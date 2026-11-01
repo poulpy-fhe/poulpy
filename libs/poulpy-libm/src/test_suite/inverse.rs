@@ -90,9 +90,9 @@ pub fn test_goldschmidt_division_assign<BE, F, E>(
         );
         let input_budget = ct.log_budget();
         if positive_alias {
-            module.ckks_inverse_positive_domain_assign(&mut ct, iters, &tsk, &mut scratch.borrow())
+            module.ckks_inverse_positive_domain_assign(iters, &mut ct, &tsk, &mut scratch.borrow())
         } else {
-            module.ckks_goldschmidt_division_assign(&mut ct, iters, &tsk, &mut scratch.borrow())
+            module.ckks_goldschmidt_division_assign(iters, &mut ct, &tsk, &mut scratch.borrow())
         }
         .unwrap_or_else(|e| panic!("{label}: {e}"));
         assert_eq!(ct.log_delta(), log_delta);
@@ -153,7 +153,7 @@ where
 
     let lb0 = y.log_budget();
     module
-        .ckks_rsqrt_assign(&mut y, &in_half, r, &tsk, &mut scratch.borrow())
+        .ckks_rsqrt_assign(r, &mut y, &in_half, &tsk, &mut scratch.borrow())
         .expect("ckks_rsqrt_assign");
 
     assert_eq!(y.log_delta(), log_delta, "rsqrt_assign: log_delta preserved");
@@ -210,7 +210,7 @@ pub fn test_inverse_negative_domain_assign<BE, F, E>(
     );
     let input_budget = ct.log_budget();
     module
-        .ckks_inverse_negative_domain_assign(&mut ct, iters, &tsk, &mut scratch.borrow())
+        .ckks_inverse_negative_domain_assign(iters, &mut ct, &tsk, &mut scratch.borrow())
         .expect("ckks_inverse_negative_domain_assign");
     assert_eq!(ct.log_delta(), log_delta, "inverse_negative_domain_assign: log_delta");
     assert_eq!(input_budget - ct.log_budget(), (iters + 1) * log_delta);
@@ -278,7 +278,7 @@ pub fn test_inverse_full_domain_assign<BE, F, E>(
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut sizing = module.ckks_ciphertext_alloc(params.base2k.into(), params.k.into());
     sizing.set_meta(params.prec().meta);
-    let scratch_size = module.ckks_inverse_domain_tmp_bytes(&sizing, &params.tsk_layout(), &params.atk_layout(), &coeff_meta);
+    let scratch_size = module.ckks_inverse_domain_tmp_bytes(&sizing, &coeff_meta, &params.tsk_layout(), &params.atk_layout());
     let mut scratch = ScratchOwned::<BE>::alloc(scratch_size);
     let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
     let conj_key = gen_atk(&params, module, -1, &sk_raw, &mut scratch.borrow());
@@ -297,7 +297,7 @@ pub fn test_inverse_full_domain_assign<BE, F, E>(
     );
     let input_budget = ct.log_budget();
     module
-        .ckks_inverse_full_domain_assign(&mut ct, iters, &composite, &tsk, &conj_key, &mut scratch.borrow())
+        .ckks_inverse_full_domain_assign(iters, &mut ct, &composite, &tsk, &conj_key, &mut scratch.borrow())
         .expect("ckks_inverse_full_domain_assign");
     assert_eq!(ct.log_delta(), log_delta, "inverse_full_domain_assign: log_delta");
     assert_eq!(input_budget - ct.log_budget(), consumed);
@@ -308,8 +308,11 @@ pub fn test_inverse_full_domain_assign<BE, F, E>(
     assert_precision_bits("inverse_full_domain_assign", &re_out, &want, required, params.n);
 }
 
-pub fn test_interval_normalization<BE, F, E>(base: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
-where
+pub fn test_interval_normalization_assign<BE, F, E>(
+    base: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) where
     BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE> + CKKSInverseOps<BE> + CKKSInverseDomainOps<BE>,
     CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>:
@@ -344,8 +347,8 @@ where
     let mut sizing = module.ckks_ciphertext_alloc(params.base2k.into(), params.k.into());
     sizing.set_meta(params.prec().meta);
     let scratch_size = module
-        .ckks_inverse_domain_tmp_bytes(&sizing, &params.tsk_layout(), &params.atk_layout(), &coeff_meta)
-        .max(module.ckks_interval_normalization_tmp_bytes(&sizing, &sizing, &params.tsk_layout(), &norm_params));
+        .ckks_inverse_domain_tmp_bytes(&sizing, &coeff_meta, &params.tsk_layout(), &params.atk_layout())
+        .max(module.ckks_interval_normalization_assign_tmp_bytes(&sizing, &sizing, &norm_params, &params.tsk_layout()));
     let mut scratch = ScratchOwned::<BE>::alloc(scratch_size);
     let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
 
@@ -366,12 +369,12 @@ where
     let mut norm = module.ckks_ciphertext_alloc(params.base2k.into(), params.k.into());
     let input_budget = ct.log_budget();
     module
-        .ckks_interval_normalization(&mut norm, &mut ct, &norm_params, &tsk, &mut scratch.borrow())
-        .expect("ckks_interval_normalization");
-    assert_eq!(ct.log_delta(), log_delta, "interval_normalization: log_delta");
+        .ckks_interval_normalization_assign(&mut ct, &mut norm, &norm_params, &tsk, &mut scratch.borrow())
+        .expect("ckks_interval_normalization_assign");
+    assert_eq!(ct.log_delta(), log_delta, "interval_normalization_assign: log_delta");
     assert_eq!(input_budget - ct.log_budget(), norm_consumed);
     module
-        .ckks_goldschmidt_division_assign(&mut ct, iters, &tsk, &mut scratch.borrow())
+        .ckks_goldschmidt_division_assign(iters, &mut ct, &tsk, &mut scratch.borrow())
         .expect("ckks_goldschmidt_division_assign");
     module
         .ckks_mul_assign(&mut ct, &norm, &tsk, &mut scratch.borrow())
@@ -380,5 +383,5 @@ where
     let (re_out, _) = ckks_decrypt_decode::<BE, F, E>(&params, module, &encoder, &ct, &sk, &mut scratch.borrow());
     let want: Vec<F> = x.iter().map(|&v| F::one() / v).collect();
     let required = log_delta as f64 - 15.0;
-    assert_precision_bits("interval_normalization", &re_out, &want, required, params.n);
+    assert_precision_bits("interval_normalization_assign", &re_out, &want, required, params.n);
 }

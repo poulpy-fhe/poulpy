@@ -195,25 +195,18 @@ fn reciprocal_iters(shifted_a: f64, target_bits: f64) -> Result<usize> {
 /// Homomorphic softmax over every dense slot.
 pub trait CKKSSoftmaxOps<BE: Backend> {
     /// Scratch bytes for [`Self::ckks_softmax`].
-    fn ckks_softmax_tmp_bytes<R, I, T, A, P>(
-        &self,
-        res: &R,
-        input: &I,
-        tsk: &T,
-        rotation_key: &A,
-        plan: &SoftmaxPlan<P>,
-    ) -> usize
+    fn ckks_softmax_tmp_bytes<R, I, P, T, A>(&self, res: &R, input: &I, plan: &SoftmaxPlan<P>, tsk: &T, keys: &A) -> usize
     where
         R: CKKSCtBounds,
         I: CKKSCtBounds,
+        P: CKKSInfos + LWEInfos,
         T: GGLWEInfos,
-        A: GGLWEInfos,
-        P: CKKSInfos + LWEInfos;
+        A: GGLWEInfos;
 
     /// Evaluates softmax over every dense slot: `exp(x - b) / sum(exp(x - b))` for the plan's upper bound `b`.
     ///
     /// The slots must lie in `plan.input_interval()`, and `input` needs `plan.consumed_bits(input.log_delta())` bits of
-    /// budget. `rotation_keys` answers the Galois elements of
+    /// budget. `keys` answers the Galois elements of
     /// [`CKKSReductionOps::ckks_sum_slots_galois_elements`].
     ///
     /// # Metadata
@@ -232,7 +225,7 @@ pub trait CKKSSoftmaxOps<BE: Backend> {
         input: &I,
         plan: &SoftmaxPlan<P>,
         tsk: &H,
-        rotation_keys: &A,
+        keys: &A,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -253,23 +246,23 @@ where
         + CKKSReductionOps<BE>
         + GLWEBytesOf<BE>,
 {
-    fn ckks_softmax_tmp_bytes<R, I, T, A, P>(&self, res: &R, input: &I, tsk: &T, rotation_key: &A, plan: &SoftmaxPlan<P>) -> usize
+    fn ckks_softmax_tmp_bytes<R, I, P, T, A>(&self, res: &R, input: &I, plan: &SoftmaxPlan<P>, tsk: &T, keys: &A) -> usize
     where
         R: CKKSCtBounds,
         I: CKKSCtBounds,
+        P: CKKSInfos + LWEInfos,
         T: GGLWEInfos,
         A: GGLWEInfos,
-        P: CKKSInfos + LWEInfos,
     {
         // The numerator lives throughout, beside the shifted input, then the denominator.
         let ct = BE::scratch_aligned(self.glwe_bytes_of_from_infos(input));
         let shifted = ct
             + self
                 .ckks_add_pt_const_tmp_bytes(input.size())
-                .max(self.ckks_exp_tmp_bytes(input, input, tsk, &plan.exp));
+                .max(self.ckks_exp_tmp_bytes(input, input, &plan.exp, tsk));
         let normalize = ct
             + self
-                .ckks_sum_slots_tmp_bytes(input, input, rotation_key)
+                .ckks_sum_slots_tmp_bytes(input, input, keys)
                 .max(self.ckks_mul_pt_const_tmp_bytes(input, input, &plan.constants))
                 .max(self.ckks_goldschmidt_division_assign_tmp_bytes(input, tsk))
                 .max(self.ckks_mul_tmp_bytes(input, input, input, tsk));
@@ -282,7 +275,7 @@ where
         input: &I,
         plan: &SoftmaxPlan<P>,
         tsk: &H,
-        rotation_keys: &A,
+        keys: &A,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -308,9 +301,9 @@ where
             })?;
             scratch_local.scope(|stage| {
                 let (mut denominator, mut stage) = stage.take_ckks_ciphertext_like_scratch(&numerator);
-                self.ckks_sum_slots(&mut denominator, &numerator, rotation_keys, &mut stage)?;
+                self.ckks_sum_slots(&mut denominator, &numerator, keys, &mut stage)?;
                 self.ckks_mul_pt_const_assign(&mut denominator, &plan.constants, 1, &mut stage)?;
-                self.ckks_goldschmidt_division_assign(&mut denominator, plan.reciprocal_iters, tsk, &mut stage)?;
+                self.ckks_goldschmidt_division_assign(plan.reciprocal_iters, &mut denominator, tsk, &mut stage)?;
                 self.ckks_mul_assign(&mut numerator, &denominator, tsk, &mut stage)?;
                 self.ckks_mul_pt_const_assign(&mut numerator, &plan.constants, 1, &mut stage)?;
                 anyhow::Ok(())

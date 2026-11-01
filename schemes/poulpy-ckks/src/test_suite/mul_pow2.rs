@@ -376,7 +376,7 @@ pub fn test_double_into_rejects_insufficient_capacity<BE, F, E>(
     use crate::api::CKKSPow2Ops;
     let a = fixture_ciphertext(module, &ct_layout, 41);
     let mut res = fixture_ciphertext(module, &layout(params, params.rank, b - 2, b - 3, 0, SlotsKind::Complex), 31);
-    for bytes in [0, module.ckks_mul_pow2_tmp_bytes(res.max_size())] {
+    for bytes in [0, module.ckks_double_tmp_bytes(res.max_size())] {
         let before = snapshot::<BE, _>(&res);
         let err = with_scratch::<BE, _>(bytes, |s| module.ckks_double_into(&mut res, &a, s)).unwrap_err();
         assert_ckks_error(

@@ -171,7 +171,7 @@ where
             ..
         } = Point::<BE>::new(bp, k);
         let plan = plan.map_plaintexts(|pt| upload_pt(&module, pt));
-        let mut scratch = ScratchOwned::<BE>::alloc(module.ckks_exp_tmp_bytes(&out, &a, &tsk_layout(bp, k), &plan));
+        let mut scratch = ScratchOwned::<BE>::alloc(module.ckks_exp_tmp_bytes(&out, &a, &plan, &tsk_layout(bp, k)));
         Box::new(move || {
             module.ckks_exp(&mut out, &a, &plan, &tsk, &mut scratch.borrow()).unwrap();
             module.synchronize();
@@ -207,7 +207,7 @@ where
             ..
         } = Point::<BE>::new(bp, k);
         let plan = plan.map_plaintexts(|pt| upload_pt(&module, pt));
-        let mut scratch = ScratchOwned::<BE>::alloc(module.ckks_log_tmp_bytes(&out, &a, &tsk_layout(bp, k), &plan));
+        let mut scratch = ScratchOwned::<BE>::alloc(module.ckks_log_tmp_bytes(&out, &a, &plan, &tsk_layout(bp, k)));
         Box::new(move || {
             module.ckks_log(&mut out, &a, &plan, &tsk, &mut scratch.borrow()).unwrap();
             module.synchronize();
@@ -245,7 +245,7 @@ where
             res: mut out,
         } = Point::<BE>::new(bp, k);
         let plan = plan.map_plaintexts(|pt| upload_pt(&module, pt));
-        let mut scratch = ScratchOwned::<BE>::alloc(module.ckks_pow_tmp_bytes(&out, &a, &b, &tsk_layout(bp, k), &plan));
+        let mut scratch = ScratchOwned::<BE>::alloc(module.ckks_pow_tmp_bytes(&out, &a, &b, &plan, &tsk_layout(bp, k)));
         Box::new(move || {
             module.ckks_pow(&mut out, &a, &b, &plan, &tsk, &mut scratch.borrow()).unwrap();
             module.synchronize();

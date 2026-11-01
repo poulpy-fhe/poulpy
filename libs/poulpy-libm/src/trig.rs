@@ -113,22 +113,22 @@ pub trait CKKSTrigOps<BE: Backend> {
     declare_unary_op!(ckks_cos_tmp_bytes, ckks_cos, CosPlan, "cos");
 
     /// Scratch bytes for [`Self::ckks_sincos`].
-    fn ckks_sincos_tmp_bytes<S, C, I, T, P, Q>(
+    fn ckks_sincos_tmp_bytes<S, C, I, P, Q, T>(
         &self,
         sin: &S,
         cos: &C,
         input: &I,
-        tsk: &T,
         sin_plan: &SinPlan<P>,
         cos_plan: &CosPlan<Q>,
+        tsk: &T,
     ) -> usize
     where
         S: CKKSCtBounds,
         C: CKKSCtBounds,
         I: CKKSCtBounds,
-        T: GGLWEInfos,
         P: CKKSInfos + LWEInfos,
-        Q: CKKSInfos + LWEInfos;
+        Q: CKKSInfos + LWEInfos,
+        T: GGLWEInfos;
 
     /// Evaluates `sin(input)` and `cos(input)`.
     ///
@@ -169,28 +169,28 @@ where
     impl_unary_op!(ckks_sin_tmp_bytes, ckks_sin, SinPlan);
     impl_unary_op!(ckks_cos_tmp_bytes, ckks_cos, CosPlan);
 
-    fn ckks_sincos_tmp_bytes<S, C, I, T, P, Q>(
+    fn ckks_sincos_tmp_bytes<S, C, I, P, Q, T>(
         &self,
         sin: &S,
         cos: &C,
         input: &I,
-        tsk: &T,
         sin_plan: &SinPlan<P>,
         cos_plan: &CosPlan<Q>,
+        tsk: &T,
     ) -> usize
     where
         S: CKKSCtBounds,
         C: CKKSCtBounds,
         I: CKKSCtBounds,
-        T: GGLWEInfos,
         P: CKKSInfos + LWEInfos,
         Q: CKKSInfos + LWEInfos,
+        T: GGLWEInfos,
     {
         // The sine has the layout of `input`.
         BE::scratch_aligned(self.glwe_bytes_of_from_infos(input))
             + self
-                .ckks_sin_tmp_bytes(input, input, tsk, sin_plan)
-                .max(self.ckks_cos_tmp_bytes(cos, input, tsk, cos_plan))
+                .ckks_sin_tmp_bytes(input, input, sin_plan, tsk)
+                .max(self.ckks_cos_tmp_bytes(cos, input, cos_plan, tsk))
                 .max(self.ckks_copy_tmp_bytes(sin, input))
     }
 

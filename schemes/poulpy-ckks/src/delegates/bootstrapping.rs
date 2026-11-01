@@ -60,6 +60,20 @@ impl<BE: Backend + CKKSBootstrappingImpl> CKKSBootstrappingOps<BE> for Module<BE
         BE::ckks_mod_up_into(self, dst, src, eval_mod, scratch)
     }
 
+    fn ckks_bootstrap_mod_up_tmp_bytes<C1, C2, F>(
+        &self,
+        ct_out: &C1,
+        ct_in: &C2,
+        ctx: &BootstrappingContextPrepared<BE, F>,
+        keys_layout: &BootstrappingKeysLayout,
+    ) -> usize
+    where
+        C1: CKKSCtBounds,
+        C2: CKKSCtBounds,
+    {
+        BE::ckks_bootstrap_mod_up_tmp_bytes(self, ct_out, ct_in, ctx, keys_layout)
+    }
+
     fn ckks_bootstrap_mod_up<Dst, Src, K>(
         &self,
         dst: &mut Dst,

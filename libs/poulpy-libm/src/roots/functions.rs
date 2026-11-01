@@ -173,13 +173,13 @@ pub trait CKKSRootOps<BE: Backend> {
     declare_unary_op!(ckks_cbrt_tmp_bytes, ckks_cbrt, CbrtPlan, "cbrt");
 
     /// Scratch bytes for [`Self::ckks_hypot`].
-    fn ckks_hypot_tmp_bytes<R, X, Y, T, P>(&self, res: &R, x: &X, y: &Y, tsk: &T, plan: &HypotPlan<P>) -> usize
+    fn ckks_hypot_tmp_bytes<R, X, Y, P, T>(&self, res: &R, x: &X, y: &Y, plan: &HypotPlan<P>, tsk: &T) -> usize
     where
         R: CKKSCtBounds,
         X: CKKSCtBounds,
         Y: CKKSCtBounds,
-        T: GGLWEInfos,
-        P: CKKSInfos + LWEInfos;
+        P: CKKSInfos + LWEInfos,
+        T: GGLWEInfos;
 
     /// Evaluates `hypot(x, y) = sqrt(x^2 + y^2)` for `x` and `y` in the plan's intervals.
     ///
@@ -213,13 +213,13 @@ where
 {
     impl_unary_op!(ckks_cbrt_tmp_bytes, ckks_cbrt, CbrtPlan);
 
-    fn ckks_hypot_tmp_bytes<R, X, Y, T, P>(&self, res: &R, x: &X, y: &Y, tsk: &T, plan: &HypotPlan<P>) -> usize
+    fn ckks_hypot_tmp_bytes<R, X, Y, P, T>(&self, res: &R, x: &X, y: &Y, plan: &HypotPlan<P>, tsk: &T) -> usize
     where
         R: CKKSCtBounds,
         X: CKKSCtBounds,
         Y: CKKSCtBounds,
-        T: GGLWEInfos,
         P: CKKSInfos + LWEInfos,
+        T: GGLWEInfos,
     {
         // The sum has the layout of `x`, and `y^2` that of `y`.
         let sum = BE::scratch_aligned(self.glwe_bytes_of_from_infos(x));

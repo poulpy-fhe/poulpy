@@ -50,7 +50,8 @@ where
     sizing.set_meta(params.prec().meta);
     let size = module
         .ckks_fma_tmp_bytes(&sizing, &sizing, &sizing, &sizing, &params.tsk_layout())
-        .max(module.ckks_scalbn_tmp_bytes(&sizing));
+        .max(module.ckks_scalbn_tmp_bytes(&sizing))
+        .max(module.ckks_ldexp_tmp_bytes(&sizing));
     let mut scratch = ScratchOwned::<BE>::alloc(size);
     let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
     let ca = ckks_encrypt_with_prec(

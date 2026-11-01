@@ -92,6 +92,19 @@ pub trait CKKSBootstrappingOps<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds;
 
+    /// Scratch bytes for [`Self::ckks_bootstrap_mod_up`] into a ciphertext like `ct_out` from one like `ct_in`, with
+    /// the arguments of [`Self::ckks_bootstrap_tmp_bytes`].
+    fn ckks_bootstrap_mod_up_tmp_bytes<C1, C2, F>(
+        &self,
+        ct_out: &C1,
+        ct_in: &C2,
+        ctx: &BootstrappingContextPrepared<BE, F>,
+        keys_layout: &BootstrappingKeysLayout,
+    ) -> usize
+    where
+        C1: CKKSCtBounds,
+        C2: CKKSCtBounds;
+
     /// Whole raise step of the bootstrap, as one call: lift `Δ·m` to the plan's
     /// message ratio, switch to the sparse secret when `keys` carry the
     /// encapsulation switches, ModUp into `dst` (with the second lift to the
@@ -99,7 +112,7 @@ pub trait CKKSBootstrappingOps<BE: Backend> {
     /// message ratio so `I(X)·q` is the integer part and the message the residue.
     ///
     /// `dst` must be allocated at the bootstrap modulus. Scratch is bounded by
-    /// [`Self::ckks_bootstrap_tmp_bytes`].
+    /// [`Self::ckks_bootstrap_mod_up_tmp_bytes`].
     fn ckks_bootstrap_mod_up<Dst, Src, K>(
         &self,
         dst: &mut Dst,

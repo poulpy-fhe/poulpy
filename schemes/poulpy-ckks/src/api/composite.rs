@@ -369,9 +369,7 @@ pub trait CKKSMulSubOps<BE: Backend> {
 pub trait CKKSDotProductOps<BE: Backend> {
     /// Scratch bytes for [`Self::ckks_dot_product_ct`] over `n` input pairs;
     /// `a`/`b` describe the widest input pair (the internal products are carved
-    /// at `max(a.k, b.k)`). They also cover [`Self::ckks_dot_product_prepared`]
-    /// over `n` pairs prepared from such ciphertexts: pass the prepared
-    /// operands, whose infos report them.
+    /// at `max(a.k, b.k)`).
     fn ckks_dot_product_ct_tmp_bytes<R, A, B, T>(&self, n: usize, res: &R, a: &A, b: &B, tsk: &T) -> usize
     where
         R: CKKSCtBounds,
@@ -431,6 +429,15 @@ pub trait CKKSDotProductOps<BE: Backend> {
         B: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetTensorKey<BE>;
 
+    /// Scratch bytes for [`Self::ckks_dot_product_prepared`] over `n` pairs, `a`/`b` describing the widest pair: pass
+    /// the prepared operands, whose infos report their sources, or those sources.
+    fn ckks_dot_product_prepared_tmp_bytes<R, A, B, T>(&self, n: usize, res: &R, a: &A, b: &B, tsk: &T) -> usize
+    where
+        R: CKKSCtBounds,
+        A: CKKSCtBounds,
+        B: CKKSCtBounds,
+        T: GGLWEInfos;
+
     /// [`Self::ckks_dot_product_ct`] of the ciphertexts `a[i]` and `b[i]` were
     /// prepared from by
     /// [`CKKSLeftOperandPreparedFactory::ckks_left_operand_prepare_alloc`](crate::api::CKKSLeftOperandPreparedFactory::ckks_left_operand_prepare_alloc)
@@ -438,7 +445,7 @@ pub trait CKKSDotProductOps<BE: Backend> {
     /// [`CKKSRightOperandPreparedFactory::ckks_right_operand_prepare_alloc`](crate::api::CKKSRightOperandPreparedFactory::ckks_right_operand_prepare_alloc),
     /// bit for bit, under either hint and for any number of pairs, with no
     /// operand transformed in the call. Its scratch is
-    /// [`Self::ckks_dot_product_ct_tmp_bytes`] of the prepared operands.
+    /// [`Self::ckks_dot_product_prepared_tmp_bytes`].
     ///
     /// Returns, before writing `dst`, `PreparedOperandLayoutMismatch` for an
     /// operand of another degree, `base2k` or rank than `dst`, and

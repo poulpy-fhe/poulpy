@@ -94,8 +94,8 @@ macro_rules! libm_backend_test_suite {
                 $crate::test_suite::inverse::test_inverse_full_domain_assign
             );
             run_test!(
-                interval_normalization,
-                $crate::test_suite::inverse::test_interval_normalization
+                interval_normalization_assign,
+                $crate::test_suite::inverse::test_interval_normalization_assign
             );
             run_test!(fabs, $crate::test_suite::predicate::test_fabs);
             run_test!(fdim_copysign, $crate::test_suite::predicate::test_fdim_copysign);

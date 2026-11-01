@@ -53,12 +53,12 @@ macro_rules! define_unary_plan {
 macro_rules! declare_unary_op {
     ($tmp:ident, $eval:ident, $plan:ident, $name:literal) => {
         #[doc = concat!("Scratch bytes for [`Self::", stringify!($eval), "`].")]
-        fn $tmp<R, I, T, P>(&self, res: &R, input: &I, tsk: &T, plan: &$plan<P>) -> usize
+        fn $tmp<R, I, P, T>(&self, res: &R, input: &I, plan: &$plan<P>, tsk: &T) -> usize
         where
             R: poulpy_ckks::CKKSCtBounds,
             I: poulpy_ckks::CKKSCtBounds,
-            T: poulpy_core::layouts::GGLWEInfos,
-            P: poulpy_ckks::CKKSInfos + poulpy_core::layouts::LWEInfos;
+            P: poulpy_ckks::CKKSInfos + poulpy_core::layouts::LWEInfos,
+            T: poulpy_core::layouts::GGLWEInfos;
 
         #[doc = concat!("Evaluates `", $name, "(input)`.")]
         ///
@@ -97,12 +97,12 @@ macro_rules! declare_unary_op {
 
 macro_rules! impl_unary_op {
     ($tmp:ident, $eval:ident, $plan:ident) => {
-        fn $tmp<R, I, T, P>(&self, res: &R, input: &I, tsk: &T, plan: &$plan<P>) -> usize
+        fn $tmp<R, I, P, T>(&self, res: &R, input: &I, plan: &$plan<P>, tsk: &T) -> usize
         where
             R: poulpy_ckks::CKKSCtBounds,
             I: poulpy_ckks::CKKSCtBounds,
-            T: poulpy_core::layouts::GGLWEInfos,
             P: poulpy_ckks::CKKSInfos + poulpy_core::layouts::LWEInfos,
+            T: poulpy_core::layouts::GGLWEInfos,
         {
             self.ckks_polynomial_approximation_eval_tmp_bytes(res, input, &plan.approximation, tsk)
         }

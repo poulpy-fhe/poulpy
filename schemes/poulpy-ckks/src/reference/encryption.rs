@@ -44,8 +44,7 @@ pub trait CKKSEncryptionReference<BE: Backend> {
         S: GLWESecretPreparedToBackendRef<BE>,
         Dct: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
         Dpt: GLWEToBackendRef<BE> + CKKSInfos + IntPolyInfos,
-        Self:
-            ModuleN + GLWEEncryptSk<BE> + GLWENormalize<BE> + VecZnxLshAdd<BE> + VecZnxRshAdd<BE> + CKKSPlaintextVecReference<BE>,
+        Self: ModuleN + GLWEEncryptSk<BE> + GLWENormalize<BE> + VecZnxLshAdd<BE> + VecZnxRshAdd<BE>,
     {
         ensure_encryption_degrees(
             "ckks_encrypt_sk",
@@ -67,7 +66,7 @@ pub trait CKKSEncryptionReference<BE: Backend> {
         ct.set_log_budget(log_budget);
         ct.set_log_delta(pt.log_delta());
         ct.set_slots(pt.slots());
-        self.ckks_add_pt_vec_into_reference(ct, pt, scratch)?;
+        crate::reference::plaintext::add_pt_vec_raw(self, ct, pt, scratch)?;
         // A plaintext is dense at its own degree.
         ct.set_log_sparsity(ct.log_n() - pt.log_n());
         // The raw limb-add above can leave digits one bit beyond the `base2k`

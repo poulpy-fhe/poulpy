@@ -435,6 +435,10 @@
 
 ### `poulpy-ckks`
 
+- **Breaking:** ckks scratch queries and entry points follow the workspace rules ([#376](https://github.com/poulpy-fhe/poulpy/issues/376)):
+  - `ckks_double_into`, `ckks_dot_product_prepared` and `ckks_bootstrap_mod_up` get their own queries, `ckks_double_tmp_bytes`, `ckks_dot_product_prepared_tmp_bytes` and `ckks_bootstrap_mod_up_tmp_bytes`, with the arguments and bounds of the `ckks_mul_pow2`, `ckks_dot_product_ct` and `ckks_bootstrap` queries that sized them, and derived defaults in their OEP families;
+  - `sign_composite_coeffs` takes default `RemezOptions` and no options argument, and `sign_composite_coeffs_with_margin(.., opts)` becomes `sign_composite_coeffs_with(tau, error_margin, target_bits, degrees, max_factors, opts)`;
+  - the `ct += pt` and `ct -= pt` kernels of `CKKSPlaintextVecReference` (`ckks_{add,sub}_pt_{vec,const}_into_reference`), which shared their stems with `CKKSAddReference` and `CKKSSubReference` methods, become crate helpers; the trait keeps its extract methods.
 - **Breaking:** ckks names lead with the object they act on ([#376](https://github.com/poulpy-fhe/poulpy/issues/376)); renamed traits, methods and functions keep no alias, and callers rename:
   - `ckks_eval_linear_transformation_*` becomes `ckks_linear_transformation_eval_*` (`ckks_eval_linear_transformation_self_into_tmp_bytes` becomes `ckks_linear_transformation_eval_self_tmp_bytes`), `ckks_prepare_linear_transformation_{rhs, baby_steps}[_tmp_bytes]` `ckks_linear_transformation_{rhs, baby_steps}_prepare[_tmp_bytes]`, and `encoding::ckks_encode_linear_transformation_*` `ckks_linear_transformation_encode_*`;
   - `ckks_new_dft_matrix[_tmp_bytes]` becomes `ckks_dft_matrix_new[_tmp_bytes]`, `ckks_prepare_dft_matrix[_tmp_bytes, _alloc]` `ckks_dft_matrix_prepare[_tmp_bytes, _alloc]`, `ckks_dft_evaluate_assign` `ckks_dft_matrix_eval_assign`, and the in-place `ckks_coeffs_to_slots` and `ckks_slots_to_coeffs` `ckks_coeffs_to_slots_assign` and `ckks_slots_to_coeffs_assign`;
@@ -926,6 +930,12 @@
 
 - Moves into the workspace from [poulpy-libm](https://github.com/poulpy-fhe/poulpy-libm) 0.1.0 (`5cfddab`), published on crates.io: CKKS math functions with `libm` names, built on the approximation machinery of `poulpy-ckks`.
   It is versioned and released with the other crates from 0.9.0.
+- **Breaking:** libm signatures follow the workspace argument rules ([#376](https://github.com/poulpy-fhe/poulpy/issues/376)):
+  - every scratch query takes its plan, `coeff_prec` or `params` before the keys, `(res, input, plan, tsk)`, as the operations do;
+  - op-wide scalars come first: `ckks_div(iters, res, a, b, tsk, scratch)`, and likewise `iters` or `r` in `ckks_sqrt`, `ckks_goldschmidt_division_assign`, `ckks_rsqrt_assign` and the `ckks_inverse_*_domain_assign` operations;
+  - automorphism-key sources are named `keys`, and `ckks_fmax_slots` and `ckks_fmin_slots` take one source answering their rotations and conjugation, where they took `rotation_keys` and `conj_key`;
+  - `ckks_ldexp` and `ckks_fmin_slots` get their own queries, `ckks_ldexp_tmp_bytes` and `ckks_fmin_slots_tmp_bytes`;
+  - `ckks_interval_normalization(norm, ct, ..)`, which compresses `ct` in place, becomes `ckks_interval_normalization_assign(ct, norm, ..)`, its query alike: a caller swaps its first two arguments, which share their bounds.
 - **Breaking:** the in-place reciprocal and inverse square root operations end in `_assign` ([#376](https://github.com/poulpy-fhe/poulpy/issues/376)): `ckks_goldschmidt_division[_tmp_bytes]` becomes `ckks_goldschmidt_division_assign[_tmp_bytes]`, `ckks_rsqrt[_tmp_bytes]` `ckks_rsqrt_assign[_tmp_bytes]`, and `ckks_inverse_positive_domain`, `ckks_inverse_negative_domain` and `ckks_inverse_full_domain` take the `_assign` suffix, `ckks_inverse_domain_tmp_bytes` sizing them as before.
 - **Breaking:** ported to the current Poulpy API.
   Operations take any operand implementing the backend view and CKKS info traits, and tensor keys as `GetTensorKey<BE>` sources, rotation and conjugation keys as `GetAutomorphismKey<BE>` sources.

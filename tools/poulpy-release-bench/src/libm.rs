@@ -450,7 +450,7 @@ where
         module
             .ckks_polynomial_approximation_eval(y, &ct_x, &approximation, &tsk, &mut scratch.borrow())
             .unwrap();
-        module.ckks_rsqrt_assign(y, &ct_half, steps, &tsk, &mut scratch.borrow()).unwrap();
+        module.ckks_rsqrt_assign(steps, y, &ct_half, &tsk, &mut scratch.borrow()).unwrap();
         module.synchronize();
     };
     op(&client.module, &mut y, &mut scratch);
@@ -509,9 +509,9 @@ where
     let mut scratch = ScratchOwned::<BE>::alloc(client.module.ckks_softmax_tmp_bytes(
         &res,
         &ct_x,
+        &plan,
         &tsk_layout(client.k),
         &atk_layout(client.k),
-        &plan,
     ));
     // Each call widens the destination back, a change of label, so that every call runs as the first, checked one.
     let k = TorusPrecision(client.k as u32);
@@ -578,7 +578,7 @@ where
         res.set_k(k);
         module.ckks_copy(res, &ct_x, &mut scratch.borrow()).unwrap();
         module
-            .ckks_inverse_positive_domain_assign(res, iters, &tsk, &mut scratch.borrow())
+            .ckks_inverse_positive_domain_assign(iters, res, &tsk, &mut scratch.borrow())
             .unwrap();
         module.synchronize();
     };

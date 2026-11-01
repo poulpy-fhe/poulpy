@@ -83,7 +83,7 @@ where
     let input_budget = cb.log_budget();
     let mut res = module.ckks_ciphertext_alloc(params.base2k.into(), params.k.into());
     module
-        .ckks_div(&mut res, &ca, &cb, iters, &tsk, &mut scratch.borrow())
+        .ckks_div(iters, &mut res, &ca, &cb, &tsk, &mut scratch.borrow())
         .expect("ckks_div");
     assert_eq!(res.log_delta(), log_delta, "div: log_delta preserved");
     assert_eq!(input_budget - res.log_budget(), (iters + 2) * log_delta);
@@ -150,7 +150,7 @@ where
     let input_budget = cx.log_budget();
     let mut res = module.ckks_ciphertext_alloc(params.base2k.into(), params.k.into());
     module
-        .ckks_sqrt(&mut res, &cx, &in_half, r, &tsk, &mut scratch.borrow())
+        .ckks_sqrt(r, &mut res, &cx, &in_half, &tsk, &mut scratch.borrow())
         .expect("ckks_sqrt");
     assert_eq!(res.log_delta(), log_delta, "sqrt: log_delta preserved");
     assert_eq!(input_budget - res.log_budget(), (2 * r + 1) * log_delta);

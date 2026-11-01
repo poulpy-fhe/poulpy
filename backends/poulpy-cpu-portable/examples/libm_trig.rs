@@ -34,7 +34,7 @@ fn run() -> Result<()> {
     let cos_plan = host_cos.map_plaintexts(|pt| upload_pt(&setup.module, pt));
     let max_consumed = sin_consumed.max(cos_consumed);
     let mut context = setup.prepare(max_consumed, |module, sizing, params| {
-        module.ckks_sincos_tmp_bytes(sizing, sizing, sizing, &params.tsk_layout(), &sin_plan, &cos_plan)
+        module.ckks_sincos_tmp_bytes(sizing, sizing, sizing, &sin_plan, &cos_plan, &params.tsk_layout())
     });
 
     // 3. Pack and encrypt the input once because both functions use the same values.

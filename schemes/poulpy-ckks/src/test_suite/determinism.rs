@@ -28,7 +28,7 @@ use poulpy_hal::{
 use crate::{
     CKKSModuleInfos, CoeffsMeta, GLWEPlaintextMeta, SetCKKSInfos, SlotsKind,
     api::{CKKSEncodingHostOps, CKKSEncodingOps},
-    approximation::{Parity, RemezOptions, minimax, sign_composite_coeffs},
+    approximation::{Parity, minimax, sign_composite_coeffs},
     layouts::{
         CKKSEncodingBuffer, CKKSPlaintextAlloc, CKKSPlaintextOwned, DFTOutputFormat, DFTPlan, DFTType,
         eval_mod::{EvalModPlan, EvalModPoly, EvalModType, ckks_eval_mod_compile},
@@ -250,7 +250,7 @@ where
         check_scalars(&format!("setup-f{bits}-dft-{kind:?}"), &scalars);
     }
 
-    let sign = sign_composite_coeffs(F::from_f64(0.1).unwrap(), 15.0, &[15], 8, RemezOptions::default()).unwrap();
+    let sign = sign_composite_coeffs(F::from_f64(0.1).unwrap(), 15.0, &[15], 8).unwrap();
     check_scalars(&format!("setup-f{bits}-sign"), &sign.concat());
     let fit = minimax(
         |x: F| (x * F::from_i32(3).unwrap()).ckks_sin(),

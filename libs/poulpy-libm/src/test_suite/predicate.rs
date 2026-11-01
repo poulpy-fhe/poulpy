@@ -68,9 +68,9 @@ where
         &sizing,
         &sizing,
         &sizing,
+        &coeff_meta,
         &params.tsk_layout(),
         &params.atk_layout(),
-        &coeff_meta,
     );
     let mut scratch = ScratchOwned::<BE>::alloc(size);
     let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
@@ -149,9 +149,9 @@ where
         &sizing,
         &sizing,
         &sizing,
+        &coeff_meta,
         &params.tsk_layout(),
         &params.atk_layout(),
-        &coeff_meta,
     );
     let mut scratch = ScratchOwned::<BE>::alloc(size);
     let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
@@ -253,9 +253,9 @@ where
         &sizing,
         &sizing,
         &sizing,
+        &coeff_meta,
         &params.tsk_layout(),
         &params.atk_layout(),
-        &coeff_meta,
     );
     let mut scratch = ScratchOwned::<BE>::alloc(size);
     let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
@@ -366,9 +366,9 @@ where
         &sizing,
         &sizing,
         &sizing,
+        &coeff_meta,
         &params.tsk_layout(),
         &params.atk_layout(),
-        &coeff_meta,
     );
     let mut scratch = ScratchOwned::<BE>::alloc(size);
     let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());

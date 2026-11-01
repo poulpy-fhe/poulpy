@@ -28,8 +28,7 @@ pub unsafe trait CKKSBootstrappingImpl: Backend<Ring = Standard> {
     /// Scratch bound of [`Self::ckks_mod_up_into`]; may report less than the reference, never less than the body takes.
     fn ckks_mod_up_tmp_bytes(module: &Module<Self>, res_size: usize) -> usize;
 
-    /// Scratch bound of [`Self::ckks_bootstrap`] and [`Self::ckks_bootstrap_mod_up`]; may report less than the
-    /// reference, never less than the body takes.
+    /// Scratch bound of [`Self::ckks_bootstrap`]; may report less than the reference, never less than the body takes.
     fn ckks_bootstrap_tmp_bytes<C1, C2, F>(
         module: &Module<Self>,
         ct_out: &C1,
@@ -70,9 +69,25 @@ pub unsafe trait CKKSBootstrappingImpl: Backend<Ring = Standard> {
         Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<Self> + CKKSCtBounds;
 
+    /// Default body: `ckks_bootstrap_mod_up_tmp_bytes_derived`, [`Self::ckks_bootstrap_tmp_bytes`]. Scratch bound of
+    /// [`Self::ckks_bootstrap_mod_up`]; may report less than the reference, never less than the body takes.
+    fn ckks_bootstrap_mod_up_tmp_bytes<C1, C2, F>(
+        module: &Module<Self>,
+        ct_out: &C1,
+        ct_in: &C2,
+        ctx: &BootstrappingContextPrepared<Self, F>,
+        keys_layout: &BootstrappingKeysLayout,
+    ) -> usize
+    where
+        C1: CKKSCtBounds,
+        C2: CKKSCtBounds,
+    {
+        super::derived::bootstrapping::ckks_bootstrap_mod_up_tmp_bytes_derived(module, ct_out, ct_in, ctx, keys_layout)
+    }
+
     /// Reproduces
     /// [`ckks_bootstrap_mod_up_reference`](crate::reference::bootstrapping::CKKSBootstrappingReference::ckks_bootstrap_mod_up_reference)
-    /// bit for bit, within [`Self::ckks_bootstrap_tmp_bytes`]; free in kernels and scratch use.
+    /// bit for bit, within [`Self::ckks_bootstrap_mod_up_tmp_bytes`]; free in kernels and scratch use.
     fn ckks_bootstrap_mod_up<Dst, Src, K>(
         module: &Module<Self>,
         dst: &mut Dst,

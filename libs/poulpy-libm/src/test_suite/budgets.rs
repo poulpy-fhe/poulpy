@@ -51,8 +51,7 @@ type HostPt = CKKSPlaintext<AlignedBuf, i64, Standard>;
 pub(super) struct Setup<BE: TestContextBackend<Ring = Standard>> {
     pub(super) params: CKKSTestParams,
     pub(super) tsk: GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
-    pub(super) conj_key: GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>,
-    pub(super) rotation_keys: std::collections::HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>>,
+    pub(super) keys: std::collections::HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>>,
     pub(super) composite: SignComposite<f64, Pt<BE>>,
     pub(super) bounds: Pt<BE>,
     pub(super) coeff_meta: CKKSLayout,
@@ -91,19 +90,21 @@ where
             &sk_raw,
             &mut poulpy_hal::api::ScratchOwnedBorrow::borrow(&mut scratch),
         );
-        let conj_key = gen_atk(
-            &params,
-            module,
+        let mut keys = rotation_keys(&params, module, &sk_raw, &mut scratch);
+        keys.insert(
             -1,
-            &sk_raw,
-            &mut poulpy_hal::api::ScratchOwnedBorrow::borrow(&mut scratch),
+            gen_atk(
+                &params,
+                module,
+                -1,
+                &sk_raw,
+                &mut poulpy_hal::api::ScratchOwnedBorrow::borrow(&mut scratch),
+            ),
         );
-        let rotation_keys = rotation_keys(&params, module, &sk_raw, &mut scratch);
         Self {
             params,
             tsk,
-            conj_key,
-            rotation_keys,
+            keys,
             composite: composite.map_plaintexts(|pt| upload_pt(module, pt)),
             bounds: upload_pt(module, &bounds),
             coeff_meta,
@@ -244,49 +245,49 @@ where
             &l("ckks_exp"),
             module,
             &layout,
-            |r| module.ckks_exp_tmp_bytes(r, &a, &tl, &exp),
+            |r| module.ckks_exp_tmp_bytes(r, &a, &exp, &tl),
             |r, s| module.ckks_exp(r, &a, &exp, tsk, s),
         );
         check_exact(
             &l("ckks_exp2"),
             module,
             &layout,
-            |r| module.ckks_exp2_tmp_bytes(r, &a, &tl, &exp2),
+            |r| module.ckks_exp2_tmp_bytes(r, &a, &exp2, &tl),
             |r, s| module.ckks_exp2(r, &a, &exp2, tsk, s),
         );
         check_exact(
             &l("ckks_exp10"),
             module,
             &layout,
-            |r| module.ckks_exp10_tmp_bytes(r, &a, &tl, &exp10),
+            |r| module.ckks_exp10_tmp_bytes(r, &a, &exp10, &tl),
             |r, s| module.ckks_exp10(r, &a, &exp10, tsk, s),
         );
         check_exact(
             &l("ckks_expm1"),
             module,
             &layout,
-            |r| module.ckks_expm1_tmp_bytes(r, &a, &tl, &expm1),
+            |r| module.ckks_expm1_tmp_bytes(r, &a, &expm1, &tl),
             |r, s| module.ckks_expm1(r, &a, &expm1, tsk, s),
         );
         check_exact(
             &l("ckks_log"),
             module,
             &layout,
-            |r| module.ckks_log_tmp_bytes(r, &a, &tl, &log),
+            |r| module.ckks_log_tmp_bytes(r, &a, &log, &tl),
             |r, s| module.ckks_log(r, &a, &log, tsk, s),
         );
         check_exact(
             &l("ckks_cbrt"),
             module,
             &layout,
-            |r| module.ckks_cbrt_tmp_bytes(r, &a, &tl, &cbrt),
+            |r| module.ckks_cbrt_tmp_bytes(r, &a, &cbrt, &tl),
             |r, s| module.ckks_cbrt(r, &a, &cbrt, tsk, s),
         );
         check_exact(
             &l("ckks_sincos"),
             module,
             &layout,
-            |r| module.ckks_sincos_tmp_bytes(r, r, &a, &tl, &sin, &cos),
+            |r| module.ckks_sincos_tmp_bytes(r, r, &a, &sin, &cos, &tl),
             |r, s| {
                 let mut cos_out = module.ckks_ciphertext_alloc_from_infos(&layout);
                 module.ckks_sincos(r, &mut cos_out, &a, &sin, &cos, tsk, s)
@@ -296,7 +297,7 @@ where
             &l("ckks_pow"),
             module,
             &layout,
-            |r| module.ckks_pow_tmp_bytes(r, &a, &b, &tl, &pow),
+            |r| module.ckks_pow_tmp_bytes(r, &a, &b, &pow, &tl),
             |r, s| module.ckks_pow(r, &a, &b, &pow, tsk, s),
         );
         check_exact(
@@ -310,7 +311,7 @@ where
             &l("ckks_hypot"),
             module,
             &layout,
-            |r| module.ckks_hypot_tmp_bytes(r, &a, &b, &tl, &hypot),
+            |r| module.ckks_hypot_tmp_bytes(r, &a, &b, &hypot, &tl),
             |r, s| module.ckks_hypot(r, &a, &b, &hypot, tsk, s),
         );
         check_exact(
@@ -361,13 +362,7 @@ where
     let atan2 = atan2.map_plaintexts(|pt| upload_pt(module, pt));
     let softmax = softmax.map_plaintexts(|pt| upload_pt(module, pt));
     let (a, b, m) = (setup.fixture(module, 4), setup.fixture(module, 5), setup.fixture(module, 6));
-    let (tsk, conj, rot, comp, bounds) = (
-        &setup.tsk,
-        &setup.conj_key,
-        &setup.rotation_keys,
-        &setup.composite,
-        &setup.bounds,
-    );
+    let (tsk, keys, comp, bounds) = (&setup.tsk, &setup.keys, &setup.composite, &setup.bounds);
     let tl = setup.params.tsk_layout();
     let al = setup.params.atk_layout();
     let cm = setup.coeff_meta;
@@ -375,54 +370,54 @@ where
     for k in setup.widths() {
         let layout = setup.layout(k);
         let l = |op: &str| format!("{op} at res.k = {k}");
-        let sign_q = |r: &CKKSCiphertextOwned<BE>| module.ckks_sign_tmp_bytes(r, &a, &tl, &al, &cm);
+        let sign_q = |r: &CKKSCiphertextOwned<BE>| module.ckks_sign_tmp_bytes(r, &a, &cm, &tl, &al);
         check_exact(&l("ckks_sign"), module, &layout, sign_q, |r, s| {
-            module.ckks_sign(r, &a, comp, tsk, conj, s)
+            module.ckks_sign(r, &a, comp, tsk, keys, s)
         });
         check_exact(&l("ckks_step"), module, &layout, sign_q, |r, s| {
-            module.ckks_step(r, &a, comp, tsk, conj, s)
+            module.ckks_step(r, &a, comp, tsk, keys, s)
         });
-        let cmp_q = |r: &CKKSCiphertextOwned<BE>| module.ckks_comparison_tmp_bytes(r, &a, &b, &tl, &al, &cm);
+        let cmp_q = |r: &CKKSCiphertextOwned<BE>| module.ckks_comparison_tmp_bytes(r, &a, &b, &cm, &tl, &al);
         check_exact(&l("ckks_fmax"), module, &layout, cmp_q, |r, s| {
-            module.ckks_fmax(r, &a, &b, comp, tsk, conj, s)
+            module.ckks_fmax(r, &a, &b, comp, tsk, keys, s)
         });
         check_exact(&l("ckks_fmin"), module, &layout, cmp_q, |r, s| {
-            module.ckks_fmin(r, &a, &b, comp, tsk, conj, s)
+            module.ckks_fmin(r, &a, &b, comp, tsk, keys, s)
         });
-        let cst_q = |r: &CKKSCiphertextOwned<BE>| module.ckks_comparison_const_tmp_bytes(r, &a, &tl, &al, &cm);
+        let cst_q = |r: &CKKSCiphertextOwned<BE>| module.ckks_comparison_const_tmp_bytes(r, &a, &cm, &tl, &al);
         check_exact(&l("ckks_fmax_const"), module, &layout, cst_q, |r, s| {
-            module.ckks_fmax_const(r, &a, bounds, 0, comp, tsk, conj, s)
+            module.ckks_fmax_const(r, &a, bounds, 0, comp, tsk, keys, s)
         });
         check_exact(&l("ckks_fmin_const"), module, &layout, cst_q, |r, s| {
-            module.ckks_fmin_const(r, &a, bounds, 1, comp, tsk, conj, s)
+            module.ckks_fmin_const(r, &a, bounds, 1, comp, tsk, keys, s)
         });
         check_exact(&l("ckks_clamp"), module, &layout, cst_q, |r, s| {
-            module.ckks_clamp(r, &a, bounds, 0, 1, comp, tsk, conj, s)
+            module.ckks_clamp(r, &a, bounds, 0, 1, comp, tsk, keys, s)
         });
-        let pred_q = |r: &CKKSCiphertextOwned<BE>| module.ckks_predicate_tmp_bytes(r, &a, &b, &tl, &al, &cm);
+        let pred_q = |r: &CKKSCiphertextOwned<BE>| module.ckks_predicate_tmp_bytes(r, &a, &b, &cm, &tl, &al);
         check_exact(&l("ckks_fabs"), module, &layout, pred_q, |r, s| {
-            module.ckks_fabs(r, &a, comp, tsk, conj, s)
+            module.ckks_fabs(r, &a, comp, tsk, keys, s)
         });
         check_exact(&l("ckks_cmp"), module, &layout, pred_q, |r, s| {
-            module.ckks_cmp(r, &a, &b, comp, tsk, conj, s)
+            module.ckks_cmp(r, &a, &b, comp, tsk, keys, s)
         });
         check_exact(&l("ckks_gt"), module, &layout, pred_q, |r, s| {
-            module.ckks_gt(r, &a, &b, comp, tsk, conj, s)
+            module.ckks_gt(r, &a, &b, comp, tsk, keys, s)
         });
         check_exact(&l("ckks_lt"), module, &layout, pred_q, |r, s| {
-            module.ckks_lt(r, &a, &b, comp, tsk, conj, s)
+            module.ckks_lt(r, &a, &b, comp, tsk, keys, s)
         });
         check_exact(&l("ckks_indicator"), module, &layout, pred_q, |r, s| {
-            module.ckks_indicator(r, &a, bounds, 0, 1, comp, tsk, conj, s)
+            module.ckks_indicator(r, &a, bounds, 0, 1, comp, tsk, keys, s)
         });
         check_exact(&l("ckks_eq"), module, &layout, pred_q, |r, s| {
-            module.ckks_eq(r, &a, &b, bounds, 1, comp, tsk, conj, s)
+            module.ckks_eq(r, &a, &b, bounds, 1, comp, tsk, keys, s)
         });
         check_exact(&l("ckks_fdim"), module, &layout, pred_q, |r, s| {
-            module.ckks_fdim(r, &a, &b, comp, tsk, conj, s)
+            module.ckks_fdim(r, &a, &b, comp, tsk, keys, s)
         });
         check_exact(&l("ckks_copysign"), module, &layout, pred_q, |r, s| {
-            module.ckks_copysign(r, &a, &b, comp, tsk, conj, s)
+            module.ckks_copysign(r, &a, &b, comp, tsk, keys, s)
         });
         check_exact(
             &l("ckks_select"),
@@ -435,29 +430,30 @@ where
             &l("ckks_atan2"),
             module,
             &layout,
-            |r| module.ckks_atan2_tmp_bytes(r, &a, &b, &tl, &al, &atan2),
-            |r, s| module.ckks_atan2(r, &a, &b, &atan2, tsk, conj, s),
+            |r| module.ckks_atan2_tmp_bytes(r, &a, &b, &atan2, &tl, &al),
+            |r, s| module.ckks_atan2(r, &a, &b, &atan2, tsk, keys, s),
         );
         check_exact(
             &l("ckks_sum_slots"),
             module,
             &layout,
             |r| module.ckks_sum_slots_tmp_bytes(r, &a, &al),
-            |r, s| module.ckks_sum_slots(r, &a, rot, s),
+            |r, s| module.ckks_sum_slots(r, &a, keys, s),
         );
-        let ext_q = |r: &CKKSCiphertextOwned<BE>| module.ckks_fmax_slots_tmp_bytes(r, &a, &tl, &al, &al, &cm);
-        check_exact(&l("ckks_fmax_slots"), module, &layout, ext_q, |r, s| {
-            module.ckks_fmax_slots(r, &a, comp, tsk, rot, conj, s)
+        let fmax_q = |r: &CKKSCiphertextOwned<BE>| module.ckks_fmax_slots_tmp_bytes(r, &a, &cm, &tl, &al);
+        check_exact(&l("ckks_fmax_slots"), module, &layout, fmax_q, |r, s| {
+            module.ckks_fmax_slots(r, &a, comp, tsk, keys, s)
         });
-        check_exact(&l("ckks_fmin_slots"), module, &layout, ext_q, |r, s| {
-            module.ckks_fmin_slots(r, &a, comp, tsk, rot, conj, s)
+        let fmin_q = |r: &CKKSCiphertextOwned<BE>| module.ckks_fmin_slots_tmp_bytes(r, &a, &cm, &tl, &al);
+        check_exact(&l("ckks_fmin_slots"), module, &layout, fmin_q, |r, s| {
+            module.ckks_fmin_slots(r, &a, comp, tsk, keys, s)
         });
         check_exact(
             &l("ckks_softmax"),
             module,
             &layout,
-            |r| module.ckks_softmax_tmp_bytes(r, &a, &tl, &al, &softmax),
-            |r, s| module.ckks_softmax(r, &a, &softmax, tsk, rot, s),
+            |r| module.ckks_softmax_tmp_bytes(r, &a, &softmax, &tl, &al),
+            |r, s| module.ckks_softmax(r, &a, &softmax, tsk, keys, s),
         );
     }
 }
@@ -486,7 +482,7 @@ where
     let setup = Setup::new(base, consumed, module, host_module);
     let norm = norm.map_plaintexts(|pt| upload_pt(module, pt));
     let (a, b) = (setup.fixture(module, 7), setup.fixture(module, 8));
-    let (tsk, conj, comp) = (&setup.tsk, &setup.conj_key, &setup.composite);
+    let (tsk, keys, comp) = (&setup.tsk, &setup.keys, &setup.composite);
     let tl = setup.params.tsk_layout();
     let al = setup.params.atk_layout();
     let cm = setup.coeff_meta;
@@ -499,23 +495,23 @@ where
             module,
             &layout,
             |r| module.ckks_div_tmp_bytes(r, &a, &b, &tl),
-            |r, s| module.ckks_div(r, &a, &b, iters, tsk, s),
+            |r, s| module.ckks_div(iters, r, &a, &b, tsk, s),
         );
         check_exact(
             &l("ckks_sqrt"),
             module,
             &layout,
             |r| module.ckks_sqrt_tmp_bytes(r, &a, &b, &tl),
-            |r, s| module.ckks_sqrt(r, &a, &b, r_steps(r), tsk, s),
+            |r, s| module.ckks_sqrt(r_steps(r), r, &a, &b, tsk, s),
         );
         check_exact(
-            &l("ckks_interval_normalization"),
+            &l("ckks_interval_normalization_assign"),
             module,
             &layout,
-            |r| module.ckks_interval_normalization_tmp_bytes(r, &a, &tl, &norm),
+            |r| module.ckks_interval_normalization_assign_tmp_bytes(&a, r, &norm, &tl),
             |r, s| {
                 let mut ct = a.clone();
-                module.ckks_interval_normalization(r, &mut ct, &norm, tsk, s)
+                module.ckks_interval_normalization_assign(&mut ct, r, &norm, tsk, s)
             },
         );
     }
@@ -536,24 +532,24 @@ where
             module,
             make,
             |c| module.ckks_goldschmidt_division_assign_tmp_bytes(c, &tl),
-            |c, s| module.ckks_goldschmidt_division_assign(c, iters, tsk, s),
+            |c, s| module.ckks_goldschmidt_division_assign(iters, c, tsk, s),
         );
         check_exact_in_place(
             &l("ckks_rsqrt_assign"),
             module,
             make,
             |c| module.ckks_rsqrt_assign_tmp_bytes(c, &b, &tl),
-            |c, s| module.ckks_rsqrt_assign(c, &b, r, tsk, s),
+            |c, s| module.ckks_rsqrt_assign(r, c, &b, tsk, s),
         );
-        let dom_q = |c: &CKKSCiphertextOwned<BE>| module.ckks_inverse_domain_tmp_bytes(c, &tl, &al, &cm);
+        let dom_q = |c: &CKKSCiphertextOwned<BE>| module.ckks_inverse_domain_tmp_bytes(c, &cm, &tl, &al);
         check_exact_in_place(&l("ckks_inverse_positive_domain_assign"), module, make, dom_q, |c, s| {
-            module.ckks_inverse_positive_domain_assign(c, iters, tsk, s)
+            module.ckks_inverse_positive_domain_assign(iters, c, tsk, s)
         });
         check_exact_in_place(&l("ckks_inverse_negative_domain_assign"), module, make, dom_q, |c, s| {
-            module.ckks_inverse_negative_domain_assign(c, iters, tsk, s)
+            module.ckks_inverse_negative_domain_assign(iters, c, tsk, s)
         });
         check_exact_in_place(&l("ckks_inverse_full_domain_assign"), module, make, dom_q, |c, s| {
-            module.ckks_inverse_full_domain_assign(c, iters, comp, tsk, conj, s)
+            module.ckks_inverse_full_domain_assign(iters, c, comp, tsk, keys, s)
         });
     }
 }

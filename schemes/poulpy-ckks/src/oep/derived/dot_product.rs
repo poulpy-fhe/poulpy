@@ -1,7 +1,7 @@
 //! Dot products over plaintexts compose the ct × pt products with the additions.
 use poulpy_core::{
     GLWEBytesOf,
-    layouts::{GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, IntPolyInfos},
+    layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, IntPolyInfos},
 };
 use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
 
@@ -53,6 +53,24 @@ where
         }
         Ok(())
     })
+}
+
+pub(crate) fn ckks_dot_product_prepared_tmp_bytes_derived<BE, R, A, B, T>(
+    module: &Module<BE>,
+    n: usize,
+    res: &R,
+    a: &A,
+    b: &B,
+    tsk: &T,
+) -> usize
+where
+    BE: CKKSDotProductImpl,
+    R: CKKSCtBounds,
+    A: CKKSCtBounds,
+    B: CKKSCtBounds,
+    T: GGLWEInfos,
+{
+    BE::ckks_dot_product_ct_tmp_bytes(module, n, res, a, b, tsk)
 }
 
 pub(crate) fn ckks_dot_product_pt_vec_tmp_bytes_derived<BE, R, A, P>(module: &Module<BE>, res: &R, a: &A, b: &P) -> usize

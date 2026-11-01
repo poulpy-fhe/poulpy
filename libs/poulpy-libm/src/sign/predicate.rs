@@ -25,19 +25,19 @@ use super::{SignComposite, ckks_sign_into, ckks_sign_tmp_bytes};
 
 /// Sign-based predicates and select.
 ///
-/// The predicates build their terms on scratch temporaries and write `res` once, with their last call. `conj_key`
+/// The predicates build their terms on scratch temporaries and write `res` once, with their last call. `keys`
 /// answers the conjugation, Galois element `-1`.
 pub trait CKKSPredicateOps<BE: Backend> {
     /// Scratch bytes for the sign-based predicates, whose two ciphertext operands are `a` and `b`: `x` and `y` for
     /// [`Self::ckks_copysign`], `x` for both in [`Self::ckks_fabs`] and [`Self::ckks_indicator`].
-    fn ckks_predicate_tmp_bytes<R, A, B, T, K, P>(&self, res: &R, a: &A, b: &B, tsk: &T, conj_key: &K, coeff_prec: &P) -> usize
+    fn ckks_predicate_tmp_bytes<R, A, B, P, T, K>(&self, res: &R, a: &A, b: &B, coeff_prec: &P, tsk: &T, keys: &K) -> usize
     where
         R: CKKSCtBounds,
         A: CKKSCtBounds,
         B: CKKSCtBounds,
+        P: CKKSInfos + LWEInfos,
         T: GGLWEInfos,
-        K: GGLWEInfos,
-        P: CKKSInfos + LWEInfos;
+        K: GGLWEInfos;
 
     /// `res <- |x|` via `x * sign(x)`.
     ///
@@ -55,7 +55,7 @@ pub trait CKKSPredicateOps<BE: Backend> {
         x: &X,
         composite: &SignComposite<F, P>,
         tsk: &H,
-        conj_key: &K,
+        keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -83,7 +83,7 @@ pub trait CKKSPredicateOps<BE: Backend> {
         b: &B,
         composite: &SignComposite<F, P>,
         tsk: &H,
-        conj_key: &K,
+        keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -112,7 +112,7 @@ pub trait CKKSPredicateOps<BE: Backend> {
         b: &B,
         composite: &SignComposite<F, P>,
         tsk: &H,
-        conj_key: &K,
+        keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -132,7 +132,7 @@ pub trait CKKSPredicateOps<BE: Backend> {
         b: &B,
         composite: &SignComposite<F, P>,
         tsk: &H,
-        conj_key: &K,
+        keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -161,7 +161,7 @@ pub trait CKKSPredicateOps<BE: Backend> {
         b: &B,
         composite: &SignComposite<F, P>,
         tsk: &H,
-        conj_key: &K,
+        keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -181,7 +181,7 @@ pub trait CKKSPredicateOps<BE: Backend> {
         b: &B,
         composite: &SignComposite<F, P>,
         tsk: &H,
-        conj_key: &K,
+        keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -212,7 +212,7 @@ pub trait CKKSPredicateOps<BE: Backend> {
         hi_coeff: usize,
         composite: &SignComposite<F, P>,
         tsk: &H,
-        conj_key: &K,
+        keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -242,7 +242,7 @@ pub trait CKKSPredicateOps<BE: Backend> {
         epsilon_coeff: usize,
         composite: &SignComposite<F, P>,
         tsk: &H,
-        conj_key: &K,
+        keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -273,7 +273,7 @@ pub trait CKKSPredicateOps<BE: Backend> {
         b: &B,
         composite: &SignComposite<F, P>,
         tsk: &H,
-        conj_key: &K,
+        keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -302,7 +302,7 @@ pub trait CKKSPredicateOps<BE: Backend> {
         y: &Y,
         composite: &SignComposite<F, P>,
         tsk: &H,
-        conj_key: &K,
+        keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -362,21 +362,21 @@ where
         + CKKSPolynomialEvaluationOps<BE>
         + GLWEBytesOf<BE>,
 {
-    fn ckks_predicate_tmp_bytes<R, A, B, T, K, P>(&self, res: &R, a: &A, b: &B, tsk: &T, conj_key: &K, coeff_prec: &P) -> usize
+    fn ckks_predicate_tmp_bytes<R, A, B, P, T, K>(&self, res: &R, a: &A, b: &B, coeff_prec: &P, tsk: &T, keys: &K) -> usize
     where
         R: CKKSCtBounds,
         A: CKKSCtBounds,
         B: CKKSCtBounds,
+        P: CKKSInfos + LWEInfos,
         T: GGLWEInfos,
         K: GGLWEInfos,
-        P: CKKSInfos + LWEInfos,
     {
         // At most three temporaries, each with the layout of `a` or `b`.
         let ct = BE::scratch_aligned(self.glwe_bytes_of_from_infos(a)).max(BE::scratch_aligned(self.glwe_bytes_of_from_infos(b)));
         let size = a.size().max(b.size());
         3 * ct
-            + ckks_sign_tmp_bytes(self, a, a, tsk, conj_key, coeff_prec)
-                .max(ckks_sign_tmp_bytes(self, b, b, tsk, conj_key, coeff_prec))
+            + ckks_sign_tmp_bytes(self, a, a, coeff_prec, tsk, keys)
+                .max(ckks_sign_tmp_bytes(self, b, b, coeff_prec, tsk, keys))
                 .max(self.ckks_sub_tmp_bytes(size))
                 .max(self.ckks_sub_pt_const_tmp_bytes(size))
                 .max(self.ckks_add_pt_const_tmp_bytes(size))
@@ -394,7 +394,7 @@ where
         x: &X,
         composite: &SignComposite<F, P>,
         tsk: &H,
-        conj_key: &K,
+        keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -406,7 +406,7 @@ where
     {
         scratch.scope(|scratch_local| {
             let (mut sgn, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(x);
-            ckks_sign_into(self, &mut sgn, x, composite, tsk, conj_key, false, &mut scratch_local)?;
+            ckks_sign_into(self, false, &mut sgn, x, composite, tsk, keys, &mut scratch_local)?;
             self.ckks_mul_into(res, x, &sgn, tsk, &mut scratch_local)?;
             Ok(())
         })
@@ -419,7 +419,7 @@ where
         b: &B,
         composite: &SignComposite<F, P>,
         tsk: &H,
-        conj_key: &K,
+        keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -433,7 +433,7 @@ where
         scratch.scope(|scratch_local| {
             let (mut diff, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(a);
             self.ckks_sub_into(&mut diff, a, b, &mut scratch_local)?;
-            ckks_sign_into(self, res, &diff, composite, tsk, conj_key, false, &mut scratch_local)
+            ckks_sign_into(self, false, res, &diff, composite, tsk, keys, &mut scratch_local)
         })
     }
 
@@ -444,7 +444,7 @@ where
         b: &B,
         composite: &SignComposite<F, P>,
         tsk: &H,
-        conj_key: &K,
+        keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -455,7 +455,7 @@ where
         H: GetTensorKey<BE>,
         K: GetAutomorphismKey<BE>,
     {
-        step_of_diff(self, res, a, b, composite, tsk, conj_key, scratch)
+        step_of_diff(self, res, a, b, composite, tsk, keys, scratch)
     }
 
     fn ckks_ge<R, A, B, F, P, H, K>(
@@ -465,7 +465,7 @@ where
         b: &B,
         composite: &SignComposite<F, P>,
         tsk: &H,
-        conj_key: &K,
+        keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -476,7 +476,7 @@ where
         H: GetTensorKey<BE>,
         K: GetAutomorphismKey<BE>,
     {
-        self.ckks_gt(res, a, b, composite, tsk, conj_key, scratch)
+        self.ckks_gt(res, a, b, composite, tsk, keys, scratch)
     }
 
     fn ckks_lt<R, A, B, F, P, H, K>(
@@ -486,7 +486,7 @@ where
         b: &B,
         composite: &SignComposite<F, P>,
         tsk: &H,
-        conj_key: &K,
+        keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -498,7 +498,7 @@ where
         K: GetAutomorphismKey<BE>,
     {
         // a < b  <=>  b > a.
-        step_of_diff(self, res, b, a, composite, tsk, conj_key, scratch)
+        step_of_diff(self, res, b, a, composite, tsk, keys, scratch)
     }
 
     fn ckks_le<R, A, B, F, P, H, K>(
@@ -508,7 +508,7 @@ where
         b: &B,
         composite: &SignComposite<F, P>,
         tsk: &H,
-        conj_key: &K,
+        keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -519,7 +519,7 @@ where
         H: GetTensorKey<BE>,
         K: GetAutomorphismKey<BE>,
     {
-        self.ckks_lt(res, a, b, composite, tsk, conj_key, scratch)
+        self.ckks_lt(res, a, b, composite, tsk, keys, scratch)
     }
 
     fn ckks_indicator<R, X, F, P, Q, H, K>(
@@ -531,7 +531,7 @@ where
         hi_coeff: usize,
         composite: &SignComposite<F, P>,
         tsk: &H,
-        conj_key: &K,
+        keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -547,10 +547,10 @@ where
             let (mut gate, scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(x);
             let (mut diff, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(x);
             self.ckks_sub_pt_const_into(&mut diff, 0, x, bounds, lo_coeff, &mut scratch_local)?;
-            ckks_sign_into(self, &mut lower, &diff, composite, tsk, conj_key, true, &mut scratch_local)?;
+            ckks_sign_into(self, true, &mut lower, &diff, composite, tsk, keys, &mut scratch_local)?;
             self.ckks_sub_pt_const_into(&mut diff, 0, x, bounds, hi_coeff, &mut scratch_local)?;
             self.ckks_neg_assign(&mut diff)?;
-            ckks_sign_into(self, &mut gate, &diff, composite, tsk, conj_key, true, &mut scratch_local)?;
+            ckks_sign_into(self, true, &mut gate, &diff, composite, tsk, keys, &mut scratch_local)?;
             self.ckks_mul_into(res, &lower, &gate, tsk, &mut scratch_local)?;
             Ok(())
         })
@@ -565,7 +565,7 @@ where
         epsilon_coeff: usize,
         composite: &SignComposite<F, P>,
         tsk: &H,
-        conj_key: &K,
+        keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -583,10 +583,10 @@ where
             let (mut diff, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(a);
             self.ckks_sub_into(&mut diff, a, b, &mut scratch_local)?;
             self.ckks_add_pt_const_assign(&mut diff, 0, epsilon, epsilon_coeff, &mut scratch_local)?;
-            ckks_sign_into(self, &mut lower, &diff, composite, tsk, conj_key, true, &mut scratch_local)?;
+            ckks_sign_into(self, true, &mut lower, &diff, composite, tsk, keys, &mut scratch_local)?;
             self.ckks_sub_into(&mut diff, b, a, &mut scratch_local)?;
             self.ckks_add_pt_const_assign(&mut diff, 0, epsilon, epsilon_coeff, &mut scratch_local)?;
-            ckks_sign_into(self, &mut gate, &diff, composite, tsk, conj_key, true, &mut scratch_local)?;
+            ckks_sign_into(self, true, &mut gate, &diff, composite, tsk, keys, &mut scratch_local)?;
             self.ckks_mul_into(res, &lower, &gate, tsk, &mut scratch_local)?;
             Ok(())
         })
@@ -599,7 +599,7 @@ where
         b: &B,
         composite: &SignComposite<F, P>,
         tsk: &H,
-        conj_key: &K,
+        keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -615,7 +615,7 @@ where
             let (mut sign, scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(a);
             let (mut acc, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(a);
             self.ckks_sub_into(&mut diff, a, b, &mut scratch_local)?;
-            ckks_sign_into(self, &mut sign, &diff, composite, tsk, conj_key, false, &mut scratch_local)?;
+            ckks_sign_into(self, false, &mut sign, &diff, composite, tsk, keys, &mut scratch_local)?;
             self.ckks_mul_into(&mut acc, &diff, &sign, tsk, &mut scratch_local)?;
             self.ckks_add_assign(&mut acc, &diff, &mut scratch_local)?;
             self.ckks_div_pow2_assign(1, &mut acc)?;
@@ -631,7 +631,7 @@ where
         y: &Y,
         composite: &SignComposite<F, P>,
         tsk: &H,
-        conj_key: &K,
+        keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -646,9 +646,9 @@ where
             let (mut abs, scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(x);
             let (mut sign_x, scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(x);
             let (mut sign_y, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(y);
-            ckks_sign_into(self, &mut sign_x, x, composite, tsk, conj_key, false, &mut scratch_local)?;
+            ckks_sign_into(self, false, &mut sign_x, x, composite, tsk, keys, &mut scratch_local)?;
             self.ckks_mul_into(&mut abs, x, &sign_x, tsk, &mut scratch_local)?;
-            ckks_sign_into(self, &mut sign_y, y, composite, tsk, conj_key, false, &mut scratch_local)?;
+            ckks_sign_into(self, false, &mut sign_y, y, composite, tsk, keys, &mut scratch_local)?;
             self.ckks_mul_into(res, &abs, &sign_y, tsk, &mut scratch_local)?;
             Ok(())
         })
@@ -707,7 +707,7 @@ fn step_of_diff<BE, R, A, B, F, P, H, K>(
     b: &B,
     composite: &SignComposite<F, P>,
     tsk: &H,
-    conj_key: &K,
+    keys: &K,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
@@ -724,6 +724,6 @@ where
     scratch.scope(|scratch_local| {
         let (mut diff, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(a);
         module.ckks_sub_into(&mut diff, a, b, &mut scratch_local)?;
-        ckks_sign_into(module, res, &diff, composite, tsk, conj_key, true, &mut scratch_local)
+        ckks_sign_into(module, true, res, &diff, composite, tsk, keys, &mut scratch_local)
     })
 }

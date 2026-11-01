@@ -303,6 +303,16 @@ impl<BE: Backend + CKKSDotProductImpl> CKKSDotProductOps<BE> for Module<BE> {
         BE::ckks_dot_product_ct(self, dst, a, b, tsk, scratch)
     }
 
+    fn ckks_dot_product_prepared_tmp_bytes<R, A, B, T>(&self, n: usize, res: &R, a: &A, b: &B, tsk: &T) -> usize
+    where
+        R: CKKSCtBounds,
+        A: CKKSCtBounds,
+        B: CKKSCtBounds,
+        T: GGLWEInfos,
+    {
+        BE::ckks_dot_product_prepared_tmp_bytes(self, n, res, a, b, tsk)
+    }
+
     fn ckks_dot_product_prepared<Dst, H>(
         &self,
         dst: &mut Dst,

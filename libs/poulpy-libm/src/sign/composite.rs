@@ -21,7 +21,7 @@ use poulpy_ckks::{
     polynomial::{BSGSPolynomial, CKKSPolynomialEncode, Polynomial, SplitStrategy},
 };
 
-use poulpy_ckks::approximation::{RemezOptions, sign_composite_coeffs};
+use poulpy_ckks::approximation::sign_composite_coeffs;
 
 /// Default Lattigo sign composite as Chebyshev coefficient rows.
 #[rustfmt::skip]
@@ -95,7 +95,7 @@ where
         strategy: SplitStrategy,
         module: &Module<HostBytesBackend>,
     ) -> Result<Self> {
-        let rows = sign_composite_coeffs::<F>(tau, target_bits, degrees, max_factors, RemezOptions::default())?;
+        let rows = sign_composite_coeffs::<F>(tau, target_bits, degrees, max_factors)?;
         Self::from_rows(rows, base2k, coeff_meta, strategy, module)
     }
 
