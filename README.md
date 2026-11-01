@@ -2,7 +2,7 @@
 # 🐙 Poulpy
 
 <p align="center">
-<img src="docs/img/poulpy.png" />
+<img src="docs/img/poulpy.svg" width="256" alt="Poulpy" />
 </p>
 
 [![CI](https://github.com/poulpy-fhe/poulpy/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/poulpy-fhe/poulpy/actions/workflows/ci.yml)
