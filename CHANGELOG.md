@@ -4,7 +4,7 @@
 
 ### GBFV
 
-- New crate `poulpy-gbfv` in `schemes/`, for the GBFV scheme. It starts with the plaintext modulus, `GBFVPlaintextModulus`: a non-zero, non-unit ring element `t`, given in any subring and stored in the smallest subring holding it, together with its inverse `numerator / characteristic` in lowest terms, computed in that subring.
+- New crate `poulpy-gbfv` in `schemes/`, for the GBFV scheme. It starts with the plaintext modulus, `GBFVPlaintextModulus`: a non-zero, non-unit ring element `t`, given in any subring and stored in the smallest subring holding it, together with its inverse `numerator / characteristic` in lowest terms, computed in that subring, and `flatten`, which returns the unique representative of a ring element modulo `t`.
 
 ## [0.10.0] - 2026-11-01
 

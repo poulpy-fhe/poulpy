@@ -107,6 +107,43 @@ impl GBFVPlaintextModulus {
     pub fn log_n(&self) -> usize {
         self.n().trailing_zeros() as usize
     }
+
+    /// Unique representative `r` of `a` modulo `t`: `r = a - t * q` for a ring element
+    /// `q`, such that every coefficient of `r / t` lies in `[-1/2, 1/2)`.
+    ///
+    /// `a` is given in `Z[X]/(X^n + 1)`, `n = a.len()`, and `r` is returned at degree
+    /// `max(n, self.n())`, the operand of smaller degree standing for its embedding.
+    /// The representative is `r = t * [a * numerator]_characteristic / characteristic`,
+    /// with `[x]_m` the centered reduction of each coefficient into `[-m/2, m/2)`. The
+    /// division is exact: with `[a * numerator]_m = a * numerator - m * q`,
+    /// `t * [a * numerator]_m = m * (a - t * q)`.
+    ///
+    /// Errors when `n` is not a power of two.
+    pub fn flatten(&self, a: &[IBig]) -> Result<Vec<IBig>> {
+        ensure!(a.len().is_power_of_two(), "flatten: degree must be a power of two");
+        let characteristic: IBig = IBig::from(self.characteristic.clone());
+        let reduced: Vec<IBig> = negacyclic_mul(a, &self.numerator)
+            .into_iter()
+            .map(|c| centered_rem(c, &characteristic))
+            .collect();
+        let ptxt_mod: Vec<IBig> = self.ptxt_mod.iter().map(|&c| IBig::from(c)).collect();
+        Ok(negacyclic_mul(&reduced, &ptxt_mod)
+            .into_iter()
+            .map(|c| c / &characteristic)
+            .collect())
+    }
+}
+
+/// `x` reduced into `[-m/2, m/2)`, `m > 0`.
+fn centered_rem(x: IBig, m: &IBig) -> IBig {
+    let mut r: IBig = x % m;
+    if r < IBig::ZERO {
+        r += m;
+    }
+    if IBig::from(2u8) * &r >= *m {
+        r -= m;
+    }
+    r
 }
 
 /// Norm `N(t)` and adjugate `adj(t)`, the product of the automorphisms of `t` other than
@@ -123,8 +160,8 @@ fn norm_and_adjugate(t: &[i64]) -> (IBig, Vec<IBig>) {
         let half: usize = level.len() / 2;
         let even: Vec<IBig> = level.iter().step_by(2).cloned().collect();
         let odd: Vec<IBig> = level.iter().skip(1).step_by(2).cloned().collect();
-        let even_sq: Vec<IBig> = negacyclic_square(&even);
-        let odd_sq: Vec<IBig> = negacyclic_square(&odd);
+        let even_sq: Vec<IBig> = negacyclic_mul(&even, &even);
+        let odd_sq: Vec<IBig> = negacyclic_mul(&odd, &odd);
         let next: Vec<IBig> = (0..half)
             .map(|i| {
                 // `Y * odd_sq` in `Z[Y]/(Y^half + 1)`.
@@ -144,34 +181,17 @@ fn norm_and_adjugate(t: &[i64]) -> (IBig, Vec<IBig>) {
 
     let mut adjugate: Vec<IBig> = vec![IBig::ONE];
     for conjugate in conjugates.iter().rev() {
-        adjugate = negacyclic_mul_by_square_embedding(conjugate, &adjugate);
+        adjugate = negacyclic_mul(conjugate, &adjugate);
     }
     (norm, adjugate)
 }
 
-/// `a^2` in `Z[X]/(X^n + 1)`, `n = a.len()`.
-fn negacyclic_square(a: &[IBig]) -> Vec<IBig> {
+/// `a * b` in `Z[X]/(X^n + 1)`, `n = max(a.len(), b.len())`, both lengths powers of two:
+/// the operand of smaller degree `m` stands for its embedding `X -> X^(n/m)`.
+fn negacyclic_mul(a: &[IBig], b: &[IBig]) -> Vec<IBig> {
+    let (a, b): (&[IBig], &[IBig]) = if a.len() >= b.len() { (a, b) } else { (b, a) };
     let n: usize = a.len();
-    let mut res: Vec<IBig> = vec![IBig::ZERO; n];
-    for (i, ai) in a.iter().enumerate() {
-        if *ai == IBig::ZERO {
-            continue;
-        }
-        for (j, aj) in a.iter().enumerate() {
-            let prod: IBig = ai * aj;
-            if i + j < n {
-                res[i + j] += prod;
-            } else {
-                res[i + j - n] -= prod;
-            }
-        }
-    }
-    res
-}
-
-/// `a(X) * b(X^2)` in `Z[X]/(X^n + 1)`, `n = a.len() = 2 * b.len()`.
-fn negacyclic_mul_by_square_embedding(a: &[IBig], b: &[IBig]) -> Vec<IBig> {
-    let n: usize = a.len();
+    let stride: usize = n / b.len();
     let mut res: Vec<IBig> = vec![IBig::ZERO; n];
     for (j, bj) in b.iter().enumerate() {
         if *bj == IBig::ZERO {
@@ -179,7 +199,7 @@ fn negacyclic_mul_by_square_embedding(a: &[IBig], b: &[IBig]) -> Vec<IBig> {
         }
         for (i, ai) in a.iter().enumerate() {
             let prod: IBig = ai * bj;
-            let e: usize = i + 2 * j;
+            let e: usize = i + stride * j;
             if e < n {
                 res[e] += prod;
             } else {
@@ -194,26 +214,9 @@ fn negacyclic_mul_by_square_embedding(a: &[IBig], b: &[IBig]) -> Vec<IBig> {
 mod tests {
     use super::*;
 
-    /// `a * b` in `Z[X]/(X^n + 1)`.
-    fn negacyclic_mul(a: &[IBig], b: &[i64]) -> Vec<IBig> {
-        let n: usize = a.len();
-        let mut res: Vec<IBig> = vec![IBig::ZERO; n];
-        for (i, ai) in a.iter().enumerate() {
-            for (j, &bj) in b.iter().enumerate() {
-                let prod: IBig = ai * IBig::from(bj);
-                if i + j < n {
-                    res[i + j] += prod;
-                } else {
-                    res[i + j - n] -= prod;
-                }
-            }
-        }
-        res
-    }
-
     /// Checks `t * numerator = characteristic` and that the fraction is irreducible.
     fn assert_inverse(t: &GBFVPlaintextModulus) {
-        let product: Vec<IBig> = negacyclic_mul(t.numerator(), t.ptxt_mod());
+        let product: Vec<IBig> = negacyclic_mul(t.numerator(), &ints(t.ptxt_mod()));
         assert_eq!(product[0], IBig::from(t.characteristic().clone()));
         assert!(product[1..].iter().all(|c| *c == IBig::ZERO));
         let gcd: UBig = t
@@ -304,5 +307,109 @@ mod tests {
     fn rejects_non_power_of_two_degree() {
         assert!(GBFVPlaintextModulus::new(&[1, 2, 3]).is_err());
         assert!(GBFVPlaintextModulus::new(&[]).is_err());
+    }
+
+    /// `X^32 - 2` at degree 512, as in the Magma reference parameters.
+    fn magma_modulus() -> GBFVPlaintextModulus {
+        let mut coeffs: Vec<i64> = vec![0; 512];
+        coeffs[0] = -2;
+        coeffs[32] = 1;
+        GBFVPlaintextModulus::new(&coeffs).unwrap()
+    }
+
+    /// Deterministic coefficients in `[-bound, bound]`.
+    fn pseudo_random(len: usize, seed: u64, bound: i64) -> Vec<IBig> {
+        let mut state: u64 = seed;
+        (0..len)
+            .map(|_| {
+                state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                IBig::from((state >> 33) as i64 % (2 * bound + 1) - bound)
+            })
+            .collect()
+    }
+
+    /// Magma's `Flatten`, on the unsimplified inverse `adj(t) / N(t)`.
+    fn magma_flatten(t: &GBFVPlaintextModulus, a: &[IBig]) -> Vec<IBig> {
+        let (norm, adjugate): (IBig, Vec<IBig>) = norm_and_adjugate(t.ptxt_mod());
+        let reduced: Vec<IBig> = negacyclic_mul(a, &adjugate)
+            .into_iter()
+            .map(|c| centered_rem(c, &norm))
+            .collect();
+        negacyclic_mul(&reduced, &ints(t.ptxt_mod()))
+            .into_iter()
+            .map(|c| c / &norm)
+            .collect()
+    }
+
+    #[test]
+    fn flatten_of_integer_modulus_is_centered_reduction() {
+        let t: GBFVPlaintextModulus = GBFVPlaintextModulus::new(&[7]).unwrap();
+        let a: Vec<IBig> = ints(&[10, -4, 3, 7, 0, -10, 13, 4]);
+        assert_eq!(t.flatten(&a).unwrap(), ints(&[3, 3, 3, 0, 0, -3, -1, -3]));
+
+        // Ties go to the lower end, as in Magma's `CenteredReduction`.
+        let t: GBFVPlaintextModulus = GBFVPlaintextModulus::new(&[4]).unwrap();
+        assert_eq!(t.flatten(&ints(&[2, -2, 6, 5])).unwrap(), ints(&[-2, -2, -2, 1]));
+    }
+
+    #[test]
+    fn flatten_matches_magma() {
+        // `2 + 2i` and `6 + 4X^2 - 2X^4 + 8X^6` have a common factor between
+        // `adj(t)` and `N(t)`, so Magma's denominator differs from the characteristic.
+        let moduli: [&[i64]; 4] = [&[2, 2], &[3, -2], &[6, 0, 4, 0, -2, 0, 8, 0], &[3, 1, -4, 1, 5, -9, 2, 6]];
+        for (seed, coeffs) in moduli.into_iter().enumerate() {
+            let t: GBFVPlaintextModulus = GBFVPlaintextModulus::new(coeffs).unwrap();
+            let a: Vec<IBig> = pseudo_random(16, seed as u64, 1 << 20);
+            assert_eq!(t.flatten(&a).unwrap(), magma_flatten(&t, &a));
+        }
+        let t: GBFVPlaintextModulus = magma_modulus();
+        let a: Vec<IBig> = pseudo_random(512, 7, 1 << 40);
+        assert_eq!(t.flatten(&a).unwrap(), magma_flatten(&t, &a));
+    }
+
+    #[test]
+    fn flatten_is_canonical_representative() {
+        let t: GBFVPlaintextModulus = magma_modulus();
+        let characteristic: IBig = IBig::from(t.characteristic().clone());
+        let a: Vec<IBig> = pseudo_random(512, 1, 1 << 40);
+        let r: Vec<IBig> = t.flatten(&a).unwrap();
+
+        // `a - r` is a multiple of `t`: `(a - r) * numerator` is divisible by the characteristic.
+        let diff: Vec<IBig> = a.iter().zip(&r).map(|(x, y)| x - y).collect();
+        assert!(
+            negacyclic_mul(&diff, t.numerator())
+                .iter()
+                .all(|c| c % &characteristic == IBig::ZERO)
+        );
+
+        // `r` is its own representative, and so is any other element of `a + (t)`.
+        assert_eq!(t.flatten(&r).unwrap(), r);
+        let b: Vec<IBig> = pseudo_random(512, 2, 1 << 20);
+        let shifted: Vec<IBig> = a
+            .iter()
+            .zip(negacyclic_mul(&b, &ints(t.ptxt_mod())))
+            .map(|(x, y)| x + y)
+            .collect();
+        assert_eq!(t.flatten(&shifted).unwrap(), r);
+    }
+
+    #[test]
+    fn flatten_embeds_smaller_operand() {
+        // An input of degree 4 under a modulus of degree 16 stands for its embedding.
+        let t: GBFVPlaintextModulus = magma_modulus();
+        let a: Vec<IBig> = ints(&[123_456, -98_765, 4_321, 77_777]);
+        let mut embedded: Vec<IBig> = vec![IBig::ZERO; 16];
+        for (i, c) in a.iter().enumerate() {
+            embedded[4 * i] = c.clone();
+        }
+        let r: Vec<IBig> = t.flatten(&a).unwrap();
+        assert_eq!(r.len(), 16);
+        assert_eq!(r, t.flatten(&embedded).unwrap());
+    }
+
+    #[test]
+    fn flatten_rejects_non_power_of_two_degree() {
+        assert!(magma_modulus().flatten(&ints(&[1, 2, 3])).is_err());
+        assert!(magma_modulus().flatten(&[]).is_err());
     }
 }
