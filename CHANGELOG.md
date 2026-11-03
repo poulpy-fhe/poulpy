@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### GBFV
+
+- New crate `poulpy-gbfv` in `schemes/`, for the GBFV scheme. It starts with the plaintext modulus, `GBFVPlaintextModulus`: a non-zero, non-unit ring element `t`, given in any subring and stored in the smallest subring holding it, together with its inverse `numerator / characteristic` in lowest terms, computed in that subring.
+
 ## [0.10.0] - 2026-11-01
 
 Completes the workspace naming pass ([#376](https://github.com/poulpy-fhe/poulpy/issues/376)): names lead with their object, opt-in macros follow their OEP trait (`impl_<op>_reference_full!`), every API method dispatches through a same-named OEP method, and operation-wide scalars lead argument lists. Gadget keys take digits of any width in bits ([#188](https://github.com/poulpy-fhe/poulpy/issues/188)) and a row offset, and every gadget product refuses an input wider than its key ([#451](https://github.com/poulpy-fhe/poulpy/issues/451)). CKKS bootstrapping applies the first CoeffsToSlots factor on the modulus raise, runs EvalMod on the conjugate-invariant ring and takes power-of-two rotation keys, with new `LogN=16` presets; normalization rounds ties to even. Crates move into `schemes/`, `libs/`, `backends/` and `tools/`; new crates: `poulpy-blas` (encrypted matrix arithmetic), `poulpy-libm` (CKKS math functions, moved in from its own repository) and `poulpy-gpu-portable` (NTT4x30 on CUDA, HIP and WGPU through CubeCL).

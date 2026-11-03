@@ -3527,6 +3527,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "poulpy-gbfv"
+version = "0.10.0"
+dependencies = [
+ "anyhow",
+ "dashu-int",
+]
+
+[[package]]
 name = "poulpy-gpu-portable"
 version = "0.10.0"
 dependencies = [

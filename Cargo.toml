@@ -4,6 +4,7 @@ members = [
     "poulpy-core",
     "poulpy-mhe",
     "schemes/poulpy-ckks",
+    "schemes/poulpy-gbfv",
     "schemes/poulpy-bin-fhe",
     "libs/poulpy-blas",
     "libs/poulpy-libm",
@@ -23,6 +24,7 @@ default-members = [
     "poulpy-core",
     "poulpy-mhe",
     "schemes/poulpy-ckks",
+    "schemes/poulpy-gbfv",
     "schemes/poulpy-bin-fhe",
     "libs/poulpy-blas",
     "libs/poulpy-libm",
@@ -56,6 +58,7 @@ poulpy-hal = {path = "poulpy-hal", version = "0.10.0"}
 poulpy-core = {path = "poulpy-core", version = "0.10.0"}
 poulpy-mhe = {path = "poulpy-mhe", version = "0.10.0"}
 poulpy-ckks = {path = "schemes/poulpy-ckks", version = "0.10.0"}
+poulpy-gbfv = {path = "schemes/poulpy-gbfv", version = "0.10.0"}
 poulpy-bin-fhe = {path = "schemes/poulpy-bin-fhe", version = "0.10.0"}
 poulpy-blas = {path = "libs/poulpy-blas", version = "0.10.0"}
 poulpy-libm = {path = "libs/poulpy-libm", version = "0.10.0"}
