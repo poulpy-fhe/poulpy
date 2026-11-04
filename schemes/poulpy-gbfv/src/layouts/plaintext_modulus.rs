@@ -26,6 +26,8 @@ pub struct GBFVPlaintextModulus {
     numerator: Vec<IBig>,
     /// Denominator of `1/t`.
     characteristic: UBig,
+    /// Absolute norm `|N(t)|` of `t` in its smallest subring.
+    norm: UBig,
 }
 
 impl GBFVPlaintextModulus {
@@ -65,7 +67,7 @@ impl GBFVPlaintextModulus {
 
         let norm_abs: UBig = (&norm).unsigned_abs();
         let gcd: UBig = adjugate.iter().fold(norm_abs.clone(), |g, c| g.gcd(c.unsigned_abs()));
-        let characteristic: UBig = norm_abs / &gcd;
+        let characteristic: UBig = &norm_abs / &gcd;
         ensure!(characteristic > UBig::ONE, "plaintext modulus: must not be a unit");
 
         // Divides by `sign(N(t)) * gcd`, so that the characteristic is positive.
@@ -80,6 +82,7 @@ impl GBFVPlaintextModulus {
             ptxt_mod,
             numerator,
             characteristic,
+            norm: norm_abs,
         })
     }
 
@@ -96,6 +99,11 @@ impl GBFVPlaintextModulus {
     /// Denominator of `1/t`: the characteristic of the plaintext ring.
     pub fn characteristic(&self) -> &UBig {
         &self.characteristic
+    }
+
+    /// Absolute norm `|N(t)|` of `t` from its smallest subring down to `Z`.
+    pub(crate) fn norm(&self) -> &UBig {
+        &self.norm
     }
 
     /// Degree `n` of the smallest subring `Z[X]/(X^n + 1)` holding `t`.
