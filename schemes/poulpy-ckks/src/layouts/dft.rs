@@ -11,7 +11,7 @@ use core::marker::PhantomData;
 use std::collections::{BTreeMap, BTreeSet};
 
 use poulpy_core::{
-    LinearTransformationPrepared,
+    GLWEDiagonalProd, LinearTransformationPrepared,
     layouts::{
         GLWEInfos, IntPolyInfos, LinearTransformation, LinearTransformationLayout, LinearTransformationStrategy,
         optimal_bsgs_giant_step,
@@ -19,7 +19,7 @@ use poulpy_core::{
 };
 use poulpy_hal::layouts::{Backend, Module, galois_element};
 
-use crate::{CoeffsMeta, GLWEPlaintextMeta, layouts::CKKSPlaintextOwned, numerics::CKKSFloat};
+use crate::{CoeffsMeta, GLWEPlaintextMeta, api::LtDiagonalMeta, layouts::CKKSPlaintextOwned, numerics::CKKSFloat};
 use num_traits::FloatConst;
 
 /// Real scalar used for plaintext DFT-matrix generation, with platform-independent
@@ -852,6 +852,42 @@ impl DftFormat for Repack {
 pub struct DFTMatrix<BE: Backend, Dir, Fmt, R = LinearTransformation<CKKSPlaintextOwned<BE>>> {
     pub(crate) inner: DFTMatrixFactors<BE, R>,
     _marker: PhantomData<(Dir, Fmt)>,
+}
+
+/// The factors a homomorphic DFT evaluates, from a compiled matrix or a view of one.
+pub trait CKKSDFTFactors<BE: Backend, Dir, Fmt> {
+    /// The operand each factor multiplies by.
+    type Diagonal: GLWEDiagonalProd<BE> + LtDiagonalMeta + GLWEInfos;
+
+    /// The resolved plan the factors were generated from.
+    fn dft_plan(&self) -> &DFTPlan;
+
+    /// The factors, in evaluation order.
+    fn factors<'a>(&'a self) -> impl Iterator<Item = &'a LinearTransformation<Self::Diagonal>>
+    where
+        BE: 'a,
+        Dir: 'a,
+        Fmt: 'a;
+}
+
+impl<BE: Backend, Dir, Fmt, P> CKKSDFTFactors<BE, Dir, Fmt> for DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>
+where
+    P: GLWEDiagonalProd<BE> + LtDiagonalMeta + GLWEInfos,
+{
+    type Diagonal = P;
+
+    fn dft_plan(&self) -> &DFTPlan {
+        self.plan()
+    }
+
+    fn factors<'a>(&'a self) -> impl Iterator<Item = &'a LinearTransformation<P>>
+    where
+        BE: 'a,
+        Dir: 'a,
+        Fmt: 'a,
+    {
+        self.factor_operands().iter()
+    }
 }
 
 /// Prepared (resident-RHS) [`DFTMatrix`]: each factor's diagonals are kept in the

@@ -136,8 +136,8 @@ pub use ciphertext::{
 };
 pub use complex_diagonals::ComplexDiagonals;
 pub use dft::{
-    DFTMatrix, DFTMatrixFactors, DFTMatrixPrepared, DFTOutputFormat, DFTPlan, DFTType, Decode, DftDirection, DftFormat,
-    DftScalar, Encode, Repack, Split, Standard,
+    CKKSDFTFactors, DFTMatrix, DFTMatrixFactors, DFTMatrixPrepared, DFTOutputFormat, DFTPlan, DFTType, Decode, DftDirection,
+    DftFormat, DftScalar, Encode, Repack, Split, Standard,
 };
 pub use encoding_buffer::{
     CKKSEncodingBuffer, CKKSEncodingBufferBackendMut, CKKSEncodingBufferBackendRef, CKKSEncodingBufferInfos,

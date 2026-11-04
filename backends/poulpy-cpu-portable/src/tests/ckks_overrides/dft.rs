@@ -351,22 +351,16 @@ unsafe impl poulpy_ckks::oep::CKKSDFTImpl for OverrideBackend {
         DFT_PREPARE_EXTRA.get() + poulpy_ckks::reference::dft::ckks_dft_matrix_prepare_tmp_bytes_reference(module, dft)
     }
 
-    fn ckks_dft_tmp_bytes<Dir, Fmt, P, Dst, Src, K>(
-        module: &Module<Self>,
-        dst: &Dst,
-        src: &Src,
-        dft: &DFTMatrix<Self, Dir, Fmt, LinearTransformation<P>>,
-        key: &K,
-    ) -> usize
+    fn ckks_dft_tmp_bytes<Dir, Fmt, D, Dst, Src, K>(module: &Module<Self>, dst: &Dst, src: &Src, dft: &D, key: &K) -> usize
     where
-        P: poulpy_core::layouts::GLWEInfos,
+        D: poulpy_ckks::layouts::CKKSDFTFactors<Self, Dir, Fmt>,
         Dst: CKKSCtBounds,
         Src: CKKSCtBounds,
         K: poulpy_core::layouts::GGLWEInfos,
     {
         DFT_QUERIES.set(DFT_QUERIES.get() + 1);
         DFT_QUERY_LAYOUTS
-            .with_borrow_mut(|layouts| layouts.push((dft.plan().kind(), dst.max_k().as_usize(), src.max_k().as_usize())));
+            .with_borrow_mut(|layouts| layouts.push((dft.dft_plan().kind(), dst.max_k().as_usize(), src.max_k().as_usize())));
         poulpy_ckks::reference::dft::ckks_dft_tmp_bytes_reference(module, dst, src, dft, key) + DFT_EXTRA.get()
     }
 
@@ -384,15 +378,15 @@ unsafe impl poulpy_ckks::oep::CKKSDFTImpl for OverrideBackend {
         })
     }
 
-    fn ckks_dft_matrix_eval_assign<Dir, Fmt, P, Dst, H>(
+    fn ckks_dft_matrix_eval_assign<Dir, Fmt, D, Dst, H>(
         module: &Module<Self>,
         ct: &mut Dst,
-        dft: &DFTMatrix<Self, Dir, Fmt, LinearTransformation<P>>,
+        dft: &D,
         keys: &H,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        P: GLWEDiagonalProd<Self> + LtDiagonalMeta,
+        D: poulpy_ckks::layouts::CKKSDFTFactors<Self, Dir, Fmt>,
         Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
         H: GetAutomorphismKey<Self>,
     {

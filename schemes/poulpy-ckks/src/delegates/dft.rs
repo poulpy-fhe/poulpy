@@ -15,20 +15,14 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 use crate::{
     CKKSCtBounds, SetCKKSInfos,
     api::{CKKSDFTMatrixOps, CKKSDFTMatrixPreparedFactory, CKKSDFTOps, CKKSEncodingScalar, LtDiagonalMeta},
-    layouts::{DFTMatrix, DFTMatrixPrepared, DFTPlan, Decode, DftDirection, DftFormat, Encode, Repack, Split, Standard},
+    layouts::{CKKSDFTFactors, DFTMatrix, DFTMatrixPrepared, DFTPlan, Decode, DftDirection, DftFormat, Encode, Repack, Split},
     oep::{CKKSDFTImpl, CKKSDFTMatrixImpl},
 };
 
 impl<BE: Backend + CKKSDFTImpl> CKKSDFTOps<BE> for Module<BE> {
-    fn ckks_dft_tmp_bytes<Dir, Fmt, P, Dst, Src, K>(
-        &self,
-        dst: &Dst,
-        src: &Src,
-        dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>,
-        key: &K,
-    ) -> usize
+    fn ckks_dft_tmp_bytes<Dir, Fmt, D, Dst, Src, K>(&self, dst: &Dst, src: &Src, dft: &D, key: &K) -> usize
     where
-        P: poulpy_core::layouts::GLWEInfos,
+        D: CKKSDFTFactors<BE, Dir, Fmt>,
         Dst: CKKSCtBounds,
         Src: CKKSCtBounds,
         K: poulpy_core::layouts::GGLWEInfos,
@@ -36,45 +30,45 @@ impl<BE: Backend + CKKSDFTImpl> CKKSDFTOps<BE> for Module<BE> {
         BE::ckks_dft_tmp_bytes(self, dst, src, dft, key)
     }
 
-    fn ckks_dft_matrix_eval_assign<Dir, Fmt, P, Dst, H>(
+    fn ckks_dft_matrix_eval_assign<Dir, Fmt, D, Dst, H>(
         &self,
         ct: &mut Dst,
-        dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>,
+        dft: &D,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
+        D: CKKSDFTFactors<BE, Dir, Fmt>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
     {
         BE::ckks_dft_matrix_eval_assign(self, ct, dft, keys, scratch)
     }
 
-    fn ckks_coeffs_to_slots_assign<P, Dst, H>(
+    fn ckks_coeffs_to_slots_assign<Fmt, D, Dst, H>(
         &self,
         ct: &mut Dst,
-        dft: &DFTMatrix<BE, Encode, Standard, LinearTransformation<P>>,
+        dft: &D,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
+        D: CKKSDFTFactors<BE, Encode, Fmt>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
     {
         BE::ckks_coeffs_to_slots_assign(self, ct, dft, keys, scratch)
     }
 
-    fn ckks_slots_to_coeffs_assign<P, Dst, H>(
+    fn ckks_slots_to_coeffs_assign<Fmt, D, Dst, H>(
         &self,
         ct: &mut Dst,
-        dft: &DFTMatrix<BE, Decode, Standard, LinearTransformation<P>>,
+        dft: &D,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
+        D: CKKSDFTFactors<BE, Decode, Fmt>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
     {

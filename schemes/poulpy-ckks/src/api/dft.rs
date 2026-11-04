@@ -23,7 +23,8 @@ use crate::{
     CKKSCtBounds, SetCKKSInfos,
     api::{CKKSEncodingScalar, LtDiagonalMeta},
     layouts::{
-        DFTMatrix, DFTMatrixFactors, DFTMatrixPrepared, DFTPlan, Decode, DftDirection, DftFormat, Encode, Repack, Split, Standard,
+        CKKSDFTFactors, DFTMatrix, DFTMatrixFactors, DFTMatrixPrepared, DFTPlan, Decode, DftDirection, DftFormat, Encode, Repack,
+        Split,
     },
 };
 
@@ -34,7 +35,7 @@ use crate::{
 /// [`CKKSDFTMatrixPreparedFactory::ckks_dft_matrix_prepare`] optionally
 /// prepares that into the resident [`DFTMatrixPrepared`] for faster repeated
 /// evaluation. The evaluation methods apply either form. The `*_assign` methods
-/// are the `Standard` format; `*_split` returns the real/imaginary parts in two
+/// evaluate the unsplit chain; `*_split` returns the real/imaginary parts in two
 /// ciphertexts (`SplitRealAndImag`); `*_repack` is the sparse `RepackImagAsReal`
 /// path that packs the imaginary part into the right half of a single ciphertext.
 ///
@@ -43,55 +44,49 @@ pub trait CKKSDFTOps<BE: Backend> {
     /// Selected workspace for raw DFT evaluation and its format wrappers.
     /// `dst` and `src` must bound all destination and source allocations; `key`
     /// must bound every rotation/conjugation key used by the transform.
-    fn ckks_dft_tmp_bytes<Dir, Fmt, P, Dst, Src, K>(
-        &self,
-        dst: &Dst,
-        src: &Src,
-        dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>,
-        key: &K,
-    ) -> usize
+    fn ckks_dft_tmp_bytes<Dir, Fmt, D, Dst, Src, K>(&self, dst: &Dst, src: &Src, dft: &D, key: &K) -> usize
     where
-        P: poulpy_core::layouts::GLWEInfos,
+        D: CKKSDFTFactors<BE, Dir, Fmt>,
         Dst: CKKSCtBounds,
         Src: CKKSCtBounds,
         K: poulpy_core::layouts::GGLWEInfos;
 
     /// Evaluates the homomorphic (I)DFT in place (raw chain, no format wrapper).
-    fn ckks_dft_matrix_eval_assign<Dir, Fmt, P, Dst, H>(
+    fn ckks_dft_matrix_eval_assign<Dir, Fmt, D, Dst, H>(
         &self,
         ct: &mut Dst,
-        dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>,
+        dft: &D,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
+        D: CKKSDFTFactors<BE, Dir, Fmt>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         H: GetAutomorphismKey<BE> + GetTensorKey<BE>;
 
-    /// `CoeffsToSlots`, `Standard` format (in place).
-    fn ckks_coeffs_to_slots_assign<P, Dst, H>(
+    /// `CoeffsToSlots` in place. `Fmt` is how an output reads; the unsplit evaluation ignores it.
+    fn ckks_coeffs_to_slots_assign<Fmt, D, Dst, H>(
         &self,
         ct: &mut Dst,
-        dft: &DFTMatrix<BE, Encode, Standard, LinearTransformation<P>>,
+        dft: &D,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
+        D: CKKSDFTFactors<BE, Encode, Fmt>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         H: GetAutomorphismKey<BE> + GetTensorKey<BE>;
 
-    /// `SlotsToCoeffs`, `Standard` format (in place).
-    fn ckks_slots_to_coeffs_assign<P, Dst, H>(
+    /// `SlotsToCoeffs` in place. `Fmt` is how an output reads; the unsplit evaluation ignores it.
+    fn ckks_slots_to_coeffs_assign<Fmt, D, Dst, H>(
         &self,
         ct: &mut Dst,
-        dft: &DFTMatrix<BE, Decode, Standard, LinearTransformation<P>>,
+        dft: &D,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
+        D: CKKSDFTFactors<BE, Decode, Fmt>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         H: GetAutomorphismKey<BE> + GetTensorKey<BE>;
 

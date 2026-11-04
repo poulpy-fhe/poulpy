@@ -3,7 +3,9 @@ use crate::api::{
     CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSDFTMatrixPreparedFactory, CKKSDFTOps, CKKSImagOps, CKKSRotateOps, CKKSSubOps,
     LtDiagonalMeta,
 };
-use crate::layouts::{DFTMatrix, DFTMatrixPrepared, Decode, Encode, Repack, ScratchArenaTakeCKKSCiphertext, Split, Standard};
+use crate::layouts::{
+    CKKSDFTFactors, DFTMatrix, DFTMatrixPrepared, Decode, Encode, Repack, ScratchArenaTakeCKKSCiphertext, Split,
+};
 use crate::oep::CKKSDFTImpl;
 use crate::{CKKSCtBounds, CKKSResult as Result, SetCKKSInfos, SlotsKind};
 use poulpy_core::GLWEDiagonalProd;
@@ -27,18 +29,18 @@ where
     Ok(res)
 }
 
-/// Homomorphic encoding (CoeffsToSlots), `Standard` format: evaluates the Encode
-/// (IDFT) matrix in place, retaining selected raw DFT dispatch.
-pub(crate) fn ckks_encoding_buffer_coeffs_to_slots_assign_derived<BE, P, Dst, H>(
+/// Homomorphic encoding (CoeffsToSlots): evaluates the Encode (IDFT) factors in place,
+/// retaining selected raw DFT dispatch. The format is how an output reads and is ignored here.
+pub(crate) fn ckks_encoding_buffer_coeffs_to_slots_assign_derived<BE, Fmt, D, Dst, H>(
     module: &Module<BE>,
     ct: &mut Dst,
-    dft: &DFTMatrix<BE, Encode, Standard, LinearTransformation<P>>,
+    dft: &D,
     keys: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
     BE: Backend,
-    P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
+    D: CKKSDFTFactors<BE, Encode, Fmt>,
     Module<BE>: crate::api::CKKSDFTOps<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
@@ -46,18 +48,18 @@ where
     module.ckks_dft_matrix_eval_assign(ct, dft, keys, scratch)
 }
 
-/// Homomorphic decoding (SlotsToCoeffs), `Standard` format: evaluates the Decode
-/// (DFT) matrix in place, retaining selected raw DFT dispatch.
-pub(crate) fn ckks_encoding_buffer_slots_to_coeffs_assign_derived<BE, P, Dst, H>(
+/// Homomorphic decoding (SlotsToCoeffs): evaluates the Decode (DFT) factors in place,
+/// retaining selected raw DFT dispatch. The format is how an output reads and is ignored here.
+pub(crate) fn ckks_encoding_buffer_slots_to_coeffs_assign_derived<BE, Fmt, D, Dst, H>(
     module: &Module<BE>,
     ct: &mut Dst,
-    dft: &DFTMatrix<BE, Decode, Standard, LinearTransformation<P>>,
+    dft: &D,
     keys: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
     BE: Backend,
-    P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
+    D: CKKSDFTFactors<BE, Decode, Fmt>,
     Module<BE>: crate::api::CKKSDFTOps<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     H: GetAutomorphismKey<BE> + GetTensorKey<BE>,

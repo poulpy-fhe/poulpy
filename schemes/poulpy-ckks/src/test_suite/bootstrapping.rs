@@ -34,8 +34,7 @@ use crate::layouts::CKKSPlaintextOwned;
 
 use poulpy_core::layouts::{
     GGLWEInfos, GLWEAutomorphismKeyLayout, GLWEInfos, GLWEPlaintextInfos, GLWESecretPreparedToBackendRef, GLWETensorKeyPrepared,
-    GLWEToBackendMut, GLWEToBackendRef, LWEInfos, LinearTransformation, SetGLWEPlaintextInfos,
-    prepared::GLWETensorKeyPreparedToBackendRef,
+    GLWEToBackendMut, GLWEToBackendRef, LWEInfos, SetGLWEPlaintextInfos, prepared::GLWETensorKeyPreparedToBackendRef,
 };
 use poulpy_hal::{
     api::{ReimNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
@@ -52,7 +51,7 @@ use crate::{
     },
     layouts::{
         BootstrappingKeys, BootstrappingKeysLayout, BootstrappingLinearKeys, BootstrappingPipeline, BootstrappingPlan,
-        BootstrappingTechniques, CKKSCiphertextAlloc, CKKSPlaintextAlloc, DFTMatrix, DFTOutputFormat, DFTPlan, DFTType,
+        BootstrappingTechniques, CKKSCiphertextAlloc, CKKSDFTFactors, CKKSPlaintextAlloc, DFTOutputFormat, DFTPlan, DFTType,
         EncapsulationKeysLayout, EvalRoundPlus, SparseSecretEncapsulation,
         eval_mod::{EvalModPlan, EvalModType},
     },
@@ -71,17 +70,17 @@ use crate::{
 };
 
 /// Scratch of one DFT stage from `src` to `dst`, under the largest of the rotation key layouts of `keys`.
-fn dft_stage_bytes<BE, Dir, Fmt, P, Dst, Src>(
+fn dft_stage_bytes<BE, Dir, Fmt, D, Dst, Src>(
     module: &Module<BE>,
     keys: &BootstrappingKeysLayout,
     dst: &Dst,
     src: &Src,
-    dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>,
+    dft: &D,
 ) -> usize
 where
     BE: Backend,
     Module<BE>: CKKSDFTOps<BE>,
-    P: GLWEInfos,
+    D: CKKSDFTFactors<BE, Dir, Fmt>,
     Dst: CKKSCtBounds,
     Src: CKKSCtBounds,
 {

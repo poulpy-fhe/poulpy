@@ -42,8 +42,8 @@ use crate::{
         CKKSRightOperandPreparedFactory,
     },
     layouts::{
-        CKKSPlaintextAlloc, ComplexDiagonals, DFTMatrix, DFTMatrixPrepared, DFTPlan, DFTType, Decode, DftScalar, Encode,
-        EncodedLut, EvalMod, EvalModPlan, Split,
+        CKKSDFTFactors, CKKSPlaintextAlloc, ComplexDiagonals, DFTMatrix, DFTMatrixPrepared, DFTPlan, DFTType, Decode, DftScalar,
+        Encode, EncodedLut, EvalMod, EvalModPlan, Split,
         eval_mod::{EvalModType, ckks_eval_mod_compile},
     },
 };
@@ -793,6 +793,40 @@ impl StageWidths<'_> {
         };
         // A width too narrow for EvalMod fails at its key lookup or in EvalMod, not here.
         (self.eval_mod_k(bootstrap_k) + f_mod_log_delta).saturating_sub(raised_log_delta)
+    }
+}
+
+impl<BE: Backend, F> CKKSDFTFactors<BE, Encode, Split> for BootstrappingContextPrepared<BE, F> {
+    type Diagonal = <DFTMatrixPrepared<BE, Encode, Split> as CKKSDFTFactors<BE, Encode, Split>>::Diagonal;
+
+    fn dft_plan(&self) -> &DFTPlan {
+        self.coeffs_to_slots.dft_plan()
+    }
+
+    fn factors<'a>(&'a self) -> impl Iterator<Item = &'a LinearTransformation<Self::Diagonal>>
+    where
+        BE: 'a,
+        Encode: 'a,
+        Split: 'a,
+    {
+        self.coeffs_to_slots.factors()
+    }
+}
+
+impl<BE: Backend, F> CKKSDFTFactors<BE, Decode, Split> for BootstrappingContextPrepared<BE, F> {
+    type Diagonal = <DFTMatrixPrepared<BE, Decode, Split> as CKKSDFTFactors<BE, Decode, Split>>::Diagonal;
+
+    fn dft_plan(&self) -> &DFTPlan {
+        self.slots_to_coeffs.dft_plan()
+    }
+
+    fn factors<'a>(&'a self) -> impl Iterator<Item = &'a LinearTransformation<Self::Diagonal>>
+    where
+        BE: 'a,
+        Decode: 'a,
+        Split: 'a,
+    {
+        self.slots_to_coeffs.factors()
     }
 }
 

@@ -42,8 +42,8 @@ use crate::{
         CKKSLinearTransformationOps, CKKSRotateOps, CKKSSubOps, LtDiagonalMeta,
     },
     layouts::{
-        CKKSPlaintextOwned, ComplexDiagonals, DFTMatrix, DFTMatrixFactors, DFTMatrixPrepared, DFTPlan, DftDirection, DftFormat,
-        DftScalar,
+        CKKSDFTFactors, CKKSPlaintextOwned, ComplexDiagonals, DFTMatrix, DFTMatrixFactors, DFTMatrixPrepared, DFTPlan,
+        DftDirection, DftFormat, DftScalar,
         dft_matrices::ckks_dft_matrices_gen,
         validation::{ensure_prepared_transformation_layout, ensure_uniform_diagonals},
     },
@@ -282,23 +282,23 @@ impl<BE: Backend, Dir, Fmt: DftFormat, P> DFTMatrix<BE, Dir, Fmt, LinearTransfor
 /// factor's baby-step keyswitches, which scale with the operand limb count) is
 /// smaller than its storage. After every factor `ct` is therefore compacted in
 /// place.
-pub fn ckks_dft_matrix_eval_assign_reference<BE, Dir, Fmt, P, Dst, H>(
+pub fn ckks_dft_matrix_eval_assign_reference<BE, Dir, Fmt, D, Dst, H>(
     module: &Module<BE>,
     ct: &mut Dst,
-    dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>,
+    dft: &D,
     keys: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
     BE: Backend,
-    P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
+    D: CKKSDFTFactors<BE, Dir, Fmt>,
     Module<BE>: CKKSLinearTransformationOps<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
 {
     // One factor at a time, in place on `ct`; compact `ct` after each so the next
     // factor's baby-step keyswitches operate on fewer limbs as the budget shrinks.
-    for factor in dft.factor_operands() {
+    for factor in dft.factors() {
         eval_factor(module, ct, factor, keys, scratch)?;
     }
     ct.set_noise(None);
@@ -357,16 +357,16 @@ where
 
 /// Workspace for the reference DFT chain and all format compositions.
 /// Covers both the prepared and the streamed evaluation of every factor.
-pub fn ckks_dft_tmp_bytes_reference<BE, Dir, Fmt, P, Dst, Src, K>(
+pub fn ckks_dft_tmp_bytes_reference<BE, Dir, Fmt, D, Dst, Src, K>(
     module: &Module<BE>,
     dst: &Dst,
     src: &Src,
-    dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>,
+    dft: &D,
     key: &K,
 ) -> usize
 where
     BE: Backend,
-    P: GLWEInfos,
+    D: CKKSDFTFactors<BE, Dir, Fmt>,
     Dst: CKKSCtBounds,
     Src: CKKSCtBounds,
     K: GGLWEInfos,
@@ -411,7 +411,7 @@ where
                     .max(module.ckks_sub_tmp_bytes(ct.max_size()))
                     .max(module.ckks_div_i_tmp_bytes(ct.max_size())),
         );
-        for factor in dft.factor_operands() {
+        for factor in dft.factors() {
             // Each factor's own schedule, so that a factor on power-of-two keys counts its
             // doubling and its giant-step tree, beside its baby cache.
             let plan = factor.index();
@@ -447,15 +447,9 @@ pub trait CKKSDFTReference<BE: Backend> {
         P: GLWEInfos,
         Module<BE>: CKKSLinearTransformationOps<BE>;
 
-    fn ckks_dft_tmp_bytes_reference<Dir, Fmt, P, Dst, Src, K>(
-        &self,
-        dst: &Dst,
-        src: &Src,
-        dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>,
-        key: &K,
-    ) -> usize
+    fn ckks_dft_tmp_bytes_reference<Dir, Fmt, D, Dst, Src, K>(&self, dst: &Dst, src: &Src, dft: &D, key: &K) -> usize
     where
-        P: GLWEInfos,
+        D: CKKSDFTFactors<BE, Dir, Fmt>,
         Dst: CKKSCtBounds,
         Src: CKKSCtBounds,
         K: GGLWEInfos,
@@ -479,15 +473,15 @@ pub trait CKKSDFTReference<BE: Backend> {
         Module<BE>: CKKSLinearTransformationOps<BE>,
         P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + GLWEDiagonalProd<BE>;
 
-    fn ckks_dft_matrix_eval_assign_reference<Dir, Fmt, P, Dst, H>(
+    fn ckks_dft_matrix_eval_assign_reference<Dir, Fmt, D, Dst, H>(
         &self,
         ct: &mut Dst,
-        dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>,
+        dft: &D,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
+        D: CKKSDFTFactors<BE, Dir, Fmt>,
         Module<BE>: CKKSLinearTransformationOps<BE>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         H: GetAutomorphismKey<BE> + GetTensorKey<BE>;
@@ -505,15 +499,9 @@ impl<BE: Backend> CKKSDFTReference<BE> for Module<BE> {
         ckks_dft_matrix_prepare_tmp_bytes_reference(self, dft)
     }
 
-    fn ckks_dft_tmp_bytes_reference<Dir, Fmt, P, Dst, Src, K>(
-        &self,
-        dst: &Dst,
-        src: &Src,
-        dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>,
-        key: &K,
-    ) -> usize
+    fn ckks_dft_tmp_bytes_reference<Dir, Fmt, D, Dst, Src, K>(&self, dst: &Dst, src: &Src, dft: &D, key: &K) -> usize
     where
-        P: GLWEInfos,
+        D: CKKSDFTFactors<BE, Dir, Fmt>,
         Dst: CKKSCtBounds,
         Src: CKKSCtBounds,
         K: GGLWEInfos,
@@ -543,15 +531,15 @@ impl<BE: Backend> CKKSDFTReference<BE> for Module<BE> {
         ckks_dft_matrix_prepare_reference(self, res, dft, scratch)
     }
 
-    fn ckks_dft_matrix_eval_assign_reference<Dir, Fmt, P, Dst, H>(
+    fn ckks_dft_matrix_eval_assign_reference<Dir, Fmt, D, Dst, H>(
         &self,
         ct: &mut Dst,
-        dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>,
+        dft: &D,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
+        D: CKKSDFTFactors<BE, Dir, Fmt>,
         Module<BE>: CKKSLinearTransformationOps<BE>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
