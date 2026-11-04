@@ -205,7 +205,6 @@ where
     for<'a> <BC as Backend>::BufRef<'a>: HostDataRef,
     for<'a> <BC as Backend>::BufMut<'a>: HostDataMut,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
-    ScratchOwned<CIBackend<BE>>: ScratchOwnedAlloc<CIBackend<BE>>,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos + CKKSCtBounds + poulpy_core::layouts::GLWEDiagonalProd<BE>,
     CKKSCiphertextOwned<BC>: GLWEToBackendMut<BC> + GLWEToBackendRef<BC> + CKKSCtBounds + SetCKKSInfos,
@@ -217,8 +216,11 @@ where
 
     let start = Instant::now();
     let mut run = match preset.plan().eval_mod_ring() {
-        EvalModRing::Standard => BootstrappingPresetRun::<BE, BC>::setup(preset),
-        _ => BootstrappingPresetRun::<BE, BC>::setup_ci(preset),
+        EvalModRing::Standard => BootstrappingPresetRun::<BE, BC>::setup(preset, None),
+        _ => {
+            let ci = Module::<CIBackend<BE>>::new(preset.n() as u64);
+            BootstrappingPresetRun::<BE, BC>::setup(preset, Some(ci))
+        }
     };
     run.synchronize();
     let setup_ns = start.elapsed().as_nanos() as u64;

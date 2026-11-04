@@ -42,7 +42,7 @@ use crate::{
         CKKSRightOperandPreparedFactory,
     },
     layouts::{
-        CKKSDFTFactors, CKKSPlaintextAlloc, ComplexDiagonals, DFTMatrix, DFTMatrixPrepared, DFTPlan, DFTType, Decode, DftScalar,
+        CKKSCITwin, CKKSDFTFactors, CKKSPlaintextAlloc, ComplexDiagonals, DFTMatrix, DFTMatrixPrepared, DFTPlan, DFTType, Decode,
         Encode, EncodedLut, EvalMod, EvalModPlan, ModRaisePlan, ModRaisePrepared, Split,
         eval_mod::{EvalModType, ckks_eval_mod_compile},
     },
@@ -346,6 +346,33 @@ impl BootstrappingPlan {
         self.eval_mod_ring
     }
 
+    /// Refuses a conjugate-invariant module on a plan with EvalMod on the standard ring, its
+    /// absence on one with EvalMod on the conjugate-invariant ring, and modules of degrees
+    /// that serve no bootstrap there.
+    pub(crate) fn check_ci_module<BE: CKKSCITwin>(
+        &self,
+        op: &'static str,
+        module: &Module<BE>,
+        ci: Option<&Module<BE::CI>>,
+    ) -> Result<()> {
+        let reason = match (self.eval_mod_ring, ci) {
+            (EvalModRing::Standard, None) => return Ok(()),
+            (EvalModRing::Standard, Some(_)) => "EvalMod runs on the standard ring: the plan takes no conjugate-invariant module",
+            (EvalModRing::ConjugateInvariant { .. }, None) => {
+                "EvalMod runs on the conjugate-invariant ring: the plan takes a conjugate-invariant module"
+            }
+            (EvalModRing::ConjugateInvariant { .. }, Some(ci)) if module.n() >= 2 * ci.n() => return Ok(()),
+            (EvalModRing::ConjugateInvariant { .. }, Some(_)) => {
+                "EvalMod on the conjugate-invariant ring takes a module of degree at least 2N and a CI module of degree N"
+            }
+        };
+        Err(crate::CKKSCompositionError::InvalidOperand {
+            op,
+            reason: reason.into(),
+        }
+        .into())
+    }
+
     /// Optional techniques applied by the recipe.
     pub fn techniques(&self) -> &BootstrappingTechniques {
         &self.techniques
@@ -497,7 +524,7 @@ impl BootstrappingPlan {
         }
         set.extend(self.slots_to_coeffs.galois_elements(log_n, cyclotomic_order));
         // The folded factors are the last CoeffsToSlots factor times diagonals of the full
-        // slots, as `compile_ci` builds them.
+        // slots, as `compile` builds them.
         if let EvalModRing::ConjugateInvariant {
             pre: CIConversion::Folded,
             ..
@@ -547,8 +574,7 @@ pub struct BootstrappingContextPrepared<BE: Backend, F> {
     eval_mod_plan: EvalModPlan,
     eval_mod: Option<EvalMod<F, CKKSPlaintextOwned<BE>>>,
 
-    /// The ring EvalMod runs on, and its plaintexts on the conjugate-invariant
-    /// ring ([`Self::compile_ci`]).
+    /// The ring EvalMod runs on, and its plaintexts on the conjugate-invariant ring.
     eval_mod_ring: EvalModRing,
     eval_mod_ci: Option<EvalModCIPrepared<BE, F>>,
 
@@ -899,7 +925,8 @@ impl<BE: Backend, F> BootstrappingContextPrepared<BE, F> {
         &self.eval_mod_plan
     }
 
-    /// EvalMod on the standard ring, which `op` runs: a context of [`Self::compile_ci`] has none.
+    /// EvalMod on the standard ring, which `op` runs: a context of a plan on the
+    /// conjugate-invariant ring has none.
     pub(crate) fn standard_eval_mod(&self, op: &'static str) -> crate::CKKSResult<&EvalMod<F, CKKSPlaintextOwned<BE>>> {
         self.eval_mod.as_ref().ok_or_else(|| {
             crate::CKKSCompositionError::InvalidOperand {
@@ -915,7 +942,7 @@ impl<BE: Backend, F> BootstrappingContextPrepared<BE, F> {
         self.eval_mod_ring
     }
 
-    /// EvalMod on the conjugate-invariant ring and its conversions, if compiled by [`Self::compile_ci`].
+    /// EvalMod on the conjugate-invariant ring and its conversions, for a plan on that ring.
     pub fn eval_mod_ci(&self) -> Option<&EvalModCIPrepared<BE, F>> {
         self.eval_mod_ci.as_ref()
     }
@@ -1085,7 +1112,7 @@ impl<BE: Backend, F> BootstrappingContext<BE, F> {
     }
 }
 
-impl<BE: Backend, F> BootstrappingContextPrepared<BE, F>
+impl<BE: CKKSCITwin, F> BootstrappingContextPrepared<BE, F>
 where
     F: CKKSEncodingScalar,
 {
@@ -1095,13 +1122,25 @@ where
     /// `EvalModPlan::meta`), including the CoeffsToSlots scaling resolved by
     /// [`BootstrappingPlan::new`].
     ///
+    /// With EvalMod on the conjugate-invariant ring, `ci` is `Some`, of degree `N`: EvalMod
+    /// is encoded on it, and `u` and `v` at degree `2N`, which `module` serves on top of the
+    /// bootstrap's degree `N`. The DFT matrices are generated as at degree `N`. `ci` is
+    /// `None` with EvalMod on the standard ring.
+    ///
     /// `scratch` serves both generation and preparation, so it must cover
     /// [`Self::compile_unprepared_tmp_bytes`] and
     /// [`BootstrappingContext::prepare_tmp_bytes`]. The latter is only
     /// known once the matrices exist: use [`Self::compile_unprepared`] followed by
     /// [`BootstrappingContext::prepare`] to size preparation exactly.
+    ///
+    /// # Errors
+    ///
+    /// [`InvalidOperand`](crate::CKKSCompositionError::InvalidOperand) for a `ci` that does not
+    /// match the plan's ring, or for a `module` under degree `2N` on the conjugate-invariant
+    /// ring, before any work.
     pub fn compile(
         module: &Module<BE>,
+        ci: Option<&Module<BE::CI>>,
         base2k: Base2K,
         plan: &BootstrappingPlan,
         scratch: &mut ScratchArena<'_, BE>,
@@ -1112,97 +1151,90 @@ where
             + CKKSDFTMatrixOps<BE, F>
             + CKKSEncodingOps<BE, F>
             + CKKSRightOperandPreparedFactory<BE>,
+        Module<BE::CI>: CKKSEncodingOps<BE::CI, F>,
         CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds + GLWEDiagonalProd<BE>,
     {
-        Self::compile_unprepared(module, base2k, plan, scratch)?.prepare(module, scratch)
+        Self::compile_unprepared(module, ci, base2k, plan, scratch)?.prepare(module, scratch)
     }
 
-    /// [`Self::compile`] for EvalMod on the conjugate-invariant ring: also encodes
-    /// EvalMod on `ci`, of degree `N`, and `u` and `v` at degree `2N`, which
-    /// `module` serves on top of the bootstrap's degree `N`. The DFT matrices are
-    /// generated as at degree `N`.
-    ///
-    /// `scratch` serves generation and preparation, as for [`Self::compile`]:
-    /// [`Self::compile_ci_unprepared_tmp_bytes`] and
-    /// [`BootstrappingContext::prepare_tmp_bytes`] size the two stages of
-    /// [`Self::compile_ci_unprepared`] and [`BootstrappingContext::prepare`].
-    pub fn compile_ci<BCI>(
-        module: &Module<BE>,
-        ci: &Module<BCI>,
-        base2k: Base2K,
-        plan: &BootstrappingPlan,
-        scratch: &mut ScratchArena<'_, BE>,
-        scratch_ci: &mut ScratchArena<'_, BCI>,
-    ) -> Result<Self>
-    where
-        BCI: Backend<Ring = ConjugateInvariant, OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>,
-        F: DftScalar,
-        Module<BE>: CKKSRightOperandPreparedFactory<BE>
-            + CKKSDFTMatrixPreparedFactory<BE>
-            + CKKSDFTOps<BE>
-            + CKKSDFTMatrixOps<BE, F>
-            + CKKSEncodingOps<BE, F>,
-        Module<BCI>: CKKSEncodingOps<BCI, F>,
-        CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds + GLWEDiagonalProd<BE>,
-    {
-        Self::compile_ci_unprepared(module, ci, base2k, plan, scratch, scratch_ci)?.prepare(module, scratch)
-    }
-
-    /// Scratch of [`Self::compile_ci_unprepared`] for `plan` and a bootstrap of degree `N = ci.n()`:
-    /// `(scratch, scratch_ci)`. On `module`, the larger of [`Self::compile_unprepared_tmp_bytes`] of `plan` with its
-    /// DFT formats resolved at degree `N` and the encoding of `u` and `v`, of degree `2N`; on `ci`, the encoding of the
-    /// coefficients of a plaintext of degree `N`.
+    /// Scratch of [`Self::compile_unprepared`] for `plan`. On the standard ring, the largest of
+    /// the queries of the stages, which run one after the other on the same scratch,
+    /// [`CKKSDFTMatrixOps::ckks_dft_matrix_new_tmp_bytes`] of each matrix and the slot encoding
+    /// EvalMod stages its coefficients through. On the conjugate-invariant ring, of bootstrap
+    /// degree `N = ci.n()`, the larger of that query, with the DFT formats resolved at degree
+    /// `N`, and the encoding of `u` and `v`, of degree `2N`, plus the encoding of the
+    /// coefficients of a plaintext of degree `N` on `ci`.
     ///
     /// # Errors
     ///
-    /// As [`Self::compile_unprepared_tmp_bytes`].
-    pub fn compile_ci_unprepared_tmp_bytes<BCI>(
+    /// As [`Self::compile`], and the plan-versus-ring error of [`CKKSDFTMatrixOps::ckks_dft_matrix_new`].
+    pub fn compile_unprepared_tmp_bytes(
         module: &Module<BE>,
-        ci: &Module<BCI>,
+        ci: Option<&Module<BE::CI>>,
         plan: &BootstrappingPlan,
-    ) -> Result<(usize, usize)>
+    ) -> Result<usize>
     where
-        BCI: Backend,
         Module<BE>: CKKSDFTMatrixOps<BE, F> + CKKSEncodingOps<BE, F>,
-        Module<BCI>: CKKSEncodingOps<BCI, F>,
+        Module<BE::CI>: CKKSEncodingOps<BE::CI, F>,
     {
+        plan.check_ci_module("compile_unprepared_tmp_bytes", module, ci)?;
+        let Some(ci) = ci else {
+            return Self::stages_tmp_bytes(module, plan);
+        };
         let n = ci.n();
         let plan = plan.with_dft_formats_resolved_at(ci.log_n());
-        Ok((
-            Self::compile_unprepared_tmp_bytes(module, &plan)?.max(
-                <Module<BE> as CKKSEncodingHostOps<BE, F>>::ckks_encoding_host_tmp_bytes(module, n),
-            ),
-            <Module<BCI> as CKKSEncodingHostOps<BCI, F>>::ckks_encoding_host_tmp_bytes(ci, n / 2),
-        ))
+        let host = <Module<BE> as CKKSEncodingHostOps<BE, F>>::ckks_encoding_host_tmp_bytes(module, n);
+        let host_ci = <Module<BE::CI> as CKKSEncodingHostOps<BE::CI, F>>::ckks_encoding_host_tmp_bytes(ci, n / 2);
+        Ok(Self::stages_tmp_bytes(module, &plan)?.max(host) + host_ci)
     }
 
-    /// First stage of [`Self::compile_ci`]: generates the DFT matrices and encodes
-    /// EvalMod and the conversions, without preparing the matrices.
-    pub fn compile_ci_unprepared<BCI>(
+    /// [`Self::compile_unprepared_tmp_bytes`] of the stages on `module`.
+    fn stages_tmp_bytes(module: &Module<BE>, plan: &BootstrappingPlan) -> Result<usize>
+    where
+        Module<BE>: CKKSDFTMatrixOps<BE, F> + CKKSEncodingOps<BE, F>,
+    {
+        let mut bytes = module
+            .ckks_dft_matrix_new_tmp_bytes::<Encode, Split>(&plan.coeffs_to_slots)?
+            .max(module.ckks_dft_matrix_new_tmp_bytes::<Decode, Split>(&plan.slots_to_coeffs)?);
+        if let Some(bypass) = plan.coeffs_to_slots_bypass() {
+            bytes = bytes.max(module.ckks_dft_matrix_new_tmp_bytes::<Encode, Split>(bypass)?);
+        }
+        if plan.eval_mod_ring == EvalModRing::Standard {
+            bytes = bytes.max(<Module<BE> as CKKSEncodingHostOps<BE, F>>::ckks_encoding_host_tmp_bytes(
+                module,
+                module.n() / 2,
+            ));
+        }
+        Ok(bytes)
+    }
+
+    /// First stage of [`Self::compile`]: generates the DFT matrices and encodes
+    /// EvalMod, and the conversions on the conjugate-invariant ring, without preparing the
+    /// matrices.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::compile`].
+    pub fn compile_unprepared(
         module: &Module<BE>,
-        ci: &Module<BCI>,
+        ci: Option<&Module<BE::CI>>,
         base2k: Base2K,
         plan: &BootstrappingPlan,
         scratch: &mut ScratchArena<'_, BE>,
-        scratch_ci: &mut ScratchArena<'_, BCI>,
     ) -> Result<BootstrappingContext<BE, F>>
     where
-        BCI: Backend<Ring = ConjugateInvariant, OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>,
-        Module<BE>: CKKSDFTMatrixOps<BE, F> + CKKSPlaintextAlloc<BE> + CKKSEncodingOps<BE, F>,
-        Module<BCI>: CKKSPlaintextAlloc<BCI> + CKKSEncodingOps<BCI, F>,
+        Module<BE>: CKKSDFTMatrixOps<BE, F> + CKKSEncodingOps<BE, F>,
+        Module<BE::CI>: CKKSEncodingOps<BE::CI, F>,
     {
-        let EvalModRing::ConjugateInvariant { pre, post } = plan.eval_mod_ring else {
-            anyhow::bail!("compile_ci takes a plan with EvalMod on the conjugate-invariant ring");
+        plan.check_ci_module("compile", module, ci)?;
+        let (Some(ci), EvalModRing::ConjugateInvariant { pre, post }) = (ci, plan.eval_mod_ring) else {
+            return Self::compile_stages(module, base2k, plan, scratch);
         };
-        ensure!(
-            module.n() >= 2 * ci.n(),
-            "compile_ci takes a module of degree at least 2N and a CI module of degree N"
-        );
-        // `compile_unprepared` resolves the DFT formats at the degree of `module`, at least
+        // `compile_stages` resolves the DFT formats at the degree of `module`, at least
         // `2N`, where every slot of degree `N` would be a sparse plan's: resolve them at
         // the bootstrap's degree first.
         let plan = plan.with_dft_formats_resolved_at(ci.log_n());
-        let mut context = Self::compile_unprepared(module, base2k, &plan, scratch)?;
+        let mut context = Self::compile_stages(module, base2k, &plan, scratch)?;
         // Slot `j` of degree `N` is slot `j` and slot `j + N/2` of degree `2N`.
         let half = ci.n() / 2;
         let mut pair = |modulus: f64, second: f64, log_delta: usize| {
@@ -1259,43 +1291,17 @@ where
                 )?)
             }
         };
+        let mut scratch_ci = scratch.borrow().into_backend::<BE::CI>();
         context.eval_mod_ci = Some(EvalModCI {
-            eval_mod: ckks_eval_mod_compile(base2k, plan.eval_mod, ci, scratch_ci)?,
+            eval_mod: ckks_eval_mod_compile(base2k, plan.eval_mod, ci, &mut scratch_ci)?,
             pre,
             post,
         });
         Ok(context)
     }
 
-    /// Scratch of [`Self::compile_unprepared`] for `plan`: the DFT matrices and EvalMod are built one after the other on
-    /// the same scratch, so the largest of their queries, [`CKKSDFTMatrixOps::ckks_dft_matrix_new_tmp_bytes`] of each
-    /// matrix and the slot encoding EvalMod stages its coefficients through.
-    ///
-    /// # Errors
-    ///
-    /// The plan-versus-ring error of [`CKKSDFTMatrixOps::ckks_dft_matrix_new`].
-    pub fn compile_unprepared_tmp_bytes(module: &Module<BE>, plan: &BootstrappingPlan) -> Result<usize>
-    where
-        Module<BE>: CKKSDFTMatrixOps<BE, F> + CKKSEncodingOps<BE, F>,
-    {
-        let mut bytes = module
-            .ckks_dft_matrix_new_tmp_bytes::<Encode, Split>(&plan.coeffs_to_slots)?
-            .max(module.ckks_dft_matrix_new_tmp_bytes::<Decode, Split>(&plan.slots_to_coeffs)?);
-        if let Some(bypass) = plan.coeffs_to_slots_bypass() {
-            bytes = bytes.max(module.ckks_dft_matrix_new_tmp_bytes::<Encode, Split>(bypass)?);
-        }
-        if plan.eval_mod_ring == EvalModRing::Standard {
-            bytes = bytes.max(<Module<BE> as CKKSEncodingHostOps<BE, F>>::ckks_encoding_host_tmp_bytes(
-                module,
-                module.n() / 2,
-            ));
-        }
-        Ok(bytes)
-    }
-
-    /// First stage of [`Self::compile`]: generates the DFT matrices and encodes
-    /// EvalMod, without preparing the matrices.
-    pub fn compile_unprepared(
+    /// The stages on `module`: the DFT matrices, and EvalMod on the standard ring.
+    fn compile_stages(
         module: &Module<BE>,
         base2k: Base2K,
         plan: &BootstrappingPlan,
@@ -1312,7 +1318,6 @@ where
             .first_factor_on_raise()
             .then(|| coeffs_to_slots.inner.factors.remove(0));
         let slots_to_coeffs = module.ckks_dft_matrix_new::<Decode, Split>(base2k, &plan.slots_to_coeffs, scratch)?;
-        // EvalMod on the conjugate-invariant ring is encoded by `compile_ci`, on its module.
         let eval_mod = match plan.eval_mod_ring {
             EvalModRing::Standard => Some(ckks_eval_mod_compile::<BE, F>(base2k, plan.eval_mod, module, scratch)?),
             EvalModRing::ConjugateInvariant { .. } => None,

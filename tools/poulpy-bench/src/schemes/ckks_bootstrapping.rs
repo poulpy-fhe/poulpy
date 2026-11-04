@@ -47,8 +47,8 @@ fn runner_ckks_bootstrapping<BE, BC>(
     setup: impl Fn(BootstrappingPreset) -> BootstrappingPresetRun<BE, BC>,
     record: Option<Record<'_>>,
 ) where
-    BE: Backend<Ring = Standard, ZnxWord = i64> + HostStaged + 'static,
-    BC: TestContextBackend<Ring = Standard> + 'static,
+    BE: Backend<Ring = Standard, ZnxWord = i64> + HostStaged + 'static + CKKSCITwin,
+    BC: TestContextBackend<Ring = Standard> + 'static + CKKSCITwin,
     Module<BE>: CKKSDFTMatrixPreparedFactory<BE> + PresetRunModule<BE>,
     Module<BC>: TestContextModule<BC> + CKKSEncodingOps<BC, f64>,
     for<'a> <BC as Backend>::BufRef<'a>: HostDataRef,
@@ -168,7 +168,6 @@ where
     for<'a> <BC as Backend>::BufRef<'a>: HostDataRef,
     for<'a> <BC as Backend>::BufMut<'a>: HostDataMut,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
-    ScratchOwned<CIBackend<BE>>: ScratchOwnedAlloc<CIBackend<BE>>,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos + CKKSCtBounds + poulpy_core::layouts::GLWEDiagonalProd<BE>,
     CKKSCiphertextOwned<BC>: GLWEToBackendMut<BC> + GLWEToBackendRef<BC> + CKKSCtBounds + SetCKKSInfos,
@@ -206,7 +205,6 @@ pub fn bench_ckks_bootstrapping_replayed_with_client<BE, BC>(
     for<'a> <BC as Backend>::BufRef<'a>: HostDataRef,
     for<'a> <BC as Backend>::BufMut<'a>: HostDataMut,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
-    ScratchOwned<CIBackend<BE>>: ScratchOwnedAlloc<CIBackend<BE>>,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos + CKKSCtBounds + poulpy_core::layouts::GLWEDiagonalProd<BE>,
     CKKSCiphertextOwned<BC>: GLWEToBackendMut<BC> + GLWEToBackendRef<BC> + CKKSCtBounds + SetCKKSInfos,
@@ -236,7 +234,6 @@ where
     for<'a> <BC as Backend>::BufRef<'a>: HostDataRef,
     for<'a> <BC as Backend>::BufMut<'a>: HostDataMut,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
-    ScratchOwned<CIBackend<BE>>: ScratchOwnedAlloc<CIBackend<BE>>,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos + CKKSCtBounds + poulpy_core::layouts::GLWEDiagonalProd<BE>,
     CKKSCiphertextOwned<BC>: GLWEToBackendMut<BC> + GLWEToBackendRef<BC> + CKKSCtBounds + SetCKKSInfos,
@@ -251,17 +248,15 @@ where
         // Each preset, then its variant with the keys of power-of-two rotations only.
         for preset in [nominal.clone(), nominal.with_power_of_two_keys().unwrap()] {
             let preset = preset_for_backend::<BE, CIBackend<BE>>(&preset).unwrap();
-            match ring {
-                EvalModRing::Standard => {
-                    runner_ckks_bootstrapping(&mut group, preset, BootstrappingPresetRun::<BE, BC>::setup, record)
-                }
-                _ => runner_ckks_bootstrapping(
-                    &mut group,
-                    preset,
-                    |preset| BootstrappingPresetRun::<BE, BC>::setup_ci(preset),
-                    record,
-                ),
-            }
+            runner_ckks_bootstrapping(
+                &mut group,
+                preset,
+                |preset| {
+                    let ci = (ring != EvalModRing::Standard).then(|| Module::<CIBackend<BE>>::new(preset.n() as u64));
+                    BootstrappingPresetRun::<BE, BC>::setup(preset, ci)
+                },
+                record,
+            );
         }
     }
     group.finish();

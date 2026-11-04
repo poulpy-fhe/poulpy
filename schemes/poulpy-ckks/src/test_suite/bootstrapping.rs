@@ -32,6 +32,8 @@ use crate::api::CKKSEncodingOps;
 use crate::layouts::CKKSCiphertextOwned;
 use crate::layouts::CKKSPlaintextOwned;
 
+use poulpy_core::GLWECIKeyEncryptSk;
+use poulpy_core::api::GLWECIKeyPreparedFactory;
 use poulpy_core::layouts::{
     GGLWEInfos, GLWEAutomorphismKeyLayout, GLWEInfos, GLWEPlaintextInfos, GLWESecretPreparedToBackendRef, GLWETensorKeyPrepared,
     GLWEToBackendMut, GLWEToBackendRef, LWEInfos, SetGLWEPlaintextInfos, prepared::GLWETensorKeyPreparedToBackendRef,
@@ -50,8 +52,8 @@ use crate::{
         CKKSEvalModOps, CKKSPow2Ops, CKKSSubOps,
     },
     layouts::{
-        BootstrappingKeys, BootstrappingKeysLayout, BootstrappingLinearKeys, BootstrappingPipeline, BootstrappingPlan,
-        BootstrappingTechniques, CKKSCiphertextAlloc, CKKSDFTFactors, CKKSPlaintextAlloc, DFTOutputFormat, DFTPlan, DFTType,
+        BootstrappingKeysLayout, BootstrappingLinearKeys, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques,
+        CKKSCITwin, CKKSCiphertextAlloc, CKKSDFTFactors, CKKSPlaintextAlloc, DFTOutputFormat, DFTPlan, DFTType,
         EncapsulationKeysLayout, EvalRoundPlus, SparseSecretEncapsulation,
         eval_mod::{EvalModPlan, EvalModType},
     },
@@ -60,12 +62,12 @@ use crate::{
     test_suite::{
         CKKSTestParams,
         helpers::{
-            LoggedBootstrappingKeys, TestContextBackend, TestContextModule, TestScalar, assert_canonical_at_k, assert_ckks_error,
-            assert_invalid_operand, ckks_encrypt_with_prec, ckks_spec, gen_sk_with_raw, next_test_seed, precision_stats,
-            test_vector_1,
+            LoggedBootstrappingKeys, TestContextBackend, TestContextModule, TestContextSharedModule, TestScalar,
+            assert_canonical_at_k, assert_ckks_error, assert_invalid_operand, ckks_encrypt_with_prec, ckks_spec, gen_sk_with_raw,
+            next_test_seed, precision_stats, test_vector_1,
         },
         parity::helpers::{fixture_ciphertext, snapshot, with_scratch},
-        presets::{bootstrap_setup_tmp_bytes, compile_context},
+        presets::{CIBackend, bootstrap_setup_tmp_bytes, compile_context},
     },
 };
 
@@ -224,8 +226,12 @@ fn plan_with_encapsulation(
 /// and the precision is that of the ordinary pipeline.
 pub fn test_bootstrapping_first_factor_on_raise<BE, F, E>(params: CKKSTestParams)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend<Ring = Standard> + CKKSCITwin,
+    CIBackend<BE>: TestContextBackend,
+    Module<CIBackend<BE>>: TestContextSharedModule<CIBackend<BE>> + CKKSEncodingOps<CIBackend<BE>, F>,
     Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + GLWECIKeyEncryptSk<BE>
+        + GLWECIKeyPreparedFactory<BE>
         + TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSBootstrappingOps<BE>
@@ -304,7 +310,7 @@ where
         let boot_spec = ckks_spec(n, base2k, log_delta, k_boot - log_delta);
         let in_spec = ckks_spec(n, base2k, log_delta, k_in - log_delta);
         let mut scratch = ScratchOwned::<BE>::alloc(bootstrap_setup_tmp_bytes(&module, &boot_spec, &plan, &keys_layout));
-        let ctx = compile_context::<BE, F>(&module, base2k.into(), &plan);
+        let ctx = compile_context::<BE, F>(&module, None, base2k.into(), &plan);
         // The matrix holds the paid factors; the first one stands apart, a rotation per diagonal.
         let first = ctx
             .coeffs_to_slots_first_factor()
@@ -319,19 +325,15 @@ where
             Source::new(next_test_seed(1)),
             Source::new(next_test_seed(2)),
         );
-        let key_set = ctx
-            .generate_keys(
-                &module,
-                &sk_raw,
-                &keys_layout,
-                &mut src_xs,
-                &mut src_xe,
-                &mut src_xa,
-                &mut scratch.borrow(),
-            )
-            .unwrap();
+        let key_set = with_scratch::<BE, _>(keys_layout.generate_tmp_bytes(&module, None), |s| {
+            ctx.generate_keys(&module, None, &sk_raw, &keys_layout, &mut src_xs, &mut src_xe, &mut src_xa, s)
+        })
+        .unwrap();
         assert_eq!(key_set.first_factor_keys.len(), first.giant_steps.len());
-        let bsk = key_set.prepare(&module, &mut scratch.borrow());
+        let bsk = with_scratch::<BE, _>(keys_layout.prepare_tmp_bytes(&module, None), |s| {
+            key_set.prepare(&module, None, s)
+        })
+        .unwrap();
 
         // The raise alone runs on exactly the scratch it advertises.
         let k_small = if s2c_first { log_modulus_in } else { k_in };
@@ -430,8 +432,12 @@ where
 /// End-to-end bootstrapping: encrypt at level 0, refresh, check the slots return.
 pub fn test_bootstrapping_standard_e2e<BE, F, E>(params: CKKSTestParams)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend<Ring = Standard> + CKKSCITwin,
+    CIBackend<BE>: TestContextBackend,
+    Module<CIBackend<BE>>: TestContextSharedModule<CIBackend<BE>> + CKKSEncodingOps<CIBackend<BE>, F>,
     Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + GLWECIKeyEncryptSk<BE>
+        + GLWECIKeyPreparedFactory<BE>
         + TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSBootstrappingOps<BE>
@@ -510,7 +516,7 @@ where
     );
     let mut scratch = ScratchOwned::<BE>::alloc(scratch_size);
 
-    let ctx = compile_context::<BE, F>(&module, base2k.into(), &plan);
+    let ctx = compile_context::<BE, F>(&module, None, base2k.into(), &plan);
 
     let (sk_raw, sk) = gen_sk_with_raw(&tp, &module, &host_module, [0u8; 32]);
 
@@ -523,9 +529,10 @@ where
     let (mut src_xs, mut src_xa, mut src_xe) = (Source::new([7u8; 32]), Source::new([1u8; 32]), Source::new([2u8; 32]));
     // `generate_keys` returns the keys *unprepared* (the serializable / GPU-resident
     // form); `prepare` preprocesses the whole set up front for this CPU path.
-    let bsk = ctx
+    let mut bsk = ctx
         .generate_keys(
             &module,
+            None,
             &sk_raw,
             &keys_layout,
             &mut src_xs,
@@ -534,13 +541,13 @@ where
             &mut scratch.borrow(),
         )
         .unwrap()
-        .prepare(&module, &mut scratch.borrow());
+        .prepare(&module, None, &mut scratch.borrow())
+        .unwrap();
 
     // The tensor key covers EvalMod's input.
     {
-        use crate::layouts::BootstrappingKeys;
         use poulpy_core::layouts::GGLWEInfos;
-        assert!(after_c2s <= bsk.tensor_key().gglwe_layout().max_input_k().as_usize());
+        assert!(after_c2s <= bsk.tensor_key.as_ref().unwrap().gglwe_layout().max_input_k().as_usize());
     }
 
     // Encrypt z at the input ("level 0") modulus.
@@ -596,6 +603,12 @@ where
             _ => panic!("expected a key refused at entry, got: {err}"),
         }
         assert_eq!(snapshot::<BE, _>(&ct_wide), before, "a refused bootstrap wrote res");
+
+        let tensor_key = bsk.tensor_key.take();
+        let err = with_scratch::<BE, _>(0, |s| module.ckks_bootstrap(&mut ct_wide, &ct0, &ctx, &bsk, s)).unwrap_err();
+        assert_invalid_operand("no tensor key", &err, "ckks_bootstrap", "no tensor key of the plan's ring");
+        assert_eq!(snapshot::<BE, _>(&ct_wide), before, "a refused bootstrap wrote res");
+        bsk.tensor_key = tensor_key;
     }
 
     // Compare the public orchestrator with the explicit pipeline below.
@@ -695,13 +708,29 @@ where
     let mut res_real = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
     let mut res_imag = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
     with_scratch::<BE, _>(
-        module.ckks_eval_mod_tmp_bytes(&res_real, &ct_real, ctx.eval_mod().unwrap(), &bsk.tensor_key),
-        |s| module.ckks_eval_mod(&mut res_real, &ct_real, ctx.eval_mod().unwrap(), &bsk.tensor_key, s),
+        module.ckks_eval_mod_tmp_bytes(&res_real, &ct_real, ctx.eval_mod().unwrap(), bsk.tensor_key.as_ref().unwrap()),
+        |s| {
+            module.ckks_eval_mod(
+                &mut res_real,
+                &ct_real,
+                ctx.eval_mod().unwrap(),
+                bsk.tensor_key.as_ref().unwrap(),
+                s,
+            )
+        },
     )
     .unwrap();
     with_scratch::<BE, _>(
-        module.ckks_eval_mod_tmp_bytes(&res_imag, &ct_imag, ctx.eval_mod().unwrap(), &bsk.tensor_key),
-        |s| module.ckks_eval_mod(&mut res_imag, &ct_imag, ctx.eval_mod().unwrap(), &bsk.tensor_key, s),
+        module.ckks_eval_mod_tmp_bytes(&res_imag, &ct_imag, ctx.eval_mod().unwrap(), bsk.tensor_key.as_ref().unwrap()),
+        |s| {
+            module.ckks_eval_mod(
+                &mut res_imag,
+                &ct_imag,
+                ctx.eval_mod().unwrap(),
+                bsk.tensor_key.as_ref().unwrap(),
+                s,
+            )
+        },
     )
     .unwrap();
 
@@ -776,8 +805,12 @@ where
 /// uses natural (`1.0`) scaling, and SlotsToCoeffs the standard `2^log_message_ratio`.
 pub fn test_bootstrapping_evalround_e2e<BE, F, E>(params: CKKSTestParams)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend<Ring = Standard> + CKKSCITwin,
+    CIBackend<BE>: TestContextBackend,
+    Module<CIBackend<BE>>: TestContextSharedModule<CIBackend<BE>> + CKKSEncodingOps<CIBackend<BE>, F>,
     Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + GLWECIKeyEncryptSk<BE>
+        + GLWECIKeyPreparedFactory<BE>
         + TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSBootstrappingOps<BE>
@@ -842,7 +875,7 @@ where
     );
     let mut scratch = ScratchOwned::<BE>::alloc(scratch_size);
 
-    let ctx = compile_context::<BE, F>(&module, base2k.into(), &plan);
+    let ctx = compile_context::<BE, F>(&module, None, base2k.into(), &plan);
 
     let (sk_raw, sk) = gen_sk_with_raw(&tp, &module, &host_module, [0u8; 32]);
 
@@ -857,6 +890,7 @@ where
     let bsk = ctx
         .generate_keys(
             &module,
+            None,
             &sk_raw,
             &keys_layout,
             &mut src_xs,
@@ -865,7 +899,8 @@ where
             &mut scratch.borrow(),
         )
         .unwrap()
-        .prepare(&module, &mut scratch.borrow());
+        .prepare(&module, None, &mut scratch.borrow())
+        .unwrap();
 
     let (re, im) = test_vector_1::<F>(m);
 
@@ -974,13 +1009,29 @@ where
     let mut res_real = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
     let mut res_imag = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
     with_scratch::<BE, _>(
-        module.ckks_eval_mod_tmp_bytes(&res_real, &r0_lp, ctx.eval_mod().unwrap(), &bsk.tensor_key()),
-        |s| module.ckks_eval_mod(&mut res_real, &r0_lp, ctx.eval_mod().unwrap(), bsk.tensor_key(), s),
+        module.ckks_eval_mod_tmp_bytes(&res_real, &r0_lp, ctx.eval_mod().unwrap(), bsk.tensor_key.as_ref().unwrap()),
+        |s| {
+            module.ckks_eval_mod(
+                &mut res_real,
+                &r0_lp,
+                ctx.eval_mod().unwrap(),
+                bsk.tensor_key.as_ref().unwrap(),
+                s,
+            )
+        },
     )
     .unwrap();
     with_scratch::<BE, _>(
-        module.ckks_eval_mod_tmp_bytes(&res_imag, &i0_lp, ctx.eval_mod().unwrap(), &bsk.tensor_key()),
-        |s| module.ckks_eval_mod(&mut res_imag, &i0_lp, ctx.eval_mod().unwrap(), bsk.tensor_key(), s),
+        module.ckks_eval_mod_tmp_bytes(&res_imag, &i0_lp, ctx.eval_mod().unwrap(), bsk.tensor_key.as_ref().unwrap()),
+        |s| {
+            module.ckks_eval_mod(
+                &mut res_imag,
+                &i0_lp,
+                ctx.eval_mod().unwrap(),
+                bsk.tensor_key.as_ref().unwrap(),
+                s,
+            )
+        },
     )
     .unwrap();
 
@@ -1050,8 +1101,12 @@ where
 /// ```
 pub fn test_bootstrapping_s2c_first_e2e<BE, F, E>(params: CKKSTestParams)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend<Ring = Standard> + CKKSCITwin,
+    CIBackend<BE>: TestContextBackend,
+    Module<CIBackend<BE>>: TestContextSharedModule<CIBackend<BE>> + CKKSEncodingOps<CIBackend<BE>, F>,
     Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + GLWECIKeyEncryptSk<BE>
+        + GLWECIKeyPreparedFactory<BE>
         + TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSBootstrappingOps<BE>
@@ -1093,8 +1148,12 @@ fn run_s2c_first_case<BE, F, E>(
     guard_bits: usize,
 ) -> (f64, f64)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend<Ring = Standard> + CKKSCITwin,
+    CIBackend<BE>: TestContextBackend,
+    Module<CIBackend<BE>>: TestContextSharedModule<CIBackend<BE>> + CKKSEncodingOps<CIBackend<BE>, F>,
     Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + GLWECIKeyEncryptSk<BE>
+        + GLWECIKeyPreparedFactory<BE>
         + TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSBootstrappingOps<BE>
@@ -1162,7 +1221,7 @@ where
     );
     let mut scratch = ScratchOwned::<BE>::alloc(scratch_size);
 
-    let ctx = compile_context::<BE, F>(&module, base2k.into(), &plan);
+    let ctx = compile_context::<BE, F>(&module, None, base2k.into(), &plan);
 
     let (sk_raw, sk) = gen_sk_with_raw(&tp, &module, &host_module, [0u8; 32]);
 
@@ -1176,6 +1235,7 @@ where
     let bsk = ctx
         .generate_keys(
             &module,
+            None,
             &sk_raw,
             &keys_layout,
             &mut src_xs,
@@ -1184,7 +1244,8 @@ where
             &mut scratch.borrow(),
         )
         .unwrap()
-        .prepare(&module, &mut scratch.borrow());
+        .prepare(&module, None, &mut scratch.borrow())
+        .unwrap();
 
     let (re, im) = test_vector_1::<F>(m);
     let ct0 = ckks_encrypt_with_prec(

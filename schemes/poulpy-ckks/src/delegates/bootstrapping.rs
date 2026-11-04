@@ -6,8 +6,8 @@ use crate::{
     CKKSCtBounds, SetCKKSInfos,
     api::{CKKSBootstrappingCIOps, CKKSBootstrappingOps},
     layouts::{
-        BootstrappingCIKeys, BootstrappingContextPrepared, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingLinearKeys,
-        CKKSCiphertextOwned, CKKSModRaiseInfos, CKKSPlaintextOwned, EncodedLut,
+        BootstrappingContextPrepared, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingLinearKeys, CKKSCiphertextOwned,
+        CKKSModRaiseInfos, CKKSPlaintextOwned, EncodedLut,
     },
     oep::{CKKSBootstrappingCIImpl, CKKSBootstrappingImpl},
 };
@@ -132,7 +132,7 @@ where
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        K: BootstrappingCIKeys<BE, BE::CI>,
+        K: BootstrappingKeys<BE>,
     {
         BE::ckks_bootstrap_ci_into(self, ci, dst, src, ctx, keys, scratch, scratch_ci)
     }

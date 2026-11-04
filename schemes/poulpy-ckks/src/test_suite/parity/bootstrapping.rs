@@ -18,7 +18,7 @@ use crate::{
     },
     layouts::{
         BootstrappingContextPrepared, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingLinearKeys, BootstrappingPipeline,
-        BootstrappingPlan, BootstrappingTechniques, CKKSPlaintextOwned, DFTOutputFormat, DFTPlan, DFTType,
+        BootstrappingPlan, BootstrappingTechniques, CKKSCITwin, CKKSPlaintextOwned, DFTOutputFormat, DFTPlan, DFTType,
         EncapsulationKeysLayout, EncodedLut, EvalModPlan, EvalModType, EvalRoundPlus, SparseSecretEncapsulation,
     },
     oep::{CKKSBootstrappingImpl, CKKSEncapsulatedModUpImpl},
@@ -264,16 +264,28 @@ where
     }
 }
 
-impl<BE: Backend> BootstrappingKeys<BE> for FixtureKeys<BE>
+impl<BE: CKKSCITwin> BootstrappingKeys<BE> for FixtureKeys<BE>
 where
     GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>: GLWEAutomorphismKeyPreparedToBackendRef<BE>,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE>,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE::CI>: GLWETensorKeyPreparedToBackendRef<BE::CI>,
     GGLWEPrepared<BE::OwnedBuf, BE>: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
 {
     type TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>;
+    type CITensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE::CI>;
+    type TraceKey = GGLWEPrepared<BE::OwnedBuf, BE>;
+    type EmbedKey = GGLWEPrepared<BE::OwnedBuf, BE>;
 
-    fn tensor_key(&self) -> &Self::TensorKey {
-        &self.tensor_key
+    fn tensor_key(&self) -> Option<&Self::TensorKey> {
+        Some(&self.tensor_key)
+    }
+
+    fn ci_tensor_key(&self) -> Option<&Self::CITensorKey> {
+        None
+    }
+
+    fn conversion_keys(&self) -> Option<(&Self::TraceKey, &Self::EmbedKey)> {
+        None
     }
 }
 
@@ -410,6 +422,7 @@ where
         + GLWEFill<BE>
         + crate::api::CKKSRightOperandPreparedFactory<BE>
         + CyclotomicOrder,
+    Module<BE::CI>: CKKSEncodingOps<BE::CI, F>,
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds + GLWEDiagonalProd<BE>,
     FixtureKeys<BE>: BootstrappingKeys<BE> + Sync,
     <FixtureKeys<BE> as BootstrappingKeys<BE>>::TensorKey: Sync,
@@ -473,7 +486,7 @@ where
                 ));
         // Staged compilation: preparation runs with exactly its advertised scratch.
         let unprepared = with_scratch::<BE, _>(compile, |scratch| {
-            BootstrappingContextPrepared::<BE, F>::compile_unprepared(module, b.into(), &plan, scratch)
+            BootstrappingContextPrepared::<BE, F>::compile_unprepared(module, None, b.into(), &plan, scratch)
         })
         .unwrap();
         let ctx = with_scratch::<BE, _>(unprepared.prepare_tmp_bytes(module), |scratch| {
@@ -547,6 +560,8 @@ where
         + GLWEFill<BT>
         + crate::api::CKKSRightOperandPreparedFactory<BT>
         + CyclotomicOrder,
+    Module<BR::CI>: CKKSEncodingOps<BR::CI, F>,
+    Module<BT::CI>: CKKSEncodingOps<BT::CI, F>,
     CKKSPlaintextOwned<BR>: GLWEToBackendRef<BR> + CKKSCtBounds + GLWEDiagonalProd<BR>,
     CKKSPlaintextOwned<BT>: GLWEToBackendRef<BT> + CKKSCtBounds + GLWEDiagonalProd<BT>,
     FixtureKeys<BR>: BootstrappingKeys<BR> + Sync,

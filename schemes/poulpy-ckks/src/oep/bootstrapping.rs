@@ -12,8 +12,8 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena, Standard};
 use crate::{
     CKKSCtBounds, CKKSResult, SetCKKSInfos,
     layouts::{
-        BootstrappingCIKeys, BootstrappingContextPrepared, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingLinearKeys,
-        CKKSCITwin, CKKSCiphertextOwned, CKKSModRaiseInfos, CKKSPlaintextOwned, CKKSRightOperandPrepared, EncodedLut,
+        BootstrappingContextPrepared, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingLinearKeys, CKKSCITwin,
+        CKKSCiphertextOwned, CKKSModRaiseInfos, CKKSPlaintextOwned, CKKSRightOperandPrepared, EncodedLut,
     },
 };
 
@@ -157,7 +157,7 @@ pub unsafe trait CKKSBootstrappingCIImpl: CKKSBootstrappingImpl {
     where
         Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<Self> + CKKSCtBounds,
-        K: BootstrappingCIKeys<Self, Self::CI>;
+        K: BootstrappingKeys<Self>;
 }
 
 /// Backend implementation of the modulus raise that applies the first
@@ -428,7 +428,7 @@ macro_rules! impl_ckks_bootstrapping_ci_reference_full {
             where
                 Dst: ::poulpy_core::layouts::GLWEToBackendMut<$be> + $crate::CKKSCtBounds + $crate::SetCKKSInfos,
                 Src: ::poulpy_core::layouts::GLWEToBackendRef<$be> + $crate::CKKSCtBounds,
-                K: $crate::layouts::BootstrappingCIKeys<$be, <$be as $crate::layouts::CKKSCITwin>::CI>,
+                K: $crate::layouts::BootstrappingKeys<$be>,
             {
                 $crate::reference::bootstrapping::CKKSBootstrappingCIReference::ckks_bootstrap_ci_reference(
                     module, ci, dst, src, ctx, keys, scratch, scratch_ci,

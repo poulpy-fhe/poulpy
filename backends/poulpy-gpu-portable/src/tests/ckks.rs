@@ -235,7 +235,7 @@ fn bootstrapping_n16_d35_k733_p20_s2c_precision_and_launches() {
     use poulpy_ckks::test_suite::presets::{BootstrappingPresetRun, preset_for_backend};
     let preset = poulpy_ckks::presets::bootstrapping::n16_d35_k733_p20_s2c().unwrap();
     let preset = preset_for_backend::<Gpu, GpuCI>(&preset).unwrap();
-    let mut run = BootstrappingPresetRun::<Gpu, poulpy_cpu_portable::NTT4x30Portable>::setup(preset);
+    let mut run = BootstrappingPresetRun::<Gpu, poulpy_cpu_portable::NTT4x30Portable>::setup(preset, None);
     // What the device holds once the keys are prepared, and what the pools reserve for it.
     {
         use crate::runtime::RuntimeDevice;
@@ -311,7 +311,7 @@ fn bootstrapping_n16_d35_k733_p20_s2c_replay() {
     let preset = preset_for_backend::<Gpu, GpuCI>(&preset).unwrap();
     let advertised = preset.log2_precision() as f64;
     let run = RefCell::new(BootstrappingPresetRun::<Gpu, poulpy_cpu_portable::NTT4x30Portable>::setup(
-        preset,
+        preset, None,
     ));
     // Compiles the kernels, so that the counters below are those of a steady-state bootstrap.
     run.borrow_mut().bootstrap();

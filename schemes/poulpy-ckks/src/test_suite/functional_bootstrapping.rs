@@ -1,7 +1,8 @@
 use crate::Scale;
 use poulpy_core::layouts::{GLWEPlaintextInfos, SetGLWEPlaintextInfos};
 use poulpy_core::{
-    GLWEBytesOf,
+    GLWEBytesOf, GLWECIKeyEncryptSk,
+    api::GLWECIKeyPreparedFactory,
     layouts::{
         GGLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, SetK,
         prepared::GLWETensorKeyPreparedToBackendRef,
@@ -21,19 +22,19 @@ use crate::{
         CKKSEvalModOps, CKKSPolynomialEvaluationOps,
     },
     layouts::{
-        BootstrappingKeysLayout, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques, CKKSCiphertextAlloc,
-        CKKSCiphertextOwned, CKKSPlaintextOwned, DFTOutputFormat, DFTPlan, DFTType, EncapsulationKeysLayout, EncodedLut,
-        SparseSecretEncapsulation, eval_mod::EvalModPlan,
+        BootstrappingKeysLayout, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques, CKKSCITwin,
+        CKKSCiphertextAlloc, CKKSCiphertextOwned, CKKSPlaintextOwned, DFTOutputFormat, DFTPlan, DFTType, EncapsulationKeysLayout,
+        EncodedLut, SparseSecretEncapsulation, eval_mod::EvalModPlan,
     },
     polynomial::SplitStrategy,
     test_suite::{
         CKKSTestParams,
         helpers::{
-            TestContextBackend, TestContextModule, TestScalar, assert_ckks_error, assert_invalid_operand, ckks_decrypt_decode,
-            ckks_encrypt_with_prec, ckks_spec, gen_sk_with_raw, precision_stats,
+            TestContextBackend, TestContextModule, TestContextSharedModule, TestScalar, assert_ckks_error,
+            assert_invalid_operand, ckks_decrypt_decode, ckks_encrypt_with_prec, ckks_spec, gen_sk_with_raw, precision_stats,
         },
         parity::helpers::with_scratch,
-        presets::compile_context,
+        presets::{CIBackend, compile_context},
         reference_encoder::ReferenceEncoder,
     },
 };
@@ -59,8 +60,12 @@ pub fn test_functional_bootstrapping_e2e<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard> + Backend<OwnedBuf = AlignedBuf>,
+    BE: TestContextBackend<Ring = Standard> + Backend<OwnedBuf = AlignedBuf> + CKKSCITwin,
+    CIBackend<BE>: TestContextBackend,
+    Module<CIBackend<BE>>: TestContextSharedModule<CIBackend<BE>> + CKKSEncodingOps<CIBackend<BE>, F>,
     Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + GLWECIKeyEncryptSk<BE>
+        + GLWECIKeyPreparedFactory<BE>
         + TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSBootstrappingOps<BE>
@@ -89,8 +94,12 @@ pub fn test_functional_bootstrapping_non_power_of_two_e2e<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard> + Backend<OwnedBuf = AlignedBuf>,
+    BE: TestContextBackend<Ring = Standard> + Backend<OwnedBuf = AlignedBuf> + CKKSCITwin,
+    CIBackend<BE>: TestContextBackend,
+    Module<CIBackend<BE>>: TestContextSharedModule<CIBackend<BE>> + CKKSEncodingOps<CIBackend<BE>, F>,
     Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + GLWECIKeyEncryptSk<BE>
+        + GLWECIKeyPreparedFactory<BE>
         + TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSBootstrappingOps<BE>
@@ -122,8 +131,12 @@ pub fn test_functional_bootstrapping_multi_e2e<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard> + Backend<OwnedBuf = AlignedBuf>,
+    BE: TestContextBackend<Ring = Standard> + Backend<OwnedBuf = AlignedBuf> + CKKSCITwin,
+    CIBackend<BE>: TestContextBackend,
+    Module<CIBackend<BE>>: TestContextSharedModule<CIBackend<BE>> + CKKSEncodingOps<CIBackend<BE>, F>,
     Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + GLWECIKeyEncryptSk<BE>
+        + GLWECIKeyPreparedFactory<BE>
         + TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSBootstrappingOps<BE>
@@ -150,8 +163,12 @@ pub fn test_functional_bootstrapping_binary_e2e<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard> + Backend<OwnedBuf = AlignedBuf>,
+    BE: TestContextBackend<Ring = Standard> + Backend<OwnedBuf = AlignedBuf> + CKKSCITwin,
+    CIBackend<BE>: TestContextBackend,
+    Module<CIBackend<BE>>: TestContextSharedModule<CIBackend<BE>> + CKKSEncodingOps<CIBackend<BE>, F>,
     Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + GLWECIKeyEncryptSk<BE>
+        + GLWECIKeyPreparedFactory<BE>
         + TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSBootstrappingOps<BE>
@@ -185,8 +202,12 @@ fn run_case<BE, F, E>(
     guard_bits: usize,
     first_factor_on_raise: bool,
 ) where
-    BE: TestContextBackend<Ring = Standard> + Backend<OwnedBuf = AlignedBuf>,
+    BE: TestContextBackend<Ring = Standard> + Backend<OwnedBuf = AlignedBuf> + CKKSCITwin,
+    CIBackend<BE>: TestContextBackend,
+    Module<CIBackend<BE>>: TestContextSharedModule<CIBackend<BE>> + CKKSEncodingOps<CIBackend<BE>, F>,
     Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + GLWECIKeyEncryptSk<BE>
+        + GLWECIKeyPreparedFactory<BE>
         + TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSBootstrappingOps<BE>
@@ -338,12 +359,12 @@ fn run_case<BE, F, E>(
         );
         ScratchOwned::<BE>::alloc(initial_tmp)
     };
-    let ctx = compile_context::<BE, F>(module, params.base2k.into(), &plan);
+    let ctx = compile_context::<BE, F>(module, None, params.base2k.into(), &plan);
     let padded_ctx = if padded_luts.is_empty() {
         None
     } else {
         let plan = fbt_plan(params.base2k, guard_bits, first_factor_on_raise);
-        Some(compile_context::<BE, F>(module, params.base2k.into(), &plan))
+        Some(compile_context::<BE, F>(module, None, params.base2k.into(), &plan))
     };
     let keys_layout = BootstrappingKeysLayout {
         rotation_keys: plan
@@ -380,6 +401,7 @@ fn run_case<BE, F, E>(
     let keys = ctx
         .generate_keys(
             module,
+            None,
             &sk_raw,
             &keys_layout,
             &mut xs,
@@ -388,7 +410,8 @@ fn run_case<BE, F, E>(
             &mut scratch.borrow(),
         )
         .unwrap()
-        .prepare(module, &mut scratch.borrow());
+        .prepare(module, None, &mut scratch.borrow())
+        .unwrap();
 
     let mut source = Source::new([9u8; 32]);
     let sample = |source: &mut Source| ((source.next_f64(0.0, 1.0) * (3 * p) as f64) as isize) - p as isize;

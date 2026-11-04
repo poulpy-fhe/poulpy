@@ -28,9 +28,9 @@ use crate::{
     },
     api::{CKKSDecryptOps, CKKSEncryptOps},
     layouts::{
-        BootstrappingCIKeys, BootstrappingKeyWidths, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingLinearKeys,
-        CKKSCiphertext, CKKSCiphertextAlloc, CKKSCiphertextOwned, CKKSPlaintextAlloc, CKKSPlaintextOwned,
-        CKKSPlaintextVecHostCodec, plaintext::CKKSPlaintext,
+        BootstrappingKeyWidths, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingLinearKeys, CKKSCITwin, CKKSCiphertext,
+        CKKSCiphertextAlloc, CKKSCiphertextOwned, CKKSPlaintextAlloc, CKKSPlaintextOwned, CKKSPlaintextVecHostCodec,
+        plaintext::CKKSPlaintext,
     },
     test_suite::reference_encoder::ReferenceEncoder,
 };
@@ -830,32 +830,23 @@ impl<BE: Backend, K: GetTensorKey<BE>> GetTensorKey<BE> for QueryLog<'_, K> {
 }
 
 /// Bootstrapping keys whose rotation and tensor keys log their lookups.
-pub(crate) struct LoggedBootstrappingKeys<'a, K, R, T> {
+pub(crate) struct LoggedBootstrappingKeys<'a, K, R, T, C> {
     keys: &'a K,
     rotation_keys: QueryLog<'a, R>,
-    tensor_key: QueryLog<'a, T>,
+    tensor_key: Option<QueryLog<'a, T>>,
+    ci_tensor_key: Option<QueryLog<'a, C>>,
 }
 
-impl<'a, K, R, T> LoggedBootstrappingKeys<'a, K, R, T> {
-    pub(crate) fn new<BE: Backend>(keys: &'a K) -> Self
+impl<'a, K, R, T, C> LoggedBootstrappingKeys<'a, K, R, T, C> {
+    pub(crate) fn new<BE: CKKSCITwin>(keys: &'a K) -> Self
     where
-        K: BootstrappingKeys<BE, RotationKeys = R, TensorKey = T>,
+        K: BootstrappingKeys<BE, RotationKeys = R, TensorKey = T, CITensorKey = C>,
     {
         Self {
             keys,
             rotation_keys: QueryLog::new(keys.rotation_keys()),
-            tensor_key: QueryLog::new(BootstrappingKeys::tensor_key(keys)),
-        }
-    }
-
-    pub(crate) fn new_ci<BE: Backend, BCI: Backend>(keys: &'a K) -> Self
-    where
-        K: BootstrappingCIKeys<BE, BCI, RotationKeys = R, TensorKey = T>,
-    {
-        Self {
-            keys,
-            rotation_keys: QueryLog::new(keys.rotation_keys()),
-            tensor_key: QueryLog::new(BootstrappingCIKeys::tensor_key(keys)),
+            tensor_key: keys.tensor_key().map(QueryLog::new),
+            ci_tensor_key: keys.ci_tensor_key().map(QueryLog::new),
         }
     }
 
@@ -884,7 +875,12 @@ impl<'a, K, R, T> LoggedBootstrappingKeys<'a, K, R, T> {
                 "{label}: rotation key {p} used at {k} bits, past its width"
             );
         }
-        let tensor: Vec<usize> = self.tensor_key.take().into_iter().map(|(_, k)| k.as_usize()).collect();
+        let tensor_log = match (&self.tensor_key, &self.ci_tensor_key) {
+            (Some(log), _) => log.take(),
+            (None, Some(log)) => log.take(),
+            (None, None) => panic!("{label}: the keys hold no tensor key"),
+        };
+        let tensor: Vec<usize> = tensor_log.into_iter().map(|(_, k)| k.as_usize()).collect();
         assert_eq!(
             tensor.first(),
             Some(&widths.tensor_key),
@@ -899,7 +895,7 @@ impl<'a, K, R, T> LoggedBootstrappingKeys<'a, K, R, T> {
     }
 }
 
-impl<'a, BE, K, R, T> BootstrappingLinearKeys<BE> for LoggedBootstrappingKeys<'a, K, R, T>
+impl<'a, BE, K, R, T, C> BootstrappingLinearKeys<BE> for LoggedBootstrappingKeys<'a, K, R, T, C>
 where
     BE: Backend,
     K: BootstrappingLinearKeys<BE, RotationKeys = R>,
@@ -925,34 +921,25 @@ where
     }
 }
 
-impl<'a, BE, K, R, T> BootstrappingKeys<BE> for LoggedBootstrappingKeys<'a, K, R, T>
+impl<'a, BE, K, R, T, C> BootstrappingKeys<BE> for LoggedBootstrappingKeys<'a, K, R, T, C>
 where
-    BE: Backend,
-    K: BootstrappingKeys<BE, RotationKeys = R, TensorKey = T>,
+    BE: CKKSCITwin,
+    K: BootstrappingKeys<BE, RotationKeys = R, TensorKey = T, CITensorKey = C>,
     R: GetAutomorphismKey<BE> + GetTensorKey<BE>,
     T: GetTensorKey<BE>,
+    C: GetTensorKey<BE::CI>,
 {
     type TensorKey = QueryLog<'a, T>;
-
-    fn tensor_key(&self) -> &Self::TensorKey {
-        &self.tensor_key
-    }
-}
-
-impl<'a, BE, BCI, K, R, T> BootstrappingCIKeys<BE, BCI> for LoggedBootstrappingKeys<'a, K, R, T>
-where
-    BE: Backend,
-    BCI: Backend,
-    K: BootstrappingCIKeys<BE, BCI, RotationKeys = R, TensorKey = T>,
-    R: GetAutomorphismKey<BE> + GetTensorKey<BE>,
-    T: GetTensorKey<BCI>,
-{
-    type TensorKey = QueryLog<'a, T>;
+    type CITensorKey = QueryLog<'a, C>;
     type TraceKey = K::TraceKey;
     type EmbedKey = K::EmbedKey;
 
-    fn tensor_key(&self) -> &Self::TensorKey {
-        &self.tensor_key
+    fn tensor_key(&self) -> Option<&Self::TensorKey> {
+        self.tensor_key.as_ref()
+    }
+
+    fn ci_tensor_key(&self) -> Option<&Self::CITensorKey> {
+        self.ci_tensor_key.as_ref()
     }
 
     fn conversion_keys(&self) -> Option<(&Self::TraceKey, &Self::EmbedKey)> {

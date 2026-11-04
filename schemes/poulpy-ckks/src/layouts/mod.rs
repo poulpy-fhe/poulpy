@@ -127,9 +127,9 @@ pub use bootstrapping::{
     SparseSecretEncapsulation,
 };
 pub use bootstrapping_keys::{
-    BootstrappingCIKeys, BootstrappingKeySet, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingKeysPrepared,
-    BootstrappingLinearKeys, CKKSCITwin, CKKSFoldKeysLayout, EncapsulationKeys, EncapsulationKeysLayout, RingSwitchKeySet,
-    RingSwitchKeys, RingSwitchKeysLayout, RingSwitchKeysPrepared,
+    BootstrappingKeySet, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingKeysPrepared, BootstrappingLinearKeys,
+    CKKSCITwin, CKKSFoldKeysLayout, EncapsulationKeys, EncapsulationKeysLayout, RingSwitchKeySet, RingSwitchKeys,
+    RingSwitchKeysLayout, RingSwitchKeysPrepared,
 };
 pub use ciphertext::{
     CKKSCiphertext, CKKSCiphertextOwned, CKKSCiphertextViewMut, CKKSCiphertextViewRef, CKKSRingCiphertext,

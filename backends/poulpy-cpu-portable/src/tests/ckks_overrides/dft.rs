@@ -517,10 +517,10 @@ fn bootstrap_sizing_includes_selected_dft_workspace() {
     .unwrap();
     type Context = BootstrappingContextPrepared<OverrideBackend, f64>;
     let compile = |plan: &BootstrappingPlan| {
-        let unprepared = with_scratch::<OverrideBackend, _>(Context::compile_unprepared_tmp_bytes(&module, plan).unwrap(), |s| {
-            Context::compile_unprepared(&module, 16usize.into(), plan, s)
-        })
-        .unwrap();
+        let bytes = Context::compile_unprepared_tmp_bytes(&module, None, plan).unwrap();
+        let unprepared =
+            with_scratch::<OverrideBackend, _>(bytes, |s| Context::compile_unprepared(&module, None, 16usize.into(), plan, s))
+                .unwrap();
         // Every matrix preparation adds the probe's workspace, so their maximum moves one for one with it.
         assert_query_takes_extra(
             "prepare_tmp_bytes",

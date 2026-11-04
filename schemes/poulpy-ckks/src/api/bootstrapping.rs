@@ -1,12 +1,12 @@
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef};
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::layouts::{Module, ScratchArena};
 
 use crate::{
     CKKSCtBounds, SetCKKSInfos,
     layouts::{
-        BootstrappingCIKeys, BootstrappingContextPrepared, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingLinearKeys,
-        CKKSCITwin, CKKSCiphertextOwned, CKKSModRaiseInfos, CKKSPlaintextOwned, EncodedLut,
+        BootstrappingContextPrepared, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingLinearKeys, CKKSCITwin,
+        CKKSCiphertextOwned, CKKSModRaiseInfos, CKKSPlaintextOwned, EncodedLut,
     },
 };
 
@@ -30,7 +30,7 @@ use crate::{
 /// Sparse-secret encapsulation is also selected by the compiled recipe; the
 /// supplied keys must carry the matching
 /// [encapsulation keys](crate::layouts::BootstrappingLinearKeys::encapsulation_keys).
-pub trait CKKSBootstrappingOps<BE: Backend> {
+pub trait CKKSBootstrappingOps<BE: CKKSCITwin> {
     /// Scratch upper bound for a full [`Self::ckks_bootstrap`] call: the
     /// pipeline working ciphertexts it carves from scratch plus the largest
     /// nested stage. `ct_out`/`ct_in` provide the bootstrap and input widths,
@@ -171,7 +171,7 @@ pub trait CKKSBootstrappingOps<BE: Backend> {
 
 /// [`CKKSBootstrappingOps::ckks_bootstrap`] with EvalMod on the
 /// conjugate-invariant ring ([`EvalModRing::ConjugateInvariant`](crate::layouts::EvalModRing::ConjugateInvariant)),
-/// for a context compiled by [`BootstrappingContextPrepared::compile_ci`]: this module
+/// for a context compiled on that ring by [`BootstrappingContextPrepared::compile`]: this module
 /// serves degree `2N` for the conversions and `N` for the other stages, and `ci`
 /// is the CI module of degree `N`, on the twin [`CKKSCITwin::CI`].
 /// The keys, the conversion keys included, are checked at entry.
@@ -196,8 +196,8 @@ pub trait CKKSBootstrappingCIOps<BE: CKKSCITwin> {
     ///
     /// Before any work, and leaving `dst` unchanged:
     /// [`InvalidOperand`](crate::CKKSCompositionError::InvalidOperand) for a context not compiled
-    /// by `compile_ci` or keys not prepared by `prepare_ci`, modules of other degrees than `2N`
-    /// and `N`, ciphertexts of another degree or rank, an encapsulation that does not match the
+    /// on that ring or keys without its tensor and conversion keys, modules of other degrees than
+    /// `2N` and `N`, ciphertexts of another degree or rank, an encapsulation that does not match the
     /// recipe, a working width or an input narrower than the bits the stages running on it
     /// consume, or conversion keys of another degree, radix or rank, or narrower than the widths
     /// they switch; [`MissingAutomorphismKey`](crate::CKKSCompositionError::MissingAutomorphismKey)
@@ -227,5 +227,5 @@ pub trait CKKSBootstrappingCIOps<BE: CKKSCITwin> {
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        K: BootstrappingCIKeys<BE, BE::CI>;
+        K: BootstrappingKeys<BE>;
 }
