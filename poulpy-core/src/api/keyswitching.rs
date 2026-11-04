@@ -47,7 +47,7 @@ pub trait GLWEKeyswitch<BE: Backend> {
         A: GLWEToBackendRef<BE> + GLWEInfos;
 
     /// Scratch of [`Self::glwe_keyswitch_dft_add`] for an accumulator of `res_size`
-    /// limbs: a product of that size and the scratch of [`Self::glwe_keyswitch_dft`].
+    /// limbs.
     fn glwe_keyswitch_dft_add_tmp_bytes<A, K>(&self, res_size: usize, a_infos: &A, key_infos: &K) -> usize
     where
         A: GLWEInfos,

@@ -141,16 +141,90 @@ pub fn glwe_keyswitch_dft_reference<BE, M, A>(
     M: GLWEKeyswitchInternal<BE>,
     A: GLWEToBackendRef<BE> + GLWEInfos,
 {
-    check_keyswitch_dft(module, res, a, key, scratch);
+    check_keyswitch_dft_operands(module, res, a, key);
+    let tmp_bytes = glwe_keyswitch_dft_tmp_bytes_reference(module, res.size(), a, key);
+    assert!(
+        scratch.available() >= tmp_bytes,
+        "scratch.available(): {} < GLWEKeyswitch::glwe_keyswitch_dft_tmp_bytes: {}",
+        scratch.available(),
+        tmp_bytes
+    );
     glwe_keyswitch_dft_canonical(module, res, a, key, scratch);
 }
 
-fn check_keyswitch_dft<BE, M, A>(
+/// Scratch of [`glwe_keyswitch_dft_add_reference`] for an accumulator of `res_size` limbs: the canonical copy of the
+/// input, then its operand beside the transform or the selected fused product.
+pub fn glwe_keyswitch_dft_add_tmp_bytes_reference<BE, A, K>(
+    module: &Module<BE>,
+    res_size: usize,
+    a_infos: &A,
+    key_infos: &K,
+) -> usize
+where
+    BE: Backend + crate::oep::GGLWEProductDigitsStridedImpl,
+    Module<BE>: GLWEKeyswitchInternal<BE>,
+    A: GLWEInfos,
+    K: GGLWEInfos,
+{
+    operand_degree(module.n(), &[a_infos.n(), key_infos.n()]);
+    let (mask_cols, a_size) = (a_infos.rank().as_usize(), a_infos.size());
+    let (operand_size, operand, transform) = glwe_keyswitch_operand_tmp_bytes(module, mask_cols, a_size, key_infos);
+    let product = BE::gglwe_product_fused_tmp_bytes(module, res_size, res_size, operand_size, key_infos);
+    BE::scratch_aligned(BE::vec_znx_bytes_of(module.n(), mask_cols + 1, a_size))
+        + module
+            .glwe_normalize_tmp_bytes()
+            .max(BE::scratch_aligned(operand) + transform.max(product))
+}
+
+/// Reference of [`GLWEKeyswitchImpl::glwe_keyswitch_dft_add`](crate::oep::GLWEKeyswitchImpl::glwe_keyswitch_dft_add),
+/// forwarded by [`impl_glwe_keyswitch_reference_full`](crate::impl_glwe_keyswitch_reference_full):
+/// [`glwe_keyswitch_dft_reference`] added to the accumulator `res` through the selected `gglwe_product_fused`.
+pub fn glwe_keyswitch_dft_add_reference<BE, A>(
+    module: &Module<BE>,
+    res: &mut VecZnxDftBackendMut<'_, BE>,
+    a: &A,
+    key: &GGLWEPreparedBackendRef<'_, BE>,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
+    BE: Backend + crate::oep::GGLWEProductDigitsStridedImpl,
+    Module<BE>: GLWEKeyswitchInternal<BE>,
+    A: GLWEToBackendRef<BE> + GLWEInfos,
+{
+    check_keyswitch_dft_operands(module, res, a, key);
+    assert!(
+        scratch.available() >= glwe_keyswitch_dft_add_tmp_bytes_reference(module, res.size(), a, key),
+        "glwe_keyswitch_dft_add: scratch below its query"
+    );
+    let (mut a_tmp, mut scratch) = scratch.borrow().take_glwe_scratch(&a.to_backend_ref());
+    let a = if a.is_canonical() {
+        a.to_backend_ref()
+    } else {
+        module.glwe_normalize(&mut a_tmp, a, &mut scratch.borrow());
+        a_tmp.to_backend_ref()
+    };
+    let (mut a_dft, mut scratch) =
+        scratch.take_vec_znx_dft_scratch(res.n(), a.rank().as_usize(), glwe_keyswitch_operand_size(&a, key));
+    glwe_keyswitch_operand(module, &mut a_dft, &&a, key, &mut scratch);
+    let product_size = res.size();
+    BE::gglwe_product_fused(
+        module,
+        res,
+        product_size,
+        &a_dft.to_backend_ref(),
+        key,
+        1,
+        &[],
+        1,
+        true,
+        &mut scratch,
+    );
+}
+
+fn check_keyswitch_dft_operands<BE, M, A>(
     module: &M,
     res: &VecZnxDftBackendMut<'_, BE>,
     a: &A,
     key: &GGLWEPreparedBackendRef<'_, BE>,
-    scratch: &ScratchArena<'_, BE>,
 ) where
     BE: Backend,
     M: GLWEKeyswitchInternal<BE>,
@@ -165,13 +239,6 @@ fn check_keyswitch_dft<BE, M, A>(
     assert_eq!(a.base2k(), key.base2k(), "glwe_keyswitch_dft: a is not at the key radix");
     operand_degree(module.n(), &[res.n().into(), a.n(), key.n()]);
     assert_key_covers("glwe_keyswitch_dft", a.k(), key);
-    let tmp_bytes = glwe_keyswitch_dft_tmp_bytes_reference(module, res.size(), a, key);
-    assert!(
-        scratch.available() >= tmp_bytes,
-        "scratch.available(): {} < GLWEKeyswitch::glwe_keyswitch_dft_tmp_bytes: {}",
-        scratch.available(),
-        tmp_bytes
-    );
 }
 
 fn glwe_keyswitch_dft_fill_tmp_bytes<BE, M, K>(
@@ -186,17 +253,29 @@ where
     M: GLWEKeyswitchInternal<BE>,
     K: GGLWEInfos,
 {
+    let (operand_size, operand, transform) = glwe_keyswitch_operand_tmp_bytes(module, mask_cols, a_size, key_infos);
+    operand
+        + module
+            .gglwe_product_dft_tmp_bytes_reference(res_size, operand_size, key_infos)
+            .max(transform)
+}
+
+/// The operand of a key switch of `a_size` limbs: its limbs, its DFT carve and the scratch of its transform.
+fn glwe_keyswitch_operand_tmp_bytes<BE, M, K>(module: &M, mask_cols: usize, a_size: usize, key_infos: &K) -> (usize, usize, usize)
+where
+    BE: Backend,
+    M: GLWEKeyswitchInternal<BE>,
+    K: GGLWEInfos,
+{
     // Sized for an input of `a_size` full limbs, an upper bound of its precision.
     let (base2k, k_digit, dnum) = (key_infos.base2k(), key_infos.k_digit(), key_infos.dnum());
     let a_k = TorusPrecision((a_size * base2k.as_usize()) as u32);
     let operand_size: usize = gglwe_gadget_input_size(base2k, k_digit, dnum, a_k, a_size);
-    let lvl_0: usize = module.vec_znx_dft_bytes_of(module.n(), mask_cols, operand_size);
-    let lvl_1: usize = module
-        .gglwe_product_dft_tmp_bytes_reference(res_size, operand_size, key_infos)
-        .max(gglwe_gadget_dft_apply_tmp_bytes::<BE, _>(
-            module, base2k, k_digit, dnum, a_k, a_size,
-        ));
-    lvl_0 + lvl_1
+    (
+        operand_size,
+        module.vec_znx_dft_bytes_of(module.n(), mask_cols, operand_size),
+        gglwe_gadget_dft_apply_tmp_bytes::<BE, _>(module, base2k, k_digit, dnum, a_k, a_size),
+    )
 }
 
 impl<BE: Backend> GGLWEProductReference<BE> for Module<BE>
@@ -508,6 +587,12 @@ pub fn gglwe_product_fused_reference<BE, M>(
         }
     }
     let product = product.to_backend_ref();
+    if accumulate && p == 1 {
+        for col in 0..cols {
+            module.vec_znx_dft_add_assign(res, col, &product, col);
+        }
+        return;
+    }
     let plan = module.vec_znx_dft_automorphism_plan(res.n(), p);
     for col in 0..cols {
         if accumulate {

@@ -372,6 +372,23 @@ where
                 );
             }
         }
+        // One byte below its query the call refuses at entry, the accumulator as it was.
+        let before = BE::to_host_bytes(&acc.data);
+        let refused = catch_unwind(AssertUnwindSafe(|| {
+            module.glwe_keyswitch_dft_add(
+                &mut acc.to_backend_mut(),
+                &inputs[0],
+                &ksk.to_backend_ref(),
+                &mut poisoned_scratch::<BE>(add_bytes - 1).borrow(),
+            )
+        }))
+        .expect_err("an arena below the query of glwe_keyswitch_dft_add");
+        assert_eq!(
+            crate::test_suite::decryption::panic_message(&*refused),
+            "glwe_keyswitch_dft_add: scratch below its query"
+        );
+        assert!(BE::to_host_bytes(&acc.data) == before, "a refused call wrote the accumulator");
+
         // The bodies, summed limb by limb so that their sum keeps its integer part, then lowered.
         let mut bodies = module.vec_znx_alloc(n, 1, inputs[0].size());
         for input in &inputs {

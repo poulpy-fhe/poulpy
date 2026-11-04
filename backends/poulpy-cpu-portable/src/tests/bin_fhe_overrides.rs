@@ -122,6 +122,31 @@ unsafe impl poulpy_core::oep::GLWEKeyswitchImpl for OverrideBackend {
         )
     }
 
+    fn glwe_keyswitch_dft_add_tmp_bytes<A: GLWEInfos, K: GGLWEInfos>(
+        module: &Module<Self>,
+        res_size: usize,
+        a_infos: &A,
+        key_infos: &K,
+    ) -> usize {
+        <Module<Self> as poulpy_core::reference::keyswitching::GLWEKeyswitchReference<Self>>::glwe_keyswitch_dft_add_tmp_bytes_reference(
+            module, res_size, a_infos, key_infos,
+        )
+    }
+
+    fn glwe_keyswitch_dft_add<A>(
+        module: &Module<Self>,
+        res: &mut poulpy_hal::layouts::VecZnxDftBackendMut<'_, Self>,
+        a: &A,
+        key: &prepared::GGLWEPreparedBackendRef<'_, Self>,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) where
+        A: GLWEToBackendRef<Self> + GLWEInfos,
+    {
+        <Module<Self> as poulpy_core::reference::keyswitching::GLWEKeyswitchReference<Self>>::glwe_keyswitch_dft_add_reference(
+            module, res, a, key, scratch,
+        )
+    }
+
     fn glwe_keyswitch_dft<A>(
         module: &Module<Self>,
         res: &mut VecZnxDftBackendMut<'_, Self>,

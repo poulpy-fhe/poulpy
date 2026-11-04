@@ -6,13 +6,14 @@ use poulpy_hal::AlignedBuf;
 use poulpy_hal::{
     api::{
         ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAlloc, VecZnxDftAlloc, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftCopy,
-        VecZnxDftZero, VecZnxFillUniformSource, VecZnxFillUniformSourceAll, VmpApplyDftToDft, VmpApplyDftToDftAdd,
-        VmpApplyDftToDftAddTmpBytes, VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPMatPrepare, VmpPMatPrepareTmpBytes,
+        VecZnxDftZero, VecZnxFillUniformSource, VecZnxFillUniformSourceAll, VecZnxIdftNormalize, VecZnxIdftNormalizeTmpBytes,
+        VmpApplyDftToDft, VmpApplyDftToDftAdd, VmpApplyDftToDftAddTmpBytes, VmpApplyDftToDftTmpBytes, VmpPMatAlloc,
+        VmpPMatPrepare, VmpPMatPrepareTmpBytes,
     },
     layouts::{
         Backend, HostDataMut, HostDataRef, MatZnx, MatZnxAtBackendMut, MatZnxToBackendRef, Module, PrepareHint, ScratchOwned,
-        VecZnx, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxToBackendRef, VmpPMat, VmpPMatToBackendMut,
-        VmpPMatToBackendRef,
+        VecZnx, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxToBackendMut, VecZnxToBackendRef, VmpPMat,
+        VmpPMatToBackendMut, VmpPMatToBackendRef,
     },
     source::Source,
     test_suite::{TestParams, download_mat_znx, upload_mat_znx},
@@ -22,8 +23,8 @@ use crate::{
     GGLWEKeyswitch, GLWEFill, GLWEKeyswitch,
     api::{GGLWEPreparedFactory, TransferInto},
     layouts::{
-        Base2K, Degree, Dnum, Dsize, GGLWEAlloc, GGLWELayout, GGLWEPrepared, GGLWEPreparedBackendRef, GLWEAlloc, GLWELayout,
-        LWEInfos, Rank, TorusPrecision, gadget_product_limbs, key_size,
+        BackendGLWE, Base2K, Degree, Dnum, Dsize, GGLWEAlloc, GGLWELayout, GGLWEPrepared, GGLWEPreparedBackendRef, GLWEAlloc,
+        GLWELayout, GLWEToBackendRef, LWEInfos, Rank, TorusPrecision, gadget_product_limbs, key_size,
     },
     oep::GGLWEProductDigitsStridedImpl,
     reference::keyswitching::{GGLWEProductDigitsStridedReference, GGLWEProductReference},
@@ -182,6 +183,152 @@ fn key_layout_offset(
         rank_in: Rank(rank_in as u32),
         rank_out: Rank(rank_out as u32),
         stride: 1,
+    }
+}
+
+/// `a0`'s product in a fresh accumulator of `acc_size` limbs, `a1`'s added to it, then one inverse transform per column
+/// into a GLWE of `res_infos`, each call on exactly its query.
+fn keyswitch_dft_add_driver<BE, A0, A1>(
+    module: &Module<BE>,
+    res_infos: &GLWELayout,
+    a0: &A0,
+    a1: &A1,
+    key: &GGLWEPrepared<BE::OwnedBuf, BE>,
+) -> BackendGLWE<BE>
+where
+    BE: ParityBackend,
+    Module<BE>: GLWEKeyswitch<BE> + VecZnxDftAlloc<BE> + VecZnxIdftNormalize<BE> + VecZnxIdftNormalizeTmpBytes,
+    A0: GLWEToBackendRef<BE> + crate::layouts::GLWEInfos,
+    A1: GLWEToBackendRef<BE> + crate::layouts::GLWEInfos,
+    GGLWEPrepared<BE::OwnedBuf, BE>: GGLWEPreparedToBackendRef<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let (n, cols, acc_size) = (res_infos.n.as_usize(), res_infos.rank.as_usize() + 1, res_infos.size());
+    let key = key.to_backend_ref();
+    let mut acc = module.vec_znx_dft_alloc(n, cols, acc_size);
+    module.glwe_keyswitch_dft(
+        &mut acc.to_backend_mut(),
+        a0,
+        &key,
+        &mut poisoned_scratch::<BE>(module.glwe_keyswitch_dft_tmp_bytes(acc_size, a0, &key)).borrow(),
+    );
+    module.glwe_keyswitch_dft_add(
+        &mut acc.to_backend_mut(),
+        a1,
+        &key,
+        &mut poisoned_scratch::<BE>(module.glwe_keyswitch_dft_add_tmp_bytes(acc_size, a1, &key)).borrow(),
+    );
+    let mut res: BackendGLWE<BE> = module.glwe_alloc_from_infos(res_infos);
+    let (base2k, res_k) = (res_infos.base2k.as_usize(), res_infos.k.as_usize());
+    let tmp_bytes = module.vec_znx_idft_normalize_tmp_bytes(acc_size, acc_size);
+    for col in 0..cols {
+        module.vec_znx_idft_normalize(
+            &mut <VecZnx<BE::OwnedBuf, i64> as VecZnxToBackendMut<BE>>::to_backend_mut(&mut res.data),
+            base2k,
+            res_k,
+            0,
+            col,
+            &mut acc.to_backend_mut(),
+            col,
+            base2k,
+            None,
+            &mut poisoned_scratch::<BE>(tmp_bytes).arena(),
+        );
+    }
+    res
+}
+
+/// `glwe_keyswitch_dft_add` on an accumulator of `glwe_keyswitch_dft`, at every key layout, compared after the inverse
+/// transform, on a canonical and on a flag-clear input.
+pub fn test_glwe_keyswitch_dft_add_parity<BR, BT>(
+    params: &TestParams,
+    shapes: &ParityShapes,
+    module_ref: &Module<BR>,
+    module_test: &Module<BT>,
+) where
+    BR: ParityBackend,
+    BT: ParityBackend,
+    BR::OwnedBuf: HostDataMut,
+    Module<BR>:
+        GLWEKeyswitch<BR> + GGLWEPreparedFactory<BR> + VecZnxDftAlloc<BR> + VecZnxIdftNormalize<BR> + VecZnxIdftNormalizeTmpBytes,
+    Module<BT>:
+        GLWEKeyswitch<BT> + GGLWEPreparedFactory<BT> + VecZnxDftAlloc<BT> + VecZnxIdftNormalize<BT> + VecZnxIdftNormalizeTmpBytes,
+    ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
+    ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
+{
+    assert!(params.n <= module_ref.n() && params.n <= module_test.n());
+
+    let n = params.n as u32;
+    let base2k = params.base2k;
+    let k_in = 4 * base2k + 1;
+    let mut source = Source::new([8u8; 32]);
+
+    for k_offset in [0, base2k + 3] {
+        for &rank_in in &shapes.ranks {
+            for &rank_out in &shapes.ranks {
+                for k_digit in shapes.k_digits(k_in, base2k, rank_in.max(rank_out)) {
+                    let a_infos = GLWELayout {
+                        n: Degree(n),
+                        base2k: Base2K(base2k as u32),
+                        k: TorusPrecision(k_in as u32),
+                        rank: Rank(rank_in as u32),
+                    };
+                    let res_k = if k_offset == 0 {
+                        k_in + k_digit
+                    } else {
+                        k_offset + k_in.div_ceil(k_digit) * k_digit
+                    };
+                    let res_infos = GLWELayout {
+                        n: Degree(n),
+                        base2k: Base2K(base2k as u32),
+                        k: TorusPrecision(res_k as u32),
+                        rank: Rank(rank_out as u32),
+                    };
+                    let key_infos = key_layout_offset(n, base2k, k_in, k_digit, k_offset, rank_in, rank_out);
+
+                    let a0_ref = ref_glwe(module_ref, &a_infos, &mut source);
+                    let a1_ref = ref_glwe(module_ref, &a_infos, &mut source);
+                    let key_ref_coeffs = ref_gglwe(module_ref, &key_infos, &mut source);
+                    let mut a0_test = module_test.glwe_alloc_from_infos(&a_infos);
+                    a0_ref.transfer_into(&mut a0_test);
+                    let mut a1_test = module_test.glwe_alloc_from_infos(&a_infos);
+                    a1_ref.transfer_into(&mut a1_test);
+                    let mut key_test_coeffs = module_test.gglwe_alloc_from_infos(&key_infos);
+                    key_ref_coeffs.transfer_into(&mut key_test_coeffs);
+
+                    let mut key_ref = module_ref.gglwe_prepared_alloc_from_infos(&key_infos);
+                    module_ref.gglwe_prepare(
+                        &mut key_ref,
+                        &key_ref_coeffs,
+                        &mut poisoned_scratch::<BR>(module_ref.gglwe_prepare_tmp_bytes(&key_infos)).borrow(),
+                    );
+                    let mut key_test = module_test.gglwe_prepared_alloc_from_infos(&key_infos);
+                    module_test.gglwe_prepare(
+                        &mut key_test,
+                        &key_test_coeffs,
+                        &mut poisoned_scratch::<BT>(module_test.gglwe_prepare_tmp_bytes(&key_infos)).borrow(),
+                    );
+
+                    let want = keyswitch_dft_add_driver(module_ref, &res_infos, &a0_ref, &a1_ref, &key_ref);
+                    let mut have = module_ref.glwe_alloc_from_infos(&res_infos);
+                    keyswitch_dft_add_driver(module_test, &res_infos, &a0_test, &a1_test, &key_test).transfer_into(&mut have);
+                    assert_glwe_eq!(
+                        want,
+                        have,
+                        "glwe_keyswitch_dft_add: rank_in={rank_in} rank_out={rank_out} k_digit={k_digit} k_offset={k_offset}"
+                    );
+
+                    unnormalized_twin::<BR, BT>(&a1_ref, &mut a1_test);
+                    keyswitch_dft_add_driver(module_test, &res_infos, &a0_test, &a1_test, &key_test).transfer_into(&mut have);
+                    assert_glwe_eq!(
+                        want,
+                        have,
+                        "glwe_keyswitch_dft_add, unnormalized operand: rank_in={rank_in} rank_out={rank_out} \
+                         k_digit={k_digit} k_offset={k_offset}"
+                    );
+                }
+            }
+        }
     }
 }
 

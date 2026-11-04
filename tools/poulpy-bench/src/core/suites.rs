@@ -10,7 +10,7 @@ use poulpy_core::{
 };
 use poulpy_hal::api::ModuleSynchronize;
 use poulpy_hal::{
-    api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
+    api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxDftAlloc},
     layouts::{Backend, Module, ScratchOwned},
 };
 
@@ -167,21 +167,29 @@ where
 
 // ── keyswitch ────────────────────────────────────────────────────────────────
 
-pub fn keyswitch_ops<BE: Backend<ZnxWord = i64>, M: criterion::measurement::Measurement>() -> [BenchOp<M, CoreParams>; 1]
+pub fn keyswitch_ops<BE: Backend<ZnxWord = i64>, M: criterion::measurement::Measurement>() -> [BenchOp<M, CoreParams>; 2]
 where
     Module<BE>: ModuleNew<BE>
         + ModuleSynchronize<BE>
         + GLWEFill<BE>
         + GLWEKeyswitch<BE>
         + GGLWEPreparedFactory<BE>
+        + VecZnxDftAlloc<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
-    [BenchOp {
-        layer: "core",
-        name: "glwe_keyswitch",
-        runner: keyswitch::runner_glwe_keyswitch::<BE, _>,
-    }]
+    [
+        BenchOp {
+            layer: "core",
+            name: "glwe_keyswitch",
+            runner: keyswitch::runner_glwe_keyswitch::<BE, _>,
+        },
+        BenchOp {
+            layer: "core",
+            name: "glwe_keyswitch_dft_add",
+            runner: keyswitch::runner_glwe_keyswitch_dft_add::<BE, _>,
+        },
+    ]
 }
 
 // ── glwe_tensor ──────────────────────────────────────────────────────────────
@@ -295,6 +303,7 @@ where
         + GGSWPreparedFactory<BE>
         + GLWESwitchingKeyEncryptSk<BE>
         + GLWEKeyswitch<BE>
+        + VecZnxDftAlloc<BE>
         + GLWESwitchingKeyPreparedFactory<BE>
         + GLWETensoring<BE>
         + GLWETensorKeyPreparedFactory<BE>
@@ -340,6 +349,7 @@ where
         + GLWEAutomorphismKeyPreparedFactory<BE>
         + GLWESwitchingKeyEncryptSk<BE>
         + GLWEKeyswitch<BE>
+        + VecZnxDftAlloc<BE>
         + GLWESwitchingKeyPreparedFactory<BE>
         + GLWEDecrypt<BE>
         + GGLWEPreparedFactory<BE>
@@ -374,6 +384,11 @@ where
         },
         BenchOp {
             layer: "core",
+            name: "glwe_keyswitch_dft_add",
+            runner: keyswitch::runner_glwe_keyswitch_dft_add::<BE, _>,
+        },
+        BenchOp {
+            layer: "core",
             name: "glwe_decrypt",
             runner: decryption::runner_glwe_decrypt::<BE, _>,
         },
@@ -403,6 +418,7 @@ where
         + GGSWPreparedFactory<BE>
         + GLWESwitchingKeyEncryptSk<BE>
         + GLWEKeyswitch<BE>
+        + VecZnxDftAlloc<BE>
         + GLWESwitchingKeyPreparedFactory<BE>
         + GLWETensoring<BE>
         + GLWETensorKeyPreparedFactory<BE>
@@ -443,6 +459,7 @@ where
         + GGSWPreparedFactory<BE>
         + GLWESwitchingKeyEncryptSk<BE>
         + GLWEKeyswitch<BE>
+        + VecZnxDftAlloc<BE>
         + GLWESwitchingKeyPreparedFactory<BE>
         + GLWETensoring<BE>
         + GLWETensorKeyPreparedFactory<BE>
@@ -478,7 +495,7 @@ pub mod standard {
         GGLWEPreparedFactory, GGSWEncryptSk, GGSWPreparedFactory, GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk,
         GLWEAutomorphismKeyPreparedFactory, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, GLWEFill, GLWEKeyswitch,
         GLWESecretPreparedFactory, GLWESecretSampling, GLWESwitchingKeyEncryptSk, GLWESwitchingKeyPreparedFactory,
-        ModuleCoreAlloc, ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, standard_ops,
+        ModuleCoreAlloc, ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxDftAlloc, standard_ops,
     };
     use crate::{bench_ops, bin_fhe_n, core::params::default_bench_params_core, is_standard_n};
 
@@ -500,6 +517,7 @@ pub mod standard {
             + GLWEAutomorphismKeyPreparedFactory<BE>
             + GLWESwitchingKeyEncryptSk<BE>
             + GLWEKeyswitch<BE>
+            + VecZnxDftAlloc<BE>
             + GLWESwitchingKeyPreparedFactory<BE>
             + GLWEDecrypt<BE>
             + GGLWEPreparedFactory<BE>
@@ -533,6 +551,7 @@ pub mod standard {
             + GLWEAutomorphismKeyPreparedFactory<BE>
             + GLWESwitchingKeyEncryptSk<BE>
             + GLWEKeyswitch<BE>
+            + VecZnxDftAlloc<BE>
             + GLWESwitchingKeyPreparedFactory<BE>
             + GLWEDecrypt<BE>
             + GGLWEPreparedFactory<BE>
@@ -560,7 +579,7 @@ pub mod light {
         GGLWEPreparedFactory, GGSWEncryptSk, GGSWPreparedFactory, GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk,
         GLWEAutomorphismKeyPreparedFactory, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, GLWEFill, GLWEKeyswitch,
         GLWESecretPreparedFactory, GLWESecretSampling, GLWESwitchingKeyEncryptSk, GLWESwitchingKeyPreparedFactory,
-        ModuleCoreAlloc, ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, standard_ops,
+        ModuleCoreAlloc, ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxDftAlloc, standard_ops,
     };
     use crate::{bench_ops, bin_fhe_n, core::params::default_bench_params_core, is_light_n};
 
@@ -582,6 +601,7 @@ pub mod light {
             + GLWEAutomorphismKeyPreparedFactory<BE>
             + GLWESwitchingKeyEncryptSk<BE>
             + GLWEKeyswitch<BE>
+            + VecZnxDftAlloc<BE>
             + GLWESwitchingKeyPreparedFactory<BE>
             + GLWEDecrypt<BE>
             + GGLWEPreparedFactory<BE>
@@ -615,6 +635,7 @@ pub mod light {
             + GLWEAutomorphismKeyPreparedFactory<BE>
             + GLWESwitchingKeyEncryptSk<BE>
             + GLWEKeyswitch<BE>
+            + VecZnxDftAlloc<BE>
             + GLWESwitchingKeyPreparedFactory<BE>
             + GLWEDecrypt<BE>
             + GGLWEPreparedFactory<BE>
