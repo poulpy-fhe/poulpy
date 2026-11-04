@@ -18,7 +18,6 @@
 use poulpy_core::{
     GLWEBytesOf, GLWECopy, GLWEKeyswitch, GLWEMulPreparedPlainSum, GLWENormalize, GLWEShift, ScratchArenaTakeGLWE,
     gglwe_product_accumulation_output_size, glwe_left_operand_prepare, glwe_left_operand_prepare_tmp_bytes,
-    glwe_right_operand_prepare, glwe_right_operand_prepare_tmp_bytes,
     layouts::{
         GGLWEInfos, GGLWELayout, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, IntPolyInfos, LWEInfos,
         LinearTransformation, Rank, prepared::GGLWEPreparedToBackendRef,
@@ -26,9 +25,9 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::{
-        CnvOps, CnvPVecBytesOf, ScratchArenaTakeCnvPVecL, ScratchArenaTakeCnvPVecR, ScratchArenaTakeVecZnx,
-        ScratchArenaTakeVecZnxDft, VecZnxAddAssign, VecZnxAutomorphism, VecZnxCopy, VecZnxDftAddAssign, VecZnxDftBytesOf,
-        VecZnxIdftNormalize, VecZnxIdftNormalizeTmpBytes, VecZnxNormalize, VecZnxNormalizeTmpBytes,
+        CnvOps, CnvPVecBytesOf, ScratchArenaTakeCnvPVecL, ScratchArenaTakeVecZnx, ScratchArenaTakeVecZnxDft, VecZnxAddAssign,
+        VecZnxAutomorphism, VecZnxCopy, VecZnxDftAddAssign, VecZnxDftBytesOf, VecZnxIdftNormalize, VecZnxIdftNormalizeTmpBytes,
+        VecZnxNormalize, VecZnxNormalizeTmpBytes,
     },
     layouts::{
         Backend, CyclotomicOrder, Module, PrepareHint, ScratchArena, VecZnxDftToBackendMut, VecZnxToBackendRef, galois_element,
@@ -38,7 +37,7 @@ use poulpy_hal::{
 use crate::{
     CKKSCompositionError, CKKSCtBounds, CKKSInfos, CKKSResult as Result, GLWEPlaintextMeta, Scale, SetCKKSInfos, ckks_bail,
     ckks_ensure, ckks_ensure_operand,
-    layouts::{BootstrappingLinearKeys, CKKSPlaintextOwned},
+    layouts::{BootstrappingLinearKeys, CKKSRightOperandPrepared},
     presets::first_factor::{first_factor_small_bits, first_factor_work},
 };
 
@@ -141,13 +140,12 @@ pub(crate) fn check_first_factor_raise<BE, K>(
     log_n: usize,
     k_large: usize,
     raised: usize,
-    factor: &LinearTransformation<CKKSPlaintextOwned<BE>>,
+    factor: &LinearTransformation<CKKSRightOperandPrepared<BE>>,
     keys: &K,
 ) -> Result<FirstFactorRaise>
 where
     BE: Backend,
     K: BootstrappingLinearKeys<BE>,
-    CKKSPlaintextOwned<BE>: IntPolyInfos + CKKSInfos,
 {
     let Some(diagonal) = factor.first_diagonal_plaintext() else {
         ckks_bail!("{op}: the first factor has no diagonal");
@@ -193,7 +191,7 @@ pub trait CKKSModUpFirstFactorReference<BE: Backend> {
         &self,
         dst_infos: &Dst,
         src_infos: &Src,
-        factor: &LinearTransformation<CKKSPlaintextOwned<BE>>,
+        factor: &LinearTransformation<CKKSRightOperandPrepared<BE>>,
         d2s_infos: Option<&D2S>,
         key_infos: &K,
     ) -> usize
@@ -211,15 +209,14 @@ pub trait CKKSModUpFirstFactorReference<BE: Backend> {
         Dst: CKKSCtBounds,
         Src: CKKSCtBounds,
         D2S: GGLWEInfos,
-        K: GGLWEInfos,
-        CKKSPlaintextOwned<BE>: IntPolyInfos + CKKSInfos;
+        K: GGLWEInfos;
 
     fn ckks_mod_up_first_factor_reference<Dst, Src, K>(
         &self,
         dst: &mut Dst,
         src: &mut Src,
         scale_up: usize,
-        factor: &LinearTransformation<CKKSPlaintextOwned<BE>>,
+        factor: &LinearTransformation<CKKSRightOperandPrepared<BE>>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -239,8 +236,7 @@ pub trait CKKSModUpFirstFactorReference<BE: Backend> {
             + CyclotomicOrder,
         K: BootstrappingLinearKeys<BE>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds;
+        Src: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos;
 }
 
 impl<BE: Backend> CKKSModUpFirstFactorReference<BE> for Module<BE> {
@@ -248,7 +244,7 @@ impl<BE: Backend> CKKSModUpFirstFactorReference<BE> for Module<BE> {
         &self,
         dst_infos: &Dst,
         src_infos: &Src,
-        factor: &LinearTransformation<CKKSPlaintextOwned<BE>>,
+        factor: &LinearTransformation<CKKSRightOperandPrepared<BE>>,
         d2s_infos: Option<&D2S>,
         key_infos: &K,
     ) -> usize
@@ -267,7 +263,6 @@ impl<BE: Backend> CKKSModUpFirstFactorReference<BE> for Module<BE> {
         Src: CKKSCtBounds,
         D2S: GGLWEInfos,
         K: GGLWEInfos,
-        CKKSPlaintextOwned<BE>: IntPolyInfos + CKKSInfos,
     {
         ckks_mod_up_first_factor_tmp_bytes_reference(self, dst_infos, src_infos, factor, d2s_infos, key_infos)
     }
@@ -277,7 +272,7 @@ impl<BE: Backend> CKKSModUpFirstFactorReference<BE> for Module<BE> {
         dst: &mut Dst,
         src: &mut Src,
         scale_up: usize,
-        factor: &LinearTransformation<CKKSPlaintextOwned<BE>>,
+        factor: &LinearTransformation<CKKSRightOperandPrepared<BE>>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -298,7 +293,6 @@ impl<BE: Backend> CKKSModUpFirstFactorReference<BE> for Module<BE> {
         K: BootstrappingLinearKeys<BE>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds,
     {
         ckks_mod_up_first_factor_reference(self, dst, src, scale_up, factor, keys, scratch)
     }
@@ -311,7 +305,7 @@ pub fn ckks_mod_up_first_factor_tmp_bytes_reference<BE, Dst, Src, D2S, K>(
     module: &Module<BE>,
     dst_infos: &Dst,
     src_infos: &Src,
-    factor: &LinearTransformation<CKKSPlaintextOwned<BE>>,
+    factor: &LinearTransformation<CKKSRightOperandPrepared<BE>>,
     d2s_infos: Option<&D2S>,
     key_infos: &K,
 ) -> usize
@@ -331,7 +325,6 @@ where
     Src: CKKSCtBounds,
     D2S: GGLWEInfos,
     K: GGLWEInfos,
-    CKKSPlaintextOwned<BE>: IntPolyInfos + CKKSInfos,
 {
     let Some(diagonal) = factor.first_diagonal_plaintext() else {
         return 0;
@@ -356,12 +349,8 @@ where
         + BE::scratch_aligned(BE::vec_znx_bytes_of(n, 1, small))
         + BE::scratch_aligned(BE::vec_znx_bytes_of(n, 1, acc_size))
         + module.vec_znx_dft_bytes_of(n, 2, acc_size);
-    // Each diagonal is prepared beside the raised ciphertext, then multiplied by it.
     let diagonal_size = diagonal_limbs(diagonal, base2k);
-    let product =
-        BE::scratch_aligned(module.cnv_pvec_right_bytes_of(diagonal.n().into(), 1, diagonal_size, PrepareHint::OneShot))
-            + glwe_right_operand_prepare_tmp_bytes(module, diagonal_size, diagonal)
-                .max(module.glwe_mul_prepared_plain_sum_tmp_bytes(&small_layout, small, diagonal_size));
+    let product = module.glwe_mul_prepared_plain_sum_tmp_bytes(&small_layout, small, diagonal_size);
     let ops = glwe_left_operand_prepare_tmp_bytes(module, small, &small_layout)
         .max(product)
         .max(module.glwe_keyswitch_dft_add_tmp_bytes(acc_size, &small_layout, key_infos))
@@ -383,7 +372,7 @@ pub fn ckks_mod_up_first_factor_reference<BE, Dst, Src, K>(
     dst: &mut Dst,
     src: &mut Src,
     scale_up: usize,
-    factor: &LinearTransformation<CKKSPlaintextOwned<BE>>,
+    factor: &LinearTransformation<CKKSRightOperandPrepared<BE>>,
     keys: &K,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
@@ -405,7 +394,6 @@ where
     K: BootstrappingLinearKeys<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds,
 {
     const OP: &str = "ckks_bootstrap_mod_up";
     let base2k: usize = dst.base2k().as_usize();
@@ -484,32 +472,18 @@ where
 
         for (index, giant) in factor.giant_steps.iter().enumerate() {
             // Product and division by the diagonal's scale, at the same width.
-            {
-                let diagonal = &giant.diagonals[0].plaintext;
-                let diagonal_size = diagonal_limbs(diagonal, base2k);
-                let (mut diagonal_prepared, mut scratch) =
-                    scratch
-                        .borrow()
-                        .take_cnv_pvec_right_scratch(diagonal.n().into(), 1, diagonal_size, PrepareHint::OneShot);
-                glwe_right_operand_prepare(
-                    module,
-                    &mut diagonal_prepared,
-                    diagonal,
-                    diagonal.encoded_k().as_usize(),
-                    &mut scratch.borrow(),
-                );
-                module.glwe_mul_prepared_plain_sum(
-                    growth,
-                    &mut product,
-                    &[&raised_prepared],
-                    small,
-                    &[&diagonal_prepared],
-                    diagonal_size,
-                    &[1],
-                    base2k.into(),
-                    &mut scratch.borrow(),
-                );
-            }
+            let diagonal = &giant.diagonals[0].plaintext;
+            module.glwe_mul_prepared_plain_sum(
+                growth,
+                &mut product,
+                &[&raised_prepared],
+                small,
+                &[diagonal],
+                diagonal_limbs(diagonal, base2k),
+                &[1],
+                base2k.into(),
+                &mut scratch.borrow(),
+            );
 
             // The rotation needs no key before the switch.
             let term = if giant.rot == 0 {

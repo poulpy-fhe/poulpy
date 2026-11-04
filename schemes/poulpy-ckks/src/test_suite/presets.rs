@@ -100,6 +100,7 @@ pub trait PresetRunModule<BE: Backend>:
     + GLWEAutomorphismKeyPreparedFactory<BE>
     + GLWETensorKeyPreparedFactory<BE>
     + GLWESwitchingKeyPreparedFactory<BE>
+    + crate::api::CKKSRightOperandPreparedFactory<BE>
 {
 }
 
@@ -116,6 +117,7 @@ impl<BE: Backend, M> PresetRunModule<BE> for M where
         + GLWEAutomorphismKeyPreparedFactory<BE>
         + GLWETensorKeyPreparedFactory<BE>
         + GLWESwitchingKeyPreparedFactory<BE>
+        + crate::api::CKKSRightOperandPreparedFactory<BE>
 {
 }
 
@@ -1223,7 +1225,11 @@ pub(crate) fn compile_context<BE, F>(
 where
     BE: Backend,
     F: CKKSEncodingScalar,
-    Module<BE>: CKKSDFTMatrixPreparedFactory<BE> + CKKSDFTOps<BE> + CKKSDFTMatrixOps<BE, F> + CKKSEncodingOps<BE, F>,
+    Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + CKKSDFTOps<BE>
+        + CKKSDFTMatrixOps<BE, F>
+        + CKKSEncodingOps<BE, F>
+        + crate::api::CKKSRightOperandPreparedFactory<BE>,
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds + GLWEDiagonalProd<BE> + LWEInfos,
 {
     let bytes = BootstrappingContextPrepared::<BE, F>::compile_unprepared_tmp_bytes(module, plan).unwrap();
@@ -1247,7 +1253,8 @@ where
         + CKKSEncodingOps<BE, f64>
         + CKKSDFTMatrixOps<BE, f64>
         + CKKSBootstrappingCIOps<BE>
-        + CKKSDFTOps<BE>,
+        + CKKSDFTOps<BE>
+        + crate::api::CKKSRightOperandPreparedFactory<BE>,
     Module<CIBackend<BE>>: CKKSEncodingOps<CIBackend<BE>, f64>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
     ScratchOwned<CIBackend<BE>>: ScratchOwnedAlloc<CIBackend<BE>>,

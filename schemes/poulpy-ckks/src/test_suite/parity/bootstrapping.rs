@@ -374,6 +374,7 @@ where
         + GLWETensorKeyPreparedFactory<BE>
         + GGLWEPreparedFactory<BE>
         + GLWEFill<BE>
+        + crate::api::CKKSRightOperandPreparedFactory<BE>
         + CyclotomicOrder,
 {
     let rotation_keys = plan
@@ -407,6 +408,7 @@ where
         + GLWETensorKeyPreparedFactory<BE>
         + GGLWEPreparedFactory<BE>
         + GLWEFill<BE>
+        + crate::api::CKKSRightOperandPreparedFactory<BE>
         + CyclotomicOrder,
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds + GLWEDiagonalProd<BE>,
     FixtureKeys<BE>: BootstrappingKeys<BE> + Sync,
@@ -536,6 +538,7 @@ where
         + GLWETensorKeyPreparedFactory<BR>
         + GGLWEPreparedFactory<BR>
         + GLWEFill<BR>
+        + crate::api::CKKSRightOperandPreparedFactory<BR>
         + CyclotomicOrder,
     Module<BT>: CKKSDFTMatrixPreparedFactory<BT>
         + CKKSDFTOps<BT>
@@ -547,6 +550,7 @@ where
         + GLWETensorKeyPreparedFactory<BT>
         + GGLWEPreparedFactory<BT>
         + GLWEFill<BT>
+        + crate::api::CKKSRightOperandPreparedFactory<BT>
         + CyclotomicOrder,
     CKKSPlaintextOwned<BR>: GLWEToBackendRef<BR> + CKKSCtBounds + GLWEDiagonalProd<BR>,
     CKKSPlaintextOwned<BT>: GLWEToBackendRef<BT> + CKKSCtBounds + GLWEDiagonalProd<BT>,

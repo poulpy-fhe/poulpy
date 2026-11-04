@@ -13,7 +13,7 @@ use crate::{
     CKKSCtBounds, CKKSResult, SetCKKSInfos,
     layouts::{
         BootstrappingCIKeys, BootstrappingContextPrepared, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingLinearKeys,
-        CKKSCiphertextOwned, CKKSPlaintextOwned, EncodedLut, EvalModPlan,
+        CKKSCiphertextOwned, CKKSPlaintextOwned, CKKSRightOperandPrepared, EncodedLut, EvalModPlan,
     },
 };
 
@@ -201,7 +201,7 @@ pub unsafe trait CKKSModUpFirstFactorImpl: Backend<Ring = Standard> {
         module: &Module<Self>,
         dst_infos: &Dst,
         src_infos: &Src,
-        factor: &LinearTransformation<CKKSPlaintextOwned<Self>>,
+        factor: &LinearTransformation<CKKSRightOperandPrepared<Self>>,
         d2s_infos: Option<&D2S>,
         key_infos: &K,
     ) -> usize
@@ -220,7 +220,7 @@ pub unsafe trait CKKSModUpFirstFactorImpl: Backend<Ring = Standard> {
         dst: &mut Dst,
         src: &mut Src,
         scale_up: usize,
-        factor: &LinearTransformation<CKKSPlaintextOwned<Self>>,
+        factor: &LinearTransformation<CKKSRightOperandPrepared<Self>>,
         keys: &K,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> CKKSResult<()>
@@ -525,7 +525,7 @@ macro_rules! impl_ckks_mod_up_first_factor_reference_full {
                 module: &::poulpy_hal::layouts::Module<$be>,
                 dst_infos: &Dst,
                 src_infos: &Src,
-                factor: &::poulpy_core::layouts::LinearTransformation<$crate::layouts::CKKSPlaintextOwned<$be>>,
+                factor: &::poulpy_core::layouts::LinearTransformation<$crate::layouts::CKKSRightOperandPrepared<$be>>,
                 d2s_infos: Option<&D2S>,
                 key_infos: &K,
             ) -> usize
@@ -545,7 +545,7 @@ macro_rules! impl_ckks_mod_up_first_factor_reference_full {
                 dst: &mut Dst,
                 src: &mut Src,
                 scale_up: usize,
-                factor: &::poulpy_core::layouts::LinearTransformation<$crate::layouts::CKKSPlaintextOwned<$be>>,
+                factor: &::poulpy_core::layouts::LinearTransformation<$crate::layouts::CKKSRightOperandPrepared<$be>>,
                 keys: &K,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) -> $crate::CKKSResult<()>

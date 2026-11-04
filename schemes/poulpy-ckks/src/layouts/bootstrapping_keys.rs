@@ -95,6 +95,12 @@ pub trait BootstrappingLinearKeys<BE: Backend> {
     fn first_factor_key(&self, _rotation: i64) -> Option<&Self::SwitchingKey> {
         None
     }
+
+    /// Layouts of these keys, against whose scratch query the bootstrap checks its
+    /// arenas at entry, or `None`, the default, to leave the arenas unchecked.
+    fn keys_layout(&self) -> Option<BootstrappingKeysLayout> {
+        None
+    }
 }
 
 /// The prepared keys of a CKKS bootstrap with EvalMod on the standard ring: the
@@ -129,12 +135,6 @@ pub trait BootstrappingCIKeys<BE: Backend, BCI: Backend>: BootstrappingLinearKey
     /// Trace and embedding keys of degree `2N`, or `None` for keys prepared
     /// without them.
     fn conversion_keys(&self) -> Option<(&Self::TraceKey, &Self::EmbedKey)>;
-
-    /// Layouts of these keys, against whose scratch query the bootstrap checks its
-    /// arenas at entry, or `None`, the default, to leave the arenas unchecked.
-    fn keys_layout(&self) -> Option<BootstrappingKeysLayout> {
-        None
-    }
 }
 
 /// Sparse-secret encapsulation keys `(denseToSparse, sparseToDense)`, without
@@ -204,6 +204,28 @@ where
     fn first_factor_key(&self, rotation: i64) -> Option<&Self::SwitchingKey> {
         self.first_factor_keys.get(&rotation)
     }
+
+    fn keys_layout(&self) -> Option<BootstrappingKeysLayout> {
+        let rotation_keys = self
+            .rotation_keys
+            .iter()
+            .map(|(&p, key)| (p, key.gglwe_layout().into()))
+            .collect();
+        let switching = |key: &GLWESwitchingKeyPrepared<D, BE>| GLWESwitchingKeyLayout::from(key.gglwe_layout());
+        Some(BootstrappingKeysLayout {
+            rotation_keys,
+            tensor_key: self.tensor_key.gglwe_layout().into(),
+            encapsulation: self.encapsulation_keys.as_ref().map(|(d2s, s2d)| EncapsulationKeysLayout {
+                dense_to_sparse: switching(d2s),
+                sparse_to_dense: s2d.as_ref().map(switching),
+            }),
+            first_factor_key: self.first_factor_keys.values().next().map(switching),
+            conversion_keys: self
+                .conversion_keys
+                .as_ref()
+                .map(|(trace, embed)| (trace.gglwe_layout().into(), embed.gglwe_layout().into())),
+        })
+    }
 }
 
 impl<D: Data, BE: Backend> BootstrappingKeys<BE> for BootstrappingKeysPrepared<D, BE>
@@ -237,28 +259,6 @@ where
 
     fn conversion_keys(&self) -> Option<(&Self::TraceKey, &Self::EmbedKey)> {
         self.conversion_keys.as_ref().map(|(trace, embed)| (trace, embed))
-    }
-
-    fn keys_layout(&self) -> Option<BootstrappingKeysLayout> {
-        let rotation_keys = self
-            .rotation_keys
-            .iter()
-            .map(|(&p, key)| (p, key.gglwe_layout().into()))
-            .collect();
-        let switching = |key: &GLWESwitchingKeyPrepared<D, BE>| GLWESwitchingKeyLayout::from(key.gglwe_layout());
-        Some(BootstrappingKeysLayout {
-            rotation_keys,
-            tensor_key: self.tensor_key.gglwe_layout().into(),
-            encapsulation: self.encapsulation_keys.as_ref().map(|(d2s, s2d)| EncapsulationKeysLayout {
-                dense_to_sparse: switching(d2s),
-                sparse_to_dense: s2d.as_ref().map(switching),
-            }),
-            first_factor_key: self.first_factor_keys.values().next().map(switching),
-            conversion_keys: self
-                .conversion_keys
-                .as_ref()
-                .map(|(trace, embed)| (trace.gglwe_layout().into(), embed.gglwe_layout().into())),
-        })
     }
 }
 

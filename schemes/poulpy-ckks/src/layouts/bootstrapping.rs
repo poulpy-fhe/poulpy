@@ -25,17 +25,22 @@
 
 use std::collections::BTreeMap;
 
-use crate::layouts::{CKKSPlaintext, CKKSPlaintextOwned};
+use crate::layouts::{CKKSPlaintext, CKKSPlaintextOwned, CKKSRightOperandPrepared};
 use anyhow::{Result, ensure};
 use poulpy_core::{
     GLWEDiagonalProd, LinearTransformationPrepared,
-    layouts::{Base2K, Diagonals, GLWEToBackendRef, LWEInfos, LinearTransformation},
+    layouts::{
+        Base2K, Diagonals, GLWEToBackendRef, LinearTransformation, LinearTransformationDiagonal, LinearTransformationGiantStep,
+    },
 };
-use poulpy_hal::layouts::{Backend, ConjugateInvariant, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, ConjugateInvariant, Module, PrepareHint, ScratchArena};
 
 use crate::{
     CKKSCtBounds, CKKSInfos, GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotsKind,
-    api::{CKKSDFTMatrixOps, CKKSDFTMatrixPreparedFactory, CKKSDFTOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar},
+    api::{
+        CKKSDFTMatrixOps, CKKSDFTMatrixPreparedFactory, CKKSDFTOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar,
+        CKKSRightOperandPreparedFactory,
+    },
     layouts::{
         CKKSPlaintextAlloc, ComplexDiagonals, DFTMatrix, DFTMatrixPrepared, DFTPlan, DFTType, Decode, DftScalar, Encode,
         EncodedLut, EvalMod, EvalModPlan, Split,
@@ -518,9 +523,9 @@ pub struct BootstrappingContextPrepared<BE: Backend, F> {
 
     /// First CoeffsToSlots factor, when the plan leaves it to the modulus
     /// raise ([`DFTPlan::with_first_factor_on_raise`]): one giant step per
-    /// diagonal, the diagonal rotated back by its own index. Kept unprepared,
-    /// its products run on a ciphertext of a few limbs.
-    coeffs_to_slots_first_factor: Option<LinearTransformation<CKKSPlaintextOwned<BE>>>,
+    /// diagonal, the diagonal rotated back by its own index. Each diagonal is
+    /// prepared once for the products on a ciphertext of a few limbs.
+    coeffs_to_slots_first_factor: Option<LinearTransformation<CKKSRightOperandPrepared<BE>>>,
 
     /// Prepared bypass CoeffsToSlots matrix
     coeffs_to_slots_bypass: Option<DFTMatrixPrepared<BE, Encode, Split>>,
@@ -827,7 +832,7 @@ impl<BE: Backend, F> BootstrappingContextPrepared<BE, F> {
     /// First CoeffsToSlots factor, when the modulus raise applies it
     /// ([`DFTPlan::with_first_factor_on_raise`]); [`Self::coeffs_to_slots`]
     /// then holds the remaining factors.
-    pub fn coeffs_to_slots_first_factor(&self) -> Option<&LinearTransformation<CKKSPlaintextOwned<BE>>> {
+    pub fn coeffs_to_slots_first_factor(&self) -> Option<&LinearTransformation<CKKSRightOperandPrepared<BE>>> {
         self.coeffs_to_slots_first_factor.as_ref()
     }
 
@@ -908,11 +913,11 @@ pub type BootstrappingContextUnprepared<BE, F> = BootstrappingContext<BE, F>;
 
 impl<BE: Backend, F> BootstrappingContext<BE, F> {
     /// Scratch required by [`Self::prepare`]: the largest selected preparation
-    /// budget among the matrices.
+    /// budget among the matrices and the first factor on the raise.
     pub fn prepare_tmp_bytes(&self, module: &Module<BE>) -> usize
     where
-        Module<BE>: CKKSDFTOps<BE> + CKKSDFTMatrixPreparedFactory<BE>,
-        CKKSPlaintextOwned<BE>: LWEInfos,
+        Module<BE>: CKKSDFTOps<BE> + CKKSDFTMatrixPreparedFactory<BE> + CKKSRightOperandPreparedFactory<BE>,
+        CKKSPlaintextOwned<BE>: CKKSCtBounds,
     {
         let mut bytes = module
             .ckks_dft_matrix_prepare_tmp_bytes(&self.coeffs_to_slots)
@@ -923,18 +928,25 @@ impl<BE: Backend, F> BootstrappingContext<BE, F> {
         if let Some(CIPre::Folded(folded)) = self.eval_mod_ci.as_ref().map(|ci| &ci.pre) {
             bytes = bytes.max(module.ckks_dft_matrix_prepare_tmp_bytes(folded));
         }
+        if let Some(diagonal) = self
+            .coeffs_to_slots_first_factor
+            .as_ref()
+            .and_then(|f| f.first_diagonal_plaintext())
+        {
+            bytes = bytes.max(module.ckks_right_operand_prepare_tmp_bytes(diagonal));
+        }
         bytes
     }
 
-    /// Prepares the matrices into the resident form the pipeline evaluates.
-    /// Each unprepared matrix is released as soon as it has been prepared.
+    /// Prepares the matrices and the diagonals of a first factor on the raise into the resident form the pipeline
+    /// evaluates. Each unprepared operand is released as soon as it has been prepared.
     ///
     /// # Errors
     ///
     /// As [`CKKSDFTMatrixPreparedFactory::ckks_dft_matrix_prepare`].
     pub fn prepare(self, module: &Module<BE>, scratch: &mut ScratchArena<'_, BE>) -> Result<BootstrappingContextPrepared<BE, F>>
     where
-        Module<BE>: CKKSDFTOps<BE> + CKKSDFTMatrixPreparedFactory<BE>,
+        Module<BE>: CKKSDFTOps<BE> + CKKSDFTMatrixPreparedFactory<BE> + CKKSRightOperandPreparedFactory<BE>,
         CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds + GLWEDiagonalProd<BE>,
     {
         let Self {
@@ -982,6 +994,33 @@ impl<BE: Backend, F> BootstrappingContext<BE, F> {
             }),
             None => None,
         };
+        let coeffs_to_slots_first_factor = coeffs_to_slots_first_factor
+            .map(|factor| -> Result<_> {
+                let mut giant_steps = Vec::with_capacity(factor.giant_steps.len());
+                for giant in factor.giant_steps {
+                    let mut diagonals = Vec::with_capacity(giant.diagonals.len());
+                    for diagonal in giant.diagonals {
+                        diagonals.push(LinearTransformationDiagonal {
+                            baby: diagonal.baby,
+                            plaintext: module.ckks_right_operand_prepare_alloc(
+                                &diagonal.plaintext,
+                                PrepareHint::Reuse,
+                                scratch,
+                            )?,
+                        });
+                    }
+                    giant_steps.push(LinearTransformationGiantStep {
+                        rot: giant.rot,
+                        diagonals,
+                    });
+                }
+                Ok(LinearTransformation {
+                    baby_steps: factor.baby_steps,
+                    giant_steps,
+                    rotations: factor.rotations,
+                })
+            })
+            .transpose()?;
         Ok(BootstrappingContextPrepared {
             plan,
             c2s_guard_bits,
@@ -1022,7 +1061,11 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<Self>
     where
-        Module<BE>: CKKSDFTMatrixPreparedFactory<BE> + CKKSDFTOps<BE> + CKKSDFTMatrixOps<BE, F> + CKKSEncodingOps<BE, F>,
+        Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+            + CKKSDFTOps<BE>
+            + CKKSDFTMatrixOps<BE, F>
+            + CKKSEncodingOps<BE, F>
+            + CKKSRightOperandPreparedFactory<BE>,
         CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds + GLWEDiagonalProd<BE>,
     {
         Self::compile_unprepared(module, base2k, plan, scratch)?.prepare(module, scratch)
@@ -1048,7 +1091,11 @@ where
     where
         BCI: Backend<Ring = ConjugateInvariant, OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>,
         F: DftScalar,
-        Module<BE>: CKKSDFTMatrixPreparedFactory<BE> + CKKSDFTOps<BE> + CKKSDFTMatrixOps<BE, F> + CKKSEncodingOps<BE, F>,
+        Module<BE>: CKKSRightOperandPreparedFactory<BE>
+            + CKKSDFTMatrixPreparedFactory<BE>
+            + CKKSDFTOps<BE>
+            + CKKSDFTMatrixOps<BE, F>
+            + CKKSEncodingOps<BE, F>,
         Module<BCI>: CKKSEncodingOps<BCI, F>,
         CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds + GLWEDiagonalProd<BE>,
     {

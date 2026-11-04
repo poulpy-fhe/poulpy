@@ -26,8 +26,8 @@ use crate::{
     eval_lut::{ckks_eval_lut, ckks_eval_lut_binary, ckks_eval_lut_from_basis, ckks_lut_power_basis},
     layouts::{
         BootstrappingCIKeys, BootstrappingContextPrepared, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingLinearKeys,
-        BootstrappingPipeline, CKKSCiphertextOwned, CKKSCiphertextViewMut, CKKSPlaintextOwned, EncodedLut, EncodedLutKind,
-        EvalModRing, EvalModType, ScratchArenaTakeCKKSCiphertext,
+        BootstrappingPipeline, CKKSCiphertextOwned, CKKSCiphertextViewMut, CKKSPlaintextOwned, CKKSRightOperandPrepared,
+        EncodedLut, EncodedLutKind, EvalModRing, EvalModType, ScratchArenaTakeCKKSCiphertext,
     },
     oep::{CKKSEncapsulatedModUpImpl, CKKSModUpFirstFactorImpl},
 };
@@ -976,7 +976,7 @@ fn bootstrap_mod_up<BE, Dst, Src, K>(
     dst: &mut Dst,
     src: &Src,
     eval_mod: &EvalModPlan,
-    first_factor: Option<&LinearTransformation<CKKSPlaintextOwned<BE>>>,
+    first_factor: Option<&LinearTransformation<CKKSRightOperandPrepared<BE>>>,
     keys: &K,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
@@ -1033,7 +1033,7 @@ fn ckks_bootstrap_mod_up_from_mut<BE, Dst, Src, K>(
     src: &mut Src,
     lift: Option<&EvalModPlan>,
     mut scale_up: usize,
-    first_factor: Option<&LinearTransformation<CKKSPlaintextOwned<BE>>>,
+    first_factor: Option<&LinearTransformation<CKKSRightOperandPrepared<BE>>>,
     keys: &K,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
