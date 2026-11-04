@@ -16,7 +16,7 @@ Read `workspace.md`, then each file the diff selects, all in full:
 - `gpu.md`: `backends/poulpy-gpu-portable/`, `.github/`, or a new or changed OEP trait or method, opt-in or registration macro or public test suite in any crate.
 - `bench.md`: `tools/poulpy-bench/`, a `benches/` directory, or a performance claim (PR description, CHANGELOG, README, `docs/guides/performance.md`, a gate constant).
 
-Backend code also selects the file of each crate whose OEP traits or test suites it implements, overrides or registers, and an example under `backends/poulpy-cpu-portable/examples` the file of the crate it demonstrates. A guide under `docs/guides/` selects the files of the crates it documents (`layering-contract.md`: `hal.md` and `core.md`).
+Backend code also selects the file of each crate whose OEP traits or test suites it implements, overrides or registers, and an example under `backends/poulpy-cpu-portable/examples` or `examples/` the file of the crate it demonstrates. A guide under `docs/guides/` selects the files of the crates it documents (`layering-contract.md`: `hal.md` and `core.md`).
 
 ## How to review
 

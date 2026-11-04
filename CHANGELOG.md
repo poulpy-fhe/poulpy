@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### `poulpy-resnet20`
+
+- Add `examples/resnet20` (unpublished): encrypted ResNet-20 on CIFAR-10 over the real-slot S2C-first bootstrap. Every convolution, shortcut and the pooled linear head is folded into the last SlotsToCoeffs factor (`MergedConv`, on `merged_s2c_factor`), on coefficient layouts (`CoeffLayout`); the masked raise keeps the layer's samples and the ReLU runs on the real slots. Stages 2 and 3 run on 16,384 real slots, `with_log_gap(1, ..)`. The `encrypted_inference` binary runs the server on the CPU or, with the `enable-cuda` feature, the GPU, where `--replay` records the whole circuit once as a `Replay` graph. The weights and ten test images are built into the crate, and `$CIFAR10_TEST_BATCH` names the full test batch.
+
 ### `poulpy-ckks`
 
 - Add `CKKSBootstrappingOps::ckks_bootstrap_real_raise[_tmp_bytes]`: the real-slot S2C-first bootstrap of coefficients up to EvalMod, for a caller working on the slots before SlotsToCoeffs on the same ring, with the digits of `ckks_bootstrap`. The raise takes an optional `RealRaiseMaskPrepared`, from `BootstrappingContextPrepared::real_raise_mask[_tmp_bytes]`: the last `CoeffsToSlots` factor times a selection of the input coefficients, which zeroes the others at no level.
