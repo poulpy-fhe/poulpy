@@ -17,7 +17,7 @@ use criterion::{BenchmarkGroup, BenchmarkId, Criterion, measurement::WallTime};
 use poulpy_ckks::{
     CKKSCtBounds, SetCKKSInfos,
     api::{CKKSBootstrappingCIOps, CKKSDFTMatrixPreparedFactory, CKKSDFTOps, CKKSEncodingOps},
-    layouts::{CKKSCiphertextOwned, CKKSPlaintextOwned, EvalModRing},
+    layouts::{CKKSCITwin, CKKSCiphertextOwned, CKKSPlaintextOwned, EvalModRing},
     presets::bootstrapping::{BootstrappingPreset, all},
     test_suite::{
         helpers::{PrecisionStats, TestContextBackend, TestContextModule, TestContextSharedModule},
@@ -124,7 +124,7 @@ fn check_precision(backend: &str, id: &str, preset: &BootstrappingPreset, (re, i
 /// put it on the conjugate-invariant ring.
 pub fn bench_ckks_bootstrapping<BE>(c: &mut Criterion<WallTime>)
 where
-    BE: TestContextBackend<Ring = Standard> + HostStaged + MaxBase2k,
+    BE: TestContextBackend<Ring = Standard> + HostStaged + MaxBase2k + CKKSCITwin,
     CIBackend<BE>: TestContextBackend + MaxBase2k,
     Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
         + TestContextModule<BE>
@@ -150,9 +150,9 @@ where
 /// twin [`CIBackend`]. The timed region is the bootstrap on `BE`, synchronized.
 pub fn bench_ckks_bootstrapping_with_client<BE, BC>(c: &mut Criterion<WallTime>)
 where
-    BE: Backend<Ring = Standard, ZnxWord = i64> + HostStaged + MaxBase2k + 'static,
+    BE: Backend<Ring = Standard, ZnxWord = i64> + HostStaged + MaxBase2k + 'static + CKKSCITwin,
     CIBackend<BE>: MaxBase2k,
-    BC: TestContextBackend<Ring = Standard> + 'static,
+    BC: TestContextBackend<Ring = Standard> + 'static + CKKSCITwin,
     CIBackend<BC>: TestContextBackend,
     Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
         + PresetRunModule<BE>
@@ -188,9 +188,9 @@ pub fn bench_ckks_bootstrapping_replayed_with_client<BE, BC>(
     c: &mut Criterion<WallTime>,
     record: impl Fn(&str, &str, Box<dyn FnMut()>) -> Box<dyn FnMut()>,
 ) where
-    BE: Backend<Ring = Standard, ZnxWord = i64> + HostStaged + MaxBase2k + 'static,
+    BE: Backend<Ring = Standard, ZnxWord = i64> + HostStaged + MaxBase2k + 'static + CKKSCITwin,
     CIBackend<BE>: MaxBase2k,
-    BC: TestContextBackend<Ring = Standard> + 'static,
+    BC: TestContextBackend<Ring = Standard> + 'static + CKKSCITwin,
     CIBackend<BC>: TestContextBackend,
     Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
         + PresetRunModule<BE>
@@ -218,9 +218,9 @@ pub fn bench_ckks_bootstrapping_replayed_with_client<BE, BC>(
 
 fn bootstrapping_group<BE, BC>(c: &mut Criterion<WallTime>, name: &str, record: Option<Record<'_>>)
 where
-    BE: Backend<Ring = Standard, ZnxWord = i64> + HostStaged + MaxBase2k + 'static,
+    BE: Backend<Ring = Standard, ZnxWord = i64> + HostStaged + MaxBase2k + 'static + CKKSCITwin,
     CIBackend<BE>: MaxBase2k,
-    BC: TestContextBackend<Ring = Standard> + 'static,
+    BC: TestContextBackend<Ring = Standard> + 'static + CKKSCITwin,
     CIBackend<BC>: TestContextBackend,
     Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
         + PresetRunModule<BE>

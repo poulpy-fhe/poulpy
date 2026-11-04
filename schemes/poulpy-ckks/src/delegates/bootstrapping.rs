@@ -124,10 +124,8 @@ impl<BE: Backend + CKKSBootstrappingImpl> CKKSBootstrappingOps<BE> for Module<BE
 
 impl<BE> CKKSBootstrappingCIOps<BE> for Module<BE>
 where
-    BE: Backend + CKKSBootstrappingCIImpl,
+    BE: CKKSBootstrappingCIImpl,
 {
-    type CI = BE::CI;
-
     fn ckks_bootstrap_ci_tmp_bytes<C1, C2, F>(
         &self,
         ci: &Module<BE::CI>,

@@ -1,13 +1,13 @@
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef};
-use poulpy_hal::layouts::{Backend, ConjugateInvariant, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
     CKKSCtBounds, SetCKKSInfos,
     layouts::EvalModPlan,
     layouts::{
-        BootstrappingCIKeys, BootstrappingContextPrepared, BootstrappingKeys, BootstrappingKeysLayout, CKKSCiphertextOwned,
-        CKKSPlaintextOwned, EncodedLut,
+        BootstrappingCIKeys, BootstrappingContextPrepared, BootstrappingKeys, BootstrappingKeysLayout, CKKSCITwin,
+        CKKSCiphertextOwned, CKKSPlaintextOwned, EncodedLut,
     },
 };
 
@@ -206,18 +206,13 @@ pub trait CKKSBootstrappingOps<BE: Backend> {
 /// conjugate-invariant ring ([`EvalModRing::ConjugateInvariant`](crate::layouts::EvalModRing::ConjugateInvariant)),
 /// for a context compiled by [`BootstrappingContextPrepared::compile_ci`]: this module
 /// serves degree `2N` for the conversions and `N` for the other stages, and `ci`
-/// is the CI module of degree `N`, on the twin [`Self::CI`].
+/// is the CI module of degree `N`, on the twin [`CKKSCITwin::CI`].
 /// The keys, the conversion keys included, are checked at entry.
-pub trait CKKSBootstrappingCIOps<BE: Backend> {
-    /// The conjugate-invariant twin of `BE` that runs EvalMod, sharing its buffers.
-    type CI: Backend<Ring = ConjugateInvariant, OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
-        + for<'a> Backend<BufRef<'a> = BE::BufRef<'a>, BufMut<'a> = BE::BufMut<'a>>
-        + 'static;
-
+pub trait CKKSBootstrappingCIOps<BE: CKKSCITwin> {
     /// Scratch of [`Self::ckks_bootstrap_ci_into`]: `(scratch, scratch_ci)`.
     fn ckks_bootstrap_ci_tmp_bytes<C1, C2, F>(
         &self,
-        ci: &Module<Self::CI>,
+        ci: &Module<BE::CI>,
         ct_out: &C1,
         ct_in: &C2,
         ctx: &BootstrappingContextPrepared<BE, F>,
@@ -254,16 +249,16 @@ pub trait CKKSBootstrappingCIOps<BE: Backend> {
     )]
     fn ckks_bootstrap_ci_into<Dst, Src, F, K>(
         &self,
-        ci: &Module<Self::CI>,
+        ci: &Module<BE::CI>,
         dst: &mut Dst,
         src: &Src,
         ctx: &BootstrappingContextPrepared<BE, F>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
-        scratch_ci: &mut ScratchArena<'_, Self::CI>,
+        scratch_ci: &mut ScratchArena<'_, BE::CI>,
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        K: BootstrappingCIKeys<BE, Self::CI>;
+        K: BootstrappingCIKeys<BE, BE::CI>;
 }

@@ -8,7 +8,7 @@ use anyhow::{Context, Result};
 use poulpy_ckks::{
     CKKSCtBounds, SetCKKSInfos,
     api::{CKKSBootstrappingCIOps, CKKSDFTMatrixPreparedFactory, CKKSDFTOps, CKKSEncodingOps},
-    layouts::{CKKSCiphertextOwned, CKKSPlaintextOwned, EvalModRing},
+    layouts::{CKKSCITwin, CKKSCiphertextOwned, CKKSPlaintextOwned, EvalModRing},
     presets::bootstrapping::{BootstrappingPreset, all},
     test_suite::{
         helpers::{PrecisionStats, TestContextBackend, TestContextModule, TestContextSharedModule},
@@ -187,9 +187,9 @@ fn preset_json(preset: &BootstrappingPreset, nominal_base2k: usize, pow2: bool) 
 /// is the bootstrap alone, synchronized.
 pub fn run<BE, BC>(args: &RunArgs, measure: Measure) -> Result<Value>
 where
-    BE: Backend<Ring = Standard, ZnxWord = i64> + HostStaged + MaxBase2k + 'static,
+    BE: Backend<Ring = Standard, ZnxWord = i64> + HostStaged + MaxBase2k + 'static + CKKSCITwin,
     CIBackend<BE>: MaxBase2k,
-    BC: TestContextBackend<Ring = Standard>,
+    BC: TestContextBackend<Ring = Standard> + CKKSCITwin,
     CIBackend<BC>: TestContextBackend,
     Module<BE>: PresetRunModule<BE>
         + CKKSDFTOps<BE>

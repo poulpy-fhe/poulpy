@@ -65,6 +65,14 @@ use poulpy_core::api::{GLWESecretSampling, TransferInto};
 use poulpy_core::layouts::GLWESecretViewMut;
 use poulpy_core::{Distribution, GetDistribution, GetDistributionMut};
 
+/// A standard backend and the conjugate-invariant twin that shares its buffers.
+pub trait CKKSCITwin: Backend<Ring = Standard> {
+    /// The conjugate-invariant backend that runs EvalMod.
+    type CI: Backend<Ring = ConjugateInvariant, OwnedBuf = Self::OwnedBuf, ZnxWord = Self::ZnxWord>
+        + for<'a> Backend<BufRef<'a> = Self::BufRef<'a>, BufMut<'a> = Self::BufMut<'a>>
+        + 'static;
+}
+
 /// Pipeline-facing access to the **prepared** keys of the linear stages of a CKKS
 /// bootstrap: the raise and the homomorphic transforms, which every bootstrap runs
 /// beside EvalMod.

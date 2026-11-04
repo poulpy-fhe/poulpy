@@ -36,7 +36,7 @@ use crate::{
         CKKSDFTOps, CKKSDecryptOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar, CKKSEncryptOps, CKKSEvalModOps,
     },
     layouts::{
-        BootstrappingContextPrepared, BootstrappingKeysLayout, BootstrappingPlan, CIConversion, CKKSCiphertextAlloc,
+        BootstrappingContextPrepared, BootstrappingKeysLayout, BootstrappingPlan, CIConversion, CKKSCITwin, CKKSCiphertextAlloc,
         CKKSCiphertextOwned, CKKSPlaintextAlloc, CKKSPlaintextOwned, EvalModRing,
     },
     presets::bootstrapping::{BootstrappingPreset, all},
@@ -84,7 +84,7 @@ pub fn preset_with_max_base2k(preset: &BootstrappingPreset, fixture_base2k: usiz
 
 /// The conjugate-invariant twin of `BE` that runs EvalMod in the bootstrap of
 /// [`CKKSBootstrappingCIOps`].
-pub type CIBackend<BE> = <Module<BE> as CKKSBootstrappingCIOps<BE>>::CI;
+pub type CIBackend<BE> = <BE as CKKSCITwin>::CI;
 
 /// `Module<BE>` capabilities of the backend a [`BootstrappingPresetRun`] evaluates on.
 pub trait PresetRunModule<BE: Backend>:
@@ -261,6 +261,8 @@ where
     /// [`CIBackend`] of the evaluated backend and of the client.
     pub fn setup_ci(preset: BootstrappingPreset) -> Self
     where
+        BE: CKKSCITwin,
+        BC: CKKSCITwin,
         Module<BE>: CKKSDFTMatrixPreparedFactory<BE> + CKKSBootstrappingCIOps<BE> + CKKSDFTOps<BE> + GLWECIKeyPreparedFactory<BE>,
         Module<CIBackend<BE>>: ModuleNew<CIBackend<BE>>
             + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
@@ -278,6 +280,8 @@ where
     /// `roundtrip_keys`.
     fn setup_ci_with_roundtrip(preset: BootstrappingPreset, roundtrip_keys: bool) -> Self
     where
+        BE: CKKSCITwin,
+        BC: CKKSCITwin,
         Module<BE>: CKKSDFTMatrixPreparedFactory<BE> + CKKSBootstrappingCIOps<BE> + CKKSDFTOps<BE> + GLWECIKeyPreparedFactory<BE>,
         Module<CIBackend<BE>>: ModuleNew<CIBackend<BE>>
             + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
@@ -557,7 +561,7 @@ where
 /// Full-size bootstraps are slow, so backends register this as an ignored test.
 pub fn bootstrapping_presets_meet_precision<BE>()
 where
-    BE: TestContextBackend<Ring = Standard> + HostStaged + MaxBase2k,
+    BE: TestContextBackend<Ring = Standard> + HostStaged + MaxBase2k + CKKSCITwin,
     CIBackend<BE>: TestContextBackend + MaxBase2k,
     Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
         + TestContextModule<BE>
@@ -583,9 +587,9 @@ where
 /// conjugate-invariant twin [`CIBackend`].
 pub fn bootstrapping_presets_meet_precision_with_client<BE, BC>()
 where
-    BE: Backend<Ring = Standard, ZnxWord = i64> + HostStaged + MaxBase2k + 'static,
+    BE: Backend<Ring = Standard, ZnxWord = i64> + HostStaged + MaxBase2k + 'static + CKKSCITwin,
     CIBackend<BE>: MaxBase2k,
-    BC: TestContextBackend<Ring = Standard>,
+    BC: TestContextBackend<Ring = Standard> + CKKSCITwin,
     CIBackend<BC>: TestContextBackend,
     Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
         + PresetRunModule<BE>
@@ -657,7 +661,7 @@ pub fn preset_label(preset: &BootstrappingPreset) -> String {
 /// run end to end. Backends register it when their radix takes the preset's 52 bits.
 pub fn small_s2c_preset_meets_precision<BE>()
 where
-    BE: TestContextBackend<Ring = Standard> + HostStaged + MaxBase2k,
+    BE: TestContextBackend<Ring = Standard> + HostStaged + MaxBase2k + CKKSCITwin,
     CIBackend<BE>: TestContextBackend + MaxBase2k,
     Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
         + TestContextModule<BE>
@@ -780,9 +784,9 @@ where
 /// key and the ciphertexts both ways between two backends.
 pub fn small_s2c_preset_meets_precision_with_client<BE, BC>()
 where
-    BE: Backend<Ring = Standard, ZnxWord = i64> + HostStaged + MaxBase2k + 'static,
+    BE: Backend<Ring = Standard, ZnxWord = i64> + HostStaged + MaxBase2k + 'static + CKKSCITwin,
     CIBackend<BE>: MaxBase2k,
-    BC: TestContextBackend<Ring = Standard>,
+    BC: TestContextBackend<Ring = Standard> + CKKSCITwin,
     CIBackend<BC>: TestContextBackend,
     Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
         + PresetRunModule<BE>
@@ -824,7 +828,7 @@ where
 /// on the conjugate-invariant ring, `u` folded into CoeffsToSlots.
 pub fn bootstrapping_plan_keys_match_context<BE>()
 where
-    BE: TestContextBackend<Ring = Standard> + HostStaged + MaxBase2k,
+    BE: TestContextBackend<Ring = Standard> + HostStaged + MaxBase2k + CKKSCITwin,
     CIBackend<BE>: TestContextBackend + MaxBase2k,
     Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
         + TestContextModule<BE>
@@ -1048,7 +1052,7 @@ fn key_set_shape<D: poulpy_hal::layouts::Data, W: poulpy_hal::layouts::ZnxWord>(
 /// preset with EvalMod on the CI ring.
 pub fn ci_bootstrap_refuses_invalid_inputs<BE>()
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend<Ring = Standard> + CKKSCITwin,
     CIBackend<BE>: TestContextBackend,
     Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
         + TestContextModule<BE>
@@ -1248,7 +1252,7 @@ fn compile_ci<BE>(
     preset: &BootstrappingPreset,
 ) -> BootstrappingContextPrepared<BE, f64>
 where
-    BE: Backend<Ring = Standard>,
+    BE: Backend<Ring = Standard> + CKKSCITwin,
     Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
         + CKKSEncodingOps<BE, f64>
         + CKKSDFTMatrixOps<BE, f64>
@@ -1288,7 +1292,7 @@ fn generate_keys_ci<BE>(
     layout: &BootstrappingKeysLayout,
 ) -> crate::layouts::BootstrappingKeySet<BE::OwnedBuf, BE::ZnxWord>
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend<Ring = Standard> + CKKSCITwin,
     CIBackend<BE>: TestContextBackend,
     Module<BE>: TestContextModule<BE> + CKKSBootstrappingCIOps<BE> + GLWECIKeyEncryptSk<BE>,
     Module<CIBackend<BE>>: TestContextSharedModule<CIBackend<BE>>,
@@ -1322,7 +1326,7 @@ fn prepare_keys_ci<BE>(
     layout: &BootstrappingKeysLayout,
 ) -> crate::layouts::BootstrappingKeysPrepared<BE::OwnedBuf, BE, CIBackend<BE>>
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend<Ring = Standard> + CKKSCITwin,
     CIBackend<BE>: TestContextBackend,
     Module<BE>: TestContextModule<BE> + CKKSBootstrappingCIOps<BE> + GLWECIKeyPreparedFactory<BE>,
     Module<CIBackend<BE>>: TestContextSharedModule<CIBackend<BE>>,
