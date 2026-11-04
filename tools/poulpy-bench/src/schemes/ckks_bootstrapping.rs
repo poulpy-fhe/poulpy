@@ -49,7 +49,7 @@ fn runner_ckks_bootstrapping<BE, BC>(
 ) where
     BE: Backend<Ring = Standard, ZnxWord = i64> + HostStaged + 'static,
     BC: TestContextBackend<Ring = Standard> + 'static,
-    Module<BE>: CKKSDFTMatrixPreparedFactory<BE> + PresetRunModule<BE>,
+    Module<BE>: CKKSDFTMatrixPreparedFactory<BE> + poulpy_ckks::api::CKKSRightOperandPreparedFactory<BE> + PresetRunModule<BE>,
     Module<BC>: TestContextModule<BC> + CKKSEncodingOps<BC, f64>,
     for<'a> <BC as Backend>::BufRef<'a>: HostDataRef,
     for<'a> <BC as Backend>::BufMut<'a>: HostDataMut,
@@ -127,6 +127,7 @@ where
     BE: TestContextBackend<Ring = Standard> + HostStaged + MaxBase2k,
     CIBackend<BE>: TestContextBackend + MaxBase2k,
     Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + poulpy_ckks::api::CKKSRightOperandPreparedFactory<BE>
         + TestContextModule<BE>
         + PresetRunModule<BE>
         + CKKSDFTOps<BE>
@@ -155,6 +156,7 @@ where
     BC: TestContextBackend<Ring = Standard> + 'static,
     CIBackend<BC>: TestContextBackend,
     Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + poulpy_ckks::api::CKKSRightOperandPreparedFactory<BE>
         + PresetRunModule<BE>
         + CKKSDFTOps<BE>
         + CKKSBootstrappingCIOps<BE>
@@ -193,6 +195,7 @@ pub fn bench_ckks_bootstrapping_replayed_with_client<BE, BC>(
     BC: TestContextBackend<Ring = Standard> + 'static,
     CIBackend<BC>: TestContextBackend,
     Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + poulpy_ckks::api::CKKSRightOperandPreparedFactory<BE>
         + PresetRunModule<BE>
         + CKKSDFTOps<BE>
         + CKKSBootstrappingCIOps<BE>
@@ -223,6 +226,7 @@ where
     BC: TestContextBackend<Ring = Standard> + 'static,
     CIBackend<BC>: TestContextBackend,
     Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + poulpy_ckks::api::CKKSRightOperandPreparedFactory<BE>
         + PresetRunModule<BE>
         + CKKSDFTOps<BE>
         + CKKSBootstrappingCIOps<BE>

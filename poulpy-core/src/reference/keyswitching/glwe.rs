@@ -145,6 +145,62 @@ pub fn glwe_keyswitch_dft_reference<BE, M, A>(
     glwe_keyswitch_dft_canonical(module, res, a, key, scratch);
 }
 
+/// Scratch of [`glwe_keyswitch_dft_add_reference`] for an accumulator of `res_size` limbs.
+pub fn glwe_keyswitch_dft_add_tmp_bytes_reference<BE, A, K>(
+    module: &Module<BE>,
+    res_size: usize,
+    a_infos: &A,
+    key_infos: &K,
+) -> usize
+where
+    BE: Backend + crate::oep::GGLWEProductDigitsStridedImpl,
+    Module<BE>: GLWEKeyswitchInternal<BE>,
+    A: GLWEInfos,
+    K: GGLWEInfos,
+{
+    let operand_size = glwe_keyswitch_operand_size(a_infos, key_infos);
+    glwe_keyswitch_dft_tmp_bytes_reference(module, res_size, a_infos, key_infos)
+        + BE::gglwe_product_fused_tmp_bytes(module, res_size, res_size, operand_size, key_infos)
+}
+
+/// [`glwe_keyswitch_dft_reference`] added to the accumulator `res`, in one pass over it.
+pub fn glwe_keyswitch_dft_add_reference<BE, A>(
+    module: &Module<BE>,
+    res: &mut VecZnxDftBackendMut<'_, BE>,
+    a: &A,
+    key: &GGLWEPreparedBackendRef<'_, BE>,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
+    BE: Backend + crate::oep::GGLWEProductDigitsStridedImpl,
+    Module<BE>: GLWEKeyswitchInternal<BE>,
+    A: GLWEToBackendRef<BE> + GLWEInfos,
+{
+    check_keyswitch_dft(module, res, a, key, scratch);
+    let (mut a_tmp, mut scratch) = scratch.borrow().take_glwe_scratch(&a.to_backend_ref());
+    let a = if a.is_canonical() {
+        a.to_backend_ref()
+    } else {
+        module.glwe_normalize(&mut a_tmp, a, &mut scratch.borrow());
+        a_tmp.to_backend_ref()
+    };
+    let (mut a_dft, mut scratch) =
+        scratch.take_vec_znx_dft_scratch(res.n(), a.rank().as_usize(), glwe_keyswitch_operand_size(&a, key));
+    glwe_keyswitch_operand(module, &mut a_dft, &&a, key, &mut scratch);
+    let product_size = res.size();
+    BE::gglwe_product_fused(
+        module,
+        res,
+        product_size,
+        &a_dft.to_backend_ref(),
+        key,
+        1,
+        &[],
+        1,
+        true,
+        &mut scratch,
+    );
+}
+
 fn check_keyswitch_dft<BE, M, A>(
     module: &M,
     res: &VecZnxDftBackendMut<'_, BE>,
@@ -508,6 +564,12 @@ pub fn gglwe_product_fused_reference<BE, M>(
         }
     }
     let product = product.to_backend_ref();
+    if accumulate && p == 1 {
+        for col in 0..cols {
+            module.vec_znx_dft_add_assign(res, col, &product, col);
+        }
+        return;
+    }
     let plan = module.vec_znx_dft_automorphism_plan(res.n(), p);
     for col in 0..cols {
         if accumulate {

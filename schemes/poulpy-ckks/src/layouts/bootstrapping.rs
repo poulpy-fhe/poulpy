@@ -25,17 +25,23 @@
 
 use std::collections::BTreeMap;
 
-use crate::layouts::{CKKSPlaintext, CKKSPlaintextOwned};
-use anyhow::{Result, ensure};
+use crate::layouts::{CKKSPlaintext, CKKSPlaintextOwned, CKKSRightOperandPrepared};
+use anyhow::{Context, Result, ensure};
 use poulpy_core::{
     GLWEDiagonalProd, LinearTransformationPrepared,
-    layouts::{Base2K, Diagonals, GLWEToBackendRef, LWEInfos, LinearTransformation},
+    layouts::{
+        Base2K, Diagonals, GLWEToBackendRef, LWEInfos, LinearTransformation, LinearTransformationDiagonal,
+        LinearTransformationGiantStep,
+    },
 };
-use poulpy_hal::layouts::{Backend, ConjugateInvariant, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, ConjugateInvariant, Module, PrepareHint, ScratchArena};
 
 use crate::{
     CKKSCtBounds, CKKSInfos, GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotsKind,
-    api::{CKKSDFTMatrixOps, CKKSDFTMatrixPreparedFactory, CKKSDFTOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar},
+    api::{
+        CKKSDFTMatrixOps, CKKSDFTMatrixPreparedFactory, CKKSDFTOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar,
+        CKKSRightOperandPreparedFactory,
+    },
     layouts::{
         CKKSPlaintextAlloc, ComplexDiagonals, DFTMatrix, DFTMatrixPrepared, DFTPlan, DFTType, Decode, DftScalar, Encode,
         EncodedLut, EvalMod, EvalModPlan, Split,
@@ -139,6 +145,7 @@ pub struct BootstrappingTechniques {
 pub struct BootstrappingPlan {
     pipeline: BootstrappingPipeline,
     c2s_guard_bits: usize,
+    log_gap: usize,
     functional_message_modulus: Option<usize>,
     eval_mod_ring: EvalModRing,
 
@@ -251,6 +258,7 @@ impl BootstrappingPlan {
         }
         Ok(Self {
             pipeline,
+            log_gap: 0,
             c2s_guard_bits: 0,
             functional_message_modulus: None,
             eval_mod_ring: EvalModRing::Standard,
@@ -281,6 +289,26 @@ impl BootstrappingPlan {
     /// The selected ModUp/EvalMod bootstrapping pipeline.
     pub fn pipeline(&self) -> BootstrappingPipeline {
         self.pipeline
+    }
+
+    /// Plaintexts in `Z[X^(2^log_gap)]`: both transforms act on `N / 2^(log_gap + 1)` slots and the sparse secret lies in
+    /// that subring, so the raise projects the ciphertext on the subring in place of a trace. Takes an S2C-first plan
+    /// with EvalMod on the standard ring and the first CoeffsToSlots factor on the raise.
+    pub fn with_log_gap(mut self, log_gap: usize) -> Result<Self> {
+        ensure!(
+            log_gap == 0
+                || (self.pipeline == BootstrappingPipeline::S2CFirst
+                    && self.eval_mod_ring == EvalModRing::Standard
+                    && self.coeffs_to_slots.first_factor_on_raise()),
+            "a gap takes an S2C-first plan with EvalMod on the standard ring and the first factor on the raise"
+        );
+        self.log_gap = log_gap;
+        Ok(self)
+    }
+
+    /// `log2` of the gap of the plaintexts, see [`Self::with_log_gap`].
+    pub fn log_gap(&self) -> usize {
+        self.log_gap
     }
 
     /// Adds scale bits at ModUp to reduce CoeffsToSlots rounding error.
@@ -520,7 +548,7 @@ pub struct BootstrappingContextPrepared<BE: Backend, F> {
     /// raise ([`DFTPlan::with_first_factor_on_raise`]): one giant step per
     /// diagonal, the diagonal rotated back by its own index. Kept unprepared,
     /// its products run on a ciphertext of a few limbs.
-    coeffs_to_slots_first_factor: Option<LinearTransformation<CKKSPlaintextOwned<BE>>>,
+    coeffs_to_slots_first_factor: Option<LinearTransformation<CKKSRightOperandPrepared<BE>>>,
 
     /// Prepared bypass CoeffsToSlots matrix
     coeffs_to_slots_bypass: Option<DFTMatrixPrepared<BE, Encode, Split>>,
@@ -606,6 +634,21 @@ impl<BE: Backend> CIPrePrepared<BE> {
             CIPreForm::Product(_) => None,
             CIPreForm::Folded { even, odd } => Some([even, odd]),
         }
+    }
+}
+
+/// The last CoeffsToSlots factor times a slot-wise mask: the real raise keeps the coefficients the mask selects and
+/// zeroes the others, at no level. Built by [`BootstrappingContextPrepared::real_raise_mask`].
+pub struct RealRaiseMask<BE: Backend>(pub(crate) LinearTransformationPrepared<BE>);
+
+/// The last SlotsToCoeffs factor with one kernel polynomial per coset of the coefficients: it finishes SlotsToCoeffs
+/// and multiplies each coset by its kernel in the same level. Built by [`BootstrappingContextPrepared::merged_s2c_factor`].
+pub struct MergedS2CFactor<BE: Backend>(pub(crate) LinearTransformationPrepared<BE>);
+
+impl<BE: Backend> MergedS2CFactor<BE> {
+    /// The factor, evaluated as a linear transformation: its rotations are those of the last SlotsToCoeffs factor.
+    pub fn factor(&self) -> &LinearTransformationPrepared<BE> {
+        &self.0
     }
 }
 
@@ -814,6 +857,11 @@ impl<BE: Backend, F> BootstrappingContextPrepared<BE, F> {
         self.c2s_guard_bits
     }
 
+    /// `log2` of the gap of the plaintexts, see [`BootstrappingPlan::with_log_gap`].
+    pub fn log_gap(&self) -> usize {
+        self.plan.log_gap()
+    }
+
     /// Selected ModUp/EvalMod pipeline.
     pub fn pipeline(&self) -> BootstrappingPipeline {
         self.pipeline
@@ -827,7 +875,7 @@ impl<BE: Backend, F> BootstrappingContextPrepared<BE, F> {
     /// First CoeffsToSlots factor, when the modulus raise applies it
     /// ([`DFTPlan::with_first_factor_on_raise`]); [`Self::coeffs_to_slots`]
     /// then holds the remaining factors.
-    pub fn coeffs_to_slots_first_factor(&self) -> Option<&LinearTransformation<CKKSPlaintextOwned<BE>>> {
+    pub fn coeffs_to_slots_first_factor(&self) -> Option<&LinearTransformation<CKKSRightOperandPrepared<BE>>> {
         self.coeffs_to_slots_first_factor.as_ref()
     }
 
@@ -908,10 +956,11 @@ pub type BootstrappingContextUnprepared<BE, F> = BootstrappingContext<BE, F>;
 
 impl<BE: Backend, F> BootstrappingContext<BE, F> {
     /// Scratch required by [`Self::prepare`]: the largest selected preparation
-    /// budget among the matrices.
+    /// budget among the matrices and the first factor on the raise.
     pub fn prepare_tmp_bytes(&self, module: &Module<BE>) -> usize
     where
-        Module<BE>: CKKSDFTOps<BE> + CKKSDFTMatrixPreparedFactory<BE>,
+        Module<BE>: CKKSDFTOps<BE> + CKKSDFTMatrixPreparedFactory<BE> + CKKSRightOperandPreparedFactory<BE>,
+        CKKSPlaintextOwned<BE>: crate::CKKSCtBounds,
         CKKSPlaintextOwned<BE>: LWEInfos,
     {
         let mut bytes = module
@@ -923,18 +972,25 @@ impl<BE: Backend, F> BootstrappingContext<BE, F> {
         if let Some(CIPre::Folded(folded)) = self.eval_mod_ci.as_ref().map(|ci| &ci.pre) {
             bytes = bytes.max(module.ckks_dft_matrix_prepare_tmp_bytes(folded));
         }
+        if let Some(diagonal) = self
+            .coeffs_to_slots_first_factor
+            .as_ref()
+            .and_then(|f| f.first_diagonal_plaintext())
+        {
+            bytes = bytes.max(module.ckks_right_operand_prepare_tmp_bytes(diagonal));
+        }
         bytes
     }
 
-    /// Prepares the matrices into the resident form the pipeline evaluates.
-    /// Each unprepared matrix is released as soon as it has been prepared.
+    /// Prepares the matrices and the diagonals of a first factor on the raise into the resident form the pipeline
+    /// evaluates. Each unprepared operand is released as soon as it has been prepared.
     ///
     /// # Errors
     ///
     /// As [`CKKSDFTMatrixPreparedFactory::ckks_dft_matrix_prepare`].
     pub fn prepare(self, module: &Module<BE>, scratch: &mut ScratchArena<'_, BE>) -> Result<BootstrappingContextPrepared<BE, F>>
     where
-        Module<BE>: CKKSDFTOps<BE> + CKKSDFTMatrixPreparedFactory<BE>,
+        Module<BE>: CKKSDFTOps<BE> + CKKSDFTMatrixPreparedFactory<BE> + CKKSRightOperandPreparedFactory<BE>,
         CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds + GLWEDiagonalProd<BE>,
     {
         let Self {
@@ -982,6 +1038,33 @@ impl<BE: Backend, F> BootstrappingContext<BE, F> {
             }),
             None => None,
         };
+        let coeffs_to_slots_first_factor = coeffs_to_slots_first_factor
+            .map(|factor| -> Result<_> {
+                let mut giant_steps = Vec::with_capacity(factor.giant_steps.len());
+                for giant in factor.giant_steps {
+                    let mut diagonals = Vec::with_capacity(giant.diagonals.len());
+                    for diagonal in giant.diagonals {
+                        diagonals.push(LinearTransformationDiagonal {
+                            baby: diagonal.baby,
+                            plaintext: module.ckks_right_operand_prepare_alloc(
+                                &diagonal.plaintext,
+                                PrepareHint::Reuse,
+                                scratch,
+                            )?,
+                        });
+                    }
+                    giant_steps.push(LinearTransformationGiantStep {
+                        rot: giant.rot,
+                        diagonals,
+                    });
+                }
+                Ok(LinearTransformation {
+                    baby_steps: factor.baby_steps,
+                    giant_steps,
+                    rotations: factor.rotations,
+                })
+            })
+            .transpose()?;
         Ok(BootstrappingContextPrepared {
             plan,
             c2s_guard_bits,
@@ -1022,7 +1105,11 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<Self>
     where
-        Module<BE>: CKKSDFTMatrixPreparedFactory<BE> + CKKSDFTOps<BE> + CKKSDFTMatrixOps<BE, F> + CKKSEncodingOps<BE, F>,
+        Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+            + CKKSDFTOps<BE>
+            + CKKSDFTMatrixOps<BE, F>
+            + CKKSEncodingOps<BE, F>
+            + CKKSRightOperandPreparedFactory<BE>,
         CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds + GLWEDiagonalProd<BE>,
     {
         Self::compile_unprepared(module, base2k, plan, scratch)?.prepare(module, scratch)
@@ -1048,7 +1135,11 @@ where
     where
         BCI: Backend<Ring = ConjugateInvariant, OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>,
         F: DftScalar,
-        Module<BE>: CKKSDFTMatrixPreparedFactory<BE> + CKKSDFTOps<BE> + CKKSDFTMatrixOps<BE, F> + CKKSEncodingOps<BE, F>,
+        Module<BE>: CKKSRightOperandPreparedFactory<BE>
+            + CKKSDFTMatrixPreparedFactory<BE>
+            + CKKSDFTOps<BE>
+            + CKKSDFTMatrixOps<BE, F>
+            + CKKSEncodingOps<BE, F>,
         Module<BCI>: CKKSEncodingOps<BCI, F>,
         CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds + GLWEDiagonalProd<BE>,
     {
@@ -1172,6 +1263,223 @@ where
             post,
         });
         Ok(context)
+    }
+
+    /// Scratch of [`Self::real_raise_mask`].
+    pub fn real_raise_mask_tmp_bytes(&self, module: &Module<BE>) -> Result<usize>
+    where
+        Module<BE>: CKKSDFTMatrixOps<BE, F> + CKKSPlaintextAlloc<BE> + crate::api::CKKSLinearTransformationOps<BE>,
+    {
+        use crate::api::CKKSLinearTransformationOps;
+        use poulpy_core::layouts::IntPolyInfos;
+
+        let dft = self.coeffs_to_slots();
+        let plain = dft.factor_operands()[0]
+            .first_diagonal_plaintext()
+            .context("a factor without a diagonal")?;
+        // A mask is no longer periodic: its diagonals fill the slots, however compact those of the factor are.
+        let dense = module.ckks_plaintext_alloc_from_slots(1 << dft.plan().log_slots(), plain.base2k(), plain.encoded_k());
+        Ok(module
+            .ckks_dft_matrix_new_tmp_bytes::<Encode, Split>(dft.plan())?
+            .max(module.ckks_linear_transformation_rhs_prepare_tmp_bytes(&dense)))
+    }
+
+    /// The mask of [`CKKSBootstrappingOps::ckks_bootstrap_real_raise`](crate::api::CKKSBootstrappingOps::ckks_bootstrap_real_raise):
+    /// the raise reads coefficient `j` of its input where `keep[j]` holds and drops it elsewhere, at no cost to the
+    /// raise. Coefficients `p` and `N/2 + p` share a real slot: `keep` selects at most one of them, on either half, and
+    /// the slot gives it back as coefficient `p` of the next SlotsToCoeffs. `scratch` covers
+    /// [`Self::real_raise_mask_tmp_bytes`].
+    ///
+    /// # Errors
+    ///
+    /// A context that is not S2C-first with EvalMod on the standard ring, a `keep` of another length than the degree
+    /// `N` of the bootstrap, or a `keep` selecting both coefficients of a slot.
+    pub fn real_raise_mask(
+        &self,
+        module: &Module<BE>,
+        keep: &[bool],
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<RealRaiseMask<BE>>
+    where
+        Module<BE>: CKKSEncodingOps<BE, F> + CKKSDFTMatrixPreparedFactory<BE>,
+        F: DftScalar,
+        CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds + GLWEDiagonalProd<BE>,
+    {
+        ensure!(
+            self.pipeline == BootstrappingPipeline::S2CFirst && self.eval_mod_ring == EvalModRing::Standard,
+            "real_raise_mask takes an S2C-first context with EvalMod on the standard ring"
+        );
+        let dft = self.coeffs_to_slots();
+        let plan = dft.plan();
+        let slots = 1usize << plan.log_slots();
+        let gap = 1usize << self.log_gap();
+        let half = slots * gap;
+        ensure!(keep.len() == 2 * half, "real_raise_mask takes one entry per coefficient");
+        ensure!(
+            !(0..half).any(|p| keep[p] && keep[half + p]),
+            "a real slot carries one of the two coefficients it holds"
+        );
+        ensure!(
+            keep.iter().enumerate().all(|(p, &k)| !k || p.is_multiple_of(gap)),
+            "a mask keeps coefficients of the subring of the transform"
+        );
+        let base2k = dft.factor_operands()[0]
+            .first_diagonal_plaintext()
+            .context("a factor without a diagonal")?
+            .base2k();
+        // Slot `s` of CoeffsToSlots holds coefficient `g·bitrev(s)` in its real part and `N/2 + g·bitrev(s)` in its
+        // imaginary part: `-i` moves the second to the real part, which conjugate and add keeps.
+        let bitrev = |s: usize| {
+            s.reverse_bits()
+                .checked_shr(usize::BITS - slots.trailing_zeros())
+                .unwrap_or(0)
+        };
+        let (mut re, mut im) = (vec![F::zero(); slots], vec![F::zero(); slots]);
+        for s in 0..slots {
+            let p = gap * bitrev(s);
+            if keep[p] {
+                re[s] = F::one();
+            }
+            if keep[half + p] {
+                im[s] = -F::one();
+            }
+        }
+        let mut scale = ComplexDiagonals::new(Diagonals::new(slots), Diagonals::new(slots));
+        scale.re.set(0, re);
+        scale.im.set(0, im);
+        let log_n = (2 * half).ilog2() as usize;
+        let masked = crate::layouts::dft::ckks_scaled_last_factors::<BE, F>(module, base2k, plan, log_n, &[scale], scratch)?;
+        let [factor]: [_; 1] = module
+            .ckks_dft_matrix_prepare_alloc(&masked, scratch)?
+            .inner
+            .factors
+            .try_into()
+            .unwrap_or_else(|_| unreachable!("one factor"));
+        Ok(RealRaiseMask(factor))
+    }
+
+    /// The cosets of the coefficients the last SlotsToCoeffs factor keeps apart: `2^depth` of that factor.
+    pub fn merged_s2c_cosets(&self) -> usize {
+        let plan = self.slots_to_coeffs().plan();
+        1 << plan.schedule.steps.last().expect("a DFT plan has at least one factor").depth
+    }
+
+    /// Scratch of [`Self::merged_s2c_factor`], for a factor of at most `k` bits.
+    ///
+    /// # Errors
+    ///
+    /// A plan the ring does not support.
+    pub fn merged_s2c_factor_tmp_bytes(&self, module: &Module<BE>, k: usize) -> Result<usize>
+    where
+        Module<BE>: CKKSDFTMatrixOps<BE, F>
+            + CKKSEncodingOps<BE, F>
+            + CKKSPlaintextAlloc<BE>
+            + crate::api::CKKSLinearTransformationOps<BE>,
+    {
+        use crate::api::CKKSLinearTransformationOps;
+
+        let dft = self.slots_to_coeffs();
+        let plain = dft.factor_operands()[0]
+            .first_diagonal_plaintext()
+            .context("a factor without a diagonal")?;
+        let n = module.n();
+        let dense = module.ckks_plaintext_alloc_from_slots(n / 2, plain.base2k(), k.into());
+        Ok(module
+            .ckks_dft_matrix_new_tmp_bytes::<Decode, Split>(dft.plan())?
+            .max(module.ckks_linear_transformation_rhs_prepare_tmp_bytes(&dense))
+            .max(<Module<BE> as CKKSEncodingHostOps<BE, F>>::ckks_encoding_host_tmp_bytes(
+                module, n,
+            )))
+    }
+
+    /// The last SlotsToCoeffs factor, at scale `2^log_delta`, with `kernels[r % kernels.len()]` the polynomial of the
+    /// coefficients of index `g·k` for `k = r` modulo [`Self::merged_s2c_cosets`], `g` the gap of the plaintexts: on the
+    /// state SlotsToCoeffs leaves before that factor, it gives `sum_r c_r·kernels[r]`, with `c_r` the input's coefficients
+    /// of coset `r`, at their own indexes. `scratch` covers [`Self::merged_s2c_factor_tmp_bytes`].
+    ///
+    /// # Errors
+    ///
+    /// A context that is not S2C-first, a kernel count that does not divide the cosets, a kernel of another length than
+    /// the degree of the module, or a kernel off the subring of the plaintexts.
+    pub fn merged_s2c_factor(
+        &self,
+        module: &Module<BE>,
+        kernels: &[Vec<F>],
+        log_delta: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<MergedS2CFactor<BE>>
+    where
+        Module<BE>: CKKSEncodingOps<BE, F> + CKKSDFTMatrixPreparedFactory<BE>,
+        F: DftScalar,
+        CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds + GLWEDiagonalProd<BE>,
+    {
+        ensure!(
+            self.pipeline == BootstrappingPipeline::S2CFirst,
+            "merged_s2c_factor takes an S2C-first context"
+        );
+        let cosets = self.merged_s2c_cosets();
+        ensure!(
+            !kernels.is_empty() && cosets.is_multiple_of(kernels.len()),
+            "merged_s2c_factor takes a kernel count dividing the cosets"
+        );
+        let n = module.n();
+        ensure!(
+            kernels.iter().all(|kernel| kernel.len() == n),
+            "merged_s2c_factor takes kernels of the module's degree"
+        );
+        let gap = 1usize << self.log_gap();
+        ensure!(
+            kernels
+                .iter()
+                .flat_map(|kernel| kernel.iter().enumerate())
+                .all(|(e, &c)| c == F::zero() || e.is_multiple_of(gap)),
+            "merged_s2c_factor takes kernels of the subring of the transform"
+        );
+        let dft = self.slots_to_coeffs();
+        let base2k = dft.factor_operands()[0]
+            .first_diagonal_plaintext()
+            .context("a factor without a diagonal")?
+            .base2k();
+        // Kernel values, read through the host codec at a scale that keeps the accuracy of `F`.
+        const LOG_SCALE: usize = 60;
+        let width = crate::layouts::dft::integer_bits(kernels.iter().flatten().fold(F::one(), |m, v| m.max(v.abs())));
+        let mut pt = module.ckks_plaintext_alloc(n.into(), base2k, (LOG_SCALE + 2 + width).into());
+        pt.set_meta(GLWEPlaintextMeta {
+            scale: Scale::Log(LOG_SCALE),
+            slots: SlotsKind::Complex,
+            log_sparsity: 0,
+        });
+        let kernel_values = kernels
+            .iter()
+            .map(|kernel| {
+                module.ckks_encode_coeffs_host_into(&mut pt, kernel, scratch)?;
+                let (mut re, mut im) = (vec![F::zero(); n / 2], vec![F::zero(); n / 2]);
+                module.ckks_decode_slots_host_into(&pt, &mut re, &mut im, scratch)?;
+                Ok((re, im))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        // Before the last factor, block `B` holds the coset `bitrev(B)`.
+        let bits = cosets.trailing_zeros();
+        let bitrev = |b: usize| b.reverse_bits().checked_shr(usize::BITS - bits).unwrap_or(0);
+        let values: Vec<_> = (0..cosets)
+            .map(|b| kernel_values[bitrev(b) % kernels.len()].clone())
+            .collect();
+        let merged = crate::layouts::dft::ckks_block_scaled_last_factor::<BE, F>(
+            module,
+            base2k,
+            dft.plan(),
+            n.ilog2() as usize,
+            &values,
+            log_delta,
+            scratch,
+        )?;
+        let [factor]: [_; 1] = module
+            .ckks_dft_matrix_prepare_alloc(&merged, scratch)?
+            .inner
+            .factors
+            .try_into()
+            .unwrap_or_else(|_| unreachable!("one factor"));
+        Ok(MergedS2CFactor(factor))
     }
 
     /// Scratch of [`Self::compile_unprepared`] for `plan`: the DFT matrices and EvalMod are built one after the other on

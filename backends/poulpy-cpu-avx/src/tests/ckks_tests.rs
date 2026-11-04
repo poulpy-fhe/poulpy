@@ -15,7 +15,8 @@ ckks_determinism_test_suite!(mod ckks_determinism_ntt4x30avxrayon, backend = cra
 mod bootstrapping_presets {
     use poulpy_ckks::test_suite::presets::{
         bootstrapping_plan_keys_match_context, bootstrapping_presets_meet_precision, ci_bootstrap_refuses_invalid_inputs,
-        small_c2s_preset_meets_precision, small_s2c_preset_meets_precision, small_s2c_preset_meets_precision_with_client,
+        real_raise_composes_to_the_bootstrap, small_c2s_preset_meets_precision, small_s2c_preset_meets_precision,
+        small_s2c_preset_meets_precision_with_client,
     };
 
     #[test]
@@ -44,10 +45,43 @@ mod bootstrapping_presets {
         ci_bootstrap_refuses_invalid_inputs::<crate::NTT4x30Avx>();
     }
 
+    #[test]
+    fn ntt4x30_real_raise_composes_to_the_bootstrap() {
+        real_raise_composes_to_the_bootstrap::<crate::NTT4x30Avx>();
+    }
+
+    #[test]
+    fn ntt4x30_real_raise_on_a_subring_keeps_the_slots() {
+        poulpy_ckks::test_suite::presets::real_raise_on_a_subring_keeps_the_slots::<crate::NTT4x30Avx>();
+    }
+
+    #[test]
+    fn ntt4x30_merged_s2c_factor_is_the_coset_product() {
+        poulpy_ckks::test_suite::presets::merged_s2c_factor_is_the_coset_product::<crate::NTT4x30Avx>();
+    }
+
     #[cfg(feature = "enable-rayon")]
     #[test]
     fn ntt4x30_rayon_ci_bootstrap_refuses_invalid_inputs() {
         ci_bootstrap_refuses_invalid_inputs::<crate::NTT4x30AvxRayon>();
+    }
+
+    #[cfg(feature = "enable-rayon")]
+    #[test]
+    fn ntt4x30_rayon_real_raise_composes_to_the_bootstrap() {
+        real_raise_composes_to_the_bootstrap::<crate::NTT4x30AvxRayon>();
+    }
+
+    #[cfg(feature = "enable-rayon")]
+    #[test]
+    fn ntt4x30_rayon_real_raise_on_a_subring_keeps_the_slots() {
+        poulpy_ckks::test_suite::presets::real_raise_on_a_subring_keeps_the_slots::<crate::NTT4x30AvxRayon>();
+    }
+
+    #[cfg(feature = "enable-rayon")]
+    #[test]
+    fn ntt4x30_rayon_merged_s2c_factor_is_the_coset_product() {
+        poulpy_ckks::test_suite::presets::merged_s2c_factor_is_the_coset_product::<crate::NTT4x30AvxRayon>();
     }
 
     #[cfg(feature = "enable-rayon")]

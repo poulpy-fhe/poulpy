@@ -60,6 +60,21 @@ fn ntt4x30_ci_bootstrap_refuses_invalid_inputs() {
 }
 
 #[test]
+fn ntt4x30_real_raise_composes_to_the_bootstrap() {
+    poulpy_ckks::test_suite::presets::real_raise_composes_to_the_bootstrap::<crate::NTT4x30Oracle>();
+}
+
+#[test]
+fn ntt4x30_real_raise_on_a_subring_keeps_the_slots() {
+    poulpy_ckks::test_suite::presets::real_raise_on_a_subring_keeps_the_slots::<crate::NTT4x30Oracle>();
+}
+
+#[test]
+fn ntt4x30_merged_s2c_factor_is_the_coset_product() {
+    poulpy_ckks::test_suite::presets::merged_s2c_factor_is_the_coset_product::<crate::NTT4x30Oracle>();
+}
+
+#[test]
 fn ntt4x30_small_c2s_preset_meets_precision() {
     poulpy_ckks::test_suite::presets::small_c2s_preset_meets_precision::<crate::NTT4x30Oracle>();
 }

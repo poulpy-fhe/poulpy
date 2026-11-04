@@ -135,7 +135,7 @@ where
 fn prepare_dft<BE, Dir, Fmt>(module: &Module<BE>, matrix: &DFTMatrix<BE, Dir, Fmt>) -> DFTMatrixPrepared<BE, Dir, Fmt>
 where
     BE: TestContextBackend,
-    Module<BE>: CKKSDFTOps<BE> + CKKSDFTMatrixPreparedFactory<BE>,
+    Module<BE>: CKKSDFTOps<BE> + CKKSDFTMatrixPreparedFactory<BE> + crate::api::CKKSRightOperandPreparedFactory<BE>,
 {
     let mut prepared = module.ckks_dft_matrix_prepared_alloc_from_infos(matrix);
     with_scratch::<BE, _>(module.ckks_dft_matrix_prepare_tmp_bytes(matrix), |s| {
@@ -217,6 +217,7 @@ pub fn test_dft_coeffs_to_slots_standard<BE, F, E>(
 ) where
     BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + crate::api::CKKSRightOperandPreparedFactory<BE>
         + TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSDFTOps<BE>
@@ -296,6 +297,7 @@ pub fn test_dft_slots_to_coeffs_standard<BE, F, E>(
 ) where
     BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + crate::api::CKKSRightOperandPreparedFactory<BE>
         + TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSDFTOps<BE>
@@ -375,6 +377,7 @@ pub fn test_dft_coeffs_to_slots_split<BE, F, E>(
 ) where
     BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + crate::api::CKKSRightOperandPreparedFactory<BE>
         + TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSDFTOps<BE>
@@ -463,6 +466,7 @@ pub fn test_dft_coeffs_to_slots_repack_sparse<BE, F, E>(
 ) where
     BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + crate::api::CKKSRightOperandPreparedFactory<BE>
         + TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSDFTOps<BE>
@@ -560,6 +564,7 @@ pub fn test_dft_slots_to_coeffs_split<BE, F, E>(
 ) where
     BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + crate::api::CKKSRightOperandPreparedFactory<BE>
         + TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSDFTOps<BE>
@@ -652,6 +657,7 @@ pub fn test_dft_slots_to_coeffs_repack_sparse<BE, F, E>(
 ) where
     BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + crate::api::CKKSRightOperandPreparedFactory<BE>
         + TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSDFTOps<BE>
@@ -772,6 +778,7 @@ where
         + CKKSEncodingOps<BE, F>
         + CKKSDFTOps<BE>
         + CKKSDFTMatrixPreparedFactory<BE>
+        + crate::api::CKKSRightOperandPreparedFactory<BE>
         + CKKSDFTMatrixOps<BE, F>,
     F: TestScalar,
     E: ReimNew<F>,

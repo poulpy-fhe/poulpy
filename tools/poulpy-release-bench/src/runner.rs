@@ -193,7 +193,7 @@ where
     CIBackend<BC>: TestContextBackend,
     Module<BE>: PresetRunModule<BE>
         + CKKSDFTOps<BE>
-        + CKKSDFTMatrixPreparedFactory<BE>
+        + CKKSDFTMatrixPreparedFactory<BE> + poulpy_ckks::api::CKKSRightOperandPreparedFactory<BE>
         + CKKSBootstrappingCIOps<BE>
         + GLWECIKeyPreparedFactory<BE>,
     Module<CIBackend<BE>>: ModuleNew<CIBackend<BE>>

@@ -39,10 +39,43 @@ fn ntt4x30_neon_ci_bootstrap_refuses_invalid_inputs() {
     poulpy_ckks::test_suite::presets::ci_bootstrap_refuses_invalid_inputs::<crate::NTT4x30Neon>();
 }
 
+#[test]
+fn ntt4x30_neon_real_raise_composes_to_the_bootstrap() {
+    poulpy_ckks::test_suite::presets::real_raise_composes_to_the_bootstrap::<crate::NTT4x30Neon>();
+}
+
+#[test]
+fn ntt4x30_neon_real_raise_on_a_subring_keeps_the_slots() {
+    poulpy_ckks::test_suite::presets::real_raise_on_a_subring_keeps_the_slots::<crate::NTT4x30Neon>();
+}
+
+#[test]
+fn ntt4x30_neon_merged_s2c_factor_is_the_coset_product() {
+    poulpy_ckks::test_suite::presets::merged_s2c_factor_is_the_coset_product::<crate::NTT4x30Neon>();
+}
+
 #[cfg(feature = "enable-rayon")]
 #[test]
 fn ntt4x30_neon_rayon_ci_bootstrap_refuses_invalid_inputs() {
     poulpy_ckks::test_suite::presets::ci_bootstrap_refuses_invalid_inputs::<crate::NTT4x30NeonRayon>();
+}
+
+#[cfg(feature = "enable-rayon")]
+#[test]
+fn ntt4x30_neon_rayon_real_raise_composes_to_the_bootstrap() {
+    poulpy_ckks::test_suite::presets::real_raise_composes_to_the_bootstrap::<crate::NTT4x30NeonRayon>();
+}
+
+#[cfg(feature = "enable-rayon")]
+#[test]
+fn ntt4x30_neon_rayon_real_raise_on_a_subring_keeps_the_slots() {
+    poulpy_ckks::test_suite::presets::real_raise_on_a_subring_keeps_the_slots::<crate::NTT4x30NeonRayon>();
+}
+
+#[cfg(feature = "enable-rayon")]
+#[test]
+fn ntt4x30_neon_rayon_merged_s2c_factor_is_the_coset_product() {
+    poulpy_ckks::test_suite::presets::merged_s2c_factor_is_the_coset_product::<crate::NTT4x30NeonRayon>();
 }
 
 #[cfg(feature = "enable-rayon")]

@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+### Workspace
+
+- Add `examples/resnet20` (`poulpy-resnet20`, unpublished): encrypted ResNet-20 on CIFAR-10 over the real-slot S2C-first bootstrap. Every convolution, shortcut and the pooled linear head is folded into the last SlotsToCoeffs factor (`MergedConv`, on `merged_s2c_factor`), on coefficient layouts (`CoeffLayout`); the masked raise keeps the layer's samples and the ReLU runs on the real slots. Stages 2 and 3 run on 16,384 real slots, `with_log_gap(1, ..)`. The `encrypted_inference` binary runs the server on the CPU or, with the `cuda` feature, the GPU, where `--replay` records the whole circuit once as a `Replay` graph. The weights and ten test images are built into the crate, and `$CIFAR10_TEST_BATCH` names the full test batch.
+
+### `poulpy-core`
+
+- **Breaking:** `GLWEKeyswitchImpl::glwe_keyswitch_dft_add[_tmp_bytes]` have no default body: `impl_glwe_keyswitch_reference_full!` forwards them to the new `GLWEKeyswitchReference` methods, which add the product through `gglwe_product_fused` in one pass instead of a temporary and an addition per column, at the same bits. A hand-written implementation adds them.
+
+### `poulpy-ckks`
+
+- Add `CKKSBootstrappingOps::ckks_bootstrap_real_raise[_tmp_bytes]`: the real-slot S2C-first bootstrap of coefficients up to EvalMod, for a caller working on the slots before SlotsToCoeffs on the same ring, with the digits of `ckks_bootstrap` (`test_suite::presets::real_raise_composes_to_the_bootstrap`). The raise takes an optional `RealRaiseMask`, from `BootstrappingContextPrepared::real_raise_mask[_tmp_bytes]`: the last `CoeffsToSlots` factor times a selection of the input coefficients, which zeroes the others at no level.
+- Add `BootstrappingContextPrepared::merged_s2c_factor[_tmp_bytes]`, `merged_s2c_cosets` and `MergedS2CFactor`: the last SlotsToCoeffs factor with one kernel polynomial per coset of the coefficients, which multiplies each coset by its kernel in the level of that factor, with the factor's rotation keys.
+- Add `BootstrappingPlan::with_log_gap` and `BootstrappingPreset::with_log_gap`: a real-slot S2C-first bootstrap of plaintexts in `Z[X^g]`, with transforms on `N/2g` slots and a sparse secret in that subring, whose raise projects the ciphertext on the subring in place of a trace. A key under that secret is bounded at the subring's degree, so a preset refuses a gap without a bound. `real_raise_mask` reads either half of the coefficients, one per real slot, and `merged_s2c_factor` takes kernels of the subring.
+- Add `BootstrappingKeysLayout::generate_tmp_bytes`, the scratch of `BootstrappingPlan::generate_keys`.
+- Add `BootstrappingPreset::with_output_k`, `with_slots_to_coeffs`, `with_input_headroom`, `with_eval_mod_polynomial`, `scales`, `with_scales` (`PresetScales`) and `rotation_key_layout`, to fit a preset and its keys to the circuit around the bootstrap.
+- `BootstrappingContext::prepare` prepares the diagonals of a first `CoeffsToSlots` factor on the raise, so no bootstrap transforms them again. The output bits are unchanged.
+- **Breaking:** `BootstrappingContextPrepared::coeffs_to_slots_first_factor` hands out `CKKSRightOperandPrepared` operands; `CKKSModUpFirstFactorImpl` takes the prepared factor, and `BootstrappingContext::prepare` needs `CKKSRightOperandPreparedFactory`.
+- **Breaking:** `CKKSBootstrappingImpl` requires `ckks_bootstrap_real_raise[_tmp_bytes]`, which `impl_ckks_bootstrapping_reference_full!` forwards to the new `CKKSBootstrappingReference` methods: a hand-written implementation adds them.
+- **Breaking:** `CKKSModUpFirstFactorImpl::ckks_mod_up_first_factor[_tmp_bytes]` take `log_gap`, which `impl_ckks_mod_up_first_factor_reference_full!` forwards to the reference; `generate_keys` requires `VecZnxSwitchRing`.
+
 ## [0.10.0] - 2026-11-01
 
 Completes the workspace naming pass ([#376](https://github.com/poulpy-fhe/poulpy/issues/376)): names lead with their object, opt-in macros follow their OEP trait (`impl_<op>_reference_full!`), every API method dispatches through a same-named OEP method, and operation-wide scalars lead argument lists. Gadget keys take digits of any width in bits ([#188](https://github.com/poulpy-fhe/poulpy/issues/188)) and a row offset, and every gadget product refuses an input wider than its key ([#451](https://github.com/poulpy-fhe/poulpy/issues/451)). CKKS bootstrapping applies the first CoeffsToSlots factor on the modulus raise, runs EvalMod on the conjugate-invariant ring and takes power-of-two rotation keys, with new `LogN=16` presets; normalization rounds ties to even. Crates move into `schemes/`, `libs/`, `backends/` and `tools/`; new crates: `poulpy-blas` (encrypted matrix arithmetic), `poulpy-libm` (CKKS math functions, moved in from its own repository) and `poulpy-gpu-portable` (NTT4x30 on CUDA, HIP and WGPU through CubeCL).

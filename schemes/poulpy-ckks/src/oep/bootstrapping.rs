@@ -13,7 +13,7 @@ use crate::{
     CKKSCtBounds, CKKSResult, SetCKKSInfos,
     layouts::{
         BootstrappingCIKeys, BootstrappingContextPrepared, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingLinearKeys,
-        CKKSCiphertextOwned, CKKSPlaintextOwned, EncodedLut, EvalModPlan,
+        CKKSCiphertextOwned, CKKSPlaintextOwned, CKKSRightOperandPrepared, EncodedLut, EvalModPlan, RealRaiseMask,
     },
 };
 
@@ -117,6 +117,34 @@ pub unsafe trait CKKSBootstrappingImpl: Backend<Ring = Standard> {
         K: BootstrappingKeys<Self> + Sync,
         K::TensorKey: Sync;
 
+    /// Scratch bound of [`Self::ckks_bootstrap_real_raise`]; may report less than the reference, never less than the
+    /// body uses.
+    fn ckks_bootstrap_real_raise_tmp_bytes<C1, C2, F>(
+        module: &Module<Self>,
+        res: &C1,
+        a: &C2,
+        ctx: &BootstrappingContextPrepared<Self, F>,
+        keys_layout: &BootstrappingKeysLayout,
+    ) -> usize
+    where
+        C1: CKKSCtBounds,
+        C2: CKKSCtBounds;
+
+    /// Reproduces
+    /// [`ckks_bootstrap_real_raise_reference`](crate::reference::bootstrapping::CKKSBootstrappingReference::ckks_bootstrap_real_raise_reference)
+    /// bit for bit, within [`Self::ckks_bootstrap_real_raise_tmp_bytes`]; free in kernels and scratch use.
+    fn ckks_bootstrap_real_raise<F, K>(
+        module: &Module<Self>,
+        res: &mut CKKSCiphertextOwned<Self>,
+        a: &CKKSCiphertextOwned<Self>,
+        ctx: &BootstrappingContextPrepared<Self, F>,
+        mask: Option<&RealRaiseMask<Self>>,
+        keys: &K,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) -> CKKSResult<()>
+    where
+        K: BootstrappingKeys<Self>;
+
     /// Reproduces
     /// [`ckks_functional_bootstrap_reference`](crate::reference::bootstrapping::CKKSBootstrappingReference::ckks_functional_bootstrap_reference)
     /// bit for bit, within [`Self::ckks_functional_bootstrap_tmp_bytes`]; free in kernels and scratch use.
@@ -201,7 +229,8 @@ pub unsafe trait CKKSModUpFirstFactorImpl: Backend<Ring = Standard> {
         module: &Module<Self>,
         dst_infos: &Dst,
         src_infos: &Src,
-        factor: &LinearTransformation<CKKSPlaintextOwned<Self>>,
+        factor: &LinearTransformation<CKKSRightOperandPrepared<Self>>,
+        log_gap: usize,
         d2s_infos: Option<&D2S>,
         key_infos: &K,
     ) -> usize
@@ -215,12 +244,14 @@ pub unsafe trait CKKSModUpFirstFactorImpl: Backend<Ring = Standard> {
     /// [`ckks_mod_up_first_factor_reference`](crate::reference::first_factor::CKKSModUpFirstFactorReference::ckks_mod_up_first_factor_reference)
     /// bit for bit, within [`Self::ckks_mod_up_first_factor_tmp_bytes`]; free in kernels and scratch use. It honors the
     /// key layouts of the reference composition.
+    #[allow(clippy::too_many_arguments)]
     fn ckks_mod_up_first_factor<Dst, Src, K>(
         module: &Module<Self>,
         dst: &mut Dst,
         src: &mut Src,
         scale_up: usize,
-        factor: &LinearTransformation<CKKSPlaintextOwned<Self>>,
+        factor: &LinearTransformation<CKKSRightOperandPrepared<Self>>,
+        log_gap: usize,
         keys: &K,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> CKKSResult<()>
@@ -383,6 +414,43 @@ macro_rules! impl_ckks_bootstrapping_reference_full {
                 )
             }
 
+            fn ckks_bootstrap_real_raise_tmp_bytes<C1, C2, F>(
+                module: &::poulpy_hal::layouts::Module<$be>,
+                res: &C1,
+                a: &C2,
+                ctx: &$crate::layouts::BootstrappingContextPrepared<$be, F>,
+                keys_layout: &$crate::layouts::BootstrappingKeysLayout,
+            ) -> usize
+            where
+                C1: $crate::CKKSCtBounds,
+                C2: $crate::CKKSCtBounds,
+            {
+                $crate::reference::bootstrapping::CKKSBootstrappingReference::ckks_bootstrap_real_raise_tmp_bytes_reference(
+                    module,
+                    res,
+                    a,
+                    ctx,
+                    keys_layout,
+                )
+            }
+
+            fn ckks_bootstrap_real_raise<F, K>(
+                module: &::poulpy_hal::layouts::Module<$be>,
+                res: &mut $crate::layouts::CKKSCiphertextOwned<$be>,
+                a: &$crate::layouts::CKKSCiphertextOwned<$be>,
+                ctx: &$crate::layouts::BootstrappingContextPrepared<$be, F>,
+                mask: ::core::option::Option<&$crate::layouts::RealRaiseMask<$be>>,
+                keys: &K,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
+            ) -> $crate::CKKSResult<()>
+            where
+                K: $crate::layouts::BootstrappingKeys<$be>,
+            {
+                $crate::reference::bootstrapping::CKKSBootstrappingReference::ckks_bootstrap_real_raise_reference(
+                    module, res, a, ctx, mask, keys, scratch,
+                )
+            }
+
             fn ckks_functional_bootstrap<F, K>(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 ct_outs: &mut [$crate::layouts::CKKSCiphertextOwned<$be>],
@@ -525,7 +593,8 @@ macro_rules! impl_ckks_mod_up_first_factor_reference_full {
                 module: &::poulpy_hal::layouts::Module<$be>,
                 dst_infos: &Dst,
                 src_infos: &Src,
-                factor: &::poulpy_core::layouts::LinearTransformation<$crate::layouts::CKKSPlaintextOwned<$be>>,
+                factor: &::poulpy_core::layouts::LinearTransformation<$crate::layouts::CKKSRightOperandPrepared<$be>>,
+                log_gap: usize,
                 d2s_infos: Option<&D2S>,
                 key_infos: &K,
             ) -> usize
@@ -536,7 +605,7 @@ macro_rules! impl_ckks_mod_up_first_factor_reference_full {
                 K: ::poulpy_core::layouts::GGLWEInfos,
             {
                 $crate::reference::first_factor::CKKSModUpFirstFactorReference::ckks_mod_up_first_factor_tmp_bytes_reference(
-                    module, dst_infos, src_infos, factor, d2s_infos, key_infos,
+                    module, dst_infos, src_infos, factor, log_gap, d2s_infos, key_infos,
                 )
             }
 
@@ -545,7 +614,8 @@ macro_rules! impl_ckks_mod_up_first_factor_reference_full {
                 dst: &mut Dst,
                 src: &mut Src,
                 scale_up: usize,
-                factor: &::poulpy_core::layouts::LinearTransformation<$crate::layouts::CKKSPlaintextOwned<$be>>,
+                factor: &::poulpy_core::layouts::LinearTransformation<$crate::layouts::CKKSRightOperandPrepared<$be>>,
+                log_gap: usize,
                 keys: &K,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) -> $crate::CKKSResult<()>
@@ -561,7 +631,7 @@ macro_rules! impl_ckks_mod_up_first_factor_reference_full {
                 K: $crate::layouts::BootstrappingLinearKeys<$be>,
             {
                 $crate::reference::first_factor::CKKSModUpFirstFactorReference::ckks_mod_up_first_factor_reference(
-                    module, dst, src, scale_up, factor, keys, scratch,
+                    module, dst, src, scale_up, factor, log_gap, keys, scratch,
                 )
             }
         }

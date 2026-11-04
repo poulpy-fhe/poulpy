@@ -61,6 +61,7 @@ pub fn test_functional_bootstrapping_e2e<BE, F, E>(
 ) where
     BE: TestContextBackend<Ring = Standard> + Backend<OwnedBuf = AlignedBuf>,
     Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + crate::api::CKKSRightOperandPreparedFactory<BE>
         + TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSBootstrappingOps<BE>
@@ -91,6 +92,7 @@ pub fn test_functional_bootstrapping_non_power_of_two_e2e<BE, F, E>(
 ) where
     BE: TestContextBackend<Ring = Standard> + Backend<OwnedBuf = AlignedBuf>,
     Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + crate::api::CKKSRightOperandPreparedFactory<BE>
         + TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSBootstrappingOps<BE>
@@ -124,6 +126,7 @@ pub fn test_functional_bootstrapping_multi_e2e<BE, F, E>(
 ) where
     BE: TestContextBackend<Ring = Standard> + Backend<OwnedBuf = AlignedBuf>,
     Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + crate::api::CKKSRightOperandPreparedFactory<BE>
         + TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSBootstrappingOps<BE>
@@ -152,6 +155,7 @@ pub fn test_functional_bootstrapping_binary_e2e<BE, F, E>(
 ) where
     BE: TestContextBackend<Ring = Standard> + Backend<OwnedBuf = AlignedBuf>,
     Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + crate::api::CKKSRightOperandPreparedFactory<BE>
         + TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSBootstrappingOps<BE>
@@ -187,6 +191,7 @@ fn run_case<BE, F, E>(
 ) where
     BE: TestContextBackend<Ring = Standard> + Backend<OwnedBuf = AlignedBuf>,
     Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + crate::api::CKKSRightOperandPreparedFactory<BE>
         + TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSBootstrappingOps<BE>

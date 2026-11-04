@@ -227,6 +227,7 @@ pub fn test_bootstrapping_first_factor_on_raise<BE, F, E>(params: CKKSTestParams
 where
     BE: TestContextBackend<Ring = Standard>,
     Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + crate::api::CKKSRightOperandPreparedFactory<BE>
         + TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSBootstrappingOps<BE>
@@ -346,6 +347,7 @@ where
             &boot_spec,
             &small_spec,
             first,
+            0,
             keys_layout.encapsulation.as_ref().map(|encaps| &encaps.dense_to_sparse),
             &first_factor_key,
         );
@@ -355,7 +357,7 @@ where
             src.set_meta(small_spec.meta);
             let mut dst = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
             with_scratch::<BE, _>(raise_tmp, |s| {
-                BE::ckks_mod_up_first_factor(&module, &mut dst, &mut src, raised - k_small, first, &bsk, s)
+                BE::ckks_mod_up_first_factor(&module, &mut dst, &mut src, raised - k_small, first, 0, &bsk, s)
             })
             .unwrap();
         }
@@ -436,6 +438,7 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(params: CKKSTestParams)
 where
     BE: TestContextBackend<Ring = Standard>,
     Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + crate::api::CKKSRightOperandPreparedFactory<BE>
         + TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSBootstrappingOps<BE>
@@ -785,6 +788,7 @@ pub fn test_bootstrapping_evalround_e2e<BE, F, E>(params: CKKSTestParams)
 where
     BE: TestContextBackend<Ring = Standard>,
     Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + crate::api::CKKSRightOperandPreparedFactory<BE>
         + TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSBootstrappingOps<BE>
@@ -1062,6 +1066,7 @@ pub fn test_bootstrapping_s2c_first_e2e<BE, F, E>(params: CKKSTestParams)
 where
     BE: TestContextBackend<Ring = Standard>,
     Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + crate::api::CKKSRightOperandPreparedFactory<BE>
         + TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSBootstrappingOps<BE>
@@ -1105,6 +1110,7 @@ fn run_s2c_first_case<BE, F, E>(
 where
     BE: TestContextBackend<Ring = Standard>,
     Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + crate::api::CKKSRightOperandPreparedFactory<BE>
         + TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSBootstrappingOps<BE>

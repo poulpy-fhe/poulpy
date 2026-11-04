@@ -1,0 +1,22 @@
+[package]
+name = "poulpy-resnet20"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "ResNet-20 inference on CIFAR-10 with poulpy-ckks, convolutions as coefficient-domain polynomial products"
+repository.workspace = true
+homepage.workspace = true
+publish = false
+
+[features]
+# Runs the tests on the CUDA backend of poulpy-gpu-portable.
+cuda = ["dep:poulpy-gpu-portable", "poulpy-gpu-portable/enable-cuda"]
+
+[dependencies]
+poulpy-hal = {workspace = true}
+poulpy-core = {workspace = true}
+poulpy-ckks = {workspace = true}
+anyhow = {workspace = true}
+serde_json = {workspace = true}
+poulpy-cpu-portable = {workspace = true, features = ["enable-ckks"]}
+poulpy-gpu-portable = {workspace = true, optional = true, features = ["enable-ckks"]}

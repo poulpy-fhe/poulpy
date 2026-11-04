@@ -398,6 +398,8 @@ where
     BE: Backend<ZnxWord = i64> + CKKSBootstrappingImpl + HostStaged,
     F: CKKSEncodingScalar,
     Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + crate::api::CKKSRightOperandPreparedFactory<BE>
+        + crate::api::CKKSRightOperandPreparedFactory<BE>
         + CKKSDFTOps<BE>
         + CKKSDFTMatrixOps<BE, F>
         + CKKSEncodingOps<BE, F>
@@ -527,6 +529,7 @@ where
     BT: Backend<ZnxWord = i64> + CKKSBootstrappingImpl + HostStaged,
     F: CKKSEncodingScalar,
     Module<BR>: CKKSDFTMatrixPreparedFactory<BR>
+        + crate::api::CKKSRightOperandPreparedFactory<BR>
         + CKKSDFTOps<BR>
         + CKKSDFTMatrixOps<BR, F>
         + CKKSEncodingOps<BR, F>
@@ -538,6 +541,7 @@ where
         + GLWEFill<BR>
         + CyclotomicOrder,
     Module<BT>: CKKSDFTMatrixPreparedFactory<BT>
+        + crate::api::CKKSRightOperandPreparedFactory<BT>
         + CKKSDFTOps<BT>
         + CKKSDFTMatrixOps<BT, F>
         + CKKSEncodingOps<BT, F>
