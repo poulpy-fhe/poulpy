@@ -292,6 +292,22 @@ mod tests {
     }
 
     #[test]
+    fn scalar_modulus_keeps_conventional_root() {
+        // A scalar vanishes at every root modulo `p`, so `k = 1` and the root is `w_0`
+        // itself, whatever the sign of the scalar and the degree it is given at.
+        let encoder = |coeffs: &[i64]| GBFVBatchEncoder::new(&GBFVPlaintextModulus::new(coeffs).unwrap(), 2, 9).unwrap();
+        let positive: GBFVBatchEncoder = encoder(&[65537]);
+        assert_eq!(positive, encoder(&[-65537]));
+        assert_eq!(positive, encoder(&[65537, 0, 0, 0]));
+        assert_root(&positive, &GBFVPlaintextModulus::new(&[65537]).unwrap());
+
+        // 3 is the smallest non-residue modulo `2^16 + 1`, so `w_0 = 3^(2^16 / 1024)`.
+        let p: UBig = UBig::from(65537u32);
+        let generator: UBig = pow_mod(&UBig::from(3u8), &UBig::from(64u8), &p);
+        assert_eq!(positive.root_of_unity() % &p, generator);
+    }
+
+    #[test]
     fn rejects_invalid_parameters() {
         let t: GBFVPlaintextModulus = magma_modulus();
         // `2^16 + 1` is not 1 modulo `2^18`.
