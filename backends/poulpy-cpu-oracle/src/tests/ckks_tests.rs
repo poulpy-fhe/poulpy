@@ -60,6 +60,26 @@ fn ntt4x30_ci_bootstrap_refuses_invalid_inputs() {
 }
 
 #[test]
+fn ntt4x30_ckks_bootstrap_real_raise() {
+    poulpy_ckks::test_suite::presets::test_ckks_bootstrap_real_raise::<crate::NTT4x30Oracle>();
+}
+
+#[test]
+fn ntt4x30_ckks_bootstrap_real_raise_rejects_invalid_inputs() {
+    poulpy_ckks::test_suite::presets::test_ckks_bootstrap_real_raise_rejects_invalid_inputs::<crate::NTT4x30Oracle>();
+}
+
+#[test]
+fn ntt4x30_ckks_bootstrap_real_raise_subring() {
+    poulpy_ckks::test_suite::presets::test_ckks_bootstrap_real_raise_subring::<crate::NTT4x30Oracle>();
+}
+
+#[test]
+fn ntt4x30_merged_s2c_factor() {
+    poulpy_ckks::test_suite::presets::test_merged_s2c_factor::<crate::NTT4x30Oracle>();
+}
+
+#[test]
 fn ntt4x30_small_c2s_preset_meets_precision() {
     poulpy_ckks::test_suite::presets::small_c2s_preset_meets_precision::<crate::NTT4x30Oracle>();
 }

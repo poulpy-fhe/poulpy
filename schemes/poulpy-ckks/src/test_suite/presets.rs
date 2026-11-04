@@ -100,6 +100,7 @@ pub trait PresetRunModule<BE: Backend>:
     + GLWEAutomorphismKeyPreparedFactory<BE>
     + GLWETensorKeyPreparedFactory<BE>
     + GLWESwitchingKeyPreparedFactory<BE>
+    + crate::api::CKKSRightOperandPreparedFactory<BE>
 {
 }
 
@@ -116,6 +117,7 @@ impl<BE: Backend, M> PresetRunModule<BE> for M where
         + GLWEAutomorphismKeyPreparedFactory<BE>
         + GLWETensorKeyPreparedFactory<BE>
         + GLWESwitchingKeyPreparedFactory<BE>
+        + crate::api::CKKSRightOperandPreparedFactory<BE>
 {
 }
 
@@ -1214,6 +1216,708 @@ where
     );
 }
 
+/// [`CKKSBootstrappingOps::ckks_bootstrap_real_raise`] after SlotsToCoeffs gives the digits, layout and metadata of
+/// the real-slot [`CKKSBootstrappingOps::ckks_bootstrap`], on an arena of exactly its query, and with a mask the
+/// coefficients left out decrypt to zero.
+pub fn test_ckks_bootstrap_real_raise<BE>()
+where
+    BE: TestContextBackend<Ring = Standard>,
+    Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + TestContextModule<BE>
+        + CKKSEncodingOps<BE, f64>
+        + CKKSBootstrappingOps<BE>
+        + CKKSDFTOps<BE>
+        + CKKSEvalModOps<BE>
+        + CKKSDFTMatrixOps<BE, f64>
+        + crate::api::CKKSLinearTransformationOps<BE>
+        + crate::api::CKKSCopyOps<BE>
+        + poulpy_core::GLWERotate<BE>,
+    for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
+    for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+{
+    use crate::{
+        api::{CKKSCopyOps, CKKSPow2Ops},
+        test_suite::parity::helpers::{fixture_ciphertext, snapshot},
+    };
+    use poulpy_core::GLWERotate;
+
+    let preset = crate::presets::bootstrapping::insecure_n11_d35_k180_p20_s2c().unwrap();
+    let n = preset.n();
+    let half = n / 2;
+    let module = Module::<BE>::new(n as u64);
+    let boot = preset.bootstrap_layout();
+    let keys_layout = preset.keys_layout();
+    let mut sk_raw = module.glwe_secret_alloc_from_infos(&boot.glwe_layout);
+    module.glwe_secret_fill_ternary_hw(&mut sk_raw, preset.dense_secret_hamming_weight(), &mut Source::new([9; 32]));
+    let mut sk = module.glwe_secret_prepared_alloc_from_infos(&boot.glwe_layout);
+    module.glwe_secret_prepare(&mut sk, &sk_raw);
+    let context = compile_context::<BE, f64>(&module, preset.base2k().into(), preset.plan());
+    let client_bytes = bootstrap_setup_tmp_bytes(&module, &boot, preset.plan(), keys_layout);
+    let (mut xs, mut xe, mut xa) = (Source::new([7; 32]), Source::new([1; 32]), Source::new([2; 32]));
+    let key_set = with_scratch::<BE, _>(client_bytes, |s| {
+        preset
+            .plan()
+            .generate_keys(&module, &sk_raw, keys_layout, &mut xs, &mut xe, &mut xa, s)
+    })
+    .unwrap();
+    let keys = with_scratch::<BE, _>(keys_layout.prepare_tmp_bytes(&module), |s| {
+        Ok::<_, anyhow::Error>(key_set.transfer_and_prepare(&module, s))
+    })
+    .unwrap();
+
+    let input = fixture_ciphertext(&module, &preset.input_layout(), 5);
+    let (want, zeros) = (test_vector_1::<f64>(half).0, vec![0.0; half]);
+    let mut pt = module.ckks_plaintext_alloc_from_slots(half, boot.base2k(), input.k());
+    pt.set_meta(GLWEPlaintextMeta {
+        slots: SlotsKind::Real,
+        ..input.meta()
+    });
+    let mut message = module.ckks_ciphertext_alloc_from_infos(&input);
+    with_scratch::<BE, _>(client_bytes, |s| {
+        module.ckks_encode_slots_host_into(&mut pt, &want, &zeros, s)?;
+        let (mut xa, mut xe) = (Source::new([3; 32]), Source::new([4; 32]));
+        module.ckks_encrypt_sk(&mut message, &pt, &sk, &mut xe, &mut xa, s)
+    })
+    .unwrap();
+
+    let mut whole = module.ckks_ciphertext_alloc_from_glwe_infos(&boot);
+    let bytes = module.ckks_bootstrap_tmp_bytes(&boot, &message, &context, keys_layout);
+    with_scratch::<BE, _>(bytes, |s| module.ckks_bootstrap(&mut whole, &message, &context, &keys, s)).unwrap();
+
+    // SlotsToCoeffs: `2·x` through the split decoding matrix.
+    let mut coeffs = module.ckks_ciphertext_alloc_from_infos(&message);
+    let bytes = keys_layout
+        .rotation_key_layouts()
+        .iter()
+        .map(|atk| module.ckks_dft_tmp_bytes(&message, &message, context.slots_to_coeffs(), atk))
+        .fold(module.ckks_double_tmp_bytes(message.size()), usize::max);
+    with_scratch::<BE, _>(bytes, |s| {
+        module.ckks_double_into(&mut coeffs, &message, s)?;
+        module.ckks_dft_matrix_eval_assign(&mut coeffs, context.slots_to_coeffs(), &keys.rotation_keys, s)
+    })
+    .unwrap();
+
+    let mut staged = module.ckks_ciphertext_alloc_from_glwe_infos(&boot);
+    let bytes = module.ckks_bootstrap_real_raise_tmp_bytes(&staged, &coeffs, &context, keys_layout);
+    with_scratch::<BE, _>(bytes, |s| {
+        module.ckks_bootstrap_real_raise(&mut staged, &coeffs, &context, None, &keys, s)
+    })
+    .unwrap();
+    assert_eq!(snapshot::<BE, _>(&staged), snapshot::<BE, _>(&whole));
+
+    // Slot `j` holds coefficient `bitrev(j)` of SlotsToCoeffs.
+    let keep: Vec<bool> = (0..n).map(|j| j < half && j % 5 != 2).collect();
+    let bytes = context.real_raise_mask_tmp_bytes(&module).unwrap();
+    let mask = with_scratch::<BE, _>(bytes, |s| context.real_raise_mask(&module, &keep, s)).unwrap();
+    let bitrev = |j: usize| j.reverse_bits() >> (usize::BITS - half.trailing_zeros());
+    let masked: Vec<f64> = (0..half).map(|j| if keep[bitrev(j)] { want[j] } else { 0.0 }).collect();
+    staged.set_k(boot.glwe_layout.k);
+    let raise_bytes = module.ckks_bootstrap_real_raise_tmp_bytes(&staged, &coeffs, &context, keys_layout);
+    let mut raises_to_masked = |input: &CKKSCiphertextOwned<BE>, mask: &crate::layouts::RealRaiseMaskPrepared<BE>| {
+        staged.set_k(boot.glwe_layout.k);
+        with_scratch::<BE, _>(raise_bytes, |s| {
+            module.ckks_bootstrap_real_raise(&mut staged, input, &context, Some(mask), &keys, s)
+        })
+        .unwrap();
+        let mut got = module.ckks_plaintext_alloc_from_slots(half, boot.base2k(), (input.log_delta() + 60).into());
+        got.set_meta(GLWEPlaintextMeta {
+            scale: crate::Scale::Log(staged.log_delta()),
+            slots: SlotsKind::Complex,
+            log_sparsity: 0,
+        });
+        let (mut got_re, mut got_im) = (vec![0.0; half], vec![0.0; half]);
+        with_scratch::<BE, _>(client_bytes, |s| {
+            module.ckks_decrypt(&mut got, &staged, &sk, s)?;
+            module.ckks_decode_slots_host_into(&got, &mut got_re, &mut got_im, s)
+        })
+        .unwrap();
+        let (re, im) = (
+            precision_stats(&got_re, &masked, input.log_delta()),
+            precision_stats(&got_im, &zeros, input.log_delta()),
+        );
+        assert!(
+            re.min_log2_prec.min(im.min_log2_prec) >= 14.0,
+            "masked raise: {:.2} and {:.2} bits",
+            re.min_log2_prec,
+            im.min_log2_prec
+        );
+    };
+    raises_to_masked(&coeffs, &mask);
+
+    // The same coefficients one half up, read through the mask.
+    let up: Vec<bool> = (0..n).map(|j| keep[(j + half) % n]).collect();
+    let mask = with_scratch::<BE, _>(bytes, |s| context.real_raise_mask(&module, &up, s)).unwrap();
+    let mut rotated = module.ckks_ciphertext_alloc_from_infos(&coeffs);
+    let rotate_bytes = module
+        .ckks_copy_tmp_bytes(&coeffs, &coeffs)
+        .max(module.glwe_rotate_tmp_bytes());
+    with_scratch::<BE, _>(rotate_bytes, |s| {
+        module.ckks_copy(&mut rotated, &coeffs, s)?;
+        module.glwe_rotate_assign(half as i64, &mut rotated, s);
+        Ok::<_, anyhow::Error>(())
+    })
+    .unwrap();
+    raises_to_masked(&rotated, &mask);
+}
+
+/// The toy preset of [`insecure_n11_d35_k180_p20_s2c`](crate::presets::bootstrapping::insecure_n11_d35_k180_p20_s2c) on
+/// plaintexts of gap 2.
+fn toy_subring_preset() -> BootstrappingPreset {
+    crate::presets::bootstrapping::insecure_n11_d35_k180_p20_s2c()
+        .unwrap()
+        .with_log_gap(1, &[(3, 1), (3, 32), (3, 4)], &[(2, 2), (3, 16), (4, 128)])
+        .unwrap()
+}
+
+/// The last SlotsToCoeffs factor with one kernel per coset finishes SlotsToCoeffs and multiplies each coset of the
+/// coefficients by its kernel, in the level of that factor, on the full ring and in a subring.
+pub fn test_merged_s2c_factor<BE>()
+where
+    BE: TestContextBackend<Ring = Standard>,
+    Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + TestContextModule<BE>
+        + CKKSEncodingOps<BE, f64>
+        + CKKSDFTOps<BE>
+        + CKKSEvalModOps<BE>
+        + CKKSDFTMatrixOps<BE, f64>
+        + crate::api::CKKSLinearTransformationOps<BE>,
+    for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
+    for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+{
+    merged_factor_on::<BE>(crate::presets::bootstrapping::insecure_n11_d35_k180_p20_s2c().unwrap());
+    merged_factor_on::<BE>(toy_subring_preset());
+}
+
+fn merged_factor_on<BE>(preset: BootstrappingPreset)
+where
+    BE: TestContextBackend<Ring = Standard>,
+    Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + TestContextModule<BE>
+        + CKKSEncodingOps<BE, f64>
+        + CKKSDFTOps<BE>
+        + CKKSEvalModOps<BE>
+        + CKKSDFTMatrixOps<BE, f64>
+        + crate::api::CKKSLinearTransformationOps<BE>,
+    for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
+    for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+{
+    use crate::{
+        api::{CKKSLinearTransformationOps, CKKSPow2Ops},
+        test_suite::parity::helpers::fixture_ciphertext,
+    };
+    use poulpy_core::{GLWELinearTransformationBabyStepsBytesOf, ScratchArenaTakeGLWELinearTransformationBabySteps};
+
+    let n = preset.n();
+    let half = n / 2;
+    let gap = 1usize << preset.plan().log_gap();
+    let slots = half / gap;
+    let module = Module::<BE>::new(n as u64);
+    let boot = preset.bootstrap_layout();
+    let keys_layout = preset.keys_layout();
+    let mut sk_raw = module.glwe_secret_alloc_from_infos(&boot.glwe_layout);
+    module.glwe_secret_fill_ternary_hw(&mut sk_raw, preset.dense_secret_hamming_weight(), &mut Source::new([9; 32]));
+    let mut sk = module.glwe_secret_prepared_alloc_from_infos(&boot.glwe_layout);
+    module.glwe_secret_prepare(&mut sk, &sk_raw);
+    let context = compile_context::<BE, f64>(&module, preset.base2k().into(), preset.plan());
+    let client_bytes = bootstrap_setup_tmp_bytes(&module, &boot, preset.plan(), keys_layout);
+    let (mut xs, mut xe, mut xa) = (Source::new([7; 32]), Source::new([1; 32]), Source::new([2; 32]));
+    let key_set = with_scratch::<BE, _>(client_bytes, |s| {
+        preset
+            .plan()
+            .generate_keys(&module, &sk_raw, keys_layout, &mut xs, &mut xe, &mut xa, s)
+    })
+    .unwrap();
+    let keys = with_scratch::<BE, _>(keys_layout.prepare_tmp_bytes(&module), |s| {
+        Ok::<_, anyhow::Error>(key_set.transfer_and_prepare(&module, s))
+    })
+    .unwrap();
+
+    let input = fixture_ciphertext(&module, &preset.input_layout(), 5);
+    let values = test_vector_1::<f64>(slots).0;
+    let (want, zeros): (Vec<f64>, _) = ((0..half).map(|j| values[j % slots]).collect(), vec![0.0; half]);
+    let mut pt = module.ckks_plaintext_alloc_from_slots(half, boot.base2k(), input.k());
+    pt.set_meta(GLWEPlaintextMeta {
+        slots: SlotsKind::Real,
+        ..input.meta()
+    });
+    let mut x = module.ckks_ciphertext_alloc_from_infos(&input);
+    with_scratch::<BE, _>(client_bytes, |s| {
+        module.ckks_encode_slots_host_into(&mut pt, &want, &zeros, s)?;
+        let (mut xa, mut xe) = (Source::new([3; 32]), Source::new([4; 32]));
+        module.ckks_encrypt_sk(&mut x, &pt, &sk, &mut xe, &mut xa, s)
+    })
+    .unwrap();
+
+    // Coefficient `bitrev(j)` is slot `j`, and the coset of a coefficient picks its kernel.
+    let cosets = context.merged_s2c_cosets();
+    let mut source = Source::new([11; 32]);
+    let kernels: Vec<Vec<f64>> = (0..cosets)
+        .map(|_| {
+            let mut kernel = vec![0.0; n];
+            for _ in 0..4 {
+                let e = source.next_u64n((n / gap) as u64, (n / gap) as u64 - 1) as usize;
+                kernel[gap * e] = source.next_f64(-0.25, 0.25);
+            }
+            kernel
+        })
+        .collect();
+    let bitrev = |j: usize| j.reverse_bits() >> (usize::BITS - slots.trailing_zeros());
+    let mut product = vec![0.0; n];
+    for (j, &value) in values.iter().enumerate() {
+        let (k, idx) = (bitrev(j), gap * bitrev(j));
+        for (e, &w) in kernels[k % cosets].iter().enumerate().filter(|&(_, &w)| w != 0.0) {
+            let (d, sign) = if idx + e < n { (idx + e, 1.0) } else { (idx + e - n, -1.0) };
+            product[d] += sign * w * value;
+        }
+    }
+
+    let log_delta_w = preset.plan().slots_to_coeffs.coeffs_meta.log_delta();
+    let width = log_delta_w + preset.base2k();
+    let bytes = context.merged_s2c_factor_tmp_bytes(&module, width).unwrap();
+    let merged = with_scratch::<BE, _>(bytes, |s| context.merged_s2c_factor(&module, &kernels, log_delta_w, s)).unwrap();
+
+    // SlotsToCoeffs up to its last factor, `2·x` through the split decoding matrix, then the merged factor.
+    let plan = merged.factor().index();
+    let bytes = keys_layout
+        .rotation_key_layouts()
+        .iter()
+        .map(|atk| module.ckks_dft_tmp_bytes(&x, &x, context.slots_to_coeffs(), atk))
+        .fold(module.ckks_double_tmp_bytes(x.size()), usize::max)
+        + module.glwe_linear_transformation_baby_steps_bytes_of(&plan, &x);
+    let mut running = module.ckks_ciphertext_alloc_from_infos(&x);
+    with_scratch::<BE, _>(bytes, |s| {
+        module.ckks_double_into(&mut running, &x, s)?;
+        module.ckks_dft_matrix_eval_head_assign(&mut running, context.slots_to_coeffs(), &keys.rotation_keys, s)?;
+        let (mut babies, mut s) = s
+            .borrow()
+            .take_glwe_linear_transformation_baby_steps_scratch(&module, &plan, &running);
+        module.ckks_linear_transformation_baby_steps_prepare(&mut babies, &running, &keys.rotation_keys, &mut s)?;
+        module.ckks_linear_transformation_eval_assign(&mut running, &babies, merged.factor(), &keys.rotation_keys, &mut s)
+    })
+    .unwrap();
+
+    let mut got = module.ckks_plaintext_alloc_from_infos(&running);
+    got.set_meta(running.meta());
+    let mut coeffs = vec![0.0; n];
+    with_scratch::<BE, _>(client_bytes, |s| {
+        module.ckks_decrypt(&mut got, &running, &sk, s)?;
+        module.ckks_decode_coeffs_host_into(&got, &mut coeffs, s)
+    })
+    .unwrap();
+    let err = coeffs.iter().zip(&product).fold(0.0f64, |e, (g, w)| e.max((g - w).abs()));
+    assert!(err < (-10.0f64).exp2(), "merged factor against the coset product: {err:e}");
+}
+
+/// The real raise of a context of gap 2: slots that repeat every `N/4`, through SlotsToCoeffs and the raise, come back,
+/// and what a layer leaves off the subring goes with the raise. Keys of a subring need a bound at its degree.
+pub fn test_ckks_bootstrap_real_raise_subring<BE>()
+where
+    BE: TestContextBackend<Ring = Standard>,
+    Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + TestContextModule<BE>
+        + CKKSEncodingOps<BE, f64>
+        + CKKSBootstrappingOps<BE>
+        + CKKSDFTOps<BE>
+        + CKKSEvalModOps<BE>
+        + CKKSDFTMatrixOps<BE, f64>
+        + crate::api::CKKSLinearTransformationOps<BE>
+        + crate::api::CKKSCopyOps<BE>
+        + poulpy_core::GLWERotate<BE>
+        + crate::api::CKKSAddOps<BE>,
+    for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
+    for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+{
+    use crate::{
+        api::{CKKSAddOps, CKKSCopyOps, CKKSPow2Ops},
+        test_suite::parity::helpers::fixture_ciphertext,
+    };
+    use poulpy_core::GLWERotate;
+
+    let preset = toy_subring_preset();
+    let n = preset.n();
+    let (half, slots) = (n / 2, n / 4);
+    let module = Module::<BE>::new(n as u64);
+    let boot = preset.bootstrap_layout();
+    let keys_layout = preset.keys_layout();
+    let mut sk_raw = module.glwe_secret_alloc_from_infos(&boot.glwe_layout);
+    module.glwe_secret_fill_ternary_hw(&mut sk_raw, preset.dense_secret_hamming_weight(), &mut Source::new([9; 32]));
+    let mut sk = module.glwe_secret_prepared_alloc_from_infos(&boot.glwe_layout);
+    module.glwe_secret_prepare(&mut sk, &sk_raw);
+    let context = compile_context::<BE, f64>(&module, preset.base2k().into(), preset.plan());
+    let client_bytes = bootstrap_setup_tmp_bytes(&module, &boot, preset.plan(), keys_layout);
+    let (mut xs, mut xe, mut xa) = (Source::new([7; 32]), Source::new([1; 32]), Source::new([2; 32]));
+    let key_set = with_scratch::<BE, _>(client_bytes, |s| {
+        preset
+            .plan()
+            .generate_keys(&module, &sk_raw, keys_layout, &mut xs, &mut xe, &mut xa, s)
+    })
+    .unwrap();
+    let keys = with_scratch::<BE, _>(keys_layout.prepare_tmp_bytes(&module), |s| {
+        Ok::<_, anyhow::Error>(key_set.transfer_and_prepare(&module, s))
+    })
+    .unwrap();
+
+    let input = fixture_ciphertext(&module, &preset.input_layout(), 5);
+    let values = test_vector_1::<f64>(slots).0;
+    let (want, zeros): (Vec<f64>, _) = ((0..half).map(|j| values[j % slots]).collect(), vec![0.0; half]);
+    let mut pt = module.ckks_plaintext_alloc_from_slots(half, boot.base2k(), input.k());
+    pt.set_meta(GLWEPlaintextMeta {
+        slots: SlotsKind::Real,
+        ..input.meta()
+    });
+    let mut message = module.ckks_ciphertext_alloc_from_infos(&input);
+    with_scratch::<BE, _>(client_bytes, |s| {
+        module.ckks_encode_slots_host_into(&mut pt, &want, &zeros, s)?;
+        let (mut xa, mut xe) = (Source::new([3; 32]), Source::new([4; 32]));
+        module.ckks_encrypt_sk(&mut message, &pt, &sk, &mut xe, &mut xa, s)
+    })
+    .unwrap();
+
+    // SlotsToCoeffs: `2·x` through the split decoding matrix. The same coefficients one up land on the odd indexes.
+    let mut coeffs = module.ckks_ciphertext_alloc_from_infos(&message);
+    let bytes = keys_layout
+        .rotation_key_layouts()
+        .iter()
+        .map(|atk| module.ckks_dft_tmp_bytes(&message, &message, context.slots_to_coeffs(), atk))
+        .fold(module.ckks_double_tmp_bytes(message.size()), usize::max);
+    with_scratch::<BE, _>(bytes, |s| {
+        module.ckks_double_into(&mut coeffs, &message, s)?;
+        module.ckks_dft_matrix_eval_assign(&mut coeffs, context.slots_to_coeffs(), &keys.rotation_keys, s)
+    })
+    .unwrap();
+    let mut off_subring = module.ckks_ciphertext_alloc_from_infos(&coeffs);
+    let garbage_bytes = module
+        .ckks_copy_tmp_bytes(&coeffs, &coeffs)
+        .max(module.glwe_rotate_tmp_bytes())
+        .max(module.ckks_add_tmp_bytes(coeffs.size()));
+    with_scratch::<BE, _>(garbage_bytes, |s| {
+        module.ckks_copy(&mut off_subring, &coeffs, s)?;
+        module.glwe_rotate_assign(1, &mut off_subring, s);
+        module.ckks_add_assign(&mut coeffs, &off_subring, s)
+    })
+    .unwrap();
+
+    let keep: Vec<bool> = (0..n).map(|j| j < half && j.is_multiple_of(2)).collect();
+    let bytes = context.real_raise_mask_tmp_bytes(&module).unwrap();
+    let mask = with_scratch::<BE, _>(bytes, |s| context.real_raise_mask(&module, &keep, s)).unwrap();
+
+    let mut raised = module.ckks_ciphertext_alloc_from_glwe_infos(&boot);
+    let bytes = module.ckks_bootstrap_real_raise_tmp_bytes(&raised, &coeffs, &context, keys_layout);
+    with_scratch::<BE, _>(bytes, |s| {
+        module.ckks_bootstrap_real_raise(&mut raised, &coeffs, &context, Some(&mask), &keys, s)
+    })
+    .unwrap();
+    let mut got = module.ckks_plaintext_alloc_from_slots(half, boot.base2k(), (input.log_delta() + 60).into());
+    got.set_meta(GLWEPlaintextMeta {
+        scale: crate::Scale::Log(raised.log_delta()),
+        slots: SlotsKind::Complex,
+        log_sparsity: 0,
+    });
+    let (mut got_re, mut got_im) = (vec![0.0; half], vec![0.0; half]);
+    with_scratch::<BE, _>(client_bytes, |s| {
+        module.ckks_decrypt(&mut got, &raised, &sk, s)?;
+        module.ckks_decode_slots_host_into(&got, &mut got_re, &mut got_im, s)
+    })
+    .unwrap();
+    let (re, im) = (
+        precision_stats(&got_re, &want, input.log_delta()),
+        precision_stats(&got_im, &zeros, input.log_delta()),
+    );
+    assert!(
+        re.min_log2_prec.min(im.min_log2_prec) >= 14.0,
+        "raise in a subring: {:.2} and {:.2} bits",
+        re.min_log2_prec,
+        im.min_log2_prec
+    );
+
+    // The whole bootstrap of the context, on real and on complex slots that repeat every `N/4`.
+    let imag = test_vector_1::<f64>(slots).1;
+    let imag: Vec<f64> = (0..half).map(|j| imag[j % slots]).collect();
+    for (kind, want_im) in [(SlotsKind::Real, &zeros), (SlotsKind::Complex, &imag)] {
+        pt.set_meta(GLWEPlaintextMeta {
+            slots: kind,
+            ..input.meta()
+        });
+        with_scratch::<BE, _>(client_bytes, |s| {
+            module.ckks_encode_slots_host_into(&mut pt, &want, want_im, s)?;
+            let (mut xa, mut xe) = (Source::new([5; 32]), Source::new([6; 32]));
+            module.ckks_encrypt_sk(&mut message, &pt, &sk, &mut xe, &mut xa, s)
+        })
+        .unwrap();
+        let mut whole = module.ckks_ciphertext_alloc_from_glwe_infos(&boot);
+        let bytes = module.ckks_bootstrap_tmp_bytes(&boot, &message, &context, keys_layout);
+        with_scratch::<BE, _>(bytes, |s| module.ckks_bootstrap(&mut whole, &message, &context, &keys, s)).unwrap();
+        let mut got = module.ckks_plaintext_alloc_from_slots(half, boot.base2k(), (input.log_delta() + 60).into());
+        got.set_meta(whole.meta());
+        let (mut got_re, mut got_im) = (vec![0.0; half], vec![0.0; half]);
+        with_scratch::<BE, _>(client_bytes, |s| {
+            module.ckks_decrypt(&mut got, &whole, &sk, s)?;
+            module.ckks_decode_slots_host_into(&got, &mut got_re, &mut got_im, s)
+        })
+        .unwrap();
+        let (re, im) = (
+            precision_stats(&got_re, &want, input.log_delta()),
+            precision_stats(&got_im, want_im, input.log_delta()),
+        );
+        assert!(
+            re.min_log2_prec.min(im.min_log2_prec) >= 14.0,
+            "bootstrap in a subring, {kind:?} slots: {:.2} and {:.2} bits",
+            re.min_log2_prec,
+            im.min_log2_prec
+        );
+    }
+}
+
+/// Keys that hide their encapsulation keys from a bootstrap.
+struct WithoutEncapsulation<'a, K>(&'a K);
+
+impl<BE: Backend, K: crate::layouts::BootstrappingKeys<BE>> crate::layouts::BootstrappingLinearKeys<BE>
+    for WithoutEncapsulation<'_, K>
+{
+    type RotationKeys = K::RotationKeys;
+    type SwitchingKey = K::SwitchingKey;
+
+    fn rotation_keys(&self) -> &Self::RotationKeys {
+        self.0.rotation_keys()
+    }
+
+    fn encapsulation_keys(&self) -> Option<(&Self::SwitchingKey, Option<&Self::SwitchingKey>)> {
+        None
+    }
+
+    fn first_factor_key(&self, rotation: i64) -> Option<&Self::SwitchingKey> {
+        self.0.first_factor_key(rotation)
+    }
+}
+
+impl<BE: Backend, K: crate::layouts::BootstrappingKeys<BE>> crate::layouts::BootstrappingKeys<BE>
+    for WithoutEncapsulation<'_, K>
+{
+    type TensorKey = K::TensorKey;
+
+    fn tensor_key(&self) -> &Self::TensorKey {
+        self.0.tensor_key()
+    }
+}
+
+/// Pins a setup refusal: [`CKKSCompositionError::InvalidOperand`] of `op` for `reason`.
+fn assert_refused<T>(label: &str, result: anyhow::Result<T>, op: &str, reason: &str) {
+    let err = result.err().unwrap_or_else(|| panic!("{label}: not refused"));
+    assert!(
+        matches!(err.downcast_ref::<CKKSCompositionError>(),
+            Some(CKKSCompositionError::InvalidOperand { op: got, reason: why }) if *got == op && why.contains(reason)),
+        "{label}: unexpected error: {err}"
+    );
+}
+
+/// [`CKKSBootstrappingOps::ckks_bootstrap_real_raise`], the mask and the merged factor refuse before any write: a
+/// context of another pipeline, a rank, keys without encapsulation, a mask of another factor, a width past the keys and
+/// an arena below the query.
+pub fn test_ckks_bootstrap_real_raise_rejects_invalid_inputs<BE>()
+where
+    BE: TestContextBackend<Ring = Standard>,
+    Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + TestContextModule<BE>
+        + CKKSEncodingOps<BE, f64>
+        + CKKSBootstrappingOps<BE>
+        + CKKSDFTOps<BE>
+        + CKKSEvalModOps<BE>
+        + CKKSDFTMatrixOps<BE, f64>
+        + crate::api::CKKSLinearTransformationOps<BE>,
+    for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
+    for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+{
+    use crate::layouts::BootstrappingPipeline;
+    use crate::test_suite::{
+        bootstrapping::plan_with_encapsulation,
+        helpers::assert_invalid_operand,
+        parity::helpers::{fixture_ciphertext, snapshot},
+    };
+    use poulpy_core::layouts::{GLWELayout, Rank};
+
+    const OP: &str = "ckks_bootstrap_real_raise";
+    let preset = crate::presets::bootstrapping::insecure_n11_d35_k180_p20_s2c().unwrap();
+    let n = preset.n();
+    let module = Module::<BE>::new(n as u64);
+    let boot = preset.bootstrap_layout();
+    let keys_layout = preset.keys_layout();
+    let mut sk_raw = module.glwe_secret_alloc_from_infos(&boot.glwe_layout);
+    module.glwe_secret_fill_ternary_hw(&mut sk_raw, preset.dense_secret_hamming_weight(), &mut Source::new([9; 32]));
+    let context = compile_context::<BE, f64>(&module, preset.base2k().into(), preset.plan());
+    let subring = toy_subring_preset();
+    let subring_context = compile_context::<BE, f64>(&module, preset.base2k().into(), subring.plan());
+    let client_bytes = bootstrap_setup_tmp_bytes(&module, &boot, preset.plan(), keys_layout);
+    let (mut xs, mut xe, mut xa) = (Source::new([7; 32]), Source::new([1; 32]), Source::new([2; 32]));
+    let key_set = with_scratch::<BE, _>(client_bytes, |s| {
+        preset
+            .plan()
+            .generate_keys(&module, &sk_raw, keys_layout, &mut xs, &mut xe, &mut xa, s)
+    })
+    .unwrap();
+    let keys = with_scratch::<BE, _>(keys_layout.prepare_tmp_bytes(&module), |s| {
+        Ok::<_, anyhow::Error>(key_set.transfer_and_prepare(&module, s))
+    })
+    .unwrap();
+
+    let input = preset.input_layout();
+    let small = CKKSLayout {
+        glwe_layout: GLWELayout {
+            k: (input.glwe_layout.k.as_usize() - preset.plan().slots_to_coeffs().consumed_bits()).into(),
+            ..input.glwe_layout
+        },
+        meta: input.meta,
+    };
+    let a = fixture_ciphertext(&module, &small, 5);
+    let mut res = fixture_ciphertext(&module, &boot, 6);
+    let before = snapshot::<BE, _>(&res);
+    let bytes = module.ckks_bootstrap_real_raise_tmp_bytes(&res, &a, &context, keys_layout);
+
+    let wrong_pipeline = plan_with_encapsulation(BootstrappingPipeline::C2SFirst, false, 6, 0, false, true);
+    let other_module = Module::<BE>::new(1 << (wrong_pipeline.coeffs_to_slots().log_slots() + 1));
+    let wrong_context = compile_context::<BE, f64>(&other_module, preset.base2k().into(), &wrong_pipeline);
+    let err = with_scratch::<BE, _>(bytes, |s| {
+        other_module.ckks_bootstrap_real_raise(&mut res, &a, &wrong_context, None, &keys, s)
+    })
+    .unwrap_err();
+    assert_invalid_operand("another pipeline", &err, OP, "takes an identity S2C-first context");
+    assert_refused(
+        "a mask of another pipeline",
+        with_scratch::<BE, _>(1 << 24, |s| wrong_context.real_raise_mask(&other_module, &[], s)),
+        "real_raise_mask",
+        "takes an S2C-first context",
+    );
+    assert_refused(
+        "a merged factor of another pipeline",
+        with_scratch::<BE, _>(1 << 24, |s| wrong_context.merged_s2c_factor(&other_module, &[], 20, s)),
+        "merged_s2c_factor",
+        "takes an S2C-first context",
+    );
+
+    let mut rank_two = fixture_ciphertext(
+        &module,
+        &CKKSLayout {
+            glwe_layout: GLWELayout {
+                rank: Rank(2),
+                ..boot.glwe_layout
+            },
+            meta: boot.meta,
+        },
+        7,
+    );
+    let err = with_scratch::<BE, _>(bytes, |s| {
+        module.ckks_bootstrap_real_raise(&mut rank_two, &a, &context, None, &keys, s)
+    })
+    .unwrap_err();
+    assert_invalid_operand("rank 2", &err, OP, "rank-1");
+
+    let err = with_scratch::<BE, _>(bytes, |s| {
+        module.ckks_bootstrap_real_raise(&mut res, &a, &context, None, &WithoutEncapsulation(&keys), s)
+    })
+    .unwrap_err();
+    assert_invalid_operand("no encapsulation keys", &err, OP, "encapsulation");
+
+    let half = n / 2;
+    let keep: Vec<bool> = (0..n).map(|j| j < half && j.is_multiple_of(2)).collect();
+    let mask_bytes = subring_context.real_raise_mask_tmp_bytes(&module).unwrap();
+    let mask = with_scratch::<BE, _>(mask_bytes, |s| subring_context.real_raise_mask(&module, &keep, s)).unwrap();
+    let err = with_scratch::<BE, _>(bytes, |s| {
+        module.ckks_bootstrap_real_raise(&mut res, &a, &context, Some(&mask), &keys, s)
+    })
+    .unwrap_err();
+    assert_invalid_operand("a mask of another context", &err, OP, "not of the last CoeffsToSlots factor");
+
+    let wide = CKKSLayout {
+        glwe_layout: GLWELayout {
+            k: (boot.glwe_layout.k.as_usize() + 4 * preset.base2k()).into(),
+            ..boot.glwe_layout
+        },
+        meta: boot.meta,
+    };
+    let mut past_the_keys = fixture_ciphertext(&module, &wide, 8);
+    let wide_bytes = module.ckks_bootstrap_real_raise_tmp_bytes(&past_the_keys, &a, &context, keys_layout);
+    let err = with_scratch::<BE, _>(wide_bytes, |s| {
+        module.ckks_bootstrap_real_raise(&mut past_the_keys, &a, &context, None, &keys, s)
+    })
+    .unwrap_err();
+    assert!(
+        matches!(err.composition(), Some(CKKSCompositionError::MissingAutomorphismKey { op: got, .. }) if *got == OP),
+        "a width past the keys: {err}"
+    );
+
+    let err = with_scratch::<BE, _>(bytes - 1, |s| {
+        module.ckks_bootstrap_real_raise(&mut res, &a, &context, None, &keys, s)
+    })
+    .unwrap_err();
+    assert!(
+        err.composition().is_none() && err.to_string().contains("needs a scratch arena"),
+        "an arena below the query: {err}"
+    );
+    assert_eq!(snapshot::<BE, _>(&res), before, "a refused raise wrote its output");
+
+    let mask_bytes = context.real_raise_mask_tmp_bytes(&module).unwrap();
+    assert_refused(
+        "a mask of another length",
+        with_scratch::<BE, _>(mask_bytes, |s| context.real_raise_mask(&module, &keep[1..], s)),
+        "real_raise_mask",
+        "one entry per coefficient",
+    );
+    assert_refused(
+        "a mask of both halves",
+        with_scratch::<BE, _>(mask_bytes, |s| context.real_raise_mask(&module, &vec![true; n], s)),
+        "real_raise_mask",
+        "one of the two coefficients",
+    );
+    let odd: Vec<bool> = (0..n).map(|j| j < half && !j.is_multiple_of(2)).collect();
+    assert_refused(
+        "a mask off the subring",
+        with_scratch::<BE, _>(mask_bytes, |s| subring_context.real_raise_mask(&module, &odd, s)),
+        "real_raise_mask",
+        "subring",
+    );
+
+    let bytes = context.merged_s2c_factor_tmp_bytes(&module, preset.base2k()).unwrap();
+    let cosets = context.merged_s2c_cosets();
+    assert_refused(
+        "a kernel count that does not divide the cosets",
+        with_scratch::<BE, _>(bytes, |s| {
+            context.merged_s2c_factor(&module, &vec![vec![0.0; n]; cosets + 1], 20, s)
+        }),
+        "merged_s2c_factor",
+        "kernel count",
+    );
+    assert_refused(
+        "a kernel of another degree",
+        with_scratch::<BE, _>(bytes, |s| {
+            context.merged_s2c_factor(&module, &vec![vec![0.0; n / 2]; cosets], 20, s)
+        }),
+        "merged_s2c_factor",
+        "module's degree",
+    );
+    let mut off_subring = vec![0.0; n];
+    off_subring[1] = 1.0;
+    assert_refused(
+        "a kernel off the subring",
+        with_scratch::<BE, _>(bytes, |s| subring_context.merged_s2c_factor(&module, &[off_subring], 20, s)),
+        "merged_s2c_factor",
+        "subring",
+    );
+}
+
 /// [`BootstrappingContextPrepared::compile`] of `plan`, each stage on an arena of exactly its query.
 pub(crate) fn compile_context<BE, F>(
     module: &Module<BE>,
@@ -1223,7 +1927,11 @@ pub(crate) fn compile_context<BE, F>(
 where
     BE: Backend,
     F: CKKSEncodingScalar,
-    Module<BE>: CKKSDFTMatrixPreparedFactory<BE> + CKKSDFTOps<BE> + CKKSDFTMatrixOps<BE, F> + CKKSEncodingOps<BE, F>,
+    Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + crate::api::CKKSRightOperandPreparedFactory<BE>
+        + CKKSDFTOps<BE>
+        + CKKSDFTMatrixOps<BE, F>
+        + CKKSEncodingOps<BE, F>,
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds + GLWEDiagonalProd<BE> + LWEInfos,
 {
     let bytes = BootstrappingContextPrepared::<BE, F>::compile_unprepared_tmp_bytes(module, plan).unwrap();
@@ -1244,6 +1952,7 @@ fn compile_ci<BE>(
 where
     BE: Backend<Ring = Standard>,
     Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + crate::api::CKKSRightOperandPreparedFactory<BE>
         + CKKSEncodingOps<BE, f64>
         + CKKSDFTMatrixOps<BE, f64>
         + CKKSBootstrappingCIOps<BE>

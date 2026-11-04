@@ -51,6 +51,21 @@ impl<BE: Backend + CKKSDFTImpl> CKKSDFTOps<BE> for Module<BE> {
         BE::ckks_dft_matrix_eval_assign(self, ct, dft, keys, scratch)
     }
 
+    fn ckks_dft_matrix_eval_head_assign<Dir, Fmt, P, Dst, H>(
+        &self,
+        ct: &mut Dst,
+        dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>,
+        keys: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
+    {
+        BE::ckks_dft_matrix_eval_head_assign(self, ct, dft, keys, scratch)
+    }
+
     fn ckks_coeffs_to_slots_assign<P, Dst, H>(
         &self,
         ct: &mut Dst,

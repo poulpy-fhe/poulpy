@@ -403,6 +403,21 @@ unsafe impl poulpy_ckks::oep::CKKSDFTImpl for OverrideBackend {
         DFT_CALLS.set(DFT_CALLS.get() + 1);
         Err(anyhow::anyhow!("DFT override probe").into())
     }
+
+    fn ckks_dft_matrix_eval_head_assign<Dir, Fmt, P, Dst, H>(
+        module: &Module<Self>,
+        ct: &mut Dst,
+        dft: &DFTMatrix<Self, Dir, Fmt, LinearTransformation<P>>,
+        keys: &H,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) -> Result<()>
+    where
+        P: GLWEDiagonalProd<Self> + LtDiagonalMeta,
+        Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
+        H: GetAutomorphismKey<Self> + GetTensorKey<Self>,
+    {
+        Self::ckks_dft_matrix_eval_assign(module, ct, dft, keys, scratch)
+    }
 }
 
 struct NoAutomorphismKey;
@@ -472,6 +487,12 @@ fn dft_format_wrapper_reenters_selected_evaluation() {
     .unwrap_err();
     assert_ckks_internal("ckks_slots_to_coeffs_repack", &error, "DFT override probe");
     assert_eq!(DFT_CALLS.get(), 1);
+    let error = with_scratch::<OverrideBackend, _>(bytes, |s| {
+        module.ckks_dft_matrix_eval_head_assign(&mut dst, &matrix, &NoAutomorphismKey, s)
+    })
+    .unwrap_err();
+    assert_ckks_internal("ckks_dft_matrix_eval_head_assign", &error, "DFT override probe");
+    assert_eq!(DFT_CALLS.get(), 2);
 }
 
 impl<F: poulpy_ckks::api::CKKSEncodingScalar> crate::ckks_encoding::CKKSEncodingTransform<F> for OverrideBackend {

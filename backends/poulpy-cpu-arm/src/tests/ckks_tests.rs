@@ -39,10 +39,54 @@ fn ntt4x30_neon_ci_bootstrap_refuses_invalid_inputs() {
     poulpy_ckks::test_suite::presets::ci_bootstrap_refuses_invalid_inputs::<crate::NTT4x30Neon>();
 }
 
+#[test]
+fn ntt4x30_neon_ckks_bootstrap_real_raise() {
+    poulpy_ckks::test_suite::presets::test_ckks_bootstrap_real_raise::<crate::NTT4x30Neon>();
+}
+
+#[test]
+fn ntt4x30_neon_ckks_bootstrap_real_raise_rejects_invalid_inputs() {
+    poulpy_ckks::test_suite::presets::test_ckks_bootstrap_real_raise_rejects_invalid_inputs::<crate::NTT4x30Neon>();
+}
+
+#[test]
+fn ntt4x30_neon_ckks_bootstrap_real_raise_subring() {
+    poulpy_ckks::test_suite::presets::test_ckks_bootstrap_real_raise_subring::<crate::NTT4x30Neon>();
+}
+
+#[test]
+fn ntt4x30_neon_merged_s2c_factor() {
+    poulpy_ckks::test_suite::presets::test_merged_s2c_factor::<crate::NTT4x30Neon>();
+}
+
 #[cfg(feature = "enable-rayon")]
 #[test]
 fn ntt4x30_neon_rayon_ci_bootstrap_refuses_invalid_inputs() {
     poulpy_ckks::test_suite::presets::ci_bootstrap_refuses_invalid_inputs::<crate::NTT4x30NeonRayon>();
+}
+
+#[cfg(feature = "enable-rayon")]
+#[test]
+fn ntt4x30_neon_rayon_ckks_bootstrap_real_raise() {
+    poulpy_ckks::test_suite::presets::test_ckks_bootstrap_real_raise::<crate::NTT4x30NeonRayon>();
+}
+
+#[cfg(feature = "enable-rayon")]
+#[test]
+fn ntt4x30_neon_rayon_ckks_bootstrap_real_raise_rejects_invalid_inputs() {
+    poulpy_ckks::test_suite::presets::test_ckks_bootstrap_real_raise_rejects_invalid_inputs::<crate::NTT4x30NeonRayon>();
+}
+
+#[cfg(feature = "enable-rayon")]
+#[test]
+fn ntt4x30_neon_rayon_ckks_bootstrap_real_raise_subring() {
+    poulpy_ckks::test_suite::presets::test_ckks_bootstrap_real_raise_subring::<crate::NTT4x30NeonRayon>();
+}
+
+#[cfg(feature = "enable-rayon")]
+#[test]
+fn ntt4x30_neon_rayon_merged_s2c_factor() {
+    poulpy_ckks::test_suite::presets::test_merged_s2c_factor::<crate::NTT4x30NeonRayon>();
 }
 
 #[cfg(feature = "enable-rayon")]

@@ -57,7 +57,7 @@ ckks_backend_rank2_test_suite!(
 mod bootstrapping_presets {
     use poulpy_ckks::test_suite::presets::{
         bootstrapping_plan_keys_match_context, bootstrapping_presets_meet_precision, ci_bootstrap_refuses_invalid_inputs,
-        small_c2s_preset_meets_precision, small_s2c_preset_meets_precision,
+        small_c2s_preset_meets_precision, small_s2c_preset_meets_precision, test_ckks_bootstrap_real_raise,
     };
 
     #[test]
@@ -78,6 +78,26 @@ mod bootstrapping_presets {
     #[test]
     fn ntt4x30_ci_bootstrap_refuses_invalid_inputs() {
         ci_bootstrap_refuses_invalid_inputs::<crate::NTT4x30Portable>();
+    }
+
+    #[test]
+    fn ntt4x30_ckks_bootstrap_real_raise() {
+        test_ckks_bootstrap_real_raise::<crate::NTT4x30Portable>();
+    }
+
+    #[test]
+    fn ntt4x30_ckks_bootstrap_real_raise_rejects_invalid_inputs() {
+        poulpy_ckks::test_suite::presets::test_ckks_bootstrap_real_raise_rejects_invalid_inputs::<crate::NTT4x30Portable>();
+    }
+
+    #[test]
+    fn ntt4x30_ckks_bootstrap_real_raise_subring() {
+        poulpy_ckks::test_suite::presets::test_ckks_bootstrap_real_raise_subring::<crate::NTT4x30Portable>();
+    }
+
+    #[test]
+    fn ntt4x30_merged_s2c_factor() {
+        poulpy_ckks::test_suite::presets::test_merged_s2c_factor::<crate::NTT4x30Portable>();
     }
 
     #[test]

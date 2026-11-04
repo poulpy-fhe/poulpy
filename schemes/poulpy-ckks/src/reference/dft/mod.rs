@@ -10,7 +10,7 @@ pub mod eval;
 
 pub use crate::layouts::dft_matrices::{ckks_dft_matrices_gen, ckks_dft_matrices_gen_blockwise};
 pub use eval::{
-    CKKSDFTMatrixReference, CKKSDFTReference, ckks_dft_matrix_eval_assign_reference, ckks_dft_matrix_new_reference,
-    ckks_dft_matrix_new_tmp_bytes_reference, ckks_dft_matrix_prepare_reference, ckks_dft_matrix_prepare_tmp_bytes_reference,
-    ckks_dft_tmp_bytes_reference,
+    CKKSDFTMatrixReference, CKKSDFTReference, ckks_dft_matrix_eval_assign_reference, ckks_dft_matrix_eval_head_assign_reference,
+    ckks_dft_matrix_new_reference, ckks_dft_matrix_new_tmp_bytes_reference, ckks_dft_matrix_prepare_reference,
+    ckks_dft_matrix_prepare_tmp_bytes_reference, ckks_dft_tmp_bytes_reference,
 };

@@ -217,6 +217,8 @@ pub trait TestContextSharedModule<BE: Backend>:
     + GLWESwitchingKeyPreparedFactory<BE>
     + GLWEKeyswitch<BE>
     + poulpy_hal::api::VecZnxAutomorphism<BE>
+    + poulpy_hal::api::VecZnxSwitchRing<BE>
+    + crate::api::CKKSRightOperandPreparedFactory<BE>
     + GaloisElement
 {
 }
@@ -260,6 +262,8 @@ impl<BE: Backend, M> TestContextSharedModule<BE> for M where
         + GLWESwitchingKeyPreparedFactory<BE>
         + GLWEKeyswitch<BE>
         + poulpy_hal::api::VecZnxAutomorphism<BE>
+        + poulpy_hal::api::VecZnxSwitchRing<BE>
+        + crate::api::CKKSRightOperandPreparedFactory<BE>
         + GaloisElement
 {
 }
@@ -919,6 +923,10 @@ where
     fn first_factor_key(&self, rotation: i64) -> Option<&Self::SwitchingKey> {
         self.keys.first_factor_key(rotation)
     }
+
+    fn keys_layout(&self) -> Option<BootstrappingKeysLayout> {
+        self.keys.keys_layout()
+    }
 }
 
 impl<'a, BE, K, R, T> BootstrappingKeys<BE> for LoggedBootstrappingKeys<'a, K, R, T>
@@ -953,10 +961,6 @@ where
 
     fn conversion_keys(&self) -> Option<(&Self::TraceKey, &Self::EmbedKey)> {
         self.keys.conversion_keys()
-    }
-
-    fn keys_layout(&self) -> Option<BootstrappingKeysLayout> {
-        self.keys.keys_layout()
     }
 }
 

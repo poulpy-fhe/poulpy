@@ -146,7 +146,7 @@ fn uniform_rotation_keys(
 }
 
 /// [`bootstrap_plan`], with sparse-secret encapsulation or without it.
-fn plan_with_encapsulation(
+pub(crate) fn plan_with_encapsulation(
     pipeline: BootstrappingPipeline,
     eval_round_plus: bool,
     log_msg_ratio: usize,
@@ -346,6 +346,7 @@ where
             &boot_spec,
             &small_spec,
             first,
+            0,
             keys_layout.encapsulation.as_ref().map(|encaps| &encaps.dense_to_sparse),
             &first_factor_key,
         );
@@ -355,7 +356,7 @@ where
             src.set_meta(small_spec.meta);
             let mut dst = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
             with_scratch::<BE, _>(raise_tmp, |s| {
-                BE::ckks_mod_up_first_factor(&module, &mut dst, &mut src, raised - k_small, first, &bsk, s)
+                BE::ckks_mod_up_first_factor(&module, &mut dst, &mut src, raised - k_small, first, 0, &bsk, s)
             })
             .unwrap();
         }

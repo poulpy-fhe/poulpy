@@ -153,7 +153,31 @@ struct PresetSpec {
     s2c_schedule: &'static [(usize, usize)],
     s2c_log_delta: usize,
     s2c_log_budget: usize,
+    /// Bits a circuit between SlotsToCoeffs and the raise spends, on top of the input width.
+    input_headroom: usize,
+    /// `log2` of the gap of the plaintexts, see [`BootstrappingPlan::with_log_gap`].
+    log_gap: usize,
     eval_mod: EvalModSpec,
+}
+
+/// The scales a preset spends its modulus on, each in bits. Every width and key of the preset follows from them, so a
+/// circuit that needs less precision than a preset offers can spend less at each stage.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PresetScales {
+    /// Scale of the ciphertexts.
+    pub log_delta: usize,
+    /// Bits between the message and the modulus at the raise, which EvalMod's approximation rests on.
+    pub log_msg_ratio: usize,
+    /// Extra bits CoeffsToSlots carries for EvalMod.
+    pub c2s_guard_bits: usize,
+    /// Scale of a CoeffsToSlots factor.
+    pub c2s_log_delta: usize,
+    /// Scale of a SlotsToCoeffs factor.
+    pub s2c_log_delta: usize,
+    /// Scale of a level of EvalMod.
+    pub eval_mod_log_delta: usize,
+    /// Scale of EvalMod's polynomial coefficients.
+    pub eval_mod_coeffs_log_delta: usize,
 }
 
 /// A complete CKKS bootstrapping parameter set.
@@ -321,6 +345,122 @@ impl BootstrappingPreset {
     pub fn with_eval_mod_ring(&self, eval_mod_ring: EvalModRing) -> Result<Self> {
         build(PresetSpec {
             eval_mod_ring,
+            ..self.spec
+        })
+    }
+
+    /// The scales of the preset.
+    pub fn scales(&self) -> PresetScales {
+        PresetScales {
+            log_delta: self.spec.log_delta,
+            log_msg_ratio: self.spec.log_msg_ratio,
+            c2s_guard_bits: self.spec.c2s_guard_bits,
+            c2s_log_delta: self.spec.c2s_log_delta,
+            s2c_log_delta: self.spec.s2c_log_delta,
+            eval_mod_log_delta: self.spec.eval_mod.log_delta,
+            eval_mod_coeffs_log_delta: self.spec.eval_mod.coeffs_log_delta,
+        }
+    }
+
+    /// Re-derives the preset with the scales `scales`. Precision follows them: the preset's name and advertised
+    /// precision do not, so a caller that lowers a scale measures what it gets.
+    pub fn with_scales(&self, scales: PresetScales) -> Result<Self> {
+        build(PresetSpec {
+            log_delta: scales.log_delta,
+            log_msg_ratio: scales.log_msg_ratio,
+            c2s_guard_bits: scales.c2s_guard_bits,
+            c2s_log_delta: scales.c2s_log_delta,
+            s2c_log_delta: scales.s2c_log_delta,
+            eval_mod: EvalModSpec {
+                log_delta: scales.eval_mod_log_delta,
+                coeffs_log_delta: scales.eval_mod_coeffs_log_delta,
+                ..self.spec.eval_mod
+            },
+            ..self.spec
+        })
+    }
+
+    /// Re-derives the preset with EvalMod's polynomial: the Han–Ki fit of degree `degree` on `interval` integers on
+    /// each side of zero, followed by `log_interval_reduction` squarings.
+    ///
+    /// `interval` must bound the integer the raise adds: a coefficient past it leaves EvalMod's range and comes out
+    /// wrong. That integer has a standard deviation of about `sqrt((h + 1) / 12)` for a sparse secret of Hamming weight
+    /// `h`, and the bound is the caller's to size to the coefficients it raises.
+    pub fn with_eval_mod_polynomial(&self, interval: usize, degree: usize, log_interval_reduction: usize) -> Result<Self> {
+        build(PresetSpec {
+            eval_mod: EvalModSpec {
+                interval,
+                degree,
+                log_interval_reduction,
+                ..self.spec.eval_mod
+            },
+            ..self.spec
+        })
+    }
+
+    /// Re-derives the preset to leave `output_k` bits, for a circuit that spends fewer than the preset offers: the
+    /// raised width and every key follow.
+    pub fn with_output_k(&self, output_k: usize) -> Result<Self> {
+        build(PresetSpec { output_k, ..self.spec })
+    }
+
+    /// Re-derives the preset with the SlotsToCoeffs schedule `s2c_schedule` (`(layers, giant step)` pairs, in evaluation
+    /// order): each factor spends one SlotsToCoeffs scale from the input width.
+    pub fn with_slots_to_coeffs(&self, s2c_schedule: &'static [(usize, usize)]) -> Result<Self> {
+        build(PresetSpec {
+            s2c_schedule,
+            ..self.spec
+        })
+    }
+
+    /// Re-derives the preset with an input `bits` wider, for a circuit between SlotsToCoeffs and the raise that spends
+    /// them: SlotsToCoeffs and the keys of its rotations take the wider input, and hand that circuit `bits` above the
+    /// raise's input.
+    ///
+    /// Fails on a C2S-first preset, which has no such place.
+    pub fn with_input_headroom(&self, bits: usize) -> Result<Self> {
+        if self.spec.pipeline != BootstrappingPipeline::S2CFirst {
+            return Err(crate::CKKSCompositionError::InvalidPlan {
+                plan: "BootstrappingPreset",
+                reason: "only an S2C-first bootstrap runs a circuit between SlotsToCoeffs and the raise".to_string(),
+            }
+            .into());
+        }
+        build(PresetSpec {
+            input_headroom: bits,
+            ..self.spec
+        })
+    }
+
+    /// Re-derives the preset for plaintexts in `Z[X^(2^log_gap)]`, on the schedules of that many fewer layers: see
+    /// [`BootstrappingPlan::with_log_gap`]. A key under the sparse secret of the subring splits into `2^log_gap` RLWE
+    /// samples of the subring's degree, so its modulus is bounded at that degree.
+    ///
+    /// Fails without a bound for the sparse secret at that degree.
+    pub fn with_log_gap(
+        &self,
+        log_gap: usize,
+        c2s_schedule: &'static [(usize, usize)],
+        s2c_schedule: &'static [(usize, usize)],
+    ) -> Result<Self> {
+        let sparse_secret = match self.spec.log_n.saturating_sub(log_gap) {
+            16 => N16_SPARSE_SECRET,
+            15 => N15_SPARSE_SECRET,
+            _ if self.spec.sparse_secret.max_log_modulus >= self.spec.dense_secret.max_log_modulus => self.spec.sparse_secret,
+            degree => {
+                return Err(crate::CKKSCompositionError::InvalidPlan {
+                    plan: "BootstrappingPreset",
+                    reason: format!("no bound for a sparse secret at degree 2^{degree}"),
+                }
+                .into());
+            }
+        };
+        build(PresetSpec {
+            log_gap,
+            sparse_secret,
+            c2s_schedule,
+            c2s_first_factor_on_raise: true,
+            s2c_schedule,
             ..self.spec
         })
     }
@@ -542,6 +682,8 @@ pub fn n16_d35_k636_p20_c2s() -> Result<BootstrappingPreset> {
         s2c_schedule: &S2C_SCHEDULE,
         s2c_log_delta: 35,
         s2c_log_budget: 2,
+        input_headroom: 0,
+        log_gap: 0,
         eval_mod: optimized_han_ki(),
     })
 }
@@ -581,6 +723,8 @@ pub fn n16_d35_k733_p20_s2c() -> Result<BootstrappingPreset> {
         s2c_schedule: &S2C_SCHEDULE,
         s2c_log_delta: 30,
         s2c_log_budget: 2,
+        input_headroom: 0,
+        log_gap: 0,
         eval_mod: optimized_han_ki(),
     })
 }
@@ -617,6 +761,8 @@ pub fn n15_d35_k180_p18_c2s() -> Result<BootstrappingPreset> {
         s2c_schedule: &[(7, 16), (7, 2048)],
         s2c_log_delta: 29,
         s2c_log_budget: 2,
+        input_headroom: 0,
+        log_gap: 0,
         eval_mod: EvalModSpec {
             log_delta: 53,
             ..optimized_han_ki()
@@ -666,6 +812,8 @@ pub(crate) fn insecure_n11_d35_k180_p20_s2c() -> Result<BootstrappingPreset> {
         s2c_schedule: &[(2, 4), (4, 4), (4, 4)],
         s2c_log_delta: 30,
         s2c_log_budget: 2,
+        input_headroom: 0,
+        log_gap: 0,
         eval_mod: optimized_han_ki(),
     })
 }
@@ -820,11 +968,11 @@ fn build(spec: PresetSpec) -> Result<BootstrappingPreset> {
     } else {
         plan.with_c2s_guard_bits(spec.c2s_guard_bits)?
     };
-    let plan = plan.with_eval_mod_ring(spec.eval_mod_ring)?;
+    let plan = plan.with_eval_mod_ring(spec.eval_mod_ring)?.with_log_gap(spec.log_gap)?;
     let log_slots = spec
         .log_n
-        .checked_sub(1)
-        .context("bootstrapping preset log_n must be positive")?;
+        .checked_sub(1 + spec.log_gap)
+        .context("bootstrapping preset log_n must exceed its gap")?;
     ensure!(
         plan.coeffs_to_slots().log_slots() == log_slots && plan.slots_to_coeffs().log_slots() == log_slots,
         "bootstrapping preset DFT schedules must cover {log_slots} slot layers"
@@ -834,7 +982,7 @@ fn build(spec: PresetSpec) -> Result<BootstrappingPreset> {
         .log_delta
         .checked_add(spec.log_msg_ratio)
         .context("bootstrapping preset input modulus overflow")?;
-    let input_k = plan.input_k(log_modulus);
+    let input_k = plan.input_k(log_modulus) + spec.input_headroom;
     let output_k = spec.output_k;
     ensure!(
         output_k >= input_k,
@@ -1415,6 +1563,50 @@ mod tests {
         // diagonals of the first one a key of 30 MiB each in place of the
         // sparse-to-dense key of 29: 9386 MiB.
         assert_eq!(key_set_bytes(&preset).map(mib), [9044, 99, 3, 240, 0]);
+    }
+
+    #[test]
+    fn a_gap_without_a_bound_at_its_degree_is_refused() {
+        const C2S: &[(usize, usize)] = &[(3, 1), (3, 512), (3, 64), (2, 8), (2, 2)];
+        const S2C: &[(usize, usize)] = &[(3, 4), (4, 32), (6, 1024)];
+        let Err(err) = n16_d35_k685_p19_s2c_ffr_ci().unwrap().with_log_gap(2, C2S, S2C) else {
+            panic!("no bound at degree 2^14");
+        };
+        assert_eq!(
+            err.downcast_ref::<crate::CKKSCompositionError>(),
+            Some(&crate::CKKSCompositionError::InvalidPlan {
+                plan: "BootstrappingPreset",
+                reason: "no bound for a sparse secret at degree 2^14".to_string(),
+            })
+        );
+    }
+
+    #[test]
+    fn a_circuit_trims_n16_d35_k685_p19_s2c_ffr_ci_to_what_it_spends() {
+        let preset = n16_d35_k685_p19_s2c_ffr_ci()
+            .unwrap()
+            .with_slots_to_coeffs(&S2C_SCHEDULE)
+            .unwrap()
+            .with_input_headroom(20)
+            .unwrap()
+            .with_output_k(467)
+            .unwrap();
+        // Three factors of 28 bits below the input, 20 for the circuit, 48 at the raise.
+        assert_eq!((preset.input_k(), preset.output_k(), preset.bootstrap_k()), (152, 467, 1213));
+        // Every rotation of SlotsToCoeffs alone reads one digit at its width.
+        let keys = preset.keys_layout();
+        assert!(keys.rotation_keys.values().all(|key| key.dnum.as_usize() <= 3));
+        assert_eq!(keys.rotation_keys.values().filter(|key| key.dnum.as_usize() == 2).count(), 0);
+        assert!(n16_d35_k636_p20_c2s().unwrap().with_input_headroom(20).is_err());
+        // Four factors of 34 bits for four of 48, then one squaring, one level of 58 bits, fewer.
+        let scales = PresetScales {
+            c2s_log_delta: 34,
+            ..preset.scales()
+        };
+        let narrower = preset.with_scales(scales).unwrap();
+        assert_eq!(narrower.bootstrap_k(), 1213 - 4 * 14);
+        let shallower = narrower.with_eval_mod_polynomial(14, 26, 2).unwrap();
+        assert_eq!(shallower.bootstrap_k(), 1213 - 4 * 14 - 58);
     }
 
     #[test]

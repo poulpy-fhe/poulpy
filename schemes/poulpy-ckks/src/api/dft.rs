@@ -69,6 +69,21 @@ pub trait CKKSDFTOps<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         H: GetAutomorphismKey<BE> + GetTensorKey<BE>;
 
+    /// [`Self::ckks_dft_matrix_eval_assign`] short of the last factor of `dft`, for a caller that runs that factor in
+    /// another form, such as a [`RealRaiseMaskPrepared`](crate::layouts::RealRaiseMaskPrepared) or a
+    /// [`MergedS2CFactorPrepared`](crate::layouts::MergedS2CFactorPrepared). Sized by [`Self::ckks_dft_tmp_bytes`].
+    fn ckks_dft_matrix_eval_head_assign<Dir, Fmt, P, Dst, H>(
+        &self,
+        ct: &mut Dst,
+        dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>,
+        keys: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        H: GetAutomorphismKey<BE> + GetTensorKey<BE>;
+
     /// `CoeffsToSlots`, `Standard` format (in place).
     fn ckks_coeffs_to_slots_assign<P, Dst, H>(
         &self,

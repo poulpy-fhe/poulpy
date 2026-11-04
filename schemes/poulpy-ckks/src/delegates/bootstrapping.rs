@@ -1,5 +1,5 @@
 use crate::CKKSResult as Result;
-use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef};
+use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef, SetBSGSMeta};
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
@@ -7,7 +7,7 @@ use crate::{
     api::{CKKSBootstrappingCIOps, CKKSBootstrappingOps},
     layouts::{
         BootstrappingCIKeys, BootstrappingContextPrepared, BootstrappingKeys, BootstrappingKeysLayout, CKKSCiphertextOwned,
-        CKKSPlaintextOwned, EncodedLut, EvalModPlan,
+        CKKSPlaintextOwned, EncodedLut, EvalModPlan, RealRaiseMaskPrepared,
     },
     oep::{CKKSBootstrappingCIImpl, CKKSBootstrappingImpl},
 };
@@ -104,6 +104,37 @@ impl<BE: Backend + CKKSBootstrappingImpl> CKKSBootstrappingOps<BE> for Module<BE
         K::TensorKey: Sync,
     {
         BE::ckks_bootstrap(self, ct_out, ct_in, ctx, keys, scratch)
+    }
+
+    fn ckks_bootstrap_real_raise_tmp_bytes<C1, C2, F>(
+        &self,
+        res: &C1,
+        a: &C2,
+        ctx: &BootstrappingContextPrepared<BE, F>,
+        keys_layout: &BootstrappingKeysLayout,
+    ) -> usize
+    where
+        C1: CKKSCtBounds,
+        C2: CKKSCtBounds,
+    {
+        BE::ckks_bootstrap_real_raise_tmp_bytes(self, res, a, ctx, keys_layout)
+    }
+
+    fn ckks_bootstrap_real_raise<R, A, F, K>(
+        &self,
+        res: &mut R,
+        a: &A,
+        ctx: &BootstrappingContextPrepared<BE, F>,
+        mask: Option<&RealRaiseMaskPrepared<BE>>,
+        keys: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        A: GLWEToBackendRef<BE> + CKKSCtBounds,
+        K: BootstrappingKeys<BE>,
+    {
+        BE::ckks_bootstrap_real_raise(self, res, a, ctx, mask, keys, scratch)
     }
 
     fn ckks_functional_bootstrap<F, K>(

@@ -1,5 +1,5 @@
 use crate::CKKSResult as Result;
-use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef};
+use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef, SetBSGSMeta};
 use poulpy_hal::layouts::{Backend, ConjugateInvariant, Module, ScratchArena};
 
 use crate::{
@@ -7,7 +7,7 @@ use crate::{
     layouts::EvalModPlan,
     layouts::{
         BootstrappingCIKeys, BootstrappingContextPrepared, BootstrappingKeys, BootstrappingKeysLayout, CKKSCiphertextOwned,
-        CKKSPlaintextOwned, EncodedLut,
+        CKKSPlaintextOwned, EncodedLut, RealRaiseMaskPrepared,
     },
 };
 
@@ -172,6 +172,53 @@ pub trait CKKSBootstrappingOps<BE: Backend> {
         F: Sync,
         K: BootstrappingKeys<BE> + Sync,
         K::TensorKey: Sync;
+
+    /// Scratch of [`Self::ckks_bootstrap_real_raise`].
+    fn ckks_bootstrap_real_raise_tmp_bytes<C1, C2, F>(
+        &self,
+        res: &C1,
+        a: &C2,
+        ctx: &BootstrappingContextPrepared<BE, F>,
+        keys_layout: &BootstrappingKeysLayout,
+    ) -> usize
+    where
+        C1: CKKSCtBounds,
+        C2: CKKSCtBounds;
+
+    /// The real-slot S2C-first bootstrap of `a`, coefficients at the raise width, up to EvalMod: ModUp, CoeffsToSlots,
+    /// the real part and one EvalMod, so a caller can work between the raise and SlotsToCoeffs on the same ring.
+    ///
+    /// `mask`, from
+    /// [`BootstrappingContextPrepared::real_raise_mask`](crate::layouts::BootstrappingContextPrepared::real_raise_mask),
+    /// takes the place of the last CoeffsToSlots factor and zeroes the coefficients it leaves out, at no level.
+    ///
+    /// # Metadata
+    ///
+    /// `res` leaves canonical, in real slots at the scale and sparsity of `a`, with the `k` it came in with less what
+    /// CoeffsToSlots and EvalMod consume, and no noise estimate. No stage of the bootstrap follows it.
+    ///
+    /// # Errors
+    ///
+    /// [`InvalidOperand`](crate::CKKSCompositionError::InvalidOperand) for a context that is not an identity S2C-first
+    /// one with EvalMod on the standard ring, one with EvalRound+, a rank other than 1, keys whose encapsulation does not
+    /// match the context, a mask of another factor or widths narrower than the stages consume;
+    /// [`MissingAutomorphismKey`](crate::CKKSCompositionError::MissingAutomorphismKey) and
+    /// [`MissingRelinearizationKey`](crate::CKKSCompositionError::MissingRelinearizationKey) for a key that does not cover
+    /// its stage; `CKKSError::Internal` for an arena below [`Self::ckks_bootstrap_real_raise_tmp_bytes`]. `res` stays
+    /// untouched on all of these.
+    fn ckks_bootstrap_real_raise<R, A, F, K>(
+        &self,
+        res: &mut R,
+        a: &A,
+        ctx: &BootstrappingContextPrepared<BE, F>,
+        mask: Option<&RealRaiseMaskPrepared<BE>>,
+        keys: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        A: GLWEToBackendRef<BE> + CKKSCtBounds,
+        K: BootstrappingKeys<BE>;
 
     /// Refreshes `ct_in` through an S2C-first context and applies each LUT of
     /// `luts` to it, writing the results into `ct_outs`.

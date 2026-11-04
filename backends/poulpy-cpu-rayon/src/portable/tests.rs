@@ -270,6 +270,26 @@ mod ckks {
         poulpy_ckks::test_suite::presets::small_c2s_preset_meets_precision::<crate::NTT4x30PortableRayon>();
     }
 
+    #[test]
+    fn ntt4x30_ckks_bootstrap_real_raise() {
+        poulpy_ckks::test_suite::presets::test_ckks_bootstrap_real_raise::<crate::NTT4x30PortableRayon>();
+    }
+
+    #[test]
+    fn ntt4x30_ckks_bootstrap_real_raise_rejects_invalid_inputs() {
+        poulpy_ckks::test_suite::presets::test_ckks_bootstrap_real_raise_rejects_invalid_inputs::<crate::NTT4x30PortableRayon>();
+    }
+
+    #[test]
+    fn ntt4x30_ckks_bootstrap_real_raise_subring() {
+        poulpy_ckks::test_suite::presets::test_ckks_bootstrap_real_raise_subring::<crate::NTT4x30PortableRayon>();
+    }
+
+    #[test]
+    fn ntt4x30_merged_s2c_factor() {
+        poulpy_ckks::test_suite::presets::test_merged_s2c_factor::<crate::NTT4x30PortableRayon>();
+    }
+
     poulpy_ckks::conjugate_invariant_ckks_test_suite!(
         ckks_ci_fft64,
         crate::FFT64CIPortableRayon,

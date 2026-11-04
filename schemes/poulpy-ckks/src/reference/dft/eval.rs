@@ -305,6 +305,30 @@ where
     Ok(())
 }
 
+/// [`ckks_dft_matrix_eval_assign_reference`] short of the last factor of `dft`, the reference of
+/// [`CKKSDFTImpl::ckks_dft_matrix_eval_head_assign`](crate::oep::CKKSDFTImpl::ckks_dft_matrix_eval_head_assign), forwarded
+/// by [`impl_ckks_dft_reference_full`](crate::impl_ckks_dft_reference_full).
+pub fn ckks_dft_matrix_eval_head_assign_reference<BE, Dir, Fmt, P, Dst, H>(
+    module: &Module<BE>,
+    ct: &mut Dst,
+    dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>,
+    keys: &H,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> Result<()>
+where
+    BE: Backend,
+    P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
+    Module<BE>: CKKSLinearTransformationOps<BE>,
+    Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
+{
+    for factor in dft.factor_operands().split_last().map_or(&[][..], |(_, head)| head) {
+        eval_factor(module, ct, factor, keys, scratch)?;
+    }
+    ct.set_noise(None);
+    Ok(())
+}
+
 /// Evaluates a single homomorphic-DFT factor in place on `running`: carves from
 /// scratch and prepares the baby rotations of the current operand, then applies the
 /// unified linear-transformation eval. `P` only decides how the factor's RHS is
@@ -491,6 +515,19 @@ pub trait CKKSDFTReference<BE: Backend> {
         Module<BE>: CKKSLinearTransformationOps<BE>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         H: GetAutomorphismKey<BE> + GetTensorKey<BE>;
+
+    fn ckks_dft_matrix_eval_head_assign_reference<Dir, Fmt, P, Dst, H>(
+        &self,
+        ct: &mut Dst,
+        dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>,
+        keys: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
+        Module<BE>: CKKSLinearTransformationOps<BE>,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        H: GetAutomorphismKey<BE> + GetTensorKey<BE>;
 }
 
 impl<BE: Backend> CKKSDFTReference<BE> for Module<BE> {
@@ -557,6 +594,22 @@ impl<BE: Backend> CKKSDFTReference<BE> for Module<BE> {
         H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
     {
         ckks_dft_matrix_eval_assign_reference(self, ct, dft, keys, scratch)
+    }
+
+    fn ckks_dft_matrix_eval_head_assign_reference<Dir, Fmt, P, Dst, H>(
+        &self,
+        ct: &mut Dst,
+        dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>,
+        keys: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
+        Module<BE>: CKKSLinearTransformationOps<BE>,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
+    {
+        ckks_dft_matrix_eval_head_assign_reference(self, ct, dft, keys, scratch)
     }
 }
 
