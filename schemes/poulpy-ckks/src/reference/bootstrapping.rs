@@ -406,7 +406,7 @@ pub trait CKKSBootstrappingReference<BE: CKKSCITwin> {
         GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos;
 
     /// Backend-generic reference for
-    /// [`CKKSBootstrappingOps::ckks_functional_bootstrap`](crate::api::CKKSBootstrappingOps::ckks_functional_bootstrap).
+    /// Backend-generic reference for [`CKKSBootstrappingOps::ckks_functional_bootstrap`].
     ///
     /// One LUT or many: the batch shares the S2C, ModUp and CoeffsToSlots stages,
     /// and general LUTs additionally share the power basis of each transformed
