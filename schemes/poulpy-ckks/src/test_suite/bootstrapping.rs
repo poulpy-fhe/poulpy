@@ -334,29 +334,26 @@ where
         let bsk = key_set.prepare(&module, &mut scratch.borrow());
 
         // The raise alone runs on exactly the scratch it advertises.
-        let (k_small, raised) = if s2c_first {
-            (log_modulus_in, plan.raised_window(log_modulus_in))
-        } else {
-            (k_in, plan.raised_window(log_modulus_in))
-        };
+        let k_small = if s2c_first { log_modulus_in } else { k_in };
         let small_spec = ckks_spec(n, base2k, log_delta, k_small - log_delta);
-        let raise_tmp = BE::ckks_mod_up_first_factor_tmp_bytes(
-            &module,
-            &boot_spec,
-            &small_spec,
-            first,
-            keys_layout.encapsulation.as_ref().map(|encaps| &encaps.dense_to_sparse),
-            &first_factor_key,
-        );
+        let raise_tmp = module.ckks_mod_raise_tmp_bytes(&boot_spec, &small_spec, &ctx, &keys_layout);
         assert!(raise_tmp > 0);
         {
             let mut src = module.ckks_ciphertext_alloc(base2k.into(), k_small.into());
             src.set_meta(small_spec.meta);
             let mut dst = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
-            with_scratch::<BE, _>(raise_tmp, |s| {
-                BE::ckks_mod_up_first_factor(&module, &mut dst, &mut src, raised - k_small, first, &bsk, s)
-            })
-            .unwrap();
+            with_scratch::<BE, _>(raise_tmp, |s| module.ckks_mod_raise(&mut dst, &mut src, &ctx, &bsk, s)).unwrap();
+        }
+        {
+            let mut src = module.ckks_ciphertext_alloc(base2k.into(), k_small.into());
+            src.set_meta(small_spec.meta);
+            let mut dst = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
+            let err =
+                with_scratch::<BE, _>(raise_tmp - 1, |s| module.ckks_mod_raise(&mut dst, &mut src, &ctx, &bsk, s)).unwrap_err();
+            assert!(
+                err.composition().is_none() && err.to_string().contains("needs a scratch arena"),
+                "{err}"
+            );
         }
 
         // Keys laid out for the raise refuse a narrower bootstrap before any work.
@@ -549,7 +546,7 @@ where
     // Encrypt z at the input ("level 0") modulus.
     let (re, im) = test_vector_1::<F>(m);
 
-    let ct0 = ckks_encrypt_with_prec(
+    let mut ct0 = ckks_encrypt_with_prec(
         &tp,
         &module,
         &host_module,
@@ -665,11 +662,8 @@ where
     //    message ratio: `I(X)·q` becomes the integer part, the message the
     //    residue `Δ·c/q`.
     let mut ct = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
-    let mod_up_tmp = module.ckks_bootstrap_mod_up_tmp_bytes(&ct, &ct0, &ctx, &keys_layout);
-    with_scratch::<BE, _>(mod_up_tmp, |s| {
-        module.ckks_bootstrap_mod_up(&mut ct, &ct0, plan.eval_mod(), &bsk, s)
-    })
-    .unwrap();
+    let mod_up_tmp = module.ckks_mod_raise_tmp_bytes(&ct, &ct0, &ctx, &keys_layout);
+    with_scratch::<BE, _>(mod_up_tmp, |s| module.ckks_mod_raise(&mut ct, &mut ct0, &ctx, &bsk, s)).unwrap();
 
     let mut log_budget_check = k_boot - ct.log_delta();
 
@@ -875,7 +869,7 @@ where
 
     let (re, im) = test_vector_1::<F>(m);
 
-    let ct0 = ckks_encrypt_with_prec(
+    let mut ct0 = ckks_encrypt_with_prec(
         &tp,
         &module,
         &host_module,
@@ -949,11 +943,8 @@ where
     // 1) The whole raise step: lift, (encapsulate) denseToSparse / ModUp /
     //    sparseToDense, relabel by the message ratio.
     let mut ct = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
-    let mod_up_tmp = module.ckks_bootstrap_mod_up_tmp_bytes(&ct, &ct0, &ctx, &keys_layout);
-    with_scratch::<BE, _>(mod_up_tmp, |s| {
-        module.ckks_bootstrap_mod_up(&mut ct, &ct0, plan.eval_mod(), &bsk, s)
-    })
-    .unwrap();
+    let mod_up_tmp = module.ckks_mod_raise_tmp_bytes(&ct, &ct0, &ctx, &keys_layout);
+    with_scratch::<BE, _>(mod_up_tmp, |s| module.ckks_mod_raise(&mut ct, &mut ct0, &ctx, &bsk, s)).unwrap();
 
     // 2) CoeffsToSlots (split): LP (low precision, `1/K` scaling) for the round, and
     //    HP (full precision, natural scaling) for the high-precision `Δm + I·q`.

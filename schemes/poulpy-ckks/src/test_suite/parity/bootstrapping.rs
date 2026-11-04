@@ -501,16 +501,11 @@ where
         assert!(result.is_ok(), "{pipeline:?}: {result:?}");
         results.push((result.map_err(|e| e.to_string()), vec![snapshot::<BE, _>(&out)]));
         if pipeline == BootstrappingPipeline::C2SFirst {
-            let mut raised = fixture_ciphertext(module, &out_layout, 101);
-            let result = with_scratch::<BE, _>(BE::ckks_mod_up_tmp_bytes(module, raised.size()), |scratch| {
-                BE::ckks_mod_up_into(module, &mut raised, &ct_in, plan.eval_mod(), scratch)
-            });
-            assert!(result.is_ok(), "{pipeline:?}: {result:?}");
-            results.push((result.map_err(|e| e.to_string()), vec![snapshot::<BE, _>(&raised)]));
             let mut raised = fixture_ciphertext(module, &out_layout, 103);
-            let bytes = BE::ckks_bootstrap_mod_up_tmp_bytes(module, &out_layout, &in_layout, &ctx, &layout);
+            let mut raise_in = fixture_ciphertext(module, &in_layout, 89);
+            let bytes = BE::ckks_mod_raise_tmp_bytes(module, &raised, &raise_in, &ctx, &layout);
             let result = with_scratch::<BE, _>(bytes, |scratch| {
-                BE::ckks_bootstrap_mod_up(module, &mut raised, &ct_in, plan.eval_mod(), &keys, scratch)
+                BE::ckks_mod_raise(module, &mut raised, &mut raise_in, &ctx, &keys, scratch)
             });
             assert!(result.is_ok(), "{pipeline:?}: {result:?}");
             results.push((result.map_err(|e| e.to_string()), vec![snapshot::<BE, _>(&raised)]));

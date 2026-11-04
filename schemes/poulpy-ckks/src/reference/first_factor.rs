@@ -333,7 +333,7 @@ where
     let k_large = dst_infos.k().as_usize();
     let d2s = d2s_infos.map_or(0, |key| module.glwe_keyswitch_tmp_bytes(src_infos, src_infos, key));
     // A key that does not fit the raise makes it fail before it takes more.
-    let Ok(small) = small_limbs("ckks_bootstrap_mod_up", base2k, k_large, key_infos) else {
+    let Ok(small) = small_limbs("ckks_mod_raise", base2k, k_large, key_infos) else {
         return d2s;
     };
     let small_layout = layout(dst_infos, small);
@@ -395,7 +395,7 @@ where
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
 {
-    const OP: &str = "ckks_bootstrap_mod_up";
+    const OP: &str = "ckks_mod_raise";
     let base2k: usize = dst.base2k().as_usize();
     let k_large: usize = dst.k().as_usize();
     ckks_ensure_operand!(

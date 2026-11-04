@@ -47,7 +47,7 @@ The raised-from modulus `q` becomes an explicit, un-reduced multiple `I(X)·q` i
 The shift stops `scale_up` bits short of the natural magnitude `k_large − k_small`, a lift fused into the raise: the value is multiplied by `2^scale_up` and `log_delta` grows by `scale_up`, so the message lands at the plan's working scale while the encoded value is unchanged.
 The headroom now spans the full raised modulus, so `log_budget = k_large − log_delta`.
 
-`ckks_mod_up_into` then relabels the ciphertext by the message ratio, adding `log_msg_ratio` to `log_delta`: this free division reinterprets `q·I + Δ·m` as `I + m·Δ/q`, separating the integer part `I` from the residue.
+`ckks_mod_raise` then relabels the ciphertext by the message ratio, adding `log_msg_ratio` to `log_delta`: this free division reinterprets `q·I + Δ·m` as `I + m·Δ/q`, separating the integer part `I` from the residue.
 The message ratio is `q/Δ = 2^log_msg_ratio`, the bit gap between the payload and the integer part.
 
 ### Sparse-secret encapsulation

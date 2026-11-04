@@ -109,6 +109,7 @@ pub(crate) mod dft_matrices;
 mod encoding_buffer;
 pub mod eval_mod;
 pub mod functional_bootstrapping;
+pub mod mod_raise;
 pub mod mul;
 pub mod paco;
 pub mod plaintext;
@@ -150,6 +151,7 @@ pub(crate) use encoding_buffer::{
 pub use eval_mod::{EvalMod, EvalModBsgs, EvalModPlan, EvalModPoly, EvalModType, ckks_eval_mod_compile};
 pub use functional_bootstrapping::EncodedLut;
 pub(crate) use functional_bootstrapping::EncodedLutKind;
+pub use mod_raise::{CKKSModRaiseInfos, ModRaisePlan, ModRaisePrepared};
 #[allow(deprecated)]
 pub use mul::CKKSPreparedRight;
 pub use mul::{CKKSLeftOperandPrepared, CKKSRightOperandPrepared};

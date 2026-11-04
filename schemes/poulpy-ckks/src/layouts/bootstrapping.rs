@@ -43,7 +43,7 @@ use crate::{
     },
     layouts::{
         CKKSDFTFactors, CKKSPlaintextAlloc, ComplexDiagonals, DFTMatrix, DFTMatrixPrepared, DFTPlan, DFTType, Decode, DftScalar,
-        Encode, EncodedLut, EvalMod, EvalModPlan, Split,
+        Encode, EncodedLut, EvalMod, EvalModPlan, ModRaisePlan, ModRaisePrepared, Split,
         eval_mod::{EvalModType, ckks_eval_mod_compile},
     },
 };
@@ -310,6 +310,15 @@ impl BootstrappingPlan {
         self.c2s_guard_bits
     }
 
+    /// What the modulus raise of this plan fixes.
+    pub fn mod_raise(&self) -> ModRaisePlan {
+        ModRaisePlan {
+            lift: (self.pipeline == BootstrappingPipeline::C2SFirst).then_some(self.eval_mod),
+            c2s_guard_bits: self.c2s_guard_bits,
+            sparse_secret_hamming_weight: self.sparse_secret_hamming_weight(),
+        }
+    }
+
     /// Selects the ring EvalMod runs on. The conjugate-invariant ring takes an
     /// S2C-first plan with a real EvalMod, without a LUT; `u` folds
     /// into a CoeffsToSlots factor the matrix evaluates, `v` does not fold.
@@ -521,11 +530,10 @@ pub struct BootstrappingContextPrepared<BE: Backend, F> {
     /// The plan constructor scales this transform for its EvalMod variant.
     coeffs_to_slots: DFTMatrixPrepared<BE, Encode, Split>,
 
-    /// First CoeffsToSlots factor, when the plan leaves it to the modulus
-    /// raise ([`DFTPlan::with_first_factor_on_raise`]): one giant step per
-    /// diagonal, the diagonal rotated back by its own index. Each diagonal is
+    /// The modulus raise and, when the plan leaves it there ([`DFTPlan::with_first_factor_on_raise`]), the first
+    /// CoeffsToSlots factor: one giant step per diagonal, the diagonal rotated back by its own index. Each diagonal is
     /// prepared once for the products on a ciphertext of a few limbs.
-    coeffs_to_slots_first_factor: Option<LinearTransformation<CKKSRightOperandPrepared<BE>>>,
+    pub(crate) mod_raise: ModRaisePrepared<BE>,
 
     /// Prepared bypass CoeffsToSlots matrix
     coeffs_to_slots_bypass: Option<DFTMatrixPrepared<BE, Encode, Split>>,
@@ -867,7 +875,7 @@ impl<BE: Backend, F> BootstrappingContextPrepared<BE, F> {
     /// ([`DFTPlan::with_first_factor_on_raise`]); [`Self::coeffs_to_slots`]
     /// then holds the remaining factors.
     pub fn coeffs_to_slots_first_factor(&self) -> Option<&LinearTransformation<CKKSRightOperandPrepared<BE>>> {
-        self.coeffs_to_slots_first_factor.as_ref()
+        self.mod_raise.first_factor.as_ref()
     }
 
     /// Prepared EvalRound+ bypass matrix, when enabled.
@@ -1055,12 +1063,16 @@ impl<BE: Backend, F> BootstrappingContext<BE, F> {
                 })
             })
             .transpose()?;
+        let mod_raise = ModRaisePrepared {
+            plan: plan.mod_raise(),
+            first_factor: coeffs_to_slots_first_factor,
+        };
         Ok(BootstrappingContextPrepared {
             plan,
             c2s_guard_bits,
             functional_message_modulus,
             coeffs_to_slots,
-            coeffs_to_slots_first_factor,
+            mod_raise,
             coeffs_to_slots_bypass,
             slots_to_coeffs,
             eval_mod_plan,

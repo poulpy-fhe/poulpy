@@ -13,7 +13,7 @@ use crate::{
     CKKSCtBounds, CKKSResult, SetCKKSInfos,
     layouts::{
         BootstrappingCIKeys, BootstrappingContextPrepared, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingLinearKeys,
-        CKKSCITwin, CKKSCiphertextOwned, CKKSPlaintextOwned, CKKSRightOperandPrepared, EncodedLut, EvalModPlan,
+        CKKSCITwin, CKKSCiphertextOwned, CKKSModRaiseInfos, CKKSPlaintextOwned, CKKSRightOperandPrepared, EncodedLut,
     },
 };
 
@@ -25,9 +25,6 @@ use crate::{
 /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait CKKSBootstrappingImpl: CKKSCITwin {
-    /// Scratch bound of [`Self::ckks_mod_up_into`]; may report less than the reference, never less than the body takes.
-    fn ckks_mod_up_tmp_bytes(module: &Module<Self>, res_size: usize) -> usize;
-
     /// Scratch bound of [`Self::ckks_bootstrap`]; may report less than the reference, never less than the body takes.
     fn ckks_bootstrap_tmp_bytes<C1, C2, F>(
         module: &Module<Self>,
@@ -54,52 +51,35 @@ pub unsafe trait CKKSBootstrappingImpl: CKKSCITwin {
         C1: CKKSCtBounds,
         C2: CKKSCtBounds;
 
-    /// Reproduces
-    /// [`ckks_mod_up_into_reference`](crate::reference::bootstrapping::CKKSBootstrappingReference::ckks_mod_up_into_reference)
-    /// bit for bit, within [`Self::ckks_mod_up_tmp_bytes`]; free in kernels and scratch use. It honors the metadata,
-    /// ciphertext semantics and key layouts of the reference pipeline.
-    fn ckks_mod_up_into<Dst, Src>(
+    /// Scratch bound of [`Self::ckks_mod_raise`]; may report less than the reference, never less than the body takes.
+    fn ckks_mod_raise_tmp_bytes<R, A, P>(
         module: &Module<Self>,
-        dst: &mut Dst,
-        src: &Src,
-        eval_mod: &EvalModPlan,
-        scratch: &mut ScratchArena<'_, Self>,
-    ) -> CKKSResult<()>
-    where
-        Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<Self> + CKKSCtBounds;
-
-    /// Default body: `ckks_bootstrap_mod_up_tmp_bytes_derived`, [`Self::ckks_bootstrap_tmp_bytes`]. Scratch bound of
-    /// [`Self::ckks_bootstrap_mod_up`]; may report less than the reference, never less than the body takes.
-    fn ckks_bootstrap_mod_up_tmp_bytes<C1, C2, F>(
-        module: &Module<Self>,
-        ct_out: &C1,
-        ct_in: &C2,
-        ctx: &BootstrappingContextPrepared<Self, F>,
+        res: &R,
+        a: &A,
+        plan: &P,
         keys_layout: &BootstrappingKeysLayout,
     ) -> usize
     where
-        C1: CKKSCtBounds,
-        C2: CKKSCtBounds,
-    {
-        super::derived::bootstrapping::ckks_bootstrap_mod_up_tmp_bytes_derived(module, ct_out, ct_in, ctx, keys_layout)
-    }
+        R: CKKSCtBounds,
+        A: CKKSCtBounds,
+        P: CKKSModRaiseInfos<Self>;
 
     /// Reproduces
-    /// [`ckks_bootstrap_mod_up_reference`](crate::reference::bootstrapping::CKKSBootstrappingReference::ckks_bootstrap_mod_up_reference)
-    /// bit for bit, within [`Self::ckks_bootstrap_mod_up_tmp_bytes`]; free in kernels and scratch use.
-    fn ckks_bootstrap_mod_up<Dst, Src, K>(
+    /// [`ckks_mod_raise_reference`](crate::reference::bootstrapping::CKKSBootstrappingReference::ckks_mod_raise_reference)
+    /// bit for bit, within [`Self::ckks_mod_raise_tmp_bytes`]; free in kernels and scratch use.
+    fn ckks_mod_raise<R, A, P, K>(
         module: &Module<Self>,
-        dst: &mut Dst,
-        src: &Src,
-        eval_mod: &EvalModPlan,
+        res: &mut R,
+        a: &mut A,
+        plan: &P,
         keys: &K,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> CKKSResult<()>
     where
-        Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<Self> + CKKSCtBounds,
-        K: BootstrappingKeys<Self>;
+        R: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
+        P: CKKSModRaiseInfos<Self>,
+        K: BootstrappingLinearKeys<Self>;
 
     /// Reproduces
     /// [`ckks_bootstrap_reference`](crate::reference::bootstrapping::CKKSBootstrappingReference::ckks_bootstrap_reference)
@@ -281,10 +261,6 @@ macro_rules! impl_ckks_bootstrapping_reference_full {
         }
 
         unsafe impl $crate::oep::CKKSBootstrappingImpl for $be {
-            fn ckks_mod_up_tmp_bytes(module: &::poulpy_hal::layouts::Module<$be>, res_size: usize) -> usize {
-                $crate::reference::bootstrapping::CKKSBootstrappingReference::ckks_mod_up_tmp_bytes_reference(module, res_size)
-            }
-
             fn ckks_bootstrap_tmp_bytes<C1, C2, F>(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 ct_out: &C1,
@@ -327,40 +303,49 @@ macro_rules! impl_ckks_bootstrapping_reference_full {
                 )
             }
 
-            fn ckks_mod_up_into<Dst, Src>(
+            fn ckks_mod_raise_tmp_bytes<R, A, P>(
                 module: &::poulpy_hal::layouts::Module<$be>,
-                dst: &mut Dst,
-                src: &Src,
-                eval_mod: &$crate::layouts::EvalModPlan,
-                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
-            ) -> $crate::CKKSResult<()>
+                res: &R,
+                a: &A,
+                plan: &P,
+                keys_layout: &$crate::layouts::BootstrappingKeysLayout,
+            ) -> usize
             where
-                Dst: ::poulpy_core::layouts::GLWEToBackendMut<$be> + $crate::CKKSCtBounds + $crate::SetCKKSInfos,
-                Src: ::poulpy_core::layouts::GLWEToBackendRef<$be> + $crate::CKKSCtBounds,
+                R: $crate::CKKSCtBounds,
+                A: $crate::CKKSCtBounds,
+                P: $crate::layouts::CKKSModRaiseInfos<$be>,
             {
-                $crate::reference::bootstrapping::CKKSBootstrappingReference::ckks_mod_up_into_reference(
-                    module, dst, src, eval_mod, scratch,
+                $crate::reference::bootstrapping::CKKSBootstrappingReference::ckks_mod_raise_tmp_bytes_reference(
+                    module,
+                    res,
+                    a,
+                    plan,
+                    keys_layout,
                 )
             }
 
-            fn ckks_bootstrap_mod_up<Dst, Src, K>(
+            fn ckks_mod_raise<R, A, P, K>(
                 module: &::poulpy_hal::layouts::Module<$be>,
-                dst: &mut Dst,
-                src: &Src,
-                eval_mod: &$crate::layouts::EvalModPlan,
+                res: &mut R,
+                a: &mut A,
+                plan: &P,
                 keys: &K,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) -> $crate::CKKSResult<()>
             where
-                Dst: ::poulpy_core::layouts::GLWEToBackendMut<$be>
+                R: ::poulpy_core::layouts::GLWEToBackendMut<$be>
                     + ::poulpy_core::layouts::GLWEToBackendRef<$be>
                     + $crate::CKKSCtBounds
                     + $crate::SetCKKSInfos,
-                Src: ::poulpy_core::layouts::GLWEToBackendRef<$be> + $crate::CKKSCtBounds,
-                K: $crate::layouts::BootstrappingKeys<$be>,
+                A: ::poulpy_core::layouts::GLWEToBackendMut<$be>
+                    + ::poulpy_core::layouts::GLWEToBackendRef<$be>
+                    + $crate::CKKSCtBounds
+                    + $crate::SetCKKSInfos,
+                P: $crate::layouts::CKKSModRaiseInfos<$be>,
+                K: $crate::layouts::BootstrappingLinearKeys<$be>,
             {
-                $crate::reference::bootstrapping::CKKSBootstrappingReference::ckks_bootstrap_mod_up_reference(
-                    module, dst, src, eval_mod, keys, scratch,
+                $crate::reference::bootstrapping::CKKSBootstrappingReference::ckks_mod_raise_reference(
+                    module, res, a, plan, keys, scratch,
                 )
             }
 

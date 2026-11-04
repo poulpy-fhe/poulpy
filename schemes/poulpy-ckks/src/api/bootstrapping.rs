@@ -4,16 +4,15 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
     CKKSCtBounds, SetCKKSInfos,
-    layouts::EvalModPlan,
     layouts::{
-        BootstrappingCIKeys, BootstrappingContextPrepared, BootstrappingKeys, BootstrappingKeysLayout, CKKSCITwin,
-        CKKSCiphertextOwned, CKKSPlaintextOwned, EncodedLut,
+        BootstrappingCIKeys, BootstrappingContextPrepared, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingLinearKeys,
+        CKKSCITwin, CKKSCiphertextOwned, CKKSModRaiseInfos, CKKSPlaintextOwned, EncodedLut,
     },
 };
 
 /// CKKS bootstrapping.
 ///
-/// Only **ModUp** is a bootstrapping-specific primitive. CoeffsToSlots,
+/// Only the **modulus raise** ([`ckks_mod_raise`](Self::ckks_mod_raise)) is a bootstrapping-specific primitive. CoeffsToSlots,
 /// EvalMod, and SlotsToCoeffs are reused from their own op traits:
 ///
 /// - CoeffsToSlots / SlotsToCoeffs via [`CKKSDFTOps`](crate::api::CKKSDFTOps)
@@ -32,9 +31,6 @@ use crate::{
 /// supplied keys must carry the matching
 /// [encapsulation keys](crate::layouts::BootstrappingLinearKeys::encapsulation_keys).
 pub trait CKKSBootstrappingOps<BE: Backend> {
-    /// Returns scratch bytes required by [`Self::ckks_mod_up_into`].
-    fn ckks_mod_up_tmp_bytes(&self, res_size: usize) -> usize;
-
     /// Scratch upper bound for a full [`Self::ckks_bootstrap`] call: the
     /// pipeline working ciphertexts it carves from scratch plus the largest
     /// nested stage. `ct_out`/`ct_in` provide the bootstrap and input widths,
@@ -67,64 +63,35 @@ pub trait CKKSBootstrappingOps<BE: Backend> {
         C1: CKKSCtBounds,
         C2: CKKSCtBounds;
 
-    /// Raises the modulus of `src` into the wider `dst`.
-    ///
-    /// `dst` must carry the target (raised) modulus: `dst.k() ≥
-    /// src.k()`. See the trait docs for the exact semantics and
-    /// metadata effect.
-    ///
-    /// `eval_mod` supplies the lift: the raise stops short of the natural
-    /// magnitude so the message lands at the plan's scale rather than the input
-    /// modulus'. `src` is expected to already carry the plan's message ratio.
-    /// `dst` comes back fully labelled, at the plan's scale: no metadata stamping
-    /// is left to the caller.
-    ///
-    /// This is the bare stage. For the whole raise step, including the
-    /// encapsulation switches, use [`Self::ckks_bootstrap_mod_up`].
-    fn ckks_mod_up_into<Dst, Src>(
-        &self,
-        dst: &mut Dst,
-        src: &Src,
-        eval_mod: &EvalModPlan,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
+    /// Scratch bytes for [`Self::ckks_mod_raise`] into a ciphertext like `res` from one like `a`, with the plan and the
+    /// key layout of the raise.
+    fn ckks_mod_raise_tmp_bytes<R, A, P>(&self, res: &R, a: &A, plan: &P, keys_layout: &BootstrappingKeysLayout) -> usize
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds;
+        R: CKKSCtBounds,
+        A: CKKSCtBounds,
+        P: CKKSModRaiseInfos<BE>;
 
-    /// Scratch bytes for [`Self::ckks_bootstrap_mod_up`] into a ciphertext like `ct_out` from one like `ct_in`, with
-    /// the arguments of [`Self::ckks_bootstrap_tmp_bytes`].
-    fn ckks_bootstrap_mod_up_tmp_bytes<C1, C2, F>(
-        &self,
-        ct_out: &C1,
-        ct_in: &C2,
-        ctx: &BootstrappingContextPrepared<BE, F>,
-        keys_layout: &BootstrappingKeysLayout,
-    ) -> usize
-    where
-        C1: CKKSCtBounds,
-        C2: CKKSCtBounds;
-
-    /// Whole raise step of the bootstrap, as one call: lift `Δ·m` to the plan's
-    /// message ratio, switch to the sparse secret when `keys` carry the
-    /// encapsulation switches, ModUp into `dst` (with the second lift to the
-    /// plan's scale fused into its shift), switch back, and relabel by the
-    /// message ratio so `I(X)·q` is the integer part and the message the residue.
+    /// Whole raise step of the bootstrap, as one call: on C2S-first, lift `Δ·m` to the plan's message ratio; switch
+    /// to the sparse secret when `keys` carry the encapsulation switches, ModUp into `res` (with the second lift, or
+    /// the C2S guard bits, fused into its shift), apply the first CoeffsToSlots factor when the plan leaves it to the
+    /// raise, switch back, and relabel so `res` comes back fully labelled: C2S-first by the message ratio, so that
+    /// `I(X)·q` is the integer part and the message the residue.
     ///
-    /// `dst` must be allocated at the bootstrap modulus. Scratch is bounded by
-    /// [`Self::ckks_bootstrap_mod_up_tmp_bytes`].
-    fn ckks_bootstrap_mod_up<Dst, Src, K>(
+    /// `res` must be allocated at the bootstrap modulus. `a` is consumed: its content and metadata are unspecified on
+    /// return. Scratch is bounded by [`Self::ckks_mod_raise_tmp_bytes`].
+    fn ckks_mod_raise<R, A, P, K>(
         &self,
-        dst: &mut Dst,
-        src: &Src,
-        eval_mod: &EvalModPlan,
+        res: &mut R,
+        a: &mut A,
+        plan: &P,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        K: BootstrappingKeys<BE>;
+        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        P: CKKSModRaiseInfos<BE>,
+        K: BootstrappingLinearKeys<BE>;
 
     /// One-shot CKKS bootstrap, driven by the compiled context.
     ///
