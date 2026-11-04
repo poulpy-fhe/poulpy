@@ -3532,6 +3532,7 @@ version = "0.10.0"
 dependencies = [
  "anyhow",
  "dashu-int",
+ "poulpy-hal",
 ]
 
 [[package]]

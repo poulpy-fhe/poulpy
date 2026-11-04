@@ -5,6 +5,7 @@
 ### GBFV
 
 - New crate `poulpy-gbfv` in `schemes/`, for the GBFV scheme. It starts with the plaintext modulus, `GBFVPlaintextModulus`: a non-zero, non-unit ring element `t`, given in any subring and stored in the smallest subring holding it, together with its inverse `numerator / characteristic` in lowest terms, computed in that subring, and `flatten`, which returns the unique representative of a ring element modulo `t`. `GBFVBatchEncoder` fixes, for a prime characteristic `p`, a maximum ring degree `n` and a maximum Hensel lifting exponent `e`, one primitive `2n`-th root of unity modulo `p^e` that is also a root of the plaintext modulus `t`, chosen deterministically from `p`, `n` and `t`, so that the roots of all degrees and lifting exponents are compatible. It requires `t` to live in the ring of degree `n` and to have norm `p`.
+- `GBFVNttOps` (`gbfv_ntt_forward_assign`, `gbfv_ntt_inverse_assign`): the negacyclic NTT over `Z/q` for an odd modulus `q` of any size, beyond 128 bits included, on backend-resident `GBFVNttBuffer` residues of `ceil(bits(q) / 64)` little-endian 64-bit words, under a `GBFVNttPlan` that holds `q`, `n^(-1)` and the bit-reversed twiddles in backend storage. It dispatches through the `GBFVNttImpl` backend contract; `impl_gbfv_ntt_reference_full!` selects the reference body `GBFVNttReference` for a backend whose views are host bytes.
 
 ## [0.10.0] - 2026-11-01
 

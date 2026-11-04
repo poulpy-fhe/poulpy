@@ -15,6 +15,16 @@
 //!
 //! | Module | Role |
 //! |--------|------|
-//! | [`layouts`] | The plaintext modulus |
+//! | [`layouts`] | The plaintext modulus, the batch encoder, and the NTT operands |
+//! | [`api`] | Public operations on `Module<BE>`: the negacyclic NTT over `Z/q` |
+//! | [`oep`] | Backend contracts and the reference opt-in macros |
+//! | [`reference`](mod@crate::reference) | Reference bodies of the backend contracts |
 
+pub mod api;
+mod delegates;
 pub mod layouts;
+pub mod oep;
+pub mod reference;
+
+/// Result of the fallible GBFV operations and setup constructors.
+pub type GBFVResult<T> = anyhow::Result<T>;

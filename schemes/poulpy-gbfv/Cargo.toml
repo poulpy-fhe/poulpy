@@ -10,5 +10,6 @@ homepage.workspace = true
 documentation = "https://docs.rs/poulpy-gbfv"
 
 [dependencies]
+poulpy-hal = {workspace = true}
 anyhow = {workspace = true}
 dashu-int = {workspace = true}
