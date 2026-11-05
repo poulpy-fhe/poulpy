@@ -8,8 +8,8 @@ use anyhow::{Context, Result, ensure};
 use poulpy_core::{
     LinearTransformationPrepared,
     layouts::{
-        Base2K, GGLWEInfos, GGLWELayout, GLWEInfos, GLWEPlaintextInfos, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey,
-        IntPolyInfos, LWEInfos, LinearTransformation, TorusPrecision, prepared::GGLWEPreparedToBackendRef,
+        Base2K, GGLWEInfos, GGLWELayout, GLWEInfos, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, IntPolyInfos, LWEInfos,
+        LinearTransformation, TorusPrecision, prepared::GGLWEPreparedToBackendRef,
     },
 };
 use poulpy_hal::layouts::{Backend, Module};
@@ -17,7 +17,7 @@ use poulpy_hal::layouts::{Backend, Module};
 use crate::{
     CKKSCompositionError, CKKSCtBounds, CKKSError, CKKSInfos, CKKSResult, GLWEPlaintextMeta, Scale, SlotsKind,
     api::CKKSBootstrappingOps,
-    checked_log_budget_sub, ckks_bail, ckks_ensure, ckks_ensure_operand,
+    checked_log_budget_sub, ckks_bail, ckks_ensure, ckks_ensure_operand, ckks_log_delta,
     layouts::{
         BootstrappingContextPrepared, BootstrappingKeys, BootstrappingLinearKeys, BootstrappingPipeline, CKKSCITwin,
         CKKSCiphertextOwned, CKKSEvalModInfos, CKKSPlaintextOwned, CKKSRightOperandPrepared, EncodedLut, EvalMod, EvalModPlan,
@@ -339,7 +339,7 @@ where
         }
         None => check_key_widths(OP, res, a, ctx, keys, required_tensor_key(OP, keys.tensor_key())?)?,
     }
-    ensure_eval_round_interval(ctx)?;
+    ensure_eval_round_interval(&ctx.run(a.meta()))?;
     if let Some(keys_layout) = keys.keys_layout() {
         let bytes = module.ckks_bootstrap_tmp_bytes(res, a, ctx, ci, &keys_layout);
         ckks_ensure!(
@@ -360,7 +360,7 @@ pub(crate) fn check_functional_entry<BE, F, K>(
     luts: &[EncodedLut<CKKSPlaintextOwned<BE>>],
     keys: &K,
     available: usize,
-) -> CKKSResult<Vec<(GLWEPlaintextMeta, usize)>>
+) -> CKKSResult<()>
 where
     BE: CKKSCITwin,
     Module<BE>: CKKSBootstrappingOps<BE>,
@@ -372,7 +372,7 @@ where
         ctx.pipeline() == BootstrappingPipeline::S2CFirst,
         "functional bootstrapping requires an S2C-first context"
     );
-    ensure_lut_batch(OP, module.n(), a, res, luts, ctx)?;
+    ensure_lut_batch(OP, module.n(), a, res, luts, &ctx.run(a.meta()))?;
     let log_msg_ratio = luts[0].log_msg_ratio();
     ensure_encapsulation(OP, keys, ctx.sparse_secret_hamming_weight())?;
     let tensor_key = required_tensor_key(OP, keys.tensor_key())?;
@@ -383,11 +383,9 @@ where
         "functional bootstrap context must be configured for message modulus {}",
         luts[0].message_modulus()
     );
-    let outputs = res
-        .iter()
-        .zip(luts)
-        .map(|(ct_out, lut)| functional_output_contract(OP, a, ctx, lut, ct_out.k().as_usize()))
-        .collect::<CKKSResult<Vec<_>>>()?;
+    for (ct_out, lut) in res.iter().zip(luts) {
+        functional_output_contract(OP, a.meta(), ctx, lut, ct_out.k().as_usize())?;
+    }
     check_key_widths(OP, &res[0], a, ctx, keys, tensor_key)?;
     if let Some(keys_layout) = keys.keys_layout() {
         let bytes = module.ckks_functional_bootstrap_tmp_bytes(&res[0], a, ctx, luts, &keys_layout);
@@ -396,7 +394,7 @@ where
             "{OP} needs a scratch arena of {bytes} bytes, got {available}"
         );
     }
-    Ok(outputs)
+    Ok(())
 }
 
 /// The refusal of a bootstrap at `bootstrap_k` bits of an input of `input_k` bits that its stages do not fit.
@@ -730,15 +728,15 @@ where
     ensure_one_degree(op, module_n, a, head)
 }
 
-fn functional_output_contract<BE: Backend, F>(
+/// What the output of `lut` carries from a raise at `bootstrap_k` bits of `message`: its metadata and width.
+pub(crate) fn functional_output_contract<BE: Backend, F>(
     op: &'static str,
-    ct_in: &CKKSCiphertextOwned<BE>,
+    message: GLWEPlaintextMeta,
     ctx: &BootstrappingContextPrepared<BE, F>,
     lut: &EncodedLut<CKKSPlaintextOwned<BE>>,
     bootstrap_k: usize,
 ) -> CKKSResult<(GLWEPlaintextMeta, usize)> {
-    let log_delta = ct_in
-        .log_delta()
+    let log_delta = ckks_log_delta(&message)
         .checked_add(lut.log_msg_ratio())
         .ok_or_else(|| crate::CKKSError::Internal(anyhow::anyhow!("functional bootstrap output scale overflow")))?;
     let eval_mod = if lut.requires_eval_mod() {
@@ -767,8 +765,7 @@ fn functional_output_contract<BE: Backend, F>(
     Ok((
         GLWEPlaintextMeta {
             scale: Scale::Log(log_delta),
-            slots: ct_in.slots(),
-            log_sparsity: ct_in.log_sparsity(),
+            ..message
         },
         output_k,
     ))

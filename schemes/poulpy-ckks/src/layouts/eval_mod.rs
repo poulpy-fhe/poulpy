@@ -47,16 +47,13 @@ use poulpy_core::layouts::{Base2K, bsgs_consumed_bits, bsgs_eval_depth, bsgs_op_
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
-    CoeffsMeta,
+    CKKSResult, CoeffsMeta, GLWEPlaintextMeta, SetCKKSInfos, SlotsKind,
     api::{Basis, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar, Parity},
     ckks_log_delta, cosine,
     polynomial::{BSGSPolynomial, ComplexBSGSPolynomial, ComplexPolynomial, Polynomial, SplitStrategy},
 };
 
-use super::{
-    BootstrappingContextPrepared, BootstrappingPipeline, CKKSCITwin, CKKSPlaintextAlloc, CKKSPlaintextOwned, CKKSScalar,
-    EvalModCIPrepared,
-};
+use super::{CKKSCITwin, CKKSPlaintextAlloc, CKKSPlaintextOwned, CKKSScalar, EncodedLut, EvalModCIPrepared};
 
 // Fallible scalar conversions: building the host-side polynomials goes through
 // the generic float `F`, and a conversion that is not exactly representable in
@@ -492,6 +489,21 @@ pub trait CKKSEvalModInfos<BE: CKKSCITwin, F> {
 
     /// Whether the plan runs EvalRound+: the step leaves `EvalMod(x) - K·x` and the guard bits to the bypass.
     fn eval_round_plus(&self) -> bool;
+
+    /// The slots of the message, which pick the route. `None`: the step reads the label of its input.
+    fn message_slots(&self) -> Option<SlotsKind>;
+
+    /// Removes the guard bits and labels an EvalMod output as the message.
+    fn stamp_eval_mod_output<C: SetCKKSInfos>(&self, res: &mut C);
+
+    /// The metadata and the width of the output of `lut` from a raise at `bootstrap_k` bits, or a typed refusal of `op`
+    /// when `bootstrap_k` cannot hold them. `None`: the output keeps what the evaluation leaves it.
+    fn eval_lut_output(
+        &self,
+        op: &'static str,
+        lut: &EncodedLut<CKKSPlaintextOwned<BE>>,
+        bootstrap_k: usize,
+    ) -> CKKSResult<Option<(GLWEPlaintextMeta, usize)>>;
 }
 
 impl<BE: CKKSCITwin, F> CKKSEvalModInfos<BE, F> for EvalMod<F, CKKSPlaintextOwned<BE>> {
@@ -518,31 +530,20 @@ impl<BE: CKKSCITwin, F> CKKSEvalModInfos<BE, F> for EvalMod<F, CKKSPlaintextOwne
     fn eval_round_plus(&self) -> bool {
         false
     }
-}
 
-impl<BE: CKKSCITwin, F> CKKSEvalModInfos<BE, F> for BootstrappingContextPrepared<BE, F> {
-    fn eval_mod_plan(&self) -> &EvalModPlan {
-        self.eval_mod_plan()
+    fn message_slots(&self) -> Option<SlotsKind> {
+        None
     }
 
-    fn eval_mod_standard(&self) -> Option<&EvalMod<F, CKKSPlaintextOwned<BE>>> {
-        self.eval_mod()
-    }
+    fn stamp_eval_mod_output<C: SetCKKSInfos>(&self, _res: &mut C) {}
 
-    fn eval_mod_ci(&self) -> Option<&EvalModCIPrepared<BE, F>> {
-        self.eval_mod_ci()
-    }
-
-    fn c2s_guard_bits(&self) -> usize {
-        self.c2s_guard_bits()
-    }
-
-    fn one_eval_mod_on_real_slots(&self) -> bool {
-        self.pipeline() == BootstrappingPipeline::S2CFirst && self.coeffs_to_slots_bypass().is_none()
-    }
-
-    fn eval_round_plus(&self) -> bool {
-        self.coeffs_to_slots_bypass().is_some()
+    fn eval_lut_output(
+        &self,
+        _op: &'static str,
+        _lut: &EncodedLut<CKKSPlaintextOwned<BE>>,
+        _bootstrap_k: usize,
+    ) -> CKKSResult<Option<(GLWEPlaintextMeta, usize)>> {
+        Ok(None)
     }
 }
 

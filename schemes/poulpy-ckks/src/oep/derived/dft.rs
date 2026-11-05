@@ -49,7 +49,8 @@ where
 }
 
 /// Homomorphic decoding (SlotsToCoeffs): evaluates the Decode (DFT) factors in place,
-/// retaining selected raw DFT dispatch. The format is how an output reads and is ignored here.
+/// retaining selected raw DFT dispatch, then lets `dft` label the output. The format is how an output reads and is
+/// ignored here.
 pub(crate) fn ckks_encoding_buffer_slots_to_coeffs_assign_derived<BE, Fmt, D, Dst, H>(
     module: &Module<BE>,
     ct: &mut Dst,
@@ -64,7 +65,9 @@ where
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
 {
-    module.ckks_dft_matrix_eval_assign(ct, dft, keys, scratch)
+    module.ckks_dft_matrix_eval_assign(ct, dft, keys, scratch)?;
+    dft.stamp_transform_output(ct);
+    Ok(())
 }
 
 /// `CoeffsToSlots` with the real and imaginary parts returned in two separate

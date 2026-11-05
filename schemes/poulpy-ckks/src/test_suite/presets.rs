@@ -1263,20 +1263,21 @@ where
     // The step alone refuses before its query, which reads these operands.
     output.set_k(preset.bootstrap_k().into());
     let boot = preset.bootstrap_layout();
+    let run = context.run(preset.input_layout().meta());
     let wide = fixture_ciphertext(&module, &boot, 13);
     assert_eval_mod_refuses(
         &mut output,
         "a CI module goes with a plan of EvalMod on the CI ring, and only with one",
-        |res, s| module.ckks_bootstrap_eval_mod(res, &wide, &context, None, &keys, s),
+        |res, s| module.ckks_bootstrap_eval_mod(res, &wide, &run, None, &keys, s),
     );
     let degrees = "takes a module of degree at least 2N and a CI module of degree N";
     let module_n = Module::<BE>::new(n);
     assert_eval_mod_refuses(&mut output, degrees, |res, s| {
-        module_n.ckks_bootstrap_eval_mod(res, &wide, &context, Some(&ci), &keys, s)
+        module_n.ckks_bootstrap_eval_mod(res, &wide, &run, Some(&ci), &keys, s)
     });
     let ci_half = Module::<CIBackend<BE>>::new(n / 2);
     assert_eval_mod_refuses(&mut output, degrees, |res, s| {
-        module.ckks_bootstrap_eval_mod(res, &wide, &context, Some(&ci_half), &keys, s)
+        module.ckks_bootstrap_eval_mod(res, &wide, &run, Some(&ci_half), &keys, s)
     });
     let mut half = boot;
     half.glwe_layout.n = (n as usize / 2).into();
@@ -1296,24 +1297,24 @@ where
         .to_string()
     };
     assert_eval_mod_refuses(&mut res_half, &key_degree, |res, s| {
-        module.ckks_bootstrap_eval_mod(res, &a_half, &context, Some(&ci_half), &keys, s)
+        module.ckks_bootstrap_eval_mod(res, &a_half, &run, Some(&ci_half), &keys, s)
     });
     assert_eval_mod_refuses(&mut output, "the keys hold no tensor key of the plan's ring", |res, s| {
-        module.ckks_bootstrap_eval_mod(res, &wide, &context, Some(&ci), &no_tensor_key, s)
+        module.ckks_bootstrap_eval_mod(res, &wide, &run, Some(&ci), &no_tensor_key, s)
     });
     let mut no_conversion_keys = keys_for(preset.keys_layout());
     no_conversion_keys.conversion_keys = None;
     assert_eval_mod_refuses(
         &mut output,
         "the keys hold no conversion keys of the plan's ring",
-        |res, s| module.ckks_bootstrap_eval_mod(res, &wide, &context, Some(&ci), &no_conversion_keys, s),
+        |res, s| module.ckks_bootstrap_eval_mod(res, &wide, &run, Some(&ci), &no_conversion_keys, s),
     );
     output.set_k((preset.bootstrap_k() - 1).into());
     assert_eval_mod_refuses(&mut output, "takes an input no wider than its output", |res, s| {
-        module.ckks_bootstrap_eval_mod(res, &wide, &context, Some(&ci), &keys, s)
+        module.ckks_bootstrap_eval_mod(res, &wide, &run, Some(&ci), &keys, s)
     });
 
-    // The step on one arena of its query gives the digits of the whole bootstrap, and refuses
+    // The step on one arena of its query, in a composition that stamps nothing, gives the whole bootstrap, and refuses
     // conversion keys narrower than the widths it reaches.
     let fixture = fixture_ciphertext(&module, &preset.input_layout(), 5);
     let mut whole = module.ckks_ciphertext_alloc_from_glwe_infos(&boot);
@@ -1326,9 +1327,9 @@ where
     let mut stepped = fixture_ciphertext(&module, &boot, 23);
     with_scratch::<BE, _>(bytes, |s| {
         module.ckks_double_into(&mut coeffs, &fixture, s)?;
-        module.ckks_slots_to_coeffs_assign(&mut coeffs, &context, &keys.rotation_keys, s)?;
-        module.ckks_mod_raise(&mut raised, &mut coeffs, &context, &keys, s)?;
-        module.ckks_coeffs_to_slots_assign(&mut raised, &context, &keys.rotation_keys, s)
+        module.ckks_slots_to_coeffs_assign(&mut coeffs, &run, &keys.rotation_keys, s)?;
+        module.ckks_mod_raise(&mut raised, &mut coeffs, &run, &keys, s)?;
+        module.ckks_coeffs_to_slots_assign(&mut raised, &run, &keys.rotation_keys, s)
     })
     .unwrap();
     // The embed key has one digit, so one limb of it goes rather than the digit.
@@ -1340,7 +1341,7 @@ where
     };
     for (narrow, cause) in [(&narrow_keys[0], "narrow trace key"), (&narrow_embed_key, "narrow embed key")] {
         let layout = narrow.keys_layout().unwrap();
-        let bytes = module.ckks_bootstrap_eval_mod_tmp_bytes(&stepped, &raised, &context, Some(&ci), &layout);
+        let bytes = module.ckks_bootstrap_eval_mod_tmp_bytes(&stepped, &raised, &run, Some(&ci), &layout);
         let before = snapshot::<BE, _>(&stepped);
         // The whole bootstrap refuses them before its first step, on an empty arena.
         let err = with_scratch::<BE, _>(0, |s| {
@@ -1357,7 +1358,7 @@ where
         );
         assert_eq!(snapshot::<BE, _>(&stepped), before, "a refused bootstrap wrote res");
         let err = with_scratch::<BE, _>(bytes, |s| {
-            module.ckks_bootstrap_eval_mod(&mut stepped, &raised, &context, Some(&ci), narrow, s)
+            module.ckks_bootstrap_eval_mod(&mut stepped, &raised, &run, Some(&ci), narrow, s)
         })
         .unwrap_err();
         assert!(
@@ -1370,12 +1371,11 @@ where
         );
         assert_eq!(snapshot::<BE, _>(&stepped), before, "a refused step wrote res");
     }
-    let bytes = module.ckks_bootstrap_eval_mod_tmp_bytes(&stepped, &raised, &context, Some(&ci), preset.keys_layout());
+    let bytes = module.ckks_bootstrap_eval_mod_tmp_bytes(&stepped, &raised, &run, Some(&ci), preset.keys_layout());
     with_scratch::<BE, _>(bytes, |s| {
-        module.ckks_bootstrap_eval_mod(&mut stepped, &raised, &context, Some(&ci), &keys, s)
+        module.ckks_bootstrap_eval_mod(&mut stepped, &raised, &run, Some(&ci), &keys, s)
     })
     .unwrap();
-    stepped.set_meta(fixture.meta());
     assert_eq!(snapshot::<BE, _>(&stepped), snapshot::<BE, _>(&whole));
 }
 

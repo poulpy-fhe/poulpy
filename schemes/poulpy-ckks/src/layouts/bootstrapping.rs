@@ -37,15 +37,18 @@ use poulpy_core::{
 use poulpy_hal::layouts::{Backend, ConjugateInvariant, Module, PrepareHint, ScratchArena};
 
 use crate::{
-    CKKSCtBounds, CKKSInfos, CKKSLayout, GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotsKind,
+    CKKSCtBounds, CKKSInfos, CKKSLayout, CKKSResult, GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotsKind,
     api::{
         CKKSDFTMatrixOps, CKKSDFTMatrixPreparedFactory, CKKSDFTOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar,
         CKKSRightOperandPreparedFactory,
     },
+    ckks_log_delta,
     layouts::{
-        CKKSCITwin, CKKSDFTFactors, CKKSPlaintextAlloc, ComplexDiagonals, DFTMatrix, DFTMatrixPrepared, DFTPlan, DFTType, Decode,
-        Encode, EncodedLut, EvalMod, EvalModPlan, ModRaisePlan, ModRaisePrepared, Split,
+        CKKSCITwin, CKKSDFTFactors, CKKSEvalModInfos, CKKSModRaiseInfos, CKKSPlaintextAlloc, ComplexDiagonals, DFTMatrix,
+        DFTMatrixPrepared, DFTPlan, DFTType, Decode, Encode, EncodedLut, EvalMod, EvalModPlan, ModRaisePlan, ModRaisePrepared,
+        Split,
         eval_mod::{EvalModType, ckks_eval_mod_compile},
+        validation::functional_output_contract,
     },
 };
 
@@ -878,11 +881,41 @@ impl<BE: Backend, F> CKKSDFTFactors<BE, Encode, Split> for BootstrappingContextP
     }
 }
 
-impl<BE: Backend, F> CKKSDFTFactors<BE, Decode, Split> for BootstrappingContextPrepared<BE, F> {
+/// A compiled bootstrap bound to the labels of the message it runs on. The steps read those labels here, so a
+/// composition stamps nothing.
+pub struct BootstrappingRun<'a, BE: Backend, F> {
+    context: &'a BootstrappingContextPrepared<BE, F>,
+    message: GLWEPlaintextMeta,
+}
+
+impl<BE: Backend, F> BootstrappingRun<'_, BE, F> {
+    pub(crate) fn context(&self) -> &BootstrappingContextPrepared<BE, F> {
+        self.context
+    }
+}
+
+impl<BE: Backend, F> CKKSDFTFactors<BE, Encode, Split> for BootstrappingRun<'_, BE, F> {
+    type Diagonal = <DFTMatrixPrepared<BE, Encode, Split> as CKKSDFTFactors<BE, Encode, Split>>::Diagonal;
+
+    fn dft_plan(&self) -> &DFTPlan {
+        CKKSDFTFactors::<BE, Encode, Split>::dft_plan(self.context)
+    }
+
+    fn factors<'a>(&'a self) -> impl Iterator<Item = &'a LinearTransformation<Self::Diagonal>>
+    where
+        BE: 'a,
+        Encode: 'a,
+        Split: 'a,
+    {
+        CKKSDFTFactors::<BE, Encode, Split>::factors(self.context)
+    }
+}
+
+impl<BE: Backend, F> CKKSDFTFactors<BE, Decode, Split> for BootstrappingRun<'_, BE, F> {
     type Diagonal = <DFTMatrixPrepared<BE, Decode, Split> as CKKSDFTFactors<BE, Decode, Split>>::Diagonal;
 
     fn dft_plan(&self) -> &DFTPlan {
-        self.slots_to_coeffs.dft_plan()
+        self.context.slots_to_coeffs.dft_plan()
     }
 
     fn factors<'a>(&'a self) -> impl Iterator<Item = &'a LinearTransformation<Self::Diagonal>>
@@ -891,11 +924,83 @@ impl<BE: Backend, F> CKKSDFTFactors<BE, Decode, Split> for BootstrappingContextP
         Decode: 'a,
         Split: 'a,
     {
-        self.slots_to_coeffs.factors()
+        self.context.slots_to_coeffs.factors()
+    }
+
+    fn stamp_transform_output<C: SetCKKSInfos>(&self, ct: &mut C) {
+        // `set_log_delta` lowers `k`, so it waits for the end of SlotsToCoeffs.
+        if self.context.pipeline == BootstrappingPipeline::C2SFirst {
+            ct.set_log_delta(ckks_log_delta(&self.message));
+            ct.set_slots(self.message.slots);
+        }
+    }
+}
+
+impl<BE: Backend, F> CKKSModRaiseInfos<BE> for BootstrappingRun<'_, BE, F> {
+    fn mod_raise_plan(&self) -> &ModRaisePlan {
+        self.context.mod_raise_plan()
+    }
+
+    fn first_factor(&self) -> Option<&LinearTransformation<CKKSRightOperandPrepared<BE>>> {
+        CKKSModRaiseInfos::first_factor(self.context)
+    }
+}
+
+impl<BE: CKKSCITwin, F> CKKSEvalModInfos<BE, F> for BootstrappingRun<'_, BE, F> {
+    fn eval_mod_plan(&self) -> &EvalModPlan {
+        self.context.eval_mod_plan()
+    }
+
+    fn eval_mod_standard(&self) -> Option<&EvalMod<F, CKKSPlaintextOwned<BE>>> {
+        self.context.eval_mod()
+    }
+
+    fn eval_mod_ci(&self) -> Option<&EvalModCIPrepared<BE, F>> {
+        self.context.eval_mod_ci()
+    }
+
+    fn c2s_guard_bits(&self) -> usize {
+        self.context.c2s_guard_bits()
+    }
+
+    fn one_eval_mod_on_real_slots(&self) -> bool {
+        self.context.pipeline == BootstrappingPipeline::S2CFirst && self.context.coeffs_to_slots_bypass.is_none()
+    }
+
+    fn eval_round_plus(&self) -> bool {
+        self.context.coeffs_to_slots_bypass.is_some()
+    }
+
+    fn message_slots(&self) -> Option<SlotsKind> {
+        Some(self.message.slots)
+    }
+
+    fn stamp_eval_mod_output<C: SetCKKSInfos>(&self, res: &mut C) {
+        res.set_log_delta(res.log_delta() - self.context.c2s_guard_bits());
+        // C2S-first ends in SlotsToCoeffs, which stamps the rest.
+        if self.context.pipeline == BootstrappingPipeline::S2CFirst {
+            res.set_meta(self.message);
+        }
+    }
+
+    fn eval_lut_output(
+        &self,
+        op: &'static str,
+        lut: &EncodedLut<CKKSPlaintextOwned<BE>>,
+        bootstrap_k: usize,
+    ) -> CKKSResult<Option<(GLWEPlaintextMeta, usize)>> {
+        functional_output_contract(op, self.message, self.context, lut, bootstrap_k).map(Some)
     }
 }
 
 impl<BE: Backend, F> BootstrappingContextPrepared<BE, F> {
+    /// Binds this bootstrap to the labels of the message it runs on: the steps read them from the returned run. It takes
+    /// the metadata, not a ciphertext: the raise clobbers its input, and a composer may state a message kind the label
+    /// does not carry.
+    pub fn run(&self, message: GLWEPlaintextMeta) -> BootstrappingRun<'_, BE, F> {
+        BootstrappingRun { context: self, message }
+    }
+
     /// The stages that set the widths at which a bootstrap uses its keys.
     pub(crate) fn stage_widths(&self) -> StageWidths<'_> {
         StageWidths {

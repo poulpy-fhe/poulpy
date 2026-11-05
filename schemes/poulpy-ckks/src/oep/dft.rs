@@ -119,7 +119,7 @@ pub unsafe trait CKKSDFTImpl:
     }
 
     /// Default body: `ckks_encoding_buffer_slots_to_coeffs_assign_derived`, the selected `ckks_dft_matrix_eval_assign` of the decode
-    /// matrix.
+    /// matrix, then [`CKKSDFTFactors::stamp_transform_output`].
     fn ckks_slots_to_coeffs_assign<Fmt, D, Dst, H>(
         module: &Module<Self>,
         ct: &mut Dst,

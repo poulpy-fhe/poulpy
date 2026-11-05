@@ -479,7 +479,8 @@ fn run_case<BE, F, E>(
         })
         .unwrap();
 
-        // The steps by hand give the digits of the whole op; only digits compare, as the whole op relabels its outputs.
+        // The steps by hand give the whole op, labels included, and stamp nothing.
+        let run = ctx.run(ct.meta());
         let mut coeffs = module.ckks_ciphertext_alloc_from_infos(&ct);
         let mut raised = module.ckks_ciphertext_alloc(params.base2k.into(), k_boot.into());
         let mut stepped: Vec<_> = backend_luts
@@ -488,15 +489,14 @@ fn run_case<BE, F, E>(
             .collect();
         with_scratch::<BE, _>(boot_tmp, |s| {
             module.ckks_double_into(&mut coeffs, &ct, s)?;
-            module.ckks_slots_to_coeffs_assign(&mut coeffs, &ctx, &keys.rotation_keys, s)?;
-            module.ckks_mod_raise(&mut raised, &mut coeffs, &ctx, &keys, s)?;
-            module.ckks_coeffs_to_slots_assign(&mut raised, &ctx, &keys.rotation_keys, s)?;
-            raised.set_slots(ct.slots());
-            module.ckks_eval_lut(&mut stepped, &raised, &ctx, &backend_luts, &keys, s)
+            module.ckks_slots_to_coeffs_assign(&mut coeffs, &run, &keys.rotation_keys, s)?;
+            module.ckks_mod_raise(&mut raised, &mut coeffs, &run, &keys, s)?;
+            module.ckks_coeffs_to_slots_assign(&mut raised, &run, &keys.rotation_keys, s)?;
+            module.ckks_eval_lut(&mut stepped, &raised, &run, &backend_luts, &keys, s)
         })
         .unwrap();
         for (got, want) in stepped.iter().zip(&outputs) {
-            assert_eq!(snapshot::<BE, _>(got).digits, snapshot::<BE, _>(want).digits);
+            assert_eq!(snapshot::<BE, _>(got), snapshot::<BE, _>(want));
         }
 
         // The step runs on exactly the scratch it advertises, and refuses one alignment unit less.
@@ -504,20 +504,20 @@ fn run_case<BE, F, E>(
             .iter()
             .map(|_| module.ckks_ciphertext_alloc(params.base2k.into(), k_boot.into()))
             .collect();
-        let lut_tmp = module.ckks_eval_lut_tmp_bytes(&exact[0], &raised, &ctx, &backend_luts, &keys_layout);
+        let lut_tmp = module.ckks_eval_lut_tmp_bytes(&exact[0], &raised, &run, &backend_luts, &keys_layout);
         with_scratch::<BE, _>(lut_tmp, |s| {
-            module.ckks_eval_lut(&mut exact, &raised, &ctx, &backend_luts, &keys, s)
+            module.ckks_eval_lut(&mut exact, &raised, &run, &backend_luts, &keys, s)
         })
         .unwrap();
         for (got, want) in exact.iter().zip(&stepped) {
-            assert_eq!(snapshot::<BE, _>(got).digits, snapshot::<BE, _>(want).digits);
+            assert_eq!(snapshot::<BE, _>(got), snapshot::<BE, _>(want));
         }
         let mut short: Vec<_> = backend_luts
             .iter()
             .map(|_| module.ckks_ciphertext_alloc(params.base2k.into(), k_boot.into()))
             .collect();
         let error = with_scratch::<BE, _>(lut_tmp - BE::SCRATCH_ALIGN, |s| {
-            module.ckks_eval_lut(&mut short, &raised, &ctx, &backend_luts, &keys, s)
+            module.ckks_eval_lut(&mut short, &raised, &run, &backend_luts, &keys, s)
         })
         .unwrap_err();
         assert!(
@@ -533,7 +533,7 @@ fn run_case<BE, F, E>(
         other_radix.glwe_layout.base2k = (params.base2k - 1).into();
         let a_radix = fixture_ciphertext(module, &other_radix, 29);
         let error = eval_lut_refusal(&mut refused, |res, s| {
-            module.ckks_eval_lut(res, &a_radix, &ctx, &backend_luts, &keys, s)
+            module.ckks_eval_lut(res, &a_radix, &run, &backend_luts, &keys, s)
         });
         assert_invalid_operand("two radices", &error, "ckks_eval_lut", "takes ciphertexts of one base2k");
         if guard_bits > 0 {
@@ -543,7 +543,7 @@ fn run_case<BE, F, E>(
                 31,
             );
             let error = eval_lut_refusal(&mut refused, |res, s| {
-                module.ckks_eval_lut(res, &a_scale, &ctx, &backend_luts, &keys, s)
+                module.ckks_eval_lut(res, &a_scale, &run, &backend_luts, &keys, s)
             });
             assert_invalid_operand(
                 "guard bits above the scale",
@@ -554,7 +554,7 @@ fn run_case<BE, F, E>(
         }
         let conjugation = keys.rotation_keys.remove(&-1).unwrap();
         let error = eval_lut_refusal(&mut refused, |res, s| {
-            module.ckks_eval_lut(res, &raised, &ctx, &backend_luts, &keys, s)
+            module.ckks_eval_lut(res, &raised, &run, &backend_luts, &keys, s)
         });
         assert!(
             matches!(
@@ -565,18 +565,21 @@ fn run_case<BE, F, E>(
         );
         keys.rotation_keys.insert(-1, conjugation);
 
-        // The label picks the route: the same raised input read as complex takes the split and gives other digits.
+        // The message picks the route: the same raised input bound to a complex message takes the split and gives other
+        // digits.
         if slots_kind == SlotsKind::Real {
             let mut as_complex: Vec<_> = backend_luts
                 .iter()
                 .map(|_| module.ckks_ciphertext_alloc(params.base2k.into(), k_boot.into()))
                 .collect();
-            raised.set_slots(SlotsKind::Complex);
+            let complex_run = ctx.run(GLWEPlaintextMeta {
+                slots: SlotsKind::Complex,
+                ..ct.meta()
+            });
             with_scratch::<BE, _>(boot_tmp, |s| {
-                module.ckks_eval_lut(&mut as_complex, &raised, &ctx, &backend_luts, &keys, s)
+                module.ckks_eval_lut(&mut as_complex, &raised, &complex_run, &backend_luts, &keys, s)
             })
             .unwrap();
-            raised.set_slots(SlotsKind::Real);
             assert!(
                 as_complex
                     .iter()
@@ -821,7 +824,8 @@ fn run_case<BE, F, E>(
 
             // The LUT step refuses on an empty arena and leaves every output as it was.
             let before: Vec<_> = outputs.iter().map(|ct| snapshot::<BE, _>(ct)).collect();
-            let error = with_scratch::<BE, _>(0, |s| module.ckks_eval_lut(&mut [], &raised, &ctx, &[], &keys, s)).unwrap_err();
+            let run = ctx.run(ct.meta());
+            let error = with_scratch::<BE, _>(0, |s| module.ckks_eval_lut(&mut [], &raised, &run, &[], &keys, s)).unwrap_err();
             assert_ckks_error(
                 "LUT step without LUTs",
                 &error,
@@ -831,7 +835,7 @@ fn run_case<BE, F, E>(
                 },
             );
             let error =
-                with_scratch::<BE, _>(0, |s| module.ckks_eval_lut(&mut outputs[..1], &raised, &ctx, luts, &keys, s)).unwrap_err();
+                with_scratch::<BE, _>(0, |s| module.ckks_eval_lut(&mut outputs[..1], &raised, &run, luts, &keys, s)).unwrap_err();
             assert_ckks_error(
                 "LUT step of fewer outputs than LUTs",
                 &error,
@@ -841,7 +845,7 @@ fn run_case<BE, F, E>(
                 },
             );
             let error = with_scratch::<BE, _>(0, |s| {
-                module.ckks_eval_lut(&mut outputs[..2], &raised, &ctx, &mixed_ratio_luts, &keys, s)
+                module.ckks_eval_lut(&mut outputs[..2], &raised, &run, &mixed_ratio_luts, &keys, s)
             })
             .unwrap_err();
             assert_ckks_error(
@@ -969,6 +973,21 @@ impl<BE: CKKSCITwin, F> CKKSEvalModInfos<BE, F> for OffCirclePlan<'_, BE, F> {
 
     fn eval_round_plus(&self) -> bool {
         false
+    }
+
+    fn message_slots(&self) -> Option<SlotsKind> {
+        None
+    }
+
+    fn stamp_eval_mod_output<C: SetCKKSInfos>(&self, _res: &mut C) {}
+
+    fn eval_lut_output(
+        &self,
+        _op: &'static str,
+        _lut: &EncodedLut<CKKSPlaintextOwned<BE>>,
+        _bootstrap_k: usize,
+    ) -> crate::CKKSResult<Option<(GLWEPlaintextMeta, usize)>> {
+        Ok(None)
     }
 }
 

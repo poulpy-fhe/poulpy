@@ -1,20 +1,16 @@
 //! The bootstrap and the functional bootstrap, composed from the public steps.
 use poulpy_core::{
     GLWEBytesOf,
-    layouts::{
-        GLWELayout, GLWEPlaintextInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank, SetBSGSMeta, SetGLWEPlaintextInfos,
-        SetK,
-    },
+    layouts::{GLWELayout, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank, SetBSGSMeta},
 };
 use poulpy_hal::layouts::{Module, ScratchArena};
 
 use crate::{
-    CKKSCtBounds, CKKSInfos, CKKSLayout, CKKSResult as Result, GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotsKind,
+    CKKSCtBounds, CKKSInfos, CKKSLayout, CKKSResult as Result, SetCKKSInfos,
     api::{CKKSAddOps, CKKSBootstrappingOps, CKKSCopyOps, CKKSDFTOps, CKKSPow2Ops},
-    ckks_ensure,
     layouts::{
-        BootstrappingContextPrepared, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingPipeline, CKKSCiphertextOwned,
-        CKKSDFTFactors, CKKSPlaintextOwned, EncodedLut, ScratchArenaTakeCKKSCiphertext,
+        BootstrappingContextPrepared, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingPipeline, BootstrappingRun,
+        CKKSCiphertextOwned, CKKSDFTFactors, CKKSEvalModInfos, CKKSPlaintextOwned, EncodedLut, ScratchArenaTakeCKKSCiphertext,
         bootstrapping::bootstrap_layouts,
         validation::{check_bootstrap_entry, check_functional_entry},
     },
@@ -62,7 +58,7 @@ where
     let in_bytes = BE::scratch_aligned(module.glwe_bytes_of_from_infos(&in_layout));
 
     let mut after_raise = dft_tmp_bytes(module, &boot_layout, &boot_layout, ctx.coeffs_to_slots(), keys_layout)
-        .max(module.ckks_bootstrap_eval_mod_tmp_bytes(res, &boot_layout, ctx, ci, keys_layout));
+        .max(module.ckks_bootstrap_eval_mod_tmp_bytes(res, &boot_layout, &ctx.run(a.meta()), ci, keys_layout));
     if let Some(bypass) = ctx.coeffs_to_slots_bypass() {
         let size = boot_layout.size();
         after_raise = boot_bytes
@@ -129,7 +125,7 @@ where
         .max(module.ckks_mod_raise_tmp_bytes(&boot_layout, &in_layout, ctx, keys_layout));
     boot_bytes
         + dft_tmp_bytes(module, &boot_layout, &boot_layout, ctx.coeffs_to_slots(), keys_layout)
-            .max(module.ckks_eval_lut_tmp_bytes(res, &boot_layout, ctx, luts, keys_layout))
+            .max(module.ckks_eval_lut_tmp_bytes(res, &boot_layout, &ctx.run(a.meta()), luts, keys_layout))
             .max(in_bytes + before_raise)
 }
 
@@ -138,7 +134,7 @@ fn slots_to_coeffs_and_raise<BE, F, K, Z>(
     module: &Module<BE>,
     z: &mut Z,
     a: &CKKSCiphertextOwned<BE>,
-    ctx: &BootstrappingContextPrepared<BE, F>,
+    run: &BootstrappingRun<'_, BE, F>,
     keys: &K,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
@@ -151,14 +147,14 @@ where
         let (mut coeffs, mut scratch) = scratch.take_ckks_ciphertext_scratch(a, a.meta());
         // The split path's `2 * a`: a `Split` decode matrix equals the standard one once its halves recombine.
         module.ckks_double_into(&mut coeffs, a, &mut scratch)?;
-        module.ckks_slots_to_coeffs_assign(&mut coeffs, ctx, keys.rotation_keys(), &mut scratch)?;
-        module.ckks_mod_raise(z, &mut coeffs, ctx, keys, &mut scratch)
+        module.ckks_slots_to_coeffs_assign(&mut coeffs, run, keys.rotation_keys(), &mut scratch)?;
+        module.ckks_mod_raise(z, &mut coeffs, run, keys, &mut scratch)
     })
 }
 
 /// Default body of `ckks_bootstrap`, by the pipeline of `ctx`: doubling, SlotsToCoeffs, the raise, CoeffsToSlots and
 /// the EvalMod of a bootstrap, or the raise, CoeffsToSlots, EvalMod and SlotsToCoeffs, with the EvalRound+ bypass when
-/// the plan has one. The input's scale, slot kind and sparsity go on the output at the end.
+/// the plan has one. A [`BootstrappingRun`] of the input's metadata gives the steps the slots and the labels of `res`.
 pub(crate) fn ckks_bootstrap_derived<BE, F, K>(
     module: &Module<BE>,
     res: &mut CKKSCiphertextOwned<BE>,
@@ -175,6 +171,7 @@ where
     K::TensorKey: Sync,
 {
     check_bootstrap_entry(module, res, a, ctx, ci, keys, scratch.available())?;
+    let run = ctx.run(a.meta());
     let boot_layout = GLWELayout {
         n: res.n(),
         base2k: a.base2k(),
@@ -185,48 +182,29 @@ where
         let (mut z, mut scratch) = scratch.take_ckks_ciphertext_scratch(&boot_layout, a.meta());
         match ctx.pipeline() {
             BootstrappingPipeline::S2CFirst => {
-                slots_to_coeffs_and_raise(module, &mut z, a, ctx, keys, &mut scratch)?;
-                coeffs_to_slots_and_eval_mod(module, res, &mut z, a.slots(), ctx, ci, keys, &mut scratch)
+                slots_to_coeffs_and_raise(module, &mut z, a, &run, keys, &mut scratch)?;
+                coeffs_to_slots_and_eval_mod(module, res, &mut z, &run, ci, keys, &mut scratch)
             }
             BootstrappingPipeline::C2SFirst => {
                 // The raise consumes its input: it works on a copy, released once `z` holds the raised ciphertext.
                 scratch.scope(|scratch| {
                     let (mut copy, mut scratch) = scratch.take_ckks_ciphertext_scratch(a, a.meta());
                     module.ckks_copy(&mut copy, a, &mut scratch)?;
-                    module.ckks_mod_raise(&mut z, &mut copy, ctx, keys, &mut scratch)
+                    module.ckks_mod_raise(&mut z, &mut copy, &run, keys, &mut scratch)
                 })?;
-                coeffs_to_slots_and_eval_mod(module, res, &mut z, a.slots(), ctx, ci, keys, &mut scratch)?;
-                module.ckks_slots_to_coeffs_assign(res, ctx, keys.rotation_keys(), &mut scratch)
+                coeffs_to_slots_and_eval_mod(module, res, &mut z, &run, ci, keys, &mut scratch)?;
+                module.ckks_slots_to_coeffs_assign(res, &run, keys.rotation_keys(), &mut scratch)
             }
         }
-    })?;
-    match ctx.pipeline() {
-        // The guard bits are gone: relabel at the output width.
-        BootstrappingPipeline::S2CFirst => res.set_meta(GLWEPlaintextMeta {
-            scale: Scale::Log(a.log_delta()),
-            slots: a.slots(),
-            log_sparsity: a.log_sparsity(),
-        }),
-        BootstrappingPipeline::C2SFirst => {
-            res.set_log_delta(a.log_delta());
-            res.set_slots(a.slots());
-        }
-    }
-    Ok(())
+    })
 }
 
 /// CoeffsToSlots on `z` and EvalMod into `res`, with the EvalRound+ bypass when the plan has one.
-/// `slots` is the kind of the message: the transforms label their outputs complex, and the step routes on it.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "the composition hands the arguments of its two steps down, with the slots they lose on the way"
-)]
 fn coeffs_to_slots_and_eval_mod<BE, F, K, R, Z>(
     module: &Module<BE>,
     res: &mut R,
     z: &mut Z,
-    slots: SlotsKind,
-    ctx: &BootstrappingContextPrepared<BE, F>,
+    run: &BootstrappingRun<'_, BE, F>,
     ci: Option<&Module<BE::CI>>,
     keys: &K,
     scratch: &mut ScratchArena<'_, BE>,
@@ -239,26 +217,26 @@ where
     R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + Send,
     Z: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
 {
-    let Some(bypass) = ctx.coeffs_to_slots_bypass() else {
-        module.ckks_coeffs_to_slots_assign(z, ctx, keys.rotation_keys(), scratch)?;
-        z.set_slots(slots);
-        return module.ckks_bootstrap_eval_mod(res, &*z, ctx, ci, keys, scratch);
+    let Some(bypass) = run.context().coeffs_to_slots_bypass() else {
+        module.ckks_coeffs_to_slots_assign(z, run, keys.rotation_keys(), scratch)?;
+        return module.ckks_bootstrap_eval_mod(res, &*z, run, ci, keys, scratch);
     };
     let (mut z_hp, mut scratch) = scratch.borrow().take_ckks_ciphertext_scratch(&*z, z.meta());
     module.ckks_copy(&mut z_hp, &*z, &mut scratch)?;
     module.ckks_dft_matrix_eval_assign(&mut z_hp, bypass, keys.rotation_keys(), &mut scratch)?;
-    module.ckks_coeffs_to_slots_assign(z, ctx, keys.rotation_keys(), &mut scratch)?;
-    module.ckks_bootstrap_eval_mod(res, &*z, ctx, ci, keys, &mut scratch)?;
+    module.ckks_coeffs_to_slots_assign(z, run, keys.rotation_keys(), &mut scratch)?;
+    module.ckks_bootstrap_eval_mod(res, &*z, run, ci, keys, &mut scratch)?;
     // `2·z_hp`, the bypass on the packed halves, which the split doubles as `2·Re` and `2·Im`.
     module.ckks_mul_pow2_assign(1, &mut z_hp, &mut scratch)?;
     module.ckks_add_assign(&mut z_hp, &*res, &mut scratch)?;
     module.ckks_copy(res, &z_hp, &mut scratch)?;
-    res.set_log_delta(res.log_delta() - ctx.c2s_guard_bits());
+    run.stamp_eval_mod_output(res);
     Ok(())
 }
 
 /// Default body of `ckks_functional_bootstrap`: doubling, SlotsToCoeffs, the raise, CoeffsToSlots and the LUT step,
-/// which shares them across the batch. The output contracts go on the outputs at the end.
+/// which shares them across the batch and gives each output its contract from a [`BootstrappingRun`] of the input's
+/// metadata.
 pub(crate) fn ckks_functional_bootstrap_derived<BE, F, K>(
     module: &Module<BE>,
     res: &mut [CKKSCiphertextOwned<BE>],
@@ -272,7 +250,8 @@ where
     BE: CKKSBootstrappingImpl,
     K: BootstrappingKeys<BE>,
 {
-    let outputs = check_functional_entry(module, res, a, ctx, luts, keys, scratch.available())?;
+    check_functional_entry(module, res, a, ctx, luts, keys, scratch.available())?;
+    let run = ctx.run(a.meta());
     let boot_layout = GLWELayout {
         n: res[0].n(),
         base2k: a.base2k(),
@@ -281,20 +260,8 @@ where
     };
     scratch.scope(|scratch| {
         let (mut z, mut scratch) = scratch.take_ckks_ciphertext_scratch(&boot_layout, a.meta());
-        slots_to_coeffs_and_raise(module, &mut z, a, ctx, keys, &mut scratch)?;
-        module.ckks_coeffs_to_slots_assign(&mut z, ctx, keys.rotation_keys(), &mut scratch)?;
-        // CoeffsToSlots labels its output complex, the LUT step routes on the kind of the message.
-        z.set_slots(a.slots());
-        module.ckks_eval_lut(res, &z, ctx, luts, keys, &mut scratch)
-    })?;
-    for (out, (meta, expected_k)) in res.iter_mut().zip(outputs) {
-        out.set_meta(meta);
-        ckks_ensure!(
-            out.k().as_usize() >= expected_k,
-            "functional bootstrap produced k={}, below required {expected_k}",
-            out.k().as_usize()
-        );
-        out.set_k(expected_k.into());
-    }
-    Ok(())
+        slots_to_coeffs_and_raise(module, &mut z, a, &run, keys, &mut scratch)?;
+        module.ckks_coeffs_to_slots_assign(&mut z, &run, keys.rotation_keys(), &mut scratch)?;
+        module.ckks_eval_lut(res, &z, &run, luts, keys, &mut scratch)
+    })
 }

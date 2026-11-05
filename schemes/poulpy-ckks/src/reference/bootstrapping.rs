@@ -231,10 +231,11 @@ pub trait CKKSBootstrappingReference<BE: CKKSCITwin> {
         A: CKKSCtBounds,
         P: CKKSEvalModInfos<BE, F>;
 
-    /// EvalMod of a bootstrap on `a`, the output of CoeffsToSlots, as the plan and the slots of `a` say:
+    /// EvalMod of a bootstrap on `a`, the output of CoeffsToSlots, as the plan and the slots of the message say:
     /// one [`ckks_eval_mod`](CKKSEvalModOps::ckks_eval_mod) on the real part, one on each half with their recombination,
     /// or one on the conjugate-invariant ring between the conversions there and back. Under EvalRound+ it returns
-    /// `EvalMod(x) - K·x` and keeps the guard bits, which go with the bypass; otherwise it removes them.
+    /// `EvalMod(x) - K·x` and keeps the guard bits and its working label, which go with the bypass; otherwise it calls
+    /// [`stamp_eval_mod_output`](CKKSEvalModInfos::stamp_eval_mod_output).
     fn ckks_bootstrap_eval_mod_reference<R, A, P, F, K>(
         &self,
         res: &mut R,
@@ -270,9 +271,10 @@ pub trait CKKSBootstrappingReference<BE: CKKSCITwin> {
         K: BootstrappingKeys<BE> + Sync,
         K::TensorKey: Sync;
 
-    /// Backend-generic reference for [`ckks_eval_lut`](crate::api::CKKSBootstrappingOps::ckks_eval_lut): on real slots
-    /// of a plan with one EvalMod on them, the real part of `a`; otherwise its split, with the imaginary half folded
-    /// into each output as it is produced. The guard bits leave the halves before the exponential.
+    /// Backend-generic reference for [`ckks_eval_lut`](crate::api::CKKSBootstrappingOps::ckks_eval_lut): on a real message
+    /// of a plan with one EvalMod on real slots, the real part of `a`; otherwise its split, with the imaginary half folded
+    /// into each output as it is produced. The guard bits leave the halves before the exponential, and each output takes
+    /// its [`eval_lut_output`](CKKSEvalModInfos::eval_lut_output) at the end.
     fn ckks_eval_lut_reference<A, P, F, K>(
         &self,
         res: &mut [CKKSCiphertextOwned<BE>],
@@ -529,7 +531,7 @@ impl<BE: CKKSCITwin + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl> CKKS
             );
         }
         if let Some((eval_mod, tensor_key)) = standard {
-            if a.slots().is_real() && plan.one_eval_mod_on_real_slots() {
+            if plan.message_slots().unwrap_or(a.slots()).is_real() && plan.one_eval_mod_on_real_slots() {
                 eval_mod_real(self, res, a, eval_mod, tensor_key, keys, scratch)?;
             } else {
                 eval_mod_complex(self, res, a, plan, eval_mod, tensor_key, keys, scratch)?;
@@ -538,7 +540,7 @@ impl<BE: CKKSCITwin + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl> CKKS
             eval_mod_on_ci(self, ci, res, a, plan, eval_mod_ci, keys, scratch)?;
         }
         if !plan.eval_round_plus() {
-            res.set_log_delta(res.log_delta() - plan.c2s_guard_bits());
+            plan.stamp_eval_mod_output(res);
         }
         Ok(())
     }
@@ -600,6 +602,10 @@ impl<BE: CKKSCITwin + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl> CKKS
                 scratch.available()
             );
         }
+        let bootstrap_k = res[0].k().as_usize();
+        for lut in luts {
+            plan.eval_lut_output(OP, lut, bootstrap_k)?;
+        }
         let shared = luts.len() > 1 && luts.iter().all(|lut| lut.general_series().is_some());
         let boot_layout = GLWELayout {
             n: res[0].n(),
@@ -607,8 +613,9 @@ impl<BE: CKKSCITwin + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl> CKKS
             k: res[0].k(),
             rank: Rank(1),
         };
+        let message_slots = plan.message_slots().unwrap_or(a.slots());
         scratch.scope(|scratch| {
-            if a.slots().is_real() && plan.one_eval_mod_on_real_slots() {
+            if message_slots.is_real() && plan.one_eval_mod_on_real_slots() {
                 let (mut z, scratch) = scratch.take_ckks_ciphertext_scratch(a, a.meta());
                 let (mut conjugate, mut scratch) = scratch.take_ckks_ciphertext_scratch(a, a.meta());
                 self.ckks_copy(&mut z, a, &mut scratch)?;
@@ -657,7 +664,19 @@ impl<BE: CKKSCITwin + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl> CKKS
                 }
             }
             Result::Ok(())
-        })
+        })?;
+        for (out, lut) in res.iter_mut().zip(luts) {
+            if let Some((meta, k)) = plan.eval_lut_output(OP, lut, bootstrap_k)? {
+                out.set_meta(meta);
+                ckks_ensure!(
+                    out.k().as_usize() >= k,
+                    "functional bootstrap produced k={}, below required {k}",
+                    out.k().as_usize()
+                );
+                out.set_k(k.into());
+            }
+        }
+        Ok(())
     }
 }
 

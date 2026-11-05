@@ -107,33 +107,31 @@ EvalMod runs at its own scale.
 
 | Step | Call | Notes |
 |---|---|---|
-| SlotsToCoeffs | `ckks_slots_to_coeffs_assign(ct, &ctx, keys.rotation_keys(), scratch)` | any `CKKSDFTFactors`, `BootstrappingContextPrepared` included |
-| ModRaise | `ckks_mod_raise(res, a, &ctx, keys, scratch)` | `a` is clobbered, the raise switches it in place; `ctx.mod_raise()` also serves, and `plan.mod_raise()` on a plan that leaves no CoeffsToSlots factor to the raise |
-| CoeffsToSlots | `ckks_coeffs_to_slots_assign(ct, &ctx, keys.rotation_keys(), scratch)` | leaves the slot label Complex |
-| EvalMod | `ckks_bootstrap_eval_mod(res, a, &ctx, ci, keys, scratch)` | real slots, split halves, or the conjugate-invariant ring, by the plan and the label of `a` |
-| EvalLut | `ckks_eval_lut(res, a, &ctx, luts, keys, scratch)` | `res` is a slice, one output per LUT |
+| SlotsToCoeffs | `ckks_slots_to_coeffs_assign(ct, &run, keys.rotation_keys(), scratch)` | any `CKKSDFTFactors`, `BootstrappingRun` included, which labels the output that ends a C2S-first bootstrap |
+| ModRaise | `ckks_mod_raise(res, a, &run, keys, scratch)` | `a` is clobbered, the raise switches it in place; `ctx`, `ctx.mod_raise()` also serve, and `plan.mod_raise()` on a plan that leaves no CoeffsToSlots factor to the raise |
+| CoeffsToSlots | `ckks_coeffs_to_slots_assign(ct, &run, keys.rotation_keys(), scratch)` | leaves the slot label Complex |
+| EvalMod | `ckks_bootstrap_eval_mod(res, a, &run, ci, keys, scratch)` | real slots, split halves, or the conjugate-invariant ring, by the plan and the slots of the message |
+| EvalLut | `ckks_eval_lut(res, a, &run, luts, keys, scratch)` | `res` is a slice, one output per LUT |
 
 Each has its `_tmp_bytes`, a step refuses a short arena or a wrong operand before it writes `res`, and a step run alone leaves the guard bits of the plan in place.
-`EvalModCIPrepared` implements no `CKKSEvalModInfos`: EvalMod on the conjugate-invariant ring runs through the context, not through its compiled part alone.
+`EvalModCIPrepared` implements no `CKKSEvalModInfos`: EvalMod on the conjugate-invariant ring runs through a run, not through its compiled part alone.
 
-The C2S-first bootstrap composed by hand, with an S2C-first variant noted in the comments:
+A composition stamps nothing. The transforms overwrite the label and the raise relabels the scale, so `ctx.run(meta)` binds the labels of the message to the compiled plan and the steps read them there. It takes the metadata, not a ciphertext: the raise clobbers its input, and a composer may state a message kind the label does not carry. `BootstrappingContextPrepared` itself takes no SlotsToCoeffs, EvalMod or EvalLut, so forgetting the run does not compile.
+
+The S2C-first bootstrap composed by hand:
 
 ```rust
-// S2C-first only: module.ckks_double_into(&mut coeffs, &input, s)?; then
-// module.ckks_slots_to_coeffs_assign(&mut coeffs, &ctx, keys.rotation_keys(), s)?;
-module.ckks_copy(&mut coeffs, &input, s)?;
-module.ckks_mod_raise(&mut raised, &mut coeffs, &ctx, &keys, s)?;
-module.ckks_coeffs_to_slots_assign(&mut raised, &ctx, keys.rotation_keys(), s)?;
-// The transforms leave the label Complex: stamp the input's, or a real route never runs.
-raised.set_slots(input.slots());
-module.ckks_bootstrap_eval_mod(&mut res, &raised, &ctx, None, &keys, s)?;
-// C2S-first only: module.ckks_slots_to_coeffs_assign(&mut res, &ctx, keys.rotation_keys(), s)?;
-// The output stamp: the scale and label of the input, which the raise relabelled.
-res.set_log_delta(input.log_delta());
-res.set_slots(input.slots());
+let run = ctx.run(input.meta());
+module.ckks_double_into(&mut coeffs, &input, s)?;
+module.ckks_slots_to_coeffs_assign(&mut coeffs, &run, keys.rotation_keys(), s)?;
+module.ckks_mod_raise(&mut raised, &mut coeffs, &run, &keys, s)?;
+module.ckks_coeffs_to_slots_assign(&mut raised, &run, keys.rotation_keys(), s)?;
+module.ckks_bootstrap_eval_mod(&mut res, &raised, &run, None, &keys, s)?;
 ```
 
-Under a bypass (EvalRound+), `ckks_bootstrap_eval_mod` returns `EvalMod(x) - K·x`, on every route and with the guard bits still on. The caller copies the raised ciphertext before CoeffsToSlots, runs the bypass factors on the copy (`ckks_dft_matrix_eval_assign(&mut z_hp, bypass, ..)`), doubles it (`ckks_mul_pow2_assign(1, ..)`), adds the step's output, and only then removes the guard bits with `set_log_delta(log_delta() - ctx.c2s_guard_bits())`: removing them earlier lowers `k` and changes the bits of the conjugate-invariant route. On an S2C-first plan the output stamp is the whole `set_meta(input.meta())`. `ckks_eval_lut` removes the guard bits itself, before its exponential.
+C2S-first copies `input` into `coeffs`, skips the SlotsToCoeffs above the raise, and ends in `module.ckks_slots_to_coeffs_assign(&mut res, &run, keys.rotation_keys(), s)?`.
+
+Under a bypass (EvalRound+), `ckks_bootstrap_eval_mod` returns `EvalMod(x) - K·x`, on every route, with its working label and the guard bits still on. The caller copies the raised ciphertext before CoeffsToSlots, runs the bypass factors on the copy (`ckks_dft_matrix_eval_assign(&mut z_hp, bypass, ..)`), doubles it (`ckks_mul_pow2_assign(1, ..)`), adds the step's output, and only then calls `run.stamp_eval_mod_output(&mut res)`: removing the guard bits earlier lowers `k` and changes the bits of the conjugate-invariant route. `ckks_eval_lut` removes the guard bits itself, before its exponential.
 The derived `ckks_bootstrap` of an S2C-first plan with a bypass returns the same value as before in other lazy digits; a normalized output is equal.
 
 ## Scale and budget chain

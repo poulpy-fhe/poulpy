@@ -83,9 +83,9 @@ pub trait CKKSBootstrappingOps<BE: CKKSCITwin> {
     /// `I(X)·q` is the integer part and the message the residue.
     ///
     /// `res` must be allocated at the bootstrap modulus. `a` is consumed: its content and metadata are unspecified on
-    /// a successful return. Scratch is bounded by [`Self::ckks_mod_raise_tmp_bytes`]. `plan` is a compiled context, its
-    /// [`mod_raise`](BootstrappingContextPrepared::mod_raise), or, on a plan that leaves no CoeffsToSlots factor to the
-    /// raise, the [`ModRaisePlan`](crate::layouts::ModRaisePlan) itself.
+    /// a successful return. Scratch is bounded by [`Self::ckks_mod_raise_tmp_bytes`]. `plan` is a compiled context, a
+    /// [`run`](BootstrappingContextPrepared::run) of it, its [`mod_raise`](BootstrappingContextPrepared::mod_raise), or,
+    /// on a plan that leaves no CoeffsToSlots factor to the raise, the [`ModRaisePlan`](crate::layouts::ModRaisePlan) itself.
     ///
     /// # Errors
     ///
@@ -125,20 +125,22 @@ pub trait CKKSBootstrappingOps<BE: CKKSCITwin> {
         A: CKKSCtBounds,
         P: CKKSEvalModInfos<BE, F>;
 
-    /// EvalMod of a bootstrap, on `a`, the output of CoeffsToSlots, as the plan and the slots of `a` say:
+    /// EvalMod of a bootstrap, on `a`, the output of CoeffsToSlots, as the plan and the slots of the message say:
     ///
     /// - real slots of an S2C-first plan without a bypass, which [`CKKSEvalModInfos::one_eval_mod_on_real_slots`] names:
-    ///   the real part and one EvalMod. CoeffsToSlots labels its output complex, so the caller stamps the slot kind of the
-    ///   message on `a`;
+    ///   the real part and one EvalMod;
     /// - any other input of a plan on the standard ring: the split, one EvalMod per half, on a parallel executor at once,
     ///   and the recombination;
     /// - a plan on the conjugate-invariant ring, with `ci` of degree `N` and this module of degree `2N`: the conversion
     ///   to that ring, one EvalMod for all coefficients on `ci`, and the conversion back.
     ///
-    /// The guard bits leave `res` here. Under EvalRound+, [`CKKSEvalModInfos::eval_round_plus`], `res` is
-    /// `EvalMod(x) - K·x` and keeps them: the caller adds the bypass back, then removes them with `set_log_delta`. A
-    /// step does not know the message scale of a raised ciphertext, so the caller stamps the scale, slot kind and
-    /// sparsity of the input at the end.
+    /// `plan` is a [`BootstrappingRun`](crate::layouts::BootstrappingRun), which holds the labels of the message, or a
+    /// plain [`EvalMod`](crate::layouts::EvalMod), which reads the slots of `a` and stamps nothing.
+    ///
+    /// The output is the message's: the guard bits leave `res` here and, on an S2C-first plan, `res` takes the message's
+    /// metadata; a C2S-first plan ends in `ckks_slots_to_coeffs_assign`, which labels it. Under EvalRound+,
+    /// [`CKKSEvalModInfos::eval_round_plus`], `res` is `EvalMod(x) - K·x`, with its working label and the guard bits: the
+    /// composer adds the bypass back, then calls [`CKKSEvalModInfos::stamp_eval_mod_output`].
     ///
     /// # Errors
     ///
@@ -192,18 +194,21 @@ pub trait CKKSBootstrappingOps<BE: CKKSCITwin> {
     /// Evaluates each LUT of `luts` on `a`, the output of CoeffsToSlots, into the matching ciphertext of `res`.
     ///
     /// The guard bits leave the input here, before the exponential. Real slots of a plan for which
-    /// [`CKKSEvalModInfos::one_eval_mod_on_real_slots`] holds take the real part of `a` and skip the imaginary half;
-    /// CoeffsToSlots labels its output complex, so the caller stamps the slot kind of the message on `a`. Any other input
-    /// is split, each half is evaluated and the halves are recombined. General LUTs of a batch share the power basis of
-    /// each half. The outputs keep the scale and widths the evaluation leaves them; the caller stamps their metadata.
+    /// [`CKKSEvalModInfos::one_eval_mod_on_real_slots`] holds take the real part of `a` and skip the imaginary half. Any
+    /// other input is split, each half is evaluated and the halves are recombined. General LUTs of a batch share the power
+    /// basis of each half.
+    ///
+    /// `plan` is a [`BootstrappingRun`](crate::layouts::BootstrappingRun), whose message gives the slots and each output
+    /// its [`eval_lut_output`](CKKSEvalModInfos::eval_lut_output), or a plain [`EvalMod`](crate::layouts::EvalMod), which
+    /// reads the slots of `a` and leaves the outputs the scale and widths of the evaluation.
     ///
     /// # Errors
     ///
     /// [`InvalidOperand`](crate::CKKSCompositionError::InvalidOperand) before any write to `res`, for no LUT, a number of
     /// outputs other than the number of LUTs, LUTs of different message moduli, a plan that is not the unit-circle
     /// complex exponential on the standard ring when a LUT needs EvalMod, outputs that do not share one rank-1 layout,
-    /// an input of another degree, base2k or rank, an input of fewer scale bits than the plan's guard bits, or keys
-    /// without the tensor key of the plan's ring.
+    /// an input of another degree, base2k or rank, an input of fewer scale bits than the plan's guard bits, keys
+    /// without the tensor key of the plan's ring, or outputs too narrow for what `plan` asks of them.
     /// [`MissingAutomorphismKey`](crate::CKKSCompositionError::MissingAutomorphismKey), before any write to `res`, for a
     /// conjugation key that does not cover `a`.
     /// `CKKSError::Internal` for an arena under [`Self::ckks_eval_lut_tmp_bytes`], when the keys report their layout.

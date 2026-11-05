@@ -19,7 +19,7 @@ use poulpy_core::{
 };
 use poulpy_hal::layouts::{Backend, Module, galois_element};
 
-use crate::{CoeffsMeta, GLWEPlaintextMeta, api::LtDiagonalMeta, layouts::CKKSPlaintextOwned, numerics::CKKSFloat};
+use crate::{CoeffsMeta, GLWEPlaintextMeta, SetCKKSInfos, api::LtDiagonalMeta, layouts::CKKSPlaintextOwned, numerics::CKKSFloat};
 use num_traits::FloatConst;
 
 /// Real scalar used for plaintext DFT-matrix generation, with platform-independent
@@ -868,6 +868,9 @@ pub trait CKKSDFTFactors<BE: Backend, Dir, Fmt> {
         BE: 'a,
         Dir: 'a,
         Fmt: 'a;
+
+    /// Labels the output of a SlotsToCoeffs that ends a bootstrap.
+    fn stamp_transform_output<C: SetCKKSInfos>(&self, _ct: &mut C) {}
 }
 
 impl<BE: Backend, Dir, Fmt, P> CKKSDFTFactors<BE, Dir, Fmt> for DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>

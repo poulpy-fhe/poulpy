@@ -54,7 +54,7 @@ use crate::{
     },
     layouts::{
         BootstrappingKeysLayout, BootstrappingLinearKeys, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques,
-        CKKSCITwin, CKKSCiphertextAlloc, CKKSDFTFactors, CKKSPlaintextAlloc, DFTOutputFormat, DFTPlan, DFTType,
+        CKKSCITwin, CKKSCiphertextAlloc, CKKSDFTFactors, CKKSEvalModInfos, CKKSPlaintextAlloc, DFTOutputFormat, DFTPlan, DFTType,
         EncapsulationKeysLayout, EvalRoundPlus, ModRaisePlan, SparseSecretEncapsulation,
         eval_mod::{EvalModPlan, EvalModType},
     },
@@ -535,9 +535,9 @@ fn assert_mod_raise_refuses<BE>(
     );
 }
 
-/// [`CKKSBootstrappingOps::ckks_bootstrap_eval_mod`] in a hand composition gives the digits of `ckks_bootstrap`, on
-/// every pipeline, on real and complex labels, with and without EvalRound+. [`CKKSBootstrappingOps::ckks_mod_raise`]
-/// takes the literal plan, the compiled raise and the context with one result.
+/// [`CKKSBootstrappingOps::ckks_bootstrap_eval_mod`] in a hand composition that stamps nothing gives the snapshot of
+/// `ckks_bootstrap`, on every pipeline, on real and complex messages, with and without EvalRound+.
+/// [`CKKSBootstrappingOps::ckks_mod_raise`] takes the literal plan, the compiled raise and the context with one result.
 pub fn test_ckks_bootstrap_eval_mod<BE>()
 where
     BE: TestContextBackend<Ring = Standard, ZnxWord = i64> + CKKSCITwin,
@@ -595,6 +595,7 @@ where
             with_scratch::<BE, _>(bytes, |s| module.ckks_bootstrap(&mut whole, &input, &context, None, &keys, s)).unwrap();
             digits.push(snapshot::<BE, _>(&whole).digits);
 
+            let run = context.run(input.meta());
             let mut coeffs = module.ckks_ciphertext_alloc_from_infos(&input);
             let mut raised = module.ckks_ciphertext_alloc_from_glwe_infos(&boot);
             let mut z_hp = module.ckks_ciphertext_alloc_from_glwe_infos(&boot);
@@ -603,30 +604,25 @@ where
             with_scratch::<BE, _>(bytes, |s| {
                 if s2c_first {
                     module.ckks_double_into(&mut coeffs, &input, s)?;
-                    module.ckks_slots_to_coeffs_assign(&mut coeffs, &context, &keys.rotation_keys, s)?;
+                    module.ckks_slots_to_coeffs_assign(&mut coeffs, &run, &keys.rotation_keys, s)?;
                 } else {
                     module.ckks_copy(&mut coeffs, &input, s)?;
                 }
-                module.ckks_mod_raise(&mut raised, &mut coeffs, &context, &keys, s)?;
+                module.ckks_mod_raise(&mut raised, &mut coeffs, &run, &keys, s)?;
                 if let Some(bypass) = context.coeffs_to_slots_bypass() {
                     module.ckks_copy(&mut z_hp, &raised, s)?;
                     module.ckks_dft_matrix_eval_assign(&mut z_hp, bypass, &keys.rotation_keys, s)?;
                 }
-                module.ckks_coeffs_to_slots_assign(&mut raised, &context, &keys.rotation_keys, s)?;
-                raised.set_slots(input.slots());
-                module.ckks_bootstrap_eval_mod(&mut stepped, &raised, &context, None, &keys, s)?;
+                module.ckks_coeffs_to_slots_assign(&mut raised, &run, &keys.rotation_keys, s)?;
+                module.ckks_bootstrap_eval_mod(&mut stepped, &raised, &run, None, &keys, s)?;
                 if context.coeffs_to_slots_bypass().is_some() {
                     module.ckks_mul_pow2_assign(1, &mut z_hp, s)?;
                     module.ckks_add_assign(&mut z_hp, &stepped, s)?;
                     module.ckks_copy(&mut stepped, &z_hp, s)?;
-                    stepped.set_log_delta(stepped.log_delta() - context.c2s_guard_bits());
+                    run.stamp_eval_mod_output(&mut stepped);
                 }
-                if s2c_first {
-                    stepped.set_meta(input.meta());
-                } else {
-                    module.ckks_slots_to_coeffs_assign(&mut stepped, &context, &keys.rotation_keys, s)?;
-                    stepped.set_log_delta(input.log_delta());
-                    stepped.set_slots(input.slots());
+                if !s2c_first {
+                    module.ckks_slots_to_coeffs_assign(&mut stepped, &run, &keys.rotation_keys, s)?;
                 }
                 Ok::<_, crate::CKKSError>(())
             })
@@ -640,16 +636,16 @@ where
 
             // The step runs on exactly the scratch it advertises, and refuses one alignment unit less.
             let mut exact = module.ckks_ciphertext_alloc_from_glwe_infos(&boot);
-            let eval_mod_tmp = module.ckks_bootstrap_eval_mod_tmp_bytes(&exact, &raised, &context, None, keys_layout);
+            let eval_mod_tmp = module.ckks_bootstrap_eval_mod_tmp_bytes(&exact, &raised, &run, None, keys_layout);
             assert!(eval_mod_tmp > 0);
             with_scratch::<BE, _>(eval_mod_tmp, |s| {
-                module.ckks_bootstrap_eval_mod(&mut exact, &raised, &context, None, &keys, s)
+                module.ckks_bootstrap_eval_mod(&mut exact, &raised, &run, None, &keys, s)
             })
             .unwrap();
             let mut short = module.ckks_ciphertext_alloc_from_glwe_infos(&boot);
             let before = snapshot::<BE, _>(&short);
             let err = with_scratch::<BE, _>(eval_mod_tmp - BE::SCRATCH_ALIGN, |s| {
-                module.ckks_bootstrap_eval_mod(&mut short, &raised, &context, None, &keys, s)
+                module.ckks_bootstrap_eval_mod(&mut short, &raised, &run, None, &keys, s)
             })
             .unwrap_err();
             assert!(
@@ -662,24 +658,45 @@ where
             assert_eval_mod_refuses(
                 &mut stepped,
                 "a CI module goes with a plan of EvalMod on the CI ring, and only with one",
-                |res, s| module.ckks_bootstrap_eval_mod(res, &raised, &context, Some(&ci), &keys, s),
+                |res, s| module.ckks_bootstrap_eval_mod(res, &raised, &run, Some(&ci), &keys, s),
             );
             let mut rank2 = boot;
             rank2.glwe_layout.rank = 2usize.into();
             let a_rank2 = fixture_ciphertext(&module, &rank2, 29);
             assert_eval_mod_refuses(&mut stepped, "supports rank-1 ciphertexts only, got rank 2 -> 1", |res, s| {
-                module.ckks_bootstrap_eval_mod(res, &a_rank2, &context, None, &keys, s)
+                module.ckks_bootstrap_eval_mod(res, &a_rank2, &run, None, &keys, s)
             });
             let mut half = boot;
             half.glwe_layout.n = (preset.n() / 2).into();
             let degree = "takes ciphertexts of one degree, which the module serves";
             assert_eval_mod_refuses(&mut fixture_ciphertext(&module, &half, 11), degree, |res, s| {
-                module.ckks_bootstrap_eval_mod(res, &raised, &context, None, &keys, s)
+                module.ckks_bootstrap_eval_mod(res, &raised, &run, None, &keys, s)
             });
             let small = Module::<BE>::new(preset.n() as u64 / 2);
             assert_eval_mod_refuses(&mut stepped, degree, |res, s| {
-                small.ckks_bootstrap_eval_mod(res, &raised, &context, None, &keys, s)
+                small.ckks_bootstrap_eval_mod(res, &raised, &run, None, &keys, s)
             });
+
+            // A plain EvalMod has no message: the label of its input picks the route, and it stamps nothing.
+            if slots == SlotsKind::Complex {
+                let plain = context.eval_mod().unwrap();
+                let mut plain_digits = Vec::new();
+                for label in [SlotsKind::Real, SlotsKind::Complex] {
+                    raised.set_slots(label);
+                    let mut out = module.ckks_ciphertext_alloc_from_glwe_infos(&boot);
+                    let bytes = module.ckks_bootstrap_eval_mod_tmp_bytes(&out, &raised, plain, None, keys_layout);
+                    with_scratch::<BE, _>(bytes, |s| {
+                        module.ckks_bootstrap_eval_mod(&mut out, &raised, plain, None, &keys, s)
+                    })
+                    .unwrap();
+                    assert_eq!(out.log_delta(), raised.log_delta(), "a plain EvalMod stamped its output");
+                    plain_digits.push(snapshot::<BE, _>(&out).digits);
+                }
+                assert_ne!(
+                    plain_digits[0], plain_digits[1],
+                    "a plain EvalMod ignored the label of its input"
+                );
+            }
         }
         // Real slots take one EvalMod on an S2C-first plan without a bypass, and only there.
         let one_eval_mod = context.pipeline() == BootstrappingPipeline::S2CFirst && context.coeffs_to_slots_bypass().is_none();
@@ -696,7 +713,7 @@ where
             with_scratch::<BE, _>(bytes, |s| {
                 if context.pipeline() == BootstrappingPipeline::S2CFirst {
                     module.ckks_double_into(&mut coeffs, &input, s)?;
-                    module.ckks_slots_to_coeffs_assign(&mut coeffs, &context, &keys.rotation_keys, s)
+                    module.ckks_slots_to_coeffs_assign(&mut coeffs, context.slots_to_coeffs(), &keys.rotation_keys, s)
                 } else {
                     module.ckks_copy(&mut coeffs, &input, s)
                 }
@@ -790,7 +807,7 @@ where
         let tensor_key = keys.tensor_key.take();
         let z = fixture_ciphertext(&module, &boot, 19);
         assert_eval_mod_refuses(&mut res, "the keys hold no tensor key of the plan's ring", |res, s| {
-            module.ckks_bootstrap_eval_mod(res, &z, &context, None, &keys, s)
+            module.ckks_bootstrap_eval_mod(res, &z, &context.run(z.meta()), None, &keys, s)
         });
         keys.tensor_key = tensor_key;
     }

@@ -30,8 +30,8 @@ use poulpy_core::{
     GLWEAdd, GLWEDiagonalProd, GLWEFill,
     api::{GGLWEPreparedFactory, GLWEAutomorphismKeyPreparedFactory, GLWETensorKeyPreparedFactory},
     layouts::{
-        GGLWEInfos, GGLWELayout, GGLWEPrepared, GLWEAutomorphismKeyPrepared, GLWELayout, GLWEPlaintextInfos,
-        GLWETensorKeyPrepared, GLWEToBackendRef, LWEInfos, SetGLWEPlaintextInfos, TorusPrecision,
+        GGLWEInfos, GGLWELayout, GGLWEPrepared, GLWEAutomorphismKeyPrepared, GLWELayout, GLWETensorKeyPrepared, GLWEToBackendRef,
+        LWEInfos, TorusPrecision,
         prepared::{GGLWEPreparedToBackendRef, GLWEAutomorphismKeyPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
     },
 };
@@ -606,27 +606,26 @@ where
     let mut stepped = fixture_ciphertext(module, out_layout, 109);
     let mut coeffs = fixture_ciphertext(module, in_layout, 113);
     let s2c_first = ctx.pipeline() == BootstrappingPipeline::S2CFirst;
+    let run = ctx.run(ct_in.meta());
     let mut steps = Vec::new();
     with_scratch::<BE, _>(bytes, |s| {
         if s2c_first {
             BE::ckks_double_into(module, &mut coeffs, ct_in, s)?;
-            module.ckks_slots_to_coeffs_assign(&mut coeffs, ctx, keys.rotation_keys(), s)?;
+            module.ckks_slots_to_coeffs_assign(&mut coeffs, &run, keys.rotation_keys(), s)?;
         } else {
             BE::ckks_copy(module, &mut coeffs, ct_in, s)?;
         }
-        BE::ckks_mod_raise(module, &mut raised, &mut coeffs, ctx, keys, s)?;
+        BE::ckks_mod_raise(module, &mut raised, &mut coeffs, &run, keys, s)?;
         steps.push(snapshot::<BE, _>(&raised));
         if let Some(bypass) = ctx.coeffs_to_slots_bypass() {
             BE::ckks_copy(module, &mut z_hp, &raised, s)?;
             module.ckks_dft_matrix_eval_assign(&mut z_hp, bypass, keys.rotation_keys(), s)?;
         }
-        module.ckks_coeffs_to_slots_assign(&mut raised, ctx, keys.rotation_keys(), s)?;
-        // The DFT leaves the label Complex, the composer restores the input's for a real route.
-        raised.set_slots(ct_in.slots());
+        module.ckks_coeffs_to_slots_assign(&mut raised, &run, keys.rotation_keys(), s)?;
         steps.push(snapshot::<BE, _>(&raised));
         match luts {
-            Some(luts) => BE::ckks_eval_lut(module, std::slice::from_mut(&mut stepped), &raised, ctx, luts, keys, s)?,
-            None => BE::ckks_bootstrap_eval_mod(module, &mut stepped, &raised, ctx, None, keys, s)?,
+            Some(luts) => BE::ckks_eval_lut(module, std::slice::from_mut(&mut stepped), &raised, &run, luts, keys, s)?,
+            None => BE::ckks_bootstrap_eval_mod(module, &mut stepped, &raised, &run, None, keys, s)?,
         }
         steps.push(snapshot::<BE, _>(&stepped));
         Ok::<_, crate::CKKSError>(())

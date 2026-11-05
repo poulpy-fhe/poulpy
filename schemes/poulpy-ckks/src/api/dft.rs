@@ -77,7 +77,9 @@ pub trait CKKSDFTOps<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         H: GetAutomorphismKey<BE> + GetTensorKey<BE>;
 
-    /// `SlotsToCoeffs` in place. `Fmt` is how an output reads; the unsplit evaluation ignores it.
+    /// `SlotsToCoeffs` in place. `Fmt` is how an output reads; the unsplit evaluation ignores it. `dft` labels the output
+    /// through [`CKKSDFTFactors::stamp_transform_output`], which a [`BootstrappingRun`](crate::layouts::BootstrappingRun) of
+    /// a C2S-first plan uses to end the bootstrap.
     fn ckks_slots_to_coeffs_assign<Fmt, D, Dst, H>(
         &self,
         ct: &mut Dst,
