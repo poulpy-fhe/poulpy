@@ -561,7 +561,7 @@ where
                 .generate_keys(&module, None, &sk, keys_layout, &mut xs, &mut xe, &mut xa, s)
         })
         .unwrap();
-        let keys = with_scratch::<BE, _>(keys_layout.prepare_tmp_bytes(&module, None), |s| {
+        let mut keys = with_scratch::<BE, _>(keys_layout.prepare_tmp_bytes(&module, None), |s| {
             key_set.transfer_and_prepare(&module, None, s)
         })
         .unwrap();
@@ -753,6 +753,14 @@ where
             "ModUp must widen, not shrink, the modulus",
             |res, a, s| module.ckks_mod_raise(res, a, &context, &keys, s),
         );
+
+        // The tensor key resolves before the scratch check, on the standard ring too.
+        let tensor_key = keys.tensor_key.take();
+        let z = fixture_ciphertext(&module, &boot, 19);
+        assert_eval_mod_refuses(&mut res, "the keys hold no tensor key of the plan's ring", |res, s| {
+            module.ckks_bootstrap_eval_mod(res, &z, &context, None, &keys, s)
+        });
+        keys.tensor_key = tensor_key;
     }
 }
 
