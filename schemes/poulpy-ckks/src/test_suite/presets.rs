@@ -715,6 +715,32 @@ where
     BootstrappingPresetRun::<BE>::setup(preset.with_eval_round_plus(30, 51).unwrap(), None).check(backend);
 }
 
+/// The run of the insecure `N = 2^11` S2C-first preset on the standard ring, for a backend that records its bootstrap.
+pub fn small_s2c_preset_run_with_client<BE, BC>() -> BootstrappingPresetRun<BE, BC>
+where
+    BE: Backend<Ring = Standard, ZnxWord = i64> + HostStaged + MaxBase2k + 'static + CKKSCITwin,
+    CIBackend<BE>: MaxBase2k,
+    BC: TestContextBackend<Ring = Standard> + CKKSCITwin,
+    CIBackend<BC>: TestContextBackend,
+    Module<BE>: CKKSDFTMatrixPreparedFactory<BE> + PresetRunModule<BE> + CKKSDFTOps<BE> + GLWECIKeyPreparedFactory<BE>,
+    Module<CIBackend<BE>>: ModuleNew<CIBackend<BE>>
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
+        + CKKSEncodingOps<CIBackend<BE>, f64>
+        + GLWETensorKeyPreparedFactory<CIBackend<BE>>,
+    Module<BC>: TestContextModule<BC> + CKKSEncodingOps<BC, f64> + GLWECIKeyEncryptSk<BC>,
+    Module<CIBackend<BC>>: TestContextSharedModule<CIBackend<BC>>,
+    for<'a> <BC as Backend>::BufRef<'a>: HostDataRef,
+    for<'a> <BC as Backend>::BufMut<'a>: HostDataMut,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos + CKKSCtBounds + poulpy_core::layouts::GLWEDiagonalProd<BE>,
+    CKKSCiphertextOwned<BC>: GLWEToBackendMut<BC> + GLWEToBackendRef<BC> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BC>: GLWEToBackendRef<BC> + LWEInfos,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+{
+    BootstrappingPresetRun::<BE, BC>::setup(crate::presets::bootstrapping::insecure_n11_d35_k180_p20_s2c().unwrap(), None)
+}
+
 /// The insecure `N = 2^11` S2C-first preset of [`small_s2c_preset_meets_precision`] on an
 /// evaluated backend `BE` whose keys and ciphertexts come from the client backend `BC`: once on
 /// the standard ring, and once with EvalMod on the conjugate-invariant ring, `u` folded and the

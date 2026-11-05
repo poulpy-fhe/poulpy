@@ -18,8 +18,9 @@ use crate::{
     },
     layouts::{
         BootstrappingContextPrepared, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingLinearKeys, BootstrappingPipeline,
-        BootstrappingPlan, BootstrappingTechniques, CKKSCITwin, CKKSPlaintextOwned, DFTOutputFormat, DFTPlan, DFTType,
-        EncapsulationKeysLayout, EncodedLut, EvalModPlan, EvalModType, EvalRoundPlus, SparseSecretEncapsulation,
+        BootstrappingPlan, BootstrappingTechniques, CKKSCITwin, CKKSCiphertextOwned, CKKSPlaintextOwned, DFTOutputFormat,
+        DFTPlan, DFTType, EncapsulationKeysLayout, EncodedLut, EvalModPlan, EvalModType, EvalRoundPlus,
+        SparseSecretEncapsulation,
     },
     oep::{CKKSBootstrappingImpl, CKKSEncapsulatedModUpImpl},
     polynomial::SplitStrategy,
@@ -29,8 +30,8 @@ use poulpy_core::{
     GLWEAdd, GLWEDiagonalProd, GLWEFill,
     api::{GGLWEPreparedFactory, GLWEAutomorphismKeyPreparedFactory, GLWETensorKeyPreparedFactory},
     layouts::{
-        GGLWEInfos, GGLWELayout, GGLWEPrepared, GLWEAutomorphismKeyPrepared, GLWELayout, GLWETensorKeyPrepared, GLWEToBackendRef,
-        LWEInfos, TorusPrecision,
+        GGLWEInfos, GGLWELayout, GGLWEPrepared, GLWEAutomorphismKeyPrepared, GLWELayout, GLWEPlaintextInfos,
+        GLWETensorKeyPrepared, GLWEToBackendRef, LWEInfos, SetGLWEPlaintextInfos, TorusPrecision,
         prepared::{GGLWEPreparedToBackendRef, GLWEAutomorphismKeyPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
     },
 };
@@ -406,7 +407,35 @@ where
 
 type Outcome = (Result<(), String>, Vec<Snapshot>);
 
-fn run_bootstrap<BE, F>(params: CKKSTestParams, module: &Module<BE>) -> Vec<Outcome>
+/// Snapshots of the hand composition of one non-functional case: the raise, the first DFT, the EvalMod output.
+type Steps = Vec<Snapshot>;
+
+/// The outcome of every whole bootstrap of the fixture cases.
+pub fn run_bootstrap<BE, F>(params: CKKSTestParams, module: &Module<BE>) -> Vec<Outcome>
+where
+    BE: Backend<ZnxWord = i64> + CKKSBootstrappingImpl + HostStaged,
+    F: CKKSEncodingScalar,
+    Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + CKKSDFTOps<BE>
+        + CKKSDFTMatrixOps<BE, F>
+        + CKKSEncodingOps<BE, F>
+        + CKKSEncodingHostOps<BE, F>
+        + CKKSAllOpsTmpBytes<BE>
+        + GLWEAutomorphismKeyPreparedFactory<BE>
+        + GLWETensorKeyPreparedFactory<BE>
+        + GGLWEPreparedFactory<BE>
+        + GLWEFill<BE>
+        + crate::api::CKKSRightOperandPreparedFactory<BE>
+        + CyclotomicOrder,
+    Module<BE::CI>: CKKSEncodingOps<BE::CI, F>,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds + GLWEDiagonalProd<BE>,
+    FixtureKeys<BE>: BootstrappingKeys<BE> + Sync,
+    <FixtureKeys<BE> as BootstrappingKeys<BE>>::TensorKey: Sync,
+{
+    run_bootstrap_cases::<BE, F>(params, module).0
+}
+
+fn run_bootstrap_cases<BE, F>(params: CKKSTestParams, module: &Module<BE>) -> (Vec<Outcome>, Vec<Steps>)
 where
     BE: Backend<ZnxWord = i64> + CKKSBootstrappingImpl + HostStaged,
     F: CKKSEncodingScalar,
@@ -431,6 +460,7 @@ where
     let log_slots = n.ilog2() as usize - 1;
     let log_delta = 12;
     let mut results = Vec::new();
+    let mut steps = Vec::new();
     let host = Module::<HostBytesBackend>::new(n as u64);
     let lut = EncodedLut::binary(
         &host,
@@ -523,8 +553,66 @@ where
             assert!(result.is_ok(), "{pipeline:?}: {result:?}");
             results.push((result.map_err(|e| e.to_string()), vec![snapshot::<BE, _>(&raised)]));
         }
+        steps.push(compose_steps::<BE, F, _>(
+            module,
+            &ctx,
+            &keys,
+            &ct_in,
+            &in_layout,
+            &out_layout,
+            bytes,
+        ));
     }
-    results
+    (results, steps)
+}
+
+/// The steps of `ckks_bootstrap` composed by hand on `ct_in`, each output snapshotted for the cross-backend comparison.
+fn compose_steps<BE, F, K>(
+    module: &Module<BE>,
+    ctx: &BootstrappingContextPrepared<BE, F>,
+    keys: &K,
+    ct_in: &CKKSCiphertextOwned<BE>,
+    in_layout: &CKKSLayout,
+    out_layout: &CKKSLayout,
+    bytes: usize,
+) -> Steps
+where
+    BE: Backend<ZnxWord = i64> + CKKSBootstrappingImpl + HostStaged,
+    F: Sync,
+    Module<BE>: CKKSDFTOps<BE> + GLWEFill<BE>,
+    CKKSCiphertextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds,
+    K: BootstrappingKeys<BE> + Sync,
+    K::TensorKey: Sync,
+{
+    let mut raised = fixture_ciphertext(module, out_layout, 103);
+    let mut z_hp = fixture_ciphertext(module, out_layout, 107);
+    let mut stepped = fixture_ciphertext(module, out_layout, 109);
+    let mut coeffs = fixture_ciphertext(module, in_layout, 113);
+    let s2c_first = ctx.pipeline() == BootstrappingPipeline::S2CFirst;
+    let mut steps = Vec::new();
+    with_scratch::<BE, _>(bytes, |s| {
+        if s2c_first {
+            BE::ckks_double_into(module, &mut coeffs, ct_in, s)?;
+            module.ckks_slots_to_coeffs_assign(&mut coeffs, ctx, keys.rotation_keys(), s)?;
+        } else {
+            BE::ckks_copy(module, &mut coeffs, ct_in, s)?;
+        }
+        BE::ckks_mod_raise(module, &mut raised, &mut coeffs, ctx, keys, s)?;
+        steps.push(snapshot::<BE, _>(&raised));
+        if let Some(bypass) = ctx.coeffs_to_slots_bypass() {
+            BE::ckks_copy(module, &mut z_hp, &raised, s)?;
+            module.ckks_dft_matrix_eval_assign(&mut z_hp, bypass, keys.rotation_keys(), s)?;
+        }
+        module.ckks_coeffs_to_slots_assign(&mut raised, ctx, keys.rotation_keys(), s)?;
+        // The DFT leaves the label Complex, the composer restores the input's for a real route.
+        raised.set_slots(ct_in.slots());
+        steps.push(snapshot::<BE, _>(&raised));
+        BE::ckks_bootstrap_eval_mod(module, &mut stepped, &raised, ctx, None, keys, s)?;
+        steps.push(snapshot::<BE, _>(&stepped));
+        Ok::<_, crate::CKKSError>(())
+    })
+    .expect("the composed steps run");
+    steps
 }
 
 /// Compare selected bootstrapping implementations on the same fixture inputs
@@ -570,12 +658,14 @@ where
     <FixtureKeys<BT> as BootstrappingKeys<BT>>::TensorKey: Sync,
 {
     assert_eq!(module_ref.n(), module_test.n());
-    let want = run_bootstrap::<BR, F>(params, module_ref);
+    let (want, want_steps) = run_bootstrap_cases::<BR, F>(params, module_ref);
     assert_untagged(
         "bootstrapping",
         want.iter()
             .filter(|(result, _)| result.is_ok())
             .flat_map(|(_, outputs)| outputs),
     );
-    assert_eq!(want, run_bootstrap::<BT, F>(params, module_test), "bootstrapping differs");
+    let (got, got_steps) = run_bootstrap_cases::<BT, F>(params, module_test);
+    assert_eq!(want, got, "bootstrapping differs");
+    assert_eq!(want_steps, got_steps, "bootstrapping steps differ");
 }

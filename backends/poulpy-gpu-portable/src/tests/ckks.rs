@@ -211,6 +211,21 @@ fn small_s2c_preset_meets_precision() {
     poulpy_ckks::test_suite::presets::small_s2c_preset_meets_precision_with_client::<Gpu, poulpy_cpu_portable::NTT4x30Portable>();
 }
 
+/// The derived `ckks_bootstrap` of the small preset records as a graph and issues no host read, write or
+/// synchronization, so every step stays on the device.
+#[test]
+fn small_s2c_bootstrap_records_without_host_events() {
+    let mut run =
+        poulpy_ckks::test_suite::presets::small_s2c_preset_run_with_client::<Gpu, poulpy_cpu_portable::NTT4x30Portable>();
+    // Compiles the kernels and fills the pools, so the recording is of a steady-state bootstrap.
+    run.bootstrap();
+    let run = std::cell::RefCell::new(run);
+    let replay = crate::Replay::<super::Runtime>::record(|| run.borrow_mut().bootstrap_queued());
+    assert!(replay.launches() > 0);
+    let host = replay.host_events();
+    assert_eq!((host.reads, host.writes, host.syncs), (0, 0, 0));
+}
+
 /// Serializes the full-size tests: each takes about 20 GB of device memory, and the
 /// launch counters two of them assert are global to the process.
 static FULL_SIZE: std::sync::Mutex<()> = std::sync::Mutex::new(());

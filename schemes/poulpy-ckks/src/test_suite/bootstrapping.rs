@@ -555,6 +555,26 @@ where
                 context.pipeline()
             );
 
+            // The step runs on exactly the scratch it advertises, and refuses one alignment unit less.
+            let mut exact = module.ckks_ciphertext_alloc_from_glwe_infos(&boot);
+            let eval_mod_tmp = module.ckks_bootstrap_eval_mod_tmp_bytes(&exact, &raised, &context, None, keys_layout);
+            assert!(eval_mod_tmp > 0);
+            with_scratch::<BE, _>(eval_mod_tmp, |s| {
+                module.ckks_bootstrap_eval_mod(&mut exact, &raised, &context, None, &keys, s)
+            })
+            .unwrap();
+            let mut short = module.ckks_ciphertext_alloc_from_glwe_infos(&boot);
+            let before = snapshot::<BE, _>(&short);
+            let err = with_scratch::<BE, _>(eval_mod_tmp - BE::SCRATCH_ALIGN, |s| {
+                module.ckks_bootstrap_eval_mod(&mut short, &raised, &context, None, &keys, s)
+            })
+            .unwrap_err();
+            assert!(
+                err.composition().is_none() && err.to_string().contains("needs a scratch arena"),
+                "{err}"
+            );
+            assert_eq!(snapshot::<BE, _>(&short), before, "a refused step wrote res");
+
             let ci = Module::<BE::CI>::new(preset.n() as u64);
             assert_eval_mod_refuses(
                 &mut stepped,
@@ -732,8 +752,7 @@ where
         for log_budget in [base2k, no_budget_for_s2c] {
             let mut ct_narrow = fixture_ciphertext(&module, &ckks_spec(n, base2k, log_delta, log_budget), 31);
             let before = snapshot::<BE, _>(&ct_narrow);
-            let err = with_scratch::<BE, _>(boot_tmp, |s| module.ckks_bootstrap(&mut ct_narrow, &ct0, &ctx, None, &bsk, s))
-                .unwrap_err();
+            let err = with_scratch::<BE, _>(0, |s| module.ckks_bootstrap(&mut ct_narrow, &ct0, &ctx, None, &bsk, s)).unwrap_err();
             assert_invalid_operand(
                 "a bootstrap narrower than its stages",
                 &err,

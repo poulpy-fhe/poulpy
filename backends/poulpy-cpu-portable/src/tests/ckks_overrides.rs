@@ -25,6 +25,8 @@ thread_local! {
  static REAL_CALLS: Cell<usize> = const { Cell::new(0) };
  static COMPLEX_CALLS: Cell<usize> = const { Cell::new(0) };
  static EVAL_MOD_CALLS: Cell<usize> = const { Cell::new(0) };
+ /// Whether the EvalMod hook runs the reference instead of failing, for probes that need a whole bootstrap.
+ static EVAL_MOD_FORWARD: Cell<bool> = const { Cell::new(false) };
  static MAX_COPY_CAPACITY: Cell<usize> = const { Cell::new(0) };
 }
 const OVERRIDE_SCRATCH: usize = 256;
@@ -154,7 +156,11 @@ unsafe impl poulpy_ckks::oep::CKKSEvalModImpl for OverrideBackend {
         P: poulpy_ckks::CKKSCtBounds,
         T: poulpy_core::layouts::GGLWEInfos,
     {
-        let _ = (module, res, ct, params, tsk);
+        if EVAL_MOD_FORWARD.get() {
+            return poulpy_ckks::reference::eval_mod::CKKSEvalModReference::ckks_eval_mod_tmp_bytes_reference(
+                module, res, ct, params, tsk,
+            );
+        }
         OVERRIDE_SCRATCH
     }
     fn ckks_eval_mod<R, C, P, F, H>(
@@ -178,8 +184,12 @@ unsafe impl poulpy_ckks::oep::CKKSEvalModImpl for OverrideBackend {
             + ::poulpy_core::layouts::BSGSMeta,
         H: ::poulpy_core::layouts::GetTensorKey<Self>,
     {
-        let _ = (module, res, ct, params, tsk);
         EVAL_MOD_CALLS.with(|calls| calls.set(calls.get() + 1));
+        if EVAL_MOD_FORWARD.get() {
+            return poulpy_ckks::reference::eval_mod::CKKSEvalModReference::ckks_eval_mod_reference(
+                module, res, ct, params, tsk, scratch,
+            );
+        }
         let (mut region, _remaining) = scratch.borrow().take_region(OVERRIDE_SCRATCH);
         Self::copy_host_to_view(&mut region, &[0x5A; OVERRIDE_SCRATCH]);
         Err(anyhow::anyhow!("EvalMod override probe").into())
