@@ -516,7 +516,7 @@ pub(crate) fn assert_eval_mod_refuses<BE>(
 
 /// `run`, a call of [`CKKSBootstrappingOps::ckks_mod_raise`], refuses for `reason` on a zero-byte arena, which puts the
 /// check before the scratch check, and leaves `res` and `a` as they were.
-fn assert_mod_raise_refuses<BE>(
+pub(crate) fn assert_mod_raise_refuses<BE>(
     res: &mut CKKSCiphertextOwned<BE>,
     a: &mut CKKSCiphertextOwned<BE>,
     reason: &str,

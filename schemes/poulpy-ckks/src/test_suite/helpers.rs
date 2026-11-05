@@ -217,6 +217,7 @@ pub trait TestContextSharedModule<BE: Backend>:
     + GLWESwitchingKeyPreparedFactory<BE>
     + GLWEKeyswitch<BE>
     + poulpy_hal::api::VecZnxAutomorphism<BE>
+    + poulpy_hal::api::VecZnxSwitchRing<BE>
     + GaloisElement
 {
 }
@@ -260,6 +261,7 @@ impl<BE: Backend, M> TestContextSharedModule<BE> for M where
         + GLWESwitchingKeyPreparedFactory<BE>
         + GLWEKeyswitch<BE>
         + poulpy_hal::api::VecZnxAutomorphism<BE>
+        + poulpy_hal::api::VecZnxSwitchRing<BE>
         + GaloisElement
 {
 }

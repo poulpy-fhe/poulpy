@@ -221,6 +221,7 @@ pub unsafe trait CKKSModUpFirstFactorImpl: Backend<Ring = Standard> {
         dst_infos: &Dst,
         src_infos: &Src,
         factor: &LinearTransformation<CKKSRightOperandPrepared<Self>>,
+        log_gap: usize,
         d2s_infos: Option<&D2S>,
         key_infos: &K,
     ) -> usize
@@ -234,12 +235,17 @@ pub unsafe trait CKKSModUpFirstFactorImpl: Backend<Ring = Standard> {
     /// [`ckks_mod_up_first_factor_reference`](crate::reference::first_factor::CKKSModUpFirstFactorReference::ckks_mod_up_first_factor_reference)
     /// bit for bit, within [`Self::ckks_mod_up_first_factor_tmp_bytes`]; free in kernels and scratch use. It honors the
     /// key layouts of the reference composition.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the raise takes its scale, the first factor and the gap beside its operands"
+    )]
     fn ckks_mod_up_first_factor<Dst, Src, K>(
         module: &Module<Self>,
         dst: &mut Dst,
         src: &mut Src,
         scale_up: usize,
         factor: &LinearTransformation<CKKSRightOperandPrepared<Self>>,
+        log_gap: usize,
         keys: &K,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> CKKSResult<()>
@@ -516,6 +522,7 @@ macro_rules! impl_ckks_mod_up_first_factor_reference_full {
                 dst_infos: &Dst,
                 src_infos: &Src,
                 factor: &::poulpy_core::layouts::LinearTransformation<$crate::layouts::CKKSRightOperandPrepared<$be>>,
+                log_gap: usize,
                 d2s_infos: Option<&D2S>,
                 key_infos: &K,
             ) -> usize
@@ -526,7 +533,7 @@ macro_rules! impl_ckks_mod_up_first_factor_reference_full {
                 K: ::poulpy_core::layouts::GGLWEInfos,
             {
                 $crate::reference::first_factor::CKKSModUpFirstFactorReference::ckks_mod_up_first_factor_tmp_bytes_reference(
-                    module, dst_infos, src_infos, factor, d2s_infos, key_infos,
+                    module, dst_infos, src_infos, factor, log_gap, d2s_infos, key_infos,
                 )
             }
 
@@ -536,6 +543,7 @@ macro_rules! impl_ckks_mod_up_first_factor_reference_full {
                 src: &mut Src,
                 scale_up: usize,
                 factor: &::poulpy_core::layouts::LinearTransformation<$crate::layouts::CKKSRightOperandPrepared<$be>>,
+                log_gap: usize,
                 keys: &K,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) -> $crate::CKKSResult<()>
@@ -551,7 +559,7 @@ macro_rules! impl_ckks_mod_up_first_factor_reference_full {
                 K: $crate::layouts::BootstrappingLinearKeys<$be>,
             {
                 $crate::reference::first_factor::CKKSModUpFirstFactorReference::ckks_mod_up_first_factor_reference(
-                    module, dst, src, scale_up, factor, keys, scratch,
+                    module, dst, src, scale_up, factor, log_gap, keys, scratch,
                 )
             }
         }

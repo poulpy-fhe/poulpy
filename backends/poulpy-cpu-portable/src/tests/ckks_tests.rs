@@ -86,6 +86,26 @@ mod bootstrapping_presets {
     }
 
     #[test]
+    fn ntt4x30_ckks_coeffs_mask() {
+        poulpy_ckks::test_suite::presets::test_ckks_coeffs_mask::<crate::NTT4x30Portable>();
+    }
+
+    #[test]
+    fn ntt4x30_ckks_coeffs_mask_rejects_invalid_inputs() {
+        poulpy_ckks::test_suite::presets::test_ckks_coeffs_mask_rejects_invalid_inputs::<crate::NTT4x30Portable>();
+    }
+
+    #[test]
+    fn ntt4x30_ckks_coeffs_mask_subring() {
+        poulpy_ckks::test_suite::presets::test_ckks_coeffs_mask_subring::<crate::NTT4x30Portable>();
+    }
+
+    #[test]
+    fn ntt4x30_merged_s2c_factor() {
+        poulpy_ckks::test_suite::presets::test_merged_s2c_factor::<crate::NTT4x30Portable>();
+    }
+
+    #[test]
     #[ignore = "runs a full logN16 bootstrap per preset; opt in with --ignored"]
     fn ntt4x30_presets_meet_precision() {
         bootstrapping_presets_meet_precision::<crate::NTT4x30Portable>();

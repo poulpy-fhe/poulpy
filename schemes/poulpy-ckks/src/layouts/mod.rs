@@ -123,8 +123,8 @@ pub use approximation::PolynomialApproximation;
 pub use bootstrapping::BootstrappingContextUnprepared;
 pub use bootstrapping::{
     BootstrappingContext, BootstrappingContextPrepared, BootstrappingKeyWidths, BootstrappingPipeline, BootstrappingPlan,
-    BootstrappingTechniques, CIConversion, CIPrePrepared, EvalModCIPrepared, EvalModRing, EvalRoundPlus,
-    SparseSecretEncapsulation,
+    BootstrappingTechniques, CIConversion, CIPrePrepared, CoeffsMaskPrepared, EvalModCIPrepared, EvalModRing, EvalRoundPlus,
+    MaskedFactors, MergedS2CFactorPrepared, SparseSecretEncapsulation,
 };
 pub use bootstrapping_keys::{
     BootstrappingKeySet, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingKeysPrepared, BootstrappingLinearKeys,
@@ -138,7 +138,7 @@ pub use ciphertext::{
 pub use complex_diagonals::ComplexDiagonals;
 pub use dft::{
     CKKSDFTFactors, DFTMatrix, DFTMatrixFactors, DFTMatrixPrepared, DFTOutputFormat, DFTPlan, DFTType, Decode, DftDirection,
-    DftFormat, DftScalar, Encode, Repack, Split, Standard,
+    DftFormat, DftScalar, Encode, HeadFactors, Repack, Split, Standard,
 };
 pub use encoding_buffer::{
     CKKSEncodingBuffer, CKKSEncodingBufferBackendMut, CKKSEncodingBufferBackendRef, CKKSEncodingBufferInfos,

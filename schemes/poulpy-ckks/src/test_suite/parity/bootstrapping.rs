@@ -14,20 +14,21 @@ use crate::{
     CKKSCtBounds, CKKSInfos, CKKSLayout, CoeffsMeta, GLWEPlaintextMeta, SlotsKind,
     api::{
         CKKSAllOpsTmpBytes, CKKSDFTMatrixOps, CKKSDFTMatrixPreparedFactory, CKKSDFTOps, CKKSEncodingHostOps, CKKSEncodingOps,
-        CKKSEncodingScalar,
+        CKKSEncodingScalar, CKKSLinearTransformationOps,
     },
     layouts::{
         BootstrappingContextPrepared, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingLinearKeys, BootstrappingPipeline,
         BootstrappingPlan, BootstrappingTechniques, CKKSCITwin, CKKSCiphertextOwned, CKKSPlaintextOwned, DFTOutputFormat,
-        DFTPlan, DFTType, EncapsulationKeysLayout, EncodedLut, EvalModPlan, EvalModType, EvalRoundPlus,
+        DFTPlan, DFTType, DftScalar, EncapsulationKeysLayout, EncodedLut, EvalModPlan, EvalModType, EvalRoundPlus,
         SparseSecretEncapsulation,
     },
     oep::{CKKSBootstrappingImpl, CKKSEncapsulatedModUpImpl},
     polynomial::SplitStrategy,
-    test_suite::CKKSTestParams,
+    test_suite::{CKKSTestParams, presets::compile_context},
 };
 use poulpy_core::{
-    GLWEAdd, GLWEDiagonalProd, GLWEFill,
+    GLWEAdd, GLWEDiagonalProd, GLWEFill, GLWELinearTransformationBabyStepsBytesOf,
+    ScratchArenaTakeGLWELinearTransformationBabySteps,
     api::{GGLWEPreparedFactory, GLWEAutomorphismKeyPreparedFactory, GLWETensorKeyPreparedFactory},
     layouts::{
         GGLWEInfos, GGLWELayout, GGLWEPrepared, GLWEAutomorphismKeyPrepared, GLWELayout, GLWEPlaintextInfos,
@@ -243,7 +244,8 @@ where
 pub struct FixtureKeys<BE: Backend> {
     rotation_keys: HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>>,
     tensor_key: GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
-    encapsulation_keys: Option<(FixtureSwitchingKey<BE>, FixtureSwitchingKey<BE>)>,
+    encapsulation_keys: Option<(FixtureSwitchingKey<BE>, Option<FixtureSwitchingKey<BE>>)>,
+    first_factor_keys: HashMap<i64, FixtureSwitchingKey<BE>>,
 }
 
 type FixtureSwitchingKey<BE> = GGLWEPrepared<<BE as Backend>::OwnedBuf, BE>;
@@ -261,7 +263,11 @@ where
     }
 
     fn encapsulation_keys(&self) -> Option<(&Self::SwitchingKey, Option<&Self::SwitchingKey>)> {
-        self.encapsulation_keys.as_ref().map(|(d2s, s2d)| (d2s, Some(s2d)))
+        self.encapsulation_keys.as_ref().map(|(d2s, s2d)| (d2s, s2d.as_ref()))
+    }
+
+    fn first_factor_key(&self, rotation: i64) -> Option<&Self::SwitchingKey> {
+        self.first_factor_keys.get(&rotation)
     }
 }
 
@@ -293,7 +299,13 @@ where
 const LOG_MSG_RATIO: usize = 4;
 
 /// A small full-slot recipe: one radix-2 layer per factor and a degree-8 EvalMod.
-fn plan(pipeline: BootstrappingPipeline, log_slots: usize, encapsulate: bool, eval_round: bool) -> BootstrappingPlan {
+fn plan(
+    pipeline: BootstrappingPipeline,
+    log_slots: usize,
+    encapsulate: bool,
+    eval_round: bool,
+    first_factor_on_raise: bool,
+) -> BootstrappingPlan {
     let meta = CoeffsMeta::from_delta_budget;
     let dft = |kind, log_delta| {
         DFTPlan::new(
@@ -313,7 +325,11 @@ fn plan(pipeline: BootstrappingPipeline, log_slots: usize, encapsulate: bool, ev
                 coeffs_to_slots_bypass: dft(DFTType::Encode, 20),
             }),
         },
-        dft(DFTType::Encode, 14),
+        if first_factor_on_raise {
+            dft(DFTType::Encode, 14).with_first_factor_on_raise()
+        } else {
+            dft(DFTType::Encode, 14)
+        },
         EvalModPlan {
             eval_mod_type: EvalModType::CosHK,
             log_msg_ratio: LOG_MSG_RATIO,
@@ -360,16 +376,17 @@ fn keys_layout(
     atk: &GGLWELayout,
     d2s: &GGLWELayout,
     s2d: &GGLWELayout,
+    first: Option<&GGLWELayout>,
     encapsulate: bool,
 ) -> BootstrappingKeysLayout {
     BootstrappingKeysLayout {
         rotation_keys: elements.map(|p| (p, (*atk).into())).collect(),
-        first_factor_key: None,
+        first_factor_key: first.map(|key| (*key).into()),
         conversion_keys: None,
         tensor_key: (*atk).into(),
         encapsulation: encapsulate.then(|| EncapsulationKeysLayout {
             dense_to_sparse: (*d2s).into(),
-            sparse_to_dense: Some((*s2d).into()),
+            sparse_to_dense: first.is_none().then(|| (*s2d).into()),
         }),
     }
 }
@@ -380,6 +397,7 @@ fn fixture_keys<BE>(
     atk: &GGLWELayout,
     d2s: &GGLWELayout,
     s2d: &GGLWELayout,
+    first: Option<&GGLWELayout>,
 ) -> FixtureKeys<BE>
 where
     BE: Backend<ZnxWord = i64>,
@@ -390,8 +408,9 @@ where
         + crate::api::CKKSRightOperandPreparedFactory<BE>
         + CyclotomicOrder,
 {
+    let log_n = module.n().ilog2() as usize;
     let rotation_keys = plan
-        .galois_elements(module.n().ilog2() as usize, module.cyclotomic_order())
+        .galois_elements(log_n, module.cyclotomic_order())
         .into_iter()
         .chain([-1])
         .map(|p| (p, prepared_automorphism_key(module, atk, p, (p as u8).wrapping_add(71))))
@@ -399,9 +418,19 @@ where
     FixtureKeys {
         rotation_keys,
         tensor_key: prepared_tensor_key(module, atk, 73),
-        encapsulation_keys: plan
-            .sparse_secret_hamming_weight()
-            .map(|_| (prepared_gglwe(module, d2s, 79), prepared_gglwe(module, s2d, 83))),
+        encapsulation_keys: plan.sparse_secret_hamming_weight().map(|_| {
+            (
+                prepared_gglwe(module, d2s, 79),
+                first.is_none().then(|| prepared_gglwe(module, s2d, 83)),
+            )
+        }),
+        first_factor_keys: first.map_or_else(HashMap::new, |key| {
+            plan.coeffs_to_slots()
+                .first_factor_rotations(log_n)
+                .into_iter()
+                .map(|rotation| (rotation, prepared_gglwe(module, key, (rotation as u8).wrapping_add(113))))
+                .collect()
+        }),
     }
 }
 
@@ -483,7 +512,7 @@ where
         (BootstrappingPipeline::S2CFirst, false, false, SlotsKind::Complex, true),
         (BootstrappingPipeline::S2CFirst, false, false, SlotsKind::Real, true),
     ] {
-        let mut plan = plan(pipeline, log_slots, encapsulate, eval_round);
+        let mut plan = plan(pipeline, log_slots, encapsulate, eval_round, false);
         if functional {
             plan = plan.with_functional_bootstrap(&lut).unwrap();
         }
@@ -505,7 +534,7 @@ where
             .key_widths(n.ilog2() as usize, k_boot, k_in, log_delta)
             .rotation_keys
             .into_keys();
-        let layout = keys_layout(elements, &atk, &d2s, &s2d, encapsulate);
+        let layout = keys_layout(elements, &atk, &d2s, &s2d, None, encapsulate);
         let pt = ct_layout(n, b, 16 + 2 * b, 16, SlotsKind::Complex);
         let compile =
             module
@@ -523,7 +552,7 @@ where
             unprepared.prepare(module, scratch)
         })
         .unwrap();
-        let keys = fixture_keys(module, &plan, &atk, &d2s, &s2d);
+        let keys = fixture_keys(module, &plan, &atk, &d2s, &s2d, None);
         let ct_in = fixture_ciphertext(module, &in_layout, 89);
         if functional {
             let luts = [lut.transfer_to(module)];
@@ -635,21 +664,141 @@ where
     steps
 }
 
+/// The masked CoeffsToSlots, the merged SlotsToCoeffs factor and the raise of a gap on fixture keys, each composed from
+/// the steps: on the full ring and on the subring of gap 2, with and without a mask.
+fn run_coeffs_mask<BE, F>(params: CKKSTestParams, module: &Module<BE>) -> Vec<Outcome>
+where
+    BE: Backend<ZnxWord = i64> + CKKSBootstrappingImpl + HostStaged,
+    F: CKKSEncodingScalar + DftScalar + Sync,
+    Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + CKKSDFTOps<BE>
+        + CKKSDFTMatrixOps<BE, F>
+        + CKKSEncodingOps<BE, F>
+        + CKKSEncodingHostOps<BE, F>
+        + CKKSAllOpsTmpBytes<BE>
+        + CKKSLinearTransformationOps<BE>
+        + GLWEAutomorphismKeyPreparedFactory<BE>
+        + GLWETensorKeyPreparedFactory<BE>
+        + GGLWEPreparedFactory<BE>
+        + GLWEFill<BE>
+        + crate::api::CKKSRightOperandPreparedFactory<BE>
+        + CyclotomicOrder,
+    Module<BE::CI>: CKKSEncodingOps<BE::CI, F>,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds + GLWEDiagonalProd<BE> + LWEInfos,
+    FixtureKeys<BE>: BootstrappingKeys<BE> + Sync,
+    <FixtureKeys<BE> as BootstrappingKeys<BE>>::TensorKey: Sync,
+{
+    let (n, b) = (module.n(), params.base2k);
+    let log_n = n.ilog2() as usize;
+    let log_delta = 12;
+    let log_modulus_in = log_delta + LOG_MSG_RATIO;
+    let mut results = Vec::new();
+    for log_gap in [0, 1] {
+        let plan = plan(BootstrappingPipeline::S2CFirst, log_n - 1 - log_gap, true, false, true)
+            .with_log_gap(log_gap)
+            .unwrap();
+        let k_in = plan.input_k(log_modulus_in);
+        let k_boot = plan.bootstrap_k(log_modulus_in + 2 * b, log_delta).next_multiple_of(b);
+        let raise_layout = ct_layout(n, b, log_modulus_in, log_delta, SlotsKind::Real);
+        let in_layout = ct_layout(n, b, k_in, log_delta, SlotsKind::Real);
+        let out_layout = ct_layout(n, b, k_boot, log_delta, SlotsKind::Real);
+        let atk = key_layout(n, b, k_boot, 2, 1, 1);
+        let d2s = key_layout(n, b, k_in, 1, 1, 1);
+        let first = CKKSTestParams {
+            n,
+            k: k_boot,
+            rank: 1,
+            ..params
+        }
+        .first_factor_key_layout(&plan, k_boot, log_modulus_in)
+        .gglwe_layout();
+        let elements = plan.key_widths(log_n, k_boot, k_in, log_delta).rotation_keys.into_keys();
+        let layout = keys_layout(elements, &atk, &d2s, &d2s, Some(&first), true);
+        let ctx = compile_context::<BE, F>(module, None, b.into(), &plan);
+        let keys = fixture_keys(module, &plan, &atk, &d2s, &d2s, Some(&first));
+
+        let keep: Vec<bool> = (0..n).map(|j| j < n / 2 && j.is_multiple_of(1 << (log_gap + 1))).collect();
+        let mask_bytes = ctx.coeffs_mask_tmp_bytes(module).unwrap();
+        let mask = with_scratch::<BE, _>(mask_bytes, |scratch| ctx.coeffs_mask(module, &keep, scratch)).unwrap();
+        let bytes = BE::ckks_mod_raise_tmp_bytes(module, &out_layout, &raise_layout, &ctx, &layout)
+            .max(module.ckks_dft_tmp_bytes(&out_layout, &out_layout, &ctx.masked(&mask).unwrap(), &atk))
+            .max(BE::ckks_bootstrap_eval_mod_tmp_bytes(
+                module,
+                &out_layout,
+                &out_layout,
+                &ctx,
+                None,
+                &layout,
+            ));
+        for mask in [None, Some(&mask)] {
+            let mut coeffs = fixture_ciphertext(module, &raise_layout, 107);
+            let mut z = fixture_ciphertext(module, &out_layout, 109);
+            let mut out = fixture_ciphertext(module, &out_layout, 113);
+            let result = with_scratch::<BE, _>(bytes, |scratch| {
+                BE::ckks_mod_raise(module, &mut z, &mut coeffs, &ctx, &keys, scratch)?;
+                match mask {
+                    Some(mask) => {
+                        module.ckks_coeffs_to_slots_assign(&mut z, &ctx.masked(mask)?, keys.rotation_keys(), scratch)?
+                    }
+                    None => module.ckks_coeffs_to_slots_assign(&mut z, &ctx, keys.rotation_keys(), scratch)?,
+                }
+                z.set_slots(SlotsKind::Real);
+                BE::ckks_bootstrap_eval_mod(module, &mut out, &z, &ctx, None, &keys, scratch)
+            });
+            assert!(result.is_ok(), "log_gap {log_gap}: {result:?}");
+            results.push((
+                result.map_err(|e| e.to_string()),
+                vec![snapshot::<BE, _>(&z), snapshot::<BE, _>(&out)],
+            ));
+        }
+
+        // One kernel per coset, of dyadic coefficients of the subring.
+        let cosets = ctx.merged_s2c_cosets();
+        let kernels: Vec<Vec<F>> = (0..cosets)
+            .map(|r| {
+                let mut kernel = vec![F::zero(); n];
+                kernel[(r + 1) << log_gap] = F::from_f64(0.25).unwrap();
+                kernel
+            })
+            .collect();
+        let factor_bytes = ctx.merged_s2c_factor_tmp_bytes(module, 14 + b).unwrap();
+        let merged = with_scratch::<BE, _>(factor_bytes, |scratch| ctx.merged_s2c_factor(module, &kernels, 14, scratch)).unwrap();
+        let factor = merged.factor();
+        let schedule = factor.index();
+        let bytes = module.ckks_dft_tmp_bytes(&in_layout, &in_layout, ctx.slots_to_coeffs(), &atk)
+            + module.glwe_linear_transformation_baby_steps_bytes_of(&schedule, &in_layout);
+        let mut running = fixture_ciphertext(module, &in_layout, 127);
+        let result = with_scratch::<BE, _>(bytes, |scratch| {
+            module.ckks_slots_to_coeffs_assign(&mut running, &ctx.slots_to_coeffs().head(), &keys.rotation_keys, scratch)?;
+            let (mut babies, mut scratch) = scratch
+                .borrow()
+                .take_glwe_linear_transformation_baby_steps_scratch(module, &schedule, &running);
+            module.ckks_linear_transformation_baby_steps_prepare(&mut babies, &running, &keys.rotation_keys, &mut scratch)?;
+            module.ckks_linear_transformation_eval_assign(&mut running, &babies, factor, &keys.rotation_keys, &mut scratch)
+        });
+        assert!(result.is_ok(), "log_gap {log_gap}: {result:?}");
+        results.push((result.map_err(|e| e.to_string()), vec![snapshot::<BE, _>(&running)]));
+    }
+    results
+}
+
 /// Compare selected bootstrapping implementations on the same fixture inputs
 /// and key coefficients: C2S-first, S2C-first, real slots, EvalRound+,
-/// encapsulation, functional bootstrapping and the ModUp stages, each within its
-/// own exact guarded scratch budget.
+/// encapsulation, functional bootstrapping, the ModUp stages, the masked CoeffsToSlots, the
+/// raise of a gap and the merged SlotsToCoeffs factor, each within its own exact guarded
+/// scratch budget.
 pub fn test_bootstrapping_parity<BR, BT, F>(params: CKKSTestParams, module_ref: &Module<BR>, module_test: &Module<BT>)
 where
     BR: Backend<ZnxWord = i64> + CKKSBootstrappingImpl + HostStaged,
     BT: Backend<ZnxWord = i64> + CKKSBootstrappingImpl + HostStaged,
-    F: CKKSEncodingScalar,
+    F: CKKSEncodingScalar + DftScalar + Sync,
     Module<BR>: CKKSDFTMatrixPreparedFactory<BR>
         + CKKSDFTOps<BR>
         + CKKSDFTMatrixOps<BR, F>
         + CKKSEncodingOps<BR, F>
         + CKKSEncodingHostOps<BR, F>
         + CKKSAllOpsTmpBytes<BR>
+        + CKKSLinearTransformationOps<BR>
         + GLWEAutomorphismKeyPreparedFactory<BR>
         + GLWETensorKeyPreparedFactory<BR>
         + GGLWEPreparedFactory<BR>
@@ -662,6 +811,7 @@ where
         + CKKSEncodingOps<BT, F>
         + CKKSEncodingHostOps<BT, F>
         + CKKSAllOpsTmpBytes<BT>
+        + CKKSLinearTransformationOps<BT>
         + GLWEAutomorphismKeyPreparedFactory<BT>
         + GLWETensorKeyPreparedFactory<BT>
         + GGLWEPreparedFactory<BT>
@@ -670,8 +820,8 @@ where
         + CyclotomicOrder,
     Module<BR::CI>: CKKSEncodingOps<BR::CI, F>,
     Module<BT::CI>: CKKSEncodingOps<BT::CI, F>,
-    CKKSPlaintextOwned<BR>: GLWEToBackendRef<BR> + CKKSCtBounds + GLWEDiagonalProd<BR>,
-    CKKSPlaintextOwned<BT>: GLWEToBackendRef<BT> + CKKSCtBounds + GLWEDiagonalProd<BT>,
+    CKKSPlaintextOwned<BR>: GLWEToBackendRef<BR> + CKKSCtBounds + GLWEDiagonalProd<BR> + LWEInfos,
+    CKKSPlaintextOwned<BT>: GLWEToBackendRef<BT> + CKKSCtBounds + GLWEDiagonalProd<BT> + LWEInfos,
     FixtureKeys<BR>: BootstrappingKeys<BR> + Sync,
     <FixtureKeys<BR> as BootstrappingKeys<BR>>::TensorKey: Sync,
     FixtureKeys<BT>: BootstrappingKeys<BT> + Sync,
@@ -688,4 +838,11 @@ where
     let (got, got_steps) = run_bootstrap_cases::<BT, F>(params, module_test);
     assert_eq!(want, got, "bootstrapping differs");
     assert_eq!(want_steps, got_steps, "bootstrapping steps differ");
+    let want = run_coeffs_mask::<BR, F>(params, module_ref);
+    assert_untagged("coefficient mask", want.iter().flat_map(|(_, outputs)| outputs));
+    assert_eq!(
+        want,
+        run_coeffs_mask::<BT, F>(params, module_test),
+        "coefficient mask differs"
+    );
 }
