@@ -10,7 +10,7 @@ use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
     GLWEDiagonalProd,
     layouts::{
-        Base2K, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LWEInfos, LinearTransformation,
+        Base2K, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, LinearTransformation,
         LinearTransformationPrepared,
     },
 };
@@ -62,7 +62,7 @@ pub trait CKKSDFTOps<BE: Backend> {
     where
         D: CKKSDFTFactors<BE, Dir, Fmt>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        H: GetAutomorphismKey<BE> + GetTensorKey<BE>;
+        H: GetAutomorphismKey<BE>;
 
     /// `CoeffsToSlots`, `Standard` format (in place).
     fn ckks_coeffs_to_slots_assign<D, Dst, H>(
@@ -75,7 +75,7 @@ pub trait CKKSDFTOps<BE: Backend> {
     where
         D: CKKSDFTFactors<BE, Encode, Standard>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        H: GetAutomorphismKey<BE> + GetTensorKey<BE>;
+        H: GetAutomorphismKey<BE>;
 
     /// `SlotsToCoeffs`, `Standard` format (in place). `dft` labels the output through
     /// [`CKKSDFTFactors::stamp_transform_output`], which a [`BootstrappingRun`](crate::layouts::BootstrappingRun) of a
@@ -90,7 +90,7 @@ pub trait CKKSDFTOps<BE: Backend> {
     where
         D: CKKSDFTFactors<BE, Decode, Standard>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        H: GetAutomorphismKey<BE> + GetTensorKey<BE>;
+        H: GetAutomorphismKey<BE>;
 
     /// `CoeffsToSlots`, `SplitRealAndImag` — real/imag in two ciphertexts.
     #[allow(clippy::too_many_arguments)]
@@ -107,7 +107,7 @@ pub trait CKKSDFTOps<BE: Backend> {
         P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        H: GetAutomorphismKey<BE> + GetTensorKey<BE>;
+        H: GetAutomorphismKey<BE>;
 
     /// `SlotsToCoeffs`, `SplitRealAndImag` — combine two ciphertexts then Decode.
     fn ckks_slots_to_coeffs_split<P, Dst, Src, H>(
@@ -123,7 +123,7 @@ pub trait CKKSDFTOps<BE: Backend> {
         P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        H: GetAutomorphismKey<BE> + GetTensorKey<BE>;
+        H: GetAutomorphismKey<BE>;
 
     /// `CoeffsToSlots`, sparse `RepackImagAsReal` — imag packed into the right half.
     #[allow(clippy::too_many_arguments)]
@@ -139,7 +139,7 @@ pub trait CKKSDFTOps<BE: Backend> {
         P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        H: GetAutomorphismKey<BE> + GetTensorKey<BE>;
+        H: GetAutomorphismKey<BE>;
 
     /// `SlotsToCoeffs`, sparse `RepackImagAsReal` — inverse of [`Self::ckks_coeffs_to_slots_repack`].
     fn ckks_slots_to_coeffs_repack<P, Dst, Src, H>(
@@ -154,7 +154,7 @@ pub trait CKKSDFTOps<BE: Backend> {
         P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        H: GetAutomorphismKey<BE> + GetTensorKey<BE>;
+        H: GetAutomorphismKey<BE>;
 }
 
 /// Allocates and prepares [`DFTMatrixPrepared`] matrices.

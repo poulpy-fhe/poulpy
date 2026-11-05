@@ -10,7 +10,7 @@ use poulpy_core::layouts::IntPolyInfos;
 use crate::CKKSResult as Result;
 use poulpy_core::{
     GLWEDiagonalProd,
-    layouts::{Base2K, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LinearTransformation},
+    layouts::{Base2K, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LinearTransformation},
 };
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
@@ -101,7 +101,7 @@ pub unsafe trait CKKSDFTImpl:
     where
         D: CKKSDFTFactors<Self, Dir, Fmt>,
         Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
-        H: GetAutomorphismKey<Self> + GetTensorKey<Self>;
+        H: GetAutomorphismKey<Self>;
 
     /// Default body: `ckks_encoding_buffer_coeffs_to_slots_assign_derived`, the selected `ckks_dft_matrix_eval_assign` of the encode
     /// matrix.
@@ -115,7 +115,7 @@ pub unsafe trait CKKSDFTImpl:
     where
         D: CKKSDFTFactors<Self, Encode, Standard>,
         Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
-        H: GetAutomorphismKey<Self> + GetTensorKey<Self>,
+        H: GetAutomorphismKey<Self>,
     {
         crate::oep::derived::dft::ckks_encoding_buffer_coeffs_to_slots_assign_derived(module, ct, dft, keys, scratch)
     }
@@ -132,7 +132,7 @@ pub unsafe trait CKKSDFTImpl:
     where
         D: CKKSDFTFactors<Self, Decode, Standard>,
         Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
-        H: GetAutomorphismKey<Self> + GetTensorKey<Self>,
+        H: GetAutomorphismKey<Self>,
     {
         crate::oep::derived::dft::ckks_encoding_buffer_slots_to_coeffs_assign_derived(module, ct, dft, keys, scratch)
     }
@@ -154,7 +154,7 @@ pub unsafe trait CKKSDFTImpl:
         P: GLWEDiagonalProd<Self> + LtDiagonalMeta,
         Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<Self> + CKKSCtBounds,
-        H: GetAutomorphismKey<Self> + GetTensorKey<Self>,
+        H: GetAutomorphismKey<Self>,
     {
         crate::oep::derived::dft::ckks_coeffs_to_slots_split_derived(module, ct_real, ct_imag, ct_in, dft, keys, scratch)
     }
@@ -174,7 +174,7 @@ pub unsafe trait CKKSDFTImpl:
         P: GLWEDiagonalProd<Self> + LtDiagonalMeta,
         Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<Self> + CKKSCtBounds,
-        H: GetAutomorphismKey<Self> + GetTensorKey<Self>,
+        H: GetAutomorphismKey<Self>,
     {
         crate::oep::derived::dft::ckks_slots_to_coeffs_split_derived(module, op_out, ct_real, ct_imag, dft, keys, scratch)
     }
@@ -197,7 +197,7 @@ pub unsafe trait CKKSDFTImpl:
         P: GLWEDiagonalProd<Self> + LtDiagonalMeta,
         Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<Self> + CKKSCtBounds,
-        H: GetAutomorphismKey<Self> + GetTensorKey<Self>,
+        H: GetAutomorphismKey<Self>,
     {
         crate::oep::derived::dft::ckks_coeffs_to_slots_repack_derived(module, ct_out, ct_in, dft, keys, scratch)
     }
@@ -216,7 +216,7 @@ pub unsafe trait CKKSDFTImpl:
         P: GLWEDiagonalProd<Self> + LtDiagonalMeta,
         Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<Self> + CKKSCtBounds,
-        H: GetAutomorphismKey<Self> + GetTensorKey<Self>,
+        H: GetAutomorphismKey<Self>,
     {
         crate::oep::derived::dft::ckks_slots_to_coeffs_repack_derived(module, op_out, ct_in, dft, keys, scratch)
     }
@@ -312,7 +312,7 @@ macro_rules! impl_ckks_dft_reference_full {
                     + ::poulpy_core::layouts::GLWEToBackendRef<Self>
                     + $crate::CKKSCtBounds
                     + $crate::SetCKKSInfos,
-                H: ::poulpy_core::layouts::GetAutomorphismKey<Self> + ::poulpy_core::layouts::GetTensorKey<Self>,
+                H: ::poulpy_core::layouts::GetAutomorphismKey<Self>,
             {
                 $crate::reference::dft::CKKSDFTReference::ckks_dft_matrix_eval_assign_reference(module, ct, dft, keys, scratch)
             }

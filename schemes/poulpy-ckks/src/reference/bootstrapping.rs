@@ -1,6 +1,7 @@
 use crate::{
     CKKSCompositionError, CKKSResult as Result, checked_log_budget_sub, ckks_ensure, ckks_ensure_operand,
-    layouts::eval_mod::EvalModPlan, reference::mul::tensor_key_at,
+    layouts::eval_mod::EvalModPlan,
+    reference::{linear_transformation::PlaintextDiagonalKeys, mul::tensor_key_at},
 };
 use poulpy_core::layouts::GLWEPlaintextInfos;
 use poulpy_core::{
@@ -942,7 +943,7 @@ where
     Module<BE>: CKKSLinearTransformationOps<BE> + GLWERotate<BE> + CKKSAddOps<BE> + GLWESwitchDegree<BE>,
     R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     W: GLWEToBackendRef<BE> + CKKSCtBounds,
-    H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
+    H: GetAutomorphismKey<BE>,
 {
     let plan = even.index();
     let (mut babies, mut scratch) = scratch
@@ -951,8 +952,9 @@ where
     module.ckks_linear_transformation_baby_steps_prepare(&mut babies, w, keys, &mut scratch)?;
     let (mut a, scratch_1) = scratch.borrow().take_ckks_ciphertext_scratch(w, w.meta());
     let (mut b, mut scratch_1) = scratch_1.take_ckks_ciphertext_scratch(w, w.meta());
-    module.ckks_linear_transformation_eval_into(&mut a, w, &babies, even, keys, &mut scratch_1)?;
-    module.ckks_linear_transformation_eval_into(&mut b, w, &babies, odd, keys, &mut scratch_1)?;
+    let lt_keys = PlaintextDiagonalKeys(keys);
+    module.ckks_linear_transformation_eval_into(&mut a, w, &babies, even, &lt_keys, &mut scratch_1)?;
+    module.ckks_linear_transformation_eval_into(&mut b, w, &babies, odd, &lt_keys, &mut scratch_1)?;
     let (mut odd_wide, mut scratch_2) = scratch_1.take_ckks_ciphertext_scratch(embedded, b.meta());
     odd_wide.set_k(b.k());
     module.glwe_switch_degree(&mut odd_wide, &b);

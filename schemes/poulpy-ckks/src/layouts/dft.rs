@@ -856,7 +856,8 @@ pub struct DFTMatrix<BE: Backend, Dir, Fmt, R = LinearTransformation<CKKSPlainte
 
 /// The factors a homomorphic DFT evaluates, from a compiled matrix or a view of one.
 pub trait CKKSDFTFactors<BE: Backend, Dir, Fmt> {
-    /// The operand each factor multiplies by.
+    /// The operand each factor multiplies by. The DFT evaluation takes no tensor key, so a factor of ciphertext diagonals
+    /// refuses with `MissingRelinearizationKey`.
     type Diagonal: GLWEDiagonalProd<BE> + LtDiagonalMeta + GLWEInfos;
 
     /// The resolved plan the factors were generated from.

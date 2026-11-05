@@ -326,7 +326,7 @@ use poulpy_ckks::reference::bootstrapping::CKKSBootstrappingReference;
 use poulpy_ckks::{CKKSCtBounds, CKKSResult as Result, SetCKKSInfos};
 use poulpy_core::GLWEDiagonalProd;
 use poulpy_core::layouts::{
-    GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, IntPolyInfos, LinearTransformation, SetBSGSMeta,
+    GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, IntPolyInfos, LinearTransformation, SetBSGSMeta,
     SetGLWEPlaintextInfos,
 };
 use poulpy_hal::layouts::ScratchArena;
@@ -394,7 +394,7 @@ unsafe impl poulpy_ckks::oep::CKKSDFTImpl for OverrideBackend {
     where
         D: poulpy_ckks::layouts::CKKSDFTFactors<Self, Dir, Fmt>,
         Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
-        H: GetAutomorphismKey<Self> + GetTensorKey<Self>,
+        H: GetAutomorphismKey<Self>,
     {
         if DFT_FORWARD.get() {
             DFT_CALLS.set(DFT_CALLS.get() + 1);
@@ -417,14 +417,6 @@ impl<BE: poulpy_hal::layouts::Backend> GetAutomorphismKey<BE> for NoAutomorphism
         _: i64,
         _: poulpy_core::layouts::TorusPrecision,
     ) -> poulpy_core::Result<poulpy_core::layouts::GLWEAutomorphismKeyPreparedBackendRef<'_, BE>> {
-        panic!("DFT dispatch probe must not request keys")
-    }
-}
-impl<BE: poulpy_hal::layouts::Backend> GetTensorKey<BE> for NoAutomorphismKey {
-    fn lookup_tensor_key(
-        &self,
-        _: poulpy_core::layouts::TorusPrecision,
-    ) -> poulpy_core::Result<poulpy_core::layouts::prepared::GLWETensorKeyPreparedBackendRef<'_, BE>> {
         panic!("DFT dispatch probe must not request keys")
     }
 }

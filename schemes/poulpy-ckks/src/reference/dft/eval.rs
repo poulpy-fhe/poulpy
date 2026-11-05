@@ -26,8 +26,8 @@ use poulpy_core::{
     GLWEBytesOf, GLWEDiagonalProd, GLWELinearTransformationBabyStepsBytesOf, GLWELinearTransformationOps,
     ScratchArenaTakeGLWELinearTransformationBabySteps,
     layouts::{
-        Base2K, GGLWEInfos, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey,
-        LWEInfos, LinearTransformation,
+        Base2K, GGLWEInfos, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos,
+        LinearTransformation,
     },
 };
 use poulpy_hal::{
@@ -35,6 +35,7 @@ use poulpy_hal::{
     layouts::{Backend, Module, ScratchArena},
 };
 
+use crate::reference::linear_transformation::PlaintextDiagonalKeys;
 use crate::{
     CKKSCompositionError, CKKSCtBounds, SetCKKSInfos,
     api::{
@@ -294,7 +295,7 @@ where
     D: CKKSDFTFactors<BE, Dir, Fmt>,
     Module<BE>: CKKSLinearTransformationOps<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
+    H: GetAutomorphismKey<BE>,
 {
     // One factor at a time, in place on `ct`; compact `ct` after each so the next
     // factor's baby-step keyswitches operate on fewer limbs as the budget shrinks.
@@ -321,7 +322,7 @@ where
     P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
     Module<BE>: CKKSLinearTransformationOps<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
+    H: GetAutomorphismKey<BE>,
 {
     let plan = factor.index();
     ckks_ensure!(
@@ -332,7 +333,7 @@ where
         .borrow()
         .take_glwe_linear_transformation_baby_steps_scratch(module, &plan, &*running);
     module.ckks_linear_transformation_baby_steps_prepare(&mut babies, running, keys, &mut scratch)?;
-    module.ckks_linear_transformation_eval_assign(running, &babies, factor, keys, &mut scratch)?;
+    module.ckks_linear_transformation_eval_assign(running, &babies, factor, &PlaintextDiagonalKeys(keys), &mut scratch)?;
     Ok(())
 }
 
@@ -484,7 +485,7 @@ pub trait CKKSDFTReference<BE: Backend> {
         D: CKKSDFTFactors<BE, Dir, Fmt>,
         Module<BE>: CKKSLinearTransformationOps<BE>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        H: GetAutomorphismKey<BE> + GetTensorKey<BE>;
+        H: GetAutomorphismKey<BE>;
 }
 
 impl<BE: Backend> CKKSDFTReference<BE> for Module<BE> {
@@ -542,7 +543,7 @@ impl<BE: Backend> CKKSDFTReference<BE> for Module<BE> {
         D: CKKSDFTFactors<BE, Dir, Fmt>,
         Module<BE>: CKKSLinearTransformationOps<BE>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
+        H: GetAutomorphismKey<BE>,
     {
         ckks_dft_matrix_eval_assign_reference(self, ct, dft, keys, scratch)
     }

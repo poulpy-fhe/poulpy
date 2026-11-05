@@ -8,7 +8,7 @@ use crate::CKKSResult as Result;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
     GLWEDiagonalProd,
-    layouts::{Base2K, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LinearTransformation},
+    layouts::{Base2K, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LinearTransformation},
 };
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
@@ -42,7 +42,7 @@ impl<BE: Backend + CKKSDFTImpl> CKKSDFTOps<BE> for Module<BE> {
     where
         D: CKKSDFTFactors<BE, Dir, Fmt>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
+        H: GetAutomorphismKey<BE>,
     {
         BE::ckks_dft_matrix_eval_assign(self, ct, dft, keys, scratch)
     }
@@ -57,7 +57,7 @@ impl<BE: Backend + CKKSDFTImpl> CKKSDFTOps<BE> for Module<BE> {
     where
         D: CKKSDFTFactors<BE, Encode, Standard>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
+        H: GetAutomorphismKey<BE>,
     {
         BE::ckks_coeffs_to_slots_assign(self, ct, dft, keys, scratch)
     }
@@ -72,7 +72,7 @@ impl<BE: Backend + CKKSDFTImpl> CKKSDFTOps<BE> for Module<BE> {
     where
         D: CKKSDFTFactors<BE, Decode, Standard>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
+        H: GetAutomorphismKey<BE>,
     {
         BE::ckks_slots_to_coeffs_assign(self, ct, dft, keys, scratch)
     }
@@ -90,7 +90,7 @@ impl<BE: Backend + CKKSDFTImpl> CKKSDFTOps<BE> for Module<BE> {
         P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
+        H: GetAutomorphismKey<BE>,
     {
         BE::ckks_coeffs_to_slots_split(self, ct_real, ct_imag, ct_in, dft, keys, scratch)
     }
@@ -108,7 +108,7 @@ impl<BE: Backend + CKKSDFTImpl> CKKSDFTOps<BE> for Module<BE> {
         P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
+        H: GetAutomorphismKey<BE>,
     {
         BE::ckks_slots_to_coeffs_split(self, op_out, ct_real, ct_imag, dft, keys, scratch)
     }
@@ -125,7 +125,7 @@ impl<BE: Backend + CKKSDFTImpl> CKKSDFTOps<BE> for Module<BE> {
         P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
+        H: GetAutomorphismKey<BE>,
     {
         BE::ckks_coeffs_to_slots_repack(self, ct_out, ct_in, dft, keys, scratch)
     }
@@ -142,7 +142,7 @@ impl<BE: Backend + CKKSDFTImpl> CKKSDFTOps<BE> for Module<BE> {
         P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
+        H: GetAutomorphismKey<BE>,
     {
         BE::ckks_slots_to_coeffs_repack(self, op_out, ct_in, dft, keys, scratch)
     }
