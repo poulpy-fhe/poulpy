@@ -322,6 +322,12 @@ impl<'a, BE: Backend + 'a> CKKSCiphertextViewMut<'a, BE> {
         ct
     }
 
+    /// A view of `ct`, in the backend's buffer type: a working ciphertext on the storage of `ct`.
+    pub(crate) fn of<C: GLWEToBackendMut<BE> + CKKSInfos>(ct: &'a mut C) -> Self {
+        let meta = ct.meta();
+        Self::from_inner(GLWEViewMut::from_inner(ct.to_backend_mut()), meta)
+    }
+
     /// As [`CKKSCiphertext::set_meta_checked`].
     pub(crate) fn set_meta_checked(&mut self, meta: GLWEPlaintextMeta) -> Result<()> {
         ensure_meta_fits(self, &meta)?;

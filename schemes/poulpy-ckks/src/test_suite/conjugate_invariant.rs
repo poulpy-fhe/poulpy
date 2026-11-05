@@ -725,7 +725,10 @@ pub fn test_conjugate_invariant_eval_mod<BE>(
         &mut scratch.borrow(),
     );
 
-    with_scratch::<BE, _>(bytes, |scratch| module.ckks_eval_mod(&mut res, &ct, &eval_mod, &tsk, scratch)).unwrap();
+    with_scratch::<BE, _>(bytes, |scratch| {
+        module.ckks_eval_mod(&mut res, &mut ct.clone(), &eval_mod, &tsk, scratch)
+    })
+    .unwrap();
     assert_eq!(res.slots(), SlotsKind::Real);
     let mut prec = precision_at(&params, res.log_delta());
     prec.meta = res.meta();
@@ -759,7 +762,7 @@ pub fn test_conjugate_invariant_eval_mod<BE>(
     })
     .unwrap();
     let before = res.to_host_owned::<BE>();
-    let err = with_scratch::<BE, _>(0, |s| module.ckks_eval_mod(&mut res, &ct, &complex, &tsk, s)).unwrap_err();
+    let err = with_scratch::<BE, _>(0, |s| module.ckks_eval_mod(&mut res, &mut ct.clone(), &complex, &tsk, s)).unwrap_err();
     assert!(
         matches!(
             err.composition(),

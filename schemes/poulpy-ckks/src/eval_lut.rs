@@ -6,10 +6,10 @@
 
 use anyhow::{Result, anyhow, ensure};
 use num_traits::{FloatConst, FromPrimitive};
-use poulpy_core::GLWENormalize;
 use poulpy_core::layouts::GetAutomorphismKey;
 use poulpy_core::layouts::GetTensorKey;
-use poulpy_core::layouts::{GLWELayout, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, SetBSGSMeta};
+use poulpy_core::layouts::{GLWELayout, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, SetBSGSMeta, SetK};
+use poulpy_core::{GLWECopy, GLWENormalize};
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
@@ -89,7 +89,8 @@ pub(crate) fn ckks_eval_lut<BE, F, K, C, R, H>(
 ) -> Result<()>
 where
     BE: Backend,
-    Module<BE>: CKKSEvalModOps<BE> + CKKSComplexPolynomialEvaluationOps<BE> + CKKSConjugateOps<BE> + CKKSAddOps<BE>,
+    Module<BE>:
+        CKKSEvalModOps<BE> + CKKSComplexPolynomialEvaluationOps<BE> + CKKSConjugateOps<BE> + CKKSAddOps<BE> + GLWECopy<BE>,
     K: GetAutomorphismKey<BE>,
     C: GLWEToBackendRef<BE> + CKKSCtBounds,
     R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
@@ -108,7 +109,14 @@ where
     };
     scratch.scope(|scratch| {
         let (mut e_x, mut scratch) = scratch.take_ckks_ciphertext_scratch(&layout, res.meta());
-        module.ckks_eval_mod(&mut e_x, ct, eval_exp, tsk, &mut scratch)?;
+        // A batch reads `ct` once per LUT: EvalMod works on a copy.
+        scratch.scope(|scratch| {
+            let (mut input, mut scratch) = scratch.take_ckks_ciphertext_scratch(&eval_exp.plan.input_layout(ct), ct.meta());
+            input.set_k(ct.k());
+            module.glwe_copy(&mut input, ct, &mut scratch);
+            input.set_meta(ct.meta());
+            module.ckks_eval_mod(&mut e_x, &mut input, eval_exp, tsk, &mut scratch)
+        })?;
         module.ckks_eval_poly_complex_const_coeffs(res, &e_x, lut, tsk, &mut scratch)
     })?;
     scratch.scope(|scratch| {
@@ -130,7 +138,7 @@ where
 /// so the populated schedule must not depend on which LUT happens to be first.
 pub(crate) fn ckks_lut_power_basis<BE, F, C, H>(
     module: &Module<BE>,
-    ct: &C,
+    ct: &mut C,
     layout: &GLWELayout,
     eval_exp: &EvalMod<F, CKKSPlaintextOwned<BE>>,
     luts: &[EncodedLut<CKKSPlaintextOwned<BE>>],
@@ -148,7 +156,7 @@ where
         + CKKSSubOps<BE>
         + CKKSCiphertextAlloc<BE>
         + GLWENormalize<BE>,
-    C: GLWEToBackendRef<BE> + CKKSCtBounds,
+    C: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds,
     H: GetTensorKey<BE>,
 {
     let series = luts

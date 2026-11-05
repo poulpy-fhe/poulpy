@@ -4,12 +4,7 @@ use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{BSGSMeta, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, SetBSGSMeta};
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
-use crate::{
-    CKKSCtBounds, SetCKKSInfos,
-    api::CKKSEvalModOps,
-    layouts::{CKKSCiphertextOwned, eval_mod::EvalMod},
-    oep::CKKSEvalModImpl,
-};
+use crate::{CKKSCtBounds, SetCKKSInfos, api::CKKSEvalModOps, layouts::eval_mod::EvalMod, oep::CKKSEvalModImpl};
 
 impl<BE: Backend + CKKSEvalModImpl> CKKSEvalModOps<BE> for Module<BE> {
     fn ckks_eval_mod_tmp_bytes<R, C, P, F, T>(&self, res: &R, ct: &C, params: &EvalMod<F, P>, tsk: &T) -> usize
@@ -25,33 +20,17 @@ impl<BE: Backend + CKKSEvalModImpl> CKKSEvalModOps<BE> for Module<BE> {
     fn ckks_eval_mod<R, C, P, F, H>(
         &self,
         res: &mut R,
-        ct: &C,
+        ct: &mut C,
         params: &EvalMod<F, P>,
         tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
-        C: GLWEToBackendRef<BE> + CKKSCtBounds,
+        C: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + BSGSMeta,
         H: GetTensorKey<BE>,
     {
         BE::ckks_eval_mod::<R, C, P, F, H>(self, res, ct, params, tsk, scratch)
-    }
-
-    fn ckks_eval_mod_owned<R, P, F, H>(
-        &self,
-        res: &mut R,
-        input: CKKSCiphertextOwned<BE>,
-        params: &EvalMod<F, P>,
-        tsk: &H,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
-        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + BSGSMeta,
-        H: GetTensorKey<BE>,
-    {
-        BE::ckks_eval_mod_owned::<R, P, F, H>(self, res, input, params, tsk, scratch)
     }
 }

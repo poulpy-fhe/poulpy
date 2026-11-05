@@ -166,7 +166,7 @@ unsafe impl poulpy_ckks::oep::CKKSEvalModImpl for OverrideBackend {
     fn ckks_eval_mod<R, C, P, F, H>(
         module: &::poulpy_hal::layouts::Module<Self>,
         res: &mut R,
-        ct: &C,
+        ct: &mut C,
         params: &poulpy_ckks::layouts::eval_mod::EvalMod<F, P>,
         tsk: &H,
         scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
@@ -177,7 +177,9 @@ unsafe impl poulpy_ckks::oep::CKKSEvalModImpl for OverrideBackend {
             + poulpy_ckks::CKKSCtBounds
             + poulpy_ckks::SetCKKSInfos
             + ::poulpy_core::layouts::SetBSGSMeta,
-        C: ::poulpy_core::layouts::GLWEToBackendRef<Self> + poulpy_ckks::CKKSCtBounds,
+        C: ::poulpy_core::layouts::GLWEToBackendMut<Self>
+            + ::poulpy_core::layouts::GLWEToBackendRef<Self>
+            + poulpy_ckks::CKKSCtBounds,
         P: ::poulpy_core::layouts::GLWEToBackendRef<Self>
             + ::poulpy_core::layouts::IntPolyInfos
             + poulpy_ckks::CKKSCtBounds
@@ -193,31 +195,6 @@ unsafe impl poulpy_ckks::oep::CKKSEvalModImpl for OverrideBackend {
         let (mut region, _remaining) = scratch.borrow().take_region(OVERRIDE_SCRATCH);
         Self::copy_host_to_view(&mut region, &[0x5A; OVERRIDE_SCRATCH]);
         Err(anyhow::anyhow!("EvalMod override probe").into())
-    }
-    fn ckks_eval_mod_owned<R, P, F, H>(
-        module: &::poulpy_hal::layouts::Module<Self>,
-        res: &mut R,
-        input: poulpy_ckks::layouts::CKKSCiphertextOwned<Self>,
-        params: &poulpy_ckks::layouts::eval_mod::EvalMod<F, P>,
-        tsk: &H,
-        scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
-    ) -> poulpy_ckks::CKKSResult<()>
-    where
-        R: ::poulpy_core::layouts::GLWEToBackendMut<Self>
-            + ::poulpy_core::layouts::GLWEToBackendRef<Self>
-            + poulpy_ckks::CKKSCtBounds
-            + poulpy_ckks::SetCKKSInfos
-            + ::poulpy_core::layouts::SetBSGSMeta,
-        P: ::poulpy_core::layouts::GLWEToBackendRef<Self>
-            + ::poulpy_core::layouts::IntPolyInfos
-            + poulpy_ckks::CKKSCtBounds
-            + ::poulpy_core::layouts::BSGSMeta,
-        H: ::poulpy_core::layouts::GetTensorKey<Self>,
-    {
-        EVAL_MOD_CALLS.with(|calls| calls.set(calls.get() + 1));
-        poulpy_ckks::reference::eval_mod::CKKSEvalModReference::ckks_eval_mod_owned_reference(
-            module, res, input, params, tsk, scratch,
-        )
     }
 }
 
@@ -376,8 +353,10 @@ fn eval_mod_dispatch_uses_its_independent_scratch_query() {
     module.glwe_fill_from_source(&mut dst, &mut poulpy_hal::source::Source::new([5u8; 32]));
     let unchanged = snapshot::<OverrideBackend, _>(&dst);
     EVAL_MOD_CALLS.with(|calls| calls.set(0));
-    let err = with_scratch::<OverrideBackend, _>(bytes, |s| module.ckks_eval_mod(&mut dst, &src, &params, &NoTensorKey, s))
-        .unwrap_err();
+    let err = with_scratch::<OverrideBackend, _>(bytes, |s| {
+        module.ckks_eval_mod(&mut dst, &mut src.clone(), &params, &NoTensorKey, s)
+    })
+    .unwrap_err();
     assert_ckks_internal("ckks_eval_mod", &err, "EvalMod override probe");
     assert_eq!(EVAL_MOD_CALLS.with(Cell::get), 1);
     assert_eq!(
@@ -453,7 +432,7 @@ fn eval_mod_reference_sizes_the_final_destination_copy() {
             let mut expected = dst.clone();
             let expected_bytes = module_ref.ckks_eval_mod_tmp_bytes(&expected, &src, &params, &key_infos);
             with_scratch::<FFT64Oracle, _>(expected_bytes, |s| {
-                module_ref.ckks_eval_mod(&mut expected, &src, &params, &NoTensorKey, s)
+                module_ref.ckks_eval_mod(&mut expected, &mut src.clone(), &params, &NoTensorKey, s)
             })
             .unwrap();
 
@@ -462,7 +441,7 @@ fn eval_mod_reference_sizes_the_final_destination_copy() {
             let bytes = ckks_eval_mod_tmp_bytes_reference(&module_test, &dst, &src, &params, &key_infos);
             MAX_COPY_CAPACITY.set(0);
             with_scratch::<OverrideBackend, _>(bytes, |s| {
-                module_test.ckks_eval_mod_reference(&mut dst, &src, &params, &NoTensorKey, s)
+                module_test.ckks_eval_mod_reference(&mut dst, &mut src.clone(), &params, &NoTensorKey, s)
             })
             .unwrap();
             assert_eq!(MAX_COPY_CAPACITY.get(), capacity);

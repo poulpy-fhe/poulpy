@@ -8,8 +8,9 @@ use poulpy_hal::layouts::{Backend, Module, PrepareHint};
 use crate::SlotsKind;
 use crate::{
     CKKSCtBounds, CKKSInfos,
-    api::{CKKSAddOps, CKKSCopyOps, CKKSMulOps, CKKSSubOps},
+    api::{CKKSAddOps, CKKSCopyOps, CKKSMulOps, CKKSSubOps, PolynomialInputTransform},
     layouts::eval_mod::{EvalMod, EvalModBsgs},
+    power_basis::populated_powers,
 };
 
 #[derive(Clone, Copy)]
@@ -110,8 +111,24 @@ where
         module.ckks_square_tmp_bytes(res, res, tsk)
             + BE::vec_znx_bytes_of(res.n().into(), (res.rank() + 1).into(), res.max_size()),
     );
-    // The input is an owned ciphertext: scratch only holds a full working one for the optional inverse composition.
-    let needs_work_copy = params.f_mod_inv_bsgs.is_some();
+    // Scratch holds the powers of the base polynomial, its transformed input, the input when its allocation is too
+    // narrow, and a working ciphertext for the optional inverse composition.
+    let powers = match &params.f_mod_bsgs {
+        EvalModBsgs::Real(poly) => {
+            populated_powers(poly.degree(), poly.log_split(), poly.parity(), poly.basis())
+                + usize::from(poly.input_transform() != PolynomialInputTransform::Identity)
+        }
+        EvalModBsgs::Complex(poly)
+            if poly.re.input_transform() == PolynomialInputTransform::Identity
+                && poly.im.input_transform() == PolynomialInputTransform::Identity =>
+        {
+            populated_powers(poly.re.degree(), poly.re.log_split(), poly.re.parity(), poly.re.basis())
+        }
+        _ => 0,
+    };
+    let input_copy = ct.log_budget() + params.plan.f_mod_log_delta > ct.max_k().as_usize();
+    let carved =
+        (powers + usize::from(input_copy) + usize::from(params.f_mod_inv_bsgs.is_some())) * BE::scratch_aligned(compact_work);
     // Working set of the fused baby-step linear combination.
     let pt_size_max = {
         let poly_max =
@@ -125,7 +142,7 @@ where
     let fused_baby =
         crate::oep::derived::polynomial_evaluation::eval_baby_linear_combination_tmp_bytes(module, work.max_size(), pt_size_max);
 
-    usize::from(needs_work_copy) * compact_work
+    carved
         + module
             .ckks_copy_tmp_bytes(&work, &work)
             // Polynomial evaluation finishes by copying into the caller's

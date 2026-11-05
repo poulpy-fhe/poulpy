@@ -13,7 +13,7 @@ use crate::{
     api::{BSGSPolynomialInfos, CKKSCopyOps, CKKSMulOps, CKKSPow2Ops, CKKSSubOps, PolynomialInputTransform},
     layouts::{CKKSCiphertextAlloc, CKKSCiphertextOwned, ScratchArenaTakeCKKSCiphertext},
     polynomial::ComplexBSGSPolynomial,
-    power_basis::{CKKSPowerBasisGen, PowerBasis},
+    power_basis::{CKKSPowerBasisGen, PowerBasis, PowerStorage},
 };
 
 /// Scratch upper bound for [`GLWEBSGSOps::eval_baby_linear_combination`]: the constant combination
@@ -41,34 +41,53 @@ where
     H: GetTensorKey<BE>,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
 {
+    polynomial_input_in(module, src, transform, tsk, scratch.borrow()).map(|(input, _)| input)
+}
+
+/// [`polynomial_input`] in the storage of `A`, with what is left of `scratch`.
+pub(crate) fn polynomial_input_in<'a, BE, A, S, H>(
+    module: &Module<BE>,
+    src: &S,
+    transform: PolynomialInputTransform,
+    tsk: &H,
+    scratch: ScratchArena<'a, BE>,
+) -> Result<(A, ScratchArena<'a, BE>)>
+where
+    BE: Backend,
+    A: PowerStorage<'a, BE>,
+    Module<BE>: CKKSCopyOps<BE> + CKKSMulOps<BE> + CKKSPow2Ops<BE> + CKKSSubOps<BE>,
+    S: GLWEToBackendRef<BE> + CKKSCtBounds,
+    H: GetTensorKey<BE>,
+{
+    let layout = |k: usize| GLWELayout {
+        n: src.n(),
+        base2k: src.base2k(),
+        k: k.into(),
+        rank: Rank(1),
+    };
     match transform {
         PolynomialInputTransform::Identity => {
-            let mut input = module.ckks_ciphertext_alloc_from_infos(src);
-            module.ckks_copy(&mut input, src, scratch)?;
-            Ok(input)
+            let (mut input, mut scratch) = A::carve(module, &layout(src.k().as_usize()), scratch);
+            input.set_meta(src.meta());
+            module.ckks_copy(&mut input, src, &mut scratch)?;
+            Ok((input, scratch))
         }
         PolynomialInputTransform::Square | PolynomialInputTransform::SquareTimesInput => {
             let k = crate::power_basis::square_ct_k(src)?;
-            let mut squared = module.ckks_ciphertext_alloc(src.base2k(), k.into());
-            module.ckks_square_into(&mut squared, src, tsk, scratch)?;
-            Ok(squared)
+            let (mut squared, mut scratch) = A::carve(module, &layout(k), scratch);
+            module.ckks_square_into(&mut squared, src, tsk, &mut scratch)?;
+            Ok((squared, scratch))
         }
         PolynomialInputTransform::ChebyshevT2 | PolynomialInputTransform::ChebyshevT2TimesInput => {
             let k = crate::power_basis::square_ct_k(src)?;
-            let mut doubled = module.ckks_ciphertext_alloc(src.base2k(), k.into());
-            let squared_layout = GLWELayout {
-                n: module.n().into(),
-                base2k: src.base2k(),
-                k: k.into(),
-                rank: Rank(1),
-            };
-            let (mut squared, mut scratch) = scratch
-                .borrow()
-                .take_ckks_ciphertext_scratch(&squared_layout, GLWEPlaintextMeta::default());
-            module.ckks_square_into(&mut squared, src, tsk, &mut scratch)?;
-            module.ckks_double_into(&mut doubled, &squared, &mut scratch)?;
-            module.ckks_sub_one_assign(&mut doubled, &mut scratch)?;
-            Ok(doubled)
+            let (mut doubled, mut scratch) = A::carve(module, &layout(k), scratch);
+            scratch.scope(|scratch| -> Result<()> {
+                let (mut squared, mut scratch) = scratch.take_ckks_ciphertext_scratch(&layout(k), GLWEPlaintextMeta::default());
+                module.ckks_square_into(&mut squared, src, tsk, &mut scratch)?;
+                module.ckks_double_into(&mut doubled, &squared, &mut scratch)?;
+                module.ckks_sub_one_assign(&mut doubled, &mut scratch)
+            })?;
+            Ok((doubled, scratch))
         }
     }
 }

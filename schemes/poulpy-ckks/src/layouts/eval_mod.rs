@@ -321,6 +321,15 @@ impl EvalModPlan {
         (layout, meta)
     }
 
+    /// Layout of a carved input holding `ct` and the width EvalMod works at, so that EvalMod copies nothing.
+    pub(crate) fn input_layout<C: CKKSCtBounds>(&self, ct: &C) -> GLWELayout {
+        let (work, _) = self.work_layout(ct);
+        GLWELayout {
+            k: work.k.max(ct.k()),
+            ..work
+        }
+    }
+
     /// Widest ciphertext this EvalMod relinearizes, in bits, on an input of `log_budget` bits of budget: it relabels
     /// its input at its own scale and keeps that budget.
     pub(crate) fn relinearization_k(&self, log_budget: usize) -> usize {

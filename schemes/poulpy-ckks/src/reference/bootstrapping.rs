@@ -26,9 +26,9 @@ use crate::{
     },
     eval_lut::{ckks_eval_lut, ckks_eval_lut_binary, ckks_eval_lut_from_basis, ckks_lut_power_basis},
     layouts::{
-        BootstrappingKeys, BootstrappingKeysLayout, BootstrappingLinearKeys, CKKSCITwin, CKKSCiphertextAlloc,
-        CKKSCiphertextOwned, CKKSEvalModInfos, CKKSModRaiseInfos, CKKSPlaintextOwned, CKKSRightOperandPrepared, EncodedLut,
-        EncodedLutKind, EvalMod, EvalModCIPrepared, ScratchArenaTakeCKKSCiphertext,
+        BootstrappingKeys, BootstrappingKeysLayout, BootstrappingLinearKeys, CKKSCITwin, CKKSCiphertextOwned, CKKSEvalModInfos,
+        CKKSModRaiseInfos, CKKSPlaintextOwned, CKKSRightOperandPrepared, EncodedLut, EncodedLutKind, EvalMod, EvalModCIPrepared,
+        ScratchArenaTakeCKKSCiphertext,
         bootstrapping::bootstrap_layouts,
         validation::{
             check_conversion_key_widths, check_eval_mod_on_ci, check_first_factor_raise, check_offset_raise, ensure_ci_module,
@@ -68,8 +68,9 @@ where
     }
 }
 
-/// Scratch of [`eval_mod_real`] and [`eval_mod_complex`], the larger of the two: the imaginary output beside EvalMod, on
-/// two worker arenas on a parallel executor, or beside the conjugation, the split or the subtraction of EvalRound+.
+/// Scratch of [`eval_mod_real`] and [`eval_mod_complex`], the larger of the two: the inputs of EvalMod and the imaginary
+/// output beside EvalMod, on two worker arenas on a parallel executor, or beside the conjugation, the split or the
+/// subtraction of EvalRound+.
 fn eval_mod_standard_tmp_bytes<BE, R, A, P, F>(
     module: &Module<BE>,
     res: &R,
@@ -89,10 +90,17 @@ where
     let tsk = &keys_layout.tensor_key;
     // EvalMod writes into a ciphertext of `res`'s width and into `res` itself, which
     // may be allocated wider than its `k`.
-    let eval_mod = plan.eval_mod_standard().map_or(0, |eval_mod| {
+    let inputs = plan.eval_mod_standard().map(|eval_mod| {
+        let (_, meta) = eval_mod.plan.work_layout(&a_layout);
+        CKKSLayout {
+            glwe_layout: eval_mod.plan.input_layout(&a_layout),
+            meta,
+        }
+    });
+    let eval_mod = plan.eval_mod_standard().zip(inputs.as_ref()).map_or(0, |(eval_mod, input)| {
         module
-            .ckks_eval_mod_tmp_bytes(&boot_layout, &a_layout, eval_mod, tsk)
-            .max(module.ckks_eval_mod_tmp_bytes(res, &a_layout, eval_mod, tsk))
+            .ckks_eval_mod_tmp_bytes(&boot_layout, input, eval_mod, tsk)
+            .max(module.ckks_eval_mod_tmp_bytes(res, input, eval_mod, tsk))
     });
     let eval_mod = if <BE::TaskExecutor as TaskExecutor>::IS_PARALLEL {
         2 * worker_scratch_bytes::<BE>(eval_mod)
@@ -108,7 +116,8 @@ where
     }
     let a_bytes = BE::scratch_aligned(module.glwe_bytes_of_from_infos(&a_layout));
     let boot_bytes = BE::scratch_aligned(module.glwe_bytes_of_from_infos(&boot_layout));
-    boot_bytes + eval_mod.max(a_bytes + linear)
+    let input_bytes = inputs.map_or(0, |input| BE::scratch_aligned(module.glwe_bytes_of_from_infos(&input)));
+    2 * input_bytes + boot_bytes + eval_mod.max(a_bytes + linear)
 }
 
 /// Scratch of the raise of `in_layout` to `boot_layout`: the lift and the shift, then under encapsulation, between
@@ -329,7 +338,7 @@ pub trait CKKSBootstrappingReference<BE: CKKSCITwin>: std::borrow::Borrow<Module
         match (ci, plan.eval_mod_ci()) {
             (Some(ci), Some(eval_mod_ci)) => {
                 let (boot_layout, _) = bootstrap_layouts(res, a);
-                eval_mod_on_ci_tmp_bytes(module, ci, &boot_layout, eval_mod_ci, keys_layout)
+                eval_mod_on_ci_tmp_bytes(module, ci, &boot_layout, eval_mod_ci, plan.eval_round_plus(), keys_layout)
             }
             _ => eval_mod_standard_tmp_bytes(module, res, a, plan, keys_layout),
         }
@@ -441,6 +450,7 @@ pub trait CKKSBootstrappingReference<BE: CKKSCITwin>: std::borrow::Borrow<Module
             + CKKSMulOps<BE>
             + CKKSPow2Ops<BE>
             + CKKSNegOps<BE>
+            + GLWECopy<BE>
             + GLWENormalize<BE>,
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
@@ -489,7 +499,7 @@ pub trait CKKSBootstrappingReference<BE: CKKSCITwin>: std::borrow::Borrow<Module
                 let (mut r0, mut scratch) = scratch.take_ckks_ciphertext_scratch(a, a.meta());
                 ckks_bootstrap_real_part(module, &mut r0, a, keys, &mut scratch)?;
                 r0.set_log_delta(log_delta);
-                return eval_lut_batch(module, res, &r0, plan, luts, keys, tensor_key, shared, &mut scratch);
+                return eval_lut_batch(module, res, &mut r0, plan, luts, keys, tensor_key, shared, &mut scratch);
             }
 
             let (mut r0, scratch) = scratch.take_ckks_ciphertext_scratch(a, a.meta());
@@ -499,7 +509,7 @@ pub trait CKKSBootstrappingReference<BE: CKKSCITwin>: std::borrow::Borrow<Module
             r0.set_log_delta(log_delta);
             i0.set_log_delta(log_delta);
 
-            eval_lut_batch(module, res, &r0, plan, luts, keys, tensor_key, shared, &mut scratch)?;
+            eval_lut_batch(module, res, &mut r0, plan, luts, keys, tensor_key, shared, &mut scratch)?;
 
             // The accumulator takes each LUT's imaginary half and folds it into its output before the next LUT, which
             // keeps the carved working set independent of the batch size. Multiplication produces its result at the
@@ -509,7 +519,7 @@ pub trait CKKSBootstrappingReference<BE: CKKSCITwin>: std::borrow::Borrow<Module
             if shared {
                 let basis = ckks_lut_power_basis(
                     module,
-                    &i0,
+                    &mut i0,
                     &boot_layout,
                     eval_mod_standard(OP, plan)?,
                     luts,
@@ -747,35 +757,12 @@ where
     Ok(())
 }
 
-/// An owned ciphertext labelled like `a`, whose allocation holds the width EvalMod works at: what
-/// [`ckks_eval_mod_owned`](CKKSEvalModOps::ckks_eval_mod_owned) takes.
-fn eval_mod_input_like<BE, F, A>(
-    module: &Module<BE>,
-    a: &A,
-    eval_mod: &EvalMod<F, CKKSPlaintextOwned<BE>>,
-) -> CKKSCiphertextOwned<BE>
-where
-    BE: Backend,
-    Module<BE>: CKKSCiphertextAlloc<BE>,
-    A: CKKSCtBounds,
-    CKKSCiphertextOwned<BE>: SetCKKSInfos,
-{
-    let (work, _) = eval_mod.plan.work_layout(a);
-    let mut input = module.ckks_ciphertext_alloc_from_glwe_infos(&GLWELayout {
-        k: work.k.max(a.k()),
-        ..work
-    });
-    input.set_meta(a.meta());
-    input.set_k(a.k());
-    input
-}
-
 /// `eval_mod` on `r0` into `res_real` and on `i0` into `res_imag`, on a parallel executor at once.
 #[allow(clippy::too_many_arguments)]
-fn ckks_bootstrap_eval_mod_halves<BE, F, T, R1, R2>(
+fn ckks_bootstrap_eval_mod_halves<BE, F, T, C, R1, R2>(
     module: &Module<BE>,
-    r0: CKKSCiphertextOwned<BE>,
-    i0: CKKSCiphertextOwned<BE>,
+    r0: &mut C,
+    i0: &mut C,
     res_real: &mut R1,
     res_imag: &mut R2,
     eval_mod: &EvalMod<F, CKKSPlaintextOwned<BE>>,
@@ -787,13 +774,13 @@ where
     Module<BE>: CKKSEvalModOps<BE>,
     F: Sync,
     T: GetTensorKey<BE> + Sync,
-    CKKSCiphertextOwned<BE>: Send,
+    C: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + Send,
     R1: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + Send,
     R2: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + Send,
 {
     if !<BE::TaskExecutor as TaskExecutor>::IS_PARALLEL {
-        module.ckks_eval_mod_owned(res_real, r0, eval_mod, tensor_key, scratch)?;
-        module.ckks_eval_mod_owned(res_imag, i0, eval_mod, tensor_key, scratch)?;
+        module.ckks_eval_mod(res_real, r0, eval_mod, tensor_key, scratch)?;
+        module.ckks_eval_mod(res_imag, i0, eval_mod, tensor_key, scratch)?;
         return Ok(());
     }
 
@@ -805,8 +792,8 @@ where
     let mut scratch_real = arenas.next().unwrap();
     let mut scratch_imag = arenas.next().unwrap();
     let (real, imag) = <BE::TaskExecutor as TaskExecutor>::join(
-        || module.ckks_eval_mod_owned(res_real, r0, eval_mod, tensor_key, &mut scratch_real),
-        || module.ckks_eval_mod_owned(res_imag, i0, eval_mod, tensor_key, &mut scratch_imag),
+        || module.ckks_eval_mod(res_real, r0, eval_mod, tensor_key, &mut scratch_real),
+        || module.ckks_eval_mod(res_imag, i0, eval_mod, tensor_key, &mut scratch_imag),
     );
     real?;
     imag?;
@@ -831,9 +818,11 @@ where
     T: GetTensorKey<BE>,
     K: BootstrappingKeys<BE>,
 {
-    let mut input = eval_mod_input_like(module, a, eval_mod);
-    ckks_bootstrap_real_part(module, &mut input, a, keys, scratch)?;
-    module.ckks_eval_mod_owned(res, input, eval_mod, tensor_key, scratch)
+    let layout = eval_mod.plan.input_layout(a);
+    let (mut input, mut scratch) = scratch.borrow().take_ckks_ciphertext_scratch(&layout, a.meta());
+    input.set_k(a.k());
+    ckks_bootstrap_real_part(module, &mut input, a, keys, &mut scratch)?;
+    module.ckks_eval_mod(res, &mut input, eval_mod, tensor_key, &mut scratch)
 }
 
 /// The split of `a`, one EvalMod per half and their recombination, from which EvalRound+ takes `K·(re + i·im) = 2K·a`.
@@ -861,11 +850,14 @@ where
     T: GetTensorKey<BE> + Sync,
     K: BootstrappingKeys<BE>,
 {
-    let (mut imag, mut scratch) = scratch.borrow().take_ckks_ciphertext_scratch(res, res.meta());
-    let mut r0 = eval_mod_input_like(module, a, eval_mod);
-    let mut i0 = eval_mod_input_like(module, a, eval_mod);
+    let layout = eval_mod.plan.input_layout(a);
+    let (mut r0, scratch) = scratch.borrow().take_ckks_ciphertext_scratch(&layout, a.meta());
+    let (mut i0, scratch) = scratch.take_ckks_ciphertext_scratch(&layout, a.meta());
+    let (mut imag, mut scratch) = scratch.take_ckks_ciphertext_scratch(res, res.meta());
+    r0.set_k(a.k());
+    i0.set_k(a.k());
     ckks_split_of(module, &mut r0, &mut i0, a, keys, &mut scratch)?;
-    ckks_bootstrap_eval_mod_halves(module, r0, i0, res, &mut imag, eval_mod, tensor_key, &mut scratch)?;
+    ckks_bootstrap_eval_mod_halves(module, &mut r0, &mut i0, res, &mut imag, eval_mod, tensor_key, &mut scratch)?;
     recombine_halves(module, res, &mut imag, &mut scratch)?;
     if plan.eval_round_plus() {
         let bits = 1 + plan.eval_mod_plan().f_mod_interval.trailing_zeros() as usize;
@@ -884,6 +876,7 @@ fn eval_mod_on_ci_tmp_bytes<BE, F>(
     ci: &Module<BE::CI>,
     boot_layout: &CKKSLayout,
     eval_mod_ci: &EvalModCIPrepared<BE, F>,
+    eval_round_plus: bool,
     keys_layout: &BootstrappingKeysLayout,
 ) -> usize
 where
@@ -945,7 +938,7 @@ where
         .max(trace);
     let eval_mod = ci.ckks_eval_mod_tmp_bytes(boot_layout, boot_layout, &eval_mod_ci.eval_mod, &keys_layout.tensor_key);
     let ct_bytes = BE::scratch_aligned(module.glwe_bytes_of_from_infos(boot_layout));
-    embedded_bytes + 2 * ct_bytes + conversions.max(eval_mod)
+    embedded_bytes + (2 + usize::from(eval_round_plus)) * ct_bytes + conversions.max(eval_mod)
 }
 
 /// `u·z(X²)` into `embedded`, of degree `2N`, from the input `w` of the last
@@ -1058,23 +1051,30 @@ where
         module.glwe_ci_trace(&mut traced, &switched, &mut scratch);
     }
 
-    let traced = traced.rebind::<BE::CI>();
+    // EvalMod works on `traced`, so `K·x` comes first. It is coefficient-wise, the same on either ring.
+    let (scaled, mut scratch) = if plan.eval_round_plus() {
+        let log2_k = plan.eval_mod_plan().f_mod_interval.trailing_zeros() as usize;
+        let (mut scaled, mut rest) = scratch.take_ckks_ciphertext_scratch(&boot_layout, traced.meta());
+        scaled.set_k(traced.k());
+        module.ckks_mul_pow2_into(log2_k, &mut scaled, &traced, &mut rest)?;
+        (Some(scaled), rest)
+    } else {
+        (None, scratch)
+    };
+
+    let mut traced = traced.rebind::<BE::CI>();
     let mut reduced = reduced.rebind::<BE::CI>();
     reduced.set_k(traced.k());
     ci.ckks_eval_mod(
         &mut reduced,
-        &traced,
+        &mut traced,
         &eval_mod_ci.eval_mod,
         tensor_key,
         &mut scratch.borrow().into_backend::<BE::CI>(),
     )?;
     let mut reduced = reduced.rebind::<BE>();
-    // `K·x` is coefficient-wise, the same on either ring.
-    if plan.eval_round_plus() {
-        let mut traced = traced.rebind::<BE>();
-        let log2_k = plan.eval_mod_plan().f_mod_interval.trailing_zeros() as usize;
-        module.ckks_mul_pow2_assign(log2_k, &mut traced, &mut scratch)?;
-        module.ckks_sub_assign(&mut reduced, &traced, &mut scratch)?;
+    if let Some(scaled) = &scaled {
+        module.ckks_sub_assign(&mut reduced, scaled, &mut scratch)?;
     }
 
     // Back to degree `2N` and times `v`, which carries the factor 2 of the
@@ -1363,6 +1363,7 @@ where
         + CKKSMulOps<BE>
         + CKKSPow2Ops<BE>
         + CKKSNegOps<BE>
+        + GLWECopy<BE>
         + GLWENormalize<BE>,
     K: BootstrappingLinearKeys<BE>,
     T: GetTensorKey<BE>,
@@ -1396,7 +1397,7 @@ where
 fn eval_lut_batch<BE, F, P, K, T, C, R>(
     module: &Module<BE>,
     outs: &mut [R],
-    ct: &C,
+    ct: &mut C,
     plan: &P,
     luts: &[EncodedLut<CKKSPlaintextOwned<BE>>],
     keys: &K,
@@ -1417,15 +1418,17 @@ where
         + CKKSMulOps<BE>
         + CKKSPow2Ops<BE>
         + CKKSNegOps<BE>
+        + GLWECopy<BE>
         + GLWENormalize<BE>,
     K: BootstrappingLinearKeys<BE>,
     T: GetTensorKey<BE>,
-    C: GLWEToBackendRef<BE> + CKKSCtBounds,
+    C: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds,
     R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + BSGSMeta,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
     if shared {
+        // One EvalMod reads the input, which leaves it to the basis.
         let layout = GLWELayout {
             n: outs[0].n(),
             base2k: outs[0].base2k(),
@@ -1447,7 +1450,7 @@ where
         return Ok(());
     }
     for (out, lut) in outs.iter_mut().zip(luts) {
-        ckks_eval_encoded_lut(module, out, ct, plan, lut, keys, tensor_key, scratch)?;
+        ckks_eval_encoded_lut(module, out, &*ct, plan, lut, keys, tensor_key, scratch)?;
     }
     Ok(())
 }

@@ -315,15 +315,13 @@ where
                 ckks_eval_mod_compile::<BE, F>(b.into(), plan, module, scratch)
             })
             .unwrap();
-            let input = fixture_ciphertext(module, &layout, 149);
-            let before = snapshot::<BE, _>(&input);
+            let mut input = fixture_ciphertext(module, &layout, 149);
             let mut out = fixture_ciphertext(module, &layout, 151);
             let eval_bytes = module.ckks_eval_mod_tmp_bytes(&out, &input, &compiled, &key);
             with_scratch::<BE, _>(eval_bytes, |scratch| {
-                module.ckks_eval_mod(&mut out, &input, &compiled, &prepared_key, scratch)
+                module.ckks_eval_mod(&mut out, &mut input, &compiled, &prepared_key, scratch)
             })
             .unwrap();
-            assert_eq!(before, snapshot::<BE, _>(&input));
             results.push(snapshot::<BE, _>(&out));
         }
     }

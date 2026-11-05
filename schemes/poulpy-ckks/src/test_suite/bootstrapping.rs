@@ -1157,7 +1157,7 @@ where
         |s| {
             module.ckks_eval_mod(
                 &mut res_real,
-                &ct_real,
+                &mut ct_real.clone(),
                 ctx.eval_mod().unwrap(),
                 bsk.tensor_key.as_ref().unwrap(),
                 s,
@@ -1170,7 +1170,7 @@ where
         |s| {
             module.ckks_eval_mod(
                 &mut res_imag,
-                &ct_imag,
+                &mut ct_imag.clone(),
                 ctx.eval_mod().unwrap(),
                 bsk.tensor_key.as_ref().unwrap(),
                 s,
@@ -1445,7 +1445,7 @@ where
         |s| {
             module.ckks_eval_mod(
                 &mut res_real,
-                &r0_lp,
+                &mut r0_lp.clone(),
                 ctx.eval_mod().unwrap(),
                 bsk.tensor_key.as_ref().unwrap(),
                 s,
@@ -1458,7 +1458,7 @@ where
         |s| {
             module.ckks_eval_mod(
                 &mut res_imag,
-                &i0_lp,
+                &mut i0_lp.clone(),
                 ctx.eval_mod().unwrap(),
                 bsk.tensor_key.as_ref().unwrap(),
                 s,
