@@ -122,9 +122,9 @@ pub use approximation::PolynomialApproximation;
 #[allow(deprecated)]
 pub use bootstrapping::BootstrappingContextUnprepared;
 pub use bootstrapping::{
-    BootstrappingBypass, BootstrappingContext, BootstrappingContextPrepared, BootstrappingKeyWidths, BootstrappingPipeline,
-    BootstrappingPlan, BootstrappingRun, BootstrappingTechniques, CIConversion, CIPrePrepared, EvalModCIPrepared, EvalModRing,
-    EvalRoundPlus, SparseSecretEncapsulation,
+    BootstrappingContext, BootstrappingContextPrepared, BootstrappingKeyWidths, BootstrappingPipeline, BootstrappingPlan,
+    BootstrappingRun, BootstrappingTechniques, CIConversion, CIPrePrepared, EvalModCIPrepared, EvalModRing, EvalRoundPlus,
+    SparseSecretEncapsulation,
 };
 pub use bootstrapping_keys::{
     BootstrappingKeySet, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingKeysPrepared, BootstrappingLinearKeys,
