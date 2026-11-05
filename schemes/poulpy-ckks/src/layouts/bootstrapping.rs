@@ -23,7 +23,7 @@
 //! the prepared, backend-resident homomorphic DFT matrices and the encoded,
 //! uploaded EvalMod, built once and reused across bootstraps.
 
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, sync::OnceLock};
 
 use crate::layouts::{CKKSPlaintext, CKKSPlaintextOwned, CKKSRightOperandPrepared};
 use anyhow::{Result, ensure};
@@ -31,7 +31,7 @@ use poulpy_core::{
     GLWEDiagonalProd, LinearTransformationPrepared,
     layouts::{
         Base2K, Diagonals, GLWELayout, GLWEToBackendRef, LinearTransformation, LinearTransformationDiagonal,
-        LinearTransformationGiantStep, Rank,
+        LinearTransformationGiantStep, LinearTransformationPlan, Rank,
     },
 };
 use poulpy_hal::layouts::{Backend, ConjugateInvariant, Module, PrepareHint, ScratchArena};
@@ -588,6 +588,9 @@ pub struct BootstrappingContextPrepared<BE: Backend, F> {
 
     /// Ephemeral sparse-secret weight required by the recipe, if enabled.
     sparse_secret_hamming_weight: Option<usize>,
+
+    /// The degree of the first bootstrap and the uses of the rotation keys there, read once for every later entry check.
+    rotation_key_uses: OnceLock<(usize, Vec<RotationKeyUse>)>,
 }
 
 /// EvalMod on the conjugate-invariant ring of degree `N` and the plaintexts of
@@ -629,6 +632,8 @@ pub(crate) enum CIPreForm<BE: Backend> {
     Folded {
         even: LinearTransformationPrepared<BE>,
         odd: LinearTransformationPrepared<BE>,
+        /// The schedules of `even` and `odd`.
+        plans: Box<[LinearTransformationPlan; 2]>,
     },
 }
 
@@ -648,7 +653,7 @@ impl<BE: Backend> CIPrePrepared<BE> {
     pub fn folded(&self) -> Option<[&LinearTransformationPrepared<BE>; 2]> {
         match &self.0 {
             CIPreForm::Product(_) => None,
-            CIPreForm::Folded { even, odd } => Some([even, odd]),
+            CIPreForm::Folded { even, odd, .. } => Some([even, odd]),
         }
     }
 }
@@ -688,6 +693,44 @@ pub struct BootstrappingKeyWidths {
 
 /// The stages that set the widths at which a bootstrap uses its keys, given the
 /// width it runs at and its input.
+/// The stage a rotation key switches in, whose starting width sets the key's.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum KeyStage {
+    Raised,
+    SlotsToCoeffs,
+    AfterCoeffsToSlots,
+    AfterBypass,
+}
+
+/// One use of the rotation key of Galois element `p`, `below` bits under the width its stage starts at.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct RotationKeyUse {
+    pub(crate) p: i64,
+    stage: KeyStage,
+    below: usize,
+}
+
+/// The widths the stages of a bootstrap start at.
+pub(crate) struct StageStarts {
+    raised: usize,
+    slots_to_coeffs: usize,
+    after_c2s: usize,
+    after_bypass: usize,
+}
+
+impl StageStarts {
+    /// The width of the ciphertext `key_use` switches.
+    pub(crate) fn width(&self, key_use: &RotationKeyUse) -> usize {
+        let start = match key_use.stage {
+            KeyStage::Raised => self.raised,
+            KeyStage::SlotsToCoeffs => self.slots_to_coeffs,
+            KeyStage::AfterCoeffsToSlots => self.after_c2s,
+            KeyStage::AfterBypass => self.after_bypass,
+        };
+        start - key_use.below
+    }
+}
+
 pub(crate) struct StageWidths<'a> {
     pipeline: BootstrappingPipeline,
     c2s_guard_bits: usize,
@@ -726,13 +769,24 @@ impl StageWidths<'_> {
     /// last CoeffsToSlots factor would. The conjugation follows each split
     /// CoeffsToSlots, which on the conjugate-invariant ring does not split.
     fn rotation_key_inputs(&self, log_n: usize, bootstrap_k: usize, input_k: usize) -> Option<BTreeMap<i64, usize>> {
-        let cyclotomic_order = 1i64 << (log_n + 1);
+        let starts = self.stage_starts(bootstrap_k, input_k)?;
+        let mut inputs: BTreeMap<i64, usize> = BTreeMap::new();
+        for key_use in self.rotation_key_uses(log_n) {
+            let k = starts.width(&key_use);
+            let widest = inputs.entry(key_use.p).or_insert(k);
+            *widest = (*widest).max(k);
+        }
+        Some(inputs)
+    }
+
+    /// The widths the stages start at, or `None` when `bootstrap_k` or `input_k` is narrower than the bits they consume.
+    pub(crate) fn stage_starts(&self, bootstrap_k: usize, input_k: usize) -> Option<StageStarts> {
         let after_c2s = bootstrap_k.checked_sub(self.coeffs_to_slots.consumed_bits())?;
         let after_bypass = match self.coeffs_to_slots_bypass {
             Some(bypass) => Some(bootstrap_k.checked_sub(bypass.consumed_bits())?),
             None => None,
         };
-        let s2c_k = match self.pipeline {
+        let slots_to_coeffs = match self.pipeline {
             BootstrappingPipeline::S2CFirst => input_k,
             BootstrappingPipeline::C2SFirst => {
                 let after_eval_mod = after_c2s.checked_sub(self.eval_mod.consumed_bits())?;
@@ -740,31 +794,41 @@ impl StageWidths<'_> {
             }
         };
         // Every factor below then runs above the bits its transform consumes.
-        s2c_k.checked_sub(self.slots_to_coeffs.consumed_bits())?;
+        slots_to_coeffs.checked_sub(self.slots_to_coeffs.consumed_bits())?;
+        Some(StageStarts {
+            raised: bootstrap_k,
+            slots_to_coeffs,
+            after_c2s,
+            after_bypass: after_bypass.unwrap_or(0),
+        })
+    }
 
-        let mut inputs: BTreeMap<i64, usize> = BTreeMap::new();
-        let mut widen = |p: i64, k: usize| {
-            let widest = inputs.entry(p).or_insert(k);
-            *widest = (*widest).max(k);
-        };
-        let bypass = self.coeffs_to_slots_bypass.map(|bypass| (bypass, bootstrap_k));
-        for (dft, start) in [(self.coeffs_to_slots, bootstrap_k), (self.slots_to_coeffs, s2c_k)]
-            .into_iter()
-            .chain(bypass)
+    /// Every use of a rotation key at degree `2^log_n`, by Galois element.
+    pub(crate) fn rotation_key_uses(&self, log_n: usize) -> Vec<RotationKeyUse> {
+        let cyclotomic_order = 1i64 << (log_n + 1);
+        let mut uses = Vec::new();
+        let bypass = self.coeffs_to_slots_bypass.map(|bypass| (bypass, KeyStage::Raised));
+        for (dft, stage) in [
+            (self.coeffs_to_slots, KeyStage::Raised),
+            (self.slots_to_coeffs, KeyStage::SlotsToCoeffs),
+        ]
+        .into_iter()
+        .chain(bypass)
         {
             let log_delta = dft.coeffs_meta().log_delta();
             let factors = dft.galois_elements_per_factor(log_n, cyclotomic_order);
             // The repack rotation of the sparse path belongs to no factor.
             for p in dft.galois_elements(log_n, cyclotomic_order) {
                 if !factors.iter().any(|elements| elements.contains(&p)) {
-                    widen(p, start);
+                    uses.push(RotationKeyUse { p, stage, below: 0 });
                 }
             }
             // A first factor applied by the raise has no element here and costs no width.
             let free = usize::from(dft.first_factor_on_raise());
             for (factor, elements) in factors.iter().enumerate() {
                 for &p in elements {
-                    widen(p, start - (factor - free) * log_delta);
+                    let below = (factor - free) * log_delta;
+                    uses.push(RotationKeyUse { p, stage, below });
                 }
             }
         }
@@ -775,18 +839,31 @@ impl StageWidths<'_> {
         {
             let c2s = self.coeffs_to_slots.resolved_at(log_n);
             let last = c2s.num_factors() - 1;
-            let last_k = bootstrap_k - (last - usize::from(c2s.first_factor_on_raise())) * c2s.coeffs_meta().log_delta();
+            let below = (last - usize::from(c2s.first_factor_on_raise())) * c2s.coeffs_meta().log_delta();
             for p in c2s.last_factor_galois_elements_at(log_n, 1 << (log_n - 1), cyclotomic_order) {
-                widen(p, last_k);
+                uses.push(RotationKeyUse {
+                    p,
+                    stage: KeyStage::Raised,
+                    below,
+                });
             }
         }
         if self.eval_mod_ring == EvalModRing::Standard {
-            widen(-1, after_c2s);
-            if let Some(k) = after_bypass {
-                widen(-1, k);
+            uses.push(RotationKeyUse {
+                p: -1,
+                stage: KeyStage::AfterCoeffsToSlots,
+                below: 0,
+            });
+            if self.coeffs_to_slots_bypass.is_some() {
+                uses.push(RotationKeyUse {
+                    p: -1,
+                    stage: KeyStage::AfterBypass,
+                    below: 0,
+                });
             }
         }
-        Some(inputs)
+        uses.sort_by_key(|key_use| key_use.p);
+        uses
     }
 
     /// Widths of the ciphertexts the trace and the embedding switch on the way
@@ -823,7 +900,7 @@ impl StageWidths<'_> {
     /// CoeffsToSlots and the product by `u` leave of the raised width above the scale the raise labels:
     /// EvalMod's own scale (C2S-first), or the input scale, the message ratio and
     /// the guard bits (S2C-first).
-    fn eval_mod_relinearization_k(&self, bootstrap_k: usize, input_log_delta: usize) -> usize {
+    pub(crate) fn eval_mod_relinearization_k(&self, bootstrap_k: usize, input_log_delta: usize) -> usize {
         let f_mod_log_delta = self.eval_mod.f_mod_log_delta;
         let raised_log_delta = match self.pipeline {
             BootstrappingPipeline::C2SFirst => f_mod_log_delta,
@@ -881,6 +958,10 @@ impl<BE: Backend, F> CKKSDFTFactors<BE, Encode, Standard> for BootstrappingConte
     {
         self.coeffs_to_slots.factors()
     }
+
+    fn factor_plans(&self) -> &[LinearTransformationPlan] {
+        self.coeffs_to_slots.factor_plans()
+    }
 }
 
 /// A compiled bootstrap bound to the labels of the message it runs on. The steps read those labels here, so a
@@ -911,6 +992,10 @@ impl<BE: Backend, F> CKKSDFTFactors<BE, Encode, Standard> for BootstrappingRun<'
     {
         CKKSDFTFactors::<BE, Encode, Standard>::factors(self.context)
     }
+
+    fn factor_plans(&self) -> &[LinearTransformationPlan] {
+        CKKSDFTFactors::<BE, Encode, Standard>::factor_plans(self.context)
+    }
 }
 
 impl<BE: Backend, F> CKKSDFTFactors<BE, Decode, Standard> for BootstrappingRun<'_, BE, F> {
@@ -927,6 +1012,10 @@ impl<BE: Backend, F> CKKSDFTFactors<BE, Decode, Standard> for BootstrappingRun<'
         Standard: 'a,
     {
         self.context.slots_to_coeffs.factors()
+    }
+
+    fn factor_plans(&self) -> &[LinearTransformationPlan] {
+        self.context.slots_to_coeffs.factor_plans()
     }
 
     fn stamp_transform_output<C: SetCKKSInfos>(&self, ct: &mut C) {
@@ -1009,6 +1098,14 @@ impl<BE: Backend, F> BootstrappingContextPrepared<BE, F> {
     /// does not carry.
     pub fn run(&self, message: GLWEPlaintextMeta) -> BootstrappingRun<'_, BE, F> {
         BootstrappingRun { context: self, message }
+    }
+
+    /// The uses of the rotation keys at degree `2^log_n`, `None` at another degree than the first asked for.
+    pub(crate) fn rotation_key_uses(&self, log_n: usize) -> Option<&[RotationKeyUse]> {
+        let (degree, uses) = self
+            .rotation_key_uses
+            .get_or_init(|| (log_n, self.stage_widths().rotation_key_uses(log_n)));
+        (*degree == log_n).then_some(uses.as_slice())
     }
 
     /// The stages that set the widths at which a bootstrap uses its keys.
@@ -1195,7 +1292,8 @@ impl<BE: Backend, F> BootstrappingContext<BE, F> {
                             .factors
                             .try_into()
                             .unwrap_or_else(|_| unreachable!("an even and an odd factor"));
-                        CIPrePrepared(CIPreForm::Folded { even, odd })
+                        let plans = Box::new([even.index(), odd.index()]);
+                        CIPrePrepared(CIPreForm::Folded { even, odd, plans })
                     }
                 },
                 post: ci.post,
@@ -1247,6 +1345,7 @@ impl<BE: Backend, F> BootstrappingContext<BE, F> {
             eval_mod_ci,
             pipeline,
             sparse_secret_hamming_weight,
+            rotation_key_uses: OnceLock::new(),
         })
     }
 }

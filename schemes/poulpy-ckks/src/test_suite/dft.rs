@@ -126,6 +126,10 @@ impl<BE: Backend, Dir, Fmt, D: CKKSDFTFactors<BE, Dir, Fmt>> CKKSDFTFactors<BE, 
     {
         self.0.factors()
     }
+
+    fn factor_plans(&self) -> &[poulpy_core::layouts::LinearTransformationPlan] {
+        self.0.factor_plans()
+    }
 }
 
 /// Coefficient meta for the factor matrices: the per-factor scale, minimal budget.

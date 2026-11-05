@@ -8,7 +8,8 @@ use poulpy_core::{
     GLWECIEmbed, GLWECITrace, GLWECopy, GLWEKeyswitch, GLWERotate, GLWEShift, GLWESwitchDegree, LinearTransformationPrepared,
     layouts::{
         BSGSMeta, GGLWEInfos, GLWEInfos, GLWELayout, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef,
-        GetAutomorphismKey, GetTensorKey, LWEInfos, LinearTransformation, Rank, SetBSGSMeta, SetK, TorusPrecision,
+        GetAutomorphismKey, GetTensorKey, LWEInfos, LinearTransformation, LinearTransformationPlan, Rank, SetBSGSMeta, SetK,
+        TorusPrecision,
         prepared::{GGLWEPreparedBackendRef, GGLWEPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
     },
 };
@@ -899,19 +900,19 @@ where
         crate::layouts::bootstrapping::CIPreForm::Product(u) => module.ckks_mul_pt_vec_tmp_bytes(&embedded, &embedded, u),
         // The baby steps of `even` and the outputs of the two folded factors beside
         // their evaluation, then the odd one's embedding beside its rotation.
-        crate::layouts::bootstrapping::CIPreForm::Folded { even, odd } => {
+        crate::layouts::bootstrapping::CIPreForm::Folded { plans, .. } => {
             // The baby steps of `even`, which `odd` shares, and each factor on its own schedule,
             // which counts the doubling and the giant-step tree of power-of-two keys.
-            let (even_plan, odd_plan) = (even.index(), odd.index());
+            let [even_plan, odd_plan] = &**plans;
             let diagonal = crate::api::ckks_plaintext_diagonal_layout(boot_layout);
             let mut factors = 0;
             for atk in keys_layout.rotation_key_layouts() {
                 factors = factors
-                    .max(module.ckks_linear_transformation_baby_steps_prepare_tmp_bytes(boot_layout, &even_plan, atk))
-                    .max(module.ckks_linear_transformation_eval_tmp_bytes(boot_layout, &diagonal, &even_plan, atk, atk))
-                    .max(module.ckks_linear_transformation_eval_tmp_bytes(boot_layout, &diagonal, &odd_plan, atk, atk));
+                    .max(module.ckks_linear_transformation_baby_steps_prepare_tmp_bytes(boot_layout, even_plan, atk))
+                    .max(module.ckks_linear_transformation_eval_tmp_bytes(boot_layout, &diagonal, even_plan, atk, atk))
+                    .max(module.ckks_linear_transformation_eval_tmp_bytes(boot_layout, &diagonal, odd_plan, atk, atk));
             }
-            module.glwe_linear_transformation_baby_steps_bytes_of(&even_plan, boot_layout)
+            module.glwe_linear_transformation_baby_steps_bytes_of(even_plan, boot_layout)
                 + 2 * BE::scratch_aligned(module.glwe_bytes_of_from_infos(boot_layout))
                 + factors.max(embedded_bytes + module.glwe_rotate_tmp_bytes().max(module.ckks_add_tmp_bytes(embedded.size())))
         }
@@ -935,6 +936,7 @@ fn ci_folded_pre<BE, R, W, H>(
     embedded: &mut R,
     w: &W,
     [even, odd]: [&LinearTransformationPrepared<BE>; 2],
+    plan: &LinearTransformationPlan,
     keys: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
@@ -945,10 +947,9 @@ where
     W: GLWEToBackendRef<BE> + CKKSCtBounds,
     H: GetAutomorphismKey<BE>,
 {
-    let plan = even.index();
     let (mut babies, mut scratch) = scratch
         .borrow()
-        .take_glwe_linear_transformation_baby_steps_scratch(module, &plan, w);
+        .take_glwe_linear_transformation_baby_steps_scratch(module, plan, w);
     module.ckks_linear_transformation_baby_steps_prepare(&mut babies, w, keys, &mut scratch)?;
     let (mut a, scratch_1) = scratch.borrow().take_ckks_ciphertext_scratch(w, w.meta());
     let (mut b, mut scratch_1) = scratch_1.take_ckks_ciphertext_scratch(w, w.meta());
@@ -1019,9 +1020,15 @@ where
             module.glwe_switch_degree(&mut embedded, a);
             module.ckks_mul_pt_vec_assign(&mut embedded, u, &mut scratch)?;
         }
-        crate::layouts::bootstrapping::CIPreForm::Folded { even, odd } => {
-            ci_folded_pre(module, &mut embedded, a, [even, odd], keys.rotation_keys(), &mut scratch)?
-        }
+        crate::layouts::bootstrapping::CIPreForm::Folded { even, odd, plans } => ci_folded_pre(
+            module,
+            &mut embedded,
+            a,
+            [even, odd],
+            &plans[0],
+            keys.rotation_keys(),
+            &mut scratch,
+        )?,
     }
     let widths = plan.eval_mod_plan().conversion_widths(embedded.k().as_usize());
     check_conversion_key_widths(EVAL_MOD_OP, trace_key, embed_key, widths)?;

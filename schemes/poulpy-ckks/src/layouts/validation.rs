@@ -432,10 +432,21 @@ where
 {
     let log_n = ct_out.n().as_usize().trailing_zeros() as usize;
     let (bootstrap_k, input_k) = (ct_out.k().as_usize(), ct_in.k().as_usize());
-    let Some(widths) = ctx.stage_widths().key_widths(log_n, bootstrap_k, input_k, ct_in.log_delta()) else {
+    let stages = ctx.stage_widths();
+    let Some(starts) = stages.stage_starts(bootstrap_k, input_k) else {
         return Err(narrower_than_stages(op, bootstrap_k, input_k));
     };
-    for (p, k) in widths.rotation_keys {
+    let other_degree;
+    let uses = match ctx.rotation_key_uses(log_n) {
+        Some(uses) => uses,
+        None => {
+            other_degree = stages.rotation_key_uses(log_n);
+            &other_degree
+        }
+    };
+    for key_uses in uses.chunk_by(|a, b| a.p == b.p) {
+        let p = key_uses[0].p;
+        let k = key_uses.iter().map(|key_use| starts.width(key_use)).max().unwrap_or(0);
         let k = TorusPrecision(k as u32);
         keys.rotation_keys()
             .get_automorphism_key(p, k)
@@ -446,7 +457,7 @@ where
                 source,
             })?;
     }
-    let k = TorusPrecision(widths.tensor_key as u32);
+    let k = TorusPrecision(stages.eval_mod_relinearization_k(bootstrap_k, ct_in.log_delta()) as u32);
     tensor_key
         .get_tensor_key(k)
         .map_err(|source| CKKSCompositionError::MissingRelinearizationKey { op, k: k.into(), source })?;

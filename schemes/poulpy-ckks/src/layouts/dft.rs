@@ -8,13 +8,16 @@
 //! [`docs/guides/bootstrapping.md`](https://github.com/poulpy-fhe/poulpy/blob/main/docs/guides/bootstrapping.md).
 
 use core::marker::PhantomData;
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::OnceLock,
+};
 
 use poulpy_core::{
     GLWEDiagonalProd, LinearTransformationPrepared,
     layouts::{
-        GLWEInfos, IntPolyInfos, LinearTransformation, LinearTransformationLayout, LinearTransformationStrategy,
-        optimal_bsgs_giant_step,
+        GLWEInfos, IntPolyInfos, LinearTransformation, LinearTransformationLayout, LinearTransformationPlan,
+        LinearTransformationStrategy, optimal_bsgs_giant_step,
     },
 };
 use poulpy_hal::layouts::{Backend, Module, galois_element};
@@ -761,6 +764,8 @@ pub struct DFTMatrixFactors<BE: Backend, R = LinearTransformation<CKKSPlaintextO
     pub plan: DFTPlan,
     /// Per-factor right operands, one per factor matrix, in evaluation order.
     pub(crate) factors: Vec<R>,
+    /// The schedule of each factor, read once from `factors` for every later evaluation and query.
+    plans: OnceLock<Vec<LinearTransformationPlan>>,
     _backend: core::marker::PhantomData<BE>,
 }
 
@@ -769,6 +774,7 @@ impl<BE: Backend, R> DFTMatrixFactors<BE, R> {
         Self {
             plan,
             factors,
+            plans: OnceLock::new(),
             _backend: core::marker::PhantomData,
         }
     }
@@ -870,6 +876,9 @@ pub trait CKKSDFTFactors<BE: Backend, Dir, Fmt> {
         Dir: 'a,
         Fmt: 'a;
 
+    /// The BSGS schedule of each of [`Self::factors`], kept so that an evaluation or a query builds none.
+    fn factor_plans(&self) -> &[LinearTransformationPlan];
+
     /// Labels the output of a SlotsToCoeffs that ends a bootstrap.
     fn stamp_transform_output<C: SetCKKSInfos>(&self, _ct: &mut C) {}
 }
@@ -891,6 +900,12 @@ where
         Fmt: 'a,
     {
         self.factor_operands().iter()
+    }
+
+    fn factor_plans(&self) -> &[LinearTransformationPlan] {
+        self.inner
+            .plans
+            .get_or_init(|| self.inner.factors.iter().map(LinearTransformation::index).collect())
     }
 }
 

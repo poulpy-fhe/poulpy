@@ -27,7 +27,7 @@ use poulpy_core::{
     ScratchArenaTakeGLWELinearTransformationBabySteps,
     layouts::{
         Base2K, GGLWEInfos, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos,
-        LinearTransformation,
+        LinearTransformation, LinearTransformationPlan,
     },
 };
 use poulpy_hal::{
@@ -299,8 +299,8 @@ where
 {
     // One factor at a time, in place on `ct`; compact `ct` after each so the next
     // factor's baby-step keyswitches operate on fewer limbs as the budget shrinks.
-    for factor in dft.factors() {
-        eval_factor(module, ct, factor, keys, scratch)?;
+    for (factor, plan) in dft.factors().zip(dft.factor_plans()) {
+        eval_factor(module, ct, factor, plan, keys, scratch)?;
     }
     ct.set_noise(None);
     Ok(())
@@ -314,6 +314,7 @@ fn eval_factor<BE, P, Dst, H>(
     module: &Module<BE>,
     running: &mut Dst,
     factor: &LinearTransformation<P>,
+    plan: &LinearTransformationPlan,
     keys: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
@@ -324,14 +325,13 @@ where
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     H: GetAutomorphismKey<BE>,
 {
-    let plan = factor.index();
     ckks_ensure!(
-        scratch.available() >= module.glwe_linear_transformation_baby_steps_bytes_of(&plan, &*running),
+        scratch.available() >= module.glwe_linear_transformation_baby_steps_bytes_of(plan, &*running),
         "ckks_dft_matrix_eval_assign: scratch below its baby-step cache"
     );
     let (mut babies, mut scratch) = scratch
         .borrow()
-        .take_glwe_linear_transformation_baby_steps_scratch(module, &plan, &*running);
+        .take_glwe_linear_transformation_baby_steps_scratch(module, plan, &*running);
     module.ckks_linear_transformation_baby_steps_prepare(&mut babies, running, keys, &mut scratch)?;
     module.ckks_linear_transformation_eval_assign(running, &babies, factor, &PlaintextDiagonalKeys(keys), &mut scratch)?;
     Ok(())
@@ -412,12 +412,11 @@ where
                     .max(module.ckks_sub_tmp_bytes(ct.max_size()))
                     .max(module.ckks_div_i_tmp_bytes(ct.max_size())),
         );
-        for factor in dft.factors() {
-            // Each factor's own schedule, so that a factor on power-of-two keys counts its
-            // doubling and its giant-step tree, beside its baby cache.
-            let plan = factor.index();
-            let babies = module.glwe_linear_transformation_baby_steps_bytes_of(&plan, ct);
-            bytes = bytes.max(babies + module.glwe_linear_transformation_baby_steps_prepare_tmp_bytes(ct, &plan, key));
+        // Each factor's own schedule, so that a factor on power-of-two keys counts its
+        // doubling and its giant-step tree, beside its baby cache.
+        for (factor, plan) in dft.factors().zip(dft.factor_plans()) {
+            let babies = module.glwe_linear_transformation_baby_steps_bytes_of(plan, ct);
+            bytes = bytes.max(babies + module.glwe_linear_transformation_baby_steps_prepare_tmp_bytes(ct, plan, key));
             for pt in factor
                 .giant_steps
                 .iter()
@@ -427,8 +426,8 @@ where
                 // Prepared and streamed evaluation are selected independently, so
                 // neither query is assumed to cover the other.
                 let factor_work = module
-                    .glwe_linear_transformation_eval_unprepared_rhs_tmp_bytes(ct, ct, pt, &plan, key, key)
-                    .max(module.glwe_linear_transformation_eval_tmp_bytes(ct, ct, pt, &plan, key, key))
+                    .glwe_linear_transformation_eval_unprepared_rhs_tmp_bytes(ct, ct, pt, plan, key, key)
+                    .max(module.glwe_linear_transformation_eval_tmp_bytes(ct, ct, pt, plan, key, key))
                     .max(module.ckks_copy_tmp_bytes(ct, ct));
                 bytes = bytes.max(babies + BE::scratch_aligned(module.glwe_bytes_of_from_infos(ct)) + factor_work);
             }
