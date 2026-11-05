@@ -180,7 +180,7 @@ where
                 coeffs_to_slots_and_eval_mod(module, res, &mut z, &run, ci, keys, &mut scratch)
             }
             BootstrappingPipeline::C2SFirst => {
-                // The raise consumes its input: it works on a copy, released once `z` holds the raised ciphertext.
+                // The raise clobbers its input: it works on a copy, released once `z` holds the raised ciphertext.
                 scratch.scope(|scratch| {
                     let (mut copy, mut scratch) = scratch.take_ckks_ciphertext_scratch(a, a.meta());
                     module.ckks_copy(&mut copy, a, &mut scratch)?;

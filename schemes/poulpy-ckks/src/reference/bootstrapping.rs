@@ -240,7 +240,7 @@ pub trait CKKSBootstrappingReference<BE: CKKSCITwin>: std::borrow::Borrow<Module
 
     /// Whole raise step: on C2S-first, lift to the plan's message ratio; (encapsulate) ModUp with the second lift
     /// or the guard bits fused into its shift; the first CoeffsToSlots factor when the plan leaves it to the raise;
-    /// then the relabeling of `res`. `a` is consumed.
+    /// then the relabeling of `res`. `a` is clobbered.
     fn ckks_mod_raise_reference<R, A, P, K>(
         &self,
         res: &mut R,

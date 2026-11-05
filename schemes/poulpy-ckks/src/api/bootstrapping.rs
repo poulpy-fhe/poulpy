@@ -33,6 +33,15 @@ use crate::{
 /// Sparse-secret encapsulation is also selected by the compiled recipe; the
 /// supplied keys must carry the matching
 /// [encapsulation keys](crate::layouts::BootstrappingLinearKeys::encapsulation_keys).
+///
+/// # Clobbered inputs
+///
+/// [`ckks_mod_raise`](Self::ckks_mod_raise), [`ckks_bootstrap_eval_mod`](Self::ckks_bootstrap_eval_mod) and
+/// [`ckks_eval_lut`](Self::ckks_eval_lut) use `a` as working storage. A composition does not read it again, so writing
+/// it saves a ciphertext of scratch and a copy. On a successful return the content and metadata of `a` are unspecified
+/// on every route, even one that only reads it: each step says what its reference route writes, a backend may write
+/// more, and a caller that needs `a` again passes a copy. `a` is borrowed and not moved, so a refusal leaves it
+/// unchanged for a retry, and the caller keeps its buffer for the next call.
 pub trait CKKSBootstrappingOps<BE: CKKSCITwin> {
     /// Scratch upper bound for a full [`Self::ckks_bootstrap`] call: the
     /// pipeline working ciphertexts it carves from scratch plus the largest
@@ -82,8 +91,9 @@ pub trait CKKSBootstrappingOps<BE: CKKSCITwin> {
     /// raise, switch back, and relabel so `res` comes back fully labelled: C2S-first by the message ratio, so that
     /// `I(X)·q` is the integer part and the message the residue.
     ///
-    /// `res` must be allocated at the bootstrap modulus. `a` is consumed: its content and metadata are unspecified on
-    /// a successful return. Scratch is bounded by [`Self::ckks_mod_raise_tmp_bytes`]. `plan` is a compiled context, a
+    /// `res` must be allocated at the bootstrap modulus. `a` is [clobbered](CKKSBootstrappingOps#clobbered-inputs): a
+    /// C2S-first lift multiplies it in place and the dense-to-sparse switch switches it in place, and a plan with
+    /// neither only reads it. Scratch is bounded by [`Self::ckks_mod_raise_tmp_bytes`]. `plan` is a compiled context, a
     /// [`run`](BootstrappingContextPrepared::run) of it, its [`mod_raise`](BootstrappingContextPrepared::mod_raise), or,
     /// on a plan that leaves no CoeffsToSlots factor to the raise, the [`ModRaisePlan`](crate::layouts::ModRaisePlan) itself.
     ///
@@ -144,7 +154,9 @@ pub trait CKKSBootstrappingOps<BE: CKKSCITwin> {
     /// `plan` is a [`BootstrappingRun`](crate::layouts::BootstrappingRun), which holds the labels of the message, or a
     /// plain [`EvalMod`](crate::layouts::EvalMod), which reads the slots of `a` and stamps nothing.
     ///
-    /// `a` is consumed: its content and metadata are unspecified on a successful return, and a refusal leaves it unchanged.
+    /// `a` is [clobbered](CKKSBootstrappingOps#clobbered-inputs): the real-slots route leaves `2·Re(a)` in it, the
+    /// split leaves its real half, times `K` under EvalRound+, and the route on the conjugate-invariant ring only reads
+    /// it.
     ///
     /// The output is the message's: the guard bits leave `res` here and, on an S2C-first plan, `res` takes the message's
     /// metadata; a C2S-first plan ends in `ckks_slots_to_coeffs_assign`, which labels it. Under EvalRound+,
@@ -222,7 +234,8 @@ pub trait CKKSBootstrappingOps<BE: CKKSCITwin> {
     /// without a bypass in the plan, which this step does not run. Any other input is split, each half is evaluated and
     /// the halves are recombined. General LUTs of a batch share the power basis of each half.
     ///
-    /// `a` is consumed: its content and metadata are unspecified on a successful return, and a refusal leaves it unchanged.
+    /// `a` is [clobbered](CKKSBootstrappingOps#clobbered-inputs) on every route: it keeps `2·Re(a)` or the real half of
+    /// the split, without the guard bits on its label.
     ///
     /// `plan` is a [`BootstrappingRun`](crate::layouts::BootstrappingRun), whose message gives the slots and each output
     /// its [`eval_lut_output`](CKKSEvalModInfos::eval_lut_output), or a plain [`EvalMod`](crate::layouts::EvalMod), which

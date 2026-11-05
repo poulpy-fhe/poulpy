@@ -518,7 +518,7 @@ pub(crate) fn assert_eval_mod_refuses<BE>(
     );
 }
 
-/// A copy of `a` for a step that consumes its input, when `a` is read again.
+/// A copy of `a` for a step that clobbers its input, when `a` is read again.
 pub(crate) fn step_input<BE>(module: &Module<BE>, a: &CKKSCiphertextOwned<BE>) -> CKKSCiphertextOwned<BE>
 where
     BE: Backend<ZnxWord = i64>,

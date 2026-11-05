@@ -108,10 +108,12 @@ EvalMod runs at its own scale.
 | Step | Call | Notes |
 |---|---|---|
 | SlotsToCoeffs | `ckks_slots_to_coeffs_assign(ct, &run, keys, scratch)` | any `Standard` `CKKSDFTFactors`, `BootstrappingRun` included, which labels the output that ends a C2S-first bootstrap |
-| ModRaise | `ckks_mod_raise(res, a, &run, keys, scratch)` | `a` is clobbered, the raise switches it in place; `ctx`, `ctx.mod_raise()` also serve, and `plan.mod_raise()` on a plan that leaves no CoeffsToSlots factor to the raise |
+| ModRaise | `ckks_mod_raise(res, a, &run, keys, scratch)` | `a` is clobbered by a C2S-first lift and the dense-to-sparse switch, and only read without them; `ctx`, `ctx.mod_raise()` also serve, and `plan.mod_raise()` on a plan that leaves no CoeffsToSlots factor to the raise |
 | CoeffsToSlots | `ckks_coeffs_to_slots_assign(ct, &run, keys, scratch)` | leaves the slot label Complex; a run or `&bypass` leaves half a `Standard` encode, which the split of the next step or the composer doubles |
-| EvalMod | `ckks_bootstrap_eval_mod(res, a, &run, ci, keys, scratch)` | `a` is clobbered; real slots, split halves, or the conjugate-invariant ring, by the plan and the slots of the message |
-| EvalLut | `ckks_eval_lut(res, a, &run, luts, keys, scratch)` | `a` is clobbered; `res` is a slice, one output per LUT |
+| EvalMod | `ckks_bootstrap_eval_mod(res, a, &run, ci, keys, scratch)` | `a` is clobbered, holding `2·Re(a)` or the real half, and only read on the conjugate-invariant ring; real slots, split halves, or that ring, by the plan and the slots of the message |
+| EvalLut | `ckks_eval_lut(res, a, &run, luts, keys, scratch)` | `a` is clobbered on every route; `res` is a slice, one output per LUT |
+
+The steps use `a` as working storage: a composition does not read it again, so writing it saves a ciphertext of scratch and a copy. After a success its content is unspecified on every route, even one that only reads it, so pass a copy if you need `a` again. It is borrowed and not moved: a refusal leaves it unchanged for a retry, and you keep its buffer for the next call.
 
 Each has its `_tmp_bytes`, and a step refuses a short arena, a wrong operand, a key that does not cover it or a missing budget before it writes `res`. `ckks_bootstrap_eval_mod` and `ckks_eval_lut` remove the guard bits of the plan; only a bypass leaves them to the composer.
 `EvalModCIPrepared` implements no `CKKSEvalModInfos`: EvalMod on the conjugate-invariant ring runs through a run, not through its compiled part alone.
