@@ -720,30 +720,32 @@ where
         let keep: Vec<bool> = (0..n).map(|j| j < n / 2 && j.is_multiple_of(1 << (log_gap + 1))).collect();
         let mask_bytes = ctx.coeffs_mask_tmp_bytes(module).unwrap();
         let mask = with_scratch::<BE, _>(mask_bytes, |scratch| ctx.coeffs_mask(module, &keep, scratch)).unwrap();
-        let bytes = BE::ckks_mod_raise_tmp_bytes(module, &out_layout, &raise_layout, &ctx, &layout)
-            .max(module.ckks_dft_tmp_bytes(&out_layout, &out_layout, &ctx.masked(&mask).unwrap(), &atk))
-            .max(BE::ckks_bootstrap_eval_mod_tmp_bytes(
-                module,
-                &out_layout,
-                &out_layout,
-                &ctx,
-                None,
-                &layout,
-            ));
+        let raise_bytes = BE::ckks_mod_raise_tmp_bytes(module, &out_layout, &raise_layout, &ctx, &layout);
+        let masked_bytes = module.ckks_dft_tmp_bytes(&out_layout, &out_layout, &ctx.masked(&mask).unwrap(), &atk);
+        let eval_mod_bytes = BE::ckks_bootstrap_eval_mod_tmp_bytes(module, &out_layout, &out_layout, &ctx, None, &layout);
         for mask in [None, Some(&mask)] {
             let mut coeffs = fixture_ciphertext(module, &raise_layout, 107);
             let mut z = fixture_ciphertext(module, &out_layout, 109);
             let mut out = fixture_ciphertext(module, &out_layout, 113);
-            let result = with_scratch::<BE, _>(bytes, |scratch| {
-                BE::ckks_mod_raise(module, &mut z, &mut coeffs, &ctx, &keys, scratch)?;
-                match mask {
-                    Some(mask) => {
-                        module.ckks_coeffs_to_slots_assign(&mut z, &ctx.masked(mask)?, keys.rotation_keys(), scratch)?
-                    }
-                    None => module.ckks_coeffs_to_slots_assign(&mut z, &ctx, keys.rotation_keys(), scratch)?,
+            let result = with_scratch::<BE, _>(raise_bytes, |scratch| {
+                BE::ckks_mod_raise(module, &mut z, &mut coeffs, &ctx, &keys, scratch)
+            })
+            .and_then(|()| match mask {
+                Some(mask) => with_scratch::<BE, _>(masked_bytes, |scratch| {
+                    module.ckks_coeffs_to_slots_assign(&mut z, &ctx.masked(mask)?, keys.rotation_keys(), scratch)
+                }),
+                None => {
+                    let bytes = module.ckks_dft_tmp_bytes(&out_layout, &out_layout, ctx.coeffs_to_slots(), &atk);
+                    with_scratch::<BE, _>(bytes, |scratch| {
+                        module.ckks_coeffs_to_slots_assign(&mut z, &ctx, keys.rotation_keys(), scratch)
+                    })
                 }
+            })
+            .and_then(|()| {
                 z.set_slots(SlotsKind::Real);
-                BE::ckks_bootstrap_eval_mod(module, &mut out, &z, &ctx, None, &keys, scratch)
+                with_scratch::<BE, _>(eval_mod_bytes, |scratch| {
+                    BE::ckks_bootstrap_eval_mod(module, &mut out, &z, &ctx, None, &keys, scratch)
+                })
             });
             assert!(result.is_ok(), "log_gap {log_gap}: {result:?}");
             results.push((
@@ -765,16 +767,31 @@ where
         let merged = with_scratch::<BE, _>(factor_bytes, |scratch| ctx.merged_s2c_factor(module, &kernels, 14, scratch)).unwrap();
         let factor = merged.factor();
         let schedule = factor.index();
-        let bytes = module.ckks_dft_tmp_bytes(&in_layout, &in_layout, ctx.slots_to_coeffs(), &atk)
-            + module.glwe_linear_transformation_baby_steps_bytes_of(&schedule, &in_layout);
+        let head = ctx.slots_to_coeffs().head();
+        let head_bytes = module.ckks_dft_tmp_bytes(&in_layout, &in_layout, &head, &atk);
+        let babies_bytes = module.glwe_linear_transformation_baby_steps_bytes_of(&schedule, &in_layout);
+        let factor_eval_bytes = babies_bytes
+            + module
+                .ckks_linear_transformation_baby_steps_prepare_tmp_bytes(&in_layout, &schedule, &atk)
+                .max(module.ckks_linear_transformation_eval_tmp_bytes(
+                    &in_layout,
+                    factor.first_diagonal_plaintext().unwrap(),
+                    &schedule,
+                    &atk,
+                    &atk,
+                ));
         let mut running = fixture_ciphertext(module, &in_layout, 127);
-        let result = with_scratch::<BE, _>(bytes, |scratch| {
-            module.ckks_slots_to_coeffs_assign(&mut running, &ctx.slots_to_coeffs().head(), &keys.rotation_keys, scratch)?;
-            let (mut babies, mut scratch) = scratch
-                .borrow()
-                .take_glwe_linear_transformation_baby_steps_scratch(module, &schedule, &running);
-            module.ckks_linear_transformation_baby_steps_prepare(&mut babies, &running, &keys.rotation_keys, &mut scratch)?;
-            module.ckks_linear_transformation_eval_assign(&mut running, &babies, factor, &keys.rotation_keys, &mut scratch)
+        let result = with_scratch::<BE, _>(head_bytes, |scratch| {
+            module.ckks_slots_to_coeffs_assign(&mut running, &head, &keys.rotation_keys, scratch)
+        })
+        .and_then(|()| {
+            with_scratch::<BE, _>(factor_eval_bytes, |scratch| {
+                let (mut babies, mut scratch) = scratch
+                    .borrow()
+                    .take_glwe_linear_transformation_baby_steps_scratch(module, &schedule, &running);
+                module.ckks_linear_transformation_baby_steps_prepare(&mut babies, &running, &keys.rotation_keys, &mut scratch)?;
+                module.ckks_linear_transformation_eval_assign(&mut running, &babies, factor, &keys.rotation_keys, &mut scratch)
+            })
         });
         assert!(result.is_ok(), "log_gap {log_gap}: {result:?}");
         results.push((result.map_err(|e| e.to_string()), vec![snapshot::<BE, _>(&running)]));

@@ -271,7 +271,7 @@ pub trait CKKSBootstrappingOps<BE: CKKSCITwin> {
     /// Before any work, and leaving `ct_out` unchanged, besides the key refusals above:
     /// [`InvalidOperand`](crate::CKKSCompositionError::InvalidOperand) for a functional context, `ci` on a plan of the
     /// standard ring, no `ci` on a plan of the conjugate-invariant ring, a rank other than 1, ciphertexts of two degrees
-    /// or base2k or of a degree the module does not serve, an encapsulation that does not match the recipe, or keys
+    /// or base2k or of a degree the module does not serve, an input of another degree than the transforms of the context fill, at the plan's gap, an encapsulation that does not match the recipe, or keys
     /// without the tensor key of the plan's ring. On the conjugate-invariant ring also, for modules of other degrees than `2N` and `N`, or
     /// conversion keys absent, of another degree, radix or rank, or narrower than the widths they switch.
     /// `CKKSError::Internal` for an arena under [`Self::ckks_bootstrap_tmp_bytes`], when the keys report their layout.
@@ -316,7 +316,7 @@ pub trait CKKSBootstrappingOps<BE: CKKSCITwin> {
     ///
     /// Before any work, and leaving `ct_outs` unchanged:
     /// [`InvalidOperand`](crate::CKKSCompositionError::InvalidOperand) for a C2S-first context, the refusals of
-    /// [`Self::ckks_eval_lut`] on the batch, an encapsulation that does not match the recipe, a message ratio or modulus
+    /// [`Self::ckks_eval_lut`] on the batch, an input of another degree than the transforms of the context fill, at the plan's gap, an encapsulation that does not match the recipe, a message ratio or modulus
     /// the context or the LUTs do not take, or an output width below the bits the stages after the raise consume;
     /// [`MissingAutomorphismKey`](crate::CKKSCompositionError::MissingAutomorphismKey) or
     /// [`MissingRelinearizationKey`](crate::CKKSCompositionError::MissingRelinearizationKey) for a key narrower than
