@@ -1038,7 +1038,22 @@ impl<BE: Backend + CKKSBootstrappingImpl + CKKSEncapsulatedModUpImpl + CKKSModUp
     {
         const OP: &str = EVAL_LUT_OP;
         ensure_lut_batch(OP, self.n(), a, res, luts, plan)?;
+        let guard_bits = plan.c2s_guard_bits();
+        ckks_ensure_operand!(
+            OP,
+            a.log_delta() >= guard_bits,
+            "the input holds fewer scale bits than the plan's guard bits"
+        );
         let tensor_key = required_tensor_key(OP, keys.tensor_key())?;
+        // Every conjugation of the step (real part, split, LUT symmetrization) switches at a width at most `a.k()`.
+        keys.rotation_keys()
+            .get_automorphism_key(-1, a.k())
+            .map_err(|source| CKKSCompositionError::MissingAutomorphismKey {
+                op: OP,
+                rotation: 0,
+                k: a.k().into(),
+                source,
+            })?;
         if let Some(keys_layout) = keys.keys_layout() {
             let bytes = self.ckks_eval_lut_tmp_bytes_reference(&res[0], a, plan, luts, &keys_layout);
             ckks_ensure!(
@@ -1054,7 +1069,6 @@ impl<BE: Backend + CKKSBootstrappingImpl + CKKSEncapsulatedModUpImpl + CKKSModUp
             k: res[0].k(),
             rank: Rank(1),
         };
-        let guard_bits = plan.c2s_guard_bits();
         scratch.scope(|scratch| {
             if a.slots().is_real() && plan.one_eval_mod_on_real_slots() {
                 let (mut z, scratch) = scratch.take_ckks_ciphertext_scratch(a, a.meta());
@@ -2563,7 +2577,7 @@ where
     ckks_ensure_operand!(
         op,
         outs.len() == luts.len(),
-        "ct_outs/luts length mismatch ({} vs {})",
+        "the number of outputs differs from the number of LUTs ({} vs {})",
         outs.len(),
         luts.len()
     );
@@ -2585,6 +2599,7 @@ where
             }),
         "LUT outputs must share one rank-1 layout"
     );
+    ckks_ensure_operand!(op, a.base2k() == head.base2k(), "takes an input and outputs of one base2k");
     ckks_ensure_operand!(
         op,
         head.n() == a.n() && a.n().as_usize() <= module_n,

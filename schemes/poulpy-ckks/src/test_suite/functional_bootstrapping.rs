@@ -482,6 +482,53 @@ fn run_case<BE, F, E>(
             assert_eq!(snapshot::<BE, _>(got).digits, snapshot::<BE, _>(want).digits);
         }
 
+        // The step runs on exactly the scratch it advertises, and refuses one alignment unit less.
+        let mut exact: Vec<_> = backend_luts
+            .iter()
+            .map(|_| module.ckks_ciphertext_alloc(params.base2k.into(), k_boot.into()))
+            .collect();
+        let lut_tmp = module.ckks_eval_lut_tmp_bytes(&exact[0], &raised, &ctx, &backend_luts, &keys_layout);
+        with_scratch::<BE, _>(lut_tmp, |s| {
+            module.ckks_eval_lut(&mut exact, &raised, &ctx, &backend_luts, &keys, s)
+        })
+        .unwrap();
+        for (got, want) in exact.iter().zip(&stepped) {
+            assert_eq!(snapshot::<BE, _>(got).digits, snapshot::<BE, _>(want).digits);
+        }
+        let mut short: Vec<_> = backend_luts
+            .iter()
+            .map(|_| module.ckks_ciphertext_alloc(params.base2k.into(), k_boot.into()))
+            .collect();
+        let error = with_scratch::<BE, _>(lut_tmp - BE::SCRATCH_ALIGN, |s| {
+            module.ckks_eval_lut(&mut short, &raised, &ctx, &backend_luts, &keys, s)
+        })
+        .unwrap_err();
+        assert!(
+            error.composition().is_none() && error.to_string().contains("needs a scratch arena"),
+            "{error}"
+        );
+
+        // The label picks the route: the same raised input read as complex takes the split and gives other digits.
+        if slots_kind == SlotsKind::Real {
+            let mut as_complex: Vec<_> = backend_luts
+                .iter()
+                .map(|_| module.ckks_ciphertext_alloc(params.base2k.into(), k_boot.into()))
+                .collect();
+            raised.set_slots(SlotsKind::Complex);
+            with_scratch::<BE, _>(boot_tmp, |s| {
+                module.ckks_eval_lut(&mut as_complex, &raised, &ctx, &backend_luts, &keys, s)
+            })
+            .unwrap();
+            raised.set_slots(SlotsKind::Real);
+            assert!(
+                as_complex
+                    .iter()
+                    .zip(&stepped)
+                    .any(|(got, want)| snapshot::<BE, _>(got).digits != snapshot::<BE, _>(want).digits),
+                "real and complex labels took one route"
+            );
+        }
+
         for (index, (output, table)) in outputs.iter().zip(&tables).enumerate() {
             let lut = &backend_luts[index];
             let output_log_delta = INPUT_LOG_DELTA + lut.log_msg_ratio();
@@ -679,7 +726,7 @@ fn run_case<BE, F, E>(
                 &error,
                 CKKSCompositionError::InvalidOperand {
                     op: "ckks_functional_bootstrap",
-                    reason: format!("ct_outs/luts length mismatch (1 vs {})", luts.len()),
+                    reason: format!("the number of outputs differs from the number of LUTs (1 vs {})", luts.len()),
                 },
             );
 
@@ -733,7 +780,7 @@ fn run_case<BE, F, E>(
                 &error,
                 CKKSCompositionError::InvalidOperand {
                     op: "ckks_eval_lut",
-                    reason: format!("ct_outs/luts length mismatch (1 vs {})", luts.len()),
+                    reason: format!("the number of outputs differs from the number of LUTs (1 vs {})", luts.len()),
                 },
             );
             let error = with_scratch::<BE, _>(0, |s| {
