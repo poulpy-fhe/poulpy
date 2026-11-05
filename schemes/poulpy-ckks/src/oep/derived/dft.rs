@@ -4,7 +4,7 @@ use crate::api::{
     LtDiagonalMeta,
 };
 use crate::layouts::{
-    CKKSDFTFactors, DFTMatrix, DFTMatrixPrepared, Decode, Encode, Repack, ScratchArenaTakeCKKSCiphertext, Split,
+    CKKSDFTFactors, DFTMatrix, DFTMatrixPrepared, Decode, Encode, Repack, ScratchArenaTakeCKKSCiphertext, Split, Standard,
 };
 use crate::oep::CKKSDFTImpl;
 use crate::{CKKSCtBounds, CKKSResult as Result, SetCKKSInfos, SlotsKind};
@@ -29,9 +29,9 @@ where
     Ok(res)
 }
 
-/// Homomorphic encoding (CoeffsToSlots): evaluates the Encode (IDFT) factors in place,
-/// retaining selected raw DFT dispatch. The format is how an output reads and is ignored here.
-pub(crate) fn ckks_encoding_buffer_coeffs_to_slots_assign_derived<BE, Fmt, D, Dst, H>(
+/// Homomorphic encoding (CoeffsToSlots), `Standard` format: evaluates the Encode (IDFT) factors in place,
+/// retaining selected raw DFT dispatch.
+pub(crate) fn ckks_encoding_buffer_coeffs_to_slots_assign_derived<BE, D, Dst, H>(
     module: &Module<BE>,
     ct: &mut Dst,
     dft: &D,
@@ -40,7 +40,7 @@ pub(crate) fn ckks_encoding_buffer_coeffs_to_slots_assign_derived<BE, Fmt, D, Ds
 ) -> Result<()>
 where
     BE: Backend,
-    D: CKKSDFTFactors<BE, Encode, Fmt>,
+    D: CKKSDFTFactors<BE, Encode, Standard>,
     Module<BE>: crate::api::CKKSDFTOps<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
@@ -48,10 +48,9 @@ where
     module.ckks_dft_matrix_eval_assign(ct, dft, keys, scratch)
 }
 
-/// Homomorphic decoding (SlotsToCoeffs): evaluates the Decode (DFT) factors in place,
-/// retaining selected raw DFT dispatch, then lets `dft` label the output. The format is how an output reads and is
-/// ignored here.
-pub(crate) fn ckks_encoding_buffer_slots_to_coeffs_assign_derived<BE, Fmt, D, Dst, H>(
+/// Homomorphic decoding (SlotsToCoeffs), `Standard` format: evaluates the Decode (DFT) factors in place,
+/// retaining selected raw DFT dispatch, then lets `dft` label the output.
+pub(crate) fn ckks_encoding_buffer_slots_to_coeffs_assign_derived<BE, D, Dst, H>(
     module: &Module<BE>,
     ct: &mut Dst,
     dft: &D,
@@ -60,7 +59,7 @@ pub(crate) fn ckks_encoding_buffer_slots_to_coeffs_assign_derived<BE, Fmt, D, Ds
 ) -> Result<()>
 where
     BE: Backend,
-    D: CKKSDFTFactors<BE, Decode, Fmt>,
+    D: CKKSDFTFactors<BE, Decode, Standard>,
     Module<BE>: crate::api::CKKSDFTOps<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     H: GetAutomorphismKey<BE> + GetTensorKey<BE>,

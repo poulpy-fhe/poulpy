@@ -551,6 +551,11 @@ fn run_case<BE, F, E>(
                 "ckks_eval_lut",
                 "the input holds fewer scale bits than the plan's guard bits",
             );
+            crate::test_suite::bootstrapping::assert_eval_mod_refuses(
+                &mut refused[0],
+                "the input holds fewer scale bits than the plan's guard bits",
+                |res, s| module.ckks_bootstrap_eval_mod(res, &a_scale, &run, None, &keys, s),
+            );
         }
         let conjugation = keys.rotation_keys.remove(&-1).unwrap();
         let error = eval_lut_refusal(&mut refused, |res, s| {
@@ -610,6 +615,18 @@ fn run_case<BE, F, E>(
                 "EvalLut requires an S2C-first run",
             );
         }
+        // The budget of a LUT refuses before the first write.
+        let starved = fixture_ciphertext(module, &ckks_spec(params.n, params.base2k, raised.log_delta(), 1), 41);
+        let error = eval_lut_refusal(&mut refused, |res, s| {
+            module.ckks_eval_lut(res, &starved, &run, &backend_luts, &keys, s)
+        });
+        assert!(
+            matches!(
+                error.composition(),
+                Some(CKKSCompositionError::InsufficientHomomorphicCapacity { op: "ckks_eval_lut", .. })
+            ),
+            "{error}"
+        );
 
         // The message picks the route: the same raised input bound to a complex message takes the split and gives other
         // digits.
@@ -871,7 +888,8 @@ fn run_case<BE, F, E>(
             // The LUT step refuses on an empty arena and leaves every output as it was.
             let before: Vec<_> = outputs.iter().map(|ct| snapshot::<BE, _>(ct)).collect();
             let run = ctx.run(ct.meta());
-            let error = with_scratch::<BE, _>(0, |s| module.ckks_eval_lut(&mut [], &raised, &run, &[], &keys, s)).unwrap_err();
+            let error =
+                with_scratch::<BE, _>(0, |s| module.ckks_eval_lut(&mut outputs[..0], &raised, &run, &[], &keys, s)).unwrap_err();
             assert_ckks_error(
                 "LUT step without LUTs",
                 &error,
@@ -908,6 +926,7 @@ fn run_case<BE, F, E>(
                     scaling: Some(1.0),
                     ..*ctx.eval_mod_plan()
                 },
+                runs_eval_mod: true,
             };
             let error = with_scratch::<BE, _>(0, |s| {
                 module.ckks_eval_lut(&mut outputs[..luts.len()], &raised, &off_circle, luts, &keys, s)
@@ -918,6 +937,21 @@ fn run_case<BE, F, E>(
                 &error,
                 "ckks_eval_lut",
                 "unit-circle ExpCmplx",
+            );
+            let no_eval_mod = OffCirclePlan {
+                ctx: &ctx,
+                plan: *ctx.eval_mod_plan(),
+                runs_eval_mod: false,
+            };
+            let error = with_scratch::<BE, _>(0, |s| {
+                module.ckks_eval_lut(&mut outputs[..luts.len()], &raised, &no_eval_mod, luts, &keys, s)
+            })
+            .unwrap_err();
+            assert_invalid_operand(
+                "LUT step of a plan without EvalMod",
+                &error,
+                "ckks_eval_lut",
+                "the plan runs no EvalMod on the standard ring",
             );
             for (ct, snap) in outputs.iter().zip(&before) {
                 assert_eq!(&snapshot::<BE, _>(ct), snap);
@@ -990,10 +1024,11 @@ fn run_case<BE, F, E>(
     }
 }
 
-/// A plan that reads as `ctx` except for its EvalMod recipe.
+/// A plan that reads as `ctx` except for its EvalMod recipe, which it may not run.
 struct OffCirclePlan<'a, BE: CKKSCITwin, F> {
     ctx: &'a crate::layouts::BootstrappingContextPrepared<BE, F>,
     plan: EvalModPlan,
+    runs_eval_mod: bool,
 }
 
 impl<BE: CKKSCITwin, F> CKKSEvalModInfos<BE, F> for OffCirclePlan<'_, BE, F> {
@@ -1002,7 +1037,7 @@ impl<BE: CKKSCITwin, F> CKKSEvalModInfos<BE, F> for OffCirclePlan<'_, BE, F> {
     }
 
     fn eval_mod_standard(&self) -> Option<&crate::layouts::eval_mod::EvalMod<F, CKKSPlaintextOwned<BE>>> {
-        self.ctx.eval_mod()
+        self.ctx.eval_mod().filter(|_| self.runs_eval_mod)
     }
 
     fn eval_mod_ci(&self) -> Option<&crate::layouts::EvalModCIPrepared<BE, F>> {
@@ -1013,7 +1048,7 @@ impl<BE: CKKSCITwin, F> CKKSEvalModInfos<BE, F> for OffCirclePlan<'_, BE, F> {
         self.ctx.c2s_guard_bits()
     }
 
-    fn one_eval_mod_on_real_slots(&self) -> bool {
+    fn real_part_on_real_slots(&self) -> bool {
         true
     }
 
@@ -1025,7 +1060,9 @@ impl<BE: CKKSCITwin, F> CKKSEvalModInfos<BE, F> for OffCirclePlan<'_, BE, F> {
         None
     }
 
-    fn stamp_eval_mod_output<C: SetCKKSInfos>(&self, _res: &mut C) {}
+    fn stamp_eval_mod_output<C: SetCKKSInfos>(&self, _res: &mut C) -> crate::CKKSResult<()> {
+        Ok(())
+    }
 
     fn eval_lut_output(
         &self,

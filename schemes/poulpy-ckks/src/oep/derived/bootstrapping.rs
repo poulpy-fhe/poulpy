@@ -1,7 +1,7 @@
 //! The bootstrap and the functional bootstrap, composed from the public steps.
 use poulpy_core::{
     GLWEBytesOf,
-    layouts::{GLWELayout, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank, SetBSGSMeta},
+    layouts::{GLWELayout, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, SetBSGSMeta},
 };
 use poulpy_hal::layouts::{Module, ScratchArena};
 
@@ -32,7 +32,6 @@ where
 {
     keys_layout
         .rotation_key_layouts()
-        .iter()
         .map(|atk| module.ckks_dft_tmp_bytes(dst, src, dft, atk))
         .max()
         .unwrap_or(0)
@@ -172,12 +171,7 @@ where
 {
     check_bootstrap_entry(module, res, a, ctx, ci, keys, scratch.available())?;
     let run = ctx.run(a.meta());
-    let boot_layout = GLWELayout {
-        n: res.n(),
-        base2k: a.base2k(),
-        k: res.k(),
-        rank: Rank(1),
-    };
+    let boot_layout = bootstrap_layouts(&*res, a).0.glwe_layout;
     scratch.scope(|scratch| {
         let (mut z, mut scratch) = scratch.take_ckks_ciphertext_scratch(&boot_layout, a.meta());
         match ctx.pipeline() {
@@ -230,7 +224,7 @@ where
     module.ckks_mul_pow2_assign(1, &mut z_hp, &mut scratch)?;
     module.ckks_add_assign(&mut z_hp, &*res, &mut scratch)?;
     module.ckks_copy(res, &z_hp, &mut scratch)?;
-    run.stamp_eval_mod_output(res);
+    run.stamp_eval_mod_output(res)?;
     Ok(())
 }
 
@@ -252,12 +246,7 @@ where
 {
     check_functional_entry(module, res, a, ctx, luts, keys, scratch.available())?;
     let run = ctx.run(a.meta());
-    let boot_layout = GLWELayout {
-        n: res[0].n(),
-        base2k: a.base2k(),
-        k: res[0].k(),
-        rank: Rank(1),
-    };
+    let boot_layout = bootstrap_layouts(&res[0], a).0.glwe_layout;
     scratch.scope(|scratch| {
         let (mut z, mut scratch) = scratch.take_ckks_ciphertext_scratch(&boot_layout, a.meta());
         slots_to_coeffs_and_raise(module, &mut z, a, &run, keys, &mut scratch)?;

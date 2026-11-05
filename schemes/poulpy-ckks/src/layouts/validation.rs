@@ -341,7 +341,7 @@ where
     }
     ensure_eval_round_interval(&ctx.run(a.meta()))?;
     if let Some(keys_layout) = keys.keys_layout() {
-        let bytes = module.ckks_bootstrap_tmp_bytes(res, a, ctx, ci, &keys_layout);
+        let bytes = module.ckks_bootstrap_tmp_bytes(res, a, ctx, ci, keys_layout);
         ckks_ensure!(
             available >= bytes,
             "{OP} needs a scratch arena of {bytes} bytes, got {available}"
@@ -388,7 +388,7 @@ where
     }
     check_key_widths(OP, &res[0], a, ctx, keys, tensor_key)?;
     if let Some(keys_layout) = keys.keys_layout() {
-        let bytes = module.ckks_functional_bootstrap_tmp_bytes(&res[0], a, ctx, luts, &keys_layout);
+        let bytes = module.ckks_functional_bootstrap_tmp_bytes(&res[0], a, ctx, luts, keys_layout);
         ckks_ensure!(
             available >= bytes,
             "{OP} needs a scratch arena of {bytes} bytes, got {available}"
@@ -546,6 +546,17 @@ pub(crate) fn required_tensor_key<'a, T>(op: &'static str, key: Option<&'a T>) -
     })
 }
 
+/// `log_delta` without the plan's `guard_bits`, or `InvalidOperand` for `op` when it holds fewer.
+pub(crate) fn remove_guard_bits(op: &'static str, log_delta: usize, guard_bits: usize) -> CKKSResult<usize> {
+    log_delta.checked_sub(guard_bits).ok_or_else(|| {
+        CKKSCompositionError::InvalidOperand {
+            op,
+            reason: "the input holds fewer scale bits than the plan's guard bits".into(),
+        }
+        .into()
+    })
+}
+
 /// The plan constructor rejects this, but re-check before the power-of-two shift of EvalRound+.
 pub(crate) fn ensure_eval_round_interval<BE, F, P>(plan: &P) -> CKKSResult<()>
 where
@@ -578,7 +589,7 @@ where
 }
 
 /// The conversion keys, or the refusal of `op`.
-pub(crate) fn required_conversion_keys<'a, BE, K>(op: &'static str, keys: &'a K) -> CKKSResult<(&'a K::TraceKey, &'a K::EmbedKey)>
+fn required_conversion_keys<'a, BE, K>(op: &'static str, keys: &'a K) -> CKKSResult<(&'a K::TraceKey, &'a K::EmbedKey)>
 where
     BE: CKKSCITwin,
     K: BootstrappingKeys<BE>,
@@ -684,11 +695,11 @@ fn ensure_unit_circle_exp_context(op: &'static str, plan: &EvalModPlan) -> CKKSR
 /// What a batch of LUTs asks of its operands, before any write: at least one LUT and as many outputs, one message
 /// modulus, a unit-circle complex exponential on the standard ring when a LUT needs EvalMod, and one rank-1
 /// layout for the input and the outputs.
-pub(crate) fn ensure_lut_batch<BE, F, P, A>(
+pub(crate) fn ensure_lut_batch<BE, F, P, A, R>(
     op: &'static str,
     module_n: usize,
     a: &A,
-    outs: &[CKKSCiphertextOwned<BE>],
+    outs: &[R],
     luts: &[EncodedLut<CKKSPlaintextOwned<BE>>],
     plan: &P,
 ) -> CKKSResult<()>
@@ -696,7 +707,7 @@ where
     BE: CKKSCITwin,
     P: CKKSEvalModInfos<BE, F>,
     A: CKKSCtBounds,
-    CKKSCiphertextOwned<BE>: CKKSCtBounds,
+    R: CKKSCtBounds,
 {
     ckks_ensure_operand!(op, !luts.is_empty(), "needs at least one LUT");
     ckks_ensure_operand!(

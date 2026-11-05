@@ -285,6 +285,12 @@ impl EvalModPlan {
         Ok(())
     }
 
+    /// Widest ciphertext this EvalMod relinearizes, in bits, on an input of `log_budget` bits of budget: it relabels
+    /// its input at its own scale and keeps that budget.
+    pub(crate) fn relinearization_k(&self, log_budget: usize) -> usize {
+        log_budget + self.f_mod_log_delta
+    }
+
     /// Widths of the ciphertexts the conversions of the conjugate-invariant ring switch around
     /// this EvalMod, from the `traced` bits of its input: to that ring, and back at what it leaves.
     pub(crate) fn conversion_widths(&self, traced: usize) -> (usize, usize) {
@@ -483,9 +489,15 @@ pub trait CKKSEvalModInfos<BE: CKKSCITwin, F> {
     /// Guard bits the input of the step carries above its message: 0 on a plain [`EvalMod`].
     fn c2s_guard_bits(&self) -> usize;
 
-    /// Whether real slots take one EvalMod: an S2C-first pipeline without a bypass. A plain [`EvalMod`] has no
-    /// pipeline and trusts the label of its input.
-    fn one_eval_mod_on_real_slots(&self) -> bool;
+    /// Whether real slots read the real part of the input alone: an S2C-first pipeline, whose raise leaves only integer
+    /// multiples of the modulus in the imaginary part. A plain [`EvalMod`] has no pipeline and trusts the label of its
+    /// input. The LUT step reads this: it runs no bypass.
+    fn real_part_on_real_slots(&self) -> bool;
+
+    /// Whether real slots take one EvalMod: [`Self::real_part_on_real_slots`] without a bypass, which needs both halves.
+    fn one_eval_mod_on_real_slots(&self) -> bool {
+        self.real_part_on_real_slots() && !self.eval_round_plus()
+    }
 
     /// Whether the plan runs EvalRound+: the step leaves `EvalMod(x) - K·x` and the guard bits to the bypass.
     fn eval_round_plus(&self) -> bool;
@@ -495,8 +507,9 @@ pub trait CKKSEvalModInfos<BE: CKKSCITwin, F> {
 
     /// Removes the guard bits and labels an EvalMod output as the message. It runs once: in
     /// [`ckks_bootstrap_eval_mod`](crate::api::CKKSBootstrappingOps::ckks_bootstrap_eval_mod), and by the composer only
-    /// under a bypass, after adding it back.
-    fn stamp_eval_mod_output<C: SetCKKSInfos>(&self, res: &mut C);
+    /// under a bypass, after adding it back. `InvalidOperand`, with `res` unchanged, when `res` holds fewer scale bits
+    /// than the guard bits.
+    fn stamp_eval_mod_output<C: SetCKKSInfos>(&self, res: &mut C) -> CKKSResult<()>;
 
     /// The metadata and the width of the output of `lut` from an input of `a_k` bits, past CoeffsToSlots, or a typed
     /// refusal of `op` when the plan or that input cannot give them. `None`: the output keeps what the evaluation leaves
@@ -526,7 +539,7 @@ impl<BE: CKKSCITwin, F> CKKSEvalModInfos<BE, F> for EvalMod<F, CKKSPlaintextOwne
         0
     }
 
-    fn one_eval_mod_on_real_slots(&self) -> bool {
+    fn real_part_on_real_slots(&self) -> bool {
         true
     }
 
@@ -538,7 +551,9 @@ impl<BE: CKKSCITwin, F> CKKSEvalModInfos<BE, F> for EvalMod<F, CKKSPlaintextOwne
         None
     }
 
-    fn stamp_eval_mod_output<C: SetCKKSInfos>(&self, _res: &mut C) {}
+    fn stamp_eval_mod_output<C: SetCKKSInfos>(&self, _res: &mut C) -> CKKSResult<()> {
+        Ok(())
+    }
 
     fn eval_lut_output(
         &self,

@@ -112,7 +112,7 @@ pub trait BootstrappingLinearKeys<BE: Backend> {
 
     /// Layouts of these keys, against whose scratch query the bootstrap checks its
     /// arena at entry, or `None`, the default, to leave the arena unchecked.
-    fn keys_layout(&self) -> Option<BootstrappingKeysLayout> {
+    fn keys_layout(&self) -> Option<&BootstrappingKeysLayout> {
         None
     }
 }
@@ -198,29 +198,18 @@ pub struct BootstrappingKeysPrepared<D: Data, BE: CKKSCITwin> {
     pub first_factor_keys: HashMap<i64, GLWESwitchingKeyPrepared<D, BE>>,
     /// Prepared trace and embedding keys, with EvalMod on the conjugate-invariant ring.
     pub conversion_keys: Option<(GLWECITraceKeyPrepared<D, BE>, GLWECIEmbedKeyPrepared<D, BE>)>,
+    /// The layouts of these keys, read once at preparation: every step checks its arena against them, and a key
+    /// replaced later does not update them.
+    pub(crate) keys_layout: Option<BootstrappingKeysLayout>,
 }
 
-impl<D: Data, BE: CKKSCITwin> BootstrappingLinearKeys<BE> for BootstrappingKeysPrepared<D, BE>
+impl<D: Data, BE: CKKSCITwin> BootstrappingKeysPrepared<D, BE>
 where
     GLWEAutomorphismKeyPrepared<D, BE>: GLWEAutomorphismKeyPreparedToBackendRef<BE>,
     GLWESwitchingKeyPrepared<D, BE>: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
 {
-    type RotationKeys = HashMap<i64, GLWEAutomorphismKeyPrepared<D, BE>>;
-    type SwitchingKey = GLWESwitchingKeyPrepared<D, BE>;
-
-    fn rotation_keys(&self) -> &Self::RotationKeys {
-        &self.rotation_keys
-    }
-
-    fn encapsulation_keys(&self) -> Option<(&Self::SwitchingKey, Option<&Self::SwitchingKey>)> {
-        self.encapsulation_keys.as_ref().map(|(d2s, s2d)| (d2s, s2d.as_ref()))
-    }
-
-    fn first_factor_key(&self, rotation: i64) -> Option<&Self::SwitchingKey> {
-        self.first_factor_keys.get(&rotation)
-    }
-
-    fn keys_layout(&self) -> Option<BootstrappingKeysLayout> {
+    /// The layouts of the keys of this bundle, `None` without a tensor key.
+    fn read_keys_layout(&self) -> Option<BootstrappingKeysLayout> {
         let tensor_key = match (&self.tensor_key, &self.ci_tensor_key) {
             (Some(key), _) => key.gglwe_layout(),
             (None, Some(key)) => key.gglwe_layout(),
@@ -245,6 +234,31 @@ where
                 .as_ref()
                 .map(|(trace, embed)| (trace.gglwe_layout().into(), embed.gglwe_layout().into())),
         })
+    }
+}
+
+impl<D: Data, BE: CKKSCITwin> BootstrappingLinearKeys<BE> for BootstrappingKeysPrepared<D, BE>
+where
+    GLWEAutomorphismKeyPrepared<D, BE>: GLWEAutomorphismKeyPreparedToBackendRef<BE>,
+    GLWESwitchingKeyPrepared<D, BE>: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
+{
+    type RotationKeys = HashMap<i64, GLWEAutomorphismKeyPrepared<D, BE>>;
+    type SwitchingKey = GLWESwitchingKeyPrepared<D, BE>;
+
+    fn rotation_keys(&self) -> &Self::RotationKeys {
+        &self.rotation_keys
+    }
+
+    fn encapsulation_keys(&self) -> Option<(&Self::SwitchingKey, Option<&Self::SwitchingKey>)> {
+        self.encapsulation_keys.as_ref().map(|(d2s, s2d)| (d2s, s2d.as_ref()))
+    }
+
+    fn first_factor_key(&self, rotation: i64) -> Option<&Self::SwitchingKey> {
+        self.first_factor_keys.get(&rotation)
+    }
+
+    fn keys_layout(&self) -> Option<&BootstrappingKeysLayout> {
+        self.keys_layout.as_ref()
     }
 }
 
@@ -364,14 +378,17 @@ impl<D: Data, W: ZnxWord> BootstrappingKeySet<D, W> {
             (trace_key, embed_key)
         });
 
-        Ok(BootstrappingKeysPrepared {
+        let mut keys = BootstrappingKeysPrepared {
             rotation_keys,
             tensor_key,
             ci_tensor_key,
             encapsulation_keys,
             first_factor_keys,
             conversion_keys,
-        })
+            keys_layout: None,
+        };
+        keys.keys_layout = keys.read_keys_layout();
+        Ok(keys)
     }
 }
 
@@ -408,14 +425,13 @@ pub struct BootstrappingKeysLayout {
 
 impl BootstrappingKeysLayout {
     /// The distinct rotation key layouts, in the order of their first Galois element.
-    pub fn rotation_key_layouts(&self) -> Vec<GLWEAutomorphismKeyLayout> {
-        let mut layouts = Vec::new();
-        for layout in self.rotation_keys.values() {
-            if !layouts.contains(layout) {
-                layouts.push(*layout);
-            }
-        }
+    pub fn rotation_key_layouts(&self) -> impl Iterator<Item = &GLWEAutomorphismKeyLayout> {
+        let layouts = &self.rotation_keys;
         layouts
+            .values()
+            .enumerate()
+            .filter(move |&(index, layout)| !layouts.values().take(index).any(|seen| seen == layout))
+            .map(|(_, layout)| layout)
     }
 
     /// The switching keys of the raise: the encapsulation keys and the first-factor key.
@@ -1001,14 +1017,17 @@ impl<D: Data, W: ZnxWord> BootstrappingKeySet<D, W> {
             (trace_key, embed_key)
         });
 
-        Ok(BootstrappingKeysPrepared {
+        let mut keys = BootstrappingKeysPrepared {
             rotation_keys,
             tensor_key,
             ci_tensor_key,
             encapsulation_keys,
             first_factor_keys,
             conversion_keys,
-        })
+            keys_layout: None,
+        };
+        keys.keys_layout = keys.read_keys_layout();
+        Ok(keys)
     }
 }
 

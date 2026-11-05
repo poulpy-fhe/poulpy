@@ -150,9 +150,9 @@ pub unsafe trait CKKSBootstrappingImpl: CKKSCITwin + CKKSDFTImpl + CKKSCopyImpl 
     /// Reproduces
     /// [`ckks_eval_lut_reference`](crate::reference::bootstrapping::CKKSBootstrappingReference::ckks_eval_lut_reference)
     /// bit for bit, within [`Self::ckks_eval_lut_tmp_bytes`]; free in kernels and scratch use.
-    fn ckks_eval_lut<A, P, F, K>(
+    fn ckks_eval_lut<R, A, P, F, K>(
         module: &Module<Self>,
-        res: &mut [CKKSCiphertextOwned<Self>],
+        res: &mut [R],
         a: &A,
         plan: &P,
         luts: &[EncodedLut<CKKSPlaintextOwned<Self>>],
@@ -160,6 +160,7 @@ pub unsafe trait CKKSBootstrappingImpl: CKKSCITwin + CKKSDFTImpl + CKKSCopyImpl 
         scratch: &mut ScratchArena<'_, Self>,
     ) -> CKKSResult<()>
     where
+        R: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         A: GLWEToBackendRef<Self> + CKKSCtBounds,
         P: CKKSEvalModInfos<Self, F>,
         K: BootstrappingKeys<Self>;
@@ -424,9 +425,9 @@ macro_rules! impl_ckks_bootstrapping_reference_full {
                 )
             }
 
-            fn ckks_eval_lut<A, P, F, K>(
+            fn ckks_eval_lut<R, A, P, F, K>(
                 module: &::poulpy_hal::layouts::Module<$be>,
-                res: &mut [$crate::layouts::CKKSCiphertextOwned<$be>],
+                res: &mut [R],
                 a: &A,
                 plan: &P,
                 luts: &[$crate::layouts::EncodedLut<$crate::layouts::CKKSPlaintextOwned<$be>>],
@@ -434,6 +435,11 @@ macro_rules! impl_ckks_bootstrapping_reference_full {
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) -> $crate::CKKSResult<()>
             where
+                R: ::poulpy_core::layouts::GLWEToBackendMut<$be>
+                    + ::poulpy_core::layouts::GLWEToBackendRef<$be>
+                    + $crate::CKKSCtBounds
+                    + $crate::SetCKKSInfos
+                    + ::poulpy_core::layouts::SetBSGSMeta,
                 A: ::poulpy_core::layouts::GLWEToBackendRef<$be> + $crate::CKKSCtBounds,
                 P: $crate::layouts::CKKSEvalModInfos<$be, F>,
                 K: $crate::layouts::BootstrappingKeys<$be>,

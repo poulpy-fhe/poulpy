@@ -46,9 +46,9 @@ use crate::{
     layouts::{
         CKKSCITwin, CKKSDFTFactors, CKKSEvalModInfos, CKKSModRaiseInfos, CKKSPlaintextAlloc, ComplexDiagonals, DFTMatrix,
         DFTMatrixPrepared, DFTPlan, DFTType, Decode, Encode, EncodedLut, EvalMod, EvalModPlan, ModRaisePlan, ModRaisePrepared,
-        Split,
+        Split, Standard,
         eval_mod::{EvalModType, ckks_eval_mod_compile},
-        validation::functional_output_contract,
+        validation::{functional_output_contract, remove_guard_bits},
     },
 };
 
@@ -830,7 +830,8 @@ impl StageWidths<'_> {
             BootstrappingPipeline::S2CFirst => input_log_delta + self.eval_mod.log_msg_ratio + self.c2s_guard_bits,
         };
         // A width too narrow for EvalMod fails at its key lookup or in EvalMod, not here.
-        (self.eval_mod_k(bootstrap_k) + f_mod_log_delta).saturating_sub(raised_log_delta)
+        self.eval_mod
+            .relinearization_k(self.eval_mod_k(bootstrap_k).saturating_sub(raised_log_delta))
     }
 }
 
@@ -864,7 +865,8 @@ where
     (boot_layout, in_layout)
 }
 
-impl<BE: Backend, F> CKKSDFTFactors<BE, Encode, Split> for BootstrappingContextPrepared<BE, F> {
+// A context holds `Split` matrices, whose unsplit chain reads as `Standard`: their halves recombine to it.
+impl<BE: Backend, F> CKKSDFTFactors<BE, Encode, Standard> for BootstrappingContextPrepared<BE, F> {
     type Diagonal = <DFTMatrixPrepared<BE, Encode, Split> as CKKSDFTFactors<BE, Encode, Split>>::Diagonal;
 
     fn dft_plan(&self) -> &DFTPlan {
@@ -875,7 +877,7 @@ impl<BE: Backend, F> CKKSDFTFactors<BE, Encode, Split> for BootstrappingContextP
     where
         BE: 'a,
         Encode: 'a,
-        Split: 'a,
+        Standard: 'a,
     {
         self.coeffs_to_slots.factors()
     }
@@ -894,24 +896,24 @@ impl<BE: Backend, F> BootstrappingRun<'_, BE, F> {
     }
 }
 
-impl<BE: Backend, F> CKKSDFTFactors<BE, Encode, Split> for BootstrappingRun<'_, BE, F> {
+impl<BE: Backend, F> CKKSDFTFactors<BE, Encode, Standard> for BootstrappingRun<'_, BE, F> {
     type Diagonal = <DFTMatrixPrepared<BE, Encode, Split> as CKKSDFTFactors<BE, Encode, Split>>::Diagonal;
 
     fn dft_plan(&self) -> &DFTPlan {
-        CKKSDFTFactors::<BE, Encode, Split>::dft_plan(self.context)
+        CKKSDFTFactors::<BE, Encode, Standard>::dft_plan(self.context)
     }
 
     fn factors<'a>(&'a self) -> impl Iterator<Item = &'a LinearTransformation<Self::Diagonal>>
     where
         BE: 'a,
         Encode: 'a,
-        Split: 'a,
+        Standard: 'a,
     {
-        CKKSDFTFactors::<BE, Encode, Split>::factors(self.context)
+        CKKSDFTFactors::<BE, Encode, Standard>::factors(self.context)
     }
 }
 
-impl<BE: Backend, F> CKKSDFTFactors<BE, Decode, Split> for BootstrappingRun<'_, BE, F> {
+impl<BE: Backend, F> CKKSDFTFactors<BE, Decode, Standard> for BootstrappingRun<'_, BE, F> {
     type Diagonal = <DFTMatrixPrepared<BE, Decode, Split> as CKKSDFTFactors<BE, Decode, Split>>::Diagonal;
 
     fn dft_plan(&self) -> &DFTPlan {
@@ -922,7 +924,7 @@ impl<BE: Backend, F> CKKSDFTFactors<BE, Decode, Split> for BootstrappingRun<'_, 
     where
         BE: 'a,
         Decode: 'a,
-        Split: 'a,
+        Standard: 'a,
     {
         self.context.slots_to_coeffs.factors()
     }
@@ -963,8 +965,8 @@ impl<BE: CKKSCITwin, F> CKKSEvalModInfos<BE, F> for BootstrappingRun<'_, BE, F> 
         self.context.c2s_guard_bits()
     }
 
-    fn one_eval_mod_on_real_slots(&self) -> bool {
-        self.context.pipeline == BootstrappingPipeline::S2CFirst && self.context.coeffs_to_slots_bypass.is_none()
+    fn real_part_on_real_slots(&self) -> bool {
+        self.context.pipeline == BootstrappingPipeline::S2CFirst
     }
 
     fn eval_round_plus(&self) -> bool {
@@ -975,12 +977,14 @@ impl<BE: CKKSCITwin, F> CKKSEvalModInfos<BE, F> for BootstrappingRun<'_, BE, F> 
         Some(self.message.slots)
     }
 
-    fn stamp_eval_mod_output<C: SetCKKSInfos>(&self, res: &mut C) {
-        res.set_log_delta(res.log_delta() - self.context.c2s_guard_bits());
+    fn stamp_eval_mod_output<C: SetCKKSInfos>(&self, res: &mut C) -> CKKSResult<()> {
+        let log_delta = remove_guard_bits("ckks_bootstrap_eval_mod", res.log_delta(), self.context.c2s_guard_bits())?;
+        res.set_log_delta(log_delta);
         // C2S-first ends in SlotsToCoeffs, which stamps the rest.
         if self.context.pipeline == BootstrappingPipeline::S2CFirst {
             res.set_meta(self.message);
         }
+        Ok(())
     }
 
     fn eval_lut_output(

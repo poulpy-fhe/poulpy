@@ -1056,7 +1056,7 @@ fn validate_modulus_bounds(spec: &PresetSpec, bootstrap_k: usize, keys: &Bootstr
         "bootstrap modulus {bootstrap_k} exceeds dense-secret limit {dense}"
     );
     for key in keys.rotation_key_layouts() {
-        validate_key("automorphism", &key, dense)?;
+        validate_key("automorphism", key, dense)?;
     }
     validate_key("tensor", &keys.tensor_key, dense)?;
     if let Some(key) = &keys.first_factor_key {
@@ -1142,7 +1142,6 @@ mod tests {
             capped
                 .keys_layout()
                 .rotation_key_layouts()
-                .iter()
                 .all(|key| key.dsize().as_usize() == 1)
         );
         assert!(preset.with_dsizes(1, 2).is_err());
@@ -1173,7 +1172,7 @@ mod tests {
         // conjugation below them, and SlotsToCoeffs after EvalMod.
         let keys = preset.keys_layout();
         assert_eq!(
-            key_shapes(&keys.rotation_key_layouts()),
+            key_shapes(keys.rotation_key_layouts()),
             [(208, 7), (260, 5), (416, 3), (780, 1), (728, 1)]
         );
         assert_eq!(key_shapes([&keys.tensor_key]), [(416, 3)]);
@@ -1203,7 +1202,7 @@ mod tests {
         // on the 138-bit input.
         let keys = preset.keys_layout();
         assert_eq!(
-            key_shapes(&keys.rotation_key_layouts()),
+            key_shapes(keys.rotation_key_layouts()),
             [(208, 7), (260, 5), (416, 3), (156, 1), (104, 1)]
         );
         assert_eq!(key_shapes([&keys.tensor_key]), [(416, 3)]);
@@ -1213,7 +1212,7 @@ mod tests {
         // A cap of four limbs keeps the keys of the raised width and narrows the digits of the others.
         let capped = preset.with_dsizes(4, 1).unwrap();
         assert_eq!(
-            key_shapes(&capped.keys_layout().rotation_key_layouts()),
+            key_shapes(capped.keys_layout().rotation_key_layouts()),
             [(208, 7), (208, 6), (156, 1), (104, 1)]
         );
         assert_eq!(key_shapes([&capped.keys_layout().tensor_key]), [(208, 6)]);
@@ -1252,7 +1251,7 @@ mod tests {
         );
         assert!(wide.k_aux >= wide.k_digit && wide.k().as_usize() <= preset.max_dense_modulus());
         assert_eq!(
-            key_shapes(&keys.rotation_key_layouts()),
+            key_shapes(keys.rotation_key_layouts()),
             [(208, 7), (260, 5), (156, 1), (104, 1)]
         );
         assert_eq!(key_shapes([&keys.tensor_key]), [(416, 3)]);
@@ -1325,7 +1324,6 @@ mod tests {
             capped
                 .keys_layout()
                 .rotation_key_layouts()
-                .iter()
                 .all(|other| other.dsize() <= key.dsize())
         );
 
@@ -1535,13 +1533,14 @@ mod tests {
             let widest = preset
                 .keys_layout()
                 .rotation_key_layouts()
-                .iter()
                 .map(|key| key.dsize().as_usize())
                 .max();
             let uncapped = preset.with_dsizes(widest.unwrap(), 1).unwrap();
-            assert_eq!(
-                uncapped.keys_layout().rotation_key_layouts(),
-                preset.keys_layout().rotation_key_layouts()
+            assert!(
+                uncapped
+                    .keys_layout()
+                    .rotation_key_layouts()
+                    .eq(preset.keys_layout().rotation_key_layouts())
             );
             assert!(preset.with_dsizes(1, 7).is_err());
         }

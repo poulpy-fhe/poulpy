@@ -473,15 +473,6 @@ pub fn test_dft_coeffs_to_slots_split<BE, F, E>(
     .unwrap();
     assert_eq!(snapshot::<BE, _>(&through_infos), snapshot::<BE, _>(&direct));
 
-    // The unsplit evaluation ignores the format: the Split matrix gives the raw chain's digits.
-    let mut unsplit = module.ckks_ciphertext_alloc_from_infos(&ct_in);
-    with_scratch::<BE, _>(bytes, |s| {
-        module.ckks_copy(&mut unsplit, &ct_in, s)?;
-        module.ckks_coeffs_to_slots_assign(&mut unsplit, &enc_dft, &atks, s)
-    })
-    .unwrap();
-    assert_eq!(snapshot::<BE, _>(&unsplit), snapshot::<BE, _>(&direct));
-
     // Reference: ct_real holds slots (re, 0), ct_imag holds slots (im, 0). Measure
     // each via GLWE noise and bound the worst log2.
     let zero = vec![F::from_f64(0.0).unwrap(); m];

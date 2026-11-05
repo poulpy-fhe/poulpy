@@ -24,7 +24,7 @@ use crate::{
     api::{CKKSEncodingScalar, LtDiagonalMeta},
     layouts::{
         CKKSDFTFactors, DFTMatrix, DFTMatrixFactors, DFTMatrixPrepared, DFTPlan, Decode, DftDirection, DftFormat, Encode, Repack,
-        Split,
+        Split, Standard,
     },
 };
 
@@ -35,7 +35,7 @@ use crate::{
 /// [`CKKSDFTMatrixPreparedFactory::ckks_dft_matrix_prepare`] optionally
 /// prepares that into the resident [`DFTMatrixPrepared`] for faster repeated
 /// evaluation. The evaluation methods apply either form. The `*_assign` methods
-/// evaluate the unsplit chain; `*_split` returns the real/imaginary parts in two
+/// are the `Standard` format; `*_split` returns the real/imaginary parts in two
 /// ciphertexts (`SplitRealAndImag`); `*_repack` is the sparse `RepackImagAsReal`
 /// path that packs the imaginary part into the right half of a single ciphertext.
 ///
@@ -64,8 +64,8 @@ pub trait CKKSDFTOps<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         H: GetAutomorphismKey<BE> + GetTensorKey<BE>;
 
-    /// `CoeffsToSlots` in place. `Fmt` is how an output reads; the unsplit evaluation ignores it.
-    fn ckks_coeffs_to_slots_assign<Fmt, D, Dst, H>(
+    /// `CoeffsToSlots`, `Standard` format (in place).
+    fn ckks_coeffs_to_slots_assign<D, Dst, H>(
         &self,
         ct: &mut Dst,
         dft: &D,
@@ -73,14 +73,14 @@ pub trait CKKSDFTOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        D: CKKSDFTFactors<BE, Encode, Fmt>,
+        D: CKKSDFTFactors<BE, Encode, Standard>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         H: GetAutomorphismKey<BE> + GetTensorKey<BE>;
 
-    /// `SlotsToCoeffs` in place. `Fmt` is how an output reads; the unsplit evaluation ignores it. `dft` labels the output
-    /// through [`CKKSDFTFactors::stamp_transform_output`], which a [`BootstrappingRun`](crate::layouts::BootstrappingRun) of
-    /// a C2S-first plan uses to end the bootstrap.
-    fn ckks_slots_to_coeffs_assign<Fmt, D, Dst, H>(
+    /// `SlotsToCoeffs`, `Standard` format (in place). `dft` labels the output through
+    /// [`CKKSDFTFactors::stamp_transform_output`], which a [`BootstrappingRun`](crate::layouts::BootstrappingRun) of a
+    /// C2S-first plan uses to end the bootstrap.
+    fn ckks_slots_to_coeffs_assign<D, Dst, H>(
         &self,
         ct: &mut Dst,
         dft: &D,
@@ -88,7 +88,7 @@ pub trait CKKSDFTOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        D: CKKSDFTFactors<BE, Decode, Fmt>,
+        D: CKKSDFTFactors<BE, Decode, Standard>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         H: GetAutomorphismKey<BE> + GetTensorKey<BE>;
 

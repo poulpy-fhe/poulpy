@@ -15,7 +15,9 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 use crate::{
     CKKSCtBounds, SetCKKSInfos,
     api::{CKKSDFTMatrixOps, CKKSDFTMatrixPreparedFactory, CKKSDFTOps, CKKSEncodingScalar, LtDiagonalMeta},
-    layouts::{CKKSDFTFactors, DFTMatrix, DFTMatrixPrepared, DFTPlan, Decode, DftDirection, DftFormat, Encode, Repack, Split},
+    layouts::{
+        CKKSDFTFactors, DFTMatrix, DFTMatrixPrepared, DFTPlan, Decode, DftDirection, DftFormat, Encode, Repack, Split, Standard,
+    },
     oep::{CKKSDFTImpl, CKKSDFTMatrixImpl},
 };
 
@@ -45,7 +47,7 @@ impl<BE: Backend + CKKSDFTImpl> CKKSDFTOps<BE> for Module<BE> {
         BE::ckks_dft_matrix_eval_assign(self, ct, dft, keys, scratch)
     }
 
-    fn ckks_coeffs_to_slots_assign<Fmt, D, Dst, H>(
+    fn ckks_coeffs_to_slots_assign<D, Dst, H>(
         &self,
         ct: &mut Dst,
         dft: &D,
@@ -53,14 +55,14 @@ impl<BE: Backend + CKKSDFTImpl> CKKSDFTOps<BE> for Module<BE> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        D: CKKSDFTFactors<BE, Encode, Fmt>,
+        D: CKKSDFTFactors<BE, Encode, Standard>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
     {
         BE::ckks_coeffs_to_slots_assign(self, ct, dft, keys, scratch)
     }
 
-    fn ckks_slots_to_coeffs_assign<Fmt, D, Dst, H>(
+    fn ckks_slots_to_coeffs_assign<D, Dst, H>(
         &self,
         ct: &mut Dst,
         dft: &D,
@@ -68,7 +70,7 @@ impl<BE: Backend + CKKSDFTImpl> CKKSDFTOps<BE> for Module<BE> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        D: CKKSDFTFactors<BE, Decode, Fmt>,
+        D: CKKSDFTFactors<BE, Decode, Standard>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
     {

@@ -88,7 +88,6 @@ where
     Src: CKKSCtBounds,
 {
     keys.rotation_key_layouts()
-        .iter()
         .map(|atk| module.ckks_dft_tmp_bytes(dst, src, dft, atk))
         .max()
         .unwrap()
@@ -619,7 +618,7 @@ where
                     module.ckks_mul_pow2_assign(1, &mut z_hp, s)?;
                     module.ckks_add_assign(&mut z_hp, &stepped, s)?;
                     module.ckks_copy(&mut stepped, &z_hp, s)?;
-                    run.stamp_eval_mod_output(&mut stepped);
+                    run.stamp_eval_mod_output(&mut stepped)?;
                 }
                 if !s2c_first {
                     module.ckks_slots_to_coeffs_assign(&mut stepped, &run, &keys.rotation_keys, s)?;
@@ -676,6 +675,35 @@ where
             assert_eval_mod_refuses(&mut stepped, degree, |res, s| {
                 small.ckks_bootstrap_eval_mod(res, &raised, &run, None, &keys, s)
             });
+            let mut other_radix = boot;
+            other_radix.glwe_layout.base2k = (boot.base2k().as_usize() - 1).into();
+            assert_eval_mod_refuses(
+                &mut fixture_ciphertext(&module, &other_radix, 13),
+                "takes ciphertexts of one base2k",
+                |res, s| module.ckks_bootstrap_eval_mod(res, &raised, &run, None, &keys, s),
+            );
+            // A tensor key narrower than EvalMod's widest product refuses before the first write.
+            let covered = keys.tensor_key.as_ref().unwrap().gglwe_layout().max_input_k().as_usize();
+            let mut wide = boot;
+            wide.glwe_layout.k = (covered + raised.log_delta() + 1).into();
+            wide.meta = raised.meta();
+            let wide = fixture_ciphertext(&module, &wide, 17);
+            let before = snapshot::<BE, _>(&stepped);
+            let err = with_scratch::<BE, _>(0, |s| {
+                module.ckks_bootstrap_eval_mod(&mut stepped, &wide, &run, None, &keys, s)
+            })
+            .unwrap_err();
+            assert!(
+                matches!(
+                    err.composition(),
+                    Some(CKKSCompositionError::MissingRelinearizationKey {
+                        op: "ckks_bootstrap_eval_mod",
+                        ..
+                    })
+                ),
+                "{err}"
+            );
+            assert_eq!(snapshot::<BE, _>(&stepped), before, "a refused step wrote res");
 
             // A plain EvalMod has no message: the label of its input picks the route, and it stamps nothing.
             if slots == SlotsKind::Complex {
@@ -713,7 +741,7 @@ where
             with_scratch::<BE, _>(bytes, |s| {
                 if context.pipeline() == BootstrappingPipeline::S2CFirst {
                     module.ckks_double_into(&mut coeffs, &input, s)?;
-                    module.ckks_slots_to_coeffs_assign(&mut coeffs, context.slots_to_coeffs(), &keys.rotation_keys, s)
+                    module.ckks_dft_matrix_eval_assign(&mut coeffs, context.slots_to_coeffs(), &keys.rotation_keys, s)
                 } else {
                     module.ckks_copy(&mut coeffs, &input, s)
                 }

@@ -96,6 +96,13 @@ pub trait CKKSBootstrappingOps<BE: CKKSCITwin> {
     /// for what they switch, or first-factor keys absent, of two layouts or too narrow for the raise.
     /// `CKKSError::Internal` for an input without the bits of the plan's lifts, or an arena under
     /// [`Self::ckks_mod_raise_tmp_bytes`], when the keys report their layout.
+    ///
+    /// # Metadata
+    ///
+    /// `res` keeps its `k`, so `log_budget_out = res.k() - log_delta_out`, and takes the slot kind and sparsity of `a`.
+    /// S2C-first has `log_delta_out = a.k() + c2s_guard_bits`. C2S-first has `log_delta_out = a.log_delta() + lifts +
+    /// log_msg_ratio`, `lifts` being the two lifts of [`EvalModPlan`](crate::layouts::EvalModPlan), so that the message
+    /// is the residue.
     fn ckks_mod_raise<R, A, P, K>(
         &self,
         res: &mut R,
@@ -146,7 +153,8 @@ pub trait CKKSBootstrappingOps<BE: CKKSCITwin> {
     ///
     /// [`InvalidOperand`](crate::CKKSCompositionError::InvalidOperand) before any write to `res`, for `ci` on a plan of
     /// the standard ring, no `ci` on a plan of the conjugate-invariant ring, a plan with no EvalMod, a rank other than 1,
-    /// ciphertexts of two degrees or of one the module does not serve, or keys without the tensor key of the plan's ring.
+    /// ciphertexts of two degrees or base2k or of a degree the module does not serve, an input of fewer scale bits than
+    /// the plan's guard bits, or keys without the tensor key of the plan's ring.
     /// On the conjugate-invariant ring also, before its query, for modules of other degrees than `2N` and `N`, `a` wider
     /// than `res`, or conversion keys absent or of another shape, and after the product by `u` for conversion keys
     /// narrower than the widths they switch. `CKKSError::Internal` for an arena under
@@ -156,9 +164,22 @@ pub trait CKKSBootstrappingOps<BE: CKKSCITwin> {
     /// conjugation key that does not cover `a`, or a rotation key of a folded `u` on the conjugate-invariant ring.
     /// [`InsufficientHomomorphicCapacity`](crate::CKKSCompositionError::InsufficientHomomorphicCapacity), before any write
     /// to `res`, for an input without the budget of EvalMod.
-    /// [`MissingRelinearizationKey`](crate::CKKSCompositionError::MissingRelinearizationKey) for a tensor key narrower
-    /// than a product of EvalMod: on the conjugate-invariant ring `res` stays unchanged, on the standard ring the refusal
-    /// can follow a write to `res`.
+    /// [`MissingRelinearizationKey`](crate::CKKSCompositionError::MissingRelinearizationKey), before any write to `res`,
+    /// for a tensor key narrower than a product of EvalMod.
+    ///
+    /// # Metadata
+    ///
+    /// EvalMod spends `consumed = plan.eval_mod_plan().consumed_bits()` of the budget of `a`, and the conversions of the
+    /// conjugate-invariant ring the scales of their products:
+    ///
+    /// - a [`BootstrappingRun`](crate::layouts::BootstrappingRun) of an S2C-first plan: `res.k() = a.k() - c2s_guard_bits -
+    ///   consumed` at the scale, slot kind and sparsity of the message;
+    /// - a run of a C2S-first plan: `log_delta_out = a.log_delta()`, `log_budget_out = a.log_budget() - consumed`, until
+    ///   `ckks_slots_to_coeffs_assign` labels it;
+    /// - under EvalRound+ and on a plain [`EvalMod`](crate::layouts::EvalMod): the same, with the guard bits still on and
+    ///   the working label; on a plain `EvalMod`, slot kind and sparsity are those of the route.
+    ///
+    /// The split route leaves the canonical flag clear: its recombination is a lazy sum.
     fn ckks_bootstrap_eval_mod<R, A, P, F, K>(
         &self,
         res: &mut R,
@@ -194,9 +215,9 @@ pub trait CKKSBootstrappingOps<BE: CKKSCITwin> {
     /// Evaluates each LUT of `luts` on `a`, the output of CoeffsToSlots, into the matching ciphertext of `res`.
     ///
     /// The guard bits leave the input here, before the exponential. Real slots of a plan for which
-    /// [`CKKSEvalModInfos::one_eval_mod_on_real_slots`] holds take the real part of `a` and skip the imaginary half. Any
-    /// other input is split, each half is evaluated and the halves are recombined. General LUTs of a batch share the power
-    /// basis of each half.
+    /// [`CKKSEvalModInfos::real_part_on_real_slots`] holds take the real part of `a` and skip the imaginary half, with or
+    /// without a bypass in the plan, which this step does not run. Any other input is split, each half is evaluated and
+    /// the halves are recombined. General LUTs of a batch share the power basis of each half.
     ///
     /// `plan` is a [`BootstrappingRun`](crate::layouts::BootstrappingRun), whose message gives the slots and each output
     /// its [`eval_lut_output`](CKKSEvalModInfos::eval_lut_output), or a plain [`EvalMod`](crate::layouts::EvalMod), which
@@ -216,12 +237,21 @@ pub trait CKKSBootstrappingOps<BE: CKKSCITwin> {
     /// `CKKSError::Internal` for an arena under [`Self::ckks_eval_lut_tmp_bytes`], when the keys report their layout.
     ///
     /// [`InsufficientHomomorphicCapacity`](crate::CKKSCompositionError::InsufficientHomomorphicCapacity) for an input
-    /// without the budget of the evaluation and
+    /// without the budget of a LUT and
     /// [`MissingRelinearizationKey`](crate::CKKSCompositionError::MissingRelinearizationKey) for a tensor key narrower than
-    /// one of its products, each of which can follow a write to `res[0]`.
-    fn ckks_eval_lut<A, P, F, K>(
+    /// its widest product, each before any write to `res`.
+    ///
+    /// # Metadata
+    ///
+    /// Each LUT spends `bits`, EvalMod's when it needs it and its own series', of the budget of `a`, the guard bits
+    /// leaving first. On a [`BootstrappingRun`](crate::layouts::BootstrappingRun), an output has the width and label of
+    /// [`eval_lut_output`](CKKSEvalModInfos::eval_lut_output): `k_out = a.k() - c2s_guard_bits - bits`,
+    /// `log_delta_out = log_delta + log_msg_ratio` from the `log_delta` of the message, and the slot kind and sparsity of
+    /// the message. On a plain [`EvalMod`](crate::layouts::EvalMod) it keeps what the evaluation leaves it. The split
+    /// route leaves the canonical flag clear: its recombination is a lazy sum.
+    fn ckks_eval_lut<R, A, P, F, K>(
         &self,
-        res: &mut [CKKSCiphertextOwned<BE>],
+        res: &mut [R],
         a: &A,
         plan: &P,
         luts: &[EncodedLut<CKKSPlaintextOwned<BE>>],
@@ -229,6 +259,7 @@ pub trait CKKSBootstrappingOps<BE: CKKSCITwin> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
+        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: CKKSEvalModInfos<BE, F>,
         K: BootstrappingKeys<BE>;

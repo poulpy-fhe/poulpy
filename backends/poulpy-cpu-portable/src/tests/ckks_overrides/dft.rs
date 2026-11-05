@@ -575,9 +575,9 @@ unsafe impl poulpy_ckks::oep::CKKSBootstrappingImpl for OverrideBackend {
         CKKSBootstrappingReference::ckks_eval_lut_tmp_bytes_reference(module, res, a, plan, luts, keys_layout)
     }
 
-    fn ckks_eval_lut<A, P, F, K>(
+    fn ckks_eval_lut<R, A, P, F, K>(
         module: &Module<Self>,
-        res: &mut [poulpy_ckks::layouts::CKKSCiphertextOwned<Self>],
+        res: &mut [R],
         a: &A,
         plan: &P,
         luts: &[poulpy_ckks::layouts::EncodedLut<poulpy_ckks::layouts::CKKSPlaintextOwned<Self>>],
@@ -585,6 +585,11 @@ unsafe impl poulpy_ckks::oep::CKKSBootstrappingImpl for OverrideBackend {
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
+        R: GLWEToBackendMut<Self>
+            + GLWEToBackendRef<Self>
+            + CKKSCtBounds
+            + poulpy_ckks::SetCKKSInfos
+            + poulpy_core::layouts::SetBSGSMeta,
         A: GLWEToBackendRef<Self> + CKKSCtBounds,
         P: poulpy_ckks::layouts::CKKSEvalModInfos<Self, F>,
         K: poulpy_ckks::layouts::BootstrappingKeys<Self>,

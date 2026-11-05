@@ -368,9 +368,10 @@ where
         self.encrypt_input(SlotsKind::Real);
         self.bootstrap();
         assert!(complex > 0, "the complex run relinearized nothing");
+        // The step resolves its tensor key once on either route, before EvalMod's own lookups.
         assert_eq!(
-            2 * self.tensor_lookups,
-            complex,
+            2 * (self.tensor_lookups - 1),
+            complex - 1,
             "real slots did not take the one-EvalMod path"
         );
         assert_eq!(self.output.k().as_usize(), self.preset.output_k());
@@ -1341,7 +1342,7 @@ where
     };
     for (narrow, cause) in [(&narrow_keys[0], "narrow trace key"), (&narrow_embed_key, "narrow embed key")] {
         let layout = narrow.keys_layout().unwrap();
-        let bytes = module.ckks_bootstrap_eval_mod_tmp_bytes(&stepped, &raised, &run, Some(&ci), &layout);
+        let bytes = module.ckks_bootstrap_eval_mod_tmp_bytes(&stepped, &raised, &run, Some(&ci), layout);
         let before = snapshot::<BE, _>(&stepped);
         // The whole bootstrap refuses them before its first step, on an empty arena.
         let err = with_scratch::<BE, _>(0, |s| {
@@ -1494,7 +1495,7 @@ where
         coeffs.log_budget(),
     );
     let mut bytes = 0;
-    for atk in &keys.rotation_key_layouts() {
+    for atk in keys.rotation_key_layouts() {
         bytes = bytes.max(module.ckks_all_ops_with_atk_tmp_bytes(layout, &coeffs, &keys.tensor_key, atk));
     }
     bytes

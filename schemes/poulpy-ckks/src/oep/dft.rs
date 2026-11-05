@@ -17,7 +17,9 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 use crate::{
     CKKSCtBounds, SetCKKSInfos,
     api::{CKKSEncodingScalar, LtDiagonalMeta},
-    layouts::{CKKSDFTFactors, DFTMatrix, DFTMatrixPrepared, DFTPlan, Decode, DftDirection, DftFormat, Encode, Repack, Split},
+    layouts::{
+        CKKSDFTFactors, DFTMatrix, DFTMatrixPrepared, DFTPlan, Decode, DftDirection, DftFormat, Encode, Repack, Split, Standard,
+    },
 };
 
 /// Backend hook for the homomorphic-DFT family.
@@ -103,7 +105,7 @@ pub unsafe trait CKKSDFTImpl:
 
     /// Default body: `ckks_encoding_buffer_coeffs_to_slots_assign_derived`, the selected `ckks_dft_matrix_eval_assign` of the encode
     /// matrix.
-    fn ckks_coeffs_to_slots_assign<Fmt, D, Dst, H>(
+    fn ckks_coeffs_to_slots_assign<D, Dst, H>(
         module: &Module<Self>,
         ct: &mut Dst,
         dft: &D,
@@ -111,7 +113,7 @@ pub unsafe trait CKKSDFTImpl:
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        D: CKKSDFTFactors<Self, Encode, Fmt>,
+        D: CKKSDFTFactors<Self, Encode, Standard>,
         Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
         H: GetAutomorphismKey<Self> + GetTensorKey<Self>,
     {
@@ -120,7 +122,7 @@ pub unsafe trait CKKSDFTImpl:
 
     /// Default body: `ckks_encoding_buffer_slots_to_coeffs_assign_derived`, the selected `ckks_dft_matrix_eval_assign` of the decode
     /// matrix, then [`CKKSDFTFactors::stamp_transform_output`].
-    fn ckks_slots_to_coeffs_assign<Fmt, D, Dst, H>(
+    fn ckks_slots_to_coeffs_assign<D, Dst, H>(
         module: &Module<Self>,
         ct: &mut Dst,
         dft: &D,
@@ -128,7 +130,7 @@ pub unsafe trait CKKSDFTImpl:
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        D: CKKSDFTFactors<Self, Decode, Fmt>,
+        D: CKKSDFTFactors<Self, Decode, Standard>,
         Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
         H: GetAutomorphismKey<Self> + GetTensorKey<Self>,
     {

@@ -916,7 +916,7 @@ where
         self.keys.first_factor_key(rotation)
     }
 
-    fn keys_layout(&self) -> Option<BootstrappingKeysLayout> {
+    fn keys_layout(&self) -> Option<&BootstrappingKeysLayout> {
         self.keys.keys_layout()
     }
 }
