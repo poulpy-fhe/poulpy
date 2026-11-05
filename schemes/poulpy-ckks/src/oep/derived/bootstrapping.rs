@@ -151,9 +151,8 @@ where
     })
 }
 
-/// Default body of `ckks_bootstrap`, by the pipeline of `ctx`: doubling, SlotsToCoeffs, the raise, CoeffsToSlots and
-/// the EvalMod of a bootstrap, or the raise, CoeffsToSlots, EvalMod and SlotsToCoeffs, with the EvalRound+ bypass when
-/// the plan has one. A [`BootstrappingRun`] of the input's metadata gives the steps the slots and the labels of `res`.
+/// Default body of `ckks_bootstrap`: the steps by the plan of `ctx`, through a [`BootstrappingRun`] of the input's
+/// metadata.
 pub(crate) fn ckks_bootstrap_derived<BE, F, K>(
     module: &Module<BE>,
     res: &mut CKKSCiphertextOwned<BE>,
@@ -228,9 +227,8 @@ where
     Ok(())
 }
 
-/// Default body of `ckks_functional_bootstrap`: doubling, SlotsToCoeffs, the raise, CoeffsToSlots and the LUT step,
-/// which shares them across the batch and gives each output its contract from a [`BootstrappingRun`] of the input's
-/// metadata.
+/// Default body of `ckks_functional_bootstrap`: the steps by the plan of `ctx`, through a [`BootstrappingRun`] of the
+/// input's metadata, the LUT step last.
 pub(crate) fn ckks_functional_bootstrap_derived<BE, F, K>(
     module: &Module<BE>,
     res: &mut [CKKSCiphertextOwned<BE>],

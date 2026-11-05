@@ -28,7 +28,7 @@ pub trait CKKSEvalModOps<BE: Backend> {
 
     /// Evaluates the configured `x mod 1` approximation of `ct` into `res`.
     ///
-    /// Consumes `params.eval_depth() * log_delta` bits of `log_budget`; errors if
+    /// Consumes `params.consumed_bits()` bits of `log_budget`; errors if
     /// `ct` has insufficient remaining capacity. `tsk` is the tensor
     /// (relinearization) key used by the squaring steps, and `scratch` must hold
     /// at least [`Self::ckks_eval_mod_tmp_bytes`] bytes.

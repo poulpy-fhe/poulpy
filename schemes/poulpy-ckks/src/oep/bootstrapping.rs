@@ -165,10 +165,8 @@ pub unsafe trait CKKSBootstrappingImpl: CKKSCITwin + CKKSDFTImpl + CKKSCopyImpl 
         P: CKKSEvalModInfos<Self, F>,
         K: BootstrappingKeys<Self>;
 
-    /// Default body: `ckks_bootstrap_derived`, the selected steps by the pipeline of `ctx`: doubling, SlotsToCoeffs,
-    /// [`Self::ckks_mod_raise`], CoeffsToSlots and [`Self::ckks_bootstrap_eval_mod`] on S2C-first, the raise, CoeffsToSlots,
-    /// EvalMod and SlotsToCoeffs on C2S-first, with the EvalRound+ bypass when the plan has one. It refuses before its
-    /// first step, within [`Self::ckks_bootstrap_tmp_bytes`].
+    /// Default body: `ckks_bootstrap_derived`, the selected steps by the plan of `ctx`. It refuses before its first
+    /// step, within [`Self::ckks_bootstrap_tmp_bytes`].
     fn ckks_bootstrap<F, K>(
         module: &Module<Self>,
         ct_out: &mut CKKSCiphertextOwned<Self>,
@@ -186,9 +184,8 @@ pub unsafe trait CKKSBootstrappingImpl: CKKSCITwin + CKKSDFTImpl + CKKSCopyImpl 
         ckks_bootstrap_derived(module, ct_out, ct_in, ctx, ci, keys, scratch)
     }
 
-    /// Default body: `ckks_functional_bootstrap_derived`, the selected doubling, SlotsToCoeffs,
-    /// [`Self::ckks_mod_raise`], CoeffsToSlots and [`Self::ckks_eval_lut`]. It refuses before its first step, within
-    /// [`Self::ckks_functional_bootstrap_tmp_bytes`].
+    /// Default body: `ckks_functional_bootstrap_derived`, the selected steps by the plan of `ctx`. It refuses before
+    /// its first step, within [`Self::ckks_functional_bootstrap_tmp_bytes`].
     fn ckks_functional_bootstrap<F, K>(
         module: &Module<Self>,
         ct_outs: &mut [CKKSCiphertextOwned<Self>],

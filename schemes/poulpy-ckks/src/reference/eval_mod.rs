@@ -148,21 +148,8 @@ where
     }
 }
 
-/// The `x mod 1` pipeline (see [`crate::layouts::eval_mod`] for the maths).
-///
-/// 1. Verify `ct` still has `params.eval_depth() · log_delta` bits of `log_budget` —
-///    the multiplicative levels the evaluation will consume — and copy it into a
-///    working ciphertext.
-/// 2. Evaluate the base `f` polynomial by BSGS into `res`.
-/// 3. Apply the `f_mod_log_interval_reduction` range-extension steps. For the
-///    trigonometric families these are `res ← 2·res² − dac` on the real path (the
-///    `cos 2θ` identity with the encoded constant `dac`) and `res ← res²` on the
-///    complex path.
-/// 4. If configured, compose the inverse `f⁻¹` polynomial in place.
-///
-/// `res` receives the result; `tsk` is the relinearization (tensor) key for the
-/// squarings, and `scratch` supplies the working memory sized by
-/// [`CKKSEvalModOps::ckks_eval_mod_tmp_bytes`](crate::api::CKKSEvalModOps::ckks_eval_mod_tmp_bytes).
+/// The evaluation [`EvalModPlan`](crate::layouts::eval_mod::EvalModPlan) describes. A range-extension step is
+/// `res ← 2·res² − dac` on the real path, the `cos 2θ` identity, and `res ← res²` on the complex path.
 fn eval_mod<R, C, P, F, BE, H>(
     module: &Module<BE>,
     res: &mut R,
@@ -188,13 +175,6 @@ where
     H: GetTensorKey<BE>,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
 {
-    // EvalMod runs at its own plan scale `f_mod_log_delta`: reinterpret the
-    // working ciphertext to it on entry, then return the result to the input
-    // scale. `consumed_bits()` accounts for the arithmetic at the plan scale;
-    // if the plan scale is higher than the input scale, returning to the input
-    // scale also drops that extra precision from the externally visible budget.
-    // Intermediates are allocated rank-1 (`ckks_ciphertext_alloc`); reject
-    // higher-rank inputs instead of silently mis-shaping them.
     if matches!(params.f_mod_bsgs, EvalModBsgs::Complex(_)) && !module.ckks_eval_mod_complex_supported() {
         return Err(complex_refused());
     }
@@ -268,14 +248,8 @@ where
         }
     }
 
-    // Restore the input scale on the result. This is a pure metadata relabel
-    // (`set_log_delta`), not a rescale: entry raised the scale `s_in -> s_eval`
-    // without spending budget (`set_log_budget(s_budget)` on an MSB-aligned copy,
-    // which reinterprets the value at `2^-(s_eval - s_in)`); relabelling back to
-    // `s_in` here undoes exactly that, so the scale round-trip is budget-neutral
-    // and the only consumption is the EvalMod arithmetic, which `consumed_bits()`
-    // accounts for in full. When the plan scale is the wider one the relabel
-    // lowers `k` by `s_eval - s_in`, which clears the canonical flag.
+    // A relabel, not a rescale: it undoes the one at entry, keeping the budget. When the plan scale is the wider one it
+    // lowers `k`, which clears the canonical flag.
     if s_eval != s_in {
         res.set_log_delta(s_in);
     }

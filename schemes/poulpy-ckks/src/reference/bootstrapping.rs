@@ -238,9 +238,7 @@ pub trait CKKSBootstrappingReference<BE: CKKSCITwin>: std::borrow::Borrow<Module
         raise_tmp_bytes(module, &boot_layout, &in_layout, plan, keys_layout)
     }
 
-    /// Whole raise step: on C2S-first, lift to the plan's message ratio; (encapsulate) ModUp with the second lift
-    /// or the guard bits fused into its shift; the first CoeffsToSlots factor when the plan leaves it to the raise;
-    /// then the relabeling of `res`. `a` is clobbered.
+    /// Reference body of [`ckks_mod_raise`](crate::api::CKKSBootstrappingOps::ckks_mod_raise).
     fn ckks_mod_raise_reference<R, A, P, K>(
         &self,
         res: &mut R,
@@ -338,11 +336,7 @@ pub trait CKKSBootstrappingReference<BE: CKKSCITwin>: std::borrow::Borrow<Module
         }
     }
 
-    /// EvalMod of a bootstrap on `a`, the output of CoeffsToSlots, as the plan and the slots of the message say:
-    /// one [`ckks_eval_mod`](CKKSEvalModOps::ckks_eval_mod) on the real part, one on each half with their recombination,
-    /// or one on the conjugate-invariant ring between the conversions there and back. Under EvalRound+ it returns
-    /// `EvalMod(x) - K·x` and keeps the guard bits and its working label, which go with the bypass; otherwise it calls
-    /// [`stamp_eval_mod_output`](CKKSEvalModInfos::stamp_eval_mod_output).
+    /// Reference body of [`ckks_bootstrap_eval_mod`](crate::api::CKKSBootstrappingOps::ckks_bootstrap_eval_mod).
     fn ckks_bootstrap_eval_mod_reference<R, A, P, F, K>(
         &self,
         res: &mut R,
@@ -424,10 +418,7 @@ pub trait CKKSBootstrappingReference<BE: CKKSCITwin>: std::borrow::Borrow<Module
         Ok(())
     }
 
-    /// Backend-generic reference for [`ckks_eval_lut`](crate::api::CKKSBootstrappingOps::ckks_eval_lut): on a real message
-    /// of a plan that reads the real part of real slots, that part of `a`; otherwise its split, with the imaginary half
-    /// folded into each output as it is produced. The guard bits leave the halves before the exponential, and each output takes
-    /// its [`eval_lut_output`](CKKSEvalModInfos::eval_lut_output) at the end.
+    /// Reference body of [`ckks_eval_lut`](crate::api::CKKSBootstrappingOps::ckks_eval_lut).
     fn ckks_eval_lut_reference<R, A, P, F, K>(
         &self,
         res: &mut [R],
@@ -573,31 +564,16 @@ where
     Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
     Src: GLWEToBackendRef<BE> + CKKSInfos,
 {
-    // `dst` is the (freshly-allocated) widened target: ModUp raises the modulus
-    // to the destination's requested modulus, so the widening width is `dst.k()`.
-    // `dst.k()` is meta-derived and is `0` on a fresh ciphertext, which would
-    // spuriously fail the "must widen" check below.
     let k_large: usize = dst.k().as_usize();
     let k_small: usize = src.k().as_usize();
 
     ensure_mod_up_widens("ckks_mod_raise", k_large, k_small, scale_up)?;
 
-    // MSB-align `src` into the wider `dst`: the value occupies the top
-    // `k_small` bits and the freshly-introduced low-order limbs are zero.
+    // The shift to the natural magnitude is the raise: `q = 2^k_small` becomes an explicit multiple `I(X)·q`. Stopping
+    // `scale_up` bits short of it is the fused lift.
     module.glwe_copy(dst, src, scratch);
-
-    // Shift the digits down to their natural integer magnitude. This is the
-    // modulus raise: the raised-from modulus `q = 2^k_small` becomes an
-    // explicit, un-reduced multiple `I(X)·q` living in the `[0, 2^k_large)`
-    // window, which EvalMod subsequently removes. (A zero shift, when the
-    // input already fills the storage, is a no-op.) Stopping `scale_up` bits
-    // short of the natural magnitude is the fused lift: the value lands
-    // multiplied by `2^scale_up`, absorbed by the matching `log_delta`.
     module.glwe_rsh_assign(k_large - k_small - scale_up, dst, scratch);
 
-    // `log_delta` picks up the fused lift, so the encoded value is unchanged;
-    // the remaining headroom now spans the full raised modulus, so the torus
-    // width `k` becomes `k_large` and `log_budget = k_large - log_delta`.
     dst.set_meta(GLWEPlaintextMeta {
         scale: Scale::Log(src.log_delta() + scale_up),
         slots: src.slots(),
@@ -811,9 +787,7 @@ where
     module.ckks_eval_mod(res, &*a, eval_mod, tensor_key, &mut scratch)
 }
 
-/// The split of `a`, in place, one EvalMod per half and their recombination. Under EvalRound+ each
-/// half also takes `-K·x`, on the very input `x` of its EvalMod, so that the error of the
-/// low-precision CoeffsToSlots cancels against the bypass the caller adds back.
+/// The split of `a`, in place, one EvalMod per half and their recombination.
 #[expect(
     clippy::too_many_arguments,
     reason = "the route reads the plan beside the EvalMod and the tensor key its entry resolved"
@@ -969,8 +943,7 @@ where
 
 /// One EvalMod for all `N` coefficients, on the conjugate-invariant ring: `a` to degree `2N`, its
 /// product by `u`, the trace onto the CI ring, EvalMod on `ci`, and back by the embedding and `v`.
-/// The two rings share their buffers, so `module` and `ci` work on one arena. Under EvalRound+ the
-/// result is `EvalMod(x) - K·x`.
+/// The two rings share their buffers, so `module` and `ci` work on one arena.
 #[expect(
     clippy::too_many_arguments,
     reason = "the route reads a module per ring and the CI part of the plan"
@@ -1049,9 +1022,7 @@ where
         &mut scratch.borrow().into_backend::<BE::CI>(),
     )?;
     let mut reduced = reduced.rebind::<BE>();
-    // EvalRound+: `EvalMod(x) − K·x` on the very input `x` of EvalMod, so that the
-    // error of the low-precision CoeffsToSlots cancels; the caller adds the bypass
-    // back. Both are coefficient-wise, the same on either ring.
+    // `K·x` is coefficient-wise, the same on either ring.
     if plan.eval_round_plus() {
         let mut traced = traced.rebind::<BE>();
         let log2_k = plan.eval_mod_plan().f_mod_interval.trailing_zeros() as usize;

@@ -134,6 +134,26 @@ pub enum EvalModType {
 
 /// User-facing recipe for an `x mod 1` evaluation. Compiled into the encoded
 /// [`EvalMod`] by [`ckks_eval_mod_compile`].
+///
+/// # Evaluation
+///
+/// The parameters act in this order, with `K = f_mod_interval` and `r = f_mod_log_interval_reduction`:
+///
+/// 1. **Input.** The transform feeding EvalMod carries [`Self::input_scaling`], `1/K`. The input is relabelled at
+///    `f_mod_log_delta`, keeping its budget, and every product runs at that scale.
+/// 2. **Base polynomial.** `eval_mod_type` picks `f` and how it is fitted over `[-K/2^r, K/2^r]`, at degree
+///    `f_mod_degree` with coefficients at `coeffs_meta`, and `split_strategy` trades depth against rotations.
+/// 3. **Range extension.** `r` squarings, each consuming `f_mod_log_delta` bits, extend the range back to `[-K, K]`: a
+///    larger `r` allows a lower `f_mod_degree` for more depth.
+/// 4. **Inverse.** `f_mod_inv_degree` composes `f⁻¹`, which makes the result linear in `m` across the interval.
+/// 5. **Output.** `scaling` sets the amplitude, `scaling/(2π)`, and the result is relabelled at the input's scale,
+///    which keeps its budget and lowers `k` by the difference.
+///
+/// [`Self::consumed_bits`] sums those stages. `log_msg_ratio` places `Δ·m` under `I(X)·q`, so on a C2S-first raise
+/// `f_mod_log_delta` is at least the lifted input's scale plus `log_msg_ratio`.
+///
+/// The choice of `eval_mod_type` restricts the rest: the discrete fits take `f_mod_degree >= 2·(K - 1)`,
+/// [`EvalModType::SinCheby`] takes no range extension and [`EvalModType::ExpCmplx`] no inverse.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct EvalModPlan {
     /// Which periodic-function approximation and output form to use.

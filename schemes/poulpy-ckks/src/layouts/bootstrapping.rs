@@ -1,27 +1,8 @@
-//! Bootstrapping parameterization.
+//! Bootstrapping parameterization: [`BootstrappingPlan`] and its compiled form,
+//! [`BootstrappingContextPrepared`], built once and reused across bootstraps.
 //!
-//! [`BootstrappingPlan`] bundles the parameters of the three homomorphic
-//! sub-circuits that make up CKKS bootstrapping — CoeffsToSlots (an `Encode`
-//! [`DFTPlan`]), EvalMod (an [`EvalModPlan`]) and SlotsToCoeffs (a `Decode`
-//! [`DFTPlan`]).
-//!
-//! The plan also selects the ModUp/EvalMod pipeline and its optional techniques.
-//! Torus widths (`base2k`, the encoding scale `log_delta`, and the input/raised
-//! moduli) remain per-ciphertext metadata supplied at call time — ModUp reads
-//! them from its source and destination ciphertexts — and the message ratio is
-//! already part of the [`EvalModPlan`]. See
-//! [`CKKSBootstrappingOps`](crate::api::CKKSBootstrappingOps) for the ModUp
-//! semantics (a digit shift in the base-`2^base2k` torus model, not an RNS
-//! prime-basis extension).
-//!
-//! [`CKKSBootstrappingOps::ckks_bootstrap`](crate::api::CKKSBootstrappingOps)
-//! composes the selected pipeline from a compiled [`BootstrappingContextPrepared`] and
-//! a prepared key set. The plan remains a plain parameter bundle, so callers
-//! can also compose the stages manually from the respective op traits.
-//!
-//! [`BootstrappingContextPrepared`] is the *compiled* form of a [`BootstrappingPlan`]:
-//! the prepared, backend-resident homomorphic DFT matrices and the encoded,
-//! uploaded EvalMod, built once and reused across bootstraps.
+//! Torus widths (`base2k`, `log_delta`, the input and raised moduli) are not part of a plan: they stay per-ciphertext
+//! metadata, read at call time.
 
 use std::{collections::BTreeMap, sync::OnceLock};
 
@@ -52,12 +33,14 @@ use crate::{
     },
 };
 
-/// Stage ordering for the ModUp/EvalMod bootstrapping family.
+/// Stage ordering of a bootstrap.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BootstrappingPipeline {
-    /// CoeffsToSlots before EvalMod and SlotsToCoeffs.
+    /// The raise, CoeffsToSlots, EvalMod and SlotsToCoeffs. The last transform restores the message ratio and labels
+    /// the output, whose scale and width return to the input's.
     C2SFirst,
-    /// SlotsToCoeffs below ModUp, then CoeffsToSlots and EvalMod above it.
+    /// SlotsToCoeffs below the raise, at scaling `1/2` on a doubled input, then the raise, CoeffsToSlots and EvalMod,
+    /// whose output is relabeled at the input's scale.
     S2CFirst,
 }
 
@@ -67,9 +50,9 @@ pub enum EvalModRing {
     /// The ring of the bootstrap, once per half of the slots.
     #[default]
     Standard,
-    /// The conjugate-invariant ring of the same degree, once for all `N`
-    /// coefficients, reached through the standard ring of degree `2N`: by `u`
-    /// before EvalMod, `pre`, and `v` after it, `post`.
+    /// The conjugate-invariant ring of the same degree, once for all `N` coefficients, reached through the standard
+    /// ring of degree `2N`: by `u` before EvalMod, `pre`, and `v` after it, `post`. The caller passes the module of
+    /// that ring, of degree `N`, the bootstrap's own module serving degree `2N` for the conversions.
     ConjugateInvariant { pre: CIConversion, post: CIConversion },
 }
 
@@ -111,16 +94,23 @@ impl EvalModRing {
     }
 }
 
-/// Sparse-secret encapsulation parameters for ModUp.
+/// Sparse-secret encapsulation of the raise (<https://eprint.iacr.org/2022/024>): ModUp runs under an ephemeral sparse
+/// secret, which bounds the integer part it adds, between a dense-to-sparse and a sparse-to-dense switch. The keys of
+/// the bootstrap carry both, as [`encapsulation_keys`](crate::layouts::BootstrappingLinearKeys::encapsulation_keys).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SparseSecretEncapsulation {
-    /// Sparse-secret ModRaise encapsulation (<https://eprint.iacr.org/2022/024>);
-    /// this is the ephemeral ternary secret weight. Use `None` in
-    /// [`BootstrappingTechniques`] to disable the technique.
+    /// Weight of the ephemeral ternary secret.
     pub hamming_weight: usize,
 }
 
-/// EvalRound+ parameters (<https://eprint.iacr.org/2024/1379>).
+/// EvalRound+ (<https://eprint.iacr.org/2024/1379>): a high-precision CoeffsToSlots bypasses EvalMod, and cancels the
+/// error of the low-precision transform that feeds it. Takes a power-of-two `f_mod_interval`.
+///
+/// [`ckks_bootstrap_eval_mod`](crate::api::CKKSBootstrappingOps::ckks_bootstrap_eval_mod) then returns `EvalMod(x) -
+/// K·x`, on every route, with its working label and the guard bits still on, and the composer finishes the step: it
+/// runs [`BootstrappingRun::bypass`] on a copy of the raised ciphertext taken before CoeffsToSlots, doubles the copy,
+/// adds the output of the step, and only then calls [`stamp_eval_mod_output`](CKKSEvalModInfos::stamp_eval_mod_output).
+/// Removing the guard bits earlier lowers `k` and changes the bits of the conjugate-invariant route.
 #[derive(Clone, Debug)]
 pub struct EvalRoundPlus {
     /// High-precision CoeffsToSlots transform bypassing EvalMod.
@@ -136,14 +126,68 @@ pub struct BootstrappingTechniques {
     pub eval_round_plus: Option<EvalRoundPlus>,
 }
 
-/// End-to-end parameterization of CKKS bootstrapping.
+/// End-to-end parameterization of CKKS bootstrapping. Every choice of how a bootstrap runs is a parameter of this plan,
+/// and the steps of [`CKKSBootstrappingOps`](crate::api::CKKSBootstrappingOps) follow it.
 ///
-/// Built with [`Self::new`], which validates the stage roles once — a
-/// `BootstrappingPlan` that exists always has an `Encode` CoeffsToSlots and a
-/// `Decode` SlotsToCoeffs, so key provisioning ([`Self::galois_elements`])
-/// cannot silently derive rotations for the wrong transform direction.
+/// Built with [`Self::new`], which validates the stage roles once, so that key provisioning ([`Self::galois_elements`])
+/// cannot derive rotations for the wrong transform direction.
 ///
-/// See the [module docs](self) for the overall role.
+/// # Parameters
+///
+/// - `pipeline` ([`BootstrappingPipeline`]): the order of the stages and which one labels the output.
+/// - `coeffs_to_slots`, `slots_to_coeffs` ([`DFTPlan`]): the two transforms. [`Self::new`] folds EvalMod's input
+///   scaling into CoeffsToSlots, so the caller scales nothing.
+/// - `eval_mod` ([`EvalModPlan`]): the `x mod 1` evaluation. It runs at its own scale, a budget-neutral relabel, so it
+///   can keep more `ct×ct` precision.
+/// - `eval_mod_ring` ([`EvalModRing`], [`Self::with_eval_mod_ring`]): the ring of EvalMod, which takes an S2C-first
+///   plan with a real EvalMod and no LUT off the standard ring.
+/// - `c2s_guard_bits` ([`Self::with_c2s_guard_bits`], S2C-first): scale bits added at the raise to reduce CoeffsToSlots
+///   rounding, charged to the raised width and removed at the output.
+/// - `techniques` ([`BootstrappingTechniques`]): [`SparseSecretEncapsulation`] around the raise and [`EvalRoundPlus`]
+///   around EvalMod. A first CoeffsToSlots factor on the raise excludes EvalRound+.
+/// - `functional_message_modulus` ([`Self::with_functional_bootstrap`], S2C-first): turns the bootstrap into a LUT
+///   evaluation on integer messages, on the standard ring.
+///
+/// The raise follows [`Self::mod_raise`].
+///
+/// # EvalMod
+///
+/// [`ckks_bootstrap_eval_mod`](crate::api::CKKSBootstrappingOps::ckks_bootstrap_eval_mod) takes its route from the plan
+/// and the slots of the message:
+///
+/// | Plan and message | Route | `a` after the step |
+/// |---|---|---|
+/// | standard ring, real slots, S2C-first, no EvalRound+ | the real part, one EvalMod | `2·Re(a)` |
+/// | any other plan on the standard ring | the split, one EvalMod per half, on a parallel executor at once, the recombination | the real half, times `K` under EvalRound+ |
+/// | conjugate-invariant ring | the conversion, one EvalMod for all coefficients, the conversion back | only read |
+///
+/// Real slots read the real part alone because an S2C-first raise leaves only integer multiples of the modulus in the
+/// imaginary part, and EvalRound+ needs both halves. A [`BootstrappingRun`] gives the step the slots of the message,
+/// and a plain [`EvalMod`] reads those of `a`, has no pipeline and stamps nothing.
+///
+/// EvalMod spends `consumed = eval_mod.consumed_bits()` of the budget of `a`, and the conversions of the
+/// conjugate-invariant ring the scales of their products. The output of a run is:
+///
+/// - S2C-first: `res.k() = a.k() - c2s_guard_bits - consumed` at the scale, slot kind and sparsity of the message;
+/// - C2S-first: `log_delta_out = a.log_delta()`, `log_budget_out = a.log_budget() - consumed`, until SlotsToCoeffs
+///   labels it;
+/// - under [`EvalRoundPlus`], and on a plain [`EvalMod`]: the same, with the guard bits still on and the working label,
+///   slot kind and sparsity being those of the route on a plain [`EvalMod`].
+///
+/// The split route leaves the canonical flag clear: its recombination is a lazy sum.
+///
+/// # LUTs
+///
+/// [`ckks_eval_lut`](crate::api::CKKSBootstrappingOps::ckks_eval_lut) runs no bypass and removes the guard bits itself,
+/// before the exponential. Real slots of an S2C-first plan take the real part of `a` and skip the imaginary half, with
+/// or without a bypass in the plan, and any other input is split, each half evaluated and the halves recombined. `a`
+/// keeps `2·Re(a)` or the real half, without the guard bits on its label. General LUTs of a batch share the power basis
+/// of each half.
+///
+/// Each LUT spends `bits`, EvalMod's when it needs it and its own series', of the budget of `a`. A run gives an output
+/// `k_out = a.k() - c2s_guard_bits - bits`, `log_delta_out = log_delta + log_msg_ratio` from the `log_delta` of the
+/// message, and the slot kind and sparsity of the message. A plain [`EvalMod`] reads the slots of `a` and leaves the
+/// outputs what the evaluation gives them. The split route leaves the canonical flag clear.
 #[derive(Clone, Debug)]
 pub struct BootstrappingPlan {
     pipeline: BootstrappingPipeline,
@@ -155,10 +199,7 @@ pub struct BootstrappingPlan {
 
     /// CoeffsToSlots: homomorphic encoding ([`DFTType::Encode`]).
     pub(crate) coeffs_to_slots: DFTPlan,
-    /// EvalMod: approximate `x mod 1`. EvalMod runs at its own
-    /// ([`EvalModPlan::f_mod_log_delta`]) scale — `ckks_eval_mod` sets the
-    /// ciphertext to it on entry and restores the input scale on exit (a pure,
-    /// budget-neutral reinterpretation), so it can keep more `ct×ct` precision.
+    /// EvalMod: approximate `x mod 1`.
     pub(crate) eval_mod: EvalModPlan,
 
     /// SlotsToCoeffs: homomorphic decoding ([`DFTType::Decode`]).
