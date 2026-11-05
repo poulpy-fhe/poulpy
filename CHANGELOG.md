@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### `poulpy-resnet20`
+
+- Add `examples/resnet20` (unpublished): encrypted ResNet-20 on CIFAR-10 over the real-slot S2C-first bootstrap, composed from its public steps: `ckks_mod_raise`, `ckks_coeffs_to_slots_assign` on a `masked` view of the context, `ckks_bootstrap_eval_mod`. Every convolution, shortcut and the pooled linear head is folded into the last SlotsToCoeffs factor (`MergedConv`, on `merged_s2c_factor`), on coefficient layouts (`CoeffLayout`); the masked raise keeps the layer's samples and the ReLU runs on the real slots. Stages 2 and 3 run on 16,384 real slots, `with_log_gap(1, ..)`. The `encrypted_inference` binary runs the server on the CPU or, with the `enable-cuda` feature, the GPU, where `--replay` records the whole circuit once as a `Replay` graph. The weights and ten test images are built into the crate, and `$CIFAR10_TEST_BATCH` names the full test batch.
+
 ### `poulpy-ckks`
 
 - Add `ckks_mod_raise[_tmp_bytes]`, `ckks_bootstrap_eval_mod[_tmp_bytes]` and `ckks_eval_lut[_tmp_bytes]`: each step of the bootstrap runs alone, the plan deciding how. A composer stamps the slot label (`set_slots`) after `ckks_coeffs_to_slots_assign`, which leaves it Complex, or a real route never runs. `ckks_coeffs_to_slots_assign`, `ckks_slots_to_coeffs_assign`, `ckks_dft_matrix_eval_assign` and `ckks_dft_tmp_bytes` take `CKKSDFTFactors`, which `BootstrappingContextPrepared` implements, and the two transforms accept factors of any output format.

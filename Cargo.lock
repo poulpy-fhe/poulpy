@@ -3586,6 +3586,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "poulpy-resnet20"
+version = "0.10.0"
+dependencies = [
+ "anyhow",
+ "poulpy-ckks",
+ "poulpy-core",
+ "poulpy-cpu-portable",
+ "poulpy-gpu-portable",
+ "poulpy-hal",
+ "serde_json",
+]
+
+[[package]]
 name = "powerfmt"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
