@@ -564,6 +564,19 @@ fn run_case<BE, F, E>(
             "{error}"
         );
         keys.rotation_keys.insert(-1, conjugation);
+        let mut narrow: Vec<_> = backend_luts
+            .iter()
+            .map(|_| fixture_ciphertext(module, &ckks_spec(params.n, params.base2k, INPUT_LOG_DELTA, 0), 37))
+            .collect();
+        let error = eval_lut_refusal(&mut narrow, |res, s| {
+            module.ckks_eval_lut(res, &raised, &run, &backend_luts, &keys, s)
+        });
+        assert_invalid_operand(
+            "outputs narrower than their width",
+            &error,
+            "ckks_eval_lut",
+            "takes outputs of at least",
+        );
 
         // The message picks the route: the same raised input bound to a complex message takes the split and gives other
         // digits.
@@ -985,7 +998,7 @@ impl<BE: CKKSCITwin, F> CKKSEvalModInfos<BE, F> for OffCirclePlan<'_, BE, F> {
         &self,
         _op: &'static str,
         _lut: &EncodedLut<CKKSPlaintextOwned<BE>>,
-        _bootstrap_k: usize,
+        _a_k: usize,
     ) -> crate::CKKSResult<Option<(GLWEPlaintextMeta, usize)>> {
         Ok(None)
     }

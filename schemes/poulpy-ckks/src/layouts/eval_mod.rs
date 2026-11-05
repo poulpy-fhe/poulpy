@@ -493,16 +493,19 @@ pub trait CKKSEvalModInfos<BE: CKKSCITwin, F> {
     /// The slots of the message, which pick the route. `None`: the step reads the label of its input.
     fn message_slots(&self) -> Option<SlotsKind>;
 
-    /// Removes the guard bits and labels an EvalMod output as the message.
+    /// Removes the guard bits and labels an EvalMod output as the message. It runs once: in
+    /// [`ckks_bootstrap_eval_mod`](crate::api::CKKSBootstrappingOps::ckks_bootstrap_eval_mod), and by the composer only
+    /// under a bypass, after adding it back.
     fn stamp_eval_mod_output<C: SetCKKSInfos>(&self, res: &mut C);
 
-    /// The metadata and the width of the output of `lut` from a raise at `bootstrap_k` bits, or a typed refusal of `op`
-    /// when `bootstrap_k` cannot hold them. `None`: the output keeps what the evaluation leaves it.
+    /// The metadata and the width of the output of `lut` from an input of `a_k` bits, past CoeffsToSlots, or a typed
+    /// refusal of `op` when the plan or that input cannot give them. `None`: the output keeps what the evaluation leaves
+    /// it.
     fn eval_lut_output(
         &self,
         op: &'static str,
         lut: &EncodedLut<CKKSPlaintextOwned<BE>>,
-        bootstrap_k: usize,
+        a_k: usize,
     ) -> CKKSResult<Option<(GLWEPlaintextMeta, usize)>>;
 }
 
@@ -541,7 +544,7 @@ impl<BE: CKKSCITwin, F> CKKSEvalModInfos<BE, F> for EvalMod<F, CKKSPlaintextOwne
         &self,
         _op: &'static str,
         _lut: &EncodedLut<CKKSPlaintextOwned<BE>>,
-        _bootstrap_k: usize,
+        _a_k: usize,
     ) -> CKKSResult<Option<(GLWEPlaintextMeta, usize)>> {
         Ok(None)
     }

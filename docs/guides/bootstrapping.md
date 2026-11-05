@@ -117,6 +117,7 @@ Each has its `_tmp_bytes`, a step refuses a short arena or a wrong operand befor
 `EvalModCIPrepared` implements no `CKKSEvalModInfos`: EvalMod on the conjugate-invariant ring runs through a run, not through its compiled part alone.
 
 A composition stamps nothing. The transforms overwrite the label and the raise relabels the scale, so `ctx.run(meta)` binds the labels of the message to the compiled plan and the steps read them there. It takes the metadata, not a ciphertext: the raise clobbers its input, and a composer may state a message kind the label does not carry. `BootstrappingContextPrepared` itself takes no SlotsToCoeffs, EvalMod or EvalLut, so forgetting the run does not compile.
+`ctx.slots_to_coeffs()` is a plain matrix that stamps nothing, so a composition passes the run.
 
 The S2C-first bootstrap composed by hand:
 

@@ -594,6 +594,14 @@ impl<BE: CKKSCITwin + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl> CKKS
                 k: a.k().into(),
                 source,
             })?;
+        // The width of `a` sets what an output carries: `res` may be allocated at any width that holds it.
+        let a_k = a.k().as_usize();
+        for lut in luts {
+            if let Some((_, k)) = plan.eval_lut_output(OP, lut, a_k)? {
+                let res_k = res[0].k().as_usize();
+                ckks_ensure_operand!(OP, res_k >= k, "takes outputs of at least {k} bits, got {res_k}");
+            }
+        }
         if let Some(keys_layout) = keys.keys_layout() {
             let bytes = self.ckks_eval_lut_tmp_bytes_reference(&res[0], a, plan, luts, &keys_layout);
             ckks_ensure!(
@@ -601,10 +609,6 @@ impl<BE: CKKSCITwin + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl> CKKS
                 "{OP} needs a scratch arena of {bytes} bytes, got {}",
                 scratch.available()
             );
-        }
-        let bootstrap_k = res[0].k().as_usize();
-        for lut in luts {
-            plan.eval_lut_output(OP, lut, bootstrap_k)?;
         }
         let shared = luts.len() > 1 && luts.iter().all(|lut| lut.general_series().is_some());
         let boot_layout = GLWELayout {
@@ -666,13 +670,13 @@ impl<BE: CKKSCITwin + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl> CKKS
             Result::Ok(())
         })?;
         for (out, lut) in res.iter_mut().zip(luts) {
-            if let Some((meta, k)) = plan.eval_lut_output(OP, lut, bootstrap_k)? {
-                out.set_meta(meta);
+            if let Some((meta, k)) = plan.eval_lut_output(OP, lut, a_k)? {
                 ckks_ensure!(
                     out.k().as_usize() >= k,
-                    "functional bootstrap produced k={}, below required {k}",
+                    "{OP} produced k={}, below required {k}",
                     out.k().as_usize()
                 );
+                out.set_meta(meta);
                 out.set_k(k.into());
             }
         }

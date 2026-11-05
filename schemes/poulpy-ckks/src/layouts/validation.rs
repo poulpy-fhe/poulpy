@@ -351,7 +351,7 @@ where
 }
 
 /// What `ckks_functional_bootstrap_derived` refuses before its first step, as [`check_bootstrap_entry`], with the
-/// batch of LUTs and the message ratio. Returns the metadata and the width of each output.
+/// batch of LUTs and the message ratio.
 pub(crate) fn check_functional_entry<BE, F, K>(
     module: &Module<BE>,
     res: &[CKKSCiphertextOwned<BE>],

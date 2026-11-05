@@ -42,7 +42,7 @@ use crate::{
         CKKSDFTMatrixOps, CKKSDFTMatrixPreparedFactory, CKKSDFTOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar,
         CKKSRightOperandPreparedFactory,
     },
-    ckks_log_delta,
+    ckks_ensure_operand, ckks_log_delta,
     layouts::{
         CKKSCITwin, CKKSDFTFactors, CKKSEvalModInfos, CKKSModRaiseInfos, CKKSPlaintextAlloc, ComplexDiagonals, DFTMatrix,
         DFTMatrixPrepared, DFTPlan, DFTType, Decode, Encode, EncodedLut, EvalMod, EvalModPlan, ModRaisePlan, ModRaisePrepared,
@@ -987,8 +987,14 @@ impl<BE: CKKSCITwin, F> CKKSEvalModInfos<BE, F> for BootstrappingRun<'_, BE, F> 
         &self,
         op: &'static str,
         lut: &EncodedLut<CKKSPlaintextOwned<BE>>,
-        bootstrap_k: usize,
+        a_k: usize,
     ) -> CKKSResult<Option<(GLWEPlaintextMeta, usize)>> {
+        ckks_ensure_operand!(
+            op,
+            self.context.pipeline == BootstrappingPipeline::S2CFirst,
+            "EvalLut requires an S2C-first run"
+        );
+        let bootstrap_k = a_k + self.context.coeffs_to_slots.consumed_bits();
         functional_output_contract(op, self.message, self.context, lut, bootstrap_k).map(Some)
     }
 }
