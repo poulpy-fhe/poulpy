@@ -55,7 +55,7 @@ use crate::{
     layouts::{
         BootstrappingKeysLayout, BootstrappingLinearKeys, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques,
         CKKSCITwin, CKKSCiphertextAlloc, CKKSDFTFactors, CKKSPlaintextAlloc, DFTOutputFormat, DFTPlan, DFTType,
-        EncapsulationKeysLayout, EvalRoundPlus, SparseSecretEncapsulation,
+        EncapsulationKeysLayout, EvalRoundPlus, ModRaisePlan, SparseSecretEncapsulation,
         eval_mod::{EvalModPlan, EvalModType},
     },
     polynomial::SplitStrategy,
@@ -348,6 +348,35 @@ where
             with_scratch::<BE, _>(raise_tmp, |s| module.ckks_mod_raise(&mut dst, &mut src, &ctx, &bsk, s)).unwrap();
         }
         {
+            let mut src = fixture_ciphertext(&module, &small_spec, 31);
+            let mut dst = fixture_ciphertext(&module, &boot_spec, 37);
+            assert_mod_raise_refuses(
+                &mut dst,
+                &mut src,
+                "the plan moves the first CoeffsToSlots factor onto the raise",
+                |res, a, s| module.ckks_mod_raise(res, a, &plan.mod_raise(), &bsk, s),
+            );
+            if encapsulated {
+                let plain = ModRaisePlan {
+                    first_factor_on_raise: false,
+                    ..plan.mod_raise()
+                };
+                assert_mod_raise_refuses(
+                    &mut dst,
+                    &mut src,
+                    "the encapsulated ModUp needs a sparse-to-dense key",
+                    |res, a, s| module.ckks_mod_raise(res, a, &plain, &bsk, s),
+                );
+            }
+            let narrow_spec = ckks_spec(n, base2k, log_delta, k_boot - base2k - log_delta);
+            assert_mod_raise_refuses(
+                &mut fixture_ciphertext(&module, &narrow_spec, 41),
+                &mut src,
+                "the first-factor keys switch",
+                |res, a, s| module.ckks_mod_raise(res, a, ctx.mod_raise(), &bsk, s),
+            );
+        }
+        {
             let mut src = module.ckks_ciphertext_alloc(base2k.into(), k_small.into());
             src.set_meta(small_spec.meta);
             let mut dst = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
@@ -381,6 +410,19 @@ where
             CKKSCompositionError::InvalidOperand {
                 op: "ckks_bootstrap",
                 reason: "supports rank-1 ciphertexts only, got rank 2 -> 1".into(),
+            },
+        );
+        assert_eq!(snapshot::<BE, _>(&narrow), before, "a refused bootstrap wrote res");
+        let mut other_radix = in_spec;
+        other_radix.glwe_layout.base2k = (base2k - 1).into();
+        let ct_radix = fixture_ciphertext(&module, &other_radix, 43);
+        let err = with_scratch::<BE, _>(0, |s| module.ckks_bootstrap(&mut narrow, &ct_radix, &ctx, None, &bsk, s)).unwrap_err();
+        assert_ckks_error(
+            "a bootstrap of two radices",
+            &err,
+            CKKSCompositionError::InvalidOperand {
+                op: "ckks_bootstrap",
+                reason: "takes ciphertexts of one base2k".into(),
             },
         );
         assert_eq!(snapshot::<BE, _>(&narrow), before, "a refused bootstrap wrote res");
@@ -453,8 +495,30 @@ pub(crate) fn assert_eval_mod_refuses<BE>(
     assert_eq!(snapshot::<BE, _>(res), before, "a refused step wrote res");
 }
 
+/// `run`, a call of [`CKKSBootstrappingOps::ckks_mod_raise`], refuses for `reason` on a zero-byte arena, which puts the
+/// check before the scratch check, and leaves `res` and `a` as they were.
+fn assert_mod_raise_refuses<BE>(
+    res: &mut CKKSCiphertextOwned<BE>,
+    a: &mut CKKSCiphertextOwned<BE>,
+    reason: &str,
+    run: impl FnOnce(&mut CKKSCiphertextOwned<BE>, &mut CKKSCiphertextOwned<BE>, &mut ScratchArena<'_, BE>) -> crate::CKKSResult<()>,
+) where
+    BE: Backend<ZnxWord = i64>,
+    CKKSCiphertextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds,
+{
+    let before = (snapshot::<BE, _>(res), snapshot::<BE, _>(a));
+    let err = with_scratch::<BE, _>(0, |s| run(res, a, s)).unwrap_err();
+    assert_invalid_operand(reason, &err, "ckks_mod_raise", reason);
+    assert_eq!(
+        (snapshot::<BE, _>(res), snapshot::<BE, _>(a)),
+        before,
+        "a refused raise wrote an operand"
+    );
+}
+
 /// [`CKKSBootstrappingOps::ckks_bootstrap_eval_mod`] in a hand composition gives the digits of `ckks_bootstrap`, on
-/// every pipeline, on real and complex labels, with and without EvalRound+.
+/// every pipeline, on real and complex labels, with and without EvalRound+. [`CKKSBootstrappingOps::ckks_mod_raise`]
+/// takes the literal plan, the compiled raise and the context with one result.
 pub fn test_ckks_bootstrap_eval_mod<BE>()
 where
     BE: TestContextBackend<Ring = Standard, ZnxWord = i64> + CKKSCITwin,
@@ -603,6 +667,91 @@ where
         assert!(
             (digits[0] != digits[1]) == one_eval_mod,
             "the real route does not run where it should"
+        );
+
+        // The input of the raise, on a composition: `input` itself or the output of SlotsToCoeffs.
+        let input = fixture_ciphertext(&module, &preset.input_layout(), 5);
+        let bytes = module.ckks_bootstrap_tmp_bytes(&boot, &input, &context, None, keys_layout);
+        let raise_input = |seed: u8| {
+            let mut coeffs = fixture_ciphertext(&module, &preset.input_layout(), seed);
+            with_scratch::<BE, _>(bytes, |s| {
+                if context.pipeline() == BootstrappingPipeline::S2CFirst {
+                    module.ckks_double_into(&mut coeffs, &input, s)?;
+                    module.ckks_slots_to_coeffs_assign(&mut coeffs, &context, &keys.rotation_keys, s)
+                } else {
+                    module.ckks_copy(&mut coeffs, &input, s)
+                }
+            })
+            .unwrap();
+            coeffs
+        };
+        let mod_raise = preset.plan().mod_raise();
+        let (mut a_context, mut a_plan, mut a_prepared) = (raise_input(31), raise_input(37), raise_input(41));
+        let mut from_context = fixture_ciphertext(&module, &boot, 43);
+        let mut from_plan = fixture_ciphertext(&module, &boot, 47);
+        let mut from_prepared = fixture_ciphertext(&module, &boot, 53);
+        let raise_tmp = module.ckks_mod_raise_tmp_bytes(&boot, &a_context, &mod_raise, keys_layout);
+        assert_eq!(
+            raise_tmp,
+            module.ckks_mod_raise_tmp_bytes(&boot, &a_context, &context, keys_layout)
+        );
+        with_scratch::<BE, _>(raise_tmp, |s| {
+            module.ckks_mod_raise(&mut from_context, &mut a_context, &context, &keys, s)?;
+            module.ckks_mod_raise(&mut from_plan, &mut a_plan, &mod_raise, &keys, s)?;
+            module.ckks_mod_raise(&mut from_prepared, &mut a_prepared, context.mod_raise(), &keys, s)
+        })
+        .unwrap();
+        assert_eq!(snapshot::<BE, _>(&from_plan), snapshot::<BE, _>(&from_context));
+        assert_eq!(snapshot::<BE, _>(&from_prepared), snapshot::<BE, _>(&from_context));
+
+        let mut a = raise_input(59);
+        let mut res = fixture_ciphertext(&module, &boot, 61);
+        let mut rank2 = preset.input_layout();
+        rank2.glwe_layout.rank = 2usize.into();
+        assert_mod_raise_refuses(
+            &mut res,
+            &mut fixture_ciphertext(&module, &rank2, 29),
+            "supports rank-1 ciphertexts only, got rank 2 -> 1",
+            |res, a, s| module.ckks_mod_raise(res, a, &context, &keys, s),
+        );
+        let mut half = boot;
+        half.glwe_layout.n = (preset.n() / 2).into();
+        let degree = "takes ciphertexts of one degree, which the module serves";
+        assert_mod_raise_refuses(&mut fixture_ciphertext(&module, &half, 11), &mut a, degree, |res, a, s| {
+            module.ckks_mod_raise(res, a, &context, &keys, s)
+        });
+        let small = Module::<BE>::new(preset.n() as u64 / 2);
+        assert_mod_raise_refuses(&mut res, &mut a, degree, |res, a, s| {
+            small.ckks_mod_raise(res, a, &context, &keys, s)
+        });
+        let mut other_radix = boot;
+        other_radix.glwe_layout.base2k = (preset.base2k() - 1).into();
+        assert_mod_raise_refuses(
+            &mut fixture_ciphertext(&module, &other_radix, 13),
+            &mut a,
+            "takes ciphertexts of one base2k",
+            |res, a, s| module.ckks_mod_raise(res, a, &context, &keys, s),
+        );
+        let other_encapsulation = ModRaisePlan {
+            sparse_secret_hamming_weight: match mod_raise.sparse_secret_hamming_weight {
+                Some(_) => None,
+                None => Some(EPHEMERAL_SECRET_WEIGHT),
+            },
+            ..mod_raise.clone()
+        };
+        assert_mod_raise_refuses(
+            &mut res,
+            &mut a,
+            "bootstrapping key encapsulation does not match the compiled recipe",
+            |res, a, s| module.ckks_mod_raise(res, a, &other_encapsulation, &keys, s),
+        );
+        let mut narrow = boot;
+        narrow.glwe_layout.k = (a.k().as_usize() - 1).into();
+        assert_mod_raise_refuses(
+            &mut fixture_ciphertext(&module, &narrow, 17),
+            &mut a,
+            "ModUp must widen, not shrink, the modulus",
+            |res, a, s| module.ckks_mod_raise(res, a, &context, &keys, s),
         );
     }
 }

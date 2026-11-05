@@ -317,6 +317,7 @@ impl BootstrappingPlan {
             lift: (self.pipeline == BootstrappingPipeline::C2SFirst).then_some(self.eval_mod),
             c2s_guard_bits: self.c2s_guard_bits,
             sparse_secret_hamming_weight: self.sparse_secret_hamming_weight(),
+            first_factor_on_raise: self.coeffs_to_slots.first_factor_on_raise(),
         }
     }
 
@@ -925,6 +926,11 @@ impl<BE: Backend, F> BootstrappingContextPrepared<BE, F> {
     /// Prepared CoeffsToSlots matrix.
     pub fn coeffs_to_slots(&self) -> &DFTMatrixPrepared<BE, Encode, Split> {
         &self.coeffs_to_slots
+    }
+
+    /// The modulus raise of this context, the step's operand with the first factor it may carry.
+    pub fn mod_raise(&self) -> &ModRaisePrepared<BE> {
+        &self.mod_raise
     }
 
     /// First CoeffsToSlots factor, when the modulus raise applies it

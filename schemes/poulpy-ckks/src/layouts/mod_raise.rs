@@ -12,6 +12,8 @@ pub struct ModRaisePlan {
     pub lift: Option<EvalModPlan>,
     pub c2s_guard_bits: usize,
     pub sparse_secret_hamming_weight: Option<usize>,
+    /// The plan moves the first CoeffsToSlots factor onto the raise, which then takes it from a [`ModRaisePrepared`].
+    pub first_factor_on_raise: bool,
 }
 
 /// A [`ModRaisePlan`] with the first CoeffsToSlots factor its raise applies, if the plan leaves it there.
@@ -24,6 +26,16 @@ pub struct ModRaisePrepared<BE: Backend> {
 pub trait CKKSModRaiseInfos<BE: Backend> {
     fn mod_raise_plan(&self) -> &ModRaisePlan;
     fn first_factor(&self) -> Option<&LinearTransformation<CKKSRightOperandPrepared<BE>>>;
+}
+
+impl<BE: Backend> CKKSModRaiseInfos<BE> for ModRaisePlan {
+    fn mod_raise_plan(&self) -> &ModRaisePlan {
+        self
+    }
+
+    fn first_factor(&self) -> Option<&LinearTransformation<CKKSRightOperandPrepared<BE>>> {
+        None
+    }
 }
 
 impl<BE: Backend> CKKSModRaiseInfos<BE> for ModRaisePrepared<BE> {

@@ -26,12 +26,13 @@ use crate::{
         ScratchArenaTakeCKKSCiphertext,
         bootstrapping::bootstrap_layouts,
         validation::{
-            check_conversion_key_widths, check_eval_mod_on_ci, check_offset_raise, ensure_ci_module, ensure_encapsulation,
-            ensure_eval_round_interval, ensure_lut_batch, ensure_mod_up_widens, ensure_one_degree, ensure_rank_one,
-            eval_mod_standard, offset_key_window, required_conversion_keys, required_tensor_key,
+            check_conversion_key_widths, check_eval_mod_on_ci, check_first_factor_raise, check_offset_raise, ensure_ci_module,
+            ensure_encapsulation, ensure_eval_round_interval, ensure_lut_batch, ensure_mod_up_widens, ensure_one_base2k,
+            ensure_one_degree, ensure_rank_one, eval_mod_standard, offset_key_window, required_conversion_keys,
+            required_tensor_key,
         },
     },
-    oep::{CKKSBootstrappingImpl, CKKSEncapsulatedModUpImpl, CKKSModUpFirstFactorImpl, derived::dft::ckks_split_real_imag},
+    oep::{CKKSEncapsulatedModUpImpl, CKKSModUpFirstFactorImpl, derived::dft::ckks_split_real_imag},
 };
 use poulpy_core::{
     GLWEBytesOf, GLWELinearTransformationBabyStepsBytesOf, GLWENormalize, ScratchArenaTakeGLWE,
@@ -117,7 +118,7 @@ fn raise_tmp_bytes<BE, P>(
     keys_layout: &BootstrappingKeysLayout,
 ) -> usize
 where
-    BE: Backend + CKKSBootstrappingImpl + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl,
+    BE: Backend + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl,
     Module<BE>: GLWEShift<BE> + CKKSPow2Ops<BE>,
     P: CKKSModRaiseInfos<BE>,
 {
@@ -304,9 +305,7 @@ pub trait CKKSBootstrappingReference<BE: CKKSCITwin> {
         GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos;
 }
 
-impl<BE: Backend + CKKSBootstrappingImpl + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl> CKKSBootstrappingReference<BE>
-    for Module<BE>
-{
+impl<BE: CKKSCITwin + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl> CKKSBootstrappingReference<BE> for Module<BE> {
     fn ckks_eval_lut_tmp_bytes_reference<R, A, P, F>(
         &self,
         res: &R,
@@ -398,7 +397,23 @@ impl<BE: Backend + CKKSBootstrappingImpl + CKKSEncapsulatedModUpImpl + CKKSModUp
         const OP: &str = "ckks_mod_raise";
         let raise = plan.mod_raise_plan();
         ensure_rank_one(OP, a, res)?;
+        ensure_one_degree(OP, self.n(), a, res)?;
+        ensure_one_base2k(OP, a, res)?;
         ensure_encapsulation(OP, keys, raise.sparse_secret_hamming_weight)?;
+        ckks_ensure_operand!(
+            OP,
+            !raise.first_factor_on_raise || plan.first_factor().is_some(),
+            "the plan moves the first CoeffsToSlots factor onto the raise, and no prepared factor comes with it"
+        );
+        // C2S-first derives both lifts from EvalMod, and the first one writes `a`: the checks run on what it will leave.
+        let (lift_bits, scale_up) = match &raise.lift {
+            Some(lift) => {
+                let lift_bits = lift.input_scale_up(a.k().as_usize(), a.log_delta())?;
+                (lift_bits, lift.raised_scale_up(a.log_delta() + lift_bits)?)
+            }
+            None => (0, raise.c2s_guard_bits),
+        };
+        check_raise_widths(res, a, scale_up, plan.first_factor(), keys)?;
         if let Some(keys_layout) = keys.keys_layout() {
             let bytes = self.ckks_mod_raise_tmp_bytes_reference(res, a, plan, &keys_layout);
             ckks_ensure!(
@@ -409,16 +424,7 @@ impl<BE: Backend + CKKSBootstrappingImpl + CKKSEncapsulatedModUpImpl + CKKSModUp
         }
         let (slots, log_sparsity) = (a.slots(), a.log_sparsity());
         let log_modulus_in = a.k().as_usize();
-        mod_raise_body(
-            self,
-            res,
-            a,
-            raise.lift.as_ref(),
-            raise.c2s_guard_bits,
-            plan.first_factor(),
-            keys,
-            scratch,
-        )?;
+        mod_raise_body(self, res, a, lift_bits, scale_up, plan.first_factor(), keys, scratch)?;
         let scale = match &raise.lift {
             Some(lift) => res.log_delta() + lift.log_msg_ratio,
             None => log_modulus_in + raise.c2s_guard_bits,
@@ -698,6 +704,51 @@ where
     Ok(())
 }
 
+/// What [`CKKSBootstrappingReference::ckks_mod_raise_reference`] refuses on widths: `src`, lifted by `scale_up` fused
+/// into ModUp, into `dst`, under the encapsulation keys and the first-factor keys of `keys`.
+fn check_raise_widths<BE, Dst, Src, K>(
+    dst: &Dst,
+    src: &Src,
+    scale_up: usize,
+    first_factor: Option<&LinearTransformation<CKKSRightOperandPrepared<BE>>>,
+    keys: &K,
+) -> Result<()>
+where
+    BE: Backend,
+    K: BootstrappingLinearKeys<BE>,
+    Dst: CKKSCtBounds,
+    Src: CKKSCtBounds,
+{
+    const OP: &str = "ckks_mod_raise";
+    let (k_large, k_small) = (dst.k().as_usize(), src.k().as_usize());
+    if let Some(factor) = first_factor {
+        ensure_mod_up_widens(OP, k_large, k_small, scale_up)?;
+        check_first_factor_raise(
+            OP,
+            dst.base2k().as_usize(),
+            dst.n().as_usize().ilog2() as usize,
+            k_large,
+            k_small + scale_up,
+            factor,
+            keys,
+        )?;
+        return Ok(());
+    }
+    match keys.encapsulation_keys() {
+        Some((dense_to_sparse, Some(sparse_to_dense))) => {
+            check_encapsulated_raise(dst, src, scale_up, dense_to_sparse, sparse_to_dense)
+        }
+        Some((_, None)) => Err(CKKSCompositionError::InvalidOperand {
+            op: OP,
+            reason:
+                "the encapsulated ModUp needs a sparse-to-dense key, which a key set for the first factor on the raise has not"
+                    .into(),
+        }
+        .into()),
+        None => ensure_mod_up_widens(OP, k_large, k_small, scale_up),
+    }
+}
+
 #[expect(
     clippy::too_many_arguments,
     reason = "the raise takes its lift, its scale and the first factor as separate operands"
@@ -706,34 +757,27 @@ fn mod_raise_body<BE, Dst, Src, K>(
     module: &Module<BE>,
     dst: &mut Dst,
     src: &mut Src,
-    lift: Option<&EvalModPlan>,
-    mut scale_up: usize,
+    lift_bits: usize,
+    scale_up: usize,
     first_factor: Option<&LinearTransformation<CKKSRightOperandPrepared<BE>>>,
     keys: &K,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    BE: Backend + CKKSBootstrappingImpl + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl,
+    BE: Backend + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl,
     Module<BE>: GLWECopy<BE> + GLWEShift<BE> + GLWEKeyswitch<BE> + CKKSPow2Ops<BE>,
     K: BootstrappingLinearKeys<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
 {
-    // C2S-first derives both lifts from EvalMod; S2C-first supplies only
-    // the internal guard bits, fused into ModUp's shift.
-    if let Some(plan) = lift {
-        let k: usize = src.k().as_usize();
+    if lift_bits != 0 {
         let log_delta: usize = src.log_delta();
-        let scale_up_in = plan.input_scale_up(k, log_delta)?;
-        if scale_up_in != 0 {
-            module.ckks_mul_pow2_assign(scale_up_in, src, scratch)?;
-            // Not `set_log_delta`: it preserves `log_budget` and grows `k`, which
-            // cancels the shift. The lift spends budget at a fixed modulus.
-            let mut meta = src.meta();
-            meta.scale = Scale::Log(log_delta + scale_up_in);
-            src.set_meta(meta);
-        }
-        scale_up = plan.raised_scale_up(src.log_delta())?;
+        module.ckks_mul_pow2_assign(lift_bits, src, scratch)?;
+        // Not `set_log_delta`: it preserves `log_budget` and grows `k`, which
+        // cancels the shift. The lift spends budget at a fixed modulus.
+        let mut meta = src.meta();
+        meta.scale = Scale::Log(log_delta + lift_bits);
+        src.set_meta(meta);
     }
 
     // A first CoeffsToSlots factor left to the raise is applied here, on the
@@ -743,26 +787,17 @@ where
     }
 
     match keys.encapsulation_keys() {
-        Some((dense_to_sparse, sparse_to_dense)) => {
-            ckks_ensure_operand!(
-                "ckks_mod_raise",
-                sparse_to_dense.is_some(),
-                "the encapsulated ModUp needs a sparse-to-dense key, which a key set for the first factor on the raise has not"
-            );
-            let sparse_to_dense = sparse_to_dense.unwrap();
-            BE::ckks_encapsulated_mod_up(
-                module,
-                dst,
-                src,
-                scale_up,
-                &dense_to_sparse.to_backend_ref(),
-                &sparse_to_dense.to_backend_ref(),
-                scratch,
-            )?;
-        }
-        None => ckks_mod_up_scaled_reference("ckks_mod_raise", module, dst, src, scale_up, scratch)?,
+        Some((dense_to_sparse, Some(sparse_to_dense))) => BE::ckks_encapsulated_mod_up(
+            module,
+            dst,
+            src,
+            scale_up,
+            &dense_to_sparse.to_backend_ref(),
+            &sparse_to_dense.to_backend_ref(),
+            scratch,
+        ),
+        _ => ckks_mod_up_scaled_reference("ckks_mod_raise", module, dst, src, scale_up, scratch),
     }
-    Ok(())
 }
 
 fn recombine_halves<BE, R1, R2>(
@@ -1165,14 +1200,8 @@ where
     Src: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
 {
     const OP: &str = "ckks_mod_raise";
-    ensure_encapsulation_covers(dst, src, dense_to_sparse, sparse_to_dense)?;
     // The switch keeps the width of `src`: the raise's checks run before it.
-    let (k_large, k_small) = (dst.k().as_usize(), src.k().as_usize());
-    if sparse_to_dense.k_offset().as_usize() > 0 {
-        check_offset_raise(OP, k_large, k_small, scale_up, sparse_to_dense)?;
-    } else {
-        ensure_mod_up_widens(OP, k_large, k_small, scale_up)?;
-    }
+    check_encapsulated_raise(dst, src, scale_up, dense_to_sparse, sparse_to_dense)?;
     module.glwe_keyswitch_assign(src, &dense_to_sparse.to_backend_ref(), scratch);
     if sparse_to_dense.k_offset().as_usize() > 0 {
         return ckks_mod_up_offset_reference(module, dst, src, scale_up, sparse_to_dense, scratch);
@@ -1234,23 +1263,29 @@ where
 }
 
 /// Refuses encapsulation keys too narrow for their inputs before any write: `src`
-/// for the dense-to-sparse switch, `dst` for an offset-free sparse-to-dense one. A
-/// sparse-to-dense key with a row offset is checked against its raise, by
-/// [`check_offset_raise`].
-fn ensure_encapsulation_covers<Dst: CKKSCtBounds, Src: CKKSCtBounds, D2S: GGLWEInfos, S2D: GGLWEInfos>(
+/// for the dense-to-sparse switch, `dst` for an offset-free sparse-to-dense one, and
+/// the raise of `src` by `scale_up` into `dst`, a sparse-to-dense key with a row
+/// offset being checked against that raise, by [`check_offset_raise`].
+fn check_encapsulated_raise<Dst: CKKSCtBounds, Src: CKKSCtBounds, D2S: GGLWEInfos, S2D: GGLWEInfos>(
     dst: &Dst,
     src: &Src,
+    scale_up: usize,
     dense_to_sparse: &D2S,
     sparse_to_dense: &S2D,
 ) -> Result<()> {
-    let sparse_to_dense_covers =
-        sparse_to_dense.k_offset().as_usize() > 0 || dst.k() <= sparse_to_dense.gglwe_layout().max_input_k();
-    if src.k() > dense_to_sparse.gglwe_layout().max_input_k() || !sparse_to_dense_covers {
-        return Err(CKKSCompositionError::InvalidOperand {
-            op: "ckks_mod_raise",
-            reason: "the input is wider than an encapsulation key's max_input_k".into(),
-        }
-        .into());
+    const OP: &str = "ckks_mod_raise";
+    let offset = sparse_to_dense.k_offset().as_usize() > 0;
+    ckks_ensure_operand!(
+        OP,
+        src.k() <= dense_to_sparse.gglwe_layout().max_input_k()
+            && (offset || dst.k() <= sparse_to_dense.gglwe_layout().max_input_k()),
+        "the input is wider than an encapsulation key's max_input_k"
+    );
+    let (k_large, k_small) = (dst.k().as_usize(), src.k().as_usize());
+    if offset {
+        check_offset_raise(OP, k_large, k_small, scale_up, sparse_to_dense)?;
+    } else {
+        ensure_mod_up_widens(OP, k_large, k_small, scale_up)?;
     }
     Ok(())
 }
