@@ -1265,25 +1265,25 @@ where
     output.set_k(preset.bootstrap_k().into());
     let boot = preset.bootstrap_layout();
     let run = context.run(preset.input_layout().meta());
-    let mut wide = fixture_ciphertext(&module, &boot, 13);
+    let wide = fixture_ciphertext(&module, &boot, 13);
     assert_eval_mod_refuses(
         &mut output,
-        &mut wide,
+        &wide,
         "a CI module goes with a plan of EvalMod on the CI ring, and only with one",
         |res, a, s| module.ckks_bootstrap_eval_mod(res, a, &run, None, &keys, s),
     );
     let degrees = "takes a module of degree at least 2N and a CI module of degree N";
     let module_n = Module::<BE>::new(n);
-    assert_eval_mod_refuses(&mut output, &mut wide, degrees, |res, a, s| {
+    assert_eval_mod_refuses(&mut output, &wide, degrees, |res, a, s| {
         module_n.ckks_bootstrap_eval_mod(res, a, &run, Some(&ci), &keys, s)
     });
     let ci_half = Module::<CIBackend<BE>>::new(n / 2);
-    assert_eval_mod_refuses(&mut output, &mut wide, degrees, |res, a, s| {
+    assert_eval_mod_refuses(&mut output, &wide, degrees, |res, a, s| {
         module.ckks_bootstrap_eval_mod(res, a, &run, Some(&ci_half), &keys, s)
     });
     let mut half = boot;
     half.glwe_layout.n = (n as usize / 2).into();
-    let (mut a_half, mut res_half) = (fixture_ciphertext(&module, &half, 17), fixture_ciphertext(&module, &half, 19));
+    let (a_half, mut res_half) = (fixture_ciphertext(&module, &half, 17), fixture_ciphertext(&module, &half, 19));
     let key_degree = {
         let (trace, _) = keys.conversion_keys.as_ref().unwrap();
         let view = poulpy_core::layouts::prepared::GGLWEPreparedToBackendRef::to_backend_ref(trace);
@@ -1298,12 +1298,12 @@ where
         .unwrap_err()
         .to_string()
     };
-    assert_eval_mod_refuses(&mut res_half, &mut a_half, &key_degree, |res, a, s| {
+    assert_eval_mod_refuses(&mut res_half, &a_half, &key_degree, |res, a, s| {
         module.ckks_bootstrap_eval_mod(res, a, &run, Some(&ci_half), &keys, s)
     });
     assert_eval_mod_refuses(
         &mut output,
-        &mut wide,
+        &wide,
         "the keys hold no tensor key of the plan's ring",
         |res, a, s| module.ckks_bootstrap_eval_mod(res, a, &run, Some(&ci), &no_tensor_key, s),
     );
@@ -1311,17 +1311,14 @@ where
     no_conversion_keys.conversion_keys = None;
     assert_eval_mod_refuses(
         &mut output,
-        &mut wide,
+        &wide,
         "the keys hold no conversion keys of the plan's ring",
         |res, a, s| module.ckks_bootstrap_eval_mod(res, a, &run, Some(&ci), &no_conversion_keys, s),
     );
     output.set_k((preset.bootstrap_k() - 1).into());
-    assert_eval_mod_refuses(
-        &mut output,
-        &mut wide,
-        "takes an input no wider than its output",
-        |res, a, s| module.ckks_bootstrap_eval_mod(res, a, &run, Some(&ci), &keys, s),
-    );
+    assert_eval_mod_refuses(&mut output, &wide, "takes an input no wider than its output", |res, a, s| {
+        module.ckks_bootstrap_eval_mod(res, a, &run, Some(&ci), &keys, s)
+    });
 
     // The step on one arena of its query, in a composition that stamps nothing, gives the whole bootstrap, and refuses
     // conversion keys narrower than the widths it reaches.
@@ -1367,7 +1364,7 @@ where
         );
         assert_eq!(snapshot::<BE, _>(&stepped), before, "a refused bootstrap wrote res");
         let err = with_scratch::<BE, _>(bytes, |s| {
-            module.ckks_bootstrap_eval_mod(&mut stepped, &mut raised, &run, Some(&ci), narrow, s)
+            module.ckks_bootstrap_eval_mod(&mut stepped, &raised, &run, Some(&ci), narrow, s)
         })
         .unwrap_err();
         assert!(
@@ -1382,7 +1379,7 @@ where
     }
     let bytes = module.ckks_bootstrap_eval_mod_tmp_bytes(&stepped, &raised, &run, Some(&ci), preset.keys_layout());
     with_scratch::<BE, _>(bytes, |s| {
-        module.ckks_bootstrap_eval_mod(&mut stepped, &mut raised, &run, Some(&ci), &keys, s)
+        module.ckks_bootstrap_eval_mod(&mut stepped, &raised, &run, Some(&ci), &keys, s)
     })
     .unwrap();
     assert_eq!(snapshot::<BE, _>(&stepped), snapshot::<BE, _>(&whole));

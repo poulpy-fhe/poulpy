@@ -102,7 +102,7 @@ where
 }
 
 /// `re = z + conj(z)` and `im = (z - conj(z)) / i`, from `z` in `re`.
-pub(crate) fn ckks_split_real_imag<BE, Re, Im, H>(
+fn ckks_split_real_imag<BE, Re, Im, H>(
     module: &Module<BE>,
     re: &mut Re,
     im: &mut Im,

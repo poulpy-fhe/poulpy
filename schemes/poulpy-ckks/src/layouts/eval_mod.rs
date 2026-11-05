@@ -43,11 +43,11 @@
 
 use crate::numerics::CKKSFloat;
 use anyhow::{Result, anyhow, ensure};
-use poulpy_core::layouts::{Base2K, bsgs_consumed_bits, bsgs_eval_depth, bsgs_op_counts};
+use poulpy_core::layouts::{Base2K, GLWELayout, Rank, bsgs_consumed_bits, bsgs_eval_depth, bsgs_op_counts};
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
-    CKKSResult, CoeffsMeta, GLWEPlaintextMeta, SetCKKSInfos, SlotsKind,
+    CKKSCtBounds, CKKSResult, CoeffsMeta, GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotsKind,
     api::{Basis, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar, Parity},
     ckks_log_delta, cosine,
     polynomial::{BSGSPolynomial, ComplexBSGSPolynomial, ComplexPolynomial, Polynomial, SplitStrategy},
@@ -303,6 +303,22 @@ impl EvalModPlan {
             "CosHKEven cannot beat CosHK's BSGS cost at this plan: adjust f_mod_degree, or use CosHK"
         );
         Ok(())
+    }
+
+    /// Layout and label EvalMod works at on an input like `ct`: its budget, at the plan's scale.
+    pub(crate) fn work_layout<C: CKKSCtBounds>(&self, ct: &C) -> (GLWELayout, GLWEPlaintextMeta) {
+        let layout = GLWELayout {
+            n: ct.n(),
+            base2k: ct.base2k(),
+            k: (ct.log_budget() + self.f_mod_log_delta).into(),
+            rank: Rank(1),
+        };
+        let meta = GLWEPlaintextMeta {
+            scale: Scale::Log(self.f_mod_log_delta),
+            slots: ct.slots(),
+            log_sparsity: ct.log_sparsity(),
+        };
+        (layout, meta)
     }
 
     /// Widest ciphertext this EvalMod relinearizes, in bits, on an input of `log_budget` bits of budget: it relabels

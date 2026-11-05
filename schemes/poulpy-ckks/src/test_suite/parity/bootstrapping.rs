@@ -635,8 +635,8 @@ where
         module.ckks_coeffs_to_slots_assign(&mut raised, &run, keys, s)?;
         steps.push(snapshot::<BE, _>(&raised));
         match luts {
-            Some(luts) => BE::ckks_eval_lut(module, std::slice::from_mut(&mut stepped), &mut raised, &run, luts, keys, s)?,
-            None => BE::ckks_bootstrap_eval_mod(module, &mut stepped, &mut raised, &run, None, keys, s)?,
+            Some(luts) => BE::ckks_eval_lut(module, std::slice::from_mut(&mut stepped), &raised, &run, luts, keys, s)?,
+            None => BE::ckks_bootstrap_eval_mod(module, &mut stepped, &raised, &run, None, keys, s)?,
         }
         steps.push(snapshot::<BE, _>(&stepped));
         Ok::<_, crate::CKKSError>(())

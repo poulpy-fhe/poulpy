@@ -18,18 +18,10 @@ use crate::{
 /// [`ckks_bootstrap`](Self::ckks_bootstrap) and [`ckks_functional_bootstrap`](Self::ckks_functional_bootstrap) compose
 /// them.
 ///
-/// # Clobbered inputs
-///
-/// The steps use `a` as working storage. A composition does not read it again, so writing it saves a ciphertext of
-/// scratch and a copy. On a successful return the content and metadata of `a` are unspecified on every route, even one
-/// that only reads it: the plan's types say what the reference writes, a backend may write more, and a caller that
-/// needs `a` again passes a copy. `a` is borrowed and not moved, so a refusal leaves it unchanged for a retry, and the
-/// caller keeps its buffer for the next call.
-///
 /// # Refusals
 ///
-/// A step refuses before it writes, leaving `res` and `a` unchanged, and a bootstrap before any work, a step refusing
-/// on its working ciphertexts leaving the output unchanged as well:
+/// A step refuses before it writes `res`, and [`ckks_mod_raise`](Self::ckks_mod_raise) before it writes `a`. A bootstrap
+/// refuses before any work, a step refusing on its working ciphertexts leaving the output unchanged as well:
 ///
 /// - [`InvalidOperand`](crate::CKKSCompositionError::InvalidOperand): a context, module, operand, key or LUT that does
 ///   not match the plan or each other, or a width too narrow for a stage.
@@ -81,8 +73,11 @@ pub trait CKKSBootstrappingOps<BE: CKKSCITwin> {
     ///
     /// `plan` is a compiled context, a [`run`](BootstrappingContextPrepared::run) of it, its
     /// [`mod_raise`](BootstrappingContextPrepared::mod_raise), or, on a plan that leaves no CoeffsToSlots factor to the
-    /// raise, the [`ModRaisePlan`](crate::layouts::ModRaisePlan) itself. `a` is
-    /// [clobbered](CKKSBootstrappingOps#clobbered-inputs).
+    /// raise, the [`ModRaisePlan`](crate::layouts::ModRaisePlan) itself.
+    ///
+    /// `a` is clobbered: the plan's lift and switch run on it in place, and its content and metadata are unspecified on a
+    /// successful return. It is borrowed and not moved, so a refusal leaves it unchanged for a retry and the caller keeps
+    /// its buffer.
     ///
     /// # Errors
     ///
@@ -125,8 +120,7 @@ pub trait CKKSBootstrappingOps<BE: CKKSCITwin> {
     ///
     /// `plan` is a [`BootstrappingRun`](crate::layouts::BootstrappingRun) or a plain
     /// [`EvalMod`](crate::layouts::EvalMod). `ci` is the module of
-    /// [`EvalModRing::ConjugateInvariant`](crate::layouts::EvalModRing::ConjugateInvariant), `None` otherwise. `a` is
-    /// [clobbered](CKKSBootstrappingOps#clobbered-inputs).
+    /// [`EvalModRing::ConjugateInvariant`](crate::layouts::EvalModRing::ConjugateInvariant), `None` otherwise.
     ///
     /// # Errors
     ///
@@ -138,7 +132,7 @@ pub trait CKKSBootstrappingOps<BE: CKKSCITwin> {
     fn ckks_bootstrap_eval_mod<R, A, P, F, K>(
         &self,
         res: &mut R,
-        a: &mut A,
+        a: &A,
         plan: &P,
         ci: Option<&Module<BE::CI>>,
         keys: &K,
@@ -147,7 +141,7 @@ pub trait CKKSBootstrappingOps<BE: CKKSCITwin> {
     where
         F: Sync,
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + Send,
-        A: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: CKKSEvalModInfos<BE, F>,
         K: BootstrappingKeys<BE> + Sync,
         K::TensorKey: Sync;
@@ -171,7 +165,7 @@ pub trait CKKSBootstrappingOps<BE: CKKSCITwin> {
     /// according to the bootstrapping plan: see [its LUT section](crate::layouts::BootstrappingPlan#luts).
     ///
     /// `plan` is a [`BootstrappingRun`](crate::layouts::BootstrappingRun) or a plain
-    /// [`EvalMod`](crate::layouts::EvalMod). `a` is [clobbered](CKKSBootstrappingOps#clobbered-inputs).
+    /// [`EvalMod`](crate::layouts::EvalMod).
     ///
     /// # Errors
     ///
@@ -184,7 +178,7 @@ pub trait CKKSBootstrappingOps<BE: CKKSCITwin> {
     fn ckks_eval_lut<R, A, P, F, K>(
         &self,
         res: &mut [R],
-        a: &mut A,
+        a: &A,
         plan: &P,
         luts: &[EncodedLut<CKKSPlaintextOwned<BE>>],
         keys: &K,
@@ -192,7 +186,7 @@ pub trait CKKSBootstrappingOps<BE: CKKSCITwin> {
     ) -> Result<()>
     where
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
-        A: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: CKKSEvalModInfos<BE, F>,
         K: BootstrappingKeys<BE>;
 

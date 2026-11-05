@@ -212,13 +212,13 @@ where
 {
     let Some(bypass) = run.bypass() else {
         module.ckks_coeffs_to_slots_assign(z, run, keys, scratch)?;
-        return module.ckks_bootstrap_eval_mod(res, z, run, ci, keys, scratch);
+        return module.ckks_bootstrap_eval_mod(res, &*z, run, ci, keys, scratch);
     };
     let (mut z_hp, mut scratch) = scratch.borrow().take_ckks_ciphertext_scratch(&*z, z.meta());
     module.ckks_copy(&mut z_hp, &*z, &mut scratch)?;
     module.ckks_coeffs_to_slots_assign(&mut z_hp, &bypass, keys, &mut scratch)?;
     module.ckks_coeffs_to_slots_assign(z, run, keys, &mut scratch)?;
-    module.ckks_bootstrap_eval_mod(res, z, run, ci, keys, &mut scratch)?;
+    module.ckks_bootstrap_eval_mod(res, &*z, run, ci, keys, &mut scratch)?;
     // `2·z_hp`, the bypass on the packed halves, which the split doubles as `2·Re` and `2·Im`.
     module.ckks_mul_pow2_assign(1, &mut z_hp, &mut scratch)?;
     module.ckks_add_assign(&mut z_hp, &*res, &mut scratch)?;
@@ -249,6 +249,6 @@ where
         let (mut z, mut scratch) = scratch.take_ckks_ciphertext_scratch(&boot_layout, a.meta());
         slots_to_coeffs_and_raise(module, &mut z, a, &run, keys, &mut scratch)?;
         module.ckks_coeffs_to_slots_assign(&mut z, &run, keys, &mut scratch)?;
-        module.ckks_eval_lut(res, &mut z, &run, luts, keys, &mut scratch)
+        module.ckks_eval_lut(res, &z, &run, luts, keys, &mut scratch)
     })
 }

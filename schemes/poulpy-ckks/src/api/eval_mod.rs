@@ -5,7 +5,10 @@ use poulpy_hal::layouts::{Backend, ScratchArena};
 
 use poulpy_core::layouts::{BSGSMeta, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, SetBSGSMeta};
 
-use crate::{CKKSCtBounds, SetCKKSInfos, layouts::eval_mod::EvalMod};
+use crate::{
+    CKKSCtBounds, SetCKKSInfos,
+    layouts::{CKKSCiphertextOwned, eval_mod::EvalMod},
+};
 
 /// Homomorphic modular reduction (`x mod 1`) via a periodic-function polynomial
 /// approximation, the core non-linear step of CKKS bootstrapping.
@@ -43,6 +46,27 @@ pub trait CKKSEvalModOps<BE: Backend> {
     where
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         C: GLWEToBackendRef<BE> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + BSGSMeta,
+        H: GetTensorKey<BE>;
+
+    /// [`Self::ckks_eval_mod`] on an owned `input`, which becomes the first power of the evaluation in place of a copy.
+    /// Its allocation holds the `log_budget + f_mod_log_delta` bits EvalMod works at. Sized by
+    /// [`Self::ckks_eval_mod_tmp_bytes`].
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::ckks_eval_mod`], and [`InvalidOperand`](crate::CKKSCompositionError::InvalidOperand) for an allocation
+    /// narrower than that width, each before any write to `res`.
+    fn ckks_eval_mod_owned<R, P, F, H>(
+        &self,
+        res: &mut R,
+        input: CKKSCiphertextOwned<BE>,
+        params: &EvalMod<F, P>,
+        tsk: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + BSGSMeta,
         H: GetTensorKey<BE>;
 }

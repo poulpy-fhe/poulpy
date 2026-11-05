@@ -4,7 +4,10 @@ use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{BSGSMeta, GLWEToBackendMut, GLWEToBackendRef, SetBSGSMeta};
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
-use crate::{CKKSCtBounds, SetCKKSInfos, layouts::eval_mod::EvalMod};
+use crate::{
+    CKKSCtBounds, SetCKKSInfos,
+    layouts::{CKKSCiphertextOwned, eval_mod::EvalMod},
+};
 
 /// Backend override hook for [`CKKSEvalModOps`](crate::api::CKKSEvalModOps).
 ///
@@ -40,6 +43,22 @@ pub unsafe trait CKKSEvalModImpl: Backend {
     where
         R: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         C: GLWEToBackendRef<Self> + CKKSCtBounds,
+        P: GLWEToBackendRef<Self> + IntPolyInfos + CKKSCtBounds + BSGSMeta,
+        H: GetTensorKey<Self>;
+
+    /// Reproduces
+    /// [`ckks_eval_mod_owned_reference`](crate::reference::eval_mod::CKKSEvalModReference::ckks_eval_mod_owned_reference)
+    /// bit for bit, within [`Self::ckks_eval_mod_tmp_bytes`]; free in kernels and scratch use.
+    fn ckks_eval_mod_owned<R, P, F, H>(
+        module: &Module<Self>,
+        res: &mut R,
+        input: CKKSCiphertextOwned<Self>,
+        params: &EvalMod<F, P>,
+        tsk: &H,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) -> Result<()>
+    where
+        R: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         P: GLWEToBackendRef<Self> + IntPolyInfos + CKKSCtBounds + BSGSMeta,
         H: GetTensorKey<Self>;
 }
@@ -86,6 +105,31 @@ macro_rules! impl_ckks_eval_mod_reference_full {
                 H: ::poulpy_core::layouts::GetTensorKey<Self>,
             {
                 $crate::reference::eval_mod::CKKSEvalModReference::ckks_eval_mod_reference(module, res, ct, params, tsk, scratch)
+            }
+
+            fn ckks_eval_mod_owned<R, P, F, H>(
+                module: &::poulpy_hal::layouts::Module<Self>,
+                res: &mut R,
+                input: $crate::layouts::CKKSCiphertextOwned<Self>,
+                params: &$crate::layouts::eval_mod::EvalMod<F, P>,
+                tsk: &H,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
+            ) -> $crate::CKKSResult<()>
+            where
+                R: ::poulpy_core::layouts::GLWEToBackendMut<Self>
+                    + ::poulpy_core::layouts::GLWEToBackendRef<Self>
+                    + $crate::CKKSCtBounds
+                    + $crate::SetCKKSInfos
+                    + ::poulpy_core::layouts::SetBSGSMeta,
+                P: ::poulpy_core::layouts::GLWEToBackendRef<Self>
+                    + ::poulpy_core::layouts::IntPolyInfos
+                    + $crate::CKKSCtBounds
+                    + ::poulpy_core::layouts::BSGSMeta,
+                H: ::poulpy_core::layouts::GetTensorKey<Self>,
+            {
+                $crate::reference::eval_mod::CKKSEvalModReference::ckks_eval_mod_owned_reference(
+                    module, res, input, params, tsk, scratch,
+                )
             }
         }
     };

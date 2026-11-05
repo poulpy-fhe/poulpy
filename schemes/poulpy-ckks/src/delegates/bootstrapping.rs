@@ -88,7 +88,7 @@ impl<BE: Backend + CKKSBootstrappingImpl> CKKSBootstrappingOps<BE> for Module<BE
     fn ckks_bootstrap_eval_mod<R, A, P, F, K>(
         &self,
         res: &mut R,
-        a: &mut A,
+        a: &A,
         plan: &P,
         ci: Option<&Module<BE::CI>>,
         keys: &K,
@@ -97,7 +97,7 @@ impl<BE: Backend + CKKSBootstrappingImpl> CKKSBootstrappingOps<BE> for Module<BE
     where
         F: Sync,
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + Send,
-        A: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: CKKSEvalModInfos<BE, F>,
         K: BootstrappingKeys<BE> + Sync,
         K::TensorKey: Sync,
@@ -124,7 +124,7 @@ impl<BE: Backend + CKKSBootstrappingImpl> CKKSBootstrappingOps<BE> for Module<BE
     fn ckks_eval_lut<R, A, P, F, K>(
         &self,
         res: &mut [R],
-        a: &mut A,
+        a: &A,
         plan: &P,
         luts: &[EncodedLut<CKKSPlaintextOwned<BE>>],
         keys: &K,
@@ -132,7 +132,7 @@ impl<BE: Backend + CKKSBootstrappingImpl> CKKSBootstrappingOps<BE> for Module<BE
     ) -> Result<()>
     where
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
-        A: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: CKKSEvalModInfos<BE, F>,
         K: BootstrappingKeys<BE>,
     {

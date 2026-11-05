@@ -8,7 +8,7 @@ use poulpy_hal::layouts::{Backend, Module, PrepareHint};
 use crate::SlotsKind;
 use crate::{
     CKKSCtBounds, CKKSInfos,
-    api::{CKKSAddOps, CKKSCopyOps, CKKSMulOps, CKKSSubOps, PolynomialInputTransform},
+    api::{CKKSAddOps, CKKSCopyOps, CKKSMulOps, CKKSSubOps},
     layouts::eval_mod::{EvalMod, EvalModBsgs},
 };
 
@@ -110,17 +110,8 @@ where
         module.ckks_square_tmp_bytes(res, res, tsk)
             + BE::vec_znx_bytes_of(res.n().into(), (res.rank() + 1).into(), res.max_size()),
     );
-    // Identity base polynomials transfer an owned, relabelled input directly
-    // into the power basis. Scratch only needs a full working ciphertext for
-    // a transformed base or for the optional inverse composition.
-    let needs_work_copy = params.f_mod_inv_bsgs.is_some()
-        || match &params.f_mod_bsgs {
-            EvalModBsgs::Real(poly) => poly.input_transform() != PolynomialInputTransform::Identity,
-            EvalModBsgs::Complex(poly) => {
-                poly.re.input_transform() != PolynomialInputTransform::Identity
-                    || poly.im.input_transform() != PolynomialInputTransform::Identity
-            }
-        };
+    // The input is an owned ciphertext: scratch only holds a full working one for the optional inverse composition.
+    let needs_work_copy = params.f_mod_inv_bsgs.is_some();
     // Working set of the fused baby-step linear combination.
     let pt_size_max = {
         let poly_max =

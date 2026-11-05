@@ -1,7 +1,8 @@
 use crate::Scale;
-use crate::api::CKKSEncodingOps;
+use crate::api::{CKKSCopyOps, CKKSEncodingOps};
 use poulpy_core::layouts::{
-    GGLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, prepared::GLWETensorKeyPreparedToBackendRef,
+    GGLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, SetK,
+    prepared::GLWETensorKeyPreparedToBackendRef,
 };
 use poulpy_hal::{
     api::{ReimNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
@@ -253,6 +254,56 @@ fn run_eval_mod_case<BE, F, E>(
         );
     }
     with_scratch::<BE, _>(eval_bytes, |s| module.ckks_eval_mod(&mut res, &ct_input, &params_be, &tsk, s)).expect("ckks_eval_mod");
+
+    // The owned form equals the copying one, at a working width above and below the input's, and refuses an allocation
+    // narrower than that width.
+    let plan_scale = params_be.plan.f_mod_log_delta;
+    let scales = [plan_scale.saturating_sub(1).max(1), plan_scale + 1];
+    for scale in scales {
+        let mut input = ct_input.clone();
+        input.set_meta(GLWEPlaintextMeta {
+            scale: Scale::Log(scale),
+            ..input.meta()
+        });
+        let width = input.k().as_usize().max(input.log_budget() + plan_scale);
+        let mut owned_input = module.ckks_ciphertext_alloc(test_params.base2k.into(), width.into());
+        owned_input.set_meta(input.meta());
+        owned_input.set_k(input.k());
+        with_scratch::<BE, _>(module.ckks_copy_tmp_bytes(&owned_input, &input), |s| {
+            module.ckks_copy(&mut owned_input, &input, s)
+        })
+        .unwrap();
+        let mut copied = module.ckks_ciphertext_alloc(test_params.base2k.into(), res_k.into());
+        let mut owned = module.ckks_ciphertext_alloc(test_params.base2k.into(), res_k.into());
+        let bytes = module.ckks_eval_mod_tmp_bytes(&copied, &input, &params_be, &tsk);
+        with_scratch::<BE, _>(bytes, |s| module.ckks_eval_mod(&mut copied, &input, &params_be, &tsk, s)).unwrap();
+        with_scratch::<BE, _>(bytes, |s| {
+            module.ckks_eval_mod_owned(&mut owned, owned_input, &params_be, &tsk, s)
+        })
+        .unwrap();
+        assert_eq!(
+            snapshot::<BE, _>(&owned),
+            snapshot::<BE, _>(&copied),
+            "{label}: the owned form at scale {scale}"
+        );
+    }
+    let full = (consumed + plan_scale).next_multiple_of(test_params.base2k) + test_params.base2k;
+    let mut narrow = module.ckks_ciphertext_alloc(test_params.base2k.into(), full.into());
+    narrow.set_meta(GLWEPlaintextMeta {
+        scale: Scale::Log(plan_scale - 1),
+        ..narrow.meta()
+    });
+    let before = snapshot::<BE, _>(&res);
+    let err = with_scratch::<BE, _>(0, |s| module.ckks_eval_mod_owned(&mut res, narrow, &params_be, &tsk, s)).unwrap_err();
+    assert_ckks_error(
+        label,
+        &err,
+        CKKSCompositionError::InvalidOperand {
+            op: "ckks_eval_mod_owned",
+            reason: "takes an input whose allocation holds the working width of EvalMod".into(),
+        },
+    );
+    assert_eq!(snapshot::<BE, _>(&res), before, "{label}: a refused EvalMod wrote res");
 
     // Exact externally visible bit-consumption: EvalMod arithmetic is charged at
     // the plan scale. Returning from that raised scale to the input scale

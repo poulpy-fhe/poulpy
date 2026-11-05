@@ -194,6 +194,31 @@ unsafe impl poulpy_ckks::oep::CKKSEvalModImpl for OverrideBackend {
         Self::copy_host_to_view(&mut region, &[0x5A; OVERRIDE_SCRATCH]);
         Err(anyhow::anyhow!("EvalMod override probe").into())
     }
+    fn ckks_eval_mod_owned<R, P, F, H>(
+        module: &::poulpy_hal::layouts::Module<Self>,
+        res: &mut R,
+        input: poulpy_ckks::layouts::CKKSCiphertextOwned<Self>,
+        params: &poulpy_ckks::layouts::eval_mod::EvalMod<F, P>,
+        tsk: &H,
+        scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
+    ) -> poulpy_ckks::CKKSResult<()>
+    where
+        R: ::poulpy_core::layouts::GLWEToBackendMut<Self>
+            + ::poulpy_core::layouts::GLWEToBackendRef<Self>
+            + poulpy_ckks::CKKSCtBounds
+            + poulpy_ckks::SetCKKSInfos
+            + ::poulpy_core::layouts::SetBSGSMeta,
+        P: ::poulpy_core::layouts::GLWEToBackendRef<Self>
+            + ::poulpy_core::layouts::IntPolyInfos
+            + poulpy_ckks::CKKSCtBounds
+            + ::poulpy_core::layouts::BSGSMeta,
+        H: ::poulpy_core::layouts::GetTensorKey<Self>,
+    {
+        EVAL_MOD_CALLS.with(|calls| calls.set(calls.get() + 1));
+        poulpy_ckks::reference::eval_mod::CKKSEvalModReference::ckks_eval_mod_owned_reference(
+            module, res, input, params, tsk, scratch,
+        )
+    }
 }
 
 struct NoTensorKey;

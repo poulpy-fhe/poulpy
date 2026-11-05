@@ -494,14 +494,14 @@ where
 /// which puts the check before the scratch check, and leaves `res` as it was.
 pub(crate) fn assert_eval_mod_refuses<BE>(
     res: &mut CKKSCiphertextOwned<BE>,
-    a: &mut CKKSCiphertextOwned<BE>,
+    a: &CKKSCiphertextOwned<BE>,
     reason: &str,
-    run: impl FnOnce(&mut CKKSCiphertextOwned<BE>, &mut CKKSCiphertextOwned<BE>, &mut ScratchArena<'_, BE>) -> crate::CKKSResult<()>,
+    run: impl FnOnce(&mut CKKSCiphertextOwned<BE>, &CKKSCiphertextOwned<BE>, &mut ScratchArena<'_, BE>) -> crate::CKKSResult<()>,
 ) where
     BE: Backend<ZnxWord = i64>,
     CKKSCiphertextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
-    let before = (snapshot::<BE, _>(res), snapshot::<BE, _>(a));
+    let before = snapshot::<BE, _>(res);
     let err = with_scratch::<BE, _>(0, |s| run(res, a, s)).unwrap_err();
     assert_ckks_error(
         reason,
@@ -511,24 +511,7 @@ pub(crate) fn assert_eval_mod_refuses<BE>(
             reason: reason.into(),
         },
     );
-    assert_eq!(
-        (snapshot::<BE, _>(res), snapshot::<BE, _>(a)),
-        before,
-        "a refused step wrote an operand"
-    );
-}
-
-/// A copy of `a` for a step that clobbers its input, when `a` is read again.
-pub(crate) fn step_input<BE>(module: &Module<BE>, a: &CKKSCiphertextOwned<BE>) -> CKKSCiphertextOwned<BE>
-where
-    BE: Backend<ZnxWord = i64>,
-    Module<BE>: CKKSCiphertextAlloc<BE> + CKKSCopyOps<BE>,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-{
-    let mut copy = module.ckks_ciphertext_alloc_from_infos(a);
-    let bytes = module.ckks_copy_tmp_bytes(&copy, a);
-    with_scratch::<BE, _>(bytes, |s| module.ckks_copy(&mut copy, a, s)).unwrap();
-    copy
+    assert_eq!(snapshot::<BE, _>(res), before, "a refused step wrote res");
 }
 
 /// `run`, a call of [`CKKSBootstrappingOps::ckks_mod_raise`], refuses for `reason` on a zero-byte arena, which puts the
@@ -617,7 +600,6 @@ where
             let mut raised = module.ckks_ciphertext_alloc_from_glwe_infos(&boot);
             let mut z_hp = module.ckks_ciphertext_alloc_from_glwe_infos(&boot);
             let mut stepped = module.ckks_ciphertext_alloc_from_glwe_infos(&boot);
-            let mut kept = module.ckks_ciphertext_alloc_from_glwe_infos(&boot);
             let s2c_first = context.pipeline() == BootstrappingPipeline::S2CFirst;
             with_scratch::<BE, _>(bytes, |s| {
                 if s2c_first {
@@ -632,8 +614,7 @@ where
                     module.ckks_coeffs_to_slots_assign(&mut z_hp, &bypass, &keys, s)?;
                 }
                 module.ckks_coeffs_to_slots_assign(&mut raised, &run, &keys, s)?;
-                module.ckks_copy(&mut kept, &raised, s)?;
-                module.ckks_bootstrap_eval_mod(&mut stepped, &mut raised, &run, None, &keys, s)?;
+                module.ckks_bootstrap_eval_mod(&mut stepped, &raised, &run, None, &keys, s)?;
                 if run.bypass().is_some() {
                     module.ckks_mul_pow2_assign(1, &mut z_hp, s)?;
                     module.ckks_add_assign(&mut z_hp, &stepped, s)?;
@@ -654,19 +635,17 @@ where
             );
 
             // The step runs on exactly the scratch it advertises, and refuses one alignment unit less.
-            let mut raised = kept;
             let mut exact = module.ckks_ciphertext_alloc_from_glwe_infos(&boot);
             let eval_mod_tmp = module.ckks_bootstrap_eval_mod_tmp_bytes(&exact, &raised, &run, None, keys_layout);
             assert!(eval_mod_tmp > 0);
-            let mut input = step_input(&module, &raised);
             with_scratch::<BE, _>(eval_mod_tmp, |s| {
-                module.ckks_bootstrap_eval_mod(&mut exact, &mut input, &run, None, &keys, s)
+                module.ckks_bootstrap_eval_mod(&mut exact, &raised, &run, None, &keys, s)
             })
             .unwrap();
             let mut short = module.ckks_ciphertext_alloc_from_glwe_infos(&boot);
             let before = snapshot::<BE, _>(&short);
             let err = with_scratch::<BE, _>(eval_mod_tmp - BE::SCRATCH_ALIGN, |s| {
-                module.ckks_bootstrap_eval_mod(&mut short, &mut raised, &run, None, &keys, s)
+                module.ckks_bootstrap_eval_mod(&mut short, &raised, &run, None, &keys, s)
             })
             .unwrap_err();
             assert!(
@@ -678,37 +657,34 @@ where
             let ci = Module::<BE::CI>::new(preset.n() as u64);
             assert_eval_mod_refuses(
                 &mut stepped,
-                &mut raised,
+                &raised,
                 "a CI module goes with a plan of EvalMod on the CI ring, and only with one",
                 |res, a, s| module.ckks_bootstrap_eval_mod(res, a, &run, Some(&ci), &keys, s),
             );
             let mut rank2 = boot;
             rank2.glwe_layout.rank = 2usize.into();
-            let mut a_rank2 = fixture_ciphertext(&module, &rank2, 29);
+            let a_rank2 = fixture_ciphertext(&module, &rank2, 29);
             assert_eval_mod_refuses(
                 &mut stepped,
-                &mut a_rank2,
+                &a_rank2,
                 "supports rank-1 ciphertexts only, got rank 2 -> 1",
                 |res, a, s| module.ckks_bootstrap_eval_mod(res, a, &run, None, &keys, s),
             );
             let mut half = boot;
             half.glwe_layout.n = (preset.n() / 2).into();
             let degree = "takes ciphertexts of one degree, which the module serves";
-            assert_eval_mod_refuses(
-                &mut fixture_ciphertext(&module, &half, 11),
-                &mut raised,
-                degree,
-                |res, a, s| module.ckks_bootstrap_eval_mod(res, a, &run, None, &keys, s),
-            );
+            assert_eval_mod_refuses(&mut fixture_ciphertext(&module, &half, 11), &raised, degree, |res, a, s| {
+                module.ckks_bootstrap_eval_mod(res, a, &run, None, &keys, s)
+            });
             let small = Module::<BE>::new(preset.n() as u64 / 2);
-            assert_eval_mod_refuses(&mut stepped, &mut raised, degree, |res, a, s| {
+            assert_eval_mod_refuses(&mut stepped, &raised, degree, |res, a, s| {
                 small.ckks_bootstrap_eval_mod(res, a, &run, None, &keys, s)
             });
             let mut other_radix = boot;
             other_radix.glwe_layout.base2k = (boot.base2k().as_usize() - 1).into();
             assert_eval_mod_refuses(
                 &mut fixture_ciphertext(&module, &other_radix, 13),
-                &mut raised,
+                &raised,
                 "takes ciphertexts of one base2k",
                 |res, a, s| module.ckks_bootstrap_eval_mod(res, a, &run, None, &keys, s),
             );
@@ -717,10 +693,10 @@ where
             let mut wide = boot;
             wide.glwe_layout.k = (covered + raised.log_delta() + 1).into();
             wide.meta = raised.meta();
-            let mut wide = fixture_ciphertext(&module, &wide, 17);
-            let before = (snapshot::<BE, _>(&stepped), snapshot::<BE, _>(&wide));
+            let wide = fixture_ciphertext(&module, &wide, 17);
+            let before = snapshot::<BE, _>(&stepped);
             let err = with_scratch::<BE, _>(0, |s| {
-                module.ckks_bootstrap_eval_mod(&mut stepped, &mut wide, &run, None, &keys, s)
+                module.ckks_bootstrap_eval_mod(&mut stepped, &wide, &run, None, &keys, s)
             })
             .unwrap_err();
             assert!(
@@ -733,19 +709,15 @@ where
                 ),
                 "{err}"
             );
-            assert_eq!(
-                (snapshot::<BE, _>(&stepped), snapshot::<BE, _>(&wide)),
-                before,
-                "a refused step wrote an operand"
-            );
-            // The budget of EvalMod refuses before the real part or the split writes `a`.
+            assert_eq!(snapshot::<BE, _>(&stepped), before, "a refused step wrote res");
+            // The budget of EvalMod refuses before the route runs.
             let mut starved = boot;
             starved.glwe_layout.k = (raised.log_delta() + 1).into();
             starved.meta = raised.meta();
-            let mut starved = fixture_ciphertext(&module, &starved, 19);
+            let starved = fixture_ciphertext(&module, &starved, 19);
             let before = snapshot::<BE, _>(&starved);
             let err = with_scratch::<BE, _>(0, |s| {
-                module.ckks_bootstrap_eval_mod(&mut stepped, &mut starved, &run, None, &keys, s)
+                module.ckks_bootstrap_eval_mod(&mut stepped, &starved, &run, None, &keys, s)
             })
             .unwrap_err();
             assert!(
@@ -768,9 +740,8 @@ where
                     raised.set_slots(label);
                     let mut out = module.ckks_ciphertext_alloc_from_glwe_infos(&boot);
                     let bytes = module.ckks_bootstrap_eval_mod_tmp_bytes(&out, &raised, plain, None, keys_layout);
-                    let mut input = step_input(&module, &raised);
                     with_scratch::<BE, _>(bytes, |s| {
-                        module.ckks_bootstrap_eval_mod(&mut out, &mut input, plain, None, &keys, s)
+                        module.ckks_bootstrap_eval_mod(&mut out, &raised, plain, None, &keys, s)
                     })
                     .unwrap();
                     assert_eq!(out.log_delta(), raised.log_delta(), "a plain EvalMod stamped its output");
@@ -889,14 +860,11 @@ where
 
         // The tensor key resolves before the scratch check, on the standard ring too.
         let tensor_key = keys.tensor_key.take();
-        let mut z = fixture_ciphertext(&module, &boot, 19);
+        let z = fixture_ciphertext(&module, &boot, 19);
         let z_run = context.run(z.meta());
-        assert_eval_mod_refuses(
-            &mut res,
-            &mut z,
-            "the keys hold no tensor key of the plan's ring",
-            |res, a, s| module.ckks_bootstrap_eval_mod(res, a, &z_run, None, &keys, s),
-        );
+        assert_eval_mod_refuses(&mut res, &z, "the keys hold no tensor key of the plan's ring", |res, a, s| {
+            module.ckks_bootstrap_eval_mod(res, a, &z_run, None, &keys, s)
+        });
         keys.tensor_key = tensor_key;
     }
 }

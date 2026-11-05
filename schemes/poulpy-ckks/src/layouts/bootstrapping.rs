@@ -155,11 +155,11 @@ pub struct BootstrappingTechniques {
 /// [`ckks_bootstrap_eval_mod`](crate::api::CKKSBootstrappingOps::ckks_bootstrap_eval_mod) takes its route from the plan
 /// and the slots of the message:
 ///
-/// | Plan and message | Route | `a` after the step |
-/// |---|---|---|
-/// | standard ring, real slots, S2C-first, no EvalRound+ | the real part, one EvalMod | `2·Re(a)` |
-/// | any other plan on the standard ring | the split, one EvalMod per half, on a parallel executor at once, the recombination | the real half, times `K` under EvalRound+ |
-/// | conjugate-invariant ring | the conversion, one EvalMod for all coefficients, the conversion back | only read |
+/// | Plan and message | Route |
+/// |---|---|
+/// | standard ring, real slots, S2C-first, no EvalRound+ | the real part, one EvalMod |
+/// | any other plan on the standard ring | the split, one EvalMod per half, on a parallel executor at once, the recombination |
+/// | conjugate-invariant ring | the conversion, one EvalMod for all coefficients, the conversion back |
 ///
 /// Real slots read the real part alone because an S2C-first raise leaves only integer multiples of the modulus in the
 /// imaginary part, and EvalRound+ needs both halves. A [`BootstrappingRun`] gives the step the slots of the message,
@@ -180,9 +180,8 @@ pub struct BootstrappingTechniques {
 ///
 /// [`ckks_eval_lut`](crate::api::CKKSBootstrappingOps::ckks_eval_lut) runs no bypass and removes the guard bits itself,
 /// before the exponential. Real slots of an S2C-first plan take the real part of `a` and skip the imaginary half, with
-/// or without a bypass in the plan, and any other input is split, each half evaluated and the halves recombined. `a`
-/// keeps `2·Re(a)` or the real half, without the guard bits on its label. General LUTs of a batch share the power basis
-/// of each half.
+/// or without a bypass in the plan, and any other input is split, each half evaluated and the halves recombined. General
+/// LUTs of a batch share the power basis of each half.
 ///
 /// Each LUT spends `bits`, EvalMod's when it needs it and its own series', of the budget of `a`. A run gives an output
 /// `k_out = a.k() - c2s_guard_bits - bits`, `log_delta_out = log_delta + log_msg_ratio` from the `log_delta` of the

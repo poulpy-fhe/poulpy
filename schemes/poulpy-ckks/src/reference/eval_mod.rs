@@ -14,8 +14,8 @@ use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
     GLWECopy, GLWENormalize,
     layouts::{
-        BSGSMeta, GGLWEInfos, GLWELayout, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, Rank, SetBSGSMeta,
-        prepared::GLWETensorKeyPreparedToBackendRef,
+        BSGSMeta, GGLWEInfos, GLWEInfos, GLWELayout, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
+        SetBSGSMeta, SetK, prepared::GLWETensorKeyPreparedToBackendRef,
     },
 };
 use poulpy_hal::{
@@ -24,7 +24,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    CKKSCtBounds, GLWEPlaintextMeta, Scale, SetCKKSInfos,
+    CKKSCtBounds, CKKSInfos, GLWEPlaintextMeta, SetCKKSInfos,
     api::{
         CKKSAddOps, CKKSComplexPolynomialEvaluationOps, CKKSCopyOps, CKKSMulOps, CKKSPolynomialEvaluationOps, CKKSPow2Ops,
         CKKSSubOps, PolynomialInputTransform,
@@ -69,6 +69,29 @@ pub trait CKKSEvalModReference<BE: Backend> {
         BE: Backend,
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         C: GLWEToBackendRef<BE> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + BSGSMeta,
+        H: GetTensorKey<BE>,
+        CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos;
+
+    /// Reference body of [`ckks_eval_mod_owned`](crate::api::CKKSEvalModOps::ckks_eval_mod_owned).
+    fn ckks_eval_mod_owned_reference<R, P, F, H>(
+        &self,
+        res: &mut R,
+        input: CKKSCiphertextOwned<BE>,
+        params: &EvalMod<F, P>,
+        tsk: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Self: CKKSPolynomialEvaluationOps<BE>
+            + CKKSEvalModComplexOps<BE, BE::Ring>
+            + CKKSAddOps<BE>
+            + CKKSSubOps<BE>
+            + CKKSMulOps<BE>
+            + CKKSCopyOps<BE>
+            + Sized,
+        BE: Backend,
+        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + BSGSMeta,
         H: GetTensorKey<BE>,
         CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos;
@@ -125,6 +148,22 @@ where
         eval_mod(self, res, ct, params, tsk, scratch)
     }
 
+    fn ckks_eval_mod_owned_reference<R, P, F, H>(
+        &self,
+        res: &mut R,
+        input: CKKSCiphertextOwned<BE>,
+        params: &EvalMod<F, P>,
+        tsk: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta + IntPolyInfos,
+        H: GetTensorKey<BE>,
+    {
+        eval_mod_owned(self, res, input, params, tsk, scratch)
+    }
+
     fn ckks_eval_mod_tmp_bytes_reference<R, C, P, F, T>(&self, res: &R, ct: &C, params: &EvalMod<F, P>, tsk: &T) -> usize
     where
         BE: poulpy_core::oep::GLWEMulConstImpl,
@@ -148,8 +187,27 @@ where
     }
 }
 
-/// The evaluation [`EvalModPlan`](crate::layouts::eval_mod::EvalModPlan) describes. A range-extension step is
-/// `res ← 2·res² − dac` on the real path, the `cos 2θ` identity, and `res ← res²` on the complex path.
+/// Refuses what EvalMod cannot evaluate on an input like `ct`.
+fn check_eval_mod<BE, C, F, P>(op: &'static str, module: &Module<BE>, ct: &C, params: &EvalMod<F, P>) -> Result<()>
+where
+    BE: Backend,
+    Module<BE>: CKKSEvalModComplexOps<BE, BE::Ring>,
+    C: CKKSCtBounds,
+{
+    if matches!(params.f_mod_bsgs, EvalModBsgs::Complex(_)) && !module.ckks_eval_mod_complex_supported() {
+        return Err(complex_refused());
+    }
+    ckks_ensure_operand!(
+        op,
+        ct.rank().as_usize() == 1,
+        "supports rank-1 ciphertexts only, got rank {}",
+        ct.rank().as_usize()
+    );
+    checked_log_budget_sub(op, ct.log_budget(), params.consumed_bits())?;
+    Ok(())
+}
+
+/// The evaluation [`EvalModPlan`](crate::layouts::eval_mod::EvalModPlan) describes, on a copy of `ct`.
 fn eval_mod<R, C, P, F, BE, H>(
     module: &Module<BE>,
     res: &mut R,
@@ -175,50 +233,90 @@ where
     H: GetTensorKey<BE>,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
 {
-    if matches!(params.f_mod_bsgs, EvalModBsgs::Complex(_)) && !module.ckks_eval_mod_complex_supported() {
-        return Err(complex_refused());
-    }
+    check_eval_mod("ckks_eval_mod", module, ct, params)?;
+    let (work_layout, work_meta) = params.plan.work_layout(ct);
+    let input = eval_mod_input(module, ct, &work_layout, work_meta, scratch);
+    eval_mod_on_input(module, res, input, ct.log_delta(), params, tsk, scratch)
+}
+
+/// The evaluation [`EvalModPlan`](crate::layouts::eval_mod::EvalModPlan) describes, on `input`, relabelled in place.
+fn eval_mod_owned<R, P, F, BE, H>(
+    module: &Module<BE>,
+    res: &mut R,
+    mut input: CKKSCiphertextOwned<BE>,
+    params: &EvalMod<F, P>,
+    tsk: &H,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> Result<()>
+where
+    BE: Backend,
+    Module<BE>: CKKSPolynomialEvaluationOps<BE>
+        + CKKSEvalModComplexOps<BE, BE::Ring>
+        + CKKSAddOps<BE>
+        + CKKSSubOps<BE>
+        + CKKSMulOps<BE>
+        + CKKSCopyOps<BE>
+        + CKKSPow2Ops<BE>
+        + GLWECopy<BE>
+        + GLWENormalize<BE>,
+    R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+    P: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta + IntPolyInfos,
+    H: GetTensorKey<BE>,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+{
+    const OP: &str = "ckks_eval_mod_owned";
+    check_eval_mod(OP, module, &input, params)?;
+    let (work_layout, work_meta) = params.plan.work_layout(&input);
     ckks_ensure_operand!(
-        "ckks_eval_mod",
-        ct.rank().as_usize() == 1,
-        "supports rank-1 ciphertexts only, got rank {}",
-        ct.rank().as_usize()
+        OP,
+        work_layout.k <= input.max_k(),
+        "takes an input whose allocation holds the working width of EvalMod"
     );
-    let s_in = ct.log_delta();
-    let s_eval = params.plan.f_mod_log_delta;
-    let s_budget = ct.log_budget();
-    checked_log_budget_sub("ckks_eval_mod", s_budget, params.consumed_bits())?;
+    let log_delta = input.log_delta();
+    input.set_meta(work_meta);
+    input.set_k(work_layout.k);
+    eval_mod_on_input(module, res, input, log_delta, params, tsk, scratch)
+}
 
-    let work_layout = GLWELayout {
-        n: ct.n(),
-        base2k: ct.base2k(),
-        k: (s_budget + s_eval).into(),
-        rank: Rank(1),
-    };
-    let work_meta = GLWEPlaintextMeta {
-        scale: Scale::Log(s_eval),
-        slots: ct.slots(),
-        log_sparsity: ct.log_sparsity(),
-    };
-
+/// EvalMod on `input`, at its working layout, the output labelled at `log_delta`. A range-extension step is
+/// `res ← 2·res² − dac` on the real path, the `cos 2θ` identity, and `res ← res²` on the complex path.
+fn eval_mod_on_input<R, P, F, BE, H>(
+    module: &Module<BE>,
+    res: &mut R,
+    mut input: CKKSCiphertextOwned<BE>,
+    log_delta: usize,
+    params: &EvalMod<F, P>,
+    tsk: &H,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> Result<()>
+where
+    BE: Backend,
+    Module<BE>: CKKSPolynomialEvaluationOps<BE>
+        + CKKSEvalModComplexOps<BE, BE::Ring>
+        + CKKSAddOps<BE>
+        + CKKSSubOps<BE>
+        + CKKSMulOps<BE>
+        + CKKSCopyOps<BE>
+        + CKKSPow2Ops<BE>
+        + GLWECopy<BE>
+        + GLWENormalize<BE>,
+    R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+    P: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta + IntPolyInfos,
+    H: GetTensorKey<BE>,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+{
+    let (work_layout, work_meta) = (input.glwe_layout(), input.meta());
     match &params.f_mod_bsgs {
         EvalModBsgs::Real(bsgs) => {
             if bsgs.input_transform() == PolynomialInputTransform::Identity {
-                // The generic one-shot evaluator would copy this input again
-                // before building its power basis. Hand ownership over directly.
-                let x1 = eval_mod_input(module, ct, &work_layout, work_meta, scratch);
-                let mut power_basis = PowerBasis::new(bsgs.basis(), x1);
+                let mut power_basis = PowerBasis::new(bsgs.basis(), input);
                 power_basis.populate(bsgs.degree(), bsgs.log_split(), bsgs.parity(), module, tsk, scratch)?;
                 module.ckks_eval_poly_real_const_coeffs_from_power_basis(res, &power_basis, bsgs, tsk, scratch)?;
             } else {
-                scratch.scope(|scratch_local| {
-                    let (mut input, mut nested) = scratch_local.take_ckks_ciphertext_scratch(&work_layout, work_meta);
-                    module.glwe_copy(&mut input, ct, &mut nested);
-                    if let Some(offset) = params.f_mod_input_offset.as_ref() {
-                        module.ckks_add_pt_const_assign(&mut input, 0, offset, 0, &mut nested)?;
-                    }
-                    module.ckks_eval_poly_real_const_coeffs(res, &input, bsgs, tsk, &mut nested)
-                })?;
+                if let Some(offset) = params.f_mod_input_offset.as_ref() {
+                    module.ckks_add_pt_const_assign(&mut input, 0, offset, 0, scratch)?;
+                }
+                module.ckks_eval_poly_real_const_coeffs(res, &input, bsgs, tsk, scratch)?;
             }
 
             if let Some(consts) = params.range_extension_consts.as_ref() {
@@ -243,15 +341,14 @@ where
             }
         }
         EvalModBsgs::Complex(bsgs) => {
-            let reductions = params.plan.f_mod_log_interval_reduction;
-            module.ckks_eval_mod_complex(res, ct, bsgs, reductions, &work_layout, work_meta, tsk, scratch)?
+            module.ckks_eval_mod_complex(res, input, bsgs, params.plan.f_mod_log_interval_reduction, tsk, scratch)?
         }
     }
 
     // A relabel, not a rescale: it undoes the one at entry, keeping the budget. When the plan scale is the wider one it
     // lowers `k`, which clears the canonical flag.
-    if s_eval != s_in {
-        res.set_log_delta(s_in);
+    if params.plan.f_mod_log_delta != log_delta {
+        res.set_log_delta(log_delta);
     }
 
     Ok(())
@@ -270,24 +367,17 @@ pub trait CKKSEvalModComplexOps<BE: Backend, R: Ring> {
         false
     }
 
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "the base polynomial takes EvalMod's working layout beside its operands"
-    )]
-    fn ckks_eval_mod_complex<Res, C, P, H>(
+    fn ckks_eval_mod_complex<Res, P, H>(
         &self,
         _res: &mut Res,
-        _ct: &C,
+        _input: CKKSCiphertextOwned<BE>,
         _bsgs: &ComplexBSGSPolynomial<P>,
         _reductions: usize,
-        _work_layout: &GLWELayout,
-        _work_meta: GLWEPlaintextMeta,
         _tsk: &H,
         _scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         Res: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
-        C: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta + IntPolyInfos,
         H: GetTensorKey<BE>,
     {
@@ -319,36 +409,28 @@ where
         true
     }
 
-    fn ckks_eval_mod_complex<Res, C, P, H>(
+    fn ckks_eval_mod_complex<Res, P, H>(
         &self,
         res: &mut Res,
-        ct: &C,
+        input: CKKSCiphertextOwned<BE>,
         bsgs: &ComplexBSGSPolynomial<P>,
         reductions: usize,
-        work_layout: &GLWELayout,
-        work_meta: GLWEPlaintextMeta,
         tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         Res: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
-        C: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta + IntPolyInfos,
         H: GetTensorKey<BE>,
     {
         if bsgs.re.input_transform() == PolynomialInputTransform::Identity
             && bsgs.im.input_transform() == PolynomialInputTransform::Identity
         {
-            let x1 = eval_mod_input(self, ct, work_layout, work_meta, scratch);
-            let mut power_basis = PowerBasis::new(bsgs.re.basis(), x1);
+            let mut power_basis = PowerBasis::new(bsgs.re.basis(), input);
             power_basis.populate(bsgs.re.degree(), bsgs.re.log_split(), bsgs.re.parity(), self, tsk, scratch)?;
             self.ckks_eval_poly_complex_const_coeffs_from_power_basis(res, &power_basis, bsgs, tsk, scratch)?;
         } else {
-            scratch.scope(|scratch_local| {
-                let (mut input, mut nested) = scratch_local.take_ckks_ciphertext_scratch(work_layout, work_meta);
-                self.glwe_copy(&mut input, ct, &mut nested);
-                self.ckks_eval_poly_complex_const_coeffs(res, &input, bsgs, tsk, &mut nested)
-            })?;
+            self.ckks_eval_poly_complex_const_coeffs(res, &input, bsgs, tsk, scratch)?;
         }
         for _ in 0..reductions {
             self.ckks_square_assign(res, tsk, scratch)?;
