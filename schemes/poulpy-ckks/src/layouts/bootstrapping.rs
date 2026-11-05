@@ -299,9 +299,11 @@ impl BootstrappingPlan {
         self.pipeline
     }
 
-    /// Plaintexts in `Z[X^(2^log_gap)]`: both transforms act on `N / 2^(log_gap + 1)` slots, which compiling the context
-    /// and generating its keys check against `N`, and the sparse secret lies in that subring, so the raise projects the
-    /// ciphertext on the subring in place of a trace.
+    /// Plaintexts in `Z[X^(2^log_gap)]`: both transforms act on `N / 2^(log_gap + 1)` slots, and the sparse secret lies in
+    /// that subring, so the raise projects the ciphertext on the subring in place of a trace. A plan on fewer slots than
+    /// the ring needs its gap: nothing else keeps the overflow of the raise in the subring. Generating the keys checks the
+    /// transforms against `N`, and a bootstrap its input's degree. Compiling the context checks only that they fit the
+    /// degree of the module, which may exceed `N`.
     ///
     /// # Errors
     ///
@@ -322,11 +324,25 @@ impl BootstrappingPlan {
         Ok(self)
     }
 
-    /// Refuses a gap whose transforms do not act on `N / 2^(log_gap + 1)` slots at degree `N = 2^log_n`.
+    /// `log2` of the degree whose subring of the plan's gap the slots of `dft` fill.
+    fn filled_log_n(&self, dft: &DFTPlan) -> Option<usize> {
+        dft.log_slots().checked_add(1).and_then(|s| s.checked_add(self.log_gap))
+    }
+
+    /// Refuses transforms that do not fill `N / 2^(log_gap + 1)` slots at the degree `N = 2^log_n` of the keys.
     pub(crate) fn check_log_gap(&self, log_n: usize) -> Result<()> {
-        let fits = |dft: &DFTPlan| dft.log_slots().checked_add(1).and_then(|s| s.checked_add(self.log_gap)) == Some(log_n);
-        if self.log_gap > 0 && !(fits(&self.coeffs_to_slots) && fits(&self.slots_to_coeffs)) {
-            return Err(invalid_plan("a gap takes transforms on the slots of the subring"));
+        let fills = |dft: &DFTPlan| self.filled_log_n(dft) == Some(log_n);
+        if !(fills(&self.coeffs_to_slots) && fills(&self.slots_to_coeffs)) {
+            return Err(invalid_plan("the transforms must fill the slots of the subring of the gap"));
+        }
+        Ok(())
+    }
+
+    /// Refuses transforms past `2^(log_n - log_gap - 1)` slots on a module of degree `2^log_n`, which may exceed `N`.
+    pub(crate) fn check_log_gap_fits(&self, log_n: usize) -> Result<()> {
+        let fits = |dft: &DFTPlan| self.filled_log_n(dft).is_some_and(|filled| filled <= log_n);
+        if !(fits(&self.coeffs_to_slots) && fits(&self.slots_to_coeffs)) {
+            return Err(invalid_plan("the slots of the subring of the gap do not fit the module"));
         }
         Ok(())
     }
@@ -1009,7 +1025,18 @@ impl<BE: Backend, F> CKKSDFTFactors<BE, Decode, Split> for BootstrappingContextP
     }
 }
 
+/// The contexts a mask serves. A bypass adds back the coefficients the mask drops, and a LUT runs no EvalMod it could
+/// clear them in.
+const MASK_CONTEXT: &str = "takes an identity S2C-first context with EvalMod on the standard ring and without EvalRound+";
+
 impl<BE: Backend, F> BootstrappingContextPrepared<BE, F> {
+    fn takes_a_mask(&self) -> bool {
+        self.pipeline == BootstrappingPipeline::S2CFirst
+            && self.eval_mod_ring == EvalModRing::Standard
+            && self.coeffs_to_slots_bypass.is_none()
+            && self.functional_message_modulus.is_none()
+    }
+
     /// The stages that set the widths at which a bootstrap uses its keys.
     pub(crate) fn stage_widths(&self) -> StageWidths<'_> {
         StageWidths {
@@ -1035,6 +1062,11 @@ impl<BE: Backend, F> BootstrappingContextPrepared<BE, F> {
     /// `log2` of the gap of the plaintexts, see [`BootstrappingPlan::with_log_gap`].
     pub fn log_gap(&self) -> usize {
         self.plan.log_gap()
+    }
+
+    /// The degree `N` of the bootstrap: `2·g` times the slots of the transforms, `g` the gap of the plaintexts.
+    pub(crate) fn bootstrap_degree(&self) -> usize {
+        2usize << (self.slots_to_coeffs().plan().log_slots() + self.log_gap())
     }
 
     /// Selected ModUp/EvalMod pipeline.
@@ -1069,19 +1101,20 @@ impl<BE: Backend, F> BootstrappingContextPrepared<BE, F> {
     ///
     /// # Errors
     ///
-    /// [`InvalidOperand`](crate::CKKSCompositionError::InvalidOperand) for a `mask` of another factor, or a context whose
-    /// CoeffsToSlots evaluates no factor.
+    /// [`InvalidOperand`](crate::CKKSCompositionError::InvalidOperand) for a context [`Self::coeffs_mask`] refuses, a `mask`
+    /// of another factor or of another plan of CoeffsToSlots, or a context whose CoeffsToSlots evaluates no factor.
     pub fn masked<'a>(&'a self, mask: &'a CoeffsMaskPrepared<BE>) -> crate::CKKSResult<MaskedFactors<'a, BE>> {
         const OP: &str = "masked";
+        if !self.takes_a_mask() {
+            return Err(invalid_operand(OP, MASK_CONTEXT).into());
+        }
         let Some(context_last) = self.coeffs_to_slots.factor_operands().last() else {
             return Err(invalid_operand(OP, "the matrix evaluates no factor").into());
         };
-        let Some(last) = mask
-            .0
-            .factor_operands()
-            .first()
-            .filter(|last| last.index() == context_last.index())
-        else {
+        let of_this_factor = |last: &&LinearTransformationPrepared<BE>| {
+            last.index() == context_last.index() && mask.0.plan() == self.coeffs_to_slots.plan()
+        };
+        let Some(last) = mask.0.factor_operands().first().filter(of_this_factor) else {
             return Err(invalid_operand(OP, "the mask is not of the last CoeffsToSlots factor of the context").into());
         };
         Ok(MaskedFactors {
@@ -1357,10 +1390,11 @@ where
     ///
     /// # Errors
     ///
-    /// [`InvalidOperand`](crate::CKKSCompositionError::InvalidOperand), for a context that is not S2C-first with EvalMod
-    /// on the standard ring or evaluates no CoeffsToSlots factor, a `keep` of another length than the degree `N` of the
-    /// bootstrap, a `keep` selecting both coefficients of a slot, or a coefficient off the subring of the plaintexts, all
-    /// before the arena check.
+    /// [`InvalidOperand`](crate::CKKSCompositionError::InvalidOperand), for a context that is not an identity S2C-first one
+    /// with EvalMod on the standard ring and without EvalRound+, whose bypass would add back what the mask drops, or that
+    /// evaluates no CoeffsToSlots factor, a `keep` of another length than the degree `N` of the bootstrap, a `keep`
+    /// selecting both coefficients of a slot, or a coefficient off the subring of the plaintexts, all before the arena
+    /// check.
     pub fn coeffs_mask(
         &self,
         module: &Module<BE>,
@@ -1375,8 +1409,8 @@ where
     {
         const OP: &str = "coeffs_mask";
         let refuse = |reason| Err(invalid_operand(OP, reason));
-        if self.pipeline != BootstrappingPipeline::S2CFirst || self.eval_mod_ring != EvalModRing::Standard {
-            return refuse("takes an S2C-first context with EvalMod on the standard ring");
+        if !self.takes_a_mask() {
+            return refuse(MASK_CONTEXT);
         }
         let dft = self.coeffs_to_slots();
         let (base2k, _) = evaluated_diagonals(OP, dft)?;
@@ -1399,8 +1433,7 @@ where
             "{OP} needs a scratch arena of {bytes} bytes, got {}",
             scratch.available()
         );
-        // Slot `s` of CoeffsToSlots holds coefficient `g·bitrev(s)` in its real part and `N/2 + g·bitrev(s)` in its
-        // imaginary part: `-i` moves the second to the real part, which conjugate and add keeps.
+        // Slot `s` holds coefficients `g·bitrev(s)` and `N/2 + g·bitrev(s)`: `-i` moves the second to the real part kept.
         let bitrev = |s: usize| {
             s.reverse_bits()
                 .checked_shr(usize::BITS - slots.trailing_zeros())
@@ -1428,11 +1461,6 @@ where
     pub fn merged_s2c_cosets(&self) -> usize {
         let plan = self.slots_to_coeffs().plan();
         1 << plan.schedule.steps.last().expect("a DFT plan has at least one factor").depth
-    }
-
-    /// The degree `N` of the bootstrap: `2·g` times the slots of the transforms, `g` the gap of the plaintexts.
-    fn bootstrap_degree(&self) -> usize {
-        2usize << (self.slots_to_coeffs().plan().log_slots() + self.log_gap())
     }
 
     /// Scratch of [`Self::merged_s2c_factor`], for a factor of at most `k` bits.
@@ -1710,7 +1738,7 @@ where
     where
         Module<BE>: CKKSDFTMatrixOps<BE, F> + CKKSEncodingOps<BE, F>,
     {
-        plan.check_log_gap(module.log_n())?;
+        plan.check_log_gap_fits(module.log_n())?;
         let mut coeffs_to_slots = module.ckks_dft_matrix_new::<Encode, Split>(base2k, &plan.coeffs_to_slots, scratch)?;
         // A first factor left to the modulus raise is evaluated from its plaintexts,
         // not by the matrix.
@@ -1832,11 +1860,17 @@ mod tests {
         let on_ci = new(true, true).with_eval_mod_ring(on_ci).unwrap();
         assert!(refusal(on_ci.with_log_gap(1).unwrap_err()).contains("a gap takes an S2C-first plan"));
         assert_eq!(plan.mod_raise().log_gap, 1);
-        // One slot layer: the gap of 2 fits degree 8 and no other.
+        // One slot layer: the gap of 2 fills degree 8 and no other, and fits a module of that degree or above.
         plan.check_log_gap(3).unwrap();
         for log_n in [2, 4, 16] {
-            assert!(refusal(plan.check_log_gap(log_n).unwrap_err()).contains("the slots of the subring"));
+            assert!(refusal(plan.check_log_gap(log_n).unwrap_err()).contains("must fill the slots of the subring"));
         }
+        for log_n in [3, 4, 16] {
+            plan.check_log_gap_fits(log_n).unwrap();
+        }
+        assert!(refusal(plan.check_log_gap_fits(2).unwrap_err()).contains("do not fit the module"));
+        // A plan on fewer slots than the ring needs its gap.
+        assert!(refusal(new(true, true).check_log_gap(3).unwrap_err()).contains("must fill the slots of the subring"));
     }
 
     #[test]

@@ -214,8 +214,8 @@ pub unsafe trait CKKSBootstrappingImpl: CKKSCITwin + CKKSDFTImpl + CKKSCopyImpl 
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait CKKSModUpFirstFactorImpl: Backend<Ring = Standard> {
     /// Scratch bound of [`Self::ckks_mod_up_first_factor`]; may report less than the reference, never less than the
-    /// body takes. `d2s_infos` is the dense-to-sparse key under encapsulation, `key_infos` the layout of the
-    /// first-factor keys.
+    /// body takes, the projection of a nonzero `log_gap` included. `d2s_infos` is the dense-to-sparse key under
+    /// encapsulation, `key_infos` the layout of the first-factor keys.
     fn ckks_mod_up_first_factor_tmp_bytes<Dst, Src, D2S, K>(
         module: &Module<Self>,
         dst_infos: &Dst,
@@ -235,6 +235,10 @@ pub unsafe trait CKKSModUpFirstFactorImpl: Backend<Ring = Standard> {
     /// [`ckks_mod_up_first_factor_reference`](crate::reference::first_factor::CKKSModUpFirstFactorReference::ckks_mod_up_first_factor_reference)
     /// bit for bit, within [`Self::ckks_mod_up_first_factor_tmp_bytes`]; free in kernels and scratch use. It honors the
     /// key layouts of the reference composition.
+    ///
+    /// `log_gap` is that of the plan. Above 0 the sparse secret lies in `Z[X^(2^log_gap)]`: the body refuses keys without
+    /// encapsulation before any write, and after the dense-to-sparse switch it zeroes the coefficients of `src` off the
+    /// multiples of `2^log_gap`, so the overflow of the raise stays in the subring. At 0 `src` keeps every coefficient.
     #[expect(
         clippy::too_many_arguments,
         reason = "the raise takes its scale, the first factor and the gap beside its operands"

@@ -147,9 +147,13 @@ module.ckks_bootstrap_eval_mod(&mut res, &z, &ctx, None, &keys, s)?;
 
 Coefficients `p` and `N/2 + p` share a real slot, in its real and imaginary parts: the selection keeps one of them, the second through a factor `-i`, and the slot gives it back as coefficient `p` of the next SlotsToCoeffs.
 
+A mask takes an identity S2C-first context with EvalMod on the standard ring and without EvalRound+: `coeffs_mask` and `masked` refuse any other, as the unmasked bypass of EvalRound+ would add the dropped coefficients back. `masked` also refuses a mask of another CoeffsToSlots plan, even on the same schedule: a mask carries the scaling and the scale of the plan it was built from.
+
 `merged_s2c_factor` folds a product into the last SlotsToCoeffs factor, which runs after `ctx.slots_to_coeffs().head()`, the view of every factor but the last. Before that factor, slot block `B` holds the sub-transform of the coefficients of index `bitrev(B)` modulo the block count, so scaling the columns of block `B` by the slots of a kernel `K_r` multiplies that coset by `K_r`. The factor keeps its diagonals and its rotation keys, and the product costs no level. The block count, `2^depth` of the factor, bounds the cosets (`merged_s2c_cosets`).
 
 A real-slot bootstrap of plaintexts in `Z[X^g]` needs fewer slots than the ring (`with_log_gap`). Its sparse secret lies in that subring, so after the dense-to-sparse switch the coefficients at multiples of `g` decrypt on their own. The raise keeps those only, for free: the overflow then lies in the subring, the first factor still runs on the small ciphertext, and the transforms act on `N/2g` slots with no trace. A key under that secret splits into `g` RLWE samples of degree `N/g`, so its modulus is bounded at that degree, and a preset refuses a gap without a bound.
+
+A plan on fewer slots than the ring needs that gap: with none, no projection and no trace keep the overflow in the subring, and it is not an integer after CoeffsToSlots. `generate_keys` refuses transforms that do not fill `N/2g` slots, and `ckks_bootstrap` and `ckks_functional_bootstrap` an input of another degree. `compile` checks only that they fit its module, whose degree may exceed `N`.
 
 ## Scale and budget chain
 
