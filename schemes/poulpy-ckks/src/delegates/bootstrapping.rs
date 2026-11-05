@@ -1,5 +1,5 @@
 use crate::CKKSResult as Result;
-use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef};
+use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef, SetBSGSMeta};
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
@@ -7,7 +7,7 @@ use crate::{
     api::{CKKSBootstrappingCIOps, CKKSBootstrappingOps},
     layouts::{
         BootstrappingContextPrepared, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingLinearKeys, CKKSCiphertextOwned,
-        CKKSModRaiseInfos, CKKSPlaintextOwned, EncodedLut,
+        CKKSEvalModInfos, CKKSModRaiseInfos, CKKSPlaintextOwned, EncodedLut,
     },
     oep::{CKKSBootstrappingCIImpl, CKKSBootstrappingImpl},
 };
@@ -18,13 +18,14 @@ impl<BE: Backend + CKKSBootstrappingImpl> CKKSBootstrappingOps<BE> for Module<BE
         ct_out: &C1,
         ct_in: &C2,
         ctx: &BootstrappingContextPrepared<BE, F>,
+        ci: Option<&Module<BE::CI>>,
         keys_layout: &BootstrappingKeysLayout,
     ) -> usize
     where
         C1: CKKSCtBounds,
         C2: CKKSCtBounds,
     {
-        BE::ckks_bootstrap_tmp_bytes(self, ct_out, ct_in, ctx, keys_layout)
+        BE::ckks_bootstrap_tmp_bytes(self, ct_out, ct_in, ctx, ci, keys_layout)
     }
 
     fn ckks_functional_bootstrap_tmp_bytes<C1, C2, F>(
@@ -68,11 +69,48 @@ impl<BE: Backend + CKKSBootstrappingImpl> CKKSBootstrappingOps<BE> for Module<BE
         BE::ckks_mod_raise(self, res, a, plan, keys, scratch)
     }
 
+    fn ckks_bootstrap_eval_mod_tmp_bytes<R, A, P, F>(
+        &self,
+        res: &R,
+        a: &A,
+        plan: &P,
+        ci: Option<&Module<BE::CI>>,
+        keys_layout: &BootstrappingKeysLayout,
+    ) -> usize
+    where
+        R: CKKSCtBounds,
+        A: CKKSCtBounds,
+        P: CKKSEvalModInfos<BE, F>,
+    {
+        BE::ckks_bootstrap_eval_mod_tmp_bytes(self, res, a, plan, ci, keys_layout)
+    }
+
+    fn ckks_bootstrap_eval_mod<R, A, P, F, K>(
+        &self,
+        res: &mut R,
+        a: &A,
+        plan: &P,
+        ci: Option<&Module<BE::CI>>,
+        keys: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        F: Sync,
+        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + Send,
+        A: GLWEToBackendRef<BE> + CKKSCtBounds,
+        P: CKKSEvalModInfos<BE, F>,
+        K: BootstrappingKeys<BE> + Sync,
+        K::TensorKey: Sync,
+    {
+        BE::ckks_bootstrap_eval_mod(self, res, a, plan, ci, keys, scratch)
+    }
+
     fn ckks_bootstrap<F, K>(
         &self,
         ct_out: &mut CKKSCiphertextOwned<BE>,
         ct_in: &CKKSCiphertextOwned<BE>,
         ctx: &BootstrappingContextPrepared<BE, F>,
+        ci: Option<&Module<BE::CI>>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -81,7 +119,7 @@ impl<BE: Backend + CKKSBootstrappingImpl> CKKSBootstrappingOps<BE> for Module<BE
         K: BootstrappingKeys<BE> + Sync,
         K::TensorKey: Sync,
     {
-        BE::ckks_bootstrap(self, ct_out, ct_in, ctx, keys, scratch)
+        BE::ckks_bootstrap(self, ct_out, ct_in, ctx, ci, keys, scratch)
     }
 
     fn ckks_functional_bootstrap<F, K>(

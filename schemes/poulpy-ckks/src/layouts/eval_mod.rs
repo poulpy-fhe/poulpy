@@ -53,7 +53,10 @@ use crate::{
     polynomial::{BSGSPolynomial, ComplexBSGSPolynomial, ComplexPolynomial, Polynomial, SplitStrategy},
 };
 
-use super::{CKKSPlaintextAlloc, CKKSPlaintextOwned, CKKSScalar};
+use super::{
+    BootstrappingContextPrepared, BootstrappingPipeline, CKKSCITwin, CKKSPlaintextAlloc, CKKSPlaintextOwned, CKKSScalar,
+    EvalModCIPrepared,
+};
 
 // Fallible scalar conversions: building the host-side polynomials goes through
 // the generic float `F`, and a conversion that is not exactly representable in
@@ -461,6 +464,79 @@ pub struct EvalMod<F, P> {
     /// Host-side inverse `f⁻¹` post-composition polynomial that `f_mod_inv_bsgs`
     /// encodes, when present.
     pub f_mod_inv_poly: Option<Polynomial<F>>,
+}
+
+/// What the EvalMod step of a bootstrap reads of a compiled plan, on either ring.
+pub trait CKKSEvalModInfos<BE: CKKSCITwin, F> {
+    /// The EvalMod recipe, on either ring.
+    fn eval_mod_plan(&self) -> &EvalModPlan;
+
+    /// EvalMod on the standard ring, when it runs there.
+    fn eval_mod_standard(&self) -> Option<&EvalMod<F, CKKSPlaintextOwned<BE>>>;
+
+    /// EvalMod on the conjugate-invariant ring and its conversions, when it runs there.
+    fn eval_mod_ci(&self) -> Option<&EvalModCIPrepared<BE, F>>;
+
+    /// Guard bits the input of the step carries above its message: 0 on a plain [`EvalMod`].
+    fn c2s_guard_bits(&self) -> usize;
+
+    /// Whether real slots take one EvalMod: an S2C-first pipeline without a bypass.
+    fn one_eval_mod_on_real_slots(&self) -> bool;
+
+    /// Whether the plan runs EvalRound+: the step leaves `EvalMod(x) - K·x` and the guard bits to the bypass.
+    fn eval_round_plus(&self) -> bool;
+}
+
+impl<BE: CKKSCITwin, F> CKKSEvalModInfos<BE, F> for EvalMod<F, CKKSPlaintextOwned<BE>> {
+    fn eval_mod_plan(&self) -> &EvalModPlan {
+        &self.plan
+    }
+
+    fn eval_mod_standard(&self) -> Option<&EvalMod<F, CKKSPlaintextOwned<BE>>> {
+        Some(self)
+    }
+
+    fn eval_mod_ci(&self) -> Option<&EvalModCIPrepared<BE, F>> {
+        None
+    }
+
+    fn c2s_guard_bits(&self) -> usize {
+        0
+    }
+
+    fn one_eval_mod_on_real_slots(&self) -> bool {
+        true
+    }
+
+    fn eval_round_plus(&self) -> bool {
+        false
+    }
+}
+
+impl<BE: CKKSCITwin, F> CKKSEvalModInfos<BE, F> for BootstrappingContextPrepared<BE, F> {
+    fn eval_mod_plan(&self) -> &EvalModPlan {
+        self.eval_mod_plan()
+    }
+
+    fn eval_mod_standard(&self) -> Option<&EvalMod<F, CKKSPlaintextOwned<BE>>> {
+        self.eval_mod()
+    }
+
+    fn eval_mod_ci(&self) -> Option<&EvalModCIPrepared<BE, F>> {
+        self.eval_mod_ci()
+    }
+
+    fn c2s_guard_bits(&self) -> usize {
+        self.c2s_guard_bits()
+    }
+
+    fn one_eval_mod_on_real_slots(&self) -> bool {
+        self.pipeline() == BootstrappingPipeline::S2CFirst && self.coeffs_to_slots_bypass().is_none()
+    }
+
+    fn eval_round_plus(&self) -> bool {
+        self.coeffs_to_slots_bypass().is_some()
+    }
 }
 
 /// [`encode_bsgs_backend`] through the parity fold (`u = T_2(t)`).

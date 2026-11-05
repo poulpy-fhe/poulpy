@@ -564,12 +564,12 @@ fn bootstrap_sizing_includes_selected_dft_workspace() {
     assert_query_takes_extra(
         "ckks_bootstrap_tmp_bytes",
         |bytes| DFT_EXTRA.set(bytes),
-        || module.ckks_bootstrap_tmp_bytes(&dst, &src, &context, &keys),
+        || module.ckks_bootstrap_tmp_bytes(&dst, &src, &context, None, &keys),
     );
     DFT_EXTRA.set(DFT_EXTRA_DEFAULT);
     DFT_QUERIES.set(0);
     DFT_QUERY_LAYOUTS.with_borrow_mut(Vec::clear);
-    module.ckks_bootstrap_tmp_bytes(&dst, &src, &context, &keys);
+    module.ckks_bootstrap_tmp_bytes(&dst, &src, &context, None, &keys);
     assert_eq!(DFT_QUERIES.get(), 2);
     // S2C-first: SlotsToCoeffs runs in place on the input, CoeffsToSlots reads the raised ciphertext.
     let layouts = DFT_QUERY_LAYOUTS.with_borrow(Vec::clone);
@@ -585,7 +585,7 @@ fn bootstrap_sizing_includes_selected_dft_workspace() {
     .unwrap();
     let context = compile(&plan);
     DFT_QUERY_LAYOUTS.with_borrow_mut(Vec::clear);
-    module.ckks_bootstrap_tmp_bytes(&dst, &src, &context, &keys);
+    module.ckks_bootstrap_tmp_bytes(&dst, &src, &context, None, &keys);
     // C2S-first: both transforms run on working-width ciphertexts.
     let layouts = DFT_QUERY_LAYOUTS.with_borrow(Vec::clone);
     assert_eq!(layouts, [(DFTType::Encode, 256, 256), (DFTType::Decode, 256, 256)]);

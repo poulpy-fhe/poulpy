@@ -523,7 +523,8 @@ fn run_case<BE, F, E>(
                 "ckks_functional_bootstrap",
                 "context must be configured",
             );
-            let error = with_scratch::<BE, _>(0, |s| module.ckks_bootstrap(&mut rejected[0], &ct, &ctx, &keys, s)).unwrap_err();
+            let error =
+                with_scratch::<BE, _>(0, |s| module.ckks_bootstrap(&mut rejected[0], &ct, &ctx, None, &keys, s)).unwrap_err();
             assert_ckks_error(
                 "functional bootstrap refusal",
                 &error,

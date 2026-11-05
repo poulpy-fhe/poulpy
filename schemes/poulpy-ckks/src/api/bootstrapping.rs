@@ -1,12 +1,12 @@
 use crate::CKKSResult as Result;
-use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef};
+use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef, SetBSGSMeta};
 use poulpy_hal::layouts::{Module, ScratchArena};
 
 use crate::{
     CKKSCtBounds, SetCKKSInfos,
     layouts::{
         BootstrappingContextPrepared, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingLinearKeys, CKKSCITwin,
-        CKKSCiphertextOwned, CKKSModRaiseInfos, CKKSPlaintextOwned, EncodedLut,
+        CKKSCiphertextOwned, CKKSEvalModInfos, CKKSModRaiseInfos, CKKSPlaintextOwned, EncodedLut,
     },
 };
 
@@ -36,12 +36,14 @@ pub trait CKKSBootstrappingOps<BE: CKKSCITwin> {
     /// nested stage. `ct_out`/`ct_in` provide the bootstrap and input widths,
     /// `ctx` selects the pipeline, optional EvalRound+ variant, and EvalMod
     /// parameters; `keys_layout` sizes the key-dependent stages
-    /// (rotations, tensor key, optional encapsulation switches).
+    /// (rotations, tensor key, optional encapsulation switches). `ci` is the module of
+    /// [`Self::ckks_bootstrap`].
     fn ckks_bootstrap_tmp_bytes<C1, C2, F>(
         &self,
         ct_out: &C1,
         ct_in: &C2,
         ctx: &BootstrappingContextPrepared<BE, F>,
+        ci: Option<&Module<BE::CI>>,
         keys_layout: &BootstrappingKeysLayout,
     ) -> usize
     where
@@ -93,10 +95,65 @@ pub trait CKKSBootstrappingOps<BE: CKKSCITwin> {
         P: CKKSModRaiseInfos<BE>,
         K: BootstrappingLinearKeys<BE>;
 
+    /// Scratch bytes for [`Self::ckks_bootstrap_eval_mod`] into a ciphertext like `res` from one like `a`, with the
+    /// plan, the module and the key layout of the step. It holds on any slot kind.
+    fn ckks_bootstrap_eval_mod_tmp_bytes<R, A, P, F>(
+        &self,
+        res: &R,
+        a: &A,
+        plan: &P,
+        ci: Option<&Module<BE::CI>>,
+        keys_layout: &BootstrappingKeysLayout,
+    ) -> usize
+    where
+        R: CKKSCtBounds,
+        A: CKKSCtBounds,
+        P: CKKSEvalModInfos<BE, F>;
+
+    /// EvalMod of a bootstrap, on `a`, the output of CoeffsToSlots, as the plan and the slots of `a` say:
+    ///
+    /// - real slots of an S2C-first plan without a bypass, which [`CKKSEvalModInfos::one_eval_mod_on_real_slots`] names:
+    ///   the real part and one EvalMod. CoeffsToSlots labels its output complex, so the caller stamps the slot kind of the
+    ///   message on `a`;
+    /// - any other input of a plan on the standard ring: the split, one EvalMod per half, on a parallel executor at once,
+    ///   and the recombination;
+    /// - a plan on the conjugate-invariant ring, with `ci` of degree `N` and this module of degree `2N`: the conversion
+    ///   to that ring, one EvalMod for all coefficients on `ci`, and the conversion back.
+    ///
+    /// The guard bits leave `res` here. Under EvalRound+, [`CKKSEvalModInfos::eval_round_plus`], `res` is
+    /// `EvalMod(x) - K·x` and keeps them: the caller adds the bypass back, then removes them with `set_log_delta`. A
+    /// step does not know the message scale of a raised ciphertext, so the caller stamps the scale, slot kind and
+    /// sparsity of the input at the end.
+    ///
+    /// # Errors
+    ///
+    /// [`InvalidOperand`](crate::CKKSCompositionError::InvalidOperand) before any write to `res`, for `ci` on a plan of
+    /// the standard ring, no `ci` on a plan of the conjugate-invariant ring, a rank other than 1, modules or ciphertexts
+    /// of other degrees, or keys without the tensor key of the plan's ring or its conversion keys, of another shape or
+    /// narrower than the widths they switch. `CKKSError::Internal` for an arena under
+    /// [`Self::ckks_bootstrap_eval_mod_tmp_bytes`], when the keys report their layout.
+    fn ckks_bootstrap_eval_mod<R, A, P, F, K>(
+        &self,
+        res: &mut R,
+        a: &A,
+        plan: &P,
+        ci: Option<&Module<BE::CI>>,
+        keys: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        F: Sync,
+        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + Send,
+        A: GLWEToBackendRef<BE> + CKKSCtBounds,
+        P: CKKSEvalModInfos<BE, F>,
+        K: BootstrappingKeys<BE> + Sync,
+        K::TensorKey: Sync;
+
     /// One-shot CKKS bootstrap, driven by the compiled context.
     ///
     /// `ct_in` is at the input ("level 0") modulus; `ct_out` must be allocated at
-    /// the bootstrap modulus (its `k()` sets the working width). When the compiled
+    /// the bootstrap modulus (its `k()` sets the working width). `ci` is `None` on a
+    /// plan with EvalMod on the standard ring. When the compiled
     /// recipe enables sparse-secret encapsulation, `keys` must carry the matching
     /// [encapsulation keys](crate::layouts::BootstrappingLinearKeys::encapsulation_keys), which wrap ModUp
     /// (`denseToSparse → ModUp → sparseToDense`). [`BootstrappingPlan::new`](crate::layouts::BootstrappingPlan::new)
@@ -132,6 +189,7 @@ pub trait CKKSBootstrappingOps<BE: CKKSCITwin> {
         ct_out: &mut CKKSCiphertextOwned<BE>,
         ct_in: &CKKSCiphertextOwned<BE>,
         ctx: &BootstrappingContextPrepared<BE, F>,
+        ci: Option<&Module<BE::CI>>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>

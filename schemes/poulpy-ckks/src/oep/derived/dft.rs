@@ -98,20 +98,33 @@ where
     // ct_real := z = Encode(ct_in).
     module.ckks_copy(ct_real, ct_in, scratch)?;
     module.ckks_dft_matrix_eval_assign(ct_real, dft, keys, scratch)?;
+    ckks_split_real_imag(module, ct_real, ct_imag, keys, scratch)
+}
 
-    // ct_imag := conj(z).
-    module.ckks_conjugate_into(ct_imag, ct_real, keys, scratch)?;
-
-    // tmp := z − conj(z); ct_real := z + conj(z) = 2·Re(z); ct_imag := −i·tmp = 2·Im(z).
+/// `re = z + conj(z)` and `im = (z - conj(z)) / i`, from `z` in `re`.
+pub(crate) fn ckks_split_real_imag<BE, Dst, H>(
+    module: &Module<BE>,
+    re: &mut Dst,
+    im: &mut Dst,
+    keys: &H,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> Result<()>
+where
+    BE: Backend,
+    Module<BE>: CKKSConjugateOps<BE> + CKKSAddOps<BE> + CKKSSubOps<BE> + CKKSImagOps<BE>,
+    Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    H: GetAutomorphismKey<BE>,
+{
+    module.ckks_conjugate_into(im, re, keys, scratch)?;
     scratch.scope(|scratch_local| -> Result<()> {
-        let (mut tmp, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(&*ct_real);
-        module.ckks_sub_into(&mut tmp, ct_real, ct_imag, &mut scratch_local.borrow())?;
-        module.ckks_add_assign(ct_real, ct_imag, &mut scratch_local.borrow())?;
-        module.ckks_div_i_into(ct_imag, &tmp, &mut scratch_local)
+        let (mut tmp, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(&*re);
+        module.ckks_sub_into(&mut tmp, re, im, &mut scratch_local.borrow())?;
+        module.ckks_add_assign(re, im, &mut scratch_local.borrow())?;
+        module.ckks_div_i_into(im, &tmp, &mut scratch_local)
     })?;
     // Both halves are the (real) coefficients of the input polynomial.
-    ct_real.set_slots(SlotsKind::Real);
-    ct_imag.set_slots(SlotsKind::Real);
+    re.set_slots(SlotsKind::Real);
+    im.set_slots(SlotsKind::Real);
     Ok(())
 }
 

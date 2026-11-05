@@ -506,10 +506,10 @@ where
             results.push((result.map_err(|e| e.to_string()), vec![snapshot::<BE, _>(&outs[0])]));
             continue;
         }
-        let bytes = BE::ckks_bootstrap_tmp_bytes(module, &out_layout, &in_layout, &ctx, &layout);
+        let bytes = BE::ckks_bootstrap_tmp_bytes(module, &out_layout, &in_layout, &ctx, None, &layout);
         let mut out = fixture_ciphertext(module, &out_layout, 97);
         let result = with_scratch::<BE, _>(bytes, |scratch| {
-            BE::ckks_bootstrap(module, &mut out, &ct_in, &ctx, &keys, scratch)
+            BE::ckks_bootstrap(module, &mut out, &ct_in, &ctx, None, &keys, scratch)
         });
         assert!(result.is_ok(), "{pipeline:?}: {result:?}");
         results.push((result.map_err(|e| e.to_string()), vec![snapshot::<BE, _>(&out)]));

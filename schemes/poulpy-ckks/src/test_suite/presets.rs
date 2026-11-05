@@ -239,12 +239,12 @@ where
         let (plan, log_n, label) = (plan.clone(), preset.log_n(), preset_label(&preset));
         let (bytes, bootstrap): (usize, Bootstrap<BE>) = match ci {
             None => (
-                module.ckks_bootstrap_tmp_bytes(&layout, &input_layout, &context, keys_layout),
+                module.ckks_bootstrap_tmp_bytes(&layout, &input_layout, &context, None, keys_layout),
                 Box::new(move |module, output, input, scratch| {
                     // The bootstrap lowers the output's width to its result.
                     let widths = plan.key_widths(log_n, output.k().as_usize(), input.k().as_usize(), input.log_delta());
                     let logged = LoggedBootstrappingKeys::new::<BE>(&keys);
-                    module.ckks_bootstrap(output, input, &context, &logged, scratch)?;
+                    module.ckks_bootstrap(output, input, &context, None, &logged, scratch)?;
                     Ok(logged.assert_lookups_at(&widths, &label))
                 }),
             ),
