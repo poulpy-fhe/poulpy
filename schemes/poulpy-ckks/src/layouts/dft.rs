@@ -82,7 +82,7 @@ pub enum DFTOutputFormat {
 /// (`s` read right-to-left) — that reversal is the caller's, not the library's.
 /// (Symmetric schedules such as `vec![(1, g); log_slots]` are their own reverse,
 /// so the same schedule round-trips.)
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct DFTPlan {
     /// Encode (IDFT) or Decode (DFT).
     pub(crate) kind: DFTType,

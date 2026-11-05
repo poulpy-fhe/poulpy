@@ -295,8 +295,24 @@ where
     Ok(())
 }
 
+/// `InvalidOperand` for an input of another degree than the transforms of `ctx` fill: a plan on fewer slots than the
+/// ring takes the gap that keeps the overflow of the raise in the subring they read.
+fn ensure_bootstrap_degree<BE: Backend, F>(
+    op: &'static str,
+    ctx: &BootstrappingContextPrepared<BE, F>,
+    a: &CKKSCiphertextOwned<BE>,
+) -> CKKSResult<()> {
+    ckks_ensure_operand!(
+        op,
+        ctx.bootstrap_degree() == a.n().as_usize(),
+        "the transforms of the context must fill the slots of the input's degree, or of the subring of its gap"
+    );
+    Ok(())
+}
+
 /// What `ckks_bootstrap_derived` refuses before its first step, so that no later step refuses with `res` half written:
-/// the context kind, the module of the plan's ring, ranks, degrees and radices, a working width without the budget of
+/// the context kind, the module of the plan's ring, ranks, degrees and radices, a sparse plan without its gap, a working
+/// width without the budget of
 /// the stages running on `res`, the keys of the plan's ring and their coverage of the run's widths, and, when the keys
 /// report their layout, the arena against the query.
 pub(crate) fn check_bootstrap_entry<BE, F, K>(
@@ -322,6 +338,7 @@ where
     ensure_ci_module(OP, ci, ctx.eval_mod_ci().is_some())?;
     ensure_rank_one(OP, a, res)?;
     ensure_one_degree(OP, module.n(), a, res)?;
+    ensure_bootstrap_degree(OP, ctx, a)?;
     ensure_one_base2k(OP, a, res)?;
     ensure_encapsulation(OP, keys, ctx.sparse_secret_hamming_weight())?;
     // `key_widths` reads widths: SlotsToCoeffs on `res` also needs its budget above the scale EvalMod leaves there.
@@ -373,6 +390,7 @@ where
         "functional bootstrapping requires an S2C-first context"
     );
     ensure_lut_batch(OP, module.n(), a, res, luts, &ctx.run(a.meta()))?;
+    ensure_bootstrap_degree(OP, ctx, a)?;
     let log_msg_ratio = luts[0].log_msg_ratio();
     ensure_encapsulation(OP, keys, ctx.sparse_secret_hamming_weight())?;
     let tensor_key = required_tensor_key(OP, keys.tensor_key())?;

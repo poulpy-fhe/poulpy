@@ -24,14 +24,15 @@ use poulpy_core::{
 use poulpy_hal::{
     api::{ModuleNew, ModuleSynchronize, ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{
-        Backend, HostDataMut, HostDataRef, HostStaged, MaxBase2k, Module, ReaderFrom, ScratchArena, ScratchOwned, Standard,
-        WriterTo,
+        Backend, HostBytesBackend, HostDataMut, HostDataRef, HostStaged, MaxBase2k, Module, ReaderFrom, ScratchArena,
+        ScratchOwned, Standard, WriterTo,
     },
     source::Source,
 };
 
 use crate::{
-    CKKSCompositionError, CKKSCtBounds, CKKSInfos, CKKSLayout, CKKSResult, GLWEPlaintextMeta, SetCKKSInfos, SlotsKind,
+    CKKSCompositionError, CKKSCtBounds, CKKSInfos, CKKSLayout, CKKSResult, CoeffsMeta, GLWEPlaintextMeta, SetCKKSInfos,
+    SlotsKind,
     api::{
         CKKSAddOps, CKKSAllOpsTmpBytes, CKKSBootstrappingOps, CKKSCopyOps, CKKSDFTMatrixOps, CKKSDFTMatrixPreparedFactory,
         CKKSDFTOps, CKKSDecryptOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar, CKKSEncryptOps, CKKSEvalModOps,
@@ -41,10 +42,11 @@ use crate::{
         BootstrappingContextPrepared, BootstrappingKeysLayout, BootstrappingKeysPrepared, BootstrappingLinearKeys,
         BootstrappingPipeline, BootstrappingPlan, CIConversion, CKKSCITwin, CKKSCiphertextAlloc, CKKSCiphertextOwned,
         CKKSDFTFactors, CKKSModRaiseInfos, CKKSPlaintextAlloc, CKKSPlaintextOwned, CKKSRightOperandPrepared, CoeffsMaskPrepared,
-        DFTOutputFormat, DFTPlan, DFTType, Decode, Encode, EvalModRing, ModRaisePlan, ModRaisePrepared, Split,
+        DFTOutputFormat, DFTPlan, DFTType, Decode, Encode, EncodedLut, EvalModRing, ModRaisePlan, ModRaisePrepared, Split,
     },
     oep::CKKSModUpFirstFactorImpl,
-    presets::bootstrapping::{BootstrappingPreset, all},
+    polynomial::SplitStrategy,
+    presets::bootstrapping::{BootstrappingPreset, PresetScales, all},
     test_suite::bootstrapping::{assert_eval_mod_refuses, assert_mod_raise_refuses},
     test_suite::helpers::{
         LoggedBootstrappingKeys, PrecisionStats, TestContextBackend, TestContextModule, TestContextSharedModule,
@@ -1585,6 +1587,7 @@ where
             log_sparsity: 0,
         });
         let (mut got_re, mut got_im) = (vec![0.0; half], vec![0.0; half]);
+        assert_canonical_at_k::<BE>(label, ct);
         with_scratch::<BE, _>(self.client_bytes, |s| {
             module.ckks_decrypt(&mut got, ct, &self.sk, s)?;
             module.ckks_decode_slots_host_into(&got, &mut got_re, &mut got_im, s)
@@ -1761,6 +1764,7 @@ where
     let mut got = module.ckks_plaintext_alloc_from_infos(&running);
     got.set_meta(running.meta());
     let mut coeffs = vec![0.0; n];
+    assert_canonical_at_k::<BE>("merged factor", &running);
     with_scratch::<BE, _>(run.client_bytes, |s| {
         module.ckks_decrypt(&mut got, &running, &run.sk, s)?;
         module.ckks_decode_coeffs_host_into(&got, &mut coeffs, s)
@@ -1810,11 +1814,30 @@ where
     })
     .unwrap();
 
-    let keep: Vec<bool> = (0..n).map(|j| j < half && j.is_multiple_of(2)).collect();
+    // Slot `s` holds coefficient `2·bitrev(s)` of SlotsToCoeffs, and the slots repeat every `N/4`.
+    let keep: Vec<bool> = (0..n).map(|j| j < half && j.is_multiple_of(2) && j % 10 != 4).collect();
     let bytes = context.coeffs_mask_tmp_bytes(module).unwrap();
     let mask = with_scratch::<BE, _>(bytes, |s| context.coeffs_mask(module, &keep, s)).unwrap();
+    let bitrev = |s: usize| s.reverse_bits() >> (usize::BITS - slots.trailing_zeros());
+    let masked: Vec<f64> = (0..half)
+        .map(|j| if keep[2 * bitrev(j % slots)] { want[j] } else { 0.0 })
+        .collect();
+    assert!(masked.iter().zip(&want).any(|(m, w)| m != w), "the mask drops a coefficient");
     let got = run.raise_to_eval_mod(&coeffs, Some(&mask), message.meta());
-    run.assert_decrypts("raise in a subring", &got, &want, &zeros);
+    run.assert_decrypts("masked in a subring", &got, &masked, &zeros);
+
+    // The same coefficients one half up, read through the mask.
+    let up: Vec<bool> = (0..n).map(|j| keep[(j + half) % n]).collect();
+    let mask = with_scratch::<BE, _>(bytes, |s| context.coeffs_mask(module, &up, s)).unwrap();
+    let mut rotated = module.ckks_ciphertext_alloc_from_infos(&coeffs);
+    with_scratch::<BE, _>(garbage_bytes, |s| {
+        module.ckks_copy(&mut rotated, &coeffs, s)?;
+        module.glwe_rotate_assign(half as i64, &mut rotated, s);
+        Ok::<_, anyhow::Error>(())
+    })
+    .unwrap();
+    let got = run.raise_to_eval_mod(&rotated, Some(&mask), message.meta());
+    run.assert_decrypts("masked in a subring, one half up", &got, &masked, &zeros);
 
     // Key generation leaves nothing of the secret of the subring in its arena: every byte is wiped or was never carved.
     let mut scratch = poisoned_scratch::<BE>(keys_layout.generate_tmp_bytes(module, None));
@@ -1885,12 +1908,12 @@ impl<BE: Backend> CKKSModRaiseInfos<BE> for RaiseWithFactor<'_, BE> {
 }
 
 /// The mask, its view, the merged factor and the gap refuse with a typed error, before the arena check on an arena of no
-/// byte: a context of another pipeline or ring, one that evaluates no factor, a mask or kernels of another shape, or off
-/// the subring, a mask of another factor, a gap off the slots of the transforms, and a raise of a gap without what it
-/// reads. The arena check comes last.
+/// byte: a context of another pipeline or ring, under EvalRound+ or a LUT, or that evaluates no factor, a mask or kernels
+/// of another shape, or off the subring, a mask of another factor or plan, a gap off the slots of the transforms, a sparse
+/// plan without its gap, and a raise of a gap without what it reads. The arena check comes last.
 pub fn test_ckks_coeffs_mask_rejects_invalid_inputs<BE>()
 where
-    BE: TestContextBackend<Ring = Standard> + CKKSCITwin + CKKSModUpFirstFactorImpl,
+    BE: TestContextBackend<Ring = Standard> + CKKSCITwin + CKKSModUpFirstFactorImpl + HostStaged,
     CIBackend<BE>: TestContextBackend,
     Module<CIBackend<BE>>: TestContextSharedModule<CIBackend<BE>> + CKKSEncodingOps<CIBackend<BE>, f64>,
     Module<BE>: StepsRunModule<BE>,
@@ -1936,19 +1959,32 @@ where
     let ci_preset = preset.with_eval_mod_ring(ci_ring).unwrap();
     let (module_2n, ci) = (Module::<BE>::new(2 * n as u64), Module::<CIBackend<BE>>::new(n as u64));
     let ci_context = compile_context::<BE, f64>(&module_2n, Some(&ci), base2k, ci_preset.plan());
+    let round_context = compile(preset.with_eval_round_plus(30, 50).unwrap().plan());
+    let host = Module::<HostBytesBackend>::new(n as u64);
+    let lut = EncodedLut::binary(
+        &host,
+        3.0f64,
+        1.0,
+        8,
+        4,
+        1,
+        base2k,
+        CoeffsMeta::from_delta_budget(16, preset.base2k()),
+        SplitStrategy::MinDepth,
+    )
+    .unwrap();
+    let functional_context = compile(&plan.clone().with_functional_bootstrap(&lut).unwrap());
 
     const MASK: &str = "coeffs_mask";
     let keep: Vec<bool> = (0..n).map(|j| j < half && j.is_multiple_of(2)).collect();
     let mask_of = |context: &BootstrappingContextPrepared<BE, f64>, module: &Module<BE>, keep: &[bool]| {
         with_scratch::<BE, _>(0, |s| context.coeffs_mask(module, keep, s))
     };
-    assert_refused(
-        "another pipeline",
-        mask_of(&c2s_context, module, &keep),
-        MASK,
-        "takes an S2C-first context",
-    );
-    assert_refused("the CI ring", mask_of(&ci_context, &module_2n, &keep), MASK, "standard ring");
+    let identity = "takes an identity S2C-first context";
+    assert_refused("another pipeline", mask_of(&c2s_context, module, &keep), MASK, identity);
+    assert_refused("the CI ring", mask_of(&ci_context, &module_2n, &keep), MASK, identity);
+    assert_refused("EvalRound+", mask_of(&round_context, module, &keep), MASK, identity);
+    assert_refused("a LUT", mask_of(&functional_context, module, &keep), MASK, identity);
     assert_refused("no factor", mask_of(&raised_only, module, &keep), MASK, "evaluates no factor");
     assert_refused(
         "another length",
@@ -2011,6 +2047,14 @@ where
         .unwrap();
     assert!(err.to_string().contains("needs a scratch arena"), "{err}");
 
+    // A kernel per coset, on the degree of the bootstrap of a module of `2N`, keeps the rotations of the factor.
+    let bytes = ci_context
+        .merged_s2c_factor_tmp_bytes(&module_2n, 20 + preset.base2k())
+        .unwrap();
+    let merged = with_scratch::<BE, _>(bytes, |s| ci_context.merged_s2c_factor(&module_2n, &kernels, 20, s)).unwrap();
+    let last = ci_context.slots_to_coeffs().factor_operands().last().unwrap();
+    assert!(merged.factor().index() == last.index(), "a merged factor keeps its schedule");
+
     let bytes = subring_context.coeffs_mask_tmp_bytes(module).unwrap();
     let mask = with_scratch::<BE, _>(bytes, |s| subring_context.coeffs_mask(module, &keep, s)).unwrap();
     assert_invalid_operand(
@@ -2025,29 +2069,98 @@ where
         "masked",
         "evaluates no factor",
     );
+    let own_mask = {
+        let bytes = context.coeffs_mask_tmp_bytes(module).unwrap();
+        with_scratch::<BE, _>(bytes, |s| context.coeffs_mask(module, &keep, s)).unwrap()
+    };
+    assert!(context.masked(&own_mask).is_ok());
+    for (label, other) in [("EvalRound+", &round_context), ("a LUT", &functional_context)] {
+        assert_invalid_operand(label, other.masked(&own_mask).err().as_ref().unwrap(), "masked", identity);
+    }
+    // One schedule, but the scaling of another interval, or another scale: the view reads the mask's plan.
+    let scales = PresetScales {
+        c2s_log_delta: preset.scales().c2s_log_delta - 2,
+        ..preset.scales()
+    };
+    for other in [
+        preset.with_eval_mod_polynomial(8, 30, 3).unwrap(),
+        preset.with_scales(scales).unwrap(),
+    ] {
+        let other_context = compile(other.plan());
+        let bytes = other_context.coeffs_mask_tmp_bytes(module).unwrap();
+        let other_mask = with_scratch::<BE, _>(bytes, |s| other_context.coeffs_mask(module, &keep, s)).unwrap();
+        let (last, other_last) = (
+            context.coeffs_to_slots().factor_operands().last().unwrap(),
+            other_context.coeffs_to_slots().factor_operands().last().unwrap(),
+        );
+        assert!(last.index() == other_last.index(), "the case needs one schedule");
+        assert_invalid_operand(
+            "a mask of another plan",
+            context.masked(&other_mask).err().as_ref().unwrap(),
+            "masked",
+            "not of the last CoeffsToSlots factor",
+        );
+    }
 
     assert_refused_gap(
         "a plan without the first factor on the raise",
         preset.plan().clone().with_log_gap(1),
         "a gap takes an S2C-first plan",
     );
-    let slots_reason = "the slots of the subring";
     let wider_gap = subring_run.preset.plan().clone().with_log_gap(2).unwrap();
     assert_refused_gap(
-        "a compile off the slots",
+        "a compile past the slots",
         with_scratch::<BE, _>(0, |s| {
             BootstrappingContextPrepared::<BE, f64>::compile_unprepared(module, None, base2k, &wider_gap, s)
         }),
-        slots_reason,
+        "do not fit the module",
     );
+    // A module may exceed the degree of the bootstrap, with a gap as without one.
+    compile_context::<BE, f64>(&module_2n, None, base2k, subring_run.preset.plan());
     let (mut xs, mut xe, mut xa) = (Source::new([7; 32]), Source::new([1; 32]), Source::new([2; 32]));
     assert_refused_gap(
         "keys off the slots",
         with_scratch::<BE, _>(0, |s| {
             wider_gap.generate_keys(module, None, &run.sk_raw, preset.keys_layout(), &mut xs, &mut xe, &mut xa, s)
         }),
-        slots_reason,
+        "must fill the slots of the subring",
     );
+
+    // A plan on fewer slots than the ring, without its gap: keys and bootstraps refuse what the compile lets through.
+    let sparse = subring_run.preset.plan().clone().with_log_gap(0).unwrap();
+    assert_refused_gap(
+        "keys of a sparse plan",
+        with_scratch::<BE, _>(0, |s| {
+            sparse.generate_keys(module, None, &run.sk_raw, preset.keys_layout(), &mut xs, &mut xe, &mut xa, s)
+        }),
+        "must fill the slots of the subring",
+    );
+    let sparse_context = compile(&sparse);
+    let (mut out, input) = (
+        fixture_ciphertext(module, &subring_run.preset.bootstrap_layout(), 8),
+        fixture_ciphertext(module, &subring_run.preset.input_layout(), 9),
+    );
+    let before = snapshot::<BE, _>(&out);
+    let degree = "must fill the slots of the input's degree";
+    let err = with_scratch::<BE, _>(0, |s| {
+        module.ckks_bootstrap(&mut out, &input, &sparse_context, None, &subring_run.keys, s)
+    })
+    .unwrap_err();
+    assert_invalid_operand("a bootstrap of a sparse plan", &err, "ckks_bootstrap", degree);
+    let functional_sparse = compile(&sparse.clone().with_functional_bootstrap(&lut).unwrap());
+    let luts = [lut.transfer_to(module)];
+    let mut outs = vec![out];
+    let err = with_scratch::<BE, _>(0, |s| {
+        module.ckks_functional_bootstrap(&mut outs, &input, &functional_sparse, &luts, &subring_run.keys, s)
+    })
+    .unwrap_err();
+    assert_invalid_operand(
+        "a functional bootstrap of a sparse plan",
+        &err,
+        "ckks_functional_bootstrap",
+        degree,
+    );
+    assert_eq!(snapshot::<BE, _>(&outs[0]), before, "a refused bootstrap wrote its output");
 
     // A raise whose plan claims a gap without the rest of what a gap reads.
     let (mut res, mut a) = (

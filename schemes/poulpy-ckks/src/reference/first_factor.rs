@@ -359,8 +359,7 @@ where
     if let Some((dense_to_sparse, _)) = keys.encapsulation_keys() {
         module.glwe_keyswitch_assign(src, &dense_to_sparse.to_backend_ref(), scratch);
     }
-    // Under a secret of `Z[X^g]` the coefficients at multiples of `g` decrypt on their own: only those stay, so the
-    // overflow of the raise lies in that subring as well, which the sparse transforms read.
+    // A secret of `Z[X^g]` decrypts the multiples of `g` on their own: dropping the rest keeps the overflow in the subring.
     if log_gap > 0 {
         let scratch = scratch.borrow();
         let (mut subring, _) = scratch.take_glwe_scratch(&subring_layout(&*src, log_gap));
