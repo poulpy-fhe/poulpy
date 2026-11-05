@@ -909,6 +909,35 @@ where
     }
 }
 
+/// The factors of a matrix short of the last one, from [`DFTMatrix::head`].
+pub struct HeadFactors<'a, D> {
+    dft: &'a D,
+}
+
+impl<BE: Backend, Dir, Fmt, P> CKKSDFTFactors<BE, Dir, Fmt> for HeadFactors<'_, DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>>
+where
+    P: GLWEDiagonalProd<BE> + LtDiagonalMeta + GLWEInfos,
+{
+    type Diagonal = P;
+
+    fn dft_plan(&self) -> &DFTPlan {
+        self.dft.plan()
+    }
+
+    fn factors<'a>(&'a self) -> impl Iterator<Item = &'a LinearTransformation<P>>
+    where
+        BE: 'a,
+        Dir: 'a,
+        Fmt: 'a,
+    {
+        self.dft
+            .factor_operands()
+            .split_last()
+            .map_or(&[][..], |(_, head)| head)
+            .iter()
+    }
+}
+
 /// Prepared (resident-RHS) [`DFTMatrix`]: each factor's diagonals are kept in the
 /// convolution domain ([`LinearTransformationPrepared`]) rather than materialized
 /// per factor, trading resident memory for faster repeated evaluation. Preserves
@@ -937,6 +966,12 @@ impl<BE: Backend, Dir, Fmt, R> DFTMatrix<BE, Dir, Fmt, R> {
     /// The per-factor right operands, in evaluation order.
     pub fn factor_operands(&self) -> &[R] {
         &self.inner.factors
+    }
+
+    /// The factors of this matrix short of the last one, for a caller that runs that factor in another form, such as a
+    /// [`MergedS2CFactorPrepared`](crate::layouts::MergedS2CFactorPrepared).
+    pub fn head(&self) -> HeadFactors<'_, Self> {
+        HeadFactors { dft: self }
     }
 
     /// Replaces the factor representation, preserving the resolved plan and markers.
@@ -1138,6 +1173,87 @@ where
     Ok(DFTMatrix::from_factors(DFTMatrixFactors::new(plan.clone(), factors)))
 }
 
+/// The bits above the binary point of a modulus at most `max`.
+pub(crate) fn integer_bits<F: DftScalar>(max: F) -> usize {
+    max.to_f64()
+        .map_or(0, |max| (max.ceil() as u64).next_power_of_two().trailing_zeros() as usize)
+}
+
+/// The last factor of the transform `plan` describes at degree `2^log_n`, with the columns of block `B` scaled on the
+/// left by the slots `values[B]` as [`block_scaled`] does, encoded at scale `2^log_delta`, in a matrix of `plan` to
+/// prepare as the others. The factor keeps the rotations of the plan. `plan` is a resolved plan, such as the one a
+/// [`DFTMatrix`] stores.
+pub(crate) fn ckks_block_scaled_last_factor<BE, F>(
+    module: &Module<BE>,
+    base2k: poulpy_core::layouts::Base2K,
+    plan: &DFTPlan,
+    log_n: usize,
+    values: &[(Vec<F>, Vec<F>)],
+    log_delta: usize,
+    scratch: &mut poulpy_hal::layouts::ScratchArena<'_, BE>,
+) -> crate::CKKSResult<DFTMatrix<BE, crate::layouts::Decode, crate::layouts::Split>>
+where
+    BE: Backend,
+    Module<BE>: crate::api::CKKSEncodingOps<BE, F>,
+    F: crate::layouts::DftScalar + crate::api::CKKSEncodingScalar,
+{
+    let last = crate::layouts::dft_matrices::ckks_dft_matrices_gen::<F>(plan, log_n)
+        .pop()
+        .expect("a DFT plan has at least one factor");
+    let merged = block_scaled(&last, values);
+    let step = plan.schedule.steps.last().expect("a DFT plan has at least one factor");
+    let max = merged
+        .indexes()
+        .iter()
+        .flat_map(|&d| [merged.re.get(d), merged.im.get(d)])
+        .flatten()
+        .flatten()
+        .fold(F::one(), |m, v| m.max(v.abs()));
+    // A sign bit, the integer bits of the largest entry, and one bit for what its rounding carries.
+    let budget = 2 + integer_bits(max);
+    let coeffs_meta = crate::CoeffsMeta::from_delta_budget(log_delta, budget);
+    let factor = crate::encoding::ckks_linear_transformation_encode_from_diagonals::<BE, F>(
+        module,
+        base2k,
+        coeffs_meta,
+        &merged,
+        plan.factor_strategy(step.giant_step),
+        false,
+        scratch,
+    )
+    .map_err(crate::CKKSError::from)?;
+    let mut plan = plan.clone();
+    plan.coeffs_meta = coeffs_meta;
+    Ok(DFTMatrix::from_factors(DFTMatrixFactors::new(plan, vec![factor])))
+}
+
+/// The diagonals of `last`, a factor of `slots` slots, with the columns of block `B` scaled on the left by the slots
+/// `values[B]`: `M[j][c]` becomes `values[c / m][j]·M[j][c]` for blocks of `m` columns. The diagonals keep their
+/// indexes, so the factor keeps its keys.
+pub(crate) fn block_scaled<F: DftScalar>(
+    last: &crate::layouts::ComplexDiagonals<F>,
+    values: &[(Vec<F>, Vec<F>)],
+) -> crate::layouts::ComplexDiagonals<F> {
+    use poulpy_core::layouts::Diagonals;
+
+    let slots = last.slots();
+    let m = slots / values.len();
+    let mut scaled = crate::layouts::ComplexDiagonals::new(Diagonals::new(slots), Diagonals::new(slots));
+    for d in last.indexes() {
+        let at = |part: &Diagonals<F>, j: usize| part.get(d).map_or(F::zero(), |v| v[j % v.len()]);
+        let (mut re, mut im) = (Vec::with_capacity(slots), Vec::with_capacity(slots));
+        for j in 0..slots {
+            let (scale_re, scale_im) = &values[(j + d as usize) % slots / m];
+            let (a, b, c, e) = (at(&last.re, j), at(&last.im, j), scale_re[j], scale_im[j]);
+            re.push(a * c - b * e);
+            im.push(a * e + b * c);
+        }
+        scaled.re.set(d, re);
+        scaled.im.set(d, im);
+    }
+    scaled
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1194,6 +1310,90 @@ mod tests {
             let own_tile = plan.galois_elements_per_factor(log_n, order).pop().unwrap();
             assert_eq!(own_tile == want, !power_of_two_keys, "power_of_two_keys={power_of_two_keys}");
         }
+    }
+
+    /// A transform with its last factor scaled per block matches the split-and-multiply convolution: each coset of
+    /// the coefficients times its own polynomial. Before the last factor, block `B` holds the coset `bitrev(B)`.
+    #[test]
+    fn block_scaled_last_factor_is_the_convolution() {
+        use poulpy_core::layouts::Evaluate;
+        use poulpy_hal::source::Source;
+
+        let (log_n, cosets) = (10usize, 8usize);
+        let (n, half) = (1usize << log_n, 1usize << (log_n - 1));
+        let plan = plan(DFTType::Decode, &[3, 3, 3], DFTOutputFormat::SplitRealAndImag)
+            .with_optimal_bsgs(log_n)
+            .resolved_at(log_n);
+        let factors = crate::reference::dft::ckks_dft_matrices_gen::<f64>(&plan, log_n);
+        let strategies: Vec<_> = plan
+            .schedule
+            .steps
+            .iter()
+            .map(|s| plan.factor_strategy(s.giant_step))
+            .collect();
+        let bitrev = |k: usize, bits: u32| k.reverse_bits() >> (usize::BITS - bits);
+        let order = 2 * n as u64;
+        let mut roots = Vec::with_capacity(half);
+        let mut pow5 = 1u64;
+        for _ in 0..half {
+            roots.push(pow5);
+            pow5 = pow5 * 5 % order;
+        }
+        let eval = |poly: &[f64]| -> (Vec<f64>, Vec<f64>) {
+            let (mut re, mut im) = (vec![0.0; half], vec![0.0; half]);
+            for (j, &root) in roots.iter().enumerate() {
+                for (e, &c) in poly.iter().enumerate().filter(|&(_, &c)| c != 0.0) {
+                    let angle = std::f64::consts::PI * ((root * e as u64 % order) as f64) / n as f64;
+                    re[j] += c * angle.cos();
+                    im[j] += c * angle.sin();
+                }
+            }
+            (re, im)
+        };
+
+        // A complex input: coefficient `bitrev(k)` holds its real part, `N/2 + bitrev(k)` its imaginary part.
+        let mut source = Source::new([5; 32]);
+        let z_re: Vec<f64> = (0..half).map(|_| source.next_f64(-1.0, 1.0)).collect();
+        let z_im: Vec<f64> = (0..half).map(|_| source.next_f64(-1.0, 1.0)).collect();
+        let mut coeffs = vec![0.0; n];
+        for k in 0..half {
+            coeffs[bitrev(k, half.trailing_zeros())] = z_re[k];
+            coeffs[half + bitrev(k, half.trailing_zeros())] = z_im[k];
+        }
+        let head = factors[..2]
+            .iter()
+            .zip(&strategies)
+            .fold((z_re, z_im), |(re, im), (factor, &strategy)| {
+                factor.evaluate((&re, &im), strategy)
+            });
+
+        // Each coset times its own polynomial, the slow way.
+        let kernels: Vec<Vec<f64>> = (0..cosets)
+            .map(|_| {
+                let mut poly = vec![0.0; n];
+                for _ in 0..5 {
+                    poly[source.next_u64n(n as u64, n as u64 - 1) as usize] = source.next_f64(-2.0, 2.0);
+                }
+                poly
+            })
+            .collect();
+        let mut product = vec![0.0; n];
+        for (idx, &c) in coeffs.iter().enumerate() {
+            for (e, &w) in kernels[idx % cosets].iter().enumerate().filter(|&(_, &w)| w != 0.0) {
+                let (d, sign) = if idx + e < n { (idx + e, 1.0) } else { (idx + e - n, -1.0) };
+                product[d] += sign * w * c;
+            }
+        }
+        let (want_re, want_im) = eval(&product);
+
+        let values: Vec<(Vec<f64>, Vec<f64>)> = (0..cosets).map(|b| eval(&kernels[bitrev(b, 3)])).collect();
+        let (got_re, got_im) = block_scaled(&factors[2], &values).evaluate((&head.0, &head.1), strategies[2]);
+        let err = got_re
+            .iter()
+            .zip(&want_re)
+            .chain(got_im.iter().zip(&want_im))
+            .fold(0.0f64, |e, (g, w)| e.max((g - w).abs()));
+        assert!(err < 1e-9, "merged against split-and-multiply: {err:e}");
     }
 
     #[test]

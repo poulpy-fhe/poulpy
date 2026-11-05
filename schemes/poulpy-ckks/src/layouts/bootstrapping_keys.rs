@@ -55,7 +55,7 @@ use poulpy_core::{
     },
 };
 use poulpy_hal::{
-    api::VecZnxAutomorphism,
+    api::{VecZnxAutomorphism, VecZnxSwitchRing},
     layouts::{
         Backend, ConjugateInvariant, CopyToHost, CyclotomicOrder, Data, HostDataMut, HostDataRef, Module, ScratchArena, Standard,
         ZnxWord, galois_element, scalar_znx_as_vec_znx_backend_mut_from_mut, scalar_znx_as_vec_znx_backend_ref_from_ref,
@@ -599,6 +599,7 @@ impl<BE: CKKSCITwin, F> BootstrappingContextPrepared<BE, F> {
             + GLWESwitchingKeyEncryptSk<BE>
             + GLWESecretSampling<BE>
             + VecZnxAutomorphism<BE>
+            + VecZnxSwitchRing<BE>
             + GLWECIKeyEncryptSk<BE>,
         Module<BE::CI>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
             + GLWETensorKeyEncryptSk<BE::CI>
@@ -638,6 +639,7 @@ impl BootstrappingPlan {
             + GLWESwitchingKeyEncryptSk<BE>
             + GLWESecretSampling<BE>
             + VecZnxAutomorphism<BE>
+            + VecZnxSwitchRing<BE>
             + GLWECIKeyEncryptSk<BE>,
         Module<BE::CI>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
             + GLWETensorKeyEncryptSk<BE::CI>
@@ -657,6 +659,7 @@ impl BootstrappingPlan {
         for dft in [self.coeffs_to_slots(), self.slots_to_coeffs()] {
             crate::layouts::dft::check_dft_fits(dft, log_n)?;
         }
+        self.check_log_gap(log_n)?;
         let first_factor_rotations = if self.coeffs_to_slots().first_factor_on_raise() {
             self.coeffs_to_slots().first_factor_rotations(log_n)
         } else {
@@ -668,6 +671,7 @@ impl BootstrappingPlan {
             self.sparse_secret_hamming_weight(),
             self.eval_mod_ring(),
             cyclotomic_order,
+            self.log_gap(),
         ))
     }
 }
@@ -683,6 +687,7 @@ pub(crate) struct KeyRecipe {
     sparse_secret_hamming_weight: Option<usize>,
     eval_mod_ring: EvalModRing,
     cyclotomic_order: i64,
+    log_gap: usize,
 }
 
 impl KeyRecipe {
@@ -692,6 +697,7 @@ impl KeyRecipe {
         sparse_secret_hamming_weight: Option<usize>,
         eval_mod_ring: EvalModRing,
         cyclotomic_order: i64,
+        log_gap: usize,
     ) -> Self {
         // Conjugation, for the split forward transform.
         if eval_mod_ring == EvalModRing::Standard {
@@ -703,6 +709,7 @@ impl KeyRecipe {
             sparse_secret_hamming_weight,
             eval_mod_ring,
             cyclotomic_order,
+            log_gap,
         }
     }
 
@@ -730,6 +737,7 @@ impl KeyRecipe {
             + GLWESwitchingKeyEncryptSk<BE>
             + GLWESecretSampling<BE>
             + VecZnxAutomorphism<BE>
+            + VecZnxSwitchRing<BE>
             + GLWECIKeyEncryptSk<BE>,
         Module<BE::CI>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
             + GLWETensorKeyEncryptSk<BE::CI>
@@ -806,7 +814,8 @@ impl KeyRecipe {
             + GLWETensorKeyEncryptSk<BE>
             + GLWESwitchingKeyEncryptSk<BE>
             + GLWESecretSampling<BE>
-            + VecZnxAutomorphism<BE>,
+            + VecZnxAutomorphism<BE>
+            + VecZnxSwitchRing<BE>,
     {
         let sparse_secret_hamming_weight = self.sparse_secret_hamming_weight;
         anyhow::ensure!(
@@ -893,7 +902,24 @@ impl KeyRecipe {
                 let (n, rank) = (sk_dense.n(), sk_dense.rank());
                 let keys = {
                     let (mut sk_sparse, mut scratch) = scratch.borrow().take_glwe_secret_scratch(n, rank);
-                    module.glwe_secret_fill_ternary_hw(&mut sk_sparse, hamming_weight, source_xs);
+                    if self.log_gap == 0 {
+                        module.glwe_secret_fill_ternary_hw(&mut sk_sparse, hamming_weight, source_xs);
+                    } else {
+                        // The secret of the subring, `s(X^g)`: its weight is spent on the subring's coefficients.
+                        let subring = (n.as_usize() >> self.log_gap).into();
+                        {
+                            let scratch = scratch.borrow();
+                            let (mut sk_subring, _) = scratch.take_glwe_secret_scratch(subring, rank);
+                            module.glwe_secret_fill_ternary_hw(&mut sk_subring, hamming_weight, source_xs);
+                            let sk_subring = GLWESecretToBackendRef::<BE>::to_backend_ref(&sk_subring);
+                            let sk = scalar_znx_as_vec_znx_backend_ref_from_ref::<BE>(sk_subring.data());
+                            let mut res = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(sk_sparse.data_mut());
+                            for col in 0..rank.as_usize() {
+                                module.vec_znx_switch_ring(&mut res, col, &sk, col);
+                            }
+                        }
+                        scratch.wipe(BE::scalar_znx_bytes_of(subring.as_usize(), rank.as_usize()));
+                    }
                     *sk_sparse.dist_mut() = Distribution::ENCAPSULATED("sparse-encapsulation");
 
                     let mut dense_to_sparse = module.glwe_switching_key_alloc_from_infos(&encaps.dense_to_sparse);

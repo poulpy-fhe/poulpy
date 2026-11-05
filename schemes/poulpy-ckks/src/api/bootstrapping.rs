@@ -77,10 +77,10 @@ pub trait CKKSBootstrappingOps<BE: CKKSCITwin> {
         P: CKKSModRaiseInfos<BE>;
 
     /// Whole raise step of the bootstrap, as one call: on C2S-first, lift `Δ·m` to the plan's message ratio; switch
-    /// to the sparse secret when `keys` carry the encapsulation switches, ModUp into `res` (with the second lift, or
-    /// the C2S guard bits, fused into its shift), apply the first CoeffsToSlots factor when the plan leaves it to the
-    /// raise, switch back, and relabel so `res` comes back fully labelled: C2S-first by the message ratio, so that
-    /// `I(X)·q` is the integer part and the message the residue.
+    /// to the sparse secret when `keys` carry the encapsulation switches, project on the subring of the plan's gap, ModUp
+    /// into `res` (with the second lift, or the C2S guard bits, fused into its shift), apply the first CoeffsToSlots factor
+    /// when the plan leaves it to the raise, switch back, and relabel so `res` comes back fully labelled: C2S-first by the
+    /// message ratio, so that `I(X)·q` is the integer part and the message the residue.
     ///
     /// `res` must be allocated at the bootstrap modulus. `a` is consumed: its content and metadata are unspecified on
     /// a successful return. Scratch is bounded by [`Self::ckks_mod_raise_tmp_bytes`]. `plan` is a compiled context, a
@@ -92,8 +92,9 @@ pub trait CKKSBootstrappingOps<BE: CKKSCITwin> {
     /// Before any write, leaving `res` and `a` unchanged: [`InvalidOperand`](crate::CKKSCompositionError::InvalidOperand)
     /// for a rank other than 1, ciphertexts of two degrees or base2k or of a degree the module does not serve, an
     /// encapsulation that does not match the plan, a plan that moves the first CoeffsToSlots factor onto the raise
-    /// without that factor, a `res` too narrow for the raise of `a` and its lifts, encapsulation keys absent or too narrow
-    /// for what they switch, or first-factor keys absent, of two layouts or too narrow for the raise.
+    /// without that factor, a gap on a raise that is not S2C-first with a first factor and a sparse secret, a `res` too
+    /// narrow for the raise of `a` and its lifts, encapsulation keys absent or too narrow for what they switch, or
+    /// first-factor keys absent, of two layouts or too narrow for the raise.
     /// `CKKSError::Internal` for an input without the bits of the plan's lifts, or an arena under
     /// [`Self::ckks_mod_raise_tmp_bytes`], when the keys report their layout.
     ///

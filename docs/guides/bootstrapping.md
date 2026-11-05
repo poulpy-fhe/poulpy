@@ -133,6 +133,21 @@ C2S-first copies `input` into `coeffs`, skips the SlotsToCoeffs above the raise,
 
 Under a bypass (EvalRound+), `ckks_bootstrap_eval_mod` returns `EvalMod(x) - K·x`, on every route, with its working label and the guard bits still on. The caller copies the raised ciphertext before CoeffsToSlots, runs the bypass factors on the copy (`ckks_dft_matrix_eval_assign(&mut z_hp, bypass, ..)`), doubles it (`ckks_mul_pow2_assign(1, ..)`), adds the step's output, and only then calls `run.stamp_eval_mod_output(&mut res)?`: removing the guard bits earlier lowers `k` and changes the bits of the conjugate-invariant route. `ckks_eval_lut` removes the guard bits itself, before its exponential, and runs no bypass: on a real message of an S2C-first plan it reads the real part alone, with or without one in the plan.
 
+A view stands in for a matrix wherever a step takes one, since the transforms read `CKKSDFTFactors`. `ctx.masked(&mask)` holds the CoeffsToSlots factors with the last one times a slot-wise selection, from `BootstrappingContextPrepared::coeffs_mask`, so the coefficients it leaves out are zero before EvalMod, at no level:
+
+```rust
+module.ckks_mod_raise(&mut z, &mut coeffs, &ctx, &keys, s)?;
+module.ckks_coeffs_to_slots_assign(&mut z, &ctx.masked(&mask)?, keys.rotation_keys(), s)?;
+z.set_slots(SlotsKind::Real);
+module.ckks_bootstrap_eval_mod(&mut res, &z, &ctx, None, &keys, s)?;
+```
+
+Coefficients `p` and `N/2 + p` share a real slot, in its real and imaginary parts: the selection keeps one of them, the second through a factor `-i`, and the slot gives it back as coefficient `p` of the next SlotsToCoeffs.
+
+`merged_s2c_factor` folds a product into the last SlotsToCoeffs factor, which runs after `ctx.slots_to_coeffs().head()`, the view of every factor but the last. Before that factor, slot block `B` holds the sub-transform of the coefficients of index `bitrev(B)` modulo the block count, so scaling the columns of block `B` by the slots of a kernel `K_r` multiplies that coset by `K_r`. The factor keeps its diagonals and its rotation keys, and the product costs no level. The block count, `2^depth` of the factor, bounds the cosets (`merged_s2c_cosets`).
+
+A real-slot bootstrap of plaintexts in `Z[X^g]` needs fewer slots than the ring (`with_log_gap`). Its sparse secret lies in that subring, so after the dense-to-sparse switch the coefficients at multiples of `g` decrypt on their own. The raise keeps those only, for free: the overflow then lies in the subring, the first factor still runs on the small ciphertext, and the transforms act on `N/2g` slots with no trace. A key under that secret splits into `g` RLWE samples of degree `N/g`, so its modulus is bounded at that degree, and a preset refuses a gap without a bound.
+
 ## Scale and budget chain
 
 A ciphertext enters at the input modulus `2^log_modulus_in` carrying `Δ·m` with `log_msg_ratio` bits of headroom, and leaves at the output modulus `2^k_out` carrying the same `Δ·m` with a much larger budget. Both pipelines restore the input scale automatically.
