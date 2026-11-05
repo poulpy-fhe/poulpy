@@ -119,7 +119,7 @@ pub unsafe trait CKKSBootstrappingImpl: CKKSCITwin + CKKSDFTImpl + CKKSCopyImpl 
     fn ckks_bootstrap_eval_mod<R, A, P, F, K>(
         module: &Module<Self>,
         res: &mut R,
-        a: &A,
+        a: &mut A,
         plan: &P,
         ci: Option<&Module<Self::CI>>,
         keys: &K,
@@ -128,7 +128,7 @@ pub unsafe trait CKKSBootstrappingImpl: CKKSCITwin + CKKSDFTImpl + CKKSCopyImpl 
     where
         F: Sync,
         R: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + Send,
-        A: GLWEToBackendRef<Self> + CKKSCtBounds,
+        A: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
         P: CKKSEvalModInfos<Self, F>,
         K: BootstrappingKeys<Self> + Sync,
         K::TensorKey: Sync;
@@ -153,7 +153,7 @@ pub unsafe trait CKKSBootstrappingImpl: CKKSCITwin + CKKSDFTImpl + CKKSCopyImpl 
     fn ckks_eval_lut<R, A, P, F, K>(
         module: &Module<Self>,
         res: &mut [R],
-        a: &A,
+        a: &mut A,
         plan: &P,
         luts: &[EncodedLut<CKKSPlaintextOwned<Self>>],
         keys: &K,
@@ -161,7 +161,7 @@ pub unsafe trait CKKSBootstrappingImpl: CKKSCITwin + CKKSDFTImpl + CKKSCopyImpl 
     ) -> CKKSResult<()>
     where
         R: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
-        A: GLWEToBackendRef<Self> + CKKSCtBounds,
+        A: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
         P: CKKSEvalModInfos<Self, F>,
         K: BootstrappingKeys<Self>;
 
@@ -378,7 +378,7 @@ macro_rules! impl_ckks_bootstrapping_reference_full {
             fn ckks_bootstrap_eval_mod<R, A, P, F, K>(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 res: &mut R,
-                a: &A,
+                a: &mut A,
                 plan: &P,
                 ci: ::core::option::Option<&::poulpy_hal::layouts::Module<$ci>>,
                 keys: &K,
@@ -392,7 +392,10 @@ macro_rules! impl_ckks_bootstrapping_reference_full {
                     + $crate::SetCKKSInfos
                     + ::poulpy_core::layouts::SetBSGSMeta
                     + Send,
-                A: ::poulpy_core::layouts::GLWEToBackendRef<$be> + $crate::CKKSCtBounds,
+                A: ::poulpy_core::layouts::GLWEToBackendMut<$be>
+                    + ::poulpy_core::layouts::GLWEToBackendRef<$be>
+                    + $crate::CKKSCtBounds
+                    + $crate::SetCKKSInfos,
                 P: $crate::layouts::CKKSEvalModInfos<$be, F>,
                 K: $crate::layouts::BootstrappingKeys<$be> + Sync,
                 K::TensorKey: Sync,
@@ -428,7 +431,7 @@ macro_rules! impl_ckks_bootstrapping_reference_full {
             fn ckks_eval_lut<R, A, P, F, K>(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 res: &mut [R],
-                a: &A,
+                a: &mut A,
                 plan: &P,
                 luts: &[$crate::layouts::EncodedLut<$crate::layouts::CKKSPlaintextOwned<$be>>],
                 keys: &K,
@@ -440,7 +443,10 @@ macro_rules! impl_ckks_bootstrapping_reference_full {
                     + $crate::CKKSCtBounds
                     + $crate::SetCKKSInfos
                     + ::poulpy_core::layouts::SetBSGSMeta,
-                A: ::poulpy_core::layouts::GLWEToBackendRef<$be> + $crate::CKKSCtBounds,
+                A: ::poulpy_core::layouts::GLWEToBackendMut<$be>
+                    + ::poulpy_core::layouts::GLWEToBackendRef<$be>
+                    + $crate::CKKSCtBounds
+                    + $crate::SetCKKSInfos,
                 P: $crate::layouts::CKKSEvalModInfos<$be, F>,
                 K: $crate::layouts::BootstrappingKeys<$be>,
             {

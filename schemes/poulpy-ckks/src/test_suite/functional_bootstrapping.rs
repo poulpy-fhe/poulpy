@@ -18,8 +18,8 @@ use poulpy_hal::{
 use crate::{
     CKKSCompositionError, CKKSCtBounds, CKKSInfos, CoeffsMeta, GLWEPlaintextMeta, SetCKKSInfos, SlotsKind,
     api::{
-        CKKSAllOpsTmpBytes, CKKSBootstrappingOps, CKKSDFTMatrixOps, CKKSDFTMatrixPreparedFactory, CKKSDFTOps, CKKSEncodingOps,
-        CKKSEvalModOps, CKKSPolynomialEvaluationOps, CKKSPow2Ops,
+        CKKSAllOpsTmpBytes, CKKSBootstrappingOps, CKKSCopyOps, CKKSDFTMatrixOps, CKKSDFTMatrixPreparedFactory, CKKSDFTOps,
+        CKKSEncodingOps, CKKSEvalModOps, CKKSPolynomialEvaluationOps, CKKSPow2Ops,
     },
     layouts::{
         BootstrappingKeysLayout, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques, CKKSCITwin,
@@ -59,16 +59,19 @@ enum Case {
 /// before the scratch check, having left `res` as it was.
 fn eval_lut_refusal<BE>(
     res: &mut [CKKSCiphertextOwned<BE>],
-    run: impl FnOnce(&mut [CKKSCiphertextOwned<BE>], &mut ScratchArena<'_, BE>) -> crate::CKKSResult<()>,
+    a: &mut CKKSCiphertextOwned<BE>,
+    run: impl FnOnce(&mut [CKKSCiphertextOwned<BE>], &mut CKKSCiphertextOwned<BE>, &mut ScratchArena<'_, BE>) -> crate::CKKSResult<()>,
 ) -> crate::CKKSError
 where
     BE: Backend<ZnxWord = i64>,
     CKKSCiphertextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
     let before: Vec<_> = res.iter().map(snapshot::<BE, _>).collect();
-    let err = with_scratch::<BE, _>(0, |s| run(res, s)).unwrap_err();
+    let a_before = snapshot::<BE, _>(a);
+    let err = with_scratch::<BE, _>(0, |s| run(res, a, s)).unwrap_err();
     let after: Vec<_> = res.iter().map(snapshot::<BE, _>).collect();
     assert_eq!(after, before, "a refused step wrote res");
+    assert_eq!(snapshot::<BE, _>(a), a_before, "a refused step wrote its input");
     err
 }
 
@@ -483,6 +486,7 @@ fn run_case<BE, F, E>(
         let run = ctx.run(ct.meta());
         let mut coeffs = module.ckks_ciphertext_alloc_from_infos(&ct);
         let mut raised = module.ckks_ciphertext_alloc(params.base2k.into(), k_boot.into());
+        let mut kept = module.ckks_ciphertext_alloc(params.base2k.into(), k_boot.into());
         let mut stepped: Vec<_> = backend_luts
             .iter()
             .map(|_| module.ckks_ciphertext_alloc(params.base2k.into(), k_boot.into()))
@@ -492,7 +496,8 @@ fn run_case<BE, F, E>(
             module.ckks_slots_to_coeffs_assign(&mut coeffs, &run, &keys.rotation_keys, s)?;
             module.ckks_mod_raise(&mut raised, &mut coeffs, &run, &keys, s)?;
             module.ckks_coeffs_to_slots_assign(&mut raised, &run, &keys.rotation_keys, s)?;
-            module.ckks_eval_lut(&mut stepped, &raised, &run, &backend_luts, &keys, s)
+            module.ckks_copy(&mut kept, &raised, s)?;
+            module.ckks_eval_lut(&mut stepped, &mut raised, &run, &backend_luts, &keys, s)
         })
         .unwrap();
         for (got, want) in stepped.iter().zip(&outputs) {
@@ -500,13 +505,15 @@ fn run_case<BE, F, E>(
         }
 
         // The step runs on exactly the scratch it advertises, and refuses one alignment unit less.
+        let mut raised = kept;
         let mut exact: Vec<_> = backend_luts
             .iter()
             .map(|_| module.ckks_ciphertext_alloc(params.base2k.into(), k_boot.into()))
             .collect();
         let lut_tmp = module.ckks_eval_lut_tmp_bytes(&exact[0], &raised, &run, &backend_luts, &keys_layout);
+        let mut input = crate::test_suite::bootstrapping::step_input(module, &raised);
         with_scratch::<BE, _>(lut_tmp, |s| {
-            module.ckks_eval_lut(&mut exact, &raised, &run, &backend_luts, &keys, s)
+            module.ckks_eval_lut(&mut exact, &mut input, &run, &backend_luts, &keys, s)
         })
         .unwrap();
         for (got, want) in exact.iter().zip(&stepped) {
@@ -517,7 +524,7 @@ fn run_case<BE, F, E>(
             .map(|_| module.ckks_ciphertext_alloc(params.base2k.into(), k_boot.into()))
             .collect();
         let error = with_scratch::<BE, _>(lut_tmp - BE::SCRATCH_ALIGN, |s| {
-            module.ckks_eval_lut(&mut short, &raised, &run, &backend_luts, &keys, s)
+            module.ckks_eval_lut(&mut short, &mut raised, &run, &backend_luts, &keys, s)
         })
         .unwrap_err();
         assert!(
@@ -531,19 +538,19 @@ fn run_case<BE, F, E>(
             .collect();
         let mut other_radix = output_spec;
         other_radix.glwe_layout.base2k = (params.base2k - 1).into();
-        let a_radix = fixture_ciphertext(module, &other_radix, 29);
-        let error = eval_lut_refusal(&mut refused, |res, s| {
-            module.ckks_eval_lut(res, &a_radix, &run, &backend_luts, &keys, s)
+        let mut a_radix = fixture_ciphertext(module, &other_radix, 29);
+        let error = eval_lut_refusal(&mut refused, &mut a_radix, |res, a, s| {
+            module.ckks_eval_lut(res, a, &run, &backend_luts, &keys, s)
         });
         assert_invalid_operand("two radices", &error, "ckks_eval_lut", "takes ciphertexts of one base2k");
         if guard_bits > 0 {
-            let a_scale = fixture_ciphertext(
+            let mut a_scale = fixture_ciphertext(
                 module,
                 &ckks_spec(params.n, params.base2k, guard_bits - 1, k_boot - guard_bits + 1),
                 31,
             );
-            let error = eval_lut_refusal(&mut refused, |res, s| {
-                module.ckks_eval_lut(res, &a_scale, &run, &backend_luts, &keys, s)
+            let error = eval_lut_refusal(&mut refused, &mut a_scale, |res, a, s| {
+                module.ckks_eval_lut(res, a, &run, &backend_luts, &keys, s)
             });
             assert_invalid_operand(
                 "guard bits above the scale",
@@ -553,13 +560,14 @@ fn run_case<BE, F, E>(
             );
             crate::test_suite::bootstrapping::assert_eval_mod_refuses(
                 &mut refused[0],
+                &mut a_scale,
                 "the input holds fewer scale bits than the plan's guard bits",
-                |res, s| module.ckks_bootstrap_eval_mod(res, &a_scale, &run, None, &keys, s),
+                |res, a, s| module.ckks_bootstrap_eval_mod(res, a, &run, None, &keys, s),
             );
         }
         let conjugation = keys.rotation_keys.remove(&-1).unwrap();
-        let error = eval_lut_refusal(&mut refused, |res, s| {
-            module.ckks_eval_lut(res, &raised, &run, &backend_luts, &keys, s)
+        let error = eval_lut_refusal(&mut refused, &mut raised, |res, a, s| {
+            module.ckks_eval_lut(res, a, &run, &backend_luts, &keys, s)
         });
         assert!(
             matches!(
@@ -573,8 +581,8 @@ fn run_case<BE, F, E>(
             .iter()
             .map(|_| fixture_ciphertext(module, &ckks_spec(params.n, params.base2k, INPUT_LOG_DELTA, 0), 37))
             .collect();
-        let error = eval_lut_refusal(&mut narrow, |res, s| {
-            module.ckks_eval_lut(res, &raised, &run, &backend_luts, &keys, s)
+        let error = eval_lut_refusal(&mut narrow, &mut raised, |res, a, s| {
+            module.ckks_eval_lut(res, a, &run, &backend_luts, &keys, s)
         });
         assert_invalid_operand(
             "outputs narrower than their width",
@@ -592,8 +600,8 @@ fn run_case<BE, F, E>(
             .iter()
             .map(|_| fixture_ciphertext(module, &one_bit_short, 39))
             .collect();
-        let error = eval_lut_refusal(&mut narrow, |res, s| {
-            module.ckks_eval_lut(res, &raised, &run, &backend_luts, &keys, s)
+        let error = eval_lut_refusal(&mut narrow, &mut raised, |res, a, s| {
+            module.ckks_eval_lut(res, a, &run, &backend_luts, &keys, s)
         });
         assert_invalid_operand(
             "outputs one bit narrower than the input",
@@ -605,8 +613,8 @@ fn run_case<BE, F, E>(
             let c2s_plan = fbt_plan_on(BootstrappingPipeline::C2SFirst, params.base2k, false);
             let c2s_ctx = compile_context::<BE, F>(module, None, params.base2k.into(), &c2s_plan);
             let c2s_run = c2s_ctx.run(ct.meta());
-            let error = eval_lut_refusal(&mut refused, |res, s| {
-                module.ckks_eval_lut(res, &raised, &c2s_run, &backend_luts, &keys, s)
+            let error = eval_lut_refusal(&mut refused, &mut raised, |res, a, s| {
+                module.ckks_eval_lut(res, a, &c2s_run, &backend_luts, &keys, s)
             });
             assert_invalid_operand(
                 "a C2S-first run",
@@ -616,9 +624,9 @@ fn run_case<BE, F, E>(
             );
         }
         // The budget of a LUT refuses before the first write.
-        let starved = fixture_ciphertext(module, &ckks_spec(params.n, params.base2k, raised.log_delta(), 1), 41);
-        let error = eval_lut_refusal(&mut refused, |res, s| {
-            module.ckks_eval_lut(res, &starved, &run, &backend_luts, &keys, s)
+        let mut starved = fixture_ciphertext(module, &ckks_spec(params.n, params.base2k, raised.log_delta(), 1), 41);
+        let error = eval_lut_refusal(&mut refused, &mut starved, |res, a, s| {
+            module.ckks_eval_lut(res, a, &run, &backend_luts, &keys, s)
         });
         assert!(
             matches!(
@@ -639,8 +647,9 @@ fn run_case<BE, F, E>(
                 slots: SlotsKind::Complex,
                 ..ct.meta()
             });
+            let mut input = crate::test_suite::bootstrapping::step_input(module, &raised);
             with_scratch::<BE, _>(boot_tmp, |s| {
-                module.ckks_eval_lut(&mut as_complex, &raised, &complex_run, &backend_luts, &keys, s)
+                module.ckks_eval_lut(&mut as_complex, &mut input, &complex_run, &backend_luts, &keys, s)
             })
             .unwrap();
             assert!(
@@ -888,8 +897,10 @@ fn run_case<BE, F, E>(
             // The LUT step refuses on an empty arena and leaves every output as it was.
             let before: Vec<_> = outputs.iter().map(|ct| snapshot::<BE, _>(ct)).collect();
             let run = ctx.run(ct.meta());
-            let error =
-                with_scratch::<BE, _>(0, |s| module.ckks_eval_lut(&mut outputs[..0], &raised, &run, &[], &keys, s)).unwrap_err();
+            let error = with_scratch::<BE, _>(0, |s| {
+                module.ckks_eval_lut(&mut outputs[..0], &mut raised, &run, &[], &keys, s)
+            })
+            .unwrap_err();
             assert_ckks_error(
                 "LUT step without LUTs",
                 &error,
@@ -898,8 +909,10 @@ fn run_case<BE, F, E>(
                     reason: "needs at least one LUT".into(),
                 },
             );
-            let error =
-                with_scratch::<BE, _>(0, |s| module.ckks_eval_lut(&mut outputs[..1], &raised, &run, luts, &keys, s)).unwrap_err();
+            let error = with_scratch::<BE, _>(0, |s| {
+                module.ckks_eval_lut(&mut outputs[..1], &mut raised, &run, luts, &keys, s)
+            })
+            .unwrap_err();
             assert_ckks_error(
                 "LUT step of fewer outputs than LUTs",
                 &error,
@@ -909,7 +922,7 @@ fn run_case<BE, F, E>(
                 },
             );
             let error = with_scratch::<BE, _>(0, |s| {
-                module.ckks_eval_lut(&mut outputs[..2], &raised, &run, &mixed_ratio_luts, &keys, s)
+                module.ckks_eval_lut(&mut outputs[..2], &mut raised, &run, &mixed_ratio_luts, &keys, s)
             })
             .unwrap_err();
             assert_ckks_error(
@@ -929,7 +942,7 @@ fn run_case<BE, F, E>(
                 runs_eval_mod: true,
             };
             let error = with_scratch::<BE, _>(0, |s| {
-                module.ckks_eval_lut(&mut outputs[..luts.len()], &raised, &off_circle, luts, &keys, s)
+                module.ckks_eval_lut(&mut outputs[..luts.len()], &mut raised, &off_circle, luts, &keys, s)
             })
             .unwrap_err();
             assert_invalid_operand(
@@ -944,7 +957,7 @@ fn run_case<BE, F, E>(
                 runs_eval_mod: false,
             };
             let error = with_scratch::<BE, _>(0, |s| {
-                module.ckks_eval_lut(&mut outputs[..luts.len()], &raised, &no_eval_mod, luts, &keys, s)
+                module.ckks_eval_lut(&mut outputs[..luts.len()], &mut raised, &no_eval_mod, luts, &keys, s)
             })
             .unwrap_err();
             assert_invalid_operand(

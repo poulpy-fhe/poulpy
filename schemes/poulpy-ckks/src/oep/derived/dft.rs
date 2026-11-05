@@ -104,17 +104,18 @@ where
 }
 
 /// `re = z + conj(z)` and `im = (z - conj(z)) / i`, from `z` in `re`.
-pub(crate) fn ckks_split_real_imag<BE, Dst, H>(
+pub(crate) fn ckks_split_real_imag<BE, Re, Im, H>(
     module: &Module<BE>,
-    re: &mut Dst,
-    im: &mut Dst,
+    re: &mut Re,
+    im: &mut Im,
     keys: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
     BE: Backend,
     Module<BE>: CKKSConjugateOps<BE> + CKKSAddOps<BE> + CKKSSubOps<BE> + CKKSImagOps<BE>,
-    Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    Re: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    Im: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     H: GetAutomorphismKey<BE>,
 {
     module.ckks_conjugate_into(im, re, keys, scratch)?;

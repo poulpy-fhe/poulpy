@@ -541,7 +541,7 @@ unsafe impl poulpy_ckks::oep::CKKSBootstrappingImpl for OverrideBackend {
     fn ckks_bootstrap_eval_mod<R, A, P, F, K>(
         module: &Module<Self>,
         res: &mut R,
-        a: &A,
+        a: &mut A,
         plan: &P,
         ci: Option<&Module<<Self as poulpy_ckks::layouts::CKKSCITwin>::CI>>,
         keys: &K,
@@ -550,7 +550,7 @@ unsafe impl poulpy_ckks::oep::CKKSBootstrappingImpl for OverrideBackend {
     where
         F: Sync,
         R: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + Send,
-        A: GLWEToBackendRef<Self> + CKKSCtBounds,
+        A: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
         P: poulpy_ckks::layouts::CKKSEvalModInfos<Self, F>,
         K: poulpy_ckks::layouts::BootstrappingKeys<Self> + Sync,
         K::TensorKey: Sync,
@@ -578,7 +578,7 @@ unsafe impl poulpy_ckks::oep::CKKSBootstrappingImpl for OverrideBackend {
     fn ckks_eval_lut<R, A, P, F, K>(
         module: &Module<Self>,
         res: &mut [R],
-        a: &A,
+        a: &mut A,
         plan: &P,
         luts: &[poulpy_ckks::layouts::EncodedLut<poulpy_ckks::layouts::CKKSPlaintextOwned<Self>>],
         keys: &K,
@@ -590,7 +590,7 @@ unsafe impl poulpy_ckks::oep::CKKSBootstrappingImpl for OverrideBackend {
             + CKKSCtBounds
             + poulpy_ckks::SetCKKSInfos
             + poulpy_core::layouts::SetBSGSMeta,
-        A: GLWEToBackendRef<Self> + CKKSCtBounds,
+        A: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
         P: poulpy_ckks::layouts::CKKSEvalModInfos<Self, F>,
         K: poulpy_ckks::layouts::BootstrappingKeys<Self>,
     {

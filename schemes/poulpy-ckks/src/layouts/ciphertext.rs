@@ -300,6 +300,15 @@ impl<BE: Backend> GLWEPlaintextInfos for CKKSCiphertextViewRef<'_, BE> {
 
 impl<BE: Backend> CKKSInfos for CKKSCiphertextViewRef<'_, BE> {}
 
+impl<'a, BE: Backend + 'a> CKKSCiphertextViewRef<'a, BE> {
+    /// A read-only view of `a`, in the backend's shared buffer type, which concurrent stages can share.
+    pub(crate) fn of<A: GLWEToBackendRef<BE>>(a: &'a A) -> Self {
+        Self {
+            inner: GLWEViewRef::from_inner(a.to_backend_ref()),
+        }
+    }
+}
+
 impl<BE: Backend> GLWEToBackendRef<BE> for CKKSCiphertextViewRef<'_, BE> {
     fn to_backend_ref(&self) -> GLWE<BE::BufRef<'_>, BE::ZnxWord> {
         self.inner.to_backend_ref()

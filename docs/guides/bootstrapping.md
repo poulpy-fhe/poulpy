@@ -110,14 +110,13 @@ EvalMod runs at its own scale.
 | SlotsToCoeffs | `ckks_slots_to_coeffs_assign(ct, &run, keys.rotation_keys(), scratch)` | any `Standard` `CKKSDFTFactors`, `BootstrappingRun` included, which labels the output that ends a C2S-first bootstrap |
 | ModRaise | `ckks_mod_raise(res, a, &run, keys, scratch)` | `a` is clobbered, the raise switches it in place; `ctx`, `ctx.mod_raise()` also serve, and `plan.mod_raise()` on a plan that leaves no CoeffsToSlots factor to the raise |
 | CoeffsToSlots | `ckks_coeffs_to_slots_assign(ct, &run, keys.rotation_keys(), scratch)` | leaves the slot label Complex |
-| EvalMod | `ckks_bootstrap_eval_mod(res, a, &run, ci, keys, scratch)` | real slots, split halves, or the conjugate-invariant ring, by the plan and the slots of the message |
-| EvalLut | `ckks_eval_lut(res, a, &run, luts, keys, scratch)` | `res` is a slice, one output per LUT |
+| EvalMod | `ckks_bootstrap_eval_mod(res, a, &run, ci, keys, scratch)` | `a` is clobbered; real slots, split halves, or the conjugate-invariant ring, by the plan and the slots of the message |
+| EvalLut | `ckks_eval_lut(res, a, &run, luts, keys, scratch)` | `a` is clobbered; `res` is a slice, one output per LUT |
 
 Each has its `_tmp_bytes`, and a step refuses a short arena, a wrong operand, a key that does not cover it or a missing budget before it writes `res`. `ckks_bootstrap_eval_mod` and `ckks_eval_lut` remove the guard bits of the plan; only a bypass leaves them to the composer.
 `EvalModCIPrepared` implements no `CKKSEvalModInfos`: EvalMod on the conjugate-invariant ring runs through a run, not through its compiled part alone.
 
 A composition stamps nothing. The transforms overwrite the label and the raise relabels the scale, so `ctx.run(meta)` binds the labels of the message to the compiled plan and the steps read them there. It takes the metadata, not a ciphertext: the raise clobbers its input, and a composer may state a message kind the label does not carry. `BootstrappingContextPrepared` itself takes no SlotsToCoeffs, EvalMod or EvalLut, so forgetting the run does not compile.
-`ctx.slots_to_coeffs()` is a plain matrix that stamps nothing, so a composition passes the run.
 
 The S2C-first bootstrap composed by hand:
 
@@ -127,7 +126,7 @@ module.ckks_double_into(&mut coeffs, &input, s)?;
 module.ckks_slots_to_coeffs_assign(&mut coeffs, &run, keys.rotation_keys(), s)?;
 module.ckks_mod_raise(&mut raised, &mut coeffs, &run, &keys, s)?;
 module.ckks_coeffs_to_slots_assign(&mut raised, &run, keys.rotation_keys(), s)?;
-module.ckks_bootstrap_eval_mod(&mut res, &raised, &run, None, &keys, s)?;
+module.ckks_bootstrap_eval_mod(&mut res, &mut raised, &run, None, &keys, s)?;
 ```
 
 C2S-first copies `input` into `coeffs`, skips the SlotsToCoeffs above the raise, and ends in `module.ckks_slots_to_coeffs_assign(&mut res, &run, keys.rotation_keys(), s)?`.

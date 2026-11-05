@@ -144,6 +144,8 @@ pub trait CKKSBootstrappingOps<BE: CKKSCITwin> {
     /// `plan` is a [`BootstrappingRun`](crate::layouts::BootstrappingRun), which holds the labels of the message, or a
     /// plain [`EvalMod`](crate::layouts::EvalMod), which reads the slots of `a` and stamps nothing.
     ///
+    /// `a` is consumed: its content and metadata are unspecified on a successful return, and a refusal leaves it unchanged.
+    ///
     /// The output is the message's: the guard bits leave `res` here and, on an S2C-first plan, `res` takes the message's
     /// metadata; a C2S-first plan ends in `ckks_slots_to_coeffs_assign`, which labels it. Under EvalRound+,
     /// [`CKKSEvalModInfos::eval_round_plus`], `res` is `EvalMod(x) - K·x`, with its working label and the guard bits: the
@@ -163,9 +165,9 @@ pub trait CKKSBootstrappingOps<BE: CKKSCITwin> {
     /// [`MissingAutomorphismKey`](crate::CKKSCompositionError::MissingAutomorphismKey), before any write to `res`, for a
     /// conjugation key that does not cover `a`, or a rotation key of a folded `u` on the conjugate-invariant ring.
     /// [`InsufficientHomomorphicCapacity`](crate::CKKSCompositionError::InsufficientHomomorphicCapacity), before any write
-    /// to `res`, for an input without the budget of EvalMod.
-    /// [`MissingRelinearizationKey`](crate::CKKSCompositionError::MissingRelinearizationKey), before any write to `res`,
-    /// for a tensor key narrower than a product of EvalMod.
+    /// to `res` or `a`, for an input without the budget of EvalMod.
+    /// [`MissingRelinearizationKey`](crate::CKKSCompositionError::MissingRelinearizationKey), before any write to `res`
+    /// or `a`, for a tensor key narrower than a product of EvalMod.
     ///
     /// # Metadata
     ///
@@ -183,7 +185,7 @@ pub trait CKKSBootstrappingOps<BE: CKKSCITwin> {
     fn ckks_bootstrap_eval_mod<R, A, P, F, K>(
         &self,
         res: &mut R,
-        a: &A,
+        a: &mut A,
         plan: &P,
         ci: Option<&Module<BE::CI>>,
         keys: &K,
@@ -192,7 +194,7 @@ pub trait CKKSBootstrappingOps<BE: CKKSCITwin> {
     where
         F: Sync,
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + Send,
-        A: GLWEToBackendRef<BE> + CKKSCtBounds,
+        A: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         P: CKKSEvalModInfos<BE, F>,
         K: BootstrappingKeys<BE> + Sync,
         K::TensorKey: Sync;
@@ -219,6 +221,8 @@ pub trait CKKSBootstrappingOps<BE: CKKSCITwin> {
     /// without a bypass in the plan, which this step does not run. Any other input is split, each half is evaluated and
     /// the halves are recombined. General LUTs of a batch share the power basis of each half.
     ///
+    /// `a` is consumed: its content and metadata are unspecified on a successful return, and a refusal leaves it unchanged.
+    ///
     /// `plan` is a [`BootstrappingRun`](crate::layouts::BootstrappingRun), whose message gives the slots and each output
     /// its [`eval_lut_output`](CKKSEvalModInfos::eval_lut_output), or a plain [`EvalMod`](crate::layouts::EvalMod), which
     /// reads the slots of `a` and leaves the outputs the scale and widths of the evaluation.
@@ -239,7 +243,7 @@ pub trait CKKSBootstrappingOps<BE: CKKSCITwin> {
     /// [`InsufficientHomomorphicCapacity`](crate::CKKSCompositionError::InsufficientHomomorphicCapacity) for an input
     /// without the budget of a LUT and
     /// [`MissingRelinearizationKey`](crate::CKKSCompositionError::MissingRelinearizationKey) for a tensor key narrower than
-    /// its widest product, each before any write to `res`.
+    /// its widest product, each before any write to `res` or `a`.
     ///
     /// # Metadata
     ///
@@ -252,7 +256,7 @@ pub trait CKKSBootstrappingOps<BE: CKKSCITwin> {
     fn ckks_eval_lut<R, A, P, F, K>(
         &self,
         res: &mut [R],
-        a: &A,
+        a: &mut A,
         plan: &P,
         luts: &[EncodedLut<CKKSPlaintextOwned<BE>>],
         keys: &K,
@@ -260,7 +264,7 @@ pub trait CKKSBootstrappingOps<BE: CKKSCITwin> {
     ) -> Result<()>
     where
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
-        A: GLWEToBackendRef<BE> + CKKSCtBounds,
+        A: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         P: CKKSEvalModInfos<BE, F>,
         K: BootstrappingKeys<BE>;
 
