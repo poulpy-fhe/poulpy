@@ -577,6 +577,39 @@ fn run_case<BE, F, E>(
             "ckks_eval_lut",
             "takes outputs of at least",
         );
+        let one_bit_short = ckks_spec(
+            params.n,
+            params.base2k,
+            INPUT_LOG_DELTA,
+            raised.k().as_usize() - 1 - INPUT_LOG_DELTA,
+        );
+        let mut narrow: Vec<_> = backend_luts
+            .iter()
+            .map(|_| fixture_ciphertext(module, &one_bit_short, 39))
+            .collect();
+        let error = eval_lut_refusal(&mut narrow, |res, s| {
+            module.ckks_eval_lut(res, &raised, &run, &backend_luts, &keys, s)
+        });
+        assert_invalid_operand(
+            "outputs one bit narrower than the input",
+            &error,
+            "ckks_eval_lut",
+            "takes an input no wider than its output",
+        );
+        if slots_kind == SlotsKind::Complex {
+            let c2s_plan = fbt_plan_on(BootstrappingPipeline::C2SFirst, params.base2k, false);
+            let c2s_ctx = compile_context::<BE, F>(module, None, params.base2k.into(), &c2s_plan);
+            let c2s_run = c2s_ctx.run(ct.meta());
+            let error = eval_lut_refusal(&mut refused, |res, s| {
+                module.ckks_eval_lut(res, &raised, &c2s_run, &backend_luts, &keys, s)
+            });
+            assert_invalid_operand(
+                "a C2S-first run",
+                &error,
+                "ckks_eval_lut",
+                "EvalLut requires an S2C-first run",
+            );
+        }
 
         // The message picks the route: the same raised input bound to a complex message takes the split and gives other
         // digits.
@@ -1005,6 +1038,12 @@ impl<BE: CKKSCITwin, F> CKKSEvalModInfos<BE, F> for OffCirclePlan<'_, BE, F> {
 }
 
 fn fbt_plan(base2k: usize, guard_bits: usize, first_factor_on_raise: bool) -> BootstrappingPlan {
+    fbt_plan_on(BootstrappingPipeline::S2CFirst, base2k, first_factor_on_raise)
+        .with_c2s_guard_bits(guard_bits)
+        .unwrap()
+}
+
+fn fbt_plan_on(pipeline: BootstrappingPipeline, base2k: usize, first_factor_on_raise: bool) -> BootstrappingPlan {
     let slots_to_coeffs = DFTPlan::new(
         DFTType::Decode,
         vec![(2, 4), (3, 4), (2, 4)],
@@ -1027,7 +1066,7 @@ fn fbt_plan(base2k: usize, guard_bits: usize, first_factor_on_raise: bool) -> Bo
         coeffs_to_slots
     };
     BootstrappingPlan::new(
-        BootstrappingPipeline::S2CFirst,
+        pipeline,
         BootstrappingTechniques {
             sparse_secret_encapsulation: Some(SparseSecretEncapsulation { hamming_weight: 32 }),
             eval_round_plus: None,
@@ -1043,7 +1082,5 @@ fn fbt_plan(base2k: usize, guard_bits: usize, first_factor_on_raise: bool) -> Bo
         ),
         slots_to_coeffs,
     )
-    .unwrap()
-    .with_c2s_guard_bits(guard_bits)
     .unwrap()
 }

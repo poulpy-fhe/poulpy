@@ -208,8 +208,9 @@ pub trait CKKSBootstrappingOps<BE: CKKSCITwin> {
     /// outputs other than the number of LUTs, LUTs of different message moduli, a plan that is not the unit-circle
     /// complex exponential on the standard ring when a LUT needs EvalMod, outputs that do not share one rank-1 layout,
     /// an input of another degree, base2k or rank, an input of fewer scale bits than the plan's guard bits, keys
-    /// without the tensor key of the plan's ring, a C2S-first run, an input without the bits an output of a run takes, or
-    /// outputs narrower than the width a run gives them, which `a` sets.
+    /// without the tensor key of the plan's ring, a C2S-first run, an input without the bits an output of a run takes,
+    /// outputs narrower than the width a run gives them, or outputs narrower than `a`: the evaluation runs at the width of
+    /// `res`, so every output must be at least as wide as `a`.
     /// [`MissingAutomorphismKey`](crate::CKKSCompositionError::MissingAutomorphismKey), before any write to `res`, for a
     /// conjugation key that does not cover `a`.
     /// `CKKSError::Internal` for an arena under [`Self::ckks_eval_lut_tmp_bytes`], when the keys report their layout.

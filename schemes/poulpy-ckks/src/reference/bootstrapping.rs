@@ -594,7 +594,6 @@ impl<BE: CKKSCITwin + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl> CKKS
                 k: a.k().into(),
                 source,
             })?;
-        // The width of `a` sets what an output carries: `res` may be allocated at any width that holds it.
         let a_k = a.k().as_usize();
         for lut in luts {
             if let Some((_, k)) = plan.eval_lut_output(OP, lut, a_k)? {
@@ -602,6 +601,8 @@ impl<BE: CKKSCITwin + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl> CKKS
                 ckks_ensure_operand!(OP, res_k >= k, "takes outputs of at least {k} bits, got {res_k}");
             }
         }
+        // The evaluation runs at the width of `res`: a narrower output can fail after it was written.
+        ckks_ensure_operand!(OP, a.k() <= res[0].k(), "takes an input no wider than its output");
         if let Some(keys_layout) = keys.keys_layout() {
             let bytes = self.ckks_eval_lut_tmp_bytes_reference(&res[0], a, plan, luts, &keys_layout);
             ckks_ensure!(
