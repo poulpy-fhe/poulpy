@@ -242,8 +242,8 @@ pub trait CKKSBootstrappingOps<BE: CKKSCITwin> {
     /// Before any work, and leaving `ct_out` unchanged, besides the key refusals above:
     /// [`InvalidOperand`](crate::CKKSCompositionError::InvalidOperand) for a functional context, `ci` on a plan of the
     /// standard ring, no `ci` on a plan of the conjugate-invariant ring, a rank other than 1, ciphertexts of two degrees
-    /// or of one the module does not serve, an encapsulation that does not match the recipe, or keys without the tensor
-    /// key of the plan's ring. On the conjugate-invariant ring also, for modules of other degrees than `2N` and `N`, or
+    /// or base2k or of a degree the module does not serve, an encapsulation that does not match the recipe, or keys
+    /// without the tensor key of the plan's ring. On the conjugate-invariant ring also, for modules of other degrees than `2N` and `N`, or
     /// conversion keys absent, of another degree, radix or rank, or narrower than the widths they switch.
     /// `CKKSError::Internal` for an arena under [`Self::ckks_bootstrap_tmp_bytes`], when the keys report their layout.
     ///

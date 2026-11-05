@@ -1,8 +1,8 @@
-//! Generic key- and operand-layout validation shared by the bootstrapping pipelines and the linear transformations, and
-//! the refusals of the bootstrap steps and of the bodies composing them.
+//! Validation shared across modules: generic key and operand layouts, and the refusals of the bootstrap steps and of the
+//! bodies composing them.
 //!
-//! These helpers check the structural invariants (degree, rank, radix, decomposition shape, storage capacity, backend-view consistency) that any gadget key or runtime ciphertext operand must satisfy before entering the arithmetic primitives, independent of which pipeline (PaCo or classic bootstrapping) consumes them, and the uniformity of a linear transformation's diagonals.
-//! Pipeline-specific validation (e.g. PaCo's plan-against-material checks) stays with its pipeline; this module is the reusable bottom layer.
+//! The generic helpers check the structural invariants (degree, rank, radix, decomposition shape, storage capacity, backend-view consistency) that any gadget key or runtime ciphertext operand must satisfy before entering the arithmetic primitives, whichever pipeline consumes them, and the uniformity of a linear transformation's diagonals.
+//! The bootstrap refusals sit here because `oep::derived` and `reference` both read them, and `oep` names no `reference`; a check only one `reference` module reads, as PaCo's plan-against-material checks, stays there.
 
 use anyhow::{Context, Result, ensure};
 use poulpy_core::{
@@ -15,7 +15,7 @@ use poulpy_core::{
 use poulpy_hal::layouts::{Backend, Module};
 
 use crate::{
-    CKKSCompositionError, CKKSCtBounds, CKKSInfos, CKKSResult, GLWEPlaintextMeta, Scale, SlotsKind,
+    CKKSCompositionError, CKKSCtBounds, CKKSError, CKKSInfos, CKKSResult, GLWEPlaintextMeta, Scale, SlotsKind,
     api::CKKSBootstrappingOps,
     checked_log_budget_sub, ckks_bail, ckks_ensure, ckks_ensure_operand,
     layouts::{
@@ -271,6 +271,12 @@ pub(crate) fn ensure_one_degree<A: GLWEInfos, R: GLWEInfos>(op: &'static str, mo
     Ok(())
 }
 
+/// `InvalidOperand` for `op` unless `a` and `res` share a base2k.
+pub(crate) fn ensure_one_base2k<A: GLWEInfos, R: GLWEInfos>(op: &'static str, a: &A, res: &R) -> CKKSResult<()> {
+    ckks_ensure_operand!(op, a.base2k() == res.base2k(), "takes ciphertexts of one base2k");
+    Ok(())
+}
+
 /// `InvalidOperand` for `op` unless `keys` carry the encapsulation switches exactly when the recipe encapsulates.
 pub(crate) fn ensure_encapsulation<BE, K>(
     op: &'static str,
@@ -290,8 +296,9 @@ where
 }
 
 /// What `ckks_bootstrap_derived` refuses before its first step, so that no later step refuses with `res` half written:
-/// the context kind, the module of the plan's ring, ranks and degrees, the keys of the plan's ring and their coverage
-/// of the run's widths, and, when the keys report their layout, the arena against the query.
+/// the context kind, the module of the plan's ring, ranks, degrees and radices, a working width without the budget of
+/// the stages running on `res`, the keys of the plan's ring and their coverage of the run's widths, and, when the keys
+/// report their layout, the arena against the query.
 pub(crate) fn check_bootstrap_entry<BE, F, K>(
     module: &Module<BE>,
     res: &CKKSCiphertextOwned<BE>,
@@ -315,12 +322,18 @@ where
     ensure_ci_module(OP, ci, ctx.eval_mod_ci().is_some())?;
     ensure_rank_one(OP, a, res)?;
     ensure_one_degree(OP, module.n(), a, res)?;
+    ensure_one_base2k(OP, a, res)?;
     ensure_encapsulation(OP, keys, ctx.sparse_secret_hamming_weight())?;
+    // `key_widths` reads widths: SlotsToCoeffs on `res` also needs its budget above the scale EvalMod leaves there.
+    if ctx.pipeline() == BootstrappingPipeline::C2SFirst
+        && res.k().as_usize() < ctx.plan.post_mod_up_consumed_bits() + ctx.plan.eval_mod().f_mod_log_delta
+    {
+        return Err(narrower_than_stages(OP, res.k().as_usize(), a.k().as_usize()));
+    }
     match ci {
         Some(ci) => {
-            check_key_widths(OP, res, a, ctx, keys, required_tensor_key(OP, keys.ci_tensor_key())?)?;
-            check_eval_mod_on_ci(OP, module, ci, res, a, keys)?;
-            let (trace_key, embed_key) = required_conversion_keys(OP, keys)?;
+            let (tensor_key, trace_key, embed_key) = check_eval_mod_on_ci(OP, module, ci, a, keys)?;
+            check_key_widths(OP, res, a, ctx, keys, tensor_key)?;
             let widths = ctx.stage_widths().conversions(res.k().as_usize()).unwrap_or_default();
             check_conversion_key_widths(OP, trace_key, embed_key, widths)?;
         }
@@ -386,6 +399,13 @@ where
     Ok(outputs)
 }
 
+/// The refusal of a bootstrap at `bootstrap_k` bits of an input of `input_k` bits that its stages do not fit.
+fn narrower_than_stages(op: &'static str, bootstrap_k: usize, input_k: usize) -> CKKSError {
+    let reason =
+        format!("a bootstrap at {bootstrap_k} bits of an input of {input_k} bits is narrower than the bits its stages consume");
+    CKKSCompositionError::InvalidOperand { op, reason }.into()
+}
+
 /// Fails before any work unless every key covers the widest ciphertext the
 /// bootstrap switches with it, and with `InvalidOperand` when the working width
 /// or the input is narrower than the bits the stages running on it consume.
@@ -415,10 +435,7 @@ where
     let log_n = ct_out.n().as_usize().trailing_zeros() as usize;
     let (bootstrap_k, input_k) = (ct_out.k().as_usize(), ct_in.k().as_usize());
     let Some(widths) = ctx.stage_widths().key_widths(log_n, bootstrap_k, input_k, ct_in.log_delta()) else {
-        let reason = format!(
-            "a bootstrap at {bootstrap_k} bits of an input of {input_k} bits is narrower than the bits its stages consume"
-        );
-        return Err(CKKSCompositionError::InvalidOperand { op, reason }.into());
+        return Err(narrower_than_stages(op, bootstrap_k, input_k));
     };
     for (p, k) in widths.rotation_keys {
         let k = TorusPrecision(k as u32);
@@ -578,19 +595,17 @@ where
 }
 
 /// Refuses what the query and the body of EvalMod on the conjugate-invariant ring take on trust: modules of other
-/// degrees than `2N` and `N`, an input wider than the carves at the width of `res`, and absent keys or conversion
-/// keys of another shape.
-pub(crate) fn check_eval_mod_on_ci<BE, R, A, K>(
+/// degrees than `2N` and `N`, and absent keys or conversion keys of another shape. Returns the tensor key of that ring
+/// and the conversion keys.
+pub(crate) fn check_eval_mod_on_ci<'a, BE, A, K>(
     op: &'static str,
     module: &Module<BE>,
     ci: &Module<BE::CI>,
-    res: &R,
     a: &A,
-    keys: &K,
-) -> CKKSResult<()>
+    keys: &'a K,
+) -> CKKSResult<(&'a K::CITensorKey, &'a K::TraceKey, &'a K::EmbedKey)>
 where
     BE: CKKSCITwin,
-    R: CKKSCtBounds,
     A: CKKSCtBounds,
     K: BootstrappingKeys<BE>,
 {
@@ -599,10 +614,9 @@ where
         module.n() >= 2 * a.n().as_usize() && ci.n() == a.n().as_usize(),
         "takes a module of degree at least 2N and a CI module of degree N"
     );
-    ckks_ensure_operand!(op, a.k() <= res.k(), "takes an input no wider than its output");
-    required_tensor_key(op, keys.ci_tensor_key())?;
-    check_conversion_key_shapes(op, a, keys)?;
-    Ok(())
+    let tensor_key = required_tensor_key(op, keys.ci_tensor_key())?;
+    let (trace_key, embed_key) = check_conversion_key_shapes(op, a, keys)?;
+    Ok((tensor_key, trace_key, embed_key))
 }
 
 /// Refuses conversion keys of another degree, radix or rank than the ciphertexts they switch,
@@ -712,7 +726,7 @@ where
             }),
         "LUT outputs must share one rank-1 layout"
     );
-    ckks_ensure_operand!(op, a.base2k() == head.base2k(), "takes an input and outputs of one base2k");
+    ensure_one_base2k(op, a, head)?;
     ensure_one_degree(op, module_n, a, head)
 }
 

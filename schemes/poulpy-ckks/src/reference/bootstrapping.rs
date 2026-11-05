@@ -506,7 +506,8 @@ impl<BE: Backend + CKKSBootstrappingImpl + CKKSEncapsulatedModUpImpl + CKKSModUp
         ensure_rank_one(OP, a, res)?;
         ensure_one_degree(OP, self.n(), a, res)?;
         if let (Some(ci), Some(_)) = (ci, plan.eval_mod_ci()) {
-            check_eval_mod_on_ci(OP, self, ci, res, a, keys)?;
+            check_eval_mod_on_ci(OP, self, ci, a, keys)?;
+            ckks_ensure_operand!(OP, a.k() <= res.k(), "takes an input no wider than its output");
         }
         ensure_eval_round_interval(plan)?;
         if let Some(keys_layout) = keys.keys_layout() {

@@ -234,7 +234,6 @@ fn coeffs_to_slots_and_eval_mod<BE, F, K, R, Z>(
 where
     BE: CKKSBootstrappingImpl,
     F: Sync,
-    Module<BE>: CKKSDFTOps<BE> + CKKSCopyOps<BE> + CKKSPow2Ops<BE> + CKKSAddOps<BE>,
     K: BootstrappingKeys<BE> + Sync,
     K::TensorKey: Sync,
     R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + Send,

@@ -725,18 +725,23 @@ where
         &mut scratch.borrow(),
     );
 
-    // A working width narrower than CoeffsToSlots and EvalMod consume fails at entry.
+    // A working width narrower than CoeffsToSlots and EvalMod consume fails at entry, and so does one that holds every
+    // stage's width but leaves SlotsToCoeffs, which runs on `res`, short of its budget above the scale of EvalMod.
     {
-        let mut ct_narrow = fixture_ciphertext(&module, &ckks_spec(n, base2k, log_delta, base2k), 31);
-        let before = snapshot::<BE, _>(&ct_narrow);
-        let err = with_scratch::<BE, _>(0, |s| module.ckks_bootstrap(&mut ct_narrow, &ct0, &ctx, None, &bsk, s)).unwrap_err();
-        assert_invalid_operand(
-            "a bootstrap narrower than its stages",
-            &err,
-            "ckks_bootstrap",
-            "is narrower than the bits its stages consume",
-        );
-        assert_eq!(snapshot::<BE, _>(&ct_narrow), before, "a refused bootstrap wrote res");
+        let no_budget_for_s2c = plan.post_mod_up_consumed_bits() + plan.eval_mod().f_mod_log_delta - 1 - log_delta;
+        for log_budget in [base2k, no_budget_for_s2c] {
+            let mut ct_narrow = fixture_ciphertext(&module, &ckks_spec(n, base2k, log_delta, log_budget), 31);
+            let before = snapshot::<BE, _>(&ct_narrow);
+            let err = with_scratch::<BE, _>(boot_tmp, |s| module.ckks_bootstrap(&mut ct_narrow, &ct0, &ctx, None, &bsk, s))
+                .unwrap_err();
+            assert_invalid_operand(
+                "a bootstrap narrower than its stages",
+                &err,
+                "ckks_bootstrap",
+                "is narrower than the bits its stages consume",
+            );
+            assert_eq!(snapshot::<BE, _>(&ct_narrow), before, "a refused bootstrap wrote res");
+        }
     }
 
     // The narrowest working width that takes a key past its layout fails at
