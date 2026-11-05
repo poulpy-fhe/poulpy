@@ -942,7 +942,7 @@ where
     (boot_layout, in_layout)
 }
 
-// A context holds `Split` matrices, whose unsplit chain reads as `Standard`: their halves recombine to it.
+// A context holds `Split` matrices, evaluated unsplit: see `ckks_coeffs_to_slots_assign` for the scale.
 impl<BE: Backend, F> CKKSDFTFactors<BE, Encode, Standard> for BootstrappingContextPrepared<BE, F> {
     type Diagonal = <DFTMatrixPrepared<BE, Encode, Split> as CKKSDFTFactors<BE, Encode, Split>>::Diagonal;
 
@@ -973,8 +973,8 @@ pub struct BootstrappingRun<'a, BE: Backend, F> {
 
 impl<BE: Backend, F> BootstrappingRun<'_, BE, F> {
     /// The EvalRound+ bypass of the plan, `None` without one. A composer runs it on a copy of the raised ciphertext,
-    /// `ckks_coeffs_to_slots_assign(&mut copy, &bypass, ..)`, then doubles the copy and adds the output of
-    /// `ckks_bootstrap_eval_mod`.
+    /// `ckks_coeffs_to_slots_assign(&mut copy, &bypass, ..)`, which leaves half a `Standard` encode, then doubles the
+    /// copy and adds the output of `ckks_bootstrap_eval_mod`.
     pub fn bypass(&self) -> Option<&DFTMatrixPrepared<BE, Encode, Split>> {
         self.context.coeffs_to_slots_bypass()
     }

@@ -64,7 +64,9 @@ pub trait CKKSDFTOps<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         H: GetAutomorphismKey<BE>;
 
-    /// `CoeffsToSlots`, `Standard` format (in place).
+    /// `CoeffsToSlots`, `Standard` format (in place). A [`BootstrappingRun`](crate::layouts::BootstrappingRun) or a
+    /// `&DFTMatrixPrepared<BE, Encode, Split>` evaluates its `Split` chain unsplit: the output is half a `Standard`
+    /// encode, and a later split or the composer doubles it.
     fn ckks_coeffs_to_slots_assign<D, Dst, H>(
         &self,
         ct: &mut Dst,

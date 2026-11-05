@@ -109,7 +109,7 @@ EvalMod runs at its own scale.
 |---|---|---|
 | SlotsToCoeffs | `ckks_slots_to_coeffs_assign(ct, &run, keys, scratch)` | any `Standard` `CKKSDFTFactors`, `BootstrappingRun` included, which labels the output that ends a C2S-first bootstrap |
 | ModRaise | `ckks_mod_raise(res, a, &run, keys, scratch)` | `a` is clobbered, the raise switches it in place; `ctx`, `ctx.mod_raise()` also serve, and `plan.mod_raise()` on a plan that leaves no CoeffsToSlots factor to the raise |
-| CoeffsToSlots | `ckks_coeffs_to_slots_assign(ct, &run, keys, scratch)` | leaves the slot label Complex |
+| CoeffsToSlots | `ckks_coeffs_to_slots_assign(ct, &run, keys, scratch)` | leaves the slot label Complex; a run or `&bypass` leaves half a `Standard` encode, which the split of the next step or the composer doubles |
 | EvalMod | `ckks_bootstrap_eval_mod(res, a, &run, ci, keys, scratch)` | `a` is clobbered; real slots, split halves, or the conjugate-invariant ring, by the plan and the slots of the message |
 | EvalLut | `ckks_eval_lut(res, a, &run, luts, keys, scratch)` | `a` is clobbered; `res` is a slice, one output per LUT |
 

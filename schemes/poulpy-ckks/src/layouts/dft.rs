@@ -918,8 +918,7 @@ where
 /// [`CKKSDFTMatrixPreparedFactory::ckks_dft_matrix_prepare`](crate::api::CKKSDFTMatrixPreparedFactory::ckks_dft_matrix_prepare).
 pub type DFTMatrixPrepared<BE, Dir, Fmt> = DFTMatrix<BE, Dir, Fmt, LinearTransformationPrepared<BE>>;
 
-// A `Split` chain evaluated unsplit reads as `Standard`, its halves recombining to it. The reference says so, not the
-// matrix, which keeps one format and leaves the free `Fmt` of `ckks_dft_matrix_eval_assign` inferred.
+// On the reference, not the matrix: a matrix keeps one format, so the free `Fmt` of `ckks_dft_matrix_eval_assign` infers.
 impl<BE: Backend> CKKSDFTFactors<BE, Encode, Standard> for &DFTMatrixPrepared<BE, Encode, Split> {
     type Diagonal = <DFTMatrixPrepared<BE, Encode, Split> as CKKSDFTFactors<BE, Encode, Split>>::Diagonal;
 
