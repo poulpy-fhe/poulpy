@@ -914,7 +914,9 @@ pub struct HeadFactors<'a, D> {
     dft: &'a D,
 }
 
-impl<BE: Backend, Dir, Fmt, P> CKKSDFTFactors<BE, Dir, Fmt> for HeadFactors<'_, DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>>
+// The format of a matrix reads on its output, and a head stops short of it: an unsplit chain, which reads as `Standard`.
+impl<BE: Backend, Dir, Fmt, P> CKKSDFTFactors<BE, Dir, Standard>
+    for HeadFactors<'_, DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>>
 where
     P: GLWEDiagonalProd<BE> + LtDiagonalMeta + GLWEInfos,
 {
@@ -928,13 +930,17 @@ where
     where
         BE: 'a,
         Dir: 'a,
-        Fmt: 'a,
+        Standard: 'a,
     {
         self.dft
             .factor_operands()
             .split_last()
             .map_or(&[][..], |(_, head)| head)
             .iter()
+    }
+
+    fn factor_plans(&self) -> &[LinearTransformationPlan] {
+        self.dft.factor_plans().split_last().map_or(&[][..], |(_, head)| head)
     }
 }
 

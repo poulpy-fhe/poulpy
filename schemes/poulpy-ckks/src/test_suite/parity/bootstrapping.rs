@@ -719,15 +719,16 @@ where
         let keep: Vec<bool> = (0..n).map(|j| j < n / 2 && j.is_multiple_of(1 << (log_gap + 1))).collect();
         let mask_bytes = ctx.coeffs_mask_tmp_bytes(module).unwrap();
         let mask = with_scratch::<BE, _>(mask_bytes, |scratch| ctx.coeffs_mask(module, &keep, scratch)).unwrap();
-        let raise_bytes = BE::ckks_mod_raise_tmp_bytes(module, &out_layout, &raise_layout, &ctx, &layout);
+        let run = ctx.run(raise_layout.meta);
+        let raise_bytes = BE::ckks_mod_raise_tmp_bytes(module, &out_layout, &raise_layout, &run, &layout);
         let masked_bytes = module.ckks_dft_tmp_bytes(&out_layout, &out_layout, &ctx.masked(&mask).unwrap(), &atk);
-        let eval_mod_bytes = BE::ckks_bootstrap_eval_mod_tmp_bytes(module, &out_layout, &out_layout, &ctx, None, &layout);
+        let eval_mod_bytes = BE::ckks_bootstrap_eval_mod_tmp_bytes(module, &out_layout, &out_layout, &run, None, &layout);
         for mask in [None, Some(&mask)] {
             let mut coeffs = fixture_ciphertext(module, &raise_layout, 107);
             let mut z = fixture_ciphertext(module, &out_layout, 109);
             let mut out = fixture_ciphertext(module, &out_layout, 113);
-            let result = with_scratch::<BE, _>(raise_bytes, |scratch| {
-                BE::ckks_mod_raise(module, &mut z, &mut coeffs, &ctx, &keys, scratch)
+            let staged = with_scratch::<BE, _>(raise_bytes, |scratch| {
+                BE::ckks_mod_raise(module, &mut z, &mut coeffs, &run, &keys, scratch)
             })
             .and_then(|()| match mask {
                 Some(mask) => with_scratch::<BE, _>(masked_bytes, |scratch| {
@@ -736,21 +737,19 @@ where
                 None => {
                     let bytes = module.ckks_dft_tmp_bytes(&out_layout, &out_layout, ctx.coeffs_to_slots(), &atk);
                     with_scratch::<BE, _>(bytes, |scratch| {
-                        module.ckks_coeffs_to_slots_assign(&mut z, &ctx, keys.rotation_keys(), scratch)
+                        module.ckks_coeffs_to_slots_assign(&mut z, &run, keys.rotation_keys(), scratch)
                     })
                 }
-            })
-            .and_then(|()| {
-                z.set_slots(SlotsKind::Real);
+            });
+            // EvalMod consumes `z`.
+            let transformed = snapshot::<BE, _>(&z);
+            let result = staged.and_then(|()| {
                 with_scratch::<BE, _>(eval_mod_bytes, |scratch| {
-                    BE::ckks_bootstrap_eval_mod(module, &mut out, &z, &ctx, None, &keys, scratch)
+                    BE::ckks_bootstrap_eval_mod(module, &mut out, &mut z, &run, None, &keys, scratch)
                 })
             });
             assert!(result.is_ok(), "log_gap {log_gap}: {result:?}");
-            results.push((
-                result.map_err(|e| e.to_string()),
-                vec![snapshot::<BE, _>(&z), snapshot::<BE, _>(&out)],
-            ));
+            results.push((result.map_err(|e| e.to_string()), vec![transformed, snapshot::<BE, _>(&out)]));
         }
 
         // One kernel per coset, of dyadic coefficients of the subring.

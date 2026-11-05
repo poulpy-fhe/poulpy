@@ -17,7 +17,7 @@ use poulpy_core::{
     layouts::{
         BackendGLWESecret, BackendGLWESecretPrepared, Base2K, GGLWEInfos, GLWEAutomorphismKeyAlloc, GLWECIEmbedKeyAlloc,
         GLWECITraceKeyAlloc, GLWESecretAlloc, GLWESecretPrepared, GLWESwitchingKeyAlloc, GLWETensorKeyAlloc,
-        GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, ModuleCoreAlloc, SetGLWEPlaintextInfos, SetK,
+        GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, ModuleCoreAlloc, SetK,
         prepared::GLWETensorKeyPreparedToBackendRef,
     },
 };
@@ -1430,6 +1430,12 @@ impl<BE: TestContextBackend<Ring = Standard> + CKKSCITwin, M> StepsRunModule<BE>
 {
 }
 
+/// The schedules `dft` keeps are those of its factors, in order.
+fn assert_factor_plans<BE: Backend, Dir, Fmt, D: CKKSDFTFactors<BE, Dir, Fmt>>(dft: &D) {
+    let plans: Vec<_> = dft.factors().map(|factor| factor.index()).collect();
+    assert_eq!(dft.factor_plans(), plans);
+}
+
 /// A preset set up for hand compositions of the steps, each stage on an arena of exactly its query.
 struct StepsRun<BE: CKKSCITwin> {
     preset: BootstrappingPreset,
@@ -1504,7 +1510,6 @@ where
         self.preset
             .keys_layout()
             .rotation_key_layouts()
-            .iter()
             .map(|atk| self.module.ckks_dft_tmp_bytes(ct, ct, dft, atk))
             .max()
             .unwrap_or(0)
@@ -1513,21 +1518,21 @@ where
     /// `message` doubled and through SlotsToCoeffs: `2·x` through the split decoding matrix.
     fn to_coeffs(&self, message: &CKKSCiphertextOwned<BE>) -> CKKSCiphertextOwned<BE> {
         let module = &self.module;
+        let run = self.context.run(message.meta());
         let mut coeffs = module.ckks_ciphertext_alloc_from_infos(message);
         let bytes = self
-            .dft_bytes::<Decode, Split, _>(message, &self.context)
+            .dft_bytes::<Decode, _, _>(message, &run)
             .max(module.ckks_double_tmp_bytes(message.size()));
         with_scratch::<BE, _>(bytes, |s| {
             module.ckks_double_into(&mut coeffs, message, s)?;
-            module.ckks_slots_to_coeffs_assign(&mut coeffs, &self.context, &self.keys.rotation_keys, s)
+            module.ckks_slots_to_coeffs_assign(&mut coeffs, &run, &self.keys.rotation_keys, s)
         })
         .unwrap();
         coeffs
     }
 
-    /// The real-slot stages above SlotsToCoeffs by hand: the raise of `coeffs`, CoeffsToSlots, with `mask` in place of
-    /// its last factor when there is one, the label the transforms lose, the EvalMod of a bootstrap and the metadata of
-    /// the message.
+    /// The real-slot stages above SlotsToCoeffs by hand, on a run of the message of metadata `meta`: the raise of `coeffs`,
+    /// CoeffsToSlots, with `mask` in place of its last factor when there is one, and the EvalMod of a bootstrap.
     fn raise_to_eval_mod(
         &self,
         coeffs: &CKKSCiphertextOwned<BE>,
@@ -1536,6 +1541,7 @@ where
     ) -> CKKSCiphertextOwned<BE> {
         let (module, context, keys) = (&self.module, &self.context, &self.keys);
         let (boot, keys_layout) = (self.preset.bootstrap_layout(), self.preset.keys_layout());
+        let run = context.run(meta);
         let mut a = module.ckks_ciphertext_alloc_from_infos(coeffs);
         with_scratch::<BE, _>(module.ckks_copy_tmp_bytes(&a, coeffs), |s| {
             module.ckks_copy(&mut a, coeffs, s)
@@ -1543,8 +1549,8 @@ where
         .unwrap();
         let mut z = module.ckks_ciphertext_alloc_from_glwe_infos(&boot);
         let mut res = module.ckks_ciphertext_alloc_from_glwe_infos(&boot);
-        with_scratch::<BE, _>(module.ckks_mod_raise_tmp_bytes(&z, &a, context, keys_layout), |s| {
-            module.ckks_mod_raise(&mut z, &mut a, context, keys, s)
+        with_scratch::<BE, _>(module.ckks_mod_raise_tmp_bytes(&z, &a, &run, keys_layout), |s| {
+            module.ckks_mod_raise(&mut z, &mut a, &run, keys, s)
         })
         .unwrap();
         match mask {
@@ -1556,20 +1562,18 @@ where
                 })
             }
             None => {
-                let bytes = self.dft_bytes::<Encode, Split, _>(&z, context);
+                let bytes = self.dft_bytes::<Encode, _, _>(&z, &run);
                 with_scratch::<BE, _>(bytes, |s| {
-                    module.ckks_coeffs_to_slots_assign(&mut z, context, &keys.rotation_keys, s)
+                    module.ckks_coeffs_to_slots_assign(&mut z, &run, &keys.rotation_keys, s)
                 })
             }
         }
         .unwrap();
-        z.set_slots(SlotsKind::Real);
-        let bytes = module.ckks_bootstrap_eval_mod_tmp_bytes(&res, &z, context, None, keys_layout);
+        let bytes = module.ckks_bootstrap_eval_mod_tmp_bytes(&res, &z, &run, None, keys_layout);
         with_scratch::<BE, _>(bytes, |s| {
-            module.ckks_bootstrap_eval_mod(&mut res, &z, context, None, keys, s)
+            module.ckks_bootstrap_eval_mod(&mut res, &mut z, &run, None, keys, s)
         })
         .unwrap();
-        res.set_meta(meta);
         res
     }
 
@@ -1643,6 +1647,7 @@ where
     let keep: Vec<bool> = (0..n).map(|j| j < half && j % 5 != 2).collect();
     let bytes = context.coeffs_mask_tmp_bytes(module).unwrap();
     let mask = with_scratch::<BE, _>(bytes, |s| context.coeffs_mask(module, &keep, s)).unwrap();
+    assert_factor_plans::<BE, Encode, _, _>(&context.masked(&mask).unwrap());
     let bitrev = |j: usize| j.reverse_bits() >> (usize::BITS - half.trailing_zeros());
     let masked: Vec<f64> = (0..half).map(|j| if keep[bitrev(j)] { want[j] } else { 0.0 }).collect();
     let got = run.raise_to_eval_mod(&coeffs, Some(&mask), message.meta());
@@ -1746,8 +1751,9 @@ where
     // SlotsToCoeffs up to its last factor, `2·x` through the split decoding matrix, then the merged factor.
     let plan = merged.factor().index();
     let head = context.slots_to_coeffs().head();
+    assert_factor_plans::<BE, Decode, _, _>(&head);
     let bytes = run
-        .dft_bytes::<Decode, Split, _>(&x, context)
+        .dft_bytes::<Decode, Split, _>(&x, context.slots_to_coeffs())
         .max(module.ckks_double_tmp_bytes(x.size()))
         + module.glwe_linear_transformation_baby_steps_bytes_of(&plan, &x);
     let mut running = module.ckks_ciphertext_alloc_from_infos(&x);

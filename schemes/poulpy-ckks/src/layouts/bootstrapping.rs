@@ -747,7 +747,7 @@ pub struct MaskedFactors<'a, BE: Backend> {
     last: &'a LinearTransformationPrepared<BE>,
 }
 
-impl<BE: Backend> CKKSDFTFactors<BE, Encode, Split> for MaskedFactors<'_, BE> {
+impl<BE: Backend> CKKSDFTFactors<BE, Encode, Standard> for MaskedFactors<'_, BE> {
     type Diagonal = <DFTMatrixPrepared<BE, Encode, Split> as CKKSDFTFactors<BE, Encode, Split>>::Diagonal;
 
     fn dft_plan(&self) -> &DFTPlan {
@@ -758,10 +758,15 @@ impl<BE: Backend> CKKSDFTFactors<BE, Encode, Split> for MaskedFactors<'_, BE> {
     where
         BE: 'a,
         Encode: 'a,
-        Split: 'a,
+        Standard: 'a,
     {
         let head = self.dft.factor_operands().split_last().map_or(&[][..], |(_, head)| head);
         head.iter().chain(std::iter::once(self.last))
+    }
+
+    // `masked` holds a mask to the schedule of the factor it replaces.
+    fn factor_plans(&self) -> &[LinearTransformationPlan] {
+        self.dft.factor_plans()
     }
 }
 
@@ -1330,11 +1335,11 @@ impl<BE: Backend, F> BootstrappingContextPrepared<BE, F> {
         if !self.takes_a_mask() {
             return Err(invalid_operand(OP, MASK_CONTEXT).into());
         }
-        let Some(context_last) = self.coeffs_to_slots.factor_operands().last() else {
+        let Some(context_last) = self.coeffs_to_slots.factor_plans().last() else {
             return Err(invalid_operand(OP, "the matrix evaluates no factor").into());
         };
-        let of_this_factor = |last: &&LinearTransformationPrepared<BE>| {
-            last.index() == context_last.index() && mask.0.plan() == self.coeffs_to_slots.plan()
+        let of_this_factor = |_: &&LinearTransformationPrepared<BE>| {
+            mask.0.factor_plans().first() == Some(context_last) && mask.0.plan() == self.coeffs_to_slots.plan()
         };
         let Some(last) = mask.0.factor_operands().first().filter(of_this_factor) else {
             return Err(invalid_operand(OP, "the mask is not of the last CoeffsToSlots factor of the context").into());
