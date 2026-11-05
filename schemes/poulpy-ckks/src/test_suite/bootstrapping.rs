@@ -33,7 +33,7 @@ use crate::layouts::CKKSCiphertextOwned;
 use crate::layouts::CKKSPlaintextOwned;
 
 use poulpy_core::GLWECIKeyEncryptSk;
-use poulpy_core::api::{GLWECIKeyPreparedFactory, GLWESecretSampling};
+use poulpy_core::api::{GLWECIKeyPreparedFactory, GLWESecretSampling, GLWESwitchingKeyPreparedFactory};
 use poulpy_core::layouts::{
     GGLWEInfos, GLWEAutomorphismKeyLayout, GLWEInfos, GLWEPlaintextInfos, GLWESecretAlloc, GLWESecretPreparedToBackendRef,
     GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, SetGLWEPlaintextInfos,
@@ -331,7 +331,7 @@ where
         })
         .unwrap();
         assert_eq!(key_set.first_factor_keys.len(), first.giant_steps.len());
-        let bsk = with_scratch::<BE, _>(keys_layout.prepare_tmp_bytes(&module, None), |s| {
+        let mut bsk = with_scratch::<BE, _>(keys_layout.prepare_tmp_bytes(&module, None), |s| {
             key_set.prepare(&module, None, s)
         })
         .unwrap();
@@ -367,6 +367,25 @@ where
                     "the encapsulated ModUp needs a sparse-to-dense key",
                     |res, a, s| module.ckks_mod_raise(res, a, &plain, &bsk, s),
                 );
+                // One bit of headroom gives C2S-first a lift, which the refusal of a key under that width precedes.
+                let lifted_k = k_small + 1;
+                let mut lifted = fixture_ciphertext(&module, &ckks_spec(n, base2k, log_delta, lifted_k - log_delta), 47);
+                if let Some(lift) = &plan.mod_raise().lift {
+                    assert_eq!(lift.input_scale_up(lifted_k, log_delta).unwrap(), 1);
+                }
+                let mut narrow_key = keys_layout.encapsulation.as_ref().unwrap().dense_to_sparse;
+                narrow_key.dnum = 1usize.into();
+                narrow_key.k_digit = k_small.into();
+                assert!(narrow_key.gglwe_layout().max_input_k().as_usize() < lifted_k);
+                let dense_to_sparse = module.glwe_switching_key_prepared_alloc_from_infos(&narrow_key);
+                let wide_keys = bsk.encapsulation_keys.replace((dense_to_sparse, None));
+                assert_mod_raise_refuses(
+                    &mut dst,
+                    &mut lifted,
+                    "the input is wider than an encapsulation key's max_input_k",
+                    |res, a, s| module.ckks_mod_raise(res, a, &ctx, &bsk, s),
+                );
+                bsk.encapsulation_keys = wide_keys;
             }
             let narrow_spec = ckks_spec(n, base2k, log_delta, k_boot - base2k - log_delta);
             assert_mod_raise_refuses(
@@ -753,6 +772,19 @@ where
             "ModUp must widen, not shrink, the modulus",
             |res, a, s| module.ckks_mod_raise(res, a, &context, &keys, s),
         );
+        // One bit of headroom gives a lift, which the refusal precedes.
+        if let Some(lift) = &mod_raise.lift {
+            let mut wider = preset.input_layout();
+            wider.glwe_layout.k = (a.k().as_usize() + 1).into();
+            let mut lifted = fixture_ciphertext(&module, &wider, 23);
+            assert_eq!(lift.input_scale_up(lifted.k().as_usize(), lifted.log_delta()).unwrap(), 1);
+            assert_mod_raise_refuses(
+                &mut fixture_ciphertext(&module, &narrow, 17),
+                &mut lifted,
+                "ModUp must widen, not shrink, the modulus",
+                |res, a, s| module.ckks_mod_raise(res, a, &context, &keys, s),
+            );
+        }
 
         // The tensor key resolves before the scratch check, on the standard ring too.
         let tensor_key = keys.tensor_key.take();

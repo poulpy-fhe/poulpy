@@ -4,7 +4,7 @@ use poulpy_core::{
     GLWECIEmbed, GLWECITrace, GLWECopy, GLWEKeyswitch, GLWERotate, GLWEShift, GLWESwitchDegree, LinearTransformationPrepared,
     layouts::{
         BSGSMeta, GGLWEInfos, GLWEInfos, GLWELayout, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef,
-        GetAutomorphismKey, GetTensorKey, LWEInfos, LinearTransformation, Rank, SetBSGSMeta, SetK,
+        GetAutomorphismKey, GetTensorKey, LWEInfos, LinearTransformation, Rank, SetBSGSMeta, SetK, TorusPrecision,
         prepared::{GGLWEPreparedBackendRef, GGLWEPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
     },
 };
@@ -730,6 +730,9 @@ where
     const OP: &str = "ckks_mod_raise";
     let (k_large, k_small) = (dst.k().as_usize(), src.k().as_usize());
     if let Some(factor) = first_factor {
+        if let Some((dense_to_sparse, _)) = keys.encapsulation_keys() {
+            ensure_encapsulation_key_covers(src.k(), dense_to_sparse)?;
+        }
         ensure_mod_up_widens(OP, k_large, k_small, scale_up)?;
         check_first_factor_raise(
             OP,
@@ -1273,6 +1276,16 @@ where
     Ok(())
 }
 
+/// `InvalidOperand` unless the encapsulation key `key` takes an input of `k` bits.
+fn ensure_encapsulation_key_covers<K: GGLWEInfos>(k: TorusPrecision, key: &K) -> Result<()> {
+    ckks_ensure_operand!(
+        "ckks_mod_raise",
+        k <= key.gglwe_layout().max_input_k(),
+        "the input is wider than an encapsulation key's max_input_k"
+    );
+    Ok(())
+}
+
 /// Refuses encapsulation keys too narrow for their inputs before any write: `src`
 /// for the dense-to-sparse switch, `dst` for an offset-free sparse-to-dense one, and
 /// the raise of `src` by `scale_up` into `dst`, a sparse-to-dense key with a row
@@ -1285,17 +1298,12 @@ fn check_encapsulated_raise<Dst: CKKSCtBounds, Src: CKKSCtBounds, D2S: GGLWEInfo
     sparse_to_dense: &S2D,
 ) -> Result<()> {
     const OP: &str = "ckks_mod_raise";
-    let offset = sparse_to_dense.k_offset().as_usize() > 0;
-    ckks_ensure_operand!(
-        OP,
-        src.k() <= dense_to_sparse.gglwe_layout().max_input_k()
-            && (offset || dst.k() <= sparse_to_dense.gglwe_layout().max_input_k()),
-        "the input is wider than an encapsulation key's max_input_k"
-    );
+    ensure_encapsulation_key_covers(src.k(), dense_to_sparse)?;
     let (k_large, k_small) = (dst.k().as_usize(), src.k().as_usize());
-    if offset {
+    if sparse_to_dense.k_offset().as_usize() > 0 {
         check_offset_raise(OP, k_large, k_small, scale_up, sparse_to_dense)?;
     } else {
+        ensure_encapsulation_key_covers(dst.k(), sparse_to_dense)?;
         ensure_mod_up_widens(OP, k_large, k_small, scale_up)?;
     }
     Ok(())
