@@ -628,9 +628,9 @@ where
         }
         BE::ckks_mod_raise(module, &mut raised, &mut coeffs, &run, keys, s)?;
         steps.push(snapshot::<BE, _>(&raised));
-        if let Some(bypass) = ctx.coeffs_to_slots_bypass() {
+        if let Some(bypass) = run.bypass() {
             BE::ckks_copy(module, &mut z_hp, &raised, s)?;
-            module.ckks_dft_matrix_eval_assign(&mut z_hp, bypass, keys, s)?;
+            module.ckks_coeffs_to_slots_assign(&mut z_hp, &bypass, keys, s)?;
         }
         module.ckks_coeffs_to_slots_assign(&mut raised, &run, keys, s)?;
         steps.push(snapshot::<BE, _>(&raised));

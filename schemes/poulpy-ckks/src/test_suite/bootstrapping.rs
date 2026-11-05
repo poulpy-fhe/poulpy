@@ -627,14 +627,14 @@ where
                     module.ckks_copy(&mut coeffs, &input, s)?;
                 }
                 module.ckks_mod_raise(&mut raised, &mut coeffs, &run, &keys, s)?;
-                if let Some(bypass) = context.coeffs_to_slots_bypass() {
+                if let Some(bypass) = run.bypass() {
                     module.ckks_copy(&mut z_hp, &raised, s)?;
-                    module.ckks_dft_matrix_eval_assign(&mut z_hp, bypass, &keys, s)?;
+                    module.ckks_coeffs_to_slots_assign(&mut z_hp, &bypass, &keys, s)?;
                 }
                 module.ckks_coeffs_to_slots_assign(&mut raised, &run, &keys, s)?;
                 module.ckks_copy(&mut kept, &raised, s)?;
                 module.ckks_bootstrap_eval_mod(&mut stepped, &mut raised, &run, None, &keys, s)?;
-                if context.coeffs_to_slots_bypass().is_some() {
+                if run.bypass().is_some() {
                     module.ckks_mul_pow2_assign(1, &mut z_hp, s)?;
                     module.ckks_add_assign(&mut z_hp, &stepped, s)?;
                     module.ckks_copy(&mut stepped, &z_hp, s)?;

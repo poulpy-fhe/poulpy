@@ -149,7 +149,8 @@ pub trait CKKSBootstrappingOps<BE: CKKSCITwin> {
     /// The output is the message's: the guard bits leave `res` here and, on an S2C-first plan, `res` takes the message's
     /// metadata; a C2S-first plan ends in `ckks_slots_to_coeffs_assign`, which labels it. Under EvalRound+,
     /// [`CKKSEvalModInfos::eval_round_plus`], `res` is `EvalMod(x) - K·x`, with its working label and the guard bits: the
-    /// composer adds the bypass back, then calls [`CKKSEvalModInfos::stamp_eval_mod_output`].
+    /// composer adds [`BootstrappingRun::bypass`](crate::layouts::BootstrappingRun::bypass) back, then calls
+    /// [`CKKSEvalModInfos::stamp_eval_mod_output`].
     ///
     /// # Errors
     ///

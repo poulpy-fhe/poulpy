@@ -972,8 +972,40 @@ pub struct BootstrappingRun<'a, BE: Backend, F> {
 }
 
 impl<BE: Backend, F> BootstrappingRun<'_, BE, F> {
-    pub(crate) fn context(&self) -> &BootstrappingContextPrepared<BE, F> {
+    /// The EvalRound+ bypass of the plan, `None` without one. A composer runs it on a copy of the raised ciphertext, then
+    /// doubles the copy and adds the output of `ckks_bootstrap_eval_mod`.
+    pub fn bypass(&self) -> Option<BootstrappingBypass<'_, BE>> {
         self.context
+            .coeffs_to_slots_bypass
+            .as_ref()
+            .map(|matrix| BootstrappingBypass { matrix })
+    }
+}
+
+/// The EvalRound+ bypass of a [`BootstrappingRun`], the high-precision CoeffsToSlots of
+/// [`ckks_coeffs_to_slots_assign`](crate::api::CKKSDFTOps::ckks_coeffs_to_slots_assign).
+pub struct BootstrappingBypass<'a, BE: Backend> {
+    matrix: &'a DFTMatrixPrepared<BE, Encode, Split>,
+}
+
+impl<BE: Backend> CKKSDFTFactors<BE, Encode, Standard> for BootstrappingBypass<'_, BE> {
+    type Diagonal = <DFTMatrixPrepared<BE, Encode, Split> as CKKSDFTFactors<BE, Encode, Split>>::Diagonal;
+
+    fn dft_plan(&self) -> &DFTPlan {
+        self.matrix.dft_plan()
+    }
+
+    fn factors<'a>(&'a self) -> impl Iterator<Item = &'a LinearTransformation<Self::Diagonal>>
+    where
+        BE: 'a,
+        Encode: 'a,
+        Standard: 'a,
+    {
+        self.matrix.factors()
+    }
+
+    fn factor_plans(&self) -> &[LinearTransformationPlan] {
+        self.matrix.factor_plans()
     }
 }
 

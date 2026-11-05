@@ -211,13 +211,13 @@ where
     R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + Send,
     Z: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
 {
-    let Some(bypass) = run.context().coeffs_to_slots_bypass() else {
+    let Some(bypass) = run.bypass() else {
         module.ckks_coeffs_to_slots_assign(z, run, keys, scratch)?;
         return module.ckks_bootstrap_eval_mod(res, z, run, ci, keys, scratch);
     };
     let (mut z_hp, mut scratch) = scratch.borrow().take_ckks_ciphertext_scratch(&*z, z.meta());
     module.ckks_copy(&mut z_hp, &*z, &mut scratch)?;
-    module.ckks_dft_matrix_eval_assign(&mut z_hp, bypass, keys, &mut scratch)?;
+    module.ckks_coeffs_to_slots_assign(&mut z_hp, &bypass, keys, &mut scratch)?;
     module.ckks_coeffs_to_slots_assign(z, run, keys, &mut scratch)?;
     module.ckks_bootstrap_eval_mod(res, z, run, ci, keys, &mut scratch)?;
     // `2·z_hp`, the bypass on the packed halves, which the split doubles as `2·Re` and `2·Im`.

@@ -131,7 +131,7 @@ module.ckks_bootstrap_eval_mod(&mut res, &mut raised, &run, None, &keys, s)?;
 
 C2S-first copies `input` into `coeffs`, skips the SlotsToCoeffs above the raise, and ends in `module.ckks_slots_to_coeffs_assign(&mut res, &run, &keys, s)?`.
 
-Under a bypass (EvalRound+), `ckks_bootstrap_eval_mod` returns `EvalMod(x) - K·x`, on every route, with its working label and the guard bits still on. The caller copies the raised ciphertext before CoeffsToSlots, runs the bypass factors on the copy (`ckks_dft_matrix_eval_assign(&mut z_hp, bypass, ..)`), doubles it (`ckks_mul_pow2_assign(1, ..)`), adds the step's output, and only then calls `run.stamp_eval_mod_output(&mut res)?`: removing the guard bits earlier lowers `k` and changes the bits of the conjugate-invariant route. `ckks_eval_lut` removes the guard bits itself, before its exponential, and runs no bypass: on a real message of an S2C-first plan it reads the real part alone, with or without one in the plan.
+Under a bypass (EvalRound+), `ckks_bootstrap_eval_mod` returns `EvalMod(x) - K·x`, on every route, with its working label and the guard bits still on. The caller copies the raised ciphertext before CoeffsToSlots, runs the bypass on the copy (`ckks_coeffs_to_slots_assign(&mut z_hp, &bypass, ..)`, `bypass` from `run.bypass()`), doubles it (`ckks_mul_pow2_assign(1, ..)`), adds the step's output, and only then calls `run.stamp_eval_mod_output(&mut res)?`: removing the guard bits earlier lowers `k` and changes the bits of the conjugate-invariant route. `ckks_eval_lut` removes the guard bits itself, before its exponential, and runs no bypass: on a real message of an S2C-first plan it reads the real part alone, with or without one in the plan.
 
 ## Scale and budget chain
 
