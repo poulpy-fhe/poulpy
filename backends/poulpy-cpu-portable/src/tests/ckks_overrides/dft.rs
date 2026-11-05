@@ -343,7 +343,7 @@ thread_local! {
     /// Whether the evaluation hook counts and runs the reference instead of failing.
     static DFT_FORWARD: Cell<bool> = const { Cell::new(false) };
     static RAISE_CALLS: Cell<usize> = const { Cell::new(0) };
-    static EVAL_MOD_CALLS: Cell<usize> = const { Cell::new(0) };
+    static BOOTSTRAP_EVAL_MOD_CALLS: Cell<usize> = const { Cell::new(0) };
     static EVAL_LUT_CALLS: Cell<usize> = const { Cell::new(0) };
 }
 unsafe impl poulpy_ckks::oep::CKKSDFTImpl for OverrideBackend {
@@ -555,7 +555,7 @@ unsafe impl poulpy_ckks::oep::CKKSBootstrappingImpl for OverrideBackend {
         K: poulpy_ckks::layouts::BootstrappingKeys<Self> + Sync,
         K::TensorKey: Sync,
     {
-        EVAL_MOD_CALLS.set(EVAL_MOD_CALLS.get() + 1);
+        BOOTSTRAP_EVAL_MOD_CALLS.set(BOOTSTRAP_EVAL_MOD_CALLS.get() + 1);
         CKKSBootstrappingReference::ckks_bootstrap_eval_mod_reference(module, res, a, plan, ci, keys, scratch)
     }
 
@@ -791,7 +791,7 @@ fn bootstrap_enters_each_step_hook() {
         ..poulpy_ckks::test_suite::BASE19_PARAMS_F64
     };
     let module = Module::<OverrideBackend>::new(64);
-    for counter in [&RAISE_CALLS, &EVAL_MOD_CALLS, &EVAL_LUT_CALLS, &DFT_CALLS] {
+    for counter in [&RAISE_CALLS, &BOOTSTRAP_EVAL_MOD_CALLS, &EVAL_LUT_CALLS, &DFT_CALLS] {
         counter.set(0);
     }
     DFT_FORWARD.set(true);
@@ -801,7 +801,7 @@ fn bootstrap_enters_each_step_hook() {
     super::EVAL_MOD_FORWARD.set(false);
     // Seven bootstraps raise: five reach EvalMod through the hook, real slots included, two the LUTs.
     assert!(RAISE_CALLS.get() >= 7);
-    assert!(EVAL_MOD_CALLS.get() >= 5);
+    assert!(BOOTSTRAP_EVAL_MOD_CALLS.get() >= 5);
     assert!(EVAL_LUT_CALLS.get() >= 2);
     assert!(DFT_CALLS.get() >= 14);
 }
