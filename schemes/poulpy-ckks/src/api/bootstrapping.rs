@@ -83,7 +83,19 @@ pub trait CKKSBootstrappingOps<BE: CKKSCITwin> {
     /// `I(X)·q` is the integer part and the message the residue.
     ///
     /// `res` must be allocated at the bootstrap modulus. `a` is consumed: its content and metadata are unspecified on
-    /// return. Scratch is bounded by [`Self::ckks_mod_raise_tmp_bytes`].
+    /// a successful return. Scratch is bounded by [`Self::ckks_mod_raise_tmp_bytes`]. `plan` is a compiled context, its
+    /// [`mod_raise`](BootstrappingContextPrepared::mod_raise), or, on a plan that leaves no CoeffsToSlots factor to the
+    /// raise, the [`ModRaisePlan`](crate::layouts::ModRaisePlan) itself.
+    ///
+    /// # Errors
+    ///
+    /// Before any write, leaving `res` and `a` unchanged: [`InvalidOperand`](crate::CKKSCompositionError::InvalidOperand)
+    /// for a rank other than 1, ciphertexts of two degrees or base2k or of a degree the module does not serve, an
+    /// encapsulation that does not match the plan, a plan that moves the first CoeffsToSlots factor onto the raise
+    /// without that factor, a `res` too narrow for the raise of `a` and its lifts, encapsulation keys absent or too narrow
+    /// for what they switch, or first-factor keys absent, of two layouts or too narrow for the raise.
+    /// `CKKSError::Internal` for an input without the bits of the plan's lifts, or an arena under
+    /// [`Self::ckks_mod_raise_tmp_bytes`], when the keys report their layout.
     fn ckks_mod_raise<R, A, P, K>(
         &self,
         res: &mut R,
@@ -131,12 +143,20 @@ pub trait CKKSBootstrappingOps<BE: CKKSCITwin> {
     /// # Errors
     ///
     /// [`InvalidOperand`](crate::CKKSCompositionError::InvalidOperand) before any write to `res`, for `ci` on a plan of
-    /// the standard ring, no `ci` on a plan of the conjugate-invariant ring, a rank other than 1, ciphertexts of two
-    /// degrees or of one the module does not serve, or keys without the tensor key of the plan's ring. On the
-    /// conjugate-invariant ring also, before its query, for modules of other degrees than `2N` and `N`, `a` wider than
-    /// `res`, or conversion keys absent or of another shape, and after the product by `u` for conversion keys narrower
-    /// than the widths they switch. `CKKSError::Internal` for an arena under
+    /// the standard ring, no `ci` on a plan of the conjugate-invariant ring, a plan with no EvalMod, a rank other than 1,
+    /// ciphertexts of two degrees or of one the module does not serve, or keys without the tensor key of the plan's ring.
+    /// On the conjugate-invariant ring also, before its query, for modules of other degrees than `2N` and `N`, `a` wider
+    /// than `res`, or conversion keys absent or of another shape, and after the product by `u` for conversion keys
+    /// narrower than the widths they switch. `CKKSError::Internal` for an arena under
     /// [`Self::ckks_bootstrap_eval_mod_tmp_bytes`], when the keys report their layout.
+    ///
+    /// [`MissingAutomorphismKey`](crate::CKKSCompositionError::MissingAutomorphismKey), before any write to `res`, for a
+    /// conjugation key that does not cover `a`, or a rotation key of a folded `u` on the conjugate-invariant ring.
+    /// [`InsufficientHomomorphicCapacity`](crate::CKKSCompositionError::InsufficientHomomorphicCapacity), before any write
+    /// to `res`, for an input without the budget of EvalMod.
+    /// [`MissingRelinearizationKey`](crate::CKKSCompositionError::MissingRelinearizationKey) for a tensor key narrower
+    /// than a product of EvalMod: on the conjugate-invariant ring `res` stays unchanged, on the standard ring the refusal
+    /// can follow a write to `res`.
     fn ckks_bootstrap_eval_mod<R, A, P, F, K>(
         &self,
         res: &mut R,
@@ -182,8 +202,16 @@ pub trait CKKSBootstrappingOps<BE: CKKSCITwin> {
     /// [`InvalidOperand`](crate::CKKSCompositionError::InvalidOperand) before any write to `res`, for no LUT, a number of
     /// outputs other than the number of LUTs, LUTs of different message moduli, a plan that is not the unit-circle
     /// complex exponential on the standard ring when a LUT needs EvalMod, outputs that do not share one rank-1 layout,
-    /// an input of another degree or rank, or keys without the tensor key of the plan's ring.
+    /// an input of another degree, base2k or rank, an input of fewer scale bits than the plan's guard bits, or keys
+    /// without the tensor key of the plan's ring.
+    /// [`MissingAutomorphismKey`](crate::CKKSCompositionError::MissingAutomorphismKey), before any write to `res`, for a
+    /// conjugation key that does not cover `a`.
     /// `CKKSError::Internal` for an arena under [`Self::ckks_eval_lut_tmp_bytes`], when the keys report their layout.
+    ///
+    /// [`InsufficientHomomorphicCapacity`](crate::CKKSCompositionError::InsufficientHomomorphicCapacity) for an input
+    /// without the budget of the evaluation and
+    /// [`MissingRelinearizationKey`](crate::CKKSCompositionError::MissingRelinearizationKey) for a tensor key narrower than
+    /// one of its products, each of which can follow a write to `res[0]`.
     fn ckks_eval_lut<A, P, F, K>(
         &self,
         res: &mut [CKKSCiphertextOwned<BE>],

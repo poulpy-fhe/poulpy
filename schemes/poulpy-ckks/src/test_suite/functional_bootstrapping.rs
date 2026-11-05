@@ -11,7 +11,7 @@ use poulpy_core::{
 use poulpy_hal::AlignedBuf;
 use poulpy_hal::{
     api::{ReimNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, HostBytesBackend, HostDataMut, HostDataRef, Module, ScratchOwned, Standard},
+    layouts::{Backend, HostBytesBackend, HostDataMut, HostDataRef, Module, ScratchArena, ScratchOwned, Standard},
     source::Source,
 };
 
@@ -33,7 +33,7 @@ use crate::{
             TestContextBackend, TestContextModule, TestContextSharedModule, TestScalar, assert_ckks_error,
             assert_invalid_operand, ckks_decrypt_decode, ckks_encrypt_with_prec, ckks_spec, gen_sk_with_raw, precision_stats,
         },
-        parity::helpers::{snapshot, with_scratch},
+        parity::helpers::{fixture_ciphertext, snapshot, with_scratch},
         presets::{CIBackend, compile_context},
         reference_encoder::ReferenceEncoder,
     },
@@ -53,6 +53,23 @@ enum Case {
     Binary([usize; 2]),
     GeneralModulus(usize),
     MultiModulus(usize),
+}
+
+/// What `run`, a call of [`CKKSBootstrappingOps::ckks_eval_lut`], refuses on a zero-byte arena, which puts the check
+/// before the scratch check, having left `res` as it was.
+fn eval_lut_refusal<BE>(
+    res: &mut [CKKSCiphertextOwned<BE>],
+    run: impl FnOnce(&mut [CKKSCiphertextOwned<BE>], &mut ScratchArena<'_, BE>) -> crate::CKKSResult<()>,
+) -> crate::CKKSError
+where
+    BE: Backend<ZnxWord = i64>,
+    CKKSCiphertextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds,
+{
+    let before: Vec<_> = res.iter().map(snapshot::<BE, _>).collect();
+    let err = with_scratch::<BE, _>(0, |s| run(res, s)).unwrap_err();
+    let after: Vec<_> = res.iter().map(snapshot::<BE, _>).collect();
+    assert_eq!(after, before, "a refused step wrote res");
+    err
 }
 
 pub fn test_functional_bootstrapping_e2e<BE, F, E>(
@@ -399,7 +416,7 @@ fn run_case<BE, F, E>(
 
     let (sk_raw, sk) = gen_sk_with_raw(&tp, module, host_module, [0u8; 32]);
     let (mut xs, mut xe, mut xa) = (Source::new([7u8; 32]), Source::new([2u8; 32]), Source::new([1u8; 32]));
-    let keys = ctx
+    let mut keys = ctx
         .generate_keys(
             module,
             None,
@@ -507,6 +524,46 @@ fn run_case<BE, F, E>(
             error.composition().is_none() && error.to_string().contains("needs a scratch arena"),
             "{error}"
         );
+
+        let mut refused: Vec<_> = backend_luts
+            .iter()
+            .map(|_| fixture_ciphertext(module, &output_spec, 23))
+            .collect();
+        let mut other_radix = output_spec;
+        other_radix.glwe_layout.base2k = (params.base2k - 1).into();
+        let a_radix = fixture_ciphertext(module, &other_radix, 29);
+        let error = eval_lut_refusal(&mut refused, |res, s| {
+            module.ckks_eval_lut(res, &a_radix, &ctx, &backend_luts, &keys, s)
+        });
+        assert_invalid_operand("two radices", &error, "ckks_eval_lut", "takes ciphertexts of one base2k");
+        if guard_bits > 0 {
+            let a_scale = fixture_ciphertext(
+                module,
+                &ckks_spec(params.n, params.base2k, guard_bits - 1, k_boot - guard_bits + 1),
+                31,
+            );
+            let error = eval_lut_refusal(&mut refused, |res, s| {
+                module.ckks_eval_lut(res, &a_scale, &ctx, &backend_luts, &keys, s)
+            });
+            assert_invalid_operand(
+                "guard bits above the scale",
+                &error,
+                "ckks_eval_lut",
+                "the input holds fewer scale bits than the plan's guard bits",
+            );
+        }
+        let conjugation = keys.rotation_keys.remove(&-1).unwrap();
+        let error = eval_lut_refusal(&mut refused, |res, s| {
+            module.ckks_eval_lut(res, &raised, &ctx, &backend_luts, &keys, s)
+        });
+        assert!(
+            matches!(
+                error.composition(),
+                Some(CKKSCompositionError::MissingAutomorphismKey { op: "ckks_eval_lut", .. })
+            ),
+            "{error}"
+        );
+        keys.rotation_keys.insert(-1, conjugation);
 
         // The label picks the route: the same raised input read as complex takes the split and gives other digits.
         if slots_kind == SlotsKind::Real {

@@ -1068,7 +1068,10 @@ where
     .expect("a CI plan without a CI module");
     assert!(matches!(
         refused.downcast_ref::<CKKSCompositionError>(),
-        Some(CKKSCompositionError::InvalidOperand { op: "compile", .. })
+        Some(CKKSCompositionError::InvalidOperand {
+            op: "compile_unprepared",
+            ..
+        })
     ));
     let refused = with_scratch::<BE, _>(bytes, |s| {
         BootstrappingContextPrepared::<BE, f64>::compile(&module, Some(&ci), preset.base2k().into(), standard.plan(), s)
@@ -1077,7 +1080,10 @@ where
     .expect("a standard plan with a CI module");
     assert!(matches!(
         refused.downcast_ref::<CKKSCompositionError>(),
-        Some(CKKSCompositionError::InvalidOperand { op: "compile", .. })
+        Some(CKKSCompositionError::InvalidOperand {
+            op: "compile_unprepared",
+            ..
+        })
     ));
     // Key generation leaves nothing of the CI secret, nor of the encryptions, in its arena: every
     // byte is wiped or was never carved.

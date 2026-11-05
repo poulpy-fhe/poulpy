@@ -108,12 +108,13 @@ EvalMod runs at its own scale.
 | Step | Call | Notes |
 |---|---|---|
 | SlotsToCoeffs | `ckks_slots_to_coeffs_assign(ct, &ctx, keys.rotation_keys(), scratch)` | any `CKKSDFTFactors`, `BootstrappingContextPrepared` included |
-| ModRaise | `ckks_mod_raise(res, a, &ctx, keys, scratch)` | `a` is clobbered, the raise switches it in place |
+| ModRaise | `ckks_mod_raise(res, a, &ctx, keys, scratch)` | `a` is clobbered, the raise switches it in place; `ctx.mod_raise()` also serves, and `plan.mod_raise()` on a plan that leaves no CoeffsToSlots factor to the raise |
 | CoeffsToSlots | `ckks_coeffs_to_slots_assign(ct, &ctx, keys.rotation_keys(), scratch)` | leaves the slot label Complex |
 | EvalMod | `ckks_bootstrap_eval_mod(res, a, &ctx, ci, keys, scratch)` | real slots, split halves, or the conjugate-invariant ring, by the plan and the label of `a` |
 | EvalLut | `ckks_eval_lut(res, a, &ctx, luts, keys, scratch)` | `res` is a slice, one output per LUT |
 
 Each has its `_tmp_bytes`, a step refuses a short arena or a wrong operand before it writes `res`, and a step run alone leaves the guard bits of the plan in place.
+`EvalModCIPrepared` implements no `CKKSEvalModInfos`: EvalMod on the conjugate-invariant ring runs through the context, not through its compiled part alone.
 
 The C2S-first bootstrap composed by hand, with an S2C-first variant noted in the comments:
 

@@ -1250,7 +1250,7 @@ where
         Module<BE>: CKKSDFTMatrixOps<BE, F> + CKKSEncodingOps<BE, F>,
         Module<BE::CI>: CKKSEncodingOps<BE::CI, F>,
     {
-        plan.check_ci_module("compile", module, ci)?;
+        plan.check_ci_module("compile_unprepared", module, ci)?;
         let (Some(ci), EvalModRing::ConjugateInvariant { pre, post }) = (ci, plan.eval_mod_ring) else {
             return Self::compile_stages(module, base2k, plan, scratch);
         };

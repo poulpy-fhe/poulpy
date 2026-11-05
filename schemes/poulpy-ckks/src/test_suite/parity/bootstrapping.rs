@@ -534,6 +534,16 @@ where
             });
             assert!(result.is_ok(), "{pipeline:?}: {result:?}");
             results.push((result.map_err(|e| e.to_string()), vec![snapshot::<BE, _>(&outs[0])]));
+            steps.push(compose_steps::<BE, F, _>(
+                module,
+                &ctx,
+                &keys,
+                &ct_in,
+                &in_layout,
+                &out_layout,
+                Some(&luts),
+                bytes,
+            ));
             continue;
         }
         let bytes = BE::ckks_bootstrap_tmp_bytes(module, &out_layout, &in_layout, &ctx, None, &layout);
@@ -560,13 +570,19 @@ where
             &ct_in,
             &in_layout,
             &out_layout,
+            None,
             bytes,
         ));
     }
     (results, steps)
 }
 
-/// The steps of `ckks_bootstrap` composed by hand on `ct_in`, each output snapshotted for the cross-backend comparison.
+/// The steps of `ckks_bootstrap`, or of `ckks_functional_bootstrap` given `luts`, composed by hand on `ct_in`, each
+/// output snapshotted for the cross-backend comparison.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the composition reads the context, the keys, its layouts, the LUTs of a functional case and its budget"
+)]
 fn compose_steps<BE, F, K>(
     module: &Module<BE>,
     ctx: &BootstrappingContextPrepared<BE, F>,
@@ -574,6 +590,7 @@ fn compose_steps<BE, F, K>(
     ct_in: &CKKSCiphertextOwned<BE>,
     in_layout: &CKKSLayout,
     out_layout: &CKKSLayout,
+    luts: Option<&[EncodedLut<CKKSPlaintextOwned<BE>>]>,
     bytes: usize,
 ) -> Steps
 where
@@ -607,7 +624,10 @@ where
         // The DFT leaves the label Complex, the composer restores the input's for a real route.
         raised.set_slots(ct_in.slots());
         steps.push(snapshot::<BE, _>(&raised));
-        BE::ckks_bootstrap_eval_mod(module, &mut stepped, &raised, ctx, None, keys, s)?;
+        match luts {
+            Some(luts) => BE::ckks_eval_lut(module, std::slice::from_mut(&mut stepped), &raised, ctx, luts, keys, s)?,
+            None => BE::ckks_bootstrap_eval_mod(module, &mut stepped, &raised, ctx, None, keys, s)?,
+        }
         steps.push(snapshot::<BE, _>(&stepped));
         Ok::<_, crate::CKKSError>(())
     })
