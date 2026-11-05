@@ -282,6 +282,10 @@ impl BootstrappingPlan {
 
     /// Configures S2C-first functional bootstrapping of integer messages modulo the LUT length.
     /// The initial transform includes the normalization to the LUT's unit-circle phase.
+    ///
+    /// # Errors
+    ///
+    /// [`InvalidPlan`](crate::CKKSCompositionError::InvalidPlan) for a plan with a gap.
     pub fn with_functional_bootstrap<P>(mut self, lut: &EncodedLut<P>) -> Result<Self> {
         ensure!(
             self.pipeline == BootstrappingPipeline::S2CFirst,
@@ -291,6 +295,9 @@ impl BootstrappingPlan {
             self.eval_mod_ring == EvalModRing::Standard,
             "functional bootstrapping runs EvalMod on the standard ring"
         );
+        if self.log_gap > 0 {
+            return Err(invalid_plan("functional bootstrapping takes a plan without a gap"));
+        }
         let q = (1usize << lut.log_msg_ratio()) as f64;
         self.slots_to_coeffs = self.slots_to_coeffs.with_scaling(q / (2.0 * lut.message_modulus() as f64))?;
         self.functional_message_modulus = Some(lut.message_modulus());
@@ -311,8 +318,11 @@ impl BootstrappingPlan {
     /// # Errors
     ///
     /// [`InvalidPlan`](crate::CKKSCompositionError::InvalidPlan) for a nonzero gap on a plan that is not S2C-first with
-    /// EvalMod on the standard ring, the first CoeffsToSlots factor on the raise and a sparse secret.
+    /// EvalMod on the standard ring, the first CoeffsToSlots factor on the raise and a sparse secret, or a functional plan.
     pub fn with_log_gap(mut self, log_gap: usize) -> Result<Self> {
+        if log_gap > 0 && self.functional_message_modulus.is_some() {
+            return Err(invalid_plan("a gap takes a plan without a LUT"));
+        }
         if log_gap > 0
             && !(self.pipeline == BootstrappingPipeline::S2CFirst
                 && self.eval_mod_ring == EvalModRing::Standard
@@ -2083,6 +2093,18 @@ mod tests {
             plan.check_log_gap_fits(log_n).unwrap();
         }
         assert!(refusal(plan.check_log_gap_fits(2).unwrap_err()).contains("do not fit the module"));
+        let module = Module::<poulpy_hal::layouts::HostBytesBackend>::new(16);
+        let lut = EncodedLut::general(
+            &module,
+            &[1.0f64; 5],
+            32usize.into(),
+            CoeffsMeta::from_delta_budget(55, 32),
+            SplitStrategy::MinDepth,
+        )
+        .unwrap();
+        assert!(refusal(plan.clone().with_functional_bootstrap(&lut).unwrap_err()).contains("without a gap"));
+        let functional = new(true, true).with_functional_bootstrap(&lut).unwrap();
+        assert!(refusal(functional.with_log_gap(1).unwrap_err()).contains("a gap takes a plan without a LUT"));
         // A plan on fewer slots than the ring needs its gap.
         assert!(refusal(new(true, true).check_log_gap(3).unwrap_err()).contains("must fill the slots of the subring"));
     }

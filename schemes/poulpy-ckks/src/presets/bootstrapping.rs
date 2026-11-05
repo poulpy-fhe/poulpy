@@ -436,6 +436,8 @@ impl BootstrappingPreset {
     /// [`BootstrappingPlan::with_log_gap`]. A key under the sparse secret of the subring splits into `2^log_gap` RLWE
     /// samples of the subring's degree, so its modulus is bounded at that degree.
     ///
+    /// A gap moves the first CoeffsToSlots factor onto the raise, which requires the preset's sparse encapsulation.
+    ///
     /// Fails without a bound for the sparse secret at that degree.
     pub fn with_log_gap(
         &self,
