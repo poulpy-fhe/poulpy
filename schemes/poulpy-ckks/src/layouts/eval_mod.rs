@@ -288,6 +288,12 @@ impl EvalModPlan {
         Ok(())
     }
 
+    /// Widths of the ciphertexts the conversions of the conjugate-invariant ring switch around
+    /// this EvalMod, from the `traced` bits of its input: to that ring, and back at what it leaves.
+    pub(crate) fn conversion_widths(&self, traced: usize) -> (usize, usize) {
+        (traced, traced.saturating_sub(self.consumed_bits()))
+    }
+
     /// `log_budget` bits the eval_mod pipeline consumes on an input ciphertext of
     /// scale `input_log_delta`: the base polynomial evaluation
     /// ([`poulpy_core::layouts::bsgs_consumed_bits`] with the
@@ -480,7 +486,8 @@ pub trait CKKSEvalModInfos<BE: CKKSCITwin, F> {
     /// Guard bits the input of the step carries above its message: 0 on a plain [`EvalMod`].
     fn c2s_guard_bits(&self) -> usize;
 
-    /// Whether real slots take one EvalMod: an S2C-first pipeline without a bypass.
+    /// Whether real slots take one EvalMod: an S2C-first pipeline without a bypass. A plain [`EvalMod`] has no
+    /// pipeline and trusts the label of its input.
     fn one_eval_mod_on_real_slots(&self) -> bool;
 
     /// Whether the plan runs EvalRound+: the step leaves `EvalMod(x) - K·x` and the guard bits to the bypass.

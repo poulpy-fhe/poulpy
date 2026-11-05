@@ -161,6 +161,7 @@ where
     let mut linear = 0;
     for atk in &keys_layout.rotation_key_layouts() {
         linear = linear
+            .max(module.ckks_all_ops_with_atk_tmp_bytes(res, &coeffs_layout, tsk, atk))
             .max(module.ckks_all_ops_with_atk_tmp_bytes(&boot_layout, &coeffs_layout, tsk, atk))
             .max(module.ckks_all_ops_with_atk_tmp_bytes(&a_layout, &coeffs_layout, tsk, atk));
     }
@@ -792,6 +793,14 @@ impl<BE: Backend + CKKSBootstrappingImpl + CKKSEncapsulatedModUpImpl + CKKSModUp
             a.rank().as_usize(),
             res.rank().as_usize()
         );
+        ckks_ensure_operand!(
+            OP,
+            res.n() == a.n() && a.n().as_usize() <= self.n(),
+            "takes ciphertexts of one degree, which the module serves"
+        );
+        if let (Some(ci), Some(_)) = (ci, plan.eval_mod_ci()) {
+            check_eval_mod_on_ci(self, ci, res, a, keys)?;
+        }
         ensure_eval_round_interval(plan)?;
         if let Some(keys_layout) = keys.keys_layout() {
             let bytes = self.ckks_bootstrap_eval_mod_tmp_bytes_reference(res, a, plan, ci, &keys_layout);
@@ -1873,6 +1882,42 @@ where
     Ok(())
 }
 
+/// The conversion keys, or the refusal of `op`.
+fn required_conversion_keys<'a, BE, K>(op: &'static str, keys: &'a K) -> Result<(&'a K::TraceKey, &'a K::EmbedKey)>
+where
+    BE: CKKSCITwin,
+    K: BootstrappingKeys<BE>,
+{
+    keys.conversion_keys().ok_or_else(|| {
+        CKKSCompositionError::InvalidOperand {
+            op,
+            reason: "the keys hold no conversion keys of the plan's ring".into(),
+        }
+        .into()
+    })
+}
+
+/// Refuses what the query and the body of [`eval_mod_on_ci`] take on trust: modules of other degrees
+/// than `2N` and `N`, an input wider than the carves at the width of `res`, and absent keys or conversion
+/// keys of another shape.
+fn check_eval_mod_on_ci<BE, R, A, K>(module: &Module<BE>, ci: &Module<BE::CI>, res: &R, a: &A, keys: &K) -> Result<()>
+where
+    BE: CKKSCITwin,
+    R: CKKSCtBounds,
+    A: CKKSCtBounds,
+    K: BootstrappingKeys<BE>,
+{
+    ckks_ensure_operand!(
+        EVAL_MOD_OP,
+        module.n() >= 2 * a.n().as_usize() && ci.n() == a.n().as_usize(),
+        "takes a module of degree at least 2N and a CI module of degree N"
+    );
+    ckks_ensure_operand!(EVAL_MOD_OP, a.k() <= res.k(), "takes an input no wider than its output");
+    required_tensor_key(EVAL_MOD_OP, keys.ci_tensor_key())?;
+    check_conversion_key_shapes(EVAL_MOD_OP, a, keys)?;
+    Ok(())
+}
+
 /// Refuses conversion keys of another degree, radix or rank than the ciphertexts they switch,
 /// or absent: they go through no key source, which would check their shapes and coverage.
 fn check_conversion_key_shapes<'a, BE, K, A>(op: &'static str, a: &A, keys: &'a K) -> Result<(&'a K::TraceKey, &'a K::EmbedKey)>
@@ -1881,10 +1926,7 @@ where
     K: BootstrappingKeys<BE>,
     A: CKKSCtBounds,
 {
-    let Some((trace_key, embed_key)) = keys.conversion_keys() else {
-        let reason = "the keys hold no conversion keys of the plan's ring".into();
-        return Err(CKKSCompositionError::InvalidOperand { op, reason }.into());
-    };
+    let (trace_key, embed_key) = required_conversion_keys(op, keys)?;
     let n_wide = 2 * a.n().as_usize();
     for (name, key, view) in [
         ("trace key", trace_key.gglwe_layout(), trace_key.to_backend_ref()),
@@ -1958,14 +2000,8 @@ where
     P: CKKSEvalModInfos<BE, F>,
     K: BootstrappingKeys<BE>,
 {
-    const OP: &str = EVAL_MOD_OP;
-    ckks_ensure_operand!(
-        OP,
-        module.n() >= 2 * a.n().as_usize() && ci.n() == a.n().as_usize() && res.n() == a.n(),
-        "takes a module of degree at least 2N, a CI module of degree N and ciphertexts of degree N"
-    );
-    let tensor_key = required_tensor_key(OP, keys.ci_tensor_key())?;
-    let (trace_key, embed_key) = check_conversion_key_shapes(OP, a, keys)?;
+    let tensor_key = required_tensor_key(EVAL_MOD_OP, keys.ci_tensor_key())?;
+    let (trace_key, embed_key) = required_conversion_keys(EVAL_MOD_OP, keys)?;
 
     let boot_layout = GLWELayout {
         n: res.n(),
@@ -1991,9 +2027,8 @@ where
             ci_folded_pre(module, &mut embedded, a, [even, odd], keys.rotation_keys(), &mut scratch)?
         }
     }
-    let traced_k = embedded.k().as_usize();
-    let widths = (traced_k, traced_k.saturating_sub(plan.eval_mod_plan().consumed_bits()));
-    check_conversion_key_widths(OP, trace_key, embed_key, widths)?;
+    let widths = plan.eval_mod_plan().conversion_widths(embedded.k().as_usize());
+    check_conversion_key_widths(EVAL_MOD_OP, trace_key, embed_key, widths)?;
     let meta = GLWEPlaintextMeta {
         slots: SlotsKind::Real,
         ..embedded.meta()

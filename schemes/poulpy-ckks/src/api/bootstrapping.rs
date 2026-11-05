@@ -128,9 +128,11 @@ pub trait CKKSBootstrappingOps<BE: CKKSCITwin> {
     /// # Errors
     ///
     /// [`InvalidOperand`](crate::CKKSCompositionError::InvalidOperand) before any write to `res`, for `ci` on a plan of
-    /// the standard ring, no `ci` on a plan of the conjugate-invariant ring, a rank other than 1, modules or ciphertexts
-    /// of other degrees, or keys without the tensor key of the plan's ring or its conversion keys, of another shape or
-    /// narrower than the widths they switch. `CKKSError::Internal` for an arena under
+    /// the standard ring, no `ci` on a plan of the conjugate-invariant ring, a rank other than 1, ciphertexts of two
+    /// degrees or of one the module does not serve, or keys without the tensor key of the plan's ring. On the
+    /// conjugate-invariant ring also, before its query, for modules of other degrees than `2N` and `N`, `a` wider than
+    /// `res`, or conversion keys absent or of another shape, and after the product by `u` for conversion keys narrower
+    /// than the widths they switch. `CKKSError::Internal` for an arena under
     /// [`Self::ckks_bootstrap_eval_mod_tmp_bytes`], when the keys report their layout.
     fn ckks_bootstrap_eval_mod<R, A, P, F, K>(
         &self,

@@ -787,8 +787,7 @@ impl StageWidths<'_> {
     /// Widths of the ciphertexts the trace and the embedding switch on the way
     /// to the conjugate-invariant ring and back, if EvalMod runs there.
     pub(crate) fn conversions(&self, bootstrap_k: usize) -> Option<(usize, usize)> {
-        let traced = self.eval_mod_k(bootstrap_k);
-        (self.eval_mod_ring != EvalModRing::Standard).then(|| (traced, traced.saturating_sub(self.eval_mod.consumed_bits())))
+        (self.eval_mod_ring != EvalModRing::Standard).then(|| self.eval_mod.conversion_widths(self.eval_mod_k(bootstrap_k)))
     }
 
     /// Width of EvalMod's input: what CoeffsToSlots and the product by `u` leave.

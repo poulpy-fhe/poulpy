@@ -430,6 +430,29 @@ where
     }
 }
 
+/// `run`, a call of [`CKKSBootstrappingOps::ckks_bootstrap_eval_mod`], refuses for `reason` on a zero-byte arena,
+/// which puts the check before the scratch check, and leaves `res` as it was.
+pub(crate) fn assert_eval_mod_refuses<BE>(
+    res: &mut CKKSCiphertextOwned<BE>,
+    reason: &str,
+    run: impl FnOnce(&mut CKKSCiphertextOwned<BE>, &mut ScratchArena<'_, BE>) -> crate::CKKSResult<()>,
+) where
+    BE: Backend<ZnxWord = i64>,
+    CKKSCiphertextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds,
+{
+    let before = snapshot::<BE, _>(res);
+    let err = with_scratch::<BE, _>(0, |s| run(res, s)).unwrap_err();
+    assert_ckks_error(
+        reason,
+        &err,
+        CKKSCompositionError::InvalidOperand {
+            op: "ckks_bootstrap_eval_mod",
+            reason: reason.into(),
+        },
+    );
+    assert_eq!(snapshot::<BE, _>(res), before, "a refused step wrote res");
+}
+
 /// [`CKKSBootstrappingOps::ckks_bootstrap_eval_mod`] in a hand composition gives the digits of `ckks_bootstrap`, on
 /// every pipeline, on real and complex labels, with and without EvalRound+.
 pub fn test_ckks_bootstrap_eval_mod<BE>()
@@ -459,6 +482,7 @@ where
         s2c.clone(),
         insecure_n11_d35_k100_p17_c2s().unwrap(),
         s2c.with_eval_round_plus(30, 50).unwrap(),
+        insecure_n11_d35_k100_p17_c2s().unwrap().with_eval_round_plus(30, 51).unwrap(),
     ] {
         let module = Module::<BE>::new(preset.n() as u64);
         let boot = preset.bootstrap_layout();
@@ -478,6 +502,7 @@ where
         })
         .unwrap();
 
+        let mut digits = Vec::new();
         for slots in [SlotsKind::Real, SlotsKind::Complex] {
             let mut layout = preset.input_layout();
             layout.meta.slots = slots;
@@ -485,6 +510,7 @@ where
             let mut whole = module.ckks_ciphertext_alloc_from_glwe_infos(&boot);
             let bytes = module.ckks_bootstrap_tmp_bytes(&boot, &input, &context, None, keys_layout);
             with_scratch::<BE, _>(bytes, |s| module.ckks_bootstrap(&mut whole, &input, &context, None, &keys, s)).unwrap();
+            digits.push(snapshot::<BE, _>(&whole).digits);
 
             let mut coeffs = module.ckks_ciphertext_alloc_from_infos(&input);
             let mut raised = module.ckks_ciphertext_alloc_from_glwe_infos(&boot);
@@ -529,23 +555,35 @@ where
                 context.pipeline()
             );
 
-            // A CI module on a standard plan is refused before any work.
             let ci = Module::<BE::CI>::new(preset.n() as u64);
-            let err = with_scratch::<BE, _>(bytes, |s| {
-                module.ckks_bootstrap_eval_mod(&mut stepped, &raised, &context, Some(&ci), &keys, s)
-            })
-            .unwrap_err();
-            assert!(
-                matches!(
-                    err.composition(),
-                    Some(CKKSCompositionError::InvalidOperand {
-                        op: "ckks_bootstrap_eval_mod",
-                        ..
-                    })
-                ),
-                "{err}"
+            assert_eval_mod_refuses(
+                &mut stepped,
+                "a CI module goes with a plan of EvalMod on the CI ring, and only with one",
+                |res, s| module.ckks_bootstrap_eval_mod(res, &raised, &context, Some(&ci), &keys, s),
             );
+            let mut rank2 = boot;
+            rank2.glwe_layout.rank = 2usize.into();
+            let a_rank2 = fixture_ciphertext(&module, &rank2, 29);
+            assert_eval_mod_refuses(&mut stepped, "supports rank-1 ciphertexts only, got rank 2 -> 1", |res, s| {
+                module.ckks_bootstrap_eval_mod(res, &a_rank2, &context, None, &keys, s)
+            });
+            let mut half = boot;
+            half.glwe_layout.n = (preset.n() / 2).into();
+            let degree = "takes ciphertexts of one degree, which the module serves";
+            assert_eval_mod_refuses(&mut fixture_ciphertext(&module, &half, 11), degree, |res, s| {
+                module.ckks_bootstrap_eval_mod(res, &raised, &context, None, &keys, s)
+            });
+            let small = Module::<BE>::new(preset.n() as u64 / 2);
+            assert_eval_mod_refuses(&mut stepped, degree, |res, s| {
+                small.ckks_bootstrap_eval_mod(res, &raised, &context, None, &keys, s)
+            });
         }
+        // Real slots take one EvalMod on an S2C-first plan without a bypass, and only there.
+        let one_eval_mod = context.pipeline() == BootstrappingPipeline::S2CFirst && context.coeffs_to_slots_bypass().is_none();
+        assert!(
+            (digits[0] != digits[1]) == one_eval_mod,
+            "the real route does not run where it should"
+        );
     }
 }
 
