@@ -19,8 +19,8 @@ use poulpy_core::{
     GLWEBytesOf, GLWECopy, GLWEKeyswitch, GLWEMulPreparedPlainSum, GLWENormalize, GLWEShift, ScratchArenaTakeGLWE,
     gglwe_product_accumulation_output_size, glwe_left_operand_prepare, glwe_left_operand_prepare_tmp_bytes,
     layouts::{
-        GGLWEInfos, GGLWELayout, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, IntPolyInfos, LWEInfos,
-        LinearTransformation, Rank, prepared::GGLWEPreparedToBackendRef,
+        GGLWEInfos, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, IntPolyInfos, LWEInfos, LinearTransformation,
+        Rank, prepared::GGLWEPreparedToBackendRef,
     },
 };
 use poulpy_hal::{
@@ -35,40 +35,13 @@ use poulpy_hal::{
 };
 
 use crate::{
-    CKKSCompositionError, CKKSCtBounds, CKKSInfos, CKKSResult as Result, GLWEPlaintextMeta, Scale, SetCKKSInfos, ckks_bail,
-    ckks_ensure, ckks_ensure_operand,
-    layouts::{BootstrappingLinearKeys, CKKSRightOperandPrepared},
-    presets::first_factor::{first_factor_small_bits, first_factor_work},
+    CKKSCtBounds, CKKSResult as Result, GLWEPlaintextMeta, Scale, SetCKKSInfos, ckks_ensure_operand,
+    layouts::{
+        BootstrappingLinearKeys, CKKSRightOperandPrepared,
+        validation::{FirstFactorRaise, check_first_factor_raise, first_factor_key, small_limbs},
+    },
+    presets::first_factor::first_factor_work,
 };
-
-/// Bits a diagonal's product adds once divided by its scale: its encoded width
-/// past its scale.
-fn diagonal_growth<P: IntPolyInfos + CKKSInfos>(diagonal: &P) -> usize {
-    diagonal.encoded_k().as_usize() - diagonal.log_delta()
-}
-
-/// Limbs of the small ciphertext a first-factor key switches: its rows sit
-/// under it and end at the working width.
-fn small_limbs<K: GGLWEInfos>(op: &'static str, base2k: usize, k_large: usize, key: &K) -> Result<usize> {
-    let (work, _) = first_factor_work(base2k, k_large);
-    let k_offset = key.k_offset().as_usize();
-    ckks_ensure_operand!(
-        op,
-        key.base2k().as_usize() == base2k && k_offset.is_multiple_of(base2k) && k_offset < work * base2k,
-        "a first-factor key lowers its input by {k_offset} bits, not a whole number of {base2k}-bit limbs below the raise's {work} limbs"
-    );
-    let small = work - k_offset / base2k;
-    let layout = key.gglwe_layout();
-    let reach = k_offset + layout.gadget_k().as_usize();
-    ckks_ensure_operand!(
-        op,
-        layout.max_input_k().as_usize() >= small * base2k && reach >= k_large,
-        "a first-factor key takes {} bits of input and reaches bit {reach}; the raise switches {} bits up to bit {k_large}",
-        layout.max_input_k(),
-        small * base2k
-    );
-    Ok(small)
-}
 
 fn layout<A: GLWEInfos>(infos: &A, size: usize) -> GLWELayout {
     GLWELayout {
@@ -99,89 +72,6 @@ where
 /// Limbs a diagonal's plaintext holds at radix `base2k`, its encoded width.
 fn diagonal_limbs<P: IntPolyInfos>(diagonal: &P, base2k: usize) -> usize {
     diagonal.encoded_k().as_usize().div_ceil(base2k)
-}
-
-/// The first-factor key of the rotation `rotation`, `InvalidOperand` for `op` when `keys` has none.
-fn first_factor_key<'k, BE: Backend, K: BootstrappingLinearKeys<BE>>(
-    op: &'static str,
-    keys: &'k K,
-    rotation: i64,
-) -> Result<&'k K::SwitchingKey> {
-    let Some(key) = keys.first_factor_key(rotation) else {
-        return Err(CKKSCompositionError::InvalidOperand {
-            op,
-            reason: format!("no first-factor key for the rotation {rotation}"),
-        }
-        .into());
-    };
-    Ok(key)
-}
-
-/// What [`check_first_factor_raise`] finds a raise with the first factor to
-/// work with.
-pub(crate) struct FirstFactorRaise {
-    /// Layout of every first-factor key.
-    pub(crate) key_layout: GGLWELayout,
-    /// Limbs of the terms the keys switch.
-    pub(crate) small: usize,
-    /// Bits a product by any diagonal adds once divided by its scale.
-    pub(crate) growth: usize,
-}
-
-/// Checks that `factor` and the first-factor keys of `keys` serve a raise into
-/// `k_large` bits at radix `base2k` of a ciphertext that fills `raised` bits
-/// once lifted: one diagonal per giant step and no baby step, all diagonals of
-/// one scale and width, and one key per rotation, all of one layout that fits
-/// the raise. The factor's shape is the compiled context's invariant; the keys' presence, layouts and coverage are
-/// `InvalidOperand` for `op`.
-pub(crate) fn check_first_factor_raise<BE, K>(
-    op: &'static str,
-    base2k: usize,
-    log_n: usize,
-    k_large: usize,
-    raised: usize,
-    factor: &LinearTransformation<CKKSRightOperandPrepared<BE>>,
-    keys: &K,
-) -> Result<FirstFactorRaise>
-where
-    BE: Backend,
-    K: BootstrappingLinearKeys<BE>,
-{
-    let Some(diagonal) = factor.first_diagonal_plaintext() else {
-        ckks_bail!("{op}: the first factor has no diagonal");
-    };
-    let (growth, width) = (diagonal_growth(diagonal), diagonal.encoded_k());
-    let key_layout = first_factor_key(op, keys, factor.giant_steps[0].rot)?.gglwe_layout();
-    for giant in &factor.giant_steps {
-        ckks_ensure!(
-            giant.diagonals.len() == 1 && giant.diagonals[0].baby == 0,
-            "{op}: a first factor on the raise has one diagonal per rotation and no baby step"
-        );
-        let diagonal = &giant.diagonals[0].plaintext;
-        ckks_ensure!(
-            diagonal_growth(diagonal) == growth && diagonal.encoded_k() == width,
-            "{op}: the diagonals of the first factor differ in scale or width"
-        );
-        ckks_ensure_operand!(
-            op,
-            first_factor_key(op, keys, giant.rot)?.gglwe_layout() == key_layout,
-            "the first-factor key of the rotation {} differs in layout from the others",
-            giant.rot
-        );
-    }
-    let small = small_limbs(op, base2k, k_large, &key_layout)?;
-    let needed = first_factor_small_bits(base2k, log_n, k_large, raised, growth);
-    ckks_ensure_operand!(
-        op,
-        needed <= small * base2k,
-        "the first-factor keys switch {} bits, the raise of a ciphertext filling {raised} bits needs {needed}",
-        small * base2k
-    );
-    Ok(FirstFactorRaise {
-        key_layout,
-        small,
-        growth,
-    })
 }
 
 /// Reference bodies of the required [`CKKSModUpFirstFactorImpl`](crate::oep::CKKSModUpFirstFactorImpl) methods, which

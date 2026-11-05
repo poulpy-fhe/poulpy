@@ -38,7 +38,7 @@ pub mod ship;
 pub mod sub;
 
 pub use add::CKKSAddReference;
-pub use bootstrapping::{CKKSBootstrappingCIReference, CKKSEncapsulatedModUpReference};
+pub use bootstrapping::CKKSEncapsulatedModUpReference;
 pub use dft::{CKKSDFTMatrixReference, CKKSDFTReference, ckks_dft_matrices_gen};
 pub use dot_product::CKKSDotProductReference;
 pub use encoding::CKKSEncodingReference;

@@ -30,13 +30,14 @@ use anyhow::{Result, ensure};
 use poulpy_core::{
     GLWEDiagonalProd, LinearTransformationPrepared,
     layouts::{
-        Base2K, Diagonals, GLWEToBackendRef, LinearTransformation, LinearTransformationDiagonal, LinearTransformationGiantStep,
+        Base2K, Diagonals, GLWELayout, GLWEToBackendRef, LinearTransformation, LinearTransformationDiagonal,
+        LinearTransformationGiantStep, Rank,
     },
 };
 use poulpy_hal::layouts::{Backend, ConjugateInvariant, Module, PrepareHint, ScratchArena};
 
 use crate::{
-    CKKSCtBounds, CKKSInfos, GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotsKind,
+    CKKSCtBounds, CKKSInfos, CKKSLayout, GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotsKind,
     api::{
         CKKSDFTMatrixOps, CKKSDFTMatrixPreparedFactory, CKKSDFTOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar,
         CKKSRightOperandPreparedFactory,
@@ -827,6 +828,36 @@ impl StageWidths<'_> {
         // A width too narrow for EvalMod fails at its key lookup or in EvalMod, not here.
         (self.eval_mod_k(bootstrap_k) + f_mod_log_delta).saturating_sub(raised_log_delta)
     }
+}
+
+/// The working ciphertext of a bootstrap into `ct_out` and its input, at the radix of the input.
+pub(crate) fn bootstrap_layouts<C1, C2>(ct_out: &C1, ct_in: &C2) -> (CKKSLayout, CKKSLayout)
+where
+    C1: CKKSCtBounds,
+    C2: CKKSCtBounds,
+{
+    let base2k = ct_in.base2k();
+    let boot_layout = CKKSLayout {
+        glwe_layout: GLWELayout {
+            n: ct_out.n(),
+            base2k,
+            k: ct_out.k(),
+            rank: Rank(1),
+        },
+        // `log_delta = 0` maximizes `log_budget`, which upper-bounds the
+        // EvalMod working width.
+        meta: GLWEPlaintextMeta::default(),
+    };
+    let in_layout = CKKSLayout {
+        glwe_layout: GLWELayout {
+            n: ct_in.n(),
+            base2k,
+            k: ct_in.k(),
+            rank: Rank(1),
+        },
+        meta: GLWEPlaintextMeta::default(),
+    };
+    (boot_layout, in_layout)
 }
 
 impl<BE: Backend, F> CKKSDFTFactors<BE, Encode, Split> for BootstrappingContextPrepared<BE, F> {

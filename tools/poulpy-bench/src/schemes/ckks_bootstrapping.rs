@@ -16,7 +16,7 @@ use crate::backend_name;
 use criterion::{BenchmarkGroup, BenchmarkId, Criterion, measurement::WallTime};
 use poulpy_ckks::{
     CKKSCtBounds, SetCKKSInfos,
-    api::{CKKSBootstrappingCIOps, CKKSDFTMatrixPreparedFactory, CKKSDFTOps, CKKSEncodingOps},
+    api::{CKKSDFTMatrixPreparedFactory, CKKSDFTOps, CKKSEncodingOps},
     layouts::{CKKSCITwin, CKKSCiphertextOwned, CKKSPlaintextOwned, EvalModRing},
     presets::bootstrapping::{BootstrappingPreset, all},
     test_suite::{
@@ -130,7 +130,6 @@ where
         + TestContextModule<BE>
         + PresetRunModule<BE>
         + CKKSDFTOps<BE>
-        + CKKSBootstrappingCIOps<BE>
         + GLWECIKeyEncryptSk<BE>
         + GLWECIKeyPreparedFactory<BE>,
     Module<CIBackend<BE>>: TestContextSharedModule<CIBackend<BE>>
@@ -154,16 +153,12 @@ where
     CIBackend<BE>: MaxBase2k,
     BC: TestContextBackend<Ring = Standard> + 'static + CKKSCITwin,
     CIBackend<BC>: TestContextBackend,
-    Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
-        + PresetRunModule<BE>
-        + CKKSDFTOps<BE>
-        + CKKSBootstrappingCIOps<BE>
-        + GLWECIKeyPreparedFactory<BE>,
+    Module<BE>: CKKSDFTMatrixPreparedFactory<BE> + PresetRunModule<BE> + CKKSDFTOps<BE> + GLWECIKeyPreparedFactory<BE>,
     Module<CIBackend<BE>>: ModuleNew<CIBackend<BE>>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
         + CKKSEncodingOps<CIBackend<BE>, f64>
         + GLWETensorKeyPreparedFactory<CIBackend<BE>>,
-    Module<BC>: TestContextModule<BC> + CKKSEncodingOps<BC, f64> + CKKSBootstrappingCIOps<BC> + GLWECIKeyEncryptSk<BC>,
+    Module<BC>: TestContextModule<BC> + CKKSEncodingOps<BC, f64> + GLWECIKeyEncryptSk<BC>,
     Module<CIBackend<BC>>: TestContextSharedModule<CIBackend<BC>>,
     for<'a> <BC as Backend>::BufRef<'a>: HostDataRef,
     for<'a> <BC as Backend>::BufMut<'a>: HostDataMut,
@@ -191,16 +186,12 @@ pub fn bench_ckks_bootstrapping_replayed_with_client<BE, BC>(
     CIBackend<BE>: MaxBase2k,
     BC: TestContextBackend<Ring = Standard> + 'static + CKKSCITwin,
     CIBackend<BC>: TestContextBackend,
-    Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
-        + PresetRunModule<BE>
-        + CKKSDFTOps<BE>
-        + CKKSBootstrappingCIOps<BE>
-        + GLWECIKeyPreparedFactory<BE>,
+    Module<BE>: CKKSDFTMatrixPreparedFactory<BE> + PresetRunModule<BE> + CKKSDFTOps<BE> + GLWECIKeyPreparedFactory<BE>,
     Module<CIBackend<BE>>: ModuleNew<CIBackend<BE>>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
         + CKKSEncodingOps<CIBackend<BE>, f64>
         + GLWETensorKeyPreparedFactory<CIBackend<BE>>,
-    Module<BC>: TestContextModule<BC> + CKKSEncodingOps<BC, f64> + CKKSBootstrappingCIOps<BC> + GLWECIKeyEncryptSk<BC>,
+    Module<BC>: TestContextModule<BC> + CKKSEncodingOps<BC, f64> + GLWECIKeyEncryptSk<BC>,
     Module<CIBackend<BC>>: TestContextSharedModule<CIBackend<BC>>,
     for<'a> <BC as Backend>::BufRef<'a>: HostDataRef,
     for<'a> <BC as Backend>::BufMut<'a>: HostDataMut,
@@ -220,16 +211,12 @@ where
     CIBackend<BE>: MaxBase2k,
     BC: TestContextBackend<Ring = Standard> + 'static + CKKSCITwin,
     CIBackend<BC>: TestContextBackend,
-    Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
-        + PresetRunModule<BE>
-        + CKKSDFTOps<BE>
-        + CKKSBootstrappingCIOps<BE>
-        + GLWECIKeyPreparedFactory<BE>,
+    Module<BE>: CKKSDFTMatrixPreparedFactory<BE> + PresetRunModule<BE> + CKKSDFTOps<BE> + GLWECIKeyPreparedFactory<BE>,
     Module<CIBackend<BE>>: ModuleNew<CIBackend<BE>>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
         + CKKSEncodingOps<CIBackend<BE>, f64>
         + GLWETensorKeyPreparedFactory<CIBackend<BE>>,
-    Module<BC>: TestContextModule<BC> + CKKSEncodingOps<BC, f64> + CKKSBootstrappingCIOps<BC> + GLWECIKeyEncryptSk<BC>,
+    Module<BC>: TestContextModule<BC> + CKKSEncodingOps<BC, f64> + GLWECIKeyEncryptSk<BC>,
     Module<CIBackend<BC>>: TestContextSharedModule<CIBackend<BC>>,
     for<'a> <BC as Backend>::BufRef<'a>: HostDataRef,
     for<'a> <BC as Backend>::BufMut<'a>: HostDataMut,

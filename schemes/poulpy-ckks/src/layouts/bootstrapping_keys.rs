@@ -111,7 +111,7 @@ pub trait BootstrappingLinearKeys<BE: Backend> {
     }
 
     /// Layouts of these keys, against whose scratch query the bootstrap checks its
-    /// arenas at entry, or `None`, the default, to leave the arenas unchecked.
+    /// arena at entry, or `None`, the default, to leave the arena unchecked.
     fn keys_layout(&self) -> Option<BootstrappingKeysLayout> {
         None
     }

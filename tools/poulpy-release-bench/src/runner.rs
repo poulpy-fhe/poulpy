@@ -7,7 +7,7 @@ use std::{cell::RefCell, time::Instant};
 use anyhow::{Context, Result};
 use poulpy_ckks::{
     CKKSCtBounds, SetCKKSInfos,
-    api::{CKKSBootstrappingCIOps, CKKSDFTMatrixPreparedFactory, CKKSDFTOps, CKKSEncodingOps},
+    api::{CKKSDFTMatrixPreparedFactory, CKKSDFTOps, CKKSEncodingOps},
     layouts::{CKKSCITwin, CKKSCiphertextOwned, CKKSPlaintextOwned, EvalModRing},
     presets::bootstrapping::{BootstrappingPreset, all},
     test_suite::{
@@ -194,13 +194,12 @@ where
     Module<BE>: PresetRunModule<BE>
         + CKKSDFTOps<BE>
         + CKKSDFTMatrixPreparedFactory<BE>
-        + CKKSBootstrappingCIOps<BE>
         + GLWECIKeyPreparedFactory<BE>,
     Module<CIBackend<BE>>: ModuleNew<CIBackend<BE>>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
         + CKKSEncodingOps<CIBackend<BE>, f64>
         + GLWETensorKeyPreparedFactory<CIBackend<BE>>,
-    Module<BC>: TestContextModule<BC> + CKKSEncodingOps<BC, f64> + CKKSBootstrappingCIOps<BC> + GLWECIKeyEncryptSk<BC>,
+    Module<BC>: TestContextModule<BC> + CKKSEncodingOps<BC, f64> + GLWECIKeyEncryptSk<BC>,
     Module<CIBackend<BC>>: TestContextSharedModule<CIBackend<BC>>,
     for<'a> <BC as Backend>::BufRef<'a>: HostDataRef,
     for<'a> <BC as Backend>::BufMut<'a>: HostDataMut,

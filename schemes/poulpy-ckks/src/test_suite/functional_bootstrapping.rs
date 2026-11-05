@@ -598,7 +598,7 @@ fn run_case<BE, F, E>(
                 &error,
                 CKKSCompositionError::InvalidOperand {
                     op: "ckks_bootstrap",
-                    reason: "requires an identity bootstrapping context with EvalMod on the standard ring".into(),
+                    reason: "requires an identity bootstrapping context".into(),
                 },
             );
             let encode_padded = |messages: &[isize]| {

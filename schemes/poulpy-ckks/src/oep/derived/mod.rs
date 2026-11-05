@@ -1,5 +1,6 @@
 //! Same-layer compositions used by explicit backend contracts.
 pub(crate) mod approximation;
+pub(crate) mod bootstrapping;
 pub(crate) mod carry_verb;
 pub(crate) mod composite;
 pub(crate) mod dft;

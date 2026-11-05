@@ -12,8 +12,10 @@ use crate::{
 
 /// CKKS bootstrapping.
 ///
-/// Only the **modulus raise** ([`ckks_mod_raise`](Self::ckks_mod_raise)) is a bootstrapping-specific primitive. CoeffsToSlots,
-/// EvalMod, and SlotsToCoeffs are reused from their own op traits:
+/// Each step of a bootstrap is a public operation, and the plan decides how each one runs. Three are specific to
+/// bootstrapping: the modulus raise ([`ckks_mod_raise`](Self::ckks_mod_raise)), the EvalMod of a bootstrap
+/// ([`ckks_bootstrap_eval_mod`](Self::ckks_bootstrap_eval_mod)) and the LUT step ([`ckks_eval_lut`](Self::ckks_eval_lut)).
+/// CoeffsToSlots, EvalMod, and SlotsToCoeffs are reused from their own op traits:
 ///
 /// - CoeffsToSlots / SlotsToCoeffs via [`CKKSDFTOps`](crate::api::CKKSDFTOps)
 ///   ([`ckks_coeffs_to_slots_assign`](crate::api::CKKSDFTOps::ckks_coeffs_to_slots_assign),
@@ -26,7 +28,8 @@ use crate::{
 /// but a ready-made orchestrator is provided: [`ckks_bootstrap`](Self::ckks_bootstrap).
 /// It consumes a compiled [`BootstrappingContextPrepared`] and a prepared
 /// [`BootstrappingKeys`], and selects C2S-first or S2C-first from the context.
-/// EvalRound+ is selected separately by either recipe's optional bypass.
+/// EvalRound+ is selected separately by either recipe's optional bypass, and the ring of EvalMod
+/// by the plan, with no other operation.
 /// Sparse-secret encapsulation is also selected by the compiled recipe; the
 /// supplied keys must carry the matching
 /// [encapsulation keys](crate::layouts::BootstrappingLinearKeys::encapsulation_keys).
@@ -37,7 +40,7 @@ pub trait CKKSBootstrappingOps<BE: CKKSCITwin> {
     /// `ctx` selects the pipeline, optional EvalRound+ variant, and EvalMod
     /// parameters; `keys_layout` sizes the key-dependent stages
     /// (rotations, tensor key, optional encapsulation switches). `ci` is the module of
-    /// [`Self::ckks_bootstrap`].
+    /// [`Self::ckks_bootstrap`]; one arena serves both rings.
     fn ckks_bootstrap_tmp_bytes<C1, C2, F>(
         &self,
         ct_out: &C1,
@@ -199,7 +202,10 @@ pub trait CKKSBootstrappingOps<BE: CKKSCITwin> {
     ///
     /// `ct_in` is at the input ("level 0") modulus; `ct_out` must be allocated at
     /// the bootstrap modulus (its `k()` sets the working width). `ci` is `None` on a
-    /// plan with EvalMod on the standard ring. When the compiled
+    /// plan with EvalMod on the standard ring. On a plan with EvalMod on the
+    /// conjugate-invariant ring ([`EvalModRing::ConjugateInvariant`](crate::layouts::EvalModRing::ConjugateInvariant)),
+    /// it is the CI module of degree `N`, on the twin [`CKKSCITwin::CI`], and this module serves degree
+    /// `2N` for the conversions and `N` for the other stages. When the compiled
     /// recipe enables sparse-secret encapsulation, `keys` must carry the matching
     /// [encapsulation keys](crate::layouts::BootstrappingLinearKeys::encapsulation_keys), which wrap ModUp
     /// (`denseToSparse → ModUp → sparseToDense`). [`BootstrappingPlan::new`](crate::layouts::BootstrappingPlan::new)
@@ -230,6 +236,24 @@ pub trait CKKSBootstrappingOps<BE: CKKSCITwin> {
     /// cover its `bootstrap_k`. A working width or an input narrower than the bits
     /// the stages running on it consume fails with
     /// [`InvalidOperand`](crate::CKKSCompositionError::InvalidOperand) before any work.
+    ///
+    /// # Errors
+    ///
+    /// Before any work, and leaving `ct_out` unchanged, besides the key refusals above:
+    /// [`InvalidOperand`](crate::CKKSCompositionError::InvalidOperand) for a functional context, `ci` on a plan of the
+    /// standard ring, no `ci` on a plan of the conjugate-invariant ring, a rank other than 1, ciphertexts of two degrees
+    /// or of one the module does not serve, an encapsulation that does not match the recipe, or keys without the tensor
+    /// key of the plan's ring. On the conjugate-invariant ring also, for modules of other degrees than `2N` and `N`, or
+    /// conversion keys absent, of another degree, radix or rank, or narrower than the widths they switch.
+    /// `CKKSError::Internal` for an arena under [`Self::ckks_bootstrap_tmp_bytes`], when the keys report their layout.
+    ///
+    /// A step refusing on its own working ciphertexts, such as an input without the budget of SlotsToCoeffs, leaves
+    /// `ct_out` unchanged as well.
+    ///
+    /// # Metadata
+    ///
+    /// `ct_out` ends at the output width of the recipe below its working width, at the scale, slot kind and sparsity
+    /// of `ct_in`.
     fn ckks_bootstrap<F, K>(
         &self,
         ct_out: &mut CKKSCiphertextOwned<BE>,
@@ -259,6 +283,18 @@ pub trait CKKSBootstrappingOps<BE: CKKSCITwin> {
     /// The slot kind of `ct_in` selects the pipeline:
     /// [`SlotsKind::Real`] slots skip the imaginary branch entirely.
     ///
+    /// # Errors
+    ///
+    /// Before any work, and leaving `ct_outs` unchanged:
+    /// [`InvalidOperand`](crate::CKKSCompositionError::InvalidOperand) for a C2S-first context, the refusals of
+    /// [`Self::ckks_eval_lut`] on the batch, an encapsulation that does not match the recipe, a message ratio or modulus
+    /// the context or the LUTs do not take, or an output width below the bits the stages after the raise consume;
+    /// [`MissingAutomorphismKey`](crate::CKKSCompositionError::MissingAutomorphismKey) or
+    /// [`MissingRelinearizationKey`](crate::CKKSCompositionError::MissingRelinearizationKey) for a key narrower than
+    /// [`BootstrappingPlan::key_widths`](crate::layouts::BootstrappingPlan::key_widths).
+    /// `CKKSError::Internal` for an arena under [`Self::ckks_functional_bootstrap_tmp_bytes`], when the keys report their
+    /// layout.
+    ///
     /// [`SlotsKind::Real`]: crate::SlotsKind::Real
     fn ckks_functional_bootstrap<F, K>(
         &self,
@@ -270,66 +306,5 @@ pub trait CKKSBootstrappingOps<BE: CKKSCITwin> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        K: BootstrappingKeys<BE>;
-}
-
-/// [`CKKSBootstrappingOps::ckks_bootstrap`] with EvalMod on the
-/// conjugate-invariant ring ([`EvalModRing::ConjugateInvariant`](crate::layouts::EvalModRing::ConjugateInvariant)),
-/// for a context compiled on that ring by [`BootstrappingContextPrepared::compile`]: this module
-/// serves degree `2N` for the conversions and `N` for the other stages, and `ci`
-/// is the CI module of degree `N`, on the twin [`CKKSCITwin::CI`].
-/// The keys, the conversion keys included, are checked at entry.
-pub trait CKKSBootstrappingCIOps<BE: CKKSCITwin> {
-    /// Scratch of [`Self::ckks_bootstrap_ci_into`]: `(scratch, scratch_ci)`.
-    fn ckks_bootstrap_ci_tmp_bytes<C1, C2, F>(
-        &self,
-        ci: &Module<BE::CI>,
-        ct_out: &C1,
-        ct_in: &C2,
-        ctx: &BootstrappingContextPrepared<BE, F>,
-        keys_layout: &BootstrappingKeysLayout,
-    ) -> (usize, usize)
-    where
-        C1: CKKSCtBounds,
-        C2: CKKSCtBounds;
-
-    /// Bootstraps `src` into `dst`, at the width of `dst`, with `scratch`
-    /// and `scratch_ci` of [`Self::ckks_bootstrap_ci_tmp_bytes`].
-    ///
-    /// # Errors
-    ///
-    /// Before any work, and leaving `dst` unchanged:
-    /// [`InvalidOperand`](crate::CKKSCompositionError::InvalidOperand) for a context not compiled
-    /// on that ring or keys without its tensor and conversion keys, modules of other degrees than
-    /// `2N` and `N`, ciphertexts of another degree or rank, an encapsulation that does not match the
-    /// recipe, a working width or an input narrower than the bits the stages running on it
-    /// consume, or conversion keys of another degree, radix or rank, or narrower than the widths
-    /// they switch; [`MissingAutomorphismKey`](crate::CKKSCompositionError::MissingAutomorphismKey)
-    /// or [`MissingRelinearizationKey`](crate::CKKSCompositionError::MissingRelinearizationKey)
-    /// for a rotation or tensor key narrower than its widest use, as
-    /// [`CKKSBootstrappingOps::ckks_bootstrap`]. An error past these checks leaves `dst`
-    /// unspecified.
-    ///
-    /// # Metadata
-    ///
-    /// `dst` ends at the output width of the recipe below its working width, at the scale,
-    /// slot kind and sparsity of `src`.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "the bootstrap takes a module and a scratch arena per ring"
-    )]
-    fn ckks_bootstrap_ci_into<Dst, Src, F, K>(
-        &self,
-        ci: &Module<BE::CI>,
-        dst: &mut Dst,
-        src: &Src,
-        ctx: &BootstrappingContextPrepared<BE, F>,
-        keys: &K,
-        scratch: &mut ScratchArena<'_, BE>,
-        scratch_ci: &mut ScratchArena<'_, BE::CI>,
-    ) -> Result<()>
-    where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: BootstrappingKeys<BE>;
 }
