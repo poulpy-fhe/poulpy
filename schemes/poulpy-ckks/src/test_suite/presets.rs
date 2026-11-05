@@ -1336,9 +1336,9 @@ where
     let mut stepped = fixture_ciphertext(&module, &boot, 23);
     with_scratch::<BE, _>(bytes, |s| {
         module.ckks_double_into(&mut coeffs, &fixture, s)?;
-        module.ckks_slots_to_coeffs_assign(&mut coeffs, &run, &keys.rotation_keys, s)?;
+        module.ckks_slots_to_coeffs_assign(&mut coeffs, &run, &keys, s)?;
         module.ckks_mod_raise(&mut raised, &mut coeffs, &run, &keys, s)?;
-        module.ckks_coeffs_to_slots_assign(&mut raised, &run, &keys.rotation_keys, s)
+        module.ckks_coeffs_to_slots_assign(&mut raised, &run, &keys, s)
     })
     .unwrap();
     // The embed key has one digit, so one limb of it goes rather than the digit.

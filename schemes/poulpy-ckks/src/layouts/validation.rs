@@ -8,8 +8,8 @@ use anyhow::{Context, Result, ensure};
 use poulpy_core::{
     LinearTransformationPrepared,
     layouts::{
-        Base2K, GGLWEInfos, GGLWELayout, GLWEInfos, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, IntPolyInfos, LWEInfos,
-        LinearTransformation, TorusPrecision, prepared::GGLWEPreparedToBackendRef,
+        Base2K, GGLWEInfos, GGLWELayout, GLWEInfos, GLWEToBackendRef, GetTensorKey, IntPolyInfos, LWEInfos, LinearTransformation,
+        TorusPrecision, prepared::GGLWEPreparedToBackendRef,
     },
 };
 use poulpy_hal::layouts::{Backend, Module};
@@ -448,8 +448,7 @@ where
         let p = key_uses[0].p;
         let k = key_uses.iter().map(|key_use| starts.width(key_use)).max().unwrap_or(0);
         let k = TorusPrecision(k as u32);
-        keys.rotation_keys()
-            .get_automorphism_key(p, k)
+        keys.get_automorphism_key(p, k)
             .map_err(|source| CKKSCompositionError::MissingAutomorphismKey {
                 op,
                 rotation: p,

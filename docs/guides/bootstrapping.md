@@ -107,9 +107,9 @@ EvalMod runs at its own scale.
 
 | Step | Call | Notes |
 |---|---|---|
-| SlotsToCoeffs | `ckks_slots_to_coeffs_assign(ct, &run, keys.rotation_keys(), scratch)` | any `Standard` `CKKSDFTFactors`, `BootstrappingRun` included, which labels the output that ends a C2S-first bootstrap |
+| SlotsToCoeffs | `ckks_slots_to_coeffs_assign(ct, &run, keys, scratch)` | any `Standard` `CKKSDFTFactors`, `BootstrappingRun` included, which labels the output that ends a C2S-first bootstrap |
 | ModRaise | `ckks_mod_raise(res, a, &run, keys, scratch)` | `a` is clobbered, the raise switches it in place; `ctx`, `ctx.mod_raise()` also serve, and `plan.mod_raise()` on a plan that leaves no CoeffsToSlots factor to the raise |
-| CoeffsToSlots | `ckks_coeffs_to_slots_assign(ct, &run, keys.rotation_keys(), scratch)` | leaves the slot label Complex |
+| CoeffsToSlots | `ckks_coeffs_to_slots_assign(ct, &run, keys, scratch)` | leaves the slot label Complex |
 | EvalMod | `ckks_bootstrap_eval_mod(res, a, &run, ci, keys, scratch)` | `a` is clobbered; real slots, split halves, or the conjugate-invariant ring, by the plan and the slots of the message |
 | EvalLut | `ckks_eval_lut(res, a, &run, luts, keys, scratch)` | `a` is clobbered; `res` is a slice, one output per LUT |
 
@@ -123,13 +123,13 @@ The S2C-first bootstrap composed by hand:
 ```rust
 let run = ctx.run(input.meta());
 module.ckks_double_into(&mut coeffs, &input, s)?;
-module.ckks_slots_to_coeffs_assign(&mut coeffs, &run, keys.rotation_keys(), s)?;
+module.ckks_slots_to_coeffs_assign(&mut coeffs, &run, &keys, s)?;
 module.ckks_mod_raise(&mut raised, &mut coeffs, &run, &keys, s)?;
-module.ckks_coeffs_to_slots_assign(&mut raised, &run, keys.rotation_keys(), s)?;
+module.ckks_coeffs_to_slots_assign(&mut raised, &run, &keys, s)?;
 module.ckks_bootstrap_eval_mod(&mut res, &mut raised, &run, None, &keys, s)?;
 ```
 
-C2S-first copies `input` into `coeffs`, skips the SlotsToCoeffs above the raise, and ends in `module.ckks_slots_to_coeffs_assign(&mut res, &run, keys.rotation_keys(), s)?`.
+C2S-first copies `input` into `coeffs`, skips the SlotsToCoeffs above the raise, and ends in `module.ckks_slots_to_coeffs_assign(&mut res, &run, &keys, s)?`.
 
 Under a bypass (EvalRound+), `ckks_bootstrap_eval_mod` returns `EvalMod(x) - K·x`, on every route, with its working label and the guard bits still on. The caller copies the raised ciphertext before CoeffsToSlots, runs the bypass factors on the copy (`ckks_dft_matrix_eval_assign(&mut z_hp, bypass, ..)`), doubles it (`ckks_mul_pow2_assign(1, ..)`), adds the step's output, and only then calls `run.stamp_eval_mod_output(&mut res)?`: removing the guard bits earlier lowers `k` and changes the bits of the conjugate-invariant route. `ckks_eval_lut` removes the guard bits itself, before its exponential, and runs no bypass: on a real message of an S2C-first plan it reads the real part alone, with or without one in the plan.
 

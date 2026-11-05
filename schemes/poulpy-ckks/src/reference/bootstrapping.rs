@@ -466,8 +466,7 @@ pub trait CKKSBootstrappingReference<BE: CKKSCITwin>: std::borrow::Borrow<Module
         let log_delta = remove_guard_bits(OP, a.log_delta(), plan.c2s_guard_bits())?;
         let tensor_key = required_tensor_key(OP, keys.tensor_key())?;
         // Every conjugation of the step (real part, split, LUT symmetrization) switches at a width at most `a.k()`.
-        keys.rotation_keys()
-            .get_automorphism_key(-1, a.k())
+        keys.get_automorphism_key(-1, a.k())
             .map_err(|source| CKKSCompositionError::MissingAutomorphismKey {
                 op: OP,
                 rotation: 0,
@@ -505,7 +504,7 @@ pub trait CKKSBootstrappingReference<BE: CKKSCITwin>: std::borrow::Borrow<Module
 
             let (mut i0, scratch) = scratch.take_ckks_ciphertext_scratch(&*a, a.meta());
             let (mut acc, mut scratch) = scratch.take_ckks_ciphertext_scratch(&boot_layout, a.meta());
-            ckks_split_real_imag(module, a, &mut i0, keys.rotation_keys(), &mut scratch)?;
+            ckks_split_real_imag(module, a, &mut i0, keys, &mut scratch)?;
             a.set_log_delta(log_delta);
             i0.set_log_delta(log_delta);
 
@@ -529,7 +528,7 @@ pub trait CKKSBootstrappingReference<BE: CKKSCITwin>: std::borrow::Borrow<Module
                 for (ct_out, lut) in res.iter_mut().zip(luts) {
                     acc.set_meta(acc_meta);
                     acc.set_k(boot_layout.k);
-                    ckks_eval_lut_from_basis(module, &mut acc, lut, &basis, keys.rotation_keys(), tensor_key, &mut scratch)?;
+                    ckks_eval_lut_from_basis(module, &mut acc, lut, &basis, keys, tensor_key, &mut scratch)?;
                     recombine_halves(module, ct_out, &mut acc, &mut scratch)?;
                 }
             } else {
@@ -740,7 +739,7 @@ where
     R1: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     R2: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
 {
-    module.ckks_conjugate_into(conjugate, &*ct, keys.rotation_keys(), scratch)?;
+    module.ckks_conjugate_into(conjugate, &*ct, keys, scratch)?;
     module.ckks_add_assign(ct, &*conjugate, scratch)?;
     ct.set_slots(SlotsKind::Real);
     Ok(())
@@ -841,7 +840,7 @@ where
 {
     let (mut i0, scratch) = scratch.borrow().take_ckks_ciphertext_scratch(&*a, a.meta());
     let (mut imag, mut scratch) = scratch.take_ckks_ciphertext_scratch(res, res.meta());
-    ckks_split_real_imag(module, a, &mut i0, keys.rotation_keys(), &mut scratch)?;
+    ckks_split_real_imag(module, a, &mut i0, keys, &mut scratch)?;
     {
         let (r0_ref, i0_ref) = (CKKSCiphertextViewRef::of(&*a), i0.to_backend_view_ref());
         ckks_bootstrap_eval_mod_halves(module, &r0_ref, &i0_ref, res, &mut imag, eval_mod, tensor_key, &mut scratch)?;
@@ -1020,15 +1019,9 @@ where
             module.glwe_switch_degree(&mut embedded, a);
             module.ckks_mul_pt_vec_assign(&mut embedded, u, &mut scratch)?;
         }
-        crate::layouts::bootstrapping::CIPreForm::Folded { even, odd, plans } => ci_folded_pre(
-            module,
-            &mut embedded,
-            a,
-            [even, odd],
-            &plans[0],
-            keys.rotation_keys(),
-            &mut scratch,
-        )?,
+        crate::layouts::bootstrapping::CIPreForm::Folded { even, odd, plans } => {
+            ci_folded_pre(module, &mut embedded, a, [even, odd], &plans[0], keys, &mut scratch)?
+        }
     }
     let widths = plan.eval_mod_plan().conversion_widths(embedded.k().as_usize());
     check_conversion_key_widths(EVAL_MOD_OP, trace_key, embed_key, widths)?;
@@ -1367,7 +1360,7 @@ where
             ct_in,
             eval_mod_standard(EVAL_LUT_OP, plan)?,
             series,
-            keys.rotation_keys(),
+            keys,
             tensor_key,
             scratch,
         )?,
@@ -1431,7 +1424,7 @@ where
             scratch,
         )?;
         for (out, lut) in outs.iter_mut().zip(luts) {
-            ckks_eval_lut_from_basis(module, out, lut, &basis, keys.rotation_keys(), tensor_key, scratch)?;
+            ckks_eval_lut_from_basis(module, out, lut, &basis, keys, tensor_key, scratch)?;
         }
         return Ok(());
     }

@@ -53,8 +53,8 @@ use crate::{
         CKKSDecryptOps, CKKSEvalModOps, CKKSPow2Ops, CKKSSubOps,
     },
     layouts::{
-        BootstrappingKeysLayout, BootstrappingLinearKeys, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques,
-        CKKSCITwin, CKKSCiphertextAlloc, CKKSDFTFactors, CKKSEvalModInfos, CKKSPlaintextAlloc, DFTOutputFormat, DFTPlan, DFTType,
+        BootstrappingKeysLayout, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques, CKKSCITwin,
+        CKKSCiphertextAlloc, CKKSDFTFactors, CKKSEvalModInfos, CKKSPlaintextAlloc, DFTOutputFormat, DFTPlan, DFTType,
         EncapsulationKeysLayout, EvalRoundPlus, ModRaisePlan, SparseSecretEncapsulation,
         eval_mod::{EvalModPlan, EvalModType},
     },
@@ -622,16 +622,16 @@ where
             with_scratch::<BE, _>(bytes, |s| {
                 if s2c_first {
                     module.ckks_double_into(&mut coeffs, &input, s)?;
-                    module.ckks_slots_to_coeffs_assign(&mut coeffs, &run, &keys.rotation_keys, s)?;
+                    module.ckks_slots_to_coeffs_assign(&mut coeffs, &run, &keys, s)?;
                 } else {
                     module.ckks_copy(&mut coeffs, &input, s)?;
                 }
                 module.ckks_mod_raise(&mut raised, &mut coeffs, &run, &keys, s)?;
                 if let Some(bypass) = context.coeffs_to_slots_bypass() {
                     module.ckks_copy(&mut z_hp, &raised, s)?;
-                    module.ckks_dft_matrix_eval_assign(&mut z_hp, bypass, &keys.rotation_keys, s)?;
+                    module.ckks_dft_matrix_eval_assign(&mut z_hp, bypass, &keys, s)?;
                 }
-                module.ckks_coeffs_to_slots_assign(&mut raised, &run, &keys.rotation_keys, s)?;
+                module.ckks_coeffs_to_slots_assign(&mut raised, &run, &keys, s)?;
                 module.ckks_copy(&mut kept, &raised, s)?;
                 module.ckks_bootstrap_eval_mod(&mut stepped, &mut raised, &run, None, &keys, s)?;
                 if context.coeffs_to_slots_bypass().is_some() {
@@ -641,7 +641,7 @@ where
                     run.stamp_eval_mod_output(&mut stepped)?;
                 }
                 if !s2c_first {
-                    module.ckks_slots_to_coeffs_assign(&mut stepped, &run, &keys.rotation_keys, s)?;
+                    module.ckks_slots_to_coeffs_assign(&mut stepped, &run, &keys, s)?;
                 }
                 Ok::<_, crate::CKKSError>(())
             })
@@ -797,7 +797,7 @@ where
             with_scratch::<BE, _>(bytes, |s| {
                 if context.pipeline() == BootstrappingPipeline::S2CFirst {
                     module.ckks_double_into(&mut coeffs, &input, s)?;
-                    module.ckks_dft_matrix_eval_assign(&mut coeffs, context.slots_to_coeffs(), &keys.rotation_keys, s)
+                    module.ckks_dft_matrix_eval_assign(&mut coeffs, context.slots_to_coeffs(), &keys, s)
                 } else {
                     module.ckks_copy(&mut coeffs, &input, s)
                 }
@@ -1165,7 +1165,7 @@ where
     let mut ct_imag = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
     let bytes = dft_stage_bytes(&module, &keys_layout, &ct_real, &ct, ctx.coeffs_to_slots());
     with_scratch::<BE, _>(bytes, |s| {
-        module.ckks_coeffs_to_slots_split(&mut ct_real, &mut ct_imag, &ct, ctx.coeffs_to_slots(), bsk.rotation_keys(), s)
+        module.ckks_coeffs_to_slots_split(&mut ct_real, &mut ct_imag, &ct, ctx.coeffs_to_slots(), &bsk, s)
     })
     .unwrap();
 
@@ -1223,14 +1223,7 @@ where
     let mut ct_out = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
     let bytes = dft_stage_bytes(&module, &keys_layout, &ct_out, &res_real, ctx.slots_to_coeffs());
     with_scratch::<BE, _>(bytes, |s| {
-        module.ckks_slots_to_coeffs_split(
-            &mut ct_out,
-            &res_real,
-            &res_imag,
-            ctx.slots_to_coeffs(),
-            bsk.rotation_keys(),
-            s,
-        )
+        module.ckks_slots_to_coeffs_split(&mut ct_out, &res_real, &res_imag, ctx.slots_to_coeffs(), &bsk, s)
     })
     .unwrap();
 
@@ -1465,21 +1458,14 @@ where
     let mut i0_lp = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
     let bytes = dft_stage_bytes(&module, &keys_layout, &r0_lp, &ct, ctx.coeffs_to_slots());
     with_scratch::<BE, _>(bytes, |s| {
-        module.ckks_coeffs_to_slots_split(&mut r0_lp, &mut i0_lp, &ct, ctx.coeffs_to_slots(), bsk.rotation_keys(), s)
+        module.ckks_coeffs_to_slots_split(&mut r0_lp, &mut i0_lp, &ct, ctx.coeffs_to_slots(), &bsk, s)
     })
     .unwrap();
     let mut r0_hp = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
     let mut i0_hp = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
     let bytes = dft_stage_bytes(&module, &keys_layout, &r0_hp, &ct, ctx.coeffs_to_slots_bypass().unwrap());
     with_scratch::<BE, _>(bytes, |s| {
-        module.ckks_coeffs_to_slots_split(
-            &mut r0_hp,
-            &mut i0_hp,
-            &ct,
-            ctx.coeffs_to_slots_bypass().unwrap(),
-            bsk.rotation_keys(),
-            s,
-        )
+        module.ckks_coeffs_to_slots_split(&mut r0_hp, &mut i0_hp, &ct, ctx.coeffs_to_slots_bypass().unwrap(), &bsk, s)
     })
     .unwrap();
 
@@ -1548,7 +1534,7 @@ where
     let mut ct_out = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
     let bytes = dft_stage_bytes(&module, &keys_layout, &ct_out, &r0_hp, ctx.slots_to_coeffs());
     with_scratch::<BE, _>(bytes, |s| {
-        module.ckks_slots_to_coeffs_split(&mut ct_out, &r0_hp, &i0_hp, ctx.slots_to_coeffs(), bsk.rotation_keys(), s)
+        module.ckks_slots_to_coeffs_split(&mut ct_out, &r0_hp, &i0_hp, ctx.slots_to_coeffs(), &bsk, s)
     })
     .unwrap();
 

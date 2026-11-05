@@ -146,7 +146,7 @@ where
         let (mut coeffs, mut scratch) = scratch.take_ckks_ciphertext_scratch(a, a.meta());
         // The split path's `2 * a`: a `Split` decode matrix equals the standard one once its halves recombine.
         module.ckks_double_into(&mut coeffs, a, &mut scratch)?;
-        module.ckks_slots_to_coeffs_assign(&mut coeffs, run, keys.rotation_keys(), &mut scratch)?;
+        module.ckks_slots_to_coeffs_assign(&mut coeffs, run, keys, &mut scratch)?;
         module.ckks_mod_raise(z, &mut coeffs, run, keys, &mut scratch)
     })
 }
@@ -187,7 +187,7 @@ where
                     module.ckks_mod_raise(&mut z, &mut copy, &run, keys, &mut scratch)
                 })?;
                 coeffs_to_slots_and_eval_mod(module, res, &mut z, &run, ci, keys, &mut scratch)?;
-                module.ckks_slots_to_coeffs_assign(res, &run, keys.rotation_keys(), &mut scratch)
+                module.ckks_slots_to_coeffs_assign(res, &run, keys, &mut scratch)
             }
         }
     })
@@ -212,13 +212,13 @@ where
     Z: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
 {
     let Some(bypass) = run.context().coeffs_to_slots_bypass() else {
-        module.ckks_coeffs_to_slots_assign(z, run, keys.rotation_keys(), scratch)?;
+        module.ckks_coeffs_to_slots_assign(z, run, keys, scratch)?;
         return module.ckks_bootstrap_eval_mod(res, z, run, ci, keys, scratch);
     };
     let (mut z_hp, mut scratch) = scratch.borrow().take_ckks_ciphertext_scratch(&*z, z.meta());
     module.ckks_copy(&mut z_hp, &*z, &mut scratch)?;
-    module.ckks_dft_matrix_eval_assign(&mut z_hp, bypass, keys.rotation_keys(), &mut scratch)?;
-    module.ckks_coeffs_to_slots_assign(z, run, keys.rotation_keys(), &mut scratch)?;
+    module.ckks_dft_matrix_eval_assign(&mut z_hp, bypass, keys, &mut scratch)?;
+    module.ckks_coeffs_to_slots_assign(z, run, keys, &mut scratch)?;
     module.ckks_bootstrap_eval_mod(res, z, run, ci, keys, &mut scratch)?;
     // `2·z_hp`, the bypass on the packed halves, which the split doubles as `2·Re` and `2·Im`.
     module.ckks_mul_pow2_assign(1, &mut z_hp, &mut scratch)?;
@@ -250,7 +250,7 @@ where
     scratch.scope(|scratch| {
         let (mut z, mut scratch) = scratch.take_ckks_ciphertext_scratch(&boot_layout, a.meta());
         slots_to_coeffs_and_raise(module, &mut z, a, &run, keys, &mut scratch)?;
-        module.ckks_coeffs_to_slots_assign(&mut z, &run, keys.rotation_keys(), &mut scratch)?;
+        module.ckks_coeffs_to_slots_assign(&mut z, &run, keys, &mut scratch)?;
         module.ckks_eval_lut(res, &mut z, &run, luts, keys, &mut scratch)
     })
 }

@@ -31,8 +31,11 @@ use poulpy_core::{
     api::{GGLWEPreparedFactory, GLWEAutomorphismKeyPreparedFactory, GLWETensorKeyPreparedFactory},
     layouts::{
         GGLWEInfos, GGLWELayout, GGLWEPrepared, GLWEAutomorphismKeyPrepared, GLWELayout, GLWETensorKeyPrepared, GLWEToBackendRef,
-        LWEInfos, TorusPrecision,
-        prepared::{GGLWEPreparedToBackendRef, GLWEAutomorphismKeyPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
+        GetAutomorphismKey, LWEInfos, TorusPrecision,
+        prepared::{
+            GGLWEPreparedToBackendRef, GLWEAutomorphismKeyPreparedBackendRef, GLWEAutomorphismKeyPreparedToBackendRef,
+            GLWETensorKeyPreparedToBackendRef,
+        },
     },
 };
 use poulpy_hal::layouts::{Backend, CyclotomicOrder, HostBytesBackend, HostStaged, Module};
@@ -248,17 +251,25 @@ pub struct FixtureKeys<BE: Backend> {
 
 type FixtureSwitchingKey<BE> = GGLWEPrepared<<BE as Backend>::OwnedBuf, BE>;
 
+impl<BE: Backend> GetAutomorphismKey<BE> for FixtureKeys<BE>
+where
+    GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>: GLWEAutomorphismKeyPreparedToBackendRef<BE>,
+{
+    fn lookup_automorphism_key(
+        &self,
+        p: i64,
+        k: TorusPrecision,
+    ) -> poulpy_core::Result<GLWEAutomorphismKeyPreparedBackendRef<'_, BE>> {
+        self.rotation_keys.lookup_automorphism_key(p, k)
+    }
+}
+
 impl<BE: Backend> BootstrappingLinearKeys<BE> for FixtureKeys<BE>
 where
     GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>: GLWEAutomorphismKeyPreparedToBackendRef<BE>,
     GGLWEPrepared<BE::OwnedBuf, BE>: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
 {
-    type RotationKeys = HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>>;
     type SwitchingKey = GGLWEPrepared<BE::OwnedBuf, BE>;
-
-    fn rotation_keys(&self) -> &Self::RotationKeys {
-        &self.rotation_keys
-    }
 
     fn encapsulation_keys(&self) -> Option<(&Self::SwitchingKey, Option<&Self::SwitchingKey>)> {
         self.encapsulation_keys.as_ref().map(|(d2s, s2d)| (d2s, Some(s2d)))
@@ -611,7 +622,7 @@ where
     with_scratch::<BE, _>(bytes, |s| {
         if s2c_first {
             BE::ckks_double_into(module, &mut coeffs, ct_in, s)?;
-            module.ckks_slots_to_coeffs_assign(&mut coeffs, &run, keys.rotation_keys(), s)?;
+            module.ckks_slots_to_coeffs_assign(&mut coeffs, &run, keys, s)?;
         } else {
             BE::ckks_copy(module, &mut coeffs, ct_in, s)?;
         }
@@ -619,9 +630,9 @@ where
         steps.push(snapshot::<BE, _>(&raised));
         if let Some(bypass) = ctx.coeffs_to_slots_bypass() {
             BE::ckks_copy(module, &mut z_hp, &raised, s)?;
-            module.ckks_dft_matrix_eval_assign(&mut z_hp, bypass, keys.rotation_keys(), s)?;
+            module.ckks_dft_matrix_eval_assign(&mut z_hp, bypass, keys, s)?;
         }
-        module.ckks_coeffs_to_slots_assign(&mut raised, &run, keys.rotation_keys(), s)?;
+        module.ckks_coeffs_to_slots_assign(&mut raised, &run, keys, s)?;
         steps.push(snapshot::<BE, _>(&raised));
         match luts {
             Some(luts) => BE::ckks_eval_lut(module, std::slice::from_mut(&mut stepped), &mut raised, &run, luts, keys, s)?,

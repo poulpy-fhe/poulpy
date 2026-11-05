@@ -50,8 +50,10 @@ use poulpy_core::{
         GLWECIKeyPrepared, GLWECITraceKey, GLWECITraceKeyAlloc, GLWECITraceKeyPrepared, GLWEInfos, GLWESecretBackendRef,
         GLWESecretToBackendRef, GLWESwitchingKey, GLWESwitchingKeyAlloc, GLWESwitchingKeyDegrees, GLWESwitchingKeyDegreesMut,
         GLWESwitchingKeyLayout, GLWESwitchingKeyPrepared, GLWETensorKey, GLWETensorKeyAlloc, GLWETensorKeyLayout,
-        GLWETensorKeyPrepared, GetAutomorphismKey, GetGaloisElement, GetTensorKey, LWEInfos, ModuleCoreAlloc,
-        prepared::{GLWEAutomorphismKeyPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
+        GLWETensorKeyPrepared, GetAutomorphismKey, GetGaloisElement, GetTensorKey, LWEInfos, ModuleCoreAlloc, TorusPrecision,
+        prepared::{
+            GLWEAutomorphismKeyPreparedBackendRef, GLWEAutomorphismKeyPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef,
+        },
     },
 };
 use poulpy_hal::{
@@ -86,15 +88,12 @@ pub trait CKKSCITwin: Backend<Ring = Standard> {
 /// The key types are associated (not fixed to a backend buffer), so an implementation
 /// is free to back them with any data representation and to prepare them lazily / on
 /// the fly. [`BootstrappingKeysPrepared`] is the eager in-memory implementation.
-pub trait BootstrappingLinearKeys<BE: Backend> {
-    /// The rotation-key collection passed to the homomorphic DFT stages.
-    type RotationKeys: GetAutomorphismKey<BE>;
-
+///
+/// As a [`GetAutomorphismKey`] it answers with the rotation keys of the homomorphic DFT
+/// stages, Galois element `−1` among them, so a DFT operation takes these keys directly.
+pub trait BootstrappingLinearKeys<BE: Backend>: GetAutomorphismKey<BE> {
     /// The prepared key-switching key type for sparse-secret encapsulation.
     type SwitchingKey: GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
-
-    /// Rotation (automorphism) keys, Galois element `−1` among them.
-    fn rotation_keys(&self) -> &Self::RotationKeys;
 
     /// Sparse-secret encapsulation keys `(denseToSparse, sparseToDense)`, or
     /// `None` when the trick is disabled. There is no `sparseToDense` key when
@@ -237,17 +236,25 @@ where
     }
 }
 
+impl<D: Data, BE: CKKSCITwin> GetAutomorphismKey<BE> for BootstrappingKeysPrepared<D, BE>
+where
+    GLWEAutomorphismKeyPrepared<D, BE>: GLWEAutomorphismKeyPreparedToBackendRef<BE>,
+{
+    fn lookup_automorphism_key(
+        &self,
+        p: i64,
+        k: TorusPrecision,
+    ) -> poulpy_core::Result<GLWEAutomorphismKeyPreparedBackendRef<'_, BE>> {
+        self.rotation_keys.lookup_automorphism_key(p, k)
+    }
+}
+
 impl<D: Data, BE: CKKSCITwin> BootstrappingLinearKeys<BE> for BootstrappingKeysPrepared<D, BE>
 where
     GLWEAutomorphismKeyPrepared<D, BE>: GLWEAutomorphismKeyPreparedToBackendRef<BE>,
     GLWESwitchingKeyPrepared<D, BE>: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
 {
-    type RotationKeys = HashMap<i64, GLWEAutomorphismKeyPrepared<D, BE>>;
     type SwitchingKey = GLWESwitchingKeyPrepared<D, BE>;
-
-    fn rotation_keys(&self) -> &Self::RotationKeys {
-        &self.rotation_keys
-    }
 
     fn encapsulation_keys(&self) -> Option<(&Self::SwitchingKey, Option<&Self::SwitchingKey>)> {
         self.encapsulation_keys.as_ref().map(|(d2s, s2d)| (d2s, s2d.as_ref()))

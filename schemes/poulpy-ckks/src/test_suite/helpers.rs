@@ -830,21 +830,21 @@ impl<BE: Backend, K: GetTensorKey<BE>> GetTensorKey<BE> for QueryLog<'_, K> {
 }
 
 /// Bootstrapping keys whose rotation and tensor keys log their lookups.
-pub(crate) struct LoggedBootstrappingKeys<'a, K, R, T, C> {
+pub(crate) struct LoggedBootstrappingKeys<'a, K, T, C> {
     keys: &'a K,
-    rotation_keys: QueryLog<'a, R>,
+    rotation_keys: QueryLog<'a, K>,
     tensor_key: Option<QueryLog<'a, T>>,
     ci_tensor_key: Option<QueryLog<'a, C>>,
 }
 
-impl<'a, K, R, T, C> LoggedBootstrappingKeys<'a, K, R, T, C> {
+impl<'a, K, T, C> LoggedBootstrappingKeys<'a, K, T, C> {
     pub(crate) fn new<BE: CKKSCITwin>(keys: &'a K) -> Self
     where
-        K: BootstrappingKeys<BE, RotationKeys = R, TensorKey = T, CITensorKey = C>,
+        K: BootstrappingKeys<BE, TensorKey = T, CITensorKey = C>,
     {
         Self {
             keys,
-            rotation_keys: QueryLog::new(keys.rotation_keys()),
+            rotation_keys: QueryLog::new(keys),
             tensor_key: keys.tensor_key().map(QueryLog::new),
             ci_tensor_key: keys.ci_tensor_key().map(QueryLog::new),
         }
@@ -895,18 +895,22 @@ impl<'a, K, R, T, C> LoggedBootstrappingKeys<'a, K, R, T, C> {
     }
 }
 
-impl<'a, BE, K, R, T, C> BootstrappingLinearKeys<BE> for LoggedBootstrappingKeys<'a, K, R, T, C>
+impl<BE: Backend, K: GetAutomorphismKey<BE>, T, C> GetAutomorphismKey<BE> for LoggedBootstrappingKeys<'_, K, T, C> {
+    fn lookup_automorphism_key(
+        &self,
+        p: i64,
+        k: TorusPrecision,
+    ) -> poulpy_core::Result<GLWEAutomorphismKeyPreparedBackendRef<'_, BE>> {
+        self.rotation_keys.lookup_automorphism_key(p, k)
+    }
+}
+
+impl<BE, K, T, C> BootstrappingLinearKeys<BE> for LoggedBootstrappingKeys<'_, K, T, C>
 where
     BE: Backend,
-    K: BootstrappingLinearKeys<BE, RotationKeys = R>,
-    R: GetAutomorphismKey<BE> + GetTensorKey<BE>,
+    K: BootstrappingLinearKeys<BE>,
 {
-    type RotationKeys = QueryLog<'a, R>;
     type SwitchingKey = K::SwitchingKey;
-
-    fn rotation_keys(&self) -> &Self::RotationKeys {
-        &self.rotation_keys
-    }
 
     fn encapsulation_keys(&self) -> Option<(&Self::SwitchingKey, Option<&Self::SwitchingKey>)> {
         self.keys.encapsulation_keys()
@@ -921,11 +925,10 @@ where
     }
 }
 
-impl<'a, BE, K, R, T, C> BootstrappingKeys<BE> for LoggedBootstrappingKeys<'a, K, R, T, C>
+impl<'a, BE, K, T, C> BootstrappingKeys<BE> for LoggedBootstrappingKeys<'a, K, T, C>
 where
     BE: CKKSCITwin,
-    K: BootstrappingKeys<BE, RotationKeys = R, TensorKey = T, CITensorKey = C>,
-    R: GetAutomorphismKey<BE> + GetTensorKey<BE>,
+    K: BootstrappingKeys<BE, TensorKey = T, CITensorKey = C>,
     T: GetTensorKey<BE>,
     C: GetTensorKey<BE::CI>,
 {

@@ -493,9 +493,9 @@ fn run_case<BE, F, E>(
             .collect();
         with_scratch::<BE, _>(boot_tmp, |s| {
             module.ckks_double_into(&mut coeffs, &ct, s)?;
-            module.ckks_slots_to_coeffs_assign(&mut coeffs, &run, &keys.rotation_keys, s)?;
+            module.ckks_slots_to_coeffs_assign(&mut coeffs, &run, &keys, s)?;
             module.ckks_mod_raise(&mut raised, &mut coeffs, &run, &keys, s)?;
-            module.ckks_coeffs_to_slots_assign(&mut raised, &run, &keys.rotation_keys, s)?;
+            module.ckks_coeffs_to_slots_assign(&mut raised, &run, &keys, s)?;
             module.ckks_copy(&mut kept, &raised, s)?;
             module.ckks_eval_lut(&mut stepped, &mut raised, &run, &backend_luts, &keys, s)
         })
