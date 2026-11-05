@@ -19,12 +19,12 @@ use crate::{
     CKKSCompositionError, CKKSCtBounds, CKKSInfos, CoeffsMeta, GLWEPlaintextMeta, SetCKKSInfos, SlotsKind,
     api::{
         CKKSAllOpsTmpBytes, CKKSBootstrappingOps, CKKSDFTMatrixOps, CKKSDFTMatrixPreparedFactory, CKKSDFTOps, CKKSEncodingOps,
-        CKKSEvalModOps, CKKSPolynomialEvaluationOps,
+        CKKSEvalModOps, CKKSPolynomialEvaluationOps, CKKSPow2Ops,
     },
     layouts::{
         BootstrappingKeysLayout, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques, CKKSCITwin,
-        CKKSCiphertextAlloc, CKKSCiphertextOwned, CKKSPlaintextOwned, DFTOutputFormat, DFTPlan, DFTType, EncapsulationKeysLayout,
-        EncodedLut, SparseSecretEncapsulation, eval_mod::EvalModPlan,
+        CKKSCiphertextAlloc, CKKSCiphertextOwned, CKKSEvalModInfos, CKKSPlaintextOwned, DFTOutputFormat, DFTPlan, DFTType,
+        EncapsulationKeysLayout, EncodedLut, SparseSecretEncapsulation, eval_mod::EvalModPlan,
     },
     polynomial::SplitStrategy,
     test_suite::{
@@ -33,7 +33,7 @@ use crate::{
             TestContextBackend, TestContextModule, TestContextSharedModule, TestScalar, assert_ckks_error,
             assert_invalid_operand, ckks_decrypt_decode, ckks_encrypt_with_prec, ckks_spec, gen_sk_with_raw, precision_stats,
         },
-        parity::helpers::with_scratch,
+        parity::helpers::{snapshot, with_scratch},
         presets::{CIBackend, compile_context},
         reference_encoder::ReferenceEncoder,
     },
@@ -212,6 +212,7 @@ fn run_case<BE, F, E>(
         + CKKSEncodingOps<BE, F>
         + CKKSBootstrappingOps<BE>
         + CKKSDFTOps<BE>
+        + CKKSPow2Ops<BE>
         + CKKSEvalModOps<BE>
         + CKKSDFTMatrixOps<BE, F>
         + CKKSPolynomialEvaluationOps<BE>,
@@ -461,6 +462,26 @@ fn run_case<BE, F, E>(
         })
         .unwrap();
 
+        // The steps by hand give the digits of the whole op; only digits compare, as the whole op relabels its outputs.
+        let mut coeffs = module.ckks_ciphertext_alloc_from_infos(&ct);
+        let mut raised = module.ckks_ciphertext_alloc(params.base2k.into(), k_boot.into());
+        let mut stepped: Vec<_> = backend_luts
+            .iter()
+            .map(|_| module.ckks_ciphertext_alloc(params.base2k.into(), k_boot.into()))
+            .collect();
+        with_scratch::<BE, _>(boot_tmp, |s| {
+            module.ckks_double_into(&mut coeffs, &ct, s)?;
+            module.ckks_slots_to_coeffs_assign(&mut coeffs, &ctx, &keys.rotation_keys, s)?;
+            module.ckks_mod_raise(&mut raised, &mut coeffs, &ctx, &keys, s)?;
+            module.ckks_coeffs_to_slots_assign(&mut raised, &ctx, &keys.rotation_keys, s)?;
+            raised.set_slots(ct.slots());
+            module.ckks_eval_lut(&mut stepped, &raised, &ctx, &backend_luts, &keys, s)
+        })
+        .unwrap();
+        for (got, want) in stepped.iter().zip(&outputs) {
+            assert_eq!(snapshot::<BE, _>(got).digits, snapshot::<BE, _>(want).digits);
+        }
+
         for (index, (output, table)) in outputs.iter().zip(&tables).enumerate() {
             let lut = &backend_luts[index];
             let output_log_delta = INPUT_LOG_DELTA + lut.log_msg_ratio();
@@ -636,7 +657,7 @@ fn run_case<BE, F, E>(
                 &error,
                 CKKSCompositionError::InvalidOperand {
                     op: "ckks_functional_bootstrap",
-                    reason: "functional bootstrapping outputs must share one rank-1 layout".into(),
+                    reason: "LUT outputs must share one rank-1 layout".into(),
                 },
             );
             let error =
@@ -646,7 +667,7 @@ fn run_case<BE, F, E>(
                 &error,
                 CKKSCompositionError::InvalidOperand {
                     op: "ckks_functional_bootstrap",
-                    reason: "functional bootstrap requires at least one LUT".into(),
+                    reason: "needs at least one LUT".into(),
                 },
             );
             let error = with_scratch::<BE, _>(0, |s| {
@@ -658,7 +679,7 @@ fn run_case<BE, F, E>(
                 &error,
                 CKKSCompositionError::InvalidOperand {
                     op: "ckks_functional_bootstrap",
-                    reason: format!("functional bootstrap ct_outs/luts length mismatch (1 vs {})", luts.len()),
+                    reason: format!("ct_outs/luts length mismatch (1 vs {})", luts.len()),
                 },
             );
 
@@ -690,9 +711,63 @@ fn run_case<BE, F, E>(
                 &error,
                 CKKSCompositionError::InvalidOperand {
                     op: "ckks_functional_bootstrap",
-                    reason: "functional bootstrap LUTs must have the same message modulus".into(),
+                    reason: "LUTs must have the same message modulus".into(),
                 },
             );
+
+            // The LUT step refuses on an empty arena and leaves every output as it was.
+            let before: Vec<_> = outputs.iter().map(|ct| snapshot::<BE, _>(ct)).collect();
+            let error = with_scratch::<BE, _>(0, |s| module.ckks_eval_lut(&mut [], &raised, &ctx, &[], &keys, s)).unwrap_err();
+            assert_ckks_error(
+                "LUT step without LUTs",
+                &error,
+                CKKSCompositionError::InvalidOperand {
+                    op: "ckks_eval_lut",
+                    reason: "needs at least one LUT".into(),
+                },
+            );
+            let error =
+                with_scratch::<BE, _>(0, |s| module.ckks_eval_lut(&mut outputs[..1], &raised, &ctx, luts, &keys, s)).unwrap_err();
+            assert_ckks_error(
+                "LUT step of fewer outputs than LUTs",
+                &error,
+                CKKSCompositionError::InvalidOperand {
+                    op: "ckks_eval_lut",
+                    reason: format!("ct_outs/luts length mismatch (1 vs {})", luts.len()),
+                },
+            );
+            let error = with_scratch::<BE, _>(0, |s| {
+                module.ckks_eval_lut(&mut outputs[..2], &raised, &ctx, &mixed_ratio_luts, &keys, s)
+            })
+            .unwrap_err();
+            assert_ckks_error(
+                "LUT step of unequal moduli",
+                &error,
+                CKKSCompositionError::InvalidOperand {
+                    op: "ckks_eval_lut",
+                    reason: "LUTs must have the same message modulus".into(),
+                },
+            );
+            let off_circle = OffCirclePlan {
+                ctx: &ctx,
+                plan: EvalModPlan {
+                    scaling: Some(1.0),
+                    ..*ctx.eval_mod_plan()
+                },
+            };
+            let error = with_scratch::<BE, _>(0, |s| {
+                module.ckks_eval_lut(&mut outputs[..luts.len()], &raised, &off_circle, luts, &keys, s)
+            })
+            .unwrap_err();
+            assert_invalid_operand(
+                "LUT step of a plan off the unit circle",
+                &error,
+                "ckks_eval_lut",
+                "unit-circle ExpCmplx",
+            );
+            for (ct, snap) in outputs.iter().zip(&before) {
+                assert_eq!(&snapshot::<BE, _>(ct), snap);
+            }
 
             let binary_luts = vec![
                 EncodedLut::general(
@@ -758,6 +833,38 @@ fn run_case<BE, F, E>(
                 required_bits: plan.slots_to_coeffs().consumed_bits(),
             },
         );
+    }
+}
+
+/// A plan that reads as `ctx` except for its EvalMod recipe.
+struct OffCirclePlan<'a, BE: CKKSCITwin, F> {
+    ctx: &'a crate::layouts::BootstrappingContextPrepared<BE, F>,
+    plan: EvalModPlan,
+}
+
+impl<BE: CKKSCITwin, F> CKKSEvalModInfos<BE, F> for OffCirclePlan<'_, BE, F> {
+    fn eval_mod_plan(&self) -> &EvalModPlan {
+        &self.plan
+    }
+
+    fn eval_mod_standard(&self) -> Option<&crate::layouts::eval_mod::EvalMod<F, CKKSPlaintextOwned<BE>>> {
+        self.ctx.eval_mod()
+    }
+
+    fn eval_mod_ci(&self) -> Option<&crate::layouts::EvalModCIPrepared<BE, F>> {
+        None
+    }
+
+    fn c2s_guard_bits(&self) -> usize {
+        self.ctx.c2s_guard_bits()
+    }
+
+    fn one_eval_mod_on_real_slots(&self) -> bool {
+        true
+    }
+
+    fn eval_round_plus(&self) -> bool {
+        false
     }
 }
 

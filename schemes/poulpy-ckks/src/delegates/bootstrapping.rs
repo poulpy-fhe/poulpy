@@ -105,6 +105,39 @@ impl<BE: Backend + CKKSBootstrappingImpl> CKKSBootstrappingOps<BE> for Module<BE
         BE::ckks_bootstrap_eval_mod(self, res, a, plan, ci, keys, scratch)
     }
 
+    fn ckks_eval_lut_tmp_bytes<R, A, P, F>(
+        &self,
+        res: &R,
+        a: &A,
+        plan: &P,
+        luts: &[EncodedLut<CKKSPlaintextOwned<BE>>],
+        keys_layout: &BootstrappingKeysLayout,
+    ) -> usize
+    where
+        R: CKKSCtBounds,
+        A: CKKSCtBounds,
+        P: CKKSEvalModInfos<BE, F>,
+    {
+        BE::ckks_eval_lut_tmp_bytes(self, res, a, plan, luts, keys_layout)
+    }
+
+    fn ckks_eval_lut<A, P, F, K>(
+        &self,
+        res: &mut [CKKSCiphertextOwned<BE>],
+        a: &A,
+        plan: &P,
+        luts: &[EncodedLut<CKKSPlaintextOwned<BE>>],
+        keys: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        A: GLWEToBackendRef<BE> + CKKSCtBounds,
+        P: CKKSEvalModInfos<BE, F>,
+        K: BootstrappingKeys<BE>,
+    {
+        BE::ckks_eval_lut(self, res, a, plan, luts, keys, scratch)
+    }
+
     fn ckks_bootstrap<F, K>(
         &self,
         ct_out: &mut CKKSCiphertextOwned<BE>,

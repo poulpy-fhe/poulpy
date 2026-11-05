@@ -39,6 +39,9 @@ use poulpy_core::{
 /// The name of [`CKKSBootstrappingOps::ckks_bootstrap_eval_mod`] in its refusals.
 const EVAL_MOD_OP: &str = "ckks_bootstrap_eval_mod";
 
+/// The name of [`CKKSBootstrappingOps::ckks_eval_lut`] in its refusals.
+const EVAL_LUT_OP: &str = "ckks_eval_lut";
+
 /// [`CKKSBootstrappingReference::ckks_bootstrap_tmp_bytes_reference`]: the terms
 /// of the rotation keys are maximized over their layouts, those of EvalMod come
 /// from the tensor key alone. The raised ciphertext and the EvalRound+ bypass sit
@@ -377,6 +380,23 @@ pub trait CKKSBootstrappingReference<BE: CKKSCITwin> {
         C2: CKKSCtBounds,
         CKKSCiphertextOwned<BE>: CKKSCtBounds;
 
+    /// Scratch upper bound for [`Self::ckks_eval_lut_reference`]: the split halves and the imaginary accumulator beside
+    /// one LUT-evaluation temporary, so the bound does not grow with `luts.len()`.
+    fn ckks_eval_lut_tmp_bytes_reference<R, A, P, F>(
+        &self,
+        res: &R,
+        a: &A,
+        plan: &P,
+        luts: &[EncodedLut<CKKSPlaintextOwned<BE>>],
+        keys_layout: &BootstrappingKeysLayout,
+    ) -> usize
+    where
+        Module<BE>: GLWEBytesOf<BE>,
+        Module<BE>: CKKSAllOpsTmpBytes<BE> + CKKSEvalModOps<BE> + CKKSMulOps<BE> + CKKSAddOps<BE> + CKKSSubOps<BE>,
+        R: CKKSCtBounds,
+        A: CKKSCtBounds,
+        P: CKKSEvalModInfos<BE, F>;
+
     /// Scratch upper bound for [`Self::ckks_mod_raise_reference`].
     fn ckks_mod_raise_tmp_bytes_reference<R, A, P>(
         &self,
@@ -474,6 +494,40 @@ pub trait CKKSBootstrappingReference<BE: CKKSCITwin> {
         P: CKKSEvalModInfos<BE, F>,
         K: BootstrappingKeys<BE> + Sync,
         K::TensorKey: Sync;
+
+    /// Backend-generic reference for [`CKKSBootstrappingOps::ckks_eval_lut`]: on real slots of a plan with one EvalMod
+    /// on them, the real part of `a`; otherwise its split, with the imaginary half folded into each output as it is
+    /// produced. The guard bits leave the halves before the exponential.
+    fn ckks_eval_lut_reference<A, P, F, K>(
+        &self,
+        res: &mut [CKKSCiphertextOwned<BE>],
+        a: &A,
+        plan: &P,
+        luts: &[EncodedLut<CKKSPlaintextOwned<BE>>],
+        keys: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Module<BE>: GLWEBytesOf<BE>
+            + CKKSAllOpsTmpBytes<BE>
+            + CKKSConjugateOps<BE>
+            + CKKSAddOps<BE>
+            + CKKSSubOps<BE>
+            + CKKSImagOps<BE>
+            + CKKSEvalModOps<BE>
+            + CKKSPolynomialEvaluationOps<BE>
+            + CKKSComplexPolynomialEvaluationOps<BE>
+            + CKKSCopyOps<BE>
+            + CKKSMulOps<BE>
+            + CKKSPow2Ops<BE>
+            + CKKSNegOps<BE>
+            + GLWENormalize<BE>,
+        A: GLWEToBackendRef<BE> + CKKSCtBounds,
+        P: CKKSEvalModInfos<BE, F>,
+        K: BootstrappingKeys<BE>,
+        CKKSCiphertextOwned<BE>:
+            GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + BSGSMeta,
+        GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos;
 
     /// Refreshes one standard ciphertext. The pipeline is selected from the context.
     #[allow(clippy::too_many_arguments)]
@@ -590,25 +644,49 @@ impl<BE: Backend + CKKSBootstrappingImpl + CKKSEncapsulatedModUpImpl + CKKSModUp
         CKKSCiphertextOwned<BE>: CKKSCtBounds,
     {
         let base = self.ckks_bootstrap_tmp_bytes_reference(ct_out, ct_in, ctx, None, keys_layout);
-        let (boot_layout, in_layout) = bootstrap_layouts(ct_out, ct_in);
-        let boot_bytes = self.glwe_bytes_of_from_infos(&boot_layout);
-        let in_bytes = self.glwe_bytes_of_from_infos(&in_layout);
-        // The complex path holds `ct_raised`, `r0` and `i0` while carving one
-        // LUT-evaluation temporary. Direct S2C instead holds one boot-width
-        // ciphertext beside its input-width buffer.
-        let carved = (4 * boot_bytes).max(boot_bytes + in_bytes);
+        let (boot_layout, _) = bootstrap_layouts(ct_out, ct_in);
+        // The raised ciphertext stays beside the linear stages and beside the LUT step, which reads it.
+        let boot_bytes = BE::scratch_aligned(self.glwe_bytes_of_from_infos(&boot_layout));
+        let linear = s2c_first_linear_tmp_bytes(self, ct_out, ct_in, ctx, keys_layout);
+        let lut = self.ckks_eval_lut_tmp_bytes_reference(ct_out, ct_out, ctx, luts, keys_layout);
+        base.max(boot_bytes + linear).max(boot_bytes + lut)
+    }
+
+    fn ckks_eval_lut_tmp_bytes_reference<R, A, P, F>(
+        &self,
+        res: &R,
+        a: &A,
+        plan: &P,
+        luts: &[EncodedLut<CKKSPlaintextOwned<BE>>],
+        keys_layout: &BootstrappingKeysLayout,
+    ) -> usize
+    where
+        Module<BE>: GLWEBytesOf<BE>,
+        Module<BE>: CKKSAllOpsTmpBytes<BE> + CKKSEvalModOps<BE> + CKKSMulOps<BE> + CKKSAddOps<BE> + CKKSSubOps<BE>,
+        R: CKKSCtBounds,
+        A: CKKSCtBounds,
+        P: CKKSEvalModInfos<BE, F>,
+    {
+        let (boot_layout, a_layout) = bootstrap_layouts(res, a);
+        let boot_bytes = BE::scratch_aligned(self.glwe_bytes_of_from_infos(&boot_layout));
+        let a_bytes = BE::scratch_aligned(self.glwe_bytes_of_from_infos(&a_layout));
+        // The halves of `a` and the accumulator, beside one LUT-evaluation temporary.
+        let carved = 2 * a_bytes + 2 * boot_bytes;
         let tsk = &keys_layout.tensor_key;
-        let mut nested = s2c_first_linear_tmp_bytes(self, ct_out, ct_in, ctx, keys_layout);
-        if let Some(eval_mod) = ctx.eval_mod().filter(|_| luts.iter().any(EncodedLut::requires_eval_mod)) {
+        let mut nested = 0;
+        if let Some(eval_mod) = plan
+            .eval_mod_standard()
+            .filter(|_| luts.iter().any(EncodedLut::requires_eval_mod))
+        {
             nested = nested
                 .max(self.ckks_eval_mod_tmp_bytes(&boot_layout, &boot_layout, eval_mod, tsk))
-                .max(self.ckks_eval_mod_tmp_bytes(ct_out, &boot_layout, eval_mod, tsk));
+                .max(self.ckks_eval_mod_tmp_bytes(res, &boot_layout, eval_mod, tsk));
         }
         for atk in &keys_layout.rotation_key_layouts() {
             for lut in luts {
                 nested = nested
                     .max(self.ckks_all_ops_with_atk_tmp_bytes(&boot_layout, lut.coeffs(), tsk, atk))
-                    .max(self.ckks_all_ops_with_atk_tmp_bytes(&in_layout, lut.coeffs(), tsk, atk));
+                    .max(self.ckks_all_ops_with_atk_tmp_bytes(&a_layout, lut.coeffs(), tsk, atk));
             }
         }
         // A double-angle chain squares into a temporary of its output's layout.
@@ -616,18 +694,18 @@ impl<BE: Backend + CKKSBootstrappingImpl + CKKSEncapsulatedModUpImpl + CKKSModUp
             .iter()
             .any(|lut| matches!(lut.kind(), EncodedLutKind::Binary { chain: Some(_), .. }))
         {
-            let size = ct_out.max_size();
+            let size = res.max_size();
             nested = nested.max(
                 BE::scratch_aligned(self.glwe_bytes_of_from_infos(&GLWELayout {
-                    k: ct_out.max_k(),
-                    ..ct_out.glwe_layout()
+                    k: res.max_k(),
+                    ..res.glwe_layout()
                 })) + self
-                    .ckks_square_tmp_bytes(ct_out, ct_out, tsk)
+                    .ckks_square_tmp_bytes(res, res, tsk)
                     .max(self.ckks_add_pt_const_tmp_bytes(size))
                     .max(self.ckks_sub_pt_const_tmp_bytes(size)),
             );
         }
-        base.max(carved + nested)
+        carved + nested
     }
 
     fn ckks_mod_raise_tmp_bytes_reference<R, A, P>(
@@ -927,6 +1005,109 @@ impl<BE: Backend + CKKSBootstrappingImpl + CKKSEncapsulatedModUpImpl + CKKSModUp
         Ok(())
     }
 
+    fn ckks_eval_lut_reference<A, P, F, K>(
+        &self,
+        res: &mut [CKKSCiphertextOwned<BE>],
+        a: &A,
+        plan: &P,
+        luts: &[EncodedLut<CKKSPlaintextOwned<BE>>],
+        keys: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Module<BE>: GLWEBytesOf<BE>
+            + CKKSAllOpsTmpBytes<BE>
+            + CKKSConjugateOps<BE>
+            + CKKSAddOps<BE>
+            + CKKSSubOps<BE>
+            + CKKSImagOps<BE>
+            + CKKSEvalModOps<BE>
+            + CKKSPolynomialEvaluationOps<BE>
+            + CKKSComplexPolynomialEvaluationOps<BE>
+            + CKKSCopyOps<BE>
+            + CKKSMulOps<BE>
+            + CKKSPow2Ops<BE>
+            + CKKSNegOps<BE>
+            + GLWENormalize<BE>,
+        A: GLWEToBackendRef<BE> + CKKSCtBounds,
+        P: CKKSEvalModInfos<BE, F>,
+        K: BootstrappingKeys<BE>,
+        CKKSCiphertextOwned<BE>:
+            GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + BSGSMeta,
+        GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+    {
+        const OP: &str = EVAL_LUT_OP;
+        ensure_lut_batch(OP, self.n(), a, res, luts, plan)?;
+        let tensor_key = required_tensor_key(OP, keys.tensor_key())?;
+        if let Some(keys_layout) = keys.keys_layout() {
+            let bytes = self.ckks_eval_lut_tmp_bytes_reference(&res[0], a, plan, luts, &keys_layout);
+            ckks_ensure!(
+                scratch.available() >= bytes,
+                "{OP} needs a scratch arena of {bytes} bytes, got {}",
+                scratch.available()
+            );
+        }
+        let shared = luts.len() > 1 && luts.iter().all(|lut| lut.general_series().is_some());
+        let boot_layout = GLWELayout {
+            n: res[0].n(),
+            base2k: a.base2k(),
+            k: res[0].k(),
+            rank: Rank(1),
+        };
+        let guard_bits = plan.c2s_guard_bits();
+        scratch.scope(|scratch| {
+            if a.slots().is_real() && plan.one_eval_mod_on_real_slots() {
+                let (mut z, scratch) = scratch.take_ckks_ciphertext_scratch(a, a.meta());
+                let (mut conjugate, mut scratch) = scratch.take_ckks_ciphertext_scratch(a, a.meta());
+                self.ckks_copy(&mut z, a, &mut scratch)?;
+                ckks_bootstrap_real_part(self, &mut z, &mut conjugate, keys, &mut scratch)?;
+                z.set_log_delta(z.log_delta() - guard_bits);
+                return eval_lut_batch(self, res, &z, plan, luts, keys, tensor_key, shared, &mut scratch);
+            }
+
+            let (mut r0, scratch) = scratch.take_ckks_ciphertext_scratch(a, a.meta());
+            let (mut i0, scratch) = scratch.take_ckks_ciphertext_scratch(a, a.meta());
+            let (mut acc, mut scratch) = scratch.take_ckks_ciphertext_scratch(&boot_layout, a.meta());
+            self.ckks_copy(&mut r0, a, &mut scratch)?;
+            ckks_split_real_imag(self, &mut r0, &mut i0, keys.rotation_keys(), &mut scratch)?;
+            r0.set_log_delta(r0.log_delta() - guard_bits);
+            i0.set_log_delta(i0.log_delta() - guard_bits);
+
+            eval_lut_batch(self, res, &r0, plan, luts, keys, tensor_key, shared, &mut scratch)?;
+
+            // The accumulator takes each LUT's imaginary half and folds it into its output before the next LUT, which
+            // keeps the carved working set independent of the batch size. Multiplication produces its result at the
+            // destination's requested `k`, so the accumulator is restored to the full width before each reuse;
+            // otherwise the first LUT's consumption would clamp every later one.
+            let acc_meta = acc.meta();
+            if shared {
+                let basis = ckks_lut_power_basis(
+                    self,
+                    &i0,
+                    &boot_layout,
+                    eval_mod_standard(OP, plan)?,
+                    luts,
+                    tensor_key,
+                    &mut scratch,
+                )?;
+                for (ct_out, lut) in res.iter_mut().zip(luts) {
+                    acc.set_meta(acc_meta);
+                    acc.set_k(boot_layout.k);
+                    ckks_eval_lut_from_basis(self, &mut acc, lut, &basis, keys.rotation_keys(), tensor_key, &mut scratch)?;
+                    recombine_halves(self, ct_out, &mut acc, &mut scratch)?;
+                }
+            } else {
+                for (ct_out, lut) in res.iter_mut().zip(luts) {
+                    acc.set_meta(acc_meta);
+                    acc.set_k(boot_layout.k);
+                    ckks_eval_encoded_lut(self, &mut acc, &i0, plan, lut, keys, tensor_key, &mut scratch)?;
+                    recombine_halves(self, ct_out, &mut acc, &mut scratch)?;
+                }
+            }
+            Result::Ok(())
+        })
+    }
+
     fn ckks_functional_bootstrap_reference<F, K>(
         &self,
         ct_outs: &mut [CKKSCiphertextOwned<BE>],
@@ -959,44 +1140,21 @@ impl<BE: Backend + CKKSBootstrappingImpl + CKKSEncapsulatedModUpImpl + CKKSModUp
         GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     {
         const OP: &str = "ckks_functional_bootstrap";
-        ckks_ensure_operand!(OP, !luts.is_empty(), "functional bootstrap requires at least one LUT");
-        ckks_ensure_operand!(
-            OP,
-            ct_outs.len() == luts.len(),
-            "functional bootstrap ct_outs/luts length mismatch ({} vs {})",
-            ct_outs.len(),
-            luts.len()
-        );
         ckks_ensure_operand!(
             OP,
             ctx.pipeline() == BootstrappingPipeline::S2CFirst,
             "functional bootstrapping requires an S2C-first context"
         );
+        ensure_lut_batch(OP, self.n(), ct_in, ct_outs, luts, ctx)?;
         let log_msg_ratio = luts[0].log_msg_ratio();
-        ckks_ensure_operand!(
-            OP,
-            luts.iter().all(|lut| lut.message_modulus() == luts[0].message_modulus()),
-            "functional bootstrap LUTs must have the same message modulus"
-        );
-        if luts.iter().any(EncodedLut::requires_eval_mod) {
-            ensure_unit_circle_exp_context(OP, ctx)?;
-        }
         let head = &ct_outs[0];
         let (out_n, out_k) = (head.n(), head.k());
-        ckks_ensure_operand!(
-            OP,
-            ct_in.rank().as_usize() == 1
-                && ct_outs.iter().all(|ct| {
-                    ct.rank().as_usize() == 1 && ct.n() == head.n() && ct.base2k() == head.base2k() && ct.k() == head.k()
-                }),
-            "functional bootstrapping outputs must share one rank-1 layout"
-        );
         ckks_ensure_operand!(
             OP,
             keys.encapsulation_keys().is_some() == ctx.sparse_secret_hamming_weight().is_some(),
             "bootstrapping key encapsulation does not match the compiled recipe"
         );
-        let tensor_key = required_tensor_key(OP, keys.tensor_key())?;
+        required_tensor_key(OP, keys.tensor_key())?;
         ensure_functional_message_ratio(OP, ct_in, ctx.slots_to_coeffs().consumed_bits(), log_msg_ratio)?;
         // Keys laid out for the raise fail here rather than after SlotsToCoeffs.
         check_raise_keys(OP, head, ct_in, ctx, keys)?;
@@ -1012,7 +1170,6 @@ impl<BE: Backend + CKKSBootstrappingImpl + CKKSEncapsulatedModUpImpl + CKKSModUp
             .map(|(ct_out, lut)| functional_output_contract(OP, ct_in, ctx, lut, ct_out.k().as_usize()))
             .collect::<Result<Vec<_>>>()?;
 
-        let shared = luts.len() > 1 && luts.iter().all(|lut| lut.general_series().is_some());
         let boot_layout = GLWELayout {
             n: out_n,
             base2k: ct_in.base2k(),
@@ -1022,73 +1179,10 @@ impl<BE: Backend + CKKSBootstrappingImpl + CKKSEncapsulatedModUpImpl + CKKSModUp
         scratch.scope(|scratch_local| {
             let (mut ct_raised, mut scratch_local) = scratch_local.take_ckks_ciphertext_scratch(&boot_layout, ct_in.meta());
             ckks_bootstrap_s2c_mod_up(self, &mut ct_raised, ct_in, ctx, keys, &mut scratch_local)?;
-
-            if ct_in.slots().is_real() {
-                let (mut r0, mut scratch_local) = scratch_local.take_ckks_ciphertext_scratch(&boot_layout, ct_raised.meta());
-                ckks_bootstrap_coeffs_to_slots_real(self, &mut ct_raised, &mut r0, ctx, keys, &mut scratch_local)?;
-                ct_raised.set_log_delta(ct_raised.log_delta() - ctx.c2s_guard_bits());
-                return eval_lut_batch(
-                    self,
-                    ct_outs,
-                    &ct_raised,
-                    ctx,
-                    luts,
-                    keys,
-                    tensor_key,
-                    shared,
-                    &mut scratch_local,
-                );
-            }
-
-            let (mut r0, scratch_local) = scratch_local.take_ckks_ciphertext_scratch(&boot_layout, ct_raised.meta());
-            let (mut i0, mut scratch_local) = scratch_local.take_ckks_ciphertext_scratch(&boot_layout, ct_raised.meta());
-            ckks_bootstrap_coeffs_to_slots(self, &ct_raised, &mut r0, &mut i0, ctx, keys, &mut scratch_local)?;
-            r0.set_log_delta(r0.log_delta() - ctx.c2s_guard_bits());
-            i0.set_log_delta(i0.log_delta() - ctx.c2s_guard_bits());
-
-            eval_lut_batch(self, ct_outs, &r0, ctx, luts, keys, tensor_key, shared, &mut scratch_local)?;
-
-            // `ct_raised` is dead after CoeffsToSlots, so it serves as the single
-            // imaginary accumulator: each LUT's imaginary half is folded into its
-            // output before the next one is evaluated, which keeps the carved
-            // working set independent of the batch size. Multiplication produces
-            // its result at the destination's requested `k`, so the accumulator is
-            // restored to the full boot width before each reuse; otherwise the
-            // first LUT's consumption would clamp every later one.
-            let im_meta = ct_raised.meta();
-            if shared {
-                let basis = ckks_lut_power_basis(
-                    self,
-                    &i0,
-                    &boot_layout,
-                    ctx.standard_eval_mod("ckks_functional_bootstrap")?,
-                    luts,
-                    tensor_key,
-                    &mut scratch_local,
-                )?;
-                for (ct_out, lut) in ct_outs.iter_mut().zip(luts) {
-                    ct_raised.set_meta(im_meta);
-                    ct_raised.set_k(boot_layout.k);
-                    ckks_eval_lut_from_basis(
-                        self,
-                        &mut ct_raised,
-                        lut,
-                        &basis,
-                        keys.rotation_keys(),
-                        tensor_key,
-                        &mut scratch_local,
-                    )?;
-                    recombine_halves(self, ct_out, &mut ct_raised, &mut scratch_local)?;
-                }
-            } else {
-                for (ct_out, lut) in ct_outs.iter_mut().zip(luts) {
-                    ct_raised.set_meta(im_meta);
-                    ct_raised.set_k(boot_layout.k);
-                    ckks_eval_encoded_lut(self, &mut ct_raised, &i0, ctx, lut, keys, tensor_key, &mut scratch_local)?;
-                    recombine_halves(self, ct_out, &mut ct_raised, &mut scratch_local)?;
-                }
-            }
-            Result::Ok(())
+            self.ckks_coeffs_to_slots_assign(&mut ct_raised, ctx, keys.rotation_keys(), &mut scratch_local)?;
+            // CoeffsToSlots labels its output complex, the LUT step routes on the kind of the message.
+            ct_raised.set_slots(ct_in.slots());
+            self.ckks_eval_lut(ct_outs, &ct_raised, ctx, luts, keys, &mut scratch_local)
         })?;
         for (ct_out, (meta, expected_k)) in ct_outs.iter_mut().zip(output_contracts) {
             ct_out.set_meta(meta);
@@ -1238,44 +1332,6 @@ where
     Ok(())
 }
 
-fn ckks_bootstrap_coeffs_to_slots<BE, F, K, C, R>(
-    module: &Module<BE>,
-    ct: &C,
-    r0: &mut R,
-    i0: &mut R,
-    ctx: &BootstrappingContextPrepared<BE, F>,
-    keys: &K,
-    scratch: &mut ScratchArena<'_, BE>,
-) -> Result<()>
-where
-    BE: Backend + CKKSEncapsulatedModUpImpl,
-    Module<BE>: CKKSDFTOps<BE>,
-    K: BootstrappingLinearKeys<BE>,
-    C: GLWEToBackendRef<BE> + CKKSCtBounds,
-    R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-{
-    module.ckks_coeffs_to_slots_split(r0, i0, ct, ctx.coeffs_to_slots(), keys.rotation_keys(), scratch)
-}
-
-fn ckks_bootstrap_coeffs_to_slots_real<BE, F, K, R1, R2>(
-    module: &Module<BE>,
-    ct: &mut R1,
-    conjugate: &mut R2,
-    ctx: &BootstrappingContextPrepared<BE, F>,
-    keys: &K,
-    scratch: &mut ScratchArena<'_, BE>,
-) -> Result<()>
-where
-    BE: Backend + CKKSEncapsulatedModUpImpl,
-    Module<BE>: CKKSDFTOps<BE> + CKKSConjugateOps<BE> + CKKSAddOps<BE>,
-    K: BootstrappingLinearKeys<BE>,
-    R1: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    R2: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-{
-    module.ckks_dft_matrix_eval_assign(ct, ctx.coeffs_to_slots(), keys.rotation_keys(), scratch)?;
-    ckks_bootstrap_real_part(module, ct, conjugate, keys, scratch)
-}
-
 /// `ct = z + conj(z) = 2·Re(z)` from `z` in `ct`: the input polynomial's coefficients.
 fn ckks_bootstrap_real_part<BE, K, R1, R2>(
     module: &Module<BE>,
@@ -1368,14 +1424,14 @@ where
 }
 
 /// EvalMod on the standard ring, which the two standard routes run.
-fn eval_mod_standard<BE, F, P>(plan: &P) -> Result<&EvalMod<F, CKKSPlaintextOwned<BE>>>
+fn eval_mod_standard<'a, BE, F, P>(op: &'static str, plan: &'a P) -> Result<&'a EvalMod<F, CKKSPlaintextOwned<BE>>>
 where
     BE: CKKSCITwin,
     P: CKKSEvalModInfos<BE, F>,
 {
     plan.eval_mod_standard().ok_or_else(|| {
         CKKSCompositionError::InvalidOperand {
-            op: EVAL_MOD_OP,
+            op,
             reason: "the plan runs no EvalMod on the standard ring".into(),
         }
         .into()
@@ -1399,7 +1455,7 @@ where
     P: CKKSEvalModInfos<BE, F>,
     K: BootstrappingKeys<BE>,
 {
-    let eval_mod = eval_mod_standard(plan)?;
+    let eval_mod = eval_mod_standard(EVAL_MOD_OP, plan)?;
     let tensor_key = required_tensor_key(EVAL_MOD_OP, keys.tensor_key())?;
     let (mut z, scratch) = scratch.borrow().take_ckks_ciphertext_scratch(a, a.meta());
     let (mut conjugate, mut scratch) = scratch.take_ckks_ciphertext_scratch(a, a.meta());
@@ -1435,7 +1491,7 @@ where
     K: BootstrappingKeys<BE>,
     K::TensorKey: Sync,
 {
-    let eval_mod = eval_mod_standard(plan)?;
+    let eval_mod = eval_mod_standard(EVAL_MOD_OP, plan)?;
     let tensor_key = required_tensor_key(EVAL_MOD_OP, keys.tensor_key())?;
     let (mut r0, scratch) = scratch.borrow().take_ckks_ciphertext_scratch(a, a.meta());
     let (mut i0, scratch) = scratch.take_ckks_ciphertext_scratch(a, a.meta());
@@ -2472,16 +2528,67 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> CKKSEncapsulatedModUpReference<BE>
     }
 }
 
-fn ensure_unit_circle_exp_context<BE: Backend, F>(op: &'static str, ctx: &BootstrappingContextPrepared<BE, F>) -> Result<()> {
+fn ensure_unit_circle_exp_context(op: &'static str, plan: &EvalModPlan) -> Result<()> {
     ckks_ensure_operand!(
         op,
-        ctx.eval_mod_plan().eval_mod_type == EvalModType::ExpCmplx,
-        "general functional bootstrapping requires an ExpCmplx EvalMod context"
+        plan.eval_mod_type == EvalModType::ExpCmplx,
+        "general LUT evaluation requires an ExpCmplx EvalMod plan"
     );
     ckks_ensure_operand!(
         op,
-        ctx.eval_mod_plan().scaling == Some(std::f64::consts::TAU),
-        "general functional bootstrapping requires a unit-circle ExpCmplx context (scaling = 2π)"
+        plan.scaling == Some(std::f64::consts::TAU),
+        "general LUT evaluation requires a unit-circle ExpCmplx plan (scaling = 2π)"
+    );
+    Ok(())
+}
+
+/// What a batch of LUTs asks of its operands, before any write: at least one LUT and as many outputs, one message
+/// modulus, a unit-circle complex exponential on the standard ring when a LUT needs EvalMod, and one rank-1
+/// layout for the input and the outputs.
+fn ensure_lut_batch<BE, F, P, A>(
+    op: &'static str,
+    module_n: usize,
+    a: &A,
+    outs: &[CKKSCiphertextOwned<BE>],
+    luts: &[EncodedLut<CKKSPlaintextOwned<BE>>],
+    plan: &P,
+) -> Result<()>
+where
+    BE: CKKSCITwin,
+    P: CKKSEvalModInfos<BE, F>,
+    A: CKKSCtBounds,
+    CKKSCiphertextOwned<BE>: CKKSCtBounds,
+{
+    ckks_ensure_operand!(op, !luts.is_empty(), "needs at least one LUT");
+    ckks_ensure_operand!(
+        op,
+        outs.len() == luts.len(),
+        "ct_outs/luts length mismatch ({} vs {})",
+        outs.len(),
+        luts.len()
+    );
+    ckks_ensure_operand!(
+        op,
+        luts.iter().all(|lut| lut.message_modulus() == luts[0].message_modulus()),
+        "LUTs must have the same message modulus"
+    );
+    if luts.iter().any(EncodedLut::requires_eval_mod) {
+        ensure_unit_circle_exp_context(op, plan.eval_mod_plan())?;
+        eval_mod_standard(op, plan)?;
+    }
+    let head = &outs[0];
+    ckks_ensure_operand!(
+        op,
+        a.rank().as_usize() == 1
+            && outs.iter().all(|ct| {
+                ct.rank().as_usize() == 1 && ct.n() == head.n() && ct.base2k() == head.base2k() && ct.k() == head.k()
+            }),
+        "LUT outputs must share one rank-1 layout"
+    );
+    ckks_ensure_operand!(
+        op,
+        head.n() == a.n() && a.n().as_usize() <= module_n,
+        "takes ciphertexts of one degree, which the module serves"
     );
     Ok(())
 }
@@ -2534,18 +2641,19 @@ fn functional_output_contract<BE: Backend, F>(
     clippy::too_many_arguments,
     reason = "the LUT evaluation reads the rotation keys and the tensor key of the plan's ring"
 )]
-fn ckks_eval_encoded_lut<BE, F, K, T, C, R>(
+fn ckks_eval_encoded_lut<BE, F, P, K, T, C, R>(
     module: &Module<BE>,
     ct_out: &mut R,
     ct_in: &C,
-    ctx: &BootstrappingContextPrepared<BE, F>,
+    plan: &P,
     lut: &EncodedLut<CKKSPlaintextOwned<BE>>,
     keys: &K,
     tensor_key: &T,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    BE: Backend,
+    BE: CKKSCITwin,
+    P: CKKSEvalModInfos<BE, F>,
     Module<BE>: CKKSConjugateOps<BE>
         + CKKSAddOps<BE>
         + CKKSSubOps<BE>
@@ -2568,7 +2676,7 @@ where
             module,
             ct_out,
             ct_in,
-            ctx.standard_eval_mod("ckks_functional_bootstrap")?,
+            eval_mod_standard(EVAL_LUT_OP, plan)?,
             series,
             keys.rotation_keys(),
             tensor_key,
@@ -2585,11 +2693,11 @@ where
 /// `outs`. Equal-arity general LUTs share one power basis; a batch containing a
 /// binary LUT falls back to evaluating each LUT against the shared input.
 #[allow(clippy::too_many_arguments)]
-fn eval_lut_batch<BE, F, K, T, C>(
+fn eval_lut_batch<BE, F, P, K, T, C>(
     module: &Module<BE>,
     outs: &mut [CKKSCiphertextOwned<BE>],
     ct: &C,
-    ctx: &BootstrappingContextPrepared<BE, F>,
+    plan: &P,
     luts: &[EncodedLut<CKKSPlaintextOwned<BE>>],
     keys: &K,
     tensor_key: &T,
@@ -2597,7 +2705,8 @@ fn eval_lut_batch<BE, F, K, T, C>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    BE: Backend,
+    BE: CKKSCITwin,
+    P: CKKSEvalModInfos<BE, F>,
     Module<BE>: CKKSConjugateOps<BE>
         + CKKSAddOps<BE>
         + CKKSSubOps<BE>
@@ -2626,7 +2735,7 @@ where
             module,
             ct,
             &layout,
-            ctx.standard_eval_mod("ckks_functional_bootstrap")?,
+            eval_mod_standard(EVAL_LUT_OP, plan)?,
             luts,
             tensor_key,
             scratch,
@@ -2637,7 +2746,7 @@ where
         return Ok(());
     }
     for (out, lut) in outs.iter_mut().zip(luts) {
-        ckks_eval_encoded_lut(module, out, ct, ctx, lut, keys, tensor_key, scratch)?;
+        ckks_eval_encoded_lut(module, out, ct, plan, lut, keys, tensor_key, scratch)?;
     }
     Ok(())
 }

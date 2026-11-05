@@ -151,6 +151,50 @@ pub trait CKKSBootstrappingOps<BE: CKKSCITwin> {
         K: BootstrappingKeys<BE> + Sync,
         K::TensorKey: Sync;
 
+    /// Scratch bytes for [`Self::ckks_eval_lut`] of `luts` into outputs like `res` from `a`, with the plan and the key
+    /// layout of the step. The bytes do not grow with the number of LUTs.
+    fn ckks_eval_lut_tmp_bytes<R, A, P, F>(
+        &self,
+        res: &R,
+        a: &A,
+        plan: &P,
+        luts: &[EncodedLut<CKKSPlaintextOwned<BE>>],
+        keys_layout: &BootstrappingKeysLayout,
+    ) -> usize
+    where
+        R: CKKSCtBounds,
+        A: CKKSCtBounds,
+        P: CKKSEvalModInfos<BE, F>;
+
+    /// Evaluates each LUT of `luts` on `a`, the output of CoeffsToSlots, into the matching ciphertext of `res`.
+    ///
+    /// The guard bits leave the input here, before the exponential. Real slots of a plan for which
+    /// [`CKKSEvalModInfos::one_eval_mod_on_real_slots`] holds take the real part of `a` and skip the imaginary half;
+    /// CoeffsToSlots labels its output complex, so the caller stamps the slot kind of the message on `a`. Any other input
+    /// is split, each half is evaluated and the halves are recombined. General LUTs of a batch share the power basis of
+    /// each half. The outputs keep the scale and widths the evaluation leaves them; the caller stamps their metadata.
+    ///
+    /// # Errors
+    ///
+    /// [`InvalidOperand`](crate::CKKSCompositionError::InvalidOperand) before any write to `res`, for no LUT, a number of
+    /// outputs other than the number of LUTs, LUTs of different message moduli, a plan that is not the unit-circle
+    /// complex exponential on the standard ring when a LUT needs EvalMod, outputs that do not share one rank-1 layout,
+    /// an input of another degree or rank, or keys without the tensor key of the plan's ring.
+    /// `CKKSError::Internal` for an arena under [`Self::ckks_eval_lut_tmp_bytes`], when the keys report their layout.
+    fn ckks_eval_lut<A, P, F, K>(
+        &self,
+        res: &mut [CKKSCiphertextOwned<BE>],
+        a: &A,
+        plan: &P,
+        luts: &[EncodedLut<CKKSPlaintextOwned<BE>>],
+        keys: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        A: GLWEToBackendRef<BE> + CKKSCtBounds,
+        P: CKKSEvalModInfos<BE, F>,
+        K: BootstrappingKeys<BE>;
+
     /// One-shot CKKS bootstrap, driven by the compiled context.
     ///
     /// `ct_in` is at the input ("level 0") modulus; `ct_out` must be allocated at

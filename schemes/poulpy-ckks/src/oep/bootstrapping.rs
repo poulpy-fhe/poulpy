@@ -117,6 +117,37 @@ pub unsafe trait CKKSBootstrappingImpl: CKKSCITwin {
         K: BootstrappingKeys<Self> + Sync,
         K::TensorKey: Sync;
 
+    /// Scratch bound of [`Self::ckks_eval_lut`]; may report less than the reference, never less than the body takes.
+    fn ckks_eval_lut_tmp_bytes<R, A, P, F>(
+        module: &Module<Self>,
+        res: &R,
+        a: &A,
+        plan: &P,
+        luts: &[EncodedLut<CKKSPlaintextOwned<Self>>],
+        keys_layout: &BootstrappingKeysLayout,
+    ) -> usize
+    where
+        R: CKKSCtBounds,
+        A: CKKSCtBounds,
+        P: CKKSEvalModInfos<Self, F>;
+
+    /// Reproduces
+    /// [`ckks_eval_lut_reference`](crate::reference::bootstrapping::CKKSBootstrappingReference::ckks_eval_lut_reference)
+    /// bit for bit, within [`Self::ckks_eval_lut_tmp_bytes`]; free in kernels and scratch use.
+    fn ckks_eval_lut<A, P, F, K>(
+        module: &Module<Self>,
+        res: &mut [CKKSCiphertextOwned<Self>],
+        a: &A,
+        plan: &P,
+        luts: &[EncodedLut<CKKSPlaintextOwned<Self>>],
+        keys: &K,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) -> CKKSResult<()>
+    where
+        A: GLWEToBackendRef<Self> + CKKSCtBounds,
+        P: CKKSEvalModInfos<Self, F>,
+        K: BootstrappingKeys<Self>;
+
     /// Reproduces
     /// [`ckks_bootstrap_reference`](crate::reference::bootstrapping::CKKSBootstrappingReference::ckks_bootstrap_reference)
     /// bit for bit, within [`Self::ckks_bootstrap_tmp_bytes`]; free in kernels and scratch use.
@@ -435,6 +466,48 @@ macro_rules! impl_ckks_bootstrapping_reference_full {
             {
                 $crate::reference::bootstrapping::CKKSBootstrappingReference::ckks_bootstrap_eval_mod_reference(
                     module, res, a, plan, ci, keys, scratch,
+                )
+            }
+
+            fn ckks_eval_lut_tmp_bytes<R, A, P, F>(
+                module: &::poulpy_hal::layouts::Module<$be>,
+                res: &R,
+                a: &A,
+                plan: &P,
+                luts: &[$crate::layouts::EncodedLut<$crate::layouts::CKKSPlaintextOwned<$be>>],
+                keys_layout: &$crate::layouts::BootstrappingKeysLayout,
+            ) -> usize
+            where
+                R: $crate::CKKSCtBounds,
+                A: $crate::CKKSCtBounds,
+                P: $crate::layouts::CKKSEvalModInfos<$be, F>,
+            {
+                $crate::reference::bootstrapping::CKKSBootstrappingReference::ckks_eval_lut_tmp_bytes_reference(
+                    module,
+                    res,
+                    a,
+                    plan,
+                    luts,
+                    keys_layout,
+                )
+            }
+
+            fn ckks_eval_lut<A, P, F, K>(
+                module: &::poulpy_hal::layouts::Module<$be>,
+                res: &mut [$crate::layouts::CKKSCiphertextOwned<$be>],
+                a: &A,
+                plan: &P,
+                luts: &[$crate::layouts::EncodedLut<$crate::layouts::CKKSPlaintextOwned<$be>>],
+                keys: &K,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
+            ) -> $crate::CKKSResult<()>
+            where
+                A: ::poulpy_core::layouts::GLWEToBackendRef<$be> + $crate::CKKSCtBounds,
+                P: $crate::layouts::CKKSEvalModInfos<$be, F>,
+                K: $crate::layouts::BootstrappingKeys<$be>,
+            {
+                $crate::reference::bootstrapping::CKKSBootstrappingReference::ckks_eval_lut_reference(
+                    module, res, a, plan, luts, keys, scratch,
                 )
             }
 

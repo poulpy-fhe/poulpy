@@ -924,18 +924,6 @@ impl<BE: Backend, F> BootstrappingContextPrepared<BE, F> {
         &self.eval_mod_plan
     }
 
-    /// EvalMod on the standard ring, which `op` runs: a context of a plan on the
-    /// conjugate-invariant ring has none.
-    pub(crate) fn standard_eval_mod(&self, op: &'static str) -> crate::CKKSResult<&EvalMod<F, CKKSPlaintextOwned<BE>>> {
-        self.eval_mod.as_ref().ok_or_else(|| {
-            crate::CKKSCompositionError::InvalidOperand {
-                op,
-                reason: "the context runs EvalMod on the conjugate-invariant ring".into(),
-            }
-            .into()
-        })
-    }
-
     /// The ring EvalMod runs on.
     pub fn eval_mod_ring(&self) -> EvalModRing {
         self.eval_mod_ring
