@@ -6,7 +6,7 @@ use crate::{
     CKKSCtBounds, SetCKKSInfos,
     layouts::EvalModPlan,
     layouts::{
-        BootstrappingCIKeys, BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, CKKSCiphertextOwned,
+        BootstrappingCIKeys, BootstrappingContextPrepared, BootstrappingKeys, BootstrappingKeysLayout, CKKSCiphertextOwned,
         CKKSPlaintextOwned, EncodedLut,
     },
 };
@@ -17,15 +17,15 @@ use crate::{
 /// EvalMod, and SlotsToCoeffs are reused from their own op traits:
 ///
 /// - CoeffsToSlots / SlotsToCoeffs via [`CKKSDFTOps`](crate::api::CKKSDFTOps)
-///   ([`ckks_coeffs_to_slots`](crate::api::CKKSDFTOps::ckks_coeffs_to_slots),
-///   [`ckks_slots_to_coeffs`](crate::api::CKKSDFTOps::ckks_slots_to_coeffs), and their
+///   ([`ckks_coeffs_to_slots_assign`](crate::api::CKKSDFTOps::ckks_coeffs_to_slots_assign),
+///   [`ckks_slots_to_coeffs_assign`](crate::api::CKKSDFTOps::ckks_slots_to_coeffs_assign), and their
 ///   `_split` / `_repack` variants);
 /// - EvalMod via [`CKKSEvalModOps`](crate::api::CKKSEvalModOps)
 ///   ([`ckks_eval_mod`](crate::api::CKKSEvalModOps::ckks_eval_mod)).
 ///
 /// The composable stages stay public so callers can assemble custom pipelines,
 /// but a ready-made orchestrator is provided: [`ckks_bootstrap`](Self::ckks_bootstrap).
-/// It consumes a compiled [`BootstrappingContext`] and a prepared
+/// It consumes a compiled [`BootstrappingContextPrepared`] and a prepared
 /// [`BootstrappingKeys`], and selects C2S-first or S2C-first from the context.
 /// EvalRound+ is selected separately by either recipe's optional bypass.
 /// Sparse-secret encapsulation is also selected by the compiled recipe; the
@@ -45,7 +45,7 @@ pub trait CKKSBootstrappingOps<BE: Backend> {
         &self,
         ct_out: &C1,
         ct_in: &C2,
-        ctx: &BootstrappingContext<BE, F>,
+        ctx: &BootstrappingContextPrepared<BE, F>,
         keys_layout: &BootstrappingKeysLayout,
     ) -> usize
     where
@@ -59,7 +59,7 @@ pub trait CKKSBootstrappingOps<BE: Backend> {
         &self,
         ct_out: &C1,
         ct_in: &C2,
-        ctx: &BootstrappingContext<BE, F>,
+        ctx: &BootstrappingContextPrepared<BE, F>,
         luts: &[EncodedLut<CKKSPlaintextOwned<BE>>],
         keys_layout: &BootstrappingKeysLayout,
     ) -> usize
@@ -92,6 +92,19 @@ pub trait CKKSBootstrappingOps<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds;
 
+    /// Scratch bytes for [`Self::ckks_bootstrap_mod_up`] into a ciphertext like `ct_out` from one like `ct_in`, with
+    /// the arguments of [`Self::ckks_bootstrap_tmp_bytes`].
+    fn ckks_bootstrap_mod_up_tmp_bytes<C1, C2, F>(
+        &self,
+        ct_out: &C1,
+        ct_in: &C2,
+        ctx: &BootstrappingContextPrepared<BE, F>,
+        keys_layout: &BootstrappingKeysLayout,
+    ) -> usize
+    where
+        C1: CKKSCtBounds,
+        C2: CKKSCtBounds;
+
     /// Whole raise step of the bootstrap, as one call: lift `Δ·m` to the plan's
     /// message ratio, switch to the sparse secret when `keys` carry the
     /// encapsulation switches, ModUp into `dst` (with the second lift to the
@@ -99,7 +112,7 @@ pub trait CKKSBootstrappingOps<BE: Backend> {
     /// message ratio so `I(X)·q` is the integer part and the message the residue.
     ///
     /// `dst` must be allocated at the bootstrap modulus. Scratch is bounded by
-    /// [`Self::ckks_bootstrap_tmp_bytes`].
+    /// [`Self::ckks_bootstrap_mod_up_tmp_bytes`].
     fn ckks_bootstrap_mod_up<Dst, Src, K>(
         &self,
         dst: &mut Dst,
@@ -123,7 +136,7 @@ pub trait CKKSBootstrappingOps<BE: Backend> {
     /// folds EvalMod's required input scaling into CoeffsToSlots, so no further
     /// scaling is needed at call time.
     ///
-    /// The pipeline is selected from [`BootstrappingContext::pipeline`]:
+    /// The pipeline is selected from [`BootstrappingContextPrepared::pipeline`]:
     ///
     /// - [`C2SFirst`](crate::layouts::BootstrappingPipeline::C2SFirst): `ModUp → CoeffsToSlots →
     ///   EvalMod → SlotsToCoeffs`. The final transform restores the message ratio,
@@ -138,17 +151,20 @@ pub trait CKKSBootstrappingOps<BE: Backend> {
     /// to `bootstrap_k` so it accounts for C2S-first's output scale restoration.
     ///
     /// Before any work, every rotation key and the tensor key must cover the
-    /// widest ciphertext the bootstrap switches with it at this working width:
+    /// widest ciphertext the bootstrap switches with it at this working width
+    /// ([`BootstrappingPlan::key_widths`](crate::layouts::BootstrappingPlan::key_widths)):
     /// otherwise it fails with
     /// [`MissingAutomorphismKey`](crate::CKKSCompositionError::MissingAutomorphismKey)
     /// or [`MissingRelinearizationKey`](crate::CKKSCompositionError::MissingRelinearizationKey),
     /// whose `source` is the key source's refusal. Keys laid out by a preset
-    /// cover its `bootstrap_k`.
+    /// cover its `bootstrap_k`. A working width or an input narrower than the bits
+    /// the stages running on it consume fails with
+    /// [`InvalidOperand`](crate::CKKSCompositionError::InvalidOperand) before any work.
     fn ckks_bootstrap<F, K>(
         &self,
         ct_out: &mut CKKSCiphertextOwned<BE>,
         ct_in: &CKKSCiphertextOwned<BE>,
-        ctx: &BootstrappingContext<BE, F>,
+        ctx: &BootstrappingContextPrepared<BE, F>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -177,7 +193,7 @@ pub trait CKKSBootstrappingOps<BE: Backend> {
         &self,
         ct_outs: &mut [CKKSCiphertextOwned<BE>],
         ct_in: &CKKSCiphertextOwned<BE>,
-        ctx: &BootstrappingContext<BE, F>,
+        ctx: &BootstrappingContextPrepared<BE, F>,
         luts: &[EncodedLut<CKKSPlaintextOwned<BE>>],
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
@@ -188,7 +204,7 @@ pub trait CKKSBootstrappingOps<BE: Backend> {
 
 /// [`CKKSBootstrappingOps::ckks_bootstrap`] with EvalMod on the
 /// conjugate-invariant ring ([`EvalModRing::ConjugateInvariant`](crate::layouts::EvalModRing::ConjugateInvariant)),
-/// for a context compiled by [`BootstrappingContext::compile_ci`]: this module
+/// for a context compiled by [`BootstrappingContextPrepared::compile_ci`]: this module
 /// serves degree `2N` for the conversions and `N` for the other stages, and `ci`
 /// is the CI module of degree `N`, on the twin [`Self::CI`].
 /// The keys, the conversion keys included, are checked at entry.
@@ -204,7 +220,7 @@ pub trait CKKSBootstrappingCIOps<BE: Backend> {
         ci: &Module<Self::CI>,
         ct_out: &C1,
         ct_in: &C2,
-        ctx: &BootstrappingContext<BE, F>,
+        ctx: &BootstrappingContextPrepared<BE, F>,
         keys_layout: &BootstrappingKeysLayout,
     ) -> (usize, usize)
     where
@@ -220,7 +236,8 @@ pub trait CKKSBootstrappingCIOps<BE: Backend> {
     /// [`InvalidOperand`](crate::CKKSCompositionError::InvalidOperand) for a context not compiled
     /// by `compile_ci` or keys not prepared by `prepare_ci`, modules of other degrees than `2N`
     /// and `N`, ciphertexts of another degree or rank, an encapsulation that does not match the
-    /// recipe, or conversion keys of another degree, radix or rank, or narrower than the widths
+    /// recipe, a working width or an input narrower than the bits the stages running on it
+    /// consume, or conversion keys of another degree, radix or rank, or narrower than the widths
     /// they switch; [`MissingAutomorphismKey`](crate::CKKSCompositionError::MissingAutomorphismKey)
     /// or [`MissingRelinearizationKey`](crate::CKKSCompositionError::MissingRelinearizationKey)
     /// for a rotation or tensor key narrower than its widest use, as
@@ -240,7 +257,7 @@ pub trait CKKSBootstrappingCIOps<BE: Backend> {
         ci: &Module<Self::CI>,
         dst: &mut Dst,
         src: &Src,
-        ctx: &BootstrappingContext<BE, F>,
+        ctx: &BootstrappingContextPrepared<BE, F>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
         scratch_ci: &mut ScratchArena<'_, Self::CI>,

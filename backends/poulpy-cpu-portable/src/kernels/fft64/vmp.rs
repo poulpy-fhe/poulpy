@@ -12,11 +12,11 @@ use crate::{
 };
 use poulpy_hal::execution::TaskExecutor;
 
-pub fn vmp_prepare_tmp_bytes_portable(n: usize) -> usize {
+pub fn vmp_pmat_prepare_tmp_bytes_portable(n: usize) -> usize {
     n * size_of::<i64>()
 }
 
-pub fn vmp_prepare_portable<BE>(
+pub fn vmp_pmat_prepare_portable<BE>(
     plan: &FFT64Plan<f64, BE::Ring>,
     pmat: &mut VmpPMatBackendMut<'_, BE>,
     mat: &MatZnxBackendRef<'_, BE>,
@@ -60,10 +60,10 @@ pub fn vmp_prepare_portable<BE>(
 
     let nrows: usize = mat.cols_in() * mat.rows();
     let ncols: usize = mat.cols_out() * mat.size();
-    vmp_prepare_core::<BE, BE::TaskExecutor>(plan, pmat.raw_mut(), mat.raw(), nrows, ncols, tmp);
+    vmp_pmat_prepare_core::<BE, BE::TaskExecutor>(plan, pmat.raw_mut(), mat.raw(), nrows, ncols, tmp);
 }
 
-pub(crate) fn vmp_prepare_core<REIM, E>(
+pub(crate) fn vmp_pmat_prepare_core<REIM, E>(
     plan: &FFT64Plan<f64, <REIM as Backend>::Ring>,
     pmat: &mut [f64],
     mat: &[i64],
@@ -81,7 +81,7 @@ pub(crate) fn vmp_prepare_core<REIM, E>(
         assert!(n >= 8);
         assert_eq!(mat.len(), n * nrows * ncols);
         assert_eq!(pmat.len(), n * nrows * ncols);
-        assert!(tmp.len() >= vmp_prepare_tmp_bytes_portable(n) / size_of::<i64>())
+        assert!(tmp.len() >= vmp_pmat_prepare_tmp_bytes_portable(n) / size_of::<i64>())
     }
 
     let offset: usize = nrows * ncols * 8;

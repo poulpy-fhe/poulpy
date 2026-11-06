@@ -7,12 +7,12 @@ use poulpy_hal::{
     source::Source,
 };
 
-use crate::layouts::{GLWEAutomorphismKeyShareOwned, GLWESwitchingKeyShareOwned};
+use crate::layouts::{MHEGLWEAutomorphismKeyShareOwned, MHEGLWESwitchingKeyShareOwned};
 
 /// Collective GLWE switching key: every party generates a share under the
 /// common seed, and any party aggregates the shares and finalizes the key
 /// switching from the sum of the input secrets to the sum of the output secrets.
-pub trait GLWESwitchingKeyMHEProtocol<BE: Backend> {
+pub trait MHEGLWESwitchingKeyProtocol<BE: Backend> {
     fn mhe_glwe_switching_key_share_gen_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos;
@@ -30,7 +30,7 @@ pub trait GLWESwitchingKeyMHEProtocol<BE: Backend> {
     #[allow(clippy::too_many_arguments)]
     fn mhe_glwe_switching_key_share_gen<S1, S2>(
         &self,
-        res: &mut GLWESwitchingKeyShareOwned<BE>,
+        res: &mut MHEGLWESwitchingKeyShareOwned<BE>,
         sk_in: &S1,
         sk_out: &S2,
         seed: [u8; 32],
@@ -44,8 +44,8 @@ pub trait GLWESwitchingKeyMHEProtocol<BE: Backend> {
     /// must have the same layout, seed and degrees.
     fn mhe_glwe_switching_key_share_aggregate(
         &self,
-        res: &mut GLWESwitchingKeyShareOwned<BE>,
-        a: &GLWESwitchingKeyShareOwned<BE>,
+        res: &mut MHEGLWESwitchingKeyShareOwned<BE>,
+        a: &MHEGLWESwitchingKeyShareOwned<BE>,
     );
 
     fn mhe_glwe_switching_key_share_finalize_tmp_bytes(&self) -> usize;
@@ -55,7 +55,7 @@ pub trait GLWESwitchingKeyMHEProtocol<BE: Backend> {
     fn mhe_glwe_switching_key_share_finalize<R>(
         &self,
         res: &mut R,
-        share: &GLWESwitchingKeyShareOwned<BE>,
+        share: &MHEGLWESwitchingKeyShareOwned<BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGLWEToBackendMut<BE> + GGLWEInfos + GLWESwitchingKeyDegreesMut;
@@ -65,7 +65,7 @@ pub trait GLWESwitchingKeyMHEProtocol<BE: Backend> {
 /// generates a share under the common seed, and any party aggregates the
 /// shares and finalizes the key mapping `X -> X^p` under the ideal secret, the
 /// sum of the parties' secrets.
-pub trait GLWEAutomorphismKeyMHEProtocol<BE: Backend> {
+pub trait MHEGLWEAutomorphismKeyProtocol<BE: Backend> {
     fn mhe_glwe_automorphism_key_share_gen_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos;
@@ -82,7 +82,7 @@ pub trait GLWEAutomorphismKeyMHEProtocol<BE: Backend> {
     #[allow(clippy::too_many_arguments)]
     fn mhe_glwe_automorphism_key_share_gen<S>(
         &self,
-        res: &mut GLWEAutomorphismKeyShareOwned<BE>,
+        res: &mut MHEGLWEAutomorphismKeyShareOwned<BE>,
         p: i64,
         sk: &S,
         seed: [u8; 32],
@@ -95,8 +95,8 @@ pub trait GLWEAutomorphismKeyMHEProtocol<BE: Backend> {
     /// must have the same layout, seed and Galois element.
     fn mhe_glwe_automorphism_key_share_aggregate(
         &self,
-        res: &mut GLWEAutomorphismKeyShareOwned<BE>,
-        a: &GLWEAutomorphismKeyShareOwned<BE>,
+        res: &mut MHEGLWEAutomorphismKeyShareOwned<BE>,
+        a: &MHEGLWEAutomorphismKeyShareOwned<BE>,
     );
 
     fn mhe_glwe_automorphism_key_share_finalize_tmp_bytes(&self) -> usize;
@@ -106,7 +106,7 @@ pub trait GLWEAutomorphismKeyMHEProtocol<BE: Backend> {
     fn mhe_glwe_automorphism_key_share_finalize<R>(
         &self,
         res: &mut R,
-        share: &GLWEAutomorphismKeyShareOwned<BE>,
+        share: &MHEGLWEAutomorphismKeyShareOwned<BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGLWEToBackendMut<BE> + GGLWEInfos + SetGaloisElement;

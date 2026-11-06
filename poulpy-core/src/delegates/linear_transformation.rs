@@ -1,22 +1,23 @@
 #![allow(clippy::too_many_arguments)]
 
+use crate::layouts::BabyStepOperand;
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
-    api::GLWELinearTransformations,
+    api::GLWELinearTransformationOps,
     layouts::{
         GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LinearTransformation,
         LinearTransformationPlan,
-        prepared::{LinearTransformationBabySteps, LinearTransformationPrepared, PreparedDiagonal},
+        prepared::{LinearTransformationBabySteps, PreparedDiagonal},
     },
-    oep::LinearTransformationImpl,
+    oep::GLWELinearTransformationImpl,
 };
 
-impl<BE> GLWELinearTransformations<BE> for Module<BE>
+impl<BE> GLWELinearTransformationOps<BE> for Module<BE>
 where
-    BE: Backend + LinearTransformationImpl,
+    BE: Backend + GLWELinearTransformationImpl,
 {
-    fn glwe_eval_linear_transformation_tmp_bytes<R, A, B, K, T>(
+    fn glwe_linear_transformation_eval_tmp_bytes<R, A, B, K, T>(
         &self,
         res: &R,
         a: &A,
@@ -32,10 +33,10 @@ where
         K: GGLWEInfos,
         T: GGLWEInfos,
     {
-        BE::glwe_eval_linear_transformation_tmp_bytes(self, res, a, pt, plan, tsk, key)
+        BE::glwe_linear_transformation_eval_tmp_bytes(self, res, a, pt, plan, tsk, key)
     }
 
-    fn glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes<R, A, B, K, T>(
+    fn glwe_linear_transformation_eval_unprepared_rhs_tmp_bytes<R, A, B, K, T>(
         &self,
         res: &R,
         a: &A,
@@ -51,10 +52,10 @@ where
         K: GGLWEInfos,
         T: GGLWEInfos,
     {
-        BE::glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(self, res, a, pt, plan, tsk, key)
+        BE::glwe_linear_transformation_eval_unprepared_rhs_tmp_bytes(self, res, a, pt, plan, tsk, key)
     }
 
-    fn glwe_eval_linear_transformation_sum_tmp_bytes<R, A, B, K, T>(
+    fn glwe_linear_transformation_eval_sum_tmp_bytes<R, A, B, K, T>(
         &self,
         res: &R,
         a: &A,
@@ -70,10 +71,29 @@ where
         K: GGLWEInfos,
         T: GGLWEInfos,
     {
-        BE::glwe_eval_linear_transformation_sum_tmp_bytes(self, res, a, pt, plan, tsk, key)
+        BE::glwe_linear_transformation_eval_sum_tmp_bytes(self, res, a, pt, plan, tsk, key)
     }
 
-    fn glwe_prepare_linear_transformation_baby_steps_tmp_bytes<A, K>(
+    fn glwe_linear_transformation_eval_sum_unprepared_rhs_tmp_bytes<R, A, B, K, T>(
+        &self,
+        res: &R,
+        a: &A,
+        pt: &B,
+        plan: &LinearTransformationPlan,
+        tsk: &T,
+        key: &K,
+    ) -> usize
+    where
+        R: GLWEInfos,
+        A: GLWEInfos,
+        B: GLWEInfos,
+        K: GGLWEInfos,
+        T: GGLWEInfos,
+    {
+        BE::glwe_linear_transformation_eval_sum_unprepared_rhs_tmp_bytes(self, res, a, pt, plan, tsk, key)
+    }
+
+    fn glwe_linear_transformation_baby_steps_prepare_tmp_bytes<A, K>(
         &self,
         a: &A,
         plan: &LinearTransformationPlan,
@@ -83,17 +103,17 @@ where
         A: GLWEInfos,
         K: GGLWEInfos,
     {
-        BE::glwe_prepare_linear_transformation_baby_steps_tmp_bytes(self, a, plan, key)
+        BE::glwe_linear_transformation_baby_steps_prepare_tmp_bytes(self, a, plan, key)
     }
 
-    fn glwe_prepare_linear_transformation_rhs_tmp_bytes<P>(&self, pt_infos: &P) -> usize
+    fn glwe_linear_transformation_rhs_prepare_tmp_bytes<P>(&self, pt_infos: &P) -> usize
     where
         P: GLWEInfos,
     {
-        BE::glwe_prepare_linear_transformation_rhs_tmp_bytes(self, pt_infos)
+        BE::glwe_linear_transformation_rhs_prepare_tmp_bytes(self, pt_infos)
     }
 
-    fn glwe_prepare_linear_transformation_rhs<P>(
+    fn glwe_linear_transformation_rhs_prepare<P>(
         &self,
         prepared: &mut LinearTransformation<PreparedDiagonal<BE::OwnedBuf, BE>>,
         lt: &LinearTransformation<P>,
@@ -101,12 +121,12 @@ where
     ) where
         P: GLWEToBackendRef<BE> + GLWEInfos,
     {
-        BE::glwe_prepare_linear_transformation_rhs(self, prepared, lt, scratch)
+        BE::glwe_linear_transformation_rhs_prepare(self, prepared, lt, scratch)
     }
 
-    fn glwe_prepare_linear_transformation_baby_steps<A, H>(
+    fn glwe_linear_transformation_baby_steps_prepare<A, H, L: BabyStepOperand<BE>>(
         &self,
-        cache: &mut LinearTransformationBabySteps<BE>,
+        cache: &mut LinearTransformationBabySteps<BE, L>,
         a: &A,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
@@ -114,37 +134,38 @@ where
         A: GLWEToBackendRef<BE> + GLWEInfos,
         H: GetAutomorphismKey<BE>,
     {
-        BE::glwe_prepare_linear_transformation_baby_steps(self, cache, a, keys, scratch)
+        BE::glwe_linear_transformation_baby_steps_prepare(self, cache, a, keys, scratch)
     }
 
-    fn glwe_eval_linear_transformation_into<R, P, H>(
+    fn glwe_linear_transformation_eval_into<R, P, H, L: BabyStepOperand<BE>>(
         &self,
         cnv_offset: usize,
         res: &mut R,
-        lhs: &LinearTransformationBabySteps<BE>,
+        lhs: &LinearTransformationBabySteps<BE, L>,
         rhs: &LinearTransformation<P>,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
-        P: crate::layouts::DiagonalProd<BE>,
+        P: crate::layouts::GLWEDiagonalProd<BE>,
         H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
     {
-        BE::glwe_eval_linear_transformation_into(self, cnv_offset, res, lhs, rhs, keys, scratch)
+        BE::glwe_linear_transformation_eval_into(self, cnv_offset, res, lhs, rhs, keys, scratch)
     }
 
-    fn glwe_eval_linear_transformation_sum_into<R, H>(
+    fn glwe_linear_transformation_eval_sum_into<R, P, H, L: BabyStepOperand<BE>>(
         &self,
         cnv_offset: usize,
         res: &mut R,
-        babies: &[&LinearTransformationBabySteps<BE>],
-        lts: &[&LinearTransformationPrepared<BE>],
+        babies: &[&LinearTransformationBabySteps<BE, L>],
+        lts: &[&LinearTransformation<P>],
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
+        P: crate::layouts::GLWEDiagonalProd<BE>,
         H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
     {
-        BE::glwe_eval_linear_transformation_sum_into(self, cnv_offset, res, babies, lts, keys, scratch)
+        BE::glwe_linear_transformation_eval_sum_into(self, cnv_offset, res, babies, lts, keys, scratch)
     }
 }

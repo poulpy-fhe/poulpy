@@ -21,7 +21,7 @@ use poulpy_hal::{
 use crate::{
     CKKSCompositionError, CKKSCtBounds, SetCKKSInfos,
     api::{CKKSMulOps, CKKSRotateOps},
-    layouts::ScratchArenaTakeCKKS,
+    layouts::ScratchArenaTakeCKKSCiphertext,
     layouts::slots::fold_rotations,
     mul_ct_params_raw,
     oep::{CKKSMulImpl, CKKSRotateImpl},

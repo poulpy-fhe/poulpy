@@ -21,12 +21,12 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 use super::bootstrap::{branch_work_layout, validate_runtime};
 use crate::SlotsKind;
 use crate::layouts::paco::{
-    context::PaCoContext,
+    context::{PaCoContext, PaCoPsiTailMaterial},
     keyset::{PaCoKeys, validate_gadget_backend_view},
 };
 use crate::{
     CKKSCtBounds, CKKSInfos, CKKSLayout,
-    api::{CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSLinearTransformationOps, CKKSMulOps, CKKSSubOps, PaCoScalar},
+    api::{CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSLinearTransformationOps, CKKSMulOps, CKKSPaCoScalar, CKKSSubOps},
     oep::CKKSEncodingImpl,
 };
 
@@ -116,7 +116,7 @@ pub(super) fn branch_tmp_bytes_validated<BE, F, K, I>(
 ) -> Result<usize>
 where
     BE: super::PaCoBackend + CKKSEncodingImpl<F>,
-    F: PaCoScalar,
+    F: CKKSPaCoScalar,
     K: PaCoKeys<BE>,
     I: CKKSCtBounds,
 {
@@ -216,8 +216,20 @@ where
         .max(module.ckks_copy_tmp_bytes(&structured, &structured))
         .max(module.glwe_rotate_tmp_bytes());
 
-    // PaCo's transforms take a key per rotation, which every plan of that kind sizes alike.
-    let lt_plan = poulpy_core::layouts::LinearTransformationPlan::default();
+    // The transforms run through `ckks_linear_transformation_eval_self_assign`, each on its own schedule, with a
+    // key per rotation.
+    let psi_pair = match context.psi_tail() {
+        PaCoPsiTailMaterial::Pair(pair) => &pair[..],
+        PaCoPsiTailMaterial::Mask { .. } => &[],
+    };
+    let lt_plans: Vec<_> = context
+        .coeffs_to_slots()
+        .iter()
+        .chain(psi_pair)
+        .chain(context.slots_to_coeffs())
+        .map(|lt| lt.index())
+        .collect();
+    let lt_diagonal = crate::api::ckks_plaintext_diagonal_layout(&lt_layout);
     for &element in context.galois_elements() {
         let key = automorphism_layout_for::<BE, _>(keys.rotation_keys(), element, working_precision)?;
         required = required
@@ -228,16 +240,21 @@ where
                 &key,
                 &relinearization,
             ))
-            .max(module.ckks_conjugate_tmp_bytes(&branch_layout, &key))
-            .max(module.ckks_eval_linear_transformation_streamed_tmp_bytes(
+            .max(module.ckks_conjugate_tmp_bytes(&branch_layout, &key));
+        for plan in &lt_plans {
+            required = required.max(module.ckks_linear_transformation_eval_self_tmp_bytes(
+                true,
                 &lt_layout,
-                &crate::api::ckks_plaintext_diagonal_layout(&lt_layout),
-                &lt_plan,
+                &lt_diagonal,
+                plan,
                 &key,
                 &key,
             ));
+        }
     }
-    required = required.max(BE::ckks_paco_coeff_encodings_tmp_bytes::<F>(module, context)?);
+    required = required
+        .max(BE::ckks_paco_coeff_encodings_tmp_bytes::<F, _>(module, context, input)?)
+        .max(BE::ckks_paco_coeff_encodings_tmp_bytes::<F, _>(module, context, &structured)?);
 
     // The shifted input, the accumulator and the temporary coexist through the whole branch.
     let work = BE::scratch_aligned(module.glwe_bytes_of_from_infos(&branch_work_layout(module, canonical.base2k(), working_k)?));
@@ -263,7 +280,7 @@ pub(super) fn direct_tmp_bytes_validated<BE, F, K, I>(
 ) -> Result<usize>
 where
     BE: super::PaCoBackend + CKKSEncodingImpl<F>,
-    F: PaCoScalar,
+    F: CKKSPaCoScalar,
     K: PaCoKeys<BE>,
     I: CKKSCtBounds,
 {
@@ -287,7 +304,7 @@ fn call_tmp_bytes_validated<BE, F, K, Src>(
 ) -> Result<(usize, usize)>
 where
     BE: super::PaCoBackend + CKKSEncodingImpl<F>,
-    F: PaCoScalar,
+    F: CKKSPaCoScalar,
     K: PaCoKeys<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
@@ -317,7 +334,7 @@ fn paco_bootstrap_tmp_bytes<BE, F, K, Src>(
 ) -> Result<usize>
 where
     BE: super::PaCoBackend + CKKSEncodingImpl<F>,
-    F: PaCoScalar,
+    F: CKKSPaCoScalar,
     K: PaCoKeys<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
@@ -334,7 +351,7 @@ pub(super) fn ckks_paco_bootstrap_direct_tmp_bytes<BE, F, K, Src>(
 ) -> Result<usize>
 where
     BE: super::PaCoBackend + CKKSEncodingImpl<F>,
-    F: PaCoScalar,
+    F: CKKSPaCoScalar,
     K: PaCoKeys<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
@@ -358,7 +375,7 @@ pub(super) fn ckks_paco_bootstrap_tmp_bytes<BE, F, K, Src>(
 ) -> Result<usize>
 where
     BE: super::PaCoBackend + CKKSEncodingImpl<F>,
-    F: PaCoScalar,
+    F: CKKSPaCoScalar,
     K: PaCoKeys<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
@@ -380,7 +397,7 @@ pub(super) fn preflight<BE, F, K, Src>(
 ) -> Result<((usize, usize), usize)>
 where
     BE: super::PaCoBackend + CKKSEncodingImpl<F>,
-    F: PaCoScalar,
+    F: CKKSPaCoScalar,
     K: PaCoKeys<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
@@ -405,7 +422,7 @@ where
 /// `kappa = N/(C*2^s)` makes that stride exactly `2^s`: every live
 /// coefficient is refreshed once, and no branch spends work on a coefficient
 /// the sparsity guarantees is zero.
-pub(super) fn branch_schedule<BE: Backend, F: PaCoScalar>(
+pub(super) fn branch_schedule<BE: Backend, F: CKKSPaCoScalar>(
     op: &'static str,
     context: &PaCoContext<BE, F>,
     log_sparsity: usize,
@@ -451,7 +468,7 @@ pub(super) fn validate_encapsulation_key<'a, BE, F, K, Src>(
 ) -> Result<&'a K::SwitchingKey>
 where
     BE: Backend,
-    F: PaCoScalar,
+    F: CKKSPaCoScalar,
     K: PaCoKeys<BE>,
     Src: CKKSCtBounds,
 {
@@ -497,7 +514,7 @@ where
 /// Layout produced by dense-to-PaCo encapsulation. The key switch accepts an
 /// input in a different limb radix, but its result must use the context radix
 /// consumed by the compiled plaintexts and bootstrapping keys.
-pub(super) fn encapsulated_input_layout<BE: Backend, F: PaCoScalar, Src: CKKSCtBounds>(
+pub(super) fn encapsulated_input_layout<BE: Backend, F: CKKSPaCoScalar, Src: CKKSCtBounds>(
     input: &Src,
     context: &PaCoContext<BE, F>,
 ) -> CKKSLayout {

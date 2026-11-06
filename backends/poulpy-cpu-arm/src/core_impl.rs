@@ -3,7 +3,7 @@ use super::{FFT64CINeon, FFT64Neon, NTT4x30CINeon, NTT4x30Neon};
 use super::{FFT64CINeonRayon, FFT64NeonRayon, NTT4x30CINeonRayon, NTT4x30NeonRayon};
 use poulpy_core::{
     impl_gglwe_product_digits_strided_reference_full, impl_glwe_tensoring_reference_full,
-    reference::keyswitching::glwe::{gglwe_product_digits_strided_reference, gglwe_product_digits_strided_tmp_bytes_reference},
+    reference::keyswitching::GGLWEProductDigitsStridedReference,
 };
 use poulpy_hal::layouts::{
     ConjugateInvariant, DataView, DataViewMut, Module, ScratchArena, Standard, VecZnxDftBackendMut, VecZnxDftBackendRef,
@@ -35,8 +35,7 @@ macro_rules! impl_ntt_digits_strided {
                 pmat_size: usize,
             ) -> usize {
                 if dsize > STRIDED_MAX_DSIZE {
-                    return gglwe_product_digits_strided_tmp_bytes_reference(
-                        module,
+                    return module.gglwe_product_digits_strided_tmp_bytes_reference(
                         res_size,
                         a_cols,
                         a_size,
@@ -60,7 +59,7 @@ macro_rules! impl_ntt_digits_strided {
                 scratch: &mut ScratchArena<'_, Self>,
             ) {
                 if dsize > STRIDED_MAX_DSIZE {
-                    return gglwe_product_digits_strided_reference(module, res, a, dsize, product_limbs, pmat, scratch);
+                    return module.gglwe_product_digits_strided_reference(res, a, dsize, product_limbs, pmat, scratch);
                 }
                 let per_worker = vmp_apply_digits_strided_tmp_bytes_neon(a.cols(), a.size());
                 let workers = ($workers).min(scratch.available() / per_worker).max(1);
@@ -84,7 +83,7 @@ macro_rules! impl_ntt_digits_strided {
                 );
             }
 
-            ::poulpy_core::impl_gglwe_product_step_hooks_reference!();
+            ::poulpy_core::impl_gglwe_product_digits_strided_reference!();
         }
     };
 }

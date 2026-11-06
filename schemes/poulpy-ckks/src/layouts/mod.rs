@@ -118,11 +118,14 @@ pub mod ship;
 pub(crate) mod slots;
 pub(crate) mod validation;
 
-pub use alloc::CKKSModuleAlloc;
+pub use alloc::{CKKSCiphertextAlloc, CKKSLinearTransformationAlloc, CKKSPlaintextAlloc};
 pub use approximation::PolynomialApproximation;
+#[allow(deprecated)]
+pub use bootstrapping::BootstrappingContextUnprepared;
 pub use bootstrapping::{
-    BootstrappingContext, BootstrappingContextUnprepared, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques,
-    CIConversion, CIPre, EvalModCI, EvalModRing, EvalRoundPlus, SparseSecretEncapsulation,
+    BootstrappingContext, BootstrappingContextPrepared, BootstrappingKeyWidths, BootstrappingPipeline, BootstrappingPlan,
+    BootstrappingTechniques, CIConversion, CIPrePrepared, EvalModCIPrepared, EvalModRing, EvalRoundPlus,
+    SparseSecretEncapsulation,
 };
 pub use bootstrapping_keys::{
     BootstrappingCIKeys, BootstrappingKeySet, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingKeysPrepared,
@@ -130,7 +133,8 @@ pub use bootstrapping_keys::{
     RingSwitchKeysLayout, RingSwitchKeysPrepared,
 };
 pub use ciphertext::{
-    CKKSCiphertext, CKKSCiphertextOwned, CKKSCiphertextViewMut, CKKSCiphertextViewRef, CKKSRingCiphertext, ScratchArenaTakeCKKS,
+    CKKSCiphertext, CKKSCiphertextOwned, CKKSCiphertextViewMut, CKKSCiphertextViewRef, CKKSRingCiphertext,
+    ScratchArenaTakeCKKSCiphertext, ScratchArenaTakeCKKSEncodingBuffer, ScratchArenaTakeCKKSPlaintext,
 };
 pub use complex_diagonals::ComplexDiagonals;
 pub use dft::{
@@ -146,13 +150,15 @@ pub(crate) use encoding_buffer::{
     copy_reim_host_into_encoding_buffer, download_from_encoding_buffer, slot_coeff_count, upload_into_encoding_buffer,
 };
 pub use eval_mod::{
-    EvalMod, EvalModBsgs, EvalModPlan, EvalModPoly, EvalModType, compile_eval_mod, compile_eval_mod_replicated,
-    compile_eval_mod_replicated_packed,
+    EvalMod, EvalModBsgs, EvalModPlan, EvalModPoly, EvalModType, ckks_eval_mod_compile, ckks_eval_mod_replicated_compile,
+    ckks_eval_mod_replicated_packed_compile,
 };
 pub use functional_bootstrapping::EncodedLut;
 pub(crate) use functional_bootstrapping::EncodedLutKind;
 pub use masked::{CKKSMaskedConstants, MaskedCoeffs, encode_bsgs_replicated, encode_complex_bsgs_replicated};
-pub use mul::{CKKSPreparedLeft, CKKSPreparedRight};
+#[allow(deprecated)]
+pub use mul::CKKSPreparedRight;
+pub use mul::{CKKSLeftOperandPrepared, CKKSRightOperandPrepared};
 pub use paco::{
     PaCoContext, PaCoDFTPlan, PaCoKeyParameters, PaCoKeySet, PaCoKeySetParts, PaCoKeys, PaCoKeysPrepared, PaCoKeysPreparedParts,
     PaCoPlan, PaCoSecretSpec, PaCoSlotOrder, PaCoWorker,
@@ -166,7 +172,7 @@ pub use ship::{
     HMuxRotKey, HMuxRotKeyPrepared, ShipCoeffEncodings, ShipIndexKeys, ShipIndexKeysPrepared, ShipKeyParameters, ShipKeySet,
     ShipKeysLayout, ShipKeysPrepared, ShipPlan, ShipSecretSpec,
 };
-pub use slots::ckks_one_pt;
+pub use slots::ckks_plaintext_one;
 
 use std::fmt::Debug;
 

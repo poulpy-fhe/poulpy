@@ -10,7 +10,7 @@ use poulpy_hal::{
 
 use crate::layouts::operand_degree;
 use crate::{
-    ScratchArenaTakeCore,
+    ScratchArenaTakeGLWE,
     layouts::{
         GGLWEInfos, GLWELayout, LWEInfos, LWEToBackendMut, LWEToBackendRef, Rank, glwe_backend_ref_from_mut,
         prepared::{GGLWEPreparedBackendRef, GGLWEPreparedToBackendRef},

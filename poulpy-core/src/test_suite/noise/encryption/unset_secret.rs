@@ -9,11 +9,15 @@ use crate::{
     GGLWECompressedEncryptSk, GGLWEToGGSWKeyCompressedEncryptSk, GGLWEToGGSWKeyEncryptSk, GGSWCompressedEncryptSk, GGSWEncryptSk,
     GLWEAutomorphismKeyCompressedEncryptSk, GLWEAutomorphismKeyEncryptSk, GLWECompressedEncryptSk, GLWEEncryptSk,
     GLWESwitchingKeyCompressedEncryptSk, GLWESwitchingKeyEncryptSk, GLWETensorKeyCompressedEncryptSk, GLWETensorKeyEncryptSk,
-    GLWEToLWESwitchingKeyEncryptSk, LWEEncryptSk, LWESwitchingKeyEncrypt, LWEToGLWESwitchingKeyEncryptSk,
+    GLWEToLWEKeyEncryptSk, LWEEncryptSk, LWESwitchingKeyEncryptSk, LWEToGLWEKeyEncryptSk,
     api::GLWESecretPreparedFactory,
     layouts::{
-        Base2K, Degree, Dnum, GGLWELayout, GGSWLayout, GLWELayout, GLWESecret, GLWESecretLayout, LWESecret, ModuleCoreAlloc,
-        ModuleCoreCompressedAlloc, Rank, TorusPrecision, prepared::GLWESecretPrepared,
+        Base2K, Degree, Dnum, GGLWECompressedAlloc, GGLWELayout, GGLWEToGGSWKeyAlloc, GGLWEToGGSWKeyCompressedAlloc, GGSWAlloc,
+        GGSWCompressedAlloc, GGSWLayout, GLWEAlloc, GLWEAutomorphismKeyAlloc, GLWEAutomorphismKeyCompressedAlloc,
+        GLWECompressedAlloc, GLWELayout, GLWEPlaintextAlloc, GLWESecret, GLWESecretAlloc, GLWESecretLayout,
+        GLWESwitchingKeyAlloc, GLWESwitchingKeyCompressedAlloc, GLWETensorKeyAlloc, GLWETensorKeyCompressedAlloc,
+        GLWEToLWEKeyAlloc, LWEAlloc, LWEPlaintextAlloc, LWESecret, LWESecretAlloc, LWESwitchingKeyAlloc, LWEToGLWEKeyAlloc, Rank,
+        TorusPrecision, prepared::GLWESecretPrepared,
     },
     test_suite::{poisoned_scratch, refusal::assert_refusal},
 };
@@ -311,10 +315,8 @@ pub fn test_lwe_switching_key_encrypt_sk_rejects_unset_secret<BE: crate::test_su
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: GLWEToLWESwitchingKeyEncryptSk<BE>
-        + LWESwitchingKeyEncrypt<BE>
-        + LWEToGLWESwitchingKeyEncryptSk<BE>
-        + GLWESecretPreparedFactory<BE>,
+    Module<BE>:
+        GLWEToLWEKeyEncryptSk<BE> + LWESwitchingKeyEncryptSk<BE> + LWEToGLWEKeyEncryptSk<BE> + GLWESecretPreparedFactory<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let layout = gglwe_layout(params, module, 1, 1);

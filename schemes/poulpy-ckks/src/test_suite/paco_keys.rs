@@ -29,10 +29,10 @@ use std::collections::HashMap;
 use poulpy_core::{
     TransferInto,
     api::GLWESecretPreparedFactory,
-    layouts::{Base2K, LinearTransformationStrategy, ModuleCoreAlloc},
+    layouts::{Base2K, GLWESecretAlloc, LinearTransformationStrategy},
 };
 use poulpy_hal::{
-    api::{CnvPVecAlloc, NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow},
+    api::{CnvPVecAlloc, ReimNew, ScratchOwnedBorrow},
     layouts::{CyclotomicOrder, HostBytesBackend, Module, Standard, galois_elements_from_rotations},
     source::Source,
 };
@@ -51,7 +51,7 @@ use crate::{
         CKKSTestParams,
         helpers::{
             TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, ckks_encrypt, ckks_encrypt_coeffs,
-            ckks_spec, gen_atk, pt_streamed_eval_tmp_bytes,
+            ckks_spec, gen_atk, pt_self_into_tmp_bytes,
         },
         paco_ops::assert_slots,
         paco_reference_model::{centered, monomial_mul, seq_paco_reference},
@@ -70,7 +70,7 @@ where
     BE: TestContextBackend<Ring = Standard> + CKKSPaCoImpl,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     for slot_order in [
         crate::layouts::PaCoSlotOrder::Natural,
@@ -88,7 +88,7 @@ where
     BE: TestContextBackend<Ring = Standard> + CKKSPaCoImpl,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let params = *params;
     // Exhausted-input modulus: a multiple of base2k around 38 bits, so the
@@ -229,7 +229,7 @@ where
     let lts: Vec<_> = factors
         .iter()
         .map(|cd| {
-            crate::encoding::ckks_encode_linear_transformation_from_diagonals(
+            crate::encoding::ckks_linear_transformation_encode_from_diagonals(
                 &module,
                 Base2K(params.base2k as u32),
                 crate::CoeffsMeta {
@@ -283,14 +283,9 @@ where
     )
     .unwrap();
     for lt in &lts {
-        // The documented bound of `self_assign`: a working copy of `acc` plus the larger of the baby-step and evaluation
-        // queries.
-        let bytes = BE::scratch_aligned(poulpy_core::GLWEBytesOf::glwe_bytes_of_from_infos(&module, &acc))
-            + module
-                .ckks_prepare_linear_transformation_baby_steps_tmp_bytes(&acc, &lt.index(), &params.atk_layout())
-                .max(pt_streamed_eval_tmp_bytes(&module, &acc, &lt.index(), &params.atk_layout()));
+        let bytes = pt_self_into_tmp_bytes(&module, true, &acc, &lt.index(), &params.atk_layout());
         with_scratch::<BE, _>(bytes, |s| {
-            module.ckks_eval_linear_transformation_self_assign(&mut acc, lt, &atks, s)
+            module.ckks_linear_transformation_eval_self_assign(&mut acc, lt, &atks, s)
         })
         .unwrap();
     }

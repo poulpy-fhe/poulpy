@@ -1,9 +1,9 @@
 //! The metadata operations leave on their results: the batch's sparsity and record, the noise tag and the slot kind.
 
 use poulpy_ckks::{
-    CKKSInfos, GLWEPlaintextInfos, SetCKKSInfos, SlotsKind,
-    api::{CKKSAddOps, CKKSEncodingOps, CKKSLinearTransformationOps, CKKSModuleInfos},
-    layouts::CKKSModuleAlloc,
+    CKKSInfos, GLWEPlaintextInfos, GLWEPlaintextMeta, SetCKKSInfos, SetGLWEPlaintextInfos, SlotsKind,
+    api::{CKKSAddOps, CKKSEncodingOps, CKKSLinearTransformationOps, CKKSModuleInfos, LtDiagonalMeta},
+    layouts::CKKSPlaintextAlloc,
     test_suite::{
         CKKSTestParams,
         helpers::{
@@ -13,9 +13,9 @@ use poulpy_ckks::{
         reference_encoder::ReferenceEncoder,
     },
 };
-use poulpy_core::layouts::{DiagonalArithmetic, LWEInfos};
+use poulpy_core::layouts::{DiagonalArithmetic, GLWE, LWEInfos};
 use poulpy_hal::{
-    api::{CnvPVecAlloc, NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow},
+    api::{CnvPVecAlloc, ReimNew, ScratchOwnedBorrow},
     layouts::{
         CyclotomicOrder, HostBytesBackend, HostDataMut, HostDataRef, Module,
         PrepareHint::{OneShot, Reuse},
@@ -26,17 +26,31 @@ use poulpy_hal::{
 use super::helpers::{
     Grid, HINTS, MIXES, Rejection::InvalidOperand, TestKeys, alloc_grid, assert_grid_decrypt, assert_guard, context_and_keys,
     copied_layout, encrypt_grid, mapped_layout, matmul_left_operand, matmul_right_operand, operand_infos, poisoned_scratch,
-    product_layout, pt_operand, relabel, to_f, want_operand_infos,
+    product_layout, pt_operand, relabel, rotation_keys, to_f, want_operand_infos,
+};
+use super::keys::slot_mask;
+use super::matvec::{
+    append, append_tmp_bytes, assert_vector_decrypt, diagonal_ciphertext_elements, diagonal_ciphertext_layout, encrypt_vector,
+    matvec_diagonal_layout, matvec_layouts, matvec_model, matvec_operands, matvec_operands_of, prepared_of, vector_entry,
+};
+use super::repack::{
+    GRID, grid_model, grid_to_vector_cases, line_values, matrix_times, placed, repack_fits, vector_to_grid_cases,
 };
 use crate::{
-    api::{BlasEncodingOps, BlasMatInterOps, BlasMatIntraOps, BlasMatMulOps},
+    api::{
+        BlasEncodingOps, BlasMatInterOps, BlasMatIntraOps, BlasMatMulLeftOperandPreparedFactory, BlasMatMulOps,
+        BlasMatMulRightOperandPreparedFactory, BlasMatVecOps,
+    },
     layouts::{
-        BlasCiphertext, BlasCiphertextOwned, BlasContextInfos, BlasGridInfos, BlasLayout, BlasModuleAlloc, BlasPlan, Left, Right,
-        blas_matmul_left_operand_layout, blas_matmul_left_term_layout, blas_matmul_output_layout,
-        blas_matmul_prepared_output_layout, blas_matmul_pt_left_output_layout, blas_matmul_pt_right_output_layout,
-        blas_matmul_right_operand_layout, blas_matmul_right_term_layout, blas_rotate_cols_output_layout,
+        BlasCiphertext, BlasCiphertextAlloc, BlasCiphertextOwned, BlasContextInfos, BlasDiagonalCiphertextAlloc, BlasGridInfos,
+        BlasGridMut, BlasLayout, BlasMatVecOperandLayout, BlasPlan, BlasVectorInfos, BlasVectorShape, Left, Right,
+        blas_grid_to_vector_output_layout, blas_matmul_left_operand_layout, blas_matmul_left_term_layout,
+        blas_matmul_output_layout, blas_matmul_prepared_output_layout, blas_matmul_pt_left_output_layout,
+        blas_matmul_pt_right_output_layout, blas_matmul_right_operand_layout, blas_matmul_right_term_layout,
+        blas_matvec_diagonal_output_layout, blas_matvec_pt_output_layout, blas_rotate_cols_output_layout,
         blas_rotate_output_layout, blas_rotate_rows_output_layout, blas_sum_cols_output_layout, blas_sum_output_layout,
-        blas_sum_rows_output_layout, blas_transpose_output_layout, replicated, sum_galois_elements,
+        blas_sum_rows_output_layout, blas_transpose_output_layout, blas_vector_to_grid_output_layout,
+        diagonal_ciphertext::AppendAxis, matvec_pt_galois_elements, replicated, sum_galois_elements,
     },
     oep::BlasImpl,
 };
@@ -53,7 +67,11 @@ use crate::{
 /// ([`blas_matmul_right_operand_layout`]) gives them all before preparing. Summing a transposed half-full batch adds
 /// each of its matrices once, canonical, and records them. The sum of one matrix copies it, the transpose of a real batch keeps its
 /// slots real, and the terms of an integer batch are real, while its hot operand reports its own slots. On one matrix
-/// slot no batch is half full: only the full one runs.
+/// slot no batch is half full: only the full one runs. A product of a vector into a `res` that held another
+/// encryption, tagged and flag-clear, stamps the metadata of its output-layout query, canonical and untagged, and so
+/// does a repacking each way, its label proving the operand's output period and a grid result recording `output_period
+/// / d^2`, where its cases fit the slots. The appends of a diagonal ciphertext keep its layout, and its product is real by a real vector, complex by a complex
+/// one, at the layout its doc gives, from 16 slots.
 pub fn test_blas_result_meta<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -67,7 +85,7 @@ pub fn test_blas_result_meta<BE, F, E>(
         + CKKSLinearTransformationOps<BE>
         + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
@@ -154,10 +172,10 @@ pub fn test_blas_result_meta<BE, F, E>(
         .max(module.blas_sum_cols_tmp_bytes(&full_column, &full_column, &ctx, &atk))
         .max(module.blas_sum_tmp_bytes(&full_row, &full_row, &atk))
         .max(module.blas_rotate_tmp_bytes(&full_row, &full_row, &atk))
-        .max(module.blas_matmul_prepare_left_tmp_bytes(&full_row, &ctx, &atk, Reuse))
-        .max(module.blas_matmul_prepare_right_tmp_bytes(&full_column, &ctx, &atk, Reuse))
-        .max(module.blas_matmul_prepare_left_tmp_bytes(&full_row, &ctx, &atk, OneShot))
-        .max(module.blas_matmul_prepare_right_tmp_bytes(&full_column, &ctx, &atk, OneShot))
+        .max(module.blas_matmul_left_operand_prepare_tmp_bytes(&full_row, &ctx, &atk, Reuse))
+        .max(module.blas_matmul_right_operand_prepare_tmp_bytes(&full_column, &ctx, &atk, Reuse))
+        .max(module.blas_matmul_left_operand_prepare_tmp_bytes(&full_row, &ctx, &atk, OneShot))
+        .max(module.blas_matmul_right_operand_prepare_tmp_bytes(&full_column, &ctx, &atk, OneShot))
         .max(module.blas_matmul_pt_right_tmp_bytes(&full_row, &full_row, &pt, &ctx, &atk))
         .max(module.blas_matmul_pt_left_tmp_bytes(&full_row, &pt_left, &full_column, &ctx, &atk));
     let mut op_scratch = poisoned_scratch::<BE>(bytes);
@@ -394,14 +412,291 @@ pub fn test_blas_result_meta<BE, F, E>(
             "integer batch: {hint:?} operand infos"
         );
     }
+
+    // A product of a vector into a `res` that held another encryption, tagged with its fresh noise and one ciphertext
+    // flag-clear: the metadata its output-layout query gives, canonical and untagged, and the values of its model.
+    if slots >= 16 {
+        let layout = matvec_layouts(&params, slots).pop().unwrap();
+        let (_, w) = matvec_operands::<BE, F>(module, &layout);
+        let elements = matvec_pt_galois_elements(module.cyclotomic_order(), &layout);
+        let keys = TestKeys::<BE> {
+            atks: rotation_keys(&params, module, &sk_raw, elements, &mut scratch.borrow()),
+            tsk: None,
+        };
+        let vector = |shape: BlasVectorShape, period: usize, scratch: &mut ScratchArena<'_, BE>| {
+            let v: Vec<f64> = (0..shape.len).map(vector_entry).collect();
+            let ct = encrypt_vector::<BE, F, E>(&params, module, host_module, &encoder, &sk, k, shape, period, &v, scratch);
+            (v, ct)
+        };
+        let (v, x) = vector(layout.input, layout.input_period, &mut scratch.borrow());
+        let (_, mut res) = vector(layout.output, layout.output_period, &mut scratch.borrow());
+        GLWE::set_canonical(res.ct_mut(0), false);
+        let want = blas_matvec_pt_output_layout(&res, &layout, &x);
+        let bytes = module.blas_matvec_pt_tmp_bytes(&res, &w, &x, &params.atk_layout());
+        module
+            .blas_matvec_pt(&mut res, &w, &x, &keys, &mut poisoned_scratch::<BE>(bytes).borrow())
+            .unwrap();
+        assert!(
+            res.cts().iter().all(|ct| GLWE::is_canonical(ct)),
+            "matvec_pt over a used res: canonical"
+        );
+        assert_vector_decrypt::<BE, F, E>(
+            "matvec_pt over a used res",
+            &params,
+            module,
+            &encoder,
+            &res,
+            &sk,
+            &matvec_model(layout.output.len, &v),
+            layout.output_period,
+            &want,
+            &mut scratch.borrow(),
+        );
+    }
+
+    // A repacking each way into a `res` that held another encryption, tagged with its fresh noise and one ciphertext
+    // flag-clear: the metadata its output-layout query gives, canonical and untagged, its label proving the operand's
+    // output period, a grid recording `output_period / d^2` over the dense batch it held, and the values of its model.
+    if repack_fits(slots, log_d) {
+        let proves = |layout: &BlasMatVecOperandLayout| (slots / layout.output_period).ilog2() as usize;
+        let keys_of = |layout: &BlasMatVecOperandLayout, scratch: &mut ScratchArena<'_, BE>| TestKeys::<BE> {
+            atks: rotation_keys(&params, module, &sk_raw, matvec_pt_galois_elements(order, layout), scratch),
+            tsk: None,
+        };
+
+        let case = grid_to_vector_cases(&params, slots, log_d).swap_remove(0);
+        let (line, layout) = (case.line, case.layout);
+        let (_, w) = matvec_operands_of::<BE, F>(module, &layout, case.entry);
+        let keys = keys_of(&layout, &mut scratch.borrow());
+        let model = grid_model(log_d, case.proven);
+        let mut a = encrypt_grid::<BE, F, E>(
+            &params,
+            module,
+            host_module,
+            &encoder,
+            &sk,
+            k,
+            case.label(slots),
+            &model,
+            &mut scratch.borrow(),
+        );
+        BlasGridMut::<BE>::set_mat_slots(&mut a, GRID.2);
+        let used: Vec<f64> = (0..layout.output.len).map(vector_entry).collect();
+        let mut res = encrypt_vector::<BE, F, E>(
+            &params,
+            module,
+            host_module,
+            &encoder,
+            &sk,
+            k,
+            layout.output,
+            slots,
+            &used,
+            &mut scratch.borrow(),
+        );
+        GLWE::set_canonical(res.ct_mut(0), false);
+        let want = blas_grid_to_vector_output_layout(&res, &layout, &a);
+        assert_eq!(
+            want.ct.log_sparsity(),
+            proves(&layout),
+            "grid_to_vector over a used res: label"
+        );
+        let bytes = module.blas_grid_to_vector_tmp_bytes(&res, &w, &a, &params.atk_layout());
+        module
+            .blas_grid_to_vector(&mut res, &w, &a, line, &keys, &mut poisoned_scratch::<BE>(bytes).borrow())
+            .unwrap();
+        assert!(
+            res.cts().iter().all(|ct| GLWE::is_canonical(ct)),
+            "grid_to_vector over a used res: canonical"
+        );
+        assert_vector_decrypt::<BE, F, E>(
+            "grid_to_vector over a used res",
+            &params,
+            module,
+            &encoder,
+            &res,
+            &sk,
+            &matrix_times(case.entry, layout.output.len, &line_values(&model, line, case.proven)),
+            layout.output_period,
+            &want,
+            &mut scratch.borrow(),
+        );
+
+        let case = vector_to_grid_cases(&params, slots, log_d).swap_remove(0);
+        let (line, layout) = (case.line, case.layout);
+        let (_, w) = matvec_operands_of::<BE, F>(module, &layout, case.entry);
+        let keys = keys_of(&layout, &mut scratch.borrow());
+        let v: Vec<f64> = (0..layout.input.len).map(vector_entry).collect();
+        let a = encrypt_vector::<BE, F, E>(
+            &params,
+            module,
+            host_module,
+            &encoder,
+            &sk,
+            k,
+            layout.input,
+            layout.input_period,
+            &v,
+            &mut scratch.borrow(),
+        );
+        let used = Grid::model(log_d, case.rows, case.cols, lanes, 41);
+        let mut res = encrypt_grid::<BE, F, E>(
+            &params,
+            module,
+            host_module,
+            &encoder,
+            &sk,
+            k,
+            0,
+            &used,
+            &mut scratch.borrow(),
+        );
+        GLWE::set_canonical(&mut res.blocks_mut()[0], false);
+        let want = blas_vector_to_grid_output_layout(&res, &layout, &a);
+        assert_eq!(
+            want.block.log_sparsity(),
+            proves(&layout),
+            "vector_to_grid over a used res: label"
+        );
+        let bytes = module.blas_vector_to_grid_tmp_bytes(&res, &w, &a, &params.atk_layout());
+        module
+            .blas_vector_to_grid(&mut res, line, &w, &a, &keys, &mut poisoned_scratch::<BE>(bytes).borrow())
+            .unwrap();
+        assert!(
+            res.blocks().iter().all(|block| block.is_canonical()),
+            "vector_to_grid over a used res: canonical"
+        );
+        assert_eq!(
+            res.mat_slots(),
+            Some(layout.output_period >> (2 * log_d)),
+            "vector_to_grid over a used res: batch record"
+        );
+        assert_grid_decrypt::<BE, F, E>(
+            "vector_to_grid over a used res",
+            &params,
+            module,
+            &encoder,
+            &res,
+            &sk,
+            &placed(&case, &matrix_times(case.entry, layout.output.len, &v)),
+            &want,
+            &mut scratch.borrow(),
+        );
+    }
+
+    // A diagonal ciphertext of real diagonals keeps its layout through appends of a real vector by a real mask, its
+    // diagonals canonical and untagged; its product into a `res` of other metadata is real by a real vector and complex
+    // by a complex one, canonical and untagged, at the layout of its doc and of its output query.
+    if slots < 16 {
+        eprintln!("result_meta: the diagonal ciphertext skipped, its diagonals span 16 slots");
+        return;
+    }
+    let real_params = CKKSTestParams {
+        prec_meta: GLWEPlaintextMeta {
+            slots: SlotsKind::Real,
+            ..params.prec_meta
+        },
+        ..params
+    };
+    let whole = BlasVectorShape::new(slots, slots, 0, 1);
+    let layout = diagonal_ciphertext_layout(&real_params, slots, k - p);
+    let keys = TestKeys::<BE> {
+        atks: rotation_keys(
+            &params,
+            module,
+            &sk_raw,
+            diagonal_ciphertext_elements(order, &layout),
+            &mut scratch.borrow(),
+        ),
+        tsk: Some(gen_tsk(&params, module, &sk_raw, &mut scratch.borrow())),
+    };
+    let values: Vec<f64> = (0..slots).map(vector_entry).collect();
+    let complex = encrypt_vector::<BE, F, E>(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        k,
+        whole,
+        slots,
+        &values,
+        &mut scratch.borrow(),
+    );
+    let mut real = complex.clone();
+    real.cts_mut()[0].set_slots(SlotsKind::Real);
+    let mask = slot_mask::<BE, F, E>(&real_params, module, host_module, &encoder, &[0]);
+    let mut m = module.blas_diagonal_ciphertext_alloc_from_infos(&layout);
+    for (axis, at) in [(AppendAxis::Row, 0), (AppendAxis::Col, 2)] {
+        let bytes = append_tmp_bytes(module, axis, &m, &real, &mask, &params.atk_layout());
+        append(
+            module,
+            axis,
+            &mut m,
+            at,
+            &real,
+            &mask,
+            &keys,
+            &mut poisoned_scratch::<BE>(bytes).borrow(),
+        )
+        .unwrap();
+        for d in m.diagonals().giant_steps.iter().flat_map(|gs| &gs.diagonals) {
+            let diagonal = &d.plaintext;
+            assert_eq!(
+                (diagonal.k(), diagonal.meta()),
+                (layout.ct.k(), layout.ct.meta),
+                "{}: the diagonals' layout",
+                axis.op()
+            );
+            assert!(
+                diagonal.is_canonical() && diagonal.noise().is_none(),
+                "{}: canonical, untagged",
+                axis.op()
+            );
+        }
+    }
+    let prepared = prepared_of(module, &m);
+    assert!(
+        prepared.diagonals().first_diagonal_plaintext().map(|d| d.lt_slots()) == Some(layout.ct.slots()),
+        "prepared: the diagonals' slots"
+    );
+    for (a, slots_kind) in [(&real, SlotsKind::Real), (&complex, SlotsKind::Complex)] {
+        let want = matvec_diagonal_layout(a.ct_layout(), layout.ct, k);
+        assert_eq!(want.slots(), slots_kind);
+        for form in ["resident", "streamed"] {
+            let mut res = complex.clone();
+            res.cts_mut()[0].set_log_delta(p / 2);
+            assert_eq!(
+                blas_matvec_diagonal_output_layout(&res, &m, a).ct,
+                want,
+                "matvec {slots_kind:?}: output query"
+            );
+            let (tsk_layout, atk_layout) = (params.tsk_layout(), params.atk_layout());
+            if form == "resident" {
+                let bytes = module.blas_matvec_diagonal_tmp_bytes(&res, &prepared, a, &tsk_layout, &atk_layout);
+                module.blas_matvec_diagonal(&mut res, &prepared, a, &keys, &mut poisoned_scratch::<BE>(bytes).borrow())
+            } else {
+                let bytes = module.blas_matvec_diagonal_tmp_bytes(&res, &m, a, &tsk_layout, &atk_layout);
+                module.blas_matvec_diagonal(&mut res, &m, a, &keys, &mut poisoned_scratch::<BE>(bytes).borrow())
+            }
+            .unwrap();
+            let ct = &res.cts()[0];
+            assert_eq!(res.ct_layout(), want, "matvec {slots_kind:?} {form}: layout");
+            assert!(
+                ct.is_canonical() && ct.noise().is_none(),
+                "matvec {slots_kind:?} {form}: canonical, untagged"
+            );
+        }
+    }
 }
 
 /// The batch record. Blocks encrypted from compact plaintexts of `count d^2` slots record `count` matrices, and the sum
 /// of a compact pair adds each matrix once. A dense plaintext added to its blocks drops their label below that record,
 /// so the next operation rejects the grid before `res` changes. A product, and its prepared form of every mix of hot
 /// and cold operands, records the larger batch of its factors, with either factor the sparse one or a replicated one,
-/// holding one matrix, and broadcasts the smaller; a prepared operand records its input's, under either hint. The pair
-/// must leave matrix slots free, so below four of them the test is skipped with a message.
+/// holding one matrix, and broadcasts the smaller; a prepared operand records its input's, under either hint. A vector
+/// written as a grid's line records `output_period / d^2` over the dense batch `res` held, for every vector-to-grid
+/// case. The pair must leave matrix slots free, so below four of them the test is skipped with a message.
 pub fn test_blas_batch_record<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -415,7 +710,7 @@ pub fn test_blas_batch_record<BE, F, E>(
         + CKKSLinearTransformationOps<BE>
         + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
@@ -440,7 +735,7 @@ pub fn test_blas_batch_record<BE, F, E>(
             .blocks(count * d * d)
             .iter()
             .map(|(re, im)| {
-                let mut pt = host_module.ckks_pt_coeffs_alloc(degree, params.base2k.into(), prec.k());
+                let mut pt = host_module.ckks_plaintext_alloc(degree.into(), params.base2k.into(), prec.k());
                 pt.set_meta(prec.meta);
                 encoder.encode_reim(&mut pt, &to_f::<F>(re), &to_f::<F>(im)).unwrap();
                 ckks_encrypt_pt(&params, module, &sk, params.k, &pt, scratch)
@@ -482,7 +777,7 @@ pub fn test_blas_batch_record<BE, F, E>(
     );
 
     let (re, im) = &Grid::model(log_d, 1, 1, lanes, 2).blocks(slots)[0];
-    let mut dense = host_module.ckks_pt_vec_alloc(host_module.ckks_max_slots(), params.base2k.into(), prec.k());
+    let mut dense = host_module.ckks_plaintext_alloc_from_slots(host_module.ckks_max_slots(), params.base2k.into(), prec.k());
     dense.set_meta(prec.meta);
     encoder.encode_reim(&mut dense, &to_f::<F>(re), &to_f::<F>(im)).unwrap();
     let dense = upload_pt(module, &dense);
@@ -551,8 +846,8 @@ pub fn test_blas_batch_record<BE, F, E>(
 
         let prepare = |hint| {
             let bytes = module
-                .blas_matmul_prepare_left_tmp_bytes(ct_a, &ctx, &atk_layout, hint)
-                .max(module.blas_matmul_prepare_right_tmp_bytes(ct_b, &ctx, &atk_layout, hint));
+                .blas_matmul_left_operand_prepare_tmp_bytes(ct_a, &ctx, &atk_layout, hint)
+                .max(module.blas_matmul_right_operand_prepare_tmp_bytes(ct_b, &ctx, &atk_layout, hint));
             let mut prepare_scratch = poisoned_scratch::<BE>(bytes);
             let left = matmul_left_operand(module, ct_a, &ctx, &keys, hint, &mut prepare_scratch.borrow()).unwrap();
             let right = matmul_right_operand(module, ct_b, &ctx, &keys, hint, &mut prepare_scratch.borrow()).unwrap();
@@ -592,5 +887,60 @@ pub fn test_blas_batch_record<BE, F, E>(
                 "{label}: prepared {hl:?} x {hr:?} mat_slots"
             );
         }
+    }
+
+    // A vector written as a grid's line records the batch of the operand's output period over the dense batch `res`
+    // held.
+    if !repack_fits(slots, log_d) {
+        eprintln!("test_blas_batch_record: the repacking skipped, its cases span 4 d^2 and 16 slots");
+        return;
+    }
+    for case in vector_to_grid_cases(&params, slots, log_d) {
+        let (line, layout) = (case.line, case.layout);
+        let (_, w) = matvec_operands_of::<BE, F>(module, &layout, case.entry);
+        let elements = matvec_pt_galois_elements(module.cyclotomic_order(), &layout);
+        let keys = TestKeys::<BE> {
+            atks: rotation_keys(&params, module, &sk_raw, elements, &mut scratch.borrow()),
+            tsk: None,
+        };
+        let v: Vec<f64> = (0..layout.input.len).map(vector_entry).collect();
+        let a = encrypt_vector::<BE, F, E>(
+            &params,
+            module,
+            host_module,
+            &encoder,
+            &sk,
+            params.k,
+            layout.input,
+            layout.input_period,
+            &v,
+            &mut scratch.borrow(),
+        );
+        let mut res = alloc_grid(&params, module, log_d, case.rows, case.cols, params.k);
+        assert_eq!(
+            res.mat_slots(),
+            Some(lanes),
+            "vector_to_grid {line:?}: the dense batch before"
+        );
+        let bytes = module.blas_vector_to_grid_tmp_bytes(&res, &w, &a, &atk_layout);
+        module
+            .blas_vector_to_grid(&mut res, line, &w, &a, &keys, &mut poisoned_scratch::<BE>(bytes).borrow())
+            .unwrap();
+        assert_eq!(
+            res.mat_slots(),
+            Some(layout.output_period >> (2 * log_d)),
+            "vector_to_grid {line:?}: mat_slots"
+        );
+        assert_grid_decrypt::<BE, F, E>(
+            &format!("vector_to_grid {line:?}"),
+            &params,
+            module,
+            &encoder,
+            &res,
+            &sk,
+            &placed(&case, &matrix_times(case.entry, layout.output.len, &v)),
+            &blas_vector_to_grid_output_layout(&res, &layout, &a),
+            &mut scratch.borrow(),
+        );
     }
 }

@@ -7,15 +7,15 @@
 use crate::Scale;
 use poulpy_core::layouts::GLWEPlaintextInfos;
 use poulpy_core::{
-    GLWEMaskFill,
+    GLWEFill,
     layouts::{Diagonals, GLWELayout, IntPolyInfos, LWEInfos, LinearTransformationStrategy},
 };
 use poulpy_hal::layouts::{Backend, Module, ZnxView};
 
 use crate::{
     CKKSInfos, CKKSLayout, CoeffsMeta, GLWEPlaintextMeta, SlotLayout, SlotsKind,
-    api::{CKKSEncodingOps, CKKSEncodingScalar, CKKSModuleInfos, PaCoScalar, ShipScalar},
-    encoding::{ckks_encode_linear_transformation_from_diagonals, ckks_encode_linear_transformation_tmp_bytes},
+    api::{CKKSEncodingOps, CKKSEncodingScalar, CKKSModuleInfos, CKKSPaCoScalar, CKKSShipScalar},
+    encoding::{ckks_linear_transformation_encode_from_diagonals, ckks_linear_transformation_encode_tmp_bytes},
     layouts::{
         CKKSEncodingBuffer, CKKSEncodingBufferToBackendMut, CKKSPlaintextOwned, ComplexDiagonals, PaCoContext, PaCoDFTPlan,
         PaCoPlan, PaCoSlotOrder, ShipPlan, slot_coeff_count,
@@ -105,8 +105,8 @@ where
                 .collect();
             let mut cached = CKKSEncodingBuffer::<BE::OwnedBuf, F>::from_host::<BE>(&input);
             let mut fresh = CKKSEncodingBuffer::<BE::OwnedBuf, F>::from_host::<BE>(&input);
-            module.ckks_slots_to_coeffs_assign(&mut cached).unwrap();
-            BE::ckks_slots_to_coeffs_assign_with_plan(
+            module.ckks_encoding_buffer_slots_to_coeffs_assign(&mut cached).unwrap();
+            BE::ckks_encoding_buffer_slots_to_coeffs_assign_with_plan(
                 module,
                 &plans,
                 &mut CKKSEncodingBufferToBackendMut::<BE, F>::to_backend_mut(&mut fresh),
@@ -115,8 +115,8 @@ where
             let got = cached.to_host::<BE>();
             scalar_close(&got, &fresh.to_host::<BE>(), transform_tolerance::<F>(len));
             observed.push(got);
-            module.ckks_coeffs_to_slots_assign(&mut cached).unwrap();
-            BE::ckks_coeffs_to_slots_assign_with_plan(
+            module.ckks_encoding_buffer_coeffs_to_slots_assign(&mut cached).unwrap();
+            BE::ckks_encoding_buffer_coeffs_to_slots_assign_with_plan(
                 module,
                 &plans,
                 &mut CKKSEncodingBufferToBackendMut::<BE, F>::to_backend_mut(&mut fresh),
@@ -133,9 +133,9 @@ where
     for len in [0, 1, 3, 2 * cap] {
         let input = vec![F::from_f64(0.375).unwrap(); len];
         let mut values = CKKSEncodingBuffer::<BE::OwnedBuf, F>::from_host::<BE>(&input);
-        assert!(module.ckks_slots_to_coeffs_assign(&mut values).is_err());
+        assert!(module.ckks_encoding_buffer_slots_to_coeffs_assign(&mut values).is_err());
         assert!(values.to_host::<BE>() == input, "invalid transform changed its input");
-        assert!(module.ckks_coeffs_to_slots_assign(&mut values).is_err());
+        assert!(module.ckks_encoding_buffer_coeffs_to_slots_assign(&mut values).is_err());
         assert!(values.to_host::<BE>() == input, "invalid transform changed its input");
     }
     observed
@@ -146,7 +146,7 @@ where
     BE: Backend<ZnxWord = i64> + CKKSEncodingImpl<F>,
     BE::Ring: CKKSSlotEmbedding,
     F: CKKSEncodingScalar,
-    Module<BE>: GLWEMaskFill<BE>,
+    Module<BE>: GLWEFill<BE>,
 {
     let mut observations = Vec::new();
     for (k, log_delta) in [(31usize, 20usize), (65, 40), (91, 70)] {
@@ -237,7 +237,7 @@ fn slot_codec<BE, F>(module: &Module<BE>, params: CKKSTestParams, floor: usize) 
 where
     BE: Backend<ZnxWord = i64> + CKKSEncodingImpl<F>,
     F: CKKSEncodingScalar,
-    Module<BE>: GLWEMaskFill<BE>,
+    Module<BE>: GLWEFill<BE>,
 {
     let layout = CKKSLayout {
         glwe_layout: GLWELayout {
@@ -270,7 +270,7 @@ where
                 .collect();
             let mut slots = CKKSEncodingBuffer::<BE::OwnedBuf, F>::from_host::<BE>(&input);
             let mut pt = fixture_plaintext(module, &layout, 53);
-            BE::ckks_encode_slots_assign_into(module, &mut pt, &mut slots).unwrap();
+            BE::ckks_encode_slots_into(module, &mut pt, &mut slots).unwrap();
             let mut decoded = CKKSEncodingBuffer::<BE::OwnedBuf, F>::from_host::<BE>(&vec![F::nan(); len]);
             let before = snapshot::<BE, _>(&pt);
             BE::ckks_decode_slots_into(module, &pt, &mut decoded).unwrap();
@@ -291,8 +291,8 @@ where
     BR::Ring: CKKSSlotEmbedding,
     BT::Ring: CKKSSlotEmbedding,
     F: CKKSEncodingScalar,
-    Module<BR>: GLWEMaskFill<BR>,
-    Module<BT>: GLWEMaskFill<BT>,
+    Module<BR>: GLWEFill<BR>,
+    Module<BT>: GLWEFill<BT>,
 {
     assert!(params.n >= 8 && params.n.is_power_of_two());
     let reference = encoding_transforms::<BR, F>(module_ref);
@@ -310,7 +310,7 @@ where
     diagonal_within_query::<BT, F>(module_test, params);
 }
 
-/// A map of period 1 encodes within [`ckks_encode_linear_transformation_tmp_bytes`] exactly, on a plaintext at the
+/// A map of period 1 encodes within [`ckks_linear_transformation_encode_tmp_bytes`] exactly, on a plaintext at the
 /// backend's minimum degree whose slots repeat the one value.
 fn diagonal_within_query<BE, F>(module: &Module<BE>, params: CKKSTestParams)
 where
@@ -321,9 +321,9 @@ where
     let mut re = Diagonals::new(slots);
     re.set(0, vec![F::from_f64(0.5).unwrap()]);
     let map = ComplexDiagonals::new(re, Diagonals::new(slots));
-    let bytes = ckks_encode_linear_transformation_tmp_bytes::<BE, _, F>(module, map.period());
+    let bytes = ckks_linear_transformation_encode_tmp_bytes::<BE, _, F>(module, map.period());
     let lt = with_scratch::<BE, _>(bytes, |scratch| {
-        ckks_encode_linear_transformation_from_diagonals::<BE, F>(
+        ckks_linear_transformation_encode_from_diagonals::<BE, F>(
             module,
             params.base2k.into(),
             CoeffsMeta::from_delta_budget(8, 12),
@@ -345,8 +345,8 @@ where
     BR: Backend<ZnxWord = i64> + CKKSEncodingImpl<F>,
     BT: Backend<ZnxWord = i64> + CKKSEncodingImpl<F>,
     F: CKKSEncodingScalar,
-    Module<BR>: GLWEMaskFill<BR>,
-    Module<BT>: GLWEMaskFill<BT>,
+    Module<BR>: GLWEFill<BR>,
+    Module<BT>: GLWEFill<BT>,
 {
     // Both sides encode the slot counts whose degree both backends allocate.
     let floor = BR::MIN_DEGREE.max(BT::MIN_DEGREE);
@@ -365,9 +365,9 @@ where
 fn paco_context<BE, F>(module: &Module<BE>, params: CKKSTestParams, plan: &PaCoPlan) -> PaCoContext<BE, F>
 where
     BE: Backend<ZnxWord = i64> + CKKSEncodingImpl<F> + CKKSPaCoCoeffEncodingImpl,
-    F: PaCoScalar,
+    F: CKKSPaCoScalar,
 {
-    let bytes = ckks_encode_linear_transformation_tmp_bytes::<BE, _, F>(module, module.ckks_max_slots());
+    let bytes = ckks_linear_transformation_encode_tmp_bytes::<BE, _, F>(module, module.ckks_max_slots());
     with_scratch::<BE, _>(bytes, |s| PaCoContext::compile(module, params.base2k.into(), plan.clone(), s)).unwrap()
 }
 
@@ -378,9 +378,9 @@ pub fn test_paco_encoding_parity<BR, BT, F>(params: CKKSTestParams, module_ref: 
 where
     BR: Backend<ZnxWord = i64> + CKKSEncodingImpl<F> + CKKSPaCoCoeffEncodingImpl,
     BT: Backend<ZnxWord = i64> + CKKSEncodingImpl<F> + CKKSPaCoCoeffEncodingImpl,
-    F: PaCoScalar,
-    Module<BR>: GLWEMaskFill<BR>,
-    Module<BT>: GLWEMaskFill<BT>,
+    F: CKKSPaCoScalar,
+    Module<BR>: GLWEFill<BR>,
+    Module<BT>: GLWEFill<BT>,
 {
     for order in [PaCoSlotOrder::Natural, PaCoSlotOrder::BitRevLow] {
         let plan = PaCoPlan::new(params.log_n(), 2, 2, 17)
@@ -413,8 +413,8 @@ where
         let st = snapshot::<BT, _>(&ct);
         let ctx_r = paco_context::<BR, F>(module_ref, params, &plan);
         let ctx_t = paco_context::<BT, F>(module_test, params, &plan);
-        let bytes_r = BR::ckks_paco_coeff_encodings_tmp_bytes::<F>(module_ref, &ctx_r).unwrap();
-        let bytes_t = BT::ckks_paco_coeff_encodings_tmp_bytes::<F>(module_test, &ctx_t).unwrap();
+        let bytes_r = BR::ckks_paco_coeff_encodings_tmp_bytes::<F, _>(module_ref, &ctx_r, &cr).unwrap();
+        let bytes_t = BT::ckks_paco_coeff_encodings_tmp_bytes::<F, _>(module_test, &ctx_t, &ct).unwrap();
         let pr = with_scratch::<BR, _>(bytes_r, |s| BR::ckks_paco_coeff_encodings::<F, _>(module_ref, &cr, &ctx_r, s)).unwrap();
         let pt = with_scratch::<BT, _>(bytes_t, |s| {
             BT::ckks_paco_coeff_encodings::<F, _>(module_test, &ct, &ctx_t, s)
@@ -461,9 +461,9 @@ pub fn test_ship_encoding_parity<BR, BT, F>(params: CKKSTestParams, module_ref: 
 where
     BR: Backend<ZnxWord = i64> + CKKSEncodingImpl<F> + CKKSShipCoeffEncodingImpl,
     BT: Backend<ZnxWord = i64> + CKKSEncodingImpl<F> + CKKSShipCoeffEncodingImpl,
-    F: ShipScalar,
-    Module<BR>: GLWEMaskFill<BR>,
-    Module<BT>: GLWEMaskFill<BT>,
+    F: CKKSShipScalar,
+    Module<BR>: GLWEFill<BR>,
+    Module<BT>: GLWEFill<BT>,
 {
     let plan = ShipPlan::new(params.log_n(), 4, 40, 3, 2, 2, 2, 2).unwrap();
     let base2k = params.base2k;

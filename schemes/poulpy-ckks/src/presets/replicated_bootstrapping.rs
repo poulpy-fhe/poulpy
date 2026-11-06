@@ -16,7 +16,7 @@
 //! caller's: the moduli do not depend on them.
 
 use anyhow::{Result, ensure};
-use poulpy_core::layouts::{Base2K, Degree, GLWELayout, Rank, TorusPrecision};
+use poulpy_core::layouts::{Base2K, Degree, GLWEAutomorphismKeyLayout, GLWELayout, Rank, TorusPrecision};
 
 use crate::{
     CKKSLayout, GLWEPlaintextMeta, ReplicatedLayout, Scale, SlotLayout, SlotsKind,
@@ -104,9 +104,24 @@ impl ReplicatedBootstrappingPreset {
         output_k(&reference_plan(), self.spec.levels)
     }
 
-    /// Evaluation-key layouts sized for this preset.
-    pub fn keys_layout(&self) -> &BootstrappingKeysLayout {
-        &self.keys_layout
+    /// Evaluation-key layouts sized for this preset, with an automorphism key
+    /// for each of `galois_elements`
+    /// ([`ReplicatedBootstrapping::galois_elements`](crate::layouts::ReplicatedBootstrapping::galois_elements)),
+    /// all on the tensor key's gadget.
+    pub fn keys_layout(&self, galois_elements: &[i64]) -> BootstrappingKeysLayout {
+        let tsk = self.keys_layout.tensor_key;
+        let rotation_key = GLWEAutomorphismKeyLayout {
+            n: tsk.n,
+            base2k: tsk.base2k,
+            dnum: tsk.dnum,
+            k_aux: tsk.k_aux,
+            rank: tsk.rank,
+            k_digit: tsk.k_digit,
+        };
+        BootstrappingKeysLayout {
+            rotation_keys: galois_elements.iter().map(|&p| (p, rotation_key)).collect(),
+            ..self.keys_layout.clone()
+        }
     }
 
     /// Layout of the bootstrap destination, in `layout`.
@@ -183,6 +198,7 @@ fn build(spec: PresetSpec) -> Result<ReplicatedBootstrappingPreset> {
     ensure!(spec.levels > 0, "a preset restores at least one level");
     let plan = reference_plan();
     let keys_layout = plan.secure_key_layouts(
+        &[],
         Degree(1 << spec.log_n),
         Base2K(spec.base2k as u32),
         output_k(&plan, spec.levels),
@@ -210,9 +226,11 @@ mod tests {
             (n14_d20_k109_p21_s2c().unwrap(), (14, 28, 28), (2, 22, 22), (2, 25, 25)),
             (n15_d20_k389_p20_s2c().unwrap(), (4, 168, 168), (1, 43, 43), (1, 49, 49)),
         ] {
-            let layout = preset.keys_layout();
+            let layout = preset.keys_layout(&[5, -1]);
             let encapsulation = layout.encapsulation.unwrap();
-            assert_eq!(gadget(&layout.automorphism_key), keys, "{}", preset.name());
+            for rotation_key in layout.rotation_keys.values() {
+                assert_eq!(gadget(rotation_key), keys, "{}", preset.name());
+            }
             assert_eq!(gadget(&layout.tensor_key), keys, "{}", preset.name());
             assert_eq!(gadget(&encapsulation.dense_to_sparse), ephemeral, "{}", preset.name());
             assert_eq!(
@@ -230,7 +248,7 @@ mod tests {
             for base2k in [18, 19, 28, 52, 54] {
                 let preset = preset.with_base2k(base2k).unwrap();
                 let plan = reference_plan();
-                let keys = preset.keys_layout();
+                let keys = preset.keys_layout(&[5]);
                 let encapsulation = keys.encapsulation.unwrap();
                 let return_key = encapsulation.sparse_to_dense.unwrap();
                 let raised = plan.k_boot(preset.output_k());
@@ -240,7 +258,7 @@ mod tests {
                     raised
                 );
                 assert!(return_key.k().as_usize() <= preset.spec.max_dense_modulus);
-                assert!(keys.automorphism_key.k().as_usize() <= preset.spec.max_dense_modulus);
+                assert!(keys.rotation_keys[&5].k().as_usize() <= preset.spec.max_dense_modulus);
                 assert!(keys.tensor_key.k().as_usize() <= preset.spec.max_dense_modulus);
                 assert!(encapsulation.dense_to_sparse.k().as_usize() <= preset.spec.max_sparse_modulus);
                 crate::reference::bootstrapping::check_offset_raise(

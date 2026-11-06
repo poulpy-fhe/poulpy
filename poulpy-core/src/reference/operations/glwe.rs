@@ -1,6 +1,7 @@
 use poulpy_hal::{
     api::{
-        CnvPVecBytesOf, Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxAdd, VecZnxAddAssign, VecZnxBigAddSmallAssign,
+        CnvOps, CnvPVecBytesOf, ModuleN, ScratchArenaTakeCnvPVecL, ScratchArenaTakeCnvPVecR, ScratchArenaTakeVecZnx,
+        ScratchArenaTakeVecZnxBig, ScratchArenaTakeVecZnxDft, VecZnxAdd, VecZnxAddAssign, VecZnxBigAddSmallAssign,
         VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxCopy, VecZnxDftAddAssign, VecZnxDftApply,
         VecZnxDftBytesOf, VecZnxDftSubAssign, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxIdftNormalize,
         VecZnxIdftNormalizeTmpBytes, VecZnxLshAdd, VecZnxLshAssign, VecZnxLshSub, VecZnxLshTmpBytes, VecZnxMulXpMinusOne,
@@ -18,14 +19,14 @@ use poulpy_hal::{
 };
 
 use crate::gadget::{
-    cnv_offset_to_limb_offset, gadget_dft_apply, gadget_dft_apply_tmp_bytes, gadget_input_size, normalize_input_limb_bound,
-    normalize_input_limb_bound_with_offset, prod_dft_size,
+    cnv_offset_to_limb_offset, gglwe_gadget_dft_apply, gglwe_gadget_dft_apply_tmp_bytes, gglwe_gadget_input_size,
+    normalize_input_limb_bound, normalize_input_limb_bound_with_offset, prod_dft_size,
 };
 use crate::layouts::operand_degree;
 use crate::oep::GLWETensoringImpl;
 use crate::{
-    ScratchArenaTakeCore,
-    api::{GLWEBytesOf, GLWENormalize},
+    ScratchArenaTakeGLWE, ScratchArenaTakeGLWETensor,
+    api::{GLWEBytesOf, GLWENormalize, GLWETensorBytesOf},
     gadget::gglwe_product_output_size,
     layouts::{
         Base2K, DiagonalOperand, GGLWEInfos, GLWE, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, GetTensorKey,
@@ -92,12 +93,24 @@ pub trait GLWEMulConstReference<BE: Backend> {
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         B: GLWEToBackendRef<BE> + GLWEInfos;
+
+    fn glwe_const_combination_tmp_bytes_reference(&self, acc_size: usize, a_size: usize, b_size: usize) -> usize;
+
+    fn glwe_const_combination_reference(
+        &self,
+        res: &mut VecZnxBackendMut<'_, BE>,
+        base2k: usize,
+        res_k: usize,
+        acc_size: usize,
+        terms: &[crate::oep::ConstTerm<'_, BE>],
+        scratch: &mut ScratchArena<'_, BE>,
+    );
 }
 
 impl<BE: Backend> GLWEMulConstReference<BE> for Module<BE>
 where
-    Self: Convolution<BE> + VecZnxBigBytesOf + VecZnxBigNormalize<BE> + VecZnxBigNormalizeTmpBytes,
-    Self: VecZnxCopy<BE> + GLWENormalize<BE>,
+    Self: CnvOps<BE> + VecZnxBigBytesOf + VecZnxBigNormalize<BE> + VecZnxBigNormalizeTmpBytes,
+    Self: VecZnxCopy<BE> + GLWENormalize<BE> + VecZnxRsh<BE> + VecZnxRshTmpBytes,
 {
     fn glwe_mul_const_tmp_bytes_reference<R, A, B>(&self, res: &R, a: &A, b: &B) -> usize
     where
@@ -110,7 +123,7 @@ where
         let b_size = b.size();
         // Offset-0 maximum of the runtime BIG span `a.size() + b_size - cnv_offset_hi`.
         let res_dft_size: usize = a.size() + b_size;
-        let lvl_0: usize = self.bytes_of_vec_znx_big(n, 1, res_dft_size) + BE::bytes_of_vec_znx(n, 1, res.size());
+        let lvl_0: usize = self.vec_znx_big_bytes_of(n, 1, res_dft_size) + BE::vec_znx_bytes_of(n, 1, res.size());
         let lvl_1_cnv: usize = self.cnv_by_const_apply_tmp_bytes(0, res_dft_size, a.size(), b_size);
         let lvl_1_norm: usize = self.vec_znx_big_normalize_tmp_bytes();
         let lvl_1: usize = lvl_1_cnv.max(lvl_1_norm);
@@ -256,6 +269,22 @@ where
             );
         }
     }
+
+    fn glwe_const_combination_tmp_bytes_reference(&self, acc_size: usize, a_size: usize, b_size: usize) -> usize {
+        glwe_const_combination_tmp_bytes_reference(self, acc_size, a_size, b_size)
+    }
+
+    fn glwe_const_combination_reference(
+        &self,
+        res: &mut VecZnxBackendMut<'_, BE>,
+        base2k: usize,
+        res_k: usize,
+        acc_size: usize,
+        terms: &[crate::oep::ConstTerm<'_, BE>],
+        scratch: &mut ScratchArena<'_, BE>,
+    ) {
+        glwe_const_combination_reference(self, res, base2k, res_k, acc_size, terms, scratch)
+    }
 }
 
 impl<BE: Backend> GLWEMulPlainReference<BE> for Module<BE>
@@ -267,7 +296,7 @@ where
         + VecZnxIdftApply<BE>
         + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BE>
-        + Convolution<BE>
+        + CnvOps<BE>
         + VecZnxBigNormalizeTmpBytes
         + VecZnxCopy<BE>
         + GLWENormalize<BE>,
@@ -293,17 +322,17 @@ where
         let a_size: usize = a.size();
         let b_size: usize = b.size();
 
-        let lvl_0: usize = self.bytes_of_cnv_pvec_left(n, cols, a_size, PrepareHint::OneShot)
-            + self.bytes_of_cnv_pvec_right(n, 1, b_size, PrepareHint::OneShot);
+        let lvl_0: usize = self.cnv_pvec_left_bytes_of(n, cols, a_size, PrepareHint::OneShot)
+            + self.cnv_pvec_right_bytes_of(n, 1, b_size, PrepareHint::OneShot);
         let lvl_1: usize = self
-            .cnv_prepare_left_tmp_bytes(a_size, a_size)
-            .max(self.cnv_prepare_right_tmp_bytes(b_size, b_size));
+            .cnv_pvec_left_prepare_tmp_bytes(a_size, a_size)
+            .max(self.cnv_pvec_right_prepare_tmp_bytes(b_size, b_size));
 
         let res_dft_size = a_size + b_size;
         let lvl_2_cnv_apply: usize = self.cnv_apply_dft_tmp_bytes(0, res_dft_size, a_size, b_size);
 
-        let lvl_2_res_dft: usize = self.bytes_of_vec_znx_dft(n, 1, res_dft_size);
-        let lvl_2_res_tmp: usize = self.bytes_of_vec_znx_big(n, 1, res_dft_size) + BE::bytes_of_vec_znx(n, 1, res.size());
+        let lvl_2_res_dft: usize = self.vec_znx_dft_bytes_of(n, 1, res_dft_size);
+        let lvl_2_res_tmp: usize = self.vec_znx_big_bytes_of(n, 1, res_dft_size) + BE::vec_znx_bytes_of(n, 1, res.size());
         let lvl_2_norm: usize = self.vec_znx_big_normalize_tmp_bytes();
         let lvl_2: usize =
             lvl_2_res_tmp + lvl_2_res_dft + lvl_2_cnv_apply.max(lvl_2_norm).max(self.vec_znx_idft_apply_tmp_bytes());
@@ -355,8 +384,8 @@ where
 
         let b_backend = b.to_backend_ref();
 
-        scratch = scratch.apply_mut(|scratch| self.cnv_prepare_left(&mut a_prep, &a.data, scratch));
-        scratch = scratch.apply_mut(|scratch| self.cnv_prepare_right(&mut b_prep, &b_backend.data, scratch));
+        scratch = scratch.apply_mut(|scratch| self.cnv_pvec_left_prepare(&mut a_prep, &a.data, scratch));
+        scratch = scratch.apply_mut(|scratch| self.cnv_pvec_right_prepare(&mut b_prep, &b_backend.data, scratch));
 
         let (cnv_offset_hi, cnv_offset_lo) = cnv_offset_to_limb_offset(cnv_offset, ab_base2k);
 
@@ -434,9 +463,9 @@ where
 
         scratch = scratch.apply_mut(|scratch| {
             let res_backend = res.to_backend_ref();
-            self.cnv_prepare_left(&mut res_prep, &res_backend.data, scratch)
+            self.cnv_pvec_left_prepare(&mut res_prep, &res_backend.data, scratch)
         });
-        scratch = scratch.apply_mut(|scratch| self.cnv_prepare_right(&mut a_prep, &a_backend.data, scratch));
+        scratch = scratch.apply_mut(|scratch| self.cnv_pvec_right_prepare(&mut a_prep, &a_backend.data, scratch));
 
         let (cnv_offset_hi, cnv_offset_lo) = cnv_offset_to_limb_offset(cnv_offset, ab_base2k);
 
@@ -646,7 +675,7 @@ pub trait GLWETensoringReference<BE: Backend> {
         R: GLWEToBackendMut<BE> + GLWEInfos,
         H: GetTensorKey<BE>;
 
-    /// [`Self::glwe_mul_relinearize_reference`] with a right operand prepared by [`glwe_prepare_right`]:
+    /// [`Self::glwe_mul_relinearize_reference`] with a right operand prepared by [`glwe_right_operand_prepare`]:
     /// `b_size` limbs of a ciphertext of width `b_k`.
     #[allow(clippy::too_many_arguments)]
     fn glwe_mul_prepared_relinearize_reference<R, A, BP, H>(
@@ -698,9 +727,9 @@ pub trait GLWETensoringReference<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     );
 
-    /// Reference of [`GLWETensoringImpl::glwe_square_prepare`]: both forms of the operand of a
-    /// one-pass square, with `cnv_prepare_self`.
-    fn glwe_square_prepare_reference(
+    /// Reference of [`GLWETensoringImpl::glwe_square_operand_prepare`]: both forms of the operand of a
+    /// one-pass square, with `cnv_pvec_self_prepare`.
+    fn glwe_square_operand_prepare_reference(
         &self,
         left: &mut poulpy_hal::layouts::CnvPVecLBackendMut<'_, BE>,
         right: &mut poulpy_hal::layouts::CnvPVecRBackendMut<'_, BE>,
@@ -763,8 +792,8 @@ pub trait GLWETensoringReference<BE: Backend> {
         R: GLWEInfos,
         B: GGLWEInfos;
 
-    /// [`Self::glwe_mul_relinearize_sum_reference`] over pairs prepared by [`glwe_prepare_left`] and
-    /// [`glwe_prepare_right`]: `a_size = ceil(a_k / base2k)` and `b_size = ceil(b_k / base2k)` limbs of ciphertexts
+    /// [`Self::glwe_mul_relinearize_sum_reference`] over pairs prepared by [`glwe_left_operand_prepare`] and
+    /// [`glwe_right_operand_prepare`]: `a_size = ceil(a_k / base2k)` and `b_size = ceil(b_k / base2k)` limbs of ciphertexts
     /// of widths `a_k` and `b_k`.
     ///
     /// Each pair feeds [`GLWETensoringImpl::glwe_mul_columns`] where it is, so no operand is prepared in the call:
@@ -819,8 +848,8 @@ pub trait GLWETensoringReference<BE: Backend> {
     where
         R: GLWEInfos;
 
-    /// [`Self::glwe_tensor_apply_reference`] of operands prepared by [`glwe_prepare_left`] and
-    /// [`glwe_prepare_right`]: `a_size` and `b_size` limbs at radix `base2k`, with one column per column of a
+    /// [`Self::glwe_tensor_apply_reference`] of operands prepared by [`glwe_left_operand_prepare`] and
+    /// [`glwe_right_operand_prepare`]: `a_size` and `b_size` limbs at radix `base2k`, with one column per column of a
     /// ciphertext of the rank of `res`.
     ///
     /// Operands prepared from those of [`Self::glwe_tensor_apply_reference`] give its result bit for bit. Checks the
@@ -854,7 +883,7 @@ where
         + VecZnxIdftApply<BE>
         + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BE>
-        + Convolution<BE>
+        + CnvOps<BE>
         + VecZnxSubAssign<BE>
         + VecZnxAddAssign<BE>
         + VecZnxBigNormalizeTmpBytes
@@ -885,27 +914,27 @@ where
         let res_size: usize = res.size();
         let cnv_offset = a_size;
 
-        let lvl_0: usize = self.bytes_of_cnv_pvec_left(n, cols, a_size, PrepareHint::Reuse)
-            + self.bytes_of_cnv_pvec_right(n, cols, a_size, PrepareHint::Reuse);
-        let lvl_1: usize = self.cnv_prepare_self_tmp_bytes(a_size, a_size);
+        let lvl_0: usize = self.cnv_pvec_left_bytes_of(n, cols, a_size, PrepareHint::Reuse)
+            + self.cnv_pvec_right_bytes_of(n, cols, a_size, PrepareHint::Reuse);
+        let lvl_1: usize = self.cnv_pvec_self_prepare_tmp_bytes(a_size, a_size);
         let diag_dft_size =
             normalize_input_limb_bound_worst_case(2 * a_size, res_size, res.base2k().as_usize(), a.base2k().as_usize());
         let lvl_2_apply: usize = self.cnv_apply_dft_tmp_bytes(cnv_offset, diag_dft_size, a_size, a_size);
 
-        let lvl_diag_cache: usize = BE::bytes_of_vec_znx(n, cols, res_size);
+        let lvl_diag_cache: usize = BE::vec_znx_bytes_of(n, cols, res_size);
         let pairwise_dft_size =
             normalize_input_limb_bound_worst_case(2 * a_size, res_size, res.base2k().as_usize(), a.base2k().as_usize());
         let lvl_2_pairwise: usize = self.cnv_pairwise_apply_dft_tmp_bytes(cnv_offset, pairwise_dft_size, a_size, a_size);
 
-        let lvl_2a: usize = self.bytes_of_vec_znx_dft(n, 1, diag_dft_size)
-            + self.bytes_of_vec_znx_big(n, 1, diag_dft_size)
-            + BE::bytes_of_vec_znx(n, 1, res_size)
+        let lvl_2a: usize = self.vec_znx_dft_bytes_of(n, 1, diag_dft_size)
+            + self.vec_znx_big_bytes_of(n, 1, diag_dft_size)
+            + BE::vec_znx_bytes_of(n, 1, res_size)
             + lvl_2_apply
                 .max(self.vec_znx_big_normalize_tmp_bytes())
                 .max(self.vec_znx_idft_apply_tmp_bytes());
-        let lvl_2b: usize = self.bytes_of_vec_znx_dft(n, 1, pairwise_dft_size)
-            + self.bytes_of_vec_znx_big(n, 1, pairwise_dft_size)
-            + BE::bytes_of_vec_znx(n, 1, res_size)
+        let lvl_2b: usize = self.vec_znx_dft_bytes_of(n, 1, pairwise_dft_size)
+            + self.vec_znx_big_bytes_of(n, 1, pairwise_dft_size)
+            + BE::vec_znx_bytes_of(n, 1, res_size)
             + lvl_2_pairwise
                 .max(self.vec_znx_big_normalize_tmp_bytes())
                 .max(self.vec_znx_idft_apply_tmp_bytes());
@@ -931,11 +960,11 @@ where
         let a_size: usize = a.size();
         let b_size: usize = b.size();
 
-        let lvl_0: usize = self.bytes_of_cnv_pvec_left(n, cols, a_size, PrepareHint::Reuse)
-            + self.bytes_of_cnv_pvec_right(n, cols, b_size, PrepareHint::Reuse);
+        let lvl_0: usize = self.cnv_pvec_left_bytes_of(n, cols, a_size, PrepareHint::Reuse)
+            + self.cnv_pvec_right_bytes_of(n, cols, b_size, PrepareHint::Reuse);
         let lvl_1: usize = self
-            .cnv_prepare_left_tmp_bytes(a_size, a_size)
-            .max(self.cnv_prepare_right_tmp_bytes(b_size, b_size));
+            .cnv_pvec_left_prepare_tmp_bytes(a_size, a_size)
+            .max(self.cnv_pvec_right_prepare_tmp_bytes(b_size, b_size));
         let lvl_2: usize = glwe_tensor_apply_loop_tmp_bytes(self, res, a_size, b_size, ab_base2k.as_usize());
 
         BE::scratch_aligned(self.glwe_bytes_of_from_infos(a))
@@ -963,22 +992,23 @@ where
         let a_dft_size: usize = a.k().div_ceil(tsk.base2k()) as usize;
         let output_size = gglwe_product_output_size::<BE, _, _, _>(res, a, tsk);
         let (gadget_base2k, k_digit, dnum) = (tsk.base2k(), tsk.k_digit(), tsk.dnum());
-        let gadget_size: usize = gadget_input_size(gadget_base2k, k_digit, dnum, a.k(), a_dft_size);
-        let gadget_bytes: usize = gadget_dft_apply_tmp_bytes::<BE, _>(self, gadget_base2k, k_digit, dnum, a.k(), a_dft_size);
+        let gadget_size: usize = gglwe_gadget_input_size(gadget_base2k, k_digit, dnum, a.k(), a_dft_size);
+        let gadget_bytes: usize =
+            gglwe_gadget_dft_apply_tmp_bytes::<BE, _>(self, gadget_base2k, k_digit, dnum, a.k(), a_dft_size);
 
-        let lvl_0: usize = self.bytes_of_vec_znx_dft(n, pairs, gadget_size);
+        let lvl_0: usize = self.vec_znx_dft_bytes_of(n, pairs, gadget_size);
 
         // `a` comes to the key's radix one column at a time: before the product,
         // and again while the key-switched sum is held.
         let lvl_1_conv: usize = if a_base2k != key_base2k {
-            BE::bytes_of_vec_znx(n, 1, a_dft_size) + self.vec_znx_normalize_tmp_bytes().max(gadget_bytes)
+            BE::vec_znx_bytes_of(n, 1, a_dft_size) + self.vec_znx_normalize_tmp_bytes().max(gadget_bytes)
         } else {
             gadget_bytes
         };
-        let lvl_1_res_dft: usize = self.bytes_of_vec_znx_dft(n, cols, output_size);
+        let lvl_1_res_dft: usize = self.vec_znx_dft_bytes_of(n, cols, output_size);
         let lvl_1_gglwe_product: usize = self.gglwe_product_dft_tmp_bytes_reference(output_size, gadget_size, tsk);
-        let lvl_1_big_norm: usize = self.bytes_of_vec_znx_big(n, cols, output_size)
-            + (BE::bytes_of_vec_znx(n, 1, res.size()) + self.vec_znx_big_normalize_tmp_bytes())
+        let lvl_1_big_norm: usize = self.vec_znx_big_bytes_of(n, cols, output_size)
+            + (BE::vec_znx_bytes_of(n, 1, res.size()) + self.vec_znx_big_normalize_tmp_bytes())
                 .max(lvl_1_conv)
                 .max(self.vec_znx_idft_apply_tmp_bytes());
         let lvl_1_main: usize = lvl_1_res_dft + lvl_1_gglwe_product.max(lvl_1_big_norm);
@@ -1018,13 +1048,13 @@ where
 
         let a_dft_size: usize = a.k().div_ceil(tsk.base2k()) as usize;
         let (gadget_base2k, k_digit, dnum) = (tsk.base2k(), tsk.k_digit(), tsk.dnum());
-        let gadget_size: usize = gadget_input_size(gadget_base2k, k_digit, dnum, a.k(), a_dft_size);
+        let gadget_size: usize = gglwe_gadget_input_size(gadget_base2k, k_digit, dnum, a.k(), a_dft_size);
 
         let (mut a_dft, mut scratch) = scratch.take_vec_znx_dft_scratch(res.n().as_usize(), pairs, gadget_size);
 
         if a_base2k == key_base2k {
             for i in 0..pairs {
-                gadget_dft_apply(
+                gglwe_gadget_dft_apply(
                     self,
                     &mut a_dft,
                     i,
@@ -1053,7 +1083,7 @@ where
                     &mut scratch_iter,
                 );
                 let a_conv_ref = a_conv.to_backend_ref();
-                gadget_dft_apply(
+                gglwe_gadget_dft_apply(
                     self,
                     &mut a_dft,
                     i,
@@ -1157,7 +1187,7 @@ where
         let (mut b_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(res.n().as_usize(), cols, a_size, PrepareHint::Reuse);
 
         let mut prep_scratch = scratch.borrow();
-        self.cnv_prepare_self(&mut a_prep, &mut b_prep, &a.data, &mut prep_scratch);
+        self.cnv_pvec_self_prepare(&mut a_prep, &mut b_prep, &a.data, &mut prep_scratch);
 
         let (cnv_offset_hi, cnv_offset_lo) = cnv_offset_to_limb_offset(cnv_offset, a_base2k);
 
@@ -1186,7 +1216,7 @@ where
         R: GLWEInfos,
         A: GLWEInfos,
     {
-        glwe_tensor_apply_prepared_right_tmp_bytes(self, res, a, a_size, b_size)
+        glwe_tensor_apply_prepared_right_tmp_bytes_reference(self, res, a, a_size, b_size)
     }
 
     fn glwe_tensor_apply_prepared_right_reference<R, A, BP>(
@@ -1202,7 +1232,7 @@ where
         A: GLWEToBackendRef<BE> + GLWEInfos,
         BP: CnvPVecRToBackendRef<BE>,
     {
-        glwe_tensor_apply_prepared_right(self, cnv_offset, res, a, b, b_size, scratch)
+        glwe_tensor_apply_prepared_right_reference(self, cnv_offset, res, a, b, b_size, scratch)
     }
 
     fn glwe_tensor_apply_reference<R, A, B>(
@@ -1256,8 +1286,8 @@ where
         let (mut b_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(res.n().as_usize(), cols, b_size, PrepareHint::Reuse);
 
         let mut prep_scratch = scratch.borrow();
-        self.cnv_prepare_left(&mut a_prep, &a.data, &mut prep_scratch);
-        self.cnv_prepare_right(&mut b_prep, &b.data, &mut prep_scratch);
+        self.cnv_pvec_left_prepare(&mut a_prep, &a.data, &mut prep_scratch);
+        self.cnv_pvec_right_prepare(&mut b_prep, &b.data, &mut prep_scratch);
 
         glwe_tensor_apply_loop(
             self,
@@ -1478,14 +1508,14 @@ where
         self.vec_znx_dft_sub_assign(cross, 0, &diag_ref, 1);
     }
 
-    fn glwe_square_prepare_reference(
+    fn glwe_square_operand_prepare_reference(
         &self,
         left: &mut poulpy_hal::layouts::CnvPVecLBackendMut<'_, BE>,
         right: &mut poulpy_hal::layouts::CnvPVecRBackendMut<'_, BE>,
         a: &VecZnxBackendRef<'_, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) {
-        self.cnv_prepare_self(left, right, a, scratch)
+        self.cnv_pvec_self_prepare(left, right, a, scratch)
     }
 
     fn glwe_mul_relinearize_sum_tmp_bytes_reference<R, B>(
@@ -1626,9 +1656,9 @@ where
             k: TorusPrecision((b_size * base2k) as u32),
             ..res.glwe_layout()
         };
-        BE::scratch_aligned(self.bytes_of_cnv_pvec_right(n, cols, b_size, PrepareHint::Reuse))
-            + BE::scratch_aligned(self.bytes_of_vec_znx_dft(n, 1, dft_size))
-            + glwe_prepare_right_tmp_bytes(self, b_size, &right)
+        BE::scratch_aligned(self.cnv_pvec_right_bytes_of(n, cols, b_size, PrepareHint::Reuse))
+            + BE::scratch_aligned(self.vec_znx_dft_bytes_of(n, 1, dft_size))
+            + glwe_right_operand_prepare_tmp_bytes(self, b_size, &right)
                 .max(self.cnv_apply_dft_tmp_bytes(cnv_offset, dft_size, a_size, b_size))
                 .max(self.cnv_apply_dft_add_tmp_bytes(cnv_offset, dft_size, a_size, b_size))
                 .max(self.cnv_pairwise_apply_dft_tmp_bytes(cnv_offset, dft_size, a_size, b_size))
@@ -1661,7 +1691,7 @@ where
         for (t, (a, b)) in pairs.enumerate() {
             let a = a.to_backend_ref();
             if let DiagonalOperand::Unprepared(b) = &b {
-                glwe_prepare_right(self, &mut b_prep, &b, b_k.as_usize(), &mut scratch);
+                glwe_right_operand_prepare(self, &mut b_prep, &b, b_k.as_usize(), &mut scratch);
             }
             let b = match b {
                 DiagonalOperand::Prepared(b) => b.to_backend_ref(),
@@ -1883,7 +1913,7 @@ where
     BE: GLWETensoringImpl + crate::oep::GGLWEProductDigitsStridedImpl,
     Module<BE>: GLWETensoringReference<BE>
         + CnvPVecBytesOf
-        + Convolution<BE>
+        + CnvOps<BE>
         + GLWENormalize<BE>
         + VecZnxIdftNormalizeTmpBytes
         + GGLWEProductReference<BE>
@@ -1903,18 +1933,18 @@ where
     let tensor_size = tensor_k.as_usize().div_ceil(base2k);
     let dft_size = normalize_input_limb_bound_worst_case(a_size + b_size, tensor_size, base2k, base2k);
 
-    let slots = module.bytes_of_cnv_pvec_left(n, 2, a_size, PrepareHint::Reuse)
-        + module.bytes_of_cnv_pvec_right(n, 2, b_size, PrepareHint::Reuse);
+    let slots = module.cnv_pvec_left_bytes_of(n, 2, a_size, PrepareHint::Reuse)
+        + module.cnv_pvec_right_bytes_of(n, 2, b_size, PrepareHint::Reuse);
     let prepared_slots =
-        module.bytes_of_cnv_pvec_left(n, 2, 1, PrepareHint::Reuse) + module.bytes_of_cnv_pvec_right(n, 2, 1, PrepareHint::Reuse);
+        module.cnv_pvec_left_bytes_of(n, 2, 1, PrepareHint::Reuse) + module.cnv_pvec_right_bytes_of(n, 2, 1, PrepareHint::Reuse);
     // Either operand may need a normalized copy while it is prepared.
     let prepare = 2 * BE::scratch_aligned(module.glwe_bytes_of_from_infos(&tensor_infos))
         + module
-            .cnv_prepare_self_tmp_bytes(max_size, max_size)
-            .max(module.cnv_prepare_left_tmp_bytes(max_size, max_size))
-            .max(module.cnv_prepare_right_tmp_bytes(max_size, max_size))
+            .cnv_pvec_self_prepare_tmp_bytes(max_size, max_size)
+            .max(module.cnv_pvec_left_prepare_tmp_bytes(max_size, max_size))
+            .max(module.cnv_pvec_right_prepare_tmp_bytes(max_size, max_size))
             .max(module.glwe_normalize_tmp_bytes());
-    let columns = module.bytes_of_vec_znx_dft(n, 2, dft_size) + module.bytes_of_vec_znx_dft(n, 1, dft_size);
+    let columns = module.vec_znx_dft_bytes_of(n, 2, dft_size) + module.vec_znx_dft_bytes_of(n, 1, dft_size);
     let convolve = module
         .cnv_apply_dft_tmp_bytes(max_size, dft_size, a_size, b_size)
         .max(module.cnv_pairwise_apply_dft_tmp_bytes(max_size, dft_size, a_size, b_size));
@@ -1931,8 +1961,8 @@ where
 
     // A sum holds a second set of product columns while each later pair is formed. A prepared form reads its operands
     // where they are.
-    let pair_columns = BE::scratch_aligned(module.bytes_of_vec_znx_dft(n, 2, dft_size))
-        + BE::scratch_aligned(module.bytes_of_vec_znx_dft(n, 1, dft_size));
+    let pair_columns = BE::scratch_aligned(module.vec_znx_dft_bytes_of(n, 2, dft_size))
+        + BE::scratch_aligned(module.vec_znx_dft_bytes_of(n, 1, dft_size));
     match (prepared_operands, summed) {
         (false, false) => slots + prepare.max(tail),
         (false, true) => slots + prepare.max(tail) + pair_columns,
@@ -1958,6 +1988,7 @@ where
     BE: GLWETensoringImpl + crate::oep::GGLWEProductDigitsStridedImpl,
     Module<BE>: ModuleN
         + GLWEBytesOf<BE>
+        + GLWETensorBytesOf<BE>
         + VecZnxDftBytesOf
         + VecZnxIdftNormalizeTmpBytes
         + poulpy_hal::api::VecZnxGadgetDecomposeTmpBytes,
@@ -1971,13 +2002,13 @@ where
     // d2 is the gadget operand, at most `dft_size` full limbs.
     let d2_k = TorusPrecision((dft_size * base2k) as u32);
     let (gadget_base2k, k_digit, dnum) = (tsk.base2k(), tsk.k_digit(), tsk.dnum());
-    let gadget_size: usize = gadget_input_size(gadget_base2k, k_digit, dnum, d2_k, dft_size);
-    let gadget_bytes: usize = gadget_dft_apply_tmp_bytes::<BE, _>(module, gadget_base2k, k_digit, dnum, d2_k, dft_size);
-    let product = module.bytes_of_vec_znx_dft(n, 1, gadget_size)
+    let gadget_size: usize = gglwe_gadget_input_size(gadget_base2k, k_digit, dnum, d2_k, dft_size);
+    let gadget_bytes: usize = gglwe_gadget_dft_apply_tmp_bytes::<BE, _>(module, gadget_base2k, k_digit, dnum, d2_k, dft_size);
+    let product = module.vec_znx_dft_bytes_of(n, 1, gadget_size)
         + gadget_bytes.max(if dft_output {
             BE::gglwe_product_fused_tmp_bytes(module, ks_size, ks_size, gadget_size, tsk)
         } else {
-            module.bytes_of_vec_znx_dft(n, 2, ks_size)
+            module.vec_znx_dft_bytes_of(n, 2, ks_size)
                 + BE::gglwe_product_idft_normalize_tmp_bytes(module, res.size(), ks_size, gadget_size, tsk)
         });
     let tensor = if tensor_route || dft_size * base2k > dnum.as_usize() * k_digit.as_usize() {
@@ -1988,7 +2019,7 @@ where
     } else {
         0
     };
-    (BE::bytes_of_vec_znx(n, 1, dft_size) + digits.max(product)).max(tensor)
+    (BE::vec_znx_bytes_of(n, 1, dft_size) + digits.max(product)).max(tensor)
 }
 
 /// Left operand of [`glwe_mul_relinearize_one_pass`].
@@ -2048,7 +2079,7 @@ fn glwe_mul_relinearize_one_pass<BE, R, A, B, AP, BP, H>(
     Module<BE>: GLWETensoringReference<BE>
         + ModuleN
         + CnvPVecBytesOf
-        + Convolution<BE>
+        + CnvOps<BE>
         + GLWENormalize<BE>
         + VecZnxIdftNormalize<BE>
         + VecZnxIdftNormalizeTmpBytes
@@ -2183,14 +2214,14 @@ fn glwe_mul_relinearize_one_pass<BE, R, A, B, AP, BP, H>(
             let left = canonical!($left, left_tmp, prep_scratch);
             match &right {
                 MulRight::Left => {
-                    BE::glwe_square_prepare(module, &mut a_prep, &mut b_prep, &left.data, &mut prep_scratch.borrow())
+                    BE::glwe_square_operand_prepare(module, &mut a_prep, &mut b_prep, &left.data, &mut prep_scratch.borrow())
                 }
                 MulRight::Operand(b) => {
-                    module.cnv_prepare_left(&mut a_prep, &left.data, &mut prep_scratch.borrow());
+                    module.cnv_pvec_left_prepare(&mut a_prep, &left.data, &mut prep_scratch.borrow());
                     let b = canonical!(*b, right_tmp, prep_scratch);
-                    module.cnv_prepare_right(&mut b_prep, &b.data, &mut prep_scratch.borrow());
+                    module.cnv_pvec_right_prepare(&mut b_prep, &b.data, &mut prep_scratch.borrow());
                 }
-                MulRight::Prepared { .. } => module.cnv_prepare_left(&mut a_prep, &left.data, &mut prep_scratch.borrow()),
+                MulRight::Prepared { .. } => module.cnv_pvec_left_prepare(&mut a_prep, &left.data, &mut prep_scratch.borrow()),
             }
         }};
     }
@@ -2263,9 +2294,9 @@ fn glwe_mul_relinearize_one_pass<BE, R, A, B, AP, BP, H>(
                     let (mut left_tmp, prep_scratch) = scratch.borrow().take_glwe_scratch(&left_infos);
                     let (mut right_tmp, mut prep_scratch) = prep_scratch.take_glwe_scratch(&right_infos);
                     let a = canonical!(*a, left_tmp, prep_scratch);
-                    module.cnv_prepare_left(&mut a_prep, &a.data, &mut prep_scratch.borrow());
+                    module.cnv_pvec_left_prepare(&mut a_prep, &a.data, &mut prep_scratch.borrow());
                     let b = canonical!(*b, right_tmp, prep_scratch);
-                    module.cnv_prepare_right(&mut b_prep, &b.data, &mut prep_scratch.borrow());
+                    module.cnv_pvec_right_prepare(&mut b_prep, &b.data, &mut prep_scratch.borrow());
                 }
                 add_columns!(&a_prep.to_backend_ref(), &b_prep.to_backend_ref());
             }
@@ -2397,9 +2428,9 @@ pub(crate) fn glwe_relinearize_columns<BE, R, H>(
 
     let d2_k = TorusPrecision((dft_size * base2k) as u32);
     let (gadget_base2k, k_digit, dnum) = (tsk.base2k(), tsk.k_digit(), tsk.dnum());
-    let gadget_size: usize = gadget_input_size(gadget_base2k, k_digit, dnum, d2_k, dft_size);
+    let gadget_size: usize = gglwe_gadget_input_size(gadget_base2k, k_digit, dnum, d2_k, dft_size);
     let (mut d2_dft, mut scratch) = scratch.take_vec_znx_dft_scratch(n, 1, gadget_size);
-    gadget_dft_apply(
+    gglwe_gadget_dft_apply(
         module,
         &mut d2_dft,
         0,
@@ -2483,7 +2514,7 @@ fn glwe_tensor_square_apply_symmetric<BE, M, R, AP, BP>(
         + VecZnxCopy<BE>
         + VecZnxSubAssign<BE>
         + VecZnxNormalizeAssign<BE>
-        + Convolution<BE>,
+        + CnvOps<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
     AP: CnvPVecLToBackendRef<BE>,
     BP: CnvPVecRToBackendRef<BE>,
@@ -2616,7 +2647,7 @@ pub(crate) fn glwe_tensor_apply_loop<BE, M, R, AP, BP>(
         + VecZnxIdftApply<BE>
         + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BE>
-        + Convolution<BE>
+        + CnvOps<BE>
         + VecZnxSubAssign<BE>
         + VecZnxAddAssign<BE>
         + VecZnxBigNormalizeTmpBytes
@@ -2767,7 +2798,7 @@ where
     BE: Backend,
     M: VecZnxDftBytesOf
         + VecZnxBigBytesOf
-        + Convolution<BE>
+        + CnvOps<BE>
         + VecZnxBigNormalizeTmpBytes
         + VecZnxIdftApplyTmpBytes
         + VecZnxNormalizeTmpBytes,
@@ -2780,19 +2811,25 @@ where
     let convolve: usize = module
         .cnv_apply_dft_tmp_bytes(cnv_offset, dft_size, a_size, b_size)
         .max(module.cnv_pairwise_apply_dft_tmp_bytes(cnv_offset, dft_size, a_size, b_size));
-    let column: usize = module.bytes_of_vec_znx_dft(n, 1, dft_size)
-        + module.bytes_of_vec_znx_big(n, 1, dft_size)
-        + BE::bytes_of_vec_znx(n, 1, res_size)
+    let column: usize = module.vec_znx_dft_bytes_of(n, 1, dft_size)
+        + module.vec_znx_big_bytes_of(n, 1, dft_size)
+        + BE::vec_znx_bytes_of(n, 1, res_size)
         + convolve
             .max(module.vec_znx_big_normalize_tmp_bytes())
             .max(module.vec_znx_idft_apply_tmp_bytes());
     column.max(module.vec_znx_normalize_tmp_bytes())
 }
 
-/// Scratch bytes for [`glwe_tensor_apply_prepared_right`].
+/// Scratch bytes for [`glwe_tensor_apply_prepared_right_reference`].
 ///
 /// `a` is prepared into a `CnvPVecL`; `b_prep` is supplied already prepared.
-pub fn glwe_tensor_apply_prepared_right_tmp_bytes<BE, M, R, A>(module: &M, res: &R, a: &A, a_size: usize, b_size: usize) -> usize
+pub fn glwe_tensor_apply_prepared_right_tmp_bytes_reference<BE, M, R, A>(
+    module: &M,
+    res: &R,
+    a: &A,
+    a_size: usize,
+    b_size: usize,
+) -> usize
 where
     BE: Backend,
     M: Sized
@@ -2800,7 +2837,7 @@ where
         + CnvPVecBytesOf
         + VecZnxDftBytesOf
         + VecZnxBigBytesOf
-        + Convolution<BE>
+        + CnvOps<BE>
         + VecZnxBigNormalizeTmpBytes
         + VecZnxIdftApplyTmpBytes
         + VecZnxNormalizeTmpBytes
@@ -2815,22 +2852,22 @@ where
     let ab_base2k: usize = a.base2k().as_usize();
     let cnv_offset = a_size.min(b_size);
 
-    let lvl_0: usize = module.bytes_of_cnv_pvec_left(module.n(), cols, a_size, PrepareHint::Reuse);
-    let lvl_1: usize = module.cnv_prepare_left_tmp_bytes(a_size, a_size);
+    let lvl_0: usize = module.cnv_pvec_left_bytes_of(module.n(), cols, a_size, PrepareHint::Reuse);
+    let lvl_1: usize = module.cnv_pvec_left_prepare_tmp_bytes(a_size, a_size);
     let diag_dft_size = normalize_input_limb_bound_worst_case(a_size + b_size, res_size, res.base2k().as_usize(), ab_base2k);
     let lvl_2_apply: usize = module.cnv_apply_dft_tmp_bytes(cnv_offset, diag_dft_size, a_size, b_size);
     let pairwise_dft_size = normalize_input_limb_bound_worst_case(a_size + b_size, res_size, res.base2k().as_usize(), ab_base2k);
     let lvl_2_pairwise: usize = module.cnv_pairwise_apply_dft_tmp_bytes(cnv_offset, pairwise_dft_size, a_size, b_size);
 
-    let lvl_2a: usize = module.bytes_of_vec_znx_dft(module.n(), 1, diag_dft_size)
-        + module.bytes_of_vec_znx_big(module.n(), 1, diag_dft_size)
-        + BE::bytes_of_vec_znx(module.n(), 1, res_size)
+    let lvl_2a: usize = module.vec_znx_dft_bytes_of(module.n(), 1, diag_dft_size)
+        + module.vec_znx_big_bytes_of(module.n(), 1, diag_dft_size)
+        + BE::vec_znx_bytes_of(module.n(), 1, res_size)
         + lvl_2_apply
             .max(module.vec_znx_big_normalize_tmp_bytes())
             .max(module.vec_znx_idft_apply_tmp_bytes());
-    let lvl_2b: usize = module.bytes_of_vec_znx_dft(module.n(), 1, pairwise_dft_size)
-        + module.bytes_of_vec_znx_big(module.n(), 1, pairwise_dft_size)
-        + BE::bytes_of_vec_znx(module.n(), 1, res_size)
+    let lvl_2b: usize = module.vec_znx_dft_bytes_of(module.n(), 1, pairwise_dft_size)
+        + module.vec_znx_big_bytes_of(module.n(), 1, pairwise_dft_size)
+        + BE::vec_znx_bytes_of(module.n(), 1, res_size)
         + lvl_2_pairwise
             .max(module.vec_znx_big_normalize_tmp_bytes())
             .max(module.vec_znx_idft_apply_tmp_bytes());
@@ -2845,7 +2882,7 @@ where
 /// `CnvPVecL` and runs `glwe_tensor_apply_loop` against the supplied `b_prep`.
 /// `b_size` is the limb count of the operand `b_prep` was prepared from.
 #[allow(clippy::too_many_arguments)]
-pub fn glwe_tensor_apply_prepared_right<BE, M, R, A, BP>(
+pub fn glwe_tensor_apply_prepared_right_reference<BE, M, R, A, BP>(
     module: &M,
     cnv_offset: usize,
     res: &mut R,
@@ -2863,7 +2900,7 @@ pub fn glwe_tensor_apply_prepared_right<BE, M, R, A, BP>(
         + VecZnxIdftApply<BE>
         + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BE>
-        + Convolution<BE>
+        + CnvOps<BE>
         + VecZnxSubAssign<BE>
         + VecZnxAddAssign<BE>
         + VecZnxBigNormalizeTmpBytes
@@ -2881,16 +2918,16 @@ pub fn glwe_tensor_apply_prepared_right<BE, M, R, A, BP>(
     let a_k = a.k().as_usize();
     let a_size: usize = a_k.div_ceil(ab_base2k);
     // Relaxed input: `a` may carry more limbs than `a_k` requires; the prepared left
-    // operand is sized to the effective limb count and `cnv_prepare_left` clamps to it, reading
+    // operand is sized to the effective limb count and `cnv_pvec_left_prepare` clamps to it, reading
     // only the top (most-significant) effective limbs.
     assert!(a_size <= a.size(), "a_k limbs ({a_size}) > a.size() ({})", a.size());
 
     let scratch = scratch.borrow();
     assert!(
-        scratch.available() >= glwe_tensor_apply_prepared_right_tmp_bytes(module, res, a, a_size, b_size),
+        scratch.available() >= glwe_tensor_apply_prepared_right_tmp_bytes_reference(module, res, a, a_size, b_size),
         "scratch.available(): {} < glwe_tensor_apply_prepared_right_tmp_bytes: {}",
         scratch.available(),
-        glwe_tensor_apply_prepared_right_tmp_bytes(module, res, a, a_size, b_size)
+        glwe_tensor_apply_prepared_right_tmp_bytes_reference(module, res, a, a_size, b_size)
     );
     let (mut a_tmp, mut scratch) = scratch.take_glwe_scratch(a);
     let a = if a.is_canonical() {
@@ -2906,7 +2943,7 @@ pub fn glwe_tensor_apply_prepared_right<BE, M, R, A, BP>(
     let (mut a_prep, mut scratch) = scratch.take_cnv_pvec_left_scratch(res.n().as_usize(), cols, a_size, PrepareHint::Reuse);
 
     let mut prep_scratch = scratch.borrow();
-    module.cnv_prepare_left(&mut a_prep, &a.data, &mut prep_scratch);
+    module.cnv_pvec_left_prepare(&mut a_prep, &a.data, &mut prep_scratch);
 
     glwe_tensor_apply_loop(
         module,
@@ -2921,61 +2958,66 @@ pub fn glwe_tensor_apply_prepared_right<BE, M, R, A, BP>(
     );
 }
 
-/// Scratch bytes of [`glwe_prepare_right`] into a `b_prep_size`-limb operand.
-pub fn glwe_prepare_right_tmp_bytes<BE, M, B>(module: &M, b_prep_size: usize, b: &B) -> usize
+/// Scratch bytes of [`glwe_right_operand_prepare`] into a `b_prep_size`-limb operand.
+pub fn glwe_right_operand_prepare_tmp_bytes<BE, M, B>(module: &M, b_prep_size: usize, b: &B) -> usize
 where
     BE: Backend,
-    M: Convolution<BE> + GLWENormalize<BE> + GLWEBytesOf<BE>,
+    M: CnvOps<BE> + GLWENormalize<BE> + GLWEBytesOf<BE>,
     B: GLWEInfos,
 {
-    glwe_prepare_tmp_bytes(module, b, module.cnv_prepare_right_tmp_bytes(b_prep_size, b.size()))
+    glwe_prepare_tmp_bytes(module, b, module.cnv_pvec_right_prepare_tmp_bytes(b_prep_size, b.size()))
 }
 
 /// Prepares GLWE `b` into the caller-owned scratch `CnvPVecR` `b_prep`.
 ///
 /// `b_prep` holds `b` at width `b_k`: its top `ceil(b_k / base2k)` limbs, which must fit in `b`, normalized first if
-/// its canonical flag is clear, within [`glwe_prepare_right_tmp_bytes`].
-/// The prepared operand can then be reused across several [`glwe_tensor_apply_prepared_right`] calls.
+/// its canonical flag is clear, within [`glwe_right_operand_prepare_tmp_bytes`].
+/// The prepared operand can then be reused across several [`glwe_tensor_apply_prepared_right_reference`] calls.
 ///
 /// # Panics
 ///
 /// Unless `b_prep` has that many limbs.
-pub fn glwe_prepare_right<BE, M, B, BP>(module: &M, b_prep: &mut BP, b: &B, b_k: usize, scratch: &mut ScratchArena<'_, BE>)
-where
+pub fn glwe_right_operand_prepare<BE, M, B, BP>(
+    module: &M,
+    b_prep: &mut BP,
+    b: &B,
+    b_k: usize,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
     BE: Backend,
-    M: Convolution<BE> + GLWENormalize<BE>,
+    M: CnvOps<BE> + GLWENormalize<BE>,
     B: GLWEToBackendRef<BE> + GLWEInfos,
     BP: CnvPVecRToBackendMut<BE>,
 {
     let mut b_prep = b_prep.to_backend_mut();
     glwe_prepare_canonical(module, b_prep.size(), b, b_k, scratch, |b, scratch| {
-        module.cnv_prepare_right(&mut b_prep, b, scratch)
+        module.cnv_pvec_right_prepare(&mut b_prep, b, scratch)
     });
 }
 
-/// Scratch bytes of [`glwe_prepare_left`] into an `a_prep_size`-limb operand.
-pub fn glwe_prepare_left_tmp_bytes<BE, M, A>(module: &M, a_prep_size: usize, a: &A) -> usize
+/// Scratch bytes of [`glwe_left_operand_prepare`] into an `a_prep_size`-limb operand.
+pub fn glwe_left_operand_prepare_tmp_bytes<BE, M, A>(module: &M, a_prep_size: usize, a: &A) -> usize
 where
     BE: Backend,
-    M: Convolution<BE> + GLWENormalize<BE> + GLWEBytesOf<BE>,
+    M: CnvOps<BE> + GLWENormalize<BE> + GLWEBytesOf<BE>,
     A: GLWEInfos,
 {
-    glwe_prepare_tmp_bytes(module, a, module.cnv_prepare_left_tmp_bytes(a_prep_size, a.size()))
+    glwe_prepare_tmp_bytes(module, a, module.cnv_pvec_left_prepare_tmp_bytes(a_prep_size, a.size()))
 }
 
 /// Prepares GLWE `a` into the caller-owned `CnvPVecL` `a_prep`: the left operand of the prepared products, as
-/// [`glwe_prepare_right`] prepares the right one, within [`glwe_prepare_left_tmp_bytes`]. A `CnvPVecL` of `rank + 1`
+/// [`glwe_right_operand_prepare`] prepares the right one, within [`glwe_left_operand_prepare_tmp_bytes`]. A `CnvPVecL` of `rank + 1`
 /// columns and `ceil(a.k() / base2k)` limbs, prepared at `a_k = a.k()`, holds `a` as the unprepared products read it.
-pub fn glwe_prepare_left<BE, M, A, AP>(module: &M, a_prep: &mut AP, a: &A, a_k: usize, scratch: &mut ScratchArena<'_, BE>)
+pub fn glwe_left_operand_prepare<BE, M, A, AP>(module: &M, a_prep: &mut AP, a: &A, a_k: usize, scratch: &mut ScratchArena<'_, BE>)
 where
     BE: Backend,
-    M: Convolution<BE> + GLWENormalize<BE>,
+    M: CnvOps<BE> + GLWENormalize<BE>,
     A: GLWEToBackendRef<BE> + GLWEInfos,
     AP: CnvPVecLToBackendMut<BE>,
 {
     let mut a_prep = a_prep.to_backend_mut();
     glwe_prepare_canonical(module, a_prep.size(), a, a_k, scratch, |a, scratch| {
-        module.cnv_prepare_left(&mut a_prep, a, scratch)
+        module.cnv_pvec_left_prepare(&mut a_prep, a, scratch)
     });
 }
 
@@ -3482,7 +3524,7 @@ fn shift_offset(k: usize, bound: usize) -> i64 {
 pub trait GLWEShiftReference<BE: Backend> {
     fn glwe_shift_tmp_bytes_reference(&self, res_size: usize) -> usize;
 
-    fn glwe_rsh_reference<R>(&self, k: usize, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_rsh_assign_reference<R>(&self, k: usize, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE>;
 
@@ -3521,19 +3563,19 @@ where
         + VecZnxCopy<BE>,
 {
     fn glwe_shift_tmp_bytes_reference(&self, res_size: usize) -> usize {
-        // The partial-width `glwe_rsh` path normalizes into a one-column
+        // The partial-width `glwe_rsh_assign` path normalizes into a one-column
         // temporary, and `glwe_lsh_assign` normalizes in place after the
         // kernel; both need the normalization scratch on top of the kernels'.
         // The arena aligns the allocation after the temporary, so its size is
         // rounded to the scratch alignment before the normalization scratch.
         let normalize: usize =
-            BE::scratch_aligned(BE::bytes_of_vec_znx(self.n(), 1, res_size)) + self.vec_znx_normalize_tmp_bytes();
+            BE::scratch_aligned(BE::vec_znx_bytes_of(self.n(), 1, res_size)) + self.vec_znx_normalize_tmp_bytes();
         self.vec_znx_rsh_tmp_bytes(res_size)
             .max(self.vec_znx_lsh_tmp_bytes(res_size))
             .max(normalize)
     }
 
-    fn glwe_rsh_reference<R>(&self, k: usize, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_rsh_assign_reference<R>(&self, k: usize, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE>,
     {
@@ -3833,7 +3875,7 @@ macro_rules! impl_glwe_mul_const_reference_full {
                 a_size: usize,
                 b_size: usize,
             ) -> usize {
-                $crate::reference::operations::glwe_const_combination_tmp_bytes_reference(module, acc_size, a_size, b_size)
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWEMulConstReference<$be>>::glwe_const_combination_tmp_bytes_reference(module, acc_size, a_size, b_size)
             }
 
             fn glwe_const_combination(
@@ -3845,7 +3887,7 @@ macro_rules! impl_glwe_mul_const_reference_full {
                 terms: &[$crate::oep::ConstTerm<'_, $be>],
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) {
-                $crate::reference::operations::glwe_const_combination_reference(module, res, base2k, res_k, acc_size, terms, scratch)
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWEMulConstReference<$be>>::glwe_const_combination_reference(module, res, base2k, res_k, acc_size, terms, scratch)
             }
         }
     };
@@ -4042,10 +4084,10 @@ macro_rules! impl_glwe_shift_reference_full {
             <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWEShiftReference<$be>>::glwe_shift_tmp_bytes_reference(module, res_size)
         }
 
-    fn glwe_rsh<R>(module: &::poulpy_hal::layouts::Module<$be>, k: usize, res: &mut R, scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>)
+    fn glwe_rsh_assign<R>(module: &::poulpy_hal::layouts::Module<$be>, k: usize, res: &mut R, scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>)
     where
         R: $crate::layouts::GLWEToBackendMut<$be> {
-            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWEShiftReference<$be>>::glwe_rsh_reference::<R>(module, k, res, scratch)
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWEShiftReference<$be>>::glwe_rsh_assign_reference::<R>(module, k, res, scratch)
         }
 
     fn glwe_lsh_assign<R>(module: &::poulpy_hal::layouts::Module<$be>, res: &mut R, k: usize, scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>)
@@ -4103,27 +4145,16 @@ macro_rules! impl_glwe_normalize_reference_full {
     };
 }
 
-/// The HAL operations [`glwe_const_combination_reference`] composes.
-pub trait GLWEConstCombinationReference<BE: Backend>:
-    ModuleN + Convolution<BE> + VecZnxBigNormalize<BE> + VecZnxBigNormalizeTmpBytes + VecZnxRsh<BE> + VecZnxRshTmpBytes
-{
-}
-
-impl<BE: Backend, M> GLWEConstCombinationReference<BE> for M where
-    M: ModuleN + Convolution<BE> + VecZnxBigNormalize<BE> + VecZnxBigNormalizeTmpBytes + VecZnxRsh<BE> + VecZnxRshTmpBytes
-{
-}
-
 /// Scratch of [`glwe_const_combination_reference`]: the accumulator and one shifted constant
 /// beside the products, shift and normalization.
 pub fn glwe_const_combination_tmp_bytes_reference<BE, M>(module: &M, acc_size: usize, a_size: usize, b_size: usize) -> usize
 where
     BE: Backend,
-    M: GLWEConstCombinationReference<BE>,
+    M: ModuleN + CnvOps<BE> + VecZnxBigNormalize<BE> + VecZnxBigNormalizeTmpBytes + VecZnxRsh<BE> + VecZnxRshTmpBytes,
 {
     let shifted_size = b_size + 1;
-    BE::scratch_aligned(BE::bytes_of_vec_znx_big(module.n(), 1, acc_size))
-        + BE::scratch_aligned(BE::bytes_of_vec_znx(1, 1, shifted_size))
+    BE::scratch_aligned(BE::vec_znx_big_bytes_of(module.n(), 1, acc_size))
+        + BE::scratch_aligned(BE::vec_znx_bytes_of(1, 1, shifted_size))
         + module
             .cnv_by_const_apply_tmp_bytes(0, acc_size, a_size, shifted_size)
             .max(module.cnv_by_const_apply_add_tmp_bytes(0, acc_size, a_size, shifted_size))
@@ -4144,7 +4175,7 @@ pub fn glwe_const_combination_reference<BE, M>(
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
-    M: GLWEConstCombinationReference<BE>,
+    M: ModuleN + CnvOps<BE> + VecZnxBigNormalize<BE> + VecZnxBigNormalizeTmpBytes + VecZnxRsh<BE> + VecZnxRshTmpBytes,
 {
     assert!(!terms.is_empty(), "glwe_const_combination: no term");
     assert!(
@@ -4220,7 +4251,7 @@ fn const_combination_accumulate<BE, M>(
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
-    M: GLWEConstCombinationReference<BE>,
+    M: ModuleN + CnvOps<BE> + VecZnxBigNormalize<BE> + VecZnxBigNormalizeTmpBytes + VecZnxRsh<BE> + VecZnxRshTmpBytes,
 {
     if first {
         module.cnv_by_const_apply(

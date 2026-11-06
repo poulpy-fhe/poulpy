@@ -12,7 +12,7 @@ use poulpy_core::{
 };
 use poulpy_hal::layouts::{Backend, CopyFromHost, CopyToHost, Data, HostDataMut, HostDataRef, ReaderFrom, WriterTo, ZnxWord};
 
-pub type GGLWEPatCompressedOwned<BE> = GGLWEPatCompressed<<BE as Backend>::OwnedBuf, <BE as Backend>::ZnxWord>;
+pub type MHEGGLWEPatCompressedOwned<BE> = MHEGGLWEPatCompressed<<BE as Backend>::OwnedBuf, <BE as Backend>::ZnxWord>;
 
 /// Seeded public aggregatable transcript of a GGLWE: the bodies of a
 /// [`GGLWECompressed`] whose masks every party regenerates from the common seed.
@@ -20,11 +20,11 @@ pub type GGLWEPatCompressedOwned<BE> = GGLWEPatCompressed<<BE as Backend>::Owned
 /// Aggregation adds limbs without normalizing; finalization produces canonical
 /// digits and leaves the PAT unchanged.
 #[derive(Clone)]
-pub struct GGLWEPatCompressed<D: Data, W: ZnxWord> {
+pub struct MHEGGLWEPatCompressed<D: Data, W: ZnxWord> {
     pub(crate) inner: GGLWECompressed<D, W>,
 }
 
-impl<D: Data, W: ZnxWord> PartialEq for GGLWEPatCompressed<D, W>
+impl<D: Data, W: ZnxWord> PartialEq for MHEGGLWEPatCompressed<D, W>
 where
     GGLWECompressed<D, W>: PartialEq,
 {
@@ -33,9 +33,9 @@ where
     }
 }
 
-impl<D: Data, W: ZnxWord> Eq for GGLWEPatCompressed<D, W> where GGLWECompressed<D, W>: Eq {}
+impl<D: Data, W: ZnxWord> Eq for MHEGGLWEPatCompressed<D, W> where GGLWECompressed<D, W>: Eq {}
 
-impl<D: Data, W: ZnxWord> LWEInfos for GGLWEPatCompressed<D, W> {
+impl<D: Data, W: ZnxWord> LWEInfos for MHEGGLWEPatCompressed<D, W> {
     fn noise(&self) -> Option<poulpy_core::ComponentNoise> {
         self.inner.noise()
     }
@@ -57,13 +57,13 @@ impl<D: Data, W: ZnxWord> LWEInfos for GGLWEPatCompressed<D, W> {
     }
 }
 
-impl<D: Data, W: ZnxWord> GLWEInfos for GGLWEPatCompressed<D, W> {
+impl<D: Data, W: ZnxWord> GLWEInfos for MHEGGLWEPatCompressed<D, W> {
     fn rank(&self) -> Rank {
         self.inner.rank()
     }
 }
 
-impl<D: Data, W: ZnxWord> GGLWEInfos for GGLWEPatCompressed<D, W> {
+impl<D: Data, W: ZnxWord> GGLWEInfos for MHEGGLWEPatCompressed<D, W> {
     fn k_aux(&self) -> TorusPrecision {
         self.inner.k_aux()
     }
@@ -89,19 +89,19 @@ impl<D: Data, W: ZnxWord> GGLWEInfos for GGLWEPatCompressed<D, W> {
     }
 }
 
-impl<D: Data, W: ZnxWord> GGLWECompressedSeed for GGLWEPatCompressed<D, W> {
+impl<D: Data, W: ZnxWord> GGLWECompressedSeed for MHEGGLWEPatCompressed<D, W> {
     fn seed(&self) -> &Vec<[u8; 32]> {
         self.inner.seed()
     }
 }
 
-impl<D: Data, W: ZnxWord> GGLWECompressedSeedMut for GGLWEPatCompressed<D, W> {
+impl<D: Data, W: ZnxWord> GGLWECompressedSeedMut for MHEGGLWEPatCompressed<D, W> {
     fn seed_mut(&mut self) -> &mut Vec<[u8; 32]> {
         self.inner.seed_mut()
     }
 }
 
-impl<BE: Backend, D: Data> GGLWECompressedToBackendRef<BE> for GGLWEPatCompressed<D, BE::ZnxWord>
+impl<BE: Backend, D: Data> GGLWECompressedToBackendRef<BE> for MHEGGLWEPatCompressed<D, BE::ZnxWord>
 where
     GGLWECompressed<D, BE::ZnxWord>: GGLWECompressedToBackendRef<BE>,
 {
@@ -110,7 +110,7 @@ where
     }
 }
 
-impl<BE: Backend, D: Data> GGLWECompressedToBackendMut<BE> for GGLWEPatCompressed<D, BE::ZnxWord>
+impl<BE: Backend, D: Data> GGLWECompressedToBackendMut<BE> for MHEGGLWEPatCompressed<D, BE::ZnxWord>
 where
     GGLWECompressed<D, BE::ZnxWord>: GGLWECompressedToBackendMut<BE>,
 {
@@ -123,37 +123,43 @@ where
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> fmt::Debug for GGLWEPatCompressed<D, W> {
+impl<D: HostDataRef, W: ZnxWord> fmt::Debug for MHEGGLWEPatCompressed<D, W> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{self}")
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> fmt::Display for GGLWEPatCompressed<D, W> {
+impl<D: HostDataRef, W: ZnxWord> fmt::Display for MHEGGLWEPatCompressed<D, W> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "GGLWEPatCompressed: {}", self.inner)
+        write!(f, "MHEGGLWEPatCompressed: {}", self.inner)
     }
 }
 
-impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GGLWEPatCompressed<D, W> {
+impl<D: HostDataMut, W: ZnxWord> ReaderFrom for MHEGGLWEPatCompressed<D, W> {
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
         self.inner.read_from(reader)
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> WriterTo for GGLWEPatCompressed<D, W> {
+impl<D: HostDataRef, W: ZnxWord> WriterTo for MHEGGLWEPatCompressed<D, W> {
     fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
         self.inner.write_to(writer)
     }
 }
 
-impl<D1, D2, W> TransferInto<GGLWEPatCompressed<D2, W>> for GGLWEPatCompressed<D1, W>
+impl<D1, D2, W> TransferInto<MHEGGLWEPatCompressed<D2, W>> for MHEGGLWEPatCompressed<D1, W>
 where
     D1: Data + CopyToHost,
     D2: Data + CopyFromHost,
     W: ZnxWord,
 {
-    fn transfer_into(&self, dst: &mut GGLWEPatCompressed<D2, W>) {
+    fn transfer_into(&self, dst: &mut MHEGGLWEPatCompressed<D2, W>) {
         self.inner.transfer_into(&mut dst.inner);
     }
 }
+
+#[deprecated(note = "renamed MHEGGLWEPatCompressed")]
+pub type GGLWEPatCompressed<D, W> = MHEGGLWEPatCompressed<D, W>;
+
+#[deprecated(note = "renamed MHEGGLWEPatCompressedOwned")]
+pub type GGLWEPatCompressedOwned<BE> = MHEGGLWEPatCompressedOwned<BE>;

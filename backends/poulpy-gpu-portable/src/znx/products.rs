@@ -58,7 +58,10 @@ fn scalar_product_kernel(
 /// `res[j][i] = a[j][i] * b[i]` for the first `a.n` coefficients of every limb of `res`.
 pub(crate) fn scalar_product<RT: GpuRuntime>(res: &Column, a: &Column, b: &Binding, b_base: u32) {
     assert!(res.words == 2 && a.words == 1);
-    assert!(res.n >= a.n && res.size <= a.size, "vec_znx_scalar_product: operand shapes");
+    assert!(
+        res.n >= a.n && res.size <= a.size,
+        "vec_znx_big_scalar_product: operand shapes"
+    );
     if res.size == 0 || a.n == 0 {
         return;
     }

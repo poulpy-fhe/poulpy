@@ -4,7 +4,7 @@ use poulpy_ckks::{
         CKKSAddManyOps, CKKSAddOps, CKKSCopyOps, CKKSInnerSumOps, CKKSLinearTransformationOps, CKKSModuleInfos, CKKSRotateOps,
         LinearTransformationBabySteps, LinearTransformationPrepared,
     },
-    layouts::{CKKSModuleAlloc, ScratchArenaTakeCKKS},
+    layouts::{CKKSCiphertextAlloc, ScratchArenaTakeCKKSCiphertext},
 };
 use poulpy_core::{
     GLWEBytesOf, GLWENormalize,
@@ -18,10 +18,10 @@ use poulpy_hal::{
     layouts::{Backend, Module, ScratchArena},
 };
 
-use super::lt_tmp_bytes;
+use super::{LtEval, lt_tmp_bytes};
 use crate::{
     layouts::{
-        BlasContext, BlasContextInfos, BlasGrid, BlasGridInfos, BlasGridMut,
+        BlasContextInfos, BlasContextPrepared, BlasGrid, BlasGridInfos, BlasGridMut,
         ciphertext::{layout_of, replicated_at},
         context::{reduction_projection, shift_maps, shift_rotates},
         encoding::{copied_block, mapped_block_into},
@@ -41,7 +41,7 @@ use crate::{
 /// The hook runs on the inputs of an operation its validator accepted ([`crate::layouts::validate_blas_transpose`],
 /// [`crate::layouts::validate_blas_rotate_rows`], [`crate::layouts::validate_blas_rotate_cols`],
 /// [`crate::layouts::validate_blas_sum_rows`], [`crate::layouts::validate_blas_sum_cols`],
-/// [`crate::layouts::validate_blas_matmul_prepare_left`], [`crate::layouts::validate_blas_matmul_prepare_right`],
+/// [`crate::layouts::validate_blas_matmul_left_operand_prepare`], [`crate::layouts::validate_blas_matmul_right_operand_prepare`],
 /// [`crate::layouts::validate_blas_matmul_prepared`], [`crate::layouts::validate_blas_matmul`],
 /// [`crate::layouts::validate_blas_matmul_pt_right`], [`crate::layouts::validate_blas_matmul_pt_left`]): it checks
 /// nothing but its scratch, and returns poulpy-ckks's budget errors before any write. It runs source after source on
@@ -63,11 +63,11 @@ pub trait BlasMatIntraReference<BE: Backend> {
         S: CKKSCtBounds,
         K: GGLWEInfos,
     {
-        lt_tmp_bytes(self, dst, src, keys, false)
+        lt_tmp_bytes(self, dst, src, keys, LtEval::Single)
     }
 
     /// `dst[t * lts.len() + m] = lts[m](src[t])`, stamped with the label of `src[t]`. Per source, one baby-step cache
-    /// covers the baby steps of every map, then each map is evaluated from it with `ckks_eval_linear_transformation_into`.
+    /// covers the baby steps of every map, then each map is evaluated from it with `ckks_linear_transformation_eval_into`.
     ///
     /// # Panics
     ///
@@ -105,9 +105,9 @@ pub trait BlasMatIntraReference<BE: Backend> {
         let rotations: Vec<i64> = lts.iter().flat_map(|lt| lt.baby_steps().iter().copied()).collect();
         let mut babies = LinearTransformationBabySteps::alloc(self, &rotations, first);
         for (&src, dst) in src.iter().zip(dst.chunks_mut(lts.len())) {
-            self.ckks_prepare_linear_transformation_baby_steps(&mut babies, src, keys, scratch)?;
+            self.ckks_linear_transformation_baby_steps_prepare(&mut babies, src, keys, scratch)?;
             for (dst, lt) in dst.iter_mut().zip(lts) {
-                self.ckks_eval_linear_transformation_into(dst, src, &babies, lt, keys, scratch)?;
+                self.ckks_linear_transformation_eval_into(dst, src, &babies, lt, keys, scratch)?;
                 dst.set_log_sparsity(src.log_sparsity());
             }
         }
@@ -117,7 +117,7 @@ pub trait BlasMatIntraReference<BE: Backend> {
     /// The scratch of a row shift by any `k`: the copy for `k' = 0`, otherwise the rotation where the shift rotates, or
     /// else for every `k'` the hook with psi^k' along one block, or with both half maps plus the addition along
     /// several.
-    fn blas_rotate_rows_tmp_bytes_reference<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContext<BE>, keys: &K) -> usize
+    fn blas_rotate_rows_tmp_bytes_reference<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContextPrepared<BE>, keys: &K) -> usize
     where
         BE: BlasMatIntraImpl,
         Self: CKKSCopyOps<BE> + CKKSRotateOps<BE> + CKKSAddOps<BE>,
@@ -136,7 +136,7 @@ pub trait BlasMatIntraReference<BE: Backend> {
         k: usize,
         res: &mut R,
         a: &A,
-        ctx: &BlasContext<BE>,
+        ctx: &BlasContextPrepared<BE>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -148,7 +148,7 @@ pub trait BlasMatIntraReference<BE: Backend> {
         K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync;
 
     /// [`Self::blas_rotate_rows_tmp_bytes_reference`] for a column shift, phi^k' along one block.
-    fn blas_rotate_cols_tmp_bytes_reference<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContext<BE>, keys: &K) -> usize
+    fn blas_rotate_cols_tmp_bytes_reference<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContextPrepared<BE>, keys: &K) -> usize
     where
         BE: BlasMatIntraImpl,
         Self: CKKSCopyOps<BE> + CKKSRotateOps<BE> + CKKSAddOps<BE>,
@@ -163,7 +163,7 @@ pub trait BlasMatIntraReference<BE: Backend> {
         k: usize,
         res: &mut R,
         a: &A,
-        ctx: &BlasContext<BE>,
+        ctx: &BlasContextPrepared<BE>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -178,7 +178,7 @@ pub trait BlasMatIntraReference<BE: Backend> {
     /// the line sum normalizes flag-clear blocks, then the inner sum of `u` into the line's first block of `res`, or
     /// its inner sum in place, the hook with the projection and the replicate on a block of the layout the projection
     /// leaves, then the copies of that block.
-    fn blas_sum_rows_tmp_bytes_reference<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContext<BE>, keys: &K) -> usize
+    fn blas_sum_rows_tmp_bytes_reference<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContextPrepared<BE>, keys: &K) -> usize
     where
         BE: BlasMatIntraImpl,
         Self: CKKSCopyOps<BE> + CKKSAddOps<BE> + CKKSAddManyOps<BE> + CKKSInnerSumOps<BE> + GLWENormalize<BE> + GLWEBytesOf<BE>,
@@ -195,7 +195,7 @@ pub trait BlasMatIntraReference<BE: Backend> {
         &self,
         res: &mut R,
         a: &A,
-        ctx: &BlasContext<BE>,
+        ctx: &BlasContextPrepared<BE>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -207,7 +207,7 @@ pub trait BlasMatIntraReference<BE: Backend> {
         K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync;
 
     /// [`Self::blas_sum_rows_tmp_bytes_reference`] along the rows of blocks.
-    fn blas_sum_cols_tmp_bytes_reference<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContext<BE>, keys: &K) -> usize
+    fn blas_sum_cols_tmp_bytes_reference<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContextPrepared<BE>, keys: &K) -> usize
     where
         BE: BlasMatIntraImpl,
         Self: CKKSCopyOps<BE> + CKKSAddOps<BE> + CKKSAddManyOps<BE> + CKKSInnerSumOps<BE> + GLWENormalize<BE> + GLWEBytesOf<BE>,
@@ -221,7 +221,7 @@ pub trait BlasMatIntraReference<BE: Backend> {
         &self,
         res: &mut R,
         a: &A,
-        ctx: &BlasContext<BE>,
+        ctx: &BlasContextPrepared<BE>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -234,7 +234,7 @@ pub trait BlasMatIntraReference<BE: Backend> {
 }
 
 impl<BE: Backend> BlasMatIntraReference<BE> for Module<BE> {
-    fn blas_rotate_rows_tmp_bytes_reference<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContext<BE>, keys: &K) -> usize
+    fn blas_rotate_rows_tmp_bytes_reference<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContextPrepared<BE>, keys: &K) -> usize
     where
         BE: BlasMatIntraImpl,
         Self: CKKSCopyOps<BE> + CKKSRotateOps<BE> + CKKSAddOps<BE>,
@@ -250,7 +250,7 @@ impl<BE: Backend> BlasMatIntraReference<BE> for Module<BE> {
         k: usize,
         res: &mut R,
         a: &A,
-        ctx: &BlasContext<BE>,
+        ctx: &BlasContextPrepared<BE>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -264,7 +264,7 @@ impl<BE: Backend> BlasMatIntraReference<BE> for Module<BE> {
         shift(self, "blas_rotate_rows", k, res, a, true, ctx, keys, scratch)
     }
 
-    fn blas_rotate_cols_tmp_bytes_reference<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContext<BE>, keys: &K) -> usize
+    fn blas_rotate_cols_tmp_bytes_reference<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContextPrepared<BE>, keys: &K) -> usize
     where
         BE: BlasMatIntraImpl,
         Self: CKKSCopyOps<BE> + CKKSRotateOps<BE> + CKKSAddOps<BE>,
@@ -280,7 +280,7 @@ impl<BE: Backend> BlasMatIntraReference<BE> for Module<BE> {
         k: usize,
         res: &mut R,
         a: &A,
-        ctx: &BlasContext<BE>,
+        ctx: &BlasContextPrepared<BE>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -294,7 +294,7 @@ impl<BE: Backend> BlasMatIntraReference<BE> for Module<BE> {
         shift(self, "blas_rotate_cols", k, res, a, false, ctx, keys, scratch)
     }
 
-    fn blas_sum_rows_tmp_bytes_reference<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContext<BE>, keys: &K) -> usize
+    fn blas_sum_rows_tmp_bytes_reference<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContextPrepared<BE>, keys: &K) -> usize
     where
         BE: BlasMatIntraImpl,
         Self: CKKSCopyOps<BE> + CKKSAddOps<BE> + CKKSAddManyOps<BE> + CKKSInnerSumOps<BE> + GLWENormalize<BE> + GLWEBytesOf<BE>,
@@ -309,7 +309,7 @@ impl<BE: Backend> BlasMatIntraReference<BE> for Module<BE> {
         &self,
         res: &mut R,
         a: &A,
-        ctx: &BlasContext<BE>,
+        ctx: &BlasContextPrepared<BE>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -323,7 +323,7 @@ impl<BE: Backend> BlasMatIntraReference<BE> for Module<BE> {
         reduction(self, res, a, true, ctx, keys, scratch)
     }
 
-    fn blas_sum_cols_tmp_bytes_reference<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContext<BE>, keys: &K) -> usize
+    fn blas_sum_cols_tmp_bytes_reference<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContextPrepared<BE>, keys: &K) -> usize
     where
         BE: BlasMatIntraImpl,
         Self: CKKSCopyOps<BE> + CKKSAddOps<BE> + CKKSAddManyOps<BE> + CKKSInnerSumOps<BE> + GLWENormalize<BE> + GLWEBytesOf<BE>,
@@ -338,7 +338,7 @@ impl<BE: Backend> BlasMatIntraReference<BE> for Module<BE> {
         &self,
         res: &mut R,
         a: &A,
-        ctx: &BlasContext<BE>,
+        ctx: &BlasContextPrepared<BE>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -354,7 +354,7 @@ impl<BE: Backend> BlasMatIntraReference<BE> for Module<BE> {
 }
 
 /// [`BlasMatIntraReference::blas_rotate_rows_tmp_bytes_reference`] (`rows`) or its column form.
-fn shift_tmp_bytes<BE, R, A, K>(module: &Module<BE>, res: &R, a: &A, rows: bool, ctx: &BlasContext<BE>, keys: &K) -> usize
+fn shift_tmp_bytes<BE, R, A, K>(module: &Module<BE>, res: &R, a: &A, rows: bool, ctx: &BlasContextPrepared<BE>, keys: &K) -> usize
 where
     BE: BlasMatIntraImpl,
     Module<BE>: CKKSCopyOps<BE> + CKKSRotateOps<BE> + CKKSAddOps<BE>,
@@ -393,7 +393,7 @@ fn shift<BE, R, A, K>(
     res: &mut R,
     a: &A,
     rows: bool,
-    ctx: &BlasContext<BE>,
+    ctx: &BlasContextPrepared<BE>,
     keys: &K,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
@@ -423,7 +423,7 @@ fn shift_blocks<BE, R, A, K>(
     res: &mut R,
     a: &A,
     rows: bool,
-    ctx: &BlasContext<BE>,
+    ctx: &BlasContextPrepared<BE>,
     keys: &K,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
@@ -487,7 +487,14 @@ where
 }
 
 /// [`BlasMatIntraReference::blas_sum_rows_tmp_bytes_reference`] (`rows`) or its column form.
-fn reduction_tmp_bytes<BE, R, A, K>(module: &Module<BE>, res: &R, a: &A, rows: bool, ctx: &BlasContext<BE>, keys: &K) -> usize
+fn reduction_tmp_bytes<BE, R, A, K>(
+    module: &Module<BE>,
+    res: &R,
+    a: &A,
+    rows: bool,
+    ctx: &BlasContextPrepared<BE>,
+    keys: &K,
+) -> usize
 where
     BE: BlasMatIntraImpl,
     Module<BE>: CKKSCopyOps<BE> + CKKSAddOps<BE> + CKKSAddManyOps<BE> + CKKSInnerSumOps<BE> + GLWENormalize<BE> + GLWEBytesOf<BE>,
@@ -590,7 +597,7 @@ fn reduction<BE, R, A, K>(
     res: &mut R,
     a: &A,
     rows: bool,
-    ctx: &BlasContext<BE>,
+    ctx: &BlasContextPrepared<BE>,
     keys: &K,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>

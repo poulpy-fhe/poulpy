@@ -12,7 +12,7 @@ use crate::{
     oep::DecompressionImpl,
 };
 
-pub(crate) fn decompress_gglwe_derived<BE, R, O>(module: &Module<BE>, res: &mut R, other: &O)
+pub(crate) fn gglwe_decompress_derived<BE, R, O>(module: &Module<BE>, res: &mut R, other: &O)
 where
     BE: DecompressionImpl,
     R: GGLWEToBackendMut<BE> + GGLWEInfos,
@@ -24,7 +24,7 @@ where
         let other = other.to_backend_ref();
 
         assert_eq!(res.k_digit(), other.k_digit());
-        assert_eq!(res.k_offset(), other.k_offset(), "decompress_gglwe: row offsets differ");
+        assert_eq!(res.k_offset(), other.k_offset(), "gglwe_decompress: row offsets differ");
         assert!(res.dnum() <= other.dnum());
 
         let rank_in: usize = res.rank_in().into();
@@ -33,14 +33,14 @@ where
             for row_i in 0..dnum {
                 let mut dst = res.at_view_mut(row_i, col_i);
                 let src = other.at_view(row_i, col_i);
-                BE::decompress_glwe(module, &mut dst, &src);
+                BE::glwe_decompress(module, &mut dst, &src);
             }
         }
     }
     res.set_noise(noise);
 }
 
-pub(crate) fn decompress_ggsw_derived<BE, R, O>(module: &Module<BE>, res: &mut R, other: &O)
+pub(crate) fn ggsw_decompress_derived<BE, R, O>(module: &Module<BE>, res: &mut R, other: &O)
 where
     BE: DecompressionImpl,
     R: GGSWToBackendMut<BE> + GGSWInfos,
@@ -59,14 +59,14 @@ where
             for col_j in 0..rank + 1 {
                 let mut dst = res.at_view_mut(row_i, col_j);
                 let src = other.at_view(row_i, col_j);
-                BE::decompress_glwe(module, &mut dst, &src);
+                BE::glwe_decompress(module, &mut dst, &src);
             }
         }
     }
     res.set_noise(noise);
 }
 
-pub(crate) fn decompress_glwe_public_key_derived<BE, R, O>(module: &Module<BE>, res: &mut R, other: &O)
+pub(crate) fn glwe_public_key_decompress_derived<BE, R, O>(module: &Module<BE>, res: &mut R, other: &O)
 where
     BE: DecompressionImpl,
     R: GLWEPublicKeyToBackendMut<BE> + GetDistributionMut + GLWEInfos,
@@ -80,72 +80,72 @@ where
         let mut res = res.to_backend_mut();
         let other = other.to_backend_ref();
         for l in 0..other.rank().as_usize() {
-            BE::decompress_glwe(module, &mut res.at_view_mut(l), &other.at_view(l));
+            BE::glwe_decompress(module, &mut res.at_view_mut(l), &other.at_view(l));
         }
     }
     res.set_noise(other.noise());
     *res.dist_mut() = *other.dist();
 }
 
-pub(crate) fn decompress_automorphism_key_derived<BE, R, O>(module: &Module<BE>, res: &mut R, other: &O)
+pub(crate) fn glwe_automorphism_key_decompress_derived<BE, R, O>(module: &Module<BE>, res: &mut R, other: &O)
 where
     BE: DecompressionImpl,
     R: GGLWEToBackendMut<BE> + GGLWEInfos + SetGaloisElement,
     O: GGLWECompressedToBackendRef<BE> + GGLWEInfos + GetGaloisElement,
 {
-    BE::decompress_gglwe(module, res, other);
+    BE::gglwe_decompress(module, res, other);
     res.set_p(other.p());
 }
 
-pub(crate) fn decompress_glwe_switching_key_derived<BE, R, O>(module: &Module<BE>, res: &mut R, other: &O)
+pub(crate) fn glwe_switching_key_decompress_derived<BE, R, O>(module: &Module<BE>, res: &mut R, other: &O)
 where
     BE: DecompressionImpl,
     R: GGLWEToBackendMut<BE> + GGLWEInfos + GLWESwitchingKeyDegreesMut,
     O: GGLWECompressedToBackendRef<BE> + GGLWEInfos + GLWESwitchingKeyDegrees,
 {
-    BE::decompress_gglwe(module, res, other);
+    BE::gglwe_decompress(module, res, other);
 
     *res.input_degree() = *other.input_degree();
     *res.output_degree() = *other.output_degree();
 }
 
-pub(crate) fn decompress_tensor_key_derived<BE, R, O>(module: &Module<BE>, res: &mut R, other: &O)
+pub(crate) fn glwe_tensor_key_decompress_derived<BE, R, O>(module: &Module<BE>, res: &mut R, other: &O)
 where
     BE: DecompressionImpl,
     R: GGLWEToBackendMut<BE> + GGLWEInfos,
     O: GGLWECompressedToBackendRef<BE> + GGLWEInfos,
 {
-    BE::decompress_gglwe(module, res, other);
+    BE::gglwe_decompress(module, res, other);
 }
 
-pub(crate) fn decompress_glwe_to_lwe_key_derived<BE, R, O>(module: &Module<BE>, res: &mut R, other: &O)
+pub(crate) fn glwe_to_lwe_key_decompress_derived<BE, R, O>(module: &Module<BE>, res: &mut R, other: &O)
 where
     BE: DecompressionImpl,
     R: GGLWEToBackendMut<BE> + GGLWEInfos + GLWESwitchingKeyDegreesMut,
     O: GGLWECompressedToBackendRef<BE> + GGLWEInfos + GLWESwitchingKeyDegrees,
 {
-    BE::decompress_glwe_switching_key(module, res, other);
+    BE::glwe_switching_key_decompress(module, res, other);
 }
 
-pub(crate) fn decompress_lwe_switching_key_derived<BE, R, O>(module: &Module<BE>, res: &mut R, other: &O)
+pub(crate) fn lwe_switching_key_decompress_derived<BE, R, O>(module: &Module<BE>, res: &mut R, other: &O)
 where
     BE: DecompressionImpl,
     R: GGLWEToBackendMut<BE> + GGLWEInfos + GLWESwitchingKeyDegreesMut,
     O: GGLWECompressedToBackendRef<BE> + GGLWEInfos + GLWESwitchingKeyDegrees,
 {
-    BE::decompress_glwe_switching_key(module, res, other);
+    BE::glwe_switching_key_decompress(module, res, other);
 }
 
-pub(crate) fn decompress_lwe_to_glwe_key_derived<BE, R, O>(module: &Module<BE>, res: &mut R, other: &O)
+pub(crate) fn lwe_to_glwe_key_decompress_derived<BE, R, O>(module: &Module<BE>, res: &mut R, other: &O)
 where
     BE: DecompressionImpl,
     R: GGLWEToBackendMut<BE> + GGLWEInfos + GLWESwitchingKeyDegreesMut,
     O: GGLWECompressedToBackendRef<BE> + GGLWEInfos + GLWESwitchingKeyDegrees,
 {
-    BE::decompress_glwe_switching_key(module, res, other);
+    BE::glwe_switching_key_decompress(module, res, other);
 }
 
-pub(crate) fn decompress_gglwe_to_ggsw_key_derived<BE, R, O>(module: &Module<BE>, res: &mut R, other: &O)
+pub(crate) fn gglwe_to_ggsw_key_decompress_derived<BE, R, O>(module: &Module<BE>, res: &mut R, other: &O)
 where
     BE: DecompressionImpl,
     R: GGLWEToGGSWKeyToBackendMut<BE>,
@@ -158,11 +158,11 @@ where
         assert_eq!(res.keys.len(), other.keys.len());
         for (a, b) in res.keys.iter().zip(other.keys.iter()) {
             assert_eq!(a.k_digit(), b.k_digit());
-            assert_eq!(a.k_offset(), b.k_offset(), "decompress_gglwe_to_ggsw_key: row offsets differ");
+            assert_eq!(a.k_offset(), b.k_offset(), "gglwe_to_ggsw_key_decompress: row offsets differ");
             assert!(a.dnum() <= b.dnum());
         }
         for i in 0..res.keys.len() {
-            BE::decompress_gglwe(module, &mut res.at_view_mut(i), &other.at_view(i));
+            BE::gglwe_decompress(module, &mut res.at_view_mut(i), &other.at_view(i));
         }
     }
     res.set_noise(noise);

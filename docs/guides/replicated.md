@@ -28,8 +28,8 @@ The other operations build on it:
 
 - encoding quantizes at `log_delta + λ` bits and rounds with shaping; `ckks_encrypt_sk` encrypts `ShapingProfile::max_pass_bits` wider and rounds to the ciphertext width, so the fresh error is shaped;
 - products (`ckks_mul_*`, `ckks_square_*`, `ckks_mul_pt_*`) and automorphisms (`ckks_rotate_*`, `ckks_conjugate_*`) are computed `ShapingProfile::shaping_depth(log_delta, w)` bits under the scale and rounded with shaping;
-- constants are multiplied as masked plaintexts `c·π_S`, constant on the data slots and zero on the guards (`ckks_encode_masked_constant_into`, `MaskedCoeffs`); `ckks_{add,sub}_one_assign` add the masked one;
-- polynomial evaluation and EvalMod take `MaskedCoeffs` (`encode_bsgs_replicated`, `compile_eval_mod_replicated`), and evaluate each baby step as one shaped linear combination.
+- constants are multiplied as masked plaintexts `c·π_S`, constant on the data slots and zero on the guards (`ckks_encode_masked_constant_host_into`, `MaskedCoeffs`); `ckks_{add,sub}_one_assign` add the masked one;
+- polynomial evaluation and EvalMod take `MaskedCoeffs` (`encode_bsgs_replicated`, `ckks_eval_mod_replicated_compile`), and evaluate each baby step as one shaped linear combination.
 
 Operations that would round plainly or write the guard slots return `InvalidOperand` on a replicated layout: constant additions, rotations by a slot count that is not a multiple of `R`, the full-layout linear transformations and DFT, ModUp, bootstrapping, PaCo and SHIP.
 
@@ -54,7 +54,7 @@ The workspace owns the prepared baby rotations for that input layout; evaluation
 
 `ReplicatedBootstrapPlan` holds the circuit (`ReplicatedBootstrapPlan::paper` is the configuration of the paper) and its widths (`k_in`, `k_boot`, `key_k`).
 `ReplicatedBootstrapping` compiles it for a module: the transforms, the masked EvalMod constants, and the Galois elements its keys cover.
-`ReplicatedBootstrapPlan::secure_key_layouts` sizes the gadgets of the keys with the fewest digits whose modulus fits the caller's bounds for the dense secret and for the ephemeral sparse secret.
+`ReplicatedBootstrapPlan::secure_key_layouts` sizes the gadgets of the keys with the fewest digits whose modulus fits the caller's bounds for the dense secret and for the ephemeral sparse secret, with one automorphism key for each Galois element of the compiled bootstrapping.
 
 ### Presets
 
@@ -106,7 +106,7 @@ let preset = n15_d20_k389_p20_s2c()?;
 let layout = ShapingUnit::U32_45.layout(log_k, 24)?;
 let ctx = ReplicatedBootstrapping::<MyBackend, f64>::new(&module, preset.plan(layout), base2k, &mut scratch)?;
 let keys = ctx
-    .generate_keys(&module, &sk, preset.keys_layout(), preset.sparse_secret_hamming_weight(),
+    .generate_keys(&module, &sk, &preset.keys_layout(&ctx.galois_elements(&module)), preset.sparse_secret_hamming_weight(),
                    &mut source_xs, &mut source_xe, &mut source_xa, &mut scratch)
     .prepare(&module, &mut scratch);
 

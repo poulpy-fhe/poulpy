@@ -6,31 +6,31 @@ use poulpy_core::layouts::{
 };
 use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, ReaderFrom, WriterTo, ZnxWord};
 
-use crate::layouts::GGLWEPat;
+use crate::layouts::MHEGGLWEPat;
 
-pub type GLWETensorKeyShareOwned<BE> = GLWETensorKeyShare<<BE as Backend>::OwnedBuf, <BE as Backend>::ZnxWord>;
+pub type MHEGLWETensorKeyShareOwned<BE> = MHEGLWETensorKeyShare<<BE as Backend>::OwnedBuf, <BE as Backend>::ZnxWord>;
 
-/// One party's share of the collective tensor key: a [`GGLWEPat`] laid out as
+/// One party's share of the collective tensor key: a [`MHEGGLWEPat`] laid out as
 /// core's `GLWETensorKey`, one entry per pair of secret components.
 ///
-/// Serializes as its [`GGLWEPat`].
+/// Serializes as its [`MHEGGLWEPat`].
 #[derive(Clone)]
-pub struct GLWETensorKeyShare<D: Data, W: ZnxWord> {
-    pub(crate) key: GGLWEPat<D, W>,
+pub struct MHEGLWETensorKeyShare<D: Data, W: ZnxWord> {
+    pub(crate) key: MHEGGLWEPat<D, W>,
 }
 
-impl<D: Data, W: ZnxWord> PartialEq for GLWETensorKeyShare<D, W>
+impl<D: Data, W: ZnxWord> PartialEq for MHEGLWETensorKeyShare<D, W>
 where
-    GGLWEPat<D, W>: PartialEq,
+    MHEGGLWEPat<D, W>: PartialEq,
 {
     fn eq(&self, other: &Self) -> bool {
         self.key == other.key
     }
 }
 
-impl<D: Data, W: ZnxWord> Eq for GLWETensorKeyShare<D, W> where GGLWEPat<D, W>: Eq {}
+impl<D: Data, W: ZnxWord> Eq for MHEGLWETensorKeyShare<D, W> where MHEGGLWEPat<D, W>: Eq {}
 
-impl<D: Data, W: ZnxWord> LWEInfos for GLWETensorKeyShare<D, W> {
+impl<D: Data, W: ZnxWord> LWEInfos for MHEGLWETensorKeyShare<D, W> {
     fn noise(&self) -> Option<poulpy_core::ComponentNoise> {
         self.key.noise()
     }
@@ -52,13 +52,13 @@ impl<D: Data, W: ZnxWord> LWEInfos for GLWETensorKeyShare<D, W> {
     }
 }
 
-impl<D: Data, W: ZnxWord> GLWEInfos for GLWETensorKeyShare<D, W> {
+impl<D: Data, W: ZnxWord> GLWEInfos for MHEGLWETensorKeyShare<D, W> {
     fn rank(&self) -> Rank {
         self.key.rank()
     }
 }
 
-impl<D: Data, W: ZnxWord> GGLWEInfos for GLWETensorKeyShare<D, W> {
+impl<D: Data, W: ZnxWord> GGLWEInfos for MHEGLWETensorKeyShare<D, W> {
     fn k_aux(&self) -> TorusPrecision {
         self.key.k_aux()
     }
@@ -84,18 +84,18 @@ impl<D: Data, W: ZnxWord> GGLWEInfos for GLWETensorKeyShare<D, W> {
     }
 }
 
-impl<BE: Backend, D: Data> GGLWEToBackendRef<BE> for GLWETensorKeyShare<D, BE::ZnxWord>
+impl<BE: Backend, D: Data> GGLWEToBackendRef<BE> for MHEGLWETensorKeyShare<D, BE::ZnxWord>
 where
-    GGLWEPat<D, BE::ZnxWord>: GGLWEToBackendRef<BE>,
+    MHEGGLWEPat<D, BE::ZnxWord>: GGLWEToBackendRef<BE>,
 {
     fn to_backend_ref(&self) -> GGLWEBackendRef<'_, BE> {
         self.key.to_backend_ref()
     }
 }
 
-impl<BE: Backend, D: Data> GGLWEToBackendMut<BE> for GLWETensorKeyShare<D, BE::ZnxWord>
+impl<BE: Backend, D: Data> GGLWEToBackendMut<BE> for MHEGLWETensorKeyShare<D, BE::ZnxWord>
 where
-    GGLWEPat<D, BE::ZnxWord>: GGLWEToBackendMut<BE>,
+    MHEGGLWEPat<D, BE::ZnxWord>: GGLWEToBackendMut<BE>,
 {
     fn set_noise(&mut self, metadata: Option<poulpy_core::ComponentNoise>) {
         GGLWEToBackendMut::<BE>::set_noise(&mut self.key, metadata);
@@ -106,20 +106,26 @@ where
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> fmt::Debug for GLWETensorKeyShare<D, W> {
+impl<D: HostDataRef, W: ZnxWord> fmt::Debug for MHEGLWETensorKeyShare<D, W> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "GLWETensorKeyShare: {:?}", self.key)
+        write!(f, "MHEGLWETensorKeyShare: {:?}", self.key)
     }
 }
 
-impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GLWETensorKeyShare<D, W> {
+impl<D: HostDataMut, W: ZnxWord> ReaderFrom for MHEGLWETensorKeyShare<D, W> {
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
         self.key.read_from(reader)
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> WriterTo for GLWETensorKeyShare<D, W> {
+impl<D: HostDataRef, W: ZnxWord> WriterTo for MHEGLWETensorKeyShare<D, W> {
     fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
         self.key.write_to(writer)
     }
 }
+
+#[deprecated(note = "renamed MHEGLWETensorKeyShare")]
+pub type GLWETensorKeyShare<D, W> = MHEGLWETensorKeyShare<D, W>;
+
+#[deprecated(note = "renamed MHEGLWETensorKeyShareOwned")]
+pub type GLWETensorKeyShareOwned<BE> = MHEGLWETensorKeyShareOwned<BE>;

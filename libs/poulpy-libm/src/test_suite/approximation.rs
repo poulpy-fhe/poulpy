@@ -6,13 +6,13 @@ use poulpy_core::layouts::{
 };
 use poulpy_hal::{
     AlignedBuf,
-    api::{ModuleNew, NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
+    api::{ModuleNew, ReimNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{HostBytesBackend, Module, ScratchOwned, Standard},
 };
 
 use poulpy_ckks::{
     CKKSCtBounds, CKKSInfos, GLWEPlaintextMeta, Scale, SetCKKSInfos,
-    layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec},
+    layouts::{CKKSCiphertext, CKKSCiphertextAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec},
     polynomial::{Polynomial, SplitStrategy},
     test_suite::{
         CKKSTestParams,
@@ -41,7 +41,7 @@ where
     CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let input_log_delta = base.prec().log_delta();
     let coeff_log_delta = 20;
@@ -85,7 +85,7 @@ where
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0x62; 32]);
     let mut sizing = module.ckks_ciphertext_alloc(params.base2k.into(), params.k.into());
     sizing.set_meta(params.prec().meta);
-    let size = module.ckks_approximation_tmp_bytes(&sizing, &sizing, &plan, &params.tsk_layout());
+    let size = module.ckks_polynomial_approximation_eval_tmp_bytes(&sizing, &sizing, &plan, &params.tsk_layout());
     let mut scratch = ScratchOwned::<BE>::alloc(size);
     let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
     let input = ckks_encrypt_with_prec(
@@ -102,8 +102,8 @@ where
     );
     let mut res = module.ckks_ciphertext_alloc(params.base2k.into(), params.k.into());
     module
-        .ckks_eval_approximation(&mut res, &input, &plan, &tsk, &mut scratch.borrow())
-        .expect("ckks_eval_approximation");
+        .ckks_polynomial_approximation_eval(&mut res, &input, &plan, &tsk, &mut scratch.borrow())
+        .expect("ckks_polynomial_approximation_eval");
     assert_eq!(input.log_budget() - res.log_budget(), consumed);
 
     let (re_out, _) = ckks_decrypt_decode::<BE, F, E>(&params, module, &encoder, &res, &sk, &mut scratch.borrow());
@@ -121,7 +121,7 @@ where
     CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let input_log_delta = base.prec().log_delta();
     let low_target = 12.0;
@@ -213,9 +213,9 @@ where
     let mut sizing = module.ckks_ciphertext_alloc(params.base2k.into(), params.k.into());
     sizing.set_meta(params.prec().meta);
     let size = module
-        .ckks_sin_tmp_bytes(&sizing, &sizing, &params.tsk_layout(), &low)
-        .max(module.ckks_sin_tmp_bytes(&sizing, &sizing, &params.tsk_layout(), &scaled))
-        .max(module.ckks_sin_tmp_bytes(&sizing, &sizing, &params.tsk_layout(), &high));
+        .ckks_sin_tmp_bytes(&sizing, &sizing, &low, &params.tsk_layout())
+        .max(module.ckks_sin_tmp_bytes(&sizing, &sizing, &scaled, &params.tsk_layout()))
+        .max(module.ckks_sin_tmp_bytes(&sizing, &sizing, &high, &params.tsk_layout()));
     let mut scratch = ScratchOwned::<BE>::alloc(size);
     let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
     let input = ckks_encrypt_with_prec(
@@ -263,7 +263,7 @@ where
     CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let params = CKKSTestParams {
         n: 1 << 12,

@@ -1,9 +1,9 @@
 use poulpy_core::{
-    GLWEAutomorphism, GLWEMaskFill,
+    GLWEAutomorphism, GLWEFill,
     api::GLWEAutomorphismKeyPreparedFactory,
     layouts::{
-        Base2K, Degree, Dnum, GGLWELayout, GLWEAutomorphismKey, GLWELayout, ModuleCoreAlloc, Rank, SetGaloisElement,
-        TorusPrecision, k_digit_of, prepared::GLWEAutomorphismKeyPrepared,
+        Base2K, Degree, Dnum, GGLWELayout, GLWEAlloc, GLWEAutomorphismKey, GLWEAutomorphismKeyAlloc, GLWELayout, ModuleCoreAlloc,
+        Rank, SetGaloisElement, TorusPrecision, k_digit_of, prepared::GLWEAutomorphismKeyPrepared,
     },
     test_suite::keys::fill_by_digit,
 };
@@ -29,7 +29,7 @@ where
         + ModuleSynchronize<BE>
         + GLWEAutomorphism<BE>
         + GLWEAutomorphismKeyPreparedFactory<BE>
-        + GLWEMaskFill<BE>
+        + GLWEFill<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
@@ -73,7 +73,7 @@ where
 
     let mut ct_in = module.glwe_alloc_from_infos(&glwe_infos);
     let mut ct_out = module.glwe_alloc_from_infos(&glwe_infos);
-    module.fill_glwe_from_source(&mut ct_in, &mut source);
+    module.glwe_fill_from_source(&mut ct_in, &mut source);
 
     bencher.iter(|| {
         module.glwe_automorphism(&mut ct_out, &ct_in, &atk_prepared.to_backend_ref(), &mut scratch.borrow());
@@ -93,7 +93,7 @@ where
         + ModuleSynchronize<BE>
         + GLWEAutomorphism<BE>
         + GLWEAutomorphismKeyPreparedFactory<BE>
-        + GLWEMaskFill<BE>
+        + GLWEFill<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
@@ -109,7 +109,7 @@ pub fn runner_glwe_automorphism_many_composed<BE: Backend<ZnxWord = i64>, M: Mea
         + ModuleSynchronize<BE>
         + GLWEAutomorphism<BE>
         + GLWEAutomorphismKeyPreparedFactory<BE>
-        + GLWEMaskFill<BE>
+        + GLWEFill<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
@@ -124,7 +124,7 @@ fn glwe_automorphism_many<BE: Backend<ZnxWord = i64>, M: Measurement, const HOIS
         + ModuleSynchronize<BE>
         + GLWEAutomorphism<BE>
         + GLWEAutomorphismKeyPreparedFactory<BE>
-        + GLWEMaskFill<BE>
+        + GLWEFill<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
@@ -170,7 +170,7 @@ fn glwe_automorphism_many<BE: Backend<ZnxWord = i64>, M: Measurement, const HOIS
     let key_refs: Vec<_> = key_views.iter().collect();
 
     let mut ct_in = module.glwe_alloc_from_infos(&glwe_infos);
-    module.fill_glwe_from_source(&mut ct_in, &mut source);
+    module.glwe_fill_from_source(&mut ct_in, &mut source);
     let mut ct_out: Vec<_> = (0..MANY_KEYS).map(|_| module.glwe_alloc_from_infos(&glwe_infos)).collect();
     let mut out_refs: Vec<_> = ct_out.iter_mut().collect();
 

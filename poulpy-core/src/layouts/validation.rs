@@ -1,13 +1,14 @@
 //! Refusal checks shared by the reference bodies, the derived defaults and
 //! backend overrides, so that every implementation refuses the same inputs.
 
+use crate::layouts::BabyStepOperand;
 use poulpy_hal::layouts::{Backend, VecZnxBackendMut, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef};
 
 use crate::{
     Distribution,
     layouts::{
-        DiagonalProd, GGLWEInfos, GLWEInfos, LWEInfos, LinearTransformation, LinearTransformationBabySteps,
-        LinearTransformationPrepared, TorusPrecision, prepared::GGLWEPreparedBackendRef,
+        GGLWEInfos, GLWEDiagonalProd, LWEInfos, LinearTransformation, LinearTransformationBabySteps, TorusPrecision,
+        prepared::GGLWEPreparedBackendRef,
     },
 };
 
@@ -51,20 +52,25 @@ pub fn assert_key_covers<K: GGLWEInfos>(op: &str, k: TorusPrecision, key: &K) {
     );
 }
 
-/// The checks of [`glwe_eval_linear_transformation_into_reference`](crate::reference::linear_transformation::glwe_eval_linear_transformation_into_reference), run before it reads a key or writes `res`.
-pub fn assert_linear_transformation_into<BE, P>(lhs: &LinearTransformationBabySteps<BE>, rhs: &LinearTransformation<P>)
-where
+/// The checks of [`glwe_linear_transformation_eval_into_reference`](crate::reference::linear_transformation::GLWELinearTransformationReference::glwe_linear_transformation_eval_into_reference), run before it reads a key or writes `res`.
+pub fn assert_linear_transformation_into<BE, P, L: BabyStepOperand<BE>>(
+    lhs: &LinearTransformationBabySteps<BE, L>,
+    rhs: &LinearTransformation<P>,
+) where
     BE: Backend,
-    P: DiagonalProd<BE>,
+    P: GLWEDiagonalProd<BE>,
 {
     assert_linear_transformation_giant_steps(&[lhs], &[rhs]);
 }
 
-/// The checks of [`glwe_eval_linear_transformation_sum_into_reference`](crate::reference::linear_transformation::glwe_eval_linear_transformation_sum_into_reference), run before it reads a key or writes `res`.
-pub fn assert_linear_transformation_sum<BE: Backend>(
-    babies: &[&LinearTransformationBabySteps<BE>],
-    lts: &[&LinearTransformationPrepared<BE>],
-) {
+/// The checks of [`glwe_linear_transformation_eval_sum_into_reference`](crate::reference::linear_transformation::GLWELinearTransformationReference::glwe_linear_transformation_eval_sum_into_reference), run before it reads a key or writes `res`.
+pub fn assert_linear_transformation_sum<BE, P, L: BabyStepOperand<BE>>(
+    babies: &[&LinearTransformationBabySteps<BE, L>],
+    lts: &[&LinearTransformation<P>],
+) where
+    BE: Backend,
+    P: GLWEDiagonalProd<BE>,
+{
     assert_eq!(
         babies.len(),
         lts.len(),
@@ -73,9 +79,9 @@ pub fn assert_linear_transformation_sum<BE: Backend>(
     let (&lhs, &rhs) = (babies.first().expect("linear transformation sum has no terms"), &lts[0]);
     // First, so that a later term's cache holds the rotations its schedule reads before its layout is read.
     assert_linear_transformation_giant_steps(babies, lts);
-    let diagonals = |lt: &LinearTransformationPrepared<BE>| {
+    let diagonals = |lt: &LinearTransformation<P>| {
         lt.first_diagonal_plaintext()
-            .map(|d| (d.glwe_layout(), d.max_size(), d.plaintext_meta().scale))
+            .map(|d| (d.glwe_layout(), d.max_size(), GLWEDiagonalProd::log_scale(d)))
     };
     for (t, (&l, &r)) in babies.iter().zip(lts).enumerate().skip(1) {
         assert!(
@@ -104,8 +110,8 @@ pub fn assert_linear_transformation_sum<BE: Backend>(
 ///
 /// Unless the first term has a giant step, and every giant step of every term has a diagonal as wide as its
 /// transform's first diagonal and reads only baby rotations its term's cache holds.
-fn assert_linear_transformation_giant_steps<BE, P>(
-    babies: &[&LinearTransformationBabySteps<BE>],
+fn assert_linear_transformation_giant_steps<BE, P, L: BabyStepOperand<BE>>(
+    babies: &[&LinearTransformationBabySteps<BE, L>],
     lts: &[&LinearTransformation<P>],
 ) where
     BE: Backend,

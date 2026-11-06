@@ -10,14 +10,14 @@ use crate::kernels::{
         reim::ReimArith,
         svp::{
             svp_apply_dft_to_dft_assign_portable as fft64_svp_apply_dft_to_dft_assign,
-            svp_apply_dft_to_dft_portable as fft64_svp_apply_dft_to_dft, svp_prepare_portable as fft64_svp_prepare,
+            svp_apply_dft_to_dft_portable as fft64_svp_apply_dft_to_dft, svp_ppol_prepare_portable as fft64_svp_ppol_prepare,
         },
     },
     ntt4x30::{
         NttCFromB, NttDFTExecute, NttFromZnx64, NttMulBbc, NttZero,
         ntt::NttTable,
         primes::Primes30,
-        svp::{ntt4x30_svp_apply_dft_to_dft_assign_portable, ntt4x30_svp_prepare_portable},
+        svp::{ntt4x30_svp_apply_dft_to_dft_assign_portable, ntt4x30_svp_ppol_prepare_portable},
         types::Q120bScalar,
         vec_znx_dft::NttModuleHandle,
     },
@@ -32,8 +32,13 @@ pub trait FFT64SvpDefault: Backend<ZnxWord = i64>
 where
     Self::OwnedBuf: poulpy_hal::layouts::HostDataMut,
 {
-    fn svp_prepare_default<R>(module: &Module<Self>, res: &mut R, res_col: usize, a: &ScalarZnxBackendRef<'_, Self>, a_col: usize)
-    where
+    fn svp_ppol_prepare_default<R>(
+        module: &Module<Self>,
+        res: &mut R,
+        res_col: usize,
+        a: &ScalarZnxBackendRef<'_, Self>,
+        a_col: usize,
+    ) where
         Module<Self>: FFTModuleHandle<f64, Ring = Self::Ring>,
         Self: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Fft64RingArith,
         for<'x> Self::BufMut<'x>: poulpy_hal::layouts::HostDataMut,
@@ -43,8 +48,8 @@ where
         let mut res_ref = res.to_backend_mut();
         let n: usize = res_ref.n();
         check_degree::<Self>(module.n(), n);
-        assert!(a.n() == n, "svp_prepare: a.n() != res.n()");
-        fft64_svp_prepare::<Self>(module.get_fft_plan(n), &mut res_ref, res_col, a, a_col);
+        assert!(a.n() == n, "svp_ppol_prepare: a.n() != res.n()");
+        fft64_svp_ppol_prepare::<Self>(module.get_fft_plan(n), &mut res_ref, res_col, a, a_col);
     }
 
     fn svp_ppol_copy_default(
@@ -110,8 +115,13 @@ pub trait NTT4x30SvpDefault: Backend<ZnxWord = i64>
 where
     Self::OwnedBuf: poulpy_hal::layouts::HostDataMut,
 {
-    fn svp_prepare_default<R>(module: &Module<Self>, res: &mut R, res_col: usize, a: &ScalarZnxBackendRef<'_, Self>, a_col: usize)
-    where
+    fn svp_ppol_prepare_default<R>(
+        module: &Module<Self>,
+        res: &mut R,
+        res_col: usize,
+        a: &ScalarZnxBackendRef<'_, Self>,
+        a_col: usize,
+    ) where
         Module<Self>: NttModuleHandle,
         Self: Backend<DftWord = Q120bScalar, ZnxWord = i64>
             + NttDFTExecute<NttTable<Primes30, <Module<Self> as crate::kernels::ntt4x30::vec_znx_dft::NttModuleHandle>::Ring>>
@@ -122,7 +132,7 @@ where
         R: SvpPPolToBackendMut<Self>,
     {
         let mut res_ref = res.to_backend_mut();
-        ntt4x30_svp_prepare_portable::<Self>(module, &mut res_ref, res_col, a, a_col);
+        ntt4x30_svp_ppol_prepare_portable::<Self>(module, &mut res_ref, res_col, a, a_col);
     }
 
     fn svp_ppol_copy_default(

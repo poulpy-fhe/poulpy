@@ -5,11 +5,11 @@ use std::marker::PhantomData;
 use num_traits::One;
 use poulpy_ckks::{
     CoeffsMeta,
-    api::{CKKSModuleInfos, LinearTransformation, LinearTransformationPrepared},
-    layouts::{CKKSModuleAlloc, CKKSPlaintextOwned, CKKSPreparedRight},
+    api::{CKKSModuleInfos, CKKSRightOperandPreparedFactory, LinearTransformation, LinearTransformationPrepared},
+    layouts::{CKKSLinearTransformationAlloc, CKKSPlaintextOwned, CKKSRightOperandPrepared},
 };
 use poulpy_core::layouts::{Base2K, DiagonalArithmetic, GetDegree, LinearTransformationStrategy};
-use poulpy_hal::layouts::{Backend, PrepareHint};
+use poulpy_hal::layouts::{Backend, Module, PrepareHint};
 
 use super::{
     BlasPlan, BlasPtAlgorithm,
@@ -18,11 +18,11 @@ use super::{
     maps,
 };
 
-/// The left side of a product by public matrices, `B` in `B A`: a [`BlasPtOperand`] on the left.
+/// The left side of a product by public matrices, `B` in `B A`: a [`BlasPtOperandPrepared`] on the left.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Left;
 
-/// The right side of a product by public matrices, `B` in `A B`, the default side of a [`BlasPtOperand`].
+/// The right side of a product by public matrices, `B` in `A B`, the default side of a [`BlasPtOperandPrepared`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Right;
 
@@ -158,7 +158,7 @@ impl<S: BlasPtSide> BlasPtOperandInfos for BlasPtOperandLayout<S> {
     }
 }
 
-/// The maps of a public operand, in the order [`BlasPtOperandUnprepared::maps`] states.
+/// The maps of a public operand, in the order [`BlasPtOperand::maps`] states.
 pub(crate) struct OperandMaps<T> {
     slots: usize,
     cols: usize,
@@ -228,27 +228,19 @@ impl<T> OperandMaps<T> {
 
 /// A grid of products by public matrices, encoded and not yet prepared: on the right of an encrypted grid `A`, `A B`
 /// ([`Right`]), or on its left, `B A` ([`Left`]).
-pub struct BlasPtOperandUnprepared<BE: Backend, S = Right> {
+pub struct BlasPtOperand<BE: Backend, S = Right> {
     layout: BlasPtOperandLayout<S>,
     pub(crate) maps: OperandMaps<Encoded<BE>>,
 }
 
 /// A prepared grid of products by public matrices, on the right of an encrypted grid ([`Right`], which
 /// `blas_matmul_pt_right` takes) or on its left ([`Left`], which `blas_matmul_pt_left` takes).
-pub struct BlasPtOperand<BE: Backend, S = Right> {
+pub struct BlasPtOperandPrepared<BE: Backend, S = Right> {
     layout: BlasPtOperandLayout<S>,
     pub(crate) maps: OperandMaps<LinearTransformationPrepared<BE>>,
     /// Under `JklsStored` and `JklsGalois`, the terms of every block, row-major, each block's in term order; `maps` then
     /// holds the first map alone. Empty under the other paths.
-    pub(crate) plaintexts: Vec<CKKSPreparedRight<BE>>,
-}
-
-impl<BE: Backend, S: BlasPtSide> BlasPtOperandInfos for BlasPtOperandUnprepared<BE, S> {
-    type Side = S;
-
-    fn blas_pt_operand_layout(&self) -> BlasPtOperandLayout<S> {
-        self.layout
-    }
+    pub(crate) plaintexts: Vec<CKKSRightOperandPrepared<BE>>,
 }
 
 impl<BE: Backend, S: BlasPtSide> BlasPtOperandInfos for BlasPtOperand<BE, S> {
@@ -259,7 +251,15 @@ impl<BE: Backend, S: BlasPtSide> BlasPtOperandInfos for BlasPtOperand<BE, S> {
     }
 }
 
-impl<BE: Backend, S> BlasPtOperandUnprepared<BE, S> {
+impl<BE: Backend, S: BlasPtSide> BlasPtOperandInfos for BlasPtOperandPrepared<BE, S> {
+    type Side = S;
+
+    fn blas_pt_operand_layout(&self) -> BlasPtOperandLayout<S> {
+        self.layout
+    }
+}
+
+impl<BE: Backend, S> BlasPtOperand<BE, S> {
     /// Every encoded map, in the order encoding and preparation walk them: the first map under JKLS and the masked
     /// paths, the blocks row-major, each block's terms in order, then the replicated-input maps if any.
     pub fn maps(&self) -> impl Iterator<Item = &LinearTransformation<CKKSPlaintextOwned<BE>>> {
@@ -267,8 +267,8 @@ impl<BE: Backend, S> BlasPtOperandUnprepared<BE, S> {
     }
 }
 
-impl<BE: Backend, S> BlasPtOperand<BE, S> {
-    /// Every prepared map, in the order of [`BlasPtOperandUnprepared::maps`]; under [`BlasPtAlgorithm::JklsStored`]
+impl<BE: Backend, S> BlasPtOperandPrepared<BE, S> {
+    /// Every prepared map, in the order of [`BlasPtOperand::maps`]; under [`BlasPtAlgorithm::JklsStored`]
     /// and [`BlasPtAlgorithm::JklsGalois`] the first map alone, the terms being [`Self::block_plaintexts`].
     pub fn maps(&self) -> impl Iterator<Item = &LinearTransformationPrepared<BE>> {
         self.maps.iter()
@@ -294,13 +294,13 @@ impl<BE: Backend, S> BlasPtOperand<BE, S> {
     /// [`BlasPtAlgorithm::JklsGalois`], in term order: under `JklsStored`, `d` on the right and `2d - 1` on the left, tau
     /// (sigma) of the block rotated by each rotation of its terms; under `JklsGalois`, that of the block, unrotated.
     /// Empty under the other paths. Panics if `(l, j)` is outside the grid.
-    pub fn block_plaintexts(&self, l: usize, j: usize) -> &[CKKSPreparedRight<BE>] {
+    pub fn block_plaintexts(&self, l: usize, j: usize) -> &[CKKSRightOperandPrepared<BE>] {
         self.assert_block(l, j);
         self.plaintexts_at(l, j)
     }
 
     /// [`Self::block_plaintexts`] without a bounds assertion.
-    pub(crate) fn plaintexts_at(&self, l: usize, j: usize) -> &[CKKSPreparedRight<BE>] {
+    pub(crate) fn plaintexts_at(&self, l: usize, j: usize) -> &[CKKSRightOperandPrepared<BE>] {
         let per = self.plaintexts.len() / (self.layout.rows * self.layout.cols);
         let t = (l * self.layout.cols + j) * per;
         &self.plaintexts[t..t + per]
@@ -314,7 +314,7 @@ impl<BE: Backend, S> BlasPtOperand<BE, S> {
     }
 }
 
-impl<BE: Backend> BlasPtOperand<BE, Left> {
+impl<BE: Backend> BlasPtOperandPrepared<BE, Left> {
     /// The prepared map of block `(i, l)` for a replicated input, with `d` diagonals at the offsets `j d` for `j < d`
     /// ([`maps::left_mul_rep`]), scheduled at `left_mul`'s giant step, so it rotates within the left product's key
     /// set; `None` unless the operand was encoded under [`BlasPtAlgorithm::Diagonal`] with one public matrix on more
@@ -506,33 +506,71 @@ pub(crate) fn layouts_of<S: BlasPtSide>(layout: &BlasPtOperandLayout<S>) -> Oper
     }
 }
 
-/// [`super::BlasModuleAlloc::blas_pt_operand_alloc_from_infos`].
-pub(crate) fn alloc<BE, M, S>(module: &M, layout: &BlasPtOperandLayout<S>) -> BlasPtOperandUnprepared<BE, S>
+/// Allocation of public operands.
+pub trait BlasPtOperandAlloc<BE: Backend>: CKKSLinearTransformationAlloc<BE> + GetDegree + Sized {
+    /// A public operand of `rows x cols` blocks of `count` public matrices per batch on side `S`, on this module's
+    /// slots, every diagonal zero, which
+    /// [`BlasEncodingOps::blas_pt_operand_encode`](crate::api::BlasEncodingOps::blas_pt_operand_encode)
+    /// fills.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the blocks of `plan` are smaller than `2 x 2` or do not fit the module's slots, if the grid has no
+    /// block or more than a `usize` counts, if `count` does not divide the matrix slots, if `coeffs_meta.k` is `0`, or
+    /// if `base2k` is outside `1..=63`.
+    fn blas_pt_operand_alloc<S: BlasPtSide>(
+        &self,
+        plan: BlasPlan,
+        rows: usize,
+        cols: usize,
+        count: usize,
+        base2k: Base2K,
+        coeffs_meta: CoeffsMeta,
+    ) -> BlasPtOperand<BE, S> {
+        let layout = BlasPtOperandLayout::<S>::new(plan, self.ckks_max_slots(), rows, cols, count, base2k, coeffs_meta);
+        self.blas_pt_operand_alloc_from_infos(&layout)
+    }
+
+    /// A public operand of `infos`, which must be of this module's slots.
+    ///
+    /// # Panics
+    ///
+    /// As [`Self::blas_pt_operand_alloc`], and if the slots of `infos` are not the module's.
+    fn blas_pt_operand_alloc_from_infos<A: BlasPtOperandInfos>(&self, infos: &A) -> BlasPtOperand<BE, A::Side> {
+        alloc(self, &infos.blas_pt_operand_layout())
+    }
+}
+
+impl<BE: Backend> BlasPtOperandAlloc<BE> for Module<BE> where Module<BE>: CKKSLinearTransformationAlloc<BE> {}
+
+/// [`BlasPtOperandAlloc::blas_pt_operand_alloc_from_infos`].
+fn alloc<BE, M, S>(module: &M, layout: &BlasPtOperandLayout<S>) -> BlasPtOperand<BE, S>
 where
     BE: Backend,
-    M: CKKSModuleAlloc<BE> + GetDegree,
+    M: CKKSLinearTransformationAlloc<BE> + GetDegree,
     S: BlasPtSide,
 {
     let maps = operand_layouts(module, layout).map(|map| map.alloc::<BE, M>(module, layout.base2k));
-    BlasPtOperandUnprepared { layout: *layout, maps }
+    BlasPtOperand { layout: *layout, maps }
 }
 
 /// [`crate::api::BlasPtOperandPreparedFactory::blas_pt_operand_prepared_alloc_from_infos`].
-pub(crate) fn alloc_prepared<BE, M, S>(module: &M, layout: &BlasPtOperandLayout<S>) -> BlasPtOperand<BE, S>
+pub(crate) fn alloc_prepared<BE, M, S>(module: &M, layout: &BlasPtOperandLayout<S>) -> BlasPtOperandPrepared<BE, S>
 where
     BE: Backend,
-    M: CKKSModuleAlloc<BE> + GetDegree,
+    M: CKKSRightOperandPreparedFactory<BE> + CKKSModuleInfos + GetDegree,
     S: BlasPtSide,
 {
     let (shapes, terms) = prepared_shapes(module, layout);
     let plaintexts = terms
         .iter()
         .map(|term| {
-            module.ckks_prepared_right_alloc_from_infos(&term.plaintext::<BE, M>(module, layout.base2k), PrepareHint::Reuse)
+            module
+                .ckks_right_operand_prepared_alloc_from_infos(&term.plaintext::<BE, M>(module, layout.base2k), PrepareHint::Reuse)
         })
         .collect();
     let maps = shapes.map(|map| map.alloc_prepared::<BE, M>(module, layout.base2k));
-    BlasPtOperand {
+    BlasPtOperandPrepared {
         layout: *layout,
         maps,
         plaintexts,
@@ -543,10 +581,9 @@ where
 mod tests {
     use std::panic::{AssertUnwindSafe, catch_unwind};
 
-    use poulpy_hal::layouts::{HostBytesBackend, Module};
+    use poulpy_hal::layouts::HostBytesBackend;
 
     use super::*;
-    use crate::layouts::BlasModuleAlloc;
 
     fn module() -> Module<HostBytesBackend> {
         Module::<HostBytesBackend>::new(256)

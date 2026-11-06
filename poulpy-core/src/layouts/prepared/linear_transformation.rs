@@ -8,11 +8,11 @@
 //! the unprepared transform and BSGS schedule types live in
 //! [`crate::layouts::linear_transformation`](crate::layouts).
 
-use poulpy_hal::layouts::{CnvPVecLBackendMut, CnvPVecLOwned, CnvPVecLToBackendMut};
+use poulpy_hal::layouts::{CnvPVecLBackendMut, CnvPVecLOwned, CnvPVecLToBackendMut, VecZnxInfos};
 use std::collections::BTreeMap;
 
 use poulpy_hal::{
-    api::{CnvPVecBytesOf, Convolution, ModuleN, ScratchArenaTakeBasic},
+    api::{CnvOps, CnvPVecBytesOf, ModuleN, ScratchArenaTakeCnvPVecR},
     layouts::{
         Backend, CnvDftAccTerm, CnvPVecLToBackendRef, CnvPVecR, CnvPVecRToBackendRef, Data, Module, PrepareHint, ScratchArena,
         VecZnxDftBackendMut,
@@ -35,7 +35,7 @@ use crate::{
 /// [`LinearTransformation`] container and differ only in the diagonal
 /// representation `P`. Allocated up-front via
 /// [`LinearTransformation::alloc_prepared`](LinearTransformation::alloc_prepared)
-/// and populated by `glwe_prepare_linear_transformation_rhs`.
+/// and populated by `glwe_linear_transformation_rhs_prepare`.
 pub type LinearTransformationPrepared<BE> = LinearTransformation<PreparedDiagonal<<BE as Backend>::OwnedBuf, BE>>;
 
 /// One prepared (convolution-domain) matrix diagonal: the right operand of the
@@ -118,19 +118,32 @@ impl<D: Data, BE: Backend> GLWEInfos for PreparedDiagonal<D, BE> {
     }
 }
 
+/// A prepared baby rotation of a [`LinearTransformationBabySteps`] cache: owned
+/// ([`CnvPVecLOwned`]) or carved from a scratch arena ([`CnvPVecLViewMut`](poulpy_hal::layouts::CnvPVecLViewMut)).
+/// Blanket-implemented.
+pub trait BabyStepOperand<BE: Backend>: CnvPVecLToBackendRef<BE> + CnvPVecLToBackendMut<BE> + VecZnxInfos + Send {}
+
+impl<BE: Backend, T> BabyStepOperand<BE> for T where T: CnvPVecLToBackendRef<BE> + CnvPVecLToBackendMut<BE> + VecZnxInfos + Send {}
+
 /// Prepared left operands for the baby rotations of one input ciphertext.
 ///
-/// The values are populated by `glwe_prepare_linear_transformation_baby_steps`; the
-/// cache is sized via [`LinearTransformationBabySteps::alloc`].
-pub struct LinearTransformationBabySteps<BE: Backend> {
-    pub(crate) values: BTreeMap<i64, CnvPVecLOwned<BE>>,
+/// The values are populated by `glwe_linear_transformation_baby_steps_prepare`. A cache
+/// a caller keeps is allocated by [`LinearTransformationBabySteps::alloc`], and a cache
+/// one call uses is carved from its scratch arena by
+/// [`ScratchArenaTakeGLWELinearTransformationBabySteps::take_glwe_linear_transformation_baby_steps_scratch`](crate::ScratchArenaTakeGLWELinearTransformationBabySteps::take_glwe_linear_transformation_baby_steps_scratch),
+/// its operands of type `L` either way.
+// Generic over the operand rather than its storage `D`: hal gives backend views of a `CnvPVecL` of owned storage
+// and of its scratch wrapper, and a pair of impls over `BE::OwnedBuf` and `BE::BufMut<'_>` would overlap.
+pub struct LinearTransformationBabySteps<BE: Backend, L = CnvPVecLOwned<BE>> {
+    pub(crate) values: BTreeMap<i64, L>,
     /// How the preparation reaches the rotations.
     pub(crate) rotations: crate::layouts::BsgsRotations,
     /// Width of the source the rotations were prepared from.
     pub(crate) k: TorusPrecision,
+    pub(crate) _backend: std::marker::PhantomData<fn() -> BE>,
 }
 
-impl<BE: Backend> LinearTransformationBabySteps<BE> {
+impl<BE: Backend, L: BabyStepOperand<BE>> LinearTransformationBabySteps<BE, L> {
     /// How the preparation reaches the rotations.
     pub fn rotations(&self) -> crate::layouts::BsgsRotations {
         self.rotations
@@ -177,7 +190,7 @@ impl<BE: Backend> LinearTransformationBabySteps<BE> {
     }
 
     /// Returns the prepared left operand `rot(v, k)` for the baby rotation `k`.
-    pub fn baby_step(&self, rot: i64) -> &CnvPVecLOwned<BE> {
+    pub fn baby_step(&self, rot: i64) -> &L {
         self.values
             .get(&rot)
             .unwrap_or_else(|| panic!("missing prepared baby-step rotation {rot}"))
@@ -217,21 +230,26 @@ impl<BE: Backend> LinearTransformationBabySteps<BE> {
 /// impls coherent: the backend type parameter prevents the compiler from
 /// ruling out a downstream `GLWEToBackendRef` impl for [`PreparedDiagonal`], so
 /// a blanket would clash with the resident impl.
-pub trait DiagonalProd<BE: Backend>: GLWEInfos + Sized {
+pub trait GLWEDiagonalProd<BE: Backend>: GLWEInfos + Sized {
     /// The diagonal as the right operand of its products: prepared, or a GLWE view the product prepares.
     fn operand(&self) -> DiagonalOperand<'_, BE>;
 
+    /// The scale the scheme records on the diagonal, which the terms of a sum share; 0 where it records none.
+    fn log_scale(&self) -> usize {
+        0
+    }
+
     /// Runs the PROD inner product of one giant step of plaintext diagonals into `prod_dft`, in the form of its first
     /// diagonal, which every diagonal of a transform shares.
-    fn accumulate_giant_prod<M>(
+    fn accumulate_giant_prod<M, L: BabyStepOperand<BE>>(
         module: &M,
         cnv_offset_hi: usize,
         prod_dft: &mut VecZnxDftBackendMut<'_, BE>,
-        lhs: &LinearTransformationBabySteps<BE>,
+        lhs: &LinearTransformationBabySteps<BE, L>,
         gs: &LinearTransformationGiantStep<Self>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        M: CnvPVecBytesOf + Convolution<BE> + ModuleN,
+        M: CnvPVecBytesOf + CnvOps<BE> + ModuleN,
     {
         let first = gs
             .diagonals
@@ -250,22 +268,22 @@ pub trait DiagonalProd<BE: Backend>: GLWEInfos + Sized {
     /// Most giant steps [`Self::accumulate_giant_prods`] takes per call, at least 1.
     fn giant_step_batch(_module: &Module<BE>) -> usize
     where
-        BE: crate::oep::LinearTransformationImpl,
+        BE: crate::oep::GLWELinearTransformationImpl,
     {
         1
     }
 
     /// Runs the PROD inner products of several giant steps, `prods[g]` receiving step `steps[g]`.
-    fn accumulate_giant_prods(
+    fn accumulate_giant_prods<L: BabyStepOperand<BE>>(
         module: &Module<BE>,
         cnv_offset_hi: usize,
         prods: &mut [VecZnxDftBackendMut<'_, BE>],
-        lhs: &LinearTransformationBabySteps<BE>,
+        lhs: &LinearTransformationBabySteps<BE, L>,
         steps: &[LinearTransformationGiantStep<Self>],
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        BE: crate::oep::LinearTransformationImpl,
-        Module<BE>: CnvPVecBytesOf + Convolution<BE> + ModuleN,
+        BE: crate::oep::GLWELinearTransformationImpl,
+        Module<BE>: CnvPVecBytesOf + CnvOps<BE> + ModuleN,
     {
         assert_eq!(prods.len(), steps.len());
         for (prod, step) in prods.iter_mut().zip(steps) {
@@ -297,17 +315,17 @@ fn unprepared<BE: Backend>(operand: DiagonalOperand<'_, BE>) -> GLWEBackendRef<'
 /// handed to the backend as a single fused accumulation per output column: it
 /// sums all `baby ⊛ diagonal` terms with one reduction per output limb and
 /// writes `prod_dft` once. Leaves the `(r+1)` output columns in `prod_dft`.
-pub(crate) fn glwe_accumulate_prepared_baby_steps_dft<BE, M, P>(
+pub(crate) fn glwe_accumulate_prepared_baby_steps_dft<BE, M, P, L: BabyStepOperand<BE>>(
     module: &M,
     cnv_offset_hi: usize,
     prod_dft: &mut VecZnxDftBackendMut<'_, BE>,
-    lhs: &LinearTransformationBabySteps<BE>,
+    lhs: &LinearTransformationBabySteps<BE, L>,
     gs: &LinearTransformationGiantStep<P>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
-    M: Convolution<BE>,
-    P: DiagonalProd<BE>,
+    M: CnvOps<BE>,
+    P: GLWEDiagonalProd<BE>,
 {
     let cols = lhs.cols();
     let first = gs
@@ -343,21 +361,21 @@ pub(crate) fn glwe_accumulate_prepared_baby_steps_dft<BE, M, P>(
 
 /// PROD block for one giant step from an *unprepared* matrix: identical to
 /// [`glwe_accumulate_prepared_baby_steps_dft`] except each diagonal is prepared
-/// (`cnv_prepare_right`) on the fly into a single reused scratch `CnvPVecR` and
+/// (`cnv_pvec_right_prepare`) on the fly into a single reused scratch `CnvPVecR` and
 /// discarded immediately, so the full prepared RHS is never materialized. Trades
 /// per-eval recompute for memory when memory bandwidth is the limiting factor. The
 /// baby loop is the outer one so each diagonal is prepared exactly once per eval.
-fn glwe_accumulate_unprepared_baby_steps_dft<BE, M, P>(
+fn glwe_accumulate_unprepared_baby_steps_dft<BE, M, P, L: BabyStepOperand<BE>>(
     module: &M,
     cnv_offset_hi: usize,
     prod_dft: &mut VecZnxDftBackendMut<'_, BE>,
-    lhs: &LinearTransformationBabySteps<BE>,
+    lhs: &LinearTransformationBabySteps<BE, L>,
     gs: &LinearTransformationGiantStep<P>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
-    M: CnvPVecBytesOf + Convolution<BE> + ModuleN,
-    P: DiagonalProd<BE>,
+    M: CnvPVecBytesOf + CnvOps<BE> + ModuleN,
+    P: GLWEDiagonalProd<BE>,
 {
     let cols = lhs.cols();
     let first = gs
@@ -396,7 +414,7 @@ fn glwe_accumulate_unprepared_baby_steps_dft<BE, M, P>(
         );
 
         // Stream the RHS: prepare this diagonal on the fly, then reuse the slot.
-        module.cnv_prepare_right(&mut diagonal, &plaintext.data, &mut scratch_1.borrow());
+        module.cnv_pvec_right_prepare(&mut diagonal, &plaintext.data, &mut scratch_1.borrow());
 
         for col in 0..cols {
             if term_idx == 0 {

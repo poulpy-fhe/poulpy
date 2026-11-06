@@ -16,9 +16,9 @@
 //! sparse one, and these switches replace the sparse-to-dense one.
 
 use poulpy_core::{
-    GLWEBytesOf, GLWECopy, GLWEKeyswitch, GLWEMulPreparedPlainSum, GLWENormalize, GLWEShift, ScratchArenaTakeCore,
-    gglwe_product_accumulation_output_size, glwe_prepare_left, glwe_prepare_left_tmp_bytes, glwe_prepare_right,
-    glwe_prepare_right_tmp_bytes,
+    GLWEBytesOf, GLWECopy, GLWEKeyswitch, GLWEMulPreparedPlainSum, GLWENormalize, GLWEShift, ScratchArenaTakeGLWE,
+    gglwe_product_accumulation_output_size, glwe_left_operand_prepare, glwe_left_operand_prepare_tmp_bytes,
+    glwe_right_operand_prepare, glwe_right_operand_prepare_tmp_bytes,
     layouts::{
         GGLWEInfos, GGLWELayout, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, IntPolyInfos, LWEInfos,
         LinearTransformation, Rank, prepared::GGLWEPreparedToBackendRef,
@@ -26,8 +26,9 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::{
-        CnvPVecBytesOf, Convolution, ScratchArenaTakeBasic, VecZnxAddAssign, VecZnxAutomorphism, VecZnxCopy, VecZnxDftAddAssign,
-        VecZnxDftBytesOf, VecZnxIdftNormalize, VecZnxIdftNormalizeTmpBytes, VecZnxNormalize, VecZnxNormalizeTmpBytes,
+        CnvOps, CnvPVecBytesOf, ScratchArenaTakeCnvPVecL, ScratchArenaTakeCnvPVecR, ScratchArenaTakeVecZnx,
+        ScratchArenaTakeVecZnxDft, VecZnxAddAssign, VecZnxAutomorphism, VecZnxCopy, VecZnxDftAddAssign, VecZnxDftBytesOf,
+        VecZnxIdftNormalize, VecZnxIdftNormalizeTmpBytes, VecZnxNormalize, VecZnxNormalizeTmpBytes,
     },
     layouts::{
         Backend, CyclotomicOrder, Module, PrepareHint, ScratchArena, VecZnxDftToBackendMut, VecZnxToBackendRef, galois_element,
@@ -185,6 +186,124 @@ where
     })
 }
 
+/// Reference bodies of the required [`CKKSModUpFirstFactorImpl`](crate::oep::CKKSModUpFirstFactorImpl) methods, which
+/// [`impl_ckks_mod_up_first_factor_reference_full!`](crate::impl_ckks_mod_up_first_factor_reference_full) forwards to.
+pub trait CKKSModUpFirstFactorReference<BE: Backend> {
+    fn ckks_mod_up_first_factor_tmp_bytes_reference<Dst, Src, D2S, K>(
+        &self,
+        dst_infos: &Dst,
+        src_infos: &Src,
+        factor: &LinearTransformation<CKKSPlaintextOwned<BE>>,
+        d2s_infos: Option<&D2S>,
+        key_infos: &K,
+    ) -> usize
+    where
+        Module<BE>: GLWEKeyswitch<BE>
+            + GLWEMulPreparedPlainSum<BE>
+            + GLWEShift<BE>
+            + GLWENormalize<BE>
+            + GLWEBytesOf<BE>
+            + CnvOps<BE>
+            + VecZnxDftBytesOf
+            + CnvPVecBytesOf
+            + VecZnxNormalizeTmpBytes
+            + VecZnxIdftNormalizeTmpBytes,
+        Dst: CKKSCtBounds,
+        Src: CKKSCtBounds,
+        D2S: GGLWEInfos,
+        K: GGLWEInfos,
+        CKKSPlaintextOwned<BE>: IntPolyInfos + CKKSInfos;
+
+    fn ckks_mod_up_first_factor_reference<Dst, Src, K>(
+        &self,
+        dst: &mut Dst,
+        src: &mut Src,
+        scale_up: usize,
+        factor: &LinearTransformation<CKKSPlaintextOwned<BE>>,
+        keys: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Module<BE>: GLWECopy<BE>
+            + GLWEShift<BE>
+            + GLWEKeyswitch<BE>
+            + VecZnxAutomorphism<BE>
+            + VecZnxCopy<BE>
+            + VecZnxAddAssign<BE>
+            + VecZnxDftAddAssign<BE>
+            + VecZnxNormalize<BE>
+            + VecZnxIdftNormalize<BE>
+            + CnvOps<BE>
+            + GLWENormalize<BE>
+            + GLWEMulPreparedPlainSum<BE>
+            + CyclotomicOrder,
+        K: BootstrappingLinearKeys<BE>,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds;
+}
+
+impl<BE: Backend> CKKSModUpFirstFactorReference<BE> for Module<BE> {
+    fn ckks_mod_up_first_factor_tmp_bytes_reference<Dst, Src, D2S, K>(
+        &self,
+        dst_infos: &Dst,
+        src_infos: &Src,
+        factor: &LinearTransformation<CKKSPlaintextOwned<BE>>,
+        d2s_infos: Option<&D2S>,
+        key_infos: &K,
+    ) -> usize
+    where
+        Module<BE>: GLWEKeyswitch<BE>
+            + GLWEMulPreparedPlainSum<BE>
+            + GLWEShift<BE>
+            + GLWENormalize<BE>
+            + GLWEBytesOf<BE>
+            + CnvOps<BE>
+            + VecZnxDftBytesOf
+            + CnvPVecBytesOf
+            + VecZnxNormalizeTmpBytes
+            + VecZnxIdftNormalizeTmpBytes,
+        Dst: CKKSCtBounds,
+        Src: CKKSCtBounds,
+        D2S: GGLWEInfos,
+        K: GGLWEInfos,
+        CKKSPlaintextOwned<BE>: IntPolyInfos + CKKSInfos,
+    {
+        ckks_mod_up_first_factor_tmp_bytes_reference(self, dst_infos, src_infos, factor, d2s_infos, key_infos)
+    }
+
+    fn ckks_mod_up_first_factor_reference<Dst, Src, K>(
+        &self,
+        dst: &mut Dst,
+        src: &mut Src,
+        scale_up: usize,
+        factor: &LinearTransformation<CKKSPlaintextOwned<BE>>,
+        keys: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Module<BE>: GLWECopy<BE>
+            + GLWEShift<BE>
+            + GLWEKeyswitch<BE>
+            + VecZnxAutomorphism<BE>
+            + VecZnxCopy<BE>
+            + VecZnxAddAssign<BE>
+            + VecZnxDftAddAssign<BE>
+            + VecZnxNormalize<BE>
+            + VecZnxIdftNormalize<BE>
+            + CnvOps<BE>
+            + GLWENormalize<BE>
+            + GLWEMulPreparedPlainSum<BE>
+            + CyclotomicOrder,
+        K: BootstrappingLinearKeys<BE>,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds,
+    {
+        ckks_mod_up_first_factor_reference(self, dst, src, scale_up, factor, keys, scratch)
+    }
+}
+
 /// Scratch of [`ckks_mod_up_first_factor_reference`]. `d2s_infos` is the
 /// dense-to-sparse key under encapsulation, `key_infos` the layout of the
 /// first-factor keys.
@@ -203,7 +322,7 @@ where
         + GLWEShift<BE>
         + GLWENormalize<BE>
         + GLWEBytesOf<BE>
-        + Convolution<BE>
+        + CnvOps<BE>
         + VecZnxDftBytesOf
         + CnvPVecBytesOf
         + VecZnxNormalizeTmpBytes
@@ -232,21 +351,18 @@ where
         key_infos,
         factor.giant_steps.len(),
     );
-    let carved = 3 * BE::scratch_aligned(BE::bytes_of_vec_znx(n, 2, small))
-        + BE::scratch_aligned(module.bytes_of_cnv_pvec_left(n, 2, small, PrepareHint::Reuse))
-        + BE::scratch_aligned(BE::bytes_of_vec_znx(n, 1, small))
-        + BE::scratch_aligned(BE::bytes_of_vec_znx(n, 1, acc_size))
-        + module.bytes_of_vec_znx_dft(n, 2, acc_size);
+    let carved = 3 * BE::scratch_aligned(BE::vec_znx_bytes_of(n, 2, small))
+        + BE::scratch_aligned(module.cnv_pvec_left_bytes_of(n, 2, small, PrepareHint::Reuse))
+        + BE::scratch_aligned(BE::vec_znx_bytes_of(n, 1, small))
+        + BE::scratch_aligned(BE::vec_znx_bytes_of(n, 1, acc_size))
+        + module.vec_znx_dft_bytes_of(n, 2, acc_size);
     // Each diagonal is prepared beside the raised ciphertext, then multiplied by it.
     let diagonal_size = diagonal_limbs(diagonal, base2k);
     let product =
-        BE::scratch_aligned(module.bytes_of_cnv_pvec_right(diagonal.n().into(), 1, diagonal_size, PrepareHint::OneShot))
-            + glwe_prepare_right_tmp_bytes(module, diagonal_size, diagonal).max(module.glwe_mul_prepared_plain_sum_tmp_bytes(
-                &small_layout,
-                small,
-                diagonal_size,
-            ));
-    let ops = glwe_prepare_left_tmp_bytes(module, small, &small_layout)
+        BE::scratch_aligned(module.cnv_pvec_right_bytes_of(diagonal.n().into(), 1, diagonal_size, PrepareHint::OneShot))
+            + glwe_right_operand_prepare_tmp_bytes(module, diagonal_size, diagonal)
+                .max(module.glwe_mul_prepared_plain_sum_tmp_bytes(&small_layout, small, diagonal_size));
+    let ops = glwe_left_operand_prepare_tmp_bytes(module, small, &small_layout)
         .max(product)
         .max(module.glwe_keyswitch_dft_add_tmp_bytes(acc_size, &small_layout, key_infos))
         .max(module.glwe_shift_tmp_bytes(small))
@@ -282,7 +398,7 @@ where
         + VecZnxDftAddAssign<BE>
         + VecZnxNormalize<BE>
         + VecZnxIdftNormalize<BE>
-        + Convolution<BE>
+        + CnvOps<BE>
         + GLWENormalize<BE>
         + GLWEMulPreparedPlainSum<BE>
         + CyclotomicOrder,
@@ -359,13 +475,13 @@ where
         // lift) above the bottom of the small width, which the keys lower to the
         // bottom of the working width.
         module.glwe_copy(&mut raised, &*src, &mut scratch.borrow());
-        module.glwe_rsh(
+        module.glwe_rsh_assign(
             small * base2k - k_small - scale_up - guard,
             &mut raised,
             &mut scratch.borrow(),
         );
         // Every diagonal multiplies the same ciphertext: it is prepared once.
-        glwe_prepare_left(module, &mut raised_prepared, &raised, small * base2k, &mut scratch.borrow());
+        glwe_left_operand_prepare(module, &mut raised_prepared, &raised, small * base2k, &mut scratch.borrow());
 
         for (index, giant) in factor.giant_steps.iter().enumerate() {
             // Product and division by the diagonal's scale, at the same width.
@@ -376,7 +492,7 @@ where
                     scratch
                         .borrow()
                         .take_cnv_pvec_right_scratch(diagonal.n().into(), 1, diagonal_size, PrepareHint::OneShot);
-                glwe_prepare_right(
+                glwe_right_operand_prepare(
                     module,
                     &mut diagonal_prepared,
                     diagonal,

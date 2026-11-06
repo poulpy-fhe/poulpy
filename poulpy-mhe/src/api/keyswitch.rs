@@ -1,4 +1,4 @@
-use crate::layouts::{GLWEPrivateKeyswitchShareOwned, GLWEPublicKeyswitchShareOwned};
+use crate::layouts::{MHEGLWEPrivateKeyswitchShareOwned, MHEGLWEPublicKeyswitchShareOwned};
 use poulpy_core::{
     Noise,
     layouts::{
@@ -28,7 +28,7 @@ use poulpy_hal::{
 /// The mask must be the session's honest ciphertext's: a crafted mask, such as a
 /// large constant in one column, reveals that component of every party's
 /// secret above the flood.
-pub trait GLWEPrivateKeyswitchMHEProtocol<BE: Backend> {
+pub trait MHEGLWEPrivateKeyswitchProtocol<BE: Backend> {
     /// `infos` is the layout of the ciphertext or its mask; the share has that layout at rank 0.
     fn mhe_glwe_private_keyswitch_share_gen_tmp_bytes<A>(&self, infos: &A) -> usize
     where
@@ -40,7 +40,7 @@ pub trait GLWEPrivateKeyswitchMHEProtocol<BE: Backend> {
     #[allow(clippy::too_many_arguments)]
     fn mhe_glwe_private_keyswitch_share_gen<C, S1, S2>(
         &self,
-        res: &mut GLWEPrivateKeyswitchShareOwned<BE>,
+        res: &mut MHEGLWEPrivateKeyswitchShareOwned<BE>,
         mask: &C,
         sk_in: &S1,
         sk_out: &S2,
@@ -56,8 +56,8 @@ pub trait GLWEPrivateKeyswitchMHEProtocol<BE: Backend> {
     /// must have the same layout.
     fn mhe_glwe_private_keyswitch_share_aggregate(
         &self,
-        res: &mut GLWEPrivateKeyswitchShareOwned<BE>,
-        a: &GLWEPrivateKeyswitchShareOwned<BE>,
+        res: &mut MHEGLWEPrivateKeyswitchShareOwned<BE>,
+        a: &MHEGLWEPrivateKeyswitchShareOwned<BE>,
     );
 
     fn mhe_glwe_private_keyswitch_share_finalize_tmp_bytes(&self) -> usize;
@@ -68,7 +68,7 @@ pub trait GLWEPrivateKeyswitchMHEProtocol<BE: Backend> {
         &self,
         res: &mut R,
         ct: &C,
-        share: &GLWEPrivateKeyswitchShareOwned<BE>,
+        share: &MHEGLWEPrivateKeyswitchShareOwned<BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -83,11 +83,11 @@ pub trait GLWEPrivateKeyswitchMHEProtocol<BE: Backend> {
 /// the party's `flood`, drawn from `source_smudge` at the share's precision.
 /// The mask columns carry the encryption errors from `source_xe`, and the
 /// ephemerals come from `source_xu`. Share generation reads the mask alone, as
-/// for [`GLWEPrivateKeyswitchMHEProtocol`], and the flood is sized as there.
+/// for [`MHEGLWEPrivateKeyswitchProtocol`], and the flood is sized as there.
 /// `pk_out` must be at least as precise as the share. Aggregation adds the
 /// shares; finalization normalizes their sum and adds the body of `ct`, which
-/// must be honest as for [`GLWEPrivateKeyswitchMHEProtocol`].
-pub trait GLWEPublicKeyswitchMHEProtocol<BE: Backend> {
+/// must be honest as for [`MHEGLWEPrivateKeyswitchProtocol`].
+pub trait MHEGLWEPublicKeyswitchProtocol<BE: Backend> {
     /// `ct_infos` is the layout of the ciphertext or its mask, `res_infos` the share layout and
     /// `pk_infos` the public key layout.
     fn mhe_glwe_public_keyswitch_share_gen_tmp_bytes<A, B, P>(&self, ct_infos: &A, res_infos: &B, pk_infos: &P) -> usize
@@ -102,7 +102,7 @@ pub trait GLWEPublicKeyswitchMHEProtocol<BE: Backend> {
     #[allow(clippy::too_many_arguments)]
     fn mhe_glwe_public_keyswitch_share_gen<C, S, K>(
         &self,
-        res: &mut GLWEPublicKeyswitchShareOwned<BE>,
+        res: &mut MHEGLWEPublicKeyswitchShareOwned<BE>,
         mask: &C,
         sk_in: &S,
         pk_out: &K,
@@ -120,8 +120,8 @@ pub trait GLWEPublicKeyswitchMHEProtocol<BE: Backend> {
     /// must have the same layout.
     fn mhe_glwe_public_keyswitch_share_aggregate(
         &self,
-        res: &mut GLWEPublicKeyswitchShareOwned<BE>,
-        a: &GLWEPublicKeyswitchShareOwned<BE>,
+        res: &mut MHEGLWEPublicKeyswitchShareOwned<BE>,
+        a: &MHEGLWEPublicKeyswitchShareOwned<BE>,
     );
 
     fn mhe_glwe_public_keyswitch_share_finalize_tmp_bytes(&self) -> usize;
@@ -132,7 +132,7 @@ pub trait GLWEPublicKeyswitchMHEProtocol<BE: Backend> {
         &self,
         res: &mut R,
         ct: &C,
-        share: &GLWEPublicKeyswitchShareOwned<BE>,
+        share: &MHEGLWEPublicKeyswitchShareOwned<BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,

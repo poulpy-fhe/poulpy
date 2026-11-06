@@ -16,8 +16,8 @@ use crate::backend_name;
 use criterion::{BenchmarkGroup, BenchmarkId, Criterion, measurement::WallTime};
 use poulpy_ckks::{
     CKKSCtBounds, SetCKKSInfos,
-    api::{CKKSBootstrappingCIOps, CKKSDFTOps, CKKSEncodingOps},
-    layouts::{CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned, EvalModRing},
+    api::{CKKSBootstrappingCIOps, CKKSDFTMatrixPreparedFactory, CKKSDFTOps, CKKSEncodingOps},
+    layouts::{CKKSCiphertextOwned, CKKSPlaintextOwned, EvalModRing},
     presets::bootstrapping::{BootstrappingPreset, all},
     test_suite::{
         helpers::{PrecisionStats, TestContextBackend, TestContextModule, TestContextSharedModule},
@@ -49,7 +49,7 @@ fn runner_ckks_bootstrapping<BE, BC>(
 ) where
     BE: Backend<Ring = Standard, ZnxWord = i64> + HostStaged + 'static,
     BC: TestContextBackend<Ring = Standard> + 'static,
-    Module<BE>: PresetRunModule<BE>,
+    Module<BE>: CKKSDFTMatrixPreparedFactory<BE> + PresetRunModule<BE>,
     Module<BC>: TestContextModule<BC> + CKKSEncodingOps<BC, f64>,
     for<'a> <BC as Backend>::BufRef<'a>: HostDataRef,
     for<'a> <BC as Backend>::BufMut<'a>: HostDataMut,
@@ -126,14 +126,14 @@ pub fn bench_ckks_bootstrapping<BE>(c: &mut Criterion<WallTime>)
 where
     BE: TestContextBackend<Ring = Standard> + HostStaged + MaxBase2k,
     CIBackend<BE>: TestContextBackend + MaxBase2k,
-    Module<BE>: TestContextModule<BE>
+    Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + TestContextModule<BE>
         + PresetRunModule<BE>
         + CKKSDFTOps<BE>
         + CKKSBootstrappingCIOps<BE>
         + GLWECIKeyEncryptSk<BE>
         + GLWECIKeyPreparedFactory<BE>,
     Module<CIBackend<BE>>: TestContextSharedModule<CIBackend<BE>>
-        + CKKSModuleAlloc<CIBackend<BE>>
         + CKKSEncodingOps<CIBackend<BE>, f64>
         + GLWETensorKeyPreparedFactory<CIBackend<BE>>,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
@@ -154,10 +154,13 @@ where
     CIBackend<BE>: MaxBase2k,
     BC: TestContextBackend<Ring = Standard> + 'static,
     CIBackend<BC>: TestContextBackend,
-    Module<BE>: PresetRunModule<BE> + CKKSDFTOps<BE> + CKKSBootstrappingCIOps<BE> + GLWECIKeyPreparedFactory<BE>,
+    Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + PresetRunModule<BE>
+        + CKKSDFTOps<BE>
+        + CKKSBootstrappingCIOps<BE>
+        + GLWECIKeyPreparedFactory<BE>,
     Module<CIBackend<BE>>: ModuleNew<CIBackend<BE>>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
-        + CKKSModuleAlloc<CIBackend<BE>>
         + CKKSEncodingOps<CIBackend<BE>, f64>
         + GLWETensorKeyPreparedFactory<CIBackend<BE>>,
     Module<BC>: TestContextModule<BC> + CKKSEncodingOps<BC, f64> + CKKSBootstrappingCIOps<BC> + GLWECIKeyEncryptSk<BC>,
@@ -167,7 +170,7 @@ where
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
     ScratchOwned<CIBackend<BE>>: ScratchOwnedAlloc<CIBackend<BE>>,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos + CKKSCtBounds + poulpy_core::layouts::DiagonalProd<BE>,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos + CKKSCtBounds + poulpy_core::layouts::GLWEDiagonalProd<BE>,
     CKKSCiphertextOwned<BC>: GLWEToBackendMut<BC> + GLWEToBackendRef<BC> + CKKSCtBounds + SetCKKSInfos,
     CKKSPlaintextOwned<BC>: GLWEToBackendRef<BC> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
@@ -189,10 +192,13 @@ pub fn bench_ckks_bootstrapping_replayed_with_client<BE, BC>(
     CIBackend<BE>: MaxBase2k,
     BC: TestContextBackend<Ring = Standard> + 'static,
     CIBackend<BC>: TestContextBackend,
-    Module<BE>: PresetRunModule<BE> + CKKSDFTOps<BE> + CKKSBootstrappingCIOps<BE> + GLWECIKeyPreparedFactory<BE>,
+    Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + PresetRunModule<BE>
+        + CKKSDFTOps<BE>
+        + CKKSBootstrappingCIOps<BE>
+        + GLWECIKeyPreparedFactory<BE>,
     Module<CIBackend<BE>>: ModuleNew<CIBackend<BE>>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
-        + CKKSModuleAlloc<CIBackend<BE>>
         + CKKSEncodingOps<CIBackend<BE>, f64>
         + GLWETensorKeyPreparedFactory<CIBackend<BE>>,
     Module<BC>: TestContextModule<BC> + CKKSEncodingOps<BC, f64> + CKKSBootstrappingCIOps<BC> + GLWECIKeyEncryptSk<BC>,
@@ -202,7 +208,7 @@ pub fn bench_ckks_bootstrapping_replayed_with_client<BE, BC>(
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
     ScratchOwned<CIBackend<BE>>: ScratchOwnedAlloc<CIBackend<BE>>,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos + CKKSCtBounds + poulpy_core::layouts::DiagonalProd<BE>,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos + CKKSCtBounds + poulpy_core::layouts::GLWEDiagonalProd<BE>,
     CKKSCiphertextOwned<BC>: GLWEToBackendMut<BC> + GLWEToBackendRef<BC> + CKKSCtBounds + SetCKKSInfos,
     CKKSPlaintextOwned<BC>: GLWEToBackendRef<BC> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
@@ -216,10 +222,13 @@ where
     CIBackend<BE>: MaxBase2k,
     BC: TestContextBackend<Ring = Standard> + 'static,
     CIBackend<BC>: TestContextBackend,
-    Module<BE>: PresetRunModule<BE> + CKKSDFTOps<BE> + CKKSBootstrappingCIOps<BE> + GLWECIKeyPreparedFactory<BE>,
+    Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + PresetRunModule<BE>
+        + CKKSDFTOps<BE>
+        + CKKSBootstrappingCIOps<BE>
+        + GLWECIKeyPreparedFactory<BE>,
     Module<CIBackend<BE>>: ModuleNew<CIBackend<BE>>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
-        + CKKSModuleAlloc<CIBackend<BE>>
         + CKKSEncodingOps<CIBackend<BE>, f64>
         + GLWETensorKeyPreparedFactory<CIBackend<BE>>,
     Module<BC>: TestContextModule<BC> + CKKSEncodingOps<BC, f64> + CKKSBootstrappingCIOps<BC> + GLWECIKeyEncryptSk<BC>,
@@ -229,7 +238,7 @@ where
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
     ScratchOwned<CIBackend<BE>>: ScratchOwnedAlloc<CIBackend<BE>>,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos + CKKSCtBounds + poulpy_core::layouts::DiagonalProd<BE>,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos + CKKSCtBounds + poulpy_core::layouts::GLWEDiagonalProd<BE>,
     CKKSCiphertextOwned<BC>: GLWEToBackendMut<BC> + GLWEToBackendRef<BC> + CKKSCtBounds + SetCKKSInfos,
     CKKSPlaintextOwned<BC>: GLWEToBackendRef<BC> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,

@@ -10,22 +10,22 @@ use poulpy_core::layouts::{
 };
 use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, ReaderFrom, WriterTo, ZnxWord};
 
-use crate::layouts::GGLWEPatCompressed;
+use crate::layouts::MHEGGLWEPatCompressed;
 
-pub type GLWESwitchingKeyShareOwned<BE> = GLWESwitchingKeyShare<<BE as Backend>::OwnedBuf, <BE as Backend>::ZnxWord>;
+pub type MHEGLWESwitchingKeyShareOwned<BE> = MHEGLWESwitchingKeyShare<<BE as Backend>::OwnedBuf, <BE as Backend>::ZnxWord>;
 
 /// One party's share of a collective GLWE switching key: a
-/// [`GGLWEPatCompressed`] with the degrees of the input and output secrets.
+/// [`MHEGGLWEPatCompressed`] with the degrees of the input and output secrets.
 ///
 /// Serializes as core's `GLWESwitchingKeyCompressed`.
 #[derive(PartialEq, Eq, Clone)]
-pub struct GLWESwitchingKeyShare<D: Data, W: ZnxWord> {
-    pub(crate) key: GGLWEPatCompressed<D, W>,
+pub struct MHEGLWESwitchingKeyShare<D: Data, W: ZnxWord> {
+    pub(crate) key: MHEGGLWEPatCompressed<D, W>,
     pub(crate) input_degree: Degree,
     pub(crate) output_degree: Degree,
 }
 
-impl<D: Data, W: ZnxWord> GLWESwitchingKeyDegrees for GLWESwitchingKeyShare<D, W> {
+impl<D: Data, W: ZnxWord> GLWESwitchingKeyDegrees for MHEGLWESwitchingKeyShare<D, W> {
     fn output_degree(&self) -> &Degree {
         &self.output_degree
     }
@@ -35,7 +35,7 @@ impl<D: Data, W: ZnxWord> GLWESwitchingKeyDegrees for GLWESwitchingKeyShare<D, W
     }
 }
 
-impl<D: Data, W: ZnxWord> GLWESwitchingKeyDegreesMut for GLWESwitchingKeyShare<D, W> {
+impl<D: Data, W: ZnxWord> GLWESwitchingKeyDegreesMut for MHEGLWESwitchingKeyShare<D, W> {
     fn output_degree(&mut self) -> &mut Degree {
         &mut self.output_degree
     }
@@ -45,7 +45,7 @@ impl<D: Data, W: ZnxWord> GLWESwitchingKeyDegreesMut for GLWESwitchingKeyShare<D
     }
 }
 
-impl<D: Data, W: ZnxWord> LWEInfos for GLWESwitchingKeyShare<D, W> {
+impl<D: Data, W: ZnxWord> LWEInfos for MHEGLWESwitchingKeyShare<D, W> {
     fn noise(&self) -> Option<poulpy_core::ComponentNoise> {
         self.key.noise()
     }
@@ -67,13 +67,13 @@ impl<D: Data, W: ZnxWord> LWEInfos for GLWESwitchingKeyShare<D, W> {
     }
 }
 
-impl<D: Data, W: ZnxWord> GLWEInfos for GLWESwitchingKeyShare<D, W> {
+impl<D: Data, W: ZnxWord> GLWEInfos for MHEGLWESwitchingKeyShare<D, W> {
     fn rank(&self) -> Rank {
         self.key.rank()
     }
 }
 
-impl<D: Data, W: ZnxWord> GGLWEInfos for GLWESwitchingKeyShare<D, W> {
+impl<D: Data, W: ZnxWord> GGLWEInfos for MHEGLWESwitchingKeyShare<D, W> {
     fn k_aux(&self) -> TorusPrecision {
         self.key.k_aux()
     }
@@ -99,30 +99,30 @@ impl<D: Data, W: ZnxWord> GGLWEInfos for GLWESwitchingKeyShare<D, W> {
     }
 }
 
-impl<D: Data, W: ZnxWord> GGLWECompressedSeed for GLWESwitchingKeyShare<D, W> {
+impl<D: Data, W: ZnxWord> GGLWECompressedSeed for MHEGLWESwitchingKeyShare<D, W> {
     fn seed(&self) -> &Vec<[u8; 32]> {
         self.key.seed()
     }
 }
 
-impl<D: Data, W: ZnxWord> GGLWECompressedSeedMut for GLWESwitchingKeyShare<D, W> {
+impl<D: Data, W: ZnxWord> GGLWECompressedSeedMut for MHEGLWESwitchingKeyShare<D, W> {
     fn seed_mut(&mut self) -> &mut Vec<[u8; 32]> {
         self.key.seed_mut()
     }
 }
 
-impl<BE: Backend, D: Data> GGLWECompressedToBackendRef<BE> for GLWESwitchingKeyShare<D, BE::ZnxWord>
+impl<BE: Backend, D: Data> GGLWECompressedToBackendRef<BE> for MHEGLWESwitchingKeyShare<D, BE::ZnxWord>
 where
-    GGLWEPatCompressed<D, BE::ZnxWord>: GGLWECompressedToBackendRef<BE>,
+    MHEGGLWEPatCompressed<D, BE::ZnxWord>: GGLWECompressedToBackendRef<BE>,
 {
     fn to_backend_ref(&self) -> GGLWECompressedBackendRef<'_, BE> {
         self.key.to_backend_ref()
     }
 }
 
-impl<BE: Backend, D: Data> GGLWECompressedToBackendMut<BE> for GLWESwitchingKeyShare<D, BE::ZnxWord>
+impl<BE: Backend, D: Data> GGLWECompressedToBackendMut<BE> for MHEGLWESwitchingKeyShare<D, BE::ZnxWord>
 where
-    GGLWEPatCompressed<D, BE::ZnxWord>: GGLWECompressedToBackendMut<BE>,
+    MHEGGLWEPatCompressed<D, BE::ZnxWord>: GGLWECompressedToBackendMut<BE>,
 {
     fn set_noise(&mut self, metadata: Option<poulpy_core::ComponentNoise>) {
         GGLWECompressedToBackendMut::<BE>::set_noise(&mut self.key, metadata);
@@ -133,23 +133,23 @@ where
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> fmt::Debug for GLWESwitchingKeyShare<D, W> {
+impl<D: HostDataRef, W: ZnxWord> fmt::Debug for MHEGLWESwitchingKeyShare<D, W> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{self}")
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> fmt::Display for GLWESwitchingKeyShare<D, W> {
+impl<D: HostDataRef, W: ZnxWord> fmt::Display for MHEGLWESwitchingKeyShare<D, W> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "(GLWESwitchingKeyShare: sk_in_n={} sk_out_n={}) {}",
+            "(MHEGLWESwitchingKeyShare: sk_in_n={} sk_out_n={}) {}",
             self.input_degree, self.output_degree, self.key
         )
     }
 }
 
-impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GLWESwitchingKeyShare<D, W> {
+impl<D: HostDataMut, W: ZnxWord> ReaderFrom for MHEGLWESwitchingKeyShare<D, W> {
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
         let mut degree = [0u8; 4];
         reader.read_exact(&mut degree)?;
@@ -160,10 +160,16 @@ impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GLWESwitchingKeyShare<D, W> {
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> WriterTo for GLWESwitchingKeyShare<D, W> {
+impl<D: HostDataRef, W: ZnxWord> WriterTo for MHEGLWESwitchingKeyShare<D, W> {
     fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
         writer.write_all(&self.input_degree.0.to_le_bytes())?;
         writer.write_all(&self.output_degree.0.to_le_bytes())?;
         self.key.write_to(writer)
     }
 }
+
+#[deprecated(note = "renamed MHEGLWESwitchingKeyShare")]
+pub type GLWESwitchingKeyShare<D, W> = MHEGLWESwitchingKeyShare<D, W>;
+
+#[deprecated(note = "renamed MHEGLWESwitchingKeyShareOwned")]
+pub type GLWESwitchingKeyShareOwned<BE> = MHEGLWESwitchingKeyShareOwned<BE>;

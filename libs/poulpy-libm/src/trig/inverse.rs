@@ -19,7 +19,7 @@ use poulpy_ckks::{
         CKKSAddOps, CKKSAllOpsTmpBytes, CKKSConjugateOps, CKKSCopyOps, CKKSMulOps, CKKSNegOps, CKKSPolynomialEvaluationOps,
         CKKSPow2Ops,
     },
-    layouts::{CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec, CKKSScalar, ScratchArenaTakeCKKS},
+    layouts::{CKKSPlaintext, CKKSPlaintextAlloc, CKKSPlaintextVecHostCodec, CKKSScalar, ScratchArenaTakeCKKSCiphertext},
     polynomial::SplitStrategy,
 };
 
@@ -248,7 +248,7 @@ where
             "atan2: normalized sign gap exceeds input_bound"
         );
         let normalizer = F::from_f64(2.0f64.powi(-(normalization_steps as i32))).unwrap();
-        let mut constants = module.ckks_pt_coeffs_alloc(2, base2k, coeff_meta.k());
+        let mut constants = module.ckks_plaintext_alloc(2usize.into(), base2k, coeff_meta.k());
         constants.set_meta(coeff_meta.meta());
         constants
             .encode_host_floats(&[F::PI() / (F::one() + F::one()), normalizer])
@@ -367,27 +367,27 @@ where
 /// Homomorphic full-quadrant `atan2` away from both axes.
 pub trait CKKSAtan2Ops<BE: Backend> {
     /// Scratch bytes for [`Self::ckks_atan2`].
-    fn ckks_atan2_tmp_bytes<R, Y, X, T, K, F, P>(
+    fn ckks_atan2_tmp_bytes<R, Y, X, F, P, T, K>(
         &self,
         res: &R,
         y: &Y,
         x: &X,
-        tsk: &T,
-        conj_key: &K,
         plan: &Atan2Plan<F, P>,
+        tsk: &T,
+        keys: &K,
     ) -> usize
     where
         R: CKKSCtBounds,
         Y: CKKSCtBounds,
         X: CKKSCtBounds,
+        P: CKKSInfos + LWEInfos,
         T: GGLWEInfos,
-        K: GGLWEInfos,
-        P: CKKSInfos + LWEInfos;
+        K: GGLWEInfos;
 
     /// Computes `atan2(y, x)` when `plan.sign_gap() <= |x|, |y| <= plan.input_bound()` and
     /// `|y/x| <= plan.ratio_bound()`.
     ///
-    /// The inputs need `plan.consumed_bits(log_delta)` bits of budget. `conj_key` answers the conjugation, Galois element
+    /// The inputs need `plan.consumed_bits(log_delta)` bits of budget. `keys` answers the conjugation, Galois element
     /// `-1`.
     ///
     /// # Metadata
@@ -406,7 +406,7 @@ pub trait CKKSAtan2Ops<BE: Backend> {
         x: &X,
         plan: &Atan2Plan<F, P>,
         tsk: &H,
-        conj_key: &K,
+        keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -432,35 +432,27 @@ where
         + CKKSPow2Ops<BE>
         + GLWEBytesOf<BE>,
 {
-    fn ckks_atan2_tmp_bytes<R, Y, X, T, K, F, P>(
-        &self,
-        res: &R,
-        y: &Y,
-        x: &X,
-        tsk: &T,
-        conj_key: &K,
-        plan: &Atan2Plan<F, P>,
-    ) -> usize
+    fn ckks_atan2_tmp_bytes<R, Y, X, F, P, T, K>(&self, res: &R, y: &Y, x: &X, plan: &Atan2Plan<F, P>, tsk: &T, keys: &K) -> usize
     where
         R: CKKSCtBounds,
         Y: CKKSCtBounds,
         X: CKKSCtBounds,
+        P: CKKSInfos + LWEInfos,
         T: GGLWEInfos,
         K: GGLWEInfos,
-        P: CKKSInfos + LWEInfos,
     {
         // Both signs, the ratio, the correction and the angle. All but the sign of `y` have the layout of `x`.
         let ct = BE::scratch_aligned(self.glwe_bytes_of_from_infos(x)).max(BE::scratch_aligned(self.glwe_bytes_of_from_infos(y)));
         5 * ct
-            + ckks_sign_tmp_bytes(self, x, x, tsk, conj_key, &plan.constants)
-                .max(ckks_sign_tmp_bytes(self, y, y, tsk, conj_key, &plan.constants))
+            + ckks_sign_tmp_bytes(self, x, x, &plan.constants, tsk, keys)
+                .max(ckks_sign_tmp_bytes(self, y, y, &plan.constants, tsk, keys))
                 .max(self.ckks_copy_tmp_bytes(x, x))
                 .max(self.ckks_copy_tmp_bytes(x, y))
                 .max(self.ckks_mul_pt_const_tmp_bytes(x, x, &plan.constants))
-                .max(self.ckks_goldschmidt_division_tmp_bytes(x, tsk))
+                .max(self.ckks_goldschmidt_division_assign_tmp_bytes(x, tsk))
                 .max(self.ckks_mul_tmp_bytes(x, x, x, tsk))
                 .max(self.ckks_mul_tmp_bytes(x, y, x, tsk))
-                .max(self.ckks_approximation_tmp_bytes(x, x, &plan.atan.approximation, tsk))
+                .max(self.ckks_polynomial_approximation_eval_tmp_bytes(x, x, &plan.atan.approximation, tsk))
                 .max(self.ckks_add_tmp_bytes(x.size()))
                 .max(self.ckks_add_tmp_bytes(res.size()))
     }
@@ -472,7 +464,7 @@ where
         x: &X,
         plan: &Atan2Plan<F, P>,
         tsk: &H,
-        conj_key: &K,
+        keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -495,31 +487,22 @@ where
                 self.ckks_mul_pt_const_assign(&mut ratio, &plan.constants, 1, &mut scratch_local)?;
                 self.ckks_mul_pt_const_assign(&mut correction, &plan.constants, 1, &mut scratch_local)?;
             }
+            ckks_sign_into(self, false, &mut sign_x, &ratio, &plan.sign, tsk, keys, &mut scratch_local)?;
             ckks_sign_into(
                 self,
-                &mut sign_x,
-                &ratio,
-                &plan.sign,
-                tsk,
-                conj_key,
                 false,
-                &mut scratch_local,
-            )?;
-            ckks_sign_into(
-                self,
                 &mut sign_y,
                 &correction,
                 &plan.sign,
                 tsk,
-                conj_key,
-                false,
+                keys,
                 &mut scratch_local,
             )?;
             self.ckks_mul_assign(&mut ratio, &sign_x, tsk, &mut scratch_local)?;
-            self.ckks_goldschmidt_division(&mut ratio, plan.reciprocal_iters, tsk, &mut scratch_local)?;
+            self.ckks_goldschmidt_division_assign(plan.reciprocal_iters, &mut ratio, tsk, &mut scratch_local)?;
             self.ckks_mul_assign(&mut ratio, &sign_x, tsk, &mut scratch_local)?;
             self.ckks_mul_assign(&mut ratio, &correction, tsk, &mut scratch_local)?;
-            self.ckks_eval_approximation(&mut angle, &ratio, &plan.atan.approximation, tsk, &mut scratch_local)?;
+            self.ckks_polynomial_approximation_eval(&mut angle, &ratio, &plan.atan.approximation, tsk, &mut scratch_local)?;
 
             // pi/2 * sign(y) * (1 - sign(x)).
             self.ckks_mul_into(&mut correction, &sign_y, &sign_x, tsk, &mut scratch_local)?;

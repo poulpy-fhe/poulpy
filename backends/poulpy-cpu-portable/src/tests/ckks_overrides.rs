@@ -6,14 +6,14 @@ use poulpy_ckks::Scale;
 use poulpy_ckks::api::{
     CKKSAllOpsTmpBytes, CKKSComplexPolynomialEvaluationOps, CKKSCopyOps, CKKSEvalModOps, CKKSPolynomialEvaluationOps,
 };
-use poulpy_ckks::layouts::{CKKSModuleAlloc, CKKSPlaintextOwned};
+use poulpy_ckks::layouts::{CKKSCiphertextAlloc, CKKSPlaintextAlloc, CKKSPlaintextOwned};
 use poulpy_ckks::oep::CKKSComplexPolynomialEvaluationImpl;
 use poulpy_ckks::test_suite::{
     helpers::{assert_ckks_error, assert_ckks_internal},
     parity::helpers::{fixture_ciphertext, snapshot, with_scratch},
 };
 use poulpy_ckks::{CKKSCompositionError, CoeffsMeta, GLWEPlaintextMeta, SetCKKSInfos, SlotLayout};
-use poulpy_core::GLWEMaskFill;
+use poulpy_core::GLWEFill;
 use poulpy_core::layouts::{
     GLWEPlaintextInfos, GetTensorKey, LWEInfos, SetGLWEPlaintextInfos, SetK, TorusPrecision,
     prepared::GLWETensorKeyPreparedBackendRef,
@@ -214,7 +214,7 @@ fn polynomial(module: &Module<OverrideBackend>) -> poulpy_ckks::polynomial::BSGS
     use poulpy_ckks::polynomial::{Basis, Polynomial, SplitStrategy};
     Polynomial::new(Basis::Monomial, vec![0.0f64, 1.0])
         .decompose_bsgs_with(SplitStrategy::MinDepth, |coeffs| -> anyhow::Result<_> {
-            let mut pt = module.ckks_pt_coeffs_alloc(coeffs.len(), 16usize.into(), 32usize.into());
+            let mut pt = module.ckks_plaintext_alloc(coeffs.len().into(), 16usize.into(), 32usize.into());
             pt.set_meta(GLWEPlaintextMeta {
                 scale: Scale::Log(8),
                 ..Default::default()
@@ -355,7 +355,7 @@ fn eval_mod_dispatch_uses_its_independent_scratch_query() {
     };
     let bytes = module.ckks_eval_mod_tmp_bytes(&dst, &src, &params, &key_infos);
     assert_eq!(bytes, OVERRIDE_SCRATCH);
-    module.fill_glwe_from_source(&mut dst, &mut poulpy_hal::source::Source::new([5u8; 32]));
+    module.glwe_fill_from_source(&mut dst, &mut poulpy_hal::source::Source::new([5u8; 32]));
     let unchanged = snapshot::<OverrideBackend, _>(&dst);
     EVAL_MOD_CALLS.with(|calls| calls.set(0));
     let err = with_scratch::<OverrideBackend, _>(bytes, |s| module.ckks_eval_mod(&mut dst, &src, &params, &NoTensorKey, s))
@@ -374,7 +374,7 @@ fn eval_mod_reference_sizes_the_final_destination_copy() {
     use poulpy_ckks::{
         CKKSInfos,
         layouts::eval_mod::{EvalMod, EvalModBsgs, EvalModPlan, EvalModPoly},
-        polynomial::{Basis, ComplexBSGSPolynomial, ComplexPolynomial, EncodeBSGS, Polynomial, SplitStrategy},
+        polynomial::{Basis, CKKSPolynomialEncode, ComplexBSGSPolynomial, ComplexPolynomial, Polynomial, SplitStrategy},
         reference::eval_mod::{CKKSEvalModReference, ckks_eval_mod_tmp_bytes_reference},
     };
     use poulpy_hal::layouts::{HostBytesBackend, ZnxViewMut};
@@ -649,12 +649,12 @@ impl poulpy_core::GLWEShift<OverrideBackend> for CoreQueryOverrides<'_> {
     fn glwe_shift_tmp_bytes(&self, res_size: usize) -> usize {
         CORE_SHIFT_WORKSPACE + poulpy_core::GLWEShift::glwe_shift_tmp_bytes(self.module, res_size)
     }
-    fn glwe_rsh<R>(&self, k: usize, res: &mut R, scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, OverrideBackend>)
+    fn glwe_rsh_assign<R>(&self, k: usize, res: &mut R, scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, OverrideBackend>)
     where
         R: poulpy_core::layouts::GLWEToBackendMut<OverrideBackend>,
     {
         let (_workspace, mut remaining) = scratch.borrow().take_region(CORE_SHIFT_WORKSPACE);
-        poulpy_core::GLWEShift::glwe_rsh(self.module, k, res, &mut remaining)
+        poulpy_core::GLWEShift::glwe_rsh_assign(self.module, k, res, &mut remaining)
     }
     fn glwe_lsh_assign<R>(&self, res: &mut R, k: usize, scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, OverrideBackend>)
     where
@@ -975,12 +975,12 @@ fn division_by_i_uses_negative_monomials_and_selected_core_workspaces() {
 fn decrypt_query_uses_plaintext_allocation_width() {
     use poulpy_ckks::api::CKKSDecryptOps;
     use poulpy_ckks::reference::CKKSPlaintextVecReference;
-    use poulpy_core::{GLWEBytesOf, GLWEDecrypt};
+    use poulpy_core::{GLWEDecrypt, GLWEPlaintextBytesOf};
 
     let module = Module::<OverrideBackend>::new(64);
     let ct = module.ckks_ciphertext_alloc(16usize.into(), 64usize.into());
-    let narrow = module.ckks_pt_vec_alloc(module.ckks_max_slots(), 16usize.into(), 64usize.into());
-    let mut wide = module.ckks_pt_vec_alloc(module.ckks_max_slots(), 16usize.into(), 1024usize.into());
+    let narrow = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots(), 16usize.into(), 64usize.into());
+    let mut wide = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots(), 16usize.into(), 1024usize.into());
     SetK::set_k(&mut wide, 32usize.into());
     let expected = |pt_size: usize| {
         module.glwe_plaintext_bytes_of_from_infos(&ct)

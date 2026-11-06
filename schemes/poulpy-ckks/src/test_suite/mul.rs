@@ -50,14 +50,14 @@
 //! | [`test_mul_pt_vec_assign`] | - |
 use crate::{
     CKKSCompositionError, CKKSInfos,
-    api::{CKKSDotProductOps, CKKSMulOps},
-    layouts::CKKSModuleAlloc,
+    api::{CKKSDotProductOps, CKKSLeftOperandPreparedFactory, CKKSMulOps, CKKSRightOperandPreparedFactory},
+    layouts::CKKSCiphertextAlloc,
 };
 use poulpy_core::layouts::{GLWEToBackendMut, LWEInfos};
 
 use poulpy_hal::{
     AlignedBuf,
-    api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow},
+    api::{ReimNew, ScratchOwnedBorrow},
     layouts::{DataView, DataViewMut, HostBytesBackend, Module, PrepareHint, ScratchArena, Standard},
 };
 
@@ -83,7 +83,7 @@ where
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -125,8 +125,8 @@ where
     let metadata = ct1.noise();
     assert!(metadata.is_some());
     assert_eq!(ct_res.noise(), None);
-    let prepared = with_scratch::<BE, _>(module.ckks_prepare_tmp_bytes(&ct2), |s| {
-        module.ckks_prepare_right(&ct2, PrepareHint::OneShot, s)
+    let prepared = with_scratch::<BE, _>(module.ckks_right_operand_prepare_tmp_bytes(&ct2), |s| {
+        module.ckks_right_operand_prepare_alloc(&ct2, PrepareHint::OneShot, s)
     })
     .unwrap();
     let mut prepared_result = ct1.clone();
@@ -140,8 +140,8 @@ where
 
     let mut unknown = ct2.clone();
     GLWEToBackendMut::<BE>::set_noise(&mut unknown, None);
-    let prepared = with_scratch::<BE, _>(module.ckks_prepare_tmp_bytes(&unknown), |s| {
-        module.ckks_prepare_right(&unknown, PrepareHint::Reuse, s)
+    let prepared = with_scratch::<BE, _>(module.ckks_right_operand_prepare_tmp_bytes(&unknown), |s| {
+        module.ckks_right_operand_prepare_alloc(&unknown, PrepareHint::Reuse, s)
     })
     .unwrap();
     let mut prepared_result = ct1.clone();
@@ -171,7 +171,7 @@ where
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -230,7 +230,7 @@ where
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -289,7 +289,7 @@ where
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -357,7 +357,7 @@ pub fn test_mul_ct_larger_budget_smaller_scale<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -409,8 +409,8 @@ pub fn test_mul_ct_larger_budget_smaller_scale<BE, F, E>(
         })
         .unwrap();
 
-        let prepared = with_scratch::<BE, _>(module.ckks_prepare_tmp_bytes(b), |s| {
-            module.ckks_prepare_right(b, PrepareHint::OneShot, s)
+        let prepared = with_scratch::<BE, _>(module.ckks_right_operand_prepare_tmp_bytes(b), |s| {
+            module.ckks_right_operand_prepare_alloc(b, PrepareHint::OneShot, s)
         })
         .unwrap();
         let mut prepared_result = a.clone();
@@ -463,7 +463,7 @@ where
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -533,7 +533,7 @@ pub fn test_mul_ct_smaller_output_exact_scratch<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -593,7 +593,7 @@ where
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -658,7 +658,7 @@ where
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -723,7 +723,7 @@ where
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -790,7 +790,7 @@ where
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -837,7 +837,7 @@ where
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -884,7 +884,7 @@ where
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -934,7 +934,7 @@ where
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -983,7 +983,7 @@ where
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -1039,7 +1039,7 @@ pub fn test_mul_pt_vec_into_delta_log_delta<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -1096,7 +1096,7 @@ pub fn test_mul_pt_vec_into_smaller_output<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -1152,7 +1152,7 @@ where
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -1210,7 +1210,7 @@ pub fn test_mul_pt_const_into_aligned<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -1267,7 +1267,7 @@ where
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -1327,7 +1327,7 @@ pub fn test_mul_pt_const_into_delta_log_delta<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -1388,7 +1388,7 @@ where
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -1479,7 +1479,7 @@ pub fn test_mul_prepared_assign_rejects_layout_mismatch<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -1503,8 +1503,8 @@ pub fn test_mul_prepared_assign_rejects_layout_mismatch<BE, F, E>(
     let mismatched_base2k = params.base2k / 2;
     let mut other = module.ckks_ciphertext_alloc(mismatched_base2k.into(), params.k.into());
     other.set_meta(params.prec().meta);
-    let prepared = with_scratch::<BE, _>(module.ckks_prepare_tmp_bytes(&other), |s| {
-        module.ckks_prepare_right(&other, PrepareHint::Reuse, s)
+    let prepared = with_scratch::<BE, _>(module.ckks_right_operand_prepare_tmp_bytes(&other), |s| {
+        module.ckks_right_operand_prepare_alloc(&other, PrepareHint::Reuse, s)
     })
     .unwrap();
     let before = snapshot::<BE, _>(&dst);
@@ -1539,7 +1539,7 @@ where
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -1572,26 +1572,26 @@ where
     for hint in [PrepareHint::OneShot, PrepareHint::Reuse] {
         check_prepare_into(
             &format!("left {hint:?}"),
-            "ckks_prepare_left_into",
-            module.ckks_prepared_left_bytes_of_from_infos(&ct, hint),
-            || module.ckks_prepared_left_alloc_from_infos(&ct, hint),
+            "ckks_left_operand_prepare",
+            module.ckks_left_operand_prepared_bytes_of_from_infos(&ct, hint),
+            || module.ckks_left_operand_prepared_alloc_from_infos(&ct, hint),
             |p| p.prep.data(),
             |p| p.prep.data_mut(),
-            |a| module.ckks_prepare_tmp_bytes(a),
-            |a, s| module.ckks_prepare_left(a, hint, s),
-            |p, a, s| module.ckks_prepare_left_into(p, a, s),
+            |a| module.ckks_left_operand_prepare_tmp_bytes(a),
+            |a, s| module.ckks_left_operand_prepare_alloc(a, hint, s),
+            |p, a, s| module.ckks_left_operand_prepare(p, a, s),
             (&ct, &other),
         );
         check_prepare_into(
             &format!("right {hint:?}"),
-            "ckks_prepare_right_into",
-            module.ckks_prepared_right_bytes_of_from_infos(&ct, hint),
-            || module.ckks_prepared_right_alloc_from_infos(&ct, hint),
+            "ckks_right_operand_prepare",
+            module.ckks_right_operand_prepared_bytes_of_from_infos(&ct, hint),
+            || module.ckks_right_operand_prepared_alloc_from_infos(&ct, hint),
             |p| p.prep.data(),
             |p| p.prep.data_mut(),
-            |a| module.ckks_prepare_tmp_bytes(a),
-            |a, s| module.ckks_prepare_right(a, hint, s),
-            |p, a, s| module.ckks_prepare_right_into(p, a, s),
+            |a| module.ckks_right_operand_prepare_tmp_bytes(a),
+            |a, s| module.ckks_right_operand_prepare_alloc(a, hint, s),
+            |p, a, s| module.ckks_right_operand_prepare(p, a, s),
             (&ct, &other),
         );
     }
@@ -1659,7 +1659,7 @@ pub fn test_mul_into_rejects_explicit_metadata<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -1720,7 +1720,7 @@ pub fn test_mul_pt_const_into_rejects_base2k_mismatch<BE, F, E>(
     BE: crate::test_suite::helpers::TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     poulpy_hal::layouts::Module<BE>: crate::test_suite::helpers::TestContextModule<BE>,
     F: crate::test_suite::helpers::TestScalar,
-    E: poulpy_hal::api::NegacyclicFFT<F> + poulpy_hal::api::NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     use crate::test_suite::{
         helpers::assert_ckks_error,
@@ -1791,7 +1791,7 @@ pub fn test_mul_pt_vec_into_rejects_base2k_mismatch<BE, F, E>(
     BE: crate::test_suite::helpers::TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     poulpy_hal::layouts::Module<BE>: crate::test_suite::helpers::TestContextModule<BE>,
     F: crate::test_suite::helpers::TestScalar,
-    E: poulpy_hal::api::NegacyclicFFT<F> + poulpy_hal::api::NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     use crate::test_suite::{
         helpers::assert_ckks_error,

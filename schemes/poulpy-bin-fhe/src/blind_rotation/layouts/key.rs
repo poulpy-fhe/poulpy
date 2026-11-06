@@ -7,6 +7,7 @@ use std::{fmt, marker::PhantomData};
 
 use poulpy_core::{
     Distribution, TransferInto,
+    layouts::GGSWAlloc,
     layouts::{Base2K, Degree, Dnum, GGSW, GGSWInfos, GLWEInfos, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision},
 };
 
@@ -112,14 +113,6 @@ where
     fn n_lwe(&self) -> Degree;
 }
 
-/// Allocation trait for bootstrapping keys.
-pub trait BlindRotationKeyAlloc {
-    /// Allocates an uninitialised (zero-filled) key from a dimension descriptor.
-    fn alloc<A>(infos: &A) -> Self
-    where
-        A: BlindRotationKeyInfos;
-}
-
 /// Standard (un-prepared) blind rotation bootstrapping key.
 ///
 /// Stores one GGSW ciphertext per LWE coefficient encrypting the corresponding
@@ -129,9 +122,10 @@ pub trait BlindRotationKeyAlloc {
 ///
 /// ## Key Lifecycle
 ///
-/// 1. Allocate with [`BlindRotationKey::alloc`].
-/// 2. Fill with [`BlindRotationKey::encrypt_sk`].
-/// 3. Prepare for evaluation with `BlindRotationKeyPrepared::prepare`.
+/// 1. Allocate with [`BlindRotationAlgo::blind_rotation_key_alloc`].
+/// 2. Fill with [`BlindRotationKeyEncryptSk::blind_rotation_key_encrypt_sk`](crate::api::BlindRotationKeyEncryptSk::blind_rotation_key_encrypt_sk).
+/// 3. Prepare for evaluation with
+///    [`BlindRotationKeyPreparedFactory::blind_rotation_key_prepare`](crate::api::BlindRotationKeyPreparedFactory::blind_rotation_key_prepare).
 ///
 /// ## Serialisation
 ///
@@ -154,10 +148,10 @@ pub struct BlindRotationKey<D: Data, BRT: BlindRotationAlgo, W: ZnxWord> {
 impl<D: Data, BRA: BlindRotationAlgo, W: ZnxWord> BlindRotationKey<D, BRA, W> {
     pub fn alloc<M, A>(module: &M, infos: &A) -> BlindRotationKey<D, BRA, W>
     where
-        M: ModuleCoreAlloc<OwnedBuf = D, ZnxWord = W> + ModuleN,
+        M: GGSWAlloc + ModuleCoreAlloc<OwnedBuf = D, ZnxWord = W> + ModuleN,
         A: BlindRotationKeyInfos,
     {
-        BRA::alloc_key(module, infos)
+        BRA::blind_rotation_key_alloc(module, infos)
     }
 }
 

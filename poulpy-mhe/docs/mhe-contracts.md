@@ -20,18 +20,18 @@ same trait, and panics before any draw or write when given less.
 
 | API family | OEP contract | Reference |
 |---|---|---|
-| `GLWEPatCompressedOps` | `GLWEPatCompressedImpl` | `reference::GLWEPatCompressedReference` |
-| `GGLWEPatCompressedOps` | `GGLWEPatCompressedImpl` | `reference::GGLWEPatCompressedReference` |
-| `GGLWEPatOps` | `GGLWEPatImpl` | `reference::GGLWEPatReference` |
-| `GLWEPublicKeyMHEProtocol` | `GLWEPublicKeyMHEProtocolImpl` | `reference::GLWEPublicKeyMHEProtocolReference`; aggregation and finalization are derived defaults |
-| `GLWESwitchingKeyMHEProtocol` | `GLWESwitchingKeyMHEProtocolImpl` | `reference::GLWESwitchingKeyMHEProtocolReference`; aggregation and finalization are derived defaults |
-| `GLWEAutomorphismKeyMHEProtocol` | `GLWEAutomorphismKeyMHEProtocolImpl` | `reference::GLWEAutomorphismKeyMHEProtocolReference`; aggregation and finalization are derived defaults |
-| `GLWETensorKeyMHEProtocol` | `GLWETensorKeyMHEProtocolImpl` | `reference::GLWETensorKeyMHEProtocolReference`; aggregation and finalization are derived defaults over `GGLWEPatImpl` |
-| `GGSWMHEProtocol` | `GGSWMHEProtocolImpl` | `reference::GGSWMHEProtocolReference`; aggregation is a derived default over `GGLWEPatCompressedImpl` |
-| `GLWEPrivateKeyswitchMHEProtocol` | `GLWEPrivateKeyswitchMHEProtocolImpl` | `reference::GLWEPrivateKeyswitchMHEProtocolReference` |
-| `GLWEPublicKeyswitchMHEProtocol` | `GLWEPublicKeyswitchMHEProtocolImpl` | `reference::GLWEPublicKeyswitchMHEProtocolReference` |
-| `GLWEEncToShareMHEProtocol` | `GLWEEncToShareMHEProtocolImpl` | `reference::GLWEEncToShareMHEProtocolReference` |
-| `GLWEShareToEncMHEProtocol` | `GLWEShareToEncMHEProtocolImpl` | `reference::GLWEShareToEncMHEProtocolReference`; aggregation and finalization are derived defaults over `GLWEPatCompressedImpl` |
+| `MHEGLWEPatCompressedOps` | `MHEGLWEPatCompressedImpl` | `reference::MHEGLWEPatCompressedReference` |
+| `MHEGGLWEPatCompressedOps` | `MHEGGLWEPatCompressedImpl` | `reference::MHEGGLWEPatCompressedReference` |
+| `MHEGGLWEPatOps` | `MHEGGLWEPatImpl` | `reference::MHEGGLWEPatReference` |
+| `MHEGLWEPublicKeyProtocol` | `MHEGLWEPublicKeyProtocolImpl` | `reference::MHEGLWEPublicKeyProtocolReference`; aggregation and finalization are derived defaults |
+| `MHEGLWESwitchingKeyProtocol` | `MHEGLWESwitchingKeyProtocolImpl` | `reference::MHEGLWESwitchingKeyProtocolReference`; aggregation and finalization are derived defaults |
+| `MHEGLWEAutomorphismKeyProtocol` | `MHEGLWEAutomorphismKeyProtocolImpl` | `reference::MHEGLWEAutomorphismKeyProtocolReference`; aggregation and finalization are derived defaults |
+| `MHEGLWETensorKeyProtocol` | `MHEGLWETensorKeyProtocolImpl` | `reference::MHEGLWETensorKeyProtocolReference`; aggregation and finalization are derived defaults over `MHEGGLWEPatImpl` |
+| `MHEGGSWProtocol` | `MHEGGSWProtocolImpl` | `reference::MHEGGSWProtocolReference`; aggregation is a derived default over `MHEGGLWEPatCompressedImpl` |
+| `MHEGLWEPrivateKeyswitchProtocol` | `MHEGLWEPrivateKeyswitchProtocolImpl` | `reference::MHEGLWEPrivateKeyswitchProtocolReference` |
+| `MHEGLWEPublicKeyswitchProtocol` | `MHEGLWEPublicKeyswitchProtocolImpl` | `reference::MHEGLWEPublicKeyswitchProtocolReference` |
+| `MHEGLWEEncToShareProtocol` | `MHEGLWEEncToShareProtocolImpl` | `reference::MHEGLWEEncToShareProtocolReference` |
+| `MHEGLWEShareToEncProtocol` | `MHEGLWEShareToEncProtocolImpl` | `reference::MHEGLWEShareToEncProtocolReference`; aggregation and finalization are derived defaults over `MHEGLWEPatCompressedImpl` |
 
 ## Normalization
 
@@ -204,15 +204,15 @@ type registering mhe runs it; the comparison backends also run
 `impl_mhe_reference_full!` selects every family. Each OEP trait has its own
 opt-in, `impl_<family>_reference_full!` with `<family>` the trait in snake case
 without `Impl`; a backend replacing one family selects the others alone:
-`impl_glwe_pat_compressed_reference_full!`, `impl_gglwe_pat_compressed_reference_full!`,
-`impl_gglwe_pat_reference_full!`, `impl_glwe_public_key_mhe_protocol_reference_full!`,
-`impl_glwe_switching_key_mhe_protocol_reference_full!`,
-`impl_glwe_automorphism_key_mhe_protocol_reference_full!`,
-`impl_glwe_tensor_key_mhe_protocol_reference_full!`, `impl_ggsw_mhe_protocol_reference_full!`,
-`impl_glwe_private_keyswitch_mhe_protocol_reference_full!`,
-`impl_glwe_public_keyswitch_mhe_protocol_reference_full!`,
-`impl_glwe_enc_to_share_mhe_protocol_reference_full!` and
-`impl_glwe_share_to_enc_mhe_protocol_reference_full!`. The reference traits
+`impl_mhe_glwe_pat_compressed_reference_full!`, `impl_mhe_gglwe_pat_compressed_reference_full!`,
+`impl_mhe_gglwe_pat_reference_full!`, `impl_mhe_glwe_public_key_protocol_reference_full!`,
+`impl_mhe_glwe_switching_key_protocol_reference_full!`,
+`impl_mhe_glwe_automorphism_key_protocol_reference_full!`,
+`impl_mhe_glwe_tensor_key_protocol_reference_full!`, `impl_mhe_ggsw_protocol_reference_full!`,
+`impl_mhe_glwe_private_keyswitch_protocol_reference_full!`,
+`impl_mhe_glwe_public_keyswitch_protocol_reference_full!`,
+`impl_mhe_glwe_enc_to_share_protocol_reference_full!` and
+`impl_mhe_glwe_share_to_enc_protocol_reference_full!`. The reference traits
 stay callable from an override.
 
 ## Workspace

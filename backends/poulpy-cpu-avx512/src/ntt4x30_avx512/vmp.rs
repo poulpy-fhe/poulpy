@@ -46,7 +46,7 @@ impl SendU32Ptr {
 }
 
 /// Scratch space (in bytes) required by the AVX VMP prepare kernel.
-pub(crate) fn vmp_prepare_tmp_bytes_avx(n: usize) -> usize {
+pub(crate) fn vmp_pmat_prepare_tmp_bytes_avx(n: usize) -> usize {
     4 * n * size_of::<u64>()
 }
 
@@ -55,7 +55,7 @@ pub(crate) fn vmp_prepare_tmp_bytes_avx(n: usize) -> usize {
 /// Every u64 stores two canonical u32 residues. The two planes hold prime
 /// pairs `(p0, p1)` and `(p2, p3)` for
 /// `[blk0.c0, blk0.c1, blk1.c0, blk1.c1]`.
-pub(crate) fn vmp_prepare_avx_pm<R: Ring>(
+pub(crate) fn vmp_pmat_prepare_avx_pm<R: Ring>(
     module: &Module<NTT4x30Avx512<R>>,
     res: &mut VmpPMatBackendMut<'_, NTT4x30Avx512<R>>,
     a: &MatZnxBackendRef<'_, NTT4x30Avx512<R>>,
@@ -71,7 +71,7 @@ pub(crate) fn vmp_prepare_avx_pm<R: Ring>(
     assert_eq!(res.rows(), a.rows());
     assert_eq!(res.cols_out(), a.cols_out());
     assert_eq!(res.size(), a.size());
-    assert!(std::mem::size_of_val(tmp) >= vmp_prepare_tmp_bytes_avx(n));
+    assert!(std::mem::size_of_val(tmp) >= vmp_pmat_prepare_tmp_bytes_avx(n));
     assert!(n.is_multiple_of(4));
 
     let nrows = a.cols_in() * a.rows();

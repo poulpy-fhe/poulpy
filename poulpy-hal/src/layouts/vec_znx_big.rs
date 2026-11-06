@@ -164,7 +164,7 @@ impl<D: Data, W: BigWord, B: Backend<BigWord = W>> VecZnxBig<D, W, B> {
     where
         B: Backend<OwnedBuf = D>,
     {
-        let data: <B as Backend>::OwnedBuf = B::alloc_zeroed_bytes(B::bytes_of_vec_znx_big(n, cols, size));
+        let data: <B as Backend>::OwnedBuf = B::alloc_zeroed_bytes(B::vec_znx_big_bytes_of(n, cols, size));
         VecZnxBig {
             data,
             shape: VecZnxShape::new(n, cols, size),
@@ -176,7 +176,7 @@ impl<D: Data, W: BigWord, B: Backend<BigWord = W>> VecZnxBig<D, W, B> {
     ///
     /// # Panics
     ///
-    /// Panics if the buffer length does not equal `B::bytes_of_vec_znx_big(n, cols, size)`;
+    /// Panics if the buffer length does not equal `B::vec_znx_big_bytes_of(n, cols, size)`;
     /// a `Vec<u8>` argument is first copied into storage padded to a 64-byte multiple, so
     /// its padded length is what is compared.
     pub fn from_bytes(n: usize, cols: usize, size: usize, bytes: impl Into<AlignedBuf>) -> VecZnxBigOwned<B>
@@ -184,7 +184,7 @@ impl<D: Data, W: BigWord, B: Backend<BigWord = W>> VecZnxBig<D, W, B> {
         B: Backend<OwnedBuf = D>,
     {
         let data: AlignedBuf = bytes.into();
-        assert!(data.len() == crate::layouts::padded_bytes(B::bytes_of_vec_znx_big(n, cols, size)));
+        assert!(data.len() == crate::layouts::padded_bytes(B::vec_znx_big_bytes_of(n, cols, size)));
         let data: <B as Backend>::OwnedBuf = B::from_host_bytes(&data);
         VecZnxBig {
             data,
@@ -377,8 +377,8 @@ impl<D: Data, W: BigWord, B: Backend<BigWord = W>> VecZnxBig<D, W, B> {
         crate::layouts::assert_dense(&self, "VecZnxBig::into_backend");
         let shape = self.shape;
         assert_eq!(
-            B::bytes_of_vec_znx_big(shape.n(), shape.cols(), shape.size()),
-            B2::bytes_of_vec_znx_big(shape.n(), shape.cols(), shape.size()),
+            B::vec_znx_big_bytes_of(shape.n(), shape.cols(), shape.size()),
+            B2::vec_znx_big_bytes_of(shape.n(), shape.cols(), shape.size()),
             "into_backend: byte sizes diverge despite declared layout compatibility"
         );
         VecZnxBig {

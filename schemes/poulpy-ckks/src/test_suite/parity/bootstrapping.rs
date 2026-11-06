@@ -12,10 +12,13 @@ use super::{
 };
 use crate::{
     CKKSCtBounds, CKKSInfos, CKKSLayout, CoeffsMeta, GLWEPlaintextMeta, SlotLayout, SlotsKind,
-    api::{CKKSAllOpsTmpBytes, CKKSDFTMatrixOps, CKKSDFTOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar},
+    api::{
+        CKKSAllOpsTmpBytes, CKKSDFTMatrixOps, CKKSDFTMatrixPreparedFactory, CKKSDFTOps, CKKSEncodingHostOps, CKKSEncodingOps,
+        CKKSEncodingScalar,
+    },
     layouts::{
-        BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingLinearKeys, BootstrappingPipeline,
-        BootstrappingPlan, BootstrappingTechniques, CKKSModuleAlloc, CKKSPlaintextOwned, DFTOutputFormat, DFTPlan, DFTType,
+        BootstrappingContextPrepared, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingLinearKeys, BootstrappingPipeline,
+        BootstrappingPlan, BootstrappingTechniques, CKKSPlaintextOwned, DFTOutputFormat, DFTPlan, DFTType,
         EncapsulationKeysLayout, EncodedLut, EvalModPlan, EvalModType, EvalRoundPlus, SparseSecretEncapsulation,
     },
     oep::{CKKSBootstrappingImpl, CKKSEncapsulatedModUpImpl},
@@ -23,7 +26,7 @@ use crate::{
     test_suite::CKKSTestParams,
 };
 use poulpy_core::{
-    DiagonalProd, GLWEAdd, GLWEMaskFill,
+    GLWEAdd, GLWEDiagonalProd, GLWEFill,
     api::{GGLWEPreparedFactory, GLWEAutomorphismKeyPreparedFactory, GLWETensorKeyPreparedFactory},
     layouts::{
         GGLWEInfos, GGLWELayout, GGLWEPrepared, GLWEAutomorphismKeyPrepared, GLWELayout, GLWETensorKeyPrepared, GLWEToBackendRef,
@@ -36,7 +39,7 @@ use poulpy_hal::layouts::{Backend, CyclotomicOrder, HostBytesBackend, HostStaged
 fn run<BE>(params: CKKSTestParams, module: &Module<BE>) -> Vec<(Result<(), String>, Snapshot, Snapshot)>
 where
     BE: Backend<ZnxWord = i64> + CKKSEncapsulatedModUpImpl,
-    Module<BE>: GGLWEPreparedFactory<BE> + GLWEMaskFill<BE> + GLWEAdd<BE>,
+    Module<BE>: GGLWEPreparedFactory<BE> + GLWEFill<BE> + GLWEAdd<BE>,
 {
     let b = params.base2k;
     let small = 3 * b + 1;
@@ -224,8 +227,8 @@ pub fn test_encapsulated_mod_up_parity<BR, BT, F>(params: CKKSTestParams, module
 where
     BR: Backend<ZnxWord = i64> + CKKSEncapsulatedModUpImpl,
     BT: Backend<ZnxWord = i64> + CKKSEncapsulatedModUpImpl,
-    Module<BR>: GGLWEPreparedFactory<BR> + GLWEMaskFill<BR> + GLWEAdd<BR>,
-    Module<BT>: GGLWEPreparedFactory<BT> + GLWEMaskFill<BT> + GLWEAdd<BT>,
+    Module<BR>: GGLWEPreparedFactory<BR> + GLWEFill<BR> + GLWEAdd<BR>,
+    Module<BT>: GGLWEPreparedFactory<BT> + GLWEFill<BT> + GLWEAdd<BT>,
 {
     assert_eq!(module_ref.n(), module_test.n());
     let want = run(params, module_ref);
@@ -341,12 +344,18 @@ fn ct_layout(n: usize, base2k: usize, k: usize, log_delta: usize, slots: SlotsKi
     }
 }
 
-fn keys_layout(atk: &GGLWELayout, d2s: &GGLWELayout, s2d: &GGLWELayout, encapsulate: bool) -> BootstrappingKeysLayout {
+/// Every rotation key of `elements` of layout `atk`.
+fn keys_layout(
+    elements: impl Iterator<Item = i64>,
+    atk: &GGLWELayout,
+    d2s: &GGLWELayout,
+    s2d: &GGLWELayout,
+    encapsulate: bool,
+) -> BootstrappingKeysLayout {
     BootstrappingKeysLayout {
-        rotation_keys: Default::default(),
+        rotation_keys: elements.map(|p| (p, (*atk).into())).collect(),
         first_factor_key: None,
         conversion_keys: None,
-        automorphism_key: (*atk).into(),
         tensor_key: (*atk).into(),
         encapsulation: encapsulate.then(|| EncapsulationKeysLayout {
             dense_to_sparse: (*d2s).into(),
@@ -367,7 +376,7 @@ where
     Module<BE>: GLWEAutomorphismKeyPreparedFactory<BE>
         + GLWETensorKeyPreparedFactory<BE>
         + GGLWEPreparedFactory<BE>
-        + GLWEMaskFill<BE>
+        + GLWEFill<BE>
         + CyclotomicOrder,
 {
     let rotation_keys = plan
@@ -391,18 +400,18 @@ fn run_bootstrap<BE, F>(params: CKKSTestParams, module: &Module<BE>) -> Vec<Outc
 where
     BE: Backend<ZnxWord = i64> + CKKSBootstrappingImpl + HostStaged,
     F: CKKSEncodingScalar,
-    Module<BE>: CKKSDFTOps<BE>
+    Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + CKKSDFTOps<BE>
         + CKKSDFTMatrixOps<BE, F>
         + CKKSEncodingOps<BE, F>
         + CKKSEncodingHostOps<BE, F>
-        + CKKSModuleAlloc<BE>
         + CKKSAllOpsTmpBytes<BE>
         + GLWEAutomorphismKeyPreparedFactory<BE>
         + GLWETensorKeyPreparedFactory<BE>
         + GGLWEPreparedFactory<BE>
-        + GLWEMaskFill<BE>
+        + GLWEFill<BE>
         + CyclotomicOrder,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds + DiagonalProd<BE>,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds + GLWEDiagonalProd<BE>,
     FixtureKeys<BE>: BootstrappingKeys<BE> + Sync,
     <FixtureKeys<BE> as BootstrappingKeys<BE>>::TensorKey: Sync,
 {
@@ -450,14 +459,22 @@ where
         let atk = key_layout(n, b, k_boot, 2, 1, 1);
         let d2s = key_layout(n, b, k_in, 1, 1, 1);
         let s2d = key_layout(n, b, k_boot, 2, 1, 1);
-        let layout = keys_layout(&atk, &d2s, &s2d, encapsulate);
+        let elements = plan
+            .key_widths(n.ilog2() as usize, k_boot, k_in, log_delta)
+            .rotation_keys
+            .into_keys();
+        let layout = keys_layout(elements, &atk, &d2s, &s2d, encapsulate);
         let pt = ct_layout(n, b, 16 + 2 * b, 16, SlotsKind::Complex);
-        let compile = module
-            .ckks_all_ops_with_atk_tmp_bytes(&out_layout, &pt, &atk, &atk)
-            .max(<Module<BE> as CKKSEncodingHostOps<BE, F>>::ckks_reim_tmp_bytes(module, n / 2));
+        let compile =
+            module
+                .ckks_all_ops_with_atk_tmp_bytes(&out_layout, &pt, &atk, &atk)
+                .max(<Module<BE> as CKKSEncodingHostOps<BE, F>>::ckks_encoding_host_tmp_bytes(
+                    module,
+                    n / 2,
+                ));
         // Staged compilation: preparation runs with exactly its advertised scratch.
         let unprepared = with_scratch::<BE, _>(compile, |scratch| {
-            BootstrappingContext::<BE, F>::compile_unprepared(module, b.into(), &plan, scratch)
+            BootstrappingContextPrepared::<BE, F>::compile_unprepared(module, b.into(), &plan, scratch)
         })
         .unwrap();
         let ctx = with_scratch::<BE, _>(unprepared.prepare_tmp_bytes(module), |scratch| {
@@ -492,6 +509,7 @@ where
             assert!(result.is_ok(), "{pipeline:?}: {result:?}");
             results.push((result.map_err(|e| e.to_string()), vec![snapshot::<BE, _>(&raised)]));
             let mut raised = fixture_ciphertext(module, &out_layout, 103);
+            let bytes = BE::ckks_bootstrap_mod_up_tmp_bytes(module, &out_layout, &in_layout, &ctx, &layout);
             let result = with_scratch::<BE, _>(bytes, |scratch| {
                 BE::ckks_bootstrap_mod_up(module, &mut raised, &ct_in, plan.eval_mod(), &keys, scratch)
             });
@@ -511,30 +529,30 @@ where
     BR: Backend<ZnxWord = i64> + CKKSBootstrappingImpl + HostStaged,
     BT: Backend<ZnxWord = i64> + CKKSBootstrappingImpl + HostStaged,
     F: CKKSEncodingScalar,
-    Module<BR>: CKKSDFTOps<BR>
+    Module<BR>: CKKSDFTMatrixPreparedFactory<BR>
+        + CKKSDFTOps<BR>
         + CKKSDFTMatrixOps<BR, F>
         + CKKSEncodingOps<BR, F>
         + CKKSEncodingHostOps<BR, F>
-        + CKKSModuleAlloc<BR>
         + CKKSAllOpsTmpBytes<BR>
         + GLWEAutomorphismKeyPreparedFactory<BR>
         + GLWETensorKeyPreparedFactory<BR>
         + GGLWEPreparedFactory<BR>
-        + GLWEMaskFill<BR>
+        + GLWEFill<BR>
         + CyclotomicOrder,
-    Module<BT>: CKKSDFTOps<BT>
+    Module<BT>: CKKSDFTMatrixPreparedFactory<BT>
+        + CKKSDFTOps<BT>
         + CKKSDFTMatrixOps<BT, F>
         + CKKSEncodingOps<BT, F>
         + CKKSEncodingHostOps<BT, F>
-        + CKKSModuleAlloc<BT>
         + CKKSAllOpsTmpBytes<BT>
         + GLWEAutomorphismKeyPreparedFactory<BT>
         + GLWETensorKeyPreparedFactory<BT>
         + GGLWEPreparedFactory<BT>
-        + GLWEMaskFill<BT>
+        + GLWEFill<BT>
         + CyclotomicOrder,
-    CKKSPlaintextOwned<BR>: GLWEToBackendRef<BR> + CKKSCtBounds + DiagonalProd<BR>,
-    CKKSPlaintextOwned<BT>: GLWEToBackendRef<BT> + CKKSCtBounds + DiagonalProd<BT>,
+    CKKSPlaintextOwned<BR>: GLWEToBackendRef<BR> + CKKSCtBounds + GLWEDiagonalProd<BR>,
+    CKKSPlaintextOwned<BT>: GLWEToBackendRef<BT> + CKKSCtBounds + GLWEDiagonalProd<BT>,
     FixtureKeys<BR>: BootstrappingKeys<BR> + Sync,
     <FixtureKeys<BR> as BootstrappingKeys<BR>>::TensorKey: Sync,
     FixtureKeys<BT>: BootstrappingKeys<BT> + Sync,

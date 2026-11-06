@@ -3,7 +3,10 @@
 //! shape checks on an arena of zero bytes.
 
 use poulpy_hal::{
-    api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxDftAlloc},
+    api::{
+        ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxDftAlloc, VecZnxDftApply, VecZnxGadgetDecompose,
+        VecZnxGadgetDecomposeTmpBytes, VecZnxIdftNormalize, VecZnxIdftNormalizeTmpBytes,
+    },
     layouts::{
         Backend, DataView, Module, ScratchOwned, VecZnx, VecZnxDft, VecZnxDftToBackendMut, VecZnxDftToBackendRef,
         VecZnxToBackendRef,
@@ -13,7 +16,7 @@ use poulpy_hal::{
 
 use crate::{
     api::GGLWEPreparedFactory,
-    gadget::gadget_dft_apply_from_dft,
+    gadget::gglwe_gadget_dft_apply_from_dft,
     layouts::{
         Base2K, Degree, Dnum, GLWESwitchingKeyLayout, LWEInfos, Rank, TorusPrecision,
         prepared::{GGLWEPrepared, GGLWEPreparedToBackendRef},
@@ -413,23 +416,28 @@ where
     }
 }
 
-/// `gadget_dft_apply_from_dft` refuses a source radix other than the key's and a scratch below
+/// `gglwe_gadget_dft_apply_from_dft` refuses a source radix other than the key's and a scratch below
 /// its query, before writing `res` or the source.
-pub fn test_gadget_dft_apply_from_dft_rejects_invalid_operands<BE>(params: &TestParams, module: &Module<BE>)
+pub fn test_gglwe_gadget_dft_apply_from_dft_rejects_invalid_operands<BE>(params: &TestParams, module: &Module<BE>)
 where
     BE: Backend + GGLWEProductDigitsStridedImpl,
-    Module<BE>:
-        GGLWEPreparedFactory<BE> + VecZnxDftAlloc<BE> + crate::reference::keyswitching::glwe::GGLWEProductFusedReference<BE>,
+    Module<BE>: GGLWEPreparedFactory<BE>
+        + VecZnxDftAlloc<BE>
+        + VecZnxDftApply<BE>
+        + VecZnxIdftNormalize<BE>
+        + VecZnxIdftNormalizeTmpBytes
+        + VecZnxGadgetDecompose<BE>
+        + VecZnxGadgetDecomposeTmpBytes,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let (n, base2k) = (module.n(), params.base2k);
     let key = key(module, base2k, 1, 0);
     let cases = [
         (
-            "gadget_dft_apply_from_dft: the source's base2k differs from the key's",
+            "gglwe_gadget_dft_apply_from_dft: the source's base2k differs from the key's",
             base2k + 1,
         ),
-        ("gadget_dft_apply_from_dft: scratch below its query", base2k),
+        ("gglwe_gadget_dft_apply_from_dft: scratch below its query", base2k),
     ];
     for (message, source_base2k) in cases {
         let mut state = (
@@ -441,7 +449,7 @@ where
             &mut state,
             |(res, source)| (dft_bytes::<BE>(res), dft_bytes::<BE>(source)),
             |(res, source)| {
-                gadget_dft_apply_from_dft(
+                gglwe_gadget_dft_apply_from_dft(
                     module,
                     &mut res[0].to_backend_mut(),
                     &mut source[0].to_backend_mut(),

@@ -1,7 +1,10 @@
 use std::fmt::Display;
 
+use poulpy_hal::layouts::{Ring, Standard};
+
 /// One point of the BLAS benchmark sweep: `d x d` blocks on a ring of degree `n`, whose `n / 2` slots hold
-/// `n / (2 d^2)` matrices per ciphertext.
+/// `n / (2 d^2)` matrices per ciphertext on the standard ring, and whose `n` slots hold `n / d^2` on the
+/// conjugate-invariant one.
 ///
 /// `k` is the torus width of a fresh block, `log_delta` the scale of the encrypted entries, and `p` the scale of the
 /// context's maps and of the public matrices (`p_B`), each of which consumes its scale. At the defaults a ciphertext
@@ -28,12 +31,23 @@ impl BlasBenchParams {
 
     /// Complex slots of a standard-ring block.
     pub fn slots(&self) -> usize {
-        self.n / 2
+        self.slots_on::<Standard>()
     }
 
-    /// Matrices a ciphertext holds, `slots / d^2`: one means every matrix slot repeats the same matrix.
+    /// Matrices a standard-ring ciphertext holds, `slots / d^2`: one means every matrix slot repeats the same matrix.
     pub fn batch(&self) -> usize {
-        self.slots() >> (2 * self.log_d)
+        self.batch_on::<Standard>()
+    }
+
+    /// Slots of a block on ring `R`: `n / 2` complex ones on the standard ring, `n` real ones on the
+    /// conjugate-invariant one.
+    pub fn slots_on<R: Ring>(&self) -> usize {
+        self.n * R::CYCLOTOMIC_ORDER_FACTOR as usize / 4
+    }
+
+    /// Matrices a ciphertext on ring `R` holds, `slots_on / d^2`.
+    pub fn batch_on<R: Ring>(&self) -> usize {
+        self.slots_on::<R>() >> (2 * self.log_d)
     }
 }
 

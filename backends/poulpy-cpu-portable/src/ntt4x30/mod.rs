@@ -60,7 +60,7 @@ pub use module::NTT4x30PortableHandle;
 pub mod drivers {
     pub use super::convolution::{
         apply_tmp_words as cnv_apply_tmp_words, cnv_apply_dft, cnv_apply_dft_add, cnv_apply_dft_sum, cnv_pairwise_apply_dft,
-        cnv_prepare_left, cnv_prepare_right, cnv_prepare_self, cnv_prepare_tmp_bytes,
+        cnv_pvec_left_prepare, cnv_pvec_prepare_tmp_bytes, cnv_pvec_right_prepare, cnv_pvec_self_prepare,
     };
     pub use super::vec_znx_dft::{
         dft_limb, dft_limb_scaled, for_each_limb, idft_limb, idft_limb_compact, idft_tmp_words, vec_znx_dft_add,

@@ -141,7 +141,7 @@ unsafe fn save_planar_result<const OVERWRITE: bool>(
 // IFMA-local VMP prepare
 // ──────────────────────────────────────────────────────────────────────────────
 
-pub(crate) fn vmp_prepare_tmp_bytes_ifma(n: usize) -> usize {
+pub(crate) fn vmp_pmat_prepare_tmp_bytes_ifma(n: usize) -> usize {
     6 * n * size_of::<u64>()
 }
 
@@ -160,7 +160,7 @@ pub(crate) fn vmp_apply_tmp_bytes_ifma(a_size: usize, b_rows: usize, b_cols_in: 
 ///
 /// Element `(blk_quad, col, row)` offset in u64:
 ///   `((blk_quad * ncols + col) * nrows + row) * 16`.
-pub(crate) fn vmp_prepare_ifma<R: Ring, E: TaskExecutor>(
+pub(crate) fn vmp_pmat_prepare_ifma<R: Ring, E: TaskExecutor>(
     module: &Module<crate::NTT3x42Ifma<R>>,
     res: &mut VmpPMatBackendMut<'_, crate::NTT3x42Ifma<R>>,
     a: &MatZnxBackendRef<'_, crate::NTT3x42Ifma<R>>,
@@ -171,7 +171,7 @@ pub(crate) fn vmp_prepare_ifma<R: Ring, E: TaskExecutor>(
 {
     let n = res.n();
     check_degree::<crate::NTT3x42Ifma<R>>(module.n(), n);
-    assert_eq!(a.n(), n, "vmp_prepare: a.n():{} != res.n():{n}", a.n());
+    assert_eq!(a.n(), n, "vmp_pmat_prepare: a.n():{} != res.n():{n}", a.n());
     let table = handle(module).table_ntt_for(n);
     let nrows = a.cols_in() * a.rows();
     let ncols = a.cols_out() * a.size();

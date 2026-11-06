@@ -9,7 +9,7 @@ use poulpy_core::{
 };
 use poulpy_hal::AlignedBuf;
 use poulpy_hal::{
-    api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
+    api::{ReimNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{Backend, HostBytesBackend, HostDataMut, HostDataRef, Module, ScratchOwned, Standard},
     source::Source,
 };
@@ -17,12 +17,12 @@ use poulpy_hal::{
 use crate::{
     CKKSCompositionError, CKKSCtBounds, CKKSInfos, CoeffsMeta, GLWEPlaintextMeta, SetCKKSInfos, SlotLayout, SlotsKind,
     api::{
-        CKKSAllOpsTmpBytes, CKKSBootstrappingOps, CKKSDFTMatrixOps, CKKSDFTOps, CKKSEncodingOps, CKKSEvalModOps,
-        CKKSPolynomialEvaluationOps,
+        CKKSAllOpsTmpBytes, CKKSBootstrappingOps, CKKSDFTMatrixOps, CKKSDFTMatrixPreparedFactory, CKKSDFTOps, CKKSEncodingOps,
+        CKKSEvalModOps, CKKSPolynomialEvaluationOps,
     },
     layouts::{
-        BootstrappingKeysLayout, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques, CKKSCiphertextOwned,
-        CKKSModuleAlloc, CKKSPlaintextOwned, DFTOutputFormat, DFTPlan, DFTType, EncapsulationKeysLayout, EncodedLut,
+        BootstrappingKeysLayout, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques, CKKSCiphertextAlloc,
+        CKKSCiphertextOwned, CKKSPlaintextOwned, DFTOutputFormat, DFTPlan, DFTType, EncapsulationKeysLayout, EncodedLut,
         SparseSecretEncapsulation, eval_mod::EvalModPlan,
     },
     polynomial::SplitStrategy,
@@ -60,7 +60,8 @@ pub fn test_functional_bootstrapping_e2e<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
 ) where
     BE: TestContextBackend<Ring = Standard> + Backend<OwnedBuf = AlignedBuf>,
-    Module<BE>: TestContextModule<BE>
+    Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSBootstrappingOps<BE>
         + CKKSDFTOps<BE>
@@ -68,7 +69,7 @@ pub fn test_functional_bootstrapping_e2e<BE, F, E>(
         + CKKSDFTMatrixOps<BE, F>
         + CKKSPolynomialEvaluationOps<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
@@ -89,7 +90,8 @@ pub fn test_functional_bootstrapping_non_power_of_two_e2e<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
 ) where
     BE: TestContextBackend<Ring = Standard> + Backend<OwnedBuf = AlignedBuf>,
-    Module<BE>: TestContextModule<BE>
+    Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSBootstrappingOps<BE>
         + CKKSDFTOps<BE>
@@ -97,7 +99,7 @@ pub fn test_functional_bootstrapping_non_power_of_two_e2e<BE, F, E>(
         + CKKSDFTMatrixOps<BE, F>
         + CKKSPolynomialEvaluationOps<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
@@ -121,7 +123,8 @@ pub fn test_functional_bootstrapping_multi_e2e<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
 ) where
     BE: TestContextBackend<Ring = Standard> + Backend<OwnedBuf = AlignedBuf>,
-    Module<BE>: TestContextModule<BE>
+    Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSBootstrappingOps<BE>
         + CKKSDFTOps<BE>
@@ -129,7 +132,7 @@ pub fn test_functional_bootstrapping_multi_e2e<BE, F, E>(
         + CKKSDFTMatrixOps<BE, F>
         + CKKSPolynomialEvaluationOps<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
@@ -148,7 +151,8 @@ pub fn test_functional_bootstrapping_binary_e2e<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
 ) where
     BE: TestContextBackend<Ring = Standard> + Backend<OwnedBuf = AlignedBuf>,
-    Module<BE>: TestContextModule<BE>
+    Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSBootstrappingOps<BE>
         + CKKSDFTOps<BE>
@@ -156,7 +160,7 @@ pub fn test_functional_bootstrapping_binary_e2e<BE, F, E>(
         + CKKSDFTMatrixOps<BE, F>
         + CKKSPolynomialEvaluationOps<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
@@ -182,7 +186,8 @@ fn run_case<BE, F, E>(
     first_factor_on_raise: bool,
 ) where
     BE: TestContextBackend<Ring = Standard> + Backend<OwnedBuf = AlignedBuf>,
-    Module<BE>: TestContextModule<BE>
+    Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSBootstrappingOps<BE>
         + CKKSDFTOps<BE>
@@ -190,7 +195,7 @@ fn run_case<BE, F, E>(
         + CKKSDFTMatrixOps<BE, F>
         + CKKSPolynomialEvaluationOps<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
@@ -342,10 +347,14 @@ fn run_case<BE, F, E>(
         Some(compile_context::<BE, F>(module, params.base2k.into(), &plan))
     };
     let keys_layout = BootstrappingKeysLayout {
-        rotation_keys: Default::default(),
+        rotation_keys: plan
+            .key_widths(tp.log_n(), k_boot, k_in, INPUT_LOG_DELTA)
+            .rotation_keys
+            .into_keys()
+            .map(|p| (p, tp.atk_layout()))
+            .collect(),
         first_factor_key: first_factor_on_raise.then(|| tp.first_factor_key_layout(&plan, k_boot, log_modulus_in)),
         conversion_keys: None,
-        automorphism_key: tp.atk_layout(),
         tensor_key: tp.tsk_layout(),
         // The first-factor keys switch back to the dense secret.
         encapsulation: plan.sparse_secret_hamming_weight().map(|_| EncapsulationKeysLayout {

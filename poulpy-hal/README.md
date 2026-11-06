@@ -76,7 +76,7 @@ The `poulpy-cpu-portable` crate separately provides portable CPU kernels and hos
 
 ### **poulpy-hal/delegates**
 
-This module provides a link between the open extension points and public API, forwarding trait calls on `Module<BE>` to the matching per-family OEP trait implemented by `BE` (for example `HalVecZnxImpl`, `HalVmpImpl`, or `HalConvolutionImpl`).
+This module provides a link between the open extension points and public API, forwarding trait calls on `Module<BE>` to the matching per-family OEP trait implemented by `BE` (for example `HalVecZnxImpl`, `HalVmpImpl`, or `HalCnvImpl`).
 
 
 ---------

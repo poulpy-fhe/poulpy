@@ -15,7 +15,7 @@ use crate::{
 };
 
 unsafe impl<RT: GpuRuntime, R: Ring> HalSvpImpl for NTT4x30Gpu<RT, R> {
-    fn svp_prepare(
+    fn svp_ppol_prepare(
         module: &Module<Self>,
         res: &mut SvpPPolBackendMut<'_, Self>,
         res_col: usize,
@@ -23,9 +23,9 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalSvpImpl for NTT4x30Gpu<RT, R> {
         a_col: usize,
     ) {
         check_degree::<Self>(module.n(), res.n());
-        assert!(a.n() == res.n(), "svp_prepare: operand degrees differ");
+        assert!(a.n() == res.n(), "svp_ppol_prepare: operand degrees differ");
         let Some(res) = svp_column(res, res_col) else { return };
-        let a = scalar_column(a, a_col).expect("svp_prepare: a holds no storage");
+        let a = scalar_column(a, a_col).expect("svp_ppol_prepare: a holds no storage");
         forward::<RT>(handle(module).tables(), &res, &a, 1);
     }
 

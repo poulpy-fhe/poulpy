@@ -3,9 +3,9 @@ use std::fmt;
 use poulpy_core::layouts::{Base2K, Degree, Dnum, GGLWEInfos, GGLWELayout, GGSWInfos, GLWEInfos, LWEInfos, Rank, TorusPrecision};
 use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, ReaderFrom, WriterTo, ZnxWord};
 
-use crate::layouts::GGLWEPatCompressed;
+use crate::layouts::MHEGGLWEPatCompressed;
 
-/// The `GGLWELayout` of a `GGSWShare` part: `col0` at `rank_in = 1`,
+/// The `GGLWELayout` of a `MHEGGSWShare` part: `col0` at `rank_in = 1`,
 /// `circ_u`/`circ_s` at `rank_in = rank`, all at `rank_out = infos.rank()`.
 pub(crate) fn ggsw_share_part_layout<A: GGSWInfos>(infos: &A, rank_in: Rank, rank_out: Rank) -> GGLWELayout {
     GGLWELayout {
@@ -21,7 +21,7 @@ pub(crate) fn ggsw_share_part_layout<A: GGSWInfos>(infos: &A, rank_in: Rank, ran
     }
 }
 
-pub type GGSWShareOwned<BE> = GGSWShare<<BE as Backend>::OwnedBuf, <BE as Backend>::ZnxWord>;
+pub type MHEGGSWShareOwned<BE> = MHEGGSWShare<<BE as Backend>::OwnedBuf, <BE as Backend>::ZnxWord>;
 
 /// One party's share of a collective GGSW of rank `r`, over seeded GGLWE PATs.
 ///
@@ -34,13 +34,13 @@ pub type GGSWShareOwned<BE> = GGSWShare<<BE as Backend>::OwnedBuf, <BE as Backen
 ///
 /// Serializes as `col0`, then every `circ_u`, then every `circ_s`.
 #[derive(PartialEq, Eq, Clone)]
-pub struct GGSWShare<D: Data, W: ZnxWord> {
-    pub(crate) col0: GGLWEPatCompressed<D, W>,
-    pub(crate) circ_u: Vec<GGLWEPatCompressed<D, W>>,
-    pub(crate) circ_s: Vec<GGLWEPatCompressed<D, W>>,
+pub struct MHEGGSWShare<D: Data, W: ZnxWord> {
+    pub(crate) col0: MHEGGLWEPatCompressed<D, W>,
+    pub(crate) circ_u: Vec<MHEGGLWEPatCompressed<D, W>>,
+    pub(crate) circ_s: Vec<MHEGGLWEPatCompressed<D, W>>,
 }
 
-impl<D: Data, W: ZnxWord> GGSWShare<D, W> {
+impl<D: Data, W: ZnxWord> MHEGGSWShare<D, W> {
     /// Iterates over the `1 + 2 * r` parts in serialization order: `col0`,
     /// then `circ_u[0..r]`, then `circ_s[0..r]`, where `r = self.rank()`.
     /// The circular parts at index `j - 1` belong to GGSW column `j`.
@@ -48,7 +48,7 @@ impl<D: Data, W: ZnxWord> GGSWShare<D, W> {
     /// Backends can read each part's bodies through
     /// [`GGLWECompressedToBackendRef`](poulpy_core::layouts::GGLWECompressedToBackendRef)
     /// and its seeds through [`GGLWECompressedSeed`](poulpy_core::layouts::GGLWECompressedSeed).
-    pub fn parts(&self) -> impl Iterator<Item = &GGLWEPatCompressed<D, W>> {
+    pub fn parts(&self) -> impl Iterator<Item = &MHEGGLWEPatCompressed<D, W>> {
         std::iter::once(&self.col0).chain(&self.circ_u).chain(&self.circ_s)
     }
 
@@ -60,14 +60,14 @@ impl<D: Data, W: ZnxWord> GGSWShare<D, W> {
     /// Update seeds on the part itself: backend views hold cloned seeds.
     /// Callers must preserve the parts' layouts and seed counts, and keep
     /// the seeds of each `circ_u[j]`/`circ_s[j]` pair equal.
-    pub fn parts_mut(&mut self) -> impl Iterator<Item = &mut GGLWEPatCompressed<D, W>> {
+    pub fn parts_mut(&mut self) -> impl Iterator<Item = &mut MHEGGLWEPatCompressed<D, W>> {
         std::iter::once(&mut self.col0)
             .chain(&mut self.circ_u)
             .chain(&mut self.circ_s)
     }
 }
 
-impl<D: Data, W: ZnxWord> LWEInfos for GGSWShare<D, W> {
+impl<D: Data, W: ZnxWord> LWEInfos for MHEGGSWShare<D, W> {
     fn noise(&self) -> Option<poulpy_core::ComponentNoise> {
         self.col0.noise()
     }
@@ -89,13 +89,13 @@ impl<D: Data, W: ZnxWord> LWEInfos for GGSWShare<D, W> {
     }
 }
 
-impl<D: Data, W: ZnxWord> GLWEInfos for GGSWShare<D, W> {
+impl<D: Data, W: ZnxWord> GLWEInfos for MHEGGSWShare<D, W> {
     fn rank(&self) -> Rank {
         self.col0.rank_out()
     }
 }
 
-impl<D: Data, W: ZnxWord> GGSWInfos for GGSWShare<D, W> {
+impl<D: Data, W: ZnxWord> GGSWInfos for MHEGGSWShare<D, W> {
     fn k_aux(&self) -> TorusPrecision {
         self.col0.k_aux()
     }
@@ -109,15 +109,15 @@ impl<D: Data, W: ZnxWord> GGSWInfos for GGSWShare<D, W> {
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> fmt::Debug for GGSWShare<D, W> {
+impl<D: HostDataRef, W: ZnxWord> fmt::Debug for MHEGGSWShare<D, W> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{self}")
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> fmt::Display for GGSWShare<D, W> {
+impl<D: HostDataRef, W: ZnxWord> fmt::Display for MHEGGSWShare<D, W> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "(GGSWShare: col0) {}", self.col0)?;
+        write!(f, "(MHEGGSWShare: col0) {}", self.col0)?;
         for (u, s) in self.circ_u.iter().zip(&self.circ_s) {
             write!(f, " (circ_u) {u} (circ_s) {s}")?;
         }
@@ -125,7 +125,7 @@ impl<D: HostDataRef, W: ZnxWord> fmt::Display for GGSWShare<D, W> {
     }
 }
 
-impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GGSWShare<D, W> {
+impl<D: HostDataMut, W: ZnxWord> ReaderFrom for MHEGGSWShare<D, W> {
     /// Fails with [`std::io::ErrorKind::InvalidData`] on a share whose parts do
     /// not match one GGSW of the allocation's rank.
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
@@ -148,8 +148,14 @@ impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GGSWShare<D, W> {
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> WriterTo for GGSWShare<D, W> {
+impl<D: HostDataRef, W: ZnxWord> WriterTo for MHEGGSWShare<D, W> {
     fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
         self.parts().try_for_each(|part| part.write_to(writer))
     }
 }
+
+#[deprecated(note = "renamed MHEGGSWShare")]
+pub type GGSWShare<D, W> = MHEGGSWShare<D, W>;
+
+#[deprecated(note = "renamed MHEGGSWShareOwned")]
+pub type GGSWShareOwned<BE> = MHEGGSWShareOwned<BE>;

@@ -1,6 +1,6 @@
 //! Homomorphic DFT (CoeffsToSlots / SlotsToCoeffs) — reference implementation.
 //!
-//! Re-exports the scheme-free factor-matrix generator ([`gen_dft_matrices`]) and
+//! Re-exports the scheme-free factor-matrix generator ([`ckks_dft_matrices_gen`]) and
 //! holds the evaluation layer: factor encoding, the chain of linear transformations
 //! and the real/imag format wrappers. The homomorphic DFT is documented as a stage
 //! of the bootstrapping pipeline in
@@ -8,8 +8,9 @@
 
 pub mod eval;
 
-pub use crate::layouts::dft_matrices::{gen_dft_matrices, gen_dft_matrices_blockwise};
+pub use crate::layouts::dft_matrices::{ckks_dft_matrices_gen, ckks_dft_matrices_gen_blockwise};
 pub use eval::{
-    ckks_dft_evaluate_assign, ckks_dft_tmp_bytes, ckks_new_dft_matrix, ckks_new_dft_matrix_tmp_bytes, ckks_prepare_dft_matrix,
-    ckks_prepare_dft_matrix_tmp_bytes,
+    CKKSDFTMatrixReference, CKKSDFTReference, ckks_dft_matrix_eval_assign_reference, ckks_dft_matrix_new_reference,
+    ckks_dft_matrix_new_tmp_bytes_reference, ckks_dft_matrix_prepare_reference, ckks_dft_matrix_prepare_tmp_bytes_reference,
+    ckks_dft_tmp_bytes_reference,
 };

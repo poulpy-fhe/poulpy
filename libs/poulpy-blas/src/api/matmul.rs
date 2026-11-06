@@ -1,10 +1,14 @@
-use poulpy_ckks::CKKSResult as Result;
+use poulpy_ckks::{
+    CKKSResult as Result,
+    api::{CKKSLeftOperandPreparedFactory, CKKSRightOperandPreparedFactory},
+};
 use poulpy_core::layouts::{GGLWEInfos, GetAutomorphismKey, GetTensorKey};
 use poulpy_hal::layouts::{Backend, PrepareHint, ScratchArena};
 
 use crate::layouts::{
-    BlasContext, BlasGrid, BlasGridInfos, BlasGridMut, BlasMatMulLeft, BlasMatMulOperandInfos, BlasMatMulRight, BlasPtOperand,
-    Left,
+    BlasCiphertextAlloc, BlasCiphertextBytesOf, BlasContextPrepared, BlasGrid, BlasGridInfos, BlasGridMut,
+    BlasMatMulLeftOperandPrepared, BlasMatMulOperandInfos, BlasMatMulRightOperandPrepared, BlasPtOperandPrepared, Left,
+    matmul_operand,
 };
 
 /// Matrix products of every matrix of the batch, across the blocks of a grid. A product records the larger batch of its
@@ -25,12 +29,12 @@ use crate::layouts::{
 /// `min(b.log_delta - a.log_delta, p)`, up to `res.k`. At equal widths and `b.log_delta <= a.log_delta`, narrowing a
 /// replicated right factor by `p` first gives the same result with narrower terms and tensor key.
 ///
-/// A prepared operand ([`BlasMatMulOperand`](crate::layouts::BlasMatMulOperand)) is hot or cold, after the
+/// A prepared operand ([`BlasMatMulOperandPrepared`](crate::layouts::BlasMatMulOperandPrepared)) is hot or cold, after the
 /// [`PrepareHint`] it was prepared under. A hot one, `OneShot`, prepared for one product, is a relabel of its source:
 /// the product evaluates its terms under its own `ctx`. A cold one, `Reuse`, prepared for many, holds every term under
 /// its preparation's `ctx`, each converted once to the transform domain. Under the same context, the hint selects where
-/// the work happens and the memory held, never the bits. Operands are allocated by
-/// [`BlasMatMulOperandPreparedFactory`](crate::layouts::BlasMatMulOperandPreparedFactory).
+/// the work happens and the memory held, never the bits. Operands are allocated and prepared by
+/// [`BlasMatMulLeftOperandPreparedFactory`] and [`BlasMatMulRightOperandPreparedFactory`].
 ///
 /// The products by public matrices give no circuit privacy: as for every evaluation in this workspace (`SECURITY.md`),
 /// `res` may reveal `b` to the holder of the secret key. Re-randomize `res`, or flood its noise, before returning it
@@ -45,7 +49,15 @@ pub trait BlasMatMulOps<BE: Backend> {
     /// May panic on layouts [`validate_blas_matmul`](crate::layouts::validate_blas_matmul) rejects: blocks of a degree
     /// other than the module's, factors of different radices, a factor at another `log_d` than `ctx`'s, or `rows * cols`
     /// overflowing `usize`.
-    fn blas_matmul_tmp_bytes<R, A, B, T, K>(&self, res: &R, a: &A, b: &B, ctx: &BlasContext<BE>, tsk: &T, keys: &K) -> usize
+    fn blas_matmul_tmp_bytes<R, A, B, T, K>(
+        &self,
+        res: &R,
+        a: &A,
+        b: &B,
+        ctx: &BlasContextPrepared<BE>,
+        tsk: &T,
+        keys: &K,
+    ) -> usize
     where
         R: BlasGridInfos,
         A: BlasGridInfos,
@@ -98,9 +110,10 @@ pub trait BlasMatMulOps<BE: Backend> {
     /// - The implementation runs [`validate_blas_matmul`](crate::layouts::validate_blas_matmul) before any write, so on
     ///   its errors `res`, its batch record and the factors are untouched: `InvalidOperand` for a grid, shape, layout,
     ///   context or radix above 62 it rejects, then, key by key, `MissingAutomorphismKey` for a key of the preparations
-    ///   `keys` lacks, at the widths [`Self::blas_matmul_prepare_left`] and [`Self::blas_matmul_prepare_right`] state,
-    ///   or `MissingRelinearizationKey` for the tensor key `tsk` lacks at `max(w_a, w_b)`, or `InvalidOperand` for a
-    ///   key of another rank than the factors' blocks.
+    ///   `keys` lacks, at the widths [`BlasMatMulLeftOperandPreparedFactory::blas_matmul_left_operand_prepare`] and
+    ///   [`BlasMatMulRightOperandPreparedFactory::blas_matmul_right_operand_prepare`] state, or
+    ///   `MissingRelinearizationKey` for the tensor key `tsk` lacks at `max(w_a, w_b)`, or `InvalidOperand` for a key
+    ///   of another rank than the factors' blocks.
     /// - poulpy-ckks's budget errors come from inside the backend before any write to `res`, and leave it untouched too:
     ///   the terms' `MultiplicationPrecisionUnderflow` when the budget of `a` or `b`, its `k - log_delta`, is below what
     ///   its terms spend, `2p`, or `p` for a replicated `b`, `a`'s first, then the kernel's,
@@ -114,7 +127,7 @@ pub trait BlasMatMulOps<BE: Backend> {
         res: &mut R,
         a: &A,
         b: &B,
-        ctx: &BlasContext<BE>,
+        ctx: &BlasContextPrepared<BE>,
         tsk: &T,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
@@ -124,116 +137,6 @@ pub trait BlasMatMulOps<BE: Backend> {
         A: BlasGrid<BE>,
         B: BlasGrid<BE>,
         T: GetTensorKey<BE> + Sync,
-        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync;
-
-    /// Scratch bytes [`Self::blas_matmul_prepare_left`] needs from `a` under `hint`, with the maps of `ctx` and rotation
-    /// keys of layout `keys`: the copies of a hot preparation; the maps, copies and conversions of a cold one.
-    ///
-    /// # Panics
-    ///
-    /// May panic on layouts [`validate_blas_matmul_prepare_left`](crate::layouts::validate_blas_matmul_prepare_left)
-    /// rejects: blocks of a degree other than the module's, a grid at another `log_d` than `ctx`'s, or `rows * cols`
-    /// overflowing `usize`.
-    fn blas_matmul_prepare_left_tmp_bytes<A, K>(&self, a: &A, ctx: &BlasContext<BE>, keys: &K, hint: PrepareHint) -> usize
-    where
-        A: BlasGridInfos,
-        K: GGLWEInfos;
-
-    /// Fills `res`, a left operand of [`Self::blas_matmul_prepared`] allocated from the infos
-    /// [`blas_matmul_left_operand_layout`](crate::layouts::blas_matmul_left_operand_layout) gives for `a`, `ctx` and a
-    /// hint, or for a grid of `a`'s shape (dimensions, degree, radix, width and rank), whatever its metadata, from `a`
-    /// under that hint, with no allocation of its storage: hot, a relabel of `a`, through no map, key or transform; cold,
-    /// every term the product multiplies, sigma of every block of `a` and its shifts under `ctx`, each converted once by
-    /// poulpy-ckks's `ckks_prepare_left_into`.
-    ///
-    /// When `ctx` is the product's, the products give the same bits under either hint, which selects where the work
-    /// happens and the memory held: for `a` of `m x K` blocks, a hot operand holds `m K` blocks of `a`'s layout, a cold
-    /// one `m K d` terms in the backend's transform-domain form. The operand owns its storage, so `a` may change or go
-    /// once it returns, and preparing into it again refills it.
-    ///
-    /// # Metadata
-    ///
-    /// The operand's [`BlasMatMulOperandInfos`] report the infos of its latest preparation: its hint, `a`'s block
-    /// layout as its source, `a`'s `log_d`, `rows`, `cols` and batch, and as its block layout `a`'s when hot and that
-    /// of every term when cold, as [`blas_matmul_left_operand_layout`](crate::layouts::blas_matmul_left_operand_layout)
-    /// gives them before preparing:
-    ///
-    /// ```text
-    ///                hot               cold
-    /// k            = a.k               a.k - 2p
-    /// log_delta    = a.log_delta       a.log_delta
-    /// log_sparsity = a.log_sparsity    a.log_sparsity
-    /// slots        = a.slots           a.slots.join(Real)
-    /// mat_slots    = Some(a's batch)   Some(a's batch)
-    /// ```
-    ///
-    /// Nothing else is specified: the backend holds the operand in its own representation, without a canonical flag or a
-    /// noise tag to read.
-    ///
-    /// # Errors
-    ///
-    /// - The implementation runs [`validate_blas_matmul_prepare_left`](crate::layouts::validate_blas_matmul_prepare_left)
-    ///   before any write, whatever the hint: `InvalidOperand` for a grid, layout or context it rejects or for `res` of
-    ///   another shape, then, key by key, `MissingAutomorphismKey` for a key `keys` lacks: sigma's baby steps at `a.k` and
-    ///   giant steps at `a.k - p`, each phi^k's baby steps at `a.k - p` and giant steps at `a.k - 2p`; or `InvalidOperand`
-    ///   for one of another rank than `a`'s blocks.
-    /// - poulpy-ckks's budget error comes from inside a cold preparation: `MultiplicationPrecisionUnderflow` when `a`'s
-    ///   budget, `a.k - a.log_delta`, is below `2p`. A hot preparation checks no budget: the product returns that error.
-    /// - Any other `Err` is a backend fault (a validator gap or a device failure).
-    ///
-    /// A preparation writes only `res`, so no error changes `a`, and the validator's and poulpy-ckks's errors leave
-    /// `res` as it was.
-    fn blas_matmul_prepare_left<A, K>(
-        &self,
-        res: &mut BlasMatMulLeft<BE>,
-        a: &A,
-        ctx: &BlasContext<BE>,
-        keys: &K,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        A: BlasGrid<BE>,
-        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync;
-
-    /// Scratch bytes [`Self::blas_matmul_prepare_right`] needs from `b` under `hint`, with the maps of `ctx` and
-    /// rotation keys of layout `keys`. The right factor's label selects its terms, so a layout given in its place carries
-    /// its label.
-    ///
-    /// # Panics
-    ///
-    /// As [`Self::blas_matmul_prepare_left_tmp_bytes`].
-    fn blas_matmul_prepare_right_tmp_bytes<B, K>(&self, b: &B, ctx: &BlasContext<BE>, keys: &K, hint: PrepareHint) -> usize
-    where
-        B: BlasGridInfos,
-        K: GGLWEInfos;
-
-    /// Fills `res`, a right operand allocated from the infos
-    /// [`blas_matmul_right_operand_layout`](crate::layouts::blas_matmul_right_operand_layout) gives for `b`, `ctx` and a
-    /// hint, from `b` under that hint, as [`Self::blas_matmul_prepare_left`]: hot, a relabel of `b`; cold, tau of every
-    /// block and its shifts, each converted once by poulpy-ckks's `ckks_prepare_right_into`. On a replicated `b` the maps
-    /// are [`BlasContext::tau_rep`] and [`BlasContext::rotate_rows_rep`], whose psi^k spend no scale.
-    ///
-    /// # Metadata
-    ///
-    /// As [`Self::blas_matmul_prepare_left`], from `b`, as
-    /// [`blas_matmul_right_operand_layout`](crate::layouts::blas_matmul_right_operand_layout) gives them: a cold operand's
-    /// terms sit at `w_b`, `b.k - p` for a replicated `b`.
-    ///
-    /// # Errors
-    ///
-    /// As [`Self::blas_matmul_prepare_left`], with tau and psi^k, from
-    /// [`validate_blas_matmul_prepare_right`](crate::layouts::validate_blas_matmul_prepare_right). On a replicated `b`,
-    /// psi^k's giant steps sit at `b.k - p`, and a cold preparation's budget error comes when `b`'s budget is below `p`.
-    fn blas_matmul_prepare_right<B, K>(
-        &self,
-        res: &mut BlasMatMulRight<BE>,
-        b: &B,
-        ctx: &BlasContext<BE>,
-        keys: &K,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        B: BlasGrid<BE>,
         K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync;
 
     /// Scratch bytes [`Self::blas_matmul_prepared`] needs into `res` under `ctx`, with a tensor key of layout `tsk` and
@@ -253,7 +156,7 @@ pub trait BlasMatMulOps<BE: Backend> {
         res: &R,
         a: &A,
         b: &B,
-        ctx: &BlasContext<BE>,
+        ctx: &BlasContextPrepared<BE>,
         tsk: &T,
         keys: &K,
     ) -> usize
@@ -301,14 +204,15 @@ pub trait BlasMatMulOps<BE: Backend> {
     ///
     /// # Errors
     ///
-    /// - The implementation runs [`validate_blas_matmul_prepared`](crate::layouts::validate_blas_matmul_prepared) before
-    ///   any write, so on its errors `res`, its batch record and the operands are untouched: `InvalidOperand` for an
-    ///   operand without a batch record, a grid, shape, layout or radix above 62 it rejects, or a hot operand at another
-    ///   `log_d` than `ctx`'s or under a context encoded for another slot count or radix; then, key by key,
+    /// - The implementation runs [`validate_blas_matmul_prepared`](crate::layouts::validate_blas_matmul_prepared)
+    ///   before any write, so on its errors `res`, its batch record and the operands are untouched: `InvalidOperand`
+    ///   for an operand without a batch record, a grid, shape, layout or radix above 62 it rejects, or a hot operand at
+    ///   another `log_d` than `ctx`'s or under a context encoded for another slot count or radix; then, key by key,
     ///   `MissingAutomorphismKey` for a key of a hot side's terms `keys` lacks, at the widths
-    ///   [`Self::blas_matmul_prepare_left`] and [`Self::blas_matmul_prepare_right`] state from that side's `k`, or
-    ///   `MissingRelinearizationKey` for the tensor key `tsk` lacks at `max(w_a, w_b)`, or `InvalidOperand` for a key of
-    ///   another rank than the operands'.
+    ///   [`BlasMatMulLeftOperandPreparedFactory::blas_matmul_left_operand_prepare`] and
+    ///   [`BlasMatMulRightOperandPreparedFactory::blas_matmul_right_operand_prepare`] state from that side's `k`, or
+    ///   `MissingRelinearizationKey` for the tensor key `tsk` lacks at `max(w_a, w_b)`, or `InvalidOperand` for a key
+    ///   of another rank than the operands'.
     /// - poulpy-ckks's budget errors come from inside the backend before any write, and leave them untouched too: a hot
     ///   side's `MultiplicationPrecisionUnderflow` when its budget, `k - log_delta`, is below what its terms spend, `2p`,
     ///   or `p` for a replicated `b`, `a`'s first, then the kernel's, `MultiplicationPrecisionUnderflow` when
@@ -319,9 +223,9 @@ pub trait BlasMatMulOps<BE: Backend> {
     fn blas_matmul_prepared<R, T, K>(
         &self,
         res: &mut R,
-        a: &BlasMatMulLeft<BE>,
-        b: &BlasMatMulRight<BE>,
-        ctx: &BlasContext<BE>,
+        a: &BlasMatMulLeftOperandPrepared<BE>,
+        b: &BlasMatMulRightOperandPrepared<BE>,
+        ctx: &BlasContextPrepared<BE>,
         tsk: &T,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
@@ -343,8 +247,8 @@ pub trait BlasMatMulOps<BE: Backend> {
         &self,
         res: &R,
         a: &A,
-        b: &BlasPtOperand<BE>,
-        ctx: &BlasContext<BE>,
+        b: &BlasPtOperandPrepared<BE>,
+        ctx: &BlasContextPrepared<BE>,
         keys: &K,
     ) -> usize
     where
@@ -356,7 +260,7 @@ pub trait BlasMatMulOps<BE: Backend> {
     ///
     /// Under `JklsStored` and `JklsGalois`, JKLS's masks go on the ciphertext: every block of `a` goes through
     /// `b.first()`, sigma, then through `ctx`'s phi^k, `1 <= k < d`, a block row at a time, the row's `K d` terms prepared
-    /// once and shared by its blocks, and block `(i, j)` of `res` is poulpy-ckks's `ckks_dot_product_prepared_pt` of those
+    /// once and shared by its blocks, and block `(i, j)` of `res` is poulpy-ckks's `ckks_dot_product_prepared_pt_vec` of those
     /// terms by `b`'s prepared plaintexts: `psi^k(tau(B_lj))` stored under `JklsStored`, `tau(B_lj)` read through the
     /// Galois element of the rotation by `k d` under `JklsGalois`. It spends three scales, `2 p_B + p`, for `p` the
     /// context's scale. It adds the `K d` products in the transform domain, and each mask adds one diagonal per giant
@@ -381,9 +285,9 @@ pub trait BlasMatMulOps<BE: Backend> {
     ///
     /// # Metadata
     ///
-    /// Block `(i, j)` of `res` is poulpy-ckks's `ckks_eval_linear_transformation_sum_into` of the `K` terms `(a_il, b_lj)`,
+    /// Block `(i, j)` of `res` is poulpy-ckks's `ckks_linear_transformation_eval_sum_into` of the `K` terms `(a_il, b_lj)`,
     /// or under `Jkls` `(s_il, b_lj)` for `s_il` the block `a_il` through `b.first()`, or under `JklsStored` and
-    /// `JklsGalois` poulpy-ckks's `ckks_dot_product_prepared_pt` of the row's `K d` masked terms by `b`'s plaintexts,
+    /// `JklsGalois` poulpy-ckks's `ckks_dot_product_prepared_pt_vec` of the row's `K d` masked terms by `b`'s plaintexts,
     /// labelled, as by poulpy-ckks's plaintext product, with the smaller of `a`'s label and the largest label the
     /// `b.count()` distinct matrices allow, for `S` the slots of a block:
     ///
@@ -423,8 +327,8 @@ pub trait BlasMatMulOps<BE: Backend> {
         &self,
         res: &mut R,
         a: &A,
-        b: &BlasPtOperand<BE>,
-        ctx: &BlasContext<BE>,
+        b: &BlasPtOperandPrepared<BE>,
+        ctx: &BlasContextPrepared<BE>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -444,9 +348,9 @@ pub trait BlasMatMulOps<BE: Backend> {
     fn blas_matmul_pt_left_tmp_bytes<R, A, K>(
         &self,
         res: &R,
-        b: &BlasPtOperand<BE, Left>,
+        b: &BlasPtOperandPrepared<BE, Left>,
         a: &A,
-        ctx: &BlasContext<BE>,
+        ctx: &BlasContextPrepared<BE>,
         keys: &K,
     ) -> usize
     where
@@ -462,7 +366,7 @@ pub trait BlasMatMulOps<BE: Backend> {
     /// Under `JklsStored` and `JklsGalois`, every block of `a` goes through `b.first()`, tau, then through `ctx`'s column
     /// halves of psi^k, `rows_left(k)` and `rows_right(k)`, a block column at a time, the column's `K (2d - 1)` terms
     /// prepared once and shared by its blocks, and block `(i, j)` of `res` is poulpy-ckks's
-    /// `ckks_dot_product_prepared_pt` of those terms by `b`'s prepared plaintexts `Rot_j(sigma(B_il))`, stored or read
+    /// `ckks_dot_product_prepared_pt_vec` of those terms by `b`'s prepared plaintexts `Rot_j(sigma(B_il))`, stored or read
     /// through Galois elements. `ctx` must hold those masks: its plan selects one of these paths.
     ///
     /// Under `Diagonal` and `Jkls`, each block of `res` is one linear transformation over its `K = a.rows()` terms,
@@ -473,9 +377,9 @@ pub trait BlasMatMulOps<BE: Backend> {
     /// `Module::max_base2k` allows for it.
     ///
     /// **Replicated input.** When `a` is replicated ([`crate::layouts::replicated`], read from its label) and `b` holds
-    /// them ([`BlasPtOperand::block_replicated`]: `Diagonal`, one public matrix, more than one matrix slot), the blocks'
+    /// them ([`BlasPtOperandPrepared::block_replicated`]: `Diagonal`, one public matrix, more than one matrix slot), the blocks'
     /// maps are those `d`-diagonal maps, scheduled at `left_mul`'s giant step so they rotate within the same key set, in
-    /// place of the `2d - 1` of [`BlasPtOperand::block`]: about 22 key switches per block instead of 30 at `d = 128`. The
+    /// place of the `2d - 1` of [`BlasPtOperandPrepared::block`]: about 22 key switches per block instead of 30 at `d = 128`. The
     /// choice is made once per call from `a`'s label, by the validator, the call and
     /// [`blas_matmul_pt_left_max_base2k`](crate::layouts::blas_matmul_pt_left_max_base2k) alike, and changes the bits
     /// against the `2d - 1` maps. Metadata and keys are unchanged, and the scratch query does not read the maps.
@@ -495,14 +399,205 @@ pub trait BlasMatMulOps<BE: Backend> {
     fn blas_matmul_pt_left<R, A, K>(
         &self,
         res: &mut R,
-        b: &BlasPtOperand<BE, Left>,
+        b: &BlasPtOperandPrepared<BE, Left>,
         a: &A,
-        ctx: &BlasContext<BE>,
+        ctx: &BlasContextPrepared<BE>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         R: BlasGridMut<BE>,
         A: BlasGrid<BE>,
+        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync;
+}
+
+/// Allocation, sizing and preparation of the left operands of [`BlasMatMulOps::blas_matmul_prepared`]. The allocation
+/// and its size are direct on the module; the preparation and its query dispatch through
+/// [`BlasMatMulImpl`](crate::oep::BlasMatMulImpl). The `# Metadata` and `# Errors` sections use the notation of
+/// [`BlasMatMulOps`].
+pub trait BlasMatMulLeftOperandPreparedFactory<BE: Backend>:
+    CKKSLeftOperandPreparedFactory<BE> + BlasCiphertextAlloc<BE> + BlasCiphertextBytesOf<BE> + Sized
+{
+    /// A left operand of `infos`, holding all its storage, which [`Self::blas_matmul_left_operand_prepare`] fills: the
+    /// infos [`blas_matmul_left_operand_layout`](crate::layouts::blas_matmul_left_operand_layout) gives for a grid, a
+    /// context and a hint. Until then it reports `infos` and the batch `0`, which the prepared product rejects.
+    ///
+    /// # Panics
+    ///
+    /// May panic on infos of no block, or whose bytes overflow `usize`.
+    fn blas_matmul_left_operand_prepared_alloc_from_infos<A: BlasMatMulOperandInfos>(
+        &self,
+        infos: &A,
+    ) -> BlasMatMulLeftOperandPrepared<BE> {
+        matmul_operand::alloc_prepared(self, infos, |term| {
+            self.ckks_left_operand_prepared_alloc_from_infos(term, PrepareHint::Reuse)
+        })
+    }
+
+    /// Bytes a left operand of `infos` holds, as [`Self::blas_matmul_left_operand_prepared_alloc_from_infos`] allocates
+    /// it.
+    fn blas_matmul_left_operand_prepared_bytes_of_from_infos<A: BlasMatMulOperandInfos>(&self, infos: &A) -> usize {
+        matmul_operand::prepared_bytes_of(self, infos, |term| {
+            self.ckks_left_operand_prepared_bytes_of_from_infos(term, PrepareHint::Reuse)
+        })
+    }
+
+    /// Scratch bytes [`Self::blas_matmul_left_operand_prepare`] needs from `a` under `hint`, with the maps of `ctx` and
+    /// rotation keys of layout `keys`: the copies of a hot preparation; the maps, copies and conversions of a cold one.
+    ///
+    /// # Panics
+    ///
+    /// May panic on layouts
+    /// [`validate_blas_matmul_left_operand_prepare`](crate::layouts::validate_blas_matmul_left_operand_prepare)
+    /// rejects: blocks of a degree other than the module's, a grid at another `log_d` than `ctx`'s, or `rows * cols`
+    /// overflowing `usize`.
+    fn blas_matmul_left_operand_prepare_tmp_bytes<A, K>(
+        &self,
+        a: &A,
+        ctx: &BlasContextPrepared<BE>,
+        keys: &K,
+        hint: PrepareHint,
+    ) -> usize
+    where
+        A: BlasGridInfos,
+        K: GGLWEInfos;
+
+    /// Fills `res`, a left operand of [`BlasMatMulOps::blas_matmul_prepared`] allocated from the infos
+    /// [`blas_matmul_left_operand_layout`](crate::layouts::blas_matmul_left_operand_layout) gives for `a`, `ctx` and a
+    /// hint, or for a grid of `a`'s shape (dimensions, degree, radix, width and rank), whatever its metadata, from `a`
+    /// under that hint, with no allocation of its storage: hot, a relabel of `a`, through no map, key or transform;
+    /// cold, every term the product multiplies, sigma of every block of `a` and its shifts under `ctx`, each converted
+    /// once by poulpy-ckks's `ckks_left_operand_prepare`.
+    ///
+    /// When `ctx` is the product's, the products give the same bits under either hint, which selects where the work
+    /// happens and the memory held: for `a` of `m x K` blocks, a hot operand holds `m K` blocks of `a`'s layout, a cold
+    /// one `m K d` terms in the backend's transform-domain form. The operand owns its storage, so `a` may change or go
+    /// once it returns, and preparing into it again refills it.
+    ///
+    /// # Metadata
+    ///
+    /// The operand's [`BlasMatMulOperandInfos`] report the infos of its latest preparation: its hint, `a`'s block
+    /// layout as its source, `a`'s `log_d`, `rows`, `cols` and batch, and as its block layout `a`'s when hot and that
+    /// of every term when cold, as [`blas_matmul_left_operand_layout`](crate::layouts::blas_matmul_left_operand_layout)
+    /// gives them before preparing:
+    ///
+    /// ```text
+    ///                hot               cold
+    /// k            = a.k               a.k - 2p
+    /// log_delta    = a.log_delta       a.log_delta
+    /// log_sparsity = a.log_sparsity    a.log_sparsity
+    /// slots        = a.slots           a.slots.join(Real)
+    /// mat_slots    = Some(a's batch)   Some(a's batch)
+    /// ```
+    ///
+    /// Nothing else is specified: the backend holds the operand in its own representation, without a canonical flag or
+    /// a noise tag to read.
+    ///
+    /// # Errors
+    ///
+    /// - The implementation runs
+    ///   [`validate_blas_matmul_left_operand_prepare`](crate::layouts::validate_blas_matmul_left_operand_prepare)
+    ///   before any write, whatever the hint: `InvalidOperand` for a grid, layout or context it rejects or for `res` of
+    ///   another shape, then, key by key, `MissingAutomorphismKey` for a key `keys` lacks: sigma's baby steps at `a.k`
+    ///   and giant steps at `a.k - p`, each phi^k's baby steps at `a.k - p` and giant steps at `a.k - 2p`; or
+    ///   `InvalidOperand` for one of another rank than `a`'s blocks.
+    /// - poulpy-ckks's budget error comes from inside a cold preparation: `MultiplicationPrecisionUnderflow` when `a`'s
+    ///   budget, `a.k - a.log_delta`, is below `2p`. A hot preparation checks no budget: the product returns that
+    ///   error.
+    /// - Any other `Err` is a backend fault (a validator gap or a device failure).
+    ///
+    /// A preparation writes only `res`, so no error changes `a`, and the validator's and poulpy-ckks's errors leave
+    /// `res` as it was.
+    fn blas_matmul_left_operand_prepare<A, K>(
+        &self,
+        res: &mut BlasMatMulLeftOperandPrepared<BE>,
+        a: &A,
+        ctx: &BlasContextPrepared<BE>,
+        keys: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        A: BlasGrid<BE>,
+        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync;
+}
+
+/// Allocation, sizing and preparation of the right operands of [`BlasMatMulOps::blas_matmul_prepared`]. The allocation
+/// and its size are direct on the module; the preparation and its query dispatch through
+/// [`BlasMatMulImpl`](crate::oep::BlasMatMulImpl). The `# Metadata` and `# Errors` sections use the notation of
+/// [`BlasMatMulOps`].
+pub trait BlasMatMulRightOperandPreparedFactory<BE: Backend>:
+    CKKSRightOperandPreparedFactory<BE> + BlasCiphertextAlloc<BE> + BlasCiphertextBytesOf<BE> + Sized
+{
+    /// As [`BlasMatMulLeftOperandPreparedFactory::blas_matmul_left_operand_prepared_alloc_from_infos`], a right
+    /// operand, which [`Self::blas_matmul_right_operand_prepare`] fills from the infos
+    /// [`blas_matmul_right_operand_layout`](crate::layouts::blas_matmul_right_operand_layout) gives.
+    ///
+    /// # Panics
+    ///
+    /// As [`BlasMatMulLeftOperandPreparedFactory::blas_matmul_left_operand_prepared_alloc_from_infos`].
+    fn blas_matmul_right_operand_prepared_alloc_from_infos<A: BlasMatMulOperandInfos>(
+        &self,
+        infos: &A,
+    ) -> BlasMatMulRightOperandPrepared<BE> {
+        matmul_operand::alloc_prepared(self, infos, |term| {
+            self.ckks_right_operand_prepared_alloc_from_infos(term, PrepareHint::Reuse)
+        })
+    }
+
+    /// As [`BlasMatMulLeftOperandPreparedFactory::blas_matmul_left_operand_prepared_bytes_of_from_infos`], for a right
+    /// operand.
+    fn blas_matmul_right_operand_prepared_bytes_of_from_infos<A: BlasMatMulOperandInfos>(&self, infos: &A) -> usize {
+        matmul_operand::prepared_bytes_of(self, infos, |term| {
+            self.ckks_right_operand_prepared_bytes_of_from_infos(term, PrepareHint::Reuse)
+        })
+    }
+
+    /// Scratch bytes [`Self::blas_matmul_right_operand_prepare`] needs from `b` under `hint`, with the maps of `ctx`
+    /// and rotation keys of layout `keys`. The right factor's label selects its terms, so a layout given in its place
+    /// carries its label.
+    ///
+    /// # Panics
+    ///
+    /// As [`BlasMatMulLeftOperandPreparedFactory::blas_matmul_left_operand_prepare_tmp_bytes`].
+    fn blas_matmul_right_operand_prepare_tmp_bytes<B, K>(
+        &self,
+        b: &B,
+        ctx: &BlasContextPrepared<BE>,
+        keys: &K,
+        hint: PrepareHint,
+    ) -> usize
+    where
+        B: BlasGridInfos,
+        K: GGLWEInfos;
+
+    /// Fills `res`, a right operand allocated from the infos
+    /// [`blas_matmul_right_operand_layout`](crate::layouts::blas_matmul_right_operand_layout) gives for `b`, `ctx` and
+    /// a hint, from `b` under that hint, as [`BlasMatMulLeftOperandPreparedFactory::blas_matmul_left_operand_prepare`]:
+    /// hot, a relabel of `b`; cold, tau of every block and its shifts, each converted once by poulpy-ckks's
+    /// `ckks_right_operand_prepare`. On a replicated `b` the maps are [`BlasContextPrepared::tau_rep`] and
+    /// [`BlasContextPrepared::rotate_rows_rep`], whose psi^k spend no scale.
+    ///
+    /// # Metadata
+    ///
+    /// As [`BlasMatMulLeftOperandPreparedFactory::blas_matmul_left_operand_prepare`], from `b`, as
+    /// [`blas_matmul_right_operand_layout`](crate::layouts::blas_matmul_right_operand_layout) gives them: a cold
+    /// operand's terms sit at `w_b`, `b.k - p` for a replicated `b`.
+    ///
+    /// # Errors
+    ///
+    /// As [`BlasMatMulLeftOperandPreparedFactory::blas_matmul_left_operand_prepare`], with tau and psi^k, from
+    /// [`validate_blas_matmul_right_operand_prepare`](crate::layouts::validate_blas_matmul_right_operand_prepare). On a
+    /// replicated `b`, psi^k's giant steps sit at `b.k - p`, and a cold preparation's budget error comes when `b`'s
+    /// budget is below `p`.
+    fn blas_matmul_right_operand_prepare<B, K>(
+        &self,
+        res: &mut BlasMatMulRightOperandPrepared<BE>,
+        b: &B,
+        ctx: &BlasContextPrepared<BE>,
+        keys: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        B: BlasGrid<BE>,
         K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync;
 }

@@ -7,12 +7,12 @@
 //! [`LinearTransformation::alloc_prepared`] from a [`LinearTransformationLayout`]
 //! and a plaintext-shape proxy; this module's `_into` function only fills the
 //! pre-allocated `CnvPVecR` slots, performing zero `CnvPVecR` allocations.
-//! Backends forward to them from their [`crate::oep::LinearTransformationImpl`]
+//! Backends forward to them from their [`crate::oep::GLWELinearTransformationImpl`]
 //! impl.
 
 use poulpy_hal::layouts::CnvPVecRToBackendMut;
 use poulpy_hal::{
-    api::{CnvPVecAlloc, Convolution},
+    api::{CnvOps, CnvPVecAlloc},
     layouts::{Backend, PrepareHint, ScratchArena},
 };
 
@@ -39,7 +39,7 @@ impl<BE: Backend> LinearTransformation<PreparedDiagonal<BE::OwnedBuf, BE>> {
     ///
     /// Each slot takes the diagonal's degree, `base2k`, `k` and `rank + 1` columns, so a degree-`n`
     /// diagonal gets a degree-`n` slot and a ciphertext diagonal a slot of its columns; the convolution buffers are
-    /// zeroed and populated by `glwe_prepare_linear_transformation_rhs`. The
+    /// zeroed and populated by `glwe_linear_transformation_rhs_prepare`. The
     /// per-diagonal `log_scale` and real-slot claim are left at `0` and `false`
     /// for the scheme layer to set.
     pub fn alloc_prepared_from_index<M, P>(module: &M, index: &LinearTransformationPlan, pt_infos: &P) -> Self
@@ -95,20 +95,20 @@ impl<BE: Backend> LinearTransformation<PreparedDiagonal<BE::OwnedBuf, BE>> {
     }
 }
 
-/// Reference impl: scratch bytes for `glwe_prepare_linear_transformation_rhs`.
+/// Reference impl: scratch bytes for `glwe_linear_transformation_rhs_prepare`.
 ///
 /// Sized at the module degree, an upper bound for a diagonal of any degree, which
 /// is prepared at its own degree; a ciphertext diagonal may need a normalized copy.
-pub fn glwe_prepare_linear_transformation_rhs_tmp_bytes_reference<BE, M, P>(module: &M, pt_infos: &P) -> usize
+pub fn glwe_linear_transformation_rhs_prepare_tmp_bytes_reference<BE, M, P>(module: &M, pt_infos: &P) -> usize
 where
     BE: Backend,
-    M: Convolution<BE> + crate::api::GLWENormalize<BE> + crate::api::GLWEBytesOf<BE>,
+    M: CnvOps<BE> + crate::api::GLWENormalize<BE> + crate::api::GLWEBytesOf<BE>,
     P: GLWEInfos,
 {
     if pt_infos.rank().as_usize() > 0 {
-        return crate::glwe_prepare_right_tmp_bytes(module, pt_infos.size(), pt_infos);
+        return crate::glwe_right_operand_prepare_tmp_bytes(module, pt_infos.size(), pt_infos);
     }
-    module.cnv_prepare_right_tmp_bytes(pt_infos.size(), pt_infos.size())
+    module.cnv_pvec_right_prepare_tmp_bytes(pt_infos.size(), pt_infos.size())
 }
 
 /// Reference impl: encodes every diagonal of `lt` into the matching
@@ -118,14 +118,14 @@ where
 /// [`LinearTransformation::alloc_prepared`](LinearTransformation::alloc_prepared)
 /// for the same BSGS schedule (giant rotations and baby rotations) that `lt`
 /// follows.
-pub fn glwe_prepare_linear_transformation_rhs_reference<BE, M, P>(
+pub fn glwe_linear_transformation_rhs_prepare_reference<BE, M, P>(
     module: &M,
     prepared: &mut LinearTransformation<PreparedDiagonal<BE::OwnedBuf, BE>>,
     lt: &LinearTransformation<P>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
-    M: CnvPVecAlloc<BE> + Convolution<BE> + crate::api::GLWENormalize<BE>,
+    M: CnvPVecAlloc<BE> + CnvOps<BE> + crate::api::GLWENormalize<BE>,
     P: GLWEToBackendRef<BE> + GLWEInfos,
 {
     if !lt.baby_steps.is_empty() {
@@ -211,11 +211,11 @@ pub fn glwe_prepare_linear_transformation_rhs_reference<BE, M, P>(
                 .expect("checked above");
             // A ciphertext diagonal is read canonical, as the products read it.
             if plaintext.rank().as_usize() > 0 {
-                crate::glwe_prepare_right(module, prepared_slot.plaintext.cnv_mut(), plaintext, pt_k_usize, scratch);
+                crate::glwe_right_operand_prepare(module, prepared_slot.plaintext.cnv_mut(), plaintext, pt_k_usize, scratch);
                 continue;
             }
             let plaintext_backend = plaintext.to_backend_ref();
-            module.cnv_prepare_right(
+            module.cnv_pvec_right_prepare(
                 &mut prepared_slot.plaintext.cnv_mut().to_backend_mut(),
                 &plaintext_backend.data,
                 scratch,

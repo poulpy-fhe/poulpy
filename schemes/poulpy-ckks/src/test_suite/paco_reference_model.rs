@@ -25,7 +25,10 @@
 use std::fmt::Debug;
 
 use num_traits::{FromPrimitive, ToPrimitive};
-use poulpy_hal::{api::NegacyclicFFT, source::Source};
+use poulpy_hal::{
+    api::{ReimFFT, ReimIFFT},
+    source::Source,
+};
 
 use crate::{
     encoding::paco::cpx::Cpx,
@@ -66,7 +69,7 @@ fn reference_circle<F: DftScalar + FromPrimitive>(a: i64, log_q: u32) -> Cpx<F> 
 fn reference_pack_chunk<F, E>(p: &PaCoPlan, encoder: &ReferenceEncoder<E>, chunk: &[Cpx<F>]) -> Vec<Cpx<F>>
 where
     F: DftScalar + Debug,
-    E: NegacyclicFFT<F>,
+    E: ReimFFT<F> + ReimIFFT<F>,
 {
     assert_eq!(chunk.len(), p.slots());
     let width = 2 * p.c();
@@ -100,7 +103,7 @@ where
 fn reference_unpack_blocks<F, E>(p: &PaCoPlan, encoder: &ReferenceEncoder<E>, packed: &[Cpx<F>]) -> Vec<Cpx<F>>
 where
     F: DftScalar + Debug,
-    E: NegacyclicFFT<F>,
+    E: ReimFFT<F> + ReimIFFT<F>,
 {
     assert_eq!(packed.len(), p.half_n());
     let width = 2 * p.c();
@@ -131,7 +134,7 @@ where
 fn reference_beta<F, E>(ct0: &[i64], ct1: &[i64], p: &PaCoPlan, encoder: &ReferenceEncoder<E>) -> [Vec<Cpx<F>>; 4]
 where
     F: DftScalar + Debug + FromPrimitive,
-    E: NegacyclicFFT<F>,
+    E: ReimFFT<F> + ReimIFFT<F>,
 {
     assert_eq!(ct0.len(), p.n());
     assert_eq!(ct1.len(), p.n());
@@ -157,7 +160,7 @@ where
 fn reference_sigma<F, E>(key: &PaCoSecretSpec, p: &PaCoPlan, t: usize, encoder: &ReferenceEncoder<E>) -> Vec<Cpx<F>>
 where
     F: DftScalar + Debug,
-    E: NegacyclicFFT<F>,
+    E: ReimFFT<F> + ReimIFFT<F>,
 {
     assert!(t < 4);
     let mut packed = Vec::with_capacity(p.half_n());
@@ -306,7 +309,7 @@ pub fn seq_paco_reference<F, E>(
 ) -> PaCoTrace
 where
     F: DftScalar + Debug + FromPrimitive + ToPrimitive,
-    E: NegacyclicFFT<F>,
+    E: ReimFFT<F> + ReimIFFT<F>,
 {
     let (n, c) = (p.slots(), p.c());
     let half_n = p.half_n();

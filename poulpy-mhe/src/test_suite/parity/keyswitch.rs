@@ -1,7 +1,9 @@
 use poulpy_core::{
-    GLWEMaskFill, Noise, TransferInto,
+    GLWEFill, Noise, TransferInto,
     api::{GLWEPublicKeyPreparedFactory, GLWESecretPreparedFactory, GLWESecretSampling},
-    layouts::{GLWE, GLWELayout, GLWEPublicKey, GLWESecret, ModuleCoreAlloc, Rank, TorusPrecision},
+    layouts::{
+        GLWE, GLWEAlloc, GLWELayout, GLWEPublicKey, GLWEPublicKeyAlloc, GLWESecret, ModuleCoreAlloc, Rank, TorusPrecision,
+    },
     test_suite::with_scratch,
 };
 use poulpy_hal::{AlignedBuf, layouts::Module, source::Source};
@@ -11,8 +13,9 @@ use super::{
     snapshot_glwe, snapshot_source,
 };
 use crate::{
-    api::{GLWEPrivateKeyswitchMHEProtocol, GLWEPublicKeyMHEProtocol, GLWEPublicKeyswitchMHEProtocol},
-    layouts::MHEModuleAlloc,
+    MHEGLWEPublicKeyswitchShareAlloc,
+    api::{MHEGLWEPrivateKeyswitchProtocol, MHEGLWEPublicKeyProtocol, MHEGLWEPublicKeyswitchProtocol},
+    layouts::MHEGLWEPrivateKeyswitchShareAlloc,
     test_suite::fixtures::{BASE2K, K, PARTIES, RANK, glwe_layout_at, secret_from_seed_at},
 };
 
@@ -28,11 +31,11 @@ pub(crate) fn ciphertext<BR, BT>(
 where
     BR: ReferenceBackend,
     BT: ParityBackend,
-    Module<BR>: GLWEMaskFill<BR> + ModuleCoreAlloc<OwnedBuf = AlignedBuf, ZnxWord = i64>,
+    Module<BR>: GLWEFill<BR> + ModuleCoreAlloc<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     Module<BT>: ModuleCoreAlloc<OwnedBuf = BT::OwnedBuf, ZnxWord = i64>,
 {
     let mut ct_ref = module_ref.glwe_alloc_from_infos(layout);
-    module_ref.fill_glwe_from_source(&mut ct_ref, &mut Source::new([seed; 32]));
+    module_ref.glwe_fill_from_source(&mut ct_ref, &mut Source::new([seed; 32]));
     let mut ct_test = module_test.glwe_alloc_from_infos(layout);
     ct_ref.transfer_into(&mut ct_test);
     (ct_ref, ct_test)
@@ -45,12 +48,8 @@ pub fn test_glwe_private_keyswitch_parity<BR, BT>(module_ref: &Module<BR>, modul
 where
     BR: ReferenceBackend,
     BT: ParityBackend,
-    Module<BR>: MHEModuleAlloc<BR>
-        + GLWEPrivateKeyswitchMHEProtocol<BR>
-        + GLWESecretSampling<BR>
-        + GLWESecretPreparedFactory<BR>
-        + GLWEMaskFill<BR>,
-    Module<BT>: MHEModuleAlloc<BT> + GLWEPrivateKeyswitchMHEProtocol<BT> + GLWESecretPreparedFactory<BT>,
+    Module<BR>: MHEGLWEPrivateKeyswitchProtocol<BR> + GLWESecretSampling<BR> + GLWESecretPreparedFactory<BR> + GLWEFill<BR>,
+    Module<BT>: MHEGLWEPrivateKeyswitchProtocol<BT> + GLWESecretPreparedFactory<BT>,
 {
     let layout = glwe_layout_at(module_ref, K);
     let (ct_ref, ct_test) = ciphertext(module_ref, module_test, &layout, 30);
@@ -75,13 +74,13 @@ fn run_private<BE: ParityBackend>(
     flood: Noise,
 ) -> Vec<Snapshot>
 where
-    Module<BE>: MHEModuleAlloc<BE> + GLWEPrivateKeyswitchMHEProtocol<BE> + GLWESecretPreparedFactory<BE>,
+    Module<BE>: MHEGLWEPrivateKeyswitchShareAlloc<BE> + MHEGLWEPrivateKeyswitchProtocol<BE> + GLWESecretPreparedFactory<BE>,
 {
     let secrets_in = prepare_secrets(module, secrets_in);
     let secrets_out = prepare_secrets(module, secrets_out);
     let mut out = Vec::new();
-    let mut acc = module.glwe_private_keyswitch_share_alloc_from_infos(share_layout);
-    let mut share = module.glwe_private_keyswitch_share_alloc_from_infos(share_layout);
+    let mut acc = module.mhe_glwe_private_keyswitch_share_alloc_from_infos(share_layout);
+    let mut share = module.mhe_glwe_private_keyswitch_share_alloc_from_infos(share_layout);
     for (i, (sk_in, sk_out)) in secrets_in.iter().zip(&secrets_out).enumerate() {
         let dst = if i == 0 { &mut acc } else { &mut share };
         poison_glwe::<BE, _>(&mut dst.inner);
@@ -115,17 +114,13 @@ pub fn test_glwe_public_keyswitch_parity<BR, BT>(module_ref: &Module<BR>, module
 where
     BR: ReferenceBackend,
     BT: ParityBackend,
-    Module<BR>: MHEModuleAlloc<BR>
-        + GLWEPublicKeyswitchMHEProtocol<BR>
-        + GLWEPublicKeyMHEProtocol<BR>
+    Module<BR>: MHEGLWEPublicKeyswitchProtocol<BR>
+        + MHEGLWEPublicKeyProtocol<BR>
         + GLWESecretSampling<BR>
         + GLWESecretPreparedFactory<BR>
         + GLWEPublicKeyPreparedFactory<BR>
-        + GLWEMaskFill<BR>,
-    Module<BT>: MHEModuleAlloc<BT>
-        + GLWEPublicKeyswitchMHEProtocol<BT>
-        + GLWESecretPreparedFactory<BT>
-        + GLWEPublicKeyPreparedFactory<BT>,
+        + GLWEFill<BR>,
+    Module<BT>: MHEGLWEPublicKeyswitchProtocol<BT> + GLWESecretPreparedFactory<BT> + GLWEPublicKeyPreparedFactory<BT>,
 {
     let layout = glwe_layout_at(module_ref, K);
     let (ct_ref, ct_test) = ciphertext(module_ref, module_test, &layout, 30);
@@ -164,8 +159,8 @@ fn run_public<BE: ParityBackend>(
     pk: &GLWEPublicKey<BE::OwnedBuf, i64>,
 ) -> Vec<Snapshot>
 where
-    Module<BE>: MHEModuleAlloc<BE>
-        + GLWEPublicKeyswitchMHEProtocol<BE>
+    Module<BE>: MHEGLWEPublicKeyswitchShareAlloc<BE>
+        + MHEGLWEPublicKeyswitchProtocol<BE>
         + GLWESecretPreparedFactory<BE>
         + GLWEPublicKeyPreparedFactory<BE>,
 {
@@ -175,8 +170,8 @@ where
         module.glwe_public_key_prepare(&mut pk_prepared, pk, scratch)
     });
     let mut out = Vec::new();
-    let mut acc = module.glwe_public_keyswitch_share_alloc_from_infos(share_layout);
-    let mut share = module.glwe_public_keyswitch_share_alloc_from_infos(share_layout);
+    let mut acc = module.mhe_glwe_public_keyswitch_share_alloc_from_infos(share_layout);
+    let mut share = module.mhe_glwe_public_keyswitch_share_alloc_from_infos(share_layout);
     for (i, sk_in) in secrets_in.iter().enumerate() {
         let dst = if i == 0 { &mut acc } else { &mut share };
         poison_glwe::<BE, _>(&mut dst.inner);

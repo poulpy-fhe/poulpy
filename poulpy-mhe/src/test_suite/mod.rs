@@ -26,44 +26,46 @@ macro_rules! mhe_backend_test_suite {
             }
 
             #[test]
-            fn glwe_pat_compressed_ops() {
-                $crate::test_suite::pat::test_glwe_pat_compressed_ops(&Module::<$backend>::new(256));
+            fn mhe_glwe_pat_compressed_ops() {
+                $crate::test_suite::pat::test_mhe_glwe_pat_compressed_ops(&Module::<$backend>::new(256));
             }
 
             #[test]
-            fn gglwe_pat_compressed_ops() {
-                $crate::test_suite::pat::test_gglwe_pat_compressed_ops(&Module::<$backend>::new(256));
+            fn mhe_gglwe_pat_compressed_ops() {
+                $crate::test_suite::pat::test_mhe_gglwe_pat_compressed_ops(&Module::<$backend>::new(256));
             }
 
             #[test]
-            fn gglwe_pat_ops() {
-                $crate::test_suite::pat::test_gglwe_pat_ops(&Module::<$backend>::new(256));
+            fn mhe_gglwe_pat_ops() {
+                $crate::test_suite::pat::test_mhe_gglwe_pat_ops(&Module::<$backend>::new(256));
             }
 
             #[test]
-            fn glwe_pat_compressed_aggregate_assign_rejects_seed_mismatch() {
-                $crate::test_suite::pat::test_glwe_pat_compressed_aggregate_assign_rejects_seed_mismatch(
+            fn mhe_glwe_pat_compressed_aggregate_assign_rejects_seed_mismatch() {
+                $crate::test_suite::pat::test_mhe_glwe_pat_compressed_aggregate_assign_rejects_seed_mismatch(
                     &Module::<$backend>::new(64),
                 );
             }
 
             #[test]
-            fn gglwe_pat_compressed_aggregate_assign_rejects_seed_mismatch() {
-                $crate::test_suite::pat::test_gglwe_pat_compressed_aggregate_assign_rejects_seed_mismatch(
+            fn mhe_gglwe_pat_compressed_aggregate_assign_rejects_seed_mismatch() {
+                $crate::test_suite::pat::test_mhe_gglwe_pat_compressed_aggregate_assign_rejects_seed_mismatch(
                     &Module::<$backend>::new(64),
                 );
             }
 
             #[test]
-            fn glwe_pat_compressed_aggregate_assign_rejects_layout_mismatch() {
-                $crate::test_suite::pat::test_glwe_pat_compressed_aggregate_assign_rejects_layout_mismatch(
+            fn mhe_glwe_pat_compressed_aggregate_assign_rejects_layout_mismatch() {
+                $crate::test_suite::pat::test_mhe_glwe_pat_compressed_aggregate_assign_rejects_layout_mismatch(
                     &Module::<$backend>::new(64),
                 );
             }
 
             #[test]
-            fn glwe_pat_compressed_finalize_rejects_layout_mismatch() {
-                $crate::test_suite::pat::test_glwe_pat_compressed_finalize_rejects_layout_mismatch(&Module::<$backend>::new(64));
+            fn mhe_glwe_pat_compressed_finalize_rejects_layout_mismatch() {
+                $crate::test_suite::pat::test_mhe_glwe_pat_compressed_finalize_rejects_layout_mismatch(&Module::<$backend>::new(
+                    64,
+                ));
             }
 
             #[test]

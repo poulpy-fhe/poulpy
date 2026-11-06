@@ -71,7 +71,7 @@ pub unsafe trait GLWEMulConstImpl: Backend {
     /// bits in base `2^base2k`, which is also the base of the terms. `terms` is not empty.
     ///
     /// An internal hook of the CKKS baby-step combination, which records the metadata of `res`.
-    /// The reference, [`glwe_const_combination_reference`](crate::reference::operations::glwe_const_combination_reference),
+    /// The reference, [`glwe_const_combination_reference`](crate::reference::operations::GLWEMulConstReference::glwe_const_combination_reference),
     /// shifts each constant, accumulates with `cnv_by_const_apply` and `cnv_by_const_apply_add`,
     /// then calls `vec_znx_big_normalize`, column by column. Overrides must reproduce it bit for
     /// bit within [`Self::glwe_const_combination_tmp_bytes`].
@@ -177,6 +177,33 @@ pub unsafe trait GLWEMulPreparedPlainSumImpl: Backend {
         AP: CnvPVecLToBackendRef<Self>,
         BP: CnvPVecRToBackendRef<Self>;
 
+    /// Scratch bound of [`Self::glwe_mul_prepared_plain_sum_add`], whatever the number of terms; may report less than
+    /// the reference, never less than the body takes.
+    fn glwe_mul_prepared_plain_sum_add_tmp_bytes<R>(module: &Module<Self>, res: &R, a_size: usize, b_size: usize) -> usize
+    where
+        R: GLWEInfos;
+
+    /// Reproduces
+    /// [`glwe_mul_prepared_plain_sum_add_reference`](crate::reference::operations::GLWEMulPreparedPlainSumReference::glwe_mul_prepared_plain_sum_add_reference)
+    /// bit for bit under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within
+    /// [`Self::glwe_mul_prepared_plain_sum_add_tmp_bytes`]; free in kernels and scratch use.
+    #[allow(clippy::too_many_arguments)]
+    fn glwe_mul_prepared_plain_sum_add<R, AP, BP>(
+        module: &Module<Self>,
+        cnv_offset: usize,
+        res: &mut R,
+        a: &[&AP],
+        a_size: usize,
+        b: &[&BP],
+        b_size: usize,
+        galois: &[i64],
+        base2k: crate::layouts::Base2K,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) where
+        R: GLWEToBackendMut<Self> + GLWEInfos,
+        AP: CnvPVecLToBackendRef<Self>,
+        BP: CnvPVecRToBackendRef<Self>;
+
     /// Scratch bound of [`Self::glwe_mul_prepared_plain_sum_dft`], whatever the number of terms; may report less than
     /// the reference, never less than the body takes.
     fn glwe_mul_prepared_plain_sum_dft_tmp_bytes(module: &Module<Self>, res_size: usize, a_size: usize, b_size: usize) -> usize;
@@ -237,8 +264,8 @@ pub unsafe trait GLWEMulPreparedPlainSumImpl: Backend {
 /// Implementations reproduce the bodies their methods document bit for bit, report for each
 /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
-/// The square hooks ([`Self::glwe_square_prepare`], [`Self::glwe_square_columns`]) are bit for bit
-/// taken together: an override of `glwe_square_prepare` that leaves `right` unwritten also
+/// The square hooks ([`Self::glwe_square_operand_prepare`], [`Self::glwe_square_columns`]) are bit for bit
+/// taken together: an override of `glwe_square_operand_prepare` that leaves `right` unwritten also
 /// overrides `glwe_square_columns`.
 pub unsafe trait GLWETensoringImpl: Backend {
     /// Scratch bound of [`Self::glwe_tensor_apply_prepared_right`]; may report less than the reference, never less
@@ -559,7 +586,7 @@ pub unsafe trait GLWETensoringImpl: Backend {
         R: GLWEInfos;
 
     /// Internal hook of the linear transformations of ciphertext diagonals, their baby-step kernel as
-    /// [`LinearTransformationImpl::glwe_accumulate_giant_steps`](crate::oep::LinearTransformationImpl::glwe_accumulate_giant_steps)
+    /// [`GLWELinearTransformationImpl::glwe_accumulate_giant_steps`](crate::oep::GLWELinearTransformationImpl::glwe_accumulate_giant_steps)
     /// is that of plaintext diagonals: reproduces
     /// [`glwe_tensor_apply_prepared_sum_dft_reference`](crate::reference::operations::GLWETensoringReference::glwe_tensor_apply_prepared_sum_dft_reference)
     /// bit for bit under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within
@@ -612,12 +639,12 @@ pub unsafe trait GLWETensoringImpl: Backend {
 
     /// Prepares the operand of a one-pass square for [`Self::glwe_square_columns`].
     ///
-    /// The reference, [`GLWETensoringReference::glwe_square_prepare_reference`](crate::reference::operations::GLWETensoringReference::glwe_square_prepare_reference),
-    /// prepares both forms with `cnv_prepare_self`. A backend whose [`Self::glwe_square_columns`]
+    /// The reference, [`GLWETensoringReference::glwe_square_operand_prepare_reference`](crate::reference::operations::GLWETensoringReference::glwe_square_operand_prepare_reference),
+    /// prepares both forms with `cnv_pvec_self_prepare`. A backend whose [`Self::glwe_square_columns`]
     /// reads the left form alone may leave `right` unwritten, and only that one: the default
     /// `glwe_square_columns` reads both forms.
-    /// Scratch is `cnv_prepare_self_tmp_bytes`, which the one-pass relinearization queries reserve.
-    fn glwe_square_prepare(
+    /// Scratch is `cnv_pvec_self_prepare_tmp_bytes`, which the one-pass relinearization queries reserve.
+    fn glwe_square_operand_prepare(
         module: &Module<Self>,
         left: &mut CnvPVecLBackendMut<'_, Self>,
         right: &mut CnvPVecRBackendMut<'_, Self>,
@@ -625,8 +652,8 @@ pub unsafe trait GLWETensoringImpl: Backend {
         scratch: &mut ScratchArena<'_, Self>,
     );
 
-    /// [`Self::glwe_mul_columns`] of a square, on the two forms [`Self::glwe_square_prepare`]
-    /// prepared from one operand. The default is [`Self::glwe_mul_columns`].
+    /// [`Self::glwe_mul_columns`] of a square, on the two forms [`Self::glwe_square_operand_prepare`]
+    /// prepared from one operand. Default body: `glwe_square_columns_derived`, [`Self::glwe_mul_columns`].
     /// Overrides must reproduce it bit for bit within the scratch of [`Self::glwe_mul_columns`].
     fn glwe_square_columns(
         module: &Module<Self>,
@@ -637,7 +664,15 @@ pub unsafe trait GLWETensoringImpl: Backend {
         right: &CnvPVecRBackendRef<'_, Self>,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        Self::glwe_mul_columns(module, cnv_offset_hi, diag, cross, left, right, scratch)
+        crate::oep::derived::operations::glwe_square_columns_derived::<Self>(
+            module,
+            cnv_offset_hi,
+            diag,
+            cross,
+            left,
+            right,
+            scratch,
+        )
     }
 }
 
@@ -885,13 +920,13 @@ pub unsafe trait GLWEMulXpMinusOneImpl: Backend<Ring = Standard> {
 /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait GLWEShiftImpl: Backend {
-    /// Scratch bound of [`Self::glwe_rsh`], [`Self::glwe_lsh_assign`], [`Self::glwe_lsh`], [`Self::glwe_lsh_add`] and
+    /// Scratch bound of [`Self::glwe_rsh_assign`], [`Self::glwe_lsh_assign`], [`Self::glwe_lsh`], [`Self::glwe_lsh_add`] and
     /// [`Self::glwe_lsh_sub`]; may report less than the reference, never less than the body takes.
     fn glwe_shift_tmp_bytes(module: &Module<Self>, res_size: usize) -> usize;
 
-    /// Reproduces [`glwe_rsh_reference`](crate::reference::operations::GLWEShiftReference::glwe_rsh_reference) bit
+    /// Reproduces [`glwe_rsh_assign_reference`](crate::reference::operations::GLWEShiftReference::glwe_rsh_assign_reference) bit
     /// for bit, within [`Self::glwe_shift_tmp_bytes`]; free in kernels and scratch use.
-    fn glwe_rsh<R>(module: &Module<Self>, k: usize, res: &mut R, scratch: &mut ScratchArena<'_, Self>)
+    fn glwe_rsh_assign<R>(module: &Module<Self>, k: usize, res: &mut R, scratch: &mut ScratchArena<'_, Self>)
     where
         R: GLWEToBackendMut<Self>;
 
@@ -963,7 +998,7 @@ pub unsafe trait GLWETraceImpl: crate::oep::AutomorphismImpl + GLWEShiftImpl + G
     /// Default body: `glwe_trace_galois_elements_derived`, the Galois elements of the visited levels of a degree-`n`
     /// operand, in visiting order.
     fn glwe_trace_galois_elements(module: &Module<Self>, n: Degree, levels: Range<usize>, reverse: bool) -> Vec<i64> {
-        crate::oep::derived::structure::glwe_trace_galois_elements_derived::<Self, _>(module, n, levels, reverse)
+        crate::oep::derived::operations::glwe_trace_galois_elements_derived::<Self, _>(module, n, levels, reverse)
     }
 
     /// Default body: `glwe_trace_tmp_bytes_derived`, a temporary at the key's radix plus the larger of the copies
@@ -975,7 +1010,7 @@ pub unsafe trait GLWETraceImpl: crate::oep::AutomorphismImpl + GLWEShiftImpl + G
         A: GLWEInfos,
         K: GGLWEInfos,
     {
-        crate::oep::derived::structure::glwe_trace_tmp_bytes_derived::<Self, _, _, _, _>(module, res_infos, a_infos, key_infos)
+        crate::oep::derived::operations::glwe_trace_tmp_bytes_derived::<Self, _, _, _, _>(module, res_infos, a_infos, key_infos)
     }
 
     /// Default body: `glwe_trace_assign_tmp_bytes_derived`, the larger of
@@ -988,7 +1023,7 @@ pub unsafe trait GLWETraceImpl: crate::oep::AutomorphismImpl + GLWEShiftImpl + G
         A: GLWEInfos,
         K: GGLWEInfos,
     {
-        crate::oep::derived::structure::glwe_trace_assign_tmp_bytes_derived::<Self, _, _, _>(module, a_infos, key_infos)
+        crate::oep::derived::operations::glwe_trace_assign_tmp_bytes_derived::<Self, _, _, _>(module, a_infos, key_infos)
     }
 
     /// Default body: `glwe_trace_derived`, [`GLWECopyImpl::glwe_copy`](crate::oep::GLWECopyImpl::glwe_copy) of `a`
@@ -1014,7 +1049,7 @@ pub unsafe trait GLWETraceImpl: crate::oep::AutomorphismImpl + GLWEShiftImpl + G
         A: GLWEToBackendRef<Self> + GLWEInfos,
         H: GetAutomorphismKey<Self>,
     {
-        crate::oep::derived::structure::glwe_trace_derived::<Self, _, _, _, _>(
+        crate::oep::derived::operations::glwe_trace_derived::<Self, _, _, _, _>(
             module, res, levels, reverse, normalize, a, keys, scratch,
         )
     }
@@ -1022,7 +1057,7 @@ pub unsafe trait GLWETraceImpl: crate::oep::AutomorphismImpl + GLWEShiftImpl + G
     /// Default body: `glwe_trace_assign_derived`, each visited level adds the Galois conjugate of the running sum
     /// through
     /// [`AutomorphismImpl::glwe_automorphism_add_assign`](crate::oep::AutomorphismImpl::glwe_automorphism_add_assign),
-    /// after [`GLWEShiftImpl::glwe_rsh`](crate::oep::GLWEShiftImpl::glwe_rsh) by one bit when normalizing; only when
+    /// after [`GLWEShiftImpl::glwe_rsh_assign`](crate::oep::GLWEShiftImpl::glwe_rsh_assign) by one bit when normalizing; only when
     /// `res`'s radix differs from the keys' does the work run on a copy at the keys' radix, converted by
     /// [`GLWENormalizeImpl::glwe_normalize`](crate::oep::GLWENormalizeImpl::glwe_normalize), within
     /// [`Self::glwe_trace_assign_tmp_bytes`], under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint) of its
@@ -1039,7 +1074,7 @@ pub unsafe trait GLWETraceImpl: crate::oep::AutomorphismImpl + GLWEShiftImpl + G
         R: GLWEToBackendMut<Self> + GLWEInfos,
         H: GetAutomorphismKey<Self>,
     {
-        crate::oep::derived::structure::glwe_trace_assign_derived::<Self, _, _, _>(
+        crate::oep::derived::operations::glwe_trace_assign_derived::<Self, _, _, _>(
             module, res, levels, reverse, normalize, keys, scratch,
         )
     }
@@ -1056,9 +1091,9 @@ pub unsafe trait GLWEPackImpl:
 {
     /// Default body: `glwe_pack_galois_elements_derived`,
     /// [`GLWETraceImpl::glwe_trace_galois_elements`](crate::oep::GLWETraceImpl::glwe_trace_galois_elements) over
-    /// every level.
-    fn glwe_pack_galois_elements(module: &Module<Self>) -> Vec<i64> {
-        crate::oep::derived::structure::glwe_pack_galois_elements_derived::<Self, _>(module)
+    /// every level of degree `n`.
+    fn glwe_pack_galois_elements(module: &Module<Self>, n: Degree) -> Vec<i64> {
+        crate::oep::derived::operations::glwe_pack_galois_elements_derived::<Self, _>(module, n)
     }
 
     /// Default body: `glwe_pack_tmp_bytes_derived`, an input-sized temporary plus the larger of
@@ -1074,7 +1109,7 @@ pub unsafe trait GLWEPackImpl:
         A: GLWEInfos,
         K: GGLWEInfos,
     {
-        crate::oep::derived::structure::glwe_pack_tmp_bytes_derived::<Self, _, _, _, _>(module, res, a, key)
+        crate::oep::derived::operations::glwe_pack_tmp_bytes_derived::<Self, _, _, _, _>(module, res, a, key)
     }
 
     /// Default body: `glwe_pack_derived`, a binary merge tree whose steps use
@@ -1083,7 +1118,7 @@ pub unsafe trait GLWEPackImpl:
     /// [`GLWESubImpl::glwe_sub`](crate::oep::GLWESubImpl::glwe_sub),
     /// [`GLWESubImpl::glwe_sub_assign`](crate::oep::GLWESubImpl::glwe_sub_assign),
     /// [`GLWEAddImpl::glwe_add_assign`](crate::oep::GLWEAddImpl::glwe_add_assign),
-    /// [`GLWEShiftImpl::glwe_rsh`](crate::oep::GLWEShiftImpl::glwe_rsh),
+    /// [`GLWEShiftImpl::glwe_rsh_assign`](crate::oep::GLWEShiftImpl::glwe_rsh_assign),
     /// [`GLWENormalizeImpl::glwe_normalize_assign`](crate::oep::GLWENormalizeImpl::glwe_normalize_assign),
     /// [`AutomorphismImpl::glwe_automorphism_assign`](crate::oep::AutomorphismImpl::glwe_automorphism_assign),
     /// [`AutomorphismImpl::glwe_automorphism_add_assign`](crate::oep::AutomorphismImpl::glwe_automorphism_add_assign)
@@ -1104,7 +1139,7 @@ pub unsafe trait GLWEPackImpl:
         A: GLWEToBackendMut<Self> + GLWEInfos,
         H: GetAutomorphismKey<Self>,
     {
-        crate::oep::derived::structure::glwe_pack_derived::<Self, _, _, _, _>(module, res, a, log_gap_out, keys, scratch)
+        crate::oep::derived::operations::glwe_pack_derived::<Self, _, _, _, _>(module, res, a, log_gap_out, keys, scratch)
     }
 }
 
@@ -1380,14 +1415,14 @@ macro_rules! impl_glwe_tensoring_reference_full {
                 )
             }
 
-            fn glwe_square_prepare(
+            fn glwe_square_operand_prepare(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 left: &mut ::poulpy_hal::layouts::CnvPVecLBackendMut<'_, $be>,
                 right: &mut ::poulpy_hal::layouts::CnvPVecRBackendMut<'_, $be>,
                 a: &::poulpy_hal::layouts::VecZnxBackendRef<'_, $be>,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be>>::glwe_square_prepare_reference(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be>>::glwe_square_operand_prepare_reference(
                     module, left, right, a, scratch,
                 )
             }

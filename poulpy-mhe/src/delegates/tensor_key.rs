@@ -4,9 +4,9 @@ use poulpy_hal::{
     source::Source,
 };
 
-use crate::{api::GLWETensorKeyMHEProtocol, layouts::GLWETensorKeyShareOwned, oep::GLWETensorKeyMHEProtocolImpl};
+use crate::{api::MHEGLWETensorKeyProtocol, layouts::MHEGLWETensorKeyShareOwned, oep::MHEGLWETensorKeyProtocolImpl};
 
-impl<BE: Backend + GLWETensorKeyMHEProtocolImpl> GLWETensorKeyMHEProtocol<BE> for Module<BE> {
+impl<BE: Backend + MHEGLWETensorKeyProtocolImpl> MHEGLWETensorKeyProtocol<BE> for Module<BE> {
     fn mhe_glwe_tensor_key_share_gen_tmp_bytes<A, B>(&self, res_infos: &A, pk_infos: &B) -> usize
     where
         A: GGLWEInfos,
@@ -17,7 +17,7 @@ impl<BE: Backend + GLWETensorKeyMHEProtocolImpl> GLWETensorKeyMHEProtocol<BE> fo
 
     fn mhe_glwe_tensor_key_share_gen<S, K>(
         &self,
-        res: &mut GLWETensorKeyShareOwned<BE>,
+        res: &mut MHEGLWETensorKeyShareOwned<BE>,
         sk: &S,
         pk: &K,
         source_xu: &mut Source,
@@ -30,7 +30,7 @@ impl<BE: Backend + GLWETensorKeyMHEProtocolImpl> GLWETensorKeyMHEProtocol<BE> fo
         BE::mhe_glwe_tensor_key_share_gen(self, res, sk, pk, source_xu, source_xe, scratch)
     }
 
-    fn mhe_glwe_tensor_key_share_aggregate(&self, res: &mut GLWETensorKeyShareOwned<BE>, a: &GLWETensorKeyShareOwned<BE>) {
+    fn mhe_glwe_tensor_key_share_aggregate(&self, res: &mut MHEGLWETensorKeyShareOwned<BE>, a: &MHEGLWETensorKeyShareOwned<BE>) {
         BE::mhe_glwe_tensor_key_share_aggregate(self, res, a)
     }
 
@@ -41,7 +41,7 @@ impl<BE: Backend + GLWETensorKeyMHEProtocolImpl> GLWETensorKeyMHEProtocol<BE> fo
     fn mhe_glwe_tensor_key_share_finalize<R>(
         &self,
         res: &mut R,
-        share: &GLWETensorKeyShareOwned<BE>,
+        share: &MHEGLWETensorKeyShareOwned<BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGLWEToBackendMut<BE> + GGLWEInfos,

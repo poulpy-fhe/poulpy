@@ -14,7 +14,7 @@
 use anyhow::Result;
 use poulpy_core::layouts::{GLWEInfos, GLWEToBackendRef, LWEInfos};
 use poulpy_hal::{
-    api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxNormalize, VecZnxNormalizeTmpBytes},
+    api::{ReimNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxNormalize, VecZnxNormalizeTmpBytes},
     layouts::{
         ConjugateInvariant, HostBytesBackend, HostDataMut, HostDataRef, Module, ScratchOwned, Standard, VecZnxToBackendMut,
         VecZnxToBackendRef, ZnxView,
@@ -28,7 +28,7 @@ use super::helpers::{
 use crate::{
     CKKSInfos, GLWEPlaintextInfos, ReplicatedLayout, Scale, SetCKKSInfos, SetGLWEPlaintextInfos, SlotLayout, SlotsKind,
     api::{CKKSEncodingHostOps, CKKSModuleInfos, CKKSRoundOps},
-    layouts::{CKKSCiphertextOwned, CKKSModuleAlloc},
+    layouts::{CKKSCiphertextOwned, CKKSPlaintextAlloc},
     shaping::{ShapingProfile, ShapingUnit},
     test_suite::{CKKSTestParams, reference_encoder::ReferenceEncoder},
 };
@@ -42,7 +42,7 @@ where
     BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -154,7 +154,7 @@ where
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let src = encrypted::<BE, F, E>(&params, module, host_module);
     let dst_k = src.k().as_usize() - src.log_delta() / 2;
@@ -179,7 +179,7 @@ where
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE> + VecZnxNormalize<BE> + VecZnxNormalizeTmpBytes,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let layout = ShapingUnit::U32_45.layout(0, 8)?;
     let src = with_layout::<BE>(
@@ -240,9 +240,9 @@ where
     let mut scratch = alloc_scratch(&params, module);
     let n = params.n;
     let values: Vec<f64> = (0..n).map(|i| (i as f64 + 1.0) / (n as f64 + 3.0)).collect();
-    let mut pt = module.ckks_pt_vec_alloc(module.ckks_max_slots(), params.base2k.into(), params.prec().k());
+    let mut pt = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots(), params.base2k.into(), params.prec().k());
     pt.set_meta(params.prec().meta());
-    module.ckks_encode_reim_into(&mut pt, &values, &vec![0.0; n], &mut scratch.borrow())?;
+    module.ckks_encode_slots_host_into(&mut pt, &values, &vec![0.0; n], &mut scratch.borrow())?;
     let mut src = ckks_encrypt_pt(
         &params,
         module,
@@ -307,7 +307,7 @@ where
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let layout = SlotLayout::Replicated(ShapingUnit::U32_45.layout(0, 8)?);
     let pass = 58;
@@ -333,7 +333,7 @@ where
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let src = encrypted::<BE, F, E>(&params, module, host_module);
     let k = src.k().as_usize();
@@ -350,9 +350,9 @@ pub fn test_round_rejects_incompatible_layouts<BE, F, E>(
 ) -> Result<()>
 where
     BE: TestContextBackend<Ring = Standard>,
-    Module<BE>: TestContextModule<BE> + poulpy_core::GLWEMaskFill<BE>,
+    Module<BE>: TestContextModule<BE> + poulpy_core::GLWEFill<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     use crate::test_suite::parity::helpers::{fixture_ciphertext, snapshot, with_scratch};
     use crate::{CKKSCompositionError, CKKSLayout, GLWEPlaintextMeta};

@@ -20,18 +20,20 @@ use crate::api::CKKSEncodingOps;
 use poulpy_core::layouts::{GLWEPlaintextInfos, SetGLWEPlaintextInfos};
 use std::collections::HashMap;
 
-use poulpy_core::{GLWECopy, TransferInto, api::GLWESecretPreparedFactory, layouts::ModuleCoreAlloc};
+use poulpy_core::{GLWECopy, TransferInto, api::GLWESecretPreparedFactory, layouts::GLWESecretAlloc};
 use poulpy_hal::{
-    api::{CnvPVecAlloc, NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow},
+    api::{CnvPVecAlloc, ReimNew, ScratchOwnedBorrow},
     layouts::{HostBytesBackend, Module, Standard},
     source::Source,
 };
 
 use crate::{
     CKKSInfos,
-    api::{CKKSLinearTransformationOps, CKKSPaCoOps, PaCoScalar},
+    api::{CKKSLinearTransformationOps, CKKSPaCoOps, CKKSPaCoScalar},
     encoding::paco::coeff_enc::glwe_column_residues,
-    layouts::{CKKSModuleAlloc, PaCoContext, PaCoDFTPlan, PaCoKeysPrepared, PaCoPlan, PaCoSecretSpec, ScratchArenaTakeCKKS},
+    layouts::{
+        CKKSCiphertextAlloc, PaCoContext, PaCoDFTPlan, PaCoKeysPrepared, PaCoPlan, PaCoSecretSpec, ScratchArenaTakeCKKSCiphertext,
+    },
     test_suite::reference_encoder::ReferenceEncoder,
     test_suite::{
         CKKSTestParams,
@@ -59,8 +61,8 @@ where
         + CKKSPaCoOps<BE, F>
         + CnvPVecAlloc<BE>
         + GLWECopy<BE>,
-    F: TestScalar + PaCoScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    F: TestScalar + CKKSPaCoScalar,
+    E: ReimNew<F>,
 {
     let _ = (module, host_module);
     for slot_order in [
@@ -87,8 +89,8 @@ where
         + CKKSPaCoOps<BE, F>
         + CnvPVecAlloc<BE>
         + GLWECopy<BE>,
-    F: TestScalar + PaCoScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    F: TestScalar + CKKSPaCoScalar,
+    E: ReimNew<F>,
 {
     let _ = (module, host_module);
     for slot_order in [
@@ -126,8 +128,8 @@ fn seq_bootstrap_case<BE, F, E>(
         + CKKSPaCoOps<BE, F>
         + CnvPVecAlloc<BE>
         + GLWECopy<BE>,
-    F: TestScalar + PaCoScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    F: TestScalar + CKKSPaCoScalar,
+    E: ReimNew<F>,
 {
     let log_delta = params.prec().log_delta();
     // Base modulus below the working scale (the PaCo precision requirement

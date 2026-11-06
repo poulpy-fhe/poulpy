@@ -7,12 +7,12 @@ use poulpy_hal::{
     source::Source,
 };
 
-use crate::layouts::GLWEPublicKeyShareOwned;
+use crate::layouts::MHEGLWEPublicKeyShareOwned;
 
 /// Collective public key: every party generates a share under the common seed,
 /// and any party aggregates the shares and finalizes the key of the ideal
 /// secret, the sum of the parties' secrets.
-pub trait GLWEPublicKeyMHEProtocol<BE: Backend> {
+pub trait MHEGLWEPublicKeyProtocol<BE: Backend> {
     fn mhe_glwe_public_key_share_gen_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GLWEInfos;
@@ -30,7 +30,7 @@ pub trait GLWEPublicKeyMHEProtocol<BE: Backend> {
     #[allow(clippy::too_many_arguments)]
     fn mhe_glwe_public_key_share_gen<S>(
         &self,
-        res: &mut GLWEPublicKeyShareOwned<BE>,
+        res: &mut MHEGLWEPublicKeyShareOwned<BE>,
         sk: &S,
         seed: [u8; 32],
         source_xe: &mut Source,
@@ -41,7 +41,7 @@ pub trait GLWEPublicKeyMHEProtocol<BE: Backend> {
     /// Adds share `a` into `res`, which starts as the first share. The shares
     /// must have the same layout, entry seeds and base secret distribution.
     /// Aggregation records the sum of their independent party counts.
-    fn mhe_glwe_public_key_share_aggregate(&self, res: &mut GLWEPublicKeyShareOwned<BE>, a: &GLWEPublicKeyShareOwned<BE>);
+    fn mhe_glwe_public_key_share_aggregate(&self, res: &mut MHEGLWEPublicKeyShareOwned<BE>, a: &MHEGLWEPublicKeyShareOwned<BE>);
 
     fn mhe_glwe_public_key_share_finalize_tmp_bytes(&self) -> usize;
 
@@ -55,7 +55,7 @@ pub trait GLWEPublicKeyMHEProtocol<BE: Backend> {
     fn mhe_glwe_public_key_share_finalize<R>(
         &self,
         res: &mut R,
-        share: &GLWEPublicKeyShareOwned<BE>,
+        share: &MHEGLWEPublicKeyShareOwned<BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEPublicKeyAtViewMut<BE> + GLWEPublicKeyToBackendMut<BE> + GetDistributionMut + GLWEInfos;

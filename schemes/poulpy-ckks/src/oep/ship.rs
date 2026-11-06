@@ -9,7 +9,7 @@ use poulpy_hal::{
 
 use crate::{
     CKKSCtBounds,
-    api::ShipScalar,
+    api::CKKSShipScalar,
     layouts::{CKKSCiphertextOwned, CKKSPlaintextOwned, HMuxRotKeyPrepared, ShipCoeffEncodings, ShipKeysPrepared, ShipPlan},
     oep::CKKSEncodingImpl,
 };
@@ -23,12 +23,12 @@ use crate::{
 /// engine, encoder, host codec, or transfer capability; a backend may
 /// implement the whole step as one fused native kernel. The complete scheme
 /// definition (host ciphertext -> plaintext material) is exposed as
-/// [`ship_coeff_encodings_host`](crate::encoding::ship_coeff_encodings_host)
+/// [`ckks_ship_coeff_encodings_host`](crate::encoding::ckks_ship_coeff_encodings_host)
 /// so host reference implementations derive from the same math.
 ///
 /// # Safety
 /// Implementations return material byte-identical with the host definition
-/// [`ship_coeff_encodings_host`](crate::reference::encoding::ship_coeff_encodings_host) on every backend and
+/// [`ckks_ship_coeff_encodings_host`](crate::reference::encoding::ckks_ship_coeff_encodings_host) on every backend and
 /// platform, report for the `_tmp_bytes` query a bound that covers the body, and refuse as documented. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait CKKSShipCoeffEncodingImpl: Backend<Ring = Standard> {
@@ -41,12 +41,12 @@ pub unsafe trait CKKSShipCoeffEncodingImpl: Backend<Ring = Standard> {
         plan: &ShipPlan,
     ) -> Result<usize>
     where
-        F: ShipScalar,
+        F: CKKSShipScalar,
         Self: CKKSEncodingImpl<F>;
 
     /// No reference body is wired: this crate carries no implementation. Builds the input-dependent SHIP plaintext
     /// material from the bottom ciphertext's public coefficients, byte-identical with the host definition
-    /// [`ship_coeff_encodings_host`](crate::reference::encoding::ship_coeff_encodings_host) on every backend and
+    /// [`ckks_ship_coeff_encodings_host`](crate::reference::encoding::ckks_ship_coeff_encodings_host) on every backend and
     /// platform, within [`Self::ckks_ship_coeff_encodings_tmp_bytes`]. Preserves the plan's degree, radix, scales and
     /// backend ownership, and rejects malformed ciphertext layouts before reading their limbs.
     fn ckks_ship_coeff_encodings<F, Src>(
@@ -58,7 +58,7 @@ pub unsafe trait CKKSShipCoeffEncodingImpl: Backend<Ring = Standard> {
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<ShipCoeffEncodings<Self::OwnedBuf, Self::ZnxWord>>
     where
-        F: ShipScalar,
+        F: CKKSShipScalar,
         Self: CKKSEncodingImpl<F>,
         Src: GLWEToBackendRef<Self> + CKKSCtBounds;
 }
@@ -83,7 +83,7 @@ pub unsafe trait CKKSShipImpl: Backend<Ring = Standard> {
         keys: &ShipKeysPrepared<Self::OwnedBuf, Self>,
     ) -> Result<usize>
     where
-        F: ShipScalar,
+        F: CKKSShipScalar,
         Self: CKKSEncodingImpl<F>,
         Src: GLWEToBackendRef<Self> + CKKSCtBounds;
 
@@ -98,7 +98,7 @@ pub unsafe trait CKKSShipImpl: Backend<Ring = Standard> {
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        F: ShipScalar,
+        F: CKKSShipScalar,
         Self: CKKSEncodingImpl<F>,
         Src: GLWEToBackendRef<Self> + CKKSCtBounds;
 
@@ -113,7 +113,7 @@ pub unsafe trait CKKSShipImpl: Backend<Ring = Standard> {
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        F: ShipScalar,
+        F: CKKSShipScalar,
         Self: CKKSEncodingImpl<F>,
         Src: GLWEToBackendRef<Self> + CKKSCtBounds;
 
@@ -173,7 +173,7 @@ macro_rules! impl_ckks_ship_reference_full {
                 keys: &$crate::layouts::ShipKeysPrepared<<Self as ::poulpy_hal::layouts::Backend>::OwnedBuf, Self>,
             ) -> $crate::CKKSResult<usize>
             where
-                F: $crate::api::ShipScalar,
+                F: $crate::api::CKKSShipScalar,
                 Self: $crate::oep::CKKSEncodingImpl<F>,
                 Src: ::poulpy_core::layouts::GLWEToBackendRef<Self> + $crate::CKKSCtBounds,
             {
@@ -190,7 +190,7 @@ macro_rules! impl_ckks_ship_reference_full {
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> $crate::CKKSResult<()>
             where
-                F: $crate::api::ShipScalar,
+                F: $crate::api::CKKSShipScalar,
                 Self: $crate::oep::CKKSEncodingImpl<F>,
                 Src: ::poulpy_core::layouts::GLWEToBackendRef<Self> + $crate::CKKSCtBounds,
             {
@@ -207,7 +207,7 @@ macro_rules! impl_ckks_ship_reference_full {
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> $crate::CKKSResult<()>
             where
-                F: $crate::api::ShipScalar,
+                F: $crate::api::CKKSShipScalar,
                 Self: $crate::oep::CKKSEncodingImpl<F>,
                 Src: ::poulpy_core::layouts::GLWEToBackendRef<Self> + $crate::CKKSCtBounds,
             {

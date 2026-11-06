@@ -66,18 +66,18 @@ pub unsafe trait GGSWBlindRotationImpl<T: UnsignedInteger>: Backend + crate::oep
             module, sign, bit_rsh, bit_mask, bit_lsh, res, a, fhe_uint, scratch,
         )
     }
-    /// Scratch bound of [`Self::scalar_to_ggsw_blind_rotation`]; may report less than the reference, never less than the
+    /// Scratch bound of [`Self::ggsw_blind_rotation_from_scalar`]; may report less than the reference, never less than the
     /// body takes.
     #[allow(clippy::too_many_arguments)]
-    fn scalar_to_ggsw_blind_rotation_tmp_bytes<R, K>(module: &Module<Self>, res_infos: &R, k_infos: &K) -> usize
+    fn ggsw_blind_rotation_from_scalar_tmp_bytes<R, K>(module: &Module<Self>, res_infos: &R, k_infos: &K) -> usize
     where
         R: GLWEInfos,
         K: GGSWInfos;
     /// Reproduces
-    /// [`scalar_to_ggsw_blind_rotation_reference`](crate::reference::bdd::scalar_to_ggsw_blind_rotation_reference) bit
-    /// for bit, within [`Self::scalar_to_ggsw_blind_rotation_tmp_bytes`]; free in kernels and scratch use.
+    /// [`ggsw_blind_rotation_from_scalar_reference`](crate::reference::bdd::ggsw_blind_rotation_from_scalar_reference) bit
+    /// for bit, within [`Self::ggsw_blind_rotation_from_scalar_tmp_bytes`]; free in kernels and scratch use.
     #[allow(clippy::too_many_arguments)]
-    fn scalar_to_ggsw_blind_rotation<R, A, K>(
+    fn ggsw_blind_rotation_from_scalar<R, A, K>(
         module: &Module<Self>,
         sign: bool,
         bit_rsh: usize,

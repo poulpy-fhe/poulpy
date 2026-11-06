@@ -105,7 +105,7 @@ where
         + poulpy_hal::api::VecZnxBigAddAssign<BE>
         + poulpy_hal::api::VecZnxBigNormalize<BE>
         + poulpy_hal::api::SvpPPolCopy<BE>
-        + poulpy_hal::api::VecZnxScalarProduct<BE>
+        + poulpy_hal::api::VecZnxBigScalarProduct<BE>
         + poulpy_hal::api::VecZnxBigInnerSum<BE>
         + poulpy_hal::api::VecZnxBigAddSmallAssign<BE>
         + poulpy_hal::api::VecZnxZero<BE>

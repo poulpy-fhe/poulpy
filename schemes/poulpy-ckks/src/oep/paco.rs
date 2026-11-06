@@ -1,6 +1,6 @@
 use crate::CKKSResult as Result;
 use crate::layouts::CKKSPlaintextOwned;
-use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey};
+use poulpy_core::layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey};
 use poulpy_hal::{
     api::ScratchOwnedBorrow,
     layouts::{Backend, Module, ScratchArena, ScratchOwned, Standard},
@@ -8,7 +8,7 @@ use poulpy_hal::{
 
 use crate::{
     CKKSCtBounds, SetCKKSInfos,
-    api::PaCoScalar,
+    api::CKKSPaCoScalar,
     layouts::{CKKSCiphertextOwned, PaCoContext, PaCoKeys, PaCoWorker},
     oep::CKKSEncodingImpl,
 };
@@ -24,28 +24,33 @@ use crate::{
 /// method sees only the ciphertext, the compiled context (its validated plan
 /// and radix), and the backend's own precomputed material, so a backend may
 /// implement the whole step as one fused native kernel. This crate carries no implementation; the
-/// reference implementation is [`crate::reference::encoding::paco_coeff_encodings_host`], and the complete
+/// reference implementation is [`crate::reference::encoding::ckks_paco_coeff_encodings_host`], and the complete
 /// scheme definition of the step (host ciphertext → four host plaintexts) is
 /// exposed as
-/// [`paco_coeff_encodings_host`](crate::encoding::paco_coeff_encodings_host)
+/// [`ckks_paco_coeff_encodings_host`](crate::encoding::ckks_paco_coeff_encodings_host)
 /// so host reference implementations derive from the same math.
 ///
 /// # Safety
 /// Implementations return plaintexts byte-identical with the host definition
-/// [`paco_coeff_encodings_host`](crate::reference::encoding::paco_coeff_encodings_host) on every backend and
+/// [`ckks_paco_coeff_encodings_host`](crate::reference::encoding::ckks_paco_coeff_encodings_host) on every backend and
 /// platform, report for the `_tmp_bytes` query a bound that covers the body, and refuse as documented. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait CKKSPaCoCoeffEncodingImpl: Backend<Ring = Standard> {
-    /// Scratch bound of [`Self::ckks_paco_coeff_encodings`], the scalar buffers of native FFT kernels included. That
-    /// method refuses a smaller arena with `CKKSError::Internal` before any work.
-    fn ckks_paco_coeff_encodings_tmp_bytes<F>(module: &Module<Self>, context: &PaCoContext<Self, F>) -> Result<usize>
+    /// Scratch bound of [`Self::ckks_paco_coeff_encodings`] for an input of the layout `input`, the scalar buffers of
+    /// native FFT kernels included. That method refuses a smaller arena with `CKKSError::Internal` before any work.
+    fn ckks_paco_coeff_encodings_tmp_bytes<F, A>(
+        module: &Module<Self>,
+        context: &PaCoContext<Self, F>,
+        input: &A,
+    ) -> Result<usize>
     where
-        F: PaCoScalar,
-        Self: CKKSEncodingImpl<F>;
+        F: CKKSPaCoScalar,
+        Self: CKKSEncodingImpl<F>,
+        A: GLWEInfos;
 
     /// No reference body is wired: this crate carries no implementation. Encodes the exhausted ciphertext's public
     /// coefficients as the four dense beta plaintexts consumed by PaCo blind rotation, byte-identical with the host
-    /// definition [`paco_coeff_encodings_host`](crate::reference::encoding::paco_coeff_encodings_host) on every
+    /// definition [`ckks_paco_coeff_encodings_host`](crate::reference::encoding::ckks_paco_coeff_encodings_host) on every
     /// backend and platform, within [`Self::ckks_paco_coeff_encodings_tmp_bytes`]. Preserves the plan's degree,
     /// radix, scale, budget, full-slot ordering and backend ownership, and rejects malformed ciphertext layouts before
     /// reading their active limbs. The beta packing agrees numerically (within CKKS precision) with the `2C`-block
@@ -58,7 +63,7 @@ pub unsafe trait CKKSPaCoCoeffEncodingImpl: Backend<Ring = Standard> {
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<[CKKSPlaintextOwned<Self>; 4]>
     where
-        F: PaCoScalar,
+        F: CKKSPaCoScalar,
         Self: CKKSEncodingImpl<F>,
         Src: GLWEToBackendRef<Self> + CKKSCtBounds;
 }
@@ -84,7 +89,7 @@ pub unsafe trait CKKSPaCoImpl: Backend<Ring = Standard> {
         keys: &K,
     ) -> Result<usize>
     where
-        F: PaCoScalar,
+        F: CKKSPaCoScalar,
         Self: CKKSEncodingImpl<F>,
         K: PaCoKeys<Self>,
         Src: GLWEToBackendRef<Self> + CKKSCtBounds;
@@ -101,7 +106,7 @@ pub unsafe trait CKKSPaCoImpl: Backend<Ring = Standard> {
         keys: &K,
     ) -> Result<usize>
     where
-        F: PaCoScalar,
+        F: CKKSPaCoScalar,
         Self: CKKSEncodingImpl<F>,
         K: PaCoKeys<Self>,
         Src: GLWEToBackendRef<Self> + CKKSCtBounds;
@@ -118,7 +123,7 @@ pub unsafe trait CKKSPaCoImpl: Backend<Ring = Standard> {
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        F: PaCoScalar,
+        F: CKKSPaCoScalar,
         Self: CKKSEncodingImpl<F>,
         K: PaCoKeys<Self>,
         Src: GLWEToBackendRef<Self> + CKKSCtBounds;
@@ -135,7 +140,7 @@ pub unsafe trait CKKSPaCoImpl: Backend<Ring = Standard> {
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        F: PaCoScalar,
+        F: CKKSPaCoScalar,
         Self: CKKSEncodingImpl<F>,
         K: PaCoKeys<Self>,
         Src: GLWEToBackendRef<Self> + CKKSCtBounds;
@@ -158,7 +163,7 @@ pub unsafe trait CKKSPaCoImpl: Backend<Ring = Standard> {
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        F: PaCoScalar,
+        F: CKKSPaCoScalar,
         Self: CKKSEncodingImpl<F>,
         K: PaCoKeys<Self> + Sync,
         ScratchOwned<Self>: ScratchOwnedBorrow<Self>,
@@ -182,7 +187,7 @@ pub unsafe trait CKKSPaCoImpl: Backend<Ring = Standard> {
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        F: PaCoScalar,
+        F: CKKSPaCoScalar,
         Self: CKKSEncodingImpl<F>,
         K: PaCoKeys<Self> + Sync,
         ScratchOwned<Self>: ScratchOwnedBorrow<Self>,
@@ -251,7 +256,7 @@ macro_rules! impl_ckks_paco_reference_full {
                 keys: &K,
             ) -> $crate::CKKSResult<usize>
             where
-                F: $crate::api::PaCoScalar,
+                F: $crate::api::CKKSPaCoScalar,
                 Self: $crate::oep::CKKSEncodingImpl<F>,
                 K: $crate::layouts::PaCoKeys<Self>,
                 Src: ::poulpy_core::layouts::GLWEToBackendRef<Self> + $crate::CKKSCtBounds,
@@ -269,7 +274,7 @@ macro_rules! impl_ckks_paco_reference_full {
                 keys: &K,
             ) -> $crate::CKKSResult<usize>
             where
-                F: $crate::api::PaCoScalar,
+                F: $crate::api::CKKSPaCoScalar,
                 Self: $crate::oep::CKKSEncodingImpl<F>,
                 K: $crate::layouts::PaCoKeys<Self>,
                 Src: ::poulpy_core::layouts::GLWEToBackendRef<Self> + $crate::CKKSCtBounds,
@@ -288,7 +293,7 @@ macro_rules! impl_ckks_paco_reference_full {
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> $crate::CKKSResult<()>
             where
-                F: $crate::api::PaCoScalar,
+                F: $crate::api::CKKSPaCoScalar,
                 Self: $crate::oep::CKKSEncodingImpl<F>,
                 K: $crate::layouts::PaCoKeys<Self>,
                 Src: ::poulpy_core::layouts::GLWEToBackendRef<Self> + $crate::CKKSCtBounds,
@@ -307,7 +312,7 @@ macro_rules! impl_ckks_paco_reference_full {
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> $crate::CKKSResult<()>
             where
-                F: $crate::api::PaCoScalar,
+                F: $crate::api::CKKSPaCoScalar,
                 Self: $crate::oep::CKKSEncodingImpl<F>,
                 K: $crate::layouts::PaCoKeys<Self>,
                 Src: ::poulpy_core::layouts::GLWEToBackendRef<Self> + $crate::CKKSCtBounds,
@@ -327,7 +332,7 @@ macro_rules! impl_ckks_paco_reference_full {
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> $crate::CKKSResult<()>
             where
-                F: $crate::api::PaCoScalar,
+                F: $crate::api::CKKSPaCoScalar,
                 Self: $crate::oep::CKKSEncodingImpl<F>,
                 K: $crate::layouts::PaCoKeys<Self> + Sync,
                 ::poulpy_hal::layouts::ScratchOwned<Self>: ::poulpy_hal::api::ScratchOwnedBorrow<Self>,
@@ -348,7 +353,7 @@ macro_rules! impl_ckks_paco_reference_full {
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> $crate::CKKSResult<()>
             where
-                F: $crate::api::PaCoScalar,
+                F: $crate::api::CKKSPaCoScalar,
                 Self: $crate::oep::CKKSEncodingImpl<F>,
                 K: $crate::layouts::PaCoKeys<Self> + Sync,
                 ::poulpy_hal::layouts::ScratchOwned<Self>: ::poulpy_hal::api::ScratchOwnedBorrow<Self>,

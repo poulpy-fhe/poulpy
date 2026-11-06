@@ -12,7 +12,7 @@ use poulpy_hal::{
 
 use crate::{
     ComponentNoise, Distribution, GLWECIKeyEncryptSk, GLWESecretSampling, GetDistributionMut,
-    layouts::{GGLWELayout, GLWECIKey, GLWESecret, GLWESecretLayout, ModuleCoreAlloc},
+    layouts::{GGLWELayout, GLWECIKey, GLWESecret, GLWESecretAlloc, GLWESecretLayout, GLWESwitchingKeyAlloc},
     oep::GLWECIConversionImpl,
     test_suite::{decryption::panic_message, poisoned_scratch},
 };

@@ -10,6 +10,8 @@
 
 use poulpy_hal::{backend_test_suite, cross_backend_test_suite};
 
+#[cfg(feature = "enable-blas")]
+mod blas;
 #[cfg(feature = "enable-ckks")]
 mod ckks;
 #[cfg(feature = "enable-core")]
@@ -126,7 +128,7 @@ cross_backend_test_suite! {
         test_vec_znx_big_from_small => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_from_small,
         test_vec_znx_big_inner_sum => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_inner_sum,
         test_vec_znx_big_col_weighted_sum => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_col_weighted_sum,
-        test_vec_znx_scalar_product => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_scalar_product,
+        test_vec_znx_big_scalar_product => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_scalar_product,
     }
 }
 
@@ -282,7 +284,7 @@ cross_backend_test_suite! {
         test_vec_znx_big_from_small => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_from_small,
         test_vec_znx_big_inner_sum => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_inner_sum,
         test_vec_znx_big_col_weighted_sum => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_col_weighted_sum,
-        test_vec_znx_scalar_product => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_scalar_product,
+        test_vec_znx_big_scalar_product => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_scalar_product,
     }
 }
 
@@ -422,7 +424,7 @@ backend_test_suite! {
         test_vec_znx_big_sub_small_a_derived => poulpy_hal::test_suite::derived::test_vec_znx_big_sub_small_a_derived,
         test_vec_znx_big_sub_small_b_derived => poulpy_hal::test_suite::derived::test_vec_znx_big_sub_small_b_derived,
         test_svp_apply_dft_derived => poulpy_hal::test_suite::derived::test_svp_apply_dft_derived,
-        test_cnv_prepare_self_derived => poulpy_hal::test_suite::derived::test_cnv_prepare_self_derived,
+        test_cnv_pvec_self_prepare_derived => poulpy_hal::test_suite::derived::test_cnv_pvec_self_prepare_derived,
         test_cnv_apply_dft_add_derived => poulpy_hal::test_suite::derived::test_cnv_apply_dft_add_derived,
         test_cnv_apply_dft_sum_derived => poulpy_hal::test_suite::derived::test_cnv_apply_dft_sum_derived,
         test_cnv_pairwise_apply_dft_derived => poulpy_hal::test_suite::derived::test_cnv_pairwise_apply_dft_derived,
@@ -476,22 +478,22 @@ fn test_transform_domain_packed_byte_sizes() {
     use poulpy_hal::layouts::{Backend, PrepareHint};
     let (n, cols, size) = (256, 3, 5);
     let packed_bytes = n * cols * size * 4 * size_of::<u32>();
-    assert_eq!(<Gpu as Backend>::bytes_of_vec_znx_dft(n, cols, size), packed_bytes);
+    assert_eq!(<Gpu as Backend>::vec_znx_dft_bytes_of(n, cols, size), packed_bytes);
     assert_eq!(
-        <Gpu as Backend>::bytes_of_cnv_pvec_left(n, cols, size, PrepareHint::Reuse),
+        <Gpu as Backend>::cnv_pvec_left_bytes_of(n, cols, size, PrepareHint::Reuse),
         packed_bytes
     );
     assert_eq!(
-        <Gpu as Backend>::bytes_of_cnv_pvec_right(n, cols, size, PrepareHint::Reuse),
+        <Gpu as Backend>::cnv_pvec_right_bytes_of(n, cols, size, PrepareHint::Reuse),
         packed_bytes
     );
     assert_eq!(
-        <Gpu as Backend>::bytes_of_svp_ppol(n, cols, PrepareHint::Reuse),
+        <Gpu as Backend>::svp_ppol_bytes_of(n, cols, PrepareHint::Reuse),
         n * cols * 4 * size_of::<u32>()
     );
     let (rows, cols_in, cols_out) = (3, 2, 4);
     assert_eq!(
-        <Gpu as Backend>::bytes_of_vmp_pmat(n, rows, cols_in, cols_out, size, PrepareHint::Reuse),
+        <Gpu as Backend>::vmp_pmat_bytes_of(n, rows, cols_in, cols_out, size, PrepareHint::Reuse),
         n * rows * cols_in * cols_out * size * 4 * size_of::<u32>()
     );
 }
@@ -545,7 +547,7 @@ backend_test_suite! {
         test_vec_znx_dft_automorphism_add_with_plan_derived => poulpy_hal::test_suite::derived::test_vec_znx_dft_automorphism_add_with_plan_derived,
         test_vec_znx_dft_automorphism_derived => poulpy_hal::test_suite::derived::test_vec_znx_dft_automorphism_derived,
         test_svp_apply_dft_derived => poulpy_hal::test_suite::derived::test_svp_apply_dft_derived,
-        test_cnv_prepare_self_derived => poulpy_hal::test_suite::derived::test_cnv_prepare_self_derived,
+        test_cnv_pvec_self_prepare_derived => poulpy_hal::test_suite::derived::test_cnv_pvec_self_prepare_derived,
         test_cnv_apply_dft_add_derived => poulpy_hal::test_suite::derived::test_cnv_apply_dft_add_derived,
         test_cnv_apply_dft_sum_derived => poulpy_hal::test_suite::derived::test_cnv_apply_dft_sum_derived,
         test_cnv_pairwise_apply_dft_derived => poulpy_hal::test_suite::derived::test_cnv_pairwise_apply_dft_derived,
@@ -653,7 +655,7 @@ cross_backend_test_suite! {
         #[ignore = "full degree; run in release with --ignored"]
         test_vec_znx_big_col_weighted_sum => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_col_weighted_sum,
         #[ignore = "full degree; run in release with --ignored"]
-        test_vec_znx_scalar_product => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_scalar_product,
+        test_vec_znx_big_scalar_product => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_scalar_product,
     }
 }
 
@@ -766,7 +768,7 @@ backend_test_suite! {
         #[ignore = "full degree; run in release with --ignored"]
         test_svp_apply_dft_derived => poulpy_hal::test_suite::derived::test_svp_apply_dft_derived,
         #[ignore = "full degree; run in release with --ignored"]
-        test_cnv_prepare_self_derived => poulpy_hal::test_suite::derived::test_cnv_prepare_self_derived,
+        test_cnv_pvec_self_prepare_derived => poulpy_hal::test_suite::derived::test_cnv_pvec_self_prepare_derived,
         #[ignore = "full degree; run in release with --ignored"]
         test_cnv_apply_dft_add_derived => poulpy_hal::test_suite::derived::test_cnv_apply_dft_add_derived,
         #[ignore = "full degree; run in release with --ignored"]

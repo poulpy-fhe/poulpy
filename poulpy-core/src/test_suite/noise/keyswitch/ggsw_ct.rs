@@ -15,8 +15,9 @@ use crate::{
     api::{GGLWEToGGSWKeyPreparedFactory, GLWESecretPreparedFactory, GLWESwitchingKeyPreparedFactory},
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
-        GGLWEInfos, GGLWEToGGSWKey, GGLWEToGGSWKeyLayout, GGLWEToGGSWKeyPrepared, GGSW, GGSWInfos, GGSWLayout, GLWEInfos,
-        GLWESecret, GLWESwitchingKey, GLWESwitchingKeyLayout, ModuleCoreAlloc,
+        GGLWEInfos, GGLWEToGGSWKey, GGLWEToGGSWKeyAlloc, GGLWEToGGSWKeyLayout, GGLWEToGGSWKeyPrepared, GGSW, GGSWAlloc,
+        GGSWInfos, GGSWLayout, GLWEInfos, GLWESecret, GLWESecretAlloc, GLWESwitchingKey, GLWESwitchingKeyAlloc,
+        GLWESwitchingKeyLayout,
         prepared::{GLWESecretPrepared, GLWESwitchingKeyPrepared},
     },
     noise::GGLWENoiseModel,

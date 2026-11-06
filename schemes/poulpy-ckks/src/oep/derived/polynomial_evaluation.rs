@@ -3,7 +3,7 @@ use crate::api::{CKKSComplexPolynomialEvaluationOps, CKKSPolynomialEvaluationOps
 use poulpy_core::GLWENormalize;
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::IntPolyInfos;
-use poulpy_core::layouts::{GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, SetBSGSMeta};
+use poulpy_core::layouts::{GLWEInfos, GLWELayout, GLWEPlaintextMeta, GLWEToBackendMut, GLWEToBackendRef, Rank, SetBSGSMeta};
 use poulpy_core::oep::GLWEMulConstImpl;
 
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
@@ -11,12 +11,12 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 use crate::{
     CKKSCtBounds, SetCKKSInfos,
     api::{BSGSPolynomialInfos, CKKSCopyOps, CKKSMulOps, CKKSPow2Ops, CKKSSubOps, PolynomialInputTransform},
-    layouts::{CKKSCiphertextOwned, CKKSModuleAlloc},
+    layouts::{CKKSCiphertextAlloc, CKKSCiphertextOwned, ScratchArenaTakeCKKSCiphertext},
     polynomial::ComplexBSGSPolynomial,
-    power_basis::{PowerBasis, PowerBasisGen},
+    power_basis::{CKKSPowerBasisGen, PowerBasis},
 };
 
-/// Scratch upper bound for [`BSGSOps::eval_baby_linear_combination`]: the constant combination
+/// Scratch upper bound for [`GLWEBSGSOps::eval_baby_linear_combination`]: the constant combination
 /// for the widest term (`ct_size`) and constant (`pt_size`) in limbs.
 pub(crate) fn eval_baby_linear_combination_tmp_bytes<BE>(module: &Module<BE>, ct_size: usize, pt_size: usize) -> usize
 where
@@ -36,7 +36,7 @@ pub(crate) fn polynomial_input<BE, S, H>(
 ) -> Result<CKKSCiphertextOwned<BE>>
 where
     BE: Backend,
-    Module<BE>: CKKSCopyOps<BE> + CKKSMulOps<BE> + CKKSPow2Ops<BE> + CKKSSubOps<BE> + CKKSModuleAlloc<BE>,
+    Module<BE>: CKKSCopyOps<BE> + CKKSMulOps<BE> + CKKSPow2Ops<BE> + CKKSSubOps<BE> + CKKSCiphertextAlloc<BE>,
     S: GLWEToBackendRef<BE> + CKKSCtBounds,
     H: GetTensorKey<BE>,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
@@ -55,11 +55,19 @@ where
         }
         PolynomialInputTransform::ChebyshevT2 | PolynomialInputTransform::ChebyshevT2TimesInput => {
             let k = crate::power_basis::square_ct_k(src)?;
-            let mut squared = module.ckks_ciphertext_alloc(src.base2k(), k.into());
-            module.ckks_square_into(&mut squared, src, tsk, scratch)?;
             let mut doubled = module.ckks_ciphertext_alloc(src.base2k(), k.into());
-            module.ckks_double_into(&mut doubled, &squared, scratch)?;
-            module.ckks_sub_one_assign(&mut doubled, scratch)?;
+            let squared_layout = GLWELayout {
+                n: module.n().into(),
+                base2k: src.base2k(),
+                k: k.into(),
+                rank: Rank(1),
+            };
+            let (mut squared, mut scratch) = scratch
+                .borrow()
+                .take_ckks_ciphertext_scratch(&squared_layout, GLWEPlaintextMeta::default());
+            module.ckks_square_into(&mut squared, src, tsk, &mut scratch)?;
+            module.ckks_double_into(&mut doubled, &squared, &mut scratch)?;
+            module.ckks_sub_one_assign(&mut doubled, &mut scratch)?;
             Ok(doubled)
         }
     }
@@ -79,7 +87,6 @@ where
         + CKKSMulOps<BE>
         + CKKSPow2Ops<BE>
         + CKKSSubOps<BE>
-        + CKKSModuleAlloc<BE>
         + GLWENormalize<BE>,
     R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
     S: GLWEToBackendRef<BE> + CKKSCtBounds,
@@ -117,7 +124,6 @@ where
         + CKKSMulOps<BE>
         + CKKSPow2Ops<BE>
         + CKKSSubOps<BE>
-        + CKKSModuleAlloc<BE>
         + GLWENormalize<BE>,
     R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
     S: GLWEToBackendRef<BE> + CKKSCtBounds,

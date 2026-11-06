@@ -2,35 +2,36 @@ use crate::CKKSResult as Result;
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
-    GLWECopy, GLWEMulConst, GLWEMulPlain, GLWENormalize, GLWETensoring, ScratchArenaTakeCore, glwe_prepare_left,
-    glwe_prepare_left_tmp_bytes, glwe_prepare_right, glwe_prepare_right_tmp_bytes,
+    GLWECopy, GLWEMulConst, GLWEMulPlain, GLWENormalize, GLWETensoring, ScratchArenaTakeGLWE, ScratchArenaTakeGLWETensor,
+    glwe_left_operand_prepare, glwe_left_operand_prepare_tmp_bytes, glwe_right_operand_prepare,
+    glwe_right_operand_prepare_tmp_bytes,
     layouts::{
         GGLWEInfos, GLWEInfos, GLWELayout, GLWEPlaintextLayout, GLWETensorViewMut, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
         ModuleCoreAlloc, TorusPrecision, prepared::GLWETensorKeyPreparedBackendRef,
     },
 };
 use poulpy_hal::{
-    api::{Convolution, VecZnxCopy},
+    api::{CnvOps, VecZnxCopy},
     layouts::{Backend, ScratchArena},
 };
 
 use crate::{
     CKKSCompositionError, CKKSCtBounds, CKKSLayout, SlotLayout, SlotsKind,
     api::CKKSRoundOps,
-    layouts::{CKKSCiphertextViewMut, ScratchArenaTakeCKKS},
+    layouts::{CKKSCiphertextViewMut, ScratchArenaTakeCKKSCiphertext},
     shaping::{MAX_PASS_BITS, ShapingProfile},
 };
 use crate::{
     CKKSInfos, GLWEPlaintextInfos, SetCKKSInfos, ckks_mul_pt_const_checks, ckks_mul_pt_vec_checks, get_mul_ct_params,
-    layouts::{CKKSPreparedLeft, CKKSPreparedRight},
+    layouts::{CKKSLeftOperandPrepared, CKKSRightOperandPrepared},
     mul_ct_params_raw,
 };
-use poulpy_core::GLWEBytesOf;
+use poulpy_core::{GLWEBytesOf, GLWETensorBytesOf};
 
 pub trait CKKSMulReference<BE: Backend> {
     fn ckks_mul_tmp_bytes_reference<R, A, B, T>(&self, res: &R, a: &A, b: &B, tsk: &T) -> usize
     where
-        Self: GLWEBytesOf<BE> + CKKSRoundOps<BE>,
+        Self: GLWEBytesOf<BE> + GLWETensorBytesOf<BE> + CKKSRoundOps<BE>,
         R: CKKSCtBounds,
         A: CKKSCtBounds,
         B: CKKSCtBounds,
@@ -165,47 +166,56 @@ pub trait CKKSMulReference<BE: Backend> {
         )
     }
 
-    /// What `glwe_prepare_left` and `glwe_prepare_right` take to prepare `a` on its own limbs.
-    fn ckks_prepare_tmp_bytes_reference<A>(&self, a: &A) -> usize
+    /// What `glwe_left_operand_prepare` takes to prepare `a` on its own limbs.
+    fn ckks_left_operand_prepare_tmp_bytes_reference<A>(&self, a: &A) -> usize
     where
-        Self: GLWEBytesOf<BE> + GLWENormalize<BE> + Convolution<BE> + Sized,
+        Self: GLWEBytesOf<BE> + GLWENormalize<BE> + CnvOps<BE> + Sized,
         A: GLWEInfos,
     {
-        glwe_prepare_left_tmp_bytes(self, a.size(), a).max(glwe_prepare_right_tmp_bytes(self, a.size(), a))
+        glwe_left_operand_prepare_tmp_bytes(self, a.size(), a)
     }
 
-    /// `glwe_prepare_left` of `a`, normalized first if its canonical flag is clear, on its `ceil(k / base2k)` limbs,
+    /// What `glwe_right_operand_prepare` takes to prepare `a` on its own limbs.
+    fn ckks_right_operand_prepare_tmp_bytes_reference<A>(&self, a: &A) -> usize
+    where
+        Self: GLWEBytesOf<BE> + GLWENormalize<BE> + CnvOps<BE> + Sized,
+        A: GLWEInfos,
+    {
+        glwe_right_operand_prepare_tmp_bytes(self, a.size(), a)
+    }
+
+    /// `glwe_left_operand_prepare` of `a`, normalized first if its canonical flag is clear, on its `ceil(k / base2k)` limbs,
     /// into `res`, which then reports `a`'s metadata. `InvalidOperand` for an `a` of another layout than `res`'s,
     /// before any write.
-    fn ckks_prepare_left_into_reference<A>(
+    fn ckks_left_operand_prepare_reference<A>(
         &self,
-        res: &mut CKKSPreparedLeft<BE>,
+        res: &mut CKKSLeftOperandPrepared<BE>,
         a: &A,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: Convolution<BE> + GLWENormalize<BE> + Sized,
+        Self: CnvOps<BE> + GLWENormalize<BE> + Sized,
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
     {
-        check_source_layout("ckks_prepare_left_into", res, a)?;
-        glwe_prepare_left(self, &mut res.prep, a, a.k().as_usize(), scratch);
+        check_source_layout("ckks_left_operand_prepare", res, a)?;
+        glwe_left_operand_prepare(self, &mut res.prep, a, a.k().as_usize(), scratch);
         res.meta = a.plaintext_meta();
         Ok(())
     }
 
-    /// As [`Self::ckks_prepare_left_into_reference`], by `glwe_prepare_right` into a right operand.
-    fn ckks_prepare_right_into_reference<A>(
+    /// As [`Self::ckks_left_operand_prepare_reference`], by `glwe_right_operand_prepare` into a right operand.
+    fn ckks_right_operand_prepare_reference<A>(
         &self,
-        res: &mut CKKSPreparedRight<BE>,
+        res: &mut CKKSRightOperandPrepared<BE>,
         a: &A,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: Convolution<BE> + GLWENormalize<BE> + Sized,
+        Self: CnvOps<BE> + GLWENormalize<BE> + Sized,
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
     {
-        check_source_layout("ckks_prepare_right_into", res, a)?;
-        glwe_prepare_right(self, &mut res.prep, a, a.k().as_usize(), scratch);
+        check_source_layout("ckks_right_operand_prepare", res, a)?;
+        glwe_right_operand_prepare(self, &mut res.prep, a, a.k().as_usize(), scratch);
         res.meta = a.plaintext_meta();
         Ok(())
     }
@@ -213,7 +223,7 @@ pub trait CKKSMulReference<BE: Backend> {
     fn ckks_mul_prepared_assign_reference<Dst, T>(
         &self,
         dst: &mut Dst,
-        prepared: &CKKSPreparedRight<BE>,
+        prepared: &CKKSRightOperandPrepared<BE>,
         tsk: &T,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -294,7 +304,7 @@ pub trait CKKSMulReference<BE: Backend> {
 
     fn ckks_square_tmp_bytes_reference<R, A, T>(&self, res: &R, a: &A, tsk: &T) -> usize
     where
-        Self: GLWEBytesOf<BE> + CKKSRoundOps<BE>,
+        Self: GLWEBytesOf<BE> + GLWETensorBytesOf<BE> + CKKSRoundOps<BE>,
         R: CKKSCtBounds,
         A: CKKSCtBounds,
         T: GGLWEInfos,
@@ -812,7 +822,7 @@ fn check_source_layout(op: &'static str, res: &impl GLWEInfos, a: &impl GLWEInfo
 /// an earlier lane modified.
 pub(crate) fn get_mul_prepared_params<BE: Backend, D: GLWEInfos + CKKSInfos>(
     dst: &D,
-    prepared: &CKKSPreparedRight<BE>,
+    prepared: &CKKSRightOperandPrepared<BE>,
 ) -> Result<(usize, usize, usize, TorusPrecision)> {
     const OP: &str = "ckks_mul_prepared_assign";
     check_prepared_layout(OP, dst, prepared)?;
@@ -1021,7 +1031,7 @@ fn mul_prepared_into_at<BE, M, Out, L, T>(
     module: &M,
     out: &mut Out,
     left: &L,
-    prepared: &CKKSPreparedRight<BE>,
+    prepared: &CKKSRightOperandPrepared<BE>,
     tsk: &T,
     cnv_offset: usize,
     tensor_k: TorusPrecision,
@@ -1137,6 +1147,6 @@ where
         meta: Default::default(),
     };
     let round = module.ckks_round_tmp_bytes(&ckks(layout), &ckks(wide));
-    let wide_bytes = BE::scratch_aligned(BE::bytes_of_vec_znx(wide.n.as_usize(), wide.rank.as_usize() + 1, wide.size()));
+    let wide_bytes = BE::scratch_aligned(BE::vec_znx_bytes_of(wide.n.as_usize(), wide.rank.as_usize() + 1, wide.size()));
     plain(&layout, tensor_k).max(wide_bytes + plain(&wide, widen(tensor_k)).max(round))
 }

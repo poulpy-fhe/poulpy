@@ -33,14 +33,14 @@
   - BDD scalars `sign, bit_rsh, bit_mask, bit_lsh` (blind rotations all four, selection and retrieval `bit_rsh, bit_mask`);
   - `_multi_thread` variants: `threads: usize` first, then the serial parameters unchanged;
   - circuit-bootstrapping exponent scalars `log_gap_out, log_domain, extension_factor`;
-  - the selector as the last operand (CMux and Cswap: the prepared selector), a circuit as a plan.
+  - the selector as the last operand (CMux and CSwap: the prepared selector), a circuit as a plan.
 - **Key-encryption signatures.** A key encryption takes exactly `(res, sk_lwe, sk_glwe, source_xe, source_xa, scratch)`, its compressed form a root `seed_xa: [u8; 32]` before `source_xe` instead of `source_xa`.
 
 ## 3. Scratch and queries
 
 - **Query shapes.** A query takes the scalar parameters (`threads`, `log_gap_out`, `log_domain`, `block_size`, `extension_factor`) before operand infos:
   - blind rotations: `(res, a, k)`, shared by the `_assign` form with `res` as `a`;
-  - `cmux`, `cmux_assign` and `cmux_assign_neg`: one shared `cmux_tmp_bytes(res, a, selector)`;
+  - `glwe_cmux`, `glwe_cmux_assign` and `glwe_cmux_neg_assign`: one shared `glwe_cmux_tmp_bytes(res, a, selector)`;
   - selection: the destination, every candidate's infos at actual capacity, the selector;
   - word-level BDD executors: `(res_infos, ggsw_infos, circuit, key)`;
   - streaming retrieval: the maximum of `add_tmp_bytes` per input layout and `flush_tmp_bytes` for the destination.
@@ -72,7 +72,7 @@
 
 ## 5. Blind-rotation algorithms and scheduling
 
-- **Algorithms are type markers.** Each blind-rotation algorithm is a zero-sized `BlindRotationAlgo` marker with its own `alloc_key` and opt-ins, the `BRA` parameter of keys and keyed traits, selecting the algorithm only, never backend, storage or scheduling, with no runtime switch in the `CGGI`-typed bodies.
+- **Algorithms are type markers.** Each blind-rotation algorithm is a zero-sized `BlindRotationAlgo` marker with its own `blind_rotation_key_alloc` and opt-ins, the `BRA` parameter of keys and keyed traits, selecting the algorithm only, never backend, storage or scheduling, with no runtime switch in the `CGGI`-typed bodies.
 - **Fixed-order reduction.** Both blind-rotation schedules share one body that reduces worker contributions in fixed index order.
 - **Multi-thread operations.** A BDD operation over independent items has a `_multi_thread` form as its only reference form, with `<op>_multi_thread_tmp_bytes(threads, ..)` where callers need a total, and outputs bit-identical for every `threads` and executor.
 - **Per-worker scratch.** A per-worker query takes no `threads` and returns its bytes rounded by `worker_scratch_bytes::<BE>`.
@@ -89,7 +89,7 @@
   - an entry in the `bdd_arithmetic` module doc.
 - **Node-array invariants.** A circuit fed to the BDD evaluator has levels of `max_inter_state` entries (0 for a zero output, else at least 2), an initial state holding constant 0 in slot 0 and constant 1 in slot 1, `Cmux(sel, hi, lo)` previous-level indices below `max_inter_state` and selectors below `input_size()`, `Copy` forwarding its own slot, a last level `[Cmux, None, ..]`, and two-word inputs `a` in `[0, BITS)`, `b` in `[BITS, 2 * BITS)`.
 - **Bit placement.** Bit `i` of an `FheUint<T>` sits at coefficient `T::bit_index(i) << (module.log_n() - T::LOG_BITS)`, never `i`, byte `b` is reached through `T::bit_index(b << 3)`, byte-isolating traces start at `T::LOG_BITS - T::LOG_BYTES`, and the ring degree is a multiple of `T::BITS`.
-- **Gates normalize once.** A CMux or Cswap style gate computes `glwe_external_product_dft` and adds the other branch in its one final normalization, never `glwe_external_product` plus `glwe_add`, reading an immutable branch in place.
+- **Gates normalize once.** A CMux or CSwap style gate computes `glwe_external_product_dft` and adds the other branch in its one final normalization, never `glwe_external_product` plus `glwe_add`, reading an immutable branch in place.
 
 ## 7. Circuit bootstrapping
 

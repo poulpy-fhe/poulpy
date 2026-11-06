@@ -26,7 +26,7 @@ use super::helpers::{
 };
 use super::parity::helpers::{snapshot, with_scratch};
 use poulpy_core::{GLWEAutomorphism, GLWEShift, layouts::LWEInfos};
-use poulpy_hal::api::{NegacyclicFFT, NegacyclicFFTNew, ScratchAvailable, ScratchOwnedBorrow};
+use poulpy_hal::api::{ReimNew, ScratchAvailable, ScratchOwnedBorrow};
 use poulpy_hal::layouts::{HostBytesBackend, Module, ScratchArena, Standard};
 
 use crate::{test_suite::CKKSTestParams, test_suite::reference_encoder::ReferenceEncoder};
@@ -38,7 +38,7 @@ where
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE> + GLWEAutomorphism<BE> + GLWEShift<BE> + CKKSConjugateOps<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
     for<'a> ScratchArena<'a, BE>: ScratchAvailable,
 {
     let m = params.n / 2;
@@ -106,7 +106,7 @@ pub fn test_conjugate_smaller_output<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE> + GLWEAutomorphism<BE> + GLWEShift<BE> + CKKSConjugateOps<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
     for<'a> ScratchArena<'a, BE>: ScratchAvailable,
 {
     let m = params.n / 2;
@@ -155,7 +155,7 @@ where
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE> + GLWEAutomorphism<BE> + GLWEShift<BE> + CKKSConjugateOps<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
     for<'a> ScratchArena<'a, BE>: ScratchAvailable,
 {
     let m = params.n / 2;

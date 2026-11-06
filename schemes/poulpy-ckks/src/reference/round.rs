@@ -4,7 +4,7 @@ use poulpy_core::{
     layouts::{GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos},
 };
 use poulpy_hal::{
-    api::{ScratchArenaTakeBasic, VecZnxAddAssign, VecZnxNormalize, VecZnxNormalizeTmpBytes},
+    api::{ScratchArenaTakeVecZnx, VecZnxAddAssign, VecZnxNormalize, VecZnxNormalizeTmpBytes},
     layouts::{Backend, Module, ScratchArena, VecZnxToBackendMut, VecZnxToBackendRef},
 };
 
@@ -19,9 +19,9 @@ where
     Src: GLWEInfos,
 {
     let n = src.n().as_usize();
-    let shaped = 2 * BE::scratch_aligned(BE::bytes_of_vec_znx(n, 1, 1))
-        + BE::scratch_aligned(BE::bytes_of_vec_znx(n, 1, 2))
-        + 2 * BE::scratch_aligned(BE::bytes_of_vec_znx(n, 1, src.size().max(dst.size())))
+    let shaped = 2 * BE::scratch_aligned(BE::vec_znx_bytes_of(n, 1, 1))
+        + BE::scratch_aligned(BE::vec_znx_bytes_of(n, 1, 2))
+        + 2 * BE::scratch_aligned(BE::vec_znx_bytes_of(n, 1, src.size().max(dst.size())))
         + module.vec_znx_normalize_tmp_bytes();
     shaped.max(module.glwe_normalize_tmp_bytes())
 }

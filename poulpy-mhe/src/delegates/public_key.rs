@@ -7,9 +7,9 @@ use poulpy_hal::{
     source::Source,
 };
 
-use crate::{api::GLWEPublicKeyMHEProtocol, layouts::GLWEPublicKeyShareOwned, oep::GLWEPublicKeyMHEProtocolImpl};
+use crate::{api::MHEGLWEPublicKeyProtocol, layouts::MHEGLWEPublicKeyShareOwned, oep::MHEGLWEPublicKeyProtocolImpl};
 
-impl<BE: Backend + GLWEPublicKeyMHEProtocolImpl> GLWEPublicKeyMHEProtocol<BE> for Module<BE> {
+impl<BE: Backend + MHEGLWEPublicKeyProtocolImpl> MHEGLWEPublicKeyProtocol<BE> for Module<BE> {
     fn mhe_glwe_public_key_share_gen_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GLWEInfos,
@@ -19,7 +19,7 @@ impl<BE: Backend + GLWEPublicKeyMHEProtocolImpl> GLWEPublicKeyMHEProtocol<BE> fo
 
     fn mhe_glwe_public_key_share_gen<S>(
         &self,
-        res: &mut GLWEPublicKeyShareOwned<BE>,
+        res: &mut MHEGLWEPublicKeyShareOwned<BE>,
         sk: &S,
         seed: [u8; 32],
         source_xe: &mut Source,
@@ -30,7 +30,7 @@ impl<BE: Backend + GLWEPublicKeyMHEProtocolImpl> GLWEPublicKeyMHEProtocol<BE> fo
         BE::mhe_glwe_public_key_share_gen(self, res, sk, seed, source_xe, scratch)
     }
 
-    fn mhe_glwe_public_key_share_aggregate(&self, res: &mut GLWEPublicKeyShareOwned<BE>, a: &GLWEPublicKeyShareOwned<BE>) {
+    fn mhe_glwe_public_key_share_aggregate(&self, res: &mut MHEGLWEPublicKeyShareOwned<BE>, a: &MHEGLWEPublicKeyShareOwned<BE>) {
         BE::mhe_glwe_public_key_share_aggregate(self, res, a)
     }
 
@@ -41,7 +41,7 @@ impl<BE: Backend + GLWEPublicKeyMHEProtocolImpl> GLWEPublicKeyMHEProtocol<BE> fo
     fn mhe_glwe_public_key_share_finalize<R>(
         &self,
         res: &mut R,
-        share: &GLWEPublicKeyShareOwned<BE>,
+        share: &MHEGLWEPublicKeyShareOwned<BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEPublicKeyAtViewMut<BE> + GLWEPublicKeyToBackendMut<BE> + GetDistributionMut + GLWEInfos,

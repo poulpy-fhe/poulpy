@@ -22,7 +22,7 @@
 //!
 //! 3. **BDD evaluation**: A compiled BDD circuit ([`BitCircuit`] / [`Circuit`])
 //!    that encodes the desired operation is evaluated bit-by-bit using CMux gates
-//!    ([`Cmux`]).  The result is a fresh packed-GLWE [`FheUint`].
+//!    ([`GLWECmux`]).  The result is a fresh packed-GLWE [`FheUint`].
 //!
 //! ## Key Structures
 //!
@@ -35,10 +35,10 @@
 //!
 //! ## Supported Operations (u32)
 //!
-//! Two-word to one-word operations: [`Add`], [`Sub`], [`Sll`], [`Srl`], [`Sra`],
-//! [`Slt`], [`Sltu`], [`Or`], [`And`], [`Xor`].
+//! Two-word to one-word operations: [`FheUintAdd`], [`FheUintSub`], [`FheUintSll`], [`FheUintSrl`], [`FheUintSra`],
+//! [`FheUintSlt`], [`FheUintSltu`], [`FheUintOr`], [`FheUintAnd`], [`FheUintXor`].
 //!
-//! One-word to one-word operations: [`Identity`].
+//! One-word to one-word operations: [`FheUintIdentity`].
 //!
 //! ## Threading
 //!

@@ -436,8 +436,8 @@ impl<D: HostDataMut, W: ZnxWord> ReaderFrom for LWE<D, W> {
         if base2k.0 == 0 {
             return Err(crate::layouts::invalid_serialized_shape());
         }
-        crate::layouts::read_vec_znx_with_shape(&mut self.body, reader, Some(1), 1)?;
-        crate::layouts::read_vec_znx_with_shape(&mut self.mask, reader, Some(degree), 1)?;
+        crate::layouts::read_vec_znx_with_shape(&mut self.body, reader, Some(1), 1, None)?;
+        crate::layouts::read_vec_znx_with_shape(&mut self.mask, reader, Some(degree), 1, None)?;
         self.set_base2k(base2k);
         self.validate_shape()?;
         crate::layouts::validate_noise_components(noise.as_ref(), self.mask.n() + 1)?;

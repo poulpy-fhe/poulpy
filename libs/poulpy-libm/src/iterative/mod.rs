@@ -18,7 +18,7 @@ use poulpy_ckks::{
         CKKSAddOps, CKKSAllOpsTmpBytes, CKKSConjugateOps, CKKSCopyOps, CKKSMulOps, CKKSNegOps, CKKSPolynomialEvaluationOps,
         CKKSPow2Ops, CKKSSubOps,
     },
-    layouts::ScratchArenaTakeCKKS,
+    layouts::ScratchArenaTakeCKKSCiphertext,
 };
 
 use crate::{
@@ -54,8 +54,8 @@ fn ensure_rsqrt_capacity<C: CKKSCtBounds>(op: &'static str, y: &C, r: usize) -> 
 
 /// Reciprocal and inverse square root.
 pub trait CKKSInverseOps<BE: Backend> {
-    /// Scratch bytes for [`Self::ckks_goldschmidt_division`].
-    fn ckks_goldschmidt_division_tmp_bytes<C, T>(&self, ct: &C, tsk: &T) -> usize
+    /// Scratch bytes for [`Self::ckks_goldschmidt_division_assign`].
+    fn ckks_goldschmidt_division_assign_tmp_bytes<C, T>(&self, ct: &C, tsk: &T) -> usize
     where
         C: CKKSCtBounds,
         T: GGLWEInfos;
@@ -70,10 +70,10 @@ pub trait CKKSInverseOps<BE: Backend> {
     ///
     /// An error for `iters == 0` or when `ct` holds no more budget than the iterations consume, and the errors of the
     /// arithmetic. The iterations run on a scratch copy, so `ct` is unchanged on `Err`.
-    fn ckks_goldschmidt_division<C, H>(
+    fn ckks_goldschmidt_division_assign<C, H>(
         &self,
-        ct: &mut C,
         iters: usize,
+        ct: &mut C,
         tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -81,8 +81,8 @@ pub trait CKKSInverseOps<BE: Backend> {
         C: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         H: GetTensorKey<BE>;
 
-    /// Scratch bytes for [`Self::ckks_rsqrt`].
-    fn ckks_rsqrt_tmp_bytes<Y, X, T>(&self, y: &Y, in_half: &X, tsk: &T) -> usize
+    /// Scratch bytes for [`Self::ckks_rsqrt_assign`].
+    fn ckks_rsqrt_assign_tmp_bytes<Y, X, T>(&self, y: &Y, in_half: &X, tsk: &T) -> usize
     where
         Y: CKKSCtBounds,
         X: CKKSCtBounds,
@@ -98,7 +98,14 @@ pub trait CKKSInverseOps<BE: Backend> {
     ///
     /// An error for `r == 0` or when `y` holds no more budget than the steps consume, and the errors of the arithmetic.
     /// The steps run on a scratch copy, so `y` is unchanged on `Err`.
-    fn ckks_rsqrt<Y, X, H>(&self, y: &mut Y, in_half: &X, r: usize, tsk: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_rsqrt_assign<Y, X, H>(
+        &self,
+        r: usize,
+        y: &mut Y,
+        in_half: &X,
+        tsk: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
     where
         Y: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         X: GLWEToBackendRef<BE> + CKKSCtBounds,
@@ -107,13 +114,19 @@ pub trait CKKSInverseOps<BE: Backend> {
 
 /// Reciprocal over signed intervals.
 pub trait CKKSInverseDomainOps<BE: Backend> {
-    /// Scratch bytes for [`Self::ckks_interval_normalization`].
-    fn ckks_interval_normalization_tmp_bytes<N, C, T, P>(&self, norm: &N, ct: &C, tsk: &T, params: &IntervalNorm<P>) -> usize
+    /// Scratch bytes for [`Self::ckks_interval_normalization_assign`].
+    fn ckks_interval_normalization_assign_tmp_bytes<C, N, P, T>(
+        &self,
+        ct: &C,
+        norm: &N,
+        params: &IntervalNorm<P>,
+        tsk: &T,
+    ) -> usize
     where
-        N: CKKSCtBounds,
         C: CKKSCtBounds,
-        T: GGLWEInfos,
-        P: CKKSInfos + LWEInfos;
+        N: CKKSCtBounds,
+        P: CKKSInfos + LWEInfos,
+        T: GGLWEInfos;
 
     /// Compresses `ct` to `[-1, 1]` and writes its factor to `norm`.
     ///
@@ -126,38 +139,38 @@ pub trait CKKSInverseDomainOps<BE: Backend> {
     ///
     /// An error when `ct` holds no more budget than `params` consumes, and the errors of the arithmetic, with `ct` and
     /// `norm` unchanged. The two final `ckks_copy` calls write `ct`, then `norm`.
-    fn ckks_interval_normalization<N, C, P, H>(
+    fn ckks_interval_normalization_assign<C, N, P, H>(
         &self,
-        norm: &mut N,
         ct: &mut C,
+        norm: &mut N,
         params: &IntervalNorm<P>,
         tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        N: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         C: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        N: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
         H: GetTensorKey<BE>;
 
-    /// Scratch bytes for [`Self::ckks_inverse_positive_domain`], [`Self::ckks_inverse_negative_domain`] and
-    /// [`Self::ckks_inverse_full_domain`].
-    fn ckks_inverse_domain_tmp_bytes<C, T, K, P>(&self, ct: &C, tsk: &T, conj_key: &K, coeff_prec: &P) -> usize
+    /// Scratch bytes for [`Self::ckks_inverse_positive_domain_assign`], [`Self::ckks_inverse_negative_domain_assign`] and
+    /// [`Self::ckks_inverse_full_domain_assign`].
+    fn ckks_inverse_domain_tmp_bytes<C, P, T, K>(&self, ct: &C, coeff_prec: &P, tsk: &T, keys: &K) -> usize
     where
         C: CKKSCtBounds,
+        P: CKKSInfos + LWEInfos,
         T: GGLWEInfos,
-        K: GGLWEInfos,
-        P: CKKSInfos + LWEInfos;
+        K: GGLWEInfos;
 
     /// `ct <- 1/ct` for `ct` in `[min, 2 - min]`. Alias of Goldschmidt division.
     ///
     /// # Errors
     ///
-    /// As [`CKKSInverseOps::ckks_goldschmidt_division`], with `ct` unchanged on `Err`.
-    fn ckks_inverse_positive_domain<C, H>(
+    /// As [`CKKSInverseOps::ckks_goldschmidt_division_assign`], with `ct` unchanged on `Err`.
+    fn ckks_inverse_positive_domain_assign<C, H>(
         &self,
-        ct: &mut C,
         iters: usize,
+        ct: &mut C,
         tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -169,11 +182,11 @@ pub trait CKKSInverseDomainOps<BE: Backend> {
     ///
     /// # Errors
     ///
-    /// As [`CKKSInverseOps::ckks_goldschmidt_division`], with `ct` unchanged on `Err`.
-    fn ckks_inverse_negative_domain<C, H>(
+    /// As [`CKKSInverseOps::ckks_goldschmidt_division_assign`], with `ct` unchanged on `Err`.
+    fn ckks_inverse_negative_domain_assign<C, H>(
         &self,
-        ct: &mut C,
         iters: usize,
+        ct: &mut C,
         tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -183,7 +196,7 @@ pub trait CKKSInverseDomainOps<BE: Backend> {
 
     /// `ct <- 1/ct` on a signed domain outside the composite gap: the magnitude is inverted, then the sign restored.
     ///
-    /// `conj_key` answers the conjugation, Galois element `-1`.
+    /// `keys` answers the conjugation, Galois element `-1`.
     ///
     /// # Metadata
     ///
@@ -193,13 +206,13 @@ pub trait CKKSInverseDomainOps<BE: Backend> {
     ///
     /// An error for `iters == 0` or when `ct` holds no more budget than the operation consumes, and the errors of the
     /// sign, the inversion and the products. Only the last product writes `ct`, so `ct` is unchanged on `Err`.
-    fn ckks_inverse_full_domain<C, F, P, H, K>(
+    fn ckks_inverse_full_domain_assign<C, F, P, H, K>(
         &self,
-        ct: &mut C,
         iters: usize,
+        ct: &mut C,
         composite: &SignComposite<F, P>,
         tsk: &H,
-        conj_key: &K,
+        keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -213,7 +226,7 @@ impl<BE: Backend> CKKSInverseOps<BE> for Module<BE>
 where
     Module<BE>: CKKSMulOps<BE> + CKKSAddOps<BE> + CKKSNegOps<BE> + CKKSPow2Ops<BE> + CKKSCopyOps<BE> + GLWEBytesOf<BE>,
 {
-    fn ckks_goldschmidt_division_tmp_bytes<C, T>(&self, ct: &C, tsk: &T) -> usize
+    fn ckks_goldschmidt_division_assign_tmp_bytes<C, T>(&self, ct: &C, tsk: &T) -> usize
     where
         C: CKKSCtBounds,
         T: GGLWEInfos,
@@ -228,12 +241,18 @@ where
                 .max(self.ckks_add_tmp_bytes(ct.size()))
     }
 
-    fn ckks_goldschmidt_division<C, H>(&self, ct: &mut C, iters: usize, tsk: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_goldschmidt_division_assign<C, H>(
+        &self,
+        iters: usize,
+        ct: &mut C,
+        tsk: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
     where
         C: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         H: GetTensorKey<BE>,
     {
-        ensure_goldschmidt_capacity("ckks_goldschmidt_division", &*ct, iters)?;
+        ensure_goldschmidt_capacity("ckks_goldschmidt_division_assign", &*ct, iters)?;
 
         // a := 2 - m and b := 1 - m, whose product converges to 1/m.
         scratch.scope(|scratch_local| {
@@ -258,7 +277,7 @@ where
         })
     }
 
-    fn ckks_rsqrt_tmp_bytes<Y, X, T>(&self, y: &Y, in_half: &X, tsk: &T) -> usize
+    fn ckks_rsqrt_assign_tmp_bytes<Y, X, T>(&self, y: &Y, in_half: &X, tsk: &T) -> usize
     where
         Y: CKKSCtBounds,
         X: CKKSCtBounds,
@@ -275,13 +294,20 @@ where
                 .max(self.ckks_add_tmp_bytes(y.size()))
     }
 
-    fn ckks_rsqrt<Y, X, H>(&self, y: &mut Y, in_half: &X, r: usize, tsk: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_rsqrt_assign<Y, X, H>(
+        &self,
+        r: usize,
+        y: &mut Y,
+        in_half: &X,
+        tsk: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
     where
         Y: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         X: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetTensorKey<BE>,
     {
-        ensure_rsqrt_capacity("ckks_rsqrt", &*y, r)?;
+        ensure_rsqrt_capacity("ckks_rsqrt_assign", &*y, r)?;
 
         // y <- 1.5 y - (x/2) y y^2, with 1.5 y = y + y/2.
         scratch.scope(|scratch_local| {
@@ -323,12 +349,18 @@ where
         + CKKSPow2Ops<BE>
         + GLWEBytesOf<BE>,
 {
-    fn ckks_interval_normalization_tmp_bytes<N, C, T, P>(&self, norm: &N, ct: &C, tsk: &T, params: &IntervalNorm<P>) -> usize
+    fn ckks_interval_normalization_assign_tmp_bytes<C, N, P, T>(
+        &self,
+        ct: &C,
+        norm: &N,
+        params: &IntervalNorm<P>,
+        tsk: &T,
+    ) -> usize
     where
-        N: CKKSCtBounds,
         C: CKKSCtBounds,
-        T: GGLWEInfos,
+        N: CKKSCtBounds,
         P: CKKSInfos + LWEInfos,
+        T: GGLWEInfos,
     {
         // The compressed copy, the factor and five terms, each with the layout of `ct`.
         7 * BE::scratch_aligned(self.glwe_bytes_of_from_infos(ct))
@@ -342,24 +374,24 @@ where
                 .max(self.ckks_copy_tmp_bytes(norm, ct))
     }
 
-    fn ckks_interval_normalization<N, C, P, H>(
+    fn ckks_interval_normalization_assign<C, N, P, H>(
         &self,
-        norm: &mut N,
         ct: &mut C,
+        norm: &mut N,
         params: &IntervalNorm<P>,
         tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        N: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         C: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        N: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
         H: GetTensorKey<BE>,
     {
         let required = params.consumed_bits(ct.log_delta());
         ensure!(
             ct.log_budget() > required,
-            "ckks_interval_normalization: log_budget {} <= {required} bits required",
+            "ckks_interval_normalization_assign: log_budget {} <= {required} bits required",
             ct.log_budget(),
         );
 
@@ -397,26 +429,26 @@ where
         })
     }
 
-    fn ckks_inverse_domain_tmp_bytes<C, T, K, P>(&self, ct: &C, tsk: &T, conj_key: &K, coeff_prec: &P) -> usize
+    fn ckks_inverse_domain_tmp_bytes<C, P, T, K>(&self, ct: &C, coeff_prec: &P, tsk: &T, keys: &K) -> usize
     where
         C: CKKSCtBounds,
+        P: CKKSInfos + LWEInfos,
         T: GGLWEInfos,
         K: GGLWEInfos,
-        P: CKKSInfos + LWEInfos,
     {
         // The sign and the magnitude, or the negated copy, each with the layout of `ct`.
         2 * BE::scratch_aligned(self.glwe_bytes_of_from_infos(ct))
             + self
-                .ckks_goldschmidt_division_tmp_bytes(ct, tsk)
-                .max(ckks_sign_tmp_bytes(self, ct, ct, tsk, conj_key, coeff_prec))
+                .ckks_goldschmidt_division_assign_tmp_bytes(ct, tsk)
+                .max(ckks_sign_tmp_bytes(self, ct, ct, coeff_prec, tsk, keys))
                 .max(self.ckks_mul_tmp_bytes(ct, ct, ct, tsk))
                 .max(self.ckks_copy_tmp_bytes(ct, ct))
     }
 
-    fn ckks_inverse_positive_domain<C, H>(
+    fn ckks_inverse_positive_domain_assign<C, H>(
         &self,
-        ct: &mut C,
         iters: usize,
+        ct: &mut C,
         tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -424,13 +456,13 @@ where
         C: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         H: GetTensorKey<BE>,
     {
-        self.ckks_goldschmidt_division(ct, iters, tsk, scratch)
+        self.ckks_goldschmidt_division_assign(iters, ct, tsk, scratch)
     }
 
-    fn ckks_inverse_negative_domain<C, H>(
+    fn ckks_inverse_negative_domain_assign<C, H>(
         &self,
-        ct: &mut C,
         iters: usize,
+        ct: &mut C,
         tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -438,25 +470,25 @@ where
         C: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         H: GetTensorKey<BE>,
     {
-        ensure_goldschmidt_capacity("ckks_inverse_negative_domain", &*ct, iters)?;
+        ensure_goldschmidt_capacity("ckks_inverse_negative_domain_assign", &*ct, iters)?;
         scratch.scope(|scratch_local| {
             let (mut m, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(&*ct);
             self.ckks_copy(&mut m, &*ct, &mut scratch_local)?;
             self.ckks_neg_assign(&mut m)?;
-            self.ckks_goldschmidt_division(&mut m, iters, tsk, &mut scratch_local)?;
+            self.ckks_goldschmidt_division_assign(iters, &mut m, tsk, &mut scratch_local)?;
             self.ckks_neg_assign(&mut m)?;
             self.ckks_copy(ct, &m, &mut scratch_local)?;
             Ok(())
         })
     }
 
-    fn ckks_inverse_full_domain<C, F, P, H, K>(
+    fn ckks_inverse_full_domain_assign<C, F, P, H, K>(
         &self,
-        ct: &mut C,
         iters: usize,
+        ct: &mut C,
         composite: &SignComposite<F, P>,
         tsk: &H,
-        conj_key: &K,
+        keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -467,10 +499,10 @@ where
     {
         let log_delta = ct.log_delta();
         let consumed = composite.consumed_bits(log_delta) + (iters + 3) * log_delta;
-        ensure!(iters > 0, "ckks_inverse_full_domain: iters must be > 0");
+        ensure!(iters > 0, "ckks_inverse_full_domain_assign: iters must be > 0");
         ensure!(
             ct.log_budget() > consumed,
-            "ckks_inverse_full_domain: log_budget {} <= {consumed} bits required for {iters} iterations at log_delta {log_delta}",
+            "ckks_inverse_full_domain_assign: log_budget {} <= {consumed} bits required for {iters} iterations at log_delta {log_delta}",
             ct.log_budget(),
         );
 
@@ -478,9 +510,9 @@ where
         scratch.scope(|scratch_local| {
             let (mut sign, scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(&*ct);
             let (mut m, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(&*ct);
-            ckks_sign_into(self, &mut sign, &*ct, composite, tsk, conj_key, false, &mut scratch_local)?;
+            ckks_sign_into(self, false, &mut sign, &*ct, composite, tsk, keys, &mut scratch_local)?;
             self.ckks_mul_into(&mut m, &*ct, &sign, tsk, &mut scratch_local)?;
-            self.ckks_goldschmidt_division(&mut m, iters, tsk, &mut scratch_local)?;
+            self.ckks_goldschmidt_division_assign(iters, &mut m, tsk, &mut scratch_local)?;
             self.ckks_mul_into(ct, &m, &sign, tsk, &mut scratch_local)?;
             Ok(())
         })
@@ -505,14 +537,14 @@ pub trait CKKSDivSqrtOps<BE: Backend> {
     ///
     /// # Errors
     ///
-    /// The errors of [`CKKSInverseOps::ckks_goldschmidt_division`] on a copy of `b` and of the product, which is the
+    /// The errors of [`CKKSInverseOps::ckks_goldschmidt_division_assign`] on a copy of `b` and of the product, which is the
     /// only write of `res`, so `res` is untouched on `Err`.
     fn ckks_div<R, A, B, H>(
         &self,
+        iters: usize,
         res: &mut R,
         a: &A,
         b: &B,
-        iters: usize,
         tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -538,14 +570,14 @@ pub trait CKKSDivSqrtOps<BE: Backend> {
     ///
     /// # Errors
     ///
-    /// The errors of [`CKKSInverseOps::ckks_rsqrt`] on a copy of `x` and of the product, which is the only write of
+    /// The errors of [`CKKSInverseOps::ckks_rsqrt_assign`] on a copy of `x` and of the product, which is the only write of
     /// `res`, so `res` is untouched on `Err`.
     fn ckks_sqrt<R, X, Y, H>(
         &self,
+        r: usize,
         res: &mut R,
         x: &X,
         in_half: &Y,
-        r: usize,
         tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -571,16 +603,16 @@ where
         BE::scratch_aligned(self.glwe_bytes_of_from_infos(b))
             + self
                 .ckks_copy_tmp_bytes(b, b)
-                .max(self.ckks_goldschmidt_division_tmp_bytes(b, tsk))
+                .max(self.ckks_goldschmidt_division_assign_tmp_bytes(b, tsk))
                 .max(self.ckks_mul_tmp_bytes(res, b, a, tsk))
     }
 
     fn ckks_div<R, A, B, H>(
         &self,
+        iters: usize,
         res: &mut R,
         a: &A,
         b: &B,
-        iters: usize,
         tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -593,7 +625,7 @@ where
         scratch.scope(|scratch_local| {
             let (mut inv, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(b);
             self.ckks_copy(&mut inv, b, &mut scratch_local)?;
-            self.ckks_goldschmidt_division(&mut inv, iters, tsk, &mut scratch_local)?;
+            self.ckks_goldschmidt_division_assign(iters, &mut inv, tsk, &mut scratch_local)?;
             self.ckks_mul_into(res, &inv, a, tsk, &mut scratch_local)?;
             Ok(())
         })
@@ -610,16 +642,16 @@ where
         BE::scratch_aligned(self.glwe_bytes_of_from_infos(x))
             + self
                 .ckks_copy_tmp_bytes(x, x)
-                .max(self.ckks_rsqrt_tmp_bytes(x, in_half, tsk))
+                .max(self.ckks_rsqrt_assign_tmp_bytes(x, in_half, tsk))
                 .max(self.ckks_mul_tmp_bytes(res, x, x, tsk))
     }
 
     fn ckks_sqrt<R, X, Y, H>(
         &self,
+        r: usize,
         res: &mut R,
         x: &X,
         in_half: &Y,
-        r: usize,
         tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -632,7 +664,7 @@ where
         scratch.scope(|scratch_local| {
             let (mut inv, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(x);
             self.ckks_copy(&mut inv, x, &mut scratch_local)?;
-            self.ckks_rsqrt(&mut inv, in_half, r, tsk, &mut scratch_local)?;
+            self.ckks_rsqrt_assign(r, &mut inv, in_half, tsk, &mut scratch_local)?;
             self.ckks_mul_into(res, &inv, x, tsk, &mut scratch_local)?;
             Ok(())
         })

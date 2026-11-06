@@ -2,11 +2,11 @@
 
 use rand_distr::num_traits::{Float, FromPrimitive};
 
-use crate::api::NegacyclicFFT;
+use crate::api::{ReimFFT, ReimIFFT};
 
 /// Checks forward root order, the separate real/imaginary halves, and the
 /// inverse's unnormalized scale against direct complex sums.
-pub fn test_negacyclic_fft<T: NegacyclicFFT<f64>>(table: &T) {
+pub fn test_reim_fft<T: ReimFFT<f64> + ReimIFFT<f64>>(table: &T) {
     let m = table.m();
     assert!(m.is_power_of_two());
     let input: Vec<f64> = (0..2 * m).map(|i| ((i * 17 + 3) % 29) as f64 / 16.0 - 0.75).collect();
@@ -14,9 +14,9 @@ pub fn test_negacyclic_fft<T: NegacyclicFFT<f64>>(table: &T) {
     for inverse in [false, true] {
         let mut have = input.clone();
         if inverse {
-            table.ifft(&mut have);
+            table.reim_ifft(&mut have);
         } else {
-            table.fft(&mut have);
+            table.reim_fft(&mut have);
         }
         for out in 0..m {
             let mut want_re = 0.0;
@@ -45,8 +45,8 @@ pub fn test_negacyclic_fft<T: NegacyclicFFT<f64>>(table: &T) {
         }
     }
     let mut roundtrip = input.clone();
-    table.fft(&mut roundtrip);
-    table.ifft(&mut roundtrip);
+    table.reim_fft(&mut roundtrip);
+    table.reim_ifft(&mut roundtrip);
     for (actual, original) in roundtrip.iter().zip(input) {
         assert!((actual - original * m as f64).abs() <= tolerance);
     }
@@ -55,11 +55,11 @@ pub fn test_negacyclic_fft<T: NegacyclicFFT<f64>>(table: &T) {
 /// Checks that two transforms of the same size return the same bits on fixed
 /// inputs, forward and inverse: zeros, an impulse, alternating signs, tiny and
 /// huge magnitudes and dense dyadic values.
-pub fn test_negacyclic_fft_bit_exact<F, A, B>(a: &A, b: &B)
+pub fn test_reim_fft_bit_exact<F, A, B>(a: &A, b: &B)
 where
     F: Float + FromPrimitive + bytemuck::Pod + std::fmt::Debug,
-    A: NegacyclicFFT<F>,
-    B: NegacyclicFFT<F>,
+    A: ReimFFT<F> + ReimIFFT<F>,
+    B: ReimFFT<F> + ReimIFFT<F>,
 {
     let m = a.m();
     assert_eq!(m, b.m(), "transform sizes differ");
@@ -95,11 +95,11 @@ where
         for inverse in [false, true] {
             let (mut have, mut want) = (input.clone(), input.clone());
             if inverse {
-                a.ifft(&mut have);
-                b.ifft(&mut want);
+                a.reim_ifft(&mut have);
+                b.reim_ifft(&mut want);
             } else {
-                a.fft(&mut have);
-                b.fft(&mut want);
+                a.reim_fft(&mut have);
+                b.reim_fft(&mut want);
             }
             for (i, (x, y)) in have.iter().zip(&want).enumerate() {
                 assert!(

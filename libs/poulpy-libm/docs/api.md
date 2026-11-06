@@ -112,7 +112,7 @@ Logarithms use one fixed-domain polynomial and do not perform automatic range re
 |---|---|---|---:|---:|
 | `pow` | `ckks_pow`, `PowPlan` | Positive prepared base interval; prepared exponent interval | `plan.consumed_bits(Db, De)` | `plan.depth()` |
 | `powi` | `ckks_powi(e, input)` | Public `u32` exponent | `M(e) * D` | `M(e)` |
-| `sqrt` | `ckks_sqrt(x, in_half, r)` | Positive and conditioned near `1` | `(2r + 1)D` | `2r + 1` |
+| `sqrt` | `ckks_sqrt(r, x, in_half)` | Positive and conditioned near `1` | `(2r + 1)D` | `2r + 1` |
 | `cbrt` | `ckks_cbrt`, `CbrtPlan` | Any finite prepared `[a, b]` | `P(D)` | `p` |
 | `hypot` | `ckks_hypot`, `HypotPlan` | `x_interval` and `y_interval` | `plan.consumed_bits(D)` | `plan.depth()` |
 
@@ -123,7 +123,7 @@ Negative integer exponents use a reciprocal explicitly; `ckks_powi` accepts only
 
 `ckks_sqrt` uses `x` as the initial inverse-square-root estimate.
 `in_half` must encode `x / 2` at the same scale and at least the same budget.
-Self-seeding converges only for `x ∈ (0, ∛3) ≈ (0, 1.442)`; larger inputs make the Newton iterate diverge, so condition them toward `1` first (public power-of-two scaling or normalization) or drive `ckks_rsqrt` directly with a hand-picked seed.
+Self-seeding converges only for `x ∈ (0, ∛3) ≈ (0, 1.442)`; larger inputs make the Newton iterate diverge, so condition them toward `1` first (public power-of-two scaling or normalization) or drive `ckks_rsqrt_assign` directly with a hand-picked seed.
 There is no runtime guard on this bound.
 
 ## Trigonometric
@@ -200,16 +200,16 @@ These operations have no direct `libm` equivalent but complete the public functi
 
 | Operation | Domain | Modulus | Depth |
 |---|---|---:|---:|
-| `ckks_goldschmidt_division` | `0 < x < 2` | `(r + 1)D` | `r + 1` |
-| `ckks_inverse_positive_domain` | Alias of Goldschmidt | `(r + 1)D` | `r + 1` |
-| `ckks_inverse_negative_domain` | `-2 < x < 0` | `(r + 1)D` | `r + 1` |
-| `ckks_inverse_full_domain` | `[-1, -tau] ∪ [tau, 1]` | `S(D) + (r + 3)D` | `s + r + 3` |
-| `ckks_rsqrt` | Positive and conditioned near `1` | `2rD` | `2r` |
-| `ckks_div(a, b)` | `0 < b < 2` | `(r + 2)D` | `r + 2` |
-| `ckks_interval_normalization` | Prepared `[-max, max]` | `2nD` | `2n` |
+| `ckks_goldschmidt_division_assign` | `0 < x < 2` | `(r + 1)D` | `r + 1` |
+| `ckks_inverse_positive_domain_assign` | Alias of Goldschmidt | `(r + 1)D` | `r + 1` |
+| `ckks_inverse_negative_domain_assign` | `-2 < x < 0` | `(r + 1)D` | `r + 1` |
+| `ckks_inverse_full_domain_assign` | `[-1, -tau] ∪ [tau, 1]` | `S(D) + (r + 3)D` | `s + r + 3` |
+| `ckks_rsqrt_assign` | Positive and conditioned near `1` | `2rD` | `2r` |
+| `ckks_div(r, a, b)` | `0 < b < 2` | `(r + 2)D` | `r + 2` |
+| `ckks_interval_normalization_assign` | Prepared `[-max, max]` | `2nD` | `2n` |
 
 Here `r` is the fixed iteration count, `tau` is the sign-composite gap, and `n` is `IntervalNorm::n`.
-`ckks_rsqrt` refines the estimate held in `y`; it converges to `1/sqrt(x)` only when the seed satisfies the Newton basin `0 < x·y² < 3`, and there is no runtime guard.
+`ckks_rsqrt_assign` refines the estimate held in `y`; it converges to `1/sqrt(x)` only when the seed satisfies the Newton basin `0 < x·y² < 3`, and there is no runtime guard.
 Interval normalization writes both the compressed value and its per-slot factor; it is not applied implicitly.
 
 ### Predicates and selection
@@ -240,12 +240,12 @@ Its cost is `exp().consumed_bits(D) + (reciprocal_iters() + 4)D`.
 
 The three packed operations rotate by `1, 2, 4, ...` slots.
 `ckks_sum_slots_galois_elements` lists the Galois elements of the rotation keys they look up, which the caller's key source must answer.
-`ckks_fmax_slots` and `ckks_fmin_slots` also look up the conjugation key, Galois element `-1`.
+`ckks_fmax_slots` and `ckks_fmin_slots` also look up the conjugation key, Galois element `-1`, in the same source.
 
 ## Approximation API
 
 `minimax`, `minimax_with`, `degree_for_precision`, and `precision_at_depth` build host polynomials.
 `PolynomialApproximation::from_polynomial` prepares a Poulpy BSGS polynomial and its interval map.
-`ckks_eval_approximation` evaluates that plan with cost `plan.consumed_bits(D)` and depth `plan.depth()`.
+`ckks_polynomial_approximation_eval` evaluates that plan with cost `plan.consumed_bits(D)` and depth `plan.depth()`.
 
 See the generated Rust documentation for complete generic bounds and argument types.

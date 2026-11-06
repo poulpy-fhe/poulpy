@@ -16,7 +16,8 @@ use poulpy_core::api::{
     GLWEToLWEKeyPreparedFactory,
 };
 use poulpy_core::layouts::{
-    GGLWEInfos, GLWESwitchingKey, GLWESwitchingKeyLayout, GLWESwitchingKeyPrepared, GetAutomorphismKey, ModuleCoreAlloc,
+    GGLWEInfos, GGLWEToGGSWKeyAlloc, GGSWAlloc, GLWEAutomorphismKeyAlloc, GLWESwitchingKey, GLWESwitchingKeyAlloc,
+    GLWESwitchingKeyLayout, GLWESwitchingKeyPrepared, GLWEToLWEKeyAlloc, GetAutomorphismKey, ModuleCoreAlloc,
 };
 use poulpy_core::{
     GetDistribution,
@@ -116,7 +117,13 @@ where
 impl<D: Data, BRA: BlindRotationAlgo, W: ZnxWord> BDDKey<D, BRA, W> {
     pub fn alloc_from_infos<M, A: BDDKeyInfos>(module: &M, infos: &A) -> Self
     where
-        M: ModuleCoreAlloc<OwnedBuf = D, ZnxWord = W> + poulpy_hal::api::ModuleN,
+        M: GGSWAlloc
+            + GLWEAutomorphismKeyAlloc
+            + GGLWEToGGSWKeyAlloc
+            + ModuleCoreAlloc<OwnedBuf = D, ZnxWord = W>
+            + GLWESwitchingKeyAlloc
+            + GLWEToLWEKeyAlloc
+            + poulpy_hal::api::ModuleN,
     {
         Self {
             cbt: CircuitBootstrappingKey::alloc_from_infos(module, &infos.cbt_infos()),
@@ -360,7 +367,7 @@ pub trait FheUintPrepareDebug<
 {
     /// Populates `res` by bootstrapping each bit of `bits` through `key`'s
     /// circuit-bootstrapping pipeline, storing the output GGSW in standard form.
-    fn fhe_uint_debug_prepare(
+    fn fhe_uint_prepare_debug(
         &self,
         res: &mut FheUintPreparedDebug<BE::OwnedBuf, T, BE::ZnxWord>,
         bits: &FheUint<BE::OwnedBuf, T, BE::ZnxWord>,

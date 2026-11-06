@@ -306,7 +306,7 @@ impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GLWECompressed<D, W> {
         let mut seed = [0u8; 32];
         reader.read_exact(&mut seed)?;
         let plaintext_meta = GLWEPlaintextMeta::read_from(reader)?;
-        crate::layouts::read_vec_znx_with_shape(&mut self.data, reader, None, 1)?;
+        crate::layouts::read_vec_znx_with_shape(&mut self.data, reader, None, 1, None)?;
         if let Some(meta) = plaintext_meta {
             meta.validate_degree(self.data.n())?;
         }
@@ -429,7 +429,7 @@ mod tests {
     use poulpy_hal::layouts::{HostBytesBackend, Module};
 
     use crate::layouts::{
-        ModuleCoreCompressedAlloc, TorusPrecision,
+        GLWECompressedAlloc, TorusPrecision,
         glwe::tests::{assert_accepts_larger_serialized_degree, assert_rejects_sparsity_exceeding_serialized_degree, layout},
     };
 

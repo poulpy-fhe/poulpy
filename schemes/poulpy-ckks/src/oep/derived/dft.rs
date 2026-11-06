@@ -1,34 +1,35 @@
 //! Format compositions over the selected CKKS DFT and arithmetic contracts.
-use crate::api::{CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSDFTOps, CKKSImagOps, CKKSRotateOps, CKKSSubOps, LtDiagonalMeta};
-use crate::layouts::{
-    CKKSModuleAlloc, DFTMatrix, DFTMatrixPrepared, Decode, Encode, Repack, ScratchArenaTakeCKKS, Split, Standard,
+use crate::api::{
+    CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSDFTMatrixPreparedFactory, CKKSDFTOps, CKKSImagOps, CKKSRotateOps, CKKSSubOps,
+    LtDiagonalMeta,
 };
+use crate::layouts::{DFTMatrix, DFTMatrixPrepared, Decode, Encode, Repack, ScratchArenaTakeCKKSCiphertext, Split, Standard};
 use crate::oep::CKKSDFTImpl;
 use crate::{CKKSCtBounds, CKKSResult as Result, SetCKKSInfos, SlotsKind};
-use poulpy_core::DiagonalProd;
+use poulpy_core::GLWEDiagonalProd;
 use poulpy_core::layouts::{
     GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, IntPolyInfos, LinearTransformation,
 };
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 /// A prepared matrix of `dft`'s layout, allocated then prepared into from `dft`.
-pub(crate) fn ckks_prepare_dft_matrix_alloc_derived<BE, Dir, Fmt, P>(
+pub(crate) fn ckks_dft_matrix_prepare_alloc_derived<BE, Dir, Fmt, P>(
     module: &Module<BE>,
     dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<DFTMatrixPrepared<BE, Dir, Fmt>>
 where
     BE: CKKSDFTImpl,
-    P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + DiagonalProd<BE>,
+    P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + GLWEDiagonalProd<BE>,
 {
     let mut res = module.ckks_dft_matrix_prepared_alloc_from_infos(dft);
-    BE::ckks_prepare_dft_matrix(module, &mut res, dft, scratch)?;
+    BE::ckks_dft_matrix_prepare(module, &mut res, dft, scratch)?;
     Ok(res)
 }
 
 /// Homomorphic encoding (CoeffsToSlots), `Standard` format: evaluates the Encode
 /// (IDFT) matrix in place, retaining selected raw DFT dispatch.
-pub(crate) fn ckks_coeffs_to_slots_assign_derived<BE, P, Dst, H>(
+pub(crate) fn ckks_encoding_buffer_coeffs_to_slots_assign_derived<BE, P, Dst, H>(
     module: &Module<BE>,
     ct: &mut Dst,
     dft: &DFTMatrix<BE, Encode, Standard, LinearTransformation<P>>,
@@ -37,17 +38,17 @@ pub(crate) fn ckks_coeffs_to_slots_assign_derived<BE, P, Dst, H>(
 ) -> Result<()>
 where
     BE: Backend,
-    P: DiagonalProd<BE> + LtDiagonalMeta,
+    P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
     Module<BE>: crate::api::CKKSDFTOps<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
 {
-    module.ckks_dft_evaluate_assign(ct, dft, keys, scratch)
+    module.ckks_dft_matrix_eval_assign(ct, dft, keys, scratch)
 }
 
 /// Homomorphic decoding (SlotsToCoeffs), `Standard` format: evaluates the Decode
 /// (DFT) matrix in place, retaining selected raw DFT dispatch.
-pub(crate) fn ckks_slots_to_coeffs_assign_derived<BE, P, Dst, H>(
+pub(crate) fn ckks_encoding_buffer_slots_to_coeffs_assign_derived<BE, P, Dst, H>(
     module: &Module<BE>,
     ct: &mut Dst,
     dft: &DFTMatrix<BE, Decode, Standard, LinearTransformation<P>>,
@@ -56,12 +57,12 @@ pub(crate) fn ckks_slots_to_coeffs_assign_derived<BE, P, Dst, H>(
 ) -> Result<()>
 where
     BE: Backend,
-    P: DiagonalProd<BE> + LtDiagonalMeta,
+    P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
     Module<BE>: crate::api::CKKSDFTOps<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
 {
-    module.ckks_dft_evaluate_assign(ct, dft, keys, scratch)
+    module.ckks_dft_matrix_eval_assign(ct, dft, keys, scratch)
 }
 
 /// `CoeffsToSlots` with the real and imaginary parts returned in two separate
@@ -85,21 +86,16 @@ pub(crate) fn ckks_coeffs_to_slots_split_derived<BE, P, Dst, Src, H>(
 ) -> Result<()>
 where
     BE: Backend,
-    P: DiagonalProd<BE> + LtDiagonalMeta,
-    Module<BE>: crate::api::CKKSDFTOps<BE>
-        + CKKSModuleAlloc<BE>
-        + CKKSCopyOps<BE>
-        + CKKSConjugateOps<BE>
-        + CKKSAddOps<BE>
-        + CKKSSubOps<BE>
-        + CKKSImagOps<BE>,
+    P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
+    Module<BE>:
+        crate::api::CKKSDFTOps<BE> + CKKSCopyOps<BE> + CKKSConjugateOps<BE> + CKKSAddOps<BE> + CKKSSubOps<BE> + CKKSImagOps<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
 {
     // ct_real := z = Encode(ct_in).
     module.ckks_copy(ct_real, ct_in, scratch)?;
-    module.ckks_dft_evaluate_assign(ct_real, dft, keys, scratch)?;
+    module.ckks_dft_matrix_eval_assign(ct_real, dft, keys, scratch)?;
 
     // ct_imag := conj(z).
     module.ckks_conjugate_into(ct_imag, ct_real, keys, scratch)?;
@@ -133,7 +129,7 @@ pub(crate) fn ckks_slots_to_coeffs_split_derived<BE, P, Dst, Src, H>(
 ) -> Result<()>
 where
     BE: Backend,
-    P: DiagonalProd<BE> + LtDiagonalMeta,
+    P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
     Module<BE>: crate::api::CKKSDFTOps<BE> + CKKSAddOps<BE> + CKKSImagOps<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
@@ -142,7 +138,7 @@ where
     // op_out := ct_real + i·ct_imag, then Decode.
     module.ckks_mul_i_into(op_out, ct_imag, scratch)?;
     module.ckks_add_assign(op_out, ct_real, scratch)?;
-    module.ckks_dft_evaluate_assign(op_out, dft, keys, scratch)
+    module.ckks_dft_matrix_eval_assign(op_out, dft, keys, scratch)
 }
 
 /// Sparse `CoeffsToSlots` with the imaginary part repacked into the right half of
@@ -163,9 +159,8 @@ pub(crate) fn ckks_coeffs_to_slots_repack_derived<BE, P, Dst, Src, H>(
 ) -> Result<()>
 where
     BE: Backend,
-    P: DiagonalProd<BE> + LtDiagonalMeta,
+    P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
     Module<BE>: crate::api::CKKSDFTOps<BE>
-        + CKKSModuleAlloc<BE>
         + CKKSCopyOps<BE>
         + CKKSConjugateOps<BE>
         + CKKSAddOps<BE>
@@ -180,7 +175,7 @@ where
 
     // ct_out := z = Encode(ct_in).
     module.ckks_copy(ct_out, ct_in, scratch)?;
-    module.ckks_dft_evaluate_assign(ct_out, dft, keys, scratch)?;
+    module.ckks_dft_matrix_eval_assign(ct_out, dft, keys, scratch)?;
 
     // conj := conj(z); imag := −i·(z − conj) = 2·Im(z); ct_out := z + conj = 2·Re(z).
     scratch.scope(|scratch_local| -> Result<()> {
@@ -221,14 +216,14 @@ pub(crate) fn ckks_slots_to_coeffs_repack_derived<BE, P, Dst, Src, H>(
 ) -> Result<()>
 where
     BE: Backend,
-    P: DiagonalProd<BE> + LtDiagonalMeta,
+    P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
     Module<BE>: crate::api::CKKSDFTOps<BE> + CKKSCopyOps<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
 {
     module.ckks_copy(op_out, ct_in, scratch)?;
-    module.ckks_dft_evaluate_assign(op_out, dft, keys, scratch)?;
+    module.ckks_dft_matrix_eval_assign(op_out, dft, keys, scratch)?;
 
     // The repack-decode halves the live slot count.
     op_out.set_log_sparsity(ct_in.log_sparsity() + 1);

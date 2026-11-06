@@ -6,11 +6,15 @@ use poulpy_core::layouts::{
     SetBSGSMeta,
 };
 use poulpy_core::oep::{ConstTerm, GLWEMulConstImpl};
-use poulpy_core::{BSGSOps, GLWENormalize, GLWEPolynomialEvaluation, GLWEZero, glwe_prepare_left, glwe_prepare_left_tmp_bytes};
+use poulpy_core::{
+    GLWEBSGSOps, GLWENormalize, GLWEPolynomialEvaluation, GLWEZero, glwe_left_operand_prepare,
+    glwe_left_operand_prepare_tmp_bytes,
+};
 use poulpy_hal::{
     api::{
-        Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxIdftApply,
-        VecZnxIdftApplyTmpBytes, VecZnxRsh, VecZnxRshTmpBytes,
+        CnvOps, ModuleN, ScratchArenaTakeCnvPVecL, ScratchArenaTakeCnvPVecR, ScratchArenaTakeVecZnx, ScratchArenaTakeVecZnxBig,
+        ScratchArenaTakeVecZnxDft, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxIdftApply, VecZnxIdftApplyTmpBytes,
+        VecZnxRsh, VecZnxRshTmpBytes,
     },
     layouts::{
         Backend, CnvPVecLToBackendRef, CnvPVecRToBackendRef, Data, Module, PrepareHint, Ring, ScratchArena,
@@ -26,9 +30,11 @@ use crate::{
     SetCKKSInfos,
     api::{
         BSGSPolynomialInfos, BabyStep as BabyStepInfos, Basis, CKKSAddOps, CKKSCopyOps, CKKSImagOps, CKKSMulAddOps, CKKSMulOps,
-        CKKSSubOps, PowerBasisHelper,
+        CKKSRightOperandPreparedFactory, CKKSSubOps, PowerBasisHelper,
     },
-    layouts::{CKKSCiphertext, CKKSMaskedConstants, CKKSModuleAlloc, CKKSPreparedRight, ScratchArenaTakeCKKS},
+    layouts::{
+        CKKSCiphertext, CKKSCiphertextAlloc, CKKSMaskedConstants, CKKSRightOperandPrepared, ScratchArenaTakeCKKSCiphertext,
+    },
     polynomial::ComplexBSGSPolynomial,
 };
 
@@ -40,7 +46,7 @@ pub(crate) fn eval_shaped_baby_linear_combination_tmp_bytes<BE, M, C>(module: &M
 where
     BE: Backend,
     M: ModuleN
-        + Convolution<BE>
+        + CnvOps<BE>
         + GLWENormalize<BE>
         + poulpy_core::GLWEBytesOf<BE>
         + VecZnxRshTmpBytes
@@ -61,23 +67,23 @@ where
     let wide_size = wide.size();
     let g_size = pt_size + 1;
     let acc_size = wide_size + g_size;
-    let term = BE::bytes_of_cnv_pvec_left(n, cols, ct.size(), PrepareHint::OneShot)
-        + BE::bytes_of_cnv_pvec_right(n, 1, g_size, PrepareHint::OneShot)
-        + glwe_prepare_left_tmp_bytes(module, ct.size(), ct)
+    let term = BE::cnv_pvec_left_bytes_of(n, cols, ct.size(), PrepareHint::OneShot)
+        + BE::cnv_pvec_right_bytes_of(n, 1, g_size, PrepareHint::OneShot)
+        + glwe_left_operand_prepare_tmp_bytes(module, ct.size(), ct)
             .max(
-                BE::bytes_of_vec_znx(n, 1, g_size)
+                BE::vec_znx_bytes_of(n, 1, g_size)
                     + module
                         .vec_znx_rsh_tmp_bytes(g_size)
-                        .max(module.cnv_prepare_right_tmp_bytes(g_size, g_size)),
+                        .max(module.cnv_pvec_right_prepare_tmp_bytes(g_size, g_size)),
             )
             .max(module.cnv_apply_dft_tmp_bytes(0, acc_size, ct.size(), g_size))
             .max(module.cnv_apply_dft_add_tmp_bytes(0, acc_size, ct.size(), g_size));
-    let normalize = BE::bytes_of_vec_znx_big(n, 1, acc_size)
+    let normalize = BE::vec_znx_big_bytes_of(n, 1, acc_size)
         + module
             .vec_znx_idft_apply_tmp_bytes()
             .max(module.vec_znx_big_normalize_tmp_bytes());
-    let combination = BE::bytes_of_vec_znx_dft(n, cols, acc_size) + term.max(normalize);
-    BE::bytes_of_vec_znx(n, cols, wide_size) + combination.max(module.ckks_round_tmp_bytes(ct, &wide))
+    let combination = BE::vec_znx_dft_bytes_of(n, cols, acc_size) + term.max(normalize);
+    BE::vec_znx_bytes_of(n, cols, wide_size) + combination.max(module.ckks_round_tmp_bytes(ct, &wide))
 }
 
 struct EvaluatedBabyStep<D: Data, W: ZnxWord, R: Ring> {
@@ -114,16 +120,17 @@ where
 /// combinations.
 struct CKKSBSGSOps;
 
-impl<BE: Backend, V, P, A, R> BSGSOps<BE, V, P, A, R> for CKKSBSGSOps
+impl<BE: Backend, V, P, A, R> GLWEBSGSOps<BE, V, P, A, R> for CKKSBSGSOps
 where
     BE: GLWEMulConstImpl,
     Module<BE>: CKKSAddOps<BE>
-        + CKKSModuleAlloc<BE>
+        + CKKSCiphertextAlloc<BE>
         + CKKSMulOps<BE>
+        + CKKSRightOperandPreparedFactory<BE>
         + CKKSMulAddOps<BE>
         + CKKSCopyOps<BE>
         + GLWEZero<BE>
-        + Convolution<BE>
+        + CnvOps<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxRsh<BE>
         + VecZnxRshTmpBytes
@@ -135,7 +142,7 @@ where
     A: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta,
     R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
 {
-    type Prepared = CKKSPreparedRight<BE>;
+    type Prepared = CKKSRightOperandPrepared<BE>;
 
     fn init_accumulator(
         &self,
@@ -294,7 +301,7 @@ where
     fn prepare_right(&self, module: &Module<BE>, a: &A, scratch: &mut ScratchArena<'_, BE>) -> anyhow::Result<Self::Prepared> {
         // `X^{gsp}` multiplies every pair of its giant-step level.
         module
-            .ckks_prepare_right(a, PrepareHint::Reuse, scratch)
+            .ckks_right_operand_prepare_alloc(a, PrepareHint::Reuse, scratch)
             .map_err(::anyhow::Error::from)
     }
 
@@ -339,8 +346,7 @@ fn shaped_baby_linear_combination<BE, V, A, P>(
 ) -> anyhow::Result<bool>
 where
     BE: Backend,
-    Module<BE>:
-        Convolution<BE> + GLWENormalize<BE> + VecZnxRsh<BE> + VecZnxIdftApply<BE> + VecZnxBigNormalize<BE> + CKKSRoundOps<BE>,
+    Module<BE>: CnvOps<BE> + GLWENormalize<BE> + VecZnxRsh<BE> + VecZnxIdftApply<BE> + VecZnxBigNormalize<BE> + CKKSRoundOps<BE>,
     V: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     A: GLWEToBackendRef<BE> + CKKSCtBounds,
     P: CKKSMaskedConstants<BE>,
@@ -457,13 +463,13 @@ where
                     .borrow()
                     .take_cnv_pvec_left_scratch(n, cols, a_size, PrepareHint::OneShot);
             let (mut right, mut scratch_term) = scratch_term.take_cnv_pvec_right_scratch(pt_n, 1, g_size, PrepareHint::OneShot);
-            glwe_prepare_left(module, &mut left, t, t.k().as_usize(), &mut scratch_term);
+            glwe_left_operand_prepare(module, &mut left, t, t.k().as_usize(), &mut scratch_term);
             if r == 0 {
-                module.cnv_prepare_right(&mut right, &pt_data, &mut scratch_term);
+                module.cnv_pvec_right_prepare(&mut right, &pt_data, &mut scratch_term);
             } else {
                 let (mut g, mut scratch_g) = scratch_term.borrow().take_vec_znx_scratch(pt_n, 1, g_size);
                 module.vec_znx_rsh(kb, r, &mut g.to_backend_mut(), 0, &pt_data, 0, &mut scratch_g.borrow());
-                module.cnv_prepare_right(&mut right, &g.to_backend_ref(), &mut scratch_g);
+                module.cnv_pvec_right_prepare(&mut right, &g.to_backend_ref(), &mut scratch_g);
             }
             let (a, b) = (left.to_backend_ref(), right.to_backend_ref());
             for col in 0..cols {
@@ -622,10 +628,11 @@ pub trait CKKSPolynomialEvaluationReference<BE: Backend> {
         Self: GLWEZero<BE>
             + CKKSAddOps<BE>
             + CKKSMulOps<BE>
+            + CKKSRightOperandPreparedFactory<BE>
             + CKKSMulAddOps<BE>
-            + CKKSModuleAlloc<BE>
+            + CKKSCiphertextAlloc<BE>
             + CKKSCopyOps<BE>
-            + Convolution<BE>
+            + CnvOps<BE>
             + VecZnxBigNormalize<BE>
             + VecZnxRsh<BE>
             + VecZnxRshTmpBytes
@@ -653,10 +660,11 @@ pub trait CKKSPolynomialEvaluationReference<BE: Backend> {
             + CKKSAddOps<BE>
             + CKKSImagOps<BE>
             + CKKSMulOps<BE>
+            + CKKSRightOperandPreparedFactory<BE>
             + CKKSMulAddOps<BE>
-            + CKKSModuleAlloc<BE>
+            + CKKSCiphertextAlloc<BE>
             + CKKSCopyOps<BE>
-            + Convolution<BE>
+            + CnvOps<BE>
             + VecZnxBigNormalize<BE>
             + VecZnxRsh<BE>
             + VecZnxRshTmpBytes
@@ -689,10 +697,11 @@ where
             + GLWEPolynomialEvaluation<BE>
             + CKKSAddOps<BE>
             + CKKSMulOps<BE>
+            + CKKSRightOperandPreparedFactory<BE>
             + CKKSMulAddOps<BE>
-            + CKKSModuleAlloc<BE>
+            + CKKSCiphertextAlloc<BE>
             + CKKSCopyOps<BE>
-            + Convolution<BE>
+            + CnvOps<BE>
             + VecZnxBigNormalize<BE>
             + VecZnxRsh<BE>
             + VecZnxRshTmpBytes
@@ -767,10 +776,11 @@ where
             + CKKSAddOps<BE>
             + CKKSImagOps<BE>
             + CKKSMulOps<BE>
+            + CKKSRightOperandPreparedFactory<BE>
             + CKKSMulAddOps<BE>
-            + CKKSModuleAlloc<BE>
+            + CKKSCiphertextAlloc<BE>
             + CKKSCopyOps<BE>
-            + Convolution<BE>
+            + CnvOps<BE>
             + VecZnxBigNormalize<BE>
             + VecZnxRsh<BE>
             + VecZnxRshTmpBytes

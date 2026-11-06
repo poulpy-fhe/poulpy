@@ -15,9 +15,10 @@ use crate::{
 };
 use itertools::Itertools;
 use poulpy_core::{
-    Distribution, GGLWEToGGSWKeyEncryptSk, GGSWExpandRows, GLWEAutomorphismKeyEncryptSk, GLWEBytesOf, GLWECopy, GLWEPacking,
-    GLWERotate, GLWETrace, GetDistribution, ScratchArenaTakeCore,
+    Distribution, GGLWEToGGSWKeyEncryptSk, GGSWExpandRows, GLWEAutomorphismKeyEncryptSk, GLWEBytesOf, GLWECopy, GLWEPack,
+    GLWERotate, GLWETrace, GetDistribution, ScratchArenaTakeGLWE, ScratchArenaTakeGLWESecretPrepared,
     api::{GGLWEToGGSWKeyPreparedFactory, GLWEAutomorphismKeyPreparedFactory, GLWESecretPreparedFactory},
+    layouts::GLWEAlloc,
     layouts::{
         GGLWEInfos, GGLWELayout, GGLWEToGGSWKeyLayout, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut,
         GLWEAutomorphismKeyLayout, GLWEInfos, GLWELayout, GLWESecretToBackendRef, GLWEToBackendMut, GLWEToBackendRef,
@@ -27,43 +28,11 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::{ModuleLogN, ModuleN},
-    layouts::{Backend, ScratchArena},
+    layouts::{Backend, Module, ScratchArena},
     source::Source,
 };
 use std::collections::HashMap;
-pub fn circuit_bootstrapping_execute_tmp_bytes_reference<R, A, M, BRA, BE>(
-    module: &M,
-    block_size: usize,
-    extension_factor: usize,
-    res_infos: &R,
-    cbt_infos: &A,
-) -> usize
-where
-    R: GGSWInfos,
-    A: CircuitBootstrappingKeyInfos,
-    BRA: BlindRotationAlgo,
-    BE: Backend<ZnxWord = i64>,
-    M: GLWEBytesOf<BE>
-        + BlindRotationExecute<BRA, BE>
-        + GLWETrace<BE>
-        + GLWEPacking<BE>
-        + GGSWExpandRows<BE>
-        + GLWERotate<BE>
-        + GLWECopy<BE>,
-{
-    circuit_bootstrapping_prepared_tmp_bytes(
-        module,
-        res_infos,
-        CircuitBootstrappingExecutionConfig {
-            output: CircuitBootstrappingOutput::Constant,
-            log_domain: 0,
-            log_gap_in: None,
-            extension_factor,
-        },
-        block_size,
-        cbt_infos,
-    )
-}
+
 pub fn circuit_bootstrapping_execute_to_exponent_tmp_bytes_reference<R, A, M, BRA, BE>(
     module: &M,
     log_gap_out: usize,
@@ -81,7 +50,7 @@ where
     M: GLWEBytesOf<BE>
         + BlindRotationExecute<BRA, BE>
         + GLWETrace<BE>
-        + GLWEPacking<BE>
+        + GLWEPack<BE>
         + GGSWExpandRows<BE>
         + GLWERotate<BE>
         + GLWECopy<BE>,
@@ -246,7 +215,7 @@ where
     M: GLWEBytesOf<BE>
         + BlindRotationExecute<BRA, BE>
         + GLWETrace<BE>
-        + GLWEPacking<BE>
+        + GLWEPack<BE>
         + GGSWExpandRows<BE>
         + GLWERotate<BE>
         + GLWECopy<BE>,
@@ -313,7 +282,7 @@ where
         }
     };
     let online = atk_bytes + blind_phase.max(row_phase).max(rotate);
-    online.max(module.ggsw_expand_rows_tmp_bytes(res_infos, &tsk_infos))
+    online.max(module.ggsw_expand_rows_assign_tmp_bytes(res_infos, &tsk_infos))
 }
 
 fn prepare_circuit_bootstrapping_plan<R, M, BRA, BE>(
@@ -328,7 +297,7 @@ where
     BRA: BlindRotationAlgo,
     BE: Backend<ZnxWord = i64>,
     R: GGSWInfos,
-    M: ModuleN + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64> + LookupTableFactory<BE::OwnedBuf, i64>,
+    M: GLWEAlloc + ModuleN + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64> + LookupTableFactory<BE::OwnedBuf, i64>,
 {
     assert!(
         extension_factor.is_power_of_two(),
@@ -455,7 +424,7 @@ fn circuit_bootstrap_prepared<R, L, M, BRA, BE>(
         + GLWEBytesOf<BE>
         + BlindRotationExecute<BRA, BE>
         + GLWETrace<BE>
-        + GLWEPacking<BE>
+        + GLWEPack<BE>
         + GGSWExpandRows<BE>
         + GLWERotate<BE>
         + GLWECopy<BE>,
@@ -532,7 +501,7 @@ fn circuit_bootstrap_prepared<R, L, M, BRA, BE>(
     }
 
     // Expands GGLWE to GGSW using GGLWE(s^2)
-    module.ggsw_expand_row(res, &key.tsk.to_backend_ref(), scratch);
+    module.ggsw_expand_rows_assign(res, &key.tsk.to_backend_ref(), scratch);
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -550,7 +519,7 @@ fn post_process<R, A, M, H, BE>(
     R: GLWEToBackendMut<BE> + GLWEInfos,
     A: GLWEToBackendRef<BE> + GLWEInfos,
     H: GetAutomorphismKey<BE>,
-    M: ModuleLogN + GLWETrace<BE> + GLWEPacking<BE> + GLWERotate<BE> + GLWECopy<BE>,
+    M: ModuleLogN + GLWETrace<BE> + GLWEPack<BE> + GLWERotate<BE> + GLWECopy<BE>,
 {
     if log_gap_in != log_gap_out {
         let steps = 1usize
@@ -612,7 +581,7 @@ pub fn circuit_bootstrapping_prepare_to_constant_reference<R: GGSWInfos, M, BRA,
 where
     BRA: BlindRotationAlgo,
     BE: Backend<ZnxWord = i64>,
-    M: ModuleN + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64> + LookupTableFactory<BE::OwnedBuf, i64>,
+    M: GLWEAlloc + ModuleN + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64> + LookupTableFactory<BE::OwnedBuf, i64>,
 {
     prepare_circuit_bootstrapping_plan(
         module,
@@ -634,7 +603,7 @@ pub fn circuit_bootstrapping_prepare_to_exponent_reference<R: GGSWInfos, M, BRA,
 where
     BRA: BlindRotationAlgo,
     BE: Backend<ZnxWord = i64>,
-    M: ModuleN + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64> + LookupTableFactory<BE::OwnedBuf, i64>,
+    M: GLWEAlloc + ModuleN + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64> + LookupTableFactory<BE::OwnedBuf, i64>,
 {
     prepare_circuit_bootstrapping_plan(
         module,
@@ -656,7 +625,7 @@ where
     M: GLWEBytesOf<BE>
         + BlindRotationExecute<BRA, BE>
         + GLWETrace<BE>
-        + GLWEPacking<BE>
+        + GLWEPack<BE>
         + GGSWExpandRows<BE>
         + GLWERotate<BE>
         + GLWECopy<BE>,
@@ -692,7 +661,7 @@ pub fn circuit_bootstrapping_execute_prepared_reference<R, L, M, BRA, BE>(
         + GLWEBytesOf<BE>
         + BlindRotationExecute<BRA, BE>
         + GLWETrace<BE>
-        + GLWEPacking<BE>
+        + GLWEPack<BE>
         + GGSWExpandRows<BE>
         + GLWERotate<BE>
         + GLWECopy<BE>,
@@ -706,6 +675,249 @@ pub fn circuit_bootstrapping_execute_prepared_reference<R, L, M, BRA, BE>(
     let needed = circuit_bootstrapping_execute_prepared_tmp_bytes_reference::<_, _, BRA, BE>(module, &plan.layout(), key);
     assert!(scratch.available() >= needed, "insufficient circuit-bootstrapping scratch");
     circuit_bootstrap_prepared(module, res, lwe, key, plan, scratch);
+}
+
+/// Reference bodies of the [`CircuitBootstrappingExecuteImpl`](crate::oep::CircuitBootstrappingExecuteImpl) methods;
+/// [`impl_circuit_bootstrapping_execute_reference_full!`](crate::impl_circuit_bootstrapping_execute_reference_full)
+/// forwards the required ones to them.
+pub trait CircuitBootstrappingExecuteReference<BRA: BlindRotationAlgo, BE: Backend> {
+    fn circuit_bootstrapping_execute_to_exponent_tmp_bytes_reference<R, A>(
+        &self,
+        log_gap_out: usize,
+        log_domain: usize,
+        block_size: usize,
+        extension_factor: usize,
+        res_infos: &R,
+        cbt_infos: &A,
+    ) -> usize
+    where
+        R: GGSWInfos,
+        A: CircuitBootstrappingKeyInfos;
+
+    fn circuit_bootstrapping_prepare_to_constant_reference<R: GGSWInfos>(
+        &self,
+        log_domain: usize,
+        extension_factor: usize,
+        res_infos: &R,
+        key: &CircuitBootstrappingKeyPrepared<BE::OwnedBuf, BRA, BE>,
+    ) -> CircuitBootstrappingPlan<BE::OwnedBuf>;
+
+    fn circuit_bootstrapping_prepare_to_exponent_reference<R: GGSWInfos>(
+        &self,
+        log_gap_out: usize,
+        log_domain: usize,
+        extension_factor: usize,
+        res_infos: &R,
+        key: &CircuitBootstrappingKeyPrepared<BE::OwnedBuf, BRA, BE>,
+    ) -> CircuitBootstrappingPlan<BE::OwnedBuf>;
+
+    fn circuit_bootstrapping_execute_prepared_tmp_bytes_reference<A: CircuitBootstrappingKeyInfos>(
+        &self,
+        plan: &CircuitBootstrappingPlanLayout,
+        key: &A,
+    ) -> usize;
+
+    fn circuit_bootstrapping_execute_prepared_reference<R, L>(
+        &self,
+        res: &mut R,
+        lwe: &L,
+        plan: &CircuitBootstrappingPlan<BE::OwnedBuf>,
+        key: &CircuitBootstrappingKeyPrepared<BE::OwnedBuf, BRA, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GGSWToBackendMut<BE> + GGSWAtViewRef<BE> + GGSWAtViewMut<BE> + GGSWInfos,
+        L: LWEToBackendRef<BE> + LWEInfos;
+}
+
+impl<BRA: BlindRotationAlgo, BE: Backend<ZnxWord = i64>> CircuitBootstrappingExecuteReference<BRA, BE> for Module<BE>
+where
+    Module<BE>: ModuleLogN
+        + ModuleN
+        + GLWEAlloc
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>
+        + LookupTableFactory<BE::OwnedBuf, i64>
+        + GLWEBytesOf<BE>
+        + BlindRotationExecute<BRA, BE>
+        + GLWETrace<BE>
+        + GLWEPack<BE>
+        + GGSWExpandRows<BE>
+        + GLWERotate<BE>
+        + GLWECopy<BE>,
+{
+    fn circuit_bootstrapping_execute_to_exponent_tmp_bytes_reference<R, A>(
+        &self,
+        log_gap_out: usize,
+        log_domain: usize,
+        block_size: usize,
+        extension_factor: usize,
+        res_infos: &R,
+        cbt_infos: &A,
+    ) -> usize
+    where
+        R: GGSWInfos,
+        A: CircuitBootstrappingKeyInfos,
+    {
+        circuit_bootstrapping_execute_to_exponent_tmp_bytes_reference::<R, A, Self, BRA, BE>(
+            self,
+            log_gap_out,
+            log_domain,
+            block_size,
+            extension_factor,
+            res_infos,
+            cbt_infos,
+        )
+    }
+
+    fn circuit_bootstrapping_prepare_to_constant_reference<R: GGSWInfos>(
+        &self,
+        log_domain: usize,
+        extension_factor: usize,
+        res_infos: &R,
+        key: &CircuitBootstrappingKeyPrepared<BE::OwnedBuf, BRA, BE>,
+    ) -> CircuitBootstrappingPlan<BE::OwnedBuf> {
+        circuit_bootstrapping_prepare_to_constant_reference::<R, Self, BRA, BE>(
+            self,
+            log_domain,
+            extension_factor,
+            res_infos,
+            key,
+        )
+    }
+
+    fn circuit_bootstrapping_prepare_to_exponent_reference<R: GGSWInfos>(
+        &self,
+        log_gap_out: usize,
+        log_domain: usize,
+        extension_factor: usize,
+        res_infos: &R,
+        key: &CircuitBootstrappingKeyPrepared<BE::OwnedBuf, BRA, BE>,
+    ) -> CircuitBootstrappingPlan<BE::OwnedBuf> {
+        circuit_bootstrapping_prepare_to_exponent_reference::<R, Self, BRA, BE>(
+            self,
+            log_gap_out,
+            log_domain,
+            extension_factor,
+            res_infos,
+            key,
+        )
+    }
+
+    fn circuit_bootstrapping_execute_prepared_tmp_bytes_reference<A: CircuitBootstrappingKeyInfos>(
+        &self,
+        plan: &CircuitBootstrappingPlanLayout,
+        key: &A,
+    ) -> usize {
+        circuit_bootstrapping_execute_prepared_tmp_bytes_reference::<A, Self, BRA, BE>(self, plan, key)
+    }
+
+    fn circuit_bootstrapping_execute_prepared_reference<R, L>(
+        &self,
+        res: &mut R,
+        lwe: &L,
+        plan: &CircuitBootstrappingPlan<BE::OwnedBuf>,
+        key: &CircuitBootstrappingKeyPrepared<BE::OwnedBuf, BRA, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GGSWToBackendMut<BE> + GGSWAtViewRef<BE> + GGSWAtViewMut<BE> + GGSWInfos,
+        L: LWEToBackendRef<BE> + LWEInfos,
+    {
+        circuit_bootstrapping_execute_prepared_reference::<R, L, Self, BRA, BE>(self, res, lwe, plan, key, scratch)
+    }
+}
+
+/// Reference bodies of the [`CircuitBootstrappingKeyEncryptSkImpl`](crate::oep::CircuitBootstrappingKeyEncryptSkImpl)
+/// methods, which
+/// [`impl_circuit_bootstrapping_key_encrypt_sk_reference_full!`](crate::impl_circuit_bootstrapping_key_encrypt_sk_reference_full)
+/// forwards to.
+pub trait CircuitBootstrappingKeyEncryptSkReference<BRA: BlindRotationAlgo, BE: Backend> {
+    fn circuit_bootstrapping_key_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
+    where
+        A: CircuitBootstrappingKeyInfos;
+
+    fn circuit_bootstrapping_key_encrypt_sk_reference<S0, S1>(
+        &self,
+        res: &mut CircuitBootstrappingKey<BE::OwnedBuf, BRA, BE::ZnxWord>,
+        sk_lwe: &S0,
+        sk_glwe: &S1,
+        source_xe: &mut Source,
+        source_xa: &mut Source,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        S0: LWESecretToBackendRef<BE> + GetDistribution + LWEInfos,
+        S1: GLWESecretToBackendRef<BE> + GLWEInfos + GetDistribution;
+}
+
+impl<BRA: BlindRotationAlgo, BE: Backend> CircuitBootstrappingKeyEncryptSkReference<BRA, BE> for Module<BE>
+where
+    Module<BE>: GGLWEToGGSWKeyEncryptSk<BE>
+        + BlindRotationKeyEncryptSk<BRA, BE>
+        + GLWEAutomorphismKeyEncryptSk<BE>
+        + GLWESecretPreparedFactory<BE>
+        + ModuleN,
+{
+    fn circuit_bootstrapping_key_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
+    where
+        A: CircuitBootstrappingKeyInfos,
+    {
+        circuit_bootstrapping_key_encrypt_sk_tmp_bytes_reference::<A, Self, BRA, BE>(self, infos)
+    }
+
+    fn circuit_bootstrapping_key_encrypt_sk_reference<S0, S1>(
+        &self,
+        res: &mut CircuitBootstrappingKey<BE::OwnedBuf, BRA, BE::ZnxWord>,
+        sk_lwe: &S0,
+        sk_glwe: &S1,
+        source_xe: &mut Source,
+        source_xa: &mut Source,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        S0: LWESecretToBackendRef<BE> + GetDistribution + LWEInfos,
+        S1: GLWESecretToBackendRef<BE> + GLWEInfos + GetDistribution,
+    {
+        circuit_bootstrapping_key_encrypt_sk_reference::<S0, S1, Self, BRA, BE>(
+            self, res, sk_lwe, sk_glwe, source_xe, source_xa, scratch,
+        )
+    }
+}
+
+/// Reference bodies of the
+/// [`CircuitBootstrappingKeyPreparedFactoryImpl`](crate::oep::CircuitBootstrappingKeyPreparedFactoryImpl) methods,
+/// which
+/// [`impl_circuit_bootstrapping_key_prepared_factory_reference_full!`](crate::impl_circuit_bootstrapping_key_prepared_factory_reference_full)
+/// forwards to.
+pub trait CircuitBootstrappingKeyPreparedFactoryReference<BRA: BlindRotationAlgo, BE: Backend> {
+    fn circuit_bootstrapping_key_prepare_tmp_bytes_reference<A>(&self, infos: &A) -> usize
+    where
+        A: CircuitBootstrappingKeyInfos;
+
+    fn circuit_bootstrapping_key_prepare_reference(
+        &self,
+        res: &mut CircuitBootstrappingKeyPrepared<BE::OwnedBuf, BRA, BE>,
+        other: &CircuitBootstrappingKey<BE::OwnedBuf, BRA, BE::ZnxWord>,
+        scratch: &mut ScratchArena<'_, BE>,
+    );
+}
+
+impl<BRA: BlindRotationAlgo, BE: Backend> CircuitBootstrappingKeyPreparedFactoryReference<BRA, BE> for Module<BE>
+where
+    Module<BE>:
+        BlindRotationKeyPreparedFactory<BRA, BE> + GGLWEToGGSWKeyPreparedFactory<BE> + GLWEAutomorphismKeyPreparedFactory<BE>,
+{
+    fn circuit_bootstrapping_key_prepare_tmp_bytes_reference<A>(&self, infos: &A) -> usize
+    where
+        A: CircuitBootstrappingKeyInfos,
+    {
+        circuit_bootstrapping_key_prepare_tmp_bytes_reference::<A, Self, BRA, BE>(self, infos)
+    }
+
+    fn circuit_bootstrapping_key_prepare_reference(
+        &self,
+        res: &mut CircuitBootstrappingKeyPrepared<BE::OwnedBuf, BRA, BE>,
+        other: &CircuitBootstrappingKey<BE::OwnedBuf, BRA, BE::ZnxWord>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) {
+        circuit_bootstrapping_key_prepare_reference::<Self, BRA, BE>(self, res, other, scratch)
+    }
 }
 
 #[cfg(test)]

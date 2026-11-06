@@ -3,9 +3,9 @@
 //! Each case breaks one precondition of an operation (budget, iteration count, sparse packing, plan slot count) and
 //! checks the error message and that `res` and every `&mut` operand keep their digits and metadata.
 
-use poulpy_core::GLWEMaskFill;
+use poulpy_core::GLWEFill;
 use poulpy_hal::{
-    api::{NegacyclicFFT, NegacyclicFFTNew},
+    api::ReimNew,
     layouts::{HostBytesBackend, Module, Standard},
 };
 
@@ -61,7 +61,7 @@ pub fn test_rejections<BE, F, E>(base: CKKSTestParams, module: &Module<BE>, host
 where
     BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE>
-        + GLWEMaskFill<BE>
+        + GLWEFill<BE>
         + CKKSExpOps<BE>
         + CKKSLogOps<BE>
         + CKKSPowOps<BE>
@@ -71,7 +71,7 @@ where
         + CKKSReductionOps<BE>
         + CKKSSoftmaxOps<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let log_delta = base.prec().log_delta();
     let coeff_meta = ckks_spec(base.n, base.base2k, log_delta, base.base2k);
@@ -101,7 +101,7 @@ where
         wide_softmax.map_plaintexts(up),
         norm.map_plaintexts(up),
     );
-    let (tsk, conj, rot, comp) = (&setup.tsk, &setup.conj_key, &setup.rotation_keys, &setup.composite);
+    let (tsk, keys, comp) = (&setup.tsk, &setup.keys, &setup.composite);
 
     // An input with one limb of budget, and `res` holding other content.
     let low = fixture_ciphertext(module, &setup.layout(log_delta + setup.params.base2k), 9);
@@ -132,41 +132,44 @@ where
     rejects!("ckks_powi budget", "ckks_powi: log_budget", |r, s| module
         .ckks_powi(5, r, &low, tsk, s));
     rejects!("ckks_sign budget", "ckks_sign: log_budget", |r, s| module
-        .ckks_sign(r, &low, comp, tsk, conj, s));
+        .ckks_sign(r, &low, comp, tsk, keys, s));
     rejects!("ckks_step budget", "ckks_step: log_budget", |r, s| module
-        .ckks_step(r, &low, comp, tsk, conj, s));
+        .ckks_step(r, &low, comp, tsk, keys, s));
     rejects!(
         "ckks_sum_slots sparse",
         "ckks_sum_slots: sparse packing is not supported",
-        |r, s| module.ckks_sum_slots(r, &sparse, rot, s)
+        |r, s| module.ckks_sum_slots(r, &sparse, keys, s)
     );
     rejects!(
         "ckks_fmax_slots sparse",
         "ckks_fmax_slots: sparse packing is not supported",
-        |r, s| module.ckks_fmax_slots(r, &sparse, comp, tsk, rot, conj, s)
+        |r, s| module.ckks_fmax_slots(r, &sparse, comp, tsk, keys, s)
     );
     rejects!(
         "ckks_fmin_slots sparse",
         "ckks_fmin_slots: sparse packing is not supported",
-        |r, s| module.ckks_fmin_slots(r, &sparse, comp, tsk, rot, conj, s)
+        |r, s| module.ckks_fmin_slots(r, &sparse, comp, tsk, keys, s)
     );
     rejects!(
         "ckks_softmax sparse",
         "ckks_softmax: sparse packing is not supported",
-        |r, s| module.ckks_softmax(r, &sparse, &softmax, tsk, rot, s)
+        |r, s| module.ckks_softmax(r, &sparse, &softmax, tsk, keys, s)
     );
     rejects!("ckks_softmax slots", "ckks_softmax: plan has", |r, s| module.ckks_softmax(
         r,
         &full,
         &wide_softmax,
         tsk,
-        rot,
+        keys,
         s
     ));
 
     // An inner poulpy-ckks refusal keeps its type through the libm context.
-    let err = rejects!("ckks_log budget", "ckks_eval_approximation cannot consume", |r, s| module
-        .ckks_log(r, &low, &log, tsk, s));
+    let err = rejects!(
+        "ckks_log budget",
+        "ckks_polynomial_approximation_eval cannot consume",
+        |r, s| module.ckks_log(r, &low, &log, tsk, s)
+    );
     assert!(
         err.downcast_ref::<CKKSError>().is_some(),
         "ckks_log: the poulpy-ckks error lost its type"
@@ -181,43 +184,49 @@ where
             });
         }};
     }
-    rejects_in_place!("ckks_goldschmidt_division iters", "iters must be > 0", full, |c, s| module
-        .ckks_goldschmidt_division(c, 0, tsk, s));
+    rejects_in_place!("ckks_goldschmidt_division_assign iters", "iters must be > 0", full, |c, s| {
+        module.ckks_goldschmidt_division_assign(0, c, tsk, s)
+    });
     rejects_in_place!(
-        "ckks_goldschmidt_division budget",
-        "ckks_goldschmidt_division: log_budget",
+        "ckks_goldschmidt_division_assign budget",
+        "ckks_goldschmidt_division_assign: log_budget",
         low,
-        |c, s| module.ckks_goldschmidt_division(c, 2, tsk, s)
+        |c, s| module.ckks_goldschmidt_division_assign(2, c, tsk, s)
     );
-    rejects_in_place!("ckks_rsqrt r", "ckks_rsqrt: r must be > 0", full, |c, s| module
-        .ckks_rsqrt(c, &full, 0, tsk, s));
-    rejects_in_place!("ckks_rsqrt budget", "ckks_rsqrt: log_budget", low, |c, s| module
-        .ckks_rsqrt(c, &full, 2, tsk, s));
+    rejects_in_place!("ckks_rsqrt_assign r", "ckks_rsqrt_assign: r must be > 0", full, |c, s| module
+        .ckks_rsqrt_assign(0, c, &full, tsk, s));
+    rejects_in_place!("ckks_rsqrt_assign budget", "ckks_rsqrt_assign: log_budget", low, |c, s| {
+        module.ckks_rsqrt_assign(2, c, &full, tsk, s)
+    });
     rejects_in_place!(
-        "ckks_inverse_negative_domain budget",
-        "ckks_inverse_negative_domain: log_budget",
+        "ckks_inverse_negative_domain_assign budget",
+        "ckks_inverse_negative_domain_assign: log_budget",
         low,
-        |c, s| { module.ckks_inverse_negative_domain(c, 2, tsk, s) }
+        |c, s| { module.ckks_inverse_negative_domain_assign(2, c, tsk, s) }
     );
     rejects_in_place!(
-        "ckks_inverse_full_domain iters",
-        "ckks_inverse_full_domain: iters must be > 0",
+        "ckks_inverse_full_domain_assign iters",
+        "ckks_inverse_full_domain_assign: iters must be > 0",
         full,
-        |c, s| { module.ckks_inverse_full_domain(c, 0, comp, tsk, conj, s) }
+        |c, s| { module.ckks_inverse_full_domain_assign(0, c, comp, tsk, keys, s) }
     );
     rejects_in_place!(
-        "ckks_inverse_full_domain budget",
-        "ckks_inverse_full_domain: log_budget",
+        "ckks_inverse_full_domain_assign budget",
+        "ckks_inverse_full_domain_assign: log_budget",
         low,
-        |c, s| { module.ckks_inverse_full_domain(c, 2, comp, tsk, conj, s) }
+        |c, s| { module.ckks_inverse_full_domain_assign(2, c, comp, tsk, keys, s) }
     );
 
     let mut pair = (fresh_res(), low.clone());
     assert_rejects(
-        "ckks_interval_normalization budget",
-        "ckks_interval_normalization: log_budget",
+        "ckks_interval_normalization_assign budget",
+        "ckks_interval_normalization_assign: log_budget",
         &mut pair,
         two,
-        |(norm_out, ct)| with_scratch::<BE, _>(ARENA, |s| module.ckks_interval_normalization(norm_out, ct, &norm, tsk, s)),
+        |(norm_out, ct)| {
+            with_scratch::<BE, _>(ARENA, |s| {
+                module.ckks_interval_normalization_assign(ct, norm_out, &norm, tsk, s)
+            })
+        },
     );
 }

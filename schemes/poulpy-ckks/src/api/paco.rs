@@ -17,7 +17,7 @@ use crate::{
     layouts::{CKKSCiphertextOwned, PaCoContext, PaCoKeys, PaCoWorker},
 };
 
-use poulpy_core::layouts::GLWEToBackendRef;
+use poulpy_core::layouts::{GLWEInfos, GLWEToBackendRef};
 use poulpy_hal::{
     api::ScratchOwnedBorrow,
     layouts::{Backend, ScratchArena, ScratchOwned},
@@ -47,16 +47,16 @@ mod sealed {
 /// buffers. It is never constrained to a host round-trip: a backend implements
 /// [`CKKSPaCoOps::ckks_paco_coeff_encodings`] entirely on device with no
 /// obligations beyond this trait.
-pub trait PaCoScalar: sealed::Sealed + CKKSEncodingScalar {
+pub trait CKKSPaCoScalar: sealed::Sealed + CKKSEncodingScalar {
     /// Number of significant binary digits in the scalar representation.
     const MANTISSA_BITS: u32;
 }
 
-impl PaCoScalar for f64 {
+impl CKKSPaCoScalar for f64 {
     const MANTISSA_BITS: u32 = f64::MANTISSA_DIGITS;
 }
 
-impl PaCoScalar for crate::Quad {
+impl CKKSPaCoScalar for crate::Quad {
     const MANTISSA_BITS: u32 = 113;
 }
 
@@ -77,7 +77,7 @@ impl PaCoScalar for crate::Quad {
 /// and the [`CKKSEncodingImpl`](crate::oep::CKKSEncodingImpl) seam at the impl
 /// level, and a backend overrides those seams independently of any bounds
 /// the reference implementation carries.
-pub trait CKKSPaCoOps<BE: Backend, F: PaCoScalar> {
+pub trait CKKSPaCoOps<BE: Backend, F: CKKSPaCoScalar> {
     /// Scratch bytes required by direct sequential or parallel PaCo.
     ///
     /// The bound covers one branch on the caller module, with the branch
@@ -114,8 +114,9 @@ pub trait CKKSPaCoOps<BE: Backend, F: PaCoScalar> {
         Src: GLWEToBackendRef<BE> + CKKSCtBounds;
 
     /// Standard-arena bytes required to build the four input-dependent β
-    /// plaintexts, including backend-native scalar/FFT workspace.
-    fn ckks_paco_coeff_encodings_tmp_bytes(&self, context: &PaCoContext<BE, F>) -> Result<usize>;
+    /// plaintexts from an input of the layout `input`, including backend-native
+    /// scalar/FFT workspace.
+    fn ckks_paco_coeff_encodings_tmp_bytes<A: GLWEInfos>(&self, context: &PaCoContext<BE, F>, input: &A) -> Result<usize>;
 
     /// Builds the four input-dependent beta plaintexts used by PaCo's blind
     /// rotation. This is the only PaCo primitive intended for native backend

@@ -163,7 +163,7 @@ pub fn test_key_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPar
         );
         result.push(seeds_snapshot("gglwe_compressed_seeds", &compact.seed));
         GGLWEToBackendMut::<B>::set_noise(&mut out, None);
-        module.decompress_gglwe(&mut out, &compact);
+        module.gglwe_decompress(&mut out, &compact);
         assert!(compact.noise().is_some());
         assert_eq!(out.noise(), compact.noise());
         result.push(gglwe_snapshot::<B, _>("gglwe_compressed_encrypt_sk", &out));
@@ -209,7 +209,7 @@ pub fn test_key_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPar
         );
         result.push(seeds_snapshot("ggsw_compressed_seeds", &compact.seed));
         GGSWToBackendMut::<B>::set_noise(&mut out, None);
-        module.decompress_ggsw(&mut out, &compact);
+        module.ggsw_decompress(&mut out, &compact);
         assert!(compact.noise().is_some());
         assert_eq!(out.noise(), compact.noise());
         result.push(ggsw_snapshot::<B, _>("ggsw_compressed_encrypt_sk", &out));
@@ -279,7 +279,7 @@ pub fn test_key_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPar
         );
         result.push(seeds_snapshot("switching_compressed_seeds", &compact.key.seed));
         GGLWEToBackendMut::<B>::set_noise(&mut switching, None);
-        module.decompress_glwe_switching_key(&mut switching, &compact);
+        module.glwe_switching_key_decompress(&mut switching, &compact);
         assert!(compact.noise().is_some());
         assert_eq!(switching.noise(), compact.noise());
         result.push(gglwe_snapshot::<B, _>("glwe_switching_key_compressed_encrypt_sk", &switching));
@@ -309,7 +309,7 @@ pub fn test_key_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPar
         );
         result.push(seeds_snapshot("automorphism_compressed_seeds", &compact.key.seed));
         GGLWEToBackendMut::<B>::set_noise(&mut auto, None);
-        module.decompress_automorphism_key(&mut auto, &compact);
+        module.glwe_automorphism_key_decompress(&mut auto, &compact);
         assert!(compact.noise().is_some());
         assert_eq!(auto.noise(), compact.noise());
         assert_eq!(auto.p, -5);
@@ -345,7 +345,7 @@ pub fn test_key_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPar
         );
         result.push(seeds_snapshot("tensor_compressed_seeds", &compact.0.seed));
         GGLWEToBackendMut::<B>::set_noise(&mut tensor, None);
-        module.decompress_tensor_key(&mut tensor, &compact);
+        module.glwe_tensor_key_decompress(&mut tensor, &compact);
         assert!(compact.noise().is_some());
         assert_eq!(tensor.noise(), compact.noise());
         result.push(gglwe_snapshot::<B, _>("glwe_tensor_key_compressed_encrypt_sk", &tensor));
@@ -380,7 +380,7 @@ pub fn test_key_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPar
             result.push(seeds_snapshot("row_key_compressed_seeds", &row.seed));
         }
         GGLWEToGGSWKeyToBackendMut::<B>::set_noise(&mut rows, None);
-        module.decompress_gglwe_to_ggsw_key(&mut rows, &compact);
+        module.gglwe_to_ggsw_key_decompress(&mut rows, &compact);
         assert!(compact.noise().is_some());
         assert_eq!(rows.noise(), compact.noise());
         let mut prepared_rows = module.gglwe_to_ggsw_key_prepared_alloc_from_infos(&rows);
@@ -439,7 +439,7 @@ pub fn test_key_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPar
             decompress_wrapper!(
                 glwe_to_lwe_key_compressed_alloc_from_infos,
                 glwe_to_lwe_key_alloc_from_infos,
-                decompress_glwe_to_lwe_key,
+                glwe_to_lwe_key_decompress,
                 kl
             );
             let mut out = module.glwe_to_lwe_key_alloc_from_infos(&kl);
@@ -464,7 +464,7 @@ pub fn test_key_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPar
             decompress_wrapper!(
                 lwe_to_glwe_key_compressed_alloc_from_infos,
                 lwe_to_glwe_key_alloc_from_infos,
-                decompress_lwe_to_glwe_key,
+                lwe_to_glwe_key_decompress,
                 kl
             );
             let mut out = module.lwe_to_glwe_key_alloc_from_infos(&kl);
@@ -488,7 +488,7 @@ pub fn test_key_encryption_parity<BR: EncryptionParityBackend, BT: EncryptionPar
             decompress_wrapper!(
                 lwe_switching_key_compressed_alloc_from_infos,
                 lwe_switching_key_alloc_from_infos,
-                decompress_lwe_switching_key,
+                lwe_switching_key_decompress,
                 kl
             );
             let mut out = module.lwe_switching_key_alloc_from_infos(&kl);

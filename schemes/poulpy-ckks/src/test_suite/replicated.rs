@@ -33,7 +33,7 @@ use poulpy_core::{
     },
 };
 use poulpy_hal::{
-    api::{CnvPVecAlloc, NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
+    api::{CnvPVecAlloc, ReimNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{Backend, ConjugateInvariant, HostBytesBackend, Module, PrepareHint, ScratchOwned, Standard, ZnxView},
     source::Source,
 };
@@ -48,16 +48,18 @@ use crate::{
     api::{
         CKKSAddOps, CKKSAffineOps, CKKSAllOpsTmpBytes, CKKSComplexPolynomialEvaluationOps, CKKSConjugateOps, CKKSCopyOps,
         CKKSDecryptOps, CKKSDotProductOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncryptOps, CKKSEvalModOps,
-        CKKSLinearTransformationOps, CKKSModuleInfos, CKKSMulOps, CKKSPolynomialEvaluationOps, CKKSPow2Ops,
-        CKKSReplicatedBootstrapOps, CKKSReplicatedCIBootstrapOps, CKKSReplicatedOps, CKKSRotateOps, CKKSRoundOps, CKKSSubOps,
+        CKKSLeftOperandPreparedFactory, CKKSLinearTransformationOps, CKKSModuleInfos, CKKSMulOps, CKKSPolynomialEvaluationOps,
+        CKKSPow2Ops, CKKSReplicatedBootstrapOps, CKKSReplicatedCIBootstrapOps, CKKSReplicatedOps,
+        CKKSRightOperandPreparedFactory, CKKSRotateOps, CKKSRoundOps, CKKSSubOps,
     },
     layouts::{
-        CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned, EvalModPlan, EvalModPoly, EvalModType, ReplicatedBootstrapPlan,
-        ReplicatedBootstrapping, ReplicatedConversion, ReplicatedTransform, compile_eval_mod, compile_eval_mod_replicated,
-        compile_eval_mod_replicated_packed, encode_bsgs_replicated, encode_complex_bsgs_replicated,
+        CKKSCiphertextAlloc, CKKSCiphertextOwned, CKKSPlaintextAlloc, CKKSPlaintextOwned, EvalModPlan, EvalModPoly, EvalModType,
+        ReplicatedBootstrapPlan, ReplicatedBootstrapping, ReplicatedConversion, ReplicatedTransform, ckks_eval_mod_compile,
+        ckks_eval_mod_replicated_compile, ckks_eval_mod_replicated_packed_compile, encode_bsgs_replicated,
+        encode_complex_bsgs_replicated,
     },
     oep::CKKSEncapsulatedModUpImpl,
-    polynomial::{Basis, ComplexPolynomial, EncodeBSGS, Polynomial, SplitStrategy},
+    polynomial::{Basis, CKKSPolynomialEncode, ComplexPolynomial, Polynomial, SplitStrategy},
     reference::replicated::{wide_gather_trace, wide_onto_replicated},
     shaping::{ShapingRing, ShapingUnit},
     test_suite::CKKSTestParams,
@@ -89,7 +91,7 @@ where
     BE: TestContextBackend,
     Module<BE>: TestContextSharedModule<BE>,
 {
-    let mut pt = module.ckks_pt_vec_alloc(
+    let mut pt = module.ckks_plaintext_alloc_from_slots(
         slots_of(module, slot_layout, len),
         Base2K(params.base2k as u32),
         TorusPrecision((LOG_DELTA + 30) as u32),
@@ -131,11 +133,11 @@ where
     Module<BE>: TestContextSharedModule<BE> + CKKSEncodingOps<BE, F>,
 {
     let slots = module.ckks_slots_of_degree(pt.n().as_usize());
-    let mut scratch = ScratchOwned::<BE>::alloc(module.ckks_reim_tmp_bytes(slots));
+    let mut scratch = ScratchOwned::<BE>::alloc(module.ckks_encoding_host_tmp_bytes(slots));
     let read = if pt.slot_layout() == SlotLayout::Full { slots } else { len };
     let (mut re, mut im) = (vec![F::zero(); read], vec![F::zero(); read]);
     module
-        .ckks_decode_reim_into(pt, &mut re, &mut im, &mut scratch.borrow())
+        .ckks_decode_slots_host_into(pt, &mut re, &mut im, &mut scratch.borrow())
         .unwrap();
     re.truncate(len);
     im.truncate(len);
@@ -149,12 +151,12 @@ where
     Module<BE>: TestContextSharedModule<BE> + CKKSEncodingOps<BE, F>,
 {
     let slots = module.ckks_slots_of_degree(pt.n().as_usize());
-    let mut scratch = ScratchOwned::<BE>::alloc(module.ckks_reim_tmp_bytes(slots));
+    let mut scratch = ScratchOwned::<BE>::alloc(module.ckks_encoding_host_tmp_bytes(slots));
     if pt.slot_layout() == SlotLayout::Full {
         let tile = |values: &[F]| values.iter().copied().cycle().take(slots).collect::<Vec<_>>();
-        module.ckks_encode_reim_into(pt, &tile(re), &tile(im), &mut scratch.borrow())?;
+        module.ckks_encode_slots_host_into(pt, &tile(re), &tile(im), &mut scratch.borrow())?;
     } else {
-        module.ckks_encode_reim_into(pt, re, im, &mut scratch.borrow())?;
+        module.ckks_encode_slots_host_into(pt, re, im, &mut scratch.borrow())?;
     }
     Ok(())
 }
@@ -211,8 +213,8 @@ where
         slots
     };
     let mut full = plaintext(&params, module, SlotLayout::Full, re.len() << unit.log_r());
-    let mut scratch = ScratchOwned::<BE>::alloc(module.ckks_reim_tmp_bytes(re.len() << unit.log_r()));
-    module.ckks_encode_reim_slots_into(&mut full, &scatter(&re), &scatter(&im), &mut scratch.borrow())?;
+    let mut scratch = ScratchOwned::<BE>::alloc(module.ckks_encoding_host_tmp_bytes(re.len() << unit.log_r()));
+    module.ckks_encode_all_slots_host_into(&mut full, &scatter(&re), &scatter(&im), &mut scratch.borrow())?;
 
     let digits = |pt: &CKKSPlaintextOwned<BE>| -> Vec<i64> {
         let glwe = GLWEToBackendRef::<BE>::to_backend_ref(pt);
@@ -338,7 +340,7 @@ where
 {
     // A few bits of budget hold the unit-scale message.
     let budget = ct.log_budget().min(10);
-    let mut pt = module.ckks_pt_vec_alloc(
+    let mut pt = module.ckks_plaintext_alloc_from_slots(
         module.ckks_slots_of_degree((ct.n().as_usize() >> ct.log_sparsity()).max(BE::MIN_DEGREE)),
         Base2K(params.base2k as u32),
         TorusPrecision((ct.log_delta() + budget) as u32),
@@ -584,11 +586,11 @@ where
 
     let mut pt = plaintext(&params, module, SlotLayout::Full, values.0.len());
     encoded(module, &mut pt, &values.0, &values.1)?;
-    let left = module.ckks_prepare_left(&shaped, PrepareHint::OneShot, &mut scratch.borrow())?;
-    let right = module.ckks_prepare_right(&pt, PrepareHint::OneShot, &mut scratch.borrow())?;
+    let left = module.ckks_left_operand_prepare_alloc(&shaped, PrepareHint::OneShot, &mut scratch.borrow())?;
+    let right = module.ckks_right_operand_prepare_alloc(&pt, PrepareHint::OneShot, &mut scratch.borrow())?;
     assert!(
         module
-            .ckks_dot_product_prepared_pt(&mut out, &[&left], &[&right], &[1], &mut scratch.borrow())
+            .ckks_dot_product_prepared_pt_vec(&mut out, &[&left], &[&right], &[1], &mut scratch.borrow())
             .is_err()
     );
 
@@ -597,12 +599,12 @@ where
     let mut babies = LinearTransformationBabySteps::alloc(module, &[1], &shaped);
     assert!(
         module
-            .ckks_prepare_linear_transformation_baby_steps(&mut babies, &shaped, &atks, &mut scratch.borrow())
+            .ckks_linear_transformation_baby_steps_prepare(&mut babies, &shaped, &atks, &mut scratch.borrow())
             .is_err()
     );
 
     // No shaping pass fits `i128` above 126 torus bits.
-    let mut wide = module.ckks_pt_vec_alloc(
+    let mut wide = module.ckks_plaintext_alloc_from_slots(
         slots_of(module, SlotLayout::Replicated(layout()), values.0.len()),
         Base2K(params.base2k as u32),
         TorusPrecision(130),
@@ -738,7 +740,7 @@ where
     let out = alloc_ct(params, module, k);
     let coeff_prec = ckks_spec(params.n, params.base2k, LOG_DELTA, 10);
     let scratch = ScratchOwned::<BE>::alloc(module.ckks_all_ops_tmp_bytes(&x, &coeff_prec, &params.tsk_layout()));
-    let encoding = ScratchOwned::<BE>::alloc(module.ckks_reim_tmp_bytes(params.n));
+    let encoding = ScratchOwned::<BE>::alloc(module.ckks_encoding_host_tmp_bytes(params.n));
     Ok(PolynomialSetup {
         sk,
         tsk,
@@ -859,7 +861,7 @@ where
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSComplexPolynomialEvaluationOps<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let full = complex_polynomial_precision::<BE, F>(&params, module, host_module, SlotLayout::Full)?;
     let shaped = complex_polynomial_precision::<BE, F>(&params, module, host_module, SlotLayout::Replicated(layout()))?;
@@ -907,7 +909,7 @@ where
     )?;
     let narrower = ShapingUnit::U16_20.layout(LOG_K, 24)?;
     let identity = Polynomial::new(Basis::Monomial, vec![F::zero(), F::one()]);
-    let mut encoding = ScratchOwned::<BE>::alloc(module.ckks_reim_tmp_bytes(params.n));
+    let mut encoding = ScratchOwned::<BE>::alloc(module.ckks_encoding_host_tmp_bytes(params.n));
     let bsgs = encode_bsgs_replicated(
         &identity,
         module,
@@ -981,7 +983,7 @@ where
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let full = automorphism_chain::<BE, F>(&params, module, host_module, SlotLayout::Full)?;
     let shaped = automorphism_chain::<BE, F>(&params, module, host_module, SlotLayout::Replicated(layout()))?;
@@ -1107,12 +1109,12 @@ where
     let slots = len << layout().log_r();
     let c_im = if real_slots::<BE>() { 0.0 } else { -0.2 };
     let (c_re, c_im) = (F::from_f64(0.3).unwrap(), F::from_f64(c_im).unwrap());
-    let mut scratch = ScratchOwned::<BE>::alloc(module.ckks_reim_tmp_bytes(slots));
+    let mut scratch = ScratchOwned::<BE>::alloc(module.ckks_encoding_host_tmp_bytes(slots));
     let mut cst = plaintext(&params, module, SlotLayout::Replicated(layout()), len);
-    module.ckks_encode_masked_constant_into(&mut cst, c_re, c_im, &mut scratch.borrow())?;
+    module.ckks_encode_masked_constant_host_into(&mut cst, c_re, c_im, &mut scratch.borrow())?;
 
     let (mut re, mut im) = (vec![F::zero(); slots], vec![F::zero(); slots]);
-    module.ckks_decode_reim_slots_into(&cst, &mut re, &mut im, &mut scratch.borrow())?;
+    module.ckks_decode_all_slots_host_into(&cst, &mut re, &mut im, &mut scratch.borrow())?;
     // Data slots hold the constant; guards hold only the shaped quantization
     // error, amplified by the guard classes of `g`.
     for t in 0..slots {
@@ -1189,7 +1191,7 @@ where
     F: TestScalar,
     Module<BE>: TestContextSharedModule<BE> + CKKSEncodingOps<BE, F>,
 {
-    let mut pt = module.ckks_pt_vec_alloc(
+    let mut pt = module.ckks_plaintext_alloc_from_slots(
         slots_of(module, SlotLayout::Full, values.0.len()),
         Base2K(params.base2k as u32),
         TorusPrecision((log_delta + 4) as u32),
@@ -1448,7 +1450,7 @@ where
         },
         meta: ckks.meta(),
     };
-    let buffers = 3 * BE::scratch_aligned(BE::bytes_of_vec_znx(params.n, wide.rank().as_usize() + 1, wide.size()));
+    let buffers = 3 * BE::scratch_aligned(BE::vec_znx_bytes_of(params.n, wide.rank().as_usize() + 1, wide.size()));
     let atk_infos = params.atk_layout();
     let ops = crate::reference::replicated::transform_tmp_bytes(module, &wide, &atk_infos)
         .max(module.ckks_rotate_tmp_bytes(&wide, &atk_infos))
@@ -1604,7 +1606,7 @@ where
     let (sk_raw, sk) = gen_sk_with_raw(&test_params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&test_params, module);
     let tsk = gen_tsk(&test_params, module, &sk_raw, &mut scratch.borrow());
-    let mut pt = module.ckks_pt_vec_alloc(
+    let mut pt = module.ckks_plaintext_alloc_from_slots(
         slots_of(module, slot_layout, len),
         Base2K(params.base2k as u32),
         TorusPrecision((EVAL_MOD_LOG_DELTA_IN + 10) as u32),
@@ -1620,16 +1622,16 @@ where
     let (mut xe, mut xa) = (Source::new([1; 32]), Source::new([2; 32]));
     module.ckks_encrypt_sk(&mut ct, &pt, &sk, &mut xe, &mut xa, &mut scratch.borrow())?;
 
-    let mut compile = ScratchOwned::<BE>::alloc(module.ckks_reim_tmp_bytes(params.n));
+    let mut compile = ScratchOwned::<BE>::alloc(module.ckks_encoding_host_tmp_bytes(params.n));
     let base2k = Base2K(params.base2k as u32);
     let mut res = alloc_ct(&test_params, module, k);
     let tsk_layout = test_params.tsk_layout();
     let (f_mod_poly, steps, scale) = match slot_layout {
         SlotLayout::Replicated(layout) => {
             let eval_mod = if let EvalModMode::Packed = mode {
-                compile_eval_mod_replicated_packed::<BE, F>(base2k, plan, layout, module, &mut compile.borrow())?
+                ckks_eval_mod_replicated_packed_compile::<BE, F>(base2k, plan, layout, module, &mut compile.borrow())?
             } else {
-                compile_eval_mod_replicated::<BE, F>(base2k, plan, layout, module, &mut compile.borrow())?
+                ckks_eval_mod_replicated_compile::<BE, F>(base2k, plan, layout, module, &mut compile.borrow())?
             };
             let mut eval = ScratchOwned::<BE>::alloc(module.ckks_eval_mod_tmp_bytes(&res, &ct, &eval_mod, &tsk_layout));
             module.ckks_eval_mod(&mut res, &ct, &eval_mod, &tsk, &mut eval.borrow())?;
@@ -1637,7 +1639,7 @@ where
             (eval_mod.f_mod_poly, plan.f_mod_log_interval_reduction, scale)
         }
         SlotLayout::Full => {
-            let eval_mod = compile_eval_mod::<BE, F>(base2k, plan, module, &mut compile.borrow())?;
+            let eval_mod = ckks_eval_mod_compile::<BE, F>(base2k, plan, module, &mut compile.borrow())?;
             let mut eval = ScratchOwned::<BE>::alloc(module.ckks_eval_mod_tmp_bytes(&res, &ct, &eval_mod, &tsk_layout));
             module.ckks_eval_mod(&mut res, &ct, &eval_mod, &tsk, &mut eval.borrow())?;
             let scale = eval_mod.range_extension_scale();
@@ -1721,16 +1723,24 @@ where
         + CnvPVecAlloc<BE>
         + GLWETrace<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let layout = ShapingUnit::U16_40.layout(3, 24)?;
     let plan = ReplicatedBootstrapPlan::paper(layout);
     let base2k = Base2K(params.base2k as u32);
-    let mut compile = ScratchOwned::<BE>::alloc(module.ckks_reim_tmp_bytes(params.n / 2));
+    let mut compile = ScratchOwned::<BE>::alloc(module.ckks_encoding_host_tmp_bytes(params.n / 2));
     let ctx = ReplicatedBootstrapping::<BE, F>::new(module, plan, base2k, &mut compile.borrow())?;
     assert!(ctx.is_packed());
     let k_out = plan.k_in() + plan.level_log_delta;
-    let key_layouts = plan.key_layouts(params.n.into(), base2k, k_out, params.base2k, params.base2k + 1, true);
+    let key_layouts = plan.key_layouts(
+        &ctx.galois_elements(module),
+        params.n.into(),
+        base2k,
+        k_out,
+        params.base2k,
+        params.base2k + 1,
+        true,
+    );
 
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
 
@@ -1771,7 +1781,7 @@ where
             &out,
             &input,
             &ctx,
-            &key_layouts.automorphism_key,
+            key_layouts.rotation_keys.values().next().expect("the bootstrapping rotates"),
             &key_layouts.tensor_key,
             Some((
                 &encapsulation.dense_to_sparse,
@@ -1823,14 +1833,15 @@ where
     let layout = ShapingUnit::U16_40.layout(3, 24)?;
     let plan = ReplicatedBootstrapPlan::paper(layout);
     let base2k = Base2K(params.base2k as u32);
-    let mut compile = ScratchOwned::<STD>::alloc(standard.ckks_reim_tmp_bytes(standard_params.n));
+    let mut compile = ScratchOwned::<STD>::alloc(standard.ckks_encoding_host_tmp_bytes(standard_params.n));
     let ctx = ReplicatedBootstrapping::<STD, f64>::new(&standard, plan, base2k, &mut compile.borrow())?;
-    let mut ci_compile = ScratchOwned::<BE>::alloc(ci.ckks_reim_tmp_bytes(params.n));
+    let mut ci_compile = ScratchOwned::<BE>::alloc(ci.ckks_encoding_host_tmp_bytes(params.n));
     assert!(ReplicatedBootstrapping::<BE, f64>::new(&ci, plan, base2k, &mut ci_compile.borrow()).is_err());
 
     // The standard bootstrapping runs one bit wider than the output.
     let k_out = plan.k_in() + plan.level_log_delta;
     let key_layouts = plan.key_layouts(
+        &ctx.galois_elements(&standard),
         standard_params.n.into(),
         base2k,
         k_out + 1,
@@ -1881,7 +1892,7 @@ where
         &out,
         &input,
         &ctx,
-        &key_layouts.automorphism_key,
+        key_layouts.rotation_keys.values().next().expect("the bootstrapping rotates"),
         &key_layouts.tensor_key,
         Some((
             &encapsulation.dense_to_sparse,

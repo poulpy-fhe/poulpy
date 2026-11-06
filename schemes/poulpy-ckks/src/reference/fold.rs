@@ -14,8 +14,9 @@ use crate::CKKSResult as Result;
 use poulpy_core::{
     GLWEAdd, GLWEAutomorphism, GLWECIEmbed, GLWECITrace, GLWEKeyswitch, GLWENormalize, GLWERotate, GLWEShift, GLWESub, GLWEZero,
     layouts::{
-        Base2K, Degree, GGLWEInfos, GLWE, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey,
-        GetGaloisElement, LWEInfos, ModuleCoreAlloc, Rank, SetK, TorusPrecision, prepared::GGLWEPreparedToBackendRef,
+        Base2K, Degree, GGLWEInfos, GLWE, GLWEAlloc, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef,
+        GetAutomorphismKey, GetGaloisElement, LWEInfos, ModuleCoreAlloc, Rank, SetK, TorusPrecision,
+        prepared::GGLWEPreparedToBackendRef,
     },
 };
 use poulpy_hal::{
@@ -28,7 +29,7 @@ use crate::{
     api::{CKKSAddOps, CKKSConjugateOps, CKKSImagOps, CKKSSubOps},
     invalid_operand,
     layouts::{
-        CKKSCiphertextOwned, CKKSFoldKeysLayout, CKKSModuleAlloc, CKKSRingCiphertext,
+        CKKSCiphertextAlloc, CKKSCiphertextOwned, CKKSFoldKeysLayout, CKKSRingCiphertext,
         validation::{validate_gadget_backend_view, validate_storage_capacity},
     },
     reference::ring_map::{ckks_ci_embed_keyless, ckks_ci_trace_keyless},
@@ -89,7 +90,7 @@ where
         + CKKSSubOps<BE>
         + CKKSImagOps<BE>
         + CKKSConjugateOps<BE>
-        + CKKSModuleAlloc<BE>,
+        + CKKSCiphertextAlloc<BE>,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
 {
     fn units(ins: &[CKKSCiphertextOwned<BE>]) -> Vec<Unit> {
@@ -177,7 +178,7 @@ where
         + GLWENormalize<BE>
         + GLWECIEmbed<BE>
         + GLWECITrace<BE>
-        + CKKSModuleAlloc<BE>,
+        + CKKSCiphertextAlloc<BE>,
     GLWE<BE::OwnedBuf, BE::ZnxWord>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
 {
@@ -368,7 +369,7 @@ where
         + GLWEKeyswitch<BE>
         + CKKSAddOps<BE>
         + CKKSImagOps<BE>
-        + CKKSModuleAlloc<BE>,
+        + CKKSCiphertextAlloc<BE>,
     GLWE<BE::OwnedBuf, BE::ZnxWord>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
 {
@@ -628,14 +629,14 @@ where
         + GLWEShift<BE>
         + GLWENormalize<BE>
         + GLWEAutomorphism<BE>
-        + CKKSModuleAlloc<BE>,
+        + CKKSCiphertextAlloc<BE>,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
 {
     let n = part.n().as_usize();
     let wide = layout(n, part.base2k(), part.k() + log_g as u32);
     let mut root = module.ckks_ciphertext_alloc_from_glwe_infos(&wide);
     switch_ring(module, &mut root, part);
-    module.glwe_rsh(log_g, &mut root, scratch);
+    module.glwe_rsh_assign(log_g, &mut root, scratch);
     let mut nodes = vec![root];
     let mut image = module.ckks_ciphertext_alloc_from_glwe_infos(&wide);
     let mut difference = module.ckks_ciphertext_alloc_from_glwe_infos(&wide);

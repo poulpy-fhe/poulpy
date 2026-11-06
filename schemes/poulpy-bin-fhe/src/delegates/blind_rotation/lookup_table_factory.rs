@@ -8,7 +8,7 @@ impl<BE: LookupTableFactoryImpl> LookupTableFactory<BE::OwnedBuf, BE::ZnxWord> f
         BE::lookup_table_set(self, k, res, f)
     }
 
-    fn lookup_table_rotate(&self, k: i64, res: &mut LookupTable<BE::OwnedBuf, BE::ZnxWord>) {
-        BE::lookup_table_rotate(self, k, res)
+    fn lookup_table_rotate_assign(&self, k: i64, res: &mut LookupTable<BE::OwnedBuf, BE::ZnxWord>) {
+        BE::lookup_table_rotate_assign(self, k, res)
     }
 }

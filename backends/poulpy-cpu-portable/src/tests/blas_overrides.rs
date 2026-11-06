@@ -3,8 +3,8 @@
 //! a hook enters it, and no call the API rejects enters any hook.
 use crate::{ckks_encoding::EncodingFFTTable, hal_impl::delegating_backend::DifferentSamplingFFT64Portable as OverrideBackend};
 use poulpy_blas::{
-    api::{BlasMatIntraOps, BlasMatMulOps},
-    layouts::{BlasContext, BlasGrid, BlasGridInfos, BlasGridMut, BlasPlan, BlasPtAlgorithm, Left, Right},
+    api::{BlasMatIntraOps, BlasMatMulLeftOperandPreparedFactory, BlasMatMulOps, BlasMatMulRightOperandPreparedFactory},
+    layouts::{BlasContextPrepared, BlasGrid, BlasGridInfos, BlasGridMut, BlasPlan, BlasPtAlgorithm, Left, Right},
     oep::{BlasJklsImpl, BlasMatIntraImpl},
     reference::{BlasJklsReference, BlasMatIntraReference},
     test_suite::{
@@ -19,7 +19,7 @@ use poulpy_blas::{
 use poulpy_ckks::{
     CKKSCtBounds, CKKSResult, SetCKKSInfos,
     api::LinearTransformationPrepared,
-    layouts::{CKKSPreparedLeft, CKKSPreparedRight},
+    layouts::{CKKSLeftOperandPrepared, CKKSRightOperandPrepared},
     test_suite::{
         BASE19_PARAMS_F64, CKKSTestParams,
         helpers::{alloc_scratch, gen_sk_with_raw, gen_tsk},
@@ -66,6 +66,7 @@ fn calls() -> (usize, usize, usize) {
 
 poulpy_blas::impl_blas_mat_inter_reference_full!(OverrideBackend);
 poulpy_blas::impl_blas_mat_mul_reference_full!(OverrideBackend);
+poulpy_blas::impl_blas_mat_vec_reference_full!(OverrideBackend);
 poulpy_blas::impl_blas_encoding_reference_full!(OverrideBackend);
 
 unsafe impl BlasMatIntraImpl for OverrideBackend {
@@ -102,7 +103,13 @@ unsafe impl BlasMatIntraImpl for OverrideBackend {
         module.blas_map_blocks_reference(dst, src, lts, keys, scratch)
     }
 
-    fn blas_rotate_rows_tmp_bytes<R, A, K>(module: &Module<Self>, res: &R, a: &A, ctx: &BlasContext<Self>, keys: &K) -> usize
+    fn blas_rotate_rows_tmp_bytes<R, A, K>(
+        module: &Module<Self>,
+        res: &R,
+        a: &A,
+        ctx: &BlasContextPrepared<Self>,
+        keys: &K,
+    ) -> usize
     where
         R: BlasGridInfos,
         A: BlasGridInfos,
@@ -116,7 +123,7 @@ unsafe impl BlasMatIntraImpl for OverrideBackend {
         k: usize,
         res: &mut R,
         a: &A,
-        ctx: &BlasContext<Self>,
+        ctx: &BlasContextPrepared<Self>,
         keys: &K,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> CKKSResult<()>
@@ -128,7 +135,13 @@ unsafe impl BlasMatIntraImpl for OverrideBackend {
         module.blas_rotate_rows_reference(k, res, a, ctx, keys, scratch)
     }
 
-    fn blas_rotate_cols_tmp_bytes<R, A, K>(module: &Module<Self>, res: &R, a: &A, ctx: &BlasContext<Self>, keys: &K) -> usize
+    fn blas_rotate_cols_tmp_bytes<R, A, K>(
+        module: &Module<Self>,
+        res: &R,
+        a: &A,
+        ctx: &BlasContextPrepared<Self>,
+        keys: &K,
+    ) -> usize
     where
         R: BlasGridInfos,
         A: BlasGridInfos,
@@ -142,7 +155,7 @@ unsafe impl BlasMatIntraImpl for OverrideBackend {
         k: usize,
         res: &mut R,
         a: &A,
-        ctx: &BlasContext<Self>,
+        ctx: &BlasContextPrepared<Self>,
         keys: &K,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> CKKSResult<()>
@@ -154,7 +167,7 @@ unsafe impl BlasMatIntraImpl for OverrideBackend {
         module.blas_rotate_cols_reference(k, res, a, ctx, keys, scratch)
     }
 
-    fn blas_sum_rows_tmp_bytes<R, A, K>(module: &Module<Self>, res: &R, a: &A, ctx: &BlasContext<Self>, keys: &K) -> usize
+    fn blas_sum_rows_tmp_bytes<R, A, K>(module: &Module<Self>, res: &R, a: &A, ctx: &BlasContextPrepared<Self>, keys: &K) -> usize
     where
         R: BlasGridInfos,
         A: BlasGridInfos,
@@ -167,7 +180,7 @@ unsafe impl BlasMatIntraImpl for OverrideBackend {
         module: &Module<Self>,
         res: &mut R,
         a: &A,
-        ctx: &BlasContext<Self>,
+        ctx: &BlasContextPrepared<Self>,
         keys: &K,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> CKKSResult<()>
@@ -179,7 +192,7 @@ unsafe impl BlasMatIntraImpl for OverrideBackend {
         module.blas_sum_rows_reference(res, a, ctx, keys, scratch)
     }
 
-    fn blas_sum_cols_tmp_bytes<R, A, K>(module: &Module<Self>, res: &R, a: &A, ctx: &BlasContext<Self>, keys: &K) -> usize
+    fn blas_sum_cols_tmp_bytes<R, A, K>(module: &Module<Self>, res: &R, a: &A, ctx: &BlasContextPrepared<Self>, keys: &K) -> usize
     where
         R: BlasGridInfos,
         A: BlasGridInfos,
@@ -192,7 +205,7 @@ unsafe impl BlasMatIntraImpl for OverrideBackend {
         module: &Module<Self>,
         res: &mut R,
         a: &A,
-        ctx: &BlasContext<Self>,
+        ctx: &BlasContextPrepared<Self>,
         keys: &K,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> CKKSResult<()>
@@ -219,8 +232,8 @@ unsafe impl BlasJklsImpl for OverrideBackend {
     fn blas_jkls_block<R, T>(
         module: &Module<Self>,
         res: &mut R,
-        lhs: &[&CKKSPreparedLeft<Self>],
-        rhs: &[&CKKSPreparedRight<Self>],
+        lhs: &[&CKKSLeftOperandPrepared<Self>],
+        rhs: &[&CKKSRightOperandPrepared<Self>],
         tsk: &T,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> CKKSResult<()>
@@ -239,7 +252,7 @@ unsafe impl BlasJklsImpl for OverrideBackend {
         src: &S,
         first: &LinearTransformationPrepared<Self>,
         masks: &[&LinearTransformationPrepared<Self>],
-        plaintext: &CKKSPreparedRight<Self>,
+        plaintext: &CKKSRightOperandPrepared<Self>,
         keys: &K,
     ) -> usize
     where
@@ -256,7 +269,7 @@ unsafe impl BlasJklsImpl for OverrideBackend {
         sources: &[&S],
         first: &LinearTransformationPrepared<Self>,
         masks: &[&LinearTransformationPrepared<Self>],
-        plaintexts: &[&[CKKSPreparedRight<Self>]],
+        plaintexts: &[&[CKKSRightOperandPrepared<Self>]],
         galois: &[i64],
         keys: &K,
         scratch: &mut ScratchArena<'_, Self>,
@@ -392,8 +405,8 @@ fn blas_hooks_run_on_accepted_calls_alone() {
     let bytes = module
         .blas_matmul_tmp_bytes(&res, &a, &a, &ctx, &tsk_layout, &atk_layout)
         .max(module.blas_matmul_tmp_bytes(&res_col, &a, &col, &ctx, &tsk_layout, &atk_layout))
-        .max(module.blas_matmul_prepare_left_tmp_bytes(&a, &ctx, &atk_layout, Reuse))
-        .max(module.blas_matmul_prepare_right_tmp_bytes(&a, &ctx, &atk_layout, Reuse))
+        .max(module.blas_matmul_left_operand_prepare_tmp_bytes(&a, &ctx, &atk_layout, Reuse))
+        .max(module.blas_matmul_right_operand_prepare_tmp_bytes(&a, &ctx, &atk_layout, Reuse))
         .max(module.blas_transpose_tmp_bytes(&res, &a, &ctx, &atk_layout))
         .max(module.blas_rotate_rows_tmp_bytes(&res, &a, &ctx, &atk_layout))
         .max(module.blas_rotate_cols_tmp_bytes(&res, &a, &ctx, &atk_layout))
@@ -428,12 +441,12 @@ fn blas_hooks_run_on_accepted_calls_alone() {
     let side = |hint| usize::from(hint == Reuse);
     let calls = |hint| if hint == Reuse { (4, 0, 0) } else { (0, 0, 0) };
     let left = HINTS.map(|hint| {
-        assert_enters(&format!("blas_matmul_prepare_left {hint:?}"), calls(hint), || {
+        assert_enters(&format!("blas_matmul_left_operand_prepare {hint:?}"), calls(hint), || {
             matmul_left_operand(&module, &a, &ctx, &keys, hint, &mut op_scratch.borrow())
         })
     });
     let right = HINTS.map(|hint| {
-        assert_enters(&format!("blas_matmul_prepare_right {hint:?}"), calls(hint), || {
+        assert_enters(&format!("blas_matmul_right_operand_prepare {hint:?}"), calls(hint), || {
             matmul_right_operand(&module, &a, &ctx, &keys, hint, &mut op_scratch.borrow())
         })
     });

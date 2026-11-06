@@ -22,9 +22,9 @@ macro_rules! impl_oracle_core {
         ::poulpy_core::impl_glwe_external_product_reference_full!($be);
         ::poulpy_core::impl_gglwe_external_product_derived_full!($be);
         ::poulpy_core::impl_ggsw_external_product_derived_full!($be);
-        ::poulpy_core::impl_linear_transformation_reference_full!($be);
+        ::poulpy_core::impl_glwe_linear_transformation_reference_full!($be);
         ::poulpy_core::impl_operations_reference_full!($be);
-        ::poulpy_core::impl_polynomial_evaluation_derived_full!($be);
+        ::poulpy_core::impl_glwe_polynomial_evaluation_derived_full!($be);
         ::poulpy_core::impl_preparation_reference_full!($be);
         ::poulpy_core::impl_secret_reference_full!($be);
         ::poulpy_core::impl_glwe_trace_derived_full!($be);

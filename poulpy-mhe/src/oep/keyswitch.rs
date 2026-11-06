@@ -1,4 +1,4 @@
-use crate::layouts::{GLWEPrivateKeyswitchShareOwned, GLWEPublicKeyswitchShareOwned};
+use crate::layouts::{MHEGLWEPrivateKeyswitchShareOwned, MHEGLWEPublicKeyswitchShareOwned};
 use poulpy_core::{
     Noise,
     layouts::{
@@ -17,16 +17,16 @@ use poulpy_hal::{
 /// Share generation wipes that scratch before returning.
 /// The memory, layout, synchrony and aliasing rules of
 /// `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait GLWEPrivateKeyswitchMHEProtocolImpl: Backend {
+pub unsafe trait MHEGLWEPrivateKeyswitchProtocolImpl: Backend {
     /// Upper bound on the scratch of `mhe_glwe_private_keyswitch_share_gen`, as
-    /// `GLWEPrivateKeyswitchMHEProtocolReference::mhe_glwe_private_keyswitch_share_gen_tmp_bytes_reference`;
+    /// `MHEGLWEPrivateKeyswitchProtocolReference::mhe_glwe_private_keyswitch_share_gen_tmp_bytes_reference`;
     /// panics unless `infos` has the module's degree.
     fn mhe_glwe_private_keyswitch_share_gen_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: GLWEInfos;
 
     /// Reproduces
-    /// `GLWEPrivateKeyswitchMHEProtocolReference::mhe_glwe_private_keyswitch_share_gen_reference`:
+    /// `MHEGLWEPrivateKeyswitchProtocolReference::mhe_glwe_private_keyswitch_share_gen_reference`:
     /// `<mask, sk_in> - <mask, sk_out>` plus the `flood` noise drawn from
     /// `source_smudge`; the mask is read only.
     /// Panics unless `mask` is canonical and has the module's degree, `res` has
@@ -36,7 +36,7 @@ pub unsafe trait GLWEPrivateKeyswitchMHEProtocolImpl: Backend {
     #[allow(clippy::too_many_arguments)]
     fn mhe_glwe_private_keyswitch_share_gen<C, S1, S2>(
         module: &Module<Self>,
-        res: &mut GLWEPrivateKeyswitchShareOwned<Self>,
+        res: &mut MHEGLWEPrivateKeyswitchShareOwned<Self>,
         mask: &C,
         sk_in: &S1,
         sk_out: &S2,
@@ -49,14 +49,14 @@ pub unsafe trait GLWEPrivateKeyswitchMHEProtocolImpl: Backend {
         S2: GLWESecretPreparedToBackendRef<Self> + GLWEInfos;
 
     /// Reproduces
-    /// `GLWEPrivateKeyswitchMHEProtocolReference::mhe_glwe_private_keyswitch_share_aggregate_reference`:
+    /// `MHEGLWEPrivateKeyswitchProtocolReference::mhe_glwe_private_keyswitch_share_aggregate_reference`:
     /// adds `a` into `res` without normalizing and combines the noise with
     /// `aggregate_metadata`.
     /// Panics unless the layouts agree.
     fn mhe_glwe_private_keyswitch_share_aggregate(
         module: &Module<Self>,
-        res: &mut GLWEPrivateKeyswitchShareOwned<Self>,
-        a: &GLWEPrivateKeyswitchShareOwned<Self>,
+        res: &mut MHEGLWEPrivateKeyswitchShareOwned<Self>,
+        a: &MHEGLWEPrivateKeyswitchShareOwned<Self>,
     );
 
     /// Upper bound on the scratch of
@@ -64,7 +64,7 @@ pub unsafe trait GLWEPrivateKeyswitchMHEProtocolImpl: Backend {
     fn mhe_glwe_private_keyswitch_share_finalize_tmp_bytes(module: &Module<Self>) -> usize;
 
     /// Reproduces
-    /// `GLWEPrivateKeyswitchMHEProtocolReference::mhe_glwe_private_keyswitch_share_finalize_reference`:
+    /// `MHEGLWEPrivateKeyswitchProtocolReference::mhe_glwe_private_keyswitch_share_finalize_reference`:
     /// `res = ct + share`, the share added to the body and normalized.
     /// Panics unless the ciphertext has the module's degree, `res` has its
     /// layout and the share is its rank-0 body layout.
@@ -72,7 +72,7 @@ pub unsafe trait GLWEPrivateKeyswitchMHEProtocolImpl: Backend {
         module: &Module<Self>,
         res: &mut R,
         ct: &C,
-        share: &GLWEPrivateKeyswitchShareOwned<Self>,
+        share: &MHEGLWEPrivateKeyswitchShareOwned<Self>,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
         R: GLWEToBackendMut<Self> + GLWEInfos,
@@ -85,9 +85,9 @@ pub unsafe trait GLWEPrivateKeyswitchMHEProtocolImpl: Backend {
 /// Share generation wipes that scratch before returning.
 /// The memory, layout, synchrony and aliasing rules of
 /// `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait GLWEPublicKeyswitchMHEProtocolImpl: Backend {
+pub unsafe trait MHEGLWEPublicKeyswitchProtocolImpl: Backend {
     /// Upper bound on the scratch of `mhe_glwe_public_keyswitch_share_gen`, as
-    /// `GLWEPublicKeyswitchMHEProtocolReference::mhe_glwe_public_keyswitch_share_gen_tmp_bytes_reference`;
+    /// `MHEGLWEPublicKeyswitchProtocolReference::mhe_glwe_public_keyswitch_share_gen_tmp_bytes_reference`;
     /// panics unless all three layouts have the module's degree.
     fn mhe_glwe_public_keyswitch_share_gen_tmp_bytes<A, B, P>(
         module: &Module<Self>,
@@ -101,7 +101,7 @@ pub unsafe trait GLWEPublicKeyswitchMHEProtocolImpl: Backend {
         P: GLWEInfos;
 
     /// Reproduces
-    /// `GLWEPublicKeyswitchMHEProtocolReference::mhe_glwe_public_keyswitch_share_gen_reference`:
+    /// `MHEGLWEPublicKeyswitchProtocolReference::mhe_glwe_public_keyswitch_share_gen_reference`:
     /// `<mask, sk_in>` plus an encryption of zero under `pk_out` (`source_xu`
     /// for the ephemeral, `source_xe` for the errors) plus the `flood` noise
     /// from `source_smudge`; the mask is read only.
@@ -112,7 +112,7 @@ pub unsafe trait GLWEPublicKeyswitchMHEProtocolImpl: Backend {
     #[allow(clippy::too_many_arguments)]
     fn mhe_glwe_public_keyswitch_share_gen<C, S, K>(
         module: &Module<Self>,
-        res: &mut GLWEPublicKeyswitchShareOwned<Self>,
+        res: &mut MHEGLWEPublicKeyswitchShareOwned<Self>,
         mask: &C,
         sk_in: &S,
         pk_out: &K,
@@ -127,14 +127,14 @@ pub unsafe trait GLWEPublicKeyswitchMHEProtocolImpl: Backend {
         K: GLWEPublicKeyPreparedToBackendRef<Self> + GLWEInfos;
 
     /// Reproduces
-    /// `GLWEPublicKeyswitchMHEProtocolReference::mhe_glwe_public_keyswitch_share_aggregate_reference`:
+    /// `MHEGLWEPublicKeyswitchProtocolReference::mhe_glwe_public_keyswitch_share_aggregate_reference`:
     /// adds `a` into `res` without normalizing and combines the noise with
     /// `aggregate_common_key_metadata`.
     /// Panics unless the layouts agree.
     fn mhe_glwe_public_keyswitch_share_aggregate(
         module: &Module<Self>,
-        res: &mut GLWEPublicKeyswitchShareOwned<Self>,
-        a: &GLWEPublicKeyswitchShareOwned<Self>,
+        res: &mut MHEGLWEPublicKeyswitchShareOwned<Self>,
+        a: &MHEGLWEPublicKeyswitchShareOwned<Self>,
     );
 
     /// Upper bound on the scratch of
@@ -142,7 +142,7 @@ pub unsafe trait GLWEPublicKeyswitchMHEProtocolImpl: Backend {
     fn mhe_glwe_public_keyswitch_share_finalize_tmp_bytes(module: &Module<Self>) -> usize;
 
     /// Reproduces
-    /// `GLWEPublicKeyswitchMHEProtocolReference::mhe_glwe_public_keyswitch_share_finalize_reference`:
+    /// `MHEGLWEPublicKeyswitchProtocolReference::mhe_glwe_public_keyswitch_share_finalize_reference`:
     /// `res = ct + share` with the share's mask and body, normalized.
     /// Panics unless the ciphertext has the module's degree and the share and
     /// `res` have its layout.
@@ -150,7 +150,7 @@ pub unsafe trait GLWEPublicKeyswitchMHEProtocolImpl: Backend {
         module: &Module<Self>,
         res: &mut R,
         ct: &C,
-        share: &GLWEPublicKeyswitchShareOwned<Self>,
+        share: &MHEGLWEPublicKeyswitchShareOwned<Self>,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
         R: GLWEToBackendMut<Self> + GLWEInfos,
@@ -160,19 +160,19 @@ pub unsafe trait GLWEPublicKeyswitchMHEProtocolImpl: Backend {
 /// Selects the reference private key switching share generation, aggregation
 /// and finalization.
 #[macro_export]
-macro_rules! impl_glwe_private_keyswitch_mhe_protocol_reference_full {
+macro_rules! impl_mhe_glwe_private_keyswitch_protocol_reference_full {
     ($be:ty) => {
-        unsafe impl $crate::oep::GLWEPrivateKeyswitchMHEProtocolImpl for $be {
+        unsafe impl $crate::oep::MHEGLWEPrivateKeyswitchProtocolImpl for $be {
             fn mhe_glwe_private_keyswitch_share_gen_tmp_bytes<A>(module: &::poulpy_hal::layouts::Module<$be>, infos: &A) -> usize
             where
                 A: ::poulpy_core::layouts::GLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::GLWEPrivateKeyswitchMHEProtocolReference<$be>>::mhe_glwe_private_keyswitch_share_gen_tmp_bytes_reference(module, infos)
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::MHEGLWEPrivateKeyswitchProtocolReference<$be>>::mhe_glwe_private_keyswitch_share_gen_tmp_bytes_reference(module, infos)
             }
 
             fn mhe_glwe_private_keyswitch_share_gen<C, S1, S2>(
                 module: &::poulpy_hal::layouts::Module<$be>,
-                res: &mut $crate::layouts::GLWEPrivateKeyswitchShareOwned<$be>,
+                res: &mut $crate::layouts::MHEGLWEPrivateKeyswitchShareOwned<$be>,
                 mask: &C,
                 sk_in: &S1,
                 sk_out: &S2,
@@ -184,28 +184,28 @@ macro_rules! impl_glwe_private_keyswitch_mhe_protocol_reference_full {
                 S1: ::poulpy_core::layouts::GLWESecretPreparedToBackendRef<$be> + ::poulpy_core::layouts::GLWEInfos,
                 S2: ::poulpy_core::layouts::GLWESecretPreparedToBackendRef<$be> + ::poulpy_core::layouts::GLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::GLWEPrivateKeyswitchMHEProtocolReference<$be>>::mhe_glwe_private_keyswitch_share_gen_reference(module, res, mask, sk_in, sk_out, flood, source_smudge, scratch)
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::MHEGLWEPrivateKeyswitchProtocolReference<$be>>::mhe_glwe_private_keyswitch_share_gen_reference(module, res, mask, sk_in, sk_out, flood, source_smudge, scratch)
             }
 
-            fn mhe_glwe_private_keyswitch_share_aggregate(module: &::poulpy_hal::layouts::Module<$be>, res: &mut $crate::layouts::GLWEPrivateKeyswitchShareOwned<$be>, a: &$crate::layouts::GLWEPrivateKeyswitchShareOwned<$be>) {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::GLWEPrivateKeyswitchMHEProtocolReference<$be>>::mhe_glwe_private_keyswitch_share_aggregate_reference(module, res, a)
+            fn mhe_glwe_private_keyswitch_share_aggregate(module: &::poulpy_hal::layouts::Module<$be>, res: &mut $crate::layouts::MHEGLWEPrivateKeyswitchShareOwned<$be>, a: &$crate::layouts::MHEGLWEPrivateKeyswitchShareOwned<$be>) {
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::MHEGLWEPrivateKeyswitchProtocolReference<$be>>::mhe_glwe_private_keyswitch_share_aggregate_reference(module, res, a)
             }
 
             fn mhe_glwe_private_keyswitch_share_finalize_tmp_bytes(module: &::poulpy_hal::layouts::Module<$be>) -> usize {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::GLWEPrivateKeyswitchMHEProtocolReference<$be>>::mhe_glwe_private_keyswitch_share_finalize_tmp_bytes_reference(module)
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::MHEGLWEPrivateKeyswitchProtocolReference<$be>>::mhe_glwe_private_keyswitch_share_finalize_tmp_bytes_reference(module)
             }
 
             fn mhe_glwe_private_keyswitch_share_finalize<R, C>(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 res: &mut R,
                 ct: &C,
-                share: &$crate::layouts::GLWEPrivateKeyswitchShareOwned<$be>,
+                share: &$crate::layouts::MHEGLWEPrivateKeyswitchShareOwned<$be>,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) where
                 R: ::poulpy_core::layouts::GLWEToBackendMut<$be> + ::poulpy_core::layouts::GLWEInfos,
                 C: ::poulpy_core::layouts::GLWEToBackendRef<$be> + ::poulpy_core::layouts::GLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::GLWEPrivateKeyswitchMHEProtocolReference<$be>>::mhe_glwe_private_keyswitch_share_finalize_reference(module, res, ct, share, scratch)
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::MHEGLWEPrivateKeyswitchProtocolReference<$be>>::mhe_glwe_private_keyswitch_share_finalize_reference(module, res, ct, share, scratch)
             }
         }
     };
@@ -214,9 +214,9 @@ macro_rules! impl_glwe_private_keyswitch_mhe_protocol_reference_full {
 /// Selects the reference public key switching share generation, aggregation
 /// and finalization.
 #[macro_export]
-macro_rules! impl_glwe_public_keyswitch_mhe_protocol_reference_full {
+macro_rules! impl_mhe_glwe_public_keyswitch_protocol_reference_full {
     ($be:ty) => {
-        unsafe impl $crate::oep::GLWEPublicKeyswitchMHEProtocolImpl for $be {
+        unsafe impl $crate::oep::MHEGLWEPublicKeyswitchProtocolImpl for $be {
             fn mhe_glwe_public_keyswitch_share_gen_tmp_bytes<A, B, P>(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 ct_infos: &A,
@@ -228,12 +228,12 @@ macro_rules! impl_glwe_public_keyswitch_mhe_protocol_reference_full {
                 B: ::poulpy_core::layouts::GLWEInfos,
                 P: ::poulpy_core::layouts::GLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::GLWEPublicKeyswitchMHEProtocolReference<$be>>::mhe_glwe_public_keyswitch_share_gen_tmp_bytes_reference(module, ct_infos, res_infos, pk_infos)
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::MHEGLWEPublicKeyswitchProtocolReference<$be>>::mhe_glwe_public_keyswitch_share_gen_tmp_bytes_reference(module, ct_infos, res_infos, pk_infos)
             }
 
             fn mhe_glwe_public_keyswitch_share_gen<C, S, K>(
                 module: &::poulpy_hal::layouts::Module<$be>,
-                res: &mut $crate::layouts::GLWEPublicKeyswitchShareOwned<$be>,
+                res: &mut $crate::layouts::MHEGLWEPublicKeyswitchShareOwned<$be>,
                 mask: &C,
                 sk_in: &S,
                 pk_out: &K,
@@ -247,28 +247,28 @@ macro_rules! impl_glwe_public_keyswitch_mhe_protocol_reference_full {
                 S: ::poulpy_core::layouts::GLWESecretPreparedToBackendRef<$be> + ::poulpy_core::layouts::GLWEInfos,
                 K: ::poulpy_core::layouts::GLWEPublicKeyPreparedToBackendRef<$be> + ::poulpy_core::layouts::GLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::GLWEPublicKeyswitchMHEProtocolReference<$be>>::mhe_glwe_public_keyswitch_share_gen_reference(module, res, mask, sk_in, pk_out, flood, source_xu, source_xe, source_smudge, scratch)
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::MHEGLWEPublicKeyswitchProtocolReference<$be>>::mhe_glwe_public_keyswitch_share_gen_reference(module, res, mask, sk_in, pk_out, flood, source_xu, source_xe, source_smudge, scratch)
             }
 
-            fn mhe_glwe_public_keyswitch_share_aggregate(module: &::poulpy_hal::layouts::Module<$be>, res: &mut $crate::layouts::GLWEPublicKeyswitchShareOwned<$be>, a: &$crate::layouts::GLWEPublicKeyswitchShareOwned<$be>) {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::GLWEPublicKeyswitchMHEProtocolReference<$be>>::mhe_glwe_public_keyswitch_share_aggregate_reference(module, res, a)
+            fn mhe_glwe_public_keyswitch_share_aggregate(module: &::poulpy_hal::layouts::Module<$be>, res: &mut $crate::layouts::MHEGLWEPublicKeyswitchShareOwned<$be>, a: &$crate::layouts::MHEGLWEPublicKeyswitchShareOwned<$be>) {
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::MHEGLWEPublicKeyswitchProtocolReference<$be>>::mhe_glwe_public_keyswitch_share_aggregate_reference(module, res, a)
             }
 
             fn mhe_glwe_public_keyswitch_share_finalize_tmp_bytes(module: &::poulpy_hal::layouts::Module<$be>) -> usize {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::GLWEPublicKeyswitchMHEProtocolReference<$be>>::mhe_glwe_public_keyswitch_share_finalize_tmp_bytes_reference(module)
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::MHEGLWEPublicKeyswitchProtocolReference<$be>>::mhe_glwe_public_keyswitch_share_finalize_tmp_bytes_reference(module)
             }
 
             fn mhe_glwe_public_keyswitch_share_finalize<R, C>(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 res: &mut R,
                 ct: &C,
-                share: &$crate::layouts::GLWEPublicKeyswitchShareOwned<$be>,
+                share: &$crate::layouts::MHEGLWEPublicKeyswitchShareOwned<$be>,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) where
                 R: ::poulpy_core::layouts::GLWEToBackendMut<$be> + ::poulpy_core::layouts::GLWEInfos,
                 C: ::poulpy_core::layouts::GLWEToBackendRef<$be> + ::poulpy_core::layouts::GLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::GLWEPublicKeyswitchMHEProtocolReference<$be>>::mhe_glwe_public_keyswitch_share_finalize_reference(module, res, ct, share, scratch)
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::MHEGLWEPublicKeyswitchProtocolReference<$be>>::mhe_glwe_public_keyswitch_share_finalize_reference(module, res, ct, share, scratch)
             }
         }
     };

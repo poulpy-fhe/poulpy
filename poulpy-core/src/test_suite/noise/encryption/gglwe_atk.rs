@@ -14,8 +14,9 @@ use crate::{
     api::GLWESecretPreparedFactory,
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
-        GGLWEInfos, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout, GLWEInfos, GLWESecret, LWEInfos, ModuleCoreAlloc,
-        ModuleCoreCompressedAlloc, compressed::GLWEAutomorphismKeyCompressed, prepared::GLWESecretPrepared,
+        GGLWEInfos, GLWEAutomorphismKey, GLWEAutomorphismKeyAlloc, GLWEAutomorphismKeyCompressedAlloc, GLWEAutomorphismKeyLayout,
+        GLWEInfos, GLWESecret, GLWESecretAlloc, LWEInfos, compressed::GLWEAutomorphismKeyCompressed,
+        prepared::GLWESecretPrepared,
     },
     noise::GGLWENoise,
 };
@@ -207,7 +208,7 @@ pub fn test_gglwe_automorphism_key_compressed_encrypt_sk<BE: crate::test_suite::
 
             let mut atk: GLWEAutomorphismKey<BE::OwnedBuf, BE::ZnxWord> =
                 module.glwe_automorphism_key_alloc_from_infos(&atk_infos);
-            module.decompress_automorphism_key(&mut atk, &atk_compressed);
+            module.glwe_automorphism_key_decompress(&mut atk, &atk_compressed);
 
             let max_noise: f64 = DEFAULT_SIGMA_XE.log2() - (atk_infos.k().as_usize() as f64) + 0.5;
 

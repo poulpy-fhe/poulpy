@@ -42,7 +42,7 @@ where
         + poulpy_hal::api::VecZnxDftBytesOf
         + poulpy_hal::api::VmpApplyDftToDftTmpBytes
         + crate::api::GLWEBytesOf<BE>
-        + crate::api::GLWEExternalProductInternal<BE>
+        + crate::api::GLWEExternalProductDft<BE>
         + crate::api::GLWENormalize<BE>
         + poulpy_hal::api::VecZnxBigBytesOf
         + poulpy_hal::api::VecZnxIdftApplyTmpBytes

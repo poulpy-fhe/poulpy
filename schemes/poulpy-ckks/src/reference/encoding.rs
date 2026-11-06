@@ -10,8 +10,8 @@ use num_traits::NumCast;
 use poulpy_core::layouts::{GLWEInfos, IntPolyInfos, LWEInfos};
 use poulpy_hal::{
     GALOISGENERATOR,
-    api::NegacyclicFFT,
-    layouts::{Backend, ConjugateInvariant, HostDataMut, HostDataRef, Ring, Standard},
+    api::{ReimFFT, ReimIFFT},
+    layouts::{Backend, ConjugateInvariant, HostDataMut, HostDataRef, Module, Ring, Standard},
 };
 
 use crate::{
@@ -22,7 +22,7 @@ use crate::{
     shaping::{ShapingProfile, ShapingRing},
 };
 
-pub use crate::encoding::{paco_coeff_encodings_host, ship_coeff_encodings_host};
+pub use crate::encoding::{ckks_paco_coeff_encodings_host, ckks_ship_coeff_encodings_host};
 
 /// Canonical CKKS slot permutation for one transform dimension.
 ///
@@ -77,7 +77,7 @@ impl EncodingPermutation {
     pub fn slots_to_coeffs_assign<F, T>(&self, fft: &T, values: &mut [F]) -> Result<()>
     where
         F: CKKSEncodingScalar + NumCast,
-        T: NegacyclicFFT<F>,
+        T: ReimFFT<F> + ReimIFFT<F>,
     {
         ensure!(values.len() == 2 * self.slots);
         ensure!(fft.m() == self.slots);
@@ -85,7 +85,7 @@ impl EncodingPermutation {
             values.swap(a, b);
             values.swap(self.slots + a, self.slots + b);
         }
-        fft.ifft(values);
+        fft.reim_ifft(values);
         let inv_slots = F::from(self.slots)
             .context("slot count is not representable by the encoding scalar")?
             .recip();
@@ -96,11 +96,11 @@ impl EncodingPermutation {
     pub fn coeffs_to_slots_assign<F, T>(&self, fft: &T, values: &mut [F]) -> Result<()>
     where
         F: CKKSEncodingScalar,
-        T: NegacyclicFFT<F>,
+        T: ReimFFT<F> + ReimIFFT<F>,
     {
         ensure!(values.len() == 2 * self.slots);
         ensure!(fft.m() == self.slots);
-        fft.fft(values);
+        fft.reim_fft(values);
         for &(a, b) in self.slot_scatter_swaps.iter().rev() {
             values.swap(a, b);
             values.swap(self.slots + a, self.slots + b);
@@ -119,13 +119,13 @@ pub trait CKKSSlotEmbedding: Ring {
     fn slots_to_coeffs_assign<F, T>(map: &EncodingPermutation, fft: &T, values: &mut [F]) -> Result<()>
     where
         F: CKKSEncodingScalar + NumCast,
-        T: NegacyclicFFT<F>;
+        T: ReimFFT<F> + ReimIFFT<F>;
 
     /// In-place coefficients to planar slots.
     fn coeffs_to_slots_assign<F, T>(map: &EncodingPermutation, fft: &T, values: &mut [F]) -> Result<()>
     where
         F: CKKSEncodingScalar,
-        T: NegacyclicFFT<F>;
+        T: ReimFFT<F> + ReimIFFT<F>;
 }
 
 /// Complex slots over all `2m` coefficients.
@@ -135,7 +135,7 @@ impl CKKSSlotEmbedding for Standard {
     fn slots_to_coeffs_assign<F, T>(map: &EncodingPermutation, fft: &T, values: &mut [F]) -> Result<()>
     where
         F: CKKSEncodingScalar + NumCast,
-        T: NegacyclicFFT<F>,
+        T: ReimFFT<F> + ReimIFFT<F>,
     {
         map.slots_to_coeffs_assign(fft, values)
     }
@@ -143,7 +143,7 @@ impl CKKSSlotEmbedding for Standard {
     fn coeffs_to_slots_assign<F, T>(map: &EncodingPermutation, fft: &T, values: &mut [F]) -> Result<()>
     where
         F: CKKSEncodingScalar,
-        T: NegacyclicFFT<F>,
+        T: ReimFFT<F> + ReimIFFT<F>,
     {
         map.coeffs_to_slots_assign(fft, values)
     }
@@ -157,7 +157,7 @@ impl CKKSSlotEmbedding for ConjugateInvariant {
     fn slots_to_coeffs_assign<F, T>(map: &EncodingPermutation, fft: &T, values: &mut [F]) -> Result<()>
     where
         F: CKKSEncodingScalar + NumCast,
-        T: NegacyclicFFT<F>,
+        T: ReimFFT<F> + ReimIFFT<F>,
     {
         ensure!(values.len() == 2 * map.slots);
         values[map.slots..].fill(F::zero());
@@ -167,7 +167,7 @@ impl CKKSSlotEmbedding for ConjugateInvariant {
     fn coeffs_to_slots_assign<F, T>(map: &EncodingPermutation, fft: &T, values: &mut [F]) -> Result<()>
     where
         F: CKKSEncodingScalar,
-        T: NegacyclicFFT<F>,
+        T: ReimFFT<F> + ReimIFFT<F>,
     {
         ensure!(values.len() == 2 * map.slots);
         // Unfold the invariant coefficients: `X^-j = -X^(2m-j)`.
@@ -193,6 +193,47 @@ where
     Ok(())
 }
 
+/// Reference bodies of the coefficient codecs of [`CKKSEncodingImpl<F>`](crate::oep::CKKSEncodingImpl), forwarding to
+/// [`ckks_quantize_coeffs_into_reference`] and [`ckks_dequantize_coeffs_into_reference`].
+pub trait CKKSEncodingReference<BE: Backend, F: CKKSEncodingScalar> {
+    fn ckks_quantize_coeffs_into_reference<P>(&self, pt: &mut P, coeffs: &CKKSEncodingBufferBackendRef<'_, BE, F>) -> Result<()>
+    where
+        F: NumCast,
+        P: CKKSPlaintextToBackendMut<BE> + IntPolyInfos + SetCKKSInfos;
+
+    fn ckks_dequantize_coeffs_into_reference<P>(
+        &self,
+        pt: &P,
+        coeffs: &mut CKKSEncodingBufferBackendMut<'_, BE, F>,
+    ) -> Result<()>
+    where
+        P: CKKSPlaintextToBackendRef<BE> + IntPolyInfos;
+}
+
+impl<BE, F> CKKSEncodingReference<BE, F> for Module<BE>
+where
+    BE: Backend<ZnxWord = i64>,
+    BE::Ring: CKKSSlotEmbedding,
+    F: CKKSEncodingScalar,
+    for<'a> BE::BufRef<'a>: HostDataRef,
+    for<'a> BE::BufMut<'a>: HostDataMut,
+{
+    fn ckks_quantize_coeffs_into_reference<P>(&self, pt: &mut P, coeffs: &CKKSEncodingBufferBackendRef<'_, BE, F>) -> Result<()>
+    where
+        F: NumCast,
+        P: CKKSPlaintextToBackendMut<BE> + IntPolyInfos + SetCKKSInfos,
+    {
+        ckks_quantize_coeffs_into_reference::<BE, F, P>(pt, coeffs)
+    }
+
+    fn ckks_dequantize_coeffs_into_reference<P>(&self, pt: &P, coeffs: &mut CKKSEncodingBufferBackendMut<'_, BE, F>) -> Result<()>
+    where
+        P: CKKSPlaintextToBackendRef<BE> + IntPolyInfos,
+    {
+        ckks_dequantize_coeffs_into_reference::<BE, F, P>(pt, coeffs)
+    }
+}
+
 /// Host reference quantization into canonical integer coefficients at the plaintext scale.
 ///
 /// Coefficients are rounded exactly to the nearest integer, with halfway cases
@@ -202,7 +243,7 @@ where
 /// preserved, except the slot kind, which is narrowed to the ring's
 /// ([`CKKSSlotEmbedding::SLOTS`]). Host-access bounds are specific to this
 /// reference helper, not the resident encoding extension point.
-pub fn encode_coeffs_into_host<BE, F, P>(pt: &mut P, coeffs: &CKKSEncodingBufferBackendRef<'_, BE, F>) -> Result<()>
+pub fn ckks_quantize_coeffs_into_reference<BE, F, P>(pt: &mut P, coeffs: &CKKSEncodingBufferBackendRef<'_, BE, F>) -> Result<()>
 where
     BE: Backend<ZnxWord = i64>,
     BE::Ring: CKKSSlotEmbedding,
@@ -320,7 +361,7 @@ where
 /// Host reference dequantization of canonical integer coefficients, rounded
 /// once ([`ckks_dequantize`](crate::numerics::CKKSFloat::ckks_dequantize)), one
 /// per coefficient of the plaintext. The plaintext and its metadata are preserved.
-pub fn decode_coeffs_into_host<BE, F, P>(pt: &P, coeffs: &mut CKKSEncodingBufferBackendMut<'_, BE, F>) -> Result<()>
+pub fn ckks_dequantize_coeffs_into_reference<BE, F, P>(pt: &P, coeffs: &mut CKKSEncodingBufferBackendMut<'_, BE, F>) -> Result<()>
 where
     BE: Backend<ZnxWord = i64>,
     F: CKKSEncodingScalar,

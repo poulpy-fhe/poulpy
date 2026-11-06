@@ -23,7 +23,7 @@ pub trait CnvPVecAlloc<BE: Backend> {
 /// Returns the byte sizes for prepared convolution operands.
 ///
 /// ```text
-/// op         bytes_of_cnv_pvec_left(n, cols, size, hint) / bytes_of_cnv_pvec_right(n, cols, size, hint)
+/// op         cnv_pvec_left_bytes_of(n, cols, size, hint) / cnv_pvec_right_bytes_of(n, cols, size, hint)
 /// class      support
 /// mutation   none
 /// domain     n: a power of two, MIN_DEGREE <= n <= the module's degree; cols >= 1, size >= 1
@@ -32,74 +32,74 @@ pub trait CnvPVecAlloc<BE: Backend> {
 /// ```
 pub trait CnvPVecBytesOf {
     /// Returns the bytes a degree-`n` [`CnvPVecL`](crate::layouts::CnvPVecL) of `cols` columns and `size` limbs under `hint` occupies.
-    fn bytes_of_cnv_pvec_left(&self, n: usize, cols: usize, size: usize, hint: PrepareHint) -> usize;
+    fn cnv_pvec_left_bytes_of(&self, n: usize, cols: usize, size: usize, hint: PrepareHint) -> usize;
     /// Returns the bytes a degree-`n` [`CnvPVecR`](crate::layouts::CnvPVecR) of `cols` columns and `size` limbs under `hint` occupies.
-    fn bytes_of_cnv_pvec_right(&self, n: usize, cols: usize, size: usize, hint: PrepareHint) -> usize;
+    fn cnv_pvec_right_bytes_of(&self, n: usize, cols: usize, size: usize, hint: PrepareHint) -> usize;
 }
 
 /// Limb convolution over the module ring `R_N[Y]`, where `Y = 2^{-K}`.
-pub trait Convolution<BE: Backend> {
-    /// Returns the scratch bytes [`cnv_prepare_left`](Convolution::cnv_prepare_left) requires for those sizes.
+pub trait CnvOps<BE: Backend> {
+    /// Returns the scratch bytes [`cnv_pvec_left_prepare`](CnvOps::cnv_pvec_left_prepare) requires for those sizes.
     ///
     /// ```text
-    /// op         cnv_prepare_left_tmp_bytes(res_size, a_size)
+    /// op         cnv_pvec_left_prepare_tmp_bytes(res_size, a_size)
     /// class      support
     /// mutation   none
     /// domain     res_size, a_size: the prepared operand's and the input's limb counts
-    /// ensures    returns the scratch bytes cnv_prepare_left needs on those sizes
+    /// ensures    returns the scratch bytes cnv_pvec_left_prepare needs on those sizes
     /// test       test_convolution
     /// ```
-    fn cnv_prepare_left_tmp_bytes(&self, res_size: usize, a_size: usize) -> usize;
+    fn cnv_pvec_left_prepare_tmp_bytes(&self, res_size: usize, a_size: usize) -> usize;
     /// Writes each column of `a` into `res`, truncated or zero-extended to `res.size()` limbs.
     ///
     /// ```text
-    /// op         cnv_prepare_left(res, a, scratch)
+    /// op         cnv_pvec_left_prepare(res, a, scratch)
     /// class      basis
     /// mutation   out-of-place
     /// definition res[c,j] reads as a[c,j] for every 0 <= c < res.cols()
     /// domain     res: a CnvPVecL of degree N with res.cols() == a.cols(); a: a dense VecZnx of degree N, canonical at the precision the caller means to convolve at
-    /// requires   scratch >= cnv_prepare_left_tmp_bytes(res.size(), a.size())
+    /// requires   scratch >= cnv_pvec_left_prepare_tmp_bytes(res.size(), a.size())
     /// ensures    each prepared column reads the source column truncated or zero-extended to res.size() limbs
     /// test       test_convolution, test_cnv_prepare_rejects_mismatched_shape, test_convolution_embed
     /// ```
-    fn cnv_prepare_left(
+    fn cnv_pvec_left_prepare(
         &self,
         res: &mut CnvPVecLBackendMut<'_, BE>,
         a: &VecZnxBackendRef<'_, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     );
 
-    /// Returns the scratch bytes [`cnv_prepare_right`](Convolution::cnv_prepare_right) requires for those sizes.
+    /// Returns the scratch bytes [`cnv_pvec_right_prepare`](CnvOps::cnv_pvec_right_prepare) requires for those sizes.
     ///
     /// ```text
-    /// op         cnv_prepare_right_tmp_bytes(res_size, a_size)
+    /// op         cnv_pvec_right_prepare_tmp_bytes(res_size, a_size)
     /// class      support
     /// mutation   none
     /// domain     res_size, a_size: the prepared operand's and the input's limb counts
-    /// ensures    returns the scratch bytes cnv_prepare_right needs on those sizes
+    /// ensures    returns the scratch bytes cnv_pvec_right_prepare needs on those sizes
     /// test       test_convolution
     /// ```
-    fn cnv_prepare_right_tmp_bytes(&self, res_size: usize, a_size: usize) -> usize;
+    fn cnv_pvec_right_prepare_tmp_bytes(&self, res_size: usize, a_size: usize) -> usize;
     /// Writes each column of `a` into `res`, truncated or zero-extended to `res.size()` limbs.
     ///
     /// ```text
-    /// op         cnv_prepare_right(res, a, scratch)
+    /// op         cnv_pvec_right_prepare(res, a, scratch)
     /// class      basis
     /// mutation   out-of-place
     /// definition res[c,j] reads as a[c,j] for every 0 <= c < res.cols()
     /// domain     res: a CnvPVecR of degree N with res.cols() == a.cols(); a: a dense VecZnx of degree N, canonical at the precision the caller means to convolve at
-    /// requires   scratch >= cnv_prepare_right_tmp_bytes(res.size(), a.size())
+    /// requires   scratch >= cnv_pvec_right_prepare_tmp_bytes(res.size(), a.size())
     /// ensures    each prepared column reads the source column truncated or zero-extended to res.size() limbs
     /// test       test_convolution, test_cnv_prepare_rejects_mismatched_shape, test_convolution_embed
     /// ```
-    fn cnv_prepare_right(
+    fn cnv_pvec_right_prepare(
         &self,
         res: &mut CnvPVecRBackendMut<'_, BE>,
         a: &VecZnxBackendRef<'_, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     );
 
-    /// Returns the scratch bytes [`cnv_apply_dft`](Convolution::cnv_apply_dft) requires for those sizes.
+    /// Returns the scratch bytes [`cnv_apply_dft`](CnvOps::cnv_apply_dft) requires for those sizes.
     ///
     /// ```text
     /// op         cnv_apply_dft_tmp_bytes(cnv_offset, res_size, a_size, b_size)
@@ -111,7 +111,7 @@ pub trait Convolution<BE: Backend> {
     /// ```
     fn cnv_apply_dft_tmp_bytes(&self, cnv_offset: usize, res_size: usize, a_size: usize, b_size: usize) -> usize;
 
-    /// Returns the scratch bytes [`cnv_by_const_apply`](Convolution::cnv_by_const_apply) requires for those sizes.
+    /// Returns the scratch bytes [`cnv_by_const_apply`](CnvOps::cnv_by_const_apply) requires for those sizes.
     ///
     /// ```text
     /// op         cnv_by_const_apply_tmp_bytes(cnv_offset, res_size, a_size, b_size)
@@ -149,7 +149,7 @@ pub trait Convolution<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     );
 
-    /// Returns the scratch bytes [`cnv_by_const_apply_add`](Convolution::cnv_by_const_apply_add) requires for those sizes.
+    /// Returns the scratch bytes [`cnv_by_const_apply_add`](CnvOps::cnv_by_const_apply_add) requires for those sizes.
     ///
     /// ```text
     /// op         cnv_by_const_apply_add_tmp_bytes(cnv_offset, res_size, a_size, b_size)
@@ -216,7 +216,7 @@ pub trait Convolution<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     );
 
-    /// Returns the scratch bytes [`cnv_apply_dft_add`](Convolution::cnv_apply_dft_add) requires for those sizes.
+    /// Returns the scratch bytes [`cnv_apply_dft_add`](CnvOps::cnv_apply_dft_add) requires for those sizes.
     ///
     /// ```text
     /// op         cnv_apply_dft_add_tmp_bytes(cnv_offset, res_size, a_size, b_size)
@@ -257,7 +257,7 @@ pub trait Convolution<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     );
 
-    /// Returns the scratch bytes [`cnv_apply_dft_sum`](Convolution::cnv_apply_dft_sum) requires for those sizes.
+    /// Returns the scratch bytes [`cnv_apply_dft_sum`](CnvOps::cnv_apply_dft_sum) requires for those sizes.
     ///
     /// ```text
     /// op         cnv_apply_dft_sum_tmp_bytes(cnv_offset, res_size, a_size, b_size)
@@ -293,7 +293,7 @@ pub trait Convolution<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     );
 
-    /// Returns the scratch bytes [`cnv_pairwise_apply_dft`](Convolution::cnv_pairwise_apply_dft) requires for those sizes.
+    /// Returns the scratch bytes [`cnv_pairwise_apply_dft`](CnvOps::cnv_pairwise_apply_dft) requires for those sizes.
     ///
     /// ```text
     /// op         cnv_pairwise_apply_dft_tmp_bytes(cnv_offset, res_size, a_size, b_size)
@@ -333,33 +333,33 @@ pub trait Convolution<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     );
 
-    /// Returns the scratch bytes [`cnv_prepare_self`](Convolution::cnv_prepare_self) requires for those sizes.
+    /// Returns the scratch bytes [`cnv_pvec_self_prepare`](CnvOps::cnv_pvec_self_prepare) requires for those sizes.
     ///
     /// ```text
-    /// op         cnv_prepare_self_tmp_bytes(res_size, a_size)
+    /// op         cnv_pvec_self_prepare_tmp_bytes(res_size, a_size)
     /// class      support
     /// mutation   none
     /// domain     res_size, a_size: the prepared operands' and the input's limb counts
-    /// ensures    returns the scratch bytes cnv_prepare_self needs on those sizes
-    /// test       test_cnv_prepare_self_derived
+    /// ensures    returns the scratch bytes cnv_pvec_self_prepare needs on those sizes
+    /// test       test_cnv_pvec_self_prepare_derived
     /// ```
-    fn cnv_prepare_self_tmp_bytes(&self, res_size: usize, a_size: usize) -> usize;
+    fn cnv_pvec_self_prepare_tmp_bytes(&self, res_size: usize, a_size: usize) -> usize;
 
     /// Writes each column of `a` into both `left` and `right`, truncated or zero-extended to their limb count.
     ///
     /// ```text
-    /// op         cnv_prepare_self(left, right, a, scratch)
+    /// op         cnv_pvec_self_prepare(left, right, a, scratch)
     /// class      derived
     /// mutation   out-of-place
     /// definition left[c,j] and right[c,j] read as a[c,j] for every 0 <= c < left.cols() and 0 <= j < left.size()
     /// domain     left: a CnvPVecL of degree N; right: a CnvPVecR of degree N, with right.cols() == left.cols() and right.size() == left.size(); a: a dense VecZnx of degree N with a.cols() == left.cols(), canonical at the precision the caller means to convolve at
-    /// requires   scratch >= cnv_prepare_self_tmp_bytes(left.size(), a.size())
+    /// requires   scratch >= cnv_pvec_self_prepare_tmp_bytes(left.size(), a.size())
     /// ensures    both prepared operands read the source truncated or zero-extended to their limb count
     /// fallback   OEP default body: the shape check, then the two prepares in sequence
-    /// override   allowed, with cnv_prepare_self_tmp_bytes
-    /// test       test_cnv_prepare_self_derived, test_cnv_prepare_rejects_mismatched_shape, test_convolution_embed
+    /// override   allowed, with cnv_pvec_self_prepare_tmp_bytes
+    /// test       test_cnv_pvec_self_prepare_derived, test_cnv_prepare_rejects_mismatched_shape, test_convolution_embed
     /// ```
-    fn cnv_prepare_self(
+    fn cnv_pvec_self_prepare(
         &self,
         left: &mut CnvPVecLBackendMut<'_, BE>,
         right: &mut CnvPVecRBackendMut<'_, BE>,

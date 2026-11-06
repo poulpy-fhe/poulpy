@@ -1,5 +1,5 @@
 use crate::CKKSResult as Result;
-use poulpy_core::layouts::GLWEToBackendRef;
+use poulpy_core::layouts::{GLWEInfos, GLWEToBackendRef};
 use poulpy_hal::{
     api::ScratchOwnedBorrow,
     layouts::{Backend, Module, ScratchArena, ScratchOwned},
@@ -7,7 +7,7 @@ use poulpy_hal::{
 
 use crate::{
     CKKSCtBounds,
-    api::{CKKSPaCoOps, PaCoScalar},
+    api::{CKKSPaCoOps, CKKSPaCoScalar},
     layouts::{CKKSCiphertextOwned, CKKSPlaintextOwned, PaCoContext, PaCoKeys, PaCoWorker},
     oep::{CKKSEncodingImpl, CKKSPaCoCoeffEncodingImpl, CKKSPaCoImpl},
 };
@@ -15,7 +15,7 @@ use crate::{
 impl<BE, F> CKKSPaCoOps<BE, F> for Module<BE>
 where
     BE: Backend + CKKSPaCoImpl + CKKSPaCoCoeffEncodingImpl + CKKSEncodingImpl<F>,
-    F: PaCoScalar,
+    F: CKKSPaCoScalar,
 {
     fn ckks_paco_bootstrap_direct_tmp_bytes<K, Src>(
         &self,
@@ -45,8 +45,8 @@ where
         BE::ckks_paco_bootstrap_tmp_bytes(self, output, input, context, keys)
     }
 
-    fn ckks_paco_coeff_encodings_tmp_bytes(&self, context: &PaCoContext<BE, F>) -> Result<usize> {
-        BE::ckks_paco_coeff_encodings_tmp_bytes(self, context)
+    fn ckks_paco_coeff_encodings_tmp_bytes<A: GLWEInfos>(&self, context: &PaCoContext<BE, F>, input: &A) -> Result<usize> {
+        BE::ckks_paco_coeff_encodings_tmp_bytes(self, context, input)
     }
 
     fn ckks_paco_coeff_encodings<Src>(

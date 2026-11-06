@@ -14,7 +14,7 @@ use crate::{
     api::{GGSWPreparedFactory, GLWESecretPreparedFactory},
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
-        GGSW, GGSWInfos, GGSWLayout, GLWEInfos, GLWESecret, ModuleCoreAlloc,
+        GGSW, GGSWAlloc, GGSWInfos, GGSWLayout, GLWEInfos, GLWESecret, GLWESecretAlloc,
         prepared::{GGSWPrepared, GLWESecretPrepared},
     },
     noise::GGSWNoiseModel,

@@ -43,7 +43,7 @@ fn run() -> Result<()> {
     let tanh = host_tanh.map_plaintexts(|pt| upload_pt(&setup.module, pt));
     let mut context = setup.prepare(circuit_consumed, |module, sizing, params| {
         module
-            .ckks_tanh_tmp_bytes(sizing, sizing, &params.tsk_layout(), &tanh)
+            .ckks_tanh_tmp_bytes(sizing, sizing, &tanh, &params.tsk_layout())
             .max(module.ckks_scalbn_tmp_bytes(sizing))
     });
 

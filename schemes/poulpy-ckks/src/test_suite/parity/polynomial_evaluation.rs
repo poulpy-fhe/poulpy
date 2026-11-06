@@ -11,16 +11,16 @@ use crate::{
         CKKSPolynomialEvaluationOps,
     },
     layouts::{
-        CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned,
-        eval_mod::{EvalModPlan, EvalModType, compile_eval_mod},
+        CKKSCiphertextOwned, CKKSPlaintextAlloc, CKKSPlaintextOwned,
+        eval_mod::{EvalModPlan, EvalModType, ckks_eval_mod_compile},
     },
     oep::{CKKSEncodingImpl, CKKSImpl, CKKSPolynomialEvaluationImpl},
-    polynomial::{Basis, ComplexBSGSPolynomial, EncodeBSGS, Parity, Polynomial, SplitStrategy},
-    power_basis::{PowerBasis, PowerBasisGen},
+    polynomial::{Basis, CKKSPolynomialEncode, ComplexBSGSPolynomial, Parity, Polynomial, SplitStrategy},
+    power_basis::{CKKSPowerBasisGen, PowerBasis},
     test_suite::CKKSTestParams,
 };
 use poulpy_core::{
-    GLWEMaskFill,
+    GLWEFill,
     api::GLWETensorKeyPreparedFactory,
     layouts::{GGLWELayout, GLWELayout, GLWETensorKeyPrepared, LWEInfos},
 };
@@ -51,7 +51,7 @@ struct Setup<BE: Backend> {
 fn setup<BE>(params: CKKSTestParams, module: &Module<BE>) -> Setup<BE>
 where
     BE: Backend<ZnxWord = i64>,
-    Module<BE>: CKKSAllOpsTmpBytes<BE> + GLWETensorKeyPreparedFactory<BE> + GLWEMaskFill<BE>,
+    Module<BE>: CKKSAllOpsTmpBytes<BE> + GLWETensorKeyPreparedFactory<BE> + GLWEFill<BE>,
 {
     let b = params.base2k;
     let layout = CKKSLayout {
@@ -113,7 +113,7 @@ fn real_polynomials<BE, F>(params: CKKSTestParams, module: &Module<BE>) -> Vec<S
 where
     BE: Backend<ZnxWord = i64> + CKKSPolynomialEvaluationImpl,
     F: CKKSEncodingScalar,
-    Module<BE>: CKKSAllOpsTmpBytes<BE> + GLWETensorKeyPreparedFactory<BE> + GLWEMaskFill<BE>,
+    Module<BE>: CKKSAllOpsTmpBytes<BE> + GLWETensorKeyPreparedFactory<BE> + GLWEFill<BE>,
 {
     let b = params.base2k;
     let Setup {
@@ -188,7 +188,7 @@ fn complex_polynomials_and_eval_mod<BE, F>(params: CKKSTestParams, module: &Modu
 where
     BE: Backend<ZnxWord = i64> + CKKSImpl + CKKSEncodingImpl<F>,
     F: CKKSEncodingScalar,
-    Module<BE>: CKKSAllOpsTmpBytes<BE> + CKKSEvalModOps<BE> + GLWETensorKeyPreparedFactory<BE> + GLWEMaskFill<BE>,
+    Module<BE>: CKKSAllOpsTmpBytes<BE> + CKKSEvalModOps<BE> + GLWETensorKeyPreparedFactory<BE> + GLWEFill<BE>,
 {
     let b = params.base2k;
     let Setup {
@@ -311,9 +311,11 @@ where
                 coeffs_meta: coeff_meta,
                 f_mod_log_delta: 10,
             };
-            let encoding = <Module<BE> as CKKSEncodingHostOps<BE, F>>::ckks_reim_tmp_bytes(module, module.n() / 2);
-            let compiled =
-                with_scratch::<BE, _>(encoding, |scratch| compile_eval_mod::<BE, F>(b.into(), plan, module, scratch)).unwrap();
+            let encoding = <Module<BE> as CKKSEncodingHostOps<BE, F>>::ckks_encoding_host_tmp_bytes(module, module.n() / 2);
+            let compiled = with_scratch::<BE, _>(encoding, |scratch| {
+                ckks_eval_mod_compile::<BE, F>(b.into(), plan, module, scratch)
+            })
+            .unwrap();
             let input = fixture_ciphertext(module, &layout, 149);
             let before = snapshot::<BE, _>(&input);
             let mut out = fixture_ciphertext(module, &layout, 151);
@@ -335,8 +337,8 @@ where
     BR: Backend<ZnxWord = i64> + CKKSPolynomialEvaluationImpl,
     BT: Backend<ZnxWord = i64> + CKKSPolynomialEvaluationImpl,
     F: CKKSEncodingScalar,
-    Module<BR>: CKKSAllOpsTmpBytes<BR> + GLWETensorKeyPreparedFactory<BR> + GLWEMaskFill<BR>,
-    Module<BT>: CKKSAllOpsTmpBytes<BT> + GLWETensorKeyPreparedFactory<BT> + GLWEMaskFill<BT>,
+    Module<BR>: CKKSAllOpsTmpBytes<BR> + GLWETensorKeyPreparedFactory<BR> + GLWEFill<BR>,
+    Module<BT>: CKKSAllOpsTmpBytes<BT> + GLWETensorKeyPreparedFactory<BT> + GLWEFill<BT>,
 {
     assert_eq!(module_ref.n(), module_test.n());
     let want = real_polynomials::<BR, F>(params, module_ref);
@@ -355,8 +357,8 @@ where
     BR: Backend<ZnxWord = i64> + CKKSImpl + CKKSEncodingImpl<F>,
     BT: Backend<ZnxWord = i64> + CKKSImpl + CKKSEncodingImpl<F>,
     F: CKKSEncodingScalar,
-    Module<BR>: CKKSAllOpsTmpBytes<BR> + CKKSEvalModOps<BR> + GLWETensorKeyPreparedFactory<BR> + GLWEMaskFill<BR>,
-    Module<BT>: CKKSAllOpsTmpBytes<BT> + CKKSEvalModOps<BT> + GLWETensorKeyPreparedFactory<BT> + GLWEMaskFill<BT>,
+    Module<BR>: CKKSAllOpsTmpBytes<BR> + CKKSEvalModOps<BR> + GLWETensorKeyPreparedFactory<BR> + GLWEFill<BR>,
+    Module<BT>: CKKSAllOpsTmpBytes<BT> + CKKSEvalModOps<BT> + GLWETensorKeyPreparedFactory<BT> + GLWEFill<BT>,
 {
     assert_eq!(module_ref.n(), module_test.n());
     let want = complex_polynomials_and_eval_mod::<BR, F>(params, module_ref);

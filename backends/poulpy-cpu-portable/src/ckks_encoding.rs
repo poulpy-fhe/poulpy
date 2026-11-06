@@ -17,7 +17,7 @@ use std::marker::PhantomData;
 
 use anyhow::{Result, ensure};
 use poulpy_ckks::{api::CKKSEncodingScalar, numerics::ROOT_TABLE_LOG_ORDER};
-use poulpy_hal::api::{NegacyclicFFT, NegacyclicFFTNew};
+use poulpy_hal::api::{ReimFFT, ReimIFFT, ReimM, ReimNew};
 
 use crate::kernels::fft64::reim::{ReimFFTExecute, ReimFFTPortableFused, ReimFFTTable, ReimIFFTPortableFused, ReimIFFTTable};
 
@@ -69,14 +69,14 @@ pub struct NegacyclicFFTSet<F, T> {
 
 impl<F, T> NegacyclicFFTSet<F, T>
 where
-    T: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    T: ReimNew<F>,
 {
     pub fn new(max_slots: usize) -> Result<Self> {
         ensure!(
             max_slots > 0 && max_slots.is_power_of_two(),
             "maximum slot count must be a non-zero power of two"
         );
-        // `NegacyclicFFTNew::new` takes the transform half-length, which for a
+        // `ReimNew::new` takes the transform half-length, which for a
         // `slots`-slot encoding is `slots` itself.
         let ffts = (0..=max_slots.ilog2() as usize)
             .map(|log_slots| T::new(1usize << log_slots))
@@ -112,7 +112,7 @@ pub struct OwnedEncodingPlanSet<F, T> {
 
 impl<F, T> OwnedEncodingPlanSet<F, T>
 where
-    T: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    T: ReimNew<F>,
 {
     /// Builds the family for every power-of-two slot count up to `max_n / 2`.
     pub fn new(max_n: usize) -> Result<Self> {
@@ -146,7 +146,7 @@ pub struct EncodingFFTTable<F: CKKSEncodingScalar, FWD = ReimFFTPortableFused, I
     kernels: PhantomData<(FWD, INV)>,
 }
 
-impl<F, FWD, INV> NegacyclicFFTNew<F> for EncodingFFTTable<F, FWD, INV>
+impl<F, FWD, INV> ReimNew<F> for EncodingFFTTable<F, FWD, INV>
 where
     F: CKKSEncodingScalar,
     FWD: ReimFFTExecute<ReimFFTTable<F>, F>,
@@ -179,7 +179,7 @@ where
     }
 }
 
-impl<F, FWD, INV> NegacyclicFFT<F> for EncodingFFTTable<F, FWD, INV>
+impl<F, FWD, INV> ReimM for EncodingFFTTable<F, FWD, INV>
 where
     F: CKKSEncodingScalar,
     FWD: ReimFFTExecute<ReimFFTTable<F>, F>,
@@ -188,12 +188,26 @@ where
     fn m(&self) -> usize {
         self.fft.m()
     }
+}
 
-    fn fft(&self, data: &mut [F]) {
+impl<F, FWD, INV> ReimFFT<F> for EncodingFFTTable<F, FWD, INV>
+where
+    F: CKKSEncodingScalar,
+    FWD: ReimFFTExecute<ReimFFTTable<F>, F>,
+    INV: ReimFFTExecute<ReimIFFTTable<F>, F>,
+{
+    fn reim_fft(&self, data: &mut [F]) {
         FWD::reim_dft_execute(&self.fft, data);
     }
+}
 
-    fn ifft(&self, data: &mut [F]) {
+impl<F, FWD, INV> ReimIFFT<F> for EncodingFFTTable<F, FWD, INV>
+where
+    F: CKKSEncodingScalar,
+    FWD: ReimFFTExecute<ReimFFTTable<F>, F>,
+    INV: ReimFFTExecute<ReimIFFTTable<F>, F>,
+{
+    fn reim_ifft(&self, data: &mut [F]) {
         INV::reim_dft_execute(&self.ifft, data);
     }
 }
@@ -211,7 +225,7 @@ where
 /// backends enumerate their precisions explicitly (one line each).
 pub trait CKKSEncodingTransform<F> {
     /// The transform family used for precision `F`.
-    type Fft: NegacyclicFFT<F> + NegacyclicFFTNew<F> + Send + Sync + 'static;
+    type Fft: ReimNew<F> + Send + Sync + 'static;
 }
 
 /// Instantiates the generic CKKS encoder for a backend.
@@ -254,7 +268,7 @@ macro_rules! impl_ckks_encoding {
                     + ::poulpy_core::layouts::IntPolyInfos
                     + ::poulpy_ckks::SetCKKSInfos,
             {
-                ::poulpy_ckks::reference::encoding::encode_coeffs_into_host::<$be, F, P>(pt, coeffs)
+                ::poulpy_ckks::reference::encoding::ckks_quantize_coeffs_into_reference::<$be, F, P>(pt, coeffs)
                     .map_err(::poulpy_ckks::CKKSError::from)
             }
 
@@ -266,11 +280,11 @@ macro_rules! impl_ckks_encoding {
             where
                 P: ::poulpy_ckks::CKKSPlaintextToBackendRef<$be> + ::poulpy_core::layouts::IntPolyInfos,
             {
-                ::poulpy_ckks::reference::encoding::decode_coeffs_into_host::<$be, F, P>(pt, coeffs)
+                ::poulpy_ckks::reference::encoding::ckks_dequantize_coeffs_into_reference::<$be, F, P>(pt, coeffs)
                     .map_err(::poulpy_ckks::CKKSError::from)
             }
 
-            fn ckks_slots_to_coeffs_assign_with_plan(
+            fn ckks_encoding_buffer_slots_to_coeffs_assign_with_plan(
                 _module: &::poulpy_hal::layouts::Module<$be>,
                 plans: &Self::Plans,
                 values: &mut ::poulpy_ckks::layouts::CKKSEncodingBufferBackendMut<'_, $be, F>,
@@ -285,7 +299,7 @@ macro_rules! impl_ckks_encoding {
                 .map_err(::poulpy_ckks::CKKSError::from)
             }
 
-            fn ckks_coeffs_to_slots_assign_with_plan(
+            fn ckks_encoding_buffer_coeffs_to_slots_assign_with_plan(
                 _module: &::poulpy_hal::layouts::Module<$be>,
                 plans: &Self::Plans,
                 values: &mut ::poulpy_ckks::layouts::CKKSEncodingBufferBackendMut<'_, $be, F>,
@@ -309,7 +323,7 @@ mod tests {
     use poulpy_ckks::{
         GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotLayout, SlotsKind,
         api::{CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar},
-        layouts::{CKKSEncodingBuffer, CKKSModuleAlloc, ScratchArenaTakeCKKS},
+        layouts::{CKKSEncodingBuffer, CKKSPlaintextAlloc, ScratchArenaTakeCKKSPlaintext},
     };
     use poulpy_core::layouts::{Base2K, Degree, GLWEPlaintext, TorusPrecision};
     use poulpy_hal::{
@@ -328,12 +342,12 @@ mod tests {
     where
         BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
         F: CKKSEncodingScalar,
-        Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
+        Module<BE>: CKKSPlaintextAlloc<BE> + CKKSEncodingOps<BE, F>,
     {
         for slots in [1usize, 2, 4, 8, 16] {
             let re: Vec<F> = (0..slots).map(|i| F::from_f64((i as f64 + 1.0) / 17.0).unwrap()).collect();
             let im: Vec<F> = (0..slots).map(|i| F::from_f64(-(i as f64 + 1.0) / 29.0).unwrap()).collect();
-            let mut scratch = ScratchOwned::<BE>::alloc(module.ckks_reim_tmp_bytes(slots));
+            let mut scratch = ScratchOwned::<BE>::alloc(module.ckks_encoding_host_tmp_bytes(slots));
             let mut scratch = scratch.arena();
 
             let degree = 2 * slots;
@@ -344,11 +358,11 @@ mod tests {
                 log_sparsity: 0,
                 slot_layout: SlotLayout::Full,
             });
-            module.ckks_encode_reim_into(&mut pt, &re, &im, &mut scratch).unwrap();
+            module.ckks_encode_slots_host_into(&mut pt, &re, &im, &mut scratch).unwrap();
             let mut got_re = vec![F::zero(); slots];
             let mut got_im = vec![F::zero(); slots];
             module
-                .ckks_decode_reim_into(&pt, &mut got_re, &mut got_im, &mut scratch)
+                .ckks_decode_slots_host_into(&pt, &mut got_re, &mut got_im, &mut scratch)
                 .unwrap();
             assert_close(&got_re, &got_im, &re, &im);
         }
@@ -387,7 +401,7 @@ mod tests {
         let im: Vec<f64> = (0..slots).map(|i| -(i as f64 + 1.0) / 29.0).collect();
         let values = re.iter().chain(&im).copied().collect::<Vec<_>>();
         let mut values = CKKSEncodingBuffer::<AlignedBuf, f64>::from_host::<FFT64Portable>(&values);
-        module.ckks_encode_slots_assign_into(&mut pt, &mut values).unwrap();
+        module.ckks_encode_slots_into(&mut pt, &mut values).unwrap();
         let coeffs = values.to_host::<FFT64Portable>();
 
         let mut decoded = CKKSEncodingBuffer::<AlignedBuf, f64>::from_host::<FFT64Portable>(&vec![0.0; 2 * slots]);
@@ -396,8 +410,9 @@ mod tests {
         let (got_re, got_im) = values.split_at(slots);
         assert_close(got_re, got_im, &re, &im);
 
-        let mut coeff_scratch =
-            ScratchOwned::<FFT64Portable>::alloc(CKKSEncodingHostOps::<FFT64Portable, f64>::ckks_reim_tmp_bytes(&module, slots));
+        let mut coeff_scratch = ScratchOwned::<FFT64Portable>::alloc(
+            CKKSEncodingHostOps::<FFT64Portable, f64>::ckks_encoding_host_tmp_bytes(&module, slots),
+        );
         let mut coeff_scratch = coeff_scratch.arena();
         module
             .ckks_encode_coeffs_host_into(&mut pt, &coeffs, &mut coeff_scratch)
@@ -410,14 +425,17 @@ mod tests {
             assert!((got - want).abs() < 1e-8);
         }
 
-        let mut reim_scratch =
-            ScratchOwned::<FFT64Portable>::alloc(CKKSEncodingHostOps::<FFT64Portable, f64>::ckks_reim_tmp_bytes(&module, slots));
+        let mut reim_scratch = ScratchOwned::<FFT64Portable>::alloc(
+            CKKSEncodingHostOps::<FFT64Portable, f64>::ckks_encoding_host_tmp_bytes(&module, slots),
+        );
         let mut reim_scratch = reim_scratch.arena();
-        module.ckks_encode_reim_into(&mut pt, &re, &im, &mut reim_scratch).unwrap();
+        module
+            .ckks_encode_slots_host_into(&mut pt, &re, &im, &mut reim_scratch)
+            .unwrap();
         let mut got_re = vec![0.0; slots];
         let mut got_im = vec![0.0; slots];
         module
-            .ckks_decode_reim_into(&pt, &mut got_re, &mut got_im, &mut reim_scratch)
+            .ckks_decode_slots_host_into(&pt, &mut got_re, &mut got_im, &mut reim_scratch)
             .unwrap();
         assert_close(&got_re, &got_im, &re, &im);
     }
@@ -434,26 +452,35 @@ mod tests {
         });
 
         let three = [0.0; 3];
-        let mut scratch =
-            ScratchOwned::<FFT64Portable>::alloc(CKKSEncodingHostOps::<FFT64Portable, f64>::ckks_reim_tmp_bytes(&module, 8));
+        let mut scratch = ScratchOwned::<FFT64Portable>::alloc(
+            CKKSEncodingHostOps::<FFT64Portable, f64>::ckks_encoding_host_tmp_bytes(&module, 8),
+        );
         let mut scratch = scratch.arena();
-        assert!(module.ckks_encode_reim_into(&mut pt, &three, &three, &mut scratch).is_err());
+        assert!(
+            module
+                .ckks_encode_slots_host_into(&mut pt, &three, &three, &mut scratch)
+                .is_err()
+        );
 
         let re = [0.0; 8];
         let im = [0.0; 7];
-        assert!(module.ckks_encode_reim_into(&mut pt, &re, &im, &mut scratch).is_err());
+        assert!(module.ckks_encode_slots_host_into(&mut pt, &re, &im, &mut scratch).is_err());
 
         let four = [0.0; 4];
-        assert!(module.ckks_encode_reim_into(&mut pt, &four, &four, &mut scratch).is_err());
+        assert!(
+            module
+                .ckks_encode_slots_host_into(&mut pt, &four, &four, &mut scratch)
+                .is_err()
+        );
 
         let im = [0.0; 8];
-        assert!(module.ckks_encode_reim_into(&mut pt, &re, &im, &mut scratch).is_ok());
+        assert!(module.ckks_encode_slots_host_into(&mut pt, &re, &im, &mut scratch).is_ok());
 
-        let required = CKKSEncodingHostOps::<FFT64Portable, f64>::ckks_reim_tmp_bytes(&module, 8);
+        let required = CKKSEncodingHostOps::<FFT64Portable, f64>::ckks_encoding_host_tmp_bytes(&module, 8);
         let mut undersized = ScratchOwned::<FFT64Portable>::alloc(required - <FFT64Portable>::SCRATCH_ALIGN);
         assert!(
             module
-                .ckks_encode_reim_into(&mut pt, &re, &im, &mut undersized.arena())
+                .ckks_encode_slots_host_into(&mut pt, &re, &im, &mut undersized.arena())
                 .is_err()
         );
     }
@@ -463,14 +490,14 @@ mod tests {
 mod transform_tests {
     use poulpy_ckks::{Quad, api::CKKSEncodingScalar};
     use poulpy_cpu_oracle::EncodingFft;
-    use poulpy_hal::{api::NegacyclicFFTNew, test_suite::reim::test_negacyclic_fft_bit_exact};
+    use poulpy_hal::{api::ReimNew, test_suite::reim::test_reim_fft_bit_exact};
 
     use super::EncodingFFTTable;
 
     fn matches_oracle<F: CKKSEncodingScalar>(max_log_m: usize) {
         for log_m in 0..=max_log_m {
             let m = 1 << log_m;
-            test_negacyclic_fft_bit_exact::<F, _, _>(&EncodingFFTTable::<F>::new(m), &EncodingFft::<F>::new(m));
+            test_reim_fft_bit_exact::<F, _, _>(&EncodingFFTTable::<F>::new(m), &EncodingFft::<F>::new(m));
         }
     }
 

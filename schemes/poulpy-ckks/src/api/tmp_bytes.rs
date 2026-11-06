@@ -6,7 +6,7 @@ use crate::{
     },
 };
 use poulpy_core::{
-    GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk, GLWELinearTransformations, GLWEMulConst, GLWEMulPlain, GLWEShift,
+    GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk, GLWELinearTransformationOps, GLWEMulConst, GLWEMulPlain, GLWEShift,
     GLWETensorKeyEncryptSk, GLWETensoring,
     api::{GLWEAutomorphismKeyPreparedFactory, GLWETensorKeyPreparedFactory},
     layouts::{GGLWEInfos, LinearTransformationPlan},
@@ -22,7 +22,7 @@ use poulpy_hal::{
 /// Pass layouts covering the widest live ciphertext and plaintext operands in
 /// the intended pipeline. These are shared bounds for polynomial evaluation.
 /// DFT preparation and evaluation require their selected matrix-specific queries,
-/// [`crate::api::CKKSDFTOps::ckks_prepare_dft_matrix_tmp_bytes`] and
+/// [`crate::api::CKKSDFTMatrixPreparedFactory::ckks_dft_matrix_prepare_tmp_bytes`] and
 /// [`crate::api::CKKSDFTOps::ckks_dft_tmp_bytes`], including format wrappers.
 /// EvalMod has its own selected query because its working precision depends on the compiled plan.
 pub trait CKKSAllOpsTmpBytes<BE: Backend> {
@@ -63,8 +63,9 @@ where
         + CKKSMulAddOps<BE>
         + CKKSMulSubOps<BE>
         + GLWEAutomorphism<BE>
+        + poulpy_core::GLWENormalize<BE>
         + GLWEAutomorphismKeyEncryptSk<BE>
-        + GLWELinearTransformations<BE>
+        + GLWELinearTransformationOps<BE>
         + GLWEAutomorphismKeyPreparedFactory<BE>
         + ModuleN
         + GLWEShift<BE>
@@ -80,10 +81,9 @@ where
         + VecZnxRshAdd<BE>
         + VecZnxRshSub<BE>
         + VecZnxRshTmpBytes
-        + poulpy_hal::api::Convolution<BE>
+        + poulpy_hal::api::CnvOps<BE>
         + poulpy_hal::api::VecZnxBigNormalizeTmpBytes
         + poulpy_hal::api::VecZnxIdftApplyTmpBytes
-        + poulpy_core::GLWENormalize<BE>
         + crate::api::CKKSRoundOps<BE>,
 {
     fn ckks_all_ops_tmp_bytes<C, T, P>(&self, ct_infos: &C, pt_prec: &P, tsk_infos: &T) -> usize
@@ -110,12 +110,14 @@ where
             .max(self.ckks_sub_pt_const_tmp_bytes(ct_infos.max_size()))
             .max(self.ckks_neg_tmp_bytes(ct_infos.max_size()))
             .max(self.ckks_mul_pow2_tmp_bytes(ct_infos.max_size()))
+            .max(self.ckks_double_tmp_bytes(ct_infos.max_size()))
             .max(self.ckks_div_pow2_tmp_bytes(ct_infos.max_size()))
             .max(self.ckks_mul_tmp_bytes(ct_infos, ct_infos, ct_infos, tsk_infos))
             .max(self.ckks_mul_add_ct_tmp_bytes(ct_infos, ct_infos, ct_infos, tsk_infos))
             .max(self.ckks_mul_sub_ct_tmp_bytes(ct_infos, ct_infos, ct_infos, tsk_infos))
             .max(self.ckks_square_tmp_bytes(ct_infos, ct_infos, tsk_infos))
             .max(polynomial_giant_steps_tmp_bytes)
+            .max(crate::power_basis::ckks_power_product_tmp_bytes(self, ct_infos, tsk_infos))
             .max(
                 crate::oep::derived::polynomial_evaluation::eval_baby_linear_combination_tmp_bytes(
                     self,
@@ -150,8 +152,8 @@ where
         let diagonal = crate::api::ckks_plaintext_diagonal_layout(ct_infos);
         self.ckks_all_ops_tmp_bytes(ct_infos, pt_prec, tsk_infos)
             .max(self.ckks_rotate_tmp_bytes(ct_infos, atk_infos))
-            .max(self.glwe_eval_linear_transformation_tmp_bytes(ct_infos, ct_infos, &diagonal, &plan, tsk_infos, atk_infos))
-            .max(self.glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(
+            .max(self.glwe_linear_transformation_eval_tmp_bytes(ct_infos, ct_infos, &diagonal, &plan, tsk_infos, atk_infos))
+            .max(self.glwe_linear_transformation_eval_unprepared_rhs_tmp_bytes(
                 ct_infos, ct_infos, &diagonal, &plan, tsk_infos, atk_infos,
             ))
             .max(self.glwe_automorphism_key_encrypt_sk_tmp_bytes(atk_infos))

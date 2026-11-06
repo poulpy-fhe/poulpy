@@ -20,9 +20,9 @@ use std::time::Instant;
 
 use poulpy_hal::{
     api::{
-        CnvPVecAlloc, Convolution, MatZnxAlloc, ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAdd, VecZnxAlloc,
+        CnvOps, CnvPVecAlloc, MatZnxAlloc, ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAdd, VecZnxAlloc,
         VecZnxBigAlloc, VecZnxDftAlloc, VecZnxDftApply, VecZnxFillUniformSource, VecZnxIdftApply, VecZnxIdftApplyTmpBytes,
-        VmpApplyDftToDft, VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes,
+        VmpApplyDftToDft, VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPMatPrepare, VmpPMatPrepareTmpBytes,
     },
     execution::ScratchWorkers,
     layouts::{
@@ -264,14 +264,14 @@ where
         + MatZnxAlloc<BE>
         + VmpPMatAlloc<BE>
         + CnvPVecAlloc<BE>
-        + VmpPrepare<BE>
-        + VmpPrepareTmpBytes
+        + VmpPMatPrepare<BE>
+        + VmpPMatPrepareTmpBytes
         + VecZnxDftApply<BE>
         + VecZnxAdd<BE>
         + VecZnxFillUniformSource<BE>
         + VecZnxIdftApply<BE>
         + VecZnxIdftApplyTmpBytes
-        + Convolution<BE>
+        + CnvOps<BE>
         + VmpApplyDftToDft<BE>
         + VmpApplyDftToDftTmpBytes,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
@@ -323,14 +323,14 @@ where
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module
-            .vmp_prepare_tmp_bytes(size, cols, cols, size)
+            .vmp_pmat_prepare_tmp_bytes(size, cols, cols, size)
             .max(module.vmp_apply_dft_to_dft_tmp_bytes(size, size, rows, cols, cols, size))
             .max(module.vec_znx_idft_apply_tmp_bytes())
-            .max(module.cnv_prepare_self_tmp_bytes(cnv_size, size))
+            .max(module.cnv_pvec_self_prepare_tmp_bytes(cnv_size, size))
             .max(module.cnv_apply_dft_tmp_bytes(0, cnv_size, size, size)),
     );
 
-    module.vmp_prepare(
+    module.vmp_pmat_prepare(
         &mut pmat.to_backend_mut(),
         &MatZnxToBackendRef::<BE>::to_backend_ref(&mat),
         &mut scratch.borrow(),
@@ -345,7 +345,7 @@ where
             col,
         );
     }
-    module.cnv_prepare_self(
+    module.cnv_pvec_self_prepare(
         &mut left.to_backend_mut(),
         &mut right.to_backend_mut(),
         &VecZnxToBackendRef::<BE>::to_backend_ref(&small),
@@ -475,7 +475,7 @@ fn run_probe<BE>(
     scratch: &mut ScratchOwned<BE>,
 ) where
     BE: Backend<ZnxWord = i64, OwnedBuf: poulpy_hal::layouts::HostDataMut> + 'static,
-    Module<BE>: VecZnxAdd<BE> + VecZnxIdftApply<BE> + Convolution<BE> + VmpApplyDftToDft<BE>,
+    Module<BE>: VecZnxAdd<BE> + VecZnxIdftApply<BE> + CnvOps<BE> + VmpApplyDftToDft<BE>,
     ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
 {
     match probe {

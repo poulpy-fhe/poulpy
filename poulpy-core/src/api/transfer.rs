@@ -152,7 +152,7 @@ where
 }
 
 /// A GGLWE moved into a matrix of the same shape carved from a scratch arena
-/// ([`take_gglwe_scratch`](crate::ScratchArenaTakeCore::take_gglwe_scratch)): the carve
+/// ([`take_gglwe_scratch`](crate::ScratchArenaTakeGGLWE::take_gglwe_scratch)): the carve
 /// holds the first bytes of an owned source, which may be padded past them.
 impl<D1, BE> TransferInto<GGLWEViewMut<'_, BE>> for GGLWE<D1, BE::ZnxWord>
 where
@@ -423,8 +423,8 @@ mod tests {
     use crate::{
         ComponentNoise, Distribution, FreshNoiseEstimate,
         layouts::{
-            Base2K, Dnum, GGLWE, GGLWELayout, GLWE, GLWEPlaintextMeta, ModuleCoreAlloc, ModuleCoreCompressedAlloc, Rank, Scale,
-            TorusPrecision,
+            Base2K, Dnum, GGLWE, GGLWEAlloc, GGLWECompressedAlloc, GGLWELayout, GLWE, GLWEAlloc, GLWECompressedAlloc,
+            GLWEPlaintextMeta, GLWEPublicKeyAlloc, GLWEPublicKeyCompressedAlloc, Rank, Scale, TorusPrecision,
         },
         test_backend::{DstBackend, SrcBackend},
         test_suite::refusal::assert_refusal,

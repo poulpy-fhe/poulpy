@@ -4,7 +4,7 @@ use std::hint::black_box;
 use criterion::{Bencher, measurement::Measurement};
 
 use poulpy_hal::{
-    api::{CnvPVecAlloc, Convolution, ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxBigAlloc, VecZnxDftAlloc},
+    api::{CnvOps, CnvPVecAlloc, ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxBigAlloc, VecZnxDftAlloc},
     layouts::{
         Backend, CnvDftAccTerm, CnvPVecLOwned, CnvPVecLToBackendMut, CnvPVecLToBackendRef, CnvPVecROwned, CnvPVecRToBackendMut,
         CnvPVecRToBackendRef, Module, PrepareHint, ScratchOwned, VecZnxBigOwned, VecZnxBigToBackendMut, VecZnxDftToBackendMut,
@@ -17,10 +17,10 @@ use crate::hal::helpers::{
 };
 use crate::hal::params::CnvSweepParms;
 
-pub fn runner_cnv_prepare_left<BE, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &CnvSweepParms)
+pub fn runner_cnv_pvec_left_prepare<BE, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &CnvSweepParms)
 where
     BE: Backend<ZnxWord = i64> + 'static,
-    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + Convolution<BE> + CnvPVecAlloc<BE>,
+    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + CnvOps<BE> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let mut source: Source = Source::new([0u8; 32]);
@@ -34,21 +34,21 @@ where
     let a = random_host_vec_znx(module.n(), 1, sweep.size, &mut source);
     let a = upload_host_vec_znx::<BE>(&a);
 
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.cnv_prepare_left_tmp_bytes(c_size, sweep.size));
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.cnv_pvec_left_prepare_tmp_bytes(c_size, sweep.size));
 
     bencher.iter(|| {
         let mut a_prep_backend = a_prep.to_backend_mut();
         let a_backend = vec_znx_backend_ref::<BE>(&a);
-        module.cnv_prepare_left(&mut a_prep_backend, &a_backend, &mut scratch.borrow());
+        module.cnv_pvec_left_prepare(&mut a_prep_backend, &a_backend, &mut scratch.borrow());
         module.synchronize();
         black_box(());
     });
 }
 
-pub fn runner_cnv_prepare_right<BE, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &CnvSweepParms)
+pub fn runner_cnv_pvec_right_prepare<BE, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &CnvSweepParms)
 where
     BE: Backend<ZnxWord = i64> + 'static,
-    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + Convolution<BE> + CnvPVecAlloc<BE>,
+    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + CnvOps<BE> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let mut source: Source = Source::new([0u8; 32]);
@@ -62,12 +62,12 @@ where
     let a = random_host_vec_znx(module.n(), 1, sweep.size, &mut source);
     let a = upload_host_vec_znx::<BE>(&a);
 
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.cnv_prepare_right_tmp_bytes(c_size, sweep.size));
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.cnv_pvec_right_prepare_tmp_bytes(c_size, sweep.size));
 
     bencher.iter(|| {
         let mut a_prep_backend = a_prep.to_backend_mut();
         let a_backend = vec_znx_backend_ref::<BE>(&a);
-        module.cnv_prepare_right(&mut a_prep_backend, &a_backend, &mut scratch.borrow());
+        module.cnv_pvec_right_prepare(&mut a_prep_backend, &a_backend, &mut scratch.borrow());
         module.synchronize();
         black_box(());
     });
@@ -76,7 +76,7 @@ where
 fn cnv_apply_dft_runner<BE, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &CnvSweepParms, b_galois: i64)
 where
     BE: Backend<ZnxWord = i64> + 'static,
-    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + Convolution<BE> + VecZnxDftAlloc<BE> + CnvPVecAlloc<BE>,
+    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + CnvOps<BE> + VecZnxDftAlloc<BE> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let mut source: Source = Source::new([0u8; 32]);
@@ -92,8 +92,8 @@ where
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module
             .cnv_apply_dft_tmp_bytes(0, c_size, sweep.size, sweep.size)
-            .max(module.cnv_prepare_left_tmp_bytes(c_size, sweep.size))
-            .max(module.cnv_prepare_right_tmp_bytes(c_size, sweep.size)),
+            .max(module.cnv_pvec_left_prepare_tmp_bytes(c_size, sweep.size))
+            .max(module.cnv_pvec_right_prepare_tmp_bytes(c_size, sweep.size)),
     );
 
     bencher.iter(|| {
@@ -117,7 +117,7 @@ where
 pub fn runner_cnv_apply_dft<BE, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &CnvSweepParms)
 where
     BE: Backend<ZnxWord = i64> + 'static,
-    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + Convolution<BE> + VecZnxDftAlloc<BE> + CnvPVecAlloc<BE>,
+    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + CnvOps<BE> + VecZnxDftAlloc<BE> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     cnv_apply_dft_runner::<BE, M>(bencher, sweep, 1);
@@ -129,7 +129,7 @@ const BENCH_GALOIS: i64 = 5;
 pub fn runner_cnv_apply_dft_galois<BE, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &CnvSweepParms)
 where
     BE: Backend<ZnxWord = i64> + 'static,
-    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + Convolution<BE> + VecZnxDftAlloc<BE> + CnvPVecAlloc<BE>,
+    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + CnvOps<BE> + VecZnxDftAlloc<BE> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     cnv_apply_dft_runner::<BE, M>(bencher, sweep, BENCH_GALOIS);
@@ -138,7 +138,7 @@ where
 pub fn runner_cnv_apply_dft_add<BE, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &CnvSweepParms)
 where
     BE: Backend<ZnxWord = i64> + 'static,
-    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + Convolution<BE> + VecZnxDftAlloc<BE> + CnvPVecAlloc<BE>,
+    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + CnvOps<BE> + VecZnxDftAlloc<BE> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let mut source: Source = Source::new([0u8; 32]);
@@ -154,8 +154,8 @@ where
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module
             .cnv_apply_dft_add_tmp_bytes(0, c_size, sweep.size, sweep.size)
-            .max(module.cnv_prepare_left_tmp_bytes(c_size, sweep.size))
-            .max(module.cnv_prepare_right_tmp_bytes(c_size, sweep.size)),
+            .max(module.cnv_pvec_left_prepare_tmp_bytes(c_size, sweep.size))
+            .max(module.cnv_pvec_right_prepare_tmp_bytes(c_size, sweep.size)),
     );
     {
         let mut c_dft_backend = c_dft.to_backend_mut();
@@ -201,7 +201,7 @@ const SUM_TERMS: usize = 4;
 pub fn runner_cnv_apply_dft_sum<BE, M: Measurement, const EMBEDDED: bool>(bencher: &mut Bencher<'_, M>, sweep: &CnvSweepParms)
 where
     BE: Backend<ZnxWord = i64> + 'static,
-    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + Convolution<BE> + VecZnxDftAlloc<BE> + CnvPVecAlloc<BE>,
+    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + CnvOps<BE> + VecZnxDftAlloc<BE> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let mut source: Source = Source::new([0u8; 32]);
@@ -247,7 +247,7 @@ where
 pub fn runner_cnv_pairwise_apply_dft<BE, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &CnvSweepParms)
 where
     BE: Backend<ZnxWord = i64> + 'static,
-    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + Convolution<BE> + VecZnxDftAlloc<BE> + CnvPVecAlloc<BE>,
+    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + CnvOps<BE> + VecZnxDftAlloc<BE> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let mut source: Source = Source::new([0u8; 32]);
@@ -264,8 +264,8 @@ where
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module
             .cnv_pairwise_apply_dft_tmp_bytes(0, c_size, sweep.size, sweep.size)
-            .max(module.cnv_prepare_left_tmp_bytes(c_size, sweep.size))
-            .max(module.cnv_prepare_right_tmp_bytes(c_size, sweep.size)),
+            .max(module.cnv_pvec_left_prepare_tmp_bytes(c_size, sweep.size))
+            .max(module.cnv_pvec_right_prepare_tmp_bytes(c_size, sweep.size)),
     );
 
     bencher.iter(|| {
@@ -288,7 +288,7 @@ where
 pub fn runner_cnv_by_const_apply<BE, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &CnvSweepParms)
 where
     BE: Backend<ZnxWord = i64> + 'static,
-    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + Convolution<BE> + VecZnxBigAlloc<BE> + CnvPVecAlloc<BE>,
+    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + CnvOps<BE> + VecZnxBigAlloc<BE> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let mut source: Source = Source::new([0u8; 32]);
@@ -331,7 +331,7 @@ where
 pub fn runner_cnv_by_const_apply_add<BE, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &CnvSweepParms)
 where
     BE: Backend<ZnxWord = i64> + 'static,
-    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + Convolution<BE> + VecZnxBigAlloc<BE> + CnvPVecAlloc<BE>,
+    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + CnvOps<BE> + VecZnxBigAlloc<BE> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let mut source: Source = Source::new([0u8; 32]);
@@ -371,10 +371,10 @@ where
     });
 }
 
-pub fn runner_cnv_prepare_self<BE, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &CnvSweepParms)
+pub fn runner_cnv_pvec_self_prepare<BE, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &CnvSweepParms)
 where
     BE: Backend<ZnxWord = i64> + 'static,
-    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + Convolution<BE> + CnvPVecAlloc<BE>,
+    Module<BE>: ModuleNew<BE> + ModuleSynchronize<BE> + CnvOps<BE> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let mut source: Source = Source::new([0u8; 32]);
@@ -389,13 +389,13 @@ where
     let a = random_host_vec_znx(module.n(), 1, sweep.size, &mut source);
     let a = upload_host_vec_znx::<BE>(&a);
 
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.cnv_prepare_self_tmp_bytes(c_size, sweep.size));
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.cnv_pvec_self_prepare_tmp_bytes(c_size, sweep.size));
 
     bencher.iter(|| {
         let mut left_backend = left.to_backend_mut();
         let mut right_backend = right.to_backend_mut();
         let a_backend = vec_znx_backend_ref::<BE>(&a);
-        module.cnv_prepare_self(&mut left_backend, &mut right_backend, &a_backend, &mut scratch.borrow());
+        module.cnv_pvec_self_prepare(&mut left_backend, &mut right_backend, &a_backend, &mut scratch.borrow());
         module.synchronize();
         black_box(());
     });

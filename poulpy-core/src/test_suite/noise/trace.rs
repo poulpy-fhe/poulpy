@@ -18,7 +18,8 @@ use crate::{
     api::{GLWEAutomorphismKeyPreparedFactory, GLWESecretPreparedFactory},
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
-        GLWE, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout, GLWELayout, GLWEPlaintext, GLWESecret, LWEInfos, ModuleCoreAlloc,
+        GLWE, GLWEAlloc, GLWEAutomorphismKey, GLWEAutomorphismKeyAlloc, GLWEAutomorphismKeyLayout, GLWELayout, GLWEPlaintext,
+        GLWEPlaintextAlloc, GLWESecret, GLWESecretAlloc, LWEInfos,
         prepared::{GLWEAutomorphismKeyPrepared, GLWESecretPrepared},
     },
     noise::GGLWENoiseModel,
@@ -178,7 +179,7 @@ where
         );
         // Residue left by the decomposition of the mask, folded against the secret.
         noise_want += n as f64 * 1.0 / 12.0 * 0.5 * rank as f64 * (-2.0 * (k) as f64).exp2();
-        // Each rotation halves the running sum with `glwe_rsh(1)`, which rounds
+        // Each rotation halves the running sum with `glwe_rsh_assign(1)`, which rounds
         // at precision `k`: one uniform rounding of variance `2^-2k / 12` on the
         // body and on each mask polynomial, the latter folded against the
         // secret. Later halvings shrink the earlier roundings, so the geometric

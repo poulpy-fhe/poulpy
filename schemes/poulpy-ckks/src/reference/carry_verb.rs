@@ -7,7 +7,7 @@
 //! The macro is `pub(crate)`: it is an implementation detail of the two verb modules, not a backend-facing extension point.
 
 use crate::CKKSResult as Result;
-use crate::layouts::{CKKSPlaintextViewMut, ScratchArenaTakeCKKS};
+use crate::layouts::{CKKSPlaintextViewMut, ScratchArenaTakeCKKSPlaintext};
 use num_traits::{Float, FromPrimitive};
 use poulpy_core::layouts::{Base2K, GLWEPlaintextLayout, GLWEToBackendMut, IntPolyInfos, TorusPrecision};
 use poulpy_hal::layouts::{Backend, ScratchArena, encode_i128_by_limb};
@@ -20,7 +20,7 @@ const MAX_ONE_COEFFS: usize = 2 << ReplicatedLayout::MAX_LOG_R;
 
 /// Scratch bytes of [`take_one_pt`] for a destination of `res_size` limbs.
 pub(crate) fn one_pt_tmp_bytes<BE: Backend>(res_size: usize) -> usize {
-    BE::scratch_aligned(BE::bytes_of_vec_znx(MAX_ONE_COEFFS, 1, res_size + 1))
+    BE::scratch_aligned(BE::vec_znx_bytes_of(MAX_ONE_COEFFS, 1, res_size + 1))
 }
 
 /// The one of `slot_layout`, carved from `scratch`. On a full layout it is the
@@ -139,8 +139,7 @@ pub(crate) fn take_one_pt<'a, BE: Backend + 'a>(
 ///
 /// All type and trait names in the expansion resolve at the call site: the
 /// invoking module must import the shared bounds (`GLWECopy`, `GLWEShift`, `GLWENormalize`,
-/// `VecZnx{Lsh,Rsh}TmpBytes`, `CKKSPlaintextVecReference`, `CKKSModuleAlloc`, the
-/// info traits) alongside its verb-specific ones.
+/// `VecZnx{Lsh,Rsh}TmpBytes`, the info traits) alongside its verb-specific ones.
 macro_rules! ckks_carry_verb_reference {
     (
         verb: $verb:ident,
@@ -291,7 +290,7 @@ macro_rules! ckks_carry_verb_reference {
                     scratch: &mut ScratchArena<'_, BE>,
                 ) -> Result<()>
                 where
-                    Self: GLWECopy<BE> + GLWEShift<BE> $(+ $PtVecBound<BE>)+ + CKKSPlaintextVecReference<BE>,
+                    Self: GLWECopy<BE> + GLWEShift<BE> $(+ $PtVecBound<BE>)+,
                     Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
                     A: GLWEToBackendRef<BE> + CKKSInfos,
                     P: GLWEToBackendRef<BE> + ::poulpy_core::layouts::IntPolyInfos + CKKSInfos,
@@ -323,7 +322,7 @@ macro_rules! ckks_carry_verb_reference {
                     scratch: &mut ScratchArena<'_, BE>,
                 ) -> Result<()>
                 where
-                    Self: CKKSPlaintextVecReference<BE> $(+ $PtVecBound<BE>)+,
+                    Self: $($PtVecBound<BE> +)+,
                     Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
                     P: GLWEToBackendRef<BE> + ::poulpy_core::layouts::IntPolyInfos + CKKSInfos,
                 {
@@ -339,7 +338,7 @@ macro_rules! ckks_carry_verb_reference {
                             pt.log_delta(),
                         )?;
                     }
-                    CKKSPlaintextVecReference::[<ckks_ $verb _pt_vec_into_reference>](self, dst, pt, scratch)?;
+                    $crate::reference::plaintext::[<$verb _pt_vec_raw>](self, dst, pt, scratch)?;
                     dst.set_log_sparsity(dst.log_sparsity().min(dst.log_n() - pt.log_n()));
                     dst.set_slots(dst.slots().join(pt.slots()));
                     Ok(())
@@ -355,7 +354,7 @@ macro_rules! ckks_carry_verb_reference {
                     scratch: &mut ScratchArena<'_, BE>,
                 ) -> Result<()>
                 where
-                    Self: GLWECopy<BE> + GLWEShift<BE> $(+ $PtVecBound<BE>)+ + CKKSPlaintextVecReference<BE>,
+                    Self: GLWECopy<BE> + GLWEShift<BE> $(+ $PtVecBound<BE>)+,
                     Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
                     A: GLWEToBackendRef<BE> + CKKSInfos,
                     P: GLWEToBackendRef<BE> + ::poulpy_core::layouts::IntPolyInfos + CKKSInfos,
@@ -389,7 +388,7 @@ macro_rules! ckks_carry_verb_reference {
                     scratch: &mut ScratchArena<'_, BE>,
                 ) -> Result<()>
                 where
-                    Self: CKKSPlaintextVecReference<BE> $(+ $PtVecBound<BE>)+,
+                    Self: $($PtVecBound<BE> +)+,
                     Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
                     P: GLWEToBackendRef<BE> + ::poulpy_core::layouts::IntPolyInfos + CKKSInfos,
                 {
@@ -397,7 +396,7 @@ macro_rules! ckks_carry_verb_reference {
                         concat!("ckks_", stringify!($verb), "_pt_const_assign"),
                         dst.slot_layout(),
                     )?;
-                    CKKSPlaintextVecReference::[<ckks_ $verb _pt_const_into_reference>](self, dst, dst_coeff, cst, const_coeff, scratch)?;
+                    $crate::reference::plaintext::[<$verb _pt_const_raw>](self, dst, dst_coeff, cst, const_coeff, scratch)?;
                     // cst is always tagged as real, it's where dst_coeff lands
                     // that selects if the added constant is real (X^{0}) or imaginary (X^{N/2}).
                     let added = if dst_coeff == 0 { $crate::SlotsKind::Real } else { $crate::SlotsKind::Complex };

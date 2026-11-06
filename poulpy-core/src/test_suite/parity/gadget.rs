@@ -4,14 +4,14 @@ use super::{ParityBackend, ParityShapes, poisoned_scratch, ref_gglwe};
 use crate::layouts::LWEInfos;
 use crate::{
     GGLWEExternalProduct, GGSWAutomorphism, GGSWExpandRows, GGSWExternalProduct, GGSWFromGGLWE, GGSWKeyswitch,
-    GLWEAutomorphismKeyAutomorphism, GLWEMaskFill,
+    GLWEAutomorphismKeyAutomorphism, GLWEFill,
     api::{
         GGLWEPreparedFactory, GGLWEToGGSWKeyPreparedFactory, GGSWPreparedFactory, GLWEAutomorphismKeyPreparedFactory,
         TransferInto,
     },
     layouts::{
-        Base2K, Degree, Dnum, Dsize, GGLWEAtViewMut, GGLWELayout, GGLWEToGGSWKeyLayout, GGSWAtViewMut, GGSWLayout,
-        GLWEAutomorphismKeyLayout, ModuleCoreAlloc, Rank, TorusPrecision,
+        Base2K, Degree, Dnum, Dsize, GGLWEAlloc, GGLWEAtViewMut, GGLWELayout, GGLWEToGGSWKeyAlloc, GGLWEToGGSWKeyLayout,
+        GGSWAlloc, GGSWAtViewMut, GGSWLayout, GLWEAutomorphismKeyAlloc, GLWEAutomorphismKeyLayout, Rank, TorusPrecision,
         prepared::{
             GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedToBackendRef, GGSWPreparedToBackendRef,
             GLWEAutomorphismKeyPreparedToBackendRef,
@@ -69,7 +69,7 @@ where
             let mut key_r = r.ggsw_alloc_from_infos(&k);
             for row in 0..k.dnum.as_usize() {
                 for col in 0..rank + 1 {
-                    r.fill_glwe_from_source(&mut key_r.at_view_mut(row, col), &mut source);
+                    r.glwe_fill_from_source(&mut key_r.at_view_mut(row, col), &mut source);
                 }
             }
             let mut key_t = t.ggsw_alloc_from_infos(&k);
@@ -93,8 +93,8 @@ where
                     let (rows, cols_in) = (a_r.data.rows(), a_r.data.cols_in());
                     for row in 0..rows {
                         for col in 0..cols_in {
-                            r.fill_glwe_from_source(&mut a_r.at_view_mut(row, col), &mut source);
-                            r.fill_glwe_from_source(&mut out_r.at_view_mut(row, col), &mut source);
+                            r.glwe_fill_from_source(&mut a_r.at_view_mut(row, col), &mut source);
+                            r.glwe_fill_from_source(&mut out_r.at_view_mut(row, col), &mut source);
                         }
                     }
                     let mut a_t = t.$alloc(&$infos);
@@ -147,12 +147,12 @@ where
                 ggsw_external_product_tmp_bytes
             );
             // Prepared zeroing is checked through its mathematical effect.
-            r.ggsw_zero(&mut prep_r);
-            t.ggsw_zero(&mut prep_t);
+            r.ggsw_prepared_zero(&mut prep_r);
+            t.ggsw_prepared_zero(&mut prep_t);
             let mut a_r = r.ggsw_alloc_from_infos(&g);
             for row in 0..g.dnum.as_usize() {
                 for col in 0..rank + 1 {
-                    r.fill_glwe_from_source(&mut a_r.at_view_mut(row, col), &mut source);
+                    r.glwe_fill_from_source(&mut a_r.at_view_mut(row, col), &mut source);
                 }
             }
             let mut a_t = t.ggsw_alloc_from_infos(&g);
@@ -302,7 +302,7 @@ where
             let mut a_r = r.ggsw_alloc_from_infos(&g);
             for row in 0..g.dnum.as_usize() {
                 for col in 0..rank + 1 {
-                    r.fill_glwe_from_source(&mut a_r.at_view_mut(row, col), &mut source);
+                    r.glwe_fill_from_source(&mut a_r.at_view_mut(row, col), &mut source);
                 }
             }
             let mut a_t = t.ggsw_alloc_from_infos(&g);
@@ -312,7 +312,7 @@ where
                     let mut out_r = r.ggsw_alloc_from_infos(&g);
                     for row in 0..g.dnum.as_usize() {
                         for col in 0..rank + 1 {
-                            r.fill_glwe_from_source(&mut out_r.at_view_mut(row, col), &mut source);
+                            r.glwe_fill_from_source(&mut out_r.at_view_mut(row, col), &mut source);
                         }
                     }
                     let mut out_t = t.ggsw_alloc_from_infos(&g);
@@ -371,7 +371,7 @@ where
             let mut short_r = r.ggsw_alloc_from_infos(&short);
             for row in 0..short.dnum.as_usize() {
                 for col in 0..rank + 1 {
-                    r.fill_glwe_from_source(&mut short_r.at_view_mut(row, col), &mut source);
+                    r.glwe_fill_from_source(&mut short_r.at_view_mut(row, col), &mut source);
                 }
             }
             let mut short_t = t.ggsw_alloc_from_infos(&short);
@@ -467,7 +467,7 @@ where
             let mut out_r = r.ggsw_alloc_from_infos(&g);
             for row in 0..g.dnum.as_usize() {
                 for col in 0..rank + 1 {
-                    r.fill_glwe_from_source(&mut out_r.at_view_mut(row, col), &mut source);
+                    r.glwe_fill_from_source(&mut out_r.at_view_mut(row, col), &mut source);
                 }
             }
             let mut out_t = t.ggsw_alloc_from_infos(&g);
@@ -490,18 +490,18 @@ where
             // Row expansion consumes an existing GGSW body row and replaces mask rows.
             a_r.transfer_into(&mut out_r);
             a_r.transfer_into(&mut out_t);
-            r.ggsw_expand_row(
+            r.ggsw_expand_rows_assign(
                 &mut out_r,
                 &tensorp_r.to_backend_ref(),
-                &mut poisoned_scratch::<BR>(r.ggsw_expand_rows_tmp_bytes(&g, &tk)).borrow(),
+                &mut poisoned_scratch::<BR>(r.ggsw_expand_rows_assign_tmp_bytes(&g, &tk)).borrow(),
             );
-            t.ggsw_expand_row(
+            t.ggsw_expand_rows_assign(
                 &mut out_t,
                 &tensorp_t.to_backend_ref(),
-                &mut poisoned_scratch::<BT>(t.ggsw_expand_rows_tmp_bytes(&g, &tk)).borrow(),
+                &mut poisoned_scratch::<BT>(t.ggsw_expand_rows_assign_tmp_bytes(&g, &tk)).borrow(),
             );
             out_t.transfer_into(&mut have);
-            assert_eval_eq!(out_r, have, "ggsw_expand_row: rank={rank} k_digit={k_digit}");
+            assert_eval_eq!(out_r, have, "ggsw_expand_rows_assign: rank={rank} k_digit={k_digit}");
         }
     }
 }

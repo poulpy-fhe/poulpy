@@ -19,9 +19,11 @@ use poulpy_core::{
     GLWEBytesOf, GLWECIKeyEncryptSk, GLWEKeyswitch, GLWESecretSampling,
     api::GLWECIKeyPreparedFactory,
     layouts::{
-        GLWECIEmbedKey, GLWECIEmbedKeyPrepared, GLWECITraceKey, GLWECITraceKeyPrepared, GLWEInfos, GLWELayout,
-        GLWESecretToBackendMut, GLWESecretToBackendRef, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, ModuleCoreAlloc,
+        GLWECIEmbedKey, GLWECIEmbedKeyAlloc, GLWECIEmbedKeyPrepared, GLWECITraceKey, GLWECITraceKeyAlloc, GLWECITraceKeyPrepared,
+        GLWEInfos, GLWELayout, GLWESecretAlloc, GLWESecretToBackendMut, GLWESecretToBackendRef, GLWEToBackendMut,
+        GLWEToBackendRef, LWEInfos,
     },
+    reference::ci_conversion::GLWECIConversionReference,
 };
 use poulpy_cpu_oracle::FFT64Oracle;
 use poulpy_hal::{
@@ -49,7 +51,7 @@ unsafe impl poulpy_core::oep::GLWECIConversionImpl for OverrideBackend {
         A: GLWEToBackendRef<Self> + GLWEInfos,
     {
         CI_EMBED_CALLS.set(CI_EMBED_CALLS.get() + 1);
-        poulpy_core::reference::ci_conversion::glwe_ci_embed_reference::<Self, _, _, _>(module, res, a)
+        module.glwe_ci_embed_reference(res, a)
     }
 
     fn glwe_secret_ci_embed<R, S>(module: &Module<Self>, res: &mut R, src: &S)
@@ -57,7 +59,7 @@ unsafe impl poulpy_core::oep::GLWECIConversionImpl for OverrideBackend {
         R: GLWESecretToBackendMut<Self> + poulpy_core::GetDistributionMut,
         S: GLWESecretToBackendRef<Self>,
     {
-        poulpy_core::reference::ci_conversion::glwe_secret_ci_embed_reference::<Self, _, _>(module, res, src)
+        module.glwe_secret_ci_embed_reference(res, src)
     }
 
     fn glwe_ci_trace_tmp_bytes<R, A>(module: &Module<Self>, res_infos: &R, a_infos: &A) -> usize
@@ -65,10 +67,7 @@ unsafe impl poulpy_core::oep::GLWECIConversionImpl for OverrideBackend {
         R: GLWEInfos,
         A: GLWEInfos,
     {
-        CI_TRACE_EXTRA
-            + poulpy_core::reference::ci_conversion::glwe_ci_trace_tmp_bytes_reference::<Self, _, _, _>(
-                module, res_infos, a_infos,
-            )
+        CI_TRACE_EXTRA + module.glwe_ci_trace_tmp_bytes_reference(res_infos, a_infos)
     }
 
     fn glwe_ci_trace<R, A>(module: &Module<Self>, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, Self>)
@@ -77,9 +76,7 @@ unsafe impl poulpy_core::oep::GLWECIConversionImpl for OverrideBackend {
         A: GLWEToBackendRef<Self> + GLWEInfos,
     {
         CI_TRACE_CALLS.set(CI_TRACE_CALLS.get() + 1);
-        with_marked_region::<CI_TRACE_EXTRA, _>(scratch, |rest| {
-            poulpy_core::reference::ci_conversion::glwe_ci_trace_reference::<Self, _, _, _>(module, res, a, rest)
-        })
+        with_marked_region::<CI_TRACE_EXTRA, _>(scratch, |rest| module.glwe_ci_trace_reference(res, a, rest))
     }
 }
 poulpy_ckks::impl_ckks_ci_ring_map_reference_full!(OverrideBackend);

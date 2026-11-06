@@ -62,7 +62,7 @@ macro_rules! impl_ckks_eval_mod_reference_full {
                 P: $crate::CKKSCtBounds,
                 T: ::poulpy_core::layouts::GGLWEInfos,
             {
-                $crate::reference::eval_mod::ckks_eval_mod_tmp_bytes_reference(module, res, ct, params, tsk)
+                $crate::reference::eval_mod::CKKSEvalModReference::ckks_eval_mod_tmp_bytes_reference(module, res, ct, params, tsk)
             }
             fn ckks_eval_mod<R, C, P, F, H>(
                 module: &::poulpy_hal::layouts::Module<Self>,

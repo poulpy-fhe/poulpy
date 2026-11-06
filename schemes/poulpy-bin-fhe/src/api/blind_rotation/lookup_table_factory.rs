@@ -18,5 +18,5 @@ pub trait LookupTableFactory<D: Data, W: ZnxWord> {
 
     /// Rotate the lookup table in-place by `k` positions in the ring
     /// `Z[X] / (X^{domain_size} + 1)`.
-    fn lookup_table_rotate(&self, k: i64, res: &mut LookupTable<D, W>);
+    fn lookup_table_rotate_assign(&self, k: i64, res: &mut LookupTable<D, W>);
 }

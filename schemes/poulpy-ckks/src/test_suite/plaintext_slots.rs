@@ -5,7 +5,7 @@ use std::collections::HashMap;
 
 use poulpy_core::layouts::{Diagonals, Evaluate, LWEInfos, LinearTransformationStrategy};
 use poulpy_hal::{
-    api::{CnvPVecAlloc, NegacyclicFFT, NegacyclicFFTNew, ScratchAvailable, ScratchOwnedBorrow},
+    api::{CnvPVecAlloc, ReimNew, ScratchAvailable, ScratchOwnedBorrow},
     layouts::{Backend, CyclotomicOrder, HostBytesBackend, Module, ScratchArena, Standard},
 };
 
@@ -15,13 +15,13 @@ use crate::{
         CKKSAddOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSLinearTransformationOps, CKKSMulOps, CKKSSubOps,
         LinearTransformation, LinearTransformationPrepared,
     },
-    layouts::{CKKSModuleAlloc, CKKSPlaintextOwned, ComplexDiagonals},
+    layouts::{CKKSPlaintextAlloc, CKKSPlaintextOwned, ComplexDiagonals},
     test_suite::{
         CKKSTestParams,
         helpers::{
             TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, assert_ckks_error,
-            assert_decrypt_precision, ckks_encrypt, gen_atk, gen_sk, gen_sk_with_raw, pt_eval_tmp_bytes,
-            pt_streamed_eval_tmp_bytes, quantize, test_vector_1, test_vector_2, upload_pt, want_add, want_mul,
+            assert_decrypt_precision, ckks_encrypt, gen_atk, gen_sk, gen_sk_with_raw, pt_self_into_tmp_bytes, quantize,
+            test_vector_1, test_vector_2, upload_pt, want_add, want_mul,
         },
         reference_encoder::ReferenceEncoder,
     },
@@ -45,7 +45,7 @@ pub fn test_plaintext_slots_add_sub_mul<BE, F, E>(
     for<'a> <BE as Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = test_slots(&params);
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -58,7 +58,7 @@ pub fn test_plaintext_slots_add_sub_mul<BE, F, E>(
     };
     let ct = encrypt(&mut scratch.borrow());
     let prec = params.prec();
-    let mut host_pt = host_module.ckks_pt_vec_alloc(m, params.base2k.into(), prec.k());
+    let mut host_pt = host_module.ckks_plaintext_alloc_from_slots(m, params.base2k.into(), prec.k());
     host_pt.set_meta(prec.meta());
     encoder.encode_reim(&mut host_pt, &re2, &im2).unwrap();
     let pt = upload_pt(module, &host_pt);
@@ -104,7 +104,7 @@ pub fn test_plaintext_slots_add_sub_mul<BE, F, E>(
     );
 
     // A degree that is not a power-of-two divisor is an error, on the add and on the mul.
-    let mut odd = host_module.ckks_pt_coeffs_alloc(3, params.base2k.into(), prec.k());
+    let mut odd = host_module.ckks_plaintext_alloc(3usize.into(), params.base2k.into(), prec.k());
     odd.set_meta(prec.meta());
     let odd = upload_pt(module, &odd);
     let before = snapshot::<BE, _>(&res);
@@ -131,7 +131,7 @@ pub fn test_plaintext_slots_add_sub_mul<BE, F, E>(
     );
     assert_eq!(snapshot::<BE, _>(&res), before, "a refused ckks_mul_pt_vec_into wrote res");
     // A degree below the backend floor is an error too.
-    let mut tiny = host_module.ckks_pt_coeffs_alloc(BE::MIN_DEGREE / 2, params.base2k.into(), prec.k());
+    let mut tiny = host_module.ckks_plaintext_alloc((BE::MIN_DEGREE / 2).into(), params.base2k.into(), prec.k());
     tiny.set_meta(prec.meta());
     let tiny = upload_pt(module, &tiny);
     let err = with_scratch::<BE, _>(0, |s| module.ckks_add_pt_vec_into(&mut res, &ct, &tiny, s)).unwrap_err();
@@ -184,9 +184,9 @@ where
 {
     let prec = params.prec();
     b.build_transform(strategy, |pre_re, pre_im| {
-        let mut pt = module.ckks_pt_vec_alloc(pre_re.len(), params.base2k.into(), prec.k());
+        let mut pt = module.ckks_plaintext_alloc_from_slots(pre_re.len(), params.base2k.into(), prec.k());
         pt.set_meta_checked(prec.meta()).unwrap();
-        module.ckks_encode_reim_into(&mut pt, pre_re, pre_im, scratch).unwrap();
+        module.ckks_encode_slots_host_into(&mut pt, pre_re, pre_im, scratch).unwrap();
         pt
     })
 }
@@ -203,7 +203,7 @@ pub fn test_linear_transformation_diagonal_slots<BE, F, E>(
     for<'a> <BE as Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE> + CKKSEncodingHostOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
     for<'a> ScratchArena<'a, BE>: ScratchAvailable,
 {
     let m = test_slots(&params);
@@ -247,16 +247,14 @@ pub fn test_linear_transformation_diagonal_slots<BE, F, E>(
         2 * m,
         "prepared slot is not at the diagonals' degree"
     );
-    with_scratch::<BE, _>(module.ckks_prepare_linear_transformation_rhs_tmp_bytes(first), |s| {
-        module.ckks_prepare_linear_transformation_rhs(&mut prepared, &lt, s)
+    with_scratch::<BE, _>(module.ckks_linear_transformation_rhs_prepare_tmp_bytes(first), |s| {
+        module.ckks_linear_transformation_rhs_prepare(&mut prepared, &lt, s)
     })
     .unwrap();
-    // The documented bound of `self_into`: the larger of the baby-step and evaluation queries.
-    let baby_bytes = module.ckks_prepare_linear_transformation_baby_steps_tmp_bytes(&ct, &lt.index(), &key_params.atk_layout());
     let mut ct_out = alloc_ct(&params, module, params.k);
     with_scratch::<BE, _>(
-        baby_bytes.max(pt_eval_tmp_bytes(module, &ct, &lt.index(), &key_params.atk_layout())),
-        |s| module.ckks_eval_linear_transformation_self_into(&mut ct_out, &ct, &prepared, &atks, s),
+        pt_self_into_tmp_bytes(module, false, &ct, &lt.index(), &key_params.atk_layout()),
+        |s| module.ckks_linear_transformation_eval_self_into(&mut ct_out, &ct, &prepared, &atks, s),
     )
     .unwrap();
     assert_decrypt_precision(
@@ -275,8 +273,8 @@ pub fn test_linear_transformation_diagonal_slots<BE, F, E>(
     // prepared on the fly at their degree.
     let mut ct_streamed = alloc_ct(&params, module, params.k);
     with_scratch::<BE, _>(
-        baby_bytes.max(pt_streamed_eval_tmp_bytes(module, &ct, &lt.index(), &key_params.atk_layout())),
-        |s| module.ckks_eval_linear_transformation_self_into(&mut ct_streamed, &ct, &lt, &atks, s),
+        pt_self_into_tmp_bytes(module, true, &ct, &lt.index(), &key_params.atk_layout()),
+        |s| module.ckks_linear_transformation_eval_self_into(&mut ct_streamed, &ct, &lt, &atks, s),
     )
     .unwrap();
     assert_decrypt_precision(
@@ -299,12 +297,12 @@ where
     BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let mut scratch = alloc_scratch(&params, module);
     let strategy = LinearTransformationStrategy::Bsgs { giant_step: 2 };
     for (slots, want_n) in [(test_slots(&params), params.n / 4), (params.n / 2, params.n)] {
-        let lt = crate::encoding::ckks_encode_linear_transformation_from_diagonals::<BE, F>(
+        let lt = crate::encoding::ckks_linear_transformation_encode_from_diagonals::<BE, F>(
             module,
             params.base2k.into(),
             params.prec().into(),

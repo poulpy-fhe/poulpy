@@ -14,7 +14,8 @@ use crate::{
     DEFAULT_SIGMA_XE, GGLWECopy, GGLWENoise, GLWEAutomorphismKeyAutomorphism, GLWEAutomorphismKeyEncryptSk,
     api::{GLWEAutomorphismKeyPreparedFactory, GLWESecretPreparedFactory},
     layouts::{
-        GGLWEInfos, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout, GLWEInfos, GLWESecret, ModuleCoreAlloc, SetGaloisElement,
+        GGLWEInfos, GLWEAutomorphismKey, GLWEAutomorphismKeyAlloc, GLWEAutomorphismKeyLayout, GLWEInfos, GLWESecret,
+        GLWESecretAlloc, SetGaloisElement,
         prepared::{GLWEAutomorphismKeyPrepared, GLWESecretPrepared},
     },
     noise::GGLWENoiseModel,

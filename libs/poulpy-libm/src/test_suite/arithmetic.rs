@@ -4,14 +4,14 @@ use poulpy_core::layouts::{
     GGLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, prepared::GLWETensorKeyPreparedToBackendRef,
 };
 use poulpy_hal::{
-    api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
+    api::{ReimNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{HostBytesBackend, Module, ScratchOwned, Standard},
     source::Source,
 };
 
 use poulpy_ckks::{
     CKKSCtBounds, CKKSInfos, SetCKKSInfos,
-    layouts::{CKKSCiphertext, CKKSModuleAlloc},
+    layouts::{CKKSCiphertext, CKKSCiphertextAlloc},
     test_suite::{
         CKKSTestParams,
         helpers::{
@@ -34,7 +34,7 @@ where
         GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let log_delta = base.prec().log_delta();
     let params = params_for(&base, log_delta);
@@ -50,7 +50,8 @@ where
     sizing.set_meta(params.prec().meta);
     let size = module
         .ckks_fma_tmp_bytes(&sizing, &sizing, &sizing, &sizing, &params.tsk_layout())
-        .max(module.ckks_scalbn_tmp_bytes(&sizing));
+        .max(module.ckks_scalbn_tmp_bytes(&sizing))
+        .max(module.ckks_ldexp_tmp_bytes(&sizing));
     let mut scratch = ScratchOwned::<BE>::alloc(size);
     let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
     let ca = ckks_encrypt_with_prec(

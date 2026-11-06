@@ -12,7 +12,7 @@
 //! | [`test_mul_add_const_zero_preserves_dst_meta`] | ZNX zero constant no-op |
 
 use poulpy_hal::{
-    api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow},
+    api::{ReimNew, ScratchOwnedBorrow},
     layouts::{HostBytesBackend, Module, Standard},
 };
 
@@ -61,7 +61,7 @@ where
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -153,7 +153,7 @@ pub fn test_mul_add_ct_unaligned_dst<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -236,7 +236,7 @@ pub fn test_mul_add_pt_vec_into_aligned<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -329,7 +329,7 @@ pub fn test_mul_add_pt_vec_into_delta_log_delta<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -410,7 +410,7 @@ pub fn test_mul_add_const_into_aligned<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -491,7 +491,7 @@ pub fn test_mul_add_const_zero_preserves_dst_meta<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -560,7 +560,7 @@ pub fn test_mul_add_pt_vec_into_rejects_base2k_mismatch<BE, F, E>(
     BE: crate::test_suite::helpers::TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     poulpy_hal::layouts::Module<BE>: crate::test_suite::helpers::TestContextModule<BE>,
     F: crate::test_suite::helpers::TestScalar,
-    E: poulpy_hal::api::NegacyclicFFT<F> + poulpy_hal::api::NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     use crate::test_suite::{
         helpers::assert_ckks_error,

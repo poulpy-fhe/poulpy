@@ -5,14 +5,14 @@ use poulpy_core::layouts::{
 };
 use poulpy_hal::{
     AlignedBuf,
-    api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
+    api::{ReimNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{HostBytesBackend, Module, ScratchOwned, Standard},
     source::Source,
 };
 
 use poulpy_ckks::{
     CKKSCtBounds, CKKSInfos, SetCKKSInfos,
-    layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec},
+    layouts::{CKKSCiphertext, CKKSCiphertextAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec},
     test_suite::{
         CKKSTestParams,
         helpers::{
@@ -39,7 +39,7 @@ where
     CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let log_delta = base.prec().log_delta();
     let coeff_meta = ckks_spec(base.n, base.base2k, log_delta, base.base2k);
@@ -106,14 +106,14 @@ where
     let mut sizing = module.ckks_ciphertext_alloc(params.base2k.into(), params.k.into());
     sizing.set_meta(params.prec().meta);
     let size = module
-        .ckks_tgamma_tmp_bytes(&sizing, &sizing, &params.tsk_layout(), &tgamma)
-        .max(module.ckks_lgamma_tmp_bytes(&sizing, &sizing, &params.tsk_layout(), &lgamma))
-        .max(module.ckks_j0_tmp_bytes(&sizing, &sizing, &params.tsk_layout(), &jp0))
-        .max(module.ckks_j1_tmp_bytes(&sizing, &sizing, &params.tsk_layout(), &jp1))
-        .max(module.ckks_jn_tmp_bytes(&sizing, &sizing, &params.tsk_layout(), &jpn))
-        .max(module.ckks_y0_tmp_bytes(&sizing, &sizing, &params.tsk_layout(), &yp0))
-        .max(module.ckks_y1_tmp_bytes(&sizing, &sizing, &params.tsk_layout(), &yp1))
-        .max(module.ckks_yn_tmp_bytes(&sizing, &sizing, &params.tsk_layout(), &ypn));
+        .ckks_tgamma_tmp_bytes(&sizing, &sizing, &tgamma, &params.tsk_layout())
+        .max(module.ckks_lgamma_tmp_bytes(&sizing, &sizing, &lgamma, &params.tsk_layout()))
+        .max(module.ckks_j0_tmp_bytes(&sizing, &sizing, &jp0, &params.tsk_layout()))
+        .max(module.ckks_j1_tmp_bytes(&sizing, &sizing, &jp1, &params.tsk_layout()))
+        .max(module.ckks_jn_tmp_bytes(&sizing, &sizing, &jpn, &params.tsk_layout()))
+        .max(module.ckks_y0_tmp_bytes(&sizing, &sizing, &yp0, &params.tsk_layout()))
+        .max(module.ckks_y1_tmp_bytes(&sizing, &sizing, &yp1, &params.tsk_layout()))
+        .max(module.ckks_yn_tmp_bytes(&sizing, &sizing, &ypn, &params.tsk_layout()));
     let mut scratch = ScratchOwned::<BE>::alloc(size);
     let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
     let cg = ckks_encrypt_with_prec(

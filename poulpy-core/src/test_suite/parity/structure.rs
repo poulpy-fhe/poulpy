@@ -1,21 +1,23 @@
 //! Trace, packing, relinearization and tensor-secret parity.
 use super::{ParityBackend, ParityShapes, poisoned_scratch, ref_glwe, unnormalized_twin};
 use crate::{
-    Distribution, GLWEMaskFill, GLWEMulRelinearizeSum, GLWENormalize, GLWEPacking, GLWEPreparedTensoring, GLWETensorDecrypt,
+    Distribution, GLWEFill, GLWEMulRelinearizeSum, GLWENormalize, GLWEPack, GLWEPreparedTensoring, GLWETensorDecrypt,
     GLWETensoring, GLWETrace, GetDistribution,
     api::{
-        GLWEAutomorphismKeyPreparedFactory, GLWESecretPreparedFactory, GLWESecretTensorFactory, GLWESecretTensorPreparedFactory,
-        GLWETensorKeyPreparedFactory, TransferInto,
+        GLWEAutomorphismKeyPreparedFactory, GLWESecretPreparedFactory, GLWESecretTensorFromGLWESecret,
+        GLWESecretTensorPreparedFactory, GLWETensorKeyPreparedFactory, TransferInto,
     },
-    glwe_prepare_left, glwe_prepare_left_tmp_bytes, glwe_prepare_right, glwe_prepare_right_tmp_bytes,
+    glwe_left_operand_prepare, glwe_left_operand_prepare_tmp_bytes, glwe_right_operand_prepare,
+    glwe_right_operand_prepare_tmp_bytes,
     layouts::{
-        Base2K, Degree, Dnum, GGLWEInfos, GLWEAutomorphismKeyLayout, GLWEInfos, GLWELayout, GLWESecretLayout,
-        GLWETensorKeyLayout, ModuleCoreAlloc, Rank, TorusPrecision,
+        Base2K, Degree, Dnum, GGLWEInfos, GLWEAlloc, GLWEAutomorphismKeyAlloc, GLWEAutomorphismKeyLayout, GLWEInfos, GLWELayout,
+        GLWEPlaintextAlloc, GLWESecretAlloc, GLWESecretLayout, GLWESecretTensorAlloc, GLWETensorAlloc, GLWETensorKeyAlloc,
+        GLWETensorKeyLayout, Rank, TorusPrecision,
     },
     test_suite::{decryption::panic_message, keys::fill_by_digit, noise::assert_refuses_uncovered_input},
 };
 use poulpy_hal::{
-    api::{CnvPVecAlloc, Convolution, ScratchOwnedAlloc, ScratchOwnedBorrow},
+    api::{CnvOps, CnvPVecAlloc, ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{HostDataMut, Module, Ring, ScratchOwned, Standard, ZnxViewMut},
     source::Source,
     test_suite::TestParams,
@@ -247,18 +249,15 @@ where
     BR: ParityBackend,
     BT: ParityBackend,
     BR::OwnedBuf: HostDataMut,
-    Module<BR>: GLWETrace<BR> + GLWEPacking<BR> + GLWEAutomorphismKeyPreparedFactory<BR>,
-    Module<BT>: GLWETrace<BT> + GLWEPacking<BT> + GLWEAutomorphismKeyPreparedFactory<BT>,
+    Module<BR>: GLWETrace<BR> + GLWEPack<BR> + GLWEAutomorphismKeyPreparedFactory<BR>,
+    Module<BT>: GLWETrace<BT> + GLWEPack<BT> + GLWEAutomorphismKeyPreparedFactory<BT>,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
 {
     let b = params.base2k;
     let mut source = Source::new([131; 32]);
-    // The key lists name the module's Galois elements; keys for operands of a smaller
-    // degree are those of a module of that degree.
-    if r.n() == t.n() {
-        assert_eq!(r.glwe_pack_galois_elements(), t.glwe_pack_galois_elements());
-    }
+    let n = Degree(params.n as u32);
+    assert_eq!(r.glwe_pack_galois_elements(n), t.glwe_pack_galois_elements(n));
     for &rank in &shapes.ranks {
         let g = GLWELayout {
             n: Degree(params.n as u32),
@@ -277,7 +276,7 @@ where
         };
         let mut keys_r = HashMap::new();
         let mut keys_t = HashMap::new();
-        for p in r.glwe_pack_galois_elements() {
+        for p in r.glwe_pack_galois_elements(n) {
             let mut key_r = r.glwe_automorphism_key_alloc_from_infos(&k);
             fill_by_digit(r, &mut key_r, 1, &mut source);
             key_r.p = p;
@@ -491,23 +490,23 @@ where
         + GLWEMulRelinearizeSum<BR>
         + GLWEPreparedTensoring<BR>
         + CnvPVecAlloc<BR>
-        + Convolution<BR>
+        + CnvOps<BR>
         + GLWENormalize<BR>
         + GLWETensorDecrypt<BR>
         + GLWETensorKeyPreparedFactory<BR>
         + GLWESecretPreparedFactory<BR>
-        + GLWESecretTensorFactory<BR>
+        + GLWESecretTensorFromGLWESecret<BR>
         + GLWESecretTensorPreparedFactory<BR>,
     Module<BT>: GLWETensoring<BT>
         + GLWEMulRelinearizeSum<BT>
         + GLWEPreparedTensoring<BT>
         + CnvPVecAlloc<BT>
-        + Convolution<BT>
+        + CnvOps<BT>
         + GLWENormalize<BT>
         + GLWETensorDecrypt<BT>
         + GLWETensorKeyPreparedFactory<BT>
         + GLWESecretPreparedFactory<BT>
-        + GLWESecretTensorFactory<BT>
+        + GLWESecretTensorFromGLWESecret<BT>
         + GLWESecretTensorPreparedFactory<BT>,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
@@ -532,23 +531,23 @@ pub fn test_tensor_relinearize_decrypt_parity_roles<BR, BT>(
         + GLWEMulRelinearizeSum<BR>
         + GLWEPreparedTensoring<BR>
         + CnvPVecAlloc<BR>
-        + Convolution<BR>
+        + CnvOps<BR>
         + GLWENormalize<BR>
         + GLWETensorDecrypt<BR>
         + GLWETensorKeyPreparedFactory<BR>
         + GLWESecretPreparedFactory<BR>
-        + GLWESecretTensorFactory<BR>
+        + GLWESecretTensorFromGLWESecret<BR>
         + GLWESecretTensorPreparedFactory<BR>,
     Module<BT>: GLWETensoring<BT>
         + GLWEMulRelinearizeSum<BT>
         + GLWEPreparedTensoring<BT>
         + CnvPVecAlloc<BT>
-        + Convolution<BT>
+        + CnvOps<BT>
         + GLWENormalize<BT>
         + GLWETensorDecrypt<BT>
         + GLWETensorKeyPreparedFactory<BT>
         + GLWESecretPreparedFactory<BT>
-        + GLWESecretTensorFactory<BT>
+        + GLWESecretTensorFromGLWESecret<BT>
         + GLWESecretTensorPreparedFactory<BT>,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
@@ -575,14 +574,15 @@ pub fn test_tensor_relinearize_decrypt_parity_roles<BR, BT>(
         t.glwe_secret_prepare(&mut secretp_t, &secret_t);
         let mut tensor_r = r.glwe_secret_tensor_alloc_from_infos(&secret_layout);
         let mut tensor_t = t.glwe_secret_tensor_alloc_from_infos(&secret_layout);
-        r.glwe_secret_tensor_prepare(
+        r.glwe_secret_tensor_from_glwe_secret(
             &mut tensor_r,
             &secret_r,
-            &mut poisoned_scratch::<BR>(r.glwe_secret_tensor_prepare_tmp_bytes(Rank(rank as u32))).borrow(),
+            &mut poisoned_scratch::<BR>(r.glwe_secret_tensor_from_glwe_secret_tmp_bytes(Rank(rank as u32))).borrow(),
         );
-        crate::test_suite::assert_wipes_scratch::<BT>(t.glwe_secret_tensor_prepare_tmp_bytes(Rank(rank as u32)), |scratch| {
-            t.glwe_secret_tensor_prepare(&mut tensor_t, &secret_t, scratch)
-        });
+        crate::test_suite::assert_wipes_scratch::<BT>(
+            t.glwe_secret_tensor_from_glwe_secret_tmp_bytes(Rank(rank as u32)),
+            |scratch| t.glwe_secret_tensor_from_glwe_secret(&mut tensor_t, &secret_t, scratch),
+        );
         assert_eq!(
             poulpy_hal::test_suite::download_scalar_znx::<BR>(&tensor_r.data),
             poulpy_hal::test_suite::download_scalar_znx::<BT>(&tensor_t.data),
@@ -591,9 +591,9 @@ pub fn test_tensor_relinearize_decrypt_parity_roles<BR, BT>(
         assert_eq!(tensor_r.dist(), tensor_t.dist());
         assert_eq!(tensor_r.dist(), secret_r.dist());
         let mut tensorp_r = r.glwe_secret_tensor_prepared_alloc_from_infos(&secret_layout);
-        r.glwe_secret_tensor_prepared_prepare(&mut tensorp_r, &tensor_r);
+        r.glwe_secret_tensor_prepare(&mut tensorp_r, &tensor_r);
         let mut tensorp_t = t.glwe_secret_tensor_prepared_alloc_from_infos(&secret_layout);
-        t.glwe_secret_tensor_prepared_prepare(&mut tensorp_t, &tensor_t);
+        t.glwe_secret_tensor_prepare(&mut tensorp_t, &tensor_t);
         for precision in [2 * b, 2 * b + 1] {
             let g = GLWELayout {
                 n: Degree(params.n as u32),
@@ -602,11 +602,11 @@ pub fn test_tensor_relinearize_decrypt_parity_roles<BR, BT>(
                 rank: Rank(rank as u32),
             };
             let mut a_r = r.glwe_tensor_alloc_from_infos(&g);
-            r.fill_glwe_from_source(&mut a_r, &mut source);
+            r.glwe_fill_from_source(&mut a_r, &mut source);
             let mut a_t = t.glwe_tensor_alloc_from_infos(&g);
             a_r.transfer_into(&mut a_t);
             let mut pt_r = r.glwe_plaintext_alloc_from_infos(&g);
-            r.fill_glwe_from_source(&mut pt_r, &mut source);
+            r.glwe_fill_from_source(&mut pt_r, &mut source);
             let mut pt_t = t.glwe_plaintext_alloc_from_infos(&g);
             pt_r.transfer_into(&mut pt_t);
             r.glwe_tensor_decrypt(
@@ -644,8 +644,8 @@ pub fn test_tensor_relinearize_decrypt_parity_roles<BR, BT>(
                 fill_by_digit(r, &mut key_r, 1, &mut source);
                 let mut key_t = t.glwe_tensor_key_alloc_from_infos(&key);
                 key_r.transfer_into(&mut key_t);
-                let mut kp_r = r.alloc_tensor_key_prepared_from_infos(&key);
-                let mut kp_t = t.alloc_tensor_key_prepared_from_infos(&key);
+                let mut kp_r = r.glwe_tensor_key_prepared_alloc_from_infos(&key);
+                let mut kp_t = t.glwe_tensor_key_prepared_alloc_from_infos(&key);
                 r.glwe_tensor_key_prepare(
                     &mut kp_r,
                     &key_r,
@@ -726,20 +726,20 @@ pub fn test_tensor_relinearize_decrypt_parity_roles<BR, BT>(
                                 .map(|(i, (l, r))| {
                                     let (l_hint, r_hint) = crate::test_suite::prepare_hints(i);
                                     let mut l_prep = $m.cnv_pvec_left_alloc(params.n, 2, size, l_hint);
-                                    glwe_prepare_left(
+                                    glwe_left_operand_prepare(
                                         $m,
                                         &mut l_prep,
                                         *l,
                                         precision,
-                                        &mut poisoned_scratch::<$be>(glwe_prepare_left_tmp_bytes($m, size, &g)).borrow(),
+                                        &mut poisoned_scratch::<$be>(glwe_left_operand_prepare_tmp_bytes($m, size, &g)).borrow(),
                                     );
                                     let mut r_prep = $m.cnv_pvec_right_alloc(params.n, 2, size, r_hint);
-                                    glwe_prepare_right(
+                                    glwe_right_operand_prepare(
                                         $m,
                                         &mut r_prep,
                                         *r,
                                         precision,
-                                        &mut poisoned_scratch::<$be>(glwe_prepare_right_tmp_bytes($m, size, &g)).borrow(),
+                                        &mut poisoned_scratch::<$be>(glwe_right_operand_prepare_tmp_bytes($m, size, &g)).borrow(),
                                     );
                                     (l_prep, r_prep)
                                 })

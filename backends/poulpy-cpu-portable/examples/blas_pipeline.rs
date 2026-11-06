@@ -30,10 +30,10 @@ use poulpy_blas::{
         BlasPtOperandPreparedFactory,
     },
     layouts::{
-        BlasCiphertext, BlasCiphertextOwned, BlasGridInfos, BlasKeyUses, BlasLayout, BlasModuleAlloc, BlasPlan, Left, Right,
-        blas_matmul_key_uses, blas_matmul_output_layout, blas_matmul_pt_left_key_uses, blas_matmul_pt_left_output_layout,
-        blas_matmul_pt_right_key_uses, blas_matmul_pt_right_output_layout, blas_sum_key_uses, blas_sum_output_layout,
-        blas_transpose_key_uses, blas_transpose_output_layout,
+        BlasCiphertext, BlasCiphertextAlloc, BlasCiphertextOwned, BlasContextAlloc, BlasGridInfos, BlasKeyUses, BlasLayout,
+        BlasPlan, BlasPtOperandAlloc, Left, Right, blas_matmul_key_uses, blas_matmul_output_layout, blas_matmul_pt_left_key_uses,
+        blas_matmul_pt_left_output_layout, blas_matmul_pt_right_key_uses, blas_matmul_pt_right_output_layout, blas_sum_key_uses,
+        blas_sum_output_layout, blas_transpose_key_uses, blas_transpose_output_layout,
         grid::{join_blocks, split_into_blocks},
     },
 };
@@ -42,8 +42,8 @@ use poulpy_core::{
     GLWEAutomorphismKeyEncryptSk, GLWETensorKeyEncryptSk,
     api::{GLWEAutomorphismKeyPreparedFactory, GLWESecretPreparedFactory, GLWESecretSampling, GLWETensorKeyPreparedFactory},
     layouts::{
-        Base2K, Degree, GGLWELayout, GLWEAutomorphismKeyLayout, GLWELayout, GLWETensorKeyLayout, LWEInfos, ModuleCoreAlloc, Rank,
-        TorusPrecision,
+        Base2K, Degree, GGLWELayout, GLWEAutomorphismKeyAlloc, GLWEAutomorphismKeyLayout, GLWELayout, GLWESecretAlloc,
+        GLWETensorKeyAlloc, GLWETensorKeyLayout, LWEInfos, Rank, TorusPrecision,
         prepared::{GLWEAutomorphismKeyPrepared, GLWETensorKeyPrepared},
     },
 };
@@ -176,7 +176,7 @@ fn main() -> Result<()> {
         let layout = tsk_at(width);
         let mut tsk_raw = module.glwe_tensor_key_alloc_from_infos(&layout);
         module.glwe_tensor_key_encrypt_sk(&mut tsk_raw, &sk_raw, xe, xa, scratch);
-        let mut tsk = module.alloc_tensor_key_prepared_from_infos(&layout);
+        let mut tsk = module.glwe_tensor_key_prepared_alloc_from_infos(&layout);
         module.glwe_tensor_key_prepare(&mut tsk, &tsk_raw, scratch);
         tsk
     };
@@ -256,9 +256,9 @@ fn main() -> Result<()> {
             let blocks = split_into_blocks(rows, cols, LOG_D, SLOTS, BATCH, entry)
                 .iter()
                 .map(|re| {
-                    let mut pt = module.ckks_pt_vec_alloc(SLOTS, CT.base2k(), CT.k());
+                    let mut pt = module.ckks_plaintext_alloc_from_slots(SLOTS, CT.base2k(), CT.k());
                     pt.set_meta(CT.meta);
-                    module.ckks_encode_reim_into(&mut pt, re, &zeros, &mut scratch.borrow())?;
+                    module.ckks_encode_slots_host_into(&mut pt, re, &zeros, &mut scratch.borrow())?;
                     let mut ct = module.ckks_ciphertext_alloc_from_infos(&CT);
                     module.ckks_encrypt_sk(&mut ct, &pt, &sk, &mut source_xe, &mut source_xa, &mut scratch.borrow())?;
                     Ok(ct)
@@ -333,7 +333,7 @@ fn main() -> Result<()> {
             let mut pt = module.ckks_plaintext_alloc_from_infos(block);
             module.ckks_decrypt(&mut pt, block, &sk, &mut scratch.borrow())?;
             let (mut re, mut im) = (vec![0.0f64; SLOTS], vec![0.0f64; SLOTS]);
-            module.ckks_decode_reim_into(&pt, &mut re, &mut im, &mut scratch.borrow())?;
+            module.ckks_decode_slots_host_into(&pt, &mut re, &mut im, &mut scratch.borrow())?;
             Ok(re)
         })
         .collect::<Result<Vec<_>>>()?;

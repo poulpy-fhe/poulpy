@@ -7,17 +7,20 @@ use num_traits::One;
 use poulpy_ckks::{
     CoeffsMeta, GLWEPlaintextMeta, Scale,
     api::{CKKSModuleInfos, LinearTransformation, LinearTransformationPrepared, optimal_bsgs_giant_step},
-    layouts::{CKKSModuleAlloc, CKKSPlaintextOwned},
+    layouts::{CKKSLinearTransformationAlloc, CKKSPlaintextOwned},
 };
 use poulpy_core::layouts::{
     Base2K, Degree, DiagonalArithmetic, Diagonals, GetDegree, LinearTransformationLayout, LinearTransformationStrategy,
 };
-use poulpy_hal::layouts::{Backend, galois_elements_from_rotations};
+use poulpy_hal::{
+    api::CnvPVecAlloc,
+    layouts::{Backend, Module, galois_elements_from_rotations},
+};
 
 use super::{
     BlasGridInfos,
     ciphertext::grid_batch_at,
-    encoding::{DiagonalShape, Encoded, Scheduled, real_map, shape},
+    encoding::{DiagonalShape, Encoded, Scheduled, real_map, ring_slots, shape},
     maps,
 };
 
@@ -167,7 +170,7 @@ impl BlasPlan {
         galois_elements_from_rotations([r.rem_euclid(mat_slots) << (2 * self.log_d)], cyclotomic_order)
     }
 
-    /// Galois elements `blas_matmul`, `blas_matmul_prepare_left` and `blas_matmul_prepare_right` look up, and
+    /// Galois elements `blas_matmul`, `blas_matmul_left_operand_prepare` and `blas_matmul_right_operand_prepare` look up, and
     /// `blas_matmul_prepared` for a hot operand, whose terms it evaluates; of two cold operands it looks up none.
     pub fn matmul_galois_elements(&self, cyclotomic_order: i64) -> Vec<i64> {
         self.elements(cyclotomic_order, |slots| self.matmul_maps(slots))
@@ -215,7 +218,7 @@ impl BlasPlan {
 
     /// The slot count of a ring of cyclotomic order `cyclotomic_order`, if a block fits it.
     fn slots(&self, cyclotomic_order: i64) -> Option<usize> {
-        let slots = usize::try_from(cyclotomic_order / 4).ok().filter(|&slots| slots > 0)?;
+        let slots = ring_slots(cyclotomic_order).filter(|&slots| slots > 0)?;
         (self.log_d <= slots.ilog2() as usize / 2).then_some(slots)
     }
 
@@ -317,7 +320,7 @@ fn family_count(plan: BlasPlan) -> usize {
     if plan.pt_algorithm().masked() { FAMILIES } else { ROWS_LEFT }
 }
 
-/// The maps of a context, in the order [`BlasContextUnprepared::maps`] states.
+/// The maps of a context, in the order [`BlasContext::maps`] states.
 pub(crate) struct ContextMaps<T> {
     log_d: usize,
     slots: usize,
@@ -551,21 +554,15 @@ impl BlasContextInfos for BlasContextLayout {
 
 /// The JKLS maps of one matrix dimension, their one-diagonal halves and their variants on a replicated input, encoded
 /// and not yet prepared.
-pub struct BlasContextUnprepared<BE: Backend> {
+pub struct BlasContext<BE: Backend> {
     layout: BlasContextLayout,
     pub(crate) maps: ContextMaps<Encoded<BE>>,
 }
 
 /// The prepared JKLS maps of one matrix dimension, their one-diagonal halves and their variants on a replicated input.
-pub struct BlasContext<BE: Backend> {
+pub struct BlasContextPrepared<BE: Backend> {
     layout: BlasContextLayout,
     pub(crate) maps: ContextMaps<LinearTransformationPrepared<BE>>,
-}
-
-impl<BE: Backend> BlasContextInfos for BlasContextUnprepared<BE> {
-    fn blas_context_layout(&self) -> BlasContextLayout {
-        self.layout
-    }
 }
 
 impl<BE: Backend> BlasContextInfos for BlasContext<BE> {
@@ -574,18 +571,24 @@ impl<BE: Backend> BlasContextInfos for BlasContext<BE> {
     }
 }
 
-impl<BE: Backend> BlasContextUnprepared<BE> {
+impl<BE: Backend> BlasContextInfos for BlasContextPrepared<BE> {
+    fn blas_context_layout(&self) -> BlasContextLayout {
+        self.layout
+    }
+}
+
+impl<BE: Backend> BlasContext<BE> {
     /// Every encoded map, in the order encoding and preparation walk them: sigma, tau, tau on a replicated input, the
     /// transpose and the projections on row 0 and column 0, then psi^k, psi^k on a replicated input, phi^k and the
     /// halves of psi^k and of phi^k, then, under `JklsStored` and `JklsGalois`, the column halves of psi^k
-    /// ([`BlasContext::rows_left`], [`BlasContext::rows_right`]), each family for `k = 1..d`.
+    /// ([`BlasContextPrepared::rows_left`], [`BlasContextPrepared::rows_right`]), each family for `k = 1..d`.
     pub fn maps(&self) -> impl Iterator<Item = &LinearTransformation<CKKSPlaintextOwned<BE>>> {
         self.maps.iter()
     }
 }
 
-impl<BE: Backend> BlasContext<BE> {
-    /// Every prepared map, in the order of [`BlasContextUnprepared::maps`].
+impl<BE: Backend> BlasContextPrepared<BE> {
+    /// Every prepared map, in the order of [`BlasContext::maps`].
     pub fn maps(&self) -> impl Iterator<Item = &LinearTransformationPrepared<BE>> {
         self.maps.iter()
     }
@@ -729,24 +732,49 @@ pub(crate) fn module_layout(
     }
 }
 
-/// [`super::BlasModuleAlloc::blas_context_alloc_from_infos`].
-pub(crate) fn alloc<BE, M>(module: &M, layout: &BlasContextLayout) -> BlasContextUnprepared<BE>
+/// Allocation of contexts.
+pub trait BlasContextAlloc<BE: Backend>: CKKSLinearTransformationAlloc<BE> + GetDegree + Sized {
+    /// A context of `plan` on this module's ring, every diagonal zero, which
+    /// [`BlasEncodingOps::blas_context_encode`](crate::api::BlasEncodingOps::blas_context_encode) fills.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the blocks of `plan` are smaller than `2 x 2` or do not fit the module's slots, if `coeffs_meta.k` is
+    /// `0` or if `base2k` is outside `1..=63`.
+    fn blas_context_alloc(&self, plan: BlasPlan, base2k: Base2K, coeffs_meta: CoeffsMeta) -> BlasContext<BE> {
+        self.blas_context_alloc_from_infos(&module_layout(self, plan, base2k, coeffs_meta))
+    }
+
+    /// A context of `infos`, which must be of this module's ring.
+    ///
+    /// # Panics
+    ///
+    /// As [`Self::blas_context_alloc`], and if the degree or the slots of `infos` are not the module's.
+    fn blas_context_alloc_from_infos<A: BlasContextInfos>(&self, infos: &A) -> BlasContext<BE> {
+        alloc(self, &infos.blas_context_layout())
+    }
+}
+
+impl<BE: Backend> BlasContextAlloc<BE> for Module<BE> where Module<BE>: CKKSLinearTransformationAlloc<BE> {}
+
+/// [`BlasContextAlloc::blas_context_alloc_from_infos`].
+fn alloc<BE, M>(module: &M, layout: &BlasContextLayout) -> BlasContext<BE>
 where
     BE: Backend,
-    M: CKKSModuleAlloc<BE> + GetDegree,
+    M: CKKSLinearTransformationAlloc<BE> + GetDegree,
 {
     assert_fits_module(module, layout);
     let maps = ContextMaps::build(layout.plan, layout.slots, |id| {
         context_map::<f64>(layout, id).layout().alloc::<BE, M>(module, layout.base2k)
     });
-    BlasContextUnprepared { layout: *layout, maps }
+    BlasContext { layout: *layout, maps }
 }
 
 /// [`crate::api::BlasContextPreparedFactory::blas_context_prepared_alloc_from_infos`].
-pub(crate) fn alloc_prepared<BE, M>(module: &M, layout: &BlasContextLayout) -> BlasContext<BE>
+pub(crate) fn alloc_prepared<BE, M>(module: &M, layout: &BlasContextLayout) -> BlasContextPrepared<BE>
 where
     BE: Backend,
-    M: CKKSModuleAlloc<BE> + GetDegree,
+    M: CnvPVecAlloc<BE> + CKKSModuleInfos + GetDegree,
 {
     assert_fits_module(module, layout);
     let maps = ContextMaps::build(layout.plan, layout.slots, |id| {
@@ -754,13 +782,13 @@ where
             .layout()
             .alloc_prepared::<BE, M>(module, layout.base2k)
     });
-    BlasContext { layout: *layout, maps }
+    BlasContextPrepared { layout: *layout, maps }
 }
 
 /// Galois elements `blas_sum` needs on a grid of layout `infos` on a ring of `cyclotomic_order`: at its recorded batch,
 /// or for a layout without one the batch its label proves; none when one block does not fit the slots.
 pub fn sum_galois_elements(cyclotomic_order: i64, infos: &impl BlasGridInfos) -> Vec<i64> {
-    let slots = usize::try_from(cyclotomic_order / 4).unwrap_or(0);
+    let slots = ring_slots(cyclotomic_order).unwrap_or(0);
     galois_elements_from_rotations(sum_rotations(infos.log_d(), grid_batch_at(slots, infos)), cyclotomic_order)
 }
 
@@ -811,9 +839,9 @@ mod tests {
     use std::panic::{AssertUnwindSafe, catch_unwind};
 
     use super::*;
-    use crate::layouts::{BlasLayout, BlasModuleAlloc, replicated};
+    use crate::layouts::{BlasCiphertextAlloc, BlasLayout, replicated};
     use poulpy_ckks::{CKKSInfos, SetGLWEPlaintextInfos};
-    use poulpy_hal::layouts::{CyclotomicOrder, HostBytesBackend, Module, Standard};
+    use poulpy_hal::layouts::{CyclotomicOrder, HostBytesBackend, Standard};
 
     #[test]
     fn contexts_allocate_every_map_of_their_layout() {

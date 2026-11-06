@@ -13,7 +13,7 @@ use crate::{
     api::{GLWESecretPreparedFactory, GLWESwitchingKeyPreparedFactory},
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
-        GGLWEInfos, GLWESecret, GLWESwitchingKey, GLWESwitchingKeyLayout, LWEInfos, ModuleCoreAlloc,
+        GGLWEInfos, GLWESecret, GLWESecretAlloc, GLWESwitchingKey, GLWESwitchingKeyAlloc, GLWESwitchingKeyLayout, LWEInfos,
         prepared::{GLWESecretPrepared, GLWESwitchingKeyPrepared},
     },
     noise::GGLWENoiseModel,

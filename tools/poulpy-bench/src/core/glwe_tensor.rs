@@ -3,10 +3,11 @@ use std::hint::black_box;
 
 use criterion::{Bencher, measurement::Measurement};
 use poulpy_core::{
-    GLWEMaskFill, GLWETensoring,
+    GLWEFill, GLWETensoring,
     api::GLWETensorKeyPreparedFactory,
     layouts::{
-        Base2K, Degree, Dnum, GLWELayout, GLWETensorKey, GLWETensorKeyLayout, ModuleCoreAlloc, Rank, TorusPrecision, k_digit_of,
+        Base2K, Degree, Dnum, GLWEAlloc, GLWELayout, GLWETensorAlloc, GLWETensorKey, GLWETensorKeyAlloc, GLWETensorKeyLayout,
+        ModuleCoreAlloc, Rank, TorusPrecision, k_digit_of,
     },
     test_suite::keys::fill_by_digit,
 };
@@ -48,7 +49,7 @@ where
         + ModuleSynchronize<BE>
         + GLWETensoring<BE>
         + GLWETensorKeyPreparedFactory<BE>
-        + GLWEMaskFill<BE>
+        + GLWEFill<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
@@ -60,12 +61,12 @@ where
 
     let mut res = module.glwe_alloc_from_infos(&glwe_infos);
     let mut tensor = module.glwe_tensor_alloc_from_infos(&glwe_infos);
-    module.fill_glwe_from_source(&mut tensor, &mut source);
+    module.glwe_fill_from_source(&mut tensor, &mut source);
 
     let mut tsk_coeffs: GLWETensorKey<BE::OwnedBuf, i64> = module.glwe_tensor_key_alloc_from_infos(&tsk_infos);
     fill_by_digit(&module, &mut tsk_coeffs, 1, &mut source);
 
-    let mut tsk = module.alloc_tensor_key_prepared_from_infos(&tsk_infos);
+    let mut tsk = module.glwe_tensor_key_prepared_alloc_from_infos(&tsk_infos);
     let mut scratch = ScratchOwned::<BE>::alloc(
         module
             .glwe_tensor_key_prepare_tmp_bytes(&tsk_infos)
@@ -85,7 +86,7 @@ where
     Module<BE>: ModuleNew<BE>
         + ModuleSynchronize<BE>
         + GLWETensoring<BE>
-        + GLWEMaskFill<BE>
+        + GLWEFill<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
@@ -96,8 +97,8 @@ where
     let mut a = module.glwe_alloc_from_infos(&glwe_infos);
     let mut b = module.glwe_alloc_from_infos(&glwe_infos);
     let mut tensor = module.glwe_tensor_alloc_from_infos(&glwe_infos);
-    module.fill_glwe_from_source(&mut a, &mut source);
-    module.fill_glwe_from_source(&mut b, &mut source);
+    module.glwe_fill_from_source(&mut a, &mut source);
+    module.glwe_fill_from_source(&mut b, &mut source);
     let mut scratch = ScratchOwned::<BE>::alloc(module.glwe_tensor_apply_tmp_bytes(&tensor, &a, &b));
 
     bencher.iter(|| {
@@ -112,7 +113,7 @@ where
     Module<BE>: ModuleNew<BE>
         + ModuleSynchronize<BE>
         + GLWETensoring<BE>
-        + GLWEMaskFill<BE>
+        + GLWEFill<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
@@ -122,7 +123,7 @@ where
 
     let mut a = module.glwe_alloc_from_infos(&glwe_infos);
     let mut tensor = module.glwe_tensor_alloc_from_infos(&glwe_infos);
-    module.fill_glwe_from_source(&mut a, &mut source);
+    module.glwe_fill_from_source(&mut a, &mut source);
     let mut scratch = ScratchOwned::<BE>::alloc(module.glwe_tensor_square_apply_tmp_bytes(&tensor, &a));
 
     bencher.iter(|| {

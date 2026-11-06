@@ -6,7 +6,8 @@ use criterion::{Bencher, measurement::Measurement};
 use poulpy_hal::{
     api::{
         ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxDftAlloc, VmpApplyDft, VmpApplyDftTmpBytes, VmpApplyDftToDft,
-        VmpApplyDftToDftAdd, VmpApplyDftToDftAddTmpBytes, VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes,
+        VmpApplyDftToDftAdd, VmpApplyDftToDftAddTmpBytes, VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPMatPrepare,
+        VmpPMatPrepareTmpBytes,
     },
     layouts::{
         Backend, Module, PrepareHint, ScratchOwned, VecZnxDftOwned, VecZnxDftToBackendMut, VmpPMatOwned, VmpPMatToBackendMut,
@@ -21,9 +22,9 @@ use crate::hal::helpers::{
 };
 use crate::hal::params::VmpSweepParms;
 
-pub fn runner_vmp_prepare<B, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &VmpSweepParms)
+pub fn runner_vmp_pmat_prepare<B, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &VmpSweepParms)
 where
-    Module<B>: ModuleNew<B> + ModuleSynchronize<B> + VmpPMatAlloc<B> + VmpPrepare<B> + VmpPrepareTmpBytes,
+    Module<B>: ModuleNew<B> + ModuleSynchronize<B> + VmpPMatAlloc<B> + VmpPMatPrepare<B> + VmpPMatPrepareTmpBytes,
     B: Backend<ZnxWord = i64>,
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
 {
@@ -32,7 +33,7 @@ where
     let mut source: Source = Source::new([0u8; 32]);
 
     let mut scratch: ScratchOwned<B> =
-        ScratchOwned::alloc(module.vmp_prepare_tmp_bytes(sweep.rows, sweep.cols_in, sweep.cols_out, sweep.size));
+        ScratchOwned::alloc(module.vmp_pmat_prepare_tmp_bytes(sweep.rows, sweep.cols_in, sweep.cols_out, sweep.size));
 
     let mat = random_host_mat_znx(module.n(), sweep.rows, sweep.cols_in, sweep.cols_out, sweep.size, &mut source);
     let mat = upload_host_mat_znx::<B>(&mat);
@@ -48,7 +49,7 @@ where
     bencher.iter(|| {
         let mut pmat_backend = pmat.to_backend_mut();
         let mat_backend = mat_znx_backend_ref::<B>(&mat);
-        module.vmp_prepare(&mut pmat_backend, &mat_backend, &mut scratch.borrow());
+        module.vmp_pmat_prepare(&mut pmat_backend, &mat_backend, &mut scratch.borrow());
         module.synchronize();
         black_box(());
     });

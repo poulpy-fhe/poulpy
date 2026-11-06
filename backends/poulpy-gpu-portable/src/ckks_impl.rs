@@ -8,20 +8,20 @@
 use poulpy_ckks::{
     CKKSCtBounds, CKKSError, CKKSInfos, CKKSPlaintextToBackendMut, CKKSPlaintextToBackendRef, CKKSResult, GLWEPlaintextInfos,
     GLWEPlaintextMeta, Scale, SetCKKSInfos, SetGLWEPlaintextInfos, SlotLayout, SlotsKind,
-    api::{CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar, PaCoScalar, ShipScalar},
-    encoding::{paco_coeff_encodings_host, ship_coeff_encodings_host},
+    api::{CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar, CKKSPaCoScalar, CKKSShipScalar},
+    encoding::{ckks_paco_coeff_encodings_host, ckks_ship_coeff_encodings_host},
     layouts::{
-        CKKSEncodingBuffer, CKKSEncodingBufferBackendMut, CKKSEncodingBufferBackendRef, CKKSEncodingBufferInfos, CKKSModuleAlloc,
-        CKKSPlaintextOwned, PaCoContext, PaCoPlan, ShipCoeffEncodings, ShipPlan, ckks_one_pt,
+        CKKSCiphertextAlloc, CKKSEncodingBuffer, CKKSEncodingBufferBackendMut, CKKSEncodingBufferBackendRef,
+        CKKSEncodingBufferInfos, CKKSPlaintextOwned, PaCoContext, PaCoPlan, ShipCoeffEncodings, ShipPlan, ckks_plaintext_one,
     },
     oep::CKKSEncodingImpl,
-    reference::encoding::{CKKSSlotEmbedding, decode_coeffs_into_host, encode_coeffs_into_host},
+    reference::encoding::{CKKSSlotEmbedding, ckks_dequantize_coeffs_into_reference, ckks_quantize_coeffs_into_reference},
 };
 use poulpy_core::{
     ComponentNoise, GLWECopy,
     layouts::{
-        Base2K, Degree, GLWE, GLWEBackendMut, GLWEBackendRef, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef,
-        IntPolyInfos, LWEInfos, ModuleCoreAlloc, Rank, SetK, TorusPrecision,
+        Base2K, Degree, GLWE, GLWEAlloc, GLWEBackendMut, GLWEBackendRef, GLWEInfos, GLWELayout, GLWEToBackendMut,
+        GLWEToBackendRef, IntPolyInfos, LWEInfos, Rank, SetK, TorusPrecision,
     },
 };
 use poulpy_cpu_portable::ckks_encoding::{EncodingFFTTable, OwnedEncodingPlanSet};
@@ -48,7 +48,8 @@ type OneKey = (usize, SlotLayout, usize);
 /// Unit plaintexts keyed by radix, slot layout and scale.
 struct OnePlaintexts<BE: poulpy_hal::layouts::Backend>(Mutex<HashMap<OneKey, Arc<CKKSPlaintextOwned<BE>>>>);
 
-/// The unit plaintext of add-one and sub-one, uploaded once per layout and scale.
+/// The unit plaintext of add-one and sub-one, [`ckks_plaintext_one`] or the masked one of a replicated layout, kept by
+/// the module: only the first request for a radix, slot layout and scale uploads it.
 pub(crate) fn one_plaintext<RT, R>(
     module: &Module<NTT4x30Gpu<RT, R>>,
     base2k: Base2K,
@@ -58,7 +59,7 @@ pub(crate) fn one_plaintext<RT, R>(
 where
     RT: GpuRuntime,
     R: Ring + CKKSSlotEmbedding,
-    Module<NTT4x30Gpu<RT, R>>: CKKSModuleAlloc<NTT4x30Gpu<RT, R>>,
+    Module<NTT4x30Gpu<RT, R>>: CKKSPlaintextAlloc<NTT4x30Gpu<RT, R>>,
 {
     // Building the constant uses the device. The access is taken before the
     // cache is locked, as everywhere else: a thread that records holds the
@@ -79,7 +80,7 @@ where
                     return Ok(one.clone());
                 }
                 let one = Arc::new(match slot_layout {
-                    SlotLayout::Full => ckks_one_pt(module, base2k)?,
+                    SlotLayout::Full => ckks_plaintext_one(module, base2k)?,
                     SlotLayout::Replicated(layout) => masked_one::<RT, R, poulpy_ckks::Quad>(module, base2k, layout, log_delta)?,
                 });
                 cache.insert(key, one.clone());
@@ -105,7 +106,7 @@ where
     let degree = poulpy_ckks::shaping::ShapingProfile::for_ring::<R>(&layout)?
         .period()
         .max(BE::<RT, R>::MIN_DEGREE);
-    let mut one = module.ckks_pt_coeffs_alloc(degree, base2k, (log_delta + 1).into());
+    let mut one = module.ckks_plaintext_alloc(degree.into(), base2k, (log_delta + 1).into());
     one.set_meta(GLWEPlaintextMeta {
         scale: Scale::Log(log_delta),
         slots: SlotsKind::Real,
@@ -114,7 +115,7 @@ where
     });
     let bytes = CKKSEncodingBuffer::<<BE<RT, R> as Backend>::OwnedBuf, F>::bytes_of(degree);
     let mut scratch = ScratchOwned::<BE<RT, R>>::alloc(bytes);
-    CKKSEncodingHostOps::<BE<RT, R>, F>::ckks_encode_masked_constant_into(
+    CKKSEncodingHostOps::<BE<RT, R>, F>::ckks_encode_masked_constant_host_into(
         module,
         &mut one,
         F::one(),
@@ -275,7 +276,7 @@ where
         // The encoder writes every limb of the plaintext: nothing is read back first.
         let host = host_like(module, &GLWEToBackendRef::<Self>::to_backend_ref(pt));
         let mut staged = Staged { pt, host };
-        encode_coeffs_into_host::<Host<R>, F, _>(&mut staged, &CKKSEncodingBuffer::from_data(&host_coeffs[..], len))
+        ckks_quantize_coeffs_into_reference::<Host<R>, F, _>(&mut staged, &CKKSEncodingBuffer::from_data(&host_coeffs[..], len))
             .map_err(CKKSError::from)?;
         let Staged { pt, host } = staged;
         let mut device = GLWEToBackendMut::<Self>::to_backend_mut(pt);
@@ -304,7 +305,7 @@ where
             host
         };
         let mut host_coeffs = AlignedBuf::from(vec![0u8; bytes]);
-        decode_coeffs_into_host::<Host<R>, F, _>(
+        ckks_dequantize_coeffs_into_reference::<Host<R>, F, _>(
             &Staged { pt, host },
             &mut CKKSEncodingBuffer::from_data(&mut host_coeffs[..], len),
         )
@@ -313,7 +314,7 @@ where
         Ok(())
     }
 
-    fn ckks_slots_to_coeffs_assign_with_plan(
+    fn ckks_encoding_buffer_slots_to_coeffs_assign_with_plan(
         _module: &Module<Self>,
         plans: &Self::Plans,
         values: &mut CKKSEncodingBufferBackendMut<'_, Self, F>,
@@ -323,7 +324,7 @@ where
         transform_assign(&mut values.data, len, |values| R::slots_to_coeffs_assign(map, fft, values))
     }
 
-    fn ckks_coeffs_to_slots_assign_with_plan(
+    fn ckks_encoding_buffer_coeffs_to_slots_assign_with_plan(
         _module: &Module<Self>,
         plans: &Self::Plans,
         values: &mut CKKSEncodingBufferBackendMut<'_, Self, F>,
@@ -365,12 +366,12 @@ fn paco_coeff_encodings<BE, F, Src>(
 ) -> CKKSResult<[CKKSPlaintextOwned<BE>; 4]>
 where
     BE: poulpy_hal::layouts::Backend<ZnxWord = i64, Ring = Standard> + CKKSEncodingImpl<F>,
-    Module<BE>: ModuleN + CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F> + GLWECopy<BE>,
-    F: PaCoScalar,
+    Module<BE>: ModuleN + CKKSCiphertextAlloc<BE> + CKKSEncodingOps<BE, F> + GLWECopy<BE>,
+    F: CKKSPaCoScalar,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
     let host = staged_ciphertext!(module, ct, plan, scratch, "PaCo");
-    paco_coeff_encodings_host::<BE, _, F>(module, base2k, &host, plan).map_err(CKKSError::from)
+    ckks_paco_coeff_encodings_host::<BE, _, F>(module, base2k, &host, plan).map_err(CKKSError::from)
 }
 
 /// The SHIP coefficient encoding, staged like [`paco_coeff_encodings`].
@@ -384,12 +385,12 @@ fn ship_coeff_encodings<BE, F, Src>(
 ) -> CKKSResult<ShipCoeffEncodings<BE::OwnedBuf, i64>>
 where
     BE: poulpy_hal::layouts::Backend<ZnxWord = i64, Ring = Standard> + CKKSEncodingImpl<F>,
-    Module<BE>: ModuleN + CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F> + GLWECopy<BE>,
-    F: ShipScalar,
+    Module<BE>: ModuleN + CKKSCiphertextAlloc<BE> + CKKSEncodingOps<BE, F> + GLWECopy<BE>,
+    F: CKKSShipScalar,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
     let host = staged_ciphertext!(module, ct, plan, scratch, "SHIP");
-    ship_coeff_encodings_host::<BE, _, F>(module, base2k, complex, &host, plan).map_err(CKKSError::from)
+    ckks_ship_coeff_encodings_host::<BE, _, F>(module, base2k, complex, &host, plan).map_err(CKKSError::from)
 }
 
 /// The families of both rings, registered through the upstream macros, which
@@ -439,10 +440,15 @@ macro_rules! impl_ckks_standard {
         ::poulpy_ckks::impl_ckks_ship_reference_full!($be);
 
         unsafe impl ::poulpy_ckks::oep::CKKSPaCoCoeffEncodingImpl for $be {
-            fn ckks_paco_coeff_encodings_tmp_bytes<F>(_module: &Module<$be>, _context: &PaCoContext<$be, F>) -> CKKSResult<usize>
+            fn ckks_paco_coeff_encodings_tmp_bytes<F, A>(
+                _module: &Module<$be>,
+                _context: &PaCoContext<$be, F>,
+                _input: &A,
+            ) -> CKKSResult<usize>
             where
-                F: PaCoScalar,
+                F: CKKSPaCoScalar,
                 $be: CKKSEncodingImpl<F>,
+                A: ::poulpy_core::layouts::GLWEInfos,
             {
                 Ok(0)
             }
@@ -454,7 +460,7 @@ macro_rules! impl_ckks_standard {
                 scratch: &mut ScratchArena<'_, $be>,
             ) -> CKKSResult<[CKKSPlaintextOwned<$be>; 4]>
             where
-                F: PaCoScalar,
+                F: CKKSPaCoScalar,
                 $be: CKKSEncodingImpl<F>,
                 Src: GLWEToBackendRef<$be> + CKKSCtBounds,
             {
@@ -470,7 +476,7 @@ macro_rules! impl_ckks_standard {
                 _plan: &ShipPlan,
             ) -> CKKSResult<usize>
             where
-                F: ShipScalar,
+                F: CKKSShipScalar,
                 $be: CKKSEncodingImpl<F>,
             {
                 Ok(0)
@@ -485,7 +491,7 @@ macro_rules! impl_ckks_standard {
                 scratch: &mut ScratchArena<'_, $be>,
             ) -> CKKSResult<ShipCoeffEncodings<<$be as poulpy_hal::layouts::Backend>::OwnedBuf, i64>>
             where
-                F: ShipScalar,
+                F: CKKSShipScalar,
                 $be: CKKSEncodingImpl<F>,
                 Src: GLWEToBackendRef<$be> + CKKSCtBounds,
             {

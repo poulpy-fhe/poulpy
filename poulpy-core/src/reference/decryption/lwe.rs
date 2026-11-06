@@ -1,7 +1,7 @@
 use poulpy_hal::{
     api::{
-        ScratchArenaTakeBasic, VecZnxBigAddSmallAssign, VecZnxBigBytesOf, VecZnxBigInnerSum, VecZnxBigNormalize,
-        VecZnxBigNormalizeTmpBytes, VecZnxScalarProduct,
+        ScratchArenaTakeVecZnxBig, VecZnxBigAddSmallAssign, VecZnxBigBytesOf, VecZnxBigInnerSum, VecZnxBigNormalize,
+        VecZnxBigNormalizeTmpBytes, VecZnxBigScalarProduct,
     },
     layouts::{Backend, ScratchArena, VecZnxBigToBackendRef},
 };
@@ -13,15 +13,15 @@ where
     M: VecZnxBigBytesOf + VecZnxBigNormalizeTmpBytes,
     A: LWEInfos,
 {
-    module.bytes_of_vec_znx_big(infos.n().as_usize(), 1, infos.size())
-        + module.bytes_of_vec_znx_big(1, 1, infos.size())
+    module.vec_znx_big_bytes_of(infos.n().as_usize(), 1, infos.size())
+        + module.vec_znx_big_bytes_of(1, 1, infos.size())
         + module.vec_znx_big_normalize_tmp_bytes()
         + 2 * (BE::SCRATCH_ALIGN - 1)
 }
 
 pub fn lwe_decrypt_reference<M, BE, R, P, S>(module: &M, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'_, BE>)
 where
-    M: VecZnxScalarProduct<BE>
+    M: VecZnxBigScalarProduct<BE>
         + VecZnxBigInnerSum<BE>
         + VecZnxBigAddSmallAssign<BE>
         + VecZnxBigNormalize<BE>
@@ -49,7 +49,7 @@ where
     {
         let scratch = scratch.borrow();
         let (mut tmp_hadamard, scratch_1) = scratch.take_vec_znx_big_scratch(res.n().as_usize(), 1, res.size());
-        module.vec_znx_scalar_product(&mut tmp_hadamard, 0, &res.mask, 0, &sk.data, 0);
+        module.vec_znx_big_scalar_product(&mut tmp_hadamard, 0, &res.mask, 0, &sk.data, 0);
 
         let (mut tmp_scalar, mut scratch_2) = scratch_1.take_vec_znx_big_scratch(1, 1, res.size());
         module.vec_znx_big_inner_sum(&mut tmp_scalar, 0, 0, &tmp_hadamard.to_backend_ref(), 0);

@@ -5,14 +5,14 @@ use poulpy_core::layouts::{
 };
 use poulpy_hal::{
     AlignedBuf,
-    api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
+    api::{ReimNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{HostBytesBackend, Module, ScratchOwned, Standard},
     source::Source,
 };
 
 use poulpy_ckks::{
     CKKSCtBounds, CKKSInfos, SetCKKSInfos,
-    layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec},
+    layouts::{CKKSCiphertext, CKKSCiphertextAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec},
     test_suite::{
         CKKSTestParams,
         helpers::{
@@ -37,7 +37,7 @@ where
     CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let log_delta = base.prec().log_delta();
     let coeff_meta = ckks_spec(base.n, base.base2k, log_delta, base.base2k);
@@ -70,10 +70,10 @@ where
     let mut sizing = module.ckks_ciphertext_alloc(params.base2k.into(), params.k.into());
     sizing.set_meta(params.prec().meta);
     let size = module
-        .ckks_log_tmp_bytes(&sizing, &sizing, &params.tsk_layout(), &log)
-        .max(module.ckks_log2_tmp_bytes(&sizing, &sizing, &params.tsk_layout(), &log2))
-        .max(module.ckks_log10_tmp_bytes(&sizing, &sizing, &params.tsk_layout(), &log10))
-        .max(module.ckks_log1p_tmp_bytes(&sizing, &sizing, &params.tsk_layout(), &log1p));
+        .ckks_log_tmp_bytes(&sizing, &sizing, &log, &params.tsk_layout())
+        .max(module.ckks_log2_tmp_bytes(&sizing, &sizing, &log2, &params.tsk_layout()))
+        .max(module.ckks_log10_tmp_bytes(&sizing, &sizing, &log10, &params.tsk_layout()))
+        .max(module.ckks_log1p_tmp_bytes(&sizing, &sizing, &log1p, &params.tsk_layout()));
     let mut scratch = ScratchOwned::<BE>::alloc(size);
     let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
 

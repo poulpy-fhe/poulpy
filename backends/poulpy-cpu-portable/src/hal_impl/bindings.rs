@@ -8,7 +8,7 @@ use crate::hal_defaults::{
 };
 use poulpy_hal::{
     layouts::{Module, VecZnxBackendMut, VecZnxBackendRef},
-    oep::{HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl},
+    oep::{HalCnvImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl},
 };
 
 unsafe impl poulpy_hal::oep::HalVecZnxMonomialImpl for FFT64Portable {
@@ -19,6 +19,7 @@ unsafe impl poulpy_hal::oep::HalVecZnxCIImpl for FFT64Portable {
     crate::hal_impl_vec_znx_ci!();
 }
 
+unsafe impl<R: Ring> poulpy_hal::oep::HalScalarZnxImpl for FFT64Portable<R> where Self: HalVecZnxImpl {}
 unsafe impl<R: Ring> poulpy_hal::oep::HalMatZnxImpl for FFT64Portable<R> where Self: HalVecZnxImpl {}
 
 unsafe impl<R: Ring> HalVecZnxImpl for FFT64Portable<R>
@@ -42,11 +43,11 @@ where
     crate::hal_impl_vmp!(FFT64VmpDefault);
 }
 
-unsafe impl<R: Ring> HalConvolutionImpl for FFT64Portable<R>
+unsafe impl<R: Ring> HalCnvImpl for FFT64Portable<R>
 where
     Self: crate::kernels::fft64::ring_arith::Fft64RingArith + crate::kernels::znx::ZnxAutomorphism,
 {
-    crate::hal_impl_convolution!(FFT64ConvolutionDefault);
+    crate::hal_impl_cnv!(FFT64ConvolutionDefault);
 }
 
 unsafe impl<R: Ring> HalVecZnxBigImpl for FFT64Portable<R>
@@ -78,6 +79,7 @@ unsafe impl poulpy_hal::oep::HalVecZnxCIImpl for NTT4x30Portable {
     crate::hal_impl_vec_znx_ci!();
 }
 
+unsafe impl<R: Ring> poulpy_hal::oep::HalScalarZnxImpl for NTT4x30Portable<R> where Self: HalVecZnxImpl {}
 unsafe impl<R: Ring> poulpy_hal::oep::HalMatZnxImpl for NTT4x30Portable<R> where Self: HalVecZnxImpl {}
 
 unsafe impl<R: Ring> HalVecZnxImpl for NTT4x30Portable<R>

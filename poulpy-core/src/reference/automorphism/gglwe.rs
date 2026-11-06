@@ -10,13 +10,13 @@ use poulpy_hal::{
 
 use crate::layouts::operand_degree;
 use crate::{
-    ScratchArenaTakeCore,
+    ScratchArenaTakeGLWE,
     layouts::{
         GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GLWEInfos, GLWEViewRef, GetGaloisElement, SetGaloisElement,
         glwe_backend_ref_from_mut,
         prepared::{GGLWEPreparedToBackendRef, GLWEAutomorphismKeyPreparedBackendRef},
     },
-    reference::automorphism::GGLWEAutomorphismReference,
+    reference::automorphism::GLWEAutomorphismKeyAutomorphismReference,
 };
 
 pub fn glwe_automorphism_key_automorphism_tmp_bytes_reference<BE, M, R, A, K>(
@@ -53,7 +53,7 @@ pub fn glwe_automorphism_key_automorphism_reference<BE, M, R, A>(
 ) where
     BE: Backend,
     M: GLWEBytesOf<BE>
-        + GGLWEAutomorphismReference<BE>
+        + GLWEAutomorphismKeyAutomorphismReference<BE>
         + GaloisElement
         + GLWEKeyswitch<BE>
         + VecZnxAutomorphism<BE>

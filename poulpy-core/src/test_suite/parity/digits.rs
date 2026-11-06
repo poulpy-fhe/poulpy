@@ -9,7 +9,7 @@ use poulpy_hal::{
     api::{
         VecZnxAlloc, VecZnxDftAlloc, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftZero, VecZnxFillUniformSource,
         VecZnxFillUniformSourceAll, VecZnxIdftNormalize, VecZnxIdftNormalizeTmpBytes, VmpApplyDftToDft, VmpApplyDftToDftAdd,
-        VmpApplyDftToDftAddTmpBytes, VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes,
+        VmpApplyDftToDftAddTmpBytes, VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPMatPrepare, VmpPMatPrepareTmpBytes,
     },
     layouts::{
         MatZnx, MatZnxAtBackendMut, MatZnxToBackendRef, Module, PrepareHint, VecZnx, VecZnxDftToBackendMut,
@@ -31,8 +31,8 @@ pub trait DigitParityModule<BE: ParityBackend>:
     + VecZnxIdftNormalize<BE>
     + VecZnxIdftNormalizeTmpBytes
     + VmpPMatAlloc<BE>
-    + VmpPrepare<BE>
-    + VmpPrepareTmpBytes
+    + VmpPMatPrepare<BE>
+    + VmpPMatPrepareTmpBytes
     + VmpApplyDftToDft<BE>
     + VmpApplyDftToDftAdd<BE>
     + VmpApplyDftToDftTmpBytes
@@ -49,8 +49,8 @@ impl<BE: ParityBackend, M> DigitParityModule<BE> for M where
         + VecZnxIdftNormalize<BE>
         + VecZnxIdftNormalizeTmpBytes
         + VmpPMatAlloc<BE>
-        + VmpPrepare<BE>
-        + VmpPrepareTmpBytes
+        + VmpPMatPrepare<BE>
+        + VmpPMatPrepareTmpBytes
         + VmpApplyDftToDft<BE>
         + VmpApplyDftToDftAdd<BE>
         + VmpApplyDftToDftTmpBytes
@@ -84,10 +84,10 @@ where
     }
     let mat = upload_mat_znx::<BE>(mat);
     let mut key = module.vmp_pmat_alloc(a.n(), rows, cols_in, cols_out, size, PrepareHint::Reuse);
-    module.vmp_prepare(
+    module.vmp_pmat_prepare(
         &mut key.to_backend_mut(),
         &<MatZnx<BE::OwnedBuf, i64> as MatZnxToBackendRef<BE>>::to_backend_ref(&mat),
-        &mut poisoned_scratch::<BE>(module.vmp_prepare_tmp_bytes(rows, cols_in, cols_out, size)).arena(),
+        &mut poisoned_scratch::<BE>(module.vmp_pmat_prepare_tmp_bytes(rows, cols_in, cols_out, size)).arena(),
     );
     let mut result = module.vec_znx_dft_alloc(a.n(), cols_out, size);
     let bytes = BE::len_bytes(&result.data);

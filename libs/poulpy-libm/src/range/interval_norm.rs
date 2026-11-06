@@ -10,7 +10,7 @@ use poulpy_hal::{
 
 use poulpy_ckks::{
     CKKSInfos, CKKSLayout, SetCKKSInfos,
-    layouts::{CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec, CKKSScalar},
+    layouts::{CKKSPlaintext, CKKSPlaintextAlloc, CKKSPlaintextVecHostCodec, CKKSScalar},
 };
 
 /// Compression factor `L` (experimental, from the reference).
@@ -38,7 +38,7 @@ impl IntervalNorm<CKKSPlaintext<AlignedBuf, i64, Standard>> {
                 F::from_f64(4.0 / den).ok_or_else(|| anyhow!("interval_norm: c_{i} not representable"))
             })
             .collect::<Result<_>>()?;
-        let mut consts = module.ckks_pt_coeffs_alloc(n, base2k, coeff_meta.k());
+        let mut consts = module.ckks_plaintext_alloc(n.into(), base2k, coeff_meta.k());
         consts.set_meta(coeff_meta.meta());
         consts.encode_host_floats(&c).context("interval_norm")?;
         Ok(Self {

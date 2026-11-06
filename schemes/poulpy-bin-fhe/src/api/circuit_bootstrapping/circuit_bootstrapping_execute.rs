@@ -15,23 +15,6 @@ where
     BRA: BlindRotationAlgo,
     BE: Backend,
 {
-    /// Returns the minimum scratch-space size for constant-encoding circuit
-    /// bootstrapping.
-    ///
-    /// This compatibility estimator predates exponent-mode parameters. Use
-    /// [`Self::circuit_bootstrapping_execute_to_exponent_tmp_bytes`] for that
-    /// mode.
-    fn circuit_bootstrapping_execute_tmp_bytes<R, A>(
-        &self,
-        block_size: usize,
-        extension_factor: usize,
-        res_infos: &R,
-        cbt_infos: &A,
-    ) -> usize
-    where
-        R: GGSWInfos,
-        A: CircuitBootstrappingKeyInfos;
-
     /// Returns the scratch-space size for constant-encoding execution.
     fn circuit_bootstrapping_execute_to_constant_tmp_bytes<R, A>(
         &self,

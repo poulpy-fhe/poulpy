@@ -10,7 +10,7 @@ use poulpy_core::GLWESecretSampling;
 
 use poulpy_core::{
     GLWETrace,
-    layouts::{GGLWEInfos, GGLWELayout, GLWELayout, GLWESecretPrepared, LWEInfos, ModuleCoreAlloc, Rank},
+    layouts::{GGLWEInfos, GGLWELayout, GLWELayout, GLWESecretAlloc, GLWESecretPrepared, LWEInfos, Rank},
 };
 use poulpy_hal::{
     api::{CnvPVecAlloc, ScratchOwnedAlloc, ScratchOwnedBorrow},
@@ -25,8 +25,8 @@ use crate::{
         CKKSModuleInfos, CKKSReplicatedBootstrapOps,
     },
     layouts::{
-        BootstrappingKeysLayout, BootstrappingKeysPrepared, CKKSCiphertextOwned, CKKSModuleAlloc, ReplicatedBootstrapWorkspace,
-        ReplicatedBootstrapping,
+        BootstrappingKeysLayout, BootstrappingKeysPrepared, CKKSCiphertextAlloc, CKKSCiphertextOwned, CKKSPlaintextAlloc,
+        ReplicatedBootstrapWorkspace, ReplicatedBootstrapping,
     },
     oep::CKKSEncapsulatedModUpImpl,
     presets::replicated_bootstrapping::{ReplicatedBootstrappingPreset, all},
@@ -79,11 +79,15 @@ where
 {
     /// `k` values with the unit `U32_45`.
     pub fn setup(preset: ReplicatedBootstrappingPreset, k: usize) -> Self {
-        let keys_layout = preset.keys_layout().clone();
-        Self::setup_with_keys(preset, k, keys_layout)
+        Self::setup_with_keys(preset, k, |keys_layout| keys_layout)
     }
 
-    fn setup_with_keys(preset: ReplicatedBootstrappingPreset, k: usize, keys_layout: BootstrappingKeysLayout) -> Self {
+    /// [`Self::setup`] with the preset's key layouts passed through `adjust`.
+    fn setup_with_keys(
+        preset: ReplicatedBootstrappingPreset,
+        k: usize,
+        adjust: impl FnOnce(BootstrappingKeysLayout) -> BootstrappingKeysLayout,
+    ) -> Self {
         let n = preset.n();
         let base2k = preset.base2k();
         let module = Module::<BE>::new(n as u64);
@@ -91,6 +95,7 @@ where
         let plan = preset.plan(layout);
         let mut scratch = ScratchOwned::<BE>::alloc(1 << 28);
         let ctx = ReplicatedBootstrapping::<BE, f64>::new(&module, plan, base2k.into(), &mut scratch.borrow()).unwrap();
+        let keys_layout = adjust(preset.keys_layout(&ctx.galois_elements(&module)));
         let glwe = GLWELayout {
             n: n.into(),
             base2k: base2k.into(),
@@ -116,7 +121,8 @@ where
             .prepare(&module, &mut scratch.borrow());
 
         let values: (Vec<f64>, Vec<f64>) = (0..k).map(|i| (0.37 * (i + 1) as f64).sin_cos()).map(|(s, c)| (c, s)).unzip();
-        let mut pt = module.ckks_pt_vec_alloc(k << layout.log_r(), base2k.into(), (plan.level_log_delta + 8).into());
+        let mut pt =
+            module.ckks_plaintext_alloc_from_slots(k << layout.log_r(), base2k.into(), (plan.level_log_delta + 8).into());
         pt.set_meta(GLWEPlaintextMeta {
             scale: Scale::Log(plan.level_log_delta),
             slots: SlotsKind::Complex,
@@ -124,7 +130,7 @@ where
             slot_layout: SlotLayout::Replicated(layout),
         });
         module
-            .ckks_encode_reim_into(&mut pt, &values.0, &values.1, &mut scratch.borrow())
+            .ckks_encode_slots_host_into(&mut pt, &values.0, &values.1, &mut scratch.borrow())
             .unwrap();
         let mut input = module.ckks_ciphertext_alloc(base2k.into(), preset.input_k().into());
         module
@@ -138,7 +144,7 @@ where
             &output,
             &input,
             &ctx,
-            &keys_layout.automorphism_key,
+            keys_layout.rotation_keys.values().next().expect("the bootstrapping rotates"),
             &keys_layout.tensor_key,
             encapsulation.as_ref().map(|(d, s)| (d, s.as_ref().unwrap())),
         );
@@ -164,7 +170,7 @@ where
     /// ephemeral secret, as `dnum x k_digit + k_aux`.
     pub fn gadgets(&self) -> String {
         let gadget = |key: GGLWELayout| format!("{}x{}+{}", key.dnum.0, key.k_digit.0, key.k_aux.0);
-        let layout = self.preset.keys_layout();
+        let layout = self.preset.keys_layout(&[]);
         let ephemeral = layout.encapsulation.map(|e| gadget(e.dense_to_sparse.gglwe_layout()));
         let return_key = layout
             .encapsulation
@@ -172,7 +178,7 @@ where
             .map(|key| format!("{}+{}", key.k_offset.0, gadget(key.gglwe_layout())));
         format!(
             "keys={} ephemeral={} return={}",
-            gadget(layout.automorphism_key.gglwe_layout()),
+            gadget(layout.tensor_key.gglwe_layout()),
             ephemeral.unwrap_or_default(),
             return_key.unwrap_or_default()
         )
@@ -195,7 +201,7 @@ where
     pub fn precision(&mut self) -> (f64, f64) {
         let out = &self.output;
         let degree = out.n().as_usize() >> GLWEPlaintextInfos::log_sparsity(out);
-        let mut pt = self.module.ckks_pt_vec_alloc(
+        let mut pt = self.module.ckks_plaintext_alloc_from_slots(
             self.module.ckks_slots_of_degree(degree),
             out.base2k(),
             (out.log_delta() + 10).into(),
@@ -208,7 +214,7 @@ where
         let k = self.values.0.len();
         let (mut re, mut im) = (vec![0.0; k], vec![0.0; k]);
         self.module
-            .ckks_decode_reim_into(&pt, &mut re, &mut im, &mut self.scratch.borrow())
+            .ckks_decode_slots_host_into(&pt, &mut re, &mut im, &mut self.scratch.borrow())
             .unwrap();
         let errors: Vec<f64> = (0..k)
             .flat_map(|i| [(re[i] - self.values.0[i]).abs(), (im[i] - self.values.1[i]).abs()])
@@ -255,14 +261,16 @@ where
             let mut run = ReplicatedBootstrappingPresetRun::<BE>::setup(preset.clone(), k);
             check(&mut run, "offset");
 
-            let mut keys_layout = preset.keys_layout().clone();
-            let wide = keys_layout.automorphism_key;
-            let return_key = keys_layout.encapsulation.as_mut().unwrap().sparse_to_dense.as_mut().unwrap();
-            return_key.k_offset = 0usize.into();
-            return_key.k_digit = wide.k_digit;
-            return_key.k_aux = wide.k_aux;
-            return_key.dnum = GGLWELayout::dnum_for_input(run.ctx.plan().k_boot(preset.output_k()).into(), wide.k_digit);
-            let mut full = ReplicatedBootstrappingPresetRun::<BE>::setup_with_keys(preset.clone(), k, keys_layout);
+            let k_boot = run.ctx.plan().k_boot(preset.output_k());
+            let mut full = ReplicatedBootstrappingPresetRun::<BE>::setup_with_keys(preset.clone(), k, |mut keys_layout| {
+                let wide = keys_layout.tensor_key;
+                let return_key = keys_layout.encapsulation.as_mut().unwrap().sparse_to_dense.as_mut().unwrap();
+                return_key.k_offset = 0usize.into();
+                return_key.k_digit = wide.k_digit;
+                return_key.k_aux = wide.k_aux;
+                return_key.dnum = GGLWELayout::dnum_for_input(k_boot.into(), wide.k_digit);
+                keys_layout
+            });
             check(&mut full, "full-width");
             run.module
                 .ckks_copy(&mut run.input, &full.input, &mut run.scratch.borrow())

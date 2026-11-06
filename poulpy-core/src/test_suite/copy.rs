@@ -10,7 +10,7 @@ use poulpy_hal::{
 use crate::test_suite::poisoned_scratch;
 use crate::{
     GLWEAdd, GLWECopy, GLWENormalize, GLWERotate, GLWEShift, GLWESub,
-    layouts::{GLWE, GLWEInfos, LWEInfos, ModuleCoreAlloc, SetK},
+    layouts::{GLWE, GLWEAlloc, GLWEInfos, LWEInfos, SetK},
     test_suite::noise::glwe_tensor::assert_canonical,
 };
 

@@ -7,9 +7,9 @@ use poulpy_hal::{
     source::Source,
 };
 
-use crate::{api::GGSWMHEProtocol, layouts::GGSWShareOwned, oep::GGSWMHEProtocolImpl};
+use crate::{api::MHEGGSWProtocol, layouts::MHEGGSWShareOwned, oep::MHEGGSWProtocolImpl};
 
-impl<BE: Backend + GGSWMHEProtocolImpl> GGSWMHEProtocol<BE> for Module<BE> {
+impl<BE: Backend + MHEGGSWProtocolImpl> MHEGGSWProtocol<BE> for Module<BE> {
     fn mhe_ggsw_share_gen_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GGSWInfos,
@@ -19,7 +19,7 @@ impl<BE: Backend + GGSWMHEProtocolImpl> GGSWMHEProtocol<BE> for Module<BE> {
 
     fn mhe_ggsw_share_gen<P, S, U>(
         &self,
-        res: &mut GGSWShareOwned<BE>,
+        res: &mut MHEGGSWShareOwned<BE>,
         pt: &P,
         sk: &S,
         u: &U,
@@ -34,7 +34,7 @@ impl<BE: Backend + GGSWMHEProtocolImpl> GGSWMHEProtocol<BE> for Module<BE> {
         BE::mhe_ggsw_share_gen(self, res, pt, sk, u, seed, source_xe, scratch)
     }
 
-    fn mhe_ggsw_share_aggregate(&self, res: &mut GGSWShareOwned<BE>, a: &GGSWShareOwned<BE>) {
+    fn mhe_ggsw_share_aggregate(&self, res: &mut MHEGGSWShareOwned<BE>, a: &MHEGGSWShareOwned<BE>) {
         BE::mhe_ggsw_share_aggregate(self, res, a)
     }
 
@@ -46,8 +46,13 @@ impl<BE: Backend + GGSWMHEProtocolImpl> GGSWMHEProtocol<BE> for Module<BE> {
         BE::mhe_ggsw_share_finalize_tmp_bytes(self, res_infos, key_infos)
     }
 
-    fn mhe_ggsw_share_finalize<R, K>(&self, res: &mut R, share: &GGSWShareOwned<BE>, key: &K, scratch: &mut ScratchArena<'_, BE>)
-    where
+    fn mhe_ggsw_share_finalize<R, K>(
+        &self,
+        res: &mut R,
+        share: &MHEGGSWShareOwned<BE>,
+        key: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
         R: GGSWToBackendMut<BE> + GGSWInfos,
         K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
     {

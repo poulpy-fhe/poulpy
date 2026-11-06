@@ -2,7 +2,7 @@ use poulpy_core::layouts::{
     Base2K, Degree, GGLWEInfos, GLWEInfos, GLWEPlaintextInfos, GLWEPlaintextMeta, LWEInfos, Rank, Scale, TorusPrecision,
 };
 use poulpy_core::{GLWEBytesOf, GLWECopy, GLWENormalize};
-use poulpy_hal::api::{CnvPVecBytesOf, Convolution, VecZnxBigNormalizeTmpBytes, VecZnxIdftApplyTmpBytes, VecZnxRshTmpBytes};
+use poulpy_hal::api::{CnvOps, CnvPVecBytesOf, VecZnxBigNormalizeTmpBytes, VecZnxIdftApplyTmpBytes, VecZnxRshTmpBytes};
 use poulpy_hal::layouts::{Backend, Module, PrepareHint};
 
 use crate::{
@@ -68,7 +68,7 @@ where
         + CKKSCopyOps<BE>
         + GLWECopy<BE>
         + CnvPVecBytesOf
-        + Convolution<BE>
+        + CnvOps<BE>
         + VecZnxRshTmpBytes
         + VecZnxBigNormalizeTmpBytes
         + VecZnxIdftApplyTmpBytes
@@ -99,10 +99,10 @@ where
     };
 
     let cols: usize = (work.rank() + 1).into();
-    let compact_work = BE::bytes_of_vec_znx(work.n().into(), cols, work.max_size());
+    let compact_work = BE::vec_znx_bytes_of(work.n().into(), cols, work.max_size());
     // The giant step hoists the prepared `X^{gsp}` right operand, kept alive
     // across the baby-step pairs that share it.
-    let hoisted_right = module.bytes_of_cnv_pvec_right(module.n(), cols, work.max_size(), PrepareHint::Reuse);
+    let hoisted_right = module.cnv_pvec_right_bytes_of(module.n(), cols, work.max_size(), PrepareHint::Reuse);
     let bsgs_giant = module
         .ckks_mul_tmp_bytes(&work, &work, &work, tsk)
         .max(module.ckks_add_tmp_bytes(work.max_size()))
@@ -113,7 +113,7 @@ where
         // copy off `res`'s allocated capacity, the upper bound on the limbs
         // any runtime re-expansion can expose.
         module.ckks_square_tmp_bytes(res, res, tsk)
-            + BE::bytes_of_vec_znx(res.n().into(), (res.rank() + 1).into(), res.max_size()),
+            + BE::vec_znx_bytes_of(res.n().into(), (res.rank() + 1).into(), res.max_size()),
     );
     // Identity base polynomials transfer an owned, relabelled input directly
     // into the power basis. Scratch only needs a full working ciphertext for
@@ -182,6 +182,7 @@ where
             .max(module.ckks_sub_one_tmp_bytes(work.max_size()))
             .max(bsgs_giant)
             .max(square_scope)
+            .max(crate::power_basis::ckks_power_product_tmp_bytes(module, &work, tsk))
             .max(fused_baby);
     steps.max(replicated)
 }

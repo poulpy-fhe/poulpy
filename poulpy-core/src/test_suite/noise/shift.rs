@@ -11,12 +11,12 @@ use poulpy_hal::{
 use crate::test_suite::poisoned_scratch;
 use crate::{
     GLWEShift,
-    layouts::{GLWE, GLWELayout, ModuleCoreAlloc, SetK},
+    layouts::{GLWE, GLWEAlloc, GLWELayout, SetK},
     test_suite::noise::glwe_tensor::assert_canonical,
 };
 
 /// Precision of the shifted ciphertexts: two limbs, three bits short of the
-/// allocation, so `glwe_rsh` and `glwe_lsh_assign` take their partial-width paths.
+/// allocation, so `glwe_rsh_assign` and `glwe_lsh_assign` take their partial-width paths.
 fn partial_k(params: &TestParams) -> usize {
     2 * params.base2k - 3
 }
@@ -57,8 +57,8 @@ where
     for &k in &[usize::MAX, 1usize << 63, (1usize << 63) + 1] {
         let mut res: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&layout);
         res.data.raw_mut().copy_from_slice(src.data.raw());
-        module.glwe_rsh(k, &mut res, &mut poisoned_scratch::<BE>(shift_bytes).borrow());
-        assert!(res.data.raw().iter().all(|&d| d == 0), "glwe_rsh by {k} is not zero");
+        module.glwe_rsh_assign(k, &mut res, &mut poisoned_scratch::<BE>(shift_bytes).borrow());
+        assert!(res.data.raw().iter().all(|&d| d == 0), "glwe_rsh_assign by {k} is not zero");
 
         let mut res: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&layout);
         module.glwe_lsh(&mut res, &src, k, &mut poisoned_scratch::<BE>(shift_bytes).borrow());
@@ -91,7 +91,7 @@ where
     for &k in &[0usize, 1, 3, base2k - 1, base2k, base2k + 2] {
         let mut res: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&layout);
         res.data.raw_mut().copy_from_slice(src.data.raw());
-        module.glwe_rsh(k, &mut res, &mut poisoned_scratch::<BE>(shift_bytes).borrow());
+        module.glwe_rsh_assign(k, &mut res, &mut poisoned_scratch::<BE>(shift_bytes).borrow());
         assert_canonical(&res.data, base2k, k_res);
 
         let mut res: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&layout);
@@ -123,7 +123,7 @@ where
         let mut res: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&wide);
         fill(&mut res.data);
         res.set_k((2 * base2k).into());
-        module.glwe_rsh(k, &mut res, &mut poisoned_scratch::<BE>(wide_bytes).borrow());
+        module.glwe_rsh_assign(k, &mut res, &mut poisoned_scratch::<BE>(wide_bytes).borrow());
         assert_canonical(&res.data, base2k, 2 * base2k);
 
         let mut res: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&wide);

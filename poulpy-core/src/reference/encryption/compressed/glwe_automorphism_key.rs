@@ -9,10 +9,10 @@ use poulpy_hal::{
     source::Source,
 };
 
-use crate::api::GLWEBytesOf;
+use crate::api::GLWESecretBytesOf;
 use crate::layouts::operand_degree;
 use crate::{
-    GGLWECompressedEncryptSk, ScratchArenaTakeCore,
+    GGLWECompressedEncryptSk, ScratchArenaTakeGLWESecret, ScratchArenaTakeGLWESecretPrepared,
     api::GLWESecretPreparedFactory,
     layouts::{
         GGLWECompressedSeedMut, GGLWECompressedToBackendMut, GGLWEInfos, GLWEInfos, GLWESecretToBackendRef, LWEInfos,

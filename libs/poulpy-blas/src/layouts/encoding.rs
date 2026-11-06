@@ -8,8 +8,8 @@ use poulpy_ckks::{
         LinearTransformation, LinearTransformationLayout, LinearTransformationPlan, LinearTransformationPrepared, LtDiagonalMeta,
         ckks_linear_transformation_output_layout,
     },
-    encoding::ckks_encode_linear_transformation_into,
-    layouts::{CKKSModuleAlloc, CKKSPlaintextOwned, ComplexDiagonals},
+    encoding::ckks_linear_transformation_encode_into,
+    layouts::{CKKSLinearTransformationAlloc, CKKSPlaintextOwned, ComplexDiagonals},
 };
 use poulpy_core::layouts::{
     Base2K, DiagonalArithmetic, Diagonals, GLWELayout, GLWEPlaintextInfos, GetDegree, IntPolyInfos, LWEInfos,
@@ -30,6 +30,11 @@ pub(crate) struct Scheduled<F> {
     map: ComplexDiagonals<F>,
     pub(crate) strategy: LinearTransformationStrategy,
     meta: CoeffsMeta,
+}
+
+/// The slot count of a ring of cyclotomic order `cyclotomic_order`.
+pub(crate) fn ring_slots(cyclotomic_order: i64) -> Option<usize> {
+    usize::try_from(cyclotomic_order / 4).ok()
 }
 
 /// `diagonals` with an empty imaginary part, its slots marked real, scheduled by `strategy` and encoded at `meta`.
@@ -60,7 +65,7 @@ impl<F> Scheduled<F> {
 
 /// One map's shape: its schedule, the slot count its diagonals repeat over, which sets their degree, and the
 /// metadata they are encoded at.
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct MapLayout {
     lt: LinearTransformationLayout,
     period: usize,
@@ -68,11 +73,16 @@ pub(crate) struct MapLayout {
 }
 
 impl MapLayout {
+    /// The shape of a map of schedule `lt`, its diagonals repeating over `period` slots, encoded at `meta`.
+    pub(crate) fn new(lt: LinearTransformationLayout, period: usize, meta: CoeffsMeta) -> Self {
+        Self { lt, period, meta }
+    }
+
     /// The layout of every diagonal on `module`: at the degree of the map's period.
     pub(crate) fn plaintext<BE, M>(&self, module: &M, base2k: Base2K) -> CKKSLayout
     where
         BE: Backend,
-        M: CKKSModuleAlloc<BE> + GetDegree,
+        M: CKKSModuleInfos + GetDegree,
     {
         CKKSLayout {
             glwe_layout: GLWELayout {
@@ -85,6 +95,11 @@ impl MapLayout {
             },
             meta: self.meta.meta,
         }
+    }
+
+    /// The map's schedule, from which its Galois elements follow.
+    pub(crate) fn lt(&self) -> &LinearTransformationLayout {
+        &self.lt
     }
 
     /// The sparsity the map's period proves on the module's degree: `log2` of its slots over its period.
@@ -101,7 +116,7 @@ impl MapLayout {
     pub(crate) fn alloc<BE, M>(&self, module: &M, base2k: Base2K) -> Encoded<BE>
     where
         BE: Backend,
-        M: CKKSModuleAlloc<BE> + GetDegree,
+        M: CKKSLinearTransformationAlloc<BE> + GetDegree,
     {
         module.ckks_linear_transformation_alloc_from_infos(&self.lt, &self.plaintext::<BE, M>(module, base2k))
     }
@@ -110,7 +125,7 @@ impl MapLayout {
     pub(crate) fn alloc_prepared<BE, M>(&self, module: &M, base2k: Base2K) -> LinearTransformationPrepared<BE>
     where
         BE: Backend,
-        M: CKKSModuleAlloc<BE> + CnvPVecAlloc<BE> + GetDegree,
+        M: CnvPVecAlloc<BE> + CKKSModuleInfos + GetDegree,
     {
         LinearTransformationPrepared::<BE>::alloc_prepared_from_index(
             module,
@@ -123,9 +138,9 @@ impl MapLayout {
     pub(crate) fn prepare_tmp_bytes<BE, M>(&self, module: &M, base2k: Base2K) -> usize
     where
         BE: Backend,
-        M: CKKSModuleAlloc<BE> + CKKSLinearTransformationOps<BE> + GetDegree,
+        M: CKKSLinearTransformationOps<BE> + CKKSModuleInfos + GetDegree,
     {
-        module.ckks_prepare_linear_transformation_rhs_tmp_bytes(&self.plaintext::<BE, M>(module, base2k))
+        module.ckks_linear_transformation_rhs_prepare_tmp_bytes(&self.plaintext::<BE, M>(module, base2k))
     }
 }
 
@@ -153,13 +168,14 @@ pub(crate) fn skeleton<P: Copy>(plan: &LinearTransformationPlan, diagonal: P) ->
 }
 
 /// What the planning queries read of a map's diagonals: their width, scale, slot kind and the sparsity their period
-/// proves on the module's degree.
+/// proves on the module's degree, and for ciphertext diagonals their width as ciphertexts.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct DiagonalShape {
     pub(crate) k: TorusPrecision,
     pub(crate) log_scale: usize,
     pub(crate) slots: SlotsKind,
     pub(crate) log_sparsity: usize,
+    pub(crate) ciphertext_k: Option<TorusPrecision>,
 }
 
 impl LtDiagonalMeta for DiagonalShape {
@@ -173,6 +189,10 @@ impl LtDiagonalMeta for DiagonalShape {
 
     fn lt_log_sparsity(&self, _log_n: usize) -> usize {
         self.log_sparsity
+    }
+
+    fn lt_ciphertext_k(&self) -> Option<TorusPrecision> {
+        self.ciphertext_k
     }
 }
 
@@ -189,6 +209,7 @@ pub(crate) fn shape(map: &MapLayout) -> LinearTransformation<DiagonalShape> {
         log_scale: map.meta.log_delta(),
         slots,
         log_sparsity: map.log_sparsity(),
+        ciphertext_k: None,
     };
     skeleton(&map.prepared_index(), diagonal)
 }
@@ -205,7 +226,7 @@ where
     M: CKKSModuleInfos + CKKSEncodingOps<BE, F>,
     F: DiagonalArithmetic + CKKSEncodingScalar,
 {
-    ckks_encode_linear_transformation_into(module, lt, map.meta.meta, &map.map, map.strategy, scratch)
+    ckks_linear_transformation_encode_into(module, lt, map.meta.meta, &map.map, map.strategy, scratch)
 }
 
 /// Whether every diagonal of `map` shares the first one's scale, encoded width and slot kind, which its preparation
@@ -241,12 +262,12 @@ pub(crate) fn prepare_maps_into<'a, BE, M>(
     let bytes = maps
         .clone()
         .filter_map(LinearTransformation::first_diagonal_plaintext)
-        .map(|pt| module.ckks_prepare_linear_transformation_rhs_tmp_bytes(pt))
+        .map(|pt| module.ckks_linear_transformation_rhs_prepare_tmp_bytes(pt))
         .max()
         .unwrap_or(0);
     assert_scratch(op, bytes.max(rest), scratch);
     for (dst, src) in res.zip(maps) {
-        if let Err(err) = module.ckks_prepare_linear_transformation_rhs(dst, src, scratch) {
+        if let Err(err) = module.ckks_linear_transformation_rhs_prepare(dst, src, scratch) {
             panic!("{op}: {err}");
         }
     }

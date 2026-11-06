@@ -4,7 +4,7 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
     CKKSCtBounds,
-    api::{CKKSShipOps, ShipScalar},
+    api::{CKKSShipOps, CKKSShipScalar},
     layouts::{CKKSCiphertextOwned, ShipCoeffEncodings, ShipKeysPrepared, ShipPlan},
     oep::{CKKSEncodingImpl, CKKSShipCoeffEncodingImpl, CKKSShipImpl},
 };
@@ -12,7 +12,7 @@ use crate::{
 impl<BE, F> CKKSShipOps<BE, F> for Module<BE>
 where
     BE: Backend + CKKSShipImpl + CKKSShipCoeffEncodingImpl + CKKSEncodingImpl<F>,
-    F: ShipScalar,
+    F: CKKSShipScalar,
 {
     fn ckks_ship_bootstrap_tmp_bytes<Src>(
         &self,

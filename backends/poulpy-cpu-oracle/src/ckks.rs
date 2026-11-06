@@ -7,7 +7,7 @@ use poulpy_ckks::{
     api::CKKSEncodingScalar,
     reference::encoding::{CKKSSlotEmbedding, EncodingPermutation},
 };
-use poulpy_hal::api::NegacyclicFFTNew;
+use poulpy_hal::api::ReimNew;
 
 use crate::{FFT64CIOracle, FFT64Oracle, NTT4x30CIOracle, NTT4x30Oracle, ckks_fft::EncodingFft};
 
@@ -60,7 +60,7 @@ macro_rules! impl_oracle_ckks_encoding {
                     + ::poulpy_core::layouts::IntPolyInfos
                     + ::poulpy_ckks::SetCKKSInfos,
             {
-                Ok(::poulpy_ckks::reference::encoding::encode_coeffs_into_host::<$be, S, P>(pt, coeffs)?)
+                Ok(::poulpy_ckks::reference::encoding::ckks_quantize_coeffs_into_reference::<$be, S, P>(pt, coeffs)?)
             }
 
             fn ckks_dequantize_coeffs_into<P>(
@@ -71,10 +71,10 @@ macro_rules! impl_oracle_ckks_encoding {
             where
                 P: ::poulpy_ckks::CKKSPlaintextToBackendRef<$be> + ::poulpy_core::layouts::IntPolyInfos,
             {
-                Ok(::poulpy_ckks::reference::encoding::decode_coeffs_into_host::<$be, S, P>(pt, coeffs)?)
+                Ok(::poulpy_ckks::reference::encoding::ckks_dequantize_coeffs_into_reference::<$be, S, P>(pt, coeffs)?)
             }
 
-            fn ckks_slots_to_coeffs_assign_with_plan(
+            fn ckks_encoding_buffer_slots_to_coeffs_assign_with_plan(
                 _module: &::poulpy_hal::layouts::Module<$be>,
                 plans: &Self::Plans,
                 values: &mut ::poulpy_ckks::layouts::CKKSEncodingBufferBackendMut<'_, $be, S>,
@@ -84,7 +84,7 @@ macro_rules! impl_oracle_ckks_encoding {
                 Ok(ring(map, fft, values.as_mut_slice())?)
             }
 
-            fn ckks_coeffs_to_slots_assign_with_plan(
+            fn ckks_encoding_buffer_coeffs_to_slots_assign_with_plan(
                 _module: &::poulpy_hal::layouts::Module<$be>,
                 plans: &Self::Plans,
                 values: &mut ::poulpy_ckks::layouts::CKKSEncodingBufferBackendMut<'_, $be, S>,
@@ -102,13 +102,15 @@ macro_rules! impl_oracle_ckks_encoding {
 macro_rules! impl_oracle_ckks_coeff_encodings {
     ($be:ty) => {
         unsafe impl ::poulpy_ckks::oep::CKKSPaCoCoeffEncodingImpl for $be {
-            fn ckks_paco_coeff_encodings_tmp_bytes<S>(
+            fn ckks_paco_coeff_encodings_tmp_bytes<S, A>(
                 _module: &::poulpy_hal::layouts::Module<$be>,
                 _context: &::poulpy_ckks::layouts::PaCoContext<$be, S>,
+                _input: &A,
             ) -> CKKSResult<usize>
             where
-                S: ::poulpy_ckks::api::PaCoScalar,
+                S: ::poulpy_ckks::api::CKKSPaCoScalar,
                 $be: ::poulpy_ckks::oep::CKKSEncodingImpl<S>,
+                A: ::poulpy_core::layouts::GLWEInfos,
             {
                 Ok(0)
             }
@@ -120,11 +122,11 @@ macro_rules! impl_oracle_ckks_coeff_encodings {
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) -> CKKSResult<[::poulpy_ckks::layouts::CKKSPlaintextOwned<$be>; 4]>
             where
-                S: ::poulpy_ckks::api::PaCoScalar,
+                S: ::poulpy_ckks::api::CKKSPaCoScalar,
                 $be: ::poulpy_ckks::oep::CKKSEncodingImpl<S>,
                 Src: ::poulpy_core::layouts::GLWEToBackendRef<$be> + ::poulpy_ckks::CKKSCtBounds,
             {
-                use ::poulpy_ckks::layouts::CKKSModuleAlloc;
+                use ::poulpy_ckks::layouts::CKKSCiphertextAlloc;
                 use ::poulpy_core::GLWECopy;
                 let plan = context.plan();
                 if module.n() != plan.n() {
@@ -137,7 +139,7 @@ macro_rules! impl_oracle_ckks_coeff_encodings {
                 let mut owned = module.ckks_ciphertext_alloc_from_infos(ciphertext);
                 module.glwe_copy(&mut owned, ciphertext, scratch);
                 owned.set_meta_checked(ciphertext.meta())?;
-                Ok(::poulpy_ckks::encoding::paco_coeff_encodings_host::<$be, _, S>(
+                Ok(::poulpy_ckks::encoding::ckks_paco_coeff_encodings_host::<$be, _, S>(
                     module,
                     context.base2k(),
                     &owned,
@@ -154,7 +156,7 @@ macro_rules! impl_oracle_ckks_coeff_encodings {
                 _plan: &::poulpy_ckks::layouts::ShipPlan,
             ) -> CKKSResult<usize>
             where
-                S: ::poulpy_ckks::api::ShipScalar,
+                S: ::poulpy_ckks::api::CKKSShipScalar,
                 $be: ::poulpy_ckks::oep::CKKSEncodingImpl<S>,
             {
                 Ok(0)
@@ -174,11 +176,11 @@ macro_rules! impl_oracle_ckks_coeff_encodings {
                 >,
             >
             where
-                S: ::poulpy_ckks::api::ShipScalar,
+                S: ::poulpy_ckks::api::CKKSShipScalar,
                 $be: ::poulpy_ckks::oep::CKKSEncodingImpl<S>,
                 Src: ::poulpy_core::layouts::GLWEToBackendRef<$be> + ::poulpy_ckks::CKKSCtBounds,
             {
-                use ::poulpy_ckks::layouts::CKKSModuleAlloc;
+                use ::poulpy_ckks::layouts::CKKSCiphertextAlloc;
                 use ::poulpy_core::GLWECopy;
                 if module.n() != plan.n() {
                     return Err(CKKSError::Internal(anyhow::anyhow!(
@@ -190,7 +192,7 @@ macro_rules! impl_oracle_ckks_coeff_encodings {
                 let mut owned = module.ckks_ciphertext_alloc_from_infos(ciphertext);
                 module.glwe_copy(&mut owned, ciphertext, scratch);
                 owned.set_meta_checked(ciphertext.meta())?;
-                Ok(::poulpy_ckks::encoding::ship_coeff_encodings_host::<$be, _, S>(
+                Ok(::poulpy_ckks::encoding::ckks_ship_coeff_encodings_host::<$be, _, S>(
                     module, base2k, complex, &owned, plan,
                 )?)
             }

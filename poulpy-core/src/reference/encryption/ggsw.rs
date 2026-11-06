@@ -5,11 +5,11 @@ use poulpy_hal::{
     source::Source,
 };
 
-use crate::api::GLWEBytesOf;
+use crate::api::GLWEPlaintextBytesOf;
 use crate::layouts::operand_degree;
 use crate::{
-    GLWEEncryptSk, GLWEEncryptSkInternal, ScratchArenaTakeCore,
-    api::GLWEMaskFill,
+    GLWEEncryptSk, GLWEEncryptSkInternal, ScratchArenaTakeGLWEPlaintext,
+    api::GLWEFill,
     layouts::{
         GGSWAtViewMut, GGSWInfos, GGSWToBackendMut, GLWEInfos, GLWEToBackendRef, LWEInfos,
         prepared::GLWESecretPreparedToBackendRef,
@@ -40,7 +40,7 @@ pub trait GGSWEncryptSkReference<BE: Backend> {
 
 impl<BE: Backend + HalVecZnxImpl> GGSWEncryptSkReference<BE> for Module<BE>
 where
-    Self: ModuleN + GLWEEncryptSkInternal<BE> + GLWEEncryptSk<BE> + GLWEMaskFill<BE> + VecZnxDftBytesOf + VecZnxNormalizeTmpBytes,
+    Self: ModuleN + GLWEEncryptSkInternal<BE> + GLWEEncryptSk<BE> + GLWEFill<BE> + VecZnxDftBytesOf + VecZnxNormalizeTmpBytes,
 {
     fn ggsw_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
@@ -85,7 +85,7 @@ where
             let tmp_pt_k = tmp_pt.k().as_usize();
 
             for row_i in 0..res.dnum().into() {
-                crate::gadget::gadget_row_plaintext(
+                crate::gadget::gglwe_gadget_row_plaintext(
                     self,
                     &mut tmp_pt.data,
                     0,
@@ -100,7 +100,7 @@ where
                 );
                 for col_j in 0..rank + 1 {
                     let mut ct = res.at_view_mut(row_i, col_j);
-                    self.fill_glwe_mask_from_source(&mut ct, source_xa);
+                    self.glwe_fill_mask_from_source(&mut ct, source_xa);
                     self.glwe_encrypt_sk_internal(
                         base2k,
                         ct.k().as_usize(),

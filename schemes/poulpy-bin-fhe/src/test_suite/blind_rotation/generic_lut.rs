@@ -2,14 +2,14 @@ use poulpy_hal::AlignedBuf;
 use std::vec;
 
 use poulpy_core::api::TransferInto;
-use poulpy_core::layouts::ModuleCoreAlloc;
+use poulpy_core::layouts::{GLWEAlloc, ModuleCoreAlloc};
 use poulpy_hal::api::ModuleN;
 
 use crate::blind_rotation::{DivRound, LookUpTableLayout, LookUpTableRotationDirection, LookupTable, LookupTableFactory};
 
 pub fn test_lut_standard<M>(module: &M)
 where
-    M: LookupTableFactory<AlignedBuf, i64> + ModuleN + ModuleCoreAlloc<OwnedBuf = AlignedBuf, ZnxWord = i64>,
+    M: GLWEAlloc + LookupTableFactory<AlignedBuf, i64> + ModuleN + ModuleCoreAlloc<OwnedBuf = AlignedBuf, ZnxWord = i64>,
 {
     let base2k: usize = 20;
     let k_lut: usize = 40;
@@ -48,7 +48,7 @@ where
 
 pub fn test_lut_extended<M>(module: &M)
 where
-    M: LookupTableFactory<AlignedBuf, i64> + ModuleN + ModuleCoreAlloc<OwnedBuf = AlignedBuf, ZnxWord = i64>,
+    M: GLWEAlloc + LookupTableFactory<AlignedBuf, i64> + ModuleN + ModuleCoreAlloc<OwnedBuf = AlignedBuf, ZnxWord = i64>,
 {
     let base2k: usize = 20;
     let k_lut: usize = 40;
@@ -90,7 +90,7 @@ where
 /// The upload carries `drift`, which `set` makes non-zero and `alloc` leaves at 0.
 pub fn test_lut_transfer_into_carries_scalars<M>(module: &M)
 where
-    M: LookupTableFactory<AlignedBuf, i64> + ModuleN + ModuleCoreAlloc<OwnedBuf = AlignedBuf, ZnxWord = i64>,
+    M: GLWEAlloc + LookupTableFactory<AlignedBuf, i64> + ModuleN + ModuleCoreAlloc<OwnedBuf = AlignedBuf, ZnxWord = i64>,
 {
     let infos = LookUpTableLayout {
         n: module.n().into(),

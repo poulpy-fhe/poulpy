@@ -24,8 +24,8 @@
 use crate::test_suite::{PoisonedArena, poisoned_arena};
 use crate::{
     api::{
-        CnvPVecAlloc, Convolution, MatZnxAlloc, ModuleN, ScalarZnxAutomorphism, ScalarZnxCIEmbed, SvpApplyDftToDft, SvpPPolAlloc,
-        SvpPrepare, VecZnxAdd, VecZnxAddAssign, VecZnxAddScalarAssign, VecZnxAlloc, VecZnxAutomorphism, VecZnxBigAddAssign,
+        CnvOps, CnvPVecAlloc, MatZnxAlloc, ModuleN, ScalarZnxAutomorphism, ScalarZnxCIEmbed, SvpApplyDftToDft, SvpPPolAlloc,
+        SvpPPolPrepare, VecZnxAdd, VecZnxAddAssign, VecZnxAddScalarAssign, VecZnxAlloc, VecZnxAutomorphism, VecZnxBigAddAssign,
         VecZnxBigAddSmall, VecZnxBigAddSmallAssign, VecZnxBigAlloc, VecZnxBigFromSmall, VecZnxBigNormalize,
         VecZnxBigNormalizeTmpBytes, VecZnxBigSubAssign, VecZnxBigSubNegateAssign, VecZnxBigSubSmallA, VecZnxBigSubSmallB,
         VecZnxCIEmbed, VecZnxCopy, VecZnxDftAddAssign, VecZnxDftAlloc, VecZnxDftApply, VecZnxDftAutomorphism,
@@ -34,7 +34,7 @@ use crate::{
         VecZnxMulXpMinusOneAssign, VecZnxMulXpMinusOneAssignTmpBytes, VecZnxNormalize, VecZnxNormalizeAssign,
         VecZnxNormalizeTmpBytes, VecZnxRotate, VecZnxRsh, VecZnxRshAdd, VecZnxRshAssign, VecZnxRshSub, VecZnxRshTmpBytes,
         VecZnxSub, VecZnxSubAssign, VmpApplyDft, VmpApplyDftTmpBytes, VmpApplyDftToDft, VmpApplyDftToDftAdd,
-        VmpApplyDftToDftAddTmpBytes, VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes,
+        VmpApplyDftToDftAddTmpBytes, VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPMatPrepare, VmpPMatPrepareTmpBytes,
     },
     layouts::{
         CnvDftAccTerm, CnvPVecLOwned, CnvPVecLToBackendMut, CnvPVecLToBackendRef, CnvPVecROwned, CnvPVecRToBackendMut,
@@ -44,11 +44,11 @@ use crate::{
         VmpPMatToBackendMut, VmpPMatToBackendRef, ZnxInfos, ZnxView, ZnxViewMut, vec_znx_backend_mut, vec_znx_backend_ref,
     },
     oep::{
-        HalConvolutionImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxCIImpl, HalVecZnxDftImpl, HalVecZnxImpl,
-        HalVecZnxMonomialImpl, HalVmpImpl, cnv_apply_dft_add_derived, cnv_apply_dft_add_tmp_bytes_derived,
-        cnv_apply_dft_sum_derived, cnv_apply_dft_sum_tmp_bytes_derived, cnv_by_const_apply_add_derived,
-        cnv_by_const_apply_add_tmp_bytes_derived, cnv_pairwise_apply_dft_derived, cnv_pairwise_apply_dft_tmp_bytes_derived,
-        cnv_prepare_self_derived, cnv_prepare_self_tmp_bytes_derived, vmp_apply_dft_derived, vmp_apply_dft_to_dft_add_derived,
+        HalCnvImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxCIImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVecZnxMonomialImpl,
+        HalVmpImpl, cnv_apply_dft_add_derived, cnv_apply_dft_add_tmp_bytes_derived, cnv_apply_dft_sum_derived,
+        cnv_apply_dft_sum_tmp_bytes_derived, cnv_by_const_apply_add_derived, cnv_by_const_apply_add_tmp_bytes_derived,
+        cnv_pairwise_apply_dft_derived, cnv_pairwise_apply_dft_tmp_bytes_derived, cnv_pvec_self_prepare_derived,
+        cnv_pvec_self_prepare_tmp_bytes_derived, vmp_apply_dft_derived, vmp_apply_dft_to_dft_add_derived,
         vmp_apply_dft_to_dft_add_tmp_bytes_derived,
     },
     source::Source,
@@ -66,8 +66,8 @@ where
         + VecZnxAlloc<BE>
         + MatZnxAlloc<BE>
         + VmpPMatAlloc<BE>
-        + VmpPrepare<BE>
-        + VmpPrepareTmpBytes
+        + VmpPMatPrepare<BE>
+        + VmpPMatPrepareTmpBytes
         + VmpApplyDft<BE>
         + VmpApplyDftTmpBytes
         + VmpApplyDftToDft<BE>
@@ -106,14 +106,14 @@ where
     ));
     let mut scratch_setup: PoisonedArena<BE> = poisoned_arena(
         module
-            .vmp_prepare_tmp_bytes(rows, cols_in, cols_out, size)
+            .vmp_pmat_prepare_tmp_bytes(rows, cols_in, cols_out, size)
             .max(module.vmp_apply_dft_to_dft_tmp_bytes(size, size, rows, cols_in, cols_out, size))
             .max(module.vec_znx_big_normalize_tmp_bytes())
             .max(module.vec_znx_idft_apply_tmp_bytes()),
     );
 
     let mut pmat = module.vmp_pmat_alloc(params.n, rows, cols_in, cols_out, size, PrepareHint::Reuse);
-    module.vmp_prepare(
+    module.vmp_pmat_prepare(
         &mut pmat.to_backend_mut(),
         &<MatZnx<BE::OwnedBuf, i64> as MatZnxToBackendRef<BE>>::to_backend_ref(&mat_backend),
         &mut scratch_setup.borrow(),
@@ -221,8 +221,8 @@ pub fn test_vmp_apply_dft_to_dft_add_derived<BE: TestBackend + HalVmpImpl>(param
 where
     Module<BE>: ModuleN
         + VmpPMatAlloc<BE>
-        + VmpPrepare<BE>
-        + VmpPrepareTmpBytes
+        + VmpPMatPrepare<BE>
+        + VmpPMatPrepareTmpBytes
         + VmpApplyDftToDft<BE>
         + VmpApplyDftToDftTmpBytes
         + VmpApplyDftToDftAdd<BE>
@@ -271,7 +271,7 @@ where
 
         let mut scratch_setup: PoisonedArena<BE> = poisoned_arena(
             module
-                .vmp_prepare_tmp_bytes(rows, cols_in, cols_out, mat_size)
+                .vmp_pmat_prepare_tmp_bytes(rows, cols_in, cols_out, mat_size)
                 .max(module.vmp_apply_dft_to_dft_tmp_bytes(res_size, a_size, rows, cols_in, cols_out, mat_size))
                 .max(module.vec_znx_big_normalize_tmp_bytes())
                 .max(module.vec_znx_idft_apply_tmp_bytes()),
@@ -280,7 +280,7 @@ where
             poisoned_arena(module.vmp_apply_dft_to_dft_add_tmp_bytes(res_size, a_size, rows, cols_in, cols_out, mat_size));
 
         let mut pmat = module.vmp_pmat_alloc(params.n, rows, cols_in, cols_out, mat_size, PrepareHint::Reuse);
-        module.vmp_prepare(
+        module.vmp_pmat_prepare(
             &mut pmat.to_backend_mut(),
             &<MatZnx<BE::OwnedBuf, i64> as MatZnxToBackendRef<BE>>::to_backend_ref(&mat_backend),
             &mut scratch_setup.borrow(),
@@ -2249,7 +2249,7 @@ where
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes
         + SvpPPolAlloc<BE>
-        + SvpPrepare<BE>
+        + SvpPPolPrepare<BE>
         + SvpApplyDftToDft<BE>,
 {
     let base2k: usize = params.base2k;
@@ -2275,7 +2275,7 @@ where
 
     let mut svp: SvpPPolOwned<BE> = module.svp_ppol_alloc(params.n, cols, PrepareHint::Reuse);
     for col in 0..cols {
-        module.svp_prepare(
+        module.svp_ppol_prepare(
             &mut svp.to_backend_mut(),
             col,
             &scalar_znx_backend_ref::<BE>(&scalar_backend),
@@ -2386,10 +2386,10 @@ where
 /// equality. The arena for the derived call is sized only by
 /// `cnv_apply_dft_add_tmp_bytes_derived`, so a decomposition that
 /// under-reports its own scratch panics here.
-pub fn test_cnv_apply_dft_add_derived<BE: TestBackend + HalConvolutionImpl>(params: &TestParams, module: &Module<BE>)
+pub fn test_cnv_apply_dft_add_derived<BE: TestBackend + HalCnvImpl>(params: &TestParams, module: &Module<BE>)
 where
     Module<BE>: ModuleN
-        + Convolution<BE>
+        + CnvOps<BE>
         + CnvPVecAlloc<BE>
         + VecZnxDftAlloc<BE>
         + VecZnxDftAddAssign<BE>
@@ -2503,10 +2503,10 @@ where
 /// suite states DFT-domain equality. The arena for the derived call is sized
 /// only by `cnv_apply_dft_sum_tmp_bytes_derived`, so a decomposition that
 /// under-reports its own scratch panics here.
-pub fn test_cnv_apply_dft_sum_derived<BE: TestBackend + HalConvolutionImpl>(params: &TestParams, module: &Module<BE>)
+pub fn test_cnv_apply_dft_sum_derived<BE: TestBackend + HalCnvImpl>(params: &TestParams, module: &Module<BE>)
 where
     Module<BE>: ModuleN
-        + Convolution<BE>
+        + CnvOps<BE>
         + CnvPVecAlloc<BE>
         + VecZnxDftAlloc<BE>
         + VecZnxBigAlloc<BE>
@@ -2623,10 +2623,10 @@ where
 /// writes out the expansion, one `cnv_apply_dft` when `i == j`, and the four
 /// cross terms as `cnv_apply_dft` + three `cnv_apply_dft_add` otherwise, and
 /// versus the backend's own `module.cnv_pairwise_apply_dft`.
-pub fn test_cnv_pairwise_apply_dft_derived<BE: TestBackend + HalConvolutionImpl>(params: &TestParams, module: &Module<BE>)
+pub fn test_cnv_pairwise_apply_dft_derived<BE: TestBackend + HalCnvImpl>(params: &TestParams, module: &Module<BE>)
 where
     Module<BE>: ModuleN
-        + Convolution<BE>
+        + CnvOps<BE>
         + CnvPVecAlloc<BE>
         + VecZnxDftAlloc<BE>
         + VecZnxBigAlloc<BE>
@@ -2722,16 +2722,16 @@ where
     }
 }
 
-/// `cnv_prepare_self`: the derived free function versus separate
-/// `cnv_prepare_left` / `cnv_prepare_right` calls, and versus the backend's
-/// own `module.cnv_prepare_self`. The prepared bytes are opaque (spec
+/// `cnv_pvec_self_prepare`: the derived free function versus separate
+/// `cnv_pvec_left_prepare` / `cnv_pvec_right_prepare` calls, and versus the backend's
+/// own `module.cnv_pvec_self_prepare`. The prepared bytes are opaque (spec
 /// decision 4), so equality is stated on an observable: the same
 /// `cnv_apply_dft` is run against each of the three prepared pairs and the
 /// normalized products are compared.
-pub fn test_cnv_prepare_self_derived<BE: TestBackend + HalConvolutionImpl>(params: &TestParams, module: &Module<BE>)
+pub fn test_cnv_pvec_self_prepare_derived<BE: TestBackend + HalCnvImpl>(params: &TestParams, module: &Module<BE>)
 where
     Module<BE>: ModuleN
-        + Convolution<BE>
+        + CnvOps<BE>
         + CnvPVecAlloc<BE>
         + VecZnxAlloc<BE>
         + VecZnxDftAlloc<BE>
@@ -2754,25 +2754,26 @@ where
 
     let mut scratch: PoisonedArena<BE> = poisoned_arena(
         module
-            .cnv_prepare_left_tmp_bytes(a_size, a_size)
-            .max(module.cnv_prepare_right_tmp_bytes(a_size, a_size))
+            .cnv_pvec_left_prepare_tmp_bytes(a_size, a_size)
+            .max(module.cnv_pvec_right_prepare_tmp_bytes(a_size, a_size))
             .max(module.cnv_apply_dft_tmp_bytes(0, res_size, a_size, a_size))
             .max(module.vec_znx_idft_apply_tmp_bytes())
             .max(module.vec_znx_big_normalize_tmp_bytes()),
     );
-    let mut module_scratch: PoisonedArena<BE> = poisoned_arena(module.cnv_prepare_self_tmp_bytes(a_size, a_size));
+    let mut module_scratch: PoisonedArena<BE> = poisoned_arena(module.cnv_pvec_self_prepare_tmp_bytes(a_size, a_size));
 
     // Oracle: the two prepares, driven separately.
     let mut left_oracle: CnvPVecLOwned<BE> = module.cnv_pvec_left_alloc(params.n, cols, a_size, PrepareHint::Reuse);
     let mut right_oracle: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(params.n, cols, a_size, PrepareHint::Reuse);
-    module.cnv_prepare_left(&mut left_oracle.to_backend_mut(), &a_ref, &mut scratch.borrow());
-    module.cnv_prepare_right(&mut right_oracle.to_backend_mut(), &a_ref, &mut scratch.borrow());
+    module.cnv_pvec_left_prepare(&mut left_oracle.to_backend_mut(), &a_ref, &mut scratch.borrow());
+    module.cnv_pvec_right_prepare(&mut right_oracle.to_backend_mut(), &a_ref, &mut scratch.borrow());
 
     // The derived free function, with an arena sized only by its own sibling.
     let mut left_derived: CnvPVecLOwned<BE> = module.cnv_pvec_left_alloc(params.n, cols, a_size, PrepareHint::Reuse);
     let mut right_derived: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(params.n, cols, a_size, PrepareHint::Reuse);
-    let mut derived_scratch: PoisonedArena<BE> = poisoned_arena(cnv_prepare_self_tmp_bytes_derived::<BE>(module, a_size, a_size));
-    cnv_prepare_self_derived::<BE>(
+    let mut derived_scratch: PoisonedArena<BE> =
+        poisoned_arena(cnv_pvec_self_prepare_tmp_bytes_derived::<BE>(module, a_size, a_size));
+    cnv_pvec_self_prepare_derived::<BE>(
         module,
         &mut left_derived.to_backend_mut(),
         &mut right_derived.to_backend_mut(),
@@ -2783,7 +2784,7 @@ where
     // The backend's own dispatch through the OEP method.
     let mut left_module: CnvPVecLOwned<BE> = module.cnv_pvec_left_alloc(params.n, cols, a_size, PrepareHint::Reuse);
     let mut right_module: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(params.n, cols, a_size, PrepareHint::Reuse);
-    module.cnv_prepare_self(
+    module.cnv_pvec_self_prepare(
         &mut left_module.to_backend_mut(),
         &mut right_module.to_backend_mut(),
         &a_ref,
@@ -2815,11 +2816,11 @@ where
             let have_module = product(&left_module, &right_module, col, cnv_offset, &mut scratch);
             assert_eq!(
                 want, have_derived,
-                "cnv_prepare_self: derived decomposition != separate prepares (col {col} cnv_offset {cnv_offset})"
+                "cnv_pvec_self_prepare: derived decomposition != separate prepares (col {col} cnv_offset {cnv_offset})"
             );
             assert_eq!(
                 want, have_module,
-                "cnv_prepare_self: module dispatch != separate prepares (col {col} cnv_offset {cnv_offset})"
+                "cnv_pvec_self_prepare: module dispatch != separate prepares (col {col} cnv_offset {cnv_offset})"
             );
         }
     }
@@ -2830,10 +2831,10 @@ where
 /// `vec_znx_big_add_assign`), and versus the backend's own
 /// `module.cnv_by_const_apply_add`. The result never enters the DFT domain,
 /// so the comparison is on the `vec_znx_big_normalize` output alone.
-pub fn test_cnv_by_const_apply_add_derived<BE: TestBackend + HalConvolutionImpl>(params: &TestParams, module: &Module<BE>)
+pub fn test_cnv_by_const_apply_add_derived<BE: TestBackend + HalCnvImpl>(params: &TestParams, module: &Module<BE>)
 where
     Module<BE>: ModuleN
-        + Convolution<BE>
+        + CnvOps<BE>
         + VecZnxAlloc<BE>
         + VecZnxBigAlloc<BE>
         + VecZnxBigAddAssign<BE>
@@ -2958,7 +2959,7 @@ where
 /// plus an arena covering every `_tmp_bytes` the convolution parity tests use
 /// on the module-dispatch side.
 #[allow(clippy::type_complexity)]
-fn prepare_convolution_operands<BE: TestBackend + HalConvolutionImpl>(
+fn prepare_convolution_operands<BE: TestBackend + HalCnvImpl>(
     module: &Module<BE>,
     n: usize,
     cols: usize,
@@ -2967,7 +2968,7 @@ fn prepare_convolution_operands<BE: TestBackend + HalConvolutionImpl>(
     fill_base2k: usize,
 ) -> (CnvPVecLOwned<BE>, CnvPVecROwned<BE>, PoisonedArena<BE>)
 where
-    Module<BE>: ModuleN + Convolution<BE> + CnvPVecAlloc<BE> + VecZnxAlloc<BE> + VecZnxBigNormalizeTmpBytes,
+    Module<BE>: ModuleN + CnvOps<BE> + CnvPVecAlloc<BE> + VecZnxAlloc<BE> + VecZnxBigNormalizeTmpBytes,
 {
     let res_size: usize = a_size + b_size;
     let mut source: Source = Source::new([0u8; 32]);
@@ -2981,20 +2982,20 @@ where
         module
             .cnv_apply_dft_tmp_bytes(0, res_size, a_size, b_size)
             .max(module.cnv_apply_dft_add_tmp_bytes(0, res_size, a_size, b_size))
-            .max(module.cnv_prepare_left_tmp_bytes(a_size, a_size))
-            .max(module.cnv_prepare_right_tmp_bytes(b_size, b_size))
+            .max(module.cnv_pvec_left_prepare_tmp_bytes(a_size, a_size))
+            .max(module.cnv_pvec_right_prepare_tmp_bytes(b_size, b_size))
             .max(module.vec_znx_big_normalize_tmp_bytes())
             .max(module.vec_znx_idft_apply_tmp_bytes()),
     );
 
     let mut a_prep: CnvPVecLOwned<BE> = module.cnv_pvec_left_alloc(n, cols, a_size, PrepareHint::Reuse);
     let mut b_prep: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(n, cols, b_size, PrepareHint::Reuse);
-    module.cnv_prepare_left(
+    module.cnv_pvec_left_prepare(
         &mut a_prep.to_backend_mut(),
         &vec_znx_backend_ref::<BE>(&a_backend),
         &mut scratch.borrow(),
     );
-    module.cnv_prepare_right(
+    module.cnv_pvec_right_prepare(
         &mut b_prep.to_backend_mut(),
         &vec_znx_backend_ref::<BE>(&b_backend),
         &mut scratch.borrow(),

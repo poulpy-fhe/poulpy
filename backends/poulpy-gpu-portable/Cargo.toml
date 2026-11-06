@@ -22,12 +22,14 @@ enable-vulkan = ["cubecl/vulkan"]
 enable-wgpu = ["cubecl/webgpu"]
 enable-core = ["dep:poulpy-core", "poulpy-cpu-portable/enable-core"]
 enable-ckks = ["enable-core", "dep:poulpy-ckks", "dep:anyhow", "poulpy-cpu-portable/enable-ckks"]
+enable-blas = ["enable-ckks", "dep:poulpy-blas"]
 
 [dependencies]
 poulpy-hal = {workspace = true}
 poulpy-cpu-portable = {workspace = true}
 poulpy-core = {workspace = true, optional = true}
 poulpy-ckks = {workspace = true, optional = true}
+poulpy-blas = {workspace = true, optional = true}
 anyhow = {workspace = true, optional = true}
 bytemuck = {workspace = true}
 cubecl = {workspace = true}
@@ -37,9 +39,10 @@ pollster = {workspace = true}
 
 [dev-dependencies]
 # Shared test helpers and the portable comparison backends.
-poulpy-cpu-portable = {workspace = true, features = ["enable-core", "enable-test-suite"]}
+poulpy-cpu-portable = {workspace = true, features = ["enable-core", "enable-blas", "enable-test-suite"]}
 poulpy-core = {workspace = true}
 poulpy-ckks = {workspace = true, features = ["test-utils"]}
+poulpy-blas = {workspace = true, features = ["test-utils"]}
 poulpy-bench = {workspace = true}
 criterion = {workspace = true}
 # `pod_collect_to_vec`, which the wgpu runtime's dependencies happen to enable.
@@ -51,7 +54,7 @@ rand_core = {workspace = true}
 
 [package.metadata.docs.rs]
 # The Vulkan runtime builds without a vendor toolkit, unlike CUDA and HIP.
-features = ["enable-vulkan", "enable-ckks"]
+features = ["enable-vulkan", "enable-ckks", "enable-blas"]
 rustdoc-args = ["--cfg", "docsrs"]
 
 [[bench]]

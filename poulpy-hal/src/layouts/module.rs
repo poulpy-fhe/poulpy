@@ -119,11 +119,11 @@ pub trait Backend: Sized + Sync + Send + PartialEq + Eq {
     /// Whether a DFT vector stores each limb as one contiguous block containing
     /// every column, and a range of those blocks is itself a valid DFT vector.
     /// Within a limb, columns are contiguous blocks in column order, each of
-    /// size `bytes_of_vec_znx_dft(n, 1, 1)`. This also permits indexed host
+    /// size `vec_znx_dft_bytes_of(n, 1, 1)`. This also permits indexed host
     /// zeroing through `VecZnxDft::zero_at`.
     ///
-    /// Opting in requires `bytes_of_vec_znx_dft(n, cols, size)` to equal
-    /// `size * bytes_of_vec_znx_dft(n, cols, 1)`, including zero at `size == 0`.
+    /// Opting in requires `vec_znx_dft_bytes_of(n, cols, size)` to equal
+    /// `size * vec_znx_dft_bytes_of(n, cols, 1)`, including zero at `size == 0`.
     /// Blocks have no size-dependent headers, strides or padding between them.
     /// This permits [`VecZnxDftBackendMut::with_limb_range_mut`](crate::layouts::VecZnxDftBackendMut::with_limb_range_mut)
     /// to reborrow a partial range without copying or changing its representation.
@@ -305,45 +305,45 @@ pub trait Backend: Sized + Sync + Send + PartialEq + Eq {
     }
 
     /// Byte size of a [`crate::layouts::VecZnx`] buffer.
-    fn bytes_of_vec_znx(n: usize, cols: usize, size: usize) -> usize {
+    fn vec_znx_bytes_of(n: usize, cols: usize, size: usize) -> usize {
         checked_product(&[n, cols, size, Self::size_of_znx_word()], "VecZnx byte size")
     }
     /// Byte size of a [`crate::layouts::ScalarZnx`] buffer.
-    fn bytes_of_scalar_znx(n: usize, cols: usize) -> usize {
+    fn scalar_znx_bytes_of(n: usize, cols: usize) -> usize {
         checked_product(&[n, cols, Self::size_of_znx_word()], "ScalarZnx byte size")
     }
     /// Byte size of a [`crate::layouts::MatZnx`] buffer.
-    fn bytes_of_mat_znx(n: usize, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> usize {
+    fn mat_znx_bytes_of(n: usize, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> usize {
         checked_product(
-            &[rows, cols_in, Self::bytes_of_vec_znx(n, cols_out, size)],
+            &[rows, cols_in, Self::vec_znx_bytes_of(n, cols_out, size)],
             "MatZnx byte size",
         )
     }
     /// Byte size of a [`crate::layouts::VecZnxDft`] buffer.
-    fn bytes_of_vec_znx_dft(n: usize, cols: usize, size: usize) -> usize {
+    fn vec_znx_dft_bytes_of(n: usize, cols: usize, size: usize) -> usize {
         checked_product(&[n, cols, size, Self::size_of_dft_word()], "VecZnxDft byte size")
     }
     /// Byte size of a [`crate::layouts::VecZnxBig`] buffer.
-    fn bytes_of_vec_znx_big(n: usize, cols: usize, size: usize) -> usize {
+    fn vec_znx_big_bytes_of(n: usize, cols: usize, size: usize) -> usize {
         checked_product(&[n, cols, size, Self::size_of_big_word()], "VecZnxBig byte size")
     }
     /// Byte size of a [`crate::layouts::SvpPPol`] buffer in the representation `hint` selects.
-    fn bytes_of_svp_ppol(n: usize, cols: usize, _hint: PrepareHint) -> usize {
+    fn svp_ppol_bytes_of(n: usize, cols: usize, _hint: PrepareHint) -> usize {
         checked_product(&[n, cols, Self::size_of_dft_word()], "SvpPPol byte size")
     }
     /// Byte size of a [`crate::layouts::VmpPMat`] buffer in the representation `hint` selects.
-    fn bytes_of_vmp_pmat(n: usize, rows: usize, cols_in: usize, cols_out: usize, size: usize, _hint: PrepareHint) -> usize {
+    fn vmp_pmat_bytes_of(n: usize, rows: usize, cols_in: usize, cols_out: usize, size: usize, _hint: PrepareHint) -> usize {
         checked_product(
             &[n, rows, cols_in, cols_out, size, Self::size_of_dft_word()],
             "VmpPMat byte size",
         )
     }
     /// Byte size of a [`crate::layouts::CnvPVecL`] buffer in the representation `hint` selects.
-    fn bytes_of_cnv_pvec_left(n: usize, cols: usize, size: usize, _hint: PrepareHint) -> usize {
+    fn cnv_pvec_left_bytes_of(n: usize, cols: usize, size: usize, _hint: PrepareHint) -> usize {
         checked_product(&[n, cols, size, Self::size_of_dft_word()], "CnvPVecL byte size")
     }
     /// Byte size of a [`crate::layouts::CnvPVecR`] buffer in the representation `hint` selects.
-    fn bytes_of_cnv_pvec_right(n: usize, cols: usize, size: usize, _hint: PrepareHint) -> usize {
+    fn cnv_pvec_right_bytes_of(n: usize, cols: usize, size: usize, _hint: PrepareHint) -> usize {
         checked_product(&[n, cols, size, Self::size_of_dft_word()], "CnvPVecR byte size")
     }
     /// Deallocates a backend handle.
@@ -504,7 +504,7 @@ impl<B: Backend> Module<B> {
     /// Allocates a zero-initialized backend-owned [`ScalarZnx`] of degree `n`.
     #[inline]
     pub fn scalar_znx_alloc(&self, n: usize, cols: usize) -> ScalarZnx<B::OwnedBuf, B::ZnxWord> {
-        let len = B::bytes_of_scalar_znx(n, cols);
+        let len = B::scalar_znx_bytes_of(n, cols);
         let bytes = B::alloc_zeroed_bytes(len);
         ScalarZnx::from_data(bytes, n, cols)
     }
@@ -517,8 +517,8 @@ impl<B: Backend> Module<B> {
 
     /// Returns the byte size of a [`VecZnx`] of degree `n`.
     #[inline]
-    pub fn bytes_of_vec_znx(&self, n: usize, cols: usize, size: usize) -> usize {
-        B::bytes_of_vec_znx(n, cols, size)
+    pub fn vec_znx_bytes_of(&self, n: usize, cols: usize, size: usize) -> usize {
+        B::vec_znx_bytes_of(n, cols, size)
     }
 
     /// Allocates a zero-initialized backend-owned [`MatZnx`] of degree `n`.
@@ -531,7 +531,7 @@ impl<B: Backend> Module<B> {
         cols_out: usize,
         size: usize,
     ) -> MatZnx<B::OwnedBuf, B::ZnxWord> {
-        let len = B::bytes_of_mat_znx(n, rows, cols_in, cols_out, size);
+        let len = B::mat_znx_bytes_of(n, rows, cols_in, cols_out, size);
         let bytes = B::alloc_zeroed_bytes(len);
         MatZnx::from_data(bytes, n, rows, cols_in, cols_out, size)
     }

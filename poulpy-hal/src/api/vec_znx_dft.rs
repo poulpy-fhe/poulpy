@@ -21,7 +21,7 @@ pub trait VecZnxDftAlloc<B: Backend> {
 /// Byte size of a DFT-domain vector.
 ///
 /// ```text
-/// op         bytes_of_vec_znx_dft(n, cols, size)
+/// op         vec_znx_dft_bytes_of(n, cols, size)
 /// class      support
 /// mutation   none
 /// domain     n: a power of two, MIN_DEGREE <= n <= the module's degree; cols >= 1, size >= 1
@@ -30,7 +30,7 @@ pub trait VecZnxDftAlloc<B: Backend> {
 /// ```
 pub trait VecZnxDftBytesOf {
     /// Returns the byte size of a degree-`n` DFT-domain vector with `cols` columns and `size` limbs.
-    fn bytes_of_vec_znx_dft(&self, n: usize, cols: usize, size: usize) -> usize;
+    fn vec_znx_dft_bytes_of(&self, n: usize, cols: usize, size: usize) -> usize;
 }
 
 /// Forward DFT of selected limbs of a coefficient-domain vector.

@@ -5,23 +5,26 @@ use std::collections::{BTreeMap, HashSet};
 use poulpy_ckks::{
     CKKSInfos, CKKSResult, CoeffsMeta, SlotsKind,
     api::{
-        CKKSEncodingOps, CKKSEncodingScalar, CKKSLinearTransformationOps, CKKSModuleInfos, CKKSMulOps, LinearTransformation,
-        LinearTransformationPrepared,
+        CKKSEncodingOps, CKKSEncodingScalar, CKKSLinearTransformationOps, CKKSModuleInfos, CKKSMulOps,
+        CKKSRightOperandPreparedFactory, LinearTransformation, LinearTransformationPrepared,
     },
-    layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext},
+    layouts::{CKKSCiphertext, CKKSCiphertextOwned, CKKSPlaintext, CKKSRightOperandPrepared},
     test_suite::{
         CKKSTestParams,
-        helpers::{TestContextBackend, TestContextModule, TestScalar, alloc_scratch, gen_atk, gen_sk_with_raw, gen_tsk},
-        parity::helpers::with_scratch,
+        helpers::{
+            TestContextBackend, TestContextModule, TestScalar, alloc_scratch, encode_and_upload_pt, gen_atk, gen_sk_with_raw,
+            gen_tsk,
+        },
+        parity::helpers::{Snapshot, with_scratch},
         reference_encoder::ReferenceEncoder,
     },
 };
 use poulpy_core::{
-    GLWEAutomorphismKeyEncryptSk, GLWETensorKeyEncryptSk,
+    GLWEAutomorphismKeyEncryptSk, GLWELinearTransformationBabyStepsBytesOf, GLWETensorKeyEncryptSk,
     api::{GLWEAutomorphismKeyPreparedFactory, GLWETensorKeyPreparedFactory},
     layouts::{
-        Base2K, DiagonalArithmetic, GGLWELayout, GLWEAutomorphismKeyLayout, GLWETensorKeyLayout, GLWEToBackendRef,
-        GetAutomorphismKey, GetTensorKey, LWEInfos, ModuleCoreAlloc, TorusPrecision,
+        Base2K, DiagonalArithmetic, GGLWELayout, GLWEAutomorphismKeyAlloc, GLWEAutomorphismKeyLayout, GLWETensorKeyAlloc,
+        GLWETensorKeyLayout, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LWEInfos, TorusPrecision,
         prepared::{
             GLWEAutomorphismKeyPreparedBackendRef, GLWEAutomorphismKeyPreparedToBackendRef, GLWETensorKeyPreparedBackendRef,
             GLWETensorKeyPreparedToBackendRef,
@@ -29,7 +32,7 @@ use poulpy_core::{
     },
 };
 use poulpy_hal::{
-    api::{CnvPVecAlloc, NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow},
+    api::{CnvPVecAlloc, ReimFFT, ReimIFFT, ReimNew, ScratchOwnedBorrow},
     layouts::{
         Backend, CyclotomicOrder, Data, HostBytesBackend, HostDataMut, HostDataRef, Module,
         PrepareHint::{OneShot, Reuse},
@@ -41,20 +44,40 @@ use poulpy_hal::{
 use super::helpers::{
     Grid, HINTS, MASKED_PT_ALGORITHMS, MIXES, PT_ALGORITHMS,
     Rejection::{MissingKey, MissingTensorKey},
-    StrictKeys, TestKeys, alloc_grid, assert_grid_decrypt, assert_guard_on, at_scale, blas_context, context_and_keys,
+    StrictKeys, TestKeys, alloc_grid, assert_grid_decrypt, assert_rejected, at_scale, blas_context, context_and_keys,
     copied_layout, encoded_context, encrypt_grid, grid_snapshot, lt_key_uses, mapped_layout, matmul_left_operand,
-    matmul_right_operand, other_scales, poisoned_scratch, product_layout, pt_operand,
+    matmul_right_operand, other_scales, poisoned_scratch, product_layout, pt_operand, rotation_keys, to_f,
 };
 use super::matmul::public_entry;
+use super::matvec::{
+    DiagonalCiphertextModel, alloc_vector, append, append_key_uses, append_tmp_bytes, assert_vector_decrypt,
+    diagonal_ciphertext_elements, diagonal_ciphertext_layout, diagonal_ciphertext_snapshot, encrypt_vector, matvec_layouts,
+    matvec_model, matvec_operands, matvec_operands_of, prepared_of, vector_entry, vector_snapshot,
+};
+use super::repack::{
+    GRID, grid_model, grid_to_vector_cases, line_values, matrix_times, placed, repack_fits, vector_to_grid_cases,
+};
 use crate::{
-    api::{BlasEncodingOps, BlasMatInterOps, BlasMatIntraOps, BlasMatMulOps, BlasPtOperandPreparedFactory},
+    api::{
+        BlasDiagonalCiphertextPreparedFactory, BlasEncodingOps, BlasMatInterOps, BlasMatIntraOps,
+        BlasMatMulLeftOperandPreparedFactory, BlasMatMulOps, BlasMatMulRightOperandPreparedFactory, BlasMatVecOps,
+        BlasPtOperandPreparedFactory,
+    },
     layouts::{
-        BlasCiphertext, BlasCiphertextOwned, BlasContextInfos, BlasGridInfos, BlasKeyUses, BlasMatMulLeft, BlasMatMulRight,
-        BlasModuleAlloc, BlasPlan, BlasPtAlgorithm, BlasPtOperandInfos, BlasPtSide, Left, Right, blas_matmul_key_uses,
-        blas_matmul_prepare_left_key_uses, blas_matmul_prepare_right_key_uses, blas_matmul_prepared_key_uses,
-        blas_matmul_pt_left_key_uses, blas_matmul_pt_right_key_uses, blas_rotate_cols_key_uses, blas_rotate_key_uses,
-        blas_rotate_rows_key_uses, blas_sum_cols_key_uses, blas_sum_key_uses, blas_sum_rows_key_uses, blas_transpose_key_uses,
+        BlasCiphertext, BlasCiphertextOwned, BlasContextInfos, BlasDiagonalCiphertext, BlasDiagonalCiphertextAlloc,
+        BlasGridInfos, BlasGridMut, BlasKeyUses, BlasMatMulLeftOperandPrepared, BlasMatMulRightOperandPrepared,
+        BlasMatVecOperandLayout, BlasPlan, BlasPtAlgorithm, BlasPtOperandAlloc, BlasPtOperandInfos, BlasPtSide, BlasVectorInfos,
+        BlasVectorOwned, BlasVectorShape, Left, Right, blas_append_col_diagonal_key_uses, blas_append_row_diagonal_key_uses,
+        blas_grid_to_vector_key_uses, blas_grid_to_vector_output_layout, blas_matmul_key_uses,
+        blas_matmul_left_operand_prepare_key_uses, blas_matmul_prepared_key_uses, blas_matmul_pt_left_key_uses,
+        blas_matmul_pt_right_key_uses, blas_matmul_right_operand_prepare_key_uses, blas_matvec_diagonal_key_uses,
+        blas_matvec_diagonal_output_layout, blas_matvec_pt_key_uses, blas_matvec_pt_output_layout, blas_rotate_cols_key_uses,
+        blas_rotate_key_uses, blas_rotate_rows_key_uses, blas_sum_cols_key_uses, blas_sum_key_uses, blas_sum_rows_key_uses,
+        blas_transpose_key_uses, blas_vector_to_grid_key_uses, blas_vector_to_grid_output_layout,
         context::context_shapes,
+        diagonal_ciphertext::{self, AppendAxis},
+        encoding::shape,
+        matvec_operand, matvec_pt_galois_elements,
         planning::{MapDiagonal, operand_shapes},
         replicated, sum_galois_elements,
     },
@@ -65,10 +88,54 @@ fn width<DG: Data, W: ZnxWord, R: Ring>(g: &BlasCiphertext<DG, W, R>) -> usize {
     g.block_layout().k().as_usize()
 }
 
+/// What a key-width case compares of the value a call writes: its digits and metadata, and a grid's batch record.
+trait Written<BE> {
+    type State: PartialEq;
+
+    fn state(&self) -> Self::State;
+}
+
+impl<BE> Written<BE> for BlasCiphertextOwned<BE>
+where
+    BE: Backend<ZnxWord = i64>,
+    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE>,
+{
+    type State = (Option<usize>, Vec<Snapshot>);
+
+    fn state(&self) -> Self::State {
+        (self.mat_slots(), grid_snapshot::<BE, _>(self))
+    }
+}
+
+impl<BE> Written<BE> for BlasVectorOwned<BE>
+where
+    BE: Backend<ZnxWord = i64>,
+    CKKSCiphertextOwned<BE>: GLWEToBackendRef<BE>,
+{
+    type State = Vec<Snapshot>;
+
+    fn state(&self) -> Self::State {
+        vector_snapshot::<BE>(self)
+    }
+}
+
+impl<BE> Written<BE> for BlasDiagonalCiphertext<BE>
+where
+    BE: Backend<ZnxWord = i64>,
+    CKKSCiphertextOwned<BE>: GLWEToBackendRef<BE>,
+{
+    type State = Vec<Snapshot>;
+
+    fn state(&self) -> Self::State {
+        diagonal_ciphertext_snapshot::<BE>(self)
+    }
+}
+
 /// Asserts `call` rejects `keys` answering only the rotation keys `atks`, as `(Galois element, width)`, and the tensor
 /// keys at the widths `tsks`, short of any one of these keys, before the unwritten `res` changes; then runs `call` on
 /// `res` under all of them and asserts it writes `full` bit for bit. The identity takes no key. `query` is the operation's
 /// key-use query, which must list exactly these keys.
+#[allow(clippy::too_many_arguments)]
 fn assert_key_widths<BE, X>(
     label: &str,
     op: &str,
@@ -76,13 +143,12 @@ fn assert_key_widths<BE, X>(
     query: BlasKeyUses,
     atks: impl IntoIterator<Item = (i64, usize)>,
     tsks: impl IntoIterator<Item = usize>,
-    full: &BlasCiphertextOwned<BE>,
+    full: &X,
     res: &mut X,
-    grid: impl Fn(&X) -> &BlasCiphertextOwned<BE>,
     mut call: impl FnMut(&mut X, &StrictKeys<'_, BE>) -> CKKSResult<()>,
 ) where
-    BE: Backend<ZnxWord = i64>,
-    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE>,
+    BE: Backend,
+    X: Written<BE>,
 {
     let mut atks: Vec<(i64, usize)> = atks.into_iter().filter(|&(p, _)| p != 1).collect();
     atks.sort_unstable();
@@ -98,33 +164,24 @@ fn assert_key_widths<BE, X>(
         query, want,
         "{label}: the key-use query differs from the widths read off the results"
     );
+    let mut guard = |what: String, rejection, short: &StrictKeys<'_, BE>| {
+        let before = res.state();
+        assert_rejected(&what, op, rejection, call(res, short));
+        assert!(res.state() == before, "{what}: {op} changed its output");
+    };
     for (i, &(p, k)) in atks.iter().enumerate() {
         let others = atks.iter().enumerate().filter(|&(j, _)| j != i).map(|(_, &key)| key);
         let short = keys.at_widths(others, tsks.iter().copied());
-        assert_guard_on::<BE, _, _>(
-            &format!("{label} without p={p} at k={k}"),
-            op,
-            MissingKey,
-            res,
-            &grid,
-            |res| call(res, &short),
-        );
+        guard(format!("{label} without p={p} at k={k}"), MissingKey, &short);
     }
     for (i, &k) in tsks.iter().enumerate() {
         let others = tsks.iter().enumerate().filter(|&(j, _)| j != i).map(|(_, &k)| k);
         let short = keys.at_widths(atks.iter().copied(), others);
-        assert_guard_on::<BE, _, _>(
-            &format!("{label} without the tensor key at k={k}"),
-            op,
-            MissingTensorKey,
-            res,
-            &grid,
-            |res| call(res, &short),
-        );
+        guard(format!("{label} without the tensor key at k={k}"), MissingTensorKey, &short);
     }
     call(res, &keys.at_widths(atks.iter().copied(), tsks.iter().copied())).unwrap_or_else(|e| panic!("{label}: {e}"));
     assert!(
-        grid_snapshot::<BE, _>(grid(res)) == grid_snapshot::<BE, _>(full),
+        res.state() == full.state(),
         "{label}: the result under the width-restricted keys differs"
     );
 }
@@ -141,13 +198,19 @@ fn assert_key_widths<BE, X>(
 /// alone, at the narrower of its input's and result's widths; a JKLS
 /// product by public matrices looks up its first map's keys from its input's width and its blocks' from the width that
 /// map leaves. The matrix products run on factors of one width, then on a narrower left or right factor; a right factor
-/// holding one matrix takes [`crate::layouts::BlasContext::tau_rep`] and
-/// [`crate::layouts::BlasContext::rotate_rows_rep`]. The context's maps and the public matrices sit a quarter of the
+/// holding one matrix takes [`crate::layouts::BlasContextPrepared::tau_rep`] and
+/// [`crate::layouts::BlasContextPrepared::rotate_rows_rep`]. From 16 slots, the row and column appends of a diagonal
+/// ciphertext look up the rotations of their vector at its width, and its product its baby steps at the input's width,
+/// its giant step at the result's and the tensor key at the wider of the input's and the diagonals' widths, into `res`
+/// narrower and wider than the result. The context's maps and the public matrices sit a quarter of the
 /// inputs' scale below it ([`other_scales`]), where a width taken from the inputs' scale in place of the maps' `p` or
 /// the public matrices' `p_B`, or capped by it, finds no key. The preparations, under either hint, look up every
 /// rotation key of their terms, each checked through the prepared product of their operand beside a cold one; the
 /// prepared product looks up those of each hot side's terms and the tensor key, and of two cold operands the tensor key
-/// alone. Every operation runs on exactly the scratch its own query reports.
+/// alone. A product of a vector by matrices below the inputs' scale, into `res` half as wide as its input, then one limb
+/// wider, looks up every map's baby steps at its input's width and its giant steps at the width the map leaves into
+/// `res`, and so does the repacking of a grid's line to and from a vector through such matrices, the grid's blocks its
+/// input or `res`, where its cases fit the slots. Every operation runs on exactly the scratch its own query reports.
 pub fn test_blas_key_widths<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -161,7 +224,7 @@ pub fn test_blas_key_widths<BE, F, E>(
         + CKKSLinearTransformationOps<BE>
         + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
@@ -242,7 +305,6 @@ pub fn test_blas_key_widths<BE, F, E>(
             [],
             &full,
             &mut alloc(1, 2, res_k),
-            |g| g,
             |res, keys| module.blas_rotate(1, res, &row, keys, &mut own(bytes).borrow()),
         );
 
@@ -261,7 +323,6 @@ pub fn test_blas_key_widths<BE, F, E>(
             [],
             &full,
             &mut alloc(1, 2, res_k),
-            |g| g,
             |res, keys| module.blas_sum(res, &row, keys, &mut own(bytes).borrow()),
         );
 
@@ -280,7 +341,6 @@ pub fn test_blas_key_widths<BE, F, E>(
             [],
             &full,
             &mut alloc(2, 1, res_k),
-            |g| g,
             |res, keys| module.blas_transpose(res, &row, &ctx, keys, &mut own(bytes).borrow()),
         );
 
@@ -312,7 +372,6 @@ pub fn test_blas_key_widths<BE, F, E>(
                 [],
                 &full,
                 &mut alloc(rows, cols, res_k),
-                |g| g,
                 |res, keys| module.blas_rotate_rows(1, res, a, &ctx, keys, &mut own(bytes).borrow()),
             );
             let mut full = alloc(rows, cols, res_k);
@@ -335,7 +394,6 @@ pub fn test_blas_key_widths<BE, F, E>(
                 [],
                 &full,
                 &mut alloc(rows, cols, res_k),
-                |g| g,
                 |res, keys| module.blas_rotate_cols(1, res, a, &ctx, keys, &mut own(bytes).borrow()),
             );
         }
@@ -380,7 +438,6 @@ pub fn test_blas_key_widths<BE, F, E>(
                     [],
                     &full,
                     &mut alloc(rows, cols, res_k),
-                    |g| g,
                     |res, keys| module.blas_sum_rows(res, a, &ctx, keys, &mut own(bytes).borrow()),
                 );
             } else {
@@ -397,7 +454,6 @@ pub fn test_blas_key_widths<BE, F, E>(
                     [],
                     &full,
                     &mut alloc(rows, cols, res_k),
-                    |g| g,
                     |res, keys| module.blas_sum_cols(res, a, &ctx, keys, &mut own(bytes).borrow()),
                 );
             }
@@ -427,7 +483,6 @@ pub fn test_blas_key_widths<BE, F, E>(
                 [],
                 &full,
                 &mut alloc(1, 1, res_k),
-                |g| g,
                 |res, keys| module.blas_matmul_pt_right(res, &row, pt, &ctx, keys, &mut own(bytes).borrow()),
             );
 
@@ -450,7 +505,6 @@ pub fn test_blas_key_widths<BE, F, E>(
                 [],
                 &full,
                 &mut alloc(1, 1, res_k),
-                |g| g,
                 |res, keys| module.blas_matmul_pt_left(res, pt_left, &column, &ctx, keys, &mut own(bytes).borrow()),
             );
 
@@ -481,7 +535,6 @@ pub fn test_blas_key_widths<BE, F, E>(
                 [],
                 &full,
                 &mut alloc(1, 1, res_k),
-                |g| g,
                 |res, keys| module.blas_matmul_pt_left(res, pt_left, &column_one, &ctx, keys, &mut own(bytes).borrow()),
             );
         }
@@ -496,25 +549,27 @@ pub fn test_blas_key_widths<BE, F, E>(
         // The widths of the terms, read off real results: sigma (tau) evaluated into a block of its input's width,
         // then phi^1 (psi^1) of that into a block of its width, which gives the width of every term.
         let term_widths = |src: &BlasCiphertextOwned<BE>, first, shift| {
-            let bytes = module.blas_matmul_prepare_left_tmp_bytes(src, &ctx, &atk_layout, Reuse);
+            let bytes = module.blas_matmul_left_operand_prepare_tmp_bytes(src, &ctx, &atk_layout, Reuse);
             let mut s = alloc(1, 1, width(src));
             module
-                .ckks_eval_linear_transformation_self_into(
+                .ckks_linear_transformation_eval_self_into(
                     s.block_mut(0, 0),
                     src.block(0, 0),
                     first,
                     &keys,
-                    &mut own(bytes).borrow(),
+                    &mut own(bytes + module.glwe_linear_transformation_baby_steps_bytes_of(&first.index(), src.block(0, 0)))
+                        .borrow(),
                 )
                 .unwrap();
             let mut p = alloc(1, 1, width(&s));
             module
-                .ckks_eval_linear_transformation_self_into(
+                .ckks_linear_transformation_eval_self_into(
                     p.block_mut(0, 0),
                     s.block(0, 0),
                     shift,
                     &keys,
-                    &mut own(bytes).borrow(),
+                    &mut own(bytes + module.glwe_linear_transformation_baby_steps_bytes_of(&shift.index(), s.block(0, 0)))
+                        .borrow(),
                 )
                 .unwrap();
             (width(&s), width(&p))
@@ -551,22 +606,21 @@ pub fn test_blas_key_widths<BE, F, E>(
             products,
             &full,
             &mut alloc(1, 1, a_k),
-            |g| g,
             |res, keys| module.blas_matmul(res, a, b, &ctx, keys, keys, &mut own(bytes).borrow()),
         );
 
         // Each preparation, under either hint, under the restricted rotation keys alone, its product with the other
         // operand cold under the full store: a missing key stops the preparation before `res` changes, whatever the
         // hint, and the operand's every term reaches `res`.
-        let prepared_bytes = |left: &BlasMatMulLeft<BE>, right: &BlasMatMulRight<BE>| {
+        let prepared_bytes = |left: &BlasMatMulLeftOperandPrepared<BE>, right: &BlasMatMulRightOperandPrepared<BE>| {
             module.blas_matmul_prepared_tmp_bytes(&alloc(1, 1, a_k), left, right, &ctx, &tsk_layout, &atk_layout)
         };
         let prepare_left = |hint, keys: &StrictKeys<'_, BE>| {
-            let bytes = module.blas_matmul_prepare_left_tmp_bytes(a, &ctx, &atk_layout, hint);
+            let bytes = module.blas_matmul_left_operand_prepare_tmp_bytes(a, &ctx, &atk_layout, hint);
             matmul_left_operand(module, a, &ctx, keys, hint, &mut own(bytes).borrow())
         };
         let prepare_right = |hint, keys: &StrictKeys<'_, BE>| {
-            let bytes = module.blas_matmul_prepare_right_tmp_bytes(b, &ctx, &atk_layout, hint);
+            let bytes = module.blas_matmul_right_operand_prepare_tmp_bytes(b, &ctx, &atk_layout, hint);
             matmul_right_operand(module, b, &ctx, keys, hint, &mut own(bytes).borrow())
         };
         let all = keys.at_widths(left_uses.iter().chain(&right_uses).copied(), products);
@@ -578,14 +632,13 @@ pub fn test_blas_key_widths<BE, F, E>(
         for hint in HINTS {
             assert_key_widths(
                 &format!("prepare_left {hint:?} {factors}"),
-                "blas_matmul_prepare_left",
+                "blas_matmul_left_operand_prepare",
                 &keys,
-                blas_matmul_prepare_left_key_uses(module, a, &ctx),
+                blas_matmul_left_operand_prepare_key_uses(module, a, &ctx),
                 left_uses.iter().copied(),
                 [],
                 &full,
                 &mut alloc(1, 1, a_k),
-                |g| g,
                 |res, strict| {
                     let left = prepare_left(hint, strict)?;
                     let bytes = prepared_bytes(&left, cold_right);
@@ -594,14 +647,13 @@ pub fn test_blas_key_widths<BE, F, E>(
             );
             assert_key_widths(
                 &format!("prepare_right {hint:?} {factors}"),
-                "blas_matmul_prepare_right",
+                "blas_matmul_right_operand_prepare",
                 &keys,
-                blas_matmul_prepare_right_key_uses(module, b, &ctx),
+                blas_matmul_right_operand_prepare_key_uses(module, b, &ctx),
                 right_uses.iter().copied(),
                 [],
                 &full,
                 &mut alloc(1, 1, a_k),
-                |g| g,
                 |res, strict| {
                     let right = prepare_right(hint, strict)?;
                     let bytes = prepared_bytes(cold_left, &right);
@@ -624,11 +676,270 @@ pub fn test_blas_key_widths<BE, F, E>(
                 products,
                 &full,
                 &mut alloc(1, 1, a_k),
-                |g| g,
                 |res, keys| module.blas_matmul_prepared(res, left, right, &ctx, keys, keys, &mut own(bytes).borrow()),
             );
         }
     }
+
+    // Products of a vector by matrices below the inputs' scale, into `res` half as wide as the input, then one limb
+    // wider: every map's baby steps at the input's width, its giant steps at the width it leaves into `res`.
+    let slots = module.ckks_max_slots();
+    if slots >= 16 {
+        let p_w = below.prec().log_delta();
+        for layout in matvec_layouts(&params, slots) {
+            let layout = BlasMatVecOperandLayout {
+                coeffs_meta: below.prec().into(),
+                ..layout
+            };
+            let (_, w) = matvec_operands::<BE, F>(module, &layout);
+            let elements = matvec_pt_galois_elements(module.cyclotomic_order(), &layout);
+            let keys = TestKeys::<BE> {
+                atks: rotation_keys(&params, module, &sk_raw, elements, &mut scratch.borrow()),
+                tsk: None,
+            };
+            let v: Vec<f64> = (0..layout.input.len).map(vector_entry).collect();
+            let a = encrypt_vector::<BE, F, E>(
+                &params,
+                module,
+                host_module,
+                &encoder,
+                &sk,
+                a_k,
+                layout.input,
+                layout.input_period,
+                &v,
+                &mut scratch.borrow(),
+            );
+            for res_k in [a_k / 2, a_k + params.base2k] {
+                let template = alloc_vector(&params, module, layout.output, res_k);
+                let bytes = module.blas_matvec_pt_tmp_bytes(&template, &w, &a, &params.atk_layout());
+                let mut full = template.clone();
+                module
+                    .blas_matvec_pt(&mut full, &w, &a, &keys, &mut poisoned_scratch::<BE>(bytes).borrow())
+                    .unwrap();
+                let giant_k = res_k.min(a_k - p_w);
+                assert_key_widths(
+                    &format!("matvec_pt {layout:?} res.k={res_k}"),
+                    "blas_matvec_pt",
+                    &keys,
+                    blas_matvec_pt_key_uses(module, &template, &layout, &a),
+                    w.maps.iter().flat_map(|lt| lt_key_uses(module, lt, a_k, giant_k)),
+                    [],
+                    &full,
+                    &mut template.clone(),
+                    |res, strict| module.blas_matvec_pt(res, &w, &a, strict, &mut poisoned_scratch::<BE>(bytes).borrow()),
+                );
+            }
+        }
+    }
+
+    // Repacking through matrices below the inputs' scale, the grid's blocks the input or `res`, into `res` as above: as
+    // the product of a vector.
+    if repack_fits(slots, log_d) {
+        let p_w = below.prec().log_delta();
+        let at_below = |layout: BlasMatVecOperandLayout| BlasMatVecOperandLayout {
+            coeffs_meta: below.prec().into(),
+            ..layout
+        };
+        let keys_of = |layout: &BlasMatVecOperandLayout, scratch: &mut ScratchArena<'_, BE>| TestKeys::<BE> {
+            atks: rotation_keys(&params, module, &sk_raw, matvec_pt_galois_elements(order, layout), scratch),
+            tsk: None,
+        };
+        for case in grid_to_vector_cases(&params, slots, log_d) {
+            let (line, layout) = (case.line, at_below(case.layout));
+            let (_, w) = matvec_operands_of::<BE, F>(module, &layout, case.entry);
+            let keys = keys_of(&layout, &mut scratch.borrow());
+            let mut a = encrypt_grid::<BE, F, E>(
+                &params,
+                module,
+                host_module,
+                &encoder,
+                &sk,
+                a_k,
+                case.label(slots),
+                &grid_model(log_d, case.proven),
+                &mut scratch.borrow(),
+            );
+            BlasGridMut::<BE>::set_mat_slots(&mut a, GRID.2);
+            for res_k in [narrow, wide] {
+                let template = alloc_vector(&params, module, layout.output, res_k);
+                let bytes = module.blas_grid_to_vector_tmp_bytes(&template, &w, &a, &atk_layout);
+                let mut full = template.clone();
+                module
+                    .blas_grid_to_vector(&mut full, &w, &a, line, &keys, &mut own(bytes).borrow())
+                    .unwrap();
+                let giant_k = res_k.min(a_k - p_w);
+                assert_key_widths(
+                    &format!("grid_to_vector {line:?} {layout:?} res.k={res_k}"),
+                    "blas_grid_to_vector",
+                    &keys,
+                    blas_grid_to_vector_key_uses(module, &template, &layout, &a),
+                    w.maps.iter().flat_map(|lt| lt_key_uses(module, lt, a_k, giant_k)),
+                    [],
+                    &full,
+                    &mut template.clone(),
+                    |res, strict| module.blas_grid_to_vector(res, &w, &a, line, strict, &mut own(bytes).borrow()),
+                );
+            }
+        }
+        for case in vector_to_grid_cases(&params, slots, log_d) {
+            let (line, layout) = (case.line, at_below(case.layout));
+            let (_, w) = matvec_operands_of::<BE, F>(module, &layout, case.entry);
+            let keys = keys_of(&layout, &mut scratch.borrow());
+            let v: Vec<f64> = (0..layout.input.len).map(vector_entry).collect();
+            let a = encrypt_vector::<BE, F, E>(
+                &params,
+                module,
+                host_module,
+                &encoder,
+                &sk,
+                a_k,
+                layout.input,
+                layout.input_period,
+                &v,
+                &mut scratch.borrow(),
+            );
+            for res_k in [narrow, wide] {
+                let template = alloc_grid(&params, module, log_d, case.rows, case.cols, res_k);
+                let bytes = module.blas_vector_to_grid_tmp_bytes(&template, &w, &a, &atk_layout);
+                let mut full = template.clone();
+                module
+                    .blas_vector_to_grid(&mut full, line, &w, &a, &keys, &mut own(bytes).borrow())
+                    .unwrap();
+                let giant_k = res_k.min(a_k - p_w);
+                assert_key_widths(
+                    &format!("vector_to_grid {line:?} {layout:?} res.k={res_k}"),
+                    "blas_vector_to_grid",
+                    &keys,
+                    blas_vector_to_grid_key_uses(module, &template, &layout, &a),
+                    w.maps.iter().flat_map(|lt| lt_key_uses(module, lt, a_k, giant_k)),
+                    [],
+                    &full,
+                    &mut template.clone(),
+                    |res, strict| module.blas_vector_to_grid(res, line, &w, &a, strict, &mut own(bytes).borrow()),
+                );
+            }
+        }
+    }
+
+    // A diagonal ciphertext of the diagonals `0..8` at giant step 4: its appends look up the rotations of their vector
+    // at its width, a row by the baby steps 1 to 3, a column by the opposite of the giant step 4; its product looks up
+    // the baby steps at the input's width, the giant step at the result's and the tensor key at the wider of the
+    // input's and the diagonals' widths.
+    if slots < 16 {
+        eprintln!("key_widths: the diagonal ciphertext skipped, its diagonals span 16 slots");
+        return;
+    }
+    let whole = BlasVectorShape::new(slots, slots, 0, 1);
+    let layout = diagonal_ciphertext_layout(&params, slots, a_k - params.prec().log_delta());
+    let ct_keys = TestKeys::<BE> {
+        atks: rotation_keys(
+            &params,
+            module,
+            &sk_raw,
+            diagonal_ciphertext_elements(order, &layout),
+            &mut scratch.borrow(),
+        ),
+        tsk: Some(gen_tsk(&params, module, &sk_raw, &mut scratch.borrow())),
+    };
+    let values: Vec<f64> = (0..slots).map(vector_entry).collect();
+    let v = encrypt_vector::<BE, F, E>(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        a_k,
+        whole,
+        slots,
+        &values,
+        &mut scratch.borrow(),
+    );
+    let mask = slot_mask::<BE, F, E>(&params, module, host_module, &encoder, &[0]);
+    let element = |rotation: i64| module.ckks_galois_element(rotation);
+    let mut m = module.blas_diagonal_ciphertext_alloc_from_infos(&layout);
+    for (axis, rotations) in [(AppendAxis::Row, vec![1, 2, 3]), (AppendAxis::Col, vec![-4])] {
+        let bytes = append_tmp_bytes(module, axis, &m, &v, &mask, &atk_layout);
+        let mut full = module.blas_diagonal_ciphertext_alloc_from_infos(&layout);
+        append(module, axis, &mut full, 1, &v, &mask, &ct_keys, &mut own(bytes).borrow()).unwrap();
+        assert_key_widths(
+            &format!("{} on a diagonal ciphertext", axis.op()),
+            axis.op(),
+            &ct_keys,
+            append_key_uses(module, axis, &m, &v),
+            rotations.into_iter().map(|rotation| (element(rotation), a_k)),
+            [],
+            &full,
+            &mut module.blas_diagonal_ciphertext_alloc_from_infos(&layout),
+            |m, keys| append(module, axis, m, 1, &v, &mask, keys, &mut own(bytes).borrow()),
+        );
+        append(module, axis, &mut m, 1, &v, &mask, &ct_keys, &mut own(bytes).borrow()).unwrap();
+    }
+    let prepared = prepared_of(module, &m);
+    for res_k in [narrow, wide] {
+        let mut full = alloc_vector(&params, module, whole, res_k);
+        let bytes = module.blas_matvec_diagonal_tmp_bytes(&full, &m, &v, &tsk_layout, &atk_layout);
+        let resident_bytes = module.blas_matvec_diagonal_tmp_bytes(&full, &prepared, &v, &tsk_layout, &atk_layout);
+        module
+            .blas_matvec_diagonal(&mut full, &m, &v, &ct_keys, &mut own(bytes).borrow())
+            .unwrap();
+        let giant_k = full.ct_layout().k().as_usize();
+        let babies = [1, 2, 3].map(|rotation| (element(rotation), a_k));
+        assert_key_widths(
+            &format!("matvec of a diagonal ciphertext res_k={res_k}"),
+            "blas_matvec_diagonal",
+            &ct_keys,
+            blas_matvec_diagonal_key_uses(module, &full, &m, &v),
+            babies.into_iter().chain([(element(4), giant_k)]),
+            [a_k.max(layout.ct.k().as_usize())],
+            &full,
+            &mut alloc_vector(&params, module, whole, res_k),
+            |res, keys| module.blas_matvec_diagonal(res, &m, &v, keys, &mut own(bytes).borrow()),
+        );
+        assert_key_widths(
+            &format!("matvec of a prepared diagonal ciphertext res_k={res_k}"),
+            "blas_matvec_diagonal",
+            &ct_keys,
+            blas_matvec_diagonal_key_uses(module, &full, &prepared, &v),
+            babies.into_iter().chain([(element(4), giant_k)]),
+            [a_k.max(layout.ct.k().as_usize())],
+            &full,
+            &mut alloc_vector(&params, module, whole, res_k),
+            |res, keys| module.blas_matvec_diagonal(res, &prepared, &v, keys, &mut own(resident_bytes).borrow()),
+        );
+    }
+}
+
+/// The prepared mask `1` on the slots of `set`, `0` elsewhere, at `params`' radix and precision, prepared to reuse.
+pub(crate) fn slot_mask<BE, F, E>(
+    params: &CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+    encoder: &ReferenceEncoder<E>,
+    set: &[usize],
+) -> CKKSRightOperandPrepared<BE>
+where
+    BE: TestContextBackend<Ring = Standard>,
+    Module<BE>: TestContextModule<BE>,
+    F: TestScalar,
+    E: ReimFFT<F> + ReimIFFT<F>,
+{
+    let slots = module.ckks_max_slots();
+    let mut re = vec![0.0; slots];
+    set.iter().for_each(|&s| re[s] = 1.0);
+    let pt = encode_and_upload_pt(
+        host_module,
+        module,
+        encoder,
+        params.base2k.into(),
+        params.prec(),
+        &to_f::<F>(&re),
+        &to_f::<F>(&vec![0.0; slots]),
+    );
+    with_scratch::<BE, _>(module.ckks_right_operand_prepare_tmp_bytes(&pt), |s| {
+        module.ckks_right_operand_prepare_alloc(&pt, Reuse, s)
+    })
+    .unwrap()
 }
 
 /// Rotation keys by `(element, width)` and tensor keys by width, each generated for its width: a look-up at `k` answers
@@ -672,8 +983,9 @@ impl<BE: Backend, A, T: GLWETensorKeyPreparedToBackendRef<BE>> GetTensorKey<BE> 
 }
 
 /// With a store holding one key per `(element, width)` the key-use queries list, generated for that width and no other,
-/// a product of two encrypted grids, a product by public matrices and row and column sums run and decrypt as under the
-/// full keys.
+/// a product of two encrypted grids, a product by public matrices, row and column sums, a product of a vector, a
+/// repacking each way between a grid's line and a vector where its cases fit, and, from 16 slots, the row and column
+/// appends of a diagonal ciphertext and its product by a vector run and decrypt as under the full keys.
 pub fn test_blas_key_stores_from_queries<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -687,7 +999,7 @@ pub fn test_blas_key_stores_from_queries<BE, F, E>(
         + CKKSLinearTransformationOps<BE>
         + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
@@ -719,12 +1031,112 @@ pub fn test_blas_key_stores_from_queries<BE, F, E>(
 
     let alloc = |k: usize| alloc_grid(&params, module, log_d, 1, 1, k);
     let alloc_like_a = || alloc_grid(&params, module, log_d, 1, 2, params.k);
-    let uses = [
+    // A product of a vector, several ciphertexts on each side, where its vectors fit the slots.
+    let vector = (slots >= 16).then(|| {
+        let layout = matvec_layouts(&params, slots).pop().unwrap();
+        let (_, w) = matvec_operands::<BE, F>(module, &layout);
+        let v: Vec<f64> = (0..layout.input.len).map(vector_entry).collect();
+        let x = encrypt_vector::<BE, F, E>(
+            &params,
+            module,
+            host_module,
+            &encoder,
+            &sk,
+            params.k,
+            layout.input,
+            layout.input_period,
+            &v,
+            &mut scratch.borrow(),
+        );
+        (layout, w, v, x)
+    });
+    let mut uses = vec![
         blas_matmul_key_uses(module, &a, &b, &ctx),
         blas_matmul_pt_right_key_uses(module, &alloc(params.k), &a, &public, &ctx),
         blas_sum_rows_key_uses(module, &alloc_like_a(), &a, &ctx),
         blas_sum_cols_key_uses(module, &alloc_like_a(), &a, &ctx),
     ];
+    if let Some((layout, _, _, x)) = &vector {
+        uses.push(blas_matvec_pt_key_uses(
+            module,
+            &alloc_vector(&params, module, layout.output, params.k),
+            layout,
+            x,
+        ));
+    }
+    // A repacking each way, on the first case of each, where the cases fit the slots.
+    let to_vector = repack_fits(slots, log_d).then(|| {
+        let case = grid_to_vector_cases(&params, slots, log_d).swap_remove(0);
+        let model = grid_model(log_d, case.proven);
+        let mut grid = encrypt_grid::<BE, F, E>(
+            &params,
+            module,
+            host_module,
+            &encoder,
+            &sk,
+            params.k,
+            case.label(slots),
+            &model,
+            &mut scratch.borrow(),
+        );
+        BlasGridMut::<BE>::set_mat_slots(&mut grid, GRID.2);
+        let (_, w) = matvec_operands_of::<BE, F>(module, &case.layout, case.entry);
+        let res = alloc_vector(&params, module, case.layout.output, params.k);
+        uses.push(blas_grid_to_vector_key_uses(module, &res, &case.layout, &grid));
+        (case, model, grid, w)
+    });
+    let to_grid = repack_fits(slots, log_d).then(|| {
+        let case = vector_to_grid_cases(&params, slots, log_d).swap_remove(0);
+        let v: Vec<f64> = (0..case.layout.input.len).map(vector_entry).collect();
+        let x = encrypt_vector::<BE, F, E>(
+            &params,
+            module,
+            host_module,
+            &encoder,
+            &sk,
+            params.k,
+            case.layout.input,
+            case.layout.input_period,
+            &v,
+            &mut scratch.borrow(),
+        );
+        let (_, w) = matvec_operands_of::<BE, F>(module, &case.layout, case.entry);
+        let res = alloc_grid(&params, module, log_d, case.rows, case.cols, params.k);
+        uses.push(blas_vector_to_grid_key_uses(module, &res, &case.layout, &x));
+        (case, v, x, w)
+    });
+    // A diagonal ciphertext of the diagonals `0..8`, a row and a column appended, by a whole vector.
+    let whole = BlasVectorShape::new(slots, slots, 0, 1);
+    let diagonal_ciphertext = (slots >= 16).then(|| {
+        let layout = diagonal_ciphertext_layout(&params, slots, params.k - params.prec().log_delta());
+        let xs: Vec<f64> = (0..slots).map(vector_entry).collect();
+        let x = encrypt_vector::<BE, F, E>(
+            &params,
+            module,
+            host_module,
+            &encoder,
+            &sk,
+            params.k,
+            whole,
+            slots,
+            &xs,
+            &mut scratch.borrow(),
+        );
+        uses.push(blas_matvec_diagonal_key_uses(
+            module,
+            &alloc_vector(&params, module, whole, params.k),
+            &layout,
+            &x,
+        ));
+        uses.push(blas_append_row_diagonal_key_uses(module, &layout, &x));
+        uses.push(blas_append_col_diagonal_key_uses(module, &layout, &x));
+        (
+            layout,
+            xs,
+            x,
+            slot_mask::<BE, F, E>(&params, module, host_module, &encoder, &[0]),
+        )
+    });
 
     // One key per `(element, width)` the queries list, laid out for that width; then one key per element, at the widest
     // width listed, which serves the narrower look-ups of its element.
@@ -767,14 +1179,20 @@ pub fn test_blas_key_stores_from_queries<BE, F, E>(
             module.glwe_automorphism_key_prepare(&mut prepared, &raw, &mut scratch.borrow());
             keys.atks.insert((p, width.as_u32()), prepared);
         }
-        for width in uses.iter().filter_map(|u| u.tensor).take(1) {
+        let mut tensors: Vec<TorusPrecision> = uses.iter().filter_map(|u| u.tensor).collect();
+        tensors.sort_unstable_by_key(|k| k.as_usize());
+        tensors.dedup();
+        if widest_only {
+            tensors.drain(..tensors.len().saturating_sub(1));
+        }
+        for width in tensors {
             let infos = GLWETensorKeyLayout {
                 dnum: dnum_at(width),
                 ..params.tsk_layout()
             };
             let mut raw = module.glwe_tensor_key_alloc_from_infos(&infos);
             module.glwe_tensor_key_encrypt_sk(&mut raw, &sk_raw, &mut xe, &mut xa, &mut scratch.borrow());
-            let mut prepared = module.alloc_tensor_key_prepared_from_infos(&infos);
+            let mut prepared = module.glwe_tensor_key_prepared_alloc_from_infos(&infos);
             module.glwe_tensor_key_prepare(&mut prepared, &raw, &mut scratch.borrow());
             keys.tsks.insert(width.as_u32(), prepared);
         }
@@ -862,6 +1280,110 @@ pub fn test_blas_key_stores_from_queries<BE, F, E>(
             &mapped_layout(&a, 1, 2, params.k, p),
             &mut scratch.borrow(),
         );
+        if let Some((layout, w, v, x)) = &vector {
+            let mut res = alloc_vector(&params, module, layout.output, params.k);
+            let bytes = module.blas_matvec_pt_tmp_bytes(&res, w, x, &atk_layout);
+            module
+                .blas_matvec_pt(&mut res, w, x, &keys, &mut poisoned_scratch::<BE>(bytes).borrow())
+                .unwrap();
+            assert_vector_decrypt::<BE, F, E>(
+                &format!("matvec_pt under the queries' keys, {mode}"),
+                &params,
+                module,
+                &encoder,
+                &res,
+                &sk,
+                &matvec_model(layout.output.len, v),
+                layout.output_period,
+                &blas_matvec_pt_output_layout(&res, layout, x),
+                &mut scratch.borrow(),
+            );
+        }
+        if let Some((case, model, grid, w)) = &to_vector {
+            let mut res = alloc_vector(&params, module, case.layout.output, params.k);
+            let bytes = module.blas_grid_to_vector_tmp_bytes(&res, w, grid, &atk_layout);
+            module
+                .blas_grid_to_vector(
+                    &mut res,
+                    w,
+                    grid,
+                    case.line,
+                    &keys,
+                    &mut poisoned_scratch::<BE>(bytes).borrow(),
+                )
+                .unwrap();
+            let x = line_values(model, case.line, case.proven);
+            assert_vector_decrypt::<BE, F, E>(
+                &format!("grid_to_vector under the queries' keys, {mode}"),
+                &params,
+                module,
+                &encoder,
+                &res,
+                &sk,
+                &matrix_times(case.entry, case.layout.output.len, &x),
+                case.layout.output_period,
+                &blas_grid_to_vector_output_layout(&res, &case.layout, grid),
+                &mut scratch.borrow(),
+            );
+        }
+        if let Some((case, v, x, w)) = &to_grid {
+            let mut res = alloc_grid(&params, module, log_d, case.rows, case.cols, params.k);
+            let bytes = module.blas_vector_to_grid_tmp_bytes(&res, w, x, &atk_layout);
+            module
+                .blas_vector_to_grid(&mut res, case.line, w, x, &keys, &mut poisoned_scratch::<BE>(bytes).borrow())
+                .unwrap();
+            assert_grid_decrypt::<BE, F, E>(
+                &format!("vector_to_grid under the queries' keys, {mode}"),
+                &params,
+                module,
+                &encoder,
+                &res,
+                &sk,
+                &placed(case, &matrix_times(case.entry, case.layout.output.len, v)),
+                &blas_vector_to_grid_output_layout(&res, &case.layout, x),
+                &mut scratch.borrow(),
+            );
+        }
+        if let Some((layout, xs, x, mask)) = &diagonal_ciphertext {
+            let mut m = module.blas_diagonal_ciphertext_alloc_from_infos(layout);
+            let mut model = DiagonalCiphertextModel::new(slots, (0..8).collect());
+            let mut mask_values = vec![0.0; slots];
+            mask_values[0] = 1.0;
+            for (axis, at) in [(AppendAxis::Row, 0), (AppendAxis::Col, 3)] {
+                let bytes = append_tmp_bytes(module, axis, &m, x, mask, &atk_layout);
+                append(
+                    module,
+                    axis,
+                    &mut m,
+                    at,
+                    x,
+                    mask,
+                    &keys,
+                    &mut poisoned_scratch::<BE>(bytes).borrow(),
+                )
+                .unwrap();
+                model.append(axis, at, &mask_values, xs);
+            }
+            let prepared = prepared_of(module, &m);
+            let mut res = alloc_vector(&params, module, whole, params.k);
+            let want = blas_matvec_diagonal_output_layout(&res, &m, x);
+            let bytes = module.blas_matvec_diagonal_tmp_bytes(&res, &prepared, x, &tsk_layout, &atk_layout);
+            module
+                .blas_matvec_diagonal(&mut res, &prepared, x, &keys, &mut poisoned_scratch::<BE>(bytes).borrow())
+                .unwrap();
+            assert_vector_decrypt::<BE, F, E>(
+                &format!("matvec of a diagonal ciphertext under the queries' keys, {mode}"),
+                &params,
+                module,
+                &encoder,
+                &res,
+                &sk,
+                &model.matvec(xs),
+                slots,
+                &want,
+                &mut scratch.borrow(),
+            );
+        }
     }
 }
 
@@ -892,8 +1414,11 @@ fn shape_of<P: MapDiagonal>(lt: &LinearTransformation<P>) -> Shape {
 fn assert_operand_shapes<BE, F, S>(module: &Module<BE>, plan: BlasPlan, base2k: Base2K, meta: CoeffsMeta)
 where
     BE: Backend + BlasEncodingImpl,
-    Module<BE>:
-        CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F> + BlasEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CKKSMulOps<BE>,
+    Module<BE>: CKKSRightOperandPreparedFactory<BE>
+        + CKKSEncodingOps<BE, F>
+        + BlasEncodingOps<BE, F>
+        + CKKSLinearTransformationOps<BE>
+        + CKKSMulOps<BE>,
     F: DiagonalArithmetic + CKKSEncodingScalar,
     S: BlasPtSide,
 {
@@ -915,7 +1440,8 @@ where
 
 /// The shapes the queries read from a layout are those of the maps encoded and prepared from it, for the context of a
 /// plan of each kind and for public operands of either side and algorithm: the same schedules, and diagonals of the same
-/// width, scale and slot kind. So every query gives on a layout what it gives on the encoded maps.
+/// width, scale and slot kind, and for operands of products of a vector, every map of the one shape its layout gives. So
+/// every query gives on a layout what it gives on the encoded maps.
 pub fn test_blas_queries_from_layouts<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -940,5 +1466,27 @@ pub fn test_blas_queries_from_layouts<BE, F, E>(
         let plan = BlasPlan::new(log_d).with_pt_algorithm(algorithm);
         assert_operand_shapes::<BE, F, Right>(module, plan, base2k, meta);
         assert_operand_shapes::<BE, F, Left>(module, plan, base2k, meta);
+    }
+    // Every map of a product of a vector, encoded and prepared, has the one shape its layout gives.
+    let slots = module.ckks_max_slots();
+    if slots >= 16 {
+        for layout in matvec_layouts(&params, slots) {
+            let (streamed, resident) = matvec_operands::<BE, F>(module, &layout);
+            let want = shape_of(&shape(&matvec_operand::map_layout(&layout)));
+            assert!(
+                streamed.maps.iter().all(|lt| shape_of(lt) == want),
+                "matvec {layout:?}: encoded"
+            );
+            assert!(
+                resident.maps.iter().all(|lt| shape_of(lt) == want),
+                "matvec {layout:?}: prepared"
+            );
+        }
+        let layout = diagonal_ciphertext_layout(&params, slots, params.k - params.prec().log_delta());
+        let prepared = module.blas_diagonal_ciphertext_prepared_alloc_from_infos(&layout);
+        assert!(
+            shape_of(&diagonal_ciphertext::shape(&layout)) == shape_of(prepared.diagonals()),
+            "diagonal ciphertext: prepared"
+        );
     }
 }

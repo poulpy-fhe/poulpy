@@ -1,6 +1,6 @@
 use poulpy_core::{
-    ComponentNoise, FreshNoiseEstimate, GGLWECompressedEncryptSk, GLWEBytesOf, GLWEEncryptSk, GLWEKeyswitch, GLWEMaskFill,
-    GLWENormalize, GetDistribution, ScratchArenaTakeCore,
+    ComponentNoise, FreshNoiseEstimate, GGLWECompressedEncryptSk, GLWEBytesOf, GLWEEncryptSk, GLWEFill, GLWEKeyswitch,
+    GLWENormalize, GetDistribution, ScratchArenaTakeGLWE, ScratchArenaTakeGLWEPlaintext,
     api::GLWESecretPreparedFactory,
     layouts::{
         GGLWECompressedSeed, GGLWECompressedSeedMut, GGLWECompressedToBackendMut, GGLWECompressedToBackendRef, GGLWEInfos,
@@ -10,7 +10,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::{
-        ScratchArenaTakeBasic, VecZnxAddAssign, VecZnxAddScalarAssign, VecZnxCopy, VecZnxNegate, VecZnxNormalize,
+        ScratchArenaTakeScalarZnx, VecZnxAddAssign, VecZnxAddScalarAssign, VecZnxCopy, VecZnxNegate, VecZnxNormalize,
         VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxZero,
     },
     layouts::{
@@ -21,9 +21,9 @@ use poulpy_hal::{
     source::Source,
 };
 
-use crate::layouts::{GGSWShareOwned, ggsw_share_part_layout};
+use crate::layouts::{MHEGGSWShareOwned, ggsw_share_part_layout};
 
-pub trait GGSWMHEProtocolReference<BE: Backend> {
+pub trait MHEGGSWProtocolReference<BE: Backend> {
     fn mhe_ggsw_share_gen_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
         A: GGSWInfos;
@@ -31,7 +31,7 @@ pub trait GGSWMHEProtocolReference<BE: Backend> {
     #[allow(clippy::too_many_arguments)]
     fn mhe_ggsw_share_gen_reference<P, S, U>(
         &self,
-        res: &mut GGSWShareOwned<BE>,
+        res: &mut MHEGGSWShareOwned<BE>,
         pt: &P,
         sk: &S,
         u: &U,
@@ -51,7 +51,7 @@ pub trait GGSWMHEProtocolReference<BE: Backend> {
     fn mhe_ggsw_share_finalize_reference<R, K>(
         &self,
         res: &mut R,
-        share: &GGSWShareOwned<BE>,
+        share: &MHEGGSWShareOwned<BE>,
         key: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
@@ -59,14 +59,14 @@ pub trait GGSWMHEProtocolReference<BE: Backend> {
         K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
 }
 
-impl<BE: Backend + HalVecZnxImpl> GGSWMHEProtocolReference<BE> for Module<BE>
+impl<BE: Backend + HalVecZnxImpl> MHEGGSWProtocolReference<BE> for Module<BE>
 where
     Self: GLWESecretPreparedFactory<BE>
         + GLWEEncryptSk<BE>
         + GGLWECompressedEncryptSk<BE>
         + GLWEBytesOf<BE>
         + GLWEKeyswitch<BE>
-        + GLWEMaskFill<BE>
+        + GLWEFill<BE>
         + GLWENormalize<BE>
         + VecZnxAddAssign<BE>
         + VecZnxAddScalarAssign<BE>
@@ -90,9 +90,9 @@ where
         let circ = ggsw_share_part_layout(infos, rank, rank);
         let n = infos.n().as_usize();
         // The zero plaintext of `circ_s`, then the `rank + 1` mask holders and the row plaintext of `circ_u`.
-        BE::scratch_aligned(BE::bytes_of_scalar_znx(n, rank.as_usize()))
+        BE::scratch_aligned(BE::scalar_znx_bytes_of(n, rank.as_usize()))
             + (rank.as_usize() + 1) * BE::scratch_aligned(self.glwe_bytes_of_from_infos(&circ))
-            + BE::scratch_aligned(BE::bytes_of_vec_znx(n, 1, circ.size()))
+            + BE::scratch_aligned(BE::vec_znx_bytes_of(n, 1, circ.size()))
             + self
                 .gglwe_compressed_encrypt_sk_tmp_bytes(&col0)
                 .max(self.gglwe_compressed_encrypt_sk_tmp_bytes(&circ))
@@ -102,7 +102,7 @@ where
 
     fn mhe_ggsw_share_gen_reference<P, S, U>(
         &self,
-        res: &mut GGSWShareOwned<BE>,
+        res: &mut MHEGGSWShareOwned<BE>,
         pt: &P,
         sk: &S,
         u: &U,
@@ -168,14 +168,14 @@ where
                 circ_u.seed_mut().copy_from_slice(circ_s.seed());
                 for row in 0..dnum {
                     for i in 0..r {
-                        self.fill_glwe_mask_from_seed(&mut mask, circ_s.seed()[row * r + i]);
+                        self.glwe_fill_mask_from_seed(&mut mask, circ_s.seed()[row * r + i]);
                         for (l, col) in cols.iter_mut().enumerate() {
                             self.vec_znx_copy(col.data_mut(), i + 1, &vec_znx_backend_ref_from_mut::<BE>(mask.data()), l + 1);
                         }
                     }
                     for (l, col) in cols.iter_mut().enumerate() {
                         if l == j {
-                            poulpy_core::gadget_row_plaintext(
+                            poulpy_core::gglwe_gadget_row_plaintext(
                                 self,
                                 row_pt.data_mut(),
                                 0,
@@ -231,7 +231,7 @@ where
     fn mhe_ggsw_share_finalize_reference<R, K>(
         &self,
         res: &mut R,
-        share: &GGSWShareOwned<BE>,
+        share: &MHEGGSWShareOwned<BE>,
         key: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
@@ -290,7 +290,7 @@ where
                     &mut scratch_1,
                 );
                 // Seeded masks are uniform digits, already canonical.
-                self.fill_glwe_mask_from_seed(&mut cell, share.col0.seed()[row]);
+                self.glwe_fill_mask_from_seed(&mut cell, share.col0.seed()[row]);
             }
         }
         // tmp's body stays zero; its masks are rewritten per entry.
@@ -329,7 +329,7 @@ fn glwe_layout<A: GLWEInfos>(infos: &A) -> GLWELayout {
 /// Retain each component's largest variance across gadget columns. The first
 /// column carries direct body noise. Other columns carry E_s * U in the body
 /// and E_u in each mask, followed by switching-key and rounding errors.
-fn fresh_ggsw_metadata<BE: Backend, K: GGLWEInfos>(share: &GGSWShareOwned<BE>, key: &K) -> Option<ComponentNoise> {
+fn fresh_ggsw_metadata<BE: Backend, K: GGLWEInfos>(share: &MHEGGSWShareOwned<BE>, key: &K) -> Option<ComponentNoise> {
     let metadata = share.noise()?;
     let k = share.k();
     let rank = share.rank().as_usize();

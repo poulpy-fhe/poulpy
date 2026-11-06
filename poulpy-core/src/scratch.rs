@@ -1,6 +1,12 @@
+use std::collections::{BTreeMap, btree_map::Entry};
+use std::marker::PhantomData;
+
 use poulpy_hal::{
-    api::{ModuleN, ScratchArenaTakeBasic, VmpPMatBytesOf},
-    layouts::{Backend, PrepareHint, ScratchArena},
+    api::{
+        ModuleN, ScratchArenaTakeCnvPVecL, ScratchArenaTakeMatZnx, ScratchArenaTakeScalarZnx, ScratchArenaTakeSvpPPol,
+        ScratchArenaTakeVecZnx, ScratchArenaTakeVmpPMat, VmpPMatBytesOf,
+    },
+    layouts::{Backend, CnvPVecLViewMut, PrepareHint, ScratchArena},
 };
 
 use crate::layouts::operand_degree;
@@ -10,15 +16,59 @@ use crate::{
         Degree, GGLWE, GGLWEInfos, GGLWEPreparedViewMut, GGLWEViewMut, GGSW, GGSWInfos, GGSWPreparedViewMut, GGSWViewMut, GLWE,
         GLWEInfos, GLWEPlaintext, GLWEPlaintextViewMut, GLWESecret, GLWESecretPreparedViewMut, GLWESecretTensor,
         GLWESecretTensorViewMut, GLWESecretViewMut, GLWETensor, GLWETensorViewMut, GLWEViewMut, LWE, LWEInfos, LWEPlaintext,
-        LWEPlaintextViewMut, LWEViewMut, Rank,
-        prepared::{GGLWEPrepared, GGSWPrepared, GLWESecretPrepared},
+        LWEPlaintextViewMut, LWEViewMut, LinearTransformationPlan, Rank,
+        prepared::{GGLWEPrepared, GGSWPrepared, GLWESecretPrepared, LinearTransformationBabySteps},
     },
 };
 
 /// Backend-native arena allocation for core ciphertext/key layouts.
 ///
 /// Returns backend-native borrows (`B::BufMut<'a>`) carved from a [`ScratchArena`].
-pub trait ScratchArenaTakeCore<'a, B: Backend>: ScratchArenaTakeBasic<'a, B> + Sized {
+pub trait ScratchArenaTakeGLWELinearTransformationBabySteps<'a, B: Backend>: ScratchArenaTakeCnvPVecL<'a, B> + Sized {
+    /// Carves the baby-step cache of the transformation schedule `plan` (a transformation's
+    /// [`index`](crate::layouts::LinearTransformation::index)) for a source of the layout `a`, in
+    /// [`GLWELinearTransformationBabyStepsBytesOf::glwe_linear_transformation_baby_steps_bytes_of`](crate::GLWELinearTransformationBabyStepsBytesOf::glwe_linear_transformation_baby_steps_bytes_of)
+    /// bytes. Its operands are arbitrary until a preparation fills them.
+    ///
+    /// # Panics
+    ///
+    /// When the module does not serve the degree of `a`, or the arena is below that size.
+    fn take_glwe_linear_transformation_baby_steps_scratch<M, A>(
+        self,
+        module: &M,
+        plan: &LinearTransformationPlan,
+        a: &A,
+    ) -> (LinearTransformationBabySteps<B, CnvPVecLViewMut<'a, B>>, Self)
+    where
+        B: 'a,
+        M: ModuleN,
+        A: GLWEInfos,
+    {
+        let n: usize = operand_degree(module.n(), &[a.n()]);
+        let (cols, size) = (a.rank().as_usize() + 1, a.size());
+        let mut values = BTreeMap::new();
+        let mut scratch = self;
+        for &rot in &plan.baby_steps {
+            if let Entry::Vacant(entry) = values.entry(rot) {
+                let (operand, rest) = scratch.take_cnv_pvec_left_scratch(n, cols, size, PrepareHint::Reuse);
+                entry.insert(operand);
+                scratch = rest;
+            }
+        }
+        (
+            LinearTransformationBabySteps {
+                values,
+                rotations: plan.rotations,
+                k: a.k(),
+                _backend: PhantomData,
+            },
+            scratch,
+        )
+    }
+}
+
+/// Carves [`LWE`] layouts from a [`ScratchArena`].
+pub trait ScratchArenaTakeLWE<'a, B: Backend>: ScratchArenaTakeVecZnx<'a, B> + Sized {
     /// Allocates an [`LWE`] ciphertext from scratch space.
     fn take_lwe_scratch<A>(self, infos: &A) -> (LWEViewMut<'a, B>, Self)
     where
@@ -38,7 +88,10 @@ pub trait ScratchArenaTakeCore<'a, B: Backend>: ScratchArenaTakeBasic<'a, B> + S
             scratch,
         )
     }
+}
 
+/// Carves [`LWEPlaintext`] layouts from a [`ScratchArena`].
+pub trait ScratchArenaTakeLWEPlaintext<'a, B: Backend>: ScratchArenaTakeVecZnx<'a, B> + Sized {
     /// Allocates an [`LWEPlaintext`] from scratch space.
     fn take_lwe_plaintext_scratch<A>(self, infos: &A) -> (LWEPlaintextViewMut<'a, B>, Self)
     where
@@ -55,7 +108,10 @@ pub trait ScratchArenaTakeCore<'a, B: Backend>: ScratchArenaTakeBasic<'a, B> + S
             scratch,
         )
     }
+}
 
+/// Carves [`GLWE`] layouts from a [`ScratchArena`].
+pub trait ScratchArenaTakeGLWE<'a, B: Backend>: ScratchArenaTakeVecZnx<'a, B> + Sized {
     /// Allocates a [`GLWE`] ciphertext from scratch space.
     fn take_glwe_scratch<A>(self, infos: &A) -> (GLWEViewMut<'a, B>, Self)
     where
@@ -76,22 +132,25 @@ pub trait ScratchArenaTakeCore<'a, B: Backend>: ScratchArenaTakeBasic<'a, B> + S
         )
     }
 
-    /// Allocates a `Vec` of `size` [`GLWE`] ciphertexts from scratch space.
-    fn take_glwe_slice_scratch<A>(self, size: usize, infos: &A) -> (Vec<GLWEViewMut<'a, B>>, Self)
+    /// Allocates a `Vec` of `len` [`GLWE`] ciphertexts from scratch space.
+    fn take_glwe_slice_scratch<A>(self, len: usize, infos: &A) -> (Vec<GLWEViewMut<'a, B>>, Self)
     where
         B: 'a,
         A: GLWEInfos,
     {
         let mut scratch: Self = self;
-        let mut cts: Vec<GLWEViewMut<'a, B>> = Vec::with_capacity(size);
-        for _ in 0..size {
+        let mut cts: Vec<GLWEViewMut<'a, B>> = Vec::with_capacity(len);
+        for _ in 0..len {
             let (ct, new_scratch) = scratch.take_glwe_scratch(infos);
             scratch = new_scratch;
             cts.push(ct);
         }
         (cts, scratch)
     }
+}
 
+/// Carves [`GLWETensor`] layouts from a [`ScratchArena`].
+pub trait ScratchArenaTakeGLWETensor<'a, B: Backend>: ScratchArenaTakeVecZnx<'a, B> + Sized {
     /// Allocates a [`GLWETensor`] from scratch space.
     fn take_glwe_tensor_scratch<A>(self, infos: &A) -> (GLWETensorViewMut<'a, B>, Self)
     where
@@ -111,7 +170,10 @@ pub trait ScratchArenaTakeCore<'a, B: Backend>: ScratchArenaTakeBasic<'a, B> + S
             scratch,
         )
     }
+}
 
+/// Carves [`GLWEPlaintext`] layouts from a [`ScratchArena`].
+pub trait ScratchArenaTakeGLWEPlaintext<'a, B: Backend>: ScratchArenaTakeVecZnx<'a, B> + Sized {
     /// Allocates a [`GLWEPlaintext`] from scratch space.
     fn take_glwe_plaintext_scratch<A>(self, infos: &A) -> (GLWEPlaintextViewMut<'a, B>, Self)
     where
@@ -129,7 +191,10 @@ pub trait ScratchArenaTakeCore<'a, B: Backend>: ScratchArenaTakeBasic<'a, B> + S
             scratch,
         )
     }
+}
 
+/// Carves [`GLWESecretPrepared`] layouts from a [`ScratchArena`].
+pub trait ScratchArenaTakeGLWESecretPrepared<'a, B: Backend>: ScratchArenaTakeSvpPPol<'a, B> + Sized {
     /// Allocates a [`GLWESecretPrepared`] (DFT-domain secret key) from scratch space.
     fn take_glwe_secret_prepared_scratch(self, n: Degree, rank: Rank) -> (GLWESecretPreparedViewMut<'a, B>, Self)
     where
@@ -144,7 +209,10 @@ pub trait ScratchArenaTakeCore<'a, B: Backend>: ScratchArenaTakeBasic<'a, B> + S
             scratch,
         )
     }
+}
 
+/// Carves [`GLWESecret`] layouts from a [`ScratchArena`].
+pub trait ScratchArenaTakeGLWESecret<'a, B: Backend>: ScratchArenaTakeScalarZnx<'a, B> + Sized {
     /// Allocates a [`GLWESecret`] from scratch space.
     fn take_glwe_secret_scratch(self, n: Degree, rank: Rank) -> (GLWESecretViewMut<'a, B>, Self)
     where
@@ -159,7 +227,10 @@ pub trait ScratchArenaTakeCore<'a, B: Backend>: ScratchArenaTakeBasic<'a, B> + S
             scratch,
         )
     }
+}
 
+/// Carves [`GLWESecretTensor`] layouts from a [`ScratchArena`].
+pub trait ScratchArenaTakeGLWESecretTensor<'a, B: Backend>: ScratchArenaTakeScalarZnx<'a, B> + Sized {
     /// Allocates a [`GLWESecretTensor`] from scratch space.
     fn take_glwe_secret_tensor_scratch(self, n: Degree, rank: Rank) -> (GLWESecretTensorViewMut<'a, B>, Self)
     where
@@ -175,7 +246,10 @@ pub trait ScratchArenaTakeCore<'a, B: Backend>: ScratchArenaTakeBasic<'a, B> + S
             scratch,
         )
     }
+}
 
+/// Carves [`GGLWE`] layouts from a [`ScratchArena`].
+pub trait ScratchArenaTakeGGLWE<'a, B: Backend>: ScratchArenaTakeMatZnx<'a, B> + Sized {
     /// Allocates a [`GGLWE`] ciphertext from scratch space.
     fn take_gglwe_scratch<A>(self, infos: &A) -> (GGLWEViewMut<'a, B>, Self)
     where
@@ -202,7 +276,10 @@ pub trait ScratchArenaTakeCore<'a, B: Backend>: ScratchArenaTakeBasic<'a, B> + S
             scratch,
         )
     }
+}
 
+/// Carves [`GGLWEPrepared`] layouts from a [`ScratchArena`].
+pub trait ScratchArenaTakeGGLWEPrepared<'a, B: Backend>: ScratchArenaTakeVmpPMat<'a, B> + Sized {
     /// Allocates a [`GGLWEPrepared`] (DFT-domain GGLWE) from scratch space.
     fn take_gglwe_prepared_scratch<A, M>(self, module: &M, infos: &A) -> (GGLWEPreparedViewMut<'a, B>, Self)
     where
@@ -233,7 +310,10 @@ pub trait ScratchArenaTakeCore<'a, B: Backend>: ScratchArenaTakeBasic<'a, B> + S
             scratch,
         )
     }
+}
 
+/// Carves [`GGSW`] layouts from a [`ScratchArena`].
+pub trait ScratchArenaTakeGGSW<'a, B: Backend>: ScratchArenaTakeMatZnx<'a, B> + Sized {
     /// Allocates a [`GGSW`] ciphertext from scratch space.
     fn take_ggsw_scratch<A>(self, infos: &A) -> (GGSWViewMut<'a, B>, Self)
     where
@@ -258,7 +338,10 @@ pub trait ScratchArenaTakeCore<'a, B: Backend>: ScratchArenaTakeBasic<'a, B> + S
             scratch,
         )
     }
+}
 
+/// Carves [`GGSWPrepared`] layouts from a [`ScratchArena`].
+pub trait ScratchArenaTakeGGSWPrepared<'a, B: Backend>: ScratchArenaTakeVmpPMat<'a, B> + Sized {
     /// Allocates a [`GGSWPrepared`] (DFT-domain GGSW) from scratch space.
     fn take_ggsw_prepared_scratch<A, M>(self, module: &M, infos: &A) -> (GGSWPreparedViewMut<'a, B>, Self)
     where
@@ -288,7 +371,19 @@ pub trait ScratchArenaTakeCore<'a, B: Backend>: ScratchArenaTakeBasic<'a, B> + S
     }
 }
 
-impl<'a, B: Backend> ScratchArenaTakeCore<'a, B> for ScratchArena<'a, B> {}
+impl<'a, B: Backend> ScratchArenaTakeGLWELinearTransformationBabySteps<'a, B> for ScratchArena<'a, B> {}
+impl<'a, B: Backend> ScratchArenaTakeLWE<'a, B> for ScratchArena<'a, B> {}
+impl<'a, B: Backend> ScratchArenaTakeLWEPlaintext<'a, B> for ScratchArena<'a, B> {}
+impl<'a, B: Backend> ScratchArenaTakeGLWE<'a, B> for ScratchArena<'a, B> {}
+impl<'a, B: Backend> ScratchArenaTakeGLWETensor<'a, B> for ScratchArena<'a, B> {}
+impl<'a, B: Backend> ScratchArenaTakeGLWEPlaintext<'a, B> for ScratchArena<'a, B> {}
+impl<'a, B: Backend> ScratchArenaTakeGLWESecretPrepared<'a, B> for ScratchArena<'a, B> {}
+impl<'a, B: Backend> ScratchArenaTakeGLWESecret<'a, B> for ScratchArena<'a, B> {}
+impl<'a, B: Backend> ScratchArenaTakeGLWESecretTensor<'a, B> for ScratchArena<'a, B> {}
+impl<'a, B: Backend> ScratchArenaTakeGGLWE<'a, B> for ScratchArena<'a, B> {}
+impl<'a, B: Backend> ScratchArenaTakeGGLWEPrepared<'a, B> for ScratchArena<'a, B> {}
+impl<'a, B: Backend> ScratchArenaTakeGGSW<'a, B> for ScratchArena<'a, B> {}
+impl<'a, B: Backend> ScratchArenaTakeGGSWPrepared<'a, B> for ScratchArena<'a, B> {}
 
 #[cfg(test)]
 mod tests {

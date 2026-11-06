@@ -137,14 +137,14 @@ impl_external_product_delegate!(
     }
 );
 
-impl<BE: Backend + GLWEExternalProductImpl> crate::api::GLWEExternalProductInternal<BE> for Module<BE> {
-    fn glwe_external_product_internal_tmp_bytes<R, A, B>(&self, res_infos: &R, a_infos: &A, b_infos: &B) -> usize
+impl<BE: Backend + GLWEExternalProductImpl> crate::api::GLWEExternalProductDft<BE> for Module<BE> {
+    fn glwe_external_product_dft_tmp_bytes<R, A, B>(&self, res_infos: &R, a_infos: &A, b_infos: &B) -> usize
     where
         R: GLWEInfos,
         A: GLWEInfos,
         B: GGSWInfos,
     {
-        BE::glwe_external_product_internal_tmp_bytes(self, res_infos, a_infos, b_infos)
+        BE::glwe_external_product_dft_tmp_bytes(self, res_infos, a_infos, b_infos)
     }
 
     fn glwe_external_product_dft<'r, A>(

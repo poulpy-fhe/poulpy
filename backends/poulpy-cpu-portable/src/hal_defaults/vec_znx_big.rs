@@ -86,7 +86,7 @@ where
     }
 }
 
-fn vec_znx_scalar_product_default_impl<R, BE>(
+fn vec_znx_big_scalar_product_default_impl<R, BE>(
     res: &mut R,
     res_col: usize,
     a: &VecZnxBackendRef<'_, BE>,
@@ -372,7 +372,7 @@ where
         vec_znx_big_inner_sum_default_impl::<R, A, Self>(res, res_col, res_coeff, a, a_col);
     }
 
-    fn vec_znx_scalar_product_default<R>(
+    fn vec_znx_big_scalar_product_default<R>(
         _module: &Module<Self>,
         res: &mut R,
         res_col: usize,
@@ -386,7 +386,7 @@ where
         for<'x> Self::BufRef<'x>: HostDataRef,
         R: VecZnxBigToBackendMut<Self>,
     {
-        vec_znx_scalar_product_default_impl::<R, Self>(res, res_col, a, a_col, b, b_col);
+        vec_znx_big_scalar_product_default_impl::<R, Self>(res, res_col, a, a_col, b, b_col);
     }
 
     fn vec_znx_big_col_weighted_sum_default<R>(
@@ -706,7 +706,7 @@ where
         vec_znx_big_inner_sum_default_impl::<R, A, Self>(res, res_col, res_coeff, a, a_col);
     }
 
-    fn vec_znx_scalar_product_default<R>(
+    fn vec_znx_big_scalar_product_default<R>(
         _module: &Module<Self>,
         res: &mut R,
         res_col: usize,
@@ -720,7 +720,7 @@ where
         for<'x> Self::BufRef<'x>: HostDataRef,
         R: VecZnxBigToBackendMut<Self>,
     {
-        vec_znx_scalar_product_default_impl::<R, Self>(res, res_col, a, a_col, b, b_col);
+        vec_znx_big_scalar_product_default_impl::<R, Self>(res, res_col, a, a_col, b, b_col);
     }
 
     fn vec_znx_big_col_weighted_sum_default<R>(

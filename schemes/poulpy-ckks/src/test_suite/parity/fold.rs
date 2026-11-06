@@ -9,12 +9,12 @@ use super::{
 };
 use crate::{
     CKKSInfos, CKKSLayout, GLWEPlaintextMeta, SlotLayout, SlotsKind,
-    layouts::{CKKSCiphertext, CKKSCiphertextOwned, CKKSFoldKeysLayout, CKKSModuleAlloc, CKKSRingCiphertext, RingSwitchKeys},
+    layouts::{CKKSCiphertext, CKKSCiphertextAlloc, CKKSCiphertextOwned, CKKSFoldKeysLayout, CKKSRingCiphertext, RingSwitchKeys},
     oep::{CKKSFoldImpl, CKKSFoldLayoutImpl},
     test_suite::CKKSTestParams,
 };
 use poulpy_core::{
-    GLWEMaskFill,
+    GLWEFill,
     api::{GGLWEPreparedFactory, GLWEAutomorphismKeyPreparedFactory},
     layouts::{
         GGLWEInfos, GGLWEPrepared, GLWEAutomorphismKeyPrepared, GLWEInfos, GLWELayout, GetAutomorphismKey, LWEInfos, SetK,
@@ -64,7 +64,7 @@ fn run_case<BE, R>(
 where
     BE: Backend<ZnxWord = i64> + CKKSFoldLayoutImpl + CKKSFoldImpl<R>,
     R: Ring,
-    Module<BE>: CKKSModuleAlloc<BE> + GLWEMaskFill<BE>,
+    Module<BE>: GLWEFill<BE>,
 {
     let keys_layout = CKKSFoldKeysLayout {
         ring_switch: ring_switch.map(RingSwitchKeys::gglwe_layout),
@@ -132,7 +132,7 @@ where
 fn run_fold<BE>(params: CKKSTestParams, module: &Module<BE>) -> Vec<Outcome>
 where
     BE: Backend<ZnxWord = i64, Ring = Standard> + CKKSFoldLayoutImpl + CKKSFoldImpl<Standard> + CKKSFoldImpl<ConjugateInvariant>,
-    Module<BE>: CKKSModuleAlloc<BE> + GLWEMaskFill<BE> + GLWEAutomorphismKeyPreparedFactory<BE> + GGLWEPreparedFactory<BE>,
+    Module<BE>: GLWEFill<BE> + GLWEAutomorphismKeyPreparedFactory<BE> + GGLWEPreparedFactory<BE>,
 {
     let (n, b) = (module.n(), params.base2k);
     let (log_delta, k_in, k_refreshed, k_out) = (12, 3 * b, 4 * b, 6 * b);
@@ -312,7 +312,7 @@ impl<BE: Backend> GetAutomorphismKey<BE> for Once<'_, BE> {
 fn check_mixed_radices<BE>(module: &Module<BE>)
 where
     BE: Backend<ZnxWord = i64, Ring = Standard> + CKKSFoldLayoutImpl + CKKSFoldImpl<Standard>,
-    Module<BE>: CKKSModuleAlloc<BE> + GLWEMaskFill<BE> + GLWEAutomorphismKeyPreparedFactory<BE> + GGLWEPreparedFactory<BE>,
+    Module<BE>: CKKSCiphertextAlloc<BE> + GLWEFill<BE> + GLWEAutomorphismKeyPreparedFactory<BE> + GGLWEPreparedFactory<BE>,
 {
     let n = module.n();
     let ring_switch = RingSwitchKeys {
@@ -380,7 +380,7 @@ where
 fn check_unfold_errors<BE>(module: &Module<BE>)
 where
     BE: Backend<ZnxWord = i64, Ring = Standard> + CKKSFoldLayoutImpl + CKKSFoldImpl<Standard>,
-    Module<BE>: CKKSModuleAlloc<BE> + GLWEMaskFill<BE> + GLWEAutomorphismKeyPreparedFactory<BE> + GGLWEPreparedFactory<BE>,
+    Module<BE>: GLWEFill<BE> + GLWEAutomorphismKeyPreparedFactory<BE> + GGLWEPreparedFactory<BE>,
 {
     let n = module.n();
     let outbound = prepared_gglwe(module, &key_layout(n, 17, 60, 2, 1, 1), 211);
@@ -452,7 +452,7 @@ where
 fn check_large_digits<BE>(module: &Module<BE>)
 where
     BE: Backend<ZnxWord = i64, Ring = Standard> + CKKSFoldLayoutImpl + CKKSFoldImpl<Standard> + CKKSFoldImpl<ConjugateInvariant>,
-    Module<BE>: CKKSModuleAlloc<BE> + GLWEMaskFill<BE>,
+    Module<BE>: GLWEFill<BE>,
 {
     let (n, b) = (module.n(), (i64::BITS - 2) as usize);
     for degree in [n, n / 2] {
@@ -493,7 +493,7 @@ fn fold_snapshots<BE, R>(module: &Module<BE>, ins: &[CKKSRingCiphertext<BE, R>])
 where
     BE: Backend<ZnxWord = i64> + CKKSFoldLayoutImpl + CKKSFoldImpl<R>,
     R: Ring,
-    Module<BE>: CKKSModuleAlloc<BE>,
+    Module<BE>: CKKSCiphertextAlloc<BE>,
 {
     let n = module.n();
     let keys = CKKSFoldKeysLayout {
@@ -517,7 +517,7 @@ where
 fn check_ci_unfold_width<BE>(module: &Module<BE>)
 where
     BE: Backend<ZnxWord = i64, Ring = Standard> + CKKSFoldLayoutImpl + CKKSFoldImpl<ConjugateInvariant>,
-    Module<BE>: CKKSModuleAlloc<BE> + GLWEMaskFill<BE>,
+    Module<BE>: GLWEFill<BE>,
 {
     let n = module.n();
     let mut refreshed = vec![fixture_ciphertext(module, &layout(n, 12, 48, 8, SlotsKind::Complex), 241)];
@@ -554,7 +554,7 @@ where
 fn denormalize<BE>(module: &Module<BE>, ct: &CKKSCiphertextOwned<BE>) -> CKKSCiphertextOwned<BE>
 where
     BE: Backend<ZnxWord = i64, Ring = Standard>,
-    Module<BE>: CKKSModuleAlloc<BE>,
+    Module<BE>: CKKSCiphertextAlloc<BE>,
 {
     let (n, b, k) = (ct.n().as_usize(), ct.base2k().as_usize(), ct.k());
     let size = k.as_usize().div_ceil(b);
@@ -588,8 +588,8 @@ pub fn test_fold_parity<BR, BT, F>(params: CKKSTestParams, module_ref: &Module<B
 where
     BR: Backend<ZnxWord = i64, Ring = Standard> + CKKSFoldLayoutImpl + CKKSFoldImpl<Standard> + CKKSFoldImpl<ConjugateInvariant>,
     BT: Backend<ZnxWord = i64, Ring = Standard> + CKKSFoldLayoutImpl + CKKSFoldImpl<Standard> + CKKSFoldImpl<ConjugateInvariant>,
-    Module<BR>: CKKSModuleAlloc<BR> + GLWEMaskFill<BR> + GLWEAutomorphismKeyPreparedFactory<BR> + GGLWEPreparedFactory<BR>,
-    Module<BT>: CKKSModuleAlloc<BT> + GLWEMaskFill<BT> + GLWEAutomorphismKeyPreparedFactory<BT> + GGLWEPreparedFactory<BT>,
+    Module<BR>: GLWEFill<BR> + GLWEAutomorphismKeyPreparedFactory<BR> + GGLWEPreparedFactory<BR>,
+    Module<BT>: GLWEFill<BT> + GLWEAutomorphismKeyPreparedFactory<BT> + GGLWEPreparedFactory<BT>,
 {
     assert_eq!(module_ref.n(), module_test.n());
     check_mixed_radices(module_ref);

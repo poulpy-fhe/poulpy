@@ -43,7 +43,7 @@ impl Display for CnvSweepParms {
 }
 
 /// Sweep parameters for the negacyclic reim FFT/IFFT (`m` is the transform
-/// half-length passed to `NegacyclicFFTNew::new`; the transformed data has
+/// half-length passed to `ReimNew::new`; the transformed data has
 /// length `2 * m`).
 #[derive(Debug, Clone)]
 pub struct ReimSweepParams {

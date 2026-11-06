@@ -19,25 +19,6 @@ use poulpy_hal::{
     source::Source,
 };
 impl<BRA: BlindRotationAlgo, BE: CircuitBootstrappingExecuteImpl<BRA>> CircuitBootstrappingExecute<BRA, BE> for Module<BE> {
-    fn circuit_bootstrapping_execute_tmp_bytes<R, A>(
-        &self,
-        block_size: usize,
-        extension_factor: usize,
-        res_infos: &R,
-        cbt_infos: &A,
-    ) -> usize
-    where
-        R: GGSWInfos,
-        A: CircuitBootstrappingKeyInfos,
-    {
-        <BE as CircuitBootstrappingExecuteImpl<BRA>>::circuit_bootstrapping_execute_tmp_bytes(
-            self,
-            block_size,
-            extension_factor,
-            res_infos,
-            cbt_infos,
-        )
-    }
     fn circuit_bootstrapping_execute_to_constant_tmp_bytes<R, A>(
         &self,
         block_size: usize,
@@ -205,14 +186,14 @@ impl<BRA: BlindRotationAlgo, BE: CircuitBootstrappingKeyEncryptSkImpl<BRA>> Circ
         )
     }
 }
-impl<BRA: BlindRotationAlgo, BE: CircuitBootstrappingKeyPreparedImpl<BRA>> CircuitBootstrappingKeyPreparedFactory<BRA, BE>
+impl<BRA: BlindRotationAlgo, BE: CircuitBootstrappingKeyPreparedFactoryImpl<BRA>> CircuitBootstrappingKeyPreparedFactory<BRA, BE>
     for Module<BE>
 {
     fn circuit_bootstrapping_key_prepare_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: CircuitBootstrappingKeyInfos,
     {
-        <BE as CircuitBootstrappingKeyPreparedImpl<BRA>>::circuit_bootstrapping_key_prepare_tmp_bytes(self, infos)
+        <BE as CircuitBootstrappingKeyPreparedFactoryImpl<BRA>>::circuit_bootstrapping_key_prepare_tmp_bytes(self, infos)
     }
     fn circuit_bootstrapping_key_prepare(
         &self,
@@ -220,6 +201,6 @@ impl<BRA: BlindRotationAlgo, BE: CircuitBootstrappingKeyPreparedImpl<BRA>> Circu
         other: &CircuitBootstrappingKey<BE::OwnedBuf, BRA, BE::ZnxWord>,
         scratch: &mut ScratchArena<'_, BE>,
     ) {
-        <BE as CircuitBootstrappingKeyPreparedImpl<BRA>>::circuit_bootstrapping_key_prepare(self, res, other, scratch)
+        <BE as CircuitBootstrappingKeyPreparedFactoryImpl<BRA>>::circuit_bootstrapping_key_prepare(self, res, other, scratch)
     }
 }

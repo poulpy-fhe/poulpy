@@ -2,7 +2,7 @@
 use poulpy_ckks::{
     CKKSLayout, GLWEPlaintextMeta, Scale, SlotLayout,
     api::{CKKSModuleInfos, CKKSReplicatedOps},
-    layouts::{CKKSModuleAlloc, ReplicatedConversion},
+    layouts::{CKKSCiphertextAlloc, ReplicatedConversion},
     shaping::ShapingUnit,
     test_suite::parity::{
         helpers::{fixture_ciphertext, snapshot},
@@ -108,7 +108,7 @@ fn ckks_replicated_workspace_reuses_prepared_buffers() {
             &mut scratch.borrow(),
         )
         .unwrap();
-    let prepared_bytes = module.bytes_of_cnv_pvec_left(256, 2, (a.k().as_usize() + 16).div_ceil(19), PrepareHint::Reuse);
+    let prepared_bytes = module.cnv_pvec_left_bytes_of(256, 2, (a.k().as_usize() + 16).div_ceil(19), PrepareHint::Reuse);
     LARGE_ALLOCATIONS.store(0, Relaxed);
     THRESHOLD.store(prepared_bytes, Relaxed);
     let result = module.ckks_to_replicated_into(&mut out, &b, &conversion, &mut workspace, &keys, &mut scratch.borrow());

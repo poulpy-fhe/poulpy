@@ -1,12 +1,12 @@
 use poulpy_core::layouts::{GGLWECompressedSeed, GGSWInfos, LWEInfos};
 use poulpy_hal::layouts::Module;
 
-use crate::{layouts::GGSWShareOwned, oep::GGLWEPatCompressedImpl};
+use crate::{layouts::MHEGGSWShareOwned, oep::MHEGGLWEPatCompressedImpl};
 
-pub(crate) fn mhe_ggsw_share_aggregate_derived<BE: GGLWEPatCompressedImpl>(
+pub(crate) fn mhe_ggsw_share_aggregate_derived<BE: MHEGGLWEPatCompressedImpl>(
     module: &Module<BE>,
-    res: &mut GGSWShareOwned<BE>,
-    a: &GGSWShareOwned<BE>,
+    res: &mut MHEGGSWShareOwned<BE>,
+    a: &MHEGGSWShareOwned<BE>,
 ) {
     assert!(res.ggsw_layout() == a.ggsw_layout(), "invalid aggregation: layouts differ");
     // Every part is checked before any is summed, so a rejected share leaves `res` unchanged.
@@ -15,6 +15,6 @@ pub(crate) fn mhe_ggsw_share_aggregate_derived<BE: GGLWEPatCompressedImpl>(
         crate::metadata::aggregate_metadata(res_part.noise(), a_part.noise());
     }
     for (res_part, a_part) in res.parts_mut().zip(a.parts()) {
-        BE::gglwe_pat_compressed_aggregate_assign(module, res_part, a_part);
+        BE::mhe_gglwe_pat_compressed_aggregate_assign(module, res_part, a_part);
     }
 }

@@ -7,6 +7,7 @@
 mod convolution;
 mod mat_znx;
 mod module;
+mod scalar_znx;
 mod scratch;
 mod svp_ppol;
 mod vec_znx;

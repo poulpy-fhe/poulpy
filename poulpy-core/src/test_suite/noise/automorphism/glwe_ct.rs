@@ -15,8 +15,8 @@ use crate::{
     api::{GLWEAutomorphismKeyPreparedFactory, GLWESecretPreparedFactory},
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
-        GGLWEInfos, GLWE, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout, GLWELayout, GLWEPlaintext, GLWESecret, LWEInfos,
-        ModuleCoreAlloc, TorusPrecision,
+        GGLWEInfos, GLWE, GLWEAlloc, GLWEAutomorphismKey, GLWEAutomorphismKeyAlloc, GLWEAutomorphismKeyLayout, GLWELayout,
+        GLWEPlaintext, GLWEPlaintextAlloc, GLWESecret, GLWESecretAlloc, LWEInfos, TorusPrecision,
         prepared::{GLWEAutomorphismKeyPrepared, GLWESecretPrepared},
     },
     noise::GGLWENoiseModel,

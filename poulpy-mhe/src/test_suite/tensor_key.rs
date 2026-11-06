@@ -3,10 +3,10 @@
 
 use poulpy_core::{
     DEFAULT_SIGMA_XE, Distribution, GGLWENoise, GetDistributionMut,
-    api::{GLWEPublicKeyPreparedFactory, GLWESecretPreparedFactory, GLWESecretSampling, GLWESecretTensorFactory},
+    api::{GLWEPublicKeyPreparedFactory, GLWESecretPreparedFactory, GLWESecretSampling, GLWESecretTensorFromGLWESecret},
     layouts::{
-        Base2K, Dnum, Dsize, GLWELayout, GLWEPublicKeyPrepared, GLWESecret, GLWESecretLayout, GLWESecretTensor, GLWETensorKey,
-        GLWETensorKeyLayout, LWEInfos, ModuleCoreAlloc, TorusPrecision, k_digit_of,
+        Base2K, Dnum, Dsize, GLWELayout, GLWEPublicKeyPrepared, GLWESecret, GLWESecretAlloc, GLWESecretLayout, GLWESecretTensor,
+        GLWESecretTensorAlloc, GLWETensorKey, GLWETensorKeyAlloc, GLWETensorKeyLayout, LWEInfos, TorusPrecision, k_digit_of,
     },
     test_suite::with_scratch,
 };
@@ -25,8 +25,8 @@ use super::{
     pat::assert_gglwe_noise_within,
 };
 use crate::{
-    api::{GLWEPublicKeyMHEProtocol, GLWETensorKeyMHEProtocol},
-    layouts::MHEModuleAlloc,
+    api::{MHEGLWEPublicKeyProtocol, MHEGLWETensorKeyProtocol},
+    layouts::MHEGLWETensorKeyShareAlloc,
 };
 
 pub fn test_glwe_tensor_key<BE>(module: &Module<BE>)
@@ -34,12 +34,12 @@ where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: MHEModuleAlloc<BE>
-        + GLWETensorKeyMHEProtocol<BE>
-        + GLWEPublicKeyMHEProtocol<BE>
+    Module<BE>: MHEGLWETensorKeyShareAlloc<BE>
+        + MHEGLWETensorKeyProtocol<BE>
+        + MHEGLWEPublicKeyProtocol<BE>
         + GLWESecretSampling<BE>
         + GLWESecretPreparedFactory<BE>
-        + GLWESecretTensorFactory<BE>
+        + GLWESecretTensorFromGLWESecret<BE>
         + GLWEPublicKeyPreparedFactory<BE>
         + VecZnxAddScalarAssign<BE>
         + GGLWENoise<BE>,
@@ -55,14 +55,14 @@ where
         let mut pk = collective_public_key(module, &parties, &pk_layout);
         let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
             module
-                .glwe_secret_tensor_prepare_tmp_bytes(RANK)
+                .glwe_secret_tensor_from_glwe_secret_tmp_bytes(RANK)
                 .max(module.gglwe_noise_tmp_bytes(&layout)),
         );
         let mut pt_want: GLWESecretTensor<AlignedBuf, i64> = module.glwe_secret_tensor_alloc(RANK);
-        module.glwe_secret_tensor_prepare(&mut pt_want, &secret_sum(module, &parties), &mut scratch.borrow());
+        module.glwe_secret_tensor_from_glwe_secret(&mut pt_want, &secret_sum(module, &parties), &mut scratch.borrow());
 
-        let mut acc = module.glwe_tensor_key_share_alloc_from_infos(&layout);
-        let mut share = module.glwe_tensor_key_share_alloc_from_infos(&layout);
+        let mut acc = module.mhe_glwe_tensor_key_share_alloc_from_infos(&layout);
+        let mut share = module.mhe_glwe_tensor_key_share_alloc_from_infos(&layout);
         for (i, (sk, _)) in parties.iter().enumerate() {
             let dst = if i == 0 { &mut acc } else { &mut share };
             let mut source_xu = Source::new([20 + i as u8; 32]);
@@ -144,8 +144,8 @@ where
 pub fn test_mhe_glwe_tensor_key_share_gen_rejects_pk_precision<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
-    Module<BE>: MHEModuleAlloc<BE>
-        + GLWETensorKeyMHEProtocol<BE>
+    Module<BE>: MHEGLWETensorKeyShareAlloc<BE>
+        + MHEGLWETensorKeyProtocol<BE>
         + GLWESecretSampling<BE>
         + GLWESecretPreparedFactory<BE>
         + GLWEPublicKeyPreparedFactory<BE>,
@@ -156,7 +156,7 @@ where
 
     let (sk, _) = secret_from_seed(module, [100u8; 32]);
     let pk: GLWEPublicKeyPrepared<AlignedBuf, BE> = module.glwe_public_key_prepared_alloc_from_infos(&pk_layout);
-    let mut res = module.glwe_tensor_key_share_alloc_from_infos(&layout);
+    let mut res = module.mhe_glwe_tensor_key_share_alloc_from_infos(&layout);
     let before = res.clone();
     let mut source_a = Source::new([20u8; 32]);
     let mut source_b = Source::new([10u8; 32]);
@@ -174,8 +174,8 @@ where
 pub fn test_mhe_glwe_tensor_key_share_gen_rejects_secret_degree<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
-    Module<BE>: MHEModuleAlloc<BE>
-        + GLWETensorKeyMHEProtocol<BE>
+    Module<BE>: MHEGLWETensorKeyShareAlloc<BE>
+        + MHEGLWETensorKeyProtocol<BE>
         + GLWESecretSampling<BE>
         + GLWESecretPreparedFactory<BE>
         + GLWEPublicKeyPreparedFactory<BE>,
@@ -191,7 +191,7 @@ where
     let mut sk: GLWESecret<AlignedBuf, i64> = module.glwe_secret_alloc_from_infos(&sk_layout);
     module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut Source::new([100u8; 32]));
     let pk: GLWEPublicKeyPrepared<AlignedBuf, BE> = module.glwe_public_key_prepared_alloc_from_infos(&pk_layout);
-    let mut res = module.glwe_tensor_key_share_alloc_from_infos(&layout);
+    let mut res = module.mhe_glwe_tensor_key_share_alloc_from_infos(&layout);
     let before = res.clone();
     let mut source_a = Source::new([20u8; 32]);
     let mut source_b = Source::new([10u8; 32]);
@@ -230,8 +230,8 @@ fn public_key_layout<BE: Backend>(module: &Module<BE>, k: TorusPrecision) -> GLW
 pub fn test_mhe_glwe_tensor_key_share_gen_rejects_pk_shape<BE>(module: &Module<BE>)
 where
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
-    Module<BE>: MHEModuleAlloc<BE>
-        + GLWETensorKeyMHEProtocol<BE>
+    Module<BE>: MHEGLWETensorKeyShareAlloc<BE>
+        + MHEGLWETensorKeyProtocol<BE>
         + GLWESecretSampling<BE>
         + GLWESecretPreparedFactory<BE>
         + GLWEPublicKeyPreparedFactory<BE>,
@@ -261,7 +261,7 @@ where
         if case == 2 {
             *pk.dist_mut() = Distribution::ENCAPSULATED("private distribution label");
         }
-        let mut res = module.glwe_tensor_key_share_alloc_from_infos(&layout);
+        let mut res = module.mhe_glwe_tensor_key_share_alloc_from_infos(&layout);
         let before = res.clone();
         let mut source_a = Source::new([20u8; 32]);
         let mut source_b = Source::new([10u8; 32]);

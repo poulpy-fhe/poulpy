@@ -29,7 +29,7 @@ use crate::{
 /// The memory, layout, synchrony and aliasing rules of
 /// `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait GLWECIConversionImpl: Backend<Ring = Standard> + HalVecZnxImpl + EncryptionImpl {
-    /// Reproduces [`glwe_ci_embed_reference`](crate::reference::ci_conversion::glwe_ci_embed_reference) bit for bit;
+    /// Reproduces [`glwe_ci_embed_reference`](crate::reference::ci_conversion::GLWECIConversionReference::glwe_ci_embed_reference) bit for bit;
     /// free in kernels.
     fn glwe_ci_embed<R, A>(module: &Module<Self>, res: &mut R, a: &A)
     where
@@ -37,7 +37,7 @@ pub unsafe trait GLWECIConversionImpl: Backend<Ring = Standard> + HalVecZnxImpl 
         A: GLWEToBackendRef<Self> + GLWEInfos;
 
     /// Reproduces
-    /// [`glwe_secret_ci_embed_reference`](crate::reference::ci_conversion::glwe_secret_ci_embed_reference)
+    /// [`glwe_secret_ci_embed_reference`](crate::reference::ci_conversion::GLWECIConversionReference::glwe_secret_ci_embed_reference)
     /// bit for bit; it takes no scratch.
     fn glwe_secret_ci_embed<R, S>(module: &Module<Self>, res: &mut R, src: &S)
     where
@@ -50,7 +50,7 @@ pub unsafe trait GLWECIConversionImpl: Backend<Ring = Standard> + HalVecZnxImpl 
         R: GLWEInfos,
         A: GLWEInfos;
 
-    /// Reproduces [`glwe_ci_trace_reference`](crate::reference::ci_conversion::glwe_ci_trace_reference) bit for bit,
+    /// Reproduces [`glwe_ci_trace_reference`](crate::reference::ci_conversion::GLWECIConversionReference::glwe_ci_trace_reference) bit for bit,
     /// within [`Self::glwe_ci_trace_tmp_bytes`]; free in kernels and scratch use.
     fn glwe_ci_trace<R, A>(module: &Module<Self>, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, Self>)
     where
@@ -130,7 +130,7 @@ macro_rules! impl_glwe_ci_conversion_reference_full {
                 R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
                 A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
             {
-                $crate::reference::ci_conversion::glwe_ci_embed_reference::<$be, _, _, _>(module, res, a)
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::ci_conversion::GLWECIConversionReference<$be>>::glwe_ci_embed_reference(module, res, a)
             }
 
             fn glwe_secret_ci_embed<R, S>(module: &::poulpy_hal::layouts::Module<$be>, res: &mut R, src: &S)
@@ -138,7 +138,7 @@ macro_rules! impl_glwe_ci_conversion_reference_full {
                 R: $crate::layouts::GLWESecretToBackendMut<$be> + $crate::GetDistributionMut,
                 S: $crate::layouts::GLWESecretToBackendRef<$be>,
             {
-                $crate::reference::ci_conversion::glwe_secret_ci_embed_reference::<$be, _, _>(module, res, src)
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::ci_conversion::GLWECIConversionReference<$be>>::glwe_secret_ci_embed_reference(module, res, src)
             }
 
             fn glwe_ci_trace_tmp_bytes<R, A>(module: &::poulpy_hal::layouts::Module<$be>, res_infos: &R, a_infos: &A) -> usize
@@ -146,7 +146,7 @@ macro_rules! impl_glwe_ci_conversion_reference_full {
                 R: $crate::layouts::GLWEInfos,
                 A: $crate::layouts::GLWEInfos,
             {
-                $crate::reference::ci_conversion::glwe_ci_trace_tmp_bytes_reference::<$be, _, _, _>(module, res_infos, a_infos)
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::ci_conversion::GLWECIConversionReference<$be>>::glwe_ci_trace_tmp_bytes_reference(module, res_infos, a_infos)
             }
 
             fn glwe_ci_trace<R, A>(
@@ -158,7 +158,7 @@ macro_rules! impl_glwe_ci_conversion_reference_full {
                 R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
                 A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
             {
-                $crate::reference::ci_conversion::glwe_ci_trace_reference::<$be, _, _, _>(module, res, a, scratch)
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::ci_conversion::GLWECIConversionReference<$be>>::glwe_ci_trace_reference(module, res, a, scratch)
             }
         }
     };

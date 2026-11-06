@@ -1,5 +1,8 @@
 use crate::blind_rotation::{BlindRotationAlgo, BlindRotationKeyCompressed, BlindRotationKeyInfos, CGGI};
-use poulpy_core::{Distribution, layouts::ModuleCoreCompressedAlloc};
+use poulpy_core::{
+    Distribution,
+    layouts::{GGSWCompressedAlloc, GGSWCompressedBytesOf, ModuleCoreCompressedAlloc},
+};
 use poulpy_hal::{
     api::ModuleN,
     layouts::{Backend, Module},
@@ -9,7 +12,7 @@ use std::marker::PhantomData;
 /// Allocates and sizes compressed blind-rotation keys, directly on the module,
 /// which implements it for each algorithm with a compressed key.
 pub trait BlindRotationKeyCompressedFactory<BRA: BlindRotationAlgo, BE: Backend>:
-    ModuleCoreCompressedAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord> + ModuleN
+    ModuleCoreCompressedAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord> + GGSWCompressedAlloc + GGSWCompressedBytesOf + ModuleN
 {
     /// Allocates a zero-filled compressed key of `infos`, one compressed GGSW
     /// per LWE coefficient, with `Distribution::NONE`, which compressed key

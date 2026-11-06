@@ -8,10 +8,10 @@ use crate::{
     api::{
         GGLWECompressedEncryptSk, GGLWEEncryptSk, GGLWEToGGSWKeyCompressedEncryptSk, GGLWEToGGSWKeyEncryptSk,
         GGSWCompressedEncryptSk, GGSWEncryptPk, GGSWEncryptSk, GLWEAutomorphismKeyCompressedEncryptSk,
-        GLWEAutomorphismKeyEncryptSk, GLWECompressedEncryptSk, GLWEEncryptPk, GLWEEncryptPkSmudged, GLWEEncryptSk, GLWEMaskFill,
+        GLWEAutomorphismKeyEncryptSk, GLWECompressedEncryptSk, GLWEEncryptPk, GLWEEncryptPkSmudged, GLWEEncryptSk, GLWEFill,
         GLWEPublicKeyCompressedGenerate, GLWEPublicKeyGenerate, GLWESwitchingKeyCompressedEncryptSk, GLWESwitchingKeyEncryptSk,
-        GLWETensorKeyCompressedEncryptSk, GLWETensorKeyEncryptSk, GLWEToLWESwitchingKeyEncryptSk, LWEEncryptSk, LWEFillMask,
-        LWESwitchingKeyEncrypt, LWEToGLWESwitchingKeyEncryptSk,
+        GLWETensorKeyCompressedEncryptSk, GLWETensorKeyEncryptSk, GLWEToLWEKeyEncryptSk, LWEEncryptSk, LWEFillMask,
+        LWESwitchingKeyEncryptSk, LWEToGLWEKeyEncryptSk,
     },
     layouts::{
         GGLWECompressedSeedMut, GGLWECompressedToBackendMut, GGLWEInfos, GGLWEToBackendMut, GGLWEToGGSWKeyCompressedToBackendMut,
@@ -37,40 +37,40 @@ macro_rules! impl_encryption_delegate {
 }
 
 impl_encryption_delegate!(
-    GLWEMaskFill<BE>,
-    fn fill_glwe_mask_from_source<R>(&self, res: &mut R, source_xa: &mut Source)
+    GLWEFill<BE>,
+    fn glwe_fill_mask_from_source<R>(&self, res: &mut R, source_xa: &mut Source)
     where
         R: GLWEToBackendMut<BE>,
     {
-        BE::fill_glwe_mask_from_source(self, res, source_xa)
+        BE::glwe_fill_mask_from_source(self, res, source_xa)
     },
-    fn fill_glwe_mask_from_seed<R>(&self, res: &mut R, seed_xa: [u8; 32])
+    fn glwe_fill_mask_from_seed<R>(&self, res: &mut R, seed_xa: [u8; 32])
     where
         R: GLWEToBackendMut<BE>,
     {
-        BE::fill_glwe_mask_from_seed(self, res, seed_xa)
+        BE::glwe_fill_mask_from_seed(self, res, seed_xa)
     },
-    fn fill_glwe_from_source<R>(&self, res: &mut R, source: &mut Source)
+    fn glwe_fill_from_source<R>(&self, res: &mut R, source: &mut Source)
     where
         R: GLWEToBackendMut<BE>,
     {
-        BE::fill_glwe_from_source(self, res, source)
+        BE::glwe_fill_from_source(self, res, source)
     }
 );
 
 impl_encryption_delegate!(
     LWEFillMask<BE>,
-    fn fill_lwe_mask_from_source<R>(&self, base2k: usize, res: &mut R, source_xa: &mut Source)
+    fn lwe_fill_mask_from_source<R>(&self, base2k: usize, res: &mut R, source_xa: &mut Source)
     where
         R: LWEToBackendMut<BE>,
     {
-        BE::fill_lwe_mask_from_source(self, base2k, res, source_xa)
+        BE::lwe_fill_mask_from_source(self, base2k, res, source_xa)
     },
-    fn fill_lwe_mask_from_seed<R>(&self, base2k: usize, res: &mut R, seed_xa: [u8; 32])
+    fn lwe_fill_mask_from_seed<R>(&self, base2k: usize, res: &mut R, seed_xa: [u8; 32])
     where
         R: LWEToBackendMut<BE>,
     {
-        BE::fill_lwe_mask_from_seed(self, base2k, res, seed_xa)
+        BE::lwe_fill_mask_from_seed(self, base2k, res, seed_xa)
     }
 );
 
@@ -428,7 +428,7 @@ impl_encryption_delegate!(
 );
 
 impl_encryption_delegate!(
-    GLWEToLWESwitchingKeyEncryptSk<BE>,
+    GLWEToLWEKeyEncryptSk<BE>,
     fn glwe_to_lwe_key_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos,
@@ -453,7 +453,7 @@ impl_encryption_delegate!(
 );
 
 impl_encryption_delegate!(
-    LWESwitchingKeyEncrypt<BE>,
+    LWESwitchingKeyEncryptSk<BE>,
     fn lwe_switching_key_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos,
@@ -478,7 +478,7 @@ impl_encryption_delegate!(
 );
 
 impl_encryption_delegate!(
-    LWEToGLWESwitchingKeyEncryptSk<BE>,
+    LWEToGLWEKeyEncryptSk<BE>,
     fn lwe_to_glwe_key_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos,

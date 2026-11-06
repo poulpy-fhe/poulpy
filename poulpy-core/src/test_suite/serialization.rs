@@ -12,11 +12,10 @@ use crate::layouts::{
     GLWEToLWEKey, LWE, LWEInfos, LWESwitchingKey, LWEToGLWEKey, Rank, TorusPrecision,
     compressed::{
         GGLWECompressed, GGSWCompressed, GLWEAutomorphismKeyCompressed, GLWECompressed, GLWESwitchingKeyCompressed,
-        GLWETensorKeyCompressed, GLWEToLWESwitchingKeyCompressed, LWECompressed, LWESwitchingKeyCompressed,
-        LWEToGLWEKeyCompressed,
+        GLWETensorKeyCompressed, GLWEToLWEKeyCompressed, LWECompressed, LWESwitchingKeyCompressed, LWEToGLWEKeyCompressed,
     },
 };
-use crate::{ComponentNoise, FreshNoiseEstimate, api::GLWEMaskFill};
+use crate::{ComponentNoise, FreshNoiseEstimate, api::GLWEFill};
 
 fn test_reader_writer_interface<T>([original, mut receiver]: [T; 2])
 where
@@ -98,7 +97,7 @@ const K_KEY_AUX: TorusPrecision = TorusPrecision(DSIZE.0 + N_GLWE.0.ilog2());
 pub fn test_serialization<BE>(module: &Module<BE>)
 where
     BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
-    Module<BE>: GLWEMaskFill<BE> + VecZnxFillUniformSource<BE> + VecZnxFillUniformSourceAll<BE>,
+    Module<BE>: GLWEFill<BE> + VecZnxFillUniformSource<BE> + VecZnxFillUniformSourceAll<BE>,
 {
     let mut source = Source::new([0u8; 32]);
 
@@ -107,7 +106,7 @@ where
     let mut lwe: [LWE<AlignedBuf, i64>; 2] = [(); 2].map(|_| LWE::alloc(N_LWE, BASE2K, K));
     let mut lwe_c: [LWECompressed<AlignedBuf, i64>; 2] = [(); 2].map(|_| LWECompressed::alloc::<BE>(BASE2K, K));
     for glwe in &mut glwe {
-        module.fill_glwe_from_source(glwe, &mut source);
+        module.glwe_fill_from_source(glwe, &mut source);
     }
     let mut pk: [GLWEPublicKey<AlignedBuf, i64>; 2] = [(); 2].map(|_| GLWEPublicKey::alloc(N_GLWE, BASE2K, K, RANK));
     for v in glwe_c
@@ -136,8 +135,8 @@ where
     let mut tsk_c: [GLWETensorKeyCompressed<AlignedBuf, i64>; 2] =
         [(); 2].map(|_| GLWETensorKeyCompressed::alloc::<BE>(N_GLWE, BASE2K, DNUM, DSIZE, K_KEY_AUX, RANK));
     let mut g2l: [GLWEToLWEKey<AlignedBuf, i64>; 2] = [(); 2].map(|_| GLWEToLWEKey::alloc(N_GLWE, BASE2K, DNUM, K_KEY_AUX, RANK));
-    let mut g2l_c: [GLWEToLWESwitchingKeyCompressed<AlignedBuf, i64>; 2] =
-        [(); 2].map(|_| GLWEToLWESwitchingKeyCompressed::alloc::<BE>(N_GLWE, BASE2K, DNUM, K_KEY_AUX, RANK));
+    let mut g2l_c: [GLWEToLWEKeyCompressed<AlignedBuf, i64>; 2] =
+        [(); 2].map(|_| GLWEToLWEKeyCompressed::alloc::<BE>(N_GLWE, BASE2K, DNUM, K_KEY_AUX, RANK));
     let mut l2g: [LWEToGLWEKey<AlignedBuf, i64>; 2] = [(); 2].map(|_| LWEToGLWEKey::alloc(N_GLWE, BASE2K, DNUM, K_KEY_AUX, RANK));
     let mut l2g_c: [LWEToGLWEKeyCompressed<AlignedBuf, i64>; 2] =
         [(); 2].map(|_| LWEToGLWEKeyCompressed::alloc::<BE>(N_GLWE, BASE2K, DNUM, K_KEY_AUX, RANK));

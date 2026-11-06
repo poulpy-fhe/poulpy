@@ -73,7 +73,7 @@ dispatch to it. The trait imposes no FFT engine, encoder, or host codec: a
 backend with a native encoder may implement the whole step as one fused
 kernel from the ciphertext residues. The complete scheme definition of the
 step is exported as
-`poulpy_ckks::reference::encoding::paco_coeff_encodings_host` (also available
+`poulpy_ckks::reference::encoding::ckks_paco_coeff_encodings_host` (also available
 through `poulpy_ckks::encoding`). This explicit host reference composes the
 backend's selected CKKS encoding operations; its host-access bounds do not
 constrain a resident OEP override. Slot permutation and quantization are defined

@@ -175,7 +175,7 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalVecZnxBigImpl for NTT4x30Gpu<RT, R> {
         col_weighted_sum::<RT>(&res, &a0, a_col_stride, &weights.binding, weights.base, cols, coeffs);
     }
 
-    fn vec_znx_scalar_product(
+    fn vec_znx_big_scalar_product(
         _module: &Module<Self>,
         res: &mut VecZnxBigBackendMut<'_, Self>,
         res_col: usize,
@@ -184,10 +184,10 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalVecZnxBigImpl for NTT4x30Gpu<RT, R> {
         b: &ScalarZnxBackendRef<'_, Self>,
         b_col: usize,
     ) {
-        poulpy_hal::layouts::assert_dense(res, "vec_znx_scalar_product");
-        poulpy_hal::layouts::assert_dense(a, "vec_znx_scalar_product");
+        poulpy_hal::layouts::assert_dense(res, "vec_znx_big_scalar_product");
+        poulpy_hal::layouts::assert_dense(a, "vec_znx_big_scalar_product");
         assert!(b.n() == a.n(), "operand degree differs from the result degree");
-        assert!(b_col < b.cols(), "vec_znx_scalar_product: b_col out of range");
+        assert!(b_col < b.cols(), "vec_znx_big_scalar_product: b_col out of range");
         let Some(res) = big_column_mut(res, res_col) else { return };
         let Some(a) = column_ref(a, a_col) else { return };
         let Some(b) = scalar_column(b, b_col) else { return };

@@ -6,8 +6,8 @@ use poulpy_hal::{
 };
 
 use crate::{
-    GetDistribution, ScratchArenaTakeCore,
-    api::GLWEBytesOf,
+    GetDistribution, ScratchArenaTakeGLWESecret,
+    api::GLWESecretBytesOf,
     layouts::{
         Degree, GGLWEInfos, GGLWEToBackendMut, GLWECIEmbedKey, GLWECITraceKey, GLWEInfos, GLWESecretToBackendRef,
         GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank,

@@ -6,12 +6,12 @@ use super::{
 use crate::Scale;
 use crate::{
     CKKSLayout, CoeffsMeta, GLWEPlaintextMeta, SlotLayout, SlotsKind,
-    api::{CKKSDFTMatrixOps, CKKSDFTOps, CKKSEncodingHostOps, CKKSEncodingScalar},
-    layouts::{CKKSModuleAlloc, DFTOutputFormat, DFTPlan, DFTType, Decode, Encode, Repack, Split, Standard},
+    api::{CKKSDFTMatrixOps, CKKSDFTMatrixPreparedFactory, CKKSDFTOps, CKKSEncodingHostOps, CKKSEncodingScalar},
+    layouts::{DFTOutputFormat, DFTPlan, DFTType, Decode, Encode, Repack, Split, Standard},
     oep::{CKKSDFTImpl, CKKSDFTMatrixImpl, CKKSEncodingImpl},
     test_suite::CKKSTestParams,
 };
-use poulpy_core::{GLWEMaskFill, api::GLWEAutomorphismKeyPreparedFactory, layouts::GLWELayout};
+use poulpy_core::{GLWEFill, api::GLWEAutomorphismKeyPreparedFactory, layouts::GLWELayout};
 use poulpy_hal::layouts::{Backend, CyclotomicOrder, Module};
 use std::collections::HashMap;
 
@@ -40,7 +40,7 @@ fn run<BE, F>(params: CKKSTestParams, module: &Module<BE>) -> Vec<Snapshot>
 where
     BE: Backend<ZnxWord = i64> + CKKSDFTImpl + CKKSDFTMatrixImpl<F> + CKKSEncodingImpl<F>,
     F: CKKSEncodingScalar,
-    Module<BE>: GLWEAutomorphismKeyPreparedFactory<BE> + GLWEMaskFill<BE>,
+    Module<BE>: GLWEAutomorphismKeyPreparedFactory<BE> + GLWEFill<BE>,
 {
     let b = params.base2k;
     let k = 8 * b + 7;
@@ -62,7 +62,7 @@ where
                 slot_layout: SlotLayout::Full,
             },
         };
-        let encoding = <Module<BE> as CKKSEncodingHostOps<BE, F>>::ckks_reim_tmp_bytes(module, module.n() / 2);
+        let encoding = <Module<BE> as CKKSEncodingHostOps<BE, F>>::ckks_encoding_host_tmp_bytes(module, module.n() / 2);
         macro_rules! prepare {
             ($dir:ty, $fmt:ty, $kind:expr, $format:expr) => {{
                 let plan = DFTPlan::new(
@@ -73,7 +73,7 @@ where
                 )
                 .unwrap();
                 let dft = with_scratch::<BE, _>(encoding, |scratch| {
-                    <Module<BE> as CKKSDFTMatrixOps<BE, F>>::ckks_new_dft_matrix::<$dir, $fmt>(module, b.into(), &plan, scratch)
+                    <Module<BE> as CKKSDFTMatrixOps<BE, F>>::ckks_dft_matrix_new::<$dir, $fmt>(module, b.into(), &plan, scratch)
                 })
                 .unwrap();
                 // Quantized diagonals are public logical operands; prepared
@@ -97,19 +97,19 @@ where
                     );
                 }
                 let mut prepared = module.ckks_dft_matrix_prepared_alloc_from_infos(&dft);
-                with_scratch::<BE, _>(module.ckks_prepare_dft_matrix_tmp_bytes(&dft), |scratch| {
-                    module.ckks_prepare_dft_matrix(&mut prepared, &dft, scratch)
+                with_scratch::<BE, _>(module.ckks_dft_matrix_prepare_tmp_bytes(&dft), |scratch| {
+                    module.ckks_dft_matrix_prepare(&mut prepared, &dft, scratch)
                 })
                 .unwrap();
                 let mut raw = fixture_ciphertext(module, &layout, 61);
                 with_scratch::<BE, _>(module.ckks_dft_tmp_bytes(&layout, &layout, &dft, &key), |scratch| {
-                    module.ckks_dft_evaluate_assign(&mut raw, &dft, &keys, scratch)
+                    module.ckks_dft_matrix_eval_assign(&mut raw, &dft, &keys, scratch)
                 })
                 .unwrap();
                 let mut resident = fixture_ciphertext(module, &layout, 61);
                 with_scratch::<BE, _>(
                     module.ckks_dft_tmp_bytes(&layout, &layout, &prepared, &key),
-                    |scratch| module.ckks_dft_evaluate_assign(&mut resident, &prepared, &keys, scratch),
+                    |scratch| module.ckks_dft_matrix_eval_assign(&mut resident, &prepared, &keys, scratch),
                 )
                 .unwrap();
                 assert_eq!(
@@ -139,8 +139,8 @@ where
                 results.push(snapshot::<BE, _>(&out));
             }};
         }
-        standard!(Encode, DFTType::Encode, ckks_coeffs_to_slots);
-        standard!(Decode, DFTType::Decode, ckks_slots_to_coeffs);
+        standard!(Encode, DFTType::Encode, ckks_coeffs_to_slots_assign);
+        standard!(Decode, DFTType::Decode, ckks_slots_to_coeffs_assign);
         {
             let (dft, prepared, keys) = prepare!(Encode, Split, DFTType::Encode, DFTOutputFormat::SplitRealAndImag);
             let src = fixture_ciphertext(module, &layout, 71);
@@ -250,7 +250,7 @@ where
             .unwrap();
             assert!(
                 with_scratch::<BE, _>(encoding, |scratch| {
-                    <Module<BE> as CKKSDFTMatrixOps<BE, F>>::ckks_new_dft_matrix::<Encode, Repack>(
+                    <Module<BE> as CKKSDFTMatrixOps<BE, F>>::ckks_dft_matrix_new::<Encode, Repack>(
                         module,
                         b.into(),
                         &invalid,
@@ -271,8 +271,8 @@ where
     BR: Backend<ZnxWord = i64> + CKKSDFTImpl + CKKSDFTMatrixImpl<F> + CKKSEncodingImpl<F>,
     BT: Backend<ZnxWord = i64> + CKKSDFTImpl + CKKSDFTMatrixImpl<F> + CKKSEncodingImpl<F>,
     F: CKKSEncodingScalar,
-    Module<BR>: GLWEAutomorphismKeyPreparedFactory<BR> + GLWEMaskFill<BR>,
-    Module<BT>: GLWEAutomorphismKeyPreparedFactory<BT> + GLWEMaskFill<BT>,
+    Module<BR>: GLWEAutomorphismKeyPreparedFactory<BR> + GLWEFill<BR>,
+    Module<BT>: GLWEAutomorphismKeyPreparedFactory<BT> + GLWEFill<BT>,
 {
     assert_eq!(module_ref.n(), module_test.n());
     let want = run::<BR, F>(params, module_ref);

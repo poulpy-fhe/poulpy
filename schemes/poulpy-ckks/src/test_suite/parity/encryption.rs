@@ -2,7 +2,7 @@
 //! backends and, when their streams differ, installs a controlled-sampling adapter.
 use super::{arithmetic::layout, helpers::*};
 use crate::{CKKSInfos, SlotsKind, oep::CKKSEncryptionImpl, test_suite::CKKSTestParams};
-use poulpy_core::{Distribution, GLWEMaskFill, GLWESecretPreparedFactory, GetDistributionMut, layouts::*};
+use poulpy_core::{Distribution, GLWEFill, GLWESecretPreparedFactory, GetDistributionMut, layouts::*};
 use poulpy_hal::{
     layouts::{Backend, Module},
     source::Source,
@@ -11,7 +11,7 @@ use poulpy_hal::{
 fn exercise<BE>(params: CKKSTestParams, module: &Module<BE>) -> (Vec<Snapshot>, Vec<[u8; 32]>)
 where
     BE: Backend<ZnxWord = i64> + CKKSEncryptionImpl,
-    Module<BE>: GLWESecretPreparedFactory<BE> + GLWEMaskFill<BE>,
+    Module<BE>: GLWESecretPreparedFactory<BE> + GLWEFill<BE>,
 {
     let mut results = Vec::new();
     let mut sources = Vec::new();
@@ -92,8 +92,8 @@ pub fn test_encryption_parity<BR, BT>(params: CKKSTestParams, module_ref: &Modul
 where
     BR: Backend<ZnxWord = i64> + CKKSEncryptionImpl,
     BT: Backend<ZnxWord = i64> + CKKSEncryptionImpl,
-    Module<BR>: GLWESecretPreparedFactory<BR> + GLWEMaskFill<BR>,
-    Module<BT>: GLWESecretPreparedFactory<BT> + GLWEMaskFill<BT>,
+    Module<BR>: GLWESecretPreparedFactory<BR> + GLWEFill<BR>,
+    Module<BT>: GLWESecretPreparedFactory<BT> + GLWEFill<BT>,
 {
     assert_eq!(exercise(params, module_ref), exercise(params, module_test));
 }

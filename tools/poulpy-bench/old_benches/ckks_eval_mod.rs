@@ -184,7 +184,7 @@ fn bench_ntt4x30_portable(c: &mut Criterion) {
     let mut ct_x = module.ckks_ciphertext_alloc(Base2K(BASE2K as u32), TorusPrecision(CT_K as u32));
     ct_x.set_meta_checked(input_meta).unwrap();
 
-    let mut compile_scratch = ScratchOwned::<BE>::alloc(CKKSEncodingHostOps::<BE, f64>::ckks_reim_tmp_bytes(&module, N / 2));
+    let mut compile_scratch = ScratchOwned::<BE>::alloc(CKKSEncodingHostOps::<BE, f64>::ckks_encoding_host_tmp_bytes(&module, N / 2));
 
     let mut group = c.benchmark_group(format!("ckks_eval_mod::{label}"));
     for case in CASES {

@@ -96,12 +96,16 @@ pub trait GLWEExpandLWEMatrix<BE: Backend> {
 }
 
 pub trait GGSWExpandRows<BE: Backend> {
-    fn ggsw_expand_rows_tmp_bytes<R, A>(&self, res_infos: &R, tsk_infos: &A) -> usize
+    fn ggsw_expand_rows_assign_tmp_bytes<R, A>(&self, res_infos: &R, tsk_infos: &A) -> usize
     where
         R: GGSWInfos,
         A: GGLWEInfos;
 
-    fn ggsw_expand_row<R>(&self, res: &mut R, tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, BE>, scratch: &mut ScratchArena<'_, BE>)
-    where
+    fn ggsw_expand_rows_assign<R>(
+        &self,
+        res: &mut R,
+        tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
         R: GGSWToBackendMut<BE> + GGSWInfos;
 }

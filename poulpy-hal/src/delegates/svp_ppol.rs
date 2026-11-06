@@ -1,7 +1,7 @@
 use crate::{
     api::{
         SvpApplyDft, SvpApplyDftTmpBytes, SvpApplyDftToDft, SvpApplyDftToDftAssign, SvpPPolAlloc, SvpPPolBytesOf, SvpPPolCopy,
-        SvpPrepare,
+        SvpPPolPrepare,
     },
     layouts::{
         Backend, Module, PrepareHint, ScalarZnxBackendRef, ScratchArena, SvpPPolBackendMut, SvpPPolBackendRef, SvpPPolOwned,
@@ -28,15 +28,15 @@ impl<B: Backend> SvpPPolAlloc<B> for Module<B> {
 }
 
 impl<B: Backend> SvpPPolBytesOf for Module<B> {
-    fn bytes_of_svp_ppol(&self, n: usize, cols: usize, hint: PrepareHint) -> usize {
-        B::bytes_of_svp_ppol(n, cols, hint)
+    fn svp_ppol_bytes_of(&self, n: usize, cols: usize, hint: PrepareHint) -> usize {
+        B::svp_ppol_bytes_of(n, cols, hint)
     }
 }
 
 impl_svp_delegate!(
-    SvpPrepare<B>,
-    fn svp_prepare(&self, res: &mut SvpPPolBackendMut<'_, B>, res_col: usize, a: &ScalarZnxBackendRef<'_, B>, a_col: usize) {
-        B::svp_prepare(self, res, res_col, a, a_col);
+    SvpPPolPrepare<B>,
+    fn svp_ppol_prepare(&self, res: &mut SvpPPolBackendMut<'_, B>, res_col: usize, a: &ScalarZnxBackendRef<'_, B>, a_col: usize) {
+        B::svp_ppol_prepare(self, res, res_col, a, a_col);
     }
 );
 

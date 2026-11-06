@@ -3,8 +3,8 @@ use crate::{
         VecZnxBigAdd, VecZnxBigAddAssign, VecZnxBigAddSmall, VecZnxBigAddSmallAssign, VecZnxBigAlloc, VecZnxBigAutomorphism,
         VecZnxBigAutomorphismAssign, VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigBytesOf, VecZnxBigColWeightedSum,
         VecZnxBigFromSmall, VecZnxBigInnerSum, VecZnxBigNegate, VecZnxBigNegateAssign, VecZnxBigNormalize,
-        VecZnxBigNormalizeTmpBytes, VecZnxBigSub, VecZnxBigSubAssign, VecZnxBigSubNegateAssign, VecZnxBigSubSmallA,
-        VecZnxBigSubSmallAssign, VecZnxBigSubSmallB, VecZnxBigSubSmallNegateAssign, VecZnxScalarProduct,
+        VecZnxBigNormalizeTmpBytes, VecZnxBigScalarProduct, VecZnxBigSub, VecZnxBigSubAssign, VecZnxBigSubNegateAssign,
+        VecZnxBigSubSmallA, VecZnxBigSubSmallAssign, VecZnxBigSubSmallB, VecZnxBigSubSmallNegateAssign,
     },
     layouts::{
         Backend, Module, ScalarZnxBackendRef, ScratchArena, VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut,
@@ -44,8 +44,8 @@ impl<B: Backend> VecZnxBigAlloc<B> for Module<B> {
 }
 
 impl<B: Backend> VecZnxBigBytesOf for Module<B> {
-    fn bytes_of_vec_znx_big(&self, n: usize, cols: usize, size: usize) -> usize {
-        B::bytes_of_vec_znx_big(n, cols, size)
+    fn vec_znx_big_bytes_of(&self, n: usize, cols: usize, size: usize) -> usize {
+        B::vec_znx_big_bytes_of(n, cols, size)
     }
 }
 
@@ -233,8 +233,8 @@ impl_vec_znx_big_delegate!(
 );
 
 impl_vec_znx_big_delegate!(
-    VecZnxScalarProduct<B>,
-    fn vec_znx_scalar_product(
+    VecZnxBigScalarProduct<B>,
+    fn vec_znx_big_scalar_product(
         &self,
         res: &mut VecZnxBigBackendMut<'_, B>,
         res_col: usize,
@@ -243,7 +243,7 @@ impl_vec_znx_big_delegate!(
         b: &ScalarZnxBackendRef<'_, B>,
         b_col: usize,
     ) {
-        B::vec_znx_scalar_product(self, res, res_col, a, a_col, b, b_col);
+        B::vec_znx_big_scalar_product(self, res, res_col, a, a_col, b, b_col);
     }
 );
 

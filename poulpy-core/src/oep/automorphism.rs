@@ -138,7 +138,7 @@ pub unsafe trait AutomorphismImpl: Backend + crate::oep::GGSWConversionImpl {
         K: GGLWEInfos;
 
     /// Reproduces
-    /// [`glwe_automorphism_many_reference`](crate::reference::automorphism::glwe::glwe_automorphism_many_reference)
+    /// [`glwe_automorphism_many_reference`](crate::reference::automorphism::GLWEAutomorphismReference::glwe_automorphism_many_reference)
     /// bit for bit under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within the largest
     /// [`Self::glwe_automorphism_many_tmp_bytes`] over its keys; free in kernels and scratch use.
     fn glwe_automorphism_many<R, A>(
@@ -152,7 +152,7 @@ pub unsafe trait AutomorphismImpl: Backend + crate::oep::GGSWConversionImpl {
         A: GLWEToBackendRef<Self> + GLWEInfos;
 
     /// Default body: `ggsw_automorphism_tmp_bytes_derived`, the larger of [`Self::glwe_automorphism_tmp_bytes`] and
-    /// [`GGSWConversionImpl::ggsw_expand_rows_tmp_bytes`](crate::oep::GGSWConversionImpl::ggsw_expand_rows_tmp_bytes).
+    /// [`GGSWConversionImpl::ggsw_expand_rows_assign_tmp_bytes`](crate::oep::GGSWConversionImpl::ggsw_expand_rows_assign_tmp_bytes).
     fn ggsw_automorphism_tmp_bytes<R, A, K, T>(
         module: &Module<Self>,
         res_infos: &R,
@@ -172,7 +172,7 @@ pub unsafe trait AutomorphismImpl: Backend + crate::oep::GGSWConversionImpl {
     }
 
     /// Default body: `ggsw_automorphism_derived`, [`Self::glwe_automorphism`] on the first column of each row, then
-    /// [`GGSWConversionImpl::ggsw_expand_row`](crate::oep::GGSWConversionImpl::ggsw_expand_row), within
+    /// [`GGSWConversionImpl::ggsw_expand_rows_assign`](crate::oep::GGSWConversionImpl::ggsw_expand_rows_assign), within
     /// [`Self::ggsw_automorphism_tmp_bytes`], under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint) of its
     /// prepared operands.
     fn ggsw_automorphism<R, A>(
@@ -190,7 +190,7 @@ pub unsafe trait AutomorphismImpl: Backend + crate::oep::GGSWConversionImpl {
     }
 
     /// Default body: `ggsw_automorphism_assign_derived`, [`Self::glwe_automorphism_assign`] on the first column of
-    /// each row, then [`GGSWConversionImpl::ggsw_expand_row`](crate::oep::GGSWConversionImpl::ggsw_expand_row),
+    /// each row, then [`GGSWConversionImpl::ggsw_expand_rows_assign`](crate::oep::GGSWConversionImpl::ggsw_expand_rows_assign),
     /// within [`Self::ggsw_automorphism_tmp_bytes`], under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint) of
     /// its prepared operands.
     fn ggsw_automorphism_assign<R>(
@@ -262,7 +262,7 @@ macro_rules! impl_automorphism_reference_full {
                 A: $crate::layouts::GLWEInfos,
                 K: $crate::layouts::GGLWEInfos,
             {
-                $crate::reference::automorphism::glwe::glwe_automorphism_tmp_bytes_reference::<$be, _, _, _, _>(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::automorphism::GLWEAutomorphismReference<$be>>::glwe_automorphism_tmp_bytes_reference(
                     module, res_infos, a_infos, key_infos,
                 )
             }
@@ -277,7 +277,7 @@ macro_rules! impl_automorphism_reference_full {
                 R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
                 A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
             {
-                $crate::reference::automorphism::glwe::glwe_automorphism_reference::<$be, _, _, _>(module, res, a, key, scratch)
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::automorphism::GLWEAutomorphismReference<$be>>::glwe_automorphism_reference(module, res, a, key, scratch)
             }
 
             fn glwe_automorphism_assign<R>(
@@ -288,7 +288,7 @@ macro_rules! impl_automorphism_reference_full {
             ) where
                 R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
             {
-                $crate::reference::automorphism::glwe::glwe_automorphism_assign_reference::<$be, _, _>(module, res, key, scratch)
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::automorphism::GLWEAutomorphismReference<$be>>::glwe_automorphism_assign_reference(module, res, key, scratch)
             }
 
             fn glwe_automorphism_add<R, A>(
@@ -301,7 +301,7 @@ macro_rules! impl_automorphism_reference_full {
                 R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
                 A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
             {
-                $crate::reference::automorphism::glwe::glwe_automorphism_add_reference::<$be, _, _, _>(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::automorphism::GLWEAutomorphismReference<$be>>::glwe_automorphism_add_reference(
                     module, res, a, key, scratch,
                 )
             }
@@ -314,7 +314,7 @@ macro_rules! impl_automorphism_reference_full {
             ) where
                 R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
             {
-                $crate::reference::automorphism::glwe::glwe_automorphism_add_assign_reference::<$be, _, _>(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::automorphism::GLWEAutomorphismReference<$be>>::glwe_automorphism_add_assign_reference(
                     module, res, key, scratch,
                 )
             }
@@ -329,7 +329,7 @@ macro_rules! impl_automorphism_reference_full {
                 R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
                 A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
             {
-                $crate::reference::automorphism::glwe::glwe_automorphism_sub_reference::<$be, _, _, _>(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::automorphism::GLWEAutomorphismReference<$be>>::glwe_automorphism_sub_reference(
                     module, res, a, key, scratch,
                 )
             }
@@ -344,7 +344,7 @@ macro_rules! impl_automorphism_reference_full {
                 R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
                 A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
             {
-                $crate::reference::automorphism::glwe::glwe_automorphism_sub_negate_reference::<$be, _, _, _>(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::automorphism::GLWEAutomorphismReference<$be>>::glwe_automorphism_sub_negate_reference(
                     module, res, a, key, scratch,
                 )
             }
@@ -357,7 +357,7 @@ macro_rules! impl_automorphism_reference_full {
             ) where
                 R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
             {
-                $crate::reference::automorphism::glwe::glwe_automorphism_sub_assign_reference::<$be, _, _>(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::automorphism::GLWEAutomorphismReference<$be>>::glwe_automorphism_sub_assign_reference(
                     module, res, key, scratch,
                 )
             }
@@ -370,7 +370,7 @@ macro_rules! impl_automorphism_reference_full {
             ) where
                 R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
             {
-                $crate::reference::automorphism::glwe::glwe_automorphism_sub_negate_assign_reference::<$be, _, _>(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::automorphism::GLWEAutomorphismReference<$be>>::glwe_automorphism_sub_negate_assign_reference(
                     module, res, key, scratch,
                 )
             }
@@ -386,7 +386,7 @@ macro_rules! impl_automorphism_reference_full {
                 A: $crate::layouts::GLWEInfos,
                 K: $crate::layouts::GGLWEInfos,
             {
-                $crate::reference::automorphism::glwe::glwe_automorphism_many_tmp_bytes_reference::<$be, _, _, _>(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::automorphism::GLWEAutomorphismReference<$be>>::glwe_automorphism_many_tmp_bytes_reference(
                     module, res_infos, a_infos, key_infos,
                 )
             }
@@ -401,7 +401,7 @@ macro_rules! impl_automorphism_reference_full {
                 R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
                 A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
             {
-                $crate::reference::automorphism::glwe::glwe_automorphism_many_reference::<$be, _, _>(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::automorphism::GLWEAutomorphismReference<$be>>::glwe_automorphism_many_reference(
                     module, res, a, keys, scratch,
                 )
             }
@@ -417,7 +417,7 @@ macro_rules! impl_automorphism_reference_full {
                 A: $crate::layouts::GGLWEInfos,
                 K: $crate::layouts::GGLWEInfos,
             {
-                $crate::reference::automorphism::gglwe::glwe_automorphism_key_automorphism_tmp_bytes_reference::<$be, _, _, _, _>(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::automorphism::GLWEAutomorphismKeyAutomorphismReference<$be>>::glwe_automorphism_key_automorphism_tmp_bytes_reference(
                     module, res_infos, a_infos, key_infos,
                 )
             }
@@ -432,7 +432,7 @@ macro_rules! impl_automorphism_reference_full {
                 R: $crate::layouts::GGLWEToBackendMut<$be> + $crate::layouts::SetGaloisElement + $crate::layouts::GGLWEInfos,
                 A: $crate::layouts::GGLWEToBackendRef<$be> + $crate::layouts::GetGaloisElement + $crate::layouts::GGLWEInfos,
             {
-                $crate::reference::automorphism::gglwe::glwe_automorphism_key_automorphism_reference::<$be, _, _, _>(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::automorphism::GLWEAutomorphismKeyAutomorphismReference<$be>>::glwe_automorphism_key_automorphism_reference(
                     module, res, a, key, scratch,
                 )
             }
@@ -448,7 +448,7 @@ macro_rules! impl_automorphism_reference_full {
                     + $crate::layouts::GetGaloisElement
                     + $crate::layouts::GGLWEInfos,
             {
-                $crate::reference::automorphism::gglwe::glwe_automorphism_key_automorphism_assign_reference::<$be, _, _>(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::automorphism::GLWEAutomorphismKeyAutomorphismReference<$be>>::glwe_automorphism_key_automorphism_assign_reference(
                     module, res, key, scratch,
                 )
             }

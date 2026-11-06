@@ -11,7 +11,7 @@ use poulpy_core::{
     layouts::{GGSWInfos, GLWEInfos, GLWESecretPreparedToBackendRef, LWEInfos, LWESecretToBackendRef},
 };
 
-use crate::blind_rotation::{BlindRotationKey, CGGI};
+use crate::blind_rotation::{BlindRotationAlgo, BlindRotationKey, CGGI};
 
 /// Independently callable canonical implementation of
 /// [`BlindRotationKeyEncryptSk::blind_rotation_key_encrypt_sk_tmp_bytes`](crate::api::BlindRotationKeyEncryptSk::blind_rotation_key_encrypt_sk_tmp_bytes), selected by
@@ -65,9 +65,9 @@ pub fn blind_rotation_key_encrypt_sk_reference<BE, S0, S1>(
 
         let mut pt: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = module.scalar_znx_alloc(module.n(), 1);
         let sk_ref = sk_lwe.data();
-        let mut sk_host = vec![0u8; BE::bytes_of_scalar_znx(sk_ref.n(), sk_ref.cols())];
+        let mut sk_host = vec![0u8; BE::scalar_znx_bytes_of(sk_ref.n(), sk_ref.cols())];
         BE::copy_view_to_host(&BE::region_ref(&sk_ref.data, 0, sk_host.len()), &mut sk_host);
-        let mut pt_host = vec![0u8; BE::bytes_of_scalar_znx(pt.n(), pt.cols())];
+        let mut pt_host = vec![0u8; BE::scalar_znx_bytes_of(pt.n(), pt.cols())];
 
         for (i, ggsw) in res.keys.iter_mut().enumerate() {
             pt_host[..size_of::<i64>()].copy_from_slice(&sk_host[i * size_of::<i64>()..(i + 1) * size_of::<i64>()]);
@@ -78,4 +78,47 @@ pub fn blind_rotation_key_encrypt_sk_reference<BE, S0, S1>(
     }
 
     scratch.wipe(blind_rotation_key_encrypt_sk_tmp_bytes_reference(module, &res.keys[0]));
+}
+
+/// Reference bodies of the [`BlindRotationKeyEncryptSkImpl`](crate::oep::BlindRotationKeyEncryptSkImpl) methods for
+/// [`CGGI`], which [`impl_blind_rotation_key_encrypt_sk_reference_full!`](crate::impl_blind_rotation_key_encrypt_sk_reference_full)
+/// forwards to.
+pub trait BlindRotationKeyEncryptSkReference<BRA: BlindRotationAlgo, BE: Backend> {
+    fn blind_rotation_key_encrypt_sk_tmp_bytes_reference<A: GGSWInfos>(&self, infos: &A) -> usize;
+
+    fn blind_rotation_key_encrypt_sk_reference<S0, S1>(
+        &self,
+        res: &mut BlindRotationKey<BE::OwnedBuf, BRA, BE::ZnxWord>,
+        sk_lwe: &S0,
+        sk_glwe: &S1,
+        source_xe: &mut Source,
+        source_xa: &mut Source,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        S0: LWESecretToBackendRef<BE> + LWEInfos + GetDistribution,
+        S1: GLWESecretPreparedToBackendRef<BE> + GLWEInfos;
+}
+
+impl<BE: Backend<ZnxWord = i64>> BlindRotationKeyEncryptSkReference<CGGI, BE> for Module<BE>
+where
+    Module<BE>: GGSWEncryptSk<BE>,
+{
+    fn blind_rotation_key_encrypt_sk_tmp_bytes_reference<A: GGSWInfos>(&self, infos: &A) -> usize {
+        blind_rotation_key_encrypt_sk_tmp_bytes_reference(self, infos)
+    }
+
+    fn blind_rotation_key_encrypt_sk_reference<S0, S1>(
+        &self,
+        res: &mut BlindRotationKey<BE::OwnedBuf, CGGI, BE::ZnxWord>,
+        sk_lwe: &S0,
+        sk_glwe: &S1,
+        source_xe: &mut Source,
+        source_xa: &mut Source,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        S0: LWESecretToBackendRef<BE> + LWEInfos + GetDistribution,
+        S1: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
+    {
+        blind_rotation_key_encrypt_sk_reference(self, res, sk_lwe, sk_glwe, source_xe, source_xa, scratch)
+    }
 }

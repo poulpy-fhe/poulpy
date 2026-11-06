@@ -1,0 +1,63 @@
+[package]
+name = "poulpy-release-bench"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "Release measurements of the CKKS bootstrapping presets, libm functions and blas operations on every backend"
+repository = "https://github.com/poulpy-fhe/poulpy"
+homepage = "https://github.com/poulpy-fhe/poulpy"
+publish = false
+readme = "README.md"
+
+# One feature per build of `tools/release_bench.py`. A build only enables the
+# backends that share its target flags, so that a backend is never measured
+# with the code generation of a wider instruction set.
+[features]
+portable-rayon = ["dep:poulpy-cpu-rayon", "poulpy-cpu-rayon/enable-ckks", "poulpy-cpu-rayon/enable-blas"]
+avx = [
+    "dep:poulpy-cpu-avx",
+    "poulpy-cpu-avx/enable-avx",
+    "poulpy-cpu-avx/enable-ckks",
+    "poulpy-cpu-avx/enable-blas",
+    "poulpy-cpu-avx/enable-rayon",
+]
+avx512 = [
+    "dep:poulpy-cpu-avx512",
+    "poulpy-cpu-avx512/enable-avx512f",
+    "poulpy-cpu-avx512/enable-ckks",
+    "poulpy-cpu-avx512/enable-blas",
+    "poulpy-cpu-avx512/enable-rayon",
+]
+ifma = ["avx512", "poulpy-cpu-avx512/enable-ifma"]
+neon = [
+    "dep:poulpy-cpu-arm",
+    "poulpy-cpu-arm/enable-neon",
+    "poulpy-cpu-arm/enable-ckks",
+    "poulpy-cpu-arm/enable-blas",
+    "poulpy-cpu-arm/enable-rayon",
+]
+cuda = ["dep:poulpy-gpu-portable", "poulpy-gpu-portable/enable-cuda", "poulpy-gpu-portable/enable-ckks", "poulpy-gpu-portable/enable-blas"]
+hip = ["dep:poulpy-gpu-portable", "poulpy-gpu-portable/enable-hip", "poulpy-gpu-portable/enable-ckks", "poulpy-gpu-portable/enable-blas"]
+metal = ["dep:poulpy-gpu-portable", "poulpy-gpu-portable/enable-metal", "poulpy-gpu-portable/enable-ckks", "poulpy-gpu-portable/enable-blas"]
+vulkan = ["dep:poulpy-gpu-portable", "poulpy-gpu-portable/enable-vulkan", "poulpy-gpu-portable/enable-ckks", "poulpy-gpu-portable/enable-blas"]
+
+# Outside the workspace, so that its builds and CI leave it out. Cargo.lock is
+# seeded from the workspace lock and pins the same versions.
+[dependencies]
+anyhow = "1.0.104"
+rayon = "1.12.0"
+serde_json = "1.0.151"
+poulpy-hal = {path = "../../poulpy-hal"}
+poulpy-core = {path = "../../poulpy-core"}
+poulpy-ckks = {path = "../../schemes/poulpy-ckks", features = ["test-utils"]}
+poulpy-libm = {path = "../../libs/poulpy-libm"}
+poulpy-blas = {path = "../../libs/poulpy-blas"}
+# The blas cases are built by the point builders of the benchmark suite.
+poulpy-bench = {path = "../poulpy-bench"}
+# The portable backend is always measured, and is the client of the GPU backends.
+poulpy-cpu-portable = {path = "../../backends/poulpy-cpu-portable", features = ["enable-ckks", "enable-blas"]}
+poulpy-cpu-rayon = {path = "../../backends/poulpy-cpu-rayon", optional = true}
+poulpy-cpu-avx = {path = "../../backends/poulpy-cpu-avx", optional = true}
+poulpy-cpu-avx512 = {path = "../../backends/poulpy-cpu-avx512", optional = true}
+poulpy-cpu-arm = {path = "../../backends/poulpy-cpu-arm", optional = true}
+poulpy-gpu-portable = {path = "../../backends/poulpy-gpu-portable", optional = true}

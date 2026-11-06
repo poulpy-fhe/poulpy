@@ -54,7 +54,7 @@ fn conjugate_invariant_square_mean_sets_the_ntt_radix() {
         let mut ppol = module.svp_ppol_alloc(n, 1, PrepareHint::Reuse);
         let mut dft = module.vec_znx_dft_alloc(n, 1, 1);
         let mut big = module.vec_znx_big_alloc(n, 1, 1);
-        module.svp_prepare(
+        module.svp_ppol_prepare(
             &mut ppol.to_backend_mut(),
             0,
             &poulpy_hal::test_suite::scalar_znx_backend_ref::<BE>(&b),
@@ -90,7 +90,7 @@ fn bootstrapping_presets_take_the_backend_radix() {
     for preset in ci {
         // An output limb of EvalMod's squares on the CI ring holds one square: its mean keeps
         // the radix at the nominal 52 on NTT4x30. FFT64's model of the CI ring takes 14, at
-        // which the preset is re-derived with digits of 7 limbs.
+        // which the keys of the raised width take the runner's cap of 7 limbs.
         assert_eq!(
             preset.max_backend_base2k::<NTT4x30Portable, crate::NTT4x30CIPortable>(BOOTSTRAP_FAILURE_BITS),
             52
@@ -128,7 +128,8 @@ fn bootstrapping_presets_take_the_backend_radix() {
                 (preset.input_k(), preset.output_k(), preset.bootstrap_k())
             );
             assert_eq!(adapted.plan().c2s_guard_bits(), preset.plan().c2s_guard_bits());
-            assert!(adapted.keys_layout().automorphism_key.k().as_usize() <= adapted.max_dense_modulus());
+            let keys = adapted.keys_layout().rotation_key_layouts();
+            assert!(keys.iter().all(|key| key.k().as_usize() <= adapted.max_dense_modulus()));
             let small_key = &adapted.keys_layout().encapsulation.as_ref().unwrap().dense_to_sparse;
             assert!(small_key.k().as_usize() <= adapted.max_sparse_modulus());
         }
@@ -215,24 +216,24 @@ fn test_transform_domain_packed_byte_sizes() {
     let (n, cols, size) = (256, 3, 5);
     let packed_bytes = n * cols * size * 4 * size_of::<u32>();
     assert_eq!(
-        <NTT4x30Portable as Backend>::bytes_of_vec_znx_dft(n, cols, size),
+        <NTT4x30Portable as Backend>::vec_znx_dft_bytes_of(n, cols, size),
         packed_bytes
     );
     assert_eq!(
-        <NTT4x30Portable as Backend>::bytes_of_cnv_pvec_left(n, cols, size, PrepareHint::Reuse),
+        <NTT4x30Portable as Backend>::cnv_pvec_left_bytes_of(n, cols, size, PrepareHint::Reuse),
         packed_bytes
     );
     assert_eq!(
-        <NTT4x30Portable as Backend>::bytes_of_cnv_pvec_right(n, cols, size, PrepareHint::Reuse),
+        <NTT4x30Portable as Backend>::cnv_pvec_right_bytes_of(n, cols, size, PrepareHint::Reuse),
         packed_bytes
     );
     assert_eq!(
-        <NTT4x30Portable as Backend>::bytes_of_svp_ppol(n, cols, PrepareHint::Reuse),
+        <NTT4x30Portable as Backend>::svp_ppol_bytes_of(n, cols, PrepareHint::Reuse),
         n * cols * 4 * size_of::<u32>()
     );
     let (rows, cols_in, cols_out) = (3, 2, 4);
     assert_eq!(
-        <NTT4x30Portable as Backend>::bytes_of_vmp_pmat(n, rows, cols_in, cols_out, size, PrepareHint::Reuse),
+        <NTT4x30Portable as Backend>::vmp_pmat_bytes_of(n, rows, cols_in, cols_out, size, PrepareHint::Reuse),
         n * rows * cols_in * cols_out * size * 4 * size_of::<u32>()
     );
 }
@@ -242,7 +243,7 @@ fn test_transform_domain_packed_byte_sizes() {
 fn test_packed_kernels_reject_out_of_range_operands() {
     use poulpy_hal::{
         api::{
-            CnvPVecAlloc, Convolution, ScratchOwnedAlloc, VecZnxDftAdd, VecZnxDftAlloc, VecZnxDftAutomorphism,
+            CnvOps, CnvPVecAlloc, ScratchOwnedAlloc, VecZnxDftAdd, VecZnxDftAlloc, VecZnxDftAutomorphism,
             VecZnxDftAutomorphismPlan,
         },
         layouts::{
@@ -263,15 +264,15 @@ fn test_packed_kernels_reject_out_of_range_operands() {
     let mut scratch: ScratchOwned<NTT4x30Portable> = ScratchOwned::alloc(
         module
             .cnv_apply_dft_add_tmp_bytes(0, size, size, size)
-            .max(module.cnv_prepare_left_tmp_bytes(size, size))
-            .max(module.cnv_prepare_right_tmp_bytes(size, size)),
+            .max(module.cnv_pvec_left_prepare_tmp_bytes(size, size))
+            .max(module.cnv_pvec_right_prepare_tmp_bytes(size, size)),
     );
-    module.cnv_prepare_left(
+    module.cnv_pvec_left_prepare(
         &mut left.to_backend_mut(),
         &vec_znx_backend_ref::<NTT4x30Portable>(&a),
         &mut scratch.arena(),
     );
-    module.cnv_prepare_right(
+    module.cnv_pvec_right_prepare(
         &mut right.to_backend_mut(),
         &vec_znx_backend_ref::<NTT4x30Portable>(&a),
         &mut scratch.arena(),
@@ -517,7 +518,7 @@ cross_backend_test_suite! {
         test_vec_znx_big_from_small => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_from_small,
         test_vec_znx_big_inner_sum => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_inner_sum,
         test_vec_znx_big_col_weighted_sum => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_col_weighted_sum,
-        test_vec_znx_scalar_product => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_scalar_product,
+        test_vec_znx_big_scalar_product => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_scalar_product,
     }
 }
 
@@ -546,7 +547,7 @@ cross_backend_test_suite! {
         test_vec_znx_big_from_small => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_from_small,
         test_vec_znx_big_inner_sum => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_inner_sum,
         test_vec_znx_big_col_weighted_sum => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_col_weighted_sum,
-        test_vec_znx_scalar_product => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_scalar_product,
+        test_vec_znx_big_scalar_product => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_scalar_product,
     }
 }
 cross_backend_test_suite! {
@@ -675,7 +676,7 @@ backend_test_suite! {
         test_vec_znx_dft_automorphism_add_with_plan_derived => poulpy_hal::test_suite::derived::test_vec_znx_dft_automorphism_add_with_plan_derived,
         test_vec_znx_dft_automorphism_derived => poulpy_hal::test_suite::derived::test_vec_znx_dft_automorphism_derived,
         test_svp_apply_dft_derived => poulpy_hal::test_suite::derived::test_svp_apply_dft_derived,
-        test_cnv_prepare_self_derived => poulpy_hal::test_suite::derived::test_cnv_prepare_self_derived,
+        test_cnv_pvec_self_prepare_derived => poulpy_hal::test_suite::derived::test_cnv_pvec_self_prepare_derived,
         test_cnv_apply_dft_add_derived => poulpy_hal::test_suite::derived::test_cnv_apply_dft_add_derived,
         test_cnv_apply_dft_sum_derived => poulpy_hal::test_suite::derived::test_cnv_apply_dft_sum_derived,
         test_cnv_pairwise_apply_dft_derived => poulpy_hal::test_suite::derived::test_cnv_pairwise_apply_dft_derived,
@@ -711,7 +712,7 @@ backend_test_suite! {
         test_vec_znx_dft_automorphism_add_with_plan_derived => poulpy_hal::test_suite::derived::test_vec_znx_dft_automorphism_add_with_plan_derived,
         test_vec_znx_dft_automorphism_derived => poulpy_hal::test_suite::derived::test_vec_znx_dft_automorphism_derived,
         test_svp_apply_dft_derived => poulpy_hal::test_suite::derived::test_svp_apply_dft_derived,
-        test_cnv_prepare_self_derived => poulpy_hal::test_suite::derived::test_cnv_prepare_self_derived,
+        test_cnv_pvec_self_prepare_derived => poulpy_hal::test_suite::derived::test_cnv_pvec_self_prepare_derived,
         test_cnv_apply_dft_add_derived => poulpy_hal::test_suite::derived::test_cnv_apply_dft_add_derived,
         test_cnv_apply_dft_sum_derived => poulpy_hal::test_suite::derived::test_cnv_apply_dft_sum_derived,
         test_cnv_pairwise_apply_dft_derived => poulpy_hal::test_suite::derived::test_cnv_pairwise_apply_dft_derived,
@@ -1750,7 +1751,7 @@ mod bin_fhe_overrides;
 mod ckks_noncanonical_compact_dst {
     use crate::FFT64Portable;
     use poulpy_ckks::api::{CKKSAddOps, CKKSCopyOps, CKKSImagOps, CKKSNegOps, CKKSPow2Ops, CKKSSubOps};
-    use poulpy_ckks::layouts::{CKKSCiphertextOwned, CKKSModuleAlloc};
+    use poulpy_ckks::layouts::{CKKSCiphertextAlloc, CKKSCiphertextOwned};
     use poulpy_ckks::{GLWEPlaintextMeta, Scale, SetCKKSInfos};
     use poulpy_core::layouts::{GLWELayout, GLWEToBackendMut};
     use poulpy_core::{GLWECopy, GLWENormalize};

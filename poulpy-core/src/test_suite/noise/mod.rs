@@ -41,8 +41,9 @@ use crate::{
     GLWEDecrypt, GLWENoise,
     api::TransferInto,
     layouts::{
-        GGLWE, GGLWEToGGSWKey, GGSW, GLWE, GLWEAutomorphismKey, GLWEInfos, GLWEPlaintext, GLWESecret,
-        GLWESecretPreparedToBackendRef, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, ModuleCoreAlloc, SetBase2k,
+        GGLWE, GGLWEAlloc, GGLWEToGGSWKey, GGSW, GGSWAlloc, GLWE, GLWEAlloc, GLWEAutomorphismKey, GLWEInfos, GLWEPlaintext,
+        GLWEPlaintextAlloc, GLWESecret, GLWESecretAlloc, GLWESecretPreparedToBackendRef, GLWEToBackendMut, GLWEToBackendRef,
+        LWEInfos, SetBase2k,
     },
 };
 use poulpy_hal::AlignedBuf;

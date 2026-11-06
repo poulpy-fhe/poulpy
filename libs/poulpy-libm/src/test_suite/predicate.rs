@@ -5,7 +5,7 @@ use poulpy_core::layouts::{
 };
 use poulpy_hal::{
     AlignedBuf,
-    api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
+    api::{ReimNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{HostBytesBackend, Module, ScratchOwned, Standard},
     source::Source,
 };
@@ -13,7 +13,7 @@ use poulpy_hal::{
 use poulpy_ckks::{
     CKKSCtBounds, CKKSInfos, SetCKKSInfos,
     api::CKKSMulOps,
-    layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec},
+    layouts::{CKKSCiphertext, CKKSCiphertextAlloc, CKKSPlaintext, CKKSPlaintextAlloc, CKKSPlaintextVecHostCodec},
     test_suite::{
         CKKSTestParams,
         helpers::{
@@ -37,7 +37,7 @@ where
     CKKSPlaintext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE> + LWEInfos + poulpy_core::layouts::IntPolyInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let log_delta = base.prec().log_delta();
     let coeff_meta = ckks_spec(base.n, base.base2k, log_delta, base.base2k);
@@ -68,9 +68,9 @@ where
         &sizing,
         &sizing,
         &sizing,
+        &coeff_meta,
         &params.tsk_layout(),
         &params.atk_layout(),
-        &coeff_meta,
     );
     let mut scratch = ScratchOwned::<BE>::alloc(size);
     let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
@@ -106,7 +106,7 @@ where
     CKKSPlaintext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE> + LWEInfos + poulpy_core::layouts::IntPolyInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let log_delta = base.prec().log_delta();
     let coeff_meta = ckks_spec(base.n, base.base2k, log_delta, base.base2k);
@@ -149,9 +149,9 @@ where
         &sizing,
         &sizing,
         &sizing,
+        &coeff_meta,
         &params.tsk_layout(),
         &params.atk_layout(),
-        &coeff_meta,
     );
     let mut scratch = ScratchOwned::<BE>::alloc(size);
     let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
@@ -219,7 +219,7 @@ where
     CKKSPlaintext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE> + LWEInfos + poulpy_core::layouts::IntPolyInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let log_delta = base.prec().log_delta();
     let coeff_meta = ckks_spec(base.n, base.base2k, log_delta, base.base2k);
@@ -253,9 +253,9 @@ where
         &sizing,
         &sizing,
         &sizing,
+        &coeff_meta,
         &params.tsk_layout(),
         &params.atk_layout(),
-        &coeff_meta,
     );
     let mut scratch = ScratchOwned::<BE>::alloc(size);
     let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
@@ -317,7 +317,7 @@ where
     CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let log_delta = base.prec().log_delta();
     let coeff_meta = ckks_spec(base.n, base.base2k, log_delta, base.base2k);
@@ -354,7 +354,7 @@ where
         .map(|(&av, &bv)| step(av - bv + epsilon) * step(bv - av + epsilon))
         .collect();
 
-    let mut host_constants = host_module.ckks_pt_coeffs_alloc(3, base.base2k.into(), coeff_meta.k());
+    let mut host_constants = host_module.ckks_plaintext_alloc(3usize.into(), base.base2k.into(), coeff_meta.k());
     host_constants.set_meta(coeff_meta.meta());
     host_constants.encode_host_floats(&[lo, hi, epsilon]).unwrap();
     let constants = upload_pt(module, &host_constants);
@@ -366,9 +366,9 @@ where
         &sizing,
         &sizing,
         &sizing,
+        &coeff_meta,
         &params.tsk_layout(),
         &params.atk_layout(),
-        &coeff_meta,
     );
     let mut scratch = ScratchOwned::<BE>::alloc(size);
     let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
@@ -441,7 +441,7 @@ where
         GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let log_delta = base.prec().log_delta();
     // select is a single ct×ct product: a small budget suffices.

@@ -5,7 +5,7 @@
 //! Bootstrapping for CKKS via Partial CoeffToSlot" (Coron & Seuré,
 //! [ePrint 2025/886](https://eprint.iacr.org/2025/886), ASIACRYPT 2025).
 //! The DFT/packing conventions are the crate's **official** ones — the
-//! generator-5 embedding of [`gen_dft_matrices`](crate::layouts::dft_matrices::gen_dft_matrices), block
+//! generator-5 embedding of [`ckks_dft_matrices_gen`](crate::layouts::dft_matrices::ckks_dft_matrices_gen), block
 //! coefficients in natural slot order — not the paper reference
 //! implementation's variant-DFT + extended bit-reversal: each `2C`-wide slot
 //! block is an element of `ℂ[Z]/(Z^{2C} − i)`, packed in the clear by a

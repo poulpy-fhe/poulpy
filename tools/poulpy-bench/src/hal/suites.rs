@@ -1,8 +1,8 @@
 use poulpy_hal::api::ModuleSynchronize;
 use poulpy_hal::{
     api::{
-        CnvPVecAlloc, Convolution, ModuleNew, ScalarZnxAlloc, ScratchOwnedAlloc, ScratchOwnedBorrow, SvpApplyDft,
-        SvpApplyDftTmpBytes, SvpApplyDftToDft, SvpApplyDftToDftAssign, SvpPPolAlloc, SvpPrepare, VecZnxAdd, VecZnxAddAssign,
+        CnvOps, CnvPVecAlloc, ModuleNew, ScalarZnxAlloc, ScratchOwnedAlloc, ScratchOwnedBorrow, SvpApplyDft, SvpApplyDftTmpBytes,
+        SvpApplyDftToDft, SvpApplyDftToDftAssign, SvpPPolAlloc, SvpPPolPrepare, VecZnxAdd, VecZnxAddAssign,
         VecZnxAddScalarAssign, VecZnxAlloc, VecZnxAutomorphism, VecZnxAutomorphismAssign, VecZnxAutomorphismAssignTmpBytes,
         VecZnxBigAdd, VecZnxBigAddAssign, VecZnxBigAddSmall, VecZnxBigAddSmallAssign, VecZnxBigAlloc, VecZnxBigAutomorphism,
         VecZnxBigAutomorphismAssign, VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigNegate, VecZnxBigNegateAssign,
@@ -14,12 +14,13 @@ use poulpy_hal::{
         VecZnxNegate, VecZnxNegateAssign, VecZnxNormalize, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxRotate,
         VecZnxRotateAssign, VecZnxRotateAssignTmpBytes, VecZnxRsh, VecZnxRshAdd, VecZnxRshAssign, VecZnxRshSub,
         VecZnxRshTmpBytes, VecZnxSub, VecZnxSubAssign, VecZnxSubNegateAssign, VmpApplyDft, VmpApplyDftTmpBytes, VmpApplyDftToDft,
-        VmpApplyDftToDftAdd, VmpApplyDftToDftAddTmpBytes, VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes,
+        VmpApplyDftToDftAdd, VmpApplyDftToDftAddTmpBytes, VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPMatPrepare,
+        VmpPMatPrepareTmpBytes,
     },
     layouts::{Backend, Module, ScratchOwned},
 };
 
-use poulpy_hal::api::{NegacyclicFFT, NegacyclicFFTNew};
+use poulpy_hal::api::ReimNew;
 
 use std::marker::PhantomData;
 
@@ -265,7 +266,7 @@ where
         + ModuleSynchronize<B>
         + SvpPPolAlloc<B>
         + VecZnxDftAlloc<B>
-        + SvpPrepare<B>
+        + SvpPPolPrepare<B>
         + SvpApplyDft<B>
         + SvpApplyDftTmpBytes
         + SvpApplyDftToDft<B>
@@ -275,8 +276,8 @@ where
     [
         BenchOp {
             layer: "hal",
-            name: "svp_prepare",
-            runner: svp::runner_svp_prepare::<B, M>,
+            name: "svp_ppol_prepare",
+            runner: svp::runner_svp_ppol_prepare::<B, M>,
         },
         BenchOp {
             layer: "hal",
@@ -469,8 +470,8 @@ where
         + ModuleNew<B>
         + ModuleSynchronize<B>
         + VmpPMatAlloc<B>
-        + VmpPrepare<B>
-        + VmpPrepareTmpBytes
+        + VmpPMatPrepare<B>
+        + VmpPMatPrepareTmpBytes
         + VecZnxDftAlloc<B>
         + VmpApplyDft<B>
         + VmpApplyDftTmpBytes
@@ -481,8 +482,8 @@ where
     [
         BenchOp {
             layer: "hal",
-            name: "vmp_prepare",
-            runner: vmp::runner_vmp_prepare::<B, M>,
+            name: "vmp_pmat_prepare",
+            runner: vmp::runner_vmp_pmat_prepare::<B, M>,
         },
         BenchOp {
             layer: "hal",
@@ -506,19 +507,19 @@ where
 
 pub fn convolution_ops<B: Backend<ZnxWord = i64> + 'static, M: Measurement>() -> [BenchOp<M, CnvSweepParms>; 11]
 where
-    Module<B>: ModuleNew<B> + ModuleSynchronize<B> + Convolution<B> + CnvPVecAlloc<B> + VecZnxDftAlloc<B> + VecZnxBigAlloc<B>,
+    Module<B>: ModuleNew<B> + ModuleSynchronize<B> + CnvOps<B> + CnvPVecAlloc<B> + VecZnxDftAlloc<B> + VecZnxBigAlloc<B>,
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
 {
     [
         BenchOp {
             layer: "hal",
-            name: "cnv_prepare_left",
-            runner: convolution::runner_cnv_prepare_left::<B, M>,
+            name: "cnv_pvec_left_prepare",
+            runner: convolution::runner_cnv_pvec_left_prepare::<B, M>,
         },
         BenchOp {
             layer: "hal",
-            name: "cnv_prepare_right",
-            runner: convolution::runner_cnv_prepare_right::<B, M>,
+            name: "cnv_pvec_right_prepare",
+            runner: convolution::runner_cnv_pvec_right_prepare::<B, M>,
         },
         BenchOp {
             layer: "hal",
@@ -562,15 +563,15 @@ where
         },
         BenchOp {
             layer: "hal",
-            name: "cnv_prepare_self",
-            runner: convolution::runner_cnv_prepare_self::<B, M>,
+            name: "cnv_pvec_self_prepare",
+            runner: convolution::runner_cnv_pvec_self_prepare::<B, M>,
         },
     ]
 }
 
 // ── reim ─────────────────────────────────────────────────────────────────────
 
-pub fn reim_ops<T: NegacyclicFFT<f64> + NegacyclicFFTNew<f64>, M: Measurement>() -> [BenchOp<M, ReimSweepParams>; 2] {
+pub fn reim_ops<T: ReimNew<f64>, M: Measurement>() -> [BenchOp<M, ReimSweepParams>; 2] {
     [
         BenchOp {
             layer: "hal",
@@ -808,21 +809,21 @@ where
         + VecZnxBigSubSmallA<B>
         + VecZnxBigSubSmallB<B>
         + SvpPPolAlloc<B>
-        + SvpPrepare<B>
+        + SvpPPolPrepare<B>
         + SvpApplyDft<B>
         + SvpApplyDftTmpBytes
         + SvpApplyDftToDft<B>
         + SvpApplyDftToDftAssign<B>
         + VmpPMatAlloc<B>
-        + VmpPrepare<B>
-        + VmpPrepareTmpBytes
+        + VmpPMatPrepare<B>
+        + VmpPMatPrepareTmpBytes
         + VmpApplyDft<B>
         + VmpApplyDftTmpBytes
         + VmpApplyDftToDft<B>
         + VmpApplyDftToDftTmpBytes
         + VmpApplyDftToDftAdd<B>
         + VmpApplyDftToDftAddTmpBytes
-        + Convolution<B>
+        + CnvOps<B>
         + CnvPVecAlloc<B>
         + VecZnxAddScalarAssign<B>
         + ScalarZnxAlloc<B>
@@ -914,21 +915,21 @@ where
         + VecZnxBigSubSmallA<B>
         + VecZnxBigSubSmallB<B>
         + SvpPPolAlloc<B>
-        + SvpPrepare<B>
+        + SvpPPolPrepare<B>
         + SvpApplyDft<B>
         + SvpApplyDftTmpBytes
         + SvpApplyDftToDft<B>
         + SvpApplyDftToDftAssign<B>
         + VmpPMatAlloc<B>
-        + VmpPrepare<B>
-        + VmpPrepareTmpBytes
+        + VmpPMatPrepare<B>
+        + VmpPMatPrepareTmpBytes
         + VmpApplyDft<B>
         + VmpApplyDftTmpBytes
         + VmpApplyDftToDft<B>
         + VmpApplyDftToDftTmpBytes
         + VmpApplyDftToDftAdd<B>
         + VmpApplyDftToDftAddTmpBytes
-        + Convolution<B>
+        + CnvOps<B>
         + CnvPVecAlloc<B>
         + VecZnxAddScalarAssign<B>
         + ScalarZnxAlloc<B>

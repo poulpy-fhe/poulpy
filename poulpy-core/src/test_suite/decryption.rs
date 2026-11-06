@@ -6,7 +6,11 @@ use poulpy_hal::{
 };
 
 use super::poisoned_scratch;
-use crate::{GLWEDecrypt, api::GLWESecretPreparedFactory, layouts::ModuleCoreAlloc};
+use crate::{
+    GLWEDecrypt,
+    api::GLWESecretPreparedFactory,
+    layouts::{GLWEAlloc, GLWEPlaintextAlloc},
+};
 
 /// Decryption rejects mismatched operand degrees and degrees above the module in all builds.
 pub fn test_glwe_decrypt_degree_mismatch<BE: Backend>()

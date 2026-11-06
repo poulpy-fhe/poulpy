@@ -20,7 +20,17 @@ where
     BE: Backend<ZnxWord = i64>,
     M: CircuitBootstrappingExecute<BRA, BE>,
 {
-    module.circuit_bootstrapping_execute_tmp_bytes(block_size, extension_factor, res_infos, cbt_infos)
+    module.circuit_bootstrapping_execute_prepared_tmp_bytes(
+        &CircuitBootstrappingPlanLayout {
+            output_layout: res_infos.ggsw_layout(),
+            log_domain: None,
+            log_gap_in: None,
+            log_gap_out: None,
+            extension_factor,
+            block_size,
+        },
+        cbt_infos,
+    )
 }
 pub(crate) fn circuit_bootstrapping_execute_to_constant_derived<R, L, M, BRA, BE>(
     module: &M,
@@ -60,32 +70,6 @@ pub(crate) fn circuit_bootstrapping_execute_to_exponent_derived<R, L, M, BRA, BE
     plan.execute(module, res, lwe, key, scratch);
 }
 
-pub(crate) fn circuit_bootstrapping_execute_tmp_bytes_derived<R, A, M, BRA, BE>(
-    module: &M,
-    block_size: usize,
-    extension_factor: usize,
-    res_infos: &R,
-    cbt_infos: &A,
-) -> usize
-where
-    R: GGSWInfos,
-    A: CircuitBootstrappingKeyInfos,
-    BRA: BlindRotationAlgo,
-    BE: Backend<ZnxWord = i64>,
-    M: CircuitBootstrappingExecute<BRA, BE>,
-{
-    module.circuit_bootstrapping_execute_prepared_tmp_bytes(
-        &CircuitBootstrappingPlanLayout {
-            output_layout: res_infos.ggsw_layout(),
-            log_domain: None,
-            log_gap_in: None,
-            log_gap_out: None,
-            extension_factor,
-            block_size,
-        },
-        cbt_infos,
-    )
-}
 pub(crate) fn circuit_bootstrapping_execute_to_exponent_tmp_bytes_derived<R, A, M, BRA, BE>(
     module: &M,
     log_gap_out: usize,

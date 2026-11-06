@@ -1,9 +1,10 @@
 use poulpy_hal::{
     api::{
-        ModuleN, ScratchArenaTakeBasic, SvpApplyDftToDftAssign, VecZnxAddAssign, VecZnxBigAddSmallAssign, VecZnxBigBytesOf,
-        VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxCopy, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftZero,
-        VecZnxFillUniformSource, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxNormalize, VecZnxNormalizeAssign,
-        VecZnxNormalizeTmpBytes, VecZnxSubAssign, VecZnxSubNegateAssign, VecZnxZero, VmpApplyDftToDft, VmpApplyDftToDftTmpBytes,
+        ModuleN, ScratchArenaTakeScalarZnx, ScratchArenaTakeVecZnx, ScratchArenaTakeVecZnxBig, ScratchArenaTakeVecZnxDft,
+        SvpApplyDftToDftAssign, VecZnxAddAssign, VecZnxBigAddSmallAssign, VecZnxBigBytesOf, VecZnxBigNormalize,
+        VecZnxBigNormalizeTmpBytes, VecZnxCopy, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftZero, VecZnxFillUniformSource,
+        VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxNormalize, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes,
+        VecZnxSubAssign, VecZnxSubNegateAssign, VecZnxZero, VmpApplyDftToDft, VmpApplyDftToDftTmpBytes,
     },
     layouts::{
         Backend, Module, ScalarZnxToBackendMut, ScratchArena, VecZnx, VecZnxBigToBackendMut, VecZnxBigToBackendRef,
@@ -15,7 +16,7 @@ use poulpy_hal::{
 
 use crate::layouts::operand_degree;
 use crate::{
-    GLWEMaskFill, GetDistribution, Noise, ScalarZnxFillDistribution, VecZnxAddNoise, VecZnxBigAddNoise,
+    GLWEFill, GetDistribution, Noise, ScalarZnxFillDistribution, VecZnxAddNoise, VecZnxBigAddNoise,
     dist::Distribution,
     layouts::{
         GLWEBackendRef, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, TorusPrecision,
@@ -26,21 +27,21 @@ use crate::{
 /// Portable implementation using HAL operations.
 ///
 /// Backend implementations may call this helper without changing their override selection.
-pub trait GLWEMaskFillReference<BE: Backend> {
-    fn fill_glwe_mask_from_source_reference<R>(&self, res: &mut R, source_xa: &mut Source)
+pub trait GLWEFillReference<BE: Backend> {
+    fn glwe_fill_mask_from_source_reference<R>(&self, res: &mut R, source_xa: &mut Source)
     where
         R: GLWEToBackendMut<BE>;
 
-    fn fill_glwe_from_source_reference<R>(&self, res: &mut R, source: &mut Source)
+    fn glwe_fill_from_source_reference<R>(&self, res: &mut R, source: &mut Source)
     where
         R: GLWEToBackendMut<BE>;
 }
 
-impl<BE: Backend> GLWEMaskFillReference<BE> for Module<BE>
+impl<BE: Backend> GLWEFillReference<BE> for Module<BE>
 where
     Self: VecZnxFillUniformSource<BE>,
 {
-    fn fill_glwe_mask_from_source_reference<R>(&self, res: &mut R, source_xa: &mut Source)
+    fn glwe_fill_mask_from_source_reference<R>(&self, res: &mut R, source_xa: &mut Source)
     where
         R: GLWEToBackendMut<BE>,
     {
@@ -51,7 +52,7 @@ where
         }
     }
 
-    fn fill_glwe_from_source_reference<R>(&self, res: &mut R, source: &mut Source)
+    fn glwe_fill_from_source_reference<R>(&self, res: &mut R, source: &mut Source)
     where
         R: GLWEToBackendMut<BE>,
     {
@@ -117,7 +118,7 @@ where
         + VecZnxBigNormalizeTmpBytes
         + VecZnxIdftApplyTmpBytes
         + VecZnxDftBytesOf
-        + GLWEMaskFill<BE>
+        + GLWEFill<BE>
         + GLWEEncryptSkInternal<BE>,
 {
     fn glwe_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
@@ -127,11 +128,11 @@ where
         let size: usize = infos.size();
         let n: usize = operand_degree(self.n(), &[infos.n()]);
 
-        let lvl_0: usize = BE::bytes_of_vec_znx(n, 1, size);
-        let lvl_1: usize = BE::bytes_of_vec_znx(n, 1, size);
+        let lvl_0: usize = BE::vec_znx_bytes_of(n, 1, size);
+        let lvl_1: usize = BE::vec_znx_bytes_of(n, 1, size);
         let lvl_2: usize = self.vec_znx_normalize_tmp_bytes().max(
-            self.bytes_of_vec_znx_dft(n, 1, size)
-                + self.bytes_of_vec_znx_big(n, 1, size)
+            self.vec_znx_dft_bytes_of(n, 1, size)
+                + self.vec_znx_big_bytes_of(n, 1, size)
                 + self
                     .vec_znx_idft_apply_tmp_bytes()
                     .max(self.vec_znx_big_normalize_tmp_bytes()),
@@ -175,7 +176,7 @@ where
 
             {
                 let mut res_ref = &mut *res;
-                self.fill_glwe_mask_from_source(&mut res_ref, source_xa);
+                self.glwe_fill_mask_from_source(&mut res_ref, source_xa);
             }
             self.glwe_encrypt_sk_internal(
                 res.base2k().into(),
@@ -223,7 +224,7 @@ where
 
             {
                 let mut res_ref = &mut *res;
-                self.fill_glwe_mask_from_source(&mut res_ref, source_xa);
+                self.glwe_fill_mask_from_source(&mut res_ref, source_xa);
             }
             self.glwe_encrypt_sk_internal(
                 res.base2k().into(),
@@ -330,12 +331,12 @@ where
         let size: usize = res_infos.size().max(pk_infos.size());
         let rank: usize = pk_infos.rank().into();
         let n: usize = operand_degree(self.n(), &[res_infos.n(), pk_infos.n()]);
-        let lvl_0: usize = BE::bytes_of_scalar_znx(n, rank);
-        let lvl_1: usize = self.bytes_of_vec_znx_dft(n, rank, 1);
-        let lvl_2: usize = self.bytes_of_vec_znx_dft(n, rank + 1, size);
+        let lvl_0: usize = BE::scalar_znx_bytes_of(n, rank);
+        let lvl_1: usize = self.vec_znx_dft_bytes_of(n, rank, 1);
+        let lvl_2: usize = self.vec_znx_dft_bytes_of(n, rank + 1, size);
         let vmp: usize = self.vmp_apply_dft_to_dft_tmp_bytes(size, 1, 1, rank, rank + 1, size);
-        let lvl_3: usize = BE::bytes_of_vec_znx(n, 1, vmp.div_ceil(BE::bytes_of_vec_znx(n, 1, 1))).max(
-            self.bytes_of_vec_znx_big(n, 1, size)
+        let lvl_3: usize = BE::vec_znx_bytes_of(n, 1, vmp.div_ceil(BE::vec_znx_bytes_of(n, 1, 1))).max(
+            self.vec_znx_big_bytes_of(n, 1, size)
                 + self
                     .vec_znx_idft_apply_tmp_bytes()
                     .max(self.vec_znx_big_normalize_tmp_bytes()),

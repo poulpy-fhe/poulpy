@@ -6,7 +6,9 @@ use poulpy_core::layouts::{GGLWEInfos, GGLWELayout, GLWEInfos, GetAutomorphismKe
 use poulpy_hal::layouts::{Module, ScratchArena};
 
 use crate::{
-    layouts::{BlasContext, BlasGrid, BlasGridInfos, BlasGridMut, validate::assert_maps_scratch, validate_blas_transpose},
+    layouts::{
+        BlasContextPrepared, BlasGrid, BlasGridInfos, BlasGridMut, validate::assert_maps_scratch, validate_blas_transpose,
+    },
     oep::BlasMatIntraImpl,
 };
 
@@ -16,7 +18,7 @@ pub(crate) fn blas_transpose_tmp_bytes_derived<BE, R, A, K>(
     module: &Module<BE>,
     res: &R,
     a: &A,
-    ctx: &BlasContext<BE>,
+    ctx: &BlasContextPrepared<BE>,
     keys: &K,
 ) -> usize
 where
@@ -42,7 +44,7 @@ pub(crate) fn blas_transpose_derived<BE, R, A, K>(
     module: &Module<BE>,
     res: &mut R,
     a: &A,
-    ctx: &BlasContext<BE>,
+    ctx: &BlasContextPrepared<BE>,
     keys: &K,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>

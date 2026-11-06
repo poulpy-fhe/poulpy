@@ -15,8 +15,10 @@ pub mod inter;
 pub mod intra;
 pub mod keys;
 pub mod matmul;
+pub mod matvec;
 pub mod meta;
 pub mod parity;
+pub mod repack;
 
 /// Registers the functional tests for one backend, scalar, encoder and parameter set, on blocks of dimension
 /// `2^log_d`: 2 unless the optional `log_d` sets it. The ring degree `N` is free within two bounds: the blocks fit the
@@ -32,7 +34,9 @@ pub mod parity;
 /// the public matrices below that scale, where a key width taken from it in place of theirs, or capped by it, finds no
 /// key.
 /// `test_blas_matmul_long_sums`, a `1 x 8` grid times an `8 x 1` grid of distinct blocks, runs on its own ring,
-/// `N = 32`, so a registration that sets `log_d` skips it with a message: its default registration runs it.
+/// `N = 32`, so a registration that sets `log_d` skips it with a message: its default registration runs it. The
+/// products of a vector span 16 slots: below `N = 32` they are skipped with a message, and the repackings of a grid's
+/// line also `4 d^2` slots, below which they are.
 #[macro_export]
 macro_rules! blas_backend_test_suite {
     (mod $modname:ident, backend = $backend:ty, scalar = $scalar:ty, encoder = $encoder:ty, params = $params:expr
@@ -113,6 +117,33 @@ macro_rules! blas_backend_test_suite {
                     &*HOST_MODULE,
                 );
             }
+            #[test]
+            fn matvec_pt() {
+                $crate::test_suite::matvec::test_blas_matvec_pt::<$backend, $scalar, $encoder>($params, &*MODULE, &*HOST_MODULE);
+            }
+            run_test_with_arg!(grid_to_vector, $crate::test_suite::repack::test_blas_grid_to_vector, log_d());
+            run_test_with_arg!(vector_to_grid, $crate::test_suite::repack::test_blas_vector_to_grid, log_d());
+            run_test_with_arg!(repack_guards, $crate::test_suite::repack::test_blas_repack_guards, log_d());
+            #[test]
+            fn matvec_diagonal() {
+                $crate::test_suite::matvec::test_blas_matvec_diagonal::<$backend, $scalar, $encoder>($params, &*MODULE, &*HOST_MODULE);
+            }
+            #[test]
+            fn matvec_diagonal_guards() {
+                $crate::test_suite::matvec::test_blas_matvec_diagonal_guards::<$backend, $scalar, $encoder>(
+                    $params,
+                    &*MODULE,
+                    &*HOST_MODULE,
+                );
+            }
+            #[test]
+            fn matvec_pt_guards() {
+                $crate::test_suite::matvec::test_blas_matvec_pt_guards::<$backend, $scalar, $encoder>(
+                    $params,
+                    &*MODULE,
+                    &*HOST_MODULE,
+                );
+            }
             run_test_with_arg!(replicated_shifts, $crate::test_suite::matmul::test_blas_replicated_shifts, log_d());
             run_test_with_arg!(key_widths, $crate::test_suite::keys::test_blas_key_widths, log_d());
             run_test_with_arg!(key_stores, $crate::test_suite::keys::test_blas_key_stores_from_queries, log_d());
@@ -148,7 +179,7 @@ macro_rules! blas_conjugate_invariant_test_suite {
 }
 
 /// Registers blas parity of `backend_test` against `backend_ref` for one scalar and parameter set: the tests `inter`,
-/// `intra` and `matmul`, each on its own pair of modules, and `concurrency`, which runs calls at once on the module of
+/// `intra`, `matmul` and `matvec`, each on its own pair of modules, and `concurrency`, which runs calls at once on the module of
 /// `backend_test` alone and compares each with the same call run alone. Rank and `dsize` come from `params`; the
 /// optional `shapes`, a [`BlasParityShapes`](crate::test_suite::parity::BlasParityShapes), narrows the `log_d` sweep.
 /// The expansion names `::poulpy_hal`, so the invoking crate depends on it directly.
@@ -179,6 +210,7 @@ macro_rules! blas_parity_test_suite {
             run_test!(inter, $crate::test_suite::parity::test_blas_inter_parity);
             run_test!(intra, $crate::test_suite::parity::test_blas_intra_parity);
             run_test!(matmul, $crate::test_suite::parity::test_blas_matmul_parity);
+            run_test!(matvec, $crate::test_suite::parity::test_blas_matvec_parity);
 
             #[test]
             fn concurrency() {

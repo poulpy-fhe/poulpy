@@ -19,12 +19,12 @@ use crate::{
         CKKSNegOps, CKKSPolynomialEvaluationOps, CKKSPow2Ops, CKKSSubOps,
     },
     layouts::{
-        CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned, EncodedLut, ScratchArenaTakeCKKS, eval_mod::EvalMod,
-        functional_bootstrapping::DoubleAngleChain,
+        CKKSCiphertextAlloc, CKKSCiphertextOwned, CKKSPlaintextOwned, EncodedLut, ScratchArenaTakeCKKSCiphertext,
+        eval_mod::EvalMod, functional_bootstrapping::DoubleAngleChain,
     },
     numerics::CKKSFloat,
     polynomial::{BSGSPolynomial, ComplexBSGSPolynomial, ComplexPolynomial, Polynomial},
-    power_basis::{PowerBasis, PowerBasisGen},
+    power_basis::{CKKSPowerBasisGen, PowerBasis},
 };
 
 /// Builds the LUT power series `Σ (α_k/2)·E^k`; `T + conj(T)` recovers the
@@ -146,7 +146,7 @@ where
         + CKKSMulOps<BE>
         + CKKSPow2Ops<BE>
         + CKKSSubOps<BE>
-        + CKKSModuleAlloc<BE>
+        + CKKSCiphertextAlloc<BE>
         + GLWENormalize<BE>,
     C: GLWEToBackendRef<BE> + CKKSCtBounds,
     H: GetTensorKey<BE>,
@@ -296,8 +296,7 @@ pub(crate) fn ckks_eval_lut_binary<BE, C, R, H>(
 ) -> Result<()>
 where
     BE: Backend,
-    Module<BE>:
-        CKKSPolynomialEvaluationOps<BE> + CKKSMulOps<BE> + CKKSAddOps<BE> + CKKSSubOps<BE> + CKKSNegOps<BE> + CKKSModuleAlloc<BE>,
+    Module<BE>: CKKSPolynomialEvaluationOps<BE> + CKKSMulOps<BE> + CKKSAddOps<BE> + CKKSSubOps<BE> + CKKSNegOps<BE>,
     C: GLWEToBackendRef<BE> + CKKSCtBounds,
     R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
     H: GetTensorKey<BE>,
@@ -309,18 +308,18 @@ where
     let consts = chain.consts();
     let last = chain.steps().get() - 1;
 
-    let mut squared = module.ckks_ciphertext_alloc_from_infos(&*res);
+    let (mut squared, mut scratch) = scratch.borrow().take_ckks_ciphertext_like_scratch(&*res);
     for i in 0..last {
-        module.ckks_square_into(&mut squared, &*res, tsk, scratch)?;
-        module.ckks_sub_pt_const_into(res, 0, &squared, consts, i, scratch)?;
+        module.ckks_square_into(&mut squared, &*res, tsk, &mut scratch)?;
+        module.ckks_sub_pt_const_into(res, 0, &squared, consts, i, &mut scratch)?;
     }
 
-    module.ckks_square_into(&mut squared, &*res, tsk, scratch)?;
+    module.ckks_square_into(&mut squared, &*res, tsk, &mut scratch)?;
     if chain.negate() {
-        module.ckks_sub_pt_const_into(res, 0, &squared, consts, last, scratch)?;
+        module.ckks_sub_pt_const_into(res, 0, &squared, consts, last, &mut scratch)?;
         module.ckks_neg_assign(res)?;
     } else {
-        module.ckks_add_pt_const_into(res, 0, &squared, consts, last, scratch)?;
+        module.ckks_add_pt_const_into(res, 0, &squared, consts, last, &mut scratch)?;
     }
 
     Ok(())

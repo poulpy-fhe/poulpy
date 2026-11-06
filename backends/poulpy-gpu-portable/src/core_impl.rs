@@ -11,17 +11,13 @@ use std::{
 
 use poulpy_core::{
     Distribution, Noise,
-    gadget::{gadget_dft_apply_from_dft, gadget_dft_operand_size},
+    gadget::{gglwe_gadget_dft_apply_from_dft, gglwe_gadget_dft_operand_size},
     layouts::{
         GGLWEInfos, LWEInfos, assert_gglwe_product, assert_gglwe_product_from_dft, assert_gglwe_product_idft_normalize,
         prepared::GGLWEPreparedBackendRef,
     },
     oep::{ConstTerm, GGLWEProductDigitsStridedImpl, SamplingImpl},
-    reference::keyswitching::glwe::{
-        gglwe_product_fused_reference, gglwe_product_fused_tmp_bytes_reference, gglwe_product_idft_normalize_reference,
-        gglwe_product_idft_normalize_tmp_bytes_reference, gglwe_product_limbs, gglwe_products_from_dft_reference,
-        gglwe_products_from_dft_tmp_bytes_reference,
-    },
+    reference::keyswitching::{GGLWEProductDigitsStridedReference, glwe::gglwe_product_limbs},
 };
 use poulpy_cpu_portable::kernels::noise::{gaussian_cumulative_table_portable, gaussian_rejection_constants_portable};
 use poulpy_hal::layouts::{
@@ -81,7 +77,7 @@ unsafe impl<RT: GpuRuntime, R: Ring> GGLWEProductDigitsStridedImpl for NTT4x30Gp
     where
         K: GGLWEInfos,
     {
-        gglwe_product_fused_tmp_bytes_reference(module, res_size, product_size, a_size, key_infos)
+        module.gglwe_product_fused_tmp_bytes_reference(res_size, product_size, a_size, key_infos)
     }
 
     // One launch: the product adds, rotates and accumulates as it stores.
@@ -104,7 +100,7 @@ unsafe impl<RT: GpuRuntime, R: Ring> GGLWEProductDigitsStridedImpl for NTT4x30Gp
         );
         // The kernel takes a dense key, a source to multiply and an addend on each of the first two columns.
         if key.stride() != 1 || a.size() == 0 || addends.len() > 2 {
-            return gglwe_product_fused_reference(module, res, product_size, a, key, term_count, addends, p, accumulate, scratch);
+            return module.gglwe_product_fused_reference(res, product_size, a, key, term_count, addends, p, accumulate, scratch);
         }
         let dsize = key.dsize().as_usize();
         // One limb per digit is a plain vector-matrix product.
@@ -136,9 +132,9 @@ unsafe impl<RT: GpuRuntime, R: Ring> GGLWEProductDigitsStridedImpl for NTT4x30Gp
         K: GGLWEInfos,
     {
         // The operands of every source side by side, then the work of one source.
-        let operand_size = gadget_dft_operand_size(key_infos, source_size, key_infos.size());
-        let operand = Self::scratch_aligned(Self::bytes_of_vec_znx_dft(module.n(), rank, operand_size));
-        gglwe_products_from_dft_tmp_bytes_reference(module, count, rank, source_size, key_infos)
+        let operand_size = gglwe_gadget_dft_operand_size(key_infos, source_size, key_infos.size());
+        let operand = Self::scratch_aligned(Self::vec_znx_dft_bytes_of(module.n(), rank, operand_size));
+        module.gglwe_products_from_dft_tmp_bytes_reference(count, rank, source_size, key_infos)
             + count.saturating_sub(1) * operand
     }
 
@@ -157,7 +153,7 @@ unsafe impl<RT: GpuRuntime, R: Ring> GGLWEProductDigitsStridedImpl for NTT4x30Gp
         key: &GGLWEPreparedBackendRef<'_, Self>,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        use poulpy_hal::api::ScratchArenaTakeBasic;
+        use poulpy_hal::api::ScratchArenaTakeVecZnxDft;
         assert!(
             sources.len() == res.len() && source_sizes.len() == res.len() && accumulate.len() == res.len(),
             "gglwe_products_from_dft: items of different lengths"
@@ -183,8 +179,7 @@ unsafe impl<RT: GpuRuntime, R: Ring> GGLWEProductDigitsStridedImpl for NTT4x30Gp
         // The kernel takes a dense key, sources of one size and one accumulation for all.
         let alike = source_sizes.iter().all(|&size| size == source_size) && accumulate.iter().all(|&acc| acc == accumulate[0]);
         if key.stride() != 1 || res.len() < 2 || !alike {
-            return gglwe_products_from_dft_reference(
-                module,
+            return module.gglwe_products_from_dft_reference(
                 p,
                 term_count,
                 res,
@@ -198,7 +193,7 @@ unsafe impl<RT: GpuRuntime, R: Ring> GGLWEProductDigitsStridedImpl for NTT4x30Gp
             );
         }
         let output_size = output_size.min(key.size());
-        let operand_size = gadget_dft_operand_size(key, source_size, output_size);
+        let operand_size = gglwe_gadget_dft_operand_size(key, source_size, output_size);
         let (mut operands, mut rest) = scratch
             .borrow()
             .take_vec_znx_dft_slice_scratch(n, res.len(), rank, operand_size);
@@ -207,7 +202,7 @@ unsafe impl<RT: GpuRuntime, R: Ring> GGLWEProductDigitsStridedImpl for NTT4x30Gp
             .map(|source| source.with_limb_range_mut(0, source_size))
             .collect();
         for (operand, source) in operands.iter_mut().zip(sources.iter_mut()) {
-            gadget_dft_apply_from_dft(module, operand, source, source_base2k, key, output_size, &mut rest);
+            gglwe_gadget_dft_apply_from_dft(module, operand, source, source_base2k, key, output_size, &mut rest);
         }
         let operands: Vec<VecZnxDftBackendRef<'_, Self>> = operands
             .iter()
@@ -266,7 +261,7 @@ unsafe impl<RT: GpuRuntime, R: Ring> GGLWEProductDigitsStridedImpl for NTT4x30Gp
     where
         K: GGLWEInfos,
     {
-        gglwe_product_idft_normalize_tmp_bytes_reference(module, res_size, product_size, a_size, key_infos)
+        module.gglwe_product_idft_normalize_tmp_bytes_reference(res_size, product_size, a_size, key_infos)
     }
 
     // At rank 1 and the kernel's radices, the product runs the first inverse launch of its
@@ -311,8 +306,8 @@ unsafe impl<RT: GpuRuntime, R: Ring> GGLWEProductDigitsStridedImpl for NTT4x30Gp
                 [addend(0), addend(1)],
             );
         if !fused {
-            return gglwe_product_idft_normalize_reference(
-                module, res, res_base2k, res_k, res_offset, res_dft, a, key, term_count, addends, body, a_base2k, scratch,
+            return module.gglwe_product_idft_normalize_reference(
+                res, res_base2k, res_k, res_offset, res_dft, a, key, term_count, addends, body, a_base2k, scratch,
             );
         }
         for col in 0..res_dft.cols() {
@@ -448,7 +443,7 @@ pub(crate) fn const_combination_shift_tmp_bytes<RT: GpuRuntime, R: Ring>(
     b_size: usize,
 ) -> usize {
     use poulpy_hal::{api::VecZnxRshTmpBytes, layouts::Backend};
-    NTT4x30Gpu::<RT, R>::scratch_aligned(NTT4x30Gpu::<RT, R>::bytes_of_vec_znx(1, CONST_TERMS, b_size + 1))
+    NTT4x30Gpu::<RT, R>::scratch_aligned(NTT4x30Gpu::<RT, R>::vec_znx_bytes_of(1, CONST_TERMS, b_size + 1))
         + module.vec_znx_rsh_tmp_bytes(b_size + 1)
 }
 
@@ -466,7 +461,7 @@ pub(crate) fn shifted_const_combination<RT: GpuRuntime, R: Ring>(
     scratch: &mut ScratchArena<'_, NTT4x30Gpu<RT, R>>,
 ) -> bool {
     use poulpy_hal::{
-        api::{ScratchArenaTakeBasic, VecZnxRsh},
+        api::{ScratchArenaTakeVecZnx, VecZnxRsh},
         layouts::{VecZnxToBackendMut, VecZnxToBackendRef, vec_znx_backend_ref_from_ref},
     };
     if terms.iter().all(|term| term.shift == 0) {
@@ -626,11 +621,8 @@ macro_rules! impl_mul_const {
                 acc_size: usize,
                 a_size: usize,
                 b_size: usize,
-            ) -> usize
-            where
-                ::poulpy_hal::layouts::Module<$be>: ::poulpy_core::reference::operations::GLWEConstCombinationReference<$be>,
-            {
-                ::poulpy_core::reference::operations::glwe_const_combination_tmp_bytes_reference(module, acc_size, a_size, b_size)
+            ) -> usize {
+                <::poulpy_hal::layouts::Module<$be> as ::poulpy_core::reference::operations::GLWEMulConstReference<$be>>::glwe_const_combination_tmp_bytes_reference(module, acc_size, a_size, b_size)
                     .max($crate::core_impl::const_combination_shift_tmp_bytes(module, b_size))
             }
 
@@ -642,11 +634,9 @@ macro_rules! impl_mul_const {
                 acc_size: usize,
                 terms: &[::poulpy_core::oep::ConstTerm<'_, $be>],
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
-            ) where
-                ::poulpy_hal::layouts::Module<$be>: ::poulpy_core::reference::operations::GLWEConstCombinationReference<$be>,
-            {
+            ) {
                 if !$crate::core_impl::shifted_const_combination(module, res, base2k, res_k, acc_size, terms, scratch) {
-                    ::poulpy_core::reference::operations::glwe_const_combination_reference(
+                    <::poulpy_hal::layouts::Module<$be> as ::poulpy_core::reference::operations::GLWEMulConstReference<$be>>::glwe_const_combination_reference(
                         module, res, base2k, res_k, acc_size, terms, scratch,
                     )
                 }
@@ -898,7 +888,7 @@ macro_rules! impl_core {
         ::poulpy_core::impl_ggsw_copy_reference_full!($be);
         ::poulpy_core::impl_glwe_shift_reference_full!($be);
         ::poulpy_core::impl_glwe_normalize_reference_full!($be);
-        ::poulpy_core::impl_polynomial_evaluation_derived_full!($be);
+        ::poulpy_core::impl_glwe_polynomial_evaluation_derived_full!($be);
         ::poulpy_core::impl_preparation_reference_full!($be);
         ::poulpy_core::impl_secret_reference_full!($be);
         ::poulpy_core::impl_glwe_trace_derived_full!($be);
@@ -1178,14 +1168,14 @@ macro_rules! impl_tensoring {
 
             // Both prepared forms are the transform: a square prepares the left
             // one alone and reads it on both sides.
-            fn glwe_square_prepare(
+            fn glwe_square_operand_prepare(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 left: &mut ::poulpy_hal::layouts::CnvPVecLBackendMut<'_, $be>,
                 right: &mut ::poulpy_hal::layouts::CnvPVecRBackendMut<'_, $be>,
                 a: &::poulpy_hal::layouts::VecZnxBackendRef<'_, $be>,
                 _scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) {
-                crate::hal_impl::cnv_prepare_self_left(module, left, right, a);
+                crate::hal_impl::cnv_pvec_self_prepare_left(module, left, right, a);
             }
 
             fn glwe_square_columns(

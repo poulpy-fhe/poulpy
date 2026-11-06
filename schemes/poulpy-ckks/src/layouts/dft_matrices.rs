@@ -126,7 +126,7 @@ type ButterflyLayer<F> = (Vec<Cpx<F>>, Vec<Cpx<F>>, Vec<Cpx<F>>);
 /// ([`rotate_and_mul`]), which also replicates them across the two halves of
 /// the `dslots = 2·slots` working vector of the sparse-repack case (the
 /// butterfly acts the same on `[Re | Im]`). Produced on demand so
-/// [`gen_dft_matrices`] can merge layer-by-layer without holding all
+/// [`ckks_dft_matrices_gen`] can merge layer-by-layer without holding all
 /// `log_slots` layers in memory at once.
 fn plain_layer<F: DftScalar>(
     kind: DFTType,
@@ -321,9 +321,9 @@ fn gen_repack_matrix<F: DftScalar>(log_l: usize, dslots: usize) -> ComplexDiagon
 }
 
 /// Merges the next `m` butterfly layers (from `fft_level`, descending) into a
-/// starting `factor` — the shared inner loop of [`gen_dft_matrices`] (where
+/// starting `factor` — the shared inner loop of [`ckks_dft_matrices_gen`] (where
 /// `merge_n`/`out_width` are the possibly-doubled sparse-repack slot counts)
-/// and [`gen_dft_matrices_blockwise`] (where both are the tile width). Keeping
+/// and [`ckks_dft_matrices_gen_blockwise`] (where both are the tile width). Keeping
 /// one copy guarantees the dense and blockwise generators compose their factor
 /// matrices from bit-identical layer merges.
 #[allow(clippy::too_many_arguments)]
@@ -371,7 +371,7 @@ fn merge_factor_layers<F: DftScalar>(
 /// matrix zeroed. Otherwise the dense path is used (and full-packing
 /// `RepackImagAsReal` ≡ `SplitRealAndImag`). Shape validity is guaranteed by
 /// [`DFTPlan::new`].
-pub fn gen_dft_matrices<F: DftScalar>(literal: &DFTPlan, log_n: usize) -> Vec<ComplexDiagonals<F>> {
+pub fn ckks_dft_matrices_gen<F: DftScalar>(literal: &DFTPlan, log_n: usize) -> Vec<ComplexDiagonals<F>> {
     let log_slots = literal.log_slots();
     let slots = 1usize << log_slots;
     let max_depth = literal.num_factors();
@@ -453,7 +453,7 @@ pub fn gen_dft_matrices<F: DftScalar>(literal: &DFTPlan, log_n: usize) -> Vec<Co
 /// larger `2^log_tile`-slot vector (block-diagonal replication across
 /// `2^(log_tile − log_slots)` identical small transforms).
 ///
-/// Unlike [`gen_dft_matrices`], whose factor diagonals are canonicalized modulo
+/// Unlike [`ckks_dft_matrices_gen`], whose factor diagonals are canonicalized modulo
 /// `slots` (exact only against a `slots`-periodic working vector), the
 /// diagonals here are canonicalized modulo the tile, so `+rot` and `−rot`
 /// stay distinct and the factors are exact when applied (tiled) to a
@@ -462,7 +462,7 @@ pub fn gen_dft_matrices<F: DftScalar>(literal: &DFTPlan, log_n: usize) -> Vec<Co
 /// its own `m`-aligned group (the `b`/`c` coefficient supports pair each
 /// position with its in-group partner at distance `m/2`), so the composed
 /// factor never crosses a block boundary. With `log_tile == log_slots` this
-/// degenerates to the dense [`gen_dft_matrices`] (`Standard` format, natural
+/// degenerates to the dense [`ckks_dft_matrices_gen`] (`Standard` format, natural
 /// order).
 ///
 /// `factorization_depth` is consumed in evaluation order (factor 0 applied
@@ -474,7 +474,7 @@ pub fn gen_dft_matrices<F: DftScalar>(literal: &DFTPlan, log_n: usize) -> Vec<Co
 /// convention); with `true` the coefficient side is natural and the points
 /// come in bit-reversed order — for a Decode/Encode pair generated with the
 /// same flag the round-trip is the identity on positions either way.
-pub fn gen_dft_matrices_blockwise<F: DftScalar>(
+pub fn ckks_dft_matrices_gen_blockwise<F: DftScalar>(
     kind: DFTType,
     log_slots: usize,
     log_tile: usize,
@@ -722,7 +722,7 @@ mod tests {
                         let mut plan = literal(kind, schedule.clone(), bit_reversed);
                         plan.format = format;
                         plan.scaling = None;
-                        let factors = gen_dft_matrices::<f64>(&plan, log_n);
+                        let factors = ckks_dft_matrices_gen::<f64>(&plan, log_n);
                         let replayed = plan.diagonal_indexes(log_n);
                         let generated: Vec<Vec<i64>> = factors.iter().map(|f| f.indexes()).collect();
                         assert_eq!(
@@ -772,7 +772,7 @@ mod tests {
                         let mut plan = literal(kind, schedule.clone(), bit_reversed);
                         plan.format = format;
                         plan.scaling = None;
-                        let factors = gen_dft_matrices::<f64>(&plan, log_n);
+                        let factors = ckks_dft_matrices_gen::<f64>(&plan, log_n);
                         for (factor, replayed) in factors.iter().zip(plan.diagonal_log_sparsity(log_n)) {
                             for (index, log_sparsity) in replayed {
                                 let claimed = 1usize << (log_n - 1 - log_sparsity);
@@ -813,8 +813,8 @@ mod tests {
             let mut repack = split.clone();
             repack.format = DFTOutputFormat::RepackImagAsReal;
 
-            let fs = gen_dft_matrices::<f64>(&split, 5);
-            let fr = gen_dft_matrices::<f64>(&repack, 5);
+            let fs = ckks_dft_matrices_gen::<f64>(&split, 5);
+            let fr = ckks_dft_matrices_gen::<f64>(&repack, 5);
             assert_eq!(fs.len(), fr.len());
             for (a, b) in fs.iter().zip(&fr) {
                 assert_eq!(a.indexes(), b.indexes());
@@ -838,11 +838,11 @@ mod tests {
             DFTPlan::new(kind, vec![(1, 1); 2], DFTOutputFormat::RepackImagAsReal, zero_meta()).unwrap()
         };
 
-        let dec = gen_dft_matrices::<f64>(&mk(DFTType::Decode), log_n);
+        let dec = ckks_dft_matrices_gen::<f64>(&mk(DFTType::Decode), log_n);
         assert_eq!(dec[0].slots(), dslots, "decode value width");
         assert!(dec[0].indexes().contains(&(slots as i64)), "repack diagonal at index slots");
 
-        let enc = gen_dft_matrices::<f64>(&mk(DFTType::Encode), log_n);
+        let enc = ckks_dft_matrices_gen::<f64>(&mk(DFTType::Encode), log_n);
         assert_eq!(enc.last().unwrap().slots(), dslots, "encode value width");
         let last = enc.last().unwrap();
         for idx in last.re.indexes() {
@@ -860,7 +860,7 @@ mod tests {
     #[test]
     fn dense_repack_not_sparse() {
         // log_n = 5 → log_max_slots = 4; log_slots = 4 → dense.
-        let f = gen_dft_matrices::<f64>(
+        let f = ckks_dft_matrices_gen::<f64>(
             // vec![(1, 1); 4]: sum of depths = log_slots = 4.
             &DFTPlan::new(
                 DFTType::Encode,
@@ -884,11 +884,12 @@ mod tests {
             let slots = 1usize << log_slots;
             for bit_reversed in [false, true] {
                 for levels in schedules(log_slots) {
-                    let enc = gen_dft_matrices::<f64>(&literal(DFTType::Encode, levels.clone(), bit_reversed), log_slots + 1);
+                    let enc =
+                        ckks_dft_matrices_gen::<f64>(&literal(DFTType::Encode, levels.clone(), bit_reversed), log_slots + 1);
                     // Decode inverts Encode, so it uses the reversed schedule
                     // (evaluation-order convention; see the `DFTPlan` docs).
                     let dec_levels: Vec<usize> = levels.iter().rev().copied().collect();
-                    let dec = gen_dft_matrices::<f64>(&literal(DFTType::Decode, dec_levels, bit_reversed), log_slots + 1);
+                    let dec = ckks_dft_matrices_gen::<f64>(&literal(DFTType::Decode, dec_levels, bit_reversed), log_slots + 1);
 
                     let re: Vec<f64> = (0..slots).map(|j| (0.3 * (j as f64 + 1.0)).sin()).collect();
                     let im: Vec<f64> = (0..slots).map(|j| (0.7 * (j as f64 + 2.0)).cos()).collect();
@@ -917,7 +918,7 @@ mod tests {
     #[test]
     fn factor_sparsity() {
         // 3 factors merging 2, 2, 1 layers (log_slots = 2+2+1 = 5).
-        let enc = gen_dft_matrices::<f64>(&literal(DFTType::Encode, vec![2, 2, 1], false), 6);
+        let enc = ckks_dft_matrices_gen::<f64>(&literal(DFTType::Encode, vec![2, 2, 1], false), 6);
         assert_eq!(enc.len(), 3, "one factor per schedule entry");
         // First factor merges 2 layers -> at most 3^2 = 9 diagonals.
         assert!(enc[0].indexes().len() <= 9);
@@ -937,8 +938,8 @@ mod tests {
         for kind in [DFTType::Encode, DFTType::Decode] {
             for bit_reversed in [false, true] {
                 for depth in schedules(log_slots) {
-                    let dense = gen_dft_matrices::<f64>(&literal(kind, depth.clone(), bit_reversed), log_slots + 1);
-                    let block = gen_dft_matrices_blockwise::<f64>(kind, log_slots, log_slots, &depth, 1.0, bit_reversed);
+                    let dense = ckks_dft_matrices_gen::<f64>(&literal(kind, depth.clone(), bit_reversed), log_slots + 1);
+                    let block = ckks_dft_matrices_gen_blockwise::<f64>(kind, log_slots, log_slots, &depth, 1.0, bit_reversed);
                     assert_eq!(dense.len(), block.len(), "{kind:?} {depth:?}");
                     for (f, (a, b)) in dense.iter().zip(&block).enumerate() {
                         assert_eq!(a.indexes(), b.indexes(), "{kind:?} br={bit_reversed} {depth:?} factor {f}");
@@ -969,7 +970,7 @@ mod tests {
 
         // Per-block dense Decode, one fully-merged factor (bit_reversed = true:
         // natural coefficient side, the convention PaCo uses).
-        let dec = gen_dft_matrices::<f64>(&literal(DFTType::Decode, vec![log_slots], true), log_slots + 1);
+        let dec = ckks_dft_matrices_gen::<f64>(&literal(DFTType::Decode, vec![log_slots], true), log_slots + 1);
         let mut ev_re = vec![0.0; tile];
         let mut ev_im = vec![0.0; tile];
         for b in 0..tile / slots {
@@ -980,7 +981,7 @@ mod tests {
         }
 
         // Blockwise Encode chain applied across the full tile at once.
-        let enc = gen_dft_matrices_blockwise::<f64>(DFTType::Encode, log_slots, log_tile, &[1, 2], 1.0, true);
+        let enc = ckks_dft_matrices_gen_blockwise::<f64>(DFTType::Encode, log_slots, log_tile, &[1, 2], 1.0, true);
         let (rr, ri) = eval_chain(&enc, ev_re, ev_im);
         for j in 0..tile {
             assert!(

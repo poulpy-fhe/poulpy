@@ -1,6 +1,6 @@
 //! Tests for `CKKSDotProductOps` — inner-product variants.
 //!
-//! All tests use `n = 3` pairs, except the long sum's 32 and the prepared products' 1 and 16.
+//! All tests use `n = 3` pairs, except the long sum's 32 and the prepared products' 1, 2 and 16.
 //!
 //! # Test inventory
 //!
@@ -16,7 +16,8 @@
 //! | [`test_dot_product_ct_non_uniform`] | ct · ct, pairs without a shared layout or scale |
 //! | [`test_dot_product_prepared`] | prepared ct · prepared ct: the bits of ct · ct, under every pair of hints; rejections |
 //! | [`test_dot_product_pt_vec_aligned`] | ct · ZNX plaintext |
-//! | [`test_dot_product_prepared_pt`] | prepared ct · prepared ZNX plaintexts through Galois elements: one sum, the bits of ct · pt; rejections |
+//! | [`test_dot_product_prepared_pt_vec`] | prepared ct · prepared ZNX plaintexts through Galois elements: one sum, the bits of ct · pt; rejections |
+//! | [`test_dot_product_prepared_pt_vec_add`] | the prepared sum added into `res`, rounded once, by plaintexts of a limb and more and of less; rejections |
 //! | [`test_dot_product_const_aligned`] | ct · ZNX constant |
 
 use poulpy_core::{
@@ -27,21 +28,25 @@ use poulpy_core::{
     },
 };
 use poulpy_hal::{
-    api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow, VecZnxDftAlloc},
+    api::{ReimNew, ScratchOwnedBorrow, VecZnxDftAlloc},
     layouts::{Backend, HostBytesBackend, Module, PrepareHint, ScratchArena, Standard, VecZnxDftToBackendMut},
 };
 
 use crate::{
-    CKKSCompositionError, CKKSError, CKKSInfos, CKKSModuleInfos, Scale, SetCKKSInfos, SlotsKind,
-    api::{CKKSDotProductOps, CKKSMulAddOps, CKKSMulOps},
-    layouts::{CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPreparedLeft, CKKSPreparedRight, plaintext::CKKSPlaintext},
+    CKKSCompositionError, CKKSError, CKKSInfos, CKKSLayout, CKKSModuleInfos, GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotsKind,
+    api::{
+        CKKSAddOps, CKKSDotProductOps, CKKSLeftOperandPreparedFactory, CKKSMulAddOps, CKKSMulOps, CKKSRightOperandPreparedFactory,
+    },
+    layouts::{
+        CKKSCiphertextAlloc, CKKSCiphertextOwned, CKKSLeftOperandPrepared, CKKSRightOperandPrepared, plaintext::CKKSPlaintext,
+    },
 };
 
 use super::helpers::{
     PT_PREC, TestContextBackend, TestContextModule, TestScalar, TestVector, alloc_ct, alloc_scratch, assert_ckks_error,
-    assert_decrypt_precision, assert_decrypt_precision_at_log_delta, ckks_encrypt, ckks_encrypt_with_prec, ckks_pt_cst_full,
-    encode_and_upload_pt, gen_sk_with_raw, gen_tsk, precision_at, quantize, quantized_const, quantized_vector, test_vector_1,
-    test_vector_2, want_mul, want_rotate,
+    assert_ckks_internal, assert_decrypt_precision, assert_decrypt_precision_at_log_delta, assert_invalid_operand, ckks_encrypt,
+    ckks_encrypt_with_prec, ckks_pt_cst_full, encode_and_upload_pt, gen_sk_with_raw, gen_tsk, precision_at, quantize,
+    quantized_const, quantized_vector, test_vector_1, test_vector_2, want_mul, want_rotate,
 };
 use super::parity::helpers::{snapshot, with_scratch};
 
@@ -88,7 +93,7 @@ where
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -178,7 +183,7 @@ pub fn test_dot_product_ct_unaligned<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -261,7 +266,7 @@ pub fn test_dot_product_ct_unaligned_b<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -344,7 +349,7 @@ pub fn test_dot_product_ct_delta_log_delta<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -457,7 +462,7 @@ pub fn test_dot_product_ct_smaller_output<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -602,7 +607,7 @@ where
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -793,7 +798,7 @@ pub fn test_dot_product_ct_long_sum<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let params = CKKSTestParams { n: 32, hw: 16, ..params };
     let module = &Module::<BE>::new(params.n as u64);
@@ -857,7 +862,7 @@ pub fn test_dot_product_ct_non_uniform<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -914,8 +919,8 @@ pub fn test_dot_product_ct_non_uniform<BE, F, E>(
 fn assert_prepared_rejected<BE: TestContextBackend, H: GetTensorKey<BE>>(
     module: &Module<BE>,
     dst: &mut CKKSCiphertextOwned<BE>,
-    a: &[&CKKSPreparedLeft<BE>],
-    b: &[&CKKSPreparedRight<BE>],
+    a: &[&CKKSLeftOperandPrepared<BE>],
+    b: &[&CKKSRightOperandPrepared<BE>],
     tsk: &H,
 ) -> CKKSError
 where
@@ -931,12 +936,12 @@ where
     err
 }
 
-/// Pairs prepared by `ckks_prepare_left` and `ckks_prepare_right` give `ckks_dot_product_ct` of the ciphertexts they
+/// Pairs prepared by `ckks_left_operand_prepare_alloc` and `ckks_right_operand_prepare_alloc` give `ckks_dot_product_ct` of the ciphertexts they
 /// were prepared from, bit for bit, metadata, noise tag and canonical flag included, for one pair and for 16 fresh
 /// pairs, under every pair of hints: the one-pass sum on rank 1, the two-pass circuit on rank 2. Each preparation runs on the exact
-/// poisoned budget of `ckks_prepare_tmp_bytes`, and each prepared operand reports its source's layout, metadata and
-/// noise estimate, `None` from a source without metadata, so `ckks_dot_product_ct_tmp_bytes` of the prepared operands
-/// is that of the ciphertexts, on whose exact poisoned budget both products run. Wrong lengths, operands of another
+/// poisoned budget of its `ckks_<side>_operand_prepare_tmp_bytes`, and each prepared operand reports its source's layout, metadata and
+/// noise estimate, `None` from a source without metadata. Each product runs on the exact poisoned budget of its own query,
+/// `ckks_dot_product_ct_tmp_bytes` of the ciphertexts and `ckks_dot_product_prepared_tmp_bytes` of the prepared operands. Wrong lengths, operands of another
 /// degree, radix or rank, mixed layouts, radix 63, a missing tensor key and inputs without the budget are rejected, in
 /// that order, with `dst` untouched.
 pub fn test_dot_product_prepared<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
@@ -946,7 +951,7 @@ where
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     const PAIRS: usize = 16;
     const HINTS: [PrepareHint; 2] = [PrepareHint::OneShot, PrepareHint::Reuse];
@@ -957,10 +962,16 @@ where
     let (re2, im2) = test_vector_2::<F>(m);
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let prepare_left = |ct: &CKKSCiphertextOwned<BE>, hint| {
-        with_scratch::<BE, _>(module.ckks_prepare_tmp_bytes(ct), |s| module.ckks_prepare_left(ct, hint, s)).unwrap()
+        with_scratch::<BE, _>(module.ckks_left_operand_prepare_tmp_bytes(ct), |s| {
+            module.ckks_left_operand_prepare_alloc(ct, hint, s)
+        })
+        .unwrap()
     };
     let prepare_right = |ct: &CKKSCiphertextOwned<BE>, hint| {
-        with_scratch::<BE, _>(module.ckks_prepare_tmp_bytes(ct), |s| module.ckks_prepare_right(ct, hint, s)).unwrap()
+        with_scratch::<BE, _>(module.ckks_right_operand_prepare_tmp_bytes(ct), |s| {
+            module.ckks_right_operand_prepare_alloc(ct, hint, s)
+        })
+        .unwrap()
     };
 
     let p = &params;
@@ -1003,12 +1014,8 @@ where
             let lhs: Vec<&_> = left[ha][..n].iter().collect();
             let rhs: Vec<&_> = right[hb][..n].iter().collect();
             let mut have = alloc_ct(p, module, p.k);
-            assert_eq!(
-                module.ckks_dot_product_ct_tmp_bytes(n, &have, lhs[0], rhs[0], tsk),
-                bytes,
-                "{label}: scratch query"
-            );
-            with_scratch::<BE, _>(bytes, |scratch| {
+            let prepared_bytes = module.ckks_dot_product_prepared_tmp_bytes(n, &have, lhs[0], rhs[0], tsk);
+            with_scratch::<BE, _>(prepared_bytes, |scratch| {
                 module.ckks_dot_product_prepared(&mut have, &lhs, &rhs, tsk, scratch)
             })
             .unwrap();
@@ -1178,7 +1185,7 @@ pub fn test_dot_product_pt_vec_aligned<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -1254,22 +1261,25 @@ pub fn test_dot_product_pt_vec_aligned<BE, F, E>(
     );
 }
 
-/// `ckks_dot_product_prepared_pt` of three ciphertexts prepared by `ckks_prepare_left` by plaintexts prepared by
-/// `ckks_prepare_right`, read through the Galois elements of the rotations `0`, `1` and `-3`, decrypts to
+/// `ckks_dot_product_prepared_pt_vec` of three ciphertexts prepared by `ckks_left_operand_prepare_alloc` by plaintexts prepared by
+/// `ckks_right_operand_prepare_alloc`, read through the Galois elements of the rotations `0`, `1` and `-3`, decrypts to
 /// `Σ a_t ⊙ Rot_{r_t}(b_t)` at the rule of `ckks_mul_pt_vec_into`; one term through `1` is `ckks_mul_pt_vec_into` of its
 /// sources, bit for bit, on exactly its scratch; the DFT forms, the first term then the other two added, finished, are
 /// the sum, bit for bit; an even element, slices of two lengths, terms of two scales and an accumulator of another limb
 /// count are rejected before `dst` changes.
-pub fn test_dot_product_prepared_pt<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
-where
+pub fn test_dot_product_prepared_pt_vec<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) where
     BE: TestContextBackend<Ring = Standard>,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE> + GLWEMulPreparedPlainSum<BE> + VecZnxDftAlloc<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
-    const OP: &str = "ckks_dot_product_prepared_pt";
+    const OP: &str = "ckks_dot_product_prepared_pt_vec";
     const ROTATIONS: [i64; N] = [0, 1, -3];
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -1279,8 +1289,8 @@ where
     let mut scratch = alloc_scratch(&params, module);
     let log_delta = params.prec().log_delta();
     let prepare_left = |ct: &CKKSCiphertextOwned<BE>| {
-        with_scratch::<BE, _>(module.ckks_prepare_tmp_bytes(ct), |s| {
-            module.ckks_prepare_left(ct, PrepareHint::Reuse, s)
+        with_scratch::<BE, _>(module.ckks_left_operand_prepare_tmp_bytes(ct), |s| {
+            module.ckks_left_operand_prepare_alloc(ct, PrepareHint::Reuse, s)
         })
         .unwrap()
     };
@@ -1317,8 +1327,8 @@ where
     let rights: Vec<_> = pts
         .iter()
         .map(|pt| {
-            with_scratch::<BE, _>(module.ckks_prepare_tmp_bytes(pt), |s| {
-                module.ckks_prepare_right(pt, PrepareHint::Reuse, s)
+            with_scratch::<BE, _>(module.ckks_right_operand_prepare_tmp_bytes(pt), |s| {
+                module.ckks_right_operand_prepare_alloc(pt, PrepareHint::Reuse, s)
             })
             .unwrap()
         })
@@ -1327,8 +1337,11 @@ where
     let (a, b): (Vec<&_>, Vec<&_>) = (lefts.iter().collect(), rights.iter().collect());
 
     let mut dst = alloc_ct(&params, module, params.k);
-    let bytes = module.ckks_dot_product_prepared_pt_tmp_bytes(&dst, a[0], b[0]);
-    with_scratch::<BE, _>(bytes, |s| module.ckks_dot_product_prepared_pt(&mut dst, &a, &b, &galois, s)).unwrap();
+    let bytes = module.ckks_dot_product_prepared_pt_vec_tmp_bytes(&dst, a[0], b[0]);
+    with_scratch::<BE, _>(bytes, |s| {
+        module.ckks_dot_product_prepared_pt_vec(&mut dst, &a, &b, &galois, s)
+    })
+    .unwrap();
     assert_eq!(
         (dst.log_delta(), dst.log_budget()),
         (a_cts[0].log_delta(), a_cts[0].log_budget() - pts[0].log_delta()),
@@ -1350,18 +1363,27 @@ where
     let mut acc = module.vec_znx_dft_alloc(params.n, cols, acc_size);
     let mut from_dft = alloc_ct(&params, module, params.k);
     with_scratch::<BE, _>(
-        module.ckks_dot_product_prepared_pt_dft_tmp_bytes(&from_dft, a[0], b[0]),
-        |s| module.ckks_dot_product_prepared_pt_dft(&mut acc.to_backend_mut(), &from_dft, &a[..1], &b[..1], &galois[..1], s),
+        module.ckks_dot_product_prepared_pt_vec_dft_tmp_bytes(&from_dft, a[0], b[0]),
+        |s| module.ckks_dot_product_prepared_pt_vec_dft(&mut acc.to_backend_mut(), &from_dft, &a[..1], &b[..1], &galois[..1], s),
     )
     .unwrap();
     with_scratch::<BE, _>(
-        module.ckks_dot_product_prepared_pt_dft_add_tmp_bytes(&from_dft, a[0], b[0]),
-        |s| module.ckks_dot_product_prepared_pt_dft_add(&mut acc.to_backend_mut(), &from_dft, &a[1..], &b[1..], &galois[1..], s),
+        module.ckks_dot_product_prepared_pt_vec_dft_add_tmp_bytes(&from_dft, a[0], b[0]),
+        |s| {
+            module.ckks_dot_product_prepared_pt_vec_dft_add(
+                &mut acc.to_backend_mut(),
+                &from_dft,
+                &a[1..],
+                &b[1..],
+                &galois[1..],
+                s,
+            )
+        },
     )
     .unwrap();
     with_scratch::<BE, _>(
-        module.ckks_dot_product_prepared_pt_from_dft_tmp_bytes(&from_dft, a[0], b[0]),
-        |s| module.ckks_dot_product_prepared_pt_from_dft(&mut from_dft, &mut acc.to_backend_mut(), a[0], b[0], s),
+        module.ckks_dot_product_prepared_pt_vec_from_dft_tmp_bytes(&from_dft, a[0], b[0]),
+        |s| module.ckks_dot_product_prepared_pt_vec_from_dft(&mut from_dft, &mut acc.to_backend_mut(), a[0], b[0], s),
     )
     .unwrap();
     assert!(
@@ -1371,27 +1393,27 @@ where
     let mut short = module.vec_znx_dft_alloc(params.n, cols, acc_size - 1);
     let reason = "acc must hold the degree and rank + 1 columns of res on a.size() + b.size() limbs";
     let err = with_scratch::<BE, _>(0, |s| {
-        module.ckks_dot_product_prepared_pt_dft(&mut short.to_backend_mut(), &from_dft, &a, &b, &galois, s)
+        module.ckks_dot_product_prepared_pt_vec_dft(&mut short.to_backend_mut(), &from_dft, &a, &b, &galois, s)
     })
     .unwrap_err();
     assert_ckks_error(
         "short accumulator",
         &err,
         CKKSCompositionError::InvalidOperand {
-            op: "ckks_dot_product_prepared_pt_dft",
+            op: "ckks_dot_product_prepared_pt_vec_dft",
             reason: reason.into(),
         },
     );
     let before = snapshot::<BE, _>(&from_dft);
     let err = with_scratch::<BE, _>(0, |s| {
-        module.ckks_dot_product_prepared_pt_from_dft(&mut from_dft, &mut short.to_backend_mut(), a[0], b[0], s)
+        module.ckks_dot_product_prepared_pt_vec_from_dft(&mut from_dft, &mut short.to_backend_mut(), a[0], b[0], s)
     })
     .unwrap_err();
     assert_ckks_error(
         "short accumulator",
         &err,
         CKKSCompositionError::InvalidOperand {
-            op: "ckks_dot_product_prepared_pt_from_dft",
+            op: "ckks_dot_product_prepared_pt_vec_from_dft",
             reason: reason.into(),
         },
     );
@@ -1407,7 +1429,7 @@ where
     .unwrap();
     let mut have = alloc_ct(&params, module, params.k);
     with_scratch::<BE, _>(bytes, |s| {
-        module.ckks_dot_product_prepared_pt(&mut have, &a[..1], &b[..1], &[1], s)
+        module.ckks_dot_product_prepared_pt_vec(&mut have, &a[..1], &b[..1], &[1], s)
     })
     .unwrap();
     assert!(
@@ -1417,7 +1439,7 @@ where
 
     let before = snapshot::<BE, _>(&have);
     let even = [galois[0], 2, galois[2]];
-    let err = with_scratch::<BE, _>(0, |s| module.ckks_dot_product_prepared_pt(&mut have, &a, &b, &even, s)).unwrap_err();
+    let err = with_scratch::<BE, _>(0, |s| module.ckks_dot_product_prepared_pt_vec(&mut have, &a, &b, &even, s)).unwrap_err();
     assert_ckks_error(
         "even element",
         &err,
@@ -1426,7 +1448,10 @@ where
             reason: "a Galois element is even".into(),
         },
     );
-    let err = with_scratch::<BE, _>(0, |s| module.ckks_dot_product_prepared_pt(&mut have, &a, &b[..2], &galois, s)).unwrap_err();
+    let err = with_scratch::<BE, _>(0, |s| {
+        module.ckks_dot_product_prepared_pt_vec(&mut have, &a, &b[..2], &galois, s)
+    })
+    .unwrap_err();
     assert_ckks_error(
         "slices of two lengths",
         &err,
@@ -1435,7 +1460,10 @@ where
             reason: format!("length mismatch between ct vector ({}) and weight vector (2)", a.len()),
         },
     );
-    let err = with_scratch::<BE, _>(0, |s| module.ckks_dot_product_prepared_pt(&mut have, &a, &b, &galois[..2], s)).unwrap_err();
+    let err = with_scratch::<BE, _>(0, |s| {
+        module.ckks_dot_product_prepared_pt_vec(&mut have, &a, &b, &galois[..2], s)
+    })
+    .unwrap_err();
     assert_ckks_error(
         "two Galois lengths",
         &err,
@@ -1448,7 +1476,10 @@ where
     rescaled.set_log_delta(a_cts[1].log_delta() - 1);
     let rescaled = prepare_left(&rescaled);
     let mixed = [a[0], &rescaled, a[2]];
-    let err = with_scratch::<BE, _>(0, |s| module.ckks_dot_product_prepared_pt(&mut have, &mixed, &b, &galois, s)).unwrap_err();
+    let err = with_scratch::<BE, _>(0, |s| {
+        module.ckks_dot_product_prepared_pt_vec(&mut have, &mixed, &b, &galois, s)
+    })
+    .unwrap_err();
     assert_ckks_error(
         "two scales",
         &err,
@@ -1458,6 +1489,173 @@ where
         },
     );
     assert!(snapshot::<BE, _>(&have) == before, "{OP}: a rejection changed dst");
+}
+
+/// `res += Σ a[t] · σ_{galois[t]}(b[t])` on `res` at the sum's frame, the scale of the terms and the width the product
+/// leaves: one rounding of the total, so it decrypts to `c + Σ a[t] · rot(b[t], r_t)` and keeps `res`'s metadata, as the
+/// sum into a temporary added to `res` does, on exactly its query's bytes. It runs one term and two, through rotations
+/// 0, 1 and -3, by plaintexts at the suite's precision and by plaintexts narrower than one limb, whose product's offset
+/// falls below a limb. A `res` at another scale, or wider than the sum, is refused before any write, and one byte short
+/// of its query, `Internal`, `res` unchanged.
+pub fn test_dot_product_prepared_pt_vec_add<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend<Ring = Standard>,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextModule<BE> + GLWEMulPreparedPlainSum<BE>,
+    F: TestScalar,
+    E: ReimNew<F>,
+{
+    const OP: &str = "ckks_dot_product_prepared_pt_vec_add";
+    let m = params.n / 2;
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
+    let (re1, im1) = test_vector_1::<F>(m);
+    let (re2, im2) = test_vector_2::<F>(m);
+    let sk = super::helpers::gen_sk(&params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(&params, module);
+    let encrypt = |k: usize, re: &[F], im: &[F], scratch: &mut ScratchArena<'_, BE>| {
+        ckks_encrypt(&params, module, host_module, &encoder, &sk, k, re, im, scratch)
+    };
+    let left = |ct: &CKKSCiphertextOwned<BE>| {
+        with_scratch::<BE, _>(module.ckks_left_operand_prepare_tmp_bytes(ct), |s| {
+            module.ckks_left_operand_prepare_alloc(ct, PrepareHint::Reuse, s)
+        })
+        .unwrap()
+    };
+    let a = [
+        left(&encrypt(params.k, &re1, &im1, &mut scratch.borrow())),
+        left(&encrypt(params.k, &re2, &im2, &mut scratch.borrow())),
+    ];
+    let full = params.prec();
+    let narrow_k = params.base2k - 1;
+    let narrow = CKKSLayout {
+        glwe_layout: GLWELayout {
+            k: TorusPrecision(narrow_k as u32),
+            ..full.glwe_layout
+        },
+        meta: GLWEPlaintextMeta {
+            scale: Scale::Log(full.log_delta().min(narrow_k - 2)),
+            ..full.meta
+        },
+    };
+    for prec in [full, narrow] {
+        let p = prec.log_delta();
+        let right = |re: &[F], im: &[F]| {
+            let pt = encode_and_upload_pt(host_module, module, &encoder, params.base2k.into(), prec, re, im);
+            with_scratch::<BE, _>(module.ckks_right_operand_prepare_tmp_bytes(&pt), |s| {
+                module.ckks_right_operand_prepare_alloc(&pt, PrepareHint::Reuse, s)
+            })
+            .unwrap()
+        };
+        let b = [right(&re2, &im2), right(&re1, &im1)];
+        // `c`, the value accumulated into, at the sum's frame: the width `a` leaves through `b`'s scale.
+        let k_frame = params.k - p;
+        for (terms, r) in [(1, 0), (1, 1), (2, -3)] {
+            let label = format!("{OP} p={p} terms={terms} r={r}");
+            let rotations = [r, r + 2];
+            let galois: Vec<i64> = rotations[..terms].iter().map(|&r| module.ckks_galois_element(r)).collect();
+            let (mut want_re, mut want_im) = (im1.clone(), re1.clone());
+            // Term `t` multiplies `a[t]`'s values by the rotation of `b[t]`'s, the other test vector.
+            let values = [((&re1, &im1), (&re2, &im2)), ((&re2, &im2), (&re1, &im1))];
+            for (&rotation, ((a_re, a_im), (b_re, b_im))) in rotations[..terms].iter().zip(values) {
+                let (b_re, b_im) = want_rotate(&quantize(b_re, p), &quantize(b_im, p), rotation, m);
+                cmul_acc(&mut want_re, &mut want_im, a_re, a_im, &b_re, &b_im);
+            }
+            let a_refs: Vec<&CKKSLeftOperandPrepared<BE>> = a[..terms].iter().collect();
+            let b_refs: Vec<&CKKSRightOperandPrepared<BE>> = b[..terms].iter().collect();
+
+            let mut res = encrypt(k_frame, &im1, &re1, &mut scratch.borrow());
+            let layout = (res.glwe_layout(), res.log_delta(), res.log_budget());
+            let bytes = module.ckks_dot_product_prepared_pt_vec_add_tmp_bytes(&res, &a[0], &b[0]);
+            with_scratch::<BE, _>(bytes, |s| {
+                module.ckks_dot_product_prepared_pt_vec_add(&mut res, &a_refs, &b_refs, &galois, s)
+            })
+            .unwrap();
+            assert_eq!(
+                (res.glwe_layout(), res.log_delta(), res.log_budget()),
+                layout,
+                "{label}: metadata"
+            );
+            assert!(res.is_canonical() && res.noise().is_none(), "{label}: canonical, untagged");
+            assert_decrypt_precision_at_log_delta(
+                &label,
+                &params,
+                module,
+                &encoder,
+                &res,
+                &sk,
+                &want_re,
+                &want_im,
+                p,
+                &mut scratch.borrow(),
+            );
+
+            // The sum into a temporary, then added: the same value.
+            let mut composed = encrypt(k_frame, &im1, &re1, &mut scratch.borrow());
+            let mut tmp = alloc_ct(&params, module, k_frame);
+            with_scratch::<BE, _>(module.ckks_dot_product_prepared_pt_vec_tmp_bytes(&tmp, &a[0], &b[0]), |s| {
+                module.ckks_dot_product_prepared_pt_vec(&mut tmp, &a_refs, &b_refs, &galois, s)
+            })
+            .unwrap();
+            with_scratch::<BE, _>(module.ckks_add_tmp_bytes(composed.size()), |s| {
+                module.ckks_add_assign(&mut composed, &tmp, s)
+            })
+            .unwrap();
+            assert_eq!(
+                (composed.glwe_layout(), composed.log_delta(), composed.log_budget()),
+                layout,
+                "{label}: composed metadata"
+            );
+            assert_decrypt_precision_at_log_delta(
+                &format!("{label}, composed"),
+                &params,
+                module,
+                &encoder,
+                &composed,
+                &sk,
+                &want_re,
+                &want_im,
+                p,
+                &mut scratch.borrow(),
+            );
+        }
+
+        // Refused before any write: `res` at another scale, `res` wider than the sum, and a scratch one byte short.
+        let galois = [module.ckks_galois_element(1)];
+        let (a_refs, b_refs) = ([&a[0]], [&b[0]]);
+        let mut other_scale = encrypt(k_frame, &re1, &im1, &mut scratch.borrow());
+        other_scale.set_log_delta(other_scale.log_delta() - 1);
+        let mut wider = encrypt(k_frame + params.base2k, &re1, &im1, &mut scratch.borrow());
+        for (label, res) in [("another scale", &mut other_scale), ("wider than the sum", &mut wider)] {
+            let before = snapshot::<BE, _>(&*res);
+            let bytes = module.ckks_dot_product_prepared_pt_vec_add_tmp_bytes(&*res, &a[0], &b[0]);
+            let err = with_scratch::<BE, _>(bytes, |s| {
+                module.ckks_dot_product_prepared_pt_vec_add(res, &a_refs, &b_refs, &galois, s)
+            })
+            .unwrap_err();
+            assert_invalid_operand(label, &err, OP, "the product's scale and budget");
+            assert!(
+                snapshot::<BE, _>(&*res) == before,
+                "{OP} p={p} {label}: res written before the refusal"
+            );
+        }
+        let mut res = encrypt(k_frame, &im1, &re1, &mut scratch.borrow());
+        let before = snapshot::<BE, _>(&res);
+        let bytes = module.ckks_dot_product_prepared_pt_vec_add_tmp_bytes(&res, &a[0], &b[0]);
+        let err = with_scratch::<BE, _>(bytes - 1, |s| {
+            module.ckks_dot_product_prepared_pt_vec_add(&mut res, &a_refs, &b_refs, &galois, s)
+        })
+        .unwrap_err();
+        assert_ckks_internal(
+            &format!("{OP} p={p}: one byte short"),
+            &err,
+            &format!("{OP}: scratch below its query"),
+        );
+        assert!(snapshot::<BE, _>(&res) == before, "{OP} p={p}: a refused call wrote res");
+    }
 }
 
 pub fn test_dot_product_const_aligned<BE, F, E>(
@@ -1470,7 +1668,7 @@ pub fn test_dot_product_const_aligned<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();

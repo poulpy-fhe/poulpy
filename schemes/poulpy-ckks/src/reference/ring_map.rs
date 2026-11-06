@@ -16,7 +16,7 @@ use poulpy_hal::{
 use crate::{
     CKKSCompositionError, CKKSCtBounds, CKKSInfos, GLWEPlaintextMeta, SetCKKSInfos, SlotsKind,
     error::checked_log_budget_sub,
-    layouts::{CKKSCiphertext, ScratchArenaTakeCKKS},
+    layouts::{CKKSCiphertext, ScratchArenaTakeCKKSCiphertext},
 };
 
 /// Reference of [`CKKSCIRingMapImpl`](crate::oep::CKKSCIRingMapImpl), which

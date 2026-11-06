@@ -84,8 +84,9 @@ pub trait GLWETrace<BE: Backend> {
 /// # Panics
 ///
 /// On invalid maps, mixed input layouts or gaps, before changing inputs or destination.
-pub trait GLWEPacking<BE: Backend> {
-    fn glwe_pack_galois_elements(&self) -> Vec<i64>;
+pub trait GLWEPack<BE: Backend> {
+    /// Galois elements of the automorphism keys packing degree-`n` inputs needs.
+    fn glwe_pack_galois_elements(&self, n: Degree) -> Vec<i64>;
 
     /// Scratch for packing inputs of layout `a` into a destination of layout `res`.
     /// The derived implementation sizes the merge tree at `a` and the final
@@ -187,9 +188,9 @@ pub trait GLWEMulPlain<BE: Backend> {
 /// Sum of products of prepared GLWE ciphertexts by prepared plaintexts, each plaintext read through a Galois element:
 /// `res = Σ_t a[t] ⊛ σ_{galois[t]}(b[t])`.
 ///
-/// `a[t]` is a ciphertext prepared as a left operand by [`crate::glwe_prepare_left`]: of the degree of `res`, its
+/// `a[t]` is a ciphertext prepared as a left operand by [`crate::glwe_left_operand_prepare`]: of the degree of `res`, its
 /// `rank + 1` columns on `a_size` limbs. `b[t]` is a plaintext prepared as a right operand by
-/// [`crate::glwe_prepare_right`]: one column on `b_size` limbs, of the degree of `res` or of a power-of-two divisor of it
+/// [`crate::glwe_right_operand_prepare`]: one column on `b_size` limbs, of the degree of `res` or of a power-of-two divisor of it
 /// not below the backend's minimum degree, which stands for its ring embedding. Both are at radix `base2k`. `b[t]` is
 /// read through `X -> X^{galois[t]}`, `1` reading it as prepared. The call transforms no operand, so one set of prepared
 /// ciphertexts serves every output that shares it. The products are added in the transform domain in slice order, one
@@ -211,6 +212,37 @@ pub trait GLWEMulPreparedPlainSum<BE: Backend> {
     /// less than the query.
     #[allow(clippy::too_many_arguments)]
     fn glwe_mul_prepared_plain_sum<R, AP, BP>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        a: &[&AP],
+        a_size: usize,
+        b: &[&BP],
+        b_size: usize,
+        galois: &[i64],
+        base2k: crate::layouts::Base2K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        AP: CnvPVecLToBackendRef<BE>,
+        BP: CnvPVecRToBackendRef<BE>;
+
+    /// Scratch bytes of [`Self::glwe_mul_prepared_plain_sum_add`] for `res` and operands of `a_size` and `b_size` limbs,
+    /// whatever the number of terms.
+    fn glwe_mul_prepared_plain_sum_add_tmp_bytes<R>(&self, res: &R, a_size: usize, b_size: usize) -> usize
+    where
+        R: GLWEInfos;
+
+    /// `res += Σ_t a[t] ⊛ σ_{galois[t]}(b[t])`: the sum of [`Self::glwe_mul_prepared_plain_sum`] at `cnv_offset`, the
+    /// value `res` holds added before the one normalization that rounds the result into `res`, canonical at its `k`.
+    /// `res`, which may be flag-clear, is at radix `base2k`: its value enters the normalization exactly, shifted to the
+    /// frame of the products.
+    ///
+    /// # Panics
+    ///
+    /// As [`Self::glwe_mul_prepared_plain_sum`], and unless `res` is at radix `base2k`.
+    #[allow(clippy::too_many_arguments)]
+    fn glwe_mul_prepared_plain_sum_add<R, AP, BP>(
         &self,
         cnv_offset: usize,
         res: &mut R,
@@ -298,7 +330,7 @@ pub trait GLWETensoring<BE: Backend> {
         R: GLWEInfos,
         A: GLWEInfos;
 
-    /// Tensor product with a right operand prepared by [`crate::glwe_prepare_right`].
+    /// Tensor product with a right operand prepared by [`crate::glwe_right_operand_prepare`].
     /// Preserves both inputs and returns a canonical tensor at `res.k()`.
     /// `b_size` is the effective limb count used to prepare `b`.
     fn glwe_tensor_apply_prepared_right<R, A, BP>(
@@ -437,7 +469,7 @@ pub trait GLWETensoring<BE: Backend> {
         R: GLWEToBackendMut<BE> + GLWEInfos,
         H: GetTensorKey<BE>;
 
-    /// [`Self::glwe_mul_relinearize`] with a right operand prepared by [`crate::glwe_prepare_right`]:
+    /// [`Self::glwe_mul_relinearize`] with a right operand prepared by [`crate::glwe_right_operand_prepare`]:
     /// `b_size` limbs of a ciphertext of width `b_k`.
     #[allow(clippy::too_many_arguments)]
     fn glwe_mul_prepared_relinearize<R, A, BP, H>(
@@ -534,8 +566,8 @@ pub trait GLWEMulRelinearizeSum<BE: Backend> {
         H: GetTensorKey<BE>;
 }
 
-/// Products of GLWE ciphertexts over operands prepared once by [`crate::glwe_prepare_left`] and
-/// [`crate::glwe_prepare_right`]: the call transforms no operand.
+/// Products of GLWE ciphertexts over operands prepared once by [`crate::glwe_left_operand_prepare`] and
+/// [`crate::glwe_right_operand_prepare`]: the call transforms no operand.
 ///
 /// An operand prepared from a ciphertext of width `k`, under either [`PrepareHint`](poulpy_hal::layouts::PrepareHint),
 /// holds it as the unprepared products read it: canonical at `k` (normalized first if its canonical flag is clear),
@@ -776,7 +808,7 @@ pub trait GLWEShift<BE: Backend> {
     /// `res_size` limbs.
     fn glwe_shift_tmp_bytes(&self, res_size: usize) -> usize;
 
-    fn glwe_rsh<R>(&self, k: usize, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_rsh_assign<R>(&self, k: usize, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE>;
 

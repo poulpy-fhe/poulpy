@@ -18,10 +18,13 @@ use std::collections::HashMap;
 use poulpy_core::{
     GLWERotate, TransferInto,
     api::GLWESecretPreparedFactory,
-    layouts::{GLWEInfos, GLWELayout, LWEInfos, ModuleCoreAlloc, Rank},
+    layouts::{
+        GLWEAutomorphismKeyAlloc, GLWEInfos, GLWELayout, GLWESecretAlloc, GLWESwitchingKeyAlloc, GLWETensorKeyAlloc, LWEInfos,
+        Rank,
+    },
 };
 use poulpy_hal::{
-    api::{CnvPVecAlloc, NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
+    api::{CnvPVecAlloc, ReimNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{HostBytesBackend, Module, ScratchOwned, Standard, ZnxView},
     source::Source,
 };
@@ -29,8 +32,10 @@ use poulpy_hal::{
 use crate::SlotsKind;
 use crate::{
     CKKSCompositionError, CKKSInfos, GLWEPlaintextMeta, SlotLayout,
-    api::{CKKSLinearTransformationOps, CKKSPaCoOps, PaCoScalar},
-    layouts::{CKKSModuleAlloc, PaCoContext, PaCoDFTPlan, PaCoKeySet, PaCoKeysPrepared, PaCoPlan, PaCoSecretSpec, PaCoWorker},
+    api::{CKKSLinearTransformationOps, CKKSPaCoOps, CKKSPaCoScalar},
+    layouts::{
+        CKKSCiphertextAlloc, PaCoContext, PaCoDFTPlan, PaCoKeySet, PaCoKeysPrepared, PaCoPlan, PaCoSecretSpec, PaCoWorker,
+    },
     test_suite::reference_encoder::ReferenceEncoder,
     test_suite::{
         CKKSTestParams,
@@ -129,8 +134,8 @@ pub fn test_paco_parallel_bootstrap<BE, F, E>(
         + CnvPVecAlloc<BE>
         + GLWERotate<BE>
         + Sync,
-    F: TestScalar + PaCoScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F> + Sync,
+    F: TestScalar + CKKSPaCoScalar,
+    E: ReimNew<F> + Sync,
 {
     let log_delta = params.prec().log_delta();
     let k_in = (log_delta - 2).min(52);
@@ -445,8 +450,8 @@ pub fn test_paco_encapsulated_bootstrap<BE, F, E>(
         + CnvPVecAlloc<BE>
         + GLWERotate<BE>
         + Sync,
-    F: TestScalar + PaCoScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F> + Sync,
+    F: TestScalar + CKKSPaCoScalar,
+    E: ReimNew<F> + Sync,
 {
     use crate::test_suite::helpers::gen_sk_with_raw;
     use poulpy_core::{GLWEAutomorphismKeyEncryptSk, GLWESwitchingKeyEncryptSk, GLWETensorKeyEncryptSk};
@@ -633,8 +638,8 @@ pub fn test_paco_bootstrap_into_rejects_narrow_encapsulation_key<BE, F, E>(
         + CnvPVecAlloc<BE>
         + GLWERotate<BE>
         + Sync,
-    F: TestScalar + PaCoScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F> + Sync,
+    F: TestScalar + CKKSPaCoScalar,
+    E: ReimNew<F> + Sync,
 {
     use crate::test_suite::helpers::gen_sk_with_raw;
     use crate::{CKKSCompositionError, CKKSError};

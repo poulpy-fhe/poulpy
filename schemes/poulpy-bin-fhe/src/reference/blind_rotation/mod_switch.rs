@@ -36,8 +36,8 @@ pub fn blind_rotation_mod_switch_reference<BE, A>(
     let lwe = lwe.to_backend_ref();
     let base2k = lwe.base2k().as_usize();
     assert!((1..=63).contains(&base2k), "the LWE radix is outside [1, 63]");
-    let body_bytes = BE::bytes_of_vec_znx(lwe.body().n(), lwe.body().cols(), lwe.body().size());
-    let mask_bytes = BE::bytes_of_vec_znx(lwe.mask().n(), lwe.mask().cols(), lwe.mask().size());
+    let body_bytes = BE::vec_znx_bytes_of(lwe.body().n(), lwe.body().cols(), lwe.body().size());
+    let mask_bytes = BE::vec_znx_bytes_of(lwe.mask().n(), lwe.mask().cols(), lwe.mask().size());
     let mut body = vec![0u8; body_bytes];
     let mut mask = vec![0u8; mask_bytes];
     BE::copy_view_to_host(&BE::region_ref(lwe.body().data(), 0, body_bytes), &mut body);
@@ -92,6 +92,33 @@ fn switch_coefficient(
         ((value + half) >> shift) - i128::from(below_tie)
     };
     (rounded & (modulus as i128 - 1)) as i64
+}
+
+/// Reference body of the [`BlindRotationModSwitchImpl`](crate::oep::BlindRotationModSwitchImpl) method, which
+/// [`impl_blind_rotation_mod_switch_reference_full!`](crate::impl_blind_rotation_mod_switch_reference_full) forwards to.
+pub trait BlindRotationModSwitchReference<BE: Backend> {
+    fn blind_rotation_mod_switch_reference<A>(
+        &self,
+        modulus: usize,
+        direction: LookUpTableRotationDirection,
+        res: &mut [i64],
+        lwe: &A,
+    ) where
+        A: LWEToBackendRef<BE> + LWEInfos;
+}
+
+impl<BE: Backend<ZnxWord = i64>> BlindRotationModSwitchReference<BE> for Module<BE> {
+    fn blind_rotation_mod_switch_reference<A>(
+        &self,
+        modulus: usize,
+        direction: LookUpTableRotationDirection,
+        res: &mut [i64],
+        lwe: &A,
+    ) where
+        A: LWEToBackendRef<BE> + LWEInfos,
+    {
+        blind_rotation_mod_switch_reference(self, modulus, direction, res, lwe)
+    }
 }
 
 #[cfg(test)]

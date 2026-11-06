@@ -5,14 +5,14 @@ use poulpy_core::layouts::{
 };
 use poulpy_hal::{
     AlignedBuf,
-    api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
+    api::{ReimNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{HostBytesBackend, Module, ScratchOwned, Standard},
     source::Source,
 };
 
 use poulpy_ckks::{
     CKKSCtBounds, CKKSInfos, SetCKKSInfos,
-    layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec},
+    layouts::{CKKSCiphertext, CKKSCiphertextAlloc, CKKSPlaintext, CKKSPlaintextAlloc, CKKSPlaintextVecHostCodec},
     test_suite::{
         CKKSTestParams,
         helpers::{
@@ -37,7 +37,7 @@ where
     CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let log_delta = base.prec().log_delta();
     let coeff_meta = ckks_spec(base.n, base.base2k, log_delta, base.base2k);
@@ -73,7 +73,7 @@ where
     let want_min_const: Vec<F> = a.iter().copied().map(min_const).collect();
     let want_clamp: Vec<F> = a.iter().copied().map(|v| min_const(max_const(v))).collect();
 
-    let mut host_bounds = host_module.ckks_pt_coeffs_alloc(2, base.base2k.into(), coeff_meta.k());
+    let mut host_bounds = host_module.ckks_plaintext_alloc(2usize.into(), base.base2k.into(), coeff_meta.k());
     host_bounds.set_meta(coeff_meta.meta());
     host_bounds.encode_host_floats(&[lo, hi]).unwrap();
     let bounds = upload_pt(module, &host_bounds);
@@ -86,9 +86,9 @@ where
         &sizing,
         &sizing,
         &sizing,
+        &coeff_meta,
         &params.tsk_layout(),
         &params.atk_layout(),
-        &coeff_meta,
     );
     let mut scratch = ScratchOwned::<BE>::alloc(scratch_size);
     let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());

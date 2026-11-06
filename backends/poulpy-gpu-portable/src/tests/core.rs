@@ -80,8 +80,8 @@ poulpy_hal::backend_test_suite! {
             poulpy_core::test_suite::step_hooks::test_gglwe_products_idft_normalize_rejects_invalid_items,
         gglwe_products_from_dft_rejects_invalid_items =>
             poulpy_core::test_suite::step_hooks::test_gglwe_products_from_dft_rejects_invalid_items,
-        gadget_dft_apply_from_dft_rejects_invalid_operands =>
-            poulpy_core::test_suite::step_hooks::test_gadget_dft_apply_from_dft_rejects_invalid_operands,
+        gglwe_gadget_dft_apply_from_dft_rejects_invalid_operands =>
+            poulpy_core::test_suite::step_hooks::test_gglwe_gadget_dft_apply_from_dft_rejects_invalid_operands,
     }
 }
 

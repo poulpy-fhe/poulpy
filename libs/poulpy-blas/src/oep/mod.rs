@@ -19,12 +19,14 @@ mod inter;
 mod intra;
 mod jkls;
 mod matmul;
+mod matvec;
 
 pub use encoding::BlasEncodingImpl;
 pub use inter::BlasMatInterImpl;
 pub use intra::BlasMatIntraImpl;
 pub use jkls::BlasJklsImpl;
 pub use matmul::BlasMatMulImpl;
+pub use matvec::BlasMatVecImpl;
 
 /// Selects every reference implementation for `$be`.
 #[macro_export]
@@ -33,6 +35,7 @@ macro_rules! impl_blas_reference_full {
         $crate::impl_blas_mat_inter_reference_full!($be);
         $crate::impl_blas_mat_intra_reference_full!($be);
         $crate::impl_blas_mat_mul_reference_full!($be);
+        $crate::impl_blas_mat_vec_reference_full!($be);
         $crate::impl_blas_jkls_reference_full!($be);
         $crate::impl_blas_encoding_reference_full!($be);
     };
@@ -43,6 +46,12 @@ macro_rules! impl_blas_reference_full {
 /// # Safety
 ///
 /// Implemented only through the blanket impl.
-pub unsafe trait BlasImpl: BlasMatInterImpl + BlasMatIntraImpl + BlasMatMulImpl + BlasJklsImpl + BlasEncodingImpl {}
+pub unsafe trait BlasImpl:
+    BlasMatInterImpl + BlasMatIntraImpl + BlasMatMulImpl + BlasMatVecImpl + BlasJklsImpl + BlasEncodingImpl
+{
+}
 
-unsafe impl<BE: BlasMatInterImpl + BlasMatIntraImpl + BlasMatMulImpl + BlasJklsImpl + BlasEncodingImpl> BlasImpl for BE {}
+unsafe impl<BE> BlasImpl for BE where
+    BE: BlasMatInterImpl + BlasMatIntraImpl + BlasMatMulImpl + BlasMatVecImpl + BlasJklsImpl + BlasEncodingImpl
+{
+}

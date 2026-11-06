@@ -297,7 +297,7 @@ fn packed_limb_mut(data: &mut [u64], n: usize, cols: usize, col: usize, j: usize
 
 /// Panics unless `a` has degree `n` and a column `col`: packed limb access trusts both.
 #[inline]
-fn check_operand(n: usize, a: &impl VecZnxInfos, col: usize) {
+pub(super) fn check_operand(n: usize, a: &impl VecZnxInfos, col: usize) {
     assert_eq!(a.n(), n, "operand degree differs from the result degree");
     assert!(col < a.cols(), "operand column out of range");
 }
@@ -743,29 +743,23 @@ pub(crate) fn vec_znx_idft_apply<R: Ring>(
     let min_size = res_size.min(a.size());
     let a_cols = a.cols();
     let table = handle(module).table_intt_for(n);
-    let _ = tmp;
+    assert!(tmp.len() >= 3 * n, "vec_znx_idft_apply: scratch below its query");
+    let tmp = &mut tmp[..3 * n];
 
     let a_u64: &[u64] = cast_slice(a.data());
     let res_data = res.raw_mut();
-    for_index_with(
-        res_size,
-        3 * n * res_size,
-        || vec![0u64; 3 * n],
-        |scratch, j| {
-            let start = n * (j * res_cols + res_col);
-            let dst = &mut res_data[start..start + n];
-            if j < min_size {
-                let a_slice: &[u64] = &a_u64[2 * n * (j * a_cols + a_col)..][..2 * n];
-                unsafe { unpack_limb_3x42(n, scratch, a_slice) };
-                <NTT3x42Ifma<R> as Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, R>>>::ntt3x42_ifma_dft_execute(
-                    table, scratch,
-                );
-                NTT3x42Ifma::<R>::ntt3x42_ifma_to_znx128(dst, n, scratch);
-            } else {
-                dst.fill(0i128);
-            }
-        },
-    );
+    for j in 0..res_size {
+        let start = n * (j * res_cols + res_col);
+        let dst = &mut res_data[start..start + n];
+        if j < min_size {
+            let a_slice: &[u64] = &a_u64[2 * n * (j * a_cols + a_col)..][..2 * n];
+            unsafe { unpack_limb_3x42(n, tmp, a_slice) };
+            <NTT3x42Ifma<R> as Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, R>>>::ntt3x42_ifma_dft_execute(table, tmp);
+            NTT3x42Ifma::<R>::ntt3x42_ifma_to_znx128(dst, n, tmp);
+        } else {
+            dst.fill(0i128);
+        }
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

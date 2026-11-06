@@ -80,7 +80,7 @@ pub fn random_normalization_vec_znx_big<BE: Backend<ZnxWord = i64>>(
     size: usize,
     source: &mut Source,
 ) -> VecZnxBigOwned<BE> {
-    let bytes = random_normalization_bytes(BE::bytes_of_vec_znx_big(n, cols, size), size_of::<BE::BigWord>(), source);
+    let bytes = random_normalization_bytes(BE::vec_znx_big_bytes_of(n, cols, size), size_of::<BE::BigWord>(), source);
     VecZnxBigOwned::<BE>::from_bytes(n, cols, size, bytes)
 }
 
@@ -102,7 +102,7 @@ pub fn random_backend_vec_znx_dft<BE: Backend<ZnxWord = i64>>(
     size: usize,
     source: &mut Source,
 ) -> VecZnxDftOwned<BE> {
-    let mut bytes = vec![0u8; BE::bytes_of_vec_znx_dft(n, cols, size)];
+    let mut bytes = vec![0u8; BE::vec_znx_dft_bytes_of(n, cols, size)];
     source.fill_bytes(&mut bytes);
     VecZnxDftOwned::<BE>::from_bytes(n, cols, size, bytes)
 }
@@ -113,13 +113,13 @@ pub fn random_backend_vec_znx_big<BE: Backend<ZnxWord = i64>>(
     size: usize,
     source: &mut Source,
 ) -> VecZnxBigOwned<BE> {
-    let mut bytes = vec![0u8; BE::bytes_of_vec_znx_big(n, cols, size)];
+    let mut bytes = vec![0u8; BE::vec_znx_big_bytes_of(n, cols, size)];
     source.fill_bytes(&mut bytes);
     VecZnxBigOwned::<BE>::from_bytes(n, cols, size, bytes)
 }
 
 pub fn random_backend_svp_ppol<BE: Backend<ZnxWord = i64>>(n: usize, cols: usize, source: &mut Source) -> SvpPPolOwned<BE> {
-    let mut bytes = vec![0u8; BE::bytes_of_svp_ppol(n, cols, PrepareHint::Reuse)];
+    let mut bytes = vec![0u8; BE::svp_ppol_bytes_of(n, cols, PrepareHint::Reuse)];
     source.fill_bytes(&mut bytes);
     SvpPPol::from_data(BE::from_host_bytes(&bytes), n, cols, PrepareHint::Reuse)
 }
@@ -132,7 +132,7 @@ pub fn random_backend_vmp_pmat<BE: Backend<ZnxWord = i64>>(
     size: usize,
     source: &mut Source,
 ) -> VmpPMatOwned<BE> {
-    let mut bytes = vec![0u8; BE::bytes_of_vmp_pmat(n, rows, cols_in, cols_out, size, PrepareHint::Reuse)];
+    let mut bytes = vec![0u8; BE::vmp_pmat_bytes_of(n, rows, cols_in, cols_out, size, PrepareHint::Reuse)];
     source.fill_bytes(&mut bytes);
     VmpPMat::from_data(
         BE::from_host_bytes(&bytes),
@@ -151,7 +151,7 @@ pub fn random_backend_cnv_pvec_left<BE: Backend<ZnxWord = i64>>(
     size: usize,
     source: &mut Source,
 ) -> CnvPVecLOwned<BE> {
-    let mut bytes = vec![0u8; BE::bytes_of_cnv_pvec_left(n, cols, size, PrepareHint::Reuse)];
+    let mut bytes = vec![0u8; BE::cnv_pvec_left_bytes_of(n, cols, size, PrepareHint::Reuse)];
     source.fill_bytes(&mut bytes);
     CnvPVecLOwned::<BE>::from_bytes(n, cols, size, PrepareHint::Reuse, bytes)
 }
@@ -162,7 +162,7 @@ pub fn random_backend_cnv_pvec_right<BE: Backend<ZnxWord = i64>>(
     size: usize,
     source: &mut Source,
 ) -> CnvPVecROwned<BE> {
-    let mut bytes = vec![0u8; BE::bytes_of_cnv_pvec_right(n, cols, size, PrepareHint::Reuse)];
+    let mut bytes = vec![0u8; BE::cnv_pvec_right_bytes_of(n, cols, size, PrepareHint::Reuse)];
     source.fill_bytes(&mut bytes);
     CnvPVecROwned::<BE>::from_bytes(n, cols, size, PrepareHint::Reuse, bytes)
 }

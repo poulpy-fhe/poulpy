@@ -12,15 +12,15 @@ use crate::Scale;
 use crate::{
     CKKSCompositionError, CKKSInfos, CKKSLayout, GLWEPlaintextMeta, SetCKKSInfos, SlotLayout,
     api::{CKKSDecryptOps, CKKSEncryptOps},
-    layouts::CKKSModuleAlloc,
+    layouts::{CKKSCiphertextAlloc, CKKSPlaintextAlloc},
 };
 use poulpy_core::{
     GLWEDecrypt, GLWENoise, GLWENormalize, GLWESub, GetDistribution,
     api::GLWESecretPreparedFactory,
-    layouts::{GLWEInfos, GLWELayout, IntPolyInfos, LWEInfos, ModuleCoreAlloc},
+    layouts::{GLWEInfos, GLWELayout, GLWEPlaintextAlloc, IntPolyInfos, LWEInfos},
 };
 use poulpy_hal::{
-    api::{ModuleNew, NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
+    api::{ModuleNew, ReimNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{Backend, HostBytesBackend, Module, ScratchOwned, Standard},
     source::Source,
 };
@@ -49,7 +49,7 @@ fn assert_decrypt_extract_success<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
     Module<BE>: CKKSDecryptOps<BE>,
 {
     let src_prec = extract_src_prec(params);
@@ -97,7 +97,7 @@ where
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE> + GLWENoise<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -127,7 +127,8 @@ where
         metadata.phase_noise(ct.n().as_usize()).std_dev(),
         poulpy_core::DEFAULT_SIGMA_XE
     );
-    let mut host_pt = host_module.ckks_pt_vec_alloc(host_module.ckks_max_slots(), params.base2k.into(), params.prec().k());
+    let mut host_pt =
+        host_module.ckks_plaintext_alloc_from_slots(host_module.ckks_max_slots(), params.base2k.into(), params.prec().k());
     host_pt.set_meta(params.prec().meta());
     encoder.encode_reim(&mut host_pt, &re1, &im1).unwrap();
     // CKKS aligns the encoded integer message to the ciphertext's torus grid.
@@ -196,7 +197,7 @@ where
         rank: 1usize.into(),
     };
     let mut ct = module.ckks_ciphertext_alloc_from_glwe_infos(&enc);
-    let mut pt = module.ckks_pt_vec_alloc(module.ckks_max_slots(), 8usize.into(), 8usize.into());
+    let mut pt = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots(), 8usize.into(), 8usize.into());
     let sk = other.glwe_secret_prepared_alloc(1usize.into());
     let ct_before = snapshot::<BE, _>(&ct);
     let pt_before = snapshot::<BE, _>(&pt);
@@ -247,7 +248,7 @@ pub fn test_decrypt_extract_same_meta<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
     Module<BE>: CKKSDecryptOps<BE>,
 {
     let m = params.n / 2;
@@ -272,7 +273,7 @@ pub fn test_decrypt_extract_truncates_log_budget<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
     Module<BE>: CKKSDecryptOps<BE>,
 {
     let m = params.n / 2;
@@ -298,7 +299,7 @@ pub fn test_decrypt_extract_rsh_for_smaller_log_delta<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
     Module<BE>: CKKSDecryptOps<BE>,
 {
     let m = params.n / 2;
@@ -324,7 +325,7 @@ pub fn test_decrypt_extract_lsh_for_larger_log_delta<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
     Module<BE>: CKKSDecryptOps<BE>,
 {
     let m = params.n / 2;
@@ -350,7 +351,7 @@ pub fn test_decrypt_rejects_output_hom_rem_too_large<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -371,7 +372,7 @@ pub fn test_decrypt_rejects_output_hom_rem_too_large<BE, F, E>(
         src_prec,
         &mut scratch.borrow(),
     );
-    let mut pt = module.ckks_pt_vec_alloc(
+    let mut pt = module.ckks_plaintext_alloc_from_slots(
         module.ckks_max_slots(),
         params.base2k.into(),
         (src_prec.log_delta() + src_prec.log_budget() + 1).into(),
@@ -410,7 +411,7 @@ pub fn test_decrypt_rejects_base2k_mismatch<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -432,7 +433,7 @@ pub fn test_decrypt_rejects_base2k_mismatch<BE, F, E>(
         &mut scratch.borrow(),
     );
     let mismatched_base2k = (params.base2k / 2).into();
-    let mut pt = host_module.ckks_pt_vec_alloc(host_module.ckks_max_slots(), mismatched_base2k, src_prec.k());
+    let mut pt = host_module.ckks_plaintext_alloc_from_slots(host_module.ckks_max_slots(), mismatched_base2k, src_prec.k());
     pt.set_meta(src_prec.meta());
     let (pt_before, ct_before) = (snapshot::<BE, _>(&pt), snapshot::<BE, _>(&ct));
     let err = with_scratch::<BE, _>(0, |s| module.ckks_decrypt(&mut pt, &ct, &sk, s)).unwrap_err();
@@ -461,7 +462,7 @@ pub fn test_decrypt_rejects_degree_mismatch<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -482,7 +483,7 @@ pub fn test_decrypt_rejects_degree_mismatch<BE, F, E>(
         src_prec,
         &mut scratch.borrow(),
     );
-    let mut pt = host_module.ckks_pt_vec_alloc(m / 2, params.base2k.into(), src_prec.k());
+    let mut pt = host_module.ckks_plaintext_alloc_from_slots(m / 2, params.base2k.into(), src_prec.k());
     pt.set_meta(src_prec.meta());
     let (pt_before, ct_before) = (snapshot::<BE, _>(&pt), snapshot::<BE, _>(&ct));
     let err = with_scratch::<BE, _>(0, |s| module.ckks_decrypt(&mut pt, &ct, &sk, s)).unwrap_err();
@@ -514,7 +515,7 @@ pub fn test_decrypt_rejects_degree_mismatch<BE, F, E>(
         sparse_prec,
         &mut scratch.borrow(),
     );
-    let mut pt = module.ckks_pt_vec_alloc(m / 2, params.base2k.into(), src_prec.k());
+    let mut pt = module.ckks_plaintext_alloc_from_slots(m / 2, params.base2k.into(), src_prec.k());
     pt.set_meta(src_prec.meta());
     with_scratch::<BE, _>(module.ckks_decrypt_tmp_bytes(&pt, &ct), |s| {
         module.ckks_decrypt(&mut pt, &ct, &sk, s)
@@ -548,7 +549,7 @@ pub fn test_decrypt_wipes_scratch<BE, F, E>(
     BE: crate::test_suite::helpers::TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     poulpy_hal::layouts::Module<BE>: crate::test_suite::helpers::TestContextModule<BE>,
     F: crate::test_suite::helpers::TestScalar,
-    E: poulpy_hal::api::NegacyclicFFT<F> + poulpy_hal::api::NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -569,7 +570,7 @@ pub fn test_decrypt_wipes_scratch<BE, F, E>(
     // Half the degree reads every second coefficient, which a sparsity of one allows.
     poulpy_core::layouts::SetGLWEPlaintextInfos::set_log_sparsity(&mut ct, 1);
     for slots in [module.ckks_max_slots(), module.ckks_max_slots() / 2] {
-        let mut pt = module.ckks_pt_vec_alloc(slots, params.base2k.into(), ct.k());
+        let mut pt = module.ckks_plaintext_alloc_from_slots(slots, params.base2k.into(), ct.k());
         pt.set_meta(ct.meta());
         let bytes = module.ckks_decrypt_tmp_bytes(&pt, &ct);
         poulpy_core::test_suite::assert_wipes_scratch::<BE>(bytes, |s| module.ckks_decrypt(&mut pt, &ct, &sk, s).unwrap());
@@ -586,7 +587,7 @@ pub fn test_decrypt_rejects_alignment_on_empty_arena<BE, F, E>(
     BE: crate::test_suite::helpers::TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     poulpy_hal::layouts::Module<BE>: crate::test_suite::helpers::TestContextModule<BE>,
     F: crate::test_suite::helpers::TestScalar,
-    E: poulpy_hal::api::NegacyclicFFT<F> + poulpy_hal::api::NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     use super::parity::{helpers::fixture_ciphertext, layout};
     let b = params.base2k;
@@ -596,7 +597,7 @@ pub fn test_decrypt_rejects_alignment_on_empty_arena<BE, F, E>(
         &layout(params, params.rank, 3 * b + 5, b - 1, 0, SlotsKind::Complex),
         41,
     );
-    let mut pt = module.ckks_pt_vec_alloc(module.ckks_max_slots(), b.into(), (3 * b + 6).into());
+    let mut pt = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots(), b.into(), (3 * b + 6).into());
     pt.set_meta(GLWEPlaintextMeta {
         slot_layout: poulpy_core::layouts::SlotLayout::Full,
         scale: Scale::Log(b - 1),
@@ -630,7 +631,7 @@ pub fn test_encrypt_sk_rejects_plaintext_base2k_mismatch<BE, F, E>(
     BE: crate::test_suite::helpers::TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     poulpy_hal::layouts::Module<BE>: crate::test_suite::helpers::TestContextModule<BE>,
     F: crate::test_suite::helpers::TestScalar,
-    E: poulpy_hal::api::NegacyclicFFT<F> + poulpy_hal::api::NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     use super::parity::{
         helpers::{fixture_ciphertext, fixture_plaintext},

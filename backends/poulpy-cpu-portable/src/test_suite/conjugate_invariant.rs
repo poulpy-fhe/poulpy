@@ -305,7 +305,7 @@ macro_rules! conjugate_invariant_test_suite {
                         }
                     }
                     let mut ppol = module.svp_ppol_alloc(n, 1, PrepareHint::Reuse);
-                    module.svp_prepare(
+                    module.svp_ppol_prepare(
                         &mut ppol.to_backend_mut(),
                         0,
                         &poulpy_hal::test_suite::scalar_znx_backend_ref::<BE>(&b),
@@ -386,11 +386,11 @@ macro_rules! conjugate_invariant_test_suite {
                 let mut right = module.cnv_pvec_right_alloc(n, 2, 2, PrepareHint::Reuse);
                 let mut scratch = ScratchOwned::<BE>::alloc(
                     module
-                        .cnv_prepare_self_tmp_bytes(2, 2)
+                        .cnv_pvec_self_prepare_tmp_bytes(2, 2)
                         .max(module.cnv_pairwise_apply_dft_tmp_bytes(0, 4, 2, 2))
                         .max(module.vec_znx_idft_apply_tmp_bytes()),
                 );
-                module.cnv_prepare_self(
+                module.cnv_pvec_self_prepare(
                     &mut left.to_backend_mut(),
                     &mut right.to_backend_mut(),
                     &vec_znx_backend_ref::<BE>(&a),

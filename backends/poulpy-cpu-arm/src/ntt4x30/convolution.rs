@@ -382,7 +382,7 @@ unsafe fn conv_run<const ACC: bool, const PAIRWISE: bool>(
 }
 
 /// Scratch for one packed limb, per worker.
-pub(crate) fn cnv_prepare_tmp_bytes(n: usize) -> usize {
+pub(crate) fn cnv_pvec_prepare_tmp_bytes(n: usize) -> usize {
     prepare_tmp_words(n) * size_of::<u64>()
 }
 
@@ -483,7 +483,7 @@ fn prepare<BE, E: TaskExecutor>(
     });
 }
 
-pub(crate) fn cnv_prepare_left<BE, E: TaskExecutor>(
+pub(crate) fn cnv_pvec_left_prepare<BE, E: TaskExecutor>(
     module: &Module<BE>,
     res: &mut CnvPVecLBackendMut<'_, BE>,
     a: &VecZnxBackendRef<'_, BE>,
@@ -497,7 +497,7 @@ pub(crate) fn cnv_prepare_left<BE, E: TaskExecutor>(
     prepare::<BE, E>(module, Some(res), None, a, tmp, dft);
 }
 
-pub(crate) fn cnv_prepare_right<BE, E: TaskExecutor>(
+pub(crate) fn cnv_pvec_right_prepare<BE, E: TaskExecutor>(
     module: &Module<BE>,
     res: &mut CnvPVecRBackendMut<'_, BE>,
     a: &VecZnxBackendRef<'_, BE>,
@@ -511,7 +511,7 @@ pub(crate) fn cnv_prepare_right<BE, E: TaskExecutor>(
     prepare::<BE, E>(module, None, Some(res), a, tmp, dft);
 }
 
-pub(crate) fn cnv_prepare_self<BE, E: TaskExecutor>(
+pub(crate) fn cnv_pvec_self_prepare<BE, E: TaskExecutor>(
     module: &Module<BE>,
     left: &mut CnvPVecLBackendMut<'_, BE>,
     right: &mut CnvPVecRBackendMut<'_, BE>,

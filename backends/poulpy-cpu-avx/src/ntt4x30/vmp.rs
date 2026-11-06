@@ -46,12 +46,12 @@ impl SendU32Ptr {
 }
 
 /// Scratch space (in bytes) required by the AVX VMP prepare kernel.
-pub(crate) fn vmp_prepare_tmp_bytes_avx(n: usize) -> usize {
+pub(crate) fn vmp_pmat_prepare_tmp_bytes_avx(n: usize) -> usize {
     4 * n * size_of::<u64>()
 }
 
 /// AVX-local VMP prepare into two packed prime-pair planes.
-pub(crate) fn vmp_prepare_avx_pm<R: Ring>(
+pub(crate) fn vmp_pmat_prepare_avx_pm<R: Ring>(
     module: &Module<NTT4x30Avx<R>>,
     res: &mut VmpPMatBackendMut<'_, NTT4x30Avx<R>>,
     a: &MatZnxBackendRef<'_, NTT4x30Avx<R>>,
@@ -67,7 +67,7 @@ pub(crate) fn vmp_prepare_avx_pm<R: Ring>(
     assert_eq!(res.rows(), a.rows());
     assert_eq!(res.cols_out(), a.cols_out());
     assert_eq!(res.size(), a.size());
-    assert!(std::mem::size_of_val(tmp) >= vmp_prepare_tmp_bytes_avx(n));
+    assert!(std::mem::size_of_val(tmp) >= vmp_pmat_prepare_tmp_bytes_avx(n));
     assert!(n.is_multiple_of(4));
 
     let nrows = a.cols_in() * a.rows();

@@ -3,9 +3,9 @@
 use std::collections::BTreeSet;
 
 use poulpy_ckks::{
-    CKKSInfos, CKKSModuleInfos, GLWEPlaintextInfos, SetCKKSInfos, SlotsKind,
-    api::{CKKSEncodingHostOps, CKKSEncodingOps, CKKSLinearTransformationOps},
-    layouts::CKKSModuleAlloc,
+    CKKSInfos, CKKSModuleInfos, GLWEPlaintextInfos, SetCKKSInfos, SetGLWEPlaintextInfos, SlotsKind,
+    api::{CKKSEncodingHostOps, CKKSEncodingOps, CKKSLinearTransformationOps, CKKSRightOperandPreparedFactory},
+    layouts::CKKSPlaintextAlloc,
     test_suite::{
         CKKSTestParams,
         helpers::{
@@ -29,12 +29,22 @@ use super::{
         mapped_layout, matmul_left_operand, matmul_right_operand, product_layout, pt_operand, rotation_keys,
     },
     matmul::public_entry,
+    matvec::{
+        DiagonalCiphertextModel, alloc_vector, append, append_tmp_bytes, diagonal_ciphertext_elements,
+        diagonal_ciphertext_layout, matvec_layouts, matvec_model, matvec_operands, prepared_of, vector_entry, vector_slots,
+    },
 };
 use crate::{
-    api::{BlasEncodingOps, BlasMatInterOps, BlasMatIntraOps, BlasMatMulOps},
+    api::{
+        BlasEncodingOps, BlasMatInterOps, BlasMatIntraOps, BlasMatMulLeftOperandPreparedFactory, BlasMatMulOps,
+        BlasMatMulRightOperandPreparedFactory, BlasMatVecOps,
+    },
     layouts::{
-        BlasCiphertext, BlasCiphertextOwned, BlasContextInfos, BlasGridInfos, BlasLayout, BlasPlan, BlasPtAlgorithm,
-        BlasPtOperand, Left, Right, ciphertext::layout_of, replicated, sum_galois_elements,
+        BlasCiphertext, BlasCiphertextOwned, BlasContextInfos, BlasDiagonalCiphertextAlloc, BlasGridInfos, BlasGridLine,
+        BlasLayout, BlasMatVecOperandLayout, BlasPlan, BlasPtAlgorithm, BlasPtOperandPrepared, BlasVector, BlasVectorInfos,
+        BlasVectorLayout, BlasVectorOwned, BlasVectorShape, Left, Right, blas_grid_to_vector_output_layout,
+        blas_matvec_diagonal_output_layout, blas_matvec_pt_output_layout, blas_vector_to_grid_output_layout,
+        ciphertext::layout_of, diagonal_ciphertext::AppendAxis, matvec_pt_galois_elements, replicated, sum_galois_elements,
     },
     oep::BlasImpl,
 };
@@ -46,7 +56,10 @@ use crate::{
 /// `blas_matmul_prepared` of every mix and `blas_matmul`, by a right factor of distinct matrices and by one whose
 /// compact encryption proves it holds one matrix, `blas_matmul_pt_right` and `blas_matmul_pt_left` under every
 /// algorithm, the masked ones under the context's masks and on the right of one public matrix, each on exactly the
-/// scratch its query reports. Every output decrypts to its cleartext model at the metadata [`copied_layout`],
+/// scratch its query reports, `blas_matvec_pt` of a real vector, resident and streamed, the row and column appends of a
+/// diagonal ciphertext by real masks then its product by a real vector, `blas_grid_to_vector` of a column and
+/// `blas_vector_to_grid` of a row. Every output decrypts to its
+/// cleartext model at the metadata [`copied_layout`],
 /// [`mapped_layout`] or [`product_layout`] gives, and its slots, like the prepared operands', are `Real`. On fewer than
 /// 16 slots, which hold no `4 x 4` block, it is skipped with a message.
 pub fn test_blas_conjugate_invariant<BE>(
@@ -198,9 +211,10 @@ pub fn test_blas_conjugate_invariant<BE>(
 
     // Both operands under either hint, hot first, then the prepared product of every mix.
     let lefts = HINTS.map(|hint| {
-        let left = with_scratch::<BE, _>(module.blas_matmul_prepare_left_tmp_bytes(&ct_a, &ctx, &atk, hint), |s| {
-            matmul_left_operand(module, &ct_a, &ctx, &keys, hint, s)
-        })
+        let left = with_scratch::<BE, _>(
+            module.blas_matmul_left_operand_prepare_tmp_bytes(&ct_a, &ctx, &atk, hint),
+            |s| matmul_left_operand(module, &ct_a, &ctx, &keys, hint, s),
+        )
         .unwrap();
         assert_eq!(left.block_layout().slots(), SlotsKind::Real, "prepare_left {hint:?}: slots");
         left
@@ -214,9 +228,10 @@ pub fn test_blas_conjugate_invariant<BE>(
     let side = |hint| usize::from(hint == PrepareHint::Reuse);
     for (name, ct_y, y) in [("", &ct_b, &b), (" of one matrix", &ct_one, &spread_one)] {
         let rights = HINTS.map(|hint| {
-            let right = with_scratch::<BE, _>(module.blas_matmul_prepare_right_tmp_bytes(ct_y, &ctx, &atk, hint), |s| {
-                matmul_right_operand(module, ct_y, &ctx, &keys, hint, s)
-            })
+            let right = with_scratch::<BE, _>(
+                module.blas_matmul_right_operand_prepare_tmp_bytes(ct_y, &ctx, &atk, hint),
+                |s| matmul_right_operand(module, ct_y, &ctx, &keys, hint, s),
+            )
             .unwrap();
             assert_eq!(
                 right.block_layout().slots(),
@@ -287,7 +302,7 @@ pub fn test_blas_conjugate_invariant<BE>(
             &mut scratch.borrow(),
         );
 
-        let pt_left: BlasPtOperand<BE, Left> = pt_operand::<BE, f64, Left>(
+        let pt_left: BlasPtOperandPrepared<BE, Left> = pt_operand::<BE, f64, Left>(
             module,
             BlasPlan::new(log_d).with_pt_algorithm(algorithm),
             2,
@@ -311,6 +326,269 @@ pub fn test_blas_conjugate_invariant<BE>(
             &mut scratch.borrow(),
         );
     }
+
+    // A product of a real vector by a public matrix, several ciphertexts on each side, resident and streamed.
+    let layout = matvec_layouts(&params, slots).pop().unwrap();
+    let (streamed, resident) = matvec_operands::<BE, f64>(module, &layout);
+    let keys = TestKeys::<BE> {
+        atks: rotation_keys(
+            &params,
+            module,
+            &sk_raw,
+            matvec_pt_galois_elements(order, &layout),
+            &mut scratch.borrow(),
+        ),
+        tsk: None,
+    };
+    let v: Vec<f64> = (0..layout.input.len).map(vector_entry).collect();
+    let ct_v = encrypt_real_vector(
+        &params,
+        module,
+        &sk,
+        layout.input,
+        layout.input_period,
+        &v,
+        &mut scratch.borrow(),
+    );
+    let want = matvec_model(layout.output.len, &v);
+    let want_layout = blas_matvec_pt_output_layout(&alloc_vector(&params, module, layout.output, k), &layout, &ct_v);
+    let mut res = alloc_vector(&params, module, layout.output, k);
+    with_scratch::<BE, _>(module.blas_matvec_pt_tmp_bytes(&res, &resident, &ct_v, &atk), |s| {
+        module.blas_matvec_pt(&mut res, &resident, &ct_v, &keys, s)
+    })
+    .unwrap();
+    let period = layout.output_period;
+    assert_real_vector(
+        "matvec_pt resident",
+        &params,
+        module,
+        &sk,
+        &res,
+        &want,
+        period,
+        &want_layout,
+        &mut scratch.borrow(),
+    );
+    let mut res = alloc_vector(&params, module, layout.output, k);
+    with_scratch::<BE, _>(module.blas_matvec_pt_tmp_bytes(&res, &streamed, &ct_v, &atk), |s| {
+        module.blas_matvec_pt(&mut res, &streamed, &ct_v, &keys, s)
+    })
+    .unwrap();
+    assert_real_vector(
+        "matvec_pt streamed",
+        &params,
+        module,
+        &sk,
+        &res,
+        &want,
+        period,
+        &want_layout,
+        &mut scratch.borrow(),
+    );
+
+    // A diagonal ciphertext of real diagonals: a row and a column appended by real masks of one and two slots, prepared to
+    // reuse and once, then its product by a real vector.
+    let layout = diagonal_ciphertext_layout(&params, slots, k - p);
+    let keys = TestKeys::<BE> {
+        atks: rotation_keys(
+            &params,
+            module,
+            &sk_raw,
+            diagonal_ciphertext_elements(order, &layout),
+            &mut scratch.borrow(),
+        ),
+        tsk: Some(gen_tsk(&params, module, &sk_raw, &mut scratch.borrow())),
+    };
+    let whole = BlasVectorShape::new(slots, slots, 0, 1);
+    let real_mask = |set: &[usize], hint: PrepareHint, scratch: &mut ScratchArena<'_, BE>| {
+        let mut re = vec![0.0; slots];
+        set.iter().for_each(|&s| re[s] = 1.0);
+        let mut pt = module.ckks_plaintext_alloc_from_slots(slots, params.base2k.into(), params.prec().k());
+        pt.set_meta(params.prec().meta());
+        module
+            .ckks_encode_slots_host_into(&mut pt, &re, &vec![0.0; slots], scratch)
+            .unwrap();
+        let mask = module.ckks_right_operand_prepare_alloc(&pt, hint, scratch).unwrap();
+        (re, mask)
+    };
+    let masks = [
+        real_mask(&[0], PrepareHint::Reuse, &mut scratch.borrow()),
+        real_mask(&[0, slots / 2], PrepareHint::OneShot, &mut scratch.borrow()),
+    ];
+    let mut m = module.blas_diagonal_ciphertext_alloc_from_infos(&layout);
+    let mut model = DiagonalCiphertextModel::new(slots, (0..8).collect());
+    for (axis, at, (mask, mask_prepared)) in [(AppendAxis::Row, 1, &masks[0]), (AppendAxis::Col, 4, &masks[1])] {
+        let v: Vec<f64> = (0..slots).map(|e| vector_entry(3 * e + at as usize)).collect();
+        let ct_v = encrypt_real_vector(&params, module, &sk, whole, slots, &v, &mut scratch.borrow());
+        with_scratch::<BE, _>(append_tmp_bytes(module, axis, &m, &ct_v, mask_prepared, &atk), |s| {
+            append(module, axis, &mut m, at, &ct_v, mask_prepared, &keys, s)
+        })
+        .unwrap();
+        model.append(axis, at, mask, &v);
+    }
+    let x: Vec<f64> = (0..slots).map(vector_entry).collect();
+    let ct_x = encrypt_real_vector(&params, module, &sk, whole, slots, &x, &mut scratch.borrow());
+    let mut res = alloc_vector(&params, module, whole, k);
+    let want_layout = blas_matvec_diagonal_output_layout(&res, &m, &ct_x);
+    with_scratch::<BE, _>(module.blas_matvec_diagonal_tmp_bytes(&res, &m, &ct_x, &tsk, &atk), |s| {
+        module.blas_matvec_diagonal(&mut res, &m, &ct_x, &keys, s)
+    })
+    .unwrap();
+    assert_real_vector(
+        "streamed matvec of a diagonal ciphertext",
+        &params,
+        module,
+        &sk,
+        &res,
+        &model.matvec(&x),
+        slots,
+        &want_layout,
+        &mut scratch.borrow(),
+    );
+    let prepared = prepared_of(module, &m);
+    let mut res = alloc_vector(&params, module, whole, k);
+    with_scratch::<BE, _>(
+        module.blas_matvec_diagonal_tmp_bytes(&res, &prepared, &ct_x, &tsk, &atk),
+        |s| module.blas_matvec_diagonal(&mut res, &prepared, &ct_x, &keys, s),
+    )
+    .unwrap();
+    assert_real_vector(
+        "resident matvec of a diagonal ciphertext",
+        &params,
+        module,
+        &sk,
+        &res,
+        &model.matvec(&x),
+        slots,
+        &want_layout,
+        &mut scratch.borrow(),
+    );
+
+    // A column of the last matrix of `A` read into a vector, then a real vector written as a row of the last matrix of
+    // a grid of one block row.
+    let (base2k, meta) = (params.base2k.into(), params.prec().into());
+    let line = BlasGridLine::Col {
+        mat_slot: lanes - 1,
+        col: 5,
+    };
+    let output = BlasVectorShape::new(5, 5, 1, 2);
+    let read = BlasMatVecOperandLayout::new(slots, line.shape(&ct_a), slots, output, slots, base2k, meta);
+    let row = BlasGridLine::Row {
+        mat_slot: lanes - 1,
+        row: 2,
+    };
+    let input = BlasVectorShape::new(3, 3, 0, 1);
+    let grid_layout = BlasLayout::new(ct_a.block_layout(), log_d, 1, 3);
+    let write = BlasMatVecOperandLayout::new(slots, input, slots, row.shape(&grid_layout), slots, base2k, meta);
+    let ((_, w_read), (_, w_write)) = (
+        matvec_operands::<BE, f64>(module, &read),
+        matvec_operands::<BE, f64>(module, &write),
+    );
+    let elements: BTreeSet<i64> = matvec_pt_galois_elements(order, &read)
+        .into_iter()
+        .chain(matvec_pt_galois_elements(order, &write))
+        .collect();
+    let keys = TestKeys::<BE> {
+        atks: rotation_keys(&params, module, &sk_raw, elements, &mut scratch.borrow()),
+        tsk: None,
+    };
+    let mut res = alloc_vector(&params, module, output, k);
+    let want_layout = blas_grid_to_vector_output_layout(&res, &read, &ct_a);
+    with_scratch::<BE, _>(module.blas_grid_to_vector_tmp_bytes(&res, &w_read, &ct_a, &atk), |s| {
+        module.blas_grid_to_vector(&mut res, &w_read, &ct_a, line, &keys, s)
+    })
+    .unwrap();
+    let column: Vec<f64> = (0..2 * a.d()).map(|r| a.at(lanes - 1, r, 5).0).collect();
+    let want = matvec_model(output.len, &column);
+    assert_real_vector(
+        "grid_to_vector",
+        &params,
+        module,
+        &sk,
+        &res,
+        &want,
+        slots,
+        &want_layout,
+        &mut scratch.borrow(),
+    );
+    let v: Vec<f64> = (0..input.len).map(vector_entry).collect();
+    let ct_v = encrypt_real_vector(&params, module, &sk, input, slots, &v, &mut scratch.borrow());
+    let mut res = alloc(1, 3);
+    let layout = blas_vector_to_grid_output_layout(&res, &write, &ct_v);
+    with_scratch::<BE, _>(module.blas_vector_to_grid_tmp_bytes(&res, &w_write, &ct_v, &atk), |s| {
+        module.blas_vector_to_grid(&mut res, row, &w_write, &ct_v, &keys, s)
+    })
+    .unwrap();
+    let y = matvec_model(write.output.len, &v);
+    let want = Grid::from_fn(log_d, 1, 3, lanes, |s, r, c| {
+        (if s == lanes - 1 && r == 2 { y[c] } else { 0.0 }, 0.0)
+    });
+    check("vector_to_grid", &res, &want, layout, &mut scratch.borrow());
+}
+
+/// Encrypts the real `values` as a vector of `shape` repeated every `period` slots at width `params.k`, each ciphertext
+/// encoded at `params.prec()` by the module and labelled with the sparsity of `period`.
+fn encrypt_real_vector<BE>(
+    params: &CKKSTestParams,
+    module: &Module<BE>,
+    sk: &GLWESecretPrepared<BE::OwnedBuf, BE>,
+    shape: BlasVectorShape,
+    period: usize,
+    values: &[f64],
+    scratch: &mut ScratchArena<'_, BE>,
+) -> BlasVectorOwned<BE>
+where
+    BE: TestContextBackend,
+    Module<BE>: TestContextSharedModule<BE> + CKKSEncodingOps<BE, f64>,
+{
+    let slots = module.ckks_max_slots();
+    let zeros = vec![0.0; slots];
+    let cts = (0..shape.count())
+        .map(|t| {
+            let mut pt = module.ckks_plaintext_alloc_from_slots(slots, params.base2k.into(), params.prec().k());
+            pt.set_meta(params.prec().meta());
+            let re = vector_slots(shape, period, slots, t, values);
+            module.ckks_encode_slots_host_into(&mut pt, &re, &zeros, scratch).unwrap();
+            let mut ct = ckks_encrypt_pt(params, module, sk, params.k, &pt.to_host_owned::<BE>(), scratch);
+            ct.set_log_sparsity((slots / period).ilog2() as usize);
+            ct
+        })
+        .collect();
+    BlasVector::from_cts(cts, shape).unwrap()
+}
+
+/// [`assert_vector_decrypt`](super::matvec::assert_vector_decrypt) on the conjugate-invariant ring: every ciphertext's
+/// slots are `Real`, then the layout `layout` gives and empty noise tags, then `want`, repeated every `period` and zero
+/// elsewhere, at `layout`'s `log_delta`, decoded by the module, with zero imaginary parts.
+#[allow(clippy::too_many_arguments)]
+fn assert_real_vector<BE>(
+    label: &str,
+    params: &CKKSTestParams,
+    module: &Module<BE>,
+    sk: &GLWESecretPrepared<BE::OwnedBuf, BE>,
+    v: &BlasVectorOwned<BE>,
+    want: &[f64],
+    period: usize,
+    layout: &BlasVectorLayout,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
+    BE: TestContextBackend,
+    Module<BE>: TestContextSharedModule<BE> + CKKSEncodingOps<BE, f64>,
+{
+    assert_eq!(v.blas_vector_layout(), *layout, "{label}: layout");
+    let (slots, shape, log_delta) = (module.ckks_max_slots(), v.vector_shape(), layout.ct.log_delta());
+    for (t, ct) in v.cts().iter().enumerate() {
+        assert_eq!(ct.slots(), SlotsKind::Real, "{label} ciphertext {t}: slots");
+        assert!(ct.noise().is_none(), "{label} ciphertext {t}: kept a noise tag");
+        let mut prec = precision_at(params, log_delta);
+        prec.meta = ct.meta();
+        let pt = ckks_decrypt_with_prec(module, ct, sk, prec, scratch).unwrap();
+        let (mut re, mut im) = (vec![0.0; slots], vec![0.0; slots]);
+        module.ckks_decode_slots_host_into(&pt, &mut re, &mut im, scratch).unwrap();
+        let want = vector_slots(shape, period, slots, t, want);
+        assert_precision(&format!("{label} ciphertext {t}"), &re, &want, log_delta, params.n);
+        assert!(im.iter().all(|&x| x == 0.0), "{label} ciphertext {t}: imaginary parts");
+    }
 }
 
 /// Encrypts every block of the real grid `grid` at width `params.k`, encoded at `params.prec()` by the module into a
@@ -332,9 +610,9 @@ where
         .blocks(slots)
         .iter()
         .map(|(re, _)| {
-            let mut pt = module.ckks_pt_vec_alloc(slots, params.base2k.into(), params.prec().k());
+            let mut pt = module.ckks_plaintext_alloc_from_slots(slots, params.base2k.into(), params.prec().k());
             pt.set_meta(params.prec().meta());
-            module.ckks_encode_reim_into(&mut pt, re, &zeros, scratch).unwrap();
+            module.ckks_encode_slots_host_into(&mut pt, re, &zeros, scratch).unwrap();
             ckks_encrypt_pt(params, module, sk, params.k, &pt.to_host_owned::<BE>(), scratch)
         })
         .collect();
@@ -376,7 +654,7 @@ fn assert_real_grid<BE>(
         prec.meta = block.meta();
         let pt = ckks_decrypt_with_prec(module, block, sk, prec, scratch).unwrap();
         let (mut re, mut im) = (vec![0.0; slots], vec![0.0; slots]);
-        module.ckks_decode_reim_into(&pt, &mut re, &mut im, scratch).unwrap();
+        module.ckks_decode_slots_host_into(&pt, &mut re, &mut im, scratch).unwrap();
         assert_precision(&format!("{label} block {b}"), &re, &want_re, log_delta, params.n);
         assert!(im.iter().all(|&x| x == 0.0), "{label} block {b}: imaginary parts");
     }

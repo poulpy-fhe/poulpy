@@ -1,7 +1,7 @@
 use poulpy_hal::{
     api::{
-        ScratchArenaTakeBasic, SvpApplyDftToDftAssign, VecZnxBigAddAssign, VecZnxBigBytesOf, VecZnxBigFromSmall,
-        VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftApply, VecZnxDftBytesOf, VecZnxIdftApply,
+        ScratchArenaTakeVecZnxBig, ScratchArenaTakeVecZnxDft, SvpApplyDftToDftAssign, VecZnxBigAddAssign, VecZnxBigBytesOf,
+        VecZnxBigFromSmall, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftApply, VecZnxDftBytesOf, VecZnxIdftApply,
         VecZnxIdftApplyTmpBytes, VecZnxNormalizeTmpBytes, VecZnxSubAssign,
     },
     layouts::{
@@ -11,8 +11,8 @@ use poulpy_hal::{
     oep::HalVecZnxImpl,
 };
 
-use crate::ScratchArenaTakeCore;
-use crate::api::GLWEBytesOf;
+use crate::ScratchArenaTakeGLWEPlaintext;
+use crate::api::GLWEPlaintextBytesOf;
 use crate::layouts::operand_degree;
 use crate::layouts::{GGSW, GGSWInfos, GGSWToBackendRef, GLWEToBackendMut, GLWEToBackendRef, GLWEViewRef, LWEInfos};
 use crate::noise::glwe::{glwe_noise_backend_inner, glwe_noise_body_tmp_bytes};
@@ -74,8 +74,8 @@ where
 
         let lvl_0: usize = self.glwe_plaintext_bytes_of_from_infos(infos);
         let lvl_1_glwe_noise: usize = glwe_noise_body_tmp_bytes(self, infos);
-        let lvl_1_mul: usize = self.bytes_of_vec_znx_dft(n, 1, infos.size())
-            + self.bytes_of_vec_znx_big(n, 1, infos.size())
+        let lvl_1_mul: usize = self.vec_znx_dft_bytes_of(n, 1, infos.size())
+            + self.vec_znx_big_bytes_of(n, 1, infos.size())
             + self
                 .vec_znx_idft_apply_tmp_bytes()
                 .max(self.vec_znx_big_normalize_tmp_bytes());
@@ -119,7 +119,7 @@ where
             ScalarZnx::from_data(BE::from_host_bytes(pt_want.data), pt_want.n(), pt_want.cols());
         {
             let mut pt_backend = pt.to_backend_mut();
-            crate::gadget::gadget_row_plaintext(
+            crate::gadget::gglwe_gadget_row_plaintext(
                 self,
                 &mut pt_backend.data,
                 0,

@@ -12,8 +12,8 @@ use crate::{
     GLWEAutomorphism,
     api::{GLWEAutomorphismKeyPreparedFactory, TransferInto},
     layouts::{
-        BackendGLWEAutomorphismKey, Base2K, Degree, Dnum, GLWEAutomorphismKeyLayout, GLWELayout, ModuleCoreAlloc, Rank,
-        TorusPrecision,
+        BackendGLWEAutomorphismKey, Base2K, Degree, Dnum, GLWEAlloc, GLWEAutomorphismKeyAlloc, GLWEAutomorphismKeyLayout,
+        GLWELayout, Rank, TorusPrecision,
     },
     test_suite::{
         keys::fill_by_digit,

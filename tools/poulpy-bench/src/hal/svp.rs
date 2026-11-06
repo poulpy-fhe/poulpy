@@ -6,7 +6,7 @@ use criterion::{Bencher, measurement::Measurement};
 use poulpy_hal::{
     api::{
         ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, SvpApplyDft, SvpApplyDftTmpBytes, SvpApplyDftToDft,
-        SvpApplyDftToDftAssign, SvpPPolAlloc, SvpPrepare, VecZnxDftAlloc,
+        SvpApplyDftToDftAssign, SvpPPolAlloc, SvpPPolPrepare, VecZnxDftAlloc,
     },
     layouts::{
         Backend, Module, PrepareHint, ScratchOwned, SvpPPolOwned, SvpPPolToBackendMut, SvpPPolToBackendRef, VecZnxDftOwned,
@@ -21,9 +21,9 @@ use crate::hal::helpers::{
 };
 use crate::hal::params::HalSweepParms;
 
-pub fn runner_svp_prepare<B, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &HalSweepParms)
+pub fn runner_svp_ppol_prepare<B, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &HalSweepParms)
 where
-    Module<B>: SvpPrepare<B> + SvpPPolAlloc<B> + ModuleNew<B> + ModuleSynchronize<B>,
+    Module<B>: SvpPPolPrepare<B> + SvpPPolAlloc<B> + ModuleNew<B> + ModuleSynchronize<B>,
     B: Backend<ZnxWord = i64>,
 {
     let module: Module<B> = Module::<B>::new(sweep.n as u64);
@@ -36,7 +36,7 @@ where
 
     bencher.iter(|| {
         let a_backend = scalar_znx_backend_ref::<B>(&a);
-        module.svp_prepare(&mut svp.to_backend_mut(), 0, &a_backend, 0);
+        module.svp_ppol_prepare(&mut svp.to_backend_mut(), 0, &a_backend, 0);
         module.synchronize();
         black_box(());
     });

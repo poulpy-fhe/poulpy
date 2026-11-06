@@ -18,7 +18,7 @@ use crate::Scale;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{GLWELayout, LWEInfos, Rank};
 use poulpy_hal::{
-    api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow},
+    api::{ReimFFT, ReimIFFT, ReimNew, ScratchOwnedBorrow},
     layouts::{CyclotomicOrder, HostBytesBackend, Module, Standard, galois_element, galois_elements_from_rotations},
 };
 use std::collections::HashMap;
@@ -29,7 +29,7 @@ use crate::{
     api::CKKSConjugateOps,
     encoding::paco::cpx::Cpx,
     layouts::slots::fold_rotations,
-    layouts::{CKKSCiphertextOwned, CKKSModuleAlloc},
+    layouts::{CKKSCiphertextAlloc, CKKSCiphertextOwned, CKKSPlaintextAlloc},
     oep::CKKSPaCoImpl,
     test_suite::reference_encoder::ReferenceEncoder,
     test_suite::{
@@ -96,7 +96,7 @@ pub(crate) fn assert_slots<BE, F, E>(
     BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F>,
+    E: ReimFFT<F> + ReimIFFT<F>,
 {
     use crate::test_suite::helpers::ckks_decrypt_with_prec;
     use poulpy_hal::layouts::ZnxView;
@@ -122,7 +122,7 @@ pub(crate) fn assert_slots<BE, F, E>(
     // Expected plaintext, encoded host-side at the same layout.
     let want_re: Vec<F> = want.iter().map(|x| F::from_f64(x.re).unwrap()).collect();
     let want_im: Vec<F> = want.iter().map(|x| F::from_f64(x.im).unwrap()).collect();
-    let mut want_pt = host_module.ckks_pt_vec_alloc(host_module.ckks_max_slots(), base2k, ct.k());
+    let mut want_pt = host_module.ckks_plaintext_alloc_from_slots(host_module.ckks_max_slots(), base2k, ct.k());
     want_pt.set_meta(GLWEPlaintextMeta {
         scale: Scale::Log(log_delta),
         slots: SlotsKind::Complex,
@@ -161,7 +161,7 @@ where
     BE: TestContextBackend<Ring = Standard> + CKKSPaCoImpl,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new::<F>(m).unwrap();
@@ -215,7 +215,7 @@ where
     BE: TestContextBackend<Ring = Standard> + CKKSPaCoImpl,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     for (a_div_m, b) in [(1usize, 16usize), (2, 8)] {
         // (a, b) pairs relative to the slot count: (m, m/8)-style folds of
@@ -300,7 +300,7 @@ where
     BE: TestContextBackend<Ring = Standard>,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new::<F>(m).unwrap();
@@ -353,7 +353,7 @@ pub fn test_slot_product_assign_rejects_missing_later_key<BE, F, E>(
     BE: TestContextBackend<Ring = Standard> + CKKSPaCoImpl,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     use super::parity::{
         helpers::{fixture_ciphertext, snapshot, with_scratch},
@@ -403,7 +403,7 @@ pub fn test_slot_trace_assign_rejects_missing_later_key<BE, F, E>(
     BE: TestContextBackend<Ring = Standard> + CKKSPaCoImpl,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     use super::parity::{
         helpers::{fixture_ciphertext, snapshot, with_scratch},

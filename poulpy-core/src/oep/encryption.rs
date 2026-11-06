@@ -33,42 +33,42 @@ use crate::{
 /// `poulpy-hal/docs/backend_safety_contract.md` apply.
 pub unsafe trait EncryptionImpl: Backend + SamplingImpl + HalVecZnxImpl + GLWENormalizeImpl + SecretImpl {
     /// Reproduces
-    /// [`fill_glwe_mask_from_source_reference`](crate::reference::encryption::GLWEMaskFillReference::fill_glwe_mask_from_source_reference)
+    /// [`glwe_fill_mask_from_source_reference`](crate::reference::encryption::GLWEFillReference::glwe_fill_mask_from_source_reference)
     /// bit for bit; free in kernels.
-    fn fill_glwe_mask_from_source<R>(module: &Module<Self>, res: &mut R, source_xa: &mut Source)
+    fn glwe_fill_mask_from_source<R>(module: &Module<Self>, res: &mut R, source_xa: &mut Source)
     where
         R: GLWEToBackendMut<Self>;
 
-    /// Default body: `fill_glwe_mask_from_seed_derived`, [`Self::fill_glwe_mask_from_source`] on a `Source` built
+    /// Default body: `glwe_fill_mask_from_seed_derived`, [`Self::glwe_fill_mask_from_source`] on a `Source` built
     /// from the seed.
-    fn fill_glwe_mask_from_seed<R>(module: &Module<Self>, res: &mut R, seed_xa: [u8; 32])
+    fn glwe_fill_mask_from_seed<R>(module: &Module<Self>, res: &mut R, seed_xa: [u8; 32])
     where
         R: GLWEToBackendMut<Self>,
     {
-        super::derived::encryption::fill_glwe_mask_from_seed_derived(module, res, seed_xa)
+        super::derived::encryption::glwe_fill_mask_from_seed_derived(module, res, seed_xa)
     }
 
     /// Reproduces
-    /// [`fill_glwe_from_source_reference`](crate::reference::encryption::GLWEMaskFillReference::fill_glwe_from_source_reference)
+    /// [`glwe_fill_from_source_reference`](crate::reference::encryption::GLWEFillReference::glwe_fill_from_source_reference)
     /// bit for bit; free in kernels.
-    fn fill_glwe_from_source<R>(module: &Module<Self>, res: &mut R, source: &mut Source)
+    fn glwe_fill_from_source<R>(module: &Module<Self>, res: &mut R, source: &mut Source)
     where
         R: GLWEToBackendMut<Self>;
 
     /// Reproduces
-    /// [`fill_lwe_mask_from_source_reference`](crate::reference::encryption::LWEFillMaskReference::fill_lwe_mask_from_source_reference)
+    /// [`lwe_fill_mask_from_source_reference`](crate::reference::encryption::LWEFillMaskReference::lwe_fill_mask_from_source_reference)
     /// bit for bit; free in kernels.
-    fn fill_lwe_mask_from_source<R>(module: &Module<Self>, base2k: usize, res: &mut R, source_xa: &mut Source)
+    fn lwe_fill_mask_from_source<R>(module: &Module<Self>, base2k: usize, res: &mut R, source_xa: &mut Source)
     where
         R: LWEToBackendMut<Self>;
 
-    /// Default body: `fill_lwe_mask_from_seed_derived`, [`Self::fill_lwe_mask_from_source`] on a `Source` built from
+    /// Default body: `lwe_fill_mask_from_seed_derived`, [`Self::lwe_fill_mask_from_source`] on a `Source` built from
     /// the seed.
-    fn fill_lwe_mask_from_seed<R>(module: &Module<Self>, base2k: usize, res: &mut R, seed_xa: [u8; 32])
+    fn lwe_fill_mask_from_seed<R>(module: &Module<Self>, base2k: usize, res: &mut R, seed_xa: [u8; 32])
     where
         R: LWEToBackendMut<Self>,
     {
-        super::derived::encryption::fill_lwe_mask_from_seed_derived(module, base2k, res, seed_xa)
+        super::derived::encryption::lwe_fill_mask_from_seed_derived(module, base2k, res, seed_xa)
     }
 
     /// Scratch bound of [`Self::lwe_encrypt_sk`]; may report less than the reference, never less than the body takes.
@@ -474,7 +474,7 @@ pub unsafe trait EncryptionImpl: Backend + SamplingImpl + HalVecZnxImpl + GLWENo
 
     /// Default body: `glwe_tensor_key_encrypt_sk_derived`, the secret prepared by
     /// [`SecretImpl::glwe_secret_prepare`](crate::oep::SecretImpl::glwe_secret_prepare) and its tensor by
-    /// [`SecretImpl::glwe_secret_tensor_prepare`](crate::oep::SecretImpl::glwe_secret_tensor_prepare), then
+    /// [`SecretImpl::glwe_secret_tensor_from_glwe_secret`](crate::oep::SecretImpl::glwe_secret_tensor_from_glwe_secret), then
     /// [`Self::gglwe_encrypt_sk`] of the tensor under the prepared secret, within
     /// [`Self::glwe_tensor_key_encrypt_sk_tmp_bytes`].
     fn glwe_tensor_key_encrypt_sk<R, S>(
@@ -498,7 +498,7 @@ pub unsafe trait EncryptionImpl: Backend + SamplingImpl + HalVecZnxImpl + GLWENo
         A: GGLWEInfos;
 
     /// Reproduces
-    /// [`glwe_to_lwe_key_encrypt_sk_reference`](crate::reference::encryption::GLWEToLWESwitchingKeyEncryptSkReference::glwe_to_lwe_key_encrypt_sk_reference)
+    /// [`glwe_to_lwe_key_encrypt_sk_reference`](crate::reference::encryption::GLWEToLWEKeyEncryptSkReference::glwe_to_lwe_key_encrypt_sk_reference)
     /// bit for bit, within [`Self::glwe_to_lwe_key_encrypt_sk_tmp_bytes`]; free in kernels and scratch use before the wipe.
     fn glwe_to_lwe_key_encrypt_sk<R, S1, S2>(
         module: &Module<Self>,
@@ -520,7 +520,7 @@ pub unsafe trait EncryptionImpl: Backend + SamplingImpl + HalVecZnxImpl + GLWENo
         A: GGLWEInfos;
 
     /// Reproduces
-    /// [`lwe_switching_key_encrypt_sk_reference`](crate::reference::encryption::LWESwitchingKeyEncryptReference::lwe_switching_key_encrypt_sk_reference)
+    /// [`lwe_switching_key_encrypt_sk_reference`](crate::reference::encryption::LWESwitchingKeyEncryptSkReference::lwe_switching_key_encrypt_sk_reference)
     /// bit for bit, within [`Self::lwe_switching_key_encrypt_sk_tmp_bytes`]; free in kernels and scratch use before the wipe.
     fn lwe_switching_key_encrypt_sk<R, S1, S2>(
         module: &Module<Self>,
@@ -542,7 +542,7 @@ pub unsafe trait EncryptionImpl: Backend + SamplingImpl + HalVecZnxImpl + GLWENo
         A: GGLWEInfos;
 
     /// Reproduces
-    /// [`lwe_to_glwe_key_encrypt_sk_reference`](crate::reference::encryption::LWEToGLWESwitchingKeyEncryptSkReference::lwe_to_glwe_key_encrypt_sk_reference)
+    /// [`lwe_to_glwe_key_encrypt_sk_reference`](crate::reference::encryption::LWEToGLWEKeyEncryptSkReference::lwe_to_glwe_key_encrypt_sk_reference)
     /// bit for bit under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within
     /// [`Self::lwe_to_glwe_key_encrypt_sk_tmp_bytes`]; free in kernels and scratch use before the wipe.
     fn lwe_to_glwe_key_encrypt_sk<R, S1, S2>(
@@ -740,7 +740,7 @@ pub unsafe trait EncryptionImpl: Backend + SamplingImpl + HalVecZnxImpl + GLWENo
 
     /// Default body: `glwe_tensor_key_compressed_encrypt_sk_derived`, the secret prepared by
     /// [`SecretImpl::glwe_secret_prepare`](crate::oep::SecretImpl::glwe_secret_prepare) and its tensor by
-    /// [`SecretImpl::glwe_secret_tensor_prepare`](crate::oep::SecretImpl::glwe_secret_tensor_prepare), then
+    /// [`SecretImpl::glwe_secret_tensor_from_glwe_secret`](crate::oep::SecretImpl::glwe_secret_tensor_from_glwe_secret), then
     /// [`Self::gglwe_compressed_encrypt_sk`] of the tensor under the prepared secret, within
     /// [`Self::glwe_tensor_key_compressed_encrypt_sk_tmp_bytes`].
     fn glwe_tensor_key_compressed_encrypt_sk<R, S>(
@@ -769,7 +769,7 @@ macro_rules! impl_encryption_reference_full {
     fn lwe_switching_key_encrypt_sk_tmp_bytes<A>(module: &::poulpy_hal::layouts::Module<$be>, infos: &A) -> usize
     where
         A: $crate::layouts::GGLWEInfos {
-            <::poulpy_hal::layouts::Module<$be> as $crate::reference::encryption::LWESwitchingKeyEncryptReference<$be>>::lwe_switching_key_encrypt_sk_tmp_bytes_reference::<A>(module, infos)
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::encryption::LWESwitchingKeyEncryptSkReference<$be>>::lwe_switching_key_encrypt_sk_tmp_bytes_reference::<A>(module, infos)
         }
 
     fn lwe_switching_key_encrypt_sk<R, S1, S2>(
@@ -784,14 +784,14 @@ macro_rules! impl_encryption_reference_full {
         R: $crate::layouts::GGLWEToBackendMut<$be> + $crate::layouts::GLWESwitchingKeyDegreesMut + $crate::layouts::GGLWEInfos,
         S1: $crate::layouts::LWESecretToBackendRef<$be>,
         S2: $crate::layouts::LWESecretToBackendRef<$be> {
-            <::poulpy_hal::layouts::Module<$be> as $crate::reference::encryption::LWESwitchingKeyEncryptReference<$be>>::lwe_switching_key_encrypt_sk_reference::<R, S1, S2>(module, res, sk_lwe_in, sk_lwe_out, source_xe, source_xa, scratch)
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::encryption::LWESwitchingKeyEncryptSkReference<$be>>::lwe_switching_key_encrypt_sk_reference::<R, S1, S2>(module, res, sk_lwe_in, sk_lwe_out, source_xe, source_xa, scratch)
         }
 
     fn glwe_to_lwe_key_encrypt_sk_tmp_bytes<A>(module: &::poulpy_hal::layouts::Module<$be>, infos: &A) -> usize
             where
                 A: $crate::layouts::GGLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::encryption::GLWEToLWESwitchingKeyEncryptSkReference<
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::encryption::GLWEToLWEKeyEncryptSkReference<
                     $be,
                 >>::glwe_to_lwe_key_encrypt_sk_tmp_bytes_reference::<A>(module, infos)
             }
@@ -809,7 +809,7 @@ macro_rules! impl_encryption_reference_full {
                 S2: $crate::layouts::GLWESecretToBackendRef<$be>,
                 R: $crate::layouts::GGLWEToBackendMut<$be> + $crate::layouts::GGLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::encryption::GLWEToLWESwitchingKeyEncryptSkReference<
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::encryption::GLWEToLWEKeyEncryptSkReference<
                     $be,
                 >>::glwe_to_lwe_key_encrypt_sk_reference::<R, S1, S2>(
                     module, res, sk_lwe, sk_glwe, source_xe, source_xa, scratch,
@@ -862,7 +862,7 @@ macro_rules! impl_encryption_reference_full {
             where
                 A: $crate::layouts::GGLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::encryption::LWEToGLWESwitchingKeyEncryptSkReference<
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::encryption::LWEToGLWEKeyEncryptSkReference<
                     $be,
                 >>::lwe_to_glwe_key_encrypt_sk_tmp_bytes_reference::<A>(module, infos)
             }
@@ -880,17 +880,17 @@ macro_rules! impl_encryption_reference_full {
                 S2: $crate::layouts::GLWESecretPreparedToBackendRef<$be>,
                 R: $crate::layouts::GGLWEToBackendMut<$be> + $crate::layouts::GGLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::encryption::LWEToGLWESwitchingKeyEncryptSkReference<
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::encryption::LWEToGLWEKeyEncryptSkReference<
                     $be,
                 >>::lwe_to_glwe_key_encrypt_sk_reference::<R, S1, S2>(
                     module, res, sk_lwe, sk_glwe, source_xe, source_xa, scratch,
                 )
             }
 
-    fn fill_lwe_mask_from_source<R>(module: &::poulpy_hal::layouts::Module<$be>, base2k: usize, res: &mut R, source_xa: &mut ::poulpy_hal::source::Source)
+    fn lwe_fill_mask_from_source<R>(module: &::poulpy_hal::layouts::Module<$be>, base2k: usize, res: &mut R, source_xa: &mut ::poulpy_hal::source::Source)
     where
         R: $crate::layouts::LWEToBackendMut<$be> {
-            <::poulpy_hal::layouts::Module<$be> as $crate::reference::encryption::LWEFillMaskReference<$be>>::fill_lwe_mask_from_source_reference::<R>(module, base2k, res, source_xa)
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::encryption::LWEFillMaskReference<$be>>::lwe_fill_mask_from_source_reference::<R>(module, base2k, res, source_xa)
         }
 
     fn lwe_encrypt_sk_tmp_bytes<A>(module: &::poulpy_hal::layouts::Module<$be>, infos: &A) -> usize
@@ -936,22 +936,22 @@ macro_rules! impl_encryption_reference_full {
             <::poulpy_hal::layouts::Module<$be> as $crate::reference::encryption::GGLWEEncryptSkReference<$be>>::gglwe_encrypt_sk_reference::<R, P, S>(module, res, pt, sk, source_xe, source_xa, scratch)
         }
 
-    fn fill_glwe_mask_from_source<R>(
+    fn glwe_fill_mask_from_source<R>(
         module: &::poulpy_hal::layouts::Module<$be>,
         res: &mut R,
         source_xa: &mut ::poulpy_hal::source::Source,
     ) where
         R: $crate::layouts::GLWEToBackendMut<$be> {
-            <::poulpy_hal::layouts::Module<$be> as $crate::reference::encryption::GLWEMaskFillReference<$be>>::fill_glwe_mask_from_source_reference::<R>(module, res, source_xa)
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::encryption::GLWEFillReference<$be>>::glwe_fill_mask_from_source_reference::<R>(module, res, source_xa)
         }
 
-    fn fill_glwe_from_source<R>(
+    fn glwe_fill_from_source<R>(
         module: &::poulpy_hal::layouts::Module<$be>,
         res: &mut R,
         source: &mut ::poulpy_hal::source::Source,
     ) where
         R: $crate::layouts::GLWEToBackendMut<$be> {
-            <::poulpy_hal::layouts::Module<$be> as $crate::reference::encryption::GLWEMaskFillReference<$be>>::fill_glwe_from_source_reference::<R>(module, res, source)
+            <::poulpy_hal::layouts::Module<$be> as $crate::reference::encryption::GLWEFillReference<$be>>::glwe_fill_from_source_reference::<R>(module, res, source)
         }
 
     fn glwe_encrypt_sk_tmp_bytes<A>(module: &::poulpy_hal::layouts::Module<$be>, infos: &A) -> usize

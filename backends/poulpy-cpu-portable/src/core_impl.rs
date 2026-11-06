@@ -1,7 +1,7 @@
 use super::{FFT64CIPortable, FFT64Portable, NTT4x30CIPortable, NTT4x30Portable};
 use poulpy_core::{
     impl_gglwe_product_digits_strided_reference_full, impl_glwe_tensoring_reference_full,
-    reference::keyswitching::glwe::{gglwe_product_digits_strided_reference, gglwe_product_digits_strided_tmp_bytes_reference},
+    reference::keyswitching::GGLWEProductDigitsStridedReference,
 };
 use poulpy_hal::{
     execution::SerialTaskExecutor,
@@ -38,8 +38,7 @@ where
         pmat_size: usize,
     ) -> usize {
         if dsize > STRIDED_MAX_DSIZE {
-            return gglwe_product_digits_strided_tmp_bytes_reference(
-                module,
+            return module.gglwe_product_digits_strided_tmp_bytes_reference(
                 res_size,
                 a_cols,
                 a_size,
@@ -63,12 +62,12 @@ where
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         if dsize > STRIDED_MAX_DSIZE {
-            return gglwe_product_digits_strided_reference(module, res, a, dsize, product_limbs, pmat, scratch);
+            return module.gglwe_product_digits_strided_reference(res, a, dsize, product_limbs, pmat, scratch);
         }
         gglwe_product_digits_strided::<R, SerialTaskExecutor>(res, a, dsize, product_limbs, pmat, None, scratch);
     }
 
-    ::poulpy_core::impl_gglwe_product_step_hooks_reference!();
+    ::poulpy_core::impl_gglwe_product_digits_strided_reference!();
 }
 
 crate::impl_cpu_core_defaults!(super::FFT64Portable, fft64);

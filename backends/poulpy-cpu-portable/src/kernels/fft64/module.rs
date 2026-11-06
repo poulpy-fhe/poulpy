@@ -1,4 +1,7 @@
-use poulpy_hal::layouts::{Ring, Standard};
+use poulpy_hal::{
+    api::{ReimFFT, ReimIFFT, ReimM},
+    layouts::{Ring, Standard},
+};
 use std::{fmt::Debug, marker::PhantomData};
 
 use bytemuck::Zeroable;
@@ -157,16 +160,20 @@ where
     }
 }
 
-impl<F: Float + FloatConst + Debug + Zeroable + Send + Sync> poulpy_hal::api::NegacyclicFFT<F> for FFT64Plan<F> {
+impl<F: Float + FloatConst + Debug + Zeroable + Send + Sync> ReimM for FFT64Plan<F> {
     fn m(&self) -> usize {
         self.fft().m()
     }
+}
 
-    fn fft(&self, data: &mut [F]) {
+impl<F: Float + FloatConst + Debug + Zeroable + Send + Sync> ReimFFT<F> for FFT64Plan<F> {
+    fn reim_fft(&self, data: &mut [F]) {
         self.fft().execute(data);
     }
+}
 
-    fn ifft(&self, data: &mut [F]) {
+impl<F: Float + FloatConst + Debug + Zeroable + Send + Sync> ReimIFFT<F> for FFT64Plan<F> {
+    fn reim_ifft(&self, data: &mut [F]) {
         self.ifft().execute(data);
     }
 }

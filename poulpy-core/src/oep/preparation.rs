@@ -16,7 +16,7 @@ use crate::{
 /// Backend-provided preparation of stored layouts into their prepared forms.
 ///
 /// The GLWE, GGLWE, GGSW, public-key and GGLWE-to-GGSW-key preparations and their scratch queries are
-/// required. `ggsw_zero` defaults to the selected `vmp_zero`, and the key-wrapper preparations and their
+/// required. `ggsw_prepared_zero` defaults to the selected `vmp_zero`, and the key-wrapper preparations and their
 /// queries to compositions of `gglwe_prepare` and `glwe_switching_key_prepare`. An implementation reproduces the body it replaces bit
 /// for bit: its refusals before any write to `res`, the metadata it records on `res`, and a prepared form
 /// from which the backend's consumers compute what they compute from the reference's. It chooses only its
@@ -72,13 +72,13 @@ pub unsafe trait PreparationImpl: Backend + HalVmpImpl {
         R: GGSWPreparedToBackendMut<Self>,
         O: GGSWToBackendRef<Self>;
 
-    /// Default body: `ggsw_zero_derived`, [`HalVmpImpl::vmp_zero`] on `res`, after clearing its noise
+    /// Default body: `ggsw_prepared_zero_derived`, [`HalVmpImpl::vmp_zero`] on `res`, after clearing its noise
     /// metadata; it takes no scratch.
-    fn ggsw_zero<R>(module: &Module<Self>, res: &mut R)
+    fn ggsw_prepared_zero<R>(module: &Module<Self>, res: &mut R)
     where
         R: GGSWPreparedToBackendMut<Self>,
     {
-        super::derived::preparation::ggsw_zero_derived(module, res)
+        super::derived::preparation::ggsw_prepared_zero_derived(module, res)
     }
 
     /// Scratch bytes of [`Self::glwe_public_key_prepare`]: those of

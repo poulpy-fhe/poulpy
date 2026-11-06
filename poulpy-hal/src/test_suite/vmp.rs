@@ -13,7 +13,7 @@ use crate::{
         VecZnxBigAlloc, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftAddAssign, VecZnxDftAlloc, VecZnxDftApply,
         VecZnxDftZero, VecZnxFillUniformSource, VecZnxFillUniformSourceAll, VecZnxIdftApply, VecZnxIdftApplyTmpBytes,
         VmpApplyDft, VmpApplyDftTmpBytes, VmpApplyDftToDft, VmpApplyDftToDftAdd, VmpApplyDftToDftAddTmpBytes,
-        VmpApplyDftToDftTmpBytes, VmpExtractSelectedRows, VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes, VmpZero,
+        VmpApplyDftToDftTmpBytes, VmpExtractSelectedRows, VmpPMatAlloc, VmpPMatPrepare, VmpPMatPrepareTmpBytes, VmpZero,
     },
     layouts::{DigestU64, MatZnx, MatZnxAtBackendMut, MatZnxOwned, MatZnxToBackendRef, Module, PrepareHint, VecZnxOwned},
     source::Source,
@@ -32,23 +32,23 @@ pub fn test_vmp_apply_dft<BR: crate::test_suite::TestBackend, BT: crate::test_su
         + VmpApplyDft<BR>
         + VmpPMatAlloc<BR>
         + VecZnxDftAlloc<BR>
-        + VmpPrepare<BR>
+        + VmpPMatPrepare<BR>
         + VecZnxBigAlloc<BR>
         + VecZnxIdftApply<BR>
         + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BR>
-        + VmpPrepareTmpBytes
+        + VmpPMatPrepareTmpBytes
         + VecZnxBigNormalizeTmpBytes,
     Module<BT>: VmpApplyDftTmpBytes
         + VmpApplyDft<BT>
         + VmpPMatAlloc<BT>
         + VecZnxDftAlloc<BT>
-        + VmpPrepare<BT>
+        + VmpPMatPrepare<BT>
         + VecZnxBigAlloc<BT>
         + VecZnxIdftApply<BT>
         + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BT>
-        + VmpPrepareTmpBytes
+        + VmpPMatPrepareTmpBytes
         + VecZnxBigNormalizeTmpBytes,
 {
     let base2k = params.base2k;
@@ -60,12 +60,12 @@ pub fn test_vmp_apply_dft<BR: crate::test_suite::TestBackend, BT: crate::test_su
 
     let mut scratch_ref_setup: PoisonedArena<BR> = poisoned_arena(
         module_ref
-            .vmp_prepare_tmp_bytes(max_size, max_cols, max_cols, max_size)
+            .vmp_pmat_prepare_tmp_bytes(max_size, max_cols, max_cols, max_size)
             .max(module_ref.vec_znx_big_normalize_tmp_bytes()),
     );
     let mut scratch_test_setup: PoisonedArena<BT> = poisoned_arena(
         module_test
-            .vmp_prepare_tmp_bytes(max_size, max_cols, max_cols, max_size)
+            .vmp_pmat_prepare_tmp_bytes(max_size, max_cols, max_cols, max_size)
             .max(module_test.vec_znx_big_normalize_tmp_bytes()),
     );
 
@@ -104,12 +104,12 @@ pub fn test_vmp_apply_dft<BR: crate::test_suite::TestBackend, BT: crate::test_su
                     let mut pmat_test: VmpPMatOwned<BT> =
                         module_test.vmp_pmat_alloc(params.n, rows, cols_in, cols_out, size_out, PrepareHint::Reuse);
 
-                    module_ref.vmp_prepare(
+                    module_ref.vmp_pmat_prepare(
                         &mut pmat_ref.to_backend_mut(),
                         &<MatZnx<BR::OwnedBuf, i64> as MatZnxToBackendRef<BR>>::to_backend_ref(&mat_ref_backend),
                         &mut scratch_ref_setup.arena(),
                     );
-                    module_test.vmp_prepare(
+                    module_test.vmp_pmat_prepare(
                         &mut pmat_test.to_backend_mut(),
                         &<MatZnx<BT::OwnedBuf, i64> as MatZnxToBackendRef<BT>>::to_backend_ref(&mat_test_backend),
                         &mut scratch_test_setup.arena(),
@@ -190,27 +190,27 @@ pub fn test_vmp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
         + VmpApplyDftToDft<BR>
         + VmpPMatAlloc<BR>
         + VecZnxDftAlloc<BR>
-        + VmpPrepare<BR>
+        + VmpPMatPrepare<BR>
         + VecZnxBigAlloc<BR>
         + VecZnxIdftApply<BR>
         + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BR>
         + VecZnxDftApply<BR>
         + VecZnxDftZero<BR>
-        + VmpPrepareTmpBytes
+        + VmpPMatPrepareTmpBytes
         + VecZnxBigNormalizeTmpBytes,
     Module<BT>: VmpApplyDftToDftTmpBytes
         + VmpApplyDftToDft<BT>
         + VmpPMatAlloc<BT>
         + VecZnxDftAlloc<BT>
-        + VmpPrepare<BT>
+        + VmpPMatPrepare<BT>
         + VecZnxBigAlloc<BT>
         + VecZnxIdftApply<BT>
         + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BT>
         + VecZnxDftApply<BT>
         + VecZnxDftZero<BT>
-        + VmpPrepareTmpBytes
+        + VmpPMatPrepareTmpBytes
         + VecZnxBigNormalizeTmpBytes,
 {
     let base2k = params.base2k;
@@ -223,12 +223,12 @@ pub fn test_vmp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
 
     let mut scratch_ref_setup: PoisonedArena<BR> = poisoned_arena(
         module_ref
-            .vmp_prepare_tmp_bytes(max_size, max_cols, max_cols, max_size)
+            .vmp_pmat_prepare_tmp_bytes(max_size, max_cols, max_cols, max_size)
             .max(module_ref.vec_znx_big_normalize_tmp_bytes()),
     );
     let mut scratch_test_setup: PoisonedArena<BT> = poisoned_arena(
         module_test
-            .vmp_prepare_tmp_bytes(max_size, max_cols, max_cols, max_size)
+            .vmp_pmat_prepare_tmp_bytes(max_size, max_cols, max_cols, max_size)
             .max(module_test.vec_znx_big_normalize_tmp_bytes()),
     );
 
@@ -309,12 +309,12 @@ pub fn test_vmp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
                     let mut pmat_test: VmpPMatOwned<BT> =
                         module_test.vmp_pmat_alloc(params.n, rows, cols_in, cols_out, size_out, PrepareHint::Reuse);
 
-                    module_ref.vmp_prepare(
+                    module_ref.vmp_pmat_prepare(
                         &mut pmat_ref.to_backend_mut(),
                         &<MatZnx<BR::OwnedBuf, i64> as MatZnxToBackendRef<BR>>::to_backend_ref(&mat_ref_backend),
                         &mut scratch_ref_setup.arena(),
                     );
-                    module_test.vmp_prepare(
+                    module_test.vmp_pmat_prepare(
                         &mut pmat_test.to_backend_mut(),
                         &<MatZnx<BT::OwnedBuf, i64> as MatZnxToBackendRef<BT>>::to_backend_ref(&mat_test_backend),
                         &mut scratch_test_setup.arena(),
@@ -395,8 +395,8 @@ pub fn test_vmp_extract_selected_rows<BR: crate::test_suite::TestBackend, BT: cr
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
-    Module<BR>: VmpPMatAlloc<BR> + VmpPrepare<BR> + VmpPrepareTmpBytes + VmpExtractSelectedRows<BR>,
-    Module<BT>: VmpPMatAlloc<BT> + VmpPrepare<BT> + VmpPrepareTmpBytes + VmpExtractSelectedRows<BT>,
+    Module<BR>: VmpPMatAlloc<BR> + VmpPMatPrepare<BR> + VmpPMatPrepareTmpBytes + VmpExtractSelectedRows<BR>,
+    Module<BT>: VmpPMatAlloc<BT> + VmpPMatPrepare<BT> + VmpPMatPrepareTmpBytes + VmpExtractSelectedRows<BT>,
 {
     check_extract_selected_rows(params, module_ref);
     check_extract_selected_rows(params, module_test);
@@ -404,12 +404,12 @@ pub fn test_vmp_extract_selected_rows<BR: crate::test_suite::TestBackend, BT: cr
 
 fn check_extract_selected_rows<BE: TestBackend>(params: &TestParams, module: &Module<BE>)
 where
-    Module<BE>: VmpPMatAlloc<BE> + VmpPrepare<BE> + VmpPrepareTmpBytes + VmpExtractSelectedRows<BE>,
+    Module<BE>: VmpPMatAlloc<BE> + VmpPMatPrepare<BE> + VmpPMatPrepareTmpBytes + VmpExtractSelectedRows<BE>,
 {
     let n: usize = params.n;
     let mut source: Source = Source::new([0u8; 32]);
     let (max_cols, size, rows) = (2usize, 4usize, 6usize);
-    let mut scratch: PoisonedArena<BE> = poisoned_arena(module.vmp_prepare_tmp_bytes(rows, max_cols, max_cols, size));
+    let mut scratch: PoisonedArena<BE> = poisoned_arena(module.vmp_pmat_prepare_tmp_bytes(rows, max_cols, max_cols, size));
 
     for cols_in in 1..max_cols + 1 {
         for cols_out in 1..max_cols + 1 {
@@ -429,7 +429,7 @@ where
             }
             let mat = download_mat_znx::<BE>(&mat);
             let mut pmat: VmpPMatOwned<BE> = module.vmp_pmat_alloc(params.n, rows, cols_in, cols_out, size, PrepareHint::Reuse);
-            module.vmp_prepare(
+            module.vmp_pmat_prepare(
                 &mut pmat.to_backend_mut(),
                 &<MatZnx<BE::OwnedBuf, i64> as MatZnxToBackendRef<BE>>::to_backend_ref(&upload_mat_znx::<BE>(&mat)),
                 &mut scratch.arena(),
@@ -458,7 +458,7 @@ where
                         }
                         let mut expected: VmpPMatOwned<BE> =
                             module.vmp_pmat_alloc(params.n, res_rows, cols_in, cols_out, res_size, PrepareHint::Reuse);
-                        module.vmp_prepare(
+                        module.vmp_pmat_prepare(
                             &mut expected.to_backend_mut(),
                             &<MatZnx<BE::OwnedBuf, i64> as MatZnxToBackendRef<BE>>::to_backend_ref(&upload_mat_znx::<BE>(&sel)),
                             &mut scratch.arena(),
@@ -549,13 +549,13 @@ pub fn test_vmp_apply_dft_to_dft_add<BR: crate::test_suite::TestBackend, BT: cra
         + VecZnxDftAlloc<BR>
         + VecZnxDftAddAssign<BR>
         + VecZnxDftZero<BR>
-        + VmpPrepare<BR>
+        + VmpPMatPrepare<BR>
         + VecZnxBigAlloc<BR>
         + VecZnxIdftApply<BR>
         + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BR>
         + VecZnxDftApply<BR>
-        + VmpPrepareTmpBytes
+        + VmpPMatPrepareTmpBytes
         + VecZnxBigNormalizeTmpBytes,
     Module<BT>: VmpApplyDftToDftTmpBytes
         + VmpApplyDftToDft<BT>
@@ -565,13 +565,13 @@ pub fn test_vmp_apply_dft_to_dft_add<BR: crate::test_suite::TestBackend, BT: cra
         + VecZnxDftAlloc<BT>
         + VecZnxDftAddAssign<BT>
         + VecZnxDftZero<BT>
-        + VmpPrepare<BT>
+        + VmpPMatPrepare<BT>
         + VecZnxBigAlloc<BT>
         + VecZnxIdftApply<BT>
         + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BT>
         + VecZnxDftApply<BT>
-        + VmpPrepareTmpBytes
+        + VmpPMatPrepareTmpBytes
         + VecZnxBigNormalizeTmpBytes,
 {
     assert_eq!(module_ref.n(), module_test.n());
@@ -630,13 +630,13 @@ pub fn test_vmp_apply_dft_to_dft_add_shape<BR: crate::test_suite::TestBackend, B
         + VecZnxDftAlloc<BR>
         + VecZnxDftAddAssign<BR>
         + VecZnxDftZero<BR>
-        + VmpPrepare<BR>
+        + VmpPMatPrepare<BR>
         + VecZnxBigAlloc<BR>
         + VecZnxIdftApply<BR>
         + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BR>
         + VecZnxDftApply<BR>
-        + VmpPrepareTmpBytes
+        + VmpPMatPrepareTmpBytes
         + VecZnxBigNormalizeTmpBytes,
     Module<BT>: VmpApplyDftToDftTmpBytes
         + VmpApplyDftToDft<BT>
@@ -646,13 +646,13 @@ pub fn test_vmp_apply_dft_to_dft_add_shape<BR: crate::test_suite::TestBackend, B
         + VecZnxDftAlloc<BT>
         + VecZnxDftAddAssign<BT>
         + VecZnxDftZero<BT>
-        + VmpPrepare<BT>
+        + VmpPMatPrepare<BT>
         + VecZnxBigAlloc<BT>
         + VecZnxIdftApply<BT>
         + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BT>
         + VecZnxDftApply<BT>
-        + VmpPrepareTmpBytes
+        + VmpPMatPrepareTmpBytes
         + VecZnxBigNormalizeTmpBytes,
 {
     assert_eq!(module_ref.n(), module_test.n());
@@ -675,13 +675,13 @@ fn vmp_apply_dft_to_dft_add_case<BR: crate::test_suite::TestBackend, BT: crate::
         + VecZnxDftAlloc<BR>
         + VecZnxDftAddAssign<BR>
         + VecZnxDftZero<BR>
-        + VmpPrepare<BR>
+        + VmpPMatPrepare<BR>
         + VecZnxBigAlloc<BR>
         + VecZnxIdftApply<BR>
         + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BR>
         + VecZnxDftApply<BR>
-        + VmpPrepareTmpBytes
+        + VmpPMatPrepareTmpBytes
         + VecZnxBigNormalizeTmpBytes,
     Module<BT>: VmpApplyDftToDftTmpBytes
         + VmpApplyDftToDft<BT>
@@ -691,13 +691,13 @@ fn vmp_apply_dft_to_dft_add_case<BR: crate::test_suite::TestBackend, BT: crate::
         + VecZnxDftAlloc<BT>
         + VecZnxDftAddAssign<BT>
         + VecZnxDftZero<BT>
-        + VmpPrepare<BT>
+        + VmpPMatPrepare<BT>
         + VecZnxBigAlloc<BT>
         + VecZnxIdftApply<BT>
         + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BT>
         + VecZnxDftApply<BT>
-        + VmpPrepareTmpBytes
+        + VmpPMatPrepareTmpBytes
         + VecZnxBigNormalizeTmpBytes,
 {
     let base2k = params.base2k;
@@ -720,12 +720,12 @@ fn vmp_apply_dft_to_dft_add_case<BR: crate::test_suite::TestBackend, BT: crate::
         poisoned_arena(module_test.vmp_apply_dft_to_dft_add_tmp_bytes(size_out, size_in, size_in, cols_in, cols_out, mat_size));
     let mut scratch_ref_setup: PoisonedArena<BR> = poisoned_arena(
         module_ref
-            .vmp_prepare_tmp_bytes(size_in, cols_in, cols_out, mat_size)
+            .vmp_pmat_prepare_tmp_bytes(size_in, cols_in, cols_out, mat_size)
             .max(module_ref.vec_znx_big_normalize_tmp_bytes()),
     );
     let mut scratch_test_setup: PoisonedArena<BT> = poisoned_arena(
         module_test
-            .vmp_prepare_tmp_bytes(size_in, cols_in, cols_out, mat_size)
+            .vmp_pmat_prepare_tmp_bytes(size_in, cols_in, cols_out, mat_size)
             .max(module_test.vec_znx_big_normalize_tmp_bytes()),
     );
 
@@ -802,12 +802,12 @@ fn vmp_apply_dft_to_dft_add_case<BR: crate::test_suite::TestBackend, BT: crate::
         module_ref.vmp_pmat_alloc(params.n, rows, cols_in, cols_out, mat_size, PrepareHint::Reuse);
     let mut pmat_test: VmpPMatOwned<BT> =
         module_test.vmp_pmat_alloc(params.n, rows, cols_in, cols_out, mat_size, PrepareHint::Reuse);
-    module_ref.vmp_prepare(
+    module_ref.vmp_pmat_prepare(
         &mut pmat_ref.to_backend_mut(),
         &<MatZnx<BR::OwnedBuf, i64> as MatZnxToBackendRef<BR>>::to_backend_ref(&mat_ref_backend),
         &mut scratch_ref_setup.arena(),
     );
-    module_test.vmp_prepare(
+    module_test.vmp_pmat_prepare(
         &mut pmat_test.to_backend_mut(),
         &<MatZnx<BT::OwnedBuf, i64> as MatZnxToBackendRef<BT>>::to_backend_ref(&mat_test_backend),
         &mut scratch_test_setup.arena(),
@@ -937,26 +937,26 @@ pub fn test_vmp_zero<BR: crate::test_suite::TestBackend, BT: crate::test_suite::
     Module<BR>: VmpApplyDftTmpBytes
         + VmpApplyDft<BR>
         + VmpPMatAlloc<BR>
-        + VmpPrepare<BR>
+        + VmpPMatPrepare<BR>
         + VmpZero<BR>
         + VecZnxDftAlloc<BR>
         + VecZnxBigAlloc<BR>
         + VecZnxIdftApply<BR>
         + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BR>
-        + VmpPrepareTmpBytes
+        + VmpPMatPrepareTmpBytes
         + VecZnxBigNormalizeTmpBytes,
     Module<BT>: VmpApplyDftTmpBytes
         + VmpApplyDft<BT>
         + VmpPMatAlloc<BT>
-        + VmpPrepare<BT>
+        + VmpPMatPrepare<BT>
         + VmpZero<BT>
         + VecZnxDftAlloc<BT>
         + VecZnxBigAlloc<BT>
         + VecZnxIdftApply<BT>
         + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BT>
-        + VmpPrepareTmpBytes
+        + VmpPMatPrepareTmpBytes
         + VecZnxBigNormalizeTmpBytes,
 {
     let base2k: usize = params.base2k;
@@ -973,12 +973,12 @@ pub fn test_vmp_zero<BR: crate::test_suite::TestBackend, BT: crate::test_suite::
         poisoned_arena(module_test.vmp_apply_dft_tmp_bytes(size, size, rows, cols, cols, size));
     let mut scratch_ref_setup: PoisonedArena<BR> = poisoned_arena(
         module_ref
-            .vmp_prepare_tmp_bytes(rows, cols, cols, size)
+            .vmp_pmat_prepare_tmp_bytes(rows, cols, cols, size)
             .max(module_ref.vec_znx_big_normalize_tmp_bytes()),
     );
     let mut scratch_test_setup: PoisonedArena<BT> = poisoned_arena(
         module_test
-            .vmp_prepare_tmp_bytes(rows, cols, cols, size)
+            .vmp_pmat_prepare_tmp_bytes(rows, cols, cols, size)
             .max(module_test.vec_znx_big_normalize_tmp_bytes()),
     );
 
@@ -1007,12 +1007,12 @@ pub fn test_vmp_zero<BR: crate::test_suite::TestBackend, BT: crate::test_suite::
     let mut pmat_ref: VmpPMatOwned<BR> = module_ref.vmp_pmat_alloc(params.n, rows, cols, cols, size, PrepareHint::Reuse);
     let mut pmat_test: VmpPMatOwned<BT> = module_test.vmp_pmat_alloc(params.n, rows, cols, cols, size, PrepareHint::Reuse);
 
-    module_ref.vmp_prepare(
+    module_ref.vmp_pmat_prepare(
         &mut pmat_ref.to_backend_mut(),
         &<MatZnx<BR::OwnedBuf, i64> as MatZnxToBackendRef<BR>>::to_backend_ref(&mat_ref_backend),
         &mut scratch_ref_setup.arena(),
     );
-    module_test.vmp_prepare(
+    module_test.vmp_pmat_prepare(
         &mut pmat_test.to_backend_mut(),
         &<MatZnx<BT::OwnedBuf, i64> as MatZnxToBackendRef<BT>>::to_backend_ref(&mat_test_backend),
         &mut scratch_test_setup.arena(),
@@ -1081,8 +1081,8 @@ pub fn test_vmp_apply_dft_to_dft_rejects_column_mismatch<BE: crate::test_suite::
     module: &Module<BE>,
 ) where
     Module<BE>: VmpPMatAlloc<BE>
-        + VmpPrepare<BE>
-        + VmpPrepareTmpBytes
+        + VmpPMatPrepare<BE>
+        + VmpPMatPrepareTmpBytes
         + crate::api::MatZnxAlloc<BE>
         + crate::api::VecZnxAlloc<BE>
         + VecZnxFillUniformSource<BE>
@@ -1112,10 +1112,10 @@ pub fn test_vmp_apply_dft_to_dft_rejects_column_mismatch<BE: crate::test_suite::
         }
     }
     let mut pmat: VmpPMatOwned<BE> = module.vmp_pmat_alloc(params.n, rows, cols, cols, size, PrepareHint::Reuse);
-    module.vmp_prepare(
+    module.vmp_pmat_prepare(
         &mut pmat.to_backend_mut(),
         &<MatZnx<BE::OwnedBuf, i64> as MatZnxToBackendRef<BE>>::to_backend_ref(&mat),
-        &mut poisoned_arena::<BE>(module.vmp_prepare_tmp_bytes(rows, cols, cols, size)).arena(),
+        &mut poisoned_arena::<BE>(module.vmp_pmat_prepare_tmp_bytes(rows, cols, cols, size)).arena(),
     );
     let mut random_dft = |dft_cols: usize| {
         let mut input = module.vec_znx_alloc(params.n, dft_cols, size);

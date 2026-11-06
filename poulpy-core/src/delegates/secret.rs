@@ -6,8 +6,8 @@ use poulpy_hal::{
 use crate::{
     GetDistribution, GetDistributionMut,
     api::{
-        GLWESecretPreparedFactory, GLWESecretSampling, GLWESecretTensorFactory, GLWESecretTensorPreparedFactory,
-        LWESecretSampling, SecretConversion,
+        GLWESecretFromLWESecret, GLWESecretPreparedFactory, GLWESecretSampling, GLWESecretTensorFromGLWESecret,
+        GLWESecretTensorPreparedFactory, LWESecretFromGLWESecret, LWESecretSampling,
     },
     layouts::{
         Degree, GLWEInfos, GLWESecret, GLWESecretPreparedToBackendMut, GLWESecretTensorPreparedToBackendMut,
@@ -121,37 +121,41 @@ impl_secret_delegate!(
 
 impl_secret_delegate!(
     GLWESecretTensorPreparedFactory<BE>,
-    fn glwe_secret_tensor_prepared_prepare<R, O>(&self, res: &mut R, other: &O)
+    fn glwe_secret_tensor_prepare<R, O>(&self, res: &mut R, other: &O)
     where
         R: GLWESecretTensorPreparedToBackendMut<BE> + GetDistributionMut,
         O: GLWESecretTensorToBackendRef<BE> + GetDistribution,
     {
-        BE::glwe_secret_tensor_prepared_prepare(self, res, other)
+        BE::glwe_secret_tensor_prepare(self, res, other)
     }
 );
 
 impl_secret_delegate!(
-    GLWESecretTensorFactory<BE>,
-    fn glwe_secret_tensor_prepare_tmp_bytes(&self, rank: Rank) -> usize {
-        BE::glwe_secret_tensor_prepare_tmp_bytes(self, rank)
+    GLWESecretTensorFromGLWESecret<BE>,
+    fn glwe_secret_tensor_from_glwe_secret_tmp_bytes(&self, rank: Rank) -> usize {
+        BE::glwe_secret_tensor_from_glwe_secret_tmp_bytes(self, rank)
     },
-    fn glwe_secret_tensor_prepare<R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_secret_tensor_from_glwe_secret<R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWESecretTensorToBackendMut<BE> + GetDistributionMut + GLWEInfos,
         O: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
     {
-        BE::glwe_secret_tensor_prepare(self, res, other, scratch)
+        BE::glwe_secret_tensor_from_glwe_secret(self, res, other, scratch)
     }
 );
 
 impl_secret_delegate!(
-    SecretConversion<BE>,
+    GLWESecretFromLWESecret<BE>,
     fn glwe_secret_from_lwe_secret<S>(&self, src: &S) -> GLWESecret<BE::OwnedBuf, BE::ZnxWord>
     where
         S: LWESecretToBackendRef<BE>,
     {
         BE::glwe_secret_from_lwe_secret(self, src)
-    },
+    }
+);
+
+impl_secret_delegate!(
+    LWESecretFromGLWESecret<BE>,
     fn lwe_secret_from_glwe_secret_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GLWEInfos,

@@ -5,17 +5,17 @@ use std::collections::{BTreeMap, BTreeSet};
 use poulpy_ckks::{
     CKKSInfos, CKKSModuleInfos, CoeffsMeta, GLWEPlaintextInfos, Scale, SetCKKSInfos, SetGLWEPlaintextInfos, SlotsKind,
     api::{
-        CKKSEncodingOps, CKKSLinearTransformationOps, CKKSMulOps, LinearTransformation, LinearTransformationPrepared,
-        PreparedDiagonal,
+        CKKSEncodingOps, CKKSLinearTransformationOps, CKKSMulOps, CKKSRightOperandPreparedFactory, LinearTransformation,
+        LinearTransformationPrepared, PreparedDiagonal,
     },
-    layouts::{CKKSModuleAlloc, CKKSPlaintextOwned},
+    layouts::{CKKSCiphertextOwned, CKKSPlaintextOwned},
     test_suite::{
         CKKSTestParams,
         helpers::{TestContextBackend, TestContextModule, TestScalar},
         parity::helpers::with_scratch,
     },
 };
-use poulpy_core::layouts::{Base2K, DiagonalArithmetic, GetDegree, LWEInfos};
+use poulpy_core::layouts::{Base2K, DiagonalArithmetic, GetDegree, LWEInfos, LinearTransformationStrategy};
 use poulpy_hal::{
     AlignedBuf,
     api::{CnvPVecAlloc, ScratchOwnedBorrow},
@@ -24,21 +24,31 @@ use poulpy_hal::{
     },
 };
 
-use super::helpers::{
-    MASKED_PT_ALGORITHMS, PT_ALGORITHMS, assert_panics, assert_short_scratch_panics, encoded_context, map_galois_elements,
-    poisoned_scratch, pt_operand,
+use super::matvec::diagonal_ciphertext_layout;
+use super::{
+    helpers::{
+        MASKED_PT_ALGORITHMS, PT_ALGORITHMS, assert_panics, assert_short_scratch_panics, encoded_context, map_galois_elements,
+        poisoned_scratch, pt_operand,
+    },
+    matvec::{matvec_entry, matvec_layouts, matvec_operands},
 };
 use crate::{
-    api::{BlasContextPreparedFactory, BlasEncodingOps, BlasPtOperandPreparedFactory},
+    api::{
+        BlasContextPreparedFactory, BlasDiagonalCiphertextPreparedFactory, BlasEncodingOps, BlasMatVecOperandPreparedFactory,
+        BlasPtOperandPreparedFactory,
+    },
     layouts::{
-        BlasContext, BlasContextInfos, BlasContextLayout, BlasContextUnprepared, BlasModuleAlloc, BlasPlan, BlasPtAlgorithm,
-        BlasPtOperand, BlasPtOperandInfos, BlasPtOperandLayout, BlasPtOperandUnprepared, BlasPtSide, Left, Right,
+        BlasContext, BlasContextAlloc, BlasContextInfos, BlasContextLayout, BlasContextPrepared, BlasDiagonalCiphertext,
+        BlasDiagonalCiphertextAlloc, BlasDiagonalCiphertextBytesOf, BlasDiagonalCiphertextPrepared, BlasMatVecOperand,
+        BlasMatVecOperandAlloc, BlasMatVecOperandLayout, BlasMatVecOperandPrepared, BlasPlan, BlasPtAlgorithm, BlasPtOperand,
+        BlasPtOperandAlloc, BlasPtOperandInfos, BlasPtOperandLayout, BlasPtOperandPrepared, BlasPtSide, Left, Right,
+        matvec_pt_galois_elements,
     },
     oep::BlasEncodingImpl,
 };
 
 /// Every block map of `b`; none under `JklsStored` and `JklsGalois`, whose blocks are plaintexts.
-fn operand_maps<BE: Backend, S: BlasPtSide>(b: &BlasPtOperand<BE, S>) -> Vec<&LinearTransformationPrepared<BE>> {
+fn operand_maps<BE: Backend, S: BlasPtSide>(b: &BlasPtOperandPrepared<BE, S>) -> Vec<&LinearTransformationPrepared<BE>> {
     if b.blas_pt_operand_layout().plan.pt_algorithm().masked() {
         return Vec::new();
     }
@@ -62,7 +72,10 @@ fn operand_maps<BE: Backend, S: BlasPtSide>(b: &BlasPtOperand<BE, S>) -> Vec<&Li
 /// query panics on a layout of other slots, and a preparation into an operand of another layout, or one scratch byte
 /// short of its query, masked or not, panics, as does the preparation of a context map with mixed slot kinds or of an
 /// operand map whose diagonals differ in scale, before any map is prepared, and an encoding one scratch byte short of
-/// its query, before any write. Each panic carries its own message.
+/// its query, before any write. An operand of products of a vector has the key set of its prepared maps; its
+/// preparation into an operand of another layout or one scratch byte short of its query, its encoding one byte short or
+/// of an operand of other slots, and its allocation at a zero torus width, a zero giant step or a schedule of
+/// power-of-two keys panic. Each panic carries its own message.
 pub fn test_blas_context<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -459,6 +472,81 @@ pub fn test_blas_context<BE, F, E>(
             module.blas_pt_operand_alloc::<Left>(plan, 1, 1, 1, base2k, zero)
         });
     }
+
+    // Products of a vector, whose vectors span 16 slots.
+    let slots = module.ckks_max_slots();
+    if slots >= 16 {
+        // Each operand's key set equals the Galois elements of its prepared maps.
+        let layouts = matvec_layouts(&params, slots);
+        for layout in &layouts {
+            let (_, resident) = matvec_operands::<BE, F>(module, layout);
+            let mut want = matvec_pt_galois_elements(order, layout);
+            want.retain(|&p| p != 1);
+            let mut have = map_galois_elements(resident.maps.iter(), order);
+            have.retain(|&p| p != 1);
+            assert_eq!(want, have, "matvec {layout:?}: key set against the prepared maps");
+        }
+        // The encoding and the preparation one byte short of their queries, into another layout and on other slots.
+        let (mut streamed, mut resident) = matvec_operands::<BE, F>(module, &layouts[0]);
+        let entry = |row: usize, col: usize| F::from_f64(matvec_entry(row, col)).unwrap();
+        assert_short_scratch_panics::<BE, _>(
+            "blas_matvec_operand_encode",
+            module.blas_matvec_operand_encode_tmp_bytes(&layouts[0]),
+            |s| module.blas_matvec_operand_encode(&mut streamed, entry, s),
+        );
+        assert_short_scratch_panics::<BE, _>(
+            "blas_matvec_operand_prepare",
+            module.blas_matvec_operand_prepare_tmp_bytes(&layouts[0]),
+            |s| module.blas_matvec_operand_prepare(&mut resident, &streamed, s),
+        );
+        let mut other = module.blas_matvec_operand_prepared_alloc_from_infos(&layouts[1]);
+        assert_panics(
+            "blas_matvec_operand_prepare into another layout",
+            "the prepared operand was allocated for another layout",
+            || {
+                with_scratch::<BE, _>(module.blas_matvec_operand_prepare_tmp_bytes(&layouts[0]), |s| {
+                    module.blas_matvec_operand_prepare(&mut other, &streamed, s)
+                })
+            },
+        );
+        let double = Module::<BE>::new(2 * params.n as u64);
+        let wide = BlasMatVecOperandLayout {
+            slots: 2 * slots,
+            ..layouts[0]
+        };
+        let mut foreign = double.blas_matvec_operand_alloc_from_infos(&wide);
+        assert_panics(
+            "blas_matvec_operand_encode of other slots",
+            "the operand's slots are not the module's",
+            || {
+                with_scratch::<BE, _>(module.blas_matvec_operand_encode_tmp_bytes(&wide), |s| {
+                    module.blas_matvec_operand_encode(&mut foreign, entry, s)
+                })
+            },
+        );
+        // A zero torus width, a zero giant step and a schedule of power-of-two keys panic at allocation.
+        let zero_width = BlasMatVecOperandLayout {
+            coeffs_meta: zero,
+            ..layouts[0]
+        };
+        assert_panics(
+            "matvec operand of no torus width",
+            "the operand's maps have no torus width",
+            || module.blas_matvec_operand_alloc_from_infos(&zero_width),
+        );
+        let zero_step = layouts[0].with_strategy(LinearTransformationStrategy::Bsgs { giant_step: 0 });
+        assert_panics(
+            "matvec operand of giant step 0",
+            "the operand's BSGS giant step is zero",
+            || module.blas_matvec_operand_prepared_alloc_from_infos(&zero_step),
+        );
+        let powers = layouts[0].with_strategy(LinearTransformationStrategy::BsgsPowersOfTwo { giant_step: 2 });
+        assert_panics(
+            "matvec operand of power-of-two keys",
+            "the operand's schedule takes a key per rotation",
+            || module.blas_matvec_operand_alloc_from_infos(&powers),
+        );
+    }
 }
 
 /// The address and the bytes of every diagonal buffer of a map set.
@@ -497,7 +585,7 @@ fn prepared_diagonal<BE: Backend<OwnedBuf = AlignedBuf>>(d: &PreparedDiagonal<Al
 }
 
 /// The prepared maps of `p`, then its terms' prepared plaintexts under `JklsStored` and `JklsGalois`.
-fn prepared_operand<BE: Backend<OwnedBuf = AlignedBuf>, S: BlasPtSide>(p: &BlasPtOperand<BE, S>) -> Buffers {
+fn prepared_operand<BE: Backend<OwnedBuf = AlignedBuf>, S: BlasPtSide>(p: &BlasPtOperandPrepared<BE, S>) -> Buffers {
     let mut maps = buffers(p.maps(), prepared_diagonal::<BE>);
     maps.extend(p.plaintexts.iter().map(|pt| {
         let b: &[u8] = pt.cnv().data();
@@ -557,8 +645,11 @@ fn check_refill<U, P>(
 fn refill_operand<BE, F, S>(module: &Module<BE>, plan: BlasPlan, base2k: Base2K, meta: CoeffsMeta)
 where
     BE: TestContextBackend + BlasEncodingImpl,
-    Module<BE>:
-        CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F> + BlasEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CKKSMulOps<BE>,
+    Module<BE>: CKKSRightOperandPreparedFactory<BE>
+        + CKKSEncodingOps<BE, F>
+        + BlasEncodingOps<BE, F>
+        + CKKSLinearTransformationOps<BE>
+        + CKKSMulOps<BE>,
     F: TestScalar + DiagonalArithmetic,
     S: BlasPtSide,
 {
@@ -573,7 +664,7 @@ where
                 module.blas_pt_operand_prepared_alloc_from_infos(&layout),
             )
         },
-        |op: &BlasPtOperandUnprepared<BE, S>| buffers(op.maps(), plaintext::<BE>),
+        |op: &BlasPtOperand<BE, S>| buffers(op.maps(), plaintext::<BE>),
         prepared_operand::<BE, S>,
         |op, p| {
             poison_plaintexts::<BE>(op.maps.iter_mut());
@@ -596,8 +687,9 @@ where
 }
 
 /// Encoding and preparing again into the same allocations overwrites every byte and equals a fresh build, for the
-/// context of a plan with and without masks and for public operands of either side and algorithm, the operands from
-/// other matrices than their first; every byte query equals the buffers allocated from its layout.
+/// context of a plan with and without masks, for public operands of either side and algorithm and for operands of
+/// products of a vector, the operands from other matrices than their first, and, from 16 slots, for a diagonal
+/// ciphertext prepared again after new diagonals; every byte query equals the buffers allocated from its layout.
 pub fn test_blas_refill<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -626,8 +718,8 @@ pub fn test_blas_refill<BE, F, E>(
                     module.blas_context_prepared_alloc_from_infos(&layout),
                 )
             },
-            |c: &BlasContextUnprepared<BE>| buffers(c.maps(), plaintext::<BE>),
-            |p: &BlasContext<BE>| buffers(p.maps(), prepared_diagonal::<BE>),
+            |c: &BlasContext<BE>| buffers(c.maps(), plaintext::<BE>),
+            |p: &BlasContextPrepared<BE>| buffers(p.maps(), prepared_diagonal::<BE>),
             |c, p| {
                 poison_plaintexts::<BE>(c.maps.iter_mut());
                 poison_prepared::<BE>(p.maps.iter_mut());
@@ -645,4 +737,101 @@ pub fn test_blas_refill<BE, F, E>(
         refill_operand::<BE, F, Right>(module, plan, base2k, meta);
         refill_operand::<BE, F, Left>(module, plan, base2k, meta);
     }
+    // Operands of products of a vector, whose vectors span 16 slots.
+    if module.ckks_max_slots() >= 16 {
+        for layout in matvec_layouts(&params, module.ckks_max_slots()) {
+            refill_matvec::<BE, F>(module, &layout);
+        }
+        refill_diagonal_ciphertext(&params, module);
+    } else {
+        eprintln!("refill: the operands of products of a vector and the diagonal ciphertext skipped, they span 16 slots");
+    }
+}
+
+/// An operand of products of a vector of `layout` through [`check_refill`], its second fill from another matrix than its
+/// first.
+fn refill_matvec<BE, F>(module: &Module<BE>, layout: &BlasMatVecOperandLayout)
+where
+    BE: TestContextBackend + BlasEncodingImpl,
+    Module<BE>: CKKSEncodingOps<BE, F> + BlasEncodingOps<BE, F> + CKKSLinearTransformationOps<BE>,
+    F: TestScalar + DiagonalArithmetic,
+{
+    let first: fn(usize, usize) -> f64 = |r, c| ((r * 3 + c) % 5) as f64 - 2.0;
+    let second: fn(usize, usize) -> f64 = |r, c| ((r + c * 2) % 9) as f64 / 4.0 - 1.0;
+    check_refill(
+        &format!("matvec {layout:?}"),
+        || {
+            (
+                module.blas_matvec_operand_alloc_from_infos(layout),
+                module.blas_matvec_operand_prepared_alloc_from_infos(layout),
+            )
+        },
+        |op: &BlasMatVecOperand<BE>| buffers(op.maps.iter(), plaintext::<BE>),
+        |p: &BlasMatVecOperandPrepared<BE>| buffers(p.maps.iter(), prepared_diagonal::<BE>),
+        |op, p| {
+            poison_plaintexts::<BE>(op.maps.iter_mut());
+            poison_prepared::<BE>(p.maps.iter_mut());
+        },
+        |op, p, again| {
+            let entry = if again { second } else { first };
+            let mut encode_scratch = poisoned_scratch::<BE>(module.blas_matvec_operand_encode_tmp_bytes(layout));
+            module
+                .blas_matvec_operand_encode(op, |r, c| F::from_f64(entry(r, c)).unwrap(), &mut encode_scratch.borrow())
+                .unwrap();
+            let mut prepare_scratch = poisoned_scratch::<BE>(module.blas_matvec_operand_prepare_tmp_bytes(layout));
+            module.blas_matvec_operand_prepare(p, op, &mut prepare_scratch.borrow());
+        },
+    );
+}
+
+fn ciphertext<BE: Backend<OwnedBuf = AlignedBuf>>(ct: &CKKSCiphertextOwned<BE>) -> &[u8] {
+    ct.data().data()
+}
+
+/// A diagonal ciphertext of the diagonals `0..8` through [`check_refill`], its diagonals written with small
+/// coefficients, other ones on the second fill, then prepared; both byte queries equal the buffers of their form.
+fn refill_diagonal_ciphertext<BE>(params: &CKKSTestParams, module: &Module<BE>)
+where
+    BE: TestContextBackend + BlasEncodingImpl,
+    Module<BE>: BlasDiagonalCiphertextPreparedFactory<BE> + BlasDiagonalCiphertextBytesOf<BE> + CKKSLinearTransformationOps<BE>,
+{
+    let layout = diagonal_ciphertext_layout(params, module.ckks_max_slots(), params.k - params.prec().log_delta());
+    let alloc = || {
+        (
+            module.blas_diagonal_ciphertext_alloc_from_infos(&layout),
+            module.blas_diagonal_ciphertext_prepared_alloc_from_infos(&layout),
+        )
+    };
+    check_refill(
+        "diagonal ciphertext",
+        alloc,
+        |m: &BlasDiagonalCiphertext<BE>| buffers([m.diagonals()], ciphertext::<BE>),
+        |p: &BlasDiagonalCiphertextPrepared<BE>| buffers([p.diagonals()], prepared_diagonal::<BE>),
+        |m, p| {
+            diagonals_mut([m.diagonals_mut()]).for_each(|ct| ct.data_mut().data_mut().as_mut().fill(POISON));
+            poison_prepared::<BE>([p.diagonals_mut()]);
+        },
+        |m, p, again| {
+            for (i, ct) in diagonals_mut([m.diagonals_mut()]).enumerate() {
+                for (j, word) in ct.data_mut().data_mut().as_mut().chunks_exact_mut(8).enumerate() {
+                    let x = ((i * 31 + j * 7 + usize::from(again)) % 13) as i64 - 6;
+                    word.copy_from_slice(&x.to_le_bytes());
+                }
+            }
+            let mut scratch = poisoned_scratch::<BE>(module.blas_diagonal_ciphertext_prepare_tmp_bytes(&layout));
+            module.blas_diagonal_ciphertext_prepare(p, m, &mut scratch.borrow());
+        },
+    );
+    let (m, p) = alloc();
+    let total = |buffers: Buffers| buffers.iter().map(|(_, bytes)| bytes.len()).sum::<usize>();
+    assert_eq!(
+        module.blas_diagonal_ciphertext_bytes_of_from_infos(&layout),
+        total(buffers([m.diagonals()], ciphertext::<BE>)),
+        "diagonal ciphertext: bytes"
+    );
+    assert_eq!(
+        module.blas_diagonal_ciphertext_prepared_bytes_of_from_infos(&layout),
+        total(buffers([p.diagonals()], prepared_diagonal::<BE>)),
+        "diagonal ciphertext: prepared bytes"
+    );
 }

@@ -7,9 +7,9 @@ use poulpy_hal::{
     source::Source,
 };
 
-use crate::layouts::{GLWEAutomorphismKeyShareOwned, GLWESwitchingKeyShareOwned};
+use crate::layouts::{MHEGLWEAutomorphismKeyShareOwned, MHEGLWESwitchingKeyShareOwned};
 
-pub trait GLWESwitchingKeyMHEProtocolReference<BE: Backend> {
+pub trait MHEGLWESwitchingKeyProtocolReference<BE: Backend> {
     fn mhe_glwe_switching_key_share_gen_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos;
@@ -17,7 +17,7 @@ pub trait GLWESwitchingKeyMHEProtocolReference<BE: Backend> {
     #[allow(clippy::too_many_arguments)]
     fn mhe_glwe_switching_key_share_gen_reference<S1, S2>(
         &self,
-        res: &mut GLWESwitchingKeyShareOwned<BE>,
+        res: &mut MHEGLWESwitchingKeyShareOwned<BE>,
         sk_in: &S1,
         sk_out: &S2,
         seed: [u8; 32],
@@ -28,7 +28,7 @@ pub trait GLWESwitchingKeyMHEProtocolReference<BE: Backend> {
         S2: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos;
 }
 
-impl<BE: Backend> GLWESwitchingKeyMHEProtocolReference<BE> for Module<BE>
+impl<BE: Backend> MHEGLWESwitchingKeyProtocolReference<BE> for Module<BE>
 where
     Self: GLWESwitchingKeyCompressedEncryptSk<BE>,
 {
@@ -45,7 +45,7 @@ where
 
     fn mhe_glwe_switching_key_share_gen_reference<S1, S2>(
         &self,
-        res: &mut GLWESwitchingKeyShareOwned<BE>,
+        res: &mut MHEGLWESwitchingKeyShareOwned<BE>,
         sk_in: &S1,
         sk_out: &S2,
         seed: [u8; 32],
@@ -79,7 +79,7 @@ where
     }
 }
 
-pub trait GLWEAutomorphismKeyMHEProtocolReference<BE: Backend> {
+pub trait MHEGLWEAutomorphismKeyProtocolReference<BE: Backend> {
     fn mhe_glwe_automorphism_key_share_gen_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos;
@@ -87,7 +87,7 @@ pub trait GLWEAutomorphismKeyMHEProtocolReference<BE: Backend> {
     #[allow(clippy::too_many_arguments)]
     fn mhe_glwe_automorphism_key_share_gen_reference<S>(
         &self,
-        res: &mut GLWEAutomorphismKeyShareOwned<BE>,
+        res: &mut MHEGLWEAutomorphismKeyShareOwned<BE>,
         p: i64,
         sk: &S,
         seed: [u8; 32],
@@ -97,7 +97,7 @@ pub trait GLWEAutomorphismKeyMHEProtocolReference<BE: Backend> {
         S: GLWESecretToBackendRef<BE> + GLWEInfos;
 }
 
-impl<BE: Backend> GLWEAutomorphismKeyMHEProtocolReference<BE> for Module<BE>
+impl<BE: Backend> MHEGLWEAutomorphismKeyProtocolReference<BE> for Module<BE>
 where
     Self: GLWEAutomorphismKeyCompressedEncryptSk<BE>,
 {
@@ -114,7 +114,7 @@ where
 
     fn mhe_glwe_automorphism_key_share_gen_reference<S>(
         &self,
-        res: &mut GLWEAutomorphismKeyShareOwned<BE>,
+        res: &mut MHEGLWEAutomorphismKeyShareOwned<BE>,
         p: i64,
         sk: &S,
         seed: [u8; 32],

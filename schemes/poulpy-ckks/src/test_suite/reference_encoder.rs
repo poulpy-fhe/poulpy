@@ -4,7 +4,7 @@ use anyhow::Result;
 use num_traits::{Float, FloatConst, NumCast};
 use poulpy_hal::{
     GALOISGENERATOR,
-    api::{NegacyclicFFT, NegacyclicFFTNew},
+    api::{ReimFFT, ReimIFFT, ReimNew},
 };
 
 use crate::{layouts::CKKSScalar, layouts::plaintext::CKKSPlaintextVecHostCodec};
@@ -94,12 +94,12 @@ impl ReferenceEncodingPlan {
     fn slots_to_coeffs_assign<F, T>(&self, table: &T, values: &mut [F]) -> Result<()>
     where
         F: Float + FloatConst + Debug + NumCast,
-        T: NegacyclicFFT<F>,
+        T: ReimFFT<F> + ReimIFFT<F>,
     {
         anyhow::ensure!(values.len() == 2 * self.m);
         anyhow::ensure!(table.m() == self.m);
         self.scatter_slots_assign(values);
-        table.ifft(values);
+        table.reim_ifft(values);
         let inv_m = <F as NumCast>::from(self.m).unwrap().recip();
         values.iter_mut().for_each(|x| *x = *x * inv_m);
         Ok(())
@@ -108,11 +108,11 @@ impl ReferenceEncodingPlan {
     fn coeffs_to_slots_assign<F, T>(&self, table: &T, values: &mut [F]) -> Result<()>
     where
         F: Float + FloatConst + Debug,
-        T: NegacyclicFFT<F>,
+        T: ReimFFT<F> + ReimIFFT<F>,
     {
         anyhow::ensure!(values.len() == 2 * self.m);
         anyhow::ensure!(table.m() == self.m);
-        table.fft(values);
+        table.reim_fft(values);
         self.gather_slots_assign(values);
         Ok(())
     }
@@ -120,7 +120,7 @@ impl ReferenceEncodingPlan {
     fn pack_reim_coeffs<F, T>(&self, table: &T, coeffs: &mut [F], re: &[F], im: &[F]) -> Result<()>
     where
         F: Float + FloatConst + Debug + NumCast,
-        T: NegacyclicFFT<F>,
+        T: ReimFFT<F> + ReimIFFT<F>,
     {
         anyhow::ensure!(coeffs.len() == 2 * self.m);
         anyhow::ensure!(table.m() == self.m);
@@ -134,7 +134,7 @@ impl ReferenceEncodingPlan {
     fn unpack_reim_coeffs<F, T>(&self, table: &T, coeffs: &[F], re: &mut [F], im: &mut [F]) -> Result<()>
     where
         F: Float + FloatConst + Debug,
-        T: NegacyclicFFT<F>,
+        T: ReimFFT<F> + ReimIFFT<F>,
     {
         anyhow::ensure!(coeffs.len() == 2 * self.m);
         anyhow::ensure!(table.m() == self.m);
@@ -169,12 +169,12 @@ impl<T> ReferenceEncoder<T> {
     pub fn new<F>(m: usize) -> Result<Self>
     where
         F: Float + FloatConst + Debug,
-        T: NegacyclicFFTNew<F>,
+        T: ReimNew<F>,
     {
         anyhow::ensure!(m > 0, "m must be > 0, got {m}");
         anyhow::ensure!(m.is_power_of_two(), "m must be a power of two, got {m}");
         Ok(Self {
-            table: <T as NegacyclicFFTNew<F>>::new(m),
+            table: <T as ReimNew<F>>::new(m),
             plan: ReferenceEncodingPlan::new(m)?,
         })
     }
@@ -182,7 +182,7 @@ impl<T> ReferenceEncoder<T> {
     /// Creates an encoder from an already-constructed FFT table.
     ///
     /// Use this when the concrete FFT type isn't known at compile time
-    /// (e.g. `T = Box<dyn NegacyclicFFT<F>>`).
+    /// (a table type chosen at run time).
     pub fn from_table(table: T, m: usize) -> Result<Self> {
         anyhow::ensure!(m > 0, "m must be > 0, got {m}");
         anyhow::ensure!(m.is_power_of_two(), "m must be a power of two, got {m}");
@@ -201,7 +201,7 @@ impl<T> ReferenceEncoder<T> {
     pub fn pack_reim_coeffs<F>(&self, coeffs: &mut [F], re: &[F], im: &[F]) -> Result<()>
     where
         F: Float + FloatConst + Debug + NumCast,
-        T: NegacyclicFFT<F>,
+        T: ReimFFT<F> + ReimIFFT<F>,
     {
         self.plan.pack_reim_coeffs(&self.table, coeffs, re, im)
     }
@@ -215,7 +215,7 @@ impl<T> ReferenceEncoder<T> {
     pub fn unpack_reim_coeffs<F>(&self, coeffs: &[F], re: &mut [F], im: &mut [F]) -> Result<()>
     where
         F: Float + FloatConst + Debug,
-        T: NegacyclicFFT<F>,
+        T: ReimFFT<F> + ReimIFFT<F>,
     {
         self.plan.unpack_reim_coeffs(&self.table, coeffs, re, im)
     }
@@ -225,7 +225,7 @@ impl<T> ReferenceEncoder<T> {
     pub fn encode_reim<F, P>(&self, pt: &mut P, re: &[F], im: &[F]) -> Result<()>
     where
         F: CKKSScalar + Float + FloatConst + Debug + NumCast,
-        T: NegacyclicFFT<F>,
+        T: ReimFFT<F> + ReimIFFT<F>,
         P: CKKSPlaintextVecHostCodec<F>,
     {
         let mut coeffs = vec![F::zero(); 2 * self.table.m()];
@@ -240,7 +240,7 @@ impl<T> ReferenceEncoder<T> {
     pub fn decode_reim<F, P>(&self, pt: &P, re: &mut [F], im: &mut [F]) -> Result<()>
     where
         F: CKKSScalar + Float + FloatConst + Debug,
-        T: NegacyclicFFT<F>,
+        T: ReimFFT<F> + ReimIFFT<F>,
         P: CKKSPlaintextVecHostCodec<F>,
     {
         let m = self.table.m();

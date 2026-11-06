@@ -1,6 +1,6 @@
 use poulpy_core::{
     GGSWEncryptSk, GLWEAdd, GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk, GLWEDecrypt, GLWEEncryptPk, GLWEEncryptSk,
-    GLWEExternalProduct, GLWEKeyswitch, GLWEMaskFill, GLWEMulPlain, GLWENormalize, GLWEPublicKeyGenerate, GLWESub,
+    GLWEExternalProduct, GLWEFill, GLWEKeyswitch, GLWEMulPlain, GLWENormalize, GLWEPublicKeyGenerate, GLWESub,
     GLWESwitchingKeyEncryptSk, GLWETensoring,
     api::{
         GGLWEPreparedFactory, GGSWPreparedFactory, GLWEAutomorphismKeyPreparedFactory, GLWEPublicKeyPreparedFactory,
@@ -114,7 +114,7 @@ pub fn automorphism_ops<BE: Backend<ZnxWord = i64>, M: criterion::measurement::M
 where
     Module<BE>: ModuleNew<BE>
         + ModuleSynchronize<BE>
-        + GLWEMaskFill<BE>
+        + GLWEFill<BE>
         + GLWEAutomorphism<BE>
         + GLWEAutomorphismKeyPreparedFactory<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
@@ -145,7 +145,7 @@ pub fn external_product_ops<BE: Backend<ZnxWord = i64>, M: criterion::measuremen
 where
     Module<BE>: ModuleNew<BE>
         + ModuleSynchronize<BE>
-        + GLWEMaskFill<BE>
+        + GLWEFill<BE>
         + GLWEExternalProduct<BE>
         + GGSWPreparedFactory<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
@@ -171,7 +171,7 @@ pub fn keyswitch_ops<BE: Backend<ZnxWord = i64>, M: criterion::measurement::Meas
 where
     Module<BE>: ModuleNew<BE>
         + ModuleSynchronize<BE>
-        + GLWEMaskFill<BE>
+        + GLWEFill<BE>
         + GLWEKeyswitch<BE>
         + GGLWEPreparedFactory<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
@@ -190,7 +190,7 @@ pub fn glwe_tensor_ops<BE: Backend<ZnxWord = i64>, M: criterion::measurement::Me
 where
     Module<BE>: ModuleNew<BE>
         + ModuleSynchronize<BE>
-        + GLWEMaskFill<BE>
+        + GLWEFill<BE>
         + GLWETensoring<BE>
         + GLWETensorKeyPreparedFactory<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
@@ -221,7 +221,7 @@ pub fn operations_ops<BE: Backend<ZnxWord = i64>, M: criterion::measurement::Mea
 where
     Module<BE>: ModuleNew<BE>
         + ModuleSynchronize<BE>
-        + GLWEMaskFill<BE>
+        + GLWEFill<BE>
         + GLWEAdd<BE>
         + GLWESub<BE>
         + GLWENormalize<BE>
@@ -283,7 +283,7 @@ pub fn all_ops<BE: Backend<ZnxWord = i64>, M: criterion::measurement::Measuremen
 where
     Module<BE>: ModuleNew<BE>
         + ModuleSynchronize<BE>
-        + GLWEMaskFill<BE>
+        + GLWEFill<BE>
         + GLWEEncryptSk<BE>
         + GLWESecretPreparedFactory<BE>
         + GGSWEncryptSk<BE>
@@ -328,7 +328,7 @@ pub fn standard_ops<BE: Backend<ZnxWord = i64>, M: criterion::measurement::Measu
 where
     Module<BE>: ModuleNew<BE>
         + ModuleSynchronize<BE>
-        + GLWEMaskFill<BE>
+        + GLWEFill<BE>
         + GLWEEncryptSk<BE>
         + GLWESecretPreparedFactory<BE>
         + GLWESecretSampling<BE>
@@ -391,7 +391,7 @@ where
     BE: Backend<ZnxWord = i64>,
     Module<BE>: ModuleNew<BE>
         + ModuleSynchronize<BE>
-        + GLWEMaskFill<BE>
+        + GLWEFill<BE>
         + GLWEEncryptSk<BE>
         + GLWESecretPreparedFactory<BE>
         + GGSWEncryptSk<BE>
@@ -431,7 +431,7 @@ where
     BE: Backend<ZnxWord = i64>,
     Module<BE>: ModuleNew<BE>
         + ModuleSynchronize<BE>
-        + GLWEMaskFill<BE>
+        + GLWEFill<BE>
         + GLWEEncryptSk<BE>
         + GLWESecretPreparedFactory<BE>
         + GGSWEncryptSk<BE>
@@ -476,7 +476,7 @@ pub mod standard {
 
     use super::{
         GGLWEPreparedFactory, GGSWEncryptSk, GGSWPreparedFactory, GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk,
-        GLWEAutomorphismKeyPreparedFactory, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, GLWEKeyswitch, GLWEMaskFill,
+        GLWEAutomorphismKeyPreparedFactory, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, GLWEFill, GLWEKeyswitch,
         GLWESecretPreparedFactory, GLWESecretSampling, GLWESwitchingKeyEncryptSk, GLWESwitchingKeyPreparedFactory,
         ModuleCoreAlloc, ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, standard_ops,
     };
@@ -488,7 +488,7 @@ pub mod standard {
         BE: Backend<ZnxWord = i64>,
         Module<BE>: ModuleNew<BE>
             + poulpy_hal::api::ModuleSynchronize<BE>
-            + GLWEMaskFill<BE>
+            + GLWEFill<BE>
             + GLWEEncryptSk<BE>
             + GLWESecretPreparedFactory<BE>
             + GLWESecretSampling<BE>
@@ -521,7 +521,7 @@ pub mod standard {
         BE: Backend<ZnxWord = i64>,
         Module<BE>: ModuleNew<BE>
             + poulpy_hal::api::ModuleSynchronize<BE>
-            + GLWEMaskFill<BE>
+            + GLWEFill<BE>
             + GLWEEncryptSk<BE>
             + GLWESecretPreparedFactory<BE>
             + GLWESecretSampling<BE>
@@ -558,7 +558,7 @@ pub mod light {
 
     use super::{
         GGLWEPreparedFactory, GGSWEncryptSk, GGSWPreparedFactory, GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk,
-        GLWEAutomorphismKeyPreparedFactory, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, GLWEKeyswitch, GLWEMaskFill,
+        GLWEAutomorphismKeyPreparedFactory, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, GLWEFill, GLWEKeyswitch,
         GLWESecretPreparedFactory, GLWESecretSampling, GLWESwitchingKeyEncryptSk, GLWESwitchingKeyPreparedFactory,
         ModuleCoreAlloc, ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, standard_ops,
     };
@@ -570,7 +570,7 @@ pub mod light {
         BE: Backend<ZnxWord = i64>,
         Module<BE>: ModuleNew<BE>
             + poulpy_hal::api::ModuleSynchronize<BE>
-            + GLWEMaskFill<BE>
+            + GLWEFill<BE>
             + GLWEEncryptSk<BE>
             + GLWESecretPreparedFactory<BE>
             + GLWESecretSampling<BE>
@@ -603,7 +603,7 @@ pub mod light {
         BE: Backend<ZnxWord = i64>,
         Module<BE>: ModuleNew<BE>
             + poulpy_hal::api::ModuleSynchronize<BE>
-            + GLWEMaskFill<BE>
+            + GLWEFill<BE>
             + GLWEEncryptSk<BE>
             + GLWESecretPreparedFactory<BE>
             + GLWESecretSampling<BE>

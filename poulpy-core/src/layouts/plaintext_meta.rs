@@ -384,8 +384,8 @@ mod reader_tests {
     use poulpy_hal::layouts::{HostBytesBackend, Module, ReaderFrom, WriterTo};
 
     use crate::layouts::{
-        Base2K, Degree, GLWELayout, GLWEPlaintextMeta, LWEInfos, ModuleCoreAlloc, ModuleCoreCompressedAlloc, Rank,
-        ReplicatedLayout, Scale, SetGLWEPlaintextInfos, SetK, SlotLayout, TorusPrecision,
+        Base2K, Degree, GLWEAlloc, GLWECompressedAlloc, GLWELayout, GLWEPlaintextMeta, LWEInfos, Rank, ReplicatedLayout, Scale,
+        SetGLWEPlaintextInfos, SetK, SlotLayout, TorusPrecision,
     };
 
     fn layout(n: u32, k: u32) -> GLWELayout {

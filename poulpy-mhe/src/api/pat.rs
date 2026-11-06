@@ -14,46 +14,46 @@ use poulpy_core::layouts::{
 };
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
-/// Operations on a [`GLWEPatCompressed`](crate::layouts::GLWEPatCompressed).
-pub trait GLWEPatCompressedOps<BE: Backend> {
-    fn glwe_pat_compressed_aggregate_assign<R, A>(&self, res: &mut R, a: &A)
+/// Operations on a [`MHEGLWEPatCompressed`](crate::layouts::MHEGLWEPatCompressed).
+pub trait MHEGLWEPatCompressedOps<BE: Backend> {
+    fn mhe_glwe_pat_compressed_aggregate_assign<R, A>(&self, res: &mut R, a: &A)
     where
         R: GLWECompressedToBackendMut<BE> + GLWECompressedSeed + GLWEInfos,
         A: GLWECompressedToBackendRef<BE> + GLWECompressedSeed + GLWEInfos;
 
-    fn glwe_pat_compressed_finalize_tmp_bytes(&self) -> usize;
+    fn mhe_glwe_pat_compressed_finalize_tmp_bytes(&self) -> usize;
 
-    fn glwe_pat_compressed_finalize<R, P>(&self, res: &mut R, pat: &P, scratch: &mut ScratchArena<'_, BE>)
+    fn mhe_glwe_pat_compressed_finalize<R, P>(&self, res: &mut R, pat: &P, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         P: GLWECompressedToBackendRef<BE> + GLWECompressedSeed + GLWEInfos;
 }
 
-/// Operations on a [`GGLWEPatCompressed`](crate::layouts::GGLWEPatCompressed).
-pub trait GGLWEPatCompressedOps<BE: Backend> {
-    fn gglwe_pat_compressed_aggregate_assign<R, A>(&self, res: &mut R, a: &A)
+/// Operations on a [`MHEGGLWEPatCompressed`](crate::layouts::MHEGGLWEPatCompressed).
+pub trait MHEGGLWEPatCompressedOps<BE: Backend> {
+    fn mhe_gglwe_pat_compressed_aggregate_assign<R, A>(&self, res: &mut R, a: &A)
     where
         R: GGLWECompressedToBackendMut<BE> + GGLWECompressedSeed + GGLWEInfos,
         A: GGLWECompressedToBackendRef<BE> + GGLWECompressedSeed + GGLWEInfos;
 
-    fn gglwe_pat_compressed_finalize_tmp_bytes(&self) -> usize;
+    fn mhe_gglwe_pat_compressed_finalize_tmp_bytes(&self) -> usize;
 
-    fn gglwe_pat_compressed_finalize<R, P>(&self, res: &mut R, pat: &P, scratch: &mut ScratchArena<'_, BE>)
+    fn mhe_gglwe_pat_compressed_finalize<R, P>(&self, res: &mut R, pat: &P, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GGLWEToBackendMut<BE> + GGLWEInfos,
         P: GGLWECompressedToBackendRef<BE> + GGLWEInfos;
 }
 
-/// Operations on a [`GGLWEPat`](crate::layouts::GGLWEPat).
-pub trait GGLWEPatOps<BE: Backend> {
-    fn gglwe_pat_aggregate_assign<R, A>(&self, res: &mut R, a: &A)
+/// Operations on a [`MHEGGLWEPat`](crate::layouts::MHEGGLWEPat).
+pub trait MHEGGLWEPatOps<BE: Backend> {
+    fn mhe_gglwe_pat_aggregate_assign<R, A>(&self, res: &mut R, a: &A)
     where
         R: GGLWEToBackendMut<BE> + GGLWEInfos,
         A: GGLWEToBackendRef<BE> + GGLWEInfos;
 
-    fn gglwe_pat_finalize_tmp_bytes(&self) -> usize;
+    fn mhe_gglwe_pat_finalize_tmp_bytes(&self) -> usize;
 
-    fn gglwe_pat_finalize<R, P>(&self, res: &mut R, pat: &P, scratch: &mut ScratchArena<'_, BE>)
+    fn mhe_gglwe_pat_finalize<R, P>(&self, res: &mut R, pat: &P, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GGLWEToBackendMut<BE> + GGLWEInfos,
         P: GGLWEToBackendRef<BE> + GGLWEInfos;

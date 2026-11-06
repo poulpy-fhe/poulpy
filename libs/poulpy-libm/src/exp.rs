@@ -14,7 +14,7 @@ use poulpy_hal::layouts::{Backend, HostBytesBackend, Module, ScratchArena};
 use poulpy_ckks::{
     CKKSCtBounds, CKKSInfos, CKKSLayout, SetCKKSInfos,
     api::{CKKSAddOps, CKKSCopyOps, CKKSMulOps},
-    layouts::{CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec, CKKSScalar, ScratchArenaTakeCKKS},
+    layouts::{CKKSPlaintext, CKKSPlaintextAlloc, CKKSPlaintextVecHostCodec, CKKSScalar, ScratchArenaTakeCKKSCiphertext},
     polynomial::SplitStrategy,
 };
 
@@ -227,7 +227,7 @@ impl Expm1Plan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
         let approximation =
             PolynomialApproximation::from_polynomial(&choice.minimax.poly, base2k, coeff_meta, options.strategy, module)
                 .context("expm1")?;
-        let mut two = module.ckks_pt_coeffs_alloc(1, base2k, coeff_meta.k());
+        let mut two = module.ckks_plaintext_alloc(1usize.into(), base2k, coeff_meta.k());
         two.set_meta(coeff_meta.meta());
         two.encode_host_floats(&[F::from_f64(2.0).unwrap()])
             .context("expm1: constant encoding failed")?;
@@ -373,12 +373,12 @@ impl<P> Expm1Plan<P> {
 /// Homomorphic exponential.
 pub trait CKKSExpOps<BE: Backend> {
     /// Scratch bytes for [`Self::ckks_exp`].
-    fn ckks_exp_tmp_bytes<R, I, T, P>(&self, res: &R, input: &I, tsk: &T, plan: &ExpPlan<P>) -> usize
+    fn ckks_exp_tmp_bytes<R, I, P, T>(&self, res: &R, input: &I, plan: &ExpPlan<P>, tsk: &T) -> usize
     where
         R: CKKSCtBounds,
         I: CKKSCtBounds,
-        T: GGLWEInfos,
-        P: CKKSInfos + LWEInfos;
+        P: CKKSInfos + LWEInfos,
+        T: GGLWEInfos;
 
     /// Evaluates `exp(input)`.
     ///
@@ -410,12 +410,12 @@ pub trait CKKSExpOps<BE: Backend> {
         H: GetTensorKey<BE>;
 
     /// Scratch bytes for [`Self::ckks_exp2`].
-    fn ckks_exp2_tmp_bytes<R, I, T, P>(&self, res: &R, input: &I, tsk: &T, plan: &Exp2Plan<P>) -> usize
+    fn ckks_exp2_tmp_bytes<R, I, P, T>(&self, res: &R, input: &I, plan: &Exp2Plan<P>, tsk: &T) -> usize
     where
         R: CKKSCtBounds,
         I: CKKSCtBounds,
-        T: GGLWEInfos,
-        P: CKKSInfos + LWEInfos;
+        P: CKKSInfos + LWEInfos,
+        T: GGLWEInfos;
 
     /// Evaluates `exp2(input)`.
     ///
@@ -447,12 +447,12 @@ pub trait CKKSExpOps<BE: Backend> {
         H: GetTensorKey<BE>;
 
     /// Scratch bytes for [`Self::ckks_exp10`].
-    fn ckks_exp10_tmp_bytes<R, I, T, P>(&self, res: &R, input: &I, tsk: &T, plan: &Exp10Plan<P>) -> usize
+    fn ckks_exp10_tmp_bytes<R, I, P, T>(&self, res: &R, input: &I, plan: &Exp10Plan<P>, tsk: &T) -> usize
     where
         R: CKKSCtBounds,
         I: CKKSCtBounds,
-        T: GGLWEInfos,
-        P: CKKSInfos + LWEInfos;
+        P: CKKSInfos + LWEInfos,
+        T: GGLWEInfos;
 
     /// Evaluates `exp10(input)`.
     ///
@@ -484,12 +484,12 @@ pub trait CKKSExpOps<BE: Backend> {
         H: GetTensorKey<BE>;
 
     /// Scratch bytes for [`Self::ckks_expm1`].
-    fn ckks_expm1_tmp_bytes<R, I, T, P>(&self, res: &R, input: &I, tsk: &T, plan: &Expm1Plan<P>) -> usize
+    fn ckks_expm1_tmp_bytes<R, I, P, T>(&self, res: &R, input: &I, plan: &Expm1Plan<P>, tsk: &T) -> usize
     where
         R: CKKSCtBounds,
         I: CKKSCtBounds,
-        T: GGLWEInfos,
-        P: CKKSInfos + LWEInfos;
+        P: CKKSInfos + LWEInfos,
+        T: GGLWEInfos;
 
     /// Evaluates `expm1(input)`.
     ///
@@ -525,14 +525,14 @@ impl<BE: Backend> CKKSExpOps<BE> for Module<BE>
 where
     Module<BE>: CKKSAddOps<BE> + CKKSApproximationOps<BE> + CKKSCopyOps<BE> + CKKSMulOps<BE> + GLWEBytesOf<BE>,
 {
-    fn ckks_exp_tmp_bytes<R, I, T, P>(&self, res: &R, input: &I, tsk: &T, plan: &ExpPlan<P>) -> usize
+    fn ckks_exp_tmp_bytes<R, I, P, T>(&self, res: &R, input: &I, plan: &ExpPlan<P>, tsk: &T) -> usize
     where
         R: CKKSCtBounds,
         I: CKKSCtBounds,
-        T: GGLWEInfos,
         P: CKKSInfos + LWEInfos,
+        T: GGLWEInfos,
     {
-        reduced_tmp_bytes(self, res, input, tsk, &plan.approximation, false)
+        reduced_tmp_bytes(self, false, res, input, &plan.approximation, tsk)
     }
 
     fn ckks_exp<R, I, P, H>(
@@ -562,14 +562,14 @@ where
         )
     }
 
-    fn ckks_exp2_tmp_bytes<R, I, T, P>(&self, res: &R, input: &I, tsk: &T, plan: &Exp2Plan<P>) -> usize
+    fn ckks_exp2_tmp_bytes<R, I, P, T>(&self, res: &R, input: &I, plan: &Exp2Plan<P>, tsk: &T) -> usize
     where
         R: CKKSCtBounds,
         I: CKKSCtBounds,
-        T: GGLWEInfos,
         P: CKKSInfos + LWEInfos,
+        T: GGLWEInfos,
     {
-        reduced_tmp_bytes(self, res, input, tsk, &plan.approximation, false)
+        reduced_tmp_bytes(self, false, res, input, &plan.approximation, tsk)
     }
 
     fn ckks_exp2<R, I, P, H>(
@@ -599,14 +599,14 @@ where
         )
     }
 
-    fn ckks_exp10_tmp_bytes<R, I, T, P>(&self, res: &R, input: &I, tsk: &T, plan: &Exp10Plan<P>) -> usize
+    fn ckks_exp10_tmp_bytes<R, I, P, T>(&self, res: &R, input: &I, plan: &Exp10Plan<P>, tsk: &T) -> usize
     where
         R: CKKSCtBounds,
         I: CKKSCtBounds,
-        T: GGLWEInfos,
         P: CKKSInfos + LWEInfos,
+        T: GGLWEInfos,
     {
-        reduced_tmp_bytes(self, res, input, tsk, &plan.approximation, false)
+        reduced_tmp_bytes(self, false, res, input, &plan.approximation, tsk)
     }
 
     fn ckks_exp10<R, I, P, H>(
@@ -636,14 +636,14 @@ where
         )
     }
 
-    fn ckks_expm1_tmp_bytes<R, I, T, P>(&self, res: &R, input: &I, tsk: &T, plan: &Expm1Plan<P>) -> usize
+    fn ckks_expm1_tmp_bytes<R, I, P, T>(&self, res: &R, input: &I, plan: &Expm1Plan<P>, tsk: &T) -> usize
     where
         R: CKKSCtBounds,
         I: CKKSCtBounds,
-        T: GGLWEInfos,
         P: CKKSInfos + LWEInfos,
+        T: GGLWEInfos,
     {
-        reduced_tmp_bytes(self, res, input, tsk, &plan.approximation, true)
+        reduced_tmp_bytes(self, true, res, input, &plan.approximation, tsk)
     }
 
     fn ckks_expm1<R, I, P, H>(
@@ -675,21 +675,21 @@ where
 }
 
 /// Query of [`eval_reduced`]: the stages run on an accumulator with the layout of `input`.
-fn reduced_tmp_bytes<BE, R, I, T, P>(
+fn reduced_tmp_bytes<BE, R, I, P, T>(
     module: &Module<BE>,
+    doubling: bool,
     res: &R,
     input: &I,
-    tsk: &T,
     approximation: &PolynomialApproximation<P>,
-    doubling: bool,
+    tsk: &T,
 ) -> usize
 where
     BE: Backend,
     Module<BE>: CKKSAddOps<BE> + CKKSApproximationOps<BE> + CKKSCopyOps<BE> + CKKSMulOps<BE> + GLWEBytesOf<BE>,
     R: CKKSCtBounds,
     I: CKKSCtBounds,
-    T: GGLWEInfos,
     P: CKKSInfos + LWEInfos,
+    T: GGLWEInfos,
 {
     let ct = BE::scratch_aligned(module.glwe_bytes_of_from_infos(input));
     let step = if doubling {
@@ -701,7 +701,7 @@ where
         module.ckks_square_tmp_bytes(input, input, tsk)
     };
     ct + module
-        .ckks_approximation_tmp_bytes(input, input, approximation, tsk)
+        .ckks_polynomial_approximation_eval_tmp_bytes(input, input, approximation, tsk)
         .max(step)
         .max(module.ckks_copy_tmp_bytes(res, input))
 }
@@ -738,7 +738,7 @@ where
     scratch.scope(|scratch_local| {
         let (mut acc, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(input);
         module
-            .ckks_eval_approximation(&mut acc, input, approximation, tsk, &mut scratch_local)
+            .ckks_polynomial_approximation_eval(&mut acc, input, approximation, tsk, &mut scratch_local)
             .context(op)?;
         for _ in 0..reduction_steps {
             match two {

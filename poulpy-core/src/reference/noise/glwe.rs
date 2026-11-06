@@ -1,4 +1,4 @@
-use crate::api::GLWEBytesOf;
+use crate::api::{GLWEBytesOf, GLWEPlaintextBytesOf};
 use poulpy_hal::{
     api::{
         ModuleN, SvpApplyDftToDftAssign, VecZnxBigAddAssign, VecZnxBigBytesOf, VecZnxBigFromSmall, VecZnxBigNormalize,
@@ -8,7 +8,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    GLWENormalize, ScratchArenaTakeCore,
+    GLWENormalize, ScratchArenaTakeGLWE, ScratchArenaTakeGLWEPlaintext,
     api::GLWENoise,
     decryption::{GLWEDecrypt, glwe::glwe_decrypt_body_tmp_bytes, glwe_decrypt_backend_inner},
     layouts::{
@@ -27,6 +27,7 @@ pub(crate) fn glwe_noise_backend_inner<M, BE>(
 ) -> Stats
 where
     M: GLWEBytesOf<BE>
+        + GLWEPlaintextBytesOf<BE>
         + GLWENoise<BE>
         + GLWEDecrypt<BE>
         + GLWENormalize<BE>
@@ -122,6 +123,7 @@ pub(crate) fn glwe_noise_body_tmp_bytes<M, BE, A>(module: &M, infos: &A) -> usiz
 where
     BE: Backend,
     M: GLWEBytesOf<BE>
+        + GLWEPlaintextBytesOf<BE>
         + GLWENormalize<BE>
         + ModuleN
         + VecZnxDftBytesOf

@@ -2,7 +2,7 @@
 //! GLWEs and secrets of degree `2N`, expressed with HAL operations of the standard module.
 use poulpy_hal::{
     api::{
-        ModuleN, ScalarZnxCIEmbed, ScratchArenaTakeBasic, VecZnxCIEmbed, VecZnxCITrace, VecZnxNormalize, VecZnxNormalizeTmpBytes,
+        ModuleN, ScalarZnxCIEmbed, ScratchArenaTakeVecZnx, VecZnxCIEmbed, VecZnxCITrace, VecZnxNormalize, VecZnxNormalizeTmpBytes,
     },
     layouts::{Backend, Module, ScratchArena, VecZnxToBackendMut, VecZnxToBackendRef},
 };
@@ -12,6 +12,68 @@ use crate::{
     dist::Distribution,
     layouts::{GLWEInfos, GLWESecretToBackendMut, GLWESecretToBackendRef, GLWEToBackendMut, GLWEToBackendRef, LWEInfos},
 };
+
+/// Reference bodies of the required [`GLWECIConversionImpl`](crate::oep::GLWECIConversionImpl) methods, which
+/// [`impl_glwe_ci_conversion_reference_full!`](crate::impl_glwe_ci_conversion_reference_full) forwards to.
+pub trait GLWECIConversionReference<BE: Backend> {
+    fn glwe_ci_embed_reference<R, A>(&self, res: &mut R, a: &A)
+    where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE> + GLWEInfos;
+
+    fn glwe_secret_ci_embed_reference<R, S>(&self, res: &mut R, src: &S)
+    where
+        R: GLWESecretToBackendMut<BE> + GetDistributionMut,
+        S: GLWESecretToBackendRef<BE>;
+
+    fn glwe_ci_trace_tmp_bytes_reference<R, A>(&self, res_infos: &R, a_infos: &A) -> usize
+    where
+        R: GLWEInfos,
+        A: GLWEInfos;
+
+    fn glwe_ci_trace_reference<R, A>(&self, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
+    where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE> + GLWEInfos;
+}
+
+impl<BE: Backend> GLWECIConversionReference<BE> for Module<BE>
+where
+    Module<BE>:
+        ModuleN + ScalarZnxCIEmbed<BE> + VecZnxCIEmbed<BE> + VecZnxCITrace<BE> + VecZnxNormalize<BE> + VecZnxNormalizeTmpBytes,
+{
+    fn glwe_ci_embed_reference<R, A>(&self, res: &mut R, a: &A)
+    where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE> + GLWEInfos,
+    {
+        glwe_ci_embed_reference::<BE, _, _, _>(self, res, a)
+    }
+
+    fn glwe_secret_ci_embed_reference<R, S>(&self, res: &mut R, src: &S)
+    where
+        R: GLWESecretToBackendMut<BE> + GetDistributionMut,
+        S: GLWESecretToBackendRef<BE>,
+    {
+        glwe_secret_ci_embed_reference::<BE, _, _>(self, res, src)
+    }
+
+    fn glwe_ci_trace_tmp_bytes_reference<R, A>(&self, res_infos: &R, a_infos: &A) -> usize
+    where
+        R: GLWEInfos,
+        A: GLWEInfos,
+    {
+        glwe_ci_trace_tmp_bytes_reference::<BE, _, _, _>(self, res_infos, a_infos)
+    }
+
+    fn glwe_ci_trace_reference<R, A>(&self, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
+    where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE> + GLWEInfos,
+    {
+        glwe_ci_trace_reference::<BE, _, _, _>(self, res, a, scratch)
+    }
+}
 
 /// Embeds each column of `a` into `res` at the radix of `a`; the digits are
 /// exact but not renormalized.
@@ -41,7 +103,7 @@ where
     R: GLWEInfos,
     A: GLWEInfos,
 {
-    BE::bytes_of_vec_znx(res_infos.n().as_usize(), 1, a_infos.size()) + module.vec_znx_normalize_tmp_bytes()
+    BE::vec_znx_bytes_of(res_infos.n().as_usize(), 1, a_infos.size()) + module.vec_znx_normalize_tmp_bytes()
 }
 
 /// Writes the trace of each column of `a` into a scratch polynomial at the radix of `a`,

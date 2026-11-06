@@ -8,19 +8,19 @@
 
 use crate::CKKSModuleInfos;
 use anyhow::{Context, Result, ensure};
-use poulpy_core::layouts::{Base2K, GLWEInfos, LWEInfos};
+use poulpy_core::layouts::{Base2K, GLWE, GLWEInfos, LWEInfos};
 use poulpy_hal::layouts::{Backend, HostDataRef, Module, Standard};
 
 use crate::SlotsKind;
 use crate::{
     GLWEPlaintextMeta, Scale, SlotLayout,
-    api::{CKKSEncodingOps, ShipScalar},
+    api::{CKKSEncodingOps, CKKSShipScalar},
     encoding::paco::coeff_enc::glwe_column_residues,
-    layouts::{CKKSCiphertext, CKKSEncodingBuffer, CKKSModuleAlloc, CKKSPlaintextOwned, ShipCoeffEncodings, ShipPlan},
+    layouts::{CKKSEncodingBuffer, CKKSPlaintextAlloc, CKKSPlaintextOwned, ShipCoeffEncodings, ShipPlan},
 };
 
 /// Phases `(cos, sin)(2*pi*x/q0)` of a residue vector.
-fn phases<F: ShipScalar>(residues: &[i64], base2k: usize) -> Result<(Vec<F>, Vec<F>)> {
+fn phases<F: CKKSShipScalar>(residues: &[i64], base2k: usize) -> Result<(Vec<F>, Vec<F>)> {
     let q0 = 1i64 << base2k;
     let q0_f = F::from_i64(q0).context("SHIP bottom modulus is not representable by the working scalar")?;
     let mut cos = Vec::with_capacity(residues.len());
@@ -44,21 +44,21 @@ fn encode_reim_pt<BE, F>(
 ) -> Result<CKKSPlaintextOwned<BE>>
 where
     BE: Backend,
-    Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
-    F: ShipScalar,
+    Module<BE>: CKKSPlaintextAlloc<BE> + CKKSEncodingOps<BE, F>,
+    F: CKKSShipScalar,
 {
     let mut values = vec![F::zero(); 2 * re.len()];
     values[..re.len()].copy_from_slice(re);
     values[re.len()..].copy_from_slice(im);
     let mut buffer = CKKSEncodingBuffer::<BE::OwnedBuf, F>::from_host::<BE>(&values);
-    let mut pt = module.ckks_pt_vec_alloc(module.ckks_max_slots(), base2k, k_pt.into());
+    let mut pt = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots(), base2k, k_pt.into());
     pt.set_meta_checked(GLWEPlaintextMeta {
         scale: Scale::Log(log_delta),
         slots: SlotsKind::Complex,
         log_sparsity: 0,
         slot_layout: SlotLayout::Full,
     })?;
-    module.ckks_encode_slots_assign_into(&mut pt, &mut buffer)?;
+    module.ckks_encode_slots_into(&mut pt, &mut buffer)?;
     Ok(pt)
 }
 
@@ -69,11 +69,11 @@ where
 /// support slot at the working width. Device backends bypass this host
 /// reference path through
 /// [`CKKSShipCoeffEncodingImpl`](crate::oep::CKKSShipCoeffEncodingImpl).
-pub fn ship_coeff_encodings_host<BE, D, F>(
+pub fn ckks_ship_coeff_encodings_host<BE, D, F>(
     module: &Module<BE>,
     base2k: Base2K,
     complex: bool,
-    ct: &CKKSCiphertext<D, BE::ZnxWord, Standard>,
+    ct: &GLWE<D, BE::ZnxWord>,
     plan: &ShipPlan,
 ) -> Result<ShipCoeffEncodings<BE::OwnedBuf, BE::ZnxWord>>
 where
@@ -81,9 +81,9 @@ where
     // `decode_vec_i64` path, so it applies only to an i64-word backend. Device
     // backends bypass it via the OEP impl.
     BE: Backend<ZnxWord = i64, Ring = Standard>,
-    Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
+    Module<BE>: CKKSEncodingOps<BE, F>,
     D: HostDataRef,
-    F: ShipScalar,
+    F: CKKSShipScalar,
 {
     let n = plan.n();
     let m = plan.half_n();

@@ -8,8 +8,11 @@ use std::{
 use poulpy_ckks::{
     CKKSCompositionError, CKKSInfos, CKKSLayout, CKKSModuleInfos, CKKSResult, CoeffsMeta, GLWEPlaintextInfos, GLWEPlaintextMeta,
     Scale, SetCKKSInfos, SetGLWEPlaintextInfos, SlotsKind,
-    api::{CKKSEncodingOps, CKKSEncodingScalar, CKKSLinearTransformationOps, CKKSMulOps, LinearTransformationPrepared},
-    layouts::{CKKSCiphertext, CKKSModuleAlloc},
+    api::{
+        CKKSEncodingOps, CKKSEncodingScalar, CKKSLinearTransformationOps, CKKSMulOps, CKKSRightOperandPreparedFactory,
+        LinearTransformationPrepared,
+    },
+    layouts::{CKKSCiphertext, CKKSCiphertextAlloc},
     test_suite::{
         CKKSTestParams,
         helpers::{TestContextBackend, TestContextSharedModule, TestScalar, assert_decrypt_precision_at_log_delta, ckks_encrypt},
@@ -26,19 +29,22 @@ use poulpy_core::layouts::{
     },
 };
 use poulpy_hal::{
-    api::NegacyclicFFT,
+    api::{ReimFFT, ReimIFFT},
     layouts::{
         Backend, Data, HostBytesBackend, HostDataMut, HostDataRef, Module, PrepareHint, Ring, ScratchArena, ScratchOwned, ZnxWord,
     },
 };
 
 use crate::{
-    api::{BlasContextPreparedFactory, BlasEncodingOps, BlasMatMulOps, BlasPtOperandPreparedFactory},
+    api::{
+        BlasContextPreparedFactory, BlasEncodingOps, BlasMatMulLeftOperandPreparedFactory, BlasMatMulRightOperandPreparedFactory,
+        BlasPtOperandPreparedFactory,
+    },
     layouts::{
-        BlasCiphertext, BlasCiphertextOwned, BlasContext, BlasContextInfos, BlasGrid, BlasGridInfos, BlasGridMut, BlasLayout,
-        BlasMatMulLeft, BlasMatMulOperandInfos, BlasMatMulOperandPreparedFactory, BlasMatMulRight, BlasModuleAlloc, BlasPlan,
-        BlasPtAlgorithm, BlasPtOperand, BlasPtSide, blas_matmul_left_operand_layout, blas_matmul_right_operand_layout,
-        ciphertext::layout_of, grid::split_into_blocks,
+        BlasCiphertext, BlasCiphertextAlloc, BlasCiphertextOwned, BlasContextAlloc, BlasContextInfos, BlasContextPrepared,
+        BlasGrid, BlasGridInfos, BlasGridMut, BlasLayout, BlasMatMulLeftOperandPrepared, BlasMatMulOperandInfos,
+        BlasMatMulRightOperandPrepared, BlasPlan, BlasPtAlgorithm, BlasPtOperandAlloc, BlasPtOperandPrepared, BlasPtSide,
+        blas_matmul_left_operand_layout, blas_matmul_right_operand_layout, ciphertext::layout_of, grid::split_into_blocks,
     },
     oep::{BlasEncodingImpl, BlasMatMulImpl},
 };
@@ -46,33 +52,33 @@ use crate::{
 /// Both preparation hints: hot, `OneShot`, then cold, `Reuse`.
 pub const HINTS: [PrepareHint; 2] = [PrepareHint::OneShot, PrepareHint::Reuse];
 
-/// [`BlasMatMulOps::blas_matmul_prepare_left`] of `a` under `hint`, into an operand allocated from the infos
-/// [`blas_matmul_left_operand_layout`] gives.
+/// [`BlasMatMulLeftOperandPreparedFactory::blas_matmul_left_operand_prepare`] of `a` under `hint`, into an operand
+/// allocated from the infos [`blas_matmul_left_operand_layout`] gives.
 pub fn matmul_left_operand<BE: BlasMatMulImpl>(
     module: &Module<BE>,
     a: &impl BlasGrid<BE>,
-    ctx: &BlasContext<BE>,
+    ctx: &BlasContextPrepared<BE>,
     keys: &(impl GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync),
     hint: PrepareHint,
     scratch: &mut ScratchArena<'_, BE>,
-) -> CKKSResult<BlasMatMulLeft<BE>> {
-    let mut res = module.blas_matmul_left_alloc_from_infos(&blas_matmul_left_operand_layout(a, ctx, hint));
-    module.blas_matmul_prepare_left(&mut res, a, ctx, keys, scratch)?;
+) -> CKKSResult<BlasMatMulLeftOperandPrepared<BE>> {
+    let mut res = module.blas_matmul_left_operand_prepared_alloc_from_infos(&blas_matmul_left_operand_layout(a, ctx, hint));
+    module.blas_matmul_left_operand_prepare(&mut res, a, ctx, keys, scratch)?;
     Ok(res)
 }
 
-/// [`BlasMatMulOps::blas_matmul_prepare_right`] of `b` under `hint`, into an operand allocated from the infos
-/// [`blas_matmul_right_operand_layout`] gives.
+/// [`BlasMatMulRightOperandPreparedFactory::blas_matmul_right_operand_prepare`] of `b` under `hint`, into an operand
+/// allocated from the infos [`blas_matmul_right_operand_layout`] gives.
 pub fn matmul_right_operand<BE: BlasMatMulImpl>(
     module: &Module<BE>,
     b: &impl BlasGrid<BE>,
-    ctx: &BlasContext<BE>,
+    ctx: &BlasContextPrepared<BE>,
     keys: &(impl GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync),
     hint: PrepareHint,
     scratch: &mut ScratchArena<'_, BE>,
-) -> CKKSResult<BlasMatMulRight<BE>> {
-    let mut res = module.blas_matmul_right_alloc_from_infos(&blas_matmul_right_operand_layout(b, ctx, hint));
-    module.blas_matmul_prepare_right(&mut res, b, ctx, keys, scratch)?;
+) -> CKKSResult<BlasMatMulRightOperandPrepared<BE>> {
+    let mut res = module.blas_matmul_right_operand_prepared_alloc_from_infos(&blas_matmul_right_operand_layout(b, ctx, hint));
+    module.blas_matmul_right_operand_prepare(&mut res, b, ctx, keys, scratch)?;
     Ok(res)
 }
 
@@ -265,7 +271,7 @@ where
     BE: TestContextBackend,
     Module<BE>: TestContextSharedModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F>,
+    E: ReimFFT<F> + ReimIFFT<F>,
 {
     let blocks = grid
         .blocks(params.n / 2)
@@ -298,10 +304,7 @@ pub fn alloc_grid<BE: Backend>(
     rows: usize,
     cols: usize,
     k: usize,
-) -> BlasCiphertextOwned<BE>
-where
-    Module<BE>: CKKSModuleAlloc<BE>,
-{
+) -> BlasCiphertextOwned<BE> {
     let block = CKKSLayout {
         glwe_layout: GLWELayout {
             k: k.into(),
@@ -380,7 +383,7 @@ pub fn assert_grid_decrypt<BE, F, E>(
     BE: TestContextBackend,
     Module<BE>: TestContextSharedModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F>,
+    E: ReimFFT<F> + ReimIFFT<F>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
@@ -489,7 +492,6 @@ where
 pub fn foreign_layouts<BE>(module: &Module<BE>, grid: &impl BlasGridInfos) -> [(&'static str, BlasCiphertextOwned<BE>); 3]
 where
     BE: Backend,
-    Module<BE>: CKKSModuleAlloc<BE>,
 {
     let alloc = |edit: fn(&mut GLWELayout)| {
         let mut block = grid.block_layout();
@@ -671,11 +673,14 @@ pub fn pt_operand<BE, F, S>(
     entry: impl Fn(usize, usize, usize) -> F,
     base2k: Base2K,
     coeffs_meta: CoeffsMeta,
-) -> BlasPtOperand<BE, S>
+) -> BlasPtOperandPrepared<BE, S>
 where
     BE: Backend + BlasEncodingImpl,
-    Module<BE>:
-        CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F> + BlasEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CKKSMulOps<BE>,
+    Module<BE>: CKKSRightOperandPreparedFactory<BE>
+        + CKKSEncodingOps<BE, F>
+        + BlasEncodingOps<BE, F>
+        + CKKSLinearTransformationOps<BE>
+        + CKKSMulOps<BE>,
     F: DiagonalArithmetic + CKKSEncodingScalar,
     S: BlasPtSide,
 {
@@ -918,10 +923,15 @@ pub fn other_scales(params: &CKKSTestParams) -> [usize; 2] {
 
 /// The context of `plan` at `coeffs_meta` on `module`, allocated, encoded and prepared, each call on exactly its
 /// query's bytes.
-pub fn encoded_context<BE, F>(module: &Module<BE>, plan: BlasPlan, base2k: Base2K, coeffs_meta: CoeffsMeta) -> BlasContext<BE>
+pub fn encoded_context<BE, F>(
+    module: &Module<BE>,
+    plan: BlasPlan,
+    base2k: Base2K,
+    coeffs_meta: CoeffsMeta,
+) -> BlasContextPrepared<BE>
 where
     BE: Backend + BlasEncodingImpl,
-    Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F> + BlasEncodingOps<BE, F> + CKKSLinearTransformationOps<BE>,
+    Module<BE>: CKKSEncodingOps<BE, F> + BlasEncodingOps<BE, F> + CKKSLinearTransformationOps<BE>,
     F: DiagonalArithmetic + CKKSEncodingScalar,
 {
     let mut ctx = module.blas_context_alloc(plan, base2k, coeffs_meta);
@@ -936,7 +946,7 @@ where
 }
 
 /// The context of `2^log_d x 2^log_d` blocks at `params.prec()`, each call on exactly its query's bytes.
-pub fn blas_context<BE, F>(params: &CKKSTestParams, module: &Module<BE>, log_d: usize) -> crate::layouts::BlasContext<BE>
+pub fn blas_context<BE, F>(params: &CKKSTestParams, module: &Module<BE>, log_d: usize) -> crate::layouts::BlasContextPrepared<BE>
 where
     BE: TestContextBackend + BlasEncodingImpl,
     Module<BE>: TestContextSharedModule<BE>
@@ -981,7 +991,7 @@ pub fn context_and_keys<BE, F>(
     sk_raw: &poulpy_core::layouts::BackendGLWESecret<BE>,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> (
-    crate::layouts::BlasContext<BE>,
+    crate::layouts::BlasContextPrepared<BE>,
     HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>>,
 )
 where
@@ -1026,7 +1036,7 @@ pub fn foreign_contexts<BE, F>(
     sk_raw: &poulpy_core::layouts::BackendGLWESecret<BE>,
     atks: &mut HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>>,
     scratch: &mut ScratchArena<'_, BE>,
-) -> [(&'static str, crate::layouts::BlasContext<BE>); 2]
+) -> [(&'static str, crate::layouts::BlasContextPrepared<BE>); 2]
 where
     BE: TestContextBackend + BlasEncodingImpl,
     Module<BE>: TestContextSharedModule<BE>

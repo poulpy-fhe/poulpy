@@ -1,4 +1,4 @@
-pub use crate::api::ExecuteBDDCircuit2WTo1W;
+pub use crate::api::BDDCircuitExecute2WTo1W;
 
 use poulpy_core::layouts::{GGSWInfos, GLWEInfos, GLWEToBackendMut, GetAutomorphismKey};
 use poulpy_hal::layouts::{Backend, ScratchArena};
@@ -6,7 +6,6 @@ use poulpy_hal::layouts::{Backend, ScratchArena};
 use crate::bdd_arithmetic::{FheUint, FheUintPrepared, UnsignedInteger, circuits};
 use poulpy_core::GLWEBytesOf;
 
-#[macro_export]
 macro_rules! define_bdd_2w_to_1w_trait {
     ($(#[$meta:meta])* $vis:vis $trait_name:ident, $method_name:ident) => {
         paste::paste! {
@@ -22,7 +21,7 @@ macro_rules! define_bdd_2w_to_1w_trait {
                     key: &H,
                     scratch: &mut ScratchArena<'_, BE>,
                 ) where
-                    M: GLWEBytesOf<BE> + ExecuteBDDCircuit2WTo1W<BE>,
+                    M: GLWEBytesOf<BE> + BDDCircuitExecute2WTo1W<BE>,
                     H: GetAutomorphismKey<BE>,
                     BE: Backend<ZnxWord = i64>,
                     Self: GLWEToBackendMut<BE>;
@@ -37,7 +36,7 @@ macro_rules! define_bdd_2w_to_1w_trait {
                     key: &H,
                     scratch: &mut ScratchArena<'_, BE>,
                 ) where
-                    M: GLWEBytesOf<BE> + ExecuteBDDCircuit2WTo1W<BE>,
+                    M: GLWEBytesOf<BE> + BDDCircuitExecute2WTo1W<BE>,
                     H: GetAutomorphismKey<BE>,
                     BE: Backend<ZnxWord = i64>,
                     Self: GLWEToBackendMut<BE>;
@@ -50,7 +49,7 @@ macro_rules! define_bdd_2w_to_1w_trait {
                     key: &H,
                 ) -> usize
                 where
-                    M: GLWEBytesOf<BE> + ExecuteBDDCircuit2WTo1W<BE>,
+                    M: GLWEBytesOf<BE> + BDDCircuitExecute2WTo1W<BE>,
                     R: GLWEInfos,
                     G: GGSWInfos,
                     H: GetAutomorphismKey<BE>,
@@ -65,7 +64,7 @@ macro_rules! define_bdd_2w_to_1w_trait {
                     key: &H,
                 ) -> usize
                 where
-                    M: GLWEBytesOf<BE> + ExecuteBDDCircuit2WTo1W<BE>,
+                    M: GLWEBytesOf<BE> + BDDCircuitExecute2WTo1W<BE>,
                     R: GLWEInfos,
                     G: GGSWInfos,
                     H: GetAutomorphismKey<BE>,
@@ -75,7 +74,6 @@ macro_rules! define_bdd_2w_to_1w_trait {
     };
 }
 
-#[macro_export]
 macro_rules! impl_bdd_2w_to_1w_trait {
     ($trait_name:ident, $method_name:ident, $ty:ty, $circuit_ty:ty, $output_circuits:path) => {
         paste::paste! {
@@ -89,11 +87,11 @@ macro_rules! impl_bdd_2w_to_1w_trait {
                     key: &H,
                     scratch: &mut ScratchArena<'_, BE>,
                 ) where
-                    M: GLWEBytesOf<BE> + ExecuteBDDCircuit2WTo1W<BE>,
+                    M: GLWEBytesOf<BE> + BDDCircuitExecute2WTo1W<BE>,
                     H: GetAutomorphismKey<BE>,
                     BE: Backend<ZnxWord = i64>,
                 {
-                    module.execute_bdd_circuit_2w_to_1w(self, a, b, &$output_circuits, key, scratch)
+                    module.bdd_circuit_execute_2w_to_1w(self, a, b, &$output_circuits, key, scratch)
                 }
 
                 fn [<$method_name _multi_thread>]<M, H>(
@@ -105,11 +103,11 @@ macro_rules! impl_bdd_2w_to_1w_trait {
                     key: &H,
                     scratch: &mut ScratchArena<'_, BE>,
                 ) where
-                    M: GLWEBytesOf<BE> + ExecuteBDDCircuit2WTo1W<BE>,
+                    M: GLWEBytesOf<BE> + BDDCircuitExecute2WTo1W<BE>,
                     H: GetAutomorphismKey<BE>,
                     BE: Backend<ZnxWord = i64>,
                 {
-                    module.execute_bdd_circuit_2w_to_1w_multi_thread(threads, self, a, b, &$output_circuits, key, scratch)
+                    module.bdd_circuit_execute_2w_to_1w_multi_thread(threads, self, a, b, &$output_circuits, key, scratch)
                 }
 
                 fn [<$method_name _tmp_bytes>]<M, R, G, H>(
@@ -120,13 +118,13 @@ macro_rules! impl_bdd_2w_to_1w_trait {
                     key: &H,
                 ) -> usize
                 where
-                    M: GLWEBytesOf<BE> + ExecuteBDDCircuit2WTo1W<BE>,
+                    M: GLWEBytesOf<BE> + BDDCircuitExecute2WTo1W<BE>,
                     R: GLWEInfos,
                     G: GGSWInfos,
                     H: GetAutomorphismKey<BE>,
                     BE: Backend<ZnxWord = i64>,
                 {
-                    module.execute_bdd_circuit_2w_to_1w_tmp_bytes::<_, $ty, _, _, _>(
+                    module.bdd_circuit_execute_2w_to_1w_tmp_bytes::<_, $ty, _, _, _>(
                         res_infos,
                         ggsw_infos,
                         &$output_circuits,
@@ -143,13 +141,13 @@ macro_rules! impl_bdd_2w_to_1w_trait {
                     key: &H,
                 ) -> usize
                 where
-                    M: GLWEBytesOf<BE> + ExecuteBDDCircuit2WTo1W<BE>,
+                    M: GLWEBytesOf<BE> + BDDCircuitExecute2WTo1W<BE>,
                     R: GLWEInfos,
                     G: GGSWInfos,
                     H: GetAutomorphismKey<BE>,
                     BE: Backend<ZnxWord = i64>,
                 {
-                    module.execute_bdd_circuit_2w_to_1w_multi_thread_tmp_bytes::<_, $ty, _, _, _>(
+                    module.bdd_circuit_execute_2w_to_1w_multi_thread_tmp_bytes::<_, $ty, _, _, _>(
                         threads,
                         res_infos,
                         ggsw_infos,
@@ -164,44 +162,44 @@ macro_rules! impl_bdd_2w_to_1w_trait {
 
 define_bdd_2w_to_1w_trait!(
     /// Homomorphic addition (`out = a + b`).
-    pub Add, add);
+    pub FheUintAdd, add);
 define_bdd_2w_to_1w_trait!(
     /// Homomorphic subtraction (`out = a - b`).
-    pub Sub, sub);
+    pub FheUintSub, sub);
 define_bdd_2w_to_1w_trait!(
     /// Homomorphic logical left shift (`out = a << b`).
-    pub Sll, sll);
+    pub FheUintSll, sll);
 define_bdd_2w_to_1w_trait!(
     /// Homomorphic arithmetic right shift (`out = a >> b`, sign-extending).
-    pub Sra, sra);
+    pub FheUintSra, sra);
 define_bdd_2w_to_1w_trait!(
     /// Homomorphic logical right shift (`out = a >> b`, zero-extending).
-    pub Srl, srl);
+    pub FheUintSrl, srl);
 define_bdd_2w_to_1w_trait!(
     /// Homomorphic signed less-than comparison (`out = (a as signed) < (b as signed)`).
     ///
     /// The result is `1` (all-bits-set in the packed-GLWE encoding) when
     /// the signed interpretation of `a` is strictly less than that of `b`,
     /// and `0` otherwise.
-    pub Slt, slt);
+    pub FheUintSlt, slt);
 define_bdd_2w_to_1w_trait!(
     /// Homomorphic unsigned less-than comparison (`out = a < b`).
     ///
     /// The result is `1` when the unsigned value of `a` is strictly less than
     /// that of `b`, and `0` otherwise.
-    pub Sltu, sltu);
+    pub FheUintSltu, sltu);
 define_bdd_2w_to_1w_trait!(
     /// Homomorphic bitwise OR (`out = a | b`).
-    pub Or, or);
+    pub FheUintOr, or);
 define_bdd_2w_to_1w_trait!(
     /// Homomorphic bitwise AND (`out = a & b`).
-    pub And, and);
+    pub FheUintAnd, and);
 define_bdd_2w_to_1w_trait!(
     /// Homomorphic bitwise XOR (`out = a ^ b`).
-    pub Xor, xor);
+    pub FheUintXor, xor);
 
 impl_bdd_2w_to_1w_trait!(
-    Add,
+    FheUintAdd,
     add,
     u32,
     circuits::u32::add_codegen::AnyBitCircuit,
@@ -209,7 +207,7 @@ impl_bdd_2w_to_1w_trait!(
 );
 
 impl_bdd_2w_to_1w_trait!(
-    Sub,
+    FheUintSub,
     sub,
     u32,
     circuits::u32::sub_codegen::AnyBitCircuit,
@@ -217,7 +215,7 @@ impl_bdd_2w_to_1w_trait!(
 );
 
 impl_bdd_2w_to_1w_trait!(
-    Sll,
+    FheUintSll,
     sll,
     u32,
     circuits::u32::sll_codegen::AnyBitCircuit,
@@ -225,7 +223,7 @@ impl_bdd_2w_to_1w_trait!(
 );
 
 impl_bdd_2w_to_1w_trait!(
-    Sra,
+    FheUintSra,
     sra,
     u32,
     circuits::u32::sra_codegen::AnyBitCircuit,
@@ -233,7 +231,7 @@ impl_bdd_2w_to_1w_trait!(
 );
 
 impl_bdd_2w_to_1w_trait!(
-    Srl,
+    FheUintSrl,
     srl,
     u32,
     circuits::u32::srl_codegen::AnyBitCircuit,
@@ -241,7 +239,7 @@ impl_bdd_2w_to_1w_trait!(
 );
 
 impl_bdd_2w_to_1w_trait!(
-    Slt,
+    FheUintSlt,
     slt,
     u32,
     circuits::u32::slt_codegen::AnyBitCircuit,
@@ -249,7 +247,7 @@ impl_bdd_2w_to_1w_trait!(
 );
 
 impl_bdd_2w_to_1w_trait!(
-    Sltu,
+    FheUintSltu,
     sltu,
     u32,
     circuits::u32::sltu_codegen::AnyBitCircuit,
@@ -257,7 +255,7 @@ impl_bdd_2w_to_1w_trait!(
 );
 
 impl_bdd_2w_to_1w_trait!(
-    And,
+    FheUintAnd,
     and,
     u32,
     circuits::u32::and_codegen::AnyBitCircuit,
@@ -265,7 +263,7 @@ impl_bdd_2w_to_1w_trait!(
 );
 
 impl_bdd_2w_to_1w_trait!(
-    Or,
+    FheUintOr,
     or,
     u32,
     circuits::u32::or_codegen::AnyBitCircuit,
@@ -273,7 +271,7 @@ impl_bdd_2w_to_1w_trait!(
 );
 
 impl_bdd_2w_to_1w_trait!(
-    Xor,
+    FheUintXor,
     xor,
     u32,
     circuits::u32::xor_codegen::AnyBitCircuit,

@@ -2,8 +2,9 @@
 //! small-batch scheme of [ePrint 2026/2513](https://eprint.iacr.org/2026/2513)
 //! (see `docs/guides/replicated.md`).
 use poulpy_core::GLWESecretSampling;
+use poulpy_core::layouts::{GLWEAutomorphismKeyAlloc, GLWESecretAlloc, GLWESwitchingKeyAlloc, GLWETensorKeyAlloc};
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 
 use anyhow::{Context, Result, ensure};
 use poulpy_core::{
@@ -27,9 +28,11 @@ use crate::{
     api::{CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar, CKKSLinearTransformationOps},
     encoding::linear_transformation::period_degree,
     layouts::{
-        BootstrappingKeySet, BootstrappingKeysLayout, CKKSModuleAlloc, CKKSPlaintextOwned, ComplexDiagonals,
-        EncapsulationKeysLayout, MaskedCoeffs,
-        eval_mod::{EvalMod, EvalModPlan, EvalModType, compile_eval_mod_replicated, compile_eval_mod_replicated_packed},
+        BootstrappingKeySet, BootstrappingKeysLayout, CKKSCiphertextAlloc, CKKSLinearTransformationAlloc, CKKSPlaintextAlloc,
+        CKKSPlaintextOwned, ComplexDiagonals, EncapsulationKeysLayout, MaskedCoeffs,
+        eval_mod::{
+            EvalMod, EvalModPlan, EvalModType, ckks_eval_mod_replicated_compile, ckks_eval_mod_replicated_packed_compile,
+        },
     },
     polynomial::SplitStrategy,
     shaping::ShapingRing,
@@ -340,7 +343,7 @@ impl<BE: Backend> ReplicatedTransform<BE> {
         };
         let mut lt = module.ckks_linear_transformation_alloc_from_infos(&lt_layout, &infos);
         let pt_slots = module.ckks_slots_of_degree(infos.glwe_layout.n.as_usize());
-        let mut scratch = ScratchOwned::<BE>::alloc(module.ckks_reim_tmp_bytes(pt_slots));
+        let mut scratch = ScratchOwned::<BE>::alloc(module.ckks_encoding_host_tmp_bytes(pt_slots));
         let mut targets = lt.giant_steps.iter_mut().flat_map(|gs| {
             let rot = gs.rot;
             gs.diagonals.iter_mut().map(move |d| (rot, &mut d.plaintext))
@@ -360,7 +363,7 @@ impl<BE: Backend> ReplicatedTransform<BE> {
                 });
                 let reps = pt_slots / re.len();
                 result = module
-                    .ckks_encode_reim_slots_into(pt, &re.repeat(reps), &im.repeat(reps), &mut scratch.borrow())
+                    .ckks_encode_all_slots_host_into(pt, &re.repeat(reps), &im.repeat(reps), &mut scratch.borrow())
                     .map_err(anyhow::Error::from);
                 // The diagonals multiply a ciphertext of the full layout.
                 pt.set_slot_layout(SlotLayout::Full);
@@ -369,8 +372,8 @@ impl<BE: Backend> ReplicatedTransform<BE> {
         result?;
         let first = lt.first_diagonal_plaintext().context("a transform has a diagonal")?;
         let mut prepared = LinearTransformationPrepared::<BE>::alloc_prepared_from_index(module, &lt.index(), first);
-        let mut scratch = ScratchOwned::<BE>::alloc(module.ckks_prepare_linear_transformation_rhs_tmp_bytes(first));
-        module.ckks_prepare_linear_transformation_rhs(&mut prepared, &lt, &mut scratch.borrow())?;
+        let mut scratch = ScratchOwned::<BE>::alloc(module.ckks_linear_transformation_rhs_prepare_tmp_bytes(first));
+        module.ckks_linear_transformation_rhs_prepare(&mut prepared, &lt, &mut scratch.borrow())?;
         Ok(Self { lt: prepared })
     }
 }
@@ -396,13 +399,20 @@ fn twisted(layout: &ReplicatedLayout, gal: i64) -> ReplicatedLayout {
 
 /// What building a [`ReplicatedTransform`] needs of a module.
 pub trait ReplicatedTransformModule<BE: Backend, F: CKKSEncodingScalar>:
-    CKKSEncodingOps<BE, F> + CKKSModuleAlloc<BE> + CKKSModuleInfos + GetDegree + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>
+    CKKSEncodingOps<BE, F>
+    + CKKSCiphertextAlloc<BE>
+    + CKKSPlaintextAlloc<BE>
+    + CKKSModuleInfos
+    + GetDegree
+    + CKKSLinearTransformationOps<BE>
+    + CnvPVecAlloc<BE>
 {
 }
 
 impl<BE: Backend, F: CKKSEncodingScalar, M> ReplicatedTransformModule<BE, F> for M where
     M: CKKSEncodingOps<BE, F>
-        + CKKSModuleAlloc<BE>
+        + CKKSCiphertextAlloc<BE>
+        + CKKSPlaintextAlloc<BE>
         + CKKSModuleInfos
         + GetDegree
         + CKKSLinearTransformationOps<BE>
@@ -496,14 +506,18 @@ impl ReplicatedBootstrapPlan {
         self.k_boot(k_out) + self.extra_bits
     }
 
-    /// Key layouts for outputs of width `k_out`: the automorphism and tensor
-    /// keys cover [`Self::key_k`] in digits of `k_digit` bits, with an
-    /// auxiliary modulus of `k_aux` bits; with `encapsulation`, the key to the
-    /// ephemeral secret covers the ModUp input in one-limb digits and an
-    /// auxiliary modulus of one limb and a bit. The key back covers the lifted
-    /// ModUp input, with its rows offset to end at the raised modulus.
+    /// Key layouts for outputs of width `k_out`: the automorphism keys of
+    /// `galois_elements` ([`ReplicatedBootstrapping::galois_elements`]) and the
+    /// tensor key share one gadget, covering [`Self::key_k`] in digits of
+    /// `k_digit` bits with an auxiliary modulus of `k_aux` bits; with
+    /// `encapsulation`, the key to the ephemeral secret covers the ModUp input
+    /// in one-limb digits and an auxiliary modulus of one limb and a bit. The
+    /// key back covers the lifted ModUp input, with its rows offset to end at
+    /// the raised modulus.
+    #[allow(clippy::too_many_arguments)]
     pub fn key_layouts(
         &self,
+        galois_elements: &[i64],
         n: Degree,
         base2k: Base2K,
         k_out: usize,
@@ -525,18 +539,18 @@ impl ReplicatedBootstrapPlan {
         };
         let k_key = self.key_k(k_out);
         let one_limb = TorusPrecision(base2k.as_u32());
+        let rotation_key = GLWEAutomorphismKeyLayout {
+            n,
+            base2k,
+            dnum: dnum(k_key, digit),
+            k_aux: TorusPrecision(k_aux as u32),
+            rank: Rank(1),
+            k_digit: digit,
+        };
         BootstrappingKeysLayout {
-            rotation_keys: BTreeMap::new(),
+            rotation_keys: galois_elements.iter().map(|&p| (p, rotation_key)).collect(),
             first_factor_key: None,
             conversion_keys: None,
-            automorphism_key: GLWEAutomorphismKeyLayout {
-                n,
-                base2k,
-                dnum: dnum(k_key, digit),
-                k_aux: TorusPrecision(k_aux as u32),
-                rank: Rank(1),
-                k_digit: digit,
-            },
             tensor_key: GLWETensorKeyLayout {
                 n,
                 base2k,
@@ -565,6 +579,7 @@ impl ReplicatedBootstrapPlan {
     /// `log2(QP) = k_offset + (dnum + 1)·k_digit`.
     pub fn secure_key_layouts(
         &self,
+        galois_elements: &[i64],
         n: Degree,
         base2k: Base2K,
         k_out: usize,
@@ -587,7 +602,7 @@ impl ReplicatedBootstrapPlan {
             .map(|dnum| window.div_ceil(dnum))
             .find(|&digit| (window.div_ceil(digit) * digit).max(raised) + digit <= max_dense_modulus)
             .context("no sparse-to-dense gadget fits the raised modulus and its auxiliary digit")?;
-        let mut layouts = self.key_layouts(n, base2k, k_out, k_digit, k_digit, true);
+        let mut layouts = self.key_layouts(galois_elements, n, base2k, k_out, k_digit, k_digit, true);
         if let Some(encapsulation) = layouts.encapsulation.as_mut() {
             let sparse = TorusPrecision(sparse_digit as u32);
             encapsulation.dense_to_sparse.k_digit = sparse;
@@ -686,8 +701,8 @@ impl<BE: Backend, F: CKKSEncodingScalar> ReplicatedBootstrapping<BE, F> {
             })?,
         };
         let eval_mod = match packed {
-            Some(double) => compile_eval_mod_replicated_packed::<BE, F>(base2k, plan.eval_mod, double, module, scratch)?,
-            None => compile_eval_mod_replicated::<BE, F>(base2k, plan.eval_mod, layout, module, scratch)?,
+            Some(double) => ckks_eval_mod_replicated_packed_compile::<BE, F>(base2k, plan.eval_mod, double, module, scratch)?,
+            None => ckks_eval_mod_replicated_compile::<BE, F>(base2k, plan.eval_mod, layout, module, scratch)?,
         };
         Ok(Self {
             plan,
@@ -763,6 +778,10 @@ impl<BE: Backend, F> ReplicatedBootstrapping<BE, F> {
     /// keys of [`Self::galois_elements`], the tensor key, and with
     /// `layout.encapsulation` the keys to and from an ephemeral secret of
     /// Hamming weight `hamming_weight` sampled from `source_xs`.
+    ///
+    /// # Panics
+    ///
+    /// If `layout.rotation_keys` has no layout for one of [`Self::galois_elements`].
     #[allow(clippy::too_many_arguments)]
     pub fn generate_keys(
         &self,
@@ -794,7 +813,11 @@ impl<BE: Backend, F> ReplicatedBootstrapping<BE, F> {
         );
         let mut rotation_keys = HashMap::new();
         for gal in self.galois_elements(module) {
-            let mut key = module.glwe_automorphism_key_alloc_from_infos(&layout.rotation_key(gal));
+            let key_layout = layout
+                .rotation_keys
+                .get(&gal)
+                .unwrap_or_else(|| panic!("the key layouts have no rotation key for Galois element {gal}"));
+            let mut key = module.glwe_automorphism_key_alloc_from_infos(key_layout);
             module.glwe_automorphism_key_encrypt_sk(&mut key, gal, sk, source_xe, source_xa, scratch);
             rotation_keys.insert(gal, key);
         }
@@ -831,10 +854,10 @@ where
     Module<BE>: ReplicatedTransformModule<BE, F>,
 {
     let log_delta = 40;
-    let mut scratch = ScratchOwned::<BE>::alloc(module.ckks_reim_tmp_bytes(k));
+    let mut scratch = ScratchOwned::<BE>::alloc(module.ckks_encoding_host_tmp_bytes(k));
     let mut columns = Vec::with_capacity(k);
     for j in 0..k {
-        let mut pt = module.ckks_pt_vec_alloc(k, base2k, TorusPrecision((log_delta + 2) as u32));
+        let mut pt = module.ckks_plaintext_alloc_from_slots(k, base2k, TorusPrecision((log_delta + 2) as u32));
         pt.set_meta(GLWEPlaintextMeta {
             scale: Scale::Log(log_delta),
             slots: SlotsKind::Complex,
@@ -845,7 +868,7 @@ where
         coeffs[j] = F::one();
         module.ckks_encode_coeffs_host_into(&mut pt, &coeffs, &mut scratch.borrow())?;
         let (mut re, mut im) = (vec![F::zero(); k], vec![F::zero(); k]);
-        module.ckks_decode_reim_into(&pt, &mut re, &mut im, &mut scratch.borrow())?;
+        module.ckks_decode_slots_host_into(&pt, &mut re, &mut im, &mut scratch.borrow())?;
         columns.push(re.into_iter().zip(im).collect::<Vec<_>>());
     }
     // `Y'^k` is `i` on every slot, so `m_j + i·m_(j+k)` reads `V[c][j]`.

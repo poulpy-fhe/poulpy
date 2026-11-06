@@ -4,7 +4,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    GLWEMaskFill,
+    GLWEFill,
     layouts::{
         GGLWEAtViewMut, GGLWEInfos, GetAutomorphismKey, GetTensorKey, TorusPrecision,
         prepared::{GLWEAutomorphismKeyPreparedBackendRef, GLWETensorKeyPreparedBackendRef},
@@ -21,7 +21,7 @@ use crate::{
 /// exactly where the coarsening says they are and nowhere else.
 pub fn fill_by_digit<BE: Backend, K>(module: &Module<BE>, key: &mut K, stride: usize, source: &mut Source)
 where
-    Module<BE>: GLWEMaskFill<BE>,
+    Module<BE>: GLWEFill<BE>,
     K: GGLWEAtViewMut<BE> + GGLWEInfos,
 {
     let (rows, cols_in) = (key.dnum().as_usize(), key.rank_in().as_usize());
@@ -33,7 +33,7 @@ where
             } else {
                 &mut poison
             };
-            module.fill_glwe_from_source(&mut key.at_view_mut(row, col), stream);
+            module.glwe_fill_from_source(&mut key.at_view_mut(row, col), stream);
         }
     }
 }

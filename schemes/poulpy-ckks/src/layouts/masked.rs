@@ -18,7 +18,7 @@ use crate::{
 };
 
 use super::{
-    CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextOwned,
+    CKKSCiphertextAlloc, CKKSPlaintext, CKKSPlaintextAlloc, CKKSPlaintextOwned,
     eval_mod::{encode_bsgs_with, encode_complex_bsgs_with, encode_scalar_constants},
 };
 
@@ -137,7 +137,7 @@ pub(crate) fn encode_masked_constants<BE, F>(
 ) -> Result<MaskedCoeffs<CKKSPlaintextOwned<BE>>>
 where
     BE: Backend,
-    Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F> + GetDegree + CKKSModuleInfos,
+    Module<BE>: CKKSCiphertextAlloc<BE> + CKKSPlaintextAlloc<BE> + CKKSEncodingOps<BE, F> + GetDegree + CKKSModuleInfos,
     F: CKKSEncodingScalar,
 {
     let scalars = encode_scalar_constants(module, base2k, coeff_meta, values, scratch)?;
@@ -151,7 +151,7 @@ where
                 slot_layout: SlotLayout::Replicated(layout),
                 ..coeff_meta.meta
             });
-            module.ckks_encode_masked_constant_into(&mut pt, value, F::zero(), scratch)?;
+            module.ckks_encode_masked_constant_host_into(&mut pt, value, F::zero(), scratch)?;
             Ok(pt)
         })
         .collect::<Result<Vec<_>>>()?;
@@ -173,18 +173,18 @@ pub(crate) fn encode_masked_constants_phased<BE, F>(
 ) -> Result<MaskedCoeffs<CKKSPlaintextOwned<BE>>>
 where
     BE: Backend,
-    Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F> + GetDegree + CKKSModuleInfos,
+    Module<BE>: CKKSCiphertextAlloc<BE> + CKKSPlaintextAlloc<BE> + CKKSEncodingOps<BE, F> + GetDegree + CKKSModuleInfos,
     F: CKKSEncodingScalar,
 {
     let mut constants = encode_masked_constants(module, base2k, coeff_meta, layout, values, scratch)?;
     let half = 1usize << (layout.log_k() - 1);
     let slots = (2 * half) << layout.log_r();
-    let mut host = ScratchOwned::<BE>::alloc(module.ckks_reim_tmp_bytes(slots));
+    let mut host = ScratchOwned::<BE>::alloc(module.ckks_encoding_host_tmp_bytes(slots));
     for ((masked, &value), &(re, im)) in constants.masked.iter_mut().zip(values).zip(phases) {
         if re == F::one() && im == F::zero() {
             continue;
         }
-        let mut pt = module.ckks_pt_vec_alloc(slots, base2k, coeff_meta.k);
+        let mut pt = module.ckks_plaintext_alloc_from_slots(slots, base2k, coeff_meta.k);
         pt.set_meta(GLWEPlaintextMeta {
             slots: SlotsKind::Complex,
             slot_layout: SlotLayout::Replicated(layout),
@@ -192,7 +192,7 @@ where
         });
         let re: Vec<F> = (0..2 * half).map(|j| if j < half { value } else { value * re }).collect();
         let im: Vec<F> = (0..2 * half).map(|j| if j < half { F::zero() } else { value * im }).collect();
-        module.ckks_encode_reim_into(&mut pt, &re, &im, &mut host.borrow())?;
+        module.ckks_encode_slots_host_into(&mut pt, &re, &im, &mut host.borrow())?;
         *masked = pt;
     }
     Ok(constants)
@@ -211,7 +211,7 @@ pub fn encode_bsgs_replicated<BE, F>(
 ) -> Result<BSGSPolynomial<MaskedCoeffs<CKKSPlaintextOwned<BE>>>>
 where
     BE: Backend,
-    Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F> + GetDegree + CKKSModuleInfos,
+    Module<BE>: CKKSCiphertextAlloc<BE> + CKKSPlaintextAlloc<BE> + CKKSEncodingOps<BE, F> + GetDegree + CKKSModuleInfos,
     F: CKKSEncodingScalar,
 {
     let mut coeff_meta = coeff_meta;
@@ -233,7 +233,7 @@ pub fn encode_complex_bsgs_replicated<BE, F>(
 ) -> Result<ComplexBSGSPolynomial<MaskedCoeffs<CKKSPlaintextOwned<BE>>>>
 where
     BE: Backend,
-    Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F> + GetDegree + CKKSModuleInfos,
+    Module<BE>: CKKSCiphertextAlloc<BE> + CKKSPlaintextAlloc<BE> + CKKSEncodingOps<BE, F> + GetDegree + CKKSModuleInfos,
     F: CKKSEncodingScalar,
 {
     let mut coeff_meta = coeff_meta;

@@ -12,7 +12,7 @@
 //! which is precisely why interchangeability is opt-in per container family.
 //!
 //! Word types are a sizing + identity contract, not necessarily an element
-//! view: [`Backend::bytes_of_vmp_pmat`](crate::layouts::Backend::bytes_of_vmp_pmat)
+//! view: [`Backend::vmp_pmat_bytes_of`](crate::layouts::Backend::vmp_pmat_bytes_of)
 //! and friends remain authoritative for total buffer sizes and may be
 //! overridden by backends whose packed representation diverges from
 //! `n * cols * size * size_of::<Word>()`.

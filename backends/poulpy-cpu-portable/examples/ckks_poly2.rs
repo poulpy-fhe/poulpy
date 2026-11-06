@@ -26,16 +26,16 @@ use poulpy_ckks::{
     CKKSInfos, CKKSLayout, CoeffsMeta, GLWEPlaintextMeta, SetCKKSInfos, SlotLayout, SlotsKind,
     api::CKKSEncodingHostOps,
     api::{CKKSAllOpsTmpBytes, CKKSDecryptOps, CKKSEncryptOps, CKKSPolynomialEvaluationOps},
-    layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext},
-    polynomial::{BSGSPolynomial, Basis, EncodeBSGS, Polynomial},
-    power_basis::{PowerBasis, PowerBasisGen},
+    layouts::{CKKSCiphertext, CKKSCiphertextAlloc, CKKSPlaintext, CKKSPlaintextAlloc},
+    polynomial::{BSGSPolynomial, Basis, CKKSPolynomialEncode, Polynomial},
+    power_basis::{CKKSPowerBasisGen, PowerBasis},
 };
 use poulpy_core::api::GLWESecretSampling;
 use poulpy_core::{
     GLWETensorKeyEncryptSk,
     api::{GLWESecretPreparedFactory, GLWETensorKeyPreparedFactory},
     layouts::{
-        Base2K, Degree, GLWELayout, GLWETensorKeyLayout, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision,
+        Base2K, Degree, GLWELayout, GLWESecretAlloc, GLWETensorKeyAlloc, GLWETensorKeyLayout, LWEInfos, Rank, TorusPrecision,
         prepared::{GLWESecretPrepared, GLWETensorKeyPrepared},
     },
 };
@@ -231,7 +231,7 @@ fn setup() -> Result<SetupArtifacts> {
         module.glwe_tensor_key_encrypt_sk(&mut tsk, &sk_raw, &mut source_xe, &mut source_xa, &mut scratch_local);
     }
 
-    let mut tsk_prepared = module.alloc_tensor_key_prepared_from_infos(&tsk_layout());
+    let mut tsk_prepared = module.glwe_tensor_key_prepared_alloc_from_infos(&tsk_layout());
     {
         let mut scratch_local = scratch.borrow();
         module.glwe_tensor_key_prepare(&mut tsk_prepared, &tsk, &mut scratch_local);
@@ -265,11 +265,11 @@ fn encoding(setup: &mut SetupArtifacts) -> Result<EncodingArtifacts> {
 
     let mut pt_znx = setup
         .module
-        .ckks_pt_vec_alloc(setup.module.ckks_max_slots(), BASE2K.into(), PREC_CT.k());
+        .ckks_plaintext_alloc_from_slots(setup.module.ckks_max_slots(), BASE2K.into(), PREC_CT.k());
     pt_znx.set_meta(PREC_CT.meta());
     setup
         .module
-        .ckks_encode_reim_into(&mut pt_znx, &x_re, &x_im, &mut setup.scratch.borrow())?;
+        .ckks_encode_slots_host_into(&mut pt_znx, &x_re, &x_im, &mut setup.scratch.borrow())?;
     print_pt_meta("encoded plaintext x", &pt_znx);
     println!("  x[0] = {:.6}", x_re[0]);
 
@@ -370,7 +370,7 @@ fn decryption(setup: &mut SetupArtifacts, evaluation: &EvaluationArtifacts) -> R
     let mut have_im = vec![0.0; M];
     setup
         .module
-        .ckks_decode_reim_into(&pt_znx, &mut have_re, &mut have_im, &mut setup.scratch.borrow())?;
+        .ckks_decode_slots_host_into(&pt_znx, &mut have_re, &mut have_im, &mut setup.scratch.borrow())?;
     println!("  sin(x[0]) decrypted = {:.15}", have_re[0]);
 
     Ok(DecryptionArtifacts { have_re })

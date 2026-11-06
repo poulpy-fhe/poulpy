@@ -10,7 +10,7 @@ use super::helpers::{
 };
 use super::parity::helpers::{snapshot, with_scratch};
 use poulpy_hal::{
-    api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow},
+    api::{ReimNew, ScratchOwnedBorrow},
     layouts::{HostBytesBackend, Module, Standard},
 };
 
@@ -25,7 +25,7 @@ where
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -72,7 +72,7 @@ where
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -120,7 +120,7 @@ where
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -168,7 +168,7 @@ where
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -214,7 +214,7 @@ where
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -267,7 +267,7 @@ where
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -315,7 +315,7 @@ pub fn test_div_pow2_assign_rejects_insufficient_capacity<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -360,7 +360,7 @@ pub fn test_double_into_rejects_insufficient_capacity<BE, F, E>(
     BE: crate::test_suite::helpers::TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
     poulpy_hal::layouts::Module<BE>: crate::test_suite::helpers::TestContextModule<BE>,
     F: crate::test_suite::helpers::TestScalar,
-    E: poulpy_hal::api::NegacyclicFFT<F> + poulpy_hal::api::NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     use crate::test_suite::{
         helpers::assert_ckks_error,
@@ -376,7 +376,7 @@ pub fn test_double_into_rejects_insufficient_capacity<BE, F, E>(
     use crate::api::CKKSPow2Ops;
     let a = fixture_ciphertext(module, &ct_layout, 41);
     let mut res = fixture_ciphertext(module, &layout(params, params.rank, b - 2, b - 3, 0, SlotsKind::Complex), 31);
-    for bytes in [0, module.ckks_mul_pow2_tmp_bytes(res.max_size())] {
+    for bytes in [0, module.ckks_double_tmp_bytes(res.max_size())] {
         let before = snapshot::<BE, _>(&res);
         let err = with_scratch::<BE, _>(bytes, |s| module.ckks_double_into(&mut res, &a, s)).unwrap_err();
         assert_ckks_error(

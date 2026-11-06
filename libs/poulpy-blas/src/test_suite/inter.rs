@@ -11,7 +11,7 @@ use poulpy_ckks::{
     },
 };
 use poulpy_hal::{
-    api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow},
+    api::{ReimNew, ScratchOwnedBorrow},
     layouts::{CyclotomicOrder, HostBytesBackend, HostDataMut, HostDataRef, Module, Standard},
 };
 
@@ -38,7 +38,7 @@ pub fn test_blas_rotate<BE, F, E>(
     BE: TestContextBackend<Ring = Standard> + BlasMatInterImpl,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
@@ -91,7 +91,7 @@ where
     BE: TestContextBackend<Ring = Standard> + BlasMatInterImpl,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
@@ -150,7 +150,7 @@ pub fn test_blas_inter_guards<BE, F, E>(
     BE: TestContextBackend<Ring = Standard> + BlasMatInterImpl,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {

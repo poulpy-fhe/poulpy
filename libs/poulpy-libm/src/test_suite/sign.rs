@@ -4,14 +4,14 @@ use poulpy_core::layouts::{
     GGLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, prepared::GLWETensorKeyPreparedToBackendRef,
 };
 use poulpy_hal::{
-    api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
+    api::{ReimNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{HostBytesBackend, Module, ScratchOwned, Standard},
     source::Source,
 };
 
 use poulpy_ckks::{
     CKKSCtBounds, CKKSInfos, GLWEPlaintextMeta, Scale, SetCKKSInfos,
-    layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext},
+    layouts::{CKKSCiphertext, CKKSCiphertextAlloc, CKKSPlaintext},
     polynomial::SplitStrategy,
     test_suite::{
         CKKSTestParams,
@@ -39,7 +39,7 @@ where
     CKKSPlaintext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE> + LWEInfos + poulpy_core::layouts::IntPolyInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let coeff_meta = ckks_spec(base.n, base.base2k, base.prec().log_delta(), base.base2k);
     assert_error(
@@ -57,7 +57,7 @@ where
             SplitStrategy::MinDepth,
             host_module,
         ),
-        "sign_composite_coeffs_with_margin: tau must lie in (0, 1)",
+        "sign_composite_coeffs_with: tau must lie in (0, 1)",
     );
     run_case::<BE, F, E>(base, module, host_module, false);
 }
@@ -71,7 +71,7 @@ where
     CKKSPlaintext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE> + LWEInfos + poulpy_core::layouts::IntPolyInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     run_case::<BE, F, E>(base, module, host_module, true);
 }
@@ -87,7 +87,7 @@ where
     CKKSPlaintext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE> + LWEInfos + poulpy_core::layouts::IntPolyInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let log_delta = base.prec().log_delta();
     let coeff_meta = ckks_spec(base.n, base.base2k, log_delta, base.base2k);
@@ -148,7 +148,7 @@ where
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut sizing = module.ckks_ciphertext_alloc(params.base2k.into(), params.k.into());
     sizing.set_meta(params.prec().meta);
-    let scratch_size = module.ckks_sign_tmp_bytes(&sizing, &sizing, &params.tsk_layout(), &params.atk_layout(), &coeff_meta);
+    let scratch_size = module.ckks_sign_tmp_bytes(&sizing, &sizing, &coeff_meta, &params.tsk_layout(), &params.atk_layout());
     let mut scratch = ScratchOwned::<BE>::alloc(scratch_size);
     let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
     let conj_key = gen_atk(&params, module, -1, &sk_raw, &mut scratch.borrow());
@@ -184,7 +184,7 @@ where
     CKKSPlaintext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE> + LWEInfos + poulpy_core::layouts::IntPolyInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
 {
     let label = if step { "step_composite" } else { "sign_composite" };
     let log_delta = base.prec().log_delta();
@@ -237,7 +237,7 @@ where
 
     let mut sizing = module.ckks_ciphertext_alloc(params.base2k.into(), params.k.into());
     sizing.set_meta(params.prec().meta);
-    let scratch_size = module.ckks_sign_tmp_bytes(&sizing, &sizing, &params.tsk_layout(), &params.atk_layout(), &coeff_meta);
+    let scratch_size = module.ckks_sign_tmp_bytes(&sizing, &sizing, &coeff_meta, &params.tsk_layout(), &params.atk_layout());
     let mut scratch = ScratchOwned::<BE>::alloc(scratch_size);
     let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
     let conj_key = gen_atk(&params, module, -1, &sk_raw, &mut scratch.borrow());

@@ -14,7 +14,7 @@ use poulpy_hal::layouts::{Backend, HostBytesBackend, Module, ScratchArena};
 use poulpy_ckks::{
     CKKSCtBounds, CKKSInfos, CKKSLayout, SetCKKSInfos,
     api::{CKKSAddOps, CKKSMulOps},
-    layouts::{CKKSPlaintext, CKKSPlaintextVecHostCodec, CKKSScalar, ScratchArenaTakeCKKS},
+    layouts::{CKKSPlaintext, CKKSPlaintextVecHostCodec, CKKSScalar, ScratchArenaTakeCKKSCiphertext},
 };
 
 use crate::{
@@ -173,23 +173,23 @@ pub trait CKKSRootOps<BE: Backend> {
     declare_unary_op!(ckks_cbrt_tmp_bytes, ckks_cbrt, CbrtPlan, "cbrt");
 
     /// Scratch bytes for [`Self::ckks_hypot`].
-    fn ckks_hypot_tmp_bytes<R, X, Y, T, P>(&self, res: &R, x: &X, y: &Y, tsk: &T, plan: &HypotPlan<P>) -> usize
+    fn ckks_hypot_tmp_bytes<R, X, Y, P, T>(&self, res: &R, x: &X, y: &Y, plan: &HypotPlan<P>, tsk: &T) -> usize
     where
         R: CKKSCtBounds,
         X: CKKSCtBounds,
         Y: CKKSCtBounds,
-        T: GGLWEInfos,
-        P: CKKSInfos + LWEInfos;
+        P: CKKSInfos + LWEInfos,
+        T: GGLWEInfos;
 
     /// Evaluates `hypot(x, y) = sqrt(x^2 + y^2)` for `x` and `y` in the plan's intervals.
     ///
     /// # Metadata
     ///
-    /// As `ckks_eval_approximation` of the square-root polynomial on `x^2 + y^2`, computed at the layout of `x`.
+    /// As `ckks_polynomial_approximation_eval` of the square-root polynomial on `x^2 + y^2`, computed at the layout of `x`.
     ///
     /// # Errors
     ///
-    /// The errors of the squares, the sum and `ckks_eval_approximation`, the last call and the only write of `res`.
+    /// The errors of the squares, the sum and `ckks_polynomial_approximation_eval`, the last call and the only write of `res`.
     fn ckks_hypot<R, X, Y, P, H>(
         &self,
         res: &mut R,
@@ -213,13 +213,13 @@ where
 {
     impl_unary_op!(ckks_cbrt_tmp_bytes, ckks_cbrt, CbrtPlan);
 
-    fn ckks_hypot_tmp_bytes<R, X, Y, T, P>(&self, res: &R, x: &X, y: &Y, tsk: &T, plan: &HypotPlan<P>) -> usize
+    fn ckks_hypot_tmp_bytes<R, X, Y, P, T>(&self, res: &R, x: &X, y: &Y, plan: &HypotPlan<P>, tsk: &T) -> usize
     where
         R: CKKSCtBounds,
         X: CKKSCtBounds,
         Y: CKKSCtBounds,
-        T: GGLWEInfos,
         P: CKKSInfos + LWEInfos,
+        T: GGLWEInfos,
     {
         // The sum has the layout of `x`, and `y^2` that of `y`.
         let sum = BE::scratch_aligned(self.glwe_bytes_of_from_infos(x));
@@ -227,7 +227,7 @@ where
         sum + self
             .ckks_square_tmp_bytes(x, x, tsk)
             .max(y2 + self.ckks_square_tmp_bytes(y, y, tsk).max(self.ckks_add_tmp_bytes(x.size())))
-            .max(self.ckks_approximation_tmp_bytes(res, x, &plan.sqrt, tsk))
+            .max(self.ckks_polynomial_approximation_eval_tmp_bytes(res, x, &plan.sqrt, tsk))
     }
 
     fn ckks_hypot<R, X, Y, P, H>(
@@ -254,7 +254,7 @@ where
                 self.ckks_square_into(&mut y2, y, tsk, &mut stage)?;
                 self.ckks_add_assign(&mut sum, &y2, &mut stage)
             })?;
-            self.ckks_eval_approximation(res, &sum, &plan.sqrt, tsk, &mut scratch_local)?;
+            self.ckks_polynomial_approximation_eval(res, &sum, &plan.sqrt, tsk, &mut scratch_local)?;
             Ok(())
         })
     }

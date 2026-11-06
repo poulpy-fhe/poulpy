@@ -4,7 +4,7 @@ use poulpy_hal::{
         ScratchArena, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut, assert_dense, check_cnv_dft_term,
         check_cnv_dft_terms, check_degree,
     },
-    oep::HalConvolutionImpl,
+    oep::HalCnvImpl,
 };
 
 use super::operand::{
@@ -49,7 +49,7 @@ fn check_mul_columns<RT: GpuRuntime, R: Ring>(
 /// of `diag` receive `a0 * b0` and `a1 * b1`, column 0 of `cross` receives
 /// `(a0 + a1) * (b0 + b1) - diag0 - diag1`. A square reads the left prepared
 /// form on both sides: `a` and `b` then prepare one operand
-/// (`GLWETensoringImpl::glwe_square_prepare`), and `b` is only checked.
+/// (`GLWETensoringImpl::glwe_square_operand_prepare`), and `b` is only checked.
 // The body of the core hooks `GLWETensoringImpl::glwe_mul_columns` and `glwe_square_columns`.
 #[cfg_attr(not(feature = "enable-core"), allow(dead_code))]
 pub(crate) fn glwe_mul_columns<RT: GpuRuntime, R: Ring>(
@@ -80,21 +80,27 @@ pub(crate) fn glwe_mul_columns<RT: GpuRuntime, R: Ring>(
     );
 }
 
-/// The checks of `cnv_prepare_self`, then its left form alone, `None` when
-/// `left` holds no storage: the first half of `cnv_prepare_self`, and the
-/// preparation of a square (`GLWETensoringImpl::glwe_square_prepare`), which
+/// The checks of `cnv_pvec_self_prepare`, then its left form alone, `None` when
+/// `left` holds no storage: the first half of `cnv_pvec_self_prepare`, and the
+/// preparation of a square (`GLWETensoringImpl::glwe_square_operand_prepare`), which
 /// reads the left form on both sides and leaves `right` unwritten.
 #[cfg_attr(not(feature = "enable-core"), allow(dead_code))]
-pub(crate) fn cnv_prepare_self_left<RT: GpuRuntime, R: Ring>(
+pub(crate) fn cnv_pvec_self_prepare_left<RT: GpuRuntime, R: Ring>(
     module: &Module<NTT4x30Gpu<RT, R>>,
     left: &mut CnvPVecLBackendMut<'_, NTT4x30Gpu<RT, R>>,
     right: &CnvPVecRBackendMut<'_, NTT4x30Gpu<RT, R>>,
     a: &VecZnxBackendRef<'_, NTT4x30Gpu<RT, R>>,
 ) -> Option<DftColumn> {
-    assert!(right.size() == left.size(), "cnv_prepare_self: right.size() != left.size()");
-    assert!(right.cols() == left.cols(), "cnv_prepare_self: right.cols() != left.cols()");
-    assert!(right.n() == left.n(), "cnv_prepare_self: right.n() != left.n()");
-    assert!(a.cols() == left.cols(), "cnv_prepare_self: left.cols() != a.cols()");
+    assert!(
+        right.size() == left.size(),
+        "cnv_pvec_self_prepare: right.size() != left.size()"
+    );
+    assert!(
+        right.cols() == left.cols(),
+        "cnv_pvec_self_prepare: right.cols() != left.cols()"
+    );
+    assert!(right.n() == left.n(), "cnv_pvec_self_prepare: right.n() != left.n()");
+    assert!(a.cols() == left.cols(), "cnv_pvec_self_prepare: left.cols() != a.cols()");
     check_prepare(module, left.n(), a);
     let left0 = cnv_left_overwritten(left)?;
     prepare(module, &left0, left.cols(), a);
@@ -143,51 +149,51 @@ fn right_plan<RT: GpuRuntime, R: Ring>(
     AutomorphismPlan::new(b.n(), b_galois, handle(module).tables().invariant())
 }
 
-unsafe impl<RT: GpuRuntime, R: Ring> HalConvolutionImpl for NTT4x30Gpu<RT, R> {
-    fn cnv_prepare_left_tmp_bytes(_module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
+unsafe impl<RT: GpuRuntime, R: Ring> HalCnvImpl for NTT4x30Gpu<RT, R> {
+    fn cnv_pvec_left_prepare_tmp_bytes(_module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
         0
     }
 
-    fn cnv_prepare_left(
+    fn cnv_pvec_left_prepare(
         module: &Module<Self>,
         res: &mut CnvPVecLBackendMut<'_, Self>,
         a: &VecZnxBackendRef<'_, Self>,
         _scratch: &mut ScratchArena<'_, Self>,
     ) {
-        assert!(a.cols() == res.cols(), "cnv_prepare_left: res.cols() != a.cols()");
+        assert!(a.cols() == res.cols(), "cnv_pvec_left_prepare: res.cols() != a.cols()");
         check_prepare(module, res.n(), a);
         let Some(res0) = cnv_left_overwritten(res) else { return };
         prepare(module, &res0, res.cols(), a);
     }
 
-    fn cnv_prepare_right_tmp_bytes(_module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
+    fn cnv_pvec_right_prepare_tmp_bytes(_module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
         0
     }
 
-    fn cnv_prepare_right(
+    fn cnv_pvec_right_prepare(
         module: &Module<Self>,
         res: &mut CnvPVecRBackendMut<'_, Self>,
         a: &VecZnxBackendRef<'_, Self>,
         _scratch: &mut ScratchArena<'_, Self>,
     ) {
-        assert!(a.cols() == res.cols(), "cnv_prepare_right: res.cols() != a.cols()");
+        assert!(a.cols() == res.cols(), "cnv_pvec_right_prepare: res.cols() != a.cols()");
         check_prepare(module, res.n(), a);
         let Some(res0) = cnv_right_overwritten(res) else { return };
         prepare(module, &res0, res.cols(), a);
     }
 
-    fn cnv_prepare_self_tmp_bytes(_module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
+    fn cnv_pvec_self_prepare_tmp_bytes(_module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
         0
     }
 
-    fn cnv_prepare_self(
+    fn cnv_pvec_self_prepare(
         module: &Module<Self>,
         left: &mut CnvPVecLBackendMut<'_, Self>,
         right: &mut CnvPVecRBackendMut<'_, Self>,
         a: &VecZnxBackendRef<'_, Self>,
         _scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let Some(left0) = cnv_prepare_self_left(module, left, right, a) else {
+        let Some(left0) = cnv_pvec_self_prepare_left(module, left, right, a) else {
             return;
         };
         // Both prepared forms are the transform: the right one is a copy.

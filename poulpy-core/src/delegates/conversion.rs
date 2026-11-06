@@ -160,15 +160,15 @@ impl_conversion_delegate!(
 impl_conversion_delegate!(
     GGSWExpandRows<BE>,
     [BE: Backend + crate::oep::GGSWConversionImpl],
-    fn ggsw_expand_rows_tmp_bytes<R, A>(&self, res_infos: &R, tsk_infos: &A) -> usize
+    fn ggsw_expand_rows_assign_tmp_bytes<R, A>(&self, res_infos: &R, tsk_infos: &A) -> usize
     where
         R: GGSWInfos,
         A: GGLWEInfos,
     {
-        BE::ggsw_expand_rows_tmp_bytes(self, res_infos, tsk_infos)
+        BE::ggsw_expand_rows_assign_tmp_bytes(self, res_infos, tsk_infos)
     }
 
-    fn ggsw_expand_row<R>(
+    fn ggsw_expand_rows_assign<R>(
         &self,
         res: &mut R,
         tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, BE>,
@@ -177,6 +177,6 @@ impl_conversion_delegate!(
     where
         R: GGSWToBackendMut<BE> + GGSWInfos,
     {
-        BE::ggsw_expand_row(self, res, tsk, scratch)
+        BE::ggsw_expand_rows_assign(self, res, tsk, scratch)
     }
 );

@@ -17,7 +17,7 @@ use crate::{
     },
     layouts::{
         BootstrappingKeys, CKKSCiphertextViewMut, ReplicatedBootstrapWorkspace, ReplicatedBootstrapping, ReplicatedConversion,
-        ReplicatedTransform, ReplicatedTransformWorkspace, ScratchArenaTakeCKKS,
+        ReplicatedTransform, ReplicatedTransformWorkspace, ScratchArenaTakeCKKSCiphertext,
     },
     oep::{CKKSEncapsulatedModUpImpl, CKKSModUpFirstFactorImpl},
     reference::bootstrapping::ckks_bootstrap_mod_up_from_mut,
@@ -167,8 +167,8 @@ where
     H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
 {
     check_workspace("replicated_transform", workspace, &x.glwe_layout(), transform)?;
-    module.ckks_prepare_linear_transformation_baby_steps(&mut workspace.babies, x, keys, scratch)?;
-    module.ckks_eval_linear_transformation_into(acc, x, &workspace.babies, &transform.lt, keys, scratch)
+    module.ckks_linear_transformation_baby_steps_prepare(&mut workspace.babies, x, keys, scratch)?;
+    module.ckks_linear_transformation_eval_into(acc, x, &workspace.babies, &transform.lt, keys, scratch)
 }
 
 fn check_workspace<BE: Backend>(
@@ -194,12 +194,12 @@ where
     K: GGLWEInfos,
 {
     module
-        .ckks_prepare_linear_transformation_baby_steps_tmp_bytes(
+        .ckks_linear_transformation_baby_steps_prepare_tmp_bytes(
             wide,
             &poulpy_core::layouts::LinearTransformationPlan::default(),
             key_infos,
         )
-        .max(module.ckks_eval_linear_transformation_tmp_bytes(
+        .max(module.ckks_linear_transformation_eval_tmp_bytes(
             wide,
             &crate::api::ckks_plaintext_diagonal_layout(wide),
             &poulpy_core::layouts::LinearTransformationPlan::default(),
@@ -209,7 +209,7 @@ where
 }
 
 fn ct_bytes<BE: Backend>(layout: &GLWELayout) -> usize {
-    BE::scratch_aligned(BE::bytes_of_vec_znx(
+    BE::scratch_aligned(BE::vec_znx_bytes_of(
         layout.n.as_usize(),
         layout.rank.as_usize() + 1,
         layout.size(),
@@ -319,7 +319,7 @@ where
         glwe_layout: layout,
         meta: ct_infos.meta(),
     };
-    let ct_bytes = BE::scratch_aligned(BE::bytes_of_vec_znx(
+    let ct_bytes = BE::scratch_aligned(BE::vec_znx_bytes_of(
         layout.n.as_usize(),
         layout.rank.as_usize() + 1,
         layout.size(),

@@ -3,11 +3,11 @@ use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetTensorKey};
 use poulpy_hal::layouts::{Backend, Module, PrepareHint, ScratchArena};
 
-use crate::api::CKKSMulOps;
+use crate::api::{CKKSLeftOperandPreparedFactory, CKKSMulOps, CKKSRightOperandPreparedFactory};
 
 use crate::{
     CKKSCtBounds, CKKSInfos, SetCKKSInfos,
-    layouts::{CKKSPreparedLeft, CKKSPreparedRight},
+    layouts::{CKKSLeftOperandPrepared, CKKSRightOperandPrepared},
     oep::CKKSMulImpl,
 };
 
@@ -68,45 +68,10 @@ impl<BE: Backend + CKKSMulImpl> CKKSMulOps<BE> for Module<BE> {
         BE::ckks_mul_assign(self, dst, a, tsk, scratch)
     }
 
-    fn ckks_prepare_tmp_bytes<A>(&self, a: &A) -> usize
-    where
-        A: CKKSCtBounds,
-    {
-        BE::ckks_prepare_tmp_bytes(self, a)
-    }
-
-    fn ckks_prepare_left_into<A>(&self, res: &mut CKKSPreparedLeft<BE>, a: &A, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
-    where
-        A: GLWEToBackendRef<BE> + CKKSCtBounds,
-    {
-        BE::ckks_prepare_left_into(self, res, a, scratch)
-    }
-
-    fn ckks_prepare_right_into<A>(&self, res: &mut CKKSPreparedRight<BE>, a: &A, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
-    where
-        A: GLWEToBackendRef<BE> + CKKSCtBounds,
-    {
-        BE::ckks_prepare_right_into(self, res, a, scratch)
-    }
-
-    fn ckks_prepare_left<A>(&self, a: &A, hint: PrepareHint, scratch: &mut ScratchArena<'_, BE>) -> Result<CKKSPreparedLeft<BE>>
-    where
-        A: GLWEToBackendRef<BE> + CKKSCtBounds,
-    {
-        BE::ckks_prepare_left(self, a, hint, scratch)
-    }
-
-    fn ckks_prepare_right<A>(&self, a: &A, hint: PrepareHint, scratch: &mut ScratchArena<'_, BE>) -> Result<CKKSPreparedRight<BE>>
-    where
-        A: GLWEToBackendRef<BE> + CKKSCtBounds,
-    {
-        BE::ckks_prepare_right(self, a, hint, scratch)
-    }
-
     fn ckks_mul_prepared_assign<Dst, H>(
         &self,
         dst: &mut Dst,
-        prepared: &CKKSPreparedRight<BE>,
+        prepared: &CKKSRightOperandPrepared<BE>,
         tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -179,5 +144,71 @@ impl<BE: Backend + CKKSMulImpl> CKKSMulOps<BE> for Module<BE> {
         P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds,
     {
         BE::ckks_mul_pt_const_assign(self, dst, pt, pt_coeff, scratch)
+    }
+}
+
+impl<BE: Backend + CKKSMulImpl> CKKSLeftOperandPreparedFactory<BE> for Module<BE> {
+    fn ckks_left_operand_prepare_tmp_bytes<A>(&self, a: &A) -> usize
+    where
+        A: CKKSCtBounds,
+    {
+        BE::ckks_left_operand_prepare_tmp_bytes(self, a)
+    }
+
+    fn ckks_left_operand_prepare<A>(
+        &self,
+        res: &mut CKKSLeftOperandPrepared<BE>,
+        a: &A,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        A: GLWEToBackendRef<BE> + CKKSCtBounds,
+    {
+        BE::ckks_left_operand_prepare(self, res, a, scratch)
+    }
+
+    fn ckks_left_operand_prepare_alloc<A>(
+        &self,
+        a: &A,
+        hint: PrepareHint,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<CKKSLeftOperandPrepared<BE>>
+    where
+        A: GLWEToBackendRef<BE> + CKKSCtBounds,
+    {
+        BE::ckks_left_operand_prepare_alloc(self, a, hint, scratch)
+    }
+}
+
+impl<BE: Backend + CKKSMulImpl> CKKSRightOperandPreparedFactory<BE> for Module<BE> {
+    fn ckks_right_operand_prepare_tmp_bytes<A>(&self, a: &A) -> usize
+    where
+        A: CKKSCtBounds,
+    {
+        BE::ckks_right_operand_prepare_tmp_bytes(self, a)
+    }
+
+    fn ckks_right_operand_prepare<A>(
+        &self,
+        res: &mut CKKSRightOperandPrepared<BE>,
+        a: &A,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        A: GLWEToBackendRef<BE> + CKKSCtBounds,
+    {
+        BE::ckks_right_operand_prepare(self, res, a, scratch)
+    }
+
+    fn ckks_right_operand_prepare_alloc<A>(
+        &self,
+        a: &A,
+        hint: PrepareHint,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<CKKSRightOperandPrepared<BE>>
+    where
+        A: GLWEToBackendRef<BE> + CKKSCtBounds,
+    {
+        BE::ckks_right_operand_prepare_alloc(self, a, hint, scratch)
     }
 }

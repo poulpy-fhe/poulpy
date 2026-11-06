@@ -23,7 +23,7 @@ use crate::{
 use poulpy_core::GLWEAutomorphismKeyPreparedFactory;
 use poulpy_core::GLWETensorKeyPreparedFactory;
 use poulpy_core::{
-    GLWEMaskFill,
+    GLWEFill,
     layouts::{GLWEAutomorphismKeyPrepared, GLWELayout, LWEInfos},
 };
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
@@ -70,7 +70,7 @@ fn replicated_ops<B, F>(params: CKKSTestParams, module: &Module<B>) -> Vec<(&'st
 where
     B: Backend<ZnxWord = i64> + ReplicatedRingImpl + CKKSEncodingImpl<F>,
     F: CKKSEncodingScalar,
-    Module<B>: CKKSAllOpsTmpBytes<B> + GLWETensorKeyPreparedFactory<B> + GLWEAutomorphismKeyPreparedFactory<B> + GLWEMaskFill<B>,
+    Module<B>: CKKSAllOpsTmpBytes<B> + GLWETensorKeyPreparedFactory<B> + GLWEAutomorphismKeyPreparedFactory<B> + GLWEFill<B>,
 {
     let b = params.base2k;
     let la = replicated(params, 8 * b + 5);
@@ -165,7 +165,7 @@ where
     let SlotLayout::Replicated(rl) = la.meta.slot_layout else {
         unreachable!()
     };
-    let encoding = <Module<B> as CKKSEncodingHostOps<B, F>>::ckks_reim_tmp_bytes(module, module.n());
+    let encoding = <Module<B> as CKKSEncodingHostOps<B, F>>::ckks_encoding_host_tmp_bytes(module, module.n());
     let bsgs = with_scratch::<B, _>(encoding, |s| {
         encode_bsgs_replicated(&polynomial, module, b.into(), coeff_meta, SplitStrategy::MinDepth, rl, s)
     })
@@ -208,7 +208,7 @@ fn narrow_automorphisms<B>(
     apply: Automorphism<B>,
 ) where
     B: Backend<ZnxWord = i64> + CKKSPlaintextVecImpl + CKKSRotateImpl,
-    Module<B>: GLWEAutomorphismKeyPreparedFactory<B> + GLWEMaskFill<B>,
+    Module<B>: GLWEAutomorphismKeyPreparedFactory<B> + GLWEFill<B>,
 {
     let b = params.base2k;
     let mut source_layout = replicated(params, 8 * b + 5);
@@ -254,7 +254,7 @@ fn narrow_automorphisms<B>(
 fn conjugations<B>(params: CKKSTestParams, module: &Module<B>) -> Vec<(&'static str, Snapshot)>
 where
     B: Backend<ZnxWord = i64> + CKKSImpl,
-    Module<B>: CKKSAllOpsTmpBytes<B> + GLWEAutomorphismKeyPreparedFactory<B> + GLWEMaskFill<B>,
+    Module<B>: CKKSAllOpsTmpBytes<B> + GLWEAutomorphismKeyPreparedFactory<B> + GLWEFill<B>,
 {
     let b = params.base2k;
     let la = replicated(params, 8 * b + 5);
@@ -282,10 +282,8 @@ where
     BR: Backend<ZnxWord = i64> + CKKSImpl + CKKSEncodingImpl<F>,
     BT: Backend<ZnxWord = i64> + CKKSImpl + CKKSEncodingImpl<F>,
     F: CKKSEncodingScalar,
-    Module<BR>:
-        CKKSAllOpsTmpBytes<BR> + GLWETensorKeyPreparedFactory<BR> + GLWEAutomorphismKeyPreparedFactory<BR> + GLWEMaskFill<BR>,
-    Module<BT>:
-        CKKSAllOpsTmpBytes<BT> + GLWETensorKeyPreparedFactory<BT> + GLWEAutomorphismKeyPreparedFactory<BT> + GLWEMaskFill<BT>,
+    Module<BR>: CKKSAllOpsTmpBytes<BR> + GLWETensorKeyPreparedFactory<BR> + GLWEAutomorphismKeyPreparedFactory<BR> + GLWEFill<BR>,
+    Module<BT>: CKKSAllOpsTmpBytes<BT> + GLWETensorKeyPreparedFactory<BT> + GLWEAutomorphismKeyPreparedFactory<BT> + GLWEFill<BT>,
 {
     assert_eq!(reference.n(), tested.n());
     let mut want = replicated_ops::<BR, F>(params, reference);
@@ -302,10 +300,8 @@ where
     BR: Backend<ZnxWord = i64> + ReplicatedRingImpl + CKKSEncodingImpl<F>,
     BT: Backend<ZnxWord = i64> + ReplicatedRingImpl + CKKSEncodingImpl<F>,
     F: CKKSEncodingScalar,
-    Module<BR>:
-        CKKSAllOpsTmpBytes<BR> + GLWETensorKeyPreparedFactory<BR> + GLWEAutomorphismKeyPreparedFactory<BR> + GLWEMaskFill<BR>,
-    Module<BT>:
-        CKKSAllOpsTmpBytes<BT> + GLWETensorKeyPreparedFactory<BT> + GLWEAutomorphismKeyPreparedFactory<BT> + GLWEMaskFill<BT>,
+    Module<BR>: CKKSAllOpsTmpBytes<BR> + GLWETensorKeyPreparedFactory<BR> + GLWEAutomorphismKeyPreparedFactory<BR> + GLWEFill<BR>,
+    Module<BT>: CKKSAllOpsTmpBytes<BT> + GLWETensorKeyPreparedFactory<BT> + GLWEAutomorphismKeyPreparedFactory<BT> + GLWEFill<BT>,
 {
     assert_eq!(reference.n(), tested.n());
     let want = replicated_ops::<BR, F>(params, reference);

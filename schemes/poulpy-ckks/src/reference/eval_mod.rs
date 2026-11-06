@@ -12,26 +12,29 @@ use crate::{CKKSResult as Result, checked_log_budget_sub, ckks_ensure_operand};
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
-    GLWECopy, GLWENormalize, GLWETensoring,
+    GLWEBytesOf, GLWECopy, GLWENormalize, GLWETensoring,
     layouts::{
         BSGSMeta, GGLWEInfos, GLWELayout, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, Rank, SetBSGSMeta,
         prepared::GLWETensorKeyPreparedToBackendRef,
     },
 };
-use poulpy_hal::layouts::{Backend, ConjugateInvariant, Module, Ring, ScratchArena, Standard};
+use poulpy_hal::{
+    api::{CnvOps, CnvPVecBytesOf, VecZnxBigNormalizeTmpBytes, VecZnxIdftApplyTmpBytes, VecZnxRshTmpBytes},
+    layouts::{Backend, ConjugateInvariant, Module, Ring, ScratchArena, Standard},
+};
 
 use crate::{
     CKKSCtBounds, CKKSInfos, GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotLayout,
     api::{
-        CKKSAddOps, CKKSComplexPolynomialEvaluationOps, CKKSCopyOps, CKKSMulOps, CKKSPolynomialEvaluationOps, CKKSPow2Ops,
-        CKKSRoundOps, CKKSSubOps, PolynomialInputTransform,
+        CKKSAddOps, CKKSComplexPolynomialEvaluationOps, CKKSCopyOps, CKKSMulAddOps, CKKSMulOps, CKKSPolynomialEvaluationOps,
+        CKKSPow2Ops, CKKSRoundOps, CKKSSubOps, PolynomialInputTransform,
     },
     layouts::{
-        CKKSCiphertextOwned, CKKSMaskedConstants, CKKSModuleAlloc, ScratchArenaTakeCKKS,
+        CKKSCiphertextAlloc, CKKSCiphertextOwned, CKKSMaskedConstants, ScratchArenaTakeCKKSCiphertext,
         eval_mod::{EvalMod, EvalModBsgs},
     },
     polynomial::ComplexBSGSPolynomial,
-    power_basis::{PowerBasis, PowerBasisGen},
+    power_basis::{CKKSPowerBasisGen, PowerBasis},
     reference::{
         mul::square_wide_into,
         polynomial_evaluation::{const_add_assign, const_sub_assign},
@@ -66,7 +69,6 @@ pub trait CKKSEvalModReference<BE: Backend> {
             + CKKSSubOps<BE>
             + CKKSMulOps<BE>
             + CKKSCopyOps<BE>
-            + CKKSModuleAlloc<BE>
             + Sized,
         BE: Backend,
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
@@ -74,6 +76,30 @@ pub trait CKKSEvalModReference<BE: Backend> {
         P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + BSGSMeta + CKKSMaskedConstants<BE>,
         H: GetTensorKey<BE>,
         CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos;
+
+    /// Scratch of [`Self::ckks_eval_mod_reference`].
+    fn ckks_eval_mod_tmp_bytes_reference<R, C, P, F, T>(&self, res: &R, ct: &C, params: &EvalMod<F, P>, tsk: &T) -> usize
+    where
+        BE: poulpy_core::oep::GLWEMulConstImpl,
+        Self: CKKSAddOps<BE>
+            + CKKSSubOps<BE>
+            + CKKSMulOps<BE>
+            + CKKSPow2Ops<BE>
+            + GLWENormalize<BE>
+            + CKKSCopyOps<BE>
+            + GLWECopy<BE>
+            + CnvPVecBytesOf
+            + CnvOps<BE>
+            + VecZnxRshTmpBytes
+            + VecZnxBigNormalizeTmpBytes
+            + VecZnxIdftApplyTmpBytes
+            + GLWEBytesOf<BE>
+            + CKKSRoundOps<BE>
+            + CKKSMulAddOps<BE>,
+        R: CKKSCtBounds,
+        C: CKKSCtBounds,
+        P: CKKSCtBounds,
+        T: GGLWEInfos;
 }
 
 impl<BE: Backend> CKKSEvalModReference<BE> for Module<BE>
@@ -84,7 +110,6 @@ where
         + CKKSSubOps<BE>
         + CKKSMulOps<BE>
         + CKKSCopyOps<BE>
-        + CKKSModuleAlloc<BE>
         + CKKSPow2Ops<BE>
         + CKKSRoundOps<BE>
         + GLWETensoring<BE>
@@ -108,6 +133,32 @@ where
         H: GetTensorKey<BE>,
     {
         eval_mod(self, res, ct, params, tsk, scratch)
+    }
+
+    fn ckks_eval_mod_tmp_bytes_reference<R, C, P, F, T>(&self, res: &R, ct: &C, params: &EvalMod<F, P>, tsk: &T) -> usize
+    where
+        BE: poulpy_core::oep::GLWEMulConstImpl,
+        Self: CKKSAddOps<BE>
+            + CKKSSubOps<BE>
+            + CKKSMulOps<BE>
+            + CKKSPow2Ops<BE>
+            + GLWENormalize<BE>
+            + CKKSCopyOps<BE>
+            + GLWECopy<BE>
+            + CnvPVecBytesOf
+            + CnvOps<BE>
+            + VecZnxRshTmpBytes
+            + VecZnxBigNormalizeTmpBytes
+            + VecZnxIdftApplyTmpBytes
+            + GLWEBytesOf<BE>
+            + CKKSRoundOps<BE>
+            + CKKSMulAddOps<BE>,
+        R: CKKSCtBounds,
+        C: CKKSCtBounds,
+        P: CKKSCtBounds,
+        T: GGLWEInfos,
+    {
+        ckks_eval_mod_tmp_bytes_reference(self, res, ct, params, tsk)
     }
 }
 
@@ -142,7 +193,6 @@ where
         + CKKSSubOps<BE>
         + CKKSMulOps<BE>
         + CKKSCopyOps<BE>
-        + CKKSModuleAlloc<BE>
         + CKKSPow2Ops<BE>
         + CKKSRoundOps<BE>
         + GLWETensoring<BE>
@@ -372,7 +422,6 @@ where
         + CKKSMulOps<BE>
         + CKKSSubOps<BE>
         + CKKSPow2Ops<BE>
-        + CKKSModuleAlloc<BE>
         + CKKSRoundOps<BE>
         + GLWECopy<BE>
         + GLWENormalize<BE>,
@@ -432,7 +481,7 @@ fn eval_mod_input<BE, C>(
 ) -> Result<CKKSCiphertextOwned<BE>>
 where
     BE: Backend,
-    Module<BE>: CKKSModuleAlloc<BE> + GLWECopy<BE> + CKKSRoundOps<BE>,
+    Module<BE>: CKKSCiphertextAlloc<BE> + GLWECopy<BE> + CKKSRoundOps<BE>,
     C: GLWEToBackendRef<BE> + CKKSCtBounds,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
 {

@@ -2,8 +2,8 @@ use poulpy_core::{
     GLWEDecrypt, GLWEEncryptSk,
     api::{GLWESecretPreparedFactory, GLWESecretSampling},
     layouts::{
-        Base2K, Degree, GLWE, GLWEInfos, GLWELayout, GLWEPlaintext, GLWESecret, ModuleCoreAlloc, Rank, TorusPrecision,
-        prepared::GLWESecretPrepared,
+        Base2K, Degree, GLWE, GLWEAlloc, GLWEInfos, GLWELayout, GLWEPlaintext, GLWEPlaintextAlloc, GLWESecret, GLWESecretAlloc,
+        ModuleCoreAlloc, Rank, TorusPrecision, prepared::GLWESecretPrepared,
     },
 };
 use poulpy_hal::api::ModuleSynchronize;

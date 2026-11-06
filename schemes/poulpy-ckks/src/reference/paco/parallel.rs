@@ -39,8 +39,8 @@ use super::{
 use crate::layouts::paco::{context::PaCoContext, keyset::PaCoKeys};
 use crate::{
     CKKSCtBounds, GLWEPlaintextMeta, SetCKKSInfos,
-    api::{CKKSAddOps, CKKSCopyOps, PaCoScalar},
-    layouts::{CKKSCiphertextViewMut, CKKSModuleAlloc, PaCoWorker, ScratchArenaTakeCKKS},
+    api::{CKKSAddOps, CKKSCopyOps, CKKSPaCoScalar},
+    layouts::{CKKSCiphertextAlloc, CKKSCiphertextViewMut, PaCoWorker, ScratchArenaTakeCKKSCiphertext},
     oep::CKKSEncodingImpl,
 };
 
@@ -71,7 +71,7 @@ fn run_branch_into<BE, F, K, Dst, Src>(
 where
     BE: super::PaCoBackend + CKKSEncodingImpl<F>,
     K: PaCoKeys<BE>,
-    F: PaCoScalar,
+    F: CKKSPaCoScalar,
     Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
@@ -106,7 +106,7 @@ where
     Ok(())
 }
 
-fn set_recombined_sparsity<BE: Backend, F: PaCoScalar>(
+fn set_recombined_sparsity<BE: Backend, F: CKKSPaCoScalar>(
     output: &mut CKKSCiphertextOwned<BE>,
     context: &PaCoContext<BE, F>,
     kappa: usize,
@@ -132,7 +132,7 @@ pub(super) fn ckks_paco_bootstrap_direct_into<BE, F, K, Src>(
 where
     BE: super::PaCoBackend + CKKSEncodingImpl<F>,
     K: PaCoKeys<BE>,
-    F: PaCoScalar,
+    F: CKKSPaCoScalar,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
     const OP: &str = "ckks_paco_bootstrap_direct_into";
@@ -161,7 +161,7 @@ fn paco_bootstrap_direct_validated_into<BE, F, K, Src>(
 where
     BE: super::PaCoBackend + CKKSEncodingImpl<F>,
     K: PaCoKeys<BE>,
-    F: PaCoScalar,
+    F: CKKSPaCoScalar,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
     ckks_ensure!(
@@ -220,7 +220,7 @@ fn encapsulate_input<'s, BE, F, K, Src>(
 ) -> Result<(CKKSCiphertextViewMut<'s, BE>, ScratchArena<'s, BE>)>
 where
     BE: super::PaCoBackend + CKKSEncodingImpl<F>,
-    F: PaCoScalar,
+    F: CKKSPaCoScalar,
     K: PaCoKeys<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
@@ -244,7 +244,7 @@ pub(super) fn ckks_paco_bootstrap_into<BE, F, K, Src>(
 where
     BE: super::PaCoBackend + CKKSEncodingImpl<F>,
     K: PaCoKeys<BE>,
-    F: PaCoScalar,
+    F: CKKSPaCoScalar,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
     const OP: &str = "ckks_paco_bootstrap_into";
@@ -278,7 +278,7 @@ pub(super) fn ckks_paco_bootstrap_parallel_direct_into<BE, F, K, Src>(
 where
     BE: super::PaCoBackend + CKKSEncodingImpl<F>,
     K: PaCoKeys<BE> + Sync,
-    F: PaCoScalar,
+    F: CKKSPaCoScalar,
     ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds + Sync,
 {
@@ -313,7 +313,7 @@ fn paco_bootstrap_parallel_direct_validated_into<BE, F, K, Src>(
 where
     BE: super::PaCoBackend + CKKSEncodingImpl<F>,
     K: PaCoKeys<BE> + Sync,
-    F: PaCoScalar,
+    F: CKKSPaCoScalar,
     ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds + Sync,
 {
@@ -510,7 +510,7 @@ pub(super) fn ckks_paco_bootstrap_parallel_into<BE, F, K, Src>(
 where
     BE: super::PaCoBackend + CKKSEncodingImpl<F>,
     K: PaCoKeys<BE> + Sync,
-    F: PaCoScalar,
+    F: CKKSPaCoScalar,
     ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {

@@ -170,7 +170,7 @@ mod ggsw {
 
         module
             .glwe_keyswitch_tmp_bytes(res_infos, a_infos, key_infos)
-            .max(module.ggsw_expand_rows_tmp_bytes(res_infos, tsk_infos))
+            .max(module.ggsw_expand_rows_assign_tmp_bytes(res_infos, tsk_infos))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -208,7 +208,7 @@ mod ggsw {
             module.glwe_keyswitch(&mut res_at, &a_at, &key.to_backend_ref(), &mut scratch.borrow());
         }
 
-        module.ggsw_expand_row(&mut res_backend, tsk, scratch)
+        module.ggsw_expand_rows_assign(&mut res_backend, tsk, scratch)
     }
 
     pub(crate) fn ggsw_keyswitch_assign_derived<BE, M, R>(
@@ -237,14 +237,14 @@ mod ggsw {
             module.glwe_keyswitch_assign(&mut res_at, &key.to_backend_ref(), &mut scratch.borrow());
         }
 
-        module.ggsw_expand_row(&mut res_backend, tsk, scratch)
+        module.ggsw_expand_rows_assign(&mut res_backend, tsk, scratch)
     }
 }
 pub(crate) use ggsw::*;
 
 mod glwe_dft {
     use poulpy_hal::{
-        api::{ScratchArenaTakeBasic, VecZnxDftBytesOf},
+        api::{ScratchArenaTakeVecZnxDft, VecZnxDftBytesOf},
         layouts::{Module, ScratchArena, VecZnxDftBackendMut, VecZnxDftToBackendRef},
     };
 
@@ -266,7 +266,7 @@ mod glwe_dft {
         A: GLWEInfos,
         K: GGLWEInfos,
     {
-        let product = module.bytes_of_vec_znx_dft(module.n(), (key_infos.rank_out() + 1).as_usize(), res_size);
+        let product = module.vec_znx_dft_bytes_of(module.n(), (key_infos.rank_out() + 1).as_usize(), res_size);
         BE::scratch_aligned(product) + BE::glwe_keyswitch_dft_tmp_bytes(module, res_size, a_infos, key_infos)
     }
 

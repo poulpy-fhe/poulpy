@@ -7,7 +7,7 @@ use crate::{
     },
 };
 
-pub fn svp_prepare_portable<'r, 'a, BE>(
+pub fn svp_ppol_prepare_portable<'r, 'a, BE>(
     plan: &FFT64Plan<f64, BE::Ring>,
     res: &mut SvpPPolBackendMut<'r, BE>,
     res_col: usize,

@@ -11,12 +11,12 @@ use poulpy_hal::{
     oep::HalMatZnxImpl,
 };
 
-use crate::layouts::GLWEPublicKeyShareOwned;
+use crate::layouts::MHEGLWEPublicKeyShareOwned;
 
 pub(crate) fn mhe_glwe_public_key_share_aggregate_derived<BE: HalMatZnxImpl>(
     module: &Module<BE>,
-    res: &mut GLWEPublicKeyShareOwned<BE>,
-    a: &GLWEPublicKeyShareOwned<BE>,
+    res: &mut MHEGLWEPublicKeyShareOwned<BE>,
+    a: &MHEGLWEPublicKeyShareOwned<BE>,
 ) {
     assert!(res.glwe_layout() == a.glwe_layout(), "invalid aggregation: layouts differ");
     assert!(res.dist() == a.dist(), "invalid aggregation: secret distributions differ");
@@ -33,7 +33,7 @@ pub(crate) fn mhe_glwe_public_key_share_aggregate_derived<BE: HalMatZnxImpl>(
 pub(crate) fn mhe_glwe_public_key_share_finalize_derived<BE: HalMatZnxImpl + EncryptionImpl, R>(
     module: &Module<BE>,
     res: &mut R,
-    share: &GLWEPublicKeyShareOwned<BE>,
+    share: &MHEGLWEPublicKeyShareOwned<BE>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     R: GLWEPublicKeyAtViewMut<BE> + GLWEPublicKeyToBackendMut<BE> + GetDistributionMut + GLWEInfos,
@@ -70,7 +70,7 @@ pub(crate) fn mhe_glwe_public_key_share_finalize_derived<BE: HalMatZnxImpl + Enc
     );
     // Seeded masks are uniform digits, already canonical.
     for (l, seed) in seeds.iter().enumerate() {
-        BE::fill_glwe_mask_from_seed(module, &mut res.at_view_mut(l), *seed);
+        BE::glwe_fill_mask_from_seed(module, &mut res.at_view_mut(l), *seed);
     }
     *res.dist_mut() = dist;
     res.set_noise(share.noise());

@@ -12,11 +12,11 @@ use std::{
 };
 
 use anyhow::Result;
-use poulpy_core::ScratchArenaTakeCore;
 use poulpy_core::layouts::{
     BSGSMeta, Base2K, Degree, GLWE, GLWEInfos, GLWEPlaintextInfos, GLWEPlaintextMeta, GLWEToBackendMut, GLWEToBackendRef,
     GLWEViewMut, GLWEViewRef, LWEInfos, Rank, SetBSGSMeta, SetGLWEPlaintextInfos, SetK, TorusPrecision,
 };
+use poulpy_core::{ScratchArenaTakeGLWE, ScratchArenaTakeGLWEPlaintext};
 use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, ReaderFrom, Ring, ScratchArena, WriterTo, ZnxWord};
 
 use crate::{CKKSInfos, SetCKKSInfos, ckks_log_delta, error::CKKSCompositionError};
@@ -381,13 +381,35 @@ impl<BE: Backend> GLWEToBackendMut<BE> for CKKSCiphertextViewMut<'_, BE> {
     }
 }
 
-/// CKKS layout carving helpers for backend-native scratch arenas.
-pub trait ScratchArenaTakeCKKS<'a, BE: Backend>: ScratchArenaTakeCore<'a, BE> + Sized {
+/// Carves [`CKKSEncodingBuffer`] workspaces from a [`ScratchArena`].
+pub trait ScratchArenaTakeCKKSEncodingBuffer<'a, BE: Backend>: Sized {
     /// Carves a backend-resident scalar workspace for CKKS encoding.
     fn take_ckks_encoding_buffer_scratch<F>(self, len: usize) -> (CKKSEncodingBufferViewMut<'a, BE, F>, Self)
     where
         BE: 'a;
+}
 
+impl<'a, BE> ScratchArenaTakeCKKSEncodingBuffer<'a, BE> for ScratchArena<'a, BE>
+where
+    BE: Backend + 'a,
+{
+    fn take_ckks_encoding_buffer_scratch<F>(self, len: usize) -> (CKKSEncodingBufferViewMut<'a, BE, F>, Self) {
+        assert!(
+            BE::SCRATCH_ALIGN.is_multiple_of(align_of::<F>()),
+            "backend scratch alignment {} is not a multiple of encoding scalar alignment {}",
+            BE::SCRATCH_ALIGN,
+            align_of::<F>()
+        );
+        let (data, scratch) = self.take_region(CKKSEncodingBuffer::<BE::BufMut<'a>, F>::bytes_of(len));
+        (
+            CKKSEncodingBufferViewMut::from_inner(CKKSEncodingBuffer::from_data(data, len)),
+            scratch,
+        )
+    }
+}
+
+/// Carves [`CKKSPlaintext`](super::CKKSPlaintext) views from a [`ScratchArena`].
+pub trait ScratchArenaTakeCKKSPlaintext<'a, BE: Backend>: ScratchArenaTakeGLWEPlaintext<'a, BE> + Sized {
     /// Carves a mutable CKKS plaintext view from backend-native scratch.
     fn take_ckks_plaintext_scratch<I>(self, infos: &I, meta: GLWEPlaintextMeta) -> (CKKSPlaintextViewMut<'a, BE>, Self)
     where
@@ -407,7 +429,12 @@ pub trait ScratchArenaTakeCKKS<'a, BE: Backend>: ScratchArenaTakeCore<'a, BE> + 
     {
         self.take_ckks_plaintext_scratch(pt, pt.meta())
     }
+}
 
+impl<'a, BE: Backend> ScratchArenaTakeCKKSPlaintext<'a, BE> for ScratchArena<'a, BE> {}
+
+/// Carves [`CKKSCiphertext`] views from a [`ScratchArena`].
+pub trait ScratchArenaTakeCKKSCiphertext<'a, BE: Backend>: ScratchArenaTakeGLWE<'a, BE> + Sized {
     fn take_ckks_ciphertext_scratch<I>(self, infos: &I, meta: GLWEPlaintextMeta) -> (CKKSCiphertextViewMut<'a, BE>, Self)
     where
         BE: 'a,
@@ -420,7 +447,7 @@ pub trait ScratchArenaTakeCKKS<'a, BE: Backend>: ScratchArenaTakeCore<'a, BE> + 
     /// Carves several same-layout CKKS ciphertexts from scratch space.
     fn take_ckks_ciphertext_slice_scratch<I>(
         self,
-        size: usize,
+        len: usize,
         infos: &I,
         meta: GLWEPlaintextMeta,
     ) -> (Vec<CKKSCiphertextViewMut<'a, BE>>, Self)
@@ -428,7 +455,7 @@ pub trait ScratchArenaTakeCKKS<'a, BE: Backend>: ScratchArenaTakeCore<'a, BE> + 
         BE: 'a,
         I: GLWEInfos,
     {
-        let (inner, scratch) = self.take_glwe_slice_scratch(size, infos);
+        let (inner, scratch) = self.take_glwe_slice_scratch(len, infos);
         (
             inner
                 .into_iter()
@@ -447,31 +474,14 @@ pub trait ScratchArenaTakeCKKS<'a, BE: Backend>: ScratchArenaTakeCore<'a, BE> + 
     }
 }
 
-impl<'a, BE> ScratchArenaTakeCKKS<'a, BE> for ScratchArena<'a, BE>
-where
-    BE: Backend + 'a,
-{
-    fn take_ckks_encoding_buffer_scratch<F>(self, len: usize) -> (CKKSEncodingBufferViewMut<'a, BE, F>, Self) {
-        assert!(
-            BE::SCRATCH_ALIGN.is_multiple_of(align_of::<F>()),
-            "backend scratch alignment {} is not a multiple of encoding scalar alignment {}",
-            BE::SCRATCH_ALIGN,
-            align_of::<F>()
-        );
-        let (data, scratch) = self.take_region(CKKSEncodingBuffer::<BE::BufMut<'a>, F>::bytes_of(len));
-        (
-            CKKSEncodingBufferViewMut::from_inner(CKKSEncodingBuffer::from_data(data, len)),
-            scratch,
-        )
-    }
-}
+impl<'a, BE: Backend> ScratchArenaTakeCKKSCiphertext<'a, BE> for ScratchArena<'a, BE> {}
 
 #[cfg(test)]
 mod tests {
     use poulpy_core::layouts::{Base2K, TorusPrecision};
     use poulpy_hal::layouts::{HostBytesBackend, Module, ReaderFrom, WriterTo, ZnxViewMut};
 
-    use crate::{CKKSInfos, GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotLayout, SlotsKind, layouts::CKKSModuleAlloc};
+    use crate::{CKKSInfos, GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotLayout, SlotsKind, layouts::CKKSCiphertextAlloc};
 
     #[test]
     fn ciphertext_round_trip_keeps_the_inner_format() {

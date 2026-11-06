@@ -6,7 +6,7 @@ use poulpy_hal::layouts::{Backend, CnvPVecLToBackendRef, CnvPVecRToBackendRef, M
 use crate::{
     api::{
         GGLWECopy, GGSWCopy, GGSWRotate, GLWEAdd, GLWECopy, GLWEMulConst, GLWEMulPlain, GLWEMulPreparedPlainSum,
-        GLWEMulRelinearizeSum, GLWEMulXpMinusOne, GLWENegate, GLWENormalize, GLWEPacking, GLWEPreparedTensoring, GLWERotate,
+        GLWEMulRelinearizeSum, GLWEMulXpMinusOne, GLWENegate, GLWENormalize, GLWEPack, GLWEPreparedTensoring, GLWERotate,
         GLWEShift, GLWESub, GLWETensoring, GLWETrace, GLWEZero,
     },
     layouts::{
@@ -247,6 +247,30 @@ impl_operations_delegate!(
         BP: CnvPVecRToBackendRef<BE>,
     {
         BE::glwe_mul_prepared_plain_sum(self, cnv_offset, res, a, a_size, b, b_size, galois, base2k, scratch)
+    },
+    fn glwe_mul_prepared_plain_sum_add_tmp_bytes<R>(&self, res: &R, a_size: usize, b_size: usize) -> usize
+    where
+        R: GLWEInfos,
+    {
+        BE::glwe_mul_prepared_plain_sum_add_tmp_bytes(self, res, a_size, b_size)
+    },
+    fn glwe_mul_prepared_plain_sum_add<R, AP, BP>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        a: &[&AP],
+        a_size: usize,
+        b: &[&BP],
+        b_size: usize,
+        galois: &[i64],
+        base2k: crate::layouts::Base2K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        AP: CnvPVecLToBackendRef<BE>,
+        BP: CnvPVecRToBackendRef<BE>,
+    {
+        BE::glwe_mul_prepared_plain_sum_add(self, cnv_offset, res, a, a_size, b, b_size, galois, base2k, scratch)
     },
     fn glwe_mul_prepared_plain_sum_dft_tmp_bytes(&self, res_size: usize, a_size: usize, b_size: usize) -> usize {
         BE::glwe_mul_prepared_plain_sum_dft_tmp_bytes(self, res_size, a_size, b_size)
@@ -650,11 +674,11 @@ impl_operations_delegate!(
     fn glwe_shift_tmp_bytes(&self, res_size: usize) -> usize {
         BE::glwe_shift_tmp_bytes(self, res_size)
     },
-    fn glwe_rsh<R>(&self, k: usize, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_rsh_assign<R>(&self, k: usize, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE>,
     {
-        BE::glwe_rsh(self, k, res, scratch)
+        BE::glwe_rsh_assign(self, k, res, scratch)
     },
     fn glwe_lsh_assign<R>(&self, res: &mut R, k: usize, scratch: &mut ScratchArena<'_, BE>)
     where
@@ -760,10 +784,10 @@ impl_operations_delegate!(
 );
 
 impl_operations_delegate!(
-    GLWEPacking<BE>,
+    GLWEPack<BE>,
     GLWEPackImpl,
-    fn glwe_pack_galois_elements(&self) -> Vec<i64> {
-        BE::glwe_pack_galois_elements(self)
+    fn glwe_pack_galois_elements(&self, n: Degree) -> Vec<i64> {
+        BE::glwe_pack_galois_elements(self, n)
     },
     fn glwe_pack_tmp_bytes<R, A, K>(&self, res: &R, a: &A, key: &K) -> usize
     where

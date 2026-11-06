@@ -13,8 +13,8 @@ use poulpy_hal::{
 
 use crate::{
     CoeffsMeta, SetCKKSInfos,
-    layouts::{CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec, CKKSScalar},
-    polynomial::{BSGSPolynomial, EncodeBSGS, Polynomial, SplitStrategy},
+    layouts::{CKKSPlaintext, CKKSPlaintextAlloc, CKKSPlaintextVecHostCodec, CKKSScalar},
+    polynomial::{BSGSPolynomial, CKKSPolynomialEncode, Polynomial, SplitStrategy},
 };
 
 /// A BSGS polynomial prepared for homomorphic evaluation, together with the
@@ -51,7 +51,7 @@ impl<R: Ring> PolynomialApproximation<CKKSPlaintext<AlignedBuf, i64, R>> {
         let affine = if scale == F::one() && offset == F::zero() {
             None
         } else {
-            let mut pt = module.ckks_pt_coeffs_alloc(2, base2k, coeff_meta.k);
+            let mut pt = module.ckks_plaintext_alloc(2usize.into(), base2k, coeff_meta.k);
             pt.set_meta(coeff_meta.meta);
             pt.encode_host_floats(&[offset, scale])
                 .map_err(|e| anyhow!("polynomial approximation: affine encoding failed: {e}"))?;

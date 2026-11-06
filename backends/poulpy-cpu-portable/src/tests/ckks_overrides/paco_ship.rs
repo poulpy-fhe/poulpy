@@ -5,7 +5,7 @@ use super::OverrideBackend;
 use super::carry::{assert_query_takes_extra, with_marked_bytes};
 use poulpy_ckks::{
     CKKSCompositionError, CKKSCtBounds,
-    api::{PaCoScalar, ShipScalar},
+    api::{CKKSPaCoScalar, CKKSShipScalar},
     layouts::{
         CKKSCiphertextOwned, CKKSPlaintextOwned, HMuxRotKeyPrepared, PaCoContext, PaCoKeys, PaCoWorker, ShipKeysPrepared,
         ShipPlan,
@@ -19,8 +19,8 @@ use poulpy_ckks::{
     },
 };
 use poulpy_core::{
-    GLWEMaskFill,
-    layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LWEInfos},
+    GLWEFill,
+    layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LWEInfos},
 };
 use poulpy_cpu_oracle::FFT64Oracle;
 use poulpy_hal::{
@@ -69,16 +69,17 @@ fn count<const N: usize, R>(counters: [&AtomicUsize; N], call: impl FnOnce() -> 
 }
 
 unsafe impl poulpy_ckks::oep::CKKSPaCoCoeffEncodingImpl for OverrideBackend {
-    fn ckks_paco_coeff_encodings_tmp_bytes<F>(
-        _module: &Module<Self>,
+    fn ckks_paco_coeff_encodings_tmp_bytes<F, A>(
+        module: &Module<Self>,
         _context: &PaCoContext<Self, F>,
+        input: &A,
     ) -> poulpy_ckks::CKKSResult<usize>
     where
-        F: PaCoScalar,
+        F: CKKSPaCoScalar,
         Self: CKKSEncodingImpl<F>,
+        A: GLWEInfos,
     {
-        // The staged encoding it forwards to takes no scratch.
-        Ok(PACO_ENCODING_EXTRA.load(Relaxed))
+        Ok(PACO_ENCODING_EXTRA.load(Relaxed) + crate::ckks_paco::paco_coeff_encodings_staged_tmp_bytes(module, input))
     }
 
     fn ckks_paco_coeff_encodings<F, Src>(
@@ -88,18 +89,18 @@ unsafe impl poulpy_ckks::oep::CKKSPaCoCoeffEncodingImpl for OverrideBackend {
         scratch: &mut ScratchArena<'_, Self>,
     ) -> poulpy_ckks::CKKSResult<[CKKSPlaintextOwned<Self>; 4]>
     where
-        F: PaCoScalar,
+        F: CKKSPaCoScalar,
         Self: CKKSEncodingImpl<F>,
         Src: GLWEToBackendRef<Self> + CKKSCtBounds,
     {
         PACO_ENCODING_CALLS.fetch_add(1, Relaxed);
-        with_marked_bytes(PACO_ENCODING_EXTRA.load(Relaxed), scratch, |rest| {
+        with_marked_bytes(PACO_ENCODING_EXTRA.load(Relaxed), scratch, |scratch| {
             crate::ckks_paco::paco_coeff_encodings_staged::<Self, F, Src>(
                 module,
                 context.base2k(),
                 ciphertext,
                 context.plan(),
-                rest,
+                scratch,
             )
             .map_err(poulpy_ckks::CKKSError::from)
         })
@@ -116,7 +117,7 @@ unsafe impl poulpy_ckks::oep::CKKSPaCoImpl for OverrideBackend {
         keys: &K,
     ) -> poulpy_ckks::CKKSResult<usize>
     where
-        F: PaCoScalar,
+        F: CKKSPaCoScalar,
         Self: CKKSEncodingImpl<F>,
         K: PaCoKeys<Self>,
         Src: GLWEToBackendRef<Self> + CKKSCtBounds,
@@ -132,7 +133,7 @@ unsafe impl poulpy_ckks::oep::CKKSPaCoImpl for OverrideBackend {
         keys: &K,
     ) -> poulpy_ckks::CKKSResult<usize>
     where
-        F: PaCoScalar,
+        F: CKKSPaCoScalar,
         Self: CKKSEncodingImpl<F>,
         K: PaCoKeys<Self>,
         Src: GLWEToBackendRef<Self> + CKKSCtBounds,
@@ -149,7 +150,7 @@ unsafe impl poulpy_ckks::oep::CKKSPaCoImpl for OverrideBackend {
         scratch: &mut ScratchArena<'_, Self>,
     ) -> poulpy_ckks::CKKSResult<()>
     where
-        F: PaCoScalar,
+        F: CKKSPaCoScalar,
         Self: CKKSEncodingImpl<F>,
         K: PaCoKeys<Self>,
         Src: GLWEToBackendRef<Self> + CKKSCtBounds,
@@ -166,7 +167,7 @@ unsafe impl poulpy_ckks::oep::CKKSPaCoImpl for OverrideBackend {
         scratch: &mut ScratchArena<'_, Self>,
     ) -> poulpy_ckks::CKKSResult<()>
     where
-        F: PaCoScalar,
+        F: CKKSPaCoScalar,
         Self: CKKSEncodingImpl<F>,
         K: PaCoKeys<Self>,
         Src: GLWEToBackendRef<Self> + CKKSCtBounds,
@@ -184,7 +185,7 @@ unsafe impl poulpy_ckks::oep::CKKSPaCoImpl for OverrideBackend {
         scratch: &mut ScratchArena<'_, Self>,
     ) -> poulpy_ckks::CKKSResult<()>
     where
-        F: PaCoScalar,
+        F: CKKSPaCoScalar,
         Self: CKKSEncodingImpl<F>,
         K: PaCoKeys<Self> + Sync,
         ScratchOwned<Self>: ScratchOwnedBorrow<Self>,
@@ -203,7 +204,7 @@ unsafe impl poulpy_ckks::oep::CKKSPaCoImpl for OverrideBackend {
         scratch: &mut ScratchArena<'_, Self>,
     ) -> poulpy_ckks::CKKSResult<()>
     where
-        F: PaCoScalar,
+        F: CKKSPaCoScalar,
         Self: CKKSEncodingImpl<F>,
         K: PaCoKeys<Self> + Sync,
         ScratchOwned<Self>: ScratchOwnedBorrow<Self>,
@@ -291,7 +292,7 @@ unsafe impl poulpy_ckks::oep::CKKSShipImpl for OverrideBackend {
         keys: &ShipKeysPrepared<<Self as Backend>::OwnedBuf, Self>,
     ) -> poulpy_ckks::CKKSResult<usize>
     where
-        F: ShipScalar,
+        F: CKKSShipScalar,
         Self: CKKSEncodingImpl<F>,
         Src: GLWEToBackendRef<Self> + CKKSCtBounds,
     {
@@ -306,7 +307,7 @@ unsafe impl poulpy_ckks::oep::CKKSShipImpl for OverrideBackend {
         scratch: &mut ScratchArena<'_, Self>,
     ) -> poulpy_ckks::CKKSResult<()>
     where
-        F: ShipScalar,
+        F: CKKSShipScalar,
         Self: CKKSEncodingImpl<F>,
         Src: GLWEToBackendRef<Self> + CKKSCtBounds,
     {
@@ -321,7 +322,7 @@ unsafe impl poulpy_ckks::oep::CKKSShipImpl for OverrideBackend {
         scratch: &mut ScratchArena<'_, Self>,
     ) -> poulpy_ckks::CKKSResult<()>
     where
-        F: ShipScalar,
+        F: CKKSShipScalar,
         Self: CKKSEncodingImpl<F>,
         Src: GLWEToBackendRef<Self> + CKKSCtBounds,
     {
@@ -380,7 +381,7 @@ fn paco_drivers_enter_the_selected_coefficient_encoding() {
     use poulpy_ckks::{
         CKKSInfos, SetCKKSInfos,
         api::CKKSPaCoOps,
-        layouts::{CKKSModuleAlloc, PaCoDFTPlan, PaCoKeySet, PaCoPlan, PaCoSecretSpec, PaCoWorker},
+        layouts::{CKKSCiphertextAlloc, PaCoDFTPlan, PaCoKeySet, PaCoPlan, PaCoSecretSpec, PaCoWorker},
         test_suite::{
             CKKSTestParams,
             helpers::{alloc_scratch, ckks_encrypt, ckks_encrypt_coeffs, ckks_spec, gen_sk_with_raw},
@@ -390,7 +391,7 @@ fn paco_drivers_enter_the_selected_coefficient_encoding() {
     };
     use poulpy_core::{
         GLWEAutomorphismKeyEncryptSk, GLWEBytesOf, GLWESwitchingKeyEncryptSk, GLWETensorKeyEncryptSk, TransferInto,
-        layouts::{ModuleCoreAlloc, SetGLWEPlaintextInfos},
+        layouts::{GLWEAutomorphismKeyAlloc, GLWESecretAlloc, GLWESwitchingKeyAlloc, GLWETensorKeyAlloc, SetGLWEPlaintextInfos},
     };
     type Out = CKKSCiphertextOwned<OverrideBackend>;
     type Run<'a> = &'a mut dyn FnMut(&mut Out, &mut ScratchArena<'_, OverrideBackend>) -> poulpy_ckks::CKKSResult<()>;
@@ -511,7 +512,7 @@ fn paco_drivers_enter_the_selected_coefficient_encoding() {
     // A destination holding other digits, so a write or a refused call that writes shows.
     let dirty = || -> Out {
         let mut out = module_test.ckks_ciphertext_alloc(ctx.base2k(), out_k);
-        module_test.fill_glwe_from_source(&mut out, &mut Source::new([5u8; 32]));
+        module_test.glwe_fill_from_source(&mut out, &mut Source::new([5u8; 32]));
         out
     };
     let out = dirty();
@@ -677,13 +678,13 @@ fn ship_drivers_enter_the_selected_masking_and_mux() {
     use poulpy_ckks::{
         CKKSInfos, CKKSModuleInfos, SetCKKSInfos,
         api::CKKSShipOps,
-        layouts::{CKKSModuleAlloc, ShipKeySet, ShipKeysLayout, ShipSecretSpec},
+        layouts::{CKKSPlaintextAlloc, ShipKeySet, ShipKeysLayout, ShipSecretSpec},
         test_suite::{
             CKKSTestParams,
             helpers::{alloc_ct, alloc_scratch, ckks_encrypt_pt, ckks_spec, gen_sk_with_raw},
         },
     };
-    use poulpy_core::{TransferInto, layouts::ModuleCoreAlloc};
+    use poulpy_core::{TransferInto, layouts::GLWESecretAlloc};
     let _probe = probe();
 
     let params = BASE19_PARAMS_F64;
@@ -748,7 +749,7 @@ fn ship_drivers_enter_the_selected_masking_and_mux() {
             })
             .collect();
         let bottom = ckks_spec(n, base2k, base2k, 0);
-        let mut host_pt = host.ckks_pt_vec_alloc(host.ckks_max_slots(), base2k.into(), bottom.k());
+        let mut host_pt = host.ckks_plaintext_alloc_from_slots(host.ckks_max_slots(), base2k.into(), bottom.k());
         host_pt.set_meta(bottom.meta());
         host_pt.encode_host_floats(&coeffs).unwrap();
         let ct0 = ckks_encrypt_pt(&big, &module_test, &sk, base2k, &host_pt, &mut scratch.borrow());
@@ -773,7 +774,7 @@ fn ship_drivers_enter_the_selected_masking_and_mux() {
 
         let keys = key_set.prepare(&module_test, &mut scratch.borrow()).unwrap();
         let mut out = alloc_ct(&big, &module_test, kk);
-        module_test.fill_glwe_from_source(&mut out, &mut Source::new([5u8; 32]));
+        module_test.glwe_fill_from_source(&mut out, &mut Source::new([5u8; 32]));
         let unchanged = snapshot::<OverrideBackend, _>(&out);
         for (label, extra, default) in [
             ("masking", &SHIP_MASKING_EXTRA, SHIP_MASKING_DEFAULT),

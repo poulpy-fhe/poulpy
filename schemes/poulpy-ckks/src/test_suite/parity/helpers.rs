@@ -1,10 +1,10 @@
 //! Coefficient-domain fixtures and exact scratch checks, using explicit transfers.
 use crate::{
     CKKSInfos, CKKSLayout,
-    layouts::{CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned},
+    layouts::{CKKSCiphertextAlloc, CKKSCiphertextOwned, CKKSPlaintextAlloc, CKKSPlaintextOwned},
 };
 use poulpy_core::{
-    ComponentNoise, Distribution, GLWEAdd, GLWEMaskFill,
+    ComponentNoise, Distribution, GLWEAdd, GLWEFill,
     layouts::{GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos},
 };
 use poulpy_hal::{
@@ -72,10 +72,10 @@ pub fn fixture_ciphertext<BE: Backend<ZnxWord = i64>>(
     seed: u8,
 ) -> CKKSCiphertextOwned<BE>
 where
-    Module<BE>: GLWEMaskFill<BE>,
+    Module<BE>: GLWEFill<BE>,
 {
     let mut out = module.ckks_ciphertext_alloc_from_infos(layout);
-    module.fill_glwe_from_source(&mut out, &mut Source::new([seed; 32]));
+    module.glwe_fill_from_source(&mut out, &mut Source::new([seed; 32]));
     // A fresh estimate, so an evaluation output that keeps a stale one fails the comparison.
     let noise = ComponentNoise::from_secret_at(Distribution::TernaryProb(0.5), out.k(), out.rank().as_usize());
     GLWEToBackendMut::<BE>::set_noise(&mut out, Some(noise));
@@ -91,7 +91,7 @@ pub fn fixture_operand<BE: Backend<ZnxWord = i64>>(
     lazy: bool,
 ) -> CKKSCiphertextOwned<BE>
 where
-    Module<BE>: GLWEMaskFill<BE> + GLWEAdd<BE>,
+    Module<BE>: GLWEFill<BE> + GLWEAdd<BE>,
 {
     let mut out = fixture_ciphertext(module, layout, seed);
     if lazy {
@@ -105,10 +105,10 @@ where
 /// A plaintext of `layout` filled from `seed`.
 pub fn fixture_plaintext<BE: Backend<ZnxWord = i64>>(module: &Module<BE>, layout: &CKKSLayout, seed: u8) -> CKKSPlaintextOwned<BE>
 where
-    Module<BE>: GLWEMaskFill<BE>,
+    Module<BE>: GLWEFill<BE>,
 {
     let mut out = module.ckks_plaintext_alloc_from_infos(layout);
-    module.fill_glwe_from_source(&mut out, &mut Source::new([seed; 32]));
+    module.glwe_fill_from_source(&mut out, &mut Source::new([seed; 32]));
     out
 }
 

@@ -39,7 +39,7 @@ use crate::{
     layouts::PaCoPlan,
     layouts::paco::factors::{mul_vec_tiled, paco_c2s_factors, paco_stc_factors},
     layouts::{
-        CKKSEncodingBuffer, CKKSModuleAlloc, ScratchArenaTakeCKKS, copy_encoding_buffer_into_reim_host,
+        CKKSEncodingBuffer, CKKSPlaintextAlloc, ScratchArenaTakeCKKSEncodingBuffer, copy_encoding_buffer_into_reim_host,
         copy_host_into_encoding_buffer,
     },
     test_suite::reference_encoder::ReferenceEncoder,
@@ -47,7 +47,7 @@ use crate::{
         CKKSTestParams,
         helpers::{
             TestContextBackend, TestContextModule, TestScalar, alloc_scratch, ckks_encrypt, gen_atk, gen_sk_with_raw,
-            pt_streamed_eval_tmp_bytes, test_vector_1,
+            pt_self_into_tmp_bytes, test_vector_1,
         },
     },
 };
@@ -56,7 +56,7 @@ use poulpy_core::{
     layouts::{Base2K, LWEInfos, LinearTransformationStrategy, TorusPrecision},
 };
 use poulpy_hal::{
-    api::{CnvPVecAlloc, NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow},
+    api::{CnvPVecAlloc, ReimNew, ScratchOwnedBorrow},
     layouts::{Backend, CyclotomicOrder, HostBytesBackend, HostDataMut, HostDataRef, Module, Standard},
 };
 
@@ -101,7 +101,7 @@ where
     Module<BE>:
         TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE> + GLWENoise<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
 {
@@ -133,7 +133,7 @@ where
                     slot_layout: SlotLayout::Full,
                 },
             };
-            crate::encoding::ckks_encode_linear_transformation_from_diagonals(
+            crate::encoding::ckks_linear_transformation_encode_from_diagonals(
                 &module,
                 Base2K(params.base2k as u32),
                 factor_layout,
@@ -171,14 +171,9 @@ where
     let budget_before = ct.log_budget();
 
     for lt in &lts {
-        // The documented bound of `self_assign`: a working copy of `ct` plus the larger of the baby-step and evaluation
-        // queries.
-        let bytes = BE::scratch_aligned(poulpy_core::GLWEBytesOf::glwe_bytes_of_from_infos(&module, &ct))
-            + module
-                .ckks_prepare_linear_transformation_baby_steps_tmp_bytes(&ct, &lt.index(), &params.atk_layout())
-                .max(pt_streamed_eval_tmp_bytes(&module, &ct, &lt.index(), &params.atk_layout()));
+        let bytes = pt_self_into_tmp_bytes(&module, true, &ct, &lt.index(), &params.atk_layout());
         with_scratch::<BE, _>(bytes, |s| {
-            module.ckks_eval_linear_transformation_self_assign(&mut ct, lt, &atks, s)
+            module.ckks_linear_transformation_eval_self_assign(&mut ct, lt, &atks, s)
         })
         .unwrap();
     }
@@ -198,7 +193,7 @@ where
     let want_re: Vec<F> = w.iter().map(|x| x.re).collect();
     let want_im: Vec<F> = w.iter().map(|x| x.im).collect();
 
-    let mut pt_want = module.ckks_pt_vec_alloc(module.ckks_max_slots(), ct.base2k(), ct.k());
+    let mut pt_want = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots(), ct.base2k(), ct.k());
     pt_want.set_meta(GLWEPlaintextMeta {
         scale: Scale::Log(ct.log_delta()),
         slots: SlotsKind::Complex,
@@ -219,7 +214,7 @@ where
     Module<BE>:
         TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE> + GLWENoise<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
 {
@@ -250,7 +245,7 @@ where
     Module<BE>:
         TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE> + GLWENoise<BE>,
     F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    E: ReimNew<F>,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
 {
@@ -340,7 +335,7 @@ where
                 scratch.scope(|arena| {
                     let (mut values, _) = arena.take_ckks_encoding_buffer_scratch::<F>(coeffs.len());
                     copy_host_into_encoding_buffer::<BE, F, _>(&mut values, coeffs)?;
-                    module.ckks_coeffs_to_slots_assign(&mut values)?;
+                    module.ckks_encoding_buffer_coeffs_to_slots_assign(&mut values)?;
                     copy_encoding_buffer_into_reim_host::<BE, F, _>(&values, re, im)
                 })
             },

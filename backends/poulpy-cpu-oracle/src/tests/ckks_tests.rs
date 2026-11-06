@@ -59,6 +59,11 @@ fn ntt4x30_ci_bootstrap_refuses_invalid_inputs() {
     poulpy_ckks::test_suite::presets::ci_bootstrap_refuses_invalid_inputs::<crate::NTT4x30Oracle>();
 }
 
+#[test]
+fn ntt4x30_small_c2s_preset_meets_precision() {
+    poulpy_ckks::test_suite::presets::small_c2s_preset_meets_precision::<crate::NTT4x30Oracle>();
+}
+
 /// Full logN16 bootstraps per preset: slow, so opt in with `--ignored`.
 mod bootstrapping_presets {
     use poulpy_ckks::test_suite::presets::bootstrapping_presets_meet_precision;

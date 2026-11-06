@@ -1,8 +1,10 @@
 use poulpy_core::layouts::prepared::GGLWEPreparedToBackendRef;
 use poulpy_core::{
-    GLWEKeyswitch, GLWEMaskFill,
+    GLWEFill, GLWEKeyswitch,
     api::GGLWEPreparedFactory,
-    layouts::{Base2K, Degree, Dnum, GGLWELayout, GLWELayout, ModuleCoreAlloc, Rank, TorusPrecision, k_digit_of},
+    layouts::{
+        Base2K, Degree, Dnum, GGLWEAlloc, GGLWELayout, GLWEAlloc, GLWELayout, ModuleCoreAlloc, Rank, TorusPrecision, k_digit_of,
+    },
     test_suite::keys::fill_by_digit,
 };
 use poulpy_hal::api::ModuleSynchronize;
@@ -36,7 +38,7 @@ where
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>
         + GLWEKeyswitch<BE>
         + GGLWEPreparedFactory<BE>
-        + GLWEMaskFill<BE>,
+        + GLWEFill<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let glwe = GLWELayout {
@@ -68,7 +70,7 @@ where
     let mut ct_out = module.glwe_alloc_from_infos(glwe_out);
     let mut key_coeffs = module.gglwe_alloc_from_infos(&key_infos);
 
-    module.fill_glwe_from_source(&mut ct_in, &mut source);
+    module.glwe_fill_from_source(&mut ct_in, &mut source);
     fill_by_digit(&module, &mut key_coeffs, 1, &mut source);
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
