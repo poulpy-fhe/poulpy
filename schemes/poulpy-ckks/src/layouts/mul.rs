@@ -2,7 +2,7 @@
 
 use crate::CKKSInfos;
 use poulpy_core::layouts::{
-    Base2K, Degree, GLWEInfos, GLWELayout, GLWEPlaintextInfos, GLWEPlaintextMeta, LWEInfos, Rank, TorusPrecision,
+    Base2K, Degree, GLWEInfos, GLWELayout, GLWEPlaintextInfos, GLWEPlaintextMeta, IntPolyInfos, LWEInfos, Rank, TorusPrecision,
 };
 use poulpy_hal::layouts::{
     Backend, CnvPVecLBackendRef, CnvPVecLOwned, CnvPVecLToBackendRef, CnvPVecRBackendRef, CnvPVecROwned, CnvPVecRToBackendRef,
@@ -135,3 +135,10 @@ macro_rules! impl_prepared_infos {
 
 impl_prepared_infos!(CKKSLeftOperandPrepared);
 impl_prepared_infos!(CKKSRightOperandPrepared);
+
+impl<BE: Backend> IntPolyInfos for CKKSRightOperandPrepared<BE> {
+    /// Its whole stored width, as a plaintext's: every prepared limb enters a product.
+    fn encoded_k(&self) -> TorusPrecision {
+        self.max_k()
+    }
+}

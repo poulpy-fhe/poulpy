@@ -7,14 +7,13 @@
 
 use crate::{CKKSError, CKKSResult as Result, ckks_ensure, ckks_ensure_operand, operand_cyclotomic_order};
 use crate::{GLWEPlaintextMeta, Scale, SlotsKind};
-use poulpy_core::layouts::BabyStepOperand;
-use poulpy_core::layouts::GLWEPlaintextInfos;
-use poulpy_core::layouts::LinearTransformationPlan;
+use poulpy_core::layouts::{BabyStepOperand, GLWEPlaintextInfos, LinearTransformationPlan};
 use poulpy_core::{
-    GLWEDiagonalProd, GLWELinearTransformationOps, LinearTransformationBabySteps, LinearTransformationPrepared,
+    CoreError, GLWEDiagonalProd, GLWELinearTransformationOps, LinearTransformationBabySteps, LinearTransformationPrepared,
     layouts::{
-        BsgsRotations, DiagonalOperand, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey,
-        GetTensorKey, LWEInfos, TorusPrecision, prepared::PreparedDiagonal,
+        BsgsRotations, DiagonalOperand, GGLWEInfos, GLWEAutomorphismKeyPreparedBackendRef, GLWEInfos, GLWEToBackendMut,
+        GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LWEInfos, TorusPrecision,
+        prepared::{GLWETensorKeyPreparedBackendRef, PreparedDiagonal},
     },
 };
 use poulpy_hal::layouts::{Backend, CyclotomicOrder, Data, Module, Ring, ScratchArena, ZnxWord, galois_element};
@@ -33,6 +32,29 @@ use crate::{
     },
 };
 use poulpy_core::GLWEBytesOf;
+
+/// The keys of a transform of plaintext diagonals: the automorphism keys of `H`, and no tensor key, which only ciphertext
+/// diagonals ask for.
+pub(crate) struct PlaintextDiagonalKeys<'a, H>(pub(crate) &'a H);
+
+impl<BE: Backend, H: GetAutomorphismKey<BE>> GetAutomorphismKey<BE> for PlaintextDiagonalKeys<'_, H> {
+    fn lookup_automorphism_key(
+        &self,
+        p: i64,
+        k: TorusPrecision,
+    ) -> poulpy_core::Result<GLWEAutomorphismKeyPreparedBackendRef<'_, BE>> {
+        self.0.lookup_automorphism_key(p, k)
+    }
+}
+
+impl<BE: Backend, H> GetTensorKey<BE> for PlaintextDiagonalKeys<'_, H> {
+    fn lookup_tensor_key(&self, _k: TorusPrecision) -> poulpy_core::Result<GLWETensorKeyPreparedBackendRef<'_, BE>> {
+        Err(CoreError::GGLWEKeyUse {
+            op: "get_tensor_key",
+            detail: "a transform of plaintext diagonals takes no tensor key".into(),
+        })
+    }
+}
 
 /// A streamed plaintext diagonal: where the resident path (core's [`PreparedDiagonal`]) fuses already-prepared
 /// diagonals, a [`CKKSPlaintext`] diagonal is a rank-0 GLWE view the product prepares on the fly.

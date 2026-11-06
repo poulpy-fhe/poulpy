@@ -18,8 +18,9 @@ use crate::{
     },
     layouts::{
         BootstrappingContextPrepared, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingLinearKeys, BootstrappingPipeline,
-        BootstrappingPlan, BootstrappingTechniques, CKKSPlaintextOwned, DFTOutputFormat, DFTPlan, DFTType,
-        EncapsulationKeysLayout, EncodedLut, EvalModPlan, EvalModType, EvalRoundPlus, SparseSecretEncapsulation,
+        BootstrappingPlan, BootstrappingTechniques, CKKSCITwin, CKKSCiphertextOwned, CKKSPlaintextOwned, DFTOutputFormat,
+        DFTPlan, DFTType, EncapsulationKeysLayout, EncodedLut, EvalModPlan, EvalModType, EvalRoundPlus,
+        SparseSecretEncapsulation,
     },
     oep::{CKKSBootstrappingImpl, CKKSEncapsulatedModUpImpl},
     polynomial::SplitStrategy,
@@ -30,8 +31,11 @@ use poulpy_core::{
     api::{GGLWEPreparedFactory, GLWEAutomorphismKeyPreparedFactory, GLWETensorKeyPreparedFactory},
     layouts::{
         GGLWEInfos, GGLWELayout, GGLWEPrepared, GLWEAutomorphismKeyPrepared, GLWELayout, GLWETensorKeyPrepared, GLWEToBackendRef,
-        LWEInfos, TorusPrecision,
-        prepared::{GGLWEPreparedToBackendRef, GLWEAutomorphismKeyPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
+        GetAutomorphismKey, LWEInfos, TorusPrecision,
+        prepared::{
+            GGLWEPreparedToBackendRef, GLWEAutomorphismKeyPreparedBackendRef, GLWEAutomorphismKeyPreparedToBackendRef,
+            GLWETensorKeyPreparedToBackendRef,
+        },
     },
 };
 use poulpy_hal::layouts::{Backend, CyclotomicOrder, HostBytesBackend, HostStaged, Module};
@@ -247,33 +251,53 @@ pub struct FixtureKeys<BE: Backend> {
 
 type FixtureSwitchingKey<BE> = GGLWEPrepared<<BE as Backend>::OwnedBuf, BE>;
 
+impl<BE: Backend> GetAutomorphismKey<BE> for FixtureKeys<BE>
+where
+    GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>: GLWEAutomorphismKeyPreparedToBackendRef<BE>,
+{
+    fn lookup_automorphism_key(
+        &self,
+        p: i64,
+        k: TorusPrecision,
+    ) -> poulpy_core::Result<GLWEAutomorphismKeyPreparedBackendRef<'_, BE>> {
+        self.rotation_keys.lookup_automorphism_key(p, k)
+    }
+}
+
 impl<BE: Backend> BootstrappingLinearKeys<BE> for FixtureKeys<BE>
 where
     GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>: GLWEAutomorphismKeyPreparedToBackendRef<BE>,
     GGLWEPrepared<BE::OwnedBuf, BE>: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
 {
-    type RotationKeys = HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>>;
     type SwitchingKey = GGLWEPrepared<BE::OwnedBuf, BE>;
-
-    fn rotation_keys(&self) -> &Self::RotationKeys {
-        &self.rotation_keys
-    }
 
     fn encapsulation_keys(&self) -> Option<(&Self::SwitchingKey, Option<&Self::SwitchingKey>)> {
         self.encapsulation_keys.as_ref().map(|(d2s, s2d)| (d2s, Some(s2d)))
     }
 }
 
-impl<BE: Backend> BootstrappingKeys<BE> for FixtureKeys<BE>
+impl<BE: CKKSCITwin> BootstrappingKeys<BE> for FixtureKeys<BE>
 where
     GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>: GLWEAutomorphismKeyPreparedToBackendRef<BE>,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE>,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE::CI>: GLWETensorKeyPreparedToBackendRef<BE::CI>,
     GGLWEPrepared<BE::OwnedBuf, BE>: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
 {
     type TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>;
+    type CITensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE::CI>;
+    type TraceKey = GGLWEPrepared<BE::OwnedBuf, BE>;
+    type EmbedKey = GGLWEPrepared<BE::OwnedBuf, BE>;
 
-    fn tensor_key(&self) -> &Self::TensorKey {
-        &self.tensor_key
+    fn tensor_key(&self) -> Option<&Self::TensorKey> {
+        Some(&self.tensor_key)
+    }
+
+    fn ci_tensor_key(&self) -> Option<&Self::CITensorKey> {
+        None
+    }
+
+    fn conversion_keys(&self) -> Option<(&Self::TraceKey, &Self::EmbedKey)> {
+        None
     }
 }
 
@@ -374,6 +398,7 @@ where
         + GLWETensorKeyPreparedFactory<BE>
         + GGLWEPreparedFactory<BE>
         + GLWEFill<BE>
+        + crate::api::CKKSRightOperandPreparedFactory<BE>
         + CyclotomicOrder,
 {
     let rotation_keys = plan
@@ -393,7 +418,11 @@ where
 
 type Outcome = (Result<(), String>, Vec<Snapshot>);
 
-fn run_bootstrap<BE, F>(params: CKKSTestParams, module: &Module<BE>) -> Vec<Outcome>
+/// Snapshots of the hand composition of one non-functional case: the raise, the first DFT, the EvalMod output.
+type Steps = Vec<Snapshot>;
+
+/// The outcome of every whole bootstrap of the fixture cases.
+pub fn run_bootstrap<BE, F>(params: CKKSTestParams, module: &Module<BE>) -> Vec<Outcome>
 where
     BE: Backend<ZnxWord = i64> + CKKSBootstrappingImpl + HostStaged,
     F: CKKSEncodingScalar,
@@ -407,7 +436,33 @@ where
         + GLWETensorKeyPreparedFactory<BE>
         + GGLWEPreparedFactory<BE>
         + GLWEFill<BE>
+        + crate::api::CKKSRightOperandPreparedFactory<BE>
         + CyclotomicOrder,
+    Module<BE::CI>: CKKSEncodingOps<BE::CI, F>,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds + GLWEDiagonalProd<BE>,
+    FixtureKeys<BE>: BootstrappingKeys<BE> + Sync,
+    <FixtureKeys<BE> as BootstrappingKeys<BE>>::TensorKey: Sync,
+{
+    run_bootstrap_cases::<BE, F>(params, module).0
+}
+
+fn run_bootstrap_cases<BE, F>(params: CKKSTestParams, module: &Module<BE>) -> (Vec<Outcome>, Vec<Steps>)
+where
+    BE: Backend<ZnxWord = i64> + CKKSBootstrappingImpl + HostStaged,
+    F: CKKSEncodingScalar,
+    Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
+        + CKKSDFTOps<BE>
+        + CKKSDFTMatrixOps<BE, F>
+        + CKKSEncodingOps<BE, F>
+        + CKKSEncodingHostOps<BE, F>
+        + CKKSAllOpsTmpBytes<BE>
+        + GLWEAutomorphismKeyPreparedFactory<BE>
+        + GLWETensorKeyPreparedFactory<BE>
+        + GGLWEPreparedFactory<BE>
+        + GLWEFill<BE>
+        + crate::api::CKKSRightOperandPreparedFactory<BE>
+        + CyclotomicOrder,
+    Module<BE::CI>: CKKSEncodingOps<BE::CI, F>,
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds + GLWEDiagonalProd<BE>,
     FixtureKeys<BE>: BootstrappingKeys<BE> + Sync,
     <FixtureKeys<BE> as BootstrappingKeys<BE>>::TensorKey: Sync,
@@ -416,6 +471,7 @@ where
     let log_slots = n.ilog2() as usize - 1;
     let log_delta = 12;
     let mut results = Vec::new();
+    let mut steps = Vec::new();
     let host = Module::<HostBytesBackend>::new(n as u64);
     let lut = EncodedLut::binary(
         &host,
@@ -471,7 +527,7 @@ where
                 ));
         // Staged compilation: preparation runs with exactly its advertised scratch.
         let unprepared = with_scratch::<BE, _>(compile, |scratch| {
-            BootstrappingContextPrepared::<BE, F>::compile_unprepared(module, b.into(), &plan, scratch)
+            BootstrappingContextPrepared::<BE, F>::compile_unprepared(module, None, b.into(), &plan, scratch)
         })
         .unwrap();
         let ctx = with_scratch::<BE, _>(unprepared.prepare_tmp_bytes(module), |scratch| {
@@ -489,32 +545,104 @@ where
             });
             assert!(result.is_ok(), "{pipeline:?}: {result:?}");
             results.push((result.map_err(|e| e.to_string()), vec![snapshot::<BE, _>(&outs[0])]));
+            steps.push(compose_steps::<BE, F, _>(
+                module,
+                &ctx,
+                &keys,
+                &ct_in,
+                &in_layout,
+                &out_layout,
+                Some(&luts),
+                bytes,
+            ));
             continue;
         }
-        let bytes = BE::ckks_bootstrap_tmp_bytes(module, &out_layout, &in_layout, &ctx, &layout);
+        let bytes = BE::ckks_bootstrap_tmp_bytes(module, &out_layout, &in_layout, &ctx, None, &layout);
         let mut out = fixture_ciphertext(module, &out_layout, 97);
         let result = with_scratch::<BE, _>(bytes, |scratch| {
-            BE::ckks_bootstrap(module, &mut out, &ct_in, &ctx, &keys, scratch)
+            BE::ckks_bootstrap(module, &mut out, &ct_in, &ctx, None, &keys, scratch)
         });
         assert!(result.is_ok(), "{pipeline:?}: {result:?}");
         results.push((result.map_err(|e| e.to_string()), vec![snapshot::<BE, _>(&out)]));
         if pipeline == BootstrappingPipeline::C2SFirst {
-            let mut raised = fixture_ciphertext(module, &out_layout, 101);
-            let result = with_scratch::<BE, _>(BE::ckks_mod_up_tmp_bytes(module, raised.size()), |scratch| {
-                BE::ckks_mod_up_into(module, &mut raised, &ct_in, plan.eval_mod(), scratch)
-            });
-            assert!(result.is_ok(), "{pipeline:?}: {result:?}");
-            results.push((result.map_err(|e| e.to_string()), vec![snapshot::<BE, _>(&raised)]));
             let mut raised = fixture_ciphertext(module, &out_layout, 103);
-            let bytes = BE::ckks_bootstrap_mod_up_tmp_bytes(module, &out_layout, &in_layout, &ctx, &layout);
+            let mut raise_in = fixture_ciphertext(module, &in_layout, 89);
+            let bytes = BE::ckks_mod_raise_tmp_bytes(module, &raised, &raise_in, &ctx, &layout);
             let result = with_scratch::<BE, _>(bytes, |scratch| {
-                BE::ckks_bootstrap_mod_up(module, &mut raised, &ct_in, plan.eval_mod(), &keys, scratch)
+                BE::ckks_mod_raise(module, &mut raised, &mut raise_in, &ctx, &keys, scratch)
             });
             assert!(result.is_ok(), "{pipeline:?}: {result:?}");
             results.push((result.map_err(|e| e.to_string()), vec![snapshot::<BE, _>(&raised)]));
         }
+        steps.push(compose_steps::<BE, F, _>(
+            module,
+            &ctx,
+            &keys,
+            &ct_in,
+            &in_layout,
+            &out_layout,
+            None,
+            bytes,
+        ));
     }
-    results
+    (results, steps)
+}
+
+/// The steps of `ckks_bootstrap`, or of `ckks_functional_bootstrap` given `luts`, composed by hand on `ct_in`, each
+/// output snapshotted for the cross-backend comparison.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the composition reads the context, the keys, its layouts, the LUTs of a functional case and its budget"
+)]
+fn compose_steps<BE, F, K>(
+    module: &Module<BE>,
+    ctx: &BootstrappingContextPrepared<BE, F>,
+    keys: &K,
+    ct_in: &CKKSCiphertextOwned<BE>,
+    in_layout: &CKKSLayout,
+    out_layout: &CKKSLayout,
+    luts: Option<&[EncodedLut<CKKSPlaintextOwned<BE>>]>,
+    bytes: usize,
+) -> Steps
+where
+    BE: Backend<ZnxWord = i64> + CKKSBootstrappingImpl + HostStaged,
+    F: Sync,
+    Module<BE>: CKKSDFTOps<BE> + GLWEFill<BE>,
+    CKKSCiphertextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds,
+    K: BootstrappingKeys<BE> + Sync,
+    K::TensorKey: Sync,
+{
+    let mut raised = fixture_ciphertext(module, out_layout, 103);
+    let mut z_hp = fixture_ciphertext(module, out_layout, 107);
+    let mut stepped = fixture_ciphertext(module, out_layout, 109);
+    let mut coeffs = fixture_ciphertext(module, in_layout, 113);
+    let s2c_first = ctx.pipeline() == BootstrappingPipeline::S2CFirst;
+    let run = ctx.run(ct_in.meta());
+    let mut steps = Vec::new();
+    with_scratch::<BE, _>(bytes, |s| {
+        if s2c_first {
+            BE::ckks_double_into(module, &mut coeffs, ct_in, s)?;
+            module.ckks_slots_to_coeffs_assign(&mut coeffs, &run, keys, s)?;
+        } else {
+            BE::ckks_copy(module, &mut coeffs, ct_in, s)?;
+        }
+        BE::ckks_mod_raise(module, &mut raised, &mut coeffs, &run, keys, s)?;
+        steps.push(snapshot::<BE, _>(&raised));
+        if let Some(bypass) = run.bypass() {
+            BE::ckks_copy(module, &mut z_hp, &raised, s)?;
+            module.ckks_coeffs_to_slots_assign(&mut z_hp, &bypass, keys, s)?;
+        }
+        module.ckks_coeffs_to_slots_assign(&mut raised, &run, keys, s)?;
+        steps.push(snapshot::<BE, _>(&raised));
+        match luts {
+            Some(luts) => BE::ckks_eval_lut(module, std::slice::from_mut(&mut stepped), &raised, &run, luts, keys, s)?,
+            None => BE::ckks_bootstrap_eval_mod(module, &mut stepped, &raised, &run, None, keys, s)?,
+        }
+        steps.push(snapshot::<BE, _>(&stepped));
+        Ok::<_, crate::CKKSError>(())
+    })
+    .expect("the composed steps run");
+    steps
 }
 
 /// Compare selected bootstrapping implementations on the same fixture inputs
@@ -536,6 +664,7 @@ where
         + GLWETensorKeyPreparedFactory<BR>
         + GGLWEPreparedFactory<BR>
         + GLWEFill<BR>
+        + crate::api::CKKSRightOperandPreparedFactory<BR>
         + CyclotomicOrder,
     Module<BT>: CKKSDFTMatrixPreparedFactory<BT>
         + CKKSDFTOps<BT>
@@ -547,7 +676,10 @@ where
         + GLWETensorKeyPreparedFactory<BT>
         + GGLWEPreparedFactory<BT>
         + GLWEFill<BT>
+        + crate::api::CKKSRightOperandPreparedFactory<BT>
         + CyclotomicOrder,
+    Module<BR::CI>: CKKSEncodingOps<BR::CI, F>,
+    Module<BT::CI>: CKKSEncodingOps<BT::CI, F>,
     CKKSPlaintextOwned<BR>: GLWEToBackendRef<BR> + CKKSCtBounds + GLWEDiagonalProd<BR>,
     CKKSPlaintextOwned<BT>: GLWEToBackendRef<BT> + CKKSCtBounds + GLWEDiagonalProd<BT>,
     FixtureKeys<BR>: BootstrappingKeys<BR> + Sync,
@@ -556,12 +688,14 @@ where
     <FixtureKeys<BT> as BootstrappingKeys<BT>>::TensorKey: Sync,
 {
     assert_eq!(module_ref.n(), module_test.n());
-    let want = run_bootstrap::<BR, F>(params, module_ref);
+    let (want, want_steps) = run_bootstrap_cases::<BR, F>(params, module_ref);
     assert_untagged(
         "bootstrapping",
         want.iter()
             .filter(|(result, _)| result.is_ok())
             .flat_map(|(_, outputs)| outputs),
     );
-    assert_eq!(want, run_bootstrap::<BT, F>(params, module_test), "bootstrapping differs");
+    let (got, got_steps) = run_bootstrap_cases::<BT, F>(params, module_test);
+    assert_eq!(want, got, "bootstrapping differs");
+    assert_eq!(want_steps, got_steps, "bootstrapping steps differ");
 }

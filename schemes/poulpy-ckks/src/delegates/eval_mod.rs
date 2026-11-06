@@ -20,14 +20,14 @@ impl<BE: Backend + CKKSEvalModImpl> CKKSEvalModOps<BE> for Module<BE> {
     fn ckks_eval_mod<R, C, P, F, H>(
         &self,
         res: &mut R,
-        ct: &C,
+        ct: &mut C,
         params: &EvalMod<F, P>,
         tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
-        C: GLWEToBackendRef<BE> + CKKSCtBounds,
+        C: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + BSGSMeta,
         H: GetTensorKey<BE>,
     {

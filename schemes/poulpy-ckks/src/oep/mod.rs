@@ -60,8 +60,7 @@ pub use add::CKKSAddImpl;
 pub use add::impl_ckks_add_reference_full;
 pub use approximation::{CKKSApproximationImpl, impl_ckks_approximation_derived_full};
 pub use bootstrapping::{
-    CKKSBootstrappingCIImpl, CKKSBootstrappingImpl, CKKSEncapsulatedModUpImpl, CKKSModUpFirstFactorImpl,
-    impl_ckks_bootstrapping_ci_reference_full, impl_ckks_bootstrapping_reference_full,
+    CKKSBootstrappingImpl, CKKSEncapsulatedModUpImpl, CKKSModUpFirstFactorImpl, impl_ckks_bootstrapping_reference_full,
     impl_ckks_encapsulated_mod_up_reference_full, impl_ckks_mod_up_first_factor_reference_full,
 };
 pub use ckks_impl::CKKSImpl;
@@ -109,8 +108,7 @@ pub use sub::impl_ckks_sub_reference_full;
 ///
 /// Left out: the standard-only families, each selected by its own macro (`CKKSImagImpl`, `CKKSConjugateImpl`,
 /// `CKKSComplexPolynomialEvaluationImpl`, `CKKSDFTImpl`, `CKKSCIRingMapImpl`, `CKKSFoldLayoutImpl`, `CKKSFoldImpl<R>`,
-/// `CKKSBootstrappingImpl`, `CKKSBootstrappingCIImpl`, `CKKSEncapsulatedModUpImpl`, `CKKSModUpFirstFactorImpl`,
-/// `CKKSPaCoImpl`, `CKKSShipImpl`), the scalar-generic families (`CKKSEncodingImpl<F>`, which each backend implements,
+/// `CKKSBootstrappingImpl`, `CKKSEncapsulatedModUpImpl`, `CKKSModUpFirstFactorImpl`, `CKKSPaCoImpl`, `CKKSShipImpl`), the scalar-generic families (`CKKSEncodingImpl<F>`, which each backend implements,
 /// and `CKKSDFTMatrixImpl<F>`, selected by its own macro) and the PaCo and SHIP coefficient encodings, which have no
 /// reference opt-in.
 #[macro_export]
