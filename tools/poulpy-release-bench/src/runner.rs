@@ -2,6 +2,9 @@
 //! the last output, on the shared [`BootstrappingPresetRun`] driver, and the
 //! direct timing the libm and blas cases share.
 
+use poulpy_core::layouts::GLWEDiagonalProd;
+#[cfg(any(feature = "cuda", feature = "hip", feature = "metal", feature = "vulkan"))]
+use poulpy_gpu_portable::{GpuRuntime, Replay};
 use std::{cell::RefCell, time::Instant};
 
 use anyhow::{Context, Result};
@@ -92,14 +95,14 @@ pub fn direct(queue: &mut dyn FnMut(), sync: &dyn Fn(), warmup: usize, iters: us
 /// backend then stands. Fails if the graph is dropped during the iterations,
 /// since `Replay` then calls the bootstrap directly.
 #[cfg(any(feature = "cuda", feature = "hip", feature = "metal", feature = "vulkan"))]
-pub fn replay<RT: poulpy_gpu_portable::GpuRuntime>(
+pub fn replay<RT: GpuRuntime>(
     queue: &mut dyn FnMut(),
     sync: &dyn Fn(),
     warmup: usize,
     iters: usize,
 ) -> Result<Option<Timings>> {
     sync();
-    let mut replay = poulpy_gpu_portable::Replay::<RT>::record(queue);
+    let mut replay = Replay::<RT>::record(queue);
     sync();
     if !replay.is_graph() {
         return Ok(None);
@@ -205,7 +208,7 @@ where
     for<'a> <BC as Backend>::BufMut<'a>: HostDataMut,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos + CKKSCtBounds + poulpy_core::layouts::GLWEDiagonalProd<BE>,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos + CKKSCtBounds + GLWEDiagonalProd<BE>,
     CKKSCiphertextOwned<BC>: GLWEToBackendMut<BC> + GLWEToBackendRef<BC> + CKKSCtBounds + SetCKKSInfos,
     CKKSPlaintextOwned<BC>: GLWEToBackendRef<BC> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,

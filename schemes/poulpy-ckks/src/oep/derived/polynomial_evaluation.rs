@@ -1,9 +1,10 @@
 use crate::CKKSResult as Result;
 use crate::api::{CKKSComplexPolynomialEvaluationOps, CKKSPolynomialEvaluationOps};
 use poulpy_core::GLWENormalize;
-use poulpy_core::layouts::GetTensorKey;
-use poulpy_core::layouts::IntPolyInfos;
-use poulpy_core::layouts::{GLWEInfos, GLWELayout, GLWEPlaintextMeta, GLWEToBackendMut, GLWEToBackendRef, Rank, SetBSGSMeta};
+use poulpy_core::layouts::{
+    BSGSMeta, GLWEInfos, GLWELayout, GLWEPlaintextMeta, GLWEToBackendMut, GLWEToBackendRef, GetTensorKey, IntPolyInfos, Rank,
+    SetBSGSMeta,
+};
 use poulpy_core::oep::GLWEMulConstImpl;
 
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
@@ -146,7 +147,7 @@ where
         + GLWENormalize<BE>,
     R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
     S: GLWEToBackendRef<BE> + CKKSCtBounds,
-    C: GLWEToBackendRef<BE> + GLWEInfos + poulpy_core::layouts::BSGSMeta + CKKSCtBounds + IntPolyInfos,
+    C: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta + CKKSCtBounds + IntPolyInfos,
     H: GetTensorKey<BE>,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
 {

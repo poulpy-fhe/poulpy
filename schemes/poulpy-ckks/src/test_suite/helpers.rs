@@ -15,6 +15,7 @@ use crate::CKKSModuleInfos;
 use crate::Scale;
 use poulpy_core::layouts::SetGLWEPlaintextInfos;
 use poulpy_hal::AlignedBuf;
+use poulpy_hal::api::VecZnxAutomorphism;
 use poulpy_hal::layouts::HostStaged;
 use std::{f64::consts::TAU, fmt::Debug, sync::Mutex};
 
@@ -216,7 +217,7 @@ pub trait TestContextSharedModule<BE: Backend>:
     + GLWESwitchingKeyEncryptSk<BE>
     + GLWESwitchingKeyPreparedFactory<BE>
     + GLWEKeyswitch<BE>
-    + poulpy_hal::api::VecZnxAutomorphism<BE>
+    + VecZnxAutomorphism<BE>
     + GaloisElement
 {
 }
@@ -259,7 +260,7 @@ impl<BE: Backend, M> TestContextSharedModule<BE> for M where
         + GLWESwitchingKeyEncryptSk<BE>
         + GLWESwitchingKeyPreparedFactory<BE>
         + GLWEKeyswitch<BE>
-        + poulpy_hal::api::VecZnxAutomorphism<BE>
+        + VecZnxAutomorphism<BE>
         + GaloisElement
 {
 }

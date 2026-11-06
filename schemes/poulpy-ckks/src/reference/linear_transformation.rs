@@ -7,11 +7,9 @@
 
 use crate::{CKKSError, CKKSResult as Result, ckks_ensure, ckks_ensure_operand, operand_cyclotomic_order};
 use crate::{GLWEPlaintextMeta, Scale, SlotsKind};
-use poulpy_core::layouts::BabyStepOperand;
-use poulpy_core::layouts::GLWEPlaintextInfos;
-use poulpy_core::layouts::LinearTransformationPlan;
+use poulpy_core::layouts::{BabyStepOperand, GLWEPlaintextInfos, LinearTransformationPlan};
 use poulpy_core::{
-    GLWEDiagonalProd, GLWELinearTransformationOps, LinearTransformationBabySteps, LinearTransformationPrepared,
+    CoreError, GLWEDiagonalProd, GLWELinearTransformationOps, LinearTransformationBabySteps, LinearTransformationPrepared,
     layouts::{
         BsgsRotations, DiagonalOperand, GGLWEInfos, GLWEAutomorphismKeyPreparedBackendRef, GLWEInfos, GLWEToBackendMut,
         GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LWEInfos, TorusPrecision,
@@ -51,7 +49,7 @@ impl<BE: Backend, H: GetAutomorphismKey<BE>> GetAutomorphismKey<BE> for Plaintex
 
 impl<BE: Backend, H> GetTensorKey<BE> for PlaintextDiagonalKeys<'_, H> {
     fn lookup_tensor_key(&self, _k: TorusPrecision) -> poulpy_core::Result<GLWETensorKeyPreparedBackendRef<'_, BE>> {
-        Err(poulpy_core::CoreError::GGLWEKeyUse {
+        Err(CoreError::GGLWEKeyUse {
             op: "get_tensor_key",
             detail: "a transform of plaintext diagonals takes no tensor key".into(),
         })

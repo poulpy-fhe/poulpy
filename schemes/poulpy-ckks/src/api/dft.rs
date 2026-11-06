@@ -6,7 +6,7 @@
 //! [`docs/guides/bootstrapping.md`](https://github.com/poulpy-fhe/poulpy/blob/main/docs/guides/bootstrapping.md).
 
 use crate::CKKSResult as Result;
-use poulpy_core::layouts::IntPolyInfos;
+use poulpy_core::layouts::{GGLWEInfos, IntPolyInfos};
 use poulpy_core::{
     GLWEDiagonalProd,
     layouts::{
@@ -49,7 +49,7 @@ pub trait CKKSDFTOps<BE: Backend> {
         D: CKKSDFTFactors<BE, Dir, Fmt>,
         Dst: CKKSCtBounds,
         Src: CKKSCtBounds,
-        K: poulpy_core::layouts::GGLWEInfos;
+        K: GGLWEInfos;
 
     /// Evaluates the homomorphic (I)DFT in place (raw chain, no format wrapper).
     fn ckks_dft_matrix_eval_assign<Dir, Fmt, D, Dst, H>(

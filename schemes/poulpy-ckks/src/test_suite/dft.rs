@@ -20,10 +20,9 @@
 use crate::CKKSModuleInfos;
 use crate::Scale;
 use crate::api::CKKSEncodingOps;
-use poulpy_core::layouts::{GLWEPlaintextInfos, SetGLWEPlaintextInfos};
+use poulpy_core::layouts::{Base2K, GLWEPlaintextInfos, LinearTransformation, LinearTransformationPlan, SetGLWEPlaintextInfos};
 use std::collections::HashMap;
 
-use poulpy_core::layouts::{Base2K, LinearTransformation};
 use poulpy_hal::{
     api::{ReimNew, ScratchOwnedBorrow},
     layouts::{Backend, CyclotomicOrder, DataView, DataViewMut, HostBytesBackend, HostDataMut, HostDataRef, Module},
@@ -127,7 +126,7 @@ impl<BE: Backend, Dir, Fmt, D: CKKSDFTFactors<BE, Dir, Fmt>> CKKSDFTFactors<BE, 
         self.0.factors()
     }
 
-    fn factor_plans(&self) -> &[poulpy_core::layouts::LinearTransformationPlan] {
+    fn factor_plans(&self) -> &[LinearTransformationPlan] {
         self.0.factor_plans()
     }
 }

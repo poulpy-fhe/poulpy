@@ -16,7 +16,7 @@ use poulpy_core::layouts::{
     BSGSMeta, Base2K, Degree, GLWE, GLWEInfos, GLWEPlaintextInfos, GLWEPlaintextMeta, GLWEToBackendMut, GLWEToBackendRef,
     GLWEViewMut, GLWEViewRef, LWEInfos, Rank, SetBSGSMeta, SetGLWEPlaintextInfos, SetK, TorusPrecision,
 };
-use poulpy_core::{ScratchArenaTakeGLWE, ScratchArenaTakeGLWEPlaintext};
+use poulpy_core::{ComponentNoise, ScratchArenaTakeGLWE, ScratchArenaTakeGLWEPlaintext};
 use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, ReaderFrom, Ring, ScratchArena, WriterTo, ZnxWord};
 
 use crate::{CKKSInfos, SetCKKSInfos, ckks_log_delta, error::CKKSCompositionError};
@@ -133,7 +133,7 @@ impl<D: Data, W: ZnxWord, R: Ring> DerefMut for CKKSCiphertext<D, W, R> {
 }
 
 impl<D: Data, W: ZnxWord, R: Ring> LWEInfos for CKKSCiphertext<D, W, R> {
-    fn noise(&self) -> Option<poulpy_core::ComponentNoise> {
+    fn noise(&self) -> Option<ComponentNoise> {
         self.inner.noise()
     }
 
@@ -240,7 +240,7 @@ where
         self.inner.set_canonical(canonical)
     }
 
-    fn set_noise(&mut self, metadata: Option<poulpy_core::ComponentNoise>) {
+    fn set_noise(&mut self, metadata: Option<ComponentNoise>) {
         GLWEToBackendMut::<BE>::set_noise(&mut self.inner, metadata);
     }
 }
@@ -265,7 +265,7 @@ impl<'a, BE: Backend + 'a> Deref for CKKSCiphertextViewRef<'a, BE> {
 }
 
 impl<BE: Backend> LWEInfos for CKKSCiphertextViewRef<'_, BE> {
-    fn noise(&self) -> Option<poulpy_core::ComponentNoise> {
+    fn noise(&self) -> Option<ComponentNoise> {
         self.inner.noise()
     }
 
@@ -382,7 +382,7 @@ impl<BE: Backend> GLWEToBackendMut<BE> for CKKSCiphertextViewMut<'_, BE> {
         GLWEToBackendMut::<BE>::set_canonical(&mut self.inner, canonical)
     }
 
-    fn set_noise(&mut self, metadata: Option<poulpy_core::ComponentNoise>) {
+    fn set_noise(&mut self, metadata: Option<ComponentNoise>) {
         GLWEToBackendMut::<BE>::set_noise(&mut self.inner, metadata);
     }
 }

@@ -1,5 +1,6 @@
 use crate::{Scale, ckks_log_delta};
 use poulpy_core::layouts::GLWEPlaintextInfos;
+use poulpy_hal::layouts::{Backend, ZnxView};
 use std::collections::HashMap;
 
 use crate::{
@@ -17,7 +18,7 @@ use crate::{
     polynomial::SplitStrategy,
 };
 use poulpy_core::{
-    GLWECIKeyEncryptSk,
+    GLWECIKeyEncryptSk, GLWECITrace,
     api::{GLWECIKeyPreparedFactory, GLWESecretCIEmbed, GLWESecretPreparedFactory},
     layouts::{GGLWEInfos, GLWEAutomorphismKeyPrepared, GLWEInfos, GLWELayout, GLWESecretAlloc, LWEInfos},
 };
@@ -514,7 +515,7 @@ where
 
             let mut coefficients = vec![F::zero(); slots];
             // A coefficient adapter stages one value per coefficient, half a slot adapter's planar buffer.
-            let coeffs_bytes = CKKSEncodingBuffer::<<BE as poulpy_hal::layouts::Backend>::OwnedBuf, F>::bytes_of(slots);
+            let coeffs_bytes = CKKSEncodingBuffer::<<BE as Backend>::OwnedBuf, F>::bytes_of(slots);
             with_scratch::<BE, _>(coeffs_bytes, |s| {
                 module.ckks_decode_coeffs_host_into(&pt, &mut coefficients, s)
             })
@@ -790,7 +791,7 @@ where
         + CKKSCIRingMapOps<STD>
         + GLWECIKeyEncryptSk<STD>
         + GLWECIKeyPreparedFactory<STD>
-        + poulpy_core::GLWECITrace<STD>,
+        + GLWECITrace<STD>,
 {
     params.prec_meta.slots = SlotsKind::Real;
     // One bit above the radix grid, so the trace output (`k − 1` bits) can fill `back` exactly.
@@ -896,7 +897,7 @@ where
     // values to the even neighbour, which the first slots alone would not show.
     {
         let mut exact = alloc_ct(&params, &ci, params.k);
-        poulpy_core::GLWECITrace::glwe_ci_trace(&standard, &mut exact.inner, &extended, &mut standard_scratch.borrow());
+        GLWECITrace::glwe_ci_trace(&standard, &mut exact.inner, &extended, &mut standard_scratch.borrow());
         let mut halved = alloc_ct(&params, &ci, params.k - 1);
         crate::reference::ring_map::ckks_ci_trace_keyless(
             "ckks_ci_trace",
@@ -912,7 +913,7 @@ where
                 let (base2k, data) = (params.base2k, ct.inner.data());
                 let mut value = 0i128;
                 for limb in 0..k.div_ceil(base2k) {
-                    let digit = poulpy_hal::layouts::ZnxView::at(data, col, limb)[i] as i128;
+                    let digit = ZnxView::at(data, col, limb)[i] as i128;
                     let bits = (k - limb * base2k).min(base2k);
                     value = value.wrapping_shl(bits as u32).wrapping_add(digit >> (base2k - bits));
                 }

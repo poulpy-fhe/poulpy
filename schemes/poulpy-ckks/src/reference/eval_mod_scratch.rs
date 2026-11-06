@@ -1,7 +1,8 @@
-use poulpy_core::GLWECopy;
 use poulpy_core::layouts::{
     Base2K, Degree, GGLWEInfos, GLWEInfos, GLWEPlaintextInfos, GLWEPlaintextMeta, LWEInfos, Rank, Scale, TorusPrecision,
 };
+use poulpy_core::oep::GLWEMulConstImpl;
+use poulpy_core::{GLWECopy, GLWENormalize};
 use poulpy_hal::api::{CnvOps, CnvPVecBytesOf, VecZnxBigNormalizeTmpBytes, VecZnxRshTmpBytes};
 use poulpy_hal::layouts::{Backend, Module, PrepareHint};
 
@@ -55,7 +56,7 @@ impl GLWEPlaintextInfos for EvalModWorkCtInfos {
 
 impl CKKSInfos for EvalModWorkCtInfos {}
 
-pub fn ckks_eval_mod_tmp_bytes_reference<BE: Backend + poulpy_core::oep::GLWEMulConstImpl, R, C, P, F, T>(
+pub fn ckks_eval_mod_tmp_bytes_reference<BE: Backend + GLWEMulConstImpl, R, C, P, F, T>(
     module: &Module<BE>,
     res: &R,
     ct: &C,
@@ -67,7 +68,7 @@ where
         + CKKSSubOps<BE>
         + CKKSMulOps<BE>
         + crate::api::CKKSPow2Ops<BE>
-        + poulpy_core::GLWENormalize<BE>
+        + GLWENormalize<BE>
         + CKKSCopyOps<BE>
         + GLWECopy<BE>
         + CnvPVecBytesOf

@@ -1,5 +1,6 @@
 //! `poulpy-ckks` extension points of the portable Rayon backends.
 
+use poulpy_ckks::api::CKKSEncodingScalar;
 use poulpy_ckks::{impl_ckks_encapsulated_mod_up_reference_full, impl_ckks_mod_up_first_factor_reference_full};
 use poulpy_cpu_portable::ckks_encoding::{CKKSEncodingTransform, EncodingFFTTable};
 use poulpy_hal::layouts::Ring;
@@ -14,14 +15,14 @@ impl_ckks_mod_up_first_factor_reference_full!(NTT4x30PortableRayon);
 // The portable backends encode every precision with the canonical table.
 impl<R: Ring, F> CKKSEncodingTransform<F> for FFT64PortableRayon<R>
 where
-    F: poulpy_ckks::api::CKKSEncodingScalar,
+    F: CKKSEncodingScalar,
 {
     type Fft = EncodingFFTTable<F>;
 }
 
 impl<R: Ring, F> CKKSEncodingTransform<F> for NTT4x30PortableRayon<R>
 where
-    F: poulpy_ckks::api::CKKSEncodingScalar,
+    F: CKKSEncodingScalar,
 {
     type Fft = EncodingFFTTable<F>;
 }

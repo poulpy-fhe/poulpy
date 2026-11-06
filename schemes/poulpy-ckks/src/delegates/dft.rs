@@ -5,7 +5,7 @@
 #![allow(clippy::too_many_arguments)]
 
 use crate::CKKSResult as Result;
-use poulpy_core::layouts::IntPolyInfos;
+use poulpy_core::layouts::{GGLWEInfos, IntPolyInfos};
 use poulpy_core::{
     GLWEDiagonalProd,
     layouts::{Base2K, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LinearTransformation},
@@ -27,7 +27,7 @@ impl<BE: Backend + CKKSDFTImpl> CKKSDFTOps<BE> for Module<BE> {
         D: CKKSDFTFactors<BE, Dir, Fmt>,
         Dst: CKKSCtBounds,
         Src: CKKSCtBounds,
-        K: poulpy_core::layouts::GGLWEInfos,
+        K: GGLWEInfos,
     {
         BE::ckks_dft_tmp_bytes(self, dst, src, dft, key)
     }

@@ -5,7 +5,7 @@
 
 #![allow(clippy::too_many_arguments)]
 
-use poulpy_core::layouts::IntPolyInfos;
+use poulpy_core::layouts::{GGLWEInfos, GLWEInfos, IntPolyInfos};
 
 use crate::CKKSResult as Result;
 use poulpy_core::{
@@ -44,7 +44,7 @@ pub unsafe trait CKKSDFTImpl:
         dft: &DFTMatrix<Self, Dir, Fmt, LinearTransformation<P>>,
     ) -> usize
     where
-        P: poulpy_core::layouts::GLWEInfos;
+        P: GLWEInfos;
 
     /// Scratch bound of [`Self::ckks_dft_matrix_eval_assign`], [`Self::ckks_coeffs_to_slots_assign`],
     /// [`Self::ckks_slots_to_coeffs_assign`], [`Self::ckks_coeffs_to_slots_split`], [`Self::ckks_slots_to_coeffs_split`],
@@ -55,7 +55,7 @@ pub unsafe trait CKKSDFTImpl:
         D: CKKSDFTFactors<Self, Dir, Fmt>,
         Dst: CKKSCtBounds,
         Src: CKKSCtBounds,
-        K: poulpy_core::layouts::GGLWEInfos;
+        K: GGLWEInfos;
 
     /// Reproduces
     /// [`ckks_dft_matrix_prepare_reference`](crate::reference::dft::CKKSDFTReference::ckks_dft_matrix_prepare_reference)

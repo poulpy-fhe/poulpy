@@ -9,8 +9,8 @@
 //! [`CKKSEvalModOps`](crate::api::CKKSEvalModOps).
 
 use crate::{CKKSResult as Result, checked_log_budget_sub, ckks_ensure_operand};
-use poulpy_core::layouts::GetTensorKey;
-use poulpy_core::layouts::IntPolyInfos;
+use poulpy_core::layouts::{GetTensorKey, IntPolyInfos};
+use poulpy_core::oep::GLWEMulConstImpl;
 use poulpy_core::{
     GLWECopy, GLWENormalize,
     layouts::{
@@ -76,7 +76,7 @@ pub trait CKKSEvalModReference<BE: Backend> {
     /// Scratch of [`Self::ckks_eval_mod_reference`].
     fn ckks_eval_mod_tmp_bytes_reference<R, C, P, F, T>(&self, res: &R, ct: &C, params: &EvalMod<F, P>, tsk: &T) -> usize
     where
-        BE: poulpy_core::oep::GLWEMulConstImpl,
+        BE: GLWEMulConstImpl,
         Self: CKKSAddOps<BE>
             + CKKSSubOps<BE>
             + CKKSMulOps<BE>
@@ -127,7 +127,7 @@ where
 
     fn ckks_eval_mod_tmp_bytes_reference<R, C, P, F, T>(&self, res: &R, ct: &C, params: &EvalMod<F, P>, tsk: &T) -> usize
     where
-        BE: poulpy_core::oep::GLWEMulConstImpl,
+        BE: GLWEMulConstImpl,
         Self: CKKSAddOps<BE>
             + CKKSSubOps<BE>
             + CKKSMulOps<BE>

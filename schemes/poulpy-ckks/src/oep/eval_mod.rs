@@ -1,7 +1,5 @@
 use crate::CKKSResult as Result;
-use poulpy_core::layouts::GetTensorKey;
-use poulpy_core::layouts::IntPolyInfos;
-use poulpy_core::layouts::{BSGSMeta, GLWEToBackendMut, GLWEToBackendRef, SetBSGSMeta};
+use poulpy_core::layouts::{BSGSMeta, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetTensorKey, IntPolyInfos, SetBSGSMeta};
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{CKKSCtBounds, SetCKKSInfos, layouts::eval_mod::EvalMod};
@@ -24,7 +22,7 @@ pub unsafe trait CKKSEvalModImpl: Backend {
         R: CKKSCtBounds,
         C: CKKSCtBounds,
         P: CKKSCtBounds,
-        T: poulpy_core::layouts::GGLWEInfos;
+        T: GGLWEInfos;
 
     /// Reproduces
     /// [`ckks_eval_mod_reference`](crate::reference::eval_mod::CKKSEvalModReference::ckks_eval_mod_reference) bit

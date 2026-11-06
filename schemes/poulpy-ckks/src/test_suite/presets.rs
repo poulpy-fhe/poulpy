@@ -7,6 +7,7 @@
 //! so there is a single description of how a preset is exercised.
 
 use crate::Scale;
+use poulpy_core::layouts::prepared::GGLWEPreparedToBackendRef;
 use poulpy_core::{
     GLWECIKeyEncryptSk, GLWEDiagonalProd,
     api::{
@@ -20,6 +21,7 @@ use poulpy_core::{
         prepared::GLWETensorKeyPreparedToBackendRef,
     },
 };
+use poulpy_hal::layouts::{Data, ZnxWord};
 use poulpy_hal::{
     api::{ModuleNew, ModuleSynchronize, ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{
@@ -535,7 +537,7 @@ where
     for<'a> <BC as Backend>::BufMut<'a>: HostDataMut,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos + CKKSCtBounds + poulpy_core::layouts::GLWEDiagonalProd<BE>,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos + CKKSCtBounds + GLWEDiagonalProd<BE>,
     CKKSCiphertextOwned<BC>: GLWEToBackendMut<BC> + GLWEToBackendRef<BC> + CKKSCtBounds + SetCKKSInfos,
     CKKSPlaintextOwned<BC>: GLWEToBackendRef<BC> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
@@ -734,7 +736,7 @@ where
     for<'a> <BC as Backend>::BufMut<'a>: HostDataMut,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos + CKKSCtBounds + poulpy_core::layouts::GLWEDiagonalProd<BE>,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos + CKKSCtBounds + GLWEDiagonalProd<BE>,
     CKKSCiphertextOwned<BC>: GLWEToBackendMut<BC> + GLWEToBackendRef<BC> + CKKSCtBounds + SetCKKSInfos,
     CKKSPlaintextOwned<BC>: GLWEToBackendRef<BC> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
@@ -764,7 +766,7 @@ where
     for<'a> <BC as Backend>::BufMut<'a>: HostDataMut,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos + CKKSCtBounds + poulpy_core::layouts::GLWEDiagonalProd<BE>,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos + CKKSCtBounds + GLWEDiagonalProd<BE>,
     CKKSCiphertextOwned<BC>: GLWEToBackendMut<BC> + GLWEToBackendRef<BC> + CKKSCtBounds + SetCKKSInfos,
     CKKSPlaintextOwned<BC>: GLWEToBackendRef<BC> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
@@ -1002,7 +1004,7 @@ fn compiled_key_rotations<BE: Backend, F>(
 
 /// The Galois elements of the rotation keys, the rotations of the first-factor keys,
 /// and which encapsulation and conversion keys a key set holds.
-fn key_set_shape<D: poulpy_hal::layouts::Data, W: poulpy_hal::layouts::ZnxWord>(
+fn key_set_shape<D: Data, W: ZnxWord>(
     keys: &crate::layouts::BootstrappingKeySet<D, W>,
 ) -> (Vec<i64>, Vec<i64>, Option<bool>, bool) {
     let sorted = |mut v: Vec<i64>| {
@@ -1286,7 +1288,7 @@ where
     let (a_half, mut res_half) = (fixture_ciphertext(&module, &half, 17), fixture_ciphertext(&module, &half, 19));
     let key_degree = {
         let (trace, _) = keys.conversion_keys.as_ref().unwrap();
-        let view = poulpy_core::layouts::prepared::GGLWEPreparedToBackendRef::to_backend_ref(trace);
+        let view = GGLWEPreparedToBackendRef::to_backend_ref(trace);
         crate::layouts::validation::validate_gadget_backend_view(
             "trace key",
             &trace.gglwe_layout(),
@@ -1418,7 +1420,7 @@ fn generate_ci_keys<BE>(
     module: &Module<BE>,
     ci: &Module<CIBackend<BE>>,
     context: &BootstrappingContextPrepared<BE, f64>,
-    sk_raw: &poulpy_core::layouts::BackendGLWESecret<BE>,
+    sk_raw: &BackendGLWESecret<BE>,
     layout: &BootstrappingKeysLayout,
 ) -> crate::layouts::BootstrappingKeySet<BE::OwnedBuf, BE::ZnxWord>
 where

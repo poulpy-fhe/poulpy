@@ -1,4 +1,5 @@
 use super::{FFT64Portable, NTT4x30Portable};
+use poulpy_ckks::api::CKKSEncodingScalar;
 
 use crate::ckks_encoding::CKKSEncodingTransform;
 use poulpy_ckks::{impl_ckks_encapsulated_mod_up_reference_full, impl_ckks_mod_up_first_factor_reference_full};
@@ -11,14 +12,14 @@ impl_ckks_mod_up_first_factor_reference_full!(NTT4x30Portable);
 // The portable backends encode every precision with the canonical table.
 impl<R: Ring, F> CKKSEncodingTransform<F> for FFT64Portable<R>
 where
-    F: poulpy_ckks::api::CKKSEncodingScalar,
+    F: CKKSEncodingScalar,
 {
     type Fft = crate::ckks_encoding::EncodingFFTTable<F>;
 }
 
 impl<R: Ring, F> CKKSEncodingTransform<F> for NTT4x30Portable<R>
 where
-    F: poulpy_ckks::api::CKKSEncodingScalar,
+    F: CKKSEncodingScalar,
 {
     type Fft = crate::ckks_encoding::EncodingFFTTable<F>;
 }

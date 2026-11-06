@@ -8,6 +8,7 @@
 //! [`docs/guides/bootstrapping.md`](https://github.com/poulpy-fhe/poulpy/blob/main/docs/guides/bootstrapping.md).
 
 use core::marker::PhantomData;
+use poulpy_core::layouts::Base2K;
 use std::{
     collections::{BTreeMap, BTreeSet},
     sync::OnceLock,
@@ -20,7 +21,7 @@ use poulpy_core::{
         LinearTransformationStrategy, optimal_bsgs_giant_step,
     },
 };
-use poulpy_hal::layouts::{Backend, Module, galois_element};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena, galois_element};
 
 use crate::{CoeffsMeta, GLWEPlaintextMeta, SetCKKSInfos, api::LtDiagonalMeta, layouts::CKKSPlaintextOwned, numerics::CKKSFloat};
 use num_traits::FloatConst;
@@ -1121,11 +1122,11 @@ impl<BE: Backend, Dir, Fmt: DftFormat, R> DFTMatrix<BE, Dir, Fmt, R> {
 /// [`DFTMatrix`] stores.
 pub(crate) fn ckks_scaled_last_factors<BE, F>(
     module: &Module<BE>,
-    base2k: poulpy_core::layouts::Base2K,
+    base2k: Base2K,
     plan: &DFTPlan,
     log_n: usize,
     scales: &[crate::layouts::ComplexDiagonals<F>],
-    scratch: &mut poulpy_hal::layouts::ScratchArena<'_, BE>,
+    scratch: &mut ScratchArena<'_, BE>,
 ) -> crate::CKKSResult<DFTMatrix<BE, crate::layouts::Encode, crate::layouts::Split>>
 where
     BE: Backend,
