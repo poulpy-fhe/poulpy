@@ -21,18 +21,19 @@
 
 use std::sync::OnceLock;
 
-use poulpy_core::layouts::ReplicatedLayout;
+use anyhow::Context;
+use poulpy_core::layouts::{ReplicatedLayout, TorusPrecision};
 use poulpy_hal::layouts::{Ring, Standard};
 
 use num_traits::{FromPrimitive, ToPrimitive, Zero};
 
-use crate::{CKKSCompositionError, CKKSResult, Quad, numerics::CKKSFloat};
+use crate::{CKKSCompositionError, CKKSInfos, CKKSResult, Quad, SlotLayout, ckks_offset_unary, numerics::CKKSFloat};
 
 /// Largest [`ShapingProfile::max_pass_bits`], reached by `U = ±1`.
 pub const MAX_PASS_BITS: usize = 62;
 
 /// Largest number of coefficients of a shaping polynomial, `2R`.
-const MAX_COEFFS: usize = 2 << ReplicatedLayout::MAX_LOG_R;
+pub(crate) const MAX_COEFFS: usize = 2 << ReplicatedLayout::MAX_LOG_R;
 
 /// Ring a [`ShapingProfile`] multiplies in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -463,6 +464,163 @@ fn inverse_mod_2_64(u: &[u64]) -> [u64; MAX_COEFFS] {
     }
 }
 
+/// Shaping depth of a product dividing by `2^log_delta` in `slot_layout`, `None` when it rounds plainly.
+pub(crate) fn product_depth(slot_layout: SlotLayout, log_delta: usize) -> Option<usize> {
+    match slot_layout {
+        SlotLayout::Replicated(layout) => {
+            Some(ShapingProfile::new(&layout).shaping_depth(log_delta, layout.w())).filter(|&lambda| lambda > 0)
+        }
+        SlotLayout::Full => None,
+    }
+}
+
+/// Input width consumed by the automorphism, including a shifted shaping temporary.
+pub(crate) fn automorphism_input_k<Dst: CKKSInfos, Src: CKKSInfos>(dst: &Dst, src: &Src) -> TorusPrecision {
+    if ckks_offset_unary(dst, src) != 0 {
+        let lambda = product_depth(src.slot_layout(), src.log_delta()).unwrap_or(0);
+        (dst.k().as_usize() + lambda).into()
+    } else {
+        src.k()
+    }
+}
+
+/// Quantizes `coeffs` at `log_delta + λ` bits into `out`, then divides by `2^λ` with
+/// shaped rounding, so that the quantization error is a multiple of the
+/// layout's shaping polynomial up to an unshaped `2^-λ` remainder. `λ` is the
+/// largest exact pass that keeps `log_delta + log_budget + λ` within `i128`;
+/// a plaintext that leaves none is rejected. `low`, `h` and `gh` are buffers as
+/// long as `coeffs`.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn shaped_quantize_into<F>(
+    coeffs: &[F],
+    layout: &ReplicatedLayout,
+    log_delta: usize,
+    log_budget: usize,
+    ring: ShapingRing,
+    out: &mut [i128],
+    low: &mut [i64],
+    h: &mut [i64],
+    gh: &mut [i64],
+) -> anyhow::Result<()>
+where
+    F: crate::api::CKKSEncodingScalar,
+{
+    let (profile, lambda) = shaping_pass(layout, ring, coeffs.len(), log_delta, log_budget)?;
+    for ((q, l), &x) in out.iter_mut().zip(low.iter_mut()).zip(coeffs) {
+        *q = x
+            .ckks_quantize(log_delta + lambda)
+            .context("CKKS coefficient is not representable as an i128 at the plaintext scale")?;
+        *l = *q as i64;
+    }
+    profile.shaped_multiple_host(lambda, low, h, gh);
+    for (q, &m) in out.iter_mut().zip(gh.iter()) {
+        *q = (*q - m as i128) >> lambda;
+    }
+    Ok(())
+}
+
+/// The shaping pass of [`shaped_quantize_into`] for `coeffs` and its shaping
+/// depth, checked before any quantization.
+fn shaping_pass(
+    layout: &ReplicatedLayout,
+    ring: ShapingRing,
+    n: usize,
+    log_delta: usize,
+    log_budget: usize,
+) -> anyhow::Result<(ShapingProfile, usize)> {
+    let profile = ShapingProfile::with_ring(layout, ring)?;
+    let period = profile.period();
+    anyhow::ensure!(
+        n.is_multiple_of(period),
+        "a replicated layout of period {} needs a multiple of {period} coefficients",
+        1usize << layout.log_r()
+    );
+    let lambda = profile.max_pass_bits().min(126usize.saturating_sub(log_delta + log_budget));
+    anyhow::ensure!(
+        lambda > 0,
+        "a replicated plaintext of {} torus bits leaves no shaping pass within i128",
+        log_delta + log_budget
+    );
+    Ok((profile, lambda))
+}
+
+/// [`shaped_quantize_into`] class by class, on stack buffers: with `Y = X^stride`,
+/// `stride = coeffs.len() / period`, the shaping product acts on each class
+/// `r < stride` of coefficients `r + stride*t` as a negacyclic product of `2R`
+/// coefficients in `Y`. On the conjugate-invariant ring the class holds its own
+/// `R` invariant coefficients and, above them, the negated mirror ones `-x_(2N-i)`,
+/// whose centered reduction is the negated reduction of the mirror, as the
+/// whole-vector pass computes it. Every coefficient is quantized and checked
+/// before the first `emit(r, values)`, which receives the `period` results of
+/// class `r` in order of `t`. Bit for bit [`shaped_quantize_into`].
+pub(crate) fn shaped_quantize_by_class<F>(
+    coeffs: &[F],
+    layout: &ReplicatedLayout,
+    log_delta: usize,
+    log_budget: usize,
+    ring: ShapingRing,
+    mut emit: impl FnMut(usize, &mut [i128]),
+) -> anyhow::Result<()>
+where
+    F: crate::api::CKKSEncodingScalar,
+{
+    let n = coeffs.len();
+    let (profile, lambda) = shaping_pass(layout, ring, n, log_delta, log_budget)?;
+    let quantize = |x: F| {
+        x.ckks_quantize(log_delta + lambda)
+            .context("CKKS coefficient is not representable as an i128 at the plaintext scale")
+    };
+    for &x in coeffs {
+        quantize(x)?;
+    }
+    let (period, len) = (profile.period(), profile.len());
+    let stride = n / period;
+    let mask = u64::MAX >> (64 - lambda);
+    let centered = |x: i64| {
+        let reduced = x as u64 & mask;
+        if reduced > mask >> 1 {
+            reduced as i64 - (1i64 << lambda)
+        } else {
+            reduced as i64
+        }
+    };
+    let (mut q, mut low, mut h, mut gh) = (
+        [0i128; MAX_COEFFS],
+        [0i64; MAX_COEFFS],
+        [0i64; MAX_COEFFS],
+        [0i64; MAX_COEFFS],
+    );
+    for r in 0..stride {
+        for (t, q) in q[..len].iter_mut().enumerate() {
+            let i = r + stride * t;
+            *q = if i < n {
+                quantize(coeffs[i]).expect("quantized above")
+            } else if i == n {
+                0
+            } else {
+                -quantize(coeffs[2 * n - i]).expect("quantized above")
+            };
+        }
+        for (l, &q) in low[..len].iter_mut().zip(&q[..len]) {
+            *l = q as i64;
+        }
+        negacyclic_sparse(profile.inverse(), 1, &low[..len], &mut h[..len]);
+        for (t, h) in h[..len].iter_mut().enumerate() {
+            *h = if t < period {
+                centered(*h)
+            } else {
+                centered(h.wrapping_neg()).wrapping_neg()
+            };
+        }
+        negacyclic_sparse(&profile.shaping[..len], 1, &h[..len], &mut gh[..len]);
+        for (q, &m) in q[..period].iter_mut().zip(&gh[..period]) {
+            *q = (*q - m as i128) >> lambda;
+        }
+        emit(r, &mut q[..period]);
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -533,6 +691,43 @@ mod tests {
                     let mut got = vec![0i64; n];
                     invariant_sparse(&p[..r], n / r, &x, &mut got);
                     assert_eq!(unfold(&got), ambient, "{unit:?}, n = {n}");
+                }
+            }
+        }
+    }
+
+    /// The class-by-class quantizer equals the whole-vector one on both rings,
+    /// down to shaping passes of one and two bits, whose centered reductions tie.
+    #[test]
+    fn shaped_quantize_by_class_matches_whole_vector() {
+        let layout = ShapingUnit::U32_45.layout(2, 24).unwrap();
+        for ring in [ShapingRing::Standard, ShapingRing::ConjugateInvariant] {
+            let period = ShapingProfile::with_ring(&layout, ring).unwrap().period();
+            for n in [period, 8 * period] {
+                let coeffs: Vec<f64> = pseudo_random(n, n as u64 + 7)
+                    .iter()
+                    .map(|&x| (x >> 40) as f64 / (1u64 << 23) as f64)
+                    .collect();
+                // A full pass, then passes of two bits and one bit.
+                for (log_delta, log_budget) in [(40, 20), (60, 64), (60, 65)] {
+                    let mut want = vec![0i128; n];
+                    let (mut low, mut h, mut gh) = (vec![0i64; n], vec![0i64; n], vec![0i64; n]);
+                    shaped_quantize_into(
+                        &coeffs, &layout, log_delta, log_budget, ring, &mut want, &mut low, &mut h, &mut gh,
+                    )
+                    .unwrap();
+                    let mut got = vec![0i128; n];
+                    let stride = n / period;
+                    shaped_quantize_by_class(&coeffs, &layout, log_delta, log_budget, ring, |r, values| {
+                        for (t, &v) in values.iter().enumerate() {
+                            got[r + stride * t] = v;
+                        }
+                    })
+                    .unwrap();
+                    assert!(
+                        got == want,
+                        "{ring:?}, n = {n}, log_delta = {log_delta}, log_budget = {log_budget}"
+                    );
                 }
             }
         }

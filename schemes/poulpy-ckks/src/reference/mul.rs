@@ -19,7 +19,7 @@ use crate::{
     CKKSCompositionError, CKKSCtBounds, CKKSLayout, SlotLayout, SlotsKind,
     api::CKKSRoundOps,
     layouts::{CKKSCiphertextViewMut, ScratchArenaTakeCKKSCiphertext},
-    shaping::{MAX_PASS_BITS, ShapingProfile},
+    shaping::MAX_PASS_BITS,
 };
 use crate::{
     CKKSInfos, GLWEPlaintextInfos, SetCKKSInfos, ckks_mul_pt_const_checks, ckks_mul_pt_vec_checks, get_mul_ct_params,
@@ -84,7 +84,7 @@ pub trait CKKSMulReference<BE: Backend> {
                 source,
             })?;
 
-        let slot_layout = product_layout("ckks_mul_into", &[a.slot_layout(), b.slot_layout()])?;
+        let slot_layout = crate::layouts::validation::product_layout("ckks_mul_into", &[a.slot_layout(), b.slot_layout()])?;
         let (res_log_budget, res_log_delta, cnv_offset) = get_mul_ct_params("ckks_mul_into", dst, a, b)?;
         let stamp = MulStamp {
             log_budget: res_log_budget,
@@ -94,7 +94,7 @@ pub trait CKKSMulReference<BE: Backend> {
             slots: Some(a.slots().join(b.slots())),
             slot_layout: Some(slot_layout),
         };
-        match product_depth(slot_layout, res_log_delta) {
+        match crate::shaping::product_depth(slot_layout, res_log_delta) {
             None => mul_into_at(self, dst, a, b, tsk, cnv_offset, stamp, scratch),
             Some(lambda) => {
                 let (mut wide, mut scratch) = take_wide(scratch, &*dst, dst.k().as_usize() + lambda);
@@ -126,9 +126,9 @@ pub trait CKKSMulReference<BE: Backend> {
                 source,
             })?;
 
-        let slot_layout = product_layout("ckks_mul_assign", &[dst.slot_layout(), a.slot_layout()])?;
+        let slot_layout = crate::layouts::validation::product_layout("ckks_mul_assign", &[dst.slot_layout(), a.slot_layout()])?;
         let (res_log_budget, res_log_delta, cnv_offset) = get_mul_ct_params("ckks_mul_assign", dst, dst, a)?;
-        if let Some(lambda) = product_depth(slot_layout, res_log_delta) {
+        if let Some(lambda) = crate::shaping::product_depth(slot_layout, res_log_delta) {
             let stamp = MulStamp {
                 log_budget: res_log_budget,
                 log_delta: res_log_delta,
@@ -240,9 +240,10 @@ pub trait CKKSMulReference<BE: Backend> {
                 source,
             })?;
 
-        let slot_layout = product_layout("ckks_mul_prepared_assign", &[dst.slot_layout(), prepared.slot_layout()])?;
+        let slot_layout =
+            crate::layouts::validation::product_layout("ckks_mul_prepared_assign", &[dst.slot_layout(), prepared.slot_layout()])?;
         let (res_log_budget, res_log_delta, cnv_offset, tensor_k) = get_mul_prepared_params(&*dst, prepared)?;
-        if let Some(lambda) = product_depth(slot_layout, res_log_delta) {
+        if let Some(lambda) = crate::shaping::product_depth(slot_layout, res_log_delta) {
             let stamp = MulStamp {
                 log_budget: res_log_budget,
                 log_delta: res_log_delta,
@@ -360,7 +361,7 @@ pub trait CKKSMulReference<BE: Backend> {
             slots: Some(a.slots()),
             slot_layout: Some(a.slot_layout()),
         };
-        match product_depth(a.slot_layout(), res_log_delta) {
+        match crate::shaping::product_depth(a.slot_layout(), res_log_delta) {
             None => square_into_at(self, dst, a, tsk, cnv_offset, stamp, scratch),
             Some(lambda) => {
                 let (mut wide, mut scratch) = take_wide(scratch, &*dst, dst.k().as_usize() + lambda);
@@ -386,7 +387,7 @@ pub trait CKKSMulReference<BE: Backend> {
             })?;
 
         let (res_log_budget, res_log_delta, cnv_offset) = get_mul_ct_params("ckks_square_assign", dst, dst, dst)?;
-        if let Some(lambda) = product_depth(dst.slot_layout(), res_log_delta) {
+        if let Some(lambda) = crate::shaping::product_depth(dst.slot_layout(), res_log_delta) {
             let stamp = MulStamp {
                 log_budget: res_log_budget,
                 log_delta: res_log_delta,
@@ -479,7 +480,8 @@ pub trait CKKSMulReference<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
     {
-        let slot_layout = product_layout("ckks_mul_pt_vec", &[a.slot_layout(), pt.slot_layout()])?;
+        let slot_layout =
+            crate::layouts::validation::product_layout("ckks_mul_pt_vec_into", &[a.slot_layout(), pt.slot_layout()])?;
         let (res_log_budget, res_log_delta, cnv_offset) =
             ckks_mul_pt_vec_checks::<BE, _, _, _>("ckks_mul_pt_vec_into", dst, a, pt)?;
         let stamp = MulStamp {
@@ -491,7 +493,7 @@ pub trait CKKSMulReference<BE: Backend> {
             slots: Some(a.slots().join(pt.slots())),
             slot_layout: Some(slot_layout),
         };
-        match product_depth(slot_layout, pt.log_delta()) {
+        match crate::shaping::product_depth(slot_layout, pt.log_delta()) {
             None => {
                 mul_pt_vec_into_at(self, dst, a, pt, cnv_offset, &stamp, scratch);
                 Ok(())
@@ -516,10 +518,11 @@ pub trait CKKSMulReference<BE: Backend> {
     {
         let (res_log_budget, res_log_delta, cnv_offset) =
             ckks_mul_pt_vec_checks::<BE, _, _, _>("ckks_mul_pt_vec_assign", dst, dst, pt)?;
-        let slot_layout = product_layout("ckks_mul_pt_vec_assign", &[dst.slot_layout(), pt.slot_layout()])?;
+        let slot_layout =
+            crate::layouts::validation::product_layout("ckks_mul_pt_vec_assign", &[dst.slot_layout(), pt.slot_layout()])?;
         let log_sparsity = dst.log_sparsity().min(dst.log_n() - pt.log_n());
         let slots = dst.slots().join(pt.slots());
-        if let Some(lambda) = product_depth(slot_layout, pt.log_delta()) {
+        if let Some(lambda) = crate::shaping::product_depth(slot_layout, pt.log_delta()) {
             let stamp = MulStamp {
                 log_budget: res_log_budget,
                 log_delta: res_log_delta,
@@ -569,7 +572,7 @@ pub trait CKKSMulReference<BE: Backend> {
             slots: Some(a.slots()),
             slot_layout: Some(a.slot_layout()),
         };
-        match product_depth(a.slot_layout(), pt.log_delta()) {
+        match crate::shaping::product_depth(a.slot_layout(), pt.log_delta()) {
             None => {
                 mul_pt_const_into_at(self, dst, a, pt, pt_coeff, cnv_offset, &stamp, scratch);
                 Ok(())
@@ -609,7 +612,7 @@ pub trait CKKSMulReference<BE: Backend> {
     {
         let (res_log_budget, res_log_delta, cnv_offset) =
             ckks_mul_pt_const_checks("ckks_mul_pt_const_assign", dst, dst, cnst, cnst_coeff)?;
-        if let Some(lambda) = product_depth(dst.slot_layout(), cnst.log_delta()) {
+        if let Some(lambda) = crate::shaping::product_depth(dst.slot_layout(), cnst.log_delta()) {
             let stamp = MulStamp {
                 log_budget: res_log_budget,
                 log_delta: res_log_delta,
@@ -839,29 +842,6 @@ pub(crate) fn get_mul_prepared_params<BE: Backend, D: GLWEInfos + CKKSInfos>(
 }
 impl<BE: Backend> CKKSMulReference<BE> for poulpy_hal::layouts::Module<BE> {}
 
-/// The common slot layout of a product's operands.
-pub(crate) fn product_layout(op: &'static str, layouts: &[SlotLayout]) -> Result<SlotLayout> {
-    let first = layouts[0];
-    if layouts.iter().any(|&layout| layout != first) {
-        return Err(CKKSCompositionError::InvalidOperand {
-            op,
-            reason: "the operands' slot layouts differ".into(),
-        }
-        .into());
-    }
-    Ok(first)
-}
-
-/// Shaping depth of a product dividing by `2^log_delta` in `slot_layout`, `None` when it rounds plainly.
-pub(crate) fn product_depth(slot_layout: SlotLayout, log_delta: usize) -> Option<usize> {
-    match slot_layout {
-        SlotLayout::Replicated(layout) => {
-            Some(ShapingProfile::new(&layout).shaping_depth(log_delta, layout.w())).filter(|&lambda| lambda > 0)
-        }
-        SlotLayout::Full => None,
-    }
-}
-
 /// A ciphertext shaped as `dst` at width `k`, for a result rounded into `dst`.
 pub(crate) fn take_wide<'a, BE: Backend + 'a, D: GLWEInfos + CKKSInfos>(
     scratch: &'a mut ScratchArena<'_, BE>,
@@ -875,37 +855,11 @@ pub(crate) fn take_wide<'a, BE: Backend + 'a, D: GLWEInfos + CKKSInfos>(
     scratch.borrow().take_ckks_ciphertext_scratch(&layout, dst.meta())
 }
 
-/// Rejects a replicated slot layout in an operation that rounds plainly or
-/// writes the guard slots.
-pub(crate) fn ensure_full_layout(op: &'static str, slot_layout: SlotLayout) -> Result<()> {
-    if let SlotLayout::Replicated(_) = slot_layout {
-        return Err(CKKSCompositionError::InvalidOperand {
-            op,
-            reason: "the operation does not support a replicated slot layout".into(),
-        }
-        .into());
-    }
-    Ok(())
-}
-
-/// Rejects a rotation by `k` slots that moves guard slots onto data slots.
-pub(crate) fn ensure_admissible_rotation(op: &'static str, slot_layout: SlotLayout, k: i64) -> Result<()> {
-    if let SlotLayout::Replicated(layout) = slot_layout
-        && k.rem_euclid(1 << layout.log_r()) != 0
-    {
-        return Err(CKKSCompositionError::InvalidOperand {
-            op,
-            reason: format!("a rotation by {k} slots is not a multiple of the period 2^{}", layout.log_r()),
-        }
-        .into());
-    }
-    Ok(())
-}
-
 /// `a²` computed `lambda` bits under its scale into `wide`, without rounding:
 /// the square of a destination `lambda` bits narrower than `wide`, labeled
-/// `lambda` bits finer.
+/// `lambda` bits finer. Refusals carry the caller's `op`.
 pub(crate) fn square_wide_into<BE, M, Out, A, T>(
+    op: &'static str,
     module: &M,
     wide: &mut Out,
     a: &A,
@@ -922,14 +876,9 @@ where
 {
     let k = a.k();
     tsk.get_tensor_key(k)
-        .map_err(|source| CKKSCompositionError::MissingRelinearizationKey {
-            op: "ckks_square_wide",
-            k: k.into(),
-            source,
-        })?;
+        .map_err(|source| CKKSCompositionError::MissingRelinearizationKey { op, k: k.into(), source })?;
     let max_k = wide.k().as_usize().saturating_sub(lambda);
-    let (log_budget, log_delta, cnv_offset) =
-        mul_ct_params_raw("ckks_square_wide", max_k, a.log_delta(), k.into(), a.log_delta(), k.into())?;
+    let (log_budget, log_delta, cnv_offset) = mul_ct_params_raw(op, max_k, a.log_delta(), k.into(), a.log_delta(), k.into())?;
     let stamp = MulStamp {
         log_budget,
         log_delta,
@@ -954,7 +903,7 @@ where
     Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
 {
     dst.set_k((stamp.log_budget + stamp.log_delta).into());
-    module.ckks_round_into(dst, wide, scratch)
+    module.ckks_round(dst, wide, scratch)
 }
 
 #[allow(clippy::too_many_arguments)]

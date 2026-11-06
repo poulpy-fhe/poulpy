@@ -3,8 +3,6 @@
 
 mod convolution;
 mod operand;
-#[cfg(feature = "enable-ckks")]
-pub(crate) use operand::column_ref;
 mod svp;
 mod vec_znx;
 mod vec_znx_big;

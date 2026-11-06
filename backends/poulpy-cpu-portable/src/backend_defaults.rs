@@ -32,7 +32,8 @@ macro_rules! impl_cpu_core_defaults {
 macro_rules! impl_cpu_ckks_defaults {
     ($be:ty) => {
         $crate::impl_cpu_ckks_shaped_rounding!($be);
-        ::poulpy_ckks::impl_ckks_round_reference!($be);
+        ::poulpy_ckks::impl_ckks_round_reference_full!($be);
+        ::poulpy_ckks::impl_ckks_replicated_derived_full!($be);
         ::poulpy_ckks::impl_ckks_reference_full!($be);
         $crate::impl_ckks_encoding!($be);
     };

@@ -43,9 +43,13 @@ where
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     H: GetAutomorphismKey<BE>,
 {
-    crate::reference::mul::ensure_admissible_rotation("conjugate_rotate", crate::GLWEPlaintextInfos::slot_layout(src), k)?;
+    crate::layouts::validation::ensure_admissible_rotation(
+        "ckks_conjugate_rotate_into",
+        crate::GLWEPlaintextInfos::slot_layout(src),
+        k,
+    )?;
     let p = conj_rotate_galois_element(k, module.cyclotomic_order());
-    let switch_k = crate::reference::rotate::automorphism_input_k(dst, src);
+    let switch_k = crate::shaping::automorphism_input_k(dst, src);
     let key = keys
         .get_automorphism_key(p, switch_k)
         .map_err(|source| CKKSCompositionError::MissingAutomorphismKey {

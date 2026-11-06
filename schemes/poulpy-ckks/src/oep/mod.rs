@@ -51,6 +51,7 @@ mod paco;
 mod plaintext;
 mod polynomial_evaluation;
 mod pow2;
+mod replicated;
 mod ring_map;
 mod rotate;
 mod round;
@@ -98,10 +99,15 @@ pub use polynomial_evaluation::{
 };
 pub use pow2::CKKSPow2Impl;
 pub use pow2::impl_ckks_pow2_reference_full;
+pub use replicated::{
+    CKKSReplicatedBootstrapImpl, CKKSReplicatedCIBootstrapImpl, CKKSReplicatedImpl,
+    impl_ckks_replicated_bootstrap_reference_full, impl_ckks_replicated_ci_bootstrap_reference_full,
+    impl_ckks_replicated_derived_full,
+};
 pub use ring_map::{CKKSCIRingMapImpl, impl_ckks_ci_ring_map_reference_full};
 pub use rotate::CKKSRotateImpl;
 pub use rotate::impl_ckks_rotate_reference_full;
-pub use round::{CKKSRoundImpl, CKKSShapedRoundingImpl, impl_ckks_round_reference};
+pub use round::{CKKSRoundImpl, CKKSShapedRoundingImpl, impl_ckks_round_reference_full};
 pub use ship::{CKKSShipCoeffEncodingImpl, CKKSShipImpl, impl_ckks_ship_reference_full};
 pub use sub::CKKSSubImpl;
 pub use sub::impl_ckks_sub_reference_full;

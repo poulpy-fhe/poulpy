@@ -17,8 +17,8 @@ use poulpy_core::{
     },
 };
 use poulpy_hal::{
-    api::{CnvPVecAlloc, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, Module, ScratchArena, ScratchOwned},
+    api::CnvPVecAlloc,
+    layouts::{Backend, Module, ScratchArena},
     source::Source,
 };
 
@@ -63,7 +63,29 @@ pub struct ReplicatedConversion<BE: Backend> {
     pub(crate) trace: Vec<i64>,
 }
 
+/// Bits a diagonal holds above its scale: the largest weight, a sign and a carry.
+const MAX_DIAGONAL_HEADROOM: usize = usize::BITS as usize + 2;
+
 impl<BE: Backend> ReplicatedConversion<BE> {
+    /// Scratch of [`Self::new`].
+    ///
+    /// # Errors
+    /// When `layout` needs more slots than the module has.
+    pub fn new_tmp_bytes<F>(
+        module: &Module<BE>,
+        layout: &ReplicatedLayout,
+        base2k: Base2K,
+        log_delta_diag: usize,
+    ) -> Result<usize>
+    where
+        F: CKKSEncodingScalar,
+        Module<BE>: ReplicatedTransformModule<BE, F>,
+    {
+        ReplicatedTransform::<BE>::encode_tmp_bytes::<F>(module, layout, base2k, log_delta_diag)
+    }
+
+    /// Encodes and prepares the conversion maps on `module`, within the caller's `scratch`
+    /// of [`Self::new_tmp_bytes`].
     pub fn new<F>(
         module: &Module<BE>,
         layout: ReplicatedLayout,
@@ -71,6 +93,7 @@ impl<BE: Backend> ReplicatedConversion<BE> {
         log_delta: usize,
         log_delta_diag: usize,
         extra_bits: usize,
+        scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<Self>
     where
         F: CKKSEncodingScalar,
@@ -81,7 +104,7 @@ impl<BE: Backend> ReplicatedConversion<BE> {
             let read = s.is_multiple_of(r) && (s / r) % k == j;
             (if read { F::one() } else { F::zero() }, F::zero())
         };
-        let to = ReplicatedTransform::from_period(module, layout, base2k, log_delta_diag, true, select)?;
+        let to = ReplicatedTransform::from_period(module, layout, base2k, log_delta_diag, true, select, scratch)?;
         let identity = |c: usize, j: usize| (if c == j { F::one() } else { F::zero() }, F::zero());
         let from = if r <= k {
             Some(ReplicatedTransform::gather(
@@ -91,6 +114,7 @@ impl<BE: Backend> ReplicatedConversion<BE> {
                 log_delta_diag,
                 false,
                 identity,
+                scratch,
             )?)
         } else {
             None
@@ -195,16 +219,27 @@ impl<BE: Backend> ReplicatedTransform<BE> {
         log_delta_diag: usize,
         shaped: bool,
         a: A,
+        scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<Self>
     where
         F: CKKSEncodingScalar,
         A: Fn(usize, usize) -> (F, F),
         Module<BE>: ReplicatedTransformModule<BE, F>,
     {
-        Self::from_input_period(module, layout, 1 << layout.log_k(), base2k, log_delta_diag, shaped, a)
+        Self::from_input_period(
+            module,
+            layout,
+            1 << layout.log_k(),
+            base2k,
+            log_delta_diag,
+            shaped,
+            a,
+            scratch,
+        )
     }
 
     /// [`Self::from_period`] from slots of period `m`, a divisor of `n`.
+    #[expect(clippy::too_many_arguments, reason = "the map, its layout, period, scale and arena")]
     pub fn from_input_period<F, A>(
         module: &Module<BE>,
         layout: ReplicatedLayout,
@@ -213,6 +248,7 @@ impl<BE: Backend> ReplicatedTransform<BE> {
         log_delta_diag: usize,
         shaped: bool,
         a: A,
+        scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<Self>
     where
         F: CKKSEncodingScalar,
@@ -222,7 +258,7 @@ impl<BE: Backend> ReplicatedTransform<BE> {
         let (_, n) = check_period(module, &layout)?;
         ensure!(n.is_multiple_of(m), "the input period {m} must divide the {n} slots");
         let weights = (0..m).map(|o| (o, (0..n).map(|s| a(s, (s + o) % m)).collect())).collect();
-        Self::encode(module, layout, base2k, log_delta_diag, shaped, weights)
+        Self::encode(module, layout, base2k, log_delta_diag, shaped, weights, scratch)
     }
 
     /// The gather `y` reading only the data slots, such that the normalized
@@ -237,6 +273,7 @@ impl<BE: Backend> ReplicatedTransform<BE> {
         log_delta_diag: usize,
         shaped: bool,
         a: A,
+        scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<Self>
     where
         F: CKKSEncodingScalar,
@@ -264,7 +301,44 @@ impl<BE: Backend> ReplicatedTransform<BE> {
                 weights[index].1[s] = (weight * re, weight * im);
             }
         }
-        Self::encode(module, layout, base2k, log_delta_diag, shaped, weights)
+        Self::encode(module, layout, base2k, log_delta_diag, shaped, weights, scratch)
+    }
+
+    /// Scratch of [`Self::from_period`], [`Self::from_input_period`] and [`Self::gather`] for `layout`
+    /// with diagonals at scale `2^log_delta_diag`: the encoding of one diagonal and its preparation, at
+    /// the widest diagonal a weight can need.
+    ///
+    /// # Errors
+    /// When `layout` needs more slots than the module has.
+    pub fn encode_tmp_bytes<F>(
+        module: &Module<BE>,
+        layout: &ReplicatedLayout,
+        base2k: Base2K,
+        log_delta_diag: usize,
+    ) -> Result<usize>
+    where
+        F: CKKSEncodingScalar,
+        Module<BE>: ReplicatedTransformModule<BE, F>,
+    {
+        let (_, n) = check_period(module, layout)?;
+        let degree = period_degree::<BE, _>(module, n);
+        let diagonal = CKKSLayout {
+            glwe_layout: GLWELayout {
+                n: degree,
+                base2k,
+                k: TorusPrecision((log_delta_diag + MAX_DIAGONAL_HEADROOM) as u32),
+                rank: Rank(0),
+            },
+            meta: GLWEPlaintextMeta {
+                scale: Scale::Log(log_delta_diag),
+                slots: SlotsKind::Complex,
+                log_sparsity: 0,
+                slot_layout: SlotLayout::Full,
+            },
+        };
+        Ok(module
+            .ckks_encoding_host_tmp_bytes(module.ckks_slots_of_degree(degree.as_usize()))
+            .max(module.ckks_linear_transformation_rhs_prepare_tmp_bytes(&diagonal)))
     }
 
     /// Slot rotations of the transform, for their automorphism keys.
@@ -284,6 +358,7 @@ impl<BE: Backend> ReplicatedTransform<BE> {
         log_delta_diag: usize,
         shaped: bool,
         weights: Vec<(usize, Vec<(F, F)>)>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<Self>
     where
         F: CKKSEncodingScalar,
@@ -301,6 +376,7 @@ impl<BE: Backend> ReplicatedTransform<BE> {
             .fold(F::zero(), F::max);
         // Bits above the scale for the largest weight, plus a sign and a carry.
         let headroom = (usize::BITS - (largest.to_f64().unwrap_or(1.0).ceil() as usize).max(1).leading_zeros()) as usize + 2;
+        debug_assert!(headroom <= MAX_DIAGONAL_HEADROOM);
         let mut diagonals = ComplexDiagonals {
             re: Diagonals::new(n),
             im: Diagonals::new(n),
@@ -343,7 +419,6 @@ impl<BE: Backend> ReplicatedTransform<BE> {
         };
         let mut lt = module.ckks_linear_transformation_alloc_from_infos(&lt_layout, &infos);
         let pt_slots = module.ckks_slots_of_degree(infos.glwe_layout.n.as_usize());
-        let mut scratch = ScratchOwned::<BE>::alloc(module.ckks_encoding_host_tmp_bytes(pt_slots));
         let mut targets = lt.giant_steps.iter_mut().flat_map(|gs| {
             let rot = gs.rot;
             gs.diagonals.iter_mut().map(move |d| (rot, &mut d.plaintext))
@@ -372,8 +447,7 @@ impl<BE: Backend> ReplicatedTransform<BE> {
         result?;
         let first = lt.first_diagonal_plaintext().context("a transform has a diagonal")?;
         let mut prepared = LinearTransformationPrepared::<BE>::alloc_prepared_from_index(module, &lt.index(), first);
-        let mut scratch = ScratchOwned::<BE>::alloc(module.ckks_linear_transformation_rhs_prepare_tmp_bytes(first));
-        module.ckks_linear_transformation_rhs_prepare(&mut prepared, &lt, &mut scratch.borrow())?;
+        module.ckks_linear_transformation_rhs_prepare(&mut prepared, &lt, scratch)?;
         Ok(Self { lt: prepared })
     }
 }
@@ -639,7 +713,50 @@ pub struct ReplicatedBootstrapping<BE: Backend, F> {
     pub(crate) eval_mod: EvalMod<F, MaskedCoeffs<CKKSPlaintextOwned<BE>>>,
 }
 
+/// The layout of the two batches EvalMod runs on side by side, when the plan packs them and they fit.
+fn packed_layout(plan: &ReplicatedBootstrapPlan, max_slots: usize) -> Result<Option<ReplicatedLayout>> {
+    let layout = plan.layout;
+    let (k, r) = (1usize << layout.log_k(), 1usize << layout.log_r());
+    Ok(if plan.packed && 4 * k * r <= 2 * max_slots {
+        Some(ReplicatedLayout::new(
+            layout.log_k() as u8 + 1,
+            layout.log_r() as u8,
+            layout.w() as u8,
+            layout.shaping(),
+        )?)
+    } else {
+        None
+    })
+}
+
 impl<BE: Backend, F: CKKSEncodingScalar> ReplicatedBootstrapping<BE, F> {
+    /// Scratch of [`Self::new`]: the host encodings of the embedding and of the EvalMod constants, and
+    /// the transforms of both conversions.
+    ///
+    /// # Errors
+    /// When the plan's layout needs more slots than the module has.
+    pub fn new_tmp_bytes(module: &Module<BE>, plan: &ReplicatedBootstrapPlan, base2k: Base2K) -> Result<usize>
+    where
+        Module<BE>: ReplicatedTransformModule<BE, F>,
+    {
+        let c2s_layout = packed_layout(plan, module.ckks_max_slots())?.unwrap_or(plan.layout);
+        Ok(module
+            .ckks_encoding_host_tmp_bytes(module.ckks_max_slots())
+            .max(ReplicatedTransform::<BE>::encode_tmp_bytes::<F>(
+                module,
+                &plan.layout,
+                base2k,
+                plan.s2c_log_delta_diag,
+            )?)
+            .max(ReplicatedTransform::<BE>::encode_tmp_bytes::<F>(
+                module,
+                &c2s_layout,
+                base2k,
+                plan.c2s_log_delta_diag,
+            )?))
+    }
+
+    /// Compiles `plan` on `module`, within the caller's `scratch` of [`Self::new_tmp_bytes`].
     pub fn new(
         module: &Module<BE>,
         plan: ReplicatedBootstrapPlan,
@@ -658,8 +775,16 @@ impl<BE: Backend, F: CKKSEncodingScalar> ReplicatedBootstrapping<BE, F> {
         let (k, r) = (1usize << layout.log_k(), 1usize << layout.log_r());
         ensure!(r <= k, "bootstrapping needs the period {r} to divide the batch size {k}");
         let half = module.ckks_max_slots();
-        let v = embedding::<BE, F>(module, k, base2k)?;
-        let s2c = ReplicatedTransform::gather(module, layout, base2k, plan.s2c_log_delta_diag, false, |c, j| v[c][j])?;
+        let v = embedding::<BE, F>(module, k, base2k, scratch)?;
+        let s2c = ReplicatedTransform::gather(
+            module,
+            layout,
+            base2k,
+            plan.s2c_log_delta_diag,
+            false,
+            |c, j| v[c][j],
+            scratch,
+        )?;
         let scale = F::from_usize(2 * k * plan.eval_mod.f_mod_interval)
             .context("the CoeffsToSlots normalization is not representable")?
             .recip();
@@ -668,37 +793,41 @@ impl<BE: Backend, F: CKKSEncodingScalar> ReplicatedBootstrapping<BE, F> {
             let (re, im) = v[c][t];
             (re * scale, -im * scale)
         };
-        let packed = if plan.packed && 4 * k * r <= 2 * half {
-            Some(ReplicatedLayout::new(
-                layout.log_k() as u8 + 1,
-                layout.log_r() as u8,
-                layout.w() as u8,
-                layout.shaping(),
-            )?)
-        } else {
-            None
-        };
+        let packed = packed_layout(&plan, half)?;
         let c2s = match packed {
             // `−i·A` on the second batch.
-            Some(double) => {
-                ReplicatedTransform::from_input_period(module, double, k, base2k, plan.c2s_log_delta_diag, true, |s, c| {
-                    match (s % r, s / r) {
-                        (0, t) if t < k => a(t, c),
-                        (0, t) => {
-                            let (re, im) = a(t - k, c);
-                            (im, -re)
-                        }
-                        _ => (F::zero(), F::zero()),
+            Some(double) => ReplicatedTransform::from_input_period(
+                module,
+                double,
+                k,
+                base2k,
+                plan.c2s_log_delta_diag,
+                true,
+                |s, c| match (s % r, s / r) {
+                    (0, t) if t < k => a(t, c),
+                    (0, t) => {
+                        let (re, im) = a(t - k, c);
+                        (im, -re)
                     }
-                })?
-            }
-            None => ReplicatedTransform::from_period(module, layout, base2k, plan.c2s_log_delta_diag, true, |s, c| {
-                if s.is_multiple_of(r) {
-                    a(s / r, c)
-                } else {
-                    (F::zero(), F::zero())
-                }
-            })?,
+                    _ => (F::zero(), F::zero()),
+                },
+                scratch,
+            )?,
+            None => ReplicatedTransform::from_period(
+                module,
+                layout,
+                base2k,
+                plan.c2s_log_delta_diag,
+                true,
+                |s, c| {
+                    if s.is_multiple_of(r) {
+                        a(s / r, c)
+                    } else {
+                        (F::zero(), F::zero())
+                    }
+                },
+                scratch,
+            )?,
         };
         let eval_mod = match packed {
             Some(double) => ckks_eval_mod_replicated_packed_compile::<BE, F>(base2k, plan.eval_mod, double, module, scratch)?,
@@ -774,10 +903,31 @@ impl<BE: Backend, F> ReplicatedBootstrapping<BE, F> {
         elements
     }
 
+    /// Scratch of [`Self::generate_keys`] for `layout`: the encryption of each key.
+    pub fn generate_keys_tmp_bytes(&self, module: &Module<BE>, layout: &BootstrappingKeysLayout) -> usize
+    where
+        Module<BE>: GLWEAutomorphismKeyEncryptSk<BE> + GLWETensorKeyEncryptSk<BE> + GLWESwitchingKeyEncryptSk<BE>,
+    {
+        let mut bytes = module.glwe_tensor_key_encrypt_sk_tmp_bytes(&layout.tensor_key);
+        for key in layout.rotation_key_layouts() {
+            bytes = bytes.max(module.glwe_automorphism_key_encrypt_sk_tmp_bytes(&key));
+        }
+        if let Some(encapsulation) = &layout.encapsulation {
+            for key in [Some(encapsulation.dense_to_sparse), encapsulation.sparse_to_dense]
+                .into_iter()
+                .flatten()
+            {
+                bytes = bytes.max(module.glwe_switching_key_encrypt_sk_tmp_bytes(&key));
+            }
+        }
+        bytes
+    }
+
     /// Generates the keys of the bootstrapping under `sk`: the automorphism
     /// keys of [`Self::galois_elements`], the tensor key, and with
     /// `layout.encapsulation` the keys to and from an ephemeral secret of
-    /// Hamming weight `hamming_weight` sampled from `source_xs`.
+    /// Hamming weight `hamming_weight` sampled from `source_xs`, within `scratch` of
+    /// [`Self::generate_keys_tmp_bytes`].
     ///
     /// # Panics
     ///
@@ -848,13 +998,17 @@ impl<BE: Backend, F> ReplicatedBootstrapping<BE, F> {
 
 /// `V[c][j]`, slot `c` of the monomial `Y'^j` of the subring of degree `2k`,
 /// read from the encoder.
-fn embedding<BE: Backend, F>(module: &Module<BE>, k: usize, base2k: Base2K) -> Result<Vec<Vec<(F, F)>>>
+fn embedding<BE: Backend, F>(
+    module: &Module<BE>,
+    k: usize,
+    base2k: Base2K,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> Result<Vec<Vec<(F, F)>>>
 where
     F: CKKSEncodingScalar,
     Module<BE>: ReplicatedTransformModule<BE, F>,
 {
     let log_delta = 40;
-    let mut scratch = ScratchOwned::<BE>::alloc(module.ckks_encoding_host_tmp_bytes(k));
     let mut columns = Vec::with_capacity(k);
     for j in 0..k {
         let mut pt = module.ckks_plaintext_alloc_from_slots(k, base2k, TorusPrecision((log_delta + 2) as u32));

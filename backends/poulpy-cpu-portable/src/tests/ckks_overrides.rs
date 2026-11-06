@@ -84,7 +84,7 @@ poulpy_ckks::impl_ckks_affine_derived_full!(OverrideBackend);
 poulpy_ckks::impl_ckks_mul_sub_derived_full!(OverrideBackend);
 poulpy_ckks::impl_ckks_approximation_derived_full!(OverrideBackend);
 unsafe impl poulpy_ckks::oep::CKKSShapedRoundingImpl for OverrideBackend {
-    fn ckks_shaped_round_correction_impl(
+    fn ckks_shaped_round_correction(
         _module: &Module<Self>,
         carry: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self>,
         h: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self>,
@@ -96,7 +96,8 @@ unsafe impl poulpy_ckks::oep::CKKSShapedRoundingImpl for OverrideBackend {
         crate::ckks_round::shaped_round_correction::<Self>(carry, h, low, profile, lambda);
     }
 }
-::poulpy_ckks::impl_ckks_round_reference!(OverrideBackend);
+::poulpy_ckks::impl_ckks_round_reference_full!(OverrideBackend);
+::poulpy_ckks::impl_ckks_replicated_derived_full!(OverrideBackend);
 
 unsafe impl poulpy_ckks::oep::CKKSPolynomialEvaluationImpl for OverrideBackend {
     fn ckks_eval_poly_real_const_coeffs_from_power_basis<R, B, A, G, H>(
@@ -603,7 +604,7 @@ impl poulpy_ckks::api::CKKSRoundOps<OverrideBackend> for CoreQueryOverrides<'_> 
         self.module.ckks_round_tmp_bytes(dst, src)
     }
 
-    fn ckks_round_into<Dst, Src>(
+    fn ckks_round<Dst, Src>(
         &self,
         dst: &mut Dst,
         src: &Src,
@@ -613,7 +614,7 @@ impl poulpy_ckks::api::CKKSRoundOps<OverrideBackend> for CoreQueryOverrides<'_> 
         Dst: poulpy_core::layouts::GLWEToBackendMut<OverrideBackend> + poulpy_ckks::CKKSCtBounds + poulpy_ckks::SetCKKSInfos,
         Src: poulpy_core::layouts::GLWEToBackendRef<OverrideBackend> + poulpy_ckks::CKKSCtBounds,
     {
-        self.module.ckks_round_into(dst, src, scratch)
+        self.module.ckks_round(dst, src, scratch)
     }
 }
 
@@ -1029,12 +1030,12 @@ fn ckks_round_reference_dispatches_shaping_correction() {
     let mut expected = fixture_ciphertext(&reference, &dst_layout, 93);
     SHAPING_CALLS.with(|calls| calls.set(0));
     with_scratch::<OverrideBackend, _>(module.ckks_round_tmp_bytes(&dst, &src), |scratch| {
-        module.ckks_round_into(&mut dst, &src, scratch)
+        module.ckks_round(&mut dst, &src, scratch)
     })
     .unwrap();
     assert_eq!(SHAPING_CALLS.with(Cell::get), 2);
     with_scratch::<crate::FFT64Portable, _>(reference.ckks_round_tmp_bytes(&expected, &src_ref), |scratch| {
-        reference.ckks_round_into(&mut expected, &src_ref, scratch)
+        reference.ckks_round(&mut expected, &src_ref, scratch)
     })
     .unwrap();
     assert_eq!(

@@ -403,6 +403,9 @@ where
     where
         S: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
     {
+        for ct in ins {
+            crate::layouts::validation::ensure_full_layout("ckks_fold", crate::GLWEPlaintextInfos::slot_layout(ct))?;
+        }
         const OP: &str = "ckks_fold";
         let module = self;
         let degree = folded_degree(OP, folded)?;
@@ -483,6 +486,9 @@ where
         S: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
         H: GetAutomorphismKey<BE>,
     {
+        for ct in folded.iter() {
+            crate::layouts::validation::ensure_full_layout("ckks_unfold", crate::GLWEPlaintextInfos::slot_layout(ct))?;
+        }
         const OP: &str = "ckks_unfold";
         let module = self;
         let degree = folded_degree(OP, folded)?;

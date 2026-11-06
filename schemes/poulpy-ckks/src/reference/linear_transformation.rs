@@ -283,7 +283,7 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetAutomorphismKey<BE>,
     {
-        crate::reference::mul::ensure_full_layout(
+        crate::layouts::validation::ensure_full_layout(
             "ckks_linear_transformation_baby_steps_prepare",
             crate::GLWEPlaintextInfos::slot_layout(src),
         )?;
@@ -330,7 +330,7 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
             .into()
         })?;
         ensure_uniform_diagonals(OP, lt, lt_diagonal_meta)?;
-        crate::reference::mul::ensure_full_layout(OP, crate::GLWEPlaintextInfos::slot_layout(src))?;
+        crate::layouts::validation::ensure_full_layout(OP, crate::GLWEPlaintextInfos::slot_layout(src))?;
         let (res_log_budget, res_log_delta, cnv_offset) = lt_rule(OP, &*dst, src, babies, first, keys)?;
         let res_k: TorusPrecision = (res_log_budget + res_log_delta).into();
         let src_layout = CKKSLayout {
@@ -417,7 +417,7 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
             ensure_uniform_diagonals(OP, lt_t, lt_diagonal_meta)?;
         }
         for &src_t in srcs {
-            crate::reference::mul::ensure_full_layout(OP, crate::GLWEPlaintextInfos::slot_layout(src_t))?;
+            crate::layouts::validation::ensure_full_layout(OP, crate::GLWEPlaintextInfos::slot_layout(src_t))?;
         }
         // The terms share the source and diagonal metadata, so the first term's
         // rule holds for all of them (see `ckks_linear_transformation_eval_into`).

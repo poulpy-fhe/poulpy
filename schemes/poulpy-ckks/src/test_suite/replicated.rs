@@ -27,6 +27,7 @@ use std::collections::HashMap;
 use anyhow::Result;
 use poulpy_core::{
     GLWECIKeyEncryptSk, GLWEMulPreparedPlainSum, GLWETrace,
+    api::GLWECIKeyPreparedFactory,
     layouts::{
         Base2K, GLWEInfos, GLWELayout, GLWEToBackendRef, LWEInfos, LinearTransformationBabySteps, TorusPrecision,
         prepared::GLWESecretPrepared,
@@ -59,8 +60,8 @@ use crate::{
         encode_complex_bsgs_replicated,
     },
     oep::CKKSEncapsulatedModUpImpl,
+    oep::derived::replicated::{wide_gather_trace, wide_onto_replicated},
     polynomial::{Basis, CKKSPolynomialEncode, ComplexPolynomial, Polynomial, SplitStrategy},
-    reference::replicated::{wide_gather_trace, wide_onto_replicated},
     shaping::{ShapingRing, ShapingUnit},
     test_suite::CKKSTestParams,
 };
@@ -1232,13 +1233,21 @@ where
     let extra_bits = log_delta_ckks - log_delta - (module.ckks_max_slots() >> log_k).trailing_zeros() as usize;
     let layout = ShapingUnit::U16_40.layout(log_k, 24)?;
     let len = 1usize << log_k;
+    let base2k = Base2K(params.base2k as u32);
+    let mut setup = ScratchOwned::<BE>::alloc(ReplicatedConversion::<BE>::new_tmp_bytes::<F>(
+        module,
+        &layout,
+        base2k,
+        log_delta_diag,
+    )?);
     let conv = ReplicatedConversion::new::<F>(
         module,
         layout,
-        Base2K(params.base2k as u32),
+        base2k,
         log_delta,
         log_delta_diag,
         extra_bits,
+        &mut setup.borrow(),
     )?;
 
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
@@ -1259,7 +1268,7 @@ where
     let mut scratch = ScratchOwned::<BE>::alloc(module.ckks_replicated_conversion_tmp_bytes(&ckks, &atk_infos, &conv));
     let mut replicated = alloc_ct(&params, module, k);
     let mut to_workspace = conv.alloc_to_workspace(module, &ckks);
-    module.ckks_to_replicated_into(&mut replicated, &ckks, &conv, &mut to_workspace, &atks, &mut scratch.borrow())?;
+    module.ckks_to_replicated(&mut replicated, &ckks, &conv, &mut to_workspace, &atks, &mut scratch.borrow())?;
     assert_eq!(replicated.slot_layout(), SlotLayout::Replicated(layout));
     assert_eq!(replicated.log_delta(), log_delta);
     let got = decrypt_batch::<BE, F>(&params, module, &sk, &replicated, len);
@@ -1274,7 +1283,7 @@ where
 
     let mut back = alloc_ct(&params, module, k);
     let mut from_workspace = conv.alloc_from_workspace(module, &replicated)?;
-    module.ckks_from_replicated_into(
+    module.ckks_from_replicated(
         &mut back,
         &replicated,
         &conv,
@@ -1312,9 +1321,9 @@ where
             let bad_before = snapshot::<BE, _>(&bad);
             for to in [true, false] {
                 let err = if to {
-                    module.ckks_to_replicated_into(&mut bad, &ckks, &conv, &mut to_workspace, &atks, &mut scratch.borrow())
+                    module.ckks_to_replicated(&mut bad, &ckks, &conv, &mut to_workspace, &atks, &mut scratch.borrow())
                 } else {
-                    module.ckks_from_replicated_into(
+                    module.ckks_from_replicated(
                         &mut bad,
                         &replicated,
                         &conv,
@@ -1324,11 +1333,7 @@ where
                     )
                 }
                 .unwrap_err();
-                let expected_op = if to {
-                    "ckks_to_replicated_into"
-                } else {
-                    "ckks_from_replicated_into"
-                };
+                let expected_op = if to { "ckks_to_replicated" } else { "ckks_from_replicated" };
                 assert!(
                     matches!(err.composition(), Some(crate::CKKSCompositionError::InvalidOperand { op, reason: actual }) if *op == expected_op && actual == reason)
                 );
@@ -1348,10 +1353,10 @@ where
         wrong_rotations.babies = LinearTransformationBabySteps::alloc(module, &[1], &wrong_rotations.input);
         for workspace in [&mut wrong_width, &mut wrong_rotations] {
             let err = module
-                .ckks_to_replicated_into(&mut out, &ckks, &conv, workspace, &atks, &mut scratch.borrow())
+                .ckks_to_replicated(&mut out, &ckks, &conv, workspace, &atks, &mut scratch.borrow())
                 .unwrap_err();
             assert!(
-                matches!(err.composition(), Some(crate::CKKSCompositionError::InvalidOperand { op: "ckks_to_replicated_into", reason }) if reason == "workspace does not match the transform input layout or rotations")
+                matches!(err.composition(), Some(crate::CKKSCompositionError::InvalidOperand { op: "ckks_to_replicated", reason }) if reason == "workspace does not match the transform input layout or rotations")
             );
             assert_eq!(snapshot::<BE, _>(&out), before);
             assert_eq!(snapshot::<BE, _>(&ckks), input_before);
@@ -1359,12 +1364,12 @@ where
     }
     assert!(
         module
-            .ckks_to_replicated_into(&mut out, &replicated, &conv, &mut to_workspace, &atks, &mut scratch.borrow())
+            .ckks_to_replicated(&mut out, &replicated, &conv, &mut to_workspace, &atks, &mut scratch.borrow())
             .is_err()
     );
     assert!(
         module
-            .ckks_from_replicated_into(&mut out, &ckks, &conv, &mut from_workspace, &atks, &mut scratch.borrow())
+            .ckks_from_replicated(&mut out, &ckks, &conv, &mut from_workspace, &atks, &mut scratch.borrow())
             .is_err()
     );
     Ok(())
@@ -1409,20 +1414,41 @@ where
     let (len, base2k) = (1usize << log_k, Base2K(params.base2k as u32));
     let layout = ShapingUnit::U16_40.layout(log_k, 24)?;
     let (log_delta_diag, extra_bits) = (36, 16);
+    let mut setup = ScratchOwned::<BE>::alloc(
+        ReplicatedTransform::<BE>::encode_tmp_bytes::<F>(module, &layout, base2k, 14)?.max(
+            ReplicatedTransform::<BE>::encode_tmp_bytes::<F>(module, &layout, base2k, log_delta_diag)?,
+        ),
+    );
     if real_slots::<BE>() {
         let imaginary = |_: usize, _: usize| (F::zero(), F::one());
-        assert!(ReplicatedTransform::from_period(module, layout, base2k, 14, true, imaginary).is_err());
+        assert!(ReplicatedTransform::from_period(module, layout, base2k, 14, true, imaginary, &mut setup.borrow()).is_err());
     }
     // Shaped diagonals far coarser than the result: each BSGS giant step needs
     // its own rotated shaping polynomial to keep their error off the data slots.
-    let to = ReplicatedTransform::from_period(module, layout, base2k, 14, true, |s, j| {
-        if s % (1 << layout.log_r()) == 0 {
-            matrix::<BE, F>((s >> layout.log_r()) % len, j)
-        } else {
-            (F::zero(), F::zero())
-        }
-    })?;
-    let gather = ReplicatedTransform::gather(module, layout, base2k, log_delta_diag, false, matrix::<BE, F>)?;
+    let to = ReplicatedTransform::from_period(
+        module,
+        layout,
+        base2k,
+        14,
+        true,
+        |s, j| {
+            if s % (1 << layout.log_r()) == 0 {
+                matrix::<BE, F>((s >> layout.log_r()) % len, j)
+            } else {
+                (F::zero(), F::zero())
+            }
+        },
+        &mut setup.borrow(),
+    )?;
+    let gather = ReplicatedTransform::gather(
+        module,
+        layout,
+        base2k,
+        log_delta_diag,
+        false,
+        matrix::<BE, F>,
+        &mut setup.borrow(),
+    )?;
     let trace: Vec<i64> = (0..(module.ckks_max_slots() / len).trailing_zeros())
         .map(|l| (len << l) as i64)
         .collect();
@@ -1452,7 +1478,7 @@ where
     };
     let buffers = 3 * BE::scratch_aligned(BE::vec_znx_bytes_of(params.n, wide.rank().as_usize() + 1, wide.size()));
     let atk_infos = params.atk_layout();
-    let ops = crate::reference::replicated::transform_tmp_bytes(module, &wide, &atk_infos)
+    let ops = crate::oep::derived::replicated::transform_tmp_bytes(module, &wide, &atk_infos)
         .max(module.ckks_rotate_tmp_bytes(&wide, &atk_infos))
         .max(module.ckks_add_tmp_bytes(wide.size()))
         .max(module.ckks_copy_tmp_bytes(&wide, &ckks))
@@ -1728,7 +1754,7 @@ where
     let layout = ShapingUnit::U16_40.layout(3, 24)?;
     let plan = ReplicatedBootstrapPlan::paper(layout);
     let base2k = Base2K(params.base2k as u32);
-    let mut compile = ScratchOwned::<BE>::alloc(module.ckks_encoding_host_tmp_bytes(params.n / 2));
+    let mut compile = ScratchOwned::<BE>::alloc(ReplicatedBootstrapping::<BE, F>::new_tmp_bytes(module, &plan, base2k)?);
     let ctx = ReplicatedBootstrapping::<BE, F>::new(module, plan, base2k, &mut compile.borrow())?;
     assert!(ctx.is_packed());
     let k_out = plan.k_in() + plan.level_log_delta;
@@ -1762,7 +1788,10 @@ where
     let mut decoded = Vec::new();
     for key_layouts in [&full_layouts, &key_layouts] {
         let (mut xs, mut xe, mut xa) = (Source::new([3; 32]), Source::new([4; 32]), Source::new([5; 32]));
-        let mut keygen = ScratchOwned::<BE>::alloc(1 << 26);
+        let mut keygen = ScratchOwned::<BE>::alloc(
+            ctx.generate_keys_tmp_bytes(module, key_layouts)
+                .max(key_layouts.prepare_tmp_bytes(module)),
+        );
         let keys = ctx
             .generate_keys(
                 module,
@@ -1789,7 +1818,7 @@ where
             )),
         ));
         let mut workspace = ctx.alloc_workspace(module, &out);
-        module.ckks_replicated_bootstrap_into(&mut out, &input, &ctx, &mut workspace, &keys, &mut boot_scratch.borrow())?;
+        module.ckks_replicated_bootstrap(&mut out, &input, &ctx, &mut workspace, &keys, &mut boot_scratch.borrow())?;
         assert_eq!(out.slot_layout(), SlotLayout::Replicated(layout));
         assert_eq!((out.log_delta(), out.k().as_usize()), (plan.level_log_delta, k_out));
         let got = decrypt_batch::<BE, F>(&params, module, &sk, &out, len);
@@ -1818,7 +1847,7 @@ where
     Module<STD>: TestContextModule<STD>
         + CKKSEncodingOps<STD, f64>
         + CKKSReplicatedBootstrapOps<STD>
-        + CKKSReplicatedCIBootstrapOps<STD>
+        + CKKSReplicatedCIBootstrapOps<STD, CI = BE>
         + CKKSLinearTransformationOps<STD>
         + CnvPVecAlloc<STD>
         + GLWECIKeyEncryptSk<STD>
@@ -1833,7 +1862,7 @@ where
     let layout = ShapingUnit::U16_40.layout(3, 24)?;
     let plan = ReplicatedBootstrapPlan::paper(layout);
     let base2k = Base2K(params.base2k as u32);
-    let mut compile = ScratchOwned::<STD>::alloc(standard.ckks_encoding_host_tmp_bytes(standard_params.n));
+    let mut compile = ScratchOwned::<STD>::alloc(ReplicatedBootstrapping::<STD, f64>::new_tmp_bytes(&standard, &plan, base2k)?);
     let ctx = ReplicatedBootstrapping::<STD, f64>::new(&standard, plan, base2k, &mut compile.borrow())?;
     let mut ci_compile = ScratchOwned::<BE>::alloc(ci.ckks_encoding_host_tmp_bytes(params.n));
     assert!(ReplicatedBootstrapping::<BE, f64>::new(&ci, plan, base2k, &mut ci_compile.borrow()).is_err());
@@ -1869,7 +1898,14 @@ where
     let profile = crate::shaping::ShapingProfile::new(&layout);
     let width = (k_in + profile.shaping_depth(input.log_delta(), layout.w()))
         .max(k_out + 1 + profile.shaping_depth(plan.level_log_delta, layout.w()));
-    let mut keygen = ScratchOwned::<STD>::alloc(1 << 26);
+    let conversion_layout = standard_params.ksk_layout(width);
+    let mut keygen = ScratchOwned::<STD>::alloc(
+        standard
+            .glwe_ci_key_encrypt_sk_tmp_bytes(&conversion_layout)
+            .max(standard.glwe_ci_key_prepare_tmp_bytes(&conversion_layout))
+            .max(ctx.generate_keys_tmp_bytes(&standard, &key_layouts))
+            .max(key_layouts.prepare_tmp_bytes(&standard)),
+    );
     let (embed_key, trace_key) = gen_ci_keys(&standard_params, &standard, &ci_sk_raw, &sk_raw, width, &mut keygen.borrow());
     let (mut xs, mut xe, mut xa) = (Source::new([3; 32]), Source::new([4; 32]), Source::new([5; 32]));
     let keys = ctx
@@ -1909,7 +1945,7 @@ where
             ..out.glwe_layout()
         },
     );
-    standard.ckks_replicated_ci_bootstrap_into(
+    standard.ckks_replicated_ci_bootstrap(
         &ci,
         &mut out,
         &input,

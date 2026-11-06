@@ -258,7 +258,7 @@ where
                     let (mut input, mut nested) = scratch_local.take_ckks_ciphertext_scratch(&work_layout, work_meta);
                     enter_plan_scale(module, &mut input, ct, work_meta, &mut nested)?;
                     if let Some(offset) = params.f_mod_input_offset.as_ref() {
-                        const_add_assign(module, &mut input, offset, 0, &mut nested)?;
+                        const_add_assign("ckks_eval_mod", module, &mut input, offset, 0, &mut nested)?;
                     }
                     module.ckks_eval_poly_real_const_coeffs(res, &input, bsgs, tsk, &mut nested)
                 })?;
@@ -277,7 +277,7 @@ where
                         module.ckks_square_into(&mut squared, &*res, tsk, &mut nested)?;
                         module.ckks_double_into(res, &squared, &mut nested)
                     })?;
-                    const_sub_assign(module, res, consts, i, scratch)?;
+                    const_sub_assign("ckks_eval_mod", module, res, consts, i, scratch)?;
                 }
             }
 
@@ -318,7 +318,7 @@ where
             let (mut wide, mut nested) = scratch_local.take_ckks_ciphertext_like_scratch(&*res);
             module.ckks_copy(&mut wide, &*res, &mut nested)?;
             res.set_k((wide.log_budget() + s_in).into());
-            module.ckks_round_into(res, &wide, &mut nested)
+            module.ckks_round(res, &wide, &mut nested)
         })?;
     } else if !returned && s_eval != s_in {
         res.set_log_delta(s_in);
@@ -357,13 +357,13 @@ where
     };
     scratch.scope(|scratch_local| -> Result<()> {
         let (mut wide, mut nested) = scratch_local.take_ckks_ciphertext_scratch(&wide_layout, res.meta());
-        square_wide_into(module, &mut wide, &*res, tsk, lambda, &mut nested)?;
+        square_wide_into("ckks_eval_mod", module, &mut wide, &*res, tsk, lambda, &mut nested)?;
         if let Some((consts, i)) = step {
             module.ckks_mul_pow2_assign(1, &mut wide, &mut nested)?;
-            const_sub_assign(module, &mut wide, consts, i, &mut nested)?;
+            const_sub_assign("ckks_eval_mod", module, &mut wide, consts, i, &mut nested)?;
         }
         res.set_k((wide.log_budget() + log_delta_out).into());
-        module.ckks_round_into(res, &wide, &mut nested)
+        module.ckks_round(res, &wide, &mut nested)
     })
 }
 
@@ -506,7 +506,7 @@ where
     C: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
     if matches!(ct.slot_layout(), SlotLayout::Replicated(_)) && ct.k() > dst.k() {
-        module.ckks_round_into(dst, ct, scratch)?;
+        module.ckks_round(dst, ct, scratch)?;
     } else {
         module.glwe_copy(dst, ct, scratch);
     }

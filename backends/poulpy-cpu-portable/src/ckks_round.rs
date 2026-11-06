@@ -42,7 +42,7 @@ pub fn shaped_round_correction<BE>(
 macro_rules! impl_cpu_ckks_shaped_rounding {
     ($be:ty) => {
         unsafe impl ::poulpy_ckks::oep::CKKSShapedRoundingImpl for $be {
-            fn ckks_shaped_round_correction_impl(
+            fn ckks_shaped_round_correction(
                 _module: &::poulpy_hal::layouts::Module<Self>,
                 carry: &mut ::poulpy_hal::layouts::VecZnxBackendMut<'_, Self>,
                 h: &mut ::poulpy_hal::layouts::VecZnxBackendMut<'_, Self>,

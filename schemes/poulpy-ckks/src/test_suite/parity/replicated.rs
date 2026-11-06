@@ -86,10 +86,7 @@ where
     let mut results = Vec::new();
 
     let mut out = fixture_ciphertext(module, &replicated(params, la.k().as_usize() - b / 2), 99);
-    with_scratch::<B, _>(module.ckks_round_tmp_bytes(&out, &a), |s| {
-        module.ckks_round_into(&mut out, &a, s)
-    })
-    .unwrap();
+    with_scratch::<B, _>(module.ckks_round_tmp_bytes(&out, &a), |s| module.ckks_round(&mut out, &a, s)).unwrap();
     results.push(("round_into", snapshot::<B, _>(&out)));
 
     let mut out = fixture_ciphertext(module, &lr, 99);

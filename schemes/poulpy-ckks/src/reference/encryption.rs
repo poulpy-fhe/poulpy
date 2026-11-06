@@ -108,7 +108,7 @@ pub trait CKKSEncryptionReference<BE: Backend> {
             source_xa,
             &mut scratch_1,
         )?;
-        self.ckks_round_into(ct, &tmp, &mut scratch_1)
+        self.ckks_round(ct, &tmp, &mut scratch_1)
     }
 
     /// Encrypts `pt` into `ct` labelled `(log_budget, log_delta)`, the

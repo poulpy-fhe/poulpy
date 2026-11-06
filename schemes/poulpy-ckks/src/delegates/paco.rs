@@ -73,10 +73,6 @@ where
         K: PaCoKeys<BE>,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
-        crate::reference::mul::ensure_full_layout(
-            "ckks_paco_bootstrap_direct_into",
-            crate::GLWEPlaintextInfos::slot_layout(input),
-        )?;
         BE::ckks_paco_bootstrap_direct_into(self, output, input, context, keys, scratch)
     }
 
@@ -92,7 +88,6 @@ where
         K: PaCoKeys<BE>,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
-        crate::reference::mul::ensure_full_layout("ckks_paco_bootstrap_into", crate::GLWEPlaintextInfos::slot_layout(input))?;
         BE::ckks_paco_bootstrap_into(self, output, input, context, keys, scratch)
     }
 
@@ -110,10 +105,6 @@ where
         ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds + Sync,
     {
-        crate::reference::mul::ensure_full_layout(
-            "ckks_paco_bootstrap_parallel_direct_into",
-            crate::GLWEPlaintextInfos::slot_layout(input),
-        )?;
         BE::ckks_paco_bootstrap_parallel_direct_into(self, output, input, context, keys, workers, scratch)
     }
 
@@ -131,10 +122,6 @@ where
         ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds + Sync,
     {
-        crate::reference::mul::ensure_full_layout(
-            "ckks_paco_bootstrap_parallel_into",
-            crate::GLWEPlaintextInfos::slot_layout(input),
-        )?;
         BE::ckks_paco_bootstrap_parallel_into(self, output, input, context, keys, workers, scratch)
     }
 }

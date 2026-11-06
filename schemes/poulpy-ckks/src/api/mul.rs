@@ -93,7 +93,7 @@ use crate::{
 /// [`SlotLayout::Replicated`](crate::SlotLayout::Replicated) product is
 /// computed `λ = ShapingProfile::shaping_depth(log_delta, w)` bits under the
 /// scale and rounded to the result width with
-/// [`CKKSRoundOps::ckks_round_into`](crate::api::CKKSRoundOps::ckks_round_into),
+/// [`CKKSRoundOps::ckks_round`](crate::api::CKKSRoundOps::ckks_round),
 /// so its rounding error is shaped; `log_delta` is the product's scale for
 /// ciphertext operands and the plaintext's for plaintext operands.
 ///

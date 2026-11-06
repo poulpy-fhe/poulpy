@@ -10,8 +10,9 @@ Each family's opt-in macro is `impl_<family>_reference_full!`, or
 OEP trait in snake case without `Impl` (`CKKSAddImpl`: `impl_ckks_add_reference_full!`,
 `CKKSDFTImpl`: `impl_ckks_dft_reference_full!`, `CKKSAffineImpl`: `impl_ckks_affine_derived_full!`).
 `impl_ckks_reference_full!` selects every scalar-independent family that serves both
-rings, except rounding, which selects `impl_ckks_round_reference!` after implementing
-`CKKSShapedRoundingImpl`; a standard backend
+rings, except rounding, which selects `impl_ckks_round_reference_full!` after implementing
+`CKKSShapedRoundingImpl`, and the replicated conversions over it, which select
+`impl_ckks_replicated_derived_full!`; a standard backend
 adds the standard-only opt-ins, `CKKSDFTMatrixImpl<F>` among them, and every backend
 implements `CKKSEncodingImpl<F>` and the PaCo and SHIP coefficient encodings itself. A
 backend replacing one of the umbrella's families selects the others with their own opt-ins.
@@ -27,7 +28,8 @@ The table gives the reference of each family.
 | `CKKSRotateImpl`, `CKKSConjugateImpl` | [`reference/rotate.rs`](../src/reference/rotate.rs), [`reference/conjugate.rs`](../src/reference/conjugate.rs). |
 | `CKKSInnerSumImpl` | [`reference/inner_sum.rs`](../src/reference/inner_sum.rs) (`CKKSInnerSumReference`), registered by `impl_ckks_inner_sum_reference_full!`: `ckks_copy`, poulpy-core's summed trace over a window of levels, forward for the inner sum and reversed for the replicate, and, for a mean, `ckks_div_pow2_assign`; the Galois elements are poulpy-core's `glwe_trace_galois_elements` over those levels at the ciphertext's degree. |
 | `CKKSPlaintextVecImpl` | [`reference/plaintext.rs`](../src/reference/plaintext.rs). |
-| `CKKSRoundImpl`, `CKKSShapedRoundingImpl` | [`reference/round.rs`](../src/reference/round.rs): `ckks_round_into_reference` and its query compose backend normalization with the internal `ckks_shaped_round_correction_impl` hook. The hook operates on resident buffers and defines the two correction limbs; it needs no host-accessible storage in the generic reference. |
+| `CKKSRoundImpl`, `CKKSShapedRoundingImpl` | [`reference/round.rs`](../src/reference/round.rs): `ckks_round_reference` and its query compose backend normalization with the internal `ckks_shaped_round_correction` hook. The hook operates on resident buffers and defines the two correction limbs; it needs no host-accessible storage in the generic reference. |
+| `CKKSReplicatedImpl` | Derived defaults ([`oep/derived/replicated.rs`](../src/oep/derived/replicated.rs)), registered by `impl_ckks_replicated_derived_full!`: the conversions between CKKS and a replicated slot layout over the selected linear transformation, rotations, additions, copies, power-of-two operations and rounding, and their query. |
 | `CKKSEncryptionImpl` | [`reference/encryption.rs`](../src/reference/encryption.rs), for encryption and decryption. |
 | `CKKSEncodingImpl<F>` | [`reference/encoding.rs`](../src/reference/encoding.rs) (`CKKSEncodingReference<BE, F>` for the coefficient codecs): slot ordering, transform normalization, and quantization behind the four required kernels `ckks_{quantize,dequantize}_coeffs_into` and `ckks_encoding_buffer_{slots_to_coeffs,coeffs_to_slots}_assign_with_plan`; backend-owned plans and cache. The six API operations are derived defaults that check the buffer and plaintext shapes and read the plans from the cache. |
 | `CKKSDFTMatrixImpl<F>`, `CKKSDFTImpl` | [`reference/dft`](../src/reference/dft/) (`CKKSDFTMatrixReference<BE, F>`, `CKKSDFTReference`): matrix generation, preparation, and evaluation; the six standard/split/repack direction wrappers are derived defaults. A prepared matrix is allocated by `CKKSDFTMatrixPreparedFactory::ckks_dft_matrix_prepared_alloc_from_infos` from the unprepared one and filled by `ckks_dft_matrix_prepare` with no allocation, which refuses a matrix of another layout with `InvalidOperand` before any write; the allocating `ckks_dft_matrix_prepare_alloc` is a derived default. |
@@ -37,6 +39,8 @@ The table gives the reference of each family.
 | `CKKSModUpFirstFactorImpl` | [`reference/first_factor.rs`](../src/reference/first_factor.rs) (`CKKSModUpFirstFactorReference`): the modulus raise applying the first `CoeffsToSlots` factor while the raised ciphertext is small, registered per type by `impl_ckks_mod_up_first_factor_reference_full!`. |
 | `CKKSBootstrappingImpl` | [`reference/bootstrapping.rs`](../src/reference/bootstrapping.rs): the ModUp stages and the identity and functional pipelines; the raise step's query defaults to the bootstrap's. |
 | `CKKSBootstrappingCIImpl` | [`reference/bootstrapping.rs`](../src/reference/bootstrapping.rs) (`CKKSBootstrappingCIReference`), registered by `impl_ckks_bootstrapping_ci_reference_full!($be, $ci)`, `$ci` its conjugate-invariant twin. |
+| `CKKSReplicatedBootstrapImpl` | Standard-only: [`reference/replicated.rs`](../src/reference/replicated.rs) (`CKKSReplicatedBootstrapReference`), registered by `impl_ckks_replicated_bootstrap_reference_full!`: the bootstrapping of a replicated slot layout and its query, over the selected CKKS and core operations. |
+| `CKKSReplicatedCIBootstrapImpl` | Standard-only: [`reference/replicated.rs`](../src/reference/replicated.rs) (`CKKSReplicatedCIBootstrapReference`), registered by `impl_ckks_replicated_ci_bootstrap_reference_full!($be, $ci)`, `$ci` its conjugate-invariant twin: the bootstrapping of a replicated layout of the twin through the standard ring and its query. |
 | `CKKSFoldLayoutImpl`, `CKKSFoldImpl<R>` | [`reference/fold.rs`](../src/reference/fold.rs): `CKKSFoldLayoutReference` and `CKKSFoldReference<BE, R>`, a crate-private per-ring step around ring packing; `impl_ckks_fold_layout_reference_full!` selects the layout and scratch query, and `impl_ckks_fold_reference_full!` registers every input ring the reference folds. |
 | `CKKSPaCoCoeffEncodingImpl`, `CKKSShipCoeffEncodingImpl` | Scheme embeddings exposed by [`reference::encoding`](../src/reference/encoding.rs), with explicitly named host reference helpers. |
 | `CKKSAddManyImpl` | [`reference/composite.rs`](../src/reference/composite.rs) (`CKKSAddManyReference`), registered by `impl_ckks_add_many_reference_full!`: the lazy sum over the selected additions and copy, normalized in place by poulpy-core. |
@@ -49,8 +53,6 @@ The table gives the reference of each family.
 `CKKSImpl` aggregates capabilities; it does not choose operation
 implementations. Every API method dispatches through a same-named OEP method;
 compositions of selected operations are that method's derived default.
-Replicated conversion and bootstrap pipelines compose public operations in crate-private
-[`reference/replicated.rs`](../src/reference/replicated.rs).
 
 ## What an override must preserve
 

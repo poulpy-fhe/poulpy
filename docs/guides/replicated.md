@@ -22,7 +22,7 @@ Slot class `j` sees `g` through `U(ω^(5^j))`, `ω = e^(iπ/(2R))`.
 
 ## Shaped operations
 
-`CKKSRoundOps::ckks_round_into` rounds a ciphertext to a smaller width at a fixed torus value.
+`CKKSRoundOps::ckks_round` rounds a ciphertext to a smaller width at a fixed torus value.
 On a replicated layout, the `λ` dropped bits are divided out as `h = [U^(-1)·c]_(2^λ)` and the remainder `c − g·h` is carried, so the error is a multiple of `g` up to a remainder `2^-λ` smaller.
 The other operations build on it:
 
@@ -36,14 +36,14 @@ Operations that would round plainly or write the guard slots return `InvalidOper
 ## Conversions
 
 `CKKSReplicatedOps` moves a batch between CKKS and the replicated layout with the same keys.
-`ckks_to_replicated_into` maps `k` values of a full-layout ciphertext with period `k` onto the data slots; `ckks_from_replicated_into` gathers them back, averaging the replicas.
+`ckks_to_replicated` maps `k` values of a full-layout ciphertext with period `k` onto the data slots; `ckks_from_replicated` gathers them back, averaging the replicas.
 `ReplicatedConversion` holds the encoded diagonals and lists the rotations its keys cover.
 Allocate a `ReplicatedTransformWorkspace` once with `conv.alloc_to_workspace(&module, &input)` or `conv.alloc_from_workspace(&module, &input)` and pass it after `conv` to each evaluation.
 The workspace owns the prepared baby rotations for that input layout; evaluations refill those buffers without reallocating them.
 
 ## Bootstrapping
 
-`CKKSReplicatedBootstrapOps::ckks_replicated_bootstrap_into` refreshes a replicated ciphertext in `SlotsToCoeffs`-first order:
+`CKKSReplicatedBootstrapOps::ckks_replicated_bootstrap` refreshes a replicated ciphertext in `SlotsToCoeffs`-first order:
 
 1. a normalized trace averages the `N/(2kR)` copies of the period;
 2. `SlotsToCoeffs` gathers the data slots onto the coefficients of the subring of degree `2k`;
@@ -82,7 +82,7 @@ Leveled operations, polynomial evaluation, EvalMod and the conversions take the 
 Masked constants and the masked one keep their real part, as the slot encoder does.
 The conjugation, complex polynomials, the packed EvalMod and diagonals with an imaginary part are standard-only.
 
-`CKKSReplicatedCIBootstrapOps::ckks_replicated_ci_bootstrap_into` bootstraps through the standard ring of degree `2N`, where the `ReplicatedBootstrapping` is compiled:
+`CKKSReplicatedCIBootstrapOps::ckks_replicated_ci_bootstrap` bootstraps through the standard ring of degree `2N`, where the `ReplicatedBootstrapping` is compiled:
 
 1. The input is embedded (`GLWECIEmbedKey`) at the shaping depth under its scale, then rounded with shaping to its width.
 2. The standard bootstrapping refreshes it, one bit wider than the output.
@@ -104,7 +104,9 @@ use poulpy_ckks::{
 
 let preset = n15_d20_k389_p20_s2c()?;
 let layout = ShapingUnit::U32_45.layout(log_k, 24)?;
-let ctx = ReplicatedBootstrapping::<MyBackend, f64>::new(&module, preset.plan(layout), base2k, &mut scratch)?;
+let plan = preset.plan(layout);
+// `scratch` covers `ReplicatedBootstrapping::<MyBackend, f64>::new_tmp_bytes(&module, &plan, base2k)?`.
+let ctx = ReplicatedBootstrapping::<MyBackend, f64>::new(&module, plan, base2k, &mut scratch)?;
 let keys = ctx
     .generate_keys(&module, &sk, &preset.keys_layout(&ctx.galois_elements(&module)), preset.sparse_secret_hamming_weight(),
                    &mut source_xs, &mut source_xe, &mut source_xa, &mut scratch)
@@ -113,7 +115,7 @@ let keys = ctx
 // `input` holds `2^log_k` values at the leveled scale and width `preset.input_k()`.
 let mut output = module.ckks_ciphertext_alloc_from_infos(&preset.output_layout(layout));
 let mut workspace = ctx.alloc_workspace(&module, &output);
-module.ckks_replicated_bootstrap_into(&mut output, &input, &ctx, &mut workspace, &keys, &mut scratch)?;
+module.ckks_replicated_bootstrap(&mut output, &input, &ctx, &mut workspace, &keys, &mut scratch)?;
 ```
 
 The bootstrap workspace is reusable for the same output width and plan. Concurrent evaluations use separate workspaces and scratch arenas.

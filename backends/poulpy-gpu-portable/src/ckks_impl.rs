@@ -12,7 +12,8 @@ use poulpy_ckks::{
     encoding::{ckks_paco_coeff_encodings_host, ckks_ship_coeff_encodings_host},
     layouts::{
         CKKSCiphertextAlloc, CKKSEncodingBuffer, CKKSEncodingBufferBackendMut, CKKSEncodingBufferBackendRef,
-        CKKSEncodingBufferInfos, CKKSPlaintextOwned, PaCoContext, PaCoPlan, ShipCoeffEncodings, ShipPlan, ckks_plaintext_one,
+        CKKSEncodingBufferInfos, CKKSPlaintextAlloc, CKKSPlaintextOwned, PaCoContext, PaCoPlan, ShipCoeffEncodings, ShipPlan,
+        ckks_plaintext_one,
     },
     oep::CKKSEncodingImpl,
     reference::encoding::{CKKSSlotEmbedding, ckks_dequantize_coeffs_into_reference, ckks_quantize_coeffs_into_reference},
@@ -402,7 +403,8 @@ macro_rules! impl_ckks {
         ::poulpy_ckks::impl_ckks_copy_reference_full!($be);
         impl_add_cached_one!($be);
         impl_sub_cached_one!($be);
-        ::poulpy_ckks::impl_ckks_round_reference!($be);
+        ::poulpy_ckks::impl_ckks_round_reference_full!($be);
+        ::poulpy_ckks::impl_ckks_replicated_derived_full!($be);
         ::poulpy_ckks::impl_ckks_encryption_reference_full!($be);
         ::poulpy_ckks::impl_ckks_neg_reference_full!($be);
         ::poulpy_ckks::impl_ckks_pow2_reference_full!($be);
@@ -429,7 +431,9 @@ macro_rules! impl_ckks_standard {
         ::poulpy_ckks::impl_ckks_conjugate_reference_full!($be);
         ::poulpy_ckks::impl_ckks_imag_reference_full!($be);
         ::poulpy_ckks::impl_ckks_bootstrapping_reference_full!($be);
+        ::poulpy_ckks::impl_ckks_replicated_bootstrap_reference_full!($be);
         ::poulpy_ckks::impl_ckks_bootstrapping_ci_reference_full!($be, $ci);
+        ::poulpy_ckks::impl_ckks_replicated_ci_bootstrap_reference_full!($be, $ci);
         ::poulpy_ckks::impl_ckks_fold_layout_reference_full!($be);
         ::poulpy_ckks::impl_ckks_fold_reference_full!($be);
         ::poulpy_ckks::impl_ckks_complex_polynomial_evaluation_reference_full!($be);

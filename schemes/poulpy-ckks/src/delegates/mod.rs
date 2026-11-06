@@ -18,6 +18,7 @@ mod paco;
 mod plaintext;
 mod polynomial_evaluation;
 mod pow2;
+mod replicated;
 mod ring_map;
 mod rotate;
 mod round;

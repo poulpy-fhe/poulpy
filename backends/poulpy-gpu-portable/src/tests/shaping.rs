@@ -32,7 +32,7 @@ fn correction<R: Ring>(module: &Module<BE<R>>, profile: &ShapingProfile, lambda:
     let mut got_h = VecZnx::from_data(BE::<R>::from_host_bytes(&vec![0xa5; n * 8]), n, 1, 1);
     let mut got_carry = VecZnx::from_data(BE::<R>::from_host_bytes(&vec![0xa5; n * 16]), n, 1, 2);
     let mut apply = || {
-        BE::<R>::ckks_shaped_round_correction_impl(
+        BE::<R>::ckks_shaped_round_correction(
             module,
             &mut vec_znx_backend_mut::<BE<R>>(&mut got_carry),
             &mut vec_znx_backend_mut::<BE<R>>(&mut got_h),

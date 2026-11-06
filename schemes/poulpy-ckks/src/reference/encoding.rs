@@ -11,15 +11,14 @@ use poulpy_core::layouts::{GLWEInfos, IntPolyInfos, LWEInfos};
 use poulpy_hal::{
     GALOISGENERATOR,
     api::{ReimFFT, ReimIFFT},
-    layouts::{Backend, ConjugateInvariant, HostDataMut, HostDataRef, Module, Ring, Standard},
+    layouts::{Backend, ConjugateInvariant, HostDataMut, HostDataRef, Module, Ring, Standard, ZnxViewMut, encode_i128_by_limb},
 };
 
 use crate::{
-    CKKSPlaintextToBackendMut, CKKSPlaintextToBackendRef, GLWEPlaintextInfos, ReplicatedLayout, SetCKKSInfos, SlotLayout,
-    SlotsKind,
+    CKKSPlaintextToBackendMut, CKKSPlaintextToBackendRef, GLWEPlaintextInfos, SetCKKSInfos, SlotLayout, SlotsKind,
     api::CKKSEncodingScalar,
     layouts::{CKKSEncodingBufferBackendMut, CKKSEncodingBufferBackendRef},
-    shaping::{ShapingProfile, ShapingRing},
+    shaping::ShapingRing,
 };
 
 pub use crate::encoding::{ckks_paco_coeff_encodings_host, ckks_ship_coeff_encodings_host};
@@ -260,8 +259,41 @@ where
     let base2k = pt.base2k().as_usize();
     let k = pt.encoded_k().as_usize();
     if let SlotLayout::Replicated(layout) = pt.slot_layout() {
-        let data = shaped_quantize(coeffs, &layout, log_delta, log_budget, ShapingRing::of::<BE::Ring>())?;
-        pt.to_backend_mut().data_mut().encode_vec_i128(base2k, 0, k, &data);
+        {
+            let n = coeffs.len();
+            let mut backend = pt.to_backend_mut();
+            let data = backend.data_mut();
+            let shape = data.shape();
+            let size = k.div_ceil(base2k);
+            assert!(
+                size <= shape.size(),
+                "invalid argument k.div_ceil(base2k)={size} > a.size()={}",
+                shape.size()
+            );
+            let raw = data.raw_mut();
+            let (mut carry, mut limb) = ([0i64; crate::shaping::MAX_COEFFS], [0i64; crate::shaping::MAX_COEFFS]);
+            // `encode_vec_i128` of the column, one class of `Y = X^stride` at a time.
+            crate::shaping::shaped_quantize_by_class(
+                coeffs,
+                &layout,
+                log_delta,
+                log_budget,
+                ShapingRing::of::<BE::Ring>(),
+                |r, values| {
+                    let (m, stride) = (values.len(), n / values.len());
+                    encode_i128_by_limb(base2k, k, values, &mut carry[..m], &mut limb[..m], |j, digits| {
+                        let base = shape.scalar_offset(0, j) + r;
+                        for (t, &digit) in digits.iter().enumerate() {
+                            raw[base + stride * t] = digit;
+                        }
+                    });
+                },
+            )?;
+            for j in size..shape.size() {
+                let base = shape.scalar_offset(0, j);
+                raw[base..base + n].fill(0);
+            }
+        }
         pt.set_slots(pt.slots().meet(BE::Ring::SLOTS));
         return Ok(());
     }
@@ -289,72 +321,6 @@ where
         }
     }
     pt.set_slots(pt.slots().meet(BE::Ring::SLOTS));
-    Ok(())
-}
-
-/// Quantizes `coeffs` at `log_delta + λ` bits, then divides by `2^λ` with
-/// shaped rounding, so that the quantization error is a multiple of the
-/// layout's shaping polynomial up to an unshaped `2^-λ` remainder. `λ` is the
-/// largest exact pass that keeps `log_delta + log_budget + λ` within `i128`;
-/// a plaintext that leaves none is rejected.
-pub(crate) fn shaped_quantize<F>(
-    coeffs: &[F],
-    layout: &ReplicatedLayout,
-    log_delta: usize,
-    log_budget: usize,
-    ring: ShapingRing,
-) -> Result<Vec<i128>>
-where
-    F: CKKSEncodingScalar,
-{
-    let n = coeffs.len();
-    let mut out = vec![0i128; n];
-    let (mut low, mut h, mut gh) = (vec![0i64; n], vec![0i64; n], vec![0i64; n]);
-    shaped_quantize_into(
-        coeffs, layout, log_delta, log_budget, ring, &mut out, &mut low, &mut h, &mut gh,
-    )?;
-    Ok(out)
-}
-
-/// [`shaped_quantize`] into `out`, with buffers `low`, `h` and `gh` as long as `coeffs`.
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn shaped_quantize_into<F>(
-    coeffs: &[F],
-    layout: &ReplicatedLayout,
-    log_delta: usize,
-    log_budget: usize,
-    ring: ShapingRing,
-    out: &mut [i128],
-    low: &mut [i64],
-    h: &mut [i64],
-    gh: &mut [i64],
-) -> Result<()>
-where
-    F: CKKSEncodingScalar,
-{
-    let profile = ShapingProfile::with_ring(layout, ring)?;
-    let period = profile.period();
-    ensure!(
-        coeffs.len().is_multiple_of(period),
-        "a replicated layout of period {} needs a multiple of {period} coefficients",
-        1usize << layout.log_r()
-    );
-    let lambda = profile.max_pass_bits().min(126usize.saturating_sub(log_delta + log_budget));
-    ensure!(
-        lambda > 0,
-        "a replicated plaintext of {} torus bits leaves no shaping pass within i128",
-        log_delta + log_budget
-    );
-    for ((q, l), &x) in out.iter_mut().zip(low.iter_mut()).zip(coeffs) {
-        *q = x
-            .ckks_quantize(log_delta + lambda)
-            .context("CKKS coefficient is not representable as an i128 at the plaintext scale")?;
-        *l = *q as i64;
-    }
-    profile.shaped_multiple_host(lambda, low, h, gh);
-    for (q, &m) in out.iter_mut().zip(gh.iter()) {
-        *q = (*q - m as i128) >> lambda;
-    }
     Ok(())
 }
 

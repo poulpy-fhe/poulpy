@@ -55,15 +55,12 @@ static HEAP: Counting = Counting;
 #[test]
 fn ckks_replicated_workspace_reuses_prepared_buffers() {
     let module = Module::<FFT64Portable>::new(256);
-    let conversion = ReplicatedConversion::new::<f64>(
-        &module,
-        ShapingUnit::U16_40.layout(3, 24).unwrap(),
-        19usize.into(),
-        20,
-        30,
-        16,
-    )
-    .unwrap();
+    let replicated = ShapingUnit::U16_40.layout(3, 24).unwrap();
+    let mut setup = ScratchOwned::<FFT64Portable>::alloc(
+        ReplicatedConversion::<FFT64Portable>::new_tmp_bytes::<f64>(&module, &replicated, 19usize.into(), 30).unwrap(),
+    );
+    let conversion =
+        ReplicatedConversion::new::<f64>(&module, replicated, 19usize.into(), 20, 30, 16, &mut setup.borrow()).unwrap();
     let layout = CKKSLayout {
         glwe_layout: GLWELayout {
             n: 256usize.into(),
@@ -95,11 +92,11 @@ fn ckks_replicated_workspace_reuses_prepared_buffers() {
     let mut scratch =
         ScratchOwned::<FFT64Portable>::alloc(module.ckks_replicated_conversion_tmp_bytes(&a, &key_layout, &conversion));
     module
-        .ckks_to_replicated_into(&mut out, &a, &conversion, &mut workspace, &keys, &mut scratch.borrow())
+        .ckks_to_replicated(&mut out, &a, &conversion, &mut workspace, &keys, &mut scratch.borrow())
         .unwrap();
     let previous = snapshot::<FFT64Portable, _>(&out);
     module
-        .ckks_to_replicated_into(
+        .ckks_to_replicated(
             &mut expected,
             &b,
             &conversion,
@@ -111,7 +108,7 @@ fn ckks_replicated_workspace_reuses_prepared_buffers() {
     let prepared_bytes = module.cnv_pvec_left_bytes_of(256, 2, (a.k().as_usize() + 16).div_ceil(19), PrepareHint::Reuse);
     LARGE_ALLOCATIONS.store(0, Relaxed);
     THRESHOLD.store(prepared_bytes, Relaxed);
-    let result = module.ckks_to_replicated_into(&mut out, &b, &conversion, &mut workspace, &keys, &mut scratch.borrow());
+    let result = module.ckks_to_replicated(&mut out, &b, &conversion, &mut workspace, &keys, &mut scratch.borrow());
     THRESHOLD.store(usize::MAX, Relaxed);
     result.unwrap();
     assert_eq!(

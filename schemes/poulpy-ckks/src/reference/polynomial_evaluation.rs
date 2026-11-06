@@ -267,7 +267,8 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> anyhow::Result<()> {
         if res_coeff == 0 {
-            return const_add_assign(module, res, coeffs, idx, scratch).map_err(::anyhow::Error::from);
+            return const_add_assign("ckks_eval_poly_real_const_coeffs", module, res, coeffs, idx, scratch)
+                .map_err(::anyhow::Error::from);
         }
         module
             .ckks_add_pt_const_assign(res, res_coeff, coeffs, idx, scratch)
@@ -283,7 +284,7 @@ where
         idx: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> anyhow::Result<()> {
-        const_mul_into(module, res, a, coeffs, idx, scratch).map_err(::anyhow::Error::from)
+        const_mul_into("ckks_eval_poly_real_const_coeffs", module, res, a, coeffs, idx, scratch).map_err(::anyhow::Error::from)
     }
 
     fn mul_add_pt_const(
@@ -295,7 +296,8 @@ where
         idx: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> anyhow::Result<()> {
-        const_mul_add_into(module, res, a, coeffs, idx, scratch).map_err(::anyhow::Error::from)
+        const_mul_add_into("ckks_eval_poly_real_const_coeffs", module, res, a, coeffs, idx, scratch)
+            .map_err(::anyhow::Error::from)
     }
 
     fn prepare_right(&self, module: &Module<BE>, a: &A, scratch: &mut ScratchArena<'_, BE>) -> anyhow::Result<Self::Prepared> {
@@ -351,10 +353,7 @@ where
     A: GLWEToBackendRef<BE> + CKKSCtBounds,
     P: CKKSMaskedConstants<BE>,
 {
-    use crate::{
-        mul_pt_params_raw,
-        reference::mul::{product_depth, product_layout},
-    };
+    use crate::{layouts::validation::product_layout, mul_pt_params_raw, shaping::product_depth};
 
     let Some(&(seed, _)) = terms.last() else {
         return Ok(false);
@@ -505,7 +504,7 @@ where
         }
     });
     res.set_k((budget + delta).into());
-    module.ckks_round_into(res, &wide, &mut scratch)?;
+    module.ckks_round(res, &wide, &mut scratch)?;
     Ok(true)
 }
 
@@ -529,8 +528,9 @@ fn masked<'p, BE: Backend, P: CKKSMaskedConstants<BE>>(
     }
 }
 
-/// `res += c` for constant `c = coeffs[idx]`, as `c·π_S` on a replicated layout.
+/// `res += c` for constant `c = coeffs[idx]`, as `c·π_S` on a replicated layout, refusing for the caller's `op`.
 pub(crate) fn const_add_assign<BE, R, P>(
+    op: &'static str,
     module: &Module<BE>,
     res: &mut R,
     coeffs: &P,
@@ -543,7 +543,7 @@ where
     R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + CKKSMaskedConstants<BE>,
 {
-    match masked("ckks_add_const", res.slot_layout(), coeffs, idx)? {
+    match masked(op, res.slot_layout(), coeffs, idx)? {
         Some(pt) => module.ckks_add_pt_vec_assign(res, pt, scratch),
         None => module.ckks_add_pt_const_assign(res, 0, coeffs, idx, scratch),
     }
@@ -551,6 +551,7 @@ where
 
 /// `res -= c` for constant `c = coeffs[idx]`, as `c·π_S` on a replicated layout.
 pub(crate) fn const_sub_assign<BE, R, P>(
+    op: &'static str,
     module: &Module<BE>,
     res: &mut R,
     coeffs: &P,
@@ -563,7 +564,7 @@ where
     R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + CKKSMaskedConstants<BE>,
 {
-    match masked("ckks_sub_const", res.slot_layout(), coeffs, idx)? {
+    match masked(op, res.slot_layout(), coeffs, idx)? {
         Some(pt) => module.ckks_sub_pt_vec_assign(res, pt, scratch),
         None => module.ckks_sub_pt_const_assign(res, 0, coeffs, idx, scratch),
     }
@@ -572,6 +573,7 @@ where
 /// `res = a·c` for constant `c = coeffs[idx]`, as a shaped product by
 /// `c·π_S` on a replicated layout.
 pub(crate) fn const_mul_into<BE, R, A, P>(
+    op: &'static str,
     module: &Module<BE>,
     res: &mut R,
     a: &A,
@@ -586,7 +588,7 @@ where
     A: GLWEToBackendRef<BE> + CKKSCtBounds,
     P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + CKKSMaskedConstants<BE>,
 {
-    match masked("ckks_mul_const", a.slot_layout(), coeffs, idx)? {
+    match masked(op, a.slot_layout(), coeffs, idx)? {
         Some(pt) => module.ckks_mul_pt_vec_into(res, a, pt, scratch),
         None => module.ckks_mul_pt_const_into(res, a, coeffs, idx, scratch),
     }
@@ -595,6 +597,7 @@ where
 /// `res += a·c` for constant `c = coeffs[idx]`, as a shaped product by
 /// `c·π_S` on a replicated layout.
 pub(crate) fn const_mul_add_into<BE, R, A, P>(
+    op: &'static str,
     module: &Module<BE>,
     res: &mut R,
     a: &A,
@@ -609,7 +612,7 @@ where
     A: GLWEToBackendRef<BE> + CKKSCtBounds,
     P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + CKKSMaskedConstants<BE>,
 {
-    match masked("ckks_mul_add_const", a.slot_layout(), coeffs, idx)? {
+    match masked(op, a.slot_layout(), coeffs, idx)? {
         Some(pt) => module.ckks_mul_add_pt_vec_into(res, a, pt, scratch),
         None => module.ckks_mul_add_pt_const_into(res, a, coeffs, idx, scratch),
     }
@@ -756,7 +759,15 @@ where
 
         if can_fold {
             let xpow = power_basis.get(fold_power)?;
-            const_mul_add_into(self, res, xpow, last_coeffs, 0, scratch)?;
+            const_mul_add_into(
+                "ckks_eval_poly_real_const_coeffs_from_power_basis",
+                self,
+                res,
+                xpow,
+                last_coeffs,
+                0,
+                scratch,
+            )?;
         }
 
         Ok(())
@@ -859,9 +870,25 @@ where
             // res += a·x^fold + i·(b·x^fold), with a = last_re[0], b = last_im[0].
             let last_im = BSGSPolynomialInfos::<BE>::baby_step(poly_im, n_baby - 1);
             let xpow = power_basis.get(fold_power)?;
-            const_mul_add_into(self, res, xpow, last_re, 0, scratch)?;
+            const_mul_add_into(
+                "ckks_eval_poly_complex_const_coeffs_from_power_basis",
+                self,
+                res,
+                xpow,
+                last_re,
+                0,
+                scratch,
+            )?;
             let mut im_fold = self.ckks_ciphertext_alloc_from_infos(res);
-            const_mul_into(self, &mut im_fold, xpow, last_im, 0, scratch)?;
+            const_mul_into(
+                "ckks_eval_poly_complex_const_coeffs_from_power_basis",
+                self,
+                &mut im_fold,
+                xpow,
+                last_im,
+                0,
+                scratch,
+            )?;
             self.ckks_mul_i_assign(&mut im_fold, scratch)?;
             self.ckks_add_assign(res, &im_fold, scratch)?;
         }

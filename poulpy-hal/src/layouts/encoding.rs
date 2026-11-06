@@ -311,12 +311,6 @@ impl<D: HostDataRef> VecZnx<D, i64> {
     }
 }
 
-/// Integer division with rounding to nearest (ties away from zero).
-///
-/// # Panics
-///
-/// Panics if `b == 0` (integer division by zero).
-#[inline]
 /// [`VecZnx::encode_vec_i128`] of one column without allocation: the digits
 /// of the `size = k.div_ceil(base2k)` limbs are handed to `emit(j, digits)`
 /// from the least significant limb `j = size - 1` to `j = 0`, bit for bit those
@@ -351,6 +345,12 @@ pub fn encode_i128_by_limb(
     }
 }
 
+/// Integer division with rounding to nearest (ties away from zero).
+///
+/// # Panics
+///
+/// Panics if `b == 0` (integer division by zero).
+#[inline]
 pub fn div_round_i64(a: i64, b: i64) -> i64 {
     let div = a / b;
     let rem = a % b;

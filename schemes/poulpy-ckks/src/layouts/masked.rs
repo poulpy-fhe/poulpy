@@ -5,10 +5,7 @@ use poulpy_core::layouts::{
     BSGSMeta, Base2K, Degree, GLWE, GLWEInfos, GLWEPlaintextInfos, GLWEPlaintextMeta, GLWEToBackendRef, GetDegree, IntPolyInfos,
     LWEInfos, Rank, TorusPrecision,
 };
-use poulpy_hal::{
-    api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, Data, Module, Ring, ScratchArena, ScratchOwned, ZnxWord},
-};
+use poulpy_hal::layouts::{Backend, Data, Module, Ring, ScratchArena, ZnxWord};
 
 use crate::{
     CKKSCtBounds, CKKSInfos, CKKSModuleInfos, CoeffsMeta, ReplicatedLayout, SetCKKSInfos, SlotLayout, SlotsKind,
@@ -179,7 +176,6 @@ where
     let mut constants = encode_masked_constants(module, base2k, coeff_meta, layout, values, scratch)?;
     let half = 1usize << (layout.log_k() - 1);
     let slots = (2 * half) << layout.log_r();
-    let mut host = ScratchOwned::<BE>::alloc(module.ckks_encoding_host_tmp_bytes(slots));
     for ((masked, &value), &(re, im)) in constants.masked.iter_mut().zip(values).zip(phases) {
         if re == F::one() && im == F::zero() {
             continue;
@@ -192,7 +188,7 @@ where
         });
         let re: Vec<F> = (0..2 * half).map(|j| if j < half { value } else { value * re }).collect();
         let im: Vec<F> = (0..2 * half).map(|j| if j < half { F::zero() } else { value * im }).collect();
-        module.ckks_encode_slots_host_into(&mut pt, &re, &im, &mut host.borrow())?;
+        module.ckks_encode_slots_host_into(&mut pt, &re, &im, &mut scratch.borrow())?;
         *masked = pt;
     }
     Ok(constants)

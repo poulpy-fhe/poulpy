@@ -22,7 +22,7 @@ The [`guides/`](guides) folder holds the guides and design notes, [`spec/`](spec
 - [Linear Transformations](guides/linear_transformation.md) — the homomorphic matrix-vector product over the slots (`CoeffsToSlots` / `SlotsToCoeffs`) via the Baby-Step Giant-Step diagonal method, with hoisting, lazy normalization, and the cost in key-switches.
 - [Bootstrapping](guides/bootstrapping.md) — refreshing a ciphertext's homomorphic budget through the `ModUp` → `CoeffsToSlots` → `EvalMod` → `SlotsToCoeffs` pipeline, the scale and budget accounting through each stage, and the standard and EvalRound+ variants.
 - [PaCo Bootstrapping](guides/paco.md) — refreshing selected coefficient classes with PaCo, including validated plans/keys, direct and encapsulated modes, bounded parallel evaluation, and metadata accounting.
-- [Replicated Slot Layout](guides/replicated.md) — the small-batch scheme of ePrint 2026/2513: a batch replicated across the ring with shaped rounding, its leveled operations, conversions to and from CKKS, bootstrapping, and the presets.
+- [Replicated Slot Layout](guides/replicated.md): the small-batch scheme of ePrint 2026/2513: a batch replicated across the ring with shaped rounding, its leveled operations, conversions to and from CKKS, bootstrapping, and the presets.
 - [SHIP Bootstrapping](guides/ship.md) — the shallow SHIP half bootstrap: sparse-secret encapsulation, hoisted mux blind rotations, and the product tree, with validated plans, integrated key generation, and real/complex entry points.
 
 ## BLAS

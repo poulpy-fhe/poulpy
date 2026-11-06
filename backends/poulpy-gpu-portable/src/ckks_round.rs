@@ -102,7 +102,7 @@ fn correction_kernel(
 }
 
 unsafe impl<RT: GpuRuntime, R: Ring> poulpy_ckks::oep::CKKSShapedRoundingImpl for NTT4x30Gpu<RT, R> {
-    fn ckks_shaped_round_correction_impl(
+    fn ckks_shaped_round_correction(
         module: &Module<Self>,
         carry: &mut VecZnxBackendMut<'_, Self>,
         h: &mut VecZnxBackendMut<'_, Self>,

@@ -4,7 +4,8 @@ use super::{
     CKKSAddImpl, CKKSAddManyImpl, CKKSAffineImpl, CKKSApproximationImpl, CKKSCIRingMapImpl, CKKSComplexPolynomialEvaluationImpl,
     CKKSConjugateImpl, CKKSCopyImpl, CKKSDFTImpl, CKKSDotProductImpl, CKKSEncryptionImpl, CKKSEvalModImpl, CKKSImagImpl,
     CKKSInnerSumImpl, CKKSLinearTransformationImpl, CKKSMulAddImpl, CKKSMulImpl, CKKSMulSubImpl, CKKSNegImpl,
-    CKKSPlaintextVecImpl, CKKSPolynomialEvaluationImpl, CKKSPow2Impl, CKKSRotateImpl, CKKSRoundImpl, CKKSSubImpl,
+    CKKSPlaintextVecImpl, CKKSPolynomialEvaluationImpl, CKKSPow2Impl, CKKSReplicatedImpl, CKKSRotateImpl, CKKSRoundImpl,
+    CKKSSubImpl,
 };
 
 /// Aggregate CKKS dispatch surface: the scalar-independent evaluation families.
@@ -44,6 +45,7 @@ pub unsafe trait CKKSImpl:
     + CKKSMulSubImpl
     + CKKSApproximationImpl
     + CKKSCIRingMapImpl
+    + CKKSReplicatedImpl
 {
 }
 
@@ -73,5 +75,6 @@ unsafe impl<BE: Backend> CKKSImpl for BE where
         + CKKSMulSubImpl
         + CKKSApproximationImpl
         + CKKSCIRingMapImpl
+        + CKKSReplicatedImpl
 {
 }

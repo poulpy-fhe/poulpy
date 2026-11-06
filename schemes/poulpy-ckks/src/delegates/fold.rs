@@ -48,9 +48,6 @@ impl<BE: Backend + CKKSFoldImpl<R>, R: Ring> CKKSFoldOps<BE, R> for Module<BE> {
     where
         S: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
     {
-        for ct in ins {
-            crate::reference::mul::ensure_full_layout("ckks_fold", crate::GLWEPlaintextInfos::slot_layout(ct))?;
-        }
         BE::ckks_fold(self, folded, ins, inbound, scratch)
     }
 
@@ -66,9 +63,6 @@ impl<BE: Backend + CKKSFoldImpl<R>, R: Ring> CKKSFoldOps<BE, R> for Module<BE> {
         S: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
         H: GetAutomorphismKey<BE>,
     {
-        for ct in folded.iter() {
-            crate::reference::mul::ensure_full_layout("ckks_unfold", crate::GLWEPlaintextInfos::slot_layout(ct))?;
-        }
         BE::ckks_unfold(self, outs, folded, automorphisms, outbound, scratch)
     }
 }

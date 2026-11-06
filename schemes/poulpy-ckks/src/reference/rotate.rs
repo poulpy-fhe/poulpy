@@ -12,7 +12,8 @@ use crate::{
     CKKSCtBounds, CKKSInfos, GLWEPlaintextInfos, SetCKKSInfos,
     api::CKKSRoundOps,
     checked_log_budget_sub, ckks_offset_unary,
-    reference::mul::{is_replicated, product_depth, take_wide, with_shaped_bytes},
+    reference::mul::{is_replicated, take_wide, with_shaped_bytes},
+    shaping::product_depth,
 };
 
 pub trait CKKSRotateReference<BE: Backend> {
@@ -68,16 +69,6 @@ pub trait CKKSRotateReference<BE: Backend> {
 
 impl<BE: Backend> CKKSRotateReference<BE> for poulpy_hal::layouts::Module<BE> {}
 
-/// Input width consumed by the automorphism, including a shifted shaping temporary.
-pub(crate) fn automorphism_input_k<Dst: CKKSInfos, Src: CKKSInfos>(dst: &Dst, src: &Src) -> TorusPrecision {
-    if ckks_offset_unary(dst, src) != 0 {
-        let lambda = product_depth(src.slot_layout(), src.log_delta()).unwrap_or(0);
-        (dst.k().as_usize() + lambda).into()
-    } else {
-        src.k()
-    }
-}
-
 /// Scratch of [`automorphism_into`] and [`automorphism_assign`].
 pub(crate) fn automorphism_tmp_bytes<BE, M, C, K>(module: &M, ct_infos: &C, key_infos: &K) -> usize
 where
@@ -130,7 +121,7 @@ where
     } else {
         module.glwe_automorphism(&mut wide, src, key, &mut scratch);
     }
-    module.ckks_round_into(dst, &wide, &mut scratch)
+    module.ckks_round(dst, &wide, &mut scratch)
 }
 
 /// `dst = τ(dst)` by the automorphism of `key`, rounded with shaping on a replicated layout.
@@ -154,5 +145,5 @@ where
     wide.set_log_budget(dst.log_budget());
     wide.set_log_delta(dst.log_delta() + lambda);
     module.glwe_automorphism(&mut wide, &*dst, key, &mut scratch);
-    module.ckks_round_into(dst, &wide, &mut scratch)
+    module.ckks_round(dst, &wide, &mut scratch)
 }

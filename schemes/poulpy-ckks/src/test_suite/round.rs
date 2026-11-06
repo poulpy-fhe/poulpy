@@ -74,7 +74,7 @@ where
 {
     let mut dst = alloc_ct(params, module, k);
     let mut scratch = ScratchOwned::<BE>::alloc(module.ckks_round_tmp_bytes(&dst, src));
-    module.ckks_round_into(&mut dst, src, &mut scratch.borrow())?;
+    module.ckks_round(&mut dst, src, &mut scratch.borrow())?;
     Ok(dst)
 }
 
@@ -396,7 +396,7 @@ where
             let mut dst = fixture_ciphertext(module, &dst_layout, 83);
             let before = snapshot::<BE, _>(&dst);
             let err = with_scratch::<BE, _>(module.ckks_round_tmp_bytes(&dst, &src), |scratch| {
-                module.ckks_round_into(&mut dst, &src, scratch)
+                module.ckks_round(&mut dst, &src, scratch)
             })
             .unwrap_err();
             assert!(
@@ -420,7 +420,7 @@ where
             83,
         );
         let before = snapshot::<BE, _>(&dst);
-        let err = with_scratch::<BE, _>(0, |scratch| module.ckks_round_into(&mut dst, &src, scratch)).unwrap_err();
+        let err = with_scratch::<BE, _>(0, |scratch| module.ckks_round(&mut dst, &src, scratch)).unwrap_err();
         assert!(matches!(&err, crate::CKKSError::Internal(_)));
         assert_eq!(err.to_string(), "ckks_round: insufficient scratch");
         assert_eq!(snapshot::<BE, _>(&dst), before);

@@ -4,26 +4,27 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena, VecZnxBackendMut, VecZn
 
 use crate::{CKKSCtBounds, GLWEToBackendMut, GLWEToBackendRef, SetCKKSInfos};
 
+/// The rounding family of [`CKKSRoundOps`](crate::api::CKKSRoundOps).
+///
 /// # Safety
 ///
-/// Both methods reproduce [`crate::reference::round::ckks_round_into_reference`]
-/// and its query, including validation, metadata and canonical flags. An
-/// override may use different kernels and scratch within its own query.
-pub unsafe trait CKKSRoundImpl: CKKSShapedRoundingImpl {
-    fn ckks_round_tmp_bytes_impl<Dst, Src>(module: &Module<Self>, dst: &Dst, src: &Src) -> usize
+/// Both methods reproduce
+/// [`CKKSRoundReference::ckks_round_reference`](crate::reference::round::CKKSRoundReference::ckks_round_reference)
+/// and its query bit for bit, including validation, metadata and canonical
+/// flags, with no more scratch than `ckks_round_tmp_bytes` reports. An override
+/// chooses only its kernels and scratch within its own query. Memory, layout,
+/// synchrony and aliasing obligations are those of
+/// `poulpy-hal/docs/backend_safety_contract.md`.
+pub unsafe trait CKKSRoundImpl: Backend {
+    fn ckks_round_tmp_bytes<R, A>(module: &Module<Self>, res: &R, a: &A) -> usize
     where
-        Dst: CKKSCtBounds,
-        Src: CKKSCtBounds;
+        R: CKKSCtBounds,
+        A: CKKSCtBounds;
 
-    fn ckks_round_into_impl<Dst, Src>(
-        module: &Module<Self>,
-        dst: &mut Dst,
-        src: &Src,
-        scratch: &mut ScratchArena<'_, Self>,
-    ) -> Result<()>
+    fn ckks_round<R, A>(module: &Module<Self>, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, Self>) -> Result<()>
     where
-        Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<Self> + CKKSCtBounds;
+        R: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<Self> + CKKSCtBounds;
 }
 
 /// Backend correction used internally by shaped precision reduction.
@@ -43,7 +44,7 @@ pub unsafe trait CKKSRoundImpl: CKKSShapedRoundingImpl {
 /// 64-bit words. Read every input before overwriting it. `low` is unchanged.
 /// No scratch beyond the supplied buffers is needed.
 pub unsafe trait CKKSShapedRoundingImpl: Backend {
-    fn ckks_shaped_round_correction_impl(
+    fn ckks_shaped_round_correction(
         module: &Module<Self>,
         carry: &mut VecZnxBackendMut<'_, Self>,
         h: &mut VecZnxBackendMut<'_, Self>,
@@ -53,32 +54,34 @@ pub unsafe trait CKKSShapedRoundingImpl: Backend {
     );
 }
 
-/// Implements this contract with the backend-independent reference algorithm.
+/// Implements [`CKKSRoundImpl`] for `$be` by forwarding to
+/// [`CKKSRoundReference`](crate::reference::round::CKKSRoundReference); `$be`
+/// implements [`CKKSShapedRoundingImpl`] itself.
 #[macro_export]
-macro_rules! impl_ckks_round_reference {
+macro_rules! impl_ckks_round_reference_full {
     ($be:ty) => {
         unsafe impl $crate::oep::CKKSRoundImpl for $be {
-            fn ckks_round_tmp_bytes_impl<Dst, Src>(module: &::poulpy_hal::layouts::Module<Self>, dst: &Dst, src: &Src) -> usize
+            fn ckks_round_tmp_bytes<R, A>(module: &::poulpy_hal::layouts::Module<Self>, res: &R, a: &A) -> usize
             where
-                Dst: $crate::CKKSCtBounds,
-                Src: $crate::CKKSCtBounds,
+                R: $crate::CKKSCtBounds,
+                A: $crate::CKKSCtBounds,
             {
-                $crate::reference::round::ckks_round_tmp_bytes_reference(module, dst, src)
+                $crate::reference::round::CKKSRoundReference::ckks_round_tmp_bytes_reference(module, res, a)
             }
 
-            fn ckks_round_into_impl<Dst, Src>(
+            fn ckks_round<R, A>(
                 module: &::poulpy_hal::layouts::Module<Self>,
-                dst: &mut Dst,
-                src: &Src,
+                res: &mut R,
+                a: &A,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> $crate::CKKSResult<()>
             where
-                Dst: ::poulpy_core::layouts::GLWEToBackendMut<Self> + $crate::CKKSCtBounds + $crate::SetCKKSInfos,
-                Src: ::poulpy_core::layouts::GLWEToBackendRef<Self> + $crate::CKKSCtBounds,
+                R: ::poulpy_core::layouts::GLWEToBackendMut<Self> + $crate::CKKSCtBounds + $crate::SetCKKSInfos,
+                A: ::poulpy_core::layouts::GLWEToBackendRef<Self> + $crate::CKKSCtBounds,
             {
-                $crate::reference::round::ckks_round_into_reference(module, dst, src, scratch)
+                $crate::reference::round::CKKSRoundReference::ckks_round_reference(module, res, a, scratch)
             }
         }
     };
 }
-pub use crate::impl_ckks_round_reference;
+pub use crate::impl_ckks_round_reference_full;
