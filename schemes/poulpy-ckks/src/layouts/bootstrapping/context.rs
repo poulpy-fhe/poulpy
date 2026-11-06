@@ -25,7 +25,7 @@ use crate::{
 use super::{
     BootstrappingPipeline, BootstrappingPlan, EvalModCIPrepared, EvalModRing,
     eval_mod_ci::{CIPre, EvalModCI},
-    key_widths::{RotationKeyUse, StageWidths},
+    key_widths::{RotationKeyOffsets, StageWidths},
 };
 
 /// Compiled [`BootstrappingPlan`]: the resident DFT matrices and encoded EvalMod
@@ -72,8 +72,8 @@ pub struct BootstrappingContextPrepared<BE: Backend, F> {
     /// Ephemeral sparse-secret weight required by the recipe, if enabled.
     sparse_secret_hamming_weight: Option<usize>,
 
-    /// The degree of the first bootstrap and the uses of the rotation keys there, read once for every later entry check.
-    rotation_key_uses: OnceLock<(usize, Vec<RotationKeyUse>)>,
+    /// The degree of the first bootstrap and the offsets of the rotation keys there, read once for every later entry check.
+    rotation_key_offsets: OnceLock<(usize, Vec<RotationKeyOffsets>)>,
 }
 
 // A context holds `Split` matrices, evaluated unsplit: see `ckks_coeffs_to_slots_assign` for the scale.
@@ -99,12 +99,12 @@ impl<BE: Backend, F> CKKSDFTFactors<BE, Encode, Standard> for BootstrappingConte
 }
 
 impl<BE: Backend, F> BootstrappingContextPrepared<BE, F> {
-    /// The uses of the rotation keys at degree `2^log_n`, `None` at another degree than the first asked for.
-    pub(crate) fn rotation_key_uses(&self, log_n: usize) -> Option<&[RotationKeyUse]> {
-        let (degree, uses) = self
-            .rotation_key_uses
-            .get_or_init(|| (log_n, self.stage_widths().rotation_key_uses(log_n)));
-        (*degree == log_n).then_some(uses.as_slice())
+    /// The offsets of the rotation keys at degree `2^log_n`, `None` at another degree than the first asked for.
+    pub(crate) fn rotation_key_offsets(&self, log_n: usize) -> Option<&[RotationKeyOffsets]> {
+        let (degree, offsets) = self
+            .rotation_key_offsets
+            .get_or_init(|| (log_n, self.stage_widths().rotation_key_offsets(log_n)));
+        (*degree == log_n).then_some(offsets.as_slice())
     }
 
     /// The stages that set the widths at which a bootstrap uses its keys.
@@ -301,7 +301,7 @@ impl<BE: Backend, F> BootstrappingContext<BE, F> {
             eval_mod_ci,
             pipeline,
             sparse_secret_hamming_weight,
-            rotation_key_uses: OnceLock::new(),
+            rotation_key_offsets: OnceLock::new(),
         })
     }
 }

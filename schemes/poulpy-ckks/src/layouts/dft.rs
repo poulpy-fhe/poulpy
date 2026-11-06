@@ -684,35 +684,67 @@ impl DFTPlan {
         set.into_iter().collect()
     }
 
-    /// The Galois elements of each factor, in evaluation order: the keys factor
-    /// `i` switches with, on a ciphertext `i` factors below the input width.
+    /// The Galois elements of each factor, in evaluation order.
     ///
     /// Their union is [`Self::galois_elements`] less the repack rotation of the
     /// sparse path, which belongs to no factor. An element can serve several
     /// factors.
     pub fn galois_elements_per_factor(&self, log_n: usize, cyclotomic_order: i64) -> Vec<Vec<i64>> {
-        let slot_count = self.factor_slots(log_n);
         let identity = galois_element(0, cyclotomic_order);
+        self.factor_schedules(log_n)
+            .into_iter()
+            .map(|schedule| {
+                let Some(schedule) = schedule else {
+                    return Vec::new();
+                };
+                let mut set: BTreeSet<i64> = schedule.galois_elements(cyclotomic_order).into_iter().collect();
+                set.remove(&identity);
+                set.into_iter().collect()
+            })
+            .collect()
+    }
 
+    /// The BSGS schedule of each factor, in evaluation order, `None` for a first factor left to
+    /// the modulus raise, which rotates with keys of its own.
+    fn factor_schedules(&self, log_n: usize) -> Vec<Option<LinearTransformationPlan>> {
+        let slot_count = self.factor_slots(log_n);
         self.diagonal_indexes(log_n)
             .into_iter()
             .zip(&self.schedule.steps)
             .enumerate()
             .map(|(factor, (indexes, step))| {
-                // A first factor left to the modulus raise rotates with keys of its own.
-                if factor == 0 && self.first_factor_on_raise {
-                    return Vec::new();
-                }
-                let layout = LinearTransformationLayout {
-                    indexes,
-                    slots: slot_count,
-                    strategy: self.factor_strategy(step.giant_step),
-                };
-                let mut set: BTreeSet<i64> = layout.galois_elements(cyclotomic_order).into_iter().collect();
-                set.remove(&identity);
-                set.into_iter().collect()
+                (factor != 0 || !self.first_factor_on_raise).then(|| {
+                    LinearTransformationLayout {
+                        indexes,
+                        slots: slot_count,
+                        strategy: self.factor_strategy(step.giant_step),
+                    }
+                    .index()
+                })
             })
             .collect()
+    }
+
+    /// Every rotation key of this transform, by Galois element, with the bits between the
+    /// transform's input and the widest ciphertext the key switches: evaluated factor `i` starts
+    /// `i` factor scales down, its baby rotations switch there, and its giant rotations switch
+    /// the product, one factor scale lower. The repack rotation of the sparse path switches
+    /// what the factors leave.
+    pub(crate) fn key_offsets(&self, log_n: usize, cyclotomic_order: i64) -> BTreeMap<i64, usize> {
+        let scale = self.coeffs_meta.log_delta();
+        let mut offsets = BTreeMap::new();
+        for (factor, schedule) in self.factor_schedules(log_n).iter().flatten().enumerate() {
+            charge_factor_keys(&mut offsets, schedule, factor * scale, scale, cyclotomic_order);
+        }
+        if self.is_sparse_repack(log_n) {
+            charge_key(
+                &mut offsets,
+                galois_element(1i64 << self.log_slots(), cyclotomic_order),
+                self.consumed_bits(),
+            );
+        }
+        offsets.remove(&galois_element(0, cyclotomic_order));
+        offsets
     }
 
     /// The slots the factor diagonals, hence the BSGS schedules, live in: the `2·slots` working
@@ -728,13 +760,35 @@ impl DFTPlan {
     /// [`CIConversion::Folded`](crate::layouts::CIConversion::Folded), whose maps are the last
     /// factor times diagonals of `slots` slots, none of them zero.
     pub(crate) fn last_factor_galois_elements_at(&self, log_n: usize, slots: usize, cyclotomic_order: i64) -> Vec<i64> {
+        let mut set: BTreeSet<i64> = self
+            .last_factor_schedule_at(log_n, slots)
+            .galois_elements(cyclotomic_order)
+            .into_iter()
+            .collect();
+        set.remove(&galois_element(0, cyclotomic_order));
+        set.into_iter().collect()
+    }
+
+    /// [`Self::key_offsets`] of the folded factors of
+    /// [`Self::last_factor_galois_elements_at`], which run where the last factor would.
+    pub(crate) fn last_factor_key_offsets_at(&self, log_n: usize, slots: usize, cyclotomic_order: i64) -> BTreeMap<i64, usize> {
+        let scale = self.coeffs_meta.log_delta();
+        let below = (self.num_evaluated_factors() - 1) * scale;
+        let mut offsets = BTreeMap::new();
+        let schedule = self.last_factor_schedule_at(log_n, slots);
+        charge_factor_keys(&mut offsets, &schedule, below, scale, cyclotomic_order);
+        offsets.remove(&galois_element(0, cyclotomic_order));
+        offsets
+    }
+
+    fn last_factor_schedule_at(&self, log_n: usize, slots: usize) -> LinearTransformationPlan {
         let tile = self.factor_slots(log_n).max(slots);
         let last = self
             .diagonal_indexes(log_n)
             .pop()
             .expect("a DFT plan has at least one factor");
         let step = self.schedule.steps.last().expect("a DFT plan has at least one factor");
-        let layout = LinearTransformationLayout {
+        LinearTransformationLayout {
             indexes: last
                 .into_iter()
                 .map(|index| index.rem_euclid(tile as i64))
@@ -743,10 +797,32 @@ impl DFTPlan {
                 .collect(),
             slots: tile,
             strategy: self.factor_strategy(step.giant_step),
-        };
-        let mut set: BTreeSet<i64> = layout.galois_elements(cyclotomic_order).into_iter().collect();
-        set.remove(&galois_element(0, cyclotomic_order));
-        set.into_iter().collect()
+        }
+        .index()
+    }
+}
+
+/// `below` bits for the key `p`, unless a wider use already took less.
+fn charge_key(offsets: &mut BTreeMap<i64, usize>, p: i64, below: usize) {
+    offsets.entry(p).and_modify(|seen| *seen = below.min(*seen)).or_insert(below);
+}
+
+/// The keys of a factor starting `below` bits down, with a product of `scale` bits between its
+/// baby and its giant rotations.
+fn charge_factor_keys(
+    offsets: &mut BTreeMap<i64, usize>,
+    schedule: &LinearTransformationPlan,
+    below: usize,
+    scale: usize,
+    cyclotomic_order: i64,
+) {
+    let babies = schedule.baby_steps.iter().copied();
+    for p in schedule.rotations.galois_elements(babies, [], cyclotomic_order) {
+        charge_key(offsets, p, below);
+    }
+    let giants = schedule.giant_steps.iter().copied();
+    for p in schedule.rotations.galois_elements([], giants, cyclotomic_order) {
+        charge_key(offsets, p, below + scale);
     }
 }
 

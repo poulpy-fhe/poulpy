@@ -17,7 +17,7 @@ use poulpy_core::layouts::SetGLWEPlaintextInfos;
 use poulpy_hal::AlignedBuf;
 use poulpy_hal::api::VecZnxAutomorphism;
 use poulpy_hal::layouts::HostStaged;
-use std::{f64::consts::TAU, fmt::Debug, sync::Mutex};
+use std::{collections::BTreeMap, f64::consts::TAU, fmt::Debug, sync::Mutex};
 
 use crate::{
     CKKSCompositionError, CKKSCtBounds, CKKSInfos, CKKSLayout, GLWEPlaintextMeta, SetCKKSInfos,
@@ -852,10 +852,9 @@ impl<'a, K, T, C> LoggedBootstrappingKeys<'a, K, T, C> {
     }
 
     /// Asserts that the bootstrap first looked up every rotation key and the tensor key at
-    /// its width in `widths`, its entry check, and that its stages then used each rotation
-    /// key on ciphertexts of at most that width and the tensor key at exactly that width.
-    /// A rotation key used only for giant steps switches the product, one factor scale
-    /// below the width `widths` gives it. Returns how many times the stages looked the tensor key up.
+    /// its width in `widths`, its entry check, and that its stages then used each of them at
+    /// exactly that width at the widest. Returns how many times the stages looked the tensor
+    /// key up.
     pub(crate) fn assert_lookups_at(&self, widths: &BootstrappingKeyWidths, label: &str) -> usize {
         let rotations: Vec<(i64, usize)> = self
             .rotation_keys
@@ -870,12 +869,12 @@ impl<'a, K, T, C> LoggedBootstrappingKeys<'a, K, T, C> {
         );
         let stages = &rotations[entry.len()..];
         assert!(!stages.is_empty(), "{label}: no rotation key used");
+        let mut widest: BTreeMap<i64, usize> = BTreeMap::new();
         for &(p, k) in stages {
-            assert!(
-                widths.rotation_keys.get(&p).is_some_and(|&width| k <= width),
-                "{label}: rotation key {p} used at {k} bits, past its width"
-            );
+            let width = widest.entry(p).or_default();
+            *width = k.max(*width);
         }
+        assert_eq!(widest, widths.rotation_keys, "{label}: widest use of each rotation key");
         let tensor_log = match (&self.tensor_key, &self.ci_tensor_key) {
             (Some(log), _) => log.take(),
             (None, Some(log)) => log.take(),

@@ -10,10 +10,10 @@ use super::{BootstrappingPipeline, CIConversion, EvalModRing};
 /// ([`key_widths`](crate::layouts::BootstrappingPlan::key_widths)): a key covers its width when its
 /// `max_input_k` is at least that width.
 ///
-/// A rotation key's width is the input width of the widest transform factor
-/// using it, which bounds the ciphertexts it switches: a key used only for giant
-/// steps switches the factor's product, one factor scale narrower. The tensor
-/// key's width is that of the widest product EvalMod relinearizes.
+/// A rotation key's width is that of the widest ciphertext it switches: a baby
+/// rotation switches the input of its factor, and a giant rotation the factor's
+/// product, one factor scale narrower. The tensor key's width is that of the
+/// widest product EvalMod relinearizes.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BootstrappingKeyWidths {
     /// Every rotation key of the plan, by Galois element, the conjugation `-1`
@@ -25,21 +25,17 @@ pub struct BootstrappingKeyWidths {
     pub conversion_keys: Option<(usize, usize)>,
 }
 
-/// The stage a rotation key switches in, whose starting width sets the key's.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum KeyStage {
-    Raised,
-    SlotsToCoeffs,
-    AfterCoeffsToSlots,
-    AfterBypass,
-}
-
-/// One use of the rotation key of Galois element `p`, `below` bits under the width its stage starts at.
+/// The offsets of a rotation key: how far below the start of each stage its widest use sits, in bits, `None` for a stage
+/// that does not use it. A plan holds no torus width, so the offsets are the plan's and [`StageStarts`] the ciphertext's.
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct RotationKeyUse {
+pub(crate) struct RotationKeyOffsets {
     pub(crate) p: i64,
-    stage: KeyStage,
-    below: usize,
+    /// CoeffsToSlots, its bypass and the factors `u` folds into, below the raised width.
+    raised: Option<usize>,
+    slots_to_coeffs: Option<usize>,
+    /// The conjugations of the split, on what CoeffsToSlots and the bypass leave.
+    after_c2s: Option<usize>,
+    after_bypass: Option<usize>,
 }
 
 /// The widths the stages of a bootstrap start at.
@@ -51,15 +47,18 @@ pub(crate) struct StageStarts {
 }
 
 impl StageStarts {
-    /// The width of the ciphertext `key_use` switches.
-    pub(crate) fn width(&self, key_use: &RotationKeyUse) -> usize {
-        let start = match key_use.stage {
-            KeyStage::Raised => self.raised,
-            KeyStage::SlotsToCoeffs => self.slots_to_coeffs,
-            KeyStage::AfterCoeffsToSlots => self.after_c2s,
-            KeyStage::AfterBypass => self.after_bypass,
-        };
-        start - key_use.below
+    /// The width of the widest ciphertext `key` switches.
+    pub(crate) fn width(&self, key: &RotationKeyOffsets) -> usize {
+        [
+            (self.raised, key.raised),
+            (self.slots_to_coeffs, key.slots_to_coeffs),
+            (self.after_c2s, key.after_c2s),
+            (self.after_bypass, key.after_bypass),
+        ]
+        .into_iter()
+        .filter_map(|(start, below)| Some(start - below?))
+        .max()
+        .unwrap_or(0)
     }
 }
 
@@ -92,25 +91,16 @@ impl StageWidths<'_> {
         })
     }
 
-    /// Width, in bits, of each rotation key, by Galois element: the input width of
-    /// the widest factor using it (see [`BootstrappingKeyWidths`]).
-    ///
-    /// Factor `i` of a transform runs on a ciphertext `i` factor scales below the
-    /// width the transform starts at: the raised width `bootstrap_k` for
-    /// CoeffsToSlots and its EvalRound+ bypass, and for SlotsToCoeffs the input
-    /// width `input_k` (S2C-first) or what EvalMod, and the bypass, leave
-    /// (C2S-first). The folded factors of [`CIConversion::Folded`] run where the
-    /// last CoeffsToSlots factor would. The conjugation follows each split
-    /// CoeffsToSlots, which on the conjugate-invariant ring does not split.
+    /// Width, in bits, of each rotation key, by Galois element: [`RotationKeyOffsets`] at the starts of
+    /// [`Self::stage_starts`].
     fn rotation_key_inputs(&self, log_n: usize, bootstrap_k: usize, input_k: usize) -> Option<BTreeMap<i64, usize>> {
         let starts = self.stage_starts(bootstrap_k, input_k)?;
-        let mut inputs: BTreeMap<i64, usize> = BTreeMap::new();
-        for key_use in self.rotation_key_uses(log_n) {
-            let k = starts.width(&key_use);
-            let widest = inputs.entry(key_use.p).or_insert(k);
-            *widest = (*widest).max(k);
-        }
-        Some(inputs)
+        Some(
+            self.rotation_key_offsets(log_n)
+                .iter()
+                .map(|key| (key.p, starts.width(key)))
+                .collect(),
+        )
     }
 
     /// The widths the stages start at, or `None` when `bootstrap_k` or `input_k` is narrower than the bits they consume.
@@ -137,34 +127,37 @@ impl StageWidths<'_> {
         })
     }
 
-    /// Every use of a rotation key at degree `2^log_n`, by Galois element.
-    pub(crate) fn rotation_key_uses(&self, log_n: usize) -> Vec<RotationKeyUse> {
+    /// The offsets of every rotation key at degree `2^log_n`, sorted by Galois element. Factor `i` of a transform runs `i`
+    /// factor scales below the width the transform starts at: the raised width for CoeffsToSlots and its bypass, and for
+    /// SlotsToCoeffs the input width (S2C-first) or what EvalMod, and the bypass, leave (C2S-first). The folded factors of
+    /// [`CIConversion::Folded`] run where the last CoeffsToSlots factor would. The conjugation follows each split
+    /// CoeffsToSlots, which on the conjugate-invariant ring does not split.
+    pub(crate) fn rotation_key_offsets(&self, log_n: usize) -> Vec<RotationKeyOffsets> {
         let cyclotomic_order = 1i64 << (log_n + 1);
-        let mut uses = Vec::new();
-        let bypass = self.coeffs_to_slots_bypass.map(|bypass| (bypass, KeyStage::Raised));
-        for (dft, stage) in [
-            (self.coeffs_to_slots, KeyStage::Raised),
-            (self.slots_to_coeffs, KeyStage::SlotsToCoeffs),
-        ]
-        .into_iter()
-        .chain(bypass)
-        {
-            let log_delta = dft.coeffs_meta().log_delta();
-            let factors = dft.galois_elements_per_factor(log_n, cyclotomic_order);
-            // The repack rotation of the sparse path belongs to no factor.
-            for p in dft.galois_elements(log_n, cyclotomic_order) {
-                if !factors.iter().any(|elements| elements.contains(&p)) {
-                    uses.push(RotationKeyUse { p, stage, below: 0 });
-                }
+        let mut keys: BTreeMap<i64, RotationKeyOffsets> = BTreeMap::new();
+        let mut charge = |stage: fn(&mut RotationKeyOffsets) -> &mut Option<usize>, offsets: BTreeMap<i64, usize>| {
+            for (p, below) in offsets {
+                let key = keys.entry(p).or_insert(RotationKeyOffsets {
+                    p,
+                    raised: None,
+                    slots_to_coeffs: None,
+                    after_c2s: None,
+                    after_bypass: None,
+                });
+                let offset = stage(key);
+                *offset = Some(offset.map_or(below, |seen| seen.min(below)));
             }
-            // A first factor applied by the raise has no element here and costs no width.
-            let free = usize::from(dft.first_factor_on_raise());
-            for (factor, elements) in factors.iter().enumerate() {
-                for &p in elements {
-                    let below = (factor - free) * log_delta;
-                    uses.push(RotationKeyUse { p, stage, below });
-                }
-            }
+        };
+        charge(
+            |key| &mut key.raised,
+            self.coeffs_to_slots.key_offsets(log_n, cyclotomic_order),
+        );
+        charge(
+            |key| &mut key.slots_to_coeffs,
+            self.slots_to_coeffs.key_offsets(log_n, cyclotomic_order),
+        );
+        if let Some(bypass) = self.coeffs_to_slots_bypass {
+            charge(|key| &mut key.raised, bypass.key_offsets(log_n, cyclotomic_order));
         }
         if let EvalModRing::ConjugateInvariant {
             pre: CIConversion::Folded,
@@ -172,32 +165,18 @@ impl StageWidths<'_> {
         } = self.eval_mod_ring
         {
             let c2s = self.coeffs_to_slots.resolved_at(log_n);
-            let last = c2s.num_factors() - 1;
-            let below = (last - usize::from(c2s.first_factor_on_raise())) * c2s.coeffs_meta().log_delta();
-            for p in c2s.last_factor_galois_elements_at(log_n, 1 << (log_n - 1), cyclotomic_order) {
-                uses.push(RotationKeyUse {
-                    p,
-                    stage: KeyStage::Raised,
-                    below,
-                });
-            }
+            charge(
+                |key| &mut key.raised,
+                c2s.last_factor_key_offsets_at(log_n, 1 << (log_n - 1), cyclotomic_order),
+            );
         }
         if self.eval_mod_ring == EvalModRing::Standard {
-            uses.push(RotationKeyUse {
-                p: -1,
-                stage: KeyStage::AfterCoeffsToSlots,
-                below: 0,
-            });
+            charge(|key| &mut key.after_c2s, BTreeMap::from([(-1, 0)]));
             if self.coeffs_to_slots_bypass.is_some() {
-                uses.push(RotationKeyUse {
-                    p: -1,
-                    stage: KeyStage::AfterBypass,
-                    below: 0,
-                });
+                charge(|key| &mut key.after_bypass, BTreeMap::from([(-1, 0)]));
             }
         }
-        uses.sort_by_key(|key_use| key_use.p);
-        uses
+        keys.into_values().collect()
     }
 
     /// Widths of the ciphertexts the trace and the embedding switch on the way

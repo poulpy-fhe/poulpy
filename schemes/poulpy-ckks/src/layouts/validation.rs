@@ -437,21 +437,19 @@ where
         return Err(narrower_than_stages(op, bootstrap_k, input_k));
     };
     let other_degree;
-    let uses = match ctx.rotation_key_uses(log_n) {
-        Some(uses) => uses,
+    let offsets = match ctx.rotation_key_offsets(log_n) {
+        Some(offsets) => offsets,
         None => {
-            other_degree = stages.rotation_key_uses(log_n);
+            other_degree = stages.rotation_key_offsets(log_n);
             &other_degree
         }
     };
-    for key_uses in uses.chunk_by(|a, b| a.p == b.p) {
-        let p = key_uses[0].p;
-        let k = key_uses.iter().map(|key_use| starts.width(key_use)).max().unwrap_or(0);
-        let k = TorusPrecision(k as u32);
-        keys.get_automorphism_key(p, k)
+    for key in offsets {
+        let k = TorusPrecision(starts.width(key) as u32);
+        keys.get_automorphism_key(key.p, k)
             .map_err(|source| CKKSCompositionError::MissingAutomorphismKey {
                 op,
-                rotation: p,
+                rotation: key.p,
                 k: k.into(),
                 source,
             })?;
