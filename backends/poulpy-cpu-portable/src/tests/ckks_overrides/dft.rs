@@ -333,7 +333,7 @@ fn checked_dft_construction_preserves_exact_encoded_width() {
 
 use super::OverrideBackend;
 use super::carry::assert_query_takes_extra;
-use poulpy_ckks::reference::bootstrapping::CKKSBootstrappingReference;
+use poulpy_ckks::reference::bootstrapping::{CKKSBootstrapEvalModReference, CKKSEvalLutReference, CKKSModRaiseReference};
 use poulpy_ckks::{CKKSCtBounds, CKKSResult as Result, SetCKKSInfos};
 use poulpy_core::GLWEDiagonalProd;
 use std::cell::{Cell, RefCell};
@@ -491,7 +491,7 @@ unsafe impl CKKSBootstrappingImpl for OverrideBackend {
         A: CKKSCtBounds,
         P: CKKSModRaiseInfos<Self>,
     {
-        CKKSBootstrappingReference::ckks_mod_raise_tmp_bytes_reference(module, res, a, plan, keys_layout)
+        CKKSModRaiseReference::ckks_mod_raise_tmp_bytes_reference(module, res, a, plan, keys_layout)
     }
 
     fn ckks_mod_raise<R, A, P, K>(
@@ -509,7 +509,7 @@ unsafe impl CKKSBootstrappingImpl for OverrideBackend {
         K: BootstrappingLinearKeys<Self>,
     {
         RAISE_CALLS.set(RAISE_CALLS.get() + 1);
-        CKKSBootstrappingReference::ckks_mod_raise_reference(module, res, a, plan, keys, scratch)
+        CKKSModRaiseReference::ckks_mod_raise_reference(module, res, a, plan, keys, scratch)
     }
 
     fn ckks_bootstrap_eval_mod_tmp_bytes<R, A, P, F>(
@@ -525,7 +525,7 @@ unsafe impl CKKSBootstrappingImpl for OverrideBackend {
         A: CKKSCtBounds,
         P: CKKSEvalModInfos<Self, F>,
     {
-        CKKSBootstrappingReference::ckks_bootstrap_eval_mod_tmp_bytes_reference(module, res, a, plan, ci, keys_layout)
+        CKKSBootstrapEvalModReference::ckks_bootstrap_eval_mod_tmp_bytes_reference(module, res, a, plan, ci, keys_layout)
     }
 
     fn ckks_bootstrap_eval_mod<R, A, P, F, K>(
@@ -546,7 +546,7 @@ unsafe impl CKKSBootstrappingImpl for OverrideBackend {
         K::TensorKey: Sync,
     {
         BOOTSTRAP_EVAL_MOD_CALLS.set(BOOTSTRAP_EVAL_MOD_CALLS.get() + 1);
-        CKKSBootstrappingReference::ckks_bootstrap_eval_mod_reference(module, res, a, plan, ci, keys, scratch)
+        CKKSBootstrapEvalModReference::ckks_bootstrap_eval_mod_reference(module, res, a, plan, ci, keys, scratch)
     }
 
     fn ckks_eval_lut_tmp_bytes<R, A, P, F>(
@@ -562,7 +562,7 @@ unsafe impl CKKSBootstrappingImpl for OverrideBackend {
         A: CKKSCtBounds,
         P: CKKSEvalModInfos<Self, F>,
     {
-        CKKSBootstrappingReference::ckks_eval_lut_tmp_bytes_reference(module, res, a, plan, luts, keys_layout)
+        CKKSEvalLutReference::ckks_eval_lut_tmp_bytes_reference(module, res, a, plan, luts, keys_layout)
     }
 
     fn ckks_eval_lut<R, A, P, F, K>(
@@ -581,7 +581,7 @@ unsafe impl CKKSBootstrappingImpl for OverrideBackend {
         K: BootstrappingKeys<Self>,
     {
         EVAL_LUT_CALLS.set(EVAL_LUT_CALLS.get() + 1);
-        CKKSBootstrappingReference::ckks_eval_lut_reference(module, res, a, plan, luts, keys, scratch)
+        CKKSEvalLutReference::ckks_eval_lut_reference(module, res, a, plan, luts, keys, scratch)
     }
 }
 unsafe impl<F: CKKSEncodingScalar + DftScalar> CKKSDFTMatrixImpl<F> for OverrideBackend {

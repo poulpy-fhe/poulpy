@@ -3,6 +3,7 @@
 ## 1. Layering, OEP families and macros
 
 - **Reference family shape.** A family's reference is a trait of default-bodied methods over an empty `Module<BE>` impl.
+- **Bootstrapping splits by step.** The bootstrapping family keeps one API, delegate and OEP file, and `layouts/bootstrapping/` and `reference/bootstrapping/` hold a file per step or concept, a reference step being its own trait of that shape.
 - **Registration follows the ring.** A family serving both rings registers through the one both-ring umbrella, a standard-only family is listed by hand on each standard backend type, and no second umbrella is added.
 - **`CKKSImpl` stays scalar-independent.** It takes no scalar-generic, fold, bootstrapping or ModUp seam, and stays the crate's only blanket `*Impl` impl.
 - **Scalar-generic seams.** Anything generic over the encoding scalar `F` is its own OEP seam, never a parameter of a scalar-independent family.

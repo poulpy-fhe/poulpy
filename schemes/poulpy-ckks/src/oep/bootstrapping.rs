@@ -82,7 +82,7 @@ pub unsafe trait CKKSBootstrappingImpl: CKKSCITwin + CKKSDFTImpl + CKKSCopyImpl 
         P: CKKSModRaiseInfos<Self>;
 
     /// Reproduces
-    /// [`ckks_mod_raise_reference`](crate::reference::bootstrapping::CKKSBootstrappingReference::ckks_mod_raise_reference)
+    /// [`ckks_mod_raise_reference`](crate::reference::bootstrapping::CKKSModRaiseReference::ckks_mod_raise_reference)
     /// bit for bit, within [`Self::ckks_mod_raise_tmp_bytes`]; free in kernels and scratch use.
     fn ckks_mod_raise<R, A, P, K>(
         module: &Module<Self>,
@@ -114,7 +114,7 @@ pub unsafe trait CKKSBootstrappingImpl: CKKSCITwin + CKKSDFTImpl + CKKSCopyImpl 
         P: CKKSEvalModInfos<Self, F>;
 
     /// Reproduces
-    /// [`ckks_bootstrap_eval_mod_reference`](crate::reference::bootstrapping::CKKSBootstrappingReference::ckks_bootstrap_eval_mod_reference)
+    /// [`ckks_bootstrap_eval_mod_reference`](crate::reference::bootstrapping::CKKSBootstrapEvalModReference::ckks_bootstrap_eval_mod_reference)
     /// bit for bit, within [`Self::ckks_bootstrap_eval_mod_tmp_bytes`]; free in kernels and scratch use.
     fn ckks_bootstrap_eval_mod<R, A, P, F, K>(
         module: &Module<Self>,
@@ -148,7 +148,7 @@ pub unsafe trait CKKSBootstrappingImpl: CKKSCITwin + CKKSDFTImpl + CKKSCopyImpl 
         P: CKKSEvalModInfos<Self, F>;
 
     /// Reproduces
-    /// [`ckks_eval_lut_reference`](crate::reference::bootstrapping::CKKSBootstrappingReference::ckks_eval_lut_reference)
+    /// [`ckks_eval_lut_reference`](crate::reference::bootstrapping::CKKSEvalLutReference::ckks_eval_lut_reference)
     /// bit for bit, within [`Self::ckks_eval_lut_tmp_bytes`]; free in kernels and scratch use.
     fn ckks_eval_lut<R, A, P, F, K>(
         module: &Module<Self>,
@@ -315,7 +315,7 @@ macro_rules! impl_ckks_bootstrapping_reference_full {
                 A: $crate::CKKSCtBounds,
                 P: $crate::layouts::CKKSModRaiseInfos<$be>,
             {
-                $crate::reference::bootstrapping::CKKSBootstrappingReference::ckks_mod_raise_tmp_bytes_reference(
+                $crate::reference::bootstrapping::CKKSModRaiseReference::ckks_mod_raise_tmp_bytes_reference(
                     module,
                     res,
                     a,
@@ -344,7 +344,7 @@ macro_rules! impl_ckks_bootstrapping_reference_full {
                 P: $crate::layouts::CKKSModRaiseInfos<$be>,
                 K: $crate::layouts::BootstrappingLinearKeys<$be>,
             {
-                $crate::reference::bootstrapping::CKKSBootstrappingReference::ckks_mod_raise_reference(
+                $crate::reference::bootstrapping::CKKSModRaiseReference::ckks_mod_raise_reference(
                     module, res, a, plan, keys, scratch,
                 )
             }
@@ -362,7 +362,7 @@ macro_rules! impl_ckks_bootstrapping_reference_full {
                 A: $crate::CKKSCtBounds,
                 P: $crate::layouts::CKKSEvalModInfos<$be, F>,
             {
-                $crate::reference::bootstrapping::CKKSBootstrappingReference::ckks_bootstrap_eval_mod_tmp_bytes_reference(
+                $crate::reference::bootstrapping::CKKSBootstrapEvalModReference::ckks_bootstrap_eval_mod_tmp_bytes_reference(
                     module,
                     res,
                     a,
@@ -394,7 +394,7 @@ macro_rules! impl_ckks_bootstrapping_reference_full {
                 K: $crate::layouts::BootstrappingKeys<$be> + Sync,
                 K::TensorKey: Sync,
             {
-                $crate::reference::bootstrapping::CKKSBootstrappingReference::ckks_bootstrap_eval_mod_reference(
+                $crate::reference::bootstrapping::CKKSBootstrapEvalModReference::ckks_bootstrap_eval_mod_reference(
                     module, res, a, plan, ci, keys, scratch,
                 )
             }
@@ -412,7 +412,7 @@ macro_rules! impl_ckks_bootstrapping_reference_full {
                 A: $crate::CKKSCtBounds,
                 P: $crate::layouts::CKKSEvalModInfos<$be, F>,
             {
-                $crate::reference::bootstrapping::CKKSBootstrappingReference::ckks_eval_lut_tmp_bytes_reference(
+                $crate::reference::bootstrapping::CKKSEvalLutReference::ckks_eval_lut_tmp_bytes_reference(
                     module,
                     res,
                     a,
@@ -441,7 +441,7 @@ macro_rules! impl_ckks_bootstrapping_reference_full {
                 P: $crate::layouts::CKKSEvalModInfos<$be, F>,
                 K: $crate::layouts::BootstrappingKeys<$be>,
             {
-                $crate::reference::bootstrapping::CKKSBootstrappingReference::ckks_eval_lut_reference(
+                $crate::reference::bootstrapping::CKKSEvalLutReference::ckks_eval_lut_reference(
                     module, res, a, plan, luts, keys, scratch,
                 )
             }

@@ -1,9 +1,13 @@
 //! The modulus raise of a bootstrap as a step of its own: what the plan fixes and the first factor it may carry.
 
-use poulpy_core::layouts::LinearTransformation;
-use poulpy_hal::layouts::Backend;
+use anyhow::Result;
+use poulpy_core::layouts::{LinearTransformation, LinearTransformationDiagonal, LinearTransformationGiantStep};
+use poulpy_hal::layouts::{Backend, Module, PrepareHint, ScratchArena};
 
-use crate::layouts::{BootstrappingContextPrepared, CKKSRightOperandPrepared, EvalModPlan};
+use crate::{
+    api::CKKSRightOperandPreparedFactory,
+    layouts::{BootstrappingContextPrepared, CKKSPlaintextOwned, CKKSRightOperandPrepared, EvalModPlan},
+};
 
 /// What the modulus raise of a [`BootstrappingPlan`](crate::layouts::BootstrappingPlan) fixes. The raise is a digit
 /// shift in the base-`2^base2k` torus, not an RNS basis extension: it leaves `I(X)·q + Δ·m` in `res`, which keeps its
@@ -68,4 +72,34 @@ impl<BE: Backend, F> CKKSModRaiseInfos<BE> for BootstrappingContextPrepared<BE, 
     fn first_factor(&self) -> Option<&LinearTransformation<CKKSRightOperandPrepared<BE>>> {
         self.mod_raise.first_factor()
     }
+}
+
+/// Prepares each diagonal of a first CoeffsToSlots factor for the products on a ciphertext of a few limbs.
+pub(crate) fn first_factor_prepare<BE: Backend>(
+    module: &Module<BE>,
+    factor: LinearTransformation<CKKSPlaintextOwned<BE>>,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> Result<LinearTransformation<CKKSRightOperandPrepared<BE>>>
+where
+    Module<BE>: CKKSRightOperandPreparedFactory<BE>,
+{
+    let mut giant_steps = Vec::with_capacity(factor.giant_steps.len());
+    for giant in factor.giant_steps {
+        let mut diagonals = Vec::with_capacity(giant.diagonals.len());
+        for diagonal in giant.diagonals {
+            diagonals.push(LinearTransformationDiagonal {
+                baby: diagonal.baby,
+                plaintext: module.ckks_right_operand_prepare_alloc(&diagonal.plaintext, PrepareHint::Reuse, scratch)?,
+            });
+        }
+        giant_steps.push(LinearTransformationGiantStep {
+            rot: giant.rot,
+            diagonals,
+        });
+    }
+    Ok(LinearTransformation {
+        baby_steps: factor.baby_steps,
+        giant_steps,
+        rotations: factor.rotations,
+    })
 }
