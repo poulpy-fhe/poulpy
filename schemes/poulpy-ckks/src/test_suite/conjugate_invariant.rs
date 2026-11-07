@@ -669,6 +669,7 @@ macro_rules! conjugate_invariant_ckks_test_suite {
             run_replicated!(test_replicated_polynomials_are_shaped);
             run_replicated!(test_replicated_eval_mod_is_shaped);
             run_replicated!(test_replicated_conversions_round_trip);
+            run_replicated!(test_replicated_conversions_round_trip_factored);
             run_replicated!(test_replicated_transforms_apply_matrices);
             #[test]
             fn ckks_ci_round_error_is_shaped() {

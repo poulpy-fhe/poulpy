@@ -1,6 +1,7 @@
 //! Default parameter sets for the bootstrapping of a replicated slot layout,
 //! with the circuit of [`ReplicatedBootstrapPlan::paper`] in
-//! `SlotsToCoeffs`-first order.
+//! `SlotsToCoeffs`-first order, its transforms dense or factored
+//! ([`ReplicatedTransforms`]).
 //!
 //! ## Naming
 //!
@@ -10,17 +11,20 @@
 //! - `d`: leveled scale exponent of the inputs and the outputs;
 //! - `k`: output width in bits, the levels at `2^d` above the bootstrapping
 //!   input width [`ReplicatedBootstrapPlan::k_in`];
-//! - `p`: guaranteed output precision in bits on the data slots.
+//! - `p`: guaranteed output precision in bits on the data slots;
+//! - `_factored`: factored transforms.
 //!
 //! The batch size `k`, a power of two with `R | k`, and the shaping unit are the
-//! caller's: the moduli do not depend on them.
+//! caller's: the moduli do not depend on them. Factored transforms take a batch
+//! of at least `2^f` values for `f` factors per stage, whose real and imaginary
+//! parts fit the ring side by side (`2kR <= N/2`).
 
 use anyhow::{Result, ensure};
 use poulpy_core::layouts::{Base2K, Degree, GLWEAutomorphismKeyLayout, GLWELayout, Rank, TorusPrecision};
 
 use crate::{
     CKKSLayout, GLWEPlaintextMeta, ReplicatedLayout, Scale, SlotLayout, SlotsKind,
-    layouts::{BootstrappingKeysLayout, ReplicatedBootstrapPlan},
+    layouts::{BootstrappingKeysLayout, ReplicatedBootstrapPlan, ReplicatedTransforms},
     shaping::ShapingUnit,
 };
 
@@ -35,6 +39,8 @@ struct PresetSpec {
     sparse_secret_hamming_weight: usize,
     max_dense_modulus: usize,
     max_sparse_modulus: usize,
+    transforms: ReplicatedTransforms,
+    s2c_log_delta_diag: usize,
 }
 
 /// A bootstrapping parameter set for a replicated slot layout: the circuit, the
@@ -90,18 +96,18 @@ impl ReplicatedBootstrappingPreset {
 
     /// The circuit for a ciphertext in `layout`.
     pub fn plan(&self, layout: ReplicatedLayout) -> ReplicatedBootstrapPlan {
-        ReplicatedBootstrapPlan::paper(layout)
+        plan_for(&self.spec, layout)
     }
 
     /// Width the application hands a ciphertext back at, at the leveled scale.
     pub fn input_k(&self) -> usize {
-        let plan = reference_plan();
+        let plan = reference_plan(&self.spec);
         plan.k_in() - (plan.log_delta - plan.level_log_delta)
     }
 
     /// Width after bootstrapping, at the leveled scale.
     pub fn output_k(&self) -> usize {
-        output_k(&reference_plan(), self.spec.levels)
+        output_k(&reference_plan(&self.spec), self.spec.levels)
     }
 
     /// Evaluation-key layouts sized for this preset, with an automorphism key
@@ -134,7 +140,7 @@ impl ReplicatedBootstrappingPreset {
                 rank: Rank(1),
             },
             meta: GLWEPlaintextMeta {
-                scale: Scale::Log(reference_plan().level_log_delta),
+                scale: Scale::Log(reference_plan(&self.spec).level_log_delta),
                 slots: SlotsKind::Complex,
                 log_sparsity: 0,
                 slot_layout: SlotLayout::Replicated(layout),
@@ -145,6 +151,16 @@ impl ReplicatedBootstrappingPreset {
     /// Re-derives the preset at limb radix `base2k`, with its key layouts.
     pub fn with_base2k(&self, base2k: usize) -> Result<Self> {
         build(PresetSpec { base2k, ..self.spec })
+    }
+
+    /// The evaluation of `SlotsToCoeffs` and `CoeffsToSlots`.
+    pub fn transforms(&self) -> ReplicatedTransforms {
+        self.spec.transforms
+    }
+
+    /// Re-derives the preset with `transforms`, with its widths and key layouts.
+    pub fn with_transforms(&self, transforms: ReplicatedTransforms) -> Result<Self> {
+        build(PresetSpec { transforms, ..self.spec })
     }
 }
 
@@ -161,6 +177,8 @@ pub fn n14_d20_k109_p21_s2c() -> Result<ReplicatedBootstrappingPreset> {
         sparse_secret_hamming_weight: 32,
         max_dense_modulus: 424,
         max_sparse_modulus: 77,
+        transforms: ReplicatedTransforms::Dense,
+        s2c_log_delta_diag: 26,
     })
 }
 
@@ -177,17 +195,58 @@ pub fn n15_d20_k389_p20_s2c() -> Result<ReplicatedBootstrappingPreset> {
         sparse_secret_hamming_weight: 32,
         max_dense_modulus: 851,
         max_sparse_modulus: 162,
+        transforms: ReplicatedTransforms::Dense,
+        s2c_log_delta_diag: 26,
+    })
+}
+
+/// `N = 2^16`: 30 levels at `2^20`, outputs of 763 bits, at least 19 bits of
+/// precision. Each map is factored into two DFT factors and two placement
+/// factors, the `SlotsToCoeffs` diagonals at `2^30` and the inner
+/// `CoeffsToSlots` ones at `2^54`, for batches of 4 to `2^10` values with
+/// `R = 16`.
+pub fn n16_d20_k763_p19_s2c_factored() -> Result<ReplicatedBootstrappingPreset> {
+    build(PresetSpec {
+        name: "n16_d20_k763_p19_s2c_factored",
+        log_n: 16,
+        base2k: 52,
+        levels: 30,
+        log2_precision: 19,
+        dense_secret_hamming_weight: 1024,
+        sparse_secret_hamming_weight: 32,
+        max_dense_modulus: 1707,
+        max_sparse_modulus: 345,
+        transforms: ReplicatedTransforms::Factored {
+            s2c_factors: 2,
+            c2s_factors: 2,
+            placement_factors: 2,
+            c2s_inner_log_delta_diag: 54,
+        },
+        s2c_log_delta_diag: 30,
     })
 }
 
 /// Every replicated bootstrapping preset.
 pub fn all() -> Result<Vec<ReplicatedBootstrappingPreset>> {
-    Ok(vec![n14_d20_k109_p21_s2c()?, n15_d20_k389_p20_s2c()?])
+    Ok(vec![
+        n14_d20_k109_p21_s2c()?,
+        n15_d20_k389_p20_s2c()?,
+        n16_d20_k763_p19_s2c_factored()?,
+    ])
 }
 
 /// The circuit's widths do not depend on the layout.
-fn reference_plan() -> ReplicatedBootstrapPlan {
-    ReplicatedBootstrapPlan::paper(ShapingUnit::U32_45.layout(4, 24).expect("a valid unit"))
+fn reference_plan(spec: &PresetSpec) -> ReplicatedBootstrapPlan {
+    plan_for(spec, ShapingUnit::U32_45.layout(4, 24).expect("a valid unit"))
+}
+
+/// The circuit of ePrint 2026/2513 with the preset's transforms and `SlotsToCoeffs` scale.
+fn plan_for(spec: &PresetSpec, layout: ReplicatedLayout) -> ReplicatedBootstrapPlan {
+    ReplicatedBootstrapPlan {
+        transforms: spec.transforms,
+        s2c_log_delta_diag: spec.s2c_log_delta_diag,
+        ..ReplicatedBootstrapPlan::paper(layout)
+    }
 }
 
 fn output_k(plan: &ReplicatedBootstrapPlan, levels: usize) -> usize {
@@ -196,7 +255,7 @@ fn output_k(plan: &ReplicatedBootstrapPlan, levels: usize) -> usize {
 
 fn build(spec: PresetSpec) -> Result<ReplicatedBootstrappingPreset> {
     ensure!(spec.levels > 0, "a preset restores at least one level");
-    let plan = reference_plan();
+    let plan = reference_plan(&spec);
     let keys_layout = plan.secure_key_layouts(
         &[],
         Degree(1 << spec.log_n),
@@ -225,6 +284,12 @@ mod tests {
         for (preset, keys, ephemeral, return_key) in [
             (n14_d20_k109_p21_s2c().unwrap(), (14, 28, 28), (2, 22, 22), (2, 25, 25)),
             (n15_d20_k389_p20_s2c().unwrap(), (4, 168, 168), (1, 43, 43), (1, 49, 49)),
+            (
+                n16_d20_k763_p19_s2c_factored().unwrap(),
+                (3, 403, 403),
+                (1, 43, 43),
+                (1, 49, 49),
+            ),
         ] {
             let layout = preset.keys_layout(&[5, -1]);
             let encapsulation = layout.encapsulation.unwrap();
@@ -242,12 +307,30 @@ mod tests {
         }
     }
 
+    /// The bootstrapping input, output and raised widths.
+    #[test]
+    fn preset_widths() {
+        for (preset, widths) in [
+            (n14_d20_k109_p21_s2c().unwrap(), (69, 109, 383)),
+            (n15_d20_k389_p20_s2c().unwrap(), (69, 389, 663)),
+            (n16_d20_k763_p19_s2c_factored().unwrap(), (163, 763, 1199)),
+        ] {
+            let plan = reference_plan(&preset.spec);
+            assert_eq!(
+                (plan.k_in(), preset.output_k(), plan.k_boot(preset.output_k())),
+                widths,
+                "{}",
+                preset.name()
+            );
+        }
+    }
+
     #[test]
     fn offset_keys_cover_the_raise_within_modulus_bounds() {
         for preset in all().unwrap() {
             for base2k in [18, 19, 28, 52, 54] {
                 let preset = preset.with_base2k(base2k).unwrap();
-                let plan = reference_plan();
+                let plan = reference_plan(&preset.spec);
                 let keys = preset.keys_layout(&[5]);
                 let encapsulation = keys.encapsulation.unwrap();
                 let return_key = encapsulation.sparse_to_dense.unwrap();

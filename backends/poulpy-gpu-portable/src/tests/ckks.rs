@@ -235,7 +235,7 @@ fn bootstrapping_presets_meet_precision() {
 /// The replicated bootstrapping presets at full size: keys generated, inputs
 /// encrypted and outputs decrypted by the portable client, bootstraps evaluated on the device.
 #[test]
-#[ignore = "full-size logN14 and logN15 replicated presets: minutes on the device; run in release"]
+#[ignore = "full-size logN14 to logN16 replicated presets: minutes on the device; run in release"]
 fn replicated_bootstrapping_presets_meet_precision() {
     let _serial = FULL_SIZE.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     poulpy_ckks::test_suite::replicated_presets::replicated_bootstrapping_presets_meet_precision_with_client::<

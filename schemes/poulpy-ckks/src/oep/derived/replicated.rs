@@ -1,6 +1,7 @@
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::{
     GGLWEInfos, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LWEInfos,
+    LinearTransformationBabySteps, LinearTransformationPrepared,
 };
 use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
 
@@ -142,7 +143,8 @@ where
     Ok(())
 }
 
-/// `acc = M(x)` by the prepared BSGS transform `M`.
+/// `acc = M(x)` by the prepared transform `M`, its factors chained through one
+/// temporary at the layout of `x`, so that the last lands in `acc`.
 pub(crate) fn apply_transform<BE, H>(
     module: &Module<BE>,
     acc: &mut CKKSCiphertextViewMut<'_, BE>,
@@ -158,8 +160,39 @@ where
     H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
 {
     check_workspace("replicated_transform", workspace, &x.glwe_layout(), transform)?;
-    module.ckks_linear_transformation_baby_steps_prepare(&mut workspace.babies, x, keys, scratch)?;
-    module.ckks_linear_transformation_eval_into(acc, x, &workspace.babies, &transform.lt, keys, scratch)
+    let count = transform.factors.len();
+    let (mut tmp, mut scratch) = scratch.borrow().take_ckks_ciphertext_scratch(&x.glwe_layout(), x.meta());
+    for (i, ((lt, _), babies)) in transform.factors.iter().zip(workspace.babies.iter_mut()).enumerate() {
+        // The outputs alternate between `acc` and `tmp`, the last in `acc`.
+        match (i, (count - 1 - i).is_multiple_of(2)) {
+            (0, true) => eval_factor(module, acc, x, lt, babies, keys, &mut scratch)?,
+            (0, false) => eval_factor(module, &mut tmp, x, lt, babies, keys, &mut scratch)?,
+            (_, true) => eval_factor(module, acc, &tmp, lt, babies, keys, &mut scratch)?,
+            (_, false) => eval_factor(module, &mut tmp, &*acc, lt, babies, keys, &mut scratch)?,
+        }
+    }
+    Ok(())
+}
+
+/// `out = M(input)` for one factor `M`, its baby steps prepared from `input`.
+fn eval_factor<BE, H, Out, In>(
+    module: &Module<BE>,
+    out: &mut Out,
+    input: &In,
+    lt: &LinearTransformationPrepared<BE>,
+    babies: &mut LinearTransformationBabySteps<BE>,
+    keys: &H,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> Result<()>
+where
+    BE: Backend,
+    Module<BE>: CKKSLinearTransformationOps<BE>,
+    H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
+    Out: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+    In: GLWEToBackendRef<BE> + CKKSCtBounds,
+{
+    module.ckks_linear_transformation_baby_steps_prepare(babies, input, keys, scratch)?;
+    module.ckks_linear_transformation_eval_into(out, input, babies, lt, keys, scratch)
 }
 
 pub(crate) fn check_workspace<BE: Backend>(
@@ -168,7 +201,13 @@ pub(crate) fn check_workspace<BE: Backend>(
     input: &GLWELayout,
     transform: &ReplicatedTransform<BE>,
 ) -> Result<()> {
-    if workspace.input != *input || !workspace.babies.baby_steps().eq(transform.lt.baby_steps().iter().copied()) {
+    let babies_match = workspace.babies.len() == transform.factors.len()
+        && workspace
+            .babies
+            .iter()
+            .zip(&transform.factors)
+            .all(|(babies, (lt, _))| babies.baby_steps().eq(lt.baby_steps().iter().copied()));
+    if workspace.input != *input || !babies_match {
         return Err(invalid(
             op,
             "workspace does not match the transform input layout or rotations",
@@ -178,7 +217,38 @@ pub(crate) fn check_workspace<BE: Backend>(
 }
 
 /// Scratch of a wide stage of `transform` on `wide`, beside its ciphertexts.
-pub(crate) fn transform_tmp_bytes<BE, K>(module: &Module<BE>, wide: &CKKSLayout, key_infos: &K) -> usize
+/// Scratch of [`apply_transform`] on inputs of layout `wide`: the temporary of
+/// a chain beside the largest factor, each at its input width.
+pub(crate) fn transform_tmp_bytes<BE, K>(
+    module: &Module<BE>,
+    wide: &CKKSLayout,
+    key_infos: &K,
+    transform: &ReplicatedTransform<BE>,
+) -> usize
+where
+    BE: Backend,
+    Module<BE>: CKKSLinearTransformationOps<BE>,
+    K: GGLWEInfos,
+{
+    let factors = transform
+        .factor_inputs(&wide.glwe_layout)
+        .into_iter()
+        .map(|glwe_layout| {
+            factor_tmp_bytes(
+                module,
+                &CKKSLayout {
+                    glwe_layout,
+                    meta: wide.meta,
+                },
+                key_infos,
+            )
+        })
+        .max()
+        .unwrap_or(0);
+    ct_bytes::<BE>(&wide.glwe_layout) + factors
+}
+
+fn factor_tmp_bytes<BE, K>(module: &Module<BE>, wide: &CKKSLayout, key_infos: &K) -> usize
 where
     BE: Backend,
     Module<BE>: CKKSLinearTransformationOps<BE>,
@@ -238,7 +308,12 @@ where
         layout.rank.as_usize() + 1,
         layout.size(),
     ));
-    let ops = transform_tmp_bytes(module, &wide, key_infos)
+    let ops = transform_tmp_bytes(module, &wide, key_infos, &conv.to)
+        .max(
+            conv.from
+                .as_ref()
+                .map_or(0, |from| transform_tmp_bytes(module, &wide, key_infos, from)),
+        )
         .max(module.ckks_rotate_tmp_bytes(&wide, key_infos))
         .max(module.ckks_add_tmp_bytes(layout.size()))
         .max(module.ckks_copy_tmp_bytes(&wide, ct_infos))

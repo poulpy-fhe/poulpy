@@ -84,9 +84,11 @@ impl_ckks_conjugate_reference_full!(super::FFT64AvxRayon);
 impl_ckks_imag_reference_full!(super::FFT64AvxRayon);
 #[cfg(feature = "enable-rayon")]
 impl_ckks_bootstrapping_reference_full!(super::FFT64AvxRayon);
+#[cfg(feature = "enable-rayon")]
 impl_ckks_replicated_bootstrap_reference_full!(super::FFT64AvxRayon);
 #[cfg(feature = "enable-rayon")]
 impl_ckks_bootstrapping_ci_reference_full!(super::FFT64AvxRayon, super::FFT64CIAvxRayon);
+#[cfg(feature = "enable-rayon")]
 impl_ckks_replicated_ci_bootstrap_reference_full!(super::FFT64AvxRayon, super::FFT64CIAvxRayon);
 #[cfg(feature = "enable-rayon")]
 impl_ckks_fold_layout_reference_full!(super::FFT64AvxRayon);
@@ -116,9 +118,11 @@ impl_ckks_conjugate_reference_full!(super::NTT4x30AvxRayon);
 impl_ckks_imag_reference_full!(super::NTT4x30AvxRayon);
 #[cfg(feature = "enable-rayon")]
 impl_ckks_bootstrapping_reference_full!(super::NTT4x30AvxRayon);
+#[cfg(feature = "enable-rayon")]
 impl_ckks_replicated_bootstrap_reference_full!(super::NTT4x30AvxRayon);
 #[cfg(feature = "enable-rayon")]
 impl_ckks_bootstrapping_ci_reference_full!(super::NTT4x30AvxRayon, super::NTT4x30CIAvxRayon);
+#[cfg(feature = "enable-rayon")]
 impl_ckks_replicated_ci_bootstrap_reference_full!(super::NTT4x30AvxRayon, super::NTT4x30CIAvxRayon);
 #[cfg(feature = "enable-rayon")]
 impl_ckks_fold_layout_reference_full!(super::NTT4x30AvxRayon);

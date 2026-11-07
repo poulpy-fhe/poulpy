@@ -66,7 +66,7 @@ mod replicated_bootstrapping_presets {
     use poulpy_ckks::test_suite::replicated_presets::replicated_bootstrapping_presets_meet_precision;
 
     #[test]
-    #[ignore = "full logN14 and logN15 replicated bootstrapping presets"]
+    #[ignore = "full logN14 to logN16 replicated bootstrapping presets"]
     fn ifma() {
         replicated_bootstrapping_presets_meet_precision::<crate::NTT3x42Ifma>(52);
     }

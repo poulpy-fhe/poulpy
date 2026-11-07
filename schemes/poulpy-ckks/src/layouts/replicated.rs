@@ -13,7 +13,7 @@ use poulpy_core::{
         BackendGLWESecret, Base2K, Degree, Diagonals, GGLWELayout, GLWEAutomorphismKeyLayout, GLWEInfos, GLWELayout,
         GLWESecretLayout, GLWESwitchingKeyLayout, GLWETensorKeyLayout, GetDegree, LWEInfos, LinearTransformationBabySteps,
         LinearTransformationLayout, LinearTransformationPrepared, LinearTransformationStrategy, ModuleCoreAlloc, Rank,
-        TorusPrecision,
+        TorusPrecision, optimal_bsgs_giant_step,
     },
 };
 use poulpy_hal::{
@@ -22,6 +22,7 @@ use poulpy_hal::{
     source::Source,
 };
 
+use crate::layouts::{DFTType, dft_matrices::ckks_dft_matrices_gen_blockwise};
 use crate::{
     CKKSLayout, CKKSModuleInfos, CoeffsMeta, GLWEPlaintextMeta, ReplicatedLayout, Scale, SetCKKSInfos, SetGLWEPlaintextInfos,
     SlotLayout, SlotsKind,
@@ -51,8 +52,16 @@ use crate::{
 ///   average of the `h/R` copies of each value, followed by `log2 h` trace
 ///   rotations by `k, 2k, ..., (h/2)k`.
 ///
-/// Both conversions compute `extra_bits` bits under the scale and consume the
-/// diagonals' `log_delta_diag` bits of budget. `log_delta` is the scale of the
+/// [`Self::new_factored`] builds each map as the move between consecutive
+/// slots and the data slots in `placement_factors` factors of about
+/// `k^(1/placement_factors)` 0/1 mask diagonals, and `from` needs no `R | k`.
+/// The last factor of `to` is quantized with shaping at `log_delta_diag`
+/// bits, its others plainly at `inner_log_delta_diag` bits, enough for their
+/// error to stay under the working precision. Every factor of `from` takes
+/// `log_delta_diag` bits.
+///
+/// Both conversions compute `extra_bits` bits under the scale and consume
+/// their diagonals' bits of budget. `log_delta` is the scale of the
 /// replicated side.
 pub struct ReplicatedConversion<BE: Backend> {
     pub(crate) layout: ReplicatedLayout,
@@ -67,7 +76,9 @@ pub struct ReplicatedConversion<BE: Backend> {
 const MAX_DIAGONAL_HEADROOM: usize = usize::BITS as usize + 2;
 
 impl<BE: Backend> ReplicatedConversion<BE> {
-    /// Scratch of [`Self::new`].
+    /// Scratch of [`Self::new`] and [`Self::new_factored`], for diagonals of at
+    /// most `log_delta_diag` bits: for [`Self::new_factored`], the larger of its
+    /// two diagonal scales.
     ///
     /// # Errors
     /// When `layout` needs more slots than the module has.
@@ -131,6 +142,64 @@ impl<BE: Backend> ReplicatedConversion<BE> {
         })
     }
 
+    /// [`Self::new`] with each map factored into the move between consecutive
+    /// slots and the data slots, in `placement_factors` factors of about
+    /// `k^(1/placement_factors)` mask diagonals, each costing about the square
+    /// root of its diagonals in key switches, for the factors' bits.
+    #[expect(clippy::too_many_arguments, reason = "the maps, their layout, scales and arena")]
+    pub fn new_factored<F>(
+        module: &Module<BE>,
+        layout: ReplicatedLayout,
+        base2k: Base2K,
+        log_delta: usize,
+        log_delta_diag: usize,
+        inner_log_delta_diag: usize,
+        extra_bits: usize,
+        placement_factors: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<Self>
+    where
+        F: CKKSEncodingScalar,
+        Module<BE>: ReplicatedTransformModule<BE, F>,
+    {
+        let (k, _) = check_period(module, &layout)?;
+        ensure!(
+            (1..=layout.log_k()).contains(&placement_factors),
+            "the placement takes between one and log2(k) = {} factors",
+            layout.log_k()
+        );
+        let r = 1usize << layout.log_r();
+        let factor = |log_delta_diag| {
+            move |diagonals| ReplicatedFactor {
+                diagonals,
+                log_delta_diag,
+                shaped: false,
+                fitted_giant_step: true,
+            }
+        };
+        let mut to: Vec<ReplicatedFactor<F>> = placement_spread::<F>(k, r, placement_factors)
+            .into_iter()
+            .map(factor(inner_log_delta_diag))
+            .collect();
+        let last = to.last_mut().context("the placement has factors")?;
+        last.log_delta_diag = log_delta_diag;
+        last.shaped = true;
+        let weight = F::from_usize(r).context("the period is a small integer")?;
+        let from = placement_compress::<F>(k, r, placement_factors, weight)
+            .into_iter()
+            .map(factor(log_delta_diag))
+            .collect();
+        let h = module.ckks_max_slots() / k;
+        Ok(Self {
+            layout,
+            log_delta,
+            extra_bits,
+            to: ReplicatedTransform::from_factors(module, layout, base2k, to, scratch)?,
+            from: Some(ReplicatedTransform::from_factors(module, layout, base2k, from, scratch)?),
+            trace: (0..h.trailing_zeros()).map(|l| (k << l) as i64).collect(),
+        })
+    }
+
     pub fn layout(&self) -> ReplicatedLayout {
         self.layout
     }
@@ -178,15 +247,31 @@ impl<BE: Backend> ReplicatedConversion<BE> {
     }
 }
 
-/// A linear map `y = Σ_o D_o ⊙ rot_o(x)` on the `n = kR` slots of a
-/// replicated layout's period, `k` diagonals whatever the map, prepared as a
-/// BSGS transform with giant step `⌈√k⌉` rounded up to a power of two.
+/// A linear map on the `n = kR` slots of a replicated layout's period, as a
+/// chain of factors `y = Σ_o D_o ⊙ rot_o(x)`, each prepared as a BSGS transform
+/// with giant step `⌈√d⌉`, `d` its diagonals, rounded up to a power of two.
+/// The maps built from a matrix are one factor of `k` diagonals whatever the
+/// map; the factored maps of the bootstrapping and the conversions chain a few
+/// factors of few diagonals.
 ///
 /// A shaped diagonal of giant step `rot` is quantized with the shaping
-/// polynomial `g(X^(5^(−rot)))`, so that after the giant rotation its
+/// polynomial `g(X^(5^(-rot)))`, so that after the giant rotation its
 /// quantization error is a multiple of `g`.
 pub struct ReplicatedTransform<BE: Backend> {
-    pub(crate) lt: LinearTransformationPrepared<BE>,
+    /// The factors in evaluation order, each with the bits of budget its diagonals consume.
+    pub(crate) factors: Vec<(LinearTransformationPrepared<BE>, usize)>,
+}
+
+/// One factor of a [`ReplicatedTransform`] before encoding: its diagonals, the
+/// bits of budget they consume, whether they are quantized with shaping, and
+/// whether the BSGS giant step is fitted to its offsets. Otherwise the giant
+/// step is the power of two whose square covers the diagonals, which the
+/// dense maps of consecutive offsets share, and with it their keys.
+pub(crate) struct ReplicatedFactor<F> {
+    pub(crate) diagonals: ComplexDiagonals<F>,
+    pub(crate) log_delta_diag: usize,
+    pub(crate) shaped: bool,
+    pub(crate) fitted_giant_step: bool,
 }
 
 /// Caller-owned prepared baby steps for one transform input layout.
@@ -194,7 +279,8 @@ pub struct ReplicatedTransform<BE: Backend> {
 /// separate workspaces.
 pub struct ReplicatedTransformWorkspace<BE: Backend> {
     pub(crate) input: GLWELayout,
-    pub(crate) babies: LinearTransformationBabySteps<BE>,
+    /// The baby steps of each factor, at the width its input has.
+    pub(crate) babies: Vec<LinearTransformationBabySteps<BE>>,
 }
 
 impl<BE: Backend> ReplicatedTransform<BE> {
@@ -203,10 +289,40 @@ impl<BE: Backend> ReplicatedTransform<BE> {
     where
         Module<BE>: CnvPVecAlloc<BE>,
     {
+        let babies = self
+            .factor_inputs(&input.glwe_layout())
+            .into_iter()
+            .zip(&self.factors)
+            .map(|(layout, (lt, _))| LinearTransformationBabySteps::alloc(module, lt.baby_steps(), &layout))
+            .collect();
         ReplicatedTransformWorkspace {
             input: input.glwe_layout(),
-            babies: LinearTransformationBabySteps::alloc(module, self.lt.baby_steps(), input),
+            babies,
         }
+    }
+
+    /// The input layout of each factor for an input of layout `input`, each
+    /// factor consuming its diagonals' bits.
+    pub(crate) fn factor_inputs(&self, input: &GLWELayout) -> Vec<GLWELayout> {
+        let mut k = input.k.as_usize();
+        self.factors
+            .iter()
+            .map(|&(_, consumed)| {
+                let layout = GLWELayout { k: k.into(), ..*input };
+                k -= consumed;
+                layout
+            })
+            .collect()
+    }
+
+    /// The bits of budget the chain consumes.
+    pub fn consumed_bits(&self) -> usize {
+        self.factors.iter().map(|&(_, consumed)| consumed).sum()
+    }
+
+    /// The number of factors the chain evaluates.
+    pub fn factor_count(&self) -> usize {
+        self.factors.len()
     }
 
     /// The map `y_s = Σ_(j<k) a(s, j)·x_j` from slots of period `k` to the `n`
@@ -258,7 +374,18 @@ impl<BE: Backend> ReplicatedTransform<BE> {
         let (_, n) = check_period(module, &layout)?;
         ensure!(n.is_multiple_of(m), "the input period {m} must divide the {n} slots");
         let weights = (0..m).map(|o| (o, (0..n).map(|s| a(s, (s + o) % m)).collect())).collect();
-        Self::encode(module, layout, base2k, log_delta_diag, shaped, weights, scratch)
+        Self::from_factors(
+            module,
+            layout,
+            base2k,
+            vec![ReplicatedFactor {
+                diagonals: diagonals_from_weights(n, weights),
+                log_delta_diag,
+                shaped,
+                fitted_giant_step: false,
+            }],
+            scratch,
+        )
     }
 
     /// The gather `y` reading only the data slots, such that the normalized
@@ -301,7 +428,18 @@ impl<BE: Backend> ReplicatedTransform<BE> {
                 weights[index].1[s] = (weight * re, weight * im);
             }
         }
-        Self::encode(module, layout, base2k, log_delta_diag, shaped, weights, scratch)
+        Self::from_factors(
+            module,
+            layout,
+            base2k,
+            vec![ReplicatedFactor {
+                diagonals: diagonals_from_weights(n, weights),
+                log_delta_diag,
+                shaped,
+                fitted_giant_step: false,
+            }],
+            scratch,
+        )
     }
 
     /// Scratch of [`Self::from_period`], [`Self::from_input_period`] and [`Self::gather`] for `layout`
@@ -343,54 +481,84 @@ impl<BE: Backend> ReplicatedTransform<BE> {
 
     /// Slot rotations of the transform, for their automorphism keys.
     pub fn rotations(&self) -> Vec<i64> {
-        let babies = self.lt.giant_steps.iter().flat_map(|gs| gs.diagonals.iter().map(|d| d.baby));
-        let giants = self.lt.giant_steps.iter().map(|gs| gs.rot);
+        let lts = || self.factors.iter().map(|(lt, _)| lt);
+        let babies = lts().flat_map(|lt| lt.giant_steps.iter().flat_map(|gs| gs.diagonals.iter().map(|d| d.baby)));
+        let giants = lts().flat_map(|lt| lt.giant_steps.iter().map(|gs| gs.rot));
         let mut rotations: Vec<i64> = babies.chain(giants).filter(|&o| o != 0).collect();
         rotations.sort_unstable();
         rotations.dedup();
         rotations
     }
 
-    fn encode<F>(
+    /// Encodes and prepares `factors`, in evaluation order.
+    pub(crate) fn from_factors<F>(
         module: &Module<BE>,
         layout: ReplicatedLayout,
         base2k: Base2K,
-        log_delta_diag: usize,
-        shaped: bool,
-        weights: Vec<(usize, Vec<(F, F)>)>,
+        factors: Vec<ReplicatedFactor<F>>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<Self>
     where
         F: CKKSEncodingScalar,
         Module<BE>: ReplicatedTransformModule<BE, F>,
     {
-        let n = weights.first().map_or(0, |(_, w)| w.len());
+        let factors = factors
+            .into_iter()
+            .map(|factor| {
+                let consumed = factor.log_delta_diag;
+                Ok((Self::encode_factor(module, layout, base2k, factor, scratch)?, consumed))
+            })
+            .collect::<Result<_>>()?;
+        Ok(Self { factors })
+    }
+
+    fn encode_factor<F>(
+        module: &Module<BE>,
+        layout: ReplicatedLayout,
+        base2k: Base2K,
+        factor: ReplicatedFactor<F>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<LinearTransformationPrepared<BE>>
+    where
+        F: CKKSEncodingScalar,
+        Module<BE>: ReplicatedTransformModule<BE, F>,
+    {
+        let ReplicatedFactor {
+            diagonals,
+            log_delta_diag,
+            shaped,
+            fitted_giant_step,
+        } = factor;
+        let n = diagonals.slots();
+        let values = |o: i64| {
+            let (re, im) = (diagonals.re.get(o), diagonals.im.get(o));
+            re.into_iter().chain(im).flatten().copied()
+        };
         ensure!(
             ShapingRing::of::<BE::Ring>() == ShapingRing::Standard
-                || weights.iter().all(|(_, w)| w.iter().all(|(_, im)| im.is_zero())),
+                || diagonals
+                    .indexes()
+                    .into_iter()
+                    .all(|o| diagonals.im.get(o).is_none_or(|im| im.iter().all(|v| v.is_zero()))),
             "the real slots of the conjugate-invariant ring take real diagonals"
         );
-        let largest = weights
-            .iter()
-            .flat_map(|(_, w)| w.iter().map(|(re, im)| re.abs().max(im.abs())))
+        let largest = diagonals
+            .indexes()
+            .into_iter()
+            .flat_map(values)
+            .map(|v| v.abs())
             .fold(F::zero(), F::max);
         // Bits above the scale for the largest weight, plus a sign and a carry.
         let headroom = (usize::BITS - (largest.to_f64().unwrap_or(1.0).ceil() as usize).max(1).leading_zeros()) as usize + 2;
         debug_assert!(headroom <= MAX_DIAGONAL_HEADROOM);
-        let mut diagonals = ComplexDiagonals {
-            re: Diagonals::new(n),
-            im: Diagonals::new(n),
-        };
-        for (o, w) in weights {
-            let (re, im): (Vec<F>, Vec<F>) = w.into_iter().unzip();
-            diagonals.re.set(o as i64, re);
-            diagonals.im.set(o as i64, im);
-        }
         let count = diagonals.indexes().len();
         let strategy = if count <= 2 {
             LinearTransformationStrategy::Direct
+        } else if fitted_giant_step {
+            LinearTransformationStrategy::Bsgs {
+                giant_step: optimal_bsgs_giant_step(diagonals.indexes(), n),
+            }
         } else {
-            // The smallest power of two whose square covers the diagonals.
             let mut giant_step = 1;
             while giant_step * giant_step < count {
                 giant_step <<= 1;
@@ -448,7 +616,7 @@ impl<BE: Backend> ReplicatedTransform<BE> {
         let first = lt.first_diagonal_plaintext().context("a transform has a diagonal")?;
         let mut prepared = LinearTransformationPrepared::<BE>::alloc_prepared_from_index(module, &lt.index(), first);
         module.ckks_linear_transformation_rhs_prepare(&mut prepared, &lt, scratch)?;
-        Ok(Self { lt: prepared })
+        Ok(prepared)
     }
 }
 
@@ -505,6 +673,33 @@ where
     Ok((k, k * r))
 }
 
+/// How the replicated bootstrapping evaluates `SlotsToCoeffs` and
+/// `CoeffsToSlots`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ReplicatedTransforms {
+    /// Each map is one transform of `k` diagonals: `2·sqrt(k)` key switches
+    /// and `k` diagonals over the `kR` slots of the period, one level each.
+    Dense,
+    /// Each map is the `k`-point DFT of the subring of degree `2k` in
+    /// `s2c_factors` and `c2s_factors` factors of the DFT generator, and the
+    /// move between the data slots and consecutive slots of `m` values in
+    /// `placement_factors` factors of about `m^(1/placement_factors)` 0/1 mask
+    /// diagonals. Every `SlotsToCoeffs` factor consumes
+    /// `s2c_log_delta_diag` bits. `CoeffsToSlots` applies the DFT on the slots
+    /// of period `k`, then the move onto the data slots, whose last factor
+    /// alone is quantized with shaping and consumes `c2s_log_delta_diag` bits;
+    /// the others consume `c2s_inner_log_delta_diag` bits, enough for their
+    /// unshaped quantization error to stay under the output precision. The DFT
+    /// factors leave the subring's coefficients in bit-reversed order, which
+    /// the two maps undo together, and a packed plan must fit the ring.
+    Factored {
+        s2c_factors: usize,
+        c2s_factors: usize,
+        placement_factors: usize,
+        c2s_inner_log_delta_diag: usize,
+    },
+}
+
 /// Parameters of the bootstrapping of a [`ReplicatedLayout`] of `k` values,
 /// `R | k`, in `SlotsToCoeffs`-first order.
 #[derive(Clone, Copy, Debug)]
@@ -528,6 +723,8 @@ pub struct ReplicatedBootstrapPlan {
     /// Evaluate EvalMod once on the real and imaginary parts side by side, when
     /// `2kR` slots fit in the ring.
     pub packed: bool,
+    /// The evaluation of `SlotsToCoeffs` and `CoeffsToSlots`.
+    pub transforms: ReplicatedTransforms,
 }
 
 impl ReplicatedBootstrapPlan {
@@ -557,20 +754,47 @@ impl ReplicatedBootstrapPlan {
                 f_mod_log_delta: 28,
             },
             packed: true,
+            transforms: ReplicatedTransforms::Dense,
+        }
+    }
+
+    /// The bits of budget `SlotsToCoeffs` consumes: its diagonal bits per factor.
+    pub fn s2c_consumed_bits(&self) -> usize {
+        match self.transforms {
+            ReplicatedTransforms::Dense => self.s2c_log_delta_diag,
+            ReplicatedTransforms::Factored {
+                s2c_factors,
+                placement_factors,
+                ..
+            } => (placement_factors + s2c_factors) * self.s2c_log_delta_diag,
+        }
+    }
+
+    /// The bits of budget `CoeffsToSlots` consumes: the shaped last factor's
+    /// diagonal bits and, factored, the inner factors'.
+    pub fn c2s_consumed_bits(&self) -> usize {
+        match self.transforms {
+            ReplicatedTransforms::Dense => self.c2s_log_delta_diag,
+            ReplicatedTransforms::Factored {
+                c2s_factors,
+                placement_factors,
+                c2s_inner_log_delta_diag,
+                ..
+            } => (c2s_factors + placement_factors - 1) * c2s_inner_log_delta_diag + self.c2s_log_delta_diag,
         }
     }
 
     /// Width of the input at scale `Δ_b`: the message ratio and the bits
     /// `SlotsToCoeffs` consumes above it.
     pub fn k_in(&self) -> usize {
-        self.log_delta + self.eval_mod.log_msg_ratio + self.s2c_log_delta_diag
+        self.log_delta + self.eval_mod.log_msg_ratio + self.s2c_consumed_bits()
     }
 
     /// Width after ModUp for an output of width `k_out`: `CoeffsToSlots`,
     /// EvalMod, and the rescale from `Δ_b`, lifted by the ModUp bits, to the
     /// leveled scale.
     pub fn k_boot(&self, k_out: usize) -> usize {
-        k_out + self.c2s_log_delta_diag + self.eval_mod.consumed_bits() + self.log_delta + self.mod_up_extra_bits
+        k_out + self.c2s_consumed_bits() + self.eval_mod.consumed_bits() + self.log_delta + self.mod_up_extra_bits
             - self.level_log_delta
     }
 
@@ -740,6 +964,13 @@ impl<BE: Backend, F: CKKSEncodingScalar> ReplicatedBootstrapping<BE, F> {
         Module<BE>: ReplicatedTransformModule<BE, F>,
     {
         let c2s_layout = packed_layout(plan, module.ckks_max_slots())?.unwrap_or(plan.layout);
+        let c2s_log_delta_diag = match plan.transforms {
+            ReplicatedTransforms::Dense => plan.c2s_log_delta_diag,
+            ReplicatedTransforms::Factored {
+                c2s_inner_log_delta_diag,
+                ..
+            } => plan.c2s_log_delta_diag.max(c2s_inner_log_delta_diag),
+        };
         Ok(module
             .ckks_encoding_host_tmp_bytes(module.ckks_max_slots())
             .max(ReplicatedTransform::<BE>::encode_tmp_bytes::<F>(
@@ -752,7 +983,7 @@ impl<BE: Backend, F: CKKSEncodingScalar> ReplicatedBootstrapping<BE, F> {
                 module,
                 &c2s_layout,
                 base2k,
-                plan.c2s_log_delta_diag,
+                c2s_log_delta_diag,
             )?))
     }
 
@@ -775,59 +1006,71 @@ impl<BE: Backend, F: CKKSEncodingScalar> ReplicatedBootstrapping<BE, F> {
         let (k, r) = (1usize << layout.log_k(), 1usize << layout.log_r());
         ensure!(r <= k, "bootstrapping needs the period {r} to divide the batch size {k}");
         let half = module.ckks_max_slots();
-        let v = embedding::<BE, F>(module, k, base2k, scratch)?;
-        let s2c = ReplicatedTransform::gather(
-            module,
-            layout,
-            base2k,
-            plan.s2c_log_delta_diag,
-            false,
-            |c, j| v[c][j],
-            scratch,
-        )?;
-        let scale = F::from_usize(2 * k * plan.eval_mod.f_mod_interval)
-            .context("the CoeffsToSlots normalization is not representable")?
-            .recip();
-        // `A[t][c] = conj(V[c][t])/(2Kk)`, written on the data slots.
-        let a = |t: usize, c: usize| {
-            let (re, im) = v[c][t];
-            (re * scale, -im * scale)
-        };
         let packed = packed_layout(&plan, half)?;
-        let c2s = match packed {
-            // `−i·A` on the second batch.
-            Some(double) => ReplicatedTransform::from_input_period(
-                module,
-                double,
-                k,
-                base2k,
-                plan.c2s_log_delta_diag,
-                true,
-                |s, c| match (s % r, s / r) {
-                    (0, t) if t < k => a(t, c),
-                    (0, t) => {
-                        let (re, im) = a(t - k, c);
-                        (im, -re)
-                    }
-                    _ => (F::zero(), F::zero()),
-                },
-                scratch,
-            )?,
-            None => ReplicatedTransform::from_period(
-                module,
-                layout,
-                base2k,
-                plan.c2s_log_delta_diag,
-                true,
-                |s, c| {
-                    if s.is_multiple_of(r) {
-                        a(s / r, c)
-                    } else {
-                        (F::zero(), F::zero())
-                    }
-                },
-                scratch,
-            )?,
+        let (s2c, c2s) = match plan.transforms {
+            ReplicatedTransforms::Dense => {
+                let v = embedding::<BE, F>(module, k, base2k, scratch)?;
+                let s2c = ReplicatedTransform::gather(
+                    module,
+                    layout,
+                    base2k,
+                    plan.s2c_log_delta_diag,
+                    false,
+                    |c, j| v[c][j],
+                    scratch,
+                )?;
+                let scale = F::from_usize(2 * k * plan.eval_mod.f_mod_interval)
+                    .context("the CoeffsToSlots normalization is not representable")?
+                    .recip();
+                // `A[t][c] = conj(V[c][t])/(2Kk)`, written on the data slots.
+                let a = |t: usize, c: usize| {
+                    let (re, im) = v[c][t];
+                    (re * scale, -im * scale)
+                };
+                let c2s = match packed {
+                    // `−i·A` on the second batch.
+                    Some(double) => ReplicatedTransform::from_input_period(
+                        module,
+                        double,
+                        k,
+                        base2k,
+                        plan.c2s_log_delta_diag,
+                        true,
+                        |s, c| match (s % r, s / r) {
+                            (0, t) if t < k => a(t, c),
+                            (0, t) => {
+                                let (re, im) = a(t - k, c);
+                                (im, -re)
+                            }
+                            _ => (F::zero(), F::zero()),
+                        },
+                        scratch,
+                    )?,
+                    None => ReplicatedTransform::from_period(
+                        module,
+                        layout,
+                        base2k,
+                        plan.c2s_log_delta_diag,
+                        true,
+                        |s, c| {
+                            if s.is_multiple_of(r) {
+                                a(s / r, c)
+                            } else {
+                                (F::zero(), F::zero())
+                            }
+                        },
+                        scratch,
+                    )?,
+                };
+                (s2c, c2s)
+            }
+            ReplicatedTransforms::Factored { .. } => {
+                ensure!(
+                    packed.is_some() == plan.packed,
+                    "a factored packed plan needs the two batches to fit the ring"
+                );
+                factored_transforms::<BE, F>(module, &plan, packed, base2k, scratch)?
+            }
         };
         let eval_mod = match packed {
             Some(double) => ckks_eval_mod_replicated_packed_compile::<BE, F>(base2k, plan.eval_mod, double, module, scratch)?,
@@ -1027,4 +1270,286 @@ where
     }
     // `Y'^k` is `i` on every slot, so `m_j + i·m_(j+k)` reads `V[c][j]`.
     Ok((0..k).map(|c| (0..k).map(|j| columns[j][c]).collect()).collect())
+}
+
+/// The factored `SlotsToCoeffs` and `CoeffsToSlots` of
+/// [`ReplicatedTransforms::Factored`]:
+///
+/// - `SlotsToCoeffs` moves the data slots onto the first `k` slots of each period,
+///   weighted `R` for the normalized trace onto period `k` that completes the map
+///   after ModUp, then applies `V·BR`, the generator's `Decode`, on them;
+/// - `CoeffsToSlots` applies `BR·V^H/(2Kk)`, the generator's `Encode`, on the
+///   slots of period `k`, then moves them onto the data slots of the `m` values
+///   of `target` (`m = 2k` when packed, the second batch times `-i`); its last
+///   factor is quantized with the shaping of `target`.
+fn factored_transforms<BE, F>(
+    module: &Module<BE>,
+    plan: &ReplicatedBootstrapPlan,
+    packed: Option<ReplicatedLayout>,
+    base2k: Base2K,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> Result<(ReplicatedTransform<BE>, ReplicatedTransform<BE>)>
+where
+    BE: Backend,
+    F: CKKSEncodingScalar,
+    Module<BE>: ReplicatedTransformModule<BE, F>,
+{
+    let ReplicatedTransforms::Factored {
+        s2c_factors,
+        c2s_factors,
+        placement_factors,
+        c2s_inner_log_delta_diag,
+    } = plan.transforms
+    else {
+        anyhow::bail!("the plan's transforms are not factored");
+    };
+    let layout = plan.layout;
+    let (log_k, log_r) = (layout.log_k(), layout.log_r());
+    let (k, r) = (1usize << log_k, 1usize << log_r);
+    ensure!(
+        [s2c_factors, c2s_factors, placement_factors]
+            .iter()
+            .all(|f| (1..=log_k).contains(f)),
+        "factored transforms take between one and log2(k) = {log_k} factors for each DFT and placement"
+    );
+    let unshaped = |log_delta_diag| {
+        move |diagonals| ReplicatedFactor {
+            diagonals,
+            log_delta_diag,
+            shaped: false,
+            fitted_giant_step: true,
+        }
+    };
+    let weight = F::from_usize(r).context("the period is a small integer")?;
+    let s2c: Vec<ReplicatedFactor<F>> = placement_compress::<F>(k, r, placement_factors, weight)
+        .into_iter()
+        .chain(ckks_dft_matrices_gen_blockwise::<F>(
+            DFTType::Decode,
+            log_k,
+            log_k + log_r,
+            &split_depth(log_k, s2c_factors),
+            1.0,
+            false,
+        ))
+        .map(unshaped(plan.s2c_log_delta_diag))
+        .collect();
+
+    let (target, m) = match packed {
+        Some(double) => (double, 2 * k),
+        None => (layout, k),
+    };
+    let interval = plan.eval_mod.f_mod_interval as f64;
+    let mut c2s: Vec<ReplicatedFactor<F>> = ckks_dft_matrices_gen_blockwise::<F>(
+        DFTType::Encode,
+        log_k,
+        log_k,
+        &split_depth(log_k, c2s_factors),
+        1.0 / (2.0 * interval),
+        false,
+    )
+    .into_iter()
+    .chain(placement_spread::<F>(m, r, placement_factors))
+    .map(unshaped(c2s_inner_log_delta_diag))
+    .collect();
+    let last = c2s.last_mut().context("CoeffsToSlots has factors")?;
+    if m > k {
+        // `-i` on the second batch.
+        times_minus_i_from(&mut last.diagonals, r * k);
+    }
+    last.log_delta_diag = plan.c2s_log_delta_diag;
+    last.shaped = true;
+    Ok((
+        ReplicatedTransform::from_factors(module, layout, base2k, s2c, scratch)?,
+        ReplicatedTransform::from_factors(module, target, base2k, c2s, scratch)?,
+    ))
+}
+
+/// Multiplies the outputs of slots `from..` of `diagonals` by `-i`:
+/// `(re, im) -> (im, -re)`.
+fn times_minus_i_from<F: CKKSEncodingScalar>(diagonals: &mut ComplexDiagonals<F>, from: usize) {
+    let n = diagonals.slots();
+    let full = |values: Option<&Vec<F>>| -> Vec<F> {
+        values.map_or_else(|| vec![F::zero(); n], |v| (0..n).map(|s| v[s % v.len()]).collect())
+    };
+    for o in diagonals.indexes() {
+        let (mut re, mut im) = (full(diagonals.re.get(o)), full(diagonals.im.get(o)));
+        for s in from..n {
+            (re[s], im[s]) = (im[s], -re[s]);
+        }
+        set_complex(diagonals, o, (re, im));
+    }
+}
+
+/// The diagonals of `n` slots given by their full values, `(offset, values)`.
+fn diagonals_from_weights<F: CKKSEncodingScalar>(n: usize, weights: Vec<(usize, Vec<(F, F)>)>) -> ComplexDiagonals<F> {
+    let mut diagonals = ComplexDiagonals::new(Diagonals::new(n), Diagonals::new(n));
+    for (o, w) in weights {
+        let (re, im): (Vec<F>, Vec<F>) = w.into_iter().unzip();
+        set_complex(&mut diagonals, o as i64, (re, im));
+    }
+    diagonals
+}
+
+/// Bits of `t` selected by `group`, kept in place.
+fn group_bits(t: usize, group: &[usize]) -> usize {
+    group.iter().map(|&b| t & (1 << b)).sum()
+}
+
+/// The bits of a `2^log_m`-value index in `factors` near-equal groups, from the highest.
+fn bit_groups(log_m: usize, factors: usize) -> Vec<Vec<usize>> {
+    let mut bits = (0..log_m).rev();
+    split_depth(log_m, factors)
+        .into_iter()
+        .map(|size| bits.by_ref().take(size).collect())
+        .collect()
+}
+
+/// Where value `t` sits once the bits of `moved` are strided: `t + (R - 1)·t_moved`.
+fn placement_position(t: usize, moved: &[usize], r: usize) -> usize {
+    t + (r - 1) * group_bits(t, moved)
+}
+
+/// A diagonal of `n` slots, `value` at the positions of `on` and zero elsewhere.
+fn mask_diagonal<F: CKKSEncodingScalar>(n: usize, on: impl IntoIterator<Item = usize>, value: F) -> (Vec<F>, Vec<F>) {
+    let mut re = vec![F::zero(); n];
+    for s in on {
+        re[s] = value;
+    }
+    (re, vec![F::zero()])
+}
+
+fn set_complex<F>(diagonals: &mut ComplexDiagonals<F>, index: i64, (re, im): (Vec<F>, Vec<F>)) {
+    diagonals.re.set(index, re);
+    diagonals.im.set(index, im);
+}
+
+/// The placement of `m` values from slots of period `k` onto the data slots of
+/// stride `R`, `y_(R·t) = x_(t mod k)` for `t < m` and zero elsewhere, over the
+/// `n = m·R` slots. The `log2(m)` bits of `t` are split into `factors`
+/// near-equal groups, and one factor per group, from the highest, moves the
+/// values whose group bits are `v` by `(R - 1)·v`. Taking the high bits first
+/// keeps the positions `t + (R - 1)·t_moved` distinct, so every factor is a
+/// set of 0/1 masks, `2^g` diagonals for a group of `g` bits.
+pub(crate) fn placement_spread<F: CKKSEncodingScalar>(m: usize, r: usize, factors: usize) -> Vec<ComplexDiagonals<F>> {
+    let n = m * r;
+    let mut moved = Vec::new();
+    let mut out = Vec::new();
+    for group in bit_groups(m.trailing_zeros() as usize, factors) {
+        let next: Vec<usize> = moved.iter().chain(&group).copied().collect();
+        let mut factor = ComplexDiagonals::new(Diagonals::new(n), Diagonals::new(n));
+        for v in (0..m)
+            .map(|t| group_bits(t, &group))
+            .collect::<std::collections::BTreeSet<_>>()
+        {
+            let on = (0..m)
+                .filter(|&t| group_bits(t, &group) == v)
+                .map(|t| placement_position(t, &next, r));
+            set_complex(&mut factor, -(((r - 1) * v) as i64), mask_diagonal(n, on, F::one()));
+        }
+        out.push(factor);
+        moved = next;
+    }
+    out
+}
+
+/// The inverse of [`placement_spread`] for `m = k`: `y_t = weight·x_(R·t)` for
+/// `t < k` and zero elsewhere, over the `n = k·R` slots, reading only the data
+/// slots `R | s`. The groups are undone from the lowest, the last factor
+/// carrying `weight`.
+pub(crate) fn placement_compress<F: CKKSEncodingScalar>(
+    k: usize,
+    r: usize,
+    factors: usize,
+    weight: F,
+) -> Vec<ComplexDiagonals<F>> {
+    let n = k * r;
+    let groups = bit_groups(k.trailing_zeros() as usize, factors);
+    let mut moved: Vec<usize> = groups.iter().flatten().copied().collect();
+    let mut out = Vec::new();
+    for (i, group) in groups.iter().rev().enumerate() {
+        moved.retain(|b| !group.contains(b));
+        let value = if i + 1 == groups.len() { weight } else { F::one() };
+        let mut factor = ComplexDiagonals::new(Diagonals::new(n), Diagonals::new(n));
+        for v in (0..k)
+            .map(|t| group_bits(t, group))
+            .collect::<std::collections::BTreeSet<_>>()
+        {
+            let on = (0..k)
+                .filter(|&t| group_bits(t, group) == v)
+                .map(|t| placement_position(t, &moved, r));
+            set_complex(&mut factor, ((r - 1) * v) as i64, mask_diagonal(n, on, value));
+        }
+        out.push(factor);
+    }
+    out
+}
+
+/// `log_m` bits in `factors` near-equal groups, the larger first.
+pub(crate) fn split_depth(log_m: usize, factors: usize) -> Vec<usize> {
+    let factors = factors.clamp(1, log_m.max(1));
+    (0..factors)
+        .map(|i| log_m / factors + usize::from(i < log_m % factors))
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use poulpy_core::layouts::{Evaluate, LinearTransformationStrategy};
+
+    use super::*;
+
+    fn apply(factors: &[ComplexDiagonals<f64>], x: &[f64]) -> Vec<f64> {
+        let mut re = x.to_vec();
+        let mut im = vec![0.0; x.len()];
+        for factor in factors {
+            (re, im) = factor.evaluate((&re, &im), LinearTransformationStrategy::Direct);
+        }
+        assert!(im.iter().all(|&v| v == 0.0));
+        re
+    }
+
+    fn pseudo_random(n: usize) -> Vec<f64> {
+        (0..n).map(|i| ((i * 2654435761) % 1000) as f64 / 7.0 + 1.0).collect()
+    }
+
+    #[test]
+    fn placement_spread_writes_the_data_slots() {
+        for (k, m, r, factors) in [
+            (8, 8, 4, 3),
+            (16, 16, 8, 2),
+            (64, 64, 16, 2),
+            (64, 64, 2, 1),
+            (32, 64, 16, 3),
+            (16, 32, 32, 5),
+        ] {
+            let x = pseudo_random(k);
+            let input: Vec<f64> = (0..m * r).map(|s| x[s % k]).collect();
+            let log_group = (m.trailing_zeros() as usize).div_ceil(factors);
+            let factors = placement_spread::<f64>(m, r, factors);
+            assert!(factors.iter().all(|f| f.indexes().len() <= 1 << log_group));
+            let want: Vec<f64> = (0..m * r).map(|s| if s % r == 0 { x[(s / r) % k] } else { 0.0 }).collect();
+            assert_eq!(apply(&factors, &input), want, "k = {k}, m = {m}, R = {r}");
+        }
+    }
+
+    #[test]
+    fn placement_compress_reads_only_the_data_slots() {
+        for (k, r, factors) in [(8, 4, 3), (16, 8, 2), (64, 16, 2), (32, 32, 1)] {
+            let x = pseudo_random(k);
+            // The guards hold garbage the compression must not read.
+            let input: Vec<f64> = (0..k * r)
+                .map(|s| if s % r == 0 { x[s / r] } else { 1e6 + s as f64 })
+                .collect();
+            let factors = placement_compress::<f64>(k, r, factors, r as f64);
+            let want: Vec<f64> = (0..k * r).map(|s| if s < k { r as f64 * x[s] } else { 0.0 }).collect();
+            assert_eq!(apply(&factors, &input), want, "k = {k}, R = {r}");
+        }
+    }
+
+    #[test]
+    fn split_depth_covers_the_bits() {
+        assert_eq!(split_depth(10, 3), [4, 3, 3]);
+        assert_eq!(split_depth(10, 1), [10]);
+        assert_eq!(split_depth(2, 5), [1, 1]);
+    }
 }

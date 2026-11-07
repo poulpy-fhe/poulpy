@@ -102,9 +102,11 @@ impl_ckks_conjugate_reference_full!(super::NTT3x42Ifma);
 impl_ckks_imag_reference_full!(super::NTT3x42Ifma);
 #[cfg(feature = "enable-ifma")]
 impl_ckks_bootstrapping_reference_full!(super::NTT3x42Ifma);
+#[cfg(feature = "enable-ifma")]
 impl_ckks_replicated_bootstrap_reference_full!(super::NTT3x42Ifma);
 #[cfg(feature = "enable-ifma")]
 impl_ckks_bootstrapping_ci_reference_full!(super::NTT3x42Ifma, super::NTT3x42CIIfma);
+#[cfg(feature = "enable-ifma")]
 impl_ckks_replicated_ci_bootstrap_reference_full!(super::NTT3x42Ifma, super::NTT3x42CIIfma);
 #[cfg(feature = "enable-ifma")]
 impl_ckks_fold_layout_reference_full!(super::NTT3x42Ifma);
@@ -134,9 +136,11 @@ impl_ckks_conjugate_reference_full!(super::FFT64Avx512Rayon);
 impl_ckks_imag_reference_full!(super::FFT64Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
 impl_ckks_bootstrapping_reference_full!(super::FFT64Avx512Rayon);
+#[cfg(feature = "enable-rayon")]
 impl_ckks_replicated_bootstrap_reference_full!(super::FFT64Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
 impl_ckks_bootstrapping_ci_reference_full!(super::FFT64Avx512Rayon, super::FFT64CIAvx512Rayon);
+#[cfg(feature = "enable-rayon")]
 impl_ckks_replicated_ci_bootstrap_reference_full!(super::FFT64Avx512Rayon, super::FFT64CIAvx512Rayon);
 #[cfg(feature = "enable-rayon")]
 impl_ckks_fold_layout_reference_full!(super::FFT64Avx512Rayon);
@@ -166,9 +170,11 @@ impl_ckks_conjugate_reference_full!(super::NTT4x30Avx512Rayon);
 impl_ckks_imag_reference_full!(super::NTT4x30Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
 impl_ckks_bootstrapping_reference_full!(super::NTT4x30Avx512Rayon);
+#[cfg(feature = "enable-rayon")]
 impl_ckks_replicated_bootstrap_reference_full!(super::NTT4x30Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
 impl_ckks_bootstrapping_ci_reference_full!(super::NTT4x30Avx512Rayon, super::NTT4x30CIAvx512Rayon);
+#[cfg(feature = "enable-rayon")]
 impl_ckks_replicated_ci_bootstrap_reference_full!(super::NTT4x30Avx512Rayon, super::NTT4x30CIAvx512Rayon);
 #[cfg(feature = "enable-rayon")]
 impl_ckks_fold_layout_reference_full!(super::NTT4x30Avx512Rayon);
@@ -198,9 +204,11 @@ impl_ckks_conjugate_reference_full!(super::NTT3x42IfmaRayon);
 impl_ckks_imag_reference_full!(super::NTT3x42IfmaRayon);
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
 impl_ckks_bootstrapping_reference_full!(super::NTT3x42IfmaRayon);
+#[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
 impl_ckks_replicated_bootstrap_reference_full!(super::NTT3x42IfmaRayon);
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
 impl_ckks_bootstrapping_ci_reference_full!(super::NTT3x42IfmaRayon, super::NTT3x42CIIfmaRayon);
+#[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
 impl_ckks_replicated_ci_bootstrap_reference_full!(super::NTT3x42IfmaRayon, super::NTT3x42CIIfmaRayon);
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
 impl_ckks_fold_layout_reference_full!(super::NTT3x42IfmaRayon);

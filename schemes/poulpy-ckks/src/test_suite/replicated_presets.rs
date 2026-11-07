@@ -255,6 +255,11 @@ where
         &self.preset
     }
 
+    /// The automorphism keys the bootstrapping rotates with.
+    pub fn rotation_keys(&self) -> usize {
+        self.ctx.galois_elements(&self.module).len()
+    }
+
     /// The gadgets of the keys under the secret and of the key to the
     /// ephemeral secret, as `dnum x k_digit + k_aux`.
     pub fn gadgets(&self) -> String {

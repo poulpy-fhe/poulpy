@@ -166,7 +166,7 @@ pub use paco::{
 pub use plaintext::{CKKSPlaintext, CKKSPlaintextOwned, CKKSPlaintextViewMut};
 pub use replicated::{
     ReplicatedBootstrapPlan, ReplicatedBootstrapWorkspace, ReplicatedBootstrapping, ReplicatedConversion, ReplicatedTransform,
-    ReplicatedTransformWorkspace,
+    ReplicatedTransformWorkspace, ReplicatedTransforms,
 };
 pub use ship::{
     HMuxRotKey, HMuxRotKeyPrepared, ShipCoeffEncodings, ShipIndexKeys, ShipIndexKeysPrepared, ShipKeyParameters, ShipKeySet,

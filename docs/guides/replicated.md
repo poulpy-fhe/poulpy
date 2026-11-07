@@ -38,6 +38,8 @@ Operations that would round plainly or write the guard slots return `InvalidOper
 `CKKSReplicatedOps` moves a batch between CKKS and the replicated layout with the same keys.
 `ckks_to_replicated` maps `k` values of a full-layout ciphertext with period `k` onto the data slots; `ckks_from_replicated` gathers them back, averaging the replicas.
 `ReplicatedConversion` holds the encoded diagonals and lists the rotations its keys cover.
+`ReplicatedConversion::new` encodes each map as `k` diagonals; `ReplicatedConversion::new_factored` encodes it as the move between consecutive slots and the data slots in `placement_factors` factors of about `k^(1/placement_factors)` 0/1 mask diagonals, which needs no `R | k` for the return.
+Every factor consumes its diagonal bits: the last factor of `ckks_to_replicated` is quantized with shaping, its others plainly at `inner_log_delta_diag` bits, a few bits above the working precision.
 Allocate a `ReplicatedTransformWorkspace` once with `conv.alloc_to_workspace(&module, &input)` or `conv.alloc_from_workspace(&module, &input)` and pass it after `conv` to each evaluation.
 The workspace owns the prepared baby rotations for that input layout; evaluations refill those buffers without reallocating them.
 
@@ -53,21 +55,31 @@ The workspace owns the prepared baby rotations for that input layout; evaluation
 6. a shaped rounding back to the leveled scale.
 
 `ReplicatedBootstrapPlan` holds the circuit (`ReplicatedBootstrapPlan::paper` is the configuration of the paper) and its widths (`k_in`, `k_boot`, `key_k`).
+Its `transforms` select how `SlotsToCoeffs` and `CoeffsToSlots` are evaluated:
+
+- `ReplicatedTransforms::Dense`, the paper's: each map is one BSGS transform of `k` (`SlotsToCoeffs`) or `2k` (packed `CoeffsToSlots`) diagonals, consuming one diagonal scale;
+- `ReplicatedTransforms::Factored`: each map is the DFT on period `k` in `s2c_factors` or `c2s_factors` factors and the move between consecutive slots and the data slots in `placement_factors` factors of 0/1 masks, each factor a BSGS transform whose giant step is fitted to its offsets. Every `SlotsToCoeffs` factor consumes `s2c_log_delta_diag` bits; the last `CoeffsToSlots` factor is quantized with shaping at `c2s_log_delta_diag` bits and the others plainly at `c2s_inner_log_delta_diag` bits. Factored maps take at least `2^f` values for `f` factors, and a packed plan needs the two batches to fit the ring.
+
+Factoring trades levels and rotation keys for fewer diagonals: at `N = 2^16` and `k = 2^10`, the dense maps multiply by about 3000 diagonals with 69 rotation keys, the factored maps of `n16_d20_k763_p19_s2c_factored` by 381 diagonals with 83 keys, for a raised modulus 256 bits wider at the same levels.
+At `k = 2^10`, the factored preset bootstraps in 6.3 s on one `NTT4x30Neon` thread and 0.36 s on Metal, against 8.1 s and 0.52 s for dense maps at the same levels, within 0.2 bits of their precision. At `k = 2^8` the dense maps are faster, the diagonals no longer dominating.
 `ReplicatedBootstrapping` compiles it for a module: the transforms, the masked EvalMod constants, and the Galois elements its keys cover.
 `ReplicatedBootstrapPlan::secure_key_layouts` sizes the gadgets of the keys with the fewest digits whose modulus fits the caller's bounds for the dense secret and for the ephemeral sparse secret, with one automorphism key for each Galois element of the compiled bootstrapping.
 
 ### Presets
 
-`poulpy_ckks::presets::replicated_bootstrapping` provides two parameter sets for 128-bit security, with dense secrets of weight 1024 and an ephemeral ModUp secret of weight 32.
+`poulpy_ckks::presets::replicated_bootstrapping` provides three parameter sets for 128-bit security, with dense secrets of weight 1024 and an ephemeral ModUp secret of weight 32.
 The batch size and the shaping unit are the caller's; the moduli do not depend on them.
+The logN16 preset factors its maps into two DFT factors and two placement factors each, with `SlotsToCoeffs` diagonals at `2^30` and inner `CoeffsToSlots` diagonals at `2^54`, for batches of 4 to `2^10` values at `R = 16`.
 The sparse-to-dense key covers the 49-bit lifted ModUp input, with a row offset ending its gadget at the raised modulus. Its full modulus includes that offset, the gadget and the auxiliary bits.
 
 | preset | ring | levels at `2^20` | keys (digits × width + aux) | ephemeral key | sparse-to-dense key (offset + gadget + aux) | min precision, k = 16 / 64 |
 |---|---|---|---|---|---|---|
 | `n14_d20_k109_p21_s2c` | `2^14` | 2 | 14 × 28 + 28 | 2 × 22 + 22 | 333 + 2 × 25 + 25 | 21.79 / 21.73 bits |
 | `n15_d20_k389_p20_s2c` | `2^15` | 16 | 4 × 168 + 168 | 1 × 43 + 43 | 614 + 1 × 49 + 49 | 21.16 / 20.84 bits |
+| `n16_d20_k763_p19_s2c_factored` | `2^16` | 30 | 3 × 403 + 403 | 1 × 43 + 43 | 1150 + 1 × 49 + 49 | 20.52 / 20.38 bits |
 
-The logN14 preset advertises 21 bits of precision on the data slots and the logN15 preset 20 bits, which the precision test asserts. The test covers offset and full-width return keys on matched ciphertexts.
+The logN14 preset advertises 21 bits of precision on the data slots, the logN15 preset 20 bits and the logN16 preset 19 bits, which the precision test asserts.
+The logN16 preset measures 20.35 bits at `k = 2^8` and 20.00 bits at `k = 2^10` on `NTT4x30Neon`. The test covers offset and full-width return keys on matched ciphertexts.
 
 ## Conjugate-invariant ring
 

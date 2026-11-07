@@ -362,6 +362,10 @@ macro_rules! ckks_backend_rank2_test_suite {
                 $crate::test_suite::replicated::test_replicated_conversions_round_trip
             );
             run_ring_test_result!(
+                replicated_conversions_round_trip_factored,
+                $crate::test_suite::replicated::test_replicated_conversions_round_trip_factored
+            );
+            run_ring_test_result!(
                 replicated_transforms_apply_matrices,
                 $crate::test_suite::replicated::test_replicated_transforms_apply_matrices
             );
@@ -759,12 +763,20 @@ macro_rules! ckks_backend_test_suite {
                 $crate::test_suite::replicated::test_replicated_conversions_round_trip
             );
             run_ring_test_result!(
+                replicated_conversions_round_trip_factored,
+                $crate::test_suite::replicated::test_replicated_conversions_round_trip_factored
+            );
+            run_ring_test_result!(
                 replicated_transforms_apply_matrices,
                 $crate::test_suite::replicated::test_replicated_transforms_apply_matrices
             );
             run_test_result!(
                 replicated_bootstrap,
                 $crate::test_suite::replicated::test_replicated_bootstrap
+            );
+            run_test_result!(
+                replicated_bootstrap_factored,
+                $crate::test_suite::replicated::test_replicated_bootstrap_factored
             );
             run_test!(conjugate_aligned, $crate::test_suite::conjugate::test_conjugate_aligned);
             run_test!(

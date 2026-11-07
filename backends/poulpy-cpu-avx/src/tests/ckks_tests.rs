@@ -73,7 +73,7 @@ mod replicated_bootstrapping_presets {
     use poulpy_ckks::test_suite::replicated_presets::replicated_bootstrapping_presets_meet_precision;
 
     #[test]
-    #[ignore = "runs full logN14 and logN15 replicated bootstraps per preset; opt in with --ignored"]
+    #[ignore = "runs full logN14 to logN16 replicated bootstraps per preset; opt in with --ignored"]
     fn ntt4x30_presets_meet_precision() {
         replicated_bootstrapping_presets_meet_precision::<crate::NTT4x30Avx>(52);
     }

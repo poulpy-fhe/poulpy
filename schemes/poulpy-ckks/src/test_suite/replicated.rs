@@ -55,8 +55,8 @@ use crate::{
     },
     layouts::{
         CKKSCiphertextAlloc, CKKSCiphertextOwned, CKKSPlaintextAlloc, CKKSPlaintextOwned, EvalModPlan, EvalModPoly, EvalModType,
-        ReplicatedBootstrapPlan, ReplicatedBootstrapping, ReplicatedConversion, ReplicatedTransform, ckks_eval_mod_compile,
-        ckks_eval_mod_replicated_compile, ckks_eval_mod_replicated_packed_compile, encode_bsgs_replicated,
+        ReplicatedBootstrapPlan, ReplicatedBootstrapping, ReplicatedConversion, ReplicatedTransform, ReplicatedTransforms,
+        ckks_eval_mod_compile, ckks_eval_mod_replicated_compile, ckks_eval_mod_replicated_packed_compile, encode_bsgs_replicated,
         encode_complex_bsgs_replicated,
     },
     oep::CKKSEncapsulatedModUpImpl,
@@ -1227,6 +1227,47 @@ where
         + CnvPVecAlloc<BE>,
     F: TestScalar,
 {
+    conversions_round_trip_with::<BE, F>(params, module, host_module, None)
+}
+
+/// [`test_replicated_conversions_round_trip`] with the conversions factored
+/// into placements of two-bit groups.
+pub fn test_replicated_conversions_round_trip_factored<BE, F>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend<BE::Ring>>,
+) -> Result<()>
+where
+    BE: TestContextBackend,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextSharedModule<BE>
+        + CKKSEncodingOps<BE, F>
+        + CKKSReplicatedOps<BE>
+        + CKKSLinearTransformationOps<BE>
+        + CnvPVecAlloc<BE>,
+    F: TestScalar,
+{
+    conversions_round_trip_with::<BE, F>(params, module, host_module, Some(2))
+}
+
+fn conversions_round_trip_with<BE, F>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend<BE::Ring>>,
+    placement_factors: Option<usize>,
+) -> Result<()>
+where
+    BE: TestContextBackend,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextSharedModule<BE>
+        + CKKSEncodingOps<BE, F>
+        + CKKSReplicatedOps<BE>
+        + CKKSLinearTransformationOps<BE>
+        + CnvPVecAlloc<BE>,
+    F: TestScalar,
+{
     // `R = 8` divides `k = 8`. The return lands on `20 + extra + log2(S/k)`
     // for the `S` slots of the ring.
     let (log_k, log_delta_ckks, log_delta, log_delta_diag) = (3u8, 40, 20, 30);
@@ -1234,21 +1275,43 @@ where
     let layout = ShapingUnit::U16_40.layout(log_k, 24)?;
     let len = 1usize << log_k;
     let base2k = Base2K(params.base2k as u32);
+    // The inner factors of `to` are quantized plainly, a few bits above the working precision.
+    let inner_log_delta_diag = log_delta + extra_bits + 4;
     let mut setup = ScratchOwned::<BE>::alloc(ReplicatedConversion::<BE>::new_tmp_bytes::<F>(
         module,
         &layout,
         base2k,
-        log_delta_diag,
+        log_delta_diag.max(inner_log_delta_diag),
     )?);
-    let conv = ReplicatedConversion::new::<F>(
-        module,
-        layout,
-        base2k,
-        log_delta,
-        log_delta_diag,
-        extra_bits,
-        &mut setup.borrow(),
-    )?;
+    let conv = match placement_factors {
+        None => ReplicatedConversion::new::<F>(
+            module,
+            layout,
+            base2k,
+            log_delta,
+            log_delta_diag,
+            extra_bits,
+            &mut setup.borrow(),
+        )?,
+        Some(placement_factors) => ReplicatedConversion::new_factored::<F>(
+            module,
+            layout,
+            base2k,
+            log_delta,
+            log_delta_diag,
+            inner_log_delta_diag,
+            extra_bits,
+            placement_factors,
+            &mut setup.borrow(),
+        )?,
+    };
+    let from_bits_consumed = conv.from.as_ref().map_or(0, ReplicatedTransform::consumed_bits);
+    // Room for both conversions and a margin of one diagonal scale, and keys covering it.
+    let k = log_delta_ckks + conv.to.consumed_bits() + from_bits_consumed + log_delta_diag;
+    let params = CKKSTestParams {
+        k: params.k.max(k + extra_bits + conv.trace.len()),
+        ..params
+    };
 
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
@@ -1259,7 +1322,6 @@ where
     }
 
     let values = unit_batch::<BE, F>(len, 0);
-    let k = log_delta_ckks + 3 * log_delta_diag;
     let ckks = encrypt_full(&params, module, &sk, (&values.0, &values.1), log_delta_ckks, k)?;
     let fresh = decrypt_batch::<BE, F>(&params, module, &sk, &ckks, len);
     let fresh_bits = precision((&fresh.0, &fresh.1), (&values.0, &values.1));
@@ -1350,7 +1412,7 @@ where
             },
         );
         let mut wrong_rotations = conv.alloc_to_workspace(module, &ckks);
-        wrong_rotations.babies = LinearTransformationBabySteps::alloc(module, &[1], &wrong_rotations.input);
+        wrong_rotations.babies[0] = LinearTransformationBabySteps::alloc(module, &[1], &wrong_rotations.input);
         for workspace in [&mut wrong_width, &mut wrong_rotations] {
             let err = module
                 .ckks_to_replicated(&mut out, &ckks, &conv, workspace, &atks, &mut scratch.borrow())
@@ -1478,7 +1540,10 @@ where
     };
     let buffers = 3 * BE::scratch_aligned(BE::vec_znx_bytes_of(params.n, wide.rank().as_usize() + 1, wide.size()));
     let atk_infos = params.atk_layout();
-    let ops = crate::oep::derived::replicated::transform_tmp_bytes(module, &wide, &atk_infos)
+    let ops = crate::oep::derived::replicated::transform_tmp_bytes(module, &wide, &atk_infos, &to)
+        .max(crate::oep::derived::replicated::transform_tmp_bytes(
+            module, &wide, &atk_infos, &gather,
+        ))
         .max(module.ckks_rotate_tmp_bytes(&wide, &atk_infos))
         .max(module.ckks_add_tmp_bytes(wide.size()))
         .max(module.ckks_copy_tmp_bytes(&wide, &ckks))
@@ -1751,8 +1816,61 @@ where
     F: TestScalar,
     E: ReimNew<F>,
 {
+    replicated_bootstrap_with::<BE, F>(params, module, host_module, ReplicatedTransforms::Dense)
+}
+
+/// [`test_replicated_bootstrap`] with `SlotsToCoeffs` and `CoeffsToSlots`
+/// factored: two DFT factors each, the placements in groups of two bits.
+pub fn test_replicated_bootstrap_factored<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) -> Result<()>
+where
+    BE: TestContextBackend<Ring = Standard> + CKKSEncapsulatedModUpImpl,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextModule<BE>
+        + CKKSEncodingOps<BE, F>
+        + CKKSReplicatedBootstrapOps<BE>
+        + CKKSLinearTransformationOps<BE>
+        + CnvPVecAlloc<BE>
+        + GLWETrace<BE>,
+    F: TestScalar,
+    E: ReimNew<F>,
+{
+    let transforms = ReplicatedTransforms::Factored {
+        s2c_factors: 2,
+        c2s_factors: 2,
+        placement_factors: 2,
+        c2s_inner_log_delta_diag: 44,
+    };
+    replicated_bootstrap_with::<BE, F>(params, module, host_module, transforms)
+}
+
+fn replicated_bootstrap_with<BE, F>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+    transforms: ReplicatedTransforms,
+) -> Result<()>
+where
+    BE: TestContextBackend<Ring = Standard> + CKKSEncapsulatedModUpImpl,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextModule<BE>
+        + CKKSEncodingOps<BE, F>
+        + CKKSReplicatedBootstrapOps<BE>
+        + CKKSLinearTransformationOps<BE>
+        + CnvPVecAlloc<BE>
+        + GLWETrace<BE>,
+    F: TestScalar,
+{
     let layout = ShapingUnit::U16_40.layout(3, 24)?;
-    let plan = ReplicatedBootstrapPlan::paper(layout);
+    let plan = ReplicatedBootstrapPlan {
+        transforms,
+        ..ReplicatedBootstrapPlan::paper(layout)
+    };
     let base2k = Base2K(params.base2k as u32);
     let mut compile = ScratchOwned::<BE>::alloc(ReplicatedBootstrapping::<BE, F>::new_tmp_bytes(module, &plan, base2k)?);
     let ctx = ReplicatedBootstrapping::<BE, F>::new(module, plan, base2k, &mut compile.borrow())?;

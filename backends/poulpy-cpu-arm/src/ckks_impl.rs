@@ -78,9 +78,11 @@ impl_ckks_conjugate_reference_full!(super::FFT64NeonRayon);
 impl_ckks_imag_reference_full!(super::FFT64NeonRayon);
 #[cfg(feature = "enable-rayon")]
 impl_ckks_bootstrapping_reference_full!(super::FFT64NeonRayon);
+#[cfg(feature = "enable-rayon")]
 impl_ckks_replicated_bootstrap_reference_full!(super::FFT64NeonRayon);
 #[cfg(feature = "enable-rayon")]
 impl_ckks_bootstrapping_ci_reference_full!(super::FFT64NeonRayon, super::FFT64CINeonRayon);
+#[cfg(feature = "enable-rayon")]
 impl_ckks_replicated_ci_bootstrap_reference_full!(super::FFT64NeonRayon, super::FFT64CINeonRayon);
 #[cfg(feature = "enable-rayon")]
 impl_ckks_fold_layout_reference_full!(super::FFT64NeonRayon);
@@ -110,9 +112,11 @@ impl_ckks_conjugate_reference_full!(super::NTT4x30NeonRayon);
 impl_ckks_imag_reference_full!(super::NTT4x30NeonRayon);
 #[cfg(feature = "enable-rayon")]
 impl_ckks_bootstrapping_reference_full!(super::NTT4x30NeonRayon);
+#[cfg(feature = "enable-rayon")]
 impl_ckks_replicated_bootstrap_reference_full!(super::NTT4x30NeonRayon);
 #[cfg(feature = "enable-rayon")]
 impl_ckks_bootstrapping_ci_reference_full!(super::NTT4x30NeonRayon, super::NTT4x30CINeonRayon);
+#[cfg(feature = "enable-rayon")]
 impl_ckks_replicated_ci_bootstrap_reference_full!(super::NTT4x30NeonRayon, super::NTT4x30CINeonRayon);
 #[cfg(feature = "enable-rayon")]
 impl_ckks_fold_layout_reference_full!(super::NTT4x30NeonRayon);

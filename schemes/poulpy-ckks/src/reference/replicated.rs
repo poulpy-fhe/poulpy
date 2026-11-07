@@ -233,12 +233,12 @@ impl<BE: Backend> CKKSReplicatedBootstrapReference<BE> for Module<BE> {
         let raised = at(k_boot);
         let high = working_layout(&raised, plan.extra_bits, 0);
         let boot = ckks(at(k_boot), replicated);
-        let wide = |layout: GLWELayout| {
+        let wide = |layout: GLWELayout, transform: &ReplicatedTransform<BE>| {
             [replicated, SlotLayout::Full]
                 .into_iter()
                 .map(|slot_layout| {
                     let wide = ckks(layout, slot_layout);
-                    transform_tmp_bytes(module, &wide, atk_infos)
+                    transform_tmp_bytes(module, &wide, atk_infos, transform)
                         .max(module.ckks_rotate_tmp_bytes(&wide, atk_infos))
                         .max(module.ckks_conjugate_tmp_bytes(&wide, atk_infos))
                         .max(module.ckks_copy_tmp_bytes(&wide, &wide))
@@ -267,9 +267,9 @@ impl<BE: Backend> CKKSReplicatedBootstrapReference<BE> for Module<BE> {
             .max(module.ckks_round_tmp_bytes(&ckks(ct_out.glwe_layout(), replicated), &boot));
         let lift = plan.log_delta.saturating_sub(ct_in.log_delta());
         let narrow = at(ct_in.k().as_usize() + lift);
-        let front = ct_bytes::<BE>(&input) + ct_bytes::<BE>(&narrow) + 3 * ct_bytes::<BE>(&low) + wide(low).max(mod_up);
-        let front = front.max(ct_bytes::<BE>(&input) + ct_bytes::<BE>(&low) + wide(low));
-        let back = 3 * ct_bytes::<BE>(&raised) + (4 * ct_bytes::<BE>(&high) + wide(high)).max(eval_mod);
+        let front = ct_bytes::<BE>(&input) + ct_bytes::<BE>(&narrow) + 3 * ct_bytes::<BE>(&low) + wide(low, &ctx.s2c).max(mod_up);
+        let front = front.max(ct_bytes::<BE>(&input) + ct_bytes::<BE>(&low) + wide(low, &ctx.s2c));
+        let back = 3 * ct_bytes::<BE>(&raised) + (4 * ct_bytes::<BE>(&high) + wide(high, &ctx.c2s)).max(eval_mod);
         ct_bytes::<BE>(&raised) + front.max(back)
     }
 
