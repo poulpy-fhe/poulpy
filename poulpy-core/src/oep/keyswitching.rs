@@ -519,7 +519,8 @@ pub unsafe trait GLWEKeyswitchImpl: Backend + HalVecZnxDftImpl {
 
     /// `res += Σ_i decomp(a_i) · key_i`: [`Self::glwe_keyswitch_dft`] added to `res`. Reproduces
     /// [`glwe_keyswitch_dft_add_reference`](crate::reference::keyswitching::GLWEKeyswitchReference::glwe_keyswitch_dft_add_reference)
-    /// bit for bit, within [`Self::glwe_keyswitch_dft_add_tmp_bytes`].
+    /// bit for bit under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within
+    /// [`Self::glwe_keyswitch_dft_add_tmp_bytes`]; free in kernels and scratch use.
     fn glwe_keyswitch_dft_add<A>(
         module: &Module<Self>,
         res: &mut VecZnxDftBackendMut<'_, Self>,

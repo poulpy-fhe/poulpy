@@ -28,7 +28,10 @@ use crate::{
     },
     oep::GGLWEProductDigitsStridedImpl,
     reference::keyswitching::{GGLWEProductDigitsStridedReference, GGLWEProductReference},
-    test_suite::parity::{ParityBackend, ParityShapes, ref_gglwe, ref_glwe, unnormalized_twin, wide_twin},
+    test_suite::{
+        noise::assert_refuses_uncovered_input,
+        parity::{ParityBackend, ParityShapes, ref_gglwe, ref_glwe, unnormalized_twin, wide_twin},
+    },
 };
 
 /// Checks a backend's interleaved-digit product against the Core definition.
@@ -187,10 +190,11 @@ fn key_layout_offset(
 }
 
 /// `a0`'s product in a fresh accumulator of `acc_size` limbs, `a1`'s added to it, then one inverse transform per column
-/// into a GLWE of `res_infos`, each call on exactly its query.
+/// into a GLWE of `res_infos`, each call on exactly its query at `a_infos`.
 fn keyswitch_dft_add_driver<BE, A0, A1>(
     module: &Module<BE>,
     res_infos: &GLWELayout,
+    a_infos: &GLWELayout,
     a0: &A0,
     a1: &A1,
     key: &GGLWEPrepared<BE::OwnedBuf, BE>,
@@ -210,13 +214,13 @@ where
         &mut acc.to_backend_mut(),
         a0,
         &key,
-        &mut poisoned_scratch::<BE>(module.glwe_keyswitch_dft_tmp_bytes(acc_size, a0, &key)).borrow(),
+        &mut poisoned_scratch::<BE>(module.glwe_keyswitch_dft_tmp_bytes(acc_size, a_infos, &key)).borrow(),
     );
     module.glwe_keyswitch_dft_add(
         &mut acc.to_backend_mut(),
         a1,
         &key,
-        &mut poisoned_scratch::<BE>(module.glwe_keyswitch_dft_add_tmp_bytes(acc_size, a1, &key)).borrow(),
+        &mut poisoned_scratch::<BE>(module.glwe_keyswitch_dft_add_tmp_bytes(acc_size, a_infos, &key)).borrow(),
     );
     let mut res: BackendGLWE<BE> = module.glwe_alloc_from_infos(res_infos);
     let (base2k, res_k) = (res_infos.base2k.as_usize(), res_infos.k.as_usize());
@@ -239,7 +243,7 @@ where
 }
 
 /// `glwe_keyswitch_dft_add` on an accumulator of `glwe_keyswitch_dft`, at every key layout, compared after the inverse
-/// transform, on a canonical and on a flag-clear input.
+/// transform, on a canonical, a flag-clear and a wide input, and its refusal of an input past the key.
 pub fn test_glwe_keyswitch_dft_add_parity<BR, BT>(
     params: &TestParams,
     shapes: &ParityShapes,
@@ -309,9 +313,10 @@ pub fn test_glwe_keyswitch_dft_add_parity<BR, BT>(
                         &mut poisoned_scratch::<BT>(module_test.gglwe_prepare_tmp_bytes(&key_infos)).borrow(),
                     );
 
-                    let want = keyswitch_dft_add_driver(module_ref, &res_infos, &a0_ref, &a1_ref, &key_ref);
+                    let want = keyswitch_dft_add_driver(module_ref, &res_infos, &a_infos, &a0_ref, &a1_ref, &key_ref);
                     let mut have = module_ref.glwe_alloc_from_infos(&res_infos);
-                    keyswitch_dft_add_driver(module_test, &res_infos, &a0_test, &a1_test, &key_test).transfer_into(&mut have);
+                    keyswitch_dft_add_driver(module_test, &res_infos, &a_infos, &a0_test, &a1_test, &key_test)
+                        .transfer_into(&mut have);
                     assert_glwe_eq!(
                         want,
                         have,
@@ -319,13 +324,53 @@ pub fn test_glwe_keyswitch_dft_add_parity<BR, BT>(
                     );
 
                     unnormalized_twin::<BR, BT>(&a1_ref, &mut a1_test);
-                    keyswitch_dft_add_driver(module_test, &res_infos, &a0_test, &a1_test, &key_test).transfer_into(&mut have);
+                    keyswitch_dft_add_driver(module_test, &res_infos, &a_infos, &a0_test, &a1_test, &key_test)
+                        .transfer_into(&mut have);
                     assert_glwe_eq!(
                         want,
                         have,
                         "glwe_keyswitch_dft_add, unnormalized operand: rank_in={rank_in} rank_out={rank_out} \
                          k_digit={k_digit} k_offset={k_offset}"
                     );
+
+                    let mut wide_test = module_test.glwe_alloc_from_infos(&GLWELayout {
+                        k: TorusPrecision((k_in + 2 * base2k) as u32),
+                        ..a_infos
+                    });
+                    module_test.glwe_fill_from_source(&mut wide_test, &mut source);
+                    wide_twin::<BR, BT>(&a1_ref, &mut wide_test);
+                    keyswitch_dft_add_driver(module_test, &res_infos, &a_infos, &a0_test, &wide_test, &key_test)
+                        .transfer_into(&mut have);
+                    assert_glwe_eq!(
+                        want,
+                        have,
+                        "glwe_keyswitch_dft_add, operand wider than its precision: rank_in={rank_in} rank_out={rank_out} \
+                         k_digit={k_digit} k_offset={k_offset}"
+                    );
+
+                    let past_key = module_test.glwe_alloc_from_infos(&GLWELayout {
+                        k: TorusPrecision(key_infos.max_input_k().0 + 1),
+                        ..a_infos
+                    });
+                    let key = key_test.to_backend_ref();
+                    let acc_size = res_infos.size();
+                    let mut acc = module_test.vec_znx_dft_alloc(n as usize, rank_out + 1, acc_size);
+                    module_test.glwe_keyswitch_dft(
+                        &mut acc.to_backend_mut(),
+                        &a0_test,
+                        &key,
+                        &mut poisoned_scratch::<BT>(module_test.glwe_keyswitch_dft_tmp_bytes(acc_size, &a_infos, &key)).borrow(),
+                    );
+                    let before = BT::to_host_bytes(&acc.data);
+                    assert_refuses_uncovered_input("glwe_keyswitch_dft_add took an input one bit past its key", || {
+                        module_test.glwe_keyswitch_dft_add(
+                            &mut acc.to_backend_mut(),
+                            &past_key,
+                            &key,
+                            &mut poisoned_scratch::<BT>(0).borrow(),
+                        )
+                    });
+                    assert!(BT::to_host_bytes(&acc.data) == before, "a refused call wrote the accumulator");
                 }
             }
         }

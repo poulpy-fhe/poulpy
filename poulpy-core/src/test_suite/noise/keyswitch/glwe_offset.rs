@@ -27,6 +27,7 @@ use crate::{
         prepared::{GGLWEPreparedToBackendRef, GLWESecretPrepared, GLWESwitchingKeyPrepared},
     },
     noise::GGLWENoiseModel,
+    reference::keyswitching::GLWEKeyswitchReference,
 };
 
 struct Case {
@@ -242,6 +243,7 @@ where
         + GLWESwitchingKeyEncryptSk<BE>
         + GLWEEncryptSk<BE>
         + GLWEKeyswitch<BE>
+        + GLWEKeyswitchReference<BE>
         + GLWEAdd<BE>
         + GLWESecretPreparedFactory<BE>
         + GLWESwitchingKeyPreparedFactory<BE>
@@ -372,14 +374,15 @@ where
                 );
             }
         }
-        // One byte below its query the call refuses at entry, the accumulator as it was.
+        // One byte below its query the reference refuses at entry, the accumulator as it was.
+        let reference_bytes = module.glwe_keyswitch_dft_add_tmp_bytes_reference(acc_size, &in_infos, &ksk_infos);
         let before = BE::to_host_bytes(&acc.data);
         let refused = catch_unwind(AssertUnwindSafe(|| {
-            module.glwe_keyswitch_dft_add(
+            module.glwe_keyswitch_dft_add_reference(
                 &mut acc.to_backend_mut(),
                 &inputs[0],
                 &ksk.to_backend_ref(),
-                &mut poisoned_scratch::<BE>(add_bytes - 1).borrow(),
+                &mut poisoned_scratch::<BE>(reference_bytes - 1).borrow(),
             )
         }))
         .expect_err("an arena below the query of glwe_keyswitch_dft_add");

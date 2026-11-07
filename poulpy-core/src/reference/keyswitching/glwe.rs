@@ -166,11 +166,11 @@ where
     A: GLWEInfos,
     K: GGLWEInfos,
 {
-    operand_degree(module.n(), &[a_infos.n(), key_infos.n()]);
+    let n = operand_degree(module.n(), &[a_infos.n(), key_infos.n()]);
     let (mask_cols, a_size) = (a_infos.rank().as_usize(), a_infos.size());
-    let (operand_size, operand, transform) = glwe_keyswitch_operand_tmp_bytes(module, mask_cols, a_size, key_infos);
+    let (operand_size, operand, transform) = glwe_keyswitch_operand_tmp_bytes(module, n, mask_cols, a_size, key_infos);
     let product = BE::gglwe_product_fused_tmp_bytes(module, res_size, res_size, operand_size, key_infos);
-    BE::scratch_aligned(BE::vec_znx_bytes_of(module.n(), mask_cols + 1, a_size))
+    BE::scratch_aligned(BE::vec_znx_bytes_of(n, mask_cols + 1, a_size))
         + module
             .glwe_normalize_tmp_bytes()
             .max(BE::scratch_aligned(operand) + transform.max(product))
@@ -253,15 +253,21 @@ where
     M: GLWEKeyswitchInternal<BE>,
     K: GGLWEInfos,
 {
-    let (operand_size, operand, transform) = glwe_keyswitch_operand_tmp_bytes(module, mask_cols, a_size, key_infos);
+    let (operand_size, operand, transform) = glwe_keyswitch_operand_tmp_bytes(module, module.n(), mask_cols, a_size, key_infos);
     operand
         + module
             .gglwe_product_dft_tmp_bytes_reference(res_size, operand_size, key_infos)
             .max(transform)
 }
 
-/// The operand of a key switch of `a_size` limbs: its limbs, its DFT carve and the scratch of its transform.
-fn glwe_keyswitch_operand_tmp_bytes<BE, M, K>(module: &M, mask_cols: usize, a_size: usize, key_infos: &K) -> (usize, usize, usize)
+/// The operand of a key switch of `a_size` limbs at degree `n`: its limbs, its DFT carve and the scratch of its transform.
+fn glwe_keyswitch_operand_tmp_bytes<BE, M, K>(
+    module: &M,
+    n: usize,
+    mask_cols: usize,
+    a_size: usize,
+    key_infos: &K,
+) -> (usize, usize, usize)
 where
     BE: Backend,
     M: GLWEKeyswitchInternal<BE>,
@@ -273,7 +279,7 @@ where
     let operand_size: usize = gglwe_gadget_input_size(base2k, k_digit, dnum, a_k, a_size);
     (
         operand_size,
-        module.vec_znx_dft_bytes_of(module.n(), mask_cols, operand_size),
+        module.vec_znx_dft_bytes_of(n, mask_cols, operand_size),
         gglwe_gadget_dft_apply_tmp_bytes::<BE, _>(module, base2k, k_digit, dnum, a_k, a_size),
     )
 }
@@ -540,8 +546,9 @@ where
     K: GGLWEInfos,
 {
     // The product, then its automorphism added into `res`.
+    let n = operand_degree(module.n(), &[key_infos.n()]);
     let cols: usize = (key_infos.rank_out() + 1).into();
-    BE::scratch_aligned(module.vec_znx_dft_bytes_of(module.n(), cols, product_size))
+    BE::scratch_aligned(module.vec_znx_dft_bytes_of(n, cols, product_size))
         + module
             .gglwe_product_dft_tmp_bytes_reference(product_size, a_size, key_infos)
             .max(module.vec_znx_dft_automorphism_add_with_plan_tmp_bytes(res_size, product_size))
