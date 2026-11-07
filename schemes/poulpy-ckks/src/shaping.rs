@@ -262,8 +262,10 @@ fn is_invariant(v: &[i16]) -> bool {
 /// A shaping unit `U = ∏ ((1 - Y^a)/(1 - Y))^(e_a)`, odd `1 < a < 2R`,
 /// minimizing the largest guard magnitude `z` subject to `ℓ_0(U) <= -T` and
 /// `ℓ_j(U) <= z` for `1 <= j < R`, where `ℓ_j(U) = log2 |U(ω^(5^j))|` is linear
-/// in the exponents. The presets solve this integer program exactly over
-/// `|e_a| <= 40`, a range their optimal exponents do not reach.
+/// in the exponents. The presets up to `R = 16` solve this integer program
+/// exactly over `|e_a| <= 40`, a range their optimal exponents do not reach;
+/// the `R = 32` presets, over 31 exponents, are the best found in 15 minutes
+/// of branch and bound, each within 0.81 bits of the proven bound on `z`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ShapingUnit {
     pub log_r: usize,
@@ -295,8 +297,15 @@ impl ShapingUnit {
         coeffs: &[9, -70, 0, 70, -9, -1, -39, -1],
     };
 
-    /// `R = 4`, 41.36 bits of suppression, guards at most 14.58 bits, the most
-    /// at a target multiple of 20 whose coefficients fit in `i16`.
+    /// `R = 4`, 30.21 bits of suppression, guards at most 11.14 bits.
+    pub const U8_30: Self = Self {
+        log_r: 2,
+        target_bits: 30,
+        coeffs: &[190, 0, -190, 8, 689, -1139, 689, 8],
+    };
+
+    /// `R = 4`, 41.36 bits of suppression, guards at most 14.58 bits. Past a
+    /// target of 45 bits, the coefficients of `R = 4` units leave `i16`.
     pub const U8_40: Self = Self {
         log_r: 2,
         target_bits: 40,
@@ -369,10 +378,55 @@ impl ShapingUnit {
         ],
     };
 
-    pub const ALL: [Self; 12] = [
+    /// `R = 32`, 21.43 bits of suppression, guards at most 3.02 bits, over a
+    /// proven lower bound of 2.40 bits.
+    pub const U64_20: Self = Self {
+        log_r: 5,
+        target_bits: 20,
+        coeffs: &[
+            -1, -1, 1, 1, 0, -1, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, -1, 0, 0, -1, 0, 0, 0, 0, 0, 1, 0, -1, -1, 1, 1, 0, 0, 0, 0, 0, 0,
+            -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, -1, 0, 0, 0, 0, 0, 0,
+        ],
+    };
+
+    /// `R = 32`, 40.27 bits of suppression, guards at most 3.68 bits, over a
+    /// proven lower bound of 2.88 bits.
+    pub const U64_40: Self = Self {
+        log_r: 5,
+        target_bits: 40,
+        coeffs: &[
+            -1, 1, -1, 1, 1, 0, 0, -1, 0, -2, -1, 0, -1, 2, 0, 1, 0, 0, 0, 1, 0, 1, 0, -1, 1, 0, -1, 0, 0, 0, 1, 0, -1, 1, 0, -1,
+            0, -1, 0, 0, 0, -1, 0, -2, 1, 0, 1, 2, 0, 1, 0, 0, -1, -1, 1, -1, 1, -1, 0, 0, 1, 0, 0, -1,
+        ],
+    };
+
+    /// `R = 32`, 61.34 bits of suppression, guards at most 4.24 bits, over a
+    /// proven lower bound of 3.58 bits.
+    pub const U64_60: Self = Self {
+        log_r: 5,
+        target_bits: 60,
+        coeffs: &[
+            0, -1, 1, 1, -1, -1, 2, -1, -1, 1, 0, -2, 0, 2, 0, -1, 1, 1, -2, 1, 1, -1, -1, 1, 0, 0, 0, -1, 0, 0, -2, -2, -2, -2,
+            1, 2, 1, 0, 1, 1, -1, 0, 0, 1, 3, 1, 0, 0, -1, 1, 1, 0, 1, 2, 1, -2, -2, -2, -2, 0, 0, -1, 0, 0,
+        ],
+    };
+
+    /// `R = 32`, 80.32 bits of suppression, guards at most 4.90 bits, over a
+    /// proven lower bound of 4.13 bits.
+    pub const U64_80: Self = Self {
+        log_r: 5,
+        target_bits: 80,
+        coeffs: &[
+            0, 0, -2, 0, -1, -1, 0, 2, 3, 0, 1, 1, -1, 0, 0, 0, 2, 2, -5, -1, 1, 1, 2, -3, 2, 1, 1, -1, -5, 2, 2, 0, 0, 0, -1, 1,
+            1, 0, 3, 2, 0, -1, -1, 0, -2, 0, 0, -3, 1, -5, 0, -2, 0, 0, 1, 0, -1, 0, 0, 2, 0, 5, -1, 3,
+        ],
+    };
+
+    pub const ALL: [Self; 17] = [
         Self::U4_10,
         Self::U4_15,
         Self::U8_20,
+        Self::U8_30,
         Self::U8_40,
         Self::U16_20,
         Self::U16_40,
@@ -382,6 +436,10 @@ impl ShapingUnit {
         Self::U32_45,
         Self::U32_50,
         Self::U32_60,
+        Self::U64_20,
+        Self::U64_40,
+        Self::U64_60,
+        Self::U64_80,
     ];
 
     /// The replicated layout of this unit for a batch of `2^log_k` values.
@@ -669,7 +727,10 @@ mod tests {
 
     #[test]
     fn conjugate_invariant_profiles() {
-        for (unit, shift) in ShapingUnit::ALL.into_iter().zip([0, 0, 2, 4, 10, 4, 3, 24, 1, 20, 24, 0]) {
+        for (unit, shift) in ShapingUnit::ALL
+            .into_iter()
+            .zip([0, 0, 2, 3, 4, 10, 4, 3, 24, 1, 20, 24, 0, 17, 4, 20, 41])
+        {
             let layout = unit.layout(2, 24).unwrap();
             let standard = ShapingProfile::new(&layout);
             let profile = ShapingProfile::for_ring::<ConjugateInvariant>(&layout).unwrap();
@@ -680,8 +741,9 @@ mod tests {
             assert!(is_invariant(profile.coefficients()), "{unit:?}");
             assert_eq!(profile.l1_norm(), standard.l1_norm());
             assert_eq!(profile.max_pass_bits(), standard.max_pass_bits());
+            // Binary128 resolves the 80 bits of suppression of `U64_80` to a few 1e-9 bits.
             for (a, b) in profile.class_log_magnitudes().iter().zip(standard.class_log_magnitudes()) {
-                assert!((a - b).abs() < 1e-9, "{unit:?}");
+                assert!((a - b).abs() < 1e-8, "{unit:?}");
             }
             let u: Vec<u64> = profile.coefficients().iter().map(|&c| c as i64 as u64).collect();
             let product = negacyclic_mul(&u, profile.inverse());
@@ -797,6 +859,7 @@ mod tests {
             (ShapingUnit::U4_10, 10.172, 10.172, 1393),
             (ShapingUnit::U4_15, 15.259, 15.259, 47321),
             (ShapingUnit::U8_20, 20.680, 7.289, 199),
+            (ShapingUnit::U8_30, 30.212, 11.139, 2913),
             (ShapingUnit::U8_40, 41.360, 14.578, 30851),
             (ShapingUnit::U16_20, 20.076, 4.005, 25),
             (ShapingUnit::U16_40, 40.842, 7.058, 169),
@@ -806,14 +869,19 @@ mod tests {
             (ShapingUnit::U32_45, 45.955, 4.594, 59),
             (ShapingUnit::U32_50, 50.207, 4.742, 61),
             (ShapingUnit::U32_60, 67.067, 5.692, 129),
+            (ShapingUnit::U64_20, 21.425, 3.024, 17),
+            (ShapingUnit::U64_40, 40.270, 3.676, 39),
+            (ShapingUnit::U64_60, 61.337, 4.240, 61),
+            (ShapingUnit::U64_80, 80.318, 4.897, 79),
         ] {
             let profile = ShapingProfile::new(&unit.layout(2, 24).unwrap());
             assert!((profile.suppression_bits() - suppression).abs() < 5e-4, "{unit:?}");
             assert!(profile.suppression_bits() >= unit.target_bits as f64, "{unit:?}");
             assert!((profile.guard_bits() - guard).abs() < 5e-4, "{unit:?}");
             assert_eq!(profile.l1_norm(), l1, "{unit:?}");
-            // A unit has norm one, so its class profile sums to zero.
-            assert!(profile.class_log_magnitudes().iter().sum::<f64>().abs() < 1e-9, "{unit:?}");
+            // A unit has norm one, so its class profile sums to zero, up to the
+            // few 1e-9 bits to which binary128 resolves 80 bits of suppression.
+            assert!(profile.class_log_magnitudes().iter().sum::<f64>().abs() < 1e-8, "{unit:?}");
         }
     }
 
