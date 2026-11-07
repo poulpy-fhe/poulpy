@@ -338,6 +338,10 @@ macro_rules! ckks_backend_rank2_test_suite {
                 $crate::test_suite::replicated::test_replicated_products_are_shaped
             );
             run_ring_test_result!(
+                replicated_units_shape_products,
+                $crate::test_suite::replicated::test_replicated_units_shape_products
+            );
+            run_ring_test_result!(
                 replicated_layouts_do_not_mix,
                 $crate::test_suite::replicated::test_replicated_layouts_do_not_mix
             );
@@ -727,6 +731,10 @@ macro_rules! ckks_backend_test_suite {
                 $crate::test_suite::replicated::test_replicated_products_are_shaped
             );
             run_ring_test_result!(
+                replicated_units_shape_products,
+                $crate::test_suite::replicated::test_replicated_units_shape_products
+            );
+            run_ring_test_result!(
                 replicated_layouts_do_not_mix,
                 $crate::test_suite::replicated::test_replicated_layouts_do_not_mix
             );
@@ -777,6 +785,10 @@ macro_rules! ckks_backend_test_suite {
             run_test_result!(
                 replicated_bootstrap_factored,
                 $crate::test_suite::replicated::test_replicated_bootstrap_factored
+            );
+            run_test_result!(
+                replicated_bootstrap_small_periods,
+                $crate::test_suite::replicated::test_replicated_bootstrap_small_periods
             );
             run_test!(conjugate_aligned, $crate::test_suite::conjugate::test_conjugate_aligned);
             run_test!(

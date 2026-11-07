@@ -272,6 +272,37 @@ pub struct ShapingUnit {
 }
 
 impl ShapingUnit {
+    /// `R = 2`, 10.17 bits of suppression, guard at most 10.17 bits: the one
+    /// guard class takes the whole suppression.
+    pub const U4_10: Self = Self {
+        log_r: 1,
+        target_bits: 10,
+        coeffs: &[577, -408, 0, 408],
+    };
+
+    /// `R = 2`, 15.26 bits of suppression, guard at most 15.26 bits, the most
+    /// whose coefficients fit in `i16`.
+    pub const U4_15: Self = Self {
+        log_r: 1,
+        target_bits: 15,
+        coeffs: &[-19601, 13860, 0, -13860],
+    };
+
+    /// `R = 4`, 20.68 bits of suppression, guards at most 7.29 bits.
+    pub const U8_20: Self = Self {
+        log_r: 2,
+        target_bits: 20,
+        coeffs: &[9, -70, 0, 70, -9, -1, -39, -1],
+    };
+
+    /// `R = 4`, 41.36 bits of suppression, guards at most 14.58 bits, the most
+    /// at a target multiple of 20 whose coefficients fit in `i16`.
+    pub const U8_40: Self = Self {
+        log_r: 2,
+        target_bits: 40,
+        coeffs: &[0, 4182, 4337, 1164, -11485, 1164, 4337, 4182],
+    };
+
     /// `R = 8`, 20.08 bits of suppression, guards at most 4.00 bits.
     pub const U16_20: Self = Self {
         log_r: 3,
@@ -338,7 +369,11 @@ impl ShapingUnit {
         ],
     };
 
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 12] = [
+        Self::U4_10,
+        Self::U4_15,
+        Self::U8_20,
+        Self::U8_40,
         Self::U16_20,
         Self::U16_40,
         Self::U16_60,
@@ -634,7 +669,7 @@ mod tests {
 
     #[test]
     fn conjugate_invariant_profiles() {
-        for (unit, shift) in ShapingUnit::ALL.into_iter().zip([10, 4, 3, 24, 1, 20, 24, 0]) {
+        for (unit, shift) in ShapingUnit::ALL.into_iter().zip([0, 0, 2, 4, 10, 4, 3, 24, 1, 20, 24, 0]) {
             let layout = unit.layout(2, 24).unwrap();
             let standard = ShapingProfile::new(&layout);
             let profile = ShapingProfile::for_ring::<ConjugateInvariant>(&layout).unwrap();
@@ -759,6 +794,10 @@ mod tests {
     #[test]
     fn preset_profiles() {
         for (unit, suppression, guard, l1) in [
+            (ShapingUnit::U4_10, 10.172, 10.172, 1393),
+            (ShapingUnit::U4_15, 15.259, 15.259, 47321),
+            (ShapingUnit::U8_20, 20.680, 7.289, 199),
+            (ShapingUnit::U8_40, 41.360, 14.578, 30851),
             (ShapingUnit::U16_20, 20.076, 4.005, 25),
             (ShapingUnit::U16_40, 40.842, 7.058, 169),
             (ShapingUnit::U16_60, 61.996, 9.903, 1643),

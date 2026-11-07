@@ -490,6 +490,36 @@ where
     Ok(())
 }
 
+/// Every unit of [`ShapingUnit::ALL`] shapes a product chain: the data slots
+/// gain the unit's target suppression over a full layout, within 4 bits, up to
+/// the 35 bits the chain resolves.
+pub fn test_replicated_units_shape_products<BE, F>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend<BE::Ring>>,
+) -> Result<()>
+where
+    BE: TestContextBackend,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextSharedModule<BE> + CKKSEncodingOps<BE, F>,
+    F: TestScalar,
+{
+    let full = product_chain::<BE, F>(&params, module, host_module, SlotLayout::Full, Product::Mul)?;
+    for unit in ShapingUnit::ALL {
+        let layout = SlotLayout::Replicated(unit.layout(LOG_K, 24)?);
+        let shaped = product_chain::<BE, F>(&params, module, host_module, layout, Product::Mul)?;
+        let want = (unit.target_bits as f64).min(35.0) - 4.0;
+        assert!(
+            shaped >= full + want,
+            "R = {}, target {}: {shaped:.2} bits against {full:.2} for a full layout",
+            1 << unit.log_r,
+            unit.target_bits
+        );
+    }
+    Ok(())
+}
+
 pub fn test_replicated_layouts_do_not_mix<BE, F>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -1816,7 +1846,40 @@ where
     F: TestScalar,
     E: ReimNew<F>,
 {
-    replicated_bootstrap_with::<BE, F>(params, module, host_module, ReplicatedTransforms::Dense)
+    replicated_bootstrap_with::<BE, F>(
+        params,
+        module,
+        host_module,
+        ShapingUnit::U16_40,
+        ReplicatedTransforms::Dense,
+        19.0,
+    )
+}
+
+/// [`test_replicated_bootstrap`] at the periods `R = 4` and `R = 2`, whose
+/// precision the units' suppression bounds: 41 bits for `U8_40`, 15 for `U4_15`.
+pub fn test_replicated_bootstrap_small_periods<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) -> Result<()>
+where
+    BE: TestContextBackend<Ring = Standard> + CKKSEncapsulatedModUpImpl,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextModule<BE>
+        + CKKSEncodingOps<BE, F>
+        + CKKSReplicatedBootstrapOps<BE>
+        + CKKSLinearTransformationOps<BE>
+        + CnvPVecAlloc<BE>
+        + GLWETrace<BE>,
+    F: TestScalar,
+    E: ReimNew<F>,
+{
+    for (unit, min_bits) in [(ShapingUnit::U8_40, 21.0), (ShapingUnit::U4_15, 15.0)] {
+        replicated_bootstrap_with::<BE, F>(params, module, host_module, unit, ReplicatedTransforms::Dense, min_bits)?;
+    }
+    Ok(())
 }
 
 /// [`test_replicated_bootstrap`] with `SlotsToCoeffs` and `CoeffsToSlots`
@@ -1845,14 +1908,18 @@ where
         placement_factors: 2,
         c2s_inner_log_delta_diag: 44,
     };
-    replicated_bootstrap_with::<BE, F>(params, module, host_module, transforms)
+    replicated_bootstrap_with::<BE, F>(params, module, host_module, ShapingUnit::U16_40, transforms, 19.0)
 }
 
+/// One bootstrapping of `k = 8` values of `unit`, with full-width and
+/// row-offset return keys, each at least `min_bits` precise.
 fn replicated_bootstrap_with<BE, F>(
     params: CKKSTestParams,
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
+    unit: ShapingUnit,
     transforms: ReplicatedTransforms,
+    min_bits: f64,
 ) -> Result<()>
 where
     BE: TestContextBackend<Ring = Standard> + CKKSEncapsulatedModUpImpl,
@@ -1866,7 +1933,7 @@ where
         + GLWETrace<BE>,
     F: TestScalar,
 {
-    let layout = ShapingUnit::U16_40.layout(3, 24)?;
+    let layout = unit.layout(3, 24)?;
     let plan = ReplicatedBootstrapPlan {
         transforms,
         ..ReplicatedBootstrapPlan::paper(layout)
@@ -1941,12 +2008,12 @@ where
         assert_eq!((out.log_delta(), out.k().as_usize()), (plan.level_log_delta, k_out));
         let got = decrypt_batch::<BE, F>(&params, module, &sk, &out, len);
         let bits = precision((&got.0, &got.1), (&values.0, &values.1));
-        assert!(bits >= 19.0, "replicated bootstrapping: {bits:.2} bits");
+        assert!(bits >= min_bits, "replicated bootstrapping of {unit:?}: {bits:.2} bits");
         decoded.push(got);
     }
     let bits = precision((&decoded[0].0, &decoded[0].1), (&decoded[1].0, &decoded[1].1));
     assert!(
-        bits >= 18.0,
+        bits >= min_bits - 1.0,
         "offset and full-width replicated bootstrapping differ by {bits:.2} bits"
     );
     Ok(())
