@@ -68,6 +68,7 @@ poulpy_core::core_parity_test_suite! {
     params = crate::tests::bounded_emulation_params(TestParams { size: 1<<8, base2k: 17, n: 1<<8 }, 64),
     tests = {
         glwe_keyswitch => poulpy_core::test_suite::parity::test_glwe_keyswitch_parity,
+        glwe_keyswitch_dft_add => poulpy_core::test_suite::parity::test_glwe_keyswitch_dft_add_parity,
         glwe_keyswitch_assign => poulpy_core::test_suite::parity::test_glwe_keyswitch_assign_parity,
         gglwe_keyswitch => poulpy_core::test_suite::parity::test_gglwe_keyswitch_parity,
         glwe_automorphism => poulpy_core::test_suite::parity::test_glwe_automorphism_parity,
@@ -105,6 +106,7 @@ poulpy_core::core_parity_test_suite! {
     params = crate::tests::bounded_emulation_params(TestParams { size: 1<<8, base2k: 52, n: 1<<8 }, 64),
     tests = {
         glwe_keyswitch => poulpy_core::test_suite::parity::test_glwe_keyswitch_parity,
+        glwe_keyswitch_dft_add => poulpy_core::test_suite::parity::test_glwe_keyswitch_dft_add_parity,
         glwe_keyswitch_assign => poulpy_core::test_suite::parity::test_glwe_keyswitch_assign_parity,
         gglwe_keyswitch => poulpy_core::test_suite::parity::test_gglwe_keyswitch_parity,
         glwe_automorphism => poulpy_core::test_suite::parity::test_glwe_automorphism_parity,
@@ -145,6 +147,7 @@ poulpy_core::core_parity_test_suite! {
     shapes = poulpy_core::test_suite::parity::ParityShapes { unaligned_digits: false, ..Default::default() },
     tests = {
         glwe_keyswitch => poulpy_core::test_suite::parity::test_glwe_keyswitch_parity,
+        glwe_keyswitch_dft_add => poulpy_core::test_suite::parity::test_glwe_keyswitch_dft_add_parity,
         glwe_keyswitch_assign => poulpy_core::test_suite::parity::test_glwe_keyswitch_assign_parity,
         gglwe_keyswitch => poulpy_core::test_suite::parity::test_gglwe_keyswitch_parity,
         glwe_automorphism => poulpy_core::test_suite::parity::test_glwe_automorphism_parity,
@@ -282,6 +285,7 @@ poulpy_core::core_parity_test_suite! {
     params = crate::tests::bounded_emulation_params(TestParams { size: 1<<8, base2k: 52, n: 1<<8 }, 64),
     tests = {
         glwe_keyswitch => poulpy_core::test_suite::parity::test_glwe_keyswitch_parity,
+        glwe_keyswitch_dft_add => poulpy_core::test_suite::parity::test_glwe_keyswitch_dft_add_parity,
         glwe_keyswitch_assign => poulpy_core::test_suite::parity::test_glwe_keyswitch_assign_parity,
         gglwe_keyswitch => poulpy_core::test_suite::parity::test_gglwe_keyswitch_parity,
         glwe_automorphism => poulpy_core::test_suite::parity::test_glwe_automorphism_parity,
@@ -322,6 +326,7 @@ poulpy_core::core_parity_test_suite! {
     shapes = poulpy_core::test_suite::parity::ParityShapes { unaligned_digits: false, ..Default::default() },
     tests = {
         glwe_keyswitch => poulpy_core::test_suite::parity::test_glwe_keyswitch_parity,
+        glwe_keyswitch_dft_add => poulpy_core::test_suite::parity::test_glwe_keyswitch_dft_add_parity,
         glwe_keyswitch_assign => poulpy_core::test_suite::parity::test_glwe_keyswitch_assign_parity,
         gglwe_keyswitch => poulpy_core::test_suite::parity::test_gglwe_keyswitch_parity,
         glwe_automorphism => poulpy_core::test_suite::parity::test_glwe_automorphism_parity,
@@ -431,6 +436,7 @@ poulpy_core::core_parity_test_suite! {
     shapes = poulpy_core::test_suite::parity::ParityShapes { unaligned_digits: false, ..Default::default() },
     tests = {
         glwe_keyswitch => poulpy_core::test_suite::parity::test_glwe_keyswitch_parity,
+        glwe_keyswitch_dft_add => poulpy_core::test_suite::parity::test_glwe_keyswitch_dft_add_parity,
         glwe_keyswitch_assign => poulpy_core::test_suite::parity::test_glwe_keyswitch_assign_parity,
         gglwe_keyswitch => poulpy_core::test_suite::parity::test_gglwe_keyswitch_parity,
         glwe_automorphism => poulpy_core::test_suite::parity::test_glwe_automorphism_parity,

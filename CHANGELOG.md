@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### `poulpy-core`
+
+- **Breaking:** `GLWEKeyswitchImpl::glwe_keyswitch_dft_add[_tmp_bytes]` have no default body, and the `oep::derived` body is gone: `impl_glwe_keyswitch_reference_full!` forwards them to the new `GLWEKeyswitchReference::glwe_keyswitch_dft_add[_tmp_bytes]_reference`, which reach a backend's `gglwe_product_fused` at the same bits: `NTT4x30Gpu<Cuda>/core/glwe_keyswitch_dft_add/(n=65536,base2k=52,k=1296,rank=1,dsize=6)` takes 362 us against 399 us for the composition on an RTX 5090 (CUDA, CubeCL 0.11.3), 9% less. A hand-written `GLWEKeyswitchImpl` forwards them to those references. The trait drops its `HalVecZnxDftImpl` supertrait: generic code reading HAL DFT methods through `GLWEKeyswitchImpl` names that family itself.
+- Add `test_suite::parity::test_glwe_keyswitch_dft_add_parity`: `core_parity_test_suite!` registrations list it as `glwe_keyswitch_dft_add`.
+
+### `poulpy-bench`
+
+- Add `runner_glwe_keyswitch_dft_add`, listed in `keyswitch_ops` and `standard_ops` under the id `<backend>/core/glwe_keyswitch_dft_add/<params>`.
+
 ## [0.10.0] - 2026-11-01
 
 Completes the workspace naming pass ([#376](https://github.com/poulpy-fhe/poulpy/issues/376)): names lead with their object, opt-in macros follow their OEP trait (`impl_<op>_reference_full!`), every API method dispatches through a same-named OEP method, and operation-wide scalars lead argument lists. Gadget keys take digits of any width in bits ([#188](https://github.com/poulpy-fhe/poulpy/issues/188)) and a row offset, and every gadget product refuses an input wider than its key ([#451](https://github.com/poulpy-fhe/poulpy/issues/451)). CKKS bootstrapping applies the first CoeffsToSlots factor on the modulus raise, runs EvalMod on the conjugate-invariant ring and takes power-of-two rotation keys, with new `LogN=16` presets; normalization rounds ties to even. Crates move into `schemes/`, `libs/`, `backends/` and `tools/`; new crates: `poulpy-blas` (encrypted matrix arithmetic), `poulpy-libm` (CKKS math functions, moved in from its own repository) and `poulpy-gpu-portable` (NTT4x30 on CUDA, HIP and WGPU through CubeCL).
