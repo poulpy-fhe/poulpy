@@ -471,7 +471,7 @@ fn znx_normalize_final_step_assign(base2k: usize, lsh: usize, x: &mut [i64], car
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::layouts::VecZnx;
+    use crate::{AlignedBuf, layouts::VecZnx};
 
     #[test]
     fn encode_by_limb_matches_encode_vec_i128() {
@@ -481,8 +481,8 @@ mod tests {
                 .map(|i| (0x5DEE_CE66_D1CE_4E5B_7A3F_19C2_8B04_u128 as i128).wrapping_mul(i + 1) >> (128 - k.min(126)))
                 .collect();
             let size = k.div_ceil(base2k);
-            let mut bytes = vec![0u8; VecZnx::<Vec<u8>, i64>::bytes_of(n, 1, size)];
-            let mut expected = VecZnx::<&mut [u8], i64>::from_data(&mut bytes[..], n, 1, size);
+            // An aligned buffer: the view's pointer accessors require the scalar alignment.
+            let mut expected = VecZnx::<AlignedBuf, i64>::alloc(n, 1, size);
             expected.encode_vec_i128(base2k, 0, k, &data);
             let mut got = vec![vec![0i64; n]; size];
             let (mut consumed, mut carry, mut limb) = (data.clone(), vec![0; n], vec![0; n]);
