@@ -2,7 +2,7 @@
 use super::helpers::*;
 use crate::Scale;
 use crate::{
-    CKKSInfos, CKKSLayout, GLWEPlaintextMeta, SetCKKSInfos, SlotsKind,
+    CKKSInfos, CKKSLayout, GLWEPlaintextMeta, SetCKKSInfos, SlotLayout, SlotsKind,
     api::{CKKSDotProductOps, CKKSModuleInfos},
     oep::*,
     test_suite::CKKSTestParams,
@@ -40,6 +40,7 @@ pub fn layout(params: CKKSTestParams, rank: usize, k: usize, delta: usize, spars
             scale: Scale::Log(delta),
             slots,
             log_sparsity: sparse,
+            slot_layout: SlotLayout::Full,
         },
     }
 }

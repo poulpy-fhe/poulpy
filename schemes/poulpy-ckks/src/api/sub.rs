@@ -37,6 +37,13 @@ use crate::{CKKSCtBounds, SetCKKSInfos};
 /// ## Ciphertext–plaintext-constant subtraction (`ckks_sub_pt_const_*`)
 ///
 /// Metadata follows the same rule as the `pt_vec` variants above.
+///
+/// ## Slot layouts
+///
+/// Ciphertext operands, and a plaintext vector operand, must share one slot
+/// layout, which the difference carries. A constant reaches every slot, so it
+/// is rejected on a [`SlotLayout::Replicated`](crate::SlotLayout::Replicated)
+/// layout, whose guards it would shift.
 pub trait CKKSSubOps<BE: Backend> {
     fn ckks_sub_tmp_bytes(&self, res_size: usize) -> usize;
     fn ckks_sub_pt_vec_tmp_bytes(&self, res_size: usize) -> usize;
@@ -62,6 +69,7 @@ pub trait CKKSSubOps<BE: Backend> {
     /// Computes `dst -= 1` in-place.
     ///
     /// The exact integer constant is subtracted from coefficient slot `0`.
+    /// A replicated slot layout returns `InvalidOperand`, since the constant would shift its guard slots.
     /// CKKS layout and scale metadata is preserved; component noise metadata is cleared.
     /// Size scratch with [`Self::ckks_sub_one_tmp_bytes`].
     fn ckks_sub_one_assign<Dst>(&self, dst: &mut Dst, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
@@ -69,6 +77,11 @@ pub trait CKKSSubOps<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos;
 
     /// Computes `dst = a - pt` where `pt` is a full plaintext polynomial.
+    ///
+    /// # Errors
+    /// Returns [`crate::CKKSCompositionError::InvalidOperand`] before changing
+    /// `dst` when slot layouts differ or a replicated plaintext has a finer
+    /// scale than the ciphertext.
     fn ckks_sub_pt_vec_into<Dst, A, P>(&self, dst: &mut Dst, a: &A, pt: &P, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,

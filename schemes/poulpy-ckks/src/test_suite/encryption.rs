@@ -10,7 +10,7 @@ use super::parity::helpers::with_scratch;
 use crate::CKKSModuleInfos;
 use crate::Scale;
 use crate::{
-    CKKSCompositionError, CKKSInfos, CKKSLayout, GLWEPlaintextMeta, SetCKKSInfos,
+    CKKSCompositionError, CKKSInfos, CKKSLayout, GLWEPlaintextMeta, SetCKKSInfos, SlotLayout,
     api::{CKKSDecryptOps, CKKSEncryptOps},
     layouts::{CKKSCiphertextAlloc, CKKSPlaintextAlloc},
 };
@@ -381,6 +381,7 @@ pub fn test_decrypt_rejects_output_hom_rem_too_large<BE, F, E>(
         scale: Scale::Log(src_prec.log_delta()),
         slots: SlotsKind::Complex,
         log_sparsity: 0,
+        slot_layout: SlotLayout::Full,
     });
     let (pt_before, ct_before) = (snapshot::<BE, _>(&pt), snapshot::<BE, _>(&ct));
     let err = with_scratch::<BE, _>(0, |s| module.ckks_decrypt(&mut pt, &ct, &sk, s)).unwrap_err();
@@ -598,6 +599,7 @@ pub fn test_decrypt_rejects_alignment_on_empty_arena<BE, F, E>(
     );
     let mut pt = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots(), b.into(), (3 * b + 6).into());
     pt.set_meta(GLWEPlaintextMeta {
+        slot_layout: poulpy_core::layouts::SlotLayout::Full,
         scale: Scale::Log(b - 1),
         slots: SlotsKind::Complex,
         log_sparsity: 0,

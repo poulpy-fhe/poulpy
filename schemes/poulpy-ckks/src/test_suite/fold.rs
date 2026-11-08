@@ -15,7 +15,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    CKKSCompositionError, CKKSInfos, CKKSLayout, GLWEPlaintextMeta, SetCKKSInfos, SlotsKind,
+    CKKSCompositionError, CKKSInfos, CKKSLayout, GLWEPlaintextMeta, SetCKKSInfos, SlotLayout, SlotsKind,
     api::{CKKSFoldLayoutOps, CKKSFoldOps},
     layouts::{CKKSCiphertextAlloc, CKKSCiphertextOwned, CKKSFoldKeysLayout, CKKSPlaintextVecHostCodec, RingSwitchKeys},
     test_suite::{
@@ -178,7 +178,8 @@ where
                         GLWEPlaintextMeta {
                             scale: Scale::Log(log_delta),
                             slots: SlotsKind::Complex,
-                            log_sparsity: 0
+                            log_sparsity: 0,
+                            slot_layout: SlotLayout::Full,
                         },
                         0
                     ),
@@ -319,6 +320,7 @@ fn fold_layout(n: usize, base2k: usize, k: usize, log_delta: usize, slots: Slots
             rank: 1usize.into(),
         },
         meta: GLWEPlaintextMeta {
+            slot_layout: poulpy_core::layouts::SlotLayout::Full,
             scale: Scale::Log(log_delta),
             slots,
             log_sparsity: 0,

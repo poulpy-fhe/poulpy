@@ -5,6 +5,7 @@
 //! input-dependent work: preflight validation of the runtime ciphertexts and
 //! keys, and the seqPaCo branch evaluation the sequential and parallel
 //! drivers share.
+use crate::SlotLayout;
 
 use crate::{CKKSResult as Result, ckks_ensure, ckks_ensure_operand, invalid_operand};
 use anyhow::Context;
@@ -506,6 +507,7 @@ where
         scale: Scale::Log(output_scale),
         slots: input.slots(),
         log_sparsity: gap.trailing_zeros() as usize,
+        slot_layout: SlotLayout::Full,
     })?;
 
     // Write the result into the caller's destination. The accumulator already carries

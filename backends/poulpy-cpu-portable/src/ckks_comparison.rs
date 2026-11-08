@@ -9,4 +9,8 @@ mod comparison {
     poulpy_ckks::impl_ckks_complex_polynomial_evaluation_reference_full!(ControlledSamplingFFT64Portable);
 
     poulpy_ckks::impl_ckks_reference_full!(ControlledSamplingFFT64CIPortable);
+    crate::impl_cpu_ckks_shaped_rounding!(ControlledSamplingFFT64Portable);
+    poulpy_ckks::impl_ckks_round_reference_full!(ControlledSamplingFFT64Portable);
+    crate::impl_cpu_ckks_shaped_rounding!(ControlledSamplingFFT64CIPortable);
+    poulpy_ckks::impl_ckks_round_reference_full!(ControlledSamplingFFT64CIPortable);
 }

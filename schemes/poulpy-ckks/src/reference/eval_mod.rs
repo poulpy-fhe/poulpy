@@ -188,6 +188,7 @@ where
     H: GetTensorKey<BE>,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
 {
+    crate::layouts::validation::ensure_full_layout("ckks_eval_mod", crate::GLWEPlaintextInfos::slot_layout(ct))?;
     // EvalMod runs at its own plan scale `f_mod_log_delta`: reinterpret the
     // working ciphertext to it on entry, then return the result to the input
     // scale. `consumed_bits()` accounts for the arithmetic at the plan scale;
@@ -219,6 +220,7 @@ where
         scale: Scale::Log(s_eval),
         slots: ct.slots(),
         log_sparsity: ct.log_sparsity(),
+        slot_layout: ct.slot_layout(),
     };
 
     match &params.f_mod_bsgs {

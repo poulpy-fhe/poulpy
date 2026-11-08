@@ -30,6 +30,7 @@ where
     Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
+    crate::layouts::validation::ensure_full_layout("ckks_rotate_into", crate::GLWEPlaintextInfos::slot_layout(src))?;
     let p = module.ckks_galois_element(k);
     if p == 1 {
         module.ckks_copy(dst, src, scratch)?;
@@ -61,6 +62,7 @@ where
     H: GetAutomorphismKey<BE>,
     Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
 {
+    crate::layouts::validation::ensure_full_layout("ckks_rotate_assign", crate::GLWEPlaintextInfos::slot_layout(&*dst))?;
     let p = module.ckks_galois_element(k);
     if p == 1 {
         dst.set_noise(None);

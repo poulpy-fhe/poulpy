@@ -268,6 +268,7 @@ where
     let params = CKKSTestParams {
         n: 1 << 12,
         prec_meta: GLWEPlaintextMeta {
+            slot_layout: poulpy_core::layouts::SlotLayout::Full,
             log_sparsity: 0,
             // The standard bootstrap recipe raises the output scale from the
             // 45-bit message scale by its 11-bit message ratio.

@@ -32,7 +32,7 @@ use anyhow::ensure;
 
 use crate::SlotsKind;
 use crate::{
-    CKKSInfos, CoeffsMeta, GLWEPlaintextMeta, SetCKKSInfos,
+    CKKSInfos, CoeffsMeta, GLWEPlaintextMeta, SetCKKSInfos, SlotLayout,
     api::{CKKSEncodingOps, CKKSLinearTransformationOps},
     encoding::paco::cpx::Cpx,
     layouts::ComplexDiagonals,
@@ -83,6 +83,7 @@ fn chain_params(base: &CKKSTestParams, num_factors: usize) -> CKKSTestParams {
             scale: Scale::Log(log_delta),
             slots: SlotsKind::Complex,
             log_sparsity: 0,
+            slot_layout: SlotLayout::Full,
         },
         prec_log_budget: 10,
         hw: base.hw.min(base.n / 2),
@@ -129,6 +130,7 @@ where
                     scale: Scale::Log(log_delta),
                     slots: SlotsKind::Complex,
                     log_sparsity: 0,
+                    slot_layout: SlotLayout::Full,
                 },
             };
             crate::encoding::ckks_linear_transformation_encode_from_diagonals(
@@ -196,6 +198,7 @@ where
         scale: Scale::Log(ct.log_delta()),
         slots: SlotsKind::Complex,
         log_sparsity: 0,
+        slot_layout: SlotLayout::Full,
     });
     encoder_full.encode_reim(&mut pt_want, &want_re, &want_im).unwrap();
     let noise = module.glwe_noise(&ct, &pt_want, &sk, &mut scratch.borrow()).std().log2();

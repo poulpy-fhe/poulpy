@@ -115,6 +115,7 @@ where
         base2k: base.base2k,
         k,
         prec_meta: GLWEPlaintextMeta {
+            slot_layout: poulpy_core::layouts::SlotLayout::Full,
             log_sparsity: 0,
             scale: Scale::Log(log_delta),
             slots: Default::default(),
@@ -201,6 +202,7 @@ where
         base2k: base.base2k,
         k,
         prec_meta: GLWEPlaintextMeta {
+            slot_layout: poulpy_core::layouts::SlotLayout::Full,
             log_sparsity: 0,
             scale: Scale::Log(log_delta),
             slots: Default::default(),

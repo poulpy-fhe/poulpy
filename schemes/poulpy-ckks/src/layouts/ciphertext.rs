@@ -481,7 +481,7 @@ mod tests {
     use poulpy_core::layouts::{Base2K, TorusPrecision};
     use poulpy_hal::layouts::{HostBytesBackend, Module, ReaderFrom, WriterTo, ZnxViewMut};
 
-    use crate::{CKKSInfos, GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotsKind, layouts::CKKSCiphertextAlloc};
+    use crate::{CKKSInfos, GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotLayout, SlotsKind, layouts::CKKSCiphertextAlloc};
 
     #[test]
     fn ciphertext_round_trip_keeps_the_inner_format() {
@@ -491,6 +491,7 @@ mod tests {
             scale: Scale::Log(20),
             slots: SlotsKind::Complex,
             log_sparsity: 2,
+            slot_layout: SlotLayout::Full,
         };
         ct.set_meta(meta);
         ct.data_mut()

@@ -5,7 +5,7 @@ use super::{
 };
 use crate::Scale;
 use crate::{
-    CKKSLayout, CoeffsMeta, GLWEPlaintextMeta, SlotsKind,
+    CKKSLayout, CoeffsMeta, GLWEPlaintextMeta, SlotLayout, SlotsKind,
     api::{CKKSDFTMatrixOps, CKKSDFTMatrixPreparedFactory, CKKSDFTOps, CKKSEncodingHostOps, CKKSEncodingScalar},
     layouts::{DFTOutputFormat, DFTPlan, DFTType, Decode, Encode, Repack, Split, Standard},
     oep::{CKKSDFTImpl, CKKSDFTMatrixImpl, CKKSEncodingImpl},
@@ -59,6 +59,7 @@ where
                 scale: Scale::Log(16),
                 slots: SlotsKind::Complex,
                 log_sparsity: log_max_slots - log_slots,
+                slot_layout: SlotLayout::Full,
             },
         };
         let encoding = <Module<BE> as CKKSEncodingHostOps<BE, F>>::ckks_encoding_host_tmp_bytes(module, module.n() / 2);

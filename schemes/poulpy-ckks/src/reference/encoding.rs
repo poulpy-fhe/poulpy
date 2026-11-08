@@ -11,13 +11,14 @@ use poulpy_core::layouts::{GLWEInfos, IntPolyInfos, LWEInfos};
 use poulpy_hal::{
     GALOISGENERATOR,
     api::{ReimFFT, ReimIFFT},
-    layouts::{Backend, ConjugateInvariant, HostDataMut, HostDataRef, Module, Ring, Standard},
+    layouts::{Backend, ConjugateInvariant, HostDataMut, HostDataRef, Module, Ring, Standard, ZnxViewMut, encode_i128_by_limb},
 };
 
 use crate::{
-    CKKSPlaintextToBackendMut, CKKSPlaintextToBackendRef, SetCKKSInfos, SlotsKind,
+    CKKSPlaintextToBackendMut, CKKSPlaintextToBackendRef, GLWEPlaintextInfos, SetCKKSInfos, SlotLayout, SlotsKind,
     api::CKKSEncodingScalar,
     layouts::{CKKSEncodingBufferBackendMut, CKKSEncodingBufferBackendRef},
+    shaping::ShapingRing,
 };
 
 pub use crate::encoding::{ckks_paco_coeff_encodings_host, ckks_ship_coeff_encodings_host};
@@ -257,6 +258,45 @@ where
     let narrow = log_delta + log_budget <= 63;
     let base2k = pt.base2k().as_usize();
     let k = pt.encoded_k().as_usize();
+    if let SlotLayout::Replicated(layout) = pt.slot_layout() {
+        {
+            let n = coeffs.len();
+            let mut backend = pt.to_backend_mut();
+            let data = backend.data_mut();
+            let shape = data.shape();
+            let size = k.div_ceil(base2k);
+            assert!(
+                size <= shape.size(),
+                "invalid argument k.div_ceil(base2k)={size} > a.size()={}",
+                shape.size()
+            );
+            let raw = data.raw_mut();
+            let (mut carry, mut limb) = ([0i64; crate::shaping::MAX_COEFFS], [0i64; crate::shaping::MAX_COEFFS]);
+            // `encode_vec_i128` of the column, one class of `Y = X^stride` at a time.
+            crate::shaping::shaped_quantize_by_class(
+                coeffs,
+                &layout,
+                log_delta,
+                log_budget,
+                ShapingRing::of::<BE::Ring>(),
+                |r, values| {
+                    let (m, stride) = (values.len(), n / values.len());
+                    encode_i128_by_limb(base2k, k, values, &mut carry[..m], &mut limb[..m], |j, digits| {
+                        let base = shape.scalar_offset(0, j) + r;
+                        for (t, &digit) in digits.iter().enumerate() {
+                            raw[base + stride * t] = digit;
+                        }
+                    });
+                },
+            )?;
+            for j in size..shape.size() {
+                let base = shape.scalar_offset(0, j);
+                raw[base..base + n].fill(0);
+            }
+        }
+        pt.set_slots(pt.slots().meet(BE::Ring::SLOTS));
+        return Ok(());
+    }
     {
         let mut backend = pt.to_backend_mut();
 

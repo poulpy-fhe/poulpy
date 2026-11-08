@@ -349,6 +349,7 @@ where
         const OP: &str = "ckks_eval_poly_real_const_coeffs_from_power_basis";
         ensure_baby_steps(OP, poly)?;
         ensure_power_basis(OP, poly.basis(), power_basis.basis())?;
+        crate::layouts::validation::ensure_full_layout(OP, crate::GLWEPlaintextInfos::slot_layout(power_basis.get(1)?))?;
 
         let n_baby = poly.baby_steps();
         let last_coeffs = poly.baby_step(n_baby - 1);
@@ -426,6 +427,7 @@ where
         let poly_im = &poly.im;
         ensure_complex_schedules::<BE, C>(OP, poly)?;
         ensure_power_basis(OP, BSGSPolynomialInfos::<BE>::basis(poly_re), power_basis.basis())?;
+        crate::layouts::validation::ensure_full_layout(OP, crate::GLWEPlaintextInfos::slot_layout(power_basis.get(1)?))?;
         let n_baby = BSGSPolynomialInfos::<BE>::baby_steps(poly_re);
 
         // Fold the trailing lone constant via the highest power when present.

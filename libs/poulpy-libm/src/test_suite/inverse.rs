@@ -251,6 +251,7 @@ pub fn test_inverse_full_domain_assign<BE, F, E>(
         base2k: base.base2k,
         k,
         prec_meta: GLWEPlaintextMeta {
+            slot_layout: poulpy_core::layouts::SlotLayout::Full,
             log_sparsity: 0,
             scale: Scale::Log(log_delta),
             slots: Default::default(),

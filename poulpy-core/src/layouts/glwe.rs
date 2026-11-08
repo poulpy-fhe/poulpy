@@ -737,6 +737,7 @@ pub(in crate::layouts) mod tests {
     }
 
     pub(in crate::layouts) const SPARSE_META: GLWEPlaintextMeta = GLWEPlaintextMeta {
+        slot_layout: crate::layouts::SlotLayout::Full,
         scale: Scale::Log(8),
         slots: SlotsKind::Real,
         log_sparsity: 7,

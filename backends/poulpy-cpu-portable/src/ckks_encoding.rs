@@ -321,7 +321,7 @@ macro_rules! impl_ckks_encoding {
 mod tests {
     use crate::{FFT64Portable, NTT4x30Portable};
     use poulpy_ckks::{
-        GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotsKind,
+        GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotLayout, SlotsKind,
         api::{CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar},
         layouts::{CKKSEncodingBuffer, CKKSPlaintextAlloc, ScratchArenaTakeCKKSPlaintext},
     };
@@ -356,6 +356,7 @@ mod tests {
                 scale: Scale::Log(40),
                 slots: SlotsKind::Complex,
                 log_sparsity: 0,
+                slot_layout: SlotLayout::Full,
             });
             module.ckks_encode_slots_host_into(&mut pt, &re, &im, &mut scratch).unwrap();
             let mut got_re = vec![F::zero(); slots];
@@ -389,6 +390,7 @@ mod tests {
             scale: Scale::Log(40),
             slots: SlotsKind::Complex,
             log_sparsity: 0,
+            slot_layout: SlotLayout::Full,
         });
         let bytes = GLWEPlaintext::<AlignedBuf, i64>::bytes_of_from_infos(&layout);
         let mut pt_scratch = ScratchOwned::<FFT64Portable>::alloc(bytes);
@@ -446,6 +448,7 @@ mod tests {
             scale: Scale::Log(40),
             slots: SlotsKind::Complex,
             log_sparsity: 0,
+            slot_layout: SlotLayout::Full,
         });
 
         let three = [0.0; 3];

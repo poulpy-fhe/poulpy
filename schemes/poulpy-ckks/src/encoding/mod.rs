@@ -1,6 +1,6 @@
 //! Backend-independent CKKS encoding algorithms.
 
-mod linear_transformation;
+pub(crate) mod linear_transformation;
 pub(crate) mod paco;
 pub(crate) mod ship;
 pub use linear_transformation::{

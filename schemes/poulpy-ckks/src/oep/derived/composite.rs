@@ -226,6 +226,7 @@ where
     P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds,
 {
     const OP: &str = "ckks_affine_pt_const_into";
+    crate::layouts::validation::ensure_full_layout(OP, crate::GLWEPlaintextInfos::slot_layout(a))?;
     let (log_budget, _, _) = ckks_mul_pt_const_checks(OP, &*dst, a, affine_const, scale_coeff)?;
     check_affine_offset_const(OP, &*dst, log_budget, affine_const, offset_coeff)?;
     module.ckks_mul_pt_const_into(dst, a, affine_const, scale_coeff, scratch)?;
@@ -246,6 +247,7 @@ where
     P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds,
 {
     const OP: &str = "ckks_affine_pt_const_assign";
+    crate::layouts::validation::ensure_full_layout(OP, crate::GLWEPlaintextInfos::slot_layout(dst))?;
     let (log_budget, _, _) = ckks_mul_pt_const_checks(OP, &*dst, &*dst, affine_const, scale_coeff)?;
     check_affine_offset_const(OP, &*dst, log_budget, affine_const, offset_coeff)?;
     module.ckks_mul_pt_const_assign(dst, affine_const, scale_coeff, scratch)?;
@@ -280,6 +282,14 @@ where
     P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds,
 {
     const OP: &str = "ckks_affine_pt_vec_into";
+    crate::layouts::validation::product_layout(
+        OP,
+        &[
+            crate::GLWEPlaintextInfos::slot_layout(a),
+            crate::GLWEPlaintextInfos::slot_layout(scale),
+            crate::GLWEPlaintextInfos::slot_layout(offset),
+        ],
+    )?;
     let (log_budget, _, _) = ckks_mul_pt_vec_checks::<BE, _, _, _>(OP, &*dst, a, scale)?;
     check_affine_offset_vec::<BE, _, _>(OP, &*dst, log_budget, offset)?;
     module.ckks_mul_pt_vec_into(dst, a, scale, scratch)?;
@@ -300,6 +310,14 @@ where
     P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds,
 {
     const OP: &str = "ckks_affine_pt_vec_assign";
+    crate::layouts::validation::product_layout(
+        OP,
+        &[
+            crate::GLWEPlaintextInfos::slot_layout(dst),
+            crate::GLWEPlaintextInfos::slot_layout(scale),
+            crate::GLWEPlaintextInfos::slot_layout(offset),
+        ],
+    )?;
     let (log_budget, _, _) = ckks_mul_pt_vec_checks::<BE, _, _, _>(OP, &*dst, &*dst, scale)?;
     check_affine_offset_vec::<BE, _, _>(OP, &*dst, log_budget, offset)?;
     module.ckks_mul_pt_vec_assign(dst, scale, scratch)?;

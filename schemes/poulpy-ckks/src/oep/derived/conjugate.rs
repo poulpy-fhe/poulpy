@@ -43,6 +43,7 @@ where
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     H: GetAutomorphismKey<BE>,
 {
+    crate::layouts::validation::ensure_full_layout("ckks_conjugate_rotate_into", crate::GLWEPlaintextInfos::slot_layout(src))?;
     let p = conj_rotate_galois_element(k, module.cyclotomic_order());
     // The switch reads `src` at `dst.k()` when `dst` is narrower.
     let switch_k = src.k().min(dst.k());
@@ -68,6 +69,7 @@ where
     Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     H: GetAutomorphismKey<BE>,
 {
+    crate::layouts::validation::ensure_full_layout("ckks_conjugate_assign", crate::GLWEPlaintextInfos::slot_layout(&*dst))?;
     let key = keys
         .get_automorphism_key(-1, dst.k())
         .map_err(|source| CKKSCompositionError::MissingAutomorphismKey {

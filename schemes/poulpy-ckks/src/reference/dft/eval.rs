@@ -296,6 +296,7 @@ where
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
 {
+    crate::layouts::validation::ensure_full_layout("ckks_dft_matrix_eval_assign", crate::GLWEPlaintextInfos::slot_layout(ct))?;
     // One factor at a time, in place on `ct`; compact `ct` after each so the next
     // factor's baby-step keyswitches operate on fewer limbs as the budget shrinks.
     for factor in dft.factor_operands() {

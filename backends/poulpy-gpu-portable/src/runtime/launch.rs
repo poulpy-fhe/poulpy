@@ -117,16 +117,16 @@ pub(crate) fn cubes(client: &Client, units: usize, dim: u32) -> CubeCount {
 }
 
 macro_rules! labels {
-    ($($name:ident => $text:literal),* $(,)?) => {
+    ($($(#[$attr:meta])* $name:ident => $text:literal),* $(,)?) => {
         /// The kernel a launch runs, as the accounting and the trace name it.
         #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
         #[repr(usize)]
         #[allow(non_camel_case_types)]
         pub(crate) enum Label {
-            $($name),*
+            $($(#[$attr])* $name),*
         }
 
-        const LABELS: &[&str] = &[$($text),*];
+        const LABELS: &[&str] = &[$($(#[$attr])* $text),*];
     };
 }
 
@@ -144,6 +144,10 @@ labels! {
     NormalizeLimbs => "normalize.limbs",
     NormalizeBig => "normalize.big",
     NormalizeResidues => "normalize.residues",
+    #[cfg(feature = "enable-ckks")]
+    ShapingPreimage => "ckks.shaping_preimage",
+    #[cfg(feature = "enable-ckks")]
+    ShapingCorrection => "ckks.shaping_correction",
     GadgetDecompose => "znx.gadget_decompose",
     NormalizeProducts => "normalize.products",
     VmpDigitProduct => "vmp.digit_product",

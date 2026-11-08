@@ -7,7 +7,7 @@ use poulpy_core::{
     layouts::{GLWELayout, LWEInfos},
 };
 
-use crate::{CKKSLayout, GLWEPlaintextMeta, Scale};
+use crate::{CKKSLayout, GLWEPlaintextMeta, Scale, SlotLayout};
 use poulpy_hal::layouts::Module;
 
 use super::bootstrap::{ship_bottom_layout, validate_runtime};
@@ -48,6 +48,7 @@ where
             scale: Scale::Log(plan.log_delta_work()),
             slots: SlotsKind::Complex,
             log_sparsity: 0,
+            slot_layout: SlotLayout::Full,
         },
     };
 

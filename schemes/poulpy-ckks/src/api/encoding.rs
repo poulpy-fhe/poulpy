@@ -9,14 +9,15 @@ use crate::{CKKSResult as Result, ckks_ensure, ckks_ensure_operand};
 use bytemuck::Pod;
 use num_traits::FloatConst;
 use poulpy_core::layouts::IntPolyInfos;
-use poulpy_hal::layouts::{Backend, ScratchArena};
+use poulpy_hal::layouts::{Backend, Ring, ScratchArena};
 
 use crate::{
-    CKKSPlaintextToBackendMut, CKKSPlaintextToBackendRef, SetCKKSInfos,
+    CKKSPlaintextToBackendMut, CKKSPlaintextToBackendRef, GLWEPlaintextInfos, SetCKKSInfos, SlotLayout,
     layouts::{
         CKKSEncodingBuffer, CKKSEncodingBufferToBackendMut, CKKSEncodingBufferToBackendRef, CKKSScalar,
         ScratchArenaTakeCKKSEncodingBuffer, copy_encoding_buffer_into_host, copy_encoding_buffer_into_reim_host,
-        copy_host_into_encoding_buffer, copy_reim_host_into_encoding_buffer,
+        copy_host_into_encoding_buffer, copy_reim_host_into_encoding_buffer, download_from_encoding_buffer,
+        upload_into_encoding_buffer,
     },
 };
 
@@ -99,7 +100,57 @@ pub trait CKKSEncodingHostOps<BE: Backend, F: CKKSEncodingScalar>: CKKSEncodingO
     }
 
     /// Encodes host complex slots through one backend-native arena buffer.
+    ///
+    /// For a [`SlotLayout::Replicated`] plaintext, `re` and `im` hold the batch
+    /// of `2^log_k` values, repeated on the data slots of the plaintext.
+    /// Scratch covers every plaintext slot.
     fn ckks_encode_slots_host_into<P>(&self, pt: &mut P, re: &[F], im: &[F], scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    where
+        P: CKKSPlaintextToBackendMut<BE> + IntPolyInfos + SetCKKSInfos,
+    {
+        if let SlotLayout::Replicated(layout) = pt.slot_layout() {
+            ckks_ensure_operand!(
+                "ckks_encode_slots_host_into",
+                re.len() == 1 << layout.log_k() && im.len() == re.len(),
+                "a replicated layout encodes {} values, got {} and {}",
+                1usize << layout.log_k(),
+                re.len(),
+                im.len()
+            );
+            let plaintext_slots = slots_of_degree::<BE>(pt.n().as_usize());
+            ckks_ensure_operand!(
+                "ckks_encode_slots_host_into",
+                (1usize << layout.log_k()) << layout.log_r() <= plaintext_slots,
+                "{} values of period {} need more than the {plaintext_slots} slots of the plaintext",
+                1usize << layout.log_k(),
+                1usize << layout.log_r(),
+            );
+            let (period, slots) = (1usize << layout.log_r(), plaintext_slots);
+            let required = CKKSEncodingBuffer::<BE::OwnedBuf, F>::bytes_of(2 * slots);
+            ckks_ensure!(
+                scratch.available() >= required,
+                "CKKS encoding needs {required} scratch bytes, but only {} are available",
+                scratch.available()
+            );
+            return scratch.scope(|arena| -> Result<()> {
+                let (mut values, _) = arena.take_ckks_encoding_buffer_scratch::<F>(2 * slots);
+                upload_into_encoding_buffer::<BE, F, _>(&mut values, |t| {
+                    let (part, s) = if t < slots { (re, t) } else { (im, t - slots) };
+                    if s.is_multiple_of(period) {
+                        part[(s / period) % part.len()]
+                    } else {
+                        F::zero()
+                    }
+                });
+                self.ckks_encode_slots_into(pt, &mut values)
+            });
+        }
+        self.ckks_encode_all_slots_host_into(pt, re, im, scratch)
+    }
+
+    /// Encodes host complex slots through one backend-native arena buffer,
+    /// every slot as given whatever the layout.
+    fn ckks_encode_all_slots_host_into<P>(&self, pt: &mut P, re: &[F], im: &[F], scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         P: CKKSPlaintextToBackendMut<BE> + IntPolyInfos + SetCKKSInfos,
     {
@@ -133,7 +184,67 @@ pub trait CKKSEncodingHostOps<BE: Backend, F: CKKSEncodingScalar>: CKKSEncodingO
 
     /// Decodes a plaintext to host complex slots through one backend-native
     /// arena buffer.
+    ///
+    /// For a [`SlotLayout::Replicated`] plaintext, `re` and `im` receive the
+    /// batch of `2^log_k` values, averaged across all replica data slots.
+    /// Scratch covers every plaintext slot.
     fn ckks_decode_slots_host_into<P>(&self, pt: &P, re: &mut [F], im: &mut [F], scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    where
+        P: CKKSPlaintextToBackendRef<BE> + IntPolyInfos,
+    {
+        if let SlotLayout::Replicated(layout) = pt.slot_layout() {
+            ckks_ensure_operand!(
+                "ckks_decode_slots_host_into",
+                re.len() == 1 << layout.log_k() && im.len() == re.len(),
+                "a replicated layout decodes {} values, got {} and {}",
+                1usize << layout.log_k(),
+                re.len(),
+                im.len()
+            );
+            let plaintext_slots = slots_of_degree::<BE>(pt.n().as_usize());
+            ckks_ensure_operand!(
+                "ckks_decode_slots_host_into",
+                (1usize << layout.log_k()) << layout.log_r() <= plaintext_slots,
+                "{} values of period {} need more than the {plaintext_slots} slots of the plaintext",
+                1usize << layout.log_k(),
+                1usize << layout.log_r(),
+            );
+            let (period, slots) = (1usize << layout.log_r(), plaintext_slots);
+            let required = CKKSEncodingBuffer::<BE::OwnedBuf, F>::bytes_of(2 * slots);
+            ckks_ensure!(
+                scratch.available() >= required,
+                "CKKS decoding needs {required} scratch bytes, but only {} are available",
+                scratch.available()
+            );
+            return scratch.scope(|arena| -> Result<()> {
+                let (mut values, _) = arena.take_ckks_encoding_buffer_scratch::<F>(2 * slots);
+                self.ckks_decode_slots_into(pt, &mut values)?;
+                let replicas = slots / (re.len() * period);
+                let weight = F::one() / F::from_usize(replicas).expect("replica count fits the encoding scalar");
+                download_from_encoding_buffer::<BE, F, _>(&values, |t, v| {
+                    let (part, s) = if t < slots { (&mut *re, t) } else { (&mut *im, t - slots) };
+                    if s.is_multiple_of(period) {
+                        let data = s / period;
+                        let index = data % part.len();
+                        let value = v * weight;
+                        part[index] = if data < part.len() { value } else { part[index] + value };
+                    }
+                });
+                Ok(())
+            });
+        }
+        self.ckks_decode_all_slots_host_into(pt, re, im, scratch)
+    }
+
+    /// Decodes a plaintext to host complex slots through one backend-native
+    /// arena buffer, every slot whatever the layout.
+    fn ckks_decode_all_slots_host_into<P>(
+        &self,
+        pt: &P,
+        re: &mut [F],
+        im: &mut [F],
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
     where
         P: CKKSPlaintextToBackendRef<BE> + IntPolyInfos,
     {
@@ -208,4 +319,10 @@ where
     F: CKKSEncodingScalar,
     T: CKKSEncodingOps<BE, F>,
 {
+}
+
+/// Slots of a plaintext of degree `n` on the ring of `BE`: `n/2` complex
+/// slots on the standard ring and `n` real ones on the conjugate-invariant ring.
+fn slots_of_degree<BE: Backend>(n: usize) -> usize {
+    n * BE::Ring::CYCLOTOMIC_ORDER_FACTOR as usize / 4
 }

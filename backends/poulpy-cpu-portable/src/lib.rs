@@ -44,6 +44,8 @@ mod ckks_impl;
 #[cfg(feature = "enable-ckks")]
 pub mod ckks_paco;
 #[cfg(feature = "enable-ckks")]
+pub mod ckks_round;
+#[cfg(feature = "enable-ckks")]
 pub mod ckks_ship;
 #[cfg(feature = "enable-core")]
 #[doc(hidden)]

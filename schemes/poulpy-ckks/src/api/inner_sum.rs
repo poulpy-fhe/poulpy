@@ -37,7 +37,8 @@ use crate::{CKKSCtBounds, SetCKKSInfos};
 ///
 /// # Errors
 ///
-/// In this order, before any write: `InvalidOperand` when `2^log_count` batches of `2^log_batch` slots exceed the
+/// In this order, before any write: `InvalidOperand` for a replicated slot layout, whose traces would round
+/// plainly, when `2^log_count` batches of `2^log_batch` slots exceed the
 /// slots of `res`'s degree, or when `normalize` divides `Integer` slots; `MissingAutomorphismKey` for the first key `keys` lacks at
 /// the width the sum switches at, `k_out`; `InsufficientHomomorphicCapacity` when the copy into `res` needs more than
 /// `a.log_budget`, or the division more than the budget the copy leaves; `CKKSError::Internal` with less scratch than

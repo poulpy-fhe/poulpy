@@ -56,6 +56,13 @@ use crate::{CKKSCtBounds, SetCKKSInfos};
 /// Adds a single quantized constant (one ZNX coefficient of a plaintext) to
 /// one coefficient slot of the ciphertext.  Metadata follows the same rule as
 /// the `pt_vec` variants above.
+///
+/// ## Slot layouts
+///
+/// Ciphertext operands, and a plaintext vector operand, must share one slot
+/// layout, which the sum carries. A constant reaches every slot, so it is
+/// rejected on a [`SlotLayout::Replicated`](crate::SlotLayout::Replicated)
+/// layout, whose guards it would shift.
 pub trait CKKSAddOps<BE: Backend> {
     fn ckks_add_tmp_bytes(&self, res_size: usize) -> usize;
 
@@ -83,6 +90,7 @@ pub trait CKKSAddOps<BE: Backend> {
     /// Computes `dst += 1` in-place.
     ///
     /// The exact integer constant is added to coefficient slot `0`.
+    /// A replicated slot layout returns `InvalidOperand`, since the constant would shift its guard slots.
     /// CKKS layout and scale metadata is preserved; component noise metadata is cleared.
     /// Size scratch with [`Self::ckks_add_one_tmp_bytes`].
     fn ckks_add_one_assign<Dst>(&self, dst: &mut Dst, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
@@ -96,6 +104,11 @@ pub trait CKKSAddOps<BE: Backend> {
     /// `pt` is added coefficient-wise after being aligned to the ciphertext's
     /// torus level. CKKS layout and scale metadata is inherited from `a` with the
     /// capacity offset applied (see trait-level doc). Component noise metadata is cleared.
+    ///
+    /// # Errors
+    /// Returns [`crate::CKKSCompositionError::InvalidOperand`] before changing
+    /// `dst` when slot layouts differ or a replicated plaintext has a finer
+    /// scale than the ciphertext.
     fn ckks_add_pt_vec_into<Dst, A, P>(&self, dst: &mut Dst, a: &A, pt: &P, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,

@@ -74,6 +74,8 @@ pub trait CKKSMulReference<BE: Backend> {
         B: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
         T: GetTensorKey<BE>,
     {
+        crate::layouts::validation::ensure_full_layout("ckks_mul_into", crate::GLWEPlaintextInfos::slot_layout(a))?;
+        crate::layouts::validation::ensure_full_layout("ckks_mul_into", crate::GLWEPlaintextInfos::slot_layout(b))?;
         let k = a.k().max(b.k());
         tsk.get_tensor_key(k)
             .map_err(|source| CKKSCompositionError::MissingRelinearizationKey {
@@ -119,6 +121,8 @@ pub trait CKKSMulReference<BE: Backend> {
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
         T: GetTensorKey<BE>,
     {
+        crate::layouts::validation::ensure_full_layout("ckks_mul_assign", crate::GLWEPlaintextInfos::slot_layout(&*dst))?;
+        crate::layouts::validation::ensure_full_layout("ckks_mul_assign", crate::GLWEPlaintextInfos::slot_layout(a))?;
         let k = dst.k().max(a.k());
         tsk.get_tensor_key(k)
             .map_err(|source| CKKSCompositionError::MissingRelinearizationKey {
@@ -219,6 +223,14 @@ pub trait CKKSMulReference<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         T: GetTensorKey<BE>,
     {
+        crate::layouts::validation::ensure_full_layout(
+            "ckks_mul_prepared_assign",
+            crate::GLWEPlaintextInfos::slot_layout(&*dst),
+        )?;
+        crate::layouts::validation::ensure_full_layout(
+            "ckks_mul_prepared_assign",
+            crate::GLWEPlaintextInfos::slot_layout(prepared),
+        )?;
         let k = dst.k().max(prepared.k());
         tsk.get_tensor_key(k)
             .map_err(|source| CKKSCompositionError::MissingRelinearizationKey {
@@ -310,6 +322,7 @@ pub trait CKKSMulReference<BE: Backend> {
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
         T: GetTensorKey<BE>,
     {
+        crate::layouts::validation::ensure_full_layout("ckks_square_into", crate::GLWEPlaintextInfos::slot_layout(a))?;
         let k = a.k();
         tsk.get_tensor_key(k)
             .map_err(|source| CKKSCompositionError::MissingRelinearizationKey {
@@ -347,6 +360,7 @@ pub trait CKKSMulReference<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         T: GetTensorKey<BE>,
     {
+        crate::layouts::validation::ensure_full_layout("ckks_square_assign", crate::GLWEPlaintextInfos::slot_layout(&*dst))?;
         let k = dst.k();
         tsk.get_tensor_key(k)
             .map_err(|source| CKKSCompositionError::MissingRelinearizationKey {
@@ -426,6 +440,8 @@ pub trait CKKSMulReference<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
     {
+        crate::layouts::validation::ensure_full_layout("ckks_mul_pt_vec_into", crate::GLWEPlaintextInfos::slot_layout(a))?;
+        crate::layouts::validation::ensure_full_layout("ckks_mul_pt_vec_into", crate::GLWEPlaintextInfos::slot_layout(pt))?;
         let (res_log_budget, res_log_delta, cnv_offset) =
             ckks_mul_pt_vec_checks::<BE, _, _, _>("ckks_mul_pt_vec_into", dst, a, pt)?;
         // Set the result metadata first: `dst.size()` is meta-derived and a fresh
@@ -447,6 +463,8 @@ pub trait CKKSMulReference<BE: Backend> {
         Self: GLWECopy<BE> + GLWEMulPlain<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord> + VecZnxCopy<BE>,
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
     {
+        crate::layouts::validation::ensure_full_layout("ckks_mul_pt_vec_assign", crate::GLWEPlaintextInfos::slot_layout(&*dst))?;
+        crate::layouts::validation::ensure_full_layout("ckks_mul_pt_vec_assign", crate::GLWEPlaintextInfos::slot_layout(pt))?;
         let (res_log_budget, res_log_delta, cnv_offset) =
             ckks_mul_pt_vec_checks::<BE, _, _, _>("ckks_mul_pt_vec_assign", dst, dst, pt)?;
         let log_sparsity = dst.log_sparsity().min(dst.log_n() - pt.log_n());
@@ -477,6 +495,7 @@ pub trait CKKSMulReference<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
     {
+        crate::layouts::validation::ensure_full_layout("ckks_mul_pt_const_into", crate::GLWEPlaintextInfos::slot_layout(a))?;
         let (res_log_budget, res_log_delta, cnv_offset) =
             ckks_mul_pt_const_checks("ckks_mul_pt_const_into", dst, a, pt, pt_coeff)?;
         // Set the result metadata first: `dst.size()` is meta-derived and a fresh
@@ -505,6 +524,10 @@ pub trait CKKSMulReference<BE: Backend> {
         Self: GLWECopy<BE> + GLWEMulConst<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord> + VecZnxCopy<BE>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
     {
+        crate::layouts::validation::ensure_full_layout(
+            "ckks_mul_pt_const_assign",
+            crate::GLWEPlaintextInfos::slot_layout(&*dst),
+        )?;
         let (res_log_budget, res_log_delta, cnv_offset) =
             ckks_mul_pt_const_checks("ckks_mul_pt_const_assign", dst, dst, cnst, cnst_coeff)?;
         scratch.scope(|scratch_local| {

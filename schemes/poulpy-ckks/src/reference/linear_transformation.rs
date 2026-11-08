@@ -6,7 +6,7 @@
 //! `docs/guides/linear_transformation.md`.
 
 use crate::{CKKSError, CKKSResult as Result, ckks_ensure, ckks_ensure_operand, operand_cyclotomic_order};
-use crate::{GLWEPlaintextMeta, Scale, SlotsKind};
+use crate::{GLWEPlaintextMeta, Scale, SlotLayout, SlotsKind};
 use poulpy_core::layouts::BabyStepOperand;
 use poulpy_core::layouts::GLWEPlaintextInfos;
 use poulpy_core::layouts::LinearTransformationPlan;
@@ -265,6 +265,7 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
                 scale: Scale::Log(first_pt.log_delta()),
                 slots: first_pt.slots(),
                 log_sparsity,
+                slot_layout: first_pt.slot_layout(),
             });
         }
         Ok(())
@@ -282,6 +283,10 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetAutomorphismKey<BE>,
     {
+        crate::layouts::validation::ensure_full_layout(
+            "ckks_linear_transformation_baby_steps_prepare",
+            crate::GLWEPlaintextInfos::slot_layout(src),
+        )?;
         let cyclotomic_order =
             operand_cyclotomic_order("ckks_linear_transformation_baby_steps_prepare", self, src.n().as_usize())?;
         let src_k = src.k();
@@ -325,6 +330,7 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
             .into()
         })?;
         ensure_uniform_diagonals(OP, lt, lt_diagonal_meta)?;
+        crate::layouts::validation::ensure_full_layout(OP, crate::GLWEPlaintextInfos::slot_layout(src))?;
         let (res_log_budget, res_log_delta, cnv_offset) = lt_rule(OP, &*dst, src, babies, first, keys)?;
         let res_k: TorusPrecision = (res_log_budget + res_log_delta).into();
         let src_layout = CKKSLayout {
@@ -338,6 +344,7 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         dst.set_log_budget(res_log_budget);
         dst.set_log_delta(res_log_delta);
         dst.set_log_sparsity(out.meta.log_sparsity);
+        dst.set_slot_layout(SlotLayout::Full);
         self.glwe_linear_transformation_eval_into(cnv_offset, dst, babies, lt, keys, scratch);
         dst.set_slots(out.meta.slots);
         Ok(())
@@ -409,6 +416,9 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         for &lt_t in lts {
             ensure_uniform_diagonals(OP, lt_t, lt_diagonal_meta)?;
         }
+        for &src_t in srcs {
+            crate::layouts::validation::ensure_full_layout(OP, crate::GLWEPlaintextInfos::slot_layout(src_t))?;
+        }
         // The terms share the source and diagonal metadata, so the first term's
         // rule holds for all of them (see `ckks_linear_transformation_eval_into`).
         let (res_log_budget, res_log_delta, cnv_offset) = lt_rule(OP, &*dst, src, cache_0, first, keys)?;
@@ -426,6 +436,7 @@ pub trait CKKSLinearTransformationReference<BE: Backend> {
         dst.set_log_budget(res_log_budget);
         dst.set_log_delta(res_log_delta);
         dst.set_log_sparsity(log_sparsity);
+        dst.set_slot_layout(SlotLayout::Full);
         self.glwe_linear_transformation_eval_sum_into(cnv_offset, dst, babies, lts, keys, scratch);
         dst.set_slots(slots);
         Ok(())

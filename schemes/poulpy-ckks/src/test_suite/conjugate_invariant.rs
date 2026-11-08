@@ -3,7 +3,7 @@ use poulpy_core::layouts::GLWEPlaintextInfos;
 use std::collections::HashMap;
 
 use crate::{
-    CKKSCompositionError, CKKSInfos, CKKSLayout, CoeffsMeta, GLWEPlaintextMeta, SetCKKSInfos, SlotsKind,
+    CKKSCompositionError, CKKSInfos, CKKSLayout, CoeffsMeta, GLWEPlaintextMeta, SetCKKSInfos, SlotLayout, SlotsKind,
     api::{
         CKKSAddOps, CKKSCIRingMapOps, CKKSCopyOps, CKKSDecryptOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar,
         CKKSEvalModOps, CKKSFoldLayoutOps, CKKSFoldOps, CKKSInnerSumOps, CKKSLinearTransformationOps, CKKSModuleInfos,
@@ -498,6 +498,7 @@ where
                 scale: Scale::Log(log_delta),
                 slots: SlotsKind::Complex,
                 log_sparsity: 0,
+                slot_layout: SlotLayout::Full,
             });
             with_scratch::<BE, _>(reim_bytes, |s| module.ckks_encode_slots_host_into(&mut pt, &re, &im, s)).unwrap();
             assert_eq!(pt.slots(), SlotsKind::Real);
@@ -633,6 +634,32 @@ macro_rules! conjugate_invariant_ckks_test_suite {
                 let host = Module::<HostBytesBackend<<$backend as ::poulpy_hal::layouts::Backend>::Ring>>::new(params.n as u64);
                 $crate::test_suite::conjugate_invariant::test_conjugate_invariant_inner_sum(params, &module, &host);
             }
+            // Replicated-layout tests shared with the standard suites.
+            macro_rules! run_replicated {
+                ($test:ident) => {
+                    #[test]
+                    fn $test() -> anyhow::Result<()> {
+                        let params = $params;
+                        let module = Module::<$backend>::new(params.n as u64);
+                        let host =
+                            Module::<HostBytesBackend<<$backend as poulpy_hal::layouts::Backend>::Ring>>::new(params.n as u64);
+                        $crate::test_suite::replicated::$test::<$backend, f64>(params, &module, &host)
+                    }
+                };
+            }
+            run_replicated!(test_replicated_encoding_is_shaped);
+            run_replicated!(test_replicated_unit_shaping_encodes_plainly);
+            run_replicated!(test_replicated_encryption_is_shaped);
+            run_replicated!(test_replicated_encoding_rejects_batch_size);
+            run_replicated!(test_replicated_layouts_do_not_mix);
+            run_replicated!(test_replicated_plain_rounding_is_rejected);
+            #[test]
+            fn ckks_ci_round_error_is_shaped() {
+                let params = $params;
+                let module = Module::<$backend>::new(params.n as u64);
+                let host = Module::<HostBytesBackend<<$backend as poulpy_hal::layouts::Backend>::Ring>>::new(params.n as u64);
+                $crate::test_suite::round::test_round_error_is_shaped_conjugate_invariant(params, &module, &host).unwrap();
+            }
             #[test]
             fn ckks_ci_leveled() {
                 let params = $params;
@@ -678,6 +705,7 @@ pub fn test_conjugate_invariant_eval_mod<BE>(
             scale: Scale::Log(input_log_delta),
             slots: SlotsKind::Real,
             log_sparsity: 0,
+            slot_layout: SlotLayout::Full,
         },
         prec_log_budget: 10,
         dsize,

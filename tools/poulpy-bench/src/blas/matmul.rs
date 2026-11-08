@@ -29,7 +29,7 @@ use poulpy_blas::{
     oep::{BlasMatIntraImpl, BlasMatMulImpl},
 };
 use poulpy_ckks::{
-    CKKSInfos, CKKSLayout, CoeffsMeta, GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotsKind,
+    CKKSInfos, CKKSLayout, CoeffsMeta, GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotLayout, SlotsKind,
     api::{
         CKKSAllOpsTmpBytes, CKKSDecryptOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncryptOps, CKKSLinearTransformationOps,
         CKKSModuleInfos, CKKSMulOps, CKKSRightOperandPreparedFactory,
@@ -92,6 +92,7 @@ pub(super) fn block_layout<R: Ring>(bp: &BlasBenchParams) -> CKKSLayout {
             scale: Scale::Log(bp.log_delta),
             slots: slots_kind::<R>(),
             log_sparsity: 0,
+            slot_layout: SlotLayout::Full,
         },
     }
 }
@@ -524,6 +525,7 @@ where
             scale: Scale::Log(log_delta),
             slots: slots_kind::<BE::Ring>(),
             log_sparsity: 0,
+            slot_layout: SlotLayout::Full,
         });
         self.client
             .ckks_decrypt(&mut pt, &ct, &self.sk, &mut self.arena.borrow())
