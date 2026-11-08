@@ -44,6 +44,20 @@ pub trait GLWEKeyswitchReference<BE: Backend> {
         A: GLWEInfos,
         K: GGLWEInfos;
 
+    fn glwe_keyswitch_dft_add_tmp_bytes_reference<A, K>(&self, res_size: usize, a_infos: &A, key_infos: &K) -> usize
+    where
+        A: GLWEInfos,
+        K: GGLWEInfos;
+
+    fn glwe_keyswitch_dft_add_reference<A>(
+        &self,
+        res: &mut VecZnxDftBackendMut<'_, BE>,
+        a: &A,
+        key: &GGLWEPreparedBackendRef<'_, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        A: GLWEToBackendRef<BE> + GLWEInfos;
+
     fn glwe_keyswitch_dft_reference<A>(
         &self,
         res: &mut VecZnxDftBackendMut<'_, BE>,
@@ -115,6 +129,26 @@ where
         crate::reference::keyswitching::glwe::glwe_keyswitch_dft_tmp_bytes_reference::<BE, _, _, _>(
             self, res_size, a_infos, key_infos,
         )
+    }
+
+    fn glwe_keyswitch_dft_add_tmp_bytes_reference<A, K>(&self, res_size: usize, a_infos: &A, key_infos: &K) -> usize
+    where
+        A: crate::layouts::GLWEInfos,
+        K: crate::layouts::GGLWEInfos,
+    {
+        crate::reference::keyswitching::glwe::glwe_keyswitch_dft_add_tmp_bytes_reference(self, res_size, a_infos, key_infos)
+    }
+
+    fn glwe_keyswitch_dft_add_reference<A>(
+        &self,
+        res: &mut VecZnxDftBackendMut<'_, BE>,
+        a: &A,
+        key: &GGLWEPreparedBackendRef<'_, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        A: GLWEToBackendRef<BE> + GLWEInfos,
+    {
+        crate::reference::keyswitching::glwe::glwe_keyswitch_dft_add_reference(self, res, a, key, scratch)
     }
 
     fn glwe_keyswitch_dft_reference<A>(

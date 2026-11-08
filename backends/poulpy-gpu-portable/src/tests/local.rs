@@ -146,19 +146,22 @@ fn digits_case<R: Ring>(
          cols_out={cols_out} key_size={key_size} res_size={res_size} product_limbs={product_limbs}"
     );
 
-    // The rotated product against its composition: the product above over
-    // `product_size` limbs, the body added to column 0, then the
-    // automorphism, stored or accumulated.
+    // The product against its composition: the product above over
+    // `product_size` limbs, the body added to column 0, then the automorphism,
+    // stored or accumulated, the identity with no plan.
     let narrow = res_size.saturating_sub(1).max(1);
-    for (accumulate, body_size, product_size) in [
-        (false, res_size, res_size),
-        (true, res_size + 2, res_size),
-        (true, res_size.div_ceil(2), res_size),
-        (false, res_size, narrow),
-        (true, res_size + 2, narrow),
-    ] {
+    for (p, accumulate, body_size, product_size) in [5, 1].into_iter().flat_map(|p| {
+        [
+            (false, res_size, res_size),
+            (true, res_size + 2, res_size),
+            (true, res_size.div_ceil(2), res_size),
+            (false, res_size, narrow),
+            (true, res_size + 2, narrow),
+        ]
+        .map(|(accumulate, body_size, product_size)| (p, accumulate, body_size, product_size))
+    }) {
         let body = transformed(module, n, cols_out, body_size, &mut seed);
-        let plan = module.vec_znx_dft_automorphism_plan(n, 5);
+        let plan = module.vec_znx_dft_automorphism_plan(n, p);
         let mut accumulator_seed = seed;
         let mut rotated_want = transformed(module, n, cols_out, res_size, &mut accumulator_seed);
         let mut rotated_have = transformed(module, n, cols_out, res_size, &mut seed);
@@ -195,14 +198,14 @@ fn digits_case<R: Ring>(
             product_limbs,
             &pmat.to_backend_ref(),
             [Some((&body.to_backend_ref(), 0)), None],
-            Some(&plan),
+            (p != 1).then_some(&plan),
             accumulate,
         );
         assert!(
             rotated_want == rotated_have,
-            "rotated digit product differs from its composition: a_size={a_size} dsize={dsize} rows={rows} \
+            "digit product differs from its composition: a_size={a_size} dsize={dsize} rows={rows} \
              cols_in={cols_in} cols_out={cols_out} key_size={key_size} res_size={res_size} \
-             product_limbs={product_limbs} accumulate={accumulate} body_size={body_size} product_size={product_size}"
+             product_limbs={product_limbs} p={p} accumulate={accumulate} body_size={body_size} product_size={product_size}"
         );
     }
 }

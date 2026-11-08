@@ -3,14 +3,15 @@ use poulpy_core::{
     GLWEFill, GLWEKeyswitch,
     api::GGLWEPreparedFactory,
     layouts::{
-        Base2K, Degree, Dnum, GGLWEAlloc, GGLWELayout, GLWEAlloc, GLWELayout, ModuleCoreAlloc, Rank, TorusPrecision, k_digit_of,
+        Base2K, Degree, Dnum, GGLWEAlloc, GGLWELayout, GLWEAlloc, GLWELayout, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision,
+        k_digit_of,
     },
     test_suite::keys::fill_by_digit,
 };
 use poulpy_hal::api::ModuleSynchronize;
 use poulpy_hal::{
-    api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, Module, ScratchOwned},
+    api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxDftAlloc},
+    layouts::{Backend, Module, ScratchOwned, VecZnxDftToBackendMut},
     source::Source,
 };
 
@@ -19,6 +20,29 @@ use std::hint::black_box;
 use criterion::{Bencher, measurement::Measurement};
 
 use crate::core::params::{CoreParams, switching_key_dnum_k_aux};
+
+/// The ciphertext and the switching key of the point `cp`.
+fn layouts(cp: &CoreParams) -> (GLWELayout, GGLWELayout) {
+    let glwe = GLWELayout {
+        n: Degree(cp.n),
+        base2k: Base2K(cp.base2k),
+        k: TorusPrecision(cp.k),
+        rank: Rank(cp.rank),
+    };
+    let (dnum, k_aux) = switching_key_dnum_k_aux(cp.k, cp.base2k, cp.dsize);
+    let key_infos = GGLWELayout {
+        n: Degree(cp.n),
+        base2k: Base2K(cp.base2k),
+        k_aux: TorusPrecision(k_aux),
+        rank_in: Rank(cp.rank),
+        rank_out: Rank(cp.rank),
+        dnum: Dnum(dnum),
+        k_digit: k_digit_of(cp.base2k, cp.dsize),
+        k_offset: TorusPrecision(0),
+        stride: 1,
+    };
+    (glwe, key_infos)
+}
 
 /// Times `glwe_keyswitch` alone.
 ///
@@ -41,25 +65,7 @@ where
         + GLWEFill<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
-    let glwe = GLWELayout {
-        n: Degree(cp.n),
-        base2k: Base2K(cp.base2k),
-        k: TorusPrecision(cp.k),
-        rank: Rank(cp.rank),
-    };
-    let (dnum, k_aux) = switching_key_dnum_k_aux(cp.k, cp.base2k, cp.dsize);
-    let key_infos = GGLWELayout {
-        n: Degree(cp.n),
-        base2k: Base2K(cp.base2k),
-        k_aux: TorusPrecision(k_aux),
-        rank_in: Rank(cp.rank),
-        rank_out: Rank(cp.rank),
-        dnum: Dnum(dnum),
-        k_digit: k_digit_of(cp.base2k, cp.dsize),
-        k_offset: TorusPrecision(0),
-        stride: 1,
-    };
-
+    let (glwe, key_infos) = layouts(cp);
     let glwe_in = &glwe;
     let glwe_out = &glwe;
 
@@ -84,6 +90,58 @@ where
 
     bencher.iter(|| {
         module.glwe_keyswitch(&mut ct_out, &ct_in, &key.to_backend_ref(), &mut scratch.borrow());
+        module.synchronize();
+        black_box(());
+    });
+}
+
+/// Times `glwe_keyswitch_dft_add` alone, on an accumulator of the ciphertext's limbs that `glwe_keyswitch_dft` filled.
+pub fn runner_glwe_keyswitch_dft_add<BE: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, cp: &CoreParams)
+where
+    Module<BE>: ModuleNew<BE>
+        + ModuleSynchronize<BE>
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>
+        + GLWEKeyswitch<BE>
+        + GGLWEPreparedFactory<BE>
+        + GLWEFill<BE>
+        + VecZnxDftAlloc<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let (glwe, key_infos) = layouts(cp);
+    let module: Module<BE> = Module::<BE>::new(cp.n as u64);
+    let mut source: Source = Source::new([0u8; 32]);
+
+    let mut ct_in = module.glwe_alloc_from_infos(&glwe);
+    let mut key_coeffs = module.gglwe_alloc_from_infos(&key_infos);
+    module.glwe_fill_from_source(&mut ct_in, &mut source);
+    fill_by_digit(&module, &mut key_coeffs, 1, &mut source);
+
+    let res_size = glwe.size();
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+        module
+            .gglwe_prepare_tmp_bytes(&key_infos)
+            .max(module.glwe_keyswitch_dft_tmp_bytes(res_size, &glwe, &key_infos))
+            .max(module.glwe_keyswitch_dft_add_tmp_bytes(res_size, &glwe, &key_infos)),
+    );
+
+    let mut key = module.gglwe_prepared_alloc_from_infos(&key_infos);
+    module.gglwe_prepare(&mut key, &key_coeffs, &mut scratch.borrow());
+
+    let mut acc = module.vec_znx_dft_alloc(cp.n as usize, cp.rank as usize + 1, res_size);
+    module.glwe_keyswitch_dft(
+        &mut acc.to_backend_mut(),
+        &ct_in,
+        &key.to_backend_ref(),
+        &mut scratch.borrow(),
+    );
+
+    bencher.iter(|| {
+        module.glwe_keyswitch_dft_add(
+            &mut acc.to_backend_mut(),
+            &ct_in,
+            &key.to_backend_ref(),
+            &mut scratch.borrow(),
+        );
         module.synchronize();
         black_box(());
     });
