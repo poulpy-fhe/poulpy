@@ -25,7 +25,7 @@ use cubecl::prelude::*;
 use super::{
     DftColumn,
     primes::{Consts, mul_lazy, sel4},
-    tables::Tables,
+    tables::{RingTables, Table},
 };
 use crate::{
     runtime::{Binding, GpuBuf, GpuRuntime, Label, NttGeometry, launch},
@@ -232,6 +232,7 @@ fn tile_pass(
     dst: &mut [u32],
     src: &[u32],
     tw: &[u32],
+    basis: &[u32],
     polys: u32,
     dst_base: u32,
     dst_stride: u32,
@@ -356,7 +357,7 @@ fn tile_pass(
                         );
                         // `i * reflected` is in `[0, 2q)`, the difference in `(0, 3q)`.
                         let turned = reflected * unit - reflected.mul_hi(unit_q) * q;
-                        let mixed = mul_lazy(direct + q + q - turned, tw[(8usize << ln) + plane + j], q);
+                        let mixed = mul_lazy(direct + q + q - turned, basis[plane + j], q);
                         x.push(select(j == 0usize, direct, mixed));
                     } else {
                         x.push(direct);
@@ -415,7 +416,7 @@ struct Span<'a> {
 
 #[allow(clippy::too_many_arguments)]
 fn launch<RT: GpuRuntime>(
-    table: &GpuBuf<RT>,
+    table: &Table<'_, RT>,
     tile: Tile,
     inverse: bool,
     scale: bool,
@@ -427,7 +428,14 @@ fn launch<RT: GpuRuntime>(
 ) {
     let polys = 4 * limbs;
     let tiles = polys << (tile.log_n - tile.mt);
-    let table = table.view().binding().expect("transform tables hold storage");
+    let binding = |buffer: &GpuBuf<RT>| buffer.view().binding().expect("transform tables hold storage");
+    let twiddles = binding(table.twiddles);
+    // Launches that read no basis factor bind the twiddles in its place: both rings share their compiled kernels.
+    let basis = binding(if source == SOURCE_LIMBS_INVARIANT {
+        table.basis
+    } else {
+        table.twiddles
+    });
     let label = match (inverse, tile.mt == tile.log_n, tile.first + tile.mt < tile.log_n) {
         (false, true, _) => Label::NttForwardSingle,
         (false, false, true) => Label::NttForwardStrided,
@@ -441,7 +449,8 @@ fn launch<RT: GpuRuntime>(
         [
             dst.binding => u32,
             src.binding => u32,
-            table => u32,
+            twiddles => u32,
+            basis => u32,
         ];
         [
             u32::try_from(polys).expect("batch beyond the 32-bit polynomial range"),
@@ -471,7 +480,7 @@ fn passes(geometry: NttGeometry, log_n: u32, inverse: bool) -> Vec<Tile> {
 
 /// `res[j] = dft(a[j])` for the first `limbs` limbs: the `i64` coefficients of
 /// `a` are reduced by the first launch.
-pub(crate) fn forward<RT: GpuRuntime>(tables: &Tables<RT>, res: &DftColumn, a: &Column, limbs: usize) {
+pub(crate) fn forward<RT: GpuRuntime>(tables: RingTables<'_, RT>, res: &DftColumn, a: &Column, limbs: usize) {
     assert!(res.n == a.n, "transform between different degrees");
     assert!(a.words == 1 && limbs <= res.size.min(a.size));
     if limbs == 0 {
@@ -514,7 +523,7 @@ pub(crate) fn forward<RT: GpuRuntime>(tables: &Tables<RT>, res: &DftColumn, a: &
             )
         };
         let mode = if last { STORE_FORWARD } else { STORE_LAZY };
-        launch::<RT>(table, tile, false, false, mode, source, limbs, dst, src);
+        launch::<RT>(&table, tile, false, false, mode, source, limbs, dst, src);
     }
 }
 
@@ -533,17 +542,17 @@ pub(crate) fn inverse_head<RT: GpuRuntime>(log_n: u32, blocks: usize) -> Option<
 /// The launches of [`inverse`] after the first, in place: `dst` holds the
 /// lanes the first launch leaves, written by it or by a kernel that ran its
 /// stages itself.
-pub(crate) fn inverse_tail<RT: GpuRuntime>(tables: &Tables<RT>, dst: &DftColumn, limbs: usize) {
+pub(crate) fn inverse_tail<RT: GpuRuntime>(tables: RingTables<'_, RT>, dst: &DftColumn, limbs: usize) {
     inverse_from::<RT>(tables, dst, dst, limbs, 1);
 }
 
 /// `dst[j] = idft(src[j])` in the negacyclic basis for the first `limbs`
 /// limbs. `dst` may be `src` itself; otherwise `src` is left unchanged.
-pub(crate) fn inverse<RT: GpuRuntime>(tables: &Tables<RT>, dst: &DftColumn, src: &DftColumn, limbs: usize) {
+pub(crate) fn inverse<RT: GpuRuntime>(tables: RingTables<'_, RT>, dst: &DftColumn, src: &DftColumn, limbs: usize) {
     inverse_from::<RT>(tables, dst, src, limbs, 0);
 }
 
-fn inverse_from<RT: GpuRuntime>(tables: &Tables<RT>, dst: &DftColumn, src: &DftColumn, limbs: usize, skip: usize) {
+fn inverse_from<RT: GpuRuntime>(tables: RingTables<'_, RT>, dst: &DftColumn, src: &DftColumn, limbs: usize, skip: usize) {
     assert!(dst.n == src.n, "transform between different degrees");
     assert!(limbs <= dst.size.min(src.size));
     if limbs == 0 {
@@ -555,7 +564,7 @@ fn inverse_from<RT: GpuRuntime>(tables: &Tables<RT>, dst: &DftColumn, src: &DftC
         let last = index + 1 == passes.len();
         let from = if index == 0 { src } else { dst };
         launch::<RT>(
-            table,
+            &table,
             tile,
             true,
             last,

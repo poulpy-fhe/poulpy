@@ -116,12 +116,12 @@
 //! # Threading and concurrency
 //!
 //! - **All backend markers are `Send + Sync`**: zero-sized marker types, no internal state.
-//! - **`Module<FFT64Neon>` / `Module<NTT4x30Neon>` are `Send + Sync`**: FFT/NTT tables are never mutated once built,
-//!   the conjugate-invariant ones built once on first use.
+//! - **`Module<FFT64Neon>` / `Module<NTT4x30Neon>` are `Send + Sync`**: FFT/NTT tables of both rings are immutable
+//!   after construction.
 //! - **Operations require `&mut` for outputs**: prevents data races at the API level.
-//! - **Internal locking only for state built on first use**: the conjugate-invariant tables (a `OnceLock`) and the
-//!   plan families of the module's `ModulePlanCache` (an `RwLock` plus a per-family `Mutex`) block concurrent first
-//!   users; synchronizing operations is the caller's responsibility.
+//! - **Internal locking only for state built on first use**: the plan families of the module's `ModulePlanCache`
+//!   (an `RwLock` plus a per-family `Mutex`) block concurrent first users; synchronizing operations is the caller's
+//!   responsibility.
 //!
 //! # Feature flags
 //!

@@ -85,8 +85,7 @@
 //! # Threading and concurrency
 //!
 //! Backend marker types are zero-sized and `Send + Sync`. `Module<BE>` values
-//! hold precomputed tables that are never mutated once built, the
-//! conjugate-invariant ones built once on first use. Operations take
+//! hold the precomputed tables of both rings, immutable after construction. Operations take
 //! mutable output references, so normal Rust borrowing rules prevent data races
 //! at the API boundary.
 //!

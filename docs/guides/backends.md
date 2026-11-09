@@ -117,7 +117,6 @@ replay.replay();
 ```
 
 The closure must bind the same buffers and issue the same launches at every call, and must not read from the device, write host data to it or synchronize; `Replay` documents the contract, and `Replay::check` tests a closure against its recording.
-The first conjugate-invariant operation of a module uploads the transform tables of that ring, so a closure making it is not recorded: run one before recording.
 A recording keeps the temporaries of the closure reserved on the device until it is dropped, and while a closure is recorded or a graph is queued, other threads wait for the device.
 
 CKKS bootstrapping on a GPU is usually faster with the keys of power-of-two rotations only (`BootstrappingPreset::with_power_of_two_keys`, see [Default presets](bootstrapping.md#default-presets)).

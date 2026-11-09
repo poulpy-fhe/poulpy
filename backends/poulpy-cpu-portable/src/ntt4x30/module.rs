@@ -3,7 +3,7 @@
 //! This module defines:
 //!
 //! - [`NTT4x30PortableHandle`]: the opaque handle stored inside a `Module<NTT4x30Portable>`
-//!   holding the tables of the packed NTT of both rings, the conjugate-invariant ones built on first use.
+//!   holding the tables of the packed NTT of both rings.
 //! - The [`Backend`] trait implementation, which defines scalar types and the
 //!   handle destruction path.
 //! - The [`NttHandleFactory`] implementation, which builds the handle stored
@@ -18,51 +18,38 @@ use poulpy_hal::{
 
 use crate::kernels::ntt4x30::{primes::Primes30, vec_znx_dft::NttHandleFactory};
 use crate::kernels::{PerRing, RingFamily};
-use poulpy_hal::layouts::{ConjugateInvariant, CrtWord, Ring, Standard};
+use poulpy_hal::layouts::{CrtWord, Ring};
 
 use super::NTT4x30Portable;
-use super::ntt32::{MIN_N, Ntt32Table};
+use super::ntt32::Ntt32Table;
 
 /// Opaque handle of [`NTT4x30Portable`](super::NTT4x30Portable), holding the tables of both rings.
 ///
-/// Holds the tables of the packed NTT of every degree the module serves.
+/// Holds the tables of the packed NTT of both rings for every degree the module serves, all built with the
+/// module; the conjugate-invariant table of a degree shares the twiddles of the standard one.
 ///
 /// This struct is heap-allocated during module creation and freed when the
 /// `Module` is dropped (via [`Backend::destroy`]).
 #[repr(C)]
 pub struct NTT4x30PortableHandle {
     table_cache: crate::table_cache::ModuleTableCache,
-    /// Tables of the packed NTT of each ring, indexed by `log2(n)`.
     packed: PerRing<PackedTables>,
 }
 
-/// The packed NTT tables of each ring, indexed by `log2(n)`.
+/// The packed NTT table of one degree on each ring.
 struct PackedTables;
 
 impl RingFamily for PackedTables {
-    type Of<R: Ring> = Vec<Option<Ntt32Table>>;
-}
-
-fn packed_tables<Rg: Ring>(n: usize) -> Vec<Option<Ntt32Table>> {
-    (0..=n.ilog2())
-        .map(|log_n| {
-            let n = 1usize << log_n;
-            (n >= MIN_N).then(|| Ntt32Table::new(n, Rg::CYCLOTOMIC_ORDER_FACTOR == 4))
-        })
-        .collect()
+    type Of<R: Ring> = Ntt32Table;
 }
 
 impl NTT4x30PortableHandle {
     /// Tables of the packed NTT of degree `n` on ring `Rg`.
     ///
-    /// Panics below the smallest degree the kernels accept, which is the smallest degree of the backend.
+    /// Panics unless `n` is a power of two between the smallest degree of the backend and the module degree.
     #[inline]
     pub(crate) fn packed_table<Rg: Ring>(&self, n: usize) -> &Ntt32Table {
-        self.packed
-            .on_ring::<Rg>()
-            .get(n.trailing_zeros() as usize)
-            .and_then(Option::as_ref)
-            .expect("no packed NTT table for this degree")
+        self.packed.on_ring::<Rg>(n)
     }
 }
 
@@ -209,7 +196,9 @@ unsafe impl NttHandleFactory for NTT4x30PortableHandle {
     fn create_ntt_handle(n: usize) -> Self {
         NTT4x30PortableHandle {
             table_cache: Default::default(),
-            packed: PerRing::new(packed_tables::<Standard>(n), n, packed_tables::<ConjugateInvariant>),
+            packed: PerRing::new(NTT4x30Portable::MIN_DEGREE, n, Ntt32Table::new, |standard, _| {
+                Ntt32Table::from_standard(standard)
+            }),
         }
     }
 }

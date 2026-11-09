@@ -15,7 +15,7 @@
 //! Each coefficient = 4 × u64 (3 active CRT residues + 1 padding).
 //! All residues are kept in `[0, 2q)` throughout the NTT.
 
-use std::marker::PhantomData;
+use std::{marker::PhantomData, sync::Arc};
 
 use poulpy_cpu_portable::kernels::ntt4x30::NttRingTable;
 use poulpy_hal::{
@@ -36,6 +36,9 @@ use super::{
 ///
 /// No per-level metadata is needed — the IFMA-native butterfly keeps all
 /// values in `[0, 2q)` without explicit reduction levels.
+///
+/// The conjugate-invariant table of a degree shares the arrays of the standard
+/// table of that degree and only adds its basis change.
 pub struct Ntt3x42IfmaTable<P: PrimeSetNtt3x42Ifma, R: Ring = Standard> {
     /// NTT size (a power of two at most `(2 << P::MAX_LOG_N) / R::CYCLOTOMIC_ORDER_FACTOR`).
     pub n: usize,
@@ -45,39 +48,42 @@ pub struct Ntt3x42IfmaTable<P: PrimeSetNtt3x42Ifma, R: Ring = Standard> {
     pub q4: [u64; 4],
     /// Packed twiddle factors: each entry is 8 u64.
     /// Layout: level-0 (n entries), then butterfly levels (halfnn-1 entries each).
-    pub powomega: AlignedVec<u64>,
+    pub powomega: Arc<AlignedVec<u64>>,
     /// Scrambled forward roots, prime-major.
     /// Entry for prime `k`, scrambled index `j` is at `[k*n + j]`.
     /// `root[bitrev(i)] = w^i`, where `w` is the primitive `2n`-th root.
-    pub root: Vec<u64>,
+    pub root: Arc<[u64]>,
     /// Harvey/Shoup preconditioned quotients for `root`, same layout.
     /// `root_quot[k*n + j] = harvey_quotient(root[k*n + j], Q[k])`.
-    pub root_quot: Vec<u64>,
+    pub root_quot: Arc<[u64]>,
     /// Vectorized tail roots for the `t = 4, 2, 1` stages, prime-major, stride
     /// `3n/2`. Per prime, three blocks of length `n/2` with each root duplicated
     /// to match the stage operand width: 4× (distance 4), 2× (distance 2), 1×
     /// (distance 1). Empty when `n < 16` (tail vectorization requires `n >= 16`).
-    pub tail_root: Vec<u64>,
+    pub tail_root: Arc<[u64]>,
     /// Harvey/Shoup preconditioned quotients for `tail_root`, same layout.
-    pub tail_quot: Vec<u64>,
+    pub tail_quot: Arc<[u64]>,
     /// Conjugate-invariant basis change per prime, empty on the standard ring.
     pub(super) basis: [BasisChangeTable; 3],
     _phantom: PhantomData<(P, R)>,
 }
 
 /// Precomputed twiddle-factor table for the inverse NTT (3-prime IFMA).
+///
+/// The conjugate-invariant table of a degree shares the arrays of the standard
+/// table of that degree and only adds its basis change.
 pub struct Ntt3x42IfmaTableInv<P: PrimeSetNtt3x42Ifma, R: Ring = Standard> {
     pub n: usize,
     pub q2: [u64; 4],
     pub q4: [u64; 4],
     /// Packed twiddle factors: butterfly levels (halfnn-1 entries each),
     /// then last-pass (n entries with ω^{-i}/n baked in).
-    pub powomega: AlignedVec<u64>,
+    pub powomega: Arc<AlignedVec<u64>>,
     /// Reordered inverse roots, prime-major (stride `n`).
     /// Entry for prime `k`, reordered index `j` is at `[k*n + j]`.
-    pub inv_root: Vec<u64>,
+    pub inv_root: Arc<[u64]>,
     /// Harvey/Shoup preconditioned quotients for `inv_root`, same layout.
-    pub inv_quot: Vec<u64>,
+    pub inv_quot: Arc<[u64]>,
     /// Precomputed inverse scale and scaled final-stage roots.
     pub n_inv: [u64; 3],
     pub n_inv_quot: [u64; 3],
@@ -132,11 +138,11 @@ fn reverse_bits(x: usize, bits: u32) -> usize {
 /// then `root[bitrev(i)] = w^i` for `i in 0..n` (`root[0] = 1`).
 /// Returns `(root, root_quot)`, each of length `3*n`, with entry for
 /// prime `k`, scrambled index `j` at `[k*n + j]`.
-fn build_root_table<P: PrimeSetNtt3x42Ifma>(n: usize) -> (Vec<u64>, Vec<u64>) {
+fn build_root_table<P: PrimeSetNtt3x42Ifma>(n: usize) -> (Arc<[u64]>, Arc<[u64]>) {
     let mut root_tbl = vec![0u64; 3 * n];
     let mut quot_tbl = vec![0u64; 3 * n];
     if n == 0 {
-        return (root_tbl, quot_tbl);
+        return (root_tbl.into(), quot_tbl.into());
     }
     let log_n = n.trailing_zeros();
     for k in 0..3 {
@@ -156,7 +162,7 @@ fn build_root_table<P: PrimeSetNtt3x42Ifma>(n: usize) -> (Vec<u64>, Vec<u64>) {
             quot_tbl[k * n + j] = harvey_quotient(root[j], q);
         }
     }
-    (root_tbl, quot_tbl)
+    (root_tbl.into(), quot_tbl.into())
 }
 
 /// Modular inverse via Fermat: `x^{q-2} mod q` (`q` prime).
@@ -171,11 +177,11 @@ fn modinv(x: u64, q: u64) -> u64 {
 /// reorder level-major: `temp[0] = inv_nat[0]`, then for `m in [n/2, n/4, …, 1]`
 /// append `inv_nat[m+i]` for `i in 0..m`.
 /// Returns `(inv_root, inv_quot)`, each of length `3*n`.
-fn build_inv_root_table<P: PrimeSetNtt3x42Ifma>(n: usize) -> (Vec<u64>, Vec<u64>) {
+fn build_inv_root_table<P: PrimeSetNtt3x42Ifma>(n: usize) -> (Arc<[u64]>, Arc<[u64]>) {
     let mut inv_root = vec![0u64; 3 * n];
     let mut inv_precon = vec![0u64; 3 * n];
     if n == 0 {
-        return (inv_root, inv_precon);
+        return (inv_root.into(), inv_precon.into());
     }
     let log_n = n.trailing_zeros();
     for k in 0..3 {
@@ -209,7 +215,7 @@ fn build_inv_root_table<P: PrimeSetNtt3x42Ifma>(n: usize) -> (Vec<u64>, Vec<u64>
             inv_precon[k * n + j] = harvey_quotient(temp[j], q);
         }
     }
-    (inv_root, inv_precon)
+    (inv_root.into(), inv_precon.into())
 }
 
 /// Build the vectorized tail root tables for the `t = 4, 2, 1` stages
@@ -221,10 +227,10 @@ fn build_inv_root_table<P: PrimeSetNtt3x42Ifma>(n: usize) -> (Vec<u64>, Vec<u64>
 /// - distance-2 block (offset `n/2`, len `n/2`): `root[i]` 2× for `i in n/4..n/2`.
 /// - distance-1 block (offset `n`, len `n/2`): `root[i]` 1× for `i in n/2..n`.
 ///
-/// Only built for `n >= 16`; returns empty vectors otherwise.
-fn build_tail_root_table<P: PrimeSetNtt3x42Ifma>(n: usize) -> (Vec<u64>, Vec<u64>) {
+/// Only built for `n >= 16`; returns empty arrays otherwise.
+fn build_tail_root_table<P: PrimeSetNtt3x42Ifma>(n: usize) -> (Arc<[u64]>, Arc<[u64]>) {
     if n < 16 {
-        return (Vec::new(), Vec::new());
+        return (Arc::default(), Arc::default());
     }
     let stride = 3 * n / 2;
     let mut tail_root = vec![0u64; 3 * stride];
@@ -267,7 +273,7 @@ fn build_tail_root_table<P: PrimeSetNtt3x42Ifma>(n: usize) -> (Vec<u64>, Vec<u64
         }
         assert_eq!(p - base, stride);
     }
-    (tail_root, tail_quot)
+    (tail_root.into(), tail_quot.into())
 }
 
 /// Harvey modular multiply (scalar): `a * omega mod q`.
@@ -319,12 +325,12 @@ fn store_twiddle_split<P: PrimeSetNtt3x42Ifma>(
 // Forward NTT table construction
 // ──────────────────────────────────────────────────────────────────────────────
 
-impl<P: PrimeSetNtt3x42Ifma, R: Ring> Ntt3x42IfmaTable<P, R> {
-    pub(super) fn build(n: usize, basis: [BasisChangeTable; 3]) -> Self {
+impl<P: PrimeSetNtt3x42Ifma> Ntt3x42IfmaTable<P, Standard> {
+    pub fn new(n: usize) -> Self {
         assert!(
-            n.is_power_of_two() && n <= max_ntt_degree::<P, R>(),
+            n.is_power_of_two() && n <= max_ntt_degree::<P, Standard>(),
             "NTT size must be a power of two ≤ {}, got {n}",
-            max_ntt_degree::<P, R>()
+            max_ntt_degree::<P, Standard>()
         );
 
         let q2: [u64; 4] = [2 * P::Q[0], 2 * P::Q[1], 2 * P::Q[2], 0];
@@ -358,12 +364,12 @@ impl<P: PrimeSetNtt3x42Ifma, R: Ring> Ntt3x42IfmaTable<P, R> {
                 n,
                 q2,
                 q4,
-                powomega,
+                powomega: Arc::new(powomega),
                 root,
                 root_quot,
                 tail_root,
                 tail_quot,
-                basis,
+                basis: Default::default(),
                 _phantom: PhantomData,
             };
         }
@@ -408,11 +414,31 @@ impl<P: PrimeSetNtt3x42Ifma, R: Ring> Ntt3x42IfmaTable<P, R> {
             n,
             q2,
             q4,
-            powomega,
+            powomega: Arc::new(powomega),
             root,
             root_quot,
             tail_root,
             tail_quot,
+            basis: Default::default(),
+            _phantom: PhantomData,
+        }
+    }
+
+    /// The table of ring `R` over these twiddles, with the basis change `basis`.
+    pub(super) fn with_basis<R: Ring>(&self, basis: [BasisChangeTable; 3]) -> Ntt3x42IfmaTable<P, R> {
+        assert!(
+            self.n <= max_ntt_degree::<P, R>(),
+            "NTT size exceeds the largest degree of the ring"
+        );
+        Ntt3x42IfmaTable {
+            n: self.n,
+            q2: self.q2,
+            q4: self.q4,
+            powomega: Arc::clone(&self.powomega),
+            root: Arc::clone(&self.root),
+            root_quot: Arc::clone(&self.root_quot),
+            tail_root: Arc::clone(&self.tail_root),
+            tail_quot: Arc::clone(&self.tail_quot),
             basis,
             _phantom: PhantomData,
         }
@@ -423,12 +449,12 @@ impl<P: PrimeSetNtt3x42Ifma, R: Ring> Ntt3x42IfmaTable<P, R> {
 // Inverse NTT table construction
 // ──────────────────────────────────────────────────────────────────────────────
 
-impl<P: PrimeSetNtt3x42Ifma, R: Ring> Ntt3x42IfmaTableInv<P, R> {
-    pub(super) fn build(n: usize, basis: [BasisChangeTable; 3]) -> Self {
+impl<P: PrimeSetNtt3x42Ifma> Ntt3x42IfmaTableInv<P, Standard> {
+    pub fn new(n: usize) -> Self {
         assert!(
-            n.is_power_of_two() && n <= max_ntt_degree::<P, R>(),
+            n.is_power_of_two() && n <= max_ntt_degree::<P, Standard>(),
             "NTT size must be a power of two ≤ {}, got {n}",
-            max_ntt_degree::<P, R>()
+            max_ntt_degree::<P, Standard>()
         );
 
         let q2: [u64; 4] = [2 * P::Q[0], 2 * P::Q[1], 2 * P::Q[2], 0];
@@ -462,14 +488,14 @@ impl<P: PrimeSetNtt3x42Ifma, R: Ring> Ntt3x42IfmaTableInv<P, R> {
                 n,
                 q2,
                 q4,
-                powomega,
+                powomega: Arc::new(powomega),
                 inv_root,
                 inv_quot,
                 n_inv,
                 n_inv_quot,
                 final_root,
                 final_quot,
-                basis,
+                basis: Default::default(),
                 _phantom: PhantomData,
             };
         }
@@ -514,13 +540,35 @@ impl<P: PrimeSetNtt3x42Ifma, R: Ring> Ntt3x42IfmaTableInv<P, R> {
             n,
             q2,
             q4,
-            powomega,
+            powomega: Arc::new(powomega),
             inv_root,
             inv_quot,
             n_inv,
             n_inv_quot,
             final_root,
             final_quot,
+            basis: Default::default(),
+            _phantom: PhantomData,
+        }
+    }
+
+    /// The table of ring `R` over these twiddles, with the basis change `basis`.
+    pub(super) fn with_basis<R: Ring>(&self, basis: [BasisChangeTable; 3]) -> Ntt3x42IfmaTableInv<P, R> {
+        assert!(
+            self.n <= max_ntt_degree::<P, R>(),
+            "NTT size exceeds the largest degree of the ring"
+        );
+        Ntt3x42IfmaTableInv {
+            n: self.n,
+            q2: self.q2,
+            q4: self.q4,
+            powomega: Arc::clone(&self.powomega),
+            inv_root: Arc::clone(&self.inv_root),
+            inv_quot: Arc::clone(&self.inv_quot),
+            n_inv: self.n_inv,
+            n_inv_quot: self.n_inv_quot,
+            final_root: self.final_root,
+            final_quot: self.final_quot,
             basis,
             _phantom: PhantomData,
         }

@@ -5,20 +5,20 @@ use std::ptr::NonNull;
 use poulpy_cpu_portable::kernels::ntt4x30::{
     mat_vec::{BbbMeta, BbcMeta},
     primes::Primes30,
-    vec_znx_dft::{NttHandleFactory, NttHandleProvider, NttMetaProvider, NttPlan, NttPlanSet},
+    vec_znx_dft::{NttHandleFactory, NttHandleProvider, NttMetaProvider, NttPlan, NttPlanNew},
 };
 use poulpy_cpu_portable::kernels::{NttPlans, PerRing, RingFamily};
 use poulpy_hal::{
     AlignedBuf, alloc_aligned,
-    layouts::{Backend, ConjugateInvariant, CrtWord, Host, Ring, Standard},
+    layouts::{Backend, CrtWord, Host, Ring},
 };
 
 use super::NTT4x30Neon;
-use crate::neon::ntt4x30_ntt32::{MIN_N, Ntt32Table};
+use crate::neon::ntt4x30_ntt32::Ntt32Table;
 
 /// Opaque handle for the [`NTT4x30Neon`](super::NTT4x30Neon) backend.
-/// Holds the tables of the packed NTT of both rings for every degree up to `n`, the
-/// conjugate-invariant ones built on first use.
+/// Holds the tables of the packed NTT of both rings for every degree up to `n`, all built with the module; the
+/// conjugate-invariant table of a degree shares the twiddles of the standard one.
 /// The q120 plans and metadata are kept for the reference bodies that are generic over the q120 layout.
 #[repr(C)]
 pub struct NTT4x30NeonHandle {
@@ -26,37 +26,23 @@ pub struct NTT4x30NeonHandle {
     meta_bbc: BbcMeta<Primes30>,
     meta_bbb: BbbMeta<Primes30>,
     table_cache: ::poulpy_cpu_portable::table_cache::ModuleTableCache,
-    /// Packed NTT tables of each ring by `log2(n)`, present from the smallest degree the kernels accept.
     packed: PerRing<PackedTables>,
 }
 
-/// The packed NTT tables of each ring, indexed by `log2(n)`.
+/// The packed NTT table of one degree on each ring.
 struct PackedTables;
 
 impl RingFamily for PackedTables {
-    type Of<R: Ring> = Vec<Option<Ntt32Table>>;
-}
-
-fn packed_tables<Rg: Ring>(n: usize) -> Vec<Option<Ntt32Table>> {
-    (0..=n.ilog2())
-        .map(|log_n| {
-            let n = 1usize << log_n;
-            (n >= MIN_N).then(|| Ntt32Table::new(n, Rg::CYCLOTOMIC_ORDER_FACTOR == 4))
-        })
-        .collect()
+    type Of<R: Ring> = Ntt32Table;
 }
 
 impl NTT4x30NeonHandle {
     /// Tables of the packed NTT of degree `n` on ring `Rg`.
     ///
-    /// Panics below the smallest degree the kernels accept, which is the smallest degree of the backend.
+    /// Panics unless `n` is a power of two between the smallest degree of the backend and the module degree.
     #[inline]
     pub(crate) fn packed_table<Rg: Ring>(&self, n: usize) -> &Ntt32Table {
-        self.packed
-            .on_ring::<Rg>()
-            .get(n.trailing_zeros() as usize)
-            .and_then(Option::as_ref)
-            .expect("no packed NTT table for this degree")
+        self.packed.on_ring::<Rg>(n)
     }
 }
 
@@ -201,8 +187,12 @@ unsafe impl NttHandleFactory for NTT4x30NeonHandle {
     fn create_ntt_handle(n: usize) -> Self {
         NTT4x30NeonHandle {
             table_cache: Default::default(),
-            packed: PerRing::new(packed_tables::<Standard>(n), n, packed_tables::<ConjugateInvariant>),
-            ring_plans: PerRing::new(NttPlanSet::new(n), n, NttPlanSet::new),
+            packed: PerRing::new(NTT4x30Neon::MIN_DEGREE, n, Ntt32Table::new, |standard, _| {
+                Ntt32Table::from_standard(standard)
+            }),
+            ring_plans: PerRing::new(NTT4x30Neon::MIN_DEGREE, n, NttPlan::new, |standard, _| {
+                NttPlan::from_standard(standard)
+            }),
             meta_bbc: BbcMeta::new(),
             meta_bbb: BbbMeta::new(),
         }
@@ -210,10 +200,11 @@ unsafe impl NttHandleFactory for NTT4x30NeonHandle {
 }
 
 /// # Safety
-/// The returned references are valid for the lifetime of `&self`.
+/// The returned references are valid for the lifetime of `&self`: the plans of both rings are built in
+/// [`NttHandleFactory::create_ntt_handle`] and never change.
 unsafe impl<Rg: Ring> NttHandleProvider<Rg> for NTT4x30NeonHandle {
     fn get_ntt_plan(&self, n: usize) -> &NttPlan<Primes30, Rg> {
-        self.ring_plans.on_ring::<Rg>().for_ring(n)
+        self.ring_plans.on_ring::<Rg>(n)
     }
 }
 

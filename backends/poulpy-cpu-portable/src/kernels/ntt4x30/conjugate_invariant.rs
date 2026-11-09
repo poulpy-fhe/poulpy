@@ -2,7 +2,7 @@
 
 use std::marker::PhantomData;
 
-use poulpy_hal::layouts::ConjugateInvariant;
+use poulpy_hal::layouts::{ConjugateInvariant, Standard};
 
 use crate::kernels::ntt4x30::{
     ntt::{NttTable, NttTableInv, intt_core, ntt_core},
@@ -112,7 +112,12 @@ fn basis_changes<P: PrimeSetCrt4>(n: usize, inverse: bool) -> [BasisChange; 4] {
 
 impl<P: PrimeSetCrt4> NttTable<P, ConjugateInvariant> {
     pub fn new(n: usize) -> Self {
-        Self::build(n, basis_changes::<P>(n, false))
+        Self::from_standard(&NttTable::<P, Standard>::new(n))
+    }
+
+    /// The table of the degree of `standard`, sharing its twiddles: only the basis change is computed.
+    fn from_standard(standard: &NttTable<P, Standard>) -> Self {
+        standard.with_basis(basis_changes::<P>(standard.n, false))
     }
 
     /// Basis change into the negacyclic basis, applied before the NTT.
@@ -123,7 +128,12 @@ impl<P: PrimeSetCrt4> NttTable<P, ConjugateInvariant> {
 
 impl<P: PrimeSetCrt4> NttTableInv<P, ConjugateInvariant> {
     pub fn new(n: usize) -> Self {
-        Self::build(n, basis_changes::<P>(n, true))
+        Self::from_standard(&NttTableInv::<P, Standard>::new(n))
+    }
+
+    /// The table of the degree of `standard`, sharing its twiddles: only the basis change is computed.
+    fn from_standard(standard: &NttTableInv<P, Standard>) -> Self {
+        standard.with_basis(basis_changes::<P>(standard.n, true))
     }
 
     /// Basis change back to invariant coefficients, applied after the inverse NTT.
@@ -134,9 +144,16 @@ impl<P: PrimeSetCrt4> NttTableInv<P, ConjugateInvariant> {
 
 impl<P: PrimeSetCrt4> NttPlanNew for NttPlan<P, ConjugateInvariant> {
     fn new(n: usize) -> Self {
+        Self::from_standard(&NttPlan::<P, Standard>::new(n))
+    }
+}
+
+impl<P: PrimeSetCrt4> NttPlan<P, ConjugateInvariant> {
+    /// The plan of the degree of `standard`, sharing its twiddles: only the basis changes are computed.
+    pub fn from_standard(standard: &NttPlan<P, Standard>) -> Self {
         Self {
-            ntt: NttTable::<P, ConjugateInvariant>::new(n),
-            intt: NttTableInv::<P, ConjugateInvariant>::new(n),
+            ntt: NttTable::from_standard(&standard.ntt),
+            intt: NttTableInv::from_standard(&standard.intt),
         }
     }
 }

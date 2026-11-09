@@ -13,7 +13,7 @@ use cubecl::prelude::*;
 
 use super::{Column, products::const_product};
 use crate::{
-    ntt4x30::{Consts, DftColumn, Tables, crt_at},
+    ntt4x30::{Consts, DftColumn, RingTables, crt_at},
     runtime::{GpuRuntime, Label, launch, read_at, wipe_host, write_at},
 };
 
@@ -24,7 +24,7 @@ fn normalize_kernel(
     // The source limbs, or the addend of a source held in `dft`.
     a: &[u64],
     dft: &[u32],
-    tw: &[u32],
+    basis: &[u32],
     // The operands of a source that is a sum of constant products.
     ta0: &[u64],
     ta1: &[u64],
@@ -231,7 +231,7 @@ fn normalize_kernel(
                                 x_lo = sum;
                             }
                         } else if residues {
-                            let value = crt_at(dft, tw, dft_base + left * dft_stride, i, n, c, invariant);
+                            let value = crt_at(dft, basis, dft_base + left * dft_stride, i, n, c, invariant);
                             x_lo = value.0;
                             x_hi = value.1;
                             if left < a_size {
@@ -340,7 +340,7 @@ enum Source<'a, RT: GpuRuntime> {
     Residues {
         dft: &'a DftColumn,
         addend: Option<&'a Column>,
-        tables: &'a Tables<RT>,
+        tables: RingTables<'a, RT>,
     },
     /// The sum of constant products `(a, b, coefficient of b, offset)`, over `size` limbs.
     Products {
@@ -441,7 +441,7 @@ pub(crate) fn normalize_products<RT: GpuRuntime>(
 /// `dft.size` limbs.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn normalize_residues<RT: GpuRuntime>(
-    tables: &Tables<RT>,
+    tables: RingTables<'_, RT>,
     res: &Column,
     res_base2k: usize,
     res_k: usize,
@@ -488,14 +488,19 @@ fn launch<RT: GpuRuntime>(res: &Column, res_base2k: usize, res_k: usize, offset:
         Source::Products { terms, .. } => terms,
         _ => &[],
     };
-    let (a, a_size, dft, table, invariant, source_size) = match source {
+    let (a, a_size, dft, basis, invariant, source_size) = match source {
         Source::Limbs(a) => (a, a.size, None, a.binding.clone(), false, a.size),
         Source::Products { size, .. } => (res, size, None, res.binding.clone(), false, size),
         Source::Residues { dft, addend, tables } => (
             addend.unwrap_or(res),
             addend.map_or(0, |addend| addend.size.min(dft.size)),
             Some(dft),
-            tables.of(res.n).view().binding().expect("transform tables hold storage"),
+            tables
+                .of(res.n)
+                .basis
+                .view()
+                .binding()
+                .expect("transform tables hold storage"),
             tables.invariant(),
             dft.size,
         ),
@@ -536,7 +541,7 @@ fn launch<RT: GpuRuntime>(res: &Column, res_base2k: usize, res_k: usize, offset:
             res.binding => u64,
             a.binding => u64,
             *dft.map_or(&a.binding, |dft| &dft.binding) => u32,
-            table => u32,
+            basis => u32,
             *term(0).map_or(&a.binding, |term| &term.0.binding) => u64,
             *term(1).map_or(&a.binding, |term| &term.0.binding) => u64,
             *term(2).map_or(&a.binding, |term| &term.0.binding) => u64,

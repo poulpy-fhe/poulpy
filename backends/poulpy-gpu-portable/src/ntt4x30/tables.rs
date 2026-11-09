@@ -1,15 +1,23 @@
-//! Transform tables, built on the host and uploaded once per degree.
+//! Transform tables, built on the host and uploaded with the module, for
+//! every degree it serves on both rings.
 //!
-//! One device buffer per degree `n`, in planes of `n` words per prime. Every
-//! word is the Shoup companion of a multiplier (see `primes::companion`).
+//! Every word is the Shoup companion of a multiplier (see `primes::companion`),
+//! in planes of `n` words per prime. Both rings share the twiddles of degree
+//! `n`, one device buffer of `8n` words:
 //!
-//! | words       | content                                                        |
-//! |-------------|----------------------------------------------------------------|
-//! | `0..4n`     | forward twiddles: entry `2^s + i` is `psi^bitrev(2^s + i)`     |
-//! | `4n..8n`    | inverse twiddles `psi^-bitrev(.)`; entry 0 is `n^-1`, entry 1 has it folded in |
-//! | `8n..12n`   | conjugate-invariant ring: `alpha^-j`                           |
-//! | `12n..16n`  | conjugate-invariant ring: `alpha^j / 2`, entry 0 is 1          |
-//! | `16n..20n`  | conjugate-invariant ring: `-alpha^-j / 2`, entry 0 is unused   |
+//! | words      | content                                                                        |
+//! |------------|--------------------------------------------------------------------------------|
+//! | `0..4n`    | forward twiddles: entry `2^s + i` is `psi^bitrev(2^s + i)`                     |
+//! | `4n..8n`   | inverse twiddles `psi^-bitrev(.)`; entry 0 is `n^-1`, entry 1 has it folded in |
+//!
+//! The conjugate-invariant ring adds the basis change of degree `n`, one
+//! device buffer of `12n` words:
+//!
+//! | words      | content                                     |
+//! |------------|---------------------------------------------|
+//! | `0..4n`    | forward: `alpha^-j`                         |
+//! | `4n..8n`   | inverse: `alpha^j / 2`, entry 0 is 1        |
+//! | `8n..12n`  | inverse: `-alpha^-j / 2`, entry 0 is unused |
 //!
 //! `psi` is the primitive `2n`-th root `OMEGA^(2^MAX_LOG_N / n)` and `alpha`
 //! the primitive `4n`-th root with `alpha^2 = psi`. Stage `s` of a transform
@@ -17,7 +25,7 @@
 //! twiddle entry `2^s + i`.
 
 use poulpy_cpu_portable::kernels::ntt4x30::{conjugate_invariant::BasisChange, primes::Primes30};
-use poulpy_hal::layouts::PrimeSet;
+use poulpy_hal::layouts::{PrimeSet, Ring};
 
 use super::primes::{MAX_LOG_N, Q, companion, inv_mod, mul_mod, omega_pow2};
 use crate::runtime::{GpuBuf, GpuRuntime};
@@ -39,10 +47,13 @@ fn bit_reversed(powers: &[u32], log_n: u32) -> Vec<u32> {
         .collect()
 }
 
-fn build(log_n: u32, invariant: bool) -> Vec<u32> {
+fn push(words: &mut Vec<u32>, multipliers: &[u32], q: u32) {
+    words.extend(multipliers.iter().map(|&w| companion(w, q)));
+}
+
+fn twiddle_words(log_n: u32) -> Vec<u32> {
     let n = 1usize << log_n;
-    let mut words = Vec::with_capacity(if invariant { 20 * n } else { 8 * n });
-    let push = |words: &mut Vec<u32>, multipliers: &[u32], q: u32| words.extend(multipliers.iter().map(|&w| companion(w, q)));
+    let mut words = Vec::with_capacity(8 * n);
     for inverse in [false, true] {
         for (k, &q) in Q.iter().enumerate() {
             let psi = omega_pow2(k, MAX_LOG_N - log_n);
@@ -56,60 +67,104 @@ fn build(log_n: u32, invariant: bool) -> Vec<u32> {
             push(&mut words, &twiddles, q);
         }
     }
-    if invariant {
-        // The multipliers of portable's basis change: forward `[alpha^-j, .]`,
-        // inverse `[alpha^j / 2, -alpha^-j / 2]`, entry 0 being `[1, 0]`.
-        let change = |k: usize, inverse: bool| {
-            BasisChange::new(n, Q[k] as u64, <Primes30 as PrimeSet>::OMEGA[k] as u64, MAX_LOG_N, inverse)
-        };
-        let plane = |change: &BasisChange, side: usize| -> Vec<u32> {
-            let mut words: Vec<u32> = change.factors().iter().map(|factor| factor[side] as u32).collect();
-            // Entry 0 of the reflected plane is unused and zero: 1 keeps its companion defined.
-            words[0] = words[0].max(1);
-            words
-        };
-        let (forward, inverse): (Vec<_>, Vec<_>) = (0..4).map(|k| (change(k, false), change(k, true))).unzip();
-        for (k, &q) in Q.iter().enumerate() {
-            push(&mut words, &plane(&forward[k], 0), q);
-        }
-        for (k, &q) in Q.iter().enumerate() {
-            push(&mut words, &plane(&inverse[k], 0), q);
-        }
-        for (k, &q) in Q.iter().enumerate() {
-            push(&mut words, &plane(&inverse[k], 1), q);
-        }
+    words
+}
+
+/// The multipliers of portable's basis change: forward `[alpha^-j, .]`,
+/// inverse `[alpha^j / 2, -alpha^-j / 2]`, entry 0 being `[1, 0]`.
+fn basis_words(log_n: u32) -> Vec<u32> {
+    let n = 1usize << log_n;
+    let change =
+        |k: usize, inverse: bool| BasisChange::new(n, Q[k] as u64, <Primes30 as PrimeSet>::OMEGA[k] as u64, MAX_LOG_N, inverse);
+    let plane = |change: &BasisChange, side: usize| -> Vec<u32> {
+        let mut words: Vec<u32> = change.factors().iter().map(|factor| factor[side] as u32).collect();
+        // Entry 0 of the reflected plane is unused and zero: 1 keeps its companion defined.
+        words[0] = words[0].max(1);
+        words
+    };
+    let (forward, inverse): (Vec<_>, Vec<_>) = (0..4).map(|k| (change(k, false), change(k, true))).unzip();
+    let mut words = Vec::with_capacity(12 * n);
+    for (k, &q) in Q.iter().enumerate() {
+        push(&mut words, &plane(&forward[k], 0), q);
+    }
+    for (k, &q) in Q.iter().enumerate() {
+        push(&mut words, &plane(&inverse[k], 0), q);
+    }
+    for (k, &q) in Q.iter().enumerate() {
+        push(&mut words, &plane(&inverse[k], 1), q);
     }
     words
 }
 
-/// The tables of every degree a module serves.
+/// The tables of every degree a module serves, from `2^MIN_LOG_N` on.
 pub(crate) struct Tables<RT: GpuRuntime> {
-    by_log_n: Vec<GpuBuf<RT>>,
-    invariant: bool,
+    twiddles: Vec<GpuBuf<RT>>,
+    basis: Vec<GpuBuf<RT>>,
 }
 
 impl<RT: GpuRuntime> Tables<RT> {
-    /// Tables of the degrees `8..=n` of the standard ring, or of the
-    /// conjugate-invariant ring when `invariant`.
-    pub(crate) fn new(n: usize, invariant: bool) -> Self {
-        let max_log_n = MAX_LOG_N - invariant as u32;
+    /// The tables of the degrees `8..=n`, on both rings.
+    pub(crate) fn new(n: usize) -> Self {
+        // One module serves both rings, and the basis change takes a primitive `4n`-th root.
         assert!(
-            n.is_power_of_two() && n <= 1 << max_log_n,
+            n.is_power_of_two() && n <= 1 << (MAX_LOG_N - 1),
             "ring degree must be a power of two within the prime set's transform"
         );
-        let by_log_n = (MIN_LOG_N..=n.ilog2())
-            .map(|log_n| GpuBuf::from_host(bytemuck::cast_slice(&build(log_n, invariant))))
-            .collect();
-        Self { by_log_n, invariant }
+        let upload = |words: Vec<u32>| GpuBuf::from_host(bytemuck::cast_slice(&words));
+        let degrees = MIN_LOG_N..=n.ilog2();
+        Self {
+            twiddles: degrees.clone().map(|log_n| upload(twiddle_words(log_n))).collect(),
+            basis: degrees.map(|log_n| upload(basis_words(log_n))).collect(),
+        }
     }
 
-    /// The table of degree `n`.
-    pub(crate) fn of(&self, n: usize) -> &GpuBuf<RT> {
+    /// The tables of ring `R`.
+    pub(crate) fn ring<R: Ring>(&self) -> RingTables<'_, RT> {
+        let invariant = R::CYCLOTOMIC_ORDER_FACTOR == 4;
+        RingTables {
+            twiddles: &self.twiddles,
+            basis: if invariant { &self.basis } else { &self.twiddles },
+            invariant,
+        }
+    }
+}
+
+/// The tables of one ring.
+pub(crate) struct RingTables<'a, RT: GpuRuntime> {
+    twiddles: &'a [GpuBuf<RT>],
+    basis: &'a [GpuBuf<RT>],
+    invariant: bool,
+}
+
+impl<RT: GpuRuntime> Clone for RingTables<'_, RT> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<RT: GpuRuntime> Copy for RingTables<'_, RT> {}
+
+/// The tables of one degree.
+pub(crate) struct Table<'a, RT: GpuRuntime> {
+    pub(crate) twiddles: &'a GpuBuf<RT>,
+    /// The basis change, or on the standard ring, whose kernels read none, the twiddles.
+    pub(crate) basis: &'a GpuBuf<RT>,
+}
+
+impl<'a, RT: GpuRuntime> RingTables<'a, RT> {
+    /// The tables of degree `n`.
+    pub(crate) fn of(&self, n: usize) -> Table<'a, RT> {
         assert!(n.is_power_of_two(), "ring degree must be a power of two");
-        n.ilog2()
+        let index = n
+            .ilog2()
             .checked_sub(MIN_LOG_N)
-            .and_then(|index| self.by_log_n.get(index as usize))
-            .expect("degree not served by the module")
+            .map(|index| index as usize)
+            .filter(|&index| index < self.twiddles.len())
+            .expect("degree not served by the module");
+        Table {
+            twiddles: &self.twiddles[index],
+            basis: &self.basis[index],
+        }
     }
 
     /// Whether the tables are of the conjugate-invariant ring.

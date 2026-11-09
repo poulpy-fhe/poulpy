@@ -35,7 +35,7 @@ pub(crate) use elementwise::{DftTerm, combine};
 pub(crate) use ntt::{forward, inverse, inverse_head, inverse_tail};
 pub(crate) use primes::Consts;
 pub(crate) use svp::scale;
-pub(crate) use tables::Tables;
+pub(crate) use tables::{RingTables, Tables};
 pub(crate) use vmp::{
     MANY_SOURCES, Pmat, Tail, digit_product, digit_product_inverse, digit_products, digit_products_inverse, extract_rows,
 };

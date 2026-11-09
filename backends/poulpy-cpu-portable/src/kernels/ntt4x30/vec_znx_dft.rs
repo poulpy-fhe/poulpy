@@ -48,6 +48,9 @@ use crate::{
 // ──────────────────────────────────────────────────────────────────────────────
 
 /// Forward and inverse NTT tables for one ring degree.
+///
+/// The conjugate-invariant plan of a degree shares the twiddles of the standard plan of that degree
+/// ([`NttPlan::from_standard`]).
 pub struct NttPlan<P: PrimeSetCrt4, R: Ring = Standard> {
     pub(super) ntt: NttTable<P, R>,
     pub(super) intt: NttTableInv<P, R>,
@@ -66,42 +69,6 @@ impl<P: PrimeSetCrt4, R: Ring> NttPlan<P, R> {
 
     pub fn intt(&self) -> &NttTableInv<P, R> {
         &self.intt
-    }
-}
-
-/// Complete geometric family of NTT plans up to a maximum ring degree.
-pub struct NttPlanSet<P: PrimeSetCrt4, R: Ring = Standard> {
-    plans: Vec<NttPlan<P, R>>,
-    max_n: usize,
-}
-
-impl<P: PrimeSetCrt4, R: Ring> NttPlanSet<P, R> {
-    pub fn new(max_n: usize) -> Self
-    where
-        NttPlan<P, R>: NttPlanNew,
-    {
-        let max_degree = crate::kernels::ntt4x30::ntt::max_ntt_degree_portable::<P, R>();
-        assert!(
-            max_n.is_power_of_two() && max_n <= max_degree,
-            "maximum ring degree must be a power of two ≤ {max_degree}, got {max_n}"
-        );
-        let plans = (0..=max_n.ilog2() as usize)
-            .map(|log_n| NttPlan::new(1usize << log_n))
-            .collect();
-        Self { plans, max_n }
-    }
-
-    pub fn max_n(&self) -> usize {
-        self.max_n
-    }
-
-    pub fn for_ring(&self, n: usize) -> &NttPlan<P, R> {
-        assert!(
-            n.is_power_of_two() && n <= self.max_n,
-            "unsupported ring degree {n}; maximum is {}",
-            self.max_n
-        );
-        &self.plans[n.ilog2() as usize]
     }
 }
 
@@ -150,9 +117,8 @@ pub trait NttMetaHandle {
 ///
 /// # Safety
 ///
-/// Implementors must return references that stay valid for the lifetime of `&self`, to plans
-/// built at construction or once on first use under internal synchronization, as
-/// [`PerRing`](crate::kernels::PerRing) builds the conjugate-invariant ones.
+/// Implementors must return references that stay valid for the lifetime of `&self`, to plans of both rings
+/// fully built before `Module::new()` returns.
 pub unsafe trait NttHandleProvider<Rg: Ring = Standard>: NttMetaProvider {
     /// Returns the combined NTT plan for `n`.
     fn get_ntt_plan(&self, n: usize) -> &NttPlan<Primes30, Rg>;
@@ -162,7 +128,8 @@ pub unsafe trait NttHandleProvider<Rg: Ring = Standard>: NttMetaProvider {
 ///
 /// # Safety
 ///
-/// Implementors must ensure the returned references are valid for the lifetime of `&self`.
+/// Implementors must return references that stay valid for the lifetime of `&self`, to metadata fully built
+/// before `Module::new()` returns.
 pub unsafe trait NttMetaProvider {
     /// Returns a reference to the `q120b × q120c` lazy multiply–accumulate metadata.
     fn get_bbc_meta(&self) -> &BbcMeta<Primes30>;

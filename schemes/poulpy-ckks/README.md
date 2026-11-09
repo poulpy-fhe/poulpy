@@ -435,8 +435,8 @@ Higher-level functionality on top of that foundation:
 ## Conjugate invariant CKKS
 
 Every module also serves the conjugate-invariant ring: an operand of degree `N`
-on `ConjugateInvariant` holds `N` real slots. The ring tables are built on the
-first conjugate-invariant call. `module.ckks_max_slots::<ConjugateInvariant>()`
+on `ConjugateInvariant` holds `N` real slots, and `Module::new` builds the
+transform tables of both rings. `module.ckks_max_slots::<ConjugateInvariant>()`
 reports the capacity, and `module.ckks_galois_element::<ConjugateInvariant>(rotation)`
 provides the identifiers for rotation keys. On both
 rings, shifts wrap modulo the slot count and negative shifts rotate backwards.

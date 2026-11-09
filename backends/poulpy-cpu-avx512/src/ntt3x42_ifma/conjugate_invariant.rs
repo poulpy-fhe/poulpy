@@ -11,12 +11,12 @@ use poulpy_cpu_portable::kernels::{
     },
     znx::{ZnxAutomorphism, conjugate_invariant::znx_automorphism_portable},
 };
-use poulpy_hal::layouts::ConjugateInvariant;
+use poulpy_hal::layouts::{ConjugateInvariant, Standard};
 
 use super::{
     NTT3x42Ifma,
     kernels::{cond_sub_2q_si512, harvey_modmul_si512, intt_avx512, ntt_avx512},
-    module::RingTables,
+    module::DegreeTables,
     primes::{PrimeSetNtt3x42Ifma, Primes42},
     tables::{Ntt3x42IfmaTable, Ntt3x42IfmaTableInv, cond_sub_2q, harvey_modmul, harvey_quotient},
     traits::Ntt3x42IfmaDFTExecute,
@@ -53,7 +53,12 @@ fn basis_changes<P: PrimeSetNtt3x42Ifma>(n: usize, inverse: bool) -> [BasisChang
 
 impl<P: PrimeSetNtt3x42Ifma> Ntt3x42IfmaTable<P, ConjugateInvariant> {
     pub fn new(n: usize) -> Self {
-        Self::build(n, basis_changes::<P>(n, false))
+        Self::from_standard(&Ntt3x42IfmaTable::<P, Standard>::new(n))
+    }
+
+    /// The table of the degree of `standard`, sharing its twiddles.
+    fn from_standard(standard: &Ntt3x42IfmaTable<P, Standard>) -> Self {
+        standard.with_basis(basis_changes::<P>(standard.n, false))
     }
 
     /// Basis change into the negacyclic basis, applied before the NTT.
@@ -64,7 +69,12 @@ impl<P: PrimeSetNtt3x42Ifma> Ntt3x42IfmaTable<P, ConjugateInvariant> {
 
 impl<P: PrimeSetNtt3x42Ifma> Ntt3x42IfmaTableInv<P, ConjugateInvariant> {
     pub fn new(n: usize) -> Self {
-        Self::build(n, basis_changes::<P>(n, true))
+        Self::from_standard(&Ntt3x42IfmaTableInv::<P, Standard>::new(n))
+    }
+
+    /// The table of the degree of `standard`, sharing its twiddles.
+    fn from_standard(standard: &Ntt3x42IfmaTableInv<P, Standard>) -> Self {
+        standard.with_basis(basis_changes::<P>(standard.n, true))
     }
 
     /// Basis change back to invariant coefficients, applied after the inverse NTT.
@@ -73,13 +83,12 @@ impl<P: PrimeSetNtt3x42Ifma> Ntt3x42IfmaTableInv<P, ConjugateInvariant> {
     }
 }
 
-/// The conjugate-invariant tables of every degree up to `n`.
-pub(super) fn tables(n: usize) -> RingTables<ConjugateInvariant> {
-    RingTables::build(
-        n,
-        Ntt3x42IfmaTable::<Primes42, ConjugateInvariant>::new,
-        Ntt3x42IfmaTableInv::<Primes42, ConjugateInvariant>::new,
-    )
+/// The conjugate-invariant tables of the degree of `standard`, sharing its twiddles.
+pub(super) fn tables(standard: &DegreeTables<Standard>) -> DegreeTables<ConjugateInvariant> {
+    DegreeTables {
+        ntt: Ntt3x42IfmaTable::from_standard(&standard.ntt),
+        intt: Ntt3x42IfmaTableInv::from_standard(&standard.intt),
+    }
 }
 
 impl ZnxAutomorphism<ConjugateInvariant> for NTT3x42Ifma {

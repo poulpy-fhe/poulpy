@@ -121,12 +121,11 @@
 //! # Threading and concurrency
 //!
 //! - **`FFT64Avx` is `Send + Sync`**: Zero-sized marker type, no internal state.
-//! - **`Module<FFT64Avx>` is `Send + Sync`**: FFT tables are never mutated once built, the
-//!   conjugate-invariant ones built once on first use.
+//! - **`Module<FFT64Avx>` is `Send + Sync`**: FFT tables of both rings are immutable after construction.
 //! - **Operations require `&mut` for outputs**: Prevents data races at the API level.
-//! - **Internal locking only for state built on first use**: The conjugate-invariant tables (a `OnceLock`) and the
-//!   plan families of the module's `ModulePlanCache` (an `RwLock` plus a per-family `Mutex`) block concurrent first
-//!   users; synchronizing operations is the caller's responsibility.
+//! - **Internal locking only for state built on first use**: the plan families of the module's `ModulePlanCache`
+//!   (an `RwLock` plus a per-family `Mutex`) block concurrent first users; synchronizing operations is the caller's
+//!   responsibility.
 //!
 //! # Feature flags
 //!

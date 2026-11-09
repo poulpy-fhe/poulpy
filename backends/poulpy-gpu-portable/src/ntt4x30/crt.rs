@@ -8,7 +8,7 @@
 
 use cubecl::prelude::*;
 
-use super::{DftColumn, primes::Consts, tables::Tables};
+use super::{DftColumn, primes::Consts, tables::RingTables};
 use crate::{
     runtime::{GpuRuntime, Label, launch},
     znx::Column,
@@ -74,12 +74,12 @@ fn center(lo: u64, hi: u64, #[comptime] c: Consts) -> (u64, u64) {
 /// Residue of coefficient `i` in the plane starting at `plane`. Over the
 /// conjugate-invariant ring the plane holds the negacyclic basis and the
 /// coefficient is `c_0 = b_0`, `c_i = (alpha^i b_i - alpha^-i b_{n-i}) / 2`;
-/// `table` is the start of the prime's plane of `alpha^i / 2`.
+/// `table` is the start of the prime's plane of `alpha^i / 2` in `basis`.
 #[cube]
 #[allow(clippy::too_many_arguments)]
 fn residue(
     dft: &[u32],
-    tw: &[u32],
+    basis: &[u32],
     plane: u32,
     table: u32,
     i: u32,
@@ -91,8 +91,8 @@ fn residue(
     let mut r = dft[(plane + i) as usize];
     if invariant {
         let other = dft[(plane + ((n - i) & (n - 1u32))) as usize];
-        let direct = tw[(table + i) as usize];
-        let reflected = tw[(table + 4u32 * n + i) as usize];
+        let direct = basis[(table + i) as usize];
+        let reflected = basis[(table + 4u32 * n + i) as usize];
         let u = r * (direct.mul_hi(q) + 1u32) - r.mul_hi(direct) * q;
         let v = other * (reflected.mul_hi(q) + 1u32) - other.mul_hi(reflected) * q;
         let mut s = u + v;
@@ -104,22 +104,21 @@ fn residue(
 }
 
 /// The centered value of coefficient `i` of the block starting at `block`,
-/// as its low and high words. `tw` is the table of degree `n`.
+/// as its low and high words. `basis` is the basis change of degree `n`.
 #[cube]
 pub(crate) fn crt_at(
     dft: &[u32],
-    tw: &[u32],
+    basis: &[u32],
     block: u32,
     i: u32,
     n: u32,
     #[comptime] c: Consts,
     #[comptime] invariant: bool,
 ) -> (u64, u64) {
-    let table = 12u32 * n;
-    let r0 = residue(dft, tw, block, table, i, n, c.q[0], c.q2[0], invariant);
-    let r1 = residue(dft, tw, block + n, table + n, i, n, c.q[1], c.q2[1], invariant);
-    let r2 = residue(dft, tw, block + 2u32 * n, table + 2u32 * n, i, n, c.q[2], c.q2[2], invariant);
-    let r3 = residue(dft, tw, block + 3u32 * n, table + 3u32 * n, i, n, c.q[3], c.q2[3], invariant);
+    let r0 = residue(dft, basis, block, 4u32 * n, i, n, c.q[0], c.q2[0], invariant);
+    let r1 = residue(dft, basis, block + n, 5u32 * n, i, n, c.q[1], c.q2[1], invariant);
+    let r2 = residue(dft, basis, block + 2u32 * n, 6u32 * n, i, n, c.q[2], c.q2[2], invariant);
+    let r3 = residue(dft, basis, block + 3u32 * n, 7u32 * n, i, n, c.q[3], c.q2[3], invariant);
     let (x1, x2, x3) = garner(r0, r1, r2, r3, c);
     let (lo, hi) = accumulate(r0, x1, x2, x3, c);
     center(lo, hi, c)
@@ -130,7 +129,7 @@ pub(crate) fn crt_at(
 fn to_big_kernel(
     res: &mut [u64],
     dft: &[u32],
-    tw: &[u32],
+    basis: &[u32],
     n: u32,
     limbs: u32,
     res_base: u32,
@@ -148,7 +147,7 @@ fn to_big_kernel(
         let mut lo = 0u64;
         let mut hi = 0u64;
         if limb < dft_size {
-            let value = crt_at(dft, tw, dft_base + limb * dft_stride, i, n, c, invariant);
+            let value = crt_at(dft, basis, dft_base + limb * dft_stride, i, n, c, invariant);
             lo = value.0;
             hi = value.1;
         }
@@ -168,7 +167,7 @@ fn to_big_clearing_kernel(
     res: &mut [u64],
     // The temporary, bound twice: cleared through this view, read through `dft`.
     clear: &mut [u32],
-    tw: &[u32],
+    basis: &[u32],
     dft: &[u32],
     n: u32,
     // Units per limb: `n`, or `n / 2 + 1` over the conjugate-invariant ring.
@@ -193,11 +192,11 @@ fn to_big_clearing_kernel(
         let mut lo_j = 0u64;
         let mut hi_j = 0u64;
         if limb < dft_size {
-            let value = crt_at(dft, tw, block, i, n, c, invariant);
+            let value = crt_at(dft, basis, block, i, n, c, invariant);
             lo = value.0;
             hi = value.1;
             if invariant {
-                let value_j = crt_at(dft, tw, block, j, n, c, invariant);
+                let value_j = crt_at(dft, basis, block, j, n, c, invariant);
                 lo_j = value_j.0;
                 hi_j = value_j.1;
             }
@@ -222,20 +221,21 @@ fn to_big_clearing_kernel(
 /// Writes every limb of the big column `res` with the centered values of
 /// `dft`, which holds the output of the inverse transform; limbs past `dft`'s
 /// are zero.
-pub(crate) fn to_big<RT: GpuRuntime>(tables: &Tables<RT>, res: &Column, dft: &DftColumn) {
+pub(crate) fn to_big<RT: GpuRuntime>(tables: RingTables<'_, RT>, res: &Column, dft: &DftColumn) {
     assert!(res.n == dft.n, "reconstruction between different degrees");
     assert!(res.words == 2, "reconstruction writes `i128` values");
     if res.size == 0 {
         return;
     }
-    let table = tables.of(res.n).view().binding().expect("transform tables hold storage");
+    let table = tables.of(res.n);
+    let basis = table.basis.view().binding().expect("transform tables hold storage");
     let units = res.n * res.size;
     launch!(
         RT, Label::CrtToBig, units * 16 + res.n * res.size.min(dft.size) * 16, to_big_kernel, (units, RT::GROUP, RT::GROUP);
         [
             res.binding => u64,
             dft.binding => u32,
-            table => u32,
+            basis => u32,
         ];
         [
             res.n as u32,
@@ -252,14 +252,15 @@ pub(crate) fn to_big<RT: GpuRuntime>(tables: &Tables<RT>, res: &Column, dft: &Df
 
 /// [`to_big`] from a temporary `dft`, every word of which it reads is zeroed:
 /// the temporary leaves the call holding nothing it computed.
-pub(crate) fn to_big_clearing<RT: GpuRuntime>(tables: &Tables<RT>, res: &Column, dft: &DftColumn) {
+pub(crate) fn to_big_clearing<RT: GpuRuntime>(tables: RingTables<'_, RT>, res: &Column, dft: &DftColumn) {
     assert!(res.n == dft.n, "reconstruction between different degrees");
     assert!(res.words == 2, "reconstruction writes `i128` values");
     assert!(dft.size <= res.size, "the temporary has no limb past the result's");
     if res.size == 0 {
         return;
     }
-    let table = tables.of(res.n).view().binding().expect("transform tables hold storage");
+    let table = tables.of(res.n);
+    let basis = table.basis.view().binding().expect("transform tables hold storage");
     let per_limb = if tables.invariant() { res.n / 2 + 1 } else { res.n };
     let units = per_limb * res.size;
     launch!(
@@ -267,7 +268,7 @@ pub(crate) fn to_big_clearing<RT: GpuRuntime>(tables: &Tables<RT>, res: &Column,
         [
             res.binding => u64,
             dft.binding => u32,
-            table => u32,
+            basis => u32,
             dft.binding => u32,
         ];
         [

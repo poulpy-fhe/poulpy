@@ -12,6 +12,8 @@
 //!
 //! Every loop is a plain loop over slices with a fixed stride, which compilers turn into vector code.
 
+use std::sync::Arc;
+
 use bytemuck::{cast_slice, cast_slice_mut};
 use poulpy_hal::execution::TaskExecutor;
 
@@ -93,10 +95,13 @@ struct FinalConst {
 }
 
 /// Tables of the packed NTT of one degree.
+///
+/// The conjugate-invariant table of a degree shares the twiddles of the standard table of that degree and adds its
+/// basis changes.
 pub(crate) struct Ntt32Table {
     n: usize,
-    fwd: [PlaneTable; 4],
-    inv: [PlaneTable; 4],
+    fwd: Arc<[PlaneTable; 4]>,
+    inv: Arc<[PlaneTable; 4]>,
     /// Indexed by `prepared`, then by prime.
     conv: [[ConvConst; 4]; 2],
     fin: [FinalConst; 4],
@@ -105,8 +110,8 @@ pub(crate) struct Ntt32Table {
 }
 
 impl Ntt32Table {
-    /// Tables of degree `n`, with the basis changes of the conjugate-invariant ring when `conjugate_invariant` is set.
-    pub(crate) fn new(n: usize, conjugate_invariant: bool) -> Self {
+    /// Tables of degree `n` of the standard ring.
+    pub(crate) fn new(n: usize) -> Self {
         assert!(n.is_power_of_two() && (MIN_N..=1 << Primes30::MAX_LOG_N).contains(&n));
         let psi: [u32; 4] =
             std::array::from_fn(|p| modq_pow_portable(Primes30::OMEGA[p], (1i64 << Primes30::MAX_LOG_N) / n as i64, Q[p]));
@@ -137,15 +142,29 @@ impl Ntt32Table {
                 cwp: quotient(cw, q),
             }
         });
-        let ci =
-            conjugate_invariant.then(|| std::array::from_fn(|inverse| std::array::from_fn(|p| CiPlane::new(n, p, inverse == 1))));
         Self {
             n,
-            fwd,
-            inv,
+            fwd: Arc::new(fwd),
+            inv: Arc::new(inv),
             conv,
             fin,
-            ci,
+            ci: None,
+        }
+    }
+
+    /// Tables of the conjugate-invariant ring of the degree of `standard`, sharing its twiddles: only the basis
+    /// changes are computed.
+    pub(crate) fn from_standard(standard: &Self) -> Self {
+        let n = standard.n;
+        Self {
+            n,
+            fwd: Arc::clone(&standard.fwd),
+            inv: Arc::clone(&standard.inv),
+            conv: standard.conv,
+            fin: standard.fin,
+            ci: Some(std::array::from_fn(|inverse| {
+                std::array::from_fn(|p| CiPlane::new(n, p, inverse == 1))
+            })),
         }
     }
 
@@ -723,7 +742,12 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(3);
         for log_n in LOG_N {
             let n = 1 << log_n;
-            let table = Ntt32Table::new(n, conjugate_invariant);
+            let standard = Ntt32Table::new(n);
+            let table = if conjugate_invariant {
+                Ntt32Table::from_standard(&standard)
+            } else {
+                standard
+            };
             assert_eq!(table.n(), n);
             let plan = <NttPlan<Primes30, Rg> as NttPlanNew>::new(n);
             let (fwd, inv) = (plan.ntt(), plan.intt());
