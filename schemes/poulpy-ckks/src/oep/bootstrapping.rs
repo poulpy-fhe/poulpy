@@ -7,7 +7,7 @@
 use poulpy_core::layouts::{
     GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LinearTransformation, prepared::GGLWEPreparedBackendRef,
 };
-use poulpy_hal::layouts::{Backend, ConjugateInvariant, Module, ScratchArena, Standard};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
     CKKSCtBounds, CKKSResult, SetCKKSInfos,
@@ -24,7 +24,7 @@ use crate::{
 /// Implementations reproduce the bodies their methods document bit for bit, report for each
 /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait CKKSBootstrappingImpl: Backend<Ring = Standard> {
+pub unsafe trait CKKSBootstrappingImpl: Backend {
     /// Scratch bound of [`Self::ckks_mod_up_into`]; may report less than the reference, never less than the body takes.
     fn ckks_mod_up_tmp_bytes(module: &Module<Self>, res_size: usize) -> usize;
 
@@ -134,29 +134,23 @@ pub unsafe trait CKKSBootstrappingImpl: Backend<Ring = Standard> {
 }
 
 /// Backend override hook for [`CKKSBootstrappingCIOps`](crate::api::CKKSBootstrappingCIOps),
-/// the bootstrap with EvalMod on the conjugate-invariant ring of [`Self::CI`].
+/// the bootstrap with EvalMod on the conjugate-invariant ring, on the same module.
 /// [`impl_ckks_bootstrapping_ci_reference_full`] wires it to the reference pipeline.
 ///
 /// # Safety
 /// Implementations reproduce the bodies their methods document bit for bit, report for each
 /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait CKKSBootstrappingCIImpl: Backend<Ring = Standard> {
-    /// The conjugate-invariant twin that runs EvalMod, sharing the buffers of `Self`.
-    type CI: Backend<Ring = ConjugateInvariant, OwnedBuf = Self::OwnedBuf, ZnxWord = Self::ZnxWord>
-        + for<'a> Backend<BufRef<'a> = Self::BufRef<'a>, BufMut<'a> = Self::BufMut<'a>>
-        + 'static;
-
-    /// Scratch bound of [`Self::ckks_bootstrap_ci_into`], one size per arena as `(scratch, scratch_ci)`; may report
-    /// less than the reference, never less than the body uses.
+pub unsafe trait CKKSBootstrappingCIImpl: Backend {
+    /// Scratch bound of [`Self::ckks_bootstrap_ci_into`], one arena serving both rings; may report less than the
+    /// reference, never less than the body uses.
     fn ckks_bootstrap_ci_tmp_bytes<C1, C2, F>(
         module: &Module<Self>,
-        ci: &Module<Self::CI>,
         ct_out: &C1,
         ct_in: &C2,
         ctx: &BootstrappingContextPrepared<Self, F>,
         keys_layout: &BootstrappingKeysLayout,
-    ) -> (usize, usize)
+    ) -> usize
     where
         C1: CKKSCtBounds,
         C2: CKKSCtBounds;
@@ -164,25 +158,19 @@ pub unsafe trait CKKSBootstrappingCIImpl: Backend<Ring = Standard> {
     /// Reproduces
     /// [`ckks_bootstrap_ci_reference`](crate::reference::bootstrapping::CKKSBootstrappingCIReference::ckks_bootstrap_ci_reference)
     /// bit for bit: values, metadata, canonical flag, refusals and their order; free in kernels. It runs within what
-    /// [`Self::ckks_bootstrap_ci_tmp_bytes`] reports for each arena.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "the bootstrap takes a module and a scratch arena per ring"
-    )]
+    /// [`Self::ckks_bootstrap_ci_tmp_bytes`] reports.
     fn ckks_bootstrap_ci_into<Dst, Src, F, K>(
         module: &Module<Self>,
-        ci: &Module<Self::CI>,
         dst: &mut Dst,
         src: &Src,
         ctx: &BootstrappingContextPrepared<Self, F>,
         keys: &K,
         scratch: &mut ScratchArena<'_, Self>,
-        scratch_ci: &mut ScratchArena<'_, Self::CI>,
     ) -> CKKSResult<()>
     where
         Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<Self> + CKKSCtBounds,
-        K: BootstrappingCIKeys<Self, Self::CI>;
+        K: BootstrappingCIKeys<Self>;
 }
 
 /// Backend implementation of the modulus raise that applies the first
@@ -193,7 +181,7 @@ pub unsafe trait CKKSBootstrappingCIImpl: Backend<Ring = Standard> {
 /// Implementations reproduce the bodies their methods document bit for bit, report for each
 /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait CKKSModUpFirstFactorImpl: Backend<Ring = Standard> {
+pub unsafe trait CKKSModUpFirstFactorImpl: Backend {
     /// Scratch bound of [`Self::ckks_mod_up_first_factor`]; may report less than the reference, never less than the
     /// body takes. `d2s_infos` is the dense-to-sparse key under encapsulation, `key_infos` the layout of the
     /// first-factor keys.
@@ -240,7 +228,7 @@ pub unsafe trait CKKSModUpFirstFactorImpl: Backend<Ring = Standard> {
 /// Implementations reproduce the bodies their methods document bit for bit, report for each
 /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait CKKSEncapsulatedModUpImpl: Backend<Ring = Standard> {
+pub unsafe trait CKKSEncapsulatedModUpImpl: Backend {
     /// Scratch bound of [`Self::ckks_encapsulated_mod_up`]; may report less than the reference, never less than the
     /// body takes.
     fn ckks_encapsulated_mod_up_tmp_bytes<Dst, Src, D2S, S2D>(
@@ -275,7 +263,7 @@ pub unsafe trait CKKSEncapsulatedModUpImpl: Backend<Ring = Standard> {
         Src: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos;
 }
 
-/// Opts a standard backend into the CKKS reference bootstrapping pipeline. The
+/// Opts a backend into the CKKS reference bootstrapping pipeline, on the standard ring. The
 /// backend also implements [`CKKSEncapsulatedModUpImpl`] and
 /// [`CKKSModUpFirstFactorImpl`], the two raises the pipeline runs.
 #[macro_export]
@@ -404,28 +392,24 @@ macro_rules! impl_ckks_bootstrapping_reference_full {
 }
 
 /// Opts a backend into the reference bootstrap with EvalMod on the
-/// conjugate-invariant ring ([`CKKSBootstrappingCIImpl`]), run by its twin `$ci`.
+/// conjugate-invariant ring ([`CKKSBootstrappingCIImpl`]), on the same module.
 #[macro_export]
 macro_rules! impl_ckks_bootstrapping_ci_reference_full {
-    ($be:ty, $ci:ty) => {
+    ($be:ty) => {
         unsafe impl $crate::oep::CKKSBootstrappingCIImpl for $be {
-            type CI = $ci;
-
             fn ckks_bootstrap_ci_tmp_bytes<C1, C2, F>(
                 module: &::poulpy_hal::layouts::Module<$be>,
-                ci: &::poulpy_hal::layouts::Module<$ci>,
                 ct_out: &C1,
                 ct_in: &C2,
                 ctx: &$crate::layouts::BootstrappingContextPrepared<$be, F>,
                 keys_layout: &$crate::layouts::BootstrappingKeysLayout,
-            ) -> (usize, usize)
+            ) -> usize
             where
                 C1: $crate::CKKSCtBounds,
                 C2: $crate::CKKSCtBounds,
             {
                 $crate::reference::bootstrapping::CKKSBootstrappingCIReference::ckks_bootstrap_ci_tmp_bytes_reference(
                     module,
-                    ci,
                     ct_out,
                     ct_in,
                     ctx,
@@ -435,21 +419,19 @@ macro_rules! impl_ckks_bootstrapping_ci_reference_full {
 
             fn ckks_bootstrap_ci_into<Dst, Src, F, K>(
                 module: &::poulpy_hal::layouts::Module<$be>,
-                ci: &::poulpy_hal::layouts::Module<$ci>,
                 dst: &mut Dst,
                 src: &Src,
                 ctx: &$crate::layouts::BootstrappingContextPrepared<$be, F>,
                 keys: &K,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
-                scratch_ci: &mut ::poulpy_hal::layouts::ScratchArena<'_, $ci>,
             ) -> $crate::CKKSResult<()>
             where
                 Dst: ::poulpy_core::layouts::GLWEToBackendMut<$be> + $crate::CKKSCtBounds + $crate::SetCKKSInfos,
                 Src: ::poulpy_core::layouts::GLWEToBackendRef<$be> + $crate::CKKSCtBounds,
-                K: $crate::layouts::BootstrappingCIKeys<$be, $ci>,
+                K: $crate::layouts::BootstrappingCIKeys<$be>,
             {
                 $crate::reference::bootstrapping::CKKSBootstrappingCIReference::ckks_bootstrap_ci_reference(
-                    module, ci, dst, src, ctx, keys, scratch, scratch_ci,
+                    module, dst, src, ctx, keys, scratch,
                 )
             }
         }
@@ -516,7 +498,7 @@ macro_rules! impl_ckks_encapsulated_mod_up_reference_full {
     };
 }
 
-/// Opts a standard backend into the reference raise with the first factor.
+/// Opts a backend into the reference raise with the first factor, on the standard ring.
 #[macro_export]
 macro_rules! impl_ckks_mod_up_first_factor_reference_full {
     ($be:ty) => {

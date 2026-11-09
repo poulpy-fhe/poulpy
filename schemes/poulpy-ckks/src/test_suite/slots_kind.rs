@@ -24,10 +24,10 @@ use crate::{
 
 pub fn test_slots_kind_composition<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextModule<BE, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -143,7 +143,7 @@ where
     // plaintext's own (default `Complex`) kind must not leak into the result.
     // What decides an added constant is where it lands: coefficient 0 is the
     // real constant term, `n/2` the imaginary one.
-    let cst = add_sub_const_pt::<BE, F>(host_module, module, params.base2k.into());
+    let cst = add_sub_const_pt::<BE, F, Standard>(host_module, module, params.base2k.into());
     assert_eq!(cst.slots(), SlotsKind::Complex, "the constant plaintext is unlabelled");
 
     let mut acc = a.clone();
@@ -181,7 +181,7 @@ where
     // Halving an integer need not give an integer, so division refuses
     // `Integer` slots rather than carry a false claim.
     a.set_slots(SlotsKind::Integer);
-    let before = snapshot::<BE, _>(&res);
+    let before = snapshot::<BE, _, Standard>(&res);
     let err = with_scratch::<BE, _>(0, |s| module.ckks_div_pow2_into(1, &mut res, &a, s)).unwrap_err();
     assert_ckks_error(
         "div_pow2_into of Integer slots",
@@ -191,9 +191,9 @@ where
             reason: "dividing Integer slots by 2^1 need not give integers; relabel them Real first".into(),
         },
     );
-    assert_eq!(snapshot::<BE, _>(&res), before, "a refused division wrote res");
+    assert_eq!(snapshot::<BE, _, Standard>(&res), before, "a refused division wrote res");
     let mut acc = a.clone();
-    let before = snapshot::<BE, _>(&acc);
+    let before = snapshot::<BE, _, Standard>(&acc);
     let err = module.ckks_div_pow2_assign(1, &mut acc).unwrap_err();
     assert_ckks_error(
         "div_pow2_assign of Integer slots",
@@ -203,7 +203,7 @@ where
             reason: "dividing Integer slots by 2^1 need not give integers; relabel them Real first".into(),
         },
     );
-    assert_eq!(snapshot::<BE, _>(&acc), before, "a refused division is a no-op");
+    assert_eq!(snapshot::<BE, _, Standard>(&acc), before, "a refused division is a no-op");
     module.ckks_div_pow2_assign(0, &mut acc).unwrap();
     assert_eq!(acc.slots(), SlotsKind::Integer, "dividing by one keeps integers");
 }

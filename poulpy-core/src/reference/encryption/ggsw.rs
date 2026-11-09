@@ -1,6 +1,6 @@
 use poulpy_hal::{
     api::{ModuleN, VecZnxDftBytesOf, VecZnxNormalizeTmpBytes},
-    layouts::{Backend, Module, ScalarZnxToBackendRef, ScratchArena, ZnxInfos},
+    layouts::{Backend, Module, Ring, ScalarZnxToBackendRef, ScratchArena, Standard, ZnxInfos},
     oep::HalVecZnxImpl,
     source::Source,
 };
@@ -19,7 +19,7 @@ use crate::{
 /// Portable implementation using HAL operations.
 ///
 /// Backend implementations may call this helper without changing their override selection.
-pub trait GGSWEncryptSkReference<BE: Backend> {
+pub trait GGSWEncryptSkReference<BE: Backend, Rg: Ring = Standard> {
     fn ggsw_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
         A: GGSWInfos;
@@ -33,14 +33,19 @@ pub trait GGSWEncryptSkReference<BE: Backend> {
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GGSWToBackendMut<BE> + GGSWInfos + GGSWAtViewMut<BE>,
-        P: ScalarZnxToBackendRef<BE> + ZnxInfos,
-        S: GLWESecretPreparedToBackendRef<BE> + LWEInfos + GLWEInfos;
+        R: GGSWToBackendMut<BE, Rg> + GGSWInfos + GGSWAtViewMut<BE, Rg>,
+        P: ScalarZnxToBackendRef<BE, Rg> + ZnxInfos,
+        S: GLWESecretPreparedToBackendRef<BE, Rg> + LWEInfos + GLWEInfos;
 }
 
-impl<BE: Backend + HalVecZnxImpl> GGSWEncryptSkReference<BE> for Module<BE>
+impl<BE: Backend + HalVecZnxImpl<Rg>, Rg: Ring> GGSWEncryptSkReference<BE, Rg> for Module<BE>
 where
-    Self: ModuleN + GLWEEncryptSkInternal<BE> + GLWEEncryptSk<BE> + GLWEFill<BE> + VecZnxDftBytesOf + VecZnxNormalizeTmpBytes,
+    Self: ModuleN
+        + GLWEEncryptSkInternal<BE, Rg>
+        + GLWEEncryptSk<BE, Rg>
+        + GLWEFill<BE, Rg>
+        + VecZnxDftBytesOf
+        + VecZnxNormalizeTmpBytes,
 {
     fn ggsw_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
@@ -62,9 +67,9 @@ where
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GGSWToBackendMut<BE> + GGSWInfos + GGSWAtViewMut<BE>,
-        P: ScalarZnxToBackendRef<BE> + ZnxInfos,
-        S: GLWESecretPreparedToBackendRef<BE> + LWEInfos + GLWEInfos,
+        R: GGSWToBackendMut<BE, Rg> + GGSWInfos + GGSWAtViewMut<BE, Rg>,
+        P: ScalarZnxToBackendRef<BE, Rg> + ZnxInfos,
+        S: GLWESecretPreparedToBackendRef<BE, Rg> + LWEInfos + GLWEInfos,
     {
         let metadata = crate::component_noise::fresh_sk_noise(sk.to_backend_ref().dist, &res.to_backend_ref());
         {

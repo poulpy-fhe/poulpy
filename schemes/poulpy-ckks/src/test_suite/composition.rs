@@ -14,21 +14,21 @@ use crate::{
 use poulpy_core::layouts::LWEInfos;
 use poulpy_hal::{
     api::{ReimFFT, ReimIFFT, ReimNew, ScratchOwnedBorrow},
-    layouts::{HostBytesBackend, Module, Standard},
+    layouts::{HostBytesBackend, Module, Ring, Standard},
 };
 
 use crate::{test_suite::CKKSTestParams, test_suite::reference_encoder::ReferenceEncoder};
 
-fn constant<BE, F, E>(
+fn constant<BE, F, E, Rg: Ring>(
     host_module: &Module<HostBytesBackend>,
     module: &Module<BE>,
     encoder: &ReferenceEncoder<E>,
     params: &CKKSTestParams,
     c: (f64, f64),
     m: usize,
-) -> CKKSPlaintextOwned<BE>
+) -> CKKSPlaintextOwned<BE, Rg>
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     F: TestScalar,
@@ -94,10 +94,10 @@ fn mul_by_y_expected<F: TestScalar>(
 /// Adding two plaintext-scaled copies of the same ciphertext stays accurate.
 pub fn test_linear_sum<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextModule<BE, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -111,8 +111,8 @@ where
     let c2 = (-0.375, 0.25);
     let c1_q = quantized_const::<F>(c1.0, c1.1, PT_PREC.log_delta());
     let c2_q = quantized_const::<F>(c2.0, c2.1, PT_PREC.log_delta());
-    let pt1 = constant::<BE, F, E>(host_module, module, &encoder, &params, c1, m);
-    let pt2 = constant::<BE, F, E>(host_module, module, &encoder, &params, c2, m);
+    let pt1 = constant::<BE, F, E, Standard>(host_module, module, &encoder, &params, c1, m);
+    let pt2 = constant::<BE, F, E, Standard>(host_module, module, &encoder, &params, c2, m);
     let (want_re, want_im) = same_offset_expected(&re1, &im1, c1_q, c2_q);
 
     let x = ckks_encrypt(
@@ -163,10 +163,10 @@ where
 /// A mixed `c1*x + c2*x^2` composition remains decryptable and accurate.
 pub fn test_poly2_sum<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextModule<BE, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -181,8 +181,8 @@ where
     let c2 = (-0.375, 0.25);
     let c1_q = quantized_const::<F>(c1.0, c1.1, PT_PREC.log_delta());
     let c2_q = quantized_const::<F>(c2.0, c2.1, PT_PREC.log_delta());
-    let pt1 = constant::<BE, F, E>(host_module, module, &encoder, &params, c1, m);
-    let pt2 = constant::<BE, F, E>(host_module, module, &encoder, &params, c2, m);
+    let pt1 = constant::<BE, F, E, Standard>(host_module, module, &encoder, &params, c1, m);
+    let pt2 = constant::<BE, F, E, Standard>(host_module, module, &encoder, &params, c2, m);
     let (want_re, want_im) = poly2_expected(&re1, &im1, (F::zero(), F::zero()), c1_q, c2_q);
 
     let x = ckks_encrypt(
@@ -239,10 +239,10 @@ where
 /// Adding a constant plaintext to `c1*x + c2*x^2` keeps the expected value.
 pub fn test_poly2_sum_with_const<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextModule<BE, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -259,9 +259,9 @@ where
     let c0_q = quantized_const::<F>(c0.0, c0.1, PT_PREC.log_delta());
     let c1_q = quantized_const::<F>(c1.0, c1.1, PT_PREC.log_delta());
     let c2_q = quantized_const::<F>(c2.0, c2.1, PT_PREC.log_delta());
-    let pt0 = constant::<BE, F, E>(host_module, module, &encoder, &params, c0, m);
-    let pt1 = constant::<BE, F, E>(host_module, module, &encoder, &params, c1, m);
-    let pt2 = constant::<BE, F, E>(host_module, module, &encoder, &params, c2, m);
+    let pt0 = constant::<BE, F, E, Standard>(host_module, module, &encoder, &params, c0, m);
+    let pt1 = constant::<BE, F, E, Standard>(host_module, module, &encoder, &params, c1, m);
+    let pt2 = constant::<BE, F, E, Standard>(host_module, module, &encoder, &params, c2, m);
     let (want_re, want_im) = poly2_expected(&re1, &im1, c0_q, c1_q, c2_q);
 
     let x = ckks_encrypt(
@@ -317,10 +317,10 @@ where
 /// Evaluates `y * (c0 + c1*x + c2*x^2)` with encrypted `x` and `y`.
 pub fn test_poly2_mul<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextModule<BE, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -338,9 +338,9 @@ where
     let c0_q = quantized_const::<F>(c0.0, c0.1, PT_PREC.log_delta());
     let c1_q = quantized_const::<F>(c1.0, c1.1, PT_PREC.log_delta());
     let c2_q = quantized_const::<F>(c2.0, c2.1, PT_PREC.log_delta());
-    let pt0 = constant::<BE, F, E>(host_module, module, &encoder, &params, c0, m);
-    let pt1 = constant::<BE, F, E>(host_module, module, &encoder, &params, c1, m);
-    let pt2 = constant::<BE, F, E>(host_module, module, &encoder, &params, c2, m);
+    let pt0 = constant::<BE, F, E, Standard>(host_module, module, &encoder, &params, c0, m);
+    let pt1 = constant::<BE, F, E, Standard>(host_module, module, &encoder, &params, c1, m);
+    let pt2 = constant::<BE, F, E, Standard>(host_module, module, &encoder, &params, c2, m);
     let (want_re, want_im) = mul_by_y_expected(&re1, &im1, &re2, &im2, c0_q, c1_q, c2_q);
 
     let x = ckks_encrypt(
@@ -416,10 +416,10 @@ pub fn test_square_into_rejects_exhausted_capacity<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextModule<BE, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -471,7 +471,7 @@ pub fn test_square_into_rejects_exhausted_capacity<BE, F, E>(
         ct.log_budget() < ct.log_delta(),
         "expected squaring to consume all HE capacity"
     );
-    let (got_re, got_im) = ckks_decrypt_decode::<BE, F, E>(&params, module, &encoder, &ct, &sk, &mut scratch.borrow());
+    let (got_re, got_im) = ckks_decrypt_decode::<BE, F, E, Standard>(&params, module, &encoder, &ct, &sk, &mut scratch.borrow());
     for (idx, (re, im)) in got_re.iter().zip(got_im.iter()).enumerate() {
         assert!(
             re.is_finite() && im.is_finite(),
@@ -485,7 +485,7 @@ pub fn test_square_into_rejects_exhausted_capacity<BE, F, E>(
     }
 
     let mut no_capacity = dirty_ct(module, &ct, params.k);
-    let before = snapshot::<BE, _>(&no_capacity);
+    let before = snapshot::<BE, _, Standard>(&no_capacity);
     let err = with_scratch::<BE, _>(0, |s| module.ckks_square_into(&mut no_capacity, &ct, &tsk, s)).unwrap_err();
     assert_ckks_error(
         "square_into_rejects_exhausted_capacity",
@@ -499,7 +499,7 @@ pub fn test_square_into_rejects_exhausted_capacity<BE, F, E>(
         },
     );
     assert_eq!(
-        snapshot::<BE, _>(&no_capacity),
+        snapshot::<BE, _, Standard>(&no_capacity),
         before,
         "a refused ckks_square_into wrote res"
     );

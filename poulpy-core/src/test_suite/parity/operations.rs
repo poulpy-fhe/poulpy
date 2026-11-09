@@ -9,8 +9,8 @@ use poulpy_hal::{
         VecZnxIdftNormalizeTmpBytes,
     },
     layouts::{
-        Backend, CnvPVecLToBackendRef, CnvPVecRToBackendRef, HostDataMut, Module, ScratchOwned, VecZnxDftToBackendMut, ZnxView,
-        ZnxViewMut,
+        Backend, CnvPVecLToBackendRef, CnvPVecRToBackendRef, HostDataMut, Module, Ring, ScratchOwned, VecZnxDftToBackendMut,
+        ZnxView, ZnxViewMut,
     },
     source::Source,
     test_suite::{TestParams, vec_znx_backend_mut, vec_znx_backend_ref},
@@ -52,7 +52,7 @@ fn layouts(n: u32, base2k: usize, shapes: &ParityShapes) -> Vec<GLWELayout> {
 /// `op` receives `(module, res, a, b, scratch)`; tests that need only one
 /// operand ignore `b`.
 #[allow(clippy::too_many_arguments)]
-fn compare<BR, BT, FR, FT>(
+fn compare<BR, BT, FR, FT, Rg: Ring>(
     params: &TestParams,
     shapes: &ParityShapes,
     module_ref: &Module<BR>,
@@ -63,8 +63,8 @@ fn compare<BR, BT, FR, FT>(
     op_ref: FR,
     op_test: FT,
 ) where
-    BR: ParityBackend,
-    BT: ParityBackend,
+    BR: ParityBackend<Rg>,
+    BT: ParityBackend<Rg>,
     BR::OwnedBuf: HostDataMut,
     Module<BR>: ModuleCoreAlloc<OwnedBuf = BR::OwnedBuf, ZnxWord = i64>,
     Module<BT>: ModuleCoreAlloc<OwnedBuf = BT::OwnedBuf, ZnxWord = i64>,
@@ -72,16 +72,16 @@ fn compare<BR, BT, FR, FT>(
     ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
     FR: Fn(
         &Module<BR>,
-        &mut crate::layouts::BackendGLWE<BR>,
-        &crate::layouts::BackendGLWE<BR>,
-        &crate::layouts::BackendGLWE<BR>,
+        &mut crate::layouts::BackendGLWE<BR, Rg>,
+        &crate::layouts::BackendGLWE<BR, Rg>,
+        &crate::layouts::BackendGLWE<BR, Rg>,
         &mut crate::test_suite::PoisonedScratch<BR>,
     ),
     FT: Fn(
         &Module<BT>,
-        &mut crate::layouts::BackendGLWE<BT>,
-        &crate::layouts::BackendGLWE<BT>,
-        &crate::layouts::BackendGLWE<BT>,
+        &mut crate::layouts::BackendGLWE<BT, Rg>,
+        &crate::layouts::BackendGLWE<BT, Rg>,
+        &crate::layouts::BackendGLWE<BT, Rg>,
         &mut crate::test_suite::PoisonedScratch<BT>,
     ),
 {
@@ -152,13 +152,17 @@ fn compare<BR, BT, FR, FT>(
 }
 
 /// `glwe_add_into` agrees with the selected comparison backend.
-pub fn test_glwe_add_parity<BR, BT>(params: &TestParams, shapes: &ParityShapes, module_ref: &Module<BR>, module_test: &Module<BT>)
-where
-    BR: ParityBackend,
-    BT: ParityBackend,
+pub fn test_glwe_add_parity<BR, BT, Rg: Ring>(
+    params: &TestParams,
+    shapes: &ParityShapes,
+    module_ref: &Module<BR>,
+    module_test: &Module<BT>,
+) where
+    BR: ParityBackend<Rg>,
+    BT: ParityBackend<Rg>,
     BR::OwnedBuf: HostDataMut,
-    Module<BR>: GLWEAdd<BR>,
-    Module<BT>: GLWEAdd<BT>,
+    Module<BR>: GLWEAdd<BR, Rg>,
+    Module<BT>: GLWEAdd<BT, Rg>,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
 {
@@ -187,13 +191,17 @@ where
 }
 
 /// `glwe_sub` agrees with the selected comparison backend.
-pub fn test_glwe_sub_parity<BR, BT>(params: &TestParams, shapes: &ParityShapes, module_ref: &Module<BR>, module_test: &Module<BT>)
-where
-    BR: ParityBackend,
-    BT: ParityBackend,
+pub fn test_glwe_sub_parity<BR, BT, Rg: Ring>(
+    params: &TestParams,
+    shapes: &ParityShapes,
+    module_ref: &Module<BR>,
+    module_test: &Module<BT>,
+) where
+    BR: ParityBackend<Rg>,
+    BT: ParityBackend<Rg>,
     BR::OwnedBuf: HostDataMut,
-    Module<BR>: GLWESub<BR>,
-    Module<BT>: GLWESub<BT>,
+    Module<BR>: GLWESub<BR, Rg>,
+    Module<BT>: GLWESub<BT, Rg>,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
 {
@@ -278,17 +286,17 @@ where
 }
 
 /// `glwe_negate` agrees with the selected comparison backend.
-pub fn test_glwe_negate_parity<BR, BT>(
+pub fn test_glwe_negate_parity<BR, BT, Rg: Ring>(
     params: &TestParams,
     shapes: &ParityShapes,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
-    BR: ParityBackend,
-    BT: ParityBackend,
+    BR: ParityBackend<Rg>,
+    BT: ParityBackend<Rg>,
     BR::OwnedBuf: HostDataMut,
-    Module<BR>: GLWENegate<BR>,
-    Module<BT>: GLWENegate<BT>,
+    Module<BR>: GLWENegate<BR, Rg>,
+    Module<BT>: GLWENegate<BT, Rg>,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
 {
@@ -320,17 +328,17 @@ pub fn test_glwe_negate_parity<BR, BT>(
 ///
 /// The one keyless operation that carries limb-carry logic, so the one most
 /// worth comparing byte-for-byte.
-pub fn test_glwe_normalize_parity<BR, BT>(
+pub fn test_glwe_normalize_parity<BR, BT, Rg: Ring>(
     params: &TestParams,
     shapes: &ParityShapes,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
-    BR: ParityBackend,
-    BT: ParityBackend,
+    BR: ParityBackend<Rg>,
+    BT: ParityBackend<Rg>,
     BR::OwnedBuf: HostDataMut,
-    Module<BR>: GLWENormalize<BR>,
-    Module<BT>: GLWENormalize<BT>,
+    Module<BR>: GLWENormalize<BR, Rg>,
+    Module<BT>: GLWENormalize<BT, Rg>,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
 {
@@ -404,28 +412,28 @@ pub fn test_glwe_rotate_parity<BR, BT>(
 
 /// Checks tensor apply and square across ranks against the selected comparison backend,
 /// including specializations selected by rank and ring degree.
-pub fn test_glwe_tensor_parity<BR, BT>(
+pub fn test_glwe_tensor_parity<BR, BT, Rg: Ring>(
     params: &TestParams,
     shapes: &ParityShapes,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
-    BR: ParityBackend,
-    BT: ParityBackend,
+    BR: ParityBackend<Rg>,
+    BT: ParityBackend<Rg>,
     BR::OwnedBuf: HostDataMut,
-    Module<BR>: GLWETensoring<BR>
-        + GLWEPreparedTensoring<BR>
+    Module<BR>: GLWETensoring<BR, Rg>
+        + GLWEPreparedTensoring<BR, Rg>
         + ModuleCoreAlloc<OwnedBuf = BR::OwnedBuf, ZnxWord = i64>
         + CnvPVecAlloc<BR>
-        + CnvOps<BR>
-        + GLWENormalize<BR>
+        + CnvOps<BR, Rg>
+        + GLWENormalize<BR, Rg>
         + GLWEBytesOf<BR>,
-    Module<BT>: GLWETensoring<BT>
-        + GLWEPreparedTensoring<BT>
+    Module<BT>: GLWETensoring<BT, Rg>
+        + GLWEPreparedTensoring<BT, Rg>
         + ModuleCoreAlloc<OwnedBuf = BT::OwnedBuf, ZnxWord = i64>
         + CnvPVecAlloc<BT>
-        + CnvOps<BT>
-        + GLWENormalize<BT>
+        + CnvOps<BT, Rg>
+        + GLWENormalize<BT, Rg>
         + GLWEBytesOf<BT>,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
@@ -462,28 +470,28 @@ pub fn test_glwe_tensor_parity<BR, BT>(
 /// Backend registrations can use focused cases at expensive ring degrees while
 /// retaining the full parameter sweep at smaller degrees, which alone also runs
 /// unnormalized operands.
-pub fn test_glwe_tensor_parity_for_layout<BR, BT>(
+pub fn test_glwe_tensor_parity_for_layout<BR, BT, Rg: Ring>(
     layout: &GLWELayout,
     offsets: &[usize],
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
-    BR: ParityBackend,
-    BT: ParityBackend,
+    BR: ParityBackend<Rg>,
+    BT: ParityBackend<Rg>,
     BR::OwnedBuf: HostDataMut,
-    Module<BR>: GLWETensoring<BR>
-        + GLWEPreparedTensoring<BR>
+    Module<BR>: GLWETensoring<BR, Rg>
+        + GLWEPreparedTensoring<BR, Rg>
         + ModuleCoreAlloc<OwnedBuf = BR::OwnedBuf, ZnxWord = i64>
         + CnvPVecAlloc<BR>
-        + CnvOps<BR>
-        + GLWENormalize<BR>
+        + CnvOps<BR, Rg>
+        + GLWENormalize<BR, Rg>
         + GLWEBytesOf<BR>,
-    Module<BT>: GLWETensoring<BT>
-        + GLWEPreparedTensoring<BT>
+    Module<BT>: GLWETensoring<BT, Rg>
+        + GLWEPreparedTensoring<BT, Rg>
         + ModuleCoreAlloc<OwnedBuf = BT::OwnedBuf, ZnxWord = i64>
         + CnvPVecAlloc<BT>
-        + CnvOps<BT>
-        + GLWENormalize<BT>
+        + CnvOps<BT, Rg>
+        + GLWENormalize<BT, Rg>
         + GLWEBytesOf<BT>,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
@@ -492,7 +500,7 @@ pub fn test_glwe_tensor_parity_for_layout<BR, BT>(
     test_glwe_tensor_parity_case(layout, offsets, false, module_ref, module_test, &mut Source::new([29u8; 32]));
 }
 
-fn test_glwe_tensor_parity_case<BR, BT>(
+fn test_glwe_tensor_parity_case<BR, BT, Rg: Ring>(
     a_infos: &GLWELayout,
     offsets: &[usize],
     with_twins: bool,
@@ -500,22 +508,22 @@ fn test_glwe_tensor_parity_case<BR, BT>(
     module_test: &Module<BT>,
     source: &mut Source,
 ) where
-    BR: ParityBackend,
-    BT: ParityBackend,
+    BR: ParityBackend<Rg>,
+    BT: ParityBackend<Rg>,
     BR::OwnedBuf: HostDataMut,
-    Module<BR>: GLWETensoring<BR>
-        + GLWEPreparedTensoring<BR>
+    Module<BR>: GLWETensoring<BR, Rg>
+        + GLWEPreparedTensoring<BR, Rg>
         + ModuleCoreAlloc<OwnedBuf = BR::OwnedBuf, ZnxWord = i64>
         + CnvPVecAlloc<BR>
-        + CnvOps<BR>
-        + GLWENormalize<BR>
+        + CnvOps<BR, Rg>
+        + GLWENormalize<BR, Rg>
         + GLWEBytesOf<BR>,
-    Module<BT>: GLWETensoring<BT>
-        + GLWEPreparedTensoring<BT>
+    Module<BT>: GLWETensoring<BT, Rg>
+        + GLWEPreparedTensoring<BT, Rg>
         + ModuleCoreAlloc<OwnedBuf = BT::OwnedBuf, ZnxWord = i64>
         + CnvPVecAlloc<BT>
-        + CnvOps<BT>
-        + GLWENormalize<BT>
+        + CnvOps<BT, Rg>
+        + GLWENormalize<BT, Rg>
         + GLWEBytesOf<BT>,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
@@ -541,8 +549,8 @@ fn test_glwe_tensor_parity_case<BR, BT>(
     let twins = with_twins.then(|| {
         let mut twin_a = module_test.glwe_alloc_from_infos(a_infos);
         let mut twin_b = module_test.glwe_alloc_from_infos(a_infos);
-        unnormalized_twin::<BR, BT>(&a_ref, &mut twin_a);
-        unnormalized_twin::<BR, BT>(&b_ref, &mut twin_b);
+        unnormalized_twin::<BR, BT, Rg>(&a_ref, &mut twin_a);
+        unnormalized_twin::<BR, BT, Rg>(&b_ref, &mut twin_b);
         (twin_a, twin_b)
     });
     let n = a_infos.n.as_usize();
@@ -710,17 +718,17 @@ fn test_glwe_tensor_parity_case<BR, BT>(
 }
 
 /// Zeroing and copying retain destination layout metadata, including partial limbs.
-pub fn test_glwe_copy_zero_parity<BR, BT>(
+pub fn test_glwe_copy_zero_parity<BR, BT, Rg: Ring>(
     params: &TestParams,
     shapes: &ParityShapes,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
-    BR: ParityBackend,
-    BT: ParityBackend,
+    BR: ParityBackend<Rg>,
+    BT: ParityBackend<Rg>,
     BR::OwnedBuf: HostDataMut,
-    Module<BR>: GLWECopy<BR> + GLWEZero<BR>,
-    Module<BT>: GLWECopy<BT> + GLWEZero<BT>,
+    Module<BR>: GLWECopy<BR, Rg> + GLWEZero<BR, Rg>,
+    Module<BT>: GLWECopy<BT, Rg> + GLWEZero<BT, Rg>,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
 {
@@ -945,36 +953,36 @@ pub fn test_glwe_shift_parity<BR, BT>(
 
 /// Plaintext and scalar products, and the summed product of prepared operands, compare canonical ciphertexts at
 /// conversion boundaries.
-pub fn test_glwe_multiplication_parity<BR, BT>(
+pub fn test_glwe_multiplication_parity<BR, BT, Rg: Ring>(
     params: &TestParams,
     shapes: &ParityShapes,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
-    BR: ParityBackend,
-    BT: ParityBackend,
+    BR: ParityBackend<Rg>,
+    BT: ParityBackend<Rg>,
     BR::OwnedBuf: HostDataMut,
-    Module<BR>: GLWEMulConst<BR>
-        + GLWEMulPlain<BR>
-        + GLWEMulPreparedPlainSum<BR>
-        + GLWEAdd<BR>
+    Module<BR>: GLWEMulConst<BR, Rg>
+        + GLWEMulPlain<BR, Rg>
+        + GLWEMulPreparedPlainSum<BR, Rg>
+        + GLWEAdd<BR, Rg>
         + CnvPVecAlloc<BR>
-        + CnvOps<BR>
-        + GLWENormalize<BR>
+        + CnvOps<BR, Rg>
+        + GLWENormalize<BR, Rg>
         + GLWEBytesOf<BR>
-        + VecZnxAutomorphism<BR>
+        + VecZnxAutomorphism<BR, Rg>
         + VecZnxDftAlloc<BR>
-        + VecZnxIdftNormalize<BR>
+        + VecZnxIdftNormalize<BR, Rg>
         + VecZnxIdftNormalizeTmpBytes,
-    Module<BT>: GLWEMulConst<BT>
-        + GLWEMulPlain<BT>
-        + GLWEMulPreparedPlainSum<BT>
+    Module<BT>: GLWEMulConst<BT, Rg>
+        + GLWEMulPlain<BT, Rg>
+        + GLWEMulPreparedPlainSum<BT, Rg>
         + CnvPVecAlloc<BT>
-        + CnvOps<BT>
-        + GLWENormalize<BT>
+        + CnvOps<BT, Rg>
+        + GLWENormalize<BT, Rg>
         + GLWEBytesOf<BT>
         + VecZnxDftAlloc<BT>
-        + VecZnxIdftNormalize<BT>
+        + VecZnxIdftNormalize<BT, Rg>
         + VecZnxIdftNormalizeTmpBytes,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
@@ -1047,7 +1055,7 @@ pub fn test_glwe_multiplication_parity<BR, BT>(
                     );
 
                     let mut twin = module_test.glwe_alloc_from_infos(&infos);
-                    unnormalized_twin::<BR, BT>(&a_ref, &mut twin);
+                    unnormalized_twin::<BR, BT, Rg>(&a_ref, &mut twin);
                     let mut st = poisoned_scratch::<BT>(if variant < 2 {
                         module_test.glwe_mul_plain_tmp_bytes(&out_test, &a_test, &plain_test)
                     } else {
@@ -1083,34 +1091,34 @@ pub fn test_glwe_multiplication_parity<BR, BT>(
 /// backends, the two sides preparing under swapped hints, the test side from unnormalized twins, and equal on each
 /// backend the DFT forms, the first term then the other two added, finished per column, the reference side on the
 /// accumulator the sum spans and the test side on one limb more; an even element panics before `res` changes.
-fn test_glwe_mul_prepared_plain_sum_case<BR, BT>(
+fn test_glwe_mul_prepared_plain_sum_case<BR, BT, Rg: Ring>(
     params: &TestParams,
     infos: &GLWELayout,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
     source: &mut Source,
 ) where
-    BR: ParityBackend,
-    BT: ParityBackend,
+    BR: ParityBackend<Rg>,
+    BT: ParityBackend<Rg>,
     BR::OwnedBuf: HostDataMut,
-    Module<BR>: GLWEMulPlain<BR>
-        + GLWEMulPreparedPlainSum<BR>
-        + GLWEAdd<BR>
+    Module<BR>: GLWEMulPlain<BR, Rg>
+        + GLWEMulPreparedPlainSum<BR, Rg>
+        + GLWEAdd<BR, Rg>
         + CnvPVecAlloc<BR>
-        + CnvOps<BR>
-        + GLWENormalize<BR>
+        + CnvOps<BR, Rg>
+        + GLWENormalize<BR, Rg>
         + GLWEBytesOf<BR>
-        + VecZnxAutomorphism<BR>
+        + VecZnxAutomorphism<BR, Rg>
         + VecZnxDftAlloc<BR>
-        + VecZnxIdftNormalize<BR>
+        + VecZnxIdftNormalize<BR, Rg>
         + VecZnxIdftNormalizeTmpBytes,
-    Module<BT>: GLWEMulPreparedPlainSum<BT>
+    Module<BT>: GLWEMulPreparedPlainSum<BT, Rg>
         + CnvPVecAlloc<BT>
-        + CnvOps<BT>
-        + GLWENormalize<BT>
+        + CnvOps<BT, Rg>
+        + GLWENormalize<BT, Rg>
         + GLWEBytesOf<BT>
         + VecZnxDftAlloc<BT>
-        + VecZnxIdftNormalize<BT>
+        + VecZnxIdftNormalize<BT, Rg>
         + VecZnxIdftNormalizeTmpBytes,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
@@ -1124,7 +1132,7 @@ fn test_glwe_mul_prepared_plain_sum_case<BR, BT>(
     for _ in GALOIS {
         let ct = ref_glwe(module_ref, infos, source);
         let mut twin = module_test.glwe_alloc_from_infos(infos);
-        unnormalized_twin::<BR, BT>(&ct, &mut twin);
+        unnormalized_twin::<BR, BT, Rg>(&ct, &mut twin);
         let mut plain = module_ref.glwe_plaintext_alloc_from_infos(infos);
         module_ref.glwe_fill_from_source(&mut plain, source);
         let mut plain_test = module_test.glwe_plaintext_alloc_from_infos(infos);
@@ -1171,9 +1179,9 @@ fn test_glwe_mul_prepared_plain_sum_case<BR, BT>(
     let mut rotated = module_ref.glwe_plaintext_alloc_from_infos(infos);
     module_ref.vec_znx_automorphism(
         5,
-        &mut vec_znx_backend_mut::<BR>(&mut rotated.data),
+        &mut vec_znx_backend_mut::<BR, Rg>(&mut rotated.data),
         0,
-        &vec_znx_backend_ref::<BR>(&plains[0].data),
+        &vec_znx_backend_ref::<BR, Rg>(&plains[0].data),
         0,
     );
     let (a_refs, b_refs): (Vec<&_>, Vec<&_>) = (a_ref.iter().collect(), b_ref.iter().collect());
@@ -1405,7 +1413,7 @@ fn test_glwe_mul_prepared_plain_sum_case<BR, BT>(
 /// [`GLWEMulPreparedPlainSum::glwe_mul_prepared_plain_sum_dft_add`] of the other two, into an accumulator of `acc_size`
 /// limbs, then one `vec_znx_idft_normalize` per column, each call on exactly its scratch.
 #[allow(clippy::too_many_arguments)]
-fn plain_sum_dft<BE, R, AP, BP>(
+fn plain_sum_dft<BE, R, AP, BP, Rg: Ring>(
     module: &Module<BE>,
     cnv_offset: usize,
     res: &mut R,
@@ -1416,11 +1424,11 @@ fn plain_sum_dft<BE, R, AP, BP>(
     base2k: Base2K,
 ) where
     BE: Backend,
-    Module<BE>: GLWEMulPreparedPlainSum<BE> + VecZnxDftAlloc<BE> + VecZnxIdftNormalize<BE> + VecZnxIdftNormalizeTmpBytes,
+    Module<BE>: GLWEMulPreparedPlainSum<BE, Rg> + VecZnxDftAlloc<BE> + VecZnxIdftNormalize<BE, Rg> + VecZnxIdftNormalizeTmpBytes,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    R: GLWEToBackendMut<BE> + GLWEInfos,
-    AP: CnvPVecLToBackendRef<BE>,
-    BP: CnvPVecRToBackendRef<BE>,
+    R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+    AP: CnvPVecLToBackendRef<BE, Rg>,
+    BP: CnvPVecRToBackendRef<BE, Rg>,
 {
     const GALOIS: [i64; 3] = [1, 5, -1];
     let (_, cnv_offset_lo) = cnv_offset_to_limb_offset(cnv_offset, base2k.as_usize());

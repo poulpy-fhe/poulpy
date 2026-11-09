@@ -365,7 +365,7 @@ pub fn fft64_automorphism_add_portable(plan: &Fft64AutomorphismPlan, res: &mut [
     }
 }
 
-/// [`Fft64RingArith`](crate::kernels::fft64::ring_arith::Fft64RingArith) for a conjugate-invariant backend: DCT transforms and real slots.
+/// [`Fft64RingArith`](crate::kernels::fft64::ring_arith::Fft64RingArith) on the conjugate-invariant ring: DCT transforms and real slots.
 #[macro_export]
 macro_rules! fft64_ring_arith_ci {
     () => {

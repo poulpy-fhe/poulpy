@@ -1,6 +1,6 @@
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Module, ScalarZnx, ScratchOwned, ZnxViewMut},
+    layouts::{Module, Ring, ScalarZnx, ScratchOwned, ZnxViewMut},
     source::Source,
     test_suite::TestParams,
 };
@@ -21,13 +21,13 @@ use crate::{
 };
 use poulpy_hal::test_suite::scalar_znx_backend_mut;
 
-pub fn test_ggsw_encrypt_sk<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
+pub fn test_ggsw_encrypt_sk<BE: crate::test_suite::noise::TestBackend<Rg>, Rg: Ring>(params: &TestParams, module: &Module<BE>)
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    Module<BE>: GGSWEncryptSk<BE> + GLWESecretPreparedFactory<BE> + GGSWNoise<BE>,
+    Module<BE>: GGSWEncryptSk<BE, Rg> + GLWESecretPreparedFactory<BE, Rg> + GGSWNoise<BE, Rg>,
 {
     let base2k: usize = params.base2k;
     let k: usize = 4 * base2k + 1;
@@ -46,16 +46,16 @@ where
                 rank: rank.into(),
             };
 
-            let mut ct: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&ggsw_infos);
+            let mut ct: GGSW<BE::OwnedBuf, BE::ZnxWord, Rg> = module.ggsw_alloc_from_infos(&ggsw_infos);
 
-            let mut pt_scalar: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = module.scalar_znx_alloc(module.n(), 1);
+            let mut pt_scalar: ScalarZnx<BE::OwnedBuf, BE::ZnxWord, Rg> = module.scalar_znx_alloc(module.n(), 1);
 
             let mut source_xs: Source = Source::new([0u8; 32]);
             let mut source_xe: Source = Source::new([0u8; 32]);
             let mut source_xa: Source = Source::new([0u8; 32]);
 
             module.scalar_znx_fill_distribution(
-                &mut scalar_znx_backend_mut::<BE>(&mut pt_scalar),
+                &mut scalar_znx_backend_mut::<BE, Rg>(&mut pt_scalar),
                 0,
                 Distribution::TernaryFixed(n),
                 &mut source_xs,
@@ -63,10 +63,10 @@ where
 
             let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ggsw_noise_tmp_bytes(&ggsw_infos));
 
-            let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc_from_infos(&ggsw_infos);
+            let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_secret_alloc_from_infos(&ggsw_infos);
             module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut source_xs);
 
-            let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc(rank.into());
+            let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE, Rg> = module.glwe_secret_prepared_alloc(rank.into());
             module.glwe_secret_prepare(&mut sk_prepared, &sk);
 
             module.ggsw_encrypt_sk(
@@ -94,18 +94,18 @@ where
     }
 }
 
-pub fn test_ggsw_encrypt_pk<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
+pub fn test_ggsw_encrypt_pk<BE: crate::test_suite::noise::TestBackend<Rg>, Rg: Ring>(params: &TestParams, module: &Module<BE>)
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    Module<BE>: GGSWEncryptPk<BE>
-        + GLWEPublicKeyGenerate<BE>
-        + GLWEPublicKeyPreparedFactory<BE>
-        + GLWESecretPreparedFactory<BE>
-        + GGSWNoise<BE>
-        + GGSWPreparedFactory<BE>,
+    Module<BE>: GGSWEncryptPk<BE, Rg>
+        + GLWEPublicKeyGenerate<BE, Rg>
+        + GLWEPublicKeyPreparedFactory<BE, Rg>
+        + GLWESecretPreparedFactory<BE, Rg>
+        + GGSWNoise<BE, Rg>
+        + GGSWPreparedFactory<BE, Rg>,
 {
     let base2k: usize = params.base2k;
     let k: usize = 4 * base2k + 1;
@@ -130,8 +130,8 @@ where
                 rank: rank.into(),
             };
 
-            let mut ct: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&ggsw_infos);
-            let mut pt_scalar: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = module.scalar_znx_alloc(module.n(), 1);
+            let mut ct: GGSW<BE::OwnedBuf, BE::ZnxWord, Rg> = module.ggsw_alloc_from_infos(&ggsw_infos);
+            let mut pt_scalar: ScalarZnx<BE::OwnedBuf, BE::ZnxWord, Rg> = module.scalar_znx_alloc(module.n(), 1);
 
             let mut source_xs: Source = Source::new([0u8; 32]);
             let mut source_xe: Source = Source::new([0u8; 32]);
@@ -139,7 +139,7 @@ where
             let mut source_xu: Source = Source::new([0u8; 32]);
 
             module.scalar_znx_fill_distribution(
-                &mut scalar_znx_backend_mut::<BE>(&mut pt_scalar),
+                &mut scalar_znx_backend_mut::<BE, Rg>(&mut pt_scalar),
                 0,
                 Distribution::TernaryFixed(n),
                 &mut source_xs,
@@ -147,12 +147,12 @@ where
 
             let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ggsw_noise_tmp_bytes(&ggsw_infos));
 
-            let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc_from_infos(&ggsw_infos);
+            let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_secret_alloc_from_infos(&ggsw_infos);
             module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut source_xs);
-            let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc(rank.into());
+            let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE, Rg> = module.glwe_secret_prepared_alloc(rank.into());
             module.glwe_secret_prepare(&mut sk_prepared, &sk);
 
-            let mut pk: GLWEPublicKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_public_key_alloc_from_infos(&pk_infos);
+            let mut pk: GLWEPublicKey<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_public_key_alloc_from_infos(&pk_infos);
             module.glwe_public_key_generate(
                 &mut pk,
                 &sk_prepared,
@@ -160,7 +160,7 @@ where
                 &mut source_xa,
                 &mut poisoned_scratch::<BE>(module.glwe_public_key_generate_tmp_bytes(&pk_infos)).borrow(),
             );
-            let mut pk_prepared: GLWEPublicKeyPrepared<BE::OwnedBuf, BE> =
+            let mut pk_prepared: GLWEPublicKeyPrepared<BE::OwnedBuf, BE, Rg> =
                 module.glwe_public_key_prepared_alloc_from_infos(&pk_infos);
             module.glwe_public_key_prepare(
                 &mut pk_prepared,
@@ -211,7 +211,7 @@ where
 }
 
 /// A message with coefficients past the radix encrypts as its reduction modulo `2^base2k`.
-pub fn test_ggsw_encrypt_pk_unnormalized_plaintext<BE: crate::test_suite::noise::TestBackend>(
+pub fn test_ggsw_encrypt_pk_unnormalized_plaintext<BE: crate::test_suite::noise::TestBackend<Rg>, Rg: Ring>(
     params: &TestParams,
     module: &Module<BE>,
 ) where
@@ -219,7 +219,10 @@ pub fn test_ggsw_encrypt_pk_unnormalized_plaintext<BE: crate::test_suite::noise:
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    Module<BE>: GGSWEncryptPk<BE> + GLWEPublicKeyGenerate<BE> + GLWEPublicKeyPreparedFactory<BE> + GLWESecretPreparedFactory<BE>,
+    Module<BE>: GGSWEncryptPk<BE, Rg>
+        + GLWEPublicKeyGenerate<BE, Rg>
+        + GLWEPublicKeyPreparedFactory<BE, Rg>
+        + GLWESecretPreparedFactory<BE, Rg>,
 {
     let base2k: usize = params.base2k;
     let n: usize = module.n();
@@ -244,11 +247,11 @@ pub fn test_ggsw_encrypt_pk_unnormalized_plaintext<BE: crate::test_suite::noise:
             .glwe_public_key_generate_tmp_bytes(&pk_infos)
             .max(module.glwe_public_key_prepare_tmp_bytes(&pk_infos)),
     );
-    let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc_from_infos(&ggsw_infos);
+    let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_secret_alloc_from_infos(&ggsw_infos);
     module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut Source::new([0u8; 32]));
-    let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc(rank.into());
+    let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE, Rg> = module.glwe_secret_prepared_alloc(rank.into());
     module.glwe_secret_prepare(&mut sk_prepared, &sk);
-    let mut pk: GLWEPublicKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_public_key_alloc_from_infos(&pk_infos);
+    let mut pk: GLWEPublicKey<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_public_key_alloc_from_infos(&pk_infos);
     module.glwe_public_key_generate(
         &mut pk,
         &sk_prepared,
@@ -256,19 +259,20 @@ pub fn test_ggsw_encrypt_pk_unnormalized_plaintext<BE: crate::test_suite::noise:
         &mut Source::new([2u8; 32]),
         &mut scratch.borrow(),
     );
-    let mut pk_prepared: GLWEPublicKeyPrepared<BE::OwnedBuf, BE> = module.glwe_public_key_prepared_alloc_from_infos(&pk_infos);
+    let mut pk_prepared: GLWEPublicKeyPrepared<BE::OwnedBuf, BE, Rg> =
+        module.glwe_public_key_prepared_alloc_from_infos(&pk_infos);
     module.glwe_public_key_prepare(&mut pk_prepared, &pk, &mut scratch.borrow());
 
-    let mut pt_wide: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = module.scalar_znx_alloc(n, 1);
-    let mut pt_reduced: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = module.scalar_znx_alloc(n, 1);
+    let mut pt_wide: ScalarZnx<BE::OwnedBuf, BE::ZnxWord, Rg> = module.scalar_znx_alloc(n, 1);
+    let mut pt_reduced: ScalarZnx<BE::OwnedBuf, BE::ZnxWord, Rg> = module.scalar_znx_alloc(n, 1);
     let (modulus, half) = (1i128 << base2k, 1i128 << (base2k - 1));
     for (i, (wide, reduced)) in pt_wide.at_mut(0, 0).iter_mut().zip(pt_reduced.at_mut(0, 0)).enumerate() {
         *wide = i64::MAX - i as i64;
         *reduced = ((*wide as i128 + half).rem_euclid(modulus) - half) as i64;
     }
 
-    let encrypt = |pt: &ScalarZnx<BE::OwnedBuf, BE::ZnxWord>| {
-        let mut ct: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&ggsw_infos);
+    let encrypt = |pt: &ScalarZnx<BE::OwnedBuf, BE::ZnxWord, Rg>| {
+        let mut ct: GGSW<BE::OwnedBuf, BE::ZnxWord, Rg> = module.ggsw_alloc_from_infos(&ggsw_infos);
         module.ggsw_encrypt_pk(
             &mut ct,
             pt,
@@ -285,13 +289,15 @@ pub fn test_ggsw_encrypt_pk_unnormalized_plaintext<BE: crate::test_suite::noise:
     );
 }
 
-pub fn test_ggsw_compressed_encrypt_sk<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
-where
+pub fn test_ggsw_compressed_encrypt_sk<BE: crate::test_suite::noise::TestBackend<Rg>, Rg: Ring>(
+    params: &TestParams,
+    module: &Module<BE>,
+) where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    Module<BE>: GGSWCompressedEncryptSk<BE> + GLWESecretPreparedFactory<BE> + GGSWNoise<BE> + GGSWDecompress<BE>,
+    Module<BE>: GGSWCompressedEncryptSk<BE, Rg> + GLWESecretPreparedFactory<BE, Rg> + GGSWNoise<BE, Rg> + GGSWDecompress<BE, Rg>,
 {
     let base2k: usize = params.base2k;
     let k: usize = 4 * base2k + 1;
@@ -310,16 +316,16 @@ where
                 rank: rank.into(),
             };
 
-            let mut ct_compressed: GGSWCompressed<BE::OwnedBuf, BE::ZnxWord> =
+            let mut ct_compressed: GGSWCompressed<BE::OwnedBuf, BE::ZnxWord, Rg> =
                 module.ggsw_compressed_alloc_from_infos(&ggsw_infos);
 
-            let mut pt_scalar: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = module.scalar_znx_alloc(module.n(), 1);
+            let mut pt_scalar: ScalarZnx<BE::OwnedBuf, BE::ZnxWord, Rg> = module.scalar_znx_alloc(module.n(), 1);
 
             let mut source_xs: Source = Source::new([0u8; 32]);
             let mut source_xe: Source = Source::new([0u8; 32]);
 
             module.scalar_znx_fill_distribution(
-                &mut scalar_znx_backend_mut::<BE>(&mut pt_scalar),
+                &mut scalar_znx_backend_mut::<BE, Rg>(&mut pt_scalar),
                 0,
                 Distribution::TernaryFixed(n),
                 &mut source_xs,
@@ -327,10 +333,10 @@ where
 
             let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ggsw_noise_tmp_bytes(&ggsw_infos));
 
-            let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc_from_infos(&ggsw_infos);
+            let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_secret_alloc_from_infos(&ggsw_infos);
             module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut source_xs);
 
-            let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc(rank.into());
+            let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE, Rg> = module.glwe_secret_prepared_alloc(rank.into());
             module.glwe_secret_prepare(&mut sk_prepared, &sk);
 
             let seed_xa: [u8; 32] = [1u8; 32];
@@ -346,7 +352,7 @@ where
 
             let noise_f = |_col_i: usize| -(ggsw_infos.k().as_usize() as f64) + DEFAULT_SIGMA_XE.log2() + 0.5;
 
-            let mut ct: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&ggsw_infos);
+            let mut ct: GGSW<BE::OwnedBuf, BE::ZnxWord, Rg> = module.ggsw_alloc_from_infos(&ggsw_infos);
             module.ggsw_decompress(&mut ct, &ct_compressed);
 
             for row in 0..ct.dnum().as_usize() {

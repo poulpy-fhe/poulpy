@@ -2,7 +2,7 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use poulpy_hal::{
     api::ModuleNew,
-    layouts::{Backend, Module},
+    layouts::{Backend, Module, Ring},
 };
 
 use super::poisoned_scratch;
@@ -13,9 +13,9 @@ use crate::{
 };
 
 /// Decryption rejects mismatched operand degrees and degrees above the module in all builds.
-pub fn test_glwe_decrypt_degree_mismatch<BE: Backend>()
+pub fn test_glwe_decrypt_degree_mismatch<BE: Backend, Rg: Ring>()
 where
-    Module<BE>: ModuleNew<BE> + GLWEDecrypt<BE> + GLWESecretPreparedFactory<BE>,
+    Module<BE>: ModuleNew<BE> + GLWEDecrypt<BE, Rg> + GLWESecretPreparedFactory<BE, Rg>,
 {
     let n = 2 * BE::MIN_DEGREE.max(16);
     let module = Module::<BE>::new(n as u64);

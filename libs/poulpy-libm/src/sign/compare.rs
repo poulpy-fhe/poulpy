@@ -7,7 +7,7 @@ use poulpy_core::{
         BSGSMeta, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, IntPolyInfos, LWEInfos,
     },
 };
-use poulpy_hal::layouts::{Backend, Module, ScratchArena, Standard};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use poulpy_ckks::{
     CKKSCtBounds, CKKSInfos, SetCKKSInfos,
@@ -190,7 +190,7 @@ pub trait CKKSComparisonOps<BE: Backend> {
         K: GetAutomorphismKey<BE>;
 }
 
-impl<BE: Backend<Ring = Standard>> CKKSComparisonOps<BE> for Module<BE>
+impl<BE: Backend> CKKSComparisonOps<BE> for Module<BE>
 where
     Module<BE>: CKKSAllOpsTmpBytes<BE>
         + CKKSSubOps<BE>
@@ -443,7 +443,7 @@ fn correction_into<BE, C, X, S, B, F, P, H, K>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    BE: Backend<Ring = Standard>,
+    BE: Backend,
     Module<BE>: CKKSSubOps<BE>
         + CKKSAddOps<BE>
         + CKKSCopyOps<BE>

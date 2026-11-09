@@ -71,30 +71,30 @@ unsafe fn mul_packed_limb_assign(n: usize, dst: &mut [u32], factor: &[u32]) {
 }
 
 pub(crate) fn svp_ppol_prepare<R: Ring>(
-    module: &Module<NTT4x30Avx<R>>,
-    res: &mut SvpPPolBackendMut<'_, NTT4x30Avx<R>>,
+    module: &Module<NTT4x30Avx>,
+    res: &mut SvpPPolBackendMut<'_, NTT4x30Avx, R>,
     res_col: usize,
-    a: &ScalarZnxBackendRef<'_, NTT4x30Avx<R>>,
+    a: &ScalarZnxBackendRef<'_, NTT4x30Avx, R>,
     a_col: usize,
 ) where
-    NTT4x30Avx<R>: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>>,
+    NTT4x30Avx: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>>,
 {
     let n = res.n();
-    check_degree::<NTT4x30Avx<R>>(module.n(), n);
+    check_degree::<NTT4x30Avx>(module.n(), n);
     assert!(a.n() == n, "svp_ppol_prepare: a.n() != res.n()");
     let data: &mut [u32] = cast_slice_mut(res.data_mut());
     // The q120 form takes twice the destination limb, and `svp_ppol_prepare` has no scratch.
     poulpy_cpu_portable::kernels::with_thread_buffer(4 * n, |tmp| {
-        NTT4x30Avx::<R>::ntt_from_znx64(tmp, a.at(a_col, 0));
-        NTT4x30Avx::<R>::ntt_dft_execute(module.get_ntt_table_for(n), tmp);
+        NTT4x30Avx::ntt_from_znx64(tmp, a.at(a_col, 0));
+        NTT4x30Avx::ntt_dft_execute(NttModuleHandle::<R>::get_ntt_table_for(module, n), tmp);
         unsafe { pack_limb_q120(n, &mut data[4 * n * res_col..][..4 * n], tmp) };
     });
 }
 
 pub(crate) fn svp_ppol_copy<R: Ring>(
-    res: &mut SvpPPolBackendMut<'_, NTT4x30Avx<R>>,
+    res: &mut SvpPPolBackendMut<'_, NTT4x30Avx, R>,
     res_col: usize,
-    a: &SvpPPolBackendRef<'_, NTT4x30Avx<R>>,
+    a: &SvpPPolBackendRef<'_, NTT4x30Avx, R>,
     a_col: usize,
 ) {
     assert_eq!(res.n(), a.n(), "svp_ppol_copy: res.n() {} != a.n() {}", res.n(), a.n());
@@ -119,21 +119,21 @@ pub(crate) fn svp_apply_dft_tmp_bytes(n: usize) -> usize {
 /// `res = a * dft(b)`: each limb of `b` is transformed into its destination through `tmp`, then multiplied there.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn svp_apply_dft<R: Ring>(
-    module: &Module<NTT4x30Avx<R>>,
-    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx<R>>,
+    module: &Module<NTT4x30Avx>,
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx, R>,
     res_col: usize,
-    a: &SvpPPolBackendRef<'_, NTT4x30Avx<R>>,
+    a: &SvpPPolBackendRef<'_, NTT4x30Avx, R>,
     a_col: usize,
-    b: &VecZnxBackendRef<'_, NTT4x30Avx<R>>,
+    b: &VecZnxBackendRef<'_, NTT4x30Avx, R>,
     b_col: usize,
     tmp: &mut [u64],
 ) where
-    NTT4x30Avx<R>: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>>,
+    NTT4x30Avx: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>>,
 {
     poulpy_hal::layouts::assert_dense(b, "svp_apply_dft");
     let n = res.n();
     check_operand(n, res, res_col);
-    check_degree::<NTT4x30Avx<R>>(module.n(), n);
+    check_degree::<NTT4x30Avx>(module.n(), n);
     check_operand(n, b, b_col);
     assert_eq!(a.n(), n, "svp_apply_dft: a.n() != res.n()");
     assert!(tmp.len() >= 4 * n, "svp_apply_dft: scratch below its query");
@@ -159,12 +159,12 @@ pub(crate) fn svp_apply_dft<R: Ring>(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn svp_apply_dft_to_dft<R: Ring>(
-    _module: &Module<NTT4x30Avx<R>>,
-    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx<R>>,
+    _module: &Module<NTT4x30Avx>,
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx, R>,
     res_col: usize,
-    a: &SvpPPolBackendRef<'_, NTT4x30Avx<R>>,
+    a: &SvpPPolBackendRef<'_, NTT4x30Avx, R>,
     a_col: usize,
-    b: &VecZnxDftBackendRef<'_, NTT4x30Avx<R>>,
+    b: &VecZnxDftBackendRef<'_, NTT4x30Avx, R>,
     b_col: usize,
 ) {
     let n = res.n();
@@ -188,10 +188,10 @@ pub(crate) fn svp_apply_dft_to_dft<R: Ring>(
 }
 
 pub(crate) fn svp_apply_dft_to_dft_assign<R: Ring>(
-    _module: &Module<NTT4x30Avx<R>>,
-    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx<R>>,
+    _module: &Module<NTT4x30Avx>,
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx, R>,
     res_col: usize,
-    a: &SvpPPolBackendRef<'_, NTT4x30Avx<R>>,
+    a: &SvpPPolBackendRef<'_, NTT4x30Avx, R>,
     a_col: usize,
 ) {
     let n = res.n();

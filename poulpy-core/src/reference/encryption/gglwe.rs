@@ -1,6 +1,6 @@
 use poulpy_hal::{
     api::{ModuleN, VecZnxDftBytesOf, VecZnxNormalizeTmpBytes},
-    layouts::{Backend, Module, ScalarZnxToBackendRef, ScratchArena},
+    layouts::{Backend, Module, Ring, ScalarZnxToBackendRef, ScratchArena, Standard},
     oep::HalVecZnxImpl,
     source::Source,
 };
@@ -17,7 +17,7 @@ use crate::{
 /// Portable implementation using HAL operations.
 ///
 /// Backend implementations may call this helper without changing their override selection.
-pub trait GGLWEEncryptSkReference<BE: Backend> {
+pub trait GGLWEEncryptSkReference<BE: Backend, Rg: Ring = Standard> {
     fn gglwe_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos;
@@ -31,14 +31,19 @@ pub trait GGLWEEncryptSkReference<BE: Backend> {
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GGLWEToBackendMut<BE>,
-        P: ScalarZnxToBackendRef<BE>,
-        S: GLWESecretPreparedToBackendRef<BE>;
+        R: GGLWEToBackendMut<BE, Rg>,
+        P: ScalarZnxToBackendRef<BE, Rg>,
+        S: GLWESecretPreparedToBackendRef<BE, Rg>;
 }
 
-impl<BE: Backend + HalVecZnxImpl> GGLWEEncryptSkReference<BE> for Module<BE>
+impl<BE: Backend + HalVecZnxImpl<Rg>, Rg: Ring> GGLWEEncryptSkReference<BE, Rg> for Module<BE>
 where
-    Self: ModuleN + GLWEEncryptSkInternal<BE> + GLWEEncryptSk<BE> + GLWEFill<BE> + VecZnxNormalizeTmpBytes + VecZnxDftBytesOf,
+    Self: ModuleN
+        + GLWEEncryptSkInternal<BE, Rg>
+        + GLWEEncryptSk<BE, Rg>
+        + GLWEFill<BE, Rg>
+        + VecZnxNormalizeTmpBytes
+        + VecZnxDftBytesOf,
 {
     fn gglwe_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
@@ -62,9 +67,9 @@ where
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GGLWEToBackendMut<BE>,
-        P: ScalarZnxToBackendRef<BE>,
-        S: GLWESecretPreparedToBackendRef<BE>,
+        R: GGLWEToBackendMut<BE, Rg>,
+        P: ScalarZnxToBackendRef<BE, Rg>,
+        S: GLWESecretPreparedToBackendRef<BE, Rg>,
     {
         let metadata = crate::component_noise::fresh_sk_noise(sk.to_backend_ref().dist, &res.to_backend_ref());
         {

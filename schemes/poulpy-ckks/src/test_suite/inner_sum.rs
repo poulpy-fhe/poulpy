@@ -25,7 +25,7 @@ use poulpy_core::layouts::{
 };
 use poulpy_hal::{
     api::{ReimNew, ScratchOwnedBorrow},
-    layouts::{Backend, HostBytesBackend, Module, ScratchArena, ScratchOwned, Standard},
+    layouts::{Backend, HostBytesBackend, Module, Ring, ScratchArena, ScratchOwned, Standard},
 };
 
 use crate::{
@@ -70,9 +70,15 @@ impl Kind {
         if self == Kind::Mean { log_count } else { 0 }
     }
 
-    fn galois_elements<BE: Backend>(self, module: &Module<BE>, n: Degree, log_batch: usize, log_count: usize) -> Vec<i64>
+    fn galois_elements<BE: Backend, Rg: Ring>(
+        self,
+        module: &Module<BE>,
+        n: Degree,
+        log_batch: usize,
+        log_count: usize,
+    ) -> Vec<i64>
     where
-        Module<BE>: CKKSInnerSumOps<BE>,
+        Module<BE>: CKKSInnerSumOps<BE, Rg>,
     {
         match self {
             Kind::Sum | Kind::Mean => module.ckks_inner_sum_galois_elements(n, log_batch, log_count),
@@ -81,18 +87,18 @@ impl Kind {
     }
 
     #[expect(clippy::too_many_arguments, reason = "the sum's operands, window, keys and scratch")]
-    fn run<BE: TestContextBackend, H: GetAutomorphismKey<BE>>(
+    fn run<BE: TestContextBackend, H: GetAutomorphismKey<BE, Rg>, Rg: Ring>(
         self,
         module: &Module<BE>,
-        res: &mut CKKSCiphertextOwned<BE>,
-        a: &CKKSCiphertextOwned<BE>,
+        res: &mut CKKSCiphertextOwned<BE, Rg>,
+        a: &CKKSCiphertextOwned<BE, Rg>,
         log_batch: usize,
         log_count: usize,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> CKKSResult<()>
     where
-        Module<BE>: CKKSInnerSumOps<BE>,
+        Module<BE>: CKKSInnerSumOps<BE, Rg>,
     {
         match self {
             Kind::Sum => module.ckks_inner_sum(log_batch, log_count, false, res, a, keys, scratch),
@@ -101,17 +107,17 @@ impl Kind {
         }
     }
 
-    fn run_assign<BE: TestContextBackend, H: GetAutomorphismKey<BE>>(
+    fn run_assign<BE: TestContextBackend, H: GetAutomorphismKey<BE, Rg>, Rg: Ring>(
         self,
         module: &Module<BE>,
-        res: &mut CKKSCiphertextOwned<BE>,
+        res: &mut CKKSCiphertextOwned<BE, Rg>,
         log_batch: usize,
         log_count: usize,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> CKKSResult<()>
     where
-        Module<BE>: CKKSInnerSumOps<BE>,
+        Module<BE>: CKKSInnerSumOps<BE, Rg>,
     {
         match self {
             Kind::Sum => module.ckks_inner_sum_assign(log_batch, log_count, false, res, keys, scratch),
@@ -127,25 +133,29 @@ fn windows(m: usize) -> [(usize, usize); 4] {
     [(0, LOG_COUNT), (1, LOG_COUNT), (log_m - LOG_COUNT, LOG_COUNT), (log_m, 0)]
 }
 
-type Keys<BE> = HashMap<i64, GLWEAutomorphismKeyPrepared<<BE as Backend>::OwnedBuf, BE>>;
+type Keys<BE, Rg = Standard> = HashMap<i64, GLWEAutomorphismKeyPrepared<<BE as Backend>::OwnedBuf, BE, Rg>>;
 
 /// An encryption of `test_vector_1` at `params.k`, with its secret and encoder.
-struct Fixture<BE: Backend, F, E> {
+struct Fixture<BE: Backend, F, E, Rg: Ring = Standard> {
     encoder: ReferenceEncoder<E>,
     re: Vec<F>,
     im: Vec<F>,
-    sk_raw: BackendGLWESecret<BE>,
-    sk: GLWESecretPrepared<BE::OwnedBuf, BE>,
+    sk_raw: BackendGLWESecret<BE, Rg>,
+    sk: GLWESecretPrepared<BE::OwnedBuf, BE, Rg>,
     scratch: ScratchOwned<BE>,
-    ct: CKKSCiphertextOwned<BE>,
+    ct: CKKSCiphertextOwned<BE, Rg>,
 }
 
-fn fixture<BE, F, E>(params: &CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>) -> Fixture<BE, F, E>
+fn fixture<BE, F, E, Rg: Ring>(
+    params: &CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) -> Fixture<BE, F, E, Rg>
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextModule<BE, Rg>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -177,16 +187,16 @@ where
 }
 
 /// The keys of every sum of [`KINDS`] over `windows`, at the layout of `params`.
-fn gen_keys<BE>(
+fn gen_keys<BE, Rg: Ring>(
     params: &CKKSTestParams,
     module: &Module<BE>,
-    sk_raw: &BackendGLWESecret<BE>,
+    sk_raw: &BackendGLWESecret<BE, Rg>,
     windows: &[(usize, usize)],
     scratch: &mut ScratchArena<'_, BE>,
-) -> Keys<BE>
+) -> Keys<BE, Rg>
 where
-    BE: TestContextBackend<Ring = Standard>,
-    Module<BE>: TestContextModule<BE>,
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE, Rg>,
 {
     let mut keys = HashMap::new();
     for &(log_batch, log_count) in windows {
@@ -221,14 +231,14 @@ fn want<F: TestScalar>(re: &[F], im: &[F], kind: Kind, log_batch: usize, log_cou
 /// Every sum, mean and replicate decrypts to its cleartext model, untagged, at the metadata of its input.
 pub fn test_inner_sum_aligned<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextModule<BE, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
 {
-    let mut f = fixture::<BE, F, E>(&params, module, host_module);
+    let mut f = fixture::<BE, F, E, Standard>(&params, module, host_module);
     let windows = windows(params.n / 2);
     let keys = gen_keys(&params, module, &f.sk_raw, &windows, &mut f.scratch.borrow());
     let atk = params.atk_layout();
@@ -266,14 +276,14 @@ pub fn test_inner_sum_smaller_output<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextModule<BE, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
 {
-    let mut f = fixture::<BE, F, E>(&params, module, host_module);
+    let mut f = fixture::<BE, F, E, Standard>(&params, module, host_module);
     let windows = windows(params.n / 2);
     let keys = gen_keys(&params, module, &f.sk_raw, &windows, &mut f.scratch.borrow());
     let keys = QueryLog::new(&keys);
@@ -323,14 +333,14 @@ pub fn test_inner_sum_smaller_output<BE, F, E>(
 /// Each `_assign` form equals its out-of-place form, digits, layout, flag and noise tag, each on exactly its query.
 pub fn test_inner_sum_assign<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextModule<BE, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
 {
-    let mut f = fixture::<BE, F, E>(&params, module, host_module);
+    let mut f = fixture::<BE, F, E, Standard>(&params, module, host_module);
     let windows = windows(params.n / 2);
     let keys = gen_keys(&params, module, &f.sk_raw, &windows, &mut f.scratch.borrow());
     let atk = params.atk_layout();
@@ -349,7 +359,7 @@ where
             })
             .unwrap();
             assert!(
-                snapshot::<BE, _>(&res_assign) == snapshot::<BE, _>(&res),
+                snapshot::<BE, _, Standard>(&res_assign) == snapshot::<BE, _, Standard>(&res),
                 "{label}: in place differs from out of place"
             );
         }
@@ -357,10 +367,10 @@ where
 }
 
 /// Asserts `result` failed as `check` wants and `res` kept its `before` snapshot.
-fn assert_refused<BE>(
+fn assert_refused<BE, Rg: Ring>(
     label: &str,
     result: CKKSResult<()>,
-    res: &CKKSCiphertextOwned<BE>,
+    res: &CKKSCiphertextOwned<BE, Rg>,
     before: &crate::test_suite::parity::helpers::Snapshot,
     check: impl FnOnce(&CKKSError) -> bool,
 ) where
@@ -368,7 +378,7 @@ fn assert_refused<BE>(
 {
     let err = result.expect_err(label);
     assert!(check(&err), "{label}: unexpected error: {err}");
-    assert!(snapshot::<BE, _>(res) == *before, "{label}: wrote the destination");
+    assert!(snapshot::<BE, _, Rg>(res) == *before, "{label}: wrote the destination");
 }
 
 /// A window of `2^log_count` batches of `2^log_batch` slots past the slot count is refused with `InvalidOperand`,
@@ -378,25 +388,25 @@ pub fn test_inner_sum_rejects_window<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextModule<BE, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
 {
-    let f = fixture::<BE, F, E>(&params, module, host_module);
+    let f = fixture::<BE, F, E, Standard>(&params, module, host_module);
     let log_batch = (params.n / 2).ilog2() as usize - 1;
-    let no_keys: Keys<BE> = HashMap::new();
+    let no_keys: Keys<BE, Standard> = HashMap::new();
     for kind in KINDS {
         let label = format!("{kind:?} window past the slots");
         let invalid = |err: &CKKSError| matches!(err.composition(), Some(CKKSCompositionError::InvalidOperand { op, .. }) if *op == kind.op());
         let mut res = dirty_ct(module, &f.ct, params.k);
-        let before = snapshot::<BE, _>(&res);
+        let before = snapshot::<BE, _, Standard>(&res);
         let result = with_scratch::<BE, _>(0, |s| kind.run(module, &mut res, &f.ct, log_batch, LOG_COUNT, &no_keys, s));
-        assert_refused::<BE>(&label, result, &res, &before, invalid);
+        assert_refused::<BE, Standard>(&label, result, &res, &before, invalid);
         let result = with_scratch::<BE, _>(0, |s| kind.run_assign(module, &mut res, log_batch, LOG_COUNT, &no_keys, s));
-        assert_refused::<BE>(&format!("{label}, in place"), result, &res, &before, invalid);
+        assert_refused::<BE, Standard>(&format!("{label}, in place"), result, &res, &before, invalid);
 
         let panic = catch_unwind(AssertUnwindSafe(|| {
             kind.galois_elements(module, f.ct.n(), log_batch, LOG_COUNT)
@@ -421,16 +431,16 @@ pub fn test_inner_sum_rejects_integer_slots<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextModule<BE, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
 {
-    let mut f = fixture::<BE, F, E>(&params, module, host_module);
+    let mut f = fixture::<BE, F, E, Standard>(&params, module, host_module);
     f.ct.set_slots(SlotsKind::Integer);
-    let no_keys: Keys<BE> = HashMap::new();
+    let no_keys: Keys<BE, Standard> = HashMap::new();
     let integer = |err: &CKKSError| {
         matches!(
             err.composition(),
@@ -441,15 +451,15 @@ pub fn test_inner_sum_rejects_integer_slots<BE, F, E>(
         )
     };
     let mut res = dirty_ct(module, &f.ct, params.k);
-    let before = snapshot::<BE, _>(&res);
+    let before = snapshot::<BE, _, Standard>(&res);
     let result = with_scratch::<BE, _>(0, |s| Kind::Mean.run(module, &mut res, &f.ct, 0, LOG_COUNT, &no_keys, s));
-    assert_refused::<BE>("mean of Integer slots", result, &res, &before, integer);
+    assert_refused::<BE, Standard>("mean of Integer slots", result, &res, &before, integer);
     let mut res_assign = dirty_ct(module, &f.ct, params.k);
-    let before_assign = snapshot::<BE, _>(&res_assign);
+    let before_assign = snapshot::<BE, _, Standard>(&res_assign);
     let result = with_scratch::<BE, _>(0, |s| {
         Kind::Mean.run_assign(module, &mut res_assign, 0, LOG_COUNT, &no_keys, s)
     });
-    assert_refused::<BE>(
+    assert_refused::<BE, Standard>(
         "mean of Integer slots, in place",
         result,
         &res_assign,
@@ -458,7 +468,7 @@ pub fn test_inner_sum_rejects_integer_slots<BE, F, E>(
     );
 
     let result = with_scratch::<BE, _>(0, |s| Kind::Sum.run(module, &mut res, &f.ct, 0, LOG_COUNT, &no_keys, s));
-    assert_refused::<BE>("sum of Integer slots", result, &res, &before, |err| {
+    assert_refused::<BE, Standard>("sum of Integer slots", result, &res, &before, |err| {
         matches!(err.composition(), Some(CKKSCompositionError::MissingAutomorphismKey { .. }))
     });
     let atk = params.atk_layout();
@@ -478,15 +488,15 @@ pub fn test_inner_sum_rejects_missing_key<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextModule<BE, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
 {
-    let mut f = fixture::<BE, F, E>(&params, module, host_module);
-    let no_keys: Keys<BE> = HashMap::new();
+    let mut f = fixture::<BE, F, E, Standard>(&params, module, host_module);
+    let no_keys: Keys<BE, Standard> = HashMap::new();
     for kind in KINDS {
         let label = format!("{kind:?} absent key");
         let first_rotation = if kind == Kind::Replicate { -2 } else { 1 };
@@ -500,11 +510,11 @@ pub fn test_inner_sum_rejects_missing_key<BE, F, E>(
             )
         };
         let mut res = dirty_ct(module, &f.ct, k);
-        let before = snapshot::<BE, _>(&res);
+        let before = snapshot::<BE, _, Standard>(&res);
         let result = with_scratch::<BE, _>(0, |s| kind.run(module, &mut res, &f.ct, 0, LOG_COUNT, &no_keys, s));
-        assert_refused::<BE>(&label, result, &res, &before, missing);
+        assert_refused::<BE, Standard>(&label, result, &res, &before, missing);
         let result = with_scratch::<BE, _>(0, |s| kind.run_assign(module, &mut res, 0, LOG_COUNT, &no_keys, s));
-        assert_refused::<BE>(&format!("{label}, in place"), result, &res, &before, missing);
+        assert_refused::<BE, Standard>(&format!("{label}, in place"), result, &res, &before, missing);
     }
 
     // Keys whose gadget decomposes `max_input_k` bits, below the input's width.
@@ -520,9 +530,9 @@ pub fn test_inner_sum_rejects_missing_key<BE, F, E>(
     for kind in KINDS {
         let label = format!("{kind:?} key one bit narrower");
         let mut res = dirty_ct(module, &f.ct, max_input_k + 1);
-        let before = snapshot::<BE, _>(&res);
+        let before = snapshot::<BE, _, Standard>(&res);
         let result = with_scratch::<BE, _>(0, |s| kind.run(module, &mut res, &f.ct, 0, LOG_COUNT, &keys, s));
-        assert_refused::<BE>(&label, result, &res, &before, |err| {
+        assert_refused::<BE, Standard>(&label, result, &res, &before, |err| {
             matches!(
                 err.composition(),
                 Some(CKKSCompositionError::MissingAutomorphismKey { op, k, .. })
@@ -544,14 +554,14 @@ pub fn test_inner_sum_rejects_budget<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextModule<BE, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
 {
-    let mut f = fixture::<BE, F, E>(&params, module, host_module);
+    let mut f = fixture::<BE, F, E, Standard>(&params, module, host_module);
     let keys = gen_keys(&params, module, &f.sk_raw, &[(0, LOG_COUNT)], &mut f.scratch.borrow());
     let (ct_k, log_delta, log_budget) = (f.ct.k().as_usize(), f.ct.log_delta(), f.ct.log_budget());
 
@@ -559,35 +569,35 @@ pub fn test_inner_sum_rejects_budget<BE, F, E>(
         let label = format!("{kind:?} copy below log_delta");
         let k = log_delta - 1;
         let mut res = dirty_ct(module, &f.ct, k);
-        let before = snapshot::<BE, _>(&res);
+        let before = snapshot::<BE, _, Standard>(&res);
         let result = with_scratch::<BE, _>(0, |s| kind.run(module, &mut res, &f.ct, 0, LOG_COUNT, &keys, s));
         let want = CKKSCompositionError::InsufficientHomomorphicCapacity {
             op: kind.op(),
             available_log_budget: log_budget,
             required_bits: ct_k - k,
         };
-        assert_refused::<BE>(&label, result, &res, &before, |err| {
+        assert_refused::<BE, Standard>(&label, result, &res, &before, |err| {
             assert_ckks_error(&label, err, want);
             true
         });
     }
 
     let mut res = dirty_ct(module, &f.ct, log_delta + LOG_COUNT - 1);
-    let before = snapshot::<BE, _>(&res);
+    let before = snapshot::<BE, _, Standard>(&res);
     let result = with_scratch::<BE, _>(0, |s| Kind::Mean.run(module, &mut res, &f.ct, 0, LOG_COUNT, &keys, s));
     let want = CKKSCompositionError::InsufficientHomomorphicCapacity {
         op: "ckks_inner_sum",
         available_log_budget: LOG_COUNT - 1,
         required_bits: LOG_COUNT,
     };
-    assert_refused::<BE>("mean past the budget", result, &res, &before, |err| {
+    assert_refused::<BE, Standard>("mean past the budget", result, &res, &before, |err| {
         assert_ckks_error("mean past the budget", err, want.clone());
         true
     });
     let mut res_assign = dirty_ct(module, &f.ct, log_delta + LOG_COUNT - 1);
-    let before_assign = snapshot::<BE, _>(&res_assign);
+    let before_assign = snapshot::<BE, _, Standard>(&res_assign);
     let result = with_scratch::<BE, _>(0, |s| Kind::Mean.run_assign(module, &mut res_assign, 0, LOG_COUNT, &keys, s));
-    assert_refused::<BE>("mean past the budget, in place", result, &res_assign, &before_assign, |err| {
+    assert_refused::<BE, Standard>("mean past the budget, in place", result, &res_assign, &before_assign, |err| {
         assert_ckks_error("mean past the budget, in place", err, want);
         true
     });
@@ -599,14 +609,14 @@ pub fn test_inner_sum_rejects_short_scratch<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextModule<BE, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
 {
-    let mut f = fixture::<BE, F, E>(&params, module, host_module);
+    let mut f = fixture::<BE, F, E, Standard>(&params, module, host_module);
     let keys = gen_keys(&params, module, &f.sk_raw, &[(0, LOG_COUNT)], &mut f.scratch.borrow());
     let atk = params.atk_layout();
     for kind in KINDS {
@@ -619,13 +629,13 @@ pub fn test_inner_sum_rejects_short_scratch<BE, F, E>(
                 ))
         };
         let mut res = dirty_ct(module, &f.ct, params.k);
-        let before = snapshot::<BE, _>(&res);
+        let before = snapshot::<BE, _, Standard>(&res);
         let bytes = module.ckks_inner_sum_tmp_bytes(&res, &f.ct, &atk);
         let result = with_scratch::<BE, _>(bytes - 1, |s| kind.run(module, &mut res, &f.ct, 0, LOG_COUNT, &keys, s));
-        assert_refused::<BE>(&label, result, &res, &before, internal);
+        assert_refused::<BE, Standard>(&label, result, &res, &before, internal);
         let bytes = module.ckks_inner_sum_tmp_bytes(&res, &res, &atk);
         let result = with_scratch::<BE, _>(bytes - 1, |s| kind.run_assign(module, &mut res, 0, LOG_COUNT, &keys, s));
-        assert_refused::<BE>(&format!("{label}, in place"), result, &res, &before, internal);
+        assert_refused::<BE, Standard>(&format!("{label}, in place"), result, &res, &before, internal);
     }
 }
 
@@ -637,14 +647,14 @@ pub fn test_inner_sum_below_module_degree<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextModule<BE, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
 {
-    let mut f = fixture::<BE, F, E>(&params, module, host_module);
+    let mut f = fixture::<BE, F, E, Standard>(&params, module, host_module);
     let windows = windows(params.n / 2);
     let keys = gen_keys(&params, module, &f.sk_raw, &windows, &mut f.scratch.borrow());
     let wide = Module::<BE>::new((2 * params.n) as u64);
@@ -669,7 +679,7 @@ pub fn test_inner_sum_below_module_degree<BE, F, E>(
             })
             .unwrap_or_else(|err| panic!("{label}: {err}"));
             assert!(
-                snapshot::<BE, _>(&res) == snapshot::<BE, _>(&want),
+                snapshot::<BE, _, Standard>(&res) == snapshot::<BE, _, Standard>(&want),
                 "{label}: differs from the sum at the ciphertext's degree"
             );
         }
@@ -678,8 +688,8 @@ pub fn test_inner_sum_below_module_degree<BE, F, E>(
         let log_m = (params.n / 2).ilog2() as usize;
         let invalid = |err: &CKKSError| matches!(err.composition(), Some(CKKSCompositionError::InvalidOperand { op, .. }) if *op == kind.op());
         let mut res = dirty_ct(module, &f.ct, params.k);
-        let before = snapshot::<BE, _>(&res);
+        let before = snapshot::<BE, _, Standard>(&res);
         let result = with_scratch::<BE, _>(0, |s| kind.run(&wide, &mut res, &f.ct, log_m, 1, &keys, s));
-        assert_refused::<BE>(&label, result, &res, &before, invalid);
+        assert_refused::<BE, Standard>(&label, result, &res, &before, invalid);
     }
 }

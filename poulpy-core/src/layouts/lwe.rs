@@ -3,7 +3,7 @@ use poulpy_hal::{AlignedBuf, alloc_aligned};
 use std::fmt;
 
 use poulpy_hal::layouts::{
-    Backend, Data, HostDataMut, HostDataRef, ReaderFrom, VecZnx, VecZnxToBackendMut, VecZnxToBackendRef, WriterTo,
+    Backend, Data, HostDataMut, HostDataRef, ReaderFrom, Ring, Standard, VecZnx, VecZnxToBackendMut, VecZnxToBackendRef, WriterTo,
 };
 
 use crate::layouts::{Base2K, Degree, TorusPrecision};
@@ -161,18 +161,18 @@ impl LWEInfos for LWELayout {
 ///
 /// `D: Data` is the storage backend (e.g. `AlignedBuf`, `&[u8]`, `&mut [u8]`).
 #[derive(PartialEq, Eq, Clone)]
-pub struct LWE<D: Data, W: ZnxWord> {
+pub struct LWE<D: Data, W: ZnxWord, Rg: Ring = Standard> {
     pub(crate) noise: Option<crate::ComponentNoise>,
-    pub(crate) body: VecZnx<D, W>,
-    pub(crate) mask: VecZnx<D, W>,
+    pub(crate) body: VecZnx<D, W, Rg>,
+    pub(crate) mask: VecZnx<D, W, Rg>,
     pub(crate) k: TorusPrecision,
     pub(crate) base2k: Base2K,
 }
 
-pub type LWEBackendRef<'a, BE> = LWE<<BE as Backend>::BufRef<'a>, <BE as Backend>::ZnxWord>;
-pub type LWEBackendMut<'a, BE> = LWE<<BE as Backend>::BufMut<'a>, <BE as Backend>::ZnxWord>;
+pub type LWEBackendRef<'a, BE, Rg = Standard> = LWE<<BE as Backend>::BufRef<'a>, <BE as Backend>::ZnxWord, Rg>;
+pub type LWEBackendMut<'a, BE, Rg = Standard> = LWE<<BE as Backend>::BufMut<'a>, <BE as Backend>::ZnxWord, Rg>;
 
-impl<D: Data, W: ZnxWord> LWEInfos for LWE<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> LWEInfos for LWE<D, W, Rg> {
     fn noise(&self) -> Option<crate::ComponentNoise> {
         self.noise.clone()
     }
@@ -194,31 +194,31 @@ impl<D: Data, W: ZnxWord> LWEInfos for LWE<D, W> {
     }
 }
 
-impl<D: Data, W: ZnxWord> SetBase2k for LWE<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> SetBase2k for LWE<D, W, Rg> {
     fn set_base2k(&mut self, base2k: Base2K) {
         self.base2k = base2k
     }
 }
 
-impl<D: Data, W: ZnxWord> LWE<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> LWE<D, W, Rg> {
     /// Returns a shared reference to the body [`VecZnx`] (n = 1).
-    pub fn body(&self) -> &VecZnx<D, W> {
+    pub fn body(&self) -> &VecZnx<D, W, Rg> {
         &self.body
     }
 
     /// Returns a mutable reference to the body [`VecZnx`] (n = 1).
-    pub fn body_mut(&mut self) -> &mut VecZnx<D, W> {
+    pub fn body_mut(&mut self) -> &mut VecZnx<D, W, Rg> {
         self.noise = None;
         &mut self.body
     }
 
     /// Returns a shared reference to the mask [`VecZnx`] (n = lwe_dim).
-    pub fn mask(&self) -> &VecZnx<D, W> {
+    pub fn mask(&self) -> &VecZnx<D, W, Rg> {
         &self.mask
     }
 
     /// Returns a mutable reference to the mask [`VecZnx`] (n = lwe_dim).
-    pub fn mask_mut(&mut self) -> &mut VecZnx<D, W> {
+    pub fn mask_mut(&mut self) -> &mut VecZnx<D, W, Rg> {
         self.noise = None;
         &mut self.mask
     }
@@ -262,9 +262,9 @@ impl<D: Data, W: ZnxWord> LWE<D, W> {
     }
 }
 
-impl<D: Data, W: ZnxWord> LWE<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> LWE<D, W, Rg> {
     /// Zero-cost rename when both backends share the same `OwnedBuf`.
-    pub fn reinterpret<To>(self) -> LWE<To::OwnedBuf, To::ZnxWord>
+    pub fn reinterpret<To>(self) -> LWE<To::OwnedBuf, To::ZnxWord, Rg>
     where
         To: Backend<OwnedBuf = D, ZnxWord = W>,
     {
@@ -282,13 +282,13 @@ impl<D: Data, W: ZnxWord> LWE<D, W> {
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> fmt::Debug for LWE<D, W> {
+impl<D: HostDataRef, W: ZnxWord, Rg: Ring> fmt::Debug for LWE<D, W, Rg> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{self}")
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> fmt::Display for LWE<D, W> {
+impl<D: HostDataRef, W: ZnxWord, Rg: Ring> fmt::Display for LWE<D, W, Rg> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
@@ -301,7 +301,7 @@ impl<D: HostDataRef, W: ZnxWord> fmt::Display for LWE<D, W> {
     }
 }
 
-impl<W: ZnxWord> LWE<AlignedBuf, W> {
+impl<W: ZnxWord, Rg: Ring> LWE<AlignedBuf, W, Rg> {
     /// Allocates a new [`LWE`] with the given parameters.
     pub(crate) fn alloc_from_infos<A>(infos: &A) -> Self
     where
@@ -319,9 +319,14 @@ impl<W: ZnxWord> LWE<AlignedBuf, W> {
         let size: usize = k.0.div_ceil(base2k.0) as usize;
         LWE {
             noise: None,
-            body: VecZnx::from_data(alloc_aligned::<u8>(VecZnx::<AlignedBuf, W>::bytes_of(1, 1, size)), 1, 1, size),
+            body: VecZnx::from_data(
+                alloc_aligned::<u8>(VecZnx::<AlignedBuf, W, Rg>::bytes_of(1, 1, size)),
+                1,
+                1,
+                size,
+            ),
             mask: VecZnx::from_data(
-                alloc_aligned::<u8>(VecZnx::<AlignedBuf, W>::bytes_of(n.as_usize(), 1, size)),
+                alloc_aligned::<u8>(VecZnx::<AlignedBuf, W, Rg>::bytes_of(n.as_usize(), 1, size)),
                 n.as_usize(),
                 1,
                 size,
@@ -346,19 +351,19 @@ impl<W: ZnxWord> LWE<AlignedBuf, W> {
     /// * `k` -- torus precision.
     pub fn bytes_of(n: Degree, base2k: Base2K, k: TorusPrecision) -> usize {
         let size: usize = k.0.div_ceil(base2k.0) as usize;
-        VecZnx::<AlignedBuf, W>::bytes_of(1, 1, size) + VecZnx::<AlignedBuf, W>::bytes_of(n.as_usize(), 1, size)
+        VecZnx::<AlignedBuf, W, Rg>::bytes_of(1, 1, size) + VecZnx::<AlignedBuf, W, Rg>::bytes_of(n.as_usize(), 1, size)
     }
 }
 
-pub trait LWEToBackendRef<BE: Backend> {
-    fn to_backend_ref(&self) -> LWEBackendRef<'_, BE>;
+pub trait LWEToBackendRef<BE: Backend, Rg: Ring = Standard> {
+    fn to_backend_ref(&self) -> LWEBackendRef<'_, BE, Rg>;
 }
 
-impl<BE: Backend, D: Data> LWEToBackendRef<BE> for LWE<D, BE::ZnxWord>
+impl<BE: Backend, D: Data, Rg: Ring> LWEToBackendRef<BE, Rg> for LWE<D, BE::ZnxWord, Rg>
 where
-    VecZnx<D, BE::ZnxWord>: VecZnxToBackendRef<BE>,
+    VecZnx<D, BE::ZnxWord, Rg>: VecZnxToBackendRef<BE, Rg>,
 {
-    fn to_backend_ref(&self) -> LWEBackendRef<'_, BE> {
+    fn to_backend_ref(&self) -> LWEBackendRef<'_, BE, Rg> {
         LWE {
             noise: self.noise.clone(),
             base2k: self.base2k,
@@ -369,23 +374,23 @@ where
     }
 }
 
-pub trait LWEToBackendMut<BE: Backend>: LWEToBackendRef<BE> {
+pub trait LWEToBackendMut<BE: Backend, Rg: Ring = Standard>: LWEToBackendRef<BE, Rg> {
     /// Backend hook for recording or propagating component noise metadata.
     fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>);
 
     /// Borrows coefficients mutably and clears the owner's component noise metadata.
-    fn to_backend_mut(&mut self) -> LWEBackendMut<'_, BE>;
+    fn to_backend_mut(&mut self) -> LWEBackendMut<'_, BE, Rg>;
 }
 
-impl<BE: Backend, D: Data> LWEToBackendMut<BE> for LWE<D, BE::ZnxWord>
+impl<BE: Backend, D: Data, Rg: Ring> LWEToBackendMut<BE, Rg> for LWE<D, BE::ZnxWord, Rg>
 where
-    VecZnx<D, BE::ZnxWord>: VecZnxToBackendRef<BE> + VecZnxToBackendMut<BE>,
+    VecZnx<D, BE::ZnxWord, Rg>: VecZnxToBackendRef<BE, Rg> + VecZnxToBackendMut<BE, Rg>,
 {
     fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
         self.noise = crate::layouts::checked_noise(metadata, crate::layouts::LWEInfos::n(self).as_usize() + 1);
     }
 
-    fn to_backend_mut(&mut self) -> LWEBackendMut<'_, BE> {
+    fn to_backend_mut(&mut self) -> LWEBackendMut<'_, BE, Rg> {
         self.noise = None;
         LWE {
             noise: None,
@@ -397,36 +402,36 @@ where
     }
 }
 
-impl<BE: Backend> LWEToBackendRef<BE> for &mut LWE<BE::BufMut<'_>, BE::ZnxWord> {
-    fn to_backend_ref(&self) -> LWEBackendRef<'_, BE> {
+impl<BE: Backend, Rg: Ring> LWEToBackendRef<BE, Rg> for &mut LWE<BE::BufMut<'_>, BE::ZnxWord, Rg> {
+    fn to_backend_ref(&self) -> LWEBackendRef<'_, BE, Rg> {
         LWE {
             noise: self.noise.clone(),
             base2k: self.base2k,
             k: self.k,
-            body: poulpy_hal::layouts::vec_znx_backend_ref_from_mut::<BE>(&self.body),
-            mask: poulpy_hal::layouts::vec_znx_backend_ref_from_mut::<BE>(&self.mask),
+            body: poulpy_hal::layouts::vec_znx_backend_ref_from_mut::<BE, Rg>(&self.body),
+            mask: poulpy_hal::layouts::vec_znx_backend_ref_from_mut::<BE, Rg>(&self.mask),
         }
     }
 }
 
-impl<BE: Backend> LWEToBackendMut<BE> for &mut LWE<BE::BufMut<'_>, BE::ZnxWord> {
+impl<BE: Backend, Rg: Ring> LWEToBackendMut<BE, Rg> for &mut LWE<BE::BufMut<'_>, BE::ZnxWord, Rg> {
     fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
         self.noise = crate::layouts::checked_noise(metadata, crate::layouts::LWEInfos::n(self).as_usize() + 1);
     }
 
-    fn to_backend_mut(&mut self) -> LWEBackendMut<'_, BE> {
+    fn to_backend_mut(&mut self) -> LWEBackendMut<'_, BE, Rg> {
         self.noise = None;
         LWE {
             noise: None,
             base2k: self.base2k,
             k: self.k,
-            body: poulpy_hal::layouts::vec_znx_backend_mut_from_mut::<BE>(&mut self.body),
-            mask: poulpy_hal::layouts::vec_znx_backend_mut_from_mut::<BE>(&mut self.mask),
+            body: poulpy_hal::layouts::vec_znx_backend_mut_from_mut::<BE, Rg>(&mut self.body),
+            mask: poulpy_hal::layouts::vec_znx_backend_mut_from_mut::<BE, Rg>(&mut self.mask),
         }
     }
 }
 
-impl<D: HostDataMut, W: ZnxWord> ReaderFrom for LWE<D, W> {
+impl<D: HostDataMut, W: ZnxWord, Rg: Ring> ReaderFrom for LWE<D, W, Rg> {
     /// Deserialises an [`LWE`] in little-endian binary format.
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
         self.noise = None;
@@ -446,7 +451,7 @@ impl<D: HostDataMut, W: ZnxWord> ReaderFrom for LWE<D, W> {
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> WriterTo for LWE<D, W> {
+impl<D: HostDataRef, W: ZnxWord, Rg: Ring> WriterTo for LWE<D, W, Rg> {
     /// Serialises the [`LWE`] in little-endian binary format.
     fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
         crate::layouts::validate_noise_components(self.noise.as_ref(), self.mask.n() + 1)?;

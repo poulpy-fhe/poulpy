@@ -84,7 +84,7 @@ fn scale_params() -> Vec<BlasBenchParams> {
     default_bench_params_blas().into_iter().filter(|bp| bp.log_d == 7).collect()
 }
 
-/// Prints, for each point of the BLAS sweep at `d = 128` on `BE`'s ring whose label one of `filter`'s words selects
+/// Prints, for each point of the BLAS sweep at `d = 128` on the ring `Rg` whose label one of `filter`'s words selects
 /// (every one for an empty filter), the radix the model of `BE` allows at 128 failure bits for products by public
 /// matrices of `32 x 48`, `32 x 32`, `32 x 224` and `112 x 32` blocks, on the right (`X W`, an encrypted grid of
 /// `1 x inner` blocks) and on the left (`W^T X^T`, `inner x 1`), under every [`BlasPtAlgorithm`], and for the ciphertext
@@ -94,13 +94,18 @@ fn scale_params() -> Vec<BlasBenchParams> {
 /// Every block of a product's output sums the same `inner` terms through maps of one shape, so the radix of the whole
 /// product is that of one block of its output, and the products of one inner dimension share it: the queries run once
 /// per inner dimension, on one block column of the public matrix (row on the left).
-pub fn max_base2k_table<BE: Backend + MaxBase2k>(filter: &[String]) {
-    let backend = backend_name::<BE>();
+pub fn max_base2k_table<BE: Backend + MaxBase2k, Rg: Ring>(filter: &[String]) {
+    let ring = backend_name::<Rg>();
+    let backend = if ring == "Standard" {
+        backend_name::<BE>()
+    } else {
+        format!("{}<{ring}>", backend_name::<BE>())
+    };
     for bp in scale_params() {
         if !selected(filter, &format!("{backend}/blas/max_base2k/{bp}")) {
             continue;
         }
-        let slots = bp.n * BE::Ring::CYCLOTOMIC_ORDER_FACTOR as usize / 4;
+        let slots = bp.n * Rg::CYCLOTOMIC_ORDER_FACTOR as usize / 4;
         let log_batch = (slots >> (2 * bp.log_d)).ilog2() as usize;
         let labels = if log_batch > 0 {
             vec![("replicated", log_batch), ("dense", 0)]
@@ -117,7 +122,7 @@ pub fn max_base2k_table<BE: Backend + MaxBase2k>(filter: &[String]) {
         };
         let plan = |algorithm| BlasPlan::new(bp.log_d).with_pt_algorithm(algorithm);
         for (grid, log_sparsity) in labels {
-            let mut block: CKKSLayout = block_layout::<BE::Ring>(&bp);
+            let mut block: CKKSLayout = block_layout::<Rg>(&bp);
             block.meta.log_sparsity = log_sparsity;
             let encrypted = |rows, cols| BlasLayout::new(block, bp.log_d, rows, cols);
             let per_algorithm = |radix: &dyn Fn(BlasPlan) -> usize| {
@@ -134,11 +139,11 @@ pub fn max_base2k_table<BE: Backend + MaxBase2k>(filter: &[String]) {
                 .map(|inner| {
                     let right = per_algorithm(&|plan| {
                         let b = BlasPtOperandLayout::<Right>::new(plan, slots, inner, 1, 1, base2k(&bp), meta);
-                        blas_matmul_pt_right_max_base2k::<BE>(&encrypted(1, inner), &b, &ctx(plan), FAILURE_BITS)
+                        blas_matmul_pt_right_max_base2k::<BE, Rg>(&encrypted(1, inner), &b, &ctx(plan), FAILURE_BITS)
                     });
                     let left = per_algorithm(&|plan| {
                         let b = BlasPtOperandLayout::<Left>::new(plan, slots, 1, inner, 1, base2k(&bp), meta);
-                        blas_matmul_pt_left_max_base2k::<BE>(&b, &encrypted(inner, 1), &ctx(plan), FAILURE_BITS)
+                        blas_matmul_pt_left_max_base2k::<BE, Rg>(&b, &encrypted(inner, 1), &ctx(plan), FAILURE_BITS)
                     });
                     (inner, (right, left))
                 })
@@ -151,7 +156,7 @@ pub fn max_base2k_table<BE: Backend + MaxBase2k>(filter: &[String]) {
                 line("pt_right", format!("1x{inner}*{inner}x{outer}"), right);
                 line("pt_left", format!("{outer}x{inner}*{inner}x1"), left);
             }
-            let radix = blas_matmul_max_base2k::<BE>(
+            let radix = blas_matmul_max_base2k::<BE, Rg>(
                 &encrypted(1, 1),
                 &encrypted(1, 1),
                 &ctx(BlasPlan::new(bp.log_d)),
@@ -202,7 +207,7 @@ fn heap_since(base: usize) -> String {
 /// operation with the heap the call allocates beyond its scratch, and a `HEAP` line per prepared operand.
 pub fn validate<BE>(filter: &[String]) -> Vec<String>
 where
-    BE: Backend<Ring = Standard> + HostStaged + 'static + BlasImpl + MaxBase2k,
+    BE: Backend + HostStaged + 'static + BlasImpl + MaxBase2k,
     Module<BE>: BlasBenchModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
@@ -296,7 +301,7 @@ fn print_heap<BE>(op: &str, operand: &str, bp: &BlasBenchParams, base: usize) {
 /// `blas_matmul_pt_right` of a replicated grid of `1 x inner` blocks by `inner x 1` blocks of a public matrix.
 fn pt_right<BE>(bp: &BlasBenchParams, algorithm: BlasPtAlgorithm, inner: usize, op: &str)
 where
-    BE: Backend<Ring = Standard> + HostStaged + 'static + BlasImpl + MaxBase2k,
+    BE: Backend + HostStaged + 'static + BlasImpl + MaxBase2k,
     Module<BE>: BlasBenchModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
@@ -308,9 +313,9 @@ where
     let ctx = client.context(bp, BlasPlan::new(bp.log_d).with_pt_algorithm(algorithm));
     let ct_a = client.encrypt(bp, 1, inner, 1, a_entry);
     assert!(replicated::<Standard>(&ct_a), "{op}: the encrypted grid is not replicated");
-    let max_base2k = blas_matmul_pt_right_max_base2k::<BE>(&ct_a, &pt, &ctx, FAILURE_BITS);
+    let max_base2k = blas_matmul_pt_right_max_base2k::<BE, Standard>(&ct_a, &pt, &ctx, FAILURE_BITS);
     let mut res = client.result(bp, 1, 1);
-    let uses = blas_matmul_pt_right_key_uses(&client.module, &res, &ct_a, &pt, &ctx);
+    let uses = blas_matmul_pt_right_key_uses::<_, Standard>(&client.module, &res, &ct_a, &pt, &ctx);
     let atks = client.rotation_keys(bp, elements_of(&uses));
     let bytes = client
         .module
@@ -326,14 +331,14 @@ where
     let max_err = client.max_error(bp, &res, |_, r, c| {
         (0..inner * d).map(|l| a_entry(0, r, l) * w(0, l, c)).sum()
     });
-    verify::<BE>(op, bp, max_err, Some(max_base2k), atks.len());
+    verify::<BE, Standard>(op, bp, max_err, Some(max_base2k), atks.len());
     assert_radix(op, bp, max_base2k);
 }
 
 /// `blas_matmul_pt_left` of `1 x inner` blocks of a public matrix by a replicated grid of `inner x 1` blocks.
 fn pt_left<BE>(bp: &BlasBenchParams, algorithm: BlasPtAlgorithm, inner: usize, op: &str)
 where
-    BE: Backend<Ring = Standard> + HostStaged + 'static + BlasImpl + MaxBase2k,
+    BE: Backend + HostStaged + 'static + BlasImpl + MaxBase2k,
     Module<BE>: BlasBenchModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
@@ -345,9 +350,9 @@ where
     let ctx = client.context(bp, BlasPlan::new(bp.log_d).with_pt_algorithm(algorithm));
     let ct_a = client.encrypt(bp, inner, 1, 1, a_entry);
     assert!(replicated::<Standard>(&ct_a), "{op}: the encrypted grid is not replicated");
-    let max_base2k = blas_matmul_pt_left_max_base2k::<BE>(&pt, &ct_a, &ctx, FAILURE_BITS);
+    let max_base2k = blas_matmul_pt_left_max_base2k::<BE, Standard>(&pt, &ct_a, &ctx, FAILURE_BITS);
     let mut res = client.result(bp, 1, 1);
-    let uses = blas_matmul_pt_left_key_uses(&client.module, &res, &pt, &ct_a, &ctx);
+    let uses = blas_matmul_pt_left_key_uses::<_, Standard>(&client.module, &res, &pt, &ct_a, &ctx);
     let atks = client.rotation_keys(bp, elements_of(&uses));
     let bytes = client
         .module
@@ -363,7 +368,7 @@ where
     let max_err = client.max_error(bp, &res, |_, r, c| {
         (0..inner * d).map(|l| w(0, r, l) * a_entry(0, l, c)).sum()
     });
-    verify::<BE>(op, bp, max_err, Some(max_base2k), atks.len());
+    verify::<BE, Standard>(op, bp, max_err, Some(max_base2k), atks.len());
     assert_radix(op, bp, max_base2k);
 }
 
@@ -371,7 +376,7 @@ where
 /// right operand under `Reuse`, the one several products share.
 fn ct_product<BE>(bp: &BlasBenchParams, op: &str)
 where
-    BE: Backend<Ring = Standard> + HostStaged + 'static + BlasImpl + MaxBase2k,
+    BE: Backend + HostStaged + 'static + BlasImpl + MaxBase2k,
     Module<BE>: BlasBenchModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
@@ -380,16 +385,20 @@ where
     let d = bp.d();
     let b_entry = move |s, r, c| entry(2, s, r, c) / d as f64;
     let (a, b) = (client.encrypt(bp, 1, 1, 1, a_entry), client.encrypt(bp, 1, 1, 1, b_entry));
-    let max_base2k = blas_matmul_max_base2k::<BE>(&a, &b, &ctx, FAILURE_BITS);
+    let max_base2k = blas_matmul_max_base2k::<BE, Standard>(&a, &b, &ctx, FAILURE_BITS);
     let module = &client.module;
-    let mut elements = elements_of(&blas_matmul_left_operand_prepare_key_uses(module, &a, &ctx));
-    elements.extend(elements_of(&blas_matmul_right_operand_prepare_key_uses(module, &b, &ctx)));
+    let mut elements = elements_of(&blas_matmul_left_operand_prepare_key_uses::<_, Standard>(module, &a, &ctx));
+    elements.extend(elements_of(&blas_matmul_right_operand_prepare_key_uses::<_, Standard>(
+        module, &b, &ctx,
+    )));
     for (hl, hr) in MIXES {
         let (left, right) = (
             blas_matmul_left_operand_layout(&a, &ctx, hl),
             blas_matmul_right_operand_layout(&b, &ctx, hr),
         );
-        elements.extend(elements_of(&blas_matmul_prepared_key_uses(module, &left, &right, &ctx)));
+        elements.extend(elements_of(&blas_matmul_prepared_key_uses::<_, Standard>(
+            module, &left, &right, &ctx,
+        )));
     }
     let atks = client.rotation_keys(bp, elements);
     let tsk = client.tensor_key(bp);
@@ -439,7 +448,7 @@ where
                     .unwrap()
             });
             let max_err = client.max_error(bp, &res, |_, r, c| (0..d).map(|l| a_entry(0, r, l) * b_entry(0, l, c)).sum());
-            verify::<BE>(&mix, bp, max_err, Some(max_base2k), atks.len());
+            verify::<BE, Standard>(&mix, bp, max_err, Some(max_base2k), atks.len());
         }
     }
     assert_radix(op, bp, max_base2k);
@@ -458,7 +467,7 @@ enum Reduction {
 /// blocks summed for the row and column sums.
 fn reduction<BE>(bp: &BlasBenchParams, kind: Reduction, rows: usize, cols: usize, op: &str)
 where
-    BE: Backend<Ring = Standard> + HostStaged + 'static + BlasImpl + MaxBase2k,
+    BE: Backend + HostStaged + 'static + BlasImpl + MaxBase2k,
     Module<BE>: BlasBenchModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
@@ -477,15 +486,15 @@ where
     let module = &client.module;
     let (uses, bytes) = match kind {
         Reduction::Sum => (
-            blas_sum_key_uses(module, &res, &ct_a),
+            blas_sum_key_uses::<_, Standard>(module, &res, &ct_a),
             module.blas_sum_tmp_bytes(&res, &ct_a, &atk),
         ),
         Reduction::SumRows => (
-            blas_sum_rows_key_uses(module, &res, &ct_a, &ctx),
+            blas_sum_rows_key_uses::<_, Standard>(module, &res, &ct_a, &ctx),
             module.blas_sum_rows_tmp_bytes(&res, &ct_a, &ctx, &atk),
         ),
         Reduction::SumCols => (
-            blas_sum_cols_key_uses(module, &res, &ct_a, &ctx),
+            blas_sum_cols_key_uses::<_, Standard>(module, &res, &ct_a, &ctx),
             module.blas_sum_cols_tmp_bytes(&res, &ct_a, &ctx, &atk),
         ),
     };
@@ -510,6 +519,6 @@ where
         Reduction::Sum => 1,
         Reduction::SumRows | Reduction::SumCols => rows * cols,
     };
-    let bound = error_bound::<BE::Ring>(bp) * (summed as f64).sqrt();
+    let bound = error_bound::<Standard>(bp) * (summed as f64).sqrt();
     verify_within::<BE>(op, bp, max_err, bound, None, atks.len());
 }

@@ -1,4 +1,4 @@
-use poulpy_hal::layouts::{Backend, Module};
+use poulpy_hal::layouts::{Backend, Module, Ring, Standard};
 
 use crate::{
     GetDistribution, GetDistributionMut,
@@ -23,22 +23,22 @@ use crate::{
 /// Implementations read `other` and write `res` only within the regions their layouts describe,
 /// and leave `other` unchanged. The memory, layout, synchrony and aliasing rules of
 /// `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait DecompressionImpl: Backend {
+pub unsafe trait DecompressionImpl<Rg: Ring = Standard>: Backend {
     /// Reproduces
     /// [`glwe_decompress_reference`](crate::reference::decompression::DecompressionReference::glwe_decompress_reference)
     /// bit for bit.
     fn glwe_decompress<R, O>(module: &Module<Self>, res: &mut R, other: &O)
     where
-        R: GLWEToBackendMut<Self> + SetBase2k + SetGLWEPlaintextInfos,
-        O: GLWECompressedToBackendRef<Self> + GLWEInfos;
+        R: GLWEToBackendMut<Self, Rg> + SetBase2k + SetGLWEPlaintextInfos,
+        O: GLWECompressedToBackendRef<Self, Rg> + GLWEInfos;
 
     /// Default body: `gglwe_decompress_derived`, `glwe_decompress` on each `(row, column)` entry of the first
     /// `res.dnum()` rows, after checking the digit width, the row offset and the row count, then the source's
     /// noise on `res`.
     fn gglwe_decompress<R, O>(module: &Module<Self>, res: &mut R, other: &O)
     where
-        R: GGLWEToBackendMut<Self> + GGLWEInfos,
-        O: GGLWECompressedToBackendRef<Self> + GGLWEInfos,
+        R: GGLWEToBackendMut<Self, Rg> + GGLWEInfos,
+        O: GGLWECompressedToBackendRef<Self, Rg> + GGLWEInfos,
     {
         super::derived::decompression::gglwe_decompress_derived(module, res, other)
     }
@@ -47,8 +47,8 @@ pub unsafe trait DecompressionImpl: Backend {
     /// the rank, then the source's noise on `res`.
     fn ggsw_decompress<R, O>(module: &Module<Self>, res: &mut R, other: &O)
     where
-        R: GGSWToBackendMut<Self> + GGSWInfos,
-        O: GGSWCompressedToBackendRef<Self> + GGSWInfos,
+        R: GGSWToBackendMut<Self, Rg> + GGSWInfos,
+        O: GGSWCompressedToBackendRef<Self, Rg> + GGSWInfos,
     {
         super::derived::decompression::ggsw_decompress_derived(module, res, other)
     }
@@ -57,8 +57,8 @@ pub unsafe trait DecompressionImpl: Backend {
     /// checking the layouts, then the source's noise and distribution on `res`.
     fn glwe_public_key_decompress<R, O>(module: &Module<Self>, res: &mut R, other: &O)
     where
-        R: GLWEPublicKeyToBackendMut<Self> + GetDistributionMut + GLWEInfos,
-        O: GLWEPublicKeyCompressedToBackendRef<Self> + GetDistribution + GLWEInfos,
+        R: GLWEPublicKeyToBackendMut<Self, Rg> + GetDistributionMut + GLWEInfos,
+        O: GLWEPublicKeyCompressedToBackendRef<Self, Rg> + GetDistribution + GLWEInfos,
     {
         super::derived::decompression::glwe_public_key_decompress_derived(module, res, other)
     }
@@ -68,15 +68,15 @@ pub unsafe trait DecompressionImpl: Backend {
     /// bit for bit.
     fn lwe_decompress<R, O>(module: &Module<Self>, res: &mut R, other: &O)
     where
-        R: LWEToBackendMut<Self> + LWEInfos + SetBase2k,
-        O: LWECompressedToBackendRef<Self>;
+        R: LWEToBackendMut<Self, Rg> + LWEInfos + SetBase2k,
+        O: LWECompressedToBackendRef<Self, Rg>;
 
     /// Default body: `glwe_automorphism_key_decompress_derived`, `gglwe_decompress`, then the source's Galois element
     /// on `res`.
     fn glwe_automorphism_key_decompress<R, O>(module: &Module<Self>, res: &mut R, other: &O)
     where
-        R: GGLWEToBackendMut<Self> + GGLWEInfos + SetGaloisElement,
-        O: GGLWECompressedToBackendRef<Self> + GGLWEInfos + GetGaloisElement,
+        R: GGLWEToBackendMut<Self, Rg> + GGLWEInfos + SetGaloisElement,
+        O: GGLWECompressedToBackendRef<Self, Rg> + GGLWEInfos + GetGaloisElement,
     {
         super::derived::decompression::glwe_automorphism_key_decompress_derived(module, res, other)
     }
@@ -85,8 +85,8 @@ pub unsafe trait DecompressionImpl: Backend {
     /// output degrees on `res`.
     fn glwe_switching_key_decompress<R, O>(module: &Module<Self>, res: &mut R, other: &O)
     where
-        R: GGLWEToBackendMut<Self> + GGLWEInfos + GLWESwitchingKeyDegreesMut,
-        O: GGLWECompressedToBackendRef<Self> + GGLWEInfos + GLWESwitchingKeyDegrees,
+        R: GGLWEToBackendMut<Self, Rg> + GGLWEInfos + GLWESwitchingKeyDegreesMut,
+        O: GGLWECompressedToBackendRef<Self, Rg> + GGLWEInfos + GLWESwitchingKeyDegrees,
     {
         super::derived::decompression::glwe_switching_key_decompress_derived(module, res, other)
     }
@@ -94,8 +94,8 @@ pub unsafe trait DecompressionImpl: Backend {
     /// Default body: `glwe_tensor_key_decompress_derived`, `gglwe_decompress`.
     fn glwe_tensor_key_decompress<R, O>(module: &Module<Self>, res: &mut R, other: &O)
     where
-        R: GGLWEToBackendMut<Self> + GGLWEInfos,
-        O: GGLWECompressedToBackendRef<Self> + GGLWEInfos,
+        R: GGLWEToBackendMut<Self, Rg> + GGLWEInfos,
+        O: GGLWECompressedToBackendRef<Self, Rg> + GGLWEInfos,
     {
         super::derived::decompression::glwe_tensor_key_decompress_derived(module, res, other)
     }
@@ -103,8 +103,8 @@ pub unsafe trait DecompressionImpl: Backend {
     /// Default body: `glwe_to_lwe_key_decompress_derived`, `glwe_switching_key_decompress`.
     fn glwe_to_lwe_key_decompress<R, O>(module: &Module<Self>, res: &mut R, other: &O)
     where
-        R: GGLWEToBackendMut<Self> + GGLWEInfos + GLWESwitchingKeyDegreesMut,
-        O: GGLWECompressedToBackendRef<Self> + GGLWEInfos + GLWESwitchingKeyDegrees,
+        R: GGLWEToBackendMut<Self, Rg> + GGLWEInfos + GLWESwitchingKeyDegreesMut,
+        O: GGLWECompressedToBackendRef<Self, Rg> + GGLWEInfos + GLWESwitchingKeyDegrees,
     {
         super::derived::decompression::glwe_to_lwe_key_decompress_derived(module, res, other)
     }
@@ -112,8 +112,8 @@ pub unsafe trait DecompressionImpl: Backend {
     /// Default body: `lwe_switching_key_decompress_derived`, `glwe_switching_key_decompress`.
     fn lwe_switching_key_decompress<R, O>(module: &Module<Self>, res: &mut R, other: &O)
     where
-        R: GGLWEToBackendMut<Self> + GGLWEInfos + GLWESwitchingKeyDegreesMut,
-        O: GGLWECompressedToBackendRef<Self> + GGLWEInfos + GLWESwitchingKeyDegrees,
+        R: GGLWEToBackendMut<Self, Rg> + GGLWEInfos + GLWESwitchingKeyDegreesMut,
+        O: GGLWECompressedToBackendRef<Self, Rg> + GGLWEInfos + GLWESwitchingKeyDegrees,
     {
         super::derived::decompression::lwe_switching_key_decompress_derived(module, res, other)
     }
@@ -121,8 +121,8 @@ pub unsafe trait DecompressionImpl: Backend {
     /// Default body: `lwe_to_glwe_key_decompress_derived`, `glwe_switching_key_decompress`.
     fn lwe_to_glwe_key_decompress<R, O>(module: &Module<Self>, res: &mut R, other: &O)
     where
-        R: GGLWEToBackendMut<Self> + GGLWEInfos + GLWESwitchingKeyDegreesMut,
-        O: GGLWECompressedToBackendRef<Self> + GGLWEInfos + GLWESwitchingKeyDegrees,
+        R: GGLWEToBackendMut<Self, Rg> + GGLWEInfos + GLWESwitchingKeyDegreesMut,
+        O: GGLWECompressedToBackendRef<Self, Rg> + GGLWEInfos + GLWESwitchingKeyDegrees,
     {
         super::derived::decompression::lwe_to_glwe_key_decompress_derived(module, res, other)
     }
@@ -131,8 +131,8 @@ pub unsafe trait DecompressionImpl: Backend {
     /// width, row offset and row count, [`Self::gglwe_decompress`] on each key, then the source's noise on `res`.
     fn gglwe_to_ggsw_key_decompress<R, O>(module: &Module<Self>, res: &mut R, other: &O)
     where
-        R: GGLWEToGGSWKeyToBackendMut<Self>,
-        O: GGLWEToGGSWKeyCompressedToBackendRef<Self>,
+        R: GGLWEToGGSWKeyToBackendMut<Self, Rg>,
+        O: GGLWEToGGSWKeyCompressedToBackendRef<Self, Rg>,
     {
         super::derived::decompression::gglwe_to_ggsw_key_decompress_derived(module, res, other)
     }
@@ -140,24 +140,32 @@ pub unsafe trait DecompressionImpl: Backend {
 
 /// Selects the reference bodies of the required decompression methods for this backend; the others keep
 /// their derived defaults.
+///
+/// `($be)` implements both rings and `($be, $ring)` one ring, as `docs/guides/layering-contract.md` describes.
 #[macro_export]
 macro_rules! impl_decompression_reference_full {
     ($be:ty) => {
-        unsafe impl $crate::oep::DecompressionImpl for $be {
+        $crate::impl_decompression_reference_full!($be, ::poulpy_hal::layouts::Standard);
+        $crate::impl_decompression_reference_full!($be, ::poulpy_hal::layouts::ConjugateInvariant);
+    };
+    ($be:ty, $ring:ty) => {
+        unsafe impl $crate::oep::DecompressionImpl<$ring> for $be {
             fn glwe_decompress<R, O>(module: &::poulpy_hal::layouts::Module<$be>, res: &mut R, other: &O)
             where
-                R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::SetBase2k + $crate::layouts::SetGLWEPlaintextInfos,
-                O: $crate::layouts::GLWECompressedToBackendRef<$be> + $crate::layouts::GLWEInfos,
+                R: $crate::layouts::GLWEToBackendMut<$be, $ring>
+                    + $crate::layouts::SetBase2k
+                    + $crate::layouts::SetGLWEPlaintextInfos,
+                O: $crate::layouts::GLWECompressedToBackendRef<$be, $ring> + $crate::layouts::GLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::decompression::DecompressionReference<$be>>::glwe_decompress_reference(module, res, other)
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::decompression::DecompressionReference<$be, $ring>>::glwe_decompress_reference(module, res, other)
             }
 
             fn lwe_decompress<R, O>(module: &::poulpy_hal::layouts::Module<$be>, res: &mut R, other: &O)
             where
-                R: $crate::layouts::LWEToBackendMut<$be> + $crate::layouts::LWEInfos + $crate::layouts::SetBase2k,
-                O: $crate::layouts::LWECompressedToBackendRef<$be>,
+                R: $crate::layouts::LWEToBackendMut<$be, $ring> + $crate::layouts::LWEInfos + $crate::layouts::SetBase2k,
+                O: $crate::layouts::LWECompressedToBackendRef<$be, $ring>,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::decompression::DecompressionReference<$be>>::lwe_decompress_reference(module, res, other)
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::decompression::DecompressionReference<$be, $ring>>::lwe_decompress_reference(module, res, other)
             }
         }
     };

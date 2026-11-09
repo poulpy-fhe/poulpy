@@ -51,7 +51,7 @@ where
     values[..re.len()].copy_from_slice(re);
     values[re.len()..].copy_from_slice(im);
     let mut buffer = CKKSEncodingBuffer::<BE::OwnedBuf, F>::from_host::<BE>(&values);
-    let mut pt = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots(), base2k, k_pt.into());
+    let mut pt = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots::<Standard>(), base2k, k_pt.into());
     pt.set_meta_checked(GLWEPlaintextMeta {
         scale: Scale::Log(log_delta),
         slots: SlotsKind::Complex,
@@ -79,7 +79,7 @@ where
     // Host reference encoder: recomposes the ciphertext limbs through the i64
     // `decode_vec_i64` path, so it applies only to an i64-word backend. Device
     // backends bypass it via the OEP impl.
-    BE: Backend<ZnxWord = i64, Ring = Standard>,
+    BE: Backend<ZnxWord = i64>,
     Module<BE>: CKKSEncodingOps<BE, F>,
     D: HostDataRef,
     F: CKKSShipScalar,

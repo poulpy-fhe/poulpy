@@ -6,7 +6,7 @@
 
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxFillUniformSource, VecZnxRotateAssign},
-    layouts::{Module, ScalarZnx, ScratchOwned, ZnxViewMut},
+    layouts::{Module, Ring, ScalarZnx, ScratchOwned, Standard, ZnxViewMut},
     source::Source,
     test_suite::{TestParams, vec_znx_backend_mut},
 };
@@ -35,20 +35,22 @@ fn k_digits(base2k: usize) -> impl Iterator<Item = usize> {
 
 /// Key switch with digits of every width from 2 bits to three limbs, from radix
 /// `base2k - 1` through a key at `base2k` to radix `base2k - 2`.
-pub fn test_glwe_keyswitch_k_digit<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
-where
+pub fn test_glwe_keyswitch_k_digit<BE: crate::test_suite::noise::TestBackend<Rg>, Rg: Ring>(
+    params: &TestParams,
+    module: &Module<BE>,
+) where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: VecZnxFillUniformSource<BE>
-        + GLWESwitchingKeyEncryptSk<BE>
-        + GLWEEncryptSk<BE>
-        + GLWEKeyswitch<BE>
-        + GLWESecretPreparedFactory<BE>
-        + GLWESwitchingKeyPreparedFactory<BE>
-        + GLWENoise<BE>
-        + GLWEDecrypt<BE>
-        + GLWENormalize<BE>,
+    Module<BE>: VecZnxFillUniformSource<BE, Rg>
+        + GLWESwitchingKeyEncryptSk<BE, Rg>
+        + GLWEEncryptSk<BE, Rg>
+        + GLWEKeyswitch<BE, Rg>
+        + GLWESecretPreparedFactory<BE, Rg>
+        + GLWESwitchingKeyPreparedFactory<BE, Rg>
+        + GLWENoise<BE, Rg>
+        + GLWEDecrypt<BE, Rg>
+        + GLWENormalize<BE, Rg>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let key_base2k: usize = params.base2k;
@@ -83,11 +85,11 @@ where
             rank_out: rank.into(),
         };
 
-        let mut ksk: GLWESwitchingKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_switching_key_alloc_from_infos(&ksk_infos);
-        let mut glwe_in: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_in_infos);
-        let mut glwe_out: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_out_infos);
-        let mut pt_in: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_in_infos);
-        let mut pt_out: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_out_infos);
+        let mut ksk: GLWESwitchingKey<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_switching_key_alloc_from_infos(&ksk_infos);
+        let mut glwe_in: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&glwe_in_infos);
+        let mut glwe_out: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&glwe_out_infos);
+        let mut pt_in: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_plaintext_alloc_from_infos(&glwe_in_infos);
+        let mut pt_out: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_plaintext_alloc_from_infos(&glwe_out_infos);
 
         let mut source_xs: Source = Source::new([1u8; 32]);
         let mut source_xe: Source = Source::new([2u8; 32]);
@@ -95,7 +97,7 @@ where
         module.vec_znx_fill_uniform_source(
             in_base2k,
             k_in,
-            &mut vec_znx_backend_mut::<BE>(&mut pt_in.data),
+            &mut vec_znx_backend_mut::<BE, Rg>(&mut pt_in.data),
             0,
             &mut source_xa,
         );
@@ -109,13 +111,13 @@ where
                 | module.glwe_normalize_tmp_bytes(),
         );
 
-        let mut sk_in: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(rank.into());
+        let mut sk_in: GLWESecret<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_secret_alloc(rank.into());
         module.glwe_secret_fill_ternary_prob(&mut sk_in, 0.5, &mut source_xs);
-        let mut sk_in_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc(rank.into());
+        let mut sk_in_prepared: GLWESecretPrepared<BE::OwnedBuf, BE, Rg> = module.glwe_secret_prepared_alloc(rank.into());
         module.glwe_secret_prepare(&mut sk_in_prepared, &sk_in);
-        let mut sk_out: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(rank.into());
+        let mut sk_out: GLWESecret<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_secret_alloc(rank.into());
         module.glwe_secret_fill_ternary_prob(&mut sk_out, 0.5, &mut source_xs);
-        let mut sk_out_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc(rank.into());
+        let mut sk_out_prepared: GLWESecretPrepared<BE::OwnedBuf, BE, Rg> = module.glwe_secret_prepared_alloc(rank.into());
         module.glwe_secret_prepare(&mut sk_out_prepared, &sk_out);
 
         module.glwe_switching_key_encrypt_sk(
@@ -134,7 +136,7 @@ where
             &mut source_xa,
             &mut scratch.borrow(),
         );
-        let mut ksk_prepared: GLWESwitchingKeyPrepared<BE::OwnedBuf, BE> =
+        let mut ksk_prepared: GLWESwitchingKeyPrepared<BE::OwnedBuf, BE, Rg> =
             module.glwe_switching_key_prepared_alloc_from_infos(&ksk);
         module.glwe_switching_key_prepare(&mut ksk_prepared, &ksk, &mut scratch.borrow());
         module.glwe_keyswitch(
@@ -161,7 +163,7 @@ where
 
         // The switch alone, against the input's phase: the input noise cancels
         // and what is left is the gadget term the digit width sets.
-        let mut phase: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_out_infos);
+        let mut phase: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_plaintext_alloc_from_infos(&glwe_out_infos);
         module.glwe_decrypt(&glwe_in, &mut phase, &sk_in_prepared, &mut scratch.borrow());
         let gadget_have = glwe_noise_checked(module, &glwe_out, &phase, &sk_out_prepared, &mut scratch.borrow())
             .std()
@@ -242,7 +244,7 @@ where
             module.vec_znx_fill_uniform_source(
                 in_base2k,
                 k_in,
-                &mut vec_znx_backend_mut::<BE>(&mut pt_in.data),
+                &mut vec_znx_backend_mut::<BE, Standard>(&mut pt_in.data),
                 0,
                 &mut source_xa,
             );
@@ -290,7 +292,7 @@ where
 
             module.vec_znx_rotate_assign(
                 k as i64,
-                &mut vec_znx_backend_mut::<BE>(&mut pt_in.data),
+                &mut vec_znx_backend_mut::<BE, Standard>(&mut pt_in.data),
                 0,
                 &mut scratch.borrow(),
             );
@@ -317,7 +319,7 @@ where
             module.glwe_decrypt(&glwe_in, &mut phase, &sk_prepared, &mut scratch.borrow());
             module.vec_znx_rotate_assign(
                 k as i64,
-                &mut vec_znx_backend_mut::<BE>(&mut phase.data),
+                &mut vec_znx_backend_mut::<BE, Standard>(&mut phase.data),
                 0,
                 &mut scratch.borrow(),
             );

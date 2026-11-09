@@ -19,7 +19,7 @@ use poulpy_core::layouts::{LWEInfos, prepared::GLWESecretPrepared};
 use poulpy_hal::{
     api::{CnvPVecAlloc, ScratchOwnedBorrow},
     layouts::{
-        ConjugateInvariant, CyclotomicOrder, HostBytesBackend, HostDataMut, HostDataRef, Module, PrepareHint, ScratchArena,
+        ConjugateInvariant, CyclotomicOrder, HostBytesBackend, HostDataMut, HostDataRef, Module, PrepareHint, Ring, ScratchArena,
     },
 };
 
@@ -62,22 +62,19 @@ use crate::{
 /// cleartext model at the metadata [`copied_layout`],
 /// [`mapped_layout`] or [`product_layout`] gives, and its slots, like the prepared operands', are `Real`. On fewer than
 /// 16 slots, which hold no `4 x 4` block, it is skipped with a message.
-pub fn test_blas_conjugate_invariant<BE>(
-    mut params: CKKSTestParams,
-    module: &Module<BE>,
-    host_module: &Module<HostBytesBackend<ConjugateInvariant>>,
-) where
-    BE: TestContextBackend<Ring = ConjugateInvariant> + BlasImpl,
-    Module<BE>: TestContextSharedModule<BE>
-        + CKKSEncodingOps<BE, f64>
-        + BlasEncodingOps<BE, f64>
-        + CKKSLinearTransformationOps<BE>
+pub fn test_blas_conjugate_invariant<BE>(mut params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
+where
+    BE: TestContextBackend + BlasImpl<ConjugateInvariant>,
+    Module<BE>: TestContextSharedModule<BE, ConjugateInvariant>
+        + CKKSEncodingOps<BE, f64, ConjugateInvariant>
+        + BlasEncodingOps<BE, f64, ConjugateInvariant>
+        + CKKSLinearTransformationOps<BE, ConjugateInvariant>
         + CnvPVecAlloc<BE>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
     params.prec_meta.slots = SlotsKind::Real;
-    let (log_d, slots) = (2, module.ckks_max_slots());
+    let (log_d, slots) = (2, module.ckks_max_slots::<ConjugateInvariant>());
     if 2 * log_d > slots.ilog2() as usize {
         eprintln!("test_blas_conjugate_invariant skips log_d {log_d}: it needs d^2 <= {slots} slots");
         return;
@@ -87,7 +84,7 @@ pub fn test_blas_conjugate_invariant<BE>(
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
     let masked = BlasPlan::new(log_d).with_pt_algorithm(BlasPtAlgorithm::JklsGalois);
-    let ctx = encoded_context::<BE, f64>(module, masked, params.base2k.into(), params.prec().into());
+    let ctx = encoded_context::<BE, f64, ConjugateInvariant>(module, masked, params.base2k.into(), params.prec().into());
     // `A` of 2 x 3 blocks and `B` of 3 x 2.
     let real = |rows: usize, cols: usize, seed: u64| {
         let mut grid = Grid::model(log_d, rows, cols, lanes, seed);
@@ -100,27 +97,34 @@ pub fn test_blas_conjugate_invariant<BE>(
 
     // One store for every operation: the context's maps, the rotation by one matrix slot, the sum and both public
     // products of the diagonal and masked plans, and the tensor key.
-    let (order, plan, diagonal) = (module.cyclotomic_order(), ctx.plan(), BlasPlan::new(log_d));
+    let (order, plan, diagonal) = (
+        module.cyclotomic_order::<ConjugateInvariant>(),
+        ctx.plan(),
+        BlasPlan::new(log_d),
+    );
     let elements: BTreeSet<i64> = plan
         .galois_elements(order)
         .into_iter()
         .chain(plan.rotate_galois_elements(order, 1))
-        .chain(sum_galois_elements(module.cyclotomic_order(), &ct_a))
+        .chain(sum_galois_elements(module.cyclotomic_order::<ConjugateInvariant>(), &ct_a))
         .chain(plan.matmul_pt_right_galois_elements(order))
         .chain(plan.matmul_pt_left_galois_elements(order))
         .chain(diagonal.matmul_pt_right_galois_elements(order))
         .chain(diagonal.matmul_pt_left_galois_elements(order))
         .collect();
-    let keys = TestKeys::<BE> {
+    let keys = TestKeys::<BE, ConjugateInvariant> {
         atks: rotation_keys(&params, module, &sk_raw, elements, &mut scratch.borrow()),
         tsk: Some(gen_tsk(&params, module, &sk_raw, &mut scratch.borrow())),
     };
     let (atk, tsk) = (params.atk_layout(), params.tsk_layout());
     let alloc = |rows: usize, cols: usize| alloc_grid(&params, module, log_d, rows, cols, k);
-    let check =
-        |label: &str, res: &BlasCiphertextOwned<BE>, want: &Grid, layout: BlasLayout, scratch: &mut ScratchArena<'_, BE>| {
-            assert_real_grid(label, &params, module, &sk, res, want, &layout, scratch)
-        };
+    let check = |label: &str,
+                 res: &BlasCiphertextOwned<BE, ConjugateInvariant>,
+                 want: &Grid,
+                 layout: BlasLayout,
+                 scratch: &mut ScratchArena<'_, BE>| {
+        assert_real_grid(label, &params, module, &sk, res, want, &layout, scratch)
+    };
 
     let mut res = alloc(2, 3);
     with_scratch::<BE, _>(module.blas_rotate_tmp_bytes(&res, &ct_a, &atk), |s| {
@@ -240,7 +244,7 @@ pub fn test_blas_conjugate_invariant<BE>(
             );
             right
         });
-        let (ab, layout) = (a.matmul(y), product_layout::<BE::Ring>(&ct_a, ct_y, 2, 2, k, p));
+        let (ab, layout) = (a.matmul(y), product_layout::<ConjugateInvariant>(&ct_a, ct_y, 2, 2, k, p));
         for (hl, hr) in MIXES {
             let (left, right) = (&lefts[side(hl)], &rights[side(hr)]);
             let mut res = alloc(2, 2);
@@ -275,7 +279,7 @@ pub fn test_blas_conjugate_invariant<BE>(
             BlasPtAlgorithm::Jkls => (2 * p, count),
             BlasPtAlgorithm::JklsStored | BlasPtAlgorithm::JklsGalois => (3 * p, 1),
         };
-        let pt = pt_operand::<BE, f64, Right>(
+        let pt = pt_operand::<BE, f64, Right, ConjugateInvariant>(
             module,
             BlasPlan::new(log_d).with_pt_algorithm(algorithm),
             3,
@@ -302,7 +306,7 @@ pub fn test_blas_conjugate_invariant<BE>(
             &mut scratch.borrow(),
         );
 
-        let pt_left: BlasPtOperandPrepared<BE, Left> = pt_operand::<BE, f64, Left>(
+        let pt_left: BlasPtOperandPrepared<BE, Left, ConjugateInvariant> = pt_operand::<BE, f64, Left, ConjugateInvariant>(
             module,
             BlasPlan::new(log_d).with_pt_algorithm(algorithm),
             2,
@@ -329,8 +333,8 @@ pub fn test_blas_conjugate_invariant<BE>(
 
     // A product of a real vector by a public matrix, several ciphertexts on each side, resident and streamed.
     let layout = matvec_layouts(&params, slots).pop().unwrap();
-    let (streamed, resident) = matvec_operands::<BE, f64>(module, &layout);
-    let keys = TestKeys::<BE> {
+    let (streamed, resident) = matvec_operands::<BE, f64, ConjugateInvariant>(module, &layout);
+    let keys = TestKeys::<BE, ConjugateInvariant> {
         atks: rotation_keys(
             &params,
             module,
@@ -351,7 +355,11 @@ pub fn test_blas_conjugate_invariant<BE>(
         &mut scratch.borrow(),
     );
     let want = matvec_model(layout.output.len, &v);
-    let want_layout = blas_matvec_pt_output_layout(&alloc_vector(&params, module, layout.output, k), &layout, &ct_v);
+    let want_layout = blas_matvec_pt_output_layout(
+        &alloc_vector::<_, ConjugateInvariant>(&params, module, layout.output, k),
+        &layout,
+        &ct_v,
+    );
     let mut res = alloc_vector(&params, module, layout.output, k);
     with_scratch::<BE, _>(module.blas_matvec_pt_tmp_bytes(&res, &resident, &ct_v, &atk), |s| {
         module.blas_matvec_pt(&mut res, &resident, &ct_v, &keys, s)
@@ -389,7 +397,7 @@ pub fn test_blas_conjugate_invariant<BE>(
     // A diagonal ciphertext of real diagonals: a row and a column appended by real masks of one and two slots, prepared to
     // reuse and once, then its product by a real vector.
     let layout = diagonal_ciphertext_layout(&params, slots, k - p);
-    let keys = TestKeys::<BE> {
+    let keys = TestKeys::<BE, ConjugateInvariant> {
         atks: rotation_keys(
             &params,
             module,
@@ -481,14 +489,14 @@ pub fn test_blas_conjugate_invariant<BE>(
     let grid_layout = BlasLayout::new(ct_a.block_layout(), log_d, 1, 3);
     let write = BlasMatVecOperandLayout::new(slots, input, slots, row.shape(&grid_layout), slots, base2k, meta);
     let ((_, w_read), (_, w_write)) = (
-        matvec_operands::<BE, f64>(module, &read),
-        matvec_operands::<BE, f64>(module, &write),
+        matvec_operands::<BE, f64, ConjugateInvariant>(module, &read),
+        matvec_operands::<BE, f64, ConjugateInvariant>(module, &write),
     );
     let elements: BTreeSet<i64> = matvec_pt_galois_elements(order, &read)
         .into_iter()
         .chain(matvec_pt_galois_elements(order, &write))
         .collect();
-    let keys = TestKeys::<BE> {
+    let keys = TestKeys::<BE, ConjugateInvariant> {
         atks: rotation_keys(&params, module, &sk_raw, elements, &mut scratch.borrow()),
         tsk: None,
     };
@@ -528,20 +536,20 @@ pub fn test_blas_conjugate_invariant<BE>(
 
 /// Encrypts the real `values` as a vector of `shape` repeated every `period` slots at width `params.k`, each ciphertext
 /// encoded at `params.prec()` by the module and labelled with the sparsity of `period`.
-fn encrypt_real_vector<BE>(
+fn encrypt_real_vector<BE, Rg: Ring>(
     params: &CKKSTestParams,
     module: &Module<BE>,
-    sk: &GLWESecretPrepared<BE::OwnedBuf, BE>,
+    sk: &GLWESecretPrepared<BE::OwnedBuf, BE, Rg>,
     shape: BlasVectorShape,
     period: usize,
     values: &[f64],
     scratch: &mut ScratchArena<'_, BE>,
-) -> BlasVectorOwned<BE>
+) -> BlasVectorOwned<BE, Rg>
 where
     BE: TestContextBackend,
-    Module<BE>: TestContextSharedModule<BE> + CKKSEncodingOps<BE, f64>,
+    Module<BE>: TestContextSharedModule<BE, Rg> + CKKSEncodingOps<BE, f64, Rg>,
 {
-    let slots = module.ckks_max_slots();
+    let slots = module.ckks_max_slots::<Rg>();
     let zeros = vec![0.0; slots];
     let cts = (0..shape.count())
         .map(|t| {
@@ -561,22 +569,22 @@ where
 /// slots are `Real`, then the layout `layout` gives and empty noise tags, then `want`, repeated every `period` and zero
 /// elsewhere, at `layout`'s `log_delta`, decoded by the module, with zero imaginary parts.
 #[allow(clippy::too_many_arguments)]
-fn assert_real_vector<BE>(
+fn assert_real_vector<BE, Rg: Ring>(
     label: &str,
     params: &CKKSTestParams,
     module: &Module<BE>,
-    sk: &GLWESecretPrepared<BE::OwnedBuf, BE>,
-    v: &BlasVectorOwned<BE>,
+    sk: &GLWESecretPrepared<BE::OwnedBuf, BE, Rg>,
+    v: &BlasVectorOwned<BE, Rg>,
     want: &[f64],
     period: usize,
     layout: &BlasVectorLayout,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: TestContextBackend,
-    Module<BE>: TestContextSharedModule<BE> + CKKSEncodingOps<BE, f64>,
+    Module<BE>: TestContextSharedModule<BE, Rg> + CKKSEncodingOps<BE, f64, Rg>,
 {
     assert_eq!(v.blas_vector_layout(), *layout, "{label}: layout");
-    let (slots, shape, log_delta) = (module.ckks_max_slots(), v.vector_shape(), layout.ct.log_delta());
+    let (slots, shape, log_delta) = (module.ckks_max_slots::<Rg>(), v.vector_shape(), layout.ct.log_delta());
     for (t, ct) in v.cts().iter().enumerate() {
         assert_eq!(ct.slots(), SlotsKind::Real, "{label} ciphertext {t}: slots");
         assert!(ct.noise().is_none(), "{label} ciphertext {t}: kept a noise tag");
@@ -593,16 +601,16 @@ fn assert_real_vector<BE>(
 
 /// Encrypts every block of the real grid `grid` at width `params.k`, encoded at `params.prec()` by the module into a
 /// plaintext of the grid's `lanes d^2` slots, so the grid records its lanes.
-fn encrypt_real<BE>(
+fn encrypt_real<BE, Rg: Ring>(
     params: &CKKSTestParams,
     module: &Module<BE>,
-    sk: &GLWESecretPrepared<BE::OwnedBuf, BE>,
+    sk: &GLWESecretPrepared<BE::OwnedBuf, BE, Rg>,
     grid: &Grid,
     scratch: &mut ScratchArena<'_, BE>,
-) -> BlasCiphertextOwned<BE>
+) -> BlasCiphertextOwned<BE, Rg>
 where
     BE: TestContextBackend,
-    Module<BE>: TestContextSharedModule<BE> + CKKSEncodingOps<BE, f64>,
+    Module<BE>: TestContextSharedModule<BE, Rg> + CKKSEncodingOps<BE, f64, Rg>,
 {
     let slots = grid.lanes() << (2 * grid.log_d);
     let zeros = vec![0.0; slots];
@@ -622,18 +630,18 @@ where
 /// [`assert_grid_decrypt`](super::helpers::assert_grid_decrypt) on the conjugate-invariant ring: every block's slots are
 /// `Real`, then the shape, labels, layouts, empty noise tags and batch record `layout` gives, then the values `want`
 /// holds at `layout`'s `log_delta`, decoded by the module, with zero imaginary parts.
-fn assert_real_grid<BE>(
+fn assert_real_grid<BE, Rg: Ring>(
     label: &str,
     params: &CKKSTestParams,
     module: &Module<BE>,
-    sk: &GLWESecretPrepared<BE::OwnedBuf, BE>,
-    ct: &BlasCiphertextOwned<BE>,
+    sk: &GLWESecretPrepared<BE::OwnedBuf, BE, Rg>,
+    ct: &BlasCiphertextOwned<BE, Rg>,
     want: &Grid,
     layout: &BlasLayout,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: TestContextBackend,
-    Module<BE>: TestContextSharedModule<BE> + CKKSEncodingOps<BE, f64>,
+    Module<BE>: TestContextSharedModule<BE, Rg> + CKKSEncodingOps<BE, f64, Rg>,
 {
     for (b, block) in ct.blocks().iter().enumerate() {
         assert_eq!(block.slots(), SlotsKind::Real, "{label} block {b}: slots");
@@ -645,7 +653,7 @@ fn assert_real_grid<BE>(
         assert_eq!(layout_of(block), layout.block, "{label} block {b}: layout");
         assert!(block.noise().is_none(), "{label} block {b}: kept a noise tag");
     }
-    let slots = module.ckks_max_slots();
+    let slots = module.ckks_max_slots::<Rg>();
     let batch = (slots >> layout.block.log_sparsity()) >> (2 * layout.log_d);
     assert_eq!(ct.mat_slots(), Some(batch), "{label}: batch record");
     let log_delta = layout.block.log_delta();

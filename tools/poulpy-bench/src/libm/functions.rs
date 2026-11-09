@@ -20,7 +20,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::{ModuleSynchronize, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, HostBytesBackend, HostStaged, Module, ScratchOwned, Standard},
+    layouts::{Backend, HostBytesBackend, HostStaged, Module, ScratchOwned},
     source::Source,
 };
 use poulpy_libm::{
@@ -103,7 +103,7 @@ struct Point<BE: Backend> {
 
 impl<BE> Point<BE>
 where
-    BE: Backend<Ring = Standard> + 'static,
+    BE: Backend + 'static,
     Module<BE>: LibmBenchModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
@@ -146,7 +146,7 @@ where
 /// `ckks_exp` of a plan on `[0.5, 1.5]` at default options.
 pub fn runner_ckks_exp<BE, M>(bencher: &mut Bencher<'_, M>, bp: &LibmBenchParams)
 where
-    BE: Backend<Ring = Standard> + HostStaged + 'static,
+    BE: Backend + HostStaged + 'static,
     Module<BE>: LibmBenchModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     M: Measurement,
@@ -182,7 +182,7 @@ where
 /// `ckks_log` of a plan on `[0.5, 1.5]` at default options.
 pub fn runner_ckks_log<BE, M>(bencher: &mut Bencher<'_, M>, bp: &LibmBenchParams)
 where
-    BE: Backend<Ring = Standard> + HostStaged + 'static,
+    BE: Backend + HostStaged + 'static,
     Module<BE>: LibmBenchModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     M: Measurement,
@@ -218,7 +218,7 @@ where
 /// `ckks_pow` of a plan for bases in `[0.5, 1.5]` and exponents in `[-1, 1]` at default options.
 pub fn runner_ckks_pow<BE, M>(bencher: &mut Bencher<'_, M>, bp: &LibmBenchParams)
 where
-    BE: Backend<Ring = Standard> + HostStaged + 'static,
+    BE: Backend + HostStaged + 'static,
     Module<BE>: LibmBenchModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     M: Measurement,

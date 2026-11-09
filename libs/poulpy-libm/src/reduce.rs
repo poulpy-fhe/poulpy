@@ -125,7 +125,7 @@ pub trait CKKSReductionOps<BE: Backend> {
         K: GetAutomorphismKey<BE>;
 }
 
-impl<BE: Backend<Ring = Standard>> CKKSReductionOps<BE> for Module<BE>
+impl<BE: Backend> CKKSReductionOps<BE> for Module<BE>
 where
     Module<BE>: CKKSAddOps<BE> + CKKSComparisonOps<BE> + CKKSCopyOps<BE> + CKKSRotateOps<BE> + GLWEBytesOf<BE>,
 {
@@ -134,7 +134,7 @@ where
         C: CKKSCtBounds,
     {
         slot_shifts(self, input)
-            .map(|shift| self.ckks_galois_element(shift))
+            .map(|shift| self.ckks_galois_element::<Standard>(shift))
             .collect()
     }
 
@@ -241,7 +241,7 @@ fn ensure_dense(op: &'static str, input: &impl CKKSCtBounds) -> Result<()> {
 
 /// Rotations `1, 2, 4, ...` below the slot count of `input`.
 fn slot_shifts<BE: Backend>(module: &Module<BE>, input: &impl CKKSCtBounds) -> impl Iterator<Item = i64> {
-    let log_slots = module.ckks_slots_of_degree(input.n().as_usize()).ilog2();
+    let log_slots = module.ckks_slots_of_degree::<Standard>(input.n().as_usize()).ilog2();
     (0..log_slots).map(|i| 1i64 << i)
 }
 

@@ -22,7 +22,7 @@ use super::{
     ntt::{intt_avx2, ntt_avx2},
 };
 
-impl ZnxAutomorphism for NTT4x30Avx<ConjugateInvariant> {
+impl ZnxAutomorphism<ConjugateInvariant> for NTT4x30Avx {
     #[inline(always)]
     fn znx_automorphism(p: i64, res: &mut [i64], a: &[i64]) {
         znx_automorphism_portable(p, res, a)
@@ -34,7 +34,7 @@ impl ZnxAutomorphism for NTT4x30Avx<ConjugateInvariant> {
     }
 }
 
-impl NttDFTExecute<NttTable<Primes30, ConjugateInvariant>> for NTT4x30Avx<ConjugateInvariant> {
+impl NttDFTExecute<NttTable<Primes30, ConjugateInvariant>> for NTT4x30Avx {
     #[inline(always)]
     fn ntt_dft_execute(table: &NttTable<Primes30, ConjugateInvariant>, data: &mut [u64]) {
         // SAFETY: NTT4x30Avx::new() verifies AVX2 availability at construction time.
@@ -49,7 +49,7 @@ impl NttDFTExecute<NttTable<Primes30, ConjugateInvariant>> for NTT4x30Avx<Conjug
     }
 }
 
-impl NttDFTExecute<NttTableInv<Primes30, ConjugateInvariant>> for NTT4x30Avx<ConjugateInvariant> {
+impl NttDFTExecute<NttTableInv<Primes30, ConjugateInvariant>> for NTT4x30Avx {
     #[inline(always)]
     fn ntt_dft_execute(table: &NttTableInv<Primes30, ConjugateInvariant>, data: &mut [u64]) {
         // SAFETY: NTT4x30Avx::new() verifies AVX2 availability at construction time.

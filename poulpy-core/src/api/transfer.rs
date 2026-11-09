@@ -23,7 +23,7 @@
 //! its own layouts without editing this one.
 
 use poulpy_hal::layouts::{
-    Backend, CopyFromHost, CopyToHost, Data, DataView, DataViewMut, MatZnx, ScalarZnx, VecZnx, ZnxWord, transfer_buf_into,
+    Backend, CopyFromHost, CopyToHost, Data, DataView, DataViewMut, MatZnx, Ring, ScalarZnx, VecZnx, ZnxWord, transfer_buf_into,
 };
 
 use crate::layouts::{
@@ -40,7 +40,7 @@ pub trait TransferInto<Dst> {
     fn transfer_into(&self, dst: &mut Dst);
 }
 
-fn move_vec_znx<D1, D2, W>(src: &VecZnx<D1, W>, dst: &mut VecZnx<D2, W>)
+fn move_vec_znx<D1, D2, W, Rg: Ring>(src: &VecZnx<D1, W, Rg>, dst: &mut VecZnx<D2, W, Rg>)
 where
     D1: Data + CopyToHost,
     D2: Data + CopyFromHost,
@@ -52,7 +52,7 @@ where
     transfer_buf_into(src.data(), dst.data_mut());
 }
 
-fn move_mat_znx<D1, D2, W>(src: &MatZnx<D1, W>, dst: &mut MatZnx<D2, W>)
+fn move_mat_znx<D1, D2, W, Rg: Ring>(src: &MatZnx<D1, W, Rg>, dst: &mut MatZnx<D2, W, Rg>)
 where
     D1: Data + CopyToHost,
     D2: Data + CopyFromHost,
@@ -66,7 +66,7 @@ where
     transfer_buf_into(src.data(), dst.data_mut());
 }
 
-fn move_scalar_znx<D1, D2, W>(src: &ScalarZnx<D1, W>, dst: &mut ScalarZnx<D2, W>)
+fn move_scalar_znx<D1, D2, W, Rg: Ring>(src: &ScalarZnx<D1, W, Rg>, dst: &mut ScalarZnx<D2, W, Rg>)
 where
     D1: Data + CopyToHost,
     D2: Data + CopyFromHost,
@@ -77,13 +77,13 @@ where
     transfer_buf_into(src.data(), dst.data_mut());
 }
 
-impl<D1, D2, W> TransferInto<GLWE<D2, W>> for GLWE<D1, W>
+impl<D1, D2, W, Rg: Ring> TransferInto<GLWE<D2, W, Rg>> for GLWE<D1, W, Rg>
 where
     D1: Data + CopyToHost,
     D2: Data + CopyFromHost,
     W: ZnxWord,
 {
-    fn transfer_into(&self, dst: &mut GLWE<D2, W>) {
+    fn transfer_into(&self, dst: &mut GLWE<D2, W, Rg>) {
         assert_eq!(self.base2k, dst.base2k, "transfer_into: GLWE base2k");
         assert_eq!(self.k, dst.k, "transfer_into: GLWE k");
         move_vec_znx(&self.data, &mut dst.data);
@@ -93,13 +93,13 @@ where
     }
 }
 
-impl<D1, D2, W> TransferInto<GLWEPlaintext<D2, W>> for GLWEPlaintext<D1, W>
+impl<D1, D2, W, Rg: Ring> TransferInto<GLWEPlaintext<D2, W, Rg>> for GLWEPlaintext<D1, W, Rg>
 where
     D1: Data + CopyToHost,
     D2: Data + CopyFromHost,
     W: ZnxWord,
 {
-    fn transfer_into(&self, dst: &mut GLWEPlaintext<D2, W>) {
+    fn transfer_into(&self, dst: &mut GLWEPlaintext<D2, W, Rg>) {
         assert!(self.base2k == dst.base2k, "transfer_into: GLWEPlaintext base2k");
         assert!(self.k == dst.k, "transfer_into: GLWEPlaintext k");
         move_vec_znx(&self.data, &mut dst.data);
@@ -107,26 +107,26 @@ where
     }
 }
 
-impl<D1, D2, W> TransferInto<LWEPlaintext<D2, W>> for LWEPlaintext<D1, W>
+impl<D1, D2, W, Rg: Ring> TransferInto<LWEPlaintext<D2, W, Rg>> for LWEPlaintext<D1, W, Rg>
 where
     D1: Data + CopyToHost,
     D2: Data + CopyFromHost,
     W: ZnxWord,
 {
-    fn transfer_into(&self, dst: &mut LWEPlaintext<D2, W>) {
+    fn transfer_into(&self, dst: &mut LWEPlaintext<D2, W, Rg>) {
         assert!(self.base2k == dst.base2k, "transfer_into: LWEPlaintext base2k");
         assert!(self.k == dst.k, "transfer_into: LWEPlaintext k");
         move_vec_znx(&self.data, &mut dst.data);
     }
 }
 
-impl<D1, D2, W> TransferInto<LWE<D2, W>> for LWE<D1, W>
+impl<D1, D2, W, Rg: Ring> TransferInto<LWE<D2, W, Rg>> for LWE<D1, W, Rg>
 where
     D1: Data + CopyToHost,
     D2: Data + CopyFromHost,
     W: ZnxWord,
 {
-    fn transfer_into(&self, dst: &mut LWE<D2, W>) {
+    fn transfer_into(&self, dst: &mut LWE<D2, W, Rg>) {
         assert_eq!(self.base2k, dst.base2k, "transfer_into: LWE base2k");
         assert_eq!(self.k, dst.k, "transfer_into: LWE k");
         move_vec_znx(&self.body, &mut dst.body);
@@ -135,13 +135,13 @@ where
     }
 }
 
-impl<D1, D2, W> TransferInto<GGLWE<D2, W>> for GGLWE<D1, W>
+impl<D1, D2, W, Rg: Ring> TransferInto<GGLWE<D2, W, Rg>> for GGLWE<D1, W, Rg>
 where
     D1: Data + CopyToHost,
     D2: Data + CopyFromHost,
     W: ZnxWord,
 {
-    fn transfer_into(&self, dst: &mut GGLWE<D2, W>) {
+    fn transfer_into(&self, dst: &mut GGLWE<D2, W, Rg>) {
         assert_eq!(self.base2k, dst.base2k, "transfer_into: GGLWE base2k");
         assert_eq!(self.k_aux, dst.k_aux, "transfer_into: GGLWE k_aux");
         assert_eq!(self.k_digit, dst.k_digit, "transfer_into: GGLWE k_digit");
@@ -154,13 +154,13 @@ where
 /// A GGLWE moved into a matrix of the same shape carved from a scratch arena
 /// ([`take_gglwe_scratch`](crate::ScratchArenaTakeGGLWE::take_gglwe_scratch)): the carve
 /// holds the first bytes of an owned source, which may be padded past them.
-impl<D1, BE> TransferInto<GGLWEViewMut<'_, BE>> for GGLWE<D1, BE::ZnxWord>
+impl<D1, BE, Rg: Ring> TransferInto<GGLWEViewMut<'_, BE, Rg>> for GGLWE<D1, BE::ZnxWord, Rg>
 where
     D1: Data + CopyToHost,
     BE: Backend,
 {
-    fn transfer_into(&self, dst: &mut GGLWEViewMut<'_, BE>) {
-        let dst: &mut GGLWE<BE::BufMut<'_>, BE::ZnxWord> = dst;
+    fn transfer_into(&self, dst: &mut GGLWEViewMut<'_, BE, Rg>) {
+        let dst: &mut GGLWE<BE::BufMut<'_>, BE::ZnxWord, Rg> = dst;
         assert_eq!(self.base2k, dst.base2k, "transfer_into: GGLWE base2k");
         assert_eq!(self.k_aux, dst.k_aux, "transfer_into: GGLWE k_aux");
         assert_eq!(self.k_digit, dst.k_digit, "transfer_into: GGLWE k_digit");
@@ -190,12 +190,12 @@ where
 /// holds besides (its Galois element, its degrees) is the caller's to keep.
 macro_rules! transfer_key_matrix_into_view {
     ($($key:ty => $($field:tt).+;)+) => {$(
-        impl<D1, BE> TransferInto<GGLWEViewMut<'_, BE>> for $key
+        impl<D1, BE, Rg: Ring> TransferInto<GGLWEViewMut<'_, BE, Rg>> for $key
         where
             D1: Data + CopyToHost,
             BE: Backend,
         {
-            fn transfer_into(&self, dst: &mut GGLWEViewMut<'_, BE>) {
+            fn transfer_into(&self, dst: &mut GGLWEViewMut<'_, BE, Rg>) {
                 self.$($field).+.transfer_into(dst);
             }
         }
@@ -203,28 +203,28 @@ macro_rules! transfer_key_matrix_into_view {
 }
 
 transfer_key_matrix_into_view! {
-    GLWEAutomorphismKey<D1, BE::ZnxWord> => key;
-    GLWESwitchingKey<D1, BE::ZnxWord> => key;
-    GLWETensorKey<D1, BE::ZnxWord> => 0;
+    GLWEAutomorphismKey<D1, BE::ZnxWord, Rg> => key;
+    GLWESwitchingKey<D1, BE::ZnxWord, Rg> => key;
+    GLWETensorKey<D1, BE::ZnxWord, Rg> => 0;
 }
 
-impl<D1, BE, M> TransferInto<GGLWEViewMut<'_, BE>> for GLWECIKey<D1, BE::ZnxWord, M>
+impl<D1, BE, M, Rg: Ring> TransferInto<GGLWEViewMut<'_, BE, Rg>> for GLWECIKey<D1, BE::ZnxWord, M, Rg>
 where
     D1: Data + CopyToHost,
     BE: Backend,
 {
-    fn transfer_into(&self, dst: &mut GGLWEViewMut<'_, BE>) {
+    fn transfer_into(&self, dst: &mut GGLWEViewMut<'_, BE, Rg>) {
         self.0.transfer_into(dst);
     }
 }
 
-impl<D1, D2, W> TransferInto<GGSW<D2, W>> for GGSW<D1, W>
+impl<D1, D2, W, Rg: Ring> TransferInto<GGSW<D2, W, Rg>> for GGSW<D1, W, Rg>
 where
     D1: Data + CopyToHost,
     D2: Data + CopyFromHost,
     W: ZnxWord,
 {
-    fn transfer_into(&self, dst: &mut GGSW<D2, W>) {
+    fn transfer_into(&self, dst: &mut GGSW<D2, W, Rg>) {
         assert_eq!(self.base2k, dst.base2k, "transfer_into: GGSW base2k");
         assert_eq!(self.k_aux, dst.k_aux, "transfer_into: GGSW k_aux");
         assert_eq!(self.k_digit, dst.k_digit, "transfer_into: GGSW k_digit");
@@ -233,13 +233,13 @@ where
     }
 }
 
-impl<D1, D2, W> TransferInto<GLWECompressed<D2, W>> for GLWECompressed<D1, W>
+impl<D1, D2, W, Rg: Ring> TransferInto<GLWECompressed<D2, W, Rg>> for GLWECompressed<D1, W, Rg>
 where
     D1: Data + CopyToHost,
     D2: Data + CopyFromHost,
     W: ZnxWord,
 {
-    fn transfer_into(&self, dst: &mut GLWECompressed<D2, W>) {
+    fn transfer_into(&self, dst: &mut GLWECompressed<D2, W, Rg>) {
         assert_eq!(self.base2k, dst.base2k, "transfer_into: GLWECompressed base2k");
         assert_eq!(self.k, dst.k, "transfer_into: GLWECompressed k");
         assert_eq!(self.rank, dst.rank, "transfer_into: GLWECompressed rank");
@@ -250,13 +250,13 @@ where
     }
 }
 
-impl<D1, D2, W> TransferInto<GGLWECompressed<D2, W>> for GGLWECompressed<D1, W>
+impl<D1, D2, W, Rg: Ring> TransferInto<GGLWECompressed<D2, W, Rg>> for GGLWECompressed<D1, W, Rg>
 where
     D1: Data + CopyToHost,
     D2: Data + CopyFromHost,
     W: ZnxWord,
 {
-    fn transfer_into(&self, dst: &mut GGLWECompressed<D2, W>) {
+    fn transfer_into(&self, dst: &mut GGLWECompressed<D2, W, Rg>) {
         assert_eq!(self.base2k, dst.base2k, "transfer_into: GGLWECompressed base2k");
         assert_eq!(self.k_aux, dst.k_aux, "transfer_into: GGLWECompressed k_aux");
         assert_eq!(self.k_digit, dst.k_digit, "transfer_into: GGLWECompressed k_digit");
@@ -269,13 +269,13 @@ where
     }
 }
 
-impl<D1, D2, W> TransferInto<GLWEPublicKey<D2, W>> for GLWEPublicKey<D1, W>
+impl<D1, D2, W, Rg: Ring> TransferInto<GLWEPublicKey<D2, W, Rg>> for GLWEPublicKey<D1, W, Rg>
 where
     D1: Data + CopyToHost,
     D2: Data + CopyFromHost,
     W: ZnxWord,
 {
-    fn transfer_into(&self, dst: &mut GLWEPublicKey<D2, W>) {
+    fn transfer_into(&self, dst: &mut GLWEPublicKey<D2, W, Rg>) {
         assert_eq!(self.base2k, dst.base2k, "transfer_into: GLWEPublicKey base2k");
         assert_eq!(self.k, dst.k, "transfer_into: GLWEPublicKey k");
         move_mat_znx(&self.data, &mut dst.data);
@@ -284,13 +284,13 @@ where
     }
 }
 
-impl<D1, D2, W> TransferInto<GLWEPublicKeyCompressed<D2, W>> for GLWEPublicKeyCompressed<D1, W>
+impl<D1, D2, W, Rg: Ring> TransferInto<GLWEPublicKeyCompressed<D2, W, Rg>> for GLWEPublicKeyCompressed<D1, W, Rg>
 where
     D1: Data + CopyToHost,
     D2: Data + CopyFromHost,
     W: ZnxWord,
 {
-    fn transfer_into(&self, dst: &mut GLWEPublicKeyCompressed<D2, W>) {
+    fn transfer_into(&self, dst: &mut GLWEPublicKeyCompressed<D2, W, Rg>) {
         assert_eq!(self.base2k, dst.base2k, "transfer_into: GLWEPublicKeyCompressed base2k");
         assert_eq!(self.k, dst.k, "transfer_into: GLWEPublicKeyCompressed k");
         assert_eq!(
@@ -305,73 +305,73 @@ where
     }
 }
 
-impl<D1, D2, W> TransferInto<GLWESwitchingKey<D2, W>> for GLWESwitchingKey<D1, W>
+impl<D1, D2, W, Rg: Ring> TransferInto<GLWESwitchingKey<D2, W, Rg>> for GLWESwitchingKey<D1, W, Rg>
 where
     D1: Data + CopyToHost,
     D2: Data + CopyFromHost,
     W: ZnxWord,
 {
-    fn transfer_into(&self, dst: &mut GLWESwitchingKey<D2, W>) {
+    fn transfer_into(&self, dst: &mut GLWESwitchingKey<D2, W, Rg>) {
         self.key.transfer_into(&mut dst.key);
         dst.input_degree = self.input_degree;
         dst.output_degree = self.output_degree;
     }
 }
 
-impl<D1, D2, W> TransferInto<GLWEAutomorphismKey<D2, W>> for GLWEAutomorphismKey<D1, W>
+impl<D1, D2, W, Rg: Ring> TransferInto<GLWEAutomorphismKey<D2, W, Rg>> for GLWEAutomorphismKey<D1, W, Rg>
 where
     D1: Data + CopyToHost,
     D2: Data + CopyFromHost,
     W: ZnxWord,
 {
-    fn transfer_into(&self, dst: &mut GLWEAutomorphismKey<D2, W>) {
+    fn transfer_into(&self, dst: &mut GLWEAutomorphismKey<D2, W, Rg>) {
         self.key.transfer_into(&mut dst.key);
         dst.p = self.p;
     }
 }
 
-impl<D1, D2, W, M> TransferInto<GLWECIKey<D2, W, M>> for GLWECIKey<D1, W, M>
+impl<D1, D2, W, M, Rg: Ring> TransferInto<GLWECIKey<D2, W, M, Rg>> for GLWECIKey<D1, W, M, Rg>
 where
     D1: Data + CopyToHost,
     D2: Data + CopyFromHost,
     W: ZnxWord,
 {
-    fn transfer_into(&self, dst: &mut GLWECIKey<D2, W, M>) {
+    fn transfer_into(&self, dst: &mut GLWECIKey<D2, W, M, Rg>) {
         self.0.transfer_into(&mut dst.0);
     }
 }
 
-impl<D1, D2, W> TransferInto<GLWESecret<D2, W>> for GLWESecret<D1, W>
+impl<D1, D2, W, Rg: Ring> TransferInto<GLWESecret<D2, W, Rg>> for GLWESecret<D1, W, Rg>
 where
     D1: Data + CopyToHost,
     D2: Data + CopyFromHost,
     W: ZnxWord,
 {
-    fn transfer_into(&self, dst: &mut GLWESecret<D2, W>) {
+    fn transfer_into(&self, dst: &mut GLWESecret<D2, W, Rg>) {
         move_scalar_znx(&self.data, &mut dst.data);
         dst.dist = self.dist;
     }
 }
 
-impl<D1, D2, W> TransferInto<LWESecret<D2, W>> for LWESecret<D1, W>
+impl<D1, D2, W, Rg: Ring> TransferInto<LWESecret<D2, W, Rg>> for LWESecret<D1, W, Rg>
 where
     D1: Data + CopyToHost,
     D2: Data + CopyFromHost,
     W: ZnxWord,
 {
-    fn transfer_into(&self, dst: &mut LWESecret<D2, W>) {
+    fn transfer_into(&self, dst: &mut LWESecret<D2, W, Rg>) {
         move_scalar_znx(&self.data, &mut dst.data);
         dst.dist = self.dist;
     }
 }
 
-impl<D1, D2, W> TransferInto<GLWETensor<D2, W>> for GLWETensor<D1, W>
+impl<D1, D2, W, Rg: Ring> TransferInto<GLWETensor<D2, W, Rg>> for GLWETensor<D1, W, Rg>
 where
     D1: Data + CopyToHost,
     D2: Data + CopyFromHost,
     W: ZnxWord,
 {
-    fn transfer_into(&self, dst: &mut GLWETensor<D2, W>) {
+    fn transfer_into(&self, dst: &mut GLWETensor<D2, W, Rg>) {
         assert_eq!(self.base2k, dst.base2k, "transfer_into: GLWETensor base2k");
         assert_eq!(self.k, dst.k, "transfer_into: GLWETensor k");
         assert_eq!(self.rank, dst.rank, "transfer_into: GLWETensor rank");
@@ -379,35 +379,35 @@ where
     }
 }
 
-impl<D1, D2, W> TransferInto<GLWETensorKey<D2, W>> for GLWETensorKey<D1, W>
+impl<D1, D2, W, Rg: Ring> TransferInto<GLWETensorKey<D2, W, Rg>> for GLWETensorKey<D1, W, Rg>
 where
     D1: Data + CopyToHost,
     D2: Data + CopyFromHost,
     W: ZnxWord,
 {
-    fn transfer_into(&self, dst: &mut GLWETensorKey<D2, W>) {
+    fn transfer_into(&self, dst: &mut GLWETensorKey<D2, W, Rg>) {
         self.0.transfer_into(&mut dst.0);
     }
 }
 
-impl<D1, D2, W> TransferInto<GLWEToLWEKey<D2, W>> for GLWEToLWEKey<D1, W>
+impl<D1, D2, W, Rg: Ring> TransferInto<GLWEToLWEKey<D2, W, Rg>> for GLWEToLWEKey<D1, W, Rg>
 where
     D1: Data + CopyToHost,
     D2: Data + CopyFromHost,
     W: ZnxWord,
 {
-    fn transfer_into(&self, dst: &mut GLWEToLWEKey<D2, W>) {
+    fn transfer_into(&self, dst: &mut GLWEToLWEKey<D2, W, Rg>) {
         self.0.transfer_into(&mut dst.0);
     }
 }
 
-impl<D1, D2, W> TransferInto<GGLWEToGGSWKey<D2, W>> for GGLWEToGGSWKey<D1, W>
+impl<D1, D2, W, Rg: Ring> TransferInto<GGLWEToGGSWKey<D2, W, Rg>> for GGLWEToGGSWKey<D1, W, Rg>
 where
     D1: Data + CopyToHost,
     D2: Data + CopyFromHost,
     W: ZnxWord,
 {
-    fn transfer_into(&self, dst: &mut GGLWEToGGSWKey<D2, W>) {
+    fn transfer_into(&self, dst: &mut GGLWEToGGSWKey<D2, W, Rg>) {
         assert_eq!(self.keys.len(), dst.keys.len(), "transfer_into: GGLWEToGGSWKey key count");
         for (src, dst) in self.keys.iter().zip(&mut dst.keys) {
             src.transfer_into(dst);
@@ -417,7 +417,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use poulpy_hal::layouts::{Backend, DataView, DataViewMut, Module};
+    use poulpy_hal::layouts::{Backend, DataView, DataViewMut, Module, Standard};
 
     use super::TransferInto;
     use crate::{
@@ -513,7 +513,7 @@ mod tests {
     fn module_transfer_glwe_compressed_roundtrip() {
         let src_module: Module<SrcBackend> = Module::new(64);
         let dst_module: Module<DstBackend> = Module::new(64);
-        let mut src = src_module.glwe_compressed_alloc(Base2K(12), TorusPrecision(33), Rank(2));
+        let mut src = src_module.glwe_compressed_alloc::<Standard>(Base2K(12), TorusPrecision(33), Rank(2));
         fill_bytes(src.data.data_mut());
         src.seed = [7; 32];
         src.noise = noise(1250.0, 2);
@@ -551,7 +551,7 @@ mod tests {
             rank_out: Rank(2),
             stride: 1,
         };
-        let mut src = src_module.gglwe_compressed_alloc_from_infos(&layout);
+        let mut src = src_module.gglwe_compressed_alloc_from_infos::<_, Standard>(&layout);
         fill_bytes(src.data.data_mut());
         src.seed
             .iter_mut()
@@ -577,7 +577,7 @@ mod tests {
     fn module_transfer_glwe_public_key_roundtrip() {
         let src_module: Module<SrcBackend> = Module::new(64);
         let dst_module: Module<DstBackend> = Module::new(64);
-        let mut src = src_module.glwe_public_key_alloc(Base2K(12), TorusPrecision(33), Rank(2));
+        let mut src = src_module.glwe_public_key_alloc::<Standard>(Base2K(12), TorusPrecision(33), Rank(2));
         fill_bytes(src.data.data_mut());
         src.dist = Distribution::TernaryProb(0.3);
         src.noise = noise(1250.0, 2);
@@ -600,7 +600,7 @@ mod tests {
     fn module_transfer_glwe_public_key_compressed_roundtrip() {
         let src_module: Module<SrcBackend> = Module::new(64);
         let dst_module: Module<DstBackend> = Module::new(64);
-        let mut src = src_module.glwe_public_key_compressed_alloc(Base2K(12), TorusPrecision(33), Rank(2));
+        let mut src = src_module.glwe_public_key_compressed_alloc::<Standard>(Base2K(12), TorusPrecision(33), Rank(2));
         fill_bytes(src.data.data_mut());
         src.seed
             .iter_mut()
@@ -639,7 +639,7 @@ mod tests {
     fn test_transfer_into_rejects_shape_mismatch() {
         let src_module: Module<SrcBackend> = Module::new(64);
         let dst_module: Module<DstBackend> = Module::new(64);
-        let src = src_module.glwe_alloc(Base2K(12), TorusPrecision(24), Rank(1));
+        let src = src_module.glwe_alloc::<Standard>(Base2K(12), TorusPrecision(24), Rank(1));
         let mut dst = dst_module.glwe_alloc(Base2K(12), TorusPrecision(36), Rank(1));
         fill_bytes(dst.data.data_mut());
         assert_transfer_refused(
@@ -655,7 +655,7 @@ mod tests {
     fn test_transfer_into_rejects_glwe_compressed_rank_mismatch() {
         let src_module: Module<SrcBackend> = Module::new(64);
         let dst_module: Module<DstBackend> = Module::new(64);
-        let src = src_module.glwe_compressed_alloc(Base2K(12), TorusPrecision(24), Rank(1));
+        let src = src_module.glwe_compressed_alloc::<Standard>(Base2K(12), TorusPrecision(24), Rank(1));
         let mut dst = dst_module.glwe_compressed_alloc(Base2K(12), TorusPrecision(24), Rank(2));
         fill_bytes(dst.data.data_mut());
         assert_transfer_refused(
@@ -682,7 +682,7 @@ mod tests {
             rank_out: Rank(1),
             stride: 1,
         };
-        let src = src_module.gglwe_compressed_alloc_from_infos(&layout);
+        let src = src_module.gglwe_compressed_alloc_from_infos::<_, Standard>(&layout);
         let mut dst = dst_module.gglwe_compressed_alloc_from_infos(&GGLWELayout {
             k_offset: TorusPrecision(1),
             ..layout
@@ -713,7 +713,7 @@ mod tests {
             rank_out: Rank(1),
             stride: 1,
         };
-        let src = src_module.gglwe_alloc_from_infos(&layout);
+        let src = src_module.gglwe_alloc_from_infos::<_, Standard>(&layout);
         let mut dst = dst_module.gglwe_alloc_from_infos(&GGLWELayout {
             k_offset: TorusPrecision(1),
             ..layout
@@ -732,7 +732,7 @@ mod tests {
     fn test_transfer_into_rejects_glwe_public_key_precision_mismatch() {
         let src_module: Module<SrcBackend> = Module::new(64);
         let dst_module: Module<DstBackend> = Module::new(64);
-        let src = src_module.glwe_public_key_alloc(Base2K(12), TorusPrecision(24), Rank(1));
+        let src = src_module.glwe_public_key_alloc::<Standard>(Base2K(12), TorusPrecision(24), Rank(1));
         let mut dst = dst_module.glwe_public_key_alloc(Base2K(12), TorusPrecision(23), Rank(1));
         fill_bytes(dst.data.data_mut());
         assert_transfer_refused(
@@ -747,7 +747,7 @@ mod tests {
     fn test_transfer_into_rejects_glwe_public_key_compressed_precision_mismatch() {
         let src_module: Module<SrcBackend> = Module::new(64);
         let dst_module: Module<DstBackend> = Module::new(64);
-        let src = src_module.glwe_public_key_compressed_alloc(Base2K(12), TorusPrecision(24), Rank(1));
+        let src = src_module.glwe_public_key_compressed_alloc::<Standard>(Base2K(12), TorusPrecision(24), Rank(1));
         let mut dst = dst_module.glwe_public_key_compressed_alloc(Base2K(12), TorusPrecision(23), Rank(1));
         fill_bytes(dst.data.data_mut());
         assert_transfer_refused(
@@ -763,7 +763,7 @@ mod tests {
     fn test_transfer_into_rejects_glwe_compressed_layout_mismatch() {
         let src_module: Module<SrcBackend> = Module::new(64);
         let dst_module: Module<DstBackend> = Module::new(64);
-        let src = src_module.glwe_compressed_alloc(Base2K(12), TorusPrecision(24), Rank(1));
+        let src = src_module.glwe_compressed_alloc::<Standard>(Base2K(12), TorusPrecision(24), Rank(1));
         for (base2k, k, message) in [
             (
                 8,
@@ -798,7 +798,7 @@ mod tests {
             rank_out: Rank(1),
             stride: 1,
         };
-        let src = src_module.gglwe_compressed_alloc_from_infos(&layout);
+        let src = src_module.gglwe_compressed_alloc_from_infos::<_, Standard>(&layout);
         for (dst_layout, message) in [
             (
                 GGLWELayout {
@@ -843,7 +843,7 @@ mod tests {
     fn test_transfer_into_rejects_glwe_public_key_radix_mismatch() {
         let src_module: Module<SrcBackend> = Module::new(64);
         let dst_module: Module<DstBackend> = Module::new(64);
-        let src = src_module.glwe_public_key_alloc(Base2K(12), TorusPrecision(24), Rank(1));
+        let src = src_module.glwe_public_key_alloc::<Standard>(Base2K(12), TorusPrecision(24), Rank(1));
         let mut dst = dst_module.glwe_public_key_alloc(Base2K(8), TorusPrecision(24), Rank(1));
         fill_bytes(dst.data.data_mut());
         assert_transfer_refused(
@@ -859,7 +859,7 @@ mod tests {
     fn test_transfer_into_rejects_glwe_public_key_compressed_layout_mismatch() {
         let src_module: Module<SrcBackend> = Module::new(64);
         let dst_module: Module<DstBackend> = Module::new(64);
-        let src = src_module.glwe_public_key_compressed_alloc(Base2K(12), TorusPrecision(24), Rank(1));
+        let src = src_module.glwe_public_key_compressed_alloc::<Standard>(Base2K(12), TorusPrecision(24), Rank(1));
         for (base2k, rank, message) in [
             (
                 8,

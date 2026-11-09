@@ -7,10 +7,10 @@ use poulpy_hal::{
         VecZnxIdftApply, VecZnxIdftApplyTmpBytes,
     },
     layouts::{
-        Backend, Module, ScratchArena, SvpPPolReborrowBackendMut, SvpPPolReborrowBackendRef, VecZnxBigToBackendMut,
-        VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, scalar_znx_as_vec_znx_backend_mut_from_mut,
-        scalar_znx_as_vec_znx_backend_ref_from_mut, scalar_znx_as_vec_znx_backend_ref_from_ref, vec_znx_backend_mut_from_mut,
-        vec_znx_backend_ref_from_ref,
+        Backend, Module, Ring, ScratchArena, Standard, SvpPPolReborrowBackendMut, SvpPPolReborrowBackendRef,
+        VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef,
+        scalar_znx_as_vec_znx_backend_mut_from_mut, scalar_znx_as_vec_znx_backend_ref_from_mut,
+        scalar_znx_as_vec_znx_backend_ref_from_ref, vec_znx_backend_mut_from_mut, vec_znx_backend_ref_from_ref,
     },
 };
 
@@ -26,27 +26,27 @@ use crate::{
 
 /// Reference bodies of the required [`SecretImpl`](crate::oep::SecretImpl) methods, which
 /// [`impl_secret_reference_full!`](crate::impl_secret_reference_full) forwards to.
-pub trait SecretReference<BE: Backend> {
+pub trait SecretReference<BE: Backend, Rg: Ring = Standard> {
     fn glwe_secret_prepare_reference<R, O>(&self, res: &mut R, other: &O)
     where
-        R: GLWESecretPreparedToBackendMut<BE> + GetDistributionMut,
-        O: GLWESecretToBackendRef<BE> + GetDistribution;
+        R: GLWESecretPreparedToBackendMut<BE, Rg> + GetDistributionMut,
+        O: GLWESecretToBackendRef<BE, Rg> + GetDistribution;
 
     fn glwe_secret_tensor_prepare_reference<R, O>(&self, res: &mut R, other: &O)
     where
-        R: GLWESecretTensorPreparedToBackendMut<BE> + GetDistributionMut,
-        O: GLWESecretTensorToBackendRef<BE> + GetDistribution;
+        R: GLWESecretTensorPreparedToBackendMut<BE, Rg> + GetDistributionMut,
+        O: GLWESecretTensorToBackendRef<BE, Rg> + GetDistribution;
 
     fn glwe_secret_tensor_from_glwe_secret_tmp_bytes_reference(&self, rank: Rank) -> usize;
 
     fn glwe_secret_tensor_from_glwe_secret_reference<R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWESecretTensorToBackendMut<BE> + GetDistributionMut + GLWEInfos,
-        O: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos;
+        R: GLWESecretTensorToBackendMut<BE, Rg> + GetDistributionMut + GLWEInfos,
+        O: GLWESecretToBackendRef<BE, Rg> + GetDistribution + GLWEInfos;
 
-    fn glwe_secret_from_lwe_secret_reference<S>(&self, src: &S) -> GLWESecret<BE::OwnedBuf, BE::ZnxWord>
+    fn glwe_secret_from_lwe_secret_reference<S>(&self, src: &S) -> GLWESecret<BE::OwnedBuf, BE::ZnxWord, Rg>
     where
-        S: LWESecretToBackendRef<BE>;
+        S: LWESecretToBackendRef<BE, Rg>;
 
     fn lwe_secret_from_glwe_secret_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
@@ -57,32 +57,32 @@ pub trait SecretReference<BE: Backend> {
         src: &S,
         lwe_n: Degree,
         scratch: &mut ScratchArena<'_, BE>,
-    ) -> LWESecret<BE::OwnedBuf, BE::ZnxWord>
+    ) -> LWESecret<BE::OwnedBuf, BE::ZnxWord, Rg>
     where
-        S: GLWESecretToBackendRef<BE>;
+        S: GLWESecretToBackendRef<BE, Rg>;
 }
 
 // Coefficient-word fence: `scalar_znx_automorphism` is delegated by
 // poulpy-hal for i64 backends only.
-impl<BE: Backend<ZnxWord = i64>> SecretReference<BE> for Module<BE>
+impl<BE: Backend<ZnxWord = i64>, Rg: Ring> SecretReference<BE, Rg> for Module<BE>
 where
-    Module<BE>: GLWESecretPreparedFactory<BE>
-        + ScalarZnxAutomorphism<BE>
-        + SvpApplyDftToDft<BE>
-        + SvpPPolPrepare<BE>
+    Module<BE>: GLWESecretPreparedFactory<BE, Rg>
+        + ScalarZnxAutomorphism<BE, Rg>
+        + SvpApplyDftToDft<BE, Rg>
+        + SvpPPolPrepare<BE, Rg>
         + VecZnxBigBytesOf
-        + VecZnxBigNormalize<BE>
+        + VecZnxBigNormalize<BE, Rg>
         + VecZnxBigNormalizeTmpBytes
-        + VecZnxCopy<BE>
-        + VecZnxDftApply<BE>
+        + VecZnxCopy<BE, Rg>
+        + VecZnxDftApply<BE, Rg>
         + VecZnxDftBytesOf
-        + VecZnxIdftApply<BE>
+        + VecZnxIdftApply<BE, Rg>
         + VecZnxIdftApplyTmpBytes,
 {
     fn glwe_secret_prepare_reference<R, O>(&self, res: &mut R, other: &O)
     where
-        R: GLWESecretPreparedToBackendMut<BE> + GetDistributionMut,
-        O: GLWESecretToBackendRef<BE> + GetDistribution,
+        R: GLWESecretPreparedToBackendMut<BE, Rg> + GetDistributionMut,
+        O: GLWESecretToBackendRef<BE, Rg> + GetDistribution,
     {
         {
             let mut res = res.to_backend_mut();
@@ -101,8 +101,8 @@ where
 
     fn glwe_secret_tensor_prepare_reference<R, O>(&self, res: &mut R, other: &O)
     where
-        R: GLWESecretTensorPreparedToBackendMut<BE> + GetDistributionMut,
-        O: GLWESecretTensorToBackendRef<BE> + GetDistribution,
+        R: GLWESecretTensorPreparedToBackendMut<BE, Rg> + GetDistributionMut,
+        O: GLWESecretTensorToBackendRef<BE, Rg> + GetDistribution,
     {
         {
             let mut res = res.to_backend_mut();
@@ -137,8 +137,8 @@ where
 
     fn glwe_secret_tensor_from_glwe_secret_reference<R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWESecretTensorToBackendMut<BE> + GetDistributionMut + GLWEInfos,
-        O: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
+        R: GLWESecretTensorToBackendMut<BE, Rg> + GetDistributionMut + GLWEInfos,
+        O: GLWESecretToBackendRef<BE, Rg> + GetDistribution + GLWEInfos,
     {
         let distribution = *other.dist();
         let tmp_bytes: usize = self.glwe_secret_tensor_from_glwe_secret_tmp_bytes_reference(other.rank());
@@ -175,7 +175,7 @@ where
 
             let base2k: usize = 17;
 
-            let a_backend_vec = scalar_znx_as_vec_znx_backend_ref_from_ref::<BE>(a.data());
+            let a_backend_vec = scalar_znx_as_vec_znx_backend_ref_from_ref::<BE, Rg>(a.data());
             for i in 0..rank {
                 let mut a_dft_backend = a_dft.to_backend_mut();
                 self.vec_znx_dft_apply(1, 0, &mut a_dft_backend, i, &a_backend_vec, i);
@@ -185,7 +185,7 @@ where
             // Tag of the base secret `a`, carried over as-is: the products below
             // are not distributed like `a`, but their statistics derive from it.
             res.dist = *a.dist();
-            let mut res_backend = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(res.data_mut());
+            let mut res_backend = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE, Rg>(res.data_mut());
 
             // sk_tensor = sk (x) sk
             // For example: (s0, s1) (x) (s0, s1) = (s0^2, s0s1, s1^2)
@@ -227,15 +227,15 @@ where
         *res.dist_mut() = distribution;
     }
 
-    fn glwe_secret_from_lwe_secret_reference<S>(&self, src: &S) -> GLWESecret<BE::OwnedBuf, BE::ZnxWord>
+    fn glwe_secret_from_lwe_secret_reference<S>(&self, src: &S) -> GLWESecret<BE::OwnedBuf, BE::ZnxWord, Rg>
     where
-        S: LWESecretToBackendRef<BE>,
+        S: LWESecretToBackendRef<BE, Rg>,
     {
         let src = src.to_backend_ref();
         assert!(src.n().as_usize() == self.n(), "secret degree differs from the module degree");
         let mut res = self.glwe_secret_alloc(Rank(1));
         {
-            let mut res_ref = GLWESecretToBackendMut::<BE>::to_backend_mut(&mut res);
+            let mut res_ref = GLWESecretToBackendMut::<BE, Rg>::to_backend_mut(&mut res);
             self.scalar_znx_automorphism(-1, res_ref.data_mut(), 0, src.data(), 0);
         }
         res.dist = src.dist;
@@ -254,9 +254,9 @@ where
         src: &S,
         lwe_n: Degree,
         scratch: &mut ScratchArena<'_, BE>,
-    ) -> LWESecret<BE::OwnedBuf, BE::ZnxWord>
+    ) -> LWESecret<BE::OwnedBuf, BE::ZnxWord, Rg>
     where
-        S: GLWESecretToBackendRef<BE>,
+        S: GLWESecretToBackendRef<BE, Rg>,
     {
         let src = src.to_backend_ref();
         let n: usize = self.n();
@@ -273,7 +273,7 @@ where
             "insufficient scratch for LWE secret flattening"
         );
 
-        let mut res: LWESecret<BE::OwnedBuf, BE::ZnxWord> = self.lwe_secret_alloc(lwe_n);
+        let mut res: LWESecret<BE::OwnedBuf, BE::ZnxWord, Rg> = self.lwe_secret_alloc(lwe_n);
         {
             // Scratch secret shaped like the source (rank cols, ring N) so the
             // per-column automorphism dimensions match. The result is then packed
@@ -281,16 +281,16 @@ where
             // last block when `target % n != 0`.
             let (mut tmp, _) = scratch.borrow().take_glwe_secret_scratch(src.n(), src.rank());
             {
-                let mut tmp_ref = GLWESecretToBackendMut::<BE>::to_backend_mut(&mut tmp);
+                let mut tmp_ref = GLWESecretToBackendMut::<BE, Rg>::to_backend_mut(&mut tmp);
                 for j in 0..rank {
                     self.scalar_znx_automorphism(-1, tmp_ref.data_mut(), j, src.data(), j);
                 }
             }
 
-            let tmp_ref = GLWESecretToBackendMut::<BE>::to_backend_mut(&mut tmp);
-            let mut res_ref = LWESecretToBackendMut::<BE>::to_backend_mut(&mut res);
-            let tmp_vz = scalar_znx_as_vec_znx_backend_ref_from_mut::<BE>(tmp_ref.data());
-            let mut res_vz = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(res_ref.data_mut());
+            let tmp_ref = GLWESecretToBackendMut::<BE, Rg>::to_backend_mut(&mut tmp);
+            let mut res_ref = LWESecretToBackendMut::<BE, Rg>::to_backend_mut(&mut res);
+            let tmp_vz = scalar_znx_as_vec_znx_backend_ref_from_mut::<BE, Rg>(tmp_ref.data());
+            let mut res_vz = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE, Rg>(res_ref.data_mut());
 
             let mut written: usize = 0;
             for j in 0..rank {
@@ -299,9 +299,9 @@ where
                 }
                 let take: usize = (target - written).min(n);
                 self.vec_znx_copy(
-                    &mut vec_znx_backend_mut_from_mut::<BE>(&mut res_vz).window_coeffs(written, take),
+                    &mut vec_znx_backend_mut_from_mut::<BE, Rg>(&mut res_vz).window_coeffs(written, take),
                     0,
-                    &vec_znx_backend_ref_from_ref::<BE>(&tmp_vz).window_coeffs(0, take),
+                    &vec_znx_backend_ref_from_ref::<BE, Rg>(&tmp_vz).window_coeffs(0, take),
                     j,
                 );
                 written += take;

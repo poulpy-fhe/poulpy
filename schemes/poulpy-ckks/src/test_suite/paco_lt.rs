@@ -57,7 +57,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::{CnvPVecAlloc, ReimNew, ScratchOwnedBorrow},
-    layouts::{Backend, CyclotomicOrder, HostBytesBackend, HostDataMut, HostDataRef, Module, Standard},
+    layouts::{Backend, CyclotomicOrder, HostBytesBackend, HostDataMut, HostDataRef, Module, Ring, Standard},
 };
 
 /// PaCo test dimensions on the suite's `N = 256` ring: `B = 16`, chunk count
@@ -94,11 +94,14 @@ fn chain_params(base: &CKKSTestParams, num_factors: usize) -> CKKSTestParams {
 /// Encrypts a dense random vector, applies the grouped factor chain
 /// homomorphically, and checks correctness (vs `mul_vec_tiled`) and
 /// budget consumption.
-fn run_chain<BE, F, E>(base: &CKKSTestParams, factors: &[ComplexDiagonals<F>], label: &str)
+fn run_chain<BE, F, E, Rg: Ring>(base: &CKKSTestParams, factors: &[ComplexDiagonals<F>], label: &str)
 where
-    BE: TestContextBackend<Ring = Standard>,
-    Module<BE>:
-        TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE> + GLWENoise<BE>,
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE, Rg>
+        + CKKSEncodingOps<BE, F, Rg>
+        + CKKSLinearTransformationOps<BE, Rg>
+        + CnvPVecAlloc<BE>
+        + GLWENoise<BE, Rg>,
     F: TestScalar,
     E: ReimNew<F>,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
@@ -144,7 +147,7 @@ where
         })
         .collect();
 
-    let order = module.cyclotomic_order();
+    let order = module.cyclotomic_order::<Rg>();
     let mut atks = HashMap::new();
     for lt in &lts {
         for p_el in lt.galois_elements(order) {
@@ -191,7 +194,7 @@ where
     let want_re: Vec<F> = w.iter().map(|x| x.re).collect();
     let want_im: Vec<F> = w.iter().map(|x| x.im).collect();
 
-    let mut pt_want = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots(), ct.base2k(), ct.k());
+    let mut pt_want = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots::<Rg>(), ct.base2k(), ct.k());
     pt_want.set_meta(GLWEPlaintextMeta {
         scale: Scale::Log(ct.log_delta()),
         slots: SlotsKind::Complex,
@@ -207,9 +210,12 @@ where
 /// `n = 2hC` slots), grouped at radices 1 and 2.
 pub fn test_paco_partial_c2s<BE, F, E>(params: CKKSTestParams, _module: &Module<BE>, _host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
-    Module<BE>:
-        TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE> + GLWENoise<BE>,
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE, Standard>
+        + CKKSEncodingOps<BE, F, Standard>
+        + CKKSLinearTransformationOps<BE, Standard>
+        + CnvPVecAlloc<BE>
+        + GLWENoise<BE, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
@@ -225,7 +231,7 @@ where
     ] {
         let p = base.clone().with_slot_order(slot_order);
         for schedule in [vec![1usize, 1, 1, 1], vec![2, 2]] {
-            run_chain::<BE, F, E>(
+            run_chain::<BE, F, E, Standard>(
                 &params,
                 &paco_c2s_factors::<F>(&p, &schedule),
                 &format!("paco_partial_c2s({schedule:?},{slot_order:?})"),
@@ -238,9 +244,12 @@ where
 /// `C/2` slots), grouped at radices 1 and 2.
 pub fn test_paco_stc<BE, F, E>(params: CKKSTestParams, _module: &Module<BE>, _host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
-    Module<BE>:
-        TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE> + GLWENoise<BE>,
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE, Standard>
+        + CKKSEncodingOps<BE, F, Standard>
+        + CKKSLinearTransformationOps<BE, Standard>
+        + CnvPVecAlloc<BE>
+        + GLWENoise<BE, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
@@ -265,7 +274,7 @@ where
                     crate::layouts::PaCoDFTPlan::new(schedule.clone(), vec![2; schedule.len()], 0, 0, 1.0).unwrap(),
                 )
                 .unwrap();
-            run_chain::<BE, F, E>(
+            run_chain::<BE, F, E, Standard>(
                 &params,
                 &paco_stc_factors::<F>(&p),
                 &format!("paco_stc({schedule:?},{slot_order:?})"),
@@ -284,8 +293,8 @@ where
 /// inverse).
 pub fn test_paco_packing<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, _host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F>,
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE, Standard> + CKKSEncodingOps<BE, F, Standard>,
     F: TestScalar,
 {
     use crate::layouts::paco::secret::pack_chunk;

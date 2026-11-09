@@ -1,6 +1,6 @@
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::{Degree, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey};
-use poulpy_hal::layouts::{Backend, ScratchArena};
+use poulpy_hal::layouts::{Backend, Ring, ScratchArena, Standard};
 
 use crate::{CKKSCtBounds, SetCKKSInfos};
 
@@ -42,7 +42,7 @@ use crate::{CKKSCtBounds, SetCKKSInfos};
 /// the width the sum switches at, `k_out`; `InsufficientHomomorphicCapacity` when the copy into `res` needs more than
 /// `a.log_budget`, or the division more than the budget the copy leaves; `CKKSError::Internal` with less scratch than
 /// [`Self::ckks_inner_sum_tmp_bytes`] reports for the keys the sum looks up.
-pub trait CKKSInnerSumOps<BE: Backend> {
+pub trait CKKSInnerSumOps<BE: Backend, Rg: Ring = Standard> {
     /// Galois elements of the keys [`Self::ckks_inner_sum`] looks up on a degree-`n` ciphertext: poulpy-core's
     /// `glwe_trace_galois_elements` over its levels. Panics with "ckks_inner_sum_galois_elements: the window exceeds
     /// the slot count" when `2^log_count` batches of `2^log_batch` slots exceed the slots of degree `n`.
@@ -78,9 +78,9 @@ pub trait CKKSInnerSumOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        H: GetAutomorphismKey<BE>;
+        R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        H: GetAutomorphismKey<BE, Rg>;
 
     /// [`Self::ckks_inner_sum`] on `res` in place.
     fn ckks_inner_sum_assign<R, H>(
@@ -93,8 +93,8 @@ pub trait CKKSInnerSumOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        H: GetAutomorphismKey<BE>;
+        R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        H: GetAutomorphismKey<BE, Rg>;
 
     /// `res = sum_{j < 2^log_count} Rot(a, -j 2^log_batch)`.
     fn ckks_replicate<R, A, H>(
@@ -107,9 +107,9 @@ pub trait CKKSInnerSumOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        H: GetAutomorphismKey<BE>;
+        R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        H: GetAutomorphismKey<BE, Rg>;
 
     /// [`Self::ckks_replicate`] on `res` in place.
     fn ckks_replicate_assign<R, H>(
@@ -121,6 +121,6 @@ pub trait CKKSInnerSumOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        H: GetAutomorphismKey<BE>;
+        R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        H: GetAutomorphismKey<BE, Rg>;
 }

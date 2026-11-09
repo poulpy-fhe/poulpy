@@ -21,6 +21,7 @@ use poulpy_blas::{
     layouts::BlasPtAlgorithm,
     oep::{BlasMatIntraImpl, BlasMatMulImpl},
 };
+use poulpy_ckks::api::CKKSRightOperandPreparedFactory;
 use poulpy_core::layouts::{GGLWEInfos, LWEInfos};
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
@@ -99,10 +100,10 @@ fn case(name: &str) -> Result<(Op, BlasBenchParams)> {
 /// and precision.
 pub fn run<BE, BC>(args: &CaseArgs) -> Result<Value>
 where
-    BE: Backend<Ring = ConjugateInvariant> + HostStaged + 'static + BlasMatIntraImpl + BlasMatMulImpl + MaxBase2k,
-    BC: Backend<Ring = ConjugateInvariant> + HostStaged + 'static,
-    Module<BE>: BlasEvalModule<BE>,
-    Module<BC>: BlasClientModule<BC>,
+    BE: Backend + HostStaged + 'static + BlasMatIntraImpl<ConjugateInvariant> + BlasMatMulImpl<ConjugateInvariant> + MaxBase2k,
+    BC: Backend + HostStaged + 'static,
+    Module<BE>: BlasEvalModule<BE, ConjugateInvariant> + CKKSRightOperandPreparedFactory<BE, ConjugateInvariant>,
+    Module<BC>: BlasClientModule<BC, ConjugateInvariant>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     ScratchOwned<BC>: ScratchOwnedAlloc<BC> + ScratchOwnedBorrow<BC>,
 {
@@ -110,10 +111,10 @@ where
     let matrices = bp.batch_on::<ConjugateInvariant>();
     let start = Instant::now();
     let BlasPoint { mut call, check } = match op {
-        Op::Matmul => point_blas_matmul::<BE, BC>(&bp, true),
-        Op::MatmulPtRight => point_blas_matmul_pt_right::<BE, BC>(&bp, BlasPtAlgorithm::Jkls),
-        Op::Transpose => point_blas_transpose::<BE, BC>(&bp),
-        Op::SumRows => point_blas_reduction::<BE, BC>(&bp, "blas_sum_rows", true, matrices),
+        Op::Matmul => point_blas_matmul::<BE, BC, ConjugateInvariant>(&bp, true),
+        Op::MatmulPtRight => point_blas_matmul_pt_right::<BE, BC, ConjugateInvariant>(&bp, BlasPtAlgorithm::Jkls),
+        Op::Transpose => point_blas_transpose::<BE, BC, ConjugateInvariant>(&bp),
+        Op::SumRows => point_blas_reduction::<BE, BC, ConjugateInvariant>(&bp, "blas_sum_rows", true, matrices),
     };
     let setup_ns = start.elapsed().as_nanos() as u64;
     let timings = direct(&mut call, &|| {}, args.warmup, args.iters)?.expect("direct timing is always available");

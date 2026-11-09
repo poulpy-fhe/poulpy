@@ -1,8 +1,8 @@
 //! Arithmetic operations on GLWE and GGSW ciphertexts.
 //!
 //! This module provides traits and implementations for element-wise
-//! arithmetic on ciphertexts in the polynomial ring `Z[X]/(X^N+1)`,
-//! including addition, subtraction, rotation (automorphism),
+//! arithmetic on ciphertexts of either [ring](crate::layouts#rings),
+//! including addition, subtraction, rotation (standard ring only),
 //! right-shift, normalization, copy, multiplication by a constant
 //! polynomial, multiplication by a plaintext GLWE, and tensor product.
 //!

@@ -20,8 +20,8 @@ pub mod meta;
 pub mod parity;
 pub mod repack;
 
-/// Registers the functional tests for one backend, scalar, encoder and parameter set, on blocks of dimension
-/// `2^log_d`: 2 unless the optional `log_d` sets it. The ring degree `N` is free within two bounds: the blocks fit the
+/// Registers the functional tests for one backend, scalar, encoder and parameter set, on the standard ring, on blocks of
+/// dimension `2^log_d`: 2 unless the optional `log_d` sets it. The ring degree `N` is free within two bounds: the blocks fit the
 /// `N / 2` slots, `d^2 <= N / 2` (`N >= 32` at the default), and the guards encode on a module of degree `2 N`, which
 /// the backend must support (`N <= 2^16` at most). `test_blas_batch_record`, below four matrix slots, and, in the
 /// guards of the products by public matrices, the operand at another dimension, where only `2 x 2` blocks fit, and the
@@ -157,8 +157,8 @@ macro_rules! blas_backend_test_suite {
 }
 
 /// Registers [`test_blas_conjugate_invariant`](crate::test_suite::conjugate_invariant::test_blas_conjugate_invariant),
-/// every operation once on real slots, as the test `conjugate_invariant`, for one backend of the conjugate-invariant
-/// ring and parameter set. It runs on `4 x 4` blocks, which the `N` slots hold from `N = 16`; below, it is skipped with
+/// every operation once on real slots, as the test `conjugate_invariant`, for one backend and parameter set, on the
+/// conjugate-invariant ring. It runs on `4 x 4` blocks, which the `N` slots hold from `N = 16`; below, it is skipped with
 /// a message. The expansion names `::poulpy_hal`, so the invoking crate depends on it directly.
 #[macro_export]
 macro_rules! blas_conjugate_invariant_test_suite {
@@ -166,12 +166,12 @@ macro_rules! blas_conjugate_invariant_test_suite {
         mod $modname {
             #[test]
             fn conjugate_invariant() {
-                use ::poulpy_hal::layouts::{ConjugateInvariant, HostBytesBackend, Module};
+                use ::poulpy_hal::layouts::{HostBytesBackend, Module};
                 let params = $params;
                 $crate::test_suite::conjugate_invariant::test_blas_conjugate_invariant(
                     params,
                     &Module::<$backend>::new(params.n as u64),
-                    &Module::<HostBytesBackend<ConjugateInvariant>>::new(params.n as u64),
+                    &Module::<HostBytesBackend>::new(params.n as u64),
                 );
             }
         }
@@ -182,6 +182,8 @@ macro_rules! blas_conjugate_invariant_test_suite {
 /// `intra`, `matmul` and `matvec`, each on its own pair of modules, and `concurrency`, which runs calls at once on the module of
 /// `backend_test` alone and compares each with the same call run alone. Rank and `dsize` come from `params`; the
 /// optional `shapes`, a [`BlasParityShapes`](crate::test_suite::parity::BlasParityShapes), narrows the `log_d` sweep.
+/// The optional `ring`, after `backend_test`, is the ring every test runs on, `::poulpy_hal::layouts::Standard` unless
+/// it names `::poulpy_hal::layouts::ConjugateInvariant`: a backend serving both rings registers the suite once per ring.
 /// The expansion names `::poulpy_hal`, so the invoking crate depends on it directly.
 ///
 /// `matmul` also runs a long product, a `1 x 32` grid by a `32 x 1` grid of distinct blocks (`1 x 16` by `16 x 1` above
@@ -190,6 +192,18 @@ macro_rules! blas_conjugate_invariant_test_suite {
 macro_rules! blas_parity_test_suite {
     (mod $modname:ident, backend_ref = $reference:ty, backend_test = $tested:ty, scalar = $scalar:ty, params = $params:expr
      $(, shapes = $shapes:expr)? $(,)?) => {
+        $crate::blas_parity_test_suite!(
+            mod $modname,
+            backend_ref = $reference,
+            backend_test = $tested,
+            ring = ::poulpy_hal::layouts::Standard,
+            scalar = $scalar,
+            params = $params
+            $(, shapes = $shapes)?
+        );
+    };
+    (mod $modname:ident, backend_ref = $reference:ty, backend_test = $tested:ty, ring = $ring:ty, scalar = $scalar:ty,
+     params = $params:expr $(, shapes = $shapes:expr)? $(,)?) => {
         mod $modname {
             macro_rules! run_test {
                 ($name:ident, $path:path) => {
@@ -202,7 +216,7 @@ macro_rules! blas_parity_test_suite {
                         $(shapes = $shapes;)?
                         let reference = ::poulpy_hal::layouts::Module::<$reference>::new(params.n as u64);
                         let tested = ::poulpy_hal::layouts::Module::<$tested>::new(params.n as u64);
-                        __test_fn::<$reference, $tested, $scalar>(params, &shapes, &reference, &tested);
+                        __test_fn::<$reference, $tested, $scalar, $ring>(params, &shapes, &reference, &tested);
                     }
                 };
             }
@@ -219,7 +233,7 @@ macro_rules! blas_parity_test_suite {
                 let mut shapes = $crate::test_suite::parity::BlasParityShapes::default();
                 $(shapes = $shapes;)?
                 let tested = ::poulpy_hal::layouts::Module::<$tested>::new(params.n as u64);
-                $crate::test_suite::parity::test_blas_concurrency::<$tested, $scalar>(params, &shapes, &tested);
+                $crate::test_suite::parity::test_blas_concurrency::<$tested, $scalar, $ring>(params, &shapes, &tested);
             }
         }
     };
@@ -227,16 +241,27 @@ macro_rules! blas_parity_test_suite {
 
 /// Registers [`test_blas_max_base2k`](crate::test_suite::parity::test_blas_max_base2k), the radix helpers of the
 /// products against counts made by hand, as the test `max_base2k`, for one backend that implements
-/// `MaxBase2k`, scalar and parameter set. It runs on `4 x 4` blocks and requires 32 slots: `n = 64`, or `n = 32` on the
-/// conjugate-invariant ring. The expansion names `::poulpy_hal`, so the invoking crate depends on it directly.
+/// `MaxBase2k`, scalar and parameter set, on the ring the optional `ring`, after `backend`, names,
+/// `::poulpy_hal::layouts::Standard` by default. It runs on `4 x 4` blocks and requires 32 slots: `n = 64`, or `n = 32`
+/// with `ring = ::poulpy_hal::layouts::ConjugateInvariant`. The expansion names `::poulpy_hal`, so the invoking crate
+/// depends on it directly.
 #[macro_export]
 macro_rules! blas_max_base2k_test_suite {
     (mod $modname:ident, backend = $backend:ty, scalar = $scalar:ty, params = $params:expr $(,)?) => {
+        $crate::blas_max_base2k_test_suite!(
+            mod $modname,
+            backend = $backend,
+            ring = ::poulpy_hal::layouts::Standard,
+            scalar = $scalar,
+            params = $params,
+        );
+    };
+    (mod $modname:ident, backend = $backend:ty, ring = $ring:ty, scalar = $scalar:ty, params = $params:expr $(,)?) => {
         mod $modname {
             #[test]
             fn max_base2k() {
                 let params = $params;
-                $crate::test_suite::parity::test_blas_max_base2k::<$backend, $scalar>(
+                $crate::test_suite::parity::test_blas_max_base2k::<$backend, $scalar, $ring>(
                     params,
                     &::poulpy_hal::layouts::Module::<$backend>::new(params.n as u64),
                 );

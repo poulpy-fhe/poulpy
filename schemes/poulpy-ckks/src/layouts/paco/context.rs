@@ -151,7 +151,7 @@ impl<BE: Backend, F> PaCoContext<BE, F> {
     /// factor/plaintext encoding failure.
     pub fn compile(module: &Module<BE>, base2k: Base2K, plan: PaCoPlan, scratch: &mut ScratchArena<'_, BE>) -> Result<Self>
     where
-        BE: Backend<Ring = Standard>,
+        BE: Backend,
         Module<BE>: CKKSPlaintextAlloc<BE> + CKKSEncodingOps<BE, F>,
         F: CKKSPaCoScalar,
     {
@@ -273,7 +273,7 @@ impl<BE: Backend, F> PaCoContext<BE, F> {
                     .log_delta()
                     .checked_add(dft.log_budget())
                     .context("PaCo ψ mask torus width overflows usize")?;
-                let mut pt = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots(), base2k, k_pt.into());
+                let mut pt = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots::<Standard>(), base2k, k_pt.into());
                 pt.set_meta_checked(GLWEPlaintextMeta {
                     scale: Scale::Log(dft.log_delta()),
                     slots: SlotsKind::Complex,
@@ -294,7 +294,7 @@ impl<BE: Backend, F> PaCoContext<BE, F> {
             &coeffs_to_slots_factors,
             &psi_factors,
             &slots_to_coeffs_factors,
-            module.cyclotomic_order(),
+            module.cyclotomic_order::<Standard>(),
         );
 
         Ok(Self {

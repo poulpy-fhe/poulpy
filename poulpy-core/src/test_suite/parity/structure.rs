@@ -26,19 +26,19 @@ use std::collections::HashMap;
 
 /// Covers complete, partial, summed, reversed and empty traces on either ring, the empty trace without keys, and
 /// the refusal of levels outside the ring's trace before any write, by both entry points and the key query.
-pub fn test_glwe_trace_parity<BR, BT>(params: &TestParams, shapes: &ParityShapes, r: &Module<BR>, t: &Module<BT>)
+pub fn test_glwe_trace_parity<BR, BT, Rg: Ring>(params: &TestParams, shapes: &ParityShapes, r: &Module<BR>, t: &Module<BT>)
 where
-    BR: ParityBackend,
-    BT: ParityBackend,
+    BR: ParityBackend<Rg>,
+    BT: ParityBackend<Rg>,
     BR::OwnedBuf: HostDataMut,
-    Module<BR>: GLWETrace<BR> + GLWEAutomorphismKeyPreparedFactory<BR>,
-    Module<BT>: GLWETrace<BT> + GLWEAutomorphismKeyPreparedFactory<BT>,
+    Module<BR>: GLWETrace<BR, Rg> + GLWEAutomorphismKeyPreparedFactory<BR, Rg>,
+    Module<BT>: GLWETrace<BT, Rg> + GLWEAutomorphismKeyPreparedFactory<BT, Rg>,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
 {
     let b = params.base2k;
     let mut source = Source::new([131; 32]);
-    let factor = <BR::Ring as Ring>::CYCLOTOMIC_ORDER_FACTOR;
+    let factor = Rg::CYCLOTOMIC_ORDER_FACTOR;
     // The conjugate-invariant ring is fixed by the conjugation: its trace starts at level 1.
     let first = usize::from(factor != Standard::CYCLOTOMIC_ORDER_FACTOR);
     let end = (factor as usize * params.n).ilog2() as usize - 1;
@@ -178,7 +178,7 @@ where
             ($be:ty, $module:ident, $a:ident) => {{
                 let empty_keys: HashMap<
                     i64,
-                    crate::layouts::GLWEAutomorphismKeyPrepared<<$be as poulpy_hal::layouts::Backend>::OwnedBuf, $be>,
+                    crate::layouts::GLWEAutomorphismKeyPrepared<<$be as poulpy_hal::layouts::Backend>::OwnedBuf, $be, Rg>,
                 > = HashMap::new();
                 let initial = ref_glwe(r, &g, &mut source);
                 let mut out = $module.glwe_alloc_from_infos(&g);
@@ -481,33 +481,37 @@ pub const ONE_PASS_SUM_ROLES: [usize; 2] = [3, 4];
 
 /// Relinearization and tensor decryption use explicitly staged coefficient
 /// inputs; secret preparation itself is compared before its prepared form is used.
-pub fn test_tensor_relinearize_decrypt_parity<BR, BT>(params: &TestParams, shapes: &ParityShapes, r: &Module<BR>, t: &Module<BT>)
-where
-    BR: ParityBackend,
-    BT: ParityBackend,
+pub fn test_tensor_relinearize_decrypt_parity<BR, BT, Rg: Ring>(
+    params: &TestParams,
+    shapes: &ParityShapes,
+    r: &Module<BR>,
+    t: &Module<BT>,
+) where
+    BR: ParityBackend<Rg>,
+    BT: ParityBackend<Rg>,
     BR::OwnedBuf: HostDataMut,
-    Module<BR>: GLWETensoring<BR>
-        + GLWEMulRelinearizeSum<BR>
-        + GLWEPreparedTensoring<BR>
+    Module<BR>: GLWETensoring<BR, Rg>
+        + GLWEMulRelinearizeSum<BR, Rg>
+        + GLWEPreparedTensoring<BR, Rg>
         + CnvPVecAlloc<BR>
-        + CnvOps<BR>
-        + GLWENormalize<BR>
-        + GLWETensorDecrypt<BR>
-        + GLWETensorKeyPreparedFactory<BR>
-        + GLWESecretPreparedFactory<BR>
-        + GLWESecretTensorFromGLWESecret<BR>
-        + GLWESecretTensorPreparedFactory<BR>,
-    Module<BT>: GLWETensoring<BT>
-        + GLWEMulRelinearizeSum<BT>
-        + GLWEPreparedTensoring<BT>
+        + CnvOps<BR, Rg>
+        + GLWENormalize<BR, Rg>
+        + GLWETensorDecrypt<BR, Rg>
+        + GLWETensorKeyPreparedFactory<BR, Rg>
+        + GLWESecretPreparedFactory<BR, Rg>
+        + GLWESecretTensorFromGLWESecret<BR, Rg>
+        + GLWESecretTensorPreparedFactory<BR, Rg>,
+    Module<BT>: GLWETensoring<BT, Rg>
+        + GLWEMulRelinearizeSum<BT, Rg>
+        + GLWEPreparedTensoring<BT, Rg>
         + CnvPVecAlloc<BT>
-        + CnvOps<BT>
-        + GLWENormalize<BT>
-        + GLWETensorDecrypt<BT>
-        + GLWETensorKeyPreparedFactory<BT>
-        + GLWESecretPreparedFactory<BT>
-        + GLWESecretTensorFromGLWESecret<BT>
-        + GLWESecretTensorPreparedFactory<BT>,
+        + CnvOps<BT, Rg>
+        + GLWENormalize<BT, Rg>
+        + GLWETensorDecrypt<BT, Rg>
+        + GLWETensorKeyPreparedFactory<BT, Rg>
+        + GLWESecretPreparedFactory<BT, Rg>
+        + GLWESecretTensorFromGLWESecret<BT, Rg>
+        + GLWESecretTensorPreparedFactory<BT, Rg>,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
 {
@@ -517,38 +521,38 @@ where
 
 /// [`test_tensor_relinearize_decrypt_parity`] on the given one-pass product roles only: a radix at which the oracle
 /// holds one product may not hold a sum.
-pub fn test_tensor_relinearize_decrypt_parity_roles<BR, BT>(
+pub fn test_tensor_relinearize_decrypt_parity_roles<BR, BT, Rg: Ring>(
     params: &TestParams,
     shapes: &ParityShapes,
     roles: &[usize],
     r: &Module<BR>,
     t: &Module<BT>,
 ) where
-    BR: ParityBackend,
-    BT: ParityBackend,
+    BR: ParityBackend<Rg>,
+    BT: ParityBackend<Rg>,
     BR::OwnedBuf: HostDataMut,
-    Module<BR>: GLWETensoring<BR>
-        + GLWEMulRelinearizeSum<BR>
-        + GLWEPreparedTensoring<BR>
+    Module<BR>: GLWETensoring<BR, Rg>
+        + GLWEMulRelinearizeSum<BR, Rg>
+        + GLWEPreparedTensoring<BR, Rg>
         + CnvPVecAlloc<BR>
-        + CnvOps<BR>
-        + GLWENormalize<BR>
-        + GLWETensorDecrypt<BR>
-        + GLWETensorKeyPreparedFactory<BR>
-        + GLWESecretPreparedFactory<BR>
-        + GLWESecretTensorFromGLWESecret<BR>
-        + GLWESecretTensorPreparedFactory<BR>,
-    Module<BT>: GLWETensoring<BT>
-        + GLWEMulRelinearizeSum<BT>
-        + GLWEPreparedTensoring<BT>
+        + CnvOps<BR, Rg>
+        + GLWENormalize<BR, Rg>
+        + GLWETensorDecrypt<BR, Rg>
+        + GLWETensorKeyPreparedFactory<BR, Rg>
+        + GLWESecretPreparedFactory<BR, Rg>
+        + GLWESecretTensorFromGLWESecret<BR, Rg>
+        + GLWESecretTensorPreparedFactory<BR, Rg>,
+    Module<BT>: GLWETensoring<BT, Rg>
+        + GLWEMulRelinearizeSum<BT, Rg>
+        + GLWEPreparedTensoring<BT, Rg>
         + CnvPVecAlloc<BT>
-        + CnvOps<BT>
-        + GLWENormalize<BT>
-        + GLWETensorDecrypt<BT>
-        + GLWETensorKeyPreparedFactory<BT>
-        + GLWESecretPreparedFactory<BT>
-        + GLWESecretTensorFromGLWESecret<BT>
-        + GLWESecretTensorPreparedFactory<BT>,
+        + CnvOps<BT, Rg>
+        + GLWENormalize<BT, Rg>
+        + GLWETensorDecrypt<BT, Rg>
+        + GLWETensorKeyPreparedFactory<BT, Rg>
+        + GLWESecretPreparedFactory<BT, Rg>
+        + GLWESecretTensorFromGLWESecret<BT, Rg>
+        + GLWESecretTensorPreparedFactory<BT, Rg>,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
 {
@@ -584,8 +588,8 @@ pub fn test_tensor_relinearize_decrypt_parity_roles<BR, BT>(
             |scratch| t.glwe_secret_tensor_from_glwe_secret(&mut tensor_t, &secret_t, scratch),
         );
         assert_eq!(
-            poulpy_hal::test_suite::download_scalar_znx::<BR>(&tensor_r.data),
-            poulpy_hal::test_suite::download_scalar_znx::<BT>(&tensor_t.data),
+            poulpy_hal::test_suite::download_scalar_znx::<BR, Rg>(&tensor_r.data),
+            poulpy_hal::test_suite::download_scalar_znx::<BT, Rg>(&tensor_t.data),
             "tensor secret rank={rank}"
         );
         assert_eq!(tensor_r.dist(), tensor_t.dist());
@@ -627,8 +631,8 @@ pub fn test_tensor_relinearize_decrypt_parity_roles<BR, BT>(
             pt_t.transfer_into(&mut have);
             assert_eq!((pt_r.base2k, pt_r.k), (have.base2k, have.k));
             assert_eq!(
-                poulpy_hal::test_suite::download_vec_znx::<BR>(&pt_r.data),
-                poulpy_hal::test_suite::download_vec_znx::<BR>(&have.data),
+                poulpy_hal::test_suite::download_vec_znx::<BR, Rg>(&pt_r.data),
+                poulpy_hal::test_suite::download_vec_znx::<BR, Rg>(&have.data),
                 "tensor decrypt rank={rank} k={precision}"
             );
             for k_digit in shapes.k_digits(precision, b, rank) {
@@ -713,9 +717,9 @@ pub fn test_tensor_relinearize_decrypt_parity_roles<BR, BT>(
                     let mut y_t = t.glwe_alloc_from_infos(&g);
                     y_r.transfer_into(&mut y_t);
                     let mut x_twin_t = t.glwe_alloc_from_infos(&g);
-                    unnormalized_twin::<BR, BT>(&x_r, &mut x_twin_t);
+                    unnormalized_twin::<BR, BT, Rg>(&x_r, &mut x_twin_t);
                     let mut y_twin_t = t.glwe_alloc_from_infos(&g);
-                    unnormalized_twin::<BR, BT>(&y_r, &mut y_twin_t);
+                    unnormalized_twin::<BR, BT, Rg>(&y_r, &mut y_twin_t);
                     let size = precision.div_ceil(b);
                     // Role 3's pairs prepared once, under both hints on each side, each on exactly its poisoned budget.
                     macro_rules! prepared_pairs {

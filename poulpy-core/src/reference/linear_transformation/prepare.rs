@@ -13,7 +13,7 @@
 use poulpy_hal::layouts::CnvPVecRToBackendMut;
 use poulpy_hal::{
     api::{CnvOps, CnvPVecAlloc},
-    layouts::{Backend, PrepareHint, ScratchArena},
+    layouts::{Backend, PrepareHint, Ring, ScratchArena},
 };
 
 use crate::layouts::{
@@ -21,7 +21,7 @@ use crate::layouts::{
     LinearTransformationLayout, LinearTransformationPlan, prepared::PreparedDiagonal,
 };
 
-impl<BE: Backend> LinearTransformation<PreparedDiagonal<BE::OwnedBuf, BE>> {
+impl<BE: Backend, Rg: Ring> LinearTransformation<PreparedDiagonal<BE::OwnedBuf, BE, Rg>> {
     /// Pre-allocates a resident (prepared) linear transformation sized for the
     /// given BSGS `layout` and plaintext shape `pt_infos`.
     ///
@@ -99,10 +99,10 @@ impl<BE: Backend> LinearTransformation<PreparedDiagonal<BE::OwnedBuf, BE>> {
 ///
 /// Sized at the module degree, an upper bound for a diagonal of any degree, which
 /// is prepared at its own degree; a ciphertext diagonal may need a normalized copy.
-pub fn glwe_linear_transformation_rhs_prepare_tmp_bytes_reference<BE, M, P>(module: &M, pt_infos: &P) -> usize
+pub fn glwe_linear_transformation_rhs_prepare_tmp_bytes_reference<BE, M, P, Rg: Ring>(module: &M, pt_infos: &P) -> usize
 where
     BE: Backend,
-    M: CnvOps<BE> + crate::api::GLWENormalize<BE> + crate::api::GLWEBytesOf<BE>,
+    M: CnvOps<BE, Rg> + crate::api::GLWENormalize<BE, Rg> + crate::api::GLWEBytesOf<BE>,
     P: GLWEInfos,
 {
     if pt_infos.rank().as_usize() > 0 {
@@ -118,15 +118,15 @@ where
 /// [`LinearTransformation::alloc_prepared`](LinearTransformation::alloc_prepared)
 /// for the same BSGS schedule (giant rotations and baby rotations) that `lt`
 /// follows.
-pub fn glwe_linear_transformation_rhs_prepare_reference<BE, M, P>(
+pub fn glwe_linear_transformation_rhs_prepare_reference<BE, M, P, Rg: Ring>(
     module: &M,
-    prepared: &mut LinearTransformation<PreparedDiagonal<BE::OwnedBuf, BE>>,
+    prepared: &mut LinearTransformation<PreparedDiagonal<BE::OwnedBuf, BE, Rg>>,
     lt: &LinearTransformation<P>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
-    M: CnvPVecAlloc<BE> + CnvOps<BE> + crate::api::GLWENormalize<BE>,
-    P: GLWEToBackendRef<BE> + GLWEInfos,
+    M: CnvPVecAlloc<BE> + CnvOps<BE, Rg> + crate::api::GLWENormalize<BE, Rg>,
+    P: GLWEToBackendRef<BE, Rg> + GLWEInfos,
 {
     if !lt.baby_steps.is_empty() {
         assert_eq!(

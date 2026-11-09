@@ -1068,7 +1068,7 @@ where
     let factors = scales
         .iter()
         .map(|scale| {
-            crate::encoding::ckks_linear_transformation_encode_from_diagonals::<BE, F>(
+            crate::encoding::ckks_linear_transformation_encode_from_diagonals::<BE, F, poulpy_hal::layouts::Standard>(
                 module,
                 base2k,
                 plan.coeffs_meta,

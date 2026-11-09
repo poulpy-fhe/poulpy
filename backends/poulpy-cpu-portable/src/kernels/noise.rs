@@ -836,7 +836,7 @@ mod tests {
         module.vec_znx_add_noise(
             base2k,
             k,
-            &mut poulpy_hal::test_suite::vec_znx_backend_mut::<FFT64Portable>(&mut res),
+            &mut poulpy_hal::test_suite::vec_znx_backend_mut::<FFT64Portable, Standard>(&mut res),
             1,
             noise,
             &mut parent,
@@ -864,7 +864,7 @@ mod tests {
                 (Noise::Gaussian { sigma: 5.2 }, cumulative_table(5.2)),
             ] {
                 let size = k.div_ceil(base2k);
-                let mut res = VecZnx::from_data(
+                let mut res = VecZnx::<_, _, Standard>::from_data(
                     <FFT64Portable as Backend>::alloc_zeroed_bytes(VecZnx::<poulpy_hal::AlignedBuf, i64>::bytes_of(
                         193,
                         2,
@@ -909,7 +909,7 @@ mod tests {
             let gaussian = RejectionGaussian::<UBig>::new(sigma).unwrap();
             for (base2k, k) in [(3usize, 50usize), (17, 43), (63, 253)] {
                 let size = k.div_ceil(base2k);
-                let mut res = VecZnx::from_data(
+                let mut res = VecZnx::<_, _, Standard>::from_data(
                     <FFT64Portable as Backend>::alloc_zeroed_bytes(VecZnx::<poulpy_hal::AlignedBuf, i64>::bytes_of(
                         193,
                         2,
@@ -964,7 +964,7 @@ mod tests {
         let module = Module::<FFT64Portable>::new(64);
         for (base2k, k, bits) in [(17usize, 211usize, 173usize), (3, 19, 1), (7, 37, 23), (63, 257, 193)] {
             let size = k.div_ceil(base2k);
-            let mut res = module.vec_znx_alloc(64, 2, size + 1);
+            let mut res = module.vec_znx_alloc::<Standard>(64, 2, size + 1);
             let mut source = Source::new([109; 32]);
             let mut expected = Source::new([109; 32]);
             add_noise_portable(base2k, k, &mut res, 1, Noise::Uniform { bits }, &mut source);
@@ -1020,11 +1020,11 @@ mod tests {
             ] {
                 let size = k.div_ceil(base2k);
                 let mut small = fft.vec_znx_alloc(64, 1, size);
-                let mut wide = ntt.vec_znx_big_alloc(64, 1, size);
+                let mut wide = ntt.vec_znx_big_alloc::<Standard>(64, 1, size);
                 fft.vec_znx_add_noise(
                     base2k,
                     k,
-                    &mut poulpy_hal::test_suite::vec_znx_backend_mut::<FFT64Portable>(&mut small),
+                    &mut poulpy_hal::test_suite::vec_znx_backend_mut::<FFT64Portable, Standard>(&mut small),
                     0,
                     noise,
                     &mut Source::new([17; 32]),
@@ -1066,7 +1066,7 @@ mod tests {
                 add_noise_portable(
                     base2k,
                     k,
-                    &mut vec_znx_backend_mut::<crate::FFT64Portable>(&mut result),
+                    &mut vec_znx_backend_mut::<crate::FFT64Portable, Standard>(&mut result),
                     col,
                     noise,
                     &mut source,

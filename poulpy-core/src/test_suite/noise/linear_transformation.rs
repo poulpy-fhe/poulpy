@@ -2,6 +2,7 @@ use crate::test_suite::keys::TransformKeys;
 use crate::test_suite::poisoned_scratch;
 use crate::test_suite::refusal::{assert_refusal, glwe_state};
 use crate::{GLWELinearTransformationBabyStepsBytesOf, ScratchArenaTakeGLWELinearTransformationBabySteps};
+use poulpy_hal::layouts::CnvPVecLOwned;
 use poulpy_hal::layouts::CnvPVecLToBackendRef;
 use poulpy_hal::layouts::CnvPVecRToBackendMut;
 use poulpy_hal::layouts::CnvPVecRToBackendRef;
@@ -9,7 +10,7 @@ use poulpy_hal::layouts::VecZnxBigToBackendMut;
 use poulpy_hal::layouts::VecZnxBigToBackendRef;
 use poulpy_hal::layouts::VecZnxDftToBackendMut;
 use poulpy_hal::layouts::VecZnxDftToBackendRef;
-use poulpy_hal::layouts::{CnvPVecLToBackendMut, DataView};
+use poulpy_hal::layouts::{CnvPVecLToBackendMut, DataView, Ring, Standard};
 use std::collections::HashMap;
 
 use poulpy_hal::{
@@ -47,14 +48,14 @@ use crate::{GLWEPreparedTensoring, GLWETensorKeyEncryptSk, api::GLWETensorKeyPre
 
 /// The stored keys, with the rotations listed in `coarse_ps` answered through a
 /// coarser `dsize`: one baby-step key set carrying two different layouts.
-struct MixedDsize<'a, BE: Backend> {
-    atks: &'a HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>>,
+struct MixedDsize<'a, BE: Backend, Rg: Ring = Standard> {
+    atks: &'a AutomorphismKeys<BE, Rg>,
     coarse: TorusPrecision,
     coarse_ps: &'a [i64],
 }
 
-impl<BE: Backend> GetAutomorphismKey<BE> for MixedDsize<'_, BE> {
-    fn lookup_automorphism_key(&self, p: i64, _k: TorusPrecision) -> Result<GLWEAutomorphismKeyPreparedBackendRef<'_, BE>> {
+impl<BE: Backend, Rg: Ring> GetAutomorphismKey<BE, Rg> for MixedDsize<'_, BE, Rg> {
+    fn lookup_automorphism_key(&self, p: i64, _k: TorusPrecision) -> Result<GLWEAutomorphismKeyPreparedBackendRef<'_, BE, Rg>> {
         let key = self.atks.get(&p).ok_or(CoreError::GGLWEKeyUse {
             op: "get_automorphism_key",
             detail: format!("no automorphism key for p={p}"),
@@ -67,16 +68,19 @@ impl<BE: Backend> GetAutomorphismKey<BE> for MixedDsize<'_, BE> {
     }
 }
 
+type AutomorphismKeys<BE, Rg> = HashMap<i64, GLWEAutomorphismKeyPrepared<<BE as Backend>::OwnedBuf, BE, Rg>>;
+type Diagonals<BE, Rg> = HashMap<(i64, i64), GLWE<<BE as Backend>::OwnedBuf, <BE as Backend>::ZnxWord, Rg>>;
+
 /// The rotation at position `i` of `baby_steps` (the unrotated one aside)
 /// answered by the keys of layout `i - 1`: one key set over several layouts.
-struct MixedLayouts<'a, BE: Backend, G: Fn(i64) -> i64> {
-    maps: &'a [HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>>],
+struct MixedLayouts<'a, BE: Backend, G: Fn(i64) -> i64, Rg: Ring = Standard> {
+    maps: &'a [AutomorphismKeys<BE, Rg>],
     baby_steps: &'a [i64],
     galois: G,
 }
 
-impl<BE: Backend, G: Fn(i64) -> i64> GetAutomorphismKey<BE> for MixedLayouts<'_, BE, G> {
-    fn lookup_automorphism_key(&self, p: i64, _k: TorusPrecision) -> Result<GLWEAutomorphismKeyPreparedBackendRef<'_, BE>> {
+impl<BE: Backend, G: Fn(i64) -> i64, Rg: Ring> GetAutomorphismKey<BE, Rg> for MixedLayouts<'_, BE, G, Rg> {
+    fn lookup_automorphism_key(&self, p: i64, _k: TorusPrecision) -> Result<GLWEAutomorphismKeyPreparedBackendRef<'_, BE, Rg>> {
         let position = self
             .baby_steps
             .iter()
@@ -91,31 +95,31 @@ impl<BE: Backend, G: Fn(i64) -> i64> GetAutomorphismKey<BE> for MixedLayouts<'_,
     }
 }
 
-pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite::noise::TestBackend>(
+pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite::noise::TestBackend<Rg>, Rg: Ring>(
     params: &TestParams,
     module: &Module<BE>,
 ) where
     BE::OwnedBuf: HostDataMut,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: GLWEAutomorphism<BE>
-        + GLWEAutomorphismKeyEncryptSk<BE>
-        + GLWEAutomorphismKeyPreparedFactory<BE>
+    Module<BE>: GLWEAutomorphism<BE, Rg>
+        + GLWEAutomorphismKeyEncryptSk<BE, Rg>
+        + GLWEAutomorphismKeyPreparedFactory<BE, Rg>
         + CnvPVecAlloc<BE>
-        + CnvOps<BE>
-        + GLWECopy<BE>
-        + GLWEEncryptSk<BE>
-        + GLWELinearTransformationOps<BE>
-        + GLWESecretPreparedFactory<BE>
+        + CnvOps<BE, Rg>
+        + GLWECopy<BE, Rg>
+        + GLWEEncryptSk<BE, Rg>
+        + GLWELinearTransformationOps<BE, Rg>
+        + GLWESecretPreparedFactory<BE, Rg>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
         + VecZnxAlloc<BE>
         + VecZnxBigAlloc<BE>
-        + VecZnxBigNormalize<BE>
+        + VecZnxBigNormalize<BE, Rg>
         + VecZnxBigNormalizeTmpBytes
         + VecZnxDftAlloc<BE>
-        + VecZnxIdftApply<BE>
+        + VecZnxIdftApply<BE, Rg>
         + VecZnxIdftApplyTmpBytes
-        + VecZnxFillUniformSource<BE>,
+        + VecZnxFillUniformSource<BE, Rg>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let n = module.n();
@@ -161,9 +165,9 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
         })
         .collect();
 
-    let mut ct: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&ct_infos);
-    let mut pt: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&ct_infos);
-    let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc_from_infos(&ct_infos);
+    let mut ct: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&ct_infos);
+    let mut pt: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_plaintext_alloc_from_infos(&ct_infos);
+    let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_secret_alloc_from_infos(&ct_infos);
     let mut source_xs = Source::new([3u8; 32]);
     let mut source_xe = Source::new([4u8; 32]);
     let mut source_xa = Source::new([5u8; 32]);
@@ -196,13 +200,13 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(tmp_bytes);
 
     module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut source_xs);
-    let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc_from_infos(&sk);
+    let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE, Rg> = module.glwe_secret_prepared_alloc_from_infos(&sk);
     module.glwe_secret_prepare(&mut sk_prepared, &sk);
 
     module.vec_znx_fill_uniform_source(
         in_base2k,
         pt.k().as_usize(),
-        &mut vec_znx_backend_mut::<BE>(&mut pt.data),
+        &mut vec_znx_backend_mut::<BE, Rg>(&mut pt.data),
         0,
         &mut source_xa,
     );
@@ -216,23 +220,24 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
     );
 
     // Automorphism keys are indexed by Galois element throughout the engine.
-    let mut maps: Vec<HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>>> = Vec::new();
+    let mut maps: Vec<AutomorphismKeys<BE, Rg>> = Vec::new();
     for layout in &layouts {
         let mut atks = HashMap::new();
         for &rot in baby_steps.iter().filter(|&&rot| rot != 0) {
-            let mut atk: GLWEAutomorphismKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_automorphism_key_alloc_from_infos(layout);
+            let mut atk: GLWEAutomorphismKey<BE::OwnedBuf, BE::ZnxWord, Rg> =
+                module.glwe_automorphism_key_alloc_from_infos(layout);
             module.glwe_automorphism_key_encrypt_sk(
                 &mut atk,
-                module.galois_element(rot),
+                module.galois_element::<Rg>(rot),
                 &sk,
                 &mut source_xe,
                 &mut source_xa,
                 &mut scratch.borrow(),
             );
-            let mut prepared: GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE> =
+            let mut prepared: GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE, Rg> =
                 module.glwe_automorphism_key_prepared_alloc_from_infos(layout);
             module.glwe_automorphism_key_prepare(&mut prepared, &atk, &mut scratch.borrow());
-            atks.insert(module.galois_element(rot), prepared);
+            atks.insert(module.galois_element::<Rg>(rot), prepared);
         }
         maps.push(atks);
     }
@@ -243,11 +248,11 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
         .iter()
         .filter(|&&rot| rot != 0)
         .skip(1)
-        .map(|&rot| module.galois_element(rot))
+        .map(|&rot| module.galois_element::<Rg>(rot))
         .collect();
     for (i, (atks, layout)) in maps.iter().zip(&layouts).take(2).enumerate() {
         for coarse_ps in [Vec::new(), half_coarse.clone()] {
-            let keys = MixedDsize::<BE> {
+            let keys = MixedDsize::<BE, Rg> {
                 atks,
                 coarse: TorusPrecision(2 * layout.k_digit.0),
                 coarse_ps: &coarse_ps,
@@ -274,10 +279,10 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
 
     // One rotation from each layout: whole-limb digits and two widths off a limb
     // boundary in one key set.
-    let keys = MixedLayouts::<BE, _> {
+    let keys = MixedLayouts::<BE, _, Rg> {
         maps: &maps,
         baby_steps: &baby_steps,
-        galois: |rot| module.galois_element(rot),
+        galois: |rot| module.galois_element::<Rg>(rot),
     };
     assert_hoisted_babies_match(
         module,
@@ -298,11 +303,11 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
     clippy::too_many_arguments,
     reason = "the comparison takes the modules, the operands, the keys and their layouts"
 )]
-fn assert_hoisted_babies_match<BE: crate::test_suite::noise::TestBackend, K: GetAutomorphismKey<BE>>(
+fn assert_hoisted_babies_match<BE: crate::test_suite::noise::TestBackend<Rg>, K: GetAutomorphismKey<BE, Rg>, Rg: Ring>(
     module: &Module<BE>,
     keys: &K,
-    ct: &GLWE<BE::OwnedBuf, BE::ZnxWord>,
-    pt: &GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord>,
+    ct: &GLWE<BE::OwnedBuf, BE::ZnxWord, Rg>,
+    pt: &GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord, Rg>,
     baby_steps: &[i64],
     rank: usize,
     product_size: usize,
@@ -312,24 +317,24 @@ fn assert_hoisted_babies_match<BE: crate::test_suite::noise::TestBackend, K: Get
     BE::OwnedBuf: HostDataMut,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: GLWEAutomorphism<BE>
-        + GLWEAutomorphismKeyEncryptSk<BE>
-        + GLWEAutomorphismKeyPreparedFactory<BE>
+    Module<BE>: GLWEAutomorphism<BE, Rg>
+        + GLWEAutomorphismKeyEncryptSk<BE, Rg>
+        + GLWEAutomorphismKeyPreparedFactory<BE, Rg>
         + CnvPVecAlloc<BE>
-        + CnvOps<BE>
-        + GLWECopy<BE>
-        + GLWEEncryptSk<BE>
-        + GLWELinearTransformationOps<BE>
-        + GLWESecretPreparedFactory<BE>
+        + CnvOps<BE, Rg>
+        + GLWECopy<BE, Rg>
+        + GLWEEncryptSk<BE, Rg>
+        + GLWELinearTransformationOps<BE, Rg>
+        + GLWESecretPreparedFactory<BE, Rg>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
         + VecZnxAlloc<BE>
         + VecZnxBigAlloc<BE>
-        + VecZnxBigNormalize<BE>
+        + VecZnxBigNormalize<BE, Rg>
         + VecZnxBigNormalizeTmpBytes
         + VecZnxDftAlloc<BE>
-        + VecZnxIdftApply<BE>
+        + VecZnxIdftApply<BE, Rg>
         + VecZnxIdftApplyTmpBytes
-        + VecZnxFillUniformSource<BE>,
+        + VecZnxFillUniformSource<BE, Rg>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let mut prep_scratch = poisoned_scratch::<BE>(prep_bytes);
@@ -338,15 +343,15 @@ fn assert_hoisted_babies_match<BE: crate::test_suite::noise::TestBackend, K: Get
     assert_eq!(prepared_babies.baby_steps().collect::<Vec<_>>(), baby_steps);
 
     let mut right_prepared = module.cnv_pvec_right_alloc(module.n(), 1, pt.size(), PrepareHint::Reuse);
-    let pt_ref = <GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> as GLWEToBackendRef<BE>>::to_backend_ref(pt);
+    let pt_ref = <GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord, Rg> as GLWEToBackendRef<BE, Rg>>::to_backend_ref(pt);
     module.cnv_pvec_right_prepare(&mut right_prepared.to_backend_mut(), &pt_ref.data, &mut scratch.borrow());
 
     for &rot in baby_steps {
-        let mut expected: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(ct);
+        let mut expected: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(ct);
         if rot == 0 {
             module.glwe_copy(&mut expected, ct, &mut scratch.borrow());
         } else {
-            let p = module.galois_element(rot);
+            let p = module.galois_element::<Rg>(rot);
             let key = keys
                 .get_automorphism_key(p, ct.k())
                 .unwrap_or_else(|e| panic!("baby-step rotation {rot}: {e}"));
@@ -354,7 +359,7 @@ fn assert_hoisted_babies_match<BE: crate::test_suite::noise::TestBackend, K: Get
         }
 
         let mut expected_prepared = module.cnv_pvec_left_alloc(module.n(), rank + 1, expected.size(), PrepareHint::Reuse);
-        let expected_ref = <GLWE<BE::OwnedBuf, BE::ZnxWord> as GLWEToBackendRef<BE>>::to_backend_ref(&expected);
+        let expected_ref = <GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> as GLWEToBackendRef<BE, Rg>>::to_backend_ref(&expected);
         module.cnv_pvec_left_prepare(
             &mut expected_prepared.to_backend_mut(),
             &expected_ref.data,
@@ -369,8 +374,8 @@ fn assert_hoisted_babies_match<BE: crate::test_suite::noise::TestBackend, K: Get
         );
 
         for col in 0..rank + 1 {
-            let mut have: VecZnx<BE::OwnedBuf, BE::ZnxWord> = module.vec_znx_alloc(module.n(), 1, product_size);
-            let mut want: VecZnx<BE::OwnedBuf, BE::ZnxWord> = module.vec_znx_alloc(module.n(), 1, product_size);
+            let mut have: VecZnx<BE::OwnedBuf, BE::ZnxWord, Rg> = module.vec_znx_alloc(module.n(), 1, product_size);
+            let mut want: VecZnx<BE::OwnedBuf, BE::ZnxWord, Rg> = module.vec_znx_alloc(module.n(), 1, product_size);
             let mut have_dft = module.vec_znx_dft_alloc(module.n(), 1, product_size);
             let mut want_dft = module.vec_znx_dft_alloc(module.n(), 1, product_size);
             let mut have_big = module.vec_znx_big_alloc(module.n(), 1, product_size);
@@ -396,7 +401,7 @@ fn assert_hoisted_babies_match<BE: crate::test_suite::noise::TestBackend, K: Get
                 &mut scratch.borrow(),
             );
             module.vec_znx_big_normalize(
-                &mut vec_znx_backend_mut::<BE>(&mut have),
+                &mut vec_znx_backend_mut::<BE, Rg>(&mut have),
                 ct.base2k().as_usize(),
                 ct.k().as_usize(),
                 0,
@@ -426,7 +431,7 @@ fn assert_hoisted_babies_match<BE: crate::test_suite::noise::TestBackend, K: Get
                 &mut scratch.borrow(),
             );
             module.vec_znx_big_normalize(
-                &mut vec_znx_backend_mut::<BE>(&mut want),
+                &mut vec_znx_backend_mut::<BE, Rg>(&mut want),
                 ct.base2k().as_usize(),
                 ct.k().as_usize(),
                 0,
@@ -448,13 +453,16 @@ fn assert_hoisted_babies_match<BE: crate::test_suite::noise::TestBackend, K: Get
 /// A diagonal stored across more limbs than its `k` selects does not fit the
 /// slot sized from that `k`: preparing it must panic instead of dropping the
 /// limbs past the slot.
-pub fn test_glwe_linear_transformation_rhs_prepare_rejects_wide_diagonal<BE: crate::test_suite::noise::TestBackend>(
+pub fn test_glwe_linear_transformation_rhs_prepare_rejects_wide_diagonal<
+    BE: crate::test_suite::noise::TestBackend<Rg>,
+    Rg: Ring,
+>(
     params: &TestParams,
     module: &Module<BE>,
 ) where
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: GLWELinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    Module<BE>: GLWELinearTransformationOps<BE, Rg> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let layout = GLWELayout {
@@ -463,7 +471,7 @@ pub fn test_glwe_linear_transformation_rhs_prepare_rejects_wide_diagonal<BE: cra
         k: (3 * params.base2k).into(),
         rank: 0u32.into(),
     };
-    let mut diagonal: GLWE<BE::OwnedBuf, i64> = module.glwe_alloc_from_infos(&layout);
+    let mut diagonal: GLWE<BE::OwnedBuf, i64, Rg> = module.glwe_alloc_from_infos(&layout);
     diagonal.set_k(params.base2k.into());
 
     let schedule = LinearTransformationLayout {
@@ -471,7 +479,7 @@ pub fn test_glwe_linear_transformation_rhs_prepare_rejects_wide_diagonal<BE: cra
         slots: module.n() / 2,
         strategy: LinearTransformationStrategy::Bsgs { giant_step: 1 },
     };
-    let mut prepared: LinearTransformation<PreparedDiagonal<BE::OwnedBuf, BE>> =
+    let mut prepared: LinearTransformation<PreparedDiagonal<BE::OwnedBuf, BE, Rg>> =
         LinearTransformation::alloc_prepared(module, &schedule, &diagonal);
     let mut scratch = poisoned_scratch::<BE>(module.glwe_linear_transformation_rhs_prepare_tmp_bytes(&layout));
     let lt = LinearTransformation {
@@ -488,14 +496,14 @@ pub fn test_glwe_linear_transformation_rhs_prepare_rejects_wide_diagonal<BE: cra
     assert_refusal(
         "assertion `left == right` failed: linear transformation plaintext size does not match its effective precision\n  left: 1\n right: 3",
         &mut prepared,
-        prepared_state::<BE>,
+        prepared_state::<BE, Rg>,
         |prepared| module.glwe_linear_transformation_rhs_prepare(prepared, &lt, &mut scratch.borrow()),
     );
 }
 
 /// Every prepared diagonal's bytes, shape and metadata.
-fn prepared_state<BE: Backend>(
-    lt: &LinearTransformationPrepared<BE>,
+fn prepared_state<BE: Backend, Rg: Ring>(
+    lt: &LinearTransformationPrepared<BE, Rg>,
 ) -> Vec<(i64, i64, Vec<u8>, usize, usize, crate::layouts::GLWEPlaintextMeta)> {
     lt.giant_steps
         .iter()
@@ -517,22 +525,24 @@ fn prepared_state<BE: Backend>(
 /// Resident transforms summed on one giant schedule: one term is the single
 /// transform bit for bit, and three decrypt to the sum of their single
 /// transforms up to the giant key switches and roundings the sum saves.
-pub fn test_glwe_linear_transformation_sum<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
-where
+pub fn test_glwe_linear_transformation_sum<BE: crate::test_suite::noise::TestBackend<Rg>, Rg: Ring>(
+    params: &TestParams,
+    module: &Module<BE>,
+) where
     BE::OwnedBuf: HostDataMut,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
     Module<BE>: CnvPVecAlloc<BE>
-        + GLWEAdd<BE>
-        + GLWEAutomorphismKeyEncryptSk<BE>
-        + GLWEAutomorphismKeyPreparedFactory<BE>
-        + GLWEDecrypt<BE>
-        + GLWEEncryptSk<BE>
-        + GLWELinearTransformationOps<BE>
-        + GLWENoise<BE>
-        + GLWESecretPreparedFactory<BE>
+        + GLWEAdd<BE, Rg>
+        + GLWEAutomorphismKeyEncryptSk<BE, Rg>
+        + GLWEAutomorphismKeyPreparedFactory<BE, Rg>
+        + GLWEDecrypt<BE, Rg>
+        + GLWEEncryptSk<BE, Rg>
+        + GLWELinearTransformationOps<BE, Rg>
+        + GLWENoise<BE, Rg>
+        + GLWESecretPreparedFactory<BE, Rg>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
-        + VecZnxFillUniformSource<BE>,
+        + VecZnxFillUniformSource<BE, Rg>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let n = module.n();
@@ -579,17 +589,18 @@ where
     let mut source_xe = Source::new([7u8; 32]);
     let mut source_xa = Source::new([8u8; 32]);
 
-    let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc_from_infos(&ct_infos);
+    let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_secret_alloc_from_infos(&ct_infos);
     module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut source_xs);
-    let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc_from_infos(&sk);
+    let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE, Rg> = module.glwe_secret_prepared_alloc_from_infos(&sk);
     module.glwe_secret_prepare(&mut sk_prepared, &sk);
 
     let mut keys = HashMap::new();
     for rot in [1, 4] {
-        let p = module.galois_element(rot);
-        let mut atk: GLWEAutomorphismKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_automorphism_key_alloc_from_infos(&atk_infos);
+        let p = module.galois_element::<Rg>(rot);
+        let mut atk: GLWEAutomorphismKey<BE::OwnedBuf, BE::ZnxWord, Rg> =
+            module.glwe_automorphism_key_alloc_from_infos(&atk_infos);
         module.glwe_automorphism_key_encrypt_sk(&mut atk, p, &sk, &mut source_xe, &mut source_xa, &mut scratch.borrow());
-        let mut prepared: GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE> =
+        let mut prepared: GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE, Rg> =
             module.glwe_automorphism_key_prepared_alloc_from_infos(&atk_infos);
         module.glwe_automorphism_key_prepare(&mut prepared, &atk, &mut scratch.borrow());
         keys.insert(p, prepared);
@@ -599,9 +610,9 @@ where
     let mut babies = Vec::new();
     let mut lts = Vec::new();
     for _ in 0..3 {
-        let mut pt: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&ct_infos);
-        module.vec_znx_fill_uniform_source(base2k, k, &mut vec_znx_backend_mut::<BE>(&mut pt.data), 0, &mut source_xa);
-        let mut ct: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&ct_infos);
+        let mut pt: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_plaintext_alloc_from_infos(&ct_infos);
+        module.vec_znx_fill_uniform_source(base2k, k, &mut vec_znx_backend_mut::<BE, Rg>(&mut pt.data), 0, &mut source_xa);
+        let mut ct: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&ct_infos);
         module.glwe_encrypt_sk(
             &mut ct,
             &pt,
@@ -622,11 +633,11 @@ where
         for (&rot, index) in plan.giant_steps.iter().zip(&plan.index) {
             let mut diagonals = Vec::new();
             for &baby in index {
-                let mut diagonal: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&pt_infos);
+                let mut diagonal: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&pt_infos);
                 module.vec_znx_fill_uniform_source(
                     base2k,
                     base2k,
-                    &mut vec_znx_backend_mut::<BE>(&mut diagonal.data),
+                    &mut vec_znx_backend_mut::<BE, Rg>(&mut diagonal.data),
                     0,
                     &mut source_xa,
                 );
@@ -637,13 +648,14 @@ where
             }
             lt.giant_steps.push(LinearTransformationGiantStep { rot, diagonals });
         }
-        let mut prepared: LinearTransformationPrepared<BE> = LinearTransformation::alloc_prepared(module, &schedule, &pt_infos);
+        let mut prepared: LinearTransformationPrepared<BE, Rg> =
+            LinearTransformation::alloc_prepared(module, &schedule, &pt_infos);
         module.glwe_linear_transformation_rhs_prepare(&mut prepared, &lt, &mut scratch.borrow());
         lts.push(prepared);
     }
     let (babies, lts): (Vec<_>, Vec<_>) = (babies.iter().collect(), lts.iter().collect());
 
-    let mut single: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&ct_infos);
+    let mut single: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&ct_infos);
     module.glwe_linear_transformation_eval_into(
         base2k,
         &mut single,
@@ -655,7 +667,7 @@ where
         )
         .borrow(),
     );
-    let mut one: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&ct_infos);
+    let mut one: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&ct_infos);
     module.glwe_linear_transformation_eval_sum_into(
         base2k,
         &mut one,
@@ -670,7 +682,7 @@ where
     assert_eq!(one, single, "a one-term sum is not the single linear transformation");
     assert!(one.is_canonical());
 
-    let mut sum: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&ct_infos);
+    let mut sum: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&ct_infos);
     module.glwe_linear_transformation_eval_sum_into(
         base2k,
         &mut sum,
@@ -684,7 +696,7 @@ where
     );
     let mut want = single;
     for (&cache, &lt) in babies[1..].iter().zip(&lts[1..]) {
-        let mut term: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&ct_infos);
+        let mut term: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&ct_infos);
         module.glwe_linear_transformation_eval_into(
             base2k,
             &mut term,
@@ -698,7 +710,7 @@ where
         );
         module.glwe_add_assign(&mut want, &term);
     }
-    let mut pt_want: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&ct_infos);
+    let mut pt_want: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_plaintext_alloc_from_infos(&ct_infos);
     module.glwe_decrypt(&want, &mut pt_want, &sk_prepared, &mut scratch.borrow());
 
     // Both sides share the inputs' noise. They differ by at most one key switch
@@ -714,7 +726,7 @@ where
 
 /// A transformation evaluated with the keys of the power-of-two rotations decrypts to its
 /// per-rotation evaluation up to the key switches that differ between them.
-pub fn test_glwe_linear_transformation_powers_of_two<BE: crate::test_suite::noise::TestBackend>(
+pub fn test_glwe_linear_transformation_powers_of_two<BE: crate::test_suite::noise::TestBackend<Rg>, Rg: Ring>(
     params: &TestParams,
     module: &Module<BE>,
 ) where
@@ -722,15 +734,15 @@ pub fn test_glwe_linear_transformation_powers_of_two<BE: crate::test_suite::nois
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
     Module<BE>: CnvPVecAlloc<BE>
-        + GLWEAutomorphismKeyEncryptSk<BE>
-        + GLWEAutomorphismKeyPreparedFactory<BE>
-        + GLWEDecrypt<BE>
-        + GLWEEncryptSk<BE>
-        + GLWELinearTransformationOps<BE>
-        + GLWENoise<BE>
-        + GLWESecretPreparedFactory<BE>
+        + GLWEAutomorphismKeyEncryptSk<BE, Rg>
+        + GLWEAutomorphismKeyPreparedFactory<BE, Rg>
+        + GLWEDecrypt<BE, Rg>
+        + GLWEEncryptSk<BE, Rg>
+        + GLWELinearTransformationOps<BE, Rg>
+        + GLWENoise<BE, Rg>
+        + GLWESecretPreparedFactory<BE, Rg>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
-        + VecZnxFillUniformSource<BE>,
+        + VecZnxFillUniformSource<BE, Rg>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let n = module.n();
@@ -765,7 +777,7 @@ pub fn test_glwe_linear_transformation_powers_of_two<BE: crate::test_suite::nois
         layout(LinearTransformationStrategy::Bsgs { giant_step: 4 }),
         layout(LinearTransformationStrategy::BsgsPowersOfTwo { giant_step: 4 }),
     ];
-    let cyclotomic_order = poulpy_hal::layouts::CyclotomicOrder::cyclotomic_order(module);
+    let cyclotomic_order = poulpy_hal::layouts::CyclotomicOrder::cyclotomic_order::<Rg>(module);
     let mut elements: Vec<i64> = schedules
         .iter()
         .flat_map(|schedule| schedule.galois_elements(cyclotomic_order))
@@ -796,24 +808,25 @@ pub fn test_glwe_linear_transformation_powers_of_two<BE: crate::test_suite::nois
     let mut source_xe = Source::new([10u8; 32]);
     let mut source_xa = Source::new([11u8; 32]);
 
-    let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc_from_infos(&ct_infos);
+    let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_secret_alloc_from_infos(&ct_infos);
     module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut source_xs);
-    let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc_from_infos(&sk);
+    let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE, Rg> = module.glwe_secret_prepared_alloc_from_infos(&sk);
     module.glwe_secret_prepare(&mut sk_prepared, &sk);
 
     let mut keys = HashMap::new();
     for p in elements {
-        let mut atk: GLWEAutomorphismKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_automorphism_key_alloc_from_infos(&atk_infos);
+        let mut atk: GLWEAutomorphismKey<BE::OwnedBuf, BE::ZnxWord, Rg> =
+            module.glwe_automorphism_key_alloc_from_infos(&atk_infos);
         module.glwe_automorphism_key_encrypt_sk(&mut atk, p, &sk, &mut source_xe, &mut source_xa, &mut scratch.borrow());
-        let mut prepared: GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE> =
+        let mut prepared: GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE, Rg> =
             module.glwe_automorphism_key_prepared_alloc_from_infos(&atk_infos);
         module.glwe_automorphism_key_prepare(&mut prepared, &atk, &mut scratch.borrow());
         keys.insert(p, prepared);
     }
 
-    let mut pt: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&ct_infos);
-    module.vec_znx_fill_uniform_source(base2k, k, &mut vec_znx_backend_mut::<BE>(&mut pt.data), 0, &mut source_xa);
-    let mut ct: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&ct_infos);
+    let mut pt: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_plaintext_alloc_from_infos(&ct_infos);
+    module.vec_znx_fill_uniform_source(base2k, k, &mut vec_znx_backend_mut::<BE, Rg>(&mut pt.data), 0, &mut source_xa);
+    let mut ct: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&ct_infos);
     module.glwe_encrypt_sk(
         &mut ct,
         &pt,
@@ -825,14 +838,14 @@ pub fn test_glwe_linear_transformation_powers_of_two<BE: crate::test_suite::nois
 
     // The same diagonals under both schedules.
     let plan = schedules[0].index();
-    let mut diagonals: HashMap<(i64, i64), GLWE<BE::OwnedBuf, BE::ZnxWord>> = HashMap::new();
+    let mut diagonals: Diagonals<BE, Rg> = HashMap::new();
     for (&rot, index) in plan.giant_steps.iter().zip(&plan.index) {
         for &baby in index {
-            let mut diagonal: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&pt_infos);
+            let mut diagonal: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&pt_infos);
             module.vec_znx_fill_uniform_source(
                 base2k,
                 base2k,
-                &mut vec_znx_backend_mut::<BE>(&mut diagonal.data),
+                &mut vec_znx_backend_mut::<BE, Rg>(&mut diagonal.data),
                 0,
                 &mut source_xa,
             );
@@ -857,11 +870,12 @@ pub fn test_glwe_linear_transformation_powers_of_two<BE: crate::test_suite::nois
                 .collect();
             lt.giant_steps.push(LinearTransformationGiantStep { rot, diagonals });
         }
-        let mut prepared: LinearTransformationPrepared<BE> = LinearTransformation::alloc_prepared(module, schedule, &pt_infos);
+        let mut prepared: LinearTransformationPrepared<BE, Rg> =
+            LinearTransformation::alloc_prepared(module, schedule, &pt_infos);
         module.glwe_linear_transformation_rhs_prepare(&mut prepared, &lt, &mut scratch.borrow());
         let mut cache = LinearTransformationBabySteps::alloc_for(module, &prepared, &ct);
         module.glwe_linear_transformation_baby_steps_prepare(&mut cache, &ct, &keys, &mut scratch.borrow());
-        let mut res: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&ct_infos);
+        let mut res: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&ct_infos);
         module.glwe_linear_transformation_eval_into(base2k, &mut res, &cache, &prepared, &keys, &mut scratch.borrow());
 
         // A cache carved from scratch takes its byte count less at most the alignment of its last operand, and
@@ -879,13 +893,13 @@ pub fn test_glwe_linear_transformation_powers_of_two<BE: crate::test_suite::nois
         );
         assert_eq!(carved.baby_steps().collect::<Vec<_>>(), plan.baby_steps);
         module.glwe_linear_transformation_baby_steps_prepare(&mut carved, &ct, &keys, &mut rest);
-        let mut from_carved: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&ct_infos);
+        let mut from_carved: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&ct_infos);
         module.glwe_linear_transformation_eval_into(base2k, &mut from_carved, &carved, &prepared, &keys, &mut rest);
         assert_eq!(from_carved, res, "a carved baby-step cache gave another ciphertext");
         results.push(res);
     }
     assert!(results[1] != results[0], "the two schedules gave the same ciphertext");
-    let mut pt_want: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&ct_infos);
+    let mut pt_want: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_plaintext_alloc_from_infos(&ct_infos);
     module.glwe_decrypt(&results[0], &mut pt_want, &sk_prepared, &mut scratch.borrow());
 
     // Babies 1 and 2 are the same switch of the input on both sides; baby 3 differs by three
@@ -902,13 +916,13 @@ pub fn test_glwe_linear_transformation_powers_of_two<BE: crate::test_suite::nois
 }
 
 /// Summed transforms must share one giant schedule.
-pub fn test_glwe_linear_transformation_sum_rejects_mismatched_schedule<BE: crate::test_suite::noise::TestBackend>(
+pub fn test_glwe_linear_transformation_sum_rejects_mismatched_schedule<BE: crate::test_suite::noise::TestBackend<Rg>, Rg: Ring>(
     params: &TestParams,
     module: &Module<BE>,
 ) where
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: GLWELinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    Module<BE>: GLWELinearTransformationOps<BE, Rg> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     eval_mismatched_sum(
@@ -923,13 +937,16 @@ pub fn test_glwe_linear_transformation_sum_rejects_mismatched_schedule<BE: crate
 }
 
 /// Summed transforms must share one diagonal layout and width.
-pub fn test_glwe_linear_transformation_sum_rejects_mismatched_diagonal_width<BE: crate::test_suite::noise::TestBackend>(
+pub fn test_glwe_linear_transformation_sum_rejects_mismatched_diagonal_width<
+    BE: crate::test_suite::noise::TestBackend<Rg>,
+    Rg: Ring,
+>(
     params: &TestParams,
     module: &Module<BE>,
 ) where
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: GLWELinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    Module<BE>: GLWELinearTransformationOps<BE, Rg> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     eval_mismatched_sum(
@@ -944,13 +961,16 @@ pub fn test_glwe_linear_transformation_sum_rejects_mismatched_diagonal_width<BE:
 }
 
 /// Summed transforms must share one diagonal scale.
-pub fn test_glwe_linear_transformation_sum_rejects_mismatched_diagonal_scale<BE: crate::test_suite::noise::TestBackend>(
+pub fn test_glwe_linear_transformation_sum_rejects_mismatched_diagonal_scale<
+    BE: crate::test_suite::noise::TestBackend<Rg>,
+    Rg: Ring,
+>(
     params: &TestParams,
     module: &Module<BE>,
 ) where
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: GLWELinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    Module<BE>: GLWELinearTransformationOps<BE, Rg> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     eval_mismatched_sum(
@@ -965,13 +985,13 @@ pub fn test_glwe_linear_transformation_sum_rejects_mismatched_diagonal_scale<BE:
 }
 
 /// Summed transforms must share one source layout.
-pub fn test_glwe_linear_transformation_sum_rejects_mismatched_source<BE: crate::test_suite::noise::TestBackend>(
+pub fn test_glwe_linear_transformation_sum_rejects_mismatched_source<BE: crate::test_suite::noise::TestBackend<Rg>, Rg: Ring>(
     params: &TestParams,
     module: &Module<BE>,
 ) where
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: GLWELinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    Module<BE>: GLWELinearTransformationOps<BE, Rg> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     eval_mismatched_sum(
@@ -986,26 +1006,26 @@ pub fn test_glwe_linear_transformation_sum_rejects_mismatched_source<BE: crate::
 }
 
 /// A sum needs a term.
-pub fn test_glwe_linear_transformation_sum_rejects_no_terms<BE: crate::test_suite::noise::TestBackend>(
+pub fn test_glwe_linear_transformation_sum_rejects_no_terms<BE: crate::test_suite::noise::TestBackend<Rg>, Rg: Ring>(
     params: &TestParams,
     module: &Module<BE>,
 ) where
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: GLWELinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    Module<BE>: GLWELinearTransformationOps<BE, Rg> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     eval_without_keys(params, module, &[], &[], true, "linear transformation sum has no terms");
 }
 
 /// A sum takes as many transforms as baby caches.
-pub fn test_glwe_linear_transformation_sum_rejects_unequal_lengths<BE: crate::test_suite::noise::TestBackend>(
+pub fn test_glwe_linear_transformation_sum_rejects_unequal_lengths<BE: crate::test_suite::noise::TestBackend<Rg>, Rg: Ring>(
     params: &TestParams,
     module: &Module<BE>,
 ) where
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: GLWELinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    Module<BE>: GLWELinearTransformationOps<BE, Rg> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let (babies, lt) = direct_term(params, module, vec![0, 1], 1, 0, 1);
@@ -1020,13 +1040,16 @@ pub fn test_glwe_linear_transformation_sum_rejects_unequal_lengths<BE: crate::te
 }
 
 /// A sum's first term needs a giant step.
-pub fn test_glwe_linear_transformation_sum_rejects_first_term_without_giant_steps<BE: crate::test_suite::noise::TestBackend>(
+pub fn test_glwe_linear_transformation_sum_rejects_first_term_without_giant_steps<
+    BE: crate::test_suite::noise::TestBackend<Rg>,
+    Rg: Ring,
+>(
     params: &TestParams,
     module: &Module<BE>,
 ) where
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: GLWELinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    Module<BE>: GLWELinearTransformationOps<BE, Rg> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let (babies_a, mut lt_a) = direct_term(params, module, vec![0, 1], 1, 0, 1);
@@ -1043,13 +1066,13 @@ pub fn test_glwe_linear_transformation_sum_rejects_first_term_without_giant_step
 }
 
 /// A transform needs a giant step.
-pub fn test_glwe_linear_transformation_rejects_no_giant_steps<BE: crate::test_suite::noise::TestBackend>(
+pub fn test_glwe_linear_transformation_rejects_no_giant_steps<BE: crate::test_suite::noise::TestBackend<Rg>, Rg: Ring>(
     params: &TestParams,
     module: &Module<BE>,
 ) where
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: GLWELinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    Module<BE>: GLWELinearTransformationOps<BE, Rg> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let (babies, mut lt) = direct_term(params, module, vec![0, 1], 1, 0, 1);
@@ -1066,13 +1089,13 @@ pub fn test_glwe_linear_transformation_rejects_no_giant_steps<BE: crate::test_su
 
 /// Every giant step of a transform needs a diagonal, checked before the
 /// fallback writes `res` at the first one.
-pub fn test_glwe_linear_transformation_rejects_empty_giant_step<BE: crate::test_suite::noise::TestBackend>(
+pub fn test_glwe_linear_transformation_rejects_empty_giant_step<BE: crate::test_suite::noise::TestBackend<Rg>, Rg: Ring>(
     params: &TestParams,
     module: &Module<BE>,
 ) where
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: GLWELinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    Module<BE>: GLWELinearTransformationOps<BE, Rg> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let (babies, mut lt) = direct_term(params, module, vec![0, 1], 1, 0, 1);
@@ -1089,13 +1112,13 @@ pub fn test_glwe_linear_transformation_rejects_empty_giant_step<BE: crate::test_
 
 /// Every giant step of every summed transform needs a diagonal, checked
 /// before the fallback writes `res` at the first one.
-pub fn test_glwe_linear_transformation_sum_rejects_empty_giant_step<BE: crate::test_suite::noise::TestBackend>(
+pub fn test_glwe_linear_transformation_sum_rejects_empty_giant_step<BE: crate::test_suite::noise::TestBackend<Rg>, Rg: Ring>(
     params: &TestParams,
     module: &Module<BE>,
 ) where
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: GLWELinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    Module<BE>: GLWELinearTransformationOps<BE, Rg> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let (babies_a, lt_a) = direct_term(params, module, vec![0, 1], 1, 0, 1);
@@ -1113,13 +1136,13 @@ pub fn test_glwe_linear_transformation_sum_rejects_empty_giant_step<BE: crate::t
 
 /// Every baby rotation a summed transform reads must be in its cache, checked
 /// before the fallback writes `res` at the first giant step.
-pub fn test_glwe_linear_transformation_sum_rejects_missing_baby_step<BE: crate::test_suite::noise::TestBackend>(
+pub fn test_glwe_linear_transformation_sum_rejects_missing_baby_step<BE: crate::test_suite::noise::TestBackend<Rg>, Rg: Ring>(
     params: &TestParams,
     module: &Module<BE>,
 ) where
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: GLWELinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    Module<BE>: GLWELinearTransformationOps<BE, Rg> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let (babies_a, lt_a) = direct_term(params, module, vec![0, 1], 1, 0, 1);
@@ -1137,13 +1160,13 @@ pub fn test_glwe_linear_transformation_sum_rejects_missing_baby_step<BE: crate::
 
 /// A summed transform's cache must hold the rotations it reads, checked before
 /// its layout is compared with the first term's.
-pub fn test_glwe_linear_transformation_sum_rejects_empty_cache<BE: crate::test_suite::noise::TestBackend>(
+pub fn test_glwe_linear_transformation_sum_rejects_empty_cache<BE: crate::test_suite::noise::TestBackend<Rg>, Rg: Ring>(
     params: &TestParams,
     module: &Module<BE>,
 ) where
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: GLWELinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    Module<BE>: GLWELinearTransformationOps<BE, Rg> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let (babies_a, lt_a) = direct_term(params, module, vec![0, 1], 1, 0, 1);
@@ -1161,13 +1184,13 @@ pub fn test_glwe_linear_transformation_sum_rejects_empty_cache<BE: crate::test_s
 
 /// Every giant step of a transform must start with a diagonal as wide as its
 /// first one, checked before the fallback writes `res` at the first giant step.
-pub fn test_glwe_linear_transformation_rejects_uneven_giant_step_width<BE: crate::test_suite::noise::TestBackend>(
+pub fn test_glwe_linear_transformation_rejects_uneven_giant_step_width<BE: crate::test_suite::noise::TestBackend<Rg>, Rg: Ring>(
     params: &TestParams,
     module: &Module<BE>,
 ) where
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: GLWELinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    Module<BE>: GLWELinearTransformationOps<BE, Rg> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let (babies, mut lt) = direct_term(params, module, vec![0, 1], 1, 0, 1);
@@ -1186,13 +1209,16 @@ pub fn test_glwe_linear_transformation_rejects_uneven_giant_step_width<BE: crate
 /// Every giant step of every summed transform must start with a diagonal as
 /// wide as the first transform's first one, beyond the first diagonals the sum
 /// compares, checked before the fallback writes `res` at the first giant step.
-pub fn test_glwe_linear_transformation_sum_rejects_uneven_giant_step_width<BE: crate::test_suite::noise::TestBackend>(
+pub fn test_glwe_linear_transformation_sum_rejects_uneven_giant_step_width<
+    BE: crate::test_suite::noise::TestBackend<Rg>,
+    Rg: Ring,
+>(
     params: &TestParams,
     module: &Module<BE>,
 ) where
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: GLWELinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    Module<BE>: GLWELinearTransformationOps<BE, Rg> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let (babies_a, lt_a) = direct_term(params, module, vec![0, 1], 1, 0, 1);
@@ -1212,7 +1238,7 @@ pub fn test_glwe_linear_transformation_sum_rejects_uneven_giant_step_width<BE: c
 /// Sums a `Direct` transform over `[0, 1]`, with one-limb diagonals at scale 0
 /// and a one-limb source, and one over `indexes`, with `pt_limbs`-limb
 /// diagonals at scale `log_scale` and a `ct_limbs`-limb source.
-fn eval_mismatched_sum<BE: crate::test_suite::noise::TestBackend>(
+fn eval_mismatched_sum<BE: crate::test_suite::noise::TestBackend<Rg>, Rg: Ring>(
     params: &TestParams,
     module: &Module<BE>,
     indexes: Vec<i64>,
@@ -1223,7 +1249,7 @@ fn eval_mismatched_sum<BE: crate::test_suite::noise::TestBackend>(
 ) where
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: GLWELinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    Module<BE>: GLWELinearTransformationOps<BE, Rg> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let (babies_a, lt_a) = direct_term(params, module, vec![0, 1], 1, 0, 1);
@@ -1234,25 +1260,25 @@ fn eval_mismatched_sum<BE: crate::test_suite::noise::TestBackend>(
 /// A `Direct` transform over `indexes` (giant steps at those rotations, each
 /// with one diagonal at baby rotation 0), with `pt_limbs`-limb diagonals at
 /// scale `log_scale`, and the cache of baby rotation 0 of a `ct_limbs`-limb source.
-fn direct_term<BE: crate::test_suite::noise::TestBackend>(
+fn direct_term<BE: crate::test_suite::noise::TestBackend<Rg>, Rg: Ring>(
     params: &TestParams,
     module: &Module<BE>,
     indexes: Vec<i64>,
     pt_limbs: usize,
     log_scale: usize,
     ct_limbs: usize,
-) -> (LinearTransformationBabySteps<BE>, LinearTransformationPrepared<BE>)
+) -> (LinearTransformationBabySteps<BE, Rg>, LinearTransformationPrepared<BE, Rg>)
 where
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: GLWELinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    Module<BE>: GLWELinearTransformationOps<BE, Rg> + CnvPVecAlloc<BE>,
 {
     let schedule = LinearTransformationLayout {
         indexes,
         slots: module.n() / 2,
         strategy: LinearTransformationStrategy::Direct,
     };
-    let mut lt: LinearTransformationPrepared<BE> =
+    let mut lt: LinearTransformationPrepared<BE, Rg> =
         LinearTransformation::alloc_prepared(module, &schedule, &limbs_layout(params, module, pt_limbs, 0));
     lt.set_plaintext_meta(crate::layouts::GLWEPlaintextMeta {
         scale: crate::layouts::Scale::Log(log_scale),
@@ -1265,25 +1291,25 @@ where
 /// Evaluates the sum of the terms `(babies[t], lts[t])`, or the first alone if `!sum`, into a
 /// one-limb `res`. There are no keys and no scratch, so a rejection must panic
 /// before any key is read or `res` is written.
-fn eval_without_keys<BE: crate::test_suite::noise::TestBackend>(
+fn eval_without_keys<BE: crate::test_suite::noise::TestBackend<Rg>, Rg: Ring>(
     params: &TestParams,
     module: &Module<BE>,
-    babies: &[&LinearTransformationBabySteps<BE>],
-    lts: &[&LinearTransformationPrepared<BE>],
+    babies: &[&LinearTransformationBabySteps<BE, Rg, CnvPVecLOwned<BE, Rg>>],
+    lts: &[&LinearTransformationPrepared<BE, Rg>],
     sum: bool,
     message: &str,
 ) where
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: GLWELinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    Module<BE>: GLWELinearTransformationOps<BE, Rg> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
-    let keys: HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>> = HashMap::new();
-    let mut res: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&limbs_layout(params, module, 1, 1));
+    let keys: AutomorphismKeys<BE, Rg> = HashMap::new();
+    let mut res: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&limbs_layout(params, module, 1, 1));
     let mut scratch = poisoned_scratch::<BE>(0);
     // Limb offset 1: a one-limb source by a one- or two-limb diagonal gives one product limb either way.
     let cnv_offset = 2 * params.base2k;
-    assert_refusal(message, &mut res, glwe_state::<BE>, |res| {
+    assert_refusal(message, &mut res, glwe_state::<BE, Rg>, |res| {
         if sum {
             module.glwe_linear_transformation_eval_sum_into(cnv_offset, res, babies, lts, &keys, &mut scratch.borrow());
         } else {
@@ -1306,7 +1332,7 @@ fn limbs_layout<BE: Backend>(params: &TestParams, module: &Module<BE>, limbs: us
 /// the dot product of each giant step rotated and summed, alone or in a sum, on both schedules and key radixes. Keys
 /// without a tensor key or with one too narrow for the products, a cache allocated for plaintext diagonals and summed
 /// caches of other widths are refused before anything is written.
-pub fn test_glwe_linear_transformation_ciphertext_diagonals<BE: crate::test_suite::noise::TestBackend>(
+pub fn test_glwe_linear_transformation_ciphertext_diagonals<BE: crate::test_suite::noise::TestBackend<Rg>, Rg: Ring>(
     params: &TestParams,
     module: &Module<BE>,
 ) where
@@ -1314,20 +1340,20 @@ pub fn test_glwe_linear_transformation_ciphertext_diagonals<BE: crate::test_suit
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
     Module<BE>: CnvPVecAlloc<BE>
-        + CnvOps<BE>
-        + GLWEAdd<BE>
-        + GLWEAutomorphism<BE>
-        + GLWEAutomorphismKeyEncryptSk<BE>
-        + GLWEAutomorphismKeyPreparedFactory<BE>
-        + GLWEDecrypt<BE>
-        + GLWEEncryptSk<BE>
-        + GLWELinearTransformationOps<BE>
-        + GLWENoise<BE>
-        + GLWEPreparedTensoring<BE>
-        + GLWETensorKeyEncryptSk<BE>
-        + GLWETensorKeyPreparedFactory<BE>
-        + crate::GLWENormalize<BE>
-        + GLWESecretPreparedFactory<BE>
+        + CnvOps<BE, Rg>
+        + GLWEAdd<BE, Rg>
+        + GLWEAutomorphism<BE, Rg>
+        + GLWEAutomorphismKeyEncryptSk<BE, Rg>
+        + GLWEAutomorphismKeyPreparedFactory<BE, Rg>
+        + GLWEDecrypt<BE, Rg>
+        + GLWEEncryptSk<BE, Rg>
+        + GLWELinearTransformationOps<BE, Rg>
+        + GLWENoise<BE, Rg>
+        + GLWEPreparedTensoring<BE, Rg>
+        + GLWETensorKeyEncryptSk<BE, Rg>
+        + GLWETensorKeyPreparedFactory<BE, Rg>
+        + crate::GLWENormalize<BE, Rg>
+        + GLWESecretPreparedFactory<BE, Rg>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
@@ -1372,11 +1398,11 @@ pub fn test_glwe_linear_transformation_ciphertext_diagonals<BE: crate::test_suit
         layout(LinearTransformationStrategy::BsgsPowersOfTwo { giant_step: 4 }),
         layout(LinearTransformationStrategy::Bsgs { giant_step: n / 2 }),
     ];
-    let cyclotomic_order = poulpy_hal::layouts::CyclotomicOrder::cyclotomic_order(module);
+    let cyclotomic_order = poulpy_hal::layouts::CyclotomicOrder::cyclotomic_order::<Rg>(module);
     let mut elements: Vec<i64> = schedules
         .iter()
         .flat_map(|schedule| schedule.galois_elements(cyclotomic_order))
-        .chain([module.galois_element(4)])
+        .chain([module.galois_element::<Rg>(4)])
         .collect();
     elements.sort_unstable();
     elements.dedup();
@@ -1406,9 +1432,9 @@ pub fn test_glwe_linear_transformation_ciphertext_diagonals<BE: crate::test_suit
     let mut source_xe = Source::new([13u8; 32]);
     let mut source_xa = Source::new([14u8; 32]);
 
-    let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc_from_infos(&ct_infos);
+    let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_secret_alloc_from_infos(&ct_infos);
     module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut source_xs);
-    let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc_from_infos(&sk);
+    let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE, Rg> = module.glwe_secret_prepared_alloc_from_infos(&sk);
     module.glwe_secret_prepare(&mut sk_prepared, &sk);
 
     // The automorphism keys of `elements` and the tensor key, at the layouts given.
@@ -1417,16 +1443,17 @@ pub fn test_glwe_linear_transformation_ciphertext_diagonals<BE: crate::test_suit
                    source_xe: &mut Source,
                    source_xa: &mut Source,
                    scratch: &mut ScratchOwned<BE>| {
-        let mut atk: GLWEAutomorphismKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_automorphism_key_alloc_from_infos(atk_infos);
-        let mut atks: HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>> = HashMap::new();
+        let mut atk: GLWEAutomorphismKey<BE::OwnedBuf, BE::ZnxWord, Rg> =
+            module.glwe_automorphism_key_alloc_from_infos(atk_infos);
+        let mut atks: AutomorphismKeys<BE, Rg> = HashMap::new();
         for &p in &elements {
             module.glwe_automorphism_key_encrypt_sk(&mut atk, p, &sk, source_xe, source_xa, &mut scratch.borrow());
-            let mut prepared: GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE> =
+            let mut prepared: GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE, Rg> =
                 module.glwe_automorphism_key_prepared_alloc_from_infos(atk_infos);
             module.glwe_automorphism_key_prepare(&mut prepared, &atk, &mut scratch.borrow());
             atks.insert(p, prepared);
         }
-        let mut tsk: GLWETensorKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_tensor_key_alloc_from_infos(tsk_infos);
+        let mut tsk: GLWETensorKey<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_tensor_key_alloc_from_infos(tsk_infos);
         module.glwe_tensor_key_encrypt_sk(
             &mut tsk,
             &sk,
@@ -1434,7 +1461,7 @@ pub fn test_glwe_linear_transformation_ciphertext_diagonals<BE: crate::test_suit
             source_xa,
             &mut crate::test_suite::noise::scratch_host_arena(scratch),
         );
-        let mut tsk_prepared: GLWETensorKeyPrepared<BE::OwnedBuf, BE> =
+        let mut tsk_prepared: GLWETensorKeyPrepared<BE::OwnedBuf, BE, Rg> =
             module.glwe_tensor_key_prepared_alloc_from_infos(tsk_infos);
         module.glwe_tensor_key_prepare(&mut tsk_prepared, &tsk, &mut scratch.borrow());
         (atks, tsk_prepared)
@@ -1452,9 +1479,9 @@ pub fn test_glwe_linear_transformation_ciphertext_diagonals<BE: crate::test_suit
 
     let encrypt = |source_xe: &mut Source, source_xa: &mut Source, scratch: &mut ScratchOwned<BE>| {
         let data: Vec<i64> = (0..n).map(|_| (source_xa.next_i64() & 7) - 4).collect();
-        let mut pt: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&ct_infos);
+        let mut pt: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_plaintext_alloc_from_infos(&ct_infos);
         pt.encode_vec_i64(&data, TorusPrecision(scale as u32));
-        let mut ct: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&ct_infos);
+        let mut ct: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&ct_infos);
         module.glwe_encrypt_sk(&mut ct, &pt, &sk_prepared, source_xe, source_xa, &mut scratch.borrow());
         ct
     };
@@ -1479,7 +1506,8 @@ pub fn test_glwe_linear_transformation_ciphertext_diagonals<BE: crate::test_suit
                 .collect();
             lt.giant_steps.push(LinearTransformationGiantStep { rot, diagonals });
         }
-        let mut prepared: LinearTransformationPrepared<BE> = LinearTransformation::alloc_prepared(module, schedule, &ct_infos);
+        let mut prepared: LinearTransformationPrepared<BE, Rg> =
+            LinearTransformation::alloc_prepared(module, schedule, &ct_infos);
         module.glwe_linear_transformation_rhs_prepare(&mut prepared, &lt, &mut scratch.borrow());
         (lt, prepared)
     };
@@ -1487,11 +1515,11 @@ pub fn test_glwe_linear_transformation_ciphertext_diagonals<BE: crate::test_suit
     let dot_bytes = module.glwe_mul_prepared_relinearize_sum_tmp_bytes(&ct_infos, size, size, ct_infos.k, &tsk_infos);
     // Each giant step's dot product at the conversion offset `offset`, rotated and added.
     let dot_products = |offset: usize,
-                        cache: &LinearTransformationBabySteps<BE>,
-                        lt: &LinearTransformationPrepared<BE>,
+                        cache: &LinearTransformationBabySteps<BE, Rg>,
+                        lt: &LinearTransformationPrepared<BE, Rg>,
                         scratch: &mut ScratchOwned<BE>| {
-        let mut want: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&ct_infos);
-        let mut term: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&ct_infos);
+        let mut want: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&ct_infos);
+        let mut term: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&ct_infos);
         let diagonal = lt.first_diagonal_plaintext().unwrap();
         for (g, gs) in lt.giant_steps.iter().enumerate() {
             let out = if g == 0 { &mut want } else { &mut term };
@@ -1509,7 +1537,7 @@ pub fn test_glwe_linear_transformation_ciphertext_diagonals<BE: crate::test_suit
                 &mut poisoned_scratch::<BE>(dot_bytes).borrow(),
             );
             if gs.rot != 0 {
-                let key = atks.get_automorphism_key(module.galois_element(gs.rot), res_k).unwrap();
+                let key = atks.get_automorphism_key(module.galois_element::<Rg>(gs.rot), res_k).unwrap();
                 module.glwe_automorphism_assign(out, &key, &mut scratch.borrow());
             }
             if g > 0 {
@@ -1523,7 +1551,7 @@ pub fn test_glwe_linear_transformation_ciphertext_diagonals<BE: crate::test_suit
         module.glwe_linear_transformation_eval_tmp_bytes(&ct_infos, &ct_infos, &ct_infos, plan, tsk_infos, atk_infos)
     };
     // The destination of the evaluations with other keys and of the refused calls.
-    let mut out: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&ct_infos);
+    let mut out: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&ct_infos);
 
     for (s, schedule) in schedules.iter().enumerate() {
         let plan = schedule.index();
@@ -1531,7 +1559,7 @@ pub fn test_glwe_linear_transformation_ciphertext_diagonals<BE: crate::test_suit
         let mut cache = LinearTransformationBabySteps::alloc_for(module, &lt, &a);
         module.glwe_linear_transformation_baby_steps_prepare(&mut cache, &a, &atks, &mut scratch.borrow());
 
-        let mut have: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&ct_infos);
+        let mut have: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&ct_infos);
         module.glwe_linear_transformation_eval_into(
             scale,
             &mut have,
@@ -1565,7 +1593,7 @@ pub fn test_glwe_linear_transformation_ciphertext_diagonals<BE: crate::test_suit
         let var_key_switch =
             atk_infos.var_noise_keyswitch(&ct_infos, &ct_infos, 0.5, 0.5, 0.0, DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE, 0.0);
         let noise_max = 0.5 * (2.0 * plan.giant_steps.len() as f64 * var_key_switch).log2() + 1.0;
-        let mut pt_want: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&ct_infos);
+        let mut pt_want: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_plaintext_alloc_from_infos(&ct_infos);
         module.glwe_decrypt(&want, &mut pt_want, &sk_prepared, &mut scratch.borrow());
         let noise_have = glwe_noise_checked(module, &have, &pt_want, &sk_prepared, &mut scratch.borrow())
             .std()
@@ -1576,7 +1604,7 @@ pub fn test_glwe_linear_transformation_ciphertext_diagonals<BE: crate::test_suit
         );
 
         // Keys at another radix take the tensor products, whose tensor rounding and relinearization no longer cancel.
-        let var_relinearize = |tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>| {
+        let var_relinearize = |tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE, Rg>| {
             let noise = tsk.noise().unwrap();
             crate::reference::noise::var_noise_glwe_mul_relinearize(
                 tsk,
@@ -1617,7 +1645,7 @@ pub fn test_glwe_linear_transformation_ciphertext_diagonals<BE: crate::test_suit
             // A sum: one term is the single transform, two the sum of the single ones.
             let sum_bytes = module
                 .glwe_linear_transformation_eval_sum_tmp_bytes(&ct_infos, &ct_infos, &ct_infos, &plan, &tsk_infos, &atk_infos);
-            let mut one: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&ct_infos);
+            let mut one: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&ct_infos);
             module.glwe_linear_transformation_eval_sum_into(
                 scale,
                 &mut one,
@@ -1631,7 +1659,7 @@ pub fn test_glwe_linear_transformation_ciphertext_diagonals<BE: crate::test_suit
             let (_, lt_b) = transform(schedule, &mut source_xe, &mut source_xa, &mut scratch);
             let mut cache_b = LinearTransformationBabySteps::alloc_for(module, &lt_b, &b);
             module.glwe_linear_transformation_baby_steps_prepare(&mut cache_b, &b, &atks, &mut scratch.borrow());
-            let mut sum: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&ct_infos);
+            let mut sum: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&ct_infos);
             module.glwe_linear_transformation_eval_sum_into(
                 scale,
                 &mut sum,
@@ -1640,7 +1668,7 @@ pub fn test_glwe_linear_transformation_ciphertext_diagonals<BE: crate::test_suit
                 &keys,
                 &mut poisoned_scratch::<BE>(sum_bytes).borrow(),
             );
-            let mut single_b: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&ct_infos);
+            let mut single_b: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&ct_infos);
             module.glwe_linear_transformation_eval_into(
                 scale,
                 &mut single_b,
@@ -1663,7 +1691,7 @@ pub fn test_glwe_linear_transformation_ciphertext_diagonals<BE: crate::test_suit
             assert_refusal(
                 "get_tensor_key: a map of automorphism keys holds no tensor key",
                 &mut out,
-                glwe_state::<BE>,
+                glwe_state::<BE, Rg>,
                 |res| {
                     module.glwe_linear_transformation_eval_into(
                         scale,
@@ -1680,7 +1708,7 @@ pub fn test_glwe_linear_transformation_ciphertext_diagonals<BE: crate::test_suit
                 dnum: (size - 1).into(),
                 ..tsk_infos
             };
-            let narrow_tsk: GLWETensorKeyPrepared<BE::OwnedBuf, BE> =
+            let narrow_tsk: GLWETensorKeyPrepared<BE::OwnedBuf, BE, Rg> =
                 module.glwe_tensor_key_prepared_alloc_from_infos(&narrow_tsk_infos);
             assert_refuses_uncovered_input("the products took a tensor key one digit short of their width", || {
                 module.glwe_linear_transformation_eval_into(
@@ -1696,7 +1724,7 @@ pub fn test_glwe_linear_transformation_ciphertext_diagonals<BE: crate::test_suit
                 )
             });
             // Ciphertext diagonals into a cache allocated for plaintext ones.
-            let mut proxy: LinearTransformationPrepared<BE> = LinearTransformation::alloc_prepared(
+            let mut proxy: LinearTransformationPrepared<BE, Rg> = LinearTransformation::alloc_prepared(
                 module,
                 schedule,
                 &GLWELayout {
@@ -1707,7 +1735,7 @@ pub fn test_glwe_linear_transformation_ciphertext_diagonals<BE: crate::test_suit
             assert_refusal(
                 "assertion `left == right` failed: linear transformation diagonal rank does not match prepared cache\n  left: 2\n right: 1",
                 &mut proxy,
-                prepared_state::<BE>,
+                prepared_state::<BE, Rg>,
                 |proxy| {
                     module.glwe_linear_transformation_rhs_prepare(
                         proxy,
@@ -1721,7 +1749,7 @@ pub fn test_glwe_linear_transformation_ciphertext_diagonals<BE: crate::test_suit
             assert_refusal(
                 "every baby cache must hold the rank of res and the first cache's width",
                 &mut out,
-                glwe_state::<BE>,
+                glwe_state::<BE, Rg>,
                 |res| {
                     module.glwe_linear_transformation_eval_sum_into(
                         scale,

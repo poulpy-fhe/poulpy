@@ -48,7 +48,7 @@ type Pt<BE> = CKKSPlaintextOwned<BE>;
 type HostPt = CKKSPlaintext<AlignedBuf, i64, Standard>;
 
 /// Plans, keys and fixtures shared by the exact-budget tests.
-pub(super) struct Setup<BE: TestContextBackend<Ring = Standard>> {
+pub(super) struct Setup<BE: TestContextBackend> {
     pub(super) params: CKKSTestParams,
     pub(super) tsk: GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
     pub(super) keys: std::collections::HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>>,
@@ -57,7 +57,7 @@ pub(super) struct Setup<BE: TestContextBackend<Ring = Standard>> {
     pub(super) coeff_meta: CKKSLayout,
 }
 
-impl<BE: TestContextBackend<Ring = Standard>> Setup<BE>
+impl<BE: TestContextBackend> Setup<BE>
 where
     Module<BE>: TestContextModule<BE> + CKKSReductionOps<BE> + GLWEFill<BE>,
 {
@@ -137,7 +137,7 @@ fn check_exact<BE>(
     query: impl Fn(&CKKSCiphertextOwned<BE>) -> usize,
     run: impl Fn(&mut CKKSCiphertextOwned<BE>, &mut ScratchArena<'_, BE>) -> Result<()>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     Module<BE>: TestContextModule<BE>,
 {
     let mut exact = module.ckks_ciphertext_alloc_from_infos(layout);
@@ -147,8 +147,8 @@ fn check_exact<BE>(
     with_scratch::<BE, _>(2 * bytes + (1 << 16), |scratch| run(&mut reference, scratch))
         .unwrap_or_else(|e| panic!("{label} (generous arena): {e:#}"));
     assert_eq!(
-        snapshot::<BE, _>(&exact),
-        snapshot::<BE, _>(&reference),
+        snapshot::<BE, _, Standard>(&exact),
+        snapshot::<BE, _, Standard>(&reference),
         "{label}: the exact-budget run differs"
     );
 }
@@ -161,7 +161,7 @@ fn check_exact_in_place<BE>(
     query: impl Fn(&CKKSCiphertextOwned<BE>) -> usize,
     run: impl Fn(&mut CKKSCiphertextOwned<BE>, &mut ScratchArena<'_, BE>) -> Result<()>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     Module<BE>: TestContextModule<BE>,
 {
     let _ = module;
@@ -172,8 +172,8 @@ fn check_exact_in_place<BE>(
     with_scratch::<BE, _>(2 * bytes + (1 << 16), |scratch| run(&mut reference, scratch))
         .unwrap_or_else(|e| panic!("{label} (generous arena): {e:#}"));
     assert_eq!(
-        snapshot::<BE, _>(&exact),
-        snapshot::<BE, _>(&reference),
+        snapshot::<BE, _, Standard>(&exact),
+        snapshot::<BE, _, Standard>(&reference),
         "{label}: the exact-budget run differs"
     );
 }
@@ -182,7 +182,7 @@ fn check_exact_in_place<BE>(
 /// `powi`, `hypot`, `fma` and `scalbn`.
 pub fn test_exact_scratch_plans<BE, F, E>(base: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     Module<BE>: TestContextModule<BE>
         + GLWEFill<BE>
         + CKKSArithmeticOps<BE>
@@ -335,7 +335,7 @@ where
 /// slot reductions and `softmax`.
 pub fn test_exact_scratch_sign<BE, F, E>(base: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     Module<BE>: TestContextModule<BE>
         + GLWEFill<BE>
         + CKKSSignOps<BE>
@@ -462,7 +462,7 @@ where
 /// `div` and `sqrt`. The in-place forms run at the input's width and one limb and a bit narrower.
 pub fn test_exact_scratch_iterative<BE, F, E>(base: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     Module<BE>: TestContextModule<BE>
         + GLWEFill<BE>
         + CKKSInverseOps<BE>

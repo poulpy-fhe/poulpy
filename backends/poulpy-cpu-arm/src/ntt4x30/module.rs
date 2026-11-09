@@ -5,48 +5,66 @@ use std::ptr::NonNull;
 use poulpy_cpu_portable::kernels::ntt4x30::{
     mat_vec::{BbbMeta, BbcMeta},
     primes::Primes30,
-    vec_znx_dft::{NttHandleFactory, NttHandleProvider, NttPlan, NttPlanSet},
+    vec_znx_dft::{NttHandleFactory, NttHandleProvider, NttMetaProvider, NttPlan, NttPlanSet},
 };
-use poulpy_hal::layouts::{Ring, Standard};
+use poulpy_cpu_portable::kernels::{NttPlans, PerRing, RingFamily};
 use poulpy_hal::{
     AlignedBuf, alloc_aligned,
-    layouts::{Backend, CrtWord, Host},
+    layouts::{Backend, ConjugateInvariant, CrtWord, Host, Ring, Standard},
 };
 
 use super::NTT4x30Neon;
 use crate::neon::ntt4x30_ntt32::{MIN_N, Ntt32Table};
 
 /// Opaque handle for the [`NTT4x30Neon`](super::NTT4x30Neon) backend.
-/// Holds the tables of the packed NTT for every degree up to `n`.
+/// Holds the tables of the packed NTT of both rings for every degree up to `n`, the
+/// conjugate-invariant ones built on first use.
 /// The q120 plans and metadata are kept for the reference bodies that are generic over the q120 layout.
 #[repr(C)]
-pub struct NTT4x30NeonHandle<R: Ring = Standard> {
-    ring_plans: NttPlanSet<Primes30, R>,
+pub struct NTT4x30NeonHandle {
+    ring_plans: PerRing<NttPlans<Primes30>>,
     meta_bbc: BbcMeta<Primes30>,
     meta_bbb: BbbMeta<Primes30>,
     table_cache: ::poulpy_cpu_portable::table_cache::ModuleTableCache,
-    /// Packed NTT tables by `log2(n)`, present from the smallest degree the kernels accept.
-    packed: Vec<Option<Ntt32Table>>,
+    /// Packed NTT tables of each ring by `log2(n)`, present from the smallest degree the kernels accept.
+    packed: PerRing<PackedTables>,
 }
 
-impl<R: Ring> NTT4x30NeonHandle<R> {
-    /// Tables of the packed NTT of degree `n`.
+/// The packed NTT tables of each ring, indexed by `log2(n)`.
+struct PackedTables;
+
+impl RingFamily for PackedTables {
+    type Of<R: Ring> = Vec<Option<Ntt32Table>>;
+}
+
+fn packed_tables<Rg: Ring>(n: usize) -> Vec<Option<Ntt32Table>> {
+    (0..=n.ilog2())
+        .map(|log_n| {
+            let n = 1usize << log_n;
+            (n >= MIN_N).then(|| Ntt32Table::new(n, Rg::CYCLOTOMIC_ORDER_FACTOR == 4))
+        })
+        .collect()
+}
+
+impl NTT4x30NeonHandle {
+    /// Tables of the packed NTT of degree `n` on ring `Rg`.
     ///
     /// Panics below the smallest degree the kernels accept, which is the smallest degree of the backend.
     #[inline]
-    pub(crate) fn packed_table(&self, n: usize) -> &Ntt32Table {
+    pub(crate) fn packed_table<Rg: Ring>(&self, n: usize) -> &Ntt32Table {
         self.packed
+            .on_ring::<Rg>()
             .get(n.trailing_zeros() as usize)
             .and_then(Option::as_ref)
             .expect("no packed NTT table for this degree")
     }
 }
 
-impl<R: Ring> poulpy_hal::execution::ScratchWorkers for NTT4x30Neon<R> {}
+impl poulpy_hal::execution::ScratchWorkers for NTT4x30Neon {}
 
-impl<R: Ring> poulpy_hal::layouts::MaxBase2k for NTT4x30Neon<R> {
-    fn max_base2k(n: usize, products: usize, failure_bits: usize, squaring: bool) -> usize {
-        poulpy_hal::layouts::max_base2k_ntt::<Self>(
+impl poulpy_hal::layouts::MaxBase2k for NTT4x30Neon {
+    fn max_base2k<Rg: Ring>(n: usize, products: usize, failure_bits: usize, squaring: bool) -> usize {
+        poulpy_hal::layouts::max_base2k_ntt::<Self, Rg>(
             <Primes30 as poulpy_hal::layouts::PrimeSet>::LOG_Q_PRODUCT,
             n,
             products,
@@ -55,8 +73,8 @@ impl<R: Ring> poulpy_hal::layouts::MaxBase2k for NTT4x30Neon<R> {
         )
     }
 
-    fn max_base2k_squares(n: usize, products: usize, squares: usize, failure_bits: usize) -> usize {
-        poulpy_hal::layouts::max_base2k_ntt_squares::<Self>(
+    fn max_base2k_squares<Rg: Ring>(n: usize, products: usize, squares: usize, failure_bits: usize) -> usize {
+        poulpy_hal::layouts::max_base2k_ntt_squares::<Self, Rg>(
             <Primes30 as poulpy_hal::layouts::PrimeSet>::LOG_Q_PRODUCT,
             n,
             products,
@@ -66,18 +84,17 @@ impl<R: Ring> poulpy_hal::layouts::MaxBase2k for NTT4x30Neon<R> {
     }
 }
 
-impl<R: Ring> Backend for NTT4x30Neon<R> {
+impl Backend for NTT4x30Neon {
     const DFT_LIMBS_CONTIGUOUS: bool = true;
 
     type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;
-    type Ring = R;
     type DftWord = CrtWord<Primes30, u32>;
     type ZnxWord = i64;
     type BigWord = i128;
     type OwnedBuf = AlignedBuf;
     type BufRef<'a> = &'a [u8];
     type BufMut<'a> = &'a mut [u8];
-    type Handle = NTT4x30NeonHandle<R>;
+    type Handle = NTT4x30NeonHandle;
     type Location = Host;
     fn alloc_bytes(len: usize) -> Self::OwnedBuf {
         alloc_aligned::<u8>(len)
@@ -180,21 +197,12 @@ impl<R: Ring> Backend for NTT4x30Neon<R> {
 /// # Safety
 /// The returned handle must be fully initialized for `n`.
 /// NEON/ASIMD is part of the AArch64 baseline; the runtime check is a no-op.
-unsafe impl<R: Ring> NttHandleFactory for NTT4x30NeonHandle<R>
-where
-    poulpy_cpu_portable::kernels::ntt4x30::vec_znx_dft::NttPlan<Primes30, R>:
-        poulpy_cpu_portable::kernels::ntt4x30::vec_znx_dft::NttPlanNew,
-{
+unsafe impl NttHandleFactory for NTT4x30NeonHandle {
     fn create_ntt_handle(n: usize) -> Self {
         NTT4x30NeonHandle {
             table_cache: Default::default(),
-            packed: (0..=n.ilog2())
-                .map(|log_n| {
-                    let n = 1usize << log_n;
-                    (n >= MIN_N).then(|| Ntt32Table::new(n, R::CYCLOTOMIC_ORDER_FACTOR == 4))
-                })
-                .collect(),
-            ring_plans: NttPlanSet::new(n),
+            packed: PerRing::new(packed_tables::<Standard>(n), n, packed_tables::<ConjugateInvariant>),
+            ring_plans: PerRing::new(NttPlanSet::new(n), n, NttPlanSet::new),
             meta_bbc: BbcMeta::new(),
             meta_bbb: BbbMeta::new(),
         }
@@ -203,12 +211,16 @@ where
 
 /// # Safety
 /// The returned references are valid for the lifetime of `&self`.
-unsafe impl<R: Ring> NttHandleProvider for NTT4x30NeonHandle<R> {
-    type Ring = R;
-    fn get_ntt_plan(&self, n: usize) -> &NttPlan<Primes30, R> {
-        self.ring_plans.for_ring(n)
+unsafe impl<Rg: Ring> NttHandleProvider<Rg> for NTT4x30NeonHandle {
+    fn get_ntt_plan(&self, n: usize) -> &NttPlan<Primes30, Rg> {
+        self.ring_plans.on_ring::<Rg>().for_ring(n)
     }
+}
 
+/// # Safety
+///
+/// The metadata is built with the handle and lives as long as it.
+unsafe impl NttMetaProvider for NTT4x30NeonHandle {
     fn get_bbc_meta(&self) -> &BbcMeta<Primes30> {
         &self.meta_bbc
     }
@@ -218,7 +230,7 @@ unsafe impl<R: Ring> NttHandleProvider for NTT4x30NeonHandle<R> {
     }
 }
 
-unsafe impl<R: Ring> ::poulpy_cpu_portable::table_cache::ModuleTableCacheProvider for NTT4x30NeonHandle<R> {
+unsafe impl ::poulpy_cpu_portable::table_cache::ModuleTableCacheProvider for NTT4x30NeonHandle {
     fn module_plan_cache(&self) -> &::poulpy_cpu_portable::table_cache::ModuleTableCache {
         &self.table_cache
     }

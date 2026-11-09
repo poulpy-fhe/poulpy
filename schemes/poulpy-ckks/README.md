@@ -128,9 +128,10 @@ test. Data-management methods (`.set_meta_checked()`,
 `.to_host_owned()`) are the exception: they live on the struct because they
 are inherently tied to the type, not to the backend.
 
-The ring is a type parameter (`CKKSCiphertext<D, W, R>`), fixed by the
-backend (`Backend::Ring`): a module only accepts operands of its own ring, so
-mixing `Standard` and `ConjugateInvariant` values is a compile error. A standard
+The ring is a type parameter of every operand (`CKKSCiphertext<D, W, Rg>`,
+`Standard` by default). One module serves both rings, and an operation takes
+operands of one ring, so mixing `Standard` and `ConjugateInvariant` values is a
+compile error. A standard
 ciphertext with real slots still belongs to the standard ring; CI encoding
 marks its plaintexts real, and arithmetic and linear transformations
 propagate that claim.
@@ -138,9 +139,8 @@ Plaintexts must have a degree that embeds in the module; scalar
 coefficient banks need the same ring kind but may have arbitrary lengths.
 
 Secret and evaluation keys use the Core key types and preparation methods.
-Prepared keys, diagonals, and baby-step caches carry the backend type, so CI
-and standard prepared objects cannot be mixed. Raw key coefficients have no
-ring tag: callers must prepare them with the backend used to generate them.
+Keys, prepared keys, diagonals, and baby-step caches carry the ring as a type
+parameter, so conjugate-invariant and standard objects cannot be mixed.
 
 ## Crate organization
 
@@ -255,7 +255,7 @@ operations derive their working width from the input ciphertext and the key's
 ## Encoding
 
 Slot and coefficient encoding are backend-resident operations on `Module<BE>`,
-exposed by `api::CKKSEncodingOps<BE, F>`:
+exposed by `api::CKKSEncodingOps<BE, F, Rg>`:
 `ckks_encode_slots_into` / `ckks_decode_slots_into` operate on a
 backend-resident `CKKSEncodingBuffer`, `ckks_encode_coeffs_into` /
 `ckks_decode_coeffs_into` on raw coefficients, and
@@ -269,18 +269,20 @@ use poulpy_ckks::{
     api::CKKSEncodingHostOps,
     layouts::CKKSPlaintextAlloc,
 };
+use poulpy_hal::layouts::Standard;
 
 let m = 8;  // number of complex slots
 let re = vec![0.0f64; m];
 let im = vec![1.0f64; m];
 
-let mut pt = module.ckks_plaintext_alloc_from_slots(m, base2k.into(), 50usize.into());
+let mut pt = module.ckks_plaintext_alloc_from_slots::<Standard>(m, base2k.into(), 50usize.into());
 pt.set_meta_checked(GLWEPlaintextMeta {
     scale: Scale::Log(40),
     slots: SlotsKind::Complex,
     log_sparsity: 0,
 })?;
-// The host adapter needs module.ckks_encoding_host_tmp_bytes(m) scratch bytes.
+// The host adapter needs the scratch bytes of
+// <Module<BE> as CKKSEncodingHostOps<BE, f64>>::ckks_encoding_host_tmp_bytes(&module, m).
 module.ckks_encode_slots_host_into(&mut pt, &re, &im, &mut scratch)?;
 
 let mut re_out = vec![0.0f64; m];
@@ -288,8 +290,8 @@ let mut im_out = vec![0.0f64; m];
 module.ckks_decode_slots_host_into(&pt, &mut re_out, &mut im_out, &mut scratch)?;
 ```
 
-The backend implements `oep::CKKSEncodingImpl<F>` for each supported scalar
-precision: the coefficient codecs `ckks_{quantize,dequantize}_coeffs_into`, the
+The backend implements `oep::CKKSEncodingImpl<F, Rg>` for each supported scalar
+precision and each ring: the coefficient codecs `ckks_{quantize,dequantize}_coeffs_into`, the
 slot transforms `ckks_encoding_buffer_{slots_to_coeffs,coeffs_to_slots}_assign_with_plan` and its
 plan cache. The API operations are derived defaults that check their operands and
 read the cached plans; callers pass only encoding buffers and plaintexts. The canonical slot ordering, normalization,
@@ -431,11 +433,23 @@ Higher-level functionality on top of that foundation:
 
 ## Conjugate invariant CKKS
 
-A CI backend such as `FFT64CIPortable` or `NTT4x30CIPortable` supports `N` real slots
-at degree `N`, constructed with `Module::<Backend>::new(N)`.
-`CKKSModuleInfos::ckks_max_slots` reports the capacity, and
-`ckks_galois_element` provides the identifiers for rotation keys. On both
+Every module also serves the conjugate-invariant ring: an operand of degree `N`
+on `ConjugateInvariant` holds `N` real slots. The ring tables are built on the
+first conjugate-invariant call. `module.ckks_max_slots::<ConjugateInvariant>()`
+reports the capacity, and `module.ckks_galois_element::<ConjugateInvariant>(rotation)`
+provides the identifiers for rotation keys. On both
 rings, shifts wrap modulo the slot count and negative shifts rotate backwards.
+
+An operation takes its ring from its operands. A call without an operand names it:
+allocators and scratch carves as their last generic
+(`module.ckks_ciphertext_alloc_from_infos::<_, ConjugateInvariant>(&infos)`,
+`module.ckks_plaintext_alloc_from_slots::<ConjugateInvariant>(..)`,
+`scratch.take_ckks_ciphertext_scratch::<_, ConjugateInvariant>(&infos, meta)`), prepared
+factories and the queries of an operation trait at trait level
+(`CKKSRightOperandPreparedFactory<BE, Rg>`, `CKKSMulOps<BE, Rg>`). A concrete module
+implements both rings, so it calls such a query in the qualified form,
+`<Module<BE> as CKKSMulOps<BE, ConjugateInvariant>>::ckks_mul_tmp_bytes(&module, ..)`, and
+generic code bounds `Module<BE>: CKKSMulOps<BE, Rg>`.
 
 The slot encoder accepts planar real/imaginary buffers, discards imaginary
 inputs, decodes with zero imaginary parts, and marks encoded plaintexts real.
@@ -443,16 +457,18 @@ Plaintexts use one coefficient per real slot, subject to the backend's
 minimum degree. Raw coefficient encoding uses the invariant basis directly.
 
 Leveled arithmetic, real polynomial evaluation, and real linear
-transformations use the module's invariant ring. Host-side polynomial coefficients are
-encoded with a `Module<HostBytesBackend<ConjugateInvariant>>`. Conjugation, multiplication by
+transformations take conjugate-invariant operands like standard ones. Host-side
+polynomial coefficients are encoded with a `Module<HostBytesBackend>` on the
+conjugate-invariant ring. Conjugation, multiplication by
 `i`, complex polynomial evaluation, DFT, bootstrapping, PaCo and SHIP
-are standard-only: CI backends do not implement them, so using them is a
-compile error. EvalMod runs on both rings; the CI ring refuses `ExpCmplx`. Real linear transformations reject nonzero imaginary diagonals.
+take standard-ring operands only, so calling them on conjugate-invariant
+operands is a compile error. EvalMod runs on both rings; the CI ring refuses
+`ExpCmplx`. Real linear transformations reject nonzero imaginary diagonals.
 Prepared plaintexts, ciphertexts, and evaluation keys must be used with their
-producing ring and backend.
+producing backend, and their type fixes their ring.
 
-Standard modules embed CI ciphertexts of degree `N` into the standard ring of degree
-`2N` and map them back by the relative trace (`CKKSCIRingMapOps`), which CI modules do not implement.
+A module embeds conjugate-invariant ciphertexts of degree `N` into the standard ring
+of degree `2N` and maps them back by the relative trace (`CKKSCIRingMapOps`).
 Each map switches between the CI secret and a standard secret with its key,
 `GLWECIEmbedKey` or `GLWECITraceKey` (`GLWECIKeyEncryptSk`).
 

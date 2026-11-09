@@ -1,5 +1,5 @@
 use poulpy_hal::{
-    layouts::{Backend, Data, ScratchArena},
+    layouts::{Backend, ConjugateInvariant, Data, ScratchArena},
     source::Source,
 };
 
@@ -12,7 +12,7 @@ use crate::{
 };
 
 /// Embedding of a conjugate-invariant GLWE of degree `N` into the standard ring of
-/// degree `2N`, on a standard module of degree at least `2N`.
+/// degree `2N`, on a module of degree at least `2N`.
 ///
 /// The result decrypts under the embedded conjugate-invariant secret
 /// ([`GLWESecretCIEmbed`]).
@@ -23,11 +23,11 @@ pub trait GLWECIEmbed<BE: Backend> {
     fn glwe_ci_embed<R, A>(&self, res: &mut R, a: &A)
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos;
+        A: GLWEToBackendRef<BE, ConjugateInvariant> + GLWEInfos;
 }
 
 /// Embedding of a conjugate-invariant secret of degree `N` into the standard secret of degree `2N`,
-/// on a standard module of degree at least `2N`.
+/// on a module of degree at least `2N`.
 pub trait GLWESecretCIEmbed<BE: Backend> {
     /// Writes into `res` the embedding of the conjugate-invariant secret `src` of degree `N`:
     /// the standard secret of degree `2N` under which embedded ciphertexts decrypt; the module
@@ -42,7 +42,7 @@ pub trait GLWESecretCIEmbed<BE: Backend> {
     fn glwe_secret_ci_embed<R, S>(&self, res: &mut R, src: &S)
     where
         R: GLWESecretToBackendMut<BE> + GetDistributionMut,
-        S: GLWESecretToBackendRef<BE>;
+        S: GLWESecretToBackendRef<BE, ConjugateInvariant>;
 }
 
 /// Switch of a GLWE between ring degrees that divide one another, on a module of
@@ -58,7 +58,7 @@ pub trait GLWESwitchDegree<BE: Backend> {
 }
 
 /// Relative trace of a standard GLWE of degree `2N` onto the conjugate-invariant ring of
-/// degree `N`, on a standard module of degree at least `2N`.
+/// degree `N`, on a module of degree at least `2N`.
 ///
 /// `a` must decrypt under the embedded conjugate-invariant secret; the result
 /// decrypts under the conjugate-invariant secret to `m(X) + m(X^-1)`.
@@ -72,12 +72,12 @@ pub trait GLWECITrace<BE: Backend> {
     /// normalized to the layout of `res`.
     fn glwe_ci_trace<R, A>(&self, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
+        R: GLWEToBackendMut<BE, ConjugateInvariant> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos;
 }
 
 /// Encryption of the switching keys between the embedding of a conjugate-invariant secret `sk_ci`
-/// of degree `N` and a standard secret `sk` of degree `2N`, on a standard module of degree at least
+/// of degree `N` and a standard secret `sk` of degree `2N`, on a module of degree at least
 /// `2N`; `sk_ci` is embedded into the scratch, which is wiped over
 /// [`glwe_ci_key_encrypt_sk_tmp_bytes`](Self::glwe_ci_key_encrypt_sk_tmp_bytes) before returning.
 #[allow(clippy::too_many_arguments)]
@@ -105,7 +105,7 @@ pub trait GLWECIKeyEncryptSk<BE: Backend> {
     ) where
         D: Data,
         GLWECIEmbedKey<D, BE::ZnxWord>: GGLWEToBackendMut<BE>,
-        S1: GLWESecretToBackendRef<BE>,
+        S1: GLWESecretToBackendRef<BE, ConjugateInvariant>,
         S2: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos;
 
     /// Encrypts the switch from `sk` to the embedded `sk_ci`.
@@ -125,6 +125,6 @@ pub trait GLWECIKeyEncryptSk<BE: Backend> {
     ) where
         D: Data,
         GLWECITraceKey<D, BE::ZnxWord>: GGLWEToBackendMut<BE>,
-        S1: GLWESecretToBackendRef<BE> + GetDistribution,
+        S1: GLWESecretToBackendRef<BE, ConjugateInvariant> + GetDistribution,
         S2: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos;
 }

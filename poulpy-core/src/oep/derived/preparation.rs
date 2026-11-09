@@ -1,6 +1,6 @@
 //! Preparations of key wrappers composed from GGLWE and GLWE switching-key preparation, and the
 //! zeroing of a prepared GGSW through the selected `vmp_zero`.
-use poulpy_hal::layouts::{Data, Module, ScratchArena};
+use poulpy_hal::layouts::{Data, Module, Ring, ScratchArena};
 
 use crate::{
     layouts::{
@@ -10,23 +10,23 @@ use crate::{
     oep::PreparationImpl,
 };
 
-pub(crate) fn glwe_automorphism_key_prepare_tmp_bytes_derived<BE, A>(module: &Module<BE>, infos: &A) -> usize
+pub(crate) fn glwe_automorphism_key_prepare_tmp_bytes_derived<BE, A, Rg: Ring>(module: &Module<BE>, infos: &A) -> usize
 where
-    BE: PreparationImpl,
+    BE: PreparationImpl<Rg>,
     A: GGLWEInfos,
 {
     BE::gglwe_prepare_tmp_bytes(module, infos)
 }
 
-pub(crate) fn glwe_automorphism_key_prepare_derived<BE, R, O>(
+pub(crate) fn glwe_automorphism_key_prepare_derived<BE, R, O, Rg: Ring>(
     module: &Module<BE>,
     res: &mut R,
     other: &O,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: PreparationImpl,
-    R: GGLWEPreparedToBackendMut<BE> + SetGaloisElement,
-    O: GGLWEToBackendRef<BE> + GetGaloisElement,
+    BE: PreparationImpl<Rg>,
+    R: GGLWEPreparedToBackendMut<BE, Rg> + SetGaloisElement,
+    O: GGLWEToBackendRef<BE, Rg> + GetGaloisElement,
 {
     let tmp_bytes = {
         let res_infos = res.to_backend_mut();
@@ -42,23 +42,23 @@ pub(crate) fn glwe_automorphism_key_prepare_derived<BE, R, O>(
     res.set_p(other.p());
 }
 
-pub(crate) fn glwe_switching_key_prepare_tmp_bytes_derived<BE, A>(module: &Module<BE>, infos: &A) -> usize
+pub(crate) fn glwe_switching_key_prepare_tmp_bytes_derived<BE, A, Rg: Ring>(module: &Module<BE>, infos: &A) -> usize
 where
-    BE: PreparationImpl,
+    BE: PreparationImpl<Rg>,
     A: GGLWEInfos,
 {
     BE::gglwe_prepare_tmp_bytes(module, infos)
 }
 
-pub(crate) fn glwe_switching_key_prepare_derived<BE, R, O>(
+pub(crate) fn glwe_switching_key_prepare_derived<BE, R, O, Rg: Ring>(
     module: &Module<BE>,
     res: &mut R,
     other: &O,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: PreparationImpl,
-    R: GGLWEPreparedToBackendMut<BE> + GLWESwitchingKeyDegreesMut,
-    O: GGLWEToBackendRef<BE> + GLWESwitchingKeyDegrees,
+    BE: PreparationImpl<Rg>,
+    R: GGLWEPreparedToBackendMut<BE, Rg> + GLWESwitchingKeyDegreesMut,
+    O: GGLWEToBackendRef<BE, Rg> + GLWESwitchingKeyDegrees,
 {
     let tmp_bytes = {
         let res_infos = res.to_backend_mut();
@@ -75,23 +75,23 @@ pub(crate) fn glwe_switching_key_prepare_derived<BE, R, O>(
     *res.output_degree() = *other.output_degree();
 }
 
-pub(crate) fn glwe_tensor_key_prepare_tmp_bytes_derived<BE, A>(module: &Module<BE>, infos: &A) -> usize
+pub(crate) fn glwe_tensor_key_prepare_tmp_bytes_derived<BE, A, Rg: Ring>(module: &Module<BE>, infos: &A) -> usize
 where
-    BE: PreparationImpl,
+    BE: PreparationImpl<Rg>,
     A: GGLWEInfos,
 {
     BE::gglwe_prepare_tmp_bytes(module, infos)
 }
 
-pub(crate) fn glwe_tensor_key_prepare_derived<BE, R, O>(
+pub(crate) fn glwe_tensor_key_prepare_derived<BE, R, O, Rg: Ring>(
     module: &Module<BE>,
     res: &mut R,
     other: &O,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: PreparationImpl,
-    R: GGLWEPreparedToBackendMut<BE>,
-    O: GGLWEToBackendRef<BE>,
+    BE: PreparationImpl<Rg>,
+    R: GGLWEPreparedToBackendMut<BE, Rg>,
+    O: GGLWEToBackendRef<BE, Rg>,
 {
     let tmp_bytes = {
         let res_infos = res.to_backend_mut();
@@ -106,23 +106,23 @@ pub(crate) fn glwe_tensor_key_prepare_derived<BE, R, O>(
     BE::gglwe_prepare(module, res, other, scratch);
 }
 
-pub(crate) fn glwe_to_lwe_key_prepare_tmp_bytes_derived<BE, A>(module: &Module<BE>, infos: &A) -> usize
+pub(crate) fn glwe_to_lwe_key_prepare_tmp_bytes_derived<BE, A, Rg: Ring>(module: &Module<BE>, infos: &A) -> usize
 where
-    BE: PreparationImpl,
+    BE: PreparationImpl<Rg>,
     A: GGLWEInfos,
 {
     BE::glwe_switching_key_prepare_tmp_bytes(module, infos)
 }
 
-pub(crate) fn glwe_to_lwe_key_prepare_derived<BE, R, O>(
+pub(crate) fn glwe_to_lwe_key_prepare_derived<BE, R, O, Rg: Ring>(
     module: &Module<BE>,
     res: &mut R,
     other: &O,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: PreparationImpl,
-    R: GGLWEPreparedToBackendMut<BE> + GLWESwitchingKeyDegreesMut,
-    O: GGLWEToBackendRef<BE> + GLWESwitchingKeyDegrees,
+    BE: PreparationImpl<Rg>,
+    R: GGLWEPreparedToBackendMut<BE, Rg> + GLWESwitchingKeyDegreesMut,
+    O: GGLWEToBackendRef<BE, Rg> + GLWESwitchingKeyDegrees,
 {
     let tmp_bytes = {
         let res_infos = res.to_backend_mut();
@@ -137,23 +137,23 @@ pub(crate) fn glwe_to_lwe_key_prepare_derived<BE, R, O>(
     BE::glwe_switching_key_prepare(module, res, other, scratch);
 }
 
-pub(crate) fn lwe_switching_key_prepare_tmp_bytes_derived<BE, A>(module: &Module<BE>, infos: &A) -> usize
+pub(crate) fn lwe_switching_key_prepare_tmp_bytes_derived<BE, A, Rg: Ring>(module: &Module<BE>, infos: &A) -> usize
 where
-    BE: PreparationImpl,
+    BE: PreparationImpl<Rg>,
     A: GGLWEInfos,
 {
     BE::glwe_switching_key_prepare_tmp_bytes(module, infos)
 }
 
-pub(crate) fn lwe_switching_key_prepare_derived<BE, R, O>(
+pub(crate) fn lwe_switching_key_prepare_derived<BE, R, O, Rg: Ring>(
     module: &Module<BE>,
     res: &mut R,
     other: &O,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: PreparationImpl,
-    R: GGLWEPreparedToBackendMut<BE> + GLWESwitchingKeyDegreesMut,
-    O: GGLWEToBackendRef<BE> + GLWESwitchingKeyDegrees,
+    BE: PreparationImpl<Rg>,
+    R: GGLWEPreparedToBackendMut<BE, Rg> + GLWESwitchingKeyDegreesMut,
+    O: GGLWEToBackendRef<BE, Rg> + GLWESwitchingKeyDegrees,
 {
     let tmp_bytes = {
         let res_infos = res.to_backend_mut();
@@ -168,23 +168,23 @@ pub(crate) fn lwe_switching_key_prepare_derived<BE, R, O>(
     BE::glwe_switching_key_prepare(module, res, other, scratch);
 }
 
-pub(crate) fn lwe_to_glwe_key_prepare_tmp_bytes_derived<BE, A>(module: &Module<BE>, infos: &A) -> usize
+pub(crate) fn lwe_to_glwe_key_prepare_tmp_bytes_derived<BE, A, Rg: Ring>(module: &Module<BE>, infos: &A) -> usize
 where
-    BE: PreparationImpl,
+    BE: PreparationImpl<Rg>,
     A: GGLWEInfos,
 {
     BE::glwe_switching_key_prepare_tmp_bytes(module, infos)
 }
 
-pub(crate) fn lwe_to_glwe_key_prepare_derived<BE, R, O>(
+pub(crate) fn lwe_to_glwe_key_prepare_derived<BE, R, O, Rg: Ring>(
     module: &Module<BE>,
     res: &mut R,
     other: &O,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: PreparationImpl,
-    R: GGLWEPreparedToBackendMut<BE> + GLWESwitchingKeyDegreesMut,
-    O: GGLWEToBackendRef<BE> + GLWESwitchingKeyDegrees,
+    BE: PreparationImpl<Rg>,
+    R: GGLWEPreparedToBackendMut<BE, Rg> + GLWESwitchingKeyDegreesMut,
+    O: GGLWEToBackendRef<BE, Rg> + GLWESwitchingKeyDegrees,
 {
     let tmp_bytes = {
         let res_infos = res.to_backend_mut();
@@ -199,32 +199,32 @@ pub(crate) fn lwe_to_glwe_key_prepare_derived<BE, R, O>(
     BE::glwe_switching_key_prepare(module, res, other, scratch);
 }
 
-pub(crate) fn glwe_ci_key_prepare_tmp_bytes_derived<BE, A>(module: &Module<BE>, infos: &A) -> usize
+pub(crate) fn glwe_ci_key_prepare_tmp_bytes_derived<BE, A, Rg: Ring>(module: &Module<BE>, infos: &A) -> usize
 where
-    BE: PreparationImpl,
+    BE: PreparationImpl<Rg>,
     A: GGLWEInfos,
 {
     BE::glwe_switching_key_prepare_tmp_bytes(module, infos)
 }
 
-pub(crate) fn glwe_ci_key_prepare_derived<BE, DR, O, M>(
+pub(crate) fn glwe_ci_key_prepare_derived<BE, DR, O, M, Rg: Ring>(
     module: &Module<BE>,
-    res: &mut GLWECIKeyPrepared<DR, BE, M>,
+    res: &mut GLWECIKeyPrepared<DR, BE, M, Rg>,
     other: &O,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: PreparationImpl,
+    BE: PreparationImpl<Rg>,
     DR: Data,
-    GLWESwitchingKeyPrepared<DR, BE>: GGLWEPreparedToBackendMut<BE>,
-    O: GGLWEToBackendRef<BE> + GLWESwitchingKeyDegrees,
+    GLWESwitchingKeyPrepared<DR, BE, Rg>: GGLWEPreparedToBackendMut<BE, Rg>,
+    O: GGLWEToBackendRef<BE, Rg> + GLWESwitchingKeyDegrees,
 {
     BE::glwe_switching_key_prepare(module, &mut res.0, other, scratch);
 }
 
-pub(crate) fn ggsw_prepared_zero_derived<BE, R>(module: &Module<BE>, res: &mut R)
+pub(crate) fn ggsw_prepared_zero_derived<BE, R, Rg: Ring>(module: &Module<BE>, res: &mut R)
 where
-    BE: PreparationImpl,
-    R: GGSWPreparedToBackendMut<BE>,
+    BE: PreparationImpl<Rg>,
+    R: GGSWPreparedToBackendMut<BE, Rg>,
 {
     res.set_noise(None);
     let mut res = res.to_backend_mut();

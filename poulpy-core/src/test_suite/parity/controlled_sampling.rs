@@ -25,26 +25,26 @@ where
 {
     fn scalar(&self, n: usize, dist: Distribution, seed: [u8; 32]) -> Vec<i64> {
         let mut out = self.0.scalar_znx_alloc(n, 1);
-        B::scalar_znx_fill_distribution(&self.0, &mut scalar_znx_backend_mut::<B>(&mut out), 0, dist, seed);
-        download_scalar_znx::<B>(&out).at(0, 0).to_vec()
+        B::scalar_znx_fill_distribution(&self.0, &mut scalar_znx_backend_mut::<B, Standard>(&mut out), 0, dist, seed);
+        download_scalar_znx::<B, Standard>(&out).at(0, 0).to_vec()
     }
     fn noise(&self, n: usize, base2k: usize, k: usize, noise: Noise, seed: [u8; 32], big: bool) -> Vec<i64> {
         let size = k.div_ceil(base2k);
         let mut out = self.0.vec_znx_alloc(n, 1, size);
-        self.0.vec_znx_zero(&mut vec_znx_backend_mut::<B>(&mut out), 0);
+        self.0.vec_znx_zero(&mut vec_znx_backend_mut::<B, Standard>(&mut out), 0);
         if big {
             let mut wide = self.0.vec_znx_big_alloc(n, 1, size);
             // From-small initializes every limb in the backend's own representation.
             self.0.vec_znx_big_from_small(
                 &mut wide.to_backend_mut(),
                 0,
-                &VecZnxToBackendRef::<B>::to_backend_ref(&out),
+                &VecZnxToBackendRef::<B, Standard>::to_backend_ref(&out),
                 0,
             );
             B::vec_znx_big_add_noise(&self.0, base2k, k, &mut wide.to_backend_mut(), 0, noise, seed);
             let mut scratch = ScratchOwned::<B>::alloc(self.0.vec_znx_big_normalize_tmp_bytes());
             self.0.vec_znx_big_normalize(
-                &mut VecZnxToBackendMut::<B>::to_backend_mut(&mut out),
+                &mut VecZnxToBackendMut::<B, Standard>::to_backend_mut(&mut out),
                 base2k,
                 size * base2k,
                 0,
@@ -55,9 +55,17 @@ where
                 &mut scratch.borrow(),
             );
         } else {
-            B::vec_znx_add_noise(&self.0, base2k, k, &mut vec_znx_backend_mut::<B>(&mut out), 0, noise, seed);
+            B::vec_znx_add_noise(
+                &self.0,
+                base2k,
+                k,
+                &mut vec_znx_backend_mut::<B, Standard>(&mut out),
+                0,
+                noise,
+                seed,
+            );
         }
-        let host = download_vec_znx::<B>(&out);
+        let host = download_vec_znx::<B, Standard>(&out);
         (0..size).flat_map(|limb| host.at(0, limb).iter().copied()).collect()
     }
 }
@@ -162,7 +170,7 @@ pub fn add_noise_samples<R: ZnxViewMut>(
 ///
 /// `params` is optional and defaults to degree 256 with radix 12. Callers may
 /// select another supported degree; both modules use the supplied module size.
-/// Both backends are on the standard ring, which the LWE-matrix decryption case
+/// The suite runs on standard-ring operands, which the LWE-matrix decryption case
 /// needs for `glwe_expand_lwe_matrix`.
 #[macro_export]
 macro_rules! core_encryption_parity_test_suite {
@@ -184,12 +192,18 @@ macro_rules! core_encryption_parity_test_suite {
         mod $name {
             #[test]
             fn glwe_encrypt_degree_mismatch() {
-                $crate::test_suite::encryption::test_glwe_encrypt_degree_mismatch::<$backend_test>();
+                $crate::test_suite::encryption::test_glwe_encrypt_degree_mismatch::<
+                    $backend_test,
+                    ::poulpy_hal::layouts::Standard,
+                >();
             }
 
             #[test]
             fn glwe_decrypt_degree_mismatch() {
-                $crate::test_suite::decryption::test_glwe_decrypt_degree_mismatch::<$backend_test>();
+                $crate::test_suite::decryption::test_glwe_decrypt_degree_mismatch::<
+                    $backend_test,
+                    ::poulpy_hal::layouts::Standard,
+                >();
             }
 
             #[test]
@@ -206,7 +220,7 @@ macro_rules! core_encryption_parity_test_suite {
                     } as u64),
                     |tested| {
                         let reference = Module::<$backend_ref>::new(params.size as u64);
-                        test_glwe_encryption_parity(
+                        test_glwe_encryption_parity::<_, _, ::poulpy_hal::layouts::Standard>(
                             &params,
                             &ParityShapes::default(),
                             &reference,
@@ -229,7 +243,7 @@ macro_rules! core_encryption_parity_test_suite {
                     } as u64),
                     |tested| {
                         let reference = Module::<$backend_ref>::new(params.size as u64);
-                        test_key_encryption_parity(
+                        test_key_encryption_parity::<_, _, ::poulpy_hal::layouts::Standard>(
                             &params,
                             &ParityShapes::default(),
                             &reference,
@@ -252,7 +266,7 @@ macro_rules! core_encryption_parity_test_suite {
                     } as u64),
                     |tested| {
                         let reference = Module::<$backend_ref>::new(params.size as u64);
-                        test_lwe_encryption_parity(
+                        test_lwe_encryption_parity::<_, _, ::poulpy_hal::layouts::Standard>(
                             &params,
                             &ParityShapes::default(),
                             &reference,
@@ -275,12 +289,7 @@ macro_rules! core_encryption_parity_test_suite {
                     } as u64),
                     |tested| {
                         let reference = Module::<$backend_ref>::new(params.size as u64);
-                        test_lwe_matrix_decrypt_parity(
-                            &params,
-                            &ParityShapes::default(),
-                            &reference,
-                            tested,
-                        );
+                        test_lwe_matrix_decrypt_parity(&params, &ParityShapes::default(), &reference, tested);
                     },
                 );
             }

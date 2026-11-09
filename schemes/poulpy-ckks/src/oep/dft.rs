@@ -236,7 +236,7 @@ pub unsafe trait CKKSDFTImpl:
 /// Implementations reproduce the bodies their methods document bit for bit, report for each
 /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait CKKSDFTMatrixImpl<F: CKKSEncodingScalar>: Backend<Ring = poulpy_hal::layouts::Standard> {
+pub unsafe trait CKKSDFTMatrixImpl<F: CKKSEncodingScalar>: Backend {
     /// Scratch bound of [`Self::ckks_dft_matrix_new`]; may report less than the reference, never less than the body takes.
     /// The reference reports the largest slot encoding of one factor's diagonals.
     fn ckks_dft_matrix_new_tmp_bytes<Dir, Fmt>(module: &Module<Self>, literal: &DFTPlan) -> Result<usize>
@@ -340,7 +340,7 @@ macro_rules! impl_ckks_dft_matrix_reference_full {
                 Dir: $crate::layouts::DftDirection,
                 Fmt: $crate::layouts::DftFormat,
             {
-                <::poulpy_hal::layouts::Module<Self> as $crate::reference::dft::CKKSDFTMatrixReference<Self, F>>::ckks_dft_matrix_new_tmp_bytes_reference::<Dir, Fmt>(
+                $crate::reference::dft::CKKSDFTMatrixReference::<Self, F>::ckks_dft_matrix_new_tmp_bytes_reference::<Dir, Fmt>(
                     module, literal,
                 )
             }
@@ -355,7 +355,7 @@ macro_rules! impl_ckks_dft_matrix_reference_full {
                 Dir: $crate::layouts::DftDirection,
                 Fmt: $crate::layouts::DftFormat,
             {
-                <::poulpy_hal::layouts::Module<Self> as $crate::reference::dft::CKKSDFTMatrixReference<Self, F>>::ckks_dft_matrix_new_reference::<Dir, Fmt>(
+                $crate::reference::dft::CKKSDFTMatrixReference::<Self, F>::ckks_dft_matrix_new_reference::<Dir, Fmt>(
                     module, base2k, literal, scratch,
                 )
             }

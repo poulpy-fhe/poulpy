@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 
 use poulpy_hal::{
     api::{VecZnxDftAlloc, VecZnxDftBytesOf, VmpPMatAlloc, VmpPMatBytesOf},
-    layouts::{Backend, Data, PrepareHint, ScratchArena},
+    layouts::{Backend, Data, PrepareHint, Ring, ScratchArena, Standard},
 };
 
 use crate::{
@@ -21,12 +21,12 @@ use crate::{
 };
 
 /// Trait for allocating and preparing DFT-domain GLWE ciphertexts.
-pub trait GLWEPreparedFactory<BE: Backend>
+pub trait GLWEPreparedFactory<BE: Backend, Rg: Ring = Standard>
 where
     Self: GetDegree + VecZnxDftAlloc<BE> + VecZnxDftBytesOf,
 {
     /// Allocates a new prepared GLWE with the given parameters.
-    fn glwe_prepared_alloc(&self, base2k: Base2K, k: TorusPrecision, rank: Rank) -> GLWEPrepared<BE::OwnedBuf, BE> {
+    fn glwe_prepared_alloc(&self, base2k: Base2K, k: TorusPrecision, rank: Rank) -> GLWEPrepared<BE::OwnedBuf, BE, Rg> {
         self.glwe_prepared_alloc_from_infos(&GLWELayout {
             n: self.ring_degree(),
             base2k,
@@ -35,7 +35,7 @@ where
         })
     }
 
-    fn glwe_prepared_alloc_from_infos<A>(&self, infos: &A) -> GLWEPrepared<BE::OwnedBuf, BE>
+    fn glwe_prepared_alloc_from_infos<A>(&self, infos: &A) -> GLWEPrepared<BE::OwnedBuf, BE, Rg>
     where
         A: GLWEInfos,
     {
@@ -71,12 +71,12 @@ where
 
     fn glwe_prepare<R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWEPreparedToBackendMut<BE>,
-        O: GLWEToBackendRef<BE> + GLWEInfos;
+        R: GLWEPreparedToBackendMut<BE, Rg>,
+        O: GLWEToBackendRef<BE, Rg> + GLWEInfos;
 }
 
 /// Factory trait for allocating and preparing [`GGLWEPrepared`] instances.
-pub trait GGLWEPreparedFactory<BE: Backend>
+pub trait GGLWEPreparedFactory<BE: Backend, Rg: Ring = Standard>
 where
     Self: GetDegree + VmpPMatAlloc<BE> + VmpPMatBytesOf,
 {
@@ -89,7 +89,7 @@ where
         k_aux: TorusPrecision,
         rank_in: Rank,
         rank_out: Rank,
-    ) -> GGLWEPrepared<BE::OwnedBuf, BE> {
+    ) -> GGLWEPrepared<BE::OwnedBuf, BE, Rg> {
         self.gglwe_prepared_alloc_from_infos(&GGLWELayout {
             n: self.ring_degree(),
             base2k,
@@ -104,7 +104,7 @@ where
     }
 
     /// Allocates a new [`GGLWEPrepared`] matching the parameters of `infos`.
-    fn gglwe_prepared_alloc_from_infos<A>(&self, infos: &A) -> GGLWEPrepared<BE::OwnedBuf, BE>
+    fn gglwe_prepared_alloc_from_infos<A>(&self, infos: &A) -> GGLWEPrepared<BE::OwnedBuf, BE, Rg>
     where
         A: GGLWEInfos,
     {
@@ -176,17 +176,17 @@ where
     where
         A: GGLWEInfos;
 
-    /// Transforms a standard [`GGLWE`](crate::layouts::GGLWE) into the DFT domain, writing the result into `res`.
+    /// Transforms an unprepared [`GGLWE`](crate::layouts::GGLWE) into the DFT domain, writing the result into `res`.
     ///
     /// Both `res` and `other` must share the same ring degree, base2k, precision, and digit width.
     fn gglwe_prepare<R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GGLWEPreparedToBackendMut<BE>,
-        O: GGLWEToBackendRef<BE>;
+        R: GGLWEPreparedToBackendMut<BE, Rg>,
+        O: GGLWEToBackendRef<BE, Rg>;
 }
 
 /// Trait for allocating and preparing DFT-domain GGSW ciphertexts.
-pub trait GGSWPreparedFactory<BE: Backend>
+pub trait GGSWPreparedFactory<BE: Backend, Rg: Ring = Standard>
 where
     Self: GetDegree + VmpPMatAlloc<BE> + VmpPMatBytesOf,
 {
@@ -198,7 +198,7 @@ where
         k_digit: TorusPrecision,
         k_aux: TorusPrecision,
         rank: Rank,
-    ) -> GGSWPrepared<BE::OwnedBuf, BE> {
+    ) -> GGSWPrepared<BE::OwnedBuf, BE, Rg> {
         self.ggsw_prepared_alloc_from_infos(&GGSWLayout {
             n: self.ring_degree(),
             base2k,
@@ -209,7 +209,7 @@ where
         })
     }
 
-    fn ggsw_prepared_alloc_from_infos<A>(&self, infos: &A) -> GGSWPrepared<BE::OwnedBuf, BE>
+    fn ggsw_prepared_alloc_from_infos<A>(&self, infos: &A) -> GGSWPrepared<BE::OwnedBuf, BE, Rg>
     where
         A: GGSWInfos,
     {
@@ -271,15 +271,15 @@ where
 
     fn ggsw_prepare<R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GGSWPreparedToBackendMut<BE>,
-        O: GGSWToBackendRef<BE>;
+        R: GGSWPreparedToBackendMut<BE, Rg>,
+        O: GGSWToBackendRef<BE, Rg>;
 
     fn ggsw_prepared_zero<R>(&self, res: &mut R)
     where
-        R: GGSWPreparedToBackendMut<BE>;
+        R: GGSWPreparedToBackendMut<BE, Rg>;
 }
 
-pub trait GLWEPublicKeyPreparedFactory<BE: Backend>
+pub trait GLWEPublicKeyPreparedFactory<BE: Backend, Rg: Ring = Standard>
 where
     Self: GetDegree + VmpPMatAlloc<BE> + VmpPMatBytesOf,
 {
@@ -288,7 +288,7 @@ where
         base2k: Base2K,
         k: TorusPrecision,
         rank: Rank,
-    ) -> GLWEPublicKeyPrepared<BE::OwnedBuf, BE> {
+    ) -> GLWEPublicKeyPrepared<BE::OwnedBuf, BE, Rg> {
         self.glwe_public_key_prepared_alloc_from_infos(&GLWELayout {
             n: self.ring_degree(),
             base2k,
@@ -297,7 +297,7 @@ where
         })
     }
 
-    fn glwe_public_key_prepared_alloc_from_infos<A>(&self, infos: &A) -> GLWEPublicKeyPrepared<BE::OwnedBuf, BE>
+    fn glwe_public_key_prepared_alloc_from_infos<A>(&self, infos: &A) -> GLWEPublicKeyPrepared<BE::OwnedBuf, BE, Rg>
     where
         A: GLWEInfos,
     {
@@ -337,13 +337,13 @@ where
 
     fn glwe_public_key_prepare<R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWEPublicKeyPreparedToBackendMut<BE> + GetDistributionMut,
-        O: GLWEPublicKeyToBackendRef<BE> + GetDistribution;
+        R: GLWEPublicKeyPreparedToBackendMut<BE, Rg> + GetDistributionMut,
+        O: GLWEPublicKeyToBackendRef<BE, Rg> + GetDistribution;
 }
 
-pub trait GLWEAutomorphismKeyPreparedFactory<BE: Backend>
+pub trait GLWEAutomorphismKeyPreparedFactory<BE: Backend, Rg: Ring = Standard>
 where
-    Self: GGLWEPreparedFactory<BE>,
+    Self: GGLWEPreparedFactory<BE, Rg>,
 {
     fn glwe_automorphism_key_prepared_alloc(
         &self,
@@ -352,14 +352,14 @@ where
         k_digit: TorusPrecision,
         k_aux: TorusPrecision,
         rank: Rank,
-    ) -> GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE> {
-        GLWEAutomorphismKeyPrepared::<BE::OwnedBuf, BE> {
+    ) -> GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE, Rg> {
+        GLWEAutomorphismKeyPrepared::<BE::OwnedBuf, BE, Rg> {
             key: self.gglwe_prepared_alloc(base2k, dnum, k_digit, k_aux, rank, rank),
             p: 0,
         }
     }
 
-    fn glwe_automorphism_key_prepared_alloc_from_infos<A>(&self, infos: &A) -> GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>
+    fn glwe_automorphism_key_prepared_alloc_from_infos<A>(&self, infos: &A) -> GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE, Rg>
     where
         A: GGLWEInfos,
     {
@@ -368,7 +368,7 @@ where
             infos.rank_out(),
             "rank_in != rank_out is not supported for AutomorphismKeyPrepared"
         );
-        GLWEAutomorphismKeyPrepared::<BE::OwnedBuf, BE> {
+        GLWEAutomorphismKeyPrepared::<BE::OwnedBuf, BE, Rg> {
             key: self.gglwe_prepared_alloc_from_infos(infos),
             p: 0,
         }
@@ -403,13 +403,13 @@ where
 
     fn glwe_automorphism_key_prepare<R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GGLWEPreparedToBackendMut<BE> + SetGaloisElement,
-        O: GGLWEToBackendRef<BE> + GetGaloisElement;
+        R: GGLWEPreparedToBackendMut<BE, Rg> + SetGaloisElement,
+        O: GGLWEToBackendRef<BE, Rg> + GetGaloisElement;
 }
 
-pub trait GLWESwitchingKeyPreparedFactory<BE: Backend>
+pub trait GLWESwitchingKeyPreparedFactory<BE: Backend, Rg: Ring = Standard>
 where
-    Self: GGLWEPreparedFactory<BE>,
+    Self: GGLWEPreparedFactory<BE, Rg>,
 {
     fn glwe_switching_key_prepared_alloc(
         &self,
@@ -419,19 +419,19 @@ where
         k_aux: TorusPrecision,
         rank_in: Rank,
         rank_out: Rank,
-    ) -> GLWESwitchingKeyPrepared<BE::OwnedBuf, BE> {
-        GLWESwitchingKeyPrepared::<BE::OwnedBuf, BE> {
+    ) -> GLWESwitchingKeyPrepared<BE::OwnedBuf, BE, Rg> {
+        GLWESwitchingKeyPrepared::<BE::OwnedBuf, BE, Rg> {
             key: self.gglwe_prepared_alloc(base2k, dnum, k_digit, k_aux, rank_in, rank_out),
             input_degree: Degree(0),
             output_degree: Degree(0),
         }
     }
 
-    fn glwe_switching_key_prepared_alloc_from_infos<A>(&self, infos: &A) -> GLWESwitchingKeyPrepared<BE::OwnedBuf, BE>
+    fn glwe_switching_key_prepared_alloc_from_infos<A>(&self, infos: &A) -> GLWESwitchingKeyPrepared<BE::OwnedBuf, BE, Rg>
     where
         A: GGLWEInfos,
     {
-        GLWESwitchingKeyPrepared::<BE::OwnedBuf, BE> {
+        GLWESwitchingKeyPrepared::<BE::OwnedBuf, BE, Rg> {
             key: self.gglwe_prepared_alloc_from_infos(infos),
             input_degree: Degree(0),
             output_degree: Degree(0),
@@ -463,13 +463,13 @@ where
 
     fn glwe_switching_key_prepare<R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GGLWEPreparedToBackendMut<BE> + GLWESwitchingKeyDegreesMut,
-        O: GGLWEToBackendRef<BE> + GLWESwitchingKeyDegrees;
+        R: GGLWEPreparedToBackendMut<BE, Rg> + GLWESwitchingKeyDegreesMut,
+        O: GGLWEToBackendRef<BE, Rg> + GLWESwitchingKeyDegrees;
 }
 
-pub trait GLWETensorKeyPreparedFactory<BE: Backend>
+pub trait GLWETensorKeyPreparedFactory<BE: Backend, Rg: Ring = Standard>
 where
-    Self: GGLWEPreparedFactory<BE>,
+    Self: GGLWEPreparedFactory<BE, Rg>,
 {
     fn glwe_tensor_key_prepared_alloc(
         &self,
@@ -478,12 +478,12 @@ where
         k_digit: TorusPrecision,
         k_aux: TorusPrecision,
         rank: Rank,
-    ) -> GLWETensorKeyPrepared<BE::OwnedBuf, BE> {
+    ) -> GLWETensorKeyPrepared<BE::OwnedBuf, BE, Rg> {
         let pairs: u32 = (((rank.as_u32() + 1) * rank.as_u32()) >> 1).max(1);
         GLWETensorKeyPrepared(self.gglwe_prepared_alloc(base2k, dnum, k_digit, k_aux, Rank(pairs), rank))
     }
 
-    fn glwe_tensor_key_prepared_alloc_from_infos<A>(&self, infos: &A) -> GLWETensorKeyPrepared<BE::OwnedBuf, BE>
+    fn glwe_tensor_key_prepared_alloc_from_infos<A>(&self, infos: &A) -> GLWETensorKeyPrepared<BE::OwnedBuf, BE, Rg>
     where
         A: GGLWEInfos,
     {
@@ -515,8 +515,8 @@ where
 
     fn glwe_tensor_key_prepare<R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GGLWEPreparedToBackendMut<BE>,
-        O: GGLWEToBackendRef<BE>;
+        R: GGLWEPreparedToBackendMut<BE, Rg>,
+        O: GGLWEToBackendRef<BE, Rg>;
 }
 
 /// The GGLWE layout of a tensor key like `infos`: one row per pair of secret columns.
@@ -535,9 +535,9 @@ fn tensor_key_layout<A: GGLWEInfos>(infos: &A) -> GGLWELayout {
     }
 }
 
-pub trait GLWEToLWEKeyPreparedFactory<BE: Backend>
+pub trait GLWEToLWEKeyPreparedFactory<BE: Backend, Rg: Ring = Standard>
 where
-    Self: GLWESwitchingKeyPreparedFactory<BE>,
+    Self: GLWESwitchingKeyPreparedFactory<BE, Rg>,
 {
     fn glwe_to_lwe_key_prepared_alloc(
         &self,
@@ -545,7 +545,7 @@ where
         dnum: Dnum,
         k_aux: TorusPrecision,
         rank_in: Rank,
-    ) -> GLWEToLWEKeyPrepared<BE::OwnedBuf, BE> {
+    ) -> GLWEToLWEKeyPrepared<BE::OwnedBuf, BE, Rg> {
         GLWEToLWEKeyPrepared(self.glwe_switching_key_prepared_alloc(
             base2k,
             dnum,
@@ -555,7 +555,7 @@ where
             Rank(1),
         ))
     }
-    fn glwe_to_lwe_key_prepared_alloc_from_infos<A>(&self, infos: &A) -> GLWEToLWEKeyPrepared<BE::OwnedBuf, BE>
+    fn glwe_to_lwe_key_prepared_alloc_from_infos<A>(&self, infos: &A) -> GLWEToLWEKeyPrepared<BE::OwnedBuf, BE, Rg>
     where
         A: GGLWEInfos,
     {
@@ -599,20 +599,20 @@ where
 
     fn glwe_to_lwe_key_prepare<R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GGLWEPreparedToBackendMut<BE> + GLWESwitchingKeyDegreesMut,
-        O: GGLWEToBackendRef<BE> + GLWESwitchingKeyDegrees;
+        R: GGLWEPreparedToBackendMut<BE, Rg> + GLWESwitchingKeyDegreesMut,
+        O: GGLWEToBackendRef<BE, Rg> + GLWESwitchingKeyDegrees;
 }
 
-pub trait LWESwitchingKeyPreparedFactory<BE: Backend>
+pub trait LWESwitchingKeyPreparedFactory<BE: Backend, Rg: Ring = Standard>
 where
-    Self: GLWESwitchingKeyPreparedFactory<BE>,
+    Self: GLWESwitchingKeyPreparedFactory<BE, Rg>,
 {
     fn lwe_switching_key_prepared_alloc(
         &self,
         base2k: Base2K,
         dnum: Dnum,
         k_aux: TorusPrecision,
-    ) -> LWESwitchingKeyPrepared<BE::OwnedBuf, BE> {
+    ) -> LWESwitchingKeyPrepared<BE::OwnedBuf, BE, Rg> {
         LWESwitchingKeyPrepared(self.glwe_switching_key_prepared_alloc(
             base2k,
             dnum,
@@ -623,7 +623,7 @@ where
         ))
     }
 
-    fn lwe_switching_key_prepared_alloc_from_infos<A>(&self, infos: &A) -> LWESwitchingKeyPrepared<BE::OwnedBuf, BE>
+    fn lwe_switching_key_prepared_alloc_from_infos<A>(&self, infos: &A) -> LWESwitchingKeyPrepared<BE::OwnedBuf, BE, Rg>
     where
         A: GGLWEInfos,
     {
@@ -661,13 +661,13 @@ where
 
     fn lwe_switching_key_prepare<R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GGLWEPreparedToBackendMut<BE> + GLWESwitchingKeyDegreesMut,
-        O: GGLWEToBackendRef<BE> + GLWESwitchingKeyDegrees;
+        R: GGLWEPreparedToBackendMut<BE, Rg> + GLWESwitchingKeyDegreesMut,
+        O: GGLWEToBackendRef<BE, Rg> + GLWESwitchingKeyDegrees;
 }
 
-pub trait LWEToGLWEKeyPreparedFactory<BE: Backend>
+pub trait LWEToGLWEKeyPreparedFactory<BE: Backend, Rg: Ring = Standard>
 where
-    Self: GLWESwitchingKeyPreparedFactory<BE>,
+    Self: GLWESwitchingKeyPreparedFactory<BE, Rg>,
 {
     fn lwe_to_glwe_key_prepared_alloc(
         &self,
@@ -675,7 +675,7 @@ where
         dnum: Dnum,
         k_aux: TorusPrecision,
         rank_out: Rank,
-    ) -> LWEToGLWEKeyPrepared<BE::OwnedBuf, BE> {
+    ) -> LWEToGLWEKeyPrepared<BE::OwnedBuf, BE, Rg> {
         LWEToGLWEKeyPrepared(self.glwe_switching_key_prepared_alloc(
             base2k,
             dnum,
@@ -685,7 +685,7 @@ where
             rank_out,
         ))
     }
-    fn lwe_to_glwe_key_prepared_alloc_from_infos<A>(&self, infos: &A) -> LWEToGLWEKeyPrepared<BE::OwnedBuf, BE>
+    fn lwe_to_glwe_key_prepared_alloc_from_infos<A>(&self, infos: &A) -> LWEToGLWEKeyPrepared<BE::OwnedBuf, BE, Rg>
     where
         A: GGLWEInfos,
     {
@@ -721,21 +721,21 @@ where
 
     fn lwe_to_glwe_key_prepare<R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GGLWEPreparedToBackendMut<BE> + GLWESwitchingKeyDegreesMut,
-        O: GGLWEToBackendRef<BE> + GLWESwitchingKeyDegrees;
+        R: GGLWEPreparedToBackendMut<BE, Rg> + GLWESwitchingKeyDegreesMut,
+        O: GGLWEToBackendRef<BE, Rg> + GLWESwitchingKeyDegrees;
 }
 
 /// Factory trait for allocating and preparing [`GGLWEToGGSWKeyPrepared`] instances.
-pub trait GGLWEToGGSWKeyPreparedFactory<BE: Backend>
+pub trait GGLWEToGGSWKeyPreparedFactory<BE: Backend, Rg: Ring = Standard>
 where
-    Self: GGLWEPreparedFactory<BE>,
+    Self: GGLWEPreparedFactory<BE, Rg>,
 {
     /// Allocates a new [`GGLWEToGGSWKeyPrepared`] matching the parameters of `infos`.
     ///
     /// # Panics
     ///
     /// If `rank_in != rank_out`.
-    fn gglwe_to_ggsw_key_prepared_alloc_from_infos<A>(&self, infos: &A) -> GGLWEToGGSWKeyPrepared<BE::OwnedBuf, BE>
+    fn gglwe_to_ggsw_key_prepared_alloc_from_infos<A>(&self, infos: &A) -> GGLWEToGGSWKeyPrepared<BE::OwnedBuf, BE, Rg>
     where
         A: GGLWEInfos,
     {
@@ -761,7 +761,7 @@ where
         k_digit: TorusPrecision,
         k_aux: TorusPrecision,
         rank: Rank,
-    ) -> GGLWEToGGSWKeyPrepared<BE::OwnedBuf, BE> {
+    ) -> GGLWEToGGSWKeyPrepared<BE::OwnedBuf, BE, Rg> {
         GGLWEToGGSWKeyPrepared {
             keys: (0..rank.as_usize())
                 .map(|_| self.gglwe_prepared_alloc(base2k, dnum, k_digit, k_aux, rank, rank))
@@ -799,13 +799,13 @@ where
     where
         A: GGLWEInfos;
 
-    /// Transforms a standard [`GGLWEToGGSWKey`](crate::layouts::GGLWEToGGSWKey) into the DFT domain, writing into `res`.
+    /// Transforms an unprepared [`GGLWEToGGSWKey`](crate::layouts::GGLWEToGGSWKey) into the DFT domain, writing into `res`.
     ///
     /// Iterates over each key element and prepares it individually.
     fn gglwe_to_ggsw_key_prepare<R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GGLWEToGGSWKeyPreparedToBackendMut<BE>,
-        O: GGLWEToGGSWKeyToBackendRef<BE>;
+        R: GGLWEToGGSWKeyPreparedToBackendMut<BE, Rg>,
+        O: GGLWEToGGSWKeyToBackendRef<BE, Rg>;
 }
 
 pub trait GLWECIKeyPreparedFactory<BE: Backend>

@@ -16,13 +16,13 @@ use crate::{
     znx::{Column, KERNEL_RADIX, Term, lincomb, normalize, normalize_residues},
 };
 
-impl<RT: GpuRuntime, R: Ring> MaxBase2k for NTT4x30Gpu<RT, R> {
-    fn max_base2k(n: usize, products: usize, failure_bits: usize, squaring: bool) -> usize {
-        poulpy_hal::layouts::max_base2k_ntt::<Self>(<Primes30 as PrimeSet>::LOG_Q_PRODUCT, n, products, failure_bits, squaring)
+impl<RT: GpuRuntime> MaxBase2k for NTT4x30Gpu<RT> {
+    fn max_base2k<R: Ring>(n: usize, products: usize, failure_bits: usize, squaring: bool) -> usize {
+        poulpy_hal::layouts::max_base2k_ntt::<Self, R>(<Primes30 as PrimeSet>::LOG_Q_PRODUCT, n, products, failure_bits, squaring)
     }
 
-    fn max_base2k_squares(n: usize, products: usize, squares: usize, failure_bits: usize) -> usize {
-        poulpy_hal::layouts::max_base2k_ntt_squares::<Self>(
+    fn max_base2k_squares<R: Ring>(n: usize, products: usize, squares: usize, failure_bits: usize) -> usize {
+        poulpy_hal::layouts::max_base2k_ntt_squares::<Self, R>(
             <Primes30 as PrimeSet>::LOG_Q_PRODUCT,
             n,
             products,
@@ -53,18 +53,18 @@ fn zero_from<RT: GpuRuntime>(res: &DftColumn, first: usize) {
 #[cfg_attr(not(feature = "enable-core"), allow(dead_code))]
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn idft_tail_normalize<RT: GpuRuntime, R: Ring>(
-    module: &Module<NTT4x30Gpu<RT, R>>,
-    res: &mut VecZnxBackendMut<'_, NTT4x30Gpu<RT, R>>,
+    module: &Module<NTT4x30Gpu<RT>>,
+    res: &mut VecZnxBackendMut<'_, NTT4x30Gpu<RT>, R>,
     res_base2k: usize,
     res_k: usize,
     res_offset: i64,
     res_col: usize,
-    a: &mut VecZnxDftBackendMut<'_, NTT4x30Gpu<RT, R>>,
+    a: &mut VecZnxDftBackendMut<'_, NTT4x30Gpu<RT>, R>,
     a_col: usize,
     a_base2k: usize,
-    addend: Option<(&VecZnxBackendRef<'_, NTT4x30Gpu<RT, R>>, usize)>,
+    addend: Option<(&VecZnxBackendRef<'_, NTT4x30Gpu<RT>, R>, usize)>,
 ) {
-    check_degree::<NTT4x30Gpu<RT, R>>(module.n(), a.n());
+    check_degree::<NTT4x30Gpu<RT>>(module.n(), a.n());
     assert!(res.n() == a.n(), "vec_znx_idft_normalize: res.n() != a.n()");
     let Some(res) = column_mut(res, res_col) else { return };
     let a = dft_column_mut(a, a_col).expect("vec_znx_idft_normalize: a holds no storage");
@@ -72,8 +72,8 @@ pub(crate) fn idft_tail_normalize<RT: GpuRuntime, R: Ring>(
         assert!(addend.n() == a.n, "vec_znx_idft_normalize: addend.n() != a.n()");
         column_ref(addend, col)
     });
-    crate::ntt4x30::inverse_tail::<RT>(handle(module).tables(), &a, a.size);
-    normalize_inverse(module, &res, res_base2k, res_k, res_offset, &a, addend.as_ref(), a_base2k);
+    crate::ntt4x30::inverse_tail::<RT>(handle(module).tables::<R>(), &a, a.size);
+    normalize_inverse::<RT, R>(module, &res, res_base2k, res_k, res_offset, &a, addend.as_ref(), a_base2k);
 }
 
 /// Normalizes the inverse transform held in `a`, plus `addend`, into `res`:
@@ -81,7 +81,7 @@ pub(crate) fn idft_tail_normalize<RT: GpuRuntime, R: Ring>(
 /// `normalize` above it.
 #[allow(clippy::too_many_arguments)]
 fn normalize_inverse<RT: GpuRuntime, R: Ring>(
-    module: &Module<NTT4x30Gpu<RT, R>>,
+    module: &Module<NTT4x30Gpu<RT>>,
     res: &Column,
     res_base2k: usize,
     res_k: usize,
@@ -91,7 +91,7 @@ fn normalize_inverse<RT: GpuRuntime, R: Ring>(
     a_base2k: usize,
 ) {
     let handle = handle(module);
-    let tables = handle.tables();
+    let tables = handle.tables::<R>();
     if res_base2k <= KERNEL_RADIX && a_base2k <= KERNEL_RADIX {
         normalize_residues::<RT>(tables, res, res_base2k, res_k, res_offset, a, addend, a_base2k);
         return;
@@ -117,14 +117,14 @@ fn normalize_inverse<RT: GpuRuntime, R: Ring>(
     });
 }
 
-unsafe impl<RT: GpuRuntime, R: Ring> HalVecZnxDftImpl for NTT4x30Gpu<RT, R> {
+unsafe impl<RT: GpuRuntime, R: Ring> HalVecZnxDftImpl<R> for NTT4x30Gpu<RT> {
     fn vec_znx_dft_apply(
         module: &Module<Self>,
         step: usize,
         offset: usize,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, R>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, Self>,
+        a: &VecZnxBackendRef<'_, Self, R>,
         a_col: usize,
     ) {
         assert_dense(a, "vec_znx_dft_apply");
@@ -142,7 +142,7 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalVecZnxDftImpl for NTT4x30Gpu<RT, R> {
                 size: limbs,
                 ..a
             };
-            forward::<RT>(handle(module).tables(), &res, &selected, limbs);
+            forward::<RT>(handle(module).tables::<R>(), &res, &selected, limbs);
         }
         zero_from::<RT>(&res, limbs);
     }
@@ -153,9 +153,9 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalVecZnxDftImpl for NTT4x30Gpu<RT, R> {
 
     fn vec_znx_idft_apply(
         module: &Module<Self>,
-        res: &mut VecZnxBigBackendMut<'_, Self>,
+        res: &mut VecZnxBigBackendMut<'_, Self, R>,
         res_col: usize,
-        a: &VecZnxDftBackendRef<'_, Self>,
+        a: &VecZnxDftBackendRef<'_, Self, R>,
         a_col: usize,
         _scratch: &mut ScratchArena<'_, Self>,
     ) {
@@ -179,8 +179,8 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalVecZnxDftImpl for NTT4x30Gpu<RT, R> {
                 n: a.n,
                 size: limbs,
             };
-            inverse::<RT>(handle.tables(), &tmp, &a, limbs);
-            to_big_clearing::<RT>(handle.tables(), &res, &tmp);
+            inverse::<RT>(handle.tables::<R>(), &tmp, &a, limbs);
+            to_big_clearing::<RT>(handle.tables::<R>(), &res, &tmp);
         });
     }
 
@@ -190,15 +190,15 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalVecZnxDftImpl for NTT4x30Gpu<RT, R> {
 
     fn vec_znx_idft_normalize(
         module: &Module<Self>,
-        res: &mut VecZnxBackendMut<'_, Self>,
+        res: &mut VecZnxBackendMut<'_, Self, R>,
         res_base2k: usize,
         res_k: usize,
         res_offset: i64,
         res_col: usize,
-        a: &mut VecZnxDftBackendMut<'_, Self>,
+        a: &mut VecZnxDftBackendMut<'_, Self, R>,
         a_col: usize,
         a_base2k: usize,
-        addend: Option<(&VecZnxBackendRef<'_, Self>, usize)>,
+        addend: Option<(&VecZnxBackendRef<'_, Self, R>, usize)>,
         _scratch: &mut ScratchArena<'_, Self>,
     ) {
         check_degree::<Self>(module.n(), a.n());
@@ -209,17 +209,17 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalVecZnxDftImpl for NTT4x30Gpu<RT, R> {
             assert!(addend.n() == a.n, "vec_znx_idft_normalize: addend.n() != a.n()");
             column_ref(addend, col)
         });
-        inverse::<RT>(handle(module).tables(), &a, &a, a.size);
-        normalize_inverse(module, &res, res_base2k, res_k, res_offset, &a, addend.as_ref(), a_base2k);
+        inverse::<RT>(handle(module).tables::<R>(), &a, &a, a.size);
+        normalize_inverse::<RT, R>(module, &res, res_base2k, res_k, res_offset, &a, addend.as_ref(), a_base2k);
     }
 
     fn vec_znx_dft_add(
         _module: &Module<Self>,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, R>,
         res_col: usize,
-        a: &VecZnxDftBackendRef<'_, Self>,
+        a: &VecZnxDftBackendRef<'_, Self, R>,
         a_col: usize,
-        b: &VecZnxDftBackendRef<'_, Self>,
+        b: &VecZnxDftBackendRef<'_, Self, R>,
         b_col: usize,
     ) {
         let Some(res) = dft_column_mut(res, res_col) else { return };
@@ -230,9 +230,9 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalVecZnxDftImpl for NTT4x30Gpu<RT, R> {
 
     fn vec_znx_dft_add_assign(
         _module: &Module<Self>,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, R>,
         res_col: usize,
-        a: &VecZnxDftBackendRef<'_, Self>,
+        a: &VecZnxDftBackendRef<'_, Self, R>,
         a_col: usize,
     ) {
         let Some(res) = dft_column_mut(res, res_col) else { return };
@@ -242,11 +242,11 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalVecZnxDftImpl for NTT4x30Gpu<RT, R> {
 
     fn vec_znx_dft_sub(
         _module: &Module<Self>,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, R>,
         res_col: usize,
-        a: &VecZnxDftBackendRef<'_, Self>,
+        a: &VecZnxDftBackendRef<'_, Self, R>,
         a_col: usize,
-        b: &VecZnxDftBackendRef<'_, Self>,
+        b: &VecZnxDftBackendRef<'_, Self, R>,
         b_col: usize,
     ) {
         let Some(res) = dft_column_mut(res, res_col) else { return };
@@ -257,9 +257,9 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalVecZnxDftImpl for NTT4x30Gpu<RT, R> {
 
     fn vec_znx_dft_sub_assign(
         _module: &Module<Self>,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, R>,
         res_col: usize,
-        a: &VecZnxDftBackendRef<'_, Self>,
+        a: &VecZnxDftBackendRef<'_, Self, R>,
         a_col: usize,
     ) {
         let Some(res) = dft_column_mut(res, res_col) else { return };
@@ -269,9 +269,9 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalVecZnxDftImpl for NTT4x30Gpu<RT, R> {
 
     fn vec_znx_dft_sub_negate_assign(
         _module: &Module<Self>,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, R>,
         res_col: usize,
-        a: &VecZnxDftBackendRef<'_, Self>,
+        a: &VecZnxDftBackendRef<'_, Self, R>,
         a_col: usize,
     ) {
         let Some(res) = dft_column_mut(res, res_col) else { return };
@@ -283,9 +283,9 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalVecZnxDftImpl for NTT4x30Gpu<RT, R> {
         _module: &Module<Self>,
         step: usize,
         offset: usize,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, R>,
         res_col: usize,
-        a: &VecZnxDftBackendRef<'_, Self>,
+        a: &VecZnxDftBackendRef<'_, Self, R>,
         a_col: usize,
     ) {
         assert!(res.n() == a.n(), "vec_znx_dft_copy: res.n() != a.n()");
@@ -296,7 +296,7 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalVecZnxDftImpl for NTT4x30Gpu<RT, R> {
         combine::<RT>(&res, res.size, DftTerm::plus(&selected), DftTerm::zero(&selected));
     }
 
-    fn vec_znx_dft_zero(_module: &Module<Self>, res: &mut VecZnxDftBackendMut<'_, Self>, res_col: usize) {
+    fn vec_znx_dft_zero(_module: &Module<Self>, res: &mut VecZnxDftBackendMut<'_, Self, R>, res_col: usize) {
         let Some(res) = dft_column_mut(res, res_col) else { return };
         zero_from::<RT>(&res, 0);
     }
@@ -305,15 +305,15 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalVecZnxDftImpl for NTT4x30Gpu<RT, R> {
 
     fn vec_znx_dft_automorphism_plan(module: &Module<Self>, n: usize, p: i64) -> Self::AutomorphismPlan {
         check_degree::<Self>(module.n(), n);
-        AutomorphismPlan::new(n, p, handle(module).tables().invariant())
+        AutomorphismPlan::new(n, p, handle(module).tables::<R>().invariant())
     }
 
     fn vec_znx_dft_automorphism_with_plan(
         module: &Module<Self>,
         plan: &Self::AutomorphismPlan,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, R>,
         res_col: usize,
-        a: &VecZnxDftBackendRef<'_, Self>,
+        a: &VecZnxDftBackendRef<'_, Self, R>,
         a_col: usize,
     ) {
         check_degree::<Self>(module.n(), res.n());
@@ -330,9 +330,9 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalVecZnxDftImpl for NTT4x30Gpu<RT, R> {
     fn vec_znx_dft_automorphism_add_with_plan(
         module: &Module<Self>,
         plan: &Self::AutomorphismPlan,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, R>,
         res_col: usize,
-        a: &VecZnxDftBackendRef<'_, Self>,
+        a: &VecZnxDftBackendRef<'_, Self, R>,
         a_col: usize,
         _scratch: &mut ScratchArena<'_, Self>,
     ) {

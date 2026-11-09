@@ -16,48 +16,48 @@ use crate::{
 };
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{DataView, Module, ScratchOwned},
+    layouts::{DataView, Module, Ring, ScratchOwned, Standard},
     test_suite::TestParams,
 };
 
-pub trait PreparationBounds<BE: ParityBackend>:
+pub trait PreparationBounds<BE: ParityBackend<Rg>, Rg: Ring = Standard>:
     ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>
-    + GLWEPreparedFactory<BE>
-    + GLWEPublicKeyPreparedFactory<BE>
-    + GLWESecretPreparedFactory<BE>
-    + GLWESecretTensorPreparedFactory<BE>
-    + GGLWEPreparedFactory<BE>
-    + GGSWPreparedFactory<BE>
-    + GLWEAutomorphismKeyPreparedFactory<BE>
-    + GLWESwitchingKeyPreparedFactory<BE>
-    + GLWETensorKeyPreparedFactory<BE>
-    + LWESwitchingKeyPreparedFactory<BE>
-    + GLWEToLWEKeyPreparedFactory<BE>
-    + LWEToGLWEKeyPreparedFactory<BE>
-    + GGLWEToGGSWKeyPreparedFactory<BE>
+    + GLWEPreparedFactory<BE, Rg>
+    + GLWEPublicKeyPreparedFactory<BE, Rg>
+    + GLWESecretPreparedFactory<BE, Rg>
+    + GLWESecretTensorPreparedFactory<BE, Rg>
+    + GGLWEPreparedFactory<BE, Rg>
+    + GGSWPreparedFactory<BE, Rg>
+    + GLWEAutomorphismKeyPreparedFactory<BE, Rg>
+    + GLWESwitchingKeyPreparedFactory<BE, Rg>
+    + GLWETensorKeyPreparedFactory<BE, Rg>
+    + LWESwitchingKeyPreparedFactory<BE, Rg>
+    + GLWEToLWEKeyPreparedFactory<BE, Rg>
+    + LWEToGLWEKeyPreparedFactory<BE, Rg>
+    + GGLWEToGGSWKeyPreparedFactory<BE, Rg>
 {
 }
-impl<BE: ParityBackend> PreparationBounds<BE> for Module<BE> where
+impl<BE: ParityBackend<Rg>, Rg: Ring> PreparationBounds<BE, Rg> for Module<BE> where
     Self: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>
-        + GLWEPreparedFactory<BE>
-        + GLWEPublicKeyPreparedFactory<BE>
-        + GLWESecretPreparedFactory<BE>
-        + GLWESecretTensorPreparedFactory<BE>
-        + GGLWEPreparedFactory<BE>
-        + GGSWPreparedFactory<BE>
-        + GLWEAutomorphismKeyPreparedFactory<BE>
-        + GLWESwitchingKeyPreparedFactory<BE>
-        + GLWETensorKeyPreparedFactory<BE>
-        + LWESwitchingKeyPreparedFactory<BE>
-        + GLWEToLWEKeyPreparedFactory<BE>
-        + LWEToGLWEKeyPreparedFactory<BE>
-        + GGLWEToGGSWKeyPreparedFactory<BE>
+        + GLWEPreparedFactory<BE, Rg>
+        + GLWEPublicKeyPreparedFactory<BE, Rg>
+        + GLWESecretPreparedFactory<BE, Rg>
+        + GLWESecretTensorPreparedFactory<BE, Rg>
+        + GGLWEPreparedFactory<BE, Rg>
+        + GGSWPreparedFactory<BE, Rg>
+        + GLWEAutomorphismKeyPreparedFactory<BE, Rg>
+        + GLWESwitchingKeyPreparedFactory<BE, Rg>
+        + GLWETensorKeyPreparedFactory<BE, Rg>
+        + LWESwitchingKeyPreparedFactory<BE, Rg>
+        + GLWEToLWEKeyPreparedFactory<BE, Rg>
+        + LWEToGLWEKeyPreparedFactory<BE, Rg>
+        + GGLWEToGGSWKeyPreparedFactory<BE, Rg>
 {
 }
 
-fn exercise<BE: ParityBackend>(params: &TestParams, shapes: &ParityShapes, m: &Module<BE>)
+fn exercise<BE: ParityBackend<Rg>, Rg: Ring>(params: &TestParams, shapes: &ParityShapes, m: &Module<BE>)
 where
-    Module<BE>: PreparationBounds<BE>,
+    Module<BE>: PreparationBounds<BE, Rg>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     macro_rules! check {
@@ -274,9 +274,9 @@ where
                 &source,
                 &mut poisoned_scratch::<BE>(m.glwe_tensor_key_prepare_tmp_bytes(&source)).borrow(),
             );
-            let borrowed = GLWETensorKeyPreparedToBackendRef::<BE>::to_backend_ref(&prepared);
+            let borrowed = GLWETensorKeyPreparedToBackendRef::<BE, Rg>::to_backend_ref(&prepared);
             let borrowed_ref = &borrowed;
-            let view = GGLWEPreparedToBackendRef::<BE>::to_backend_ref(&borrowed_ref);
+            let view = GGLWEPreparedToBackendRef::<BE, Rg>::to_backend_ref(&borrowed_ref);
             assert_eq!(view.noise(), source.noise());
             let mut prepared = check!(
                 lwe_switching_key_prepared_alloc,
@@ -347,14 +347,14 @@ where
 }
 /// Exercises each prepared factory's direct/from-info allocation and size
 /// queries, then prepares with an independently budgeted poisoned arena.
-pub fn test_preparation_contract<BR: ParityBackend, BT: ParityBackend>(
+pub fn test_preparation_contract<BR: ParityBackend<Rg>, BT: ParityBackend<Rg>, Rg: Ring>(
     params: &TestParams,
     shapes: &ParityShapes,
     r: &Module<BR>,
     t: &Module<BT>,
 ) where
-    Module<BR>: PreparationBounds<BR>,
-    Module<BT>: PreparationBounds<BT>,
+    Module<BR>: PreparationBounds<BR, Rg>,
+    Module<BT>: PreparationBounds<BT, Rg>,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
 {

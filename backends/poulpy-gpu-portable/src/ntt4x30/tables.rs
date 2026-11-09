@@ -112,7 +112,7 @@ impl<RT: GpuRuntime> Tables<RT> {
             .expect("degree not served by the module")
     }
 
-    /// Whether the module is over the conjugate-invariant ring.
+    /// Whether the tables are of the conjugate-invariant ring.
     pub(crate) fn invariant(&self) -> bool {
         self.invariant
     }

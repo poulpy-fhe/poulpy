@@ -4,7 +4,7 @@ use poulpy_hal::{
         VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftApply, VecZnxDftBytesOf, VecZnxIdftApply,
         VecZnxIdftApplyTmpBytes,
     },
-    layouts::{Backend, Data, ScratchArena},
+    layouts::{Backend, Data, Ring, ScratchArena},
 };
 
 use crate::layouts::operand_degree;
@@ -18,7 +18,7 @@ use crate::{
     },
 };
 
-pub fn glwe_tensor_decrypt_tmp_bytes_reference<M, BE: Backend, A>(module: &M, infos: &A) -> usize
+pub fn glwe_tensor_decrypt_tmp_bytes_reference<M, BE: Backend, A, Rg: Ring>(module: &M, infos: &A) -> usize
 where
     M: ModuleN
         + VecZnxDftBytesOf
@@ -26,7 +26,7 @@ where
         + VecZnxBigNormalizeTmpBytes
         + VecZnxIdftApplyTmpBytes
         + SvpPPolBytesOf
-        + GLWESecretPreparedFactory<BE>,
+        + GLWESecretPreparedFactory<BE, Rg>,
     A: GLWEInfos,
 {
     operand_degree(module.n(), &[infos.n()]);
@@ -38,40 +38,40 @@ where
     lvl_0 + lvl_1
 }
 
-pub fn glwe_tensor_decrypt_reference<M, BE: Backend, R: Data, P: Data, S0: Data, S1: Data>(
+pub fn glwe_tensor_decrypt_reference<M, BE: Backend, R: Data, P: Data, S0: Data, S1: Data, Rg: Ring>(
     module: &M,
-    res: &GLWETensor<R, BE::ZnxWord>,
-    pt: &mut GLWEPlaintext<P, BE::ZnxWord>,
-    sk: &GLWESecretPrepared<S0, BE>,
-    sk_tensor: &GLWESecretTensorPrepared<S1, BE>,
+    res: &GLWETensor<R, BE::ZnxWord, Rg>,
+    pt: &mut GLWEPlaintext<P, BE::ZnxWord, Rg>,
+    sk: &GLWESecretPrepared<S0, BE, Rg>,
+    sk_tensor: &GLWESecretTensorPrepared<S1, BE, Rg>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     M: ModuleN
         + VecZnxDftBytesOf
         + VecZnxBigBytesOf
-        + VecZnxBigFromSmall<BE>
-        + VecZnxDftApply<BE>
-        + SvpApplyDftToDftAssign<BE>
-        + VecZnxIdftApply<BE>
+        + VecZnxBigFromSmall<BE, Rg>
+        + VecZnxDftApply<BE, Rg>
+        + SvpApplyDftToDftAssign<BE, Rg>
+        + VecZnxIdftApply<BE, Rg>
         + VecZnxIdftApplyTmpBytes
-        + VecZnxBigAddAssign<BE>
-        + VecZnxBigNormalize<BE>
+        + VecZnxBigAddAssign<BE, Rg>
+        + VecZnxBigNormalize<BE, Rg>
         + VecZnxBigNormalizeTmpBytes
         + SvpPPolBytesOf
-        + SvpPPolCopy<BE>
-        + GLWESecretPreparedFactory<BE>,
-    GLWETensor<R, BE::ZnxWord>: GLWEToBackendRef<BE> + GLWEInfos,
-    GLWEPlaintext<P, BE::ZnxWord>: GLWEToBackendMut<BE> + GLWEInfos + crate::layouts::SetBase2k,
-    GLWESecretPrepared<S0, BE>: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
-    GLWESecretTensorPrepared<S1, BE>: GLWESecretTensorPreparedToBackendRef<BE> + GLWEInfos,
+        + SvpPPolCopy<BE, Rg>
+        + GLWESecretPreparedFactory<BE, Rg>,
+    GLWETensor<R, BE::ZnxWord, Rg>: GLWEToBackendRef<BE, Rg> + GLWEInfos,
+    GLWEPlaintext<P, BE::ZnxWord, Rg>: GLWEToBackendMut<BE, Rg> + GLWEInfos + crate::layouts::SetBase2k,
+    GLWESecretPrepared<S0, BE, Rg>: GLWESecretPreparedToBackendRef<BE, Rg> + GLWEInfos,
+    GLWESecretTensorPrepared<S1, BE, Rg>: GLWESecretTensorPreparedToBackendRef<BE, Rg> + GLWEInfos,
 {
     assert!(
-        scratch.available() >= glwe_tensor_decrypt_tmp_bytes_reference::<M, BE, _>(module, res),
+        scratch.available() >= glwe_tensor_decrypt_tmp_bytes_reference::<M, BE, _, Rg>(module, res),
         "scratch.available(): {} < GLWETensorDecrypt::glwe_tensor_decrypt_tmp_bytes: {}",
         scratch.available(),
-        glwe_tensor_decrypt_tmp_bytes_reference::<M, BE, _>(module, res)
+        glwe_tensor_decrypt_tmp_bytes_reference::<M, BE, _, Rg>(module, res)
     );
-    let tmp_bytes: usize = glwe_tensor_decrypt_tmp_bytes_reference::<M, BE, _>(module, res);
+    let tmp_bytes: usize = glwe_tensor_decrypt_tmp_bytes_reference::<M, BE, _, Rg>(module, res);
     {
         let rank: usize = sk.rank().as_usize();
 

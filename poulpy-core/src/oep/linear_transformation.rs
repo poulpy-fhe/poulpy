@@ -1,7 +1,7 @@
 #![allow(clippy::too_many_arguments)]
 
 use crate::layouts::BabyStepOperand;
-use poulpy_hal::layouts::{Backend, Module, ScratchArena, VecZnxDftBackendMut};
+use poulpy_hal::layouts::{Backend, Module, Ring, ScratchArena, Standard, VecZnxDftBackendMut};
 
 use crate::layouts::{
     GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LinearTransformation,
@@ -15,7 +15,7 @@ use crate::layouts::{
 /// Implementations reproduce the bodies their methods document bit for bit, report for each
 /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait GLWELinearTransformationImpl: Backend {
+pub unsafe trait GLWELinearTransformationImpl<Rg: Ring = Standard>: Backend {
     /// Scratch bound of [`Self::glwe_linear_transformation_eval_into`]; may report less than the reference, never
     /// less than the body takes.
     fn glwe_linear_transformation_eval_tmp_bytes<R, A, B, K, T>(
@@ -112,26 +112,26 @@ pub unsafe trait GLWELinearTransformationImpl: Backend {
     /// [`Self::glwe_linear_transformation_rhs_prepare_tmp_bytes`]; free in kernels and scratch use.
     fn glwe_linear_transformation_rhs_prepare<P>(
         module: &Module<Self>,
-        prepared: &mut LinearTransformation<PreparedDiagonal<Self::OwnedBuf, Self>>,
+        prepared: &mut LinearTransformation<PreparedDiagonal<Self::OwnedBuf, Self, Rg>>,
         lt: &LinearTransformation<P>,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        P: GLWEToBackendRef<Self> + GLWEInfos;
+        P: GLWEToBackendRef<Self, Rg> + GLWEInfos;
 
     /// Reproduces
     /// [`glwe_linear_transformation_baby_steps_prepare_reference`](crate::reference::linear_transformation::GLWELinearTransformationReference::glwe_linear_transformation_baby_steps_prepare_reference)
     /// bit for bit under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within
     /// [`Self::glwe_linear_transformation_baby_steps_prepare_tmp_bytes`]; free in kernels and scratch use. The cache
     /// records `a`'s width ([`LinearTransformationBabySteps::set_k`]).
-    fn glwe_linear_transformation_baby_steps_prepare<A, H, L: BabyStepOperand<Self>>(
+    fn glwe_linear_transformation_baby_steps_prepare<A, H, L: BabyStepOperand<Self, Rg>>(
         module: &Module<Self>,
-        cache: &mut LinearTransformationBabySteps<Self, L>,
+        cache: &mut LinearTransformationBabySteps<Self, Rg, L>,
         a: &A,
         keys: &H,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        A: GLWEToBackendRef<Self> + GLWEInfos,
-        H: GetAutomorphismKey<Self>;
+        A: GLWEToBackendRef<Self, Rg> + GLWEInfos,
+        H: GetAutomorphismKey<Self, Rg>;
 
     /// Reproduces
     /// [`glwe_linear_transformation_eval_into_reference`](crate::reference::linear_transformation::GLWELinearTransformationReference::glwe_linear_transformation_eval_into_reference)
@@ -139,35 +139,35 @@ pub unsafe trait GLWELinearTransformationImpl: Backend {
     /// [`Self::glwe_linear_transformation_eval_tmp_bytes`], or
     /// [`Self::glwe_linear_transformation_eval_unprepared_rhs_tmp_bytes`] for a streamed right-hand side; free in
     /// kernels and scratch use.
-    fn glwe_linear_transformation_eval_into<R, P, H, L: BabyStepOperand<Self>>(
+    fn glwe_linear_transformation_eval_into<R, P, H, L: BabyStepOperand<Self, Rg>>(
         module: &Module<Self>,
         cnv_offset: usize,
         res: &mut R,
-        lhs: &LinearTransformationBabySteps<Self, L>,
+        lhs: &LinearTransformationBabySteps<Self, Rg, L>,
         rhs: &LinearTransformation<P>,
         keys: &H,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        R: GLWEToBackendMut<Self> + GLWEInfos,
-        P: crate::layouts::GLWEDiagonalProd<Self>,
-        H: GetAutomorphismKey<Self> + GetTensorKey<Self>;
+        R: GLWEToBackendMut<Self, Rg> + GLWEInfos,
+        P: crate::layouts::GLWEDiagonalProd<Self, Rg>,
+        H: GetAutomorphismKey<Self, Rg> + GetTensorKey<Self, Rg>;
 
     /// Reproduces
     /// [`glwe_linear_transformation_eval_sum_into_reference`](crate::reference::linear_transformation::GLWELinearTransformationReference::glwe_linear_transformation_eval_sum_into_reference)
     /// bit for bit under any [`PrepareHint`](poulpy_hal::layouts::PrepareHint), within
     /// [`Self::glwe_linear_transformation_eval_sum_tmp_bytes`]; free in kernels and scratch use.
-    fn glwe_linear_transformation_eval_sum_into<R, P, H, L: BabyStepOperand<Self>>(
+    fn glwe_linear_transformation_eval_sum_into<R, P, H, L: BabyStepOperand<Self, Rg>>(
         module: &Module<Self>,
         cnv_offset: usize,
         res: &mut R,
-        babies: &[&LinearTransformationBabySteps<Self, L>],
+        babies: &[&LinearTransformationBabySteps<Self, Rg, L>],
         lts: &[&LinearTransformation<P>],
         keys: &H,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        R: GLWEToBackendMut<Self> + GLWEInfos,
-        P: crate::layouts::GLWEDiagonalProd<Self>,
-        H: GetAutomorphismKey<Self> + GetTensorKey<Self>;
+        R: GLWEToBackendMut<Self, Rg> + GLWEInfos,
+        P: crate::layouts::GLWEDiagonalProd<Self, Rg>,
+        H: GetAutomorphismKey<Self, Rg> + GetTensorKey<Self, Rg>;
 
     /// Most giant steps [`Self::glwe_accumulate_giant_steps`] takes per call, at least 1: the
     /// evaluation holds that many products at once. The reference,
@@ -184,12 +184,12 @@ pub unsafe trait GLWELinearTransformationImpl: Backend {
     /// accumulates each step with `cnv_apply_dft_sum`. Overrides must reproduce it bit for bit.
     /// Scratch is the per-step product scratch of [`Self::glwe_linear_transformation_eval_tmp_bytes`],
     /// which reserves the `prods` of a full batch; an internal hook, it records no metadata.
-    fn glwe_accumulate_giant_steps<L: BabyStepOperand<Self>>(
+    fn glwe_accumulate_giant_steps<L: BabyStepOperand<Self, Rg>>(
         module: &Module<Self>,
         cnv_offset_hi: usize,
-        prods: &mut [VecZnxDftBackendMut<'_, Self>],
-        lhs: &LinearTransformationBabySteps<Self, L>,
-        steps: &[LinearTransformationGiantStep<PreparedDiagonal<Self::OwnedBuf, Self>>],
+        prods: &mut [VecZnxDftBackendMut<'_, Self, Rg>],
+        lhs: &LinearTransformationBabySteps<Self, Rg, L>,
+        steps: &[LinearTransformationGiantStep<PreparedDiagonal<Self::OwnedBuf, Self, Rg>>],
         scratch: &mut ScratchArena<'_, Self>,
     );
 }
@@ -198,10 +198,16 @@ pub unsafe trait GLWELinearTransformationImpl: Backend {
 ///
 /// Each method can instead be implemented directly by the backend. The reference
 /// functions remain callable independently for methods whose algorithms are reused.
+///
+/// `($be)` implements both rings and `($be, $ring)` one ring, as `docs/guides/layering-contract.md` describes.
 #[macro_export]
 macro_rules! impl_glwe_linear_transformation_reference_full {
     ($be:ty) => {
-        unsafe impl $crate::oep::GLWELinearTransformationImpl for $be {
+        $crate::impl_glwe_linear_transformation_reference_full!($be, ::poulpy_hal::layouts::Standard);
+        $crate::impl_glwe_linear_transformation_reference_full!($be, ::poulpy_hal::layouts::ConjugateInvariant);
+    };
+    ($be:ty, $ring:ty) => {
+        unsafe impl $crate::oep::GLWELinearTransformationImpl<$ring> for $be {
             fn glwe_linear_transformation_eval_tmp_bytes<R, A, B, K, T>(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 res: &R,
@@ -218,7 +224,7 @@ macro_rules! impl_glwe_linear_transformation_reference_full {
                 K: $crate::layouts::GGLWEInfos,
                 T: $crate::layouts::GGLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::linear_transformation::GLWELinearTransformationReference<$be>>::glwe_linear_transformation_eval_tmp_bytes_reference(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::linear_transformation::GLWELinearTransformationReference<$be, $ring>>::glwe_linear_transformation_eval_tmp_bytes_reference(
                     module, res, a, pt, plan, tsk, key,
                 )
             }
@@ -239,7 +245,7 @@ macro_rules! impl_glwe_linear_transformation_reference_full {
                 K: $crate::layouts::GGLWEInfos,
                 T: $crate::layouts::GGLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::linear_transformation::GLWELinearTransformationReference<$be>>::glwe_linear_transformation_eval_unprepared_rhs_tmp_bytes_reference(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::linear_transformation::GLWELinearTransformationReference<$be, $ring>>::glwe_linear_transformation_eval_unprepared_rhs_tmp_bytes_reference(
                     module, res, a, pt, plan, tsk, key,
                 )
             }
@@ -260,7 +266,7 @@ macro_rules! impl_glwe_linear_transformation_reference_full {
                 K: $crate::layouts::GGLWEInfos,
                 T: $crate::layouts::GGLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::linear_transformation::GLWELinearTransformationReference<$be>>::glwe_linear_transformation_eval_sum_tmp_bytes_reference(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::linear_transformation::GLWELinearTransformationReference<$be, $ring>>::glwe_linear_transformation_eval_sum_tmp_bytes_reference(
                     module, res, a, pt, plan, tsk, key,
                 )
             }
@@ -281,7 +287,7 @@ macro_rules! impl_glwe_linear_transformation_reference_full {
                 K: $crate::layouts::GGLWEInfos,
                 T: $crate::layouts::GGLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::linear_transformation::GLWELinearTransformationReference<$be>>::glwe_linear_transformation_eval_sum_unprepared_rhs_tmp_bytes_reference(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::linear_transformation::GLWELinearTransformationReference<$be, $ring>>::glwe_linear_transformation_eval_sum_unprepared_rhs_tmp_bytes_reference(
                     module, res, a, pt, plan, tsk, key,
                 )
             }
@@ -296,7 +302,7 @@ macro_rules! impl_glwe_linear_transformation_reference_full {
                 A: $crate::layouts::GLWEInfos,
                 K: $crate::layouts::GGLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::linear_transformation::GLWELinearTransformationReference<$be>>::glwe_linear_transformation_baby_steps_prepare_tmp_bytes_reference(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::linear_transformation::GLWELinearTransformationReference<$be, $ring>>::glwe_linear_transformation_baby_steps_prepare_tmp_bytes_reference(
                     module, a, plan, key,
                 )
             }
@@ -308,7 +314,7 @@ macro_rules! impl_glwe_linear_transformation_reference_full {
             where
                 P: $crate::layouts::GLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::linear_transformation::GLWELinearTransformationReference<$be>>::glwe_linear_transformation_rhs_prepare_tmp_bytes_reference(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::linear_transformation::GLWELinearTransformationReference<$be, $ring>>::glwe_linear_transformation_rhs_prepare_tmp_bytes_reference(
                     module, pt_infos,
                 )
             }
@@ -316,84 +322,84 @@ macro_rules! impl_glwe_linear_transformation_reference_full {
             fn glwe_linear_transformation_rhs_prepare<P>(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 prepared: &mut $crate::layouts::LinearTransformation<
-                    $crate::layouts::prepared::PreparedDiagonal<<$be as ::poulpy_hal::layouts::Backend>::OwnedBuf, $be>,
+                    $crate::layouts::prepared::PreparedDiagonal<<$be as ::poulpy_hal::layouts::Backend>::OwnedBuf, $be, $ring>,
                 >,
                 lt: &$crate::layouts::LinearTransformation<P>,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
             ) where
-                P: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
+                P: $crate::layouts::GLWEToBackendRef<$be, $ring> + $crate::layouts::GLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::linear_transformation::GLWELinearTransformationReference<$be>>::glwe_linear_transformation_rhs_prepare_reference(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::linear_transformation::GLWELinearTransformationReference<$be, $ring>>::glwe_linear_transformation_rhs_prepare_reference(
                     module, prepared, lt, scratch,
                 )
             }
 
-            fn glwe_linear_transformation_baby_steps_prepare<A, H, L: $crate::layouts::BabyStepOperand<$be>>(
+            fn glwe_linear_transformation_baby_steps_prepare<A, H, L: $crate::layouts::BabyStepOperand<$be, $ring>>(
                 module: &::poulpy_hal::layouts::Module<$be>,
-                cache: &mut $crate::layouts::prepared::LinearTransformationBabySteps<$be, L>,
+                cache: &mut $crate::layouts::prepared::LinearTransformationBabySteps<$be, $ring, L>,
                 a: &A,
                 keys: &H,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
             ) where
-                A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
-                H: $crate::layouts::GetAutomorphismKey<$be>,
+                A: $crate::layouts::GLWEToBackendRef<$be, $ring> + $crate::layouts::GLWEInfos,
+                H: $crate::layouts::GetAutomorphismKey<$be, $ring>,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::linear_transformation::GLWELinearTransformationReference<$be>>::glwe_linear_transformation_baby_steps_prepare_reference(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::linear_transformation::GLWELinearTransformationReference<$be, $ring>>::glwe_linear_transformation_baby_steps_prepare_reference(
                     module, cache, a, keys, scratch,
                 )
             }
 
-            fn glwe_linear_transformation_eval_into<R, P, H, L: $crate::layouts::BabyStepOperand<$be>>(
+            fn glwe_linear_transformation_eval_into<R, P, H, L: $crate::layouts::BabyStepOperand<$be, $ring>>(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 cnv_offset: usize,
                 res: &mut R,
-                lhs: &$crate::layouts::prepared::LinearTransformationBabySteps<$be, L>,
+                lhs: &$crate::layouts::prepared::LinearTransformationBabySteps<$be, $ring, L>,
                 rhs: &$crate::layouts::LinearTransformation<P>,
                 keys: &H,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
             ) where
-                R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
-                P: $crate::GLWEDiagonalProd<$be>,
-                H: $crate::layouts::GetAutomorphismKey<$be> + $crate::layouts::GetTensorKey<$be>,
+                R: $crate::layouts::GLWEToBackendMut<$be, $ring> + $crate::layouts::GLWEInfos,
+                P: $crate::GLWEDiagonalProd<$be, $ring>,
+                H: $crate::layouts::GetAutomorphismKey<$be, $ring> + $crate::layouts::GetTensorKey<$be, $ring>,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::linear_transformation::GLWELinearTransformationReference<$be>>::glwe_linear_transformation_eval_into_reference(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::linear_transformation::GLWELinearTransformationReference<$be, $ring>>::glwe_linear_transformation_eval_into_reference(
                     module, cnv_offset, res, lhs, rhs, keys, scratch,
                 )
             }
 
-            fn glwe_linear_transformation_eval_sum_into<R, P, H, L: $crate::layouts::BabyStepOperand<$be>>(
+            fn glwe_linear_transformation_eval_sum_into<R, P, H, L: $crate::layouts::BabyStepOperand<$be, $ring>>(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 cnv_offset: usize,
                 res: &mut R,
-                babies: &[&$crate::layouts::prepared::LinearTransformationBabySteps<$be, L>],
+                babies: &[&$crate::layouts::prepared::LinearTransformationBabySteps<$be, $ring, L>],
                 lts: &[&$crate::layouts::LinearTransformation<P>],
                 keys: &H,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
             ) where
-                R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
-                P: $crate::layouts::GLWEDiagonalProd<$be>,
-                H: $crate::layouts::GetAutomorphismKey<$be> + $crate::layouts::GetTensorKey<$be>,
+                R: $crate::layouts::GLWEToBackendMut<$be, $ring> + $crate::layouts::GLWEInfos,
+                P: $crate::layouts::GLWEDiagonalProd<$be, $ring>,
+                H: $crate::layouts::GetAutomorphismKey<$be, $ring> + $crate::layouts::GetTensorKey<$be, $ring>,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::linear_transformation::GLWELinearTransformationReference<$be>>::glwe_linear_transformation_eval_sum_into_reference(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::linear_transformation::GLWELinearTransformationReference<$be, $ring>>::glwe_linear_transformation_eval_sum_into_reference(
                     module, cnv_offset, res, babies, lts, keys, scratch,
                 )
             }
 
             fn glwe_giant_step_batch(module: &::poulpy_hal::layouts::Module<$be>) -> usize {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::linear_transformation::GLWELinearTransformationReference<$be>>::glwe_giant_step_batch_reference(module)
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::linear_transformation::GLWELinearTransformationReference<$be, $ring>>::glwe_giant_step_batch_reference(module)
             }
 
-            fn glwe_accumulate_giant_steps<L: $crate::layouts::BabyStepOperand<$be>>(
+            fn glwe_accumulate_giant_steps<L: $crate::layouts::BabyStepOperand<$be, $ring>>(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 cnv_offset_hi: usize,
-                prods: &mut [::poulpy_hal::layouts::VecZnxDftBackendMut<'_, $be>],
-                lhs: &$crate::layouts::prepared::LinearTransformationBabySteps<$be, L>,
+                prods: &mut [::poulpy_hal::layouts::VecZnxDftBackendMut<'_, $be, $ring>],
+                lhs: &$crate::layouts::prepared::LinearTransformationBabySteps<$be, $ring, L>,
                 steps: &[$crate::layouts::LinearTransformationGiantStep<
-                    $crate::layouts::prepared::PreparedDiagonal<<$be as ::poulpy_hal::layouts::Backend>::OwnedBuf, $be>,
+                    $crate::layouts::prepared::PreparedDiagonal<<$be as ::poulpy_hal::layouts::Backend>::OwnedBuf, $be, $ring>,
                 >],
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::linear_transformation::GLWELinearTransformationReference<$be>>::glwe_accumulate_giant_steps_reference(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::linear_transformation::GLWELinearTransformationReference<$be, $ring>>::glwe_accumulate_giant_steps_reference(
                     module,
                     cnv_offset_hi,
                     prods,

@@ -24,20 +24,29 @@
 //! so a default reaches each constituent through the backend's selection with no
 //! bound on the module. A family that only a reference body composes bounds that
 //! reference instead, as `GLWEAutomorphismReference` bounds the module by
-//! `GLWEKeyswitch`, and a family without defaults has only `Backend`, with its ring.
+//! `GLWEKeyswitch`, and a family without defaults has only `Backend`.
 //!
 //! # Selecting an implementation
 //!
 //! `impl_*_reference_full!` macros implement a backend's `*Impl` family with the
 //! available reference algorithms and derived defaults. Purely derived families
 //! have `impl_*_derived_full!` macros. [`crate::impl_core_reference_full!`] selects
-//! the provided implementations for all core families except [`SamplingImpl`],
-//! and the standard-only families (monomial operations and the
-//! conjugate-invariant maps), whose traits bound `Backend<Ring = Standard>`.
+//! the provided implementations for all core families except [`SamplingImpl`] and
+//! the families without a ring parameter: the standard-only families (LWE conversion,
+//! packing, GLWE/GGSW rotate, `mul_xp_minus_one`), whose traits take standard-ring
+//! operands, and
+//! [`GLWECIConversionImpl`], whose conversions take one standard and one
+//! conjugate-invariant operand and whose degree switch two standard ones.
+//!
+//! Every other family, [`SamplingImpl`] included, takes the operand ring as its trait
+//! parameter and is implemented once per ring. Its opt-in macro implements both rings
+//! with `($be)` and one ring with `($be, $ring)`; `docs/guides/layering-contract.md`
+//! describes both arms and a per-ring override.
 //!
 //! To customize a family, implement its `*Impl` trait yourself. Forward unchanged
 //! required methods to reference helpers and inherit the derived defaults you
-//! want. Omit the corresponding family macro to avoid defining the trait twice.
+//! want. Omit the corresponding family macro, or its arm for the overridden ring,
+//! to avoid defining the trait twice.
 //! Satisfying a reference helper's HAL bounds alone never selects a backend hook.
 //!
 //! # Layout requirements
@@ -111,34 +120,39 @@ pub use preparation::*;
 pub use sampling::*;
 pub use secret::*;
 
-/// Forwards every core family except sampling and the standard-only families (LWE conversion,
-/// packing, GLWE/GGSW rotate, `mul_xp_minus_one`).
+/// Forwards every core family except sampling, the standard-only families (LWE conversion,
+/// packing, GLWE/GGSW rotate, `mul_xp_minus_one`) and the conjugate-invariant conversions.
 ///
 /// Select the individual family macros instead when replacing an operation. The
 /// reference gadget-product and external-product bodies require contiguous DFT limbs.
+/// `($be)` implements both rings and `($be, $ring)` one ring, as `docs/guides/layering-contract.md` describes.
 #[macro_export]
 macro_rules! impl_core_reference_full {
     ($be:ty) => {
-        $crate::impl_ggsw_conversion_reference_full!($be);
-        $crate::impl_decompression_reference_full!($be);
-        $crate::impl_decryption_reference_full!($be);
-        $crate::impl_encryption_reference_full!($be);
-        $crate::impl_operations_reference_full!($be);
-        $crate::impl_glwe_polynomial_evaluation_derived_full!($be);
-        $crate::impl_preparation_reference_full!($be);
-        $crate::impl_secret_reference_full!($be);
-        $crate::impl_gglwe_external_product_derived_full!($be);
-        $crate::impl_gglwe_keyswitch_derived_full!($be);
-        $crate::impl_ggsw_external_product_derived_full!($be);
-        $crate::impl_ggsw_keyswitch_derived_full!($be);
-        $crate::impl_automorphism_reference_full!($be);
-        $crate::impl_glwe_external_product_reference_full!($be);
-        $crate::impl_glwe_keyswitch_reference_full!($be);
-        $crate::impl_glwe_linear_transformation_reference_full!($be);
-        $crate::impl_lwe_keyswitch_reference_full!($be);
-        $crate::impl_glwe_tensoring_reference_full!($be);
-        $crate::impl_gglwe_product_digits_strided_reference_full!($be);
-        $crate::impl_glwe_trace_derived_full!($be);
+        $crate::impl_core_reference_full!($be, ::poulpy_hal::layouts::Standard);
+        $crate::impl_core_reference_full!($be, ::poulpy_hal::layouts::ConjugateInvariant);
+    };
+    ($be:ty, $ring:ty) => {
+        $crate::impl_ggsw_conversion_reference_full!($be, $ring);
+        $crate::impl_decompression_reference_full!($be, $ring);
+        $crate::impl_decryption_reference_full!($be, $ring);
+        $crate::impl_encryption_reference_full!($be, $ring);
+        $crate::impl_operations_reference_full!($be, $ring);
+        $crate::impl_glwe_polynomial_evaluation_derived_full!($be, $ring);
+        $crate::impl_preparation_reference_full!($be, $ring);
+        $crate::impl_secret_reference_full!($be, $ring);
+        $crate::impl_gglwe_external_product_derived_full!($be, $ring);
+        $crate::impl_gglwe_keyswitch_derived_full!($be, $ring);
+        $crate::impl_ggsw_external_product_derived_full!($be, $ring);
+        $crate::impl_ggsw_keyswitch_derived_full!($be, $ring);
+        $crate::impl_automorphism_reference_full!($be, $ring);
+        $crate::impl_glwe_external_product_reference_full!($be, $ring);
+        $crate::impl_glwe_keyswitch_reference_full!($be, $ring);
+        $crate::impl_glwe_linear_transformation_reference_full!($be, $ring);
+        $crate::impl_lwe_keyswitch_reference_full!($be, $ring);
+        $crate::impl_glwe_tensoring_reference_full!($be, $ring);
+        $crate::impl_gglwe_product_digits_strided_reference_full!($be, $ring);
+        $crate::impl_glwe_trace_derived_full!($be, $ring);
     };
 }
 

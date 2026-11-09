@@ -1,4 +1,4 @@
-use poulpy_hal::layouts::{Backend, Data};
+use poulpy_hal::layouts::{Backend, Data, Ring, Standard};
 
 use crate::layouts::prepared::{GGLWEPreparedToBackendMut, GGLWEPreparedToBackendRef};
 use crate::layouts::{Base2K, Degree, Dnum, GGLWEInfos, GGLWEPrepared, GLWEInfos, LWEInfos, Rank, TorusPrecision};
@@ -11,12 +11,12 @@ use crate::layouts::{Base2K, Degree, Dnum, GGLWEInfos, GGLWEPrepared, GLWEInfos,
 /// key-switching operations.
 ///
 /// Requires `rank_in == rank_out`. Tied to a specific backend via `BE: Backend`.
-pub struct GGLWEToGGSWKeyPrepared<D: Data, BE: Backend> {
-    pub(crate) keys: Vec<GGLWEPrepared<D, BE>>,
+pub struct GGLWEToGGSWKeyPrepared<D: Data, BE: Backend, Rg: Ring = Standard> {
+    pub(crate) keys: Vec<GGLWEPrepared<D, BE, Rg>>,
 }
 
 /// Provides LWE-level parameter accessors, delegating to the first key element.
-impl<D: Data, BE: Backend> LWEInfos for GGLWEToGGSWKeyPrepared<D, BE> {
+impl<D: Data, BE: Backend, Rg: Ring> LWEInfos for GGLWEToGGSWKeyPrepared<D, BE, Rg> {
     fn noise(&self) -> Option<crate::ComponentNoise> {
         crate::layouts::common_noise(self.keys.iter().map(crate::layouts::LWEInfos::noise))
     }
@@ -39,14 +39,14 @@ impl<D: Data, BE: Backend> LWEInfos for GGLWEToGGSWKeyPrepared<D, BE> {
 }
 
 /// Provides the GLWE rank, derived from the output rank.
-impl<D: Data, BE: Backend> GLWEInfos for GGLWEToGGSWKeyPrepared<D, BE> {
+impl<D: Data, BE: Backend, Rg: Ring> GLWEInfos for GGLWEToGGSWKeyPrepared<D, BE, Rg> {
     fn rank(&self) -> Rank {
         self.keys[0].rank_out()
     }
 }
 
 /// Provides GGLWE-specific parameter accessors. Note that `rank_in == rank_out` for this type.
-impl<D: Data, BE: Backend> GGLWEInfos for GGLWEToGGSWKeyPrepared<D, BE> {
+impl<D: Data, BE: Backend, Rg: Ring> GGLWEInfos for GGLWEToGGSWKeyPrepared<D, BE, Rg> {
     fn k_aux(&self) -> TorusPrecision {
         self.keys[0].k_aux()
     }
@@ -76,7 +76,7 @@ impl<D: Data, BE: Backend> GGLWEInfos for GGLWEToGGSWKeyPrepared<D, BE> {
     }
 }
 
-impl<D: Data, BE: Backend> GGLWEToGGSWKeyPrepared<D, BE> {
+impl<D: Data, BE: Backend, Rg: Ring> GGLWEToGGSWKeyPrepared<D, BE, Rg> {
     /// Returns a mutable reference to the `i`-th prepared GGLWE key element.
     ///
     /// The `i`-th element corresponds to `GGLWEPrepared_s([s[i]*s[0], s[i]*s[1], ..., s[i]*s[rank]])`.
@@ -84,13 +84,13 @@ impl<D: Data, BE: Backend> GGLWEToGGSWKeyPrepared<D, BE> {
     /// # Panics
     ///
     /// If `i >= rank`.
-    pub fn at_mut(&mut self, i: usize) -> &mut GGLWEPrepared<D, BE> {
+    pub fn at_mut(&mut self, i: usize) -> &mut GGLWEPrepared<D, BE, Rg> {
         assert!((i as u32) < self.rank());
         &mut self.keys[i]
     }
 }
 
-impl<D: Data, BE: Backend> GGLWEToGGSWKeyPrepared<D, BE> {
+impl<D: Data, BE: Backend, Rg: Ring> GGLWEToGGSWKeyPrepared<D, BE, Rg> {
     /// Returns a reference to the `i`-th prepared GGLWE key element.
     ///
     /// The `i`-th element corresponds to `GGLWEPrepared_s([s[i]*s[0], s[i]*s[1], ..., s[i]*s[rank]])`.
@@ -98,39 +98,39 @@ impl<D: Data, BE: Backend> GGLWEToGGSWKeyPrepared<D, BE> {
     /// # Panics
     ///
     /// If `i >= rank`.
-    pub fn at(&self, i: usize) -> &GGLWEPrepared<D, BE> {
+    pub fn at(&self, i: usize) -> &GGLWEPrepared<D, BE, Rg> {
         assert!((i as u32) < self.rank());
         &self.keys[i]
     }
 }
 
-pub type GGLWEToGGSWKeyPreparedBackendRef<'a, B> = GGLWEToGGSWKeyPrepared<<B as Backend>::BufRef<'a>, B>;
-pub type GGLWEToGGSWKeyPreparedBackendMut<'a, B> = GGLWEToGGSWKeyPrepared<<B as Backend>::BufMut<'a>, B>;
+pub type GGLWEToGGSWKeyPreparedBackendRef<'a, B, Rg = Standard> = GGLWEToGGSWKeyPrepared<<B as Backend>::BufRef<'a>, B, Rg>;
+pub type GGLWEToGGSWKeyPreparedBackendMut<'a, B, Rg = Standard> = GGLWEToGGSWKeyPrepared<<B as Backend>::BufMut<'a>, B, Rg>;
 
-pub trait GGLWEToGGSWKeyPreparedToBackendRef<B: Backend> {
-    fn to_backend_ref(&self) -> GGLWEToGGSWKeyPreparedBackendRef<'_, B>;
+pub trait GGLWEToGGSWKeyPreparedToBackendRef<B: Backend, Rg: Ring = Standard> {
+    fn to_backend_ref(&self) -> GGLWEToGGSWKeyPreparedBackendRef<'_, B, Rg>;
 }
 
-impl<D: Data, B: Backend> GGLWEToGGSWKeyPreparedToBackendRef<B> for GGLWEToGGSWKeyPrepared<D, B>
+impl<D: Data, B: Backend, Rg: Ring> GGLWEToGGSWKeyPreparedToBackendRef<B, Rg> for GGLWEToGGSWKeyPrepared<D, B, Rg>
 where
-    GGLWEPrepared<D, B>: GGLWEPreparedToBackendRef<B>,
+    GGLWEPrepared<D, B, Rg>: GGLWEPreparedToBackendRef<B, Rg>,
 {
-    fn to_backend_ref(&self) -> GGLWEToGGSWKeyPreparedBackendRef<'_, B> {
+    fn to_backend_ref(&self) -> GGLWEToGGSWKeyPreparedBackendRef<'_, B, Rg> {
         GGLWEToGGSWKeyPrepared {
             keys: self.keys.iter().map(|c| c.to_backend_ref()).collect(),
         }
     }
 }
 
-pub trait GGLWEToGGSWKeyPreparedToBackendMut<B: Backend> {
+pub trait GGLWEToGGSWKeyPreparedToBackendMut<B: Backend, Rg: Ring = Standard> {
     fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>);
     /// Borrows coefficients mutably and clears the owner's component noise metadata.
-    fn to_backend_mut(&mut self) -> GGLWEToGGSWKeyPreparedBackendMut<'_, B>;
+    fn to_backend_mut(&mut self) -> GGLWEToGGSWKeyPreparedBackendMut<'_, B, Rg>;
 }
 
-impl<D: Data, B: Backend> GGLWEToGGSWKeyPreparedToBackendMut<B> for GGLWEToGGSWKeyPrepared<D, B>
+impl<D: Data, B: Backend, Rg: Ring> GGLWEToGGSWKeyPreparedToBackendMut<B, Rg> for GGLWEToGGSWKeyPrepared<D, B, Rg>
 where
-    GGLWEPrepared<D, B>: GGLWEPreparedToBackendMut<B>,
+    GGLWEPrepared<D, B, Rg>: GGLWEPreparedToBackendMut<B, Rg>,
 {
     fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
         for key in &mut self.keys {
@@ -138,7 +138,7 @@ where
         }
     }
 
-    fn to_backend_mut(&mut self) -> GGLWEToGGSWKeyPreparedBackendMut<'_, B> {
+    fn to_backend_mut(&mut self) -> GGLWEToGGSWKeyPreparedBackendMut<'_, B, Rg> {
         GGLWEToGGSWKeyPrepared {
             keys: self.keys.iter_mut().map(|c| c.to_backend_mut()).collect(),
         }

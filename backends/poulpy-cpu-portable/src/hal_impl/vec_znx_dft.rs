@@ -1,42 +1,42 @@
 #[macro_export]
 macro_rules! hal_impl_vec_znx_dft {
     // Default form: everything from `$defaults`.
-    ($defaults:ident) => {
-        $crate::hal_impl_vec_znx_dft!($defaults, automorphism_with_plan: default);
+    ($defaults:ident, $ring:ty) => {
+        $crate::hal_impl_vec_znx_dft!($defaults, $ring, automorphism_with_plan: default);
     };
 
     // `automorphism_with_plan: skip` lets a backend (typically an AVX path)
     // provide its own SIMD implementation of `vec_znx_dft_automorphism_with_plan`
     // while keeping every other method on the defaults trait.
-    ($defaults:ident, automorphism_with_plan: skip) => {
-        $crate::__hal_impl_vec_znx_dft_common!($defaults);
+    ($defaults:ident, $ring:ty, automorphism_with_plan: skip) => {
+        $crate::__hal_impl_vec_znx_dft_common!($defaults, $ring);
 
-        type AutomorphismPlan = <Self as $defaults>::AutomorphismPlanDefault;
+        type AutomorphismPlan = <Self as $defaults<$ring>>::AutomorphismPlanDefault;
 
         fn vec_znx_dft_automorphism_plan(module: &Module<Self>, n: usize, p: i64) -> Self::AutomorphismPlan {
-            <Self as $defaults>::vec_znx_dft_automorphism_plan_default(module, n, p)
+            <Self as $defaults<$ring>>::vec_znx_dft_automorphism_plan_default(module, n, p)
         }
     };
 
     // Internal: full default form (every method delegated to `$defaults`).
-    ($defaults:ident, automorphism_with_plan: default) => {
-        $crate::__hal_impl_vec_znx_dft_common!($defaults);
+    ($defaults:ident, $ring:ty, automorphism_with_plan: default) => {
+        $crate::__hal_impl_vec_znx_dft_common!($defaults, $ring);
 
-        type AutomorphismPlan = <Self as $defaults>::AutomorphismPlanDefault;
+        type AutomorphismPlan = <Self as $defaults<$ring>>::AutomorphismPlanDefault;
 
         fn vec_znx_dft_automorphism_plan(module: &Module<Self>, n: usize, p: i64) -> Self::AutomorphismPlan {
-            <Self as $defaults>::vec_znx_dft_automorphism_plan_default(module, n, p)
+            <Self as $defaults<$ring>>::vec_znx_dft_automorphism_plan_default(module, n, p)
         }
 
         fn vec_znx_dft_automorphism_with_plan(
             module: &Module<Self>,
             plan: &Self::AutomorphismPlan,
-            res: &mut poulpy_hal::layouts::VecZnxDftBackendMut<'_, Self>,
+            res: &mut poulpy_hal::layouts::VecZnxDftBackendMut<'_, Self, $ring>,
             res_col: usize,
-            a: &poulpy_hal::layouts::VecZnxDftBackendRef<'_, Self>,
+            a: &poulpy_hal::layouts::VecZnxDftBackendRef<'_, Self, $ring>,
             a_col: usize,
         ) {
-            <Self as $defaults>::vec_znx_dft_automorphism_with_plan_default(module, plan, res, res_col, a, a_col)
+            <Self as $defaults<$ring>>::vec_znx_dft_automorphism_with_plan_default(module, plan, res, res_col, a, a_col)
         }
     };
 }
@@ -44,103 +44,107 @@ macro_rules! hal_impl_vec_znx_dft {
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __hal_impl_vec_znx_dft_common {
-    ($defaults:ident) => {
+    ($defaults:ident, $ring:ty) => {
         fn vec_znx_dft_apply(
             module: &Module<Self>,
             step: usize,
             offset: usize,
-            res: &mut poulpy_hal::layouts::VecZnxDftBackendMut<'_, Self>,
+            res: &mut poulpy_hal::layouts::VecZnxDftBackendMut<'_, Self, $ring>,
             res_col: usize,
-            a: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self>,
+            a: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self, $ring>,
             a_col: usize,
         ) {
-            <Self as $defaults>::vec_znx_dft_apply_default(module, step, offset, res, res_col, a, a_col)
+            <Self as $defaults<$ring>>::vec_znx_dft_apply_default(module, step, offset, res, res_col, a, a_col)
         }
 
         fn vec_znx_idft_apply_tmp_bytes(module: &Module<Self>) -> usize {
-            <Self as $defaults>::vec_znx_idft_apply_tmp_bytes_default(module)
+            <Self as $defaults<$ring>>::vec_znx_idft_apply_tmp_bytes_default(module)
         }
 
         fn vec_znx_idft_apply(
             module: &Module<Self>,
-            res: &mut poulpy_hal::layouts::VecZnxBigBackendMut<'_, Self>,
+            res: &mut poulpy_hal::layouts::VecZnxBigBackendMut<'_, Self, $ring>,
             res_col: usize,
-            a: &poulpy_hal::layouts::VecZnxDftBackendRef<'_, Self>,
+            a: &poulpy_hal::layouts::VecZnxDftBackendRef<'_, Self, $ring>,
             a_col: usize,
             scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
         ) {
             let mut scratch = scratch.borrow();
-            <Self as $defaults>::vec_znx_idft_apply_default(module, res, res_col, a, a_col, &mut scratch);
+            <Self as $defaults<$ring>>::vec_znx_idft_apply_default(module, res, res_col, a, a_col, &mut scratch);
         }
 
         fn vec_znx_dft_add(
             module: &Module<Self>,
-            res: &mut poulpy_hal::layouts::VecZnxDftBackendMut<'_, Self>,
+            res: &mut poulpy_hal::layouts::VecZnxDftBackendMut<'_, Self, $ring>,
             res_col: usize,
-            a: &poulpy_hal::layouts::VecZnxDftBackendRef<'_, Self>,
+            a: &poulpy_hal::layouts::VecZnxDftBackendRef<'_, Self, $ring>,
             a_col: usize,
-            b: &poulpy_hal::layouts::VecZnxDftBackendRef<'_, Self>,
+            b: &poulpy_hal::layouts::VecZnxDftBackendRef<'_, Self, $ring>,
             b_col: usize,
         ) {
-            <Self as $defaults>::vec_znx_dft_add_default(module, res, res_col, a, a_col, b, b_col)
+            <Self as $defaults<$ring>>::vec_znx_dft_add_default(module, res, res_col, a, a_col, b, b_col)
         }
 
         fn vec_znx_dft_add_assign(
             module: &Module<Self>,
-            res: &mut poulpy_hal::layouts::VecZnxDftBackendMut<'_, Self>,
+            res: &mut poulpy_hal::layouts::VecZnxDftBackendMut<'_, Self, $ring>,
             res_col: usize,
-            a: &poulpy_hal::layouts::VecZnxDftBackendRef<'_, Self>,
+            a: &poulpy_hal::layouts::VecZnxDftBackendRef<'_, Self, $ring>,
             a_col: usize,
         ) {
-            <Self as $defaults>::vec_znx_dft_add_assign_default(module, res, res_col, a, a_col)
+            <Self as $defaults<$ring>>::vec_znx_dft_add_assign_default(module, res, res_col, a, a_col)
         }
 
         fn vec_znx_dft_sub(
             module: &Module<Self>,
-            res: &mut poulpy_hal::layouts::VecZnxDftBackendMut<'_, Self>,
+            res: &mut poulpy_hal::layouts::VecZnxDftBackendMut<'_, Self, $ring>,
             res_col: usize,
-            a: &poulpy_hal::layouts::VecZnxDftBackendRef<'_, Self>,
+            a: &poulpy_hal::layouts::VecZnxDftBackendRef<'_, Self, $ring>,
             a_col: usize,
-            b: &poulpy_hal::layouts::VecZnxDftBackendRef<'_, Self>,
+            b: &poulpy_hal::layouts::VecZnxDftBackendRef<'_, Self, $ring>,
             b_col: usize,
         ) {
-            <Self as $defaults>::vec_znx_dft_sub_default(module, res, res_col, a, a_col, b, b_col)
+            <Self as $defaults<$ring>>::vec_znx_dft_sub_default(module, res, res_col, a, a_col, b, b_col)
         }
 
         fn vec_znx_dft_sub_assign(
             module: &Module<Self>,
-            res: &mut poulpy_hal::layouts::VecZnxDftBackendMut<'_, Self>,
+            res: &mut poulpy_hal::layouts::VecZnxDftBackendMut<'_, Self, $ring>,
             res_col: usize,
-            a: &poulpy_hal::layouts::VecZnxDftBackendRef<'_, Self>,
+            a: &poulpy_hal::layouts::VecZnxDftBackendRef<'_, Self, $ring>,
             a_col: usize,
         ) {
-            <Self as $defaults>::vec_znx_dft_sub_assign_default(module, res, res_col, a, a_col)
+            <Self as $defaults<$ring>>::vec_znx_dft_sub_assign_default(module, res, res_col, a, a_col)
         }
 
         fn vec_znx_dft_sub_negate_assign(
             module: &Module<Self>,
-            res: &mut poulpy_hal::layouts::VecZnxDftBackendMut<'_, Self>,
+            res: &mut poulpy_hal::layouts::VecZnxDftBackendMut<'_, Self, $ring>,
             res_col: usize,
-            a: &poulpy_hal::layouts::VecZnxDftBackendRef<'_, Self>,
+            a: &poulpy_hal::layouts::VecZnxDftBackendRef<'_, Self, $ring>,
             a_col: usize,
         ) {
-            <Self as $defaults>::vec_znx_dft_sub_negate_assign_default(module, res, res_col, a, a_col)
+            <Self as $defaults<$ring>>::vec_znx_dft_sub_negate_assign_default(module, res, res_col, a, a_col)
         }
 
         fn vec_znx_dft_copy(
             module: &Module<Self>,
             step: usize,
             offset: usize,
-            res: &mut poulpy_hal::layouts::VecZnxDftBackendMut<'_, Self>,
+            res: &mut poulpy_hal::layouts::VecZnxDftBackendMut<'_, Self, $ring>,
             res_col: usize,
-            a: &poulpy_hal::layouts::VecZnxDftBackendRef<'_, Self>,
+            a: &poulpy_hal::layouts::VecZnxDftBackendRef<'_, Self, $ring>,
             a_col: usize,
         ) {
-            <Self as $defaults>::vec_znx_dft_copy_default(module, step, offset, res, res_col, a, a_col)
+            <Self as $defaults<$ring>>::vec_znx_dft_copy_default(module, step, offset, res, res_col, a, a_col)
         }
 
-        fn vec_znx_dft_zero(module: &Module<Self>, res: &mut poulpy_hal::layouts::VecZnxDftBackendMut<'_, Self>, res_col: usize) {
-            <Self as $defaults>::vec_znx_dft_zero_default(module, res, res_col)
+        fn vec_znx_dft_zero(
+            module: &Module<Self>,
+            res: &mut poulpy_hal::layouts::VecZnxDftBackendMut<'_, Self, $ring>,
+            res_col: usize,
+        ) {
+            <Self as $defaults<$ring>>::vec_znx_dft_zero_default(module, res, res_col)
         }
 
         fn vec_znx_dft_automorphism_add_with_plan_tmp_bytes(_module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
@@ -151,14 +155,14 @@ macro_rules! __hal_impl_vec_znx_dft_common {
         fn vec_znx_dft_automorphism_add_with_plan(
             module: &Module<Self>,
             plan: &Self::AutomorphismPlan,
-            res: &mut poulpy_hal::layouts::VecZnxDftBackendMut<'_, Self>,
+            res: &mut poulpy_hal::layouts::VecZnxDftBackendMut<'_, Self, $ring>,
             res_col: usize,
-            a: &poulpy_hal::layouts::VecZnxDftBackendRef<'_, Self>,
+            a: &poulpy_hal::layouts::VecZnxDftBackendRef<'_, Self, $ring>,
             a_col: usize,
             scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
         ) {
             let _ = scratch;
-            <Self as $defaults>::vec_znx_dft_automorphism_add_with_plan_default(module, plan, res, res_col, a, a_col)
+            <Self as $defaults<$ring>>::vec_znx_dft_automorphism_add_with_plan_default(module, plan, res, res_col, a, a_col)
         }
     };
 }

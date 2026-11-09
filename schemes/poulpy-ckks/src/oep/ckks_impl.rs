@@ -10,8 +10,8 @@ use super::{
 /// Aggregate CKKS dispatch surface: the scalar-independent evaluation families.
 ///
 /// Concrete APIs depend on narrower `CKKS*Impl` families; this bundle serves code spanning several of them, such as
-/// test and backend capability bounds. It includes standard-only families, so conjugate-invariant backends do not
-/// implement it. The scalar-generic families ([`CKKSEncodingImpl<F>`](super::CKKSEncodingImpl),
+/// test and backend capability bounds. It includes standard-only families, so it holds the standard-ring instance of
+/// each family serving both rings. The scalar-generic families ([`CKKSEncodingImpl<F, Rg>`](super::CKKSEncodingImpl),
 /// [`CKKSDFTMatrixImpl<F>`](super::CKKSDFTMatrixImpl)) and the fold, bootstrapping, ModUp, PaCo and SHIP families
 /// stay outside it and are bounded separately where needed.
 ///

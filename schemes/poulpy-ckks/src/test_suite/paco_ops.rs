@@ -19,7 +19,7 @@ use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{GLWELayout, LWEInfos, Rank};
 use poulpy_hal::{
     api::{ReimFFT, ReimIFFT, ReimNew, ScratchOwnedBorrow},
-    layouts::{CyclotomicOrder, HostBytesBackend, Module, Standard, galois_element, galois_elements_from_rotations},
+    layouts::{CyclotomicOrder, HostBytesBackend, Module, Ring, Standard, galois_element, galois_elements_from_rotations},
 };
 use std::collections::HashMap;
 
@@ -82,19 +82,19 @@ fn to_cpx<F: TestScalar>(re: &[F], im: &[F]) -> Vec<Cpx> {
 /// distinguishable from oracle rounding; the bound is clamped accordingly
 /// (structural failures sit at signal level, far above the clamp).
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn assert_slots<BE, F, E>(
+pub(crate) fn assert_slots<BE, F, E, Rg: Ring>(
     label: &str,
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
     encoder: &ReferenceEncoder<E>,
-    ct: &CKKSCiphertextOwned<BE>,
-    sk: &poulpy_core::layouts::prepared::GLWESecretPrepared<BE::OwnedBuf, BE>,
+    ct: &CKKSCiphertextOwned<BE, Rg>,
+    sk: &poulpy_core::layouts::prepared::GLWESecretPrepared<BE::OwnedBuf, BE, Rg>,
     want: &[Cpx],
     bound: f64,
     scratch: &mut poulpy_hal::layouts::ScratchArena<'_, BE>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
-    Module<BE>: TestContextModule<BE>,
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE, Rg>,
     F: TestScalar,
     E: ReimFFT<F> + ReimIFFT<F>,
 {
@@ -121,7 +121,7 @@ pub(crate) fn assert_slots<BE, F, E>(
     // Expected plaintext, encoded host-side at the same layout.
     let want_re: Vec<F> = want.iter().map(|x| F::from_f64(x.re).unwrap()).collect();
     let want_im: Vec<F> = want.iter().map(|x| F::from_f64(x.im).unwrap()).collect();
-    let mut want_pt = host_module.ckks_plaintext_alloc_from_slots(host_module.ckks_max_slots(), base2k, ct.k());
+    let mut want_pt = host_module.ckks_plaintext_alloc_from_slots::<Standard>(host_module.ckks_max_slots::<Rg>(), base2k, ct.k());
     want_pt.set_meta(GLWEPlaintextMeta {
         scale: Scale::Log(log_delta),
         slots: SlotsKind::Complex,
@@ -156,7 +156,7 @@ pub(crate) fn assert_slots<BE, F, E>(
 /// `Tr_{a→b}` matches the cleartext fold and consumes no budget.
 pub fn test_paco_slot_trace<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard> + CKKSPaCoImpl,
+    BE: TestContextBackend + CKKSPaCoImpl,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: ReimNew<F>,
@@ -165,7 +165,7 @@ where
     let encoder = ReferenceEncoder::<E>::new::<F>(m).unwrap();
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
-    let order = module.cyclotomic_order();
+    let order = module.cyclotomic_order::<Standard>();
     let (a_re, a_im) = test_vector_1::<F>(m);
     let v = to_cpx(&a_re, &a_im);
 
@@ -192,7 +192,7 @@ where
         })
         .unwrap();
         assert_eq!(ct.log_budget(), budget_before, "trace({a}->{b}) must consume no budget");
-        assert_slots::<BE, F, E>(
+        assert_slots::<BE, F, E, Standard>(
             &format!("paco_slot_trace({a}->{b})"),
             module,
             host_module,
@@ -210,7 +210,7 @@ where
 /// exactly `log(a/b) · log_delta` budget bits.
 pub fn test_paco_slot_product<BE, F, E>(params: CKKSTestParams, _module: &Module<BE>, _host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard> + CKKSPaCoImpl,
+    BE: TestContextBackend + CKKSPaCoImpl,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: ReimNew<F>,
@@ -230,7 +230,7 @@ where
         let encoder = ReferenceEncoder::<E>::new::<F>(m).unwrap();
         let (sk_raw, sk) = gen_sk_with_raw(&params, &module, &host_module, [0u8; 32]);
         let mut scratch = alloc_scratch(&params, &module);
-        let order = module.cyclotomic_order();
+        let order = module.cyclotomic_order::<Standard>();
         let tsk = gen_tsk(&params, &module, &sk_raw, &mut scratch.borrow());
 
         let mut atks = HashMap::new();
@@ -254,7 +254,7 @@ where
         );
         let budget_before = ct.log_budget();
         let bytes = BE::ckks_slot_product_assign_tmp_bytes(&module, &ct, &params.atk_layout(), &params.tsk_layout());
-        let before = snapshot::<BE, _>(&ct);
+        let before = snapshot::<BE, _, Standard>(&ct);
         let err = with_scratch::<BE, _>(bytes - 1, |s| {
             BE::ckks_slot_product_assign(&module, &mut ct, a, b, &atks, &tsk, s)
         })
@@ -265,7 +265,7 @@ where
             "ckks_slot_product_assign: scratch below its query",
         );
         assert_eq!(
-            snapshot::<BE, _>(&ct),
+            snapshot::<BE, _, Standard>(&ct),
             before,
             "paco_slot_product({a}->{b}): a refused fold wrote ct"
         );
@@ -278,7 +278,7 @@ where
             levels * log_delta,
             "product({a}->{b}) must consume log(a/b) × log_delta budget bits"
         );
-        assert_slots::<BE, F, E>(
+        assert_slots::<BE, F, E, Standard>(
             &format!("paco_slot_product({a}->{b})"),
             &module,
             &host_module,
@@ -295,8 +295,8 @@ where
 /// A single automorphism keyed at `−5^k` equals `conj ∘ rotate_k`.
 pub fn test_paco_conj_rotate<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
-    Module<BE>: TestContextModule<BE>,
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -304,7 +304,7 @@ where
     let encoder = ReferenceEncoder::<E>::new::<F>(m).unwrap();
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
-    let order = module.cyclotomic_order();
+    let order = module.cyclotomic_order::<Standard>();
     let (a_re, a_im) = test_vector_1::<F>(m);
     let v = to_cpx(&a_re, &a_im);
 
@@ -327,7 +327,7 @@ where
         })
         .unwrap();
         assert_eq!(out.log_budget(), ct.log_budget(), "conj_rotate must consume no budget");
-        assert_slots::<BE, F, E>(
+        assert_slots::<BE, F, E, Standard>(
             &format!("paco_conj_rotate(k={k})"),
             module,
             host_module,
@@ -348,7 +348,7 @@ pub fn test_slot_product_assign_rejects_missing_later_key<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard> + CKKSPaCoImpl,
+    BE: TestContextBackend + CKKSPaCoImpl,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: ReimNew<F>,
@@ -364,7 +364,7 @@ pub fn test_slot_product_assign_rejects_missing_later_key<BE, F, E>(
     let mut scratch = alloc_scratch(&params, module);
     let (sk_raw, _) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
-    let first = galois_element(rotations[0], module.cyclotomic_order());
+    let first = galois_element(rotations[0], module.cyclotomic_order::<Standard>());
     let keys = HashMap::from([(first, gen_atk(&params, module, first, &sk_raw, &mut scratch.borrow()))]);
     let log_delta = params.prec().log_delta();
     let mut ct = fixture_ciphertext(
@@ -374,7 +374,7 @@ pub fn test_slot_product_assign_rejects_missing_later_key<BE, F, E>(
     );
     let query = BE::ckks_slot_product_assign_tmp_bytes(module, &ct, &params.atk_layout(), &params.tsk_layout());
     for bytes in [0, query] {
-        let before = snapshot::<BE, _>(&ct);
+        let before = snapshot::<BE, _, Standard>(&ct);
         let err = with_scratch::<BE, _>(bytes, |s| {
             BE::ckks_slot_product_assign(module, &mut ct, m, m / 4, &keys, &tsk, s)
         })
@@ -387,7 +387,7 @@ pub fn test_slot_product_assign_rejects_missing_later_key<BE, F, E>(
             ),
             "slot_product_assign: missing second key: {err}"
         );
-        assert_eq!(snapshot::<BE, _>(&ct), before, "a refused product fold wrote ct");
+        assert_eq!(snapshot::<BE, _, Standard>(&ct), before, "a refused product fold wrote ct");
     }
 }
 
@@ -398,7 +398,7 @@ pub fn test_slot_trace_assign_rejects_missing_later_key<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard> + CKKSPaCoImpl,
+    BE: TestContextBackend + CKKSPaCoImpl,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: ReimNew<F>,
@@ -412,7 +412,7 @@ pub fn test_slot_trace_assign_rejects_missing_later_key<BE, F, E>(
     let rotations = fold_rotations(m, m / 4);
     let mut scratch = alloc_scratch(&params, module);
     let (sk_raw, _) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
-    let first = galois_element(rotations[0], module.cyclotomic_order());
+    let first = galois_element(rotations[0], module.cyclotomic_order::<Standard>());
     let keys = HashMap::from([(first, gen_atk(&params, module, first, &sk_raw, &mut scratch.borrow()))]);
     let mut ct = fixture_ciphertext(
         module,
@@ -427,7 +427,7 @@ pub fn test_slot_trace_assign_rejects_missing_later_key<BE, F, E>(
         41,
     );
     for bytes in [0, BE::ckks_slot_trace_assign_tmp_bytes(module, &ct, &params.atk_layout())] {
-        let before = snapshot::<BE, _>(&ct);
+        let before = snapshot::<BE, _, Standard>(&ct);
         let err = with_scratch::<BE, _>(bytes, |s| BE::ckks_slot_trace_assign(module, &mut ct, m, m / 4, &keys, s)).unwrap_err();
         assert!(
             matches!(
@@ -437,6 +437,6 @@ pub fn test_slot_trace_assign_rejects_missing_later_key<BE, F, E>(
             ),
             "slot_trace_assign: missing second key: {err}"
         );
-        assert_eq!(snapshot::<BE, _>(&ct), before, "a refused trace fold wrote ct");
+        assert_eq!(snapshot::<BE, _, Standard>(&ct), before, "a refused trace fold wrote ct");
     }
 }

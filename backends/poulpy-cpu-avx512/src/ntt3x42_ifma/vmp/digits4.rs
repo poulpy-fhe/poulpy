@@ -1,5 +1,5 @@
 use super::*;
-use poulpy_hal::layouts::PrimeSet;
+use poulpy_hal::layouts::{PrimeSet, Ring};
 
 // Four adjacent output sums share each key column: z[j] = sum_d sum_r x[d,r] K[r,j+d].
 struct Contraction<'a> {
@@ -17,9 +17,9 @@ struct Contraction<'a> {
 }
 
 pub(super) fn apply<R: Ring, E: TaskExecutor>(
-    res: &mut VecZnxDftBackendMut<'_, crate::NTT3x42Ifma<R>>,
-    a: &VecZnxDftBackendRef<'_, crate::NTT3x42Ifma<R>>,
-    pmat: &VmpPMatBackendRef<'_, crate::NTT3x42Ifma<R>>,
+    res: &mut VecZnxDftBackendMut<'_, crate::NTT3x42Ifma, R>,
+    a: &VecZnxDftBackendRef<'_, crate::NTT3x42Ifma, R>,
+    pmat: &VmpPMatBackendRef<'_, crate::NTT3x42Ifma, R>,
     zero_prefix: Option<usize>,
     tmp: &mut [u64],
 ) {
@@ -844,7 +844,7 @@ mod tests {
         for edge in [false, true] {
             for a_size in [16, 17, 18, 19, 20, 23, 24, 27, 28, 31, 32] {
                 for key_size in [0, 3, 33] {
-                    let mut input = module.vec_znx_dft_alloc(n, 1, a_size);
+                    let mut input = module.vec_znx_dft_alloc::<Standard>(n, 1, a_size);
                     let mut key = module.vmp_pmat_alloc(n, 8, 1, 2, key_size, PrepareHint::Reuse);
                     for data in [input.data.as_mut_slice(), key.data_mut().as_mut()] {
                         for group in cast_slice_mut::<_, u64>(data).chunks_exact_mut(16) {

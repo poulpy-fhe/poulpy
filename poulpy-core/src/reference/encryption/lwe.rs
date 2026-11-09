@@ -3,7 +3,7 @@ use poulpy_hal::{
         ScratchArenaTakeVecZnxBig, VecZnxBigBytesOf, VecZnxBigInnerSum, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes,
         VecZnxBigScalarProduct, VecZnxBigSubSmallNegateAssign, VecZnxFillUniformSource,
     },
-    layouts::{Backend, Module, ScratchArena, VecZnxBigToBackendRef},
+    layouts::{Backend, Module, Ring, ScratchArena, Standard, VecZnxBigToBackendRef},
     source::Source,
 };
 
@@ -15,19 +15,19 @@ use crate::{
 /// Portable implementation using HAL operations.
 ///
 /// Backend implementations may call this helper without changing their override selection.
-pub trait LWEFillMaskReference<BE: Backend> {
+pub trait LWEFillMaskReference<BE: Backend, Rg: Ring = Standard> {
     fn lwe_fill_mask_from_source_reference<R>(&self, base2k: usize, res: &mut R, source_xa: &mut Source)
     where
-        R: LWEToBackendMut<BE>;
+        R: LWEToBackendMut<BE, Rg>;
 }
 
-impl<BE: Backend> LWEFillMaskReference<BE> for Module<BE>
+impl<BE: Backend, Rg: Ring> LWEFillMaskReference<BE, Rg> for Module<BE>
 where
-    Self: VecZnxFillUniformSource<BE>,
+    Self: VecZnxFillUniformSource<BE, Rg>,
 {
     fn lwe_fill_mask_from_source_reference<R>(&self, base2k: usize, res: &mut R, source_xa: &mut Source)
     where
-        R: LWEToBackendMut<BE>,
+        R: LWEToBackendMut<BE, Rg>,
     {
         let mut res = res.to_backend_mut();
         assert!(res.mask.cols() == 1, "lwe_fill_mask_from_source: LWE mask cols must be 1");
@@ -38,7 +38,7 @@ where
 /// Portable implementation using HAL operations.
 ///
 /// Backend implementations may call this helper without changing their override selection.
-pub trait LWEEncryptSkReference<BE: Backend> {
+pub trait LWEEncryptSkReference<BE: Backend, Rg: Ring = Standard> {
     fn lwe_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
         A: LWEInfos;
@@ -52,22 +52,22 @@ pub trait LWEEncryptSkReference<BE: Backend> {
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: LWEToBackendMut<BE> + LWEInfos,
-        P: LWEPlaintextToBackendRef<BE>,
-        S: LWESecretToBackendRef<BE>;
+        R: LWEToBackendMut<BE, Rg> + LWEInfos,
+        P: LWEPlaintextToBackendRef<BE, Rg>,
+        S: LWESecretToBackendRef<BE, Rg>;
 }
 
-impl<BE: Backend> LWEEncryptSkReference<BE> for Module<BE>
+impl<BE: Backend, Rg: Ring> LWEEncryptSkReference<BE, Rg> for Module<BE>
 where
     Self: Sized
-        + LWEFillMask<BE>
-        + VecZnxBigAddNoise<BE>
+        + LWEFillMask<BE, Rg>
+        + VecZnxBigAddNoise<BE, Rg>
         + VecZnxBigBytesOf
-        + VecZnxBigInnerSum<BE>
-        + VecZnxBigNormalize<BE>
+        + VecZnxBigInnerSum<BE, Rg>
+        + VecZnxBigNormalize<BE, Rg>
         + VecZnxBigNormalizeTmpBytes
-        + VecZnxBigScalarProduct<BE>
-        + VecZnxBigSubSmallNegateAssign<BE>,
+        + VecZnxBigScalarProduct<BE, Rg>
+        + VecZnxBigSubSmallNegateAssign<BE, Rg>,
 {
     fn lwe_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
@@ -92,9 +92,9 @@ where
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: LWEToBackendMut<BE> + LWEInfos,
-        P: LWEPlaintextToBackendRef<BE>,
-        S: LWESecretToBackendRef<BE>,
+        R: LWEToBackendMut<BE, Rg> + LWEInfos,
+        P: LWEPlaintextToBackendRef<BE, Rg>,
+        S: LWESecretToBackendRef<BE, Rg>,
     {
         let metadata = Some(crate::ComponentNoise::from_secret_at(
             sk.to_backend_ref().dist,

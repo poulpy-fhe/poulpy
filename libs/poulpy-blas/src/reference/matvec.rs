@@ -12,7 +12,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::{CnvPVecAlloc, ModuleN},
-    layouts::{Backend, Module, PrepareHint, ScratchArena},
+    layouts::{Backend, Module, PrepareHint, Ring, ScratchArena, Standard},
 };
 
 use super::{LtEval, baby_caches, lt_tmp_bytes, shared_giants};
@@ -32,15 +32,15 @@ use crate::layouts::{
 /// [`crate::layouts::validate_blas_matvec_pt`], before any write, so its errors leave `res` untouched, then asserts its
 /// scratch and returns poulpy-ckks's budget errors before any write. It runs ciphertext after ciphertext on one
 /// scratch, and the first error stops it.
-pub trait BlasMatVecReference<BE: Backend> {
+pub trait BlasMatVecReference<BE: Backend, Rg: Ring = Standard> {
     /// The baby steps of one input ciphertext and one summed linear transformation from ciphertexts of `a`'s layout into
     /// one of `res`'s, by `w`'s diagonals: resident, or streamed for an unprepared operand. On maps that rotate nothing,
     /// `keys` is never read and the smallest key covering `a`'s layout stands in for it.
     fn blas_matvec_pt_tmp_bytes_reference<R, W, A, K>(&self, res: &R, w: &W, a: &A, keys: &K) -> usize
     where
-        Self: CKKSLinearTransformationOps<BE>,
+        Self: CKKSLinearTransformationOps<BE, Rg>,
         R: BlasVectorInfos,
-        W: BlasMatVecMaps<BE>,
+        W: BlasMatVecMaps<BE, Rg>,
         A: BlasVectorInfos,
         K: GGLWEInfos;
 
@@ -57,18 +57,18 @@ pub trait BlasMatVecReference<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: CKKSLinearTransformationOps<BE> + ModuleN + CnvPVecAlloc<BE> + Sized,
-        R: BlasVectorMut<BE>,
-        W: BlasMatVecMaps<BE>,
-        A: BlasVectorRef<BE>,
-        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync;
+        Self: CKKSLinearTransformationOps<BE, Rg> + ModuleN + CnvPVecAlloc<BE> + Sized,
+        R: BlasVectorMut<BE, Rg>,
+        W: BlasMatVecMaps<BE, Rg>,
+        A: BlasVectorRef<BE, Rg>,
+        K: GetAutomorphismKey<BE, Rg> + GetTensorKey<BE, Rg> + Sync;
 
     /// [`Self::blas_matvec_pt_tmp_bytes_reference`] from `a`'s blocks.
     fn blas_grid_to_vector_tmp_bytes_reference<R, W, A, K>(&self, res: &R, w: &W, a: &A, keys: &K) -> usize
     where
-        Self: CKKSLinearTransformationOps<BE>,
+        Self: CKKSLinearTransformationOps<BE, Rg>,
         R: BlasVectorInfos,
-        W: BlasMatVecMaps<BE>,
+        W: BlasMatVecMaps<BE, Rg>,
         A: BlasGridInfos,
         K: GGLWEInfos;
 
@@ -83,18 +83,18 @@ pub trait BlasMatVecReference<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: CKKSLinearTransformationOps<BE> + ModuleN + CnvPVecAlloc<BE> + Sized,
-        R: BlasVectorMut<BE>,
-        W: BlasMatVecMaps<BE>,
-        A: BlasGrid<BE>,
-        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync;
+        Self: CKKSLinearTransformationOps<BE, Rg> + ModuleN + CnvPVecAlloc<BE> + Sized,
+        R: BlasVectorMut<BE, Rg>,
+        W: BlasMatVecMaps<BE, Rg>,
+        A: BlasGrid<BE, Rg>,
+        K: GetAutomorphismKey<BE, Rg> + GetTensorKey<BE, Rg> + Sync;
 
     /// [`Self::blas_matvec_pt_tmp_bytes_reference`] into `res`'s blocks.
     fn blas_vector_to_grid_tmp_bytes_reference<R, W, A, K>(&self, res: &R, w: &W, a: &A, keys: &K) -> usize
     where
-        Self: CKKSLinearTransformationOps<BE>,
+        Self: CKKSLinearTransformationOps<BE, Rg>,
         R: BlasGridInfos,
-        W: BlasMatVecMaps<BE>,
+        W: BlasMatVecMaps<BE, Rg>,
         A: BlasVectorInfos,
         K: GGLWEInfos;
 
@@ -110,20 +110,20 @@ pub trait BlasMatVecReference<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: CKKSLinearTransformationOps<BE> + ModuleN + CnvPVecAlloc<BE> + Sized,
-        R: BlasGridMut<BE>,
-        W: BlasMatVecMaps<BE>,
-        A: BlasVectorRef<BE>,
-        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync;
+        Self: CKKSLinearTransformationOps<BE, Rg> + ModuleN + CnvPVecAlloc<BE> + Sized,
+        R: BlasGridMut<BE, Rg>,
+        W: BlasMatVecMaps<BE, Rg>,
+        A: BlasVectorRef<BE, Rg>,
+        K: GetAutomorphismKey<BE, Rg> + GetTensorKey<BE, Rg> + Sync;
 
     /// The baby-step cache of `a` beside the larger of its preparation and poulpy-ckks's transform of `m`'s ciphertext
     /// diagonals from `a`'s layout and from `res`'s. On a schedule that rotates nothing, `keys` is never read and
     /// `tsk`'s layout stands in for it.
     fn blas_matvec_diagonal_tmp_bytes_reference<R, M, A, T, K>(&self, res: &R, m: &M, a: &A, tsk: &T, keys: &K) -> usize
     where
-        Self: CKKSLinearTransformationOps<BE>,
+        Self: CKKSLinearTransformationOps<BE, Rg>,
         R: BlasVectorInfos,
-        M: BlasDiagonalCiphertextMap<BE>,
+        M: BlasDiagonalCiphertextMap<BE, Rg>,
         A: BlasVectorInfos,
         T: GGLWEInfos,
         K: GGLWEInfos;
@@ -140,17 +140,21 @@ pub trait BlasMatVecReference<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: CKKSLinearTransformationOps<BE> + ModuleN + Sized,
-        R: BlasVectorMut<BE>,
-        M: BlasDiagonalCiphertextMap<BE>,
-        A: BlasVectorRef<BE>,
-        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync;
+        Self: CKKSLinearTransformationOps<BE, Rg> + ModuleN + Sized,
+        R: BlasVectorMut<BE, Rg>,
+        M: BlasDiagonalCiphertextMap<BE, Rg>,
+        A: BlasVectorRef<BE, Rg>,
+        K: GetAutomorphismKey<BE, Rg> + GetTensorKey<BE, Rg> + Sync;
 
     /// The largest of a rotation of `v` into a scratch ciphertext and its preparation as a left operand, and
     /// poulpy-ckks's masked accumulate into a diagonal of `m`; the rotation only when the row append rotates `v`.
     fn blas_append_row_diagonal_tmp_bytes_reference<M, V, P, K>(&self, m: &M, v: &V, mask: &P, keys: &K) -> usize
     where
-        Self: CKKSLinearTransformationOps<BE> + CKKSRotateOps<BE> + CKKSMulOps<BE> + CKKSDotProductOps<BE> + GLWEBytesOf<BE>,
+        Self: CKKSLinearTransformationOps<BE, Rg>
+            + CKKSRotateOps<BE, Rg>
+            + CKKSMulOps<BE, Rg>
+            + CKKSDotProductOps<BE, Rg>
+            + GLWEBytesOf<BE>,
         M: BlasDiagonalCiphertextInfos,
         V: BlasVectorInfos,
         P: GLWEInfos,
@@ -162,27 +166,31 @@ pub trait BlasMatVecReference<BE: Backend> {
     /// `ckks_dot_product_prepared_pt_vec_add`.
     fn blas_append_row_diagonal_reference<V, K>(
         &self,
-        m: &mut BlasDiagonalCiphertext<BE>,
+        m: &mut BlasDiagonalCiphertext<BE, Rg>,
         row: i64,
         v: &V,
-        mask: &CKKSRightOperandPrepared<BE>,
+        mask: &CKKSRightOperandPrepared<BE, Rg>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: CKKSLinearTransformationOps<BE>
-            + CKKSRotateOps<BE>
-            + CKKSMulOps<BE>
-            + CKKSDotProductOps<BE>
+        Self: CKKSLinearTransformationOps<BE, Rg>
+            + CKKSRotateOps<BE, Rg>
+            + CKKSMulOps<BE, Rg>
+            + CKKSDotProductOps<BE, Rg>
             + GLWEBytesOf<BE>
             + Sized,
-        V: BlasVectorRef<BE>,
-        K: GetAutomorphismKey<BE> + Sync;
+        V: BlasVectorRef<BE, Rg>,
+        K: GetAutomorphismKey<BE, Rg> + Sync;
 
     /// As [`Self::blas_append_row_diagonal_tmp_bytes_reference`], for a column append.
     fn blas_append_col_diagonal_tmp_bytes_reference<M, V, P, K>(&self, m: &M, v: &V, mask: &P, keys: &K) -> usize
     where
-        Self: CKKSLinearTransformationOps<BE> + CKKSRotateOps<BE> + CKKSMulOps<BE> + CKKSDotProductOps<BE> + GLWEBytesOf<BE>,
+        Self: CKKSLinearTransformationOps<BE, Rg>
+            + CKKSRotateOps<BE, Rg>
+            + CKKSMulOps<BE, Rg>
+            + CKKSDotProductOps<BE, Rg>
+            + GLWEBytesOf<BE>,
         M: BlasDiagonalCiphertextInfos,
         V: BlasVectorInfos,
         P: GLWEInfos,
@@ -193,33 +201,33 @@ pub trait BlasMatVecReference<BE: Backend> {
     /// through the Galois element of `b - col` times `rot(v, -g)`.
     fn blas_append_col_diagonal_reference<V, K>(
         &self,
-        m: &mut BlasDiagonalCiphertext<BE>,
+        m: &mut BlasDiagonalCiphertext<BE, Rg>,
         col: i64,
         v: &V,
-        mask: &CKKSRightOperandPrepared<BE>,
+        mask: &CKKSRightOperandPrepared<BE, Rg>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: CKKSLinearTransformationOps<BE>
-            + CKKSRotateOps<BE>
-            + CKKSMulOps<BE>
-            + CKKSDotProductOps<BE>
+        Self: CKKSLinearTransformationOps<BE, Rg>
+            + CKKSRotateOps<BE, Rg>
+            + CKKSMulOps<BE, Rg>
+            + CKKSDotProductOps<BE, Rg>
             + GLWEBytesOf<BE>
             + Sized,
-        V: BlasVectorRef<BE>,
-        K: GetAutomorphismKey<BE> + Sync;
+        V: BlasVectorRef<BE, Rg>,
+        K: GetAutomorphismKey<BE, Rg> + Sync;
 }
 
-impl<BE: Backend> BlasMatVecReference<BE> for Module<BE>
+impl<BE: Backend, Rg: Ring> BlasMatVecReference<BE, Rg> for Module<BE>
 where
-    Module<BE>: CKKSLeftOperandPreparedFactory<BE>,
+    Module<BE>: CKKSLeftOperandPreparedFactory<BE, Rg>,
 {
     fn blas_matvec_pt_tmp_bytes_reference<R, W, A, K>(&self, res: &R, w: &W, a: &A, keys: &K) -> usize
     where
-        Self: CKKSLinearTransformationOps<BE>,
+        Self: CKKSLinearTransformationOps<BE, Rg>,
         R: BlasVectorInfos,
-        W: BlasMatVecMaps<BE>,
+        W: BlasMatVecMaps<BE, Rg>,
         A: BlasVectorInfos,
         K: GGLWEInfos,
     {
@@ -235,11 +243,11 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: CKKSLinearTransformationOps<BE> + ModuleN + CnvPVecAlloc<BE> + Sized,
-        R: BlasVectorMut<BE>,
-        W: BlasMatVecMaps<BE>,
-        A: BlasVectorRef<BE>,
-        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync,
+        Self: CKKSLinearTransformationOps<BE, Rg> + ModuleN + CnvPVecAlloc<BE> + Sized,
+        R: BlasVectorMut<BE, Rg>,
+        W: BlasMatVecMaps<BE, Rg>,
+        A: BlasVectorRef<BE, Rg>,
+        K: GetAutomorphismKey<BE, Rg> + GetTensorKey<BE, Rg> + Sync,
     {
         let op = "blas_matvec_pt";
         validate_blas_matvec_pt(self, &*res, w, a, keys)?;
@@ -264,9 +272,9 @@ where
 
     fn blas_grid_to_vector_tmp_bytes_reference<R, W, A, K>(&self, res: &R, w: &W, a: &A, keys: &K) -> usize
     where
-        Self: CKKSLinearTransformationOps<BE>,
+        Self: CKKSLinearTransformationOps<BE, Rg>,
         R: BlasVectorInfos,
-        W: BlasMatVecMaps<BE>,
+        W: BlasMatVecMaps<BE, Rg>,
         A: BlasGridInfos,
         K: GGLWEInfos,
     {
@@ -283,11 +291,11 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: CKKSLinearTransformationOps<BE> + ModuleN + CnvPVecAlloc<BE> + Sized,
-        R: BlasVectorMut<BE>,
-        W: BlasMatVecMaps<BE>,
-        A: BlasGrid<BE>,
-        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync,
+        Self: CKKSLinearTransformationOps<BE, Rg> + ModuleN + CnvPVecAlloc<BE> + Sized,
+        R: BlasVectorMut<BE, Rg>,
+        W: BlasMatVecMaps<BE, Rg>,
+        A: BlasGrid<BE, Rg>,
+        K: GetAutomorphismKey<BE, Rg> + GetTensorKey<BE, Rg> + Sync,
     {
         let op = "blas_grid_to_vector";
         validate_blas_grid_to_vector(self, &*res, w, a, line, keys)?;
@@ -314,9 +322,9 @@ where
 
     fn blas_vector_to_grid_tmp_bytes_reference<R, W, A, K>(&self, res: &R, w: &W, a: &A, keys: &K) -> usize
     where
-        Self: CKKSLinearTransformationOps<BE>,
+        Self: CKKSLinearTransformationOps<BE, Rg>,
         R: BlasGridInfos,
-        W: BlasMatVecMaps<BE>,
+        W: BlasMatVecMaps<BE, Rg>,
         A: BlasVectorInfos,
         K: GGLWEInfos,
     {
@@ -333,11 +341,11 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: CKKSLinearTransformationOps<BE> + ModuleN + CnvPVecAlloc<BE> + Sized,
-        R: BlasGridMut<BE>,
-        W: BlasMatVecMaps<BE>,
-        A: BlasVectorRef<BE>,
-        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync,
+        Self: CKKSLinearTransformationOps<BE, Rg> + ModuleN + CnvPVecAlloc<BE> + Sized,
+        R: BlasGridMut<BE, Rg>,
+        W: BlasMatVecMaps<BE, Rg>,
+        A: BlasVectorRef<BE, Rg>,
+        K: GetAutomorphismKey<BE, Rg> + GetTensorKey<BE, Rg> + Sync,
     {
         let op = "blas_vector_to_grid";
         let batch = validate_blas_vector_to_grid(self, &*res, line, w, a, keys)?;
@@ -365,15 +373,15 @@ where
 
     fn blas_matvec_diagonal_tmp_bytes_reference<R, M, A, T, K>(&self, res: &R, m: &M, a: &A, tsk: &T, keys: &K) -> usize
     where
-        Self: CKKSLinearTransformationOps<BE>,
+        Self: CKKSLinearTransformationOps<BE, Rg>,
         R: BlasVectorInfos,
-        M: BlasDiagonalCiphertextMap<BE>,
+        M: BlasDiagonalCiphertextMap<BE, Rg>,
         A: BlasVectorInfos,
         T: GGLWEInfos,
         K: GGLWEInfos,
     {
         let shape = diagonal_ciphertext::shape(&m.blas_diagonal_ciphertext_layout());
-        let keys = rotates(self, |f| matvec_diagonal_uses(res, &shape, a, f)).then(|| keys.gglwe_layout());
+        let keys = rotates::<_, Rg>(self, |f| matvec_diagonal_uses(res, &shape, a, f)).then(|| keys.gglwe_layout());
         matvec_diagonal_tmp_bytes(self, M::STREAMED, res, m, a, &tsk.gglwe_layout(), keys.as_ref())
     }
 
@@ -386,11 +394,11 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: CKKSLinearTransformationOps<BE> + ModuleN + Sized,
-        R: BlasVectorMut<BE>,
-        M: BlasDiagonalCiphertextMap<BE>,
-        A: BlasVectorRef<BE>,
-        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync,
+        Self: CKKSLinearTransformationOps<BE, Rg> + ModuleN + Sized,
+        R: BlasVectorMut<BE, Rg>,
+        M: BlasDiagonalCiphertextMap<BE, Rg>,
+        A: BlasVectorRef<BE, Rg>,
+        K: GetAutomorphismKey<BE, Rg> + GetTensorKey<BE, Rg> + Sync,
     {
         let op = "blas_matvec_diagonal";
         validate_blas_matvec_diagonal(self, &*res, m, a, keys)?;
@@ -417,7 +425,11 @@ where
 
     fn blas_append_row_diagonal_tmp_bytes_reference<M, V, P, K>(&self, m: &M, v: &V, mask: &P, keys: &K) -> usize
     where
-        Self: CKKSLinearTransformationOps<BE> + CKKSRotateOps<BE> + CKKSMulOps<BE> + CKKSDotProductOps<BE> + GLWEBytesOf<BE>,
+        Self: CKKSLinearTransformationOps<BE, Rg>
+            + CKKSRotateOps<BE, Rg>
+            + CKKSMulOps<BE, Rg>
+            + CKKSDotProductOps<BE, Rg>
+            + GLWEBytesOf<BE>,
         M: BlasDiagonalCiphertextInfos,
         V: BlasVectorInfos,
         P: GLWEInfos,
@@ -428,22 +440,22 @@ where
 
     fn blas_append_row_diagonal_reference<V, K>(
         &self,
-        m: &mut BlasDiagonalCiphertext<BE>,
+        m: &mut BlasDiagonalCiphertext<BE, Rg>,
         row: i64,
         v: &V,
-        mask: &CKKSRightOperandPrepared<BE>,
+        mask: &CKKSRightOperandPrepared<BE, Rg>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: CKKSLinearTransformationOps<BE>
-            + CKKSRotateOps<BE>
-            + CKKSMulOps<BE>
-            + CKKSDotProductOps<BE>
+        Self: CKKSLinearTransformationOps<BE, Rg>
+            + CKKSRotateOps<BE, Rg>
+            + CKKSMulOps<BE, Rg>
+            + CKKSDotProductOps<BE, Rg>
             + GLWEBytesOf<BE>
             + Sized,
-        V: BlasVectorRef<BE>,
-        K: GetAutomorphismKey<BE> + Sync,
+        V: BlasVectorRef<BE, Rg>,
+        K: GetAutomorphismKey<BE, Rg> + Sync,
     {
         validate_blas_append_row_diagonal(self, m, v, mask, keys)?;
         append(self, AppendAxis::Row, m, row, v, mask, keys, scratch)
@@ -451,7 +463,11 @@ where
 
     fn blas_append_col_diagonal_tmp_bytes_reference<M, V, P, K>(&self, m: &M, v: &V, mask: &P, keys: &K) -> usize
     where
-        Self: CKKSLinearTransformationOps<BE> + CKKSRotateOps<BE> + CKKSMulOps<BE> + CKKSDotProductOps<BE> + GLWEBytesOf<BE>,
+        Self: CKKSLinearTransformationOps<BE, Rg>
+            + CKKSRotateOps<BE, Rg>
+            + CKKSMulOps<BE, Rg>
+            + CKKSDotProductOps<BE, Rg>
+            + GLWEBytesOf<BE>,
         M: BlasDiagonalCiphertextInfos,
         V: BlasVectorInfos,
         P: GLWEInfos,
@@ -462,22 +478,22 @@ where
 
     fn blas_append_col_diagonal_reference<V, K>(
         &self,
-        m: &mut BlasDiagonalCiphertext<BE>,
+        m: &mut BlasDiagonalCiphertext<BE, Rg>,
         col: i64,
         v: &V,
-        mask: &CKKSRightOperandPrepared<BE>,
+        mask: &CKKSRightOperandPrepared<BE, Rg>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: CKKSLinearTransformationOps<BE>
-            + CKKSRotateOps<BE>
-            + CKKSMulOps<BE>
-            + CKKSDotProductOps<BE>
+        Self: CKKSLinearTransformationOps<BE, Rg>
+            + CKKSRotateOps<BE, Rg>
+            + CKKSMulOps<BE, Rg>
+            + CKKSDotProductOps<BE, Rg>
             + GLWEBytesOf<BE>
             + Sized,
-        V: BlasVectorRef<BE>,
-        K: GetAutomorphismKey<BE> + Sync,
+        V: BlasVectorRef<BE, Rg>,
+        K: GetAutomorphismKey<BE, Rg> + Sync,
     {
         validate_blas_append_col_diagonal(self, m, v, mask, keys)?;
         append(self, AppendAxis::Col, m, col, v, mask, keys, scratch)
@@ -486,7 +502,7 @@ where
 
 /// [`BlasMatVecReference::blas_matvec_diagonal_tmp_bytes_reference`] of diagonals prepared at each use when `streamed`,
 /// on rotation keys of layout `keys`, or of `tsk` where the schedule rotates nothing (`None`).
-fn matvec_diagonal_tmp_bytes<BE: Backend>(
+fn matvec_diagonal_tmp_bytes<BE: Backend, Rg: Ring>(
     module: &Module<BE>,
     streamed: bool,
     res: &impl BlasVectorInfos,
@@ -496,7 +512,7 @@ fn matvec_diagonal_tmp_bytes<BE: Backend>(
     keys: Option<&GGLWELayout>,
 ) -> usize
 where
-    Module<BE>: CKKSLinearTransformationOps<BE>,
+    Module<BE>: CKKSLinearTransformationOps<BE, Rg>,
 {
     let (layout, res, a) = (m.blas_diagonal_ciphertext_layout(), res.ct_layout(), a.ct_layout());
     let (plan, keys) = (layout.lt.index(), keys.unwrap_or(tsk));
@@ -516,7 +532,7 @@ where
 }
 
 /// The append query along `axis` on rotation keys of layout `keys`, read only when the append rotates `v`.
-fn append_query<BE: Backend>(
+fn append_query<BE: Backend, Rg: Ring>(
     module: &Module<BE>,
     axis: AppendAxis,
     m: &impl BlasDiagonalCiphertextInfos,
@@ -525,22 +541,22 @@ fn append_query<BE: Backend>(
     keys: &impl GGLWEInfos,
 ) -> usize
 where
-    Module<BE>: CKKSLinearTransformationOps<BE>
-        + CKKSRotateOps<BE>
-        + CKKSMulOps<BE>
-        + CKKSLeftOperandPreparedFactory<BE>
-        + CKKSDotProductOps<BE>
+    Module<BE>: CKKSLinearTransformationOps<BE, Rg>
+        + CKKSRotateOps<BE, Rg>
+        + CKKSMulOps<BE, Rg>
+        + CKKSLeftOperandPreparedFactory<BE, Rg>
+        + CKKSDotProductOps<BE, Rg>
         + GLWEBytesOf<BE>,
 {
     let shape = diagonal_ciphertext::shape(&m.blas_diagonal_ciphertext_layout());
-    let keys = rotates(module, |f| append_uses(axis, &shape, v, f)).then(|| keys.gglwe_layout());
+    let keys = rotates::<_, Rg>(module, |f| append_uses(axis, &shape, v, f)).then(|| keys.gglwe_layout());
     append_tmp_bytes(module, m, v, mask, keys.as_ref())
 }
 
 /// The append query on rotation keys of layout `keys`, `None` for an append that rotates nothing: a rotation of `v`
 /// into a scratch ciphertext then its preparation, or `v`'s preparation alone, a masked accumulate and the
 /// preparation of the diagonals.
-fn append_tmp_bytes<BE: Backend>(
+fn append_tmp_bytes<BE: Backend, Rg: Ring>(
     module: &Module<BE>,
     m: &impl BlasDiagonalCiphertextInfos,
     v: &impl BlasVectorInfos,
@@ -548,11 +564,11 @@ fn append_tmp_bytes<BE: Backend>(
     keys: Option<&GGLWELayout>,
 ) -> usize
 where
-    Module<BE>: CKKSLinearTransformationOps<BE>
-        + CKKSRotateOps<BE>
-        + CKKSMulOps<BE>
-        + CKKSLeftOperandPreparedFactory<BE>
-        + CKKSDotProductOps<BE>
+    Module<BE>: CKKSLinearTransformationOps<BE, Rg>
+        + CKKSRotateOps<BE, Rg>
+        + CKKSMulOps<BE, Rg>
+        + CKKSLeftOperandPreparedFactory<BE, Rg>
+        + CKKSDotProductOps<BE, Rg>
         + GLWEBytesOf<BE>,
 {
     let (diagonal, v) = (m.blas_diagonal_ciphertext_layout().ct, v.ct_layout());
@@ -569,33 +585,33 @@ where
 /// left operand, refilled for each rotation of `v` ([`append_rotations`]), the rotation made in scratch, and read by the
 /// entries of that rotation.
 #[allow(clippy::too_many_arguments)]
-fn append<BE, V, K>(
+fn append<BE, V, K, Rg: Ring>(
     module: &Module<BE>,
     axis: AppendAxis,
-    m: &mut BlasDiagonalCiphertext<BE>,
+    m: &mut BlasDiagonalCiphertext<BE, Rg>,
     at: i64,
     v: &V,
-    mask: &CKKSRightOperandPrepared<BE>,
+    mask: &CKKSRightOperandPrepared<BE, Rg>,
     keys: &K,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
     BE: Backend,
-    Module<BE>: CKKSLinearTransformationOps<BE>
-        + CKKSRotateOps<BE>
-        + CKKSMulOps<BE>
-        + CKKSLeftOperandPreparedFactory<BE>
-        + CKKSDotProductOps<BE>
+    Module<BE>: CKKSLinearTransformationOps<BE, Rg>
+        + CKKSRotateOps<BE, Rg>
+        + CKKSMulOps<BE, Rg>
+        + CKKSLeftOperandPreparedFactory<BE, Rg>
+        + CKKSDotProductOps<BE, Rg>
         + GLWEBytesOf<BE>,
-    V: BlasVectorRef<BE>,
-    K: GetAutomorphismKey<BE> + Sync,
+    V: BlasVectorRef<BE, Rg>,
+    K: GetAutomorphismKey<BE, Rg> + Sync,
 {
     let op = axis.op();
     let used = KeyLayouts::new(keys);
     let _ = append_uses(axis, &m.diagonals, v, &mut |u| ensure_rotation(op, module, &used, u));
     let bytes = used.max_bytes_or_unused(|key| append_tmp_bytes(module, &*m, v, mask, key));
     assert_scratch(op, bytes, scratch);
-    let (src, layout, slots) = (&v.cts()[0], v.ct_layout(), module.ckks_max_slots() as i64);
+    let (src, layout, slots) = (&v.cts()[0], v.ct_layout(), module.ckks_max_slots::<Rg>() as i64);
     let at = at.rem_euclid(slots);
     let mut left = module.ckks_left_operand_prepared_alloc_from_infos(&layout, PrepareHint::Reuse);
     for r in append_rotations(axis, &m.diagonals) {
@@ -614,7 +630,7 @@ where
                     AppendAxis::Col if -giant == r => d.baby - at,
                     _ => continue,
                 };
-                let galois = module.ckks_galois_element(shift.rem_euclid(slots));
+                let galois = module.ckks_galois_element::<Rg>(shift.rem_euclid(slots));
                 module.ckks_dot_product_prepared_pt_vec_add(&mut d.plaintext, &[&left], &[mask], &[galois], scratch)?;
             }
         }
@@ -642,14 +658,14 @@ fn covering_key(a: &CKKSLayout) -> GGLWELayout {
 /// One baby-step cache of an input of layout `a` and one summed transform from it into an output of layout `res` by
 /// `w`'s diagonals: resident, or streamed for an unprepared operand, at `keys`' layout, or at [`covering_key`] for maps
 /// that look up no key.
-fn maps_tmp_bytes<BE, W>(module: &Module<BE>, w: &W, res: CKKSLayout, a: CKKSLayout, keys: &impl GGLWEInfos) -> usize
+fn maps_tmp_bytes<BE, W, Rg: Ring>(module: &Module<BE>, w: &W, res: CKKSLayout, a: CKKSLayout, keys: &impl GGLWEInfos) -> usize
 where
     BE: Backend,
-    Module<BE>: CKKSLinearTransformationOps<BE>,
-    W: BlasMatVecMaps<BE>,
+    Module<BE>: CKKSLinearTransformationOps<BE, Rg>,
+    W: BlasMatVecMaps<BE, Rg>,
 {
     let views = (BlasVectorLayout::new(res, w.output()), BlasVectorLayout::new(a, w.input()));
-    let key = if rotates(module, |f| matvec_pt_uses(&views.0, w.blocks(), &views.1, f)) {
+    let key = if rotates::<_, Rg>(module, |f| matvec_pt_uses(&views.0, w.blocks(), &views.1, f)) {
         keys.gglwe_layout()
     } else {
         covering_key(&a)
@@ -661,7 +677,7 @@ where
 /// The products by `w`'s maps: one baby-step cache per input `source(i)`, `i < inputs`, which every output shares, then
 /// output `o` of `dsts` is poulpy-ckks's summed linear transformation of the terms `(source(i), w_oi)` in ascending
 /// `i`, stamped with the label `w`'s output period proves.
-fn apply_maps<'s, BE, M, D, S, W, K>(
+fn apply_maps<'s, BE, M, D, S, W, K, Rg: Ring>(
     module: &M,
     dsts: Vec<&mut D>,
     inputs: usize,
@@ -672,11 +688,11 @@ fn apply_maps<'s, BE, M, D, S, W, K>(
 ) -> Result<()>
 where
     BE: Backend + 's,
-    M: CKKSLinearTransformationOps<BE> + ModuleN + CnvPVecAlloc<BE>,
-    D: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-    S: GLWEToBackendRef<BE> + CKKSCtBounds + 's,
-    W: BlasMatVecMaps<BE>,
-    K: GetAutomorphismKey<BE> + GetTensorKey<BE>,
+    M: CKKSLinearTransformationOps<BE, Rg> + ModuleN + CnvPVecAlloc<BE>,
+    D: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+    S: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + 's,
+    W: BlasMatVecMaps<BE, Rg>,
+    K: GetAutomorphismKey<BE, Rg> + GetTensorKey<BE, Rg>,
 {
     let maps = w.blocks();
     // Every map shares one schedule, so the first one's baby steps serve them all.

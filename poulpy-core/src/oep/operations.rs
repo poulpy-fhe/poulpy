@@ -3,7 +3,7 @@ use std::{collections::HashMap, ops::Range};
 
 use poulpy_hal::layouts::{
     Backend, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecLToBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef,
-    CnvPVecRToBackendRef, Module, ScratchArena, Standard, VecZnxBackendMut, VecZnxBackendRef, VecZnxDftBackendMut,
+    CnvPVecRToBackendRef, Module, Ring, ScratchArena, Standard, VecZnxBackendMut, VecZnxBackendRef, VecZnxDftBackendMut,
 };
 
 use crate::layouts::{
@@ -17,7 +17,7 @@ use crate::layouts::{
 /// Implementations reproduce the bodies their methods document bit for bit, report for each
 /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait GLWEMulConstImpl: Backend {
+pub unsafe trait GLWEMulConstImpl<Rg: Ring = Standard>: Backend {
     /// Scratch bound of [`Self::glwe_mul_const`] and [`Self::glwe_mul_const_assign`]; may report less than the
     /// reference, never less than the body takes.
     fn glwe_mul_const_tmp_bytes<R, A, B>(module: &Module<Self>, res: &R, a: &A, b: &B) -> usize
@@ -38,9 +38,9 @@ pub unsafe trait GLWEMulConstImpl: Backend {
         b_coeff: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        R: GLWEToBackendMut<Self> + GLWEInfos,
-        A: GLWEToBackendRef<Self> + GLWEInfos,
-        B: GLWEToBackendRef<Self> + GLWEInfos;
+        R: GLWEToBackendMut<Self, Rg> + GLWEInfos,
+        A: GLWEToBackendRef<Self, Rg> + GLWEInfos,
+        B: GLWEToBackendRef<Self, Rg> + GLWEInfos;
 
     /// Reproduces
     /// [`glwe_mul_const_assign_reference`](crate::reference::operations::GLWEMulConstReference::glwe_mul_const_assign_reference)
@@ -53,8 +53,8 @@ pub unsafe trait GLWEMulConstImpl: Backend {
         b_coeff: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        R: GLWEToBackendMut<Self> + GLWEInfos,
-        B: GLWEToBackendRef<Self> + GLWEInfos;
+        R: GLWEToBackendMut<Self, Rg> + GLWEInfos,
+        B: GLWEToBackendRef<Self, Rg> + GLWEInfos;
 
     /// Scratch bytes of [`Self::glwe_const_combination`] for an accumulator of `acc_size` limbs,
     /// terms of at most `a_size` limbs and constants of at most `b_size` limbs.
@@ -77,11 +77,11 @@ pub unsafe trait GLWEMulConstImpl: Backend {
     /// bit within [`Self::glwe_const_combination_tmp_bytes`].
     fn glwe_const_combination(
         module: &Module<Self>,
-        res: &mut VecZnxBackendMut<'_, Self>,
+        res: &mut VecZnxBackendMut<'_, Self, Rg>,
         base2k: usize,
         res_k: usize,
         acc_size: usize,
-        terms: &[ConstTerm<'_, Self>],
+        terms: &[ConstTerm<'_, Self, Rg>],
         scratch: &mut ScratchArena<'_, Self>,
     );
 }
@@ -89,9 +89,9 @@ pub unsafe trait GLWEMulConstImpl: Backend {
 /// One term of [`GLWEMulConstImpl::glwe_const_combination`]: every column of `a` times
 /// coefficient `b_coeff` of column `b_col` of `b`, shifted right by `shift` bits, at
 /// convolution offset `cnv_offset`.
-pub struct ConstTerm<'a, BE: Backend + 'a> {
-    pub a: VecZnxBackendRef<'a, BE>,
-    pub b: VecZnxBackendRef<'a, BE>,
+pub struct ConstTerm<'a, BE: Backend + 'a, Rg: Ring = Standard> {
+    pub a: VecZnxBackendRef<'a, BE, Rg>,
+    pub b: VecZnxBackendRef<'a, BE, Rg>,
     pub b_col: usize,
     pub b_coeff: usize,
     pub shift: usize,
@@ -104,7 +104,7 @@ pub struct ConstTerm<'a, BE: Backend + 'a> {
 /// Implementations reproduce the bodies their methods document bit for bit, report for each
 /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait GLWEMulPlainImpl: Backend {
+pub unsafe trait GLWEMulPlainImpl<Rg: Ring = Standard>: Backend {
     /// Scratch bound of [`Self::glwe_mul_plain`] and [`Self::glwe_mul_plain_assign`]; may report less than the
     /// reference, never less than the body takes.
     fn glwe_mul_plain_tmp_bytes<R, A, B>(module: &Module<Self>, res: &R, a: &A, b: &B) -> usize
@@ -125,9 +125,9 @@ pub unsafe trait GLWEMulPlainImpl: Backend {
         b: &B,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        R: GLWEToBackendMut<Self> + GLWEInfos,
-        A: GLWEToBackendRef<Self> + GLWEInfos,
-        B: GLWEToBackendRef<Self> + IntPolyInfos + GLWEInfos;
+        R: GLWEToBackendMut<Self, Rg> + GLWEInfos,
+        A: GLWEToBackendRef<Self, Rg> + GLWEInfos,
+        B: GLWEToBackendRef<Self, Rg> + IntPolyInfos + GLWEInfos;
 
     /// Reproduces
     /// [`glwe_mul_plain_assign_reference`](crate::reference::operations::GLWEMulPlainReference::glwe_mul_plain_assign_reference)
@@ -139,8 +139,8 @@ pub unsafe trait GLWEMulPlainImpl: Backend {
         a: &A,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        R: GLWEToBackendMut<Self> + GLWEInfos,
-        A: GLWEToBackendRef<Self> + IntPolyInfos + GLWEInfos;
+        R: GLWEToBackendMut<Self, Rg> + GLWEInfos,
+        A: GLWEToBackendRef<Self, Rg> + IntPolyInfos + GLWEInfos;
 }
 
 /// Backend-provided sums of products of prepared GLWE ciphertexts by prepared plaintexts read through Galois elements.
@@ -149,7 +149,7 @@ pub unsafe trait GLWEMulPlainImpl: Backend {
 /// Implementations reproduce the bodies their methods document bit for bit, report for each
 /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait GLWEMulPreparedPlainSumImpl: Backend {
+pub unsafe trait GLWEMulPreparedPlainSumImpl<Rg: Ring = Standard>: Backend {
     /// Scratch bound of [`Self::glwe_mul_prepared_plain_sum`], whatever the number of terms; may report less than the
     /// reference, never less than the body takes.
     fn glwe_mul_prepared_plain_sum_tmp_bytes<R>(module: &Module<Self>, res: &R, a_size: usize, b_size: usize) -> usize
@@ -173,9 +173,9 @@ pub unsafe trait GLWEMulPreparedPlainSumImpl: Backend {
         base2k: crate::layouts::Base2K,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        R: GLWEToBackendMut<Self> + GLWEInfos,
-        AP: CnvPVecLToBackendRef<Self>,
-        BP: CnvPVecRToBackendRef<Self>;
+        R: GLWEToBackendMut<Self, Rg> + GLWEInfos,
+        AP: CnvPVecLToBackendRef<Self, Rg>,
+        BP: CnvPVecRToBackendRef<Self, Rg>;
 
     /// Scratch bound of [`Self::glwe_mul_prepared_plain_sum_add`], whatever the number of terms; may report less than
     /// the reference, never less than the body takes.
@@ -200,9 +200,9 @@ pub unsafe trait GLWEMulPreparedPlainSumImpl: Backend {
         base2k: crate::layouts::Base2K,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        R: GLWEToBackendMut<Self> + GLWEInfos,
-        AP: CnvPVecLToBackendRef<Self>,
-        BP: CnvPVecRToBackendRef<Self>;
+        R: GLWEToBackendMut<Self, Rg> + GLWEInfos,
+        AP: CnvPVecLToBackendRef<Self, Rg>,
+        BP: CnvPVecRToBackendRef<Self, Rg>;
 
     /// Scratch bound of [`Self::glwe_mul_prepared_plain_sum_dft`], whatever the number of terms; may report less than
     /// the reference, never less than the body takes.
@@ -216,7 +216,7 @@ pub unsafe trait GLWEMulPreparedPlainSumImpl: Backend {
     fn glwe_mul_prepared_plain_sum_dft<AP, BP>(
         module: &Module<Self>,
         cnv_offset: usize,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, Rg>,
         a: &[&AP],
         a_size: usize,
         b: &[&BP],
@@ -225,8 +225,8 @@ pub unsafe trait GLWEMulPreparedPlainSumImpl: Backend {
         base2k: crate::layouts::Base2K,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        AP: CnvPVecLToBackendRef<Self>,
-        BP: CnvPVecRToBackendRef<Self>;
+        AP: CnvPVecLToBackendRef<Self, Rg>,
+        BP: CnvPVecRToBackendRef<Self, Rg>;
 
     /// Scratch bound of [`Self::glwe_mul_prepared_plain_sum_dft_add`], whatever the number of terms; may report less
     /// than the reference, never less than the body takes.
@@ -245,7 +245,7 @@ pub unsafe trait GLWEMulPreparedPlainSumImpl: Backend {
     fn glwe_mul_prepared_plain_sum_dft_add<AP, BP>(
         module: &Module<Self>,
         cnv_offset: usize,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, Rg>,
         a: &[&AP],
         a_size: usize,
         b: &[&BP],
@@ -254,8 +254,8 @@ pub unsafe trait GLWEMulPreparedPlainSumImpl: Backend {
         base2k: crate::layouts::Base2K,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        AP: CnvPVecLToBackendRef<Self>,
-        BP: CnvPVecRToBackendRef<Self>;
+        AP: CnvPVecLToBackendRef<Self, Rg>,
+        BP: CnvPVecRToBackendRef<Self, Rg>;
 }
 
 /// Backend-provided GLWE tensoring and relinearization operations.
@@ -267,7 +267,7 @@ pub unsafe trait GLWEMulPreparedPlainSumImpl: Backend {
 /// The square hooks ([`Self::glwe_square_operand_prepare`], [`Self::glwe_square_columns`]) are bit for bit
 /// taken together: an override of `glwe_square_operand_prepare` that leaves `right` unwritten also
 /// overrides `glwe_square_columns`.
-pub unsafe trait GLWETensoringImpl: Backend {
+pub unsafe trait GLWETensoringImpl<Rg: Ring = Standard>: Backend {
     /// Scratch bound of [`Self::glwe_tensor_apply_prepared_right`]; may report less than the reference, never less
     /// than the body takes.
     fn glwe_tensor_apply_prepared_right_tmp_bytes<R, A>(
@@ -294,9 +294,9 @@ pub unsafe trait GLWETensoringImpl: Backend {
         b_size: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        R: GLWEToBackendMut<Self> + GLWEInfos,
-        A: GLWEToBackendRef<Self> + GLWEInfos,
-        BP: CnvPVecRToBackendRef<Self>;
+        R: GLWEToBackendMut<Self, Rg> + GLWEInfos,
+        A: GLWEToBackendRef<Self, Rg> + GLWEInfos,
+        BP: CnvPVecRToBackendRef<Self, Rg>;
 
     /// Scratch bound of [`Self::glwe_tensor_apply`]; may report less than the reference, never less than the body
     /// takes.
@@ -324,9 +324,9 @@ pub unsafe trait GLWETensoringImpl: Backend {
         b: &B,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        R: GLWEToBackendMut<Self> + GLWEInfos,
-        A: GLWEToBackendRef<Self> + GLWEInfos,
-        B: GLWEToBackendRef<Self> + GLWEInfos;
+        R: GLWEToBackendMut<Self, Rg> + GLWEInfos,
+        A: GLWEToBackendRef<Self, Rg> + GLWEInfos,
+        B: GLWEToBackendRef<Self, Rg> + GLWEInfos;
 
     /// Reproduces
     /// [`glwe_tensor_square_apply_reference`](crate::reference::operations::GLWETensoringReference::glwe_tensor_square_apply_reference)
@@ -338,8 +338,8 @@ pub unsafe trait GLWETensoringImpl: Backend {
         a: &A,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        R: GLWEToBackendMut<Self> + GLWEInfos,
-        A: GLWEToBackendRef<Self> + GLWEInfos;
+        R: GLWEToBackendMut<Self, Rg> + GLWEInfos,
+        A: GLWEToBackendRef<Self, Rg> + GLWEInfos;
 
     /// Reproduces
     /// [`glwe_tensor_relinearize_reference`](crate::reference::operations::GLWETensoringReference::glwe_tensor_relinearize_reference)
@@ -347,9 +347,9 @@ pub unsafe trait GLWETensoringImpl: Backend {
     /// [`Self::glwe_tensor_relinearize_tmp_bytes`]; free in kernels and scratch use.
     fn glwe_tensor_relinearize<R, A, H>(module: &Module<Self>, res: &mut R, a: &A, tsk: &H, scratch: &mut ScratchArena<'_, Self>)
     where
-        R: GLWEToBackendMut<Self> + GLWEInfos,
-        A: GLWEToBackendRef<Self> + GLWEInfos,
-        H: GetTensorKey<Self>;
+        R: GLWEToBackendMut<Self, Rg> + GLWEInfos,
+        A: GLWEToBackendRef<Self, Rg> + GLWEInfos,
+        H: GetTensorKey<Self, Rg>;
 
     /// Scratch bound of [`Self::glwe_tensor_relinearize`]; may report less than the reference, never less than the
     /// body takes.
@@ -390,10 +390,10 @@ pub unsafe trait GLWETensoringImpl: Backend {
         tsk: &H,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        R: GLWEToBackendMut<Self> + GLWEInfos,
-        A: GLWEToBackendRef<Self> + GLWEInfos,
-        B: GLWEToBackendRef<Self> + GLWEInfos,
-        H: GetTensorKey<Self>;
+        R: GLWEToBackendMut<Self, Rg> + GLWEInfos,
+        A: GLWEToBackendRef<Self, Rg> + GLWEInfos,
+        B: GLWEToBackendRef<Self, Rg> + GLWEInfos,
+        H: GetTensorKey<Self, Rg>;
 
     /// Reproduces
     /// [`glwe_mul_relinearize_assign_reference`](crate::reference::operations::GLWETensoringReference::glwe_mul_relinearize_assign_reference)
@@ -408,9 +408,9 @@ pub unsafe trait GLWETensoringImpl: Backend {
         tsk: &H,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        R: GLWEToBackendMut<Self> + GLWEInfos,
-        A: GLWEToBackendRef<Self> + GLWEInfos,
-        H: GetTensorKey<Self>;
+        R: GLWEToBackendMut<Self, Rg> + GLWEInfos,
+        A: GLWEToBackendRef<Self, Rg> + GLWEInfos,
+        H: GetTensorKey<Self, Rg>;
 
     /// Reproduces
     /// [`glwe_square_relinearize_reference`](crate::reference::operations::GLWETensoringReference::glwe_square_relinearize_reference)
@@ -425,9 +425,9 @@ pub unsafe trait GLWETensoringImpl: Backend {
         tsk: &H,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        R: GLWEToBackendMut<Self> + GLWEInfos,
-        A: GLWEToBackendRef<Self> + GLWEInfos,
-        H: GetTensorKey<Self>;
+        R: GLWEToBackendMut<Self, Rg> + GLWEInfos,
+        A: GLWEToBackendRef<Self, Rg> + GLWEInfos,
+        H: GetTensorKey<Self, Rg>;
 
     /// Reproduces
     /// [`glwe_square_relinearize_assign_reference`](crate::reference::operations::GLWETensoringReference::glwe_square_relinearize_assign_reference)
@@ -441,8 +441,8 @@ pub unsafe trait GLWETensoringImpl: Backend {
         tsk: &H,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        R: GLWEToBackendMut<Self> + GLWEInfos,
-        H: GetTensorKey<Self>;
+        R: GLWEToBackendMut<Self, Rg> + GLWEInfos,
+        H: GetTensorKey<Self, Rg>;
 
     /// Reproduces
     /// [`glwe_mul_prepared_relinearize_reference`](crate::reference::operations::GLWETensoringReference::glwe_mul_prepared_relinearize_reference)
@@ -461,10 +461,10 @@ pub unsafe trait GLWETensoringImpl: Backend {
         tsk: &H,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        R: GLWEToBackendMut<Self> + GLWEInfos,
-        A: GLWEToBackendRef<Self> + GLWEInfos,
-        BP: CnvPVecRToBackendRef<Self>,
-        H: GetTensorKey<Self>;
+        R: GLWEToBackendMut<Self, Rg> + GLWEInfos,
+        A: GLWEToBackendRef<Self, Rg> + GLWEInfos,
+        BP: CnvPVecRToBackendRef<Self, Rg>,
+        H: GetTensorKey<Self, Rg>;
 
     /// Reproduces
     /// [`glwe_mul_prepared_relinearize_assign_reference`](crate::reference::operations::GLWETensoringReference::glwe_mul_prepared_relinearize_assign_reference)
@@ -482,9 +482,9 @@ pub unsafe trait GLWETensoringImpl: Backend {
         tsk: &H,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        R: GLWEToBackendMut<Self> + GLWEInfos,
-        AP: CnvPVecRToBackendRef<Self>,
-        H: GetTensorKey<Self>;
+        R: GLWEToBackendMut<Self, Rg> + GLWEInfos,
+        AP: CnvPVecRToBackendRef<Self, Rg>,
+        H: GetTensorKey<Self, Rg>;
 
     /// Reproduces
     /// [`glwe_mul_columns_reference`](crate::reference::operations::GLWETensoringReference::glwe_mul_columns_reference)
@@ -496,10 +496,10 @@ pub unsafe trait GLWETensoringImpl: Backend {
     fn glwe_mul_columns(
         module: &Module<Self>,
         cnv_offset_hi: usize,
-        diag: &mut VecZnxDftBackendMut<'_, Self>,
-        cross: &mut VecZnxDftBackendMut<'_, Self>,
-        a: &CnvPVecLBackendRef<'_, Self>,
-        b: &CnvPVecRBackendRef<'_, Self>,
+        diag: &mut VecZnxDftBackendMut<'_, Self, Rg>,
+        cross: &mut VecZnxDftBackendMut<'_, Self, Rg>,
+        a: &CnvPVecLBackendRef<'_, Self, Rg>,
+        b: &CnvPVecRBackendRef<'_, Self, Rg>,
         scratch: &mut ScratchArena<'_, Self>,
     );
 
@@ -535,10 +535,10 @@ pub unsafe trait GLWETensoringImpl: Backend {
         tsk: &H,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        R: GLWEToBackendMut<Self> + GLWEInfos,
-        A: GLWEToBackendRef<Self> + GLWEInfos,
-        B: GLWEToBackendRef<Self> + GLWEInfos,
-        H: GetTensorKey<Self>;
+        R: GLWEToBackendMut<Self, Rg> + GLWEInfos,
+        A: GLWEToBackendRef<Self, Rg> + GLWEInfos,
+        B: GLWEToBackendRef<Self, Rg> + GLWEInfos,
+        H: GetTensorKey<Self, Rg>;
 
     /// Scratch bound of [`Self::glwe_mul_prepared_relinearize_sum`], whatever the number of pairs; one pair needs no
     /// more than [`Self::glwe_mul_relinearize_tmp_bytes`]; may report less than the reference, never less than the
@@ -574,10 +574,10 @@ pub unsafe trait GLWETensoringImpl: Backend {
         tsk: &H,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        R: GLWEToBackendMut<Self> + GLWEInfos,
-        AP: CnvPVecLToBackendRef<Self> + 'a,
-        BP: CnvPVecRToBackendRef<Self> + 'a,
-        H: GetTensorKey<Self>;
+        R: GLWEToBackendMut<Self, Rg> + GLWEInfos,
+        AP: CnvPVecLToBackendRef<Self, Rg> + 'a,
+        BP: CnvPVecRToBackendRef<Self, Rg> + 'a,
+        H: GetTensorKey<Self, Rg>;
 
     /// Scratch bound of [`Self::glwe_tensor_apply_prepared_sum_dft`] for the tensor of the layout `res`; may report less
     /// than the reference, never less than the body takes.
@@ -595,15 +595,15 @@ pub unsafe trait GLWETensoringImpl: Backend {
     fn glwe_tensor_apply_prepared_sum_dft<'a, AP>(
         module: &Module<Self>,
         cnv_offset_hi: usize,
-        diag: &mut VecZnxDftBackendMut<'_, Self>,
-        cross: &mut VecZnxDftBackendMut<'_, Self>,
-        pairs: impl IntoIterator<Item = (&'a AP, crate::layouts::DiagonalOperand<'a, Self>)>,
+        diag: &mut VecZnxDftBackendMut<'_, Self, Rg>,
+        cross: &mut VecZnxDftBackendMut<'_, Self, Rg>,
+        pairs: impl IntoIterator<Item = (&'a AP, crate::layouts::DiagonalOperand<'a, Self, Rg>)>,
         b_size: usize,
         b_k: crate::layouts::TorusPrecision,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
         Self: 'a,
-        AP: CnvPVecLToBackendRef<Self> + 'a;
+        AP: CnvPVecLToBackendRef<Self, Rg> + 'a;
 
     /// Scratch bound of [`Self::glwe_tensor_apply_prepared`]; may report less than the reference, never less than the
     /// body takes.
@@ -633,9 +633,9 @@ pub unsafe trait GLWETensoringImpl: Backend {
         base2k: crate::layouts::Base2K,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        R: GLWEToBackendMut<Self> + GLWEInfos,
-        AP: CnvPVecLToBackendRef<Self>,
-        BP: CnvPVecRToBackendRef<Self>;
+        R: GLWEToBackendMut<Self, Rg> + GLWEInfos,
+        AP: CnvPVecLToBackendRef<Self, Rg>,
+        BP: CnvPVecRToBackendRef<Self, Rg>;
 
     /// Prepares the operand of a one-pass square for [`Self::glwe_square_columns`].
     ///
@@ -646,9 +646,9 @@ pub unsafe trait GLWETensoringImpl: Backend {
     /// Scratch is `cnv_pvec_self_prepare_tmp_bytes`, which the one-pass relinearization queries reserve.
     fn glwe_square_operand_prepare(
         module: &Module<Self>,
-        left: &mut CnvPVecLBackendMut<'_, Self>,
-        right: &mut CnvPVecRBackendMut<'_, Self>,
-        a: &VecZnxBackendRef<'_, Self>,
+        left: &mut CnvPVecLBackendMut<'_, Self, Rg>,
+        right: &mut CnvPVecRBackendMut<'_, Self, Rg>,
+        a: &VecZnxBackendRef<'_, Self, Rg>,
         scratch: &mut ScratchArena<'_, Self>,
     );
 
@@ -658,13 +658,13 @@ pub unsafe trait GLWETensoringImpl: Backend {
     fn glwe_square_columns(
         module: &Module<Self>,
         cnv_offset_hi: usize,
-        diag: &mut VecZnxDftBackendMut<'_, Self>,
-        cross: &mut VecZnxDftBackendMut<'_, Self>,
-        left: &CnvPVecLBackendRef<'_, Self>,
-        right: &CnvPVecRBackendRef<'_, Self>,
+        diag: &mut VecZnxDftBackendMut<'_, Self, Rg>,
+        cross: &mut VecZnxDftBackendMut<'_, Self, Rg>,
+        left: &CnvPVecLBackendRef<'_, Self, Rg>,
+        right: &CnvPVecRBackendRef<'_, Self, Rg>,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        crate::oep::derived::operations::glwe_square_columns_derived::<Self>(
+        crate::oep::derived::operations::glwe_square_columns_derived::<Self, Rg>(
             module,
             cnv_offset_hi,
             diag,
@@ -682,23 +682,23 @@ pub unsafe trait GLWETensoringImpl: Backend {
 /// Implementations reproduce the bodies their methods document bit for bit, report for each
 /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait GLWEAddImpl: Backend {
+pub unsafe trait GLWEAddImpl<Rg: Ring = Standard>: Backend {
     /// Reproduces
     /// [`glwe_add_into_reference`](crate::reference::operations::GLWEAddReference::glwe_add_into_reference) bit for
     /// bit; free in kernels.
     fn glwe_add_into<R, A, B>(module: &Module<Self>, res: &mut R, a: &A, b: &B)
     where
-        R: GLWEToBackendMut<Self>,
-        A: GLWEToBackendRef<Self>,
-        B: GLWEToBackendRef<Self>;
+        R: GLWEToBackendMut<Self, Rg>,
+        A: GLWEToBackendRef<Self, Rg>,
+        B: GLWEToBackendRef<Self, Rg>;
 
     /// Reproduces
     /// [`glwe_add_assign_reference`](crate::reference::operations::GLWEAddReference::glwe_add_assign_reference) bit
     /// for bit; free in kernels.
     fn glwe_add_assign<R, A>(module: &Module<Self>, res: &mut R, a: &A)
     where
-        R: GLWEToBackendMut<Self>,
-        A: GLWEToBackendRef<Self>;
+        R: GLWEToBackendMut<Self, Rg>,
+        A: GLWEToBackendRef<Self, Rg>;
 }
 
 /// Backend-provided GLWE negation operations.
@@ -707,20 +707,20 @@ pub unsafe trait GLWEAddImpl: Backend {
 /// Implementations reproduce the bodies their methods document bit for bit, report for each
 /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait GLWENegateImpl: Backend {
+pub unsafe trait GLWENegateImpl<Rg: Ring = Standard>: Backend {
     /// Reproduces [`glwe_negate_reference`](crate::reference::operations::GLWENegateReference::glwe_negate_reference)
     /// bit for bit; free in kernels.
     fn glwe_negate<R, A>(module: &Module<Self>, res: &mut R, a: &A)
     where
-        R: GLWEToBackendMut<Self>,
-        A: GLWEToBackendRef<Self>;
+        R: GLWEToBackendMut<Self, Rg>,
+        A: GLWEToBackendRef<Self, Rg>;
 
     /// Reproduces
     /// [`glwe_negate_assign_reference`](crate::reference::operations::GLWENegateReference::glwe_negate_assign_reference)
     /// bit for bit; free in kernels.
     fn glwe_negate_assign<R>(module: &Module<Self>, res: &mut R)
     where
-        R: GLWEToBackendMut<Self>;
+        R: GLWEToBackendMut<Self, Rg>;
 }
 
 /// Backend-provided GLWE subtraction operations.
@@ -729,32 +729,32 @@ pub unsafe trait GLWENegateImpl: Backend {
 /// Implementations reproduce the bodies their methods document bit for bit, report for each
 /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait GLWESubImpl: GLWEAddImpl + GLWENegateImpl {
+pub unsafe trait GLWESubImpl<Rg: Ring = Standard>: GLWEAddImpl<Rg> + GLWENegateImpl<Rg> {
     /// Reproduces [`glwe_sub_reference`](crate::reference::operations::GLWESubReference::glwe_sub_reference) bit for
     /// bit; free in kernels.
     fn glwe_sub<R, A, B>(module: &Module<Self>, res: &mut R, a: &A, b: &B)
     where
-        R: GLWEToBackendMut<Self>,
-        A: GLWEToBackendRef<Self>,
-        B: GLWEToBackendRef<Self>;
+        R: GLWEToBackendMut<Self, Rg>,
+        A: GLWEToBackendRef<Self, Rg>,
+        B: GLWEToBackendRef<Self, Rg>;
 
     /// Reproduces
     /// [`glwe_sub_assign_reference`](crate::reference::operations::GLWESubReference::glwe_sub_assign_reference) bit
     /// for bit; free in kernels.
     fn glwe_sub_assign<R, A>(module: &Module<Self>, res: &mut R, a: &A)
     where
-        R: GLWEToBackendMut<Self>,
-        A: GLWEToBackendRef<Self>;
+        R: GLWEToBackendMut<Self, Rg>,
+        A: GLWEToBackendRef<Self, Rg>;
 
     /// Default body: `glwe_sub_negate_assign_derived`,
     /// [`GLWENegateImpl::glwe_negate_assign`](crate::oep::GLWENegateImpl::glwe_negate_assign) of `res`, then
     /// [`GLWEAddImpl::glwe_add_assign`](crate::oep::GLWEAddImpl::glwe_add_assign) of `a`.
     fn glwe_sub_negate_assign<R, A>(module: &Module<Self>, res: &mut R, a: &A)
     where
-        R: GLWEToBackendMut<Self>,
-        A: GLWEToBackendRef<Self>,
+        R: GLWEToBackendMut<Self, Rg>,
+        A: GLWEToBackendRef<Self, Rg>,
     {
-        crate::oep::derived::operations::glwe_sub_negate_assign_derived::<Self, _, _>(module, res, a)
+        crate::oep::derived::operations::glwe_sub_negate_assign_derived::<Self, _, _, Rg>(module, res, a)
     }
 }
 
@@ -764,12 +764,12 @@ pub unsafe trait GLWESubImpl: GLWEAddImpl + GLWENegateImpl {
 /// Implementations reproduce the bodies their methods document bit for bit, report for each
 /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait GLWEZeroImpl: Backend {
+pub unsafe trait GLWEZeroImpl<Rg: Ring = Standard>: Backend {
     /// Reproduces [`glwe_zero_reference`](crate::reference::operations::GLWEZeroReference::glwe_zero_reference) bit
     /// for bit; free in kernels.
     fn glwe_zero<R>(module: &Module<Self>, res: &mut R)
     where
-        R: GLWEToBackendMut<Self>;
+        R: GLWEToBackendMut<Self, Rg>;
 }
 
 /// Backend-provided GLWE copy operations.
@@ -778,7 +778,7 @@ pub unsafe trait GLWEZeroImpl: Backend {
 /// Implementations reproduce the bodies their methods document bit for bit, report for each
 /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait GLWECopyImpl: Backend {
+pub unsafe trait GLWECopyImpl<Rg: Ring = Standard>: Backend {
     /// Scratch bound of [`Self::glwe_copy`]; may report less than the reference, never less than the body takes.
     fn glwe_copy_tmp_bytes<R: GLWEInfos, A: GLWEInfos>(module: &Module<Self>, res: &R, a: &A) -> usize;
 
@@ -786,8 +786,8 @@ pub unsafe trait GLWECopyImpl: Backend {
     /// for bit, within [`Self::glwe_copy_tmp_bytes`]; free in kernels and scratch use.
     fn glwe_copy<R, A>(module: &Module<Self>, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, Self>)
     where
-        R: GLWEToBackendMut<Self>,
-        A: GLWEToBackendRef<Self>;
+        R: GLWEToBackendMut<Self, Rg>,
+        A: GLWEToBackendRef<Self, Rg>;
 }
 
 /// Backend-provided GGLWE copy operations.
@@ -796,7 +796,7 @@ pub unsafe trait GLWECopyImpl: Backend {
 /// Implementations reproduce the bodies their methods document bit for bit, report for each
 /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait GGLWECopyImpl: Backend {
+pub unsafe trait GGLWECopyImpl<Rg: Ring = Standard>: Backend {
     /// Scratch bound of [`Self::gglwe_copy`]; may report less than the reference, never less than the body takes.
     fn gglwe_copy_tmp_bytes<R: GGLWEInfos, A: GGLWEInfos>(module: &Module<Self>, res: &R, a: &A) -> usize;
 
@@ -804,8 +804,8 @@ pub unsafe trait GGLWECopyImpl: Backend {
     /// bit for bit, within [`Self::gglwe_copy_tmp_bytes`]; free in kernels and scratch use.
     fn gglwe_copy<R, A>(module: &Module<Self>, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, Self>)
     where
-        R: GGLWEToBackendMut<Self> + GGLWEInfos,
-        A: GGLWEToBackendRef<Self> + GGLWEInfos;
+        R: GGLWEToBackendMut<Self, Rg> + GGLWEInfos,
+        A: GGLWEToBackendRef<Self, Rg> + GGLWEInfos;
 }
 
 /// Backend-provided GGSW copy operations.
@@ -814,7 +814,7 @@ pub unsafe trait GGLWECopyImpl: Backend {
 /// Implementations reproduce the bodies their methods document bit for bit, report for each
 /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait GGSWCopyImpl: Backend {
+pub unsafe trait GGSWCopyImpl<Rg: Ring = Standard>: Backend {
     /// Scratch bound of [`Self::ggsw_copy`]; may report less than the reference, never less than the body takes.
     fn ggsw_copy_tmp_bytes<R: GGSWInfos, A: GGSWInfos>(module: &Module<Self>, res: &R, a: &A) -> usize;
 
@@ -822,8 +822,8 @@ pub unsafe trait GGSWCopyImpl: Backend {
     /// for bit, within [`Self::ggsw_copy_tmp_bytes`]; free in kernels and scratch use.
     fn ggsw_copy<R, A>(module: &Module<Self>, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, Self>)
     where
-        R: GGSWToBackendMut<Self> + GGSWInfos,
-        A: GGSWToBackendRef<Self> + GGSWInfos;
+        R: GGSWToBackendMut<Self, Rg> + GGSWInfos,
+        A: GGSWToBackendRef<Self, Rg> + GGSWInfos;
 }
 
 /// Backend-provided GLWE rotation operations, on the standard ring only.
@@ -832,7 +832,7 @@ pub unsafe trait GGSWCopyImpl: Backend {
 /// Implementations reproduce the bodies their methods document bit for bit, report for each
 /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait GLWERotateImpl: Backend<Ring = Standard> {
+pub unsafe trait GLWERotateImpl: Backend {
     /// Scratch bound of [`Self::glwe_rotate_assign`]; may report less than the reference, never less than the body
     /// takes.
     fn glwe_rotate_tmp_bytes(module: &Module<Self>) -> usize;
@@ -892,7 +892,7 @@ pub unsafe trait GGSWRotateImpl: GLWERotateImpl {
 /// Implementations reproduce the bodies their methods document bit for bit, report for each
 /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait GLWEMulXpMinusOneImpl: Backend<Ring = Standard> {
+pub unsafe trait GLWEMulXpMinusOneImpl: Backend {
     /// Scratch bound of [`Self::glwe_mul_xp_minus_one_assign`]; may report less than the reference, never less than
     /// the body takes.
     fn glwe_mul_xp_minus_one_assign_tmp_bytes(module: &Module<Self>, res_size: usize) -> usize;
@@ -919,7 +919,7 @@ pub unsafe trait GLWEMulXpMinusOneImpl: Backend<Ring = Standard> {
 /// Implementations reproduce the bodies their methods document bit for bit, report for each
 /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait GLWEShiftImpl: Backend {
+pub unsafe trait GLWEShiftImpl<Rg: Ring = Standard>: Backend {
     /// Scratch bound of [`Self::glwe_rsh_assign`], [`Self::glwe_lsh_assign`], [`Self::glwe_lsh`], [`Self::glwe_lsh_add`] and
     /// [`Self::glwe_lsh_sub`]; may report less than the reference, never less than the body takes.
     fn glwe_shift_tmp_bytes(module: &Module<Self>, res_size: usize) -> usize;
@@ -928,37 +928,37 @@ pub unsafe trait GLWEShiftImpl: Backend {
     /// for bit, within [`Self::glwe_shift_tmp_bytes`]; free in kernels and scratch use.
     fn glwe_rsh_assign<R>(module: &Module<Self>, k: usize, res: &mut R, scratch: &mut ScratchArena<'_, Self>)
     where
-        R: GLWEToBackendMut<Self>;
+        R: GLWEToBackendMut<Self, Rg>;
 
     /// Reproduces
     /// [`glwe_lsh_assign_reference`](crate::reference::operations::GLWEShiftReference::glwe_lsh_assign_reference) bit
     /// for bit, within [`Self::glwe_shift_tmp_bytes`]; free in kernels and scratch use.
     fn glwe_lsh_assign<R>(module: &Module<Self>, res: &mut R, k: usize, scratch: &mut ScratchArena<'_, Self>)
     where
-        R: GLWEToBackendMut<Self>;
+        R: GLWEToBackendMut<Self, Rg>;
 
     /// Reproduces [`glwe_lsh_reference`](crate::reference::operations::GLWEShiftReference::glwe_lsh_reference) bit
     /// for bit, within [`Self::glwe_shift_tmp_bytes`]; free in kernels and scratch use.
     fn glwe_lsh<R, A>(module: &Module<Self>, res: &mut R, a: &A, k: usize, scratch: &mut ScratchArena<'_, Self>)
     where
-        R: GLWEToBackendMut<Self>,
-        A: GLWEToBackendRef<Self>;
+        R: GLWEToBackendMut<Self, Rg>,
+        A: GLWEToBackendRef<Self, Rg>;
 
     /// Reproduces
     /// [`glwe_lsh_add_reference`](crate::reference::operations::GLWEShiftReference::glwe_lsh_add_reference) bit for
     /// bit, within [`Self::glwe_shift_tmp_bytes`]; free in kernels and scratch use.
     fn glwe_lsh_add<R, A>(module: &Module<Self>, res: &mut R, a: &A, k: usize, scratch: &mut ScratchArena<'_, Self>)
     where
-        R: GLWEToBackendMut<Self>,
-        A: GLWEToBackendRef<Self>;
+        R: GLWEToBackendMut<Self, Rg>,
+        A: GLWEToBackendRef<Self, Rg>;
 
     /// Reproduces
     /// [`glwe_lsh_sub_reference`](crate::reference::operations::GLWEShiftReference::glwe_lsh_sub_reference) bit for
     /// bit, within [`Self::glwe_shift_tmp_bytes`]; free in kernels and scratch use.
     fn glwe_lsh_sub<R, A>(module: &Module<Self>, res: &mut R, a: &A, k: usize, scratch: &mut ScratchArena<'_, Self>)
     where
-        R: GLWEToBackendMut<Self>,
-        A: GLWEToBackendRef<Self>;
+        R: GLWEToBackendMut<Self, Rg>,
+        A: GLWEToBackendRef<Self, Rg>;
 }
 
 /// Backend-provided GLWE normalization operations.
@@ -967,7 +967,7 @@ pub unsafe trait GLWEShiftImpl: Backend {
 /// Implementations reproduce the bodies their methods document bit for bit, report for each
 /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait GLWENormalizeImpl: Backend {
+pub unsafe trait GLWENormalizeImpl<Rg: Ring = Standard>: Backend {
     /// Scratch bound of [`Self::glwe_normalize`] and [`Self::glwe_normalize_assign`]; may report less than the
     /// reference, never less than the body takes.
     fn glwe_normalize_tmp_bytes(module: &Module<Self>) -> usize;
@@ -977,15 +977,15 @@ pub unsafe trait GLWENormalizeImpl: Backend {
     /// bit for bit, within [`Self::glwe_normalize_tmp_bytes`]; free in kernels and scratch use.
     fn glwe_normalize<R, A>(module: &Module<Self>, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, Self>)
     where
-        R: GLWEToBackendMut<Self>,
-        A: GLWEToBackendRef<Self>;
+        R: GLWEToBackendMut<Self, Rg>,
+        A: GLWEToBackendRef<Self, Rg>;
 
     /// Reproduces
     /// [`glwe_normalize_assign_reference`](crate::reference::operations::GLWENormalizeReference::glwe_normalize_assign_reference)
     /// bit for bit, within [`Self::glwe_normalize_tmp_bytes`]; free in kernels and scratch use.
     fn glwe_normalize_assign<R>(module: &Module<Self>, res: &mut R, scratch: &mut ScratchArena<'_, Self>)
     where
-        R: GLWEToBackendMut<Self>;
+        R: GLWEToBackendMut<Self, Rg>;
 }
 
 /// Backend-provided GLWE trace operations.
@@ -994,11 +994,13 @@ pub unsafe trait GLWENormalizeImpl: Backend {
 /// Implementations reproduce the bodies their methods document bit for bit, report for each
 /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait GLWETraceImpl: crate::oep::AutomorphismImpl + GLWEShiftImpl + GLWECopyImpl + GLWENormalizeImpl {
+pub unsafe trait GLWETraceImpl<Rg: Ring = Standard>:
+    crate::oep::AutomorphismImpl<Rg> + GLWEShiftImpl<Rg> + GLWECopyImpl<Rg> + GLWENormalizeImpl<Rg>
+{
     /// Default body: `glwe_trace_galois_elements_derived`, the Galois elements of the visited levels of a degree-`n`
     /// operand, in visiting order.
     fn glwe_trace_galois_elements(module: &Module<Self>, n: Degree, levels: Range<usize>, reverse: bool) -> Vec<i64> {
-        crate::oep::derived::operations::glwe_trace_galois_elements_derived::<Self, _>(module, n, levels, reverse)
+        crate::oep::derived::operations::glwe_trace_galois_elements_derived::<_, Rg>(module, n, levels, reverse)
     }
 
     /// Default body: `glwe_trace_tmp_bytes_derived`, a temporary at the key's radix plus the larger of the copies
@@ -1010,7 +1012,9 @@ pub unsafe trait GLWETraceImpl: crate::oep::AutomorphismImpl + GLWEShiftImpl + G
         A: GLWEInfos,
         K: GGLWEInfos,
     {
-        crate::oep::derived::operations::glwe_trace_tmp_bytes_derived::<Self, _, _, _, _>(module, res_infos, a_infos, key_infos)
+        crate::oep::derived::operations::glwe_trace_tmp_bytes_derived::<Self, _, _, _, _, Rg>(
+            module, res_infos, a_infos, key_infos,
+        )
     }
 
     /// Default body: `glwe_trace_assign_tmp_bytes_derived`, the larger of
@@ -1023,7 +1027,7 @@ pub unsafe trait GLWETraceImpl: crate::oep::AutomorphismImpl + GLWEShiftImpl + G
         A: GLWEInfos,
         K: GGLWEInfos,
     {
-        crate::oep::derived::operations::glwe_trace_assign_tmp_bytes_derived::<Self, _, _, _>(module, a_infos, key_infos)
+        crate::oep::derived::operations::glwe_trace_assign_tmp_bytes_derived::<Self, _, _, _, Rg>(module, a_infos, key_infos)
     }
 
     /// Default body: `glwe_trace_derived`, [`GLWECopyImpl::glwe_copy`](crate::oep::GLWECopyImpl::glwe_copy) of `a`
@@ -1045,11 +1049,11 @@ pub unsafe trait GLWETraceImpl: crate::oep::AutomorphismImpl + GLWEShiftImpl + G
         keys: &H,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        R: GLWEToBackendMut<Self> + GLWEInfos,
-        A: GLWEToBackendRef<Self> + GLWEInfos,
-        H: GetAutomorphismKey<Self>,
+        R: GLWEToBackendMut<Self, Rg> + GLWEInfos,
+        A: GLWEToBackendRef<Self, Rg> + GLWEInfos,
+        H: GetAutomorphismKey<Self, Rg>,
     {
-        crate::oep::derived::operations::glwe_trace_derived::<Self, _, _, _, _>(
+        crate::oep::derived::operations::glwe_trace_derived::<Self, _, _, _, _, Rg>(
             module, res, levels, reverse, normalize, a, keys, scratch,
         )
     }
@@ -1071,10 +1075,10 @@ pub unsafe trait GLWETraceImpl: crate::oep::AutomorphismImpl + GLWEShiftImpl + G
         keys: &H,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        R: GLWEToBackendMut<Self> + GLWEInfos,
-        H: GetAutomorphismKey<Self>,
+        R: GLWEToBackendMut<Self, Rg> + GLWEInfos,
+        H: GetAutomorphismKey<Self, Rg>,
     {
-        crate::oep::derived::operations::glwe_trace_assign_derived::<Self, _, _, _>(
+        crate::oep::derived::operations::glwe_trace_assign_derived::<Self, _, _, _, Rg>(
             module, res, levels, reverse, normalize, keys, scratch,
         )
     }
@@ -1144,10 +1148,16 @@ pub unsafe trait GLWEPackImpl:
 }
 
 /// Selects the reference implementation of `GLWETensoringImpl` for `$be`.
+///
+/// `($be)` implements both rings and `($be, $ring)` one ring, as `docs/guides/layering-contract.md` describes.
 #[macro_export]
 macro_rules! impl_glwe_tensoring_reference_full {
     ($be:ty) => {
-        unsafe impl $crate::oep::GLWETensoringImpl for $be {
+        $crate::impl_glwe_tensoring_reference_full!($be, ::poulpy_hal::layouts::Standard);
+        $crate::impl_glwe_tensoring_reference_full!($be, ::poulpy_hal::layouts::ConjugateInvariant);
+    };
+    ($be:ty, $ring:ty) => {
+        unsafe impl $crate::oep::GLWETensoringImpl<$ring> for $be {
             fn glwe_tensor_apply_prepared_right_tmp_bytes<R, A>(
                 module: &::poulpy_hal::layouts::Module<$be>, res: &R, a: &A, a_size: usize, b_size: usize,
             ) -> usize
@@ -1155,7 +1165,7 @@ macro_rules! impl_glwe_tensoring_reference_full {
                 R: $crate::layouts::GLWEInfos,
                 A: $crate::layouts::GLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be>>::glwe_tensor_apply_prepared_right_tmp_bytes_reference(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be, $ring>>::glwe_tensor_apply_prepared_right_tmp_bytes_reference(
                     module, res, a, a_size, b_size,
                 )
             }
@@ -1164,11 +1174,11 @@ macro_rules! impl_glwe_tensoring_reference_full {
                 module: &::poulpy_hal::layouts::Module<$be>, cnv_offset: usize, res: &mut R, a: &A, b: &BP, b_size: usize,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) where
-                R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
-                A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
-                BP: ::poulpy_hal::layouts::CnvPVecRToBackendRef<$be>,
+                R: $crate::layouts::GLWEToBackendMut<$be, $ring> + $crate::layouts::GLWEInfos,
+                A: $crate::layouts::GLWEToBackendRef<$be, $ring> + $crate::layouts::GLWEInfos,
+                BP: ::poulpy_hal::layouts::CnvPVecRToBackendRef<$be, $ring>,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be>>::glwe_tensor_apply_prepared_right_reference(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be, $ring>>::glwe_tensor_apply_prepared_right_reference(
                     module, cnv_offset, res, a, b, b_size, scratch,
                 )
             }
@@ -1184,7 +1194,7 @@ macro_rules! impl_glwe_tensoring_reference_full {
                 A: $crate::layouts::GLWEInfos,
                 B: $crate::layouts::GLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be>>::glwe_tensor_apply_tmp_bytes_reference(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be, $ring>>::glwe_tensor_apply_tmp_bytes_reference(
                     module, res, a, b,
                 )
             }
@@ -1198,7 +1208,7 @@ macro_rules! impl_glwe_tensoring_reference_full {
                 R: $crate::layouts::GLWEInfos,
                 A: $crate::layouts::GLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be>>::glwe_tensor_square_apply_tmp_bytes_reference(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be, $ring>>::glwe_tensor_square_apply_tmp_bytes_reference(
                     module, res, a,
                 )
             }
@@ -1211,11 +1221,11 @@ macro_rules! impl_glwe_tensoring_reference_full {
                 b: &B,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) where
-                R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
-                A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
-                B: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
+                R: $crate::layouts::GLWEToBackendMut<$be, $ring> + $crate::layouts::GLWEInfos,
+                A: $crate::layouts::GLWEToBackendRef<$be, $ring> + $crate::layouts::GLWEInfos,
+                B: $crate::layouts::GLWEToBackendRef<$be, $ring> + $crate::layouts::GLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be>>::glwe_tensor_apply_reference(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be, $ring>>::glwe_tensor_apply_reference(
                     module, cnv_offset, res, a, b, scratch,
                 )
             }
@@ -1227,10 +1237,10 @@ macro_rules! impl_glwe_tensoring_reference_full {
                 a: &A,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) where
-                R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
-                A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
+                R: $crate::layouts::GLWEToBackendMut<$be, $ring> + $crate::layouts::GLWEInfos,
+                A: $crate::layouts::GLWEToBackendRef<$be, $ring> + $crate::layouts::GLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be>>::glwe_tensor_square_apply_reference(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be, $ring>>::glwe_tensor_square_apply_reference(
                     module, cnv_offset, res, a, scratch,
                 )
             }
@@ -1242,11 +1252,11 @@ macro_rules! impl_glwe_tensoring_reference_full {
                 tsk: &H,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) where
-                R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
-                A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
-                H: $crate::layouts::GetTensorKey<$be>,
+                R: $crate::layouts::GLWEToBackendMut<$be, $ring> + $crate::layouts::GLWEInfos,
+                A: $crate::layouts::GLWEToBackendRef<$be, $ring> + $crate::layouts::GLWEInfos,
+                H: $crate::layouts::GetTensorKey<$be, $ring>,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be>>::glwe_tensor_relinearize_reference(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be, $ring>>::glwe_tensor_relinearize_reference(
                     module, res, a, tsk, scratch,
                 )
             }
@@ -1262,7 +1272,7 @@ macro_rules! impl_glwe_tensoring_reference_full {
                 A: $crate::layouts::GLWEInfos,
                 B: $crate::layouts::GGLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be>>::glwe_tensor_relinearize_tmp_bytes_reference(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be, $ring>>::glwe_tensor_relinearize_tmp_bytes_reference(
                     module, res, a, tsk,
                 )
             }
@@ -1279,7 +1289,7 @@ macro_rules! impl_glwe_tensoring_reference_full {
                 R: $crate::layouts::GLWEInfos,
                 B: $crate::layouts::GGLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be>>::glwe_mul_relinearize_tmp_bytes_reference(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be, $ring>>::glwe_mul_relinearize_tmp_bytes_reference(
                     module, res, a_size, b_size, tensor_k, tsk,
                 )
             }
@@ -1295,12 +1305,12 @@ macro_rules! impl_glwe_tensoring_reference_full {
                 tsk: &H,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) where
-                R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
-                A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
-                B: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
-                H: $crate::layouts::GetTensorKey<$be>,
+                R: $crate::layouts::GLWEToBackendMut<$be, $ring> + $crate::layouts::GLWEInfos,
+                A: $crate::layouts::GLWEToBackendRef<$be, $ring> + $crate::layouts::GLWEInfos,
+                B: $crate::layouts::GLWEToBackendRef<$be, $ring> + $crate::layouts::GLWEInfos,
+                H: $crate::layouts::GetTensorKey<$be, $ring>,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be>>::glwe_mul_relinearize_reference(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be, $ring>>::glwe_mul_relinearize_reference(
                     module, cnv_offset, res, res_k, a, b, tsk, scratch,
                 )
             }
@@ -1314,11 +1324,11 @@ macro_rules! impl_glwe_tensoring_reference_full {
                 tsk: &H,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) where
-                R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
-                A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
-                H: $crate::layouts::GetTensorKey<$be>,
+                R: $crate::layouts::GLWEToBackendMut<$be, $ring> + $crate::layouts::GLWEInfos,
+                A: $crate::layouts::GLWEToBackendRef<$be, $ring> + $crate::layouts::GLWEInfos,
+                H: $crate::layouts::GetTensorKey<$be, $ring>,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be>>::glwe_mul_relinearize_assign_reference(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be, $ring>>::glwe_mul_relinearize_assign_reference(
                     module, cnv_offset, res, res_k, a, tsk, scratch,
                 )
             }
@@ -1332,11 +1342,11 @@ macro_rules! impl_glwe_tensoring_reference_full {
                 tsk: &H,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) where
-                R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
-                A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
-                H: $crate::layouts::GetTensorKey<$be>,
+                R: $crate::layouts::GLWEToBackendMut<$be, $ring> + $crate::layouts::GLWEInfos,
+                A: $crate::layouts::GLWEToBackendRef<$be, $ring> + $crate::layouts::GLWEInfos,
+                H: $crate::layouts::GetTensorKey<$be, $ring>,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be>>::glwe_square_relinearize_reference(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be, $ring>>::glwe_square_relinearize_reference(
                     module, cnv_offset, res, res_k, a, tsk, scratch,
                 )
             }
@@ -1349,10 +1359,10 @@ macro_rules! impl_glwe_tensoring_reference_full {
                 tsk: &H,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) where
-                R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
-                H: $crate::layouts::GetTensorKey<$be>,
+                R: $crate::layouts::GLWEToBackendMut<$be, $ring> + $crate::layouts::GLWEInfos,
+                H: $crate::layouts::GetTensorKey<$be, $ring>,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be>>::glwe_square_relinearize_assign_reference(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be, $ring>>::glwe_square_relinearize_assign_reference(
                     module, cnv_offset, res, res_k, tsk, scratch,
                 )
             }
@@ -1370,12 +1380,12 @@ macro_rules! impl_glwe_tensoring_reference_full {
                 tsk: &H,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) where
-                R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
-                A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
-                BP: ::poulpy_hal::layouts::CnvPVecRToBackendRef<$be>,
-                H: $crate::layouts::GetTensorKey<$be>,
+                R: $crate::layouts::GLWEToBackendMut<$be, $ring> + $crate::layouts::GLWEInfos,
+                A: $crate::layouts::GLWEToBackendRef<$be, $ring> + $crate::layouts::GLWEInfos,
+                BP: ::poulpy_hal::layouts::CnvPVecRToBackendRef<$be, $ring>,
+                H: $crate::layouts::GetTensorKey<$be, $ring>,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be>>::glwe_mul_prepared_relinearize_reference(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be, $ring>>::glwe_mul_prepared_relinearize_reference(
                     module, cnv_offset, res, res_k, a, b, b_size, b_k, tsk, scratch,
                 )
             }
@@ -1392,11 +1402,11 @@ macro_rules! impl_glwe_tensoring_reference_full {
                 tsk: &H,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) where
-                R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
-                AP: ::poulpy_hal::layouts::CnvPVecRToBackendRef<$be>,
-                H: $crate::layouts::GetTensorKey<$be>,
+                R: $crate::layouts::GLWEToBackendMut<$be, $ring> + $crate::layouts::GLWEInfos,
+                AP: ::poulpy_hal::layouts::CnvPVecRToBackendRef<$be, $ring>,
+                H: $crate::layouts::GetTensorKey<$be, $ring>,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be>>::glwe_mul_prepared_relinearize_assign_reference(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be, $ring>>::glwe_mul_prepared_relinearize_assign_reference(
                     module, cnv_offset, res, res_k, a, a_size, a_k, tsk, scratch,
                 )
             }
@@ -1404,25 +1414,25 @@ macro_rules! impl_glwe_tensoring_reference_full {
             fn glwe_mul_columns(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 cnv_offset_hi: usize,
-                diag: &mut ::poulpy_hal::layouts::VecZnxDftBackendMut<'_, $be>,
-                cross: &mut ::poulpy_hal::layouts::VecZnxDftBackendMut<'_, $be>,
-                a: &::poulpy_hal::layouts::CnvPVecLBackendRef<'_, $be>,
-                b: &::poulpy_hal::layouts::CnvPVecRBackendRef<'_, $be>,
+                diag: &mut ::poulpy_hal::layouts::VecZnxDftBackendMut<'_, $be, $ring>,
+                cross: &mut ::poulpy_hal::layouts::VecZnxDftBackendMut<'_, $be, $ring>,
+                a: &::poulpy_hal::layouts::CnvPVecLBackendRef<'_, $be, $ring>,
+                b: &::poulpy_hal::layouts::CnvPVecRBackendRef<'_, $be, $ring>,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be>>::glwe_mul_columns_reference(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be, $ring>>::glwe_mul_columns_reference(
                     module, cnv_offset_hi, diag, cross, a, b, scratch,
                 )
             }
 
             fn glwe_square_operand_prepare(
                 module: &::poulpy_hal::layouts::Module<$be>,
-                left: &mut ::poulpy_hal::layouts::CnvPVecLBackendMut<'_, $be>,
-                right: &mut ::poulpy_hal::layouts::CnvPVecRBackendMut<'_, $be>,
-                a: &::poulpy_hal::layouts::VecZnxBackendRef<'_, $be>,
+                left: &mut ::poulpy_hal::layouts::CnvPVecLBackendMut<'_, $be, $ring>,
+                right: &mut ::poulpy_hal::layouts::CnvPVecRBackendMut<'_, $be, $ring>,
+                a: &::poulpy_hal::layouts::VecZnxBackendRef<'_, $be, $ring>,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be>>::glwe_square_operand_prepare_reference(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be, $ring>>::glwe_square_operand_prepare_reference(
                     module, left, right, a, scratch,
                 )
             }
@@ -1439,7 +1449,7 @@ macro_rules! impl_glwe_tensoring_reference_full {
                 R: $crate::layouts::GLWEInfos,
                 B: $crate::layouts::GGLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be>>::glwe_mul_relinearize_sum_tmp_bytes_reference(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be, $ring>>::glwe_mul_relinearize_sum_tmp_bytes_reference(
                     module, res, a_size, b_size, tensor_k, tsk,
                 )
             }
@@ -1454,12 +1464,12 @@ macro_rules! impl_glwe_tensoring_reference_full {
                 tsk: &H,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) where
-                R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
-                A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
-                B: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
-                H: $crate::layouts::GetTensorKey<$be>,
+                R: $crate::layouts::GLWEToBackendMut<$be, $ring> + $crate::layouts::GLWEInfos,
+                A: $crate::layouts::GLWEToBackendRef<$be, $ring> + $crate::layouts::GLWEInfos,
+                B: $crate::layouts::GLWEToBackendRef<$be, $ring> + $crate::layouts::GLWEInfos,
+                H: $crate::layouts::GetTensorKey<$be, $ring>,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be>>::glwe_mul_relinearize_sum_reference(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be, $ring>>::glwe_mul_relinearize_sum_reference(
                     module, cnv_offset, res, res_k, a, b, tsk, scratch,
                 )
             }
@@ -1476,7 +1486,7 @@ macro_rules! impl_glwe_tensoring_reference_full {
                 R: $crate::layouts::GLWEInfos,
                 B: $crate::layouts::GGLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be>>::glwe_mul_prepared_relinearize_sum_tmp_bytes_reference(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be, $ring>>::glwe_mul_prepared_relinearize_sum_tmp_bytes_reference(
                     module, res, a_size, b_size, tensor_k, tsk,
                 )
             }
@@ -1496,12 +1506,12 @@ macro_rules! impl_glwe_tensoring_reference_full {
                 tsk: &H,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) where
-                R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
-                AP: ::poulpy_hal::layouts::CnvPVecLToBackendRef<$be> + 'a,
-                BP: ::poulpy_hal::layouts::CnvPVecRToBackendRef<$be> + 'a,
-                H: $crate::layouts::GetTensorKey<$be>,
+                R: $crate::layouts::GLWEToBackendMut<$be, $ring> + $crate::layouts::GLWEInfos,
+                AP: ::poulpy_hal::layouts::CnvPVecLToBackendRef<$be, $ring> + 'a,
+                BP: ::poulpy_hal::layouts::CnvPVecRToBackendRef<$be, $ring> + 'a,
+                H: $crate::layouts::GetTensorKey<$be, $ring>,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be>>::glwe_mul_prepared_relinearize_sum_reference(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be, $ring>>::glwe_mul_prepared_relinearize_sum_reference(
                     module, cnv_offset, res, res_k, a, a_size, a_k, b, b_size, b_k, tsk, scratch,
                 )
             }
@@ -1515,7 +1525,7 @@ macro_rules! impl_glwe_tensoring_reference_full {
             where
                 R: $crate::layouts::GLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be>>::glwe_tensor_apply_prepared_sum_dft_tmp_bytes_reference(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be, $ring>>::glwe_tensor_apply_prepared_sum_dft_tmp_bytes_reference(
                     module, res, a_size, b_size,
                 )
             }
@@ -1524,17 +1534,17 @@ macro_rules! impl_glwe_tensoring_reference_full {
             fn glwe_tensor_apply_prepared_sum_dft<'a, AP>(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 cnv_offset_hi: usize,
-                diag: &mut ::poulpy_hal::layouts::VecZnxDftBackendMut<'_, $be>,
-                cross: &mut ::poulpy_hal::layouts::VecZnxDftBackendMut<'_, $be>,
-                pairs: impl IntoIterator<Item = (&'a AP, $crate::layouts::DiagonalOperand<'a, $be>)>,
+                diag: &mut ::poulpy_hal::layouts::VecZnxDftBackendMut<'_, $be, $ring>,
+                cross: &mut ::poulpy_hal::layouts::VecZnxDftBackendMut<'_, $be, $ring>,
+                pairs: impl IntoIterator<Item = (&'a AP, $crate::layouts::DiagonalOperand<'a, $be, $ring>)>,
                 b_size: usize,
                 b_k: $crate::layouts::TorusPrecision,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) where
                 $be: 'a,
-                AP: ::poulpy_hal::layouts::CnvPVecLToBackendRef<$be> + 'a,
+                AP: ::poulpy_hal::layouts::CnvPVecLToBackendRef<$be, $ring> + 'a,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be>>::glwe_tensor_apply_prepared_sum_dft_reference(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be, $ring>>::glwe_tensor_apply_prepared_sum_dft_reference(
                     module, cnv_offset_hi, diag, cross, pairs, b_size, b_k, scratch,
                 )
             }
@@ -1549,7 +1559,7 @@ macro_rules! impl_glwe_tensoring_reference_full {
             where
                 R: $crate::layouts::GLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be>>::glwe_tensor_apply_prepared_tmp_bytes_reference(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be, $ring>>::glwe_tensor_apply_prepared_tmp_bytes_reference(
                     module, res, a_size, b_size, base2k,
                 )
             }
@@ -1566,11 +1576,11 @@ macro_rules! impl_glwe_tensoring_reference_full {
                 base2k: $crate::layouts::Base2K,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) where
-                R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
-                AP: ::poulpy_hal::layouts::CnvPVecLToBackendRef<$be>,
-                BP: ::poulpy_hal::layouts::CnvPVecRToBackendRef<$be>,
+                R: $crate::layouts::GLWEToBackendMut<$be, $ring> + $crate::layouts::GLWEInfos,
+                AP: ::poulpy_hal::layouts::CnvPVecLToBackendRef<$be, $ring>,
+                BP: ::poulpy_hal::layouts::CnvPVecRToBackendRef<$be, $ring>,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be>>::glwe_tensor_apply_prepared_reference(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringReference<$be, $ring>>::glwe_tensor_apply_prepared_reference(
                     module, cnv_offset, res, a, a_size, b, b_size, base2k, scratch,
                 )
             }
@@ -1579,10 +1589,16 @@ macro_rules! impl_glwe_tensoring_reference_full {
 }
 
 /// Selects the core-derived trace defaults.
+///
+/// `($be)` implements both rings and `($be, $ring)` one ring, as `docs/guides/layering-contract.md` describes.
 #[macro_export]
 macro_rules! impl_glwe_trace_derived_full {
     ($be:ty) => {
-        unsafe impl $crate::oep::GLWETraceImpl for $be {}
+        $crate::impl_glwe_trace_derived_full!($be, ::poulpy_hal::layouts::Standard);
+        $crate::impl_glwe_trace_derived_full!($be, ::poulpy_hal::layouts::ConjugateInvariant);
+    };
+    ($be:ty, $ring:ty) => {
+        unsafe impl $crate::oep::GLWETraceImpl<$ring> for $be {}
     };
 }
 
@@ -1605,20 +1621,26 @@ macro_rules! impl_ggsw_rotate_derived_full {
 /// Forwards every elementary arithmetic family except tensoring.
 ///
 /// Use the per-family macros instead when overriding one of these operations.
+///
+/// `($be)` implements both rings and `($be, $ring)` one ring, as `docs/guides/layering-contract.md` describes.
 #[macro_export]
 macro_rules! impl_operations_reference_full {
     ($be:ty) => {
-        $crate::impl_glwe_mul_const_reference_full!($be);
-        $crate::impl_glwe_mul_plain_reference_full!($be);
-        $crate::impl_glwe_mul_prepared_plain_sum_reference_full!($be);
-        $crate::impl_glwe_add_reference_full!($be);
-        $crate::impl_glwe_sub_reference_full!($be);
-        $crate::impl_glwe_negate_reference_full!($be);
-        $crate::impl_glwe_zero_reference_full!($be);
-        $crate::impl_glwe_copy_reference_full!($be);
-        $crate::impl_gglwe_copy_reference_full!($be);
-        $crate::impl_ggsw_copy_reference_full!($be);
-        $crate::impl_glwe_shift_reference_full!($be);
-        $crate::impl_glwe_normalize_reference_full!($be);
+        $crate::impl_operations_reference_full!($be, ::poulpy_hal::layouts::Standard);
+        $crate::impl_operations_reference_full!($be, ::poulpy_hal::layouts::ConjugateInvariant);
+    };
+    ($be:ty, $ring:ty) => {
+        $crate::impl_glwe_mul_const_reference_full!($be, $ring);
+        $crate::impl_glwe_mul_plain_reference_full!($be, $ring);
+        $crate::impl_glwe_mul_prepared_plain_sum_reference_full!($be, $ring);
+        $crate::impl_glwe_add_reference_full!($be, $ring);
+        $crate::impl_glwe_sub_reference_full!($be, $ring);
+        $crate::impl_glwe_negate_reference_full!($be, $ring);
+        $crate::impl_glwe_zero_reference_full!($be, $ring);
+        $crate::impl_glwe_copy_reference_full!($be, $ring);
+        $crate::impl_gglwe_copy_reference_full!($be, $ring);
+        $crate::impl_ggsw_copy_reference_full!($be, $ring);
+        $crate::impl_glwe_shift_reference_full!($be, $ring);
+        $crate::impl_glwe_normalize_reference_full!($be, $ring);
     };
 }

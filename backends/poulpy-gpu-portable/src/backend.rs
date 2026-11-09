@@ -3,32 +3,31 @@
 use std::{marker::PhantomData, ptr::NonNull};
 
 use poulpy_cpu_portable::kernels::ntt4x30::primes::Primes30;
-use poulpy_hal::layouts::{Backend, CrtWord, Device, Ring, Standard};
+use poulpy_hal::layouts::{Backend, CrtWord, Device};
 
 use crate::{
     module::GpuHandle,
     runtime::{GpuBuf, GpuMut, GpuRef, GpuRuntime},
 };
 
-/// NTT4x30 on the CubeCL runtime `RT`, over the ring `R`.
+/// NTT4x30 on the CubeCL runtime `RT`, over both rings.
 ///
 /// Coefficient-domain limbs are `i64`, big values `i128`, and a DFT-domain
 /// word is the four 30-bit residues of `Primes30`, 16 bytes per coefficient.
-pub struct NTT4x30Gpu<RT: GpuRuntime, R: Ring = Standard>(PhantomData<fn() -> (RT, R)>);
+pub struct NTT4x30Gpu<RT: GpuRuntime>(PhantomData<fn() -> RT>);
 
-impl<RT: GpuRuntime, R: Ring> PartialEq for NTT4x30Gpu<RT, R> {
+impl<RT: GpuRuntime> PartialEq for NTT4x30Gpu<RT> {
     fn eq(&self, _: &Self) -> bool {
         true
     }
 }
 
-impl<RT: GpuRuntime, R: Ring> Eq for NTT4x30Gpu<RT, R> {}
+impl<RT: GpuRuntime> Eq for NTT4x30Gpu<RT> {}
 
-impl<RT: GpuRuntime, R: Ring> Backend for NTT4x30Gpu<RT, R> {
+impl<RT: GpuRuntime> Backend for NTT4x30Gpu<RT> {
     const DFT_LIMBS_CONTIGUOUS: bool = true;
 
     type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;
-    type Ring = R;
     type ZnxWord = i64;
     type BigWord = i128;
     type DftWord = CrtWord<Primes30, u32>;

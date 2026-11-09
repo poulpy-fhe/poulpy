@@ -15,7 +15,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::CnvPVecAlloc,
-    layouts::{Backend, Module},
+    layouts::{Backend, Module, Ring, Standard},
 };
 
 use super::{
@@ -159,24 +159,24 @@ impl BlasMatVecOperandInfos for BlasMatVecOperandLayout {
 
 /// A public matrix encoded for products of a vector, not yet prepared: its diagonals are plaintexts, which a product
 /// prepares at each use (streamed).
-pub struct BlasMatVecOperand<BE: Backend> {
+pub struct BlasMatVecOperand<BE: Backend, Rg: Ring = Standard> {
     layout: BlasMatVecOperandLayout,
-    pub(crate) maps: Vec<Encoded<BE>>,
+    pub(crate) maps: Vec<Encoded<BE, Rg>>,
 }
 
 /// A public matrix prepared for products of a vector: its diagonals are resident.
-pub struct BlasMatVecOperandPrepared<BE: Backend> {
+pub struct BlasMatVecOperandPrepared<BE: Backend, Rg: Ring = Standard> {
     layout: BlasMatVecOperandLayout,
-    pub(crate) maps: Vec<LinearTransformationPrepared<BE>>,
+    pub(crate) maps: Vec<LinearTransformationPrepared<BE, Rg>>,
 }
 
-impl<BE: Backend> BlasMatVecOperandInfos for BlasMatVecOperand<BE> {
+impl<BE: Backend, Rg: Ring> BlasMatVecOperandInfos for BlasMatVecOperand<BE, Rg> {
     fn blas_matvec_operand_layout(&self) -> BlasMatVecOperandLayout {
         self.layout
     }
 }
 
-impl<BE: Backend> BlasMatVecOperandInfos for BlasMatVecOperandPrepared<BE> {
+impl<BE: Backend, Rg: Ring> BlasMatVecOperandInfos for BlasMatVecOperandPrepared<BE, Rg> {
     fn blas_matvec_operand_layout(&self) -> BlasMatVecOperandLayout {
         self.layout
     }
@@ -184,9 +184,9 @@ impl<BE: Backend> BlasMatVecOperandInfos for BlasMatVecOperandPrepared<BE> {
 
 /// The maps of a public operand of products of a vector, in either form: [`BlasMatVecOperandPrepared`] (resident) or
 /// [`BlasMatVecOperand`] (streamed).
-pub trait BlasMatVecMaps<BE: Backend>: BlasMatVecOperandInfos + Sync {
+pub trait BlasMatVecMaps<BE: Backend, Rg: Ring = Standard>: BlasMatVecOperandInfos + Sync {
     /// The form of a diagonal.
-    type Diagonal: GLWEDiagonalProd<BE> + LtDiagonalMeta + Sync;
+    type Diagonal: GLWEDiagonalProd<BE, Rg> + LtDiagonalMeta + Sync;
 
     /// Whether the diagonals are plaintexts a product prepares at each use.
     const STREAMED: bool;
@@ -196,37 +196,37 @@ pub trait BlasMatVecMaps<BE: Backend>: BlasMatVecOperandInfos + Sync {
     fn blocks(&self) -> &[LinearTransformation<Self::Diagonal>];
 }
 
-impl<BE: Backend> BlasMatVecMaps<BE> for BlasMatVecOperand<BE>
+impl<BE: Backend, Rg: Ring> BlasMatVecMaps<BE, Rg> for BlasMatVecOperand<BE, Rg>
 where
-    CKKSPlaintextOwned<BE>: GLWEDiagonalProd<BE> + Sync,
+    CKKSPlaintextOwned<BE, Rg>: GLWEDiagonalProd<BE, Rg> + Sync,
 {
-    type Diagonal = CKKSPlaintextOwned<BE>;
+    type Diagonal = CKKSPlaintextOwned<BE, Rg>;
     const STREAMED: bool = true;
 
-    fn blocks(&self) -> &[Encoded<BE>] {
+    fn blocks(&self) -> &[Encoded<BE, Rg>] {
         &self.maps
     }
 }
 
-impl<BE: Backend> BlasMatVecMaps<BE> for BlasMatVecOperandPrepared<BE> {
-    type Diagonal = PreparedDiagonal<BE::OwnedBuf, BE>;
+impl<BE: Backend, Rg: Ring> BlasMatVecMaps<BE, Rg> for BlasMatVecOperandPrepared<BE, Rg> {
+    type Diagonal = PreparedDiagonal<BE::OwnedBuf, BE, Rg>;
     const STREAMED: bool = false;
 
-    fn blocks(&self) -> &[LinearTransformationPrepared<BE>] {
+    fn blocks(&self) -> &[LinearTransformationPrepared<BE, Rg>] {
         &self.maps
     }
 }
 
-impl<BE: Backend> BlasMatVecOperand<BE> {
+impl<BE: Backend, Rg: Ring> BlasMatVecOperand<BE, Rg> {
     /// The encoded map of output ciphertext `o` from input ciphertext `i`. Panics outside the operand.
-    pub fn block(&self, o: usize, i: usize) -> &LinearTransformation<CKKSPlaintextOwned<BE>> {
+    pub fn block(&self, o: usize, i: usize) -> &LinearTransformation<CKKSPlaintextOwned<BE, Rg>> {
         &self.maps[block_index(&self.layout, o, i)]
     }
 }
 
-impl<BE: Backend> BlasMatVecOperandPrepared<BE> {
+impl<BE: Backend, Rg: Ring> BlasMatVecOperandPrepared<BE, Rg> {
     /// The prepared map of output ciphertext `o` from input ciphertext `i`. Panics outside the operand.
-    pub fn block(&self, o: usize, i: usize) -> &LinearTransformationPrepared<BE> {
+    pub fn block(&self, o: usize, i: usize) -> &LinearTransformationPrepared<BE, Rg> {
         &self.maps[block_index(&self.layout, o, i)]
     }
 }
@@ -270,10 +270,10 @@ pub(crate) fn assert_fits(layout: &BlasMatVecOperandLayout) {
 }
 
 /// Panics unless `layout` fits and is of `module`'s slots.
-pub(crate) fn assert_module_slots(module: &impl CKKSModuleInfos, layout: &BlasMatVecOperandLayout) {
+pub(crate) fn assert_module_slots<Rg: Ring>(module: &impl CKKSModuleInfos, layout: &BlasMatVecOperandLayout) {
     assert_fits(layout);
     assert!(
-        layout.slots == module.ckks_max_slots(),
+        layout.slots == module.ckks_max_slots::<Rg>(),
         "the operand's slots are not the module's"
     );
 }
@@ -392,7 +392,7 @@ pub trait BlasMatVecOperandAlloc<BE: Backend>: CKKSLinearTransformationAlloc<BE>
     /// period, which divides the slots, if the operand has more blocks than a `usize` counts, if `coeffs_meta.k` is
     /// `0`, if `base2k` is outside `1..=63`, or, from infos, for a schedule other than `Direct` and `Bsgs` of a
     /// positive giant step.
-    fn blas_matvec_operand_alloc(
+    fn blas_matvec_operand_alloc<Rg: Ring>(
         &self,
         input: BlasVectorShape,
         input_period: usize,
@@ -400,9 +400,9 @@ pub trait BlasMatVecOperandAlloc<BE: Backend>: CKKSLinearTransformationAlloc<BE>
         output_period: usize,
         base2k: Base2K,
         coeffs_meta: CoeffsMeta,
-    ) -> BlasMatVecOperand<BE> {
+    ) -> BlasMatVecOperand<BE, Rg> {
         let layout = BlasMatVecOperandLayout::new(
-            self.ckks_max_slots(),
+            self.ckks_max_slots::<Rg>(),
             input,
             input_period,
             output,
@@ -418,7 +418,7 @@ pub trait BlasMatVecOperandAlloc<BE: Backend>: CKKSLinearTransformationAlloc<BE>
     /// # Panics
     ///
     /// As [`Self::blas_matvec_operand_alloc`], and if the slots of `infos` are not the module's.
-    fn blas_matvec_operand_alloc_from_infos<A: BlasMatVecOperandInfos>(&self, infos: &A) -> BlasMatVecOperand<BE> {
+    fn blas_matvec_operand_alloc_from_infos<A: BlasMatVecOperandInfos, Rg: Ring>(&self, infos: &A) -> BlasMatVecOperand<BE, Rg> {
         alloc(self, &infos.blas_matvec_operand_layout())
     }
 }
@@ -426,29 +426,29 @@ pub trait BlasMatVecOperandAlloc<BE: Backend>: CKKSLinearTransformationAlloc<BE>
 impl<BE: Backend> BlasMatVecOperandAlloc<BE> for Module<BE> where Module<BE>: CKKSLinearTransformationAlloc<BE> {}
 
 /// [`BlasMatVecOperandAlloc::blas_matvec_operand_alloc_from_infos`].
-fn alloc<BE, M>(module: &M, layout: &BlasMatVecOperandLayout) -> BlasMatVecOperand<BE>
+fn alloc<BE, M, Rg: Ring>(module: &M, layout: &BlasMatVecOperandLayout) -> BlasMatVecOperand<BE, Rg>
 where
     BE: Backend,
     M: CKKSLinearTransformationAlloc<BE> + GetDegree,
 {
-    assert_module_slots(module, layout);
+    assert_module_slots::<Rg>(module, layout);
     let map = map_layout(layout);
     let maps = (0..layout.blocks())
-        .map(|_| map.alloc::<BE, M>(module, layout.base2k))
+        .map(|_| map.alloc::<BE, M, Rg>(module, layout.base2k))
         .collect();
     BlasMatVecOperand { layout: *layout, maps }
 }
 
 /// [`crate::api::BlasMatVecOperandPreparedFactory::blas_matvec_operand_prepared_alloc_from_infos`].
-pub(crate) fn alloc_prepared<BE, M>(module: &M, layout: &BlasMatVecOperandLayout) -> BlasMatVecOperandPrepared<BE>
+pub(crate) fn alloc_prepared<BE, M, Rg: Ring>(module: &M, layout: &BlasMatVecOperandLayout) -> BlasMatVecOperandPrepared<BE, Rg>
 where
     BE: Backend,
     M: CnvPVecAlloc<BE> + CKKSModuleInfos + GetDegree,
 {
-    assert_module_slots(module, layout);
+    assert_module_slots::<Rg>(module, layout);
     let map = map_layout(layout);
     let maps = (0..layout.blocks())
-        .map(|_| map.alloc_prepared::<BE, M>(module, layout.base2k))
+        .map(|_| map.alloc_prepared::<BE, M, Rg>(module, layout.base2k))
         .collect();
     BlasMatVecOperandPrepared { layout: *layout, maps }
 }

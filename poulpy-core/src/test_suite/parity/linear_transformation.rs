@@ -5,7 +5,7 @@ use std::collections::HashMap;
 
 use poulpy_hal::{
     api::CnvPVecAlloc,
-    layouts::{Backend, CyclotomicOrder, Data, DataViewMut, GaloisElement, HostDataMut, Module, ZnxViewMut},
+    layouts::{Backend, CyclotomicOrder, Data, DataViewMut, GaloisElement, HostDataMut, Module, Ring, Standard, ZnxViewMut},
     source::Source,
     test_suite::TestParams,
 };
@@ -28,9 +28,9 @@ use crate::{
 };
 
 /// Scheme-independent test diagonal: its storage represents an integer polynomial.
-struct StreamedDiagonal<D: Data>(GLWE<D, i64>);
+struct StreamedDiagonal<D: Data, Rg: Ring = Standard>(GLWE<D, i64, Rg>);
 
-impl<D: Data> LWEInfos for StreamedDiagonal<D> {
+impl<D: Data, Rg: Ring> LWEInfos for StreamedDiagonal<D, Rg> {
     fn n(&self) -> Degree {
         self.0.n()
     }
@@ -44,24 +44,24 @@ impl<D: Data> LWEInfos for StreamedDiagonal<D> {
         self.0.max_size()
     }
 }
-impl<D: Data> GLWEInfos for StreamedDiagonal<D> {
+impl<D: Data, Rg: Ring> GLWEInfos for StreamedDiagonal<D, Rg> {
     fn rank(&self) -> Rank {
         self.0.rank()
     }
 }
-impl<D: Data, BE: Backend> GLWEToBackendRef<BE> for StreamedDiagonal<D>
+impl<D: Data, BE: Backend, Rg: Ring> GLWEToBackendRef<BE, Rg> for StreamedDiagonal<D, Rg>
 where
-    GLWE<D, i64>: GLWEToBackendRef<BE>,
+    GLWE<D, i64, Rg>: GLWEToBackendRef<BE, Rg>,
 {
-    fn to_backend_ref(&self) -> GLWEBackendRef<'_, BE> {
+    fn to_backend_ref(&self) -> GLWEBackendRef<'_, BE, Rg> {
         self.0.to_backend_ref()
     }
 }
-impl<BE: Backend<ZnxWord = i64>> GLWEDiagonalProd<BE> for StreamedDiagonal<BE::OwnedBuf>
+impl<BE: Backend<ZnxWord = i64>, Rg: Ring> GLWEDiagonalProd<BE, Rg> for StreamedDiagonal<BE::OwnedBuf, Rg>
 where
-    GLWE<BE::OwnedBuf, i64>: GLWEToBackendRef<BE>,
+    GLWE<BE::OwnedBuf, i64, Rg>: GLWEToBackendRef<BE, Rg>,
 {
-    fn operand(&self) -> DiagonalOperand<'_, BE> {
+    fn operand(&self) -> DiagonalOperand<'_, BE, Rg> {
         DiagonalOperand::Unprepared(self.0.to_backend_ref())
     }
 }
@@ -76,18 +76,22 @@ fn poison<B: Backend>(buffer: &mut B::OwnedBuf) {
 /// Queries are exercised by their consumers using independently poisoned, exact budgets.
 /// Prepared caches are compared only through canonical output and semantic metadata.
 /// Then diagonals of the source's rank, multiplied as ciphertexts, on the per-rotation schedule.
-pub fn test_linear_transformation_parity<BR, BT>(params: &TestParams, shapes: &ParityShapes, r: &Module<BR>, t: &Module<BT>)
-where
-    BR: ParityBackend,
-    BT: ParityBackend,
+pub fn test_linear_transformation_parity<BR, BT, Rg: Ring>(
+    params: &TestParams,
+    shapes: &ParityShapes,
+    r: &Module<BR>,
+    t: &Module<BT>,
+) where
+    BR: ParityBackend<Rg>,
+    BT: ParityBackend<Rg>,
     BR::OwnedBuf: HostDataMut,
-    Module<BR>: GLWELinearTransformationOps<BR>
-        + GLWEAutomorphismKeyPreparedFactory<BR>
-        + GLWETensorKeyPreparedFactory<BR>
+    Module<BR>: GLWELinearTransformationOps<BR, Rg>
+        + GLWEAutomorphismKeyPreparedFactory<BR, Rg>
+        + GLWETensorKeyPreparedFactory<BR, Rg>
         + CnvPVecAlloc<BR>,
-    Module<BT>: GLWELinearTransformationOps<BT>
-        + GLWEAutomorphismKeyPreparedFactory<BT>
-        + GLWETensorKeyPreparedFactory<BT>
+    Module<BT>: GLWELinearTransformationOps<BT, Rg>
+        + GLWEAutomorphismKeyPreparedFactory<BT, Rg>
+        + GLWETensorKeyPreparedFactory<BT, Rg>
         + CnvPVecAlloc<BT>,
 {
     assert!(params.n <= r.n() && params.n <= t.n());
@@ -130,7 +134,7 @@ where
                 let mut keys_r = HashMap::new();
                 let mut keys_t = HashMap::new();
                 for rotation in [1, 3, 4] {
-                    let p = r.galois_element(rotation);
+                    let p = r.galois_element::<Rg>(rotation);
                     let mut key_r = r.glwe_automorphism_key_alloc_from_infos(&key);
                     fill_by_digit(r, &mut key_r, 1, &mut source);
                     key_r.p = p;
@@ -177,7 +181,7 @@ where
                 assert_eq!((lhs_r.size(), lhs_r.cols()), (lhs_t.size(), lhs_t.cols()));
 
                 let mut twin_t = t.glwe_alloc_from_infos(&ct);
-                unnormalized_twin::<BR, BT>(&input_r, &mut twin_t);
+                unnormalized_twin::<BR, BT, Rg>(&input_r, &mut twin_t);
                 let mut lhs_twin = LinearTransformationBabySteps::alloc(t, &baby_steps, &ct);
                 t.glwe_linear_transformation_baby_steps_prepare(
                     &mut lhs_twin,
@@ -256,9 +260,9 @@ where
                             }],
                         }],
                     };
-                    let mut resident_r: LinearTransformation<PreparedDiagonal<BR::OwnedBuf, BR>> =
+                    let mut resident_r: LinearTransformation<PreparedDiagonal<BR::OwnedBuf, BR, Rg>> =
                         LinearTransformation::alloc_prepared(r, &identity_schedule, &one_layout);
-                    let mut resident_t: LinearTransformation<PreparedDiagonal<BT::OwnedBuf, BT>> =
+                    let mut resident_t: LinearTransformation<PreparedDiagonal<BT::OwnedBuf, BT, Rg>> =
                         LinearTransformation::alloc_prepared(t, &identity_schedule, &one_layout);
                     r.glwe_linear_transformation_rhs_prepare(
                         &mut resident_r,
@@ -388,9 +392,9 @@ where
                             diagonals: diagonals_t,
                         });
                     }
-                    let mut resident_r: LinearTransformation<PreparedDiagonal<BR::OwnedBuf, BR>> =
+                    let mut resident_r: LinearTransformation<PreparedDiagonal<BR::OwnedBuf, BR, Rg>> =
                         LinearTransformation::alloc_prepared(r, &schedule, &pt);
-                    let mut resident_t: LinearTransformation<PreparedDiagonal<BT::OwnedBuf, BT>> =
+                    let mut resident_t: LinearTransformation<PreparedDiagonal<BT::OwnedBuf, BT, Rg>> =
                         LinearTransformation::alloc_prepared(t, &schedule, &pt);
                     for giant in &mut resident_r.giant_steps {
                         for diagonal in &mut giant.diagonals {
@@ -636,22 +640,22 @@ where
 /// `{0, 15}` with 128 slots or more: their tree takes a buffer per switch, more than two per giant step. Then
 /// diagonals of the source's rank, multiplied as ciphertexts, on a power-of-two schedule.
 /// Every call runs on the scratch its query returns.
-pub fn test_linear_transformation_powers_of_two_parity<BR, BT>(
+pub fn test_linear_transformation_powers_of_two_parity<BR, BT, Rg: Ring>(
     params: &TestParams,
     shapes: &ParityShapes,
     r: &Module<BR>,
     t: &Module<BT>,
 ) where
-    BR: ParityBackend,
-    BT: ParityBackend,
+    BR: ParityBackend<Rg>,
+    BT: ParityBackend<Rg>,
     BR::OwnedBuf: HostDataMut,
-    Module<BR>: GLWELinearTransformationOps<BR>
-        + GLWEAutomorphismKeyPreparedFactory<BR>
-        + GLWETensorKeyPreparedFactory<BR>
+    Module<BR>: GLWELinearTransformationOps<BR, Rg>
+        + GLWEAutomorphismKeyPreparedFactory<BR, Rg>
+        + GLWETensorKeyPreparedFactory<BR, Rg>
         + CnvPVecAlloc<BR>,
-    Module<BT>: GLWELinearTransformationOps<BT>
-        + GLWEAutomorphismKeyPreparedFactory<BT>
-        + GLWETensorKeyPreparedFactory<BT>
+    Module<BT>: GLWELinearTransformationOps<BT, Rg>
+        + GLWEAutomorphismKeyPreparedFactory<BT, Rg>
+        + GLWETensorKeyPreparedFactory<BT, Rg>
         + CnvPVecAlloc<BT>,
 {
     assert!(params.n <= r.n() && params.n <= t.n());
@@ -711,7 +715,7 @@ pub fn test_linear_transformation_powers_of_two_parity<BR, BT>(
             let mut keys_r = HashMap::new();
             let mut keys_t = HashMap::new();
             for rotation in keyed {
-                let p = r.galois_element(rotation);
+                let p = r.galois_element::<Rg>(rotation);
                 let mut key_r = r.glwe_automorphism_key_alloc_from_infos(&key);
                 fill_by_digit(r, &mut key_r, 1, &mut source);
                 key_r.p = p;
@@ -747,9 +751,9 @@ pub fn test_linear_transformation_powers_of_two_parity<BR, BT>(
                 &mut poisoned_scratch::<BT>(t.glwe_linear_transformation_baby_steps_prepare_tmp_bytes(&ct, &plan, &key)).borrow(),
             );
 
-            let mut resident_r: LinearTransformation<PreparedDiagonal<BR::OwnedBuf, BR>> =
+            let mut resident_r: LinearTransformation<PreparedDiagonal<BR::OwnedBuf, BR, Rg>> =
                 LinearTransformation::alloc_prepared(r, &schedule, &pt);
-            let mut resident_t: LinearTransformation<PreparedDiagonal<BT::OwnedBuf, BT>> =
+            let mut resident_t: LinearTransformation<PreparedDiagonal<BT::OwnedBuf, BT, Rg>> =
                 LinearTransformation::alloc_prepared(t, &schedule, &pt);
             let mut rhs_r = LinearTransformation {
                 baby_steps: plan.baby_steps.clone(),
@@ -846,7 +850,7 @@ pub fn test_linear_transformation_powers_of_two_parity<BR, BT>(
 /// either form. At rank 1, keys at the source's radix take the one-pass products from an offset of a limb, and with
 /// digits of two limbs a backend's fused giant steps where it has them; keys one bit narrower take the tensor products
 /// and the normalized giant route. Every call runs on the scratch its query returns.
-fn ciphertext_diagonals_parity<BR, BT>(
+fn ciphertext_diagonals_parity<BR, BT, Rg: Ring>(
     params: &TestParams,
     shapes: &ParityShapes,
     r: &Module<BR>,
@@ -854,16 +858,16 @@ fn ciphertext_diagonals_parity<BR, BT>(
     strategy: LinearTransformationStrategy,
     source: &mut Source,
 ) where
-    BR: ParityBackend,
-    BT: ParityBackend,
+    BR: ParityBackend<Rg>,
+    BT: ParityBackend<Rg>,
     BR::OwnedBuf: HostDataMut,
-    Module<BR>: GLWELinearTransformationOps<BR>
-        + GLWEAutomorphismKeyPreparedFactory<BR>
-        + GLWETensorKeyPreparedFactory<BR>
+    Module<BR>: GLWELinearTransformationOps<BR, Rg>
+        + GLWEAutomorphismKeyPreparedFactory<BR, Rg>
+        + GLWETensorKeyPreparedFactory<BR, Rg>
         + CnvPVecAlloc<BR>,
-    Module<BT>: GLWELinearTransformationOps<BT>
-        + GLWEAutomorphismKeyPreparedFactory<BT>
-        + GLWETensorKeyPreparedFactory<BT>
+    Module<BT>: GLWELinearTransformationOps<BT, Rg>
+        + GLWEAutomorphismKeyPreparedFactory<BT, Rg>
+        + GLWETensorKeyPreparedFactory<BT, Rg>
         + CnvPVecAlloc<BT>,
 {
     let base = params.base2k.min(12);
@@ -911,7 +915,7 @@ fn ciphertext_diagonals_parity<BR, BT>(
             };
             let mut atks_r = HashMap::new();
             let mut atks_t = HashMap::new();
-            for p in plan.galois_elements(r.cyclotomic_order()) {
+            for p in plan.galois_elements(r.cyclotomic_order::<Rg>()) {
                 let mut key_r = r.glwe_automorphism_key_alloc_from_infos(&key);
                 fill_by_digit(r, &mut key_r, 1, source);
                 key_r.p = p;
@@ -1016,9 +1020,9 @@ fn ciphertext_diagonals_parity<BR, BT>(
                         diagonals: diagonals_t,
                     });
                 }
-                let mut resident_r: LinearTransformation<PreparedDiagonal<BR::OwnedBuf, BR>> =
+                let mut resident_r: LinearTransformation<PreparedDiagonal<BR::OwnedBuf, BR, Rg>> =
                     LinearTransformation::alloc_prepared(r, &schedule, &ct);
-                let mut resident_t: LinearTransformation<PreparedDiagonal<BT::OwnedBuf, BT>> =
+                let mut resident_t: LinearTransformation<PreparedDiagonal<BT::OwnedBuf, BT, Rg>> =
                     LinearTransformation::alloc_prepared(t, &schedule, &ct);
                 r.glwe_linear_transformation_rhs_prepare(
                     &mut resident_r,

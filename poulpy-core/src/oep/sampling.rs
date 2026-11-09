@@ -1,4 +1,4 @@
-use poulpy_hal::layouts::{Backend, Module, ScalarZnxBackendMut, VecZnxBackendMut, VecZnxBigBackendMut};
+use poulpy_hal::layouts::{Backend, Module, Ring, ScalarZnxBackendMut, Standard, VecZnxBackendMut, VecZnxBigBackendMut};
 
 use crate::{Distribution, Noise};
 
@@ -33,12 +33,12 @@ use crate::{Distribution, Noise};
 /// within the selected column and precision. The scheme's security relies on
 /// these distribution and precision guarantees. The memory, layout, synchrony and aliasing rules of
 /// `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait SamplingImpl: Backend {
+pub unsafe trait SamplingImpl<Rg: Ring = Standard>: Backend {
     /// Fills column `res_col` of `res` with a draw of `dist` from `seed`. No reference body exists: the trait's
     /// sampling contract is the specification, and the stream is the backend's own.
     fn scalar_znx_fill_distribution(
         module: &Module<Self>,
-        res: &mut ScalarZnxBackendMut<'_, Self>,
+        res: &mut ScalarZnxBackendMut<'_, Self, Rg>,
         res_col: usize,
         dist: Distribution,
         seed: [u8; 32],
@@ -51,7 +51,7 @@ pub unsafe trait SamplingImpl: Backend {
         module: &Module<Self>,
         base2k: usize,
         k: usize,
-        res: &mut VecZnxBackendMut<'_, Self>,
+        res: &mut VecZnxBackendMut<'_, Self, Rg>,
         res_col: usize,
         noise: Noise,
         seed: [u8; 32],
@@ -64,7 +64,7 @@ pub unsafe trait SamplingImpl: Backend {
         module: &Module<Self>,
         base2k: usize,
         k: usize,
-        res: &mut VecZnxBigBackendMut<'_, Self>,
+        res: &mut VecZnxBigBackendMut<'_, Self, Rg>,
         res_col: usize,
         noise: Noise,
         seed: [u8; 32],

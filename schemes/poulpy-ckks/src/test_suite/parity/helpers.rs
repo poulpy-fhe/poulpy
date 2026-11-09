@@ -8,7 +8,7 @@ use poulpy_core::{
     layouts::{GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos},
 };
 use poulpy_hal::{
-    layouts::{Backend, Module, ScratchArena, ScratchOwned},
+    layouts::{Backend, Module, Ring, ScratchArena, ScratchOwned},
     source::Source,
 };
 
@@ -34,10 +34,10 @@ impl std::fmt::Debug for Snapshot {
 }
 
 /// Copies the digits, layout and metadata of `value` to the host.
-pub fn snapshot<BE, A>(value: &A) -> Snapshot
+pub fn snapshot<BE, A, Rg: Ring>(value: &A) -> Snapshot
 where
     BE: Backend<ZnxWord = i64>,
-    A: CKKSInfos + GLWEInfos + GLWEToBackendRef<BE>,
+    A: CKKSInfos + GLWEInfos + GLWEToBackendRef<BE, Rg>,
 {
     let view = value.to_backend_ref();
     let mut digits = vec![0i64; view.n().as_usize() * (view.rank().as_usize() + 1) * view.data().size()];
@@ -66,32 +66,32 @@ pub fn assert_untagged<'a>(label: &str, outputs: impl IntoIterator<Item = &'a Sn
 }
 
 /// A ciphertext of `layout` filled from `seed`, tagged with a fresh noise estimate.
-pub fn fixture_ciphertext<BE: Backend<ZnxWord = i64>>(
+pub fn fixture_ciphertext<BE: Backend<ZnxWord = i64>, Rg: Ring>(
     module: &Module<BE>,
     layout: &CKKSLayout,
     seed: u8,
-) -> CKKSCiphertextOwned<BE>
+) -> CKKSCiphertextOwned<BE, Rg>
 where
-    Module<BE>: GLWEFill<BE>,
+    Module<BE>: GLWEFill<BE, Rg>,
 {
     let mut out = module.ckks_ciphertext_alloc_from_infos(layout);
     module.glwe_fill_from_source(&mut out, &mut Source::new([seed; 32]));
     // A fresh estimate, so an evaluation output that keeps a stale one fails the comparison.
     let noise = ComponentNoise::from_secret_at(Distribution::TernaryProb(0.5), out.k(), out.rank().as_usize());
-    GLWEToBackendMut::<BE>::set_noise(&mut out, Some(noise));
+    GLWEToBackendMut::<BE, Rg>::set_noise(&mut out, Some(noise));
     out
 }
 
 /// With `lazy`, adds a fixture filled over whole limbs: the digits leave the
 /// canonical range, bits below `k` must round away, and the flag is clear.
-pub fn fixture_operand<BE: Backend<ZnxWord = i64>>(
+pub fn fixture_operand<BE: Backend<ZnxWord = i64>, Rg: Ring>(
     module: &Module<BE>,
     layout: &CKKSLayout,
     seed: u8,
     lazy: bool,
-) -> CKKSCiphertextOwned<BE>
+) -> CKKSCiphertextOwned<BE, Rg>
 where
-    Module<BE>: GLWEFill<BE> + GLWEAdd<BE>,
+    Module<BE>: GLWEFill<BE, Rg> + GLWEAdd<BE, Rg>,
 {
     let mut out = fixture_ciphertext(module, layout, seed);
     if lazy {
@@ -103,9 +103,13 @@ where
 }
 
 /// A plaintext of `layout` filled from `seed`.
-pub fn fixture_plaintext<BE: Backend<ZnxWord = i64>>(module: &Module<BE>, layout: &CKKSLayout, seed: u8) -> CKKSPlaintextOwned<BE>
+pub fn fixture_plaintext<BE: Backend<ZnxWord = i64>, Rg: Ring>(
+    module: &Module<BE>,
+    layout: &CKKSLayout,
+    seed: u8,
+) -> CKKSPlaintextOwned<BE, Rg>
 where
-    Module<BE>: GLWEFill<BE>,
+    Module<BE>: GLWEFill<BE, Rg>,
 {
     let mut out = module.ckks_plaintext_alloc_from_infos(layout);
     module.glwe_fill_from_source(&mut out, &mut Source::new([seed; 32]));

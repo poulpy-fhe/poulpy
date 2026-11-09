@@ -4,7 +4,7 @@ use poulpy_hal::{
         ModuleN, SvpApplyDftToDftAssign, VecZnxBigAddAssign, VecZnxBigBytesOf, VecZnxBigFromSmall, VecZnxBigNormalize,
         VecZnxBigNormalizeTmpBytes, VecZnxDftApply, VecZnxDftBytesOf, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxSubAssign,
     },
-    layouts::{Backend, HostBackend, HostDataMut, Module, ScratchArena, Stats},
+    layouts::{Backend, HostBackend, HostDataMut, Module, Ring, ScratchArena, Stats},
 };
 
 use crate::{
@@ -18,30 +18,30 @@ use crate::{
 };
 
 // Coefficient-word fence: ends in `VecZnx::stats`, which is i64-only.
-pub(crate) fn glwe_noise_backend_inner<M, BE>(
+pub(crate) fn glwe_noise_backend_inner<M, BE, Rg: Ring>(
     module: &M,
-    res_backend: &GLWEBackendRef<'_, BE>,
-    pt_want_backend: &GLWEBackendRef<'_, BE>,
-    sk_backend: &GLWESecretPreparedBackendRef<'_, BE>,
+    res_backend: &GLWEBackendRef<'_, BE, Rg>,
+    pt_want_backend: &GLWEBackendRef<'_, BE, Rg>,
+    sk_backend: &GLWESecretPreparedBackendRef<'_, BE, Rg>,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Stats
 where
     M: GLWEBytesOf<BE>
         + GLWEPlaintextBytesOf<BE>
-        + GLWENoise<BE>
-        + GLWEDecrypt<BE>
-        + GLWENormalize<BE>
-        + VecZnxSubAssign<BE>
+        + GLWENoise<BE, Rg>
+        + GLWEDecrypt<BE, Rg>
+        + GLWENormalize<BE, Rg>
+        + VecZnxSubAssign<BE, Rg>
         + ModuleN
         + VecZnxDftBytesOf
         + VecZnxBigBytesOf
-        + VecZnxBigFromSmall<BE>
-        + VecZnxDftApply<BE>
-        + SvpApplyDftToDftAssign<BE>
-        + VecZnxIdftApply<BE>
+        + VecZnxBigFromSmall<BE, Rg>
+        + VecZnxDftApply<BE, Rg>
+        + SvpApplyDftToDftAssign<BE, Rg>
+        + VecZnxIdftApply<BE, Rg>
         + VecZnxIdftApplyTmpBytes
-        + VecZnxBigAddAssign<BE>
-        + VecZnxBigNormalize<BE>
+        + VecZnxBigAddAssign<BE, Rg>
+        + VecZnxBigNormalize<BE, Rg>
         + VecZnxBigNormalizeTmpBytes,
     BE: HostBackend<ZnxWord = i64>,
     for<'a> BE::BufMut<'a>: HostDataMut,
@@ -67,21 +67,21 @@ where
     pt_have.data.stats(pt_base2k.into(), 0)
 }
 
-impl<BE: Backend + HostBackend> GLWENoise<BE> for Module<BE>
+impl<BE: Backend + HostBackend, Rg: Ring> GLWENoise<BE, Rg> for Module<BE>
 where
-    Module<BE>: GLWEDecrypt<BE>
-        + GLWENormalize<BE>
-        + VecZnxSubAssign<BE>
+    Module<BE>: GLWEDecrypt<BE, Rg>
+        + GLWENormalize<BE, Rg>
+        + VecZnxSubAssign<BE, Rg>
         + ModuleN
         + VecZnxDftBytesOf
         + VecZnxBigBytesOf
-        + VecZnxBigFromSmall<BE>
-        + VecZnxDftApply<BE>
-        + SvpApplyDftToDftAssign<BE>
-        + VecZnxIdftApply<BE>
+        + VecZnxBigFromSmall<BE, Rg>
+        + VecZnxDftApply<BE, Rg>
+        + SvpApplyDftToDftAssign<BE, Rg>
+        + VecZnxIdftApply<BE, Rg>
         + VecZnxIdftApplyTmpBytes
-        + VecZnxBigAddAssign<BE>
-        + VecZnxBigNormalize<BE>
+        + VecZnxBigAddAssign<BE, Rg>
+        + VecZnxBigNormalize<BE, Rg>
         + VecZnxBigNormalizeTmpBytes,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
@@ -94,9 +94,9 @@ where
 
     fn glwe_noise<R, P, S>(&self, res: &R, pt_want: &P, sk_prepared: &S, scratch: &mut ScratchArena<'_, BE>) -> Stats
     where
-        R: GLWEToBackendRef<BE> + GLWEInfos,
-        P: GLWEToBackendRef<BE>,
-        S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
+        R: GLWEToBackendRef<BE, Rg> + GLWEInfos,
+        P: GLWEToBackendRef<BE, Rg>,
+        S: GLWESecretPreparedToBackendRef<BE, Rg> + GLWEInfos,
         BE: HostBackend<ZnxWord = i64>,
         for<'a> BE::BufMut<'a>: HostDataMut,
     {
@@ -119,12 +119,12 @@ where
     }
 }
 
-pub(crate) fn glwe_noise_body_tmp_bytes<M, BE, A>(module: &M, infos: &A) -> usize
+pub(crate) fn glwe_noise_body_tmp_bytes<M, BE, A, Rg: Ring>(module: &M, infos: &A) -> usize
 where
     BE: Backend,
     M: GLWEBytesOf<BE>
         + GLWEPlaintextBytesOf<BE>
-        + GLWENormalize<BE>
+        + GLWENormalize<BE, Rg>
         + ModuleN
         + VecZnxDftBytesOf
         + VecZnxBigBytesOf

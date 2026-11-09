@@ -10,7 +10,7 @@ use poulpy_hal::execution::TaskExecutor;
 use poulpy_hal::layouts::CnvDftAccTerm;
 use poulpy_hal::layouts::{
     Backend, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, CrtWord, HostDataMut, HostDataRef,
-    Module, VecZnxBackendRef, VecZnxDftBackendMut, ZnxView, ZnxViewMut, check_cnv_dft_terms, check_degree,
+    Module, Ring, VecZnxBackendRef, VecZnxDftBackendMut, ZnxView, ZnxViewMut, check_cnv_dft_terms, check_degree,
 };
 use std::mem::size_of;
 
@@ -33,7 +33,7 @@ fn col_slice(raw: &[u32], n: usize, size: usize, col: usize) -> &[u32] {
     &raw[col * stride..(col + 1) * stride]
 }
 
-fn zero_res_limb<BE>(res: &mut VecZnxDftBackendMut<'_, BE>, col: usize, limb: usize)
+fn zero_res_limb<BE, Rg: Ring>(res: &mut VecZnxDftBackendMut<'_, BE, Rg>, col: usize, limb: usize)
 where
     BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>,
     for<'a> BE::BufMut<'a>: HostDataMut,
@@ -73,13 +73,13 @@ impl<'a> Term<'a> {
 
     /// The term over `n` coefficients for a result of `res_size` limbs, or the empty term when an operand has no limb.
     #[allow(clippy::too_many_arguments)]
-    fn new<BE>(
+    fn new<BE, Rg: Ring>(
         n: usize,
         res_size: usize,
         cnv_offset: usize,
-        a: &'a CnvPVecLBackendRef<'_, BE>,
+        a: &'a CnvPVecLBackendRef<'_, BE, Rg>,
         a_cols: (usize, usize),
-        b: &'a CnvPVecRBackendRef<'_, BE>,
+        b: &'a CnvPVecRBackendRef<'_, BE, Rg>,
         b_cols: (usize, usize),
         b_galois: i64,
     ) -> Self
@@ -89,7 +89,7 @@ impl<'a> Term<'a> {
     {
         let (a_size, b_size) = (a.size(), b.size());
         assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
-        let b_read = right_read_ntt::<BE::Ring>(n, b.n(), b_galois, BE::MIN_DEGREE);
+        let b_read = right_read_ntt::<Rg>(n, b.n(), b_galois, BE::MIN_DEGREE);
         if a_size == 0 || b_size == 0 {
             return Self::EMPTY;
         }
@@ -187,8 +187,8 @@ pub fn apply_tmp_words(res_size: usize) -> usize {
 ///
 /// Limbs below `add_below` receive the sum of their content and the terms, the others are overwritten.
 #[allow(clippy::too_many_arguments)]
-fn apply_terms<BE, E: TaskExecutor, const PAIRWISE: bool>(
-    res: &mut VecZnxDftBackendMut<'_, BE>,
+fn apply_terms<BE, E: TaskExecutor, const PAIRWISE: bool, Rg: Ring>(
+    res: &mut VecZnxDftBackendMut<'_, BE, Rg>,
     res_col: usize,
     terms: &[Term<'_>],
     limbs: usize,
@@ -259,11 +259,11 @@ unsafe fn zero_prepared_limb(col: *mut u32, n: usize, size: usize, limb: usize) 
 ///
 /// `dft(n, dst, src, prepared)` is the forward transform of `src` into the packed limb `dst`,
 /// multiplied by `2^32` when `prepared` is set.
-fn prepare<BE, E: TaskExecutor>(
+fn prepare<BE, E: TaskExecutor, Rg: Ring>(
     module: &Module<BE>,
-    left: Option<&mut CnvPVecLBackendMut<'_, BE>>,
-    right: Option<&mut CnvPVecRBackendMut<'_, BE>>,
-    a: &VecZnxBackendRef<'_, BE>,
+    left: Option<&mut CnvPVecLBackendMut<'_, BE, Rg>>,
+    right: Option<&mut CnvPVecRBackendMut<'_, BE, Rg>>,
+    a: &VecZnxBackendRef<'_, BE, Rg>,
     tmp: &mut [u64],
     dft: impl Fn(usize, &mut [u32], &[i64], bool) + Send + Sync,
 ) where
@@ -326,10 +326,10 @@ fn prepare<BE, E: TaskExecutor>(
     });
 }
 
-pub fn cnv_pvec_left_prepare<BE, E: TaskExecutor>(
+pub fn cnv_pvec_left_prepare<BE, E: TaskExecutor, Rg: Ring>(
     module: &Module<BE>,
-    res: &mut CnvPVecLBackendMut<'_, BE>,
-    a: &VecZnxBackendRef<'_, BE>,
+    res: &mut CnvPVecLBackendMut<'_, BE, Rg>,
+    a: &VecZnxBackendRef<'_, BE, Rg>,
     tmp: &mut [u64],
     dft: impl Fn(usize, &mut [u32], &[i64], bool) + Send + Sync,
 ) where
@@ -337,13 +337,13 @@ pub fn cnv_pvec_left_prepare<BE, E: TaskExecutor>(
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
-    prepare::<BE, E>(module, Some(res), None, a, tmp, dft);
+    prepare::<BE, E, Rg>(module, Some(res), None, a, tmp, dft);
 }
 
-pub fn cnv_pvec_right_prepare<BE, E: TaskExecutor>(
+pub fn cnv_pvec_right_prepare<BE, E: TaskExecutor, Rg: Ring>(
     module: &Module<BE>,
-    res: &mut CnvPVecRBackendMut<'_, BE>,
-    a: &VecZnxBackendRef<'_, BE>,
+    res: &mut CnvPVecRBackendMut<'_, BE, Rg>,
+    a: &VecZnxBackendRef<'_, BE, Rg>,
     tmp: &mut [u64],
     dft: impl Fn(usize, &mut [u32], &[i64], bool) + Send + Sync,
 ) where
@@ -351,14 +351,14 @@ pub fn cnv_pvec_right_prepare<BE, E: TaskExecutor>(
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
-    prepare::<BE, E>(module, None, Some(res), a, tmp, dft);
+    prepare::<BE, E, Rg>(module, None, Some(res), a, tmp, dft);
 }
 
-pub fn cnv_pvec_self_prepare<BE, E: TaskExecutor>(
+pub fn cnv_pvec_self_prepare<BE, E: TaskExecutor, Rg: Ring>(
     module: &Module<BE>,
-    left: &mut CnvPVecLBackendMut<'_, BE>,
-    right: &mut CnvPVecRBackendMut<'_, BE>,
-    a: &VecZnxBackendRef<'_, BE>,
+    left: &mut CnvPVecLBackendMut<'_, BE, Rg>,
+    right: &mut CnvPVecRBackendMut<'_, BE, Rg>,
+    a: &VecZnxBackendRef<'_, BE, Rg>,
     tmp: &mut [u64],
     dft: impl Fn(usize, &mut [u32], &[i64], bool) + Send + Sync,
 ) where
@@ -366,7 +366,7 @@ pub fn cnv_pvec_self_prepare<BE, E: TaskExecutor>(
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
-    prepare::<BE, E>(module, Some(left), Some(right), a, tmp, dft);
+    prepare::<BE, E, Rg>(module, Some(left), Some(right), a, tmp, dft);
 }
 
 /// Scratch space (in bytes) of the apply kernels, per worker.
@@ -375,14 +375,14 @@ pub(crate) fn cnv_apply_dft_tmp_bytes(res_size: usize) -> usize {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn apply<BE, E: TaskExecutor, const ACC: bool, const PAIRWISE: bool>(
+fn apply<BE, E: TaskExecutor, const ACC: bool, const PAIRWISE: bool, Rg: Ring>(
     module: &Module<BE>,
     cnv_offset: usize,
-    res: &mut VecZnxDftBackendMut<'_, BE>,
+    res: &mut VecZnxDftBackendMut<'_, BE, Rg>,
     res_col: usize,
-    a: &CnvPVecLBackendRef<'_, BE>,
+    a: &CnvPVecLBackendRef<'_, BE, Rg>,
     a_cols: (usize, usize),
-    b: &CnvPVecRBackendRef<'_, BE>,
+    b: &CnvPVecRBackendRef<'_, BE, Rg>,
     b_cols: (usize, usize),
     b_galois: i64,
     tmp: &mut [u32],
@@ -394,7 +394,7 @@ fn apply<BE, E: TaskExecutor, const ACC: bool, const PAIRWISE: bool>(
     let (n, res_size) = (res.n(), res.size());
     check_degree::<BE>(module.n(), n);
     let term = Term::new(n, res_size, cnv_offset, a, a_cols, b, b_cols, b_galois);
-    apply_terms::<BE, E, PAIRWISE>(res, res_col, &[term], term.limbs, if ACC { term.limbs } else { 0 }, tmp);
+    apply_terms::<BE, E, PAIRWISE, Rg>(res, res_col, &[term], term.limbs, if ACC { term.limbs } else { 0 }, tmp);
     if !ACC {
         for limb in term.limbs..res_size {
             zero_res_limb(res, res_col, limb);
@@ -403,14 +403,14 @@ fn apply<BE, E: TaskExecutor, const ACC: bool, const PAIRWISE: bool>(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn cnv_apply_dft<BE, E: TaskExecutor>(
+pub fn cnv_apply_dft<BE, E: TaskExecutor, Rg: Ring>(
     module: &Module<BE>,
     cnv_offset: usize,
-    res: &mut VecZnxDftBackendMut<'_, BE>,
+    res: &mut VecZnxDftBackendMut<'_, BE, Rg>,
     res_col: usize,
-    a: &CnvPVecLBackendRef<'_, BE>,
+    a: &CnvPVecLBackendRef<'_, BE, Rg>,
     a_col: usize,
-    b: &CnvPVecRBackendRef<'_, BE>,
+    b: &CnvPVecRBackendRef<'_, BE, Rg>,
     b_col: usize,
     b_galois: i64,
     tmp: &mut [u32],
@@ -419,7 +419,7 @@ pub fn cnv_apply_dft<BE, E: TaskExecutor>(
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
-    apply::<BE, E, false, false>(
+    apply::<BE, E, false, false, Rg>(
         module,
         cnv_offset,
         res,
@@ -434,14 +434,14 @@ pub fn cnv_apply_dft<BE, E: TaskExecutor>(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn cnv_apply_dft_add<BE, E: TaskExecutor>(
+pub fn cnv_apply_dft_add<BE, E: TaskExecutor, Rg: Ring>(
     module: &Module<BE>,
     cnv_offset: usize,
-    res: &mut VecZnxDftBackendMut<'_, BE>,
+    res: &mut VecZnxDftBackendMut<'_, BE, Rg>,
     res_col: usize,
-    a: &CnvPVecLBackendRef<'_, BE>,
+    a: &CnvPVecLBackendRef<'_, BE, Rg>,
     a_col: usize,
-    b: &CnvPVecRBackendRef<'_, BE>,
+    b: &CnvPVecRBackendRef<'_, BE, Rg>,
     b_col: usize,
     b_galois: i64,
     tmp: &mut [u32],
@@ -450,7 +450,7 @@ pub fn cnv_apply_dft_add<BE, E: TaskExecutor>(
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
-    apply::<BE, E, true, false>(
+    apply::<BE, E, true, false, Rg>(
         module,
         cnv_offset,
         res,
@@ -470,12 +470,12 @@ const SUM_TERMS: usize = 16;
 /// `res[res_col] = sum_t a_t (x) sigma_{b_galois_t}(b_t)`, the terms of each group of `SUM_TERMS` accumulated in one pass.
 ///
 /// An output limb is reduced and stored once per group, where a per-term loop reduces, reads and writes it for every term.
-pub fn cnv_apply_dft_sum<BE, E: TaskExecutor>(
+pub fn cnv_apply_dft_sum<BE, E: TaskExecutor, Rg: Ring>(
     module: &Module<BE>,
     cnv_offset: usize,
-    res: &mut VecZnxDftBackendMut<'_, BE>,
+    res: &mut VecZnxDftBackendMut<'_, BE, Rg>,
     res_col: usize,
-    terms: &[CnvDftAccTerm<'_, BE>],
+    terms: &[CnvDftAccTerm<'_, BE, Rg>],
     tmp: &mut [u32],
 ) where
     BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>,
@@ -484,7 +484,7 @@ pub fn cnv_apply_dft_sum<BE, E: TaskExecutor>(
 {
     let (n, res_size) = (res.n(), res.size());
     check_degree::<BE>(module.n(), n);
-    check_cnv_dft_terms::<BE>(n, terms);
+    check_cnv_dft_terms::<BE, Rg>(n, terms);
     // Limbs written so far: a group overwrites the limbs no earlier group reached and adds to the others.
     let mut written = 0;
     for group in terms.chunks(SUM_TERMS) {
@@ -503,7 +503,7 @@ pub fn cnv_apply_dft_sum<BE, E: TaskExecutor>(
             );
             limbs = limbs.max(dst.limbs);
         }
-        apply_terms::<BE, E, false>(res, res_col, &sum_terms[..group.len()], limbs, written, tmp);
+        apply_terms::<BE, E, false, Rg>(res, res_col, &sum_terms[..group.len()], limbs, written, tmp);
         written = written.max(limbs);
     }
     for limb in written..res_size {
@@ -512,13 +512,13 @@ pub fn cnv_apply_dft_sum<BE, E: TaskExecutor>(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn cnv_pairwise_apply_dft<BE, E: TaskExecutor>(
+pub fn cnv_pairwise_apply_dft<BE, E: TaskExecutor, Rg: Ring>(
     module: &Module<BE>,
     cnv_offset: usize,
-    res: &mut VecZnxDftBackendMut<'_, BE>,
+    res: &mut VecZnxDftBackendMut<'_, BE, Rg>,
     res_col: usize,
-    a: &CnvPVecLBackendRef<'_, BE>,
-    b: &CnvPVecRBackendRef<'_, BE>,
+    a: &CnvPVecLBackendRef<'_, BE, Rg>,
+    b: &CnvPVecRBackendRef<'_, BE, Rg>,
     i: usize,
     j: usize,
     tmp: &mut [u32],
@@ -528,8 +528,8 @@ pub fn cnv_pairwise_apply_dft<BE, E: TaskExecutor>(
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
     if i == j {
-        apply::<BE, E, false, false>(module, cnv_offset, res, res_col, a, (i, i), b, (i, i), 1, tmp);
+        apply::<BE, E, false, false, Rg>(module, cnv_offset, res, res_col, a, (i, i), b, (i, i), 1, tmp);
     } else {
-        apply::<BE, E, false, true>(module, cnv_offset, res, res_col, a, (i, j), b, (i, j), 1, tmp);
+        apply::<BE, E, false, true, Rg>(module, cnv_offset, res, res_col, a, (i, j), b, (i, j), 1, tmp);
     }
 }

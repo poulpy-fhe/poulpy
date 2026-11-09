@@ -1,12 +1,12 @@
 use crate::blind_rotation::LookupTable;
-use poulpy_hal::layouts::{Backend, Module, Standard};
+use poulpy_hal::layouts::{Backend, Module};
 
 /// Backend implementation contract for [`LookupTableFactory`](crate::api::LookupTableFactory), on the standard ring only.
 ///
 /// # Safety
 /// Implementations reproduce the bodies their methods document bit for bit and refuse as the reference does.
 /// The memory, layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait LookupTableFactoryImpl: Backend<Ring = Standard> {
+pub unsafe trait LookupTableFactoryImpl: Backend {
     /// Reproduces [`lookup_table_set_reference`](crate::reference::blind_rotation::lookup_table_set_reference) bit for
     /// bit; free in kernels.
     fn lookup_table_set(module: &Module<Self>, k: usize, res: &mut LookupTable<Self::OwnedBuf, Self::ZnxWord>, f: &[i64]);

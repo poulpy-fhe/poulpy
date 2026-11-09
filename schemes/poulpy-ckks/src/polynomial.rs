@@ -22,53 +22,53 @@ pub use poulpy_core::layouts::{
 /// [`CKKSCompositionError::InvalidOperand`](crate::CKKSCompositionError::InvalidOperand) before allocating anything.
 pub trait CKKSPolynomialEncode {
     /// Decomposes and encodes using [`DEFAULT_SPLIT_STRATEGY`].
-    fn encode_bsgs<R: Ring>(
+    fn encode_bsgs<Rg: Ring>(
         &self,
-        module: &Module<HostBytesBackend<R>>,
+        module: &Module<HostBytesBackend>,
         base2k: Base2K,
         coeff_meta: CoeffsMeta,
-    ) -> Result<BSGSPolynomial<CKKSPlaintextOwned<HostBytesBackend<R>>>>;
+    ) -> Result<BSGSPolynomial<CKKSPlaintextOwned<HostBytesBackend, Rg>>>;
 
     /// Decomposes and encodes using an explicit [`SplitStrategy`].
-    fn encode_bsgs_with<R: Ring>(
+    fn encode_bsgs_with<Rg: Ring>(
         &self,
-        module: &Module<HostBytesBackend<R>>,
+        module: &Module<HostBytesBackend>,
         base2k: Base2K,
         coeff_meta: CoeffsMeta,
         strategy: SplitStrategy,
-    ) -> Result<BSGSPolynomial<CKKSPlaintextOwned<HostBytesBackend<R>>>>;
+    ) -> Result<BSGSPolynomial<CKKSPlaintextOwned<HostBytesBackend, Rg>>>;
 
     /// Folds an even/odd polynomial through `x²` (monomial) or `T₂`
     /// (Chebyshev), then encodes the lower-degree polynomial.
-    fn encode_bsgs_folded_with<R: Ring>(
+    fn encode_bsgs_folded_with<Rg: Ring>(
         &self,
-        module: &Module<HostBytesBackend<R>>,
+        module: &Module<HostBytesBackend>,
         base2k: Base2K,
         coeff_meta: CoeffsMeta,
         strategy: SplitStrategy,
-    ) -> Result<BSGSPolynomial<CKKSPlaintextOwned<HostBytesBackend<R>>>>;
+    ) -> Result<BSGSPolynomial<CKKSPlaintextOwned<HostBytesBackend, Rg>>>;
 }
 
 impl<F> CKKSPolynomialEncode for Polynomial<F>
 where
     F: Float + FloatConst + FromPrimitive + Debug + CKKSScalar,
 {
-    fn encode_bsgs<R: Ring>(
+    fn encode_bsgs<Rg: Ring>(
         &self,
-        module: &Module<HostBytesBackend<R>>,
+        module: &Module<HostBytesBackend>,
         base2k: Base2K,
         coeff_meta: CoeffsMeta,
-    ) -> Result<BSGSPolynomial<CKKSPlaintextOwned<HostBytesBackend<R>>>> {
+    ) -> Result<BSGSPolynomial<CKKSPlaintextOwned<HostBytesBackend, Rg>>> {
         self.encode_bsgs_with(module, base2k, coeff_meta, DEFAULT_SPLIT_STRATEGY)
     }
 
-    fn encode_bsgs_with<R: Ring>(
+    fn encode_bsgs_with<Rg: Ring>(
         &self,
-        module: &Module<HostBytesBackend<R>>,
+        module: &Module<HostBytesBackend>,
         base2k: Base2K,
         coeff_meta: CoeffsMeta,
         strategy: SplitStrategy,
-    ) -> Result<BSGSPolynomial<CKKSPlaintextOwned<HostBytesBackend<R>>>> {
+    ) -> Result<BSGSPolynomial<CKKSPlaintextOwned<HostBytesBackend, Rg>>> {
         coeff_meta.ensure_width("encode_bsgs_with")?;
         let mut step_idx = 0usize;
         self.decompose_bsgs_with(strategy, |baby_coeffs| {
@@ -83,13 +83,13 @@ where
         })
     }
 
-    fn encode_bsgs_folded_with<R: Ring>(
+    fn encode_bsgs_folded_with<Rg: Ring>(
         &self,
-        module: &Module<HostBytesBackend<R>>,
+        module: &Module<HostBytesBackend>,
         base2k: Base2K,
         coeff_meta: CoeffsMeta,
         strategy: SplitStrategy,
-    ) -> Result<BSGSPolynomial<CKKSPlaintextOwned<HostBytesBackend<R>>>> {
+    ) -> Result<BSGSPolynomial<CKKSPlaintextOwned<HostBytesBackend, Rg>>> {
         coeff_meta.ensure_width("encode_bsgs_folded_with")?;
         let mut step_idx = 0usize;
         self.decompose_bsgs_folded_with(strategy, |baby_coeffs| {
@@ -168,24 +168,24 @@ where
 
     /// Encodes both parts into a [`ComplexBSGSPolynomial`] using
     /// [`DEFAULT_SPLIT_STRATEGY`].
-    pub fn encode_bsgs<R: Ring>(
+    pub fn encode_bsgs<Rg: Ring>(
         &self,
-        module: &Module<HostBytesBackend<R>>,
+        module: &Module<HostBytesBackend>,
         base2k: Base2K,
         coeff_meta: CoeffsMeta,
-    ) -> Result<ComplexBSGSPolynomial<CKKSPlaintextOwned<HostBytesBackend<R>>>> {
+    ) -> Result<ComplexBSGSPolynomial<CKKSPlaintextOwned<HostBytesBackend, Rg>>> {
         self.encode_bsgs_with(module, base2k, coeff_meta, DEFAULT_SPLIT_STRATEGY)
     }
 
     /// Encodes both parts with a shared parity and `strategy`, yielding two
     /// `BSGSPolynomial`s with identical baby-step structure.
-    pub fn encode_bsgs_with<R: Ring>(
+    pub fn encode_bsgs_with<Rg: Ring>(
         &self,
-        module: &Module<HostBytesBackend<R>>,
+        module: &Module<HostBytesBackend>,
         base2k: Base2K,
         coeff_meta: CoeffsMeta,
         strategy: SplitStrategy,
-    ) -> Result<ComplexBSGSPolynomial<CKKSPlaintextOwned<HostBytesBackend<R>>>> {
+    ) -> Result<ComplexBSGSPolynomial<CKKSPlaintextOwned<HostBytesBackend, Rg>>> {
         let (re_poly, im_poly) = self.split_with_shared_parity();
         let re = re_poly.encode_bsgs_with(module, base2k, coeff_meta, strategy)?;
         let im = im_poly.encode_bsgs_with(module, base2k, coeff_meta, strategy)?;
@@ -193,13 +193,13 @@ where
     }
 
     /// Encodes both components through the same even/odd quadratic fold.
-    pub fn encode_bsgs_folded_with<R: Ring>(
+    pub fn encode_bsgs_folded_with<Rg: Ring>(
         &self,
-        module: &Module<HostBytesBackend<R>>,
+        module: &Module<HostBytesBackend>,
         base2k: Base2K,
         coeff_meta: CoeffsMeta,
         strategy: SplitStrategy,
-    ) -> Result<ComplexBSGSPolynomial<CKKSPlaintextOwned<HostBytesBackend<R>>>> {
+    ) -> Result<ComplexBSGSPolynomial<CKKSPlaintextOwned<HostBytesBackend, Rg>>> {
         let (re_poly, im_poly) = self.split_with_shared_parity();
         let re = re_poly.encode_bsgs_folded_with(module, base2k, coeff_meta, strategy)?;
         let im = im_poly.encode_bsgs_folded_with(module, base2k, coeff_meta, strategy)?;

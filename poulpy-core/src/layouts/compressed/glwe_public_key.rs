@@ -6,8 +6,8 @@ use std::{
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use poulpy_hal::AlignedBuf;
 use poulpy_hal::layouts::{
-    Backend, Data, HostDataMut, HostDataRef, MatZnx, MatZnxToBackendMut, MatZnxToBackendRef, ReaderFrom, VecZnx, WriterTo,
-    ZnxWord, mat_znx_at_backend_mut_from_mut, mat_znx_at_backend_ref_from_mut, mat_znx_at_backend_ref_from_ref,
+    Backend, Data, HostDataMut, HostDataRef, MatZnx, MatZnxToBackendMut, MatZnxToBackendRef, ReaderFrom, Ring, Standard, VecZnx,
+    WriterTo, ZnxWord, mat_znx_at_backend_mut_from_mut, mat_znx_at_backend_ref_from_mut, mat_znx_at_backend_ref_from_ref,
     mat_znx_backend_mut_from_mut, mat_znx_backend_ref_from_mut, mat_znx_backend_ref_from_ref,
 };
 
@@ -23,18 +23,18 @@ use crate::{
 /// Seed-compressed [`GLWEPublicKey`](crate::layouts::GLWEPublicKey) of rank `r`:
 /// the bodies of its `r` encryptions of zero, entry `l` at input column `l` of
 /// a one-row matrix, each mask regenerated from its own seed.
-pub struct GLWEPublicKeyCompressed<D: Data, W: ZnxWord> {
+pub struct GLWEPublicKeyCompressed<D: Data, W: ZnxWord, Rg: Ring = Standard> {
     pub(crate) noise: Option<crate::ComponentNoise>,
-    pub(crate) data: MatZnx<D, W>,
+    pub(crate) data: MatZnx<D, W, Rg>,
     pub(crate) base2k: Base2K,
     pub(crate) k: TorusPrecision,
     pub(crate) seed: Vec<[u8; 32]>,
     pub(crate) dist: Distribution,
 }
 
-impl<D: Data, W: ZnxWord> PartialEq for GLWEPublicKeyCompressed<D, W>
+impl<D: Data, W: ZnxWord, Rg: Ring> PartialEq for GLWEPublicKeyCompressed<D, W, Rg>
 where
-    MatZnx<D, W>: PartialEq,
+    MatZnx<D, W, Rg>: PartialEq,
 {
     fn eq(&self, other: &Self) -> bool {
         self.noise == other.noise
@@ -46,9 +46,9 @@ where
     }
 }
 
-impl<D: Data, W: ZnxWord> Eq for GLWEPublicKeyCompressed<D, W> where MatZnx<D, W>: Eq {}
+impl<D: Data, W: ZnxWord, Rg: Ring> Eq for GLWEPublicKeyCompressed<D, W, Rg> where MatZnx<D, W, Rg>: Eq {}
 
-impl<D: Data + Clone, W: ZnxWord> Clone for GLWEPublicKeyCompressed<D, W> {
+impl<D: Data + Clone, W: ZnxWord, Rg: Ring> Clone for GLWEPublicKeyCompressed<D, W, Rg> {
     fn clone(&self) -> Self {
         Self {
             noise: self.noise.clone(),
@@ -61,12 +61,12 @@ impl<D: Data + Clone, W: ZnxWord> Clone for GLWEPublicKeyCompressed<D, W> {
     }
 }
 
-impl<D: Data, W: ZnxWord> GLWEPublicKeyCompressed<D, W> {
-    pub fn data(&self) -> &MatZnx<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> GLWEPublicKeyCompressed<D, W, Rg> {
+    pub fn data(&self) -> &MatZnx<D, W, Rg> {
         &self.data
     }
 
-    pub fn data_mut(&mut self) -> &mut MatZnx<D, W> {
+    pub fn data_mut(&mut self) -> &mut MatZnx<D, W, Rg> {
         self.noise = None;
         &mut self.data
     }
@@ -82,31 +82,31 @@ pub trait GLWEPublicKeyCompressedSeedMut {
     fn seed_mut(&mut self) -> &mut [[u8; 32]];
 }
 
-impl<D: Data, W: ZnxWord> GLWEPublicKeyCompressedSeed for GLWEPublicKeyCompressed<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> GLWEPublicKeyCompressedSeed for GLWEPublicKeyCompressed<D, W, Rg> {
     fn seed(&self) -> &[[u8; 32]] {
         &self.seed
     }
 }
 
-impl<D: Data, W: ZnxWord> GLWEPublicKeyCompressedSeedMut for GLWEPublicKeyCompressed<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> GLWEPublicKeyCompressedSeedMut for GLWEPublicKeyCompressed<D, W, Rg> {
     fn seed_mut(&mut self) -> &mut [[u8; 32]] {
         &mut self.seed
     }
 }
 
-impl<D: Data, W: ZnxWord> GetDistribution for GLWEPublicKeyCompressed<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> GetDistribution for GLWEPublicKeyCompressed<D, W, Rg> {
     fn dist(&self) -> &Distribution {
         &self.dist
     }
 }
 
-impl<D: Data, W: ZnxWord> GetDistributionMut for GLWEPublicKeyCompressed<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> GetDistributionMut for GLWEPublicKeyCompressed<D, W, Rg> {
     fn dist_mut(&mut self) -> &mut Distribution {
         &mut self.dist
     }
 }
 
-impl<D: Data, W: ZnxWord> LWEInfos for GLWEPublicKeyCompressed<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> LWEInfos for GLWEPublicKeyCompressed<D, W, Rg> {
     fn noise(&self) -> Option<crate::ComponentNoise> {
         self.noise.clone()
     }
@@ -128,13 +128,13 @@ impl<D: Data, W: ZnxWord> LWEInfos for GLWEPublicKeyCompressed<D, W> {
     }
 }
 
-impl<D: Data, W: ZnxWord> GLWEInfos for GLWEPublicKeyCompressed<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> GLWEInfos for GLWEPublicKeyCompressed<D, W, Rg> {
     fn rank(&self) -> Rank {
         Rank(self.data.cols_in() as u32)
     }
 }
 
-impl<D: Data, W: ZnxWord> GLWEPublicKeyCompressed<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> GLWEPublicKeyCompressed<D, W, Rg> {
     pub(crate) fn alloc_from_infos<B: Backend<OwnedBuf = D, ZnxWord = W>, A>(infos: &A) -> Self
     where
         A: GLWEInfos,
@@ -170,11 +170,11 @@ impl<D: Data, W: ZnxWord> GLWEPublicKeyCompressed<D, W> {
     }
 
     pub fn bytes_of(n: Degree, base2k: Base2K, k: TorusPrecision, rank: Rank) -> usize {
-        MatZnx::<AlignedBuf, W>::bytes_of(n.into(), 1, rank.into(), 1, k.0.div_ceil(base2k.0) as usize)
+        MatZnx::<AlignedBuf, W, Rg>::bytes_of(n.into(), 1, rank.into(), 1, k.0.div_ceil(base2k.0) as usize)
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> fmt::Debug for GLWEPublicKeyCompressed<D, W> {
+impl<D: HostDataRef, W: ZnxWord, Rg: Ring> fmt::Debug for GLWEPublicKeyCompressed<D, W, Rg> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("GLWEPublicKeyCompressed")
             .field("base2k", &self.base2k)
@@ -186,7 +186,7 @@ impl<D: HostDataRef, W: ZnxWord> fmt::Debug for GLWEPublicKeyCompressed<D, W> {
     }
 }
 
-impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GLWEPublicKeyCompressed<D, W> {
+impl<D: HostDataMut, W: ZnxWord, Rg: Ring> ReaderFrom for GLWEPublicKeyCompressed<D, W, Rg> {
     /// Rejects an invalid shape with [`std::io::ErrorKind::InvalidData`] before
     /// changing the layout. Every read attempt clears the previous metadata.
     /// The stream must contain one row of `r >= 1` bodies at the destination's
@@ -241,7 +241,7 @@ impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GLWEPublicKeyCompressed<D, W> {
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> WriterTo for GLWEPublicKeyCompressed<D, W> {
+impl<D: HostDataRef, W: ZnxWord, Rg: Ring> WriterTo for GLWEPublicKeyCompressed<D, W, Rg> {
     fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
         self.dist.validate_wire()?;
         crate::layouts::validate_noise_components(self.noise.as_ref(), self.data.cols_in() + 1)?;
@@ -255,61 +255,61 @@ impl<D: HostDataRef, W: ZnxWord> WriterTo for GLWEPublicKeyCompressed<D, W> {
     }
 }
 
-pub struct GLWEPublicKeyCompressedBackendRef<'a, BE: Backend + 'a> {
-    inner: GLWEPublicKeyCompressed<BE::BufRef<'a>, BE::ZnxWord>,
+pub struct GLWEPublicKeyCompressedBackendRef<'a, BE: Backend + 'a, Rg: Ring = Standard> {
+    inner: GLWEPublicKeyCompressed<BE::BufRef<'a>, BE::ZnxWord, Rg>,
 }
 
-impl<'a, BE: Backend + 'a> GLWEPublicKeyCompressedBackendRef<'a, BE> {
-    pub fn from_inner(inner: GLWEPublicKeyCompressed<BE::BufRef<'a>, BE::ZnxWord>) -> Self {
+impl<'a, BE: Backend + 'a, Rg: Ring> GLWEPublicKeyCompressedBackendRef<'a, BE, Rg> {
+    pub fn from_inner(inner: GLWEPublicKeyCompressed<BE::BufRef<'a>, BE::ZnxWord, Rg>) -> Self {
         Self { inner }
     }
 
-    pub fn into_inner(self) -> GLWEPublicKeyCompressed<BE::BufRef<'a>, BE::ZnxWord> {
+    pub fn into_inner(self) -> GLWEPublicKeyCompressed<BE::BufRef<'a>, BE::ZnxWord, Rg> {
         self.inner
     }
 
     /// Entry `l`, with its seed.
-    pub fn at_view(&self, l: usize) -> GLWECompressedViewRef<'_, BE> {
+    pub fn at_view(&self, l: usize) -> GLWECompressedViewRef<'_, BE, Rg> {
         let pk = &self.inner;
-        GLWECompressedViewRef::from_inner(entry(mat_znx_at_backend_ref_from_ref::<BE>(&pk.data, 0, l), pk, l))
+        GLWECompressedViewRef::from_inner(entry(mat_znx_at_backend_ref_from_ref::<BE, Rg>(&pk.data, 0, l), pk, l))
     }
 }
 
-impl<'a, BE: Backend + 'a> Deref for GLWEPublicKeyCompressedBackendRef<'a, BE> {
-    type Target = GLWEPublicKeyCompressed<BE::BufRef<'a>, BE::ZnxWord>;
+impl<'a, BE: Backend + 'a, Rg: Ring> Deref for GLWEPublicKeyCompressedBackendRef<'a, BE, Rg> {
+    type Target = GLWEPublicKeyCompressed<BE::BufRef<'a>, BE::ZnxWord, Rg>;
 
     fn deref(&self) -> &Self::Target {
         &self.inner
     }
 }
 
-pub struct GLWEPublicKeyCompressedBackendMut<'a, BE: Backend + 'a> {
-    inner: GLWEPublicKeyCompressed<BE::BufMut<'a>, BE::ZnxWord>,
+pub struct GLWEPublicKeyCompressedBackendMut<'a, BE: Backend + 'a, Rg: Ring = Standard> {
+    inner: GLWEPublicKeyCompressed<BE::BufMut<'a>, BE::ZnxWord, Rg>,
 }
 
-impl<'a, BE: Backend + 'a> GLWEPublicKeyCompressedBackendMut<'a, BE> {
-    pub fn from_inner(inner: GLWEPublicKeyCompressed<BE::BufMut<'a>, BE::ZnxWord>) -> Self {
+impl<'a, BE: Backend + 'a, Rg: Ring> GLWEPublicKeyCompressedBackendMut<'a, BE, Rg> {
+    pub fn from_inner(inner: GLWEPublicKeyCompressed<BE::BufMut<'a>, BE::ZnxWord, Rg>) -> Self {
         Self { inner }
     }
 
-    pub fn into_inner(self) -> GLWEPublicKeyCompressed<BE::BufMut<'a>, BE::ZnxWord> {
+    pub fn into_inner(self) -> GLWEPublicKeyCompressed<BE::BufMut<'a>, BE::ZnxWord, Rg> {
         self.inner
     }
 
     /// Entry `l`, with its seed.
-    pub fn at_view(&self, l: usize) -> GLWECompressedViewRef<'_, BE> {
+    pub fn at_view(&self, l: usize) -> GLWECompressedViewRef<'_, BE, Rg> {
         let pk = &self.inner;
-        GLWECompressedViewRef::from_inner(entry(mat_znx_at_backend_ref_from_mut::<BE>(&pk.data, 0, l), pk, l))
+        GLWECompressedViewRef::from_inner(entry(mat_znx_at_backend_ref_from_mut::<BE, Rg>(&pk.data, 0, l), pk, l))
     }
 
     /// Entry `l`, with a copy of its seed: seeds are written through
     /// [`GLWEPublicKeyCompressedSeedMut`] on the key.
-    pub fn at_view_mut(&mut self, l: usize) -> GLWECompressedViewMut<'_, BE> {
+    pub fn at_view_mut(&mut self, l: usize) -> GLWECompressedViewMut<'_, BE, Rg> {
         let (base2k, k, rank, seed) = (self.inner.base2k, self.inner.k, self.inner.rank(), self.inner.seed[l]);
         self.inner.noise = None;
         GLWECompressedViewMut::from_inner(GLWECompressed {
             noise: None,
-            data: mat_znx_at_backend_mut_from_mut::<BE>(&mut self.inner.data, 0, l),
+            data: mat_znx_at_backend_mut_from_mut::<BE, Rg>(&mut self.inner.data, 0, l),
             base2k,
             k,
             rank,
@@ -319,21 +319,25 @@ impl<'a, BE: Backend + 'a> GLWEPublicKeyCompressedBackendMut<'a, BE> {
     }
 }
 
-impl<'a, BE: Backend + 'a> Deref for GLWEPublicKeyCompressedBackendMut<'a, BE> {
-    type Target = GLWEPublicKeyCompressed<BE::BufMut<'a>, BE::ZnxWord>;
+impl<'a, BE: Backend + 'a, Rg: Ring> Deref for GLWEPublicKeyCompressedBackendMut<'a, BE, Rg> {
+    type Target = GLWEPublicKeyCompressed<BE::BufMut<'a>, BE::ZnxWord, Rg>;
 
     fn deref(&self) -> &Self::Target {
         &self.inner
     }
 }
 
-impl<BE: Backend> DerefMut for GLWEPublicKeyCompressedBackendMut<'_, BE> {
+impl<BE: Backend, Rg: Ring> DerefMut for GLWEPublicKeyCompressedBackendMut<'_, BE, Rg> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner
     }
 }
 
-fn entry<D: Data, E: Data, W: ZnxWord>(data: VecZnx<D, W>, pk: &GLWEPublicKeyCompressed<E, W>, l: usize) -> GLWECompressed<D, W> {
+fn entry<D: Data, E: Data, W: ZnxWord, Rg: Ring>(
+    data: VecZnx<D, W, Rg>,
+    pk: &GLWEPublicKeyCompressed<E, W, Rg>,
+    l: usize,
+) -> GLWECompressed<D, W, Rg> {
     GLWECompressed {
         noise: pk.noise.clone(),
         data,
@@ -347,7 +351,7 @@ fn entry<D: Data, E: Data, W: ZnxWord>(data: VecZnx<D, W>, pk: &GLWEPublicKeyCom
 
 macro_rules! impl_compressed_public_key_infos_for_inner {
     ($ty:ident) => {
-        impl<BE: Backend> LWEInfos for $ty<'_, BE> {
+        impl<BE: Backend, Rg: Ring> LWEInfos for $ty<'_, BE, Rg> {
             fn noise(&self) -> Option<crate::ComponentNoise> {
                 self.inner.noise.clone()
             }
@@ -369,19 +373,19 @@ macro_rules! impl_compressed_public_key_infos_for_inner {
             }
         }
 
-        impl<BE: Backend> GLWEInfos for $ty<'_, BE> {
+        impl<BE: Backend, Rg: Ring> GLWEInfos for $ty<'_, BE, Rg> {
             fn rank(&self) -> Rank {
                 self.inner.rank()
             }
         }
 
-        impl<BE: Backend> GetDistribution for $ty<'_, BE> {
+        impl<BE: Backend, Rg: Ring> GetDistribution for $ty<'_, BE, Rg> {
             fn dist(&self) -> &Distribution {
                 self.inner.dist()
             }
         }
 
-        impl<BE: Backend> GLWEPublicKeyCompressedSeed for $ty<'_, BE> {
+        impl<BE: Backend, Rg: Ring> GLWEPublicKeyCompressedSeed for $ty<'_, BE, Rg> {
             fn seed(&self) -> &[[u8; 32]] {
                 self.inner.seed()
             }
@@ -392,35 +396,37 @@ macro_rules! impl_compressed_public_key_infos_for_inner {
 impl_compressed_public_key_infos_for_inner!(GLWEPublicKeyCompressedBackendRef);
 impl_compressed_public_key_infos_for_inner!(GLWEPublicKeyCompressedBackendMut);
 
-impl<BE: Backend> GetDistributionMut for GLWEPublicKeyCompressedBackendMut<'_, BE> {
+impl<BE: Backend, Rg: Ring> GetDistributionMut for GLWEPublicKeyCompressedBackendMut<'_, BE, Rg> {
     fn dist_mut(&mut self) -> &mut Distribution {
         self.inner.dist_mut()
     }
 }
 
-impl<BE: Backend> GLWEPublicKeyCompressedSeedMut for GLWEPublicKeyCompressedBackendMut<'_, BE> {
+impl<BE: Backend, Rg: Ring> GLWEPublicKeyCompressedSeedMut for GLWEPublicKeyCompressedBackendMut<'_, BE, Rg> {
     fn seed_mut(&mut self) -> &mut [[u8; 32]] {
         self.inner.seed_mut()
     }
 }
 
-pub trait GLWEPublicKeyCompressedToBackendRef<BE: Backend> {
-    fn to_backend_ref(&self) -> GLWEPublicKeyCompressedBackendRef<'_, BE>;
+pub trait GLWEPublicKeyCompressedToBackendRef<BE: Backend, Rg: Ring = Standard> {
+    fn to_backend_ref(&self) -> GLWEPublicKeyCompressedBackendRef<'_, BE, Rg>;
 }
 
-pub trait GLWEPublicKeyCompressedToBackendMut<BE: Backend>: GLWEPublicKeyCompressedToBackendRef<BE> {
+pub trait GLWEPublicKeyCompressedToBackendMut<BE: Backend, Rg: Ring = Standard>:
+    GLWEPublicKeyCompressedToBackendRef<BE, Rg>
+{
     /// Records component noise metadata on this key.
     fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>);
 
     /// Borrows coefficients mutably and clears the owner's component noise metadata.
-    fn to_backend_mut(&mut self) -> GLWEPublicKeyCompressedBackendMut<'_, BE>;
+    fn to_backend_mut(&mut self) -> GLWEPublicKeyCompressedBackendMut<'_, BE, Rg>;
 }
 
-impl<BE: Backend, D: Data> GLWEPublicKeyCompressedToBackendRef<BE> for GLWEPublicKeyCompressed<D, BE::ZnxWord>
+impl<BE: Backend, D: Data, Rg: Ring> GLWEPublicKeyCompressedToBackendRef<BE, Rg> for GLWEPublicKeyCompressed<D, BE::ZnxWord, Rg>
 where
-    MatZnx<D, BE::ZnxWord>: MatZnxToBackendRef<BE>,
+    MatZnx<D, BE::ZnxWord, Rg>: MatZnxToBackendRef<BE, Rg>,
 {
-    fn to_backend_ref(&self) -> GLWEPublicKeyCompressedBackendRef<'_, BE> {
+    fn to_backend_ref(&self) -> GLWEPublicKeyCompressedBackendRef<'_, BE, Rg> {
         GLWEPublicKeyCompressedBackendRef::from_inner(GLWEPublicKeyCompressed {
             noise: self.noise.clone(),
             data: self.data.to_backend_ref(),
@@ -432,15 +438,15 @@ where
     }
 }
 
-impl<BE: Backend, D: Data> GLWEPublicKeyCompressedToBackendMut<BE> for GLWEPublicKeyCompressed<D, BE::ZnxWord>
+impl<BE: Backend, D: Data, Rg: Ring> GLWEPublicKeyCompressedToBackendMut<BE, Rg> for GLWEPublicKeyCompressed<D, BE::ZnxWord, Rg>
 where
-    MatZnx<D, BE::ZnxWord>: MatZnxToBackendRef<BE> + MatZnxToBackendMut<BE>,
+    MatZnx<D, BE::ZnxWord, Rg>: MatZnxToBackendRef<BE, Rg> + MatZnxToBackendMut<BE, Rg>,
 {
     fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
         self.noise = crate::layouts::checked_noise(metadata, crate::layouts::GLWEInfos::rank(self).as_usize() + 1);
     }
 
-    fn to_backend_mut(&mut self) -> GLWEPublicKeyCompressedBackendMut<'_, BE> {
+    fn to_backend_mut(&mut self) -> GLWEPublicKeyCompressedBackendMut<'_, BE, Rg> {
         self.noise = None;
         GLWEPublicKeyCompressedBackendMut::from_inner(GLWEPublicKeyCompressed {
             noise: None,
@@ -453,11 +459,11 @@ where
     }
 }
 
-impl<BE: Backend> GLWEPublicKeyCompressedToBackendRef<BE> for GLWEPublicKeyCompressedBackendRef<'_, BE> {
-    fn to_backend_ref(&self) -> GLWEPublicKeyCompressedBackendRef<'_, BE> {
+impl<BE: Backend, Rg: Ring> GLWEPublicKeyCompressedToBackendRef<BE, Rg> for GLWEPublicKeyCompressedBackendRef<'_, BE, Rg> {
+    fn to_backend_ref(&self) -> GLWEPublicKeyCompressedBackendRef<'_, BE, Rg> {
         GLWEPublicKeyCompressedBackendRef::from_inner(GLWEPublicKeyCompressed {
             noise: self.inner.noise.clone(),
-            data: mat_znx_backend_ref_from_ref::<BE>(&self.inner.data),
+            data: mat_znx_backend_ref_from_ref::<BE, Rg>(&self.inner.data),
             base2k: self.inner.base2k,
             k: self.inner.k,
             seed: self.inner.seed.clone(),
@@ -466,11 +472,11 @@ impl<BE: Backend> GLWEPublicKeyCompressedToBackendRef<BE> for GLWEPublicKeyCompr
     }
 }
 
-impl<BE: Backend> GLWEPublicKeyCompressedToBackendRef<BE> for GLWEPublicKeyCompressedBackendMut<'_, BE> {
-    fn to_backend_ref(&self) -> GLWEPublicKeyCompressedBackendRef<'_, BE> {
+impl<BE: Backend, Rg: Ring> GLWEPublicKeyCompressedToBackendRef<BE, Rg> for GLWEPublicKeyCompressedBackendMut<'_, BE, Rg> {
+    fn to_backend_ref(&self) -> GLWEPublicKeyCompressedBackendRef<'_, BE, Rg> {
         GLWEPublicKeyCompressedBackendRef::from_inner(GLWEPublicKeyCompressed {
             noise: self.inner.noise.clone(),
-            data: mat_znx_backend_ref_from_mut::<BE>(&self.inner.data),
+            data: mat_znx_backend_ref_from_mut::<BE, Rg>(&self.inner.data),
             base2k: self.inner.base2k,
             k: self.inner.k,
             seed: self.inner.seed.clone(),
@@ -479,16 +485,16 @@ impl<BE: Backend> GLWEPublicKeyCompressedToBackendRef<BE> for GLWEPublicKeyCompr
     }
 }
 
-impl<BE: Backend> GLWEPublicKeyCompressedToBackendMut<BE> for GLWEPublicKeyCompressedBackendMut<'_, BE> {
+impl<BE: Backend, Rg: Ring> GLWEPublicKeyCompressedToBackendMut<BE, Rg> for GLWEPublicKeyCompressedBackendMut<'_, BE, Rg> {
     fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
         self.inner.noise = crate::layouts::checked_noise(metadata, crate::layouts::GLWEInfos::rank(self).as_usize() + 1);
     }
 
-    fn to_backend_mut(&mut self) -> GLWEPublicKeyCompressedBackendMut<'_, BE> {
+    fn to_backend_mut(&mut self) -> GLWEPublicKeyCompressedBackendMut<'_, BE, Rg> {
         self.inner.noise = None;
         GLWEPublicKeyCompressedBackendMut::from_inner(GLWEPublicKeyCompressed {
             noise: None,
-            data: mat_znx_backend_mut_from_mut::<BE>(&mut self.inner.data),
+            data: mat_znx_backend_mut_from_mut::<BE, Rg>(&mut self.inner.data),
             base2k: self.inner.base2k,
             k: self.inner.k,
             seed: self.inner.seed.clone(),
@@ -514,18 +520,20 @@ mod tests {
         // Deref does not satisfy trait bounds: each borrow implements them itself.
         fn key<
             BE: Backend,
-            T: GLWEInfos + GetDistribution + GLWEPublicKeyCompressedSeed + GLWEPublicKeyCompressedToBackendRef<BE>,
+            T: GLWEInfos + GetDistribution + GLWEPublicKeyCompressedSeed + GLWEPublicKeyCompressedToBackendRef<BE, Rg>,
+            Rg: Ring,
         >() {
         }
         fn key_mut<
             BE: Backend,
-            T: GetDistributionMut + GLWEPublicKeyCompressedSeedMut + GLWEPublicKeyCompressedToBackendMut<BE>,
+            T: GetDistributionMut + GLWEPublicKeyCompressedSeedMut + GLWEPublicKeyCompressedToBackendMut<BE, Rg>,
+            Rg: Ring,
         >() {
         }
         fn assert_for<'a, BE: Backend + 'a>() {
-            key::<BE, GLWEPublicKeyCompressedBackendRef<'a, BE>>();
-            key::<BE, GLWEPublicKeyCompressedBackendMut<'a, BE>>();
-            key_mut::<BE, GLWEPublicKeyCompressedBackendMut<'a, BE>>();
+            key::<BE, GLWEPublicKeyCompressedBackendRef<'a, BE>, Standard>();
+            key::<BE, GLWEPublicKeyCompressedBackendMut<'a, BE>, Standard>();
+            key_mut::<BE, GLWEPublicKeyCompressedBackendMut<'a, BE>, Standard>();
         }
         assert_for::<HostBytesBackend>();
     }

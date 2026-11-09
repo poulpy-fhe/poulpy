@@ -18,7 +18,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::{ReimNew, ScratchOwnedBorrow},
-    layouts::{HostBytesBackend, Module, Standard},
+    layouts::{HostBytesBackend, Module, Ring, Standard},
 };
 
 use crate::{
@@ -65,14 +65,14 @@ fn build_terms<F: TestScalar>(re1: &[F], im1: &[F], re2: &[F], im2: &[F], n: usi
 }
 
 /// `ckks_add_many` on exactly the scratch its query reports for `res` and `a[0]`.
-fn add_many<BE: TestContextBackend>(
+fn add_many<BE: TestContextBackend, Rg: Ring>(
     module: &Module<BE>,
-    res: &mut CKKSCiphertextOwned<BE>,
-    a: &[&CKKSCiphertextOwned<BE>],
+    res: &mut CKKSCiphertextOwned<BE, Rg>,
+    a: &[&CKKSCiphertextOwned<BE, Rg>],
     normalize_after: usize,
 ) -> CKKSResult<()>
 where
-    Module<BE>: CKKSAddManyOps<BE>,
+    Module<BE>: CKKSAddManyOps<BE, Rg>,
 {
     with_scratch::<BE, _>(module.ckks_add_many_tmp_bytes(&*res, a[0]), |s| {
         module.ckks_add_many(normalize_after, res, a, s)
@@ -81,10 +81,10 @@ where
 
 pub fn test_add_many_aligned<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextModule<BE, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -136,10 +136,10 @@ pub fn test_add_many_single_smaller_output<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextModule<BE, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -187,10 +187,10 @@ pub fn test_add_many_unaligned_log_budget<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextModule<BE, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -232,10 +232,10 @@ pub fn test_add_many_delta_log_delta<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextModule<BE, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -317,10 +317,10 @@ pub fn test_add_many_delta_log_delta<BE, F, E>(
 
 pub fn test_add_many_smaller_output<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextModule<BE, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -373,10 +373,10 @@ pub fn test_add_many_normalize_after<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextModule<BE, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -407,7 +407,7 @@ pub fn test_add_many_normalize_after<BE, F, E>(
         let mut sum = |normalize_after: usize| {
             let mut ct_res = alloc_ct(&params, module, res_k);
             add_many(module, &mut ct_res, a, normalize_after).unwrap();
-            let lazy = snapshot::<BE, _>(&ct_res).digits;
+            let lazy = snapshot::<BE, _, Standard>(&ct_res).digits;
             assert_decrypt_precision(
                 &format!("add_many {case} normalize_after={normalize_after}"),
                 &params,
@@ -420,7 +420,7 @@ pub fn test_add_many_normalize_after<BE, F, E>(
                 &mut scratch.borrow(),
             );
             module.glwe_normalize_assign(&mut ct_res, &mut scratch.borrow());
-            (lazy, snapshot::<BE, _>(&ct_res).digits)
+            (lazy, snapshot::<BE, _, Standard>(&ct_res).digits)
         };
         let (never, never_normalized) = sum(usize::MAX);
         if case == "aligned" {
@@ -453,10 +453,10 @@ pub fn test_add_many_rejects_invalid_calls<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextModule<BE, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -478,10 +478,10 @@ pub fn test_add_many_rejects_invalid_calls<BE, F, E>(
     );
 
     let mut res = dirty_ct(module, &ct, params.k);
-    let before = snapshot::<BE, _>(&res);
-    let refused = |label: &str, result: CKKSResult<()>, res: &CKKSCiphertextOwned<BE>, check: &dyn Fn(&CKKSError)| {
+    let before = snapshot::<BE, _, Standard>(&res);
+    let refused = |label: &str, result: CKKSResult<()>, res: &CKKSCiphertextOwned<BE, Standard>, check: &dyn Fn(&CKKSError)| {
         check(&result.expect_err(label));
-        assert!(snapshot::<BE, _>(res) == before, "{label}: wrote the destination");
+        assert!(snapshot::<BE, _, Standard>(res) == before, "{label}: wrote the destination");
     };
     let invalid = |reason: &str| {
         let want = CKKSCompositionError::InvalidOperand {
@@ -490,7 +490,7 @@ pub fn test_add_many_rejects_invalid_calls<BE, F, E>(
         };
         move |err: &CKKSError| assert_ckks_error("ckks_add_many", err, want.clone())
     };
-    let empty: Vec<&CKKSCiphertextOwned<BE>> = Vec::new();
+    let empty: Vec<&CKKSCiphertextOwned<BE, Standard>> = Vec::new();
     let several = [&ct, &ct, &ct];
     for (label, a, reason) in [
         ("zero normalize_after", &several[..], "normalize_after must be at least 1"),

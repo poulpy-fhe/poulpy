@@ -31,10 +31,10 @@ pub fn test_add_pt_vec_assign_rejects_alignment<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextModule<BE, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -56,9 +56,10 @@ pub fn test_add_pt_vec_assign_rejects_alignment<BE, F, E>(
         &mut scratch.borrow(),
     );
     ct.set_log_budget(0);
-    let mut pt = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots(), params.base2k.into(), params.prec().k());
+    let mut pt =
+        module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots::<Standard>(), params.base2k.into(), params.prec().k());
     pt.set_meta(params.prec().meta());
-    let before = snapshot::<BE, _>(&ct);
+    let before = snapshot::<BE, _, Standard>(&ct);
     let err = with_scratch::<BE, _>(0, |s| module.ckks_add_pt_vec_assign(&mut ct, &pt, s)).unwrap_err();
     assert_ckks_error(
         "add_pt_vec_alignment",
@@ -72,7 +73,11 @@ pub fn test_add_pt_vec_assign_rejects_alignment<BE, F, E>(
             pt_k: params.prec().log_delta() + params.prec().log_budget(),
         },
     );
-    assert_eq!(snapshot::<BE, _>(&ct), before, "a refused ckks_add_pt_vec_assign wrote res");
+    assert_eq!(
+        snapshot::<BE, _, Standard>(&ct),
+        before,
+        "a refused ckks_add_pt_vec_assign wrote res"
+    );
 }
 
 /// `ckks_linear_transformation_encode_from_diagonals` rejects a zero torus width, `coeffs_meta.k = 0`, with
@@ -83,8 +88,8 @@ pub fn test_linear_transformation_encode_from_diagonals_rejects_zero_k<BE, F, E>
     module: &Module<BE>,
     _host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F>,
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE, Standard> + CKKSEncodingOps<BE, F, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -124,8 +129,8 @@ pub fn test_linear_transformation_encode_into<BE, F, E>(
     module: &Module<BE>,
     _host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F>,
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE, Standard> + CKKSEncodingOps<BE, F, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -137,18 +142,19 @@ pub fn test_linear_transformation_encode_into<BE, F, E>(
         }
         ComplexDiagonals::new(re, Diagonals::new(slots))
     };
-    let digits = |lt: &LinearTransformation<CKKSPlaintextOwned<BE>>| -> Vec<VecZnx<AlignedBuf, i64>> {
+    let digits = |lt: &LinearTransformation<CKKSPlaintextOwned<BE, Standard>>| -> Vec<VecZnx<AlignedBuf, i64, Standard>> {
         lt.giant_steps
             .iter()
             .flat_map(|gs| &gs.diagonals)
-            .map(|d| download_pt::<BE>(&d.plaintext).inner.data().clone())
+            .map(|d| download_pt::<BE, Standard>(&d.plaintext).inner.data().clone())
             .collect()
     };
     let coeffs_meta: CoeffsMeta = params.prec().into();
     let strategy = LinearTransformationStrategy::Bsgs { giant_step: 2 };
     let (ones, twos) = (map(&[0, 1, 2, 3], 1.0), map(&[0, 1, 2, 3], 2.0));
-    let bytes =
-        |diagonals: &ComplexDiagonals<F>| ckks_linear_transformation_encode_tmp_bytes::<BE, _, F>(module, diagonals.period());
+    let bytes = |diagonals: &ComplexDiagonals<F>| {
+        ckks_linear_transformation_encode_tmp_bytes::<BE, _, F, Standard>(module, diagonals.period())
+    };
     let encode = |diagonals: &ComplexDiagonals<F>, coeffs_meta: CoeffsMeta| {
         with_scratch::<BE, _>(bytes(diagonals), |scratch| {
             ckks_linear_transformation_encode_from_diagonals(
@@ -223,8 +229,8 @@ pub fn test_encode_bsgs_with_rejects_zero_k<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F>,
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE, Standard> + CKKSEncodingOps<BE, F, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -233,11 +239,15 @@ pub fn test_encode_bsgs_with_rejects_zero_k<BE, F, E>(
     let base2k = params.base2k.into();
     let zero_k = CoeffsMeta::from_delta_budget(0, 0);
     let split = SplitStrategy::MinDepth;
-    let with = poly.encode_bsgs_with(host_module, base2k, zero_k, split).map(drop);
-    let folded = poly.encode_bsgs_folded_with(host_module, base2k, zero_k, split).map(drop);
+    let with = poly
+        .encode_bsgs_with::<Standard>(host_module, base2k, zero_k, split)
+        .map(drop);
+    let folded = poly
+        .encode_bsgs_folded_with::<Standard>(host_module, base2k, zero_k, split)
+        .map(drop);
     let plan = EvalModPlan::complex_exponential(4, 2, 0, split, zero_k, params.prec().log_delta());
     let eval_mod = with_scratch::<BE, _>(0, |scratch| {
-        ckks_eval_mod_compile::<BE, F>(base2k, plan, module, scratch).map(drop)
+        ckks_eval_mod_compile::<BE, F, Standard>(base2k, plan, module, scratch).map(drop)
     });
     for (op, res) in [
         ("encode_bsgs_with", with),

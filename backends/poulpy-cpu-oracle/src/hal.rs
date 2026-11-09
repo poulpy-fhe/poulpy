@@ -5,14 +5,14 @@
 
 use poulpy_hal::{
     layouts::{
-        CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, MatZnxBackendRef, Module,
-        ScalarZnxBackendRef, ScratchArena, Standard, SvpPPolBackendMut, SvpPPolBackendRef, VecZnxBackendMut, VecZnxBackendRef,
+        CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, ConjugateInvariant, MatZnxBackendRef,
+        Module, ScalarZnxBackendRef, ScratchArena, SvpPPolBackendMut, SvpPPolBackendRef, VecZnxBackendMut, VecZnxBackendRef,
         VecZnxBigBackendMut, VecZnxBigBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef, VmpPMatBackendMut, VmpPMatBackendRef,
         ZnxView, ZnxViewMut, assert_dense,
     },
     oep::{
-        HalCnvImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxCIImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVecZnxMonomialImpl,
-        HalVmpImpl,
+        HalCnvImpl, HalScalarZnxCIImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxCIImpl, HalVecZnxDftImpl, HalVecZnxImpl,
+        HalVecZnxMonomialImpl, HalVmpImpl,
     },
     source::Source,
 };
@@ -51,11 +51,11 @@ fn switch_ring(res: &mut [i64], a: &[i64]) {
     }
 }
 
-unsafe impl<F: DFTFamily, R: OracleRing> poulpy_hal::oep::HalScalarZnxImpl for Oracle<F, R> {}
-unsafe impl<F: DFTFamily, R: OracleRing> poulpy_hal::oep::HalMatZnxImpl for Oracle<F, R> {}
+unsafe impl<F: DFTFamily, Rg: OracleRing> poulpy_hal::oep::HalScalarZnxImpl<Rg> for Oracle<F> {}
+unsafe impl<F: DFTFamily, Rg: OracleRing> poulpy_hal::oep::HalMatZnxImpl<Rg> for Oracle<F> {}
 
-unsafe impl<F: DFTFamily, R: OracleRing> HalVecZnxImpl for Oracle<F, R> {
-    fn vec_znx_zero(_module: &Module<Self>, res: &mut VecZnxBackendMut<'_, Self>, res_col: usize) {
+unsafe impl<F: DFTFamily, Rg: OracleRing> HalVecZnxImpl<Rg> for Oracle<F> {
+    fn vec_znx_zero(_module: &Module<Self>, res: &mut VecZnxBackendMut<'_, Self, Rg>, res_col: usize) {
         apply(res, res_col, |_| 0);
     }
 
@@ -65,12 +65,12 @@ unsafe impl<F: DFTFamily, R: OracleRing> HalVecZnxImpl for Oracle<F, R> {
 
     fn vec_znx_normalize(
         _module: &Module<Self>,
-        res: &mut VecZnxBackendMut<'_, Self>,
+        res: &mut VecZnxBackendMut<'_, Self, Rg>,
         res_base2k: usize,
         res_k: usize,
         res_offset: i64,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, Self>,
+        a: &VecZnxBackendRef<'_, Self, Rg>,
         a_base2k: usize,
         a_col: usize,
         _scratch: &mut ScratchArena<'_, Self>,
@@ -84,9 +84,9 @@ unsafe impl<F: DFTFamily, R: OracleRing> HalVecZnxImpl for Oracle<F, R> {
 
     fn vec_znx_gadget_decompose(
         _module: &Module<Self>,
-        res: &mut VecZnxBackendMut<'_, Self>,
+        res: &mut VecZnxBackendMut<'_, Self, Rg>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, Self>,
+        a: &VecZnxBackendRef<'_, Self, Rg>,
         a_col: usize,
         base2k: usize,
         k_digit: usize,
@@ -100,7 +100,7 @@ unsafe impl<F: DFTFamily, R: OracleRing> HalVecZnxImpl for Oracle<F, R> {
         base2k: usize,
         k: usize,
         a_offset: i64,
-        a: &mut VecZnxBackendMut<'_, Self>,
+        a: &mut VecZnxBackendMut<'_, Self, Rg>,
         a_col: usize,
         _scratch: &mut ScratchArena<'_, Self>,
     ) {
@@ -109,90 +109,90 @@ unsafe impl<F: DFTFamily, R: OracleRing> HalVecZnxImpl for Oracle<F, R> {
 
     fn vec_znx_add(
         _module: &Module<Self>,
-        res: &mut VecZnxBackendMut<'_, Self>,
+        res: &mut VecZnxBackendMut<'_, Self, Rg>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, Self>,
+        a: &VecZnxBackendRef<'_, Self, Rg>,
         a_col: usize,
-        b: &VecZnxBackendRef<'_, Self>,
+        b: &VecZnxBackendRef<'_, Self, Rg>,
         b_col: usize,
     ) {
         let n = res.n();
-        with_vec_znx::<Self, _>(a, n, |a| {
-            with_vec_znx::<Self, _>(b, n, |b| zip(res, res_col, a, a_col, b, b_col, i64::add, |x| x, |y| y))
+        with_vec_znx::<Self, _, Rg>(a, n, |a| {
+            with_vec_znx::<Self, _, Rg>(b, n, |b| zip(res, res_col, a, a_col, b, b_col, i64::add, |x| x, |y| y))
         });
     }
 
     fn vec_znx_add_assign(
         _module: &Module<Self>,
-        res: &mut VecZnxBackendMut<'_, Self>,
+        res: &mut VecZnxBackendMut<'_, Self, Rg>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, Self>,
+        a: &VecZnxBackendRef<'_, Self, Rg>,
         a_col: usize,
     ) {
-        with_vec_znx::<Self, _>(a, res.n(), |a| update(res, res_col, a, a_col, i64::add, |r| r));
+        with_vec_znx::<Self, _, Rg>(a, res.n(), |a| update(res, res_col, a, a_col, i64::add, |r| r));
     }
 
     fn vec_znx_sub(
         _module: &Module<Self>,
-        res: &mut VecZnxBackendMut<'_, Self>,
+        res: &mut VecZnxBackendMut<'_, Self, Rg>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, Self>,
+        a: &VecZnxBackendRef<'_, Self, Rg>,
         a_col: usize,
-        b: &VecZnxBackendRef<'_, Self>,
+        b: &VecZnxBackendRef<'_, Self, Rg>,
         b_col: usize,
     ) {
         let n = res.n();
-        with_vec_znx::<Self, _>(a, n, |a| {
-            with_vec_znx::<Self, _>(b, n, |b| zip(res, res_col, a, a_col, b, b_col, i64::sub, |x| x, i64::neg))
+        with_vec_znx::<Self, _, Rg>(a, n, |a| {
+            with_vec_znx::<Self, _, Rg>(b, n, |b| zip(res, res_col, a, a_col, b, b_col, i64::sub, |x| x, i64::neg))
         });
     }
 
     fn vec_znx_sub_assign(
         _module: &Module<Self>,
-        res: &mut VecZnxBackendMut<'_, Self>,
+        res: &mut VecZnxBackendMut<'_, Self, Rg>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, Self>,
+        a: &VecZnxBackendRef<'_, Self, Rg>,
         a_col: usize,
     ) {
-        with_vec_znx::<Self, _>(a, res.n(), |a| update(res, res_col, a, a_col, i64::sub, |r| r));
+        with_vec_znx::<Self, _, Rg>(a, res.n(), |a| update(res, res_col, a, a_col, i64::sub, |r| r));
     }
 
     fn vec_znx_sub_negate_assign(
         _module: &Module<Self>,
-        res: &mut VecZnxBackendMut<'_, Self>,
+        res: &mut VecZnxBackendMut<'_, Self, Rg>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, Self>,
+        a: &VecZnxBackendRef<'_, Self, Rg>,
         a_col: usize,
     ) {
-        with_vec_znx::<Self, _>(a, res.n(), |a| update(res, res_col, a, a_col, |r, x| x.sub(r), i64::neg));
+        with_vec_znx::<Self, _, Rg>(a, res.n(), |a| update(res, res_col, a, a_col, |r, x| x.sub(r), i64::neg));
     }
 
     fn vec_znx_negate(
         _module: &Module<Self>,
-        res: &mut VecZnxBackendMut<'_, Self>,
+        res: &mut VecZnxBackendMut<'_, Self, Rg>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, Self>,
+        a: &VecZnxBackendRef<'_, Self, Rg>,
         a_col: usize,
     ) {
         map(res, res_col, a, a_col, i64::neg);
     }
 
-    fn vec_znx_negate_assign(_module: &Module<Self>, a: &mut VecZnxBackendMut<'_, Self>, a_col: usize) {
+    fn vec_znx_negate_assign(_module: &Module<Self>, a: &mut VecZnxBackendMut<'_, Self, Rg>, a_col: usize) {
         apply(a, a_col, i64::neg);
     }
 
     fn vec_znx_automorphism(
         _module: &Module<Self>,
         k: i64,
-        res: &mut VecZnxBackendMut<'_, Self>,
+        res: &mut VecZnxBackendMut<'_, Self, Rg>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, Self>,
+        a: &VecZnxBackendRef<'_, Self, Rg>,
         a_col: usize,
     ) {
         assert_dense(res, "vec_znx_automorphism");
         assert_dense(a, "vec_znx_automorphism");
         assert_eq!(res.n(), a.n());
-        map_poly(res, res_col, a, a_col, |r, x| ring::automorphism::<R, _>(k, r, x));
+        map_poly(res, res_col, a, a_col, |r, x| ring::automorphism::<Rg, _>(k, r, x));
     }
 
     fn vec_znx_automorphism_assign_tmp_bytes(_module: &Module<Self>) -> usize {
@@ -202,19 +202,19 @@ unsafe impl<F: DFTFamily, R: OracleRing> HalVecZnxImpl for Oracle<F, R> {
     fn vec_znx_automorphism_assign(
         _module: &Module<Self>,
         k: i64,
-        res: &mut VecZnxBackendMut<'_, Self>,
+        res: &mut VecZnxBackendMut<'_, Self, Rg>,
         res_col: usize,
         _scratch: &mut ScratchArena<'_, Self>,
     ) {
         assert_dense(res, "vec_znx_automorphism_assign");
-        apply_poly(res, res_col, |r, x| ring::automorphism::<R, _>(k, r, x));
+        apply_poly(res, res_col, |r, x| ring::automorphism::<Rg, _>(k, r, x));
     }
 
     fn vec_znx_switch_ring(
         _module: &Module<Self>,
-        res: &mut VecZnxBackendMut<'_, Self>,
+        res: &mut VecZnxBackendMut<'_, Self, Rg>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, Self>,
+        a: &VecZnxBackendRef<'_, Self, Rg>,
         a_col: usize,
     ) {
         assert_dense(res, "vec_znx_switch_ring");
@@ -224,9 +224,9 @@ unsafe impl<F: DFTFamily, R: OracleRing> HalVecZnxImpl for Oracle<F, R> {
 
     fn vec_znx_copy(
         _module: &Module<Self>,
-        res: &mut VecZnxBackendMut<'_, Self>,
+        res: &mut VecZnxBackendMut<'_, Self, Rg>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, Self>,
+        a: &VecZnxBackendRef<'_, Self, Rg>,
         a_col: usize,
     ) {
         map(res, res_col, a, a_col, |x| x);
@@ -238,7 +238,7 @@ unsafe impl<F: DFTFamily, R: OracleRing> HalVecZnxImpl for Oracle<F, R> {
         _module: &Module<Self>,
         base2k: usize,
         k: usize,
-        res: &mut VecZnxBackendMut<'_, Self>,
+        res: &mut VecZnxBackendMut<'_, Self, Rg>,
         res_col: usize,
         source: &mut Source,
     ) {
@@ -266,7 +266,7 @@ unsafe impl<F: DFTFamily, R: OracleRing> HalVecZnxImpl for Oracle<F, R> {
 // The HAL-derived in-place multiplication by X^p - 1 stages a full-size
 // temporary in scratch, which Core's in-place callers do not provide. This
 // override works limb by limb on the heap.
-unsafe impl<F: DFTFamily> HalVecZnxMonomialImpl for Oracle<F, Standard> {
+unsafe impl<F: DFTFamily> HalVecZnxMonomialImpl for Oracle<F> {
     fn vec_znx_rotate(
         _module: &Module<Self>,
         k: i64,
@@ -315,63 +315,63 @@ unsafe impl<F: DFTFamily> HalVecZnxMonomialImpl for Oracle<F, Standard> {
     }
 }
 
-unsafe impl<F: DFTFamily, R: OracleRing> HalVecZnxBigImpl for Oracle<F, R> {
+unsafe impl<F: DFTFamily, Rg: OracleRing> HalVecZnxBigImpl<Rg> for Oracle<F> {
     fn vec_znx_big_from_small(
-        res: &mut VecZnxBigBackendMut<'_, Self>,
+        res: &mut VecZnxBigBackendMut<'_, Self, Rg>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, Self>,
+        a: &VecZnxBackendRef<'_, Self, Rg>,
         a_col: usize,
     ) {
-        with_vec_znx::<Self, _>(a, res.n(), |a| map(res, res_col, a, a_col, F::Big::from));
+        with_vec_znx::<Self, _, Rg>(a, res.n(), |a| map(res, res_col, a, a_col, F::Big::from));
     }
 
     fn vec_znx_big_add(
         _module: &Module<Self>,
-        res: &mut VecZnxBigBackendMut<'_, Self>,
+        res: &mut VecZnxBigBackendMut<'_, Self, Rg>,
         res_col: usize,
-        a: &VecZnxBigBackendRef<'_, Self>,
+        a: &VecZnxBigBackendRef<'_, Self, Rg>,
         a_col: usize,
-        b: &VecZnxBigBackendRef<'_, Self>,
+        b: &VecZnxBigBackendRef<'_, Self, Rg>,
         b_col: usize,
     ) {
         let n = res.n();
-        with_vec_znx_big::<Self, _>(a, n, |a| {
-            with_vec_znx_big::<Self, _>(b, n, |b| zip(res, res_col, a, a_col, b, b_col, F::Big::add, |x| x, |y| y))
+        with_vec_znx_big::<Self, _, Rg>(a, n, |a| {
+            with_vec_znx_big::<Self, _, Rg>(b, n, |b| zip(res, res_col, a, a_col, b, b_col, F::Big::add, |x| x, |y| y))
         });
     }
 
     fn vec_znx_big_add_assign(
         _module: &Module<Self>,
-        res: &mut VecZnxBigBackendMut<'_, Self>,
+        res: &mut VecZnxBigBackendMut<'_, Self, Rg>,
         res_col: usize,
-        a: &VecZnxBigBackendRef<'_, Self>,
+        a: &VecZnxBigBackendRef<'_, Self, Rg>,
         a_col: usize,
     ) {
-        with_vec_znx_big::<Self, _>(a, res.n(), |a| update(res, res_col, a, a_col, F::Big::add, |r| r));
+        with_vec_znx_big::<Self, _, Rg>(a, res.n(), |a| update(res, res_col, a, a_col, F::Big::add, |r| r));
     }
 
     fn vec_znx_big_add_small_assign(
         _module: &Module<Self>,
-        res: &mut VecZnxBigBackendMut<'_, Self>,
+        res: &mut VecZnxBigBackendMut<'_, Self, Rg>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, Self>,
+        a: &VecZnxBackendRef<'_, Self, Rg>,
         a_col: usize,
     ) {
-        with_vec_znx::<Self, _>(a, res.n(), |a| update(res, res_col, a, a_col, |r, x| r.add(x.into()), |r| r));
+        with_vec_znx::<Self, _, Rg>(a, res.n(), |a| update(res, res_col, a, a_col, |r, x| r.add(x.into()), |r| r));
     }
 
     fn vec_znx_big_sub(
         _module: &Module<Self>,
-        res: &mut VecZnxBigBackendMut<'_, Self>,
+        res: &mut VecZnxBigBackendMut<'_, Self, Rg>,
         res_col: usize,
-        a: &VecZnxBigBackendRef<'_, Self>,
+        a: &VecZnxBigBackendRef<'_, Self, Rg>,
         a_col: usize,
-        b: &VecZnxBigBackendRef<'_, Self>,
+        b: &VecZnxBigBackendRef<'_, Self, Rg>,
         b_col: usize,
     ) {
         let n = res.n();
-        with_vec_znx_big::<Self, _>(a, n, |a| {
-            with_vec_znx_big::<Self, _>(b, n, |b| {
+        with_vec_znx_big::<Self, _, Rg>(a, n, |a| {
+            with_vec_znx_big::<Self, _, Rg>(b, n, |b| {
                 zip(res, res_col, a, a_col, b, b_col, F::Big::sub, |x| x, F::Big::neg)
             })
         });
@@ -379,42 +379,42 @@ unsafe impl<F: DFTFamily, R: OracleRing> HalVecZnxBigImpl for Oracle<F, R> {
 
     fn vec_znx_big_sub_assign(
         _module: &Module<Self>,
-        res: &mut VecZnxBigBackendMut<'_, Self>,
+        res: &mut VecZnxBigBackendMut<'_, Self, Rg>,
         res_col: usize,
-        a: &VecZnxBigBackendRef<'_, Self>,
+        a: &VecZnxBigBackendRef<'_, Self, Rg>,
         a_col: usize,
     ) {
-        with_vec_znx_big::<Self, _>(a, res.n(), |a| update(res, res_col, a, a_col, F::Big::sub, |r| r));
+        with_vec_znx_big::<Self, _, Rg>(a, res.n(), |a| update(res, res_col, a, a_col, F::Big::sub, |r| r));
     }
 
     fn vec_znx_big_sub_negate_assign(
         _module: &Module<Self>,
-        res: &mut VecZnxBigBackendMut<'_, Self>,
+        res: &mut VecZnxBigBackendMut<'_, Self, Rg>,
         res_col: usize,
-        a: &VecZnxBigBackendRef<'_, Self>,
+        a: &VecZnxBigBackendRef<'_, Self, Rg>,
         a_col: usize,
     ) {
-        with_vec_znx_big::<Self, _>(a, res.n(), |a| update(res, res_col, a, a_col, |r, x| x.sub(r), F::Big::neg));
+        with_vec_znx_big::<Self, _, Rg>(a, res.n(), |a| update(res, res_col, a, a_col, |r, x| x.sub(r), F::Big::neg));
     }
 
     fn vec_znx_big_sub_small_assign(
         _module: &Module<Self>,
-        res: &mut VecZnxBigBackendMut<'_, Self>,
+        res: &mut VecZnxBigBackendMut<'_, Self, Rg>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, Self>,
+        a: &VecZnxBackendRef<'_, Self, Rg>,
         a_col: usize,
     ) {
-        with_vec_znx::<Self, _>(a, res.n(), |a| update(res, res_col, a, a_col, |r, x| r.sub(x.into()), |r| r));
+        with_vec_znx::<Self, _, Rg>(a, res.n(), |a| update(res, res_col, a, a_col, |r, x| r.sub(x.into()), |r| r));
     }
 
     fn vec_znx_big_sub_small_negate_assign(
         _module: &Module<Self>,
-        res: &mut VecZnxBigBackendMut<'_, Self>,
+        res: &mut VecZnxBigBackendMut<'_, Self, Rg>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, Self>,
+        a: &VecZnxBackendRef<'_, Self, Rg>,
         a_col: usize,
     ) {
-        with_vec_znx::<Self, _>(a, res.n(), |a| {
+        with_vec_znx::<Self, _, Rg>(a, res.n(), |a| {
             update(res, res_col, a, a_col, |r, x| F::Big::from(x).sub(r), F::Big::neg)
         });
     }
@@ -422,10 +422,10 @@ unsafe impl<F: DFTFamily, R: OracleRing> HalVecZnxBigImpl for Oracle<F, R> {
     // res[res_col, j, res_coeff] = sum_i a[a_col, j, i]
     fn vec_znx_big_inner_sum(
         _module: &Module<Self>,
-        res: &mut VecZnxBigBackendMut<'_, Self>,
+        res: &mut VecZnxBigBackendMut<'_, Self, Rg>,
         res_col: usize,
         res_coeff: usize,
-        a: &VecZnxBigBackendRef<'_, Self>,
+        a: &VecZnxBigBackendRef<'_, Self, Rg>,
         a_col: usize,
     ) {
         assert!(res_coeff < res.n());
@@ -439,10 +439,10 @@ unsafe impl<F: DFTFamily, R: OracleRing> HalVecZnxBigImpl for Oracle<F, R> {
     // res[res_col, j, i] = sum_{c < cols} weights[c] a[c, j, i] for i < coeffs
     fn vec_znx_big_col_weighted_sum(
         _module: &Module<Self>,
-        res: &mut VecZnxBigBackendMut<'_, Self>,
+        res: &mut VecZnxBigBackendMut<'_, Self, Rg>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, Self>,
-        weights: &ScalarZnxBackendRef<'_, Self>,
+        a: &VecZnxBackendRef<'_, Self, Rg>,
+        weights: &ScalarZnxBackendRef<'_, Self, Rg>,
         weights_col: usize,
         cols: usize,
         coeffs: usize,
@@ -463,11 +463,11 @@ unsafe impl<F: DFTFamily, R: OracleRing> HalVecZnxBigImpl for Oracle<F, R> {
     // res[res_col, j, i] = a[a_col, j, i] b[b_col, 0, i]
     fn vec_znx_big_scalar_product(
         _module: &Module<Self>,
-        res: &mut VecZnxBigBackendMut<'_, Self>,
+        res: &mut VecZnxBigBackendMut<'_, Self, Rg>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, Self>,
+        a: &VecZnxBackendRef<'_, Self, Rg>,
         a_col: usize,
-        b: &ScalarZnxBackendRef<'_, Self>,
+        b: &ScalarZnxBackendRef<'_, Self, Rg>,
         b_col: usize,
     ) {
         let n = a.n();
@@ -481,15 +481,15 @@ unsafe impl<F: DFTFamily, R: OracleRing> HalVecZnxBigImpl for Oracle<F, R> {
 
     fn vec_znx_big_negate(
         _module: &Module<Self>,
-        res: &mut VecZnxBigBackendMut<'_, Self>,
+        res: &mut VecZnxBigBackendMut<'_, Self, Rg>,
         res_col: usize,
-        a: &VecZnxBigBackendRef<'_, Self>,
+        a: &VecZnxBigBackendRef<'_, Self, Rg>,
         a_col: usize,
     ) {
         map(res, res_col, a, a_col, F::Big::neg);
     }
 
-    fn vec_znx_big_negate_assign(_module: &Module<Self>, a: &mut VecZnxBigBackendMut<'_, Self>, a_col: usize) {
+    fn vec_znx_big_negate_assign(_module: &Module<Self>, a: &mut VecZnxBigBackendMut<'_, Self, Rg>, a_col: usize) {
         apply(a, a_col, F::Big::neg);
     }
 
@@ -499,12 +499,12 @@ unsafe impl<F: DFTFamily, R: OracleRing> HalVecZnxBigImpl for Oracle<F, R> {
 
     fn vec_znx_big_normalize(
         _module: &Module<Self>,
-        res: &mut VecZnxBackendMut<'_, Self>,
+        res: &mut VecZnxBackendMut<'_, Self, Rg>,
         res_base2k: usize,
         res_k: usize,
         res_offset: i64,
         res_col: usize,
-        a: &VecZnxBigBackendRef<'_, Self>,
+        a: &VecZnxBigBackendRef<'_, Self, Rg>,
         a_base2k: usize,
         a_col: usize,
         _scratch: &mut ScratchArena<'_, Self>,
@@ -515,15 +515,15 @@ unsafe impl<F: DFTFamily, R: OracleRing> HalVecZnxBigImpl for Oracle<F, R> {
     fn vec_znx_big_automorphism(
         _module: &Module<Self>,
         k: i64,
-        res: &mut VecZnxBigBackendMut<'_, Self>,
+        res: &mut VecZnxBigBackendMut<'_, Self, Rg>,
         res_col: usize,
-        a: &VecZnxBigBackendRef<'_, Self>,
+        a: &VecZnxBigBackendRef<'_, Self, Rg>,
         a_col: usize,
     ) {
         assert_dense(res, "vec_znx_big_automorphism");
         assert_dense(a, "vec_znx_big_automorphism");
         assert_eq!(res.n(), a.n());
-        map_poly(res, res_col, a, a_col, |r, x| ring::automorphism::<R, _>(k, r, x));
+        map_poly(res, res_col, a, a_col, |r, x| ring::automorphism::<Rg, _>(k, r, x));
     }
 
     fn vec_znx_big_automorphism_assign_tmp_bytes(_module: &Module<Self>) -> usize {
@@ -533,24 +533,24 @@ unsafe impl<F: DFTFamily, R: OracleRing> HalVecZnxBigImpl for Oracle<F, R> {
     fn vec_znx_big_automorphism_assign(
         _module: &Module<Self>,
         k: i64,
-        a: &mut VecZnxBigBackendMut<'_, Self>,
+        a: &mut VecZnxBigBackendMut<'_, Self, Rg>,
         a_col: usize,
         _scratch: &mut ScratchArena<'_, Self>,
     ) {
         assert_dense(a, "vec_znx_big_automorphism_assign");
-        apply_poly(a, a_col, |r, x| ring::automorphism::<R, _>(k, r, x));
+        apply_poly(a, a_col, |r, x| ring::automorphism::<Rg, _>(k, r, x));
     }
 }
 
 /// Maps between the conjugate-invariant ring of degree `N` and the standard
-/// ring of degree `2N`, from their HAL definitions, on the standard oracle.
-unsafe impl<F: DFTFamily> HalVecZnxCIImpl for Oracle<F, Standard> {
+/// ring of degree `2N`, from their HAL definitions.
+unsafe impl<F: DFTFamily> HalVecZnxCIImpl for Oracle<F> {
     // res = a_0 + sum_{0<i<N} a_i (X^i + X^-i), with X^-i = -X^(2N-i)
     fn vec_znx_ci_embed(
         _module: &Module<Self>,
         res: &mut VecZnxBackendMut<'_, Self>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, Self>,
+        a: &VecZnxBackendRef<'_, Self, ConjugateInvariant>,
         a_col: usize,
     ) {
         assert_dense(res, "vec_znx_ci_embed");
@@ -570,7 +570,7 @@ unsafe impl<F: DFTFamily> HalVecZnxCIImpl for Oracle<F, Standard> {
     // res_0 = 2 a_0 and res_i = a_i - a_(2N-i): the coordinates of a(X) + a(X^-1)
     fn vec_znx_ci_trace(
         _module: &Module<Self>,
-        res: &mut VecZnxBackendMut<'_, Self>,
+        res: &mut VecZnxBackendMut<'_, Self, ConjugateInvariant>,
         res_col: usize,
         a: &VecZnxBackendRef<'_, Self>,
         a_col: usize,
@@ -588,20 +588,22 @@ unsafe impl<F: DFTFamily> HalVecZnxCIImpl for Oracle<F, Standard> {
     }
 }
 
+unsafe impl<F: DFTFamily> HalScalarZnxCIImpl for Oracle<F> {}
+
 /// An automorphism of the transformed domain: the exponent is all it needs.
 pub struct DftAutomorphismPlan {
     p: i64,
 }
 
-unsafe impl<F: DFTFamily, R: OracleRing> HalVecZnxDftImpl for Oracle<F, R> {
+unsafe impl<F: DFTFamily, Rg: OracleRing> HalVecZnxDftImpl<Rg> for Oracle<F> {
     // res[j] = DFT(a[offset + j step]) while that limb exists, zero after.
     fn vec_znx_dft_apply(
         module: &Module<Self>,
         step: usize,
         offset: usize,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, Rg>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, Self>,
+        a: &VecZnxBackendRef<'_, Self, Rg>,
         a_col: usize,
     ) {
         assert!(step >= 1, "vec_znx_dft_apply: step must be >= 1");
@@ -610,7 +612,7 @@ unsafe impl<F: DFTFamily, R: OracleRing> HalVecZnxDftImpl for Oracle<F, R> {
         for j in 0..res.size() {
             let limb = offset + j * step;
             if j < a.size().div_ceil(step) && limb < a.size() {
-                ring::forward(module, res.at_mut(res_col, j), a.at(a_col, limb));
+                ring::forward::<F, Rg>(module, res.at_mut(res_col, j), a.at(a_col, limb));
             } else {
                 res.at_mut(res_col, j).fill(F::Dft::default());
             }
@@ -623,24 +625,24 @@ unsafe impl<F: DFTFamily, R: OracleRing> HalVecZnxDftImpl for Oracle<F, R> {
 
     fn vec_znx_idft_apply(
         module: &Module<Self>,
-        res: &mut VecZnxBigBackendMut<'_, Self>,
+        res: &mut VecZnxBigBackendMut<'_, Self, Rg>,
         res_col: usize,
-        a: &VecZnxDftBackendRef<'_, Self>,
+        a: &VecZnxDftBackendRef<'_, Self, Rg>,
         a_col: usize,
         _scratch: &mut ScratchArena<'_, Self>,
     ) {
         assert_dense(res, "vec_znx_idft_apply");
         assert_eq!(res.n(), a.n());
-        map_poly(res, res_col, a, a_col, |r, x| ring::inverse(module, r, x));
+        map_poly(res, res_col, a, a_col, |r, x| ring::inverse::<F, Rg>(module, r, x));
     }
 
     fn vec_znx_dft_add(
         _module: &Module<Self>,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, Rg>,
         res_col: usize,
-        a: &VecZnxDftBackendRef<'_, Self>,
+        a: &VecZnxDftBackendRef<'_, Self, Rg>,
         a_col: usize,
-        b: &VecZnxDftBackendRef<'_, Self>,
+        b: &VecZnxDftBackendRef<'_, Self, Rg>,
         b_col: usize,
     ) {
         zip(res, res_col, a, a_col, b, b_col, F::dft_add, |x| x, |y| y);
@@ -648,9 +650,9 @@ unsafe impl<F: DFTFamily, R: OracleRing> HalVecZnxDftImpl for Oracle<F, R> {
 
     fn vec_znx_dft_add_assign(
         _module: &Module<Self>,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, Rg>,
         res_col: usize,
-        a: &VecZnxDftBackendRef<'_, Self>,
+        a: &VecZnxDftBackendRef<'_, Self, Rg>,
         a_col: usize,
     ) {
         update(res, res_col, a, a_col, F::dft_add, |r| r);
@@ -658,11 +660,11 @@ unsafe impl<F: DFTFamily, R: OracleRing> HalVecZnxDftImpl for Oracle<F, R> {
 
     fn vec_znx_dft_sub(
         _module: &Module<Self>,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, Rg>,
         res_col: usize,
-        a: &VecZnxDftBackendRef<'_, Self>,
+        a: &VecZnxDftBackendRef<'_, Self, Rg>,
         a_col: usize,
-        b: &VecZnxDftBackendRef<'_, Self>,
+        b: &VecZnxDftBackendRef<'_, Self, Rg>,
         b_col: usize,
     ) {
         zip(
@@ -680,9 +682,9 @@ unsafe impl<F: DFTFamily, R: OracleRing> HalVecZnxDftImpl for Oracle<F, R> {
 
     fn vec_znx_dft_sub_assign(
         _module: &Module<Self>,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, Rg>,
         res_col: usize,
-        a: &VecZnxDftBackendRef<'_, Self>,
+        a: &VecZnxDftBackendRef<'_, Self, Rg>,
         a_col: usize,
     ) {
         update(res, res_col, a, a_col, |r, x| F::dft_add(r, F::dft_neg(x)), |r| r);
@@ -690,9 +692,9 @@ unsafe impl<F: DFTFamily, R: OracleRing> HalVecZnxDftImpl for Oracle<F, R> {
 
     fn vec_znx_dft_sub_negate_assign(
         _module: &Module<Self>,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, Rg>,
         res_col: usize,
-        a: &VecZnxDftBackendRef<'_, Self>,
+        a: &VecZnxDftBackendRef<'_, Self, Rg>,
         a_col: usize,
     ) {
         update(res, res_col, a, a_col, |r, x| F::dft_add(x, F::dft_neg(r)), F::dft_neg);
@@ -703,9 +705,9 @@ unsafe impl<F: DFTFamily, R: OracleRing> HalVecZnxDftImpl for Oracle<F, R> {
         _module: &Module<Self>,
         step: usize,
         offset: usize,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, Rg>,
         res_col: usize,
-        a: &VecZnxDftBackendRef<'_, Self>,
+        a: &VecZnxDftBackendRef<'_, Self, Rg>,
         a_col: usize,
     ) {
         assert!(step >= 1, "vec_znx_dft_copy: step must be >= 1");
@@ -720,7 +722,7 @@ unsafe impl<F: DFTFamily, R: OracleRing> HalVecZnxDftImpl for Oracle<F, R> {
         }
     }
 
-    fn vec_znx_dft_zero(_module: &Module<Self>, res: &mut VecZnxDftBackendMut<'_, Self>, res_col: usize) {
+    fn vec_znx_dft_zero(_module: &Module<Self>, res: &mut VecZnxDftBackendMut<'_, Self, Rg>, res_col: usize) {
         apply(res, res_col, |_| F::Dft::default());
     }
 
@@ -733,33 +735,33 @@ unsafe impl<F: DFTFamily, R: OracleRing> HalVecZnxDftImpl for Oracle<F, R> {
     fn vec_znx_dft_automorphism_with_plan(
         _module: &Module<Self>,
         plan: &DftAutomorphismPlan,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, Rg>,
         res_col: usize,
-        a: &VecZnxDftBackendRef<'_, Self>,
+        a: &VecZnxDftBackendRef<'_, Self, Rg>,
         a_col: usize,
     ) {
         assert_eq!(res.n(), a.n());
-        map_poly(res, res_col, a, a_col, |r, x| ring::dft_automorphism::<F, R>(plan.p, r, x));
+        map_poly(res, res_col, a, a_col, |r, x| ring::dft_automorphism::<F, Rg>(plan.p, r, x));
     }
 }
 
-unsafe impl<F: DFTFamily, R: OracleRing> HalSvpImpl for Oracle<F, R> {
+unsafe impl<F: DFTFamily, Rg: OracleRing> HalSvpImpl<Rg> for Oracle<F> {
     fn svp_ppol_prepare(
         module: &Module<Self>,
-        res: &mut SvpPPolBackendMut<'_, Self>,
+        res: &mut SvpPPolBackendMut<'_, Self, Rg>,
         res_col: usize,
-        a: &ScalarZnxBackendRef<'_, Self>,
+        a: &ScalarZnxBackendRef<'_, Self, Rg>,
         a_col: usize,
     ) {
         assert_eq!(res.n(), a.n());
-        ring::forward(module, res.at_mut(res_col, 0), a.at(a_col, 0));
+        ring::forward::<F, Rg>(module, res.at_mut(res_col, 0), a.at(a_col, 0));
     }
 
     fn svp_ppol_copy(
         _module: &Module<Self>,
-        res: &mut SvpPPolBackendMut<'_, Self>,
+        res: &mut SvpPPolBackendMut<'_, Self, Rg>,
         res_col: usize,
-        a: &SvpPPolBackendRef<'_, Self>,
+        a: &SvpPPolBackendRef<'_, Self, Rg>,
         a_col: usize,
     ) {
         assert_eq!(res.hint(), a.hint());
@@ -768,36 +770,36 @@ unsafe impl<F: DFTFamily, R: OracleRing> HalSvpImpl for Oracle<F, R> {
 
     fn svp_apply_dft_to_dft(
         _module: &Module<Self>,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, Rg>,
         res_col: usize,
-        a: &SvpPPolBackendRef<'_, Self>,
+        a: &SvpPPolBackendRef<'_, Self, Rg>,
         a_col: usize,
-        b: &VecZnxDftBackendRef<'_, Self>,
+        b: &VecZnxDftBackendRef<'_, Self, Rg>,
         b_col: usize,
     ) {
         let a = a.at(a_col, 0);
         map_poly(res, res_col, b, b_col, |r, x| {
             r.fill(F::Dft::default());
-            ring::mul_acc::<F, R>(r, a, x);
+            ring::mul_acc::<F, Rg>(r, a, x);
         });
     }
 
     fn svp_apply_dft_to_dft_assign(
         _module: &Module<Self>,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, Rg>,
         res_col: usize,
-        a: &SvpPPolBackendRef<'_, Self>,
+        a: &SvpPPolBackendRef<'_, Self, Rg>,
         a_col: usize,
     ) {
         for j in 0..res.size() {
-            ring::mul_assign::<F, R>(res.at_mut(res_col, j), a.at(a_col, 0));
+            ring::mul_assign::<F, Rg>(res.at_mut(res_col, j), a.at(a_col, 0));
         }
     }
 }
 
 // A prepared matrix keeps the MatZnx order: row, input column, limb, output
 // column, each block the transform of one polynomial.
-unsafe impl<F: DFTFamily, R: OracleRing> HalVmpImpl for Oracle<F, R> {
+unsafe impl<F: DFTFamily, Rg: OracleRing> HalVmpImpl<Rg> for Oracle<F> {
     fn vmp_pmat_prepare_tmp_bytes(
         _module: &Module<Self>,
         _rows: usize,
@@ -810,8 +812,8 @@ unsafe impl<F: DFTFamily, R: OracleRing> HalVmpImpl for Oracle<F, R> {
 
     fn vmp_pmat_prepare(
         module: &Module<Self>,
-        res: &mut VmpPMatBackendMut<'_, Self>,
-        a: &MatZnxBackendRef<'_, Self>,
+        res: &mut VmpPMatBackendMut<'_, Self, Rg>,
+        a: &MatZnxBackendRef<'_, Self, Rg>,
         _scratch: &mut ScratchArena<'_, Self>,
     ) {
         assert_eq!(
@@ -820,7 +822,7 @@ unsafe impl<F: DFTFamily, R: OracleRing> HalVmpImpl for Oracle<F, R> {
         );
         let n = res.n();
         for (out, x) in res.raw_mut().chunks_exact_mut(n).zip(a.raw().chunks_exact(n)) {
-            ring::forward(module, out, x);
+            ring::forward::<F, Rg>(module, out, x);
         }
     }
 
@@ -839,9 +841,9 @@ unsafe impl<F: DFTFamily, R: OracleRing> HalVmpImpl for Oracle<F, R> {
     // res[col, j] = sum_{row, input} a[input, row] b[row, input, col, j + limb_offset]
     fn vmp_apply_dft_to_dft(
         _module: &Module<Self>,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
-        a: &VecZnxDftBackendRef<'_, Self>,
-        b: &VmpPMatBackendRef<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, Rg>,
+        a: &VecZnxDftBackendRef<'_, Self, Rg>,
+        b: &VmpPMatBackendRef<'_, Self, Rg>,
         limb_offset: usize,
         _scratch: &mut ScratchArena<'_, Self>,
     ) {
@@ -858,7 +860,7 @@ unsafe impl<F: DFTFamily, R: OracleRing> HalVmpImpl for Oracle<F, R> {
                 for row in 0..a.size().min(b.rows()) {
                     for input in 0..a.cols() {
                         let at = ((row * b.cols_in() + input) * b.size() * b.cols_out() + k * b.cols_out() + col) * n;
-                        ring::mul_acc::<F, R>(out, a.at(input, row), &b.raw()[at..at + n]);
+                        ring::mul_acc::<F, Rg>(out, a.at(input, row), &b.raw()[at..at + n]);
                     }
                 }
             }
@@ -867,8 +869,8 @@ unsafe impl<F: DFTFamily, R: OracleRing> HalVmpImpl for Oracle<F, R> {
 
     fn vmp_extract_selected_rows(
         _module: &Module<Self>,
-        res: &mut VmpPMatBackendMut<'_, Self>,
-        a: &VmpPMatBackendRef<'_, Self>,
+        res: &mut VmpPMatBackendMut<'_, Self, Rg>,
+        a: &VmpPMatBackendRef<'_, Self, Rg>,
         first_row: usize,
         row_step: usize,
     ) {
@@ -899,18 +901,18 @@ unsafe impl<F: DFTFamily, R: OracleRing> HalVmpImpl for Oracle<F, R> {
         }
     }
 
-    fn vmp_zero(_module: &Module<Self>, res: &mut VmpPMatBackendMut<'_, Self>) {
+    fn vmp_zero(_module: &Module<Self>, res: &mut VmpPMatBackendMut<'_, Self, Rg>) {
         res.raw_mut().fill(F::Dft::default());
     }
 }
 
 /// Prepares every limb of every column of `a` into `raw`, limb-major.
-fn cnv_prepare<F: DFTFamily, R: OracleRing>(
-    module: &Module<Oracle<F, R>>,
+fn cnv_prepare<F: DFTFamily, Rg: OracleRing>(
+    module: &Module<Oracle<F>>,
     raw: &mut [F::Dft],
     cols: usize,
     size: usize,
-    a: &VecZnxBackendRef<'_, Oracle<F, R>>,
+    a: &VecZnxBackendRef<'_, Oracle<F>, Rg>,
 ) {
     assert_dense(a, "cnv_prepare");
     assert_eq!(cols, a.cols());
@@ -919,7 +921,7 @@ fn cnv_prepare<F: DFTFamily, R: OracleRing>(
         for col in 0..cols {
             let out = &mut raw[(j * cols + col) * n..(j * cols + col + 1) * n];
             if j < a.size() {
-                ring::forward(module, out, a.at(col, j));
+                ring::forward::<F, Rg>(module, out, a.at(col, j));
             } else {
                 out.fill(F::Dft::default());
             }
@@ -927,15 +929,15 @@ fn cnv_prepare<F: DFTFamily, R: OracleRing>(
     }
 }
 
-unsafe impl<F: DFTFamily, R: OracleRing> HalCnvImpl for Oracle<F, R> {
+unsafe impl<F: DFTFamily, Rg: OracleRing> HalCnvImpl<Rg> for Oracle<F> {
     fn cnv_pvec_left_prepare_tmp_bytes(_module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
         0
     }
 
     fn cnv_pvec_left_prepare(
         module: &Module<Self>,
-        res: &mut CnvPVecLBackendMut<'_, Self>,
-        a: &VecZnxBackendRef<'_, Self>,
+        res: &mut CnvPVecLBackendMut<'_, Self, Rg>,
+        a: &VecZnxBackendRef<'_, Self, Rg>,
         _scratch: &mut ScratchArena<'_, Self>,
     ) {
         assert_eq!(res.n(), a.n());
@@ -949,8 +951,8 @@ unsafe impl<F: DFTFamily, R: OracleRing> HalCnvImpl for Oracle<F, R> {
 
     fn cnv_pvec_right_prepare(
         module: &Module<Self>,
-        res: &mut CnvPVecRBackendMut<'_, Self>,
-        a: &VecZnxBackendRef<'_, Self>,
+        res: &mut CnvPVecRBackendMut<'_, Self, Rg>,
+        a: &VecZnxBackendRef<'_, Self, Rg>,
         _scratch: &mut ScratchArena<'_, Self>,
     ) {
         assert_eq!(res.n(), a.n());
@@ -982,11 +984,11 @@ unsafe impl<F: DFTFamily, R: OracleRing> HalCnvImpl for Oracle<F, R> {
     fn cnv_by_const_apply(
         _module: &Module<Self>,
         cnv_offset: usize,
-        res: &mut VecZnxBigBackendMut<'_, Self>,
+        res: &mut VecZnxBigBackendMut<'_, Self, Rg>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, Self>,
+        a: &VecZnxBackendRef<'_, Self, Rg>,
         a_col: usize,
-        b: &VecZnxBackendRef<'_, Self>,
+        b: &VecZnxBackendRef<'_, Self, Rg>,
         b_col: usize,
         b_coeff: usize,
         _scratch: &mut ScratchArena<'_, Self>,
@@ -1018,11 +1020,11 @@ unsafe impl<F: DFTFamily, R: OracleRing> HalCnvImpl for Oracle<F, R> {
     fn cnv_apply_dft(
         _module: &Module<Self>,
         cnv_offset: usize,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, Rg>,
         res_col: usize,
-        a: &CnvPVecLBackendRef<'_, Self>,
+        a: &CnvPVecLBackendRef<'_, Self, Rg>,
         a_col: usize,
-        b: &CnvPVecRBackendRef<'_, Self>,
+        b: &CnvPVecRBackendRef<'_, Self, Rg>,
         b_col: usize,
         b_galois: i64,
         _scratch: &mut ScratchArena<'_, Self>,
@@ -1046,11 +1048,11 @@ unsafe impl<F: DFTFamily, R: OracleRing> HalCnvImpl for Oracle<F, R> {
                     if b.n() == n {
                         limb.copy_from_slice(b.at(b_col, l));
                     } else {
-                        ring::dft_embed::<F, R>(&mut limb, b.at(b_col, l));
+                        ring::dft_embed::<F, Rg>(&mut limb, b.at(b_col, l));
                     }
                     if b_galois != 1 {
                         let image = limb.clone();
-                        ring::dft_automorphism::<F, R>(b_galois, &mut limb, &image);
+                        ring::dft_automorphism::<F, Rg>(b_galois, &mut limb, &image);
                     }
                     limb
                 })
@@ -1066,7 +1068,7 @@ unsafe impl<F: DFTFamily, R: OracleRing> HalCnvImpl for Oracle<F, R> {
             };
             for i in 0..a.size().min(k + 1) {
                 if k - i < b.size() {
-                    ring::mul_acc::<F, R>(out, a.at(a_col, i), b_limb(k - i));
+                    ring::mul_acc::<F, Rg>(out, a.at(a_col, i), b_limb(k - i));
                 }
             }
         }

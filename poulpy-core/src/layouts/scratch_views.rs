@@ -1,5 +1,5 @@
 use poulpy_hal::layouts::{
-    Backend, ScalarZnx, SvpPPolReborrowBackendMut, SvpPPolReborrowBackendRef, VmpPMatReborrowBackendMut,
+    Backend, Ring, ScalarZnx, SvpPPolReborrowBackendMut, SvpPPolReborrowBackendRef, VmpPMatReborrowBackendMut,
     VmpPMatReborrowBackendRef, mat_znx_backend_mut_from_mut, mat_znx_backend_ref_from_mut, vec_znx_backend_mut_from_mut,
     vec_znx_backend_ref_from_mut, vec_znx_backend_ref_from_ref,
 };
@@ -27,15 +27,23 @@ use crate::{
 /// The wrapper gives projected backend buffer types a distinct identity for
 /// trait coherence while forwarding the common layout metadata and deref
 /// surface to the wrapped value.
+///
+/// The generated type is `$name<'a, BE: Backend + 'a, Rg: Ring = Standard>`, generic over the
+/// operand ring. `$inner` names the wrapped layout through these parameters and must use `Rg`,
+/// as in `GLWE<BE::BufMut<'a>, BE::ZnxWord, Rg>`.
 #[macro_export]
 macro_rules! view_wrapper {
     ($(#[$meta:meta])* $name:ident, $inner:ty) => {
         $(#[$meta])*
-        pub struct $name<'a, BE: ::poulpy_hal::layouts::Backend + 'a> {
+        pub struct $name<
+            'a,
+            BE: ::poulpy_hal::layouts::Backend + 'a,
+            Rg: ::poulpy_hal::layouts::Ring = ::poulpy_hal::layouts::Standard,
+        > {
             inner: $inner,
         }
 
-        impl<'a, BE: ::poulpy_hal::layouts::Backend + 'a> $name<'a, BE> {
+        impl<'a, BE: ::poulpy_hal::layouts::Backend + 'a, Rg: ::poulpy_hal::layouts::Ring> $name<'a, BE, Rg> {
             pub fn from_inner(inner: $inner) -> Self {
                 Self { inner }
             }
@@ -45,7 +53,9 @@ macro_rules! view_wrapper {
             }
         }
 
-        impl<'a, BE: ::poulpy_hal::layouts::Backend + 'a> ::core::ops::Deref for $name<'a, BE> {
+        impl<'a, BE: ::poulpy_hal::layouts::Backend + 'a, Rg: ::poulpy_hal::layouts::Ring> ::core::ops::Deref
+            for $name<'a, BE, Rg>
+        {
             type Target = $inner;
 
             fn deref(&self) -> &Self::Target {
@@ -53,13 +63,17 @@ macro_rules! view_wrapper {
             }
         }
 
-        impl<'a, BE: ::poulpy_hal::layouts::Backend + 'a> ::core::ops::DerefMut for $name<'a, BE> {
+        impl<'a, BE: ::poulpy_hal::layouts::Backend + 'a, Rg: ::poulpy_hal::layouts::Ring> ::core::ops::DerefMut
+            for $name<'a, BE, Rg>
+        {
             fn deref_mut(&mut self) -> &mut Self::Target {
                 &mut self.inner
             }
         }
 
-        impl<'a, BE: ::poulpy_hal::layouts::Backend + 'a> $crate::layouts::LWEInfos for $name<'a, BE> {
+        impl<'a, BE: ::poulpy_hal::layouts::Backend + 'a, Rg: ::poulpy_hal::layouts::Ring> $crate::layouts::LWEInfos
+            for $name<'a, BE, Rg>
+        {
             fn noise(&self) -> Option<$crate::ComponentNoise> { $crate::layouts::LWEInfos::noise(&self.inner) }
 
             fn base2k(&self) -> $crate::layouts::Base2K {
@@ -85,33 +99,37 @@ macro_rules! view_wrapper {
     };
 }
 
-view_wrapper!(LWEViewMut, LWE<BE::BufMut<'a>, BE::ZnxWord>);
-view_wrapper!(LWEPlaintextViewMut, LWEPlaintext<BE::BufMut<'a>, BE::ZnxWord>);
-view_wrapper!(GLWEViewRef, GLWE<BE::BufRef<'a>, BE::ZnxWord>);
-view_wrapper!(GLWEViewMut, GLWE<BE::BufMut<'a>, BE::ZnxWord>);
-view_wrapper!(GLWEPlaintextViewMut, GLWEPlaintext<BE::BufMut<'a>, BE::ZnxWord>);
-view_wrapper!(GLWETensorViewMut, GLWETensor<BE::BufMut<'a>, BE::ZnxWord>);
-view_wrapper!(GLWESecretViewMut, GLWESecret<BE::BufMut<'a>, BE::ZnxWord>);
-view_wrapper!(GLWESecretTensorViewMut, GLWESecretTensor<BE::BufMut<'a>, BE::ZnxWord>);
-view_wrapper!(GLWESecretPreparedViewMut, GLWESecretPrepared<BE::BufMut<'a>, BE>);
-view_wrapper!(GGLWEViewMut, GGLWE<BE::BufMut<'a>, BE::ZnxWord>);
-view_wrapper!(GGLWEPreparedViewMut, GGLWEPrepared<BE::BufMut<'a>, BE>);
-view_wrapper!(GGSWViewMut, GGSW<BE::BufMut<'a>, BE::ZnxWord>);
-view_wrapper!(GGSWPreparedViewMut, GGSWPrepared<BE::BufMut<'a>, BE>);
+view_wrapper!(LWEViewMut, LWE<BE::BufMut<'a>, BE::ZnxWord, Rg>);
+view_wrapper!(LWEPlaintextViewMut, LWEPlaintext<BE::BufMut<'a>, BE::ZnxWord, Rg>);
+view_wrapper!(GLWEViewRef, GLWE<BE::BufRef<'a>, BE::ZnxWord, Rg>);
+view_wrapper!(GLWEViewMut, GLWE<BE::BufMut<'a>, BE::ZnxWord, Rg>);
+view_wrapper!(GLWEPlaintextViewMut, GLWEPlaintext<BE::BufMut<'a>, BE::ZnxWord, Rg>);
+view_wrapper!(GLWETensorViewMut, GLWETensor<BE::BufMut<'a>, BE::ZnxWord, Rg>);
+view_wrapper!(GLWESecretViewMut, GLWESecret<BE::BufMut<'a>, BE::ZnxWord, Rg>);
+view_wrapper!(GLWESecretTensorViewMut, GLWESecretTensor<BE::BufMut<'a>, BE::ZnxWord, Rg>);
+view_wrapper!(GLWESecretPreparedViewMut, GLWESecretPrepared<BE::BufMut<'a>, BE, Rg>);
+view_wrapper!(GGLWEViewMut, GGLWE<BE::BufMut<'a>, BE::ZnxWord, Rg>);
+view_wrapper!(GGLWEPreparedViewMut, GGLWEPrepared<BE::BufMut<'a>, BE, Rg>);
+view_wrapper!(GGSWViewMut, GGSW<BE::BufMut<'a>, BE::ZnxWord, Rg>);
+view_wrapper!(GGSWPreparedViewMut, GGSWPrepared<BE::BufMut<'a>, BE, Rg>);
 
-impl<BE: Backend> GGLWEViewMut<'_, BE> {
-    pub fn at_view(&self, row: usize, col: usize) -> GLWEViewRef<'_, BE> {
-        GLWEViewRef::from_inner(crate::layouts::gglwe_at_backend_ref_from_mut::<BE>(&self.inner, row, col))
+impl<BE: Backend, Rg: Ring> GGLWEViewMut<'_, BE, Rg> {
+    pub fn at_view(&self, row: usize, col: usize) -> GLWEViewRef<'_, BE, Rg> {
+        GLWEViewRef::from_inner(crate::layouts::gglwe_at_backend_ref_from_mut::<BE, Rg>(&self.inner, row, col))
     }
 
-    pub fn at_view_mut(&mut self, row: usize, col: usize) -> GLWEViewMut<'_, BE> {
-        GLWEViewMut::from_inner(crate::layouts::gglwe_at_backend_mut_from_mut::<BE>(&mut self.inner, row, col))
+    pub fn at_view_mut(&mut self, row: usize, col: usize) -> GLWEViewMut<'_, BE, Rg> {
+        GLWEViewMut::from_inner(crate::layouts::gglwe_at_backend_mut_from_mut::<BE, Rg>(
+            &mut self.inner,
+            row,
+            col,
+        ))
     }
 }
 
 macro_rules! impl_set_lwe_infos {
     ($name:ident) => {
-        impl<'a, BE: Backend + 'a> SetBase2k for $name<'a, BE> {
+        impl<'a, BE: Backend + 'a, Rg: Ring> SetBase2k for $name<'a, BE, Rg> {
             fn set_base2k(&mut self, base2k: Base2K) {
                 self.inner.set_base2k(base2k);
             }
@@ -123,36 +141,39 @@ impl_set_lwe_infos!(LWEViewMut);
 impl_set_lwe_infos!(GLWEViewMut);
 impl_set_lwe_infos!(GLWEPlaintextViewMut);
 
-impl<BE: Backend> crate::layouts::IntPolyInfos for GLWEPlaintextViewMut<'_, BE> {
+impl<BE: Backend, Rg: Ring> crate::layouts::IntPolyInfos for GLWEPlaintextViewMut<'_, BE, Rg> {
     fn encoded_k(&self) -> crate::layouts::TorusPrecision {
         self.inner.encoded_k()
     }
 }
 
-impl<BE: Backend> crate::layouts::IntPolyInfos for LWEPlaintextViewMut<'_, BE> {
+impl<BE: Backend, Rg: Ring> crate::layouts::IntPolyInfos for LWEPlaintextViewMut<'_, BE, Rg> {
     fn encoded_k(&self) -> crate::layouts::TorusPrecision {
         self.inner.encoded_k()
     }
 }
 
-impl<BE: Backend> SetK for GLWEViewMut<'_, BE> {
+impl<BE: Backend, Rg: Ring> SetK for GLWEViewMut<'_, BE, Rg> {
     fn set_k(&mut self, k: TorusPrecision) {
         self.inner.set_k(k);
     }
 }
 
-impl<BE: Backend> SetBase2k for LWEPlaintextViewMut<'_, BE> {
+impl<BE: Backend, Rg: Ring> SetBase2k for LWEPlaintextViewMut<'_, BE, Rg> {
     fn set_base2k(&mut self, base2k: Base2K) {
         self.inner.base2k = base2k;
     }
 }
 
 /// Forwards [`GLWEInfos`](crate::layouts::GLWEInfos) through a nominal
-/// backend view wrapper generated by [`view_wrapper!`](crate::view_wrapper).
+/// backend view wrapper generated by [`view_wrapper!`](crate::view_wrapper),
+/// implementing it on `$name<'a, BE, Rg>` for every ring `Rg`.
 #[macro_export]
 macro_rules! impl_glwe_infos {
     ($name:ident) => {
-        impl<'a, BE: ::poulpy_hal::layouts::Backend + 'a> $crate::layouts::GLWEInfos for $name<'a, BE> {
+        impl<'a, BE: ::poulpy_hal::layouts::Backend + 'a, Rg: ::poulpy_hal::layouts::Ring> $crate::layouts::GLWEInfos
+            for $name<'a, BE, Rg>
+        {
             fn rank(&self) -> $crate::layouts::Rank {
                 $crate::layouts::GLWEInfos::rank(&self.inner)
             }
@@ -174,13 +195,13 @@ impl_glwe_infos!(GGSWPreparedViewMut);
 
 macro_rules! impl_dist {
     ($name:ident) => {
-        impl<'a, BE: Backend + 'a> GetDistribution for $name<'a, BE> {
+        impl<'a, BE: Backend + 'a, Rg: Ring> GetDistribution for $name<'a, BE, Rg> {
             fn dist(&self) -> &Distribution {
                 self.inner.dist()
             }
         }
 
-        impl<'a, BE: Backend + 'a> GetDistributionMut for $name<'a, BE> {
+        impl<'a, BE: Backend + 'a, Rg: Ring> GetDistributionMut for $name<'a, BE, Rg> {
             fn dist_mut(&mut self) -> &mut Distribution {
                 self.inner.dist_mut()
             }
@@ -192,7 +213,7 @@ impl_dist!(GLWESecretTensorViewMut);
 impl_dist!(GLWESecretPreparedViewMut);
 impl_dist!(GLWESecretViewMut);
 
-impl<BE: Backend> GGLWEInfos for GGLWEViewMut<'_, BE> {
+impl<BE: Backend, Rg: Ring> GGLWEInfos for GGLWEViewMut<'_, BE, Rg> {
     fn k_aux(&self) -> crate::layouts::TorusPrecision {
         self.inner.k_aux()
     }
@@ -218,7 +239,7 @@ impl<BE: Backend> GGLWEInfos for GGLWEViewMut<'_, BE> {
     }
 }
 
-impl<BE: Backend> GGLWEInfos for GGLWEPreparedViewMut<'_, BE> {
+impl<BE: Backend, Rg: Ring> GGLWEInfos for GGLWEPreparedViewMut<'_, BE, Rg> {
     fn k_aux(&self) -> crate::layouts::TorusPrecision {
         self.inner.k_aux()
     }
@@ -244,13 +265,13 @@ impl<BE: Backend> GGLWEInfos for GGLWEPreparedViewMut<'_, BE> {
     }
 }
 
-impl<BE: Backend> SetGGLWEInfos for GGLWEViewMut<'_, BE> {
+impl<BE: Backend, Rg: Ring> SetGGLWEInfos for GGLWEViewMut<'_, BE, Rg> {
     fn set_k_digit(&mut self, k_digit: TorusPrecision) {
         self.inner.k_digit = k_digit;
     }
 }
 
-impl<BE: Backend> GGSWInfos for GGSWViewMut<'_, BE> {
+impl<BE: Backend, Rg: Ring> GGSWInfos for GGSWViewMut<'_, BE, Rg> {
     fn k_aux(&self) -> crate::layouts::TorusPrecision {
         self.inner.k_aux()
     }
@@ -264,7 +285,7 @@ impl<BE: Backend> GGSWInfos for GGSWViewMut<'_, BE> {
     }
 }
 
-impl<BE: Backend> GGSWInfos for GGSWPreparedViewMut<'_, BE> {
+impl<BE: Backend, Rg: Ring> GGSWInfos for GGSWPreparedViewMut<'_, BE, Rg> {
     fn k_aux(&self) -> crate::layouts::TorusPrecision {
         self.inner.k_aux()
     }
@@ -278,28 +299,28 @@ impl<BE: Backend> GGSWInfos for GGSWPreparedViewMut<'_, BE> {
     }
 }
 
-impl<BE: Backend> LWEToBackendRef<BE> for LWEViewMut<'_, BE> {
-    fn to_backend_ref(&self) -> LWEBackendRef<'_, BE> {
+impl<BE: Backend, Rg: Ring> LWEToBackendRef<BE, Rg> for LWEViewMut<'_, BE, Rg> {
+    fn to_backend_ref(&self) -> LWEBackendRef<'_, BE, Rg> {
         LWE {
             noise: crate::layouts::LWEInfos::noise(&self.inner),
             base2k: self.inner.base2k,
             k: self.inner.k,
-            body: vec_znx_backend_ref_from_mut::<BE>(&self.inner.body),
-            mask: vec_znx_backend_ref_from_mut::<BE>(&self.inner.mask),
+            body: vec_znx_backend_ref_from_mut::<BE, Rg>(&self.inner.body),
+            mask: vec_znx_backend_ref_from_mut::<BE, Rg>(&self.inner.mask),
         }
     }
 }
 
-impl<BE: Backend> LWEToBackendMut<BE> for LWEViewMut<'_, BE> {
+impl<BE: Backend, Rg: Ring> LWEToBackendMut<BE, Rg> for LWEViewMut<'_, BE, Rg> {
     fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
         self.inner.noise = crate::layouts::checked_noise(metadata, self.inner.mask.n() + 1);
     }
 
-    fn to_backend_mut(&mut self) -> LWEBackendMut<'_, BE> {
+    fn to_backend_mut(&mut self) -> LWEBackendMut<'_, BE, Rg> {
         let base2k = self.inner.base2k;
         let k = self.inner.k;
-        let body = vec_znx_backend_mut_from_mut::<BE>(&mut self.inner.body);
-        let mask = vec_znx_backend_mut_from_mut::<BE>(&mut self.inner.mask);
+        let body = vec_znx_backend_mut_from_mut::<BE, Rg>(&mut self.inner.body);
+        let mask = vec_znx_backend_mut_from_mut::<BE, Rg>(&mut self.inner.mask);
         self.inner.noise = None;
         LWE {
             noise: None,
@@ -311,30 +332,30 @@ impl<BE: Backend> LWEToBackendMut<BE> for LWEViewMut<'_, BE> {
     }
 }
 
-impl<BE: Backend> LWEPlaintextToBackendRef<BE> for LWEPlaintextViewMut<'_, BE> {
-    fn to_backend_ref(&self) -> LWEPlaintextBackendRef<'_, BE> {
+impl<BE: Backend, Rg: Ring> LWEPlaintextToBackendRef<BE, Rg> for LWEPlaintextViewMut<'_, BE, Rg> {
+    fn to_backend_ref(&self) -> LWEPlaintextBackendRef<'_, BE, Rg> {
         LWEPlaintext {
             base2k: self.inner.base2k,
             k: self.inner.k,
-            data: vec_znx_backend_ref_from_mut::<BE>(&self.inner.data),
+            data: vec_znx_backend_ref_from_mut::<BE, Rg>(&self.inner.data),
         }
     }
 }
 
-impl<BE: Backend> LWEPlaintextToBackendMut<BE> for LWEPlaintextViewMut<'_, BE> {
-    fn to_backend_mut(&mut self) -> LWEPlaintextBackendMut<'_, BE> {
+impl<BE: Backend, Rg: Ring> LWEPlaintextToBackendMut<BE, Rg> for LWEPlaintextViewMut<'_, BE, Rg> {
+    fn to_backend_mut(&mut self) -> LWEPlaintextBackendMut<'_, BE, Rg> {
         LWEPlaintext {
             base2k: self.inner.base2k,
             k: self.inner.k,
-            data: vec_znx_backend_mut_from_mut::<BE>(&mut self.inner.data),
+            data: vec_znx_backend_mut_from_mut::<BE, Rg>(&mut self.inner.data),
         }
     }
 }
 
 macro_rules! impl_glwe_to_backend {
     ($name:ident, |$this:ident| ($canonical:expr, $plaintext_meta:expr), |$this_mut:ident, $flag:ident| $set_canonical:expr) => {
-        impl<'a, BE: Backend + 'a> GLWEToBackendRef<BE> for $name<'a, BE> {
-            fn to_backend_ref(&self) -> GLWEBackendRef<'_, BE> {
+        impl<'a, BE: Backend + 'a, Rg: Ring> GLWEToBackendRef<BE, Rg> for $name<'a, BE, Rg> {
+            fn to_backend_ref(&self) -> GLWEBackendRef<'_, BE, Rg> {
                 let $this = self;
                 GLWE {
                     noise: crate::layouts::LWEInfos::noise(&self.inner),
@@ -342,17 +363,17 @@ macro_rules! impl_glwe_to_backend {
                     k: self.inner.k,
                     canonical: $canonical,
                     plaintext_meta: $plaintext_meta,
-                    data: vec_znx_backend_ref_from_mut::<BE>(&self.inner.data),
+                    data: vec_znx_backend_ref_from_mut::<BE, Rg>(&self.inner.data),
                 }
             }
         }
 
-        impl<'a, BE: Backend + 'a> GLWEToBackendMut<BE> for $name<'a, BE> {
+        impl<'a, BE: Backend + 'a, Rg: Ring> GLWEToBackendMut<BE, Rg> for $name<'a, BE, Rg> {
             fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
                 self.inner.record_noise(metadata);
             }
 
-            fn to_backend_mut(&mut self) -> GLWEBackendMut<'_, BE> {
+            fn to_backend_mut(&mut self) -> GLWEBackendMut<'_, BE, Rg> {
                 let $this = &*self;
                 let (canonical, plaintext_meta) = ($canonical, $plaintext_meta);
                 self.inner.record_noise(None);
@@ -362,7 +383,7 @@ macro_rules! impl_glwe_to_backend {
                     k: self.inner.k,
                     canonical,
                     plaintext_meta,
-                    data: vec_znx_backend_mut_from_mut::<BE>(&mut self.inner.data),
+                    data: vec_znx_backend_mut_from_mut::<BE, Rg>(&mut self.inner.data),
                 }
             }
 
@@ -388,7 +409,7 @@ impl_glwe_to_backend!(GLWETensorViewMut, |_this| (true, Default::default()), |_t
 
 macro_rules! impl_plaintext_infos {
     ($($name:ident),*) => {$(
-        impl<'a, BE: Backend + 'a> GLWEPlaintextInfos for $name<'a, BE> {
+        impl<'a, BE: Backend + 'a, Rg: Ring> GLWEPlaintextInfos for $name<'a, BE, Rg> {
             fn plaintext_meta(&self) -> Option<GLWEPlaintextMeta> {
                 self.inner.plaintext_meta
             }
@@ -398,33 +419,33 @@ macro_rules! impl_plaintext_infos {
 
 impl_plaintext_infos!(GLWEViewMut, GLWEViewRef, GLWEPlaintextViewMut);
 
-impl<BE: Backend> SetGLWEPlaintextInfos for GLWEViewMut<'_, BE> {
+impl<BE: Backend, Rg: Ring> SetGLWEPlaintextInfos for GLWEViewMut<'_, BE, Rg> {
     fn set_plaintext_meta(&mut self, meta: Option<GLWEPlaintextMeta>) {
         self.inner.plaintext_meta = meta
     }
 }
 
-impl<BE: Backend> SetGLWEPlaintextInfos for GLWEPlaintextViewMut<'_, BE> {
+impl<BE: Backend, Rg: Ring> SetGLWEPlaintextInfos for GLWEPlaintextViewMut<'_, BE, Rg> {
     fn set_plaintext_meta(&mut self, meta: Option<GLWEPlaintextMeta>) {
         self.inner.plaintext_meta = meta
     }
 }
 
-impl<BE: Backend> GLWEToBackendRef<BE> for GLWEViewRef<'_, BE> {
-    fn to_backend_ref(&self) -> GLWEBackendRef<'_, BE> {
+impl<BE: Backend, Rg: Ring> GLWEToBackendRef<BE, Rg> for GLWEViewRef<'_, BE, Rg> {
+    fn to_backend_ref(&self) -> GLWEBackendRef<'_, BE, Rg> {
         GLWE {
             noise: crate::layouts::LWEInfos::noise(&self.inner),
             base2k: self.inner.base2k,
             k: self.inner.k,
             canonical: self.inner.canonical,
             plaintext_meta: self.inner.plaintext_meta,
-            data: vec_znx_backend_ref_from_ref::<BE>(&self.inner.data),
+            data: vec_znx_backend_ref_from_ref::<BE, Rg>(&self.inner.data),
         }
     }
 }
 
-impl<BE: Backend> GLWESecretToBackendRef<BE> for GLWESecretViewMut<'_, BE> {
-    fn to_backend_ref(&self) -> GLWESecretBackendRef<'_, BE> {
+impl<BE: Backend, Rg: Ring> GLWESecretToBackendRef<BE, Rg> for GLWESecretViewMut<'_, BE, Rg> {
+    fn to_backend_ref(&self) -> GLWESecretBackendRef<'_, BE, Rg> {
         GLWESecret {
             dist: self.inner.dist,
             data: ScalarZnx::from_data(
@@ -436,8 +457,8 @@ impl<BE: Backend> GLWESecretToBackendRef<BE> for GLWESecretViewMut<'_, BE> {
     }
 }
 
-impl<BE: Backend> GLWESecretToBackendMut<BE> for GLWESecretViewMut<'_, BE> {
-    fn to_backend_mut(&mut self) -> GLWESecretBackendMut<'_, BE> {
+impl<BE: Backend, Rg: Ring> GLWESecretToBackendMut<BE, Rg> for GLWESecretViewMut<'_, BE, Rg> {
+    fn to_backend_mut(&mut self) -> GLWESecretBackendMut<'_, BE, Rg> {
         let n = self.inner.data.n();
         let cols = self.inner.data.cols();
         GLWESecret {
@@ -447,8 +468,8 @@ impl<BE: Backend> GLWESecretToBackendMut<BE> for GLWESecretViewMut<'_, BE> {
     }
 }
 
-impl<BE: Backend> GLWESecretTensorToBackendRef<BE> for GLWESecretTensorViewMut<'_, BE> {
-    fn to_backend_ref(&self) -> GLWESecretTensorBackendRef<'_, BE> {
+impl<BE: Backend, Rg: Ring> GLWESecretTensorToBackendRef<BE, Rg> for GLWESecretTensorViewMut<'_, BE, Rg> {
+    fn to_backend_ref(&self) -> GLWESecretTensorBackendRef<'_, BE, Rg> {
         GLWESecretTensor {
             dist: self.inner.dist,
             rank: self.inner.rank,
@@ -461,8 +482,8 @@ impl<BE: Backend> GLWESecretTensorToBackendRef<BE> for GLWESecretTensorViewMut<'
     }
 }
 
-impl<BE: Backend> GLWESecretTensorToBackendMut<BE> for GLWESecretTensorViewMut<'_, BE> {
-    fn to_backend_mut(&mut self) -> GLWESecretTensorBackendMut<'_, BE> {
+impl<BE: Backend, Rg: Ring> GLWESecretTensorToBackendMut<BE, Rg> for GLWESecretTensorViewMut<'_, BE, Rg> {
+    fn to_backend_mut(&mut self) -> GLWESecretTensorBackendMut<'_, BE, Rg> {
         let n = self.inner.data.n();
         let cols = self.inner.data.cols();
         GLWESecretTensor {
@@ -473,8 +494,8 @@ impl<BE: Backend> GLWESecretTensorToBackendMut<BE> for GLWESecretTensorViewMut<'
     }
 }
 
-impl<BE: Backend> GLWESecretPreparedToBackendRef<BE> for GLWESecretPreparedViewMut<'_, BE> {
-    fn to_backend_ref(&self) -> GLWESecretPreparedBackendRef<'_, BE> {
+impl<BE: Backend, Rg: Ring> GLWESecretPreparedToBackendRef<BE, Rg> for GLWESecretPreparedViewMut<'_, BE, Rg> {
+    fn to_backend_ref(&self) -> GLWESecretPreparedBackendRef<'_, BE, Rg> {
         GLWESecretPrepared {
             dist: self.inner.dist,
             data: self.inner.data.reborrow_backend_ref(),
@@ -482,8 +503,8 @@ impl<BE: Backend> GLWESecretPreparedToBackendRef<BE> for GLWESecretPreparedViewM
     }
 }
 
-impl<BE: Backend> GLWESecretPreparedToBackendMut<BE> for GLWESecretPreparedViewMut<'_, BE> {
-    fn to_backend_mut(&mut self) -> GLWESecretPreparedBackendMut<'_, BE> {
+impl<BE: Backend, Rg: Ring> GLWESecretPreparedToBackendMut<BE, Rg> for GLWESecretPreparedViewMut<'_, BE, Rg> {
+    fn to_backend_mut(&mut self) -> GLWESecretPreparedBackendMut<'_, BE, Rg> {
         GLWESecretPrepared {
             dist: self.inner.dist,
             data: self.inner.data.reborrow_backend_mut(),
@@ -491,25 +512,25 @@ impl<BE: Backend> GLWESecretPreparedToBackendMut<BE> for GLWESecretPreparedViewM
     }
 }
 
-impl<BE: Backend> GGLWEToBackendRef<BE> for GGLWEViewMut<'_, BE> {
-    fn to_backend_ref(&self) -> GGLWEBackendRef<'_, BE> {
+impl<BE: Backend, Rg: Ring> GGLWEToBackendRef<BE, Rg> for GGLWEViewMut<'_, BE, Rg> {
+    fn to_backend_ref(&self) -> GGLWEBackendRef<'_, BE, Rg> {
         GGLWEBackendRef::from_inner(GGLWE {
             noise: crate::layouts::LWEInfos::noise(&self.inner),
             base2k: self.inner.base2k,
             k_aux: self.inner.k_aux,
             k_digit: self.inner.k_digit,
             k_offset: self.inner.k_offset,
-            data: mat_znx_backend_ref_from_mut::<BE>(&self.inner.data),
+            data: mat_znx_backend_ref_from_mut::<BE, Rg>(&self.inner.data),
         })
     }
 }
 
-impl<BE: Backend> GGLWEToBackendMut<BE> for GGLWEViewMut<'_, BE> {
+impl<BE: Backend, Rg: Ring> GGLWEToBackendMut<BE, Rg> for GGLWEViewMut<'_, BE, Rg> {
     fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
         self.inner.noise = crate::layouts::checked_noise(metadata, self.inner.data.cols_out());
     }
 
-    fn to_backend_mut(&mut self) -> GGLWEBackendMut<'_, BE> {
+    fn to_backend_mut(&mut self) -> GGLWEBackendMut<'_, BE, Rg> {
         self.inner.noise = None;
         GGLWEBackendMut::from_inner(GGLWE {
             noise: None,
@@ -517,13 +538,13 @@ impl<BE: Backend> GGLWEToBackendMut<BE> for GGLWEViewMut<'_, BE> {
             k_aux: self.inner.k_aux,
             k_digit: self.inner.k_digit,
             k_offset: self.inner.k_offset,
-            data: mat_znx_backend_mut_from_mut::<BE>(&mut self.inner.data),
+            data: mat_znx_backend_mut_from_mut::<BE, Rg>(&mut self.inner.data),
         })
     }
 }
 
-impl<BE: Backend> GGLWEPreparedToBackendRef<BE> for GGLWEPreparedViewMut<'_, BE> {
-    fn to_backend_ref(&self) -> GGLWEPreparedBackendRef<'_, BE> {
+impl<BE: Backend, Rg: Ring> GGLWEPreparedToBackendRef<BE, Rg> for GGLWEPreparedViewMut<'_, BE, Rg> {
+    fn to_backend_ref(&self) -> GGLWEPreparedBackendRef<'_, BE, Rg> {
         GGLWEPrepared {
             noise: crate::layouts::LWEInfos::noise(&self.inner),
             base2k: self.inner.base2k,
@@ -537,12 +558,12 @@ impl<BE: Backend> GGLWEPreparedToBackendRef<BE> for GGLWEPreparedViewMut<'_, BE>
     }
 }
 
-impl<BE: Backend> GGLWEPreparedToBackendMut<BE> for GGLWEPreparedViewMut<'_, BE> {
+impl<BE: Backend, Rg: Ring> GGLWEPreparedToBackendMut<BE, Rg> for GGLWEPreparedViewMut<'_, BE, Rg> {
     fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
         self.inner.noise = crate::layouts::checked_noise(metadata, self.inner.data.cols_out());
     }
 
-    fn to_backend_mut(&mut self) -> GGLWEPreparedBackendMut<'_, BE> {
+    fn to_backend_mut(&mut self) -> GGLWEPreparedBackendMut<'_, BE, Rg> {
         self.inner.noise = None;
         GGLWEPrepared {
             noise: None,
@@ -557,37 +578,37 @@ impl<BE: Backend> GGLWEPreparedToBackendMut<BE> for GGLWEPreparedViewMut<'_, BE>
     }
 }
 
-impl<BE: Backend> GGSWToBackendRef<BE> for GGSWViewMut<'_, BE> {
-    fn to_backend_ref(&self) -> GGSWBackendRef<'_, BE> {
+impl<BE: Backend, Rg: Ring> GGSWToBackendRef<BE, Rg> for GGSWViewMut<'_, BE, Rg> {
+    fn to_backend_ref(&self) -> GGSWBackendRef<'_, BE, Rg> {
         GGSWBackendRef::from_inner(GGSW {
             noise: crate::layouts::LWEInfos::noise(&self.inner),
             base2k: self.inner.base2k,
             k_aux: self.inner.k_aux,
             k_digit: self.inner.k_digit,
-            data: mat_znx_backend_ref_from_mut::<BE>(&self.inner.data),
+            data: mat_znx_backend_ref_from_mut::<BE, Rg>(&self.inner.data),
         })
     }
 }
 
-impl<BE: Backend> GGSWToBackendMut<BE> for GGSWViewMut<'_, BE> {
+impl<BE: Backend, Rg: Ring> GGSWToBackendMut<BE, Rg> for GGSWViewMut<'_, BE, Rg> {
     fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
         self.inner.noise = crate::layouts::checked_noise(metadata, self.inner.data.cols_out());
     }
 
-    fn to_backend_mut(&mut self) -> GGSWBackendMut<'_, BE> {
+    fn to_backend_mut(&mut self) -> GGSWBackendMut<'_, BE, Rg> {
         self.inner.noise = None;
         GGSWBackendMut::from_inner(GGSW {
             noise: None,
             base2k: self.inner.base2k,
             k_aux: self.inner.k_aux,
             k_digit: self.inner.k_digit,
-            data: mat_znx_backend_mut_from_mut::<BE>(&mut self.inner.data),
+            data: mat_znx_backend_mut_from_mut::<BE, Rg>(&mut self.inner.data),
         })
     }
 }
 
-impl<BE: Backend> GGSWPreparedToBackendRef<BE> for GGSWPreparedViewMut<'_, BE> {
-    fn to_backend_ref(&self) -> GGSWPreparedBackendRef<'_, BE> {
+impl<BE: Backend, Rg: Ring> GGSWPreparedToBackendRef<BE, Rg> for GGSWPreparedViewMut<'_, BE, Rg> {
+    fn to_backend_ref(&self) -> GGSWPreparedBackendRef<'_, BE, Rg> {
         GGSWPrepared {
             noise: crate::layouts::LWEInfos::noise(&self.inner),
             base2k: self.inner.base2k,
@@ -598,12 +619,12 @@ impl<BE: Backend> GGSWPreparedToBackendRef<BE> for GGSWPreparedViewMut<'_, BE> {
     }
 }
 
-impl<BE: Backend> GGSWPreparedToBackendMut<BE> for GGSWPreparedViewMut<'_, BE> {
+impl<BE: Backend, Rg: Ring> GGSWPreparedToBackendMut<BE, Rg> for GGSWPreparedViewMut<'_, BE, Rg> {
     fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
         self.inner.noise = crate::layouts::checked_noise(metadata, self.inner.data.cols_out());
     }
 
-    fn to_backend_mut(&mut self) -> GGSWPreparedBackendMut<'_, BE> {
+    fn to_backend_mut(&mut self) -> GGSWPreparedBackendMut<'_, BE, Rg> {
         self.inner.noise = None;
         GGSWPrepared {
             noise: None,

@@ -15,7 +15,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::ModuleN,
-    layouts::{CyclotomicOrder, Module, ScratchArena, galois_element},
+    layouts::{CyclotomicOrder, Module, ScratchArena, Standard, galois_element},
 };
 
 use crate::{
@@ -148,7 +148,7 @@ where
     M: CyclotomicOrder,
     H: GetAutomorphismKey<BE>,
 {
-    keys.get_automorphism_key(galois_element(rotation, module.cyclotomic_order()), k)
+    keys.get_automorphism_key(galois_element(rotation, module.cyclotomic_order::<Standard>()), k)
         .map_err(|source| {
             CKKSCompositionError::MissingAutomorphismKey {
                 op,

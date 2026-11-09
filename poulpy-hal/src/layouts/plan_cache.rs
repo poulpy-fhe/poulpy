@@ -18,13 +18,16 @@ use anyhow::Result;
 /// A heterogeneous cache of immutable plan families.
 ///
 /// One entry should normally contain the complete geometric family for a
-/// concrete logical plan key, rather than one entry per ring dimension. The
-/// key and stored value are separate type parameters: callers can give a
-/// stable identity to a service even if its concrete plan representation
-/// changes. Access is closure-based so callers borrow the cached value while
-/// the cache itself is borrowed; no reference counting is required. The
-/// erased entries are boxed only to keep their addresses stable when the map
-/// grows, allowing the map lock to be released before initialization or use.
+/// concrete logical plan key, covering every degree of one ring rather than one
+/// entry per degree. The module serves both rings, so the key of a plan family
+/// that depends on the ring takes it as a type parameter, one entry per
+/// [`Ring`](crate::layouts::Ring). The key and stored value are separate type
+/// parameters: callers can give a stable identity to a service even if its
+/// concrete plan representation changes. Access is closure-based so callers
+/// borrow the cached value while the cache itself is borrowed; no reference
+/// counting is required. The erased entries are boxed only to keep their
+/// addresses stable when the map grows, allowing the map lock to be released
+/// before initialization or use.
 #[derive(Default)]
 pub struct ModulePlanCache {
     plans: RwLock<HashMap<TypeId, Box<dyn Any + Send + Sync>>>,

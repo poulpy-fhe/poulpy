@@ -1,6 +1,6 @@
 use poulpy_ckks::CKKSResult as Result;
 use poulpy_core::layouts::{GGLWEInfos, GetAutomorphismKey};
-use poulpy_hal::layouts::{Backend, ScratchArena};
+use poulpy_hal::layouts::{Backend, Ring, ScratchArena, Standard};
 
 use crate::layouts::{BlasGrid, BlasGridInfos, BlasGridMut};
 
@@ -12,7 +12,7 @@ use crate::layouts::{BlasGrid, BlasGridInfos, BlasGridMut};
 /// ([`grid_batch`](crate::layouts::grid_batch)). A copy is poulpy-ckks's `ckks_copy`: it keeps the canonical flag of
 /// `a` when `res.k >= a.k` and `res` has room for every limb of a non-canonical `a`, and otherwise normalizes, which
 /// sets it.
-pub trait BlasMatInterOps<BE: Backend> {
+pub trait BlasMatInterOps<BE: Backend, Rg: Ring = Standard> {
     /// Scratch bytes [`Self::blas_rotate`] needs into `res` from `a` with rotation keys of layout `keys`.
     ///
     /// # Panics
@@ -53,9 +53,9 @@ pub trait BlasMatInterOps<BE: Backend> {
     /// - Any other `Err` is a backend fault (a validator gap or a device failure), and `res` is then unspecified.
     fn blas_rotate<R, A, K>(&self, r: i64, res: &mut R, a: &A, keys: &K, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        R: BlasGridMut<BE>,
-        A: BlasGrid<BE>,
-        K: GetAutomorphismKey<BE> + Sync;
+        R: BlasGridMut<BE, Rg>,
+        A: BlasGrid<BE, Rg>,
+        K: GetAutomorphismKey<BE, Rg> + Sync;
 
     /// Scratch bytes [`Self::blas_sum`] needs into `res` from `a` with rotation keys of layout `keys`.
     ///
@@ -97,7 +97,7 @@ pub trait BlasMatInterOps<BE: Backend> {
     /// - Any other `Err` is a backend fault (a validator gap or a device failure), and `res` is then unspecified.
     fn blas_sum<R, A, K>(&self, res: &mut R, a: &A, keys: &K, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        R: BlasGridMut<BE>,
-        A: BlasGrid<BE>,
-        K: GetAutomorphismKey<BE> + Sync;
+        R: BlasGridMut<BE, Rg>,
+        A: BlasGrid<BE, Rg>,
+        K: GetAutomorphismKey<BE, Rg> + Sync;
 }

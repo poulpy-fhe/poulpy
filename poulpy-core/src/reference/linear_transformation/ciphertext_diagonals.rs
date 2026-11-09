@@ -13,7 +13,7 @@ use poulpy_hal::{
         ModuleN, ScratchArenaTakeVecZnxDft, VecZnxDftApply, VecZnxDftBytesOf, VecZnxGadgetDecompose,
         VecZnxGadgetDecomposeTmpBytes, VecZnxIdftNormalize, VecZnxIdftNormalizeTmpBytes,
     },
-    layouts::{Backend, Module, ScratchArena, VecZnxDftBackendMut},
+    layouts::{Backend, Module, Ring, ScratchArena, Standard, VecZnxDftBackendMut},
 };
 
 use crate::{
@@ -38,25 +38,25 @@ use crate::{
 
 /// The products of the transforms `lts` from the baby caches `babies`, into a result of the layout `res`: giant step
 /// `g`'s is the dot product of the baby rotations of every term by its diagonals of giant step `g`.
-pub(super) struct CiphertextProducts<'a, BE: Backend, P, L> {
-    babies: &'a [&'a LinearTransformationBabySteps<BE, L>],
+pub(super) struct CiphertextProducts<'a, BE: Backend, P, L, Rg: Ring = Standard> {
+    babies: &'a [&'a LinearTransformationBabySteps<BE, Rg, L>],
     lts: &'a [&'a LinearTransformation<P>],
     diagonal: &'a P,
-    tsk: GLWETensorKeyPreparedBackendRef<'a, BE>,
+    tsk: GLWETensorKeyPreparedBackendRef<'a, BE, Rg>,
     res: GLWELayout,
     tensor: GLWELayout,
     cnv_offset: usize,
     shape: OnePassShape,
 }
 
-impl<'a, BE, P, L> CiphertextProducts<'a, BE, P, L>
+impl<'a, BE, P, L, Rg: Ring> CiphertextProducts<'a, BE, P, L, Rg>
 where
     BE: Backend,
-    P: GLWEDiagonalProd<BE>,
-    L: BabyStepOperand<BE>,
+    P: GLWEDiagonalProd<BE, Rg>,
+    L: BabyStepOperand<BE, Rg>,
 {
-    pub(super) fn new<T: GetTensorKey<BE>>(
-        babies: &'a [&'a LinearTransformationBabySteps<BE, L>],
+    pub(super) fn new<T: GetTensorKey<BE, Rg>>(
+        babies: &'a [&'a LinearTransformationBabySteps<BE, Rg, L>],
         lts: &'a [&'a LinearTransformation<P>],
         tsk_source: &'a T,
         res: GLWELayout,
@@ -117,20 +117,20 @@ where
     }
 }
 
-impl<BE, P, L> GiantProducts<BE> for CiphertextProducts<'_, BE, P, L>
+impl<BE, P, L, Rg: Ring> GiantProducts<BE, Rg> for CiphertextProducts<'_, BE, P, L, Rg>
 where
-    BE: GLWETensoringImpl + GGLWEProductDigitsStridedImpl,
-    Module<BE>: GLWETensoringReference<BE>
+    BE: GLWETensoringImpl<Rg> + GGLWEProductDigitsStridedImpl<Rg>,
+    Module<BE>: GLWETensoringReference<BE, Rg>
         + GLWEBytesOf<BE>
         + VecZnxDftBytesOf
-        + VecZnxIdftNormalize<BE>
+        + VecZnxIdftNormalize<BE, Rg>
         + VecZnxIdftNormalizeTmpBytes
-        + VecZnxDftApply<BE>
-        + GGLWEProductReference<BE>
-        + VecZnxGadgetDecompose<BE>
+        + VecZnxDftApply<BE, Rg>
+        + GGLWEProductReference<BE, Rg>
+        + VecZnxGadgetDecompose<BE, Rg>
         + VecZnxGadgetDecomposeTmpBytes,
-    P: GLWEDiagonalProd<BE>,
-    L: BabyStepOperand<BE>,
+    P: GLWEDiagonalProd<BE, Rg>,
+    L: BabyStepOperand<BE, Rg>,
 {
     fn size(&self) -> usize {
         self.shape.dft_out_size(self.res.size())
@@ -168,7 +168,7 @@ where
     fn products(
         &self,
         module: &Module<BE>,
-        prods: &mut [VecZnxDftBackendMut<'_, BE>],
+        prods: &mut [VecZnxDftBackendMut<'_, BE, Rg>],
         steps: core::ops::Range<usize>,
         scratch: &mut ScratchArena<'_, BE>,
     ) {
@@ -226,10 +226,10 @@ where
 }
 
 /// The tensor key looked up once, the source of every product.
-struct Resolved<'k, 'a, BE: Backend + 'a>(&'k GLWETensorKeyPreparedBackendRef<'a, BE>);
+struct Resolved<'k, 'a, BE: Backend + 'a, Rg: Ring = Standard>(&'k GLWETensorKeyPreparedBackendRef<'a, BE, Rg>);
 
-impl<'a, BE: Backend + 'a> GetTensorKey<BE> for Resolved<'_, 'a, BE> {
-    fn lookup_tensor_key(&self, _k: TorusPrecision) -> crate::Result<GLWETensorKeyPreparedBackendRef<'_, BE>> {
+impl<'a, BE: Backend + 'a, Rg: Ring> GetTensorKey<BE, Rg> for Resolved<'_, 'a, BE, Rg> {
+    fn lookup_tensor_key(&self, _k: TorusPrecision) -> crate::Result<GLWETensorKeyPreparedBackendRef<'_, BE, Rg>> {
         Ok(GLWETensorKeyPrepared(GGLWEPreparedToBackendRef::to_backend_ref(&self.0)))
     }
 }
@@ -237,7 +237,7 @@ impl<'a, BE: Backend + 'a> GetTensorKey<BE> for Resolved<'_, 'a, BE> {
 /// Bytes the product of a giant step of [`CiphertextProducts`] takes beside it, into a result of the layout `res`
 /// from babies of `a_size` limbs and diagonals of `b_size` limbs through a tensor of width `tensor_k`: the result, the
 /// tensor columns in DFT and the larger of the baby-step kernel and the relinearization of either route.
-pub(super) fn ciphertext_products_tmp_bytes<BE, R, K>(
+pub(super) fn ciphertext_products_tmp_bytes<BE, R, K, Rg: Ring>(
     module: &Module<BE>,
     res: &R,
     a_size: usize,
@@ -246,7 +246,7 @@ pub(super) fn ciphertext_products_tmp_bytes<BE, R, K>(
     tsk: &K,
 ) -> usize
 where
-    BE: GLWETensoringImpl + GGLWEProductDigitsStridedImpl,
+    BE: GLWETensoringImpl<Rg> + GGLWEProductDigitsStridedImpl<Rg>,
     Module<BE>: ModuleN + GLWEBytesOf<BE> + VecZnxDftBytesOf + VecZnxIdftNormalizeTmpBytes + VecZnxGadgetDecomposeTmpBytes,
     R: GLWEInfos,
     K: GGLWEInfos,

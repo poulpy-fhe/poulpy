@@ -42,10 +42,6 @@
 //! - `DftWord = CrtWord<Primes30, u32>` — NTT-domain coefficients (4 × u32, 16 bytes/coeff).
 //! - `BigWord  = i128` — CRT-reconstructed large coefficients.
 
-use std::marker::PhantomData;
-
-use poulpy_hal::layouts::{Ring, Standard};
-
 pub(crate) mod arithmetic_avx512;
 mod conjugate_invariant;
 pub(crate) mod convolution;
@@ -84,12 +80,12 @@ mod znx;
 ///
 /// `NTT4x30Avx512` is `Send + Sync` (derived from being a zero-sized, field-less struct).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct NTT4x30Avx512<R: Ring = Standard>(PhantomData<R>);
+pub struct NTT4x30Avx512;
 
 /// Rayon-scheduled AVX-512F NTT4x30 backend.
 #[cfg(feature = "enable-rayon")]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
-pub struct NTT4x30Avx512Rayon<R: Ring = Standard>(PhantomData<R>);
+pub struct NTT4x30Avx512Rayon;
 
 #[cfg(all(test, feature = "enable-rayon"))]
 mod rayon_tests;

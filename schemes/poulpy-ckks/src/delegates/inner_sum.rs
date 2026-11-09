@@ -1,10 +1,10 @@
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::{Degree, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey};
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Module, Ring, ScratchArena};
 
 use crate::{CKKSCtBounds, SetCKKSInfos, api::CKKSInnerSumOps, oep::CKKSInnerSumImpl};
 
-impl<BE: Backend + CKKSInnerSumImpl> CKKSInnerSumOps<BE> for Module<BE> {
+impl<BE: Backend + CKKSInnerSumImpl<Rg>, Rg: Ring> CKKSInnerSumOps<BE, Rg> for Module<BE> {
     fn ckks_inner_sum_galois_elements(&self, n: Degree, log_batch: usize, log_count: usize) -> Vec<i64> {
         BE::ckks_inner_sum_galois_elements(self, n, log_batch, log_count)
     }
@@ -33,9 +33,9 @@ impl<BE: Backend + CKKSInnerSumImpl> CKKSInnerSumOps<BE> for Module<BE> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        H: GetAutomorphismKey<BE>,
+        R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        H: GetAutomorphismKey<BE, Rg>,
     {
         BE::ckks_inner_sum(self, log_batch, log_count, normalize, res, a, keys, scratch)
     }
@@ -50,8 +50,8 @@ impl<BE: Backend + CKKSInnerSumImpl> CKKSInnerSumOps<BE> for Module<BE> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        H: GetAutomorphismKey<BE>,
+        R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        H: GetAutomorphismKey<BE, Rg>,
     {
         BE::ckks_inner_sum_assign(self, log_batch, log_count, normalize, res, keys, scratch)
     }
@@ -66,9 +66,9 @@ impl<BE: Backend + CKKSInnerSumImpl> CKKSInnerSumOps<BE> for Module<BE> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        H: GetAutomorphismKey<BE>,
+        R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        H: GetAutomorphismKey<BE, Rg>,
     {
         BE::ckks_replicate(self, log_batch, log_count, res, a, keys, scratch)
     }
@@ -82,8 +82,8 @@ impl<BE: Backend + CKKSInnerSumImpl> CKKSInnerSumOps<BE> for Module<BE> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        H: GetAutomorphismKey<BE>,
+        R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        H: GetAutomorphismKey<BE, Rg>,
     {
         BE::ckks_replicate_assign(self, log_batch, log_count, res, keys, scratch)
     }

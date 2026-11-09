@@ -28,9 +28,8 @@ the caller owns scheme arithmetic and precision, while the derived schedule
 chooses the order of those calls.
 
 `impl_core_reference_full!` selects the available reference algorithms and
-derived defaults, except sampling and the monomial families (LWE conversion,
-packing, GLWE/GGSW rotate, `mul_xp_minus_one`), which bound `Backend<Ring = Standard>`
-and register on standard backends only. Use individual family macros when replacing
+derived defaults, except sampling and the families without a ring parameter
+([Rings](#rings)). Use individual family macros when replacing
 a family, so its `*Impl` is defined only once. Sampling is supplied through
 the mandatory `SamplingImpl`, including full-width flooding.
 Preparation, decompression and the secret operations dispatch through
@@ -58,6 +57,20 @@ ciphertexts by prepared plaintexts, each plaintext read through an odd Galois el
 element `1` must equal `glwe_mul_plain` of the sources, bit for bit, whatever
 `PrepareHint` each operand was prepared under. It checks its operands against `res`
 before writing it.
+
+## Rings
+
+Every core family takes the operand ring as its trait parameter
+(`GLWEKeyswitchImpl<Rg>`, `SamplingImpl<Rg>`) and is selected per ring, as the
+[layering contract](../../docs/guides/layering-contract.md#selecting-an-implementation)
+states, except the standard-only families (LWE conversion, packing, GLWE/GGSW
+rotate, `mul_xp_minus_one`) and `GLWECIConversionImpl` (the conjugate-invariant
+conversions, one standard and one conjugate-invariant operand, and the standard
+degree switch), which carry no ring parameter and whose macros a backend registers once.
+
+Inside a hand-written `GGLWEProductDigitsStridedImpl<Rg>`,
+`impl_gglwe_product_digits_strided_reference!($ring)` forwards the step hooks it does not
+override, `$ring` naming the ring of the enclosing impl (`Rg` in a ring-generic one).
 
 ## Matching the result
 
@@ -270,6 +283,16 @@ with `backend_test` in `core_parity_test_suite!` or
 `core_encryption_parity_test_suite!`.
 A validated backend can bootstrap another: parity is transitive for the
 operations and parameter ranges covered by the tests.
+
+`core_parity_test_suite!` runs its entries on the standard ring unless given
+`ring = ::poulpy_hal::layouts::ConjugateInvariant`, which registers the same entries on the
+conjugate-invariant ring; `core_backend_test_suite!` and encryption parity run on
+the standard ring. A `core_parity_test_suite!` entry of `tests` is the path of a
+suite function generic over the two backends then the ring, called as
+`test_glwe_keyswitch_parity::<BR, BT, Rg>`, and an entry of `ring_free_tests`
+that of a test of standard-only or cross-ring operations, or of one fixing the
+standard ring, which takes no ring:
+`test_glwe_rotate_parity::<BR, BT>`.
 
 Encryption parity requires identical sampled inputs. Backends with matching
 random streams can be compared directly; otherwise use the optional

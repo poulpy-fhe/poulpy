@@ -15,7 +15,7 @@ use poulpy_hal::{
     api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAddScalarAssign, VecZnxAutomorphism},
     layouts::{
         GaloisElement, HostBackend, HostDataMut, HostDataRef, Module, ScalarZnxAsVecZnxBackendMut, ScalarZnxAsVecZnxBackendRef,
-        ScratchOwned,
+        ScratchOwned, Standard,
     },
     source::Source,
 };
@@ -229,7 +229,7 @@ where
         let src = ScalarZnxAsVecZnxBackendRef::<BE>::as_vec_znx_backend(sk.data());
         let mut dst = ScalarZnxAsVecZnxBackendMut::<BE>::as_vec_znx_backend_mut(sigma.data_mut());
         for col in 0..sk.rank().as_usize() {
-            module.vec_znx_automorphism(module.galois_element_inv(p), &mut dst, col, &src, col);
+            module.vec_znx_automorphism(module.galois_element_inv::<Standard>(p), &mut dst, col, &src, col);
         }
     }
     let mut prepared: GLWESecretPrepared<AlignedBuf, BE> = module.glwe_secret_prepared_alloc(sk.rank());

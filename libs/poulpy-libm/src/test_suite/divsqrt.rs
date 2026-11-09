@@ -27,9 +27,9 @@ use super::helpers::{assert_precision_bits, params_for_with_headroom, sample_uni
 
 pub fn test_div<BE, F, E>(base: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     Module<BE>: TestContextModule<BE> + CKKSDivSqrtOps<BE>,
-    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>:
+    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, Standard>:
         GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
@@ -48,7 +48,7 @@ where
     let want: Vec<F> = a.iter().zip(&b).map(|(&av, &bv)| av / bv).collect();
 
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
-    let mut sizing = module.ckks_ciphertext_alloc(params.base2k.into(), params.k.into());
+    let mut sizing = module.ckks_ciphertext_alloc::<Standard>(params.base2k.into(), params.k.into());
     sizing.set_meta(params.prec().meta);
     let size = module
         .ckks_div_tmp_bytes(&sizing, &sizing, &sizing, &params.tsk_layout())
@@ -88,15 +88,15 @@ where
     assert_eq!(res.log_delta(), log_delta, "div: log_delta preserved");
     assert_eq!(input_budget - res.log_budget(), (iters + 2) * log_delta);
 
-    let (re_out, _) = ckks_decrypt_decode::<BE, F, E>(&params, module, &encoder, &res, &sk, &mut scratch.borrow());
+    let (re_out, _) = ckks_decrypt_decode::<BE, F, E, Standard>(&params, module, &encoder, &res, &sk, &mut scratch.borrow());
     assert_precision_bits("div", &re_out, &want, log_delta as f64 - 12.0, params.n);
 }
 
 pub fn test_sqrt<BE, F, E>(base: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     Module<BE>: TestContextModule<BE> + CKKSDivSqrtOps<BE>,
-    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>:
+    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, Standard>:
         GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
@@ -115,7 +115,7 @@ where
     let want: Vec<F> = x.iter().map(|&v| v.sqrt()).collect();
 
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
-    let mut sizing = module.ckks_ciphertext_alloc(params.base2k.into(), params.k.into());
+    let mut sizing = module.ckks_ciphertext_alloc::<Standard>(params.base2k.into(), params.k.into());
     sizing.set_meta(params.prec().meta);
     let size = module
         .ckks_div_tmp_bytes(&sizing, &sizing, &sizing, &params.tsk_layout())
@@ -155,6 +155,6 @@ where
     assert_eq!(res.log_delta(), log_delta, "sqrt: log_delta preserved");
     assert_eq!(input_budget - res.log_budget(), (2 * r + 1) * log_delta);
 
-    let (re_out, _) = ckks_decrypt_decode::<BE, F, E>(&params, module, &encoder, &res, &sk, &mut scratch.borrow());
+    let (re_out, _) = ckks_decrypt_decode::<BE, F, E, Standard>(&params, module, &encoder, &res, &sk, &mut scratch.borrow());
     assert_precision_bits("sqrt", &re_out, &want, log_delta as f64 - 15.0, params.n);
 }

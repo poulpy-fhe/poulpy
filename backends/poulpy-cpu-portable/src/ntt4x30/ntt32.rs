@@ -693,12 +693,12 @@ pub(crate) fn intt32_compact<E: TaskExecutor>(table: &Ntt32Table, slot: &mut [u3
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::NTT4x30Portable;
     use crate::kernels::ntt4x30::{
         NttDFTExecute, NttFromZnx64, NttToZnx128,
         ntt::{NttTable, NttTableInv},
         vec_znx_dft::{NttPlan, NttPlanNew},
     };
-    use crate::{NTT4x30CIPortable, NTT4x30Portable};
     use poulpy_hal::layouts::{ConjugateInvariant, Ring, Standard};
     use rand::{RngExt, SeedableRng, rngs::StdRng};
 
@@ -715,17 +715,17 @@ mod tests {
     }
 
     /// The packed transforms against the q120 kernels, residue by residue.
-    fn matches_q120<R: Ring, BE>(conjugate_invariant: bool)
+    fn matches_q120<Rg: Ring, BE>(conjugate_invariant: bool)
     where
-        BE: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>> + NttFromZnx64 + NttToZnx128,
-        NttPlan<Primes30, R>: NttPlanNew,
+        BE: NttDFTExecute<NttTable<Primes30, Rg>> + NttDFTExecute<NttTableInv<Primes30, Rg>> + NttFromZnx64 + NttToZnx128,
+        NttPlan<Primes30, Rg>: NttPlanNew,
     {
         let mut rng = StdRng::seed_from_u64(3);
         for log_n in LOG_N {
             let n = 1 << log_n;
             let table = Ntt32Table::new(n, conjugate_invariant);
             assert_eq!(table.n(), n);
-            let plan = <NttPlan<Primes30, R> as NttPlanNew>::new(n);
+            let plan = <NttPlan<Primes30, Rg> as NttPlanNew>::new(n);
             let (fwd, inv) = (plan.ntt(), plan.intt());
             let src = source(n, &mut rng);
             let mut wide = vec![0u64; 4 * n];
@@ -783,6 +783,6 @@ mod tests {
 
     #[test]
     fn matches_q120_conjugate_invariant() {
-        matches_q120::<ConjugateInvariant, NTT4x30CIPortable>(true);
+        matches_q120::<ConjugateInvariant, NTT4x30Portable>(true);
     }
 }

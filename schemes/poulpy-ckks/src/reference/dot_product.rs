@@ -10,7 +10,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::{VecZnxIdftNormalize, VecZnxIdftNormalizeTmpBytes},
-    layouts::{Backend, Module, ScratchArena, VecZnxDftBackendMut},
+    layouts::{Backend, Module, Ring, ScratchArena, Standard, VecZnxDftBackendMut},
 };
 
 use crate::{
@@ -25,17 +25,17 @@ use crate::{
 
 /// The reference algorithms of [`CKKSDotProductImpl`](crate::oep::CKKSDotProductImpl), which
 /// `impl_ckks_dot_product_reference_full!` forwards to and an override can call for the methods it keeps.
-pub trait CKKSDotProductReference<BE: Backend>: Sized {
+pub trait CKKSDotProductReference<BE: Backend, Rg: Ring = Standard>: Sized {
     fn ckks_dot_product_ct_tmp_bytes_reference<R, A, B, T>(&self, n: usize, res: &R, a: &A, b: &B, tsk: &T) -> usize
     where
-        Self: CKKSMulOps<BE>
-            + CKKSAddOps<BE>
+        Self: CKKSMulOps<BE, Rg>
+            + CKKSAddOps<BE, Rg>
             + GLWEBytesOf<BE>
             + GLWETensorBytesOf<BE>
-            + GLWETensoring<BE>
-            + GLWEMulRelinearizeSum<BE>
-            + GLWEPreparedTensoring<BE>
-            + GLWENormalize<BE>,
+            + GLWETensoring<BE, Rg>
+            + GLWEMulRelinearizeSum<BE, Rg>
+            + GLWEPreparedTensoring<BE, Rg>
+            + GLWENormalize<BE, Rg>,
         R: CKKSCtBounds,
         A: CKKSCtBounds,
         B: CKKSCtBounds,
@@ -84,11 +84,16 @@ pub trait CKKSDotProductReference<BE: Backend>: Sized {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: CKKSMulOps<BE> + CKKSAddOps<BE> + GLWETensoring<BE> + GLWEMulRelinearizeSum<BE> + GLWEAdd<BE> + GLWENormalize<BE>,
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        B: GLWEToBackendRef<BE> + CKKSCtBounds,
-        H: GetTensorKey<BE>,
+        Self: CKKSMulOps<BE, Rg>
+            + CKKSAddOps<BE, Rg>
+            + GLWETensoring<BE, Rg>
+            + GLWEMulRelinearizeSum<BE, Rg>
+            + GLWEAdd<BE, Rg>
+            + GLWENormalize<BE, Rg>,
+        Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        B: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        H: GetTensorKey<BE, Rg>,
     {
         check_lengths("ckks_dot_product_ct", a.len(), b.len())?;
         let n: usize = a.len();
@@ -114,15 +119,15 @@ pub trait CKKSDotProductReference<BE: Backend>: Sized {
     fn ckks_dot_product_prepared_reference<Dst, H>(
         &self,
         dst: &mut Dst,
-        a: &[&CKKSLeftOperandPrepared<BE>],
-        b: &[&CKKSRightOperandPrepared<BE>],
+        a: &[&CKKSLeftOperandPrepared<BE, Rg>],
+        b: &[&CKKSRightOperandPrepared<BE, Rg>],
         tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: GLWEPreparedTensoring<BE> + GLWETensoring<BE> + GLWEAdd<BE> + GLWENormalize<BE>,
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        H: GetTensorKey<BE>,
+        Self: GLWEPreparedTensoring<BE, Rg> + GLWETensoring<BE, Rg> + GLWEAdd<BE, Rg> + GLWENormalize<BE, Rg>,
+        Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        H: GetTensorKey<BE, Rg>,
     {
         const OP: &str = "ckks_dot_product_prepared";
         check_lengths(OP, a.len(), b.len())?;
@@ -170,7 +175,7 @@ pub trait CKKSDotProductReference<BE: Backend>: Sized {
     /// Core's summed product's scratch, whatever the number of terms.
     fn ckks_dot_product_prepared_pt_vec_tmp_bytes_reference<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
     where
-        Self: GLWEMulPreparedPlainSum<BE>,
+        Self: GLWEMulPreparedPlainSum<BE, Rg>,
         R: CKKSCtBounds,
         A: GLWEInfos,
         P: GLWEInfos,
@@ -183,14 +188,14 @@ pub trait CKKSDotProductReference<BE: Backend>: Sized {
     fn ckks_dot_product_prepared_pt_vec_reference<Dst>(
         &self,
         dst: &mut Dst,
-        a: &[&CKKSLeftOperandPrepared<BE>],
-        b: &[&CKKSRightOperandPrepared<BE>],
+        a: &[&CKKSLeftOperandPrepared<BE, Rg>],
+        b: &[&CKKSRightOperandPrepared<BE, Rg>],
         galois: &[i64],
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: GLWEMulPreparedPlainSum<BE>,
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        Self: GLWEMulPreparedPlainSum<BE, Rg>,
+        Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
     {
         let (log_budget, log_delta, cnv_offset) = prepared_pt_rule("ckks_dot_product_prepared_pt_vec", &*dst, a, b, galois)?;
         let (a0, b0, base2k) = (a[0], b[0], dst.base2k());
@@ -215,7 +220,7 @@ pub trait CKKSDotProductReference<BE: Backend>: Sized {
     /// Core's `glwe_mul_prepared_plain_sum_add` query, whatever the number of terms.
     fn ckks_dot_product_prepared_pt_vec_add_tmp_bytes_reference<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
     where
-        Self: GLWEMulPreparedPlainSum<BE>,
+        Self: GLWEMulPreparedPlainSum<BE, Rg>,
         R: CKKSCtBounds,
         A: GLWEInfos,
         P: GLWEInfos,
@@ -229,14 +234,14 @@ pub trait CKKSDotProductReference<BE: Backend>: Sized {
     fn ckks_dot_product_prepared_pt_vec_add_reference<R>(
         &self,
         res: &mut R,
-        a: &[&CKKSLeftOperandPrepared<BE>],
-        b: &[&CKKSRightOperandPrepared<BE>],
+        a: &[&CKKSLeftOperandPrepared<BE, Rg>],
+        b: &[&CKKSRightOperandPrepared<BE, Rg>],
         galois: &[i64],
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: GLWEMulPreparedPlainSum<BE>,
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        Self: GLWEMulPreparedPlainSum<BE, Rg>,
+        R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
     {
         const OP: &str = "ckks_dot_product_prepared_pt_vec_add";
         let (log_budget, log_delta, cnv_offset) = prepared_pt_rule(OP, &*res, a, b, galois)?;
@@ -269,7 +274,7 @@ pub trait CKKSDotProductReference<BE: Backend>: Sized {
     /// Core's `glwe_mul_prepared_plain_sum_dft` query on an accumulator of `a.size() + b.size()` limbs.
     fn ckks_dot_product_prepared_pt_vec_dft_tmp_bytes_reference<R, A, P>(&self, _res: &R, a: &A, b: &P) -> usize
     where
-        Self: GLWEMulPreparedPlainSum<BE>,
+        Self: GLWEMulPreparedPlainSum<BE, Rg>,
         R: CKKSCtBounds,
         A: GLWEInfos,
         P: GLWEInfos,
@@ -281,15 +286,15 @@ pub trait CKKSDotProductReference<BE: Backend>: Sized {
     /// [`Self::ckks_dot_product_prepared_pt_vec_reference`] with `res` as the destination, then those of `acc`.
     fn ckks_dot_product_prepared_pt_vec_dft_reference<R>(
         &self,
-        acc: &mut VecZnxDftBackendMut<'_, BE>,
+        acc: &mut VecZnxDftBackendMut<'_, BE, Rg>,
         res: &R,
-        a: &[&CKKSLeftOperandPrepared<BE>],
-        b: &[&CKKSRightOperandPrepared<BE>],
+        a: &[&CKKSLeftOperandPrepared<BE, Rg>],
+        b: &[&CKKSRightOperandPrepared<BE, Rg>],
         galois: &[i64],
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: GLWEMulPreparedPlainSum<BE>,
+        Self: GLWEMulPreparedPlainSum<BE, Rg>,
         R: CKKSCtBounds,
     {
         const OP: &str = "ckks_dot_product_prepared_pt_vec_dft";
@@ -303,7 +308,7 @@ pub trait CKKSDotProductReference<BE: Backend>: Sized {
     /// Core's `glwe_mul_prepared_plain_sum_dft_add` query on an accumulator of `a.size() + b.size()` limbs.
     fn ckks_dot_product_prepared_pt_vec_dft_add_tmp_bytes_reference<R, A, P>(&self, _res: &R, a: &A, b: &P) -> usize
     where
-        Self: GLWEMulPreparedPlainSum<BE>,
+        Self: GLWEMulPreparedPlainSum<BE, Rg>,
         R: CKKSCtBounds,
         A: GLWEInfos,
         P: GLWEInfos,
@@ -315,15 +320,15 @@ pub trait CKKSDotProductReference<BE: Backend>: Sized {
     /// [`Self::ckks_dot_product_prepared_pt_vec_dft_reference`].
     fn ckks_dot_product_prepared_pt_vec_dft_add_reference<R>(
         &self,
-        acc: &mut VecZnxDftBackendMut<'_, BE>,
+        acc: &mut VecZnxDftBackendMut<'_, BE, Rg>,
         res: &R,
-        a: &[&CKKSLeftOperandPrepared<BE>],
-        b: &[&CKKSRightOperandPrepared<BE>],
+        a: &[&CKKSLeftOperandPrepared<BE, Rg>],
+        b: &[&CKKSRightOperandPrepared<BE, Rg>],
         galois: &[i64],
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: GLWEMulPreparedPlainSum<BE>,
+        Self: GLWEMulPreparedPlainSum<BE, Rg>,
         R: CKKSCtBounds,
     {
         const OP: &str = "ckks_dot_product_prepared_pt_vec_dft_add";
@@ -350,14 +355,14 @@ pub trait CKKSDotProductReference<BE: Backend>: Sized {
     fn ckks_dot_product_prepared_pt_vec_from_dft_reference<Dst>(
         &self,
         res: &mut Dst,
-        acc: &mut VecZnxDftBackendMut<'_, BE>,
-        a: &CKKSLeftOperandPrepared<BE>,
-        b: &CKKSRightOperandPrepared<BE>,
+        acc: &mut VecZnxDftBackendMut<'_, BE, Rg>,
+        a: &CKKSLeftOperandPrepared<BE, Rg>,
+        b: &CKKSRightOperandPrepared<BE, Rg>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: VecZnxIdftNormalize<BE>,
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        Self: VecZnxIdftNormalize<BE, Rg>,
+        Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
     {
         const OP: &str = "ckks_dot_product_prepared_pt_vec_from_dft";
         let (log_budget, log_delta, cnv_offset) = prepared_pt_rule(OP, &*res, &[a], &[b], &[1])?;
@@ -392,11 +397,11 @@ pub trait CKKSDotProductReference<BE: Backend>: Sized {
 
 /// The checks of the summed products by prepared plaintexts into a destination of `res`'s layout and metadata, in
 /// their order and before any write, then the rule of `ckks_mul_pt_vec_into`: `(log_budget, log_delta, cnv_offset)`.
-fn prepared_pt_rule<BE: Backend, R: CKKSCtBounds>(
+fn prepared_pt_rule<BE: Backend, R: CKKSCtBounds, Rg: Ring>(
     op: &'static str,
     res: &R,
-    a: &[&CKKSLeftOperandPrepared<BE>],
-    b: &[&CKKSRightOperandPrepared<BE>],
+    a: &[&CKKSLeftOperandPrepared<BE, Rg>],
+    b: &[&CKKSRightOperandPrepared<BE, Rg>],
     galois: &[i64],
 ) -> Result<(usize, usize, usize)> {
     check_lengths(op, a.len(), b.len())?;
@@ -436,9 +441,9 @@ fn prepared_pt_rule<BE: Backend, R: CKKSCtBounds>(
 }
 
 /// `InvalidOperand` unless `acc` holds the degree and the `rank + 1` columns of `res` on `size` limbs.
-fn check_accumulator<BE: Backend, R: CKKSCtBounds>(
+fn check_accumulator<BE: Backend, R: CKKSCtBounds, Rg: Ring>(
     op: &'static str,
-    acc: &VecZnxDftBackendMut<'_, BE>,
+    acc: &VecZnxDftBackendMut<'_, BE, Rg>,
     res: &R,
     size: usize,
 ) -> Result<()> {
@@ -451,7 +456,7 @@ fn check_accumulator<BE: Backend, R: CKKSCtBounds>(
     Ok(())
 }
 
-impl<BE: Backend> CKKSDotProductReference<BE> for Module<BE> {}
+impl<BE: Backend, Rg: Ring> CKKSDotProductReference<BE, Rg> for Module<BE> {}
 
 /// `InvalidOperand` past base2k 62, where `ckks_dot_product_ct` keeps the eager path, which prepared pairs do not have.
 pub(crate) fn check_lazy_base2k<D: GLWEInfos>(op: &'static str, dst: &D) -> Result<()> {
@@ -482,7 +487,7 @@ fn share_layout<C: CKKSCtBounds>(cts: &[&C]) -> bool {
     clippy::too_many_arguments,
     reason = "the two product forms of the pairs and the operation's operands"
 )]
-fn dot_product_lazy<BE, M, Dst, A, B, H>(
+fn dot_product_lazy<BE, M, Dst, A, B, H, Rg: Ring>(
     module: &M,
     op: &'static str,
     dst: &mut Dst,
@@ -491,15 +496,15 @@ fn dot_product_lazy<BE, M, Dst, A, B, H>(
     tsk: &H,
     scratch: &mut ScratchArena<'_, BE>,
     one_pass: impl FnOnce(&mut Dst, usize, TorusPrecision, &mut ScratchArena<'_, BE>),
-    mut tensor: impl for<'t> FnMut(&mut GLWETensorViewMut<'t, BE>, usize, usize, &mut ScratchArena<'t, BE>),
+    mut tensor: impl for<'t> FnMut(&mut GLWETensorViewMut<'t, BE, Rg>, usize, usize, &mut ScratchArena<'t, BE>),
 ) -> Result<()>
 where
     BE: Backend,
-    M: GLWETensoring<BE> + GLWEAdd<BE> + GLWENormalize<BE>,
-    Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+    M: GLWETensoring<BE, Rg> + GLWEAdd<BE, Rg> + GLWENormalize<BE, Rg>,
+    Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
     A: CKKSCtBounds,
     B: CKKSCtBounds,
-    H: GetTensorKey<BE>,
+    H: GetTensorKey<BE, Rg>,
 {
     // `ckks_mul_into`'s tensor width, and so its key width, whatever `dst`'s width.
     let tensor_layout = GLWELayout {

@@ -11,7 +11,7 @@ use poulpy_cpu_portable::kernels::{
     znx_normalize::ZnxNormalize,
 };
 use poulpy_hal::layouts::{
-    Backend, VecZnx, VecZnxBackendMut, VecZnxBackendRef, VecZnxBig, VecZnxBigBackendRef, ZnxView, ZnxViewMut,
+    Backend, Ring, VecZnx, VecZnxBackendMut, VecZnxBackendRef, VecZnxBig, VecZnxBigBackendRef, ZnxView, ZnxViewMut,
 };
 use rayon::prelude::*;
 
@@ -48,10 +48,10 @@ where
 /// Parallel [`vec_znx_gadget_decompose`](poulpy_hal::api::VecZnxGadgetDecompose),
 /// split over coefficient ranges as normalization is: every coefficient's digits
 /// depend on that coefficient alone, so the result is the serial one bit for bit.
-pub fn vec_znx_gadget_decompose_par<B, T>(
-    res: &mut VecZnxBackendMut<'_, B>,
+pub fn vec_znx_gadget_decompose_par<B, T, Rg: Ring>(
+    res: &mut VecZnxBackendMut<'_, B, Rg>,
     res_col: usize,
-    a: &VecZnxBackendRef<'_, B>,
+    a: &VecZnxBackendRef<'_, B, Rg>,
     a_col: usize,
     base2k: usize,
     k_digit: usize,
@@ -64,7 +64,7 @@ pub fn vec_znx_gadget_decompose_par<B, T>(
     let n = res.n();
     let tasks = normalize_tasks::<T>(n);
     if tasks < 2 {
-        return vec_znx_gadget_decompose_portable::<B>(res, res_col, a, a_col, base2k, k_digit);
+        return vec_znx_gadget_decompose_portable::<B, Rg>(res, res_col, a, a_col, base2k, k_digit);
     }
 
     assert!(res_col < res.cols(), "operand column out of range");
@@ -76,11 +76,11 @@ pub fn vec_znx_gadget_decompose_par<B, T>(
     let res_ptr = SendPtr::new(res.base_mut_ptr());
     let a_data: &[u8] = a.data();
     for_each_range(n, tasks, |start, len| {
-        let a_view: VecZnxBackendRef<'_, B> = VecZnx::from_shape(a_data, a_shape);
+        let a_view: VecZnxBackendRef<'_, B, Rg> = VecZnx::from_shape(a_data, a_shape);
         // SAFETY: `res` is bounds-checked above and exclusive, and does not alias `a`; tasks
         // write disjoint coefficient ranges.
         unsafe {
-            vec_znx_gadget_decompose_range_raw_portable::<B>(
+            vec_znx_gadget_decompose_range_raw_portable::<B, Rg>(
                 res_ptr.get(),
                 res_shape,
                 res_col,
@@ -97,13 +97,13 @@ pub fn vec_znx_gadget_decompose_par<B, T>(
 
 /// Parallel [`vec_znx_normalize`](poulpy_hal::api::VecZnxNormalize::vec_znx_normalize), `B` being the serial kernel backend.
 #[allow(clippy::too_many_arguments)]
-pub fn vec_znx_normalize_par<B, T>(
-    res: &mut VecZnxBackendMut<'_, B>,
+pub fn vec_znx_normalize_par<B, T, Rg: Ring>(
+    res: &mut VecZnxBackendMut<'_, B, Rg>,
     res_base2k: usize,
     res_k: usize,
     res_offset: i64,
     res_col: usize,
-    a: &VecZnxBackendRef<'_, B>,
+    a: &VecZnxBackendRef<'_, B, Rg>,
     a_base2k: usize,
     a_col: usize,
 ) where
@@ -115,7 +115,7 @@ pub fn vec_znx_normalize_par<B, T>(
     let n = res.n();
     let tasks = normalize_tasks::<T>(n);
     if tasks < 2 {
-        return vec_znx_normalize_portable::<B>(res, res_base2k, res_k, res_offset, res_col, a, a_base2k, a_col);
+        return vec_znx_normalize_portable::<B, Rg>(res, res_base2k, res_k, res_offset, res_col, a, a_base2k, a_col);
     }
 
     assert!(res_col < res.cols(), "operand column out of range");
@@ -127,10 +127,10 @@ pub fn vec_znx_normalize_par<B, T>(
     let res_ptr = SendPtr::new(res.base_mut_ptr());
     let a_data: &[u8] = a.data();
     for_each_range(n, tasks, |start, len| {
-        let a_view: VecZnxBackendRef<'_, B> = VecZnx::from_shape(a_data, a_shape);
+        let a_view: VecZnxBackendRef<'_, B, Rg> = VecZnx::from_shape(a_data, a_shape);
         // SAFETY: `res` is bounds-checked above and exclusive; tasks write disjoint coefficient ranges.
         unsafe {
-            vec_znx_normalize_range_raw_portable::<B>(
+            vec_znx_normalize_range_raw_portable::<B, Rg>(
                 res_ptr.get(),
                 res_shape,
                 res_base2k,
@@ -148,11 +148,11 @@ pub fn vec_znx_normalize_par<B, T>(
 }
 
 /// Parallel [`vec_znx_normalize_assign`](poulpy_hal::api::VecZnxNormalizeAssign::vec_znx_normalize_assign), `B` being the serial kernel backend.
-pub fn vec_znx_normalize_assign_par<B, T>(
+pub fn vec_znx_normalize_assign_par<B, T, Rg: Ring>(
     base2k: usize,
     k: usize,
     res_offset: i64,
-    res: &mut VecZnxBackendMut<'_, B>,
+    res: &mut VecZnxBackendMut<'_, B, Rg>,
     res_col: usize,
 ) where
     B: ZnxNormalize,
@@ -163,7 +163,7 @@ pub fn vec_znx_normalize_assign_par<B, T>(
     let n = res.n();
     let tasks = normalize_tasks::<T>(n);
     if tasks < 2 {
-        return vec_znx_normalize_assign_portable::<B>(base2k, k, res_offset, res, res_col);
+        return vec_znx_normalize_assign_portable::<B, Rg>(base2k, k, res_offset, res, res_col);
     }
 
     assert!(res_col < res.cols(), "operand column out of range");
@@ -180,13 +180,13 @@ pub fn vec_znx_normalize_assign_par<B, T>(
 
 /// Parallel [`vec_znx_big_normalize`](poulpy_hal::api::VecZnxBigNormalize::vec_znx_big_normalize), `B` being the serial kernel backend.
 #[allow(clippy::too_many_arguments)]
-pub fn vec_znx_big_normalize_par<B, T>(
-    res: &mut VecZnxBackendMut<'_, B>,
+pub fn vec_znx_big_normalize_par<B, T, Rg: Ring>(
+    res: &mut VecZnxBackendMut<'_, B, Rg>,
     res_base2k: usize,
     res_k: usize,
     res_offset: i64,
     res_col: usize,
-    a: &VecZnxBigBackendRef<'_, B>,
+    a: &VecZnxBigBackendRef<'_, B, Rg>,
     a_base2k: usize,
     a_col: usize,
 ) where
@@ -198,7 +198,7 @@ pub fn vec_znx_big_normalize_par<B, T>(
     let n = res.n();
     let tasks = normalize_tasks::<T>(n);
     if tasks < 2 {
-        return vec_znx_big_normalize_portable::<B>(res, res_base2k, res_k, res_offset, res_col, a, a_base2k, a_col);
+        return vec_znx_big_normalize_portable::<B, Rg>(res, res_base2k, res_k, res_offset, res_col, a, a_base2k, a_col);
     }
 
     assert!(res_col < res.cols(), "operand column out of range");
@@ -210,10 +210,10 @@ pub fn vec_znx_big_normalize_par<B, T>(
     let res_ptr = SendPtr::new(res.base_mut_ptr());
     let a_data: &[u8] = a.data;
     for_each_range(n, tasks, |start, len| {
-        let a_view: VecZnxBigBackendRef<'_, B> = VecZnxBig::from_shape(a_data, a_shape);
+        let a_view: VecZnxBigBackendRef<'_, B, Rg> = VecZnxBig::from_shape(a_data, a_shape);
         // SAFETY: `res` is bounds-checked above and exclusive; tasks write disjoint coefficient ranges.
         unsafe {
-            vec_znx_big_normalize_range_raw_portable::<B>(
+            vec_znx_big_normalize_range_raw_portable::<B, Rg>(
                 res_ptr.get(),
                 res_shape,
                 res_base2k,

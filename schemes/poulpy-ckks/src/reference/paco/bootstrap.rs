@@ -12,7 +12,7 @@ use poulpy_core::layouts::{
     Base2K, Degree, GGLWEInfos, GLWEInfos, GLWELayout, GLWEPlaintextInfos, GLWEToBackendMut, GLWEToBackendRef,
     GetAutomorphismKey, GetTensorKey, LWEInfos, Rank, TorusPrecision,
 };
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena, Standard};
 
 use crate::{
     CKKSCompositionError, CKKSCtBounds, CKKSInfos, GLWEPlaintextMeta, Scale, SetCKKSInfos,
@@ -240,7 +240,7 @@ where
         input.log_delta(),
         input.k()
     );
-    validate_backend_storage_capacity::<BE, _>("PaCo input", input).map_err(|e| invalid_operand(op, e))?;
+    validate_backend_storage_capacity::<BE, _, Standard>("PaCo input", input).map_err(|e| invalid_operand(op, e))?;
 
     ckks_ensure_operand!(
         op,
@@ -263,7 +263,7 @@ where
         context.base2k()
     );
 
-    validate_backend_storage_capacity::<BE, _>("PaCo output", output).map_err(|e| invalid_operand(op, e))?;
+    validate_backend_storage_capacity::<BE, _, Standard>("PaCo output", output).map_err(|e| invalid_operand(op, e))?;
     let bsk = keys.bootstrapping_keys();
     let canonical = &bsk[0];
     ckks_ensure_operand!(
@@ -318,7 +318,7 @@ where
             key.log_delta(),
             key.k(),
         );
-        validate_backend_storage_capacity::<BE, _>(&format!("PaCo bootstrapping key {index}"), key)
+        validate_backend_storage_capacity::<BE, _, Standard>(&format!("PaCo bootstrapping key {index}"), key)
             .map_err(|e| invalid_operand(op, e))?;
         ckks_ensure_operand!(op, key.log_sparsity() == 0, "PaCo bootstrapping key {index} must be dense");
         ckks_ensure_operand!(

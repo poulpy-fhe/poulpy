@@ -14,7 +14,7 @@
 //! inner loop is branch free.
 
 use poulpy_hal::layouts::{
-    Backend, HostDataMut, HostDataRef, VecZnxBackendMut, VecZnxBackendRef, VecZnxShape, ZnxView, ZnxViewMut,
+    Backend, HostDataMut, HostDataRef, Ring, VecZnxBackendMut, VecZnxBackendRef, VecZnxShape, ZnxView, ZnxViewMut,
 };
 
 use crate::kernels::znx_normalize::{Limbs, LimbsMut};
@@ -22,10 +22,10 @@ use crate::kernels::znx_normalize::{Limbs, LimbsMut};
 /// Coefficients per pass: three `i64` buffers of this length live on the stack.
 const CHUNK: usize = 512;
 
-pub fn vec_znx_gadget_decompose_portable<'r, 'a, BE>(
-    res: &mut VecZnxBackendMut<'r, BE>,
+pub fn vec_znx_gadget_decompose_portable<'r, 'a, BE, Rg: Ring>(
+    res: &mut VecZnxBackendMut<'r, BE, Rg>,
     res_col: usize,
-    a: &VecZnxBackendRef<'a, BE>,
+    a: &VecZnxBackendRef<'a, BE, Rg>,
     a_col: usize,
     base2k: usize,
     k_digit: usize,
@@ -41,7 +41,7 @@ pub fn vec_znx_gadget_decompose_portable<'r, 'a, BE>(
     let (n, shape) = (res.n(), res.shape());
     let ptr: *mut i64 = res.base_mut_ptr();
     // SAFETY: `ptr` and `shape` come from `res`, bounds-checked above, and `&mut res` is exclusive.
-    unsafe { vec_znx_gadget_decompose_range_raw_portable::<BE>(ptr, shape, res_col, a, a_col, base2k, k_digit, 0, n) }
+    unsafe { vec_znx_gadget_decompose_range_raw_portable::<BE, Rg>(ptr, shape, res_col, a, a_col, base2k, k_digit, 0, n) }
 }
 
 /// [`vec_znx_gadget_decompose_portable`] restricted to the coefficients
@@ -55,11 +55,11 @@ pub fn vec_znx_gadget_decompose_portable<'r, 'a, BE>(
 /// does not overlap `a`. Concurrent calls may share the destination allocation
 /// only with disjoint coefficient ranges.
 #[doc(hidden)]
-pub unsafe fn vec_znx_gadget_decompose_range_raw_portable<'a, BE>(
+pub unsafe fn vec_znx_gadget_decompose_range_raw_portable<'a, BE, Rg: Ring>(
     res_ptr: *mut i64,
     res_shape: VecZnxShape,
     res_col: usize,
-    a: &VecZnxBackendRef<'a, BE>,
+    a: &VecZnxBackendRef<'a, BE, Rg>,
     a_col: usize,
     base2k: usize,
     k_digit: usize,

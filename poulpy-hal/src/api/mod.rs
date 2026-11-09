@@ -39,13 +39,16 @@
 //!
 //! # Value model
 //!
-//! The backend selects the polynomial ring and its coefficient basis.
-//! By default, `R_n = Z[X]/(X^n + 1)` with the monomial basis. In the
-//! conjugate invariant ring, `R_n` is the fixed subring of `Z[X]/(X^(2n)+1)`
+//! The ring parameter `Rg` of each operand ([`Standard`](crate::layouts::Standard)
+//! by default, or [`ConjugateInvariant`](crate::layouts::ConjugateInvariant))
+//! selects the polynomial ring and its coefficient basis; one module serves both
+//! rings. On the standard ring, `R_n = Z[X]/(X^n + 1)` with the monomial basis. On the
+//! conjugate-invariant ring, `R_n` is the fixed subring of `Z[X]/(X^(2n)+1)`
 //! with basis `1, X^j + X^(-j)` for `1 <= j < n`. Automorphisms `sigma_p` substitute
 //! `X -> X^p` in that basis; monomial multiplication requires the standard ring.
-//! Prepared objects and keys must be used with the ring configuration that
-//! produced them, even when their backend types and degrees agree.
+//! The operands of a call share one ring, except in the maps between the two
+//! rings, and a prepared object or key carries the ring that produced it as
+//! its ring parameter.
 //! A module is built at a
 //! degree `N` and serves every power-of-two degree `n` with
 //! `MIN_DEGREE <= n <= N`, `MIN_DEGREE` the backend's floor; in a contract

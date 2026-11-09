@@ -4,7 +4,7 @@ use poulpy_core::layouts::{
     GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey,
     prepared::GLWEAutomorphismKeyPreparedBackendRef,
 };
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Module, Ring, ScratchArena, Standard};
 
 use crate::{
     CKKSCtBounds, SetCKKSInfos,
@@ -17,7 +17,7 @@ use crate::{
 /// Implementations reproduce the bodies their methods document bit for bit, report for each
 /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait CKKSRotateImpl: Backend + super::CKKSCopyImpl {
+pub unsafe trait CKKSRotateImpl<Rg: Ring = Standard>: Backend + super::CKKSCopyImpl<Rg> {
     /// Scratch bound of [`Self::ckks_rotate_with_key_into`] and [`Self::ckks_rotate_with_key_assign`]; may report less
     /// than the reference, never less than the body takes.
     fn ckks_rotate_with_key_tmp_bytes<C: GLWEInfos, K: GGLWEInfos>(module: &Module<Self>, ct_infos: &C, key_infos: &K) -> usize;
@@ -30,12 +30,12 @@ pub unsafe trait CKKSRotateImpl: Backend + super::CKKSCopyImpl {
         module: &Module<Self>,
         dst: &mut Dst,
         src: &Src,
-        key: &GLWEAutomorphismKeyPreparedBackendRef<'_, Self>,
+        key: &GLWEAutomorphismKeyPreparedBackendRef<'_, Self, Rg>,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<Self> + GLWEInfos + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<Self> + GLWEInfos + CKKSCtBounds;
+        Dst: GLWEToBackendMut<Self, Rg> + GLWEInfos + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<Self, Rg> + GLWEInfos + CKKSCtBounds;
 
     /// Hook without an API twin. Reproduces
     /// [`ckks_rotate_with_key_assign_reference`](crate::reference::rotate::CKKSRotateReference::ckks_rotate_with_key_assign_reference)
@@ -44,11 +44,11 @@ pub unsafe trait CKKSRotateImpl: Backend + super::CKKSCopyImpl {
     fn ckks_rotate_with_key_assign<Dst>(
         module: &Module<Self>,
         dst: &mut Dst,
-        key: &GLWEAutomorphismKeyPreparedBackendRef<'_, Self>,
+        key: &GLWEAutomorphismKeyPreparedBackendRef<'_, Self, Rg>,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<Self> + GLWEInfos + CKKSCtBounds + SetCKKSInfos;
+        Dst: GLWEToBackendMut<Self, Rg> + GLWEInfos + CKKSCtBounds + SetCKKSInfos;
 
     /// Default body: `ckks_rotate_tmp_bytes_derived`, the larger of [`Self::ckks_rotate_with_key_tmp_bytes`] and the
     /// selected `ckks_copy_tmp_bytes` of `ct_infos` onto itself, the copy serving the identity shift. Bounds
@@ -70,9 +70,9 @@ pub unsafe trait CKKSRotateImpl: Backend + super::CKKSCopyImpl {
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        H: GetAutomorphismKey<Self>,
-        Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<Self> + CKKSCtBounds,
+        H: GetAutomorphismKey<Self, Rg>,
+        Dst: GLWEToBackendMut<Self, Rg> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<Self, Rg> + CKKSCtBounds,
     {
         ckks_rotate_into_derived(module, k, dst, src, keys, scratch)
     }
@@ -88,8 +88,8 @@ pub unsafe trait CKKSRotateImpl: Backend + super::CKKSCopyImpl {
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        H: GetAutomorphismKey<Self>,
-        Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
+        H: GetAutomorphismKey<Self, Rg>,
+        Dst: GLWEToBackendMut<Self, Rg> + CKKSCtBounds + SetCKKSInfos,
     {
         ckks_rotate_assign_derived(module, k, dst, keys, scratch)
     }
@@ -99,13 +99,17 @@ pub unsafe trait CKKSRotateImpl: Backend + super::CKKSCopyImpl {
 #[macro_export]
 macro_rules! impl_ckks_rotate_reference_full {
     ($be:ty) => {
-        unsafe impl $crate::oep::CKKSRotateImpl for $be {
+        $crate::impl_ckks_rotate_reference_full!($be, ::poulpy_hal::layouts::Standard);
+        $crate::impl_ckks_rotate_reference_full!($be, ::poulpy_hal::layouts::ConjugateInvariant);
+    };
+    ($be:ty, $ring:ty) => {
+        unsafe impl $crate::oep::CKKSRotateImpl<$ring> for $be {
             fn ckks_rotate_with_key_tmp_bytes<C: ::poulpy_core::layouts::GLWEInfos, K: ::poulpy_core::layouts::GGLWEInfos>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 ct_infos: &C,
                 key_infos: &K,
             ) -> usize {
-                $crate::reference::rotate::CKKSRotateReference::ckks_rotate_with_key_tmp_bytes_reference(
+                $crate::reference::rotate::CKKSRotateReference::<Self, $ring>::ckks_rotate_with_key_tmp_bytes_reference(
                     module, ct_infos, key_infos,
                 )
             }
@@ -114,17 +118,19 @@ macro_rules! impl_ckks_rotate_reference_full {
                 module: &::poulpy_hal::layouts::Module<Self>,
                 dst: &mut Dst,
                 src: &Src,
-                key: &::poulpy_core::layouts::prepared::GLWEAutomorphismKeyPreparedBackendRef<'_, Self>,
+                key: &::poulpy_core::layouts::prepared::GLWEAutomorphismKeyPreparedBackendRef<'_, Self, $ring>,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> $crate::CKKSResult<()>
             where
-                Dst: ::poulpy_core::layouts::GLWEToBackendMut<Self>
+                Dst: ::poulpy_core::layouts::GLWEToBackendMut<Self, $ring>
                     + ::poulpy_core::layouts::GLWEInfos
                     + $crate::CKKSCtBounds
                     + $crate::SetCKKSInfos,
-                Src: ::poulpy_core::layouts::GLWEToBackendRef<Self> + ::poulpy_core::layouts::GLWEInfos + $crate::CKKSCtBounds,
+                Src: ::poulpy_core::layouts::GLWEToBackendRef<Self, $ring>
+                    + ::poulpy_core::layouts::GLWEInfos
+                    + $crate::CKKSCtBounds,
             {
-                $crate::reference::rotate::CKKSRotateReference::ckks_rotate_with_key_into_reference(
+                $crate::reference::rotate::CKKSRotateReference::<Self, $ring>::ckks_rotate_with_key_into_reference(
                     module, dst, src, key, scratch,
                 )
             }
@@ -132,16 +138,18 @@ macro_rules! impl_ckks_rotate_reference_full {
             fn ckks_rotate_with_key_assign<Dst>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 dst: &mut Dst,
-                key: &::poulpy_core::layouts::prepared::GLWEAutomorphismKeyPreparedBackendRef<'_, Self>,
+                key: &::poulpy_core::layouts::prepared::GLWEAutomorphismKeyPreparedBackendRef<'_, Self, $ring>,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> $crate::CKKSResult<()>
             where
-                Dst: ::poulpy_core::layouts::GLWEToBackendMut<Self>
+                Dst: ::poulpy_core::layouts::GLWEToBackendMut<Self, $ring>
                     + ::poulpy_core::layouts::GLWEInfos
                     + $crate::CKKSCtBounds
                     + $crate::SetCKKSInfos,
             {
-                $crate::reference::rotate::CKKSRotateReference::ckks_rotate_with_key_assign_reference(module, dst, key, scratch)
+                $crate::reference::rotate::CKKSRotateReference::<Self, $ring>::ckks_rotate_with_key_assign_reference(
+                    module, dst, key, scratch,
+                )
             }
         }
     };

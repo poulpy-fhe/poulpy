@@ -2,18 +2,18 @@ use std::mem::size_of;
 
 use crate::{
     kernels::znx::{ZnxCopy, ZnxRotate, ZnxZero},
-    layouts::{Backend, HostDataMut, HostDataRef, VecZnxBackendMut, VecZnxBackendRef, ZnxView, ZnxViewMut},
+    layouts::{Backend, HostDataMut, HostDataRef, Ring, VecZnxBackendMut, VecZnxBackendRef, ZnxView, ZnxViewMut},
 };
 
 pub fn vec_znx_rotate_assign_tmp_bytes_portable(n: usize) -> usize {
     n * size_of::<i64>()
 }
 
-pub fn vec_znx_rotate_portable<'r, 'a, BE>(
+pub fn vec_znx_rotate_portable<'r, 'a, BE, Rg: Ring>(
     p: i64,
-    res: &mut VecZnxBackendMut<'r, BE>,
+    res: &mut VecZnxBackendMut<'r, BE, Rg>,
     res_col: usize,
-    a: &VecZnxBackendRef<'a, BE>,
+    a: &VecZnxBackendRef<'a, BE, Rg>,
     a_col: usize,
 ) where
     BE: Backend<ZnxWord = i64> + ZnxRotate + ZnxZero,
@@ -40,8 +40,12 @@ pub fn vec_znx_rotate_portable<'r, 'a, BE>(
     }
 }
 
-pub fn vec_znx_rotate_assign_portable<'r, BE>(p: i64, res: &mut VecZnxBackendMut<'r, BE>, res_col: usize, tmp: &mut [i64])
-where
+pub fn vec_znx_rotate_assign_portable<'r, BE, Rg: Ring>(
+    p: i64,
+    res: &mut VecZnxBackendMut<'r, BE, Rg>,
+    res_col: usize,
+    tmp: &mut [i64],
+) where
     BE: Backend<ZnxWord = i64> + ZnxRotate + ZnxCopy,
     BE::BufMut<'r>: HostDataMut,
 {

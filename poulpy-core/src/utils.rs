@@ -3,9 +3,9 @@
 // HAL codecs generic over `ZnxWord` first.
 use crate::layouts::{GLWEPlaintext, LWEInfos, LWEPlaintext, TorusPrecision};
 use dashu_float::{FBig, round::mode::HalfEven};
-use poulpy_hal::layouts::{HostDataMut, HostDataRef, Stats};
+use poulpy_hal::layouts::{HostDataMut, HostDataRef, Ring, Stats};
 
-impl<D: HostDataMut> GLWEPlaintext<D, i64> {
+impl<D: HostDataMut, Rg: Ring> GLWEPlaintext<D, i64, Rg> {
     /// Encodes a slice of `i64` values into the plaintext's coefficient slots.
     ///
     /// Values are scaled by `2^k` and decomposed into the base-2k limb
@@ -27,7 +27,7 @@ impl<D: HostDataMut> GLWEPlaintext<D, i64> {
     }
 }
 
-impl<D: HostDataRef> GLWEPlaintext<D, i64> {
+impl<D: HostDataRef, Rg: Ring> GLWEPlaintext<D, i64, Rg> {
     /// Decodes the plaintext coefficients into a slice of `i64` values
     /// using `k` bits of torus precision.
     pub fn decode_vec_i64(&self, data: &mut [i64], k: TorusPrecision) {
@@ -54,7 +54,7 @@ impl<D: HostDataRef> GLWEPlaintext<D, i64> {
     }
 }
 
-impl<D: HostDataMut> LWEPlaintext<D, i64> {
+impl<D: HostDataMut, Rg: Ring> LWEPlaintext<D, i64, Rg> {
     /// Encodes a single `i64` value into the LWE plaintext scalar slot.
     pub fn encode_i64(&mut self, data: i64, k: TorusPrecision) {
         let base2k: usize = self.base2k().into();
@@ -68,7 +68,7 @@ impl<D: HostDataMut> LWEPlaintext<D, i64> {
     }
 }
 
-impl<D: HostDataRef> LWEPlaintext<D, i64> {
+impl<D: HostDataRef, Rg: Ring> LWEPlaintext<D, i64, Rg> {
     /// Decodes the LWE plaintext scalar as an `i64` using `k` bits of torus precision.
     pub fn decode_i64(&self, k: TorusPrecision) -> i64 {
         self.data.decode_coeff_i64(self.base2k().into(), 0, k.into(), 0)

@@ -26,7 +26,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::ModuleN,
-    layouts::{Backend, HostDataRef, Module, ScratchArena, Standard},
+    layouts::{Backend, HostDataRef, Module, ScratchArena},
 };
 
 /// Scratch of [`paco_coeff_encodings_staged`] for an input of the layout `ct`: its rounded copy beside the
@@ -58,7 +58,7 @@ pub fn paco_coeff_encodings_staged<BE, F, Src>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<[CKKSPlaintextOwned<BE>; 4]>
 where
-    BE: Backend<ZnxWord = i64, Ring = Standard> + CKKSEncodingImpl<F>,
+    BE: Backend<ZnxWord = i64> + CKKSEncodingImpl<F>,
     for<'x> BE::BufRef<'x>: HostDataRef,
     Module<BE>: ModuleN + CKKSEncodingOps<BE, F> + GLWEBytesOf<BE> + GLWENormalize<BE>,
     F: CKKSPaCoScalar,

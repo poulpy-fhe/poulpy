@@ -1,4 +1,4 @@
-use poulpy_hal::layouts::{Backend, Data, VecZnx, VecZnxToBackendRef, ZnxWord};
+use poulpy_hal::layouts::{Backend, Data, Ring, Standard, VecZnx, VecZnxToBackendRef, ZnxWord};
 
 use crate::layouts::{Base2K, Degree, GLWE, GLWEInfos, LWEInfos, Rank, TorusPrecision};
 
@@ -8,23 +8,23 @@ use crate::layouts::{Base2K, Degree, GLWE, GLWEInfos, LWEInfos, Rank, TorusPreci
 /// Mask polynomial `j` is column `offset + j` of the [`VecZnx`]: an allocated mask
 /// stores them from column 0, and [`GLWEMaskToBackendRef`] views the mask of a
 /// [`GLWE`] in place, from its column 1. The canonical flag follows the [`GLWE`]'s.
-pub struct GLWEMask<D: Data, W: ZnxWord> {
-    pub(crate) data: VecZnx<D, W>,
+pub struct GLWEMask<D: Data, W: ZnxWord, Rg: Ring = Standard> {
+    pub(crate) data: VecZnx<D, W, Rg>,
     pub(crate) offset: usize,
     pub(crate) k: TorusPrecision,
     pub(crate) base2k: Base2K,
     pub(crate) canonical: bool,
 }
 
-pub type GLWEMaskBackendRef<'a, BE> = GLWEMask<<BE as Backend>::BufRef<'a>, <BE as Backend>::ZnxWord>;
+pub type GLWEMaskBackendRef<'a, BE, Rg = Standard> = GLWEMask<<BE as Backend>::BufRef<'a>, <BE as Backend>::ZnxWord, Rg>;
 
-impl<D: Data, W: ZnxWord> GLWEMask<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> GLWEMask<D, W, Rg> {
     /// The underlying [`VecZnx`], whose column [`Self::col`]`(j)` holds mask polynomial `j`.
-    pub fn data(&self) -> &VecZnx<D, W> {
+    pub fn data(&self) -> &VecZnx<D, W, Rg> {
         &self.data
     }
 
-    pub fn data_mut(&mut self) -> &mut VecZnx<D, W> {
+    pub fn data_mut(&mut self) -> &mut VecZnx<D, W, Rg> {
         &mut self.data
     }
 
@@ -43,7 +43,7 @@ impl<D: Data, W: ZnxWord> GLWEMask<D, W> {
     }
 }
 
-impl<D: Data, W: ZnxWord> LWEInfos for GLWEMask<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> LWEInfos for GLWEMask<D, W, Rg> {
     fn base2k(&self) -> Base2K {
         self.base2k
     }
@@ -61,22 +61,22 @@ impl<D: Data, W: ZnxWord> LWEInfos for GLWEMask<D, W> {
     }
 }
 
-impl<D: Data, W: ZnxWord> GLWEInfos for GLWEMask<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> GLWEInfos for GLWEMask<D, W, Rg> {
     fn rank(&self) -> Rank {
         Rank((self.data.cols() - self.offset) as u32)
     }
 }
 
 /// Backend view of a GLWE mask: of a [`GLWEMask`], or of the mask of a [`GLWE`].
-pub trait GLWEMaskToBackendRef<BE: Backend> {
-    fn to_mask_backend_ref(&self) -> GLWEMaskBackendRef<'_, BE>;
+pub trait GLWEMaskToBackendRef<BE: Backend, Rg: Ring = Standard> {
+    fn to_mask_backend_ref(&self) -> GLWEMaskBackendRef<'_, BE, Rg>;
 }
 
-impl<BE: Backend, D: Data> GLWEMaskToBackendRef<BE> for GLWEMask<D, BE::ZnxWord>
+impl<BE: Backend, D: Data, Rg: Ring> GLWEMaskToBackendRef<BE, Rg> for GLWEMask<D, BE::ZnxWord, Rg>
 where
-    VecZnx<D, BE::ZnxWord>: VecZnxToBackendRef<BE>,
+    VecZnx<D, BE::ZnxWord, Rg>: VecZnxToBackendRef<BE, Rg>,
 {
-    fn to_mask_backend_ref(&self) -> GLWEMaskBackendRef<'_, BE> {
+    fn to_mask_backend_ref(&self) -> GLWEMaskBackendRef<'_, BE, Rg> {
         GLWEMask {
             data: self.data.to_backend_ref(),
             offset: self.offset,
@@ -87,11 +87,11 @@ where
     }
 }
 
-impl<BE: Backend, D: Data> GLWEMaskToBackendRef<BE> for GLWE<D, BE::ZnxWord>
+impl<BE: Backend, D: Data, Rg: Ring> GLWEMaskToBackendRef<BE, Rg> for GLWE<D, BE::ZnxWord, Rg>
 where
-    VecZnx<D, BE::ZnxWord>: VecZnxToBackendRef<BE>,
+    VecZnx<D, BE::ZnxWord, Rg>: VecZnxToBackendRef<BE, Rg>,
 {
-    fn to_mask_backend_ref(&self) -> GLWEMaskBackendRef<'_, BE> {
+    fn to_mask_backend_ref(&self) -> GLWEMaskBackendRef<'_, BE, Rg> {
         GLWEMask {
             data: self.data.to_backend_ref(),
             offset: 1,

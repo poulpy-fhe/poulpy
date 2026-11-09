@@ -40,10 +40,11 @@ pub fn test_rotate_aligned<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
     rotations: &[i64],
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE> + GLWEAutomorphism<BE> + GLWEShift<BE> + CKKSRotateOps<BE>,
+    Module<BE>:
+        TestContextModule<BE, Standard> + GLWEAutomorphism<BE, Standard> + GLWEShift<BE, Standard> + CKKSRotateOps<BE, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
     for<'a> ScratchArena<'a, BE>: ScratchAvailable,
@@ -56,7 +57,7 @@ pub fn test_rotate_aligned<BE, F, E>(
 
     let mut atks = HashMap::new();
     for &r in rotations {
-        let gal = module.ckks_galois_element(r);
+        let gal = module.ckks_galois_element::<Standard>(r);
         let atk = gen_atk(&params, module, gal, &sk_raw, &mut scratch.borrow());
         atks.insert(gal, atk);
     }
@@ -100,10 +101,11 @@ pub fn test_rotate_smaller_output<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
     rotations: &[i64],
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE> + GLWEAutomorphism<BE> + GLWEShift<BE> + CKKSRotateOps<BE>,
+    Module<BE>:
+        TestContextModule<BE, Standard> + GLWEAutomorphism<BE, Standard> + GLWEShift<BE, Standard> + CKKSRotateOps<BE, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
     for<'a> ScratchArena<'a, BE>: ScratchAvailable,
@@ -116,7 +118,7 @@ pub fn test_rotate_smaller_output<BE, F, E>(
 
     let mut atks = HashMap::new();
     for &r in rotations {
-        let gal = module.ckks_galois_element(r);
+        let gal = module.ckks_galois_element::<Standard>(r);
         let atk = gen_atk(&params, module, gal, &sk_raw, &mut scratch.borrow());
         atks.insert(gal, atk);
     }
@@ -161,10 +163,11 @@ pub fn test_rotate_assign<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
     rotations: &[i64],
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE> + GLWEAutomorphism<BE> + GLWEShift<BE> + CKKSRotateOps<BE>,
+    Module<BE>:
+        TestContextModule<BE, Standard> + GLWEAutomorphism<BE, Standard> + GLWEShift<BE, Standard> + CKKSRotateOps<BE, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
     for<'a> ScratchArena<'a, BE>: ScratchAvailable,
@@ -177,7 +180,7 @@ pub fn test_rotate_assign<BE, F, E>(
 
     let mut atks = HashMap::new();
     for &r in rotations {
-        let gal = module.ckks_galois_element(r);
+        let gal = module.ckks_galois_element::<Standard>(r);
         let atk = gen_atk(&params, module, gal, &sk_raw, &mut scratch.borrow());
         atks.insert(gal, atk);
     }
@@ -221,10 +224,11 @@ pub fn test_rotate_assign_rejects_missing_key<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE> + GLWEAutomorphism<BE> + GLWEShift<BE> + CKKSRotateOps<BE>,
+    Module<BE>:
+        TestContextModule<BE, Standard> + GLWEAutomorphism<BE, Standard> + GLWEShift<BE, Standard> + CKKSRotateOps<BE, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
     for<'a> ScratchArena<'a, BE>: ScratchAvailable,
@@ -246,8 +250,8 @@ pub fn test_rotate_assign_rejects_missing_key<BE, F, E>(
         &im1,
         &mut scratch.borrow(),
     );
-    let empty_keys: HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>> = HashMap::new();
-    let before = snapshot::<BE, _>(&ct);
+    let empty_keys: HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE, Standard>> = HashMap::new();
+    let before = snapshot::<BE, _, Standard>(&ct);
     let err = with_scratch::<BE, _>(0, |s| module.ckks_rotate_assign(1, &mut ct, &empty_keys, s)).unwrap_err();
     assert!(
         matches!(
@@ -257,5 +261,9 @@ pub fn test_rotate_assign_rejects_missing_key<BE, F, E>(
         ),
         "rotate_assign missing_key: unexpected error: {err}"
     );
-    assert_eq!(snapshot::<BE, _>(&ct), before, "a refused ckks_rotate_assign wrote res");
+    assert_eq!(
+        snapshot::<BE, _, Standard>(&ct),
+        before,
+        "a refused ckks_rotate_assign wrote res"
+    );
 }

@@ -9,7 +9,7 @@ use poulpy_cpu_portable::kernels::{RightRead, right_read_ntt};
 use poulpy_hal::execution::TaskExecutor;
 use poulpy_hal::layouts::{
     Backend, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, CrtWord, HostDataMut, HostDataRef,
-    Module, VecZnxBackendRef, VecZnxDftBackendMut, ZnxView, ZnxViewMut, check_degree,
+    Module, Ring, VecZnxBackendRef, VecZnxDftBackendMut, ZnxView, ZnxViewMut, check_degree,
 };
 use std::mem::size_of;
 
@@ -37,7 +37,7 @@ fn col_slice_mut(raw: &mut [u32], n: usize, size: usize, col: usize) -> &mut [u3
     &mut raw[col * stride..(col + 1) * stride]
 }
 
-fn zero_res_limb<BE>(res: &mut VecZnxDftBackendMut<'_, BE>, col: usize, limb: usize)
+fn zero_res_limb<BE, Rg: Ring>(res: &mut VecZnxDftBackendMut<'_, BE, Rg>, col: usize, limb: usize)
 where
     BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>,
     for<'a> BE::BufMut<'a>: HostDataMut,
@@ -193,11 +193,11 @@ unsafe fn pack_prepared_limb(dst: *mut u32, src: &[u64], n: usize, size: usize, 
 /// Prepares `a` into `left`, `right`, or both.
 ///
 /// `dft(n, dst, src)` is the forward transform of `src` into `dst`, one `u64` per residue.
-fn prepare<BE, E: TaskExecutor>(
+fn prepare<BE, E: TaskExecutor, Rg: Ring>(
     module: &Module<BE>,
-    left: Option<&mut CnvPVecLBackendMut<'_, BE>>,
-    right: Option<&mut CnvPVecRBackendMut<'_, BE>>,
-    a: &VecZnxBackendRef<'_, BE>,
+    left: Option<&mut CnvPVecLBackendMut<'_, BE, Rg>>,
+    right: Option<&mut CnvPVecRBackendMut<'_, BE, Rg>>,
+    a: &VecZnxBackendRef<'_, BE, Rg>,
     tmp: &mut [u64],
     dft: impl Fn(usize, &mut [u64], &[i64]) + Send + Sync,
 ) where
@@ -283,10 +283,10 @@ fn prepare<BE, E: TaskExecutor>(
     }
 }
 
-pub(crate) fn cnv_pvec_left_prepare<BE, E: TaskExecutor>(
+pub(crate) fn cnv_pvec_left_prepare<BE, E: TaskExecutor, Rg: Ring>(
     module: &Module<BE>,
-    res: &mut CnvPVecLBackendMut<'_, BE>,
-    a: &VecZnxBackendRef<'_, BE>,
+    res: &mut CnvPVecLBackendMut<'_, BE, Rg>,
+    a: &VecZnxBackendRef<'_, BE, Rg>,
     tmp: &mut [u64],
     dft: impl Fn(usize, &mut [u64], &[i64]) + Send + Sync,
 ) where
@@ -294,13 +294,13 @@ pub(crate) fn cnv_pvec_left_prepare<BE, E: TaskExecutor>(
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
-    prepare::<BE, E>(module, Some(res), None, a, tmp, dft);
+    prepare::<BE, E, Rg>(module, Some(res), None, a, tmp, dft);
 }
 
-pub(crate) fn cnv_pvec_right_prepare<BE, E: TaskExecutor>(
+pub(crate) fn cnv_pvec_right_prepare<BE, E: TaskExecutor, Rg: Ring>(
     module: &Module<BE>,
-    res: &mut CnvPVecRBackendMut<'_, BE>,
-    a: &VecZnxBackendRef<'_, BE>,
+    res: &mut CnvPVecRBackendMut<'_, BE, Rg>,
+    a: &VecZnxBackendRef<'_, BE, Rg>,
     tmp: &mut [u64],
     dft: impl Fn(usize, &mut [u64], &[i64]) + Send + Sync,
 ) where
@@ -308,14 +308,14 @@ pub(crate) fn cnv_pvec_right_prepare<BE, E: TaskExecutor>(
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
-    prepare::<BE, E>(module, None, Some(res), a, tmp, dft);
+    prepare::<BE, E, Rg>(module, None, Some(res), a, tmp, dft);
 }
 
-pub(crate) fn cnv_pvec_self_prepare<BE, E: TaskExecutor>(
+pub(crate) fn cnv_pvec_self_prepare<BE, E: TaskExecutor, Rg: Ring>(
     module: &Module<BE>,
-    left: &mut CnvPVecLBackendMut<'_, BE>,
-    right: &mut CnvPVecRBackendMut<'_, BE>,
-    a: &VecZnxBackendRef<'_, BE>,
+    left: &mut CnvPVecLBackendMut<'_, BE, Rg>,
+    right: &mut CnvPVecRBackendMut<'_, BE, Rg>,
+    a: &VecZnxBackendRef<'_, BE, Rg>,
     tmp: &mut [u64],
     dft: impl Fn(usize, &mut [u64], &[i64]) + Send + Sync,
 ) where
@@ -323,7 +323,7 @@ pub(crate) fn cnv_pvec_self_prepare<BE, E: TaskExecutor>(
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
-    prepare::<BE, E>(module, Some(left), Some(right), a, tmp, dft);
+    prepare::<BE, E, Rg>(module, Some(left), Some(right), a, tmp, dft);
 }
 
 pub(crate) fn cnv_apply_dft_tmp_bytes(_res_size: usize, _a_size: usize, _b_size: usize) -> usize {
@@ -331,16 +331,16 @@ pub(crate) fn cnv_apply_dft_tmp_bytes(_res_size: usize, _a_size: usize, _b_size:
 }
 
 #[allow(clippy::too_many_arguments)]
-unsafe fn apply<BE, E: TaskExecutor, const ACC: bool, const PAIRWISE: bool>(
+unsafe fn apply<BE, E: TaskExecutor, const ACC: bool, const PAIRWISE: bool, Rg: Ring>(
     module: &Module<BE>,
     meta: &BbcMeta<Primes30>,
     cnv_offset: usize,
-    res: &mut VecZnxDftBackendMut<'_, BE>,
+    res: &mut VecZnxDftBackendMut<'_, BE, Rg>,
     res_col: usize,
-    a: &CnvPVecLBackendRef<'_, BE>,
+    a: &CnvPVecLBackendRef<'_, BE, Rg>,
     a0_col: usize,
     a1_col: usize,
-    b: &CnvPVecRBackendRef<'_, BE>,
+    b: &CnvPVecRBackendRef<'_, BE, Rg>,
     b0_col: usize,
     b1_col: usize,
     b_galois: i64,
@@ -352,7 +352,7 @@ unsafe fn apply<BE, E: TaskExecutor, const ACC: bool, const PAIRWISE: bool>(
     let (n, res_size, a_size, b_size) = (res.n(), res.size(), a.size(), b.size());
     check_degree::<BE>(module.n(), n);
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
-    let b_read = right_read_ntt::<BE::Ring>(n, b.n(), b_galois, BE::MIN_DEGREE);
+    let b_read = right_read_ntt::<Rg>(n, b.n(), b_galois, BE::MIN_DEGREE);
     if res_size == 0 || a_size == 0 || b_size == 0 {
         if !ACC {
             for limb in 0..res_size {
@@ -387,15 +387,15 @@ unsafe fn apply<BE, E: TaskExecutor, const ACC: bool, const PAIRWISE: bool>(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) unsafe fn cnv_apply_dft<BE, E: TaskExecutor>(
+pub(crate) unsafe fn cnv_apply_dft<BE, E: TaskExecutor, Rg: Ring>(
     module: &Module<BE>,
     meta: &BbcMeta<Primes30>,
     cnv_offset: usize,
-    res: &mut VecZnxDftBackendMut<'_, BE>,
+    res: &mut VecZnxDftBackendMut<'_, BE, Rg>,
     res_col: usize,
-    a: &CnvPVecLBackendRef<'_, BE>,
+    a: &CnvPVecLBackendRef<'_, BE, Rg>,
     a_col: usize,
-    b: &CnvPVecRBackendRef<'_, BE>,
+    b: &CnvPVecRBackendRef<'_, BE, Rg>,
     b_col: usize,
     b_galois: i64,
 ) where
@@ -404,22 +404,22 @@ pub(crate) unsafe fn cnv_apply_dft<BE, E: TaskExecutor>(
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
     unsafe {
-        apply::<BE, E, false, false>(
+        apply::<BE, E, false, false, Rg>(
             module, meta, cnv_offset, res, res_col, a, a_col, a_col, b, b_col, b_col, b_galois,
         )
     };
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) unsafe fn cnv_apply_dft_add<BE, E: TaskExecutor>(
+pub(crate) unsafe fn cnv_apply_dft_add<BE, E: TaskExecutor, Rg: Ring>(
     module: &Module<BE>,
     meta: &BbcMeta<Primes30>,
     cnv_offset: usize,
-    res: &mut VecZnxDftBackendMut<'_, BE>,
+    res: &mut VecZnxDftBackendMut<'_, BE, Rg>,
     res_col: usize,
-    a: &CnvPVecLBackendRef<'_, BE>,
+    a: &CnvPVecLBackendRef<'_, BE, Rg>,
     a_col: usize,
-    b: &CnvPVecRBackendRef<'_, BE>,
+    b: &CnvPVecRBackendRef<'_, BE, Rg>,
     b_col: usize,
     b_galois: i64,
 ) where
@@ -428,21 +428,21 @@ pub(crate) unsafe fn cnv_apply_dft_add<BE, E: TaskExecutor>(
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
     unsafe {
-        apply::<BE, E, true, false>(
+        apply::<BE, E, true, false, Rg>(
             module, meta, cnv_offset, res, res_col, a, a_col, a_col, b, b_col, b_col, b_galois,
         )
     };
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) unsafe fn cnv_pairwise_apply_dft<BE, E: TaskExecutor>(
+pub(crate) unsafe fn cnv_pairwise_apply_dft<BE, E: TaskExecutor, Rg: Ring>(
     module: &Module<BE>,
     meta: &BbcMeta<Primes30>,
     cnv_offset: usize,
-    res: &mut VecZnxDftBackendMut<'_, BE>,
+    res: &mut VecZnxDftBackendMut<'_, BE, Rg>,
     res_col: usize,
-    a: &CnvPVecLBackendRef<'_, BE>,
-    b: &CnvPVecRBackendRef<'_, BE>,
+    a: &CnvPVecLBackendRef<'_, BE, Rg>,
+    b: &CnvPVecRBackendRef<'_, BE, Rg>,
     i: usize,
     j: usize,
 ) where
@@ -451,9 +451,9 @@ pub(crate) unsafe fn cnv_pairwise_apply_dft<BE, E: TaskExecutor>(
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
     if i == j {
-        unsafe { apply::<BE, E, false, false>(module, meta, cnv_offset, res, res_col, a, i, i, b, i, i, 1) };
+        unsafe { apply::<BE, E, false, false, Rg>(module, meta, cnv_offset, res, res_col, a, i, i, b, i, i, 1) };
     } else {
-        unsafe { apply::<BE, E, false, true>(module, meta, cnv_offset, res, res_col, a, i, j, b, i, j, 1) };
+        unsafe { apply::<BE, E, false, true, Rg>(module, meta, cnv_offset, res, res_col, a, i, j, b, i, j, 1) };
     }
 }
 

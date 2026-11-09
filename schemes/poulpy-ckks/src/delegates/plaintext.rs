@@ -1,7 +1,7 @@
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{GLWEInfos, GLWEToBackendRef};
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Module, Ring, ScratchArena};
 
 use crate::GLWEToBackendMut;
 
@@ -9,15 +9,15 @@ use crate::{CKKSInfos, SetCKKSInfos, oep::CKKSPlaintextVecImpl};
 
 use crate::api::CKKSPlaintextVecOps;
 
-impl<BE: Backend + CKKSPlaintextVecImpl> CKKSPlaintextVecOps<BE> for Module<BE> {
+impl<BE: Backend + CKKSPlaintextVecImpl<Rg>, Rg: Ring> CKKSPlaintextVecOps<BE, Rg> for Module<BE> {
     fn ckks_extract_pt_tmp_bytes(&self, res_size: usize) -> usize {
         BE::ckks_extract_pt_tmp_bytes(self, res_size)
     }
 
     fn ckks_extract_pt<D, S>(&self, dst: &mut D, src: &S, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        D: GLWEToBackendMut<BE> + GLWEInfos + CKKSInfos + SetCKKSInfos + IntPolyInfos,
-        S: GLWEToBackendRef<BE> + GLWEInfos + CKKSInfos,
+        D: GLWEToBackendMut<BE, Rg> + GLWEInfos + CKKSInfos + SetCKKSInfos + IntPolyInfos,
+        S: GLWEToBackendRef<BE, Rg> + GLWEInfos + CKKSInfos,
     {
         BE::ckks_extract_pt(self, dst, src, scratch)
     }

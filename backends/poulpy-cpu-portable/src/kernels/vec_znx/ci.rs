@@ -1,11 +1,13 @@
-use crate::layouts::{Backend, HostDataMut, HostDataRef, VecZnxBackendMut, VecZnxBackendRef, ZnxView, ZnxViewMut};
+use crate::layouts::{
+    Backend, ConjugateInvariant, HostDataMut, HostDataRef, VecZnxBackendMut, VecZnxBackendRef, ZnxView, ZnxViewMut,
+};
 
 /// Embeds the conjugate-invariant `a[a_col]` of degree `N` into `res[res_col]` of degree `2N`:
 /// `a_0 + Σ a_i (X^i + X^-i)`, with `X^-i = -X^(2N-i)`.
 pub fn vec_znx_ci_embed_portable<'r, 'a, BE>(
     res: &mut VecZnxBackendMut<'r, BE>,
     res_col: usize,
-    a: &VecZnxBackendRef<'a, BE>,
+    a: &VecZnxBackendRef<'a, BE, ConjugateInvariant>,
     a_col: usize,
 ) where
     BE: Backend<ZnxWord = i64>,
@@ -33,7 +35,7 @@ pub fn vec_znx_ci_embed_portable<'r, 'a, BE>(
 /// Writes the relative trace of `a[a_col]` of degree `2N` into `res[res_col]` of
 /// degree `N`: the compressed `a(X) + a(X^-1)`.
 pub fn vec_znx_ci_trace_portable<'r, 'a, BE>(
-    res: &mut VecZnxBackendMut<'r, BE>,
+    res: &mut VecZnxBackendMut<'r, BE, ConjugateInvariant>,
     res_col: usize,
     a: &VecZnxBackendRef<'a, BE>,
     a_col: usize,

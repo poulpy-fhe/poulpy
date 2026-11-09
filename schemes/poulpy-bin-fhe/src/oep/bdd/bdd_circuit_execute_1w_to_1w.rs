@@ -8,7 +8,7 @@ use poulpy_hal::layouts::*;
 /// Implementations reproduce the bodies their methods document bit for bit, report for each
 /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait BDDCircuitExecute1WTo1WImpl: Backend<Ring = Standard> {
+pub unsafe trait BDDCircuitExecute1WTo1WImpl: Backend {
     /// Default body: `bdd_circuit_execute_1w_to_1w_tmp_bytes_derived`, the selected
     /// [`Self::bdd_circuit_execute_1w_to_1w_multi_thread_tmp_bytes`] with `threads = 1`.
     ///

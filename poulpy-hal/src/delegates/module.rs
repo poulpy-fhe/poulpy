@@ -1,6 +1,6 @@
 use crate::{
     api::{MatZnxAlloc, ModuleN, ModuleNew, ModuleSynchronize, ScalarZnxAlloc, VecZnxAlloc},
-    layouts::{Backend, MatZnx, Module, ScalarZnx, VecZnx},
+    layouts::{Backend, MatZnx, Module, Ring, ScalarZnx, VecZnx},
     oep::HalModuleImpl,
 };
 
@@ -32,26 +32,26 @@ where
 }
 
 impl<B: Backend> ScalarZnxAlloc<B> for Module<B> {
-    fn scalar_znx_alloc(&self, n: usize, cols: usize) -> ScalarZnx<B::OwnedBuf, B::ZnxWord> {
+    fn scalar_znx_alloc<Rg: Ring>(&self, n: usize, cols: usize) -> ScalarZnx<B::OwnedBuf, B::ZnxWord, Rg> {
         Module::<B>::scalar_znx_alloc(self, n, cols)
     }
 }
 
 impl<B: Backend> VecZnxAlloc<B> for Module<B> {
-    fn vec_znx_alloc(&self, n: usize, cols: usize, size: usize) -> VecZnx<B::OwnedBuf, B::ZnxWord> {
+    fn vec_znx_alloc<Rg: Ring>(&self, n: usize, cols: usize, size: usize) -> VecZnx<B::OwnedBuf, B::ZnxWord, Rg> {
         Module::<B>::vec_znx_alloc(self, n, cols, size)
     }
 }
 
 impl<B: Backend> MatZnxAlloc<B> for Module<B> {
-    fn mat_znx_alloc(
+    fn mat_znx_alloc<Rg: Ring>(
         &self,
         n: usize,
         rows: usize,
         cols_in: usize,
         cols_out: usize,
         size: usize,
-    ) -> MatZnx<B::OwnedBuf, B::ZnxWord> {
+    ) -> MatZnx<B::OwnedBuf, B::ZnxWord, Rg> {
         Module::<B>::mat_znx_alloc(self, n, rows, cols_in, cols_out, size)
     }
 }

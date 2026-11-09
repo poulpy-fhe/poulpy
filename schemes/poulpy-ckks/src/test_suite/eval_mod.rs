@@ -5,7 +5,7 @@ use poulpy_core::layouts::{
 };
 use poulpy_hal::{
     api::{ReimNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{HostBytesBackend, Module, ScratchOwned, Standard},
+    layouts::{HostBytesBackend, Module, Ring, ScratchOwned, Standard},
     source::Source,
 };
 
@@ -28,15 +28,15 @@ use super::helpers::{
 use super::parity::helpers::{fixture_ciphertext, snapshot, with_scratch};
 use crate::SlotsKind;
 
-fn alloc_scratch_eval_mod<BE>(params: &super::CKKSTestParams, module: &Module<BE>, res_k: usize) -> ScratchOwned<BE>
+fn alloc_scratch_eval_mod<BE, Rg: Ring>(params: &super::CKKSTestParams, module: &Module<BE>, res_k: usize) -> ScratchOwned<BE>
 where
-    BE: TestContextBackend<Ring = Standard>,
-    Module<BE>: TestContextModule<BE>,
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE, Rg>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
-    let mut ct = module.ckks_ciphertext_alloc(params.base2k.into(), params.k.into());
+    let mut ct = module.ckks_ciphertext_alloc::<Standard>(params.base2k.into(), params.k.into());
     ct.set_meta(params.prec().meta);
-    let mut res = module.ckks_ciphertext_alloc(params.base2k.into(), res_k.into());
+    let mut res = module.ckks_ciphertext_alloc::<Standard>(params.base2k.into(), res_k.into());
     res.set_meta(params.prec().meta);
     let pt_prec = ckks_spec(params.n, params.base2k, 8, 10);
     let tsk_layout = super::CKKSTestParams { k: res_k, ..*params }.tsk_layout();
@@ -122,7 +122,7 @@ where
     (amp * y, F::zero())
 }
 
-fn run_eval_mod_case<BE, F, E>(
+fn run_eval_mod_case<BE, F, E, Rg: Ring>(
     params: super::CKKSTestParams,
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
@@ -130,20 +130,20 @@ fn run_eval_mod_case<BE, F, E>(
     lit: EvalModPlan,
     required_log2_prec: f64,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSEvalModOps<BE>,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
-    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE, Rg> + CKKSEncodingOps<BE, F, Rg> + CKKSEvalModOps<BE, Rg>,
+    CKKSCiphertextOwned<BE, Rg>: GLWEToBackendMut<BE, Rg> + GLWEToBackendRef<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BE, Rg>: GLWEToBackendRef<BE, Rg> + LWEInfos,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE, Rg>: GLWETensorKeyPreparedToBackendRef<BE, Rg> + GGLWEInfos,
     F: TestScalar,
     E: ReimNew<F>,
 {
     // Coefficients are encoded at the scale EvalMod runs at (`f_mod_log_delta`).
     let mut lit = lit;
     lit.coeffs_meta = CoeffsMeta::from_delta_budget(lit.f_mod_log_delta, params.base2k);
-    let compile_bytes = CKKSEncodingHostOps::<BE, F>::ckks_encoding_host_tmp_bytes(module, module.n() / 2);
+    let compile_bytes = CKKSEncodingHostOps::<BE, F, Rg>::ckks_encoding_host_tmp_bytes(module, module.n() / 2);
     let params_be = with_scratch::<BE, _>(compile_bytes, |s| {
-        ckks_eval_mod_compile::<BE, F>(params.base2k.into(), lit, module, s)
+        ckks_eval_mod_compile::<BE, F, Rg>(params.base2k.into(), lit, module, s)
     })
     .expect("ckks_eval_mod_compile");
     assert_eq!(lit.consumed_bits(), params_be.consumed_bits(), "{label}: consumed bits");
@@ -243,11 +243,11 @@ fn run_eval_mod_case<BE, F, E>(
             },
         ),
     ] {
-        let before = snapshot::<BE, _>(&res);
+        let before = snapshot::<BE, _, Rg>(&res);
         let err = with_scratch::<BE, _>(0, |s| module.ckks_eval_mod(&mut res, &input, &params_be, &tsk, s)).unwrap_err();
         assert_ckks_error(&format!("{label}: {case}"), &err, want);
         assert_eq!(
-            snapshot::<BE, _>(&res),
+            snapshot::<BE, _, Rg>(&res),
             before,
             "{label}: {case}: a refused EvalMod wrote res"
         );
@@ -264,7 +264,7 @@ fn run_eval_mod_case<BE, F, E>(
         "{label}: eval_mod consumed bits mismatch"
     );
 
-    let (re_out, im_out) = ckks_decrypt_decode::<BE, F, E>(&test_params, module, &encoder, &res, &sk, &mut scratch.borrow());
+    let (re_out, im_out) = ckks_decrypt_decode::<BE, F, E, Rg>(&test_params, module, &encoder, &res, &sk, &mut scratch.borrow());
 
     // The eval_mod output recovers the message scaled by 1/message_ratio (the
     // amplitude folds in `scaling`, which is 1 here). Scale the output and the
@@ -318,11 +318,12 @@ pub fn test_eval_mod_sin_continuous_minimal<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSEvalModOps<BE>,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
-    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE, Standard> + CKKSEncodingOps<BE, F, Standard> + CKKSEvalModOps<BE, Standard>,
+    CKKSCiphertextOwned<BE, Standard>:
+        GLWEToBackendMut<BE, Standard> + GLWEToBackendRef<BE, Standard> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BE, Standard>: GLWEToBackendRef<BE, Standard> + LWEInfos,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE, Standard>: GLWETensorKeyPreparedToBackendRef<BE, Standard> + GGLWEInfos,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -338,7 +339,7 @@ pub fn test_eval_mod_sin_continuous_minimal<BE, F, E>(
         coeffs_meta: CoeffsMeta::from_delta_budget(0, 0), // overwritten by run_eval_mod_case
         f_mod_log_delta: 60,
     };
-    run_eval_mod_case::<BE, F, E>(params, module, host_module, "eval_mod_sin_continuous_minimal", lit, 18.0);
+    run_eval_mod_case::<BE, F, E, Standard>(params, module, host_module, "eval_mod_sin_continuous_minimal", lit, 18.0);
 }
 
 pub fn test_eval_mod_sin_continuous_with_arcsine<BE, F, E>(
@@ -346,11 +347,12 @@ pub fn test_eval_mod_sin_continuous_with_arcsine<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSEvalModOps<BE>,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
-    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE, Standard> + CKKSEncodingOps<BE, F, Standard> + CKKSEvalModOps<BE, Standard>,
+    CKKSCiphertextOwned<BE, Standard>:
+        GLWEToBackendMut<BE, Standard> + GLWEToBackendRef<BE, Standard> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BE, Standard>: GLWEToBackendRef<BE, Standard> + LWEInfos,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE, Standard>: GLWETensorKeyPreparedToBackendRef<BE, Standard> + GGLWEInfos,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -366,7 +368,7 @@ pub fn test_eval_mod_sin_continuous_with_arcsine<BE, F, E>(
         split_strategy: SplitStrategy::MinDepth,
         coeffs_meta: CoeffsMeta::from_delta_budget(0, 0), // overwritten by run_eval_mod_case
     };
-    run_eval_mod_case::<BE, F, E>(params, module, host_module, "eval_mod_sin_continuous_arcsine", lit, 18.0);
+    run_eval_mod_case::<BE, F, E, Standard>(params, module, host_module, "eval_mod_sin_continuous_arcsine", lit, 18.0);
 }
 
 pub fn test_eval_mod_cos_discrete<BE, F, E>(
@@ -374,11 +376,12 @@ pub fn test_eval_mod_cos_discrete<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSEvalModOps<BE>,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
-    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE, Standard> + CKKSEncodingOps<BE, F, Standard> + CKKSEvalModOps<BE, Standard>,
+    CKKSCiphertextOwned<BE, Standard>:
+        GLWEToBackendMut<BE, Standard> + GLWEToBackendRef<BE, Standard> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BE, Standard>: GLWEToBackendRef<BE, Standard> + LWEInfos,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE, Standard>: GLWETensorKeyPreparedToBackendRef<BE, Standard> + GGLWEInfos,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -394,7 +397,7 @@ pub fn test_eval_mod_cos_discrete<BE, F, E>(
         split_strategy: SplitStrategy::MinDepth,
         coeffs_meta: CoeffsMeta::from_delta_budget(0, 0), // overwritten by run_eval_mod_case
     };
-    run_eval_mod_case::<BE, F, E>(params, module, host_module, "eval_mod_cos_discrete", lit, 18.0);
+    run_eval_mod_case::<BE, F, E, Standard>(params, module, host_module, "eval_mod_cos_discrete", lit, 18.0);
 }
 
 pub fn test_eval_mod_cos_continuous<BE, F, E>(
@@ -402,11 +405,12 @@ pub fn test_eval_mod_cos_continuous<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSEvalModOps<BE>,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
-    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE, Standard> + CKKSEncodingOps<BE, F, Standard> + CKKSEvalModOps<BE, Standard>,
+    CKKSCiphertextOwned<BE, Standard>:
+        GLWEToBackendMut<BE, Standard> + GLWEToBackendRef<BE, Standard> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BE, Standard>: GLWEToBackendRef<BE, Standard> + LWEInfos,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE, Standard>: GLWETensorKeyPreparedToBackendRef<BE, Standard> + GGLWEInfos,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -422,16 +426,17 @@ pub fn test_eval_mod_cos_continuous<BE, F, E>(
         coeffs_meta: CoeffsMeta::from_delta_budget(0, 0), // overwritten by run_eval_mod_case
         f_mod_log_delta: 60,
     };
-    run_eval_mod_case::<BE, F, E>(params, module, host_module, "eval_mod_cos_continuous", lit, 18.0);
+    run_eval_mod_case::<BE, F, E, Standard>(params, module, host_module, "eval_mod_cos_continuous", lit, 18.0);
 }
 
 pub fn test_eval_mod_exp<BE, F, E>(params: super::CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSEvalModOps<BE>,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
-    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE, Standard> + CKKSEncodingOps<BE, F, Standard> + CKKSEvalModOps<BE, Standard>,
+    CKKSCiphertextOwned<BE, Standard>:
+        GLWEToBackendMut<BE, Standard> + GLWEToBackendRef<BE, Standard> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BE, Standard>: GLWEToBackendRef<BE, Standard> + LWEInfos,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE, Standard>: GLWETensorKeyPreparedToBackendRef<BE, Standard> + GGLWEInfos,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -447,7 +452,7 @@ where
         coeffs_meta: CoeffsMeta::from_delta_budget(0, 0), // overwritten by run_eval_mod_case
         f_mod_log_delta: 60,
     };
-    run_eval_mod_case::<BE, F, E>(params, module, host_module, "eval_mod_exp", lit, 18.0);
+    run_eval_mod_case::<BE, F, E, Standard>(params, module, host_module, "eval_mod_exp", lit, 18.0);
 }
 
 pub fn test_eval_mod_cos_discrete_even<BE, F, E>(
@@ -455,11 +460,12 @@ pub fn test_eval_mod_cos_discrete_even<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSEvalModOps<BE>,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
-    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE, Standard> + CKKSEncodingOps<BE, F, Standard> + CKKSEvalModOps<BE, Standard>,
+    CKKSCiphertextOwned<BE, Standard>:
+        GLWEToBackendMut<BE, Standard> + GLWEToBackendRef<BE, Standard> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BE, Standard>: GLWEToBackendRef<BE, Standard> + LWEInfos,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE, Standard>: GLWETensorKeyPreparedToBackendRef<BE, Standard> + GGLWEInfos,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -476,5 +482,5 @@ pub fn test_eval_mod_cos_discrete_even<BE, F, E>(
         f_mod_log_delta: 60,
     };
     assert!(lit.folds_even_base());
-    run_eval_mod_case::<BE, F, E>(params, module, host_module, "eval_mod_cos_discrete_even", lit, 18.0);
+    run_eval_mod_case::<BE, F, E, Standard>(params, module, host_module, "eval_mod_cos_discrete_even", lit, 18.0);
 }

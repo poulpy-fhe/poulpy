@@ -3,14 +3,14 @@
 mod gglwe {
     use crate::api::GLWEKeyswitch;
 
-    use poulpy_hal::layouts::{Backend, ScratchArena};
+    use poulpy_hal::layouts::{Backend, Ring, ScratchArena};
 
     use crate::layouts::{
         GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef,
         prepared::{GGLWEPreparedBackendRef, GGLWEPreparedToBackendRef},
     };
 
-    pub(crate) fn gglwe_keyswitch_tmp_bytes_derived<BE, M, R, A, K>(
+    pub(crate) fn gglwe_keyswitch_tmp_bytes_derived<BE, M, R, A, K, Rg: Ring>(
         module: &M,
         res_infos: &R,
         a_infos: &A,
@@ -18,7 +18,7 @@ mod gglwe {
     ) -> usize
     where
         BE: Backend,
-        M: GLWEKeyswitch<BE>,
+        M: GLWEKeyswitch<BE, Rg>,
         R: GGLWEInfos,
         A: GGLWEInfos,
         K: GGLWEInfos,
@@ -26,17 +26,17 @@ mod gglwe {
         module.glwe_keyswitch_tmp_bytes(res_infos, a_infos, key_infos)
     }
 
-    pub(crate) fn gglwe_keyswitch_derived<BE, M, R, A>(
+    pub(crate) fn gglwe_keyswitch_derived<BE, M, R, A, Rg: Ring>(
         module: &M,
         res: &mut R,
         a: &A,
-        b: &GGLWEPreparedBackendRef<'_, BE>,
+        b: &GGLWEPreparedBackendRef<'_, BE, Rg>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         BE: Backend,
-        M: GLWEKeyswitch<BE>,
-        R: GGLWEToBackendMut<BE> + GGLWEInfos,
-        A: GGLWEToBackendRef<BE> + GGLWEInfos,
+        M: GLWEKeyswitch<BE, Rg>,
+        R: GGLWEToBackendMut<BE, Rg> + GGLWEInfos,
+        A: GGLWEToBackendRef<BE, Rg> + GGLWEInfos,
     {
         assert_eq!(
             res.rank_in(),
@@ -77,10 +77,10 @@ mod gglwe {
         assert_eq!(res.base2k(), a.base2k());
         crate::layouts::assert_no_row_offset("gglwe_keyswitch", &b);
         assert!(
-            scratch.available() >= gglwe_keyswitch_tmp_bytes_derived::<BE, _, _, _, _>(module, res, a, b),
+            scratch.available() >= gglwe_keyswitch_tmp_bytes_derived::<BE, _, _, _, _, Rg>(module, res, a, b),
             "scratch.available(): {} < GGLWEKeyswitch::gglwe_keyswitch_tmp_bytes: {}",
             scratch.available(),
-            gglwe_keyswitch_tmp_bytes_derived::<BE, _, _, _, _>(module, res, a, b)
+            gglwe_keyswitch_tmp_bytes_derived::<BE, _, _, _, _, Rg>(module, res, a, b)
         );
 
         let mut res = res.to_backend_mut();
@@ -95,15 +95,15 @@ mod gglwe {
         }
     }
 
-    pub(crate) fn gglwe_keyswitch_assign_derived<BE, M, R>(
+    pub(crate) fn gglwe_keyswitch_assign_derived<BE, M, R, Rg: Ring>(
         module: &M,
         res: &mut R,
-        a: &GGLWEPreparedBackendRef<'_, BE>,
+        a: &GGLWEPreparedBackendRef<'_, BE, Rg>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         BE: Backend,
-        M: GLWEKeyswitch<BE>,
-        R: GGLWEToBackendMut<BE> + GGLWEInfos,
+        M: GLWEKeyswitch<BE, Rg>,
+        R: GGLWEToBackendMut<BE, Rg> + GGLWEInfos,
     {
         let mut res = res.to_backend_mut();
 
@@ -115,10 +115,10 @@ mod gglwe {
             a.rank_out()
         );
         assert!(
-            scratch.available() >= gglwe_keyswitch_tmp_bytes_derived::<BE, _, _, _, _>(module, &res, &res, a),
+            scratch.available() >= gglwe_keyswitch_tmp_bytes_derived::<BE, _, _, _, _, Rg>(module, &res, &res, a),
             "scratch.available(): {} < GGLWEKeyswitch::gglwe_keyswitch_tmp_bytes: {}",
             scratch.available(),
-            gglwe_keyswitch_tmp_bytes_derived::<BE, _, _, _, _>(module, &res, &res, a)
+            gglwe_keyswitch_tmp_bytes_derived::<BE, _, _, _, _, Rg>(module, &res, &res, a)
         );
 
         for row in 0..res.dnum().into() {
@@ -137,7 +137,7 @@ mod ggsw {
 
     use poulpy_hal::{
         api::ModuleN,
-        layouts::{Backend, ScratchArena},
+        layouts::{Backend, Ring, ScratchArena},
     };
 
     use crate::{
@@ -148,7 +148,7 @@ mod ggsw {
         },
     };
 
-    pub(crate) fn ggsw_keyswitch_tmp_bytes_derived<BE, M, R, A, K, T>(
+    pub(crate) fn ggsw_keyswitch_tmp_bytes_derived<BE, M, R, A, K, T, Rg: Ring>(
         module: &M,
         res_infos: &R,
         a_infos: &A,
@@ -157,7 +157,7 @@ mod ggsw {
     ) -> usize
     where
         BE: Backend,
-        M: ModuleN + GLWEKeyswitch<BE> + GGSWExpandRows<BE>,
+        M: ModuleN + GLWEKeyswitch<BE, Rg> + GGSWExpandRows<BE, Rg>,
         R: GGSWInfos,
         A: GGSWInfos,
         K: GGLWEInfos,
@@ -174,18 +174,18 @@ mod ggsw {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn ggsw_keyswitch_derived<BE, M, R, A>(
+    pub(crate) fn ggsw_keyswitch_derived<BE, M, R, A, Rg: Ring>(
         module: &M,
         res: &mut R,
         a: &A,
-        key: &GGLWEPreparedBackendRef<'_, BE>,
-        tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, BE>,
+        key: &GGLWEPreparedBackendRef<'_, BE, Rg>,
+        tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, BE, Rg>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         BE: Backend,
-        M: ModuleN + GLWEKeyswitch<BE> + GGSWExpandRows<BE>,
-        R: GGSWToBackendMut<BE> + GGSWInfos,
-        A: GGSWToBackendRef<BE> + GGSWInfos,
+        M: ModuleN + GLWEKeyswitch<BE, Rg> + GGSWExpandRows<BE, Rg>,
+        R: GGSWToBackendMut<BE, Rg> + GGSWInfos,
+        A: GGSWToBackendRef<BE, Rg> + GGSWInfos,
     {
         let mut res_backend = res.to_backend_mut();
         let a_backend = a.to_backend_ref();
@@ -195,10 +195,10 @@ mod ggsw {
         assert_eq!(res_backend.base2k(), a_backend.base2k());
         assert!(
             scratch.available()
-                >= ggsw_keyswitch_tmp_bytes_derived::<BE, _, _, _, _, _>(module, &res_backend, &a_backend, key, tsk),
+                >= ggsw_keyswitch_tmp_bytes_derived::<BE, _, _, _, _, _, Rg>(module, &res_backend, &a_backend, key, tsk),
             "scratch.available(): {} < GGSWKeyswitch::ggsw_keyswitch_tmp_bytes: {}",
             scratch.available(),
-            ggsw_keyswitch_tmp_bytes_derived::<BE, _, _, _, _, _>(module, &res_backend, &a_backend, key, tsk)
+            ggsw_keyswitch_tmp_bytes_derived::<BE, _, _, _, _, _, Rg>(module, &res_backend, &a_backend, key, tsk)
         );
 
         crate::layouts::assert_no_row_offset("ggsw_keyswitch", &key);
@@ -211,25 +211,25 @@ mod ggsw {
         module.ggsw_expand_rows_assign(&mut res_backend, tsk, scratch)
     }
 
-    pub(crate) fn ggsw_keyswitch_assign_derived<BE, M, R>(
+    pub(crate) fn ggsw_keyswitch_assign_derived<BE, M, R, Rg: Ring>(
         module: &M,
         res: &mut R,
-        key: &GGLWEPreparedBackendRef<'_, BE>,
-        tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, BE>,
+        key: &GGLWEPreparedBackendRef<'_, BE, Rg>,
+        tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, BE, Rg>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         BE: Backend,
-        M: ModuleN + GLWEKeyswitch<BE> + GGSWExpandRows<BE>,
-        R: GGSWToBackendMut<BE> + GGSWInfos,
+        M: ModuleN + GLWEKeyswitch<BE, Rg> + GGSWExpandRows<BE, Rg>,
+        R: GGSWToBackendMut<BE, Rg> + GGSWInfos,
     {
         let mut res_backend = res.to_backend_mut();
 
         assert!(
             scratch.available()
-                >= ggsw_keyswitch_tmp_bytes_derived::<BE, _, _, _, _, _>(module, &res_backend, &res_backend, key, tsk),
+                >= ggsw_keyswitch_tmp_bytes_derived::<BE, _, _, _, _, _, Rg>(module, &res_backend, &res_backend, key, tsk),
             "scratch.available(): {} < GGSWKeyswitch::ggsw_keyswitch_tmp_bytes: {}",
             scratch.available(),
-            ggsw_keyswitch_tmp_bytes_derived::<BE, _, _, _, _, _>(module, &res_backend, &res_backend, key, tsk)
+            ggsw_keyswitch_tmp_bytes_derived::<BE, _, _, _, _, _, Rg>(module, &res_backend, &res_backend, key, tsk)
         );
 
         for row in 0..res_backend.dnum().into() {
@@ -244,7 +244,7 @@ pub(crate) use ggsw::*;
 
 mod gglwe_product {
     use poulpy_hal::layouts::{
-        Module, ScratchArena, VecZnxBackendMut, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef,
+        Module, Ring, ScratchArena, VecZnxBackendMut, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef,
     };
 
     use crate::{
@@ -255,18 +255,18 @@ mod gglwe_product {
     /// [`GGLWEProductDigitsStridedImpl::gglwe_product_idft_normalize`] on the items in order,
     /// every item and the scratch checked before the first write.
     #[allow(clippy::too_many_arguments, clippy::type_complexity)]
-    pub(crate) fn gglwe_products_idft_normalize_derived<BE: GGLWEProductDigitsStridedImpl>(
+    pub(crate) fn gglwe_products_idft_normalize_derived<BE: GGLWEProductDigitsStridedImpl<Rg>, Rg: Ring>(
         module: &Module<BE>,
-        res: &mut [VecZnxBackendMut<'_, BE>],
+        res: &mut [VecZnxBackendMut<'_, BE, Rg>],
         res_base2k: usize,
         res_k: usize,
         res_offset: i64,
-        res_dft: &mut [VecZnxDftBackendMut<'_, BE>],
-        a: &[VecZnxDftBackendRef<'_, BE>],
-        key: &GGLWEPreparedBackendRef<'_, BE>,
+        res_dft: &mut [VecZnxDftBackendMut<'_, BE, Rg>],
+        a: &[VecZnxDftBackendRef<'_, BE, Rg>],
+        key: &GGLWEPreparedBackendRef<'_, BE, Rg>,
         term_count: usize,
-        addends: &[&[Option<(&VecZnxDftBackendRef<'_, BE>, usize)>]],
-        body: &[Option<(&VecZnxBackendRef<'_, BE>, usize)>],
+        addends: &[&[Option<(&VecZnxDftBackendRef<'_, BE, Rg>, usize)>]],
+        body: &[Option<(&VecZnxBackendRef<'_, BE, Rg>, usize)>],
         a_base2k: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) {

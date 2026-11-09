@@ -1,6 +1,6 @@
 use poulpy_hal::layouts::SvpPPolToBackendMut;
 use poulpy_hal::layouts::SvpPPolToBackendRef;
-use poulpy_hal::layouts::{Backend, Data, SvpPPol, ZnxInfos};
+use poulpy_hal::layouts::{Backend, Data, Ring, Standard, SvpPPol, ZnxInfos};
 
 use crate::{
     GetDistribution, GetDistributionMut,
@@ -12,25 +12,25 @@ use crate::{
 ///
 /// Stores the GLWE secret tensor with polynomials in the frequency domain
 /// for fast tensor operations. Tied to a specific backend via `B: Backend`.
-pub struct GLWESecretTensorPrepared<D: Data, B: Backend> {
-    pub(crate) data: SvpPPol<D, B::DftWord, B>,
+pub struct GLWESecretTensorPrepared<D: Data, B: Backend, Rg: Ring = Standard> {
+    pub(crate) data: SvpPPol<D, B::DftWord, B, Rg>,
     pub(crate) rank: Rank,
     pub(crate) dist: Distribution,
 }
 
-impl<D: Data, BE: Backend> GetDistribution for GLWESecretTensorPrepared<D, BE> {
+impl<D: Data, BE: Backend, Rg: Ring> GetDistribution for GLWESecretTensorPrepared<D, BE, Rg> {
     fn dist(&self) -> &Distribution {
         &self.dist
     }
 }
 
-impl<D: Data, BE: Backend> GetDistributionMut for GLWESecretTensorPrepared<D, BE> {
+impl<D: Data, BE: Backend, Rg: Ring> GetDistributionMut for GLWESecretTensorPrepared<D, BE, Rg> {
     fn dist_mut(&mut self) -> &mut Distribution {
         &mut self.dist
     }
 }
 
-impl<D: Data, B: Backend> LWEInfos for GLWESecretTensorPrepared<D, B> {
+impl<D: Data, B: Backend, Rg: Ring> LWEInfos for GLWESecretTensorPrepared<D, B, Rg> {
     fn base2k(&self) -> Base2K {
         Base2K(0)
     }
@@ -47,13 +47,13 @@ impl<D: Data, B: Backend> LWEInfos for GLWESecretTensorPrepared<D, B> {
         unimplemented!("this method is not defined on secrets")
     }
 }
-impl<D: Data, B: Backend> GLWEInfos for GLWESecretTensorPrepared<D, B> {
+impl<D: Data, B: Backend, Rg: Ring> GLWEInfos for GLWESecretTensorPrepared<D, B, Rg> {
     fn rank(&self) -> Rank {
         self.rank
     }
 }
 
-impl<D: Data, B: Backend> GLWESecretTensorPrepared<D, B> {
+impl<D: Data, B: Backend, Rg: Ring> GLWESecretTensorPrepared<D, B, Rg> {
     pub fn n(&self) -> Degree {
         Degree(self.data.n() as u32)
     }
@@ -65,15 +65,15 @@ impl<D: Data, B: Backend> GLWESecretTensorPrepared<D, B> {
     }
 }
 
-pub type GLWESecretTensorPreparedBackendRef<'a, B> = GLWESecretTensorPrepared<<B as Backend>::BufRef<'a>, B>;
-pub type GLWESecretTensorPreparedBackendMut<'a, B> = GLWESecretTensorPrepared<<B as Backend>::BufMut<'a>, B>;
+pub type GLWESecretTensorPreparedBackendRef<'a, B, Rg = Standard> = GLWESecretTensorPrepared<<B as Backend>::BufRef<'a>, B, Rg>;
+pub type GLWESecretTensorPreparedBackendMut<'a, B, Rg = Standard> = GLWESecretTensorPrepared<<B as Backend>::BufMut<'a>, B, Rg>;
 
-pub trait GLWESecretTensorPreparedToBackendRef<B: Backend> {
-    fn to_backend_ref(&self) -> GLWESecretTensorPreparedBackendRef<'_, B>;
+pub trait GLWESecretTensorPreparedToBackendRef<B: Backend, Rg: Ring = Standard> {
+    fn to_backend_ref(&self) -> GLWESecretTensorPreparedBackendRef<'_, B, Rg>;
 }
 
-impl<B: Backend> GLWESecretTensorPreparedToBackendRef<B> for GLWESecretTensorPrepared<B::OwnedBuf, B> {
-    fn to_backend_ref(&self) -> GLWESecretTensorPreparedBackendRef<'_, B> {
+impl<B: Backend, Rg: Ring> GLWESecretTensorPreparedToBackendRef<B, Rg> for GLWESecretTensorPrepared<B::OwnedBuf, B, Rg> {
+    fn to_backend_ref(&self) -> GLWESecretTensorPreparedBackendRef<'_, B, Rg> {
         GLWESecretTensorPrepared {
             data: self.data.to_backend_ref(),
             rank: self.rank,
@@ -82,12 +82,12 @@ impl<B: Backend> GLWESecretTensorPreparedToBackendRef<B> for GLWESecretTensorPre
     }
 }
 
-pub trait GLWESecretTensorPreparedToBackendMut<B: Backend> {
-    fn to_backend_mut(&mut self) -> GLWESecretTensorPreparedBackendMut<'_, B>;
+pub trait GLWESecretTensorPreparedToBackendMut<B: Backend, Rg: Ring = Standard> {
+    fn to_backend_mut(&mut self) -> GLWESecretTensorPreparedBackendMut<'_, B, Rg>;
 }
 
-impl<B: Backend> GLWESecretTensorPreparedToBackendMut<B> for GLWESecretTensorPrepared<B::OwnedBuf, B> {
-    fn to_backend_mut(&mut self) -> GLWESecretTensorPreparedBackendMut<'_, B> {
+impl<B: Backend, Rg: Ring> GLWESecretTensorPreparedToBackendMut<B, Rg> for GLWESecretTensorPrepared<B::OwnedBuf, B, Rg> {
+    fn to_backend_mut(&mut self) -> GLWESecretTensorPreparedBackendMut<'_, B, Rg> {
         GLWESecretTensorPrepared {
             data: self.data.to_backend_mut(),
             rank: self.rank,

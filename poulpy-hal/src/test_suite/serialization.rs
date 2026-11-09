@@ -2,7 +2,7 @@ use std::fmt::Debug;
 
 use crate::{
     api::VecZnxFillUniformSource,
-    layouts::{MatZnxAtBackendMut, Module, ReaderFrom, ScalarZnxAsVecZnxBackendMut, WriterTo},
+    layouts::{MatZnxAtBackendMut, Module, ReaderFrom, Ring, ScalarZnxAsVecZnxBackendMut, WriterTo},
     source::Source,
     test_suite::{TestBackend, download_mat_znx, download_scalar_znx, download_vec_znx, vec_znx_backend_mut},
 };
@@ -27,7 +27,7 @@ where
 }
 
 /// Round-trips `ScalarZnx`, `VecZnx` and `MatZnx` fixtures sampled by `module`.
-pub fn test_serialization<BE: TestBackend>(module: &Module<BE>) {
+pub fn test_serialization<BE: TestBackend<Rg>, Rg: Ring>(module: &Module<BE>) {
     let n: usize = module.n();
     let base2k: usize = 50;
     let mut source = Source::new([0u8; 32]);
@@ -38,21 +38,21 @@ pub fn test_serialization<BE: TestBackend>(module: &Module<BE>) {
             module.vec_znx_fill_uniform_source(
                 base2k,
                 base2k,
-                &mut ScalarZnxAsVecZnxBackendMut::<BE>::as_vec_znx_backend_mut(s),
+                &mut ScalarZnxAsVecZnxBackendMut::<BE, Rg>::as_vec_znx_backend_mut(s),
                 col,
                 &mut source,
             );
         }
     }
-    test_reader_writer_interface(scalar.each_ref().map(download_scalar_znx::<BE>));
+    test_reader_writer_interface(scalar.each_ref().map(download_scalar_znx::<BE, Rg>));
 
     let mut vec = [(); 2].map(|_| module.vec_znx_alloc(n, 3, 4));
     for v in &mut vec {
         for col in 0..3 {
-            module.vec_znx_fill_uniform_source(base2k, 4 * base2k, &mut vec_znx_backend_mut::<BE>(v), col, &mut source);
+            module.vec_znx_fill_uniform_source(base2k, 4 * base2k, &mut vec_znx_backend_mut::<BE, Rg>(v), col, &mut source);
         }
     }
-    test_reader_writer_interface(vec.each_ref().map(download_vec_znx::<BE>));
+    test_reader_writer_interface(vec.each_ref().map(download_vec_znx::<BE, Rg>));
 
     let mut mat = [(); 2].map(|_| module.mat_znx_alloc(n, 3, 2, 2, 4));
     for m in &mut mat {
@@ -62,7 +62,7 @@ pub fn test_serialization<BE: TestBackend>(module: &Module<BE>) {
                     module.vec_znx_fill_uniform_source(
                         base2k,
                         4 * base2k,
-                        &mut MatZnxAtBackendMut::<BE>::at_backend_mut(m, row, col_in),
+                        &mut MatZnxAtBackendMut::<BE, Rg>::at_backend_mut(m, row, col_in),
                         col,
                         &mut source,
                     );
@@ -70,5 +70,5 @@ pub fn test_serialization<BE: TestBackend>(module: &Module<BE>) {
             }
         }
     }
-    test_reader_writer_interface(mat.each_ref().map(download_mat_znx::<BE>));
+    test_reader_writer_interface(mat.each_ref().map(download_mat_znx::<BE, Rg>));
 }

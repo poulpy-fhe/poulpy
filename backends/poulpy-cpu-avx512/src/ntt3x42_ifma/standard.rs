@@ -1,15 +1,12 @@
 //! Standard-ring items of [`NTT3x42Ifma`].
 
-use poulpy_cpu_portable::kernels::{
-    ntt4x30::NttHandleFactory,
-    znx::{ZnxAutomorphism, ZnxAutomorphismRotate, standard::znx_automorphism_portable},
-};
+use poulpy_cpu_portable::kernels::znx::{ZnxAutomorphism, ZnxAutomorphismRotate, standard::znx_automorphism_portable};
 use poulpy_hal::layouts::Standard;
 
 use super::{
     NTT3x42Ifma,
     kernels::{intt_avx512, ntt_avx512},
-    module::NTT3x42IfmaHandle,
+    module::RingTables,
     primes::{PrimeSetNtt3x42Ifma, Primes42},
     tables::{Ntt3x42IfmaTable, Ntt3x42IfmaTableInv},
     traits::Ntt3x42IfmaDFTExecute,
@@ -28,13 +25,12 @@ impl<P: PrimeSetNtt3x42Ifma> Ntt3x42IfmaTableInv<P, Standard> {
     }
 }
 
-unsafe impl NttHandleFactory for NTT3x42IfmaHandle {
-    fn create_ntt_handle(n: usize) -> Self {
-        Self::with_tables(n, Ntt3x42IfmaTable::<Primes42>::new, Ntt3x42IfmaTableInv::<Primes42>::new)
-    }
+/// The standard-ring tables of every degree up to `n`.
+pub(super) fn tables(n: usize) -> RingTables<Standard> {
+    RingTables::build(n, Ntt3x42IfmaTable::<Primes42>::new, Ntt3x42IfmaTableInv::<Primes42>::new)
 }
 
-impl ZnxAutomorphism for NTT3x42Ifma {
+impl ZnxAutomorphism<Standard> for NTT3x42Ifma {
     #[inline(always)]
     fn znx_automorphism(p: i64, res: &mut [i64], a: &[i64]) {
         unsafe { znx_automorphism_avx512(p, res, a) }
@@ -46,7 +42,7 @@ impl ZnxAutomorphism for NTT3x42Ifma {
     }
 }
 
-impl ZnxAutomorphismRotate for NTT3x42Ifma {
+impl ZnxAutomorphismRotate<Standard> for NTT3x42Ifma {
     #[inline(always)]
     fn znx_automorphism_rotate(p: i64, k: i64, res: &mut [i64], a: &[i64]) {
         unsafe { znx_automorphism_rotate_avx512(p, k, res, a) }

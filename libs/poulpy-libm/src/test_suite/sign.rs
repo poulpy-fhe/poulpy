@@ -32,11 +32,11 @@ use super::helpers::{assert_error, assert_precision_bits};
 
 pub fn test_sign_composite<BE, F, E>(base: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     Module<BE>: TestContextModule<BE> + CKKSSignOps<BE>,
-    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>:
+    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, Standard>:
         GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE> + LWEInfos + poulpy_core::layouts::IntPolyInfos,
+    CKKSPlaintext<BE::OwnedBuf, BE::ZnxWord, Standard>: GLWEToBackendRef<BE> + LWEInfos + poulpy_core::layouts::IntPolyInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
     E: ReimNew<F>,
@@ -64,11 +64,11 @@ where
 
 pub fn test_step_composite<BE, F, E>(base: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     Module<BE>: TestContextModule<BE> + CKKSSignOps<BE>,
-    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>:
+    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, Standard>:
         GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE> + LWEInfos + poulpy_core::layouts::IntPolyInfos,
+    CKKSPlaintext<BE::OwnedBuf, BE::ZnxWord, Standard>: GLWEToBackendRef<BE> + LWEInfos + poulpy_core::layouts::IntPolyInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
     E: ReimNew<F>,
@@ -80,11 +80,11 @@ where
 /// ([`SignComposite::from_minimax`]) rather than the tabulated constants.
 pub fn test_sign_minimax<BE, F, E>(base: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     Module<BE>: TestContextModule<BE> + CKKSSignOps<BE>,
-    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>:
+    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, Standard>:
         GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE> + LWEInfos + poulpy_core::layouts::IntPolyInfos,
+    CKKSPlaintext<BE::OwnedBuf, BE::ZnxWord, Standard>: GLWEToBackendRef<BE> + LWEInfos + poulpy_core::layouts::IntPolyInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
     E: ReimNew<F>,
@@ -145,7 +145,7 @@ where
     let composite = host_composite.map_plaintexts(|pt| upload_pt(module, pt));
 
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
-    let mut sizing = module.ckks_ciphertext_alloc(params.base2k.into(), params.k.into());
+    let mut sizing = module.ckks_ciphertext_alloc::<Standard>(params.base2k.into(), params.k.into());
     sizing.set_meta(params.prec().meta);
     let scratch_size = module.ckks_sign_tmp_bytes(&sizing, &sizing, &coeff_meta, &params.tsk_layout(), &params.atk_layout());
     let mut scratch = ScratchOwned::<BE>::alloc(scratch_size);
@@ -169,18 +169,18 @@ where
         .ckks_sign(&mut res, &ct, &composite, &tsk, &conj_key, &mut scratch.borrow())
         .expect("ckks_sign");
 
-    let (re_out, _) = ckks_decrypt_decode::<BE, F, E>(&params, module, &encoder, &res, &sk, &mut scratch.borrow());
+    let (re_out, _) = ckks_decrypt_decode::<BE, F, E, Standard>(&params, module, &encoder, &res, &sk, &mut scratch.borrow());
     let required = log_delta as f64 - 15.0;
     assert_precision_bits("sign_minimax", &re_out, &want, required, params.n);
 }
 
 fn run_case<BE, F, E>(base: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>, step: bool)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     Module<BE>: TestContextModule<BE> + CKKSSignOps<BE>,
-    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>:
+    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, Standard>:
         GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE> + LWEInfos + poulpy_core::layouts::IntPolyInfos,
+    CKKSPlaintext<BE::OwnedBuf, BE::ZnxWord, Standard>: GLWEToBackendRef<BE> + LWEInfos + poulpy_core::layouts::IntPolyInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
     E: ReimNew<F>,
@@ -233,7 +233,7 @@ where
 
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
 
-    let mut sizing = module.ckks_ciphertext_alloc(params.base2k.into(), params.k.into());
+    let mut sizing = module.ckks_ciphertext_alloc::<Standard>(params.base2k.into(), params.k.into());
     sizing.set_meta(params.prec().meta);
     let scratch_size = module.ckks_sign_tmp_bytes(&sizing, &sizing, &coeff_meta, &params.tsk_layout(), &params.atk_layout());
     let mut scratch = ScratchOwned::<BE>::alloc(scratch_size);
@@ -297,7 +297,7 @@ where
             host_module,
         )
         .expect("one-row SignComposite");
-        let (re_in, _) = ckks_decrypt_decode::<BE, F, E>(&params, module, &encoder, &cur, &sk, &mut scratch.borrow());
+        let (re_in, _) = ckks_decrypt_decode::<BE, F, E, Standard>(&params, module, &encoder, &cur, &sk, &mut scratch.borrow());
         let want: Vec<F> = re_in
             .iter()
             .map(|&v| {
@@ -316,7 +316,8 @@ where
                 .ckks_sign(&mut next, &cur, &factor, &tsk, &conj_key, &mut scratch.borrow())
                 .expect("ckks_sign");
         }
-        let (re_out, im_out) = ckks_decrypt_decode::<BE, F, E>(&params, module, &encoder, &next, &sk, &mut scratch.borrow());
+        let (re_out, im_out) =
+            ckks_decrypt_decode::<BE, F, E, Standard>(&params, module, &encoder, &next, &sk, &mut scratch.borrow());
         assert_precision_bits(&format!("{label}/factor {j}"), &re_out, &want, required, params.n);
         assert_precision_bits(
             &format!("{label}/factor {j}/imag"),
@@ -329,8 +330,8 @@ where
     }
 
     // The composite is the composition of its factors: the same bits come out.
-    let (re_out, im_out) = ckks_decrypt_decode::<BE, F, E>(&params, module, &encoder, &res, &sk, &mut scratch.borrow());
-    let (re_rep, im_rep) = ckks_decrypt_decode::<BE, F, E>(&params, module, &encoder, &cur, &sk, &mut scratch.borrow());
+    let (re_out, im_out) = ckks_decrypt_decode::<BE, F, E, Standard>(&params, module, &encoder, &res, &sk, &mut scratch.borrow());
+    let (re_rep, im_rep) = ckks_decrypt_decode::<BE, F, E, Standard>(&params, module, &encoder, &cur, &sk, &mut scratch.borrow());
     assert!(
         re_out == re_rep && im_out == im_rep,
         "{label}: differs from its factors evaluated one at a time"

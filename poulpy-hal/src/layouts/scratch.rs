@@ -190,7 +190,7 @@ mod tests {
 
     use crate::{
         api::ScratchArenaTakeVecZnx,
-        layouts::{Backend, HostBytesBackend, ScratchOwned},
+        layouts::{Backend, HostBytesBackend, ScratchOwned, Standard},
     };
 
     #[test]
@@ -208,11 +208,14 @@ mod tests {
         assert_eq!(chunks.len(), 2);
 
         let mut it = chunks.into_iter();
-        let (mut lhs, _) = it.next().expect("missing first scratch chunk").take_vec_znx_scratch(64, 2, 2);
+        let (mut lhs, _) = it
+            .next()
+            .expect("missing first scratch chunk")
+            .take_vec_znx_scratch::<Standard>(64, 2, 2);
         let (mut rhs, _) = it
             .next()
             .expect("missing second scratch chunk")
-            .take_vec_znx_scratch(64, 2, 2);
+            .take_vec_znx_scratch::<Standard>(64, 2, 2);
 
         let lhs_bytes = lhs.data_mut();
         let rhs_bytes = rhs.data_mut();

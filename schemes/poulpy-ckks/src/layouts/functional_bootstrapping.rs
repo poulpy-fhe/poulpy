@@ -12,7 +12,7 @@ use num_traits::{Float, FloatConst};
 use poulpy_core::api::TransferInto;
 use poulpy_core::layouts::Base2K;
 use poulpy_core::layouts::{GLWEPlaintextAlloc, ModuleCoreAlloc};
-use poulpy_hal::layouts::{Backend, HostBytesBackend, HostStaged, Module, Standard};
+use poulpy_hal::layouts::{Backend, HostBytesBackend, HostStaged, Module};
 
 use crate::{
     CKKSInfos, CoeffsMeta, SetCKKSInfos, SlotsKind,
@@ -153,7 +153,7 @@ impl EncodedLut<CKKSPlaintextOwned<HostBytesBackend>> {
     /// preserving the LUT kind and message-ratio metadata.
     pub fn transfer_to<BE>(&self, module: &Module<BE>) -> EncodedLut<CKKSPlaintextOwned<BE>>
     where
-        BE: Backend<Ring = Standard> + HostStaged,
+        BE: Backend + HostStaged,
         Module<BE>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>,
     {
         self.map(|pt| {

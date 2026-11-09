@@ -12,7 +12,7 @@ its own rules, and links here.
 | API trait | The public operation, implemented on `Module<BE>` (`GLWERotate`). |
 | Delegate | The blanket `impl Api<BE> for Module<BE>`. It forwards every call, unchanged, to the backend's OEP method and checks nothing. |
 | OEP family | An `unsafe` trait the backend implements (`GLWERotateImpl`); OEP means open extension point. Its methods take `module: &Module<Self>`, then the API method's parameters. |
-| Reference | A public `<ApiTrait>Reference<BE>` trait, blanket-implemented on `Module<BE>`, whose `<op>_reference` methods define the result by composing lower-layer operations through their public APIs. |
+| Reference | A public `<ApiTrait>Reference<BE[, Rg]>` trait, blanket-implemented on `Module<BE>`, whose `<op>_reference` methods define the result by composing lower-layer operations through their public APIs. |
 | Derived default | The default body of an OEP method that composes operations of the same layer. It calls one crate-private `<op>_derived` function, which reaches its constituents through the backend's selected implementations. |
 
 A call runs `api -> delegate -> oep`. Only the reference and derived bodies
@@ -34,7 +34,7 @@ backend override can fall back to them.
 ## Selecting an implementation
 
 A backend implements every OEP family it serves, choosing exactly one of these
-per family:
+per family and ring:
 
 - **The family's opt-in macro.** It implements every required method by
   forwarding it to the reference, and inherits every derived default:
@@ -46,16 +46,43 @@ per family:
   A family whose methods all have default bodies has
   `impl_<family>_derived_full!`, an empty `unsafe impl`. Each crate has one
   umbrella, `impl_<crate>_reference_full!`, that expands to its family macros;
-  poulpy-ckks's covers the families serving both rings, a standard backend
-  adding the standard-only ones.
+  those of poulpy-core and poulpy-ckks cover the families serving both rings
+  that their docs list, the backend adding the rest (core's sampling, the
+  scalar-generic CKKS families) and the standard-only and cross-ring ones.
 - **A hand-written `unsafe impl` of the family.** It implements the methods it
   replaces, forwards the other required methods and their `_tmp_bytes` queries
   to the reference, and keeps the derived defaults.
 
-A macro and a hand-written implementation of the same family exclude each
-other, so a backend that replaces one family lists the macros of the other
+A macro and a hand-written implementation of the same family and ring exclude
+each other, so a backend that replaces one family lists the macros of the other
 families instead of the umbrella. Trait bounds and imports never select an
 implementation.
+
+A family serving both rings takes the ring last on its API, reference and OEP
+traits (`GLWEKeyswitch<BE, Rg>`, `GLWEKeyswitchReference<BE, Rg>`,
+`GLWEKeyswitchImpl<Rg>`) and is selected per ring: its macro, umbrellas
+included, implements both rings from `($be)` and one from `($be, $ring)`. A
+standard-only or cross-ring family has no ring to select, and its macro takes
+only `($be)`, except the CKKS fold, whose input may be of either ring: it takes
+that ring as its parameter, and its macro implements both input rings from
+`($be)` and one from `($be, $ring)`, while its planning family
+(`CKKSFoldLayoutImpl`) takes no ring.
+The reference of one ring calls the families of that ring, so a backend
+overriding a family serving both rings writes its `unsafe impl` for both rings,
+generic over the ring (`unsafe impl<Rg: Ring> GLWEKeyswitchImpl<Rg>`) or for
+one ring beside the macro's arm for the other:
+
+```rust,ignore
+unsafe impl poulpy_core::oep::GLWEKeyswitchImpl<Standard> for MyBackend {
+    // The override and the forwarded required methods.
+}
+poulpy_core::impl_glwe_keyswitch_reference_full!(MyBackend, ConjugateInvariant);
+```
+
+An umbrella holding that family is replaced ring by ring: the untouched ring
+keeps the umbrella's `($be, $ring)` arm, which already selects the family
+there, and the overridden ring lists the umbrella's other family macros at
+`($be, $ring)`.
 
 Derived defaults call their constituents through the selected
 implementations. An override of a constituent therefore reaches every
@@ -87,8 +114,8 @@ macro is named after its OEP family (`GLWEAddImpl`:
 | Crate | OEP methods | Reference | Derived bodies | Opt-in macros |
 |---|---|---|---|---|
 | poulpy-hal | the API name | none | `#[doc(hidden)] pub fn <op>_derived` in `oep::derived` | `hal_impl_*!` in poulpy-cpu-portable |
-| poulpy-core | the API name | `<Trait>Reference<BE>` | `pub(crate) fn <op>_derived` | `impl_<family>_reference_full!`, `impl_<family>_derived_full!`, `impl_core_reference_full!` |
-| poulpy-ckks | the API name; hooks: keyed `ckks_{rotate,conjugate}_with_key_*`, encoding `ckks_{quantize,dequantize}_coeffs_into`, `ckks_encoding_buffer_{slots_to_coeffs,coeffs_to_slots}_assign_with_plan`, `ckks_encoding_plan_cache` and `ckks_encoding_plans_create`, ModUp `ckks_encapsulated_mod_up` and `ckks_mod_up_first_factor`, PaCo `ckks_slot_{trace,product}_assign`, SHIP `ckks_ship_{masking_accumulate,mux_rotate}` | `CKKS<Family>Reference<BE>` | `pub(crate) fn <op>_derived` | `impl_<family>_reference_full!`, `impl_<family>_derived_full!`, `impl_ckks_reference_full!` (both-ring families) |
+| poulpy-core | the API name | `<Trait>Reference<BE[, Rg]>` | `pub(crate) fn <op>_derived` | `impl_<family>_reference_full!`, `impl_<family>_derived_full!`, `impl_core_reference_full!` |
+| poulpy-ckks | the API name; hooks: keyed `ckks_{rotate,conjugate}_with_key_*`, encoding `ckks_{quantize,dequantize}_coeffs_into`, `ckks_encoding_buffer_{slots_to_coeffs,coeffs_to_slots}_assign_with_plan`, `ckks_encoding_plan_cache` and `ckks_encoding_plans_create`, ModUp `ckks_encapsulated_mod_up` and `ckks_mod_up_first_factor`, PaCo `ckks_slot_{trace,product}_assign`, SHIP `ckks_ship_{masking_accumulate,mux_rotate}` | `CKKS<Family>Reference<BE[, Rg]>` | `pub(crate) fn <op>_derived` | `impl_<family>_reference_full!`, `impl_<family>_derived_full!`, `impl_ckks_reference_full!` (both-ring families) |
 | poulpy-bin-fhe | the API name | `<Trait>Reference<BE>` | `pub(crate) fn <op>_derived` | `impl_<family>_reference_full!`, `impl_<family>_derived_full!`, group umbrellas `impl_<group>_reference_full!`, `impl_bin_fhe_reference_full!` |
 | poulpy-mhe | the API name | `MHE<Thing>ProtocolReference<BE>`, `MHE<Pat>Reference<BE>` | `pub(crate) fn <op>_derived` | `impl_<family>_reference_full!`, `impl_mhe_reference_full!` |
-| poulpy-blas | the API name; hooks `blas_<hook>` | `BlasMat<Family>Reference<BE>`, `BlasJklsReference<BE>`, `BlasEncodingReference<BE>` | `pub(crate) fn blas_<op>_derived` | `impl_<family>_reference_full!`, `impl_blas_reference_full!` |
+| poulpy-blas | the API name; hooks `blas_<hook>` | `BlasMat<Family>Reference<BE, Rg>`, `BlasJklsReference<BE, Rg>`, `BlasEncodingReference<BE, Rg>` | `pub(crate) fn blas_<op>_derived` | `impl_<family>_reference_full!`, `impl_blas_reference_full!` |

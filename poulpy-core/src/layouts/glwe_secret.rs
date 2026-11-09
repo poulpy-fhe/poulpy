@@ -1,5 +1,7 @@
 use poulpy_hal::layouts::ZnxWord;
-use poulpy_hal::layouts::{Backend, Data, HostDataMut, ScalarZnx, ScalarZnxToBackendMut, ScalarZnxToBackendRef, ZnxViewMut};
+use poulpy_hal::layouts::{
+    Backend, Data, HostDataMut, Ring, ScalarZnx, ScalarZnxToBackendMut, ScalarZnxToBackendRef, Standard, ZnxViewMut,
+};
 use poulpy_hal::{AlignedBuf, alloc_aligned};
 
 use crate::{
@@ -38,8 +40,8 @@ impl GLWEInfos for GLWESecretLayout {
 }
 
 #[derive(PartialEq, Eq, Clone)]
-pub struct GLWESecret<D: Data, W: ZnxWord> {
-    pub(crate) data: ScalarZnx<D, W>,
+pub struct GLWESecret<D: Data, W: ZnxWord, Rg: Ring = Standard> {
+    pub(crate) data: ScalarZnx<D, W, Rg>,
     /// Distribution the base secret was sampled from, shared by all `rank`
     /// polynomial components. See [`Distribution`] for how this tag is
     /// propagated: it survives automorphisms, LWE/GLWE conversions, DFT
@@ -48,10 +50,10 @@ pub struct GLWESecret<D: Data, W: ZnxWord> {
     pub(crate) dist: Distribution,
 }
 
-pub type GLWESecretBackendRef<'a, BE> = GLWESecret<<BE as Backend>::BufRef<'a>, <BE as Backend>::ZnxWord>;
-pub type GLWESecretBackendMut<'a, BE> = GLWESecret<<BE as Backend>::BufMut<'a>, <BE as Backend>::ZnxWord>;
+pub type GLWESecretBackendRef<'a, BE, Rg = Standard> = GLWESecret<<BE as Backend>::BufRef<'a>, <BE as Backend>::ZnxWord, Rg>;
+pub type GLWESecretBackendMut<'a, BE, Rg = Standard> = GLWESecret<<BE as Backend>::BufMut<'a>, <BE as Backend>::ZnxWord, Rg>;
 
-impl<D: Data, W: ZnxWord> LWEInfos for GLWESecret<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> LWEInfos for GLWESecret<D, W, Rg> {
     fn base2k(&self) -> Base2K {
         Base2K(0)
     }
@@ -69,35 +71,35 @@ impl<D: Data, W: ZnxWord> LWEInfos for GLWESecret<D, W> {
     }
 }
 
-impl<D: Data, W: ZnxWord> GetDistribution for GLWESecret<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> GetDistribution for GLWESecret<D, W, Rg> {
     fn dist(&self) -> &Distribution {
         &self.dist
     }
 }
 
-impl<D: Data, W: ZnxWord> GetDistributionMut for GLWESecret<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> GetDistributionMut for GLWESecret<D, W, Rg> {
     fn dist_mut(&mut self) -> &mut Distribution {
         &mut self.dist
     }
 }
 
-impl<D: Data, W: ZnxWord> GLWEInfos for GLWESecret<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> GLWEInfos for GLWESecret<D, W, Rg> {
     fn rank(&self) -> Rank {
         Rank(self.data.cols() as u32)
     }
 }
 
-impl<D: Data, W: ZnxWord> GLWESecret<D, W> {
-    pub fn data(&self) -> &ScalarZnx<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> GLWESecret<D, W, Rg> {
+    pub fn data(&self) -> &ScalarZnx<D, W, Rg> {
         &self.data
     }
 
-    pub fn data_mut(&mut self) -> &mut ScalarZnx<D, W> {
+    pub fn data_mut(&mut self) -> &mut ScalarZnx<D, W, Rg> {
         &mut self.data
     }
 
     /// Zero-cost rename when both backends share the same `OwnedBuf`.
-    pub fn reinterpret<To>(self) -> GLWESecret<To::OwnedBuf, To::ZnxWord>
+    pub fn reinterpret<To>(self) -> GLWESecret<To::OwnedBuf, To::ZnxWord, Rg>
     where
         To: Backend<OwnedBuf = D, ZnxWord = W>,
     {
@@ -115,7 +117,7 @@ impl<D: Data, W: ZnxWord> GLWESecret<D, W> {
     dead_code,
     reason = "host-owned constructors are kept for serialization and host-only staging"
 )]
-impl<W: ZnxWord> GLWESecret<AlignedBuf, W> {
+impl<W: ZnxWord, Rg: Ring> GLWESecret<AlignedBuf, W, Rg> {
     pub(crate) fn alloc_from_infos<A>(infos: &A) -> Self
     where
         A: GLWEInfos,
@@ -126,7 +128,7 @@ impl<W: ZnxWord> GLWESecret<AlignedBuf, W> {
     pub(crate) fn alloc(n: Degree, rank: Rank) -> Self {
         GLWESecret {
             data: ScalarZnx::from_data(
-                alloc_aligned::<u8>(ScalarZnx::<AlignedBuf, W>::bytes_of(n.into(), rank.into())),
+                alloc_aligned::<u8>(ScalarZnx::<AlignedBuf, W, Rg>::bytes_of(n.into(), rank.into())),
                 n.into(),
                 rank.into(),
             ),
@@ -142,11 +144,11 @@ impl<W: ZnxWord> GLWESecret<AlignedBuf, W> {
     }
 
     pub fn bytes_of(n: Degree, rank: Rank) -> usize {
-        ScalarZnx::<AlignedBuf, W>::bytes_of(n.into(), rank.into())
+        ScalarZnx::<AlignedBuf, W, Rg>::bytes_of(n.into(), rank.into())
     }
 }
 
-impl<D: HostDataMut, W: ZnxWord> GLWESecret<D, W> {
+impl<D: HostDataMut, W: ZnxWord, Rg: Ring> GLWESecret<D, W, Rg> {
     /// Sets column `col` to the caller-provided binary `{0, 1}` coefficient
     /// vector and tags the distribution as [`Distribution::BinaryFixed`] with
     /// the vector's Hamming weight. For structured binary secrets whose
@@ -167,27 +169,27 @@ impl<D: HostDataMut, W: ZnxWord> GLWESecret<D, W> {
     }
 }
 
-pub trait GLWESecretToBackendMut<BE: Backend>: GLWESecretToBackendRef<BE> {
-    fn to_backend_mut(&mut self) -> GLWESecretBackendMut<'_, BE>;
+pub trait GLWESecretToBackendMut<BE: Backend, Rg: Ring = Standard>: GLWESecretToBackendRef<BE, Rg> {
+    fn to_backend_mut(&mut self) -> GLWESecretBackendMut<'_, BE, Rg>;
 }
 
-impl<BE: Backend> GLWESecretToBackendMut<BE> for GLWESecret<BE::OwnedBuf, BE::ZnxWord> {
-    fn to_backend_mut(&mut self) -> GLWESecretBackendMut<'_, BE> {
+impl<BE: Backend, Rg: Ring> GLWESecretToBackendMut<BE, Rg> for GLWESecret<BE::OwnedBuf, BE::ZnxWord, Rg> {
+    fn to_backend_mut(&mut self) -> GLWESecretBackendMut<'_, BE, Rg> {
         GLWESecret {
             dist: self.dist,
-            data: <ScalarZnx<BE::OwnedBuf, BE::ZnxWord> as ScalarZnxToBackendMut<BE>>::to_backend_mut(&mut self.data),
+            data: <ScalarZnx<BE::OwnedBuf, BE::ZnxWord, Rg> as ScalarZnxToBackendMut<BE, Rg>>::to_backend_mut(&mut self.data),
         }
     }
 }
 
-pub trait GLWESecretToBackendRef<BE: Backend> {
-    fn to_backend_ref(&self) -> GLWESecretBackendRef<'_, BE>;
+pub trait GLWESecretToBackendRef<BE: Backend, Rg: Ring = Standard> {
+    fn to_backend_ref(&self) -> GLWESecretBackendRef<'_, BE, Rg>;
 }
 
-impl<BE: Backend> GLWESecretToBackendRef<BE> for GLWESecret<BE::OwnedBuf, BE::ZnxWord> {
-    fn to_backend_ref(&self) -> GLWESecretBackendRef<'_, BE> {
+impl<BE: Backend, Rg: Ring> GLWESecretToBackendRef<BE, Rg> for GLWESecret<BE::OwnedBuf, BE::ZnxWord, Rg> {
+    fn to_backend_ref(&self) -> GLWESecretBackendRef<'_, BE, Rg> {
         GLWESecret {
-            data: <ScalarZnx<BE::OwnedBuf, BE::ZnxWord> as ScalarZnxToBackendRef<BE>>::to_backend_ref(&self.data),
+            data: <ScalarZnx<BE::OwnedBuf, BE::ZnxWord, Rg> as ScalarZnxToBackendRef<BE, Rg>>::to_backend_ref(&self.data),
             dist: self.dist,
         }
     }

@@ -30,11 +30,11 @@ use super::helpers::{assert_error, assert_error_starts_with, assert_precision_bi
 
 pub fn test_trig_family<BE, F, E>(base: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     Module<BE>: TestContextModule<BE> + CKKSTrigOps<BE>,
-    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>:
+    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, Standard>:
         GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE> + LWEInfos + poulpy_core::layouts::IntPolyInfos,
+    CKKSPlaintext<BE::OwnedBuf, BE::ZnxWord, Standard>: GLWEToBackendRef<BE> + LWEInfos + poulpy_core::layouts::IntPolyInfos,
     CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
@@ -83,7 +83,7 @@ where
     let encoder = ReferenceEncoder::<E>::new::<F>(slots).unwrap();
     let im = vec![F::zero(); slots];
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0xc1u8; 32]);
-    let mut sizing = module.ckks_ciphertext_alloc(params.base2k.into(), params.k.into());
+    let mut sizing = module.ckks_ciphertext_alloc::<Standard>(params.base2k.into(), params.k.into());
     sizing.set_meta(params.prec().meta);
     let size = module
         .ckks_sin_tmp_bytes(&sizing, &sizing, &sin, &params.tsk_layout())
@@ -219,20 +219,20 @@ fn check<BE, F, E>(
     params: &CKKSTestParams,
     module: &Module<BE>,
     encoder: &ReferenceEncoder<E>,
-    res: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>,
+    res: &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, Standard>,
     sk: &GLWESecretPrepared<BE::OwnedBuf, BE>,
     want: &[F],
     want_budget: usize,
     target_bits: f64,
     scratch: &mut ScratchOwned<BE>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     Module<BE>: TestContextModule<BE>,
-    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE> + CKKSCtBounds,
+    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, Standard>: GLWEToBackendRef<BE> + CKKSCtBounds,
     F: TestScalar,
     E: ReimNew<F>,
 {
     assert_eq!(res.log_budget(), want_budget);
-    let (re_out, _) = ckks_decrypt_decode::<BE, F, E>(params, module, encoder, res, sk, &mut scratch.borrow());
+    let (re_out, _) = ckks_decrypt_decode::<BE, F, E, Standard>(params, module, encoder, res, sk, &mut scratch.borrow());
     assert_precision_bits(label, &re_out, want, target_bits, params.n);
 }

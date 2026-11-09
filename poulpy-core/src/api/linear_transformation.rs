@@ -9,7 +9,7 @@
 #![allow(clippy::too_many_arguments)]
 
 use crate::layouts::BabyStepOperand;
-use poulpy_hal::layouts::{Backend, ScratchArena};
+use poulpy_hal::layouts::{Backend, Ring, ScratchArena, Standard};
 
 use crate::layouts::{
     GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LinearTransformation,
@@ -23,7 +23,7 @@ use crate::layouts::{
 /// The API is split into three phases (allocate / populate / evaluate); see
 /// [`LinearTransformation::alloc_prepared`] and
 /// [`LinearTransformationBabySteps::alloc`] for the allocation half.
-pub trait GLWELinearTransformationOps<BE: Backend> {
+pub trait GLWELinearTransformationOps<BE: Backend, Rg: Ring = Standard> {
     /// Scratch bytes required by [`Self::glwe_linear_transformation_eval_into`] for a transform
     /// with the schedule `plan` ([`LinearTransformation::index`]), which gives the giant-step
     /// tree of [`BsgsRotations::PowersOfTwo`](crate::layouts::BsgsRotations::PowersOfTwo); every
@@ -134,11 +134,11 @@ pub trait GLWELinearTransformationOps<BE: Backend> {
     /// `lt.first_diagonal_plaintext()` is the proxy every caller should pass.
     fn glwe_linear_transformation_rhs_prepare<P>(
         &self,
-        prepared: &mut LinearTransformation<PreparedDiagonal<BE::OwnedBuf, BE>>,
+        prepared: &mut LinearTransformation<PreparedDiagonal<BE::OwnedBuf, BE, Rg>>,
         lt: &LinearTransformation<P>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        P: GLWEToBackendRef<BE> + GLWEInfos;
+        P: GLWEToBackendRef<BE, Rg> + GLWEInfos;
 
     /// Fills a pre-allocated baby-step cache with the rotated, prepared versions
     /// of `a`.
@@ -146,15 +146,15 @@ pub trait GLWELinearTransformationOps<BE: Backend> {
     /// `cache` must have been allocated by [`LinearTransformationBabySteps::alloc`] or carved by
     /// [`ScratchArenaTakeGLWELinearTransformationBabySteps::take_glwe_linear_transformation_baby_steps_scratch`](crate::ScratchArenaTakeGLWELinearTransformationBabySteps::take_glwe_linear_transformation_baby_steps_scratch).
     /// Performs zero `CnvPVecL` allocations.
-    fn glwe_linear_transformation_baby_steps_prepare<A, H, L: BabyStepOperand<BE>>(
+    fn glwe_linear_transformation_baby_steps_prepare<A, H, L: BabyStepOperand<BE, Rg>>(
         &self,
-        cache: &mut LinearTransformationBabySteps<BE, L>,
+        cache: &mut LinearTransformationBabySteps<BE, Rg, L>,
         a: &A,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        A: GLWEToBackendRef<BE> + GLWEInfos,
-        H: GetAutomorphismKey<BE>;
+        A: GLWEToBackendRef<BE, Rg> + GLWEInfos,
+        H: GetAutomorphismKey<BE, Rg>;
 
     /// Computes `res = M(a)` from the prepared left cache `lhs` (the input baby
     /// rotations) and the matrix `rhs`, generic over the diagonal representation
@@ -189,18 +189,18 @@ pub trait GLWELinearTransformationOps<BE: Backend> {
     /// them, and preparing asserts the degree. Ciphertext diagonals are each checked against the degree, `base2k` and
     /// rank of `res` and the first one's width, and `lhs` against the rank of `res`, and `keys` must hold the tensor
     /// key, also before writing `res`.
-    fn glwe_linear_transformation_eval_into<R, P, H, L: BabyStepOperand<BE>>(
+    fn glwe_linear_transformation_eval_into<R, P, H, L: BabyStepOperand<BE, Rg>>(
         &self,
         cnv_offset: usize,
         res: &mut R,
-        lhs: &LinearTransformationBabySteps<BE, L>,
+        lhs: &LinearTransformationBabySteps<BE, Rg, L>,
         rhs: &LinearTransformation<P>,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        P: crate::layouts::GLWEDiagonalProd<BE>,
-        H: GetAutomorphismKey<BE> + GetTensorKey<BE>;
+        R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+        P: crate::layouts::GLWEDiagonalProd<BE, Rg>,
+        H: GetAutomorphismKey<BE, Rg> + GetTensorKey<BE, Rg>;
 
     /// Computes `res = Σ_t M_t(a_t)`, where `babies[t]` is the baby cache of
     /// `a_t` and `lts[t]` the resident transform `M_t`, all sharing one giant
@@ -224,16 +224,16 @@ pub trait GLWELinearTransformationOps<BE: Backend> {
     /// every diagonal of a transform shares one width, scale and degree, as the
     /// encoder produces them, and preparing asserts the degree. Ciphertext diagonals and caches are checked as by
     /// [`Self::glwe_linear_transformation_eval_into`], every cache at the first one's width.
-    fn glwe_linear_transformation_eval_sum_into<R, P, H, L: BabyStepOperand<BE>>(
+    fn glwe_linear_transformation_eval_sum_into<R, P, H, L: BabyStepOperand<BE, Rg>>(
         &self,
         cnv_offset: usize,
         res: &mut R,
-        babies: &[&LinearTransformationBabySteps<BE, L>],
+        babies: &[&LinearTransformationBabySteps<BE, Rg, L>],
         lts: &[&LinearTransformation<P>],
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        P: crate::layouts::GLWEDiagonalProd<BE>,
-        H: GetAutomorphismKey<BE> + GetTensorKey<BE>;
+        R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+        P: crate::layouts::GLWEDiagonalProd<BE, Rg>,
+        H: GetAutomorphismKey<BE, Rg> + GetTensorKey<BE, Rg>;
 }

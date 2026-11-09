@@ -3,7 +3,7 @@ use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{GLWEInfos, GLWEToBackendMut, LWEInfos};
 use poulpy_hal::{
     api::{VecZnxLsh, VecZnxLshAdd, VecZnxLshSub, VecZnxLshTmpBytes, VecZnxRsh, VecZnxRshAdd, VecZnxRshSub, VecZnxRshTmpBytes},
-    layouts::{Backend, ScratchArena, vec_znx_backend_mut_from_mut, vec_znx_backend_ref_from_ref},
+    layouts::{Backend, Ring, ScratchArena, Standard, vec_znx_backend_mut_from_mut, vec_znx_backend_ref_from_ref},
 };
 
 use crate::GLWEToBackendRef;
@@ -30,12 +30,17 @@ fn plaintext_shift<P: CKKSInfos + IntPolyInfos>(ct_log_budget: usize, pt: &P) ->
 }
 
 /// `ct += pt`, `pt` aligned to the budget of `ct`, without normalization.
-pub(crate) fn add_pt_vec_raw<BE, M, Dst, A>(module: &M, ct: &mut Dst, pt: &A, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+pub(crate) fn add_pt_vec_raw<BE, M, Dst, A, Rg: Ring>(
+    module: &M,
+    ct: &mut Dst,
+    pt: &A,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> Result<()>
 where
     BE: Backend,
-    M: VecZnxRshAdd<BE> + VecZnxLshAdd<BE> + ?Sized,
-    Dst: GLWEToBackendMut<BE> + CKKSInfos,
-    A: GLWEToBackendRef<BE> + IntPolyInfos + CKKSInfos,
+    M: VecZnxRshAdd<BE, Rg> + VecZnxLshAdd<BE, Rg> + ?Sized,
+    Dst: GLWEToBackendMut<BE, Rg> + CKKSInfos,
+    A: GLWEToBackendRef<BE, Rg> + IntPolyInfos + CKKSInfos,
 {
     ensure_plaintext_vec_operand(
         "ckks_add_pt_vec",
@@ -59,7 +64,7 @@ where
 
 /// Adds coefficient `coeff_pt` of `pt` to coefficient `coeff_ct` of `ct`, aligned to the budget of `ct`, without
 /// normalization.
-pub(crate) fn add_pt_const_raw<BE, M, Dst, A>(
+pub(crate) fn add_pt_const_raw<BE, M, Dst, A, Rg: Ring>(
     module: &M,
     ct: &mut Dst,
     coeff_ct: usize,
@@ -69,9 +74,9 @@ pub(crate) fn add_pt_const_raw<BE, M, Dst, A>(
 ) -> Result<()>
 where
     BE: Backend,
-    M: VecZnxRshAdd<BE> + VecZnxLshAdd<BE> + ?Sized,
-    Dst: GLWEToBackendMut<BE> + CKKSInfos,
-    A: GLWEToBackendRef<BE> + IntPolyInfos + CKKSInfos,
+    M: VecZnxRshAdd<BE, Rg> + VecZnxLshAdd<BE, Rg> + ?Sized,
+    Dst: GLWEToBackendMut<BE, Rg> + CKKSInfos,
+    A: GLWEToBackendRef<BE, Rg> + IntPolyInfos + CKKSInfos,
 {
     ensure_plaintext_const_operand(
         "ckks_add_pt_const",
@@ -87,8 +92,8 @@ where
     ct.set_canonical(false);
     let mut ct_ref = GLWEToBackendMut::to_backend_mut(ct);
     let pt_ref = GLWEToBackendRef::to_backend_ref(pt);
-    let mut ct_win = vec_znx_backend_mut_from_mut::<BE>(ct_ref.data_mut()).window_coeffs(coeff_ct, 1);
-    let pt_win = vec_znx_backend_ref_from_ref::<BE>(pt_ref.data()).window_coeffs(coeff_pt, 1);
+    let mut ct_win = vec_znx_backend_mut_from_mut::<BE, Rg>(ct_ref.data_mut()).window_coeffs(coeff_ct, 1);
+    let pt_win = vec_znx_backend_ref_from_ref::<BE, Rg>(pt_ref.data()).window_coeffs(coeff_pt, 1);
     match shift {
         PlaintextShift::Rsh(k) => module.vec_znx_rsh_add(base2k, k, &mut ct_win, 0, &pt_win, 0, scratch),
         PlaintextShift::Lsh(k) => module.vec_znx_lsh_add(base2k, k, &mut ct_win, 0, &pt_win, 0, scratch),
@@ -99,7 +104,7 @@ where
 
 /// Subtracts coefficient `coeff_pt` of `pt` from coefficient `coeff_ct` of `ct`, aligned to the budget of `ct`,
 /// without normalization.
-pub(crate) fn sub_pt_const_raw<BE, M, Dst, A>(
+pub(crate) fn sub_pt_const_raw<BE, M, Dst, A, Rg: Ring>(
     module: &M,
     ct: &mut Dst,
     coeff_ct: usize,
@@ -109,9 +114,9 @@ pub(crate) fn sub_pt_const_raw<BE, M, Dst, A>(
 ) -> Result<()>
 where
     BE: Backend,
-    M: VecZnxRshSub<BE> + VecZnxLshSub<BE> + ?Sized,
-    Dst: GLWEToBackendMut<BE> + CKKSInfos,
-    A: GLWEToBackendRef<BE> + IntPolyInfos + CKKSInfos,
+    M: VecZnxRshSub<BE, Rg> + VecZnxLshSub<BE, Rg> + ?Sized,
+    Dst: GLWEToBackendMut<BE, Rg> + CKKSInfos,
+    A: GLWEToBackendRef<BE, Rg> + IntPolyInfos + CKKSInfos,
 {
     ensure_plaintext_const_operand(
         "ckks_sub_pt_const",
@@ -127,8 +132,8 @@ where
     ct.set_canonical(false);
     let mut ct_ref = GLWEToBackendMut::to_backend_mut(ct);
     let pt_ref = GLWEToBackendRef::to_backend_ref(pt);
-    let mut ct_win = vec_znx_backend_mut_from_mut::<BE>(ct_ref.data_mut()).window_coeffs(coeff_ct, 1);
-    let pt_win = vec_znx_backend_ref_from_ref::<BE>(pt_ref.data()).window_coeffs(coeff_pt, 1);
+    let mut ct_win = vec_znx_backend_mut_from_mut::<BE, Rg>(ct_ref.data_mut()).window_coeffs(coeff_ct, 1);
+    let pt_win = vec_znx_backend_ref_from_ref::<BE, Rg>(pt_ref.data()).window_coeffs(coeff_pt, 1);
     match shift {
         PlaintextShift::Rsh(k) => module.vec_znx_rsh_sub(base2k, k, &mut ct_win, 0, &pt_win, 0, scratch),
         PlaintextShift::Lsh(k) => module.vec_znx_lsh_sub(base2k, k, &mut ct_win, 0, &pt_win, 0, scratch),
@@ -138,12 +143,17 @@ where
 }
 
 /// `ct -= pt`, `pt` aligned to the budget of `ct`, without normalization.
-pub(crate) fn sub_pt_vec_raw<BE, M, Dst, A>(module: &M, ct: &mut Dst, pt: &A, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+pub(crate) fn sub_pt_vec_raw<BE, M, Dst, A, Rg: Ring>(
+    module: &M,
+    ct: &mut Dst,
+    pt: &A,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> Result<()>
 where
     BE: Backend,
-    M: VecZnxRshSub<BE> + VecZnxLshSub<BE> + ?Sized,
-    Dst: GLWEToBackendMut<BE> + CKKSInfos,
-    A: GLWEToBackendRef<BE> + IntPolyInfos + CKKSInfos,
+    M: VecZnxRshSub<BE, Rg> + VecZnxLshSub<BE, Rg> + ?Sized,
+    Dst: GLWEToBackendMut<BE, Rg> + CKKSInfos,
+    A: GLWEToBackendRef<BE, Rg> + IntPolyInfos + CKKSInfos,
 {
     ensure_plaintext_vec_operand(
         "ckks_sub_pt_vec",
@@ -165,7 +175,7 @@ where
     Ok(())
 }
 
-pub trait CKKSPlaintextVecReference<BE: Backend> {
+pub trait CKKSPlaintextVecReference<BE: Backend, Rg: Ring = Standard> {
     fn ckks_extract_pt_tmp_bytes_reference(&self, res_size: usize) -> usize
     where
         Self: VecZnxLshTmpBytes + VecZnxRshTmpBytes,
@@ -175,9 +185,9 @@ pub trait CKKSPlaintextVecReference<BE: Backend> {
 
     fn ckks_extract_pt_reference<D, S>(&self, dst: &mut D, src: &S, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        D: GLWEToBackendMut<BE> + CKKSInfos + IntPolyInfos + SetCKKSInfos,
-        S: GLWEToBackendRef<BE> + GLWEInfos + CKKSInfos,
-        Self: VecZnxLsh<BE> + VecZnxRsh<BE>,
+        D: GLWEToBackendMut<BE, Rg> + CKKSInfos + IntPolyInfos + SetCKKSInfos,
+        S: GLWEToBackendRef<BE, Rg> + GLWEInfos + CKKSInfos,
+        Self: VecZnxLsh<BE, Rg> + VecZnxRsh<BE, Rg>,
     {
         self.ckks_extract_pt_with_meta_reference(dst, src, src.meta(), scratch)
     }
@@ -190,9 +200,9 @@ pub trait CKKSPlaintextVecReference<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        D: GLWEToBackendMut<BE> + CKKSInfos + IntPolyInfos + SetCKKSInfos,
-        S: GLWEToBackendRef<BE> + GLWEInfos + LWEInfos,
-        Self: VecZnxLsh<BE> + VecZnxRsh<BE>,
+        D: GLWEToBackendMut<BE, Rg> + CKKSInfos + IntPolyInfos + SetCKKSInfos,
+        S: GLWEToBackendRef<BE, Rg> + GLWEInfos + LWEInfos,
+        Self: VecZnxLsh<BE, Rg> + VecZnxRsh<BE, Rg>,
     {
         ensure_base2k_match("ckks_extract_pt", src.base2k().as_usize(), dst.base2k().as_usize())?;
         if dst.n() != src.n() {
@@ -251,4 +261,4 @@ pub trait CKKSPlaintextVecReference<BE: Backend> {
     }
 }
 
-impl<BE: Backend> CKKSPlaintextVecReference<BE> for poulpy_hal::layouts::Module<BE> {}
+impl<BE: Backend, Rg: Ring> CKKSPlaintextVecReference<BE, Rg> for poulpy_hal::layouts::Module<BE> {}

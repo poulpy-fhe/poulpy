@@ -4,7 +4,7 @@ use poulpy_core::{
     GLWENormalize,
     layouts::{GLWEToBackendMut, GLWEToBackendRef},
 };
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Module, Ring, ScratchArena, Standard};
 
 use crate::{
     CKKSCompositionError, CKKSCtBounds, CKKSResult as Result, SetCKKSInfos,
@@ -14,12 +14,12 @@ use crate::{
 
 /// Reference bodies of [`CKKSAddManyImpl`](crate::oep::CKKSAddManyImpl), forwarded by
 /// `impl_ckks_add_many_reference_full!`.
-pub trait CKKSAddManyReference<BE: Backend> {
+pub trait CKKSAddManyReference<BE: Backend, Rg: Ring = Standard> {
     /// The largest of the selected `ckks_add_tmp_bytes` at `res.max_size()`, poulpy-core's `glwe_normalize_tmp_bytes`
     /// and the selected `ckks_copy_tmp_bytes` from `a` to `res`, the copy serving a single term.
     fn ckks_add_many_tmp_bytes_reference<R, A>(&self, res: &R, a: &A) -> usize
     where
-        Self: CKKSAddOps<BE> + CKKSCopyOps<BE> + GLWENormalize<BE>,
+        Self: CKKSAddOps<BE, Rg> + CKKSCopyOps<BE, Rg> + GLWENormalize<BE, Rg>,
         R: CKKSCtBounds,
         A: CKKSCtBounds,
     {
@@ -41,9 +41,9 @@ pub trait CKKSAddManyReference<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: CKKSAddOps<BE> + CKKSCopyOps<BE> + GLWENormalize<BE>,
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<BE> + CKKSCtBounds,
+        Self: CKKSAddOps<BE, Rg> + CKKSCopyOps<BE, Rg> + GLWENormalize<BE, Rg>,
+        R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
     {
         const OP: &str = "ckks_add_many";
         let invalid = |reason: &str| -> Result<()> {
@@ -96,4 +96,4 @@ pub trait CKKSAddManyReference<BE: Backend> {
     }
 }
 
-impl<BE: Backend> CKKSAddManyReference<BE> for Module<BE> {}
+impl<BE: Backend, Rg: Ring> CKKSAddManyReference<BE, Rg> for Module<BE> {}

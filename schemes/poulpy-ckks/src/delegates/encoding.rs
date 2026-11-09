@@ -1,6 +1,6 @@
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::IntPolyInfos;
-use poulpy_hal::layouts::{Backend, Module};
+use poulpy_hal::layouts::{Backend, Module, Ring};
 
 use crate::{
     CKKSPlaintextToBackendMut, CKKSPlaintextToBackendRef, SetCKKSInfos,
@@ -9,14 +9,14 @@ use crate::{
     oep::CKKSEncodingImpl,
 };
 
-impl<BE, F> CKKSEncodingOps<BE, F> for Module<BE>
+impl<BE, F, Rg: Ring> CKKSEncodingOps<BE, F, Rg> for Module<BE>
 where
-    BE: Backend + CKKSEncodingImpl<F>,
+    BE: Backend + CKKSEncodingImpl<F, Rg>,
     F: CKKSEncodingScalar,
 {
     fn ckks_encode_slots_into<P, C>(&self, pt: &mut P, slots: &mut C) -> Result<()>
     where
-        P: CKKSPlaintextToBackendMut<BE> + IntPolyInfos + SetCKKSInfos,
+        P: CKKSPlaintextToBackendMut<BE, Rg> + IntPolyInfos + SetCKKSInfos,
         C: CKKSEncodingBufferToBackendMut<BE, F>,
     {
         BE::ckks_encode_slots_into(self, pt, slots)
@@ -24,7 +24,7 @@ where
 
     fn ckks_decode_slots_into<P, C>(&self, pt: &P, slots: &mut C) -> Result<()>
     where
-        P: CKKSPlaintextToBackendRef<BE> + IntPolyInfos,
+        P: CKKSPlaintextToBackendRef<BE, Rg> + IntPolyInfos,
         C: CKKSEncodingBufferToBackendMut<BE, F>,
     {
         BE::ckks_decode_slots_into(self, pt, slots)
@@ -32,7 +32,7 @@ where
 
     fn ckks_encode_coeffs_into<P, C>(&self, pt: &mut P, coeffs: &C) -> Result<()>
     where
-        P: CKKSPlaintextToBackendMut<BE> + IntPolyInfos + SetCKKSInfos,
+        P: CKKSPlaintextToBackendMut<BE, Rg> + IntPolyInfos + SetCKKSInfos,
         C: CKKSEncodingBufferToBackendRef<BE, F>,
     {
         BE::ckks_encode_coeffs_into(self, pt, coeffs)
@@ -40,7 +40,7 @@ where
 
     fn ckks_decode_coeffs_into<P, C>(&self, pt: &P, coeffs: &mut C) -> Result<()>
     where
-        P: CKKSPlaintextToBackendRef<BE> + IntPolyInfos,
+        P: CKKSPlaintextToBackendRef<BE, Rg> + IntPolyInfos,
         C: CKKSEncodingBufferToBackendMut<BE, F>,
     {
         BE::ckks_decode_coeffs_into(self, pt, coeffs)

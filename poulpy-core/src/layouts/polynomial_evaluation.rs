@@ -11,7 +11,7 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 
 use anyhow::{Result, anyhow, ensure};
-use poulpy_hal::layouts::Backend;
+use poulpy_hal::layouts::{Backend, Ring, Standard};
 
 use crate::layouts::IntPolyInfos;
 use rand_distr::num_traits::{Float, FloatConst, FromPrimitive};
@@ -912,9 +912,9 @@ pub struct BSGSPolynomial<C> {
     b: f64,
 }
 
-impl<BE: Backend, C> BSGSPolynomialInfos<BE> for BSGSPolynomial<C>
+impl<BE: Backend, C, Rg: Ring> BSGSPolynomialInfos<BE, Rg> for BSGSPolynomial<C>
 where
-    C: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta + IntPolyInfos,
+    C: GLWEToBackendRef<BE, Rg> + GLWEInfos + BSGSMeta + IntPolyInfos,
 {
     type Coeffs = C;
 
@@ -1080,8 +1080,8 @@ pub trait SetBSGSMeta: BSGSMeta {
 }
 
 /// Read access to a decomposed BSGS polynomial during evaluation.
-pub trait BSGSPolynomialInfos<BE: Backend> {
-    type Coeffs: GLWEToBackendRef<BE> + IntPolyInfos + GLWEInfos + BSGSMeta;
+pub trait BSGSPolynomialInfos<BE: Backend, Rg: Ring = Standard> {
+    type Coeffs: GLWEToBackendRef<BE, Rg> + IntPolyInfos + GLWEInfos + BSGSMeta;
     fn degree(&self) -> usize;
     fn baby_steps(&self) -> usize;
     fn baby_step(&self, i: usize) -> &Self::Coeffs;
@@ -1095,8 +1095,8 @@ pub trait BSGSPolynomialInfos<BE: Backend> {
 }
 
 /// A single evaluated baby step with its degree.
-pub trait BabyStep<BE: Backend> {
-    type Value: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos + SetBSGSMeta;
+pub trait BabyStep<BE: Backend, Rg: Ring = Standard> {
+    type Value: GLWEToBackendMut<BE, Rg> + GLWEToBackendRef<BE, Rg> + GLWEInfos + SetBSGSMeta;
     fn degree(&self) -> usize;
     fn get(&self) -> &Self::Value;
     fn get_mut(&mut self) -> &mut Self::Value;
@@ -1105,7 +1105,7 @@ pub trait BabyStep<BE: Backend> {
 // ── PowerBasis ────────────────────────────────────────────────────────────────
 
 /// Read access to the pre-computed powers feeding a BSGS evaluation.
-pub trait PowerBasisHelper<BE: Backend, A> {
+pub trait PowerBasisHelper<BE: Backend, A, Rg: Ring = Standard> {
     fn basis(&self) -> Basis;
     fn has_power(&self, power: usize) -> bool;
     fn get(&self, power: usize) -> Result<&A>;
@@ -1154,9 +1154,9 @@ impl<A> PowerBasis<A> {
     }
 }
 
-impl<BE: Backend, A> PowerBasisHelper<BE, A> for PowerBasis<A>
+impl<BE: Backend, A, Rg: Ring> PowerBasisHelper<BE, A, Rg> for PowerBasis<A>
 where
-    A: GLWEToBackendRef<BE>,
+    A: GLWEToBackendRef<BE, Rg>,
 {
     fn basis(&self) -> Basis {
         self.basis

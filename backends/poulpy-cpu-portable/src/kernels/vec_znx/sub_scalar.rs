@@ -1,14 +1,16 @@
 use crate::{
     kernels::znx::{ZnxSub, ZnxSubAssign, ZnxZero},
-    layouts::{Backend, HostDataMut, HostDataRef, ScalarZnxBackendRef, VecZnxBackendMut, VecZnxBackendRef, ZnxView, ZnxViewMut},
+    layouts::{
+        Backend, HostDataMut, HostDataRef, Ring, ScalarZnxBackendRef, VecZnxBackendMut, VecZnxBackendRef, ZnxView, ZnxViewMut,
+    },
 };
 
-pub fn vec_znx_sub_scalar_portable<'r, 'a, BE>(
-    res: &mut VecZnxBackendMut<'r, BE>,
+pub fn vec_znx_sub_scalar_portable<'r, 'a, BE, Rg: Ring>(
+    res: &mut VecZnxBackendMut<'r, BE, Rg>,
     res_col: usize,
-    a: &ScalarZnxBackendRef<'a, BE>,
+    a: &ScalarZnxBackendRef<'a, BE, Rg>,
     a_col: usize,
-    b: &VecZnxBackendRef<'a, BE>,
+    b: &VecZnxBackendRef<'a, BE, Rg>,
     b_col: usize,
     b_limb: usize,
 ) where
@@ -35,11 +37,11 @@ pub fn vec_znx_sub_scalar_portable<'r, 'a, BE>(
     }
 }
 
-pub fn vec_znx_sub_scalar_assign_portable<'r, 'a, BE>(
-    res: &mut VecZnxBackendMut<'r, BE>,
+pub fn vec_znx_sub_scalar_assign_portable<'r, 'a, BE, Rg: Ring>(
+    res: &mut VecZnxBackendMut<'r, BE, Rg>,
     res_col: usize,
     res_limb: usize,
-    a: &ScalarZnxBackendRef<'a, BE>,
+    a: &ScalarZnxBackendRef<'a, BE, Rg>,
     a_col: usize,
 ) where
     BE: Backend<ZnxWord = i64> + ZnxSubAssign,

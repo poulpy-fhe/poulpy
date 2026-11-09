@@ -5,7 +5,8 @@ use std::{
 };
 
 use crate::layouts::{
-    Backend, Data, DataView, DataViewMut, DftWord, DigestU64, HostDataRef, PrepareHint, VecZnxInfos, ZnxInfos, ZnxView,
+    Backend, Data, DataView, DataViewMut, DftWord, DigestU64, HostDataRef, PrepareHint, Ring, Standard, VecZnxInfos, ZnxInfos,
+    ZnxView,
 };
 
 /// Shape of a prepared scalar polynomial: `cols` columns of degree `n`, plus
@@ -51,39 +52,39 @@ impl SvpPPolShape {
 /// representation the [`PrepareHint`] chosen at allocation selected (see
 /// [`SvpPPolShape::hint`]).
 #[repr(C)]
-pub struct SvpPPol<D: Data, W: DftWord, B: Backend<DftWord = W>> {
+pub struct SvpPPol<D: Data, W: DftWord, B: Backend<DftWord = W>, Rg: Ring = Standard> {
     pub data: D,
     shape: SvpPPolShape,
-    pub _phantom: PhantomData<(W, B)>,
+    pub _phantom: PhantomData<(W, B, Rg)>,
 }
 
 // Equality (and hashing, where provided) is defined directly on the
 // representation: same shape, same buffer bytes. No `W`/`B` value is ever
 // compared, so no bound on them is needed — in particular `Eq` holds even
 // for non-`Eq` words like `f64` (byte equality is a total equivalence).
-impl<D: Data, W: DftWord, B: Backend<DftWord = W>> PartialEq for SvpPPol<D, W, B> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>, Rg: Ring> PartialEq for SvpPPol<D, W, B, Rg> {
     fn eq(&self, other: &Self) -> bool {
         self.shape == other.shape && self.data == other.data
     }
 }
 
-impl<D: Data, W: DftWord, B: Backend<DftWord = W>> Eq for SvpPPol<D, W, B> {}
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>, Rg: Ring> Eq for SvpPPol<D, W, B, Rg> {}
 
 /// The shape only: the representation is opaque.
-impl<D: Data, W: DftWord, B: Backend<DftWord = W>> std::fmt::Debug for SvpPPol<D, W, B> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>, Rg: Ring> std::fmt::Debug for SvpPPol<D, W, B, Rg> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SvpPPol").field("shape", &self.shape).finish()
     }
 }
 
-impl<D: Data + std::hash::Hash, W: DftWord, B: Backend<DftWord = W>> std::hash::Hash for SvpPPol<D, W, B> {
+impl<D: Data + std::hash::Hash, W: DftWord, B: Backend<DftWord = W>, Rg: Ring> std::hash::Hash for SvpPPol<D, W, B, Rg> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.shape.hash(state);
         self.data.hash(state);
     }
 }
 
-impl<D: HostDataRef, W: DftWord, B: Backend<DftWord = W>> DigestU64 for SvpPPol<D, W, B> {
+impl<D: HostDataRef, W: DftWord, B: Backend<DftWord = W>, Rg: Ring> DigestU64 for SvpPPol<D, W, B, Rg> {
     fn digest_u64(&self) -> u64 {
         let mut h: DefaultHasher = DefaultHasher::new();
         h.write(self.data.as_ref());
@@ -93,7 +94,7 @@ impl<D: HostDataRef, W: DftWord, B: Backend<DftWord = W>> DigestU64 for SvpPPol<
     }
 }
 
-impl<D: HostDataRef, W: DftWord, B: Backend<DftWord = W>> ZnxView for SvpPPol<D, W, B> {
+impl<D: HostDataRef, W: DftWord, B: Backend<DftWord = W>, Rg: Ring> ZnxView for SvpPPol<D, W, B, Rg> {
     type Scalar = W;
 
     fn validate_element_view(&self) {
@@ -108,7 +109,7 @@ impl<D: HostDataRef, W: DftWord, B: Backend<DftWord = W>> ZnxView for SvpPPol<D,
     }
 }
 
-impl<D: Data, W: DftWord, B: Backend<DftWord = W>> ZnxInfos for SvpPPol<D, W, B> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>, Rg: Ring> ZnxInfos for SvpPPol<D, W, B, Rg> {
     fn n(&self) -> usize {
         self.shape.n()
     }
@@ -122,13 +123,13 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> ZnxInfos for SvpPPol<D, W, B>
     }
 }
 
-impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VecZnxInfos for SvpPPol<D, W, B> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>, Rg: Ring> VecZnxInfos for SvpPPol<D, W, B, Rg> {
     fn cols(&self) -> usize {
         self.shape.cols()
     }
 }
 
-impl<D: Data, W: DftWord, B: Backend<DftWord = W>> SvpPPol<D, W, B> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>, Rg: Ring> SvpPPol<D, W, B, Rg> {
     pub fn n(&self) -> usize {
         self.shape.n()
     }
@@ -146,22 +147,22 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> SvpPPol<D, W, B> {
     }
 }
 
-impl<D: Data, W: DftWord, B: Backend<DftWord = W>> DataView for SvpPPol<D, W, B> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>, Rg: Ring> DataView for SvpPPol<D, W, B, Rg> {
     type D = D;
     fn data(&self) -> &Self::D {
         &self.data
     }
 }
 
-impl<D: Data, W: DftWord, B: Backend<DftWord = W>> DataViewMut for SvpPPol<D, W, B> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>, Rg: Ring> DataViewMut for SvpPPol<D, W, B, Rg> {
     fn data_mut(&mut self) -> &mut Self::D {
         &mut self.data
     }
 }
 
-impl<D: Data, W: DftWord, B: Backend<DftWord = W>> SvpPPol<D, W, B> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>, Rg: Ring> SvpPPol<D, W, B, Rg> {
     /// Allocates a zero-initialized backend-owned `SvpPPol`.
-    pub fn alloc(n: usize, cols: usize, hint: PrepareHint) -> SvpPPolOwned<B>
+    pub fn alloc(n: usize, cols: usize, hint: PrepareHint) -> SvpPPolOwned<B, Rg>
     where
         B: Backend<OwnedBuf = D>,
     {
@@ -175,14 +176,16 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> SvpPPol<D, W, B> {
 }
 
 /// Owned `SvpPPol` backed by a backend-owned buffer.
-pub type SvpPPolOwned<B> = SvpPPol<<B as Backend>::OwnedBuf, <B as Backend>::DftWord, B>;
+pub type SvpPPolOwned<B, Rg = Standard> = SvpPPol<<B as Backend>::OwnedBuf, <B as Backend>::DftWord, B, Rg>;
 /// Shared backend-native borrow of an `SvpPPol`.
-pub type SvpPPolBackendRef<'a, B> = SvpPPol<<B as Backend>::BufRef<'a>, <B as Backend>::DftWord, B>;
+pub type SvpPPolBackendRef<'a, B, Rg = Standard> = SvpPPol<<B as Backend>::BufRef<'a>, <B as Backend>::DftWord, B, Rg>;
 /// Mutable backend-native borrow of an `SvpPPol`.
-pub type SvpPPolBackendMut<'a, B> = SvpPPol<<B as Backend>::BufMut<'a>, <B as Backend>::DftWord, B>;
+pub type SvpPPolBackendMut<'a, B, Rg = Standard> = SvpPPol<<B as Backend>::BufMut<'a>, <B as Backend>::DftWord, B, Rg>;
 
 /// Reborrow a mutable backend-native `SvpPPol` view as a shared backend-native view.
-pub fn svp_ppol_backend_ref_from_mut<'a, 'b, B: Backend>(ppol: &'a SvpPPolBackendMut<'b, B>) -> SvpPPolBackendRef<'a, B> {
+pub fn svp_ppol_backend_ref_from_mut<'a, 'b, B: Backend, Rg: Ring>(
+    ppol: &'a SvpPPolBackendMut<'b, B, Rg>,
+) -> SvpPPolBackendRef<'a, B, Rg> {
     SvpPPol {
         data: B::view_ref_mut(&ppol.data),
         shape: ppol.shape,
@@ -191,12 +194,12 @@ pub fn svp_ppol_backend_ref_from_mut<'a, 'b, B: Backend>(ppol: &'a SvpPPolBacken
 }
 
 /// Borrow a backend-owned `SvpPPol` using the backend's native view type.
-pub trait SvpPPolToBackendRef<B: Backend> {
-    fn to_backend_ref(&self) -> SvpPPolBackendRef<'_, B>;
+pub trait SvpPPolToBackendRef<B: Backend, Rg: Ring = Standard> {
+    fn to_backend_ref(&self) -> SvpPPolBackendRef<'_, B, Rg>;
 }
 
-impl<B: Backend> SvpPPolToBackendRef<B> for SvpPPol<B::OwnedBuf, B::DftWord, B> {
-    fn to_backend_ref(&self) -> SvpPPolBackendRef<'_, B> {
+impl<B: Backend, Rg: Ring> SvpPPolToBackendRef<B, Rg> for SvpPPol<B::OwnedBuf, B::DftWord, B, Rg> {
+    fn to_backend_ref(&self) -> SvpPPolBackendRef<'_, B, Rg> {
         SvpPPol {
             data: B::view(&self.data),
             shape: self.shape,
@@ -205,8 +208,8 @@ impl<B: Backend> SvpPPolToBackendRef<B> for SvpPPol<B::OwnedBuf, B::DftWord, B> 
     }
 }
 
-impl<B: Backend> SvpPPolToBackendRef<B> for &SvpPPol<B::BufRef<'_>, B::DftWord, B> {
-    fn to_backend_ref(&self) -> SvpPPolBackendRef<'_, B> {
+impl<B: Backend, Rg: Ring> SvpPPolToBackendRef<B, Rg> for &SvpPPol<B::BufRef<'_>, B::DftWord, B, Rg> {
+    fn to_backend_ref(&self) -> SvpPPolBackendRef<'_, B, Rg> {
         SvpPPol {
             data: B::view_ref(&self.data),
             shape: self.shape,
@@ -216,23 +219,23 @@ impl<B: Backend> SvpPPolToBackendRef<B> for &SvpPPol<B::BufRef<'_>, B::DftWord, 
 }
 
 /// Reborrow an already backend-borrowed `SvpPPol` as a shared backend-native view.
-pub trait SvpPPolReborrowBackendRef<B: Backend> {
-    fn reborrow_backend_ref(&self) -> SvpPPolBackendRef<'_, B>;
+pub trait SvpPPolReborrowBackendRef<B: Backend, Rg: Ring = Standard> {
+    fn reborrow_backend_ref(&self) -> SvpPPolBackendRef<'_, B, Rg>;
 }
 
-impl<B: Backend> SvpPPolReborrowBackendRef<B> for SvpPPol<B::BufMut<'_>, B::DftWord, B> {
-    fn reborrow_backend_ref(&self) -> SvpPPolBackendRef<'_, B> {
-        svp_ppol_backend_ref_from_mut::<B>(self)
+impl<B: Backend, Rg: Ring> SvpPPolReborrowBackendRef<B, Rg> for SvpPPol<B::BufMut<'_>, B::DftWord, B, Rg> {
+    fn reborrow_backend_ref(&self) -> SvpPPolBackendRef<'_, B, Rg> {
+        svp_ppol_backend_ref_from_mut::<B, Rg>(self)
     }
 }
 
 /// Mutably borrow a backend-owned `SvpPPol` using the backend's native view type.
-pub trait SvpPPolToBackendMut<B: Backend> {
-    fn to_backend_mut(&mut self) -> SvpPPolBackendMut<'_, B>;
+pub trait SvpPPolToBackendMut<B: Backend, Rg: Ring = Standard> {
+    fn to_backend_mut(&mut self) -> SvpPPolBackendMut<'_, B, Rg>;
 }
 
-impl<B: Backend> SvpPPolToBackendMut<B> for SvpPPol<B::OwnedBuf, B::DftWord, B> {
-    fn to_backend_mut(&mut self) -> SvpPPolBackendMut<'_, B> {
+impl<B: Backend, Rg: Ring> SvpPPolToBackendMut<B, Rg> for SvpPPol<B::OwnedBuf, B::DftWord, B, Rg> {
+    fn to_backend_mut(&mut self) -> SvpPPolBackendMut<'_, B, Rg> {
         SvpPPol {
             data: B::view_mut(&mut self.data),
             shape: self.shape,
@@ -241,8 +244,8 @@ impl<B: Backend> SvpPPolToBackendMut<B> for SvpPPol<B::OwnedBuf, B::DftWord, B> 
     }
 }
 
-impl<B: Backend> SvpPPolToBackendMut<B> for &mut SvpPPol<B::BufMut<'_>, B::DftWord, B> {
-    fn to_backend_mut(&mut self) -> SvpPPolBackendMut<'_, B> {
+impl<B: Backend, Rg: Ring> SvpPPolToBackendMut<B, Rg> for &mut SvpPPol<B::BufMut<'_>, B::DftWord, B, Rg> {
+    fn to_backend_mut(&mut self) -> SvpPPolBackendMut<'_, B, Rg> {
         SvpPPol {
             data: B::view_mut_ref(&mut self.data),
             shape: self.shape,
@@ -252,12 +255,12 @@ impl<B: Backend> SvpPPolToBackendMut<B> for &mut SvpPPol<B::BufMut<'_>, B::DftWo
 }
 
 /// Reborrow an already backend-borrowed `SvpPPol` as a mutable backend-native view.
-pub trait SvpPPolReborrowBackendMut<B: Backend> {
-    fn reborrow_backend_mut(&mut self) -> SvpPPolBackendMut<'_, B>;
+pub trait SvpPPolReborrowBackendMut<B: Backend, Rg: Ring = Standard> {
+    fn reborrow_backend_mut(&mut self) -> SvpPPolBackendMut<'_, B, Rg>;
 }
 
-impl<B: Backend> SvpPPolReborrowBackendMut<B> for SvpPPol<B::BufMut<'_>, B::DftWord, B> {
-    fn reborrow_backend_mut(&mut self) -> SvpPPolBackendMut<'_, B> {
+impl<B: Backend, Rg: Ring> SvpPPolReborrowBackendMut<B, Rg> for SvpPPol<B::BufMut<'_>, B::DftWord, B, Rg> {
+    fn reborrow_backend_mut(&mut self) -> SvpPPolBackendMut<'_, B, Rg> {
         SvpPPol {
             data: B::view_mut_ref(&mut self.data),
             shape: self.shape,
@@ -266,7 +269,7 @@ impl<B: Backend> SvpPPolReborrowBackendMut<B> for SvpPPol<B::BufMut<'_>, B::DftW
     }
 }
 
-impl<D: Data, W: DftWord, B: Backend<DftWord = W>> SvpPPol<D, W, B> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>, Rg: Ring> SvpPPol<D, W, B, Rg> {
     pub fn from_data(data: D, n: usize, cols: usize, hint: PrepareHint) -> Self {
         Self {
             data,
@@ -276,7 +279,7 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> SvpPPol<D, W, B> {
     }
 }
 
-impl<D: HostDataRef, W: DftWord, B: Backend<DftWord = W>> fmt::Display for SvpPPol<D, W, B> {
+impl<D: HostDataRef, W: DftWord, B: Backend<DftWord = W>, Rg: Ring> fmt::Display for SvpPPol<D, W, B, Rg> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "SvpPPol(n={}, cols={})", self.n(), self.cols())?;
 
@@ -313,14 +316,14 @@ impl<D: HostDataRef, W: DftWord, B: Backend<DftWord = W>> fmt::Display for SvpPP
     }
 }
 
-impl<D: Data, W: DftWord, B: Backend<DftWord = W>> SvpPPol<D, W, B> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>, Rg: Ring> SvpPPol<D, W, B, Rg> {
     /// Zero-copy re-tag of this container to a layout-compatible backend `B2`.
     ///
     /// The buffer moves as-is; only the type tag changes. Requires the
     /// [`SvpPPolLayoutCompatible`](crate::layouts::SvpPPolLayoutCompatible) marker declared by the backend
     /// pair. `D` is kept, so for further backend-native use `B2`'s buffer
     /// types must match `D` (true for every backend in the workspace).
-    pub fn into_backend<B2>(self) -> SvpPPol<D, W, B2>
+    pub fn into_backend<B2>(self) -> SvpPPol<D, W, B2, Rg>
     where
         B2: Backend<DftWord = W>,
         B: crate::layouts::SvpPPolLayoutCompatible<B2>,

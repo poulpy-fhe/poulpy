@@ -198,7 +198,7 @@ pub trait NttCopy {
 /// Multiplies each of the `ell` rows of a column vector `b` (in q120b
 /// format) by the corresponding entry in `a` (also q120b), accumulating
 /// the results into `res`. `meta` carries the precomputed lazy-reduction
-/// constants and should be obtained via [`vec_znx_dft::NttModuleHandle::get_bbb_meta`].
+/// constants and should be obtained via [`vec_znx_dft::NttMetaHandle::get_bbb_meta`].
 pub trait NttMulBbb {
     /// `res += a[0..ell] ⊙ b[0..ell]` using lazy modular arithmetic.
     fn ntt_mul_bbb(meta: &BbbMeta<Primes30>, ell: usize, res: &mut [u64], a: &[u64], b: &[u64]);

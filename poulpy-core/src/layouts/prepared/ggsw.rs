@@ -1,6 +1,6 @@
 use poulpy_hal::layouts::VmpPMatToBackendMut;
 use poulpy_hal::layouts::VmpPMatToBackendRef;
-use poulpy_hal::layouts::{Backend, Data, VmpPMat};
+use poulpy_hal::layouts::{Backend, Data, Ring, Standard, VmpPMat};
 
 use crate::layouts::{Base2K, Degree, Dnum, GGSWInfos, GLWEInfos, LWEInfos, Rank, TorusPrecision};
 
@@ -10,18 +10,18 @@ use crate::layouts::{Base2K, Degree, Dnum, GGSWInfos, GLWEInfos, LWEInfos, Rank,
 /// of the backend's DFT/NTT transform, enabling O(N log N) polynomial
 /// operations. Tied to a specific backend via `B: Backend`.
 #[derive(PartialEq)]
-pub struct GGSWPrepared<D: Data, B: Backend> {
+pub struct GGSWPrepared<D: Data, B: Backend, Rg: Ring = Standard> {
     pub(crate) noise: Option<crate::ComponentNoise>,
-    pub(crate) data: VmpPMat<D, B::DftWord, B>,
+    pub(crate) data: VmpPMat<D, B::DftWord, B, Rg>,
     pub(crate) k_aux: TorusPrecision,
     pub(crate) base2k: Base2K,
     pub(crate) k_digit: TorusPrecision,
 }
 
-pub type GGSWPreparedBackendRef<'a, B> = GGSWPrepared<<B as Backend>::BufRef<'a>, B>;
-pub type GGSWPreparedBackendMut<'a, B> = GGSWPrepared<<B as Backend>::BufMut<'a>, B>;
+pub type GGSWPreparedBackendRef<'a, B, Rg = Standard> = GGSWPrepared<<B as Backend>::BufRef<'a>, B, Rg>;
+pub type GGSWPreparedBackendMut<'a, B, Rg = Standard> = GGSWPrepared<<B as Backend>::BufMut<'a>, B, Rg>;
 
-impl<D: Data, B: Backend> LWEInfos for GGSWPrepared<D, B> {
+impl<D: Data, B: Backend, Rg: Ring> LWEInfos for GGSWPrepared<D, B, Rg> {
     fn noise(&self) -> Option<crate::ComponentNoise> {
         self.noise.clone()
     }
@@ -43,13 +43,13 @@ impl<D: Data, B: Backend> LWEInfos for GGSWPrepared<D, B> {
     }
 }
 
-impl<D: Data, B: Backend> GLWEInfos for GGSWPrepared<D, B> {
+impl<D: Data, B: Backend, Rg: Ring> GLWEInfos for GGSWPrepared<D, B, Rg> {
     fn rank(&self) -> Rank {
         Rank(self.data.cols_out() as u32 - 1)
     }
 }
 
-impl<D: Data, B: Backend> GGSWInfos for GGSWPrepared<D, B> {
+impl<D: Data, B: Backend, Rg: Ring> GGSWInfos for GGSWPrepared<D, B, Rg> {
     fn k_aux(&self) -> TorusPrecision {
         self.k_aux
     }
@@ -63,18 +63,18 @@ impl<D: Data, B: Backend> GGSWInfos for GGSWPrepared<D, B> {
     }
 }
 
-impl<D: Data, B: Backend> GGSWPrepared<D, B> {
-    pub fn data(&self) -> &VmpPMat<D, B::DftWord, B> {
+impl<D: Data, B: Backend, Rg: Ring> GGSWPrepared<D, B, Rg> {
+    pub fn data(&self) -> &VmpPMat<D, B::DftWord, B, Rg> {
         &self.data
     }
 }
 
-pub trait GGSWPreparedToBackendRef<B: Backend> {
-    fn to_backend_ref(&self) -> GGSWPreparedBackendRef<'_, B>;
+pub trait GGSWPreparedToBackendRef<B: Backend, Rg: Ring = Standard> {
+    fn to_backend_ref(&self) -> GGSWPreparedBackendRef<'_, B, Rg>;
 }
 
-impl<B: Backend> GGSWPreparedToBackendRef<B> for GGSWPrepared<B::OwnedBuf, B> {
-    fn to_backend_ref(&self) -> GGSWPreparedBackendRef<'_, B> {
+impl<B: Backend, Rg: Ring> GGSWPreparedToBackendRef<B, Rg> for GGSWPrepared<B::OwnedBuf, B, Rg> {
+    fn to_backend_ref(&self) -> GGSWPreparedBackendRef<'_, B, Rg> {
         GGSWPrepared {
             noise: crate::layouts::LWEInfos::noise(&self),
             base2k: self.base2k,
@@ -85,20 +85,20 @@ impl<B: Backend> GGSWPreparedToBackendRef<B> for GGSWPrepared<B::OwnedBuf, B> {
     }
 }
 
-pub trait GGSWPreparedToBackendMut<B: Backend> {
+pub trait GGSWPreparedToBackendMut<B: Backend, Rg: Ring = Standard> {
     /// Backend hook for recording or propagating component noise metadata.
     fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>);
 
     /// Borrows coefficients mutably and clears the owner's component noise metadata.
-    fn to_backend_mut(&mut self) -> GGSWPreparedBackendMut<'_, B>;
+    fn to_backend_mut(&mut self) -> GGSWPreparedBackendMut<'_, B, Rg>;
 }
 
-impl<B: Backend> GGSWPreparedToBackendMut<B> for GGSWPrepared<B::OwnedBuf, B> {
+impl<B: Backend, Rg: Ring> GGSWPreparedToBackendMut<B, Rg> for GGSWPrepared<B::OwnedBuf, B, Rg> {
     fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
         self.noise = crate::layouts::checked_noise(metadata, crate::layouts::GLWEInfos::rank(self).as_usize() + 1);
     }
 
-    fn to_backend_mut(&mut self) -> GGSWPreparedBackendMut<'_, B> {
+    fn to_backend_mut(&mut self) -> GGSWPreparedBackendMut<'_, B, Rg> {
         self.noise = None;
         GGSWPrepared {
             noise: None,

@@ -52,15 +52,15 @@ pub(crate) fn vmp_pmat_prepare_tmp_bytes_neon(n: usize) -> usize {
 
 /// VMP prepare into the block-major prepared layout.
 pub(crate) fn vmp_pmat_prepare_neon_pm<R: Ring>(
-    module: &Module<NTT4x30Neon<R>>,
-    res: &mut VmpPMatBackendMut<'_, NTT4x30Neon<R>>,
-    a: &MatZnxBackendRef<'_, NTT4x30Neon<R>>,
+    module: &Module<NTT4x30Neon>,
+    res: &mut VmpPMatBackendMut<'_, NTT4x30Neon, R>,
+    a: &MatZnxBackendRef<'_, NTT4x30Neon, R>,
     tmp: &mut [u64],
 ) where
-    NTT4x30Neon<R>: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>>,
+    NTT4x30Neon: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>>,
 {
     let n = res.n();
-    check_degree::<NTT4x30Neon<R>>(module.n(), n);
+    check_degree::<NTT4x30Neon>(module.n(), n);
 
     assert_eq!(a.n(), n);
     assert_eq!(res.cols_in(), a.cols_in());
@@ -97,8 +97,8 @@ pub(crate) fn vmp_pmat_prepare_neon_pm<R: Ring>(
 
 /// Copies rows `first_row + i * row_step` of `a`, truncated to `res.size()` limbs, into rows `i` of `res`.
 pub(crate) fn vmp_extract_selected_rows_neon_pm<R: Ring>(
-    res: &mut VmpPMatBackendMut<'_, NTT4x30Neon<R>>,
-    a: &VmpPMatBackendRef<'_, NTT4x30Neon<R>>,
+    res: &mut VmpPMatBackendMut<'_, NTT4x30Neon, R>,
+    a: &VmpPMatBackendRef<'_, NTT4x30Neon, R>,
     first_row: usize,
     row_step: usize,
 ) {
@@ -286,10 +286,10 @@ unsafe fn vmp_apply_core_neon_pm<const OVERWRITE: bool, E: TaskExecutor>(
 }
 
 pub(crate) fn vmp_apply_dft_to_dft_neon<R: Ring, E: TaskExecutor>(
-    _module: &Module<NTT4x30Neon<R>>,
-    res: &mut VecZnxDftBackendMut<'_, NTT4x30Neon<R>>,
-    a: &VecZnxDftBackendRef<'_, NTT4x30Neon<R>>,
-    pmat: &VmpPMatBackendRef<'_, NTT4x30Neon<R>>,
+    _module: &Module<NTT4x30Neon>,
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Neon, R>,
+    a: &VecZnxDftBackendRef<'_, NTT4x30Neon, R>,
+    pmat: &VmpPMatBackendRef<'_, NTT4x30Neon, R>,
     limb_offset: usize,
     tmp: &mut [u64],
 ) {
@@ -320,10 +320,10 @@ pub(crate) fn vmp_apply_dft_to_dft_neon<R: Ring, E: TaskExecutor>(
 }
 
 pub(crate) fn vmp_apply_dft_to_dft_add_neon<R: Ring, E: TaskExecutor>(
-    _module: &Module<NTT4x30Neon<R>>,
-    res: &mut VecZnxDftBackendMut<'_, NTT4x30Neon<R>>,
-    a: &VecZnxDftBackendRef<'_, NTT4x30Neon<R>>,
-    pmat: &VmpPMatBackendRef<'_, NTT4x30Neon<R>>,
+    _module: &Module<NTT4x30Neon>,
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Neon, R>,
+    a: &VecZnxDftBackendRef<'_, NTT4x30Neon, R>,
+    pmat: &VmpPMatBackendRef<'_, NTT4x30Neon, R>,
     limb_offset: usize,
     tmp: &mut [u64],
 ) {
@@ -382,11 +382,11 @@ struct Digit {
 /// Digit `di` gathers the input limbs congruent to `dsize - 1 - di` modulo `dsize` and reads the matrix `di` limbs ahead.
 /// Returns the residues of `gglwe_product_digits_strided_reference`.
 pub(crate) fn vmp_apply_dft_to_dft_digits_strided_neon<R: Ring, E: TaskExecutor>(
-    res: &mut VecZnxDftBackendMut<'_, NTT4x30Neon<R>>,
-    a: &VecZnxDftBackendRef<'_, NTT4x30Neon<R>>,
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Neon, R>,
+    a: &VecZnxDftBackendRef<'_, NTT4x30Neon, R>,
     dsize: usize,
     product_limbs: usize,
-    pmat: &VmpPMatBackendRef<'_, NTT4x30Neon<R>>,
+    pmat: &VmpPMatBackendRef<'_, NTT4x30Neon, R>,
     tmp: &mut [u64],
 ) {
     assert_eq!(res.n(), pmat.n());

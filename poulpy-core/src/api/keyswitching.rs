@@ -1,6 +1,6 @@
 #![allow(clippy::too_many_arguments)]
 
-use poulpy_hal::layouts::{Backend, ScratchArena, VecZnxDftBackendMut};
+use poulpy_hal::layouts::{Backend, Ring, ScratchArena, Standard, VecZnxDftBackendMut};
 
 use crate::layouts::{
     GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWEInfos, GLWEToBackendMut,
@@ -8,21 +8,30 @@ use crate::layouts::{
     prepared::{GGLWEPreparedBackendRef, GGLWEToGGSWKeyPreparedBackendRef},
 };
 
-pub trait GLWEKeyswitch<BE: Backend> {
+pub trait GLWEKeyswitch<BE: Backend, Rg: Ring = Standard> {
     fn glwe_keyswitch_tmp_bytes<R, A, B>(&self, res_infos: &R, a_infos: &A, key_infos: &B) -> usize
     where
         R: GLWEInfos,
         A: GLWEInfos,
         B: GGLWEInfos;
 
-    fn glwe_keyswitch<R, A>(&self, res: &mut R, a: &A, key: &GGLWEPreparedBackendRef<'_, BE>, scratch: &mut ScratchArena<'_, BE>)
-    where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos;
+    fn glwe_keyswitch<R, A>(
+        &self,
+        res: &mut R,
+        a: &A,
+        key: &GGLWEPreparedBackendRef<'_, BE, Rg>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+        A: GLWEToBackendRef<BE, Rg> + GLWEInfos;
 
-    fn glwe_keyswitch_assign<R>(&self, res: &mut R, key: &GGLWEPreparedBackendRef<'_, BE>, scratch: &mut ScratchArena<'_, BE>)
-    where
-        R: GLWEToBackendMut<BE> + GLWEInfos;
+    fn glwe_keyswitch_assign<R>(
+        &self,
+        res: &mut R,
+        key: &GGLWEPreparedBackendRef<'_, BE, Rg>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE, Rg> + GLWEInfos;
 
     /// Scratch of [`Self::glwe_keyswitch_dft`] for an accumulator of `res_size` limbs.
     fn glwe_keyswitch_dft_tmp_bytes<A, K>(&self, res_size: usize, a_infos: &A, key_infos: &K) -> usize
@@ -39,12 +48,12 @@ pub trait GLWEKeyswitch<BE: Backend> {
     /// the addend of column 0. `a` is at the key radix.
     fn glwe_keyswitch_dft<A>(
         &self,
-        res: &mut VecZnxDftBackendMut<'_, BE>,
+        res: &mut VecZnxDftBackendMut<'_, BE, Rg>,
         a: &A,
-        key: &GGLWEPreparedBackendRef<'_, BE>,
+        key: &GGLWEPreparedBackendRef<'_, BE, Rg>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        A: GLWEToBackendRef<BE> + GLWEInfos;
+        A: GLWEToBackendRef<BE, Rg> + GLWEInfos;
 
     /// Scratch of [`Self::glwe_keyswitch_dft_add`] for an accumulator of `res_size`
     /// limbs.
@@ -57,15 +66,15 @@ pub trait GLWEKeyswitch<BE: Backend> {
     /// added to `res`.
     fn glwe_keyswitch_dft_add<A>(
         &self,
-        res: &mut VecZnxDftBackendMut<'_, BE>,
+        res: &mut VecZnxDftBackendMut<'_, BE, Rg>,
         a: &A,
-        key: &GGLWEPreparedBackendRef<'_, BE>,
+        key: &GGLWEPreparedBackendRef<'_, BE, Rg>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        A: GLWEToBackendRef<BE> + GLWEInfos;
+        A: GLWEToBackendRef<BE, Rg> + GLWEInfos;
 }
 
-pub trait GGLWEKeyswitch<BE: Backend> {
+pub trait GGLWEKeyswitch<BE: Backend, Rg: Ring = Standard> {
     fn gglwe_keyswitch_tmp_bytes<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
         R: GGLWEInfos,
@@ -76,18 +85,22 @@ pub trait GGLWEKeyswitch<BE: Backend> {
         &self,
         res: &mut R,
         a: &A,
-        key: &GGLWEPreparedBackendRef<'_, BE>,
+        key: &GGLWEPreparedBackendRef<'_, BE, Rg>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GGLWEToBackendMut<BE> + GGLWEInfos,
-        A: GGLWEToBackendRef<BE> + GGLWEInfos;
+        R: GGLWEToBackendMut<BE, Rg> + GGLWEInfos,
+        A: GGLWEToBackendRef<BE, Rg> + GGLWEInfos;
 
-    fn gglwe_keyswitch_assign<R>(&self, res: &mut R, key: &GGLWEPreparedBackendRef<'_, BE>, scratch: &mut ScratchArena<'_, BE>)
-    where
-        R: GGLWEToBackendMut<BE> + GGLWEInfos;
+    fn gglwe_keyswitch_assign<R>(
+        &self,
+        res: &mut R,
+        key: &GGLWEPreparedBackendRef<'_, BE, Rg>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GGLWEToBackendMut<BE, Rg> + GGLWEInfos;
 }
 
-pub trait GGSWKeyswitch<BE: Backend> {
+pub trait GGSWKeyswitch<BE: Backend, Rg: Ring = Standard> {
     fn ggsw_keyswitch_tmp_bytes<R, A, K, T>(&self, res_infos: &R, a_infos: &A, key_infos: &K, tsk_infos: &T) -> usize
     where
         R: GGSWInfos,
@@ -99,32 +112,37 @@ pub trait GGSWKeyswitch<BE: Backend> {
         &self,
         res: &mut R,
         a: &A,
-        key: &GGLWEPreparedBackendRef<'_, BE>,
-        tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, BE>,
+        key: &GGLWEPreparedBackendRef<'_, BE, Rg>,
+        tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, BE, Rg>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GGSWToBackendMut<BE> + GGSWInfos,
-        A: GGSWToBackendRef<BE> + GGSWInfos;
+        R: GGSWToBackendMut<BE, Rg> + GGSWInfos,
+        A: GGSWToBackendRef<BE, Rg> + GGSWInfos;
 
     fn ggsw_keyswitch_assign<R>(
         &self,
         res: &mut R,
-        key: &GGLWEPreparedBackendRef<'_, BE>,
-        tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, BE>,
+        key: &GGLWEPreparedBackendRef<'_, BE, Rg>,
+        tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, BE, Rg>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GGSWToBackendMut<BE> + GGSWInfos;
+        R: GGSWToBackendMut<BE, Rg> + GGSWInfos;
 }
 
-pub trait LWEKeyswitch<BE: Backend> {
+pub trait LWEKeyswitch<BE: Backend, Rg: Ring = Standard> {
     fn lwe_keyswitch_tmp_bytes<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
         R: LWEInfos,
         A: LWEInfos,
         K: GGLWEInfos;
 
-    fn lwe_keyswitch<R, A>(&self, res: &mut R, a: &A, ksk: &GGLWEPreparedBackendRef<'_, BE>, scratch: &mut ScratchArena<'_, BE>)
-    where
-        R: LWEToBackendMut<BE> + LWEInfos,
-        A: LWEToBackendRef<BE> + LWEInfos;
+    fn lwe_keyswitch<R, A>(
+        &self,
+        res: &mut R,
+        a: &A,
+        ksk: &GGLWEPreparedBackendRef<'_, BE, Rg>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: LWEToBackendMut<BE, Rg> + LWEInfos,
+        A: LWEToBackendRef<BE, Rg> + LWEInfos;
 }

@@ -3,7 +3,7 @@ use poulpy_core::layouts::{
     LinearTransformationDiagonal, LinearTransformationGiantStep, LinearTransformationLayout, ModuleCoreAlloc, Rank,
     TorusPrecision,
 };
-use poulpy_hal::layouts::{Backend, Module};
+use poulpy_hal::layouts::{Backend, Module, Ring};
 
 use crate::{CKKSInfos, GLWEPlaintextMeta, SetCKKSInfos, api::CKKSModuleInfos};
 
@@ -18,7 +18,7 @@ pub trait CKKSCiphertextAlloc<BE: Backend>: ModuleCoreAlloc<OwnedBuf = BE::Owned
     /// [`CKKSPlaintextAlloc::ckks_plaintext_alloc_from_infos`]. Use
     /// [`Self::ckks_ciphertext_alloc_from_glwe_infos`] when only a GLWE layout
     /// is available (fresh default metadata).
-    fn ckks_ciphertext_alloc_from_infos<A>(&self, infos: &A) -> CKKSCiphertextOwned<BE>
+    fn ckks_ciphertext_alloc_from_infos<A, Rg: Ring>(&self, infos: &A) -> CKKSCiphertextOwned<BE, Rg>
     where
         A: GLWEInfos + CKKSInfos,
     {
@@ -27,7 +27,7 @@ pub trait CKKSCiphertextAlloc<BE: Backend>: ModuleCoreAlloc<OwnedBuf = BE::Owned
 
     /// Allocates a default-meta ciphertext from a bare GLWE layout; the name
     /// makes the metadata drop explicit.
-    fn ckks_ciphertext_alloc_from_glwe_infos<A>(&self, infos: &A) -> CKKSCiphertextOwned<BE>
+    fn ckks_ciphertext_alloc_from_glwe_infos<A, Rg: Ring>(&self, infos: &A) -> CKKSCiphertextOwned<BE, Rg>
     where
         A: GLWEInfos,
     {
@@ -35,12 +35,17 @@ pub trait CKKSCiphertextAlloc<BE: Backend>: ModuleCoreAlloc<OwnedBuf = BE::Owned
     }
 
     /// Allocates a default-meta ciphertext of the given `rank`.
-    fn ckks_ciphertext_alloc_with_rank(&self, base2k: Base2K, k: TorusPrecision, rank: Rank) -> CKKSCiphertextOwned<BE> {
+    fn ckks_ciphertext_alloc_with_rank<Rg: Ring>(
+        &self,
+        base2k: Base2K,
+        k: TorusPrecision,
+        rank: Rank,
+    ) -> CKKSCiphertextOwned<BE, Rg> {
         CKKSCiphertext::from_inner(self.glwe_alloc(base2k, k, rank), GLWEPlaintextMeta::default())
     }
 
     /// Rank-1 convenience over [`Self::ckks_ciphertext_alloc_with_rank`].
-    fn ckks_ciphertext_alloc(&self, base2k: Base2K, k: TorusPrecision) -> CKKSCiphertextOwned<BE> {
+    fn ckks_ciphertext_alloc<Rg: Ring>(&self, base2k: Base2K, k: TorusPrecision) -> CKKSCiphertextOwned<BE, Rg> {
         self.ckks_ciphertext_alloc_with_rank(base2k, k, Rank(1))
     }
 }
@@ -57,7 +62,7 @@ impl<BE: Backend> CKKSCiphertextAlloc<BE> for Module<BE> where
 pub trait CKKSPlaintextAlloc<BE: Backend>:
     ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord> + GLWEPlaintextAlloc + CKKSModuleInfos
 {
-    fn ckks_plaintext_alloc_from_infos<A>(&self, infos: &A) -> CKKSPlaintextOwned<BE>
+    fn ckks_plaintext_alloc_from_infos<A, Rg: Ring>(&self, infos: &A) -> CKKSPlaintextOwned<BE, Rg>
     where
         A: CKKSInfos,
     {
@@ -69,7 +74,7 @@ pub trait CKKSPlaintextAlloc<BE: Backend>:
     /// Allocates a default-meta plaintext sized to `k` over `base2k`. The semantic
     /// [`GLWEPlaintextMeta`] is not needed to size the buffer: set it afterwards with
     /// [`SetCKKSInfos::set_meta`] (the `_from_infos` variants do this for you).
-    fn ckks_plaintext_alloc(&self, n: Degree, base2k: Base2K, k: TorusPrecision) -> CKKSPlaintextOwned<BE> {
+    fn ckks_plaintext_alloc<Rg: Ring>(&self, n: Degree, base2k: Base2K, k: TorusPrecision) -> CKKSPlaintextOwned<BE, Rg> {
         // `k` is the effective torus width (`log_delta + log_budget`); the buffer
         // auto-sizes to `ceil(k / base2k)` limbs, so the integer-poly storage spans
         // `max_k` while `k` records the meaningful precision. The semantic meta is
@@ -85,11 +90,16 @@ pub trait CKKSPlaintextAlloc<BE: Backend>:
     ///
     /// Panics when `slots` is not a power of two, exceeds `ckks_max_slots`, or needs a degree below the backend's
     /// minimum.
-    fn ckks_plaintext_alloc_from_slots(&self, slots: usize, base2k: Base2K, k: TorusPrecision) -> CKKSPlaintextOwned<BE>
+    fn ckks_plaintext_alloc_from_slots<Rg: Ring>(
+        &self,
+        slots: usize,
+        base2k: Base2K,
+        k: TorusPrecision,
+    ) -> CKKSPlaintextOwned<BE, Rg>
     where
         Self: GetDegree,
     {
-        let max_slots = self.ckks_max_slots();
+        let max_slots = self.ckks_max_slots::<Rg>();
         assert!(
             slots.is_power_of_two() && slots <= max_slots,
             "ckks_plaintext_alloc_from_slots: the slot count must be a power of two up to the module's slots"
@@ -114,11 +124,11 @@ pub trait CKKSLinearTransformationAlloc<BE: Backend>: CKKSPlaintextAlloc<BE> {
     /// encoder's, that of a plaintext of the diagonals' period in slots. It is the schedule
     /// [`ComplexDiagonals::build_transform`](crate::layouts::ComplexDiagonals::build_transform) produces for that
     /// layout, so the receiver of an encoding into a transform.
-    fn ckks_linear_transformation_alloc_from_infos<A>(
+    fn ckks_linear_transformation_alloc_from_infos<A, Rg: Ring>(
         &self,
         layout: &LinearTransformationLayout,
         infos: &A,
-    ) -> LinearTransformation<CKKSPlaintextOwned<BE>>
+    ) -> LinearTransformation<CKKSPlaintextOwned<BE, Rg>>
     where
         A: CKKSInfos,
     {
@@ -155,7 +165,7 @@ mod tests {
     use poulpy_core::layouts::{
         Diagonals, GLWELayout, LWEInfos, LinearTransformationLayout, LinearTransformationStrategy, Rank, TorusPrecision,
     };
-    use poulpy_hal::layouts::{HostBytesBackend, Module};
+    use poulpy_hal::layouts::{HostBytesBackend, Module, Standard};
 
     use super::*;
     use crate::{CKKSLayout, Scale, SlotsKind, layouts::ComplexDiagonals};
@@ -178,7 +188,7 @@ mod tests {
             strategy,
         };
         let n = module
-            .ckks_plaintext_alloc_from_slots(cd.period(), Base2K(12), TorusPrecision(24))
+            .ckks_plaintext_alloc_from_slots::<Standard>(cd.period(), Base2K(12), TorusPrecision(24))
             .n();
         let infos = CKKSLayout {
             glwe_layout: GLWELayout {
@@ -193,7 +203,7 @@ mod tests {
                 log_sparsity: 0,
             },
         };
-        let built = cd.build_transform(strategy, |_, _| module.ckks_plaintext_alloc_from_infos(&infos));
+        let built = cd.build_transform(strategy, |_, _| module.ckks_plaintext_alloc_from_infos::<_, Standard>(&infos));
         let alloc = module.ckks_linear_transformation_alloc_from_infos(&layout, &infos);
         let schedule = |t: &LinearTransformation<_>| -> Vec<(i64, Vec<i64>)> {
             t.giant_steps

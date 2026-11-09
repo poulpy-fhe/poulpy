@@ -1,4 +1,4 @@
-use crate::layouts::{Backend, ScalarZnxBackendMut, ScalarZnxBackendRef};
+use crate::layouts::{Backend, ConjugateInvariant, Ring, ScalarZnxBackendMut, ScalarZnxBackendRef, Standard};
 
 /// Substitution `X -> X^k` on a column of a scalar vector.
 ///
@@ -13,14 +13,14 @@ use crate::layouts::{Backend, ScalarZnxBackendMut, ScalarZnxBackendRef};
 /// override   allowed, scratch-free
 /// test       test_scalar_znx_automorphism, test_scalar_znx_automorphism_derived
 /// ```
-pub trait ScalarZnxAutomorphism<B: Backend> {
+pub trait ScalarZnxAutomorphism<B: Backend, Rg: Ring = Standard> {
     /// Writes the image of `a[a_col]` under `X -> X^k` into `res[res_col]`.
     fn scalar_znx_automorphism(
         &self,
         k: i64,
-        res: &mut ScalarZnxBackendMut<'_, B>,
+        res: &mut ScalarZnxBackendMut<'_, B, Rg>,
         res_col: usize,
-        a: &ScalarZnxBackendRef<'_, B>,
+        a: &ScalarZnxBackendRef<'_, B, Rg>,
         a_col: usize,
     );
 }
@@ -32,7 +32,7 @@ pub trait ScalarZnxAutomorphism<B: Backend> {
 /// class      derived
 /// mutation   out-of-place
 /// definition res[res_col] = a[a_col,0] + sum_{0<i<N} a[a_col,i] (X^i + X^-i) in Z[X]/(X^2N + 1); the other columns of res are untouched
-/// domain     standard module of degree at least 2N; res: ScalarZnx of degree 2N; a: ScalarZnx of degree N
+/// domain     module of degree at least 2N; res: ScalarZnx of degree 2N; a: ScalarZnx of degree N
 /// ensures    res[res_col] is the image of a[a_col] in the standard ring
 /// fallback   default body: vec_znx_ci_embed(res, res_col, a, a_col) with res and a read as one-limb VecZnx
 /// override   allowed, scratch-free
@@ -44,7 +44,7 @@ pub trait ScalarZnxCIEmbed<B: Backend> {
         &self,
         res: &mut ScalarZnxBackendMut<'_, B>,
         res_col: usize,
-        a: &ScalarZnxBackendRef<'_, B>,
+        a: &ScalarZnxBackendRef<'_, B, ConjugateInvariant>,
         a_col: usize,
     );
 }

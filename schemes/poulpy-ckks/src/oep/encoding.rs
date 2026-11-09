@@ -1,6 +1,6 @@
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::IntPolyInfos;
-use poulpy_hal::layouts::{Backend, Module, ModulePlanCache};
+use poulpy_hal::layouts::{Backend, Module, ModulePlanCache, Ring, Standard};
 
 use crate::{
     CKKSPlaintextToBackendMut, CKKSPlaintextToBackendRef, SetCKKSInfos,
@@ -41,12 +41,12 @@ use crate::{
 /// Implementations reproduce the bodies their methods document bit for bit, report for each
 /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait CKKSEncodingImpl<F: CKKSEncodingScalar>: Backend {
-    /// Opaque backend-specific plan family for precision `F`.
+pub unsafe trait CKKSEncodingImpl<F: CKKSEncodingScalar, Rg: Ring = Standard>: Backend {
+    /// Opaque backend-specific plan family for precision `F` on ring `Rg`.
     type Plans: Send + Sync + 'static;
 
     /// The plan cache of `module`, where the plans of [`Self::ckks_encoding_plans_create`] are created once per
-    /// precision. Backend-owned state with no reference body.
+    /// precision and ring. Backend-owned state with no reference body.
     fn ckks_encoding_plan_cache(module: &Module<Self>) -> &ModulePlanCache;
 
     /// Builds the transform-plan family for every supported power-of-two dimension up to `module.max_n()`.
@@ -59,14 +59,14 @@ pub unsafe trait CKKSEncodingImpl<F: CKKSEncodingScalar>: Backend {
     /// rounding, one value per coefficient; free in kernels and scratch use. The caller,
     /// [`Self::ckks_encode_coeffs_into`], validated the operands. Rejects non-finite inputs and rounded values outside
     /// the codec's signed integer range before writing the plaintext. Preserves the input coefficients and plaintext
-    /// metadata, except that invariant modules mark the slots [`SlotsKind::Real`](crate::SlotsKind::Real).
+    /// metadata, except that the conjugate-invariant ring marks the slots [`SlotsKind::Real`](crate::SlotsKind::Real).
     fn ckks_quantize_coeffs_into<P>(
         module: &Module<Self>,
         pt: &mut P,
         coeffs: &CKKSEncodingBufferBackendRef<'_, Self, F>,
     ) -> Result<()>
     where
-        P: CKKSPlaintextToBackendMut<Self> + IntPolyInfos + SetCKKSInfos;
+        P: CKKSPlaintextToBackendMut<Self, Rg> + IntPolyInfos + SetCKKSInfos;
 
     /// Hook without an API twin. Reproduces
     /// [`ckks_dequantize_coeffs_into_reference`](crate::reference::encoding::ckks_dequantize_coeffs_into_reference) bit for bit; free in kernels
@@ -78,14 +78,14 @@ pub unsafe trait CKKSEncodingImpl<F: CKKSEncodingScalar>: Backend {
         coeffs: &mut CKKSEncodingBufferBackendMut<'_, Self, F>,
     ) -> Result<()>
     where
-        P: CKKSPlaintextToBackendRef<Self> + IntPolyInfos;
+        P: CKKSPlaintextToBackendRef<Self, Rg> + IntPolyInfos;
 
     /// Hook without an API twin. Reproduces
     /// [`EncodingPermutation::slots_to_coeffs_assign`](crate::reference::encoding::EncodingPermutation::slots_to_coeffs_assign)
     /// bit for bit (permutation and IFFT; the determinism fixtures pin the bytes across backends), in place under the
     /// cached `plans`, on a buffer [`Self::ckks_encoding_buffer_slots_to_coeffs_assign`] validated; free in layouts and scheduling.
-    /// Invariant modules discard imaginary slots and store the independent coefficients in the first half of the
-    /// buffer.
+    /// On the conjugate-invariant ring (`Rg = ConjugateInvariant`), it discards imaginary slots and stores the
+    /// independent coefficients in the first half of the buffer.
     fn ckks_encoding_buffer_slots_to_coeffs_assign_with_plan(
         module: &Module<Self>,
         plans: &Self::Plans,
@@ -96,7 +96,8 @@ pub unsafe trait CKKSEncodingImpl<F: CKKSEncodingScalar>: Backend {
     /// [`EncodingPermutation::coeffs_to_slots_assign`](crate::reference::encoding::EncodingPermutation::coeffs_to_slots_assign)
     /// bit for bit (FFT and permutation; the determinism fixtures pin the bytes across backends), in place under the
     /// cached `plans`, on a buffer [`Self::ckks_encoding_buffer_coeffs_to_slots_assign`] validated; free in layouts and scheduling.
-    /// Invariant modules read independent coefficients from the first half and return zero imaginary parts.
+    /// On the conjugate-invariant ring, it reads the independent coefficients from the first half and returns zero
+    /// imaginary parts.
     fn ckks_encoding_buffer_coeffs_to_slots_assign_with_plan(
         module: &Module<Self>,
         plans: &Self::Plans,
@@ -109,7 +110,7 @@ pub unsafe trait CKKSEncodingImpl<F: CKKSEncodingScalar>: Backend {
     /// [`Self::ckks_encode_coeffs_into`] of its leading coefficients.
     fn ckks_encode_slots_into<P, C>(module: &Module<Self>, pt: &mut P, slots: &mut C) -> Result<()>
     where
-        P: CKKSPlaintextToBackendMut<Self> + IntPolyInfos + SetCKKSInfos,
+        P: CKKSPlaintextToBackendMut<Self, Rg> + IntPolyInfos + SetCKKSInfos,
         C: CKKSEncodingBufferToBackendMut<Self, F>,
     {
         ckks_encode_slots_into_derived(module, pt, slots)
@@ -120,7 +121,7 @@ pub unsafe trait CKKSEncodingImpl<F: CKKSEncodingScalar>: Backend {
     /// [`Self::ckks_encoding_buffer_coeffs_to_slots_assign`] on it.
     fn ckks_decode_slots_into<P, C>(module: &Module<Self>, pt: &P, slots: &mut C) -> Result<()>
     where
-        P: CKKSPlaintextToBackendRef<Self> + IntPolyInfos,
+        P: CKKSPlaintextToBackendRef<Self, Rg> + IntPolyInfos,
         C: CKKSEncodingBufferToBackendMut<Self, F>,
     {
         ckks_decode_slots_into_derived(module, pt, slots)
@@ -130,7 +131,7 @@ pub unsafe trait CKKSEncodingImpl<F: CKKSEncodingScalar>: Backend {
     /// coefficient count different from the plaintext degree, is `InvalidOperand`. Then [`Self::ckks_quantize_coeffs_into`].
     fn ckks_encode_coeffs_into<P, C>(module: &Module<Self>, pt: &mut P, coeffs: &C) -> Result<()>
     where
-        P: CKKSPlaintextToBackendMut<Self> + IntPolyInfos + SetCKKSInfos,
+        P: CKKSPlaintextToBackendMut<Self, Rg> + IntPolyInfos + SetCKKSInfos,
         C: CKKSEncodingBufferToBackendRef<Self, F>,
     {
         ckks_encode_coeffs_into_derived(module, pt, coeffs)
@@ -140,7 +141,7 @@ pub unsafe trait CKKSEncodingImpl<F: CKKSEncodingScalar>: Backend {
     /// [`Self::ckks_dequantize_coeffs_into`].
     fn ckks_decode_coeffs_into<P, C>(module: &Module<Self>, pt: &P, coeffs: &mut C) -> Result<()>
     where
-        P: CKKSPlaintextToBackendRef<Self> + IntPolyInfos,
+        P: CKKSPlaintextToBackendRef<Self, Rg> + IntPolyInfos,
         C: CKKSEncodingBufferToBackendMut<Self, F>,
     {
         ckks_decode_coeffs_into_derived(module, pt, coeffs)

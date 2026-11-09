@@ -15,7 +15,7 @@ use poulpy_core::layouts::{GLWEInfos, LWEInfos};
 use poulpy_cpu_portable::{FFT64Portable, ckks_encoding::EncodingFFTTable};
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{CyclotomicOrder, HostBytesBackend, Module, ScratchOwned},
+    layouts::{CyclotomicOrder, HostBytesBackend, Module, ScratchOwned, Standard},
 };
 
 #[global_allocator]
@@ -35,16 +35,16 @@ fn blas_matmul_heap_does_not_grow_with_the_streamed_side() {
     let slots = params.n / 2;
     let encoder = ReferenceEncoder::<EncodingFFTTable<f64>>::new(slots).unwrap();
     let (sk_raw, sk) = gen_sk_with_raw(&params, &module, &host_module, [0u8; 32]);
-    let mut scratch = alloc_scratch(&params, &module);
-    let elements = BlasPlan::new(log_d).matmul_galois_elements(module.cyclotomic_order());
+    let mut scratch = alloc_scratch::<_, Standard>(&params, &module);
+    let elements = BlasPlan::new(log_d).matmul_galois_elements(module.cyclotomic_order::<Standard>());
     let keys = TestKeys::<FFT64Portable> {
         atks: rotation_keys(&params, &module, &sk_raw, elements, &mut scratch.borrow()),
         tsk: Some(gen_tsk(&params, &module, &sk_raw, &mut scratch.borrow())),
     };
-    let ctx = blas_context::<FFT64Portable, f64>(&params, &module, log_d);
+    let ctx = blas_context::<FFT64Portable, f64, Standard>(&params, &module, log_d);
     let mut encrypt = |rows: usize, cols: usize, seed: u64| {
         let grid = Grid::model(log_d, rows, cols, slots >> (2 * log_d), seed);
-        encrypt_grid::<FFT64Portable, f64, EncodingFFTTable<f64>>(
+        encrypt_grid::<FFT64Portable, f64, EncodingFFTTable<f64>, Standard>(
             &params,
             &module,
             &host_module,

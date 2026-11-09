@@ -1,12 +1,11 @@
 //! Rayon-scheduled wrapper for the portable FFT64 backend.
 
-use poulpy_hal::layouts::Ring;
-
 use super::FFT64PortableRayon;
 
-mod standard {
+mod backend {
     use poulpy_cpu_portable::FFT64Portable;
     use poulpy_cpu_portable::kernels::{fft64::ring_arith::Fft64RingArith, znx::ZnxAutomorphismRotate};
+    use poulpy_hal::layouts::{ConjugateInvariant, Standard};
 
     use super::FFT64PortableRayon;
 
@@ -20,40 +19,32 @@ mod standard {
         poulpy_cpu_portable::hal_impl_vec_znx_ci!();
     }
 
-    impl ZnxAutomorphismRotate for FFT64PortableRayon {
+    unsafe impl poulpy_hal::oep::HalScalarZnxCIImpl for FFT64PortableRayon {}
+
+    impl ZnxAutomorphismRotate<Standard> for FFT64PortableRayon {
         #[inline(always)]
         fn znx_automorphism_rotate(p: i64, k: i64, res: &mut [i64], a: &[i64]) {
-            <FFT64Portable as ZnxAutomorphismRotate>::znx_automorphism_rotate(p, k, res, a)
+            <FFT64Portable as ZnxAutomorphismRotate<Standard>>::znx_automorphism_rotate(p, k, res, a)
         }
     }
 
-    impl Fft64RingArith for FFT64PortableRayon {
+    impl Fft64RingArith<Standard> for FFT64PortableRayon {
         poulpy_cpu_portable::fft64_ring_arith_standard!();
     }
-}
 
-mod conjugate_invariant {
-    use poulpy_cpu_portable::FFT64Portable;
-    use poulpy_cpu_portable::kernels::fft64::ring_arith::Fft64RingArith;
-    use poulpy_hal::layouts::ConjugateInvariant;
-
-    use super::FFT64PortableRayon;
-
-    crate::impl_fft64_rayon_backend!(FFT64PortableRayon<ConjugateInvariant>, FFT64Portable<ConjugateInvariant>);
-
-    impl Fft64RingArith for FFT64PortableRayon<ConjugateInvariant> {
+    impl Fft64RingArith<ConjugateInvariant> for FFT64PortableRayon {
         poulpy_cpu_portable::fft64_ring_arith_ci!();
     }
 }
 
 // Starting values, those of the NEON FFT64 wrapper.
-impl<R: Ring> crate::RayonTuning for FFT64PortableRayon<R> {
+impl crate::RayonTuning for FFT64PortableRayon {
     const COEFF_MIN_LEN: usize = 1 << 15;
     const COEFF_MIN_TASK: usize = 1 << 13;
     const NORMALIZE_MIN_TASK: usize = 1 << 12;
 }
 
-impl<R: Ring> poulpy_hal::execution::ScratchWorkers for FFT64PortableRayon<R> {
+impl poulpy_hal::execution::ScratchWorkers for FFT64PortableRayon {
     const PREPARE: usize = 8;
     const APPLY: usize = 8;
     const VMP: usize = 8;

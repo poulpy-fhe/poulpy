@@ -3,23 +3,23 @@ use poulpy_core::{
     GLWENegate, GLWEShift,
     layouts::{GLWEInfos, GLWEToBackendMut, GLWEToBackendRef},
 };
-use poulpy_hal::layouts::{Backend, ScratchArena};
+use poulpy_hal::layouts::{Backend, Ring, ScratchArena, Standard};
 
 use crate::{CKKSInfos, SetCKKSInfos, checked_log_budget_sub, ckks_offset_unary, ckks_unary_exact};
 
-pub trait CKKSNegReference<BE: Backend> {
+pub trait CKKSNegReference<BE: Backend, Rg: Ring = Standard> {
     fn ckks_neg_tmp_bytes_reference(&self, res_size: usize) -> usize
     where
-        Self: GLWEShift<BE>,
+        Self: GLWEShift<BE, Rg>,
     {
         self.glwe_shift_tmp_bytes(res_size)
     }
 
     fn ckks_neg_into_reference<Dst, Src>(&self, dst: &mut Dst, src: &Src, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Self: GLWENegate<BE> + GLWEShift<BE>,
-        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + GLWEInfos + CKKSInfos,
+        Self: GLWENegate<BE, Rg> + GLWEShift<BE, Rg>,
+        Dst: GLWEToBackendMut<BE, Rg> + CKKSInfos + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE, Rg> + GLWEInfos + CKKSInfos,
     {
         let offset = ckks_offset_unary(dst, src);
         if !ckks_unary_exact(dst, src) {
@@ -42,12 +42,12 @@ pub trait CKKSNegReference<BE: Backend> {
 
     fn ckks_neg_assign_reference<Dst>(&self, dst: &mut Dst) -> Result<()>
     where
-        Self: GLWENegate<BE>,
-        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
+        Self: GLWENegate<BE, Rg>,
+        Dst: GLWEToBackendMut<BE, Rg> + CKKSInfos + SetCKKSInfos,
     {
         self.glwe_negate_assign(dst);
         Ok(())
     }
 }
 
-impl<BE: Backend> CKKSNegReference<BE> for poulpy_hal::layouts::Module<BE> {}
+impl<BE: Backend, Rg: Ring> CKKSNegReference<BE, Rg> for poulpy_hal::layouts::Module<BE> {}

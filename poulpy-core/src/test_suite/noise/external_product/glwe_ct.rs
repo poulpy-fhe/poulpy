@@ -1,6 +1,6 @@
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxFillUniformSource, VecZnxRotateAssign},
-    layouts::{Module, ScalarZnx, ScratchOwned, ZnxViewMut},
+    layouts::{Module, ScalarZnx, ScratchOwned, Standard, ZnxViewMut},
     source::Source,
     test_suite::{TestParams, vec_znx_backend_mut},
 };
@@ -90,7 +90,7 @@ where
             module.vec_znx_fill_uniform_source(
                 in_base2k,
                 pt_in.k().as_usize(),
-                &mut vec_znx_backend_mut::<BE>(&mut pt_in.data),
+                &mut vec_znx_backend_mut::<BE, Standard>(&mut pt_in.data),
                 0,
                 &mut source_xa,
             );
@@ -149,7 +149,7 @@ where
 
             module.vec_znx_rotate_assign(
                 k as i64,
-                &mut vec_znx_backend_mut::<BE>(&mut pt_in.data),
+                &mut vec_znx_backend_mut::<BE, Standard>(&mut pt_in.data),
                 0,
                 &mut scratch.borrow(),
             );
@@ -242,7 +242,7 @@ where
             module.vec_znx_fill_uniform_source(
                 out_base2k,
                 pt_want.k().as_usize(),
-                &mut vec_znx_backend_mut::<BE>(&mut pt_want.data),
+                &mut vec_znx_backend_mut::<BE, Standard>(&mut pt_want.data),
                 0,
                 &mut source_xa,
             );
@@ -300,7 +300,7 @@ where
 
             module.vec_znx_rotate_assign(
                 k as i64,
-                &mut vec_znx_backend_mut::<BE>(&mut pt_want.data),
+                &mut vec_znx_backend_mut::<BE, Standard>(&mut pt_want.data),
                 0,
                 &mut scratch.borrow(),
             );

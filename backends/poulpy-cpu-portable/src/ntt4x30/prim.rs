@@ -20,7 +20,7 @@ use crate::kernels::ntt4x30::{
     standard,
     types::Q_SHIFTED,
 };
-use poulpy_hal::layouts::{ConjugateInvariant, Ring, Standard};
+use poulpy_hal::layouts::{ConjugateInvariant, Standard};
 
 use super::NTT4x30Portable;
 
@@ -28,21 +28,21 @@ use super::NTT4x30Portable;
 // NTT execution
 // ──────────────────────────────────────────────────────────────────────────────
 
-impl NttDFTExecute<NttTable<Primes30, Standard>> for NTT4x30Portable<Standard> {
+impl NttDFTExecute<NttTable<Primes30, Standard>> for NTT4x30Portable {
     #[inline(always)]
     fn ntt_dft_execute(table: &NttTable<Primes30, Standard>, data: &mut [u64]) {
         standard::ntt_portable::<Primes30>(table, data);
     }
 }
 
-impl NttDFTExecute<NttTableInv<Primes30, Standard>> for NTT4x30Portable<Standard> {
+impl NttDFTExecute<NttTableInv<Primes30, Standard>> for NTT4x30Portable {
     #[inline(always)]
     fn ntt_dft_execute(table: &NttTableInv<Primes30, Standard>, data: &mut [u64]) {
         standard::intt_portable::<Primes30>(table, data);
     }
 }
 
-impl NttDFTExecute<NttTable<Primes30, ConjugateInvariant>> for NTT4x30Portable<ConjugateInvariant> {
+impl NttDFTExecute<NttTable<Primes30, ConjugateInvariant>> for NTT4x30Portable {
     #[inline(always)]
     fn ntt_dft_execute(table: &NttTable<Primes30, ConjugateInvariant>, data: &mut [u64]) {
         conjugate_invariant::ntt_portable::<Primes30>(table, data);
@@ -53,7 +53,7 @@ impl NttDFTExecute<NttTable<Primes30, ConjugateInvariant>> for NTT4x30Portable<C
     }
 }
 
-impl NttDFTExecute<NttTableInv<Primes30, ConjugateInvariant>> for NTT4x30Portable<ConjugateInvariant> {
+impl NttDFTExecute<NttTableInv<Primes30, ConjugateInvariant>> for NTT4x30Portable {
     #[inline(always)]
     fn ntt_dft_execute(table: &NttTableInv<Primes30, ConjugateInvariant>, data: &mut [u64]) {
         conjugate_invariant::intt_portable::<Primes30>(table, data);
@@ -68,14 +68,14 @@ impl NttDFTExecute<NttTableInv<Primes30, ConjugateInvariant>> for NTT4x30Portabl
 // Domain conversion
 // ──────────────────────────────────────────────────────────────────────────────
 
-impl<R: Ring> NttFromZnx64 for NTT4x30Portable<R> {
+impl NttFromZnx64 for NTT4x30Portable {
     #[inline(always)]
     fn ntt_from_znx64(res: &mut [u64], a: &[i64]) {
         b_from_znx64_portable::<Primes30>(a.len(), res, a);
     }
 }
 
-impl<R: Ring> NttToZnx128 for NTT4x30Portable<R> {
+impl NttToZnx128 for NTT4x30Portable {
     #[inline(always)]
     fn ntt_to_znx128(res: &mut [i128], divisor_is_n: usize, a: &[u64]) {
         b_to_znx128_portable::<Primes30>(divisor_is_n, res, a);
@@ -86,14 +86,14 @@ impl<R: Ring> NttToZnx128 for NTT4x30Portable<R> {
 // Addition / subtraction / negation / copy / zero
 // ──────────────────────────────────────────────────────────────────────────────
 
-impl<R: Ring> NttAdd for NTT4x30Portable<R> {
+impl NttAdd for NTT4x30Portable {
     #[inline(always)]
     fn ntt_add(res: &mut [u64], a: &[u64], b: &[u64]) {
         add_bbb_portable::<Primes30>(res.len() / 4, res, a, b);
     }
 }
 
-impl<R: Ring> NttAddAssign for NTT4x30Portable<R> {
+impl NttAddAssign for NTT4x30Portable {
     #[inline(always)]
     fn ntt_add_assign(res: &mut [u64], a: &[u64]) {
         let n = res.len() / 4;
@@ -106,7 +106,7 @@ impl<R: Ring> NttAddAssign for NTT4x30Portable<R> {
     }
 }
 
-impl<R: Ring> NttSub for NTT4x30Portable<R> {
+impl NttSub for NTT4x30Portable {
     #[inline(always)]
     fn ntt_sub(res: &mut [u64], a: &[u64], b: &[u64]) {
         let n = res.len() / 4;
@@ -119,7 +119,7 @@ impl<R: Ring> NttSub for NTT4x30Portable<R> {
     }
 }
 
-impl<R: Ring> NttSubAssign for NTT4x30Portable<R> {
+impl NttSubAssign for NTT4x30Portable {
     #[inline(always)]
     fn ntt_sub_assign(res: &mut [u64], a: &[u64]) {
         let n = res.len() / 4;
@@ -132,7 +132,7 @@ impl<R: Ring> NttSubAssign for NTT4x30Portable<R> {
     }
 }
 
-impl<R: Ring> NttSubNegateAssign for NTT4x30Portable<R> {
+impl NttSubNegateAssign for NTT4x30Portable {
     #[inline(always)]
     fn ntt_sub_negate_assign(res: &mut [u64], a: &[u64]) {
         let n = res.len() / 4;
@@ -147,7 +147,7 @@ impl<R: Ring> NttSubNegateAssign for NTT4x30Portable<R> {
 
 /// **Output range:** For a zero input the result is `Q_SHIFTED\[k\]` (≡ 0 mod `Q\[k\]`), not `0`.
 /// Output range is `(0, Q_SHIFTED\[k\]\]`. Use `val % Q\[k\] == 0`, not `val == 0`, to test for zero.
-impl<R: Ring> NttNegate for NTT4x30Portable<R> {
+impl NttNegate for NTT4x30Portable {
     #[inline(always)]
     fn ntt_negate(res: &mut [u64], a: &[u64]) {
         let n = res.len() / 4;
@@ -162,7 +162,7 @@ impl<R: Ring> NttNegate for NTT4x30Portable<R> {
 
 /// **Output range:** For a zero input the result is `Q_SHIFTED\[k\]` (≡ 0 mod `Q\[k\]`), not `0`.
 /// Output range is `(0, Q_SHIFTED\[k\]\]`. Use `val % Q\[k\] == 0`, not `val == 0`, to test for zero.
-impl<R: Ring> NttNegateAssign for NTT4x30Portable<R> {
+impl NttNegateAssign for NTT4x30Portable {
     #[inline(always)]
     fn ntt_negate_assign(res: &mut [u64]) {
         let n = res.len() / 4;
@@ -175,14 +175,14 @@ impl<R: Ring> NttNegateAssign for NTT4x30Portable<R> {
     }
 }
 
-impl<R: Ring> NttZero for NTT4x30Portable<R> {
+impl NttZero for NTT4x30Portable {
     #[inline(always)]
     fn ntt_zero(res: &mut [u64]) {
         res.fill(0);
     }
 }
 
-impl<R: Ring> NttCopy for NTT4x30Portable<R> {
+impl NttCopy for NTT4x30Portable {
     #[inline(always)]
     fn ntt_copy(res: &mut [u64], a: &[u64]) {
         res.copy_from_slice(a);
@@ -193,14 +193,14 @@ impl<R: Ring> NttCopy for NTT4x30Portable<R> {
 // Multiply-accumulate
 // ──────────────────────────────────────────────────────────────────────────────
 
-impl<R: Ring> NttMulBbb for NTT4x30Portable<R> {
+impl NttMulBbb for NTT4x30Portable {
     #[inline(always)]
     fn ntt_mul_bbb(meta: &BbbMeta<Primes30>, ell: usize, res: &mut [u64], a: &[u64], b: &[u64]) {
         vec_mat1col_product_bbb_portable::<Primes30>(meta, ell, res, a, b);
     }
 }
 
-impl<R: Ring> NttMulBbc for NTT4x30Portable<R> {
+impl NttMulBbc for NTT4x30Portable {
     #[inline(always)]
     fn ntt_mul_bbc(meta: &BbcMeta<Primes30>, ell: usize, res: &mut [u64], ntt_coeff: &[u32], prepared: &[u32]) {
         vec_mat1col_product_bbc_portable::<Primes30>(meta, ell, res, ntt_coeff, prepared);
@@ -211,7 +211,7 @@ impl<R: Ring> NttMulBbc for NTT4x30Portable<R> {
 // q120b → q120c conversion
 // ──────────────────────────────────────────────────────────────────────────────
 
-impl<R: Ring> NttCFromB for NTT4x30Portable<R> {
+impl NttCFromB for NTT4x30Portable {
     #[inline(always)]
     fn ntt_c_from_b(n: usize, res: &mut [u32], a: &[u64]) {
         c_from_b_portable::<Primes30>(n, res, a);
@@ -222,28 +222,28 @@ impl<R: Ring> NttCFromB for NTT4x30Portable<R> {
 // VMP x2-block kernels
 // ──────────────────────────────────────────────────────────────────────────────
 
-impl<R: Ring> NttMulBbc1ColX2 for NTT4x30Portable<R> {
+impl NttMulBbc1ColX2 for NTT4x30Portable {
     #[inline(always)]
     fn ntt_mul_bbc_1col_x2(meta: &BbcMeta<Primes30>, ell: usize, res: &mut [u64], a: &[u32], b: &[u32]) {
         vec_mat1col_product_x2_bbc_portable::<Primes30>(meta, ell, res, a, b);
     }
 }
 
-impl<R: Ring> NttMulBbc2ColsX2 for NTT4x30Portable<R> {
+impl NttMulBbc2ColsX2 for NTT4x30Portable {
     #[inline(always)]
     fn ntt_mul_bbc_2cols_x2(meta: &BbcMeta<Primes30>, ell: usize, res: &mut [u64], a: &[u32], b: &[u32]) {
         vec_mat2cols_product_x2_bbc_portable::<Primes30>(meta, ell, res, a, b);
     }
 }
 
-impl<R: Ring> NttExtract1BlkContiguous for NTT4x30Portable<R> {
+impl NttExtract1BlkContiguous for NTT4x30Portable {
     #[inline(always)]
     fn ntt_extract_1blk_contiguous(n: usize, row_max: usize, blk: usize, dst: &mut [u64], src: &[u64]) {
         extract_1blk_from_contiguous_q120b_portable(n, row_max, blk, dst, src);
     }
 }
 
-impl<R: Ring> NttPackLeft1BlkX2 for NTT4x30Portable<R> {
+impl NttPackLeft1BlkX2 for NTT4x30Portable {
     #[inline(always)]
     fn ntt_pack_left_1blk_x2(dst: &mut [u32], a: &[u64], row_count: usize, row_stride: usize, blk: usize) {
         assert!(dst.len() >= 16 * row_count);
@@ -265,7 +265,7 @@ impl<R: Ring> NttPackLeft1BlkX2 for NTT4x30Portable<R> {
     }
 }
 
-impl<R: Ring> NttPackRight1BlkX2 for NTT4x30Portable<R> {
+impl NttPackRight1BlkX2 for NTT4x30Portable {
     #[inline(always)]
     fn ntt_pack_right_1blk_x2(dst: &mut [u32], a: &[u32], row_count: usize, row_stride: usize, blk: usize) {
         assert!(dst.len() >= 16 * row_count);
@@ -279,7 +279,7 @@ impl<R: Ring> NttPackRight1BlkX2 for NTT4x30Portable<R> {
     }
 }
 
-impl<R: Ring> NttPairwisePackLeft1BlkX2 for NTT4x30Portable<R> {
+impl NttPairwisePackLeft1BlkX2 for NTT4x30Portable {
     #[inline(always)]
     fn ntt_pairwise_pack_left_1blk_x2(dst: &mut [u32], a: &[u64], b: &[u64], row_count: usize, row_stride: usize, blk: usize) {
         assert!(dst.len() >= 16 * row_count);
@@ -305,7 +305,7 @@ impl<R: Ring> NttPairwisePackLeft1BlkX2 for NTT4x30Portable<R> {
     }
 }
 
-impl<R: Ring> NttPairwisePackRight1BlkX2 for NTT4x30Portable<R> {
+impl NttPairwisePackRight1BlkX2 for NTT4x30Portable {
     #[inline(always)]
     fn ntt_pairwise_pack_right_1blk_x2(dst: &mut [u32], a: &[u32], b: &[u32], row_count: usize, row_stride: usize, blk: usize) {
         assert!(dst.len() >= 16 * row_count);

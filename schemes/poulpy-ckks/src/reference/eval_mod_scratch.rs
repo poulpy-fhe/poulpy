@@ -3,7 +3,7 @@ use poulpy_core::layouts::{
     Base2K, Degree, GGLWEInfos, GLWEInfos, GLWEPlaintextInfos, GLWEPlaintextMeta, LWEInfos, Rank, Scale, TorusPrecision,
 };
 use poulpy_hal::api::{CnvOps, CnvPVecBytesOf, VecZnxBigNormalizeTmpBytes, VecZnxRshTmpBytes};
-use poulpy_hal::layouts::{Backend, Module, PrepareHint};
+use poulpy_hal::layouts::{Backend, Module, PrepareHint, Ring};
 
 use crate::SlotsKind;
 use crate::{
@@ -54,7 +54,7 @@ impl GLWEPlaintextInfos for EvalModWorkCtInfos {
 
 impl CKKSInfos for EvalModWorkCtInfos {}
 
-pub fn ckks_eval_mod_tmp_bytes_reference<BE: Backend + poulpy_core::oep::GLWEMulConstImpl, R, C, P, F, T>(
+pub fn ckks_eval_mod_tmp_bytes_reference<BE: Backend + poulpy_core::oep::GLWEMulConstImpl<Rg>, R, C, P, F, T, Rg: Ring>(
     module: &Module<BE>,
     res: &R,
     ct: &C,
@@ -62,15 +62,15 @@ pub fn ckks_eval_mod_tmp_bytes_reference<BE: Backend + poulpy_core::oep::GLWEMul
     tsk: &T,
 ) -> usize
 where
-    Module<BE>: CKKSAddOps<BE>
-        + CKKSSubOps<BE>
-        + CKKSMulOps<BE>
-        + crate::api::CKKSPow2Ops<BE>
-        + poulpy_core::GLWENormalize<BE>
-        + CKKSCopyOps<BE>
-        + GLWECopy<BE>
+    Module<BE>: CKKSAddOps<BE, Rg>
+        + CKKSSubOps<BE, Rg>
+        + CKKSMulOps<BE, Rg>
+        + crate::api::CKKSPow2Ops<BE, Rg>
+        + poulpy_core::GLWENormalize<BE, Rg>
+        + CKKSCopyOps<BE, Rg>
+        + GLWECopy<BE, Rg>
         + CnvPVecBytesOf
-        + CnvOps<BE>
+        + CnvOps<BE, Rg>
         + VecZnxRshTmpBytes
         + VecZnxBigNormalizeTmpBytes,
     R: CKKSCtBounds,

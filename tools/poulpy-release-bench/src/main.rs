@@ -20,7 +20,6 @@ mod libm;
 mod runner;
 
 use anyhow::{Context, Result, bail, ensure};
-use poulpy_hal::layouts::ConjugateInvariant;
 use serde_json::{Value, json};
 
 use runner::{CaseArgs, RunArgs, direct, run};
@@ -93,10 +92,7 @@ macro_rules! gpu_entry {
             }),
             blas: Some(|args| {
                 select_device::<$rt>(args.device)?;
-                blas::run::<
-                    poulpy_gpu_portable::$backend<ConjugateInvariant>,
-                    poulpy_cpu_portable::NTT4x30Portable<ConjugateInvariant>,
-                >(args)
+                blas::run::<poulpy_gpu_portable::$backend, poulpy_cpu_portable::NTT4x30Portable>(args)
             }),
         }
     };
@@ -117,7 +113,7 @@ macro_rules! cpu_entry {
                 run::<$be, $be>(args, direct)
             },
             libm: Some(libm::run::<$be, $be>),
-            blas: Some(blas::run::<$be<ConjugateInvariant>, $be<ConjugateInvariant>>),
+            blas: Some(blas::run::<$be, $be>),
         }
     };
 }

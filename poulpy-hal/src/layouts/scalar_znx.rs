@@ -7,21 +7,11 @@ use std::{
 use crate::{
     AlignedBuf, alloc_aligned,
     layouts::{
-        Backend, Data, DataView, DataViewMut, DigestU64, HostDataMut, HostDataRef, ReaderFrom, ToOwnedDeep, VecZnx,
-        VecZnxBackendMut, VecZnxBackendRef, VecZnxInfos, WriterTo, ZnxInfos, ZnxView, ZnxViewMut, ZnxWord, ZnxZero,
+        Backend, Data, DataView, DataViewMut, DigestU64, HostDataMut, HostDataRef, ReaderFrom, Ring, Standard, ToOwnedDeep,
+        VecZnx, VecZnxBackendMut, VecZnxBackendRef, VecZnxInfos, WriterTo, ZnxInfos, ZnxView, ZnxViewMut, ZnxWord, ZnxZero,
     },
 };
 
-/// A single-limb polynomial vector in `Z[X]/(X^N + 1)`.
-///
-/// `ScalarZnx` is a specialization of [`VecZnx`] with exactly one limb
-/// (`size == 1`). It is the primary type for plaintext polynomials,
-/// secret keys, and other single-precision ring elements.
-///
-/// The type parameter `D` controls ownership: `AlignedBuf` for owned,
-/// `&[u8]` for shared borrows, `&mut [u8]` for mutable borrows.
-/// The type parameter `W` names the coefficient word (byte-layout
-/// contract) of the buffer.
 #[repr(C)]
 #[derive(PartialEq, Eq, Debug, Clone, Copy, Hash, Default)]
 pub struct ScalarZnxShape {
@@ -43,7 +33,7 @@ impl ScalarZnxShape {
     }
 }
 
-impl<D: Data, W: ZnxWord> ScalarZnx<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> ScalarZnx<D, W, Rg> {
     pub fn n(&self) -> usize {
         self.shape.n()
     }
@@ -57,16 +47,27 @@ impl<D: Data, W: ZnxWord> ScalarZnx<D, W> {
     }
 }
 
+/// A single-limb polynomial vector of the ring `Rg`.
+///
+/// `ScalarZnx` is a specialization of [`VecZnx`] with exactly one limb
+/// (`size == 1`). It is the primary type for plaintext polynomials,
+/// secret keys, and other single-precision ring elements.
+///
+/// The type parameter `D` controls ownership: `AlignedBuf` for owned,
+/// `&[u8]` for shared borrows, `&mut [u8]` for mutable borrows.
+/// The type parameter `W` names the coefficient word (byte-layout
+/// contract) of the buffer, and `Rg` the ring of the polynomials (see
+/// [layouts](crate::layouts#value-model)).
 #[repr(C)]
 #[derive(PartialEq, Eq, Clone, Hash)]
-pub struct ScalarZnx<D: Data, W: ZnxWord> {
+pub struct ScalarZnx<D: Data, W: ZnxWord, Rg: Ring = Standard> {
     pub data: D,
     shape: ScalarZnxShape,
-    pub _phantom: PhantomData<W>,
+    pub _phantom: PhantomData<(W, Rg)>,
 }
 
 /// Shape and the first 16 coefficients of each column, as `VecZnx` prints.
-impl<D: HostDataRef, W: ZnxWord> fmt::Debug for ScalarZnx<D, W> {
+impl<D: HostDataRef, W: ZnxWord, Rg: Ring> fmt::Debug for ScalarZnx<D, W, Rg> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "ScalarZnx(n={}, cols={})", self.n(), self.cols())?;
         for col in 0..self.cols() {
@@ -77,7 +78,7 @@ impl<D: HostDataRef, W: ZnxWord> fmt::Debug for ScalarZnx<D, W> {
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> DigestU64 for ScalarZnx<D, W> {
+impl<D: HostDataRef, W: ZnxWord, Rg: Ring> DigestU64 for ScalarZnx<D, W, Rg> {
     fn digest_u64(&self) -> u64 {
         let mut h: DefaultHasher = DefaultHasher::new();
         h.write(self.data.as_ref());
@@ -87,8 +88,8 @@ impl<D: HostDataRef, W: ZnxWord> DigestU64 for ScalarZnx<D, W> {
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> ToOwnedDeep for ScalarZnx<D, W> {
-    type Owned = ScalarZnx<AlignedBuf, W>;
+impl<D: HostDataRef, W: ZnxWord, Rg: Ring> ToOwnedDeep for ScalarZnx<D, W, Rg> {
+    type Owned = ScalarZnx<AlignedBuf, W, Rg>;
     fn to_owned_deep(&self) -> Self::Owned {
         ScalarZnx {
             data: AlignedBuf::from(self.data.as_ref()),
@@ -98,7 +99,7 @@ impl<D: HostDataRef, W: ZnxWord> ToOwnedDeep for ScalarZnx<D, W> {
     }
 }
 
-impl<D: Data, W: ZnxWord> ZnxInfos for ScalarZnx<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> ZnxInfos for ScalarZnx<D, W, Rg> {
     fn n(&self) -> usize {
         self.shape.n()
     }
@@ -112,30 +113,30 @@ impl<D: Data, W: ZnxWord> ZnxInfos for ScalarZnx<D, W> {
     }
 }
 
-impl<D: Data, W: ZnxWord> VecZnxInfos for ScalarZnx<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> VecZnxInfos for ScalarZnx<D, W, Rg> {
     fn cols(&self) -> usize {
         self.shape.cols()
     }
 }
 
-impl<D: Data, W: ZnxWord> DataView for ScalarZnx<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> DataView for ScalarZnx<D, W, Rg> {
     type D = D;
     fn data(&self) -> &Self::D {
         &self.data
     }
 }
 
-impl<D: Data, W: ZnxWord> DataViewMut for ScalarZnx<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> DataViewMut for ScalarZnx<D, W, Rg> {
     fn data_mut(&mut self) -> &mut Self::D {
         &mut self.data
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> ZnxView for ScalarZnx<D, W> {
+impl<D: HostDataRef, W: ZnxWord, Rg: Ring> ZnxView for ScalarZnx<D, W, Rg> {
     type Scalar = W;
 }
 
-impl<D: Data, W: ZnxWord> ScalarZnx<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> ScalarZnx<D, W, Rg> {
     /// Returns the number of bytes required to store a `ScalarZnx` with
     /// ring degree `n` and `cols` columns: `n * cols * size_of::<W>()`.
     pub fn bytes_of(n: usize, cols: usize) -> usize {
@@ -143,7 +144,7 @@ impl<D: Data, W: ZnxWord> ScalarZnx<D, W> {
     }
 }
 
-impl<W: ZnxWord> ScalarZnx<AlignedBuf, W> {
+impl<W: ZnxWord, Rg: Ring> ScalarZnx<AlignedBuf, W, Rg> {
     /// Allocates a zero-initialized `ScalarZnx` aligned to [`DEFAULTALIGN`](crate::DEFAULTALIGN).
     pub(crate) fn alloc(n: usize, cols: usize) -> Self {
         let data: AlignedBuf = alloc_aligned::<u8>(Self::bytes_of(n, cols));
@@ -172,7 +173,7 @@ impl<W: ZnxWord> ScalarZnx<AlignedBuf, W> {
     }
 }
 
-impl<D: HostDataMut, W: ZnxWord> ZnxZero for ScalarZnx<D, W> {
+impl<D: HostDataMut, W: ZnxWord, Rg: Ring> ZnxZero for ScalarZnx<D, W, Rg> {
     fn zero(&mut self) {
         self.raw_mut().fill(W::zero())
     }
@@ -182,13 +183,13 @@ impl<D: HostDataMut, W: ZnxWord> ZnxZero for ScalarZnx<D, W> {
 }
 
 /// Owned `ScalarZnx` backed by an `AlignedBuf`.
-pub type ScalarZnxOwned<W> = ScalarZnx<AlignedBuf, W>;
+pub type ScalarZnxOwned<W, Rg = Standard> = ScalarZnx<AlignedBuf, W, Rg>;
 /// Shared backend-native borrow of a `ScalarZnx`.
-pub type ScalarZnxBackendRef<'a, B> = ScalarZnx<<B as Backend>::BufRef<'a>, <B as Backend>::ZnxWord>;
+pub type ScalarZnxBackendRef<'a, B, Rg = Standard> = ScalarZnx<<B as Backend>::BufRef<'a>, <B as Backend>::ZnxWord, Rg>;
 /// Mutable backend-native borrow of a `ScalarZnx`.
-pub type ScalarZnxBackendMut<'a, B> = ScalarZnx<<B as Backend>::BufMut<'a>, <B as Backend>::ZnxWord>;
+pub type ScalarZnxBackendMut<'a, B, Rg = Standard> = ScalarZnx<<B as Backend>::BufMut<'a>, <B as Backend>::ZnxWord, Rg>;
 
-impl<D: Data, W: ZnxWord> ScalarZnx<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> ScalarZnx<D, W, Rg> {
     /// Constructs a `ScalarZnx` from raw parts without validation.
     pub fn from_data(data: D, n: usize, cols: usize) -> Self {
         Self {
@@ -200,12 +201,12 @@ impl<D: Data, W: ZnxWord> ScalarZnx<D, W> {
 }
 
 /// Borrow a backend-owned `ScalarZnx` using the backend's native view type.
-pub trait ScalarZnxToBackendRef<B: Backend> {
-    fn to_backend_ref(&self) -> ScalarZnxBackendRef<'_, B>;
+pub trait ScalarZnxToBackendRef<B: Backend, Rg: Ring = Standard> {
+    fn to_backend_ref(&self) -> ScalarZnxBackendRef<'_, B, Rg>;
 }
 
-impl<B: Backend> ScalarZnxToBackendRef<B> for ScalarZnx<B::OwnedBuf, B::ZnxWord> {
-    fn to_backend_ref(&self) -> ScalarZnxBackendRef<'_, B> {
+impl<B: Backend, Rg: Ring> ScalarZnxToBackendRef<B, Rg> for ScalarZnx<B::OwnedBuf, B::ZnxWord, Rg> {
+    fn to_backend_ref(&self) -> ScalarZnxBackendRef<'_, B, Rg> {
         ScalarZnx {
             data: B::view(&self.data),
             shape: self.shape,
@@ -214,8 +215,8 @@ impl<B: Backend> ScalarZnxToBackendRef<B> for ScalarZnx<B::OwnedBuf, B::ZnxWord>
     }
 }
 
-impl<B: Backend> ScalarZnxToBackendRef<B> for &ScalarZnx<B::BufRef<'_>, B::ZnxWord> {
-    fn to_backend_ref(&self) -> ScalarZnxBackendRef<'_, B> {
+impl<B: Backend, Rg: Ring> ScalarZnxToBackendRef<B, Rg> for &ScalarZnx<B::BufRef<'_>, B::ZnxWord, Rg> {
+    fn to_backend_ref(&self) -> ScalarZnxBackendRef<'_, B, Rg> {
         ScalarZnx {
             data: B::view_ref(&self.data),
             shape: self.shape,
@@ -224,19 +225,19 @@ impl<B: Backend> ScalarZnxToBackendRef<B> for &ScalarZnx<B::BufRef<'_>, B::ZnxWo
     }
 }
 
-impl<B: Backend> ScalarZnxToBackendRef<B> for &mut ScalarZnx<B::BufMut<'_>, B::ZnxWord> {
-    fn to_backend_ref(&self) -> ScalarZnxBackendRef<'_, B> {
-        scalar_znx_backend_ref_from_mut::<B>(self)
+impl<B: Backend, Rg: Ring> ScalarZnxToBackendRef<B, Rg> for &mut ScalarZnx<B::BufMut<'_>, B::ZnxWord, Rg> {
+    fn to_backend_ref(&self) -> ScalarZnxBackendRef<'_, B, Rg> {
+        scalar_znx_backend_ref_from_mut::<B, Rg>(self)
     }
 }
 
 /// Mutably borrow a backend-owned `ScalarZnx` using the backend's native view type.
-pub trait ScalarZnxToBackendMut<B: Backend> {
-    fn to_backend_mut(&mut self) -> ScalarZnxBackendMut<'_, B>;
+pub trait ScalarZnxToBackendMut<B: Backend, Rg: Ring = Standard> {
+    fn to_backend_mut(&mut self) -> ScalarZnxBackendMut<'_, B, Rg>;
 }
 
-impl<B: Backend> ScalarZnxToBackendMut<B> for ScalarZnx<B::OwnedBuf, B::ZnxWord> {
-    fn to_backend_mut(&mut self) -> ScalarZnxBackendMut<'_, B> {
+impl<B: Backend, Rg: Ring> ScalarZnxToBackendMut<B, Rg> for ScalarZnx<B::OwnedBuf, B::ZnxWord, Rg> {
+    fn to_backend_mut(&mut self) -> ScalarZnxBackendMut<'_, B, Rg> {
         ScalarZnx {
             data: B::view_mut(&mut self.data),
             shape: self.shape,
@@ -245,15 +246,15 @@ impl<B: Backend> ScalarZnxToBackendMut<B> for ScalarZnx<B::OwnedBuf, B::ZnxWord>
     }
 }
 
-impl<B: Backend> ScalarZnxToBackendMut<B> for &mut ScalarZnx<B::BufMut<'_>, B::ZnxWord> {
-    fn to_backend_mut(&mut self) -> ScalarZnxBackendMut<'_, B> {
-        scalar_znx_backend_mut_from_mut::<B>(self)
+impl<B: Backend, Rg: Ring> ScalarZnxToBackendMut<B, Rg> for &mut ScalarZnx<B::BufMut<'_>, B::ZnxWord, Rg> {
+    fn to_backend_mut(&mut self) -> ScalarZnxBackendMut<'_, B, Rg> {
+        scalar_znx_backend_mut_from_mut::<B, Rg>(self)
     }
 }
 
-fn scalar_znx_backend_ref_from_mut<'a, 'b, B: Backend + 'b>(
-    scalar: &'a ScalarZnx<B::BufMut<'b>, B::ZnxWord>,
-) -> ScalarZnxBackendRef<'a, B> {
+fn scalar_znx_backend_ref_from_mut<'a, 'b, B: Backend + 'b, Rg: Ring>(
+    scalar: &'a ScalarZnx<B::BufMut<'b>, B::ZnxWord, Rg>,
+) -> ScalarZnxBackendRef<'a, B, Rg> {
     ScalarZnx {
         data: B::view_ref_mut(&scalar.data),
         shape: scalar.shape,
@@ -261,9 +262,9 @@ fn scalar_znx_backend_ref_from_mut<'a, 'b, B: Backend + 'b>(
     }
 }
 
-fn scalar_znx_backend_mut_from_mut<'a, 'b, B: Backend + 'b>(
-    scalar: &'a mut ScalarZnx<B::BufMut<'b>, B::ZnxWord>,
-) -> ScalarZnxBackendMut<'a, B> {
+fn scalar_znx_backend_mut_from_mut<'a, 'b, B: Backend + 'b, Rg: Ring>(
+    scalar: &'a mut ScalarZnx<B::BufMut<'b>, B::ZnxWord, Rg>,
+) -> ScalarZnxBackendMut<'a, B, Rg> {
     ScalarZnx {
         data: B::view_mut_ref(&mut scalar.data),
         shape: scalar.shape,
@@ -271,9 +272,9 @@ fn scalar_znx_backend_mut_from_mut<'a, 'b, B: Backend + 'b>(
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> ScalarZnx<D, W> {
+impl<D: HostDataRef, W: ZnxWord, Rg: Ring> ScalarZnx<D, W, Rg> {
     /// Borrow a host-visible `ScalarZnx` as a shared byte-slice view.
-    pub fn to_ref(&self) -> ScalarZnx<&[u8], W> {
+    pub fn to_ref(&self) -> ScalarZnx<&[u8], W, Rg> {
         ScalarZnx {
             data: self.data.as_ref(),
             shape: self.shape,
@@ -282,66 +283,66 @@ impl<D: HostDataRef, W: ZnxWord> ScalarZnx<D, W> {
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> ScalarZnx<D, W> {
+impl<D: HostDataRef, W: ZnxWord, Rg: Ring> ScalarZnx<D, W, Rg> {
     /// Views this `ScalarZnx` as a [`VecZnx`] with `size == 1`.
-    pub fn as_vec_znx(&self) -> VecZnx<&[u8], W> {
+    pub fn as_vec_znx(&self) -> VecZnx<&[u8], W, Rg> {
         VecZnx::from_data(self.data.as_ref(), self.n(), self.cols(), 1)
     }
 }
 
 /// Views a backend-owned `ScalarZnx` as a backend-native [`VecZnx`] with `size == 1`.
-pub trait ScalarZnxAsVecZnxBackendRef<B: Backend> {
-    fn as_vec_znx_backend(&self) -> VecZnx<B::BufRef<'_>, B::ZnxWord>;
+pub trait ScalarZnxAsVecZnxBackendRef<B: Backend, Rg: Ring = Standard> {
+    fn as_vec_znx_backend(&self) -> VecZnx<B::BufRef<'_>, B::ZnxWord, Rg>;
 }
 
-impl<B: Backend> ScalarZnxAsVecZnxBackendRef<B> for ScalarZnx<B::OwnedBuf, B::ZnxWord> {
-    fn as_vec_znx_backend(&self) -> VecZnx<B::BufRef<'_>, B::ZnxWord> {
+impl<B: Backend, Rg: Ring> ScalarZnxAsVecZnxBackendRef<B, Rg> for ScalarZnx<B::OwnedBuf, B::ZnxWord, Rg> {
+    fn as_vec_znx_backend(&self) -> VecZnx<B::BufRef<'_>, B::ZnxWord, Rg> {
         VecZnx::from_data(B::view(&self.data), self.n(), self.cols(), 1)
     }
 }
 
-pub fn scalar_znx_as_vec_znx_backend_ref_from_ref<'a, 'b, B: Backend + 'b>(
-    scalar: &'a ScalarZnx<B::BufRef<'b>, B::ZnxWord>,
-) -> VecZnxBackendRef<'a, B> {
+pub fn scalar_znx_as_vec_znx_backend_ref_from_ref<'a, 'b, B: Backend + 'b, Rg: Ring>(
+    scalar: &'a ScalarZnx<B::BufRef<'b>, B::ZnxWord, Rg>,
+) -> VecZnxBackendRef<'a, B, Rg> {
     VecZnx::from_data(B::view_ref(&scalar.data), scalar.n(), scalar.cols(), 1)
 }
 
-pub fn scalar_znx_as_vec_znx_backend_ref_from_mut<'a, 'b, B: Backend + 'b>(
-    scalar: &'a ScalarZnx<B::BufMut<'b>, B::ZnxWord>,
-) -> VecZnxBackendRef<'a, B> {
+pub fn scalar_znx_as_vec_znx_backend_ref_from_mut<'a, 'b, B: Backend + 'b, Rg: Ring>(
+    scalar: &'a ScalarZnx<B::BufMut<'b>, B::ZnxWord, Rg>,
+) -> VecZnxBackendRef<'a, B, Rg> {
     VecZnx::from_data(B::view_ref_mut(&scalar.data), scalar.n(), scalar.cols(), 1)
 }
 
-impl<D: HostDataMut, W: ZnxWord> ScalarZnx<D, W> {
+impl<D: HostDataMut, W: ZnxWord, Rg: Ring> ScalarZnx<D, W, Rg> {
     /// Mutably views this `ScalarZnx` as a [`VecZnx`] with `size == 1`.
-    pub fn as_vec_znx_mut(&mut self) -> VecZnx<&mut [u8], W> {
+    pub fn as_vec_znx_mut(&mut self) -> VecZnx<&mut [u8], W, Rg> {
         let shape = self.shape();
         VecZnx::from_data(self.data.as_mut(), shape.n(), shape.cols(), 1)
     }
 }
 
 /// Mutably views a backend-owned `ScalarZnx` as a backend-native [`VecZnx`] with `size == 1`.
-pub trait ScalarZnxAsVecZnxBackendMut<B: Backend> {
-    fn as_vec_znx_backend_mut(&mut self) -> VecZnx<B::BufMut<'_>, B::ZnxWord>;
+pub trait ScalarZnxAsVecZnxBackendMut<B: Backend, Rg: Ring = Standard> {
+    fn as_vec_znx_backend_mut(&mut self) -> VecZnx<B::BufMut<'_>, B::ZnxWord, Rg>;
 }
 
-impl<B: Backend> ScalarZnxAsVecZnxBackendMut<B> for ScalarZnx<B::OwnedBuf, B::ZnxWord> {
-    fn as_vec_znx_backend_mut(&mut self) -> VecZnx<B::BufMut<'_>, B::ZnxWord> {
+impl<B: Backend, Rg: Ring> ScalarZnxAsVecZnxBackendMut<B, Rg> for ScalarZnx<B::OwnedBuf, B::ZnxWord, Rg> {
+    fn as_vec_znx_backend_mut(&mut self) -> VecZnx<B::BufMut<'_>, B::ZnxWord, Rg> {
         let shape = self.shape();
         VecZnx::from_data(B::view_mut(&mut self.data), shape.n(), shape.cols(), 1)
     }
 }
 
-pub fn scalar_znx_as_vec_znx_backend_mut_from_mut<'a, 'b, B: Backend + 'b>(
-    scalar: &'a mut ScalarZnx<B::BufMut<'b>, B::ZnxWord>,
-) -> VecZnxBackendMut<'a, B> {
+pub fn scalar_znx_as_vec_znx_backend_mut_from_mut<'a, 'b, B: Backend + 'b, Rg: Ring>(
+    scalar: &'a mut ScalarZnx<B::BufMut<'b>, B::ZnxWord, Rg>,
+) -> VecZnxBackendMut<'a, B, Rg> {
     let shape = scalar.shape();
     VecZnx::from_data(B::view_mut_ref(&mut scalar.data), shape.n(), shape.cols(), 1)
 }
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
-impl<D: HostDataMut, W: ZnxWord> ReaderFrom for ScalarZnx<D, W> {
+impl<D: HostDataMut, W: ZnxWord, Rg: Ring> ReaderFrom for ScalarZnx<D, W, Rg> {
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
         let new_n: usize = reader.read_u64::<LittleEndian>()? as usize;
         let new_cols: usize = reader.read_u64::<LittleEndian>()? as usize;
@@ -373,7 +374,7 @@ impl<D: HostDataMut, W: ZnxWord> ReaderFrom for ScalarZnx<D, W> {
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> WriterTo for ScalarZnx<D, W> {
+impl<D: HostDataRef, W: ZnxWord, Rg: Ring> WriterTo for ScalarZnx<D, W, Rg> {
     fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
         writer.write_u64::<LittleEndian>(self.n() as u64)?;
         writer.write_u64::<LittleEndian>(self.cols() as u64)?;

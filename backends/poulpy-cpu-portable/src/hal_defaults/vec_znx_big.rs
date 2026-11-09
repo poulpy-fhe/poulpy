@@ -45,7 +45,7 @@ use crate::kernels::{
 use poulpy_hal::{
     api::HostBufMut,
     layouts::{
-        Backend, HostDataMut, HostDataRef, Module, ScalarZnxBackendRef, ScratchArena, VecZnx, VecZnxBackendRef,
+        Backend, HostDataMut, HostDataRef, Module, Ring, ScalarZnxBackendRef, ScratchArena, Standard, VecZnx, VecZnxBackendRef,
         VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxToBackendMut, ZnxView, ZnxViewMut,
     },
 };
@@ -53,7 +53,9 @@ use poulpy_hal::{
 use super::take_host_typed;
 
 #[inline]
-fn vec_znx_backend_ref_as_host_ref<'a, 'b, BE>(a: &'a VecZnx<BE::BufRef<'b>, BE::ZnxWord>) -> VecZnx<&'a [u8], i64>
+fn vec_znx_backend_ref_as_host_ref<'a, 'b, BE, Rg: Ring>(
+    a: &'a VecZnx<BE::BufRef<'b>, BE::ZnxWord, Rg>,
+) -> VecZnx<&'a [u8], i64, Rg>
 where
     BE: Backend<ZnxWord = i64> + 'b,
     for<'x> BE::BufRef<'x>: AsRef<[u8]>,
@@ -61,15 +63,15 @@ where
     VecZnx::from_shape(a.data().as_ref(), a.shape())
 }
 
-fn vec_znx_big_inner_sum_default_impl<R, A, BE>(res: &mut R, res_col: usize, res_coeff: usize, a: &A, a_col: usize)
+fn vec_znx_big_inner_sum_default_impl<R, A, BE, Rg: Ring>(res: &mut R, res_col: usize, res_coeff: usize, a: &A, a_col: usize)
 where
     BE: Backend<ZnxWord = i64>,
     BE::BigWord: Copy + From<i64>,
     Wrapping<BE::BigWord>: Add<Output = Wrapping<BE::BigWord>>,
     for<'x> BE::BufMut<'x>: HostDataMut,
     for<'x> BE::BufRef<'x>: HostDataRef,
-    R: VecZnxBigToBackendMut<BE>,
-    A: VecZnxBigToBackendRef<BE>,
+    R: VecZnxBigToBackendMut<BE, Rg>,
+    A: VecZnxBigToBackendRef<BE, Rg>,
 {
     let mut res = res.to_backend_mut();
     let a = a.to_backend_ref();
@@ -86,12 +88,12 @@ where
     }
 }
 
-fn vec_znx_big_scalar_product_default_impl<R, BE>(
+fn vec_znx_big_scalar_product_default_impl<R, BE, Rg: Ring>(
     res: &mut R,
     res_col: usize,
-    a: &VecZnxBackendRef<'_, BE>,
+    a: &VecZnxBackendRef<'_, BE, Rg>,
     a_col: usize,
-    b: &ScalarZnxBackendRef<'_, BE>,
+    b: &ScalarZnxBackendRef<'_, BE, Rg>,
     b_col: usize,
 ) where
     BE: Backend<ZnxWord = i64>,
@@ -99,7 +101,7 @@ fn vec_znx_big_scalar_product_default_impl<R, BE>(
     Wrapping<BE::BigWord>: Mul<Output = Wrapping<BE::BigWord>>,
     for<'x> BE::BufMut<'x>: HostDataMut,
     for<'x> BE::BufRef<'x>: HostDataRef,
-    R: VecZnxBigToBackendMut<BE>,
+    R: VecZnxBigToBackendMut<BE, Rg>,
 {
     let mut res = res.to_backend_mut();
 
@@ -118,11 +120,11 @@ fn vec_znx_big_scalar_product_default_impl<R, BE>(
     }
 }
 
-fn vec_znx_big_col_weighted_sum_default_impl<R, BE>(
+fn vec_znx_big_col_weighted_sum_default_impl<R, BE, Rg: Ring>(
     res: &mut R,
     res_col: usize,
-    a: &VecZnxBackendRef<'_, BE>,
-    weights: &ScalarZnxBackendRef<'_, BE>,
+    a: &VecZnxBackendRef<'_, BE, Rg>,
+    weights: &ScalarZnxBackendRef<'_, BE, Rg>,
     weights_col: usize,
     cols: usize,
     coeffs: usize,
@@ -132,7 +134,7 @@ fn vec_znx_big_col_weighted_sum_default_impl<R, BE>(
     Wrapping<BE::BigWord>: Add<Output = Wrapping<BE::BigWord>> + Mul<Output = Wrapping<BE::BigWord>>,
     for<'x> BE::BufMut<'x>: HostDataMut,
     for<'x> BE::BufRef<'x>: HostDataRef,
-    R: VecZnxBigToBackendMut<BE>,
+    R: VecZnxBigToBackendMut<BE, Rg>,
 {
     let mut res = res.to_backend_mut();
 
@@ -161,21 +163,21 @@ fn vec_znx_big_col_weighted_sum_default_impl<R, BE>(
 }
 
 #[doc(hidden)]
-pub trait FFT64VecZnxBigDefault: Backend<ZnxWord = i64>
+pub trait FFT64VecZnxBigDefault<Rg: Ring = Standard>: Backend<ZnxWord = i64>
 where
     Self::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'x> Self::BufMut<'x>: HostDataMut,
     for<'x> Self::BufRef<'x>: HostDataRef,
 {
-    fn vec_znx_big_from_small_default<R>(res: &mut R, res_col: usize, a: &VecZnxBackendRef<'_, Self>, a_col: usize)
+    fn vec_znx_big_from_small_default<R>(res: &mut R, res_col: usize, a: &VecZnxBackendRef<'_, Self, Rg>, a_col: usize)
     where
         Self: Backend<BigWord = i64, ZnxWord = i64>,
         for<'x> Self::BufMut<'x>: HostDataMut,
         for<'x> Self::BufRef<'x>: AsRef<[u8]>,
-        R: VecZnxBigToBackendMut<Self>,
+        R: VecZnxBigToBackendMut<Self, Rg>,
     {
         let mut res = res.to_backend_mut();
-        let a: VecZnx<&[u8], i64> = vec_znx_backend_ref_as_host_ref::<Self>(a);
+        let a: VecZnx<&[u8], i64, Rg> = vec_znx_backend_ref_as_host_ref::<Self, Rg>(a);
 
         if a.n() != res.n() {
             return vec_znx_from_small_mixed_portable(&mut res, res_col, &a, a_col);
@@ -205,20 +207,20 @@ where
     ) where
         Self: Backend<BigWord = i64, ZnxWord = i64> + ZnxAdd + ZnxCopy + ZnxZero,
         for<'x> Self::BufRef<'x>: AsRef<[u8]>,
-        R: VecZnxBigToBackendMut<Self>,
-        A: VecZnxBigToBackendRef<Self>,
-        C: VecZnxBigToBackendRef<Self>,
+        R: VecZnxBigToBackendMut<Self, Rg>,
+        A: VecZnxBigToBackendRef<Self, Rg>,
+        C: VecZnxBigToBackendRef<Self, Rg>,
     {
-        fft64_vec_znx_big_add::<_, _, _, Self>(res, res_col, a, a_col, b, b_col);
+        fft64_vec_znx_big_add::<_, _, _, Self, Rg>(res, res_col, a, a_col, b, b_col);
     }
 
     fn vec_znx_big_add_assign_default<R, A>(_module: &Module<Self>, res: &mut R, res_col: usize, a: &A, a_col: usize)
     where
         Self: Backend<BigWord = i64, ZnxWord = i64> + ZnxAddAssign,
-        R: VecZnxBigToBackendMut<Self>,
-        A: VecZnxBigToBackendRef<Self>,
+        R: VecZnxBigToBackendMut<Self, Rg>,
+        A: VecZnxBigToBackendRef<Self, Rg>,
     {
-        fft64_vec_znx_big_add_assign::<_, _, Self>(res, res_col, a, a_col);
+        fft64_vec_znx_big_add_assign::<_, _, Self, Rg>(res, res_col, a, a_col);
     }
 
     /// CPU override of [`poulpy_hal::oep::vec_znx_big_add_small_derived`]: one
@@ -229,29 +231,29 @@ where
         res_col: usize,
         a: &A,
         a_col: usize,
-        b: &VecZnxBackendRef<'_, Self>,
+        b: &VecZnxBackendRef<'_, Self, Rg>,
         b_col: usize,
     ) where
         Self: Backend<BigWord = i64, ZnxWord = i64> + ZnxAdd + ZnxCopy + ZnxZero,
         for<'x> Self::BufRef<'x>: AsRef<[u8]>,
-        R: VecZnxBigToBackendMut<Self>,
-        A: VecZnxBigToBackendRef<Self>,
+        R: VecZnxBigToBackendMut<Self, Rg>,
+        A: VecZnxBigToBackendRef<Self, Rg>,
     {
-        fft64_vec_znx_big_add_small::<_, _, _, Self>(res, res_col, a, a_col, &b, b_col);
+        fft64_vec_znx_big_add_small::<_, _, _, Self, Rg>(res, res_col, a, a_col, &b, b_col);
     }
 
     fn vec_znx_big_add_small_assign_default<R>(
         _module: &Module<Self>,
         res: &mut R,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, Self>,
+        a: &VecZnxBackendRef<'_, Self, Rg>,
         a_col: usize,
     ) where
         Self: Backend<BigWord = i64, ZnxWord = i64> + ZnxAddAssign,
         for<'x> Self::BufRef<'x>: AsRef<[u8]>,
-        R: VecZnxBigToBackendMut<Self>,
+        R: VecZnxBigToBackendMut<Self, Rg>,
     {
-        fft64_vec_znx_big_add_small_assign::<_, _, Self>(res, res_col, &a, a_col);
+        fft64_vec_znx_big_add_small_assign::<_, _, Self, Rg>(res, res_col, &a, a_col);
     }
 
     fn vec_znx_big_sub_default<R, A, C>(
@@ -264,29 +266,29 @@ where
         b_col: usize,
     ) where
         Self: Backend<BigWord = i64, ZnxWord = i64> + ZnxSub + ZnxNegate + ZnxZero + ZnxCopy,
-        R: VecZnxBigToBackendMut<Self>,
-        A: VecZnxBigToBackendRef<Self>,
-        C: VecZnxBigToBackendRef<Self>,
+        R: VecZnxBigToBackendMut<Self, Rg>,
+        A: VecZnxBigToBackendRef<Self, Rg>,
+        C: VecZnxBigToBackendRef<Self, Rg>,
     {
-        fft64_vec_znx_big_sub::<_, _, _, Self>(res, res_col, a, a_col, b, b_col);
+        fft64_vec_znx_big_sub::<_, _, _, Self, Rg>(res, res_col, a, a_col, b, b_col);
     }
 
     fn vec_znx_big_sub_assign_default<R, A>(_module: &Module<Self>, res: &mut R, res_col: usize, a: &A, a_col: usize)
     where
         Self: Backend<BigWord = i64, ZnxWord = i64> + ZnxSubAssign,
-        R: VecZnxBigToBackendMut<Self>,
-        A: VecZnxBigToBackendRef<Self>,
+        R: VecZnxBigToBackendMut<Self, Rg>,
+        A: VecZnxBigToBackendRef<Self, Rg>,
     {
-        fft64_vec_znx_big_sub_assign::<_, _, Self>(res, res_col, a, a_col);
+        fft64_vec_znx_big_sub_assign::<_, _, Self, Rg>(res, res_col, a, a_col);
     }
 
     fn vec_znx_big_sub_negate_assign_default<R, A>(_module: &Module<Self>, res: &mut R, res_col: usize, a: &A, a_col: usize)
     where
         Self: Backend<BigWord = i64, ZnxWord = i64> + ZnxSubNegateAssign + ZnxNegateAssign,
-        R: VecZnxBigToBackendMut<Self>,
-        A: VecZnxBigToBackendRef<Self>,
+        R: VecZnxBigToBackendMut<Self, Rg>,
+        A: VecZnxBigToBackendRef<Self, Rg>,
     {
-        fft64_vec_znx_big_sub_negate_assign::<_, _, Self>(res, res_col, a, a_col);
+        fft64_vec_znx_big_sub_negate_assign::<_, _, Self, Rg>(res, res_col, a, a_col);
     }
 
     /// CPU override of [`poulpy_hal::oep::vec_znx_big_sub_small_a_derived`]: one
@@ -295,31 +297,31 @@ where
         _module: &Module<Self>,
         res: &mut R,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, Self>,
+        a: &VecZnxBackendRef<'_, Self, Rg>,
         a_col: usize,
         b: &C,
         b_col: usize,
     ) where
         Self: Backend<BigWord = i64, ZnxWord = i64> + ZnxSub + ZnxNegate + ZnxZero + ZnxCopy,
         for<'x> Self::BufRef<'x>: AsRef<[u8]>,
-        R: VecZnxBigToBackendMut<Self>,
-        C: VecZnxBigToBackendRef<Self>,
+        R: VecZnxBigToBackendMut<Self, Rg>,
+        C: VecZnxBigToBackendRef<Self, Rg>,
     {
-        fft64_vec_znx_big_sub_small_a::<_, _, _, Self>(res, res_col, &a, a_col, b, b_col);
+        fft64_vec_znx_big_sub_small_a::<_, _, _, Self, Rg>(res, res_col, &a, a_col, b, b_col);
     }
 
     fn vec_znx_big_sub_small_assign_default<R>(
         _module: &Module<Self>,
         res: &mut R,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, Self>,
+        a: &VecZnxBackendRef<'_, Self, Rg>,
         a_col: usize,
     ) where
         Self: Backend<BigWord = i64, ZnxWord = i64> + ZnxSubAssign,
         for<'x> Self::BufRef<'x>: AsRef<[u8]>,
-        R: VecZnxBigToBackendMut<Self>,
+        R: VecZnxBigToBackendMut<Self, Rg>,
     {
-        fft64_vec_znx_big_sub_small_a_assign::<_, _, Self>(res, res_col, &a, a_col);
+        fft64_vec_znx_big_sub_small_a_assign::<_, _, Self, Rg>(res, res_col, &a, a_col);
     }
 
     /// CPU override of [`poulpy_hal::oep::vec_znx_big_sub_small_b_derived`]: one
@@ -330,29 +332,29 @@ where
         res_col: usize,
         a: &A,
         a_col: usize,
-        b: &VecZnxBackendRef<'_, Self>,
+        b: &VecZnxBackendRef<'_, Self, Rg>,
         b_col: usize,
     ) where
         Self: Backend<BigWord = i64, ZnxWord = i64> + ZnxSub + ZnxNegate + ZnxZero + ZnxCopy,
         for<'x> Self::BufRef<'x>: AsRef<[u8]>,
-        R: VecZnxBigToBackendMut<Self>,
-        A: VecZnxBigToBackendRef<Self>,
+        R: VecZnxBigToBackendMut<Self, Rg>,
+        A: VecZnxBigToBackendRef<Self, Rg>,
     {
-        fft64_vec_znx_big_sub_small_b::<_, _, _, Self>(res, res_col, a, a_col, &b, b_col);
+        fft64_vec_znx_big_sub_small_b::<_, _, _, Self, Rg>(res, res_col, a, a_col, &b, b_col);
     }
 
     fn vec_znx_big_sub_small_negate_assign_default<R>(
         _module: &Module<Self>,
         res: &mut R,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, Self>,
+        a: &VecZnxBackendRef<'_, Self, Rg>,
         a_col: usize,
     ) where
         Self: Backend<BigWord = i64, ZnxWord = i64> + ZnxSubNegateAssign + ZnxNegateAssign,
         for<'x> Self::BufRef<'x>: AsRef<[u8]>,
-        R: VecZnxBigToBackendMut<Self>,
+        R: VecZnxBigToBackendMut<Self, Rg>,
     {
-        fft64_vec_znx_big_sub_small_b_assign::<_, _, Self>(res, res_col, &a, a_col);
+        fft64_vec_znx_big_sub_small_b_assign::<_, _, Self, Rg>(res, res_col, &a, a_col);
     }
 
     fn vec_znx_big_inner_sum_default<R, A>(
@@ -366,35 +368,35 @@ where
         Self: Backend<BigWord = i64, ZnxWord = i64>,
         for<'x> Self::BufMut<'x>: HostDataMut,
         for<'x> Self::BufRef<'x>: HostDataRef,
-        R: VecZnxBigToBackendMut<Self>,
-        A: VecZnxBigToBackendRef<Self>,
+        R: VecZnxBigToBackendMut<Self, Rg>,
+        A: VecZnxBigToBackendRef<Self, Rg>,
     {
-        vec_znx_big_inner_sum_default_impl::<R, A, Self>(res, res_col, res_coeff, a, a_col);
+        vec_znx_big_inner_sum_default_impl::<R, A, Self, Rg>(res, res_col, res_coeff, a, a_col);
     }
 
     fn vec_znx_big_scalar_product_default<R>(
         _module: &Module<Self>,
         res: &mut R,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, Self>,
+        a: &VecZnxBackendRef<'_, Self, Rg>,
         a_col: usize,
-        b: &ScalarZnxBackendRef<'_, Self>,
+        b: &ScalarZnxBackendRef<'_, Self, Rg>,
         b_col: usize,
     ) where
         Self: Backend<BigWord = i64, ZnxWord = i64>,
         for<'x> Self::BufMut<'x>: HostDataMut,
         for<'x> Self::BufRef<'x>: HostDataRef,
-        R: VecZnxBigToBackendMut<Self>,
+        R: VecZnxBigToBackendMut<Self, Rg>,
     {
-        vec_znx_big_scalar_product_default_impl::<R, Self>(res, res_col, a, a_col, b, b_col);
+        vec_znx_big_scalar_product_default_impl::<R, Self, Rg>(res, res_col, a, a_col, b, b_col);
     }
 
     fn vec_znx_big_col_weighted_sum_default<R>(
         _module: &Module<Self>,
         res: &mut R,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, Self>,
-        weights: &ScalarZnxBackendRef<'_, Self>,
+        a: &VecZnxBackendRef<'_, Self, Rg>,
+        weights: &ScalarZnxBackendRef<'_, Self, Rg>,
         weights_col: usize,
         cols: usize,
         coeffs: usize,
@@ -402,26 +404,26 @@ where
         Self: Backend<BigWord = i64, ZnxWord = i64>,
         for<'x> Self::BufMut<'x>: HostDataMut,
         for<'x> Self::BufRef<'x>: HostDataRef,
-        R: VecZnxBigToBackendMut<Self>,
+        R: VecZnxBigToBackendMut<Self, Rg>,
     {
-        vec_znx_big_col_weighted_sum_default_impl::<R, Self>(res, res_col, a, weights, weights_col, cols, coeffs);
+        vec_znx_big_col_weighted_sum_default_impl::<R, Self, Rg>(res, res_col, a, weights, weights_col, cols, coeffs);
     }
 
     fn vec_znx_big_negate_default<R, A>(_module: &Module<Self>, res: &mut R, res_col: usize, a: &A, a_col: usize)
     where
         Self: Backend<BigWord = i64, ZnxWord = i64> + ZnxNegate + ZnxZero,
-        R: VecZnxBigToBackendMut<Self>,
-        A: VecZnxBigToBackendRef<Self>,
+        R: VecZnxBigToBackendMut<Self, Rg>,
+        A: VecZnxBigToBackendRef<Self, Rg>,
     {
-        fft64_vec_znx_big_negate::<_, _, Self>(res, res_col, a, a_col);
+        fft64_vec_znx_big_negate::<_, _, Self, Rg>(res, res_col, a, a_col);
     }
 
     fn vec_znx_big_negate_assign_default<R>(_module: &Module<Self>, res: &mut R, res_col: usize)
     where
         Self: Backend<BigWord = i64, ZnxWord = i64> + ZnxNegateAssign,
-        R: VecZnxBigToBackendMut<Self>,
+        R: VecZnxBigToBackendMut<Self, Rg>,
     {
-        fft64_vec_znx_big_negate_assign::<_, Self>(res, res_col);
+        fft64_vec_znx_big_negate_assign::<_, Self, Rg>(res, res_col);
     }
 
     fn vec_znx_big_normalize_tmp_bytes_default(_module: &Module<Self>) -> usize
@@ -446,10 +448,10 @@ where
         Self: Backend<BigWord = i64, ZnxWord = i64> + ZnxNormalize,
         for<'x> Self::BufMut<'x>: HostDataMut,
         for<'x> Self::BufRef<'x>: HostDataRef,
-        R: VecZnxToBackendMut<Self>,
-        A: VecZnxBigToBackendRef<Self>,
+        R: VecZnxToBackendMut<Self, Rg>,
+        A: VecZnxBigToBackendRef<Self, Rg>,
     {
-        crate::kernels::vec_znx_big_normalize::vec_znx_big_normalize_portable::<Self>(
+        crate::kernels::vec_znx_big_normalize::vec_znx_big_normalize_portable::<Self, Rg>(
             &mut res.to_backend_mut(),
             res_base2k,
             res_k,
@@ -463,11 +465,11 @@ where
 
     fn vec_znx_big_automorphism_default<R, A>(_module: &Module<Self>, k: i64, res: &mut R, res_col: usize, a: &A, a_col: usize)
     where
-        Self: Backend<BigWord = i64, ZnxWord = i64> + ZnxAutomorphism + ZnxZero,
-        R: VecZnxBigToBackendMut<Self>,
-        A: VecZnxBigToBackendRef<Self>,
+        Self: Backend<BigWord = i64, ZnxWord = i64> + ZnxAutomorphism<Rg> + ZnxZero,
+        R: VecZnxBigToBackendMut<Self, Rg>,
+        A: VecZnxBigToBackendRef<Self, Rg>,
     {
-        fft64_vec_znx_big_automorphism::<_, _, Self>(k, res, res_col, a, a_col);
+        fft64_vec_znx_big_automorphism::<_, _, Self, Rg>(k, res, res_col, a, a_col);
     }
 
     fn vec_znx_big_automorphism_assign_tmp_bytes_default(module: &Module<Self>) -> usize
@@ -484,20 +486,20 @@ where
         res_col: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        Self: Backend<BigWord = i64, ZnxWord = i64> + ZnxAutomorphism + ZnxCopy,
+        Self: Backend<BigWord = i64, ZnxWord = i64> + ZnxAutomorphism<Rg> + ZnxCopy,
         for<'x> Self::BufMut<'x>: HostBufMut<'x>,
-        R: VecZnxBigToBackendMut<Self>,
+        R: VecZnxBigToBackendMut<Self, Rg>,
     {
         let n: usize = res.to_backend_mut().n();
         let (tmp, _) = take_host_typed::<Self, i64>(
             scratch.borrow(),
             fft64_vec_znx_big_automorphism_assign_tmp_bytes(n) / size_of::<i64>(),
         );
-        fft64_vec_znx_big_automorphism_assign::<_, Self>(k, res, res_col, tmp);
+        fft64_vec_znx_big_automorphism_assign::<_, Self, Rg>(k, res, res_col, tmp);
     }
 }
 
-impl<BE: Backend<ZnxWord = i64>> FFT64VecZnxBigDefault for BE
+impl<BE: Backend<ZnxWord = i64>, Rg: Ring> FFT64VecZnxBigDefault<Rg> for BE
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'x> BE::BufMut<'x>: HostDataMut,
@@ -506,20 +508,20 @@ where
 }
 
 #[doc(hidden)]
-pub trait NTT4x30VecZnxBigDefault: Backend<ZnxWord = i64>
+pub trait NTT4x30VecZnxBigDefault<Rg: Ring = Standard>: Backend<ZnxWord = i64>
 where
     Self::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'x> Self::BufMut<'x>: HostDataMut,
     for<'x> Self::BufRef<'x>: HostDataRef,
 {
-    fn vec_znx_big_from_small_default<R>(res: &mut R, res_col: usize, a: &VecZnxBackendRef<'_, Self>, a_col: usize)
+    fn vec_znx_big_from_small_default<R>(res: &mut R, res_col: usize, a: &VecZnxBackendRef<'_, Self, Rg>, a_col: usize)
     where
         Self: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps,
         for<'x> Self::BufRef<'x>: AsRef<[u8]>,
-        R: VecZnxBigToBackendMut<Self>,
+        R: VecZnxBigToBackendMut<Self, Rg>,
     {
-        let a = vec_znx_backend_ref_as_host_ref::<Self>(a);
-        ntt4x30_vec_znx_big_from_small_portable::<_, _, Self>(res, res_col, &a, a_col);
+        let a = vec_znx_backend_ref_as_host_ref::<Self, Rg>(a);
+        ntt4x30_vec_znx_big_from_small_portable::<_, _, Self, Rg>(res, res_col, &a, a_col);
     }
 
     fn vec_znx_big_add_default<R, A, C>(
@@ -533,20 +535,20 @@ where
     ) where
         Self: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps,
         for<'x> Self::BufRef<'x>: AsRef<[u8]>,
-        R: VecZnxBigToBackendMut<Self>,
-        A: VecZnxBigToBackendRef<Self>,
-        C: VecZnxBigToBackendRef<Self>,
+        R: VecZnxBigToBackendMut<Self, Rg>,
+        A: VecZnxBigToBackendRef<Self, Rg>,
+        C: VecZnxBigToBackendRef<Self, Rg>,
     {
-        ntt4x30_vec_znx_big_add_portable::<_, _, _, Self>(res, res_col, a, a_col, b, b_col);
+        ntt4x30_vec_znx_big_add_portable::<_, _, _, Self, Rg>(res, res_col, a, a_col, b, b_col);
     }
 
     fn vec_znx_big_add_assign_default<R, A>(_module: &Module<Self>, res: &mut R, res_col: usize, a: &A, a_col: usize)
     where
         Self: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps,
-        R: VecZnxBigToBackendMut<Self>,
-        A: VecZnxBigToBackendRef<Self>,
+        R: VecZnxBigToBackendMut<Self, Rg>,
+        A: VecZnxBigToBackendRef<Self, Rg>,
     {
-        ntt4x30_vec_znx_big_add_assign_portable::<_, _, Self>(res, res_col, a, a_col);
+        ntt4x30_vec_znx_big_add_assign_portable::<_, _, Self, Rg>(res, res_col, a, a_col);
     }
 
     /// CPU override of [`poulpy_hal::oep::vec_znx_big_add_small_derived`]: one
@@ -557,31 +559,31 @@ where
         res_col: usize,
         a: &A,
         a_col: usize,
-        b: &VecZnxBackendRef<'_, Self>,
+        b: &VecZnxBackendRef<'_, Self, Rg>,
         b_col: usize,
     ) where
         Self: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps,
         for<'x> Self::BufRef<'x>: AsRef<[u8]>,
-        R: VecZnxBigToBackendMut<Self>,
-        A: VecZnxBigToBackendRef<Self>,
+        R: VecZnxBigToBackendMut<Self, Rg>,
+        A: VecZnxBigToBackendRef<Self, Rg>,
     {
-        let b = vec_znx_backend_ref_as_host_ref::<Self>(b);
-        ntt4x30_vec_znx_big_add_small_portable::<_, _, _, Self>(res, res_col, a, a_col, &b, b_col);
+        let b = vec_znx_backend_ref_as_host_ref::<Self, Rg>(b);
+        ntt4x30_vec_znx_big_add_small_portable::<_, _, _, Self, Rg>(res, res_col, a, a_col, &b, b_col);
     }
 
     fn vec_znx_big_add_small_assign_default<R>(
         _module: &Module<Self>,
         res: &mut R,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, Self>,
+        a: &VecZnxBackendRef<'_, Self, Rg>,
         a_col: usize,
     ) where
         Self: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps,
         for<'x> Self::BufRef<'x>: AsRef<[u8]>,
-        R: VecZnxBigToBackendMut<Self>,
+        R: VecZnxBigToBackendMut<Self, Rg>,
     {
-        let a = vec_znx_backend_ref_as_host_ref::<Self>(a);
-        ntt4x30_vec_znx_big_add_small_assign_portable::<_, _, Self>(res, res_col, &a, a_col);
+        let a = vec_znx_backend_ref_as_host_ref::<Self, Rg>(a);
+        ntt4x30_vec_znx_big_add_small_assign_portable::<_, _, Self, Rg>(res, res_col, &a, a_col);
     }
 
     fn vec_znx_big_sub_default<R, A, C>(
@@ -594,29 +596,29 @@ where
         b_col: usize,
     ) where
         Self: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps,
-        R: VecZnxBigToBackendMut<Self>,
-        A: VecZnxBigToBackendRef<Self>,
-        C: VecZnxBigToBackendRef<Self>,
+        R: VecZnxBigToBackendMut<Self, Rg>,
+        A: VecZnxBigToBackendRef<Self, Rg>,
+        C: VecZnxBigToBackendRef<Self, Rg>,
     {
-        ntt4x30_vec_znx_big_sub_portable::<_, _, _, Self>(res, res_col, a, a_col, b, b_col);
+        ntt4x30_vec_znx_big_sub_portable::<_, _, _, Self, Rg>(res, res_col, a, a_col, b, b_col);
     }
 
     fn vec_znx_big_sub_assign_default<R, A>(_module: &Module<Self>, res: &mut R, res_col: usize, a: &A, a_col: usize)
     where
         Self: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps,
-        R: VecZnxBigToBackendMut<Self>,
-        A: VecZnxBigToBackendRef<Self>,
+        R: VecZnxBigToBackendMut<Self, Rg>,
+        A: VecZnxBigToBackendRef<Self, Rg>,
     {
-        ntt4x30_vec_znx_big_sub_assign_portable::<_, _, Self>(res, res_col, a, a_col);
+        ntt4x30_vec_znx_big_sub_assign_portable::<_, _, Self, Rg>(res, res_col, a, a_col);
     }
 
     fn vec_znx_big_sub_negate_assign_default<R, A>(_module: &Module<Self>, res: &mut R, res_col: usize, a: &A, a_col: usize)
     where
         Self: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps,
-        R: VecZnxBigToBackendMut<Self>,
-        A: VecZnxBigToBackendRef<Self>,
+        R: VecZnxBigToBackendMut<Self, Rg>,
+        A: VecZnxBigToBackendRef<Self, Rg>,
     {
-        ntt4x30_vec_znx_big_sub_negate_assign_portable::<_, _, Self>(res, res_col, a, a_col);
+        ntt4x30_vec_znx_big_sub_negate_assign_portable::<_, _, Self, Rg>(res, res_col, a, a_col);
     }
 
     /// CPU override of [`poulpy_hal::oep::vec_znx_big_sub_small_a_derived`]: one
@@ -625,33 +627,33 @@ where
         _module: &Module<Self>,
         res: &mut R,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, Self>,
+        a: &VecZnxBackendRef<'_, Self, Rg>,
         a_col: usize,
         b: &C,
         b_col: usize,
     ) where
         Self: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps,
         for<'x> Self::BufRef<'x>: AsRef<[u8]>,
-        R: VecZnxBigToBackendMut<Self>,
-        C: VecZnxBigToBackendRef<Self>,
+        R: VecZnxBigToBackendMut<Self, Rg>,
+        C: VecZnxBigToBackendRef<Self, Rg>,
     {
-        let a = vec_znx_backend_ref_as_host_ref::<Self>(a);
-        ntt4x30_vec_znx_big_sub_small_a_portable::<_, _, _, Self>(res, res_col, &a, a_col, b, b_col);
+        let a = vec_znx_backend_ref_as_host_ref::<Self, Rg>(a);
+        ntt4x30_vec_znx_big_sub_small_a_portable::<_, _, _, Self, Rg>(res, res_col, &a, a_col, b, b_col);
     }
 
     fn vec_znx_big_sub_small_assign_default<R>(
         _module: &Module<Self>,
         res: &mut R,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, Self>,
+        a: &VecZnxBackendRef<'_, Self, Rg>,
         a_col: usize,
     ) where
         Self: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps,
         for<'x> Self::BufRef<'x>: AsRef<[u8]>,
-        R: VecZnxBigToBackendMut<Self>,
+        R: VecZnxBigToBackendMut<Self, Rg>,
     {
-        let a = vec_znx_backend_ref_as_host_ref::<Self>(a);
-        ntt4x30_vec_znx_big_sub_small_assign_portable::<_, _, Self>(res, res_col, &a, a_col);
+        let a = vec_znx_backend_ref_as_host_ref::<Self, Rg>(a);
+        ntt4x30_vec_znx_big_sub_small_assign_portable::<_, _, Self, Rg>(res, res_col, &a, a_col);
     }
 
     /// CPU override of [`poulpy_hal::oep::vec_znx_big_sub_small_b_derived`]: one
@@ -662,31 +664,31 @@ where
         res_col: usize,
         a: &A,
         a_col: usize,
-        b: &VecZnxBackendRef<'_, Self>,
+        b: &VecZnxBackendRef<'_, Self, Rg>,
         b_col: usize,
     ) where
         Self: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps,
         for<'x> Self::BufRef<'x>: AsRef<[u8]>,
-        R: VecZnxBigToBackendMut<Self>,
-        A: VecZnxBigToBackendRef<Self>,
+        R: VecZnxBigToBackendMut<Self, Rg>,
+        A: VecZnxBigToBackendRef<Self, Rg>,
     {
-        let b = vec_znx_backend_ref_as_host_ref::<Self>(b);
-        ntt4x30_vec_znx_big_sub_small_b_portable::<_, _, _, Self>(res, res_col, a, a_col, &b, b_col);
+        let b = vec_znx_backend_ref_as_host_ref::<Self, Rg>(b);
+        ntt4x30_vec_znx_big_sub_small_b_portable::<_, _, _, Self, Rg>(res, res_col, a, a_col, &b, b_col);
     }
 
     fn vec_znx_big_sub_small_negate_assign_default<R>(
         _module: &Module<Self>,
         res: &mut R,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, Self>,
+        a: &VecZnxBackendRef<'_, Self, Rg>,
         a_col: usize,
     ) where
         Self: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps,
         for<'x> Self::BufRef<'x>: AsRef<[u8]>,
-        R: VecZnxBigToBackendMut<Self>,
+        R: VecZnxBigToBackendMut<Self, Rg>,
     {
-        let a = vec_znx_backend_ref_as_host_ref::<Self>(a);
-        ntt4x30_vec_znx_big_sub_small_negate_assign_portable::<_, _, Self>(res, res_col, &a, a_col);
+        let a = vec_znx_backend_ref_as_host_ref::<Self, Rg>(a);
+        ntt4x30_vec_znx_big_sub_small_negate_assign_portable::<_, _, Self, Rg>(res, res_col, &a, a_col);
     }
 
     fn vec_znx_big_inner_sum_default<R, A>(
@@ -700,35 +702,35 @@ where
         Self: Backend<BigWord = i128, ZnxWord = i64>,
         for<'x> Self::BufMut<'x>: HostDataMut,
         for<'x> Self::BufRef<'x>: HostDataRef,
-        R: VecZnxBigToBackendMut<Self>,
-        A: VecZnxBigToBackendRef<Self>,
+        R: VecZnxBigToBackendMut<Self, Rg>,
+        A: VecZnxBigToBackendRef<Self, Rg>,
     {
-        vec_znx_big_inner_sum_default_impl::<R, A, Self>(res, res_col, res_coeff, a, a_col);
+        vec_znx_big_inner_sum_default_impl::<R, A, Self, Rg>(res, res_col, res_coeff, a, a_col);
     }
 
     fn vec_znx_big_scalar_product_default<R>(
         _module: &Module<Self>,
         res: &mut R,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, Self>,
+        a: &VecZnxBackendRef<'_, Self, Rg>,
         a_col: usize,
-        b: &ScalarZnxBackendRef<'_, Self>,
+        b: &ScalarZnxBackendRef<'_, Self, Rg>,
         b_col: usize,
     ) where
         Self: Backend<BigWord = i128, ZnxWord = i64>,
         for<'x> Self::BufMut<'x>: HostDataMut,
         for<'x> Self::BufRef<'x>: HostDataRef,
-        R: VecZnxBigToBackendMut<Self>,
+        R: VecZnxBigToBackendMut<Self, Rg>,
     {
-        vec_znx_big_scalar_product_default_impl::<R, Self>(res, res_col, a, a_col, b, b_col);
+        vec_znx_big_scalar_product_default_impl::<R, Self, Rg>(res, res_col, a, a_col, b, b_col);
     }
 
     fn vec_znx_big_col_weighted_sum_default<R>(
         _module: &Module<Self>,
         res: &mut R,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, Self>,
-        weights: &ScalarZnxBackendRef<'_, Self>,
+        a: &VecZnxBackendRef<'_, Self, Rg>,
+        weights: &ScalarZnxBackendRef<'_, Self, Rg>,
         weights_col: usize,
         cols: usize,
         coeffs: usize,
@@ -736,26 +738,26 @@ where
         Self: Backend<BigWord = i128, ZnxWord = i64>,
         for<'x> Self::BufMut<'x>: HostDataMut,
         for<'x> Self::BufRef<'x>: HostDataRef,
-        R: VecZnxBigToBackendMut<Self>,
+        R: VecZnxBigToBackendMut<Self, Rg>,
     {
-        vec_znx_big_col_weighted_sum_default_impl::<R, Self>(res, res_col, a, weights, weights_col, cols, coeffs);
+        vec_znx_big_col_weighted_sum_default_impl::<R, Self, Rg>(res, res_col, a, weights, weights_col, cols, coeffs);
     }
 
     fn vec_znx_big_negate_default<R, A>(_module: &Module<Self>, res: &mut R, res_col: usize, a: &A, a_col: usize)
     where
         Self: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps,
-        R: VecZnxBigToBackendMut<Self>,
-        A: VecZnxBigToBackendRef<Self>,
+        R: VecZnxBigToBackendMut<Self, Rg>,
+        A: VecZnxBigToBackendRef<Self, Rg>,
     {
-        ntt4x30_vec_znx_big_negate_portable::<_, _, Self>(res, res_col, a, a_col);
+        ntt4x30_vec_znx_big_negate_portable::<_, _, Self, Rg>(res, res_col, a, a_col);
     }
 
     fn vec_znx_big_negate_assign_default<R>(_module: &Module<Self>, res: &mut R, res_col: usize)
     where
         Self: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps,
-        R: VecZnxBigToBackendMut<Self>,
+        R: VecZnxBigToBackendMut<Self, Rg>,
     {
-        ntt4x30_vec_znx_big_negate_assign_portable::<_, Self>(res, res_col);
+        ntt4x30_vec_znx_big_negate_assign_portable::<_, Self, Rg>(res, res_col);
     }
 
     fn vec_znx_big_normalize_tmp_bytes_default(_module: &Module<Self>) -> usize
@@ -780,10 +782,10 @@ where
         Self: Backend<BigWord = i128, ZnxWord = i64> + ZnxNormalize,
         for<'x> Self::BufMut<'x>: HostDataMut,
         for<'x> Self::BufRef<'x>: HostDataRef,
-        R: VecZnxToBackendMut<Self>,
-        A: VecZnxBigToBackendRef<Self>,
+        R: VecZnxToBackendMut<Self, Rg>,
+        A: VecZnxBigToBackendRef<Self, Rg>,
     {
-        crate::kernels::vec_znx_big_normalize::vec_znx_big_normalize_portable::<Self>(
+        crate::kernels::vec_znx_big_normalize::vec_znx_big_normalize_portable::<Self, Rg>(
             &mut res.to_backend_mut(),
             res_base2k,
             res_k,
@@ -797,11 +799,11 @@ where
 
     fn vec_znx_big_automorphism_default<R, A>(_module: &Module<Self>, k: i64, res: &mut R, res_col: usize, a: &A, a_col: usize)
     where
-        Self: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps + crate::kernels::znx::ZnxAutomorphism,
-        R: VecZnxBigToBackendMut<Self>,
-        A: VecZnxBigToBackendRef<Self>,
+        Self: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps + crate::kernels::znx::ZnxAutomorphism<Rg>,
+        R: VecZnxBigToBackendMut<Self, Rg>,
+        A: VecZnxBigToBackendRef<Self, Rg>,
     {
-        ntt4x30_vec_znx_big_automorphism_portable::<_, _, Self>(k, res, res_col, a, a_col);
+        ntt4x30_vec_znx_big_automorphism_portable::<_, _, Self, Rg>(k, res, res_col, a, a_col);
     }
 
     fn vec_znx_big_automorphism_assign_tmp_bytes_default(module: &Module<Self>) -> usize
@@ -818,20 +820,20 @@ where
         res_col: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        Self: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps + crate::kernels::znx::ZnxAutomorphism,
+        Self: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps + crate::kernels::znx::ZnxAutomorphism<Rg>,
         for<'x> Self::BufMut<'x>: HostBufMut<'x>,
-        R: VecZnxBigToBackendMut<Self>,
+        R: VecZnxBigToBackendMut<Self, Rg>,
     {
         let n: usize = res.to_backend_mut().n();
         let (tmp, _) = take_host_typed::<Self, i128>(
             scratch.borrow(),
             ntt4x30_vec_znx_big_automorphism_assign_tmp_bytes_portable(n) / size_of::<i128>(),
         );
-        ntt4x30_vec_znx_big_automorphism_assign_portable::<_, Self>(k, res, res_col, tmp);
+        ntt4x30_vec_znx_big_automorphism_assign_portable::<_, Self, Rg>(k, res, res_col, tmp);
     }
 }
 
-impl<BE: Backend<ZnxWord = i64>> NTT4x30VecZnxBigDefault for BE
+impl<BE: Backend<ZnxWord = i64>, Rg: Ring> NTT4x30VecZnxBigDefault<Rg> for BE
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'x> BE::BufMut<'x>: HostDataMut,

@@ -20,10 +20,10 @@ const SHIFT_BITS: usize = 7;
 
 pub fn test_mul_pow2_aligned<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextModule<BE, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -67,10 +67,10 @@ where
 
 pub fn test_mul_pow2_smaller_output<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextModule<BE, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -115,10 +115,10 @@ where
 
 pub fn test_mul_pow2_assign<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextModule<BE, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -163,10 +163,10 @@ where
 
 pub fn test_div_pow2_aligned<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextModule<BE, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -209,10 +209,10 @@ where
 
 pub fn test_div_pow2_smaller_output<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextModule<BE, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -262,10 +262,10 @@ where
 
 pub fn test_div_pow2_assign<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextModule<BE, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -310,10 +310,10 @@ pub fn test_div_pow2_assign_rejects_insufficient_capacity<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextModule<BE, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -336,7 +336,7 @@ pub fn test_div_pow2_assign_rejects_insufficient_capacity<BE, F, E>(
     );
     let available_log_budget = ct.log_budget();
     let required_bits = available_log_budget + 1;
-    let before = snapshot::<BE, _>(&ct);
+    let before = snapshot::<BE, _, Standard>(&ct);
     let err = module.ckks_div_pow2_assign(required_bits, &mut ct).unwrap_err();
     assert_ckks_error(
         "div_pow2_assign_rejects_insufficient_capacity",
@@ -347,7 +347,11 @@ pub fn test_div_pow2_assign_rejects_insufficient_capacity<BE, F, E>(
             required_bits,
         },
     );
-    assert_eq!(snapshot::<BE, _>(&ct), before, "a refused ckks_div_pow2_assign wrote res");
+    assert_eq!(
+        snapshot::<BE, _, Standard>(&ct),
+        before,
+        "a refused ckks_div_pow2_assign wrote res"
+    );
 }
 
 /// A destination narrower than the scale of `a` sends the doubling through the aligning shift, whose budget refusal
@@ -357,8 +361,8 @@ pub fn test_double_into_rejects_insufficient_capacity<BE, F, E>(
     module: &poulpy_hal::layouts::Module<BE>,
     _host_module: &poulpy_hal::layouts::Module<poulpy_hal::layouts::HostBytesBackend>,
 ) where
-    BE: crate::test_suite::helpers::TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
-    poulpy_hal::layouts::Module<BE>: crate::test_suite::helpers::TestContextModule<BE>,
+    BE: crate::test_suite::helpers::TestContextBackend,
+    poulpy_hal::layouts::Module<BE>: crate::test_suite::helpers::TestContextModule<BE, Standard>,
     F: crate::test_suite::helpers::TestScalar,
     E: ReimNew<F>,
 {
@@ -377,7 +381,7 @@ pub fn test_double_into_rejects_insufficient_capacity<BE, F, E>(
     let a = fixture_ciphertext(module, &ct_layout, 41);
     let mut res = fixture_ciphertext(module, &layout(params, params.rank, b - 2, b - 3, 0, SlotsKind::Complex), 31);
     for bytes in [0, module.ckks_double_tmp_bytes(res.max_size())] {
-        let before = snapshot::<BE, _>(&res);
+        let before = snapshot::<BE, _, Standard>(&res);
         let err = with_scratch::<BE, _>(bytes, |s| module.ckks_double_into(&mut res, &a, s)).unwrap_err();
         assert_ckks_error(
             "double_into: destination below the scale",
@@ -388,6 +392,6 @@ pub fn test_double_into_rejects_insufficient_capacity<BE, F, E>(
                 required_bits: 2 * b + 7,
             },
         );
-        assert_eq!(snapshot::<BE, _>(&res), before, "a refused doubling wrote dst");
+        assert_eq!(snapshot::<BE, _, Standard>(&res), before, "a refused doubling wrote dst");
     }
 }

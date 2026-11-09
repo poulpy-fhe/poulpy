@@ -5,7 +5,7 @@
 //! objects (e.g., [`VecZnx`], [`VecZnxDft`], [`VmpPMat`]) out of them.
 
 use crate::layouts::{
-    Backend, CnvPVecL, CnvPVecLViewMut, CnvPVecR, CnvPVecRViewMut, MatZnx, MatZnxViewMut, PrepareHint, ScalarZnx,
+    Backend, CnvPVecL, CnvPVecLViewMut, CnvPVecR, CnvPVecRViewMut, MatZnx, MatZnxViewMut, PrepareHint, Ring, ScalarZnx,
     ScalarZnxViewMut, ScratchArena, SvpPPol, SvpPPolViewMut, VecZnx, VecZnxBig, VecZnxBigViewMut, VecZnxDft, VecZnxDftViewMut,
     VecZnxViewMut, VmpPMat, VmpPMatViewMut,
 };
@@ -89,7 +89,13 @@ impl<'a> HostBufMut<'a> for &'a mut [u8] {
 /// ```
 pub trait ScratchArenaTakeCnvPVecL<'a, B: Backend>: Sized {
     /// Returns a degree-`n` [`CnvPVecL`] of `cols` columns and `size` limbs under `hint`, beside the remaining arena.
-    fn take_cnv_pvec_left_scratch(self, n: usize, cols: usize, size: usize, hint: PrepareHint) -> (CnvPVecLViewMut<'a, B>, Self)
+    fn take_cnv_pvec_left_scratch<Rg: Ring>(
+        self,
+        n: usize,
+        cols: usize,
+        size: usize,
+        hint: PrepareHint,
+    ) -> (CnvPVecLViewMut<'a, B, Rg>, Self)
     where
         B: 'a;
 }
@@ -106,7 +112,13 @@ pub trait ScratchArenaTakeCnvPVecL<'a, B: Backend>: Sized {
 /// ```
 pub trait ScratchArenaTakeCnvPVecR<'a, B: Backend>: Sized {
     /// Returns a degree-`n` [`CnvPVecR`] of `cols` columns and `size` limbs under `hint`, beside the remaining arena.
-    fn take_cnv_pvec_right_scratch(self, n: usize, cols: usize, size: usize, hint: PrepareHint) -> (CnvPVecRViewMut<'a, B>, Self)
+    fn take_cnv_pvec_right_scratch<Rg: Ring>(
+        self,
+        n: usize,
+        cols: usize,
+        size: usize,
+        hint: PrepareHint,
+    ) -> (CnvPVecRViewMut<'a, B, Rg>, Self)
     where
         B: 'a;
 }
@@ -123,7 +135,7 @@ pub trait ScratchArenaTakeCnvPVecR<'a, B: Backend>: Sized {
 /// ```
 pub trait ScratchArenaTakeScalarZnx<'a, B: Backend>: Sized {
     /// Returns a degree-`n` [`ScalarZnx`] of `cols` columns, beside the remaining arena.
-    fn take_scalar_znx_scratch(self, n: usize, cols: usize) -> (ScalarZnxViewMut<'a, B>, Self)
+    fn take_scalar_znx_scratch<Rg: Ring>(self, n: usize, cols: usize) -> (ScalarZnxViewMut<'a, B, Rg>, Self)
     where
         B: 'a;
 }
@@ -140,7 +152,7 @@ pub trait ScratchArenaTakeScalarZnx<'a, B: Backend>: Sized {
 /// ```
 pub trait ScratchArenaTakeSvpPPol<'a, B: Backend>: Sized {
     /// Returns a degree-`n` [`SvpPPol`] of `cols` columns under `hint`, beside the remaining arena.
-    fn take_svp_ppol_scratch(self, n: usize, cols: usize, hint: PrepareHint) -> (SvpPPolViewMut<'a, B>, Self)
+    fn take_svp_ppol_scratch<Rg: Ring>(self, n: usize, cols: usize, hint: PrepareHint) -> (SvpPPolViewMut<'a, B, Rg>, Self)
     where
         B: 'a;
 }
@@ -157,17 +169,23 @@ pub trait ScratchArenaTakeSvpPPol<'a, B: Backend>: Sized {
 /// ```
 pub trait ScratchArenaTakeVecZnx<'a, B: Backend>: Sized {
     /// Returns a degree-`n` [`VecZnx`] of `cols` columns and `size` limbs, beside the remaining arena.
-    fn take_vec_znx_scratch(self, n: usize, cols: usize, size: usize) -> (VecZnxViewMut<'a, B>, Self)
+    fn take_vec_znx_scratch<Rg: Ring>(self, n: usize, cols: usize, size: usize) -> (VecZnxViewMut<'a, B, Rg>, Self)
     where
         B: 'a;
 
     /// Returns `len` consecutive degree-`n` [`VecZnx`] of `cols` columns and `size` limbs, beside the remaining arena.
-    fn take_vec_znx_slice_scratch(self, n: usize, len: usize, cols: usize, size: usize) -> (Vec<VecZnxViewMut<'a, B>>, Self)
+    fn take_vec_znx_slice_scratch<Rg: Ring>(
+        self,
+        n: usize,
+        len: usize,
+        cols: usize,
+        size: usize,
+    ) -> (Vec<VecZnxViewMut<'a, B, Rg>>, Self)
     where
         B: 'a,
     {
         let mut scratch: Self = self;
-        let mut slice: Vec<VecZnxViewMut<'a, B>> = Vec::with_capacity(len);
+        let mut slice: Vec<VecZnxViewMut<'a, B, Rg>> = Vec::with_capacity(len);
         for _ in 0..len {
             let (znx, rem) = scratch.take_vec_znx_scratch(n, cols, size);
             scratch = rem;
@@ -189,7 +207,7 @@ pub trait ScratchArenaTakeVecZnx<'a, B: Backend>: Sized {
 /// ```
 pub trait ScratchArenaTakeVecZnxBig<'a, B: Backend>: Sized {
     /// Returns a degree-`n` [`VecZnxBig`] of `cols` columns and `size` limbs, beside the remaining arena.
-    fn take_vec_znx_big_scratch(self, n: usize, cols: usize, size: usize) -> (VecZnxBigViewMut<'a, B>, Self)
+    fn take_vec_znx_big_scratch<Rg: Ring>(self, n: usize, cols: usize, size: usize) -> (VecZnxBigViewMut<'a, B, Rg>, Self)
     where
         B: 'a;
 }
@@ -206,23 +224,23 @@ pub trait ScratchArenaTakeVecZnxBig<'a, B: Backend>: Sized {
 /// ```
 pub trait ScratchArenaTakeVecZnxDft<'a, B: Backend>: Sized {
     /// Returns a degree-`n` [`VecZnxDft`] of `cols` columns and `size` limbs, beside the remaining arena.
-    fn take_vec_znx_dft_scratch(self, n: usize, cols: usize, size: usize) -> (VecZnxDftViewMut<'a, B>, Self)
+    fn take_vec_znx_dft_scratch<Rg: Ring>(self, n: usize, cols: usize, size: usize) -> (VecZnxDftViewMut<'a, B, Rg>, Self)
     where
         B: 'a;
 
     /// Returns `len` consecutive degree-`n` [`VecZnxDft`] of `cols` columns and `size` limbs, beside the remaining arena.
-    fn take_vec_znx_dft_slice_scratch(
+    fn take_vec_znx_dft_slice_scratch<Rg: Ring>(
         self,
         n: usize,
         len: usize,
         cols: usize,
         size: usize,
-    ) -> (Vec<VecZnxDftViewMut<'a, B>>, Self)
+    ) -> (Vec<VecZnxDftViewMut<'a, B, Rg>>, Self)
     where
         B: 'a,
     {
         let mut scratch: Self = self;
-        let mut slice: Vec<VecZnxDftViewMut<'a, B>> = Vec::with_capacity(len);
+        let mut slice: Vec<VecZnxDftViewMut<'a, B, Rg>> = Vec::with_capacity(len);
         for _ in 0..len {
             let (znx, rem) = scratch.take_vec_znx_dft_scratch(n, cols, size);
             scratch = rem;
@@ -244,7 +262,7 @@ pub trait ScratchArenaTakeVecZnxDft<'a, B: Backend>: Sized {
 /// ```
 pub trait ScratchArenaTakeVmpPMat<'a, B: Backend>: Sized {
     /// Returns a degree-`n` [`VmpPMat`] of the given dimensions under `hint`, beside the remaining arena.
-    fn take_vmp_pmat_scratch(
+    fn take_vmp_pmat_scratch<Rg: Ring>(
         self,
         n: usize,
         rows: usize,
@@ -252,7 +270,7 @@ pub trait ScratchArenaTakeVmpPMat<'a, B: Backend>: Sized {
         cols_out: usize,
         size: usize,
         hint: PrepareHint,
-    ) -> (VmpPMatViewMut<'a, B>, Self)
+    ) -> (VmpPMatViewMut<'a, B, Rg>, Self)
     where
         B: 'a;
 }
@@ -269,20 +287,26 @@ pub trait ScratchArenaTakeVmpPMat<'a, B: Backend>: Sized {
 /// ```
 pub trait ScratchArenaTakeMatZnx<'a, B: Backend>: Sized {
     /// Returns a degree-`n` [`MatZnx`] of the given dimensions, beside the remaining arena.
-    fn take_mat_znx_scratch(
+    fn take_mat_znx_scratch<Rg: Ring>(
         self,
         n: usize,
         rows: usize,
         cols_in: usize,
         cols_out: usize,
         size: usize,
-    ) -> (MatZnxViewMut<'a, B>, Self)
+    ) -> (MatZnxViewMut<'a, B, Rg>, Self)
     where
         B: 'a;
 }
 
 impl<'a, B: Backend> ScratchArenaTakeCnvPVecL<'a, B> for ScratchArena<'a, B> {
-    fn take_cnv_pvec_left_scratch(self, n: usize, cols: usize, size: usize, hint: PrepareHint) -> (CnvPVecLViewMut<'a, B>, Self)
+    fn take_cnv_pvec_left_scratch<Rg: Ring>(
+        self,
+        n: usize,
+        cols: usize,
+        size: usize,
+        hint: PrepareHint,
+    ) -> (CnvPVecLViewMut<'a, B, Rg>, Self)
     where
         B: 'a,
     {
@@ -295,7 +319,13 @@ impl<'a, B: Backend> ScratchArenaTakeCnvPVecL<'a, B> for ScratchArena<'a, B> {
 }
 
 impl<'a, B: Backend> ScratchArenaTakeCnvPVecR<'a, B> for ScratchArena<'a, B> {
-    fn take_cnv_pvec_right_scratch(self, n: usize, cols: usize, size: usize, hint: PrepareHint) -> (CnvPVecRViewMut<'a, B>, Self)
+    fn take_cnv_pvec_right_scratch<Rg: Ring>(
+        self,
+        n: usize,
+        cols: usize,
+        size: usize,
+        hint: PrepareHint,
+    ) -> (CnvPVecRViewMut<'a, B, Rg>, Self)
     where
         B: 'a,
     {
@@ -308,7 +338,7 @@ impl<'a, B: Backend> ScratchArenaTakeCnvPVecR<'a, B> for ScratchArena<'a, B> {
 }
 
 impl<'a, B: Backend> ScratchArenaTakeScalarZnx<'a, B> for ScratchArena<'a, B> {
-    fn take_scalar_znx_scratch(self, n: usize, cols: usize) -> (ScalarZnxViewMut<'a, B>, Self)
+    fn take_scalar_znx_scratch<Rg: Ring>(self, n: usize, cols: usize) -> (ScalarZnxViewMut<'a, B, Rg>, Self)
     where
         B: 'a,
     {
@@ -318,7 +348,7 @@ impl<'a, B: Backend> ScratchArenaTakeScalarZnx<'a, B> for ScratchArena<'a, B> {
 }
 
 impl<'a, B: Backend> ScratchArenaTakeSvpPPol<'a, B> for ScratchArena<'a, B> {
-    fn take_svp_ppol_scratch(self, n: usize, cols: usize, hint: PrepareHint) -> (SvpPPolViewMut<'a, B>, Self)
+    fn take_svp_ppol_scratch<Rg: Ring>(self, n: usize, cols: usize, hint: PrepareHint) -> (SvpPPolViewMut<'a, B, Rg>, Self)
     where
         B: 'a,
     {
@@ -328,7 +358,7 @@ impl<'a, B: Backend> ScratchArenaTakeSvpPPol<'a, B> for ScratchArena<'a, B> {
 }
 
 impl<'a, B: Backend> ScratchArenaTakeVecZnx<'a, B> for ScratchArena<'a, B> {
-    fn take_vec_znx_scratch(self, n: usize, cols: usize, size: usize) -> (VecZnxViewMut<'a, B>, Self)
+    fn take_vec_znx_scratch<Rg: Ring>(self, n: usize, cols: usize, size: usize) -> (VecZnxViewMut<'a, B, Rg>, Self)
     where
         B: 'a,
     {
@@ -338,7 +368,7 @@ impl<'a, B: Backend> ScratchArenaTakeVecZnx<'a, B> for ScratchArena<'a, B> {
 }
 
 impl<'a, B: Backend> ScratchArenaTakeVecZnxBig<'a, B> for ScratchArena<'a, B> {
-    fn take_vec_znx_big_scratch(self, n: usize, cols: usize, size: usize) -> (VecZnxBigViewMut<'a, B>, Self)
+    fn take_vec_znx_big_scratch<Rg: Ring>(self, n: usize, cols: usize, size: usize) -> (VecZnxBigViewMut<'a, B, Rg>, Self)
     where
         B: 'a,
     {
@@ -348,7 +378,7 @@ impl<'a, B: Backend> ScratchArenaTakeVecZnxBig<'a, B> for ScratchArena<'a, B> {
 }
 
 impl<'a, B: Backend> ScratchArenaTakeVecZnxDft<'a, B> for ScratchArena<'a, B> {
-    fn take_vec_znx_dft_scratch(self, n: usize, cols: usize, size: usize) -> (VecZnxDftViewMut<'a, B>, Self)
+    fn take_vec_znx_dft_scratch<Rg: Ring>(self, n: usize, cols: usize, size: usize) -> (VecZnxDftViewMut<'a, B, Rg>, Self)
     where
         B: 'a,
     {
@@ -358,7 +388,7 @@ impl<'a, B: Backend> ScratchArenaTakeVecZnxDft<'a, B> for ScratchArena<'a, B> {
 }
 
 impl<'a, B: Backend> ScratchArenaTakeVmpPMat<'a, B> for ScratchArena<'a, B> {
-    fn take_vmp_pmat_scratch(
+    fn take_vmp_pmat_scratch<Rg: Ring>(
         self,
         n: usize,
         rows: usize,
@@ -366,7 +396,7 @@ impl<'a, B: Backend> ScratchArenaTakeVmpPMat<'a, B> for ScratchArena<'a, B> {
         cols_out: usize,
         size: usize,
         hint: PrepareHint,
-    ) -> (VmpPMatViewMut<'a, B>, Self)
+    ) -> (VmpPMatViewMut<'a, B, Rg>, Self)
     where
         B: 'a,
     {
@@ -379,14 +409,14 @@ impl<'a, B: Backend> ScratchArenaTakeVmpPMat<'a, B> for ScratchArena<'a, B> {
 }
 
 impl<'a, B: Backend> ScratchArenaTakeMatZnx<'a, B> for ScratchArena<'a, B> {
-    fn take_mat_znx_scratch(
+    fn take_mat_znx_scratch<Rg: Ring>(
         self,
         n: usize,
         rows: usize,
         cols_in: usize,
         cols_out: usize,
         size: usize,
-    ) -> (MatZnxViewMut<'a, B>, Self)
+    ) -> (MatZnxViewMut<'a, B, Rg>, Self)
     where
         B: 'a,
     {

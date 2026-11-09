@@ -1,7 +1,7 @@
 use poulpy_hal::{
     api::{SvpPPolBytesOf, VecZnxAutomorphism},
     layouts::{
-        Backend, GaloisElement, Module, ScratchArena, scalar_znx_as_vec_znx_backend_mut_from_mut,
+        Backend, GaloisElement, Module, Ring, ScratchArena, Standard, scalar_znx_as_vec_znx_backend_mut_from_mut,
         scalar_znx_as_vec_znx_backend_ref_from_ref,
     },
     source::Source,
@@ -18,7 +18,7 @@ use crate::{
 /// Portable implementation using HAL operations.
 ///
 /// Backend implementations may call this helper without changing their override selection.
-pub trait GLWEAutomorphismKeyEncryptSkReference<BE: Backend> {
+pub trait GLWEAutomorphismKeyEncryptSkReference<BE: Backend, Rg: Ring = Standard> {
     fn glwe_automorphism_key_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos;
@@ -32,13 +32,14 @@ pub trait GLWEAutomorphismKeyEncryptSkReference<BE: Backend> {
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GGLWEToBackendMut<BE> + SetGaloisElement + GGLWEInfos,
-        S: GLWESecretToBackendRef<BE> + GLWEInfos;
+        R: GGLWEToBackendMut<BE, Rg> + SetGaloisElement + GGLWEInfos,
+        S: GLWESecretToBackendRef<BE, Rg> + GLWEInfos;
 }
 
-impl<BE: Backend> GLWEAutomorphismKeyEncryptSkReference<BE> for Module<BE>
+impl<BE: Backend, Rg: Ring> GLWEAutomorphismKeyEncryptSkReference<BE, Rg> for Module<BE>
 where
-    Self: GGLWEEncryptSk<BE> + VecZnxAutomorphism<BE> + GaloisElement + SvpPPolBytesOf + GLWESecretPreparedFactory<BE>,
+    Self:
+        GGLWEEncryptSk<BE, Rg> + VecZnxAutomorphism<BE, Rg> + GaloisElement + SvpPPolBytesOf + GLWESecretPreparedFactory<BE, Rg>,
 {
     fn glwe_automorphism_key_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
@@ -69,8 +70,8 @@ where
 
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GGLWEToBackendMut<BE> + SetGaloisElement + GGLWEInfos,
-        S: GLWESecretToBackendRef<BE> + GLWEInfos,
+        R: GGLWEToBackendMut<BE, Rg> + SetGaloisElement + GGLWEInfos,
+        S: GLWESecretToBackendRef<BE, Rg> + GLWEInfos,
     {
         let sk = sk.to_backend_ref();
 
@@ -94,10 +95,10 @@ where
             let (mut sk_out, scratch_2) = scratch_1.take_glwe_secret_scratch(res.n().as_usize().into(), sk.rank());
             sk_out.dist = sk.dist;
             {
-                let sk_backend = scalar_znx_as_vec_znx_backend_ref_from_ref::<BE>(sk.data());
-                let mut sk_out_backend = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(sk_out.data_mut());
+                let sk_backend = scalar_znx_as_vec_znx_backend_ref_from_ref::<BE, Rg>(sk.data());
+                let mut sk_out_backend = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE, Rg>(sk_out.data_mut());
                 for i in 0..sk.rank().into() {
-                    self.vec_znx_automorphism(self.galois_element_inv(p), &mut sk_out_backend, i, &sk_backend, i);
+                    self.vec_znx_automorphism(self.galois_element_inv::<Rg>(p), &mut sk_out_backend, i, &sk_backend, i);
                 }
             }
             self.glwe_secret_prepare(&mut sk_out_prepared, &sk_out);

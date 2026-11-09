@@ -1,5 +1,5 @@
 use poulpy_hal::AlignedBuf;
-use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, ReaderFrom, WriterTo};
+use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, ReaderFrom, Ring, Standard, WriterTo};
 
 use crate::layouts::{
     Base2K, Degree, Dnum, GGLWECompressed, GGLWECompressedSeedMut, GGLWEInfos, GLWEInfos, LWEInfos, Rank, TorusPrecision,
@@ -15,21 +15,21 @@ use std::fmt;
 /// A newtype wrapper around [`GGLWECompressed`] representing
 /// the seed-compressed form of a GLWE tensor key.
 #[derive(PartialEq, Eq, Clone)]
-pub struct GLWETensorKeyCompressed<D: Data, W: ZnxWord>(pub(crate) GGLWECompressed<D, W>);
+pub struct GLWETensorKeyCompressed<D: Data, W: ZnxWord, Rg: Ring = Standard>(pub(crate) GGLWECompressed<D, W, Rg>);
 
-impl<D: Data, W: ZnxWord> crate::layouts::GGLWECompressedSeed for GLWETensorKeyCompressed<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> crate::layouts::GGLWECompressedSeed for GLWETensorKeyCompressed<D, W, Rg> {
     fn seed(&self) -> &Vec<[u8; 32]> {
         &self.0.seed
     }
 }
 
-impl<D: Data, W: ZnxWord> GGLWECompressedSeedMut for GLWETensorKeyCompressed<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> GGLWECompressedSeedMut for GLWETensorKeyCompressed<D, W, Rg> {
     fn seed_mut(&mut self) -> &mut Vec<[u8; 32]> {
         &mut self.0.seed
     }
 }
 
-impl<D: Data, W: ZnxWord> LWEInfos for GLWETensorKeyCompressed<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> LWEInfos for GLWETensorKeyCompressed<D, W, Rg> {
     fn noise(&self) -> Option<crate::ComponentNoise> {
         self.0.noise()
     }
@@ -49,13 +49,13 @@ impl<D: Data, W: ZnxWord> LWEInfos for GLWETensorKeyCompressed<D, W> {
         self.0.k()
     }
 }
-impl<D: Data, W: ZnxWord> GLWEInfos for GLWETensorKeyCompressed<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> GLWEInfos for GLWETensorKeyCompressed<D, W, Rg> {
     fn rank(&self) -> Rank {
         self.rank_out()
     }
 }
 
-impl<D: Data, W: ZnxWord> GGLWEInfos for GLWETensorKeyCompressed<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> GGLWEInfos for GLWETensorKeyCompressed<D, W, Rg> {
     fn k_aux(&self) -> TorusPrecision {
         self.0.k_aux()
     }
@@ -81,13 +81,13 @@ impl<D: Data, W: ZnxWord> GGLWEInfos for GLWETensorKeyCompressed<D, W> {
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> fmt::Debug for GLWETensorKeyCompressed<D, W> {
+impl<D: HostDataRef, W: ZnxWord, Rg: Ring> fmt::Debug for GLWETensorKeyCompressed<D, W, Rg> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{self}")
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> fmt::Display for GLWETensorKeyCompressed<D, W> {
+impl<D: HostDataRef, W: ZnxWord, Rg: Ring> fmt::Display for GLWETensorKeyCompressed<D, W, Rg> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "(GLWETensorKeyCompressed)",)?;
         write!(f, "{}", self.0)?;
@@ -95,7 +95,7 @@ impl<D: HostDataRef, W: ZnxWord> fmt::Display for GLWETensorKeyCompressed<D, W> 
     }
 }
 
-impl<D: Data, W: ZnxWord> GLWETensorKeyCompressed<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> GLWETensorKeyCompressed<D, W, Rg> {
     pub(crate) fn alloc_from_infos<B: Backend<OwnedBuf = D, ZnxWord = W>, A>(infos: &A) -> Self
     where
         A: GGLWEInfos,
@@ -146,22 +146,22 @@ impl<D: Data, W: ZnxWord> GLWETensorKeyCompressed<D, W> {
 
     pub fn bytes_of(n: Degree, base2k: Base2K, dnum: Dnum, k_digit: TorusPrecision, k_aux: TorusPrecision, rank: Rank) -> usize {
         let pairs: u32 = (((rank.as_u32() + 1) * rank.as_u32()) >> 1).max(1);
-        GGLWECompressed::<AlignedBuf, W>::bytes_of(n, base2k, dnum, k_digit, k_aux, Rank(pairs))
+        GGLWECompressed::<AlignedBuf, W, Rg>::bytes_of(n, base2k, dnum, k_digit, k_aux, Rank(pairs))
     }
 }
 
-impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GLWETensorKeyCompressed<D, W> {
+impl<D: HostDataMut, W: ZnxWord, Rg: Ring> ReaderFrom for GLWETensorKeyCompressed<D, W, Rg> {
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
         self.0.read_from(reader)?;
         Ok(())
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> WriterTo for GLWETensorKeyCompressed<D, W> {
+impl<D: HostDataRef, W: ZnxWord, Rg: Ring> WriterTo for GLWETensorKeyCompressed<D, W, Rg> {
     fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
         self.0.write_to(writer)?;
         Ok(())
     }
 }
 
-impl_gglwe_compressed_to_backend_for_field!(GLWETensorKeyCompressed<BE::OwnedBuf, BE::ZnxWord>, 0, GGLWECompressed<BE::OwnedBuf, BE::ZnxWord>);
+impl_gglwe_compressed_to_backend_for_field!(GLWETensorKeyCompressed<BE::OwnedBuf, BE::ZnxWord, Rg>, 0, GGLWECompressed<BE::OwnedBuf, BE::ZnxWord, Rg>);

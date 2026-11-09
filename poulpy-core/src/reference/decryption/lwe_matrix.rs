@@ -4,7 +4,7 @@ use poulpy_hal::{
         VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxCopy, VecZnxZero,
     },
     layouts::{
-        Backend, Module, ScratchArena, VecZnxBigToBackendRef, VecZnxToBackendRef, vec_znx_backend_mut_from_mut,
+        Backend, Module, Ring, ScratchArena, VecZnxBigToBackendRef, VecZnxToBackendRef, vec_znx_backend_mut_from_mut,
         vec_znx_backend_ref_from_ref,
     },
 };
@@ -24,23 +24,23 @@ where
         + 3 * (BE::SCRATCH_ALIGN - 1)
 }
 
-pub fn lwe_matrix_decrypt_reference<BE, R, P, S>(
+pub fn lwe_matrix_decrypt_reference<BE, R, P, S, Rg: Ring>(
     module: &Module<BE>,
     res: &R,
     pt: &mut P,
     sk: &S,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    Module<BE>: VecZnxZero<BE>
-        + VecZnxBigColWeightedSum<BE>
-        + VecZnxBigAddSmallAssign<BE>
-        + VecZnxBigNormalize<BE>
-        + VecZnxCopy<BE>
+    Module<BE>: VecZnxZero<BE, Rg>
+        + VecZnxBigColWeightedSum<BE, Rg>
+        + VecZnxBigAddSmallAssign<BE, Rg>
+        + VecZnxBigNormalize<BE, Rg>
+        + VecZnxCopy<BE, Rg>
         + VecZnxBigBytesOf
         + VecZnxBigNormalizeTmpBytes,
-    R: LWEMatrixToBackendRef<BE> + LWEMatrixInfos,
-    P: GLWEToBackendMut<BE> + SetBase2k + GLWEInfos,
-    S: LWESecretToBackendRef<BE> + LWEInfos,
+    R: LWEMatrixToBackendRef<BE, Rg> + LWEMatrixInfos,
+    P: GLWEToBackendMut<BE, Rg> + SetBase2k + GLWEInfos,
+    S: LWESecretToBackendRef<BE, Rg> + LWEInfos,
     BE: Backend,
 {
     let res = res.to_backend_ref();
@@ -91,9 +91,9 @@ pub fn lwe_matrix_decrypt_reference<BE, R, P, S>(
 
         let rows_pt_ref = rows_pt.to_backend_ref();
         module.vec_znx_copy(
-            &mut vec_znx_backend_mut_from_mut::<BE>(&mut pt.data).window_coeffs(0, res.rows()),
+            &mut vec_znx_backend_mut_from_mut::<BE, Rg>(&mut pt.data).window_coeffs(0, res.rows()),
             0,
-            &vec_znx_backend_ref_from_ref::<BE>(&rows_pt_ref).window_coeffs(0, res.rows()),
+            &vec_znx_backend_ref_from_ref::<BE, Rg>(&rows_pt_ref).window_coeffs(0, res.rows()),
             0,
         );
     }

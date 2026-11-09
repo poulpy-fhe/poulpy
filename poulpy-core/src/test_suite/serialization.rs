@@ -1,7 +1,7 @@
 use poulpy_hal::{
     AlignedBuf,
     api::{VecZnxFillUniformSource, VecZnxFillUniformSourceAll},
-    layouts::{Backend, MatZnx, MatZnxAtBackendMut, Module, ReaderFrom, WriterTo},
+    layouts::{Backend, MatZnx, MatZnxAtBackendMut, Module, ReaderFrom, Ring, WriterTo},
     source::Source,
     test_suite::serialization::test_reader_writer_interface as check_roundtrip,
 };
@@ -92,23 +92,24 @@ const DSIZE: TorusPrecision = TorusPrecision(BASE2K.0);
 /// `log2(n)`. Must always be at least `dsize * base2k`.
 const K_KEY_AUX: TorusPrecision = TorusPrecision(DSIZE.0 + N_GLWE.0.ilog2());
 
-/// Round-trips every core layout, standard and compressed, through
+/// Round-trips every core layout, unprepared and compressed, through
 /// `WriterTo`/`ReaderFrom`, on fixtures sampled by `module` (degree at least 64).
-pub fn test_serialization<BE>(module: &Module<BE>)
+pub fn test_serialization<BE, Rg: Ring>(module: &Module<BE>)
 where
     BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
-    Module<BE>: GLWEFill<BE> + VecZnxFillUniformSource<BE> + VecZnxFillUniformSourceAll<BE>,
+    Module<BE>: GLWEFill<BE, Rg> + VecZnxFillUniformSource<BE, Rg> + VecZnxFillUniformSourceAll<BE, Rg>,
 {
     let mut source = Source::new([0u8; 32]);
 
-    let mut glwe: [GLWE<AlignedBuf, i64>; 2] = [(); 2].map(|_| GLWE::alloc(N_GLWE, BASE2K, K, RANK));
-    let mut glwe_c: [GLWECompressed<AlignedBuf, i64>; 2] = [(); 2].map(|_| GLWECompressed::alloc::<BE>(N_GLWE, BASE2K, K, RANK));
-    let mut lwe: [LWE<AlignedBuf, i64>; 2] = [(); 2].map(|_| LWE::alloc(N_LWE, BASE2K, K));
-    let mut lwe_c: [LWECompressed<AlignedBuf, i64>; 2] = [(); 2].map(|_| LWECompressed::alloc::<BE>(BASE2K, K));
+    let mut glwe: [GLWE<AlignedBuf, i64, Rg>; 2] = [(); 2].map(|_| GLWE::alloc(N_GLWE, BASE2K, K, RANK));
+    let mut glwe_c: [GLWECompressed<AlignedBuf, i64, Rg>; 2] =
+        [(); 2].map(|_| GLWECompressed::alloc::<BE>(N_GLWE, BASE2K, K, RANK));
+    let mut lwe: [LWE<AlignedBuf, i64, Rg>; 2] = [(); 2].map(|_| LWE::alloc(N_LWE, BASE2K, K));
+    let mut lwe_c: [LWECompressed<AlignedBuf, i64, Rg>; 2] = [(); 2].map(|_| LWECompressed::alloc::<BE>(BASE2K, K));
     for glwe in &mut glwe {
         module.glwe_fill_from_source(glwe, &mut source);
     }
-    let mut pk: [GLWEPublicKey<AlignedBuf, i64>; 2] = [(); 2].map(|_| GLWEPublicKey::alloc(N_GLWE, BASE2K, K, RANK));
+    let mut pk: [GLWEPublicKey<AlignedBuf, i64, Rg>; 2] = [(); 2].map(|_| GLWEPublicKey::alloc(N_GLWE, BASE2K, K, RANK));
     for v in glwe_c
         .iter_mut()
         .map(|x| &mut x.data)
@@ -118,33 +119,36 @@ where
         module.vec_znx_fill_uniform_source_all(50, v.size() * 50, v, &mut source);
     }
 
-    let mut gglwe: [GGLWE<AlignedBuf, i64>; 2] =
+    let mut gglwe: [GGLWE<AlignedBuf, i64, Rg>; 2] =
         [(); 2].map(|_| GGLWE::alloc(N_GLWE, BASE2K, DNUM, DSIZE, K_KEY_AUX, RANK, RANK));
-    let mut gglwe_c: [GGLWECompressed<AlignedBuf, i64>; 2] =
+    let mut gglwe_c: [GGLWECompressed<AlignedBuf, i64, Rg>; 2] =
         [(); 2].map(|_| GGLWECompressed::alloc::<BE>(N_GLWE, BASE2K, DNUM, DSIZE, K_KEY_AUX, RANK, RANK));
-    let mut swk: [GLWESwitchingKey<AlignedBuf, i64>; 2] =
+    let mut swk: [GLWESwitchingKey<AlignedBuf, i64, Rg>; 2] =
         [(); 2].map(|_| GLWESwitchingKey::alloc(N_GLWE, BASE2K, DNUM, DSIZE, K_KEY_AUX, RANK, RANK));
-    let mut swk_c: [GLWESwitchingKeyCompressed<AlignedBuf, i64>; 2] =
+    let mut swk_c: [GLWESwitchingKeyCompressed<AlignedBuf, i64, Rg>; 2] =
         [(); 2].map(|_| GLWESwitchingKeyCompressed::alloc::<BE>(N_GLWE, BASE2K, DNUM, DSIZE, K_KEY_AUX, RANK, RANK));
-    let mut atk: [GLWEAutomorphismKey<AlignedBuf, i64>; 2] =
+    let mut atk: [GLWEAutomorphismKey<AlignedBuf, i64, Rg>; 2] =
         [(); 2].map(|_| GLWEAutomorphismKey::alloc(N_GLWE, BASE2K, DNUM, DSIZE, K_KEY_AUX, RANK));
-    let mut atk_c: [GLWEAutomorphismKeyCompressed<AlignedBuf, i64>; 2] =
+    let mut atk_c: [GLWEAutomorphismKeyCompressed<AlignedBuf, i64, Rg>; 2] =
         [(); 2].map(|_| GLWEAutomorphismKeyCompressed::alloc::<BE>(N_GLWE, BASE2K, DNUM, DSIZE, K_KEY_AUX, RANK));
-    let mut tsk: [GLWETensorKey<AlignedBuf, i64>; 2] =
+    let mut tsk: [GLWETensorKey<AlignedBuf, i64, Rg>; 2] =
         [(); 2].map(|_| GLWETensorKey::alloc(N_GLWE, BASE2K, DNUM, DSIZE, K_KEY_AUX, RANK));
-    let mut tsk_c: [GLWETensorKeyCompressed<AlignedBuf, i64>; 2] =
+    let mut tsk_c: [GLWETensorKeyCompressed<AlignedBuf, i64, Rg>; 2] =
         [(); 2].map(|_| GLWETensorKeyCompressed::alloc::<BE>(N_GLWE, BASE2K, DNUM, DSIZE, K_KEY_AUX, RANK));
-    let mut g2l: [GLWEToLWEKey<AlignedBuf, i64>; 2] = [(); 2].map(|_| GLWEToLWEKey::alloc(N_GLWE, BASE2K, DNUM, K_KEY_AUX, RANK));
-    let mut g2l_c: [GLWEToLWEKeyCompressed<AlignedBuf, i64>; 2] =
+    let mut g2l: [GLWEToLWEKey<AlignedBuf, i64, Rg>; 2] =
+        [(); 2].map(|_| GLWEToLWEKey::alloc(N_GLWE, BASE2K, DNUM, K_KEY_AUX, RANK));
+    let mut g2l_c: [GLWEToLWEKeyCompressed<AlignedBuf, i64, Rg>; 2] =
         [(); 2].map(|_| GLWEToLWEKeyCompressed::alloc::<BE>(N_GLWE, BASE2K, DNUM, K_KEY_AUX, RANK));
-    let mut l2g: [LWEToGLWEKey<AlignedBuf, i64>; 2] = [(); 2].map(|_| LWEToGLWEKey::alloc(N_GLWE, BASE2K, DNUM, K_KEY_AUX, RANK));
-    let mut l2g_c: [LWEToGLWEKeyCompressed<AlignedBuf, i64>; 2] =
+    let mut l2g: [LWEToGLWEKey<AlignedBuf, i64, Rg>; 2] =
+        [(); 2].map(|_| LWEToGLWEKey::alloc(N_GLWE, BASE2K, DNUM, K_KEY_AUX, RANK));
+    let mut l2g_c: [LWEToGLWEKeyCompressed<AlignedBuf, i64, Rg>; 2] =
         [(); 2].map(|_| LWEToGLWEKeyCompressed::alloc::<BE>(N_GLWE, BASE2K, DNUM, K_KEY_AUX, RANK));
-    let mut lsk: [LWESwitchingKey<AlignedBuf, i64>; 2] = [(); 2].map(|_| LWESwitchingKey::alloc(N_GLWE, BASE2K, DNUM, K_KEY_AUX));
-    let mut lsk_c: [LWESwitchingKeyCompressed<AlignedBuf, i64>; 2] =
+    let mut lsk: [LWESwitchingKey<AlignedBuf, i64, Rg>; 2] =
+        [(); 2].map(|_| LWESwitchingKey::alloc(N_GLWE, BASE2K, DNUM, K_KEY_AUX));
+    let mut lsk_c: [LWESwitchingKeyCompressed<AlignedBuf, i64, Rg>; 2] =
         [(); 2].map(|_| LWESwitchingKeyCompressed::alloc::<BE>(N_GLWE, BASE2K, DNUM, K_KEY_AUX));
-    let mut ggsw: [GGSW<AlignedBuf, i64>; 2] = [(); 2].map(|_| GGSW::alloc(N_GLWE, BASE2K, DNUM, DSIZE, K_KEY_AUX, RANK));
-    let mut ggsw_c: [GGSWCompressed<AlignedBuf, i64>; 2] =
+    let mut ggsw: [GGSW<AlignedBuf, i64, Rg>; 2] = [(); 2].map(|_| GGSW::alloc(N_GLWE, BASE2K, DNUM, DSIZE, K_KEY_AUX, RANK));
+    let mut ggsw_c: [GGSWCompressed<AlignedBuf, i64, Rg>; 2] =
         [(); 2].map(|_| GGSWCompressed::alloc::<BE>(N_GLWE, BASE2K, DNUM, DSIZE, K_KEY_AUX, RANK));
     for m in gglwe
         .iter_mut()
@@ -172,7 +176,7 @@ where
                     module.vec_znx_fill_uniform_source(
                         50,
                         m.size() * 50,
-                        &mut MatZnxAtBackendMut::<BE>::at_backend_mut(m, row, col_in),
+                        &mut MatZnxAtBackendMut::<BE, Rg>::at_backend_mut(m, row, col_in),
                         col,
                         &mut source,
                     );
@@ -307,9 +311,9 @@ where
     test_reader_writer_interface(glwe);
     // A stream is one row of `rank` encryptions of zero at the stated precision.
     let size: usize = K.0.div_ceil(BASE2K.0) as usize;
-    let zeros: Vec<u8> = vec![0u8; GLWEPublicKey::<AlignedBuf, i64>::bytes_of(N_GLWE, BASE2K, K, RANK)];
-    let pristine: GLWEPublicKey<AlignedBuf, i64> = GLWEPublicKey::alloc(N_GLWE, BASE2K, K, RANK);
-    let mut receiver: GLWEPublicKey<AlignedBuf, i64> = GLWEPublicKey::alloc(N_GLWE, BASE2K, K, RANK);
+    let zeros: Vec<u8> = vec![0u8; GLWEPublicKey::<AlignedBuf, i64, Rg>::bytes_of(N_GLWE, BASE2K, K, RANK)];
+    let pristine: GLWEPublicKey<AlignedBuf, i64, Rg> = GLWEPublicKey::alloc(N_GLWE, BASE2K, K, RANK);
+    let mut receiver: GLWEPublicKey<AlignedBuf, i64, Rg> = GLWEPublicKey::alloc(N_GLWE, BASE2K, K, RANK);
     let n: usize = N_GLWE.into();
     for (n, base2k, rows, cols_in, cols_out, size) in [
         (n, BASE2K, 2, 1, 2, size),
@@ -324,7 +328,7 @@ where
         Distribution::TernaryFixed(1).write_to(&mut stream).unwrap();
         stream.extend(base2k.0.to_le_bytes());
         stream.extend(K.0.to_le_bytes());
-        MatZnx::<&[u8], i64>::from_data(&zeros, n, rows, cols_in, cols_out, size)
+        MatZnx::<&[u8], i64, Rg>::from_data(&zeros, n, rows, cols_in, cols_out, size)
             .write_to(&mut stream)
             .unwrap();
         let error = receiver.read_from(&mut stream.as_slice()).unwrap_err();

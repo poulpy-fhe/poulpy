@@ -19,16 +19,12 @@ poulpy_core::core_parity_test_suite! {
         glwe_automorphism => poulpy_core::test_suite::parity::test_glwe_automorphism_parity,
         glwe_external_product => poulpy_core::test_suite::parity::test_glwe_external_product_parity,
         glwe_copy_zero => poulpy_core::test_suite::parity::test_glwe_copy_zero_parity,
-        glwe_shift => poulpy_core::test_suite::parity::test_glwe_shift_parity,
         glwe_multiplication => poulpy_core::test_suite::parity::test_glwe_multiplication_parity,
-        ggsw_rotate => poulpy_core::test_suite::parity::test_ggsw_rotate_parity,
         gadget_external_product => poulpy_core::test_suite::parity::test_gadget_external_product_parity,
         gadget_conversion => poulpy_core::test_suite::parity::test_gadget_conversion_parity,
-        lwe_conversion => poulpy_core::test_suite::parity::test_lwe_conversion_parity,
         gglwe_product_digits_strided => poulpy_core::test_suite::parity::test_gglwe_product_digits_strided_parity,
         polynomial_evaluation => poulpy_core::test_suite::parity::test_polynomial_evaluation_parity,
         glwe_trace => poulpy_core::test_suite::parity::test_glwe_trace_parity,
-        trace_packing => poulpy_core::test_suite::parity::test_trace_packing_parity,
         tensor_relinearize_decrypt => poulpy_core::test_suite::parity::test_tensor_relinearize_decrypt_parity,
         linear_transformation => poulpy_core::test_suite::parity::test_linear_transformation_parity,
         linear_transformation_powers_of_two => poulpy_core::test_suite::parity::test_linear_transformation_powers_of_two_parity,
@@ -38,8 +34,14 @@ poulpy_core::core_parity_test_suite! {
         glwe_sub => poulpy_core::test_suite::parity::test_glwe_sub_parity,
         glwe_negate => poulpy_core::test_suite::parity::test_glwe_negate_parity,
         glwe_normalize => poulpy_core::test_suite::parity::test_glwe_normalize_parity,
-        glwe_rotate => poulpy_core::test_suite::parity::test_glwe_rotate_parity,
         glwe_tensor => poulpy_core::test_suite::parity::test_glwe_tensor_parity,
+    },
+    ring_free_tests = {
+        glwe_shift => poulpy_core::test_suite::parity::test_glwe_shift_parity,
+        ggsw_rotate => poulpy_core::test_suite::parity::test_ggsw_rotate_parity,
+        lwe_conversion => poulpy_core::test_suite::parity::test_lwe_conversion_parity,
+        trace_packing => poulpy_core::test_suite::parity::test_trace_packing_parity,
+        glwe_rotate => poulpy_core::test_suite::parity::test_glwe_rotate_parity,
     }
 }
 
@@ -60,16 +62,12 @@ poulpy_core::core_parity_test_suite! {
         glwe_automorphism => poulpy_core::test_suite::parity::test_glwe_automorphism_parity,
         glwe_external_product => poulpy_core::test_suite::parity::test_glwe_external_product_parity,
         glwe_copy_zero => poulpy_core::test_suite::parity::test_glwe_copy_zero_parity,
-        glwe_shift => poulpy_core::test_suite::parity::test_glwe_shift_parity,
         glwe_multiplication => poulpy_core::test_suite::parity::test_glwe_multiplication_parity,
-        ggsw_rotate => poulpy_core::test_suite::parity::test_ggsw_rotate_parity,
         gadget_external_product => poulpy_core::test_suite::parity::test_gadget_external_product_parity,
         gadget_conversion => poulpy_core::test_suite::parity::test_gadget_conversion_parity,
-        lwe_conversion => poulpy_core::test_suite::parity::test_lwe_conversion_parity,
         gglwe_product_digits_strided => poulpy_core::test_suite::parity::test_gglwe_product_digits_strided_parity,
         polynomial_evaluation => poulpy_core::test_suite::parity::test_polynomial_evaluation_parity,
         glwe_trace => poulpy_core::test_suite::parity::test_glwe_trace_parity,
-        trace_packing => poulpy_core::test_suite::parity::test_trace_packing_parity,
         tensor_relinearize_decrypt => poulpy_core::test_suite::parity::test_tensor_relinearize_decrypt_parity,
         linear_transformation => poulpy_core::test_suite::parity::test_linear_transformation_parity,
         linear_transformation_powers_of_two => poulpy_core::test_suite::parity::test_linear_transformation_powers_of_two_parity,
@@ -79,8 +77,14 @@ poulpy_core::core_parity_test_suite! {
         glwe_sub => poulpy_core::test_suite::parity::test_glwe_sub_parity,
         glwe_negate => poulpy_core::test_suite::parity::test_glwe_negate_parity,
         glwe_normalize => poulpy_core::test_suite::parity::test_glwe_normalize_parity,
-        glwe_rotate => poulpy_core::test_suite::parity::test_glwe_rotate_parity,
         glwe_tensor => poulpy_core::test_suite::parity::test_glwe_tensor_parity,
+    },
+    ring_free_tests = {
+        glwe_shift => poulpy_core::test_suite::parity::test_glwe_shift_parity,
+        ggsw_rotate => poulpy_core::test_suite::parity::test_ggsw_rotate_parity,
+        lwe_conversion => poulpy_core::test_suite::parity::test_lwe_conversion_parity,
+        trace_packing => poulpy_core::test_suite::parity::test_trace_packing_parity,
+        glwe_rotate => poulpy_core::test_suite::parity::test_glwe_rotate_parity,
     }
 }
 
@@ -98,16 +102,12 @@ poulpy_core::core_parity_test_suite! {
         glwe_automorphism => poulpy_core::test_suite::parity::test_glwe_automorphism_parity,
         glwe_external_product => poulpy_core::test_suite::parity::test_glwe_external_product_parity,
         glwe_copy_zero => poulpy_core::test_suite::parity::test_glwe_copy_zero_parity,
-        glwe_shift => poulpy_core::test_suite::parity::test_glwe_shift_parity,
         glwe_multiplication => poulpy_core::test_suite::parity::test_glwe_multiplication_parity,
-        ggsw_rotate => poulpy_core::test_suite::parity::test_ggsw_rotate_parity,
         gadget_external_product => poulpy_core::test_suite::parity::test_gadget_external_product_parity,
         gadget_conversion => poulpy_core::test_suite::parity::test_gadget_conversion_parity,
-        lwe_conversion => poulpy_core::test_suite::parity::test_lwe_conversion_parity,
         gglwe_product_digits_strided => poulpy_core::test_suite::parity::test_gglwe_product_digits_strided_parity,
         polynomial_evaluation => poulpy_core::test_suite::parity::test_polynomial_evaluation_parity,
         glwe_trace => poulpy_core::test_suite::parity::test_glwe_trace_parity,
-        trace_packing => poulpy_core::test_suite::parity::test_trace_packing_parity,
         tensor_relinearize_decrypt => poulpy_core::test_suite::parity::test_tensor_relinearize_decrypt_parity,
         linear_transformation => poulpy_core::test_suite::parity::test_linear_transformation_parity,
         linear_transformation_powers_of_two => poulpy_core::test_suite::parity::test_linear_transformation_powers_of_two_parity,
@@ -117,8 +117,14 @@ poulpy_core::core_parity_test_suite! {
         glwe_sub => poulpy_core::test_suite::parity::test_glwe_sub_parity,
         glwe_negate => poulpy_core::test_suite::parity::test_glwe_negate_parity,
         glwe_normalize => poulpy_core::test_suite::parity::test_glwe_normalize_parity,
-        glwe_rotate => poulpy_core::test_suite::parity::test_glwe_rotate_parity,
         glwe_tensor => poulpy_core::test_suite::parity::test_glwe_tensor_parity,
+    },
+    ring_free_tests = {
+        glwe_shift => poulpy_core::test_suite::parity::test_glwe_shift_parity,
+        ggsw_rotate => poulpy_core::test_suite::parity::test_ggsw_rotate_parity,
+        lwe_conversion => poulpy_core::test_suite::parity::test_lwe_conversion_parity,
+        trace_packing => poulpy_core::test_suite::parity::test_trace_packing_parity,
+        glwe_rotate => poulpy_core::test_suite::parity::test_glwe_rotate_parity,
     }
 }
 
@@ -139,16 +145,12 @@ poulpy_core::core_parity_test_suite! {
         glwe_automorphism => poulpy_core::test_suite::parity::test_glwe_automorphism_parity,
         glwe_external_product => poulpy_core::test_suite::parity::test_glwe_external_product_parity,
         glwe_copy_zero => poulpy_core::test_suite::parity::test_glwe_copy_zero_parity,
-        glwe_shift => poulpy_core::test_suite::parity::test_glwe_shift_parity,
         glwe_multiplication => poulpy_core::test_suite::parity::test_glwe_multiplication_parity,
-        ggsw_rotate => poulpy_core::test_suite::parity::test_ggsw_rotate_parity,
         gadget_external_product => poulpy_core::test_suite::parity::test_gadget_external_product_parity,
         gadget_conversion => poulpy_core::test_suite::parity::test_gadget_conversion_parity,
-        lwe_conversion => poulpy_core::test_suite::parity::test_lwe_conversion_parity,
         gglwe_product_digits_strided => poulpy_core::test_suite::parity::test_gglwe_product_digits_strided_parity,
         polynomial_evaluation => poulpy_core::test_suite::parity::test_polynomial_evaluation_parity,
         glwe_trace => poulpy_core::test_suite::parity::test_glwe_trace_parity,
-        trace_packing => poulpy_core::test_suite::parity::test_trace_packing_parity,
         tensor_relinearize_decrypt => poulpy_core::test_suite::parity::test_tensor_relinearize_decrypt_parity,
         linear_transformation => poulpy_core::test_suite::parity::test_linear_transformation_parity,
         linear_transformation_powers_of_two => poulpy_core::test_suite::parity::test_linear_transformation_powers_of_two_parity,
@@ -158,8 +160,14 @@ poulpy_core::core_parity_test_suite! {
         glwe_sub => poulpy_core::test_suite::parity::test_glwe_sub_parity,
         glwe_negate => poulpy_core::test_suite::parity::test_glwe_negate_parity,
         glwe_normalize => poulpy_core::test_suite::parity::test_glwe_normalize_parity,
-        glwe_rotate => poulpy_core::test_suite::parity::test_glwe_rotate_parity,
         glwe_tensor => poulpy_core::test_suite::parity::test_glwe_tensor_parity,
+    },
+    ring_free_tests = {
+        glwe_shift => poulpy_core::test_suite::parity::test_glwe_shift_parity,
+        ggsw_rotate => poulpy_core::test_suite::parity::test_ggsw_rotate_parity,
+        lwe_conversion => poulpy_core::test_suite::parity::test_lwe_conversion_parity,
+        trace_packing => poulpy_core::test_suite::parity::test_trace_packing_parity,
+        glwe_rotate => poulpy_core::test_suite::parity::test_glwe_rotate_parity,
     }
 }
 
@@ -167,6 +175,7 @@ poulpy_core::core_parity_test_suite! {
 #[cfg(feature = "enable-rayon")]
 mod tuning {
     use poulpy_cpu_rayon::tuning::{Mode, ProbeShape, default_thread_sweep, thread_scaling};
+    use poulpy_hal::layouts::Standard;
 
     const LOG_N: usize = 15;
     const SIZE: usize = 12;
@@ -178,9 +187,9 @@ mod tuning {
     #[ignore = "diagnostic: run on the machine you deploy on"]
     fn thread_scaling_report() {
         let sweep = default_thread_sweep();
-        thread_scaling::<crate::FFT64NeonRayon>(ProbeShape::square(1 << LOG_N, SIZE, RANK + 1), &sweep, MODE)
+        thread_scaling::<crate::FFT64NeonRayon, Standard>(ProbeShape::square(1 << LOG_N, SIZE, RANK + 1), &sweep, MODE)
             .print("FFT64NeonRayon");
-        thread_scaling::<crate::NTT4x30NeonRayon>(ProbeShape::square(1 << LOG_N, SIZE, RANK + 1), &sweep, MODE)
+        thread_scaling::<crate::NTT4x30NeonRayon, Standard>(ProbeShape::square(1 << LOG_N, SIZE, RANK + 1), &sweep, MODE)
             .print("NTT4x30NeonRayon");
     }
 }

@@ -3,8 +3,8 @@ use poulpy_hal::layouts::ZnxWord;
 use std::fmt;
 
 use poulpy_hal::layouts::{
-    Backend, Data, HostDataMut, HostDataRef, ReaderFrom, VecZnx, VecZnxToBackendMut, VecZnxToBackendRef, WriterTo,
-    vec_znx_alloc_zeroed, vec_znx_backend_mut_from_mut, vec_znx_backend_ref_from_mut, vec_znx_backend_ref_from_ref,
+    Backend, Data, HostDataMut, HostDataRef, ReaderFrom, Ring, Standard, VecZnx, VecZnxToBackendMut, VecZnxToBackendRef,
+    WriterTo, vec_znx_alloc_zeroed, vec_znx_backend_mut_from_mut, vec_znx_backend_ref_from_mut, vec_znx_backend_ref_from_ref,
 };
 
 use crate::layouts::{Base2K, Degree, LWEInfos, TorusPrecision};
@@ -16,17 +16,19 @@ use crate::layouts::{Base2K, Degree, LWEInfos, TorusPrecision};
 /// PRNG seed during decompression. This layout has no secret dimension and
 /// carries no component-noise metadata.
 #[derive(PartialEq, Eq, Clone)]
-pub struct LWECompressed<D: Data, W: ZnxWord> {
-    pub(crate) data: VecZnx<D, W>,
+pub struct LWECompressed<D: Data, W: ZnxWord, Rg: Ring = Standard> {
+    pub(crate) data: VecZnx<D, W, Rg>,
     pub(crate) k: TorusPrecision,
     pub(crate) base2k: Base2K,
     pub(crate) seed: [u8; 32],
 }
 
-pub type LWECompressedBackendRef<'a, BE> = LWECompressed<<BE as Backend>::BufRef<'a>, <BE as Backend>::ZnxWord>;
-pub type LWECompressedBackendMut<'a, BE> = LWECompressed<<BE as Backend>::BufMut<'a>, <BE as Backend>::ZnxWord>;
+pub type LWECompressedBackendRef<'a, BE, Rg = Standard> =
+    LWECompressed<<BE as Backend>::BufRef<'a>, <BE as Backend>::ZnxWord, Rg>;
+pub type LWECompressedBackendMut<'a, BE, Rg = Standard> =
+    LWECompressed<<BE as Backend>::BufMut<'a>, <BE as Backend>::ZnxWord, Rg>;
 
-impl<D: Data, W: ZnxWord> LWEInfos for LWECompressed<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> LWEInfos for LWECompressed<D, W, Rg> {
     fn noise(&self) -> Option<crate::ComponentNoise> {
         None
     }
@@ -47,13 +49,13 @@ impl<D: Data, W: ZnxWord> LWEInfos for LWECompressed<D, W> {
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> fmt::Debug for LWECompressed<D, W> {
+impl<D: HostDataRef, W: ZnxWord, Rg: Ring> fmt::Debug for LWECompressed<D, W, Rg> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{self}")
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> fmt::Display for LWECompressed<D, W> {
+impl<D: HostDataRef, W: ZnxWord, Rg: Ring> fmt::Display for LWECompressed<D, W, Rg> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
@@ -66,7 +68,7 @@ impl<D: HostDataRef, W: ZnxWord> fmt::Display for LWECompressed<D, W> {
     }
 }
 
-impl<D: Data, W: ZnxWord> LWECompressed<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> LWECompressed<D, W, Rg> {
     /// Allocates a new compressed LWE by copying parameters from an existing info provider.
     pub(crate) fn alloc_from_infos<B: Backend<OwnedBuf = D, ZnxWord = W>, A>(infos: &A) -> Self
     where
@@ -82,7 +84,7 @@ impl<D: Data, W: ZnxWord> LWECompressed<D, W> {
     pub(crate) fn alloc<B: Backend<OwnedBuf = D, ZnxWord = W>>(base2k: Base2K, k: TorusPrecision) -> Self {
         let size: usize = k.0.div_ceil(base2k.0) as usize;
         LWECompressed {
-            data: vec_znx_alloc_zeroed::<B>(1, 1, size),
+            data: vec_znx_alloc_zeroed::<B, Rg>(1, 1, size),
             k,
             base2k,
             seed: [0u8; 32],
@@ -97,13 +99,13 @@ impl<D: Data, W: ZnxWord> LWECompressed<D, W> {
     }
 
     pub fn bytes_of(base2k: Base2K, k: TorusPrecision) -> usize {
-        VecZnx::<AlignedBuf, W>::bytes_of(1, 1, k.0.div_ceil(base2k.0) as usize)
+        VecZnx::<AlignedBuf, W, Rg>::bytes_of(1, 1, k.0.div_ceil(base2k.0) as usize)
     }
 }
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
-impl<D: HostDataMut, W: ZnxWord> ReaderFrom for LWECompressed<D, W> {
+impl<D: HostDataMut, W: ZnxWord, Rg: Ring> ReaderFrom for LWECompressed<D, W, Rg> {
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
         crate::ComponentNoise::read_optional(reader, 0)?;
         let k = TorusPrecision(reader.read_u32::<LittleEndian>()?);
@@ -118,7 +120,7 @@ impl<D: HostDataMut, W: ZnxWord> ReaderFrom for LWECompressed<D, W> {
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> WriterTo for LWECompressed<D, W> {
+impl<D: HostDataRef, W: ZnxWord, Rg: Ring> WriterTo for LWECompressed<D, W, Rg> {
     fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
         crate::ComponentNoise::write_optional(None, writer)?;
         writer.write_u32::<LittleEndian>(self.k.into())?;
@@ -128,77 +130,77 @@ impl<D: HostDataRef, W: ZnxWord> WriterTo for LWECompressed<D, W> {
     }
 }
 
-pub trait LWECompressedToBackendRef<BE: Backend> {
-    fn to_backend_ref(&self) -> LWECompressedBackendRef<'_, BE>;
+pub trait LWECompressedToBackendRef<BE: Backend, Rg: Ring = Standard> {
+    fn to_backend_ref(&self) -> LWECompressedBackendRef<'_, BE, Rg>;
 }
 
-impl<BE: Backend> LWECompressedToBackendRef<BE> for LWECompressed<BE::OwnedBuf, BE::ZnxWord> {
-    fn to_backend_ref(&self) -> LWECompressedBackendRef<'_, BE> {
+impl<BE: Backend, Rg: Ring> LWECompressedToBackendRef<BE, Rg> for LWECompressed<BE::OwnedBuf, BE::ZnxWord, Rg> {
+    fn to_backend_ref(&self) -> LWECompressedBackendRef<'_, BE, Rg> {
         LWECompressed {
             k: self.k,
             base2k: self.base2k,
             seed: self.seed,
-            data: <VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendRef<BE>>::to_backend_ref(&self.data),
+            data: <VecZnx<BE::OwnedBuf, BE::ZnxWord, Rg> as VecZnxToBackendRef<BE, Rg>>::to_backend_ref(&self.data),
         }
     }
 }
 
-impl<BE: Backend> LWECompressedToBackendRef<BE> for &LWECompressed<BE::BufRef<'_>, BE::ZnxWord> {
-    fn to_backend_ref(&self) -> LWECompressedBackendRef<'_, BE> {
+impl<BE: Backend, Rg: Ring> LWECompressedToBackendRef<BE, Rg> for &LWECompressed<BE::BufRef<'_>, BE::ZnxWord, Rg> {
+    fn to_backend_ref(&self) -> LWECompressedBackendRef<'_, BE, Rg> {
         LWECompressed {
             k: self.k,
             base2k: self.base2k,
             seed: self.seed,
-            data: vec_znx_backend_ref_from_ref::<BE>(&self.data),
+            data: vec_znx_backend_ref_from_ref::<BE, Rg>(&self.data),
         }
     }
 }
 
-impl<BE: Backend> LWECompressedToBackendRef<BE> for &mut LWECompressed<BE::BufMut<'_>, BE::ZnxWord> {
-    fn to_backend_ref(&self) -> LWECompressedBackendRef<'_, BE> {
+impl<BE: Backend, Rg: Ring> LWECompressedToBackendRef<BE, Rg> for &mut LWECompressed<BE::BufMut<'_>, BE::ZnxWord, Rg> {
+    fn to_backend_ref(&self) -> LWECompressedBackendRef<'_, BE, Rg> {
         LWECompressed {
             k: self.k,
             base2k: self.base2k,
             seed: self.seed,
-            data: vec_znx_backend_ref_from_mut::<BE>(&self.data),
+            data: vec_znx_backend_ref_from_mut::<BE, Rg>(&self.data),
         }
     }
 }
 
-pub trait LWECompressedToBackendMut<BE: Backend>: LWECompressedToBackendRef<BE> {
+pub trait LWECompressedToBackendMut<BE: Backend, Rg: Ring = Standard>: LWECompressedToBackendRef<BE, Rg> {
     /// Only `None` is supported because this layout has no secret dimension.
     fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>);
 
     /// Borrows coefficients and copies the current layout.
-    fn to_backend_mut(&mut self) -> LWECompressedBackendMut<'_, BE>;
+    fn to_backend_mut(&mut self) -> LWECompressedBackendMut<'_, BE, Rg>;
 }
 
-impl<BE: Backend> LWECompressedToBackendMut<BE> for LWECompressed<BE::OwnedBuf, BE::ZnxWord> {
+impl<BE: Backend, Rg: Ring> LWECompressedToBackendMut<BE, Rg> for LWECompressed<BE::OwnedBuf, BE::ZnxWord, Rg> {
     fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
         assert!(metadata.is_none(), "compressed LWE does not carry component metadata");
     }
 
-    fn to_backend_mut(&mut self) -> LWECompressedBackendMut<'_, BE> {
+    fn to_backend_mut(&mut self) -> LWECompressedBackendMut<'_, BE, Rg> {
         LWECompressed {
             k: self.k,
             base2k: self.base2k,
             seed: self.seed,
-            data: <VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendMut<BE>>::to_backend_mut(&mut self.data),
+            data: <VecZnx<BE::OwnedBuf, BE::ZnxWord, Rg> as VecZnxToBackendMut<BE, Rg>>::to_backend_mut(&mut self.data),
         }
     }
 }
 
-impl<BE: Backend> LWECompressedToBackendMut<BE> for &mut LWECompressed<BE::BufMut<'_>, BE::ZnxWord> {
+impl<BE: Backend, Rg: Ring> LWECompressedToBackendMut<BE, Rg> for &mut LWECompressed<BE::BufMut<'_>, BE::ZnxWord, Rg> {
     fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
         assert!(metadata.is_none(), "compressed LWE does not carry component metadata");
     }
 
-    fn to_backend_mut(&mut self) -> LWECompressedBackendMut<'_, BE> {
+    fn to_backend_mut(&mut self) -> LWECompressedBackendMut<'_, BE, Rg> {
         LWECompressed {
             k: self.k,
             base2k: self.base2k,
             seed: self.seed,
-            data: vec_znx_backend_mut_from_mut::<BE>(&mut self.data),
+            data: vec_znx_backend_mut_from_mut::<BE, Rg>(&mut self.data),
         }
     }
 }

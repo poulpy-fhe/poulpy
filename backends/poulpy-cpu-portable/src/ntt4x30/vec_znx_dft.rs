@@ -39,9 +39,9 @@ fn check_operand(n: usize, a: &impl VecZnxInfos, col: usize) {
 
 /// Tables of the packed NTT of degree `n`.
 #[inline(always)]
-pub(crate) fn packed_table<R: Ring>(module: &Module<NTT4x30Portable<R>>, n: usize) -> &Ntt32Table {
+pub(crate) fn packed_table<Rg: Ring>(module: &Module<NTT4x30Portable>, n: usize) -> &Ntt32Table {
     // SAFETY: the handle is initialised before `Module::new` returns and lives as long as the module.
-    unsafe { (*module.ptr()).packed_table(n) }
+    unsafe { (*module.ptr()).packed_table::<Rg>(n) }
 }
 
 /// Length in `u64` of the scratch the inverse transform of one limb of degree `n` needs: the planes move to it.
@@ -59,21 +59,21 @@ pub(crate) fn prepare_tmp_words(n: usize) -> usize {
 /// Forward transform of `src` into one packed limb, multiplied by `2^32` when `prepared` is set.
 ///
 /// A parallel executor `E` transforms the four planes as separate tasks at large degrees, here and in the inverse transforms.
-pub fn dft_limb_scaled<R: Ring, E: TaskExecutor>(
-    module: &Module<NTT4x30Portable<R>>,
+pub fn dft_limb_scaled<Rg: Ring, E: TaskExecutor>(
+    module: &Module<NTT4x30Portable>,
     n: usize,
     dst: &mut [u32],
     src: &[i64],
     prepared: bool,
 ) {
-    ntt32::<E>(packed_table(module, n), dst, src, prepared);
+    ntt32::<E>(packed_table::<Rg>(module, n), dst, src, prepared);
 }
 
 /// Forward transform of `src` into one packed limb, or zeros when `src` is `None`.
-pub fn dft_limb<R: Ring, E: TaskExecutor>(module: &Module<NTT4x30Portable<R>>, n: usize, dst: &mut [u32], src: Option<&[i64]>) {
+pub fn dft_limb<Rg: Ring, E: TaskExecutor>(module: &Module<NTT4x30Portable>, n: usize, dst: &mut [u32], src: Option<&[i64]>) {
     match src {
         // A zero limb transforms to zero: the scan stops at the first nonzero coefficient.
-        Some(src) if src[..n].iter().any(|&x| x != 0) => dft_limb_scaled::<R, E>(module, n, dst, src, false),
+        Some(src) if src[..n].iter().any(|&x| x != 0) => dft_limb_scaled::<Rg, E>(module, n, dst, src, false),
         _ => dst.fill(0),
     }
 }
@@ -81,43 +81,43 @@ pub fn dft_limb<R: Ring, E: TaskExecutor>(module: &Module<NTT4x30Portable<R>>, n
 /// Inverse transform of one packed limb.
 ///
 /// `tmp` holds [`idft_tmp_words`] words.
-pub fn idft_limb<R: Ring, E: TaskExecutor>(
-    module: &Module<NTT4x30Portable<R>>,
+pub fn idft_limb<Rg: Ring, E: TaskExecutor>(
+    module: &Module<NTT4x30Portable>,
     n: usize,
     dst: &mut [i128],
     src: &[u32],
     tmp: &mut [u64],
 ) {
-    intt32::<E>(packed_table(module, n), dst, src, cast_slice_mut(tmp));
+    intt32::<E>(packed_table::<Rg>(module, n), dst, src, cast_slice_mut(tmp));
 }
 
 /// Inverse transform of the packed limb `slot` into `n` coefficients that overwrite it.
 ///
 /// The planes move to `tmp`, which holds [`idft_tmp_words`] words, so the coefficients can take the place of the limb.
-pub fn idft_limb_compact<R: Ring, E: TaskExecutor>(
-    module: &Module<NTT4x30Portable<R>>,
+pub fn idft_limb_compact<Rg: Ring, E: TaskExecutor>(
+    module: &Module<NTT4x30Portable>,
     n: usize,
     slot: &mut [u32],
     tmp: &mut [u64],
 ) {
-    intt32_compact::<E>(packed_table(module, n), slot, cast_slice_mut(tmp));
+    intt32_compact::<E>(packed_table::<Rg>(module, n), slot, cast_slice_mut(tmp));
 }
 
-pub(crate) fn vec_znx_dft_apply<R: Ring>(
-    module: &Module<NTT4x30Portable<R>>,
+pub(crate) fn vec_znx_dft_apply<Rg: Ring>(
+    module: &Module<NTT4x30Portable>,
     step: usize,
     offset: usize,
-    res: &mut VecZnxDftBackendMut<'_, NTT4x30Portable<R>>,
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Portable, Rg>,
     res_col: usize,
-    a: &VecZnxBackendRef<'_, NTT4x30Portable<R>>,
+    a: &VecZnxBackendRef<'_, NTT4x30Portable, Rg>,
     a_col: usize,
 ) where
-    NTT4x30Portable<R>: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>>,
+    NTT4x30Portable: NttDFTExecute<NttTable<Primes30, Rg>> + NttDFTExecute<NttTableInv<Primes30, Rg>>,
 {
     poulpy_hal::layouts::assert_dense(a, "vec_znx_dft_apply");
     assert!(step >= 1, "vec_znx_dft_apply: step must be >= 1");
     let n = res.n();
-    check_degree::<NTT4x30Portable<R>>(module.n(), n);
+    check_degree::<NTT4x30Portable>(module.n(), n);
     check_operand(n, a, a_col);
     check_operand(n, res, res_col);
     let cols = res.cols();
@@ -127,7 +127,7 @@ pub(crate) fn vec_znx_dft_apply<R: Ring>(
     for limb in 0..res_size {
         let dst = packed_limb_mut(res_data, n, cols, res_col, limb);
         let src_limb = offset + limb * step;
-        dft_limb::<_, poulpy_hal::execution::SerialTaskExecutor>(
+        dft_limb::<Rg, poulpy_hal::execution::SerialTaskExecutor>(
             module,
             n,
             dst,
@@ -140,26 +140,26 @@ pub(crate) fn vec_znx_idft_apply_tmp_bytes(n: usize) -> usize {
     idft_tmp_words(n) * size_of::<u64>()
 }
 
-pub(crate) fn vec_znx_idft_apply<R: Ring>(
-    module: &Module<NTT4x30Portable<R>>,
-    res: &mut VecZnxBigBackendMut<'_, NTT4x30Portable<R>>,
+pub(crate) fn vec_znx_idft_apply<Rg: Ring>(
+    module: &Module<NTT4x30Portable>,
+    res: &mut VecZnxBigBackendMut<'_, NTT4x30Portable, Rg>,
     res_col: usize,
-    a: &VecZnxDftBackendRef<'_, NTT4x30Portable<R>>,
+    a: &VecZnxDftBackendRef<'_, NTT4x30Portable, Rg>,
     a_col: usize,
     tmp: &mut [u64],
 ) where
-    NTT4x30Portable<R>: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>>,
+    NTT4x30Portable: NttDFTExecute<NttTable<Primes30, Rg>> + NttDFTExecute<NttTableInv<Primes30, Rg>>,
 {
     poulpy_hal::layouts::assert_dense(res, "vec_znx_idft_apply");
     let n = res.n();
     check_operand(n, res, res_col);
-    check_degree::<NTT4x30Portable<R>>(module.n(), n);
+    check_degree::<NTT4x30Portable>(module.n(), n);
     check_operand(n, a, a_col);
     let min_size = res.size().min(a.size());
     let a_cols = a.cols();
     let a_data: &[u32] = cast_slice(a.data());
     for limb in 0..min_size {
-        idft_limb::<_, poulpy_hal::execution::SerialTaskExecutor>(
+        idft_limb::<Rg, poulpy_hal::execution::SerialTaskExecutor>(
             module,
             n,
             res.at_mut(res_col, limb),
@@ -172,22 +172,22 @@ pub(crate) fn vec_znx_idft_apply<R: Ring>(
     }
 }
 
-pub(crate) fn idft_compact_in_place<R: Ring>(
-    module: &Module<NTT4x30Portable<R>>,
-    a: &mut VecZnxDftBackendMut<'_, NTT4x30Portable<R>>,
+pub(crate) fn idft_compact_in_place<Rg: Ring>(
+    module: &Module<NTT4x30Portable>,
+    a: &mut VecZnxDftBackendMut<'_, NTT4x30Portable, Rg>,
     a_col: usize,
     tmp: &mut [u64],
 ) where
-    NTT4x30Portable<R>: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>>,
+    NTT4x30Portable: NttDFTExecute<NttTable<Primes30, Rg>> + NttDFTExecute<NttTableInv<Primes30, Rg>>,
 {
     let n = a.n();
-    check_degree::<NTT4x30Portable<R>>(module.n(), n);
+    check_degree::<NTT4x30Portable>(module.n(), n);
     check_operand(n, a, a_col);
     let cols = a.cols();
     let size = a.size();
     let data: &mut [u32] = cast_slice_mut(a.data_mut());
     for limb in 0..size {
-        idft_limb_compact::<_, poulpy_hal::execution::SerialTaskExecutor>(
+        idft_limb_compact::<Rg, poulpy_hal::execution::SerialTaskExecutor>(
             module,
             n,
             packed_limb_mut(data, n, cols, a_col, limb),
@@ -219,12 +219,12 @@ pub fn for_each_limb<E: TaskExecutor>(
     });
 }
 
-pub fn vec_znx_dft_add<R: Ring, E: TaskExecutor>(
-    res: &mut VecZnxDftBackendMut<'_, NTT4x30Portable<R>>,
+pub fn vec_znx_dft_add<Rg: Ring, E: TaskExecutor>(
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Portable, Rg>,
     res_col: usize,
-    a: &VecZnxDftBackendRef<'_, NTT4x30Portable<R>>,
+    a: &VecZnxDftBackendRef<'_, NTT4x30Portable, Rg>,
     a_col: usize,
-    b: &VecZnxDftBackendRef<'_, NTT4x30Portable<R>>,
+    b: &VecZnxDftBackendRef<'_, NTT4x30Portable, Rg>,
     b_col: usize,
 ) {
     let n = res.n();
@@ -262,10 +262,10 @@ pub fn vec_znx_dft_add<R: Ring, E: TaskExecutor>(
     });
 }
 
-pub fn vec_znx_dft_add_assign<R: Ring, E: TaskExecutor>(
-    res: &mut VecZnxDftBackendMut<'_, NTT4x30Portable<R>>,
+pub fn vec_znx_dft_add_assign<Rg: Ring, E: TaskExecutor>(
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Portable, Rg>,
     res_col: usize,
-    a: &VecZnxDftBackendRef<'_, NTT4x30Portable<R>>,
+    a: &VecZnxDftBackendRef<'_, NTT4x30Portable, Rg>,
     a_col: usize,
 ) {
     let n = res.n();
@@ -280,12 +280,12 @@ pub fn vec_znx_dft_add_assign<R: Ring, E: TaskExecutor>(
     });
 }
 
-pub fn vec_znx_dft_sub<R: Ring, E: TaskExecutor>(
-    res: &mut VecZnxDftBackendMut<'_, NTT4x30Portable<R>>,
+pub fn vec_znx_dft_sub<Rg: Ring, E: TaskExecutor>(
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Portable, Rg>,
     res_col: usize,
-    a: &VecZnxDftBackendRef<'_, NTT4x30Portable<R>>,
+    a: &VecZnxDftBackendRef<'_, NTT4x30Portable, Rg>,
     a_col: usize,
-    b: &VecZnxDftBackendRef<'_, NTT4x30Portable<R>>,
+    b: &VecZnxDftBackendRef<'_, NTT4x30Portable, Rg>,
     b_col: usize,
 ) {
     let n = res.n();
@@ -323,10 +323,10 @@ pub fn vec_znx_dft_sub<R: Ring, E: TaskExecutor>(
     });
 }
 
-pub fn vec_znx_dft_sub_assign<R: Ring, E: TaskExecutor>(
-    res: &mut VecZnxDftBackendMut<'_, NTT4x30Portable<R>>,
+pub fn vec_znx_dft_sub_assign<Rg: Ring, E: TaskExecutor>(
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Portable, Rg>,
     res_col: usize,
-    a: &VecZnxDftBackendRef<'_, NTT4x30Portable<R>>,
+    a: &VecZnxDftBackendRef<'_, NTT4x30Portable, Rg>,
     a_col: usize,
 ) {
     let n = res.n();
@@ -341,10 +341,10 @@ pub fn vec_znx_dft_sub_assign<R: Ring, E: TaskExecutor>(
     });
 }
 
-pub fn vec_znx_dft_sub_negate_assign<R: Ring, E: TaskExecutor>(
-    res: &mut VecZnxDftBackendMut<'_, NTT4x30Portable<R>>,
+pub fn vec_znx_dft_sub_negate_assign<Rg: Ring, E: TaskExecutor>(
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Portable, Rg>,
     res_col: usize,
-    a: &VecZnxDftBackendRef<'_, NTT4x30Portable<R>>,
+    a: &VecZnxDftBackendRef<'_, NTT4x30Portable, Rg>,
     a_col: usize,
 ) {
     let n = res.n();
@@ -364,12 +364,12 @@ pub fn vec_znx_dft_sub_negate_assign<R: Ring, E: TaskExecutor>(
     });
 }
 
-pub fn vec_znx_dft_copy<R: Ring, E: TaskExecutor>(
+pub fn vec_znx_dft_copy<Rg: Ring, E: TaskExecutor>(
     step: usize,
     offset: usize,
-    res: &mut VecZnxDftBackendMut<'_, NTT4x30Portable<R>>,
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Portable, Rg>,
     res_col: usize,
-    a: &VecZnxDftBackendRef<'_, NTT4x30Portable<R>>,
+    a: &VecZnxDftBackendRef<'_, NTT4x30Portable, Rg>,
     a_col: usize,
 ) {
     assert!(step >= 1, "vec_znx_dft_copy: step must be >= 1");
@@ -391,7 +391,7 @@ pub fn vec_znx_dft_copy<R: Ring, E: TaskExecutor>(
     });
 }
 
-pub(crate) fn vec_znx_dft_zero<R: Ring>(res: &mut VecZnxDftBackendMut<'_, NTT4x30Portable<R>>, res_col: usize) {
+pub(crate) fn vec_znx_dft_zero<Rg: Ring>(res: &mut VecZnxDftBackendMut<'_, NTT4x30Portable, Rg>, res_col: usize) {
     let n = res.n();
     check_operand(n, res, res_col);
     let cols = res.cols();
@@ -402,11 +402,11 @@ pub(crate) fn vec_znx_dft_zero<R: Ring>(res: &mut VecZnxDftBackendMut<'_, NTT4x3
     }
 }
 
-pub(crate) fn vec_znx_dft_automorphism<R: Ring>(
+pub(crate) fn vec_znx_dft_automorphism<Rg: Ring>(
     plan: &NttAutomorphismPlan,
-    res: &mut VecZnxDftBackendMut<'_, NTT4x30Portable<R>>,
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Portable, Rg>,
     res_col: usize,
-    a: &VecZnxDftBackendRef<'_, NTT4x30Portable<R>>,
+    a: &VecZnxDftBackendRef<'_, NTT4x30Portable, Rg>,
     a_col: usize,
 ) {
     let n = res.n();
@@ -433,11 +433,11 @@ pub(crate) fn vec_znx_dft_automorphism<R: Ring>(
     }
 }
 
-pub fn vec_znx_dft_automorphism_add<R: Ring, E: TaskExecutor>(
+pub fn vec_znx_dft_automorphism_add<Rg: Ring, E: TaskExecutor>(
     plan: &NttAutomorphismPlan,
-    res: &mut VecZnxDftBackendMut<'_, NTT4x30Portable<R>>,
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Portable, Rg>,
     res_col: usize,
-    a: &VecZnxDftBackendRef<'_, NTT4x30Portable<R>>,
+    a: &VecZnxDftBackendRef<'_, NTT4x30Portable, Rg>,
     a_col: usize,
 ) {
     let n = res.n();

@@ -8,9 +8,10 @@
 //! alignment exceeds a limb.
 
 use poulpy_hal::{
-    layouts::Module,
+    layouts::{Module, Ring, Standard},
+    oep::{HalCnvImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl},
     test_suite::{
-        TestParams,
+        TestBackend, TestParams,
         convolution::{test_convolution_add, test_convolution_by_const_add},
         derived::{
             test_cnv_apply_dft_add_derived, test_cnv_by_const_apply_add_derived, test_vec_znx_idft_normalize_derived,
@@ -28,13 +29,17 @@ const PARAMS: TestParams = TestParams {
     n: 8,
 };
 
-fn run<BE>(module: &Module<BE>)
+fn run<BE, Rg: Ring>(module: &Module<BE>)
 where
-    BE: poulpy_hal::test_suite::TestBackend
-        + poulpy_hal::oep::HalVecZnxImpl
-        + poulpy_hal::oep::HalVmpImpl
-        + poulpy_hal::oep::HalVecZnxDftImpl
-        + poulpy_hal::oep::HalCnvImpl,
+    BE: TestBackend<Rg>
+        + HalVecZnxImpl<Rg>
+        + HalVmpImpl<Rg>
+        + HalVecZnxDftImpl<Rg>
+        + HalCnvImpl<Rg>
+        + HalVecZnxBigImpl
+        + HalVmpImpl
+        + HalVecZnxDftImpl
+        + HalCnvImpl,
 {
     test_vec_znx_lsh_add_derived(&PARAMS, module);
     test_vec_znx_lsh_sub_derived(&PARAMS, module);
@@ -46,9 +51,9 @@ where
 }
 
 /// The VMP composites.
-fn run_vmp<BE>(module: &Module<BE>)
+fn run_vmp<BE, Rg: Ring>(module: &Module<BE>)
 where
-    BE: poulpy_hal::test_suite::TestBackend + poulpy_hal::oep::HalVmpImpl + poulpy_hal::oep::HalVecZnxImpl,
+    BE: TestBackend<Rg> + HalVmpImpl<Rg> + HalVecZnxImpl<Rg> + HalVmpImpl + HalVecZnxDftImpl,
 {
     test_vmp_apply_dft_derived(&PARAMS, module);
     test_vmp_apply_dft_to_dft_add_derived(&PARAMS, module);
@@ -57,17 +62,17 @@ where
 #[test]
 fn derived_scratch_fft64_portable_n8() {
     let module = Module::<FFT64Portable>::new(8);
-    run(&module);
-    run_vmp(&module);
-    test_convolution_add(&module, 8, 17);
-    test_convolution_by_const_add(&module, 8, 17);
+    run::<_, Standard>(&module);
+    run_vmp::<_, Standard>(&module);
+    test_convolution_add::<_, _, Standard>(&module, 8, 17);
+    test_convolution_by_const_add::<_, _, Standard>(&module, 8, 17);
 }
 
 #[test]
 fn derived_scratch_ntt4x30_portable_n8() {
     let module = Module::<NTT4x30Portable>::new(8);
-    run(&module);
-    run_vmp(&module);
-    test_convolution_add(&module, 8, 17);
-    test_convolution_by_const_add(&module, 8, 17);
+    run::<_, Standard>(&module);
+    run_vmp::<_, Standard>(&module);
+    test_convolution_add::<_, _, Standard>(&module, 8, 17);
+    test_convolution_by_const_add::<_, _, Standard>(&module, 8, 17);
 }

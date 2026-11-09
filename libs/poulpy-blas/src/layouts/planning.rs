@@ -11,7 +11,7 @@ use poulpy_ckks::{
     },
 };
 use poulpy_core::layouts::{LWEInfos, TorusPrecision};
-use poulpy_hal::layouts::{Backend, Data, MaxBase2k, Module};
+use poulpy_hal::layouts::{Backend, Data, MaxBase2k, Module, Ring};
 
 use super::{
     BlasContextInfos, BlasDiagonalCiphertextInfos, BlasGridInfos, BlasLayout, BlasMatMulOperandInfos, BlasMatVecOperandInfos,
@@ -34,7 +34,8 @@ use super::{
 /// rotation of its linear transformations, rotations and sums takes, with the width of the input it key-switches, the
 /// identity (element 1) which poulpy-ckks applies without a key left out, and the width of the tensor key where it
 /// relinearizes. These are the very look-ups its validator makes, in sets: pairs sorted by element then width, with no
-/// repeats.
+/// repeats. A key-use query names the ring of its operands, which sets their slots and the Galois elements and which no
+/// argument fixes: `blas_matmul_key_uses::<_, Rg>(&module, ..)`.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct BlasKeyUses {
     /// `(Galois element, width)` of every rotation key looked up.
@@ -45,14 +46,14 @@ pub struct BlasKeyUses {
 
 impl BlasKeyUses {
     /// Collects the look-ups an enumerator makes, and the tensor key's width.
-    fn collect<BE: Backend>(
+    fn collect<BE: Backend, Rg: Ring>(
         module: &Module<BE>,
         tensor: Option<TorusPrecision>,
         uses: impl FnOnce(UseSink<'_>) -> Result<()>,
     ) -> Self {
         let mut rotations = Vec::new();
         let _ = uses(&mut |u| {
-            rotations.push((module.ckks_galois_element(u.rotation), u.k));
+            rotations.push((module.ckks_galois_element::<Rg>(u.rotation), u.k));
             Ok(())
         });
         rotations.retain(|&(p, _)| p != 1);
@@ -85,7 +86,7 @@ impl MapDiagonal for DiagonalShape {
     }
 }
 
-impl<D: Data, BE: Backend> MapDiagonal for PreparedDiagonal<D, BE> {
+impl<D: Data, BE: Backend, Rg: Ring> MapDiagonal for PreparedDiagonal<D, BE, Rg> {
     fn width(&self) -> TorusPrecision {
         self.k()
     }
@@ -137,18 +138,22 @@ pub fn blas_sum_output_layout(res: &impl BlasGridInfos, a: &impl BlasGridInfos) 
 }
 
 /// The keys [`crate::api::BlasMatInterOps::blas_rotate`] by `r` looks up for `a` into `res`; see [`BlasKeyUses`].
-pub fn blas_rotate_key_uses<BE: Backend>(
+pub fn blas_rotate_key_uses<BE: Backend, Rg: Ring>(
     module: &Module<BE>,
     r: i64,
     res: &impl BlasGridInfos,
     a: &impl BlasGridInfos,
 ) -> BlasKeyUses {
-    BlasKeyUses::collect(module, None, |f| rotate_uses(r, res, a, f))
+    BlasKeyUses::collect::<_, Rg>(module, None, |f| rotate_uses(r, res, a, f))
 }
 
 /// The keys [`crate::api::BlasMatInterOps::blas_sum`] looks up for `a` into `res`; see [`BlasKeyUses`].
-pub fn blas_sum_key_uses<BE: Backend>(module: &Module<BE>, res: &impl BlasGridInfos, a: &impl BlasGridInfos) -> BlasKeyUses {
-    BlasKeyUses::collect(module, None, |f| sum_uses::<BE::Ring>(res, a, f))
+pub fn blas_sum_key_uses<BE: Backend, Rg: Ring>(
+    module: &Module<BE>,
+    res: &impl BlasGridInfos,
+    a: &impl BlasGridInfos,
+) -> BlasKeyUses {
+    BlasKeyUses::collect::<_, Rg>(module, None, |f| sum_uses::<Rg>(res, a, f))
 }
 
 /// The layout [`crate::api::BlasMatIntraOps::blas_transpose`] stamps on `res` for `a`: `a`'s block through the transpose
@@ -224,14 +229,14 @@ pub fn blas_rotate_cols_output_layout(
 /// # Panics
 ///
 /// As [`blas_transpose_output_layout`], for [`validate_blas_transpose`](crate::layouts::validate_blas_transpose).
-pub fn blas_transpose_key_uses<BE: Backend>(
+pub fn blas_transpose_key_uses<BE: Backend, Rg: Ring>(
     module: &Module<BE>,
     res: &impl BlasGridInfos,
     a: &impl BlasGridInfos,
     ctx: &impl BlasContextInfos,
 ) -> BlasKeyUses {
     let maps = context_shapes(ctx);
-    BlasKeyUses::collect(module, None, |f| transpose_uses(res, a, &maps, f))
+    BlasKeyUses::collect::<_, Rg>(module, None, |f| transpose_uses(res, a, &maps, f))
 }
 
 /// The keys [`crate::api::BlasMatIntraOps::blas_rotate_rows`] by `k` looks up for `a` into `res`; see [`BlasKeyUses`].
@@ -241,7 +246,7 @@ pub fn blas_transpose_key_uses<BE: Backend>(
 /// # Panics
 ///
 /// As [`blas_transpose_output_layout`], for [`validate_blas_rotate_rows`](crate::layouts::validate_blas_rotate_rows).
-pub fn blas_rotate_rows_key_uses<BE: Backend>(
+pub fn blas_rotate_rows_key_uses<BE: Backend, Rg: Ring>(
     module: &Module<BE>,
     k: usize,
     res: &impl BlasGridInfos,
@@ -249,7 +254,7 @@ pub fn blas_rotate_rows_key_uses<BE: Backend>(
     ctx: &impl BlasContextInfos,
 ) -> BlasKeyUses {
     let maps = context_shapes(ctx);
-    BlasKeyUses::collect(module, None, |f| shift_uses(k, res, a, true, &maps, f))
+    BlasKeyUses::collect::<_, Rg>(module, None, |f| shift_uses(k, res, a, true, &maps, f))
 }
 
 /// [`blas_rotate_rows_key_uses`] for [`crate::api::BlasMatIntraOps::blas_rotate_cols`].
@@ -257,7 +262,7 @@ pub fn blas_rotate_rows_key_uses<BE: Backend>(
 /// # Panics
 ///
 /// As [`blas_transpose_output_layout`], for [`validate_blas_rotate_cols`](crate::layouts::validate_blas_rotate_cols).
-pub fn blas_rotate_cols_key_uses<BE: Backend>(
+pub fn blas_rotate_cols_key_uses<BE: Backend, Rg: Ring>(
     module: &Module<BE>,
     k: usize,
     res: &impl BlasGridInfos,
@@ -265,7 +270,7 @@ pub fn blas_rotate_cols_key_uses<BE: Backend>(
     ctx: &impl BlasContextInfos,
 ) -> BlasKeyUses {
     let maps = context_shapes(ctx);
-    BlasKeyUses::collect(module, None, |f| shift_uses(k, res, a, false, &maps, f))
+    BlasKeyUses::collect::<_, Rg>(module, None, |f| shift_uses(k, res, a, false, &maps, f))
 }
 
 /// The layout of an axis reduction along the rows (`rows`) or the columns: `a`'s block copied into `res`'s width without
@@ -309,14 +314,14 @@ pub fn blas_sum_cols_output_layout(res: &impl BlasGridInfos, a: &impl BlasGridIn
 /// # Panics
 ///
 /// As [`blas_transpose_output_layout`], for [`validate_blas_sum_rows`](crate::layouts::validate_blas_sum_rows).
-pub fn blas_sum_rows_key_uses<BE: Backend>(
+pub fn blas_sum_rows_key_uses<BE: Backend, Rg: Ring>(
     module: &Module<BE>,
     res: &impl BlasGridInfos,
     a: &impl BlasGridInfos,
     ctx: &impl BlasContextInfos,
 ) -> BlasKeyUses {
     let maps = context_shapes(ctx);
-    BlasKeyUses::collect(module, None, |f| reduction_uses(res, a, true, &maps, f))
+    BlasKeyUses::collect::<_, Rg>(module, None, |f| reduction_uses(res, a, true, &maps, f))
 }
 
 /// [`blas_sum_rows_key_uses`] for [`crate::api::BlasMatIntraOps::blas_sum_cols`].
@@ -324,23 +329,23 @@ pub fn blas_sum_rows_key_uses<BE: Backend>(
 /// # Panics
 ///
 /// As [`blas_transpose_output_layout`], for [`validate_blas_sum_cols`](crate::layouts::validate_blas_sum_cols).
-pub fn blas_sum_cols_key_uses<BE: Backend>(
+pub fn blas_sum_cols_key_uses<BE: Backend, Rg: Ring>(
     module: &Module<BE>,
     res: &impl BlasGridInfos,
     a: &impl BlasGridInfos,
     ctx: &impl BlasContextInfos,
 ) -> BlasKeyUses {
     let maps = context_shapes(ctx);
-    BlasKeyUses::collect(module, None, |f| reduction_uses(res, a, false, &maps, f))
+    BlasKeyUses::collect::<_, Rg>(module, None, |f| reduction_uses(res, a, false, &maps, f))
 }
 
 /// The largest radix in `1..=62` at which the model of `BE` holds the `products(r)` limb products that a lazy sum adds
 /// in one output limb of degree-`n` polynomials at radix `r`, 0 if none does.
-fn max_radix<BE: MaxBase2k>(n: usize, failure_bits: usize, products: impl Fn(usize) -> usize) -> usize {
+fn max_radix<BE: MaxBase2k, Rg: Ring>(n: usize, failure_bits: usize, products: impl Fn(usize) -> usize) -> usize {
     // A zero width adds no product, which the model rejects: count one.
     (1..=MAX_BASE2K)
         .rev()
-        .find(|&r| Module::<BE>::max_base2k(n, products(r).max(1), failure_bits, false) >= r)
+        .find(|&r| Module::<BE>::max_base2k::<Rg>(n, products(r).max(1), failure_bits, false) >= r)
         .unwrap_or(0)
 }
 
@@ -357,13 +362,14 @@ fn max_radix<BE: MaxBase2k>(n: usize, failure_bits: usize, products: impl Fn(usi
 /// counted at each candidate radix, whatever the radix of `a`, `b` and `ctx`. For a prepared product, pass the source
 /// grids, not a cold operand's term layout. `failure_bits` and the model are those of [`Module::max_base2k`], whose
 /// estimate is a Gaussian approximation, not a guarantee. `ctx` is a context or its layout: the query reads the shape
-/// of its maps. Name the backend: `blas_matmul_max_base2k::<BE>(..)`.
+/// of its maps. Name the backend and the ring of the grids, which select the noise model and which no argument fixes:
+/// `blas_matmul_max_base2k::<BE, Rg>(..)`.
 ///
 /// # Panics
 ///
 /// As [`Module::max_base2k`]: unless the blocks' degree is a power of two at least the backend's minimum degree and
 /// `failure_bits` is positive; and as [`blas_matmul_output_layout`] on `ctx`.
-pub fn blas_matmul_max_base2k<BE: MaxBase2k>(
+pub fn blas_matmul_max_base2k<BE: MaxBase2k, Rg: Ring>(
     a: &impl BlasGridInfos,
     b: &impl BlasGridInfos,
     ctx: &impl BlasContextInfos,
@@ -385,7 +391,7 @@ pub fn blas_matmul_max_base2k<BE: MaxBase2k>(
     .into_iter()
     .chain(term_maps(first, shifts.map(shift), b.block_layout().k()))
     .collect();
-    max_radix::<BE>(a.block_layout().n().as_usize(), failure_bits, |r| {
+    max_radix::<BE, Rg>(a.block_layout().n().as_usize(), failure_bits, |r| {
         terms.iter().fold(2 * width.div_ceil(r) * pairs, |count, &(shape, src)| {
             count.max(giant_products(shape, 1, src, r))
         })
@@ -423,7 +429,7 @@ fn giant_products((diagonals, width): (usize, usize), terms: usize, src: usize, 
 
 /// [`blas_matmul_pt_right_max_base2k`] and [`blas_matmul_pt_left_max_base2k`] over `inner` terms, the block maps being
 /// `b`'s replicated-input ones when `rep`, under the masked paths through the context's `masks`.
-fn pt_max_base2k<BE: MaxBase2k, P: MapDiagonal>(
+fn pt_max_base2k<BE: MaxBase2k, P: MapDiagonal, Rg: Ring>(
     a: &impl BlasGridInfos,
     b: &OperandMaps<LinearTransformation<P>>,
     masks: &[&LinearTransformation<P>],
@@ -448,7 +454,7 @@ fn pt_max_base2k<BE: MaxBase2k, P: MapDiagonal>(
             Some(map_shape(masks.iter().copied())),
         ),
     };
-    max_radix::<BE>(block.n().as_usize(), failure_bits, |r| {
+    max_radix::<BE, Rg>(block.n().as_usize(), failure_bits, |r| {
         let blocks = giant_products(maps, terms, src_k.as_usize(), r);
         let blocks = masked.map_or(blocks, |shape| blocks.max(giant_products(shape, 1, maps_k.as_usize(), r)));
         first.map_or(blocks, |first| blocks.max(giant_products(first, 1, a_k.as_usize(), r)))
@@ -462,13 +468,13 @@ fn pt_max_base2k<BE: MaxBase2k, P: MapDiagonal>(
 /// layout: the query reads the shape of its maps. Under `JklsStored` and `JklsGalois` it also reads the shape of
 /// `ctx`'s masks, which add one diagonal per giant step from the first map's width, and the final step, poulpy-ckks's
 /// summed product by prepared plaintexts, adds `K d` products from the masks' width in the transform domain. `ctx` is a
-/// context or its layout, read only then. Name the backend, as [`blas_matmul_max_base2k`] does.
+/// context or its layout, read only then. Name the backend and the ring, as [`blas_matmul_max_base2k`] does.
 ///
 /// # Panics
 ///
 /// As [`blas_matmul_max_base2k`] on the degree and `failure_bits`, and as [`blas_matmul_pt_right_output_layout`] on `b`
 /// and `ctx`.
-pub fn blas_matmul_pt_right_max_base2k<BE: MaxBase2k>(
+pub fn blas_matmul_pt_right_max_base2k<BE: MaxBase2k, Rg: Ring>(
     a: &impl BlasGridInfos,
     b: &impl BlasPtOperandInfos<Side = Right>,
     ctx: &impl BlasContextInfos,
@@ -476,7 +482,7 @@ pub fn blas_matmul_pt_right_max_base2k<BE: MaxBase2k>(
 ) -> usize {
     let maps = operand_shapes(b);
     with_mask_shapes(b.plan(), ctx, false, |masks| {
-        pt_max_base2k::<BE, _>(a, &maps, masks, a.cols(), false, failure_bits)
+        pt_max_base2k::<BE, _, Rg>(a, &maps, masks, a.cols(), false, failure_bits)
     })
 }
 
@@ -490,7 +496,7 @@ pub fn blas_matmul_pt_right_max_base2k<BE: MaxBase2k>(
 ///
 /// As [`blas_matmul_max_base2k`] on the degree and `failure_bits`, and as [`blas_matmul_pt_left_output_layout`] on `b`
 /// and `ctx`.
-pub fn blas_matmul_pt_left_max_base2k<BE: MaxBase2k>(
+pub fn blas_matmul_pt_left_max_base2k<BE: MaxBase2k, Rg: Ring>(
     b: &impl BlasPtOperandInfos<Side = Left>,
     a: &impl BlasGridInfos,
     ctx: &impl BlasContextInfos,
@@ -499,7 +505,7 @@ pub fn blas_matmul_pt_left_max_base2k<BE: MaxBase2k>(
     let maps = operand_shapes(b);
     let rep = left_takes_replicated(&maps, a);
     with_mask_shapes(b.plan(), ctx, true, |masks| {
-        pt_max_base2k::<BE, _>(a, &maps, masks, a.rows(), rep, failure_bits)
+        pt_max_base2k::<BE, _, Rg>(a, &maps, masks, a.rows(), rep, failure_bits)
     })
 }
 
@@ -645,14 +651,14 @@ pub fn blas_matmul_pt_left_output_layout(
 /// # Panics
 ///
 /// As [`blas_transpose_output_layout`], for [`validate_blas_matmul`](crate::layouts::validate_blas_matmul).
-pub fn blas_matmul_key_uses<BE: Backend>(
+pub fn blas_matmul_key_uses<BE: Backend, Rg: Ring>(
     module: &Module<BE>,
     a: &impl BlasGridInfos,
     b: &impl BlasGridInfos,
     ctx: &impl BlasContextInfos,
 ) -> BlasKeyUses {
     let maps = context_shapes(ctx);
-    BlasKeyUses::collect(module, Some(matmul_tensor(a, b, &maps).0), |f| matmul_uses(a, b, &maps, f))
+    BlasKeyUses::collect::<_, Rg>(module, Some(matmul_tensor(a, b, &maps).0), |f| matmul_uses(a, b, &maps, f))
 }
 
 /// The keys [`crate::api::BlasMatMulLeftOperandPreparedFactory::blas_matmul_left_operand_prepare`] looks up for `a`
@@ -663,13 +669,13 @@ pub fn blas_matmul_key_uses<BE: Backend>(
 ///
 /// As [`blas_transpose_output_layout`], for
 /// [`validate_blas_matmul_left_operand_prepare`](crate::layouts::validate_blas_matmul_left_operand_prepare).
-pub fn blas_matmul_left_operand_prepare_key_uses<BE: Backend>(
+pub fn blas_matmul_left_operand_prepare_key_uses<BE: Backend, Rg: Ring>(
     module: &Module<BE>,
     a: &impl BlasGridInfos,
     ctx: &impl BlasContextInfos,
 ) -> BlasKeyUses {
     let maps = context_shapes(ctx);
-    BlasKeyUses::collect(module, None, |f| left_uses(a, &maps, f))
+    BlasKeyUses::collect::<_, Rg>(module, None, |f| left_uses(a, &maps, f))
 }
 
 /// [`blas_matmul_left_operand_prepare_key_uses`] for
@@ -679,13 +685,13 @@ pub fn blas_matmul_left_operand_prepare_key_uses<BE: Backend>(
 ///
 /// As [`blas_transpose_output_layout`], for
 /// [`validate_blas_matmul_right_operand_prepare`](crate::layouts::validate_blas_matmul_right_operand_prepare).
-pub fn blas_matmul_right_operand_prepare_key_uses<BE: Backend>(
+pub fn blas_matmul_right_operand_prepare_key_uses<BE: Backend, Rg: Ring>(
     module: &Module<BE>,
     b: &impl BlasGridInfos,
     ctx: &impl BlasContextInfos,
 ) -> BlasKeyUses {
     let maps = context_shapes(ctx);
-    BlasKeyUses::collect(module, None, |f| right_uses(b, &maps, f))
+    BlasKeyUses::collect::<_, Rg>(module, None, |f| right_uses(b, &maps, f))
 }
 
 /// The keys [`crate::api::BlasMatMulOps::blas_matmul_prepared`] looks up for the operands `a` and `b` under `ctx`: the
@@ -696,14 +702,14 @@ pub fn blas_matmul_right_operand_prepare_key_uses<BE: Backend>(
 ///
 /// As [`blas_transpose_output_layout`], for
 /// [`validate_blas_matmul_prepared`](crate::layouts::validate_blas_matmul_prepared).
-pub fn blas_matmul_prepared_key_uses<BE: Backend>(
+pub fn blas_matmul_prepared_key_uses<BE: Backend, Rg: Ring>(
     module: &Module<BE>,
     a: &impl BlasMatMulOperandInfos,
     b: &impl BlasMatMulOperandInfos,
     ctx: &impl BlasContextInfos,
 ) -> BlasKeyUses {
     let maps = context_shapes(ctx);
-    BlasKeyUses::collect(module, Some(prepared_tensor(a, b, &maps).0), |f| {
+    BlasKeyUses::collect::<_, Rg>(module, Some(prepared_tensor(a, b, &maps).0), |f| {
         prepared_uses(a, b, &maps, f)
     })
 }
@@ -716,7 +722,7 @@ pub fn blas_matmul_prepared_key_uses<BE: Backend>(
 /// # Panics
 ///
 /// As [`blas_matmul_pt_right_output_layout`].
-pub fn blas_matmul_pt_right_key_uses<BE: Backend>(
+pub fn blas_matmul_pt_right_key_uses<BE: Backend, Rg: Ring>(
     module: &Module<BE>,
     res: &impl BlasGridInfos,
     a: &impl BlasGridInfos,
@@ -725,7 +731,7 @@ pub fn blas_matmul_pt_right_key_uses<BE: Backend>(
 ) -> BlasKeyUses {
     let maps = operand_shapes(b);
     with_mask_shapes(b.plan(), ctx, false, |masks| {
-        BlasKeyUses::collect(module, None, |f| pt_right_uses(res, a, &maps, masks, f))
+        BlasKeyUses::collect::<_, Rg>(module, None, |f| pt_right_uses(res, a, &maps, masks, f))
     })
 }
 
@@ -737,7 +743,7 @@ pub fn blas_matmul_pt_right_key_uses<BE: Backend>(
 /// # Panics
 ///
 /// As [`blas_matmul_pt_left_output_layout`].
-pub fn blas_matmul_pt_left_key_uses<BE: Backend>(
+pub fn blas_matmul_pt_left_key_uses<BE: Backend, Rg: Ring>(
     module: &Module<BE>,
     res: &impl BlasGridInfos,
     b: &impl BlasPtOperandInfos<Side = Left>,
@@ -746,7 +752,7 @@ pub fn blas_matmul_pt_left_key_uses<BE: Backend>(
 ) -> BlasKeyUses {
     let maps = operand_shapes(b);
     with_mask_shapes(b.plan(), ctx, true, |masks| {
-        BlasKeyUses::collect(module, None, |f| pt_left_uses(res, &maps, masks, a, f))
+        BlasKeyUses::collect::<_, Rg>(module, None, |f| pt_left_uses(res, &maps, masks, a, f))
     })
 }
 
@@ -776,7 +782,7 @@ pub fn blas_matvec_pt_output_layout(
 /// # Panics
 ///
 /// As [`blas_matvec_pt_output_layout`].
-pub fn blas_matvec_pt_key_uses<BE: Backend>(
+pub fn blas_matvec_pt_key_uses<BE: Backend, Rg: Ring>(
     module: &Module<BE>,
     res: &impl BlasVectorInfos,
     w: &impl BlasMatVecOperandInfos,
@@ -784,7 +790,7 @@ pub fn blas_matvec_pt_key_uses<BE: Backend>(
 ) -> BlasKeyUses {
     let layout = w.blas_matvec_operand_layout();
     let map = shape(&map_layout(&layout));
-    BlasKeyUses::collect(module, None, |f| {
+    BlasKeyUses::collect::<_, Rg>(module, None, |f| {
         matvec_pt_uses(res, std::iter::repeat_n(&map, layout.blocks()), a, f)
     })
 }
@@ -793,19 +799,19 @@ pub fn blas_matvec_pt_key_uses<BE: Backend>(
 /// [`crate::api::BlasMatVecOps::blas_matvec_pt`] of `w` by `a`, 0 if none does: each giant step adds, over the `K`
 /// input ciphertexts, `K g min(L, P)` limb products in an output limb, `g` the most diagonals a giant step of `w`'s maps
 /// groups, `L` the limbs of `a.k` and `P` those of a diagonal, counted at each candidate radix. `failure_bits` and the
-/// model are those of [`Module::max_base2k`]. Name the backend, as [`blas_matmul_max_base2k`] does.
+/// model are those of [`Module::max_base2k`]. Name the backend and the ring, as [`blas_matmul_max_base2k`] does.
 ///
 /// # Panics
 ///
 /// As [`blas_matmul_max_base2k`] on the degree and `failure_bits`, and as [`blas_matvec_pt_output_layout`] on `w`.
-pub fn blas_matvec_pt_max_base2k<BE: MaxBase2k>(
+pub fn blas_matvec_pt_max_base2k<BE: MaxBase2k, Rg: Ring>(
     w: &impl BlasMatVecOperandInfos,
     a: &impl BlasVectorInfos,
     failure_bits: usize,
 ) -> usize {
     let map = shape(&map_layout(&w.blas_matvec_operand_layout()));
     let (ct, terms) = (a.ct_layout(), w.input().count());
-    max_radix::<BE>(ct.n().as_usize(), failure_bits, |r| {
+    max_radix::<BE, Rg>(ct.n().as_usize(), failure_bits, |r| {
         giant_products(map_shape([&map]), terms, ct.k().as_usize(), r)
     })
 }
@@ -830,13 +836,13 @@ pub fn blas_grid_to_vector_output_layout(
 /// # Panics
 ///
 /// As [`blas_matvec_pt_output_layout`].
-pub fn blas_grid_to_vector_key_uses<BE: Backend>(
+pub fn blas_grid_to_vector_key_uses<BE: Backend, Rg: Ring>(
     module: &Module<BE>,
     res: &impl BlasVectorInfos,
     w: &impl BlasMatVecOperandInfos,
     a: &impl BlasGridInfos,
 ) -> BlasKeyUses {
-    blas_matvec_pt_key_uses(module, res, w, &line_of(a, w.input()))
+    blas_matvec_pt_key_uses::<_, Rg>(module, res, w, &line_of(a, w.input()))
 }
 
 /// [`blas_matvec_pt_max_base2k`] of a [`crate::api::BlasMatVecOps::blas_grid_to_vector`] of `w` by a line of `a`.
@@ -844,12 +850,12 @@ pub fn blas_grid_to_vector_key_uses<BE: Backend>(
 /// # Panics
 ///
 /// As [`blas_matvec_pt_max_base2k`].
-pub fn blas_grid_to_vector_max_base2k<BE: MaxBase2k>(
+pub fn blas_grid_to_vector_max_base2k<BE: MaxBase2k, Rg: Ring>(
     w: &impl BlasMatVecOperandInfos,
     a: &impl BlasGridInfos,
     failure_bits: usize,
 ) -> usize {
-    blas_matvec_pt_max_base2k::<BE>(w, &line_of(a, w.input()), failure_bits)
+    blas_matvec_pt_max_base2k::<BE, Rg>(w, &line_of(a, w.input()), failure_bits)
 }
 
 /// The layout [`crate::api::BlasMatVecOps::blas_vector_to_grid`] stamps on `res` for `w` and `a`: `res`'s dimensions,
@@ -874,13 +880,13 @@ pub fn blas_vector_to_grid_output_layout(
 /// # Panics
 ///
 /// As [`blas_matvec_pt_output_layout`].
-pub fn blas_vector_to_grid_key_uses<BE: Backend>(
+pub fn blas_vector_to_grid_key_uses<BE: Backend, Rg: Ring>(
     module: &Module<BE>,
     res: &impl BlasGridInfos,
     w: &impl BlasMatVecOperandInfos,
     a: &impl BlasVectorInfos,
 ) -> BlasKeyUses {
-    blas_matvec_pt_key_uses(module, &line_of(res, w.output()), w, a)
+    blas_matvec_pt_key_uses::<_, Rg>(module, &line_of(res, w.output()), w, a)
 }
 
 /// [`blas_matvec_pt_max_base2k`] of a [`crate::api::BlasMatVecOps::blas_vector_to_grid`] of `w` by `a`.
@@ -888,12 +894,12 @@ pub fn blas_vector_to_grid_key_uses<BE: Backend>(
 /// # Panics
 ///
 /// As [`blas_matvec_pt_max_base2k`].
-pub fn blas_vector_to_grid_max_base2k<BE: MaxBase2k>(
+pub fn blas_vector_to_grid_max_base2k<BE: MaxBase2k, Rg: Ring>(
     w: &impl BlasMatVecOperandInfos,
     a: &impl BlasVectorInfos,
     failure_bits: usize,
 ) -> usize {
-    blas_matvec_pt_max_base2k::<BE>(w, a, failure_bits)
+    blas_matvec_pt_max_base2k::<BE, Rg>(w, a, failure_bits)
 }
 
 /// A line of `g` of `shape` as a vector layout: the queries read only its blocks' layout.
@@ -916,7 +922,7 @@ pub fn blas_matvec_diagonal_output_layout(
 /// The keys [`crate::api::BlasMatVecOps::blas_matvec_diagonal`] looks up for `a` into `res` through `m`, by `m`'s schedule: those
 /// of its baby steps at `a`'s width, those of its giant steps at the width of the result, and the tensor key at the
 /// wider of `a`'s and the diagonals' widths. See [`BlasKeyUses`].
-pub fn blas_matvec_diagonal_key_uses<BE: Backend>(
+pub fn blas_matvec_diagonal_key_uses<BE: Backend, Rg: Ring>(
     module: &Module<BE>,
     res: &impl BlasVectorInfos,
     m: &impl BlasDiagonalCiphertextInfos,
@@ -924,59 +930,59 @@ pub fn blas_matvec_diagonal_key_uses<BE: Backend>(
 ) -> BlasKeyUses {
     let layout = m.blas_diagonal_ciphertext_layout();
     let shape = diagonal_ciphertext::shape(&layout);
-    BlasKeyUses::collect(module, Some(matvec_diagonal_tensor(&layout, a)), |f| {
+    BlasKeyUses::collect::<_, Rg>(module, Some(matvec_diagonal_tensor(&layout, a)), |f| {
         matvec_diagonal_uses(res, &shape, a, f)
     })
 }
 
 /// The keys [`crate::api::BlasMatVecOps::blas_append_row_diagonal`] looks up on `m` for `v`: the rotations of `v` by the baby
 /// steps `m`'s diagonals read, at `v`'s width. See [`BlasKeyUses`].
-pub fn blas_append_row_diagonal_key_uses<BE: Backend>(
+pub fn blas_append_row_diagonal_key_uses<BE: Backend, Rg: Ring>(
     module: &Module<BE>,
     m: &impl BlasDiagonalCiphertextInfos,
     v: &impl BlasVectorInfos,
 ) -> BlasKeyUses {
-    append_key_uses(module, AppendAxis::Row, m, v)
+    append_key_uses::<_, Rg>(module, AppendAxis::Row, m, v)
 }
 
 /// The keys [`crate::api::BlasMatVecOps::blas_append_col_diagonal`] looks up on `m` for `v`: the rotations of `v` by the
 /// opposites of `m`'s giant steps, at `v`'s width. See [`BlasKeyUses`].
-pub fn blas_append_col_diagonal_key_uses<BE: Backend>(
+pub fn blas_append_col_diagonal_key_uses<BE: Backend, Rg: Ring>(
     module: &Module<BE>,
     m: &impl BlasDiagonalCiphertextInfos,
     v: &impl BlasVectorInfos,
 ) -> BlasKeyUses {
-    append_key_uses(module, AppendAxis::Col, m, v)
+    append_key_uses::<_, Rg>(module, AppendAxis::Col, m, v)
 }
 
-fn append_key_uses<BE: Backend>(
+fn append_key_uses<BE: Backend, Rg: Ring>(
     module: &Module<BE>,
     axis: AppendAxis,
     m: &impl BlasDiagonalCiphertextInfos,
     v: &impl BlasVectorInfos,
 ) -> BlasKeyUses {
     let shape = diagonal_ciphertext::shape(&m.blas_diagonal_ciphertext_layout());
-    BlasKeyUses::collect(module, None, |f| append_uses(axis, &shape, v, f))
+    BlasKeyUses::collect::<_, Rg>(module, None, |f| append_uses(axis, &shape, v, f))
 }
 
 /// The largest `base2k`, at most 62, that [`Module::max_base2k`] allows for every lazy sum of a
 /// [`crate::api::BlasMatVecOps::blas_matvec_diagonal`] of `m` by `a`, 0 if none does: each giant step sums, before its one
 /// relinearization, the tensor products of its `g` pairs, `2 g min(L, P)` limb products in an output limb of the middle
 /// term, `g` the most diagonals a giant step groups, `L` the limbs of `a.k` and `P` those of a diagonal, counted at each
-/// candidate radix. `failure_bits` and the model are those of [`Module::max_base2k`]. Name the backend, as
+/// candidate radix. `failure_bits` and the model are those of [`Module::max_base2k`]. Name the backend and the ring, as
 /// [`blas_matmul_max_base2k`] does.
 ///
 /// # Panics
 ///
 /// As [`blas_matmul_max_base2k`] on the degree and `failure_bits`.
-pub fn blas_matvec_diagonal_max_base2k<BE: MaxBase2k>(
+pub fn blas_matvec_diagonal_max_base2k<BE: MaxBase2k, Rg: Ring>(
     m: &impl BlasDiagonalCiphertextInfos,
     a: &impl BlasVectorInfos,
     failure_bits: usize,
 ) -> usize {
     let shape = diagonal_ciphertext::shape(&m.blas_diagonal_ciphertext_layout());
     let ct = a.ct_layout();
-    max_radix::<BE>(ct.n().as_usize(), failure_bits, |r| {
+    max_radix::<BE, Rg>(ct.n().as_usize(), failure_bits, |r| {
         2 * giant_products(map_shape([&shape]), 1, ct.k().as_usize(), r)
     })
 }
@@ -985,7 +991,7 @@ pub fn blas_matvec_diagonal_max_base2k<BE: MaxBase2k>(
 mod tests {
     use poulpy_ckks::{CoeffsMeta, layouts::CKKSCiphertextAlloc};
     use poulpy_core::layouts::Base2K;
-    use poulpy_hal::layouts::{CyclotomicOrder, HostBytesBackend};
+    use poulpy_hal::layouts::{CyclotomicOrder, HostBytesBackend, Standard};
 
     use super::*;
     use crate::layouts::{
@@ -1018,7 +1024,7 @@ mod tests {
     }
 
     fn block(module: &Module<HostBytesBackend>, k: usize, log_delta: usize) -> CKKSLayout {
-        let mut block = layout_of(&module.ckks_ciphertext_alloc(19usize.into(), k.into()));
+        let mut block = layout_of(&module.ckks_ciphertext_alloc::<Standard>(19usize.into(), k.into()));
         block.meta.scale = Scale::Log(log_delta);
         block
     }
@@ -1030,7 +1036,7 @@ mod tests {
         let mut block = block(&module, 60, 20);
         block.meta.log_sparsity = 3;
         let a = Recorded(BlasLayout::new(block, 2, 1, 1), 8);
-        let ctx = module_layout(&module, BlasPlan::new(2), Base2K(19), CoeffsMeta::from_delta_budget(20, 19));
+        let ctx = module_layout::<Standard>(&module, BlasPlan::new(2), Base2K(19), CoeffsMeta::from_delta_budget(20, 19));
         for (count, label) in [(1, 3), (2, 2), (8, 0)] {
             let meta = CoeffsMeta::from_delta_budget(20, 19);
             let right = BlasPtOperandLayout::<Right>::new(BlasPlan::new(2), 128, 1, 1, count, Base2K(19), meta);
@@ -1055,10 +1061,10 @@ mod tests {
         let module = Module::<HostBytesBackend>::new(256);
         let a = Recorded(BlasLayout::new(block(&module, 90, 20), 2, 1, 1), 8);
         let meta = CoeffsMeta::from_delta_budget(20, 19);
-        let order = module.cyclotomic_order();
+        let order = module.cyclotomic_order::<Standard>();
         for algorithm in [BlasPtAlgorithm::JklsStored, BlasPtAlgorithm::JklsGalois] {
             let plan = BlasPlan::new(2).with_pt_algorithm(algorithm);
-            let ctx = module_layout(&module, plan, Base2K(19), CoeffsMeta::from_delta_budget(15, 19));
+            let ctx = module_layout::<Standard>(&module, plan, Base2K(19), CoeffsMeta::from_delta_budget(15, 19));
             let right = BlasPtOperandLayout::<Right>::new(plan, 128, 1, 1, 1, Base2K(19), meta);
             let left = BlasPtOperandLayout::<Left>::new(plan, 128, 1, 1, 1, Base2K(19), meta);
             // 90 bits through sigma (tau), the masks and the plaintexts: 90 - 20 - 15 - 20.
@@ -1075,8 +1081,8 @@ mod tests {
                 elements.dedup();
                 elements
             };
-            let right_uses = blas_matmul_pt_right_key_uses(&module, &a, &a, &right, &ctx);
-            let left_uses = blas_matmul_pt_left_key_uses(&module, &a, &left, &a, &ctx);
+            let right_uses = blas_matmul_pt_right_key_uses::<_, Standard>(&module, &a, &a, &right, &ctx);
+            let left_uses = blas_matmul_pt_left_key_uses::<_, Standard>(&module, &a, &left, &a, &ctx);
             assert_eq!(elements(&right_uses), plan.matmul_pt_right_galois_elements(order));
             assert_eq!(elements(&left_uses), plan.matmul_pt_left_galois_elements(order));
             // The first map's baby steps at 90 and giant steps at 70, the masks' at 90 - 20 - 15.
@@ -1095,7 +1101,7 @@ mod tests {
     fn masked_left_queries_panic_without_the_masks() {
         let module = Module::<HostBytesBackend>::new(256);
         let a = Recorded(BlasLayout::new(block(&module, 90, 20), 2, 1, 1), 8);
-        let ctx = module_layout(&module, BlasPlan::new(2), Base2K(19), CoeffsMeta::from_delta_budget(15, 19));
+        let ctx = module_layout::<Standard>(&module, BlasPlan::new(2), Base2K(19), CoeffsMeta::from_delta_budget(15, 19));
         let plan = BlasPlan::new(2).with_pt_algorithm(BlasPtAlgorithm::JklsGalois);
         let meta = CoeffsMeta::from_delta_budget(20, 19);
         let left = BlasPtOperandLayout::<Left>::new(plan, 128, 1, 1, 1, Base2K(19), meta);
@@ -1104,7 +1110,7 @@ mod tests {
                 blas_matmul_pt_left_output_layout(&a, &left, &a, &ctx);
             }),
             ("key uses", &|| {
-                blas_matmul_pt_left_key_uses(&module, &a, &left, &a, &ctx);
+                blas_matmul_pt_left_key_uses::<_, Standard>(&module, &a, &left, &a, &ctx);
             }),
         ];
         for (label, query) in queries {
@@ -1124,7 +1130,7 @@ mod tests {
         let module = Module::<HostBytesBackend>::new(256);
         let a = Recorded(BlasLayout::new(block(&module, 90, 20), 1, 1, 1), 32);
         let plan = |log_d| BlasPlan::new(log_d).with_pt_algorithm(BlasPtAlgorithm::JklsGalois);
-        let ctx = module_layout(&module, plan(2), Base2K(19), CoeffsMeta::from_delta_budget(15, 19));
+        let ctx = module_layout::<Standard>(&module, plan(2), Base2K(19), CoeffsMeta::from_delta_budget(15, 19));
         let meta = CoeffsMeta::from_delta_budget(20, 19);
         let right = BlasPtOperandLayout::<Right>::new(plan(1), 128, 1, 1, 1, Base2K(19), meta);
         let payload = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {

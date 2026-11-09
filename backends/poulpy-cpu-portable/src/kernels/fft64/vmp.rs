@@ -10,19 +10,19 @@ use crate::{
         VmpPMatBackendRef, ZnxView, ZnxViewMut,
     },
 };
-use poulpy_hal::execution::TaskExecutor;
+use poulpy_hal::{execution::TaskExecutor, layouts::Ring};
 
 pub fn vmp_pmat_prepare_tmp_bytes_portable(n: usize) -> usize {
     n * size_of::<i64>()
 }
 
-pub fn vmp_pmat_prepare_portable<BE>(
-    plan: &FFT64Plan<f64, BE::Ring>,
-    pmat: &mut VmpPMatBackendMut<'_, BE>,
-    mat: &MatZnxBackendRef<'_, BE>,
+pub fn vmp_pmat_prepare_portable<BE, Rg: Ring>(
+    plan: &FFT64Plan<f64, Rg>,
+    pmat: &mut VmpPMatBackendMut<'_, BE, Rg>,
+    mat: &MatZnxBackendRef<'_, BE, Rg>,
     tmp: &mut [f64],
 ) where
-    BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec + Fft64RingArith + 'static,
+    BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec + Fft64RingArith<Rg> + 'static,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
@@ -60,18 +60,18 @@ pub fn vmp_pmat_prepare_portable<BE>(
 
     let nrows: usize = mat.cols_in() * mat.rows();
     let ncols: usize = mat.cols_out() * mat.size();
-    vmp_pmat_prepare_core::<BE, BE::TaskExecutor>(plan, pmat.raw_mut(), mat.raw(), nrows, ncols, tmp);
+    vmp_pmat_prepare_core::<BE, BE::TaskExecutor, Rg>(plan, pmat.raw_mut(), mat.raw(), nrows, ncols, tmp);
 }
 
-pub(crate) fn vmp_pmat_prepare_core<REIM, E>(
-    plan: &FFT64Plan<f64, <REIM as Backend>::Ring>,
+pub(crate) fn vmp_pmat_prepare_core<REIM, E, Rg: Ring>(
+    plan: &FFT64Plan<f64, Rg>,
     pmat: &mut [f64],
     mat: &[i64],
     nrows: usize,
     ncols: usize,
     tmp: &mut [f64],
 ) where
-    REIM: Backend + ReimArith + Reim4BlkMatVec + Fft64RingArith,
+    REIM: Backend + ReimArith + Reim4BlkMatVec + Fft64RingArith<Rg>,
     E: TaskExecutor,
 {
     let m = plan.fft().m();
@@ -110,9 +110,9 @@ pub(crate) fn vmp_pmat_prepare_core<REIM, E>(
 
 /// Copies rows `first_row + i * row_step` of `a`, truncated to `res.size()`
 /// limbs, into rows `i` of `res`.
-pub fn vmp_extract_selected_rows_portable<BE>(
-    res: &mut VmpPMatBackendMut<'_, BE>,
-    a: &VmpPMatBackendRef<'_, BE>,
+pub fn vmp_extract_selected_rows_portable<BE, Rg: Ring>(
+    res: &mut VmpPMatBackendMut<'_, BE, Rg>,
+    a: &VmpPMatBackendRef<'_, BE, Rg>,
     first_row: usize,
     row_step: usize,
 ) where
@@ -144,7 +144,7 @@ pub fn vmp_apply_dft_to_dft_tmp_bytes_portable(a_size: usize, prows: usize, pcol
     (16 + 8 * row_max * pcols_in) * size_of::<f64>()
 }
 
-pub fn vmp_zero_portable<BE>(res: &mut VmpPMatBackendMut<'_, BE>)
+pub fn vmp_zero_portable<BE, Rg: Ring>(res: &mut VmpPMatBackendMut<'_, BE, Rg>)
 where
     BE: Backend<DftWord = f64, ZnxWord = i64>,
     for<'x> BE::BufMut<'x>: HostDataMut,
@@ -153,67 +153,67 @@ where
 }
 
 #[inline(always)]
-pub fn vmp_apply_dft_to_dft_portable<BE>(
-    res: &mut VecZnxDftBackendMut<'_, BE>,
-    a: &VecZnxDftBackendRef<'_, BE>,
-    pmat: &VmpPMatBackendRef<'_, BE>,
+pub fn vmp_apply_dft_to_dft_portable<BE, Rg: Ring>(
+    res: &mut VecZnxDftBackendMut<'_, BE, Rg>,
+    a: &VecZnxDftBackendRef<'_, BE, Rg>,
+    pmat: &VmpPMatBackendRef<'_, BE, Rg>,
     limb_offset: usize,
     tmp_bytes: &mut [f64],
 ) where
-    BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec + Fft64RingArith,
+    BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec + Fft64RingArith<Rg>,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
-    vmp_apply_dft_to_dft_with_kernel_portable::<BE, BE, BE::TaskExecutor>(res, a, pmat, limb_offset, tmp_bytes);
+    vmp_apply_dft_to_dft_with_kernel_portable::<BE, BE, BE::TaskExecutor, Rg>(res, a, pmat, limb_offset, tmp_bytes);
 }
 
 #[inline(always)]
-pub fn vmp_apply_dft_to_dft_with_kernel_portable<BE, KERNEL, E>(
-    res: &mut VecZnxDftBackendMut<'_, BE>,
-    a: &VecZnxDftBackendRef<'_, BE>,
-    pmat: &VmpPMatBackendRef<'_, BE>,
+pub fn vmp_apply_dft_to_dft_with_kernel_portable<BE, KERNEL, E, Rg: Ring>(
+    res: &mut VecZnxDftBackendMut<'_, BE, Rg>,
+    a: &VecZnxDftBackendRef<'_, BE, Rg>,
+    pmat: &VmpPMatBackendRef<'_, BE, Rg>,
     limb_offset: usize,
     tmp_bytes: &mut [f64],
 ) where
     BE: Backend<DftWord = f64, ZnxWord = i64>,
-    KERNEL: ReimArith + Reim4BlkMatVec + Fft64RingArith,
+    KERNEL: ReimArith + Reim4BlkMatVec + Fft64RingArith<Rg>,
     E: TaskExecutor,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
-    vmp_apply_dft_to_dft_dispatch::<true, BE, KERNEL, E>(res, a, pmat, limb_offset, tmp_bytes);
+    vmp_apply_dft_to_dft_dispatch::<true, BE, KERNEL, E, Rg>(res, a, pmat, limb_offset, tmp_bytes);
 }
 
 /// `res += a * pmat`, accumulated block by block as the products are computed.
 ///
 /// Takes the scratch of [`vmp_apply_dft_to_dft_with_kernel_portable`].
 #[inline(always)]
-pub fn vmp_apply_dft_to_dft_add_with_kernel_portable<BE, KERNEL, E>(
-    res: &mut VecZnxDftBackendMut<'_, BE>,
-    a: &VecZnxDftBackendRef<'_, BE>,
-    pmat: &VmpPMatBackendRef<'_, BE>,
+pub fn vmp_apply_dft_to_dft_add_with_kernel_portable<BE, KERNEL, E, Rg: Ring>(
+    res: &mut VecZnxDftBackendMut<'_, BE, Rg>,
+    a: &VecZnxDftBackendRef<'_, BE, Rg>,
+    pmat: &VmpPMatBackendRef<'_, BE, Rg>,
     limb_offset: usize,
     tmp_bytes: &mut [f64],
 ) where
     BE: Backend<DftWord = f64, ZnxWord = i64>,
-    KERNEL: ReimArith + Reim4BlkMatVec + Fft64RingArith,
+    KERNEL: ReimArith + Reim4BlkMatVec + Fft64RingArith<Rg>,
     E: TaskExecutor,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
-    vmp_apply_dft_to_dft_dispatch::<false, BE, KERNEL, E>(res, a, pmat, limb_offset, tmp_bytes);
+    vmp_apply_dft_to_dft_dispatch::<false, BE, KERNEL, E, Rg>(res, a, pmat, limb_offset, tmp_bytes);
 }
 
 #[inline(always)]
-fn vmp_apply_dft_to_dft_dispatch<const OVERWRITE: bool, BE, KERNEL, E>(
-    res: &mut VecZnxDftBackendMut<'_, BE>,
-    a: &VecZnxDftBackendRef<'_, BE>,
-    pmat: &VmpPMatBackendRef<'_, BE>,
+fn vmp_apply_dft_to_dft_dispatch<const OVERWRITE: bool, BE, KERNEL, E, Rg: Ring>(
+    res: &mut VecZnxDftBackendMut<'_, BE, Rg>,
+    a: &VecZnxDftBackendRef<'_, BE, Rg>,
+    pmat: &VmpPMatBackendRef<'_, BE, Rg>,
     limb_offset: usize,
     tmp_bytes: &mut [f64],
 ) where
     BE: Backend<DftWord = f64, ZnxWord = i64>,
-    KERNEL: ReimArith + Reim4BlkMatVec + Fft64RingArith,
+    KERNEL: ReimArith + Reim4BlkMatVec + Fft64RingArith<Rg>,
     E: TaskExecutor,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
@@ -237,9 +237,9 @@ fn vmp_apply_dft_to_dft_dispatch<const OVERWRITE: bool, BE, KERNEL, E>(
     // the runtime expression `limb_offset * pmat.cols_out()`. Blind rotation
     // always calls this with `limb_offset == 0`.
     if limb_offset == 0 {
-        vmp_apply_dft_to_dft_core::<OVERWRITE, KERNEL, E>(n, res_raw, a_raw, pmat_raw, 0, nrows, ncols, tmp_bytes)
+        vmp_apply_dft_to_dft_core::<OVERWRITE, KERNEL, E, Rg>(n, res_raw, a_raw, pmat_raw, 0, nrows, ncols, tmp_bytes)
     } else {
-        vmp_apply_dft_to_dft_core::<OVERWRITE, KERNEL, E>(
+        vmp_apply_dft_to_dft_core::<OVERWRITE, KERNEL, E, Rg>(
             n,
             res_raw,
             a_raw,
@@ -254,7 +254,7 @@ fn vmp_apply_dft_to_dft_dispatch<const OVERWRITE: bool, BE, KERNEL, E>(
 
 #[allow(clippy::too_many_arguments)]
 #[inline(always)]
-unsafe fn vmp_apply_dft_to_dft_block<const OVERWRITE: bool, REIM>(
+unsafe fn vmp_apply_dft_to_dft_block<const OVERWRITE: bool, REIM, Rg: Ring>(
     n: usize,
     m: usize,
     res_addr: usize,
@@ -269,7 +269,7 @@ unsafe fn vmp_apply_dft_to_dft_block<const OVERWRITE: bool, REIM>(
     blk_i: usize,
     tmp: &mut [f64],
 ) where
-    REIM: ReimArith + Reim4BlkMatVec + Fft64RingArith,
+    REIM: ReimArith + Reim4BlkMatVec + Fft64RingArith<Rg>,
 {
     let (mat2cols_output, extracted_blk) = tmp.split_at_mut(16);
     let mat_blk_start = &pmat[blk_i * (8 * nrows * ncols)..];
@@ -328,7 +328,7 @@ unsafe fn vmp_apply_dft_to_dft_block<const OVERWRITE: bool, REIM>(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn vmp_apply_dft_to_dft_core<const OVERWRITE: bool, REIM, E>(
+fn vmp_apply_dft_to_dft_core<const OVERWRITE: bool, REIM, E, Rg: Ring>(
     n: usize,
     res: &mut [f64],
     a: &[f64],
@@ -338,7 +338,7 @@ fn vmp_apply_dft_to_dft_core<const OVERWRITE: bool, REIM, E>(
     ncols: usize,
     tmp_bytes: &mut [f64],
 ) where
-    REIM: ReimArith + Reim4BlkMatVec + Fft64RingArith,
+    REIM: ReimArith + Reim4BlkMatVec + Fft64RingArith<Rg>,
     E: TaskExecutor,
 {
     {
@@ -381,7 +381,7 @@ fn vmp_apply_dft_to_dft_core<const OVERWRITE: bool, REIM, E>(
     let res_addr = res.as_mut_ptr() as usize;
     if E::is_parallel() && block_count > 1 {
         E::for_each_chunked(block_count, tmp_bytes, task_tmp_len, |tmp, blk_i| unsafe {
-            vmp_apply_dft_to_dft_block::<OVERWRITE, REIM>(
+            vmp_apply_dft_to_dft_block::<OVERWRITE, REIM, Rg>(
                 n,
                 m,
                 res_addr,
@@ -400,7 +400,7 @@ fn vmp_apply_dft_to_dft_core<const OVERWRITE: bool, REIM, E>(
     } else {
         for blk_i in 0..block_count {
             unsafe {
-                vmp_apply_dft_to_dft_block::<OVERWRITE, REIM>(
+                vmp_apply_dft_to_dft_block::<OVERWRITE, REIM, Rg>(
                     n,
                     m,
                     res_addr,

@@ -1,7 +1,7 @@
 use crate::layouts::IntPolyInfos;
 use std::{collections::HashMap, ops::Range};
 
-use poulpy_hal::layouts::{Backend, CnvPVecLToBackendRef, CnvPVecRToBackendRef, Module, ScratchArena, VecZnxDftBackendMut};
+use poulpy_hal::layouts::{Backend, CnvPVecLToBackendRef, CnvPVecRToBackendRef, Module, Ring, ScratchArena, VecZnxDftBackendMut};
 
 use crate::{
     api::{
@@ -21,8 +21,16 @@ use crate::{
 };
 
 macro_rules! impl_operations_delegate {
-    ($trait:ty, $impl_trait:path, $($body:item),+ $(,)?) => {
+    (free $trait:ty, $impl_trait:path, $($body:item),+ $(,)?) => {
         impl<BE> $trait for Module<BE>
+        where
+            BE: Backend + $impl_trait,
+        {
+            $($body)+
+        }
+    };
+    ($trait:ty, $impl_trait:path, $($body:item),+ $(,)?) => {
+        impl<BE, Rg: Ring> $trait for Module<BE>
         where
             BE: Backend + $impl_trait,
         {
@@ -32,129 +40,129 @@ macro_rules! impl_operations_delegate {
 }
 
 impl_operations_delegate!(
-    GLWEAdd<BE>,
-    GLWEAddImpl,
+    GLWEAdd<BE, Rg>,
+    GLWEAddImpl<Rg>,
     fn glwe_add_into<R, A, B>(&self, res: &mut R, a: &A, b: &B)
     where
-        R: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE>,
-        B: GLWEToBackendRef<BE>,
+        R: GLWEToBackendMut<BE, Rg>,
+        A: GLWEToBackendRef<BE, Rg>,
+        B: GLWEToBackendRef<BE, Rg>,
     {
         BE::glwe_add_into(self, res, a, b)
     },
     fn glwe_add_assign<R, A>(&self, res: &mut R, a: &A)
     where
-        R: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE>,
+        R: GLWEToBackendMut<BE, Rg>,
+        A: GLWEToBackendRef<BE, Rg>,
     {
         BE::glwe_add_assign(self, res, a)
     }
 );
 
 impl_operations_delegate!(
-    GLWENegate<BE>,
-    GLWENegateImpl,
+    GLWENegate<BE, Rg>,
+    GLWENegateImpl<Rg>,
     fn glwe_negate<R, A>(&self, res: &mut R, a: &A)
     where
-        R: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE>,
+        R: GLWEToBackendMut<BE, Rg>,
+        A: GLWEToBackendRef<BE, Rg>,
     {
         BE::glwe_negate(self, res, a)
     },
     fn glwe_negate_assign<R>(&self, res: &mut R)
     where
-        R: GLWEToBackendMut<BE>,
+        R: GLWEToBackendMut<BE, Rg>,
     {
         BE::glwe_negate_assign(self, res)
     }
 );
 
 impl_operations_delegate!(
-    GLWESub<BE>,
-    GLWESubImpl,
+    GLWESub<BE, Rg>,
+    GLWESubImpl<Rg>,
     fn glwe_sub<R, A, B>(&self, res: &mut R, a: &A, b: &B)
     where
-        R: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE>,
-        B: GLWEToBackendRef<BE>,
+        R: GLWEToBackendMut<BE, Rg>,
+        A: GLWEToBackendRef<BE, Rg>,
+        B: GLWEToBackendRef<BE, Rg>,
     {
         BE::glwe_sub(self, res, a, b)
     },
     fn glwe_sub_assign<R, A>(&self, res: &mut R, a: &A)
     where
-        R: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE>,
+        R: GLWEToBackendMut<BE, Rg>,
+        A: GLWEToBackendRef<BE, Rg>,
     {
         BE::glwe_sub_assign(self, res, a)
     },
     fn glwe_sub_negate_assign<R, A>(&self, res: &mut R, a: &A)
     where
-        R: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE>,
+        R: GLWEToBackendMut<BE, Rg>,
+        A: GLWEToBackendRef<BE, Rg>,
     {
         BE::glwe_sub_negate_assign(self, res, a)
     }
 );
 
 impl_operations_delegate!(
-    GLWEZero<BE>,
-    GLWEZeroImpl,
+    GLWEZero<BE, Rg>,
+    GLWEZeroImpl<Rg>,
     fn glwe_zero<R>(&self, res: &mut R)
     where
-        R: GLWEToBackendMut<BE>,
+        R: GLWEToBackendMut<BE, Rg>,
     {
         BE::glwe_zero(self, res)
     }
 );
 
 impl_operations_delegate!(
-    GLWECopy<BE>,
-    GLWECopyImpl,
+    GLWECopy<BE, Rg>,
+    GLWECopyImpl<Rg>,
     fn glwe_copy_tmp_bytes<R: GLWEInfos, A: GLWEInfos>(&self, res: &R, a: &A) -> usize {
         BE::glwe_copy_tmp_bytes(self, res, a)
     },
     fn glwe_copy<R, A>(&self, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE>,
+        R: GLWEToBackendMut<BE, Rg>,
+        A: GLWEToBackendRef<BE, Rg>,
     {
         BE::glwe_copy(self, res, a, scratch)
     }
 );
 
 impl_operations_delegate!(
-    GGLWECopy<BE>,
-    GGLWECopyImpl,
+    GGLWECopy<BE, Rg>,
+    GGLWECopyImpl<Rg>,
     fn gglwe_copy_tmp_bytes<R: GGLWEInfos, A: GGLWEInfos>(&self, res: &R, a: &A) -> usize {
         BE::gglwe_copy_tmp_bytes(self, res, a)
     },
     fn gglwe_copy<R, A>(&self, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GGLWEToBackendMut<BE> + GGLWEInfos,
-        A: GGLWEToBackendRef<BE> + GGLWEInfos,
+        R: GGLWEToBackendMut<BE, Rg> + GGLWEInfos,
+        A: GGLWEToBackendRef<BE, Rg> + GGLWEInfos,
     {
         BE::gglwe_copy(self, res, a, scratch)
     }
 );
 
 impl_operations_delegate!(
-    GGSWCopy<BE>,
-    GGSWCopyImpl,
+    GGSWCopy<BE, Rg>,
+    GGSWCopyImpl<Rg>,
     fn ggsw_copy_tmp_bytes<R: GGSWInfos, A: GGSWInfos>(&self, res: &R, a: &A) -> usize {
         BE::ggsw_copy_tmp_bytes(self, res, a)
     },
     fn ggsw_copy<R, A>(&self, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GGSWToBackendMut<BE> + GGSWInfos,
-        A: GGSWToBackendRef<BE> + GGSWInfos,
+        R: GGSWToBackendMut<BE, Rg> + GGSWInfos,
+        A: GGSWToBackendRef<BE, Rg> + GGSWInfos,
     {
         BE::ggsw_copy(self, res, a, scratch)
     }
 );
 
 impl_operations_delegate!(
-    GLWEMulConst<BE>,
-    GLWEMulConstImpl,
+    GLWEMulConst<BE, Rg>,
+    GLWEMulConstImpl<Rg>,
     fn glwe_mul_const_tmp_bytes<R, A, B>(&self, res: &R, a: &A, b: &B) -> usize
     where
         R: GLWEInfos,
@@ -172,9 +180,9 @@ impl_operations_delegate!(
         b_coeff: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
-        B: GLWEToBackendRef<BE> + GLWEInfos,
+        R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+        A: GLWEToBackendRef<BE, Rg> + GLWEInfos,
+        B: GLWEToBackendRef<BE, Rg> + GLWEInfos,
     {
         BE::glwe_mul_const(self, cnv_offset, res, a, b, b_coeff, scratch)
     },
@@ -186,16 +194,16 @@ impl_operations_delegate!(
         b_coeff: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        B: GLWEToBackendRef<BE> + GLWEInfos,
+        R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+        B: GLWEToBackendRef<BE, Rg> + GLWEInfos,
     {
         BE::glwe_mul_const_assign(self, cnv_offset, res, b, b_coeff, scratch)
     }
 );
 
 impl_operations_delegate!(
-    GLWEMulPlain<BE>,
-    GLWEMulPlainImpl,
+    GLWEMulPlain<BE, Rg>,
+    GLWEMulPlainImpl<Rg>,
     fn glwe_mul_plain_tmp_bytes<R, A, B>(&self, res: &R, a: &A, b: &B) -> usize
     where
         R: GLWEInfos,
@@ -206,24 +214,24 @@ impl_operations_delegate!(
     },
     fn glwe_mul_plain<R, A, B>(&self, cnv_offset: usize, res: &mut R, a: &A, b: &B, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
-        B: GLWEToBackendRef<BE> + IntPolyInfos + GLWEInfos,
+        R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+        A: GLWEToBackendRef<BE, Rg> + GLWEInfos,
+        B: GLWEToBackendRef<BE, Rg> + IntPolyInfos + GLWEInfos,
     {
         BE::glwe_mul_plain(self, cnv_offset, res, a, b, scratch)
     },
     fn glwe_mul_plain_assign<R, A>(&self, cnv_offset: usize, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + IntPolyInfos + GLWEInfos,
+        R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+        A: GLWEToBackendRef<BE, Rg> + IntPolyInfos + GLWEInfos,
     {
         BE::glwe_mul_plain_assign(self, cnv_offset, res, a, scratch)
     }
 );
 
 impl_operations_delegate!(
-    GLWEMulPreparedPlainSum<BE>,
-    GLWEMulPreparedPlainSumImpl,
+    GLWEMulPreparedPlainSum<BE, Rg>,
+    GLWEMulPreparedPlainSumImpl<Rg>,
     fn glwe_mul_prepared_plain_sum_tmp_bytes<R>(&self, res: &R, a_size: usize, b_size: usize) -> usize
     where
         R: GLWEInfos,
@@ -242,9 +250,9 @@ impl_operations_delegate!(
         base2k: crate::layouts::Base2K,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        AP: CnvPVecLToBackendRef<BE>,
-        BP: CnvPVecRToBackendRef<BE>,
+        R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+        AP: CnvPVecLToBackendRef<BE, Rg>,
+        BP: CnvPVecRToBackendRef<BE, Rg>,
     {
         BE::glwe_mul_prepared_plain_sum(self, cnv_offset, res, a, a_size, b, b_size, galois, base2k, scratch)
     },
@@ -266,9 +274,9 @@ impl_operations_delegate!(
         base2k: crate::layouts::Base2K,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        AP: CnvPVecLToBackendRef<BE>,
-        BP: CnvPVecRToBackendRef<BE>,
+        R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+        AP: CnvPVecLToBackendRef<BE, Rg>,
+        BP: CnvPVecRToBackendRef<BE, Rg>,
     {
         BE::glwe_mul_prepared_plain_sum_add(self, cnv_offset, res, a, a_size, b, b_size, galois, base2k, scratch)
     },
@@ -278,7 +286,7 @@ impl_operations_delegate!(
     fn glwe_mul_prepared_plain_sum_dft<AP, BP>(
         &self,
         cnv_offset: usize,
-        res: &mut VecZnxDftBackendMut<'_, BE>,
+        res: &mut VecZnxDftBackendMut<'_, BE, Rg>,
         a: &[&AP],
         a_size: usize,
         b: &[&BP],
@@ -287,8 +295,8 @@ impl_operations_delegate!(
         base2k: crate::layouts::Base2K,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        AP: CnvPVecLToBackendRef<BE>,
-        BP: CnvPVecRToBackendRef<BE>,
+        AP: CnvPVecLToBackendRef<BE, Rg>,
+        BP: CnvPVecRToBackendRef<BE, Rg>,
     {
         BE::glwe_mul_prepared_plain_sum_dft(self, cnv_offset, res, a, a_size, b, b_size, galois, base2k, scratch)
     },
@@ -298,7 +306,7 @@ impl_operations_delegate!(
     fn glwe_mul_prepared_plain_sum_dft_add<AP, BP>(
         &self,
         cnv_offset: usize,
-        res: &mut VecZnxDftBackendMut<'_, BE>,
+        res: &mut VecZnxDftBackendMut<'_, BE, Rg>,
         a: &[&AP],
         a_size: usize,
         b: &[&BP],
@@ -307,16 +315,16 @@ impl_operations_delegate!(
         base2k: crate::layouts::Base2K,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        AP: CnvPVecLToBackendRef<BE>,
-        BP: CnvPVecRToBackendRef<BE>,
+        AP: CnvPVecLToBackendRef<BE, Rg>,
+        BP: CnvPVecRToBackendRef<BE, Rg>,
     {
         BE::glwe_mul_prepared_plain_sum_dft_add(self, cnv_offset, res, a, a_size, b, b_size, galois, base2k, scratch)
     }
 );
 
 impl_operations_delegate!(
-    GLWETensoring<BE>,
-    GLWETensoringImpl,
+    GLWETensoring<BE, Rg>,
+    GLWETensoringImpl<Rg>,
     fn glwe_tensor_apply_prepared_right_tmp_bytes<R, A>(&self, res: &R, a: &A, a_size: usize, b_size: usize) -> usize
     where
         R: GLWEInfos,
@@ -333,9 +341,9 @@ impl_operations_delegate!(
         b_size: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
-        BP: CnvPVecRToBackendRef<BE>,
+        R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+        A: GLWEToBackendRef<BE, Rg> + GLWEInfos,
+        BP: CnvPVecRToBackendRef<BE, Rg>,
     {
         BE::glwe_tensor_apply_prepared_right(self, cnv_offset, res, a, b, b_size, scratch)
     },
@@ -356,24 +364,24 @@ impl_operations_delegate!(
     },
     fn glwe_tensor_apply<R, A, B>(&self, cnv_offset: usize, res: &mut R, a: &A, b: &B, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
-        B: GLWEToBackendRef<BE> + GLWEInfos,
+        R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+        A: GLWEToBackendRef<BE, Rg> + GLWEInfos,
+        B: GLWEToBackendRef<BE, Rg> + GLWEInfos,
     {
         BE::glwe_tensor_apply(self, cnv_offset, res, a, b, scratch)
     },
     fn glwe_tensor_square_apply<R, A>(&self, cnv_offset: usize, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
+        R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+        A: GLWEToBackendRef<BE, Rg> + GLWEInfos,
     {
         BE::glwe_tensor_square_apply(self, cnv_offset, res, a, scratch)
     },
     fn glwe_tensor_relinearize<R, A, H>(&self, res: &mut R, a: &A, tsk: &H, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
-        H: GetTensorKey<BE>,
+        R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+        A: GLWEToBackendRef<BE, Rg> + GLWEInfos,
+        H: GetTensorKey<BE, Rg>,
     {
         BE::glwe_tensor_relinearize(self, res, a, tsk, scratch)
     },
@@ -410,10 +418,10 @@ impl_operations_delegate!(
         tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
-        B: GLWEToBackendRef<BE> + GLWEInfos,
-        H: GetTensorKey<BE>,
+        R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+        A: GLWEToBackendRef<BE, Rg> + GLWEInfos,
+        B: GLWEToBackendRef<BE, Rg> + GLWEInfos,
+        H: GetTensorKey<BE, Rg>,
     {
         BE::glwe_mul_relinearize(self, cnv_offset, res, res_k, a, b, tsk, scratch)
     },
@@ -426,9 +434,9 @@ impl_operations_delegate!(
         tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
-        H: GetTensorKey<BE>,
+        R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+        A: GLWEToBackendRef<BE, Rg> + GLWEInfos,
+        H: GetTensorKey<BE, Rg>,
     {
         BE::glwe_mul_relinearize_assign(self, cnv_offset, res, res_k, a, tsk, scratch)
     },
@@ -441,9 +449,9 @@ impl_operations_delegate!(
         tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
-        H: GetTensorKey<BE>,
+        R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+        A: GLWEToBackendRef<BE, Rg> + GLWEInfos,
+        H: GetTensorKey<BE, Rg>,
     {
         BE::glwe_square_relinearize(self, cnv_offset, res, res_k, a, tsk, scratch)
     },
@@ -455,8 +463,8 @@ impl_operations_delegate!(
         tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        H: GetTensorKey<BE>,
+        R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+        H: GetTensorKey<BE, Rg>,
     {
         BE::glwe_square_relinearize_assign(self, cnv_offset, res, res_k, tsk, scratch)
     },
@@ -473,10 +481,10 @@ impl_operations_delegate!(
         tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
-        BP: CnvPVecRToBackendRef<BE>,
-        H: GetTensorKey<BE>,
+        R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+        A: GLWEToBackendRef<BE, Rg> + GLWEInfos,
+        BP: CnvPVecRToBackendRef<BE, Rg>,
+        H: GetTensorKey<BE, Rg>,
     {
         BE::glwe_mul_prepared_relinearize(self, cnv_offset, res, res_k, a, b, b_size, b_k, tsk, scratch)
     },
@@ -492,17 +500,17 @@ impl_operations_delegate!(
         tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        AP: CnvPVecRToBackendRef<BE>,
-        H: GetTensorKey<BE>,
+        R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+        AP: CnvPVecRToBackendRef<BE, Rg>,
+        H: GetTensorKey<BE, Rg>,
     {
         BE::glwe_mul_prepared_relinearize_assign(self, cnv_offset, res, res_k, a, a_size, a_k, tsk, scratch)
     }
 );
 
 impl_operations_delegate!(
-    GLWEMulRelinearizeSum<BE>,
-    GLWETensoringImpl,
+    GLWEMulRelinearizeSum<BE, Rg>,
+    GLWETensoringImpl<Rg>,
     fn glwe_mul_relinearize_sum_tmp_bytes<R, B>(
         &self,
         res: &R,
@@ -527,18 +535,18 @@ impl_operations_delegate!(
         tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
-        B: GLWEToBackendRef<BE> + GLWEInfos,
-        H: GetTensorKey<BE>,
+        R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+        A: GLWEToBackendRef<BE, Rg> + GLWEInfos,
+        B: GLWEToBackendRef<BE, Rg> + GLWEInfos,
+        H: GetTensorKey<BE, Rg>,
     {
         BE::glwe_mul_relinearize_sum(self, cnv_offset, res, res_k, a, b, tsk, scratch)
     }
 );
 
 impl_operations_delegate!(
-    GLWEPreparedTensoring<BE>,
-    GLWETensoringImpl,
+    GLWEPreparedTensoring<BE, Rg>,
+    GLWETensoringImpl<Rg>,
     fn glwe_mul_prepared_relinearize_sum_tmp_bytes<R, B>(
         &self,
         res: &R,
@@ -567,10 +575,10 @@ impl_operations_delegate!(
         tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        AP: CnvPVecLToBackendRef<BE> + 'a,
-        BP: CnvPVecRToBackendRef<BE> + 'a,
-        H: GetTensorKey<BE>,
+        R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+        AP: CnvPVecLToBackendRef<BE, Rg> + 'a,
+        BP: CnvPVecRToBackendRef<BE, Rg> + 'a,
+        H: GetTensorKey<BE, Rg>,
     {
         BE::glwe_mul_prepared_relinearize_sum(self, cnv_offset, res, res_k, a, a_size, a_k, b, b_size, b_k, tsk, scratch)
     },
@@ -597,16 +605,16 @@ impl_operations_delegate!(
         base2k: crate::layouts::Base2K,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        AP: CnvPVecLToBackendRef<BE>,
-        BP: CnvPVecRToBackendRef<BE>,
+        R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+        AP: CnvPVecLToBackendRef<BE, Rg>,
+        BP: CnvPVecRToBackendRef<BE, Rg>,
     {
         BE::glwe_tensor_apply_prepared(self, cnv_offset, res, a, a_size, b, b_size, base2k, scratch)
     }
 );
 
 impl_operations_delegate!(
-    GLWERotate<BE>,
+    free GLWERotate<BE>,
     GLWERotateImpl,
     fn glwe_rotate_tmp_bytes(&self) -> usize {
         BE::glwe_rotate_tmp_bytes(self)
@@ -627,7 +635,7 @@ impl_operations_delegate!(
 );
 
 impl_operations_delegate!(
-    GGSWRotate<BE>,
+    free GGSWRotate<BE>,
     GGSWRotateImpl,
     fn ggsw_rotate_tmp_bytes(&self) -> usize {
         BE::ggsw_rotate_tmp_bytes(self)
@@ -648,7 +656,7 @@ impl_operations_delegate!(
 );
 
 impl_operations_delegate!(
-    GLWEMulXpMinusOne<BE>,
+    free GLWEMulXpMinusOne<BE>,
     GLWEMulXpMinusOneImpl,
     fn glwe_mul_xp_minus_one_assign_tmp_bytes(&self, res_size: usize) -> usize {
         BE::glwe_mul_xp_minus_one_assign_tmp_bytes(self, res_size)
@@ -669,70 +677,70 @@ impl_operations_delegate!(
 );
 
 impl_operations_delegate!(
-    GLWEShift<BE>,
-    GLWEShiftImpl,
+    GLWEShift<BE, Rg>,
+    GLWEShiftImpl<Rg>,
     fn glwe_shift_tmp_bytes(&self, res_size: usize) -> usize {
         BE::glwe_shift_tmp_bytes(self, res_size)
     },
     fn glwe_rsh_assign<R>(&self, k: usize, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWEToBackendMut<BE>,
+        R: GLWEToBackendMut<BE, Rg>,
     {
         BE::glwe_rsh_assign(self, k, res, scratch)
     },
     fn glwe_lsh_assign<R>(&self, res: &mut R, k: usize, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWEToBackendMut<BE>,
+        R: GLWEToBackendMut<BE, Rg>,
     {
         BE::glwe_lsh_assign(self, res, k, scratch)
     },
     fn glwe_lsh<R, A>(&self, res: &mut R, a: &A, k: usize, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE>,
+        R: GLWEToBackendMut<BE, Rg>,
+        A: GLWEToBackendRef<BE, Rg>,
     {
         BE::glwe_lsh(self, res, a, k, scratch)
     },
     fn glwe_lsh_add<R, A>(&self, res: &mut R, a: &A, k: usize, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE>,
+        R: GLWEToBackendMut<BE, Rg>,
+        A: GLWEToBackendRef<BE, Rg>,
     {
         BE::glwe_lsh_add(self, res, a, k, scratch)
     },
     fn glwe_lsh_sub<R, A>(&self, res: &mut R, a: &A, k: usize, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE>,
+        R: GLWEToBackendMut<BE, Rg>,
+        A: GLWEToBackendRef<BE, Rg>,
     {
         BE::glwe_lsh_sub(self, res, a, k, scratch)
     }
 );
 
 impl_operations_delegate!(
-    GLWENormalize<BE>,
-    GLWENormalizeImpl,
+    GLWENormalize<BE, Rg>,
+    GLWENormalizeImpl<Rg>,
     fn glwe_normalize_tmp_bytes(&self) -> usize {
         BE::glwe_normalize_tmp_bytes(self)
     },
     fn glwe_normalize<R, A>(&self, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE>,
+        R: GLWEToBackendMut<BE, Rg>,
+        A: GLWEToBackendRef<BE, Rg>,
     {
         BE::glwe_normalize(self, res, a, scratch)
     },
     fn glwe_normalize_assign<R>(&self, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWEToBackendMut<BE>,
+        R: GLWEToBackendMut<BE, Rg>,
     {
         BE::glwe_normalize_assign(self, res, scratch)
     }
 );
 
 impl_operations_delegate!(
-    GLWETrace<BE>,
-    GLWETraceImpl,
+    GLWETrace<BE, Rg>,
+    GLWETraceImpl<Rg>,
     fn glwe_trace_galois_elements(&self, n: Degree, levels: Range<usize>, reverse: bool) -> Vec<i64> {
         BE::glwe_trace_galois_elements(self, n, levels, reverse)
     },
@@ -761,9 +769,9 @@ impl_operations_delegate!(
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
-        H: GetAutomorphismKey<BE>,
+        R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+        A: GLWEToBackendRef<BE, Rg> + GLWEInfos,
+        H: GetAutomorphismKey<BE, Rg>,
     {
         BE::glwe_trace(self, res, levels, reverse, normalize, a, keys, scratch)
     },
@@ -776,15 +784,15 @@ impl_operations_delegate!(
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        H: GetAutomorphismKey<BE>,
+        R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+        H: GetAutomorphismKey<BE, Rg>,
     {
         BE::glwe_trace_assign(self, res, levels, reverse, normalize, keys, scratch)
     }
 );
 
 impl_operations_delegate!(
-    GLWEPack<BE>,
+    free GLWEPack<BE>,
     GLWEPackImpl,
     fn glwe_pack_galois_elements(&self, n: Degree) -> Vec<i64> {
         BE::glwe_pack_galois_elements(self, n)

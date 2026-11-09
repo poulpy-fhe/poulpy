@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use poulpy_core::layouts::{Diagonals, Evaluate, LWEInfos, LinearTransformationStrategy};
 use poulpy_hal::{
     api::{CnvPVecAlloc, ReimNew, ScratchAvailable, ScratchOwnedBorrow},
-    layouts::{Backend, CyclotomicOrder, HostBytesBackend, Module, ScratchArena, Standard},
+    layouts::{Backend, CyclotomicOrder, HostBytesBackend, Module, Ring, ScratchArena, Standard},
 };
 
 use crate::{
@@ -40,10 +40,10 @@ pub fn test_plaintext_slots_add_sub_mul<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextModule<BE, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -107,7 +107,7 @@ pub fn test_plaintext_slots_add_sub_mul<BE, F, E>(
     let mut odd = host_module.ckks_plaintext_alloc(3usize.into(), params.base2k.into(), prec.k());
     odd.set_meta(prec.meta());
     let odd = upload_pt(module, &odd);
-    let before = snapshot::<BE, _>(&res);
+    let before = snapshot::<BE, _, Standard>(&res);
     let err = with_scratch::<BE, _>(0, |s| module.ckks_add_pt_vec_into(&mut res, &ct, &odd, s)).unwrap_err();
     assert_ckks_error(
         "ckks_add_pt_vec_into of a plaintext of degree 3",
@@ -118,7 +118,11 @@ pub fn test_plaintext_slots_add_sub_mul<BE, F, E>(
             pt_n: 3,
         },
     );
-    assert_eq!(snapshot::<BE, _>(&res), before, "a refused ckks_add_pt_vec_into wrote res");
+    assert_eq!(
+        snapshot::<BE, _, Standard>(&res),
+        before,
+        "a refused ckks_add_pt_vec_into wrote res"
+    );
     let err = with_scratch::<BE, _>(0, |s| module.ckks_mul_pt_vec_into(&mut res, &ct, &odd, s)).unwrap_err();
     assert_ckks_error(
         "ckks_mul_pt_vec_into of a plaintext of degree 3",
@@ -129,7 +133,11 @@ pub fn test_plaintext_slots_add_sub_mul<BE, F, E>(
             pt_n: 3,
         },
     );
-    assert_eq!(snapshot::<BE, _>(&res), before, "a refused ckks_mul_pt_vec_into wrote res");
+    assert_eq!(
+        snapshot::<BE, _, Standard>(&res),
+        before,
+        "a refused ckks_mul_pt_vec_into wrote res"
+    );
     // A degree below the backend floor is an error too.
     let mut tiny = host_module.ckks_plaintext_alloc((BE::MIN_DEGREE / 2).into(), params.base2k.into(), prec.k());
     tiny.set_meta(prec.meta());
@@ -144,7 +152,11 @@ pub fn test_plaintext_slots_add_sub_mul<BE, F, E>(
             pt_n: BE::MIN_DEGREE / 2,
         },
     );
-    assert_eq!(snapshot::<BE, _>(&res), before, "a refused ckks_add_pt_vec_into wrote res");
+    assert_eq!(
+        snapshot::<BE, _, Standard>(&res),
+        before,
+        "a refused ckks_add_pt_vec_into wrote res"
+    );
 }
 
 /// A six-diagonal complex matrix on `m` slots (the shape `linear_transformation.rs` uses).
@@ -170,16 +182,16 @@ fn matrix<F: TestScalar>(m: usize) -> ComplexDiagonals<F> {
 
 /// Encodes the matrix into a transformation whose diagonals are plaintexts of its slots, through the closure shape the
 /// production encoder uses.
-fn encode_lt<BE, F>(
+fn encode_lt<BE, F, Rg: Ring>(
     module: &Module<BE>,
     params: &CKKSTestParams,
     b: &ComplexDiagonals<F>,
     strategy: LinearTransformationStrategy,
     scratch: &mut ScratchArena<'_, BE>,
-) -> LinearTransformation<CKKSPlaintextOwned<BE>>
+) -> LinearTransformation<CKKSPlaintextOwned<BE, Rg>>
 where
-    BE: TestContextBackend<Ring = Standard>,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingHostOps<BE, F>,
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE, Rg> + CKKSEncodingHostOps<BE, F, Rg>,
     F: TestScalar,
 {
     let prec = params.prec();
@@ -198,10 +210,13 @@ pub fn test_linear_transformation_diagonal_slots<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingHostOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    Module<BE>: TestContextModule<BE, Standard>
+        + CKKSEncodingHostOps<BE, F, Standard>
+        + CKKSLinearTransformationOps<BE, Standard>
+        + CnvPVecAlloc<BE>,
     F: TestScalar,
     E: ReimNew<F>,
     for<'a> ScratchArena<'a, BE>: ScratchAvailable,
@@ -221,7 +236,7 @@ pub fn test_linear_transformation_diagonal_slots<BE, F, E>(
     let first = lt.first_diagonal_plaintext().unwrap();
     assert_eq!(first.n().as_usize(), 2 * m, "diagonal is not a plaintext of the map's slots");
 
-    let order = module.cyclotomic_order();
+    let order = module.cyclotomic_order::<Standard>();
     let mut atks = HashMap::new();
     for p in lt.galois_elements(order) {
         atks.entry(p)
@@ -241,7 +256,7 @@ pub fn test_linear_transformation_diagonal_slots<BE, F, E>(
     let (want_re, want_im) = b.evaluate((a_re.as_slice(), a_im.as_slice()), strategy);
 
     // Prepared path: the slots are allocated and prepared at the diagonals' degree under the one module.
-    let mut prepared = LinearTransformationPrepared::<BE>::alloc_prepared_from_index(module, &lt.index(), first);
+    let mut prepared = LinearTransformationPrepared::<BE, Standard>::alloc_prepared_from_index(module, &lt.index(), first);
     assert_eq!(
         prepared.first_diagonal_plaintext().unwrap().n().as_usize(),
         2 * m,
@@ -294,15 +309,15 @@ pub fn test_linear_transformation_diagonal_slots<BE, F, E>(
 /// for one of every slot.
 pub fn test_diagonal_encoder_slots<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, _host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F>,
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE, Standard> + CKKSEncodingOps<BE, F, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
 {
     let mut scratch = alloc_scratch(&params, module);
     let strategy = LinearTransformationStrategy::Bsgs { giant_step: 2 };
     for (slots, want_n) in [(test_slots(&params), params.n / 4), (params.n / 2, params.n)] {
-        let lt = crate::encoding::ckks_linear_transformation_encode_from_diagonals::<BE, F>(
+        let lt = crate::encoding::ckks_linear_transformation_encode_from_diagonals::<BE, F, Standard>(
             module,
             params.base2k.into(),
             params.prec().into(),

@@ -112,22 +112,27 @@ To implement your own backend (SIMD or accelerator):
 
 1. Define a backend struct and implement the `Backend` trait from `poulpy-hal`.
 2. Implement each required HAL OEP method and inherit or override its derived defaults.
-   Backends using the FFT64 defaults implement `Fft64RingArith` for their ring
-   (`fft64_ring_arith_standard!` or `fft64_ring_arith_ci!`); NTT4x30 backends
-   implement `NttDFTExecute` for their ring's tables.
+   Backends using the FFT64 defaults implement `Fft64RingArith` for each ring
+   (`fft64_ring_arith_standard!` and `fft64_ring_arith_ci!`); NTT4x30 backends
+   implement `NttDFTExecute` for the tables of each ring.
 3. Implement the core `*Impl` traits, or use family macros to select reference algorithms and derived defaults.
-4. Optionally, do the same for `poulpy-ckks` behind a backend-owned `enable-ckks` feature: the umbrella `impl_ckks_reference_full!` selects every family serving both rings (`poulpy_cpu_portable::impl_cpu_ckks_defaults!` adds the encoding), a standard-ring backend adds each standard-only family with its own `impl_<family>_reference_full!` or, for a family of derived defaults only, `impl_<family>_derived_full!`, and an overriding backend writes that family's `*Impl` and registers the others individually.
+4. Optionally, do the same for `poulpy-ckks` behind a backend-owned `enable-ckks` feature: the umbrella `impl_ckks_reference_full!` selects every family serving both rings (`poulpy_cpu_portable::impl_cpu_ckks_defaults!` adds the encoding), the backend adds each standard-only and cross-ring family (the ring maps, the fold) with its own `impl_<family>_reference_full!` or, for a family of derived defaults only, `impl_<family>_derived_full!`, and an overriding backend writes that family's `*Impl` and registers the others individually.
 
 CPU backends share their common registrations through `impl_cpu_core_defaults!`
-and `impl_cpu_ckks_defaults!` (`impl_ckks_reference_full!` and the encoding).
-Tensoring, strided digit products, encoding transforms, encapsulated ModUp and
-its first factor remain explicit per-type choices, as do the standard-only core
-families (`hal_impl_vec_znx_monomial!`, LWE conversion, packing, rotate,
-`mul_xp_minus_one`) and the standard-only CKKS families (conjugation, `i`,
-complex polynomial evaluation, the DFT and its matrices, the conjugate-invariant
-ring maps, fold, bootstrapping, PaCo and SHIP with their coefficient encodings),
-which only standard-ring backends register, each with its own macro. Backends
-that override other families can register the individual operation macros.
+and `impl_cpu_ckks_defaults!` (`impl_ckks_reference_full!` and the encoding),
+which register both rings, or one from their ring arm beside a family of the other
+ring written by hand. Tensoring, strided digit products, encoding transforms,
+encapsulated ModUp and its first factor remain explicit per-type choices, as do the
+standard-only families (`hal_impl_vec_znx_monomial!`, LWE conversion, packing,
+rotate, `mul_xp_minus_one`, and in CKKS conjugation, `i`, complex polynomial
+evaluation, the DFT and its matrices, bootstrapping, PaCo and SHIP with their
+coefficient encodings), which take standard-ring operands only, and the families
+crossing the rings: the conjugate-invariant embedding and trace (`hal_impl_vec_znx_ci!`
+beside an empty `HalScalarZnxCIImpl`, and their core and CKKS forms), which take one
+standard and one conjugate-invariant operand, and CKKS fold, which folds ciphertexts
+of either ring into standard ones.
+Each is registered once per type with its own macro. Backends that override other
+families can register the individual operation macros.
 
 Use either a family macro or a handwritten implementation of the same core
 `*Impl` trait. Reference helpers remain callable for methods you forward, while
@@ -149,31 +154,33 @@ For questions or guidance, feel free to open an issue or discussion in the repos
 
 ## Conjugate invariant rings
 
-`Module::<FFT64CIPortable>::new(n)` and `Module::<NTT4x30CIPortable>::new(n)` select
-an `n`-coefficient ring fixed by `X -> X^-1` inside `Z[X]/(X^(2n)+1)`.
-The coefficient basis is `1, X^j + X^-j` for `1 <= j < n`, and the ambient
-cyclotomic order is `4n`. They alias `FFT64Portable<ConjugateInvariant>` and
-`NTT4x30Portable<ConjugateInvariant>`; the ring parameter defaults to the standard ring.
-The accelerated CPU and Rayon backends take the same parameter, with CI aliases
-such as `FFT64CIAvx512`, `NTT4x30CIAvx` and `NTT3x42CIIfmaRayon`.
+Every module serves both rings. An operand of type `VecZnx<D, W, ConjugateInvariant>`
+(and likewise for every other layout) holds an element of the `n`-coefficient ring
+fixed by `X -> X^-1` inside `Z[X]/(X^(2n)+1)`; the ring parameter defaults to
+`Standard`. The coefficient basis is `1, X^j + X^-j` for `1 <= j < n`, and the
+ambient cyclotomic order is `4n`. Calls without an operand to carry the ring take
+it as a method generic: `module.vec_znx_alloc::<ConjugateInvariant>(n, cols, size)`,
+`module.cyclotomic_order::<ConjugateInvariant>()`. The accelerated CPU and Rayon
+backends serve both rings the same way.
 NTT modules support invariant degrees up to `2^17` with the current prime sets.
 
-The ring is selected by the backend type. Standard plans leave the CI tables empty,
-and CI plans own their required tables directly. Ring-specific transforms,
-slot products and automorphisms have one implementation per ring
-(`Fft64RingArith`, `NttDFTExecute`, `ZnxAutomorphism`), whose portable bodies live in the
-`standard` and `conjugate_invariant` submodules of `kernels::{fft64, ntt4x30, znx}`
-under the same names. The two rings have distinct
-module handles and prepared-data types; layout compatibility only connects
-implementations of the same ring.
+The ring is selected by the operand type. A handle holds the tables of both rings:
+the standard ones are built with the module, the conjugate-invariant ones on first
+use. Ring-specific transforms, slot products and automorphisms have one
+implementation per ring (`Fft64RingArith`, `NttDFTExecute`, `ZnxAutomorphism`),
+whose portable bodies live in the `standard` and `conjugate_invariant` submodules of
+`kernels::{fft64, ntt4x30, znx}` under the same names, and a backend implements each
+operation per ring: one missing for a ring fails at `cargo check`. Prepared data
+carries the ring as a type parameter, and a layout-compatibility marker between two
+backends covers the operands of both rings.
 
 Transforms, polynomial products, and automorphisms use this basis. Lower-degree
 operands embed through `X -> X^(N/n)`. Arbitrary monomial multiplication is
-not closed in this ring, so CI backends do not implement rotation, `X^p - 1`,
-packing, or LWE conversion. The GLWE trace runs on both rings: the conjugate-invariant
+not closed in this ring, so rotation, `X^p - 1`, packing and LWE conversion take
+standard-ring operands only. The GLWE trace runs on both rings: the conjugate-invariant
 ring, fixed by the conjugation, starts it at the rotation by one slot.
-Standard modules embed CI operands of degree `n` into the standard ring of degree
-`2n` and map them back by the relative trace (`vec_znx_ci_embed`, `vec_znx_ci_trace`); CKKS combines
+A module embeds conjugate-invariant operands of degree `n` into the standard ring
+of degree `2n` and maps them back by the relative trace (`vec_znx_ci_embed`, `vec_znx_ci_trace`); CKKS combines
 these with key switching.
 
 ## Binary-FHE integration

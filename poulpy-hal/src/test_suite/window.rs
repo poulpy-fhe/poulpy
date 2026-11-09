@@ -13,9 +13,9 @@ use crate::{
         VecZnxRshSub, VecZnxRshTmpBytes, VecZnxSub, VecZnxZero,
     },
     layouts::{
-        Backend, CnvPVecLToBackendMut, DataView, HostDataRef, Module, PrepareHint, VecZnx, VecZnxBig, VecZnxBigOwned,
-        VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxOwned, VecZnxShape, ZnxView, ZnxViewMut,
-        ZnxWord,
+        Backend, CnvPVecLToBackendMut, DataView, HostDataRef, Module, PrepareHint, Ring, Standard, VecZnx, VecZnxBig,
+        VecZnxBigOwned, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxOwned, VecZnxShape, ZnxView,
+        ZnxViewMut, ZnxWord,
     },
     source::Source,
     test_suite::{TestParams, download_vec_znx, upload_vec_znx, vec_znx_backend_mut, vec_znx_backend_ref},
@@ -37,9 +37,9 @@ fn shape_of(base: VecZnxShape, w: (usize, usize, usize, usize, usize)) -> VecZnx
 }
 
 /// Dense copy of the elements a host container shows through `shape`.
-fn materialize<W: ZnxWord>(host: &VecZnx<impl HostDataRef, W>, shape: VecZnxShape) -> VecZnxOwned<W> {
-    let view = VecZnx::<&[u8], W>::from_shape(host.data().as_ref(), shape);
-    let mut out = VecZnxOwned::<W>::alloc(shape.n(), shape.cols(), shape.size());
+fn materialize<W: ZnxWord, Rg: Ring>(host: &VecZnx<impl HostDataRef, W, Rg>, shape: VecZnxShape) -> VecZnxOwned<W, Rg> {
+    let view = VecZnx::<&[u8], W, Rg>::from_shape(host.data().as_ref(), shape);
+    let mut out = VecZnxOwned::<W, Rg>::alloc(shape.n(), shape.cols(), shape.size());
     for j in 0..shape.size() {
         for i in 0..shape.cols() {
             out.at_mut(i, j).copy_from_slice(view.at(i, j));
@@ -72,9 +72,9 @@ where
     }
 }
 
-pub fn test_vec_znx_window_ops<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
+pub fn test_vec_znx_window_ops<BE: crate::test_suite::TestBackend<Rg>, Rg: Ring>(params: &TestParams, module: &Module<BE>)
 where
-    Module<BE>: VecZnxZero<BE> + VecZnxCopy<BE> + VecZnxAdd<BE> + VecZnxSub<BE> + VecZnxNegate<BE>,
+    Module<BE>: VecZnxZero<BE, Rg> + VecZnxCopy<BE, Rg> + VecZnxAdd<BE, Rg> + VecZnxSub<BE, Rg> + VecZnxNegate<BE, Rg>,
 {
     let n = params.size;
     let base2k = params.base2k;
@@ -91,96 +91,96 @@ where
             module.vec_znx_fill_uniform_source_all(base2k, size * base2k, &mut b_be, &mut source);
             let mut res_be = module.vec_znx_alloc(n, cols, size);
             module.vec_znx_fill_uniform_source_all(base2k, size * base2k, &mut res_be, &mut source);
-            let a = download_vec_znx::<BE>(&a_be);
-            let b = download_vec_znx::<BE>(&b_be);
-            let res = download_vec_znx::<BE>(&res_be);
+            let a = download_vec_znx::<BE, Rg>(&a_be);
+            let b = download_vec_znx::<BE, Rg>(&b_be);
+            let res = download_vec_znx::<BE, Rg>(&res_be);
             let res_before = res.clone();
 
             // Dense oracle on materialized windows.
             let am = materialize(&a, shape);
             let bm = materialize(&b, shape);
             let rm = materialize(&res, shape);
-            let am_be = upload_vec_znx::<BE>(&am);
-            let bm_be = upload_vec_znx::<BE>(&bm);
-            let mut rm_be = upload_vec_znx::<BE>(&rm);
+            let am_be = upload_vec_znx::<BE, Rg>(&am);
+            let bm_be = upload_vec_znx::<BE, Rg>(&bm);
+            let mut rm_be = upload_vec_znx::<BE, Rg>(&rm);
 
             // Windowed run.
 
             for col in 0..cols {
                 match op {
                     0 => {
-                        module.vec_znx_zero(&mut vec_znx_backend_mut::<BE>(&mut res_be).with_shape(shape), col);
-                        module.vec_znx_zero(&mut vec_znx_backend_mut::<BE>(&mut rm_be), col);
+                        module.vec_znx_zero(&mut vec_znx_backend_mut::<BE, Rg>(&mut res_be).with_shape(shape), col);
+                        module.vec_znx_zero(&mut vec_znx_backend_mut::<BE, Rg>(&mut rm_be), col);
                     }
                     1 => {
                         module.vec_znx_copy(
-                            &mut vec_znx_backend_mut::<BE>(&mut res_be).with_shape(shape),
+                            &mut vec_znx_backend_mut::<BE, Rg>(&mut res_be).with_shape(shape),
                             col,
-                            &vec_znx_backend_ref::<BE>(&a_be).with_shape(shape),
+                            &vec_znx_backend_ref::<BE, Rg>(&a_be).with_shape(shape),
                             col,
                         );
                         module.vec_znx_copy(
-                            &mut vec_znx_backend_mut::<BE>(&mut rm_be),
+                            &mut vec_znx_backend_mut::<BE, Rg>(&mut rm_be),
                             col,
-                            &vec_znx_backend_ref::<BE>(&am_be),
+                            &vec_znx_backend_ref::<BE, Rg>(&am_be),
                             col,
                         );
                     }
                     2 => {
                         module.vec_znx_add(
-                            &mut vec_znx_backend_mut::<BE>(&mut res_be).with_shape(shape),
+                            &mut vec_znx_backend_mut::<BE, Rg>(&mut res_be).with_shape(shape),
                             col,
-                            &vec_znx_backend_ref::<BE>(&a_be).with_shape(shape),
+                            &vec_znx_backend_ref::<BE, Rg>(&a_be).with_shape(shape),
                             col,
-                            &vec_znx_backend_ref::<BE>(&b_be).with_shape(shape),
+                            &vec_znx_backend_ref::<BE, Rg>(&b_be).with_shape(shape),
                             col,
                         );
                         module.vec_znx_add(
-                            &mut vec_znx_backend_mut::<BE>(&mut rm_be),
+                            &mut vec_znx_backend_mut::<BE, Rg>(&mut rm_be),
                             col,
-                            &vec_znx_backend_ref::<BE>(&am_be),
+                            &vec_znx_backend_ref::<BE, Rg>(&am_be),
                             col,
-                            &vec_znx_backend_ref::<BE>(&bm_be),
+                            &vec_znx_backend_ref::<BE, Rg>(&bm_be),
                             col,
                         );
                     }
                     3 => {
                         module.vec_znx_sub(
-                            &mut vec_znx_backend_mut::<BE>(&mut res_be).with_shape(shape),
+                            &mut vec_znx_backend_mut::<BE, Rg>(&mut res_be).with_shape(shape),
                             col,
-                            &vec_znx_backend_ref::<BE>(&a_be).with_shape(shape),
+                            &vec_znx_backend_ref::<BE, Rg>(&a_be).with_shape(shape),
                             col,
-                            &vec_znx_backend_ref::<BE>(&b_be).with_shape(shape),
+                            &vec_znx_backend_ref::<BE, Rg>(&b_be).with_shape(shape),
                             col,
                         );
                         module.vec_znx_sub(
-                            &mut vec_znx_backend_mut::<BE>(&mut rm_be),
+                            &mut vec_znx_backend_mut::<BE, Rg>(&mut rm_be),
                             col,
-                            &vec_znx_backend_ref::<BE>(&am_be),
+                            &vec_znx_backend_ref::<BE, Rg>(&am_be),
                             col,
-                            &vec_znx_backend_ref::<BE>(&bm_be),
+                            &vec_znx_backend_ref::<BE, Rg>(&bm_be),
                             col,
                         );
                     }
                     _ => {
                         module.vec_znx_negate(
-                            &mut vec_znx_backend_mut::<BE>(&mut res_be).with_shape(shape),
+                            &mut vec_znx_backend_mut::<BE, Rg>(&mut res_be).with_shape(shape),
                             col,
-                            &vec_znx_backend_ref::<BE>(&a_be).with_shape(shape),
+                            &vec_znx_backend_ref::<BE, Rg>(&a_be).with_shape(shape),
                             col,
                         );
                         module.vec_znx_negate(
-                            &mut vec_znx_backend_mut::<BE>(&mut rm_be),
+                            &mut vec_znx_backend_mut::<BE, Rg>(&mut rm_be),
                             col,
-                            &vec_znx_backend_ref::<BE>(&am_be),
+                            &vec_znx_backend_ref::<BE, Rg>(&am_be),
                             col,
                         );
                     }
                 }
             }
 
-            let res_after = download_vec_znx::<BE>(&res_be);
-            let rm_after = download_vec_znx::<BE>(&rm_be);
+            let res_after = download_vec_znx::<BE, Rg>(&res_be);
+            let rm_after = download_vec_znx::<BE, Rg>(&rm_be);
             assert_eq!(
                 materialize(&res_after, shape),
                 rm_after,
@@ -222,9 +222,9 @@ where
     let rotate_panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         module.vec_znx_rotate(
             1,
-            &mut vec_znx_backend_mut::<BE>(&mut res_be).with_shape(shape),
+            &mut vec_znx_backend_mut::<BE, Standard>(&mut res_be).with_shape(shape),
             0,
-            &vec_znx_backend_ref::<BE>(&a_be).with_shape(shape),
+            &vec_znx_backend_ref::<BE, Standard>(&a_be).with_shape(shape),
             0,
         );
     }))
@@ -237,9 +237,9 @@ where
     let automorphism_panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         module.vec_znx_automorphism(
             5,
-            &mut vec_znx_backend_mut::<BE>(&mut res_be).with_shape(shape),
+            &mut vec_znx_backend_mut::<BE, Standard>(&mut res_be).with_shape(shape),
             0,
-            &vec_znx_backend_ref::<BE>(&a_be).with_shape(shape),
+            &vec_znx_backend_ref::<BE, Standard>(&a_be).with_shape(shape),
             0,
         );
     }))
@@ -256,7 +256,7 @@ where
             0,
             &mut dft.to_backend_mut(),
             0,
-            &vec_znx_backend_ref::<BE>(&a_be).with_shape(shape),
+            &vec_znx_backend_ref::<BE, Standard>(&a_be).with_shape(shape),
             0,
         );
     }))
@@ -271,7 +271,7 @@ where
     let cnv_panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         module.cnv_pvec_left_prepare(
             &mut prep.to_backend_mut(),
-            &vec_znx_backend_ref::<BE>(&a_be).with_shape(shape),
+            &vec_znx_backend_ref::<BE, Standard>(&a_be).with_shape(shape),
             &mut scratch.arena(),
         );
     }))
@@ -283,11 +283,11 @@ where
 
     let add_into_ok = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         module.vec_znx_add(
-            &mut vec_znx_backend_mut::<BE>(&mut res_be).with_shape(shape),
+            &mut vec_znx_backend_mut::<BE, Standard>(&mut res_be).with_shape(shape),
             0,
-            &vec_znx_backend_ref::<BE>(&a_be).with_shape(shape),
+            &vec_znx_backend_ref::<BE, Standard>(&a_be).with_shape(shape),
             0,
-            &vec_znx_backend_ref::<BE>(&b_be).with_shape(shape),
+            &vec_znx_backend_ref::<BE, Standard>(&b_be).with_shape(shape),
             0,
         );
     }))
@@ -295,13 +295,13 @@ where
     assert!(add_into_ok, "vec_znx_add rejected a windowed view unexpectedly");
 }
 
-fn download_big<BE: Backend>(v: &VecZnxBigOwned<BE>) -> VecZnxBig<AlignedBuf, BE::BigWord, BE> {
+fn download_big<BE: Backend, Rg: Ring>(v: &VecZnxBigOwned<BE, Rg>) -> VecZnxBig<AlignedBuf, BE::BigWord, BE, Rg> {
     VecZnxBig::from_shape(AlignedBuf::from(BE::to_host_bytes(v.data())), v.shape())
 }
 
-pub fn test_vec_znx_big_window_ops<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
+pub fn test_vec_znx_big_window_ops<BE: crate::test_suite::TestBackend<Rg>, Rg: Ring>(params: &TestParams, module: &Module<BE>)
 where
-    Module<BE>: VecZnxBigFromSmall<BE> + VecZnxBigAdd<BE> + VecZnxBigSub<BE> + VecZnxBigNegate<BE>,
+    Module<BE>: VecZnxBigFromSmall<BE, Rg> + VecZnxBigAdd<BE, Rg> + VecZnxBigSub<BE, Rg> + VecZnxBigNegate<BE, Rg>,
     BE::BigWord: PartialEq + std::fmt::Debug,
 {
     let n = params.size;
@@ -316,46 +316,46 @@ where
         module.vec_znx_fill_uniform_source_all(base2k, size * base2k, &mut a_be, &mut source);
         let mut b_be = module.vec_znx_alloc(n, cols, size);
         module.vec_znx_fill_uniform_source_all(base2k, size * base2k, &mut b_be, &mut source);
-        let a = download_vec_znx::<BE>(&a_be);
-        let b = download_vec_znx::<BE>(&b_be);
+        let a = download_vec_znx::<BE, Rg>(&a_be);
+        let b = download_vec_znx::<BE, Rg>(&b_be);
         let (am, bm) = (materialize(&a, shape), materialize(&b, shape));
 
         // Windowed path: promote through windows, then add / sub / negate through windows.
-        let mut big_a = VecZnxBigOwned::<BE>::alloc(n, cols, size);
-        let mut big_b = VecZnxBigOwned::<BE>::alloc(n, cols, size);
-        let mut big_r = VecZnxBigOwned::<BE>::alloc(n, cols, size);
+        let mut big_a = VecZnxBigOwned::<BE, Rg>::alloc(n, cols, size);
+        let mut big_b = VecZnxBigOwned::<BE, Rg>::alloc(n, cols, size);
+        let mut big_r = VecZnxBigOwned::<BE, Rg>::alloc(n, cols, size);
         // Seed the whole dense buffers with unrelated content, so that a kernel
         // running past the window shows up as a changed outside-window element.
         for big in [&mut big_a, &mut big_b, &mut big_r] {
             let mut seed_be = module.vec_znx_alloc(n, cols, size);
             module.vec_znx_fill_uniform_source_all(base2k, size * base2k, &mut seed_be, &mut source);
             for col in 0..cols {
-                module.vec_znx_big_from_small(&mut big.to_backend_mut(), col, &vec_znx_backend_ref::<BE>(&seed_be), col);
+                module.vec_znx_big_from_small(&mut big.to_backend_mut(), col, &vec_znx_backend_ref::<BE, Rg>(&seed_be), col);
             }
         }
         let (seed_a, seed_b, seed_r) = (
-            download_big::<BE>(&big_a),
-            download_big::<BE>(&big_b),
-            download_big::<BE>(&big_r),
+            download_big::<BE, Rg>(&big_a),
+            download_big::<BE, Rg>(&big_b),
+            download_big::<BE, Rg>(&big_r),
         );
         // Dense oracle on the materialized windows.
-        let am_be = upload_vec_znx::<BE>(&am);
-        let bm_be = upload_vec_znx::<BE>(&bm);
-        let mut big_am = VecZnxBigOwned::<BE>::alloc(shape.n(), cols, shape.size());
-        let mut big_bm = VecZnxBigOwned::<BE>::alloc(shape.n(), cols, shape.size());
-        let mut big_rm = VecZnxBigOwned::<BE>::alloc(shape.n(), cols, shape.size());
+        let am_be = upload_vec_znx::<BE, Rg>(&am);
+        let bm_be = upload_vec_znx::<BE, Rg>(&bm);
+        let mut big_am = VecZnxBigOwned::<BE, Rg>::alloc(shape.n(), cols, shape.size());
+        let mut big_bm = VecZnxBigOwned::<BE, Rg>::alloc(shape.n(), cols, shape.size());
+        let mut big_rm = VecZnxBigOwned::<BE, Rg>::alloc(shape.n(), cols, shape.size());
 
         for col in 0..cols {
             module.vec_znx_big_from_small(
                 &mut big_a.to_backend_mut().with_shape(shape),
                 col,
-                &vec_znx_backend_ref::<BE>(&a_be).with_shape(shape),
+                &vec_znx_backend_ref::<BE, Rg>(&a_be).with_shape(shape),
                 col,
             );
             module.vec_znx_big_from_small(
                 &mut big_b.to_backend_mut().with_shape(shape),
                 col,
-                &vec_znx_backend_ref::<BE>(&b_be).with_shape(shape),
+                &vec_znx_backend_ref::<BE, Rg>(&b_be).with_shape(shape),
                 col,
             );
             module.vec_znx_big_add(
@@ -381,8 +381,8 @@ where
                 col,
             );
 
-            module.vec_znx_big_from_small(&mut big_am.to_backend_mut(), col, &vec_znx_backend_ref::<BE>(&am_be), col);
-            module.vec_znx_big_from_small(&mut big_bm.to_backend_mut(), col, &vec_znx_backend_ref::<BE>(&bm_be), col);
+            module.vec_znx_big_from_small(&mut big_am.to_backend_mut(), col, &vec_znx_backend_ref::<BE, Rg>(&am_be), col);
+            module.vec_znx_big_from_small(&mut big_bm.to_backend_mut(), col, &vec_znx_backend_ref::<BE, Rg>(&bm_be), col);
             module.vec_znx_big_add(
                 &mut big_rm.to_backend_mut(),
                 col,
@@ -403,9 +403,9 @@ where
         }
 
         let (after_a, after_b, after_r) = (
-            download_big::<BE>(&big_a),
-            download_big::<BE>(&big_b),
-            download_big::<BE>(&big_r),
+            download_big::<BE, Rg>(&big_a),
+            download_big::<BE, Rg>(&big_b),
+            download_big::<BE, Rg>(&big_r),
         );
         assert_untouched_outside(&seed_a, &after_a, shape);
         assert_untouched_outside(&seed_b, &after_b, shape);
@@ -413,8 +413,8 @@ where
 
         let hr = after_r.with_shape(shape);
         let hb = after_b.with_shape(shape);
-        let hrm = download_big::<BE>(&big_rm);
-        let hbm = download_big::<BE>(&big_bm);
+        let hrm = download_big::<BE, Rg>(&big_rm);
+        let hbm = download_big::<BE, Rg>(&big_bm);
         for j in 0..shape.size() {
             for col in 0..cols {
                 assert_eq!(hr.at(col, j), hrm.at(col, j), "big add window {w:?} col {col} limb {j}");
@@ -431,19 +431,21 @@ where
 /// `normalize`, `normalize_assign` and the shift family applied through a
 /// window equal the same operation on the materialized window and leave every
 /// element outside the window untouched.
-pub fn test_vec_znx_window_normalize_ops<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
-where
-    Module<BE>: VecZnxNormalize<BE>
-        + VecZnxNormalizeAssign<BE>
+pub fn test_vec_znx_window_normalize_ops<BE: crate::test_suite::TestBackend<Rg>, Rg: Ring>(
+    params: &TestParams,
+    module: &Module<BE>,
+) where
+    Module<BE>: VecZnxNormalize<BE, Rg>
+        + VecZnxNormalizeAssign<BE, Rg>
         + VecZnxNormalizeTmpBytes
-        + VecZnxLsh<BE>
-        + VecZnxRsh<BE>
-        + VecZnxLshAdd<BE>
-        + VecZnxRshAdd<BE>
-        + VecZnxLshSub<BE>
-        + VecZnxRshSub<BE>
-        + VecZnxLshAssign<BE>
-        + VecZnxRshAssign<BE>
+        + VecZnxLsh<BE, Rg>
+        + VecZnxRsh<BE, Rg>
+        + VecZnxLshAdd<BE, Rg>
+        + VecZnxRshAdd<BE, Rg>
+        + VecZnxLshSub<BE, Rg>
+        + VecZnxRshSub<BE, Rg>
+        + VecZnxLshAssign<BE, Rg>
+        + VecZnxRshAssign<BE, Rg>
         + VecZnxLshTmpBytes
         + VecZnxRshTmpBytes,
 {
@@ -465,14 +467,14 @@ where
                 module.vec_znx_fill_uniform_source_all(base2k, size * base2k, &mut a_be, &mut source);
                 let mut res_be = module.vec_znx_alloc(n, cols, size);
                 module.vec_znx_fill_uniform_source_all(base2k, size * base2k, &mut res_be, &mut source);
-                let a = download_vec_znx::<BE>(&a_be);
-                let res = download_vec_znx::<BE>(&res_be);
+                let a = download_vec_znx::<BE, Rg>(&a_be);
+                let res = download_vec_znx::<BE, Rg>(&res_be);
                 let res_before = res.clone();
 
                 let am = materialize(&a, shape);
                 let rm = materialize(&res, shape);
-                let am_be = upload_vec_znx::<BE>(&am);
-                let mut rm_be = upload_vec_znx::<BE>(&rm);
+                let am_be = upload_vec_znx::<BE, Rg>(&am);
+                let mut rm_be = upload_vec_znx::<BE, Rg>(&rm);
 
                 // normalize parameters derived from k: partial precision and a signed offset.
                 let res_offset = k as i64 - base2k as i64;
@@ -485,13 +487,13 @@ where
                     macro_rules! both {
                         (|$r:ident, $a:ident| $body:expr) => {{
                             {
-                                let mut $r = vec_znx_backend_mut::<BE>(&mut res_be).with_shape(shape);
-                                let $a = vec_znx_backend_ref::<BE>(&a_be).with_shape(shape);
+                                let mut $r = vec_znx_backend_mut::<BE, Rg>(&mut res_be).with_shape(shape);
+                                let $a = vec_znx_backend_ref::<BE, Rg>(&a_be).with_shape(shape);
                                 $body;
                             }
                             {
-                                let mut $r = vec_znx_backend_mut::<BE>(&mut rm_be);
-                                let $a = vec_znx_backend_ref::<BE>(&am_be);
+                                let mut $r = vec_znx_backend_mut::<BE, Rg>(&mut rm_be);
+                                let $a = vec_znx_backend_ref::<BE, Rg>(&am_be);
                                 $body;
                             }
                         }};
@@ -540,10 +542,10 @@ where
                     }
                 }
 
-                let res_after = download_vec_znx::<BE>(&res_be);
+                let res_after = download_vec_znx::<BE, Rg>(&res_be);
                 assert_eq!(
                     materialize(&res_after, shape),
-                    download_vec_znx::<BE>(&rm_be),
+                    download_vec_znx::<BE, Rg>(&rm_be),
                     "window {w:?} op {op} k {k}: windowed result differs from the dense oracle"
                 );
                 assert_untouched_outside(&res_before, &res_after, shape);
@@ -553,9 +555,11 @@ where
 }
 
 /// `vec_znx_big_normalize` through windows on both operands.
-pub fn test_vec_znx_big_window_normalize<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
-where
-    Module<BE>: VecZnxBigFromSmall<BE> + VecZnxBigNormalize<BE> + VecZnxBigNormalizeTmpBytes,
+pub fn test_vec_znx_big_window_normalize<BE: crate::test_suite::TestBackend<Rg>, Rg: Ring>(
+    params: &TestParams,
+    module: &Module<BE>,
+) where
+    Module<BE>: VecZnxBigFromSmall<BE, Rg> + VecZnxBigNormalize<BE, Rg> + VecZnxBigNormalizeTmpBytes,
 {
     let n = params.size;
     let base2k = params.base2k;
@@ -572,24 +576,24 @@ where
             module.vec_znx_fill_uniform_source_all(base2k, size * base2k, &mut a_be, &mut source);
             let mut res_be = module.vec_znx_alloc(n, cols, size);
             module.vec_znx_fill_uniform_source_all(base2k, size * base2k, &mut res_be, &mut source);
-            let a = download_vec_znx::<BE>(&a_be);
-            let res = download_vec_znx::<BE>(&res_be);
+            let a = download_vec_znx::<BE, Rg>(&a_be);
+            let res = download_vec_znx::<BE, Rg>(&res_be);
             let res_before = res.clone();
             let am = materialize(&a, shape);
             let rm = materialize(&res, shape);
 
             // Dense big operands: big_a holds the whole box, big_am the materialized window.
-            let am_be = upload_vec_znx::<BE>(&am);
-            let mut big_a = VecZnxBigOwned::<BE>::alloc(n, cols, size);
-            let mut big_am = VecZnxBigOwned::<BE>::alloc(shape.n(), cols, wsize);
+            let am_be = upload_vec_znx::<BE, Rg>(&am);
+            let mut big_a = VecZnxBigOwned::<BE, Rg>::alloc(n, cols, size);
+            let mut big_am = VecZnxBigOwned::<BE, Rg>::alloc(shape.n(), cols, wsize);
             for col in 0..cols {
-                module.vec_znx_big_from_small(&mut big_a.to_backend_mut(), col, &vec_znx_backend_ref::<BE>(&a_be), col);
-                module.vec_znx_big_from_small(&mut big_am.to_backend_mut(), col, &vec_znx_backend_ref::<BE>(&am_be), col);
+                module.vec_znx_big_from_small(&mut big_a.to_backend_mut(), col, &vec_znx_backend_ref::<BE, Rg>(&a_be), col);
+                module.vec_znx_big_from_small(&mut big_am.to_backend_mut(), col, &vec_znx_backend_ref::<BE, Rg>(&am_be), col);
             }
-            let mut rm_be = upload_vec_znx::<BE>(&rm);
+            let mut rm_be = upload_vec_znx::<BE, Rg>(&rm);
             for col in 0..cols {
                 module.vec_znx_big_normalize(
-                    &mut vec_znx_backend_mut::<BE>(&mut res_be).with_shape(shape),
+                    &mut vec_znx_backend_mut::<BE, Rg>(&mut res_be).with_shape(shape),
                     base2k,
                     res_k,
                     res_offset,
@@ -600,7 +604,7 @@ where
                     &mut scratch.arena(),
                 );
                 module.vec_znx_big_normalize(
-                    &mut vec_znx_backend_mut::<BE>(&mut rm_be),
+                    &mut vec_znx_backend_mut::<BE, Rg>(&mut rm_be),
                     base2k,
                     res_k,
                     res_offset,
@@ -611,10 +615,10 @@ where
                     &mut scratch.arena(),
                 );
             }
-            let res_after = download_vec_znx::<BE>(&res_be);
+            let res_after = download_vec_znx::<BE, Rg>(&res_be);
             assert_eq!(
                 materialize(&res_after, shape),
-                download_vec_znx::<BE>(&rm_be),
+                download_vec_znx::<BE, Rg>(&rm_be),
                 "window {w:?} offset {res_offset} k {res_k}: windowed big normalize differs from the dense oracle"
             );
             assert_untouched_outside(&res_before, &res_after, shape);

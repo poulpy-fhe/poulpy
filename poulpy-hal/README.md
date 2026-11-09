@@ -105,20 +105,20 @@ let module = Module::<FFT64Avx>::new(1 << 12);
 module.vec_znx_add(&mut res, 0, &a, 0, &b, 0);
 ```
 
-Delegate in `poulpy-hal`:
+Delegate in `poulpy-hal`, generic over the operands' ring `Rg` (`Standard` or `ConjugateInvariant`):
 
 ```rust
-impl<BE> VecZnxAdd<BE> for Module<BE>
+impl<BE, Rg: Ring> VecZnxAdd<BE, Rg> for Module<BE>
 where
-    BE: Backend<ZnxWord = i64> + HalVecZnxImpl,
+    BE: Backend<ZnxWord = i64> + HalVecZnxImpl<Rg>,
 {
     fn vec_znx_add(
         &self,
-        res: &mut VecZnxBackendMut<'_, BE>,
+        res: &mut VecZnxBackendMut<'_, BE, Rg>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE>,
+        a: &VecZnxBackendRef<'_, BE, Rg>,
         a_col: usize,
-        b: &VecZnxBackendRef<'_, BE>,
+        b: &VecZnxBackendRef<'_, BE, Rg>,
         b_col: usize,
     ) {
         BE::vec_znx_add(self, res, res_col, a, a_col, b, b_col)
@@ -126,36 +126,39 @@ where
 }
 ```
 
-Backend implementation (the CPU helper macros bind required methods to CPU kernels and leave HAL compositions inherited where appropriate):
+Backend implementation, once over both rings (the CPU helper macros bind required methods to CPU kernels for the ring they are given and leave HAL compositions inherited where appropriate):
 
 ```rust
-unsafe impl HalVecZnxImpl for FFT64Avx {
-    poulpy_cpu_portable::hal_impl_vec_znx_without_normalize!();
-    poulpy_cpu_portable::hal_impl_vec_znx_normalize!();
+unsafe impl<Rg: Ring> HalVecZnxImpl<Rg> for FFT64Avx
+where
+    Self: ZnxAutomorphism<Rg>,
+{
+    poulpy_cpu_portable::hal_impl_vec_znx_without_normalize!(Rg);
+    poulpy_cpu_portable::hal_impl_vec_znx_normalize!(Rg);
 }
 ```
 
 CPU helper in `poulpy-cpu-portable` (excerpt from `HalVecZnxDefault`):
 
 ```rust
-pub trait HalVecZnxDefault: Backend<ZnxWord = i64>
+pub trait HalVecZnxDefault<Rg: Ring = Standard>: Backend<ZnxWord = i64>
 where
     Self::OwnedBuf: HostDataMut,
 {
     fn vec_znx_add_default<'a>(
         _module: &Module<Self>,
-        res: &mut VecZnxBackendMut<'_, Self>,
+        res: &mut VecZnxBackendMut<'_, Self, Rg>,
         res_col: usize,
-        a: &VecZnxBackendRef<'a, Self>,
+        a: &VecZnxBackendRef<'a, Self, Rg>,
         a_col: usize,
-        b: &VecZnxBackendRef<'a, Self>,
+        b: &VecZnxBackendRef<'a, Self, Rg>,
         b_col: usize,
     ) where
         Self: ZnxAdd + ZnxCopy + ZnxZero,
         for<'x> Self::BufMut<'x>: HostDataMut,
         for<'x> Self::BufRef<'x>: PartialEq + Eq + Sized + Default + AsRef<[u8]> + Sync,
     {
-        vec_znx_add::<Self>(res, res_col, a, a_col, b, b_col);
+        vec_znx_add_portable::<Self, Rg>(res, res_col, a, a_col, b, b_col);
     }
 }
 ```

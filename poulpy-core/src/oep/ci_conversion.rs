@@ -1,5 +1,5 @@
 use poulpy_hal::{
-    layouts::{Backend, Data, Module, ScratchArena, Standard},
+    layouts::{ConjugateInvariant, Data, Module, ScratchArena},
     oep::HalVecZnxImpl,
     source::Source,
 };
@@ -16,7 +16,7 @@ use crate::{
 /// Backend-provided maps between conjugate-invariant GLWEs and secrets of degree `N` and
 /// standard GLWEs and secrets of degree `2N`, the degree switch between standard GLWEs of
 /// degrees `N` and `2N`, and the encryption of the switching keys between a standard secret and
-/// an embedded conjugate-invariant one, executed by a standard backend of degree at least `2N`.
+/// an embedded conjugate-invariant one, executed by a module of degree at least `2N`.
 ///
 /// The key encryptions default to [`Self::glwe_secret_ci_embed`] into their scratch followed by the
 /// selected [`EncryptionImpl::glwe_switching_key_encrypt_sk`], and the degree switch to the selected
@@ -28,13 +28,13 @@ use crate::{
 /// The key encryptions wipe the scratch their query reports before returning.
 /// The memory, layout, synchrony and aliasing rules of
 /// `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait GLWECIConversionImpl: Backend<Ring = Standard> + HalVecZnxImpl + EncryptionImpl {
+pub unsafe trait GLWECIConversionImpl: HalVecZnxImpl + EncryptionImpl {
     /// Reproduces [`glwe_ci_embed_reference`](crate::reference::ci_conversion::GLWECIConversionReference::glwe_ci_embed_reference) bit for bit;
     /// free in kernels.
     fn glwe_ci_embed<R, A>(module: &Module<Self>, res: &mut R, a: &A)
     where
         R: GLWEToBackendMut<Self> + GLWEInfos,
-        A: GLWEToBackendRef<Self> + GLWEInfos;
+        A: GLWEToBackendRef<Self, ConjugateInvariant> + GLWEInfos;
 
     /// Reproduces
     /// [`glwe_secret_ci_embed_reference`](crate::reference::ci_conversion::GLWECIConversionReference::glwe_secret_ci_embed_reference)
@@ -42,7 +42,7 @@ pub unsafe trait GLWECIConversionImpl: Backend<Ring = Standard> + HalVecZnxImpl 
     fn glwe_secret_ci_embed<R, S>(module: &Module<Self>, res: &mut R, src: &S)
     where
         R: GLWESecretToBackendMut<Self> + GetDistributionMut,
-        S: GLWESecretToBackendRef<Self>;
+        S: GLWESecretToBackendRef<Self, ConjugateInvariant>;
 
     /// Scratch bound of [`Self::glwe_ci_trace`]; may report less than the reference, never less than the body takes.
     fn glwe_ci_trace_tmp_bytes<R, A>(module: &Module<Self>, res_infos: &R, a_infos: &A) -> usize
@@ -54,7 +54,7 @@ pub unsafe trait GLWECIConversionImpl: Backend<Ring = Standard> + HalVecZnxImpl 
     /// within [`Self::glwe_ci_trace_tmp_bytes`]; free in kernels and scratch use.
     fn glwe_ci_trace<R, A>(module: &Module<Self>, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, Self>)
     where
-        R: GLWEToBackendMut<Self> + GLWEInfos,
+        R: GLWEToBackendMut<Self, ConjugateInvariant> + GLWEInfos,
         A: GLWEToBackendRef<Self> + GLWEInfos;
 
     /// Default body: `glwe_switch_degree_derived`, [`HalVecZnxImpl::vec_znx_switch_ring`] on each column.
@@ -89,7 +89,7 @@ pub unsafe trait GLWECIConversionImpl: Backend<Ring = Standard> + HalVecZnxImpl 
     ) where
         D: Data,
         GLWECIEmbedKey<D, Self::ZnxWord>: GGLWEToBackendMut<Self>,
-        S1: GLWESecretToBackendRef<Self>,
+        S1: GLWESecretToBackendRef<Self, ConjugateInvariant>,
         S2: GLWESecretToBackendRef<Self> + GetDistribution + GLWEInfos,
     {
         crate::oep::derived::ci_conversion::glwe_ci_embed_key_encrypt_sk_derived(
@@ -111,7 +111,7 @@ pub unsafe trait GLWECIConversionImpl: Backend<Ring = Standard> + HalVecZnxImpl 
     ) where
         D: Data,
         GLWECITraceKey<D, Self::ZnxWord>: GGLWEToBackendMut<Self>,
-        S1: GLWESecretToBackendRef<Self> + GetDistribution,
+        S1: GLWESecretToBackendRef<Self, ConjugateInvariant> + GetDistribution,
         S2: GLWESecretToBackendRef<Self> + GetDistribution + GLWEInfos,
     {
         crate::oep::derived::ci_conversion::glwe_ci_trace_key_encrypt_sk_derived(
@@ -128,7 +128,7 @@ macro_rules! impl_glwe_ci_conversion_reference_full {
             fn glwe_ci_embed<R, A>(module: &::poulpy_hal::layouts::Module<$be>, res: &mut R, a: &A)
             where
                 R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
-                A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
+                A: $crate::layouts::GLWEToBackendRef<$be, ::poulpy_hal::layouts::ConjugateInvariant> + $crate::layouts::GLWEInfos,
             {
                 <::poulpy_hal::layouts::Module<$be> as $crate::reference::ci_conversion::GLWECIConversionReference<$be>>::glwe_ci_embed_reference(module, res, a)
             }
@@ -136,7 +136,7 @@ macro_rules! impl_glwe_ci_conversion_reference_full {
             fn glwe_secret_ci_embed<R, S>(module: &::poulpy_hal::layouts::Module<$be>, res: &mut R, src: &S)
             where
                 R: $crate::layouts::GLWESecretToBackendMut<$be> + $crate::GetDistributionMut,
-                S: $crate::layouts::GLWESecretToBackendRef<$be>,
+                S: $crate::layouts::GLWESecretToBackendRef<$be, ::poulpy_hal::layouts::ConjugateInvariant>,
             {
                 <::poulpy_hal::layouts::Module<$be> as $crate::reference::ci_conversion::GLWECIConversionReference<$be>>::glwe_secret_ci_embed_reference(module, res, src)
             }
@@ -155,7 +155,7 @@ macro_rules! impl_glwe_ci_conversion_reference_full {
                 a: &A,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) where
-                R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
+                R: $crate::layouts::GLWEToBackendMut<$be, ::poulpy_hal::layouts::ConjugateInvariant> + $crate::layouts::GLWEInfos,
                 A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
             {
                 <::poulpy_hal::layouts::Module<$be> as $crate::reference::ci_conversion::GLWECIConversionReference<$be>>::glwe_ci_trace_reference(module, res, a, scratch)

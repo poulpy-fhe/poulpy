@@ -1,5 +1,5 @@
 use poulpy_hal::{
-    layouts::{Backend, Module, ScratchArena},
+    layouts::{Backend, Module, Ring, ScratchArena},
     source::Source,
 };
 
@@ -19,9 +19,9 @@ use crate::{
 
 macro_rules! impl_secret_delegate {
     ($trait:ty, $($body:item),+ $(,)?) => {
-        impl<BE> $trait for Module<BE>
+        impl<BE, Rg: Ring> $trait for Module<BE>
         where
-            BE: Backend + SecretImpl,
+            BE: Backend + SecretImpl<Rg>,
         {
             $($body)+
         }
@@ -29,133 +29,133 @@ macro_rules! impl_secret_delegate {
 }
 
 impl_secret_delegate!(
-    GLWESecretSampling<BE>,
+    GLWESecretSampling<BE, Rg>,
     fn glwe_secret_fill_ternary_prob<S>(&self, sk: &mut S, prob: f64, source: &mut Source)
     where
-        S: GLWESecretToBackendMut<BE> + GetDistributionMut + GLWEInfos,
+        S: GLWESecretToBackendMut<BE, Rg> + GetDistributionMut + GLWEInfos,
     {
         BE::glwe_secret_fill_ternary_prob(self, sk, prob, source)
     },
     fn glwe_secret_fill_ternary_hw<S>(&self, sk: &mut S, hw: usize, source: &mut Source)
     where
-        S: GLWESecretToBackendMut<BE> + GetDistributionMut + GLWEInfos,
+        S: GLWESecretToBackendMut<BE, Rg> + GetDistributionMut + GLWEInfos,
     {
         BE::glwe_secret_fill_ternary_hw(self, sk, hw, source)
     },
     fn glwe_secret_fill_binary_prob<S>(&self, sk: &mut S, prob: f64, source: &mut Source)
     where
-        S: GLWESecretToBackendMut<BE> + GetDistributionMut + GLWEInfos,
+        S: GLWESecretToBackendMut<BE, Rg> + GetDistributionMut + GLWEInfos,
     {
         BE::glwe_secret_fill_binary_prob(self, sk, prob, source)
     },
     fn glwe_secret_fill_binary_hw<S>(&self, sk: &mut S, hw: usize, source: &mut Source)
     where
-        S: GLWESecretToBackendMut<BE> + GetDistributionMut + GLWEInfos,
+        S: GLWESecretToBackendMut<BE, Rg> + GetDistributionMut + GLWEInfos,
     {
         BE::glwe_secret_fill_binary_hw(self, sk, hw, source)
     },
     fn glwe_secret_fill_binary_block<S>(&self, sk: &mut S, block_size: usize, source: &mut Source)
     where
-        S: GLWESecretToBackendMut<BE> + GetDistributionMut + GLWEInfos,
+        S: GLWESecretToBackendMut<BE, Rg> + GetDistributionMut + GLWEInfos,
     {
         BE::glwe_secret_fill_binary_block(self, sk, block_size, source)
     },
     fn glwe_secret_fill_zero<S>(&self, sk: &mut S)
     where
-        S: GLWESecretToBackendMut<BE> + GetDistributionMut + GLWEInfos,
+        S: GLWESecretToBackendMut<BE, Rg> + GetDistributionMut + GLWEInfos,
     {
         BE::glwe_secret_fill_zero(self, sk)
     }
 );
 
 impl_secret_delegate!(
-    LWESecretSampling<BE>,
+    LWESecretSampling<BE, Rg>,
     fn lwe_secret_fill_ternary_prob<S>(&self, sk: &mut S, prob: f64, source: &mut Source)
     where
-        S: LWESecretToBackendMut<BE> + GetDistributionMut,
+        S: LWESecretToBackendMut<BE, Rg> + GetDistributionMut,
     {
         BE::lwe_secret_fill_ternary_prob(self, sk, prob, source)
     },
     fn lwe_secret_fill_ternary_hw<S>(&self, sk: &mut S, hw: usize, source: &mut Source)
     where
-        S: LWESecretToBackendMut<BE> + GetDistributionMut,
+        S: LWESecretToBackendMut<BE, Rg> + GetDistributionMut,
     {
         BE::lwe_secret_fill_ternary_hw(self, sk, hw, source)
     },
     fn lwe_secret_fill_binary_prob<S>(&self, sk: &mut S, prob: f64, source: &mut Source)
     where
-        S: LWESecretToBackendMut<BE> + GetDistributionMut,
+        S: LWESecretToBackendMut<BE, Rg> + GetDistributionMut,
     {
         BE::lwe_secret_fill_binary_prob(self, sk, prob, source)
     },
     fn lwe_secret_fill_binary_hw<S>(&self, sk: &mut S, hw: usize, source: &mut Source)
     where
-        S: LWESecretToBackendMut<BE> + GetDistributionMut,
+        S: LWESecretToBackendMut<BE, Rg> + GetDistributionMut,
     {
         BE::lwe_secret_fill_binary_hw(self, sk, hw, source)
     },
     fn lwe_secret_fill_binary_block<S>(&self, sk: &mut S, block_size: usize, source: &mut Source)
     where
-        S: LWESecretToBackendMut<BE> + GetDistributionMut,
+        S: LWESecretToBackendMut<BE, Rg> + GetDistributionMut,
     {
         BE::lwe_secret_fill_binary_block(self, sk, block_size, source)
     },
     fn lwe_secret_fill_zero<S>(&self, sk: &mut S)
     where
-        S: LWESecretToBackendMut<BE> + GetDistributionMut,
+        S: LWESecretToBackendMut<BE, Rg> + GetDistributionMut,
     {
         BE::lwe_secret_fill_zero(self, sk)
     }
 );
 
 impl_secret_delegate!(
-    GLWESecretPreparedFactory<BE>,
+    GLWESecretPreparedFactory<BE, Rg>,
     fn glwe_secret_prepare<R, O>(&self, res: &mut R, other: &O)
     where
-        R: GLWESecretPreparedToBackendMut<BE> + GetDistributionMut,
-        O: GLWESecretToBackendRef<BE> + GetDistribution,
+        R: GLWESecretPreparedToBackendMut<BE, Rg> + GetDistributionMut,
+        O: GLWESecretToBackendRef<BE, Rg> + GetDistribution,
     {
         BE::glwe_secret_prepare(self, res, other)
     }
 );
 
 impl_secret_delegate!(
-    GLWESecretTensorPreparedFactory<BE>,
+    GLWESecretTensorPreparedFactory<BE, Rg>,
     fn glwe_secret_tensor_prepare<R, O>(&self, res: &mut R, other: &O)
     where
-        R: GLWESecretTensorPreparedToBackendMut<BE> + GetDistributionMut,
-        O: GLWESecretTensorToBackendRef<BE> + GetDistribution,
+        R: GLWESecretTensorPreparedToBackendMut<BE, Rg> + GetDistributionMut,
+        O: GLWESecretTensorToBackendRef<BE, Rg> + GetDistribution,
     {
         BE::glwe_secret_tensor_prepare(self, res, other)
     }
 );
 
 impl_secret_delegate!(
-    GLWESecretTensorFromGLWESecret<BE>,
+    GLWESecretTensorFromGLWESecret<BE, Rg>,
     fn glwe_secret_tensor_from_glwe_secret_tmp_bytes(&self, rank: Rank) -> usize {
         BE::glwe_secret_tensor_from_glwe_secret_tmp_bytes(self, rank)
     },
     fn glwe_secret_tensor_from_glwe_secret<R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWESecretTensorToBackendMut<BE> + GetDistributionMut + GLWEInfos,
-        O: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
+        R: GLWESecretTensorToBackendMut<BE, Rg> + GetDistributionMut + GLWEInfos,
+        O: GLWESecretToBackendRef<BE, Rg> + GetDistribution + GLWEInfos,
     {
         BE::glwe_secret_tensor_from_glwe_secret(self, res, other, scratch)
     }
 );
 
 impl_secret_delegate!(
-    GLWESecretFromLWESecret<BE>,
-    fn glwe_secret_from_lwe_secret<S>(&self, src: &S) -> GLWESecret<BE::OwnedBuf, BE::ZnxWord>
+    GLWESecretFromLWESecret<BE, Rg>,
+    fn glwe_secret_from_lwe_secret<S>(&self, src: &S) -> GLWESecret<BE::OwnedBuf, BE::ZnxWord, Rg>
     where
-        S: LWESecretToBackendRef<BE>,
+        S: LWESecretToBackendRef<BE, Rg>,
     {
         BE::glwe_secret_from_lwe_secret(self, src)
     }
 );
 
 impl_secret_delegate!(
-    LWESecretFromGLWESecret<BE>,
+    LWESecretFromGLWESecret<BE, Rg>,
     fn lwe_secret_from_glwe_secret_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GLWEInfos,
@@ -167,9 +167,9 @@ impl_secret_delegate!(
         src: &S,
         lwe_n: Degree,
         scratch: &mut ScratchArena<'_, BE>,
-    ) -> LWESecret<BE::OwnedBuf, BE::ZnxWord>
+    ) -> LWESecret<BE::OwnedBuf, BE::ZnxWord, Rg>
     where
-        S: GLWESecretToBackendRef<BE>,
+        S: GLWESecretToBackendRef<BE, Rg>,
     {
         BE::lwe_secret_from_glwe_secret(self, src, lwe_n, scratch)
     }

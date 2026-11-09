@@ -6,7 +6,9 @@ use poulpy_hal::{
         ModuleN, ScratchArenaTakeVecZnx, VecZnxDftApply, VecZnxGadgetDecompose, VecZnxGadgetDecomposeTmpBytes,
         VecZnxIdftNormalize, VecZnxIdftNormalizeTmpBytes,
     },
-    layouts::{Backend, ScratchArena, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxToBackendRef, vec_znx_backend_ref_from_ref},
+    layouts::{
+        Backend, Ring, ScratchArena, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxToBackendRef, vec_znx_backend_ref_from_ref,
+    },
 };
 
 use crate::layouts::{
@@ -54,13 +56,13 @@ pub fn gglwe_gadget_input_size(base2k: Base2K, k_digit: TorusPrecision, dnum: Dn
 /// that precision read only these: the digit layout rounds at the gadget
 /// precision, which can reach past `a_k`, and the body of a key switch adds
 /// the input back.
-pub fn precision_limbs<'a, BE: Backend>(
-    a: &'a VecZnxBackendRef<'_, BE>,
+pub fn precision_limbs<'a, BE: Backend, Rg: Ring>(
+    a: &'a VecZnxBackendRef<'_, BE, Rg>,
     base2k: Base2K,
     a_k: TorusPrecision,
-) -> Option<VecZnxBackendRef<'a, BE>> {
+) -> Option<VecZnxBackendRef<'a, BE, Rg>> {
     let live: usize = a_k.as_usize().div_ceil(base2k.as_usize()).min(a.size());
-    (live > 0).then(|| vec_znx_backend_ref_from_ref::<BE>(a).window_limbs(0, 1, live))
+    (live > 0).then(|| vec_znx_backend_ref_from_ref::<BE, Rg>(a).window_limbs(0, 1, live))
 }
 
 /// Scratch of [`gglwe_gadget_dft_apply`]: none for whole-limb digits.
@@ -93,11 +95,11 @@ where
 /// the digit grid with `vec_znx_gadget_decompose`, rounded at the gadget
 /// precision.
 #[allow(clippy::too_many_arguments)]
-pub fn gglwe_gadget_dft_apply<BE, M>(
+pub fn gglwe_gadget_dft_apply<BE, M, Rg: Ring>(
     module: &M,
-    res: &mut VecZnxDftBackendMut<'_, BE>,
+    res: &mut VecZnxDftBackendMut<'_, BE, Rg>,
     res_col: usize,
-    a: &VecZnxBackendRef<'_, BE>,
+    a: &VecZnxBackendRef<'_, BE, Rg>,
     a_col: usize,
     base2k: Base2K,
     k_digit: TorusPrecision,
@@ -106,7 +108,7 @@ pub fn gglwe_gadget_dft_apply<BE, M>(
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
-    M: VecZnxDftApply<BE> + VecZnxGadgetDecompose<BE>,
+    M: VecZnxDftApply<BE, Rg> + VecZnxGadgetDecompose<BE, Rg>,
 {
     if digits_aligned(base2k, k_digit) {
         module.vec_znx_dft_apply(1, 0, res, res_col, a, a_col);
@@ -119,7 +121,7 @@ pub fn gglwe_gadget_dft_apply<BE, M>(
         res.size()
     );
     // An input of precision 0 has no digit, and its operand no limb.
-    let Some(a_live) = precision_limbs::<BE>(a, base2k, a_k).filter(|_| size > 0) else {
+    let Some(a_live) = precision_limbs::<BE, Rg>(a, base2k, a_k).filter(|_| size > 0) else {
         return;
     };
     let (mut digits, mut scratch_1) = scratch.borrow().take_vec_znx_scratch(a.n(), 1, size);
@@ -254,24 +256,24 @@ pub fn normalize_input_limb_bound_with_offset(
 ///
 /// Unless the row lies within the precision, `k_offset + (row + 1) * k_digit <= k`.
 #[allow(clippy::too_many_arguments)]
-pub fn gglwe_gadget_row_plaintext<BE>(
+pub fn gglwe_gadget_row_plaintext<BE, Rg: Ring>(
     module: &poulpy_hal::layouts::Module<BE>,
-    res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, BE>,
+    res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, BE, Rg>,
     res_col: usize,
     base2k: usize,
     k: usize,
     row: usize,
     k_digit: usize,
     k_offset: usize,
-    pt: &poulpy_hal::layouts::ScalarZnxBackendRef<'_, BE>,
+    pt: &poulpy_hal::layouts::ScalarZnxBackendRef<'_, BE, Rg>,
     pt_col: usize,
     scratch: &mut poulpy_hal::layouts::ScratchArena<'_, BE>,
 ) where
-    BE: poulpy_hal::oep::HalVecZnxImpl,
+    BE: poulpy_hal::oep::HalVecZnxImpl<Rg>,
 {
     let position: usize = k_offset + (row + 1) * k_digit;
     assert!(position <= k, "gadget row {row} at bit {position} is below the precision {k}");
-    let src = poulpy_hal::layouts::scalar_znx_as_vec_znx_backend_ref_from_ref::<BE>(pt);
+    let src = poulpy_hal::layouts::scalar_znx_as_vec_znx_backend_ref_from_ref::<BE, Rg>(pt);
     BE::vec_znx_normalize(module, res, base2k, k, 1 - position as i64, res_col, &src, 1, pt_col, scratch);
 }
 
@@ -288,21 +290,21 @@ pub fn gglwe_gadget_dft_operand_size<K: GGLWEInfos>(key: &K, a_size: usize, outp
 /// `a.size().min(output_size)` limbs at radix `a_base2k`, then laid out in digits. The mask
 /// columns of `a` are unspecified afterwards. The operand of each source of
 /// [`GGLWEProductDigitsStridedImpl::gglwe_products_from_dft`](crate::oep::GGLWEProductDigitsStridedImpl::gglwe_products_from_dft).
-pub fn gglwe_gadget_dft_apply_from_dft<BE, M>(
+pub fn gglwe_gadget_dft_apply_from_dft<BE, M, Rg: Ring>(
     module: &M,
-    res: &mut VecZnxDftBackendMut<'_, BE>,
-    a: &mut VecZnxDftBackendMut<'_, BE>,
+    res: &mut VecZnxDftBackendMut<'_, BE, Rg>,
+    a: &mut VecZnxDftBackendMut<'_, BE, Rg>,
     a_base2k: usize,
-    key: &GGLWEPreparedBackendRef<'_, BE>,
+    key: &GGLWEPreparedBackendRef<'_, BE, Rg>,
     output_size: usize,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
     M: ModuleN
-        + VecZnxDftApply<BE>
-        + VecZnxIdftNormalize<BE>
+        + VecZnxDftApply<BE, Rg>
+        + VecZnxIdftNormalize<BE, Rg>
         + VecZnxIdftNormalizeTmpBytes
-        + VecZnxGadgetDecompose<BE>
+        + VecZnxGadgetDecompose<BE, Rg>
         + VecZnxGadgetDecomposeTmpBytes,
 {
     let rank = a.cols() - 1;

@@ -33,7 +33,7 @@ use std::{
 use poulpy_hal::{
     AlignedBuf,
     api::ModuleN,
-    layouts::{ConjugateInvariant, HostBytesBackend, Module, ModulePlanCache, Ring, ScratchArena, Standard},
+    layouts::{HostBytesBackend, Module, ModulePlanCache, Ring, ScratchArena},
 };
 
 use crate::{
@@ -43,16 +43,16 @@ use crate::{
     runtime::{GpuMut, GpuRef, GpuRuntime, access},
 };
 
-/// The constant plaintexts `1` of a module, one per radix.
-struct OnePlaintexts<BE: poulpy_hal::layouts::Backend>(Mutex<HashMap<usize, Arc<CKKSPlaintextOwned<BE>>>>);
+/// The constant plaintexts `1` of a module on the ring `Rg`, one per radix.
+struct OnePlaintexts<BE: poulpy_hal::layouts::Backend, Rg: Ring>(Mutex<HashMap<usize, Arc<CKKSPlaintextOwned<BE, Rg>>>>);
 
 /// The device plaintext of the constant `1.0` of the add-one and sub-one
 /// operations, [`ckks_plaintext_one`], kept by the module: only the first request
 /// for a radix uploads it.
 pub(crate) fn one_plaintext<RT, R>(
-    module: &Module<NTT4x30Gpu<RT, R>>,
+    module: &Module<NTT4x30Gpu<RT>>,
     base2k: Base2K,
-) -> CKKSResult<Arc<CKKSPlaintextOwned<NTT4x30Gpu<RT, R>>>>
+) -> CKKSResult<Arc<CKKSPlaintextOwned<NTT4x30Gpu<RT>, R>>>
 where
     RT: GpuRuntime,
     R: Ring,
@@ -63,14 +63,14 @@ where
     let _access = access::shared();
     handle(module)
         .plan_cache()
-        .with_or_create::<OnePlaintexts<NTT4x30Gpu<RT, R>>, _, _>(
+        .with_or_create::<OnePlaintexts<NTT4x30Gpu<RT>, R>, _, _>(
             || Ok(OnePlaintexts(Mutex::new(HashMap::new()))),
-            |cache: &OnePlaintexts<NTT4x30Gpu<RT, R>>| {
+            |cache: &OnePlaintexts<NTT4x30Gpu<RT>, R>| {
                 let mut cache = cache.0.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
                 if let Some(one) = cache.get(&base2k.as_usize()) {
                     return Ok(one.clone());
                 }
-                let one = Arc::new(ckks_plaintext_one(module, base2k)?);
+                let one = Arc::new(ckks_plaintext_one::<_, _, R>(module, base2k)?);
                 cache.insert(base2k.as_usize(), one.clone());
                 Ok(one)
             },
@@ -78,21 +78,21 @@ where
         .map_err(CKKSError::from)?
 }
 
-/// The host backend the staged work is typed with: host bytes, `i64` limbs, the ring of the device backend.
-type Host<R> = HostBytesBackend<R>;
+/// The host backend the staged work is typed with: host bytes, `i64` limbs.
+type Host = HostBytesBackend;
 
 /// A host copy of the storage of a device plaintext, with the plaintext's own
 /// metadata: what the portable encoder reads and writes in its place.
-struct Staged<P> {
+struct Staged<P, R: Ring> {
     pt: P,
-    host: GLWE<AlignedBuf, i64>,
+    host: GLWE<AlignedBuf, i64, R>,
 }
 
 /// A zeroed host container with the shape of the device storage `data`.
 fn host_like<RT: GpuRuntime, R: Ring, D: poulpy_hal::layouts::Data>(
-    module: &Module<NTT4x30Gpu<RT, R>>,
-    data: &GLWE<D, i64>,
-) -> GLWE<AlignedBuf, i64> {
+    module: &Module<NTT4x30Gpu<RT>>,
+    data: &GLWE<D, i64, R>,
+) -> GLWE<AlignedBuf, i64, R> {
     let shape = data.data().shape();
     assert!(shape.is_dense(), "CKKS encoding is staged from dense plaintext storage");
     let base2k = LWEInfos::base2k(data);
@@ -106,7 +106,7 @@ fn host_like<RT: GpuRuntime, R: Ring, D: poulpy_hal::layouts::Data>(
 
 macro_rules! impl_staged {
     ($reference:ty) => {
-        impl<P: LWEInfos> LWEInfos for Staged<$reference> {
+        impl<P: LWEInfos, R: Ring> LWEInfos for Staged<$reference, R> {
             fn noise(&self) -> Option<ComponentNoise> {
                 self.pt.noise()
             }
@@ -128,29 +128,29 @@ macro_rules! impl_staged {
             }
         }
 
-        impl<P: GLWEInfos> GLWEInfos for Staged<$reference> {
+        impl<P: GLWEInfos, R: Ring> GLWEInfos for Staged<$reference, R> {
             fn rank(&self) -> Rank {
                 self.pt.rank()
             }
         }
 
-        impl<P: IntPolyInfos> IntPolyInfos for Staged<$reference> {
+        impl<P: IntPolyInfos, R: Ring> IntPolyInfos for Staged<$reference, R> {
             fn encoded_k(&self) -> TorusPrecision {
                 self.pt.encoded_k()
             }
         }
 
-        impl<P: GLWEPlaintextInfos> GLWEPlaintextInfos for Staged<$reference> {
+        impl<P: GLWEPlaintextInfos, R: Ring> GLWEPlaintextInfos for Staged<$reference, R> {
             fn plaintext_meta(&self) -> Option<GLWEPlaintextMeta> {
                 self.pt.plaintext_meta()
             }
         }
 
-        impl<P: CKKSInfos> CKKSInfos for Staged<$reference> {}
+        impl<P: CKKSInfos, R: Ring> CKKSInfos for Staged<$reference, R> {}
 
-        impl<P, R: Ring> GLWEToBackendRef<Host<R>> for Staged<$reference> {
-            fn to_backend_ref(&self) -> GLWEBackendRef<'_, Host<R>> {
-                GLWEToBackendRef::<Host<R>>::to_backend_ref(&self.host)
+        impl<P, R: Ring> GLWEToBackendRef<Host, R> for Staged<$reference, R> {
+            fn to_backend_ref(&self) -> GLWEBackendRef<'_, Host, R> {
+                GLWEToBackendRef::<Host, R>::to_backend_ref(&self.host)
             }
         }
     };
@@ -159,23 +159,23 @@ macro_rules! impl_staged {
 impl_staged!(&P);
 impl_staged!(&mut P);
 
-impl<P: SetGLWEPlaintextInfos> SetGLWEPlaintextInfos for Staged<&mut P> {
+impl<P: SetGLWEPlaintextInfos, R: Ring> SetGLWEPlaintextInfos for Staged<&mut P, R> {
     fn set_plaintext_meta(&mut self, meta: Option<GLWEPlaintextMeta>) {
         self.pt.set_plaintext_meta(meta)
     }
 }
 
-impl<P: SetK> SetK for Staged<&mut P> {
+impl<P: SetK, R: Ring> SetK for Staged<&mut P, R> {
     fn set_k(&mut self, k: TorusPrecision) {
         self.pt.set_k(k)
     }
 }
 
-impl<P, R: Ring> GLWEToBackendMut<Host<R>> for Staged<&mut P> {
+impl<P, R: Ring> GLWEToBackendMut<Host, R> for Staged<&mut P, R> {
     fn set_noise(&mut self, _: Option<ComponentNoise>) {}
 
-    fn to_backend_mut(&mut self) -> GLWEBackendMut<'_, Host<R>> {
-        GLWEToBackendMut::<Host<R>>::to_backend_mut(&mut self.host)
+    fn to_backend_mut(&mut self) -> GLWEBackendMut<'_, Host, R> {
+        GLWEToBackendMut::<Host, R>::to_backend_mut(&mut self.host)
     }
 
     fn set_canonical(&mut self, _: bool) {}
@@ -200,7 +200,7 @@ fn transform_assign<RT: GpuRuntime, F: CKKSEncodingScalar>(
     Ok(())
 }
 
-unsafe impl<RT, R, F> CKKSEncodingImpl<F> for NTT4x30Gpu<RT, R>
+unsafe impl<RT, R, F> CKKSEncodingImpl<F, R> for NTT4x30Gpu<RT>
 where
     RT: GpuRuntime,
     R: Ring + CKKSSlotEmbedding,
@@ -213,7 +213,7 @@ where
     }
 
     fn ckks_encoding_plans_create(module: &Module<Self>) -> CKKSResult<Self::Plans> {
-        OwnedEncodingPlanSet::new(2 * poulpy_ckks::CKKSModuleInfos::ckks_max_slots(module)).map_err(CKKSError::from)
+        OwnedEncodingPlanSet::new(2 * poulpy_ckks::CKKSModuleInfos::ckks_max_slots::<R>(module)).map_err(CKKSError::from)
     }
 
     fn ckks_quantize_coeffs_into<P>(
@@ -222,17 +222,17 @@ where
         coeffs: &CKKSEncodingBufferBackendRef<'_, Self, F>,
     ) -> CKKSResult<()>
     where
-        P: CKKSPlaintextToBackendMut<Self> + IntPolyInfos + SetCKKSInfos,
+        P: CKKSPlaintextToBackendMut<Self, R> + IntPolyInfos + SetCKKSInfos,
     {
         let len = CKKSEncodingBufferInfos::len(coeffs);
         let host_coeffs = download::<RT, F>(&coeffs.data, len);
         // The encoder writes every limb of the plaintext: nothing is read back first.
-        let host = host_like(module, &GLWEToBackendRef::<Self>::to_backend_ref(pt));
+        let host = host_like(module, &GLWEToBackendRef::<Self, R>::to_backend_ref(pt));
         let mut staged = Staged { pt, host };
-        ckks_quantize_coeffs_into_reference::<Host<R>, F, _>(&mut staged, &CKKSEncodingBuffer::from_data(&host_coeffs[..], len))
+        ckks_quantize_coeffs_into_reference::<Host, F, _, R>(&mut staged, &CKKSEncodingBuffer::from_data(&host_coeffs[..], len))
             .map_err(CKKSError::from)?;
         let Staged { pt, host } = staged;
-        let mut device = GLWEToBackendMut::<Self>::to_backend_mut(pt);
+        let mut device = GLWEToBackendMut::<Self, R>::to_backend_mut(pt);
         // Host storage is padded; the device view has the exact length.
         let storage = device.data_mut().data_mut();
         let bytes = storage.len();
@@ -246,19 +246,19 @@ where
         coeffs: &mut CKKSEncodingBufferBackendMut<'_, Self, F>,
     ) -> CKKSResult<()>
     where
-        P: CKKSPlaintextToBackendRef<Self> + IntPolyInfos,
+        P: CKKSPlaintextToBackendRef<Self, R> + IntPolyInfos,
     {
         let len = CKKSEncodingBufferInfos::len(coeffs);
         let bytes = len * size_of::<F>();
         let host = {
-            let device = GLWEToBackendRef::<Self>::to_backend_ref(pt);
+            let device = GLWEToBackendRef::<Self, R>::to_backend_ref(pt);
             let mut host = host_like(module, &device);
             let storage = device.data().data();
             storage.read_prefix(&mut host.data_mut().data_mut()[..storage.len()]);
             host
         };
         let mut host_coeffs = AlignedBuf::from(vec![0u8; bytes]);
-        ckks_dequantize_coeffs_into_reference::<Host<R>, F, _>(
+        ckks_dequantize_coeffs_into_reference::<Host, F, _, R>(
             &Staged { pt, host },
             &mut CKKSEncodingBuffer::from_data(&mut host_coeffs[..], len),
         )
@@ -318,7 +318,7 @@ fn paco_coeff_encodings<BE, F, Src>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> CKKSResult<[CKKSPlaintextOwned<BE>; 4]>
 where
-    BE: poulpy_hal::layouts::Backend<ZnxWord = i64, Ring = Standard> + CKKSEncodingImpl<F>,
+    BE: poulpy_hal::layouts::Backend<ZnxWord = i64> + CKKSEncodingImpl<F>,
     Module<BE>: ModuleN + CKKSCiphertextAlloc<BE> + CKKSEncodingOps<BE, F> + GLWECopy<BE>,
     F: CKKSPaCoScalar,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
@@ -337,7 +337,7 @@ fn ship_coeff_encodings<BE, F, Src>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> CKKSResult<ShipCoeffEncodings<BE::OwnedBuf, i64>>
 where
-    BE: poulpy_hal::layouts::Backend<ZnxWord = i64, Ring = Standard> + CKKSEncodingImpl<F>,
+    BE: poulpy_hal::layouts::Backend<ZnxWord = i64> + CKKSEncodingImpl<F>,
     Module<BE>: ModuleN + CKKSCiphertextAlloc<BE> + CKKSEncodingOps<BE, F> + GLWECopy<BE>,
     F: CKKSShipScalar,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
@@ -347,7 +347,7 @@ where
 }
 
 /// The families of both rings, registered through the upstream macros, which
-/// take a concrete backend type.
+/// take a concrete backend type and expand once per ring.
 macro_rules! impl_ckks {
     ($be:ty) => {
         // `impl_ckks_reference_full!`, with the cached add-one and sub-one.
@@ -373,15 +373,15 @@ macro_rules! impl_ckks {
     };
 }
 
-/// The families of the standard ring only, `$ci` the conjugate-invariant twin of `$be`.
+/// The standard-only and cross-ring families.
 macro_rules! impl_ckks_standard {
-    ($be:ty, $ci:ty) => {
+    ($be:ty) => {
         ::poulpy_ckks::impl_ckks_encapsulated_mod_up_reference_full!($be);
         ::poulpy_ckks::impl_ckks_mod_up_first_factor_reference_full!($be);
         ::poulpy_ckks::impl_ckks_conjugate_reference_full!($be);
         ::poulpy_ckks::impl_ckks_imag_reference_full!($be);
         ::poulpy_ckks::impl_ckks_bootstrapping_reference_full!($be);
-        ::poulpy_ckks::impl_ckks_bootstrapping_ci_reference_full!($be, $ci);
+        ::poulpy_ckks::impl_ckks_bootstrapping_ci_reference_full!($be);
         ::poulpy_ckks::impl_ckks_fold_layout_reference_full!($be);
         ::poulpy_ckks::impl_ckks_fold_reference_full!($be);
         ::poulpy_ckks::impl_ckks_complex_polynomial_evaluation_reference_full!($be);
@@ -457,22 +457,19 @@ macro_rules! impl_ckks_standard {
 mod wgpu {
     use super::*;
     impl_ckks!(crate::NTT4x30Wgpu);
-    impl_ckks_standard!(crate::NTT4x30Wgpu, crate::NTT4x30Wgpu<ConjugateInvariant>);
-    impl_ckks!(crate::NTT4x30Wgpu<ConjugateInvariant>);
+    impl_ckks_standard!(crate::NTT4x30Wgpu);
 }
 
 #[cfg(feature = "enable-cuda")]
 mod cuda {
     use super::*;
     impl_ckks!(crate::NTT4x30Cuda);
-    impl_ckks_standard!(crate::NTT4x30Cuda, crate::NTT4x30Cuda<ConjugateInvariant>);
-    impl_ckks!(crate::NTT4x30Cuda<ConjugateInvariant>);
+    impl_ckks_standard!(crate::NTT4x30Cuda);
 }
 
 #[cfg(feature = "enable-hip")]
 mod hip {
     use super::*;
     impl_ckks!(crate::NTT4x30Hip);
-    impl_ckks_standard!(crate::NTT4x30Hip, crate::NTT4x30Hip<ConjugateInvariant>);
-    impl_ckks!(crate::NTT4x30Hip<ConjugateInvariant>);
+    impl_ckks_standard!(crate::NTT4x30Hip);
 }

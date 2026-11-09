@@ -30,14 +30,14 @@ pub struct PolynomialApproximation<P> {
     pub coeff_log_delta: usize,
 }
 
-impl<R: Ring> PolynomialApproximation<CKKSPlaintext<AlignedBuf, i64, R>> {
+impl<Rg: Ring> PolynomialApproximation<CKKSPlaintext<AlignedBuf, i64, Rg>> {
     /// Prepares `poly` and its interval map on the host.
     pub fn from_polynomial<F, M>(
         poly: &Polynomial<F>,
         base2k: Base2K,
         coeff_meta: M,
         strategy: SplitStrategy,
-        module: &Module<HostBytesBackend<R>>,
+        module: &Module<HostBytesBackend>,
     ) -> Result<Self>
     where
         F: CKKSScalar + Float + FloatConst + FromPrimitive + ToPrimitive + Debug,

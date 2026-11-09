@@ -1,4 +1,4 @@
-use poulpy_hal::layouts::{Backend, ScratchArena};
+use poulpy_hal::layouts::{Backend, Ring, ScratchArena, Standard};
 
 use crate::layouts::{
     GGLWEInfos, GGLWEToBackendRef, GGSWInfos, GGSWToBackendMut, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
@@ -50,7 +50,7 @@ pub trait LWEFromGLWE<BE: Backend> {
         A: GLWEToBackendRef<BE> + GLWEInfos;
 }
 
-pub trait GGSWFromGGLWE<BE: Backend> {
+pub trait GGSWFromGGLWE<BE: Backend, Rg: Ring = Standard> {
     /// Scratch for copying the source body rows and expanding the remaining rows.
     /// The source layout is required because the selected copy implementation may
     /// need different scratch when the input and output precisions differ.
@@ -64,11 +64,11 @@ pub trait GGSWFromGGLWE<BE: Backend> {
         &self,
         res: &mut R,
         a: &A,
-        tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, BE>,
+        tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, BE, Rg>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GGSWToBackendMut<BE> + GGSWInfos,
-        A: GGLWEToBackendRef<BE> + GGLWEInfos;
+        R: GGSWToBackendMut<BE, Rg> + GGSWInfos,
+        A: GGLWEToBackendRef<BE, Rg> + GGLWEInfos;
 }
 
 pub trait GLWEExpandLWE<BE: Backend> {
@@ -95,7 +95,7 @@ pub trait GLWEExpandLWEMatrix<BE: Backend> {
         A: GLWEToBackendRef<BE> + GLWEInfos;
 }
 
-pub trait GGSWExpandRows<BE: Backend> {
+pub trait GGSWExpandRows<BE: Backend, Rg: Ring = Standard> {
     fn ggsw_expand_rows_assign_tmp_bytes<R, A>(&self, res_infos: &R, tsk_infos: &A) -> usize
     where
         R: GGSWInfos,
@@ -104,8 +104,8 @@ pub trait GGSWExpandRows<BE: Backend> {
     fn ggsw_expand_rows_assign<R>(
         &self,
         res: &mut R,
-        tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, BE>,
+        tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, BE, Rg>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GGSWToBackendMut<BE> + GGSWInfos;
+        R: GGSWToBackendMut<BE, Rg> + GGSWInfos;
 }

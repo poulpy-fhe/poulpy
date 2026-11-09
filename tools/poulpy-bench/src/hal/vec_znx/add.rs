@@ -5,7 +5,7 @@ use criterion::{Bencher, measurement::Measurement};
 
 use poulpy_hal::{
     api::{ModuleNew, ScalarZnxAlloc, VecZnxAdd, VecZnxAddAssign, VecZnxAddScalarAssign, VecZnxAlloc},
-    layouts::{Backend, Module},
+    layouts::{Backend, Module, Standard},
 };
 
 use crate::hal::helpers::{
@@ -29,9 +29,9 @@ where
     let mut c = module.vec_znx_alloc(module.n(), sweep.cols, sweep.size);
 
     bencher.iter(|| {
-        let a = vec_znx_backend_ref::<B>(&a);
-        let b = vec_znx_backend_ref::<B>(&b);
-        let mut c = vec_znx_backend_mut::<B>(&mut c);
+        let a = vec_znx_backend_ref::<B, Standard>(&a);
+        let b = vec_znx_backend_ref::<B, Standard>(&b);
+        let mut c = vec_znx_backend_mut::<B, Standard>(&mut c);
         for i in 0..sweep.cols {
             module.vec_znx_add(&mut c, i, &a, i, &b, i);
         }
@@ -53,8 +53,8 @@ where
     let mut b = module.vec_znx_alloc(module.n(), sweep.cols, sweep.size);
 
     bencher.iter(|| {
-        let a = vec_znx_backend_ref::<B>(&a);
-        let mut b = vec_znx_backend_mut::<B>(&mut b);
+        let a = vec_znx_backend_ref::<B, Standard>(&a);
+        let mut b = vec_znx_backend_mut::<B, Standard>(&mut b);
         for i in 0..sweep.cols {
             module.vec_znx_add_assign(&mut b, i, &a, i);
         }
@@ -80,7 +80,7 @@ pub fn runner_vec_znx_add_scalar_assign<B: Backend<ZnxWord = i64>, M: Measuremen
 
     bencher.iter(|| {
         let a = scalar_znx_backend_ref::<B>(&a);
-        let mut res = vec_znx_backend_mut::<B>(&mut res);
+        let mut res = vec_znx_backend_mut::<B, Standard>(&mut res);
         for i in 0..sweep.cols {
             module.vec_znx_add_scalar_assign(&mut res, i, sweep.size - 1, &a, i);
         }

@@ -1,6 +1,6 @@
 use poulpy_hal::{
     api::{ScalarZnxAlloc, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Module, ScratchArena, ScratchOwned},
+    layouts::{Module, Ring, ScratchArena, ScratchOwned, Standard},
     source::Source,
     test_suite::TestParams,
 };
@@ -24,8 +24,9 @@ use crate::{
 
 const GLWE_NONE: &str = "glwe secret distribution is NONE (have you prepared the key?)";
 
-type Secret<BE> = GLWESecret<<BE as poulpy_hal::layouts::Backend>::OwnedBuf, <BE as poulpy_hal::layouts::Backend>::ZnxWord>;
-type Prepared<BE> = GLWESecretPrepared<<BE as poulpy_hal::layouts::Backend>::OwnedBuf, BE>;
+type Secret<BE, Rg = Standard> =
+    GLWESecret<<BE as poulpy_hal::layouts::Backend>::OwnedBuf, <BE as poulpy_hal::layouts::Backend>::ZnxWord, Rg>;
+type Prepared<BE, Rg = Standard> = GLWESecretPrepared<<BE as poulpy_hal::layouts::Backend>::OwnedBuf, BE, Rg>;
 
 /// Runs `encrypt` on `res` on an empty arena and asserts the full message, `res` and both sources unchanged.
 fn assert_unset_secret_refused<BE, T>(
@@ -92,7 +93,7 @@ fn ggsw_layout<BE: poulpy_hal::layouts::Backend>(params: &TestParams, module: &M
     }
 }
 
-fn unset_secret<BE: crate::test_suite::noise::TestBackend>(module: &Module<BE>, rank: usize) -> Secret<BE>
+fn unset_secret<BE: crate::test_suite::noise::TestBackend<Rg>, Rg: Ring>(module: &Module<BE>, rank: usize) -> Secret<BE, Rg>
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
@@ -105,14 +106,14 @@ where
 }
 
 /// Encrypting an LWE under a secret that was never sampled is refused before any draw or carve.
-pub fn test_lwe_encrypt_sk_rejects_unset_secret<BE: crate::test_suite::noise::TestBackend>(
+pub fn test_lwe_encrypt_sk_rejects_unset_secret<BE: crate::test_suite::noise::TestBackend<Rg>, Rg: Ring>(
     params: &TestParams,
     module: &Module<BE>,
 ) where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: LWEEncryptSk<BE>,
+    Module<BE>: LWEEncryptSk<BE, Rg>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let (n, base2k, k) = (
@@ -122,7 +123,7 @@ pub fn test_lwe_encrypt_sk_rejects_unset_secret<BE: crate::test_suite::noise::Te
     );
     let mut res = module.lwe_alloc(n, base2k, k);
     let pt = module.lwe_plaintext_alloc(base2k, k);
-    let sk: LWESecret<BE::OwnedBuf, BE::ZnxWord> = module.lwe_secret_alloc(n);
+    let sk: LWESecret<BE::OwnedBuf, BE::ZnxWord, Rg> = module.lwe_secret_alloc(n);
     assert_unset_secret_refused(
         "lwe secret distribution is NONE (have you prepared the key?)",
         &mut res,
@@ -132,20 +133,20 @@ pub fn test_lwe_encrypt_sk_rejects_unset_secret<BE: crate::test_suite::noise::Te
 
 /// Encrypting a GLWE, a zero or a GLWE with a given mask under a secret that was never sampled is refused before any
 /// draw or carve.
-pub fn test_glwe_encrypt_sk_rejects_unset_secret<BE: crate::test_suite::noise::TestBackend>(
+pub fn test_glwe_encrypt_sk_rejects_unset_secret<BE: crate::test_suite::noise::TestBackend<Rg>, Rg: Ring>(
     params: &TestParams,
     module: &Module<BE>,
 ) where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: GLWEEncryptSk<BE> + GLWESecretPreparedFactory<BE>,
+    Module<BE>: GLWEEncryptSk<BE, Rg> + GLWESecretPreparedFactory<BE, Rg>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let layout = glwe_layout(params, module, 1);
     let mut res = module.glwe_alloc_from_infos(&layout);
     let pt = module.glwe_plaintext_alloc_from_infos(&layout);
-    let sk: Prepared<BE> = module.glwe_secret_prepared_alloc(Rank(1));
+    let sk: Prepared<BE, Rg> = module.glwe_secret_prepared_alloc(Rank(1));
     assert_unset_secret_refused(GLWE_NONE, &mut res, |res, xe, xa, scratch| {
         module.glwe_encrypt_sk(res, &pt, &sk, xe, xa, scratch)
     });
@@ -158,20 +159,20 @@ pub fn test_glwe_encrypt_sk_rejects_unset_secret<BE: crate::test_suite::noise::T
 }
 
 /// Encrypting a compressed GLWE or zero under a secret that was never sampled is refused before any draw or carve.
-pub fn test_glwe_compressed_encrypt_sk_rejects_unset_secret<BE: crate::test_suite::noise::TestBackend>(
+pub fn test_glwe_compressed_encrypt_sk_rejects_unset_secret<BE: crate::test_suite::noise::TestBackend<Rg>, Rg: Ring>(
     params: &TestParams,
     module: &Module<BE>,
 ) where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: GLWECompressedEncryptSk<BE> + GLWESecretPreparedFactory<BE>,
+    Module<BE>: GLWECompressedEncryptSk<BE, Rg> + GLWESecretPreparedFactory<BE, Rg>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let layout = glwe_layout(params, module, 1);
     let mut res = module.glwe_compressed_alloc_from_infos(&layout);
     let pt = module.glwe_plaintext_alloc_from_infos(&layout);
-    let sk: Prepared<BE> = module.glwe_secret_prepared_alloc(Rank(1));
+    let sk: Prepared<BE, Rg> = module.glwe_secret_prepared_alloc(Rank(1));
     assert_unset_secret_refused(GLWE_NONE, &mut res, |res, xe, _, scratch| {
         module.glwe_compressed_encrypt_sk(res, &pt, &sk, [1u8; 32], xe, scratch)
     });
@@ -181,38 +182,38 @@ pub fn test_glwe_compressed_encrypt_sk_rejects_unset_secret<BE: crate::test_suit
 }
 
 /// Encrypting a compressed GGLWE under a secret that was never sampled is refused before any draw or carve.
-pub fn test_gglwe_compressed_encrypt_sk_rejects_unset_secret<BE: crate::test_suite::noise::TestBackend>(
+pub fn test_gglwe_compressed_encrypt_sk_rejects_unset_secret<BE: crate::test_suite::noise::TestBackend<Rg>, Rg: Ring>(
     params: &TestParams,
     module: &Module<BE>,
 ) where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: GGLWECompressedEncryptSk<BE> + GLWESecretPreparedFactory<BE> + ScalarZnxAlloc<BE>,
+    Module<BE>: GGLWECompressedEncryptSk<BE, Rg> + GLWESecretPreparedFactory<BE, Rg> + ScalarZnxAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let mut res = module.gglwe_compressed_alloc_from_infos(&gglwe_layout(params, module, 1, 1));
     let pt = module.scalar_znx_alloc(module.n(), 1);
-    let sk: Prepared<BE> = module.glwe_secret_prepared_alloc(Rank(1));
+    let sk: Prepared<BE, Rg> = module.glwe_secret_prepared_alloc(Rank(1));
     assert_unset_secret_refused(GLWE_NONE, &mut res, |res, xe, _, scratch| {
         module.gglwe_compressed_encrypt_sk(res, &pt, &sk, [1u8; 32], xe, scratch)
     });
 }
 
 /// Encrypting a GGSW, plain or compressed, under a secret that was never sampled is refused before any draw or carve.
-pub fn test_ggsw_encrypt_sk_rejects_unset_secret<BE: crate::test_suite::noise::TestBackend>(
+pub fn test_ggsw_encrypt_sk_rejects_unset_secret<BE: crate::test_suite::noise::TestBackend<Rg>, Rg: Ring>(
     params: &TestParams,
     module: &Module<BE>,
 ) where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: GGSWEncryptSk<BE> + GGSWCompressedEncryptSk<BE> + GLWESecretPreparedFactory<BE> + ScalarZnxAlloc<BE>,
+    Module<BE>: GGSWEncryptSk<BE, Rg> + GGSWCompressedEncryptSk<BE, Rg> + GLWESecretPreparedFactory<BE, Rg> + ScalarZnxAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let layout = ggsw_layout(params, module);
     let pt = module.scalar_znx_alloc(module.n(), 1);
-    let sk: Prepared<BE> = module.glwe_secret_prepared_alloc(Rank(1));
+    let sk: Prepared<BE, Rg> = module.glwe_secret_prepared_alloc(Rank(1));
     let mut res = module.ggsw_alloc_from_infos(&layout);
     assert_unset_secret_refused(GLWE_NONE, &mut res, |res, xe, xa, scratch| {
         module.ggsw_encrypt_sk(res, &pt, &sk, xe, xa, scratch)
@@ -225,14 +226,14 @@ pub fn test_ggsw_encrypt_sk_rejects_unset_secret<BE: crate::test_suite::noise::T
 
 /// Encrypting a switching key, plain or compressed, to an output secret that was never sampled is refused before any
 /// draw or carve.
-pub fn test_glwe_switching_key_encrypt_sk_rejects_unset_secret<BE: crate::test_suite::noise::TestBackend>(
+pub fn test_glwe_switching_key_encrypt_sk_rejects_unset_secret<BE: crate::test_suite::noise::TestBackend<Rg>, Rg: Ring>(
     params: &TestParams,
     module: &Module<BE>,
 ) where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: GLWESwitchingKeyEncryptSk<BE> + GLWESwitchingKeyCompressedEncryptSk<BE>,
+    Module<BE>: GLWESwitchingKeyEncryptSk<BE, Rg> + GLWESwitchingKeyCompressedEncryptSk<BE, Rg>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let layout = gglwe_layout(params, module, 1, 1);
@@ -249,14 +250,14 @@ pub fn test_glwe_switching_key_encrypt_sk_rejects_unset_secret<BE: crate::test_s
 
 /// Encrypting an automorphism key, plain or compressed, under a secret that was never sampled is refused before any
 /// draw or carve.
-pub fn test_glwe_automorphism_key_encrypt_sk_rejects_unset_secret<BE: crate::test_suite::noise::TestBackend>(
+pub fn test_glwe_automorphism_key_encrypt_sk_rejects_unset_secret<BE: crate::test_suite::noise::TestBackend<Rg>, Rg: Ring>(
     params: &TestParams,
     module: &Module<BE>,
 ) where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: GLWEAutomorphismKeyEncryptSk<BE> + GLWEAutomorphismKeyCompressedEncryptSk<BE>,
+    Module<BE>: GLWEAutomorphismKeyEncryptSk<BE, Rg> + GLWEAutomorphismKeyCompressedEncryptSk<BE, Rg>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let layout = gglwe_layout(params, module, 1, 1);
@@ -273,17 +274,17 @@ pub fn test_glwe_automorphism_key_encrypt_sk_rejects_unset_secret<BE: crate::tes
 
 /// Encrypting a tensor key or a GGLWE-to-GGSW key, plain or compressed, under a secret that was never sampled is
 /// refused before any draw or carve.
-pub fn test_glwe_tensor_key_encrypt_sk_rejects_unset_secret<BE: crate::test_suite::noise::TestBackend>(
+pub fn test_glwe_tensor_key_encrypt_sk_rejects_unset_secret<BE: crate::test_suite::noise::TestBackend<Rg>, Rg: Ring>(
     params: &TestParams,
     module: &Module<BE>,
 ) where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: GLWETensorKeyEncryptSk<BE>
-        + GLWETensorKeyCompressedEncryptSk<BE>
-        + GGLWEToGGSWKeyEncryptSk<BE>
-        + GGLWEToGGSWKeyCompressedEncryptSk<BE>,
+    Module<BE>: GLWETensorKeyEncryptSk<BE, Rg>
+        + GLWETensorKeyCompressedEncryptSk<BE, Rg>
+        + GGLWEToGGSWKeyEncryptSk<BE, Rg>
+        + GGLWEToGGSWKeyCompressedEncryptSk<BE, Rg>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let sk = unset_secret(module, 1);
@@ -308,23 +309,25 @@ pub fn test_glwe_tensor_key_encrypt_sk_rejects_unset_secret<BE: crate::test_suit
 
 /// Encrypting a GLWE-to-LWE, LWE switching or LWE-to-GLWE key to an output secret that was never sampled is refused
 /// before any draw or carve.
-pub fn test_lwe_switching_key_encrypt_sk_rejects_unset_secret<BE: crate::test_suite::noise::TestBackend>(
+pub fn test_lwe_switching_key_encrypt_sk_rejects_unset_secret<BE: crate::test_suite::noise::TestBackend<Rg>, Rg: Ring>(
     params: &TestParams,
     module: &Module<BE>,
 ) where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>:
-        GLWEToLWEKeyEncryptSk<BE> + LWESwitchingKeyEncryptSk<BE> + LWEToGLWEKeyEncryptSk<BE> + GLWESecretPreparedFactory<BE>,
+    Module<BE>: GLWEToLWEKeyEncryptSk<BE, Rg>
+        + LWESwitchingKeyEncryptSk<BE, Rg>
+        + LWEToGLWEKeyEncryptSk<BE, Rg>
+        + GLWESecretPreparedFactory<BE, Rg>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let layout = gglwe_layout(params, module, 1, 1);
     let sk_glwe = unset_secret(module, 1);
-    let sk_glwe_prepared: Prepared<BE> = module.glwe_secret_prepared_alloc(Rank(1));
+    let sk_glwe_prepared: Prepared<BE, Rg> = module.glwe_secret_prepared_alloc(Rank(1));
     let n = Degree(module.n() as u32);
-    let sk_lwe_in: LWESecret<BE::OwnedBuf, BE::ZnxWord> = module.lwe_secret_alloc(n);
-    let sk_lwe_out: LWESecret<BE::OwnedBuf, BE::ZnxWord> = module.lwe_secret_alloc(n);
+    let sk_lwe_in: LWESecret<BE::OwnedBuf, BE::ZnxWord, Rg> = module.lwe_secret_alloc(n);
+    let sk_lwe_out: LWESecret<BE::OwnedBuf, BE::ZnxWord, Rg> = module.lwe_secret_alloc(n);
     let mut res = module.glwe_to_lwe_key_alloc_from_infos(&layout);
     assert_unset_secret_refused(GLWE_NONE, &mut res, |res, xe, xa, scratch| {
         module.glwe_to_lwe_key_encrypt_sk(res, &sk_lwe_out, &sk_glwe, xe, xa, scratch)

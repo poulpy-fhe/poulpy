@@ -4,7 +4,7 @@ use poulpy_hal::layouts::{Backend, Module, Ring, ScratchArena, Standard};
 
 use crate::{
     CKKSCtBounds,
-    layouts::{CKKSCiphertextOwned, CKKSFoldKeysLayout, CKKSRingCiphertext},
+    layouts::{CKKSCiphertextOwned, CKKSFoldKeysLayout},
 };
 
 /// Backend override hook for [`CKKSFoldLayoutOps`](crate::api::CKKSFoldLayoutOps).
@@ -13,7 +13,7 @@ use crate::{
 /// Implementations reproduce the bodies their methods document bit for bit, report for each
 /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait CKKSFoldLayoutImpl: Backend<Ring = Standard> {
+pub unsafe trait CKKSFoldLayoutImpl: Backend {
     /// Reproduces
     /// [`ckks_fold_layout_reference`](crate::reference::fold::CKKSFoldLayoutReference::ckks_fold_layout_reference) bit
     /// for bit; free in kernels. The layout answers for the fold registered with [`CKKSFoldImpl`]: it is the layout of
@@ -43,10 +43,10 @@ pub unsafe trait CKKSFoldLayoutImpl: Backend<Ring = Standard> {
 /// Implementations reproduce the bodies their methods document bit for bit, report for each
 /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait CKKSFoldImpl<R: Ring>: Backend<Ring = Standard> {
+pub unsafe trait CKKSFoldImpl<R: Ring>: Backend {
     /// Reproduces [`ckks_fold_count_reference`](crate::reference::fold::CKKSFoldReference::ckks_fold_count_reference)
     /// bit for bit; free in kernels. It answers for the registered `ckks_fold`: the number of ciphertexts it writes.
-    fn ckks_fold_count(module: &Module<Self>, degree: Degree, ins: &[CKKSRingCiphertext<Self, R>]) -> usize;
+    fn ckks_fold_count(module: &Module<Self>, degree: Degree, ins: &[CKKSCiphertextOwned<Self, R>]) -> usize;
 
     /// Reproduces
     /// [`ckks_unfold_galois_elements_reference`](crate::reference::fold::CKKSFoldReference::ckks_unfold_galois_elements_reference)
@@ -61,31 +61,31 @@ pub unsafe trait CKKSFoldImpl<R: Ring>: Backend<Ring = Standard> {
     /// reference fold, honoring the key layouts of `inbound`; free in kernels and scratch use.
     fn ckks_fold<S>(
         module: &Module<Self>,
-        folded: &mut [CKKSCiphertextOwned<Self>],
-        ins: &[CKKSRingCiphertext<Self, R>],
+        folded: &mut [CKKSCiphertextOwned<Self, Standard>],
+        ins: &[CKKSCiphertextOwned<Self, R>],
         inbound: Option<&S>,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        S: GGLWEPreparedToBackendRef<Self> + GGLWEInfos;
+        S: GGLWEPreparedToBackendRef<Self, Standard> + GGLWEInfos;
 
     /// Reproduces [`ckks_unfold_reference`](crate::reference::fold::CKKSFoldReference::ckks_unfold_reference) bit for
     /// bit, within [`CKKSFoldLayoutImpl::ckks_fold_tmp_bytes`]: CKKS metadata, ciphertext values and refusals as the
     /// reference unfold, honoring the key layouts of `outbound` and `automorphisms`; free in kernels and scratch use.
     fn ckks_unfold<S, H>(
         module: &Module<Self>,
-        outs: &mut [CKKSRingCiphertext<Self, R>],
-        folded: &mut [CKKSCiphertextOwned<Self>],
+        outs: &mut [CKKSCiphertextOwned<Self, R>],
+        folded: &mut [CKKSCiphertextOwned<Self, Standard>],
         automorphisms: Option<&H>,
         outbound: Option<&S>,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        S: GGLWEPreparedToBackendRef<Self> + GGLWEInfos,
-        H: GetAutomorphismKey<Self>;
+        S: GGLWEPreparedToBackendRef<Self, Standard> + GGLWEInfos,
+        H: GetAutomorphismKey<Self, Standard>;
 }
 
-/// Selects the reference fold layout and fold scratch query for a standard backend.
+/// Selects the reference fold layout and fold scratch query, which serve inputs of either ring.
 #[macro_export]
 macro_rules! impl_ckks_fold_layout_reference_full {
     ($be:ty) => {
@@ -121,20 +121,20 @@ macro_rules! impl_ckks_fold_layout_reference_full {
     };
 }
 
-/// Selects the reference fold and unfold for a standard backend, for every input ring
-/// the reference folds.
+/// Selects the reference fold into standard ciphertexts and unfold back: `($be)` for both input rings,
+/// `($be, $ring)` for one, beside a hand-written fold of the other.
 #[macro_export]
 macro_rules! impl_ckks_fold_reference_full {
     ($be:ty) => {
-        $crate::impl_ckks_fold_reference_full!(@ring $be, ::poulpy_hal::layouts::Standard);
-        $crate::impl_ckks_fold_reference_full!(@ring $be, ::poulpy_hal::layouts::ConjugateInvariant);
+        $crate::impl_ckks_fold_reference_full!($be, ::poulpy_hal::layouts::Standard);
+        $crate::impl_ckks_fold_reference_full!($be, ::poulpy_hal::layouts::ConjugateInvariant);
     };
-    (@ring $be:ty, $ring:ty) => {
+    ($be:ty, $ring:ty) => {
         unsafe impl $crate::oep::CKKSFoldImpl<$ring> for $be {
             fn ckks_fold_count(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 degree: ::poulpy_core::layouts::Degree,
-                ins: &[$crate::layouts::CKKSRingCiphertext<$be, $ring>],
+                ins: &[$crate::layouts::CKKSCiphertextOwned<$be, $ring>],
             ) -> usize {
                 $crate::reference::fold::CKKSFoldReference::ckks_fold_count_reference(module, degree, ins)
             }
@@ -148,28 +148,30 @@ macro_rules! impl_ckks_fold_reference_full {
 
             fn ckks_fold<S>(
                 module: &::poulpy_hal::layouts::Module<$be>,
-                folded: &mut [$crate::layouts::CKKSCiphertextOwned<$be>],
-                ins: &[$crate::layouts::CKKSRingCiphertext<$be, $ring>],
+                folded: &mut [$crate::layouts::CKKSCiphertextOwned<$be, ::poulpy_hal::layouts::Standard>],
+                ins: &[$crate::layouts::CKKSCiphertextOwned<$be, $ring>],
                 inbound: Option<&S>,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) -> $crate::CKKSResult<()>
             where
-                S: ::poulpy_core::layouts::prepared::GGLWEPreparedToBackendRef<$be> + ::poulpy_core::layouts::GGLWEInfos,
+                S: ::poulpy_core::layouts::prepared::GGLWEPreparedToBackendRef<$be, ::poulpy_hal::layouts::Standard>
+                    + ::poulpy_core::layouts::GGLWEInfos,
             {
                 $crate::reference::fold::CKKSFoldReference::ckks_fold_reference(module, folded, ins, inbound, scratch)
             }
 
             fn ckks_unfold<S, H>(
                 module: &::poulpy_hal::layouts::Module<$be>,
-                outs: &mut [$crate::layouts::CKKSRingCiphertext<$be, $ring>],
-                folded: &mut [$crate::layouts::CKKSCiphertextOwned<$be>],
+                outs: &mut [$crate::layouts::CKKSCiphertextOwned<$be, $ring>],
+                folded: &mut [$crate::layouts::CKKSCiphertextOwned<$be, ::poulpy_hal::layouts::Standard>],
                 automorphisms: Option<&H>,
                 outbound: Option<&S>,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) -> $crate::CKKSResult<()>
             where
-                S: ::poulpy_core::layouts::prepared::GGLWEPreparedToBackendRef<$be> + ::poulpy_core::layouts::GGLWEInfos,
-                H: ::poulpy_core::layouts::GetAutomorphismKey<$be>,
+                S: ::poulpy_core::layouts::prepared::GGLWEPreparedToBackendRef<$be, ::poulpy_hal::layouts::Standard>
+                    + ::poulpy_core::layouts::GGLWEInfos,
+                H: ::poulpy_core::layouts::GetAutomorphismKey<$be, ::poulpy_hal::layouts::Standard>,
             {
                 $crate::reference::fold::CKKSFoldReference::ckks_unfold_reference(
                     module,

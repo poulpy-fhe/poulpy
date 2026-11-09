@@ -2,7 +2,7 @@ use dashu_float::{FBig, round::mode::HalfEven};
 use poulpy_hal::AlignedBuf;
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxNormalize},
-    layouts::{Module, ReaderFrom, ScratchOwned, ZnxView},
+    layouts::{Module, ReaderFrom, Ring, ScratchOwned, Standard, ZnxView},
     source::Source,
     test_suite::{TestParams, vec_znx_backend_mut, vec_znx_backend_ref},
 };
@@ -40,7 +40,7 @@ fn write_vec_znx_bytes(out: &mut Vec<u8>, n: u64, cols: u64, size: u64, coeffs: 
     out.extend_from_slice(&raw);
 }
 
-pub fn test_lwe_read_from_rejects_malformed_shape<BE: crate::test_suite::noise::TestBackend>(
+pub fn test_lwe_read_from_rejects_malformed_shape<BE: crate::test_suite::noise::TestBackend<Rg>, Rg: Ring>(
     _params: &TestParams,
     _module: &Module<BE>,
 ) where
@@ -53,7 +53,7 @@ pub fn test_lwe_read_from_rejects_malformed_shape<BE: crate::test_suite::noise::
         k: TorusPrecision(64),
     };
 
-    let mut lwe = LWE::<AlignedBuf, i64>::alloc_from_infos(&infos);
+    let mut lwe = LWE::<AlignedBuf, i64, Rg>::alloc_from_infos(&infos);
     let mut bytes = Vec::new();
 
     crate::ComponentNoise::write_optional(None, &mut bytes).unwrap();
@@ -69,14 +69,17 @@ pub fn test_lwe_read_from_rejects_malformed_shape<BE: crate::test_suite::noise::
     assert!(err.to_string().contains("LWE body and mask sizes must match"), "{err}");
 }
 
-pub fn test_lwe_secret_from_glwe_secret_flattens_rank_and_preserves_metadata<BE: crate::test_suite::noise::TestBackend>(
+pub fn test_lwe_secret_from_glwe_secret_flattens_rank_and_preserves_metadata<
+    BE: crate::test_suite::noise::TestBackend<Rg>,
+    Rg: Ring,
+>(
     _params: &TestParams,
     module: &Module<BE>,
 ) where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord> + LWESecretFromGLWESecret<BE>,
+    Module<BE>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord> + LWESecretFromGLWESecret<BE, Rg>,
 {
     let rank = Rank(2);
     let mut source = Source::new([9u8; 32]);
@@ -95,13 +98,19 @@ pub fn test_lwe_secret_from_glwe_secret_flattens_rank_and_preserves_metadata<BE:
     assert_eq!(sk_lwe.dist(), crate::dist::Distribution::TernaryFixed(3));
 }
 
-pub fn test_glwe_base2k_conversion<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
-where
+pub fn test_glwe_base2k_conversion<BE: crate::test_suite::noise::TestBackend<Rg>, Rg: Ring>(
+    params: &TestParams,
+    module: &Module<BE>,
+) where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>:
-        GLWEEncryptSk<BE> + GLWEDecrypt<BE> + GLWENormalize<BE> + GLWESecretPreparedFactory<BE> + GLWENoise<BE> + GLWEFill<BE>,
+    Module<BE>: GLWEEncryptSk<BE, Rg>
+        + GLWEDecrypt<BE, Rg>
+        + GLWENormalize<BE, Rg>
+        + GLWESecretPreparedFactory<BE, Rg>
+        + GLWENoise<BE, Rg>
+        + GLWEFill<BE, Rg>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let n_glwe: Degree = Degree(module.n() as u32);
@@ -131,10 +140,10 @@ where
                 rank: Rank(rank as u32),
             };
 
-            let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(rank.into());
+            let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_secret_alloc(rank.into());
             module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut source_xs);
 
-            let mut sk_prep: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc_from_infos(&sk);
+            let mut sk_prep: GLWESecretPrepared<BE::OwnedBuf, BE, Rg> = module.glwe_secret_prepared_alloc_from_infos(&sk);
             module.glwe_secret_prepare(&mut sk_prep, &sk);
 
             let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
@@ -143,11 +152,11 @@ where
                     .max(module.glwe_noise_tmp_bytes(&glwe_infos_out)),
             );
 
-            let mut ct_in: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_infos_in);
-            let mut ct_out: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_infos_out);
+            let mut ct_in: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&glwe_infos_in);
+            let mut ct_out: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&glwe_infos_out);
 
-            let pt_in: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_infos_in);
-            let pt_out: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_infos_out);
+            let pt_in: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_plaintext_alloc_from_infos(&glwe_infos_in);
+            let pt_out: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_plaintext_alloc_from_infos(&glwe_infos_out);
 
             module.glwe_encrypt_sk(
                 &mut ct_in,
@@ -290,12 +299,12 @@ pub fn test_lwe_to_glwe<BE: crate::test_suite::noise::TestBackend + crate::oep::
     let mut lwe_pt_conv = module.lwe_plaintext_alloc(glwe_pt.base2k(), lwe_pt.k());
 
     module.vec_znx_normalize(
-        &mut vec_znx_backend_mut::<BE>(&mut lwe_pt_conv.data),
+        &mut vec_znx_backend_mut::<BE, Standard>(&mut lwe_pt_conv.data),
         glwe_pt.base2k().as_usize(),
         lwe_pt.k().as_usize(),
         0,
         0,
-        &vec_znx_backend_ref::<BE>(&lwe_pt.data),
+        &vec_znx_backend_ref::<BE, Standard>(&lwe_pt.data),
         lwe_pt.base2k().as_usize(),
         0,
         &mut scratch.borrow(),
@@ -420,12 +429,12 @@ pub fn test_glwe_to_lwe<BE: crate::test_suite::noise::TestBackend + crate::oep::
     let mut glwe_pt_conv: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc(lwe_pt.base2k(), lwe_pt.k());
 
     module.vec_znx_normalize(
-        &mut vec_znx_backend_mut::<BE>(&mut glwe_pt_conv.data),
+        &mut vec_znx_backend_mut::<BE, Standard>(&mut glwe_pt_conv.data),
         lwe_pt.base2k().as_usize(),
         lwe_pt.k().as_usize(),
         0,
         0,
-        &vec_znx_backend_ref::<BE>(&glwe_pt.data),
+        &vec_znx_backend_ref::<BE, Standard>(&glwe_pt.data),
         glwe_ct.base2k().as_usize(),
         0,
         &mut scratch.borrow(),
@@ -516,12 +525,12 @@ pub fn test_glwe_expand_lwe<BE: crate::test_suite::noise::TestBackend + crate::o
 
         let mut glwe_pt_conv: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc(lwe_pt.base2k(), lwe_pt.k());
         module.vec_znx_normalize(
-            &mut vec_znx_backend_mut::<BE>(&mut glwe_pt_conv.data),
+            &mut vec_znx_backend_mut::<BE, Standard>(&mut glwe_pt_conv.data),
             lwe_pt.base2k().as_usize(),
             lwe_pt.k().as_usize(),
             0,
             0,
-            &vec_znx_backend_ref::<BE>(&glwe_pt.data),
+            &vec_znx_backend_ref::<BE, Standard>(&glwe_pt.data),
             glwe_ct.base2k().as_usize(),
             0,
             &mut scratch.borrow(),

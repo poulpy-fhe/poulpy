@@ -228,7 +228,7 @@ impl<D: Data, W: ZnxWord> ShipKeySet<D, W> {
     /// Prepares every key for `module`: gadget keys are preprocessed and the
     /// selector masks become left convolution operands. `scratch` must hold
     /// the per-key prepare scratch, which is validated up front.
-    pub fn prepare<BE: Backend<OwnedBuf = D, ZnxWord = W, Ring = Standard>>(
+    pub fn prepare<BE: Backend<OwnedBuf = D, ZnxWord = W>>(
         &self,
         module: &Module<BE>,
         scratch: &mut ScratchArena<'_, BE>,
@@ -367,13 +367,13 @@ pub(crate) fn hmux_rot_key_encrypt_sk<BE>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<HMuxRotKey<BE::OwnedBuf, BE::ZnxWord>>
 where
-    BE: HostStaged + Backend<Ring = Standard>,
+    BE: HostStaged + Backend,
     BE::OwnedBuf: HostDataRef + HostDataMut,
     Module<BE>: GLWESwitchingKeyEncryptSk<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord> + GaloisElement,
 {
     let n = sk_dense_host.n();
     let m = n.as_usize() / 2;
-    let gal_el = module.galois_element(((m - (rot % m)) % m) as i64);
+    let gal_el = module.galois_element::<Standard>(((m - (rot % m)) % m) as i64);
 
     // `(beta * s, beta)`: the second column is the constant 1, not a secret.
     let mut sk_in_host = host_module.glwe_secret_alloc_from_infos(&GLWESecretLayout { n, rank: Rank(2) });
@@ -393,7 +393,7 @@ where
     let mut sk_out_host = host_module.glwe_secret_alloc_from_infos(&GLWESecretLayout { n, rank: Rank(1) });
     sk_out_host.data_mut().zero();
     znx_automorphism_apply(
-        module.galois_element_inv(gal_el),
+        module.galois_element_inv::<Standard>(gal_el),
         sk_dense_host.data().at(0, 0),
         sk_out_host.data_mut().at_mut(0, 0),
     );
@@ -462,7 +462,7 @@ impl<D: Data> ShipKeySet<D, i64> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<Self>
     where
-        BE: HostStaged + Backend<OwnedBuf = D, Ring = Standard>,
+        BE: HostStaged + Backend<OwnedBuf = D>,
         D: HostDataRef + HostDataMut,
         F: CKKSShipScalar,
         Module<BE>: GLWESwitchingKeyEncryptSk<BE>
@@ -523,7 +523,8 @@ impl<D: Data> ShipKeySet<D, i64> {
                         .into_iter()
                         .map(|re| {
                             let im = vec![F::zero(); m];
-                            let mut pt = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots(), base2k, kk.into());
+                            let mut pt =
+                                module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots::<Standard>(), base2k, kk.into());
                             pt.set_meta_checked(mask_meta)?;
                             module.ckks_encode_slots_host_into(&mut pt, &re, &im, scratch)?;
                             let mut ct = module.ckks_ciphertext_alloc(base2k, kk.into());

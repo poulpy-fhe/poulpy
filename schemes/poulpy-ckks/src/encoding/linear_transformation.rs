@@ -12,7 +12,7 @@ use poulpy_core::layouts::{
     Base2K, Degree, DiagonalArithmetic, GLWELayout, GLWEPlaintextMeta, GetDegree, LWEInfos, LinearTransformationLayout,
     LinearTransformationStrategy, Rank,
 };
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Module, Ring, ScratchArena};
 
 use crate::api::CKKSModuleInfos;
 use crate::{
@@ -55,7 +55,7 @@ fn validate_compile_inputs<F>(
 
 /// `InvalidOperand` for `op` when `diagonals` has a nonzero imaginary part but encodes into real slots: at a `meta` of
 /// real slots, or into plaintexts of degree `n` on a ring whose degree-`n` plaintexts hold `n` real slots.
-fn ensure_complex_fits<M: CKKSModuleInfos, F: CKKSEncodingScalar>(
+fn ensure_complex_fits<M: CKKSModuleInfos, F: CKKSEncodingScalar, Rg: Ring>(
     op: &'static str,
     module: &M,
     meta: GLWEPlaintextMeta,
@@ -68,7 +68,7 @@ fn ensure_complex_fits<M: CKKSModuleInfos, F: CKKSEncodingScalar>(
             .get(index)
             .is_some_and(|values| values.iter().any(|value| !value.is_zero()))
     });
-    let real_slots = meta.slots.is_real() || module.ckks_slots_of_degree(n) == n;
+    let real_slots = meta.slots.is_real() || module.ckks_slots_of_degree::<Rg>(n) == n;
     ckks_ensure_operand!(
         op,
         !(complex && real_slots),
@@ -117,7 +117,7 @@ fn ensure_complex_fits<M: CKKSModuleInfos, F: CKKSEncodingScalar>(
     clippy::too_many_arguments,
     reason = "linear-transformation compilation needs the encoding layout, matrix, schedule, and arena"
 )]
-pub fn ckks_linear_transformation_encode_from_diagonals<BE, F>(
+pub fn ckks_linear_transformation_encode_from_diagonals<BE, F, Rg: Ring>(
     module: &Module<BE>,
     base2k: Base2K,
     coeffs_meta: CoeffsMeta,
@@ -125,10 +125,10 @@ pub fn ckks_linear_transformation_encode_from_diagonals<BE, F>(
     strategy: LinearTransformationStrategy,
     transpose: bool,
     scratch: &mut ScratchArena<'_, BE>,
-) -> Result<LinearTransformation<CKKSPlaintextOwned<BE>>>
+) -> Result<LinearTransformation<CKKSPlaintextOwned<BE, Rg>>>
 where
     BE: Backend,
-    Module<BE>: CKKSLinearTransformationAlloc<BE> + CKKSEncodingOps<BE, F>,
+    Module<BE>: CKKSLinearTransformationAlloc<BE> + CKKSEncodingOps<BE, F, Rg>,
     F: DiagonalArithmetic + CKKSEncodingScalar,
 {
     const OP: &str = "ckks_linear_transformation_encode_from_diagonals";
@@ -140,9 +140,9 @@ where
         }
         .into());
     }
-    validate_compile_inputs(OP, module.ckks_max_slots(), diagonals, strategy)?;
-    let n = period_degree::<BE, _>(module, diagonals.period());
-    ensure_complex_fits(OP, module, coeffs_meta.meta, n.as_usize(), diagonals)?;
+    validate_compile_inputs(OP, module.ckks_max_slots::<Rg>(), diagonals, strategy)?;
+    let n = period_degree::<BE, _, Rg>(module, diagonals.period());
+    ensure_complex_fits::<_, _, Rg>(OP, module, coeffs_meta.meta, n.as_usize(), diagonals)?;
 
     let owned_transposed;
     let cd: &ComplexDiagonals<F> = if transpose {
@@ -176,14 +176,14 @@ where
 /// Scratch bytes [`ckks_linear_transformation_encode_into`] and [`ckks_linear_transformation_encode_from_diagonals`]
 /// need for a map of period at most `period`: the slot encoding of one diagonal, which fills its plaintext, so a period
 /// below the backend's minimum degree counts the slots of that degree.
-pub fn ckks_linear_transformation_encode_tmp_bytes<BE, M, F>(module: &M, period: usize) -> usize
+pub fn ckks_linear_transformation_encode_tmp_bytes<BE, M, F, Rg: Ring>(module: &M, period: usize) -> usize
 where
     BE: Backend,
-    M: CKKSModuleInfos + GetDegree + CKKSEncodingHostOps<BE, F>,
+    M: CKKSModuleInfos + GetDegree + CKKSEncodingHostOps<BE, F, Rg>,
     F: CKKSEncodingScalar,
 {
-    let slots = module.ckks_slots_of_degree(period_degree::<BE, M>(module, period).as_usize());
-    <M as CKKSEncodingHostOps<BE, F>>::ckks_encoding_host_tmp_bytes(module, slots)
+    let slots = module.ckks_slots_of_degree::<Rg>(period_degree::<BE, M, Rg>(module, period).as_usize());
+    <M as CKKSEncodingHostOps<BE, F, Rg>>::ckks_encoding_host_tmp_bytes(module, slots)
 }
 
 /// Encodes `diagonals` into `res`, allocated by
@@ -197,9 +197,9 @@ where
 /// [`CKKSCompositionError::InvalidOperand`], before anything is written, for malformed `diagonals` or `strategy`, a
 /// schedule of `res` other than the one they give, or a nonzero imaginary part encoded into real slots; then the
 /// encoding's errors, after which the content of `res` is unspecified.
-pub fn ckks_linear_transformation_encode_into<BE, M, F>(
+pub fn ckks_linear_transformation_encode_into<BE, M, F, Rg: Ring>(
     module: &M,
-    res: &mut LinearTransformation<CKKSPlaintextOwned<BE>>,
+    res: &mut LinearTransformation<CKKSPlaintextOwned<BE, Rg>>,
     meta: GLWEPlaintextMeta,
     diagonals: &ComplexDiagonals<F>,
     strategy: LinearTransformationStrategy,
@@ -207,11 +207,11 @@ pub fn ckks_linear_transformation_encode_into<BE, M, F>(
 ) -> CKKSResult<()>
 where
     BE: Backend,
-    M: CKKSModuleInfos + CKKSEncodingOps<BE, F>,
+    M: CKKSModuleInfos + CKKSEncodingOps<BE, F, Rg>,
     F: DiagonalArithmetic + CKKSEncodingScalar,
 {
     const OP: &str = "ckks_linear_transformation_encode_into";
-    validate_compile_inputs(OP, module.ckks_max_slots(), diagonals, strategy)?;
+    validate_compile_inputs(OP, module.ckks_max_slots::<Rg>(), diagonals, strategy)?;
     let plan = LinearTransformationLayout {
         indexes: diagonals.indexes(),
         slots: diagonals.slots(),
@@ -233,7 +233,7 @@ where
         .into());
     }
     if let Some(pt) = res.first_diagonal_plaintext() {
-        ensure_complex_fits(OP, module, meta, pt.n().as_usize(), diagonals)?;
+        ensure_complex_fits::<_, _, Rg>(OP, module, meta, pt.n().as_usize(), diagonals)?;
     }
     let mut targets = res.giant_steps.iter_mut().flat_map(|gs| &mut gs.diagonals);
     let mut result = Ok(());
@@ -247,9 +247,9 @@ where
 }
 
 /// Encodes `re + i im`, one period, into `pt` at `meta`, repeated over the slots of `pt`.
-fn encode_diagonal<BE, M, F>(
+fn encode_diagonal<BE, M, F, Rg: Ring>(
     module: &M,
-    pt: &mut CKKSPlaintextOwned<BE>,
+    pt: &mut CKKSPlaintextOwned<BE, Rg>,
     meta: GLWEPlaintextMeta,
     re: &[F],
     im: &[F],
@@ -257,12 +257,12 @@ fn encode_diagonal<BE, M, F>(
 ) -> CKKSResult<()>
 where
     BE: Backend,
-    M: CKKSModuleInfos + CKKSEncodingOps<BE, F>,
+    M: CKKSModuleInfos + CKKSEncodingOps<BE, F, Rg>,
     F: CKKSEncodingScalar,
 {
     pt.set_meta_checked(meta)?;
     // A period below the backend's minimum degree fills fewer slots than the plaintext holds.
-    let reps = module.ckks_slots_of_degree(pt.n().as_usize()) / re.len();
+    let reps = module.ckks_slots_of_degree::<Rg>(pt.n().as_usize()) / re.len();
     if reps > 1 {
         module.ckks_encode_slots_host_into(pt, &re.repeat(reps), &im.repeat(reps), scratch)?;
     } else {
@@ -273,11 +273,11 @@ where
 
 /// The degree of the diagonals of a map of period `period`: `period * N / ckks_max_slots` (`2 * period` on the
 /// standard ring, `period` on the invariant ring), raised to the backend's minimum degree and capped at the ring degree.
-fn period_degree<BE: Backend, M: CKKSModuleInfos + GetDegree>(module: &M, period: usize) -> Degree {
+fn period_degree<BE: Backend, M: CKKSModuleInfos + GetDegree, Rg: Ring>(module: &M, period: usize) -> Degree {
     assert!(period.is_power_of_two(), "a map's period is a power of two");
     let ring = module.ring_degree().as_usize();
     period
-        .checked_mul(ring / module.ckks_max_slots())
+        .checked_mul(ring / module.ckks_max_slots::<Rg>())
         .expect("slot count overflow")
         .max(BE::MIN_DEGREE)
         .min(ring)

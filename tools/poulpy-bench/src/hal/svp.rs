@@ -9,8 +9,8 @@ use poulpy_hal::{
         SvpApplyDftToDftAssign, SvpPPolAlloc, SvpPPolPrepare, VecZnxDftAlloc,
     },
     layouts::{
-        Backend, Module, PrepareHint, ScratchOwned, SvpPPolOwned, SvpPPolToBackendMut, SvpPPolToBackendRef, VecZnxDftOwned,
-        VecZnxDftToBackendMut, VecZnxDftToBackendRef,
+        Backend, Module, PrepareHint, ScratchOwned, Standard, SvpPPolOwned, SvpPPolToBackendMut, SvpPPolToBackendRef,
+        VecZnxDftOwned, VecZnxDftToBackendMut, VecZnxDftToBackendRef,
     },
     source::Source,
 };
@@ -59,7 +59,7 @@ where
 
     bencher.iter(|| {
         let svp = svp.to_backend_ref();
-        let a = vec_znx_backend_ref::<B>(&a);
+        let a = vec_znx_backend_ref::<B, Standard>(&a);
         let mut res = res.to_backend_mut();
         for j in 0..sweep.cols {
             module.svp_apply_dft(&mut res, j, &svp, j, &a, j, &mut scratch.borrow());

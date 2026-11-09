@@ -1,13 +1,13 @@
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef};
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Module, Ring, ScratchArena};
 
 use crate::api::CKKSSubOps;
 
 use crate::{CKKSCtBounds, SetCKKSInfos, oep::CKKSSubImpl};
 
-impl<BE: Backend + CKKSSubImpl> CKKSSubOps<BE> for Module<BE> {
+impl<BE: Backend + CKKSSubImpl<Rg>, Rg: Ring> CKKSSubOps<BE, Rg> for Module<BE> {
     fn ckks_sub_tmp_bytes(&self, res_size: usize) -> usize {
         BE::ckks_sub_tmp_bytes(self, res_size)
     }
@@ -18,17 +18,17 @@ impl<BE: Backend + CKKSSubImpl> CKKSSubOps<BE> for Module<BE> {
 
     fn ckks_sub_into<Dst, A, B>(&self, dst: &mut Dst, a: &A, b: &B, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        B: GLWEToBackendRef<BE> + CKKSCtBounds,
+        Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        B: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
     {
         BE::ckks_sub_into(self, dst, a, b, scratch)
     }
 
     fn ckks_sub_assign<Dst, A>(&self, dst: &mut Dst, a: &A, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<BE> + CKKSCtBounds,
+        Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
     {
         BE::ckks_sub_assign(self, dst, a, scratch)
     }
@@ -39,24 +39,24 @@ impl<BE: Backend + CKKSSubImpl> CKKSSubOps<BE> for Module<BE> {
 
     fn ckks_sub_one_assign<Dst>(&self, dst: &mut Dst, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
     {
         BE::ckks_sub_one_assign(self, dst, scratch)
     }
 
     fn ckks_sub_pt_vec_into<Dst, A, P>(&self, dst: &mut Dst, a: &A, pt: &P, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
+        Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos,
     {
         BE::ckks_sub_pt_vec_into(self, dst, a, pt, scratch)
     }
 
     fn ckks_sub_pt_vec_assign<Dst, P>(&self, dst: &mut Dst, pt: &P, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
+        Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos,
     {
         BE::ckks_sub_pt_vec_assign(self, dst, pt, scratch)
     }
@@ -75,9 +75,9 @@ impl<BE: Backend + CKKSSubImpl> CKKSSubOps<BE> for Module<BE> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
+        Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos,
     {
         BE::ckks_sub_pt_const_into(self, dst, dst_coeff, a, pt, pt_coeff, scratch)
     }
@@ -91,8 +91,8 @@ impl<BE: Backend + CKKSSubImpl> CKKSSubOps<BE> for Module<BE> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
+        Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos,
     {
         BE::ckks_sub_pt_const_assign(self, dst, dst_coeff, pt, pt_coeff, scratch)
     }

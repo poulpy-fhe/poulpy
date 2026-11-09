@@ -1,5 +1,5 @@
 use poulpy_hal::AlignedBuf;
-use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, ReaderFrom, WriterTo};
+use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, ReaderFrom, Ring, Standard, WriterTo};
 
 use crate::layouts::{
     Base2K, Degree, Dnum, GGLWE, GGLWEAtBackendMut, GGLWEAtBackendRef, GGLWEAtViewMut, GGLWEAtViewRef, GGLWEBackendMut,
@@ -107,8 +107,8 @@ impl GGLWEInfos for GLWESwitchingKeyLayout {
 /// `D: Data` is the backing storage type (e.g. `AlignedBuf`, `&[u8]`,
 /// `&mut [u8]`).
 #[derive(PartialEq, Eq, Clone)]
-pub struct GLWESwitchingKey<D: Data, W: ZnxWord> {
-    pub(crate) key: GGLWE<D, W>,
+pub struct GLWESwitchingKey<D: Data, W: ZnxWord, Rg: Ring = Standard> {
+    pub(crate) key: GGLWE<D, W, Rg>,
     pub(crate) input_degree: Degree,  // Degree of sk_in
     pub(crate) output_degree: Degree, // Degree of sk_out
 }
@@ -122,7 +122,7 @@ pub trait GLWESwitchingKeyDegrees {
     fn output_degree(&self) -> &Degree;
 }
 
-impl<D: Data, W: ZnxWord> GLWESwitchingKeyDegrees for GLWESwitchingKey<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> GLWESwitchingKeyDegrees for GLWESwitchingKey<D, W, Rg> {
     fn output_degree(&self) -> &Degree {
         &self.output_degree
     }
@@ -141,7 +141,7 @@ pub trait GLWESwitchingKeyDegreesMut {
     fn output_degree(&mut self) -> &mut Degree;
 }
 
-impl<D: Data, W: ZnxWord> GLWESwitchingKeyDegreesMut for GLWESwitchingKey<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> GLWESwitchingKeyDegreesMut for GLWESwitchingKey<D, W, Rg> {
     fn output_degree(&mut self) -> &mut Degree {
         &mut self.output_degree
     }
@@ -151,7 +151,7 @@ impl<D: Data, W: ZnxWord> GLWESwitchingKeyDegreesMut for GLWESwitchingKey<D, W> 
     }
 }
 
-impl<D: Data, W: ZnxWord> LWEInfos for GLWESwitchingKey<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> LWEInfos for GLWESwitchingKey<D, W, Rg> {
     fn noise(&self) -> Option<crate::ComponentNoise> {
         self.key.noise()
     }
@@ -173,13 +173,13 @@ impl<D: Data, W: ZnxWord> LWEInfos for GLWESwitchingKey<D, W> {
     }
 }
 
-impl<D: Data, W: ZnxWord> GLWEInfos for GLWESwitchingKey<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> GLWEInfos for GLWESwitchingKey<D, W, Rg> {
     fn rank(&self) -> Rank {
         self.rank_out()
     }
 }
 
-impl<D: Data, W: ZnxWord> GGLWEInfos for GLWESwitchingKey<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> GGLWEInfos for GLWESwitchingKey<D, W, Rg> {
     fn k_aux(&self) -> TorusPrecision {
         self.key.k_aux()
     }
@@ -204,25 +204,25 @@ impl<D: Data, W: ZnxWord> GGLWEInfos for GLWESwitchingKey<D, W> {
     }
 }
 
-impl<BE: Backend> GGLWEAtBackendRef<BE> for GLWESwitchingKey<BE::OwnedBuf, BE::ZnxWord> {
-    fn at_backend(&self, row: usize, col: usize) -> GLWE<BE::BufRef<'_>, BE::ZnxWord> {
-        <GGLWE<BE::OwnedBuf, BE::ZnxWord> as GGLWEAtBackendRef<BE>>::at_backend(&self.key, row, col)
+impl<BE: Backend, Rg: Ring> GGLWEAtBackendRef<BE, Rg> for GLWESwitchingKey<BE::OwnedBuf, BE::ZnxWord, Rg> {
+    fn at_backend(&self, row: usize, col: usize) -> GLWE<BE::BufRef<'_>, BE::ZnxWord, Rg> {
+        <GGLWE<BE::OwnedBuf, BE::ZnxWord, Rg> as GGLWEAtBackendRef<BE, Rg>>::at_backend(&self.key, row, col)
     }
 }
 
-impl<BE: Backend> GGLWEAtBackendMut<BE> for GLWESwitchingKey<BE::OwnedBuf, BE::ZnxWord> {
-    fn at_backend_mut(&mut self, row: usize, col: usize) -> GLWE<BE::BufMut<'_>, BE::ZnxWord> {
-        <GGLWE<BE::OwnedBuf, BE::ZnxWord> as GGLWEAtBackendMut<BE>>::at_backend_mut(&mut self.key, row, col)
+impl<BE: Backend, Rg: Ring> GGLWEAtBackendMut<BE, Rg> for GLWESwitchingKey<BE::OwnedBuf, BE::ZnxWord, Rg> {
+    fn at_backend_mut(&mut self, row: usize, col: usize) -> GLWE<BE::BufMut<'_>, BE::ZnxWord, Rg> {
+        <GGLWE<BE::OwnedBuf, BE::ZnxWord, Rg> as GGLWEAtBackendMut<BE, Rg>>::at_backend_mut(&mut self.key, row, col)
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> fmt::Debug for GLWESwitchingKey<D, W> {
+impl<D: HostDataRef, W: ZnxWord, Rg: Ring> fmt::Debug for GLWESwitchingKey<D, W, Rg> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{self}")
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> fmt::Display for GLWESwitchingKey<D, W> {
+impl<D: HostDataRef, W: ZnxWord, Rg: Ring> fmt::Display for GLWESwitchingKey<D, W, Rg> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
@@ -238,7 +238,7 @@ impl<D: HostDataRef, W: ZnxWord> fmt::Display for GLWESwitchingKey<D, W> {
     dead_code,
     reason = "host-owned constructors are kept for serialization and host-only staging"
 )]
-impl<W: ZnxWord> GLWESwitchingKey<AlignedBuf, W> {
+impl<W: ZnxWord, Rg: Ring> GLWESwitchingKey<AlignedBuf, W, Rg> {
     /// Allocates a new [`GLWESwitchingKey`] with the given parameters.
     pub(crate) fn alloc_from_infos<A>(infos: &A) -> Self
     where
@@ -298,17 +298,17 @@ impl<W: ZnxWord> GLWESwitchingKey<AlignedBuf, W> {
         rank_in: Rank,
         rank_out: Rank,
     ) -> usize {
-        GGLWE::<AlignedBuf, W>::bytes_of(n, base2k, dnum, k_digit, k_aux, rank_in, rank_out)
+        GGLWE::<AlignedBuf, W, Rg>::bytes_of(n, base2k, dnum, k_digit, k_aux, rank_in, rank_out)
     }
 }
 
-impl_gglwe_to_backend_for_field!(GLWESwitchingKey<D, BE::ZnxWord>, key, GGLWE<D, BE::ZnxWord>);
+impl_gglwe_to_backend_for_field!(GLWESwitchingKey<D, BE::ZnxWord, Rg>, key, GGLWE<D, BE::ZnxWord, Rg>);
 
-impl_gglwe_at_view_for_field!(GLWESwitchingKey<BE::OwnedBuf, BE::ZnxWord>; key);
+impl_gglwe_at_view_for_field!(GLWESwitchingKey<BE::OwnedBuf, BE::ZnxWord, Rg>; key);
 
-impl_glwe_host_at_for_field!(GLWESwitchingKey<D, W>; key);
+impl_glwe_host_at_for_field!(GLWESwitchingKey<D, W, Rg>; key);
 
-impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GLWESwitchingKey<D, W> {
+impl<D: HostDataMut, W: ZnxWord, Rg: Ring> ReaderFrom for GLWESwitchingKey<D, W, Rg> {
     /// Deserialises from little-endian binary format.
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
         self.key.noise = None;
@@ -321,7 +321,7 @@ impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GLWESwitchingKey<D, W> {
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> WriterTo for GLWESwitchingKey<D, W> {
+impl<D: HostDataRef, W: ZnxWord, Rg: Ring> WriterTo for GLWESwitchingKey<D, W, Rg> {
     /// Serialises in little-endian binary format.
     fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
         if let Some(noise) = &self.key.noise {

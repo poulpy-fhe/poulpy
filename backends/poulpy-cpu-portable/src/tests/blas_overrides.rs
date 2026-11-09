@@ -30,7 +30,7 @@ use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAu
 use poulpy_cpu_oracle::FFT64Oracle;
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{CyclotomicOrder, HostBytesBackend, Module, PrepareHint::Reuse, ScratchArena, ScratchOwned},
+    layouts::{CyclotomicOrder, HostBytesBackend, Module, PrepareHint::Reuse, ScratchArena, ScratchOwned, Standard},
 };
 use std::{
     collections::HashMap,
@@ -64,18 +64,18 @@ fn calls() -> (usize, usize, usize) {
     (MAP_CALLS.load(Relaxed), JKLS_CALLS.load(Relaxed), PT_UNIT_CALLS.load(Relaxed))
 }
 
-poulpy_blas::impl_blas_mat_inter_reference_full!(OverrideBackend);
-poulpy_blas::impl_blas_mat_mul_reference_full!(OverrideBackend);
-poulpy_blas::impl_blas_mat_vec_reference_full!(OverrideBackend);
-poulpy_blas::impl_blas_encoding_reference_full!(OverrideBackend);
+poulpy_blas::impl_blas_mat_inter_reference_full!(OverrideBackend, Standard);
+poulpy_blas::impl_blas_mat_mul_reference_full!(OverrideBackend, Standard);
+poulpy_blas::impl_blas_mat_vec_reference_full!(OverrideBackend, Standard);
+poulpy_blas::impl_blas_encoding_reference_full!(OverrideBackend, Standard);
 
-unsafe impl BlasMatIntraImpl for OverrideBackend {
+unsafe impl BlasMatIntraImpl<Standard> for OverrideBackend {
     fn blas_map_blocks_tmp_bytes<D, S, K>(
         module: &Module<Self>,
         sources: usize,
         dst: &D,
         src: &S,
-        lts: &[&LinearTransformationPrepared<Self>],
+        lts: &[&LinearTransformationPrepared<Self, Standard>],
         keys: &K,
     ) -> usize
     where
@@ -90,14 +90,14 @@ unsafe impl BlasMatIntraImpl for OverrideBackend {
         module: &Module<Self>,
         dst: &mut [D],
         src: &[&S],
-        lts: &[&LinearTransformationPrepared<Self>],
+        lts: &[&LinearTransformationPrepared<Self, Standard>],
         keys: &K,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> CKKSResult<()>
     where
-        D: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos + Send,
-        S: GLWEToBackendRef<Self> + CKKSCtBounds + Sync,
-        K: GetAutomorphismKey<Self> + GetTensorKey<Self> + Sync,
+        D: GLWEToBackendMut<Self, Standard> + CKKSCtBounds + SetCKKSInfos + Send,
+        S: GLWEToBackendRef<Self, Standard> + CKKSCtBounds + Sync,
+        K: GetAutomorphismKey<Self, Standard> + GetTensorKey<Self, Standard> + Sync,
     {
         MAP_CALLS.fetch_add(1, Relaxed);
         module.blas_map_blocks_reference(dst, src, lts, keys, scratch)
@@ -107,7 +107,7 @@ unsafe impl BlasMatIntraImpl for OverrideBackend {
         module: &Module<Self>,
         res: &R,
         a: &A,
-        ctx: &BlasContextPrepared<Self>,
+        ctx: &BlasContextPrepared<Self, Standard>,
         keys: &K,
     ) -> usize
     where
@@ -123,14 +123,14 @@ unsafe impl BlasMatIntraImpl for OverrideBackend {
         k: usize,
         res: &mut R,
         a: &A,
-        ctx: &BlasContextPrepared<Self>,
+        ctx: &BlasContextPrepared<Self, Standard>,
         keys: &K,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> CKKSResult<()>
     where
-        R: BlasGridMut<Self>,
-        A: BlasGrid<Self>,
-        K: GetAutomorphismKey<Self> + GetTensorKey<Self> + Sync,
+        R: BlasGridMut<Self, Standard>,
+        A: BlasGrid<Self, Standard>,
+        K: GetAutomorphismKey<Self, Standard> + GetTensorKey<Self, Standard> + Sync,
     {
         module.blas_rotate_rows_reference(k, res, a, ctx, keys, scratch)
     }
@@ -139,7 +139,7 @@ unsafe impl BlasMatIntraImpl for OverrideBackend {
         module: &Module<Self>,
         res: &R,
         a: &A,
-        ctx: &BlasContextPrepared<Self>,
+        ctx: &BlasContextPrepared<Self, Standard>,
         keys: &K,
     ) -> usize
     where
@@ -155,19 +155,25 @@ unsafe impl BlasMatIntraImpl for OverrideBackend {
         k: usize,
         res: &mut R,
         a: &A,
-        ctx: &BlasContextPrepared<Self>,
+        ctx: &BlasContextPrepared<Self, Standard>,
         keys: &K,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> CKKSResult<()>
     where
-        R: BlasGridMut<Self>,
-        A: BlasGrid<Self>,
-        K: GetAutomorphismKey<Self> + GetTensorKey<Self> + Sync,
+        R: BlasGridMut<Self, Standard>,
+        A: BlasGrid<Self, Standard>,
+        K: GetAutomorphismKey<Self, Standard> + GetTensorKey<Self, Standard> + Sync,
     {
         module.blas_rotate_cols_reference(k, res, a, ctx, keys, scratch)
     }
 
-    fn blas_sum_rows_tmp_bytes<R, A, K>(module: &Module<Self>, res: &R, a: &A, ctx: &BlasContextPrepared<Self>, keys: &K) -> usize
+    fn blas_sum_rows_tmp_bytes<R, A, K>(
+        module: &Module<Self>,
+        res: &R,
+        a: &A,
+        ctx: &BlasContextPrepared<Self, Standard>,
+        keys: &K,
+    ) -> usize
     where
         R: BlasGridInfos,
         A: BlasGridInfos,
@@ -180,19 +186,25 @@ unsafe impl BlasMatIntraImpl for OverrideBackend {
         module: &Module<Self>,
         res: &mut R,
         a: &A,
-        ctx: &BlasContextPrepared<Self>,
+        ctx: &BlasContextPrepared<Self, Standard>,
         keys: &K,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> CKKSResult<()>
     where
-        R: BlasGridMut<Self>,
-        A: BlasGrid<Self>,
-        K: GetAutomorphismKey<Self> + GetTensorKey<Self> + Sync,
+        R: BlasGridMut<Self, Standard>,
+        A: BlasGrid<Self, Standard>,
+        K: GetAutomorphismKey<Self, Standard> + GetTensorKey<Self, Standard> + Sync,
     {
         module.blas_sum_rows_reference(res, a, ctx, keys, scratch)
     }
 
-    fn blas_sum_cols_tmp_bytes<R, A, K>(module: &Module<Self>, res: &R, a: &A, ctx: &BlasContextPrepared<Self>, keys: &K) -> usize
+    fn blas_sum_cols_tmp_bytes<R, A, K>(
+        module: &Module<Self>,
+        res: &R,
+        a: &A,
+        ctx: &BlasContextPrepared<Self, Standard>,
+        keys: &K,
+    ) -> usize
     where
         R: BlasGridInfos,
         A: BlasGridInfos,
@@ -205,20 +217,20 @@ unsafe impl BlasMatIntraImpl for OverrideBackend {
         module: &Module<Self>,
         res: &mut R,
         a: &A,
-        ctx: &BlasContextPrepared<Self>,
+        ctx: &BlasContextPrepared<Self, Standard>,
         keys: &K,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> CKKSResult<()>
     where
-        R: BlasGridMut<Self>,
-        A: BlasGrid<Self>,
-        K: GetAutomorphismKey<Self> + GetTensorKey<Self> + Sync,
+        R: BlasGridMut<Self, Standard>,
+        A: BlasGrid<Self, Standard>,
+        K: GetAutomorphismKey<Self, Standard> + GetTensorKey<Self, Standard> + Sync,
     {
         module.blas_sum_cols_reference(res, a, ctx, keys, scratch)
     }
 }
 
-unsafe impl BlasJklsImpl for OverrideBackend {
+unsafe impl BlasJklsImpl<Standard> for OverrideBackend {
     fn blas_jkls_block_tmp_bytes<R, L, Rh, T>(module: &Module<Self>, terms: usize, res: &R, lhs: &L, rhs: &Rh, tsk: &T) -> usize
     where
         R: CKKSCtBounds,
@@ -226,20 +238,22 @@ unsafe impl BlasJklsImpl for OverrideBackend {
         Rh: CKKSCtBounds,
         T: GGLWEInfos,
     {
-        module.blas_jkls_block_tmp_bytes_reference(terms, res, lhs, rhs, tsk)
+        <Module<OverrideBackend> as BlasJklsReference<OverrideBackend, Standard>>::blas_jkls_block_tmp_bytes_reference(
+            module, terms, res, lhs, rhs, tsk,
+        )
     }
 
     fn blas_jkls_block<R, T>(
         module: &Module<Self>,
         res: &mut R,
-        lhs: &[&CKKSLeftOperandPrepared<Self>],
-        rhs: &[&CKKSRightOperandPrepared<Self>],
+        lhs: &[&CKKSLeftOperandPrepared<Self, Standard>],
+        rhs: &[&CKKSRightOperandPrepared<Self, Standard>],
         tsk: &T,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> CKKSResult<()>
     where
-        R: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
-        T: GetTensorKey<Self> + Sync,
+        R: GLWEToBackendMut<Self, Standard> + CKKSCtBounds + SetCKKSInfos,
+        T: GetTensorKey<Self, Standard> + Sync,
     {
         JKLS_CALLS.fetch_add(1, Relaxed);
         module.blas_jkls_block_reference(res, lhs, rhs, tsk, scratch)
@@ -250,9 +264,9 @@ unsafe impl BlasJklsImpl for OverrideBackend {
         outputs: usize,
         res: &R,
         src: &S,
-        first: &LinearTransformationPrepared<Self>,
-        masks: &[&LinearTransformationPrepared<Self>],
-        plaintext: &CKKSRightOperandPrepared<Self>,
+        first: &LinearTransformationPrepared<Self, Standard>,
+        masks: &[&LinearTransformationPrepared<Self, Standard>],
+        plaintext: &CKKSRightOperandPrepared<Self, Standard>,
         keys: &K,
     ) -> usize
     where
@@ -267,17 +281,17 @@ unsafe impl BlasJklsImpl for OverrideBackend {
         module: &Module<Self>,
         res: &mut [&mut D],
         sources: &[&S],
-        first: &LinearTransformationPrepared<Self>,
-        masks: &[&LinearTransformationPrepared<Self>],
-        plaintexts: &[&[CKKSRightOperandPrepared<Self>]],
+        first: &LinearTransformationPrepared<Self, Standard>,
+        masks: &[&LinearTransformationPrepared<Self, Standard>],
+        plaintexts: &[&[CKKSRightOperandPrepared<Self, Standard>]],
         galois: &[i64],
         keys: &K,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> CKKSResult<()>
     where
-        D: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos + Send,
-        S: GLWEToBackendRef<Self> + CKKSCtBounds + Sync,
-        K: GetAutomorphismKey<Self> + GetTensorKey<Self> + Sync,
+        D: GLWEToBackendMut<Self, Standard> + CKKSCtBounds + SetCKKSInfos + Send,
+        S: GLWEToBackendRef<Self, Standard> + CKKSCtBounds + Sync,
+        K: GetAutomorphismKey<Self, Standard> + GetTensorKey<Self, Standard> + Sync,
     {
         PT_UNIT_CALLS.fetch_add(1, Relaxed);
         module.blas_jkls_pt_unit_reference(res, sources, first, masks, plaintexts, galois, keys, scratch)
@@ -297,9 +311,9 @@ fn blas_overrides_match_the_oracle() {
     let shapes = BlasParityShapes::default();
     let oracle = Module::<FFT64Oracle>::new(params.n as u64);
     let module = Module::<OverrideBackend>::new(params.n as u64);
-    test_blas_inter_parity::<FFT64Oracle, OverrideBackend, f64>(params, &shapes, &oracle, &module);
-    test_blas_intra_parity::<FFT64Oracle, OverrideBackend, f64>(params, &shapes, &oracle, &module);
-    test_blas_matmul_parity::<FFT64Oracle, OverrideBackend, f64>(params, &shapes, &oracle, &module);
+    test_blas_inter_parity::<FFT64Oracle, OverrideBackend, f64, Standard>(params, &shapes, &oracle, &module);
+    test_blas_intra_parity::<FFT64Oracle, OverrideBackend, f64, Standard>(params, &shapes, &oracle, &module);
+    test_blas_matmul_parity::<FFT64Oracle, OverrideBackend, f64, Standard>(params, &shapes, &oracle, &module);
     let (map, jkls, pt_unit) = calls();
     assert!(
         map > 0 && jkls > 0 && pt_unit > 0,
@@ -350,9 +364,10 @@ fn blas_hooks_run_on_accepted_calls_alone() {
     let slots = params.n / 2;
     let encoder = ReferenceEncoder::<EncodingFFTTable<f64>>::new(slots).unwrap();
     let (sk_raw, sk) = gen_sk_with_raw(&params, &module, &host_module, [0u8; 32]);
-    let mut scratch = alloc_scratch(&params, &module);
-    let (ctx, mut atks) = context_and_keys::<OverrideBackend, f64>(&params, &module, log_d, &sk_raw, &mut scratch.borrow());
-    let foreign = foreign_contexts::<OverrideBackend, f64>(
+    let mut scratch = alloc_scratch::<_, Standard>(&params, &module);
+    let (ctx, mut atks) =
+        context_and_keys::<OverrideBackend, f64, Standard>(&params, &module, log_d, &sk_raw, &mut scratch.borrow());
+    let foreign = foreign_contexts::<OverrideBackend, f64, Standard>(
         &params,
         &module,
         BlasPlan::new(log_d),
@@ -364,7 +379,7 @@ fn blas_hooks_run_on_accepted_calls_alone() {
         atks,
         tsk: Some(gen_tsk(&params, &module, &sk_raw, &mut scratch.borrow())),
     };
-    let a = encrypt_grid::<OverrideBackend, f64, EncodingFFTTable<f64>>(
+    let a = encrypt_grid::<OverrideBackend, f64, EncodingFFTTable<f64>, Standard>(
         &params,
         &module,
         &host_module,
@@ -375,7 +390,7 @@ fn blas_hooks_run_on_accepted_calls_alone() {
         &Grid::model(log_d, 2, 2, slots >> (2 * log_d), 7),
         &mut scratch.borrow(),
     );
-    let col = encrypt_grid::<OverrideBackend, f64, EncodingFFTTable<f64>>(
+    let col = encrypt_grid::<OverrideBackend, f64, EncodingFFTTable<f64>, Standard>(
         &params,
         &module,
         &host_module,
@@ -388,7 +403,7 @@ fn blas_hooks_run_on_accepted_calls_alone() {
     );
     let lanes = slots >> (2 * log_d);
     let one_matrix = Grid::model(log_d, 1, 2, 1, 9);
-    let one = encrypt_grid::<OverrideBackend, f64, EncodingFFTTable<f64>>(
+    let one = encrypt_grid::<OverrideBackend, f64, EncodingFFTTable<f64>, Standard>(
         &params,
         &module,
         &host_module,
@@ -470,8 +485,8 @@ fn blas_hooks_run_on_accepted_calls_alone() {
         let plan = BlasPlan::new(log_d).with_pt_algorithm(algorithm);
         let entry = |_: usize, r: usize, c: usize| ((r + c) % 3) as f64 - 1.0;
         let (base2k, meta) = (params.base2k.into(), params.prec().into());
-        let pt = pt_operand::<OverrideBackend, f64, Right>(&module, plan, 1, 1, 1, entry, base2k, meta);
-        let pt_left = pt_operand::<OverrideBackend, f64, Left>(&module, plan, 2, 2, 1, entry, base2k, meta);
+        let pt = pt_operand::<OverrideBackend, f64, Right, Standard>(&module, plan, 1, 1, 1, entry, base2k, meta);
+        let pt_left = pt_operand::<OverrideBackend, f64, Left, Standard>(&module, plan, 2, 2, 1, entry, base2k, meta);
         let (right_calls, left_calls) = if algorithm == BlasPtAlgorithm::Jkls { (2, 1) } else { (0, 0) };
         let bytes = module
             .blas_matmul_pt_right_tmp_bytes(&res_col, &col, &pt, &ctx, &atk_layout)
@@ -493,12 +508,12 @@ fn blas_hooks_run_on_accepted_calls_alone() {
     // Under the masked paths, one masked-unit call per block row (column on the left) of `res`, entering the map hook
     // twice per source block, for sigma (tau) and for the masks: 2 rows of one block on the right, 1 column of 2 on the
     // left.
-    let order = module.cyclotomic_order();
+    let order = module.cyclotomic_order::<Standard>();
     for algorithm in MASKED_PT_ALGORITHMS {
         let plan = BlasPlan::new(log_d).with_pt_algorithm(algorithm);
         let entry = |_: usize, r: usize, c: usize| ((r + c) % 3) as f64 - 1.0;
         let (base2k, meta) = (params.base2k.into(), params.prec().into());
-        let masked_ctx = encoded_context::<OverrideBackend, f64>(&module, plan, base2k, meta);
+        let masked_ctx = encoded_context::<OverrideBackend, f64, Standard>(&module, plan, base2k, meta);
         let elements = plan
             .matmul_pt_right_galois_elements(order)
             .into_iter()
@@ -507,8 +522,8 @@ fn blas_hooks_run_on_accepted_calls_alone() {
             atks: rotation_keys(&params, &module, &sk_raw, elements, &mut scratch.borrow()),
             tsk: None,
         };
-        let pt = pt_operand::<OverrideBackend, f64, Right>(&module, plan, 1, 1, 1, entry, base2k, meta);
-        let pt_left = pt_operand::<OverrideBackend, f64, Left>(&module, plan, 2, 2, 1, entry, base2k, meta);
+        let pt = pt_operand::<OverrideBackend, f64, Right, Standard>(&module, plan, 1, 1, 1, entry, base2k, meta);
+        let pt_left = pt_operand::<OverrideBackend, f64, Left, Standard>(&module, plan, 2, 2, 1, entry, base2k, meta);
         let bytes = module
             .blas_matmul_pt_right_tmp_bytes(&res_col, &col, &pt, &masked_ctx, &atk_layout)
             .max(module.blas_matmul_pt_left_tmp_bytes(&res_col, &pt_left, &col, &masked_ctx, &atk_layout));

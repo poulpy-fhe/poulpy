@@ -31,7 +31,8 @@ use poulpy_hal::{
         VecZnxIdftNormalize, VecZnxIdftNormalizeTmpBytes, VecZnxNormalize, VecZnxNormalizeTmpBytes,
     },
     layouts::{
-        Backend, CyclotomicOrder, Module, PrepareHint, ScratchArena, VecZnxDftToBackendMut, VecZnxToBackendRef, galois_element,
+        Backend, CyclotomicOrder, Module, PrepareHint, ScratchArena, Standard, VecZnxDftToBackendMut, VecZnxToBackendRef,
+        galois_element,
     },
 };
 
@@ -446,7 +447,7 @@ where
     let (_, guard) = first_factor_work(base2k, k_large);
     let small_layout = layout(dst, small);
     // The cyclotomic order of the bootstrap's degree, which the module may exceed.
-    let order = crate::operand_cyclotomic_order(OP, module, dst.n().as_usize())?;
+    let order = crate::operand_cyclotomic_order::<_, Standard>(OP, module, dst.n().as_usize())?;
     let meta = GLWEPlaintextMeta {
         scale: Scale::Log(src.log_delta() + scale_up),
         slots: src.slots(),

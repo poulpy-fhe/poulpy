@@ -7,8 +7,8 @@ use poulpy_hal::{
         VecZnxSubAssign, VecZnxSubNegateAssign, VecZnxZero, VmpApplyDftToDft, VmpApplyDftToDftTmpBytes,
     },
     layouts::{
-        Backend, Module, ScalarZnxToBackendMut, ScratchArena, VecZnx, VecZnxBigToBackendMut, VecZnxBigToBackendRef,
-        VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxToBackendMut, VecZnxToBackendRef,
+        Backend, Module, Ring, ScalarZnxToBackendMut, ScratchArena, Standard, VecZnx, VecZnxBigToBackendMut,
+        VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxToBackendMut, VecZnxToBackendRef,
         scalar_znx_as_vec_znx_backend_ref_from_mut, vec_znx_backend_ref_from_mut,
     },
     source::Source,
@@ -27,23 +27,23 @@ use crate::{
 /// Portable implementation using HAL operations.
 ///
 /// Backend implementations may call this helper without changing their override selection.
-pub trait GLWEFillReference<BE: Backend> {
+pub trait GLWEFillReference<BE: Backend, Rg: Ring = Standard> {
     fn glwe_fill_mask_from_source_reference<R>(&self, res: &mut R, source_xa: &mut Source)
     where
-        R: GLWEToBackendMut<BE>;
+        R: GLWEToBackendMut<BE, Rg>;
 
     fn glwe_fill_from_source_reference<R>(&self, res: &mut R, source: &mut Source)
     where
-        R: GLWEToBackendMut<BE>;
+        R: GLWEToBackendMut<BE, Rg>;
 }
 
-impl<BE: Backend> GLWEFillReference<BE> for Module<BE>
+impl<BE: Backend, Rg: Ring> GLWEFillReference<BE, Rg> for Module<BE>
 where
-    Self: VecZnxFillUniformSource<BE>,
+    Self: VecZnxFillUniformSource<BE, Rg>,
 {
     fn glwe_fill_mask_from_source_reference<R>(&self, res: &mut R, source_xa: &mut Source)
     where
-        R: GLWEToBackendMut<BE>,
+        R: GLWEToBackendMut<BE, Rg>,
     {
         let mut res = res.to_backend_mut();
         let (base2k, k) = (res.base2k().as_usize(), res.k().as_usize());
@@ -54,7 +54,7 @@ where
 
     fn glwe_fill_from_source_reference<R>(&self, res: &mut R, source: &mut Source)
     where
-        R: GLWEToBackendMut<BE>,
+        R: GLWEToBackendMut<BE, Rg>,
     {
         res.set_canonical(true);
         let mut res = res.to_backend_mut();
@@ -68,7 +68,7 @@ where
 /// Portable implementation using HAL operations.
 ///
 /// Backend implementations may call this helper without changing their override selection.
-pub trait GLWEEncryptSkReference<BE: Backend> {
+pub trait GLWEEncryptSkReference<BE: Backend, Rg: Ring = Standard> {
     fn glwe_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
         A: GLWEInfos;
@@ -82,9 +82,9 @@ pub trait GLWEEncryptSkReference<BE: Backend> {
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE>,
-        P: GLWEToBackendRef<BE>,
-        S: GLWESecretPreparedToBackendRef<BE>;
+        R: GLWEToBackendMut<BE, Rg>,
+        P: GLWEToBackendRef<BE, Rg>,
+        S: GLWESecretPreparedToBackendRef<BE, Rg>;
 
     fn glwe_encrypt_zero_sk_reference<R, S>(
         &self,
@@ -94,8 +94,8 @@ pub trait GLWEEncryptSkReference<BE: Backend> {
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE>,
-        S: GLWESecretPreparedToBackendRef<BE>;
+        R: GLWEToBackendMut<BE, Rg>,
+        S: GLWESecretPreparedToBackendRef<BE, Rg>;
 
     fn glwe_encrypt_sk_with_mask_reference<R, P, S>(
         &self,
@@ -105,12 +105,12 @@ pub trait GLWEEncryptSkReference<BE: Backend> {
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE>,
-        P: GLWEToBackendRef<BE>,
-        S: GLWESecretPreparedToBackendRef<BE>;
+        R: GLWEToBackendMut<BE, Rg>,
+        P: GLWEToBackendRef<BE, Rg>,
+        S: GLWESecretPreparedToBackendRef<BE, Rg>;
 }
 
-impl<BE: Backend> GLWEEncryptSkReference<BE> for Module<BE>
+impl<BE: Backend, Rg: Ring> GLWEEncryptSkReference<BE, Rg> for Module<BE>
 where
     Self: Sized
         + ModuleN
@@ -118,8 +118,8 @@ where
         + VecZnxBigNormalizeTmpBytes
         + VecZnxIdftApplyTmpBytes
         + VecZnxDftBytesOf
-        + GLWEFill<BE>
-        + GLWEEncryptSkInternal<BE>,
+        + GLWEFill<BE, Rg>
+        + GLWEEncryptSkInternal<BE, Rg>,
 {
     fn glwe_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
@@ -151,9 +151,9 @@ where
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE>,
-        P: GLWEToBackendRef<BE>,
-        S: GLWESecretPreparedToBackendRef<BE>,
+        R: GLWEToBackendMut<BE, Rg>,
+        P: GLWEToBackendRef<BE, Rg>,
+        S: GLWESecretPreparedToBackendRef<BE, Rg>,
     {
         let metadata = crate::component_noise::fresh_sk_noise(sk.to_backend_ref().dist, &res.to_backend_ref());
         {
@@ -201,8 +201,8 @@ where
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE>,
-        S: GLWESecretPreparedToBackendRef<BE>,
+        R: GLWEToBackendMut<BE, Rg>,
+        S: GLWESecretPreparedToBackendRef<BE, Rg>,
     {
         let metadata = crate::component_noise::fresh_sk_noise(sk.to_backend_ref().dist, &res.to_backend_ref());
         {
@@ -249,9 +249,9 @@ where
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE>,
-        P: GLWEToBackendRef<BE>,
-        S: GLWESecretPreparedToBackendRef<BE>,
+        R: GLWEToBackendMut<BE, Rg>,
+        P: GLWEToBackendRef<BE, Rg>,
+        S: GLWESecretPreparedToBackendRef<BE, Rg>,
     {
         let metadata = crate::component_noise::fresh_sk_noise(sk.to_backend_ref().dist, &res.to_backend_ref());
         {
@@ -291,7 +291,7 @@ where
 /// Portable implementation using HAL operations.
 ///
 /// Backend implementations may call this helper without changing their override selection.
-pub trait GLWEEncryptPkReference<BE: Backend> {
+pub trait GLWEEncryptPkReference<BE: Backend, Rg: Ring = Standard> {
     fn glwe_encrypt_pk_tmp_bytes_reference<R, K>(&self, res_infos: &R, pk_infos: &K) -> usize
     where
         R: GLWEInfos,
@@ -309,14 +309,14 @@ pub trait GLWEEncryptPkReference<BE: Backend> {
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        P: GLWEToBackendRef<BE> + GLWEInfos,
-        K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos;
+        R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+        P: GLWEToBackendRef<BE, Rg> + GLWEInfos,
+        K: GLWEPublicKeyPreparedToBackendRef<BE, Rg> + GLWEInfos;
 }
 
-impl<BE: Backend> GLWEEncryptPkReference<BE> for Module<BE>
+impl<BE: Backend, Rg: Ring> GLWEEncryptPkReference<BE, Rg> for Module<BE>
 where
-    Self: GLWEEncryptPkInternal<BE>
+    Self: GLWEEncryptPkInternal<BE, Rg>
         + VecZnxDftBytesOf
         + VmpApplyDftToDftTmpBytes
         + VecZnxBigBytesOf
@@ -357,9 +357,9 @@ where
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        P: GLWEToBackendRef<BE> + GLWEInfos,
-        K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos,
+        R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+        P: GLWEToBackendRef<BE, Rg> + GLWEInfos,
+        K: GLWEPublicKeyPreparedToBackendRef<BE, Rg> + GLWEInfos,
     {
         if let Some((_, col)) = pt {
             assert!(col <= res.rank().as_usize(), "invalid column: exceeds the output rank");
@@ -382,12 +382,12 @@ where
     }
 }
 
-pub(crate) trait GLWEEncryptPkInternal<BE: Backend> {
+pub(crate) trait GLWEEncryptPkInternal<BE: Backend, Rg: Ring = Standard> {
     #[allow(clippy::too_many_arguments)]
     fn glwe_encrypt_pk_internal<R, K>(
         &self,
         res: &mut R,
-        pt: Option<(GLWEBackendRef<'_, BE>, usize)>,
+        pt: Option<(GLWEBackendRef<'_, BE, Rg>, usize)>,
         body_noise: bool,
         pk: &K,
         k_sample: TorusPrecision,
@@ -395,30 +395,30 @@ pub(crate) trait GLWEEncryptPkInternal<BE: Backend> {
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE>,
-        K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos;
+        R: GLWEToBackendMut<BE, Rg>,
+        K: GLWEPublicKeyPreparedToBackendRef<BE, Rg> + GLWEInfos;
 }
 
-impl<BE: Backend> GLWEEncryptPkInternal<BE> for Module<BE>
+impl<BE: Backend, Rg: Ring> GLWEEncryptPkInternal<BE, Rg> for Module<BE>
 where
-    Self: VecZnxDftApply<BE>
-        + VmpApplyDftToDft<BE>
+    Self: VecZnxDftApply<BE, Rg>
+        + VmpApplyDftToDft<BE, Rg>
         + VmpApplyDftToDftTmpBytes
-        + VecZnxDftZero<BE>
-        + VecZnxZero<BE>
-        + VecZnxIdftApply<BE>
+        + VecZnxDftZero<BE, Rg>
+        + VecZnxZero<BE, Rg>
+        + VecZnxIdftApply<BE, Rg>
         + VecZnxIdftApplyTmpBytes
-        + VecZnxBigAddNoise<BE>
-        + VecZnxBigNormalize<BE>
-        + VecZnxBigAddSmallAssign<BE>
+        + VecZnxBigAddNoise<BE, Rg>
+        + VecZnxBigNormalize<BE, Rg>
+        + VecZnxBigAddSmallAssign<BE, Rg>
         + ModuleN
-        + ScalarZnxFillDistribution<BE>,
+        + ScalarZnxFillDistribution<BE, Rg>,
 {
     #[allow(clippy::too_many_arguments)]
     fn glwe_encrypt_pk_internal<R, K>(
         &self,
         res: &mut R,
-        pt: Option<(GLWEBackendRef<'_, BE>, usize)>,
+        pt: Option<(GLWEBackendRef<'_, BE, Rg>, usize)>,
         body_noise: bool,
         pk: &K,
         k_sample: TorusPrecision,
@@ -426,8 +426,8 @@ where
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE>,
-        K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos,
+        R: GLWEToBackendMut<BE, Rg>,
+        K: GLWEPublicKeyPreparedToBackendRef<BE, Rg> + GLWEInfos,
     {
         {
             let res_ref = res.to_backend_ref();
@@ -453,7 +453,7 @@ where
                 operand_degree(self.n(), &[pt.n(), pk.n()]);
             }
 
-            let pk = <K as GLWEPublicKeyPreparedToBackendRef<BE>>::to_backend_ref(pk);
+            let pk = <K as GLWEPublicKeyPreparedToBackendRef<BE, Rg>>::to_backend_ref(pk);
             assert!(
                 pk.data.cols_out() == pk.data.cols_in() + 1,
                 "invalid public key: entry count differs from its rank"
@@ -497,7 +497,7 @@ where
                     0,
                     &mut u_dft.to_backend_mut(),
                     l,
-                    &scalar_znx_as_vec_znx_backend_ref_from_mut::<BE>(&u),
+                    &scalar_znx_as_vec_znx_backend_ref_from_mut::<BE, Rg>(&u),
                     l,
                 );
             }
@@ -545,55 +545,55 @@ where
     }
 }
 
-pub(crate) trait GLWEEncryptSkInternal<BE: Backend> {
+pub(crate) trait GLWEEncryptSkInternal<BE: Backend, Rg: Ring = Standard> {
     #[allow(clippy::too_many_arguments)]
     fn glwe_encrypt_sk_internal<'pt, S>(
         &self,
         base2k: usize,
         k: usize,
-        res: &mut VecZnx<BE::BufMut<'_>, BE::ZnxWord>,
-        pt: GLWEEncryptSkPlaintext<'pt, BE>,
+        res: &mut VecZnx<BE::BufMut<'_>, BE::ZnxWord, Rg>,
+        pt: GLWEEncryptSkPlaintext<'pt, BE, Rg>,
         sk: &S,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        S: GLWESecretPreparedToBackendRef<BE>;
+        S: GLWESecretPreparedToBackendRef<BE, Rg>;
 }
 
-type GLWEEncryptSkPlaintext<'a, BE> = Option<(GLWEBackendRef<'a, BE>, usize)>;
+type GLWEEncryptSkPlaintext<'a, BE, Rg = Standard> = Option<(GLWEBackendRef<'a, BE, Rg>, usize)>;
 
-impl<BE: Backend> GLWEEncryptSkInternal<BE> for Module<BE>
+impl<BE: Backend, Rg: Ring> GLWEEncryptSkInternal<BE, Rg> for Module<BE>
 where
     Self: ModuleN
         + VecZnxDftBytesOf
-        + VecZnxBigNormalize<BE>
-        + VecZnxDftApply<BE>
-        + SvpApplyDftToDftAssign<BE>
-        + VecZnxIdftApply<BE>
+        + VecZnxBigNormalize<BE, Rg>
+        + VecZnxDftApply<BE, Rg>
+        + SvpApplyDftToDftAssign<BE, Rg>
+        + VecZnxIdftApply<BE, Rg>
         + VecZnxIdftApplyTmpBytes
         + VecZnxNormalizeTmpBytes
-        + VecZnxFillUniformSource<BE>
-        + VecZnxAddAssign<BE>
-        + VecZnxCopy<BE>
-        + VecZnxZero<BE>
-        + VecZnxNormalizeAssign<BE>
-        + VecZnxAddNoise<BE>
-        + VecZnxNormalize<BE>
-        + VecZnxSubAssign<BE>
-        + VecZnxSubNegateAssign<BE>
+        + VecZnxFillUniformSource<BE, Rg>
+        + VecZnxAddAssign<BE, Rg>
+        + VecZnxCopy<BE, Rg>
+        + VecZnxZero<BE, Rg>
+        + VecZnxNormalizeAssign<BE, Rg>
+        + VecZnxAddNoise<BE, Rg>
+        + VecZnxNormalize<BE, Rg>
+        + VecZnxSubAssign<BE, Rg>
+        + VecZnxSubNegateAssign<BE, Rg>
         + VecZnxBigNormalizeTmpBytes,
 {
     fn glwe_encrypt_sk_internal<'pt, S>(
         &self,
         base2k: usize,
         k: usize,
-        res: &mut VecZnx<BE::BufMut<'_>, BE::ZnxWord>,
-        pt: GLWEEncryptSkPlaintext<'pt, BE>,
+        res: &mut VecZnx<BE::BufMut<'_>, BE::ZnxWord, Rg>,
+        pt: GLWEEncryptSkPlaintext<'pt, BE, Rg>,
         sk: &S,
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        S: GLWESecretPreparedToBackendRef<BE>,
+        S: GLWESecretPreparedToBackendRef<BE, Rg>,
     {
         let sk = sk.to_backend_ref();
 
@@ -615,15 +615,15 @@ where
             if let Some((pt, col)) = pt.as_ref() {
                 if i == *col {
                     self.vec_znx_copy(&mut ci, 0, &pt.data, 0);
-                    let ct_ref = vec_znx_backend_ref_from_mut::<BE>(res);
+                    let ct_ref = vec_znx_backend_ref_from_mut::<BE, Rg>(res);
                     self.vec_znx_sub_negate_assign(&mut ci, 0, &ct_ref, i);
                     self.vec_znx_normalize_assign(base2k, size * base2k, 0, &mut ci.to_backend_mut(), 0, &mut scratch_2.borrow());
                 } else {
-                    let ct_ref = vec_znx_backend_ref_from_mut::<BE>(res);
+                    let ct_ref = vec_znx_backend_ref_from_mut::<BE, Rg>(res);
                     self.vec_znx_copy(&mut ci, 0, &ct_ref, i);
                 }
             } else {
-                let ct_ref = vec_znx_backend_ref_from_mut::<BE>(res);
+                let ct_ref = vec_znx_backend_ref_from_mut::<BE, Rg>(res);
                 self.vec_znx_copy(&mut ci, 0, &ct_ref, i);
             }
 

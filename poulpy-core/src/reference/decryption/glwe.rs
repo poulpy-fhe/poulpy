@@ -4,7 +4,9 @@ use poulpy_hal::{
         VecZnxBigBytesOf, VecZnxBigFromSmall, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftApply, VecZnxDftBytesOf,
         VecZnxIdftApply, VecZnxIdftApplyTmpBytes,
     },
-    layouts::{Backend, ScratchArena, VecZnxBackendRef, VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef},
+    layouts::{
+        Backend, Ring, ScratchArena, VecZnxBackendRef, VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef,
+    },
 };
 
 pub use crate::api::GLWEDecrypt;
@@ -19,14 +21,14 @@ use crate::{
     },
 };
 
-pub fn glwe_decrypt_tmp_bytes_reference<M, BE: Backend, A>(module: &M, infos: &A) -> usize
+pub fn glwe_decrypt_tmp_bytes_reference<M, BE: Backend, A, Rg: Ring>(module: &M, infos: &A) -> usize
 where
     M: ModuleN
         + VecZnxDftBytesOf
         + VecZnxBigBytesOf
         + VecZnxBigNormalizeTmpBytes
         + VecZnxIdftApplyTmpBytes
-        + GLWENormalize<BE>
+        + GLWENormalize<BE, Rg>
         + GLWEBytesOf<BE>,
     A: GLWEInfos,
 {
@@ -51,7 +53,7 @@ where
     lvl_0 + lvl_1
 }
 
-pub fn glwe_decrypt_reference<M, BE: Backend, R, P, S>(
+pub fn glwe_decrypt_reference<M, BE: Backend, R, P, S, Rg: Ring>(
     module: &M,
     res: &R,
     pt: &mut P,
@@ -61,28 +63,28 @@ pub fn glwe_decrypt_reference<M, BE: Backend, R, P, S>(
     M: ModuleN
         + VecZnxDftBytesOf
         + VecZnxBigBytesOf
-        + VecZnxBigFromSmall<BE>
-        + VecZnxDftApply<BE>
-        + SvpApplyDftToDftAssign<BE>
-        + VecZnxIdftApply<BE>
+        + VecZnxBigFromSmall<BE, Rg>
+        + VecZnxDftApply<BE, Rg>
+        + SvpApplyDftToDftAssign<BE, Rg>
+        + VecZnxIdftApply<BE, Rg>
         + VecZnxIdftApplyTmpBytes
-        + VecZnxBigAddAssign<BE>
-        + VecZnxBigNormalize<BE>
+        + VecZnxBigAddAssign<BE, Rg>
+        + VecZnxBigNormalize<BE, Rg>
         + VecZnxBigNormalizeTmpBytes
-        + GLWENormalize<BE>
+        + GLWENormalize<BE, Rg>
         + GLWEBytesOf<BE>,
-    R: GLWEToBackendRef<BE> + GLWEInfos,
-    P: GLWEToBackendMut<BE> + GLWEInfos + SetBase2k,
-    S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
+    R: GLWEToBackendRef<BE, Rg> + GLWEInfos,
+    P: GLWEToBackendMut<BE, Rg> + GLWEInfos + SetBase2k,
+    S: GLWESecretPreparedToBackendRef<BE, Rg> + GLWEInfos,
 {
     operand_degree(module.n(), &[res.n(), pt.n(), sk.n()]);
     assert!(
-        scratch.available() >= glwe_decrypt_tmp_bytes_reference::<M, BE, _>(module, res),
+        scratch.available() >= glwe_decrypt_tmp_bytes_reference::<M, BE, _, Rg>(module, res),
         "scratch.available(): {} < GLWEDecrypt::glwe_decrypt_tmp_bytes: {}",
         scratch.available(),
-        glwe_decrypt_tmp_bytes_reference::<M, BE, _>(module, res)
+        glwe_decrypt_tmp_bytes_reference::<M, BE, _, Rg>(module, res)
     );
-    let tmp_bytes: usize = glwe_decrypt_tmp_bytes_reference::<M, BE, _>(module, res);
+    let tmp_bytes: usize = glwe_decrypt_tmp_bytes_reference::<M, BE, _, Rg>(module, res);
     {
         let (mut res_tmp, mut scratch) = scratch.borrow().take_glwe_scratch(res);
         let res = if res.is_canonical() {
@@ -99,23 +101,23 @@ pub fn glwe_decrypt_reference<M, BE: Backend, R, P, S>(
     scratch.wipe(tmp_bytes);
 }
 
-pub(crate) fn glwe_decrypt_backend_inner<'arena, 'scratch, M, BE: Backend>(
+pub(crate) fn glwe_decrypt_backend_inner<'arena, 'scratch, M, BE: Backend, Rg: Ring>(
     module: &M,
-    res: &GLWEBackendRef<'_, BE>,
-    pt: &mut GLWEBackendMut<'_, BE>,
-    sk: &GLWESecretPreparedBackendRef<'_, BE>,
+    res: &GLWEBackendRef<'_, BE, Rg>,
+    pt: &mut GLWEBackendMut<'_, BE, Rg>,
+    sk: &GLWESecretPreparedBackendRef<'_, BE, Rg>,
     scratch: &'scratch mut ScratchArena<'arena, BE>,
 ) where
     M: ModuleN
         + VecZnxDftBytesOf
         + VecZnxBigBytesOf
-        + VecZnxBigFromSmall<BE>
-        + VecZnxDftApply<BE>
-        + SvpApplyDftToDftAssign<BE>
-        + VecZnxIdftApply<BE>
+        + VecZnxBigFromSmall<BE, Rg>
+        + VecZnxDftApply<BE, Rg>
+        + SvpApplyDftToDftAssign<BE, Rg>
+        + VecZnxIdftApply<BE, Rg>
         + VecZnxIdftApplyTmpBytes
-        + VecZnxBigAddAssign<BE>
-        + VecZnxBigNormalize<BE>
+        + VecZnxBigAddAssign<BE, Rg>
+        + VecZnxBigNormalize<BE, Rg>
         + VecZnxBigNormalizeTmpBytes,
 {
     assert!(res.rank() == sk.rank(), "the ciphertext rank differs from the secret's rank");
@@ -144,28 +146,28 @@ pub(crate) fn glwe_decrypt_backend_inner<'arena, 'scratch, M, BE: Backend>(
 /// Normalizes into `pt` the column `body` of `data`, if any, plus the products of
 /// its `rank` columns from `mask` with the secret's.
 #[allow(clippy::too_many_arguments)]
-fn phase_backend_inner<'arena, 'scratch, M, BE: Backend>(
+fn phase_backend_inner<'arena, 'scratch, M, BE: Backend, Rg: Ring>(
     module: &M,
-    data: &VecZnxBackendRef<'_, BE>,
+    data: &VecZnxBackendRef<'_, BE, Rg>,
     body: Option<usize>,
     mask: usize,
     rank: usize,
     base2k: Base2K,
     size: usize,
-    pt: &mut GLWEBackendMut<'_, BE>,
-    sk: &GLWESecretPreparedBackendRef<'_, BE>,
+    pt: &mut GLWEBackendMut<'_, BE, Rg>,
+    sk: &GLWESecretPreparedBackendRef<'_, BE, Rg>,
     scratch: &'scratch mut ScratchArena<'arena, BE>,
 ) where
     M: ModuleN
         + VecZnxDftBytesOf
         + VecZnxBigBytesOf
-        + VecZnxBigFromSmall<BE>
-        + VecZnxDftApply<BE>
-        + SvpApplyDftToDftAssign<BE>
-        + VecZnxIdftApply<BE>
+        + VecZnxBigFromSmall<BE, Rg>
+        + VecZnxDftApply<BE, Rg>
+        + SvpApplyDftToDftAssign<BE, Rg>
+        + VecZnxIdftApply<BE, Rg>
         + VecZnxIdftApplyTmpBytes
-        + VecZnxBigAddAssign<BE>
-        + VecZnxBigNormalize<BE>
+        + VecZnxBigAddAssign<BE, Rg>
+        + VecZnxBigNormalize<BE, Rg>
         + VecZnxBigNormalizeTmpBytes,
 {
     let n: usize = data.n();
@@ -219,7 +221,7 @@ where
 }
 
 /// Writes into `res` the inner product of the canonical `mask` with `sk`.
-pub fn glwe_mask_inner_product_reference<M, BE: Backend, R, A, S>(
+pub fn glwe_mask_inner_product_reference<M, BE: Backend, R, A, S, Rg: Ring>(
     module: &M,
     res: &mut R,
     mask: &A,
@@ -229,17 +231,17 @@ pub fn glwe_mask_inner_product_reference<M, BE: Backend, R, A, S>(
     M: ModuleN
         + VecZnxDftBytesOf
         + VecZnxBigBytesOf
-        + VecZnxBigFromSmall<BE>
-        + VecZnxDftApply<BE>
-        + SvpApplyDftToDftAssign<BE>
-        + VecZnxIdftApply<BE>
+        + VecZnxBigFromSmall<BE, Rg>
+        + VecZnxDftApply<BE, Rg>
+        + SvpApplyDftToDftAssign<BE, Rg>
+        + VecZnxIdftApply<BE, Rg>
         + VecZnxIdftApplyTmpBytes
-        + VecZnxBigAddAssign<BE>
-        + VecZnxBigNormalize<BE>
+        + VecZnxBigAddAssign<BE, Rg>
+        + VecZnxBigNormalize<BE, Rg>
         + VecZnxBigNormalizeTmpBytes,
-    R: GLWEToBackendMut<BE> + GLWEInfos + SetBase2k,
-    A: GLWEMaskToBackendRef<BE> + GLWEInfos,
-    S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
+    R: GLWEToBackendMut<BE, Rg> + GLWEInfos + SetBase2k,
+    A: GLWEMaskToBackendRef<BE, Rg> + GLWEInfos,
+    S: GLWESecretPreparedToBackendRef<BE, Rg> + GLWEInfos,
 {
     operand_degree(module.n(), &[res.n(), mask.n(), sk.n()]);
     assert!(mask.rank().as_usize() > 0, "GLWE mask rank must be positive");

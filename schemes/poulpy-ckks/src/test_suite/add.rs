@@ -67,10 +67,10 @@ const DELTA_LOG_DELTA: usize = 12;
 /// ct+ct out-of-place, aligned (same log_budget(), offset == 0 → glwe_add fast path).
 pub fn test_add_ct_aligned<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextModule<BE, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -126,10 +126,10 @@ where
 /// ct+ct out-of-place, a.log_budget() < b.log_budget() (b is shifted to align with a).
 pub fn test_add_ct_delta_a_lt_b<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextModule<BE, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -185,10 +185,10 @@ where
 /// ct+ct out-of-place, a.log_budget() > b.log_budget() (a is shifted to align with b).
 pub fn test_add_ct_delta_a_gt_b<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextModule<BE, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -244,10 +244,10 @@ where
 /// ct+ct out-of-place with aligned homomorphic capacity but different log_delta.
 pub fn test_add_ct_delta_log_delta<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextModule<BE, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -310,10 +310,10 @@ pub fn test_add_ct_aligned_smaller_output<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextModule<BE, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -372,10 +372,10 @@ pub fn test_add_ct_aligned_smaller_output<BE, F, E>(
 /// ct+ct in-place, aligned (same log_budget()).
 pub fn test_add_ct_assign_aligned<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextModule<BE, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -432,10 +432,10 @@ where
 /// ct+ct in-place, self.log_budget() < a.log_budget() (a is shifted down to align with self).
 pub fn test_add_ct_assign_self_lt<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextModule<BE, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -492,10 +492,10 @@ where
 /// ct+ct in-place, self.log_budget() > a.log_budget() (self is shifted down to align with a).
 pub fn test_add_ct_assign_self_gt<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextModule<BE, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -554,10 +554,10 @@ where
 /// ct + ZNX plaintext, in-place.
 pub fn test_add_pt_vec_assign<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextModule<BE, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -612,10 +612,10 @@ where
 /// ct + ZNX plaintext, out-of-place.
 pub fn test_add_pt_vec_into_aligned<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextModule<BE, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -671,10 +671,10 @@ pub fn test_add_pt_vec_into_delta_log_delta<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextModule<BE, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -729,10 +729,10 @@ pub fn test_add_pt_vec_into_lsh_alignment<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextModule<BE, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -793,10 +793,10 @@ pub fn test_add_pt_vec_into_lsh_alignment<BE, F, E>(
 /// ct + complex constant, out-of-place.
 pub fn test_add_const_into_aligned<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextModule<BE, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -820,7 +820,7 @@ where
     let (const_re, const_im) = quantized_const::<F>(ADD_SUB_CONST.0, ADD_SUB_CONST.1, PT_PREC.log_delta());
     let (want_re, want_im) = want_add_const(&re1, &im1, const_re, const_im);
     let mut ct_res = alloc_ct(&params, module, params.k);
-    let cst = add_sub_const_pt::<BE, F>(host_module, module, params.base2k.into());
+    let cst = add_sub_const_pt::<BE, F, Standard>(host_module, module, params.base2k.into());
     with_scratch::<BE, _>(module.ckks_add_pt_const_tmp_bytes(ct_res.max_size()), |s| {
         module.ckks_add_pt_const_into(&mut ct_res, 0, &ct, &cst, 0, s)
     })
@@ -849,10 +849,10 @@ pub fn test_add_const_into_lsh_alignment<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextModule<BE, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -879,7 +879,7 @@ pub fn test_add_const_into_lsh_alignment<BE, F, E>(
     // Padding the constant with the full ciphertext budget makes its allocated
     // max_k round up past the available precision, forcing PlaintextShift::Lsh.
     let cst_prec = ckks_spec(params.n, params.base2k, PT_PREC.log_delta(), ct.log_budget());
-    let cst = ckks_pt_cst::<BE, F>(
+    let cst = ckks_pt_cst::<BE, F, Standard>(
         host_module,
         module,
         params.base2k.into(),
@@ -918,10 +918,10 @@ pub fn test_add_const_into_lsh_alignment<BE, F, E>(
 /// ct + complex constant, in-place.
 pub fn test_add_const_assign<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextModule<BE, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -946,7 +946,7 @@ where
     let (want_re, want_im) = want_add_const(&re1, &im1, const_re, const_im);
     let expected_log_delta = ct.log_delta();
     let expected_log_budget = ct.log_budget();
-    let cst = add_sub_const_pt::<BE, F>(host_module, module, params.base2k.into());
+    let cst = add_sub_const_pt::<BE, F, Standard>(host_module, module, params.base2k.into());
     with_scratch::<BE, _>(module.ckks_add_pt_const_tmp_bytes(ct.max_size()), |s| {
         module.ckks_add_pt_const_assign(&mut ct, 0, &cst, 0, s)
     })
@@ -972,10 +972,10 @@ where
 /// ct + 1, in-place.
 pub fn test_add_one_assign<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextModule<BE, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -1024,10 +1024,10 @@ pub fn test_add_const_into_delta_log_delta<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextModule<BE, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -1051,7 +1051,7 @@ pub fn test_add_const_into_delta_log_delta<BE, F, E>(
     );
     let (want_re, want_im) = want_add_const(&a_re, &a_im, const_re, const_im);
     let mut ct_res = alloc_ct(&params, module, params.k);
-    let cst = add_sub_const_pt::<BE, F>(host_module, module, params.base2k.into());
+    let cst = add_sub_const_pt::<BE, F, Standard>(host_module, module, params.base2k.into());
     with_scratch::<BE, _>(module.ckks_add_pt_const_tmp_bytes(ct_res.max_size()), |s| {
         module.ckks_add_pt_const_into(&mut ct_res, 0, &ct, &cst, 0, s)
     })
@@ -1081,10 +1081,10 @@ pub fn test_add_const_into_smaller_output<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextModule<BE, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -1109,7 +1109,7 @@ pub fn test_add_const_into_smaller_output<BE, F, E>(
     let (want_re, want_im) = want_add_const(&re1, &im1, const_re, const_im);
     let dst_k = params.k - params.base2k - 1;
     let mut ct_res = alloc_ct(&params, module, dst_k);
-    let cst = add_sub_const_pt::<BE, F>(host_module, module, params.base2k.into());
+    let cst = add_sub_const_pt::<BE, F, Standard>(host_module, module, params.base2k.into());
     with_scratch::<BE, _>(module.ckks_add_pt_const_tmp_bytes(ct_res.max_size()), |s| {
         module.ckks_add_pt_const_into(&mut ct_res, 0, &ct, &cst, 0, s)
     })
@@ -1138,10 +1138,10 @@ pub fn test_add_const_into_real_only<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextModule<BE, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -1166,7 +1166,7 @@ pub fn test_add_const_into_real_only<BE, F, E>(
     let (const_re, const_im) = quantized_const::<F>(const_re_f64, 0.0, PT_PREC.log_delta());
     let (want_re, want_im) = want_add_const(&re1, &im1, const_re, const_im);
     let mut ct_res = alloc_ct(&params, module, params.k);
-    let cst = ckks_pt_cst::<BE, F>(host_module, module, params.base2k.into(), PT_PREC, Some(const_re_f64), None);
+    let cst = ckks_pt_cst::<BE, F, Standard>(host_module, module, params.base2k.into(), PT_PREC, Some(const_re_f64), None);
     with_scratch::<BE, _>(module.ckks_add_pt_const_tmp_bytes(ct_res.max_size()), |s| {
         module.ckks_add_pt_const_into(&mut ct_res, 0, &ct, &cst, 0, s)
     })
@@ -1191,10 +1191,10 @@ pub fn test_add_pt_vec_into_smaller_output<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextModule<BE, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -1249,10 +1249,10 @@ pub fn test_add_pt_vec_assign_rejects_base2k_mismatch<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextModule<BE, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -1274,9 +1274,10 @@ pub fn test_add_pt_vec_assign_rejects_base2k_mismatch<BE, F, E>(
         &mut scratch.borrow(),
     );
     let mismatched_base2k = Base2K((params.base2k / 2) as u32);
-    let mut pt = host_module.ckks_plaintext_alloc_from_slots(host_module.ckks_max_slots(), mismatched_base2k, PT_PREC.k());
+    let mut pt =
+        host_module.ckks_plaintext_alloc_from_slots(host_module.ckks_max_slots::<Standard>(), mismatched_base2k, PT_PREC.k());
     pt.set_meta(PT_PREC.meta());
-    let before = snapshot::<BE, _>(&ct);
+    let before = snapshot::<BE, _, Standard>(&ct);
     let err = with_scratch::<BE, _>(0, |s| module.ckks_add_pt_vec_assign(&mut ct, &pt, s)).unwrap_err();
     assert_ckks_error(
         "add_pt_vec_base2k_mismatch",
@@ -1287,7 +1288,11 @@ pub fn test_add_pt_vec_assign_rejects_base2k_mismatch<BE, F, E>(
             pt_base2k: mismatched_base2k.as_usize(),
         },
     );
-    assert_eq!(snapshot::<BE, _>(&ct), before, "a refused ckks_add_pt_vec_assign wrote res");
+    assert_eq!(
+        snapshot::<BE, _, Standard>(&ct),
+        before,
+        "a refused ckks_add_pt_vec_assign wrote res"
+    );
 }
 
 /// A narrower destination, which the copy of `a` would write, keeps its content when the plaintext's checks refuse:
@@ -1298,8 +1303,8 @@ pub fn test_add_pt_vec_into_rejects_plaintext_before_copy<BE, F, E>(
     module: &poulpy_hal::layouts::Module<BE>,
     _host_module: &poulpy_hal::layouts::Module<poulpy_hal::layouts::HostBytesBackend>,
 ) where
-    BE: crate::test_suite::helpers::TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
-    poulpy_hal::layouts::Module<BE>: crate::test_suite::helpers::TestContextModule<BE>,
+    BE: crate::test_suite::helpers::TestContextBackend,
+    poulpy_hal::layouts::Module<BE>: crate::test_suite::helpers::TestContextModule<BE, Standard>,
     F: crate::test_suite::helpers::TestScalar,
     E: ReimNew<F>,
 {
@@ -1338,13 +1343,17 @@ pub fn test_add_pt_vec_into_rejects_plaintext_before_copy<BE, F, E>(
         pt_base2k: b - 1,
     };
     for bytes in [0, module.ckks_add_pt_vec_tmp_bytes(res.max_size())] {
-        let before = snapshot::<BE, _>(&res);
+        let before = snapshot::<BE, _, Standard>(&res);
         let err = with_scratch::<BE, _>(bytes, |s| module.ckks_add_pt_vec_into(&mut res, &a, &pt, s)).unwrap_err();
         assert_ckks_error("add_pt_vec_into: plaintext of another radix", &err, radix.clone());
-        assert_eq!(snapshot::<BE, _>(&res), before, "a refused plaintext form wrote dst");
+        assert_eq!(
+            snapshot::<BE, _, Standard>(&res),
+            before,
+            "a refused plaintext form wrote dst"
+        );
     }
     for bytes in [0, module.ckks_add_pt_const_tmp_bytes(res.max_size())] {
-        let before = snapshot::<BE, _>(&res);
+        let before = snapshot::<BE, _, Standard>(&res);
         let err =
             with_scratch::<BE, _>(bytes, |s| module.ckks_add_pt_const_into(&mut res, 0, &a, &same_radix, n, s)).unwrap_err();
         assert_ckks_error(
@@ -1357,6 +1366,10 @@ pub fn test_add_pt_vec_into_rejects_plaintext_before_copy<BE, F, E>(
                 n,
             },
         );
-        assert_eq!(snapshot::<BE, _>(&res), before, "a refused plaintext form wrote dst");
+        assert_eq!(
+            snapshot::<BE, _, Standard>(&res),
+            before,
+            "a refused plaintext form wrote dst"
+        );
     }
 }

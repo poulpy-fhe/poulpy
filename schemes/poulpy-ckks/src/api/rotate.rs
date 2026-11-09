@@ -1,6 +1,6 @@
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey};
-use poulpy_hal::layouts::{Backend, ScratchArena};
+use poulpy_hal::layouts::{Backend, Ring, ScratchArena, Standard};
 
 use crate::{CKKSCtBounds, SetCKKSInfos};
 
@@ -30,7 +30,7 @@ use crate::{CKKSCtBounds, SetCKKSInfos};
 ///
 /// For `_assign` variants `offset = 0` and CKKS layout and scale metadata is unchanged.
 /// Component noise metadata is cleared.
-pub trait CKKSRotateOps<BE: Backend> {
+pub trait CKKSRotateOps<BE: Backend, Rg: Ring = Standard> {
     fn ckks_rotate_tmp_bytes<C, K>(&self, ct_infos: &C, key_infos: &K) -> usize
     where
         C: CKKSCtBounds,
@@ -56,9 +56,9 @@ pub trait CKKSRotateOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        H: GetAutomorphismKey<BE>,
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds;
+        H: GetAutomorphismKey<BE, Rg>,
+        Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE, Rg> + CKKSCtBounds;
 
     /// Computes `dst = rotate(dst, k)` in-place, preserving CKKS layout and scale metadata.
     /// Component noise metadata is cleared.
@@ -68,6 +68,6 @@ pub trait CKKSRotateOps<BE: Backend> {
     /// `MissingAutomorphismKey` when `keys` has no key for the shift covering `dst.k()`. `dst` is untouched on `Err`.
     fn ckks_rotate_assign<Dst, H>(&self, k: i64, dst: &mut Dst, keys: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        H: GetAutomorphismKey<BE>,
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos;
+        H: GetAutomorphismKey<BE, Rg>,
+        Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos;
 }

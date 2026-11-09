@@ -1,7 +1,7 @@
 use poulpy_ckks::CKKSResult as Result;
 use poulpy_ckks::layouts::CKKSRightOperandPrepared;
 use poulpy_core::layouts::{GGLWEInfos, GLWEInfos, GetAutomorphismKey, GetTensorKey};
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Module, Ring, ScratchArena};
 
 use crate::{
     api::BlasMatVecOps,
@@ -12,11 +12,11 @@ use crate::{
     oep::BlasMatVecImpl,
 };
 
-impl<BE: Backend + BlasMatVecImpl> BlasMatVecOps<BE> for Module<BE> {
+impl<BE: Backend + BlasMatVecImpl<Rg>, Rg: Ring> BlasMatVecOps<BE, Rg> for Module<BE> {
     fn blas_matvec_pt_tmp_bytes<R, W, A, K>(&self, res: &R, w: &W, a: &A, keys: &K) -> usize
     where
         R: BlasVectorInfos,
-        W: BlasMatVecMaps<BE>,
+        W: BlasMatVecMaps<BE, Rg>,
         A: BlasVectorInfos,
         K: GGLWEInfos,
     {
@@ -25,10 +25,10 @@ impl<BE: Backend + BlasMatVecImpl> BlasMatVecOps<BE> for Module<BE> {
 
     fn blas_matvec_pt<R, W, A, K>(&self, res: &mut R, w: &W, a: &A, keys: &K, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        R: BlasVectorMut<BE>,
-        W: BlasMatVecMaps<BE>,
-        A: BlasVectorRef<BE>,
-        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync,
+        R: BlasVectorMut<BE, Rg>,
+        W: BlasMatVecMaps<BE, Rg>,
+        A: BlasVectorRef<BE, Rg>,
+        K: GetAutomorphismKey<BE, Rg> + GetTensorKey<BE, Rg> + Sync,
     {
         BE::blas_matvec_pt(self, res, w, a, keys, scratch)
     }
@@ -36,7 +36,7 @@ impl<BE: Backend + BlasMatVecImpl> BlasMatVecOps<BE> for Module<BE> {
     fn blas_grid_to_vector_tmp_bytes<R, W, A, K>(&self, res: &R, w: &W, a: &A, keys: &K) -> usize
     where
         R: BlasVectorInfos,
-        W: BlasMatVecMaps<BE>,
+        W: BlasMatVecMaps<BE, Rg>,
         A: BlasGridInfos,
         K: GGLWEInfos,
     {
@@ -53,10 +53,10 @@ impl<BE: Backend + BlasMatVecImpl> BlasMatVecOps<BE> for Module<BE> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: BlasVectorMut<BE>,
-        W: BlasMatVecMaps<BE>,
-        A: BlasGrid<BE>,
-        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync,
+        R: BlasVectorMut<BE, Rg>,
+        W: BlasMatVecMaps<BE, Rg>,
+        A: BlasGrid<BE, Rg>,
+        K: GetAutomorphismKey<BE, Rg> + GetTensorKey<BE, Rg> + Sync,
     {
         BE::blas_grid_to_vector(self, res, w, a, line, keys, scratch)
     }
@@ -64,7 +64,7 @@ impl<BE: Backend + BlasMatVecImpl> BlasMatVecOps<BE> for Module<BE> {
     fn blas_vector_to_grid_tmp_bytes<R, W, A, K>(&self, res: &R, w: &W, a: &A, keys: &K) -> usize
     where
         R: BlasGridInfos,
-        W: BlasMatVecMaps<BE>,
+        W: BlasMatVecMaps<BE, Rg>,
         A: BlasVectorInfos,
         K: GGLWEInfos,
     {
@@ -81,10 +81,10 @@ impl<BE: Backend + BlasMatVecImpl> BlasMatVecOps<BE> for Module<BE> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: BlasGridMut<BE>,
-        W: BlasMatVecMaps<BE>,
-        A: BlasVectorRef<BE>,
-        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync,
+        R: BlasGridMut<BE, Rg>,
+        W: BlasMatVecMaps<BE, Rg>,
+        A: BlasVectorRef<BE, Rg>,
+        K: GetAutomorphismKey<BE, Rg> + GetTensorKey<BE, Rg> + Sync,
     {
         BE::blas_vector_to_grid(self, res, line, w, a, keys, scratch)
     }
@@ -92,7 +92,7 @@ impl<BE: Backend + BlasMatVecImpl> BlasMatVecOps<BE> for Module<BE> {
     fn blas_matvec_diagonal_tmp_bytes<R, M, A, T, K>(&self, res: &R, m: &M, a: &A, tsk: &T, keys: &K) -> usize
     where
         R: BlasVectorInfos,
-        M: BlasDiagonalCiphertextMap<BE>,
+        M: BlasDiagonalCiphertextMap<BE, Rg>,
         A: BlasVectorInfos,
         T: GGLWEInfos,
         K: GGLWEInfos,
@@ -109,10 +109,10 @@ impl<BE: Backend + BlasMatVecImpl> BlasMatVecOps<BE> for Module<BE> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: BlasVectorMut<BE>,
-        M: BlasDiagonalCiphertextMap<BE>,
-        A: BlasVectorRef<BE>,
-        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync,
+        R: BlasVectorMut<BE, Rg>,
+        M: BlasDiagonalCiphertextMap<BE, Rg>,
+        A: BlasVectorRef<BE, Rg>,
+        K: GetAutomorphismKey<BE, Rg> + GetTensorKey<BE, Rg> + Sync,
     {
         BE::blas_matvec_diagonal(self, res, m, a, keys, scratch)
     }
@@ -129,16 +129,16 @@ impl<BE: Backend + BlasMatVecImpl> BlasMatVecOps<BE> for Module<BE> {
 
     fn blas_append_row_diagonal<V, K>(
         &self,
-        m: &mut BlasDiagonalCiphertext<BE>,
+        m: &mut BlasDiagonalCiphertext<BE, Rg>,
         row: i64,
         v: &V,
-        mask: &CKKSRightOperandPrepared<BE>,
+        mask: &CKKSRightOperandPrepared<BE, Rg>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        V: BlasVectorRef<BE>,
-        K: GetAutomorphismKey<BE> + Sync,
+        V: BlasVectorRef<BE, Rg>,
+        K: GetAutomorphismKey<BE, Rg> + Sync,
     {
         BE::blas_append_row_diagonal(self, m, row, v, mask, keys, scratch)
     }
@@ -155,16 +155,16 @@ impl<BE: Backend + BlasMatVecImpl> BlasMatVecOps<BE> for Module<BE> {
 
     fn blas_append_col_diagonal<V, K>(
         &self,
-        m: &mut BlasDiagonalCiphertext<BE>,
+        m: &mut BlasDiagonalCiphertext<BE, Rg>,
         col: i64,
         v: &V,
-        mask: &CKKSRightOperandPrepared<BE>,
+        mask: &CKKSRightOperandPrepared<BE, Rg>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        V: BlasVectorRef<BE>,
-        K: GetAutomorphismKey<BE> + Sync,
+        V: BlasVectorRef<BE, Rg>,
+        K: GetAutomorphismKey<BE, Rg> + Sync,
     {
         BE::blas_append_col_diagonal(self, m, col, v, mask, keys, scratch)
     }

@@ -8,12 +8,13 @@ use poulpy_cpu_portable::kernels::{
     },
     znx::{ZnxAutomorphism, ZnxAutomorphismRotate, standard::znx_automorphism_portable},
 };
+use poulpy_hal::layouts::Standard;
 
 use super::NTT4x30Neon;
 use crate::neon::znx::{znx_automorphism_neon as kn_automorphism, znx_automorphism_rotate_neon as kn_automorphism_rotate};
 use poulpy_cpu_portable::kernels::ntt4x30::standard::{intt_portable, ntt_portable};
 
-impl ZnxAutomorphism for NTT4x30Neon {
+impl ZnxAutomorphism<Standard> for NTT4x30Neon {
     #[inline(always)]
     fn znx_automorphism(p: i64, res: &mut [i64], a: &[i64]) {
         kn_automorphism(p, res, a);
@@ -25,7 +26,7 @@ impl ZnxAutomorphism for NTT4x30Neon {
     }
 }
 
-impl ZnxAutomorphismRotate for NTT4x30Neon {
+impl ZnxAutomorphismRotate<Standard> for NTT4x30Neon {
     #[inline(always)]
     fn znx_automorphism_rotate(p: i64, k: i64, res: &mut [i64], a: &[i64]) {
         kn_automorphism_rotate(p, k, res, a);

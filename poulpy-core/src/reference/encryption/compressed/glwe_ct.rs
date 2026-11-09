@@ -2,7 +2,7 @@
 
 use poulpy_hal::{
     api::{VecZnxCopy, VecZnxNormalize},
-    layouts::{Backend, Module, ScratchArena},
+    layouts::{Backend, Module, Ring, ScratchArena, Standard},
     source::Source,
 };
 
@@ -19,7 +19,7 @@ use crate::{
 /// Portable implementation using HAL operations.
 ///
 /// Backend implementations may call this helper without changing their override selection.
-pub trait GLWECompressedEncryptSkReference<BE: Backend> {
+pub trait GLWECompressedEncryptSkReference<BE: Backend, Rg: Ring = Standard> {
     fn glwe_compressed_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
         A: GLWEInfos;
@@ -33,9 +33,9 @@ pub trait GLWECompressedEncryptSkReference<BE: Backend> {
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWECompressedToBackendMut<BE> + GLWECompressedSeedMut,
-        P: GLWEToBackendRef<BE>,
-        S: GLWESecretPreparedToBackendRef<BE>;
+        R: GLWECompressedToBackendMut<BE, Rg> + GLWECompressedSeedMut,
+        P: GLWEToBackendRef<BE, Rg>,
+        S: GLWESecretPreparedToBackendRef<BE, Rg>;
 
     fn glwe_compressed_encrypt_zero_sk_reference<R, S>(
         &self,
@@ -45,13 +45,13 @@ pub trait GLWECompressedEncryptSkReference<BE: Backend> {
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWECompressedToBackendMut<BE> + GLWECompressedSeedMut,
-        S: GLWESecretPreparedToBackendRef<BE>;
+        R: GLWECompressedToBackendMut<BE, Rg> + GLWECompressedSeedMut,
+        S: GLWESecretPreparedToBackendRef<BE, Rg>;
 }
 
-impl<BE: Backend> GLWECompressedEncryptSkReference<BE> for Module<BE>
+impl<BE: Backend, Rg: Ring> GLWECompressedEncryptSkReference<BE, Rg> for Module<BE>
 where
-    Self: GLWEEncryptSkInternal<BE> + GLWEEncryptSk<BE> + GLWEFill<BE> + VecZnxCopy<BE> + VecZnxNormalize<BE>,
+    Self: GLWEEncryptSkInternal<BE, Rg> + GLWEEncryptSk<BE, Rg> + GLWEFill<BE, Rg> + VecZnxCopy<BE, Rg> + VecZnxNormalize<BE, Rg>,
 {
     fn glwe_compressed_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
@@ -72,9 +72,9 @@ where
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWECompressedToBackendMut<BE> + GLWECompressedSeedMut,
-        P: GLWEToBackendRef<BE>,
-        S: GLWESecretPreparedToBackendRef<BE>,
+        R: GLWECompressedToBackendMut<BE, Rg> + GLWECompressedSeedMut,
+        P: GLWEToBackendRef<BE, Rg>,
+        S: GLWESecretPreparedToBackendRef<BE, Rg>,
     {
         let metadata = crate::component_noise::fresh_sk_noise(sk.to_backend_ref().dist, &res.to_backend_ref());
         {
@@ -116,8 +116,8 @@ where
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWECompressedToBackendMut<BE> + GLWECompressedSeedMut,
-        S: GLWESecretPreparedToBackendRef<BE>,
+        R: GLWECompressedToBackendMut<BE, Rg> + GLWECompressedSeedMut,
+        S: GLWESecretPreparedToBackendRef<BE, Rg>,
     {
         let metadata = crate::component_noise::fresh_sk_noise(sk.to_backend_ref().dist, &res.to_backend_ref());
         {

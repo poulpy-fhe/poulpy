@@ -12,12 +12,14 @@
 pub mod fft64;
 pub mod galois;
 pub mod ntt4x30;
+pub mod per_ring;
 pub mod vec_znx;
 pub mod vec_znx_big_normalize;
 pub mod vmp_select;
 pub mod znx_normalize;
 
 pub use galois::{GaloisSlots, RightRead, right_read_fft64, right_read_ntt};
+pub use per_ring::{FFT64Plans, NttPlans, PerRing, RingFamily};
 
 /// `log2(N / n)` for an operand of degree `n` under a module of degree `N`, zero for a dense operand;
 /// panics unless an embedded operand's degree is a power of two dividing `N` and at least `min_degree`.

@@ -9,7 +9,7 @@ use poulpy_core::{
     test_suite::keys::fill_by_digit,
 };
 use poulpy_hal::{
-    layouts::{Backend, Module},
+    layouts::{Backend, Module, Ring},
     source::Source,
 };
 
@@ -47,9 +47,13 @@ pub fn key_layout_offset(
 }
 
 /// A GGLWE of `layout` filled digit by digit from `seed`.
-pub fn fixture_gglwe<BE: Backend<ZnxWord = i64>>(module: &Module<BE>, layout: &GGLWELayout, seed: u8) -> GGLWE<BE::OwnedBuf, i64>
+pub fn fixture_gglwe<BE: Backend<ZnxWord = i64>, Rg: Ring>(
+    module: &Module<BE>,
+    layout: &GGLWELayout,
+    seed: u8,
+) -> GGLWE<BE::OwnedBuf, i64, Rg>
 where
-    Module<BE>: GLWEFill<BE>,
+    Module<BE>: GLWEFill<BE, Rg>,
 {
     let mut out = module.gglwe_alloc_from_infos(layout);
     fill_by_digit(module, &mut out, 1, &mut Source::new([seed; 32]));
@@ -57,10 +61,14 @@ where
 }
 
 /// A tensor key prepared from the fixture GGLWE of `seed`.
-pub fn prepared_tensor_key<BE>(module: &Module<BE>, layout: &GGLWELayout, seed: u8) -> GLWETensorKeyPrepared<BE::OwnedBuf, BE>
+pub fn prepared_tensor_key<BE, Rg: Ring>(
+    module: &Module<BE>,
+    layout: &GGLWELayout,
+    seed: u8,
+) -> GLWETensorKeyPrepared<BE::OwnedBuf, BE, Rg>
 where
     BE: Backend<ZnxWord = i64>,
-    Module<BE>: GLWETensorKeyPreparedFactory<BE> + GLWEFill<BE>,
+    Module<BE>: GLWETensorKeyPreparedFactory<BE, Rg> + GLWEFill<BE, Rg>,
 {
     let coefficients = fixture_gglwe(module, layout, seed);
     let mut prepared = module.glwe_tensor_key_prepared_alloc_from_infos(layout);
@@ -71,15 +79,15 @@ where
 }
 
 /// An automorphism key for Galois element `p`, prepared from the fixture GGLWE of `seed`.
-pub fn prepared_automorphism_key<BE>(
+pub fn prepared_automorphism_key<BE, Rg: Ring>(
     module: &Module<BE>,
     layout: &GGLWELayout,
     p: i64,
     seed: u8,
-) -> GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>
+) -> GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE, Rg>
 where
     BE: Backend<ZnxWord = i64>,
-    Module<BE>: GLWEAutomorphismKeyPreparedFactory<BE> + GLWEFill<BE>,
+    Module<BE>: GLWEAutomorphismKeyPreparedFactory<BE, Rg> + GLWEFill<BE, Rg>,
 {
     let coefficients = fixture_gglwe(module, layout, seed);
     let mut prepared = module.glwe_automorphism_key_prepared_alloc_from_infos(layout);
@@ -91,10 +99,10 @@ where
 }
 
 /// A GGLWE prepared from the fixture GGLWE of `seed`.
-pub fn prepared_gglwe<BE>(module: &Module<BE>, layout: &GGLWELayout, seed: u8) -> GGLWEPrepared<BE::OwnedBuf, BE>
+pub fn prepared_gglwe<BE, Rg: Ring>(module: &Module<BE>, layout: &GGLWELayout, seed: u8) -> GGLWEPrepared<BE::OwnedBuf, BE, Rg>
 where
     BE: Backend<ZnxWord = i64>,
-    Module<BE>: GGLWEPreparedFactory<BE> + GLWEFill<BE>,
+    Module<BE>: GGLWEPreparedFactory<BE, Rg> + GLWEFill<BE, Rg>,
 {
     let coefficients = fixture_gglwe(module, layout, seed);
     let mut prepared = module.gglwe_prepared_alloc_from_infos(layout);

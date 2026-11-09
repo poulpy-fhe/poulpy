@@ -32,7 +32,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::CnvPVecAlloc,
-    layouts::{Backend, Module, ScratchArena},
+    layouts::{Backend, Module, ScratchArena, Standard},
 };
 
 use crate::{
@@ -105,7 +105,7 @@ where
         .zip(&plan.schedule.steps)
         .map(|(cd, step)| {
             let strategy = plan.factor_strategy(step.giant_step);
-            crate::encoding::ckks_linear_transformation_encode_from_diagonals::<BE, F>(
+            crate::encoding::ckks_linear_transformation_encode_from_diagonals::<BE, F, Standard>(
                 module,
                 base2k,
                 plan.coeffs_meta,
@@ -238,7 +238,7 @@ where
     let (_, factors) = dft_plan_diagonals::<F>(&literal, module.log_n())?;
     Ok(factors
         .iter()
-        .map(|factor| crate::encoding::ckks_linear_transformation_encode_tmp_bytes::<BE, _, F>(module, factor.period()))
+        .map(|factor| crate::encoding::ckks_linear_transformation_encode_tmp_bytes::<BE, _, F, Standard>(module, factor.period()))
         .max()
         .unwrap_or(0))
 }

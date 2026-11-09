@@ -7,7 +7,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::{ReimFFT, ReimIFFT, ReimNew, ScratchOwnedBorrow},
-    layouts::{HostBytesBackend, Module, Standard},
+    layouts::{HostBytesBackend, Module, Ring, Standard},
 };
 
 use crate::{
@@ -34,12 +34,12 @@ use crate::api::CKKSAllOpsTmpBytes;
 use crate::layouts::CKKSCiphertextAlloc;
 
 /// The documented query of polynomial evaluation and of the power basis it builds: the shared all-operations bound.
-fn poly_scratch_bytes<BE>(params: &CKKSTestParams, module: &Module<BE>) -> usize
+fn poly_scratch_bytes<BE, Rg: Ring>(params: &CKKSTestParams, module: &Module<BE>) -> usize
 where
-    BE: TestContextBackend<Ring = Standard>,
-    Module<BE>: TestContextModule<BE>,
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE, Rg>,
 {
-    let mut ct = module.ckks_ciphertext_alloc_from_glwe_infos(&params.glwe_layout());
+    let mut ct = module.ckks_ciphertext_alloc_from_glwe_infos::<_, Rg>(&params.glwe_layout());
     ct.set_meta(params.prec().meta);
     module.ckks_all_ops_tmp_bytes(&ct, &PT_PREC, &params.tsk_layout())
 }
@@ -47,13 +47,13 @@ where
 /// Asserts the eval consumed exactly `bsgs.consumed_bits(input_ld, coeff_ld)`
 /// of `log_budget` and preserved `log_delta`. `input_log_budget`/`input_log_delta`
 /// are the original input ciphertext's metadata (level 0).
-fn assert_consumed_bits<BE, C>(
+fn assert_consumed_bits<BE, C, Rg: Ring>(
     label: &str,
     bsgs: &BSGSPolynomial<C>,
     input_log_delta: usize,
     input_log_budget: usize,
     coeff_log_delta: usize,
-    res: &CKKSCiphertextOwned<BE>,
+    res: &CKKSCiphertextOwned<BE, Rg>,
 ) where
     BE: poulpy_hal::layouts::Backend,
 {
@@ -129,7 +129,7 @@ fn chebyshev_value<F: TestScalar>(x: F, degree: usize) -> F {
     t_prev
 }
 
-fn eval_encoded_bsgs<F: TestScalar>(poly: &BSGSPolynomial<CKKSPlaintextOwned<HostBytesBackend>>, x: F) -> F {
+fn eval_encoded_bsgs<F: TestScalar, Rg: Ring>(poly: &BSGSPolynomial<CKKSPlaintextOwned<HostBytesBackend, Rg>>, x: F) -> F {
     #[derive(Clone, Copy)]
     struct Step<F> {
         degree: usize,
@@ -174,28 +174,28 @@ fn eval_encoded_bsgs<F: TestScalar>(poly: &BSGSPolynomial<CKKSPlaintextOwned<Hos
     steps[0].value
 }
 
-fn upload_bsgs<BE>(
+fn upload_bsgs<BE, Rg: Ring>(
     module: &Module<BE>,
-    poly: &BSGSPolynomial<CKKSPlaintextOwned<HostBytesBackend>>,
-) -> BSGSPolynomial<CKKSPlaintextOwned<BE>>
+    poly: &BSGSPolynomial<CKKSPlaintextOwned<HostBytesBackend, Rg>>,
+) -> BSGSPolynomial<CKKSPlaintextOwned<BE, Rg>>
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextModule<BE, Rg>,
 {
     poly.map_baby_steps_ref(|pt| upload_pt(module, pt))
 }
 
-fn upload_complex_bsgs<BE>(
+fn upload_complex_bsgs<BE, Rg: Ring>(
     module: &Module<BE>,
-    poly: &ComplexBSGSPolynomial<CKKSPlaintextOwned<HostBytesBackend>>,
-) -> ComplexBSGSPolynomial<CKKSPlaintextOwned<BE>>
+    poly: &ComplexBSGSPolynomial<CKKSPlaintextOwned<HostBytesBackend, Rg>>,
+) -> ComplexBSGSPolynomial<CKKSPlaintextOwned<BE, Rg>>
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextModule<BE, Rg>,
 {
     poly.map_baby_steps_ref(|pt| upload_pt(module, pt))
 }
@@ -205,12 +205,13 @@ pub fn test_power_basis_populate_degree7<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE>,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+    Module<BE>: TestContextModule<BE, Standard>,
+    CKKSCiphertextOwned<BE, Standard>:
+        GLWEToBackendMut<BE, Standard> + GLWEToBackendRef<BE, Standard> + CKKSCtBounds + SetCKKSInfos,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE, Standard>: GLWETensorKeyPreparedToBackendRef<BE, Standard> + GGLWEInfos,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -273,12 +274,13 @@ pub fn test_power_basis_populate_chebyshev_degree7<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE>,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+    Module<BE>: TestContextModule<BE, Standard>,
+    CKKSCiphertextOwned<BE, Standard>:
+        GLWEToBackendMut<BE, Standard> + GLWEToBackendRef<BE, Standard> + CKKSCtBounds + SetCKKSInfos,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE, Standard>: GLWETensorKeyPreparedToBackendRef<BE, Standard> + GGLWEInfos,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -341,7 +343,7 @@ pub fn test_chebyshev_interpolation_quadratic<BE, F, E>(
     _module: &Module<BE>,
     _host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     F: TestScalar,
@@ -374,7 +376,7 @@ pub fn test_encode_bsgs_preserves_chebyshev_eval<BE, F, E>(
     _module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     F: TestScalar,
@@ -384,7 +386,7 @@ pub fn test_encode_bsgs_preserves_chebyshev_eval<BE, F, E>(
         .expect("degree-31 Chebyshev interpolation of sin(x) should succeed");
     let coeff_meta = crate::CoeffsMeta::from_delta_budget(40, 8);
     let bsgs = poly
-        .encode_bsgs(host_module, params.base2k.into(), coeff_meta)
+        .encode_bsgs::<Standard>(host_module, params.base2k.into(), coeff_meta)
         .expect("encode_bsgs should succeed for degree-31 Chebyshev polynomial");
     let tolerance = (-F::from_usize(ckks_log_delta(&coeff_meta.meta)).unwrap()).exp2() * F::from_usize(1024).unwrap();
 
@@ -410,13 +412,14 @@ pub fn test_eval_poly_const_coeffs_cubic<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE> + CKKSPolynomialEvaluationOps<BE>,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
-    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+    Module<BE>: TestContextModule<BE, Standard> + CKKSPolynomialEvaluationOps<BE, Standard>,
+    CKKSCiphertextOwned<BE, Standard>:
+        GLWEToBackendMut<BE, Standard> + GLWEToBackendRef<BE, Standard> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BE, Standard>: GLWEToBackendRef<BE, Standard> + LWEInfos,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE, Standard>: GLWETensorKeyPreparedToBackendRef<BE, Standard> + GGLWEInfos,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -483,7 +486,7 @@ pub fn test_eval_poly_const_coeffs_cubic<BE, F, E>(
 
     let mut res = alloc_ct(&params, module, params.k);
     with_scratch::<BE, _>(poly_scratch_bytes(&params, module), |s| {
-        module.ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<BE>, _, _>(
+        module.ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<BE, Standard>, _, _>(
             &mut res,
             &power_basis,
             &poly,
@@ -493,7 +496,7 @@ pub fn test_eval_poly_const_coeffs_cubic<BE, F, E>(
     })
     .unwrap();
 
-    assert_consumed_bits::<BE, _>("cubic", &bsgs_host, x_ld, x_lb, PT_PREC.log_delta(), &res);
+    assert_consumed_bits::<BE, _, Standard>("cubic", &bsgs_host, x_ld, x_lb, PT_PREC.log_delta(), &res);
 
     assert_decrypt_precision(
         "eval_poly_const_coeffs_cubic",
@@ -513,13 +516,14 @@ pub fn test_eval_poly_rejects_power_basis_mismatch<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE> + CKKSPolynomialEvaluationOps<BE>,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
-    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+    Module<BE>: TestContextModule<BE, Standard> + CKKSPolynomialEvaluationOps<BE, Standard>,
+    CKKSCiphertextOwned<BE, Standard>:
+        GLWEToBackendMut<BE, Standard> + GLWEToBackendRef<BE, Standard> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BE, Standard>: GLWEToBackendRef<BE, Standard> + LWEInfos,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE, Standard>: GLWETensorKeyPreparedToBackendRef<BE, Standard> + GGLWEInfos,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -550,9 +554,9 @@ pub fn test_eval_poly_rejects_power_basis_mismatch<BE, F, E>(
     );
     let mut res = dirty_ct(module, &x_ct, params.k);
     let power_basis = PowerBasis::new(Basis::Chebyshev, x_ct);
-    let before = snapshot::<BE, _>(&res);
+    let before = snapshot::<BE, _, Standard>(&res);
     let err = with_scratch::<BE, _>(0, |s| {
-        module.ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<BE>, _, _>(
+        module.ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<BE, Standard>, _, _>(
             &mut res,
             &power_basis,
             &bsgs,
@@ -569,16 +573,16 @@ pub fn test_eval_poly_rejects_power_basis_mismatch<BE, F, E>(
             reason: "polynomial basis Monomial does not match power basis Chebyshev".into(),
         },
     );
-    assert_eq!(snapshot::<BE, _>(&res), before, "a refused evaluation wrote res");
+    assert_eq!(snapshot::<BE, _, Standard>(&res), before, "a refused evaluation wrote res");
 }
 
 /// A real polynomial reporting no baby step, which a custom [`BSGSPolynomialInfos`] may.
 struct NoBabySteps<'a, C>(&'a BSGSPolynomial<C>);
 
-impl<BE, C> BSGSPolynomialInfos<BE> for NoBabySteps<'_, C>
+impl<BE, C, Rg: Ring> BSGSPolynomialInfos<BE, Rg> for NoBabySteps<'_, C>
 where
     BE: poulpy_hal::layouts::Backend,
-    C: GLWEToBackendRef<BE> + poulpy_core::layouts::GLWEInfos + poulpy_core::layouts::BSGSMeta + IntPolyInfos,
+    C: GLWEToBackendRef<BE, Rg> + poulpy_core::layouts::GLWEInfos + poulpy_core::layouts::BSGSMeta + IntPolyInfos,
 {
     type Coeffs = C;
 
@@ -607,7 +611,7 @@ where
     }
 
     fn split_strategy(&self) -> SplitStrategy {
-        BSGSPolynomialInfos::<BE>::split_strategy(self.0)
+        BSGSPolynomialInfos::<BE, Rg>::split_strategy(self.0)
     }
 }
 
@@ -620,7 +624,7 @@ pub fn test_eval_poly_rejects_malformed_polynomials<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE> + CKKSPolynomialEvaluationOps<BE> + CKKSComplexPolynomialEvaluationOps<BE>,
@@ -649,7 +653,7 @@ pub fn test_eval_poly_rejects_malformed_polynomials<BE, F, E>(
     let upload = |poly: &BSGSPolynomial<CKKSPlaintextOwned<HostBytesBackend>>| upload_bsgs(module, poly);
     let mut refused =
         |label: &str, op: &'static str, reason: &str, call: &dyn Fn(&mut CKKSCiphertextOwned<BE>) -> CKKSResult<()>| {
-            let before = snapshot::<BE, _>(&res);
+            let before = snapshot::<BE, _, Standard>(&res);
             let err = call(&mut res).expect_err(label);
             assert_ckks_error(
                 label,
@@ -659,7 +663,11 @@ pub fn test_eval_poly_rejects_malformed_polynomials<BE, F, E>(
                     reason: reason.into(),
                 },
             );
-            assert_eq!(snapshot::<BE, _>(&res), before, "{label}: a refused evaluation wrote res");
+            assert_eq!(
+                snapshot::<BE, _, Standard>(&res),
+                before,
+                "{label}: a refused evaluation wrote res"
+            );
         };
 
     // Degree 3: two baby steps of two coefficients; degree 2: two baby steps of two and one; degree 7: three.
@@ -779,13 +787,14 @@ pub fn test_eval_poly_const_coeffs_exp7<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE> + CKKSPolynomialEvaluationOps<BE>,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
-    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+    Module<BE>: TestContextModule<BE, Standard> + CKKSPolynomialEvaluationOps<BE, Standard>,
+    CKKSCiphertextOwned<BE, Standard>:
+        GLWEToBackendMut<BE, Standard> + GLWEToBackendRef<BE, Standard> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BE, Standard>: GLWEToBackendRef<BE, Standard> + LWEInfos,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE, Standard>: GLWETensorKeyPreparedToBackendRef<BE, Standard> + GGLWEInfos,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -845,13 +854,13 @@ pub fn test_eval_poly_const_coeffs_exp7<BE, F, E>(
 
     let mut res = alloc_ct(&params, module, params.k);
     with_scratch::<BE, _>(poly_scratch_bytes(&params, module), |s| {
-        module.ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<BE>, _, _>(
+        module.ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<BE, Standard>, _, _>(
             &mut res, &pb, &bsgs, &tsk, s,
         )
     })
     .expect("ckks_eval_poly_real_const_coeffs_from_power_basis should succeed");
 
-    assert_consumed_bits::<BE, _>("exp7", &bsgs_host, x_ld, x_lb, PT_PREC.log_delta(), &res);
+    assert_consumed_bits::<BE, _, Standard>("exp7", &bsgs_host, x_ld, x_lb, PT_PREC.log_delta(), &res);
 
     assert_decrypt_precision(
         "eval_poly_const_coeffs_exp7",
@@ -871,13 +880,14 @@ pub fn test_eval_poly_const_coeffs_even_monomial<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE> + CKKSPolynomialEvaluationOps<BE>,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
-    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+    Module<BE>: TestContextModule<BE, Standard> + CKKSPolynomialEvaluationOps<BE, Standard>,
+    CKKSCiphertextOwned<BE, Standard>:
+        GLWEToBackendMut<BE, Standard> + GLWEToBackendRef<BE, Standard> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BE, Standard>: GLWEToBackendRef<BE, Standard> + LWEInfos,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE, Standard>: GLWETensorKeyPreparedToBackendRef<BE, Standard> + GGLWEInfos,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -933,13 +943,13 @@ pub fn test_eval_poly_const_coeffs_even_monomial<BE, F, E>(
 
     let mut res = alloc_ct(&params, module, params.k);
     with_scratch::<BE, _>(poly_scratch_bytes(&params, module), |s| {
-        module.ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<BE>, _, _>(
+        module.ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<BE, Standard>, _, _>(
             &mut res, &pb, &bsgs, &tsk, s,
         )
     })
     .expect("ckks_eval_poly_real_const_coeffs_from_power_basis should succeed");
 
-    assert_consumed_bits::<BE, _>("even_monomial", &bsgs_host, x_ld, x_lb, PT_PREC.log_delta(), &res);
+    assert_consumed_bits::<BE, _, Standard>("even_monomial", &bsgs_host, x_ld, x_lb, PT_PREC.log_delta(), &res);
 
     assert_decrypt_precision(
         "eval_poly_const_coeffs_even_monomial",
@@ -959,13 +969,14 @@ pub fn test_eval_poly_const_coeffs_odd_monomial<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE> + CKKSPolynomialEvaluationOps<BE>,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
-    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+    Module<BE>: TestContextModule<BE, Standard> + CKKSPolynomialEvaluationOps<BE, Standard>,
+    CKKSCiphertextOwned<BE, Standard>:
+        GLWEToBackendMut<BE, Standard> + GLWEToBackendRef<BE, Standard> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BE, Standard>: GLWEToBackendRef<BE, Standard> + LWEInfos,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE, Standard>: GLWETensorKeyPreparedToBackendRef<BE, Standard> + GGLWEInfos,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -1021,13 +1032,13 @@ pub fn test_eval_poly_const_coeffs_odd_monomial<BE, F, E>(
 
     let mut res = alloc_ct(&params, module, params.k);
     with_scratch::<BE, _>(poly_scratch_bytes(&params, module), |s| {
-        module.ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<BE>, _, _>(
+        module.ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<BE, Standard>, _, _>(
             &mut res, &pb, &bsgs, &tsk, s,
         )
     })
     .expect("ckks_eval_poly_real_const_coeffs_from_power_basis should succeed");
 
-    assert_consumed_bits::<BE, _>("odd_monomial", &bsgs_host, x_ld, x_lb, PT_PREC.log_delta(), &res);
+    assert_consumed_bits::<BE, _, Standard>("odd_monomial", &bsgs_host, x_ld, x_lb, PT_PREC.log_delta(), &res);
 
     assert_decrypt_precision(
         "eval_poly_const_coeffs_odd_monomial",
@@ -1047,13 +1058,14 @@ pub fn test_eval_poly_const_coeffs_chebyshev_degree31<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE> + CKKSPolynomialEvaluationOps<BE>,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
-    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+    Module<BE>: TestContextModule<BE, Standard> + CKKSPolynomialEvaluationOps<BE, Standard>,
+    CKKSCiphertextOwned<BE, Standard>:
+        GLWEToBackendMut<BE, Standard> + GLWEToBackendRef<BE, Standard> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BE, Standard>: GLWEToBackendRef<BE, Standard> + LWEInfos,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE, Standard>: GLWETensorKeyPreparedToBackendRef<BE, Standard> + GGLWEInfos,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -1098,13 +1110,13 @@ pub fn test_eval_poly_const_coeffs_chebyshev_degree31<BE, F, E>(
 
     let mut res = alloc_ct(&params, module, params.k);
     with_scratch::<BE, _>(poly_scratch_bytes(&params, module), |s| {
-        module.ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<BE>, _, _>(
+        module.ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<BE, Standard>, _, _>(
             &mut res, &pb, &bsgs, &tsk, s,
         )
     })
     .expect("ckks_eval_poly_real_const_coeffs_from_power_basis should succeed");
 
-    assert_consumed_bits::<BE, _>("chebyshev31", &bsgs_host, x_ld, x_lb, PT_PREC.log_delta(), &res);
+    assert_consumed_bits::<BE, _, Standard>("chebyshev31", &bsgs_host, x_ld, x_lb, PT_PREC.log_delta(), &res);
 
     assert_decrypt_precision(
         "eval_poly_const_coeffs_chebyshev_degree31",
@@ -1124,13 +1136,14 @@ pub fn test_eval_poly_const_coeffs_chebyshev_degree31_min_mult<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE> + CKKSPolynomialEvaluationOps<BE>,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
-    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+    Module<BE>: TestContextModule<BE, Standard> + CKKSPolynomialEvaluationOps<BE, Standard>,
+    CKKSCiphertextOwned<BE, Standard>:
+        GLWEToBackendMut<BE, Standard> + GLWEToBackendRef<BE, Standard> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BE, Standard>: GLWEToBackendRef<BE, Standard> + LWEInfos,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE, Standard>: GLWETensorKeyPreparedToBackendRef<BE, Standard> + GGLWEInfos,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -1175,13 +1188,13 @@ pub fn test_eval_poly_const_coeffs_chebyshev_degree31_min_mult<BE, F, E>(
 
     let mut res = alloc_ct(&params, module, params.k);
     with_scratch::<BE, _>(poly_scratch_bytes(&params, module), |s| {
-        module.ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<BE>, _, _>(
+        module.ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<BE, Standard>, _, _>(
             &mut res, &pb, &bsgs, &tsk, s,
         )
     })
     .expect("ckks_eval_poly_real_const_coeffs_from_power_basis should succeed with MinMult split");
 
-    assert_consumed_bits::<BE, _>("chebyshev31_min_mult", &bsgs_host, x_ld, x_lb, PT_PREC.log_delta(), &res);
+    assert_consumed_bits::<BE, _, Standard>("chebyshev31_min_mult", &bsgs_host, x_ld, x_lb, PT_PREC.log_delta(), &res);
 
     assert_decrypt_precision(
         "eval_poly_const_coeffs_chebyshev_degree31_min_mult",
@@ -1201,13 +1214,14 @@ pub fn test_eval_poly_const_coeffs_parity_folds<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE> + CKKSPolynomialEvaluationOps<BE>,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
-    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+    Module<BE>: TestContextModule<BE, Standard> + CKKSPolynomialEvaluationOps<BE, Standard>,
+    CKKSCiphertextOwned<BE, Standard>:
+        GLWEToBackendMut<BE, Standard> + GLWEToBackendRef<BE, Standard> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BE, Standard>: GLWEToBackendRef<BE, Standard> + LWEInfos,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE, Standard>: GLWETensorKeyPreparedToBackendRef<BE, Standard> + GGLWEInfos,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -1303,7 +1317,7 @@ pub fn test_eval_poly_const_coeffs_parity_folds<BE, F, E>(
         })
         .expect("parity-folded evaluation should succeed");
 
-        assert_consumed_bits::<BE, _>(
+        assert_consumed_bits::<BE, _, Standard>(
             label,
             &bsgs_host,
             input_log_delta,
@@ -1330,7 +1344,7 @@ pub fn test_eval_poly_const_coeffs_complex_cubic<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE> + CKKSPolynomialEvaluationOps<BE> + CKKSComplexPolynomialEvaluationOps<BE>,
@@ -1428,7 +1442,7 @@ pub fn test_eval_poly_const_coeffs_complex_cubic<BE, F, E>(
     })
     .expect("ckks_eval_poly_complex_const_coeffs_from_power_basis should succeed");
 
-    assert_consumed_bits::<BE, _>("complex_cubic", &bsgs_host.re, x_ld, x_lb, PT_PREC.log_delta(), &res);
+    assert_consumed_bits::<BE, _, Standard>("complex_cubic", &bsgs_host.re, x_ld, x_lb, PT_PREC.log_delta(), &res);
 
     assert_decrypt_precision(
         "eval_poly_const_coeffs_complex_cubic",
@@ -1448,7 +1462,7 @@ pub fn test_eval_poly_const_coeffs_complex_chebyshev<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE> + CKKSPolynomialEvaluationOps<BE> + CKKSComplexPolynomialEvaluationOps<BE>,
@@ -1552,7 +1566,7 @@ pub fn test_eval_poly_const_coeffs_complex_chebyshev<BE, F, E>(
     })
     .expect("ckks_eval_poly_complex_const_coeffs_from_power_basis (Chebyshev) should succeed");
 
-    assert_consumed_bits::<BE, _>("complex_chebyshev", &bsgs_host.re, x_ld, x_lb, PT_PREC.log_delta(), &res);
+    assert_consumed_bits::<BE, _, Standard>("complex_chebyshev", &bsgs_host.re, x_ld, x_lb, PT_PREC.log_delta(), &res);
 
     assert_decrypt_precision(
         "eval_poly_const_coeffs_complex_chebyshev",
@@ -1584,7 +1598,7 @@ pub fn test_eval_poly_const_coeffs_complex_even<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE> + CKKSPolynomialEvaluationOps<BE> + CKKSComplexPolynomialEvaluationOps<BE>,
@@ -1668,7 +1682,7 @@ pub fn test_eval_poly_const_coeffs_complex_even<BE, F, E>(
     })
     .expect("ckks_eval_poly_complex_const_coeffs_from_power_basis (even) should succeed");
 
-    assert_consumed_bits::<BE, _>("complex_even", &bsgs_host.re, x_ld, x_lb, PT_PREC.log_delta(), &res);
+    assert_consumed_bits::<BE, _, Standard>("complex_even", &bsgs_host.re, x_ld, x_lb, PT_PREC.log_delta(), &res);
 
     assert_decrypt_precision(
         "eval_poly_const_coeffs_complex_even",
@@ -1688,7 +1702,7 @@ pub fn test_eval_poly_const_coeffs_complex_odd<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE> + CKKSPolynomialEvaluationOps<BE> + CKKSComplexPolynomialEvaluationOps<BE>,
@@ -1772,7 +1786,7 @@ pub fn test_eval_poly_const_coeffs_complex_odd<BE, F, E>(
     })
     .expect("ckks_eval_poly_complex_const_coeffs_from_power_basis (odd) should succeed");
 
-    assert_consumed_bits::<BE, _>("complex_odd", &bsgs_host.re, x_ld, x_lb, PT_PREC.log_delta(), &res);
+    assert_consumed_bits::<BE, _, Standard>("complex_odd", &bsgs_host.re, x_ld, x_lb, PT_PREC.log_delta(), &res);
 
     assert_decrypt_precision(
         "eval_poly_const_coeffs_complex_odd",
@@ -1792,7 +1806,7 @@ pub fn test_eval_poly_const_coeffs_complex_fold<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE> + CKKSPolynomialEvaluationOps<BE> + CKKSComplexPolynomialEvaluationOps<BE>,
@@ -1879,7 +1893,7 @@ pub fn test_eval_poly_const_coeffs_complex_fold<BE, F, E>(
     })
     .expect("ckks_eval_poly_complex_const_coeffs (fold) should succeed");
 
-    assert_consumed_bits::<BE, _>("complex_fold", &bsgs_host.re, x_ld, x_lb, PT_PREC.log_delta(), &res);
+    assert_consumed_bits::<BE, _, Standard>("complex_fold", &bsgs_host.re, x_ld, x_lb, PT_PREC.log_delta(), &res);
 
     assert_decrypt_precision(
         "eval_poly_const_coeffs_complex_fold",
@@ -1907,13 +1921,14 @@ pub fn test_eval_poly_consumed_bits_sweep<BE, F, E>(
     _module: &Module<BE>,
     _host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE> + CKKSPolynomialEvaluationOps<BE>,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
-    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+    Module<BE>: TestContextModule<BE, Standard> + CKKSPolynomialEvaluationOps<BE, Standard>,
+    CKKSCiphertextOwned<BE, Standard>:
+        GLWEToBackendMut<BE, Standard> + GLWEToBackendRef<BE, Standard> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BE, Standard>: GLWEToBackendRef<BE, Standard> + LWEInfos,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE, Standard>: GLWETensorKeyPreparedToBackendRef<BE, Standard> + GGLWEInfos,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -1981,7 +1996,7 @@ pub fn test_eval_poly_consumed_bits_sweep<BE, F, E>(
 
             let mut res = alloc_ct(&params, &module, k);
             with_scratch::<BE, _>(poly_scratch_bytes(&params, &module), |s| {
-                module.ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<BE>, _, _>(
+                module.ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<BE, Standard>, _, _>(
                     &mut res, &pb, &bsgs, &tsk, s,
                 )
             })
@@ -2009,8 +2024,9 @@ pub fn test_polynomial_approximation_eval_rejects_insufficient_capacity<BE, F, E
     module: &poulpy_hal::layouts::Module<BE>,
     host_module: &poulpy_hal::layouts::Module<poulpy_hal::layouts::HostBytesBackend>,
 ) where
-    BE: crate::test_suite::helpers::TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
-    poulpy_hal::layouts::Module<BE>: crate::test_suite::helpers::TestContextModule<BE> + crate::api::CKKSApproximationOps<BE>,
+    BE: crate::test_suite::helpers::TestContextBackend,
+    poulpy_hal::layouts::Module<BE>:
+        crate::test_suite::helpers::TestContextModule<BE, Standard> + crate::api::CKKSApproximationOps<BE, Standard>,
     F: crate::test_suite::helpers::TestScalar,
     E: ReimNew<F>,
 {
@@ -2028,7 +2044,7 @@ pub fn test_polynomial_approximation_eval_rejects_insufficient_capacity<BE, F, E
         polynomial::{BSGSPolynomial, Basis, Polynomial, SplitStrategy},
     };
     let b = params.base2k;
-    let coeffs = |count: usize| -> anyhow::Result<CKKSPlaintextOwned<BE>> {
+    let coeffs = |count: usize| -> anyhow::Result<CKKSPlaintextOwned<BE, Standard>> {
         let mut pt = module.ckks_plaintext_alloc(count.into(), b.into(), (2 * b).into());
         pt.set_meta(GLWEPlaintextMeta {
             scale: Scale::Log(b / 2),
@@ -2036,7 +2052,7 @@ pub fn test_polynomial_approximation_eval_rejects_insufficient_capacity<BE, F, E
         });
         Ok(pt)
     };
-    let poly: BSGSPolynomial<CKKSPlaintextOwned<BE>> = Polynomial::new(Basis::Monomial, vec![0.0f64, 1.0])
+    let poly: BSGSPolynomial<CKKSPlaintextOwned<BE, Standard>> = Polynomial::new(Basis::Monomial, vec![0.0f64, 1.0])
         .decompose_bsgs_with(SplitStrategy::MinDepth, |c| coeffs(c.len()))
         .unwrap();
     let approximation = PolynomialApproximation {
@@ -2060,7 +2076,7 @@ pub fn test_polynomial_approximation_eval_rejects_insufficient_capacity<BE, F, E
         0,
         module.ckks_polynomial_approximation_eval_tmp_bytes(&res, &input, &approximation, &params.tsk_layout()),
     ] {
-        let before = snapshot::<BE, _>(&res);
+        let before = snapshot::<BE, _, Standard>(&res);
         let err = with_scratch::<BE, _>(bytes, |s| {
             module.ckks_polynomial_approximation_eval(&mut res, &input, &approximation, &tsk, s)
         })
@@ -2074,6 +2090,6 @@ pub fn test_polynomial_approximation_eval_rejects_insufficient_capacity<BE, F, E
                 required_bits: required,
             },
         );
-        assert_eq!(snapshot::<BE, _>(&res), before, "a refused approximation wrote res");
+        assert_eq!(snapshot::<BE, _, Standard>(&res), before, "a refused approximation wrote res");
     }
 }

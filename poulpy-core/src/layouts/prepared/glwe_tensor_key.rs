@@ -1,5 +1,5 @@
 use crate::error::Result;
-use poulpy_hal::layouts::{Backend, Data};
+use poulpy_hal::layouts::{Backend, Data, Ring, Standard};
 
 use crate::layouts::prepared::{GGLWEPreparedToBackendMut, GGLWEPreparedToBackendRef};
 use crate::layouts::{
@@ -12,9 +12,9 @@ use crate::layouts::{
 /// A newtype wrapper around [`GGLWEPrepared`] for tensor operations.
 /// Tied to a specific backend via `B: Backend`.
 #[derive(PartialEq)]
-pub struct GLWETensorKeyPrepared<D: Data, B: Backend>(pub(crate) GGLWEPrepared<D, B>);
+pub struct GLWETensorKeyPrepared<D: Data, B: Backend, Rg: Ring = Standard>(pub(crate) GGLWEPrepared<D, B, Rg>);
 
-impl<D: Data, B: Backend> LWEInfos for GLWETensorKeyPrepared<D, B> {
+impl<D: Data, B: Backend, Rg: Ring> LWEInfos for GLWETensorKeyPrepared<D, B, Rg> {
     fn noise(&self) -> Option<crate::ComponentNoise> {
         self.0.noise()
     }
@@ -36,13 +36,13 @@ impl<D: Data, B: Backend> LWEInfos for GLWETensorKeyPrepared<D, B> {
     }
 }
 
-impl<D: Data, B: Backend> GLWEInfos for GLWETensorKeyPrepared<D, B> {
+impl<D: Data, B: Backend, Rg: Ring> GLWEInfos for GLWETensorKeyPrepared<D, B, Rg> {
     fn rank(&self) -> Rank {
         self.rank_out()
     }
 }
 
-impl<D: Data, B: Backend> GGLWEInfos for GLWETensorKeyPrepared<D, B> {
+impl<D: Data, B: Backend, Rg: Ring> GGLWEInfos for GLWETensorKeyPrepared<D, B, Rg> {
     fn k_aux(&self) -> TorusPrecision {
         self.0.k_aux()
     }
@@ -72,57 +72,57 @@ impl<D: Data, B: Backend> GGLWEInfos for GLWETensorKeyPrepared<D, B> {
     }
 }
 
-pub type GLWETensorKeyPreparedBackendRef<'a, B> = GLWETensorKeyPrepared<<B as Backend>::BufRef<'a>, B>;
-pub type GLWETensorKeyPreparedBackendMut<'a, B> = GLWETensorKeyPrepared<<B as Backend>::BufMut<'a>, B>;
+pub type GLWETensorKeyPreparedBackendRef<'a, B, Rg = Standard> = GLWETensorKeyPrepared<<B as Backend>::BufRef<'a>, B, Rg>;
+pub type GLWETensorKeyPreparedBackendMut<'a, B, Rg = Standard> = GLWETensorKeyPrepared<<B as Backend>::BufMut<'a>, B, Rg>;
 
-impl<D: Data, B: Backend> GLWETensorKeyPrepared<D, B> {
+impl<D: Data, B: Backend, Rg: Ring> GLWETensorKeyPrepared<D, B, Rg> {
     /// This key read through a coarser `k_digit`. See [`GGLWEPrepared::with_k_digit`].
-    pub fn with_k_digit(&self, k_digit: TorusPrecision) -> Result<GLWETensorKeyPreparedBackendRef<'_, B>>
+    pub fn with_k_digit(&self, k_digit: TorusPrecision) -> Result<GLWETensorKeyPreparedBackendRef<'_, B, Rg>>
     where
-        GGLWEPrepared<D, B>: GGLWEPreparedToBackendRef<B>,
+        GGLWEPrepared<D, B, Rg>: GGLWEPreparedToBackendRef<B, Rg>,
     {
         Ok(GLWETensorKeyPrepared(self.0.with_k_digit(k_digit)?))
     }
 }
 
-pub trait GLWETensorKeyPreparedToBackendRef<B: Backend> {
-    fn to_backend_ref(&self) -> GLWETensorKeyPreparedBackendRef<'_, B>;
+pub trait GLWETensorKeyPreparedToBackendRef<B: Backend, Rg: Ring = Standard> {
+    fn to_backend_ref(&self) -> GLWETensorKeyPreparedBackendRef<'_, B, Rg>;
 }
 
-impl<D: Data, B: Backend> GLWETensorKeyPreparedToBackendRef<B> for GLWETensorKeyPrepared<D, B>
+impl<D: Data, B: Backend, Rg: Ring> GLWETensorKeyPreparedToBackendRef<B, Rg> for GLWETensorKeyPrepared<D, B, Rg>
 where
-    GGLWEPrepared<D, B>: GGLWEPreparedToBackendRef<B>,
+    GGLWEPrepared<D, B, Rg>: GGLWEPreparedToBackendRef<B, Rg>,
 {
-    fn to_backend_ref(&self) -> GLWETensorKeyPreparedBackendRef<'_, B> {
+    fn to_backend_ref(&self) -> GLWETensorKeyPreparedBackendRef<'_, B, Rg> {
         GLWETensorKeyPrepared(self.0.to_backend_ref())
     }
 }
 
-pub trait GLWETensorKeyPreparedToBackendMut<B: Backend> {
+pub trait GLWETensorKeyPreparedToBackendMut<B: Backend, Rg: Ring = Standard> {
     /// Borrows coefficients mutably and clears the owner's component noise metadata.
-    fn to_backend_mut(&mut self) -> GLWETensorKeyPreparedBackendMut<'_, B>;
+    fn to_backend_mut(&mut self) -> GLWETensorKeyPreparedBackendMut<'_, B, Rg>;
 }
 
-impl<D: Data, B: Backend> GLWETensorKeyPreparedToBackendMut<B> for GLWETensorKeyPrepared<D, B>
+impl<D: Data, B: Backend, Rg: Ring> GLWETensorKeyPreparedToBackendMut<B, Rg> for GLWETensorKeyPrepared<D, B, Rg>
 where
-    GGLWEPrepared<D, B>: GGLWEPreparedToBackendMut<B>,
+    GGLWEPrepared<D, B, Rg>: GGLWEPreparedToBackendMut<B, Rg>,
 {
-    fn to_backend_mut(&mut self) -> GLWETensorKeyPreparedBackendMut<'_, B> {
+    fn to_backend_mut(&mut self) -> GLWETensorKeyPreparedBackendMut<'_, B, Rg> {
         GLWETensorKeyPrepared(self.0.to_backend_mut())
     }
 }
 
-impl<D: Data, B: Backend> GGLWEPreparedToBackendRef<B> for GLWETensorKeyPrepared<D, B>
+impl<D: Data, B: Backend, Rg: Ring> GGLWEPreparedToBackendRef<B, Rg> for GLWETensorKeyPrepared<D, B, Rg>
 where
-    GGLWEPrepared<D, B>: GGLWEPreparedToBackendRef<B>,
+    GGLWEPrepared<D, B, Rg>: GGLWEPreparedToBackendRef<B, Rg>,
 {
-    fn to_backend_ref(&self) -> GGLWEPreparedBackendRef<'_, B> {
+    fn to_backend_ref(&self) -> GGLWEPreparedBackendRef<'_, B, Rg> {
         self.0.to_backend_ref()
     }
 }
 
-impl<'a, B: Backend + 'a> GGLWEPreparedToBackendRef<B> for &GLWETensorKeyPrepared<B::BufRef<'a>, B> {
-    fn to_backend_ref(&self) -> GGLWEPreparedBackendRef<'_, B> {
+impl<'a, B: Backend + 'a, Rg: Ring> GGLWEPreparedToBackendRef<B, Rg> for &GLWETensorKeyPrepared<B::BufRef<'a>, B, Rg> {
+    fn to_backend_ref(&self) -> GGLWEPreparedBackendRef<'_, B, Rg> {
         GGLWEPrepared {
             noise: self.0.noise.clone(),
             base2k: self.0.base2k,
@@ -131,20 +131,20 @@ impl<'a, B: Backend + 'a> GGLWEPreparedToBackendRef<B> for &GLWETensorKeyPrepare
             k_offset: self.0.k_offset,
             dnum: self.0.dnum,
             stride: self.0.stride,
-            data: poulpy_hal::layouts::vmp_pmat_backend_ref_from_ref::<B>(&self.0.data),
+            data: poulpy_hal::layouts::vmp_pmat_backend_ref_from_ref::<B, Rg>(&self.0.data),
         }
     }
 }
 
-impl<D: Data, B: Backend> GGLWEPreparedToBackendMut<B> for GLWETensorKeyPrepared<D, B>
+impl<D: Data, B: Backend, Rg: Ring> GGLWEPreparedToBackendMut<B, Rg> for GLWETensorKeyPrepared<D, B, Rg>
 where
-    GGLWEPrepared<D, B>: GGLWEPreparedToBackendMut<B>,
+    GGLWEPrepared<D, B, Rg>: GGLWEPreparedToBackendMut<B, Rg>,
 {
     fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
-        <_ as GGLWEPreparedToBackendMut<B>>::set_noise(&mut self.0, metadata);
+        <_ as GGLWEPreparedToBackendMut<B, Rg>>::set_noise(&mut self.0, metadata);
     }
 
-    fn to_backend_mut(&mut self) -> GGLWEPreparedBackendMut<'_, B> {
+    fn to_backend_mut(&mut self) -> GGLWEPreparedBackendMut<'_, B, Rg> {
         self.0.to_backend_mut()
     }
 }

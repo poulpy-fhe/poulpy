@@ -12,7 +12,9 @@
 //! # Safety
 //!
 //! Implementing a marker asserts that the two backends produce **byte-identical
-//! buffer layouts for that container family, for every shape** — same
+//! buffer layouts for that container family, for every shape and on both rings**
+//! (`into_backend` keeps the ring, see the rings section of the
+//! [backend safety contract](crate::doc::backend_safety)): the same
 //! convention, not merely the same size. Declared impls are validated by the
 //! word-compatibility test suite
 //! ([`test_suite::word_compat`](crate::test_suite::word_compat)); declare the
@@ -33,8 +35,8 @@ use crate::layouts::Backend;
 /// # Safety
 ///
 /// Implementors assert byte-identical buffer layouts between `Self` and `B2`
-/// for this container family, for every shape — same convention, not merely
-/// the same size. Validate with the word-compat test suite.
+/// for this container family, for every shape and on both rings: the same
+/// convention, not merely the same size. Validate with the word-compat test suite.
 pub unsafe trait VecZnxDftLayoutCompatible<B2: Backend>: Backend {}
 unsafe impl<B: Backend> VecZnxDftLayoutCompatible<B> for B {}
 
@@ -44,8 +46,8 @@ unsafe impl<B: Backend> VecZnxDftLayoutCompatible<B> for B {}
 /// # Safety
 ///
 /// Implementors assert byte-identical buffer layouts between `Self` and `B2`
-/// for this container family, for every shape — same convention, not merely
-/// the same size. Validate with the word-compat test suite.
+/// for this container family, for every shape and on both rings: the same
+/// convention, not merely the same size. Validate with the word-compat test suite.
 pub unsafe trait SvpPPolLayoutCompatible<B2: Backend>: Backend {}
 unsafe impl<B: Backend> SvpPPolLayoutCompatible<B> for B {}
 
@@ -58,8 +60,8 @@ unsafe impl<B: Backend> SvpPPolLayoutCompatible<B> for B {}
 /// # Safety
 ///
 /// Implementors assert byte-identical buffer layouts between `Self` and `B2`
-/// for this container family, for every shape — same convention, not merely
-/// the same size. Validate with the word-compat test suite.
+/// for this container family, for every shape and on both rings: the same
+/// convention, not merely the same size. Validate with the word-compat test suite.
 pub unsafe trait VmpPMatLayoutCompatible<B2: Backend>: Backend {}
 unsafe impl<B: Backend> VmpPMatLayoutCompatible<B> for B {}
 
@@ -69,8 +71,8 @@ unsafe impl<B: Backend> VmpPMatLayoutCompatible<B> for B {}
 /// # Safety
 ///
 /// Implementors assert byte-identical buffer layouts between `Self` and `B2`
-/// for this container family, for every shape — same convention, not merely
-/// the same size. Validate with the word-compat test suite.
+/// for this container family, for every shape and on both rings: the same
+/// convention, not merely the same size. Validate with the word-compat test suite.
 pub unsafe trait VecZnxBigLayoutCompatible<B2: Backend>: Backend {}
 unsafe impl<B: Backend> VecZnxBigLayoutCompatible<B> for B {}
 
@@ -80,7 +82,7 @@ unsafe impl<B: Backend> VecZnxBigLayoutCompatible<B> for B {}
 /// # Safety
 ///
 /// Implementors assert byte-identical buffer layouts between `Self` and `B2`
-/// for this container family, for every shape — same convention, not merely
-/// the same size. Validate with the word-compat test suite.
+/// for this container family, for every shape and on both rings: the same
+/// convention, not merely the same size. Validate with the word-compat test suite.
 pub unsafe trait CnvPVecLayoutCompatible<B2: Backend>: Backend {}
 unsafe impl<B: Backend> CnvPVecLayoutCompatible<B> for B {}

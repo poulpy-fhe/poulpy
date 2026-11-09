@@ -1,9 +1,9 @@
 //! BLAS tests for the portable backends: the functional suite on the serial
-//! standard types against cleartext expectations, parity of each type against
+//! types, on the standard ring, against cleartext expectations, parity of each type against
 //! its same-family oracle, bit for bit, the NTT types' also at radix 54 and
-//! the standard FFT64 type's also at `N = 32`, the conjugate-invariant
-//! suite on the conjugate-invariant types, and the radix helpers of the products
-//! on every type.
+//! the FFT64 type's also at `N = 32` on the standard ring, the conjugate-invariant
+//! suite on every type, and the radix helpers of the products on every type and
+//! both rings.
 //!
 //! All test logic lives in `poulpy_blas::test_suite` as backend-generic
 //! functions; this file only instantiates the functional suite for each concrete
@@ -102,40 +102,45 @@ blas_parity_test_suite! {
 
 blas_parity_test_suite! {
     mod blas_parity_ci_fft64portable_f64,
-    backend_ref = poulpy_cpu_oracle::FFT64CIOracle,
-    backend_test = crate::FFT64CIPortable,
+    backend_ref = poulpy_cpu_oracle::FFT64Oracle,
+    backend_test = crate::FFT64Portable,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     scalar = f64,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
 }
 
 blas_parity_test_suite! {
     mod blas_parity_ci_fft64portable_quad,
-    backend_ref = poulpy_cpu_oracle::FFT64CIOracle,
-    backend_test = crate::FFT64CIPortable,
+    backend_ref = poulpy_cpu_oracle::FFT64Oracle,
+    backend_test = crate::FFT64Portable,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     scalar = poulpy_ckks::Quad,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE52_PARAMS_QUAD },
 }
 
 blas_parity_test_suite! {
     mod blas_parity_ci_fft64portable_rank2,
-    backend_ref = poulpy_cpu_oracle::FFT64CIOracle,
-    backend_test = crate::FFT64CIPortable,
+    backend_ref = poulpy_cpu_oracle::FFT64Oracle,
+    backend_test = crate::FFT64Portable,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     scalar = f64,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, rank: 2, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
 }
 
 blas_parity_test_suite! {
     mod blas_parity_ci_ntt4x30portable_f64,
-    backend_ref = poulpy_cpu_oracle::NTT4x30CIOracle,
-    backend_test = crate::NTT4x30CIPortable,
+    backend_ref = poulpy_cpu_oracle::NTT4x30Oracle,
+    backend_test = crate::NTT4x30Portable,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     scalar = f64,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE52_PARAMS_F64 },
 }
 
 blas_parity_test_suite! {
     mod blas_parity_ci_ntt4x30portable_quad,
-    backend_ref = poulpy_cpu_oracle::NTT4x30CIOracle,
-    backend_test = crate::NTT4x30CIPortable,
+    backend_ref = poulpy_cpu_oracle::NTT4x30Oracle,
+    backend_test = crate::NTT4x30Portable,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     scalar = poulpy_ckks::Quad,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE52_PARAMS_QUAD },
 }
@@ -143,21 +148,22 @@ blas_parity_test_suite! {
 // Radix 54 on the conjugate-invariant ring at N = 32, whose products are as long as the standard ring's at N = 64.
 blas_parity_test_suite! {
     mod blas_parity_ci_ntt4x30portable_base2k54,
-    backend_ref = poulpy_cpu_oracle::NTT4x30CIOracle,
-    backend_test = crate::NTT4x30CIPortable,
+    backend_ref = poulpy_cpu_oracle::NTT4x30Oracle,
+    backend_test = crate::NTT4x30Portable,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     scalar = f64,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 32, hw: 16, base2k: 54, ..poulpy_ckks::test_suite::BASE52_PARAMS_F64 },
 }
 
 blas_conjugate_invariant_test_suite!(
     mod blas_ci_fft64portable,
-    backend = crate::FFT64CIPortable,
+    backend = crate::FFT64Portable,
     params = poulpy_ckks::test_suite::BASE19_PARAMS_F64,
 );
 
 blas_conjugate_invariant_test_suite!(
     mod blas_ci_ntt4x30portable,
-    backend = crate::NTT4x30CIPortable,
+    backend = crate::NTT4x30Portable,
     params = poulpy_ckks::test_suite::BASE52_PARAMS_F64,
 );
 
@@ -178,14 +184,16 @@ blas_max_base2k_test_suite! {
 
 blas_max_base2k_test_suite! {
     mod blas_max_base2k_ci_fft64portable,
-    backend = crate::FFT64CIPortable,
+    backend = crate::FFT64Portable,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     scalar = f64,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 32, hw: 24, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
 }
 
 blas_max_base2k_test_suite! {
     mod blas_max_base2k_ci_ntt4x30portable,
-    backend = crate::NTT4x30CIPortable,
+    backend = crate::NTT4x30Portable,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     scalar = f64,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 32, hw: 24, base2k: 12, ..poulpy_ckks::test_suite::BASE52_PARAMS_F64 },
 }

@@ -8,7 +8,7 @@ use poulpy_hal::{
         VecZnxCopy, VecZnxDftBytesOf, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxNegate, VecZnxNormalizeAssign,
         VecZnxNormalizeTmpBytes, VecZnxSubAssign,
     },
-    layouts::Backend,
+    layouts::{Backend, Ring, Standard},
 };
 
 /// Former bundle of the HAL bounds behind the prepared-right tensor product.
@@ -17,47 +17,47 @@ use poulpy_hal::{
 /// [`GLWETensoring::glwe_tensor_apply_prepared_right`](crate::GLWETensoring::glwe_tensor_apply_prepared_right),
 /// so neither the BSGS engine nor its scheme implementations need these bounds.
 #[deprecated(note = "bound the module by `GLWETensoring` and the HAL operations it calls directly")]
-pub trait GiantStepTensorBounds<BE: Backend>:
+pub trait GiantStepTensorBounds<BE: Backend, Rg: Ring = Standard>:
     Sized
     + ModuleN
     + CnvPVecBytesOf
     + VecZnxDftBytesOf
     + VecZnxBigBytesOf
-    + VecZnxIdftApply<BE>
+    + VecZnxIdftApply<BE, Rg>
     + VecZnxIdftApplyTmpBytes
-    + VecZnxBigNormalize<BE>
-    + CnvOps<BE>
-    + VecZnxSubAssign<BE>
-    + VecZnxAddAssign<BE>
+    + VecZnxBigNormalize<BE, Rg>
+    + CnvOps<BE, Rg>
+    + VecZnxSubAssign<BE, Rg>
+    + VecZnxAddAssign<BE, Rg>
     + VecZnxBigNormalizeTmpBytes
-    + VecZnxCopy<BE>
-    + VecZnxNegate<BE>
-    + VecZnxNormalizeAssign<BE>
+    + VecZnxCopy<BE, Rg>
+    + VecZnxNegate<BE, Rg>
+    + VecZnxNormalizeAssign<BE, Rg>
     + VecZnxNormalizeTmpBytes
-    + GLWENormalize<BE>
+    + GLWENormalize<BE, Rg>
     + GLWEBytesOf<BE>
 {
 }
 
 #[allow(deprecated)]
-impl<BE: Backend, M> GiantStepTensorBounds<BE> for M where
+impl<BE: Backend, M, Rg: Ring> GiantStepTensorBounds<BE, Rg> for M where
     M: Sized
         + ModuleN
         + CnvPVecBytesOf
         + VecZnxDftBytesOf
         + VecZnxBigBytesOf
-        + VecZnxIdftApply<BE>
+        + VecZnxIdftApply<BE, Rg>
         + VecZnxIdftApplyTmpBytes
-        + VecZnxBigNormalize<BE>
-        + CnvOps<BE>
-        + VecZnxSubAssign<BE>
-        + VecZnxAddAssign<BE>
+        + VecZnxBigNormalize<BE, Rg>
+        + CnvOps<BE, Rg>
+        + VecZnxSubAssign<BE, Rg>
+        + VecZnxAddAssign<BE, Rg>
         + VecZnxBigNormalizeTmpBytes
-        + VecZnxCopy<BE>
-        + VecZnxNegate<BE>
-        + VecZnxNormalizeAssign<BE>
+        + VecZnxCopy<BE, Rg>
+        + VecZnxNegate<BE, Rg>
+        + VecZnxNormalizeAssign<BE, Rg>
         + VecZnxNormalizeTmpBytes
-        + GLWENormalize<BE>
+        + GLWENormalize<BE, Rg>
         + GLWEBytesOf<BE>
 {
 }

@@ -1,6 +1,6 @@
 //! Rotations by a slot shift compose the key lookup with the keyed rotation; the identity is a copy.
 use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos};
-use poulpy_hal::layouts::{Module, ScratchArena};
+use poulpy_hal::layouts::{Module, Ring, ScratchArena};
 
 use crate::{
     CKKSCompositionError, CKKSCtBounds, CKKSResult as Result, SetCKKSInfos,
@@ -8,7 +8,7 @@ use crate::{
     oep::CKKSRotateImpl,
 };
 
-pub(crate) fn ckks_rotate_tmp_bytes_derived<BE: CKKSRotateImpl, C: CKKSCtBounds, K: GGLWEInfos>(
+pub(crate) fn ckks_rotate_tmp_bytes_derived<BE: CKKSRotateImpl<Rg>, C: CKKSCtBounds, K: GGLWEInfos, Rg: Ring>(
     module: &Module<BE>,
     ct_infos: &C,
     key_infos: &K,
@@ -16,7 +16,7 @@ pub(crate) fn ckks_rotate_tmp_bytes_derived<BE: CKKSRotateImpl, C: CKKSCtBounds,
     BE::ckks_rotate_with_key_tmp_bytes(module, ct_infos, key_infos).max(module.ckks_copy_tmp_bytes(ct_infos, ct_infos))
 }
 
-pub(crate) fn ckks_rotate_into_derived<BE, Dst, Src, H>(
+pub(crate) fn ckks_rotate_into_derived<BE, Dst, Src, H, Rg: Ring>(
     module: &Module<BE>,
     k: i64,
     dst: &mut Dst,
@@ -25,12 +25,12 @@ pub(crate) fn ckks_rotate_into_derived<BE, Dst, Src, H>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    BE: CKKSRotateImpl,
-    H: GetAutomorphismKey<BE>,
-    Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-    Src: GLWEToBackendRef<BE> + CKKSCtBounds,
+    BE: CKKSRotateImpl<Rg>,
+    H: GetAutomorphismKey<BE, Rg>,
+    Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+    Src: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
 {
-    let p = module.ckks_galois_element(k);
+    let p = module.ckks_galois_element::<Rg>(k);
     if p == 1 {
         module.ckks_copy(dst, src, scratch)?;
         dst.set_noise(None);
@@ -49,7 +49,7 @@ where
     BE::ckks_rotate_with_key_into(module, dst, src, &key, scratch)
 }
 
-pub(crate) fn ckks_rotate_assign_derived<BE, Dst, H>(
+pub(crate) fn ckks_rotate_assign_derived<BE, Dst, H, Rg: Ring>(
     module: &Module<BE>,
     k: i64,
     dst: &mut Dst,
@@ -57,11 +57,11 @@ pub(crate) fn ckks_rotate_assign_derived<BE, Dst, H>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    BE: CKKSRotateImpl,
-    H: GetAutomorphismKey<BE>,
-    Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+    BE: CKKSRotateImpl<Rg>,
+    H: GetAutomorphismKey<BE, Rg>,
+    Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
 {
-    let p = module.ckks_galois_element(k);
+    let p = module.ckks_galois_element::<Rg>(k);
     if p == 1 {
         dst.set_noise(None);
         return Ok(());

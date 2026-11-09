@@ -41,18 +41,18 @@ struct Digit {
 /// Interleaved-digit GGLWE product in one pass over the prepared matrix, on one worker's scratch taken from `scratch`.
 ///
 /// See [`gglwe_product_digits_strided_with`].
-pub(crate) fn gglwe_product_digits_strided<R: Ring, E: TaskExecutor>(
-    res: &mut VecZnxDftBackendMut<'_, NTT4x30Portable<R>>,
-    a: &VecZnxDftBackendRef<'_, NTT4x30Portable<R>>,
+pub(crate) fn gglwe_product_digits_strided<Rg: Ring, E: TaskExecutor>(
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Portable, Rg>,
+    a: &VecZnxDftBackendRef<'_, NTT4x30Portable, Rg>,
     dsize: usize,
     product_limbs: usize,
-    pmat: &VmpPMatBackendRef<'_, NTT4x30Portable<R>>,
+    pmat: &VmpPMatBackendRef<'_, NTT4x30Portable, Rg>,
     zero_prefix: Option<usize>,
-    scratch: &mut ScratchArena<'_, NTT4x30Portable<R>>,
+    scratch: &mut ScratchArena<'_, NTT4x30Portable>,
 ) {
     let bytes = gglwe_product_digits_strided_tmp_bytes(a.cols(), a.size());
-    let (tmp, _) = take_host_typed::<NTT4x30Portable<R>, u32>(scratch.borrow(), bytes / size_of::<u32>());
-    gglwe_product_digits_strided_with::<R, E>(res, a, dsize, product_limbs, pmat, zero_prefix, tmp);
+    let (tmp, _) = take_host_typed::<NTT4x30Portable, u32>(scratch.borrow(), bytes / size_of::<u32>());
+    gglwe_product_digits_strided_with::<Rg, E>(res, a, dsize, product_limbs, pmat, zero_prefix, tmp);
 }
 
 /// Interleaved-digit GGLWE product in one pass over the prepared matrix.
@@ -64,12 +64,12 @@ pub(crate) fn gglwe_product_digits_strided<R: Ring, E: TaskExecutor>(
 /// Those limbs are then not read, so they need not hold anything, and the scan for leading zero limbs is skipped.
 ///
 /// `tmp` holds [`gglwe_product_digits_strided_tmp_bytes`] bytes for each worker of `E`.
-pub fn gglwe_product_digits_strided_with<R: Ring, E: TaskExecutor>(
-    res: &mut VecZnxDftBackendMut<'_, NTT4x30Portable<R>>,
-    a: &VecZnxDftBackendRef<'_, NTT4x30Portable<R>>,
+pub fn gglwe_product_digits_strided_with<Rg: Ring, E: TaskExecutor>(
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Portable, Rg>,
+    a: &VecZnxDftBackendRef<'_, NTT4x30Portable, Rg>,
     dsize: usize,
     product_limbs: usize,
-    pmat: &VmpPMatBackendRef<'_, NTT4x30Portable<R>>,
+    pmat: &VmpPMatBackendRef<'_, NTT4x30Portable, Rg>,
     zero_prefix: Option<usize>,
     tmp: &mut [u32],
 ) {

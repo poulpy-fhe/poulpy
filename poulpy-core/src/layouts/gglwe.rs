@@ -1,6 +1,6 @@
 use poulpy_hal::layouts::{
     Backend, Data, HostDataMut, HostDataRef, MatZnx, MatZnxAtBackendMut, MatZnxAtBackendRef, MatZnxToBackendMut,
-    MatZnxToBackendRef, ReaderFrom, WriterTo,
+    MatZnxToBackendRef, ReaderFrom, Ring, Standard, WriterTo,
 };
 use poulpy_hal::{AlignedBuf, alloc_aligned};
 
@@ -307,119 +307,119 @@ impl GGLWEInfos for GGLWELayout {
 }
 
 #[derive(PartialEq, Eq, Clone)]
-pub struct GGLWE<D: Data, W: ZnxWord> {
+pub struct GGLWE<D: Data, W: ZnxWord, Rg: Ring = Standard> {
     pub(crate) noise: Option<crate::ComponentNoise>,
-    pub(crate) data: MatZnx<D, W>,
+    pub(crate) data: MatZnx<D, W, Rg>,
     pub(crate) k_aux: TorusPrecision,
     pub(crate) base2k: Base2K,
     pub(crate) k_digit: TorusPrecision,
     pub(crate) k_offset: TorusPrecision,
 }
 
-pub struct GGLWEBackendRef<'a, BE: Backend + 'a> {
-    inner: GGLWE<BE::BufRef<'a>, BE::ZnxWord>,
+pub struct GGLWEBackendRef<'a, BE: Backend + 'a, Rg: Ring = Standard> {
+    inner: GGLWE<BE::BufRef<'a>, BE::ZnxWord, Rg>,
 }
 
-impl<'a, BE: Backend + 'a> GGLWEBackendRef<'a, BE> {
-    pub fn from_inner(inner: GGLWE<BE::BufRef<'a>, BE::ZnxWord>) -> Self {
+impl<'a, BE: Backend + 'a, Rg: Ring> GGLWEBackendRef<'a, BE, Rg> {
+    pub fn from_inner(inner: GGLWE<BE::BufRef<'a>, BE::ZnxWord, Rg>) -> Self {
         Self { inner }
     }
 
-    pub fn into_inner(self) -> GGLWE<BE::BufRef<'a>, BE::ZnxWord> {
+    pub fn into_inner(self) -> GGLWE<BE::BufRef<'a>, BE::ZnxWord, Rg> {
         self.inner
     }
 
-    pub fn at_view(&self, row: usize, col: usize) -> GLWEViewRef<'_, BE> {
-        GLWEViewRef::from_inner(gglwe_at_backend_ref_from_ref::<BE>(&self.inner, row, col))
+    pub fn at_view(&self, row: usize, col: usize) -> GLWEViewRef<'_, BE, Rg> {
+        GLWEViewRef::from_inner(gglwe_at_backend_ref_from_ref::<BE, Rg>(&self.inner, row, col))
     }
 }
 
-impl<'a, BE: Backend + 'a> Deref for GGLWEBackendRef<'a, BE> {
-    type Target = GGLWE<BE::BufRef<'a>, BE::ZnxWord>;
+impl<'a, BE: Backend + 'a, Rg: Ring> Deref for GGLWEBackendRef<'a, BE, Rg> {
+    type Target = GGLWE<BE::BufRef<'a>, BE::ZnxWord, Rg>;
 
     fn deref(&self) -> &Self::Target {
         &self.inner
     }
 }
 
-pub struct GGLWEBackendMut<'a, BE: Backend + 'a> {
-    inner: GGLWE<BE::BufMut<'a>, BE::ZnxWord>,
+pub struct GGLWEBackendMut<'a, BE: Backend + 'a, Rg: Ring = Standard> {
+    inner: GGLWE<BE::BufMut<'a>, BE::ZnxWord, Rg>,
 }
 
-impl<'a, BE: Backend + 'a> GGLWEBackendMut<'a, BE> {
-    pub fn from_inner(inner: GGLWE<BE::BufMut<'a>, BE::ZnxWord>) -> Self {
+impl<'a, BE: Backend + 'a, Rg: Ring> GGLWEBackendMut<'a, BE, Rg> {
+    pub fn from_inner(inner: GGLWE<BE::BufMut<'a>, BE::ZnxWord, Rg>) -> Self {
         Self { inner }
     }
 
-    pub fn into_inner(self) -> GGLWE<BE::BufMut<'a>, BE::ZnxWord> {
+    pub fn into_inner(self) -> GGLWE<BE::BufMut<'a>, BE::ZnxWord, Rg> {
         self.inner
     }
 
-    pub fn at_view(&self, row: usize, col: usize) -> GLWEViewRef<'_, BE> {
-        GLWEViewRef::from_inner(gglwe_at_backend_ref_from_mut::<BE>(&self.inner, row, col))
+    pub fn at_view(&self, row: usize, col: usize) -> GLWEViewRef<'_, BE, Rg> {
+        GLWEViewRef::from_inner(gglwe_at_backend_ref_from_mut::<BE, Rg>(&self.inner, row, col))
     }
 
     /// Clears the owner's component noise metadata.
-    pub fn at_view_mut(&mut self, row: usize, col: usize) -> GLWEViewMut<'_, BE> {
-        GLWEViewMut::from_inner(gglwe_at_backend_mut_from_mut::<BE>(&mut self.inner, row, col))
+    pub fn at_view_mut(&mut self, row: usize, col: usize) -> GLWEViewMut<'_, BE, Rg> {
+        GLWEViewMut::from_inner(gglwe_at_backend_mut_from_mut::<BE, Rg>(&mut self.inner, row, col))
     }
 }
 
-impl<'a, BE: Backend + 'a> Deref for GGLWEBackendMut<'a, BE> {
-    type Target = GGLWE<BE::BufMut<'a>, BE::ZnxWord>;
+impl<'a, BE: Backend + 'a, Rg: Ring> Deref for GGLWEBackendMut<'a, BE, Rg> {
+    type Target = GGLWE<BE::BufMut<'a>, BE::ZnxWord, Rg>;
 
     fn deref(&self) -> &Self::Target {
         &self.inner
     }
 }
 
-impl<BE: Backend> DerefMut for GGLWEBackendMut<'_, BE> {
+impl<BE: Backend, Rg: Ring> DerefMut for GGLWEBackendMut<'_, BE, Rg> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner
     }
 }
 
-impl_gglwe_infos_for_inner!(GGLWEBackendRef<'a, BE>, ['a, BE: Backend + 'a]; inner);
-impl_gglwe_infos_for_inner!(GGLWEBackendMut<'a, BE>, ['a, BE: Backend + 'a]; inner);
+impl_gglwe_infos_for_inner!(GGLWEBackendRef<'a, BE, Rg>, ['a, BE: Backend + 'a, Rg: Ring]; inner);
+impl_gglwe_infos_for_inner!(GGLWEBackendMut<'a, BE, Rg>, ['a, BE: Backend + 'a, Rg: Ring]; inner);
 
-impl<BE: Backend> GGLWEToBackendRef<BE> for GGLWEBackendRef<'_, BE> {
-    fn to_backend_ref(&self) -> GGLWEBackendRef<'_, BE> {
+impl<BE: Backend, Rg: Ring> GGLWEToBackendRef<BE, Rg> for GGLWEBackendRef<'_, BE, Rg> {
+    fn to_backend_ref(&self) -> GGLWEBackendRef<'_, BE, Rg> {
         GGLWEBackendRef::from_inner(GGLWE {
             noise: crate::layouts::LWEInfos::noise(&self.inner),
             base2k: self.inner.base2k,
             k_aux: self.inner.k_aux,
             k_digit: self.inner.k_digit,
             k_offset: self.inner.k_offset,
-            data: poulpy_hal::layouts::mat_znx_backend_ref_from_ref::<BE>(&self.inner.data),
+            data: poulpy_hal::layouts::mat_znx_backend_ref_from_ref::<BE, Rg>(&self.inner.data),
         })
     }
 }
 
-impl<BE: Backend> GGSWAtViewRef<BE> for GGLWEBackendRef<'_, BE> {
-    fn at_view(&self, row: usize, col: usize) -> GLWEViewRef<'_, BE> {
+impl<BE: Backend, Rg: Ring> GGSWAtViewRef<BE, Rg> for GGLWEBackendRef<'_, BE, Rg> {
+    fn at_view(&self, row: usize, col: usize) -> GLWEViewRef<'_, BE, Rg> {
         GGLWEBackendRef::at_view(self, row, col)
     }
 }
 
-impl<BE: Backend> GGLWEToBackendRef<BE> for GGLWEBackendMut<'_, BE> {
-    fn to_backend_ref(&self) -> GGLWEBackendRef<'_, BE> {
+impl<BE: Backend, Rg: Ring> GGLWEToBackendRef<BE, Rg> for GGLWEBackendMut<'_, BE, Rg> {
+    fn to_backend_ref(&self) -> GGLWEBackendRef<'_, BE, Rg> {
         GGLWEBackendRef::from_inner(GGLWE {
             noise: crate::layouts::LWEInfos::noise(&self.inner),
             base2k: self.inner.base2k,
             k_aux: self.inner.k_aux,
             k_digit: self.inner.k_digit,
             k_offset: self.inner.k_offset,
-            data: poulpy_hal::layouts::mat_znx_backend_ref_from_mut::<BE>(&self.inner.data),
+            data: poulpy_hal::layouts::mat_znx_backend_ref_from_mut::<BE, Rg>(&self.inner.data),
         })
     }
 }
 
-impl<BE: Backend> GGLWEToBackendMut<BE> for GGLWEBackendMut<'_, BE> {
+impl<BE: Backend, Rg: Ring> GGLWEToBackendMut<BE, Rg> for GGLWEBackendMut<'_, BE, Rg> {
     fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
         self.inner.noise = crate::layouts::checked_noise(metadata, crate::layouts::GLWEInfos::rank(self).as_usize() + 1);
     }
 
-    fn to_backend_mut(&mut self) -> GGLWEBackendMut<'_, BE> {
+    fn to_backend_mut(&mut self) -> GGLWEBackendMut<'_, BE, Rg> {
         self.inner.noise = None;
         GGLWEBackendMut::from_inner(GGLWE {
             noise: None,
@@ -427,12 +427,12 @@ impl<BE: Backend> GGLWEToBackendMut<BE> for GGLWEBackendMut<'_, BE> {
             k_aux: self.inner.k_aux,
             k_digit: self.inner.k_digit,
             k_offset: self.inner.k_offset,
-            data: poulpy_hal::layouts::mat_znx_backend_mut_from_mut::<BE>(&mut self.inner.data),
+            data: poulpy_hal::layouts::mat_znx_backend_mut_from_mut::<BE, Rg>(&mut self.inner.data),
         })
     }
 }
 
-impl<D: Data, W: ZnxWord> LWEInfos for GGLWE<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> LWEInfos for GGLWE<D, W, Rg> {
     fn noise(&self) -> Option<crate::ComponentNoise> {
         self.noise.clone()
     }
@@ -454,13 +454,13 @@ impl<D: Data, W: ZnxWord> LWEInfos for GGLWE<D, W> {
     }
 }
 
-impl<D: Data, W: ZnxWord> GLWEInfos for GGLWE<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> GLWEInfos for GGLWE<D, W, Rg> {
     fn rank(&self) -> Rank {
         self.rank_out()
     }
 }
 
-impl<D: Data, W: ZnxWord> GGLWEInfos for GGLWE<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> GGLWEInfos for GGLWE<D, W, Rg> {
     fn k_aux(&self) -> TorusPrecision {
         self.k_aux
     }
@@ -486,21 +486,21 @@ impl<D: Data, W: ZnxWord> GGLWEInfos for GGLWE<D, W> {
     }
 }
 
-impl<D: Data, W: ZnxWord> GGLWE<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> GGLWE<D, W, Rg> {
     /// Returns a shared reference to the underlying [`MatZnx`].
-    pub fn data(&self) -> &MatZnx<D, W> {
+    pub fn data(&self) -> &MatZnx<D, W, Rg> {
         &self.data
     }
 }
 
 /// Backend-native shared view of one GLWE row.
-pub trait GGLWEAtBackendRef<BE: Backend> {
-    fn at_backend(&self, row: usize, col: usize) -> GLWE<BE::BufRef<'_>, BE::ZnxWord>;
+pub trait GGLWEAtBackendRef<BE: Backend, Rg: Ring = Standard> {
+    fn at_backend(&self, row: usize, col: usize) -> GLWE<BE::BufRef<'_>, BE::ZnxWord, Rg>;
 }
 
-impl<BE: Backend> GGLWEAtBackendRef<BE> for GGLWE<BE::OwnedBuf, BE::ZnxWord> {
-    fn at_backend(&self, row: usize, col: usize) -> GLWE<BE::BufRef<'_>, BE::ZnxWord> {
-        let data = <MatZnx<BE::OwnedBuf, BE::ZnxWord> as MatZnxAtBackendRef<BE>>::at_backend(&self.data, row, col);
+impl<BE: Backend, Rg: Ring> GGLWEAtBackendRef<BE, Rg> for GGLWE<BE::OwnedBuf, BE::ZnxWord, Rg> {
+    fn at_backend(&self, row: usize, col: usize) -> GLWE<BE::BufRef<'_>, BE::ZnxWord, Rg> {
+        let data = <MatZnx<BE::OwnedBuf, BE::ZnxWord, Rg> as MatZnxAtBackendRef<BE, Rg>>::at_backend(&self.data, row, col);
         GLWE {
             noise: crate::layouts::LWEInfos::noise(&self),
             base2k: self.base2k,
@@ -512,12 +512,12 @@ impl<BE: Backend> GGLWEAtBackendRef<BE> for GGLWE<BE::OwnedBuf, BE::ZnxWord> {
     }
 }
 
-pub(crate) fn gglwe_at_backend_ref_from_ref<'a, 'b, BE: Backend>(
-    gglwe: &'a GGLWE<BE::BufRef<'b>, BE::ZnxWord>,
+pub(crate) fn gglwe_at_backend_ref_from_ref<'a, 'b, BE: Backend, Rg: Ring>(
+    gglwe: &'a GGLWE<BE::BufRef<'b>, BE::ZnxWord, Rg>,
     row: usize,
     col: usize,
-) -> GLWE<BE::BufRef<'a>, BE::ZnxWord> {
-    let data = poulpy_hal::layouts::mat_znx_at_backend_ref_from_ref::<BE>(&gglwe.data, row, col);
+) -> GLWE<BE::BufRef<'a>, BE::ZnxWord, Rg> {
+    let data = poulpy_hal::layouts::mat_znx_at_backend_ref_from_ref::<BE, Rg>(&gglwe.data, row, col);
     GLWE {
         noise: crate::layouts::LWEInfos::noise(&gglwe),
         base2k: gglwe.base2k,
@@ -528,24 +528,22 @@ pub(crate) fn gglwe_at_backend_ref_from_ref<'a, 'b, BE: Backend>(
     }
 }
 
-pub trait GGLWEAtViewRef<BE: Backend> {
-    fn at_view(&self, row: usize, col: usize) -> GLWEViewRef<'_, BE>;
+pub trait GGLWEAtViewRef<BE: Backend, Rg: Ring = Standard> {
+    fn at_view(&self, row: usize, col: usize) -> GLWEViewRef<'_, BE, Rg>;
 }
 
-impl<BE: Backend> GGLWEAtViewRef<BE> for GGLWE<BE::OwnedBuf, BE::ZnxWord> {
-    fn at_view(&self, row: usize, col: usize) -> GLWEViewRef<'_, BE> {
-        GLWEViewRef::from_inner(<GGLWE<BE::OwnedBuf, BE::ZnxWord> as GGLWEAtBackendRef<BE>>::at_backend(
-            self, row, col,
-        ))
+impl<BE: Backend, Rg: Ring> GGLWEAtViewRef<BE, Rg> for GGLWE<BE::OwnedBuf, BE::ZnxWord, Rg> {
+    fn at_view(&self, row: usize, col: usize) -> GLWEViewRef<'_, BE, Rg> {
+        GLWEViewRef::from_inner(<GGLWE<BE::OwnedBuf, BE::ZnxWord, Rg> as GGLWEAtBackendRef<BE, Rg>>::at_backend(self, row, col))
     }
 }
 
-pub(crate) fn gglwe_at_backend_ref_from_mut<'a, 'b, BE: Backend>(
-    gglwe: &'a GGLWE<BE::BufMut<'b>, BE::ZnxWord>,
+pub(crate) fn gglwe_at_backend_ref_from_mut<'a, 'b, BE: Backend, Rg: Ring>(
+    gglwe: &'a GGLWE<BE::BufMut<'b>, BE::ZnxWord, Rg>,
     row: usize,
     col: usize,
-) -> GLWE<BE::BufRef<'a>, BE::ZnxWord> {
-    let data = poulpy_hal::layouts::mat_znx_at_backend_ref_from_mut::<BE>(&gglwe.data, row, col);
+) -> GLWE<BE::BufRef<'a>, BE::ZnxWord, Rg> {
+    let data = poulpy_hal::layouts::mat_znx_at_backend_ref_from_mut::<BE, Rg>(&gglwe.data, row, col);
     GLWE {
         noise: crate::layouts::LWEInfos::noise(&gglwe),
         base2k: gglwe.base2k,
@@ -556,26 +554,27 @@ pub(crate) fn gglwe_at_backend_ref_from_mut<'a, 'b, BE: Backend>(
     }
 }
 
-impl<D: Data, W: ZnxWord> GGLWE<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> GGLWE<D, W, Rg> {
     /// Returns a mutable reference to the underlying [`MatZnx`].
-    pub fn data_mut(&mut self) -> &mut MatZnx<D, W> {
+    pub fn data_mut(&mut self) -> &mut MatZnx<D, W, Rg> {
         self.noise = None;
         &mut self.data
     }
 }
 
 /// Backend-native mutable view of one GLWE row.
-pub trait GGLWEAtBackendMut<BE: Backend> {
+pub trait GGLWEAtBackendMut<BE: Backend, Rg: Ring = Standard> {
     /// Clears the owner's component noise metadata.
-    fn at_backend_mut(&mut self, row: usize, col: usize) -> GLWE<BE::BufMut<'_>, BE::ZnxWord>;
+    fn at_backend_mut(&mut self, row: usize, col: usize) -> GLWE<BE::BufMut<'_>, BE::ZnxWord, Rg>;
 }
 
-impl<BE: Backend> GGLWEAtBackendMut<BE> for GGLWE<BE::OwnedBuf, BE::ZnxWord> {
+impl<BE: Backend, Rg: Ring> GGLWEAtBackendMut<BE, Rg> for GGLWE<BE::OwnedBuf, BE::ZnxWord, Rg> {
     /// Clears the owner's component noise metadata.
-    fn at_backend_mut(&mut self, row: usize, col: usize) -> GLWE<BE::BufMut<'_>, BE::ZnxWord> {
+    fn at_backend_mut(&mut self, row: usize, col: usize) -> GLWE<BE::BufMut<'_>, BE::ZnxWord, Rg> {
         let base2k = self.base2k;
         let k = self.k();
-        let data = <MatZnx<BE::OwnedBuf, BE::ZnxWord> as MatZnxAtBackendMut<BE>>::at_backend_mut(&mut self.data, row, col);
+        let data =
+            <MatZnx<BE::OwnedBuf, BE::ZnxWord, Rg> as MatZnxAtBackendMut<BE, Rg>>::at_backend_mut(&mut self.data, row, col);
         self.noise = None;
         GLWE {
             noise: None,
@@ -588,14 +587,14 @@ impl<BE: Backend> GGLWEAtBackendMut<BE> for GGLWE<BE::OwnedBuf, BE::ZnxWord> {
     }
 }
 
-pub(crate) fn gglwe_at_backend_mut_from_mut<'a, 'b, BE: Backend>(
-    gglwe: &'a mut GGLWE<BE::BufMut<'b>, BE::ZnxWord>,
+pub(crate) fn gglwe_at_backend_mut_from_mut<'a, 'b, BE: Backend, Rg: Ring>(
+    gglwe: &'a mut GGLWE<BE::BufMut<'b>, BE::ZnxWord, Rg>,
     row: usize,
     col: usize,
-) -> GLWE<BE::BufMut<'a>, BE::ZnxWord> {
+) -> GLWE<BE::BufMut<'a>, BE::ZnxWord, Rg> {
     let base2k = gglwe.base2k;
     let k = gglwe.k();
-    let data = poulpy_hal::layouts::mat_znx_at_backend_mut_from_mut::<BE>(&mut gglwe.data, row, col);
+    let data = poulpy_hal::layouts::mat_znx_at_backend_mut_from_mut::<BE, Rg>(&mut gglwe.data, row, col);
     gglwe.noise = None;
     GLWE {
         noise: None,
@@ -607,31 +606,31 @@ pub(crate) fn gglwe_at_backend_mut_from_mut<'a, 'b, BE: Backend>(
     }
 }
 
-pub trait GGLWEAtViewMut<BE: Backend> {
-    fn at_view_mut(&mut self, row: usize, col: usize) -> GLWEViewMut<'_, BE>;
+pub trait GGLWEAtViewMut<BE: Backend, Rg: Ring = Standard> {
+    fn at_view_mut(&mut self, row: usize, col: usize) -> GLWEViewMut<'_, BE, Rg>;
 }
 
-impl<BE: Backend> GGLWEAtViewMut<BE> for GGLWE<BE::OwnedBuf, BE::ZnxWord> {
-    fn at_view_mut(&mut self, row: usize, col: usize) -> GLWEViewMut<'_, BE> {
-        GLWEViewMut::from_inner(<GGLWE<BE::OwnedBuf, BE::ZnxWord> as GGLWEAtBackendMut<BE>>::at_backend_mut(
-            self, row, col,
-        ))
+impl<BE: Backend, Rg: Ring> GGLWEAtViewMut<BE, Rg> for GGLWE<BE::OwnedBuf, BE::ZnxWord, Rg> {
+    fn at_view_mut(&mut self, row: usize, col: usize) -> GLWEViewMut<'_, BE, Rg> {
+        GLWEViewMut::from_inner(
+            <GGLWE<BE::OwnedBuf, BE::ZnxWord, Rg> as GGLWEAtBackendMut<BE, Rg>>::at_backend_mut(self, row, col),
+        )
     }
 }
 
-impl<BE: Backend> GGLWEAtViewMut<BE> for &mut GGLWE<BE::BufMut<'_>, BE::ZnxWord> {
-    fn at_view_mut(&mut self, row: usize, col: usize) -> GLWEViewMut<'_, BE> {
-        GLWEViewMut::from_inner(gglwe_at_backend_mut_from_mut::<BE>(*self, row, col))
+impl<BE: Backend, Rg: Ring> GGLWEAtViewMut<BE, Rg> for &mut GGLWE<BE::BufMut<'_>, BE::ZnxWord, Rg> {
+    fn at_view_mut(&mut self, row: usize, col: usize) -> GLWEViewMut<'_, BE, Rg> {
+        GLWEViewMut::from_inner(gglwe_at_backend_mut_from_mut::<BE, Rg>(*self, row, col))
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> fmt::Debug for GGLWE<D, W> {
+impl<D: HostDataRef, W: ZnxWord, Rg: Ring> fmt::Debug for GGLWE<D, W, Rg> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{self}")
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> fmt::Display for GGLWE<D, W> {
+impl<D: HostDataRef, W: ZnxWord, Rg: Ring> fmt::Display for GGLWE<D, W, Rg> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
@@ -645,8 +644,8 @@ impl<D: HostDataRef, W: ZnxWord> fmt::Display for GGLWE<D, W> {
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> GGLWE<D, W> {
-    pub fn at(&self, row: usize, col: usize) -> GLWE<&[u8], W> {
+impl<D: HostDataRef, W: ZnxWord, Rg: Ring> GGLWE<D, W, Rg> {
+    pub fn at(&self, row: usize, col: usize) -> GLWE<&[u8], W, Rg> {
         let data = self.data.at(row, col);
         GLWE {
             noise: crate::layouts::LWEInfos::noise(&self),
@@ -659,8 +658,8 @@ impl<D: HostDataRef, W: ZnxWord> GGLWE<D, W> {
     }
 }
 
-impl<D: HostDataMut, W: ZnxWord> GGLWE<D, W> {
-    pub fn at_mut(&mut self, row: usize, col: usize) -> GLWE<&mut [u8], W> {
+impl<D: HostDataMut, W: ZnxWord, Rg: Ring> GGLWE<D, W, Rg> {
+    pub fn at_mut(&mut self, row: usize, col: usize) -> GLWE<&mut [u8], W, Rg> {
         let base2k = self.base2k;
         let k = self.k();
         let data = self.data.at_mut(row, col);
@@ -676,9 +675,9 @@ impl<D: HostDataMut, W: ZnxWord> GGLWE<D, W> {
     }
 }
 
-impl<D: Data, W: ZnxWord> GGLWE<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> GGLWE<D, W, Rg> {
     /// Zero-cost rename when both backends share the same `OwnedBuf`.
-    pub fn reinterpret<To>(self) -> GGLWE<To::OwnedBuf, To::ZnxWord>
+    pub fn reinterpret<To>(self) -> GGLWE<To::OwnedBuf, To::ZnxWord, Rg>
     where
         To: Backend<OwnedBuf = D, ZnxWord = W>,
     {
@@ -704,7 +703,7 @@ impl<D: Data, W: ZnxWord> GGLWE<D, W> {
     dead_code,
     reason = "host-owned constructors are kept for serialization and host-only staging"
 )]
-impl<W: ZnxWord> GGLWE<AlignedBuf, W> {
+impl<W: ZnxWord, Rg: Ring> GGLWE<AlignedBuf, W, Rg> {
     pub(crate) fn alloc_from_infos<A>(infos: &A) -> Self
     where
         A: GGLWEInfos,
@@ -752,7 +751,7 @@ impl<W: ZnxWord> GGLWE<AlignedBuf, W> {
         GGLWE {
             noise: None,
             data: MatZnx::from_data(
-                alloc_aligned::<u8>(MatZnx::<AlignedBuf, W>::bytes_of(
+                alloc_aligned::<u8>(MatZnx::<AlignedBuf, W, Rg>::bytes_of(
                     n.into(),
                     dnum.into(),
                     rank_in.into(),
@@ -778,7 +777,7 @@ impl<W: ZnxWord> GGLWE<AlignedBuf, W> {
     {
         let size: usize =
             crate::layouts::offset_key_size(infos.base2k(), infos.k_offset(), infos.dnum(), infos.k_digit(), infos.k_aux());
-        MatZnx::<AlignedBuf, W>::bytes_of(
+        MatZnx::<AlignedBuf, W, Rg>::bytes_of(
             infos.n().into(),
             infos.dnum().into(),
             infos.rank_in().into(),
@@ -798,27 +797,27 @@ impl<W: ZnxWord> GGLWE<AlignedBuf, W> {
     ) -> usize {
         let size: usize = crate::layouts::key_size(base2k, dnum, k_digit, k_aux);
 
-        MatZnx::<AlignedBuf, W>::bytes_of(n.into(), dnum.into(), rank_in.into(), (rank_out + 1).into(), size)
+        MatZnx::<AlignedBuf, W, Rg>::bytes_of(n.into(), dnum.into(), rank_in.into(), (rank_out + 1).into(), size)
     }
 }
 
-pub trait GGLWEToBackendMut<BE: Backend>: GGLWEToBackendRef<BE> {
+pub trait GGLWEToBackendMut<BE: Backend, Rg: Ring = Standard>: GGLWEToBackendRef<BE, Rg> {
     /// Backend hook for recording or propagating component noise metadata.
     fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>);
 
     /// Borrows coefficients mutably and clears the owner's component noise metadata.
-    fn to_backend_mut(&mut self) -> GGLWEBackendMut<'_, BE>;
+    fn to_backend_mut(&mut self) -> GGLWEBackendMut<'_, BE, Rg>;
 }
 
-impl<BE: Backend, D: Data> GGLWEToBackendMut<BE> for GGLWE<D, BE::ZnxWord>
+impl<BE: Backend, D: Data, Rg: Ring> GGLWEToBackendMut<BE, Rg> for GGLWE<D, BE::ZnxWord, Rg>
 where
-    MatZnx<D, BE::ZnxWord>: MatZnxToBackendRef<BE> + MatZnxToBackendMut<BE>,
+    MatZnx<D, BE::ZnxWord, Rg>: MatZnxToBackendRef<BE, Rg> + MatZnxToBackendMut<BE, Rg>,
 {
     fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
         self.noise = crate::layouts::checked_noise(metadata, crate::layouts::GLWEInfos::rank(self).as_usize() + 1);
     }
 
-    fn to_backend_mut(&mut self) -> GGLWEBackendMut<'_, BE> {
+    fn to_backend_mut(&mut self) -> GGLWEBackendMut<'_, BE, Rg> {
         self.noise = None;
         GGLWEBackendMut::from_inner(GGLWE {
             noise: None,
@@ -831,25 +830,25 @@ where
     }
 }
 
-impl<BE: Backend> GGLWEToBackendRef<BE> for &mut GGLWE<BE::BufMut<'_>, BE::ZnxWord> {
-    fn to_backend_ref(&self) -> GGLWEBackendRef<'_, BE> {
+impl<BE: Backend, Rg: Ring> GGLWEToBackendRef<BE, Rg> for &mut GGLWE<BE::BufMut<'_>, BE::ZnxWord, Rg> {
+    fn to_backend_ref(&self) -> GGLWEBackendRef<'_, BE, Rg> {
         GGLWEBackendRef::from_inner(GGLWE {
             noise: crate::layouts::LWEInfos::noise(&self),
             base2k: self.base2k(),
             k_digit: self.k_digit(),
             k_offset: self.k_offset(),
             k_aux: self.k_aux(),
-            data: poulpy_hal::layouts::mat_znx_backend_ref_from_mut::<BE>(&self.data),
+            data: poulpy_hal::layouts::mat_znx_backend_ref_from_mut::<BE, Rg>(&self.data),
         })
     }
 }
 
-impl<BE: Backend> GGLWEToBackendMut<BE> for &mut GGLWE<BE::BufMut<'_>, BE::ZnxWord> {
+impl<BE: Backend, Rg: Ring> GGLWEToBackendMut<BE, Rg> for &mut GGLWE<BE::BufMut<'_>, BE::ZnxWord, Rg> {
     fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
         self.noise = crate::layouts::checked_noise(metadata, crate::layouts::GLWEInfos::rank(self).as_usize() + 1);
     }
 
-    fn to_backend_mut(&mut self) -> GGLWEBackendMut<'_, BE> {
+    fn to_backend_mut(&mut self) -> GGLWEBackendMut<'_, BE, Rg> {
         self.noise = None;
         GGLWEBackendMut::from_inner(GGLWE {
             noise: None,
@@ -857,20 +856,20 @@ impl<BE: Backend> GGLWEToBackendMut<BE> for &mut GGLWE<BE::BufMut<'_>, BE::ZnxWo
             k_digit: self.k_digit(),
             k_offset: self.k_offset(),
             k_aux: self.k_aux(),
-            data: poulpy_hal::layouts::mat_znx_backend_mut_from_mut::<BE>(&mut self.data),
+            data: poulpy_hal::layouts::mat_znx_backend_mut_from_mut::<BE, Rg>(&mut self.data),
         })
     }
 }
 
-pub trait GGLWEToBackendRef<BE: Backend> {
-    fn to_backend_ref(&self) -> GGLWEBackendRef<'_, BE>;
+pub trait GGLWEToBackendRef<BE: Backend, Rg: Ring = Standard> {
+    fn to_backend_ref(&self) -> GGLWEBackendRef<'_, BE, Rg>;
 }
 
-impl<BE: Backend, D: Data> GGLWEToBackendRef<BE> for GGLWE<D, BE::ZnxWord>
+impl<BE: Backend, D: Data, Rg: Ring> GGLWEToBackendRef<BE, Rg> for GGLWE<D, BE::ZnxWord, Rg>
 where
-    MatZnx<D, BE::ZnxWord>: MatZnxToBackendRef<BE>,
+    MatZnx<D, BE::ZnxWord, Rg>: MatZnxToBackendRef<BE, Rg>,
 {
-    fn to_backend_ref(&self) -> GGLWEBackendRef<'_, BE> {
+    fn to_backend_ref(&self) -> GGLWEBackendRef<'_, BE, Rg> {
         GGLWEBackendRef::from_inner(GGLWE {
             noise: crate::layouts::LWEInfos::noise(&self),
             base2k: self.base2k(),
@@ -882,7 +881,7 @@ where
     }
 }
 
-impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GGLWE<D, W> {
+impl<D: HostDataMut, W: ZnxWord, Rg: Ring> ReaderFrom for GGLWE<D, W, Rg> {
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
         self.noise = None;
         let components = self.data.cols_out();
@@ -902,7 +901,7 @@ impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GGLWE<D, W> {
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> WriterTo for GGLWE<D, W> {
+impl<D: HostDataRef, W: ZnxWord, Rg: Ring> WriterTo for GGLWE<D, W, Rg> {
     fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
         crate::layouts::validate_noise_components(self.noise.as_ref(), self.data.cols_out())?;
         crate::ComponentNoise::write_optional(self.noise.as_ref(), writer)?;

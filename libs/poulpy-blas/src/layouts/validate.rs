@@ -23,7 +23,7 @@ use super::{
     BlasContextInfos, BlasContextPrepared, BlasDiagonalCiphertext, BlasDiagonalCiphertextInfos, BlasDiagonalCiphertextLayout,
     BlasDiagonalCiphertextMap, BlasGrid, BlasGridInfos, BlasGridLine, BlasMatMulOperandInfos, BlasMatMulOperandLayout,
     BlasMatVecMaps, BlasPlan, BlasPtOperandInfos, BlasPtOperandPrepared, BlasVectorInfos, BlasVectorLayout, BlasVectorRef,
-    BlasVectorShape, Left,
+    BlasVectorShape, Left, Right,
     ciphertext::{batch_fits, layout_of, replicated_at, slots_of},
     context::{ContextMaps, reduction_projection, reduction_rotations, shift_maps, shift_rotates, sum_rotations},
     diagonal_ciphertext::{AppendAxis, append_rotations},
@@ -46,9 +46,9 @@ pub(crate) fn reject(op: &'static str, reason: String) -> CKKSError {
 
 /// Rejects `g`, whose blocks are `blocks`, unless it reads `2^log_d x 2^log_d` blocks, at least one and exactly
 /// `rows x cols` of them, that share one layout, whose `log_delta` does not exceed their `k`, and whose label allows its
-/// batch on ring `R`: a power of two from the batch the label proves to the slots' dense batch, with the label at most
+/// batch on ring `Rg`: a power of two from the batch the label proves to the slots' dense batch, with the label at most
 /// `log2` of the degree.
-pub(crate) fn ensure_grid<R: Ring>(
+pub(crate) fn ensure_grid<Rg: Ring>(
     op: &'static str,
     log_d: usize,
     g: &impl BlasGridInfos,
@@ -65,7 +65,7 @@ pub(crate) fn ensure_grid<R: Ring>(
     if blocks.iter().any(|block| layout_of(block) != first) {
         return Err(reject(op, "the blocks of a grid do not share one layout".into()));
     }
-    ensure_record::<R>(op, g)
+    ensure_record::<Rg>(op, g)
 }
 
 /// Rejects `g` unless it reads `2^log_d x 2^log_d` blocks.
@@ -77,8 +77,8 @@ pub(crate) fn ensure_dimension(op: &'static str, log_d: usize, g: &impl BlasGrid
 }
 
 /// Rejects `g` unless the `log_delta` of its block layout does not exceed its `k` and its label allows its batch on
-/// ring `R`, as [`ensure_grid`] states.
-pub(crate) fn ensure_record<R: Ring>(op: &'static str, g: &impl BlasGridInfos) -> Result<()> {
+/// ring `Rg`, as [`ensure_grid`] states.
+pub(crate) fn ensure_record<Rg: Ring>(op: &'static str, g: &impl BlasGridInfos) -> Result<()> {
     let (first, log_d) = (g.block_layout(), g.log_d());
     if first.log_delta() > first.k().as_usize() {
         return Err(reject(
@@ -90,12 +90,12 @@ pub(crate) fn ensure_record<R: Ring>(op: &'static str, g: &impl BlasGridInfos) -
             ),
         ));
     }
-    if !batch_fits::<R>(g) {
+    if !batch_fits::<Rg>(g) {
         return Err(reject(
             op,
             format!(
                 "a batch of {} matrices of 2^{log_d} x 2^{log_d} blocks does not fit blocks of degree {} labelled log_sparsity={}",
-                grid_batch::<R>(g),
+                grid_batch::<Rg>(g),
                 first.n().as_usize(),
                 first.log_sparsity()
             ),
@@ -152,7 +152,7 @@ pub(crate) fn ensure_inner(op: &'static str, a_cols: usize, b_rows: usize) -> Re
 /// Rejects maps encoded on a module of `slots` slots at radix `base2k` and torus width `k` unless `module` has `slots`
 /// slots and every grid of `inputs`, the grids they read, holds blocks at `base2k` no narrower than `k`: the scratch
 /// queries bound a diagonal by its input block.
-pub(crate) fn ensure_maps<M: CKKSModuleInfos + ?Sized>(
+pub(crate) fn ensure_maps<M: CKKSModuleInfos + ?Sized, Rg: Ring>(
     op: &'static str,
     module: &M,
     slots: usize,
@@ -161,11 +161,11 @@ pub(crate) fn ensure_maps<M: CKKSModuleInfos + ?Sized>(
     inputs: &[&dyn BlasGridInfos],
 ) -> Result<()> {
     let inputs: Vec<CKKSLayout> = inputs.iter().map(|g| g.block_layout()).collect();
-    ensure_maps_reading(op, module, slots, base2k, k, &inputs, "blocks")
+    ensure_maps_reading::<_, Rg>(op, module, slots, base2k, k, &inputs, "blocks")
 }
 
 /// [`ensure_maps`] over the layouts of the ciphertexts the maps read, named `what` in its reasons.
-fn ensure_maps_reading<M: CKKSModuleInfos + ?Sized>(
+fn ensure_maps_reading<M: CKKSModuleInfos + ?Sized, Rg: Ring>(
     op: &'static str,
     module: &M,
     slots: usize,
@@ -174,12 +174,12 @@ fn ensure_maps_reading<M: CKKSModuleInfos + ?Sized>(
     inputs: &[CKKSLayout],
     what: &str,
 ) -> Result<()> {
-    if module.ckks_max_slots() != slots {
+    if module.ckks_max_slots::<Rg>() != slots {
         return Err(reject(
             op,
             format!(
                 "maps encoded for {slots} slots on a module of {} slots",
-                module.ckks_max_slots()
+                module.ckks_max_slots::<Rg>()
             ),
         ));
     }
@@ -204,8 +204,8 @@ fn ensure_maps_reading<M: CKKSModuleInfos + ?Sized>(
 
 /// Rejects `v`, whose ciphertexts are `cts`, unless its shape holds an entry, an entry per ciphertext and a positive
 /// stride, and `cts` number its ciphertexts, share one layout whose `log_delta` does not exceed its `k`, and carry a
-/// label, at most `log2` of the degree, proving a period on ring `R` that holds the entries.
-pub(crate) fn ensure_vector<R: Ring>(op: &'static str, v: &impl BlasVectorInfos, cts: &[impl CKKSCtBounds]) -> Result<()> {
+/// label, at most `log2` of the degree, proving a period on ring `Rg` that holds the entries.
+pub(crate) fn ensure_vector<Rg: Ring>(op: &'static str, v: &impl BlasVectorInfos, cts: &[impl CKKSCtBounds]) -> Result<()> {
     let shape = v.vector_shape();
     if shape.len == 0 || shape.chunk == 0 || shape.stride == 0 {
         return Err(reject(
@@ -242,8 +242,8 @@ pub(crate) fn ensure_vector<R: Ring>(op: &'static str, v: &impl BlasVectorInfos,
         ));
     }
     let (n, s) = (first.n().as_usize(), first.log_sparsity());
-    let period = vector_period::<R>(v);
-    if s > n.ilog2() as usize || !shape.fits(slots_of::<R>(n), period) {
+    let period = vector_period::<Rg>(v);
+    if s > n.ilog2() as usize || !shape.fits(slots_of::<Rg>(n), period) {
         return Err(reject(
             op,
             format!(
@@ -308,13 +308,13 @@ pub(crate) type UseSink<'f> = &'f mut dyn FnMut(RotationUse) -> Result<()>;
 
 /// Fails with `MissingAutomorphismKey` unless `keys` holds a key for `u`, or with `InvalidOperand` unless it is of the
 /// rank of the blocks it switches. Element 1 is the identity, which poulpy-ckks applies without a key.
-pub(crate) fn ensure_rotation<BE, M, K>(op: &'static str, module: &M, keys: &K, u: RotationUse) -> Result<()>
+pub(crate) fn ensure_rotation<BE, M, K, Rg: Ring>(op: &'static str, module: &M, keys: &K, u: RotationUse) -> Result<()>
 where
     BE: Backend,
     M: CKKSModuleInfos + ?Sized,
-    K: GetAutomorphismKey<BE>,
+    K: GetAutomorphismKey<BE, Rg>,
 {
-    let p = module.ckks_galois_element(u.rotation);
+    let p = module.ckks_galois_element::<Rg>(u.rotation);
     if p == 1 {
         return Ok(());
     }
@@ -331,7 +331,7 @@ where
 
 /// Fails with `MissingRelinearizationKey` unless `keys` holds a tensor key at width `k`, then with `InvalidOperand`
 /// unless it is of `rank`, that of the blocks it relinearizes.
-pub(crate) fn ensure_tensor_key<BE: Backend, K: GetTensorKey<BE>>(
+pub(crate) fn ensure_tensor_key<BE: Backend, K: GetTensorKey<BE, Rg>, Rg: Ring>(
     op: &'static str,
     keys: &K,
     k: TorusPrecision,
@@ -390,10 +390,10 @@ fn bsgs_uses<P>(
 }
 
 /// Whether `uses`, an enumerator, yields a look-up [`ensure_rotation`] makes: a rotation other than the identity.
-pub(crate) fn rotates<M: CKKSModuleInfos + ?Sized>(module: &M, uses: impl FnOnce(UseSink<'_>) -> Result<()>) -> bool {
+pub(crate) fn rotates<M: CKKSModuleInfos + ?Sized, Rg: Ring>(module: &M, uses: impl FnOnce(UseSink<'_>) -> Result<()>) -> bool {
     let mut any = false;
     let _ = uses(&mut |u| {
-        any |= module.ckks_galois_element(u.rotation) != 1;
+        any |= module.ckks_galois_element::<Rg>(u.rotation) != 1;
         Ok(())
     });
     any
@@ -448,20 +448,20 @@ impl<'a, K> KeyLayouts<'a, K> {
     }
 }
 
-impl<BE: Backend, K: GetAutomorphismKey<BE>> GetAutomorphismKey<BE> for KeyLayouts<'_, K> {
+impl<BE: Backend, K: GetAutomorphismKey<BE, Rg>, Rg: Ring> GetAutomorphismKey<BE, Rg> for KeyLayouts<'_, K> {
     fn lookup_automorphism_key(
         &self,
         p: i64,
         k: TorusPrecision,
-    ) -> poulpy_core::Result<GLWEAutomorphismKeyPreparedBackendRef<'_, BE>> {
+    ) -> poulpy_core::Result<GLWEAutomorphismKeyPreparedBackendRef<'_, BE, Rg>> {
         let key = self.keys.get_automorphism_key(p, k)?;
         self.record(&key);
         Ok(key)
     }
 }
 
-impl<BE: Backend, K: GetTensorKey<BE>> GetTensorKey<BE> for KeyLayouts<'_, K> {
-    fn lookup_tensor_key(&self, k: TorusPrecision) -> poulpy_core::Result<GLWETensorKeyPreparedBackendRef<'_, BE>> {
+impl<BE: Backend, K: GetTensorKey<BE, Rg>, Rg: Ring> GetTensorKey<BE, Rg> for KeyLayouts<'_, K> {
+    fn lookup_tensor_key(&self, k: TorusPrecision) -> poulpy_core::Result<GLWETensorKeyPreparedBackendRef<'_, BE, Rg>> {
         let key = self.keys.get_tensor_key(k)?;
         self.record(&key);
         Ok(key)
@@ -472,11 +472,11 @@ impl<BE: Backend, K: GetTensorKey<BE>> GetTensorKey<BE> for KeyLayouts<'_, K> {
 /// blocks of rank `rank` and width `src_k` into width `dst_k` looks up in `keys`, as [`assert_scratch`] does; a call
 /// that looks up none asserts nothing. The keys passed `op`'s validator, so the look-ups only record their layouts.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn assert_maps_scratch<BE: Backend, M: CKKSModuleInfos + ?Sized>(
+pub(crate) fn assert_maps_scratch<BE: Backend, M: CKKSModuleInfos + ?Sized, Rg: Ring>(
     op: &'static str,
     module: &M,
-    lts: &[&LinearTransformationPrepared<BE>],
-    keys: &impl GetAutomorphismKey<BE>,
+    lts: &[&LinearTransformationPrepared<BE, Rg>],
+    keys: &impl GetAutomorphismKey<BE, Rg>,
     src_k: TorusPrecision,
     dst_k: TorusPrecision,
     rank: Rank,
@@ -491,7 +491,7 @@ pub(crate) fn assert_maps_scratch<BE: Backend, M: CKKSModuleInfos + ?Sized>(
 }
 
 /// Fails as [`ensure_rotation`] unless `keys` holds every key of [`lt_uses`], of that rank.
-pub(crate) fn ensure_lt_keys<BE, M, P, K>(
+pub(crate) fn ensure_lt_keys<BE, M, P, K, Rg: Ring>(
     op: &'static str,
     module: &M,
     lt: &LinearTransformation<P>,
@@ -504,7 +504,7 @@ where
     BE: Backend,
     M: CKKSModuleInfos + ?Sized,
     P: LtDiagonalMeta,
-    K: GetAutomorphismKey<BE>,
+    K: GetAutomorphismKey<BE, Rg>,
 {
     lt_uses(lt, src_k, dst_k, rank, &mut |u| ensure_rotation(op, module, keys, u))
 }
@@ -518,17 +518,17 @@ where
 ///
 /// `InvalidOperand` for a grid, shape or layout it rejects, then `MissingAutomorphismKey`, or `InvalidOperand` for a
 /// key of another rank.
-pub fn validate_blas_rotate<BE: Backend>(
+pub fn validate_blas_rotate<BE: Backend, Rg: Ring>(
     module: &Module<BE>,
     r: i64,
-    res: &impl BlasGrid<BE>,
-    a: &impl BlasGrid<BE>,
-    keys: &impl GetAutomorphismKey<BE>,
+    res: &impl BlasGrid<BE, Rg>,
+    a: &impl BlasGrid<BE, Rg>,
+    keys: &impl GetAutomorphismKey<BE, Rg>,
 ) -> Result<usize> {
     let op = "blas_rotate";
     ensure_same_grids(op, module, res, a)?;
     rotate_uses(r, res, a, &mut |u| ensure_rotation(op, module, keys, u))?;
-    Ok(grid_batch::<BE::Ring>(a))
+    Ok(grid_batch::<Rg>(a))
 }
 
 /// Checks a [`blas_sum`](crate::api::BlasMatInterOps::blas_sum) call as [`validate_blas_rotate`] does, with the
@@ -539,16 +539,16 @@ pub fn validate_blas_rotate<BE: Backend>(
 ///
 /// `InvalidOperand` for a grid, shape or layout it rejects, then, key by key, `MissingAutomorphismKey`, or
 /// `InvalidOperand` for a key of another rank.
-pub fn validate_blas_sum<BE: Backend>(
+pub fn validate_blas_sum<BE: Backend, Rg: Ring>(
     module: &Module<BE>,
-    res: &impl BlasGrid<BE>,
-    a: &impl BlasGrid<BE>,
-    keys: &impl GetAutomorphismKey<BE>,
+    res: &impl BlasGrid<BE, Rg>,
+    a: &impl BlasGrid<BE, Rg>,
+    keys: &impl GetAutomorphismKey<BE, Rg>,
 ) -> Result<usize> {
     let op = "blas_sum";
     ensure_same_grids(op, module, res, a)?;
-    sum_uses::<BE::Ring>(res, a, &mut |u| ensure_rotation(op, module, keys, u))?;
-    Ok(grid_batch::<BE::Ring>(a))
+    sum_uses::<Rg>(res, a, &mut |u| ensure_rotation(op, module, keys, u))?;
+    Ok(grid_batch::<Rg>(a))
 }
 
 /// The look-up of [`validate_blas_rotate`]: the rotation by `r d^2` slots, at the narrower of `a`'s and `res`'s widths.
@@ -561,21 +561,21 @@ pub(crate) fn rotate_uses(r: i64, res: &impl BlasGridInfos, a: &impl BlasGridInf
 }
 
 /// The look-ups of [`validate_blas_sum`]: the rotations of the batch, at the narrower of `a`'s and `res`'s widths.
-pub(crate) fn sum_uses<R: Ring>(res: &impl BlasGridInfos, a: &impl BlasGridInfos, f: UseSink<'_>) -> Result<()> {
+pub(crate) fn sum_uses<Rg: Ring>(res: &impl BlasGridInfos, a: &impl BlasGridInfos, f: UseSink<'_>) -> Result<()> {
     let (k, rank) = (rotation_key_width(res, a), a.block_layout().rank());
-    sum_rotations(a.log_d(), grid_batch::<R>(a)).try_for_each(|rotation| f(RotationUse { rotation, k, rank }))
+    sum_rotations(a.log_d(), grid_batch::<Rg>(a)).try_for_each(|rotation| f(RotationUse { rotation, k, rank }))
 }
 
 /// `a` and `res` are grids at `a`'s `log_d`, `res` of `a`'s shape and its blocks of the module's degree and `a`'s radix
 /// and rank.
-fn ensure_same_grids<BE: Backend>(
+fn ensure_same_grids<BE: Backend, Rg: Ring>(
     op: &'static str,
     module: &Module<BE>,
-    res: &impl BlasGrid<BE>,
-    a: &impl BlasGrid<BE>,
+    res: &impl BlasGrid<BE, Rg>,
+    a: &impl BlasGrid<BE, Rg>,
 ) -> Result<()> {
-    ensure_grid::<BE::Ring>(op, a.log_d(), a, a.blocks())?;
-    ensure_grid::<BE::Ring>(op, a.log_d(), res, res.blocks())?;
+    ensure_grid::<Rg>(op, a.log_d(), a, a.blocks())?;
+    ensure_grid::<Rg>(op, a.log_d(), res, res.blocks())?;
     ensure_shape(op, res, a.rows(), a.cols())?;
     ensure_layouts(op, module.n(), res, &[a])
 }
@@ -597,18 +597,18 @@ fn rotation_key_width(res: &impl BlasGridInfos, a: &impl BlasGridInfos) -> Torus
 ///
 /// `InvalidOperand` for a grid, shape, layout or context it rejects, then, key by key, `MissingAutomorphismKey`, or
 /// `InvalidOperand` for a key of another rank.
-pub fn validate_blas_transpose<BE: Backend>(
+pub fn validate_blas_transpose<BE: Backend, Rg: Ring>(
     module: &Module<BE>,
-    res: &impl BlasGrid<BE>,
-    a: &impl BlasGrid<BE>,
-    ctx: &BlasContextPrepared<BE>,
-    keys: &impl GetAutomorphismKey<BE>,
+    res: &impl BlasGrid<BE, Rg>,
+    a: &impl BlasGrid<BE, Rg>,
+    ctx: &BlasContextPrepared<BE, Rg>,
+    keys: &impl GetAutomorphismKey<BE, Rg>,
 ) -> Result<usize> {
     let op = "blas_transpose";
     ensure_intra(op, module, res, a, ctx, a.cols(), a.rows())?;
     ensure_mapped(op, module, ctx, a)?;
     transpose_uses(res, a, &ctx.maps, &mut |u| ensure_rotation(op, module, keys, u))?;
-    Ok(grid_batch::<BE::Ring>(a))
+    Ok(grid_batch::<Rg>(a))
 }
 
 /// Checks a [`blas_rotate_rows`](crate::api::BlasMatIntraOps::blas_rotate_rows) call as [`validate_blas_transpose`]
@@ -620,13 +620,13 @@ pub fn validate_blas_transpose<BE: Backend>(
 /// # Errors
 ///
 /// As [`validate_blas_transpose`].
-pub fn validate_blas_rotate_rows<BE: Backend>(
+pub fn validate_blas_rotate_rows<BE: Backend, Rg: Ring>(
     module: &Module<BE>,
     k: usize,
-    res: &impl BlasGrid<BE>,
-    a: &impl BlasGrid<BE>,
-    ctx: &BlasContextPrepared<BE>,
-    keys: &impl GetAutomorphismKey<BE>,
+    res: &impl BlasGrid<BE, Rg>,
+    a: &impl BlasGrid<BE, Rg>,
+    ctx: &BlasContextPrepared<BE, Rg>,
+    keys: &impl GetAutomorphismKey<BE, Rg>,
 ) -> Result<usize> {
     validate_shift(module, k, res, a, true, ctx, keys)
 }
@@ -636,43 +636,43 @@ pub fn validate_blas_rotate_rows<BE: Backend>(
 /// # Errors
 ///
 /// As [`validate_blas_transpose`].
-pub fn validate_blas_rotate_cols<BE: Backend>(
+pub fn validate_blas_rotate_cols<BE: Backend, Rg: Ring>(
     module: &Module<BE>,
     k: usize,
-    res: &impl BlasGrid<BE>,
-    a: &impl BlasGrid<BE>,
-    ctx: &BlasContextPrepared<BE>,
-    keys: &impl GetAutomorphismKey<BE>,
+    res: &impl BlasGrid<BE, Rg>,
+    a: &impl BlasGrid<BE, Rg>,
+    ctx: &BlasContextPrepared<BE, Rg>,
+    keys: &impl GetAutomorphismKey<BE, Rg>,
 ) -> Result<usize> {
     validate_shift(module, k, res, a, false, ctx, keys)
 }
 
 /// `a` and `res` are grids at the context's `log_d`, `res` of `rows x cols` blocks of `a`'s degree, radix and rank, and
 /// the context encoded for the module's slot count.
-fn ensure_intra<BE: Backend>(
+fn ensure_intra<BE: Backend, Rg: Ring>(
     op: &'static str,
     module: &Module<BE>,
-    res: &impl BlasGrid<BE>,
-    a: &impl BlasGrid<BE>,
-    ctx: &BlasContextPrepared<BE>,
+    res: &impl BlasGrid<BE, Rg>,
+    a: &impl BlasGrid<BE, Rg>,
+    ctx: &BlasContextPrepared<BE, Rg>,
     rows: usize,
     cols: usize,
 ) -> Result<()> {
-    ensure_grid::<BE::Ring>(op, ctx.log_d(), a, a.blocks())?;
-    ensure_grid::<BE::Ring>(op, ctx.log_d(), res, res.blocks())?;
+    ensure_grid::<Rg>(op, ctx.log_d(), a, a.blocks())?;
+    ensure_grid::<Rg>(op, ctx.log_d(), res, res.blocks())?;
     ensure_shape(op, res, rows, cols)?;
     ensure_layouts(op, module.n(), res, &[a])?;
-    ensure_maps(op, module, ctx.slots(), ctx.base2k(), ctx.coeffs_meta().k, &[])
+    ensure_maps::<_, Rg>(op, module, ctx.slots(), ctx.base2k(), ctx.coeffs_meta().k, &[])
 }
 
 /// The context's maps read `a`: its blocks at their radix and at least as wide.
-fn ensure_mapped<BE: Backend>(
+fn ensure_mapped<BE: Backend, Rg: Ring>(
     op: &'static str,
     module: &Module<BE>,
-    ctx: &BlasContextPrepared<BE>,
-    a: &impl BlasGrid<BE>,
+    ctx: &BlasContextPrepared<BE, Rg>,
+    a: &impl BlasGrid<BE, Rg>,
 ) -> Result<()> {
-    ensure_maps(op, module, ctx.slots(), ctx.base2k(), ctx.coeffs_meta().k, &[a])
+    ensure_maps::<_, Rg>(op, module, ctx.slots(), ctx.base2k(), ctx.coeffs_meta().k, &[a])
 }
 
 /// Checks a [`blas_sum_rows`](crate::api::BlasMatIntraOps::blas_sum_rows) call as [`validate_blas_rotate_rows`] does,
@@ -682,12 +682,12 @@ fn ensure_mapped<BE: Backend>(
 /// # Errors
 ///
 /// As [`validate_blas_transpose`].
-pub fn validate_blas_sum_rows<BE: Backend>(
+pub fn validate_blas_sum_rows<BE: Backend, Rg: Ring>(
     module: &Module<BE>,
-    res: &impl BlasGrid<BE>,
-    a: &impl BlasGrid<BE>,
-    ctx: &BlasContextPrepared<BE>,
-    keys: &impl GetAutomorphismKey<BE>,
+    res: &impl BlasGrid<BE, Rg>,
+    a: &impl BlasGrid<BE, Rg>,
+    ctx: &BlasContextPrepared<BE, Rg>,
+    keys: &impl GetAutomorphismKey<BE, Rg>,
 ) -> Result<usize> {
     validate_reduction(module, res, a, true, ctx, keys)
 }
@@ -697,24 +697,24 @@ pub fn validate_blas_sum_rows<BE: Backend>(
 /// # Errors
 ///
 /// As [`validate_blas_sum_rows`].
-pub fn validate_blas_sum_cols<BE: Backend>(
+pub fn validate_blas_sum_cols<BE: Backend, Rg: Ring>(
     module: &Module<BE>,
-    res: &impl BlasGrid<BE>,
-    a: &impl BlasGrid<BE>,
-    ctx: &BlasContextPrepared<BE>,
-    keys: &impl GetAutomorphismKey<BE>,
+    res: &impl BlasGrid<BE, Rg>,
+    a: &impl BlasGrid<BE, Rg>,
+    ctx: &BlasContextPrepared<BE, Rg>,
+    keys: &impl GetAutomorphismKey<BE, Rg>,
 ) -> Result<usize> {
     validate_reduction(module, res, a, false, ctx, keys)
 }
 
 /// The checks of an axis reduction along the rows (`rows`) or the columns.
-fn validate_reduction<BE: Backend>(
+fn validate_reduction<BE: Backend, Rg: Ring>(
     module: &Module<BE>,
-    res: &impl BlasGrid<BE>,
-    a: &impl BlasGrid<BE>,
+    res: &impl BlasGrid<BE, Rg>,
+    a: &impl BlasGrid<BE, Rg>,
     rows: bool,
-    ctx: &BlasContextPrepared<BE>,
-    keys: &impl GetAutomorphismKey<BE>,
+    ctx: &BlasContextPrepared<BE, Rg>,
+    keys: &impl GetAutomorphismKey<BE, Rg>,
 ) -> Result<usize> {
     let op = if rows { "blas_sum_rows" } else { "blas_sum_cols" };
     ensure_intra(op, module, res, a, ctx, a.rows(), a.cols())?;
@@ -722,7 +722,7 @@ fn validate_reduction<BE: Backend>(
         ensure_mapped(op, module, ctx, a)?;
     }
     reduction_uses(res, a, rows, &ctx.maps, &mut |u| ensure_rotation(op, module, keys, u))?;
-    Ok(grid_batch::<BE::Ring>(a))
+    Ok(grid_batch::<Rg>(a))
 }
 
 /// The look-ups of an axis reduction of `a` into `res` along its rows (`rows`) or columns, of `a`'s rank: along the rows
@@ -766,14 +766,14 @@ pub(crate) fn reduction_uses<P: LtDiagonalMeta>(
 }
 
 /// The checks of a row (`rows`) or column shift by `k`.
-fn validate_shift<BE: Backend>(
+fn validate_shift<BE: Backend, Rg: Ring>(
     module: &Module<BE>,
     k: usize,
-    res: &impl BlasGrid<BE>,
-    a: &impl BlasGrid<BE>,
+    res: &impl BlasGrid<BE, Rg>,
+    a: &impl BlasGrid<BE, Rg>,
     rows: bool,
-    ctx: &BlasContextPrepared<BE>,
-    keys: &impl GetAutomorphismKey<BE>,
+    ctx: &BlasContextPrepared<BE, Rg>,
+    keys: &impl GetAutomorphismKey<BE, Rg>,
 ) -> Result<usize> {
     let op = if rows { "blas_rotate_rows" } else { "blas_rotate_cols" };
     ensure_intra(op, module, res, a, ctx, a.rows(), a.cols())?;
@@ -782,7 +782,7 @@ fn validate_shift<BE: Backend>(
         ensure_mapped(op, module, ctx, a)?;
     }
     shift_uses(k, res, a, rows, &ctx.maps, &mut |u| ensure_rotation(op, module, keys, u))?;
-    Ok(grid_batch::<BE::Ring>(a))
+    Ok(grid_batch::<Rg>(a))
 }
 
 /// The look-ups of [`validate_blas_transpose`]: the transpose map from `a`'s width into `res`'s.
@@ -859,15 +859,15 @@ pub(crate) fn context_masks<T>(plan: BlasPlan, maps: &ContextMaps<T>, left: bool
 /// Under `JklsStored` and `JklsGalois`, `ctx`'s masks read the results of the operand's first map: `ctx` is at `a`'s
 /// `log_d`, encoded for the module's slot count at `a`'s radix and no wider than `a`, and on the `left` holds the
 /// column halves of psi^k.
-fn ensure_masks<BE: Backend>(
+fn ensure_masks<BE: Backend, Rg: Ring>(
     op: &'static str,
     module: &Module<BE>,
     a: &impl BlasGridInfos,
-    ctx: &BlasContextPrepared<BE>,
+    ctx: &BlasContextPrepared<BE, Rg>,
     left: bool,
 ) -> Result<()> {
     ensure_dimension(op, ctx.log_d(), a)?;
-    ensure_maps(op, module, ctx.slots(), ctx.base2k(), ctx.coeffs_meta().k, &[a])?;
+    ensure_maps::<_, Rg>(op, module, ctx.slots(), ctx.base2k(), ctx.coeffs_meta().k, &[a])?;
     if left && !ctx.maps.has_masked_rows() {
         return Err(reject(op, MASKLESS.into()));
     }
@@ -885,14 +885,14 @@ fn ensure_masks<BE: Backend>(
 ///
 /// `InvalidOperand` for a grid, shape, layout, radix or context it rejects, then, key by key, `MissingAutomorphismKey`
 /// or `MissingRelinearizationKey`, or `InvalidOperand` for a key of another rank.
-pub fn validate_blas_matmul<BE: Backend>(
+pub fn validate_blas_matmul<BE: Backend, Rg: Ring>(
     module: &Module<BE>,
-    res: &impl BlasGrid<BE>,
-    a: &impl BlasGrid<BE>,
-    b: &impl BlasGrid<BE>,
-    ctx: &BlasContextPrepared<BE>,
-    tsk: &impl GetTensorKey<BE>,
-    keys: &impl GetAutomorphismKey<BE>,
+    res: &impl BlasGrid<BE, Rg>,
+    a: &impl BlasGrid<BE, Rg>,
+    b: &impl BlasGrid<BE, Rg>,
+    ctx: &BlasContextPrepared<BE, Rg>,
+    tsk: &impl GetTensorKey<BE, Rg>,
+    keys: &impl GetAutomorphismKey<BE, Rg>,
 ) -> Result<usize> {
     let op = "blas_matmul";
     ensure_factor(op, module, a, ctx)?;
@@ -901,7 +901,7 @@ pub fn validate_blas_matmul<BE: Backend>(
     matmul_uses(a, b, &ctx.maps, &mut |u| ensure_rotation(op, module, keys, u))?;
     let (k, rank) = matmul_tensor(a, b, &ctx.maps);
     ensure_tensor_key(op, tsk, k, rank)?;
-    Ok(grid_batch::<BE::Ring>(a).max(grid_batch::<BE::Ring>(b)))
+    Ok(grid_batch::<Rg>(a).max(grid_batch::<Rg>(b)))
 }
 
 /// Checks a
@@ -917,12 +917,12 @@ pub fn validate_blas_matmul<BE: Backend>(
 ///
 /// `InvalidOperand` for a grid, layout or context it rejects or for `res` of another shape, then, key by key,
 /// `MissingAutomorphismKey`, or `InvalidOperand` for a key of another rank.
-pub fn validate_blas_matmul_left_operand_prepare<BE: Backend>(
+pub fn validate_blas_matmul_left_operand_prepare<BE: Backend, Rg: Ring>(
     module: &Module<BE>,
     res: &impl BlasMatMulOperandInfos,
-    a: &impl BlasGrid<BE>,
-    ctx: &BlasContextPrepared<BE>,
-    keys: &impl GetAutomorphismKey<BE>,
+    a: &impl BlasGrid<BE, Rg>,
+    ctx: &BlasContextPrepared<BE, Rg>,
+    keys: &impl GetAutomorphismKey<BE, Rg>,
 ) -> Result<()> {
     let op = "blas_matmul_left_operand_prepare";
     ensure_factor(op, module, a, ctx)?;
@@ -939,12 +939,12 @@ pub fn validate_blas_matmul_left_operand_prepare<BE: Backend>(
 /// # Errors
 ///
 /// As [`validate_blas_matmul_left_operand_prepare`].
-pub fn validate_blas_matmul_right_operand_prepare<BE: Backend>(
+pub fn validate_blas_matmul_right_operand_prepare<BE: Backend, Rg: Ring>(
     module: &Module<BE>,
     res: &impl BlasMatMulOperandInfos,
-    b: &impl BlasGrid<BE>,
-    ctx: &BlasContextPrepared<BE>,
-    keys: &impl GetAutomorphismKey<BE>,
+    b: &impl BlasGrid<BE, Rg>,
+    ctx: &BlasContextPrepared<BE, Rg>,
+    keys: &impl GetAutomorphismKey<BE, Rg>,
 ) -> Result<()> {
     let op = "blas_matmul_right_operand_prepare";
     ensure_factor(op, module, b, ctx)?;
@@ -980,17 +980,17 @@ fn ensure_allocated(op: &'static str, res: &impl BlasMatMulOperandInfos, want: B
 ///
 /// `InvalidOperand` for an operand without a batch record, or a grid, shape, layout, radix or context it rejects, then,
 /// key by key, `MissingAutomorphismKey` or `MissingRelinearizationKey`, or `InvalidOperand` for a key of another rank.
-pub fn validate_blas_matmul_prepared<BE: Backend>(
+pub fn validate_blas_matmul_prepared<BE: Backend, Rg: Ring>(
     module: &Module<BE>,
-    res: &impl BlasGrid<BE>,
+    res: &impl BlasGrid<BE, Rg>,
     a: &impl BlasMatMulOperandInfos,
     b: &impl BlasMatMulOperandInfos,
-    ctx: &BlasContextPrepared<BE>,
-    tsk: &impl GetTensorKey<BE>,
-    keys: &impl GetAutomorphismKey<BE>,
+    ctx: &BlasContextPrepared<BE, Rg>,
+    tsk: &impl GetTensorKey<BE, Rg>,
+    keys: &impl GetAutomorphismKey<BE, Rg>,
 ) -> Result<usize> {
     let op = "blas_matmul_prepared";
-    let batch = ensure_operand::<BE>(op, a.log_d(), a)?.max(ensure_operand::<BE>(op, a.log_d(), b)?);
+    let batch = ensure_operand::<Rg>(op, a.log_d(), a)?.max(ensure_operand::<Rg>(op, a.log_d(), b)?);
     ensure_hot_context(op, module, a, ctx)?;
     ensure_hot_context(op, module, b, ctx)?;
     ensure_product(op, module, res, a, b)?;
@@ -1015,22 +1015,22 @@ pub fn validate_blas_matmul_prepared<BE: Backend>(
 ///
 /// `InvalidOperand` for a grid, shape, layout, operand, count or context it rejects, then, key by key,
 /// `MissingAutomorphismKey`, or `InvalidOperand` for a key of another rank.
-pub fn validate_blas_matmul_pt_right<BE: Backend>(
+pub fn validate_blas_matmul_pt_right<BE: Backend, Rg: Ring>(
     module: &Module<BE>,
-    res: &impl BlasGrid<BE>,
-    a: &impl BlasGrid<BE>,
-    b: &BlasPtOperandPrepared<BE>,
-    ctx: &BlasContextPrepared<BE>,
-    keys: &impl GetAutomorphismKey<BE>,
+    res: &impl BlasGrid<BE, Rg>,
+    a: &impl BlasGrid<BE, Rg>,
+    b: &BlasPtOperandPrepared<BE, Right, Rg>,
+    ctx: &BlasContextPrepared<BE, Rg>,
+    keys: &impl GetAutomorphismKey<BE, Rg>,
 ) -> Result<usize> {
     let op = "blas_matmul_pt_right";
-    ensure_grid::<BE::Ring>(op, b.log_d(), a, a.blocks())?;
-    ensure_grid::<BE::Ring>(op, b.log_d(), res, res.blocks())?;
+    ensure_grid::<Rg>(op, b.log_d(), a, a.blocks())?;
+    ensure_grid::<Rg>(op, b.log_d(), res, res.blocks())?;
     ensure_inner(op, a.cols(), b.rows())?;
     ensure_shape(op, res, a.rows(), b.cols())?;
     ensure_layouts(op, module.n(), res, &[a])?;
-    ensure_maps(op, module, b.slots(), b.base2k(), b.coeffs_meta().k, &[a])?;
-    let batch = grid_batch::<BE::Ring>(a);
+    ensure_maps::<_, Rg>(op, module, b.slots(), b.base2k(), b.coeffs_meta().k, &[a])?;
+    let batch = grid_batch::<Rg>(a);
     if !batch.is_multiple_of(b.count()) {
         return Err(reject(
             op,
@@ -1068,22 +1068,22 @@ pub fn validate_blas_matmul_pt_right<BE: Backend>(
 /// # Errors
 ///
 /// As [`validate_blas_matmul_pt_right`].
-pub fn validate_blas_matmul_pt_left<BE: Backend>(
+pub fn validate_blas_matmul_pt_left<BE: Backend, Rg: Ring>(
     module: &Module<BE>,
-    res: &impl BlasGrid<BE>,
-    b: &BlasPtOperandPrepared<BE, Left>,
-    a: &impl BlasGrid<BE>,
-    ctx: &BlasContextPrepared<BE>,
-    keys: &impl GetAutomorphismKey<BE>,
+    res: &impl BlasGrid<BE, Rg>,
+    b: &BlasPtOperandPrepared<BE, Left, Rg>,
+    a: &impl BlasGrid<BE, Rg>,
+    ctx: &BlasContextPrepared<BE, Rg>,
+    keys: &impl GetAutomorphismKey<BE, Rg>,
 ) -> Result<usize> {
     let op = "blas_matmul_pt_left";
-    ensure_grid::<BE::Ring>(op, b.log_d(), a, a.blocks())?;
-    ensure_grid::<BE::Ring>(op, b.log_d(), res, res.blocks())?;
+    ensure_grid::<Rg>(op, b.log_d(), a, a.blocks())?;
+    ensure_grid::<Rg>(op, b.log_d(), res, res.blocks())?;
     ensure_inner(op, b.cols(), a.rows())?;
     ensure_shape(op, res, b.rows(), a.cols())?;
     ensure_layouts(op, module.n(), res, &[a])?;
-    ensure_maps(op, module, b.slots(), b.base2k(), b.coeffs_meta().k, &[a])?;
-    let batch = grid_batch::<BE::Ring>(a);
+    ensure_maps::<_, Rg>(op, module, b.slots(), b.base2k(), b.coeffs_meta().k, &[a])?;
+    let batch = grid_batch::<Rg>(a);
     if !batch.is_multiple_of(b.count()) {
         return Err(reject(
             op,
@@ -1099,34 +1099,34 @@ pub fn validate_blas_matmul_pt_left<BE: Backend>(
 }
 
 /// `a` is a grid at the context's `log_d` of blocks of the module's degree, which the context's maps read.
-fn ensure_factor<BE: Backend>(
+fn ensure_factor<BE: Backend, Rg: Ring>(
     op: &'static str,
     module: &Module<BE>,
-    a: &impl BlasGrid<BE>,
-    ctx: &BlasContextPrepared<BE>,
+    a: &impl BlasGrid<BE, Rg>,
+    ctx: &BlasContextPrepared<BE, Rg>,
 ) -> Result<()> {
-    ensure_grid::<BE::Ring>(op, ctx.log_d(), a, a.blocks())?;
+    ensure_grid::<Rg>(op, ctx.log_d(), a, a.blocks())?;
     ensure_layouts(op, module.n(), a, &[])?;
-    ensure_maps(op, module, ctx.slots(), ctx.base2k(), ctx.coeffs_meta().k, &[a])
+    ensure_maps::<_, Rg>(op, module, ctx.slots(), ctx.base2k(), ctx.coeffs_meta().k, &[a])
 }
 
 /// For a hot operand `x`, whose terms the product evaluates, that `ctx` reads it: at its `log_d`, encoded for the
 /// module's slot count at its radix. A cold operand brings its terms and reads no context.
-fn ensure_hot_context<BE: Backend>(
+fn ensure_hot_context<BE: Backend, Rg: Ring>(
     op: &'static str,
     module: &Module<BE>,
     x: &impl BlasMatMulOperandInfos,
-    ctx: &BlasContextPrepared<BE>,
+    ctx: &BlasContextPrepared<BE, Rg>,
 ) -> Result<()> {
     if x.hint() == PrepareHint::Reuse {
         return Ok(());
     }
     ensure_dimension(op, ctx.log_d(), x)?;
-    ensure_maps(op, module, ctx.slots(), ctx.base2k(), ctx.coeffs_meta().k, &[x])
+    ensure_maps::<_, Rg>(op, module, ctx.slots(), ctx.base2k(), ctx.coeffs_meta().k, &[x])
 }
 
 /// `g` is a prepared operand at `log_d`, with at least one block and a batch record its label allows; returns the record.
-fn ensure_operand<BE: Backend>(op: &'static str, log_d: usize, g: &impl BlasGridInfos) -> Result<usize> {
+fn ensure_operand<Rg: Ring>(op: &'static str, log_d: usize, g: &impl BlasGridInfos) -> Result<usize> {
     let batch = g
         .mat_slots()
         .ok_or_else(|| reject(op, "an operand without a batch record: only a preparation records one".into()))?;
@@ -1134,20 +1134,20 @@ fn ensure_operand<BE: Backend>(op: &'static str, log_d: usize, g: &impl BlasGrid
     if !matches!(g.rows().checked_mul(g.cols()), Some(1..)) {
         return Err(reject(op, format!("{} x {} blocks form no operand", g.rows(), g.cols())));
     }
-    ensure_record::<BE::Ring>(op, g)?;
+    ensure_record::<Rg>(op, g)?;
     Ok(batch)
 }
 
 /// `res` is a grid at `a`'s `log_d` of `a`'s rows and `b`'s columns, `a`'s columns match `b`'s rows, its radix is at
 /// most [`MAX_BASE2K`], and the blocks of `res` have the module's degree and `a` and `b` its radix and rank.
-fn ensure_product<BE: Backend>(
+fn ensure_product<BE: Backend, Rg: Ring>(
     op: &'static str,
     module: &Module<BE>,
-    res: &impl BlasGrid<BE>,
+    res: &impl BlasGrid<BE, Rg>,
     a: &impl BlasGridInfos,
     b: &impl BlasGridInfos,
 ) -> Result<()> {
-    ensure_grid::<BE::Ring>(op, a.log_d(), res, res.blocks())?;
+    ensure_grid::<Rg>(op, a.log_d(), res, res.blocks())?;
     ensure_inner(op, a.cols(), b.rows())?;
     ensure_shape(op, res, a.rows(), b.cols())?;
     let base2k = res.block_layout().base2k().as_usize();
@@ -1312,16 +1312,16 @@ pub(crate) fn pt_left_uses<P: LtDiagonalMeta>(
 ///
 /// `InvalidOperand` for a vector, shape, layout, operand or period it rejects, then, key by key,
 /// `MissingAutomorphismKey`, or `InvalidOperand` for a key of another rank.
-pub fn validate_blas_matvec_pt<BE: Backend>(
+pub fn validate_blas_matvec_pt<BE: Backend, Rg: Ring>(
     module: &Module<BE>,
-    res: &impl BlasVectorRef<BE>,
-    w: &impl BlasMatVecMaps<BE>,
-    a: &impl BlasVectorRef<BE>,
-    keys: &impl GetAutomorphismKey<BE>,
+    res: &impl BlasVectorRef<BE, Rg>,
+    w: &impl BlasMatVecMaps<BE, Rg>,
+    a: &impl BlasVectorRef<BE, Rg>,
+    keys: &impl GetAutomorphismKey<BE, Rg>,
 ) -> Result<()> {
     let op = "blas_matvec_pt";
-    ensure_vector::<BE::Ring>(op, a, a.cts())?;
-    ensure_vector::<BE::Ring>(op, res, res.cts())?;
+    ensure_vector::<Rg>(op, a, a.cts())?;
+    ensure_vector::<Rg>(op, res, res.cts())?;
     ensure_matvec_pt(op, module, &res.blas_vector_layout(), w, &a.blas_vector_layout(), keys)
 }
 
@@ -1329,19 +1329,19 @@ pub fn validate_blas_matvec_pt<BE: Backend>(
 /// own: `a` of `w`'s input shape and `res` of its output shape, the ciphertexts of `res` of the module's degree and
 /// those of `a` of their radix and rank, `w` encoded on a module of the module's slot count at `a`'s radix and no
 /// wider than `a`, `a` repeating within `w`'s input period, and `keys` holding every key of `w`'s maps.
-fn ensure_matvec_pt<BE: Backend>(
+fn ensure_matvec_pt<BE: Backend, Rg: Ring>(
     op: &'static str,
     module: &Module<BE>,
     res: &BlasVectorLayout,
-    w: &impl BlasMatVecMaps<BE>,
+    w: &impl BlasMatVecMaps<BE, Rg>,
     a: &BlasVectorLayout,
-    keys: &impl GetAutomorphismKey<BE>,
+    keys: &impl GetAutomorphismKey<BE, Rg>,
 ) -> Result<()> {
     ensure_vector_shape(op, "input", a.shape, w.input())?;
     ensure_vector_shape(op, "output", res.shape, w.output())?;
     ensure_vector_layouts(op, module.n(), res.ct, a.ct)?;
-    ensure_maps_reading(op, module, w.slots(), w.base2k(), w.coeffs_meta().k, &[a.ct], "ciphertexts")?;
-    let period = vector_period::<BE::Ring>(a);
+    ensure_maps_reading::<_, Rg>(op, module, w.slots(), w.base2k(), w.coeffs_meta().k, &[a.ct], "ciphertexts")?;
+    let period = vector_period::<Rg>(a);
     if period > w.input_period() {
         return Err(reject(
             op,
@@ -1377,18 +1377,18 @@ fn ensure_line(op: &'static str, line: BlasGridLine, g: &impl BlasGridInfos, bat
 ///
 /// `InvalidOperand` for a grid, line, vector, shape, layout, operand or period it rejects, then, key by key,
 /// `MissingAutomorphismKey`, or `InvalidOperand` for a key of another rank.
-pub fn validate_blas_grid_to_vector<BE: Backend>(
+pub fn validate_blas_grid_to_vector<BE: Backend, Rg: Ring>(
     module: &Module<BE>,
-    res: &impl BlasVectorRef<BE>,
-    w: &impl BlasMatVecMaps<BE>,
-    a: &impl BlasGrid<BE>,
+    res: &impl BlasVectorRef<BE, Rg>,
+    w: &impl BlasMatVecMaps<BE, Rg>,
+    a: &impl BlasGrid<BE, Rg>,
     line: BlasGridLine,
-    keys: &impl GetAutomorphismKey<BE>,
+    keys: &impl GetAutomorphismKey<BE, Rg>,
 ) -> Result<()> {
     let op = "blas_grid_to_vector";
-    ensure_grid::<BE::Ring>(op, a.log_d(), a, a.blocks())?;
-    ensure_line(op, line, a, grid_batch::<BE::Ring>(a))?;
-    ensure_vector::<BE::Ring>(op, res, res.cts())?;
+    ensure_grid::<Rg>(op, a.log_d(), a, a.blocks())?;
+    ensure_line(op, line, a, grid_batch::<Rg>(a))?;
+    ensure_vector::<Rg>(op, res, res.cts())?;
     ensure_matvec_pt(op, module, &res.blas_vector_layout(), w, &line.vector_layout(a), keys)
 }
 
@@ -1403,17 +1403,17 @@ pub fn validate_blas_grid_to_vector<BE: Backend>(
 ///
 /// `InvalidOperand` for a vector, grid, shape, operand, line, layout or period it rejects, then, key by key,
 /// `MissingAutomorphismKey`, or `InvalidOperand` for a key of another rank.
-pub fn validate_blas_vector_to_grid<BE: Backend>(
+pub fn validate_blas_vector_to_grid<BE: Backend, Rg: Ring>(
     module: &Module<BE>,
-    res: &impl BlasGrid<BE>,
+    res: &impl BlasGrid<BE, Rg>,
     line: BlasGridLine,
-    w: &impl BlasMatVecMaps<BE>,
-    a: &impl BlasVectorRef<BE>,
-    keys: &impl GetAutomorphismKey<BE>,
+    w: &impl BlasMatVecMaps<BE, Rg>,
+    a: &impl BlasVectorRef<BE, Rg>,
+    keys: &impl GetAutomorphismKey<BE, Rg>,
 ) -> Result<usize> {
     let op = "blas_vector_to_grid";
-    ensure_vector::<BE::Ring>(op, a, a.cts())?;
-    ensure_grid::<BE::Ring>(op, res.log_d(), res, res.blocks())?;
+    ensure_vector::<Rg>(op, a, a.cts())?;
+    ensure_grid::<Rg>(op, res.log_d(), res, res.blocks())?;
     match line {
         BlasGridLine::Row { .. } => ensure_shape(op, res, 1, res.cols())?,
         BlasGridLine::Col { .. } => ensure_shape(op, res, res.rows(), 1)?,
@@ -1448,9 +1448,9 @@ pub(crate) fn matvec_pt_uses<'m, P: LtDiagonalMeta + 'm>(
 
 /// Rejects `v` unless it is a vector, [`ensure_vector`], of one ciphertext whose every slot is an entry: the shape
 /// `(S, S, 0, 1)` for `S` slots, which the products of a diagonal ciphertext read and write.
-fn ensure_whole<R: Ring>(op: &'static str, v: &impl BlasVectorInfos, cts: &[impl CKKSCtBounds]) -> Result<()> {
-    ensure_vector::<R>(op, v, cts)?;
-    let slots = slots_of::<R>(v.ct_layout().n().as_usize());
+fn ensure_whole<Rg: Ring>(op: &'static str, v: &impl BlasVectorInfos, cts: &[impl CKKSCtBounds]) -> Result<()> {
+    ensure_vector::<Rg>(op, v, cts)?;
+    let slots = slots_of::<Rg>(v.ct_layout().n().as_usize());
     let whole = BlasVectorShape::new(slots, slots, 0, 1);
     if v.vector_shape() != whole {
         return Err(reject(
@@ -1465,16 +1465,20 @@ fn ensure_whole<R: Ring>(op: &'static str, v: &impl BlasVectorInfos, cts: &[impl
 }
 
 /// Rejects a matrix unless its layout fits the module and its diagonals have the degree, radix and rank of `ct`.
-fn ensure_diagonal_ciphertext(
+fn ensure_diagonal_ciphertext<Rg: Ring>(
     op: &'static str,
     module: &(impl CKKSModuleInfos + GetDegree),
     m: &BlasDiagonalCiphertextLayout,
     ct: CKKSLayout,
 ) -> Result<()> {
-    if m.lt.slots != module.ckks_max_slots() {
+    if m.lt.slots != module.ckks_max_slots::<Rg>() {
         return Err(reject(
             op,
-            format!("a matrix of {} slots on a module of {}", m.lt.slots, module.ckks_max_slots()),
+            format!(
+                "a matrix of {} slots on a module of {}",
+                m.lt.slots,
+                module.ckks_max_slots::<Rg>()
+            ),
         ));
     }
     if ring(m.ct) != ring(ct) {
@@ -1500,16 +1504,16 @@ fn ensure_diagonal_ciphertext(
 ///
 /// `InvalidOperand` for a vector, layout, radix or matrix it rejects, then, key by key, `MissingAutomorphismKey`, then
 /// `MissingRelinearizationKey`, or `InvalidOperand` for a key of another rank.
-pub fn validate_blas_matvec_diagonal<BE: Backend>(
+pub fn validate_blas_matvec_diagonal<BE: Backend, Rg: Ring>(
     module: &Module<BE>,
-    res: &impl BlasVectorRef<BE>,
-    m: &impl BlasDiagonalCiphertextMap<BE>,
-    a: &impl BlasVectorRef<BE>,
-    keys: &(impl GetAutomorphismKey<BE> + GetTensorKey<BE>),
+    res: &impl BlasVectorRef<BE, Rg>,
+    m: &impl BlasDiagonalCiphertextMap<BE, Rg>,
+    a: &impl BlasVectorRef<BE, Rg>,
+    keys: &(impl GetAutomorphismKey<BE, Rg> + GetTensorKey<BE, Rg>),
 ) -> Result<()> {
     let op = "blas_matvec_diagonal";
-    ensure_whole::<BE::Ring>(op, a, a.cts())?;
-    ensure_whole::<BE::Ring>(op, res, res.cts())?;
+    ensure_whole::<Rg>(op, a, a.cts())?;
+    ensure_whole::<Rg>(op, res, res.cts())?;
     ensure_vector_layouts(op, module.n(), res.ct_layout(), a.ct_layout())?;
     let base2k = res.ct_layout().base2k().as_usize();
     if base2k > MAX_BASE2K {
@@ -1519,7 +1523,7 @@ pub fn validate_blas_matvec_diagonal<BE: Backend>(
         ));
     }
     let layout = m.blas_diagonal_ciphertext_layout();
-    ensure_diagonal_ciphertext(op, module, &layout, a.ct_layout())?;
+    ensure_diagonal_ciphertext::<Rg>(op, module, &layout, a.ct_layout())?;
     matvec_diagonal_uses(res, m.map(), a, &mut |u| ensure_rotation(op, module, keys, u))?;
     ensure_tensor_key(op, keys, matvec_diagonal_tensor(&layout, a), a.ct_layout().rank())
 }
@@ -1551,12 +1555,12 @@ pub(crate) fn matvec_diagonal_tensor(m: &BlasDiagonalCiphertextLayout, a: &impl 
 ///
 /// `InvalidOperand` for a vector, layout, matrix or mask it rejects, then, key by key, `MissingAutomorphismKey`, or
 /// `InvalidOperand` for a key of another rank.
-pub fn validate_blas_append_row_diagonal<BE: Backend>(
+pub fn validate_blas_append_row_diagonal<BE: Backend, Rg: Ring>(
     module: &Module<BE>,
-    m: &BlasDiagonalCiphertext<BE>,
-    v: &impl BlasVectorRef<BE>,
-    mask: &CKKSRightOperandPrepared<BE>,
-    keys: &impl GetAutomorphismKey<BE>,
+    m: &BlasDiagonalCiphertext<BE, Rg>,
+    v: &impl BlasVectorRef<BE, Rg>,
+    mask: &CKKSRightOperandPrepared<BE, Rg>,
+    keys: &impl GetAutomorphismKey<BE, Rg>,
 ) -> Result<()> {
     validate_append(module, AppendAxis::Row, m, v, mask, keys)
 }
@@ -1567,29 +1571,29 @@ pub fn validate_blas_append_row_diagonal<BE: Backend>(
 /// # Errors
 ///
 /// As [`validate_blas_append_row_diagonal`].
-pub fn validate_blas_append_col_diagonal<BE: Backend>(
+pub fn validate_blas_append_col_diagonal<BE: Backend, Rg: Ring>(
     module: &Module<BE>,
-    m: &BlasDiagonalCiphertext<BE>,
-    v: &impl BlasVectorRef<BE>,
-    mask: &CKKSRightOperandPrepared<BE>,
-    keys: &impl GetAutomorphismKey<BE>,
+    m: &BlasDiagonalCiphertext<BE, Rg>,
+    v: &impl BlasVectorRef<BE, Rg>,
+    mask: &CKKSRightOperandPrepared<BE, Rg>,
+    keys: &impl GetAutomorphismKey<BE, Rg>,
 ) -> Result<()> {
     validate_append(module, AppendAxis::Col, m, v, mask, keys)
 }
 
-fn validate_append<BE: Backend>(
+fn validate_append<BE: Backend, Rg: Ring>(
     module: &Module<BE>,
     axis: AppendAxis,
-    m: &BlasDiagonalCiphertext<BE>,
-    v: &impl BlasVectorRef<BE>,
-    mask: &CKKSRightOperandPrepared<BE>,
-    keys: &impl GetAutomorphismKey<BE>,
+    m: &BlasDiagonalCiphertext<BE, Rg>,
+    v: &impl BlasVectorRef<BE, Rg>,
+    mask: &CKKSRightOperandPrepared<BE, Rg>,
+    keys: &impl GetAutomorphismKey<BE, Rg>,
 ) -> Result<()> {
     let op = axis.op();
     let (layout, v_ct) = (m.blas_diagonal_ciphertext_layout(), v.ct_layout());
-    ensure_whole::<BE::Ring>(op, v, v.cts())?;
+    ensure_whole::<Rg>(op, v, v.cts())?;
     ensure_vector_layouts(op, module.n(), v_ct, v_ct)?;
-    ensure_diagonal_ciphertext(op, module, &layout, v_ct)?;
+    ensure_diagonal_ciphertext::<Rg>(op, module, &layout, v_ct)?;
     if mask.rank().as_usize() != 0 || mask.base2k() != v_ct.base2k() {
         return Err(reject(
             op,
@@ -1634,7 +1638,7 @@ pub(crate) fn append_uses<P>(
 #[cfg(test)]
 mod tests {
     use poulpy_ckks::layouts::CKKSCiphertextAlloc;
-    use poulpy_hal::layouts::HostBytesBackend;
+    use poulpy_hal::layouts::{HostBytesBackend, Standard};
 
     use super::*;
     use crate::layouts::{BlasCiphertextAlloc, BlasLayout};
@@ -1642,10 +1646,11 @@ mod tests {
     #[test]
     fn maps_reject_blocks_of_another_ring_radix_or_a_narrower_width() {
         let module = Module::<HostBytesBackend>::new(256);
-        let block = layout_of(&module.ckks_ciphertext_alloc(19usize.into(), 60usize.into()));
+        let block = layout_of(&module.ckks_ciphertext_alloc::<Standard>(19usize.into(), 60usize.into()));
         let grid = BlasLayout::new(block, 2, 1, 1);
         let check = |slots: usize, base2k: usize, k: usize| {
-            ensure_maps("op", &module, slots, base2k.into(), k.into(), &[&grid]).map_err(|err| err.composition().cloned())
+            ensure_maps::<_, Standard>("op", &module, slots, base2k.into(), k.into(), &[&grid])
+                .map_err(|err| err.composition().cloned())
         };
         assert!(check(128, 19, 60).is_ok());
         assert!(check(128, 19, 40).is_ok());
@@ -1667,7 +1672,7 @@ mod tests {
     #[test]
     fn products_reject_a_radix_above_62_first() {
         let module = Module::<HostBytesBackend>::new(256);
-        let grid = |base2k: usize| module.blas_ciphertext_alloc(2, 1, 1, base2k.into(), 120usize.into());
+        let grid = |base2k: usize| module.blas_ciphertext_alloc::<Standard>(2, 1, 1, base2k.into(), 120usize.into());
         let (a, b) = (grid(19), grid(19));
         let check =
             |base2k: usize| ensure_product("op", &module, &grid(base2k), &a, &b).map_err(|err| err.composition().cloned());

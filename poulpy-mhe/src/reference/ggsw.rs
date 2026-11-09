@@ -14,7 +14,7 @@ use poulpy_hal::{
         VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxZero,
     },
     layouts::{
-        Backend, Module, ScalarZnxToBackendRef, ScratchArena, scalar_znx_as_vec_znx_backend_mut_from_mut,
+        Backend, Module, ScalarZnxToBackendRef, ScratchArena, Standard, scalar_znx_as_vec_znx_backend_mut_from_mut,
         vec_znx_backend_ref_from_mut,
     },
     oep::HalVecZnxImpl,
@@ -156,7 +156,10 @@ where
             }
             let (mut row_pt, mut scratch_2) = rest.take_glwe_plaintext_scratch(&circ);
             for col in 0..r {
-                self.vec_znx_zero(&mut scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(&mut zero), col);
+                self.vec_znx_zero(
+                    &mut scalar_znx_as_vec_znx_backend_mut_from_mut::<BE, Standard>(&mut zero),
+                    col,
+                );
             }
             self.gglwe_compressed_encrypt_sk(&mut res.col0, pt, sk, seeds.new_seed(), source_xe, &mut scratch_2);
             for j in 0..r {
@@ -170,7 +173,12 @@ where
                     for i in 0..r {
                         self.glwe_fill_mask_from_seed(&mut mask, circ_s.seed()[row * r + i]);
                         for (l, col) in cols.iter_mut().enumerate() {
-                            self.vec_znx_copy(col.data_mut(), i + 1, &vec_znx_backend_ref_from_mut::<BE>(mask.data()), l + 1);
+                            self.vec_znx_copy(
+                                col.data_mut(),
+                                i + 1,
+                                &vec_znx_backend_ref_from_mut::<BE, Standard>(mask.data()),
+                                l + 1,
+                            );
                         }
                     }
                     for (l, col) in cols.iter_mut().enumerate() {
@@ -196,7 +204,7 @@ where
                         self.vec_znx_copy(
                             dst.at_view_mut(row, l).data_mut(),
                             0,
-                            &vec_znx_backend_ref_from_mut::<BE>(col.data()),
+                            &vec_znx_backend_ref_from_mut::<BE, Standard>(col.data()),
                             0,
                         );
                     }

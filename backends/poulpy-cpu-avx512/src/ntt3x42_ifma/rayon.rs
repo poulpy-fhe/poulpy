@@ -19,96 +19,93 @@ use poulpy_hal::{
     execution::{SerialTaskExecutor, TaskExecutor},
     layouts::{
         CnvDftAccTerm, CnvPVecL, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecR, CnvPVecRBackendMut, CnvPVecRBackendRef,
-        DataView, DataViewMut, MatZnxBackendRef, Module, ScalarZnxBackendRef, ScratchArena, SvpPPol, SvpPPolBackendMut,
-        SvpPPolBackendRef, VecZnxBackendMut, VecZnxBackendRef, VecZnxBig, VecZnxBigBackendMut, VecZnxDft, VecZnxDftBackendMut,
-        VecZnxDftBackendRef, VmpPMat, VmpPMatBackendMut, VmpPMatBackendRef, ZnxView, ZnxViewMut,
+        DataView, DataViewMut, MatZnxBackendRef, Module, Ring, ScalarZnxBackendRef, ScratchArena, Standard, SvpPPol,
+        SvpPPolBackendMut, SvpPPolBackendRef, VecZnxBackendMut, VecZnxBackendRef, VecZnxBig, VecZnxBigBackendMut, VecZnxDft,
+        VecZnxDftBackendMut, VecZnxDftBackendRef, VmpPMat, VmpPMatBackendMut, VmpPMatBackendRef, ZnxView, ZnxViewMut,
     },
     oep::{HalCnvImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl},
 };
 
 use super::{NTT3x42Ifma, NTT3x42IfmaRayon, NTT3x42IfmaRayonExecutor};
 use super::{
-    module::NTT3x42IfmaHandle,
     primes::Primes42,
     tables::{Ntt3x42IfmaTable, Ntt3x42IfmaTableInv},
     traits::Ntt3x42IfmaDFTExecute,
 };
-use poulpy_cpu_portable::kernels::ntt4x30::vec_znx_dft::NttHandleFactory;
 use poulpy_cpu_rayon::{RayonTaskExecutor, SendPtr};
-use poulpy_hal::layouts::Ring;
 
-fn base_module<R: Ring>(module: &Module<NTT3x42IfmaRayon<R>>) -> &Module<NTT3x42Ifma<R>> {
+fn base_module(module: &Module<NTT3x42IfmaRayon>) -> &Module<NTT3x42Ifma> {
     module.reinterpret()
 }
 
-fn base_dft_ref<'a, R: Ring>(a: &'a VecZnxDftBackendRef<'_, NTT3x42IfmaRayon<R>>) -> VecZnxDftBackendRef<'a, NTT3x42Ifma<R>> {
+fn base_dft_ref<'a, R: Ring>(a: &'a VecZnxDftBackendRef<'_, NTT3x42IfmaRayon, R>) -> VecZnxDftBackendRef<'a, NTT3x42Ifma, R> {
     VecZnxDft::from_shape(&**a.data(), a.shape())
 }
 
 pub(crate) fn base_dft_mut<'a, R: Ring>(
-    a: &'a mut VecZnxDftBackendMut<'_, NTT3x42IfmaRayon<R>>,
-) -> VecZnxDftBackendMut<'a, NTT3x42Ifma<R>> {
+    a: &'a mut VecZnxDftBackendMut<'_, NTT3x42IfmaRayon, R>,
+) -> VecZnxDftBackendMut<'a, NTT3x42Ifma, R> {
     let shape = a.shape();
     VecZnxDft::from_shape(&mut **a.data_mut(), shape)
 }
 
-fn base_big_mut<'a, R: Ring>(a: &'a mut VecZnxBigBackendMut<'_, NTT3x42IfmaRayon<R>>) -> VecZnxBigBackendMut<'a, NTT3x42Ifma<R>> {
+fn base_big_mut<'a, R: Ring>(a: &'a mut VecZnxBigBackendMut<'_, NTT3x42IfmaRayon, R>) -> VecZnxBigBackendMut<'a, NTT3x42Ifma, R> {
     let shape = a.shape();
     VecZnxBig::from_shape(&mut **a.data_mut(), shape)
 }
 
 fn base_big_ref<'a, R: Ring>(
-    a: &'a poulpy_hal::layouts::VecZnxBigBackendRef<'_, NTT3x42IfmaRayon<R>>,
-) -> poulpy_hal::layouts::VecZnxBigBackendRef<'a, NTT3x42Ifma<R>> {
+    a: &'a poulpy_hal::layouts::VecZnxBigBackendRef<'_, NTT3x42IfmaRayon, R>,
+) -> poulpy_hal::layouts::VecZnxBigBackendRef<'a, NTT3x42Ifma, R> {
     VecZnxBig::from_shape(&**a.data(), a.shape())
 }
 
-fn base_svp_ref<'a, R: Ring>(a: &'a SvpPPolBackendRef<'_, NTT3x42IfmaRayon<R>>) -> SvpPPolBackendRef<'a, NTT3x42Ifma<R>> {
+fn base_svp_ref<'a, R: Ring>(a: &'a SvpPPolBackendRef<'_, NTT3x42IfmaRayon, R>) -> SvpPPolBackendRef<'a, NTT3x42Ifma, R> {
     SvpPPol::from_data(&**a.data(), a.n(), a.cols(), a.hint())
 }
 
-fn base_svp_mut<'a, R: Ring>(a: &'a mut SvpPPolBackendMut<'_, NTT3x42IfmaRayon<R>>) -> SvpPPolBackendMut<'a, NTT3x42Ifma<R>> {
+fn base_svp_mut<'a, R: Ring>(a: &'a mut SvpPPolBackendMut<'_, NTT3x42IfmaRayon, R>) -> SvpPPolBackendMut<'a, NTT3x42Ifma, R> {
     let (n, cols, hint) = (a.n(), a.cols(), a.hint());
     SvpPPol::from_data(&mut **a.data_mut(), n, cols, hint)
 }
 
-fn base_vmp_ref<'a, R: Ring>(a: &'a VmpPMatBackendRef<'_, NTT3x42IfmaRayon<R>>) -> VmpPMatBackendRef<'a, NTT3x42Ifma<R>> {
+fn base_vmp_ref<'a, R: Ring>(a: &'a VmpPMatBackendRef<'_, NTT3x42IfmaRayon, R>) -> VmpPMatBackendRef<'a, NTT3x42Ifma, R> {
     VmpPMat::from_data(&**a.data(), a.n(), a.rows(), a.cols_in(), a.cols_out(), a.size(), a.hint())
 }
 
-fn base_vmp_mut<'a, R: Ring>(a: &'a mut VmpPMatBackendMut<'_, NTT3x42IfmaRayon<R>>) -> VmpPMatBackendMut<'a, NTT3x42Ifma<R>> {
+fn base_vmp_mut<'a, R: Ring>(a: &'a mut VmpPMatBackendMut<'_, NTT3x42IfmaRayon, R>) -> VmpPMatBackendMut<'a, NTT3x42Ifma, R> {
     let (n, rows, cols_in, cols_out, size, hint) = (a.n(), a.rows(), a.cols_in(), a.cols_out(), a.size(), a.hint());
     VmpPMat::from_data(&mut **a.data_mut(), n, rows, cols_in, cols_out, size, hint)
 }
 
 pub(crate) fn base_cnv_l_ref<'a, R: Ring>(
-    a: &'a CnvPVecLBackendRef<'_, NTT3x42IfmaRayon<R>>,
-) -> CnvPVecLBackendRef<'a, NTT3x42Ifma<R>> {
+    a: &'a CnvPVecLBackendRef<'_, NTT3x42IfmaRayon, R>,
+) -> CnvPVecLBackendRef<'a, NTT3x42Ifma, R> {
     CnvPVecL::from_data(&**a.data(), a.n(), a.cols(), a.size(), a.hint())
 }
 
-fn base_cnv_l_mut<'a, R: Ring>(a: &'a mut CnvPVecLBackendMut<'_, NTT3x42IfmaRayon<R>>) -> CnvPVecLBackendMut<'a, NTT3x42Ifma<R>> {
+fn base_cnv_l_mut<'a, R: Ring>(a: &'a mut CnvPVecLBackendMut<'_, NTT3x42IfmaRayon, R>) -> CnvPVecLBackendMut<'a, NTT3x42Ifma, R> {
     let (n, cols, size, hint) = (a.n(), a.cols(), a.size(), a.hint());
     CnvPVecL::from_data(&mut **a.data_mut(), n, cols, size, hint)
 }
 
 pub(crate) fn base_cnv_r_ref<'a, R: Ring>(
-    a: &'a CnvPVecRBackendRef<'_, NTT3x42IfmaRayon<R>>,
-) -> CnvPVecRBackendRef<'a, NTT3x42Ifma<R>> {
+    a: &'a CnvPVecRBackendRef<'_, NTT3x42IfmaRayon, R>,
+) -> CnvPVecRBackendRef<'a, NTT3x42Ifma, R> {
     CnvPVecR::from_data(&**a.data(), a.n(), a.cols(), a.size(), a.hint())
 }
 
-fn base_cnv_r_mut<'a, R: Ring>(a: &'a mut CnvPVecRBackendMut<'_, NTT3x42IfmaRayon<R>>) -> CnvPVecRBackendMut<'a, NTT3x42Ifma<R>> {
+fn base_cnv_r_mut<'a, R: Ring>(a: &'a mut CnvPVecRBackendMut<'_, NTT3x42IfmaRayon, R>) -> CnvPVecRBackendMut<'a, NTT3x42Ifma, R> {
     let (n, cols, size, hint) = (a.n(), a.cols(), a.size(), a.hint());
     CnvPVecR::from_data(&mut **a.data_mut(), n, cols, size, hint)
 }
 
 macro_rules! forward_znx {
     ($trait:ident, $method:ident($($arg:ident: $ty:ty),* $(,)?)) => {
-        impl<R: Ring> $trait for NTT3x42IfmaRayon<R> {
+        impl $trait for NTT3x42IfmaRayon {
             #[inline(always)]
             fn $method($($arg: $ty),*) {
-                <NTT3x42Ifma<R> as $trait>::$method($($arg),*)
+                <NTT3x42Ifma as $trait>::$method($($arg),*)
             }
         }
     };
@@ -118,15 +115,15 @@ use poulpy_cpu_rayon::{parallel_chunk_len, parallel_limb_tasks};
 
 macro_rules! parallel_binary {
     ($trait:ident, $method:ident) => {
-        impl<R: Ring> $trait for NTT3x42IfmaRayon<R> {
+        impl $trait for NTT3x42IfmaRayon {
             fn $method(res: &mut [i64], a: &[i64], b: &[i64]) {
                 let Some(chunk) = parallel_chunk_len::<Self>(res.len()) else {
-                    return <NTT3x42Ifma<R> as $trait>::$method(res, a, b);
+                    return <NTT3x42Ifma as $trait>::$method(res, a, b);
                 };
                 res.par_chunks_mut(chunk)
                     .zip(a.par_chunks(chunk))
                     .zip(b.par_chunks(chunk))
-                    .for_each(|((res, a), b)| <NTT3x42Ifma<R> as $trait>::$method(res, a, b));
+                    .for_each(|((res, a), b)| <NTT3x42Ifma as $trait>::$method(res, a, b));
             }
         }
     };
@@ -134,14 +131,14 @@ macro_rules! parallel_binary {
 
 macro_rules! parallel_assign {
     ($trait:ident, $method:ident) => {
-        impl<R: Ring> $trait for NTT3x42IfmaRayon<R> {
+        impl $trait for NTT3x42IfmaRayon {
             fn $method(res: &mut [i64], a: &[i64]) {
                 let Some(chunk) = parallel_chunk_len::<Self>(res.len()) else {
-                    return <NTT3x42Ifma<R> as $trait>::$method(res, a);
+                    return <NTT3x42Ifma as $trait>::$method(res, a);
                 };
                 res.par_chunks_mut(chunk)
                     .zip(a.par_chunks(chunk))
-                    .for_each(|(res, a)| <NTT3x42Ifma<R> as $trait>::$method(res, a));
+                    .for_each(|(res, a)| <NTT3x42Ifma as $trait>::$method(res, a));
             }
         }
     };
@@ -149,13 +146,13 @@ macro_rules! parallel_assign {
 
 macro_rules! parallel_unary {
     ($trait:ident, $method:ident) => {
-        impl<R: Ring> $trait for NTT3x42IfmaRayon<R> {
+        impl $trait for NTT3x42IfmaRayon {
             fn $method(res: &mut [i64]) {
                 let Some(chunk) = parallel_chunk_len::<Self>(res.len()) else {
-                    return <NTT3x42Ifma<R> as $trait>::$method(res);
+                    return <NTT3x42Ifma as $trait>::$method(res);
                 };
                 res.par_chunks_mut(chunk)
-                    .for_each(|res| <NTT3x42Ifma<R> as $trait>::$method(res));
+                    .for_each(|res| <NTT3x42Ifma as $trait>::$method(res));
             }
         }
     };
@@ -163,14 +160,14 @@ macro_rules! parallel_unary {
 
 macro_rules! parallel_shift {
     ($trait:ident, $method:ident) => {
-        impl<R: Ring> $trait for NTT3x42IfmaRayon<R> {
+        impl $trait for NTT3x42IfmaRayon {
             fn $method(k: i64, res: &mut [i64], a: &[i64]) {
                 let Some(chunk) = parallel_chunk_len::<Self>(res.len()) else {
-                    return <NTT3x42Ifma<R> as $trait>::$method(k, res, a);
+                    return <NTT3x42Ifma as $trait>::$method(k, res, a);
                 };
                 res.par_chunks_mut(chunk)
                     .zip(a.par_chunks(chunk))
-                    .for_each(|(res, a)| <NTT3x42Ifma<R> as $trait>::$method(k, res, a));
+                    .for_each(|(res, a)| <NTT3x42Ifma as $trait>::$method(k, res, a));
             }
         }
     };
@@ -184,33 +181,33 @@ parallel_assign!(ZnxSubNegateAssign, znx_sub_negate_assign);
 parallel_shift!(ZnxMulAddPowerOfTwo, znx_muladd_power_of_two);
 parallel_shift!(ZnxMulPowerOfTwo, znx_mul_power_of_two);
 
-impl<R: Ring> ZnxMulPowerOfTwoAssign for NTT3x42IfmaRayon<R> {
+impl ZnxMulPowerOfTwoAssign for NTT3x42IfmaRayon {
     fn znx_mul_power_of_two_assign(k: i64, res: &mut [i64]) {
         let Some(chunk) = parallel_chunk_len::<Self>(res.len()) else {
-            return <NTT3x42Ifma<R> as ZnxMulPowerOfTwoAssign>::znx_mul_power_of_two_assign(k, res);
+            return <NTT3x42Ifma as ZnxMulPowerOfTwoAssign>::znx_mul_power_of_two_assign(k, res);
         };
         res.par_chunks_mut(chunk)
-            .for_each(|res| <NTT3x42Ifma<R> as ZnxMulPowerOfTwoAssign>::znx_mul_power_of_two_assign(k, res));
+            .for_each(|res| <NTT3x42Ifma as ZnxMulPowerOfTwoAssign>::znx_mul_power_of_two_assign(k, res));
     }
 }
-impl<R: Ring> ZnxAutomorphism for NTT3x42IfmaRayon<R>
+impl<Rg: Ring> ZnxAutomorphism<Rg> for NTT3x42IfmaRayon
 where
-    NTT3x42Ifma<R>: ZnxAutomorphism,
+    NTT3x42Ifma: ZnxAutomorphism<Rg>,
 {
     #[inline(always)]
     fn znx_automorphism(p: i64, res: &mut [i64], a: &[i64]) {
-        <NTT3x42Ifma<R> as ZnxAutomorphism>::znx_automorphism(p, res, a)
+        <NTT3x42Ifma as ZnxAutomorphism<Rg>>::znx_automorphism(p, res, a)
     }
 
     #[inline(always)]
     fn znx_automorphism_i128(p: i64, res: &mut [i128], a: &[i128]) {
-        <NTT3x42Ifma<R> as ZnxAutomorphism>::znx_automorphism_i128(p, res, a)
+        <NTT3x42Ifma as ZnxAutomorphism<Rg>>::znx_automorphism_i128(p, res, a)
     }
 }
-impl ZnxAutomorphismRotate for NTT3x42IfmaRayon {
+impl ZnxAutomorphismRotate<Standard> for NTT3x42IfmaRayon {
     #[inline(always)]
     fn znx_automorphism_rotate(p: i64, k: i64, res: &mut [i64], a: &[i64]) {
-        <NTT3x42Ifma as ZnxAutomorphismRotate>::znx_automorphism_rotate(p, k, res, a)
+        <NTT3x42Ifma as ZnxAutomorphismRotate<Standard>>::znx_automorphism_rotate(p, k, res, a)
     }
 }
 parallel_assign!(ZnxCopy, znx_copy);
@@ -220,7 +217,7 @@ forward_znx!(ZnxRotate, znx_rotate(p: i64, res: &mut [i64], src: &[i64]));
 parallel_unary!(ZnxZero, znx_zero);
 forward_znx!(ZnxSwitchRing, znx_switch_ring(res: &mut [i64], a: &[i64]));
 
-impl<R: Ring> ZnxNormalize for NTT3x42IfmaRayon<R> {
+impl ZnxNormalize for NTT3x42IfmaRayon {
     unsafe fn znx_normalize(
         res: LimbsMut<i64>,
         res_base2k: usize,
@@ -230,7 +227,7 @@ impl<R: Ring> ZnxNormalize for NTT3x42IfmaRayon<R> {
         a_base2k: usize,
         len: usize,
     ) {
-        unsafe { <NTT3x42Ifma<R> as ZnxNormalize>::znx_normalize(res, res_base2k, res_k, offset, a, a_base2k, len) }
+        unsafe { <NTT3x42Ifma as ZnxNormalize>::znx_normalize(res, res_base2k, res_k, offset, a, a_base2k, len) }
     }
 
     unsafe fn znx_normalize_big(
@@ -242,15 +239,12 @@ impl<R: Ring> ZnxNormalize for NTT3x42IfmaRayon<R> {
         a_base2k: usize,
         len: usize,
     ) {
-        unsafe { <NTT3x42Ifma<R> as ZnxNormalize>::znx_normalize_big(res, res_base2k, res_k, offset, a, a_base2k, len) }
+        unsafe { <NTT3x42Ifma as ZnxNormalize>::znx_normalize_big(res, res_base2k, res_k, offset, a, a_base2k, len) }
     }
 }
 
-unsafe impl<R: Ring> HalModuleImpl for NTT3x42IfmaRayon<R>
-where
-    NTT3x42IfmaHandle<R>: NttHandleFactory,
-{
-    fn new(n: u64) -> Module<NTT3x42IfmaRayon<R>> {
+unsafe impl HalModuleImpl for NTT3x42IfmaRayon {
+    fn new(n: u64) -> Module<NTT3x42IfmaRayon> {
         let module = ManuallyDrop::new(super::module::module_new(n));
         unsafe { Module::from_raw_parts(module.as_mut_ptr(), n) }
     }
@@ -264,47 +258,49 @@ unsafe impl poulpy_hal::oep::HalVecZnxCIImpl for NTT3x42IfmaRayon {
     poulpy_cpu_portable::hal_impl_vec_znx_ci!();
 }
 
-unsafe impl<R: Ring> poulpy_hal::oep::HalScalarZnxImpl for NTT3x42IfmaRayon<R> where Self: HalVecZnxImpl {}
-unsafe impl<R: Ring> poulpy_hal::oep::HalMatZnxImpl for NTT3x42IfmaRayon<R> where Self: HalVecZnxImpl {}
+unsafe impl poulpy_hal::oep::HalScalarZnxCIImpl for NTT3x42IfmaRayon {}
 
-unsafe impl<R: Ring> HalVecZnxImpl for NTT3x42IfmaRayon<R>
+unsafe impl<Rg: Ring> poulpy_hal::oep::HalScalarZnxImpl<Rg> for NTT3x42IfmaRayon where Self: HalVecZnxImpl<Rg> {}
+unsafe impl<Rg: Ring> poulpy_hal::oep::HalMatZnxImpl<Rg> for NTT3x42IfmaRayon where Self: HalVecZnxImpl<Rg> {}
+
+unsafe impl<Rg: Ring> HalVecZnxImpl<Rg> for NTT3x42IfmaRayon
 where
-    NTT3x42Ifma<R>: Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, R>>
-        + Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, R>>
-        + ZnxAutomorphism,
+    NTT3x42Ifma: Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, Rg>>
+        + Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, Rg>>
+        + ZnxAutomorphism<Rg>,
 {
-    poulpy_cpu_portable::hal_impl_vec_znx_without_normalize_or_decompose!();
+    poulpy_cpu_portable::hal_impl_vec_znx_without_normalize_or_decompose!(Rg);
 
     fn vec_znx_gadget_decompose_tmp_bytes(module: &Module<Self>) -> usize {
-        <Self as HalVecZnxDefault>::vec_znx_gadget_decompose_tmp_bytes_default(module)
+        <Self as HalVecZnxDefault<Rg>>::vec_znx_gadget_decompose_tmp_bytes_default(module)
     }
 
     fn vec_znx_gadget_decompose(
         _module: &Module<Self>,
-        res: &mut VecZnxBackendMut<'_, Self>,
+        res: &mut VecZnxBackendMut<'_, Self, Rg>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, Self>,
+        a: &VecZnxBackendRef<'_, Self, Rg>,
         a_col: usize,
         base2k: usize,
         k_digit: usize,
         _scratch: &mut ScratchArena<'_, Self>,
     ) {
-        poulpy_cpu_rayon::normalize::vec_znx_gadget_decompose_par::<Self, Self>(res, res_col, a, a_col, base2k, k_digit);
+        poulpy_cpu_rayon::normalize::vec_znx_gadget_decompose_par::<Self, Self, Rg>(res, res_col, a, a_col, base2k, k_digit);
     }
 
     fn vec_znx_normalize(
         _module: &Module<Self>,
-        res: &mut VecZnxBackendMut<'_, Self>,
+        res: &mut VecZnxBackendMut<'_, Self, Rg>,
         res_base2k: usize,
         res_k: usize,
         res_offset: i64,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, Self>,
+        a: &VecZnxBackendRef<'_, Self, Rg>,
         a_base2k: usize,
         a_col: usize,
         _scratch: &mut ScratchArena<'_, Self>,
     ) {
-        poulpy_cpu_rayon::normalize::vec_znx_normalize_par::<NTT3x42Ifma<R>, Self>(
+        poulpy_cpu_rayon::normalize::vec_znx_normalize_par::<NTT3x42Ifma, Self, Rg>(
             res, res_base2k, res_k, res_offset, res_col, a, a_base2k, a_col,
         );
     }
@@ -314,11 +310,11 @@ where
         base2k: usize,
         k: usize,
         a_offset: i64,
-        a: &mut VecZnxBackendMut<'_, Self>,
+        a: &mut VecZnxBackendMut<'_, Self, Rg>,
         a_col: usize,
         _scratch: &mut ScratchArena<'_, Self>,
     ) {
-        poulpy_cpu_rayon::normalize::vec_znx_normalize_assign_par::<NTT3x42Ifma<R>, Self>(base2k, k, a_offset, a, a_col);
+        poulpy_cpu_rayon::normalize::vec_znx_normalize_assign_par::<NTT3x42Ifma, Self, Rg>(base2k, k, a_offset, a, a_col);
     }
 }
 
@@ -331,7 +327,7 @@ macro_rules! forward_i128_big {
     };
 }
 
-impl<R: Ring> I128BigOps for NTT3x42IfmaRayon<R> {
+impl I128BigOps for NTT3x42IfmaRayon {
     forward_i128_big!(i128_hadamard_product_i64(res: &mut [i128], a: &[i64], b: &[i64]));
     forward_i128_big!(i128_add(res: &mut [i128], a: &[i128], b: &[i128]));
     forward_i128_big!(i128_add_assign(res: &mut [i128], a: &[i128]));
@@ -350,50 +346,50 @@ impl<R: Ring> I128BigOps for NTT3x42IfmaRayon<R> {
     forward_i128_big!(i128_from_small(res: &mut [i128], a: &[i64]));
 }
 
-impl<R: Ring> BigWordHadamardProduct for NTT3x42IfmaRayon<R> {
+impl BigWordHadamardProduct for NTT3x42IfmaRayon {
     fn big_word_hadamard_product(res: &mut [i128], a: &[i64], b: &[i64]) {
         <Self as I128BigOps>::i128_hadamard_product_i64(res, a, b)
     }
 }
 
-unsafe impl<R: Ring> HalVecZnxBigImpl for NTT3x42IfmaRayon<R>
+unsafe impl<Rg: Ring> HalVecZnxBigImpl<Rg> for NTT3x42IfmaRayon
 where
-    NTT3x42Ifma<R>: Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, R>>
-        + Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, R>>
-        + ZnxAutomorphism,
+    NTT3x42Ifma: Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, Rg>>
+        + Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, Rg>>
+        + ZnxAutomorphism<Rg>,
 {
-    poulpy_cpu_portable::hal_impl_vec_znx_big_without_normalize!(NTT4x30VecZnxBigDefault);
+    poulpy_cpu_portable::hal_impl_vec_znx_big_without_normalize!(NTT4x30VecZnxBigDefault, Rg);
 
     fn vec_znx_big_normalize(
         _module: &Module<Self>,
-        res: &mut VecZnxBackendMut<'_, Self>,
+        res: &mut VecZnxBackendMut<'_, Self, Rg>,
         res_base2k: usize,
         res_k: usize,
         res_offset: i64,
         res_col: usize,
-        a: &poulpy_hal::layouts::VecZnxBigBackendRef<'_, Self>,
+        a: &poulpy_hal::layouts::VecZnxBigBackendRef<'_, Self, Rg>,
         a_base2k: usize,
         a_col: usize,
         _scratch: &mut ScratchArena<'_, Self>,
     ) {
-        poulpy_cpu_rayon::normalize::vec_znx_big_normalize_par::<NTT3x42Ifma<R>, Self>(
+        poulpy_cpu_rayon::normalize::vec_znx_big_normalize_par::<NTT3x42Ifma, Self, Rg>(
             res,
             res_base2k,
             res_k,
             res_offset,
             res_col,
-            &base_big_ref::<R>(a),
+            &base_big_ref::<Rg>(a),
             a_base2k,
             a_col,
         );
     }
 }
 
-unsafe impl<R: Ring> HalVecZnxDftImpl for NTT3x42IfmaRayon<R>
+unsafe impl<Rg: Ring> HalVecZnxDftImpl<Rg> for NTT3x42IfmaRayon
 where
-    NTT3x42Ifma<R>: Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, R>>
-        + Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, R>>
-        + ZnxAutomorphism,
+    NTT3x42Ifma: Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, Rg>>
+        + Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, Rg>>
+        + ZnxAutomorphism<Rg>,
 {
     fn vec_znx_idft_normalize_tmp_bytes(module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
         poulpy_cpu_rayon::workers(<Self as poulpy_hal::execution::ScratchWorkers>::IDFT) * 3 * module.n() * size_of::<u64>()
@@ -402,26 +398,26 @@ where
     #[allow(clippy::too_many_arguments)]
     fn vec_znx_idft_normalize(
         module: &Module<Self>,
-        res: &mut VecZnxBackendMut<'_, Self>,
+        res: &mut VecZnxBackendMut<'_, Self, Rg>,
         res_base2k: usize,
         res_k: usize,
         res_offset: i64,
         res_col: usize,
-        a: &mut VecZnxDftBackendMut<'_, Self>,
+        a: &mut VecZnxDftBackendMut<'_, Self, Rg>,
         a_col: usize,
         a_base2k: usize,
-        addend: Option<(&VecZnxBackendRef<'_, Self>, usize)>,
+        addend: Option<(&VecZnxBackendRef<'_, Self, Rg>, usize)>,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let n = a.n();
-        poulpy_hal::layouts::check_degree::<NTT3x42Ifma<R>>(module.n(), n);
+        poulpy_hal::layouts::check_degree::<NTT3x42Ifma>(module.n(), n);
         let workers = poulpy_cpu_rayon::workers_within(
             a.size().min(<Self as poulpy_hal::execution::ScratchWorkers>::IDFT),
             3 * n * size_of::<u64>(),
             scratch.available(),
         );
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), workers * 3 * n);
-        let mut a_base = base_dft_mut::<R>(a);
+        let mut a_base = base_dft_mut::<Rg>(a);
         let add_base = addend.map(|(add, col)| (poulpy_hal::layouts::VecZnx::from_shape(&**add.data(), add.shape()), col));
         super::vec_znx_dft::idft_normalize_ifma::<_, NTT3x42IfmaRayonExecutor>(
             base_module(module),
@@ -442,14 +438,14 @@ where
         module: &Module<Self>,
         step: usize,
         offset: usize,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, Rg>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, Self>,
+        a: &VecZnxBackendRef<'_, Self, Rg>,
         a_col: usize,
     ) {
         poulpy_hal::layouts::assert_dense(a, "vec_znx_dft_apply");
         assert!(step >= 1, "vec_znx_dft_apply: step must be >= 1");
-        poulpy_hal::layouts::check_degree::<NTT3x42Ifma<R>>(module.n(), res.n());
+        poulpy_hal::layouts::check_degree::<NTT3x42Ifma>(module.n(), res.n());
         assert!(a.n() == res.n(), "vec_znx_dft_apply: a.n() != res.n()");
         assert!(res_col < res.cols(), "result column out of range");
         assert!(a_col < a.cols(), "operand column out of range");
@@ -472,12 +468,12 @@ where
             );
             return;
         }
-        let mut res = base_dft_mut::<R>(res);
-        NTT3x42Ifma::<R>::vec_znx_dft_apply(base_module(module), step, offset, &mut res, res_col, a, a_col)
+        let mut res = base_dft_mut::<Rg>(res);
+        <NTT3x42Ifma as HalVecZnxDftImpl<Rg>>::vec_znx_dft_apply(base_module(module), step, offset, &mut res, res_col, a, a_col)
     }
 
     fn vec_znx_idft_apply_tmp_bytes(module: &Module<Self>) -> usize {
-        NTT3x42Ifma::<R>::vec_znx_idft_apply_tmp_bytes(base_module(module)).max(
+        <NTT3x42Ifma as HalVecZnxDftImpl<Rg>>::vec_znx_idft_apply_tmp_bytes(base_module(module)).max(
             poulpy_cpu_rayon::workers(<Self as poulpy_hal::execution::ScratchWorkers>::IDFT) * 3 * module.n() * size_of::<u64>(),
         )
     }
@@ -485,13 +481,13 @@ where
     #[inline(always)]
     fn vec_znx_idft_apply(
         module: &Module<Self>,
-        res: &mut VecZnxBigBackendMut<'_, Self>,
+        res: &mut VecZnxBigBackendMut<'_, Self, Rg>,
         res_col: usize,
-        a: &VecZnxDftBackendRef<'_, Self>,
+        a: &VecZnxDftBackendRef<'_, Self, Rg>,
         a_col: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        poulpy_hal::layouts::check_degree::<NTT3x42Ifma<R>>(module.n(), res.n());
+        poulpy_hal::layouts::check_degree::<NTT3x42Ifma>(module.n(), res.n());
         assert_eq!(a.n(), res.n(), "vec_znx_idft_apply: a.n():{} != res.n():{}", a.n(), res.n());
         assert!(res_col < res.cols(), "result column out of range");
         assert!(a_col < a.cols(), "operand column out of range");
@@ -517,86 +513,96 @@ where
             });
             return;
         }
-        let mut res = base_big_mut::<R>(res);
-        let a = base_dft_ref::<R>(a);
-        let mut scratch = scratch.borrow().into_backend::<NTT3x42Ifma<R>>();
-        NTT3x42Ifma::<R>::vec_znx_idft_apply(base_module(module), &mut res, res_col, &a, a_col, &mut scratch)
+        let mut res = base_big_mut::<Rg>(res);
+        let a = base_dft_ref::<Rg>(a);
+        let mut scratch = scratch.borrow().into_backend::<NTT3x42Ifma>();
+        <NTT3x42Ifma as HalVecZnxDftImpl<Rg>>::vec_znx_idft_apply(base_module(module), &mut res, res_col, &a, a_col, &mut scratch)
     }
 
     fn vec_znx_dft_add(
         _module: &Module<Self>,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, Rg>,
         res_col: usize,
-        a: &VecZnxDftBackendRef<'_, Self>,
+        a: &VecZnxDftBackendRef<'_, Self, Rg>,
         a_col: usize,
-        b: &VecZnxDftBackendRef<'_, Self>,
+        b: &VecZnxDftBackendRef<'_, Self, Rg>,
         b_col: usize,
     ) {
-        let mut res = base_dft_mut::<R>(res);
+        let mut res = base_dft_mut::<Rg>(res);
         super::vec_znx_dft::vec_znx_dft_add::<_, NTT3x42IfmaRayonExecutor>(
             &mut res,
             res_col,
-            &base_dft_ref::<R>(a),
+            &base_dft_ref::<Rg>(a),
             a_col,
-            &base_dft_ref::<R>(b),
+            &base_dft_ref::<Rg>(b),
             b_col,
         )
     }
 
     fn vec_znx_dft_add_assign(
         _module: &Module<Self>,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, Rg>,
         res_col: usize,
-        a: &VecZnxDftBackendRef<'_, Self>,
+        a: &VecZnxDftBackendRef<'_, Self, Rg>,
         a_col: usize,
     ) {
-        let mut res = base_dft_mut::<R>(res);
-        super::vec_znx_dft::vec_znx_dft_add_assign::<_, NTT3x42IfmaRayonExecutor>(&mut res, res_col, &base_dft_ref::<R>(a), a_col)
+        let mut res = base_dft_mut::<Rg>(res);
+        super::vec_znx_dft::vec_znx_dft_add_assign::<_, NTT3x42IfmaRayonExecutor>(
+            &mut res,
+            res_col,
+            &base_dft_ref::<Rg>(a),
+            a_col,
+        )
     }
 
     fn vec_znx_dft_sub(
         _module: &Module<Self>,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, Rg>,
         res_col: usize,
-        a: &VecZnxDftBackendRef<'_, Self>,
+        a: &VecZnxDftBackendRef<'_, Self, Rg>,
         a_col: usize,
-        b: &VecZnxDftBackendRef<'_, Self>,
+        b: &VecZnxDftBackendRef<'_, Self, Rg>,
         b_col: usize,
     ) {
-        let mut res = base_dft_mut::<R>(res);
+        let mut res = base_dft_mut::<Rg>(res);
         super::vec_znx_dft::vec_znx_dft_sub::<_, NTT3x42IfmaRayonExecutor>(
             &mut res,
             res_col,
-            &base_dft_ref::<R>(a),
+            &base_dft_ref::<Rg>(a),
             a_col,
-            &base_dft_ref::<R>(b),
+            &base_dft_ref::<Rg>(b),
             b_col,
         )
     }
 
     fn vec_znx_dft_sub_assign(
         _module: &Module<Self>,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, Rg>,
         res_col: usize,
-        a: &VecZnxDftBackendRef<'_, Self>,
+        a: &VecZnxDftBackendRef<'_, Self, Rg>,
         a_col: usize,
     ) {
-        let mut res = base_dft_mut::<R>(res);
-        super::vec_znx_dft::vec_znx_dft_sub_assign::<_, NTT3x42IfmaRayonExecutor>(&mut res, res_col, &base_dft_ref::<R>(a), a_col)
+        let mut res = base_dft_mut::<Rg>(res);
+        super::vec_znx_dft::vec_znx_dft_sub_assign::<_, NTT3x42IfmaRayonExecutor>(
+            &mut res,
+            res_col,
+            &base_dft_ref::<Rg>(a),
+            a_col,
+        )
     }
 
     fn vec_znx_dft_sub_negate_assign(
         _module: &Module<Self>,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, Rg>,
         res_col: usize,
-        a: &VecZnxDftBackendRef<'_, Self>,
+        a: &VecZnxDftBackendRef<'_, Self, Rg>,
         a_col: usize,
     ) {
-        let mut res = base_dft_mut::<R>(res);
+        let mut res = base_dft_mut::<Rg>(res);
         super::vec_znx_dft::vec_znx_dft_sub_negate_assign::<_, NTT3x42IfmaRayonExecutor>(
             &mut res,
             res_col,
-            &base_dft_ref::<R>(a),
+            &base_dft_ref::<Rg>(a),
             a_col,
         )
     }
@@ -605,47 +611,47 @@ where
         _module: &Module<Self>,
         step: usize,
         offset: usize,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, Rg>,
         res_col: usize,
-        a: &VecZnxDftBackendRef<'_, Self>,
+        a: &VecZnxDftBackendRef<'_, Self, Rg>,
         a_col: usize,
     ) {
-        let mut res = base_dft_mut::<R>(res);
+        let mut res = base_dft_mut::<Rg>(res);
         super::vec_znx_dft::vec_znx_dft_copy::<_, NTT3x42IfmaRayonExecutor>(
             step,
             offset,
             &mut res,
             res_col,
-            &base_dft_ref::<R>(a),
+            &base_dft_ref::<Rg>(a),
             a_col,
         )
     }
 
-    fn vec_znx_dft_zero(_module: &Module<Self>, res: &mut VecZnxDftBackendMut<'_, Self>, res_col: usize) {
-        let mut res = base_dft_mut::<R>(res);
+    fn vec_znx_dft_zero(_module: &Module<Self>, res: &mut VecZnxDftBackendMut<'_, Self, Rg>, res_col: usize) {
+        let mut res = base_dft_mut::<Rg>(res);
         super::vec_znx_dft::vec_znx_dft_zero::<_, NTT3x42IfmaRayonExecutor>(&mut res, res_col)
     }
 
-    type AutomorphismPlan = <NTT3x42Ifma<R> as HalVecZnxDftImpl>::AutomorphismPlan;
+    type AutomorphismPlan = <NTT3x42Ifma as HalVecZnxDftImpl<Rg>>::AutomorphismPlan;
 
     fn vec_znx_dft_automorphism_plan(module: &Module<Self>, n: usize, p: i64) -> Self::AutomorphismPlan {
-        NTT3x42Ifma::<R>::vec_znx_dft_automorphism_plan(base_module(module), n, p)
+        <NTT3x42Ifma as HalVecZnxDftImpl<Rg>>::vec_znx_dft_automorphism_plan(base_module(module), n, p)
     }
 
     fn vec_znx_dft_automorphism_with_plan(
         _module: &Module<Self>,
         plan: &Self::AutomorphismPlan,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, Rg>,
         res_col: usize,
-        a: &VecZnxDftBackendRef<'_, Self>,
+        a: &VecZnxDftBackendRef<'_, Self, Rg>,
         a_col: usize,
     ) {
-        let mut res = base_dft_mut::<R>(res);
+        let mut res = base_dft_mut::<Rg>(res);
         super::vec_znx_dft::vec_znx_dft_automorphism::<_, NTT3x42IfmaRayonExecutor>(
             plan,
             &mut res,
             res_col,
-            &base_dft_ref::<R>(a),
+            &base_dft_ref::<Rg>(a),
             a_col,
         )
     }
@@ -658,52 +664,52 @@ where
     fn vec_znx_dft_automorphism_add_with_plan(
         _module: &Module<Self>,
         plan: &Self::AutomorphismPlan,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, Rg>,
         res_col: usize,
-        a: &VecZnxDftBackendRef<'_, Self>,
+        a: &VecZnxDftBackendRef<'_, Self, Rg>,
         a_col: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let _ = scratch;
-        let mut res = base_dft_mut::<R>(res);
+        let mut res = base_dft_mut::<Rg>(res);
         super::vec_znx_dft::vec_znx_dft_automorphism_add::<_, NTT3x42IfmaRayonExecutor>(
             plan,
             &mut res,
             res_col,
-            &base_dft_ref::<R>(a),
+            &base_dft_ref::<Rg>(a),
             a_col,
         );
     }
 }
 
-unsafe impl<R: Ring> HalSvpImpl for NTT3x42IfmaRayon<R>
+unsafe impl<Rg: Ring> HalSvpImpl<Rg> for NTT3x42IfmaRayon
 where
-    NTT3x42Ifma<R>: Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, R>>
-        + Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, R>>
-        + ZnxAutomorphism,
+    NTT3x42Ifma: Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, Rg>>
+        + Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, Rg>>
+        + ZnxAutomorphism<Rg>,
 {
     fn svp_ppol_prepare(
         module: &Module<Self>,
-        res: &mut SvpPPolBackendMut<'_, Self>,
+        res: &mut SvpPPolBackendMut<'_, Self, Rg>,
         res_col: usize,
-        a: &ScalarZnxBackendRef<'_, Self>,
+        a: &ScalarZnxBackendRef<'_, Self, Rg>,
         a_col: usize,
     ) {
-        NTT3x42Ifma::<R>::svp_ppol_prepare(base_module(module), &mut base_svp_mut::<R>(res), res_col, a, a_col)
+        <NTT3x42Ifma as HalSvpImpl<Rg>>::svp_ppol_prepare(base_module(module), &mut base_svp_mut::<Rg>(res), res_col, a, a_col)
     }
 
     fn svp_ppol_copy(
         module: &Module<Self>,
-        res: &mut SvpPPolBackendMut<'_, Self>,
+        res: &mut SvpPPolBackendMut<'_, Self, Rg>,
         res_col: usize,
-        a: &SvpPPolBackendRef<'_, Self>,
+        a: &SvpPPolBackendRef<'_, Self, Rg>,
         a_col: usize,
     ) {
-        NTT3x42Ifma::<R>::svp_ppol_copy(
+        <NTT3x42Ifma as HalSvpImpl<Rg>>::svp_ppol_copy(
             base_module(module),
-            &mut base_svp_mut::<R>(res),
+            &mut base_svp_mut::<Rg>(res),
             res_col,
-            &base_svp_ref::<R>(a),
+            &base_svp_ref::<Rg>(a),
             a_col,
         )
     }
@@ -715,11 +721,11 @@ where
     #[allow(clippy::too_many_arguments)]
     fn svp_apply_dft(
         module: &Module<Self>,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, Rg>,
         res_col: usize,
-        a: &SvpPPolBackendRef<'_, Self>,
+        a: &SvpPPolBackendRef<'_, Self, Rg>,
         a_col: usize,
-        b: &VecZnxBackendRef<'_, Self>,
+        b: &VecZnxBackendRef<'_, Self, Rg>,
         b_col: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
@@ -727,9 +733,9 @@ where
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
         super::svp::svp_apply_dft::<_, NTT3x42IfmaRayonExecutor>(
             base_module(module),
-            &mut base_dft_mut::<R>(res),
+            &mut base_dft_mut::<Rg>(res),
             res_col,
-            &base_svp_ref::<R>(a),
+            &base_svp_ref::<Rg>(a),
             a_col,
             b,
             b_col,
@@ -739,56 +745,56 @@ where
 
     fn svp_apply_dft_to_dft(
         module: &Module<Self>,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, Rg>,
         res_col: usize,
-        a: &SvpPPolBackendRef<'_, Self>,
+        a: &SvpPPolBackendRef<'_, Self, Rg>,
         a_col: usize,
-        b: &VecZnxDftBackendRef<'_, Self>,
+        b: &VecZnxDftBackendRef<'_, Self, Rg>,
         b_col: usize,
     ) {
         super::svp::svp_apply_dft_to_dft::<_, NTT3x42IfmaRayonExecutor>(
             base_module(module),
-            &mut base_dft_mut::<R>(res),
+            &mut base_dft_mut::<Rg>(res),
             res_col,
-            &base_svp_ref::<R>(a),
+            &base_svp_ref::<Rg>(a),
             a_col,
-            &base_dft_ref::<R>(b),
+            &base_dft_ref::<Rg>(b),
             b_col,
         )
     }
 
     fn svp_apply_dft_to_dft_assign(
         module: &Module<Self>,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, Rg>,
         res_col: usize,
-        a: &SvpPPolBackendRef<'_, Self>,
+        a: &SvpPPolBackendRef<'_, Self, Rg>,
         a_col: usize,
     ) {
         super::svp::svp_apply_dft_to_dft_assign::<_, NTT3x42IfmaRayonExecutor>(
             base_module(module),
-            &mut base_dft_mut::<R>(res),
+            &mut base_dft_mut::<Rg>(res),
             res_col,
-            &base_svp_ref::<R>(a),
+            &base_svp_ref::<Rg>(a),
             a_col,
         )
     }
 }
 
-unsafe impl<R: Ring> HalVmpImpl for NTT3x42IfmaRayon<R>
+unsafe impl<Rg: Ring> HalVmpImpl<Rg> for NTT3x42IfmaRayon
 where
-    NTT3x42Ifma<R>: Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, R>>
-        + Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, R>>
-        + ZnxAutomorphism,
+    NTT3x42Ifma: Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, Rg>>
+        + Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, Rg>>
+        + ZnxAutomorphism<Rg>,
 {
     fn vmp_pmat_prepare_tmp_bytes(module: &Module<Self>, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> usize {
         poulpy_cpu_rayon::workers(<Self as poulpy_hal::execution::ScratchWorkers>::PREPARE)
-            * NTT3x42Ifma::<R>::vmp_pmat_prepare_tmp_bytes(base_module(module), rows, cols_in, cols_out, size)
+            * <NTT3x42Ifma as HalVmpImpl<Rg>>::vmp_pmat_prepare_tmp_bytes(base_module(module), rows, cols_in, cols_out, size)
     }
 
     fn vmp_pmat_prepare(
         module: &Module<Self>,
-        res: &mut VmpPMatBackendMut<'_, Self>,
-        a: &MatZnxBackendRef<'_, Self>,
+        res: &mut VmpPMatBackendMut<'_, Self, Rg>,
+        a: &MatZnxBackendRef<'_, Self, Rg>,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let per_worker = super::vmp::vmp_pmat_prepare_tmp_bytes_ifma(res.n());
@@ -801,7 +807,7 @@ where
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), workers * per_worker / size_of::<u64>());
         super::vmp::vmp_pmat_prepare_ifma::<_, NTT3x42IfmaRayonExecutor>(
             base_module(module),
-            &mut base_vmp_mut::<R>(res),
+            &mut base_vmp_mut::<Rg>(res),
             a,
             tmp,
         );
@@ -817,7 +823,7 @@ where
         b_size: usize,
     ) -> usize {
         poulpy_cpu_rayon::workers(<Self as poulpy_hal::execution::ScratchWorkers>::VMP)
-            * NTT3x42Ifma::<R>::vmp_apply_dft_to_dft_tmp_bytes(
+            * <NTT3x42Ifma as HalVmpImpl<Rg>>::vmp_apply_dft_to_dft_tmp_bytes(
                 base_module(module),
                 res_size,
                 a_size,
@@ -830,9 +836,9 @@ where
 
     fn vmp_apply_dft_to_dft(
         module: &Module<Self>,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
-        a: &VecZnxDftBackendRef<'_, Self>,
-        b: &VmpPMatBackendRef<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, Rg>,
+        a: &VecZnxDftBackendRef<'_, Self, Rg>,
+        b: &VmpPMatBackendRef<'_, Self, Rg>,
         limb_offset: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
@@ -846,18 +852,18 @@ where
         if NTT3x42IfmaRayonExecutor::should_serialize_inner() {
             super::vmp::vmp_apply_dft_to_dft_ifma::<_, SerialTaskExecutor>(
                 base_module(module),
-                &mut base_dft_mut::<R>(res),
-                &base_dft_ref::<R>(a),
-                &base_vmp_ref::<R>(b),
+                &mut base_dft_mut::<Rg>(res),
+                &base_dft_ref::<Rg>(a),
+                &base_vmp_ref::<Rg>(b),
                 limb_offset,
                 tmp,
             )
         } else {
             super::vmp::vmp_apply_dft_to_dft_ifma::<_, NTT3x42IfmaRayonExecutor>(
                 base_module(module),
-                &mut base_dft_mut::<R>(res),
-                &base_dft_ref::<R>(a),
-                &base_vmp_ref::<R>(b),
+                &mut base_dft_mut::<Rg>(res),
+                &base_dft_ref::<Rg>(a),
+                &base_vmp_ref::<Rg>(b),
                 limb_offset,
                 tmp,
             )
@@ -874,7 +880,7 @@ where
         b_size: usize,
     ) -> usize {
         poulpy_cpu_rayon::workers(<Self as poulpy_hal::execution::ScratchWorkers>::VMP)
-            * NTT3x42Ifma::<R>::vmp_apply_dft_to_dft_add_tmp_bytes(
+            * <NTT3x42Ifma as HalVmpImpl<Rg>>::vmp_apply_dft_to_dft_add_tmp_bytes(
                 base_module(module),
                 res_size,
                 a_size,
@@ -887,9 +893,9 @@ where
 
     fn vmp_apply_dft_to_dft_add(
         module: &Module<Self>,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
-        a: &VecZnxDftBackendRef<'_, Self>,
-        b: &VmpPMatBackendRef<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, Rg>,
+        a: &VecZnxDftBackendRef<'_, Self, Rg>,
+        b: &VmpPMatBackendRef<'_, Self, Rg>,
         limb_offset: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
@@ -903,18 +909,18 @@ where
         if NTT3x42IfmaRayonExecutor::should_serialize_inner() {
             super::vmp::vmp_apply_dft_to_dft_add_ifma::<_, SerialTaskExecutor>(
                 base_module(module),
-                &mut base_dft_mut::<R>(res),
-                &base_dft_ref::<R>(a),
-                &base_vmp_ref::<R>(b),
+                &mut base_dft_mut::<Rg>(res),
+                &base_dft_ref::<Rg>(a),
+                &base_vmp_ref::<Rg>(b),
                 limb_offset,
                 tmp,
             )
         } else {
             super::vmp::vmp_apply_dft_to_dft_add_ifma::<_, NTT3x42IfmaRayonExecutor>(
                 base_module(module),
-                &mut base_dft_mut::<R>(res),
-                &base_dft_ref::<R>(a),
-                &base_vmp_ref::<R>(b),
+                &mut base_dft_mut::<Rg>(res),
+                &base_dft_ref::<Rg>(a),
+                &base_vmp_ref::<Rg>(b),
                 limb_offset,
                 tmp,
             )
@@ -923,30 +929,30 @@ where
 
     fn vmp_extract_selected_rows(
         module: &Module<Self>,
-        res: &mut VmpPMatBackendMut<'_, Self>,
-        a: &VmpPMatBackendRef<'_, Self>,
+        res: &mut VmpPMatBackendMut<'_, Self, Rg>,
+        a: &VmpPMatBackendRef<'_, Self, Rg>,
         first_row: usize,
         row_step: usize,
     ) {
-        NTT3x42Ifma::<R>::vmp_extract_selected_rows(
+        <NTT3x42Ifma as HalVmpImpl<Rg>>::vmp_extract_selected_rows(
             base_module(module),
-            &mut base_vmp_mut::<R>(res),
-            &base_vmp_ref::<R>(a),
+            &mut base_vmp_mut::<Rg>(res),
+            &base_vmp_ref::<Rg>(a),
             first_row,
             row_step,
         )
     }
 
-    fn vmp_zero(module: &Module<Self>, res: &mut VmpPMatBackendMut<'_, Self>) {
-        NTT3x42Ifma::<R>::vmp_zero(base_module(module), &mut base_vmp_mut::<R>(res))
+    fn vmp_zero(module: &Module<Self>, res: &mut VmpPMatBackendMut<'_, Self, Rg>) {
+        <NTT3x42Ifma as HalVmpImpl<Rg>>::vmp_zero(base_module(module), &mut base_vmp_mut::<Rg>(res))
     }
 }
 
-unsafe impl<R: Ring> poulpy_core::oep::GGLWEProductDigitsStridedImpl for NTT3x42IfmaRayon<R>
+unsafe impl<Rg: Ring> poulpy_core::oep::GGLWEProductDigitsStridedImpl<Rg> for NTT3x42IfmaRayon
 where
-    NTT3x42Ifma<R>: Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, R>>
-        + Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, R>>
-        + ZnxAutomorphism,
+    NTT3x42Ifma: Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, Rg>>
+        + Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, Rg>>
+        + ZnxAutomorphism<Rg>,
 {
     fn gglwe_product_digits_strided_tmp_bytes(
         _module: &Module<Self>,
@@ -971,11 +977,11 @@ where
 
     fn gglwe_product_digits_strided(
         module: &Module<Self>,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
-        a: &VecZnxDftBackendRef<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, Rg>,
+        a: &VecZnxDftBackendRef<'_, Self, Rg>,
         dsize: usize,
         product_limbs: usize,
-        pmat: &VmpPMatBackendRef<'_, Self>,
+        pmat: &VmpPMatBackendRef<'_, Self, Rg>,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let metadata_bytes = 4 * dsize * size_of::<u64>();
@@ -991,33 +997,33 @@ where
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
         super::vmp::vmp_apply_dft_to_dft_digits_strided_ifma::<_, NTT3x42IfmaRayonExecutor>(
             base_module(module),
-            &mut base_dft_mut::<R>(res),
-            &base_dft_ref::<R>(a),
+            &mut base_dft_mut::<Rg>(res),
+            &base_dft_ref::<Rg>(a),
             dsize,
             product_limbs,
-            &base_vmp_ref::<R>(pmat),
+            &base_vmp_ref::<Rg>(pmat),
             tmp,
         );
     }
 
-    ::poulpy_core::impl_gglwe_product_digits_strided_reference!();
+    ::poulpy_core::impl_gglwe_product_digits_strided_reference!(Rg);
 }
 
-unsafe impl<R: Ring> HalCnvImpl for NTT3x42IfmaRayon<R>
+unsafe impl<Rg: Ring> HalCnvImpl<Rg> for NTT3x42IfmaRayon
 where
-    NTT3x42Ifma<R>: Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, R>>
-        + Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, R>>
-        + ZnxAutomorphism,
+    NTT3x42Ifma: Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, Rg>>
+        + Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, Rg>>
+        + ZnxAutomorphism<Rg>,
 {
     fn cnv_pvec_left_prepare_tmp_bytes(module: &Module<Self>, res_size: usize, a_size: usize) -> usize {
         poulpy_cpu_rayon::workers(<Self as poulpy_hal::execution::ScratchWorkers>::PREPARE)
-            * NTT3x42Ifma::<R>::cnv_pvec_left_prepare_tmp_bytes(base_module(module), res_size, a_size)
+            * <NTT3x42Ifma as HalCnvImpl<Rg>>::cnv_pvec_left_prepare_tmp_bytes(base_module(module), res_size, a_size)
     }
 
     fn cnv_pvec_left_prepare(
         module: &Module<Self>,
-        res: &mut CnvPVecLBackendMut<'_, Self>,
-        a: &VecZnxBackendRef<'_, Self>,
+        res: &mut CnvPVecLBackendMut<'_, Self, Rg>,
+        a: &VecZnxBackendRef<'_, Self, Rg>,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let per_worker = super::convolution::cnv_pvec_left_prepare_tmp_bytes(res.n());
@@ -1029,7 +1035,7 @@ where
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u8>(scratch.borrow(), bytes);
         super::convolution::cnv_pvec_left_prepare::<_, NTT3x42IfmaRayonExecutor>(
             base_module(module),
-            &mut base_cnv_l_mut::<R>(res),
+            &mut base_cnv_l_mut::<Rg>(res),
             a,
             tmp,
         )
@@ -1037,13 +1043,13 @@ where
 
     fn cnv_pvec_right_prepare_tmp_bytes(module: &Module<Self>, res_size: usize, a_size: usize) -> usize {
         poulpy_cpu_rayon::workers(<Self as poulpy_hal::execution::ScratchWorkers>::PREPARE)
-            * NTT3x42Ifma::<R>::cnv_pvec_right_prepare_tmp_bytes(base_module(module), res_size, a_size)
+            * <NTT3x42Ifma as HalCnvImpl<Rg>>::cnv_pvec_right_prepare_tmp_bytes(base_module(module), res_size, a_size)
     }
 
     fn cnv_pvec_right_prepare(
         module: &Module<Self>,
-        res: &mut CnvPVecRBackendMut<'_, Self>,
-        a: &VecZnxBackendRef<'_, Self>,
+        res: &mut CnvPVecRBackendMut<'_, Self, Rg>,
+        a: &VecZnxBackendRef<'_, Self, Rg>,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let per_worker = super::convolution::cnv_pvec_right_prepare_tmp_bytes(res.n());
@@ -1055,7 +1061,7 @@ where
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
         super::convolution::cnv_pvec_right_prepare::<_, NTT3x42IfmaRayonExecutor>(
             base_module(module),
-            &mut base_cnv_r_mut::<R>(res),
+            &mut base_cnv_r_mut::<Rg>(res),
             a,
             tmp,
         )
@@ -1063,7 +1069,7 @@ where
 
     fn cnv_apply_dft_tmp_bytes(module: &Module<Self>, cnv_offset: usize, res_size: usize, a_size: usize, b_size: usize) -> usize {
         poulpy_cpu_rayon::workers(<Self as poulpy_hal::execution::ScratchWorkers>::APPLY)
-            * NTT3x42Ifma::<R>::cnv_apply_dft_tmp_bytes(base_module(module), cnv_offset, res_size, a_size, b_size)
+            * <NTT3x42Ifma as HalCnvImpl<Rg>>::cnv_apply_dft_tmp_bytes(base_module(module), cnv_offset, res_size, a_size, b_size)
     }
 
     fn cnv_by_const_apply_tmp_bytes(
@@ -1073,17 +1079,17 @@ where
         a_size: usize,
         b_size: usize,
     ) -> usize {
-        NTT3x42Ifma::<R>::cnv_by_const_apply_tmp_bytes(base_module(module), cnv_offset, res_size, a_size, b_size)
+        <NTT3x42Ifma as HalCnvImpl<Rg>>::cnv_by_const_apply_tmp_bytes(base_module(module), cnv_offset, res_size, a_size, b_size)
     }
 
     fn cnv_by_const_apply(
         _module: &Module<Self>,
         cnv_offset: usize,
-        res: &mut VecZnxBigBackendMut<'_, Self>,
+        res: &mut VecZnxBigBackendMut<'_, Self, Rg>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, Self>,
+        a: &VecZnxBackendRef<'_, Self, Rg>,
         a_col: usize,
-        b: &VecZnxBackendRef<'_, Self>,
+        b: &VecZnxBackendRef<'_, Self, Rg>,
         b_col: usize,
         b_coeff: usize,
         scratch: &mut ScratchArena<'_, Self>,
@@ -1092,11 +1098,12 @@ where
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u8>(scratch.borrow(), bytes);
         if NTT3x42IfmaRayonExecutor::should_serialize_inner() {
             poulpy_cpu_portable::kernels::ntt4x30::convolution::ntt4x30_cnv_by_const_apply_portable::<
-                NTT3x42Ifma<R>,
+                NTT3x42Ifma,
                 SerialTaskExecutor,
+                Rg,
             >(
                 cnv_offset,
-                &mut base_big_mut::<R>(res),
+                &mut base_big_mut::<Rg>(res),
                 res_col,
                 a,
                 a_col,
@@ -1107,11 +1114,12 @@ where
             )
         } else {
             poulpy_cpu_portable::kernels::ntt4x30::convolution::ntt4x30_cnv_by_const_apply_portable::<
-                NTT3x42Ifma<R>,
+                NTT3x42Ifma,
                 NTT3x42IfmaRayonExecutor,
+                Rg,
             >(
                 cnv_offset,
-                &mut base_big_mut::<R>(res),
+                &mut base_big_mut::<Rg>(res),
                 res_col,
                 a,
                 a_col,
@@ -1137,11 +1145,11 @@ where
     fn cnv_by_const_apply_add(
         _module: &Module<Self>,
         cnv_offset: usize,
-        res: &mut VecZnxBigBackendMut<'_, Self>,
+        res: &mut VecZnxBigBackendMut<'_, Self, Rg>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, Self>,
+        a: &VecZnxBackendRef<'_, Self, Rg>,
         a_col: usize,
-        b: &VecZnxBackendRef<'_, Self>,
+        b: &VecZnxBackendRef<'_, Self, Rg>,
         b_col: usize,
         b_coeff: usize,
         scratch: &mut ScratchArena<'_, Self>,
@@ -1150,11 +1158,12 @@ where
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u8>(scratch.borrow(), bytes);
         if NTT3x42IfmaRayonExecutor::should_serialize_inner() {
             poulpy_cpu_portable::kernels::ntt4x30::convolution::ntt4x30_cnv_by_const_apply_add_portable::<
-                NTT3x42Ifma<R>,
+                NTT3x42Ifma,
                 SerialTaskExecutor,
+                Rg,
             >(
                 cnv_offset,
-                &mut base_big_mut::<R>(res),
+                &mut base_big_mut::<Rg>(res),
                 res_col,
                 a,
                 a_col,
@@ -1165,11 +1174,12 @@ where
             )
         } else {
             poulpy_cpu_portable::kernels::ntt4x30::convolution::ntt4x30_cnv_by_const_apply_add_portable::<
-                NTT3x42Ifma<R>,
+                NTT3x42Ifma,
                 NTT3x42IfmaRayonExecutor,
+                Rg,
             >(
                 cnv_offset,
-                &mut base_big_mut::<R>(res),
+                &mut base_big_mut::<Rg>(res),
                 res_col,
                 a,
                 a_col,
@@ -1184,11 +1194,11 @@ where
     fn cnv_apply_dft(
         module: &Module<Self>,
         cnv_offset: usize,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, Rg>,
         res_col: usize,
-        a: &CnvPVecLBackendRef<'_, Self>,
+        a: &CnvPVecLBackendRef<'_, Self, Rg>,
         a_col: usize,
-        b: &CnvPVecRBackendRef<'_, Self>,
+        b: &CnvPVecRBackendRef<'_, Self, Rg>,
         b_col: usize,
         b_galois: i64,
         scratch: &mut ScratchArena<'_, Self>,
@@ -1203,12 +1213,12 @@ where
         unsafe {
             super::convolution::cnv_apply_dft_ifma::<_, NTT3x42IfmaRayonExecutor>(
                 base_module(module),
-                &mut base_dft_mut::<R>(res),
+                &mut base_dft_mut::<Rg>(res),
                 cnv_offset,
                 res_col,
-                &base_cnv_l_ref::<R>(a),
+                &base_cnv_l_ref::<Rg>(a),
                 a_col,
-                &base_cnv_r_ref::<R>(b),
+                &base_cnv_r_ref::<Rg>(b),
                 b_col,
                 b_galois,
                 tmp,
@@ -1229,11 +1239,11 @@ where
     fn cnv_apply_dft_add(
         module: &Module<Self>,
         cnv_offset: usize,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, Rg>,
         res_col: usize,
-        a: &CnvPVecLBackendRef<'_, Self>,
+        a: &CnvPVecLBackendRef<'_, Self, Rg>,
         a_col: usize,
-        b: &CnvPVecRBackendRef<'_, Self>,
+        b: &CnvPVecRBackendRef<'_, Self, Rg>,
         b_col: usize,
         b_galois: i64,
         scratch: &mut ScratchArena<'_, Self>,
@@ -1248,12 +1258,12 @@ where
         unsafe {
             super::convolution::cnv_apply_dft_add_ifma::<_, NTT3x42IfmaRayonExecutor>(
                 base_module(module),
-                &mut base_dft_mut::<R>(res),
+                &mut base_dft_mut::<Rg>(res),
                 cnv_offset,
                 res_col,
-                &base_cnv_l_ref::<R>(a),
+                &base_cnv_l_ref::<Rg>(a),
                 a_col,
-                &base_cnv_r_ref::<R>(b),
+                &base_cnv_r_ref::<Rg>(b),
                 b_col,
                 b_galois,
                 tmp,
@@ -1275,17 +1285,17 @@ where
     fn cnv_apply_dft_sum(
         module: &Module<Self>,
         cnv_offset: usize,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, Rg>,
         res_col: usize,
-        terms: &[CnvDftAccTerm<'_, Self>],
+        terms: &[CnvDftAccTerm<'_, Self, Rg>],
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let base_terms: Vec<_> = terms
             .iter()
             .map(|term| CnvDftAccTerm {
-                a: base_cnv_l_ref::<R>(&term.a),
+                a: base_cnv_l_ref::<Rg>(&term.a),
                 a_col: term.a_col,
-                b: base_cnv_r_ref::<R>(&term.b),
+                b: base_cnv_r_ref::<Rg>(&term.b),
                 b_col: term.b_col,
                 b_galois: term.b_galois,
             })
@@ -1302,7 +1312,7 @@ where
         unsafe {
             super::convolution::cnv_apply_dft_sum_ifma::<_, NTT3x42IfmaRayonExecutor>(
                 base_module(module),
-                &mut base_dft_mut::<R>(res),
+                &mut base_dft_mut::<Rg>(res),
                 cnv_offset,
                 res_col,
                 &base_terms,
@@ -1319,16 +1329,22 @@ where
         b_size: usize,
     ) -> usize {
         poulpy_cpu_rayon::workers(<Self as poulpy_hal::execution::ScratchWorkers>::APPLY)
-            * NTT3x42Ifma::<R>::cnv_pairwise_apply_dft_tmp_bytes(base_module(module), cnv_offset, res_size, a_size, b_size)
+            * <NTT3x42Ifma as HalCnvImpl<Rg>>::cnv_pairwise_apply_dft_tmp_bytes(
+                base_module(module),
+                cnv_offset,
+                res_size,
+                a_size,
+                b_size,
+            )
     }
 
     fn cnv_pairwise_apply_dft(
         module: &Module<Self>,
         cnv_offset: usize,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, Rg>,
         res_col: usize,
-        a: &CnvPVecLBackendRef<'_, Self>,
-        b: &CnvPVecRBackendRef<'_, Self>,
+        a: &CnvPVecLBackendRef<'_, Self, Rg>,
+        b: &CnvPVecRBackendRef<'_, Self, Rg>,
         i: usize,
         j: usize,
         scratch: &mut ScratchArena<'_, Self>,
@@ -1343,11 +1359,11 @@ where
         unsafe {
             super::convolution::cnv_pairwise_apply_dft_ifma::<_, NTT3x42IfmaRayonExecutor>(
                 base_module(module),
-                &mut base_dft_mut::<R>(res),
+                &mut base_dft_mut::<Rg>(res),
                 cnv_offset,
                 res_col,
-                &base_cnv_l_ref::<R>(a),
-                &base_cnv_r_ref::<R>(b),
+                &base_cnv_l_ref::<Rg>(a),
+                &base_cnv_r_ref::<Rg>(b),
                 i,
                 j,
                 tmp,
@@ -1357,14 +1373,14 @@ where
 
     fn cnv_pvec_self_prepare_tmp_bytes(module: &Module<Self>, res_size: usize, a_size: usize) -> usize {
         poulpy_cpu_rayon::workers(<Self as poulpy_hal::execution::ScratchWorkers>::PREPARE)
-            * NTT3x42Ifma::<R>::cnv_pvec_self_prepare_tmp_bytes(base_module(module), res_size, a_size)
+            * <NTT3x42Ifma as HalCnvImpl<Rg>>::cnv_pvec_self_prepare_tmp_bytes(base_module(module), res_size, a_size)
     }
 
     fn cnv_pvec_self_prepare(
         module: &Module<Self>,
-        left: &mut CnvPVecLBackendMut<'_, Self>,
-        right: &mut CnvPVecRBackendMut<'_, Self>,
-        a: &VecZnxBackendRef<'_, Self>,
+        left: &mut CnvPVecLBackendMut<'_, Self, Rg>,
+        right: &mut CnvPVecRBackendMut<'_, Self, Rg>,
+        a: &VecZnxBackendRef<'_, Self, Rg>,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let per_worker = super::convolution::cnv_pvec_self_prepare_tmp_bytes(left.n());
@@ -1376,22 +1392,22 @@ where
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u8>(scratch.borrow(), bytes);
         super::convolution::cnv_pvec_self_prepare::<_, NTT3x42IfmaRayonExecutor>(
             base_module(module),
-            &mut base_cnv_l_mut::<R>(left),
-            &mut base_cnv_r_mut::<R>(right),
+            &mut base_cnv_l_mut::<Rg>(left),
+            &mut base_cnv_r_mut::<Rg>(right),
             a,
             tmp,
         )
     }
 }
 
-impl<R: Ring> poulpy_hal::execution::ScratchWorkers for NTT3x42IfmaRayon<R> {
+impl poulpy_hal::execution::ScratchWorkers for NTT3x42IfmaRayon {
     const PREPARE: usize = 4;
     const APPLY: usize = 8;
     const VMP: usize = 8;
     const IDFT: usize = 8;
 }
 
-impl<R: Ring> poulpy_cpu_rayon::RayonTuning for NTT3x42IfmaRayon<R> {
+impl poulpy_cpu_rayon::RayonTuning for NTT3x42IfmaRayon {
     const COEFF_MIN_LEN: usize = 1 << 15;
     const COEFF_MIN_TASK: usize = 1 << 13;
     const NORMALIZE_MIN_TASK: usize = 1 << 12;

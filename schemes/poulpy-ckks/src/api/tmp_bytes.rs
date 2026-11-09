@@ -13,7 +13,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::{CnvPVecBytesOf, ModuleN, VecZnxLsh, VecZnxLshTmpBytes, VecZnxRsh, VecZnxRshAdd, VecZnxRshSub, VecZnxRshTmpBytes},
-    layouts::{Backend, Module},
+    layouts::{Backend, Module, Standard},
 };
 
 /// Helpers that return the maximum scratch size needed across broad CKKS
@@ -25,6 +25,7 @@ use poulpy_hal::{
 /// [`crate::api::CKKSDFTMatrixPreparedFactory::ckks_dft_matrix_prepare_tmp_bytes`] and
 /// [`crate::api::CKKSDFTOps::ckks_dft_tmp_bytes`], including format wrappers.
 /// EvalMod has its own selected query because its working precision depends on the compiled plan.
+/// Scratch sizes do not depend on the ring: the queries are those of the standard ring.
 pub trait CKKSAllOpsTmpBytes<BE: Backend> {
     /// Returns a scratch size large enough for the common CKKS workflow using
     /// ciphertext ops, plaintext ops, encryption/decryption, multiplication,
@@ -50,38 +51,38 @@ pub trait CKKSAllOpsTmpBytes<BE: Backend> {
 
 impl<BE: Backend> CKKSAllOpsTmpBytes<BE> for Module<BE>
 where
-    BE: poulpy_core::oep::GLWEMulConstImpl,
-    Self: CKKSEncryptOps<BE>
-        + CKKSDecryptOps<BE>
-        + CKKSAddOps<BE>
-        + CKKSCopyOps<BE>
-        + CKKSSubOps<BE>
-        + CKKSNegOps<BE>
-        + CKKSPow2Ops<BE>
-        + CKKSRotateOps<BE>
-        + CKKSMulOps<BE>
-        + CKKSMulAddOps<BE>
-        + CKKSMulSubOps<BE>
-        + GLWEAutomorphism<BE>
-        + poulpy_core::GLWENormalize<BE>
-        + GLWEAutomorphismKeyEncryptSk<BE>
-        + GLWELinearTransformationOps<BE>
-        + GLWEAutomorphismKeyPreparedFactory<BE>
+    BE: poulpy_core::oep::GLWEMulConstImpl<Standard>,
+    Self: CKKSEncryptOps<BE, Standard>
+        + CKKSDecryptOps<BE, Standard>
+        + CKKSAddOps<BE, Standard>
+        + CKKSCopyOps<BE, Standard>
+        + CKKSSubOps<BE, Standard>
+        + CKKSNegOps<BE, Standard>
+        + CKKSPow2Ops<BE, Standard>
+        + CKKSRotateOps<BE, Standard>
+        + CKKSMulOps<BE, Standard>
+        + CKKSMulAddOps<BE, Standard>
+        + CKKSMulSubOps<BE, Standard>
+        + GLWEAutomorphism<BE, Standard>
+        + poulpy_core::GLWENormalize<BE, Standard>
+        + GLWEAutomorphismKeyEncryptSk<BE, Standard>
+        + GLWELinearTransformationOps<BE, Standard>
+        + GLWEAutomorphismKeyPreparedFactory<BE, Standard>
         + ModuleN
-        + GLWEShift<BE>
-        + GLWEMulPlain<BE>
-        + GLWEMulConst<BE>
-        + GLWETensoring<BE>
-        + GLWETensorKeyEncryptSk<BE>
-        + GLWETensorKeyPreparedFactory<BE>
+        + GLWEShift<BE, Standard>
+        + GLWEMulPlain<BE, Standard>
+        + GLWEMulConst<BE, Standard>
+        + GLWETensoring<BE, Standard>
+        + GLWETensorKeyEncryptSk<BE, Standard>
+        + GLWETensorKeyPreparedFactory<BE, Standard>
         + CnvPVecBytesOf
-        + VecZnxLsh<BE>
+        + VecZnxLsh<BE, Standard>
         + VecZnxLshTmpBytes
-        + VecZnxRsh<BE>
-        + VecZnxRshAdd<BE>
-        + VecZnxRshSub<BE>
+        + VecZnxRsh<BE, Standard>
+        + VecZnxRshAdd<BE, Standard>
+        + VecZnxRshSub<BE, Standard>
         + VecZnxRshTmpBytes
-        + poulpy_hal::api::CnvOps<BE>
+        + poulpy_hal::api::CnvOps<BE, Standard>
         + poulpy_hal::api::VecZnxBigNormalizeTmpBytes,
 {
     fn ckks_all_ops_tmp_bytes<C, T, P>(&self, ct_infos: &C, pt_prec: &P, tsk_infos: &T) -> usize

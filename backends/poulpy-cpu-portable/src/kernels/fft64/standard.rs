@@ -116,7 +116,7 @@ pub fn fft64_automorphism_add_portable(plan: &Fft64AutomorphismPlan, res: &mut [
     }
 }
 
-/// [`Fft64RingArith`](crate::kernels::fft64::ring_arith::Fft64RingArith) for a standard-ring backend: negacyclic FFT and complex slots.
+/// [`Fft64RingArith`](crate::kernels::fft64::ring_arith::Fft64RingArith) on the standard ring: negacyclic FFT and complex slots.
 #[macro_export]
 macro_rules! fft64_ring_arith_standard {
     () => {

@@ -2,7 +2,10 @@
 
 use std::{
     ptr::NonNull,
-    sync::atomic::{AtomicUsize, Ordering},
+    sync::{
+        OnceLock,
+        atomic::{AtomicUsize, Ordering},
+    },
 };
 
 use poulpy_hal::{
@@ -13,14 +16,16 @@ use poulpy_hal::{
 use crate::{
     NTT4x30Gpu,
     ntt4x30::Tables,
-    runtime::{GpuBuf, GpuRuntime},
+    runtime::{GpuBuf, GpuRuntime, access},
 };
 
 /// State a module keeps on the device.
 pub struct GpuHandle<RT: GpuRuntime> {
     n: usize,
-    /// Transform tables of every degree the module serves.
+    /// Transform tables of every degree the module serves, on the standard ring.
     tables: Tables<RT>,
+    /// The same on the conjugate-invariant ring, built on first use.
+    tables_ci: OnceLock<Tables<RT>>,
     /// Plans the layers above memoize per module, such as the encoding tables.
     #[cfg_attr(not(feature = "enable-ckks"), allow(dead_code))]
     plans: ModulePlanCache,
@@ -64,8 +69,17 @@ impl<RT: GpuRuntime> GpuHandle<RT> {
         &self.plans
     }
 
-    pub(crate) fn tables(&self) -> &Tables<RT> {
-        &self.tables
+    /// The transform tables of ring `R`.
+    pub(crate) fn tables<R: Ring>(&self) -> &Tables<RT> {
+        if R::CYCLOTOMIC_ORDER_FACTOR == 4 {
+            self.tables_ci.get().unwrap_or_else(|| {
+                // The access is taken before the cell is locked, as everywhere else: a thread that records holds the device.
+                let _access = access::shared();
+                self.tables_ci.get_or_init(|| Tables::new(self.n, true))
+            })
+        } else {
+            &self.tables
+        }
     }
 
     /// Runs `f` on an uninitialized device temporary of `len` bytes, the one of
@@ -99,12 +113,12 @@ impl<RT: GpuRuntime> GpuHandle<RT> {
 pub const MAX_CAPACITY_STEP: usize = 64;
 
 /// The device state of `module`.
-pub fn handle<RT: GpuRuntime, R: Ring>(module: &Module<NTT4x30Gpu<RT, R>>) -> &GpuHandle<RT> {
+pub fn handle<RT: GpuRuntime>(module: &Module<NTT4x30Gpu<RT>>) -> &GpuHandle<RT> {
     // SAFETY: the pointer was created by `HalModuleImpl::new` and lives as long as the module.
     unsafe { &*module.ptr() }
 }
 
-unsafe impl<RT: GpuRuntime, R: Ring> HalModuleImpl for NTT4x30Gpu<RT, R> {
+unsafe impl<RT: GpuRuntime> HalModuleImpl for NTT4x30Gpu<RT> {
     fn new(n: u64) -> Module<Self> {
         // The degree is checked before any table is built or uploaded.
         const { assert!(1 << crate::ntt4x30::tables::MIN_LOG_N == <Self as poulpy_hal::layouts::Backend>::MIN_DEGREE) };
@@ -122,7 +136,8 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalModuleImpl for NTT4x30Gpu<RT, R> {
         RT::client();
         let handle = Box::new(GpuHandle::<RT> {
             n: n as usize,
-            tables: Tables::new(n as usize, R::CYCLOTOMIC_ORDER_FACTOR == 4),
+            tables: Tables::new(n as usize, false),
+            tables_ci: OnceLock::new(),
             plans: ModulePlanCache::default(),
             capacity_step: AtomicUsize::new(crate::ntt4x30::CAPACITY_STEP),
         });

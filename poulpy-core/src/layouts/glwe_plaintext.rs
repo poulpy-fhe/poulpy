@@ -2,7 +2,7 @@ use poulpy_hal::{AlignedBuf, alloc_aligned};
 use std::fmt;
 
 use poulpy_hal::layouts::{
-    Backend, Data, HostDataRef, VecZnx, VecZnxReborrowBackendMut, VecZnxReborrowBackendRef, VecZnxToBackendMut,
+    Backend, Data, HostDataRef, Ring, Standard, VecZnx, VecZnxReborrowBackendMut, VecZnxReborrowBackendRef, VecZnxToBackendMut,
     VecZnxToBackendRef, ZnxWord,
 };
 
@@ -73,41 +73,43 @@ impl GLWEInfos for GLWEPlaintextLayout {
     }
 }
 
-pub struct GLWEPlaintext<D: Data, W: ZnxWord> {
-    pub(crate) data: VecZnx<D, W>,
+pub struct GLWEPlaintext<D: Data, W: ZnxWord, Rg: Ring = Standard> {
+    pub(crate) data: VecZnx<D, W, Rg>,
     pub(crate) k: TorusPrecision,
     pub(crate) base2k: Base2K,
     pub(crate) plaintext_meta: Option<GLWEPlaintextMeta>,
 }
 
-pub type GLWEPlaintextBackendRef<'a, BE> = GLWEPlaintext<<BE as Backend>::BufRef<'a>, <BE as Backend>::ZnxWord>;
-pub type GLWEPlaintextBackendMut<'a, BE> = GLWEPlaintext<<BE as Backend>::BufMut<'a>, <BE as Backend>::ZnxWord>;
+pub type GLWEPlaintextBackendRef<'a, BE, Rg = Standard> =
+    GLWEPlaintext<<BE as Backend>::BufRef<'a>, <BE as Backend>::ZnxWord, Rg>;
+pub type GLWEPlaintextBackendMut<'a, BE, Rg = Standard> =
+    GLWEPlaintext<<BE as Backend>::BufMut<'a>, <BE as Backend>::ZnxWord, Rg>;
 
-impl<D: Data, W: ZnxWord> SetBase2k for GLWEPlaintext<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> SetBase2k for GLWEPlaintext<D, W, Rg> {
     fn set_base2k(&mut self, base2k: Base2K) {
         self.base2k = base2k
     }
 }
 
-impl<D: Data, W: ZnxWord> SetBase2k for &mut GLWEPlaintext<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> SetBase2k for &mut GLWEPlaintext<D, W, Rg> {
     fn set_base2k(&mut self, base2k: Base2K) {
         self.base2k = base2k
     }
 }
 
-impl<D: Data, W: ZnxWord> SetK for GLWEPlaintext<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> SetK for GLWEPlaintext<D, W, Rg> {
     fn set_k(&mut self, k: TorusPrecision) {
         self.k = k
     }
 }
 
-impl<D: Data, W: ZnxWord> SetK for &mut GLWEPlaintext<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> SetK for &mut GLWEPlaintext<D, W, Rg> {
     fn set_k(&mut self, k: TorusPrecision) {
         self.k = k
     }
 }
 
-impl<D: Data, W: ZnxWord> LWEInfos for GLWEPlaintext<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> LWEInfos for GLWEPlaintext<D, W, Rg> {
     fn base2k(&self) -> Base2K {
         self.base2k
     }
@@ -125,25 +127,25 @@ impl<D: Data, W: ZnxWord> LWEInfos for GLWEPlaintext<D, W> {
     }
 }
 
-impl<D: Data, W: ZnxWord> GLWEPlaintextInfos for GLWEPlaintext<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> GLWEPlaintextInfos for GLWEPlaintext<D, W, Rg> {
     fn plaintext_meta(&self) -> Option<GLWEPlaintextMeta> {
         self.plaintext_meta
     }
 }
 
-impl<D: Data, W: ZnxWord> SetGLWEPlaintextInfos for GLWEPlaintext<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> SetGLWEPlaintextInfos for GLWEPlaintext<D, W, Rg> {
     fn set_plaintext_meta(&mut self, meta: Option<GLWEPlaintextMeta>) {
         self.plaintext_meta = meta
     }
 }
 
-impl<D: Data, W: ZnxWord> GLWEInfos for GLWEPlaintext<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> GLWEInfos for GLWEPlaintext<D, W, Rg> {
     fn rank(&self) -> Rank {
         Rank(self.data.cols() as u32 - 1)
     }
 }
 
-impl<D: Data, W: ZnxWord> IntPolyInfos for GLWEPlaintext<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> IntPolyInfos for GLWEPlaintext<D, W, Rg> {
     /// Plaintexts are encoded across their whole allocation today, so the
     /// encoded width equals the allocated width. This equality is a property
     /// of the encoders, not of the vocabulary: an encoder writing narrower
@@ -159,7 +161,7 @@ impl IntPolyInfos for GLWEPlaintextLayout {
     }
 }
 
-impl<D: Data, W: ZnxWord> GLWEPlaintext<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> GLWEPlaintext<D, W, Rg> {
     /// Replaces this plaintext's backing storage with host bytes uploaded into
     /// backend `BE`. The shape and metadata are preserved.
     pub fn copy_from_host_bytes<BE>(&mut self, bytes: &[u8])
@@ -171,7 +173,7 @@ impl<D: Data, W: ZnxWord> GLWEPlaintext<D, W> {
     }
 
     /// Rebuilds this backend-owned plaintext as a host-owned [`GLWEPlaintext<AlignedBuf, W>`].
-    pub fn to_host_owned<BE>(&self) -> GLWEPlaintext<AlignedBuf, W>
+    pub fn to_host_owned<BE>(&self) -> GLWEPlaintext<AlignedBuf, W, Rg>
     where
         BE: Backend<OwnedBuf = D, ZnxWord = W>,
     {
@@ -192,9 +194,9 @@ impl<D: Data, W: ZnxWord> GLWEPlaintext<D, W> {
     }
 }
 
-impl<D: Data, W: ZnxWord> GLWEPlaintext<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> GLWEPlaintext<D, W, Rg> {
     /// Zero-cost rename when both backends share the same `OwnedBuf`.
-    pub fn reinterpret<To>(self) -> GLWEPlaintext<To::OwnedBuf, To::ZnxWord>
+    pub fn reinterpret<To>(self) -> GLWEPlaintext<To::OwnedBuf, To::ZnxWord, Rg>
     where
         To: Backend<OwnedBuf = D, ZnxWord = W>,
     {
@@ -209,7 +211,7 @@ impl<D: Data, W: ZnxWord> GLWEPlaintext<D, W> {
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> fmt::Display for GLWEPlaintext<D, W> {
+impl<D: HostDataRef, W: ZnxWord, Rg: Ring> fmt::Display for GLWEPlaintext<D, W, Rg> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "GLWEPlaintext: base2k={} k={}: {}", self.base2k().0, self.k().0, self.data)
     }
@@ -219,7 +221,7 @@ impl<D: HostDataRef, W: ZnxWord> fmt::Display for GLWEPlaintext<D, W> {
     dead_code,
     reason = "host-owned constructors are kept for serialization and host-only staging"
 )]
-impl<W: ZnxWord> GLWEPlaintext<AlignedBuf, W> {
+impl<W: ZnxWord, Rg: Ring> GLWEPlaintext<AlignedBuf, W, Rg> {
     pub(crate) fn alloc_from_infos<A>(infos: &A) -> Self
     where
         A: GLWEInfos,
@@ -232,7 +234,7 @@ impl<W: ZnxWord> GLWEPlaintext<AlignedBuf, W> {
         let size: usize = infos.size();
         GLWEPlaintext {
             data: VecZnx::from_data(
-                alloc_aligned::<u8>(VecZnx::<AlignedBuf, W>::bytes_of(n.into(), 1, size)),
+                alloc_aligned::<u8>(VecZnx::<AlignedBuf, W, Rg>::bytes_of(n.into(), 1, size)),
                 n.into(),
                 1,
                 size,
@@ -247,7 +249,7 @@ impl<W: ZnxWord> GLWEPlaintext<AlignedBuf, W> {
         let size: usize = k.0.div_ceil(base2k.0) as usize;
         GLWEPlaintext {
             data: VecZnx::from_data(
-                alloc_aligned::<u8>(VecZnx::<AlignedBuf, W>::bytes_of(n.into(), 1, size)),
+                alloc_aligned::<u8>(VecZnx::<AlignedBuf, W, Rg>::bytes_of(n.into(), 1, size)),
                 n.into(),
                 1,
                 size,
@@ -259,7 +261,7 @@ impl<W: ZnxWord> GLWEPlaintext<AlignedBuf, W> {
     }
 }
 
-impl<W: ZnxWord> GLWEPlaintext<AlignedBuf, W> {
+impl<W: ZnxWord, Rg: Ring> GLWEPlaintext<AlignedBuf, W, Rg> {
     pub fn bytes_of_from_infos<A>(infos: &A) -> usize
     where
         A: GLWEInfos,
@@ -267,19 +269,19 @@ impl<W: ZnxWord> GLWEPlaintext<AlignedBuf, W> {
         // Mirror `alloc_from_infos` / `take_glwe_plaintext_scratch`: size to
         // `infos.size()` so key infos (with auxiliary limbs) reserve the full
         // width. For non-key infos `size() == ceil(k/base2k)`.
-        VecZnx::<AlignedBuf, W>::bytes_of(infos.n().into(), 1, infos.size())
+        VecZnx::<AlignedBuf, W, Rg>::bytes_of(infos.n().into(), 1, infos.size())
     }
 
     pub fn bytes_of(n: Degree, base2k: Base2K, k: TorusPrecision) -> usize {
-        VecZnx::<AlignedBuf, W>::bytes_of(n.into(), 1, k.0.div_ceil(base2k.0) as usize)
+        VecZnx::<AlignedBuf, W, Rg>::bytes_of(n.into(), 1, k.0.div_ceil(base2k.0) as usize)
     }
 }
 
-impl<BE: Backend, D: Data> GLWEToBackendRef<BE> for GLWEPlaintext<D, BE::ZnxWord>
+impl<BE: Backend, D: Data, Rg: Ring> GLWEToBackendRef<BE, Rg> for GLWEPlaintext<D, BE::ZnxWord, Rg>
 where
-    VecZnx<D, BE::ZnxWord>: VecZnxToBackendRef<BE>,
+    VecZnx<D, BE::ZnxWord, Rg>: VecZnxToBackendRef<BE, Rg>,
 {
-    fn to_backend_ref(&self) -> GLWE<BE::BufRef<'_>, BE::ZnxWord> {
+    fn to_backend_ref(&self) -> GLWE<BE::BufRef<'_>, BE::ZnxWord, Rg> {
         GLWE {
             noise: None,
             base2k: self.base2k,
@@ -291,13 +293,13 @@ where
     }
 }
 
-impl<BE: Backend, D: Data> GLWEToBackendMut<BE> for GLWEPlaintext<D, BE::ZnxWord>
+impl<BE: Backend, D: Data, Rg: Ring> GLWEToBackendMut<BE, Rg> for GLWEPlaintext<D, BE::ZnxWord, Rg>
 where
-    VecZnx<D, BE::ZnxWord>: VecZnxToBackendRef<BE> + VecZnxToBackendMut<BE>,
+    VecZnx<D, BE::ZnxWord, Rg>: VecZnxToBackendRef<BE, Rg> + VecZnxToBackendMut<BE, Rg>,
 {
     fn set_noise(&mut self, _: Option<crate::ComponentNoise>) {}
 
-    fn to_backend_mut(&mut self) -> GLWE<BE::BufMut<'_>, BE::ZnxWord> {
+    fn to_backend_mut(&mut self) -> GLWE<BE::BufMut<'_>, BE::ZnxWord, Rg> {
         GLWE {
             noise: None,
             base2k: self.base2k,
@@ -312,70 +314,72 @@ where
 }
 
 /// Reborrows a mutable-view-backed plaintext as a shared backend view.
-pub trait GLWEPlaintextReborrowBackendRef<BE: Backend> {
-    fn reborrow_backend_ref(&self) -> GLWE<BE::BufRef<'_>, BE::ZnxWord>;
+pub trait GLWEPlaintextReborrowBackendRef<BE: Backend, Rg: Ring = Standard> {
+    fn reborrow_backend_ref(&self) -> GLWE<BE::BufRef<'_>, BE::ZnxWord, Rg>;
 }
 
-impl<'b, BE: Backend + 'b> GLWEPlaintextReborrowBackendRef<BE> for GLWEPlaintext<BE::BufMut<'b>, BE::ZnxWord> {
-    fn reborrow_backend_ref(&self) -> GLWE<BE::BufRef<'_>, BE::ZnxWord> {
+impl<'b, BE: Backend + 'b, Rg: Ring> GLWEPlaintextReborrowBackendRef<BE, Rg> for GLWEPlaintext<BE::BufMut<'b>, BE::ZnxWord, Rg> {
+    fn reborrow_backend_ref(&self) -> GLWE<BE::BufRef<'_>, BE::ZnxWord, Rg> {
         GLWE {
             noise: None,
             base2k: self.base2k,
             k: self.k,
             canonical: true,
             plaintext_meta: self.plaintext_meta,
-            data: <VecZnx<BE::BufMut<'b>, BE::ZnxWord> as VecZnxReborrowBackendRef<BE>>::reborrow_backend_ref(&self.data),
+            data: <VecZnx<BE::BufMut<'b>, BE::ZnxWord, Rg> as VecZnxReborrowBackendRef<BE, Rg>>::reborrow_backend_ref(&self.data),
         }
     }
 }
 
 /// Reborrows a mutable-view-backed plaintext as a mutable backend view.
-pub trait GLWEPlaintextReborrowBackendMut<BE: Backend>: GLWEPlaintextReborrowBackendRef<BE> {
-    fn reborrow_backend_mut(&mut self) -> GLWE<BE::BufMut<'_>, BE::ZnxWord>;
+pub trait GLWEPlaintextReborrowBackendMut<BE: Backend, Rg: Ring = Standard>: GLWEPlaintextReborrowBackendRef<BE, Rg> {
+    fn reborrow_backend_mut(&mut self) -> GLWE<BE::BufMut<'_>, BE::ZnxWord, Rg>;
 }
 
-impl<'b, BE: Backend + 'b> GLWEPlaintextReborrowBackendMut<BE> for GLWEPlaintext<BE::BufMut<'b>, BE::ZnxWord> {
-    fn reborrow_backend_mut(&mut self) -> GLWE<BE::BufMut<'_>, BE::ZnxWord> {
+impl<'b, BE: Backend + 'b, Rg: Ring> GLWEPlaintextReborrowBackendMut<BE, Rg> for GLWEPlaintext<BE::BufMut<'b>, BE::ZnxWord, Rg> {
+    fn reborrow_backend_mut(&mut self) -> GLWE<BE::BufMut<'_>, BE::ZnxWord, Rg> {
         GLWE {
             noise: None,
             base2k: self.base2k,
             k: self.k,
             canonical: true,
             plaintext_meta: self.plaintext_meta,
-            data: <VecZnx<BE::BufMut<'b>, BE::ZnxWord> as VecZnxReborrowBackendMut<BE>>::reborrow_backend_mut(&mut self.data),
+            data: <VecZnx<BE::BufMut<'b>, BE::ZnxWord, Rg> as VecZnxReborrowBackendMut<BE, Rg>>::reborrow_backend_mut(
+                &mut self.data,
+            ),
         }
     }
 }
 
-impl<'b, BE: Backend + 'b> GLWEToBackendRef<BE> for &mut GLWEPlaintext<BE::BufMut<'b>, BE::ZnxWord> {
-    fn to_backend_ref(&self) -> GLWE<BE::BufRef<'_>, BE::ZnxWord> {
-        <GLWEPlaintext<BE::BufMut<'b>, BE::ZnxWord> as GLWEPlaintextReborrowBackendRef<BE>>::reborrow_backend_ref(*self)
+impl<'b, BE: Backend + 'b, Rg: Ring> GLWEToBackendRef<BE, Rg> for &mut GLWEPlaintext<BE::BufMut<'b>, BE::ZnxWord, Rg> {
+    fn to_backend_ref(&self) -> GLWE<BE::BufRef<'_>, BE::ZnxWord, Rg> {
+        <GLWEPlaintext<BE::BufMut<'b>, BE::ZnxWord, Rg> as GLWEPlaintextReborrowBackendRef<BE, Rg>>::reborrow_backend_ref(*self)
     }
 }
 
-impl<'b, BE: Backend + 'b> GLWEToBackendMut<BE> for &mut GLWEPlaintext<BE::BufMut<'b>, BE::ZnxWord> {
+impl<'b, BE: Backend + 'b, Rg: Ring> GLWEToBackendMut<BE, Rg> for &mut GLWEPlaintext<BE::BufMut<'b>, BE::ZnxWord, Rg> {
     fn set_noise(&mut self, _: Option<crate::ComponentNoise>) {}
 
-    fn to_backend_mut(&mut self) -> GLWE<BE::BufMut<'_>, BE::ZnxWord> {
-        <GLWEPlaintext<BE::BufMut<'b>, BE::ZnxWord> as GLWEPlaintextReborrowBackendMut<BE>>::reborrow_backend_mut(*self)
+    fn to_backend_mut(&mut self) -> GLWE<BE::BufMut<'_>, BE::ZnxWord, Rg> {
+        <GLWEPlaintext<BE::BufMut<'b>, BE::ZnxWord, Rg> as GLWEPlaintextReborrowBackendMut<BE, Rg>>::reborrow_backend_mut(*self)
     }
 
     fn set_canonical(&mut self, _canonical: bool) {}
 }
 
-impl<D: Data, W: ZnxWord> GLWEPlaintext<D, W> {
-    pub fn data_mut(&mut self) -> &mut VecZnx<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> GLWEPlaintext<D, W, Rg> {
+    pub fn data_mut(&mut self) -> &mut VecZnx<D, W, Rg> {
         &mut self.data
     }
 }
 
-impl<D: Data, W: ZnxWord> GLWEPlaintext<D, W> {
-    pub fn data(&self) -> &VecZnx<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> GLWEPlaintext<D, W, Rg> {
+    pub fn data(&self) -> &VecZnx<D, W, Rg> {
         &self.data
     }
 }
 
-impl<D: Data, W: ZnxWord> GLWEPlaintext<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> GLWEPlaintext<D, W, Rg> {
     pub(crate) fn record_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
         let _ = metadata;
     }

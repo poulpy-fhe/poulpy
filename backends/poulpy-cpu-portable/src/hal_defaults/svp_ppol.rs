@@ -19,16 +19,16 @@ use crate::kernels::{
         primes::Primes30,
         svp::{ntt4x30_svp_apply_dft_to_dft_assign_portable, ntt4x30_svp_ppol_prepare_portable},
         types::Q120bScalar,
-        vec_znx_dft::NttModuleHandle,
+        vec_znx_dft::{NttMetaHandle, NttModuleHandle},
     },
 };
 use poulpy_hal::layouts::{
-    Backend, HostDataRef, Module, ScalarZnxBackendRef, SvpPPolBackendMut, SvpPPolBackendRef, SvpPPolToBackendMut,
+    Backend, HostDataRef, Module, Ring, ScalarZnxBackendRef, Standard, SvpPPolBackendMut, SvpPPolBackendRef, SvpPPolToBackendMut,
     SvpPPolToBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef, ZnxView, ZnxViewMut, check_degree,
 };
 
 #[doc(hidden)]
-pub trait FFT64SvpDefault: Backend<ZnxWord = i64>
+pub trait FFT64SvpDefault<Rg: Ring = Standard>: Backend<ZnxWord = i64>
 where
     Self::OwnedBuf: poulpy_hal::layouts::HostDataMut,
 {
@@ -36,27 +36,27 @@ where
         module: &Module<Self>,
         res: &mut R,
         res_col: usize,
-        a: &ScalarZnxBackendRef<'_, Self>,
+        a: &ScalarZnxBackendRef<'_, Self, Rg>,
         a_col: usize,
     ) where
-        Module<Self>: FFTModuleHandle<f64, Ring = Self::Ring>,
-        Self: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Fft64RingArith,
+        Module<Self>: FFTModuleHandle<f64, Rg>,
+        Self: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Fft64RingArith<Rg>,
         for<'x> Self::BufMut<'x>: poulpy_hal::layouts::HostDataMut,
         for<'x> Self::BufRef<'x>: HostDataRef,
-        R: SvpPPolToBackendMut<Self>,
+        R: SvpPPolToBackendMut<Self, Rg>,
     {
         let mut res_ref = res.to_backend_mut();
         let n: usize = res_ref.n();
         check_degree::<Self>(module.n(), n);
         assert!(a.n() == n, "svp_ppol_prepare: a.n() != res.n()");
-        fft64_svp_ppol_prepare::<Self>(module.get_fft_plan(n), &mut res_ref, res_col, a, a_col);
+        fft64_svp_ppol_prepare::<Self, Rg>(module.get_fft_plan(n), &mut res_ref, res_col, a, a_col);
     }
 
     fn svp_ppol_copy_default(
         _module: &Module<Self>,
-        res: &mut SvpPPolBackendMut<'_, Self>,
+        res: &mut SvpPPolBackendMut<'_, Self, Rg>,
         res_col: usize,
-        a: &SvpPPolBackendRef<'_, Self>,
+        a: &SvpPPolBackendRef<'_, Self, Rg>,
         a_col: usize,
     ) where
         for<'x> Self::BufMut<'x>: poulpy_hal::layouts::HostDataMut,
@@ -75,17 +75,17 @@ where
 
     fn svp_apply_dft_to_dft_default<'b, A>(
         _module: &Module<Self>,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, Rg>,
         res_col: usize,
         a: &'b A,
         a_col: usize,
-        b: &VecZnxDftBackendRef<'b, Self>,
+        b: &VecZnxDftBackendRef<'b, Self, Rg>,
         b_col: usize,
     ) where
-        Self: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Fft64RingArith,
+        Self: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Fft64RingArith<Rg>,
         for<'x> Self::BufMut<'x>: poulpy_hal::layouts::HostDataMut,
         for<'x> Self::BufRef<'x>: HostDataRef,
-        A: SvpPPolToBackendRef<Self>,
+        A: SvpPPolToBackendRef<Self, Rg>,
     {
         let a_ref = a.to_backend_ref();
         fft64_svp_apply_dft_to_dft(res, res_col, &a_ref, a_col, b, b_col);
@@ -93,25 +93,25 @@ where
 
     fn svp_apply_dft_to_dft_assign_default<A>(
         _module: &Module<Self>,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, Rg>,
         res_col: usize,
         a: &A,
         a_col: usize,
     ) where
-        Self: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Fft64RingArith,
+        Self: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Fft64RingArith<Rg>,
         for<'x> Self::BufMut<'x>: poulpy_hal::layouts::HostDataMut,
         for<'x> Self::BufRef<'x>: HostDataRef,
-        A: SvpPPolToBackendRef<Self>,
+        A: SvpPPolToBackendRef<Self, Rg>,
     {
         let a_ref = a.to_backend_ref();
         fft64_svp_apply_dft_to_dft_assign(res, res_col, &a_ref, a_col);
     }
 }
 
-impl<BE: Backend<ZnxWord = i64>> FFT64SvpDefault for BE where BE::OwnedBuf: poulpy_hal::layouts::HostDataMut {}
+impl<BE: Backend<ZnxWord = i64>, Rg: Ring> FFT64SvpDefault<Rg> for BE where BE::OwnedBuf: poulpy_hal::layouts::HostDataMut {}
 
 #[doc(hidden)]
-pub trait NTT4x30SvpDefault: Backend<ZnxWord = i64>
+pub trait NTT4x30SvpDefault<Rg: Ring = Standard>: Backend<ZnxWord = i64>
 where
     Self::OwnedBuf: poulpy_hal::layouts::HostDataMut,
 {
@@ -119,27 +119,24 @@ where
         module: &Module<Self>,
         res: &mut R,
         res_col: usize,
-        a: &ScalarZnxBackendRef<'_, Self>,
+        a: &ScalarZnxBackendRef<'_, Self, Rg>,
         a_col: usize,
     ) where
-        Module<Self>: NttModuleHandle,
-        Self: Backend<DftWord = Q120bScalar, ZnxWord = i64>
-            + NttDFTExecute<NttTable<Primes30, <Module<Self> as crate::kernels::ntt4x30::vec_znx_dft::NttModuleHandle>::Ring>>
-            + NttFromZnx64
-            + NttCFromB,
+        Module<Self>: NttModuleHandle<Rg>,
+        Self: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttDFTExecute<NttTable<Primes30, Rg>> + NttFromZnx64 + NttCFromB,
         for<'x> Self::BufMut<'x>: poulpy_hal::layouts::HostDataMut,
         for<'x> Self::BufRef<'x>: HostDataRef,
-        R: SvpPPolToBackendMut<Self>,
+        R: SvpPPolToBackendMut<Self, Rg>,
     {
         let mut res_ref = res.to_backend_mut();
-        ntt4x30_svp_ppol_prepare_portable::<Self>(module, &mut res_ref, res_col, a, a_col);
+        ntt4x30_svp_ppol_prepare_portable::<Self, Rg>(module, &mut res_ref, res_col, a, a_col);
     }
 
     fn svp_ppol_copy_default(
         _module: &Module<Self>,
-        res: &mut SvpPPolBackendMut<'_, Self>,
+        res: &mut SvpPPolBackendMut<'_, Self, Rg>,
         res_col: usize,
-        a: &SvpPPolBackendRef<'_, Self>,
+        a: &SvpPPolBackendRef<'_, Self, Rg>,
         a_col: usize,
     ) where
         for<'x> Self::BufMut<'x>: poulpy_hal::layouts::HostDataMut,
@@ -158,18 +155,18 @@ where
 
     fn svp_apply_dft_to_dft_default<'b, A>(
         module: &Module<Self>,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, Rg>,
         res_col: usize,
         a: &'b A,
         a_col: usize,
-        b: &VecZnxDftBackendRef<'b, Self>,
+        b: &VecZnxDftBackendRef<'b, Self, Rg>,
         b_col: usize,
     ) where
-        Module<Self>: NttModuleHandle,
+        Module<Self>: NttModuleHandle<Rg>,
         Self: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttMulBbc + NttZero,
         for<'x> Self::BufMut<'x>: poulpy_hal::layouts::HostDataMut,
         for<'x> Self::BufRef<'x>: HostDataRef,
-        A: SvpPPolToBackendRef<Self>,
+        A: SvpPPolToBackendRef<Self, Rg>,
     {
         let a_ref = a.to_backend_ref();
         let meta = module.get_bbc_meta();
@@ -198,20 +195,20 @@ where
 
     fn svp_apply_dft_to_dft_assign_default<A>(
         module: &Module<Self>,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, Rg>,
         res_col: usize,
         a: &A,
         a_col: usize,
     ) where
-        Module<Self>: NttModuleHandle,
+        Module<Self>: NttModuleHandle<Rg>,
         Self: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttMulBbc,
         for<'x> Self::BufMut<'x>: poulpy_hal::layouts::HostDataMut,
         for<'x> Self::BufRef<'x>: HostDataRef,
-        A: SvpPPolToBackendRef<Self>,
+        A: SvpPPolToBackendRef<Self, Rg>,
     {
         let a_ref = a.to_backend_ref();
-        ntt4x30_svp_apply_dft_to_dft_assign_portable::<Self>(module, res, res_col, &a_ref, a_col);
+        ntt4x30_svp_apply_dft_to_dft_assign_portable::<Self, Rg>(module, res, res_col, &a_ref, a_col);
     }
 }
 
-impl<BE: Backend<ZnxWord = i64>> NTT4x30SvpDefault for BE where BE::OwnedBuf: poulpy_hal::layouts::HostDataMut {}
+impl<BE: Backend<ZnxWord = i64>, Rg: Ring> NTT4x30SvpDefault<Rg> for BE where BE::OwnedBuf: poulpy_hal::layouts::HostDataMut {}

@@ -1,7 +1,7 @@
 //! BLAS tests for the AVX-512 backends: parity of each type, Rayon
 //! included, against its same-family oracle (NTT4x30Oracle for IFMA), bit for
-//! bit, the NTT types' also at radix 54 and the standard FFT64 types' also at
-//! `N = 32`, and the conjugate-invariant suite on the conjugate-invariant types.
+//! bit, the NTT types' also at radix 54 and the FFT64 types' also at `N = 32`
+//! on the standard ring, and the conjugate-invariant suite on every type.
 //!
 //! All test logic lives in `poulpy_blas::test_suite` as backend-generic
 //! functions; this file only instantiates the parity suite for each concrete
@@ -188,40 +188,45 @@ blas_parity_test_suite! {
 
 blas_parity_test_suite! {
     mod blas_parity_ci_fft64avx512_f64,
-    backend_ref = poulpy_cpu_oracle::FFT64CIOracle,
-    backend_test = crate::FFT64CIAvx512,
+    backend_ref = poulpy_cpu_oracle::FFT64Oracle,
+    backend_test = crate::FFT64Avx512,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     scalar = f64,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
 }
 
 blas_parity_test_suite! {
     mod blas_parity_ci_fft64avx512_quad,
-    backend_ref = poulpy_cpu_oracle::FFT64CIOracle,
-    backend_test = crate::FFT64CIAvx512,
+    backend_ref = poulpy_cpu_oracle::FFT64Oracle,
+    backend_test = crate::FFT64Avx512,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     scalar = poulpy_ckks::Quad,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE52_PARAMS_QUAD },
 }
 
 blas_parity_test_suite! {
     mod blas_parity_ci_fft64avx512_rank2,
-    backend_ref = poulpy_cpu_oracle::FFT64CIOracle,
-    backend_test = crate::FFT64CIAvx512,
+    backend_ref = poulpy_cpu_oracle::FFT64Oracle,
+    backend_test = crate::FFT64Avx512,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     scalar = f64,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, rank: 2, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
 }
 
 blas_parity_test_suite! {
     mod blas_parity_ci_ntt4x30avx512_f64,
-    backend_ref = poulpy_cpu_oracle::NTT4x30CIOracle,
-    backend_test = crate::NTT4x30CIAvx512,
+    backend_ref = poulpy_cpu_oracle::NTT4x30Oracle,
+    backend_test = crate::NTT4x30Avx512,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     scalar = f64,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE52_PARAMS_F64 },
 }
 
 blas_parity_test_suite! {
     mod blas_parity_ci_ntt4x30avx512_quad,
-    backend_ref = poulpy_cpu_oracle::NTT4x30CIOracle,
-    backend_test = crate::NTT4x30CIAvx512,
+    backend_ref = poulpy_cpu_oracle::NTT4x30Oracle,
+    backend_test = crate::NTT4x30Avx512,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     scalar = poulpy_ckks::Quad,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE52_PARAMS_QUAD },
 }
@@ -229,8 +234,9 @@ blas_parity_test_suite! {
 // Radix 54 on the conjugate-invariant ring at N = 32, whose products are as long as the standard ring's at N = 64.
 blas_parity_test_suite! {
     mod blas_parity_ci_ntt4x30avx512_base2k54,
-    backend_ref = poulpy_cpu_oracle::NTT4x30CIOracle,
-    backend_test = crate::NTT4x30CIAvx512,
+    backend_ref = poulpy_cpu_oracle::NTT4x30Oracle,
+    backend_test = crate::NTT4x30Avx512,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     scalar = f64,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 32, hw: 16, base2k: 54, ..poulpy_ckks::test_suite::BASE52_PARAMS_F64 },
 }
@@ -238,8 +244,9 @@ blas_parity_test_suite! {
 #[cfg(feature = "enable-rayon")]
 blas_parity_test_suite! {
     mod blas_parity_ci_fft64avx512rayon_f64,
-    backend_ref = poulpy_cpu_oracle::FFT64CIOracle,
-    backend_test = crate::FFT64CIAvx512Rayon,
+    backend_ref = poulpy_cpu_oracle::FFT64Oracle,
+    backend_test = crate::FFT64Avx512Rayon,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     scalar = f64,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
 }
@@ -247,8 +254,9 @@ blas_parity_test_suite! {
 #[cfg(feature = "enable-rayon")]
 blas_parity_test_suite! {
     mod blas_parity_ci_fft64avx512rayon_quad,
-    backend_ref = poulpy_cpu_oracle::FFT64CIOracle,
-    backend_test = crate::FFT64CIAvx512Rayon,
+    backend_ref = poulpy_cpu_oracle::FFT64Oracle,
+    backend_test = crate::FFT64Avx512Rayon,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     scalar = poulpy_ckks::Quad,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE52_PARAMS_QUAD },
 }
@@ -256,8 +264,9 @@ blas_parity_test_suite! {
 #[cfg(feature = "enable-rayon")]
 blas_parity_test_suite! {
     mod blas_parity_ci_fft64avx512rayon_rank2,
-    backend_ref = poulpy_cpu_oracle::FFT64CIOracle,
-    backend_test = crate::FFT64CIAvx512Rayon,
+    backend_ref = poulpy_cpu_oracle::FFT64Oracle,
+    backend_test = crate::FFT64Avx512Rayon,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     scalar = f64,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, rank: 2, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
 }
@@ -265,8 +274,9 @@ blas_parity_test_suite! {
 #[cfg(feature = "enable-rayon")]
 blas_parity_test_suite! {
     mod blas_parity_ci_ntt4x30avx512rayon_f64,
-    backend_ref = poulpy_cpu_oracle::NTT4x30CIOracle,
-    backend_test = crate::NTT4x30CIAvx512Rayon,
+    backend_ref = poulpy_cpu_oracle::NTT4x30Oracle,
+    backend_test = crate::NTT4x30Avx512Rayon,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     scalar = f64,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE52_PARAMS_F64 },
 }
@@ -274,8 +284,9 @@ blas_parity_test_suite! {
 #[cfg(feature = "enable-rayon")]
 blas_parity_test_suite! {
     mod blas_parity_ci_ntt4x30avx512rayon_quad,
-    backend_ref = poulpy_cpu_oracle::NTT4x30CIOracle,
-    backend_test = crate::NTT4x30CIAvx512Rayon,
+    backend_ref = poulpy_cpu_oracle::NTT4x30Oracle,
+    backend_test = crate::NTT4x30Avx512Rayon,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     scalar = poulpy_ckks::Quad,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE52_PARAMS_QUAD },
 }
@@ -283,8 +294,9 @@ blas_parity_test_suite! {
 #[cfg(feature = "enable-rayon")]
 blas_parity_test_suite! {
     mod blas_parity_ci_ntt4x30avx512rayon_base2k54,
-    backend_ref = poulpy_cpu_oracle::NTT4x30CIOracle,
-    backend_test = crate::NTT4x30CIAvx512Rayon,
+    backend_ref = poulpy_cpu_oracle::NTT4x30Oracle,
+    backend_test = crate::NTT4x30Avx512Rayon,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     scalar = f64,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 32, hw: 16, base2k: 54, ..poulpy_ckks::test_suite::BASE52_PARAMS_F64 },
 }
@@ -292,8 +304,9 @@ blas_parity_test_suite! {
 #[cfg(feature = "enable-ifma")]
 blas_parity_test_suite! {
     mod blas_parity_ci_ntt3x42ifma_f64,
-    backend_ref = poulpy_cpu_oracle::NTT4x30CIOracle,
-    backend_test = crate::NTT3x42CIIfma,
+    backend_ref = poulpy_cpu_oracle::NTT4x30Oracle,
+    backend_test = crate::NTT3x42Ifma,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     scalar = f64,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE52_PARAMS_F64 },
 }
@@ -301,8 +314,9 @@ blas_parity_test_suite! {
 #[cfg(feature = "enable-ifma")]
 blas_parity_test_suite! {
     mod blas_parity_ci_ntt3x42ifma_quad,
-    backend_ref = poulpy_cpu_oracle::NTT4x30CIOracle,
-    backend_test = crate::NTT3x42CIIfma,
+    backend_ref = poulpy_cpu_oracle::NTT4x30Oracle,
+    backend_test = crate::NTT3x42Ifma,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     scalar = poulpy_ckks::Quad,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE52_PARAMS_QUAD },
 }
@@ -310,8 +324,9 @@ blas_parity_test_suite! {
 #[cfg(feature = "enable-ifma")]
 blas_parity_test_suite! {
     mod blas_parity_ci_ntt3x42ifma_base2k54,
-    backend_ref = poulpy_cpu_oracle::NTT4x30CIOracle,
-    backend_test = crate::NTT3x42CIIfma,
+    backend_ref = poulpy_cpu_oracle::NTT4x30Oracle,
+    backend_test = crate::NTT3x42Ifma,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     scalar = f64,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 32, hw: 16, base2k: 54, ..poulpy_ckks::test_suite::BASE52_PARAMS_F64 },
 }
@@ -319,8 +334,9 @@ blas_parity_test_suite! {
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
 blas_parity_test_suite! {
     mod blas_parity_ci_ntt3x42ifmarayon_f64,
-    backend_ref = poulpy_cpu_oracle::NTT4x30CIOracle,
-    backend_test = crate::NTT3x42CIIfmaRayon,
+    backend_ref = poulpy_cpu_oracle::NTT4x30Oracle,
+    backend_test = crate::NTT3x42IfmaRayon,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     scalar = f64,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE52_PARAMS_F64 },
 }
@@ -328,8 +344,9 @@ blas_parity_test_suite! {
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
 blas_parity_test_suite! {
     mod blas_parity_ci_ntt3x42ifmarayon_quad,
-    backend_ref = poulpy_cpu_oracle::NTT4x30CIOracle,
-    backend_test = crate::NTT3x42CIIfmaRayon,
+    backend_ref = poulpy_cpu_oracle::NTT4x30Oracle,
+    backend_test = crate::NTT3x42IfmaRayon,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     scalar = poulpy_ckks::Quad,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE52_PARAMS_QUAD },
 }
@@ -337,48 +354,49 @@ blas_parity_test_suite! {
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
 blas_parity_test_suite! {
     mod blas_parity_ci_ntt3x42ifmarayon_base2k54,
-    backend_ref = poulpy_cpu_oracle::NTT4x30CIOracle,
-    backend_test = crate::NTT3x42CIIfmaRayon,
+    backend_ref = poulpy_cpu_oracle::NTT4x30Oracle,
+    backend_test = crate::NTT3x42IfmaRayon,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     scalar = f64,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 32, hw: 16, base2k: 54, ..poulpy_ckks::test_suite::BASE52_PARAMS_F64 },
 }
 
 blas_conjugate_invariant_test_suite!(
     mod blas_ci_fft64avx512,
-    backend = crate::FFT64CIAvx512,
+    backend = crate::FFT64Avx512,
     params = poulpy_ckks::test_suite::BASE19_PARAMS_F64,
 );
 
 blas_conjugate_invariant_test_suite!(
     mod blas_ci_ntt4x30avx512,
-    backend = crate::NTT4x30CIAvx512,
+    backend = crate::NTT4x30Avx512,
     params = poulpy_ckks::test_suite::BASE52_PARAMS_F64,
 );
 
 #[cfg(feature = "enable-rayon")]
 blas_conjugate_invariant_test_suite!(
     mod blas_ci_fft64avx512rayon,
-    backend = crate::FFT64CIAvx512Rayon,
+    backend = crate::FFT64Avx512Rayon,
     params = poulpy_ckks::test_suite::BASE19_PARAMS_F64,
 );
 
 #[cfg(feature = "enable-rayon")]
 blas_conjugate_invariant_test_suite!(
     mod blas_ci_ntt4x30avx512rayon,
-    backend = crate::NTT4x30CIAvx512Rayon,
+    backend = crate::NTT4x30Avx512Rayon,
     params = poulpy_ckks::test_suite::BASE52_PARAMS_F64,
 );
 
 #[cfg(feature = "enable-ifma")]
 blas_conjugate_invariant_test_suite!(
     mod blas_ci_ntt3x42ifma,
-    backend = crate::NTT3x42CIIfma,
+    backend = crate::NTT3x42Ifma,
     params = poulpy_ckks::test_suite::BASE52_PARAMS_F64,
 );
 
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
 blas_conjugate_invariant_test_suite!(
     mod blas_ci_ntt3x42ifmarayon,
-    backend = crate::NTT3x42CIIfmaRayon,
+    backend = crate::NTT3x42IfmaRayon,
     params = poulpy_ckks::test_suite::BASE52_PARAMS_F64,
 );

@@ -67,7 +67,7 @@ const PACO_C: usize = 8;
 /// against the cleartext model.
 pub fn test_paco_partial_pipeline<BE, F, E>(params: CKKSTestParams, _module: &Module<BE>, _host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard> + CKKSPaCoImpl,
+    BE: TestContextBackend + CKKSPaCoImpl,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
     F: TestScalar,
     E: ReimNew<F>,
@@ -85,7 +85,7 @@ where
 /// lands on its `P`-relabel (`slot j = z_7[P(j)]`).
 fn test_paco_partial_pipeline_with<BE, F, E>(params: &CKKSTestParams, slot_order: crate::layouts::PaCoSlotOrder)
 where
-    BE: TestContextBackend<Ring = Standard> + CKKSPaCoImpl,
+    BE: TestContextBackend + CKKSPaCoImpl,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
     F: TestScalar,
     E: ReimNew<F>,
@@ -147,7 +147,7 @@ where
                 &mut scratch.borrow(),
             );
             let s64: Vec<Cpx> = s.iter().map(|x| x.to_f64().unwrap()).collect();
-            assert_slots::<BE, F, E>(
+            assert_slots::<BE, F, E, Standard>(
                 &format!("paco_bsk_{t}"),
                 &module,
                 &host_module,
@@ -213,7 +213,7 @@ where
         .map(|b| {
             let re: Vec<F> = b.iter().map(|x| x.re).collect();
             let im: Vec<F> = b.iter().map(|x| x.im).collect();
-            crate::test_suite::helpers::encode_and_upload_pt::<BE, F, E>(
+            crate::test_suite::helpers::encode_and_upload_pt::<BE, F, E, Standard>(
                 &host_module,
                 &module,
                 &encoder_full,
@@ -249,7 +249,7 @@ where
         })
         .collect();
 
-    let order = module.cyclotomic_order();
+    let order = module.cyclotomic_order::<Standard>();
     let mut atks = HashMap::new();
     for p_el in galois_elements_from_rotations(fold_rotations(m_full, n_paco), order)
         .into_iter()
@@ -300,7 +300,7 @@ where
                 .collect()
         }
     };
-    assert_slots::<BE, F, E>(
+    assert_slots::<BE, F, E, Standard>(
         &format!("paco_partial_pipeline_z7({slot_order:?})"),
         &module,
         &host_module,

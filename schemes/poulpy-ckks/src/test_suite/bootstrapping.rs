@@ -225,7 +225,7 @@ fn plan_with_encapsulation(
 /// and the precision is that of the ordinary pipeline.
 pub fn test_bootstrapping_first_factor_on_raise<BE, F, E>(params: CKKSTestParams)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
         + TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
@@ -363,7 +363,7 @@ where
         // Keys laid out for the raise refuse a narrower bootstrap before any work.
         let mut narrow = fixture_ciphertext(&module, &ckks_spec(n, base2k, log_delta, k_boot - base2k - log_delta), 23);
         let ct_any = module.ckks_ciphertext_alloc(base2k.into(), k_in.into());
-        let before = snapshot::<BE, _>(&narrow);
+        let before = snapshot::<BE, _, Standard>(&narrow);
         let err = with_scratch::<BE, _>(0, |s| module.ckks_bootstrap(&mut narrow, &ct_any, &ctx, &bsk, s)).unwrap_err();
         assert_invalid_operand(
             "a bootstrap narrower than its raise keys",
@@ -371,7 +371,7 @@ where
             "ckks_bootstrap",
             "the first-factor keys switch",
         );
-        assert_eq!(snapshot::<BE, _>(&narrow), before, "a refused bootstrap wrote res");
+        assert_eq!(snapshot::<BE, _, Standard>(&narrow), before, "a refused bootstrap wrote res");
         let mut rank2 = in_spec;
         rank2.glwe_layout.rank = 2usize.into();
         let ct_rank2 = fixture_ciphertext(&module, &rank2, 29);
@@ -384,7 +384,7 @@ where
                 reason: "supports rank-1 ciphertexts only, got rank 2 -> 1".into(),
             },
         );
-        assert_eq!(snapshot::<BE, _>(&narrow), before, "a refused bootstrap wrote res");
+        assert_eq!(snapshot::<BE, _, Standard>(&narrow), before, "a refused bootstrap wrote res");
 
         let (re, im) = test_vector_1::<F>(m);
         let im_zero = vec![F::zero(); m];
@@ -434,7 +434,7 @@ where
 /// End-to-end bootstrapping: encrypt at level 0, refresh, check the slots return.
 pub fn test_bootstrapping_standard_e2e<BE, F, E>(params: CKKSTestParams)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
         + TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
@@ -566,7 +566,7 @@ where
     // A working width narrower than CoeffsToSlots and EvalMod consume fails at entry.
     {
         let mut ct_narrow = fixture_ciphertext(&module, &ckks_spec(n, base2k, log_delta, base2k), 31);
-        let before = snapshot::<BE, _>(&ct_narrow);
+        let before = snapshot::<BE, _, Standard>(&ct_narrow);
         let err = with_scratch::<BE, _>(0, |s| module.ckks_bootstrap(&mut ct_narrow, &ct0, &ctx, &bsk, s)).unwrap_err();
         assert_invalid_operand(
             "a bootstrap narrower than its stages",
@@ -574,7 +574,11 @@ where
             "ckks_bootstrap",
             "is narrower than the bits its stages consume",
         );
-        assert_eq!(snapshot::<BE, _>(&ct_narrow), before, "a refused bootstrap wrote res");
+        assert_eq!(
+            snapshot::<BE, _, Standard>(&ct_narrow),
+            before,
+            "a refused bootstrap wrote res"
+        );
     }
 
     // The narrowest working width that takes a key past its layout fails at
@@ -589,7 +593,7 @@ where
         };
         let wide_k = (k_boot..).step_by(base2k).find(|&k| !covered(k)).unwrap();
         let mut ct_wide = fixture_ciphertext(&module, &ckks_spec(n, base2k, log_delta, wide_k - log_delta), 23);
-        let before = snapshot::<BE, _>(&ct_wide);
+        let before = snapshot::<BE, _, Standard>(&ct_wide);
         let err = with_scratch::<BE, _>(0, |s| module.ckks_bootstrap(&mut ct_wide, &ct0, &ctx, &bsk, s)).unwrap_err();
         match err.composition() {
             Some(CKKSCompositionError::MissingAutomorphismKey {
@@ -599,7 +603,7 @@ where
             }) => assert!(source.to_string().contains("wider than the key's max_input_k"), "{err}"),
             _ => panic!("expected a key refused at entry, got: {err}"),
         }
-        assert_eq!(snapshot::<BE, _>(&ct_wide), before, "a refused bootstrap wrote res");
+        assert_eq!(snapshot::<BE, _, Standard>(&ct_wide), before, "a refused bootstrap wrote res");
     }
 
     // Compare the public orchestrator with the explicit pipeline below.
@@ -675,7 +679,7 @@ where
     let mut log_budget_check = k_boot - ct.log_delta();
 
     assert_eq!(ct.log_budget(), log_budget_check);
-    assert_canonical_at_k::<BE>("ModUp", &ct);
+    assert_canonical_at_k::<BE, Standard>("ModUp", &ct);
 
     // 2) CoeffsToSlots (split): coefficients → (real, imag) slots.
     let mut ct_real = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
@@ -691,7 +695,7 @@ where
     assert_eq!(ct_real.log_budget(), log_budget_check);
     assert_eq!(ct_imag.log_budget(), log_budget_check);
     for ct in [&ct_real, &ct_imag] {
-        assert_canonical_at_k::<BE>("CoeffsToSlots", ct);
+        assert_canonical_at_k::<BE, Standard>("CoeffsToSlots", ct);
     }
 
     // 3) EvalMod each half. EvalMod raises the ciphertext to its own plan scale
@@ -717,7 +721,7 @@ where
     assert_eq!(res_real.log_budget(), log_budget_check);
     assert_eq!(res_imag.log_budget(), log_budget_check);
     for ct in [&res_real, &res_imag] {
-        assert_canonical_at_k::<BE>("EvalMod", ct);
+        assert_canonical_at_k::<BE, Standard>("EvalMod", ct);
     }
 
     // 4) SlotsToCoeffs (split), then restore the message ratio EvalMod divided out.
@@ -783,7 +787,7 @@ where
 /// uses natural (`1.0`) scaling, and SlotsToCoeffs the standard `2^log_message_ratio`.
 pub fn test_bootstrapping_evalround_e2e<BE, F, E>(params: CKKSTestParams)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
         + TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
@@ -1060,7 +1064,7 @@ where
 /// ```
 pub fn test_bootstrapping_s2c_first_e2e<BE, F, E>(params: CKKSTestParams)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
         + TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
@@ -1103,7 +1107,7 @@ fn run_s2c_first_case<BE, F, E>(
     guard_bits: usize,
 ) -> (f64, f64)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
         + TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
@@ -1266,7 +1270,7 @@ where
     );
     let mut ct_out = fixture_ciphertext(&module, &ckks_spec(n, base2k, log_delta, k_boot - log_delta), 24);
     // The S2C-first budget refusal comes from its first stage, after the pipeline carved its working ciphertexts.
-    let before = snapshot::<BE, _>(&ct_out);
+    let before = snapshot::<BE, _, Standard>(&ct_out);
     let err = with_scratch::<BE, _>(boot_tmp, |s| {
         module.ckks_bootstrap(&mut ct_out, &ct_insufficient, &ctx, &bsk, s)
     })
@@ -1275,7 +1279,7 @@ where
         err.composition(),
         Some(CKKSCompositionError::MultiplicationPrecisionUnderflow { .. })
     ));
-    assert_eq!(snapshot::<BE, _>(&ct_out), before, "a refused bootstrap wrote res");
+    assert_eq!(snapshot::<BE, _, Standard>(&ct_out), before, "a refused bootstrap wrote res");
 
     let s_re = precision_stats(&bs_re, &re, log_delta);
     let s_im = precision_stats(&bs_im, &im, log_delta);
@@ -1295,12 +1299,12 @@ where
     E: ReimNew<F>,
     S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
 {
-    assert_canonical_at_k::<BE>("decrypt", ct);
+    assert_canonical_at_k::<BE, Standard>("decrypt", ct);
     // Decrypt, decode, and confirm the slots are recovered. Cap the budget so
     // `log_delta + log_budget <= 127` fits the i128 decode codec (the unused
     // high-order budget is dropped losslessly).
     let prec = meta(ct.log_delta(), ct.log_budget().min(127usize.saturating_sub(ct.log_delta())));
-    let mut pt_out = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots(), ct.base2k(), prec.k);
+    let mut pt_out = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots::<Standard>(), ct.base2k(), prec.k);
     pt_out.set_meta(prec.meta);
     module.ckks_decrypt(&mut pt_out, ct, sk, &mut scratch.borrow()).unwrap();
     let m = 1 << (ct.log_n() - ct.log_sparsity() - 1);

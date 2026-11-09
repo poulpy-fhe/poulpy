@@ -25,14 +25,18 @@
 //!
 //! Each x2-block slot stores 16 u32 = two consecutive q120c coefficients
 //! (8 u32 each).
-use poulpy_hal::layouts::Module;
+use poulpy_hal::layouts::{Module, Ring};
 
 use bytemuck::{cast_slice, cast_slice_mut};
 
 use crate::{
     kernels::ntt4x30::{
-        NttCFromB, NttDFTExecute, NttExtract1BlkContiguous, NttFromZnx64, NttMulBbc1ColX2, NttMulBbc2ColsX2, mat_vec::BbcMeta,
-        ntt::NttTable, primes::Primes30, types::Q120bScalar, vec_znx_dft::NttModuleHandle,
+        NttCFromB, NttDFTExecute, NttExtract1BlkContiguous, NttFromZnx64, NttMulBbc1ColX2, NttMulBbc2ColsX2,
+        mat_vec::BbcMeta,
+        ntt::NttTable,
+        primes::Primes30,
+        types::Q120bScalar,
+        vec_znx_dft::{NttMetaHandle, NttModuleHandle},
     },
     layouts::{
         Backend, DataViewMut, HostDataMut, HostDataRef, MatZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef,
@@ -63,17 +67,14 @@ pub fn ntt4x30_vmp_pmat_prepare_tmp_bytes_portable(n: usize) -> usize {
 /// 4. Store in `res` in the block-interleaved layout (see module doc).
 ///
 /// `tmp` must hold at least `ntt4x30_vmp_pmat_prepare_tmp_bytes(n) / size_of::<u64>()` elements.
-pub fn ntt4x30_vmp_pmat_prepare_portable<BE>(
+pub fn ntt4x30_vmp_pmat_prepare_portable<BE, Rg: Ring>(
     module: &Module<BE>,
-    res: &mut VmpPMatBackendMut<'_, BE>,
-    a: &MatZnxBackendRef<'_, BE>,
+    res: &mut VmpPMatBackendMut<'_, BE, Rg>,
+    a: &MatZnxBackendRef<'_, BE, Rg>,
     tmp: &mut [u64],
 ) where
-    Module<BE>: NttModuleHandle,
-    BE: Backend<DftWord = Q120bScalar, ZnxWord = i64>
-        + NttDFTExecute<NttTable<Primes30, <Module<BE> as crate::kernels::ntt4x30::vec_znx_dft::NttModuleHandle>::Ring>>
-        + NttFromZnx64
-        + NttCFromB,
+    Module<BE>: NttModuleHandle<Rg>,
+    BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttDFTExecute<NttTable<Primes30, Rg>> + NttFromZnx64 + NttCFromB,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
@@ -319,15 +320,15 @@ fn vmp_apply_dft_to_dft_core<const OVERWRITE: bool, BE>(
 /// of `pmat` using lazy q120b × q120c accumulation.
 ///
 /// `tmp` must hold at least `ntt4x30_vmp_apply_dft_to_dft_tmp_bytes(...) / size_of::<u64>()` elements.
-pub fn ntt4x30_vmp_apply_dft_to_dft_portable<BE>(
+pub fn ntt4x30_vmp_apply_dft_to_dft_portable<BE, Rg: Ring>(
     module: &Module<BE>,
-    res: &mut VecZnxDftBackendMut<'_, BE>,
-    a: &VecZnxDftBackendRef<'_, BE>,
-    pmat: &VmpPMatBackendRef<'_, BE>,
+    res: &mut VecZnxDftBackendMut<'_, BE, Rg>,
+    a: &VecZnxDftBackendRef<'_, BE, Rg>,
+    pmat: &VmpPMatBackendRef<'_, BE, Rg>,
     limb_offset: usize,
     tmp: &mut [u64],
 ) where
-    Module<BE>: NttModuleHandle,
+    Module<BE>: NttModuleHandle<Rg>,
     BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttExtract1BlkContiguous + NttMulBbc1ColX2 + NttMulBbc2ColsX2,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
@@ -361,9 +362,9 @@ pub fn ntt4x30_vmp_apply_dft_to_dft_portable<BE>(
 
 /// Copies rows `first_row + i * row_step` of `a`, truncated to `res.size()`
 /// limbs, into rows `i` of `res`.
-pub fn ntt4x30_vmp_extract_selected_rows_portable<BE: Backend<ZnxWord = i64>>(
-    res: &mut VmpPMatBackendMut<'_, BE>,
-    a: &VmpPMatBackendRef<'_, BE>,
+pub fn ntt4x30_vmp_extract_selected_rows_portable<BE: Backend<ZnxWord = i64>, Rg: Ring>(
+    res: &mut VmpPMatBackendMut<'_, BE, Rg>,
+    a: &VmpPMatBackendRef<'_, BE, Rg>,
     first_row: usize,
     row_step: usize,
 ) where
@@ -394,7 +395,7 @@ pub fn ntt4x30_vmp_extract_selected_rows_portable<BE: Backend<ZnxWord = i64>>(
 // ──────────────────────────────────────────────────────────────────────────────
 
 /// Zero all entries of a prepared polynomial matrix.
-pub fn ntt4x30_vmp_zero_portable<BE: Backend<ZnxWord = i64>>(res: &mut VmpPMatBackendMut<'_, BE>)
+pub fn ntt4x30_vmp_zero_portable<BE: Backend<ZnxWord = i64>, Rg: Ring>(res: &mut VmpPMatBackendMut<'_, BE, Rg>)
 where
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
 {

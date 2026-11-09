@@ -1,4 +1,4 @@
-use poulpy_hal::layouts::{Backend, Module};
+use poulpy_hal::layouts::{Backend, Module, Ring};
 
 use crate::{
     GetDistribution, GetDistributionMut,
@@ -19,9 +19,9 @@ use crate::{
 
 macro_rules! impl_decompression_delegate {
     ($trait:ty, $($body:item),+ $(,)?) => {
-        impl<BE> $trait for Module<BE>
+        impl<BE, Rg: Ring> $trait for Module<BE>
         where
-            BE: Backend + DecompressionImpl,
+            BE: Backend + DecompressionImpl<Rg>,
         {
             $($body)+
         }
@@ -29,132 +29,132 @@ macro_rules! impl_decompression_delegate {
 }
 
 impl_decompression_delegate!(
-    GLWEDecompress<BE>,
+    GLWEDecompress<BE, Rg>,
     fn glwe_decompress<R, O>(&self, res: &mut R, other: &O)
     where
-        R: GLWEToBackendMut<BE> + SetBase2k + SetGLWEPlaintextInfos,
-        O: GLWECompressedToBackendRef<BE> + GLWEInfos,
+        R: GLWEToBackendMut<BE, Rg> + SetBase2k + SetGLWEPlaintextInfos,
+        O: GLWECompressedToBackendRef<BE, Rg> + GLWEInfos,
     {
         BE::glwe_decompress(self, res, other)
     }
 );
 
 impl_decompression_delegate!(
-    GGLWEDecompress<BE>,
+    GGLWEDecompress<BE, Rg>,
     fn gglwe_decompress<R, O>(&self, res: &mut R, other: &O)
     where
-        R: GGLWEToBackendMut<BE> + GGLWEInfos,
-        O: GGLWECompressedToBackendRef<BE> + GGLWEInfos,
+        R: GGLWEToBackendMut<BE, Rg> + GGLWEInfos,
+        O: GGLWECompressedToBackendRef<BE, Rg> + GGLWEInfos,
     {
         BE::gglwe_decompress(self, res, other)
     }
 );
 
 impl_decompression_delegate!(
-    GGSWDecompress<BE>,
+    GGSWDecompress<BE, Rg>,
     fn ggsw_decompress<R, O>(&self, res: &mut R, other: &O)
     where
-        R: GGSWToBackendMut<BE> + GGSWInfos,
-        O: GGSWCompressedToBackendRef<BE> + GGSWInfos,
+        R: GGSWToBackendMut<BE, Rg> + GGSWInfos,
+        O: GGSWCompressedToBackendRef<BE, Rg> + GGSWInfos,
     {
         BE::ggsw_decompress(self, res, other)
     }
 );
 
 impl_decompression_delegate!(
-    GLWEPublicKeyDecompress<BE>,
+    GLWEPublicKeyDecompress<BE, Rg>,
     fn glwe_public_key_decompress<R, O>(&self, res: &mut R, other: &O)
     where
-        R: GLWEPublicKeyToBackendMut<BE> + GetDistributionMut + GLWEInfos,
-        O: GLWEPublicKeyCompressedToBackendRef<BE> + GetDistribution + GLWEInfos,
+        R: GLWEPublicKeyToBackendMut<BE, Rg> + GetDistributionMut + GLWEInfos,
+        O: GLWEPublicKeyCompressedToBackendRef<BE, Rg> + GetDistribution + GLWEInfos,
     {
         BE::glwe_public_key_decompress(self, res, other)
     }
 );
 
 impl_decompression_delegate!(
-    LWEDecompress<BE>,
+    LWEDecompress<BE, Rg>,
     fn lwe_decompress<R, O>(&self, res: &mut R, other: &O)
     where
-        R: LWEToBackendMut<BE> + LWEInfos + SetBase2k,
-        O: LWECompressedToBackendRef<BE>,
+        R: LWEToBackendMut<BE, Rg> + LWEInfos + SetBase2k,
+        O: LWECompressedToBackendRef<BE, Rg>,
     {
         BE::lwe_decompress(self, res, other)
     }
 );
 
 impl_decompression_delegate!(
-    GLWEAutomorphismKeyDecompress<BE>,
+    GLWEAutomorphismKeyDecompress<BE, Rg>,
     fn glwe_automorphism_key_decompress<R, O>(&self, res: &mut R, other: &O)
     where
-        R: GGLWEToBackendMut<BE> + GGLWEInfos + SetGaloisElement,
-        O: GGLWECompressedToBackendRef<BE> + GGLWEInfos + GetGaloisElement,
+        R: GGLWEToBackendMut<BE, Rg> + GGLWEInfos + SetGaloisElement,
+        O: GGLWECompressedToBackendRef<BE, Rg> + GGLWEInfos + GetGaloisElement,
     {
         BE::glwe_automorphism_key_decompress(self, res, other)
     }
 );
 
 impl_decompression_delegate!(
-    GLWESwitchingKeyDecompress<BE>,
+    GLWESwitchingKeyDecompress<BE, Rg>,
     fn glwe_switching_key_decompress<R, O>(&self, res: &mut R, other: &O)
     where
-        R: GGLWEToBackendMut<BE> + GGLWEInfos + GLWESwitchingKeyDegreesMut,
-        O: GGLWECompressedToBackendRef<BE> + GGLWEInfos + GLWESwitchingKeyDegrees,
+        R: GGLWEToBackendMut<BE, Rg> + GGLWEInfos + GLWESwitchingKeyDegreesMut,
+        O: GGLWECompressedToBackendRef<BE, Rg> + GGLWEInfos + GLWESwitchingKeyDegrees,
     {
         BE::glwe_switching_key_decompress(self, res, other)
     }
 );
 
 impl_decompression_delegate!(
-    GLWETensorKeyDecompress<BE>,
+    GLWETensorKeyDecompress<BE, Rg>,
     fn glwe_tensor_key_decompress<R, O>(&self, res: &mut R, other: &O)
     where
-        R: GGLWEToBackendMut<BE> + GGLWEInfos,
-        O: GGLWECompressedToBackendRef<BE> + GGLWEInfos,
+        R: GGLWEToBackendMut<BE, Rg> + GGLWEInfos,
+        O: GGLWECompressedToBackendRef<BE, Rg> + GGLWEInfos,
     {
         BE::glwe_tensor_key_decompress(self, res, other)
     }
 );
 
 impl_decompression_delegate!(
-    GLWEToLWEKeyDecompress<BE>,
+    GLWEToLWEKeyDecompress<BE, Rg>,
     fn glwe_to_lwe_key_decompress<R, O>(&self, res: &mut R, other: &O)
     where
-        R: GGLWEToBackendMut<BE> + GGLWEInfos + GLWESwitchingKeyDegreesMut,
-        O: GGLWECompressedToBackendRef<BE> + GGLWEInfos + GLWESwitchingKeyDegrees,
+        R: GGLWEToBackendMut<BE, Rg> + GGLWEInfos + GLWESwitchingKeyDegreesMut,
+        O: GGLWECompressedToBackendRef<BE, Rg> + GGLWEInfos + GLWESwitchingKeyDegrees,
     {
         BE::glwe_to_lwe_key_decompress(self, res, other)
     }
 );
 
 impl_decompression_delegate!(
-    LWESwitchingKeyDecompress<BE>,
+    LWESwitchingKeyDecompress<BE, Rg>,
     fn lwe_switching_key_decompress<R, O>(&self, res: &mut R, other: &O)
     where
-        R: GGLWEToBackendMut<BE> + GGLWEInfos + GLWESwitchingKeyDegreesMut,
-        O: GGLWECompressedToBackendRef<BE> + GGLWEInfos + GLWESwitchingKeyDegrees,
+        R: GGLWEToBackendMut<BE, Rg> + GGLWEInfos + GLWESwitchingKeyDegreesMut,
+        O: GGLWECompressedToBackendRef<BE, Rg> + GGLWEInfos + GLWESwitchingKeyDegrees,
     {
         BE::lwe_switching_key_decompress(self, res, other)
     }
 );
 
 impl_decompression_delegate!(
-    LWEToGLWEKeyDecompress<BE>,
+    LWEToGLWEKeyDecompress<BE, Rg>,
     fn lwe_to_glwe_key_decompress<R, O>(&self, res: &mut R, other: &O)
     where
-        R: GGLWEToBackendMut<BE> + GGLWEInfos + GLWESwitchingKeyDegreesMut,
-        O: GGLWECompressedToBackendRef<BE> + GGLWEInfos + GLWESwitchingKeyDegrees,
+        R: GGLWEToBackendMut<BE, Rg> + GGLWEInfos + GLWESwitchingKeyDegreesMut,
+        O: GGLWECompressedToBackendRef<BE, Rg> + GGLWEInfos + GLWESwitchingKeyDegrees,
     {
         BE::lwe_to_glwe_key_decompress(self, res, other)
     }
 );
 
 impl_decompression_delegate!(
-    GGLWEToGGSWKeyDecompress<BE>,
+    GGLWEToGGSWKeyDecompress<BE, Rg>,
     fn gglwe_to_ggsw_key_decompress<R, O>(&self, res: &mut R, other: &O)
     where
-        R: GGLWEToGGSWKeyToBackendMut<BE>,
-        O: GGLWEToGGSWKeyCompressedToBackendRef<BE>,
+        R: GGLWEToGGSWKeyToBackendMut<BE, Rg>,
+        O: GGLWEToGGSWKeyCompressedToBackendRef<BE, Rg>,
     {
         BE::gglwe_to_ggsw_key_decompress(self, res, other)
     }

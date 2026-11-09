@@ -12,7 +12,7 @@ use poulpy_hal::{
         ModuleN, VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigNormalize, VecZnxDftAddAssign, VecZnxDftBytesOf, VecZnxDftCopy,
         VecZnxIdftApply, VecZnxIdftApplyTmpBytes,
     },
-    layouts::{Backend, ScratchArena, VecZnxBigBackendMut, VecZnxBigBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef},
+    layouts::{Backend, Ring, ScratchArena, VecZnxBigBackendMut, VecZnxBigBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef},
 };
 
 use crate::{
@@ -20,10 +20,10 @@ use crate::{
     reference::keyswitching::GLWEKeyswitchInternal,
 };
 
-pub(super) fn glwe_lazy_giant_automorphism_tmp_bytes<BE, M, R, K>(module: &M, a_infos: &R, key_infos: &K) -> usize
+pub(super) fn glwe_lazy_giant_automorphism_tmp_bytes<BE, M, R, K, Rg: Ring>(module: &M, a_infos: &R, key_infos: &K) -> usize
 where
     BE: Backend,
-    M: ModuleN + GLWEKeyswitchInternal<BE> + VecZnxBigAutomorphismAssignTmpBytes + VecZnxDftBytesOf + VecZnxIdftApplyTmpBytes,
+    M: ModuleN + GLWEKeyswitchInternal<BE, Rg> + VecZnxBigAutomorphismAssignTmpBytes + VecZnxDftBytesOf + VecZnxIdftApplyTmpBytes,
     R: GLWEInfos,
     K: GGLWEInfos,
 {
@@ -39,10 +39,13 @@ where
 }
 
 /// Adds every column of `a` (DFT) into `res` (DFT).
-pub(super) fn glwe_dft_add_dft_assign<BE, M>(module: &M, res: &mut VecZnxDftBackendMut<'_, BE>, a: &VecZnxDftBackendRef<'_, BE>)
-where
+pub(super) fn glwe_dft_add_dft_assign<BE, M, Rg: Ring>(
+    module: &M,
+    res: &mut VecZnxDftBackendMut<'_, BE, Rg>,
+    a: &VecZnxDftBackendRef<'_, BE, Rg>,
+) where
     BE: Backend,
-    M: VecZnxDftAddAssign<BE>,
+    M: VecZnxDftAddAssign<BE, Rg>,
 {
     let cols = res.cols();
     assert_eq!(a.cols(), cols);
@@ -53,10 +56,13 @@ where
 
 /// Copies every column of `a` (DFT) into `res` (DFT), zeroing limbs outside
 /// the source active size.
-pub(super) fn glwe_dft_copy_dft<BE, M>(module: &M, res: &mut VecZnxDftBackendMut<'_, BE>, a: &VecZnxDftBackendRef<'_, BE>)
-where
+pub(super) fn glwe_dft_copy_dft<BE, M, Rg: Ring>(
+    module: &M,
+    res: &mut VecZnxDftBackendMut<'_, BE, Rg>,
+    a: &VecZnxDftBackendRef<'_, BE, Rg>,
+) where
     BE: Backend,
-    M: VecZnxDftCopy<BE>,
+    M: VecZnxDftCopy<BE, Rg>,
 {
     let cols = res.cols();
     assert_eq!(a.cols(), cols);
@@ -66,14 +72,14 @@ where
 }
 
 /// IDFTs all DFT columns into a same-shaped BIG buffer.
-pub(super) fn glwe_idft_dft_into_big<BE, M>(
+pub(super) fn glwe_idft_dft_into_big<BE, M, Rg: Ring>(
     module: &M,
-    res_big: &mut VecZnxBigBackendMut<'_, BE>,
-    a: &VecZnxDftBackendRef<'_, BE>,
+    res_big: &mut VecZnxBigBackendMut<'_, BE, Rg>,
+    a: &VecZnxDftBackendRef<'_, BE, Rg>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
-    M: VecZnxIdftApply<BE>,
+    M: VecZnxIdftApply<BE, Rg>,
 {
     let cols = res_big.cols();
     assert_eq!(a.cols(), cols);
@@ -86,17 +92,17 @@ pub(super) fn glwe_idft_dft_into_big<BE, M>(
 /// Final BIG → SMALL normalize with sub-limb offset. `cnv_offset_lo` is the
 /// fractional limb shift PROD never applied, so it lands here at the end.
 #[allow(clippy::too_many_arguments)]
-pub(super) fn glwe_normalize_big_into<BE, M, R>(
+pub(super) fn glwe_normalize_big_into<BE, M, R, Rg: Ring>(
     module: &M,
     res: &mut R,
-    a: &VecZnxBigBackendRef<'_, BE>,
+    a: &VecZnxBigBackendRef<'_, BE, Rg>,
     a_base2k: usize,
     cnv_offset_lo: i64,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
-    M: VecZnxBigNormalize<BE>,
-    R: GLWEToBackendMut<BE> + GLWEInfos,
+    M: VecZnxBigNormalize<BE, Rg>,
+    R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
 {
     let cols = res.rank().as_usize() + 1;
     let res_base2k = res.base2k().as_usize();

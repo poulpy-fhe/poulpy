@@ -23,7 +23,7 @@ where
     BE: Backend<ZnxWord = i64>,
     A: crate::CKKSInfos + poulpy_core::layouts::GLWEInfos + poulpy_core::layouts::GLWEToBackendRef<BE>,
 {
-    let mut out = snapshot::<BE, _>(value);
+    let mut out = snapshot::<BE, _, ::poulpy_hal::layouts::Standard>(value);
     let degree = out.layout.glwe_layout.n.as_usize();
     assert!(ring_degree.is_multiple_of(degree));
     let gap = ring_degree / degree;
@@ -86,7 +86,10 @@ where
                 }
                 let mut keys = HashMap::new();
                 for p in plan
-                    .galois_elements(module.n().ilog2() as usize, module.cyclotomic_order())
+                    .galois_elements(
+                        module.n().ilog2() as usize,
+                        module.cyclotomic_order::<::poulpy_hal::layouts::Standard>(),
+                    )
                     .into_iter()
                     .chain([-1])
                 {
@@ -112,11 +115,11 @@ where
                 )
                 .unwrap();
                 assert_eq!(
-                    snapshot::<BE, _>(&raw),
-                    snapshot::<BE, _>(&resident),
+                    snapshot::<BE, _, ::poulpy_hal::layouts::Standard>(&raw),
+                    snapshot::<BE, _, ::poulpy_hal::layouts::Standard>(&resident),
                     "prepared DFT differs from streamed DFT"
                 );
-                results.push(snapshot::<BE, _>(&raw));
+                results.push(snapshot::<BE, _, ::poulpy_hal::layouts::Standard>(&raw));
                 (dft, prepared, keys)
             }};
         }
@@ -134,8 +137,11 @@ where
                     |scratch| module.$method(&mut resident, &prepared, &keys, scratch),
                 )
                 .unwrap();
-                assert_eq!(snapshot::<BE, _>(&out), snapshot::<BE, _>(&resident));
-                results.push(snapshot::<BE, _>(&out));
+                assert_eq!(
+                    snapshot::<BE, _, ::poulpy_hal::layouts::Standard>(&out),
+                    snapshot::<BE, _, ::poulpy_hal::layouts::Standard>(&resident)
+                );
+                results.push(snapshot::<BE, _, ::poulpy_hal::layouts::Standard>(&out));
             }};
         }
         standard!(Encode, DFTType::Encode, ckks_coeffs_to_slots_assign);
@@ -143,7 +149,7 @@ where
         {
             let (dft, prepared, keys) = prepare!(Encode, Split, DFTType::Encode, DFTOutputFormat::SplitRealAndImag);
             let src = fixture_ciphertext(module, &layout, 71);
-            let before = snapshot::<BE, _>(&src);
+            let before = snapshot::<BE, _, ::poulpy_hal::layouts::Standard>(&src);
             let mut re = fixture_ciphertext(module, &layout, 73);
             let mut im = fixture_ciphertext(module, &layout, 79);
             with_scratch::<BE, _>(module.ckks_dft_tmp_bytes(&layout, &layout, &dft, &key), |scratch| {
@@ -156,11 +162,17 @@ where
                 module.ckks_coeffs_to_slots_split(&mut resident_re, &mut resident_im, &src, &prepared, &keys, scratch)
             })
             .unwrap();
-            assert_eq!(snapshot::<BE, _>(&re), snapshot::<BE, _>(&resident_re));
-            assert_eq!(snapshot::<BE, _>(&im), snapshot::<BE, _>(&resident_im));
-            assert_eq!(before, snapshot::<BE, _>(&src));
-            results.push(snapshot::<BE, _>(&re));
-            results.push(snapshot::<BE, _>(&im));
+            assert_eq!(
+                snapshot::<BE, _, ::poulpy_hal::layouts::Standard>(&re),
+                snapshot::<BE, _, ::poulpy_hal::layouts::Standard>(&resident_re)
+            );
+            assert_eq!(
+                snapshot::<BE, _, ::poulpy_hal::layouts::Standard>(&im),
+                snapshot::<BE, _, ::poulpy_hal::layouts::Standard>(&resident_im)
+            );
+            assert_eq!(before, snapshot::<BE, _, ::poulpy_hal::layouts::Standard>(&src));
+            results.push(snapshot::<BE, _, ::poulpy_hal::layouts::Standard>(&re));
+            results.push(snapshot::<BE, _, ::poulpy_hal::layouts::Standard>(&im));
         }
         {
             let (dft, prepared, keys) = prepare!(Decode, Split, DFTType::Decode, DFTOutputFormat::SplitRealAndImag);
@@ -183,15 +195,18 @@ where
                 module.ckks_slots_to_coeffs_split(&mut resident, &re, &im, &prepared, &keys, scratch)
             })
             .unwrap();
-            assert_eq!(snapshot::<BE, _>(&out), snapshot::<BE, _>(&resident));
-            results.push(snapshot::<BE, _>(&out));
             assert_eq!(
-                snapshot::<BE, _>(&re),
-                snapshot::<BE, _>(&fixture_ciphertext(module, &real_layout, 83))
+                snapshot::<BE, _, ::poulpy_hal::layouts::Standard>(&out),
+                snapshot::<BE, _, ::poulpy_hal::layouts::Standard>(&resident)
+            );
+            results.push(snapshot::<BE, _, ::poulpy_hal::layouts::Standard>(&out));
+            assert_eq!(
+                snapshot::<BE, _, ::poulpy_hal::layouts::Standard>(&re),
+                snapshot::<BE, _, ::poulpy_hal::layouts::Standard>(&fixture_ciphertext(module, &real_layout, 83))
             );
             assert_eq!(
-                snapshot::<BE, _>(&im),
-                snapshot::<BE, _>(&fixture_ciphertext(module, &real_layout, 89))
+                snapshot::<BE, _, ::poulpy_hal::layouts::Standard>(&im),
+                snapshot::<BE, _, ::poulpy_hal::layouts::Standard>(&fixture_ciphertext(module, &real_layout, 89))
             );
         }
         if log_slots < log_max_slots {
@@ -207,11 +222,14 @@ where
                 module.ckks_coeffs_to_slots_repack(&mut resident, &src, &prepared, &keys, scratch)
             })
             .unwrap();
-            assert_eq!(snapshot::<BE, _>(&out), snapshot::<BE, _>(&resident));
-            results.push(snapshot::<BE, _>(&out));
             assert_eq!(
-                snapshot::<BE, _>(&src),
-                snapshot::<BE, _>(&fixture_ciphertext(module, &layout, 101))
+                snapshot::<BE, _, ::poulpy_hal::layouts::Standard>(&out),
+                snapshot::<BE, _, ::poulpy_hal::layouts::Standard>(&resident)
+            );
+            results.push(snapshot::<BE, _, ::poulpy_hal::layouts::Standard>(&out));
+            assert_eq!(
+                snapshot::<BE, _, ::poulpy_hal::layouts::Standard>(&src),
+                snapshot::<BE, _, ::poulpy_hal::layouts::Standard>(&fixture_ciphertext(module, &layout, 101))
             );
             let (dft, prepared, keys) = prepare!(Decode, Repack, DFTType::Decode, DFTOutputFormat::RepackImagAsReal);
             let repacked = CKKSLayout {
@@ -233,11 +251,14 @@ where
                 module.ckks_slots_to_coeffs_repack(&mut resident, &src, &prepared, &keys, scratch)
             })
             .unwrap();
-            assert_eq!(snapshot::<BE, _>(&out), snapshot::<BE, _>(&resident));
-            results.push(snapshot::<BE, _>(&out));
             assert_eq!(
-                snapshot::<BE, _>(&src),
-                snapshot::<BE, _>(&fixture_ciphertext(module, &repacked, 107))
+                snapshot::<BE, _, ::poulpy_hal::layouts::Standard>(&out),
+                snapshot::<BE, _, ::poulpy_hal::layouts::Standard>(&resident)
+            );
+            results.push(snapshot::<BE, _, ::poulpy_hal::layouts::Standard>(&out));
+            assert_eq!(
+                snapshot::<BE, _, ::poulpy_hal::layouts::Standard>(&src),
+                snapshot::<BE, _, ::poulpy_hal::layouts::Standard>(&fixture_ciphertext(module, &repacked, 107))
             );
         } else {
             let invalid = DFTPlan::new(

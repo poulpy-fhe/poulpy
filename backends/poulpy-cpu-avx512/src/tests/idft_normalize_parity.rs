@@ -1,11 +1,13 @@
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, VecZnxDftAlloc, VecZnxDftApply, VecZnxIdftNormalize, VecZnxIdftNormalizeTmpBytes},
-    layouts::{DataView, HostBytesBackend, Module, ScratchOwned, VecZnxDftToBackendMut, ZnxViewMut},
+    layouts::{
+        ConjugateInvariant, DataView, HostBytesBackend, Module, ScratchOwned, Standard, VecZnxDftToBackendMut, ZnxViewMut,
+    },
     test_suite::{download_vec_znx, upload_vec_znx, vec_znx_backend_mut, vec_znx_backend_ref},
 };
 
 macro_rules! idft_normalize_case {
-    ($name:ident, $parallel:ty, $serial:ty, $oracle:ty) => {
+    ($name:ident, $ring:ty, $parallel:ty, $serial:ty, $oracle:ty) => {
         #[test]
         fn $name() {
             rayon::ThreadPoolBuilder::new()
@@ -47,8 +49,8 @@ macro_rules! idft_normalize_case {
                                 for with_add in [false, true] {
                                     macro_rules! run {
                                         ($be:ty, $module:ident, $bytes:expr) => {{
-                                            let a = upload_vec_znx::<$be>(&input);
-                                            let add = upload_vec_znx::<$be>(&add);
+                                            let a = upload_vec_znx::<$be, $ring>(&input);
+                                            let add = upload_vec_znx::<$be, $ring>(&add);
                                             let mut dft = $module.vec_znx_dft_alloc(n, 2, 5);
                                             for col in 0..2 {
                                                 $module.vec_znx_dft_apply(
@@ -56,18 +58,18 @@ macro_rules! idft_normalize_case {
                                                     0,
                                                     &mut dft.to_backend_mut(),
                                                     col,
-                                                    &vec_znx_backend_ref::<$be>(&a),
+                                                    &vec_znx_backend_ref::<$be, $ring>(&a),
                                                     col,
                                                 );
                                             }
                                             let before = dft.data().to_vec();
                                             let mut res = host.vec_znx_alloc(n, 2, 6);
                                             res.data_mut().fill(0xa5);
-                                            let mut res = upload_vec_znx::<$be>(&res);
-                                            let add_ref = vec_znx_backend_ref::<$be>(&add);
+                                            let mut res = upload_vec_znx::<$be, $ring>(&res);
+                                            let add_ref = vec_znx_backend_ref::<$be, $ring>(&add);
                                             let mut scratch = ScratchOwned::<$be>::alloc($bytes);
                                             $module.vec_znx_idft_normalize(
-                                                &mut vec_znx_backend_mut::<$be>(&mut res),
+                                                &mut vec_znx_backend_mut::<$be, $ring>(&mut res),
                                                 49,
                                                 k,
                                                 offset,
@@ -85,7 +87,7 @@ macro_rules! idft_normalize_case {
                                                     "the source limb {limb} changed"
                                                 );
                                             }
-                                            download_vec_znx::<$be>(&res)
+                                            download_vec_znx::<$be, $ring>(&res)
                                         }};
                                     }
                                     let expected = run!($oracle, oracle, oracle.vec_znx_idft_normalize_tmp_bytes(6, 5));
@@ -117,11 +119,11 @@ macro_rules! idft_normalize_case {
                     let mut dft = module.vec_znx_dft_alloc(256, 2, 2);
                     let host = Module::<HostBytesBackend>::new(256);
                     let res = host.vec_znx_alloc(256, 1, 2);
-                    let mut res = upload_vec_znx::<$parallel>(&res);
+                    let mut res = upload_vec_znx::<$parallel, $ring>(&res);
                     let mut scratch = ScratchOwned::<$parallel>::alloc(module.vec_znx_idft_normalize_tmp_bytes(2, 2));
                     let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                         module.vec_znx_idft_normalize(
-                            &mut vec_znx_backend_mut::<$parallel>(&mut res), 52, 104, 0, 0,
+                            &mut vec_znx_backend_mut::<$parallel, $ring>(&mut res), 52, 104, 0, 0,
                             &mut dft.to_backend_mut(), col, 52, None, &mut scratch.arena(),
                         );
                     })).unwrap_err();
@@ -134,25 +136,29 @@ macro_rules! idft_normalize_case {
 
 idft_normalize_case!(
     avx,
+    Standard,
     poulpy_cpu_avx::NTT4x30AvxRayon,
     poulpy_cpu_avx::NTT4x30Avx,
     poulpy_cpu_oracle::NTT4x30Oracle
 );
 idft_normalize_case!(
     avx_ci,
-    poulpy_cpu_avx::NTT4x30CIAvxRayon,
-    poulpy_cpu_avx::NTT4x30CIAvx,
-    poulpy_cpu_oracle::NTT4x30CIOracle
+    ConjugateInvariant,
+    poulpy_cpu_avx::NTT4x30AvxRayon,
+    poulpy_cpu_avx::NTT4x30Avx,
+    poulpy_cpu_oracle::NTT4x30Oracle
 );
 idft_normalize_case!(
     avx512,
+    Standard,
     crate::NTT4x30Avx512Rayon,
     crate::NTT4x30Avx512,
     poulpy_cpu_oracle::NTT4x30Oracle
 );
 idft_normalize_case!(
     avx512_ci,
-    crate::NTT4x30CIAvx512Rayon,
-    crate::NTT4x30CIAvx512,
-    poulpy_cpu_oracle::NTT4x30CIOracle
+    ConjugateInvariant,
+    crate::NTT4x30Avx512Rayon,
+    crate::NTT4x30Avx512,
+    poulpy_cpu_oracle::NTT4x30Oracle
 );

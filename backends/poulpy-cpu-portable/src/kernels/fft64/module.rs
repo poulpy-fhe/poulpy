@@ -104,12 +104,11 @@ where
 /// Backend crates implement [`FFTHandleProvider`] for their concrete handle type.
 /// `poulpy-hal` then provides this blanket trait on `Module<B>`, which lets family
 /// defaults share the same FFT64 handle contract across scalar and accelerated backends.
-pub trait FFTModuleHandle<F>: poulpy_hal::api::ModuleN
+pub trait FFTModuleHandle<F, Rg: Ring = Standard>: poulpy_hal::api::ModuleN
 where
     F: Float + FloatConst + Debug + Zeroable + Send + Sync,
 {
-    type Ring: Ring;
-    fn get_fft_plan(&self, n: usize) -> &FFT64Plan<F, Self::Ring>;
+    fn get_fft_plan(&self, n: usize) -> &FFT64Plan<F, Rg>;
 
     fn get_fft_table_for(&self, n: usize) -> &ReimFFTTable<F> {
         self.get_fft_plan(n).fft()
@@ -124,14 +123,14 @@ where
 ///
 /// # Safety
 ///
-/// Implementors must return references that stay valid for the lifetime of `&self`.
-/// The handle must be fully initialized before `Module::new()` returns.
-pub unsafe trait FFTHandleProvider<F>
+/// Implementors must return references that stay valid for the lifetime of `&self`, to plans
+/// built at construction or once on first use under internal synchronization, as
+/// [`PerRing`](crate::kernels::PerRing) builds the conjugate-invariant ones.
+pub unsafe trait FFTHandleProvider<F, Rg: Ring = Standard>
 where
     F: Float + FloatConst + Debug + Zeroable + Send + Sync,
 {
-    type Ring: Ring;
-    fn get_fft_plan(&self, n: usize) -> &FFT64Plan<F, Self::Ring>;
+    fn get_fft_plan(&self, n: usize) -> &FFT64Plan<F, Rg>;
 }
 
 /// Construct FFT64 backend handles for [`Module::new`](crate::api::ModuleNew::new).
@@ -149,13 +148,12 @@ pub unsafe trait FFT64HandleFactory: Sized {
     fn assert_fft64_runtime_support() {}
 }
 
-impl<BE: Backend<ZnxWord = i64>> FFTModuleHandle<BE::DftWord> for Module<BE>
+impl<BE: Backend<ZnxWord = i64>, Rg: Ring> FFTModuleHandle<BE::DftWord, Rg> for Module<BE>
 where
     BE::DftWord: Float + FloatConst + Debug + Send + Sync,
-    BE::Handle: FFTHandleProvider<BE::DftWord>,
+    BE::Handle: FFTHandleProvider<BE::DftWord, Rg>,
 {
-    type Ring = <BE::Handle as FFTHandleProvider<BE::DftWord>>::Ring;
-    fn get_fft_plan(&self, n: usize) -> &FFT64Plan<BE::DftWord, Self::Ring> {
+    fn get_fft_plan(&self, n: usize) -> &FFT64Plan<BE::DftWord, Rg> {
         unsafe { (&*self.ptr()).get_fft_plan(n) }
     }
 }

@@ -50,7 +50,7 @@ use poulpy_core::{
 use poulpy_cpu_portable::FFT64Portable;
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, Module, ScratchArena, ScratchOwned},
+    layouts::{Backend, Module, ScratchArena, ScratchOwned, Standard},
     source::Source,
 };
 
@@ -188,14 +188,16 @@ fn main() -> Result<()> {
     let public = CoeffsMeta::from_delta_budget(LOG_P_B, 4);
     let plan = BlasPlan::new(LOG_D);
     let mut ctx = module.blas_context_alloc(plan, BASE2K.into(), maps);
-    let mut pt_p = module.blas_pt_operand_alloc::<Right>(plan, 2, 1, 1, BASE2K.into(), public);
-    let mut pt_q = module.blas_pt_operand_alloc::<Left>(plan, 1, 2, BATCH, BASE2K.into(), public);
+    let mut pt_p = module.blas_pt_operand_alloc::<Right, Standard>(plan, 2, 1, 1, BASE2K.into(), public);
+    let mut pt_q = module.blas_pt_operand_alloc::<Left, Standard>(plan, 1, 2, BATCH, BASE2K.into(), public);
     let mut arena = Arena::alloc(
         BlasEncodingOps::<_, f64>::blas_context_encode_tmp_bytes(&module, &ctx)
             .max(BlasEncodingOps::<_, f64>::blas_pt_operand_encode_tmp_bytes(&module, &pt_q))
-            .max(module.blas_context_prepare_tmp_bytes(&ctx))
-            .max(module.blas_pt_operand_prepare_tmp_bytes(&pt_p))
-            .max(module.blas_pt_operand_prepare_tmp_bytes(&pt_q)),
+            .max(BlasContextPreparedFactory::<_, Standard>::blas_context_prepare_tmp_bytes(
+                &module, &ctx,
+            ))
+            .max(BlasPtOperandPreparedFactory::<_, Standard>::blas_pt_operand_prepare_tmp_bytes(&module, &pt_p))
+            .max(BlasPtOperandPreparedFactory::<_, Standard>::blas_pt_operand_prepare_tmp_bytes(&module, &pt_q)),
     );
     BlasEncodingOps::<_, f64>::blas_context_encode(&module, &mut ctx, &mut arena.borrow())?;
     module.blas_pt_operand_encode(&mut pt_p, |_, r, c| p(r, c), &mut arena.borrow())?;
@@ -220,11 +222,11 @@ fn main() -> Result<()> {
     let f_l = blas_matmul_pt_left_output_layout(&grid(1, 1), &pt_q, &e_l, &ctx);
     let g_l = blas_sum_output_layout(&grid(1, 1), &f_l);
     let uses: Vec<BlasKeyUses> = vec![
-        blas_matmul_key_uses(&module, &a_l, &b_l, &ctx),
-        blas_transpose_key_uses(&module, &grid(2, 2), &c_l, &ctx),
-        blas_matmul_pt_right_key_uses(&module, &grid(2, 1), &c_t_l, &pt_p, &ctx),
-        blas_matmul_pt_left_key_uses(&module, &grid(1, 1), &pt_q, &e_l, &ctx),
-        blas_sum_key_uses(&module, &grid(1, 1), &f_l),
+        blas_matmul_key_uses::<_, Standard>(&module, &a_l, &b_l, &ctx),
+        blas_transpose_key_uses::<_, Standard>(&module, &grid(2, 2), &c_l, &ctx),
+        blas_matmul_pt_right_key_uses::<_, Standard>(&module, &grid(2, 1), &c_t_l, &pt_p, &ctx),
+        blas_matmul_pt_left_key_uses::<_, Standard>(&module, &grid(1, 1), &pt_q, &e_l, &ctx),
+        blas_sum_key_uses::<_, Standard>(&module, &grid(1, 1), &f_l),
     ];
     // A key serves every narrower look-up of its element, so each element needs one key, at its widest.
     let mut widest: BTreeMap<i64, usize> = BTreeMap::new();
@@ -303,7 +305,7 @@ fn main() -> Result<()> {
         // G = Σ_s F_s in every matrix slot: consumes nothing. Its keys cover the batch they were planned for.
         assert_eq!(f.mat_slots(), Some(BATCH), "the sum's keys were planned for another batch");
         let mut g = alloc(1, 1);
-        let bytes = module.blas_sum_tmp_bytes(&g, &f, &atk);
+        let bytes = BlasMatInterOps::<_, Standard>::blas_sum_tmp_bytes(&module, &g, &f, &atk);
         module.blas_sum(&mut g, &f, atks, &mut Arena::alloc(bytes).borrow())?;
         report("blas_sum", &f, &g);
         Ok([c, c_t, e, f, g])

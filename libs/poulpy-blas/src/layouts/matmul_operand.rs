@@ -6,7 +6,7 @@ use poulpy_ckks::{
     layouts::{CKKSCiphertextOwned, CKKSLeftOperandPrepared, CKKSRightOperandPrepared},
 };
 use poulpy_core::layouts::GLWELayout;
-use poulpy_hal::layouts::{Backend, PrepareHint};
+use poulpy_hal::layouts::{Backend, PrepareHint, Ring, Standard};
 
 use super::{
     BlasCiphertextAlloc, BlasCiphertextBytesOf, BlasContextInfos, BlasGridInfos, BlasLayout, BlasMatMulOperandInfos,
@@ -18,11 +18,11 @@ use super::{
 
 /// The left operand of [`blas_matmul_prepared`](crate::api::BlasMatMulOps::blas_matmul_prepared), hot or cold, which
 /// [`BlasMatMulLeftOperandPreparedFactory`](crate::api::BlasMatMulLeftOperandPreparedFactory) allocates and fills.
-pub type BlasMatMulLeftOperandPrepared<BE> = BlasMatMulOperandPrepared<BE, CKKSLeftOperandPrepared<BE>>;
+pub type BlasMatMulLeftOperandPrepared<BE, Rg = Standard> = BlasMatMulOperandPrepared<BE, CKKSLeftOperandPrepared<BE, Rg>, Rg>;
 
 /// The right operand of [`blas_matmul_prepared`](crate::api::BlasMatMulOps::blas_matmul_prepared), hot or cold, which
 /// [`BlasMatMulRightOperandPreparedFactory`](crate::api::BlasMatMulRightOperandPreparedFactory) allocates and fills.
-pub type BlasMatMulRightOperandPrepared<BE> = BlasMatMulOperandPrepared<BE, CKKSRightOperandPrepared<BE>>;
+pub type BlasMatMulRightOperandPrepared<BE, Rg = Standard> = BlasMatMulOperandPrepared<BE, CKKSRightOperandPrepared<BE, Rg>, Rg>;
 
 /// A prepared operand of a product, of terms `P`: [`CKKSLeftOperandPrepared`] on the left, [`BlasMatMulLeftOperandPrepared`], and
 /// [`CKKSRightOperandPrepared`] on the right, [`BlasMatMulRightOperandPrepared`], so that swapping the operands of a product does not
@@ -42,21 +42,21 @@ pub type BlasMatMulRightOperandPrepared<BE> = BlasMatMulOperandPrepared<BE, CKKS
 /// and its source's batch. The preparation's validator checks that the source's infos have the operand's shape. An
 /// implementation of the preparations and of the prepared product reads and fills the storage through [`Self::blocks`]
 /// and [`Self::terms`], and records a preparation with [`Self::set_prepared`].
-pub struct BlasMatMulOperandPrepared<BE: Backend, P> {
-    pub(crate) blocks: Vec<CKKSCiphertextOwned<BE>>,
+pub struct BlasMatMulOperandPrepared<BE: Backend, P, Rg: Ring = Standard> {
+    pub(crate) blocks: Vec<CKKSCiphertextOwned<BE, Rg>>,
     pub(crate) terms: Vec<P>,
     pub(crate) layout: BlasMatMulOperandLayout,
     pub(crate) mat_slots: usize,
 }
 
-impl<BE: Backend, P> BlasMatMulOperandPrepared<BE, P> {
+impl<BE: Backend, P, Rg: Ring> BlasMatMulOperandPrepared<BE, P, Rg> {
     /// A hot operand's blocks, row-major; empty when cold.
-    pub fn blocks(&self) -> &[CKKSCiphertextOwned<BE>] {
+    pub fn blocks(&self) -> &[CKKSCiphertextOwned<BE, Rg>] {
         &self.blocks
     }
 
     /// The blocks a hot preparation fills.
-    pub fn blocks_mut(&mut self) -> &mut [CKKSCiphertextOwned<BE>] {
+    pub fn blocks_mut(&mut self) -> &mut [CKKSCiphertextOwned<BE, Rg>] {
         &mut self.blocks
     }
 
@@ -87,7 +87,7 @@ impl<BE: Backend, P> BlasMatMulOperandPrepared<BE, P> {
 }
 
 /// The operand's infos and the count of what it holds; its digits may live on a device.
-impl<BE: Backend, P> std::fmt::Debug for BlasMatMulOperandPrepared<BE, P> {
+impl<BE: Backend, P, Rg: Ring> std::fmt::Debug for BlasMatMulOperandPrepared<BE, P, Rg> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("BlasMatMulOperandPrepared")
             .field("layout", &self.layout)
@@ -97,7 +97,7 @@ impl<BE: Backend, P> std::fmt::Debug for BlasMatMulOperandPrepared<BE, P> {
     }
 }
 
-impl<BE: Backend, P> BlasGridInfos for BlasMatMulOperandPrepared<BE, P> {
+impl<BE: Backend, P, Rg: Ring> BlasGridInfos for BlasMatMulOperandPrepared<BE, P, Rg> {
     fn log_d(&self) -> usize {
         self.layout.grid.log_d
     }
@@ -119,7 +119,7 @@ impl<BE: Backend, P> BlasGridInfos for BlasMatMulOperandPrepared<BE, P> {
     }
 }
 
-impl<BE: Backend, P> BlasMatMulOperandInfos for BlasMatMulOperandPrepared<BE, P> {
+impl<BE: Backend, P, Rg: Ring> BlasMatMulOperandInfos for BlasMatMulOperandPrepared<BE, P, Rg> {
     fn hint(&self) -> PrepareHint {
         self.layout.hint
     }
@@ -131,11 +131,11 @@ impl<BE: Backend, P> BlasMatMulOperandInfos for BlasMatMulOperandPrepared<BE, P>
 
 /// An operand of `infos` holding all its storage, the batch `0`: hot, a grid of the source's block layout; cold, `d`
 /// terms of `term` per source block.
-pub(crate) fn alloc_prepared<BE: Backend, P>(
+pub(crate) fn alloc_prepared<BE: Backend, P, Rg: Ring>(
     module: &impl BlasCiphertextAlloc<BE>,
     infos: &impl BlasMatMulOperandInfos,
     term: impl Fn(&CKKSLayout) -> P,
-) -> BlasMatMulOperandPrepared<BE, P> {
+) -> BlasMatMulOperandPrepared<BE, P, Rg> {
     let layout = BlasMatMulOperandLayout {
         grid: infos.blas_layout(),
         source: infos.source_block_layout(),
@@ -331,7 +331,7 @@ mod tests {
     use std::panic::{AssertUnwindSafe, catch_unwind};
 
     use poulpy_ckks::layouts::CKKSCiphertextAlloc;
-    use poulpy_hal::layouts::{HostBytesBackend, Module};
+    use poulpy_hal::layouts::{HostBytesBackend, Module, Standard};
 
     use super::*;
     use crate::layouts::ciphertext::layout_of;
@@ -339,7 +339,7 @@ mod tests {
     #[test]
     fn set_prepared_records_infos_of_the_operand_shape_only() {
         let module = Module::<HostBytesBackend>::new(256);
-        let block = layout_of(&module.ckks_ciphertext_alloc(19usize.into(), 60usize.into()));
+        let block = layout_of(&module.ckks_ciphertext_alloc::<Standard>(19usize.into(), 60usize.into()));
         let layout = BlasMatMulOperandLayout {
             grid: BlasLayout::new(block, 2, 2, 1),
             source: block,

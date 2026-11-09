@@ -1,5 +1,8 @@
 use crate::{
-    layouts::{Backend, ScalarZnxBackendRef, ScratchArena, VecZnxBackendMut, VecZnxBackendRef, VecZnxToBackendMut},
+    layouts::{
+        Backend, ConjugateInvariant, Ring, ScalarZnxBackendRef, ScratchArena, Standard, VecZnxBackendMut, VecZnxBackendRef,
+        VecZnxToBackendMut,
+    },
     source::Source,
 };
 
@@ -29,9 +32,9 @@ pub trait VecZnxNormalizeTmpBytes {
 /// ensures    every limb of res[res_col] is zero; the other columns are untouched
 /// test       test_vec_znx_zero_matches_wrapper, test_vec_znx_window_ops
 /// ```
-pub trait VecZnxZero<B: Backend> {
+pub trait VecZnxZero<B: Backend, Rg: Ring = Standard> {
     /// Writes zero into every limb of `res[res_col]`.
-    fn vec_znx_zero(&self, res: &mut VecZnxBackendMut<'_, B>, res_col: usize);
+    fn vec_znx_zero(&self, res: &mut VecZnxBackendMut<'_, B, Rg>, res_col: usize);
 }
 
 /// Normalization of a column at a destination radix and precision, with a power-of-two offset.
@@ -46,17 +49,17 @@ pub trait VecZnxZero<B: Backend> {
 /// ensures    res[res_col] is canonical at radix res_base2k and precision res_k and congruent modulo 1 to rnd([[a[a_col]]]_a_base2k * 2^res_offset, res_k); every limb of the selected column is written
 /// test       test_vec_znx_normalize, test_vec_znx_window_normalize_ops
 /// ```
-pub trait VecZnxNormalize<B: Backend> {
+pub trait VecZnxNormalize<B: Backend, Rg: Ring = Standard> {
     #[allow(clippy::too_many_arguments)]
     /// Writes `a[a_col]`, scaled by `2^res_offset` and normalized at `res_base2k` and `res_k`, into `res[res_col]`.
     fn vec_znx_normalize(
         &self,
-        res: &mut VecZnxBackendMut<'_, B>,
+        res: &mut VecZnxBackendMut<'_, B, Rg>,
         res_base2k: usize,
         res_k: usize,
         res_offset: i64,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, B>,
+        a: &VecZnxBackendRef<'_, B, Rg>,
         a_base2k: usize,
         a_col: usize,
         scratch: &mut ScratchArena<'_, B>,
@@ -104,14 +107,14 @@ pub trait VecZnxGadgetDecomposeTmpBytes {
 ///            top limb is +2^(base2k - 1) instead and the block above receives one less
 /// test       test_vec_znx_gadget_decompose
 /// ```
-pub trait VecZnxGadgetDecompose<B: Backend> {
+pub trait VecZnxGadgetDecompose<B: Backend, Rg: Ring = Standard> {
     /// Writes the digits of `a[a_col]` for `k_digit`-bit gadget rows into `res[res_col]`.
     #[allow(clippy::too_many_arguments)]
     fn vec_znx_gadget_decompose(
         &self,
-        res: &mut VecZnxBackendMut<'_, B>,
+        res: &mut VecZnxBackendMut<'_, B, Rg>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, B>,
+        a: &VecZnxBackendRef<'_, B, Rg>,
         a_col: usize,
         base2k: usize,
         k_digit: usize,
@@ -133,14 +136,14 @@ pub trait VecZnxGadgetDecompose<B: Backend> {
 /// override   required
 /// test       test_vec_znx_normalize_assign, test_vec_znx_window_normalize_ops
 /// ```
-pub trait VecZnxNormalizeAssign<B: Backend> {
+pub trait VecZnxNormalizeAssign<B: Backend, Rg: Ring = Standard> {
     /// Replaces `a[a_col]` with its value scaled by `2^a_offset` and normalized at `base2k` and `k`.
     fn vec_znx_normalize_assign(
         &self,
         base2k: usize,
         k: usize,
         a_offset: i64,
-        a: &mut VecZnxBackendMut<'_, B>,
+        a: &mut VecZnxBackendMut<'_, B, Rg>,
         a_col: usize,
         scratch: &mut ScratchArena<'_, B>,
     );
@@ -158,15 +161,15 @@ pub trait VecZnxNormalizeAssign<B: Backend> {
 /// embed      a and b are the embedding slots: a dense degree-n operand, n dividing N, stands for switch_ring_{n->N} of itself; a window in these slots has the width of res
 /// test       test_vec_znx_add_matches_reference, test_vec_znx_window_ops, test_vec_znx_embed_add_sub
 /// ```
-pub trait VecZnxAdd<B: Backend> {
+pub trait VecZnxAdd<B: Backend, Rg: Ring = Standard> {
     /// Writes the sum of `a[a_col]` and `b[b_col]` into `res[res_col]`.
     fn vec_znx_add(
         &self,
-        res: &mut VecZnxBackendMut<'_, B>,
+        res: &mut VecZnxBackendMut<'_, B, Rg>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, B>,
+        a: &VecZnxBackendRef<'_, B, Rg>,
         a_col: usize,
-        b: &VecZnxBackendRef<'_, B>,
+        b: &VecZnxBackendRef<'_, B, Rg>,
         b_col: usize,
     );
 }
@@ -183,9 +186,15 @@ pub trait VecZnxAdd<B: Backend> {
 /// embed      a is the embedding slot, as for vec_znx_add
 /// test       test_vec_znx_add_assign, test_vec_znx_add_assign_matches_wrapper, test_vec_znx_embed_add_sub
 /// ```
-pub trait VecZnxAddAssign<B: Backend> {
+pub trait VecZnxAddAssign<B: Backend, Rg: Ring = Standard> {
     /// Adds `a[a_col]` into `res[res_col]`.
-    fn vec_znx_add_assign(&self, res: &mut VecZnxBackendMut<'_, B>, res_col: usize, a: &VecZnxBackendRef<'_, B>, a_col: usize);
+    fn vec_znx_add_assign(
+        &self,
+        res: &mut VecZnxBackendMut<'_, B, Rg>,
+        res_col: usize,
+        a: &VecZnxBackendRef<'_, B, Rg>,
+        a_col: usize,
+    );
 }
 
 /// Addition of a scalar polynomial into one limb of a column.
@@ -201,14 +210,14 @@ pub trait VecZnxAddAssign<B: Backend> {
 /// override   allowed, scratch-free
 /// test       test_vec_znx_add_scalar_assign, test_vec_znx_add_scalar_assign_derived
 /// ```
-pub trait VecZnxAddScalarAssign<B: Backend> {
+pub trait VecZnxAddScalarAssign<B: Backend, Rg: Ring = Standard> {
     /// Adds `a[a_col]` into limb `res_limb` of `res[res_col]`.
     fn vec_znx_add_scalar_assign(
         &self,
-        res: &mut VecZnxBackendMut<'_, B>,
+        res: &mut VecZnxBackendMut<'_, B, Rg>,
         res_col: usize,
         res_limb: usize,
-        a: &ScalarZnxBackendRef<'_, B>,
+        a: &ScalarZnxBackendRef<'_, B, Rg>,
         a_col: usize,
     );
 }
@@ -225,15 +234,15 @@ pub trait VecZnxAddScalarAssign<B: Backend> {
 /// embed      a and b are the embedding slots, as for vec_znx_add
 /// test       test_vec_znx_sub, test_vec_znx_window_ops, test_vec_znx_embed_add_sub
 /// ```
-pub trait VecZnxSub<B: Backend> {
+pub trait VecZnxSub<B: Backend, Rg: Ring = Standard> {
     /// Writes the difference of `a[a_col]` and `b[b_col]` into `res[res_col]`.
     fn vec_znx_sub(
         &self,
-        res: &mut VecZnxBackendMut<'_, B>,
+        res: &mut VecZnxBackendMut<'_, B, Rg>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, B>,
+        a: &VecZnxBackendRef<'_, B, Rg>,
         a_col: usize,
-        b: &VecZnxBackendRef<'_, B>,
+        b: &VecZnxBackendRef<'_, B, Rg>,
         b_col: usize,
     );
 }
@@ -250,9 +259,15 @@ pub trait VecZnxSub<B: Backend> {
 /// embed      a is the embedding slot, as for vec_znx_add
 /// test       test_vec_znx_sub_assign, test_vec_znx_embed_add_sub
 /// ```
-pub trait VecZnxSubAssign<B: Backend> {
+pub trait VecZnxSubAssign<B: Backend, Rg: Ring = Standard> {
     /// Subtracts `a[a_col]` from `res[res_col]`.
-    fn vec_znx_sub_assign(&self, res: &mut VecZnxBackendMut<'_, B>, res_col: usize, a: &VecZnxBackendRef<'_, B>, a_col: usize);
+    fn vec_znx_sub_assign(
+        &self,
+        res: &mut VecZnxBackendMut<'_, B, Rg>,
+        res_col: usize,
+        a: &VecZnxBackendRef<'_, B, Rg>,
+        a_col: usize,
+    );
 }
 
 /// In-place limbwise subtraction of the destination from a column.
@@ -267,13 +282,13 @@ pub trait VecZnxSubAssign<B: Backend> {
 /// embed      a is the embedding slot, as for vec_znx_add
 /// test       test_vec_znx_sub_negate_assign, test_vec_znx_embed_add_sub
 /// ```
-pub trait VecZnxSubNegateAssign<B: Backend> {
+pub trait VecZnxSubNegateAssign<B: Backend, Rg: Ring = Standard> {
     /// Replaces `res[res_col]` with `a[a_col]` minus its pre-call value.
     fn vec_znx_sub_negate_assign(
         &self,
-        res: &mut VecZnxBackendMut<'_, B>,
+        res: &mut VecZnxBackendMut<'_, B, Rg>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, B>,
+        a: &VecZnxBackendRef<'_, B, Rg>,
         a_col: usize,
     );
 }
@@ -289,9 +304,15 @@ pub trait VecZnxSubNegateAssign<B: Backend> {
 /// ensures    res[res_col] = -a[a_col] limb by limb; limbs of res past a.size() are zero
 /// test       test_vec_znx_negate, test_vec_znx_negate_matches_wrapper
 /// ```
-pub trait VecZnxNegate<B: Backend> {
+pub trait VecZnxNegate<B: Backend, Rg: Ring = Standard> {
     /// Writes the negation of `a[a_col]` into `res[res_col]`.
-    fn vec_znx_negate(&self, res: &mut VecZnxBackendMut<'_, B>, res_col: usize, a: &VecZnxBackendRef<'_, B>, a_col: usize);
+    fn vec_znx_negate(
+        &self,
+        res: &mut VecZnxBackendMut<'_, B, Rg>,
+        res_col: usize,
+        a: &VecZnxBackendRef<'_, B, Rg>,
+        a_col: usize,
+    );
 }
 
 /// In-place limbwise negation of a column.
@@ -305,9 +326,9 @@ pub trait VecZnxNegate<B: Backend> {
 /// ensures    every limb of a[a_col] is negated in place
 /// test       test_vec_znx_negate_assign, test_vec_znx_negate_assign_matches_wrapper
 /// ```
-pub trait VecZnxNegateAssign<B: Backend> {
+pub trait VecZnxNegateAssign<B: Backend, Rg: Ring = Standard> {
     /// Negates every limb of `a[a_col]` in place.
-    fn vec_znx_negate_assign(&self, a: &mut VecZnxBackendMut<'_, B>, a_col: usize);
+    fn vec_znx_negate_assign(&self, a: &mut VecZnxBackendMut<'_, B, Rg>, a_col: usize);
 }
 
 /// Scratch requirement of the left-shift operations.
@@ -339,16 +360,16 @@ pub trait VecZnxLshTmpBytes {
 /// override   allowed, with vec_znx_lsh_tmp_bytes
 /// test       test_vec_znx_lsh, test_vec_znx_lsh_derived
 /// ```
-pub trait VecZnxLsh<B: Backend> {
+pub trait VecZnxLsh<B: Backend, Rg: Ring = Standard> {
     /// Writes `a[a_col]` shifted up by `k` bits and normalized at `base2k` into `res[res_col]`.
     #[allow(clippy::too_many_arguments)]
     fn vec_znx_lsh(
         &self,
         base2k: usize,
         k: usize,
-        res: &mut VecZnxBackendMut<'_, B>,
+        res: &mut VecZnxBackendMut<'_, B, Rg>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, B>,
+        a: &VecZnxBackendRef<'_, B, Rg>,
         a_col: usize,
         scratch: &mut ScratchArena<'_, B>,
     );
@@ -369,16 +390,16 @@ pub trait VecZnxLsh<B: Backend> {
 /// embed      a is the embedding slot, as for vec_znx_add_assign
 /// test       test_vec_znx_lsh_add_derived, test_vec_znx_embed_add_sub
 /// ```
-pub trait VecZnxLshAdd<B: Backend> {
+pub trait VecZnxLshAdd<B: Backend, Rg: Ring = Standard> {
     /// Adds `a[a_col]`, shifted up by `k` bits and normalized at `base2k`, into `res[res_col]`.
     #[allow(clippy::too_many_arguments)]
     fn vec_znx_lsh_add(
         &self,
         base2k: usize,
         k: usize,
-        res: &mut VecZnxBackendMut<'_, B>,
+        res: &mut VecZnxBackendMut<'_, B, Rg>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, B>,
+        a: &VecZnxBackendRef<'_, B, Rg>,
         a_col: usize,
         scratch: &mut ScratchArena<'_, B>,
     );
@@ -413,16 +434,16 @@ pub trait VecZnxRshTmpBytes {
 /// override   allowed, with vec_znx_rsh_tmp_bytes
 /// test       test_vec_znx_rsh, test_vec_znx_rsh_derived
 /// ```
-pub trait VecZnxRsh<B: Backend> {
+pub trait VecZnxRsh<B: Backend, Rg: Ring = Standard> {
     /// Writes `a[a_col]` shifted down by `k` bits and normalized at `base2k` into `res[res_col]`.
     #[allow(clippy::too_many_arguments)]
     fn vec_znx_rsh(
         &self,
         base2k: usize,
         k: usize,
-        res: &mut VecZnxBackendMut<'_, B>,
+        res: &mut VecZnxBackendMut<'_, B, Rg>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, B>,
+        a: &VecZnxBackendRef<'_, B, Rg>,
         a_col: usize,
         scratch: &mut ScratchArena<'_, B>,
     );
@@ -443,16 +464,16 @@ pub trait VecZnxRsh<B: Backend> {
 /// embed      a is the embedding slot, as for vec_znx_add_assign
 /// test       test_vec_znx_rsh_add_derived, test_vec_znx_embed_add_sub
 /// ```
-pub trait VecZnxRshAdd<B: Backend> {
+pub trait VecZnxRshAdd<B: Backend, Rg: Ring = Standard> {
     /// Adds `a[a_col]`, shifted down by `k` bits and normalized at `base2k`, into `res[res_col]`.
     #[allow(clippy::too_many_arguments)]
     fn vec_znx_rsh_add(
         &self,
         base2k: usize,
         k: usize,
-        res: &mut VecZnxBackendMut<'_, B>,
+        res: &mut VecZnxBackendMut<'_, B, Rg>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, B>,
+        a: &VecZnxBackendRef<'_, B, Rg>,
         a_col: usize,
         scratch: &mut ScratchArena<'_, B>,
     );
@@ -473,16 +494,16 @@ pub trait VecZnxRshAdd<B: Backend> {
 /// embed      a is the embedding slot, as for vec_znx_sub_assign
 /// test       test_vec_znx_lsh_sub_derived, test_vec_znx_embed_add_sub
 /// ```
-pub trait VecZnxLshSub<B: Backend> {
+pub trait VecZnxLshSub<B: Backend, Rg: Ring = Standard> {
     /// Subtracts `a[a_col]`, shifted up by `k` bits and normalized at `base2k`, from `res[res_col]`.
     #[allow(clippy::too_many_arguments)]
     fn vec_znx_lsh_sub(
         &self,
         base2k: usize,
         k: usize,
-        res: &mut VecZnxBackendMut<'_, B>,
+        res: &mut VecZnxBackendMut<'_, B, Rg>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, B>,
+        a: &VecZnxBackendRef<'_, B, Rg>,
         a_col: usize,
         scratch: &mut ScratchArena<'_, B>,
     );
@@ -503,16 +524,16 @@ pub trait VecZnxLshSub<B: Backend> {
 /// embed      a is the embedding slot, as for vec_znx_sub_assign
 /// test       test_vec_znx_rsh_sub_derived, test_vec_znx_embed_add_sub
 /// ```
-pub trait VecZnxRshSub<B: Backend> {
+pub trait VecZnxRshSub<B: Backend, Rg: Ring = Standard> {
     /// Subtracts `a[a_col]`, shifted down by `k` bits and normalized at `base2k`, from `res[res_col]`.
     #[allow(clippy::too_many_arguments)]
     fn vec_znx_rsh_sub(
         &self,
         base2k: usize,
         k: usize,
-        res: &mut VecZnxBackendMut<'_, B>,
+        res: &mut VecZnxBackendMut<'_, B, Rg>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, B>,
+        a: &VecZnxBackendRef<'_, B, Rg>,
         a_col: usize,
         scratch: &mut ScratchArena<'_, B>,
     );
@@ -532,13 +553,13 @@ pub trait VecZnxRshSub<B: Backend> {
 /// override   allowed, with vec_znx_lsh_tmp_bytes
 /// test       test_vec_znx_lsh_assign, test_vec_znx_lsh_assign_derived
 /// ```
-pub trait VecZnxLshAssign<B: Backend> {
+pub trait VecZnxLshAssign<B: Backend, Rg: Ring = Standard> {
     /// Replaces `a[a_col]` with its value shifted up by `k` bits and normalized at `base2k`.
     fn vec_znx_lsh_assign(
         &self,
         base2k: usize,
         k: usize,
-        a: &mut VecZnxBackendMut<'_, B>,
+        a: &mut VecZnxBackendMut<'_, B, Rg>,
         a_col: usize,
         scratch: &mut ScratchArena<'_, B>,
     );
@@ -558,13 +579,13 @@ pub trait VecZnxLshAssign<B: Backend> {
 /// override   allowed, with vec_znx_rsh_tmp_bytes
 /// test       test_vec_znx_rsh_assign, test_vec_znx_rsh_assign_derived
 /// ```
-pub trait VecZnxRshAssign<B: Backend> {
+pub trait VecZnxRshAssign<B: Backend, Rg: Ring = Standard> {
     /// Replaces `a[a_col]` with its value shifted down by `k` bits and normalized at `base2k`.
     fn vec_znx_rsh_assign(
         &self,
         base2k: usize,
         k: usize,
-        a: &mut VecZnxBackendMut<'_, B>,
+        a: &mut VecZnxBackendMut<'_, B, Rg>,
         a_col: usize,
         scratch: &mut ScratchArena<'_, B>,
     );
@@ -638,14 +659,14 @@ pub trait VecZnxRotateAssign<B: Backend> {
 /// ensures    each limb of res[res_col] is the image of a[a_col] under X -> X^k; limbs of res past a.size() are zero
 /// test       test_vec_znx_automorphism
 /// ```
-pub trait VecZnxAutomorphism<B: Backend> {
+pub trait VecZnxAutomorphism<B: Backend, Rg: Ring = Standard> {
     /// Writes the image of `a[a_col]` under `X -> X^k` into `res[res_col]`.
     fn vec_znx_automorphism(
         &self,
         k: i64,
-        res: &mut VecZnxBackendMut<'_, B>,
+        res: &mut VecZnxBackendMut<'_, B, Rg>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, B>,
+        a: &VecZnxBackendRef<'_, B, Rg>,
         a_col: usize,
     );
 }
@@ -679,12 +700,12 @@ pub trait VecZnxAutomorphismAssignTmpBytes {
 /// override   required
 /// test       test_vec_znx_automorphism_assign
 /// ```
-pub trait VecZnxAutomorphismAssign<B: Backend> {
+pub trait VecZnxAutomorphismAssign<B: Backend, Rg: Ring = Standard> {
     /// Replaces `res[res_col]` with its image under `X -> X^k`.
     fn vec_znx_automorphism_assign(
         &self,
         k: i64,
-        res: &mut VecZnxBackendMut<'_, B>,
+        res: &mut VecZnxBackendMut<'_, B, Rg>,
         res_col: usize,
         scratch: &mut ScratchArena<'_, B>,
     );
@@ -766,9 +787,15 @@ pub trait VecZnxMulXpMinusOneAssign<B: Backend> {
 /// ensures    growing inserts zero coefficients between the coefficients of a[a_col]; shrinking retains only source coefficients at multiples of the degree ratio; limbs from a.size() onward are zero; the other columns are untouched
 /// test       test_vec_znx_switch_ring, test_vec_znx_switch_ring_matches_wrapper
 /// ```
-pub trait VecZnxSwitchRing<B: Backend> {
+pub trait VecZnxSwitchRing<B: Backend, Rg: Ring = Standard> {
     /// Writes `a[a_col]` at the ring degree of `res` into `res[res_col]`.
-    fn vec_znx_switch_ring(&self, res: &mut VecZnxBackendMut<'_, B>, res_col: usize, a: &VecZnxBackendRef<'_, B>, a_col: usize);
+    fn vec_znx_switch_ring(
+        &self,
+        res: &mut VecZnxBackendMut<'_, B, Rg>,
+        res_col: usize,
+        a: &VecZnxBackendRef<'_, B, Rg>,
+        a_col: usize,
+    );
 }
 
 /// Embedding of a conjugate-invariant column into the standard ring of twice its degree.
@@ -778,13 +805,19 @@ pub trait VecZnxSwitchRing<B: Backend> {
 /// class      variant
 /// mutation   out-of-place
 /// definition res[res_col,j] = a[a_col,j,0] + sum_{0<i<N} a[a_col,j,i] (X^i + X^-i) in Z[X]/(X^2N + 1); the other columns of res are untouched
-/// domain     standard module of degree at least 2N; res: dense VecZnx of degree 2N; a: dense VecZnx of degree N
+/// domain     module of degree at least 2N; res: dense VecZnx of degree 2N; a: dense VecZnx of degree N
 /// ensures    limbs from a.size() onward are zero; the digits are not renormalized
 /// test       test_vec_znx_ci_embed_trace
 /// ```
 pub trait VecZnxCIEmbed<B: Backend> {
     /// Writes the embedded `a[a_col]` into `res[res_col]`.
-    fn vec_znx_ci_embed(&self, res: &mut VecZnxBackendMut<'_, B>, res_col: usize, a: &VecZnxBackendRef<'_, B>, a_col: usize);
+    fn vec_znx_ci_embed(
+        &self,
+        res: &mut VecZnxBackendMut<'_, B>,
+        res_col: usize,
+        a: &VecZnxBackendRef<'_, B, ConjugateInvariant>,
+        a_col: usize,
+    );
 }
 
 /// Relative trace of a standard column onto the conjugate-invariant ring of half its degree.
@@ -794,13 +827,19 @@ pub trait VecZnxCIEmbed<B: Backend> {
 /// class      variant
 /// mutation   out-of-place
 /// definition res[res_col,j,0] = 2 a[a_col,j,0]; res[res_col,j,i] = a[a_col,j,i] - a[a_col,j,2N-i] for 0 < i < N; the other columns of res are untouched
-/// domain     standard module of degree at least 2N; res: dense VecZnx of degree N; a: dense VecZnx of degree 2N
+/// domain     module of degree at least 2N; res: dense VecZnx of degree N; a: dense VecZnx of degree 2N
 /// ensures    res[res_col] is the compressed a(X) + a(X^-1); limbs from a.size() onward are zero; the digits are not renormalized
 /// test       test_vec_znx_ci_embed_trace
 /// ```
 pub trait VecZnxCITrace<B: Backend> {
     /// Writes the trace of `a[a_col]` into `res[res_col]`.
-    fn vec_znx_ci_trace(&self, res: &mut VecZnxBackendMut<'_, B>, res_col: usize, a: &VecZnxBackendRef<'_, B>, a_col: usize);
+    fn vec_znx_ci_trace(
+        &self,
+        res: &mut VecZnxBackendMut<'_, B, ConjugateInvariant>,
+        res_col: usize,
+        a: &VecZnxBackendRef<'_, B>,
+        a_col: usize,
+    );
 }
 
 /// Copy of one column into another.
@@ -814,9 +853,9 @@ pub trait VecZnxCITrace<B: Backend> {
 /// ensures    res[res_col] holds a[a_col] limb by limb; limbs of res past a.size() are zero
 /// test       test_vec_znx_copy, test_vec_znx_copy_matches_wrapper, test_vec_znx_window_ops
 /// ```
-pub trait VecZnxCopy<B: Backend> {
+pub trait VecZnxCopy<B: Backend, Rg: Ring = Standard> {
     /// Writes `a[a_col]` into `res[res_col]`.
-    fn vec_znx_copy(&self, res: &mut VecZnxBackendMut<'_, B>, res_col: usize, a: &VecZnxBackendRef<'_, B>, a_col: usize);
+    fn vec_znx_copy(&self, res: &mut VecZnxBackendMut<'_, B, Rg>, res_col: usize, a: &VecZnxBackendRef<'_, B, Rg>, a_col: usize);
 }
 
 /// Filling of a column with a uniform torus value drawn from a pseudorandom stream.
@@ -830,13 +869,13 @@ pub trait VecZnxCopy<B: Backend> {
 /// ensures    res[res_col] is uniform over the torus at precision k and canonical at radix base2k; source advances by the 32 bytes of one seed, and reseed(source) by live(k, base2k) * res.n() draws in increasing limb order, then increasing coefficient order
 /// test       test_vec_znx_fill_uniform
 /// ```
-pub trait VecZnxFillUniformSource<B: Backend> {
+pub trait VecZnxFillUniformSource<B: Backend, Rg: Ring = Standard> {
     /// Writes a uniform torus value of precision `k`, canonical at radix `base2k`, into `res[res_col]`, drawing from `source`.
     fn vec_znx_fill_uniform_source(
         &self,
         base2k: usize,
         k: usize,
-        res: &mut VecZnxBackendMut<'_, B>,
+        res: &mut VecZnxBackendMut<'_, B, Rg>,
         res_col: usize,
         source: &mut Source,
     );
@@ -855,9 +894,9 @@ pub trait VecZnxFillUniformSource<B: Backend> {
 /// override   allowed, drawing the same values
 /// test       test_vec_znx_fill_uniform_source_all_derived
 /// ```
-pub trait VecZnxFillUniformSourceAll<B: Backend> {
+pub trait VecZnxFillUniformSourceAll<B: Backend, Rg: Ring = Standard> {
     /// Writes an independent uniform torus value of precision `k`, canonical at radix `base2k`, into every column of `res`, drawing from `source`.
     fn vec_znx_fill_uniform_source_all<R>(&self, base2k: usize, k: usize, res: &mut R, source: &mut Source)
     where
-        R: VecZnxToBackendMut<B>;
+        R: VecZnxToBackendMut<B, Rg>;
 }

@@ -1,15 +1,15 @@
 use super::{vec_znx_sub_assign_mixed_portable, vec_znx_sub_mixed_portable, vec_znx_sub_negate_assign_mixed_portable};
 use crate::{
     kernels::znx::{ZnxCopy, ZnxNegate, ZnxNegateAssign, ZnxSub, ZnxSubAssign, ZnxSubNegateAssign, ZnxZero},
-    layouts::{Backend, HostDataMut, HostDataRef, VecZnxBackendMut, VecZnxBackendRef, ZnxView, ZnxViewMut},
+    layouts::{Backend, HostDataMut, HostDataRef, Ring, VecZnxBackendMut, VecZnxBackendRef, ZnxView, ZnxViewMut},
 };
 
-pub fn vec_znx_sub_portable<'r, 'a, BE>(
-    res: &mut VecZnxBackendMut<'r, BE>,
+pub fn vec_znx_sub_portable<'r, 'a, BE, Rg: Ring>(
+    res: &mut VecZnxBackendMut<'r, BE, Rg>,
     res_col: usize,
-    a: &VecZnxBackendRef<'a, BE>,
+    a: &VecZnxBackendRef<'a, BE, Rg>,
     a_col: usize,
-    b: &VecZnxBackendRef<'a, BE>,
+    b: &VecZnxBackendRef<'a, BE, Rg>,
     b_col: usize,
 ) where
     BE: Backend<ZnxWord = i64> + ZnxSub + ZnxNegate + ZnxZero + ZnxCopy,
@@ -57,10 +57,10 @@ pub fn vec_znx_sub_portable<'r, 'a, BE>(
     }
 }
 
-pub fn vec_znx_sub_assign_portable<'r, 'a, BE>(
-    res: &mut VecZnxBackendMut<'r, BE>,
+pub fn vec_znx_sub_assign_portable<'r, 'a, BE, Rg: Ring>(
+    res: &mut VecZnxBackendMut<'r, BE, Rg>,
     res_col: usize,
-    a: &VecZnxBackendRef<'a, BE>,
+    a: &VecZnxBackendRef<'a, BE, Rg>,
     a_col: usize,
 ) where
     BE: Backend<ZnxWord = i64> + ZnxSubAssign,
@@ -81,10 +81,10 @@ pub fn vec_znx_sub_assign_portable<'r, 'a, BE>(
     }
 }
 
-pub fn vec_znx_sub_negate_assign_portable<'r, 'a, BE>(
-    res: &mut VecZnxBackendMut<'r, BE>,
+pub fn vec_znx_sub_negate_assign_portable<'r, 'a, BE, Rg: Ring>(
+    res: &mut VecZnxBackendMut<'r, BE, Rg>,
     res_col: usize,
-    a: &VecZnxBackendRef<'a, BE>,
+    a: &VecZnxBackendRef<'a, BE, Rg>,
     a_col: usize,
 ) where
     BE: Backend<ZnxWord = i64> + ZnxSubNegateAssign + ZnxNegateAssign,

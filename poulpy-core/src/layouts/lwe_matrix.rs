@@ -1,5 +1,5 @@
 use poulpy_hal::AlignedBuf;
-use poulpy_hal::layouts::{Backend, Data, HostDataRef, VecZnx, VecZnxToBackendMut, VecZnxToBackendRef, ZnxWord};
+use poulpy_hal::layouts::{Backend, Data, HostDataRef, Ring, Standard, VecZnx, VecZnxToBackendMut, VecZnxToBackendRef, ZnxWord};
 
 use crate::layouts::{Base2K, Degree, LWEInfos, SetBase2k, TorusPrecision};
 
@@ -46,18 +46,18 @@ impl LWEMatrixInfos for LWEMatrixLayout {
 ///
 /// `body[row]` is `b_row`; `mask[col][row]` is `A[row, col]`.
 #[derive(PartialEq, Eq, Clone)]
-pub struct LWEMatrix<D: Data, W: ZnxWord> {
+pub struct LWEMatrix<D: Data, W: ZnxWord, Rg: Ring = Standard> {
     pub(crate) noise: Option<crate::ComponentNoise>,
-    pub(crate) body: VecZnx<D, W>,
-    pub(crate) mask: VecZnx<D, W>,
+    pub(crate) body: VecZnx<D, W, Rg>,
+    pub(crate) mask: VecZnx<D, W, Rg>,
     pub(crate) k: TorusPrecision,
     pub(crate) base2k: Base2K,
 }
 
-pub type LWEMatrixBackendRef<'a, BE> = LWEMatrix<<BE as Backend>::BufRef<'a>, <BE as Backend>::ZnxWord>;
-pub type LWEMatrixBackendMut<'a, BE> = LWEMatrix<<BE as Backend>::BufMut<'a>, <BE as Backend>::ZnxWord>;
+pub type LWEMatrixBackendRef<'a, BE, Rg = Standard> = LWEMatrix<<BE as Backend>::BufRef<'a>, <BE as Backend>::ZnxWord, Rg>;
+pub type LWEMatrixBackendMut<'a, BE, Rg = Standard> = LWEMatrix<<BE as Backend>::BufMut<'a>, <BE as Backend>::ZnxWord, Rg>;
 
-impl<D: Data, W: ZnxWord> LWEInfos for LWEMatrix<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> LWEInfos for LWEMatrix<D, W, Rg> {
     fn noise(&self) -> Option<crate::ComponentNoise> {
         self.noise.clone()
     }
@@ -78,40 +78,40 @@ impl<D: Data, W: ZnxWord> LWEInfos for LWEMatrix<D, W> {
     }
 }
 
-impl<D: Data, W: ZnxWord> LWEMatrixInfos for LWEMatrix<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> LWEMatrixInfos for LWEMatrix<D, W, Rg> {
     fn rows(&self) -> usize {
         self.body.n()
     }
 }
 
-impl<D: Data, W: ZnxWord> SetBase2k for LWEMatrix<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> SetBase2k for LWEMatrix<D, W, Rg> {
     fn set_base2k(&mut self, base2k: Base2K) {
         self.base2k = base2k;
     }
 }
 
-impl<D: Data, W: ZnxWord> LWEMatrix<D, W> {
-    pub fn body(&self) -> &VecZnx<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> LWEMatrix<D, W, Rg> {
+    pub fn body(&self) -> &VecZnx<D, W, Rg> {
         &self.body
     }
 
-    pub fn body_mut(&mut self) -> &mut VecZnx<D, W> {
+    pub fn body_mut(&mut self) -> &mut VecZnx<D, W, Rg> {
         self.noise = None;
         &mut self.body
     }
 
-    pub fn mask(&self) -> &VecZnx<D, W> {
+    pub fn mask(&self) -> &VecZnx<D, W, Rg> {
         &self.mask
     }
 
-    pub fn mask_mut(&mut self) -> &mut VecZnx<D, W> {
+    pub fn mask_mut(&mut self) -> &mut VecZnx<D, W, Rg> {
         self.noise = None;
         &mut self.mask
     }
 }
 
-impl<D: Data, W: ZnxWord> LWEMatrix<D, W> {
-    pub fn reinterpret<To>(self) -> LWEMatrix<To::OwnedBuf, To::ZnxWord>
+impl<D: Data, W: ZnxWord, Rg: Ring> LWEMatrix<D, W, Rg> {
+    pub fn reinterpret<To>(self) -> LWEMatrix<To::OwnedBuf, To::ZnxWord, Rg>
     where
         To: Backend<OwnedBuf = D, ZnxWord = W>,
     {
@@ -127,8 +127,8 @@ impl<D: Data, W: ZnxWord> LWEMatrix<D, W> {
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> LWEMatrix<D, W> {
-    pub fn to_host_owned<BE>(&self) -> LWEMatrix<AlignedBuf, W>
+impl<D: HostDataRef, W: ZnxWord, Rg: Ring> LWEMatrix<D, W, Rg> {
+    pub fn to_host_owned<BE>(&self) -> LWEMatrix<AlignedBuf, W, Rg>
     where
         BE: Backend<OwnedBuf = D, ZnxWord = W>,
     {
@@ -142,41 +142,41 @@ impl<D: HostDataRef, W: ZnxWord> LWEMatrix<D, W> {
     }
 }
 
-pub trait LWEMatrixToBackendRef<BE: Backend> {
-    fn to_backend_ref(&self) -> LWEMatrixBackendRef<'_, BE>;
+pub trait LWEMatrixToBackendRef<BE: Backend, Rg: Ring = Standard> {
+    fn to_backend_ref(&self) -> LWEMatrixBackendRef<'_, BE, Rg>;
 }
 
-impl<BE: Backend> LWEMatrixToBackendRef<BE> for LWEMatrix<BE::OwnedBuf, BE::ZnxWord> {
-    fn to_backend_ref(&self) -> LWEMatrixBackendRef<'_, BE> {
+impl<BE: Backend, Rg: Ring> LWEMatrixToBackendRef<BE, Rg> for LWEMatrix<BE::OwnedBuf, BE::ZnxWord, Rg> {
+    fn to_backend_ref(&self) -> LWEMatrixBackendRef<'_, BE, Rg> {
         LWEMatrix {
             noise: self.noise.clone(),
-            body: <VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendRef<BE>>::to_backend_ref(&self.body),
-            mask: <VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendRef<BE>>::to_backend_ref(&self.mask),
+            body: <VecZnx<BE::OwnedBuf, BE::ZnxWord, Rg> as VecZnxToBackendRef<BE, Rg>>::to_backend_ref(&self.body),
+            mask: <VecZnx<BE::OwnedBuf, BE::ZnxWord, Rg> as VecZnxToBackendRef<BE, Rg>>::to_backend_ref(&self.mask),
             base2k: self.base2k,
             k: self.k,
         }
     }
 }
 
-pub trait LWEMatrixToBackendMut<BE: Backend>: LWEMatrixToBackendRef<BE> {
+pub trait LWEMatrixToBackendMut<BE: Backend, Rg: Ring = Standard>: LWEMatrixToBackendRef<BE, Rg> {
     /// Backend hook for propagating component noise metadata.
     fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>);
 
     /// Borrows coefficients mutably and clears the owner's component noise metadata.
-    fn to_backend_mut(&mut self) -> LWEMatrixBackendMut<'_, BE>;
+    fn to_backend_mut(&mut self) -> LWEMatrixBackendMut<'_, BE, Rg>;
 }
 
-impl<BE: Backend> LWEMatrixToBackendMut<BE> for LWEMatrix<BE::OwnedBuf, BE::ZnxWord> {
+impl<BE: Backend, Rg: Ring> LWEMatrixToBackendMut<BE, Rg> for LWEMatrix<BE::OwnedBuf, BE::ZnxWord, Rg> {
     fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
         self.noise = crate::layouts::checked_noise(metadata, crate::layouts::LWEInfos::n(self).as_usize() + 1);
     }
 
-    fn to_backend_mut(&mut self) -> LWEMatrixBackendMut<'_, BE> {
+    fn to_backend_mut(&mut self) -> LWEMatrixBackendMut<'_, BE, Rg> {
         self.noise = None;
         LWEMatrix {
             noise: None,
-            body: <VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendMut<BE>>::to_backend_mut(&mut self.body),
-            mask: <VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendMut<BE>>::to_backend_mut(&mut self.mask),
+            body: <VecZnx<BE::OwnedBuf, BE::ZnxWord, Rg> as VecZnxToBackendMut<BE, Rg>>::to_backend_mut(&mut self.body),
+            mask: <VecZnx<BE::OwnedBuf, BE::ZnxWord, Rg> as VecZnxToBackendMut<BE, Rg>>::to_backend_mut(&mut self.mask),
             base2k: self.base2k,
             k: self.k,
         }

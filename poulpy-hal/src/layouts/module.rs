@@ -10,7 +10,7 @@ mod sealed {
     pub trait Sealed {}
 }
 
-/// Sealed compile-time ring of a backend.
+/// Sealed compile-time ring of an operand.
 pub trait Ring: sealed::Sealed + Copy + Eq + Send + Sync + 'static {
     /// Ambient cyclotomic order divided by the coefficient dimension.
     const CYCLOTOMIC_ORDER_FACTOR: i64;
@@ -162,9 +162,6 @@ pub trait Backend: Sized + Sync + Send + PartialEq + Eq {
     /// Residency of this backend's buffers — [`Host`](crate::layouts::Host)
     /// or [`Device`](crate::layouts::Device).
     type Location: Location;
-
-    /// Ring served by this backend.
-    type Ring: Ring;
 
     /// Allocates a backend-owned byte buffer of `len` bytes.
     fn alloc_bytes(len: usize) -> Self::OwnedBuf;
@@ -356,8 +353,6 @@ pub trait Backend: Sized + Sync + Send + PartialEq + Eq {
     unsafe fn destroy(handle: NonNull<Self::Handle>);
 }
 
-/// Primary entry point for polynomial operations in the backend-selected ring.
-///
 /// Largest ring degree a [`Module`] accepts, on the standard and the
 /// conjugate-invariant ring alike.
 pub const MAX_RING_DEGREE: u64 = 1 << 17;
@@ -365,10 +360,10 @@ pub const MAX_RING_DEGREE: u64 = 1 << 17;
 /// A `Module` pairs a maximum ring degree `N` (always a power of two) with a
 /// backend-specific handle that holds any required precomputed state. All
 /// [`api`](crate::api) trait methods are dispatched through this type.
-/// Every operation serves operands of any power-of-two degree `n` with
+/// Every operation serves operands of either ring and of any power-of-two degree `n` with
 /// `B::MIN_DEGREE <= n <= N`, read from the operands; the handle holds the
-/// transform tables of every such degree. Allocation takes the degree
-/// explicitly.
+/// transform tables of every such degree, those of a ring built at construction or
+/// on its first use. Allocation takes the degree explicitly.
 ///
 /// The module **owns** its handle; dropping the `Module` calls
 /// [`Backend::destroy`].
@@ -406,7 +401,7 @@ impl<B: Backend> Module<B> {
     /// Panics unless `n` is a power of two at least [`Backend::MIN_DEGREE`],
     /// and `products` and `failure_bits` are positive.
     #[inline]
-    pub fn max_base2k(n: usize, products: usize, failure_bits: usize, squaring: bool) -> usize
+    pub fn max_base2k<Rg: Ring>(n: usize, products: usize, failure_bits: usize, squaring: bool) -> usize
     where
         B: super::MaxBase2k,
     {
@@ -414,7 +409,7 @@ impl<B: Backend> Module<B> {
         assert!(n >= B::MIN_DEGREE, "n is below the backend's minimum degree");
         assert!(products > 0, "products must be positive");
         assert!(failure_bits > 0, "failure_bits must be positive");
-        B::max_base2k(n, products, failure_bits, squaring)
+        B::max_base2k::<Rg>(n, products, failure_bits, squaring)
     }
 
     /// As [`Self::max_base2k`], for `products` terms of which only `squares` are
@@ -423,7 +418,7 @@ impl<B: Backend> Module<B> {
     /// # Panics
     /// As [`Self::max_base2k`], and unless `squares <= products`.
     #[inline]
-    pub fn max_base2k_squares(n: usize, products: usize, squares: usize, failure_bits: usize) -> usize
+    pub fn max_base2k_squares<Rg: Ring>(n: usize, products: usize, squares: usize, failure_bits: usize) -> usize
     where
         B: super::MaxBase2k,
     {
@@ -432,7 +427,7 @@ impl<B: Backend> Module<B> {
         assert!(products > 0, "products must be positive");
         assert!(squares <= products, "squares are counted among the products");
         assert!(failure_bits > 0, "failure_bits must be positive");
-        B::max_base2k_squares(n, products, squares, failure_bits)
+        B::max_base2k_squares::<Rg>(n, products, squares, failure_bits)
     }
 
     /// Creates a backend module for ring degree `N`.
@@ -503,7 +498,7 @@ impl<B: Backend> Module<B> {
 
     /// Allocates a zero-initialized backend-owned [`ScalarZnx`] of degree `n`.
     #[inline]
-    pub fn scalar_znx_alloc(&self, n: usize, cols: usize) -> ScalarZnx<B::OwnedBuf, B::ZnxWord> {
+    pub fn scalar_znx_alloc<Rg: Ring>(&self, n: usize, cols: usize) -> ScalarZnx<B::OwnedBuf, B::ZnxWord, Rg> {
         let len = B::scalar_znx_bytes_of(n, cols);
         let bytes = B::alloc_zeroed_bytes(len);
         ScalarZnx::from_data(bytes, n, cols)
@@ -511,8 +506,8 @@ impl<B: Backend> Module<B> {
 
     /// Allocates a zero-initialized backend-owned [`VecZnx`] of degree `n`.
     #[inline]
-    pub fn vec_znx_alloc(&self, n: usize, cols: usize, size: usize) -> VecZnx<B::OwnedBuf, B::ZnxWord> {
-        vec_znx_alloc_zeroed::<B>(n, cols, size)
+    pub fn vec_znx_alloc<Rg: Ring>(&self, n: usize, cols: usize, size: usize) -> VecZnx<B::OwnedBuf, B::ZnxWord, Rg> {
+        vec_znx_alloc_zeroed::<B, Rg>(n, cols, size)
     }
 
     /// Returns the byte size of a [`VecZnx`] of degree `n`.
@@ -523,14 +518,14 @@ impl<B: Backend> Module<B> {
 
     /// Allocates a zero-initialized backend-owned [`MatZnx`] of degree `n`.
     #[inline]
-    pub fn mat_znx_alloc(
+    pub fn mat_znx_alloc<Rg: Ring>(
         &self,
         n: usize,
         rows: usize,
         cols_in: usize,
         cols_out: usize,
         size: usize,
-    ) -> MatZnx<B::OwnedBuf, B::ZnxWord> {
+    ) -> MatZnx<B::OwnedBuf, B::ZnxWord, Rg> {
         let len = B::mat_znx_bytes_of(n, rows, cols_in, cols_out, size);
         let bytes = B::alloc_zeroed_bytes(len);
         MatZnx::from_data(bytes, n, rows, cols_in, cols_out, size)
@@ -574,24 +569,20 @@ impl<B: Backend> Module<B> {
     }
 }
 
-/// Returns the ambient cyclotomic order for the module's maximum degree `N`.
+/// Returns the ambient cyclotomic order of ring `Rg` at the module's maximum degree `N`.
 pub trait CyclotomicOrder
 where
     Self: ModuleN,
 {
-    /// Defaults to `2N` for `Z[X]/(X^N + 1)`; a backend may select another ambient ring.
-    fn cyclotomic_order(&self) -> i64 {
-        (self.n() << 1) as _
+    /// `2N` on [`Standard`], `4N` on [`ConjugateInvariant`].
+    fn cyclotomic_order<Rg: Ring>(&self) -> i64 {
+        Rg::CYCLOTOMIC_ORDER_FACTOR * self.n() as i64
     }
 }
 
 impl<BE: Backend> ModuleLogN for Module<BE> where Self: ModuleN {}
 
-impl<BE: Backend> CyclotomicOrder for Module<BE> {
-    fn cyclotomic_order(&self) -> i64 {
-        <BE::Ring as Ring>::CYCLOTOMIC_ORDER_FACTOR * self.n() as i64
-    }
-}
+impl<BE: Backend> CyclotomicOrder for Module<BE> {}
 
 /// Asserts that a module of degree `module_n` serves operands of degree `n`.
 ///
@@ -655,8 +646,8 @@ where
     Self: CyclotomicOrder,
 {
     /// Returns [`GALOISGENERATOR`]`^|generator| * sign(generator) mod cyclotomic_order`.
-    fn galois_element(&self, generator: i64) -> i64 {
-        galois_element(generator, self.cyclotomic_order())
+    fn galois_element<Rg: Ring>(&self, generator: i64) -> i64 {
+        galois_element(generator, self.cyclotomic_order::<Rg>())
     }
 
     /// Returns the inverse of `gal_el` modulo the ambient cyclotomic order.
@@ -664,13 +655,13 @@ where
     /// # Panics
     ///
     /// Panics if `gal_el == 0`.
-    fn galois_element_inv(&self, gal_el: i64) -> i64 {
+    fn galois_element_inv<Rg: Ring>(&self, gal_el: i64) -> i64 {
         if gal_el == 0 {
             panic!("cannot invert 0")
         }
 
-        let g_exp: u64 =
-            mod_exp_u64(gal_el.unsigned_abs(), (self.cyclotomic_order() - 1) as usize) & (self.cyclotomic_order() - 1) as u64;
+        let order: i64 = self.cyclotomic_order::<Rg>();
+        let g_exp: u64 = mod_exp_u64(gal_el.unsigned_abs(), (order - 1) as usize) & (order - 1) as u64;
         g_exp as i64 * gal_el.signum()
     }
 }

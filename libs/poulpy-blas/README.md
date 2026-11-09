@@ -104,7 +104,8 @@ width)` pairs and the tensor key's width. The output-layout queries (`blas_matmu
 each operation stamps on `res` from its inputs' layouts, so a client plans every intermediate grid, and with it every
 key, before it encrypts or runs anything. Every query takes a context or a public operand, or their layouts
 (`BlasContextLayout`, `BlasPtOperandLayout`), and reads only the shape of their maps, so the plan needs no map encoded;
-the radix queries name their backend, `blas_matmul_max_base2k::<BE>`.
+the key-use queries name the ring of their operands, `blas_matmul_key_uses::<_, Rg>`, and the radix queries also
+their backend, `blas_matmul_max_base2k::<BE, Rg>`, since no argument fixes either.
 
 The [pipeline example](../../backends/poulpy-cpu-portable/examples/blas_pipeline.rs) plans its keys this way, plans every layout from the queries, runs `blas_matmul`,
 `blas_transpose`, `blas_matmul_pt_right`, `blas_matmul_pt_left` and `blas_sum` on a batch of encrypted matrices, prints the
@@ -116,10 +117,10 @@ cargo run -p poulpy-cpu-portable --example blas_pipeline --features enable-blas
 
 ## Lifecycle
 
-poulpy-blas follows poulpy-core's layouts: a standard form, which a client builds and a server stores, and a prepared
+poulpy-blas follows poulpy-core's layouts: an unprepared form, which a client builds and a server stores, and a prepared
 form, the backend's representation, which operations read.
 
-| Standard | Prepared | Layout and infos |
+| Unprepared | Prepared | Layout and infos |
 |---|---|---|
 | `BlasCiphertext` | none | `BlasLayout`, `BlasGridInfos` |
 | `BlasVector` | none | `BlasVectorLayout`, `BlasVectorInfos` |
@@ -144,11 +145,12 @@ storage:
 let mut ctx = module.blas_context_alloc(plan, base2k, coeffs_meta);
 let mut prepared = module.blas_context_prepared_alloc_from_infos(&ctx);
 let encode_bytes = BlasEncodingOps::<BE, f64>::blas_context_encode_tmp_bytes(&module, &ctx);
-let mut scratch = ScratchOwned::<BE>::alloc(encode_bytes.max(module.blas_context_prepare_tmp_bytes(&ctx)));
+let prepare_bytes = BlasContextPreparedFactory::<BE, Standard>::blas_context_prepare_tmp_bytes(&module, &ctx);
+let mut scratch = ScratchOwned::<BE>::alloc(encode_bytes.max(prepare_bytes));
 BlasEncodingOps::<BE, f64>::blas_context_encode(&module, &mut ctx, &mut scratch.borrow())?;
 module.blas_context_prepare(&mut prepared, &ctx, &mut scratch.borrow());
 
-let mut b = module.blas_pt_operand_alloc::<Right>(plan, rows, cols, count, base2k, coeffs_meta);
+let mut b = module.blas_pt_operand_alloc::<Right, Standard>(plan, rows, cols, count, base2k, coeffs_meta);
 module.blas_pt_operand_encode(&mut b, |m, row, col| entry(m, row, col), &mut scratch.borrow())?;
 ```
 
@@ -175,8 +177,10 @@ poulpy-blas imports no backend. Backend crates select the reference compositions
 `poulpy_blas::impl_blas_reference_full!(Backend)`. To override a family, a backend wires the other families with
 `impl_blas_mat_inter_reference_full!`, `impl_blas_mat_intra_reference_full!`, `impl_blas_mat_mul_reference_full!`,
 `impl_blas_mat_vec_reference_full!`, `impl_blas_jkls_reference_full!` or `impl_blas_encoding_reference_full!` and implements that family's `oep` trait by
-hand, forwarding the methods it keeps to `reference`. `poulpy-cpu-oracle` and the CPU backends do so behind their
-`enable-blas` feature. A backend crate outside this workspace does the same for its own types. It takes `poulpy-hal`,
+hand on each ring it overrides, forwarding the methods it keeps to `reference`, each family selected per ring as the
+[layering contract](../../docs/guides/layering-contract.md#selecting-an-implementation) states. `poulpy-cpu-oracle` and
+the CPU backends do so behind their `enable-blas` feature. A backend crate outside this workspace does the same for
+its own types. It takes `poulpy-hal`,
 `poulpy-core`, `poulpy-ckks` and `poulpy-blas` from one poulpy source, as direct dependencies under those names, because
 the macros expand to `::poulpy_hal`, `::poulpy_core` and `::poulpy_ckks`. Like the reference, an implementation runs its
 operation's validator, the public `layouts::validate_*`, before any write and stamps the batch record of `res` after
@@ -190,7 +194,7 @@ cargo test -p poulpy-blas
 
 The `test-utils` feature exposes the functional suite, registered with `blas_backend_test_suite!` and run by
 `poulpy-cpu-oracle` and the serial `poulpy-cpu-portable` types, its conjugate-invariant counterpart, registered with
-`blas_conjugate_invariant_test_suite!` and run by every conjugate-invariant backend type, the parity suite, registered
+`blas_conjugate_invariant_test_suite!` and run by every backend type on the conjugate-invariant ring, the parity suite, registered
 with `blas_parity_test_suite!`, and the radix helpers' test, registered with `blas_max_base2k_test_suite!` for a backend
 that implements `MaxBase2k`. Parity compares a tested backend with a reference backend bit for bit, at every block
 dimension that the optional `shapes` argument (`test_suite::parity::BlasParityShapes`, `log_d` 1 and 2 by default)

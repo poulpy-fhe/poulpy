@@ -3,7 +3,7 @@ use crate::{
     layouts::slots::conj_rotate_galois_element, oep::CKKSConjugateImpl,
 };
 use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey};
-use poulpy_hal::layouts::{CyclotomicOrder, Module, ScratchArena};
+use poulpy_hal::layouts::{CyclotomicOrder, Module, ScratchArena, Standard};
 
 pub(crate) fn ckks_conjugate_tmp_bytes_derived<BE: CKKSConjugateImpl, C: CKKSCtBounds, K: GGLWEInfos>(
     module: &Module<BE>,
@@ -43,7 +43,7 @@ where
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     H: GetAutomorphismKey<BE>,
 {
-    let p = conj_rotate_galois_element(k, module.cyclotomic_order());
+    let p = conj_rotate_galois_element(k, module.cyclotomic_order::<Standard>());
     // The switch reads `src` at `dst.k()` when `dst` is narrower.
     let switch_k = src.k().min(dst.k());
     let key = keys

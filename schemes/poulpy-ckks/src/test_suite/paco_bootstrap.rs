@@ -54,7 +54,7 @@ const PACO_C: usize = 8;
 /// cleartext oracle (suite-scale parameters).
 pub fn test_paco_seq_bootstrap<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSLinearTransformationOps<BE>
@@ -82,7 +82,7 @@ where
 /// by default, run explicitly with `--ignored`.
 pub fn test_paco_paper_scale<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSLinearTransformationOps<BE>
@@ -121,7 +121,7 @@ fn seq_bootstrap_case<BE, F, E>(
     stc_depth: Vec<usize>,
     slot_order: crate::layouts::PaCoSlotOrder,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSLinearTransformationOps<BE>
@@ -259,7 +259,7 @@ fn seq_bootstrap_case<BE, F, E>(
         module.ckks_paco_bootstrap_direct_into::<_, _>(&mut out, &ct_in, &ctx, &keys, s)
     })
     .unwrap();
-    assert_slots::<BE, F, E>(
+    assert_slots::<BE, F, E, Standard>(
         &format!("paco_seq_bootstrap[final]({paco_h},{paco_c},{slot_order:?})"),
         &module,
         &host_module,
@@ -289,7 +289,7 @@ fn seq_bootstrap_case<BE, F, E>(
             k_low,
             "reduced-level bootstrap must produce exactly the requested output level"
         );
-        assert_slots::<BE, F, E>(
+        assert_slots::<BE, F, E, Standard>(
             &format!("paco_seq_bootstrap[reduced-level]({paco_h},{paco_c},{slot_order:?})"),
             &module,
             &host_module,

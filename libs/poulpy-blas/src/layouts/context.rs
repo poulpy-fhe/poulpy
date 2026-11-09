@@ -14,7 +14,7 @@ use poulpy_core::layouts::{
 };
 use poulpy_hal::{
     api::CnvPVecAlloc,
-    layouts::{Backend, Module, galois_elements_from_rotations},
+    layouts::{Backend, Module, Ring, Standard, galois_elements_from_rotations},
 };
 
 use super::{
@@ -554,119 +554,119 @@ impl BlasContextInfos for BlasContextLayout {
 
 /// The JKLS maps of one matrix dimension, their one-diagonal halves and their variants on a replicated input, encoded
 /// and not yet prepared.
-pub struct BlasContext<BE: Backend> {
+pub struct BlasContext<BE: Backend, Rg: Ring = Standard> {
     layout: BlasContextLayout,
-    pub(crate) maps: ContextMaps<Encoded<BE>>,
+    pub(crate) maps: ContextMaps<Encoded<BE, Rg>>,
 }
 
 /// The prepared JKLS maps of one matrix dimension, their one-diagonal halves and their variants on a replicated input.
-pub struct BlasContextPrepared<BE: Backend> {
+pub struct BlasContextPrepared<BE: Backend, Rg: Ring = Standard> {
     layout: BlasContextLayout,
-    pub(crate) maps: ContextMaps<LinearTransformationPrepared<BE>>,
+    pub(crate) maps: ContextMaps<LinearTransformationPrepared<BE, Rg>>,
 }
 
-impl<BE: Backend> BlasContextInfos for BlasContext<BE> {
+impl<BE: Backend, Rg: Ring> BlasContextInfos for BlasContext<BE, Rg> {
     fn blas_context_layout(&self) -> BlasContextLayout {
         self.layout
     }
 }
 
-impl<BE: Backend> BlasContextInfos for BlasContextPrepared<BE> {
+impl<BE: Backend, Rg: Ring> BlasContextInfos for BlasContextPrepared<BE, Rg> {
     fn blas_context_layout(&self) -> BlasContextLayout {
         self.layout
     }
 }
 
-impl<BE: Backend> BlasContext<BE> {
+impl<BE: Backend, Rg: Ring> BlasContext<BE, Rg> {
     /// Every encoded map, in the order encoding and preparation walk them: sigma, tau, tau on a replicated input, the
     /// transpose and the projections on row 0 and column 0, then psi^k, psi^k on a replicated input, phi^k and the
     /// halves of psi^k and of phi^k, then, under `JklsStored` and `JklsGalois`, the column halves of psi^k
     /// ([`BlasContextPrepared::rows_left`], [`BlasContextPrepared::rows_right`]), each family for `k = 1..d`.
-    pub fn maps(&self) -> impl Iterator<Item = &LinearTransformation<CKKSPlaintextOwned<BE>>> {
+    pub fn maps(&self) -> impl Iterator<Item = &LinearTransformation<CKKSPlaintextOwned<BE, Rg>>> {
         self.maps.iter()
     }
 }
 
-impl<BE: Backend> BlasContextPrepared<BE> {
+impl<BE: Backend, Rg: Ring> BlasContextPrepared<BE, Rg> {
     /// Every prepared map, in the order of [`BlasContext::maps`].
-    pub fn maps(&self) -> impl Iterator<Item = &LinearTransformationPrepared<BE>> {
+    pub fn maps(&self) -> impl Iterator<Item = &LinearTransformationPrepared<BE, Rg>> {
         self.maps.iter()
     }
 
     /// JKLS sigma.
-    pub fn sigma(&self) -> &LinearTransformationPrepared<BE> {
+    pub fn sigma(&self) -> &LinearTransformationPrepared<BE, Rg> {
         self.maps.sigma()
     }
 
     /// JKLS tau.
-    pub fn tau(&self) -> &LinearTransformationPrepared<BE> {
+    pub fn tau(&self) -> &LinearTransformationPrepared<BE, Rg> {
         self.maps.tau()
     }
 
     /// JKLS tau of a replicated input ([`maps::tau_rep`]): `d` diagonals, scheduled at tau's giant step.
-    pub fn tau_rep(&self) -> &LinearTransformationPrepared<BE> {
+    pub fn tau_rep(&self) -> &LinearTransformationPrepared<BE, Rg> {
         self.maps.tau_rep()
     }
 
     /// Per-matrix transpose.
-    pub fn transpose(&self) -> &LinearTransformationPrepared<BE> {
+    pub fn transpose(&self) -> &LinearTransformationPrepared<BE, Rg> {
         self.maps.transpose()
     }
 
     /// Projection on row 0 of every matrix ([`maps::first_row`]): one diagonal at offset 0, `Direct`.
-    pub fn first_row(&self) -> &LinearTransformationPrepared<BE> {
+    pub fn first_row(&self) -> &LinearTransformationPrepared<BE, Rg> {
         self.maps.first_row()
     }
 
     /// Projection on column 0 of every matrix ([`maps::first_col`]): one diagonal at offset 0, `Direct`.
-    pub fn first_col(&self) -> &LinearTransformationPrepared<BE> {
+    pub fn first_col(&self) -> &LinearTransformationPrepared<BE, Rg> {
         self.maps.first_col()
     }
 
     /// psi^k. Panics unless `1 <= k < d`.
-    pub fn rotate_rows(&self, k: usize) -> &LinearTransformationPrepared<BE> {
+    pub fn rotate_rows(&self, k: usize) -> &LinearTransformationPrepared<BE, Rg> {
         self.maps.rotate_rows(k)
     }
 
     /// psi^k of a replicated input ([`maps::rotate_rows_rep`]): the rotation by `k d`, at no scale. Panics unless
     /// `1 <= k < d`.
-    pub fn rotate_rows_rep(&self, k: usize) -> &LinearTransformationPrepared<BE> {
+    pub fn rotate_rows_rep(&self, k: usize) -> &LinearTransformationPrepared<BE, Rg> {
         self.maps.rotate_rows_rep(k)
     }
 
     /// phi^k. Panics unless `1 <= k < d`.
-    pub fn rotate_cols(&self, k: usize) -> &LinearTransformationPrepared<BE> {
+    pub fn rotate_cols(&self, k: usize) -> &LinearTransformationPrepared<BE, Rg> {
         self.maps.rotate_cols(k)
     }
 
     /// The rows of psi^k that stay in the block. Panics unless `1 <= k < d`.
-    pub fn rows_upper(&self, k: usize) -> &LinearTransformationPrepared<BE> {
+    pub fn rows_upper(&self, k: usize) -> &LinearTransformationPrepared<BE, Rg> {
         self.maps.rows_upper(k)
     }
 
     /// The rows of psi^k that wrap around the block. Panics unless `1 <= k < d`.
-    pub fn rows_lower(&self, k: usize) -> &LinearTransformationPrepared<BE> {
+    pub fn rows_lower(&self, k: usize) -> &LinearTransformationPrepared<BE, Rg> {
         self.maps.rows_lower(k)
     }
 
     /// The columns of phi^k that stay in the block. Panics unless `1 <= k < d`.
-    pub fn cols_left(&self, k: usize) -> &LinearTransformationPrepared<BE> {
+    pub fn cols_left(&self, k: usize) -> &LinearTransformationPrepared<BE, Rg> {
         self.maps.cols_left(k)
     }
 
     /// The columns of phi^k that wrap around the block. Panics unless `1 <= k < d`.
-    pub fn cols_right(&self, k: usize) -> &LinearTransformationPrepared<BE> {
+    pub fn cols_right(&self, k: usize) -> &LinearTransformationPrepared<BE, Rg> {
         self.maps.cols_right(k)
     }
 
     /// The columns of psi^k that phi^k keeps in the block, `c + k < d` ([`maps::rows_left`]). Panics unless
     /// `1 <= k < d` and the plan selects [`BlasPtAlgorithm::JklsStored`] or [`BlasPtAlgorithm::JklsGalois`].
-    pub fn rows_left(&self, k: usize) -> &LinearTransformationPrepared<BE> {
+    pub fn rows_left(&self, k: usize) -> &LinearTransformationPrepared<BE, Rg> {
         self.maps.rows_left(k)
     }
 
     /// The columns of psi^k that phi^k wraps, `c + k >= d` ([`maps::rows_right`]). Panics as [`Self::rows_left`].
-    pub fn rows_right(&self, k: usize) -> &LinearTransformationPrepared<BE> {
+    pub fn rows_right(&self, k: usize) -> &LinearTransformationPrepared<BE, Rg> {
         self.maps.rows_right(k)
     }
 }
@@ -707,17 +707,17 @@ pub(crate) fn assert_maps_fit(owner: &str, log_d: usize, slots: usize, coeffs_me
     assert!((1..=63).contains(&base2k.as_usize()), "the {owner}'s radix is outside 1..=63");
 }
 
-/// Panics unless `layout` fits, as [`assert_fits`] states, and is of `module`'s ring.
-pub(crate) fn assert_fits_module(module: &(impl GetDegree + CKKSModuleInfos), layout: &BlasContextLayout) {
+/// Panics unless `layout` fits, as [`assert_fits`] states, and is laid out at `module`'s degree on ring `Rg`.
+pub(crate) fn assert_fits_module<Rg: Ring>(module: &(impl GetDegree + CKKSModuleInfos), layout: &BlasContextLayout) {
     assert_fits(layout);
     assert!(
-        layout.n == module.ring_degree() && layout.slots == module.ckks_max_slots(),
-        "the context's ring is not the module's"
+        layout.n == module.ring_degree() && layout.slots == module.ckks_max_slots::<Rg>(),
+        "the context is laid out for another degree or ring than the call's"
     );
 }
 
-/// The layout of a context of `plan` on `module`'s ring.
-pub(crate) fn module_layout(
+/// The layout of a context of `plan` at `module`'s degree on ring `Rg`.
+pub(crate) fn module_layout<Rg: Ring>(
     module: &(impl GetDegree + CKKSModuleInfos),
     plan: BlasPlan,
     base2k: Base2K,
@@ -728,29 +728,29 @@ pub(crate) fn module_layout(
         base2k,
         coeffs_meta,
         n: module.ring_degree(),
-        slots: module.ckks_max_slots(),
+        slots: module.ckks_max_slots::<Rg>(),
     }
 }
 
 /// Allocation of contexts.
 pub trait BlasContextAlloc<BE: Backend>: CKKSLinearTransformationAlloc<BE> + GetDegree + Sized {
-    /// A context of `plan` on this module's ring, every diagonal zero, which
+    /// A context of `plan` on the ring `Rg`, every diagonal zero, which
     /// [`BlasEncodingOps::blas_context_encode`](crate::api::BlasEncodingOps::blas_context_encode) fills.
     ///
     /// # Panics
     ///
     /// Panics if the blocks of `plan` are smaller than `2 x 2` or do not fit the module's slots, if `coeffs_meta.k` is
     /// `0` or if `base2k` is outside `1..=63`.
-    fn blas_context_alloc(&self, plan: BlasPlan, base2k: Base2K, coeffs_meta: CoeffsMeta) -> BlasContext<BE> {
-        self.blas_context_alloc_from_infos(&module_layout(self, plan, base2k, coeffs_meta))
+    fn blas_context_alloc<Rg: Ring>(&self, plan: BlasPlan, base2k: Base2K, coeffs_meta: CoeffsMeta) -> BlasContext<BE, Rg> {
+        self.blas_context_alloc_from_infos(&module_layout::<Rg>(self, plan, base2k, coeffs_meta))
     }
 
-    /// A context of `infos`, which must be of this module's ring.
+    /// A context of `infos`, on the ring `Rg`.
     ///
     /// # Panics
     ///
     /// As [`Self::blas_context_alloc`], and if the degree or the slots of `infos` are not the module's.
-    fn blas_context_alloc_from_infos<A: BlasContextInfos>(&self, infos: &A) -> BlasContext<BE> {
+    fn blas_context_alloc_from_infos<A: BlasContextInfos, Rg: Ring>(&self, infos: &A) -> BlasContext<BE, Rg> {
         alloc(self, &infos.blas_context_layout())
     }
 }
@@ -758,29 +758,31 @@ pub trait BlasContextAlloc<BE: Backend>: CKKSLinearTransformationAlloc<BE> + Get
 impl<BE: Backend> BlasContextAlloc<BE> for Module<BE> where Module<BE>: CKKSLinearTransformationAlloc<BE> {}
 
 /// [`BlasContextAlloc::blas_context_alloc_from_infos`].
-fn alloc<BE, M>(module: &M, layout: &BlasContextLayout) -> BlasContext<BE>
+fn alloc<BE, M, Rg: Ring>(module: &M, layout: &BlasContextLayout) -> BlasContext<BE, Rg>
 where
     BE: Backend,
     M: CKKSLinearTransformationAlloc<BE> + GetDegree,
 {
-    assert_fits_module(module, layout);
+    assert_fits_module::<Rg>(module, layout);
     let maps = ContextMaps::build(layout.plan, layout.slots, |id| {
-        context_map::<f64>(layout, id).layout().alloc::<BE, M>(module, layout.base2k)
+        context_map::<f64>(layout, id)
+            .layout()
+            .alloc::<BE, M, Rg>(module, layout.base2k)
     });
     BlasContext { layout: *layout, maps }
 }
 
 /// [`crate::api::BlasContextPreparedFactory::blas_context_prepared_alloc_from_infos`].
-pub(crate) fn alloc_prepared<BE, M>(module: &M, layout: &BlasContextLayout) -> BlasContextPrepared<BE>
+pub(crate) fn alloc_prepared<BE, M, Rg: Ring>(module: &M, layout: &BlasContextLayout) -> BlasContextPrepared<BE, Rg>
 where
     BE: Backend,
     M: CnvPVecAlloc<BE> + CKKSModuleInfos + GetDegree,
 {
-    assert_fits_module(module, layout);
+    assert_fits_module::<Rg>(module, layout);
     let maps = ContextMaps::build(layout.plan, layout.slots, |id| {
         context_map::<f64>(layout, id)
             .layout()
-            .alloc_prepared::<BE, M>(module, layout.base2k)
+            .alloc_prepared::<BE, M, Rg>(module, layout.base2k)
     });
     BlasContextPrepared { layout: *layout, maps }
 }
@@ -846,8 +848,8 @@ mod tests {
     #[test]
     fn contexts_allocate_every_map_of_their_layout() {
         let module = Module::<HostBytesBackend>::new(256);
-        let layout = module_layout(&module, BlasPlan::new(2), Base2K(19), CoeffsMeta::from_delta_budget(20, 19));
-        let ctx = module.blas_context_alloc_from_infos(&layout);
+        let layout = module_layout::<Standard>(&module, BlasPlan::new(2), Base2K(19), CoeffsMeta::from_delta_budget(20, 19));
+        let ctx = module.blas_context_alloc_from_infos::<_, Standard>(&layout);
         // Sigma, tau, tau on a replicated input, the transpose and both projections, then seven families of shifts for
         // k = 1, 2, 3.
         assert_eq!(ctx.maps().count(), 6 + 7 * 3);
@@ -873,8 +875,8 @@ mod tests {
             BlasPtAlgorithm::JklsStored,
             BlasPtAlgorithm::JklsGalois,
         ] {
-            let layout = module_layout(&module, BlasPlan::new(2).with_pt_algorithm(algorithm), Base2K(19), meta);
-            let ctx = module.blas_context_alloc_from_infos(&layout);
+            let layout = module_layout::<Standard>(&module, BlasPlan::new(2).with_pt_algorithm(algorithm), Base2K(19), meta);
+            let ctx = module.blas_context_alloc_from_infos::<_, Standard>(&layout);
             let families = if algorithm.masked() { 9 } else { 7 };
             assert_eq!(ctx.maps().count(), 6 + families * 3, "{algorithm:?}");
             assert_eq!(MapId::all(layout.plan).count(), ctx.maps().count(), "{algorithm:?}");
@@ -884,7 +886,7 @@ mod tests {
     #[test]
     fn context_allocation_panics_on_layouts_that_do_not_fit() {
         let module = Module::<HostBytesBackend>::new(256);
-        let base = module_layout(&module, BlasPlan::new(2), Base2K(19), CoeffsMeta::from_delta_budget(20, 19));
+        let base = module_layout::<Standard>(&module, BlasPlan::new(2), Base2K(19), CoeffsMeta::from_delta_budget(20, 19));
         for layout in [
             BlasContextLayout {
                 plan: BlasPlan::new(0),
@@ -893,7 +895,9 @@ mod tests {
             BlasContextLayout { n: Degree(512), ..base },
             BlasContextLayout { slots: 64, ..base },
         ] {
-            let alloc = catch_unwind(AssertUnwindSafe(|| module.blas_context_alloc_from_infos(&layout)));
+            let alloc = catch_unwind(AssertUnwindSafe(|| {
+                module.blas_context_alloc_from_infos::<_, Standard>(&layout)
+            }));
             assert!(alloc.is_err(), "{layout:?}");
         }
     }
@@ -901,11 +905,12 @@ mod tests {
     #[test]
     fn sum_keys_plan_from_a_layout() {
         let module = Module::<HostBytesBackend>::new(256);
-        let mut ct = module.blas_ciphertext_alloc(2, 1, 1, 19usize.into(), 60usize.into());
+        let mut ct = module.blas_ciphertext_alloc::<Standard>(2, 1, 1, 19usize.into(), 60usize.into());
         let mut layout = BlasLayout::new(ct.block_layout(), 2, 2, 2);
-        let order = module.cyclotomic_order();
+        let order = module.cyclotomic_order::<Standard>();
         // 128 slots hold 8 matrix slots of 4 x 4 blocks: rotations by 16, 32 and 64.
-        let want = |rotations: &[i64]| -> Vec<i64> { rotations.iter().map(|&r| module.ckks_galois_element(r)).collect() };
+        let want =
+            |rotations: &[i64]| -> Vec<i64> { rotations.iter().map(|&r| module.ckks_galois_element::<Standard>(r)).collect() };
         let sorted = |mut elements: Vec<i64>| {
             elements.sort_unstable();
             elements
@@ -968,7 +973,7 @@ mod tests {
     #[test]
     fn replicated_reads_the_label() {
         let module = Module::<HostBytesBackend>::new(256);
-        let ct = module.blas_ciphertext_alloc(2, 1, 1, 19usize.into(), 60usize.into());
+        let ct = module.blas_ciphertext_alloc::<Standard>(2, 1, 1, 19usize.into(), 60usize.into());
         let mut layout = BlasLayout::new(ct.block_layout(), 2, 1, 1);
         for (log_sparsity, want) in [(0, false), (2, false), (3, true), (5, true)] {
             layout.block.meta.log_sparsity = log_sparsity;

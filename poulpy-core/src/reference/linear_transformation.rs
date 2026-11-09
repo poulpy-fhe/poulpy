@@ -49,7 +49,7 @@ use poulpy_hal::{
         VecZnxGadgetDecompose, VecZnxGadgetDecomposeTmpBytes, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxIdftNormalize,
         VecZnxIdftNormalizeTmpBytes, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes,
     },
-    layouts::{Backend, GaloisElement, Module, ScratchArena, VecZnxDftBackendMut},
+    layouts::{Backend, GaloisElement, Module, Ring, ScratchArena, Standard, VecZnxDftBackendMut},
 };
 
 use crate::{
@@ -67,7 +67,7 @@ use crate::{
 
 /// Reference bodies of the [`GLWELinearTransformationImpl`] methods, which
 /// [`impl_glwe_linear_transformation_reference_full!`](crate::impl_glwe_linear_transformation_reference_full) forwards to.
-pub trait GLWELinearTransformationReference<BE: Backend> {
+pub trait GLWELinearTransformationReference<BE: Backend, Rg: Ring = Standard> {
     fn glwe_linear_transformation_eval_tmp_bytes_reference<R, A, B, K, T>(
         &self,
         res: &R,
@@ -148,104 +148,104 @@ pub trait GLWELinearTransformationReference<BE: Backend> {
 
     fn glwe_linear_transformation_rhs_prepare_reference<P>(
         &self,
-        prepared: &mut LinearTransformation<PreparedDiagonal<BE::OwnedBuf, BE>>,
+        prepared: &mut LinearTransformation<PreparedDiagonal<BE::OwnedBuf, BE, Rg>>,
         lt: &LinearTransformation<P>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        P: GLWEToBackendRef<BE> + GLWEInfos;
+        P: GLWEToBackendRef<BE, Rg> + GLWEInfos;
 
-    fn glwe_linear_transformation_baby_steps_prepare_reference<A, H, L: BabyStepOperand<BE>>(
+    fn glwe_linear_transformation_baby_steps_prepare_reference<A, H, L: BabyStepOperand<BE, Rg>>(
         &self,
-        cache: &mut LinearTransformationBabySteps<BE, L>,
+        cache: &mut LinearTransformationBabySteps<BE, Rg, L>,
         a: &A,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        A: GLWEToBackendRef<BE> + GLWEInfos,
-        H: GetAutomorphismKey<BE>;
+        A: GLWEToBackendRef<BE, Rg> + GLWEInfos,
+        H: GetAutomorphismKey<BE, Rg>;
 
-    fn glwe_linear_transformation_eval_into_reference<R, P, H, L: BabyStepOperand<BE>>(
+    fn glwe_linear_transformation_eval_into_reference<R, P, H, L: BabyStepOperand<BE, Rg>>(
         &self,
         cnv_offset: usize,
         res: &mut R,
-        lhs: &LinearTransformationBabySteps<BE, L>,
+        lhs: &LinearTransformationBabySteps<BE, Rg, L>,
         rhs: &LinearTransformation<P>,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        P: GLWEDiagonalProd<BE>,
-        H: GetAutomorphismKey<BE> + GetTensorKey<BE>;
+        R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+        P: GLWEDiagonalProd<BE, Rg>,
+        H: GetAutomorphismKey<BE, Rg> + GetTensorKey<BE, Rg>;
 
-    fn glwe_linear_transformation_eval_sum_into_reference<R, P, H, L: BabyStepOperand<BE>>(
+    fn glwe_linear_transformation_eval_sum_into_reference<R, P, H, L: BabyStepOperand<BE, Rg>>(
         &self,
         cnv_offset: usize,
         res: &mut R,
-        babies: &[&LinearTransformationBabySteps<BE, L>],
+        babies: &[&LinearTransformationBabySteps<BE, Rg, L>],
         lts: &[&LinearTransformation<P>],
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        P: GLWEDiagonalProd<BE>,
-        H: GetAutomorphismKey<BE> + GetTensorKey<BE>;
+        R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+        P: GLWEDiagonalProd<BE, Rg>,
+        H: GetAutomorphismKey<BE, Rg> + GetTensorKey<BE, Rg>;
 
     fn glwe_giant_step_batch_reference(&self) -> usize;
 
-    fn glwe_accumulate_giant_steps_reference<L: BabyStepOperand<BE>>(
+    fn glwe_accumulate_giant_steps_reference<L: BabyStepOperand<BE, Rg>>(
         &self,
         cnv_offset_hi: usize,
-        prods: &mut [VecZnxDftBackendMut<'_, BE>],
-        lhs: &LinearTransformationBabySteps<BE, L>,
-        steps: &[LinearTransformationGiantStep<PreparedDiagonal<BE::OwnedBuf, BE>>],
+        prods: &mut [VecZnxDftBackendMut<'_, BE, Rg>],
+        lhs: &LinearTransformationBabySteps<BE, Rg, L>,
+        steps: &[LinearTransformationGiantStep<PreparedDiagonal<BE::OwnedBuf, BE, Rg>>],
         scratch: &mut ScratchArena<'_, BE>,
     );
 }
 
-impl<BE: Backend> GLWELinearTransformationReference<BE> for Module<BE>
+impl<BE: Backend, Rg: Ring> GLWELinearTransformationReference<BE, Rg> for Module<BE>
 where
-    BE: GGLWEProductDigitsStridedImpl + GLWELinearTransformationImpl + GLWETensoringImpl,
+    BE: GGLWEProductDigitsStridedImpl<Rg> + GLWELinearTransformationImpl<Rg> + GLWETensoringImpl<Rg>,
     Module<BE>: GLWEBytesOf<BE>
-        + GLWEPreparedTensoring<BE>
-        + GLWETensoringReference<BE>
-        + GLWENormalize<BE>
-        + GLWEAutomorphism<BE>
-        + GLWEAdd<BE>
-        + GLWECopy<BE>
-        + GLWEMulPlain<BE>
+        + GLWEPreparedTensoring<BE, Rg>
+        + GLWETensoringReference<BE, Rg>
+        + GLWENormalize<BE, Rg>
+        + GLWEAutomorphism<BE, Rg>
+        + GLWEAdd<BE, Rg>
+        + GLWECopy<BE, Rg>
+        + GLWEMulPlain<BE, Rg>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
         + ModuleN
-        + CnvOps<BE>
+        + CnvOps<BE, Rg>
         + CnvPVecAlloc<BE>
         + CnvPVecBytesOf
-        + GGLWEProductReference<BE>
-        + GLWEKeyswitchInternal<BE>
-        + VecZnxAutomorphism<BE>
-        + VecZnxAutomorphismAssign<BE>
-        + VecZnxBigAddAssign<BE>
+        + GGLWEProductReference<BE, Rg>
+        + GLWEKeyswitchInternal<BE, Rg>
+        + VecZnxAutomorphism<BE, Rg>
+        + VecZnxAutomorphismAssign<BE, Rg>
+        + VecZnxBigAddAssign<BE, Rg>
         + VecZnxBigAlloc<BE>
-        + VecZnxBigAutomorphismAssign<BE>
+        + VecZnxBigAutomorphismAssign<BE, Rg>
         + VecZnxBigAutomorphismAssignTmpBytes
         + VecZnxBigBytesOf
-        + VecZnxBigFromSmall<BE>
-        + VecZnxBigNormalize<BE>
+        + VecZnxBigFromSmall<BE, Rg>
+        + VecZnxBigNormalize<BE, Rg>
         + VecZnxBigNormalizeTmpBytes
-        + VecZnxCopy<BE>
-        + VecZnxDftAddAssign<BE>
+        + VecZnxCopy<BE, Rg>
+        + VecZnxDftAddAssign<BE, Rg>
         + VecZnxDftAlloc<BE>
-        + VecZnxDftApply<BE>
-        + VecZnxDftAutomorphism<BE>
+        + VecZnxDftApply<BE, Rg>
+        + VecZnxDftAutomorphism<BE, Rg>
         + VecZnxDftAutomorphismAddWithPlanTmpBytes
         + VecZnxDftBytesOf
-        + VecZnxDftCopy<BE>
-        + VecZnxDftZero<BE>
-        + VecZnxGadgetDecompose<BE>
+        + VecZnxDftCopy<BE, Rg>
+        + VecZnxDftZero<BE, Rg>
+        + VecZnxGadgetDecompose<BE, Rg>
         + VecZnxGadgetDecomposeTmpBytes
-        + VecZnxIdftApply<BE>
+        + VecZnxIdftApply<BE, Rg>
         + VecZnxIdftApplyTmpBytes
-        + VecZnxIdftNormalize<BE>
+        + VecZnxIdftNormalize<BE, Rg>
         + VecZnxIdftNormalizeTmpBytes
-        + VecZnxNormalizeAssign<BE>
+        + VecZnxNormalizeAssign<BE, Rg>
         + VecZnxNormalizeTmpBytes
         + GaloisElement
         + Sync,
@@ -348,56 +348,56 @@ where
 
     fn glwe_linear_transformation_rhs_prepare_reference<P>(
         &self,
-        prepared: &mut LinearTransformation<PreparedDiagonal<BE::OwnedBuf, BE>>,
+        prepared: &mut LinearTransformation<PreparedDiagonal<BE::OwnedBuf, BE, Rg>>,
         lt: &LinearTransformation<P>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        P: GLWEToBackendRef<BE> + GLWEInfos,
+        P: GLWEToBackendRef<BE, Rg> + GLWEInfos,
     {
         prepare::glwe_linear_transformation_rhs_prepare_reference(self, prepared, lt, scratch)
     }
 
-    fn glwe_linear_transformation_baby_steps_prepare_reference<A, H, L: BabyStepOperand<BE>>(
+    fn glwe_linear_transformation_baby_steps_prepare_reference<A, H, L: BabyStepOperand<BE, Rg>>(
         &self,
-        cache: &mut LinearTransformationBabySteps<BE, L>,
+        cache: &mut LinearTransformationBabySteps<BE, Rg, L>,
         a: &A,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        A: GLWEToBackendRef<BE> + GLWEInfos,
-        H: GetAutomorphismKey<BE>,
+        A: GLWEToBackendRef<BE, Rg> + GLWEInfos,
+        H: GetAutomorphismKey<BE, Rg>,
     {
         eval::glwe_linear_transformation_baby_steps_prepare_reference(self, cache, a, keys, scratch)
     }
 
-    fn glwe_linear_transformation_eval_into_reference<R, P, H, L: BabyStepOperand<BE>>(
+    fn glwe_linear_transformation_eval_into_reference<R, P, H, L: BabyStepOperand<BE, Rg>>(
         &self,
         cnv_offset: usize,
         res: &mut R,
-        lhs: &LinearTransformationBabySteps<BE, L>,
+        lhs: &LinearTransformationBabySteps<BE, Rg, L>,
         rhs: &LinearTransformation<P>,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        P: GLWEDiagonalProd<BE>,
-        H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
+        R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+        P: GLWEDiagonalProd<BE, Rg>,
+        H: GetAutomorphismKey<BE, Rg> + GetTensorKey<BE, Rg>,
     {
         eval::glwe_linear_transformation_eval_into_reference(self, cnv_offset, res, lhs, rhs, keys, scratch)
     }
 
-    fn glwe_linear_transformation_eval_sum_into_reference<R, P, H, L: BabyStepOperand<BE>>(
+    fn glwe_linear_transformation_eval_sum_into_reference<R, P, H, L: BabyStepOperand<BE, Rg>>(
         &self,
         cnv_offset: usize,
         res: &mut R,
-        babies: &[&LinearTransformationBabySteps<BE, L>],
+        babies: &[&LinearTransformationBabySteps<BE, Rg, L>],
         lts: &[&LinearTransformation<P>],
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        P: GLWEDiagonalProd<BE>,
-        H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
+        R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+        P: GLWEDiagonalProd<BE, Rg>,
+        H: GetAutomorphismKey<BE, Rg> + GetTensorKey<BE, Rg>,
     {
         eval::glwe_linear_transformation_eval_sum_into_reference(self, cnv_offset, res, babies, lts, keys, scratch)
     }
@@ -406,12 +406,12 @@ where
         inner_product::glwe_giant_step_batch_reference(self)
     }
 
-    fn glwe_accumulate_giant_steps_reference<L: BabyStepOperand<BE>>(
+    fn glwe_accumulate_giant_steps_reference<L: BabyStepOperand<BE, Rg>>(
         &self,
         cnv_offset_hi: usize,
-        prods: &mut [VecZnxDftBackendMut<'_, BE>],
-        lhs: &LinearTransformationBabySteps<BE, L>,
-        steps: &[LinearTransformationGiantStep<PreparedDiagonal<BE::OwnedBuf, BE>>],
+        prods: &mut [VecZnxDftBackendMut<'_, BE, Rg>],
+        lhs: &LinearTransformationBabySteps<BE, Rg, L>,
+        steps: &[LinearTransformationGiantStep<PreparedDiagonal<BE::OwnedBuf, BE, Rg>>],
         scratch: &mut ScratchArena<'_, BE>,
     ) {
         inner_product::glwe_accumulate_giant_steps_reference(self, cnv_offset_hi, prods, lhs, steps, scratch)

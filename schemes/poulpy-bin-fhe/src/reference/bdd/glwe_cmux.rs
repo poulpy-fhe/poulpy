@@ -108,7 +108,7 @@ pub fn glwe_cmux_reference<BE, R, T, F>(
         let (tmp_res_big, mut scratch_4) = scratch_3.take_vec_znx_big_scratch(module.n(), cols, output_size);
         let mut tmp_res_big = tmp_res_big;
         module.glwe_external_product_dft(&mut res_dft, &tmp_in, s, &mut scratch_4.borrow());
-        let res_dft_ref = vec_znx_dft_backend_ref_from_mut::<BE>(&res_dft);
+        let res_dft_ref = vec_znx_dft_backend_ref_from_mut::<BE, Standard>(&res_dft);
         for col in 0..cols {
             module.vec_znx_idft_apply(&mut tmp_res_big, col, &res_dft_ref, col, &mut scratch_4.borrow());
         }
@@ -119,7 +119,7 @@ pub fn glwe_cmux_reference<BE, R, T, F>(
     // directly also keeps workspace independent of its allocation capacity.
     for j in 0..cols {
         module.vec_znx_big_add_small_assign(&mut res_big, j, f_backend.data(), j);
-        let res_big_ref = vec_znx_big_backend_ref_from_mut::<BE>(&res_big);
+        let res_big_ref = vec_znx_big_backend_ref_from_mut::<BE, Standard>(&res_big);
         module.vec_znx_big_normalize(
             tmp_in.data_mut(),
             res_base2k,
@@ -193,17 +193,17 @@ pub fn glwe_cmux_neg_assign_reference<BE, R, A>(
         let (tmp_res_big, mut scratch_4) = scratch_3.take_vec_znx_big_scratch(module.n(), cols, output_size);
         let mut tmp_res_big = tmp_res_big;
         module.glwe_external_product_dft(&mut res_dft, &tmp, s, &mut scratch_4.borrow());
-        let res_dft_ref = vec_znx_dft_backend_ref_from_mut::<BE>(&res_dft);
+        let res_dft_ref = vec_znx_dft_backend_ref_from_mut::<BE, Standard>(&res_dft);
         for col in 0..cols {
             module.vec_znx_idft_apply(&mut tmp_res_big, col, &res_dft_ref, col, &mut scratch_4.borrow());
         }
         (res_big, scratch_norm) = (tmp_res_big, scratch_4);
     }
     let mut res_big = res_big;
-    let res_prev_ref = vec_znx_backend_ref_from_mut::<BE>(res_prev.data());
+    let res_prev_ref = vec_znx_backend_ref_from_mut::<BE, Standard>(res_prev.data());
     for j in 0..cols {
         module.vec_znx_big_add_small_assign(&mut res_big, j, &res_prev_ref, j);
-        let res_big_ref = vec_znx_big_backend_ref_from_mut::<BE>(&res_big);
+        let res_big_ref = vec_znx_big_backend_ref_from_mut::<BE, Standard>(&res_big);
         module.vec_znx_big_normalize(
             tmp.data_mut(),
             res_base2k,
@@ -269,17 +269,17 @@ pub fn glwe_cmux_assign_reference<BE, R, A>(
         let (tmp_res_big, mut scratch_4) = scratch_3.take_vec_znx_big_scratch(module.n(), cols, output_size);
         let mut tmp_res_big = tmp_res_big;
         module.glwe_external_product_dft(&mut res_dft, &tmp, s, &mut scratch_4.borrow());
-        let res_dft_ref = vec_znx_dft_backend_ref_from_mut::<BE>(&res_dft);
+        let res_dft_ref = vec_znx_dft_backend_ref_from_mut::<BE, Standard>(&res_dft);
         for col in 0..cols {
             module.vec_znx_idft_apply(&mut tmp_res_big, col, &res_dft_ref, col, &mut scratch_4.borrow());
         }
         (res_big, scratch_norm) = (tmp_res_big, scratch_4);
     }
     let mut res_big = res_big;
-    let tmp_a_ref = vec_znx_backend_ref_from_mut::<BE>(tmp_a.data());
+    let tmp_a_ref = vec_znx_backend_ref_from_mut::<BE, Standard>(tmp_a.data());
     for j in 0..cols {
         module.vec_znx_big_add_small_assign(&mut res_big, j, &tmp_a_ref, j);
-        let res_big_ref = vec_znx_big_backend_ref_from_mut::<BE>(&res_big);
+        let res_big_ref = vec_znx_big_backend_ref_from_mut::<BE, Standard>(&res_big);
         module.vec_znx_big_normalize(
             tmp.data_mut(),
             res_base2k,
