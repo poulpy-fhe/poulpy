@@ -65,13 +65,11 @@ pub fn glwe_tensor_decrypt_reference<M, BE: Backend, R: Data, P: Data, S0: Data,
     GLWESecretPrepared<S0, BE, Rg>: GLWESecretPreparedToBackendRef<BE, Rg> + GLWEInfos,
     GLWESecretTensorPrepared<S1, BE, Rg>: GLWESecretTensorPreparedToBackendRef<BE, Rg> + GLWEInfos,
 {
-    assert!(
-        scratch.available() >= glwe_tensor_decrypt_tmp_bytes_reference::<M, BE, _, Rg>(module, res),
-        "scratch.available(): {} < GLWETensorDecrypt::glwe_tensor_decrypt_tmp_bytes: {}",
-        scratch.available(),
-        glwe_tensor_decrypt_tmp_bytes_reference::<M, BE, _, Rg>(module, res)
-    );
     let tmp_bytes: usize = glwe_tensor_decrypt_tmp_bytes_reference::<M, BE, _, Rg>(module, res);
+    assert!(
+        scratch.available() >= tmp_bytes,
+        "scratch.available() < GLWETensorDecrypt::glwe_tensor_decrypt_tmp_bytes"
+    );
     {
         let rank: usize = sk.rank().as_usize();
 
