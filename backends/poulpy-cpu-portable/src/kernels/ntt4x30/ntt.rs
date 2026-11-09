@@ -50,7 +50,7 @@ use poulpy_hal::layouts::{Ring, Standard};
 
 use std::{marker::PhantomData, sync::Arc};
 
-use crate::kernels::ntt4x30::{conjugate_invariant::BasisChange, primes::PrimeSetCrt4};
+use crate::kernels::ntt4x30::{conjugate_invariant::BasisChangeTable, primes::PrimeSetCrt4};
 use poulpy_hal::{AlignedVec, alloc_aligned};
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -115,8 +115,8 @@ pub struct NttTable<P: PrimeSetCrt4, R: Ring = Standard> {
     pub input_bit_size: u64,
     /// Output bit-size bound.
     pub output_bit_size: u64,
-    /// Conjugate-invariant basis change per prime, empty on the standard ring.
-    pub(super) basis: [BasisChange; 4],
+    /// Conjugate-invariant basis change of the degree, none on the standard ring.
+    pub(super) basis: Option<Arc<BasisChangeTable<P>>>,
     _phantom: PhantomData<(P, R)>,
 }
 
@@ -137,8 +137,8 @@ pub struct NttTableInv<P: PrimeSetCrt4, R: Ring = Standard> {
     pub input_bit_size: u64,
     /// Output bit-size bound.
     pub output_bit_size: u64,
-    /// Conjugate-invariant basis change per prime, empty on the standard ring.
-    pub(super) basis: [BasisChange; 4],
+    /// Conjugate-invariant basis change of the degree, none on the standard ring.
+    pub(super) basis: Option<Arc<BasisChangeTable<P>>>,
     _phantom: PhantomData<(P, R)>,
 }
 
@@ -267,7 +267,7 @@ impl<P: PrimeSetCrt4> NttTable<P, Standard> {
                 reduc_metadata,
                 input_bit_size,
                 output_bit_size: bs,
-                basis: [BasisChange::EMPTY; 4],
+                basis: None,
                 _phantom: PhantomData,
             };
         }
@@ -374,13 +374,13 @@ impl<P: PrimeSetCrt4> NttTable<P, Standard> {
             reduc_metadata,
             input_bit_size,
             output_bit_size,
-            basis: [BasisChange::EMPTY; 4],
+            basis: None,
             _phantom: PhantomData,
         }
     }
 
     /// The table of ring `R` that wraps the transform of this one in `basis`, sharing its twiddles.
-    pub(super) fn with_basis<R: Ring>(&self, basis: [BasisChange; 4]) -> NttTable<P, R> {
+    pub(super) fn with_basis<R: Ring>(&self, basis: Arc<BasisChangeTable<P>>) -> NttTable<P, R> {
         NttTable {
             n: self.n,
             level_metadata: self.level_metadata.clone(),
@@ -388,7 +388,7 @@ impl<P: PrimeSetCrt4> NttTable<P, Standard> {
             reduc_metadata: self.reduc_metadata.clone(),
             input_bit_size: self.input_bit_size,
             output_bit_size: self.output_bit_size,
-            basis,
+            basis: Some(basis),
             _phantom: PhantomData,
         }
     }
@@ -425,7 +425,7 @@ impl<P: PrimeSetCrt4> NttTableInv<P, Standard> {
                 reduc_metadata,
                 input_bit_size,
                 output_bit_size: bs,
-                basis: [BasisChange::EMPTY; 4],
+                basis: None,
                 _phantom: PhantomData,
             };
         }
@@ -542,13 +542,13 @@ impl<P: PrimeSetCrt4> NttTableInv<P, Standard> {
             reduc_metadata,
             input_bit_size,
             output_bit_size,
-            basis: [BasisChange::EMPTY; 4],
+            basis: None,
             _phantom: PhantomData,
         }
     }
 
     /// The table of ring `R` that wraps the transform of this one in `basis`, sharing its twiddles.
-    pub(super) fn with_basis<R: Ring>(&self, basis: [BasisChange; 4]) -> NttTableInv<P, R> {
+    pub(super) fn with_basis<R: Ring>(&self, basis: Arc<BasisChangeTable<P>>) -> NttTableInv<P, R> {
         NttTableInv {
             n: self.n,
             level_metadata: self.level_metadata.clone(),
@@ -556,7 +556,7 @@ impl<P: PrimeSetCrt4> NttTableInv<P, Standard> {
             reduc_metadata: self.reduc_metadata.clone(),
             input_bit_size: self.input_bit_size,
             output_bit_size: self.output_bit_size,
-            basis,
+            basis: Some(basis),
             _phantom: PhantomData,
         }
     }

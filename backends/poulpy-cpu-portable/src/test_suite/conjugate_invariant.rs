@@ -1,3 +1,5 @@
+use crate::kernels::ntt4x30::{conjugate_invariant::BasisChangeTable, ntt::modq_pow_portable, primes::PrimeSetCrt4};
+
 /// Checks real-slot products, convolution tails, and invalid size rejection.
 pub fn test_conjugate_invariant_fft_arithmetic<BE>()
 where
@@ -62,14 +64,41 @@ where
     assert!(std::panic::catch_unwind(|| BE::reim4_real_mat2cols_2ndcol_prod(oversized, &mut [0.0; 8], &[], &[])).is_err());
 }
 
-/// Compares a four-prime SIMD basis change against scalar modular arithmetic.
-pub fn test_conjugate_invariant_ntt_basis_change<P: crate::kernels::ntt4x30::primes::PrimeSetCrt4>(
-    apply: impl Fn(&[crate::kernels::ntt4x30::conjugate_invariant::BasisChange; 4], &mut [u64]),
-) {
-    use crate::kernels::ntt4x30::conjugate_invariant::BasisChange;
-    for n in [1, 2, 4, 8, 16, 32, 64, 256, 1024, 8192, 32768, 65536] {
+/// The basis change of `kernels::ntt4x30::conjugate_invariant` on the q120b vector `data`, into the negacyclic basis or
+/// back with `inverse`, in plain modular arithmetic: canonical, with `out[0] = a[0] mod q`.
+fn basis_change_reference<P: PrimeSetCrt4>(inverse: bool, data: &mut [u64]) {
+    let n = data.len() / 4;
+    let e = (1i64 << (P::MAX_LOG_N - 1)) / n as i64;
+    for (p, (&q, &omega)) in P::Q.iter().zip(&P::OMEGA).enumerate() {
+        let alpha_inv = modq_pow_portable(omega, -e, q) as u64;
+        let i = modq_pow_portable(omega, e * n as i64, q) as u64;
+        let q = q as u64;
+        let f: Vec<u64> = std::iter::successors(Some(1), |&x| Some(x * alpha_inv % q)).take(n).collect();
+        let mul = |a: u64, b: u64| a * b % q;
+        let sub = |a: u64, b: u64| (a + q - b) % q;
+        let half = q.div_ceil(2);
+        data[p] %= q;
+        for j in 1..=n / 2 {
+            let (a, b) = (data[4 * j + p] % q, data[4 * (n - j) + p] % q);
+            let (x, y) = if inverse {
+                let (u, v) = (mul(f[n - j], a), mul(f[j], b));
+                (mul(half, sub(mul(i, u), v)), mul(half, sub(mul(i, v), u)))
+            } else {
+                (mul(f[j], sub(a, mul(i, b))), mul(f[n - j], sub(b, mul(i, a))))
+            };
+            data[4 * j + p] = x;
+            data[4 * (n - j) + p] = y;
+        }
+    }
+}
+
+/// Compares a q120b basis change `apply(table, inverse, data)` against scalar modular arithmetic, on the table of every
+/// degree up to `2^16` in both directions, and checks it rejects a vector shorter than the degree of its table.
+pub fn test_conjugate_invariant_ntt_basis_change<P: PrimeSetCrt4>(apply: impl Fn(&BasisChangeTable<P>, bool, &mut [u64])) {
+    for log_n in 0..=16 {
+        let n = 1 << log_n;
+        let table = BasisChangeTable::<P>::new(n);
         for inverse in [false, true] {
-            let plans = std::array::from_fn(|k| BasisChange::new(n, P::Q[k] as u64, P::OMEGA[k] as u64, P::MAX_LOG_N, inverse));
             let mut seed = 0x1234_5678_9abc_def0u64;
             let mut actual: Vec<_> = (0..4 * n)
                 .map(|j| {
@@ -93,17 +122,13 @@ pub fn test_conjugate_invariant_ntt_basis_change<P: crate::kernels::ntt4x30::pri
                 *value = if inverse { u64::MAX } else { P::Q[k] as u64 };
             }
             let mut expected = actual.clone();
-            for k in 0..4 {
-                plans[k].apply(&mut expected[k..], 4);
-            }
-            apply(&plans, &mut actual);
+            basis_change_reference::<P>(inverse, &mut expected);
+            apply(&table, inverse, &mut actual);
             assert_eq!(actual, expected, "n={n}, inverse={inverse}, prime bits={}", P::LOG_Q);
         }
     }
-    let mut plans = std::array::from_fn(|k| BasisChange::new(8, P::Q[k] as u64, P::OMEGA[k] as u64, P::MAX_LOG_N, false));
-    assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| apply(&plans, &mut [0; 16]))).is_err());
-    plans[1] = BasisChange::new(16, P::Q[1] as u64, P::OMEGA[1] as u64, P::MAX_LOG_N, false);
-    assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| apply(&plans, &mut [0; 32]))).is_err());
+    let table = BasisChangeTable::<P>::new(8);
+    assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| apply(&table, false, &mut [0; 16]))).is_err());
 }
 
 /// Multiplies through an independent degree-2n negacyclic embedding.

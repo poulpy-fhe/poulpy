@@ -10,22 +10,16 @@
 //! | `0..4n`    | forward twiddles: entry `2^s + i` is `psi^bitrev(2^s + i)`                     |
 //! | `4n..8n`   | inverse twiddles `psi^-bitrev(.)`; entry 0 is `n^-1`, entry 1 has it folded in |
 //!
-//! The conjugate-invariant ring adds the basis change of degree `n`, one
-//! device buffer of `12n` words:
-//!
-//! | words      | content                                     |
-//! |------------|---------------------------------------------|
-//! | `0..4n`    | forward: `alpha^-j`                         |
-//! | `4n..8n`   | inverse: `alpha^j / 2`, entry 0 is 1        |
-//! | `8n..12n`  | inverse: `-alpha^-j / 2`, entry 0 is unused |
+//! The basis change of the conjugate-invariant ring at degree `n` reads one
+//! device buffer of `4n` words, plane `k` holding `f[j] = alpha^-j` modulo
+//! prime `k`; `i = alpha^n`, the same at every degree, is a kernel constant.
 //!
 //! `psi` is the primitive `2n`-th root `OMEGA^(2^MAX_LOG_N / n)` and `alpha`
 //! the primitive `4n`-th root with `alpha^2 = psi`. Stage `s` of a transform
 //! has `2^s` blocks and butterfly distance `n / 2^(s+1)`; its block `i` uses
 //! twiddle entry `2^s + i`.
 
-use poulpy_cpu_portable::kernels::ntt4x30::{conjugate_invariant::BasisChange, primes::Primes30};
-use poulpy_hal::layouts::{PrimeSet, Ring};
+use poulpy_hal::layouts::Ring;
 
 use super::primes::{MAX_LOG_N, Q, companion, inv_mod, mul_mod, omega_pow2};
 use crate::runtime::{GpuBuf, GpuRuntime};
@@ -70,28 +64,13 @@ fn twiddle_words(log_n: u32) -> Vec<u32> {
     words
 }
 
-/// The multipliers of portable's basis change: forward `[alpha^-j, .]`,
-/// inverse `[alpha^j / 2, -alpha^-j / 2]`, entry 0 being `[1, 0]`.
+/// `f[j] = alpha^-j` for `j < n = 2^log_n`, prime after prime.
 fn basis_words(log_n: u32) -> Vec<u32> {
     let n = 1usize << log_n;
-    let change =
-        |k: usize, inverse: bool| BasisChange::new(n, Q[k] as u64, <Primes30 as PrimeSet>::OMEGA[k] as u64, MAX_LOG_N, inverse);
-    let plane = |change: &BasisChange, side: usize| -> Vec<u32> {
-        let mut words: Vec<u32> = change.factors().iter().map(|factor| factor[side] as u32).collect();
-        // Entry 0 of the reflected plane is unused and zero: 1 keeps its companion defined.
-        words[0] = words[0].max(1);
-        words
-    };
-    let (forward, inverse): (Vec<_>, Vec<_>) = (0..4).map(|k| (change(k, false), change(k, true))).unzip();
-    let mut words = Vec::with_capacity(12 * n);
+    let mut words = Vec::with_capacity(4 * n);
     for (k, &q) in Q.iter().enumerate() {
-        push(&mut words, &plane(&forward[k], 0), q);
-    }
-    for (k, &q) in Q.iter().enumerate() {
-        push(&mut words, &plane(&inverse[k], 0), q);
-    }
-    for (k, &q) in Q.iter().enumerate() {
-        push(&mut words, &plane(&inverse[k], 1), q);
+        let alpha = omega_pow2(k, MAX_LOG_N - 1 - log_n);
+        push(&mut words, &powers(inv_mod(alpha, q), n, q), q);
     }
     words
 }
@@ -120,11 +99,10 @@ impl<RT: GpuRuntime> Tables<RT> {
 
     /// The tables of ring `R`.
     pub(crate) fn ring<R: Ring>(&self) -> RingTables<'_, RT> {
-        let invariant = R::CYCLOTOMIC_ORDER_FACTOR == 4;
         RingTables {
             twiddles: &self.twiddles,
-            basis: if invariant { &self.basis } else { &self.twiddles },
-            invariant,
+            basis: &self.basis,
+            invariant: R::CYCLOTOMIC_ORDER_FACTOR == 4,
         }
     }
 }
@@ -147,7 +125,7 @@ impl<RT: GpuRuntime> Copy for RingTables<'_, RT> {}
 /// The tables of one degree.
 pub(crate) struct Table<'a, RT: GpuRuntime> {
     pub(crate) twiddles: &'a GpuBuf<RT>,
-    /// The basis change, or on the standard ring, whose kernels read none, the twiddles.
+    /// The basis change of the conjugate-invariant ring.
     pub(crate) basis: &'a GpuBuf<RT>,
 }
 

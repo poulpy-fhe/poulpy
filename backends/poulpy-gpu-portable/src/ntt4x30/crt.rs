@@ -8,7 +8,11 @@
 
 use cubecl::prelude::*;
 
-use super::{DftColumn, primes::Consts, tables::RingTables};
+use super::{
+    DftColumn,
+    primes::{Consts, mul_lazy},
+    tables::RingTables,
+};
 use crate::{
     runtime::{GpuRuntime, Label, launch},
     znx::Column,
@@ -71,59 +75,81 @@ fn center(lo: u64, hi: u64, #[comptime] c: Consts) -> (u64, u64) {
     (lo - al, hi - ah - b)
 }
 
-/// Residue of coefficient `i` in the plane starting at `plane`. Over the
-/// conjugate-invariant ring the plane holds the negacyclic basis and the
-/// coefficient is `c_0 = b_0`, `c_i = (alpha^i b_i - alpha^-i b_{n-i}) / 2`;
-/// `table` is the start of the prime's plane of `alpha^i / 2` in `basis`.
+/// The centered value of the residues `r0..r3` of a coefficient, as its low and high words.
 #[cube]
-#[allow(clippy::too_many_arguments)]
-fn residue(
-    dft: &[u32],
-    basis: &[u32],
-    plane: u32,
-    table: u32,
-    i: u32,
-    n: u32,
-    #[comptime] q: u32,
-    #[comptime] q2: u32,
-    #[comptime] invariant: bool,
-) -> u32 {
-    let mut r = dft[(plane + i) as usize];
-    if invariant {
-        let other = dft[(plane + ((n - i) & (n - 1u32))) as usize];
-        let direct = basis[(table + i) as usize];
-        let reflected = basis[(table + 4u32 * n + i) as usize];
-        let u = r * (direct.mul_hi(q) + 1u32) - r.mul_hi(direct) * q;
-        let v = other * (reflected.mul_hi(q) + 1u32) - other.mul_hi(reflected) * q;
-        let mut s = u + v;
-        s = min(s, s - q2);
-        s = min(s, s - q);
-        r = select(i == 0u32, r, s);
-    }
-    r
+fn reconstruct(r0: u32, r1: u32, r2: u32, r3: u32, #[comptime] c: Consts) -> (u64, u64) {
+    let (x1, x2, x3) = garner(r0, r1, r2, r3, c);
+    let (lo, hi) = accumulate(r0, x1, x2, x3, c);
+    center(lo, hi, c)
 }
 
-/// The centered value of coefficient `i` of the block starting at `block`,
-/// as its low and high words. `basis` is the basis change of degree `n`.
+/// `(i x - y) / 2` modulo prime `k`, in `[0, q)`, for `x` and `y` in `[0, 2q)`
+/// and `i = alpha^n`.
 #[cube]
-pub(crate) fn crt_at(
+fn half_difference(x: u32, y: u32, #[comptime] c: Consts, #[comptime] k: u32) -> u32 {
+    let q = comptime!(c.q[k as usize]);
+    let q2 = comptime!(c.q2[k as usize]);
+    // `i x` and `y` are in `[0, 2q)`, so `i x + 2q - y` is in `(0, 4q)`.
+    let mut s = shoup_lazy(x, comptime!(c.i[k as usize]), comptime!(c.i_shoup[k as usize]), q) + q2 - y;
+    s = min(s, s - q2);
+    s = min(s, s - q);
+    // Halved modulo the odd `q`: an odd `s` is first raised by `q`.
+    (s + (s & 1u32) * q) >> 1u32
+}
+
+/// Residues modulo prime `k` over the conjugate-invariant ring of coefficient
+/// `i` and of its reflection `j = n - i` of the block starting at `block`, which
+/// holds the negacyclic basis `b`, from the same products: `c_0 = b_0` and, with
+/// `f[j] = alpha^-j` word `k n + j` of `basis`, `u = f[j] b_i` and `v = f[i] b_j`,
+/// `c_i = (alpha^n u - v) / 2` and `c_j = (alpha^n v - u) / 2`.
+#[cube]
+fn residue_pair(dft: &[u32], basis: &[u32], block: u32, i: u32, n: u32, #[comptime] c: Consts, #[comptime] k: u32) -> (u32, u32) {
+    let q = comptime!(c.q[k as usize]);
+    let plane = block + k * n;
+    let j = (n - i) & (n - 1u32);
+    let x = dft[(plane + i) as usize];
+    let y = dft[(plane + j) as usize];
+    let u = mul_lazy(x, basis[(k * n + j) as usize], q);
+    let v = mul_lazy(y, basis[(k * n + i) as usize], q);
+    let first = i == 0u32;
+    (
+        select(first, x, half_difference(u, v, c, k)),
+        select(first, y, half_difference(v, u, c, k)),
+    )
+}
+
+/// The centered value over the standard ring of coefficient `i` of the block
+/// starting at `block`, as its low and high words.
+#[cube]
+pub(crate) fn crt_at(dft: &[u32], block: u32, i: u32, n: u32, #[comptime] c: Consts) -> (u64, u64) {
+    let r0 = dft[(block + i) as usize];
+    let r1 = dft[(block + n + i) as usize];
+    let r2 = dft[(block + 2u32 * n + i) as usize];
+    let r3 = dft[(block + 3u32 * n + i) as usize];
+    reconstruct(r0, r1, r2, r3, c)
+}
+
+/// The centered values over the conjugate-invariant ring of coefficient `i`
+/// and of its reflection `n - i` of the block starting at `block`, in this
+/// order. `basis` is the basis change of degree `n`.
+#[cube]
+pub(crate) fn crt_pair_at(
     dft: &[u32],
     basis: &[u32],
     block: u32,
     i: u32,
     n: u32,
     #[comptime] c: Consts,
-    #[comptime] invariant: bool,
-) -> (u64, u64) {
-    let r0 = residue(dft, basis, block, 4u32 * n, i, n, c.q[0], c.q2[0], invariant);
-    let r1 = residue(dft, basis, block + n, 5u32 * n, i, n, c.q[1], c.q2[1], invariant);
-    let r2 = residue(dft, basis, block + 2u32 * n, 6u32 * n, i, n, c.q[2], c.q2[2], invariant);
-    let r3 = residue(dft, basis, block + 3u32 * n, 7u32 * n, i, n, c.q[3], c.q2[3], invariant);
-    let (x1, x2, x3) = garner(r0, r1, r2, r3, c);
-    let (lo, hi) = accumulate(r0, x1, x2, x3, c);
-    center(lo, hi, c)
+) -> ((u64, u64), (u64, u64)) {
+    let (r0, s0) = residue_pair(dft, basis, block, i, n, c, 0u32);
+    let (r1, s1) = residue_pair(dft, basis, block, i, n, c, 1u32);
+    let (r2, s2) = residue_pair(dft, basis, block, i, n, c, 2u32);
+    let (r3, s3) = residue_pair(dft, basis, block, i, n, c, 3u32);
+    (reconstruct(r0, r1, r2, r3, c), reconstruct(s0, s1, s2, s3, c))
 }
 
+/// A unit owns coefficient `i` of a limb and, over the conjugate-invariant
+/// ring, its reflection `n - i`, whose basis change shares its products.
 #[cube(launch_unchecked)]
 #[allow(clippy::too_many_arguments)]
 fn to_big_kernel(
@@ -131,6 +157,8 @@ fn to_big_kernel(
     dft: &[u32],
     basis: &[u32],
     n: u32,
+    // Units per limb: `n`, or `n / 2 + 1` over the conjugate-invariant ring.
+    per_limb: u32,
     limbs: u32,
     res_base: u32,
     res_stride: u32,
@@ -141,26 +169,41 @@ fn to_big_kernel(
     #[comptime] invariant: bool,
 ) {
     let pos = ABSOLUTE_POS as u32;
-    if pos < n * limbs {
-        let limb = pos / n;
-        let i = pos - limb * n;
+    if pos < per_limb * limbs {
+        let limb = pos / per_limb;
+        let i = pos - limb * per_limb;
+        let j = (n - i) & (n - 1u32);
+        let block = dft_base + limb * dft_stride;
         let mut lo = 0u64;
         let mut hi = 0u64;
+        let mut lo_j = 0u64;
+        let mut hi_j = 0u64;
         if limb < dft_size {
-            let value = crt_at(dft, basis, dft_base + limb * dft_stride, i, n, c, invariant);
-            lo = value.0;
-            hi = value.1;
+            if invariant {
+                let (value, value_j) = crt_pair_at(dft, basis, block, i, n, c);
+                lo = value.0;
+                hi = value.1;
+                lo_j = value_j.0;
+                hi_j = value_j.1;
+            } else {
+                let value = crt_at(dft, block, i, n, c);
+                lo = value.0;
+                hi = value.1;
+            }
         }
         let index = res_base + limb * res_stride + 2u32 * i;
         res[index as usize] = lo;
         res[(index + 1u32) as usize] = hi;
+        if invariant {
+            let index_j = res_base + limb * res_stride + 2u32 * j;
+            res[index_j as usize] = lo_j;
+            res[(index_j + 1u32) as usize] = hi_j;
+        }
     }
 }
 
-/// [`to_big_kernel`] for a temporary `dft` that is zeroed once read. A unit owns
-/// coefficient `i` of a limb and, over the conjugate-invariant ring, its
-/// reflection `n - i`, whose residues the reconstruction of either reads:
-/// no residue is cleared before every unit reading it has read it.
+/// [`to_big_kernel`] for a temporary `dft` that is zeroed once read: a unit
+/// clears the residues of the coefficients it owns, which no other unit reads.
 #[cube(launch_unchecked)]
 #[allow(clippy::too_many_arguments)]
 fn to_big_clearing_kernel(
@@ -192,13 +235,16 @@ fn to_big_clearing_kernel(
         let mut lo_j = 0u64;
         let mut hi_j = 0u64;
         if limb < dft_size {
-            let value = crt_at(dft, basis, block, i, n, c, invariant);
-            lo = value.0;
-            hi = value.1;
             if invariant {
-                let value_j = crt_at(dft, basis, block, j, n, c, invariant);
+                let (value, value_j) = crt_pair_at(dft, basis, block, i, n, c);
+                lo = value.0;
+                hi = value.1;
                 lo_j = value_j.0;
                 hi_j = value_j.1;
+            } else {
+                let value = crt_at(dft, block, i, n, c);
+                lo = value.0;
+                hi = value.1;
             }
             for k in 0..4u32 {
                 clear[(block + k * n + i) as usize] = 0u32;
@@ -229,9 +275,11 @@ pub(crate) fn to_big<RT: GpuRuntime>(tables: RingTables<'_, RT>, res: &Column, d
     }
     let table = tables.of(res.n);
     let basis = table.basis.view().binding().expect("transform tables hold storage");
-    let units = res.n * res.size;
+    let per_limb = if tables.invariant() { res.n / 2 + 1 } else { res.n };
+    let units = per_limb * res.size;
+    let bytes = res.n * res.size * 16 + res.n * res.size.min(dft.size) * 16;
     launch!(
-        RT, Label::CrtToBig, units * 16 + res.n * res.size.min(dft.size) * 16, to_big_kernel, (units, RT::GROUP, RT::GROUP);
+        RT, Label::CrtToBig, bytes, to_big_kernel, (units, RT::GROUP, RT::GROUP);
         [
             res.binding => u64,
             dft.binding => u32,
@@ -239,6 +287,7 @@ pub(crate) fn to_big<RT: GpuRuntime>(tables: RingTables<'_, RT>, res: &Column, d
         ];
         [
             res.n as u32,
+            per_limb as u32,
             res.size as u32,
             res.base,
             res.stride,

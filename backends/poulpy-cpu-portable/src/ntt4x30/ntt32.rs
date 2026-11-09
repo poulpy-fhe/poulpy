@@ -18,7 +18,6 @@ use bytemuck::{cast_slice, cast_slice_mut};
 use poulpy_hal::execution::TaskExecutor;
 
 use crate::kernels::ntt4x30::{
-    conjugate_invariant::BasisChange,
     ntt::modq_pow_portable,
     primes::{PrimeSet, PrimeSetCrt4, Primes30},
 };
@@ -106,7 +105,7 @@ pub(crate) struct Ntt32Table {
     conv: [[ConvConst; 4]; 2],
     fin: [FinalConst; 4],
     /// Basis changes of the conjugate-invariant ring: into the negacyclic basis, and back.
-    ci: Option<[[CiPlane; 4]; 2]>,
+    ci: Option<CiBasis>,
 }
 
 impl Ntt32Table {
@@ -162,9 +161,7 @@ impl Ntt32Table {
             inv: Arc::clone(&standard.inv),
             conv: standard.conv,
             fin: standard.fin,
-            ci: Some(std::array::from_fn(|inverse| {
-                std::array::from_fn(|p| CiPlane::new(n, p, inverse == 1))
-            })),
+            ci: Some(CiBasis::new(n)),
         }
     }
 
@@ -174,69 +171,109 @@ impl Ntt32Table {
     }
 }
 
-/// Basis change of the conjugate-invariant ring for one prime and one direction.
+/// Basis changes of the conjugate-invariant ring of degree `n`, for the four primes.
 ///
-/// Coefficient `j` becomes `d[j] * a[j] + c[j] * a[n - j]`, and coefficient `0` is kept.
-/// The factors are stored multiplied by `2^32`.
-struct CiPlane {
-    d: Vec<u32>,
-    c: Vec<u32>,
-    q: u32,
-    qinv: u32,
+/// With `alpha` a primitive `4 n`-th root of unity and the fourth root of unity `i = alpha^n`, plane `p` holds
+/// `f[k] = alpha^-k * 2^32 mod Q[p]` for every `k < n`.
+struct CiBasis {
+    f: [Vec<u32>; 4],
+    /// `i * 2^32 mod Q[p]`.
+    i: [u32; 4],
 }
 
-impl CiPlane {
-    fn new(n: usize, p: usize, inverse: bool) -> Self {
-        let q = Q[p];
-        let basis = BasisChange::new(n, q as u64, Primes30::OMEGA[p] as u64, Primes30::MAX_LOG_N, inverse);
-        let prepared = |x: u64| mul_mod(x as u32, R1[p], q);
-        Self {
-            d: basis.factors().iter().map(|f| prepared(f[0])).collect(),
-            c: basis.factors().iter().map(|f| prepared(f[1])).collect(),
-            q,
-            qinv: QINV[p],
-        }
+impl CiBasis {
+    fn new(n: usize) -> Self {
+        assert!(n <= 1 << (Primes30::MAX_LOG_N - 1), "no root of unity of order 4 n");
+        // `alpha` is this power of the primitive `2^(MAX_LOG_N + 1)`-th root `OMEGA`.
+        let e = (1i64 << (Primes30::MAX_LOG_N - 1)) / n as i64;
+        let f = std::array::from_fn(|p| {
+            let alpha_inv = modq_pow_portable(Primes30::OMEGA[p], -e, Q[p]);
+            let mut f = vec![R1[p]; n];
+            for k in 1..n {
+                f[k] = mul_mod(f[k - 1], alpha_inv, Q[p]);
+            }
+            f
+        });
+        let i = std::array::from_fn(|p| mul_mod(modq_pow_portable(Primes30::OMEGA[p], e * n as i64, Q[p]), R1[p], Q[p]));
+        Self { f, i }
     }
 
-    /// `x * w * 2^-32 mod q` in `(-q, q)`, for a prepared factor `w` and a signed `x` of magnitude below `2 * q`.
-    #[inline(always)]
-    fn mul(&self, x: i32, w: u32) -> i32 {
-        let s = x as i64 * w as i64;
-        let m = (s as i32).wrapping_mul(self.qinv as i32);
-        ((s - m as i64 * self.q as i64) >> 32) as i32
-    }
-
-    /// `d * a + c * b`, canonical.
-    #[inline(always)]
-    fn combine(&self, d: u32, c: u32, a: i32, b: i32) -> i32 {
-        let q = self.q;
-        // The sum lies in (-2 q, 2 q): shifted by 2 q it lies in (0, 4 q).
-        let r = (self.mul(a, d).wrapping_add(self.mul(b, c)) as u32).wrapping_add(2 * q);
-        let r = r.min(r.wrapping_sub(2 * q));
-        r.min(r.wrapping_sub(q)) as i32
-    }
-
-    /// Applies the basis change to one plane, in place.
+    /// Into the negacyclic basis, in place: coefficient `j` becomes `f[j] * (a[j] - i * a[n - j])`.
     ///
     /// Inputs are signed residues of magnitude below `2 * q`, outputs are canonical, coefficient `0` excepted, which is kept.
-    fn apply(&self, a: &mut [i32]) {
-        let n = a.len();
-        let half = n / 2;
-        let (lo, hi) = a.split_at_mut(half);
-        // The middle coefficient is its own mirror.
-        let mid = hi[0];
-        hi[0] = self.combine(self.d[half], self.c[half], mid, mid);
-        // Coefficient `j` against its mirror `n - j`, both read before either is written.
-        let (d_lo, d_hi) = self.d.split_at(half);
-        let (c_lo, c_hi) = self.c.split_at(half);
-        let lo = lo[1..].iter_mut().zip(&d_lo[1..]).zip(&c_lo[1..]);
-        let hi = hi[1..].iter_mut().zip(&d_hi[1..]).zip(&c_hi[1..]).rev();
-        for (((x, &dx), &cx), ((y, &dy), &cy)) in lo.zip(hi) {
-            let (xv, yv) = (*x, *y);
-            *x = self.combine(dx, cx, xv, yv);
-            *y = self.combine(dy, cy, yv, xv);
-        }
+    fn forward(&self, p: usize, a: &mut [i32]) {
+        let (i, q, qinv) = (self.i[p], Q[p], QINV[p]);
+        // Into `[0, 2 q)`, so that `x + q - i * y` lies in `(0, 4 q)`.
+        let lift = move |x: i32| x.wrapping_add((2 * q as i32) & (x >> 31)) as u32;
+        ci_pairs(a, &self.f[p], move |x, y, fx, fy| {
+            let (x, y) = (lift(x), lift(y));
+            let (ix, iy) = (mont_mul_lazy(x, i, q, qinv), mont_mul_lazy(y, i, q, qinv));
+            let tx = mont_mul_lazy((x + q).wrapping_sub(iy), fx, q, qinv);
+            let ty = mont_mul_lazy((y + q).wrapping_sub(ix), fy, q, qinv);
+            (tx.min(tx.wrapping_add(q)) as i32, ty.min(ty.wrapping_add(q)) as i32)
+        });
     }
+
+    /// Back to invariant coefficients, in place: coefficient `j` becomes `(i * f[n - j] * a[j] - f[j] * a[n - j]) / 2`.
+    ///
+    /// Inputs and outputs are canonical.
+    fn inverse(&self, p: usize, a: &mut [i32]) {
+        let (i, q, qinv) = (self.i[p], Q[p], QINV[p]);
+        ci_pairs(a, &self.f[p], move |x, y, fx, fy| {
+            let (u, v) = (mont_mul_lazy(x as u32, fy, q, qinv), mont_mul_lazy(y as u32, fx, q, qinv));
+            let iu = mont_mul_lazy(u.wrapping_add(q), i, q, qinv);
+            let iv = mont_mul_lazy(v.wrapping_add(q), i, q, qinv);
+            let (tx, ty) = (canonical_2q(iu.wrapping_sub(v), q), canonical_2q(iv.wrapping_sub(u), q));
+            (halve(tx, q) as i32, halve(ty, q) as i32)
+        });
+    }
+}
+
+/// Runs `pair(a[j], a[n - j], f[j], f[n - j])` for every `j` in `1..=n / 2`, both coefficients read before either is
+/// written, on the `n` coefficients of `a` and the `n` factors of `f`.
+#[inline(always)]
+fn ci_pairs(a: &mut [i32], f: &[u32], pair: impl Fn(i32, i32, u32, u32) -> (i32, i32)) {
+    let half = a.len() / 2;
+    let (lo, hi) = a.split_at_mut(half);
+    let (f_lo, f_hi) = f.split_at(half);
+    // The middle coefficient is its own mirror.
+    hi[0] = pair(hi[0], hi[0], f_hi[0], f_hi[0]).0;
+    ci_mirrored(&mut lo[1..], &mut hi[1..], &f_lo[1..], &f_hi[1..], pair);
+}
+
+/// `pair` on `lo[j]` and its mirror `hi[hi.len() - 1 - j]`, with the factors `f_lo[j]` and `f_hi[hi.len() - 1 - j]`;
+/// not inlined, see [`fwd_block`].
+#[inline(never)]
+fn ci_mirrored(lo: &mut [i32], hi: &mut [i32], f_lo: &[u32], f_hi: &[u32], pair: impl Fn(i32, i32, u32, u32) -> (i32, i32)) {
+    let hi = hi.iter_mut().zip(f_hi).rev();
+    for ((x, &fx), (y, &fy)) in lo.iter_mut().zip(f_lo).zip(hi) {
+        (*x, *y) = pair(*x, *y, fx, fy);
+    }
+}
+
+/// `a * b * 2^-32 mod q` in `(-q, q)`, as a two's complement word, for `a * b < q * 2^32`.
+///
+/// The Montgomery step of [`mont_mul`](super::packed::mont_mul) without its final correction. Its products are unsigned:
+/// the x86-64 baseline has no signed widening vector product.
+#[inline(always)]
+fn mont_mul_lazy(a: u32, b: u32, q: u32, qinv: u32) -> u32 {
+    let p = a as u64 * b as u64;
+    let m = (p as u32).wrapping_mul(qinv);
+    ((p >> 32) as u32).wrapping_sub(((m as u64 * q as u64) >> 32) as u32)
+}
+
+/// Maps `(-2 q, 2 q)`, as two's complement words, to `[0, q)`.
+#[inline(always)]
+fn canonical_2q(x: u32, q: u32) -> u32 {
+    let r = x.wrapping_add(2 * q);
+    let r = r.min(r.wrapping_sub(2 * q));
+    r.min(r.wrapping_sub(q))
+}
+
+/// `x / 2 mod q` for a canonical `x`, canonical: `x + q` when `x` is odd, halved.
+#[inline(always)]
+fn halve(x: u32, q: u32) -> u32 {
+    (x + (q & (x & 1).wrapping_neg())) >> 1
 }
 
 /// `y * w mod q` for any `y`, of magnitude at most `q / 2 + |y| * q / 2^32`: within `[-q, q]`.
@@ -537,7 +574,7 @@ fn ntt32_plane(table: &Ntt32Table, p: usize, dst: &mut [u32], src: &[i64], prepa
     let q = Q[p] as i32;
     from_i64(dst, &src[..n], &table.conv[prepared as usize][p], q);
     if let Some(ci) = &table.ci {
-        ci[0][p].apply(dst);
+        ci.forward(p, dst);
     }
     fwd_plane(dst, &table.fwd[p], q);
 }
@@ -667,7 +704,7 @@ fn intt32_plane(table: &Ntt32Table, p: usize, work: &mut [u32], src: Option<&[u3
         Q[p] as i32,
     );
     if let Some(ci) = &table.ci {
-        ci[1][p].apply(work);
+        ci.inverse(p, work);
     }
 }
 

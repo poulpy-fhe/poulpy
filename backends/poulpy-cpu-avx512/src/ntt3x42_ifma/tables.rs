@@ -63,8 +63,8 @@ pub struct Ntt3x42IfmaTable<P: PrimeSetNtt3x42Ifma, R: Ring = Standard> {
     pub tail_root: Arc<[u64]>,
     /// Harvey/Shoup preconditioned quotients for `tail_root`, same layout.
     pub tail_quot: Arc<[u64]>,
-    /// Conjugate-invariant basis change per prime, empty on the standard ring.
-    pub(super) basis: [BasisChangeTable; 3],
+    /// Conjugate-invariant basis change of this degree, `None` on the standard ring.
+    pub(super) basis: Option<Arc<BasisChangeTable>>,
     _phantom: PhantomData<(P, R)>,
 }
 
@@ -89,8 +89,8 @@ pub struct Ntt3x42IfmaTableInv<P: PrimeSetNtt3x42Ifma, R: Ring = Standard> {
     pub n_inv_quot: [u64; 3],
     pub final_root: [u64; 3],
     pub final_quot: [u64; 3],
-    /// Conjugate-invariant basis change per prime, empty on the standard ring.
-    pub(super) basis: [BasisChangeTable; 3],
+    /// Conjugate-invariant basis change of this degree, `None` on the standard ring.
+    pub(super) basis: Option<Arc<BasisChangeTable>>,
     _phantom: PhantomData<(P, R)>,
 }
 
@@ -103,7 +103,7 @@ impl<P: PrimeSetNtt3x42Ifma, R: Ring> NttRingTable for Ntt3x42IfmaTableInv<P, R>
 }
 
 /// Largest degree `n` whose ambient order `CYCLOTOMIC_ORDER_FACTOR * n` fits the prime set.
-fn max_ntt_degree<P: PrimeSetNtt3x42Ifma, R: Ring>() -> usize {
+pub(super) fn max_ntt_degree<P: PrimeSetNtt3x42Ifma, R: Ring>() -> usize {
     (2usize << P::MAX_LOG_N) / R::CYCLOTOMIC_ORDER_FACTOR as usize
 }
 
@@ -369,7 +369,7 @@ impl<P: PrimeSetNtt3x42Ifma> Ntt3x42IfmaTable<P, Standard> {
                 root_quot,
                 tail_root,
                 tail_quot,
-                basis: Default::default(),
+                basis: None,
                 _phantom: PhantomData,
             };
         }
@@ -419,13 +419,13 @@ impl<P: PrimeSetNtt3x42Ifma> Ntt3x42IfmaTable<P, Standard> {
             root_quot,
             tail_root,
             tail_quot,
-            basis: Default::default(),
+            basis: None,
             _phantom: PhantomData,
         }
     }
 
     /// The table of ring `R` over these twiddles, with the basis change `basis`.
-    pub(super) fn with_basis<R: Ring>(&self, basis: [BasisChangeTable; 3]) -> Ntt3x42IfmaTable<P, R> {
+    pub(super) fn with_basis<R: Ring>(&self, basis: Arc<BasisChangeTable>) -> Ntt3x42IfmaTable<P, R> {
         assert!(
             self.n <= max_ntt_degree::<P, R>(),
             "NTT size exceeds the largest degree of the ring"
@@ -439,7 +439,7 @@ impl<P: PrimeSetNtt3x42Ifma> Ntt3x42IfmaTable<P, Standard> {
             root_quot: Arc::clone(&self.root_quot),
             tail_root: Arc::clone(&self.tail_root),
             tail_quot: Arc::clone(&self.tail_quot),
-            basis,
+            basis: Some(basis),
             _phantom: PhantomData,
         }
     }
@@ -495,7 +495,7 @@ impl<P: PrimeSetNtt3x42Ifma> Ntt3x42IfmaTableInv<P, Standard> {
                 n_inv_quot,
                 final_root,
                 final_quot,
-                basis: Default::default(),
+                basis: None,
                 _phantom: PhantomData,
             };
         }
@@ -547,13 +547,13 @@ impl<P: PrimeSetNtt3x42Ifma> Ntt3x42IfmaTableInv<P, Standard> {
             n_inv_quot,
             final_root,
             final_quot,
-            basis: Default::default(),
+            basis: None,
             _phantom: PhantomData,
         }
     }
 
     /// The table of ring `R` over these twiddles, with the basis change `basis`.
-    pub(super) fn with_basis<R: Ring>(&self, basis: [BasisChangeTable; 3]) -> Ntt3x42IfmaTableInv<P, R> {
+    pub(super) fn with_basis<R: Ring>(&self, basis: Arc<BasisChangeTable>) -> Ntt3x42IfmaTableInv<P, R> {
         assert!(
             self.n <= max_ntt_degree::<P, R>(),
             "NTT size exceeds the largest degree of the ring"
@@ -569,7 +569,7 @@ impl<P: PrimeSetNtt3x42Ifma> Ntt3x42IfmaTableInv<P, Standard> {
             n_inv_quot: self.n_inv_quot,
             final_root: self.final_root,
             final_quot: self.final_quot,
-            basis,
+            basis: Some(basis),
             _phantom: PhantomData,
         }
     }

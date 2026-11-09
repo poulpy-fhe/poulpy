@@ -2,13 +2,13 @@
 
 use core::arch::x86_64::{
     __m256i, _mm_cvtsi64_si128, _mm256_add_epi64, _mm256_and_si256, _mm256_loadu_si256, _mm256_mul_epu32, _mm256_set1_epi64x,
-    _mm256_srl_epi64, _mm256_srli_epi64, _mm256_storeu_si256, _mm256_sub_epi64,
+    _mm256_setzero_si256, _mm256_srl_epi64, _mm256_srli_epi64, _mm256_storeu_si256, _mm256_sub_epi64,
 };
 
 use poulpy_cpu_portable::kernels::{
     ntt4x30::{
         NttDFTExecute,
-        conjugate_invariant::{BasisChange, build_ntt4x30_automorphism_plan_portable},
+        conjugate_invariant::{BasisChangeTable, build_ntt4x30_automorphism_plan_portable},
         ntt::{NttTable, NttTableInv},
         primes::{PrimeSetCrt4, Primes30},
         vec_znx_dft::NttAutomorphismPlan,
@@ -19,6 +19,7 @@ use poulpy_hal::layouts::ConjugateInvariant;
 
 use super::{
     NTT4x30Avx,
+    arithmetic_avx::cond_sub,
     ntt::{intt_avx2, ntt_avx2},
 };
 
@@ -39,7 +40,7 @@ impl NttDFTExecute<NttTable<Primes30, ConjugateInvariant>> for NTT4x30Avx {
     fn ntt_dft_execute(table: &NttTable<Primes30, ConjugateInvariant>, data: &mut [u64]) {
         // SAFETY: NTT4x30Avx::new() verifies AVX2 availability at construction time.
         unsafe {
-            basis_change::<Primes30>(table.basis_changes(), data);
+            basis_change::<Primes30, false>(table.basis_change(), data);
             ntt_avx2::<Primes30>(table, data)
         }
     }
@@ -55,7 +56,7 @@ impl NttDFTExecute<NttTableInv<Primes30, ConjugateInvariant>> for NTT4x30Avx {
         // SAFETY: NTT4x30Avx::new() verifies AVX2 availability at construction time.
         unsafe {
             intt_avx2::<Primes30>(table, data);
-            basis_change::<Primes30>(table.basis_changes(), data)
+            basis_change::<Primes30, true>(table.basis_change(), data)
         }
     }
 
@@ -64,22 +65,27 @@ impl NttDFTExecute<NttTableInv<Primes30, ConjugateInvariant>> for NTT4x30Avx {
     }
 }
 
-/// AVX2 conjugate-invariant basis change of a q120b vector, one prime per lane.
+/// AVX2 conjugate-invariant basis change of the q120b vector `data` of the degree of `table`, one prime per lane: into
+/// the negacyclic basis, or back with `INVERSE`, canonical.
+///
+/// # Safety
+///
+/// The CPU must support AVX2.
 #[target_feature(enable = "avx2")]
-unsafe fn basis_change<P: PrimeSetCrt4>(plans: &[BasisChange; 4], data: &mut [u64]) {
-    use super::arithmetic_avx::cond_sub;
+unsafe fn basis_change<P: PrimeSetCrt4, const INVERSE: bool>(table: &BasisChangeTable<P>, data: &mut [u64]) {
+    let n = table.degree();
+    assert!(data.len() == 4 * n, "the vector must have the degree of the table");
+    // SAFETY: AVX2 is the caller's contract; `data` and the table both hold `n` coefficients, and every index below is under `n`.
     unsafe {
-        let factors = plans.each_ref().map(|plan| plan.factors());
-        let n = factors[0].len();
-        assert_eq!(data.len(), 4 * n);
-        assert!(factors.iter().all(|f| f.len() == n));
         let primes = P::Q.map(u64::from);
         let mu = primes.map(|q| (1u64 << (P::LOG_Q + 31)) / q);
         let pow32 = primes.map(|q| (1u64 << 32) % q);
         let q = _mm256_loadu_si256(primes.as_ptr().cast());
         let mu = _mm256_loadu_si256(mu.as_ptr().cast());
         let pow32 = _mm256_loadu_si256(pow32.as_ptr().cast());
+        let i = _mm256_loadu_si256(table.i().as_ptr().cast());
         let mask = _mm256_set1_epi64x(u32::MAX as i64);
+        let one = _mm256_set1_epi64x(1);
         let high_shift = _mm_cvtsi64_si128((P::LOG_Q - 1) as i64);
         let low_shift = _mm_cvtsi64_si128((P::LOG_Q + 31) as i64);
         let reduce = |x| {
@@ -94,40 +100,60 @@ unsafe fn basis_change<P: PrimeSetCrt4>(plans: &[BasisChange; 4], data: &mut [u6
             let hi = reduce(_mm256_srli_epi64::<32>(x));
             reduce(_mm256_add_epi64(_mm256_mul_epu32(hi, pow32), _mm256_and_si256(x, mask)))
         };
-        let apply = |j: usize, a, b| {
-            let direct: [u64; 4] = std::array::from_fn(|k| factors[k][j][0]);
-            let reflected: [u64; 4] = std::array::from_fn(|k| factors[k][j][1]);
-            let d = _mm256_loadu_si256(direct.as_ptr().cast());
-            let c = _mm256_loadu_si256(reflected.as_ptr().cast());
-            cond_sub(
-                _mm256_add_epi64(reduce(_mm256_mul_epu32(a, d)), reduce(_mm256_mul_epu32(b, c))),
-                q,
-            )
+        let mul = |x, y| reduce(_mm256_mul_epu32(x, y));
+        let sub = |x, y| cond_sub(_mm256_add_epi64(x, _mm256_sub_epi64(q, y)), q);
+        let odd = |x| _mm256_sub_epi64(_mm256_setzero_si256(), _mm256_and_si256(x, one));
+        let half = |x| _mm256_srli_epi64::<1>(_mm256_add_epi64(x, _mm256_and_si256(odd(x), q)));
+        // Coefficient `j` of `a` against `n - j` of `b`, `fa = f[j]` and `fb = f[n - j]`.
+        let change = |a, b, fa, fb| {
+            if INVERSE {
+                let (u, v) = (mul(a, fb), mul(b, fa));
+                (half(sub(mul(u, i), v)), half(sub(mul(v, i), u)))
+            } else {
+                (mul(fa, sub(a, mul(i, b))), mul(fb, sub(b, mul(i, a))))
+            }
         };
+        let f = table.powers().as_ptr().cast::<__m256i>();
         let ptr = data.as_mut_ptr().cast::<__m256i>();
         _mm256_storeu_si256(ptr, canonical(_mm256_loadu_si256(ptr)));
         for j in 1..=n / 2 {
             let other = n - j;
             let a = canonical(_mm256_loadu_si256(ptr.add(j)));
             let b = canonical(_mm256_loadu_si256(ptr.add(other)));
-            _mm256_storeu_si256(ptr.add(j), apply(j, a, b));
-            _mm256_storeu_si256(ptr.add(other), apply(other, b, a));
+            let (x, y) = change(a, b, _mm256_loadu_si256(f.add(j)), _mm256_loadu_si256(f.add(other)));
+            _mm256_storeu_si256(ptr.add(j), x);
+            _mm256_storeu_si256(ptr.add(other), y);
         }
     }
 }
 
 #[cfg(all(test, target_feature = "avx2"))]
 mod tests {
+    use poulpy_cpu_portable::{
+        kernels::ntt4x30::{
+            conjugate_invariant::BasisChangeTable,
+            primes::{PrimeSetCrt4, Primes29, Primes30, Primes31},
+        },
+        test_suite::conjugate_invariant::test_conjugate_invariant_ntt_basis_change,
+    };
+
     use super::basis_change;
+
+    fn kernel<P: PrimeSetCrt4>(table: &BasisChangeTable<P>, inverse: bool, data: &mut [u64]) {
+        // SAFETY: the test only builds with AVX2 enabled; the length check panics before any access.
+        unsafe {
+            if inverse {
+                basis_change::<P, true>(table, data)
+            } else {
+                basis_change::<P, false>(table, data)
+            }
+        }
+    }
 
     #[test]
     fn basis_change_parity() {
-        use poulpy_cpu_portable::{
-            kernels::ntt4x30::primes::{Primes29, Primes30, Primes31},
-            test_suite::conjugate_invariant::test_conjugate_invariant_ntt_basis_change,
-        };
-        test_conjugate_invariant_ntt_basis_change::<Primes29>(|plans, data| unsafe { basis_change::<Primes29>(plans, data) });
-        test_conjugate_invariant_ntt_basis_change::<Primes30>(|plans, data| unsafe { basis_change::<Primes30>(plans, data) });
-        test_conjugate_invariant_ntt_basis_change::<Primes31>(|plans, data| unsafe { basis_change::<Primes31>(plans, data) });
+        test_conjugate_invariant_ntt_basis_change::<Primes29>(kernel);
+        test_conjugate_invariant_ntt_basis_change::<Primes30>(kernel);
+        test_conjugate_invariant_ntt_basis_change::<Primes31>(kernel);
     }
 }
