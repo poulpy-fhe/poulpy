@@ -19,6 +19,8 @@
 //!
 //! All arithmetic uses [`Primes30`] (Q ≈ 2^120).  Generalisation to `Primes29` / `Primes31`
 //! is future work.
+use std::marker::PhantomData;
+
 use poulpy_hal::layouts::{Ring, Standard};
 
 use bytemuck::{cast_slice, cast_slice_mut};
@@ -684,15 +686,16 @@ where
 }
 
 /// Precomputed permutation for `VecZnxDft` automorphism `tau_p : X -> X^p`
-/// in the NTT4x30 layout.
+/// in the NTT4x30 layout of ring `Rg`, which only applies to operands of `Rg`.
 ///
 /// `perm[i]` is the source slot (in q120b units of 4 u64) that supplies
 /// output slot `i`. NTT4x30 stores all `n` evaluations, so the action is a
 /// pure permutation with no sign / conjugate flag.
 #[derive(Clone, Debug)]
-pub struct NttAutomorphismPlan {
+pub struct NttAutomorphismPlan<Rg: Ring> {
     pub p: i64,
     pub perm: Vec<u32>,
+    pub(crate) ring: PhantomData<Rg>,
 }
 
 /// Applies a precomputed NTT4x30 automorphism plan to `a`, writing the
@@ -702,7 +705,7 @@ pub struct NttAutomorphismPlan {
 /// No modular arithmetic, no negation — full-spectrum NTT layout makes
 /// the action a pure permutation.
 pub fn ntt4x30_vec_znx_dft_automorphism_portable<BE, Rg: Ring>(
-    plan: &NttAutomorphismPlan,
+    plan: &NttAutomorphismPlan<Rg>,
     res: &mut VecZnxDftBackendMut<'_, BE, Rg>,
     res_col: usize,
     a: &VecZnxDftBackendRef<'_, BE, Rg>,
@@ -741,7 +744,7 @@ pub fn ntt4x30_vec_znx_dft_automorphism_portable<BE, Rg: Ring>(
 }
 
 pub fn ntt4x30_vec_znx_dft_automorphism_add_portable<BE, E: poulpy_hal::execution::TaskExecutor, Rg: Ring>(
-    plan: &NttAutomorphismPlan,
+    plan: &NttAutomorphismPlan<Rg>,
     res: &mut VecZnxDftBackendMut<'_, BE, Rg>,
     res_col: usize,
     a: &VecZnxDftBackendRef<'_, BE, Rg>,

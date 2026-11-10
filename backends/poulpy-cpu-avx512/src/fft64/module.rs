@@ -18,7 +18,7 @@ use poulpy_cpu_portable::kernels::{
 };
 use poulpy_hal::{
     AlignedBuf, alloc_aligned,
-    layouts::{Backend, Ring},
+    layouts::{Backend, Ring, Standard},
 };
 
 use crate::{
@@ -441,7 +441,7 @@ impl ReimArith for FFT64Avx512 {
     }
 
     #[inline(always)]
-    fn reim_automorphism(plan: &Fft64AutomorphismPlan, res: &mut [f64], a: &[f64]) {
+    fn reim_automorphism(plan: &Fft64AutomorphismPlan<Standard>, res: &mut [f64], a: &[f64]) {
         super::automorphism::reim_automorphism_avx512(plan, res, a)
     }
 }

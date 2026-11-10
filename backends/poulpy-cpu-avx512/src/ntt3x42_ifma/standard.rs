@@ -1,6 +1,9 @@
 //! Standard-ring items of [`NTT3x42Ifma`].
 
-use poulpy_cpu_portable::kernels::znx::{ZnxAutomorphism, ZnxAutomorphismRotate, standard::znx_automorphism_portable};
+use poulpy_cpu_portable::kernels::{
+    ntt4x30::{standard::build_ntt4x30_automorphism_plan_portable, vec_znx_dft::NttAutomorphismPlan},
+    znx::{ZnxAutomorphism, ZnxAutomorphismRotate, standard::znx_automorphism_portable},
+};
 use poulpy_hal::layouts::Standard;
 
 use super::{
@@ -60,11 +63,19 @@ impl Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42>> for NTT3x42Ifma {
     fn ntt3x42_ifma_dft_execute_lazy(table: &Ntt3x42IfmaTable<Primes42>, data: &mut [u64]) {
         unsafe { ntt_avx512::<Primes42>(table, data, true) }
     }
+
+    fn ntt_automorphism_plan(n: usize, p: i64) -> NttAutomorphismPlan<Standard> {
+        build_ntt4x30_automorphism_plan_portable(n, p)
+    }
 }
 
 impl Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42>> for NTT3x42Ifma {
     #[inline(always)]
     fn ntt3x42_ifma_dft_execute(table: &Ntt3x42IfmaTableInv<Primes42>, data: &mut [u64]) {
         unsafe { intt_avx512::<Primes42>(table, data) }
+    }
+
+    fn ntt_automorphism_plan(n: usize, p: i64) -> NttAutomorphismPlan<Standard> {
+        build_ntt4x30_automorphism_plan_portable(n, p)
     }
 }

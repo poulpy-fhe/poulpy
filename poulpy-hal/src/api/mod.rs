@@ -47,8 +47,8 @@
 //! with basis `1, X^j + X^(-j)` for `1 <= j < n`. Automorphisms `sigma_p` substitute
 //! `X -> X^p` in that basis; monomial multiplication requires the standard ring.
 //! The operands of a call share one ring, except in the maps between the two
-//! rings, and a prepared object or key carries the ring that produced it as
-//! its ring parameter.
+//! rings, and a prepared object, key or DFT automorphism plan carries the ring
+//! that produced it as its ring parameter.
 //! A module is built at a
 //! degree `N` and serves every power-of-two degree `n` with
 //! `MIN_DEGREE <= n <= N`, `MIN_DEGREE` the backend's floor; in a contract

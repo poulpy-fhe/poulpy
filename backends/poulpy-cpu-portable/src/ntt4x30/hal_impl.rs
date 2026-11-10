@@ -576,7 +576,7 @@ where
         super::vec_znx_dft::vec_znx_dft_zero(res, res_col)
     }
 
-    type AutomorphismPlan = crate::kernels::ntt4x30::vec_znx_dft::NttAutomorphismPlan;
+    type AutomorphismPlan = crate::kernels::ntt4x30::vec_znx_dft::NttAutomorphismPlan<Rg>;
 
     fn vec_znx_dft_automorphism_plan(module: &Module<Self>, n: usize, p: i64) -> Self::AutomorphismPlan {
         let _ = module;

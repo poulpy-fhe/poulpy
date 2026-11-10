@@ -123,7 +123,7 @@ use $crate::__private::poulpy_cpu_portable::{
 use $crate::__private::poulpy_hal::execution::{SerialTaskExecutor, TaskExecutor};
 use $crate::__private::poulpy_hal::{
     layouts::{
-        Backend, DataView, DataViewMut, MatZnxBackendRef, Module, Ring, ScalarZnxBackendRef, ScratchArena, VecZnx,
+        Backend, DataView, DataViewMut, MatZnxBackendRef, Module, Ring, ScalarZnxBackendRef, ScratchArena, Standard, VecZnx,
         VecZnxBackendMut, VecZnxBackendRef, VecZnxBig, VecZnxBigBackendMut, VecZnxBigBackendRef, VecZnxDft, VecZnxDftBackendMut,
         VecZnxDftBackendRef, VmpPMatBackendMut, VmpPMatBackendRef, ZnxView, ZnxViewMut,
     },
@@ -311,11 +311,11 @@ impl ReimArith for $rayon {
         <$base as ReimArith>::reim_zero(res)
     }
     #[inline(always)]
-    fn reim_automorphism(plan: &Fft64AutomorphismPlan, res: &mut [f64], a: &[f64]) {
+    fn reim_automorphism(plan: &Fft64AutomorphismPlan<Standard>, res: &mut [f64], a: &[f64]) {
         <$base as ReimArith>::reim_automorphism(plan, res, a)
     }
     #[inline(always)]
-    fn reim_automorphism_add(plan: &Fft64AutomorphismPlan, res: &mut [f64], a: &[f64]) {
+    fn reim_automorphism_add(plan: &Fft64AutomorphismPlan<Standard>, res: &mut [f64], a: &[f64]) {
         <$base as ReimArith>::reim_automorphism_add(plan, res, a)
     }
 }

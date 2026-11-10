@@ -68,9 +68,9 @@ pub trait Fft64RingArith<Rg: Ring = Standard> {
         b_read: RightRead,
         tmp: &mut [f64],
     );
-    fn fft64_automorphism_plan(n: usize, p: i64) -> Fft64AutomorphismPlan;
+    fn fft64_automorphism_plan(n: usize, p: i64) -> Fft64AutomorphismPlan<Rg>;
     /// One limb: `res = tau_p(a)`.
-    fn fft64_automorphism(plan: &Fft64AutomorphismPlan, res: &mut [f64], a: &[f64]);
+    fn fft64_automorphism(plan: &Fft64AutomorphismPlan<Rg>, res: &mut [f64], a: &[f64]);
     /// One limb: `res += tau_p(a)`.
-    fn fft64_automorphism_add(plan: &Fft64AutomorphismPlan, res: &mut [f64], a: &[f64]);
+    fn fft64_automorphism_add(plan: &Fft64AutomorphismPlan<Rg>, res: &mut [f64], a: &[f64]);
 }

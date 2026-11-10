@@ -1,3 +1,5 @@
+use std::marker::PhantomData;
+
 use crate::kernels::fft64::ring_arith::Fft64RingArith;
 use bytemuck::cast_slice_mut;
 
@@ -349,7 +351,7 @@ where
 }
 
 /// Precomputed permutation for `VecZnxDft` automorphism `tau_p : X -> X^p`
-/// in the FFT64 half-spectrum layout.
+/// in the FFT64 half-spectrum layout of ring `Rg`, which only applies to operands of `Rg`.
 ///
 /// `perm[i]` is the source complex slot that supplies output slot `i`. If
 /// `conj` is set, the imaginary half is globally negated on apply (driven
@@ -357,10 +359,11 @@ where
 /// standard degree-`2n` layout: `perm` indexes its real slots and `conj` is
 /// unused.
 #[derive(Clone, Debug)]
-pub struct Fft64AutomorphismPlan {
+pub struct Fft64AutomorphismPlan<Rg: Ring> {
     pub p: i64,
     pub perm: Vec<u32>,
     pub conj: bool,
+    pub(crate) ring: PhantomData<Rg>,
 }
 
 /// Applies a precomputed DFT-domain automorphism plan to `a`, writing the
@@ -369,7 +372,7 @@ pub struct Fft64AutomorphismPlan {
 /// This is a pure data movement op, applied limb by limb through the
 /// ring's [`Fft64RingArith::fft64_automorphism`].
 pub fn vec_znx_dft_automorphism_portable<BE, Rg: Ring>(
-    plan: &Fft64AutomorphismPlan,
+    plan: &Fft64AutomorphismPlan<Rg>,
     res: &mut VecZnxDftBackendMut<'_, BE, Rg>,
     res_col: usize,
     a: &VecZnxDftBackendRef<'_, BE, Rg>,
@@ -392,7 +395,7 @@ pub fn vec_znx_dft_automorphism_portable<BE, Rg: Ring>(
 }
 
 pub fn vec_znx_dft_automorphism_add_portable<BE, E: poulpy_hal::execution::TaskExecutor, Rg: Ring>(
-    plan: &Fft64AutomorphismPlan,
+    plan: &Fft64AutomorphismPlan<Rg>,
     res: &mut VecZnxDftBackendMut<'_, BE, Rg>,
     res_col: usize,
     a: &VecZnxDftBackendRef<'_, BE, Rg>,

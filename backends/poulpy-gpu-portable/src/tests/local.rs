@@ -196,7 +196,7 @@ fn digits_case<R: Ring>(
             product_limbs,
             &pmat.to_backend_ref(),
             [Some((&body.to_backend_ref(), 0)), None],
-            (p != 1).then_some(&plan),
+            (p != 1).then_some(plan.substitution()),
             accumulate,
         );
         assert!(
@@ -1685,7 +1685,7 @@ fn many_source_products_match_one_launch_each_at_full_degree() {
         }
         DataView::data(&owned).to_host()
     };
-    let plan = crate::ntt4x30::AutomorphismPlan::new(n, 5, false);
+    let plan = crate::ntt4x30::Substitution::new(n, 5, false);
     for m in [2usize, 3, 4] {
         let sources: Vec<_> = (0..m).map(|_| transformed(&module, n, 1, a_size, &mut seed)).collect();
         let bodies: Vec<_> = (0..m).map(|_| transformed(&module, n, 2, res_size, &mut seed)).collect();

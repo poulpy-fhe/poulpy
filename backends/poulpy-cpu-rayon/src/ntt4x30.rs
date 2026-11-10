@@ -748,7 +748,7 @@ where
         <$base as NttDFTExecute<NttTable<Primes30, Rg>>>::ntt_dft_execute(table, data)
     }
 
-    fn ntt_automorphism_plan(n: usize, p: i64) -> $crate::__private::poulpy_cpu_portable::kernels::ntt4x30::vec_znx_dft::NttAutomorphismPlan {
+    fn ntt_automorphism_plan(n: usize, p: i64) -> $crate::__private::poulpy_cpu_portable::kernels::ntt4x30::vec_znx_dft::NttAutomorphismPlan<Rg> {
         <$base as NttDFTExecute<NttTable<Primes30, Rg>>>::ntt_automorphism_plan(n, p)
     }
 }
@@ -761,7 +761,7 @@ where
         <$base as NttDFTExecute<NttTableInv<Primes30, Rg>>>::ntt_dft_execute(table, data)
     }
 
-    fn ntt_automorphism_plan(n: usize, p: i64) -> $crate::__private::poulpy_cpu_portable::kernels::ntt4x30::vec_znx_dft::NttAutomorphismPlan {
+    fn ntt_automorphism_plan(n: usize, p: i64) -> $crate::__private::poulpy_cpu_portable::kernels::ntt4x30::vec_znx_dft::NttAutomorphismPlan<Rg> {
         <$base as NttDFTExecute<NttTableInv<Primes30, Rg>>>::ntt_automorphism_plan(n, p)
     }
 }

@@ -19,6 +19,7 @@ use crate::kernels::ntt4x30::{
     primes::{PrimeSet, Primes30},
     standard,
     types::Q_SHIFTED,
+    vec_znx_dft::NttAutomorphismPlan,
 };
 use poulpy_hal::layouts::{ConjugateInvariant, Standard};
 
@@ -33,12 +34,20 @@ impl NttDFTExecute<NttTable<Primes30, Standard>> for NTT4x30Portable {
     fn ntt_dft_execute(table: &NttTable<Primes30, Standard>, data: &mut [u64]) {
         standard::ntt_portable::<Primes30>(table, data);
     }
+
+    fn ntt_automorphism_plan(n: usize, p: i64) -> NttAutomorphismPlan<Standard> {
+        standard::build_ntt4x30_automorphism_plan_portable(n, p)
+    }
 }
 
 impl NttDFTExecute<NttTableInv<Primes30, Standard>> for NTT4x30Portable {
     #[inline(always)]
     fn ntt_dft_execute(table: &NttTableInv<Primes30, Standard>, data: &mut [u64]) {
         standard::intt_portable::<Primes30>(table, data);
+    }
+
+    fn ntt_automorphism_plan(n: usize, p: i64) -> NttAutomorphismPlan<Standard> {
+        standard::build_ntt4x30_automorphism_plan_portable(n, p)
     }
 }
 
@@ -48,7 +57,7 @@ impl NttDFTExecute<NttTable<Primes30, ConjugateInvariant>> for NTT4x30Portable {
         conjugate_invariant::ntt_portable::<Primes30>(table, data);
     }
 
-    fn ntt_automorphism_plan(n: usize, p: i64) -> crate::kernels::ntt4x30::vec_znx_dft::NttAutomorphismPlan {
+    fn ntt_automorphism_plan(n: usize, p: i64) -> NttAutomorphismPlan<ConjugateInvariant> {
         conjugate_invariant::build_ntt4x30_automorphism_plan_portable(n, p)
     }
 }
@@ -59,7 +68,7 @@ impl NttDFTExecute<NttTableInv<Primes30, ConjugateInvariant>> for NTT4x30Portabl
         conjugate_invariant::intt_portable::<Primes30>(table, data);
     }
 
-    fn ntt_automorphism_plan(n: usize, p: i64) -> crate::kernels::ntt4x30::vec_znx_dft::NttAutomorphismPlan {
+    fn ntt_automorphism_plan(n: usize, p: i64) -> NttAutomorphismPlan<ConjugateInvariant> {
         conjugate_invariant::build_ntt4x30_automorphism_plan_portable(n, p)
     }
 }

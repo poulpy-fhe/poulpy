@@ -201,7 +201,7 @@ where
         fft64_vec_znx_dft_zero::<Self, Rg>(res, res_col);
     }
 
-    fn vec_znx_dft_automorphism_plan_default(_module: &Module<Self>, n: usize, p: i64) -> Fft64AutomorphismPlan
+    fn vec_znx_dft_automorphism_plan_default(_module: &Module<Self>, n: usize, p: i64) -> Fft64AutomorphismPlan<Rg>
     where
         Module<Self>: FFTModuleHandle<f64, Rg>,
         Self: Backend<DftWord = f64, ZnxWord = i64> + Fft64RingArith<Rg>,
@@ -211,7 +211,7 @@ where
 
     fn vec_znx_dft_automorphism_with_plan_default(
         module: &Module<Self>,
-        plan: &Fft64AutomorphismPlan,
+        plan: &Fft64AutomorphismPlan<Rg>,
         res: &mut VecZnxDftBackendMut<'_, Self, Rg>,
         res_col: usize,
         a: &VecZnxDftBackendRef<'_, Self, Rg>,
@@ -227,7 +227,7 @@ where
 
     fn vec_znx_dft_automorphism_add_with_plan_default(
         module: &Module<Self>,
-        plan: &Fft64AutomorphismPlan,
+        plan: &Fft64AutomorphismPlan<Rg>,
         res: &mut VecZnxDftBackendMut<'_, Self, Rg>,
         res_col: usize,
         a: &VecZnxDftBackendRef<'_, Self, Rg>,
@@ -246,7 +246,7 @@ impl<BE: Backend<ZnxWord = i64>, Rg: Ring> FFT64VecZnxDftDefault<Rg> for BE
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
 {
-    type AutomorphismPlanDefault = Fft64AutomorphismPlan;
+    type AutomorphismPlanDefault = Fft64AutomorphismPlan<Rg>;
 }
 
 #[doc(hidden)]
@@ -254,9 +254,6 @@ pub trait NTT4x30VecZnxDftDefault<Rg: Ring = Standard>: Backend<ZnxWord = i64>
 where
     Self::OwnedBuf: poulpy_hal::layouts::HostDataMut,
 {
-    /// NTT4x30 automorphism plan type. Implementation lands as a follow-up
-    /// step; the placeholder unit type keeps the OEP wiring consistent
-    /// across backends.
     type AutomorphismPlanDefault: Send + Sync;
 
     fn vec_znx_dft_apply_default(
@@ -408,7 +405,7 @@ where
         ntt4x30_default_vec_znx_dft_zero::<Self, Rg>(res, res_col);
     }
 
-    fn vec_znx_dft_automorphism_plan_default(_module: &Module<Self>, n: usize, p: i64) -> NttAutomorphismPlan
+    fn vec_znx_dft_automorphism_plan_default(_module: &Module<Self>, n: usize, p: i64) -> NttAutomorphismPlan<Rg>
     where
         Self: Backend<ZnxWord = i64> + NttDFTExecute<NttTable<Primes30, Rg>>,
         Module<Self>: NttModuleHandle<Rg>,
@@ -418,7 +415,7 @@ where
 
     fn vec_znx_dft_automorphism_with_plan_default(
         module: &Module<Self>,
-        plan: &NttAutomorphismPlan,
+        plan: &NttAutomorphismPlan<Rg>,
         res: &mut VecZnxDftBackendMut<'_, Self, Rg>,
         res_col: usize,
         a: &VecZnxDftBackendRef<'_, Self, Rg>,
@@ -434,7 +431,7 @@ where
 
     fn vec_znx_dft_automorphism_add_with_plan_default(
         module: &Module<Self>,
-        plan: &NttAutomorphismPlan,
+        plan: &NttAutomorphismPlan<Rg>,
         res: &mut VecZnxDftBackendMut<'_, Self, Rg>,
         res_col: usize,
         a: &VecZnxDftBackendRef<'_, Self, Rg>,
@@ -455,5 +452,5 @@ impl<BE: Backend<ZnxWord = i64>, Rg: Ring> NTT4x30VecZnxDftDefault<Rg> for BE
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
 {
-    type AutomorphismPlanDefault = NttAutomorphismPlan;
+    type AutomorphismPlanDefault = NttAutomorphismPlan<Rg>;
 }

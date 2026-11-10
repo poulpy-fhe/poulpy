@@ -436,7 +436,7 @@ impl ReimArith for FFT64Avx {
 
     #[inline(always)]
     fn reim_automorphism(
-        plan: &poulpy_cpu_portable::kernels::fft64::vec_znx_dft::Fft64AutomorphismPlan,
+        plan: &poulpy_cpu_portable::kernels::fft64::vec_znx_dft::Fft64AutomorphismPlan<poulpy_hal::layouts::Standard>,
         res: &mut [f64],
         a: &[f64],
     ) {

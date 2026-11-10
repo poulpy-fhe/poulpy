@@ -12,7 +12,7 @@ use crate::{
     NTT4x30Gpu,
     module::handle,
     ntt4x30::{
-        AutomorphismPlan, DftColumn, DftTerm, Tail, combine, digit_product, digit_product_inverse, digit_products,
+        DftColumn, DftTerm, Substitution, Tail, combine, digit_product, digit_product_inverse, digit_products,
         digit_products_inverse, extract_rows, forward, inverse_head,
     },
     runtime::GpuRuntime,
@@ -51,7 +51,7 @@ pub(crate) fn gglwe_product_fused<RT: GpuRuntime, R: Ring>(
     product_limbs: usize,
     pmat: &VmpPMatBackendRef<'_, NTT4x30Gpu<RT>, R>,
     addends: [Option<(&VecZnxDftBackendRef<'_, NTT4x30Gpu<RT>, R>, usize)>; 2],
-    plan: Option<&AutomorphismPlan>,
+    plan: Option<&Substitution>,
     accumulate: bool,
 ) {
     assert!(
@@ -110,7 +110,7 @@ pub(crate) fn gglwe_products_fused<RT: GpuRuntime, R: Ring>(
     product_limbs: usize,
     pmat: &VmpPMatBackendRef<'_, NTT4x30Gpu<RT>, R>,
     addends: Option<&[&VecZnxDftBackendRef<'_, NTT4x30Gpu<RT>, R>]>,
-    plan: Option<&AutomorphismPlan>,
+    plan: Option<&Substitution>,
     accumulate: bool,
 ) -> bool {
     let columns = |views: &mut dyn Iterator<Item = Option<DftColumn>>| views.collect::<Option<Vec<DftColumn>>>();

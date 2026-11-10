@@ -340,17 +340,18 @@ where
 /// Builds the [`Fft64AutomorphismPlan`]: the standard degree-`2n` plan,
 /// whose real half is the conjugate-invariant layout; `conj` only touches the absent
 /// imaginary half.
-pub fn build_fft64_automorphism_plan_portable(n: usize, p: i64) -> Fft64AutomorphismPlan {
+pub fn build_fft64_automorphism_plan_portable(n: usize, p: i64) -> Fft64AutomorphismPlan<ConjugateInvariant> {
     let plan = standard::build_fft64_automorphism_plan_portable(2 * n, p);
     Fft64AutomorphismPlan {
         p,
         perm: plan.perm,
         conj: false,
+        ring: PhantomData,
     }
 }
 
 /// One limb of the DFT automorphism: `res = tau_p(a)`.
-pub fn fft64_automorphism_portable(plan: &Fft64AutomorphismPlan, res: &mut [f64], a: &[f64]) {
+pub fn fft64_automorphism_portable(plan: &Fft64AutomorphismPlan<ConjugateInvariant>, res: &mut [f64], a: &[f64]) {
     assert_eq!(plan.perm.len(), res.len());
     for (value, &source) in res.iter_mut().zip(&plan.perm) {
         *value = a[source as usize];
@@ -358,7 +359,7 @@ pub fn fft64_automorphism_portable(plan: &Fft64AutomorphismPlan, res: &mut [f64]
 }
 
 /// One limb of the DFT automorphism: `res += tau_p(a)`.
-pub fn fft64_automorphism_add_portable(plan: &Fft64AutomorphismPlan, res: &mut [f64], a: &[f64]) {
+pub fn fft64_automorphism_add_portable(plan: &Fft64AutomorphismPlan<ConjugateInvariant>, res: &mut [f64], a: &[f64]) {
     assert_eq!(plan.perm.len(), res.len());
     for (value, &source) in res.iter_mut().zip(&plan.perm) {
         *value += a[source as usize];
@@ -454,13 +455,24 @@ macro_rules! fft64_ring_arith_ci {
                 m, min_size, offset, dst, dst_stride, a0, a1, a_size, b0, b1, b_size, b_read, tmp,
             )
         }
-        fn fft64_automorphism_plan(n: usize, p: i64) -> $crate::kernels::fft64::vec_znx_dft::Fft64AutomorphismPlan {
+        fn fft64_automorphism_plan(
+            n: usize,
+            p: i64,
+        ) -> $crate::kernels::fft64::vec_znx_dft::Fft64AutomorphismPlan<$crate::layouts::ConjugateInvariant> {
             $crate::kernels::fft64::conjugate_invariant::build_fft64_automorphism_plan_portable(n, p)
         }
-        fn fft64_automorphism(plan: &$crate::kernels::fft64::vec_znx_dft::Fft64AutomorphismPlan, res: &mut [f64], a: &[f64]) {
+        fn fft64_automorphism(
+            plan: &$crate::kernels::fft64::vec_znx_dft::Fft64AutomorphismPlan<$crate::layouts::ConjugateInvariant>,
+            res: &mut [f64],
+            a: &[f64],
+        ) {
             $crate::kernels::fft64::conjugate_invariant::fft64_automorphism_portable(plan, res, a)
         }
-        fn fft64_automorphism_add(plan: &$crate::kernels::fft64::vec_znx_dft::Fft64AutomorphismPlan, res: &mut [f64], a: &[f64]) {
+        fn fft64_automorphism_add(
+            plan: &$crate::kernels::fft64::vec_znx_dft::Fft64AutomorphismPlan<$crate::layouts::ConjugateInvariant>,
+            res: &mut [f64],
+            a: &[f64],
+        ) {
             $crate::kernels::fft64::conjugate_invariant::fft64_automorphism_add_portable(plan, res, a)
         }
     };

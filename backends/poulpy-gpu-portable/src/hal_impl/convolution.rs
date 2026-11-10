@@ -15,7 +15,7 @@ use crate::{
     NTT4x30Gpu,
     module::handle,
     ntt4x30::{
-        AutomorphismPlan, DftColumn, DftTerm, combine, convolution, convolution_pairwise, convolution_sum, convolution_tensor,
+        DftColumn, DftTerm, Substitution, combine, convolution, convolution_pairwise, convolution_sum, convolution_tensor,
         forward,
     },
     runtime::GpuRuntime,
@@ -150,8 +150,8 @@ fn right_plan<RT: GpuRuntime, R: Ring>(
     module: &Module<NTT4x30Gpu<RT>>,
     b: &CnvPVecRBackendRef<'_, NTT4x30Gpu<RT>, R>,
     b_galois: i64,
-) -> AutomorphismPlan {
-    AutomorphismPlan::new(b.n(), b_galois, handle(module).tables::<R>().invariant())
+) -> Substitution {
+    Substitution::new(b.n(), b_galois, handle(module).tables::<R>().invariant())
 }
 
 unsafe impl<RT: GpuRuntime, R: Ring> HalCnvImpl<R> for NTT4x30Gpu<RT> {
@@ -357,7 +357,7 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalCnvImpl<R> for NTT4x30Gpu<RT> {
                 &res,
                 &left(i),
                 &right(i),
-                &AutomorphismPlan::new(b.n(), 1, false),
+                &Substitution::new(b.n(), 1, false),
                 cnv_offset,
                 false,
                 handle(module).convolution_capacity_step(),

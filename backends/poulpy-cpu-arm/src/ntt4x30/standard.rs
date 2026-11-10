@@ -5,6 +5,8 @@ use poulpy_cpu_portable::kernels::{
         NttDFTExecute,
         ntt::{NttTable, NttTableInv},
         primes::Primes30,
+        standard::build_ntt4x30_automorphism_plan_portable,
+        vec_znx_dft::NttAutomorphismPlan,
     },
     znx::{ZnxAutomorphism, ZnxAutomorphismRotate, standard::znx_automorphism_portable},
 };
@@ -40,11 +42,19 @@ impl NttDFTExecute<NttTable<Primes30>> for NTT4x30Neon {
     fn ntt_dft_execute(table: &NttTable<Primes30>, data: &mut [u64]) {
         ntt_portable::<Primes30>(table, data);
     }
+
+    fn ntt_automorphism_plan(n: usize, p: i64) -> NttAutomorphismPlan<Standard> {
+        build_ntt4x30_automorphism_plan_portable(n, p)
+    }
 }
 
 impl NttDFTExecute<NttTableInv<Primes30>> for NTT4x30Neon {
     #[inline(always)]
     fn ntt_dft_execute(table: &NttTableInv<Primes30>, data: &mut [u64]) {
         intt_portable::<Primes30>(table, data);
+    }
+
+    fn ntt_automorphism_plan(n: usize, p: i64) -> NttAutomorphismPlan<Standard> {
+        build_ntt4x30_automorphism_plan_portable(n, p)
     }
 }

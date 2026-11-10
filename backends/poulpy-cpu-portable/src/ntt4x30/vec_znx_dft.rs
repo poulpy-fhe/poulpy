@@ -403,7 +403,7 @@ pub(crate) fn vec_znx_dft_zero<Rg: Ring>(res: &mut VecZnxDftBackendMut<'_, NTT4x
 }
 
 pub(crate) fn vec_znx_dft_automorphism<Rg: Ring>(
-    plan: &NttAutomorphismPlan,
+    plan: &NttAutomorphismPlan<Rg>,
     res: &mut VecZnxDftBackendMut<'_, NTT4x30Portable, Rg>,
     res_col: usize,
     a: &VecZnxDftBackendRef<'_, NTT4x30Portable, Rg>,
@@ -434,7 +434,7 @@ pub(crate) fn vec_znx_dft_automorphism<Rg: Ring>(
 }
 
 pub fn vec_znx_dft_automorphism_add<Rg: Ring, E: TaskExecutor>(
-    plan: &NttAutomorphismPlan,
+    plan: &NttAutomorphismPlan<Rg>,
     res: &mut VecZnxDftBackendMut<'_, NTT4x30Portable, Rg>,
     res_col: usize,
     a: &VecZnxDftBackendRef<'_, NTT4x30Portable, Rg>,

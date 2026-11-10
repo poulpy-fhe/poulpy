@@ -44,7 +44,7 @@ impl NttDFTExecute<NttTable<Primes30, ConjugateInvariant>> for NTT4x30Avx {
         }
     }
 
-    fn ntt_automorphism_plan(n: usize, p: i64) -> NttAutomorphismPlan {
+    fn ntt_automorphism_plan(n: usize, p: i64) -> NttAutomorphismPlan<ConjugateInvariant> {
         build_ntt4x30_automorphism_plan_portable(n, p)
     }
 }
@@ -59,7 +59,7 @@ impl NttDFTExecute<NttTableInv<Primes30, ConjugateInvariant>> for NTT4x30Avx {
         }
     }
 
-    fn ntt_automorphism_plan(n: usize, p: i64) -> NttAutomorphismPlan {
+    fn ntt_automorphism_plan(n: usize, p: i64) -> NttAutomorphismPlan<ConjugateInvariant> {
         build_ntt4x30_automorphism_plan_portable(n, p)
     }
 }

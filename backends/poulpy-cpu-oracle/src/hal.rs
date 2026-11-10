@@ -3,6 +3,8 @@
 //! [`HalVecZnxMonomialImpl`]. Temporaries live on the heap, so every scratch
 //! size is zero.
 
+use std::marker::PhantomData;
+
 use poulpy_hal::{
     layouts::{
         CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, ConjugateInvariant, MatZnxBackendRef,
@@ -590,9 +592,10 @@ unsafe impl<F: DFTFamily> HalVecZnxCIImpl for Oracle<F> {
 
 unsafe impl<F: DFTFamily> HalScalarZnxCIImpl for Oracle<F> {}
 
-/// An automorphism of the transformed domain: the exponent is all it needs.
-pub struct DftAutomorphismPlan {
+/// An automorphism of the transformed domain of ring `Rg`: the exponent is all it needs.
+pub struct DftAutomorphismPlan<Rg: OracleRing> {
     p: i64,
+    ring: PhantomData<Rg>,
 }
 
 unsafe impl<F: DFTFamily, Rg: OracleRing> HalVecZnxDftImpl<Rg> for Oracle<F> {
@@ -726,15 +729,15 @@ unsafe impl<F: DFTFamily, Rg: OracleRing> HalVecZnxDftImpl<Rg> for Oracle<F> {
         apply(res, res_col, |_| F::Dft::default());
     }
 
-    type AutomorphismPlan = DftAutomorphismPlan;
+    type AutomorphismPlan = DftAutomorphismPlan<Rg>;
 
-    fn vec_znx_dft_automorphism_plan(_module: &Module<Self>, _n: usize, p: i64) -> DftAutomorphismPlan {
-        DftAutomorphismPlan { p }
+    fn vec_znx_dft_automorphism_plan(_module: &Module<Self>, _n: usize, p: i64) -> DftAutomorphismPlan<Rg> {
+        DftAutomorphismPlan { p, ring: PhantomData }
     }
 
     fn vec_znx_dft_automorphism_with_plan(
         _module: &Module<Self>,
-        plan: &DftAutomorphismPlan,
+        plan: &DftAutomorphismPlan<Rg>,
         res: &mut VecZnxDftBackendMut<'_, Self, Rg>,
         res_col: usize,
         a: &VecZnxDftBackendRef<'_, Self, Rg>,

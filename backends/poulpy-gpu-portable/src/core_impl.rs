@@ -32,7 +32,7 @@ use crate::{
         scalar_column,
     },
     module::handle,
-    ntt4x30::AutomorphismPlan,
+    ntt4x30::Substitution,
     runtime::{GpuBuf, GpuRuntime, access},
     znx::{
         CONST_TERMS, Column, KERNEL_RADIX, Term, lincomb, normalize_products,
@@ -119,7 +119,7 @@ unsafe impl<RT: GpuRuntime, R: Ring> GGLWEProductDigitsStridedImpl<R> for NTT4x3
         // One limb per digit is a plain vector-matrix product.
         let product_limbs = if dsize == 1 { 1 } else { gglwe_product_limbs(key, term_count) };
         // The identity stores without a rotation.
-        let plan = (p != 1).then(|| AutomorphismPlan::new(res.n(), p, handle(module).tables::<R>().invariant()));
+        let plan = (p != 1).then(|| Substitution::new(res.n(), p, handle(module).tables::<R>().invariant()));
         let addend = |column: usize| addends.get(column).copied().flatten();
         gglwe_product_fused(
             res,
@@ -237,7 +237,7 @@ unsafe impl<RT: GpuRuntime, R: Ring> GGLWEProductDigitsStridedImpl<R> for NTT4x3
         let dsize = key.dsize().as_usize();
         let product_limbs = if dsize == 1 { 1 } else { gglwe_product_limbs(key, term_count) };
         // The identity stores without a rotation.
-        let plan = (p != 1).then(|| AutomorphismPlan::new(n, p, handle(module).tables::<R>().invariant()));
+        let plan = (p != 1).then(|| Substitution::new(n, p, handle(module).tables::<R>().invariant()));
         let mut body_refs: Vec<&VecZnxDftBackendRef<'_, Self, R>> = Vec::with_capacity(crate::ntt4x30::MANY_SOURCES);
         let mut start = 0;
         while start < res.len() {

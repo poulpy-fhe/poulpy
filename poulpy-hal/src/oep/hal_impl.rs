@@ -858,8 +858,9 @@ pub unsafe trait HalVecZnxDftImpl<Rg: Ring = Standard>: Backend + HalVecZnxBigIm
 
     fn vec_znx_dft_zero(module: &Module<Self>, res: &mut crate::layouts::VecZnxDftBackendMut<'_, Self, Rg>, res_col: usize);
 
-    /// Backend-specific automorphism plan (e.g. a precomputed plan for a
-    /// floating-point FFT backend, a pure-permutation plan for an NTT backend).
+    /// Backend-specific automorphism plan of ring `Rg` (e.g. a precomputed plan for a
+    /// floating-point FFT backend, a pure-permutation plan for an NTT backend), a
+    /// distinct type per ring so a plan built on one ring never reaches the other's methods.
     type AutomorphismPlan: Send + Sync;
 
     fn vec_znx_dft_automorphism_plan(module: &Module<Self>, n: usize, p: i64) -> Self::AutomorphismPlan;

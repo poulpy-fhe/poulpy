@@ -952,7 +952,7 @@ fn vmp_apply_dft_to_dft_digits_strided_ifma_inner<R: Ring, E: TaskExecutor>(
 }
 
 pub(crate) struct RotatedOutput<'a, R: Ring> {
-    pub(crate) plan: &'a poulpy_cpu_portable::kernels::ntt4x30::vec_znx_dft::NttAutomorphismPlan,
+    pub(crate) plan: &'a poulpy_cpu_portable::kernels::ntt4x30::vec_znx_dft::NttAutomorphismPlan<R>,
     pub(crate) body: VecZnxDftBackendRef<'a, crate::NTT3x42Ifma, R>,
     pub(crate) output_size: usize,
 }

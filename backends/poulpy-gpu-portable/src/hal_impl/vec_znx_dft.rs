@@ -11,7 +11,9 @@ use super::operand::{big_column_mut, column_mut, column_ref, dft_column_mut, dft
 use crate::{
     NTT4x30Gpu,
     module::handle,
-    ntt4x30::{AutomorphismPlan, DftColumn, DftTerm, automorphism, combine, forward, inverse, to_big, to_big_clearing},
+    ntt4x30::{
+        AutomorphismPlan, DftColumn, DftTerm, Substitution, automorphism, combine, forward, inverse, to_big, to_big_clearing,
+    },
     runtime::GpuRuntime,
     znx::{Column, KERNEL_RADIX, Term, lincomb, normalize, normalize_residues},
 };
@@ -301,11 +303,11 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalVecZnxDftImpl<R> for NTT4x30Gpu<RT> {
         zero_from::<RT>(&res, 0);
     }
 
-    type AutomorphismPlan = AutomorphismPlan;
+    type AutomorphismPlan = AutomorphismPlan<R>;
 
     fn vec_znx_dft_automorphism_plan(module: &Module<Self>, n: usize, p: i64) -> Self::AutomorphismPlan {
         check_degree::<Self>(module.n(), n);
-        AutomorphismPlan::new(n, p, handle(module).tables::<R>().invariant())
+        AutomorphismPlan::new(Substitution::new(n, p, handle(module).tables::<R>().invariant()))
     }
 
     fn vec_znx_dft_automorphism_with_plan(
@@ -320,7 +322,7 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalVecZnxDftImpl<R> for NTT4x30Gpu<RT> {
         assert!(a.n() == res.n(), "vec_znx_dft_automorphism: a.n() != res.n()");
         let Some(res) = dft_column_mut(res, res_col) else { return };
         let a = dft_column_ref(a, a_col).unwrap_or_else(|| empty_dft_like(&res));
-        automorphism::<RT>(plan, &res, &a, false);
+        automorphism::<RT>(plan.substitution(), &res, &a, false);
     }
 
     fn vec_znx_dft_automorphism_add_with_plan_tmp_bytes(_module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
@@ -340,6 +342,6 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalVecZnxDftImpl<R> for NTT4x30Gpu<RT> {
         assert!(a.n() == res.n(), "vec_znx_dft_automorphism_add: a.n() != res.n()");
         let Some(res) = dft_column_mut(res, res_col) else { return };
         let Some(a) = dft_column_ref(a, a_col) else { return };
-        automorphism::<RT>(plan, &res, &a, true);
+        automorphism::<RT>(plan.substitution(), &res, &a, true);
     }
 }

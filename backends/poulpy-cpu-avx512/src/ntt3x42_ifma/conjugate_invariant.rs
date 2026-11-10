@@ -111,7 +111,7 @@ impl Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, ConjugateInvariant>> for N
         }
     }
 
-    fn ntt_automorphism_plan(n: usize, p: i64) -> NttAutomorphismPlan {
+    fn ntt_automorphism_plan(n: usize, p: i64) -> NttAutomorphismPlan<ConjugateInvariant> {
         build_ntt4x30_automorphism_plan_portable(n, p)
     }
 }
@@ -125,7 +125,7 @@ impl Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, ConjugateInvariant>> fo
         }
     }
 
-    fn ntt_automorphism_plan(n: usize, p: i64) -> NttAutomorphismPlan {
+    fn ntt_automorphism_plan(n: usize, p: i64) -> NttAutomorphismPlan<ConjugateInvariant> {
         build_ntt4x30_automorphism_plan_portable(n, p)
     }
 }

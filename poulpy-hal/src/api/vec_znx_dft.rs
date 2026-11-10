@@ -304,7 +304,7 @@ pub trait VecZnxDftZero<B: Backend, Rg: Ring = Standard> {
 /// class      support
 /// mutation   none
 /// domain     n: a power of two, MIN_DEGREE <= n <= the module's degree, the degree of the objects the plan is applied to; p odd
-/// ensures    returns a reusable plan for the substitution X -> X^p in R_n
+/// ensures    returns a reusable plan for the substitution X -> X^p in R_n, of a type serving only operands of ring Rg
 /// test       test_vec_znx_dft_automorphism
 /// ```
 pub trait VecZnxDftAutomorphismPlan<B: Backend, Rg: Ring = Standard> {
@@ -337,7 +337,7 @@ pub trait VecZnxDftAutomorphismAddWithPlanTmpBytes {
 /// class      basis
 /// mutation   out-of-place
 /// definition idft(res)[res_col,j] = sigma_plan.p(idft(a)[a_col,j]) in R_N; other columns of res are unchanged
-/// domain     res, a: VecZnxDft of degree N; plan: built by vec_znx_dft_automorphism_plan for this degree and an odd exponent
+/// domain     res, a: VecZnxDft of degree N; plan: built by vec_znx_dft_automorphism_plan on the ring of res and a, for this degree and an odd exponent
 /// ensures    the planned substitution is applied to the selected source column limb by limb; result limbs from a.size() onward are zero
 /// test       test_vec_znx_dft_automorphism
 /// ```
@@ -359,7 +359,7 @@ pub trait VecZnxDftAutomorphism<B: Backend, Rg: Ring = Standard>: VecZnxDftAutom
     /// class      derived
     /// mutation   accumulate
     /// definition idft(res)[res_col,j] = idft(old(res))[res_col,j] + sigma_plan.p(idft(a)[a_col,j]) in R_N; result limbs from a.size() onward and other columns of res are unchanged
-    /// domain     res, a: VecZnxDft of degree N; plan: built by vec_znx_dft_automorphism_plan for this degree and an odd exponent
+    /// domain     res, a: VecZnxDft of degree N; plan: built by vec_znx_dft_automorphism_plan on the ring of res and a, for this degree and an odd exponent
     /// requires   scratch >= vec_znx_dft_automorphism_add_with_plan_tmp_bytes(res.size(), a.size())
     /// ensures    the selected result column gains the planned substitution of the selected source column limb by limb
     /// fallback   apply the plan into a one-column VecZnxDft with min(res.size(), a.size()) limbs, then add its column 0 into res[res_col]
