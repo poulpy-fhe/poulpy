@@ -1477,6 +1477,7 @@ where
         + GLWECITrace<BE>
         + CKKSMulOps<BE>
         + CKKSAddOps<BE>
+        + CKKSCopyOps<BE>
         + CKKSLinearTransformationOps<BE>
         + GLWERotate<BE>
         + CKKSEvalModOps<BE, ConjugateInvariant>
@@ -1539,12 +1540,20 @@ where
         module,
         boot_layout.size(),
     ));
+    // EvalRound+ adds the bypass back last, beside every carve.
+    let bypass_tail = match ctx.coeffs_to_slots_bypass() {
+        Some(_) => <Module<BE> as CKKSPow2Ops<BE>>::ckks_mul_pow2_tmp_bytes(module, boot_layout.size())
+            .max(module.ckks_add_tmp_bytes(boot_layout.size()))
+            .max(module.ckks_copy_tmp_bytes(ct_out, &boot_layout)),
+        None => 0,
+    };
     // The traced and the reduced ciphertexts on the conjugate-invariant ring stay carved from the trace on.
     let past_trace = 2 * ci_bytes
         + trace
             .max(on_ci)
             .max(module.ckks_mul_pt_vec_tmp_bytes(&embedded, &embedded, &eval_mod_ci.post))
-            .max(module.glwe_keyswitch_tmp_bytes(&embedded, &embedded, embed_key));
+            .max(module.glwe_keyswitch_tmp_bytes(&embedded, &embedded, embed_key))
+            .max(bypass_tail);
     let mut linear = s2c_first_linear_tmp_bytes(module, &boot_layout, ct_in, ctx, keys_layout);
     let ct_bytes = BE::scratch_aligned(module.glwe_bytes_of_from_infos(&boot_layout));
     // EvalRound+ holds the high-precision CoeffsToSlots beside the rest of the bootstrap.
@@ -2005,6 +2014,7 @@ pub trait CKKSBootstrappingCIReference<BE: Backend> {
             + GLWECITrace<BE>
             + CKKSMulOps<BE>
             + CKKSAddOps<BE>
+            + CKKSCopyOps<BE>
             + CKKSLinearTransformationOps<BE>
             + GLWERotate<BE>
             + CKKSEvalModOps<BE, ConjugateInvariant>
@@ -2064,6 +2074,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl> CKKSBoo
             + GLWECITrace<BE>
             + CKKSMulOps<BE>
             + CKKSAddOps<BE>
+            + CKKSCopyOps<BE>
             + CKKSLinearTransformationOps<BE>
             + GLWERotate<BE>
             + CKKSEvalModOps<BE, ConjugateInvariant>

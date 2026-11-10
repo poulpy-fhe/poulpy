@@ -61,7 +61,10 @@ use poulpy_hal::{
     source::Source,
 };
 
-use crate::layouts::{BootstrappingContextPrepared, BootstrappingPlan, EvalModRing};
+use crate::{
+    CKKSCompositionError,
+    layouts::{BootstrappingContextPrepared, BootstrappingPlan, EvalModRing},
+};
 use poulpy_core::api::{GLWESecretSampling, TransferInto};
 use poulpy_core::{Distribution, GetDistribution, GetDistributionMut};
 
@@ -399,10 +402,50 @@ impl BootstrappingKeysLayout {
         encapsulation.chain([self.first_factor_key]).flatten().collect()
     }
 
+    /// One secret of the keys' degree and rank, as key generation carves it.
+    fn secret_bytes<BE: Backend>(&self) -> usize {
+        let (n, rank) = (self.tensor_key.n().as_usize(), self.tensor_key.rank_out().as_usize());
+        BE::scratch_aligned(BE::scalar_znx_bytes_of(n, rank))
+    }
+
+    /// The encryption of the rotation and raise keys: the encapsulation keys beside the sparse
+    /// secret, a first-factor key beside the rotated secret it is carved with, and beside the
+    /// sparse secret too under encapsulation.
+    fn linear_keys_tmp_bytes<BE>(&self, module: &Module<BE>) -> usize
+    where
+        BE: Backend,
+        Module<BE>: GLWEAutomorphismKeyEncryptSk<BE> + GLWESwitchingKeyEncryptSk<BE>,
+    {
+        let secret = self.secret_bytes::<BE>();
+        let sparse = usize::from(self.encapsulation.is_some()) * secret;
+        let mut bytes = 0;
+        for layout in self.rotation_key_layouts() {
+            bytes = bytes.max(module.glwe_automorphism_key_encrypt_sk_tmp_bytes(&layout));
+        }
+        for layout in self.raise_key_layouts() {
+            bytes = bytes.max(sparse + module.glwe_switching_key_encrypt_sk_tmp_bytes(&layout));
+        }
+        if let Some(layout) = &self.first_factor_key {
+            bytes = bytes.max(sparse + secret + module.glwe_switching_key_encrypt_sk_tmp_bytes(layout));
+        }
+        bytes
+    }
+
+    /// Scratch of [`BootstrappingContextPrepared::generate_keys`] for these layouts: the
+    /// encryption of each key, beside the secrets carved for the raise keys.
+    pub fn generate_tmp_bytes<BE>(&self, module: &Module<BE>) -> usize
+    where
+        BE: Backend,
+        Module<BE>: GLWEAutomorphismKeyEncryptSk<BE> + GLWESwitchingKeyEncryptSk<BE> + GLWETensorKeyEncryptSk<BE>,
+    {
+        self.linear_keys_tmp_bytes(module)
+            .max(module.glwe_tensor_key_encrypt_sk_tmp_bytes(&self.tensor_key))
+    }
+
     /// Scratch of [`BootstrappingContextPrepared::generate_keys_ci`] for these layouts, one
-    /// arena serving both rings: the encryption of each key, a first-factor key beside the
-    /// rotated secret it is carved with, and the tensor and conversion keys beside the
-    /// conjugate-invariant secret. Zero without conversion key layouts.
+    /// arena serving both rings: the encryption of each key, beside the secrets carved for the
+    /// raise keys, and the tensor and conversion keys beside the conjugate-invariant secret.
+    /// Zero without conversion key layouts.
     pub fn generate_ci_tmp_bytes<BE>(&self, module: &Module<BE>) -> usize
     where
         BE: Backend,
@@ -414,25 +457,13 @@ impl BootstrappingKeysLayout {
         let Some((trace, embed)) = &self.conversion_keys else {
             return 0;
         };
-        let (n, rank) = (self.tensor_key.n().as_usize(), self.tensor_key.rank_out().as_usize());
-        let secret = BE::scratch_aligned(BE::scalar_znx_bytes_of(n, rank));
-        let mut bytes = 0;
-        for layout in self.rotation_key_layouts() {
-            bytes = bytes.max(module.glwe_automorphism_key_encrypt_sk_tmp_bytes(&layout));
-        }
-        for layout in self.raise_key_layouts() {
-            bytes = bytes.max(module.glwe_switching_key_encrypt_sk_tmp_bytes(&layout));
-        }
-        if let Some(layout) = &self.first_factor_key {
-            bytes = bytes.max(secret + module.glwe_switching_key_encrypt_sk_tmp_bytes(layout));
-        }
         let ci_keys = <Module<BE> as GLWETensorKeyEncryptSk<BE, ConjugateInvariant>>::glwe_tensor_key_encrypt_sk_tmp_bytes(
             module,
             &self.tensor_key,
         )
         .max(module.glwe_ci_key_encrypt_sk_tmp_bytes(trace))
         .max(module.glwe_ci_key_encrypt_sk_tmp_bytes(embed));
-        bytes.max(secret + ci_keys)
+        self.linear_keys_tmp_bytes(module).max(self.secret_bytes::<BE>() + ci_keys)
     }
 
     /// Scratch of [`BootstrappingKeySet::prepare`] and [`BootstrappingKeySet::transfer_and_prepare`]
@@ -537,10 +568,9 @@ impl<BE: Backend, F> BootstrappingContextPrepared<BE, F> {
     /// [`Distribution::ENCAPSULATED`], so it can neither back a public key nor
     /// be serialized.
     ///
-    /// `scratch` must be large enough for the key encrypt operations beside the
-    /// secrets carved from it, each wiped before returning: the ephemeral sparse
-    /// secret with encapsulation, and each rotated raise secret beside it with
-    /// first-factor keys.
+    /// [`BootstrappingKeysLayout::generate_tmp_bytes`] sizes `scratch`, which holds the
+    /// ephemeral sparse secret with encapsulation and the rotated raise secret with
+    /// first-factor keys, and which is wiped before returning.
     #[allow(clippy::too_many_arguments)]
     pub fn generate_keys(
         &self,
@@ -574,11 +604,12 @@ impl<BE: Backend, F> BootstrappingContextPrepared<BE, F> {
     /// [`Self::generate_keys`] with EvalMod on the conjugate-invariant ring, on `module`, of
     /// degree `2N`: a conjugate-invariant secret of the dense secret's Hamming weight and of
     /// degree `N`, sampled after the raise keys, has the tensor key; the trace and embedding
-    /// keys switch between it and the dense secret lifted to `s(X²)`, of degree `2N`. The
-    /// conjugate-invariant secret is carved from `scratch`, wiped before returning.
-    /// [`BootstrappingKeysLayout::generate_ci_tmp_bytes`] sizes the arena. Without conversion
-    /// key layouts, with a dense secret not of fixed-weight ternary law, or on a module of
-    /// another degree than twice the secret's, it fails before any draw.
+    /// keys switch between it and the dense secret lifted to `s(X²)`, of degree `2N`.
+    /// [`BootstrappingKeysLayout::generate_ci_tmp_bytes`] sizes `scratch`, which holds the
+    /// secrets of [`Self::generate_keys`] and the conjugate-invariant one, and which is wiped
+    /// before returning. Without conversion key layouts, with a dense secret not of
+    /// fixed-weight ternary law, or on a module of another degree than twice the secret's
+    /// ([`CKKSCompositionError::InvalidOperand`] in the chain), it fails before any draw.
     #[expect(
         clippy::too_many_arguments,
         reason = "key generation takes the module, the secret, the layout, three sources and a scratch arena"
@@ -757,7 +788,7 @@ impl KeyRecipe {
             self.eval_mod_ring == EvalModRing::Standard,
             "keys for EvalMod on the conjugate-invariant ring are generated by generate_keys_ci"
         );
-        self.generate_linear_keys(
+        let keys = self.generate_linear_keys(
             module,
             sk_dense,
             layout,
@@ -770,7 +801,9 @@ impl KeyRecipe {
                 module.glwe_tensor_key_encrypt_sk(&mut tensor_key, sk_dense, source_xe, source_xa, scratch);
                 tensor_key
             },
-        )
+        )?;
+        scratch.wipe(layout.generate_tmp_bytes(module));
+        Ok(keys)
     }
 
     /// The keys of the linear stages, with the tensor key of `tensor_key`, which draws it
@@ -848,27 +881,21 @@ impl KeyRecipe {
                             scratch: &mut ScratchArena<'_, BE>| {
             let mut keys = HashMap::with_capacity(first_factor_rotations.len());
             if let Some(key_layout) = &layout.first_factor_key {
-                let (n, rank) = (sk_raise.n(), sk_raise.rank());
-                {
-                    // The rotated secret is carved from scratch, which is wiped once the keys
-                    // are encrypted.
-                    let scratch = scratch.borrow();
-                    let (mut sk_rotated, mut scratch) = scratch.take_glwe_secret_scratch(n, rank);
-                    *sk_rotated.dist_mut() = *sk_raise.dist();
-                    for &rotation in first_factor_rotations {
-                        {
-                            let sk = scalar_znx_as_vec_znx_backend_ref_from_ref::<BE, Standard>(sk_raise.data());
-                            let mut res = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE, Standard>(sk_rotated.data_mut());
-                            for col in 0..rank.as_usize() {
-                                module.vec_znx_automorphism(galois_element(rotation, order), &mut res, col, &sk, col);
-                            }
+                let rank = sk_raise.rank();
+                let (mut sk_rotated, mut scratch) = scratch.borrow().take_glwe_secret_scratch(sk_raise.n(), rank);
+                *sk_rotated.dist_mut() = *sk_raise.dist();
+                for &rotation in first_factor_rotations {
+                    {
+                        let sk = scalar_znx_as_vec_znx_backend_ref_from_ref::<BE, Standard>(sk_raise.data());
+                        let mut res = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE, Standard>(sk_rotated.data_mut());
+                        for col in 0..rank.as_usize() {
+                            module.vec_znx_automorphism(galois_element(rotation, order), &mut res, col, &sk, col);
                         }
-                        let mut key = module.glwe_switching_key_alloc_from_infos(key_layout);
-                        module.glwe_switching_key_encrypt_sk(&mut key, &sk_rotated, sk_dense, source_xe, source_xa, &mut scratch);
-                        keys.insert(rotation, key);
                     }
+                    let mut key = module.glwe_switching_key_alloc_from_infos(key_layout);
+                    module.glwe_switching_key_encrypt_sk(&mut key, &sk_rotated, sk_dense, source_xe, source_xa, &mut scratch);
+                    keys.insert(rotation, key);
                 }
-                scratch.wipe(BE::scalar_znx_bytes_of(n.as_usize(), rank.as_usize()));
             }
             keys
         };
@@ -877,10 +904,8 @@ impl KeyRecipe {
         // Sparse-secret encapsulation key-switching keys.
         let encapsulation_keys = match (sparse_secret_hamming_weight, &layout.encapsulation) {
             (Some(hamming_weight), Some(encaps)) => {
-                // The ephemeral secret is carved from scratch, which is wiped once its keys are encrypted.
-                let (n, rank) = (sk_dense.n(), sk_dense.rank());
                 let keys = {
-                    let (mut sk_sparse, mut scratch) = scratch.borrow().take_glwe_secret_scratch(n, rank);
+                    let (mut sk_sparse, mut scratch) = scratch.borrow().take_glwe_secret_scratch(sk_dense.n(), sk_dense.rank());
                     module.glwe_secret_fill_ternary_hw(&mut sk_sparse, hamming_weight, source_xs);
                     *sk_sparse.dist_mut() = Distribution::ENCAPSULATED("sparse-encapsulation");
 
@@ -907,7 +932,6 @@ impl KeyRecipe {
                     );
                     (dense_to_sparse, sparse_to_dense)
                 };
-                scratch.wipe(BE::scalar_znx_bytes_of(n.as_usize(), rank.as_usize()));
                 Some(keys)
             }
             (None, None) => {
@@ -963,9 +987,16 @@ impl KeyRecipe {
             anyhow::bail!("EvalMod on the CI ring takes conversion key layouts and a fixed-weight ternary dense secret");
         };
         anyhow::ensure!(
-            self.eval_mod_ring != EvalModRing::Standard && 2 * sk_dense.n().as_usize() == module.n(),
-            "generate_keys_ci takes a recipe with EvalMod on the CI ring and a module of twice the degree of the dense secret"
+            self.eval_mod_ring != EvalModRing::Standard,
+            "generate_keys_ci takes a recipe with EvalMod on the CI ring"
         );
+        if 2 * sk_dense.n().as_usize() != module.n() {
+            return Err(CKKSCompositionError::InvalidOperand {
+                op: "generate_keys_ci",
+                reason: "takes a module of twice the degree of the dense secret".into(),
+            }
+            .into());
+        }
         let mut keys = self.generate_linear_keys(
             module,
             sk_dense,
@@ -976,11 +1007,10 @@ impl KeyRecipe {
             scratch,
             |_, _, _| module.glwe_tensor_key_alloc_from_infos::<_, ConjugateInvariant>(&layout.tensor_key),
         )?;
-        let (n, rank) = (sk_dense.n().as_usize(), sk_dense.rank());
         let conversion_keys = {
             let (mut sk_ci, mut scratch) = scratch
                 .borrow()
-                .take_glwe_secret_scratch::<ConjugateInvariant>(n.into(), rank);
+                .take_glwe_secret_scratch::<ConjugateInvariant>(sk_dense.n(), sk_dense.rank());
             module.glwe_secret_fill_ternary_hw(&mut sk_ci, hamming_weight, source_xs);
             // Created here and wiped before returning: it backs no public key and is not serialized.
             *sk_ci.dist_mut() = Distribution::ENCAPSULATED("ci-eval-mod");
@@ -991,7 +1021,7 @@ impl KeyRecipe {
             module.glwe_ci_embed_key_encrypt_sk(&mut embed_key, &sk_ci, sk_dense, source_xe, source_xa, &mut scratch);
             (trace_key, embed_key)
         };
-        scratch.wipe(BE::scalar_znx_bytes_of(n, rank.as_usize()));
+        scratch.wipe(layout.generate_ci_tmp_bytes(module));
         keys.conversion_keys = Some(conversion_keys);
         Ok(keys)
     }

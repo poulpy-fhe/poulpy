@@ -30,7 +30,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    CKKSCompositionError, CKKSCtBounds, CKKSInfos, CKKSLayout, CKKSResult, GLWEPlaintextMeta, SetCKKSInfos, SlotsKind,
+    CKKSCompositionError, CKKSCtBounds, CKKSError, CKKSInfos, CKKSLayout, CKKSResult, GLWEPlaintextMeta, SetCKKSInfos, SlotsKind,
     api::{
         CKKSAllOpsTmpBytes, CKKSBootstrappingCIOps, CKKSBootstrappingOps, CKKSDFTMatrixOps, CKKSDFTMatrixPreparedFactory,
         CKKSDFTOps, CKKSDecryptOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar, CKKSEncryptOps, CKKSEvalModOps,
@@ -792,7 +792,8 @@ where
 /// Key generation from the plan alone ([`BootstrappingPlan::generate_keys`] and
 /// [`BootstrappingPlan::generate_keys_ci`]) takes the keys the matrices of the compiled context
 /// rotate with, Galois elements and first-factor rotations, and the context's own key
-/// generation, from the same plan, the same keys, encapsulation and conversion keys alike, on the
+/// generation, from the same plan, the same keys, encapsulation and conversion keys alike, leaving
+/// its arena of [`BootstrappingKeysLayout::generate_tmp_bytes`] wiped, on the
 /// insecure `N = 2^11` S2C-first preset, with the keys of power-of-two rotations, and with EvalMod
 /// on the conjugate-invariant ring, `u` folded into CoeffsToSlots.
 pub fn bootstrapping_plan_keys_match_context<BE>()
@@ -832,10 +833,16 @@ where
         let from_context = context
             .generate_keys(&module, &sk_raw, layout, &mut xs, &mut xe, &mut xa, &mut scratch.borrow())
             .unwrap();
-        let (mut xs, mut xa, mut xe) = sources();
-        let from_plan = plan
-            .generate_keys(&module, &sk_raw, layout, &mut xs, &mut xe, &mut xa, &mut scratch.borrow())
-            .unwrap();
+        // Key generation leaves nothing of its secrets, nor of the encryptions, in its arena.
+        let mut from_plan = None;
+        poulpy_core::test_suite::assert_wipes_scratch::<BE>(layout.generate_tmp_bytes(&module), |scratch| {
+            let (mut xs, mut xa, mut xe) = sources();
+            from_plan = Some(
+                plan.generate_keys(&module, &sk_raw, layout, &mut xs, &mut xe, &mut xa, scratch)
+                    .unwrap(),
+            );
+        });
+        let from_plan = from_plan.unwrap();
         assert_eq!(
             key_set_shape(&from_plan),
             key_set_shape(&from_context),
@@ -981,8 +988,8 @@ fn key_set_shape<D: poulpy_hal::layouts::Data, W: poulpy_hal::layouts::ZnxWord, 
 /// The bootstrap with EvalMod on the conjugate-invariant ring refuses, before any
 /// work: conversion keys narrower than its widths, a context compiled without
 /// conversions, a module of another degree than `2N`, and keys without the
-/// dense-to-sparse key of an encapsulated recipe; its key generation refuses a
-/// module of another degree than twice the secret's before any draw. On the
+/// dense-to-sparse key of an encapsulated recipe; its key generation leaves its arena
+/// wiped and refuses a module of another degree than twice the secret's before any draw. On the
 /// insecure `N = 2^11` preset with EvalMod on the CI ring.
 pub fn ci_bootstrap_refuses_invalid_inputs<BE>()
 where
@@ -1024,24 +1031,21 @@ where
         })
         .unwrap()
     };
-    // Key generation leaves nothing of the CI secret, nor of the encryptions, in its arena.
-    let mut scratch = poisoned_scratch::<BE>(preset.keys_layout().generate_ci_tmp_bytes(&module));
-    let (mut source_xs, mut source_xa, mut source_xe) = (Source::new([7; 32]), Source::new([1; 32]), Source::new([2; 32]));
-    context
-        .generate_keys_ci(
-            &module,
-            &sk_raw,
-            preset.keys_layout(),
-            &mut source_xs,
-            &mut source_xe,
-            &mut source_xa,
-            &mut scratch.borrow(),
-        )
-        .unwrap();
-    assert!(
-        BE::to_host_bytes(&scratch.data).iter().all(|&byte| byte == 0 || byte == 0xA5),
-        "key generation left data in its scratch"
-    );
+    // Key generation leaves nothing of its secrets, nor of the encryptions, in its arena.
+    poulpy_core::test_suite::assert_wipes_scratch::<BE>(preset.keys_layout().generate_ci_tmp_bytes(&module), |scratch| {
+        let (mut source_xs, mut source_xa, mut source_xe) = (Source::new([7; 32]), Source::new([1; 32]), Source::new([2; 32]));
+        context
+            .generate_keys_ci(
+                &module,
+                &sk_raw,
+                preset.keys_layout(),
+                &mut source_xs,
+                &mut source_xe,
+                &mut source_xa,
+                scratch,
+            )
+            .unwrap();
+    });
     for module_degree in [n, 4 * n] {
         let (mut source_xs, mut source_xa, mut source_xe) = (Source::new([7; 32]), Source::new([1; 32]), Source::new([2; 32]));
         let err = with_scratch::<BE, _>(0, |s| {
@@ -1060,8 +1064,14 @@ where
         })
         .unwrap_err();
         assert!(
-            err.to_string().contains("a module of twice the degree of the dense secret"),
-            "module of degree {module_degree}: {err}"
+            matches!(
+                CKKSError::from(err).composition(),
+                Some(CKKSCompositionError::InvalidOperand {
+                    op: "generate_keys_ci",
+                    ..
+                })
+            ),
+            "module of degree {module_degree}: the refusal is not generate_keys_ci's InvalidOperand"
         );
         assert_eq!(
             [source_xs.new_seed(), source_xa.new_seed(), source_xe.new_seed()],
