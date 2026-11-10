@@ -143,6 +143,13 @@ where
     P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + GLWEDiagonalProd<BE>,
 {
     const OP: &str = "ckks_dft_matrix_prepare";
+    crate::ensure_operand_degrees(
+        OP,
+        module,
+        dft.factor_operands()
+            .iter()
+            .filter_map(|lt| lt.first_diagonal_plaintext().map(|pt| pt.n())),
+    )?;
     if res.factor_operands().len() != dft.factor_operands().len() {
         return Err(CKKSCompositionError::InvalidOperand {
             op: OP,
@@ -296,6 +303,7 @@ where
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
 {
+    crate::ensure_operand_degrees("ckks_dft_matrix_eval_assign", module, [ct.n()])?;
     // One factor at a time, in place on `ct`; compact `ct` after each so the next
     // factor's baby-step keyswitches operate on fewer limbs as the budget shrinks.
     for factor in dft.factor_operands() {

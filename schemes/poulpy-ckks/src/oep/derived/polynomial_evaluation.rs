@@ -90,6 +90,7 @@ where
     H: GetTensorKey<BE, Rg>,
     CKKSCiphertextOwned<BE, Rg>: GLWEToBackendMut<BE, Rg> + GLWEToBackendRef<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
 {
+    crate::ensure_operand_degrees("ckks_eval_poly_real_const_coeffs", module, [dst.n(), src.n()])?;
     crate::reference::polynomial_evaluation::ensure_baby_steps("ckks_eval_poly_real_const_coeffs", bsgs)?;
     let transform = bsgs.input_transform();
     let x1 = polynomial_input(module, src, transform, tsk, scratch)?;
@@ -127,6 +128,7 @@ where
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
 {
     const OP: &str = "ckks_eval_poly_complex_const_coeffs";
+    crate::ensure_operand_degrees(OP, module, [dst.n(), src.n()])?;
     crate::reference::polynomial_evaluation::ensure_complex_schedules::<BE, C>(OP, poly)?;
     let transform = poly.re.input_transform();
     crate::ckks_ensure_operand!(

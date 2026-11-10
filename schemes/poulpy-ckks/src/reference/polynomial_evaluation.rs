@@ -5,7 +5,7 @@ use poulpy_core::layouts::{BSGSMeta, GLWEInfos, GLWEToBackendMut, GLWEToBackendR
 use poulpy_core::oep::{ConstTerm, GLWEMulConstImpl};
 use poulpy_core::{GLWEBSGSOps, GLWEPolynomialEvaluation, GLWEZero};
 use poulpy_hal::{
-    api::{CnvOps, VecZnxBigNormalize, VecZnxRsh, VecZnxRshTmpBytes},
+    api::{CnvOps, ModuleN, VecZnxBigNormalize, VecZnxRsh, VecZnxRshTmpBytes},
     layouts::{Backend, Data, Module, PrepareHint, Ring, ScratchArena, Standard, ZnxWord, vec_znx_backend_ref_from_ref},
 };
 use std::borrow::Borrow;
@@ -255,7 +255,7 @@ where
     }
 }
 
-pub trait CKKSPolynomialEvaluationReference<BE: Backend, Rg: Ring = Standard> {
+pub trait CKKSPolynomialEvaluationReference<BE: Backend, Rg: Ring = Standard>: ModuleN {
     fn ckks_eval_poly_real_const_coeffs_from_power_basis_reference<R, B, A, G, H>(
         &self,
         res: &mut R,
@@ -338,6 +338,7 @@ pub trait CKKSComplexPolynomialEvaluationReference<BE: Backend>: Borrow<Module<B
         // over baby_i runs the relinearizations once.
         let parity = BSGSPolynomialInfos::<BE>::parity(poly_re);
         let x = power_basis.get(1)?;
+        crate::ensure_operand_degrees(OP, module, [res.n(), x.n()])?;
         let precision = CKKSBSGSOps;
         let mut baby_steps = Vec::with_capacity(n_to_process);
         for i in 0..n_to_process {
@@ -451,6 +452,7 @@ where
         let mut baby_steps = Vec::with_capacity(n_to_process);
         let parity = poly.parity();
         let x = power_basis.get(1)?;
+        crate::ensure_operand_degrees(OP, self, [res.n(), x.n()])?;
         let precision = CKKSBSGSOps;
         for i in 0..n_to_process {
             let coeffs = poly.baby_step(i);

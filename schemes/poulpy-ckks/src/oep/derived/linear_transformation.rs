@@ -30,6 +30,7 @@ where
     P: GLWEDiagonalProd<BE, Rg> + LtDiagonalMeta,
     H: GetAutomorphismKey<BE, Rg> + poulpy_core::layouts::GetTensorKey<BE, Rg>,
 {
+    crate::ensure_operand_degrees("ckks_linear_transformation_eval_assign", module, [dst.n()])?;
     // The evaluation checks its own query on what the working copy leaves.
     ckks_ensure!(
         scratch.available() >= BE::scratch_aligned(module.glwe_bytes_of_from_infos(&*dst)),
@@ -58,6 +59,7 @@ where
     P: GLWEDiagonalProd<BE, Rg> + LtDiagonalMeta,
     H: GetAutomorphismKey<BE, Rg> + poulpy_core::layouts::GetTensorKey<BE, Rg>,
 {
+    crate::ensure_operand_degrees("ckks_linear_transformation_eval_self_into", module, [dst.n(), src.n()])?;
     // Only the baby cache is carved: an unprepared `lt` streams its diagonals inside the evaluation, and the nested
     // calls check their own queries on what the cache leaves.
     let plan = lt.index();
@@ -85,6 +87,7 @@ where
     P: GLWEDiagonalProd<BE, Rg> + LtDiagonalMeta,
     H: GetAutomorphismKey<BE, Rg> + poulpy_core::layouts::GetTensorKey<BE, Rg>,
 {
+    crate::ensure_operand_degrees("ckks_linear_transformation_eval_self_assign", module, [dst.n()])?;
     // The evaluation checks its own query on what the working copy leaves.
     ckks_ensure!(
         scratch.available() >= BE::scratch_aligned(module.glwe_bytes_of_from_infos(&*dst)),

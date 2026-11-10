@@ -121,6 +121,7 @@ where
         P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + BSGSMeta + IntPolyInfos,
         H: GetTensorKey<BE, Rg>,
     {
+        crate::ensure_operand_degrees("ckks_eval_mod", self, [res.n(), ct.n()])?;
         eval_mod(self, res, ct, params, tsk, scratch)
     }
 

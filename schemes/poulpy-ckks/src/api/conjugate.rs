@@ -62,8 +62,7 @@ pub trait CKKSConjugateOps<BE: Backend> {
     ///
     /// # Errors
     ///
-    /// `InvalidOperand` when `dst` exceeds the module degree, `MissingAutomorphismKey` when `keys` has no conjugation key
-    /// covering `dst.k()`. `dst` is untouched on `Err`.
+    /// `MissingAutomorphismKey` when `keys` has no conjugation key covering `dst.k()`. `dst` is untouched on `Err`.
     fn ckks_conjugate_assign<Dst, H>(&self, dst: &mut Dst, keys: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
@@ -77,8 +76,7 @@ pub trait CKKSConjugateOps<BE: Backend> {
     ///
     /// # Errors
     ///
-    /// `InvalidOperand` when `src` exceeds the module degree, `MissingAutomorphismKey` when `keys` has no key for the
-    /// conjugate rotation covering `min(src.k(), dst.k())`, and `InsufficientHomomorphicCapacity` when `dst` is
+    /// `MissingAutomorphismKey` when `keys` has no key for the conjugate rotation covering `min(src.k(), dst.k())`, and `InsufficientHomomorphicCapacity` when `dst` is
     /// narrower than `src` by more than its budget. `dst` is untouched on `Err`.
     fn ckks_conjugate_rotate_into<Dst, Src, H>(
         &self,

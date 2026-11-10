@@ -18,6 +18,7 @@ where
     BE: CKKSMulImpl<Rg>,
     A: GLWEToBackendRef<BE, Rg> + CKKSInfos + GLWEInfos,
 {
+    crate::ensure_operand_degrees("ckks_left_operand_prepare_alloc", module, [a.n()])?;
     let mut res = module.ckks_left_operand_prepared_alloc_from_infos(a, hint);
     BE::ckks_left_operand_prepare(module, &mut res, a, scratch)?;
     Ok(res)
@@ -34,6 +35,7 @@ where
     BE: CKKSMulImpl<Rg>,
     A: GLWEToBackendRef<BE, Rg> + CKKSInfos + GLWEInfos,
 {
+    crate::ensure_operand_degrees("ckks_right_operand_prepare_alloc", module, [a.n()])?;
     let mut res = module.ckks_right_operand_prepared_alloc_from_infos(a, hint);
     BE::ckks_right_operand_prepare(module, &mut res, a, scratch)?;
     Ok(res)

@@ -17,7 +17,10 @@ use poulpy_core::{
         GetTensorKey, LWEInfos, TorusPrecision, prepared::PreparedDiagonal,
     },
 };
-use poulpy_hal::layouts::{Backend, CyclotomicOrder, Data, Module, Ring, ScratchArena, Standard, ZnxWord, galois_element};
+use poulpy_hal::{
+    api::ModuleN,
+    layouts::{Backend, CyclotomicOrder, Data, Module, Ring, ScratchArena, Standard, ZnxWord, galois_element},
+};
 
 use crate::{
     CKKSCompositionError, CKKSCtBounds, CKKSInfos, CKKSLayout, SetCKKSInfos,
@@ -121,7 +124,7 @@ impl<D: Data, BE: Backend, Rg: Ring> LtDiagonalMeta for PreparedDiagonal<D, BE, 
 
 /// The reference algorithms of [`CKKSLinearTransformationImpl`](crate::oep::CKKSLinearTransformationImpl), which
 /// `impl_ckks_linear_transformation_reference_full!` forwards to and an override can call for the methods it keeps.
-pub trait CKKSLinearTransformationReference<BE: Backend, Rg: Ring = Standard> {
+pub trait CKKSLinearTransformationReference<BE: Backend, Rg: Ring = Standard>: ModuleN {
     fn ckks_linear_transformation_rhs_prepare_tmp_bytes_reference<P>(&self, pt_infos: &P) -> usize
     where
         Self: GLWELinearTransformationOps<BE, Rg>,
@@ -227,8 +230,8 @@ pub trait CKKSLinearTransformationReference<BE: Backend, Rg: Ring = Standard> {
         self.glwe_linear_transformation_eval_sum_tmp_bytes(ct, ct, diagonal, plan, tsk, key)
     }
 
-    /// `InvalidOperand`, before any write, for a `prepared` allocated for another layout than `lt`'s or diagonals of
-    /// `lt` not sharing one scale, width and slot kind.
+    /// `InvalidOperand`, before any write, for diagonals above the module degree, a `prepared` allocated for another
+    /// layout than `lt`'s or diagonals of `lt` not sharing one scale, width and slot kind.
     fn ckks_linear_transformation_rhs_prepare_reference<P>(
         &self,
         prepared: &mut LinearTransformationPrepared<BE, Rg>,
@@ -240,6 +243,7 @@ pub trait CKKSLinearTransformationReference<BE: Backend, Rg: Ring = Standard> {
         P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
     {
         const OP: &str = "ckks_linear_transformation_rhs_prepare";
+        crate::ensure_operand_degrees(OP, self, lt.first_diagonal_plaintext().map(|pt| pt.n()))?;
         ensure_prepared_transformation_layout(OP, prepared, lt)?;
         ensure_uniform_diagonals(OP, lt, |pt| (pt.log_delta(), pt.max_k().as_usize(), pt.slots()))?;
         let first_pt = lt.first_diagonal_plaintext();
@@ -317,6 +321,7 @@ pub trait CKKSLinearTransformationReference<BE: Backend, Rg: Ring = Standard> {
         H: GetAutomorphismKey<BE, Rg> + GetTensorKey<BE, Rg>,
     {
         const OP: &str = "ckks_linear_transformation_eval_into";
+        crate::ensure_operand_degrees(OP, self, [dst.n(), src.n()])?;
         let first = lt.first_diagonal_plaintext().ok_or_else(|| -> CKKSError {
             CKKSCompositionError::InvalidOperand {
                 op: OP,
@@ -360,6 +365,7 @@ pub trait CKKSLinearTransformationReference<BE: Backend, Rg: Ring = Standard> {
         H: GetAutomorphismKey<BE, Rg> + GetTensorKey<BE, Rg>,
     {
         const OP: &str = "ckks_linear_transformation_eval_sum_into";
+        crate::ensure_operand_degrees(OP, self, std::iter::once(dst.n()).chain(srcs.iter().map(|src| src.n())))?;
         if babies.len() != srcs.len() || lts.len() != srcs.len() {
             return Err(invalid_sum("srcs, babies and lts differ in length".into()));
         }

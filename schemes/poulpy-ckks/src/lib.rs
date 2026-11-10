@@ -125,8 +125,8 @@ pub mod test_suite;
 pub use error::{CKKSCompositionError, CKKSError, CKKSResult};
 pub(crate) use error::{
     checked_log_budget_sub, checked_mul_ct_log_budget, checked_mul_pt_log_budget, ckks_bail, ckks_ensure, ckks_ensure_operand,
-    ensure_base2k_match, ensure_plaintext_alignment, ensure_plaintext_coeff_in_range, ensure_plaintext_const_operand,
-    ensure_plaintext_degree_embeds, ensure_plaintext_vec_operand, invalid_operand,
+    ensure_base2k_match, ensure_operand_degrees, ensure_plaintext_alignment, ensure_plaintext_coeff_in_range,
+    ensure_plaintext_const_operand, ensure_plaintext_degree_embeds, ensure_plaintext_vec_operand, invalid_operand,
 };
 /// Quad-precision (IEEE 754 binary128) CKKS scalar.
 ///
@@ -186,13 +186,7 @@ pub(crate) fn operand_cyclotomic_order<M: CyclotomicOrder + ?Sized, Rg: Ring>(
     module: &M,
     n: usize,
 ) -> CKKSResult<i64> {
-    if n > module.n() {
-        return Err(CKKSCompositionError::InvalidOperand {
-            op,
-            reason: "operand degree exceeds the module degree".into(),
-        }
-        .into());
-    }
+    ensure_operand_degrees(op, module, [n.into()])?;
     Ok(module.cyclotomic_order::<Rg>() / module.n() as i64 * n as i64)
 }
 

@@ -138,6 +138,7 @@ where
     H: GetTensorKey<BE, Rg>,
 {
     const OP: &str = "ckks_mul_add_ct_into";
+    crate::ensure_operand_degrees(OP, module, [dst.n(), a.n(), b.n()])?;
     let key = tensor_key_at(OP, tsk, a.k().max(b.k()))?;
     get_mul_ct_params(OP, &*dst, a, b)?;
     let bytes = ckks_mul_add_ct_tmp_bytes_derived(module, &*dst, a, b, &key);
@@ -165,6 +166,7 @@ where
     P: GLWEToBackendRef<BE, Rg> + IntPolyInfos + CKKSCtBounds,
 {
     const OP: &str = "ckks_mul_add_pt_vec_into";
+    crate::ensure_operand_degrees(OP, module, [dst.n(), a.n()])?;
     ckks_mul_pt_vec_checks::<BE, _, _, _>(OP, &*dst, a, pt)?;
     let bytes = ckks_mul_add_pt_vec_tmp_bytes_derived(module, &*dst, a, pt);
     mul_then_combine(
@@ -192,6 +194,7 @@ where
     P: GLWEToBackendRef<BE, Rg> + IntPolyInfos + CKKSCtBounds,
 {
     const OP: &str = "ckks_mul_add_pt_const_into";
+    crate::ensure_operand_degrees(OP, module, [dst.n(), a.n()])?;
     ckks_mul_pt_const_checks(OP, &*dst, a, pt, pt_coeff)?;
     let bytes = ckks_mul_add_pt_const_tmp_bytes_derived(module, &*dst, a, pt);
     mul_then_combine(
@@ -237,6 +240,7 @@ where
     P: GLWEToBackendRef<BE, Rg> + IntPolyInfos + CKKSCtBounds,
 {
     const OP: &str = "ckks_affine_pt_const_into";
+    crate::ensure_operand_degrees(OP, module, [dst.n(), a.n()])?;
     let (log_budget, _, _) = ckks_mul_pt_const_checks(OP, &*dst, a, affine_const, scale_coeff)?;
     check_affine_offset_const(OP, &*dst, log_budget, affine_const, offset_coeff)?;
     module.ckks_mul_pt_const_into(dst, a, affine_const, scale_coeff, scratch)?;
@@ -257,6 +261,7 @@ where
     P: GLWEToBackendRef<BE, Rg> + IntPolyInfos + CKKSCtBounds,
 {
     const OP: &str = "ckks_affine_pt_const_assign";
+    crate::ensure_operand_degrees(OP, module, [dst.n()])?;
     let (log_budget, _, _) = ckks_mul_pt_const_checks(OP, &*dst, &*dst, affine_const, scale_coeff)?;
     check_affine_offset_const(OP, &*dst, log_budget, affine_const, offset_coeff)?;
     module.ckks_mul_pt_const_assign(dst, affine_const, scale_coeff, scratch)?;
@@ -291,6 +296,7 @@ where
     P: GLWEToBackendRef<BE, Rg> + IntPolyInfos + CKKSCtBounds,
 {
     const OP: &str = "ckks_affine_pt_vec_into";
+    crate::ensure_operand_degrees(OP, module, [dst.n(), a.n()])?;
     let (log_budget, _, _) = ckks_mul_pt_vec_checks::<BE, _, _, _>(OP, &*dst, a, scale)?;
     check_affine_offset_vec::<BE, _, _>(OP, &*dst, log_budget, offset)?;
     module.ckks_mul_pt_vec_into(dst, a, scale, scratch)?;
@@ -311,6 +317,7 @@ where
     P: GLWEToBackendRef<BE, Rg> + IntPolyInfos + CKKSCtBounds,
 {
     const OP: &str = "ckks_affine_pt_vec_assign";
+    crate::ensure_operand_degrees(OP, module, [dst.n()])?;
     let (log_budget, _, _) = ckks_mul_pt_vec_checks::<BE, _, _, _>(OP, &*dst, &*dst, scale)?;
     check_affine_offset_vec::<BE, _, _>(OP, &*dst, log_budget, offset)?;
     module.ckks_mul_pt_vec_assign(dst, scale, scratch)?;
@@ -379,6 +386,7 @@ where
     H: GetTensorKey<BE, Rg>,
 {
     const OP: &str = "ckks_mul_sub_ct_into";
+    crate::ensure_operand_degrees(OP, module, [dst.n(), a.n(), b.n()])?;
     let key = tensor_key_at(OP, tsk, a.k().max(b.k()))?;
     get_mul_ct_params(OP, &*dst, a, b)?;
     let bytes = ckks_mul_sub_ct_tmp_bytes_derived(module, &*dst, a, b, &key);
@@ -406,6 +414,7 @@ where
     P: GLWEToBackendRef<BE, Rg> + IntPolyInfos + CKKSCtBounds,
 {
     const OP: &str = "ckks_mul_sub_pt_vec_into";
+    crate::ensure_operand_degrees(OP, module, [dst.n(), a.n()])?;
     ckks_mul_pt_vec_checks::<BE, _, _, _>(OP, &*dst, a, pt)?;
     let bytes = ckks_mul_sub_pt_vec_tmp_bytes_derived(module, &*dst, a, pt);
     mul_then_combine(
@@ -433,6 +442,7 @@ where
     P: GLWEToBackendRef<BE, Rg> + IntPolyInfos + CKKSCtBounds,
 {
     const OP: &str = "ckks_mul_sub_pt_const_into";
+    crate::ensure_operand_degrees(OP, module, [dst.n(), a.n()])?;
     ckks_mul_pt_const_checks(OP, &*dst, a, pt, pt_coeff)?;
     let bytes = ckks_mul_sub_pt_const_tmp_bytes_derived(module, &*dst, a, pt);
     mul_then_combine(

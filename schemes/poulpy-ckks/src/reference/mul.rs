@@ -11,7 +11,7 @@ use poulpy_core::{
     },
 };
 use poulpy_hal::{
-    api::{CnvOps, VecZnxCopy},
+    api::{CnvOps, ModuleN, VecZnxCopy},
     layouts::{Backend, Ring, ScratchArena, Standard},
 };
 
@@ -23,7 +23,7 @@ use crate::{
 };
 use poulpy_core::{GLWEBytesOf, GLWETensorBytesOf};
 
-pub trait CKKSMulReference<BE: Backend, Rg: Ring = Standard> {
+pub trait CKKSMulReference<BE: Backend, Rg: Ring = Standard>: ModuleN {
     fn ckks_mul_tmp_bytes_reference<R, A, B, T>(&self, res: &R, a: &A, b: &B, tsk: &T) -> usize
     where
         Self: GLWEBytesOf<BE> + GLWETensorBytesOf<BE>,
@@ -74,6 +74,7 @@ pub trait CKKSMulReference<BE: Backend, Rg: Ring = Standard> {
         B: GLWEToBackendRef<BE, Rg> + CKKSInfos + GLWEInfos,
         T: GetTensorKey<BE, Rg>,
     {
+        crate::ensure_operand_degrees("ckks_mul_into", self, [dst.n(), a.n(), b.n()])?;
         let k = a.k().max(b.k());
         tsk.get_tensor_key(k)
             .map_err(|source| CKKSCompositionError::MissingRelinearizationKey {
@@ -119,6 +120,7 @@ pub trait CKKSMulReference<BE: Backend, Rg: Ring = Standard> {
         A: GLWEToBackendRef<BE, Rg> + CKKSInfos + GLWEInfos,
         T: GetTensorKey<BE, Rg>,
     {
+        crate::ensure_operand_degrees("ckks_mul_assign", self, [dst.n(), a.n()])?;
         let k = dst.k().max(a.k());
         tsk.get_tensor_key(k)
             .map_err(|source| CKKSCompositionError::MissingRelinearizationKey {
@@ -184,6 +186,7 @@ pub trait CKKSMulReference<BE: Backend, Rg: Ring = Standard> {
         Self: CnvOps<BE, Rg> + GLWENormalize<BE, Rg> + Sized,
         A: GLWEToBackendRef<BE, Rg> + CKKSInfos + GLWEInfos,
     {
+        crate::ensure_operand_degrees("ckks_left_operand_prepare", self, [res.n(), a.n()])?;
         check_source_layout("ckks_left_operand_prepare", res, a)?;
         glwe_left_operand_prepare(self, &mut res.prep, a, a.k().as_usize(), scratch);
         res.meta = a.plaintext_meta();
@@ -201,6 +204,7 @@ pub trait CKKSMulReference<BE: Backend, Rg: Ring = Standard> {
         Self: CnvOps<BE, Rg> + GLWENormalize<BE, Rg> + Sized,
         A: GLWEToBackendRef<BE, Rg> + CKKSInfos + GLWEInfos,
     {
+        crate::ensure_operand_degrees("ckks_right_operand_prepare", self, [res.n(), a.n()])?;
         check_source_layout("ckks_right_operand_prepare", res, a)?;
         glwe_right_operand_prepare(self, &mut res.prep, a, a.k().as_usize(), scratch);
         res.meta = a.plaintext_meta();
@@ -219,6 +223,7 @@ pub trait CKKSMulReference<BE: Backend, Rg: Ring = Standard> {
         Dst: GLWEToBackendMut<BE, Rg> + GLWEToBackendRef<BE, Rg> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         T: GetTensorKey<BE, Rg>,
     {
+        crate::ensure_operand_degrees("ckks_mul_prepared_assign", self, [dst.n(), prepared.n()])?;
         let k = dst.k().max(prepared.k());
         tsk.get_tensor_key(k)
             .map_err(|source| CKKSCompositionError::MissingRelinearizationKey {
@@ -310,6 +315,7 @@ pub trait CKKSMulReference<BE: Backend, Rg: Ring = Standard> {
         A: GLWEToBackendRef<BE, Rg> + CKKSInfos + GLWEInfos,
         T: GetTensorKey<BE, Rg>,
     {
+        crate::ensure_operand_degrees("ckks_square_into", self, [dst.n(), a.n()])?;
         let k = a.k();
         tsk.get_tensor_key(k)
             .map_err(|source| CKKSCompositionError::MissingRelinearizationKey {
@@ -347,6 +353,7 @@ pub trait CKKSMulReference<BE: Backend, Rg: Ring = Standard> {
         Dst: GLWEToBackendMut<BE, Rg> + GLWEToBackendRef<BE, Rg> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         T: GetTensorKey<BE, Rg>,
     {
+        crate::ensure_operand_degrees("ckks_square_assign", self, [dst.n()])?;
         let k = dst.k();
         tsk.get_tensor_key(k)
             .map_err(|source| CKKSCompositionError::MissingRelinearizationKey {
@@ -429,6 +436,7 @@ pub trait CKKSMulReference<BE: Backend, Rg: Ring = Standard> {
         Dst: GLWEToBackendMut<BE, Rg> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         A: GLWEToBackendRef<BE, Rg> + CKKSInfos + GLWEInfos,
     {
+        crate::ensure_operand_degrees("ckks_mul_pt_vec_into", self, [dst.n(), a.n()])?;
         let (res_log_budget, res_log_delta, cnv_offset) =
             ckks_mul_pt_vec_checks::<BE, _, _, _>("ckks_mul_pt_vec_into", dst, a, pt)?;
         // Set the result metadata first: `dst.size()` is meta-derived and a fresh
@@ -453,6 +461,7 @@ pub trait CKKSMulReference<BE: Backend, Rg: Ring = Standard> {
             + VecZnxCopy<BE, Rg>,
         Dst: GLWEToBackendMut<BE, Rg> + CKKSInfos + SetCKKSInfos + GLWEInfos,
     {
+        crate::ensure_operand_degrees("ckks_mul_pt_vec_assign", self, [dst.n()])?;
         let (res_log_budget, res_log_delta, cnv_offset) =
             ckks_mul_pt_vec_checks::<BE, _, _, _>("ckks_mul_pt_vec_assign", dst, dst, pt)?;
         let log_sparsity = dst.log_sparsity().min(dst.log_n() - pt.log_n());
@@ -483,6 +492,7 @@ pub trait CKKSMulReference<BE: Backend, Rg: Ring = Standard> {
         Dst: GLWEToBackendMut<BE, Rg> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         A: GLWEToBackendRef<BE, Rg> + CKKSInfos + GLWEInfos,
     {
+        crate::ensure_operand_degrees("ckks_mul_pt_const_into", self, [dst.n(), a.n()])?;
         let (res_log_budget, res_log_delta, cnv_offset) =
             ckks_mul_pt_const_checks("ckks_mul_pt_const_into", dst, a, pt, pt_coeff)?;
         // Set the result metadata first: `dst.size()` is meta-derived and a fresh
@@ -514,6 +524,7 @@ pub trait CKKSMulReference<BE: Backend, Rg: Ring = Standard> {
             + VecZnxCopy<BE, Rg>,
         Dst: GLWEToBackendMut<BE, Rg> + GLWEToBackendRef<BE, Rg> + CKKSInfos + SetCKKSInfos + GLWEInfos,
     {
+        crate::ensure_operand_degrees("ckks_mul_pt_const_assign", self, [dst.n()])?;
         let (res_log_budget, res_log_delta, cnv_offset) =
             ckks_mul_pt_const_checks("ckks_mul_pt_const_assign", dst, dst, cnst, cnst_coeff)?;
         scratch.scope(|scratch_local| {

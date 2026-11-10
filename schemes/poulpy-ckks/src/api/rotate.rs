@@ -45,7 +45,7 @@ pub trait CKKSRotateOps<BE: Backend, Rg: Ring = Standard> {
     ///
     /// # Errors
     ///
-    /// `InvalidOperand` when `src` exceeds the module degree. A shift of zero slots then returns the errors of
+    /// A shift of zero slots returns the errors of
     /// [`CKKSCopyOps::ckks_copy`](crate::api::CKKSCopyOps::ckks_copy), another
     /// `MissingAutomorphismKey` when `keys` has no key for the shift covering
     /// `min(src.k(), dst.k())`, and `InsufficientHomomorphicCapacity` when `dst` is narrower
@@ -68,8 +68,7 @@ pub trait CKKSRotateOps<BE: Backend, Rg: Ring = Standard> {
     ///
     /// # Errors
     ///
-    /// `InvalidOperand` when `dst` exceeds the module degree, then `MissingAutomorphismKey` when `keys` has no key for
-    /// the shift covering `dst.k()`. `dst` is untouched on `Err`.
+    /// `MissingAutomorphismKey` when `keys` has no key for the shift covering `dst.k()`. `dst` is untouched on `Err`.
     fn ckks_rotate_assign<Dst, H>(&self, k: i64, dst: &mut Dst, keys: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         H: GetAutomorphismKey<BE, Rg>,

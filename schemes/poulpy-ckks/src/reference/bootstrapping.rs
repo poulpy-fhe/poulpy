@@ -946,6 +946,7 @@ where
     // to the destination's requested modulus, so the widening width is `dst.k()`.
     // `dst.k()` is meta-derived and is `0` on a fresh ciphertext, which would
     // spuriously fail the "must widen" check below.
+    crate::ensure_operand_degrees(op, module, [dst.n(), src.n()])?;
     let k_large: usize = dst.k().as_usize();
     let k_small: usize = src.k().as_usize();
 
@@ -997,6 +998,7 @@ where
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
 {
+    crate::ensure_operand_degrees("ckks_bootstrap_mod_up", module, [dst.n(), src.n()])?;
     // The pipeline carves rank-1 intermediates, so reject higher-rank inputs
     // rather than silently copying into a rank-1 scratch ciphertext.
     ckks_ensure_operand!(
@@ -1832,6 +1834,7 @@ where
     Src: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
 {
     const OP: &str = "ckks_bootstrap_mod_up";
+    crate::ensure_operand_degrees(OP, module, [dst.n(), src.n()])?;
     ensure_encapsulation_covers(dst, src, dense_to_sparse, sparse_to_dense)?;
     // The switch keeps the width of `src`: the raise's checks run before it.
     let (k_large, k_small) = (dst.k().as_usize(), src.k().as_usize());

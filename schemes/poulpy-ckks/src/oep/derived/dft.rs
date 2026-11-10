@@ -22,6 +22,11 @@ where
     BE: CKKSDFTImpl,
     P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + GLWEDiagonalProd<BE>,
 {
+    let degrees = dft
+        .factor_operands()
+        .iter()
+        .filter_map(|lt| lt.first_diagonal_plaintext().map(|pt| pt.n()));
+    crate::ensure_operand_degrees("ckks_dft_matrix_prepare_alloc", module, degrees)?;
     let mut res = module.ckks_dft_matrix_prepared_alloc_from_infos(dft);
     BE::ckks_dft_matrix_prepare(module, &mut res, dft, scratch)?;
     Ok(res)
@@ -93,6 +98,7 @@ where
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
 {
+    crate::ensure_operand_degrees("ckks_coeffs_to_slots_split", module, [ct_real.n(), ct_imag.n(), ct_in.n()])?;
     // ct_real := z = Encode(ct_in).
     module.ckks_copy(ct_real, ct_in, scratch)?;
     module.ckks_dft_matrix_eval_assign(ct_real, dft, keys, scratch)?;
@@ -135,6 +141,7 @@ where
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
 {
+    crate::ensure_operand_degrees("ckks_slots_to_coeffs_split", module, [op_out.n(), ct_real.n(), ct_imag.n()])?;
     // op_out := ct_real + i·ct_imag, then Decode.
     module.ckks_mul_i_into(op_out, ct_imag, scratch)?;
     module.ckks_add_assign(op_out, ct_real, scratch)?;
@@ -171,6 +178,7 @@ where
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
 {
+    crate::ensure_operand_degrees("ckks_coeffs_to_slots_repack", module, [ct_out.n(), ct_in.n()])?;
     let slots = 1i64 << dft.plan().log_slots();
 
     // ct_out := z = Encode(ct_in).
@@ -222,6 +230,7 @@ where
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
 {
+    crate::ensure_operand_degrees("ckks_slots_to_coeffs_repack", module, [op_out.n(), ct_in.n()])?;
     module.ckks_copy(op_out, ct_in, scratch)?;
     module.ckks_dft_matrix_eval_assign(op_out, dft, keys, scratch)?;
 

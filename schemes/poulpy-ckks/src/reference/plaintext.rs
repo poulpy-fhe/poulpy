@@ -2,7 +2,10 @@ use crate::CKKSResult as Result;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{GLWEInfos, GLWEToBackendMut, LWEInfos};
 use poulpy_hal::{
-    api::{VecZnxLsh, VecZnxLshAdd, VecZnxLshSub, VecZnxLshTmpBytes, VecZnxRsh, VecZnxRshAdd, VecZnxRshSub, VecZnxRshTmpBytes},
+    api::{
+        ModuleN, VecZnxLsh, VecZnxLshAdd, VecZnxLshSub, VecZnxLshTmpBytes, VecZnxRsh, VecZnxRshAdd, VecZnxRshSub,
+        VecZnxRshTmpBytes,
+    },
     layouts::{Backend, Ring, ScratchArena, Standard, vec_znx_backend_mut_from_mut, vec_znx_backend_ref_from_ref},
 };
 
@@ -175,7 +178,7 @@ where
     Ok(())
 }
 
-pub trait CKKSPlaintextVecReference<BE: Backend, Rg: Ring = Standard> {
+pub trait CKKSPlaintextVecReference<BE: Backend, Rg: Ring = Standard>: ModuleN {
     fn ckks_extract_pt_tmp_bytes_reference(&self, res_size: usize) -> usize
     where
         Self: VecZnxLshTmpBytes + VecZnxRshTmpBytes,
@@ -204,6 +207,7 @@ pub trait CKKSPlaintextVecReference<BE: Backend, Rg: Ring = Standard> {
         S: GLWEToBackendRef<BE, Rg> + GLWEInfos + LWEInfos,
         Self: VecZnxLsh<BE, Rg> + VecZnxRsh<BE, Rg>,
     {
+        crate::ensure_operand_degrees("ckks_extract_pt", self, [src.n()])?;
         ensure_base2k_match("ckks_extract_pt", src.base2k().as_usize(), dst.base2k().as_usize())?;
         if dst.n() != src.n() {
             return Err(crate::CKKSCompositionError::PlaintextDegreeMismatch {

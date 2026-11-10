@@ -4,7 +4,10 @@ use poulpy_core::{
     GLWENormalize,
     layouts::{GLWEToBackendMut, GLWEToBackendRef},
 };
-use poulpy_hal::layouts::{Backend, Module, Ring, ScratchArena, Standard};
+use poulpy_hal::{
+    api::ModuleN,
+    layouts::{Backend, Module, Ring, ScratchArena, Standard},
+};
 
 use crate::{
     CKKSCompositionError, CKKSCtBounds, CKKSResult as Result, SetCKKSInfos,
@@ -14,7 +17,7 @@ use crate::{
 
 /// Reference bodies of [`CKKSAddManyImpl`](crate::oep::CKKSAddManyImpl), forwarded by
 /// `impl_ckks_add_many_reference_full!`.
-pub trait CKKSAddManyReference<BE: Backend, Rg: Ring = Standard> {
+pub trait CKKSAddManyReference<BE: Backend, Rg: Ring = Standard>: ModuleN {
     /// The largest of the selected `ckks_add_tmp_bytes` at `res.max_size()`, poulpy-core's `glwe_normalize_tmp_bytes`
     /// and the selected `ckks_copy_tmp_bytes` from `a` to `res`, the copy serving a single term.
     fn ckks_add_many_tmp_bytes_reference<R, A>(&self, res: &R, a: &A) -> usize
@@ -28,8 +31,8 @@ pub trait CKKSAddManyReference<BE: Backend, Rg: Ring = Standard> {
             .max(self.ckks_copy_tmp_bytes(res, a))
     }
 
-    /// A zero `normalize_after`, then an empty `a`, then a term of another degree, radix or rank than `res`, is a
-    /// refusal, then an arena below [`Self::ckks_add_many_tmp_bytes_reference`]. One term is the selected `ckks_copy`. Two or more are `ckks_add_into`
+    /// A `res` above the module degree, a zero `normalize_after`, then an empty `a`, then a term of another degree,
+    /// radix or rank than `res`, is a refusal, then an arena below [`Self::ckks_add_many_tmp_bytes_reference`]. One term is the selected `ckks_copy`. Two or more are `ckks_add_into`
     /// of the first two terms, then `ckks_add_assign` of each later one, poulpy-core's `glwe_normalize_assign` of `res`
     /// running before every addition that follows a multiple of `normalize_after` additions. The noise record is
     /// cleared in every case.
@@ -46,6 +49,7 @@ pub trait CKKSAddManyReference<BE: Backend, Rg: Ring = Standard> {
         A: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
     {
         const OP: &str = "ckks_add_many";
+        crate::ensure_operand_degrees(OP, self, [res.n()])?;
         let invalid = |reason: &str| -> Result<()> {
             Err(CKKSCompositionError::InvalidOperand {
                 op: OP,

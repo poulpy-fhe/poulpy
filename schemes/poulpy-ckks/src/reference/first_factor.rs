@@ -409,6 +409,7 @@ where
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds,
 {
     const OP: &str = "ckks_bootstrap_mod_up";
+    crate::ensure_operand_degrees(OP, module, [dst.n(), src.n()])?;
     let base2k: usize = dst.base2k().as_usize();
     let k_large: usize = dst.k().as_usize();
     ckks_ensure_operand!(

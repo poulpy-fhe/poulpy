@@ -9,7 +9,10 @@ use poulpy_core::{
         prepared::GLWEAutomorphismKeyPreparedBackendRef,
     },
 };
-use poulpy_hal::layouts::{Backend, Module, Ring, ScratchArena, Standard};
+use poulpy_hal::{
+    api::ModuleN,
+    layouts::{Backend, Module, Ring, ScratchArena, Standard},
+};
 
 use crate::{
     CKKSCompositionError, CKKSCtBounds, CKKSResult as Result, SetCKKSInfos, SlotsKind,
@@ -20,7 +23,7 @@ use crate::{
 
 /// Reference bodies of [`CKKSInnerSumImpl`](crate::oep::CKKSInnerSumImpl), forwarded by
 /// `impl_ckks_inner_sum_reference_full!`.
-pub trait CKKSInnerSumReference<BE: Backend, Rg: Ring = Standard> {
+pub trait CKKSInnerSumReference<BE: Backend, Rg: Ring = Standard>: ModuleN {
     /// poulpy-core's `glwe_trace_galois_elements` at degree `n` over the levels of the inner sum.
     ///
     /// # Panics
@@ -226,7 +229,7 @@ impl Sum {
     }
 
     /// The checks before any write of a sum of `a` on a degree-`n` result at width `k`, in the documented order: the
-    /// window, the division of `a`'s slots, the key of every rotation, then the budget of the copy from `a.k` to `k`
+    /// degrees of `a` and the result, the window, the division of `a`'s slots, the key of every rotation, then the budget of the copy from `a.k` to `k`
     /// and of the division. Returns the largest scratch `bytes` gives for those keys' layouts, if any key is looked up.
     fn validate<BE: Backend, M, A, H, Rg: Ring>(
         self,
@@ -238,11 +241,12 @@ impl Sum {
         bytes: impl Fn(&GLWEAutomorphismKeyPreparedBackendRef<'_, BE, Rg>) -> usize,
     ) -> Result<Option<usize>>
     where
-        M: CKKSModuleInfos + GLWETrace<BE, Rg> + ?Sized,
+        M: CKKSModuleInfos + GLWETrace<BE, Rg> + ModuleN + ?Sized,
         A: CKKSCtBounds,
         H: GetAutomorphismKey<BE, Rg>,
     {
         let op = self.op;
+        crate::ensure_operand_degrees(op, module, [n, a.n()])?;
         if !self.fits::<_, Rg>(module, n) {
             return Err(CKKSCompositionError::InvalidOperand {
                 op,
@@ -295,7 +299,7 @@ fn sum_into<BE: Backend, M, R, A, H, Rg: Ring>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    M: CKKSModuleInfos + CKKSCopyOps<BE, Rg> + CKKSPow2Ops<BE, Rg> + GLWETrace<BE, Rg> + ?Sized,
+    M: CKKSModuleInfos + CKKSCopyOps<BE, Rg> + CKKSPow2Ops<BE, Rg> + GLWETrace<BE, Rg> + ModuleN + ?Sized,
     R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
     A: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
     H: GetAutomorphismKey<BE, Rg>,
@@ -323,7 +327,7 @@ fn sum_assign<BE: Backend, M, R, H, Rg: Ring>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    M: CKKSModuleInfos + CKKSCopyOps<BE, Rg> + CKKSPow2Ops<BE, Rg> + GLWETrace<BE, Rg> + ?Sized,
+    M: CKKSModuleInfos + CKKSCopyOps<BE, Rg> + CKKSPow2Ops<BE, Rg> + GLWETrace<BE, Rg> + ModuleN + ?Sized,
     R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
     H: GetAutomorphismKey<BE, Rg>,
 {

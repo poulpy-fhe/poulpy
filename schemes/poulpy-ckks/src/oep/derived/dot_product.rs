@@ -1,7 +1,7 @@
 //! Dot products over plaintexts compose the ct × pt products with the additions.
 use poulpy_core::{
     GLWEBytesOf,
-    layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, IntPolyInfos},
+    layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, IntPolyInfos, LWEInfos},
 };
 use poulpy_hal::layouts::{Backend, Data, Module, Ring, ScratchArena};
 
@@ -123,6 +123,11 @@ where
     E: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos,
 {
     check_lengths("ckks_dot_product_pt_vec", a.len(), b.len())?;
+    crate::ensure_operand_degrees(
+        "ckks_dot_product_pt_vec",
+        module,
+        std::iter::once(dst.n()).chain(a.iter().map(|t| t.n())),
+    )?;
     module.ckks_mul_pt_vec_into(dst, a[0], b[0], scratch)?;
     accumulate(module, dst, a.len(), scratch, |tmp, i, s| {
         module.ckks_mul_pt_vec_into(tmp, a[i], b[i], s)
@@ -145,6 +150,11 @@ where
 {
     check_lengths("ckks_dot_product_pt_const", a.len(), b.len())?;
     check_slice_lengths("ckks_dot_product_pt_const", "coefficient vector", a.len(), pt_coeffs.len())?;
+    crate::ensure_operand_degrees(
+        "ckks_dot_product_pt_const",
+        module,
+        std::iter::once(dst.n()).chain(a.iter().map(|t| t.n())),
+    )?;
     module.ckks_mul_pt_const_into(dst, a[0], b[0], pt_coeffs[0], scratch)?;
     accumulate(module, dst, a.len(), scratch, |tmp, i, s| {
         module.ckks_mul_pt_const_into(tmp, a[i], b[i], pt_coeffs[i], s)

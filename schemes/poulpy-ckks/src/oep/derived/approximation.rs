@@ -89,6 +89,7 @@ where
     H: GetTensorKey<BE, Rg>,
 {
     const OP: &str = "ckks_polynomial_approximation_eval";
+    crate::ensure_operand_degrees(OP, module, [res.n(), input.n()])?;
     checked_log_budget_sub(OP, input.log_budget(), approximation.consumed_bits(input.log_delta()))?;
     if let Some(affine) = &approximation.affine {
         ckks_ensure!(

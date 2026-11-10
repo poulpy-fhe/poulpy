@@ -3,11 +3,14 @@ use poulpy_core::{
     GLWENegate, GLWEShift,
     layouts::{GLWEInfos, GLWEToBackendMut, GLWEToBackendRef},
 };
-use poulpy_hal::layouts::{Backend, Ring, ScratchArena, Standard};
+use poulpy_hal::{
+    api::ModuleN,
+    layouts::{Backend, Ring, ScratchArena, Standard},
+};
 
 use crate::{CKKSInfos, SetCKKSInfos, checked_log_budget_sub, ckks_offset_unary, ckks_unary_exact};
 
-pub trait CKKSNegReference<BE: Backend, Rg: Ring = Standard> {
+pub trait CKKSNegReference<BE: Backend, Rg: Ring = Standard>: ModuleN {
     fn ckks_neg_tmp_bytes_reference(&self, res_size: usize) -> usize
     where
         Self: GLWEShift<BE, Rg>,
@@ -21,6 +24,7 @@ pub trait CKKSNegReference<BE: Backend, Rg: Ring = Standard> {
         Dst: GLWEToBackendMut<BE, Rg> + CKKSInfos + SetCKKSInfos,
         Src: GLWEToBackendRef<BE, Rg> + GLWEInfos + CKKSInfos,
     {
+        crate::ensure_operand_degrees("ckks_neg_into", self, [dst.n(), src.n()])?;
         let offset = ckks_offset_unary(dst, src);
         if !ckks_unary_exact(dst, src) {
             // Validate before mutating: on error `dst` must remain untouched.
@@ -45,6 +49,7 @@ pub trait CKKSNegReference<BE: Backend, Rg: Ring = Standard> {
         Self: GLWENegate<BE, Rg>,
         Dst: GLWEToBackendMut<BE, Rg> + CKKSInfos + SetCKKSInfos,
     {
+        crate::ensure_operand_degrees("ckks_neg_assign", self, [dst.n()])?;
         self.glwe_negate_assign(dst);
         Ok(())
     }

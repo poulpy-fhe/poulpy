@@ -3,11 +3,14 @@ use poulpy_core::{
     GLWECopy, GLWEShift,
     layouts::{GLWEInfos, GLWEToBackendMut, GLWEToBackendRef},
 };
-use poulpy_hal::layouts::{Backend, Ring, ScratchArena, Standard};
+use poulpy_hal::{
+    api::ModuleN,
+    layouts::{Backend, Ring, ScratchArena, Standard},
+};
 
 use crate::{CKKSInfos, SetCKKSInfos};
 
-pub trait CKKSCopyReference<BE: Backend, Rg: Ring = Standard> {
+pub trait CKKSCopyReference<BE: Backend, Rg: Ring = Standard>: ModuleN {
     fn ckks_copy_tmp_bytes_reference<Dst, Src>(&self, dst: &Dst, src: &Src) -> usize
     where
         Self: GLWECopy<BE, Rg> + GLWEShift<BE, Rg>,
@@ -24,6 +27,7 @@ pub trait CKKSCopyReference<BE: Backend, Rg: Ring = Standard> {
         Dst: GLWEToBackendMut<BE, Rg> + CKKSInfos + SetCKKSInfos,
         Src: GLWEToBackendRef<BE, Rg> + CKKSInfos,
     {
+        crate::ensure_operand_degrees("ckks_copy", self, [dst.n(), src.n()])?;
         let offset = crate::ckks_offset_unary(dst, src);
         crate::ckks_copy_stamp_unary(self, "ckks_copy", dst, src, scratch)?;
         let rank = dst.to_backend_ref().rank().as_usize();

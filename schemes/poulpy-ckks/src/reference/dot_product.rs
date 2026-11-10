@@ -9,7 +9,7 @@ use poulpy_core::{
     },
 };
 use poulpy_hal::{
-    api::{VecZnxIdftNormalize, VecZnxIdftNormalizeTmpBytes},
+    api::{ModuleN, VecZnxIdftNormalize, VecZnxIdftNormalizeTmpBytes},
     layouts::{Backend, Module, Ring, ScratchArena, Standard, VecZnxDftBackendMut},
 };
 
@@ -25,7 +25,7 @@ use crate::{
 
 /// The reference algorithms of [`CKKSDotProductImpl`](crate::oep::CKKSDotProductImpl), which
 /// `impl_ckks_dot_product_reference_full!` forwards to and an override can call for the methods it keeps.
-pub trait CKKSDotProductReference<BE: Backend, Rg: Ring = Standard>: Sized {
+pub trait CKKSDotProductReference<BE: Backend, Rg: Ring = Standard>: Sized + ModuleN {
     fn ckks_dot_product_ct_tmp_bytes_reference<R, A, B, T>(&self, n: usize, res: &R, a: &A, b: &B, tsk: &T) -> usize
     where
         Self: CKKSMulOps<BE, Rg>
@@ -96,6 +96,8 @@ pub trait CKKSDotProductReference<BE: Backend, Rg: Ring = Standard>: Sized {
         H: GetTensorKey<BE, Rg>,
     {
         check_lengths("ckks_dot_product_ct", a.len(), b.len())?;
+        let terms = a.iter().map(|t| t.n()).chain(b.iter().map(|t| t.n()));
+        crate::ensure_operand_degrees("ckks_dot_product_ct", self, std::iter::once(dst.n()).chain(terms))?;
         let n: usize = a.len();
         // Past base2k 62, two canonical tensor digits can overflow an `i64`, and no backend models a
         // product there (`Module::max_base2k`): such pairs keep the eager path.
@@ -130,6 +132,7 @@ pub trait CKKSDotProductReference<BE: Backend, Rg: Ring = Standard>: Sized {
         H: GetTensorKey<BE, Rg>,
     {
         const OP: &str = "ckks_dot_product_prepared";
+        crate::ensure_operand_degrees(OP, self, [dst.n()])?;
         check_lengths(OP, a.len(), b.len())?;
         for operand in a {
             check_prepared_layout(OP, dst, *operand)?;
@@ -197,7 +200,8 @@ pub trait CKKSDotProductReference<BE: Backend, Rg: Ring = Standard>: Sized {
         Self: GLWEMulPreparedPlainSum<BE, Rg>,
         Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
     {
-        let (log_budget, log_delta, cnv_offset) = prepared_pt_rule("ckks_dot_product_prepared_pt_vec", &*dst, a, b, galois)?;
+        let (log_budget, log_delta, cnv_offset) =
+            prepared_pt_rule(self, "ckks_dot_product_prepared_pt_vec", &*dst, a, b, galois)?;
         let (a0, b0, base2k) = (a[0], b[0], dst.base2k());
         let log_sparsity = a
             .iter()
@@ -244,7 +248,7 @@ pub trait CKKSDotProductReference<BE: Backend, Rg: Ring = Standard>: Sized {
         R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
     {
         const OP: &str = "ckks_dot_product_prepared_pt_vec_add";
-        let (log_budget, log_delta, cnv_offset) = prepared_pt_rule(OP, &*res, a, b, galois)?;
+        let (log_budget, log_delta, cnv_offset) = prepared_pt_rule(self, OP, &*res, a, b, galois)?;
         ckks_ensure_operand!(
             OP,
             (log_budget, log_delta) == (res.log_budget(), res.log_delta()),
@@ -298,7 +302,7 @@ pub trait CKKSDotProductReference<BE: Backend, Rg: Ring = Standard>: Sized {
         R: CKKSCtBounds,
     {
         const OP: &str = "ckks_dot_product_prepared_pt_vec_dft";
-        let (_, _, cnv_offset) = prepared_pt_rule(OP, res, a, b, galois)?;
+        let (_, _, cnv_offset) = prepared_pt_rule(self, OP, res, a, b, galois)?;
         let (a_size, b_size) = (a[0].size(), b[0].size());
         check_accumulator(OP, acc, res, a_size + b_size)?;
         self.glwe_mul_prepared_plain_sum_dft(cnv_offset, acc, a, a_size, b, b_size, galois, res.base2k(), scratch);
@@ -332,7 +336,7 @@ pub trait CKKSDotProductReference<BE: Backend, Rg: Ring = Standard>: Sized {
         R: CKKSCtBounds,
     {
         const OP: &str = "ckks_dot_product_prepared_pt_vec_dft_add";
-        let (_, _, cnv_offset) = prepared_pt_rule(OP, res, a, b, galois)?;
+        let (_, _, cnv_offset) = prepared_pt_rule(self, OP, res, a, b, galois)?;
         let (a_size, b_size) = (a[0].size(), b[0].size());
         check_accumulator(OP, acc, res, a_size + b_size)?;
         self.glwe_mul_prepared_plain_sum_dft_add(cnv_offset, acc, a, a_size, b, b_size, galois, res.base2k(), scratch);
@@ -365,7 +369,7 @@ pub trait CKKSDotProductReference<BE: Backend, Rg: Ring = Standard>: Sized {
         Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
     {
         const OP: &str = "ckks_dot_product_prepared_pt_vec_from_dft";
-        let (log_budget, log_delta, cnv_offset) = prepared_pt_rule(OP, &*res, &[a], &[b], &[1])?;
+        let (log_budget, log_delta, cnv_offset) = prepared_pt_rule(self, OP, &*res, &[a], &[b], &[1])?;
         check_accumulator(OP, acc, &*res, a.size() + b.size())?;
         res.set_log_budget(log_budget);
         res.set_log_delta(log_delta);
@@ -395,15 +399,17 @@ pub trait CKKSDotProductReference<BE: Backend, Rg: Ring = Standard>: Sized {
     }
 }
 
-/// The checks of the summed products by prepared plaintexts into a destination of `res`'s layout and metadata, in
-/// their order and before any write, then the rule of `ckks_mul_pt_vec_into`: `(log_budget, log_delta, cnv_offset)`.
+/// The checks of the summed products by prepared plaintexts into a destination of `res`'s layout and metadata, at most
+/// the degree of `module`, in their order and before any write, then the rule of `ckks_mul_pt_vec_into`: `(log_budget, log_delta, cnv_offset)`.
 fn prepared_pt_rule<BE: Backend, R: CKKSCtBounds, Rg: Ring>(
+    module: &impl ModuleN,
     op: &'static str,
     res: &R,
     a: &[&CKKSLeftOperandPrepared<BE, Rg>],
     b: &[&CKKSRightOperandPrepared<BE, Rg>],
     galois: &[i64],
 ) -> Result<(usize, usize, usize)> {
+    crate::ensure_operand_degrees(op, module, [res.n()])?;
     check_lengths(op, a.len(), b.len())?;
     let invalid = |reason: &str| -> Result<(usize, usize, usize)> {
         Err(CKKSCompositionError::InvalidOperand {
