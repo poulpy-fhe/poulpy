@@ -1815,9 +1815,15 @@ fn one_pass_keeps_two_step_noise<Rg: Ring>(
             0.0
         }
     };
-    let var_operands =
-        crate::reference::noise::var_noise_glwe_tensor_operands(n as f64, 1.0, var_xs, var_e(left_k), var_e(right_k), cnv_offset);
-    let (one_pass, two_step) = crate::reference::noise::var_noise_glwe_mul_relinearize(
+    let var_operands = crate::reference::noise::var_noise_glwe_tensor_operands(
+        Rg::product_moments(n).weight,
+        1.0,
+        var_xs,
+        var_e(left_k),
+        var_e(right_k),
+        cnv_offset,
+    );
+    let (one_pass, two_step) = crate::reference::noise::var_noise_glwe_mul_relinearize::<_, Rg>(
         tsk,
         var_xs,
         var_key_err_body,

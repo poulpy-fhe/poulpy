@@ -1606,7 +1606,7 @@ pub fn test_glwe_linear_transformation_ciphertext_diagonals<BE: crate::test_suit
         // Keys at another radix take the tensor products, whose tensor rounding and relinearization no longer cancel.
         let var_relinearize = |tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE, Rg>| {
             let noise = tsk.noise().unwrap();
-            crate::reference::noise::var_noise_glwe_mul_relinearize(
+            crate::reference::noise::var_noise_glwe_mul_relinearize::<_, Rg>(
                 tsk,
                 noise.secret_distribution().coefficient_second_moment(n).unwrap(),
                 noise.body().variance_at(tsk.k()),

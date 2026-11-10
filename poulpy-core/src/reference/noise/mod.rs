@@ -29,6 +29,8 @@ pub(crate) mod glwe;
 
 pub use crate::api::GGLWENoise;
 
+use poulpy_hal::layouts::Ring;
+
 use crate::layouts::{GGLWEInfos, GGLWELayout, GGSWInfos, GLWEInfos, GLWELayout, LWEInfos, TorusPrecision};
 
 /// Noise model of a gadget key, blanket-implemented for every [`GGLWEInfos`].
@@ -380,10 +382,11 @@ pub(crate) fn var_noise_glwe_tensor_operands(
 /// the log2 scale.
 pub(crate) const TENSOR_NOISE_MARGIN: f64 = 2.0;
 
-/// `Var_key + n * (2 * n * var_xs^2) * Var(r)`, what relinearizing `d2`, the `s^2` column of a rank-1 tensor of
+/// `Var_key + w * (2 * w * var_xs^2) * Var(r)`, what relinearizing `d2`, the `s^2` column of a rank-1 tensor of
 /// precision `d2_k`, adds: the key error of [`GGLWENoiseModel::var_key_error`], and the residue the gadget drops
-/// below its cover, lost against `s^2`, whose coefficients have variance `2 * n * var_xs^2`.
-pub(crate) fn var_noise_relinearize_d2<K: GGLWEInfos>(
+/// below its cover, lost against `s^2`, whose coefficients have variance `2 * w * var_xs^2`. `w` is the ring's product
+/// weight, `Rg::product_moments(n).weight`, in place of the negacyclic `n` of the key error too.
+pub(crate) fn var_noise_relinearize_d2<K: GGLWEInfos, Rg: Ring>(
     tsk: &K,
     d2_k: usize,
     var_xs: f64,
@@ -397,7 +400,9 @@ pub(crate) fn var_noise_relinearize_d2<K: GGLWEInfos>(
         rank: tsk.rank_out(),
     };
     let n: f64 = tsk.n().as_usize() as f64;
-    tsk.var_key_error(&d2, var_xs, var_key_err_body, var_key_err_mask) + n * (2.0 * n * var_xs * var_xs) * tsk.var_residue(&d2)
+    let w: f64 = Rg::product_moments(tsk.n().as_usize()).weight;
+    w / n * tsk.var_key_error(&d2, var_xs, var_key_err_body, var_key_err_mask)
+        + w * (2.0 * w * var_xs * var_xs) * tsk.var_residue(&d2)
 }
 
 /// `(one_pass, two_step)` variances of a rank-1 product relinearized against `tsk` at `res_k`:
@@ -411,9 +416,10 @@ pub(crate) fn var_noise_relinearize_d2<K: GGLWEInfos>(
 /// The two-step path normalizes the tensor at `tensor_k` before relinearizing `d2`. The one-pass path relinearizes
 /// `d2` as the convolution leaves it, `d2_k` bits wide and `lo = cnv_offset mod base2k` bits under the result, which
 /// lifts its relinearization by `2^lo`. `var_operands` is the operands' term of
-/// [`var_noise_glwe_tensor_operands`], or what the caller knows of the product's own noise.
+/// [`var_noise_glwe_tensor_operands`], or what the caller knows of the product's own noise. Ring products weigh
+/// `Rg::product_moments(n).weight` in place of `n`.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn var_noise_glwe_mul_relinearize<K: GGLWEInfos>(
+pub(crate) fn var_noise_glwe_mul_relinearize<K: GGLWEInfos, Rg: Ring>(
     tsk: &K,
     var_xs: f64,
     var_key_err_body: f64,
@@ -424,13 +430,13 @@ pub(crate) fn var_noise_glwe_mul_relinearize<K: GGLWEInfos>(
     d2_k: usize,
     res_k: usize,
 ) -> (f64, f64) {
-    let n: f64 = tsk.n().as_usize() as f64;
-    let shared: f64 = var_operands + var_rounding(res_k, 1.0 + n * var_xs);
+    let w: f64 = Rg::product_moments(tsk.n().as_usize()).weight;
+    let shared: f64 = var_operands + var_rounding(res_k, 1.0 + w * var_xs);
     let two_step: f64 = shared
-        + var_rounding(tensor_k, var_tensor_key(n, 1.0, var_xs))
-        + var_noise_relinearize_d2(tsk, tensor_k, var_xs, var_key_err_body, var_key_err_mask);
-    let one_pass: f64 =
-        shared + ((2 * lo) as f64).exp2() * var_noise_relinearize_d2(tsk, d2_k, var_xs, var_key_err_body, var_key_err_mask);
+        + var_rounding(tensor_k, var_tensor_key(w, 1.0, var_xs))
+        + var_noise_relinearize_d2::<_, Rg>(tsk, tensor_k, var_xs, var_key_err_body, var_key_err_mask);
+    let one_pass: f64 = shared
+        + ((2 * lo) as f64).exp2() * var_noise_relinearize_d2::<_, Rg>(tsk, d2_k, var_xs, var_key_err_body, var_key_err_mask);
     (one_pass, two_step)
 }
 

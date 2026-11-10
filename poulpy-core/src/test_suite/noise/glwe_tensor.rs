@@ -509,7 +509,7 @@ fn one_pass_product_key_coverage<BE: crate::test_suite::noise::TestBackend<Rg>, 
                 // The model, with the operands' errors met by the messages, `e_a * m_b + e_b * m_a` lifted by `2^k`,
                 // and with them floored as the product does, at zero once the lift passes the operands' width.
                 let model = |var_operands: f64| {
-                    crate::reference::noise::var_noise_glwe_mul_relinearize(
+                    crate::reference::noise::var_noise_glwe_mul_relinearize::<_, Rg>(
                         &tsk_prep,
                         var_xs,
                         var_key_err_body,
