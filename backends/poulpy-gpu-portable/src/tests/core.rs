@@ -117,33 +117,12 @@ fn test_glwe_tensor_many_limbs() {
     test_glwe_tensor_parity_for_layout::<_, _, Standard>(&layout, &[0, 51], &comparison, &tested);
 }
 
-// `conjugate_invariant_core_test_suite!` of `poulpy-cpu-portable` without its
-// coarsened-automorphism check, which reads backend allocations as host slices.
-#[test]
-fn conjugate_invariant_core_parity() {
-    let n = 256;
-    let reference = Module::<poulpy_cpu_portable::NTT4x30Portable>::new(n as u64);
-    let module = Module::<Gpu>::new(n as u64);
-    let params = poulpy_hal::test_suite::TestParams { size: n, n, base2k: 10 };
-    let shapes = poulpy_core::test_suite::parity::ParityShapes {
-        ranks: vec![1, 2],
-        dsizes: Some(vec![1, 2]),
-        unaligned_digits: true,
-    };
-    poulpy_core::test_suite::parity::test_glwe_keyswitch_parity::<_, _, ConjugateInvariant>(
-        &params, &shapes, &reference, &module,
-    );
-    poulpy_core::test_suite::parity::test_glwe_keyswitch_dft_add_parity::<_, _, ConjugateInvariant>(
-        &params, &shapes, &reference, &module,
-    );
-    poulpy_core::test_suite::parity::test_glwe_external_product_parity::<_, _, ConjugateInvariant>(
-        &params, &shapes, &reference, &module,
-    );
-    poulpy_core::test_suite::parity::test_glwe_automorphism_parity::<_, _, ConjugateInvariant>(
-        &params, &shapes, &reference, &module,
-    );
-    poulpy_core::test_suite::parity::test_glwe_trace_parity::<_, _, ConjugateInvariant>(&params, &shapes, &reference, &module);
-}
+poulpy_cpu_portable::conjugate_invariant_core_test_suite!(
+    conjugate_invariant_core,
+    crate::tests::Gpu,
+    reference = poulpy_cpu_portable::NTT4x30Portable,
+    device_memory
+);
 
 /// The conjugate-invariant key switches at a degree whose inverse transform takes two launches,
 /// where the products with the first inverse launch fused in run.

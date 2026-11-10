@@ -654,6 +654,13 @@ macro_rules! conjugate_invariant_ckks_test_suite {
             #[test]
             fn ckks_ci_eval_mod() {
                 let params = $params;
+                let module = Module::<$backend>::new(params.n as u64);
+                let host = Module::<HostBytesBackend>::new(params.n as u64);
+                $crate::test_suite::conjugate_invariant::test_conjugate_invariant_eval_mod(params, &module, &host);
+            }
+            #[test]
+            fn ckks_ci_eval_mod_sub_degree() {
+                let params = $params;
                 let module = Module::<$backend>::new((2 * params.n) as u64);
                 let host = Module::<HostBytesBackend>::new(params.n as u64);
                 $crate::test_suite::conjugate_invariant::test_conjugate_invariant_eval_mod(params, &module, &host);

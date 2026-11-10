@@ -490,10 +490,23 @@ macro_rules! conjugate_invariant_test_suite {
 }
 
 /// Core operation parity on the conjugate-invariant ring, against the
-/// explicitly selected `reference` backend.
+/// explicitly selected `reference` backend. The `device_memory` form leaves out
+/// the coarsened-automorphism check, which reads backend allocations as host slices.
 #[macro_export]
 macro_rules! conjugate_invariant_core_test_suite {
     ($name:ident, $backend:ty, reference = $reference:ty) => {
+        $crate::conjugate_invariant_core_test_suite!(@suite $name, $backend, $reference, {
+            #[test]
+            fn conjugate_invariant_core_automorphism_coarsened() {
+                let (_, module, params, _) = setup();
+                ::poulpy_core::test_suite::parity::test_glwe_automorphism_coarsened::<_, Ci>(&params, &module);
+            }
+        });
+    };
+    ($name:ident, $backend:ty, reference = $reference:ty, device_memory) => {
+        $crate::conjugate_invariant_core_test_suite!(@suite $name, $backend, $reference, {});
+    };
+    (@suite $name:ident, $backend:ty, $reference:ty, { $($host_tests:item)* }) => {
         mod $name {
             type Ci = ::poulpy_hal::layouts::ConjugateInvariant;
 
@@ -530,7 +543,6 @@ macro_rules! conjugate_invariant_core_test_suite {
                 test_glwe_keyswitch_dft_add_parity::<_, _, Ci>(&params, &shapes, &reference, &module);
                 test_glwe_external_product_parity::<_, _, Ci>(&params, &shapes, &reference, &module);
                 test_glwe_automorphism_parity::<_, _, Ci>(&params, &shapes, &reference, &module);
-                test_glwe_automorphism_coarsened::<_, Ci>(&params, &module);
                 test_glwe_trace_parity::<_, _, Ci>(&params, &shapes, &reference, &module);
             }
 
@@ -542,6 +554,8 @@ macro_rules! conjugate_invariant_core_test_suite {
                 test_glwe_multiplication_parity::<_, _, Ci>(&params, &shapes, &reference, &module);
                 test_tensor_relinearize_decrypt_parity::<_, _, Ci>(&params, &shapes, &reference, &module);
             }
+
+            $($host_tests)*
         }
     };
 }
