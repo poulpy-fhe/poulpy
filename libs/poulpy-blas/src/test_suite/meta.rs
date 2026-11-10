@@ -79,7 +79,7 @@ pub fn test_blas_result_meta<BE, F, E>(
     log_d: usize,
 ) where
     BE: TestContextBackend + BlasImpl<Standard>,
-    Module<BE>: TestContextModule<BE, Standard>
+    Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, F, Standard>
         + BlasEncodingOps<BE, F, Standard>
         + CKKSLinearTransformationOps<BE, Standard>
@@ -121,7 +121,7 @@ pub fn test_blas_result_meta<BE, F, E>(
     // Grids encrypted from `grid` and labelled `log_sparsity`: `grid` holds `lanes >> log_sparsity` matrices, each
     // repeated over the slots, and the grid records them.
     let encrypt = |grid: &Grid, log_sparsity: usize, scratch: &mut ScratchArena<'_, BE>| {
-        encrypt_grid::<BE, F, E, Standard>(
+        encrypt_grid::<BE, F, E>(
             &params,
             module,
             host_module,
@@ -192,7 +192,7 @@ pub fn test_blas_result_meta<BE, F, E>(
     };
     let check =
         |label: &str, res: &BlasCiphertextOwned<BE>, want: &Grid, layout: &BlasLayout, scratch: &mut ScratchArena<'_, BE>| {
-            assert_grid_decrypt::<BE, F, E, Standard>(label, &params, module, &encoder, res, &sk, want, layout, scratch)
+            assert_grid_decrypt::<BE, F, E>(label, &params, module, &encoder, res, &sk, want, layout, scratch)
         };
 
     // A half-full batch into a fresh grid, then a full batch into a grid labelled and recorded half full; on one matrix
@@ -470,7 +470,7 @@ pub fn test_blas_result_meta<BE, F, E>(
         let (_, w) = matvec_operands_of::<BE, F, Standard>(module, &layout, case.entry);
         let keys = keys_of(&layout, &mut scratch.borrow());
         let model = grid_model(log_d, case.proven);
-        let mut a = encrypt_grid::<BE, F, E, Standard>(
+        let mut a = encrypt_grid::<BE, F, E>(
             &params,
             module,
             host_module,
@@ -541,7 +541,7 @@ pub fn test_blas_result_meta<BE, F, E>(
             &mut scratch.borrow(),
         );
         let used = Grid::model(log_d, case.rows, case.cols, lanes, 41);
-        let mut res = encrypt_grid::<BE, F, E, Standard>(
+        let mut res = encrypt_grid::<BE, F, E>(
             &params,
             module,
             host_module,
@@ -572,7 +572,7 @@ pub fn test_blas_result_meta<BE, F, E>(
             Some(layout.output_period >> (2 * log_d)),
             "vector_to_grid over a used res: batch record"
         );
-        assert_grid_decrypt::<BE, F, E, Standard>(
+        assert_grid_decrypt::<BE, F, E>(
             "vector_to_grid over a used res",
             &params,
             module,
@@ -705,7 +705,7 @@ pub fn test_blas_batch_record<BE, F, E>(
     log_d: usize,
 ) where
     BE: TestContextBackend + BlasImpl<Standard>,
-    Module<BE>: TestContextModule<BE, Standard>
+    Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, F, Standard>
         + BlasEncodingOps<BE, F, Standard>
         + CKKSLinearTransformationOps<BE, Standard>
@@ -765,7 +765,7 @@ pub fn test_blas_batch_record<BE, F, E>(
     let mut res = alloc_grid(&params, module, log_d, 1, 2, params.k);
     module.blas_sum(&mut res, &ct_pair, &keys, &mut op_scratch.borrow()).unwrap();
     assert_eq!(res.mat_slots(), Some(2), "sum of a compact pair: mat_slots");
-    assert_grid_decrypt::<BE, F, E, Standard>(
+    assert_grid_decrypt::<BE, F, E>(
         "sum of a compact pair",
         &params,
         module,
@@ -792,7 +792,7 @@ pub fn test_blas_batch_record<BE, F, E>(
     });
 
     let full = Grid::model(log_d, 1, 1, lanes, 3);
-    let ct_full = encrypt_grid::<BE, F, E, Standard>(
+    let ct_full = encrypt_grid::<BE, F, E>(
         &params,
         module,
         host_module,
@@ -834,7 +834,7 @@ pub fn test_blas_batch_record<BE, F, E>(
         assert_eq!(res.mat_slots(), Some(lanes), "{label}: mat_slots");
         let product = product_layout::<Standard>(ct_a, ct_b, 1, 1, params.k, params.prec().log_delta());
         assert_eq!(blas_matmul_output_layout(&res, ct_a, ct_b, &ctx), product, "{label}: query");
-        assert_grid_decrypt::<BE, F, E, Standard>(
+        assert_grid_decrypt::<BE, F, E>(
             label,
             &params,
             module,
@@ -933,7 +933,7 @@ pub fn test_blas_batch_record<BE, F, E>(
             Some(layout.output_period >> (2 * log_d)),
             "vector_to_grid {line:?}: mat_slots"
         );
-        assert_grid_decrypt::<BE, F, E, Standard>(
+        assert_grid_decrypt::<BE, F, E>(
             &format!("vector_to_grid {line:?}"),
             &params,
             module,

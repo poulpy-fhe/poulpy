@@ -34,7 +34,7 @@ pub fn test_add_pt_vec_assign_rejects_alignment<BE, F, E>(
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE, Standard>,
+    Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -89,7 +89,7 @@ pub fn test_linear_transformation_encode_from_diagonals_rejects_zero_k<BE, F, E>
     _host_module: &Module<HostBytesBackend>,
 ) where
     BE: TestContextBackend,
-    Module<BE>: TestContextModule<BE, Standard> + CKKSEncodingOps<BE, F, Standard>,
+    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -130,7 +130,7 @@ pub fn test_linear_transformation_encode_into<BE, F, E>(
     _host_module: &Module<HostBytesBackend>,
 ) where
     BE: TestContextBackend,
-    Module<BE>: TestContextModule<BE, Standard> + CKKSEncodingOps<BE, F, Standard>,
+    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -230,7 +230,7 @@ pub fn test_encode_bsgs_with_rejects_zero_k<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
 ) where
     BE: TestContextBackend,
-    Module<BE>: TestContextModule<BE, Standard> + CKKSEncodingOps<BE, F, Standard>,
+    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
 {

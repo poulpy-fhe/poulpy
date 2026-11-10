@@ -14,19 +14,19 @@ use crate::{
 use poulpy_core::layouts::LWEInfos;
 use poulpy_hal::{
     api::{ReimFFT, ReimIFFT, ReimNew, ScratchOwnedBorrow},
-    layouts::{HostBytesBackend, Module, Ring, Standard},
+    layouts::{HostBytesBackend, Module, Standard},
 };
 
 use crate::{test_suite::CKKSTestParams, test_suite::reference_encoder::ReferenceEncoder};
 
-fn constant<BE, F, E, Rg: Ring>(
+fn constant<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
     module: &Module<BE>,
     encoder: &ReferenceEncoder<E>,
     params: &CKKSTestParams,
     c: (f64, f64),
     m: usize,
-) -> CKKSPlaintextOwned<BE, Rg>
+) -> CKKSPlaintextOwned<BE>
 where
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
@@ -97,7 +97,7 @@ where
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE, Standard>,
+    Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -111,8 +111,8 @@ where
     let c2 = (-0.375, 0.25);
     let c1_q = quantized_const::<F>(c1.0, c1.1, PT_PREC.log_delta());
     let c2_q = quantized_const::<F>(c2.0, c2.1, PT_PREC.log_delta());
-    let pt1 = constant::<BE, F, E, Standard>(host_module, module, &encoder, &params, c1, m);
-    let pt2 = constant::<BE, F, E, Standard>(host_module, module, &encoder, &params, c2, m);
+    let pt1 = constant::<BE, F, E>(host_module, module, &encoder, &params, c1, m);
+    let pt2 = constant::<BE, F, E>(host_module, module, &encoder, &params, c2, m);
     let (want_re, want_im) = same_offset_expected(&re1, &im1, c1_q, c2_q);
 
     let x = ckks_encrypt(
@@ -166,7 +166,7 @@ where
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE, Standard>,
+    Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -181,8 +181,8 @@ where
     let c2 = (-0.375, 0.25);
     let c1_q = quantized_const::<F>(c1.0, c1.1, PT_PREC.log_delta());
     let c2_q = quantized_const::<F>(c2.0, c2.1, PT_PREC.log_delta());
-    let pt1 = constant::<BE, F, E, Standard>(host_module, module, &encoder, &params, c1, m);
-    let pt2 = constant::<BE, F, E, Standard>(host_module, module, &encoder, &params, c2, m);
+    let pt1 = constant::<BE, F, E>(host_module, module, &encoder, &params, c1, m);
+    let pt2 = constant::<BE, F, E>(host_module, module, &encoder, &params, c2, m);
     let (want_re, want_im) = poly2_expected(&re1, &im1, (F::zero(), F::zero()), c1_q, c2_q);
 
     let x = ckks_encrypt(
@@ -242,7 +242,7 @@ where
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE, Standard>,
+    Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -259,9 +259,9 @@ where
     let c0_q = quantized_const::<F>(c0.0, c0.1, PT_PREC.log_delta());
     let c1_q = quantized_const::<F>(c1.0, c1.1, PT_PREC.log_delta());
     let c2_q = quantized_const::<F>(c2.0, c2.1, PT_PREC.log_delta());
-    let pt0 = constant::<BE, F, E, Standard>(host_module, module, &encoder, &params, c0, m);
-    let pt1 = constant::<BE, F, E, Standard>(host_module, module, &encoder, &params, c1, m);
-    let pt2 = constant::<BE, F, E, Standard>(host_module, module, &encoder, &params, c2, m);
+    let pt0 = constant::<BE, F, E>(host_module, module, &encoder, &params, c0, m);
+    let pt1 = constant::<BE, F, E>(host_module, module, &encoder, &params, c1, m);
+    let pt2 = constant::<BE, F, E>(host_module, module, &encoder, &params, c2, m);
     let (want_re, want_im) = poly2_expected(&re1, &im1, c0_q, c1_q, c2_q);
 
     let x = ckks_encrypt(
@@ -320,7 +320,7 @@ where
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE, Standard>,
+    Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -338,9 +338,9 @@ where
     let c0_q = quantized_const::<F>(c0.0, c0.1, PT_PREC.log_delta());
     let c1_q = quantized_const::<F>(c1.0, c1.1, PT_PREC.log_delta());
     let c2_q = quantized_const::<F>(c2.0, c2.1, PT_PREC.log_delta());
-    let pt0 = constant::<BE, F, E, Standard>(host_module, module, &encoder, &params, c0, m);
-    let pt1 = constant::<BE, F, E, Standard>(host_module, module, &encoder, &params, c1, m);
-    let pt2 = constant::<BE, F, E, Standard>(host_module, module, &encoder, &params, c2, m);
+    let pt0 = constant::<BE, F, E>(host_module, module, &encoder, &params, c0, m);
+    let pt1 = constant::<BE, F, E>(host_module, module, &encoder, &params, c1, m);
+    let pt2 = constant::<BE, F, E>(host_module, module, &encoder, &params, c2, m);
     let (want_re, want_im) = mul_by_y_expected(&re1, &im1, &re2, &im2, c0_q, c1_q, c2_q);
 
     let x = ckks_encrypt(
@@ -419,7 +419,7 @@ pub fn test_square_into_rejects_exhausted_capacity<BE, F, E>(
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE, Standard>,
+    Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: ReimNew<F>,
 {

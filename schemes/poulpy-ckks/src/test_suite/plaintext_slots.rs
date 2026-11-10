@@ -19,9 +19,9 @@ use crate::{
     test_suite::{
         CKKSTestParams,
         helpers::{
-            TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, assert_ckks_error,
-            assert_decrypt_precision, ckks_encrypt, gen_atk, gen_sk, gen_sk_with_raw, pt_self_into_tmp_bytes, quantize,
-            test_vector_1, test_vector_2, upload_pt, want_add, want_mul,
+            TestContextBackend, TestContextModule, TestContextSharedModule, TestScalar, alloc_ct, alloc_scratch,
+            assert_ckks_error, assert_decrypt_precision, ckks_encrypt, gen_atk, gen_sk, gen_sk_with_raw, pt_self_into_tmp_bytes,
+            quantize, test_vector_1, test_vector_2, upload_pt, want_add, want_mul,
         },
         reference_encoder::ReferenceEncoder,
     },
@@ -43,7 +43,7 @@ pub fn test_plaintext_slots_add_sub_mul<BE, F, E>(
     BE: TestContextBackend,
     for<'a> <BE as Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE, Standard>,
+    Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -191,7 +191,7 @@ fn encode_lt<BE, F, Rg: Ring>(
 ) -> LinearTransformation<CKKSPlaintextOwned<BE, Rg>>
 where
     BE: TestContextBackend,
-    Module<BE>: TestContextModule<BE, Rg> + CKKSEncodingHostOps<BE, F, Rg>,
+    Module<BE>: TestContextSharedModule<BE, Rg> + CKKSEncodingHostOps<BE, F, Rg>,
     F: TestScalar,
 {
     let prec = params.prec();
@@ -213,7 +213,7 @@ pub fn test_linear_transformation_diagonal_slots<BE, F, E>(
     BE: TestContextBackend,
     for<'a> <BE as Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE, Standard>
+    Module<BE>: TestContextModule<BE>
         + CKKSEncodingHostOps<BE, F, Standard>
         + CKKSLinearTransformationOps<BE, Standard>
         + CnvPVecAlloc<BE>,
@@ -310,7 +310,7 @@ pub fn test_linear_transformation_diagonal_slots<BE, F, E>(
 pub fn test_diagonal_encoder_slots<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, _host_module: &Module<HostBytesBackend>)
 where
     BE: TestContextBackend,
-    Module<BE>: TestContextModule<BE, Standard> + CKKSEncodingOps<BE, F, Standard>,
+    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
 {

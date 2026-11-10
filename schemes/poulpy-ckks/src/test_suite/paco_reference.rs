@@ -10,7 +10,7 @@
 
 use poulpy_hal::{
     api::ReimNew,
-    layouts::{HostBytesBackend, Module, Standard},
+    layouts::{HostBytesBackend, Module},
     source::Source,
 };
 
@@ -61,7 +61,7 @@ pub fn test_paco_cleartext_reference<BE, F, E>(
     _host_module: &Module<HostBytesBackend>,
 ) where
     BE: TestContextBackend,
-    Module<BE>: TestContextModule<BE, Standard>,
+    Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: ReimNew<F>,
 {

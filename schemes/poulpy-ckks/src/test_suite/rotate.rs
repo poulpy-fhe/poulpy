@@ -43,8 +43,7 @@ pub fn test_rotate_aligned<BE, F, E>(
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>:
-        TestContextModule<BE, Standard> + GLWEAutomorphism<BE, Standard> + GLWEShift<BE, Standard> + CKKSRotateOps<BE, Standard>,
+    Module<BE>: TestContextModule<BE> + GLWEAutomorphism<BE, Standard> + GLWEShift<BE, Standard> + CKKSRotateOps<BE, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
     for<'a> ScratchArena<'a, BE>: ScratchAvailable,
@@ -104,8 +103,7 @@ pub fn test_rotate_smaller_output<BE, F, E>(
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>:
-        TestContextModule<BE, Standard> + GLWEAutomorphism<BE, Standard> + GLWEShift<BE, Standard> + CKKSRotateOps<BE, Standard>,
+    Module<BE>: TestContextModule<BE> + GLWEAutomorphism<BE, Standard> + GLWEShift<BE, Standard> + CKKSRotateOps<BE, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
     for<'a> ScratchArena<'a, BE>: ScratchAvailable,
@@ -166,8 +164,7 @@ pub fn test_rotate_assign<BE, F, E>(
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>:
-        TestContextModule<BE, Standard> + GLWEAutomorphism<BE, Standard> + GLWEShift<BE, Standard> + CKKSRotateOps<BE, Standard>,
+    Module<BE>: TestContextModule<BE> + GLWEAutomorphism<BE, Standard> + GLWEShift<BE, Standard> + CKKSRotateOps<BE, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
     for<'a> ScratchArena<'a, BE>: ScratchAvailable,
@@ -227,8 +224,7 @@ pub fn test_rotate_assign_rejects_missing_key<BE, F, E>(
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>:
-        TestContextModule<BE, Standard> + GLWEAutomorphism<BE, Standard> + GLWEShift<BE, Standard> + CKKSRotateOps<BE, Standard>,
+    Module<BE>: TestContextModule<BE> + GLWEAutomorphism<BE, Standard> + GLWEShift<BE, Standard> + CKKSRotateOps<BE, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
     for<'a> ScratchArena<'a, BE>: ScratchAvailable,

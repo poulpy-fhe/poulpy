@@ -15,8 +15,8 @@ use poulpy_ckks::{
     test_suite::{
         CKKSTestParams,
         helpers::{
-            TestContextBackend, TestContextModule, TestScalar, alloc_scratch, assert_decrypt_precision_at_log_delta,
-            gen_sk_with_raw, gen_tsk,
+            TestContextBackend, TestContextModule, TestContextSharedModule, TestScalar, alloc_scratch,
+            assert_decrypt_precision_at_log_delta, gen_sk_with_raw, gen_tsk,
         },
         parity::helpers::{Snapshot, snapshot, with_scratch},
         reference_encoder::ReferenceEncoder,
@@ -87,7 +87,7 @@ pub fn test_blas_matmul<BE, F, E>(
     log_d: usize,
 ) where
     BE: TestContextBackend + BlasMatMulImpl<Standard> + BlasEncodingImpl<Standard>,
-    Module<BE>: TestContextModule<BE, Standard>
+    Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, F, Standard>
         + BlasEncodingOps<BE, F, Standard>
         + CKKSLinearTransformationOps<BE, Standard>
@@ -110,7 +110,7 @@ pub fn test_blas_matmul<BE, F, E>(
     let (m, inner, n) = (2, 3, 2);
     let lanes = slots >> (2 * log_d);
     let (a, b) = (Grid::model(log_d, m, inner, lanes, 7), Grid::model(log_d, inner, n, lanes, 8));
-    let ct_a = encrypt_grid::<BE, F, E, Standard>(
+    let ct_a = encrypt_grid::<BE, F, E>(
         &params,
         module,
         host_module,
@@ -121,7 +121,7 @@ pub fn test_blas_matmul<BE, F, E>(
         &a,
         &mut scratch.borrow(),
     );
-    let ct_b = encrypt_grid::<BE, F, E, Standard>(
+    let ct_b = encrypt_grid::<BE, F, E>(
         &params,
         module,
         host_module,
@@ -141,7 +141,7 @@ pub fn test_blas_matmul<BE, F, E>(
     let gap = delta / 8;
     let [[ct_a_low, ct_b_low], [ct_a_crossed, ct_b_crossed]] = [params.k - gap, params.k].map(|k| {
         [&a, &b].map(|grid| {
-            encrypt_grid::<BE, F, E, Standard>(
+            encrypt_grid::<BE, F, E>(
                 &at_scale(&params, delta - gap),
                 module,
                 host_module,
@@ -234,7 +234,7 @@ pub fn test_blas_matmul<BE, F, E>(
             module
                 .blas_matmul(&mut res, x, y, ctx, &keys, &keys, &mut poisoned_scratch::<BE>(bytes).borrow())
                 .unwrap();
-            assert_grid_decrypt::<BE, F, E, Standard>(
+            assert_grid_decrypt::<BE, F, E>(
                 &label,
                 &maps,
                 module,
@@ -332,7 +332,7 @@ pub fn test_blas_matmul<BE, F, E>(
     let (low, high) = (&contexts[1], &contexts[2]);
     let (cold_a, cold_b) = (prepare_left(&ct_a, high, Reuse), prepare_right(&ct_b, low, Reuse));
     let want = product(&cold_a, &cold_b, high);
-    assert_grid_decrypt::<BE, F, E, Standard>(
+    assert_grid_decrypt::<BE, F, E>(
         "matmul across contexts",
         &at_scale(&params, scales[1]),
         module,
@@ -492,7 +492,7 @@ pub fn test_blas_matmul_pt_right<BE, F, E>(
     log_d: usize,
 ) where
     BE: TestContextBackend + BlasMatMulImpl<Standard> + BlasEncodingImpl<Standard>,
-    Module<BE>: TestContextModule<BE, Standard>
+    Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, F, Standard>
         + BlasEncodingOps<BE, F, Standard>
         + CKKSLinearTransformationOps<BE, Standard>
@@ -532,7 +532,7 @@ pub fn test_blas_matmul_pt_right<BE, F, E>(
             atks: rotation_keys(&params, module, &sk_raw, elements.iter().copied(), &mut scratch.borrow()),
             tsk: None,
         };
-        let ct = encrypt_grid::<BE, F, E, Standard>(
+        let ct = encrypt_grid::<BE, F, E>(
             &params,
             module,
             host_module,
@@ -565,7 +565,7 @@ pub fn test_blas_matmul_pt_right<BE, F, E>(
                 module
                     .blas_matmul_pt_right(&mut res, &ct, &b, &ctx, &counting, &mut op_scratch.borrow())
                     .unwrap();
-                assert_grid_decrypt::<BE, F, E, Standard>(
+                assert_grid_decrypt::<BE, F, E>(
                     &label,
                     &public,
                     module,
@@ -621,7 +621,7 @@ pub fn test_blas_matmul_pt_right<BE, F, E>(
         atks: rotation_keys(&params, module, &sk_raw, elements, &mut scratch.borrow()),
         tsk: None,
     };
-    let ct = encrypt_grid::<BE, F, E, Standard>(
+    let ct = encrypt_grid::<BE, F, E>(
         &params,
         module,
         host_module,
@@ -669,12 +669,7 @@ pub fn test_blas_matmul_pt_right<BE, F, E>(
 /// A `1 x 1` grid one bit narrower than `log_delta`, into which poulpy-ckks rejects the budget of a product of blocks at
 /// that scale. Where the slots hold two matrices or more, it records half of them, where a product of dense inputs
 /// records them all, so that a record stamped on failure shows.
-fn res_below_scale<BE, Rg: Ring>(
-    params: &CKKSTestParams,
-    module: &Module<BE>,
-    log_d: usize,
-    log_delta: usize,
-) -> BlasCiphertextOwned<BE, Rg>
+fn res_below_scale<BE>(params: &CKKSTestParams, module: &Module<BE>, log_d: usize, log_delta: usize) -> BlasCiphertextOwned<BE>
 where
     BE: TestContextBackend,
 {
@@ -715,7 +710,7 @@ pub fn test_blas_matmul_pt_right_guards<BE, F, E>(
     log_d: usize,
 ) where
     BE: TestContextBackend + BlasMatMulImpl<Standard> + BlasEncodingImpl<Standard>,
-    Module<BE>: TestContextModule<BE, Standard>
+    Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, F, Standard>
         + BlasEncodingOps<BE, F, Standard>
         + CKKSLinearTransformationOps<BE, Standard>
@@ -765,7 +760,7 @@ pub fn test_blas_matmul_pt_right_guards<BE, F, E>(
         tsk: None,
     };
     let encrypt = |rows: usize, cols: usize, seed: u64, scratch: &mut ScratchArena<'_, BE>| {
-        encrypt_grid::<BE, F, E, Standard>(
+        encrypt_grid::<BE, F, E>(
             &params,
             module,
             host_module,
@@ -888,7 +883,7 @@ pub fn test_blas_matmul_pt_right_guards<BE, F, E>(
     );
     let p_b = params.prec().log_delta();
     for (label, budget) in [("jkls first map", p_b - 1), ("jkls second map", 2 * p_b - 1)] {
-        let short = encrypt_grid::<BE, F, E, Standard>(
+        let short = encrypt_grid::<BE, F, E>(
             &params,
             module,
             host_module,
@@ -949,7 +944,7 @@ pub fn test_blas_matmul_pt_right_guards<BE, F, E>(
         return;
     }
     let one_label = lanes.ilog2() as usize;
-    let dense = encrypt_grid::<BE, F, E, Standard>(
+    let dense = encrypt_grid::<BE, F, E>(
         &params,
         module,
         host_module,
@@ -1012,7 +1007,7 @@ pub fn test_blas_matmul_pt_left<BE, F, E>(
     log_d: usize,
 ) where
     BE: TestContextBackend + BlasImpl<Standard>,
-    Module<BE>: TestContextModule<BE, Standard>
+    Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, F, Standard>
         + BlasEncodingOps<BE, F, Standard>
         + CKKSLinearTransformationOps<BE, Standard>
@@ -1051,7 +1046,7 @@ pub fn test_blas_matmul_pt_left<BE, F, E>(
             atks: rotation_keys(&params, module, &sk_raw, elements.iter().copied(), &mut scratch.borrow()),
             tsk: None,
         };
-        let ct = encrypt_grid::<BE, F, E, Standard>(
+        let ct = encrypt_grid::<BE, F, E>(
             &params,
             module,
             host_module,
@@ -1082,7 +1077,7 @@ pub fn test_blas_matmul_pt_left<BE, F, E>(
                 module
                     .blas_matmul_pt_left(&mut res, &b, &ct, &ctx, &keys, &mut op_scratch.borrow())
                     .unwrap();
-                assert_grid_decrypt::<BE, F, E, Standard>(
+                assert_grid_decrypt::<BE, F, E>(
                     &label,
                     &public,
                     module,
@@ -1169,7 +1164,7 @@ pub fn test_blas_matmul_pt_left<BE, F, E>(
             (params.k - 2 * p - p_b, params.k - p_b),
             "the transposes spend two context scales"
         );
-        assert_grid_decrypt::<BE, F, E, Standard>(
+        assert_grid_decrypt::<BE, F, E>(
             "matmul_pt_left through transposes",
             &at_scale(&params, p.min(p_b)),
             module,
@@ -1196,7 +1191,7 @@ pub fn test_blas_matmul_pt_left<BE, F, E>(
         atks: rotation_keys(&params, module, &sk_raw, elements, &mut scratch.borrow()),
         tsk: None,
     };
-    let ct = encrypt_grid::<BE, F, E, Standard>(
+    let ct = encrypt_grid::<BE, F, E>(
         &params,
         module,
         host_module,
@@ -1255,7 +1250,7 @@ pub fn test_blas_matmul_pt_left_replicated<BE, F, E>(
     log_d: usize,
 ) where
     BE: TestContextBackend + BlasImpl<Standard>,
-    Module<BE>: TestContextModule<BE, Standard>
+    Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, F, Standard>
         + BlasEncodingOps<BE, F, Standard>
         + CKKSLinearTransformationOps<BE, Standard>
@@ -1302,7 +1297,7 @@ pub fn test_blas_matmul_pt_left_replicated<BE, F, E>(
     let spread = Grid::from_fn(log_d, inner, n, lanes, |_, r, c| one.at(0, r, c));
     let distinct = Grid::model(log_d, inner, n, lanes, 21);
     let encrypt = |grid: &Grid, log_sparsity: usize, scratch: &mut ScratchArena<'_, BE>| {
-        encrypt_grid::<BE, F, E, Standard>(
+        encrypt_grid::<BE, F, E>(
             &params,
             module,
             host_module,
@@ -1358,7 +1353,7 @@ pub fn test_blas_matmul_pt_left_replicated<BE, F, E>(
     };
     let p = params.prec().log_delta();
     let (res, want) = run(&ct_one, &mut scratch.borrow());
-    assert_grid_decrypt::<BE, F, E, Standard>(
+    assert_grid_decrypt::<BE, F, E>(
         "matmul_pt_left of a replicated input",
         &params,
         module,
@@ -1373,7 +1368,7 @@ pub fn test_blas_matmul_pt_left_replicated<BE, F, E>(
     assert!(replicated::<Standard>(&res), "replicated input: the result is replicated");
 
     let (res, want) = run(&ct_distinct, &mut scratch.borrow());
-    assert_grid_decrypt::<BE, F, E, Standard>(
+    assert_grid_decrypt::<BE, F, E>(
         "matmul_pt_left of distinct matrices",
         &params,
         module,
@@ -1409,7 +1404,7 @@ pub fn test_blas_matmul_pt_left_guards<BE, F, E>(
     log_d: usize,
 ) where
     BE: TestContextBackend + BlasMatMulImpl<Standard> + BlasEncodingImpl<Standard>,
-    Module<BE>: TestContextModule<BE, Standard>
+    Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, F, Standard>
         + BlasEncodingOps<BE, F, Standard>
         + CKKSLinearTransformationOps<BE, Standard>
@@ -1460,7 +1455,7 @@ pub fn test_blas_matmul_pt_left_guards<BE, F, E>(
         tsk: None,
     };
     let encrypt = |rows: usize, cols: usize, seed: u64, scratch: &mut ScratchArena<'_, BE>| {
-        encrypt_grid::<BE, F, E, Standard>(
+        encrypt_grid::<BE, F, E>(
             &params,
             module,
             host_module,
@@ -1572,7 +1567,7 @@ pub fn test_blas_matmul_pt_left_guards<BE, F, E>(
     );
     let p_b = params.prec().log_delta();
     for (label, budget) in [("jkls first map", p_b - 1), ("jkls second map", 2 * p_b - 1)] {
-        let short = encrypt_grid::<BE, F, E, Standard>(
+        let short = encrypt_grid::<BE, F, E>(
             &params,
             module,
             host_module,
@@ -1633,7 +1628,7 @@ pub fn test_blas_matmul_pt_left_guards<BE, F, E>(
         return;
     }
     let one_label = lanes.ilog2() as usize;
-    let dense = encrypt_grid::<BE, F, E, Standard>(
+    let dense = encrypt_grid::<BE, F, E>(
         &params,
         module,
         host_module,
@@ -1682,35 +1677,38 @@ pub fn test_blas_matmul_pt_left_guards<BE, F, E>(
 
 /// What both masked tests share, at `params.prec()`: the encoder, the secret, a scratch, a context holding the masks,
 /// each masked path's plan, and one store of the keys of their sets on both sides alone.
-struct MaskedFixture<BE: Backend, E, Rg: Ring = Standard> {
+struct MaskedFixture<BE: Backend, E> {
     encoder: ReferenceEncoder<E>,
-    sk_raw: BackendGLWESecret<BE, Rg>,
-    sk: GLWESecretPrepared<BE::OwnedBuf, BE, Rg>,
+    sk_raw: BackendGLWESecret<BE>,
+    sk: GLWESecretPrepared<BE::OwnedBuf, BE>,
     scratch: ScratchOwned<BE>,
-    ctx: BlasContextPrepared<BE, Rg>,
+    ctx: BlasContextPrepared<BE>,
     plans: [BlasPlan; 2],
-    keys: TestKeys<BE, Rg>,
+    keys: TestKeys<BE>,
 }
 
 /// The [`MaskedFixture`] of `2^log_d x 2^log_d` blocks on `module`.
-fn masked_fixture<BE, F, E, Rg: Ring>(
+fn masked_fixture<BE, F, E>(
     params: &CKKSTestParams,
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
     log_d: usize,
-) -> MaskedFixture<BE, E, Rg>
+) -> MaskedFixture<BE, E>
 where
-    BE: TestContextBackend + BlasEncodingImpl<Rg>,
-    Module<BE>:
-        TestContextModule<BE, Rg> + CKKSEncodingOps<BE, F, Rg> + BlasEncodingOps<BE, F, Rg> + CKKSLinearTransformationOps<BE, Rg>,
+    BE: TestContextBackend + BlasEncodingImpl,
+    Module<BE>: TestContextSharedModule<BE> + CKKSEncodingOps<BE, F> + BlasEncodingOps<BE, F> + CKKSLinearTransformationOps<BE>,
     F: TestScalar + DiagonalArithmetic,
     E: ReimNew<F>,
 {
     let (sk_raw, sk) = gen_sk_with_raw(params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(params, module);
-    let (base2k, meta, order) = (params.base2k.into(), params.prec().into(), module.cyclotomic_order::<Rg>());
+    let (base2k, meta, order) = (
+        params.base2k.into(),
+        params.prec().into(),
+        module.cyclotomic_order::<Standard>(),
+    );
     let masked = BlasPlan::new(log_d).with_pt_algorithm(BlasPtAlgorithm::JklsGalois);
-    let ctx = encoded_context::<BE, F, Rg>(module, masked, base2k, meta);
+    let ctx = encoded_context::<BE, F, Standard>(module, masked, base2k, meta);
     let plans = MASKED_PT_ALGORITHMS.map(|algorithm| BlasPlan::new(log_d).with_pt_algorithm(algorithm));
     let elements: BTreeSet<i64> = plans
         .iter()
@@ -1737,28 +1735,28 @@ where
 /// Asserts `res`, written by a masked product under `keys`, decrypts to `want` at `layout`, which the product's
 /// output-layout query gave as `queried`, every block canonical, and that `call` under a store holding only the keys its
 /// key-use query listed, `uses`, writes it into a fresh grid bit for bit.
-fn assert_masked_product<BE, F, E, Rg: Ring>(
+fn assert_masked_product<BE, F, E>(
     label: &str,
     params: &CKKSTestParams,
     module: &Module<BE>,
     encoder: &ReferenceEncoder<E>,
-    sk: &GLWESecretPrepared<BE::OwnedBuf, BE, Rg>,
-    keys: &TestKeys<BE, Rg>,
-    res: &BlasCiphertextOwned<BE, Rg>,
+    sk: &GLWESecretPrepared<BE::OwnedBuf, BE>,
+    keys: &TestKeys<BE>,
+    res: &BlasCiphertextOwned<BE>,
     want: &Grid,
     (layout, queried, uses): (BlasLayout, BlasLayout, BlasKeyUses),
-    call: impl FnOnce(&mut BlasCiphertextOwned<BE, Rg>, &StrictKeys<'_, BE, Rg>) -> CKKSResult<()>,
+    call: impl FnOnce(&mut BlasCiphertextOwned<BE>, &StrictKeys<'_, BE>) -> CKKSResult<()>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: TestContextBackend,
-    Module<BE>: TestContextModule<BE, Rg> + CKKSEncodingOps<BE, F, Rg>,
+    Module<BE>: TestContextSharedModule<BE> + CKKSEncodingOps<BE, F>,
     F: TestScalar,
     E: ReimNew<F>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
     assert_eq!(queried, layout, "{label}: output-layout query");
-    assert_grid_decrypt::<BE, F, E, Rg>(label, params, module, encoder, res, sk, want, &layout, scratch);
+    assert_grid_decrypt::<BE, F, E>(label, params, module, encoder, res, sk, want, &layout, scratch);
     assert!(
         res.blocks().iter().all(|block| block.is_canonical()),
         "{label}: a block is not canonical"
@@ -1767,7 +1765,7 @@ fn assert_masked_product<BE, F, E, Rg: Ring>(
     let mut again = alloc_grid(params, module, res.log_d(), res.rows(), res.cols(), params.k);
     call(&mut again, &strict).unwrap();
     assert!(
-        grid_snapshot::<BE, _, Rg>(&again) == grid_snapshot::<BE, _, Rg>(res),
+        grid_snapshot::<BE, _, Standard>(&again) == grid_snapshot::<BE, _, Standard>(res),
         "{label}: the result under the queried keys differs"
     );
 }
@@ -1787,7 +1785,7 @@ pub fn test_blas_matmul_pt_masked<BE, F, E>(
     log_d: usize,
 ) where
     BE: TestContextBackend + BlasMatMulImpl<Standard> + BlasEncodingImpl<Standard>,
-    Module<BE>: TestContextModule<BE, Standard>
+    Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, F, Standard>
         + BlasEncodingOps<BE, F, Standard>
         + CKKSLinearTransformationOps<BE, Standard>
@@ -1808,14 +1806,14 @@ pub fn test_blas_matmul_pt_masked<BE, F, E>(
         plans,
         keys,
         ..
-    } = masked_fixture::<BE, F, E, Standard>(&params, module, host_module, log_d);
+    } = masked_fixture::<BE, F, E>(&params, module, host_module, log_d);
     let (base2k, meta, delta) = (params.base2k.into(), params.prec().into(), params.prec().log_delta());
     let (a, a_left) = (
         Grid::model(log_d, m, inner, lanes, 9),
         Grid::model(log_d, inner, n, lanes, 11),
     );
     let encrypt = |grid: &Grid, scratch: &mut ScratchArena<'_, BE>| {
-        encrypt_grid::<BE, F, E, Standard>(&params, module, host_module, &encoder, &sk, params.k, 0, grid, scratch)
+        encrypt_grid::<BE, F, E>(&params, module, host_module, &encoder, &sk, params.k, 0, grid, scratch)
     };
     let (ct, ct_left) = (encrypt(&a, &mut scratch.borrow()), encrypt(&a_left, &mut scratch.borrow()));
     let mut counts: Vec<usize> = [1, 2, lanes].into_iter().filter(|c| lanes.is_multiple_of(*c)).collect();
@@ -1846,7 +1844,7 @@ pub fn test_blas_matmul_pt_masked<BE, F, E>(
         module
             .blas_matmul_pt_right(&mut res, &ct, &b, &ctx, &keys, &mut poisoned_scratch::<BE>(bytes).borrow())
             .unwrap();
-        assert_masked_product::<BE, F, E, Standard>(
+        assert_masked_product::<BE, F, E>(
             &label,
             &params,
             module,
@@ -1885,7 +1883,7 @@ pub fn test_blas_matmul_pt_masked<BE, F, E>(
                     &mut poisoned_scratch::<BE>(bytes).borrow(),
                 )
                 .unwrap();
-            assert_masked_product::<BE, F, E, Standard>(
+            assert_masked_product::<BE, F, E>(
                 &label,
                 &params,
                 module,
@@ -1917,7 +1915,7 @@ pub fn test_blas_matmul_pt_masked_guards<BE, F, E>(
     log_d: usize,
 ) where
     BE: TestContextBackend + BlasMatMulImpl<Standard> + BlasEncodingImpl<Standard>,
-    Module<BE>: TestContextModule<BE, Standard>
+    Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, F, Standard>
         + BlasEncodingOps<BE, F, Standard>
         + CKKSLinearTransformationOps<BE, Standard>
@@ -1937,7 +1935,7 @@ pub fn test_blas_matmul_pt_masked_guards<BE, F, E>(
         ctx,
         plans,
         mut keys,
-    } = masked_fixture::<BE, F, E, Standard>(&params, module, host_module, log_d);
+    } = masked_fixture::<BE, F, E>(&params, module, host_module, log_d);
     let (base2k, meta, atk) = (params.base2k.into(), params.prec().into(), params.atk_layout());
     let plain = blas_context::<BE, F, Standard>(&params, module, log_d);
     // Every foreign context holds the masks, so its mismatch alone rejects it on either side.
@@ -1954,7 +1952,7 @@ pub fn test_blas_matmul_pt_masked_guards<BE, F, E>(
     };
     foreign.push(("width", encoded_context::<BE, F, Standard>(module, masked, base2k, wide)));
     let a = Grid::model(log_d, 1, 1, lanes, 3);
-    let ct = encrypt_grid::<BE, F, E, Standard>(
+    let ct = encrypt_grid::<BE, F, E>(
         &params,
         module,
         host_module,
@@ -2059,7 +2057,7 @@ pub fn test_blas_matmul_guards<BE, F, E>(
     log_d: usize,
 ) where
     BE: TestContextBackend + BlasMatMulImpl<Standard> + BlasEncodingImpl<Standard>,
-    Module<BE>: TestContextModule<BE, Standard>
+    Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, F, Standard>
         + BlasEncodingOps<BE, F, Standard>
         + CKKSLinearTransformationOps<BE, Standard>
@@ -2091,7 +2089,7 @@ pub fn test_blas_matmul_guards<BE, F, E>(
         atks,
         tsk: Some(gen_tsk(&params, module, &sk_raw, &mut scratch.borrow())),
     };
-    let ct = encrypt_grid::<BE, F, E, Standard>(
+    let ct = encrypt_grid::<BE, F, E>(
         &params,
         module,
         host_module,
@@ -2397,7 +2395,7 @@ pub fn test_blas_matmul_guards<BE, F, E>(
     // One bit short of what the terms spend, `2p` or `p` on a replicated right input: the overdrawing map rejects it.
     let p = params.prec().log_delta();
     let mut short_by = |spend: usize| {
-        encrypt_grid::<BE, F, E, Standard>(
+        encrypt_grid::<BE, F, E>(
             &params,
             module,
             host_module,
@@ -2455,7 +2453,7 @@ pub fn test_blas_matmul_guards<BE, F, E>(
     // Both factors short, `A` by one bit and `B` by two bits: whichever side the product holds, `A`'s terms come first,
     // so `blas_matmul` and the prepared product of hot operands return the error `A` alone gives, not `B`'s, before
     // any write. `1 x 2` by `2 x 1` holds `A`; `2 x 1` by `1 x 1` holds `B`.
-    let short_b = encrypt_grid::<BE, F, E, Standard>(
+    let short_b = encrypt_grid::<BE, F, E>(
         &params,
         module,
         host_module,
@@ -2597,7 +2595,7 @@ pub fn test_blas_matmul_guards<BE, F, E>(
 pub fn test_blas_matmul_long_sums<BE, F, E>(params: CKKSTestParams, _module: &Module<BE>, _host_module: &Module<HostBytesBackend>)
 where
     BE: TestContextBackend + BlasMatMulImpl<Standard> + BlasEncodingImpl<Standard>,
-    Module<BE>: TestContextModule<BE, Standard>
+    Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, F, Standard>
         + BlasEncodingOps<BE, F, Standard>
         + CKKSLinearTransformationOps<BE, Standard>
@@ -2625,7 +2623,7 @@ where
     let inner = 8;
     let (a, b) = (Grid::model(log_d, 1, inner, lanes, 7), Grid::model(log_d, inner, 1, lanes, 8));
     let [ct_a, ct_b] = [&a, &b].map(|grid| {
-        encrypt_grid::<BE, F, E, Standard>(
+        encrypt_grid::<BE, F, E>(
             &params,
             module,
             host_module,
@@ -2705,7 +2703,7 @@ pub fn test_blas_replicated_shifts<BE, F, E>(
     log_d: usize,
 ) where
     BE: TestContextBackend + BlasMatMulImpl<Standard> + BlasEncodingImpl<Standard>,
-    Module<BE>: TestContextModule<BE, Standard>
+    Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, F, Standard>
         + BlasEncodingOps<BE, F, Standard>
         + CKKSLinearTransformationOps<BE, Standard>
@@ -2723,7 +2721,7 @@ pub fn test_blas_replicated_shifts<BE, F, E>(
     let (ctx, atks) = context_and_keys::<BE, F, Standard>(&params, module, log_d, &sk_raw, &mut scratch.borrow());
     let keys = TestKeys::<BE, Standard> { atks, tsk: None };
     let one_slot = slots.ilog2() as usize - 2 * log_d;
-    let ct = encrypt_grid::<BE, F, E, Standard>(
+    let ct = encrypt_grid::<BE, F, E>(
         &params,
         module,
         host_module,
@@ -2803,7 +2801,7 @@ pub fn test_blas_matmul_operands<BE, F, E>(
     log_d: usize,
 ) where
     BE: TestContextBackend + BlasImpl<Standard>,
-    Module<BE>: TestContextModule<BE, Standard>
+    Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, F, Standard>
         + BlasEncodingOps<BE, F, Standard>
         + CKKSLinearTransformationOps<BE, Standard>
@@ -2822,7 +2820,7 @@ pub fn test_blas_matmul_operands<BE, F, E>(
     let lanes = slots >> (2 * log_d);
     let mut encrypt = |params: &CKKSTestParams, k: usize, seed: u64| {
         let grid = Grid::model(log_d, 2, 2, lanes, seed);
-        encrypt_grid::<BE, F, E, Standard>(params, module, host_module, &encoder, &sk, k, 0, &grid, &mut scratch.borrow())
+        encrypt_grid::<BE, F, E>(params, module, host_module, &encoder, &sk, k, 0, &grid, &mut scratch.borrow())
     };
     let first = encrypt(&params, params.k, 9);
     // The shape of `first` at a lower scale, then at a narrower width.
@@ -3018,7 +3016,7 @@ pub fn test_blas_matmul_flag_clear<BE, F, E>(
     log_d: usize,
 ) where
     BE: TestContextBackend + BlasImpl<Standard>,
-    Module<BE>: TestContextModule<BE, Standard>
+    Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, F, Standard>
         + BlasEncodingOps<BE, F, Standard>
         + CKKSLinearTransformationOps<BE, Standard>
@@ -3040,7 +3038,7 @@ pub fn test_blas_matmul_flag_clear<BE, F, E>(
     let lanes = slots >> (2 * log_d);
     let models = [9, 10].map(|seed| Grid::model(log_d, 2, 2, lanes, seed));
     let [a, b] = [&models[0], &models[1]].map(|grid| {
-        let ct = encrypt_grid::<BE, F, E, Standard>(
+        let ct = encrypt_grid::<BE, F, E>(
             &params,
             module,
             host_module,
@@ -3067,7 +3065,7 @@ pub fn test_blas_matmul_flag_clear<BE, F, E>(
     module
         .blas_matmul(&mut in_place, &a, &b, &ctx, &keys, &keys, &mut op_scratch.borrow())
         .unwrap();
-    assert_grid_decrypt::<BE, F, E, Standard>(
+    assert_grid_decrypt::<BE, F, E>(
         "matmul of flag-clear factors",
         &params,
         module,

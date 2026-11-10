@@ -24,9 +24,9 @@ use crate::{
 };
 
 use super::helpers::{
-    PT_PREC, TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, assert_ckks_error,
-    assert_decrypt_precision, ckks_encrypt, ckks_encrypt_with_prec, ckks_spec, dirty_ct, gen_sk_with_raw, gen_tsk, precision_at,
-    quantized_const, quantized_slots, test_vector_1, upload_pt,
+    PT_PREC, TestContextBackend, TestContextModule, TestContextSharedModule, TestScalar, alloc_ct, alloc_scratch,
+    assert_ckks_error, assert_decrypt_precision, ckks_encrypt, ckks_encrypt_with_prec, ckks_spec, dirty_ct, gen_sk_with_raw,
+    gen_tsk, precision_at, quantized_const, quantized_slots, test_vector_1, upload_pt,
 };
 use super::parity::helpers::{snapshot, with_scratch};
 use crate::SlotsKind;
@@ -37,7 +37,7 @@ use crate::layouts::CKKSCiphertextAlloc;
 fn poly_scratch_bytes<BE, Rg: Ring>(params: &CKKSTestParams, module: &Module<BE>) -> usize
 where
     BE: TestContextBackend,
-    Module<BE>: TestContextModule<BE, Rg>,
+    Module<BE>: TestContextSharedModule<BE, Rg>,
 {
     let mut ct = module.ckks_ciphertext_alloc_from_glwe_infos::<_, Rg>(&params.glwe_layout());
     ct.set_meta(params.prec().meta);
@@ -182,7 +182,7 @@ where
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE, Rg>,
+    Module<BE>: TestContextSharedModule<BE, Rg>,
 {
     poly.map_baby_steps_ref(|pt| upload_pt(module, pt))
 }
@@ -195,7 +195,7 @@ where
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE, Rg>,
+    Module<BE>: TestContextSharedModule<BE, Rg>,
 {
     poly.map_baby_steps_ref(|pt| upload_pt(module, pt))
 }
@@ -208,7 +208,7 @@ pub fn test_power_basis_populate_degree7<BE, F, E>(
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE, Standard>,
+    Module<BE>: TestContextModule<BE>,
     CKKSCiphertextOwned<BE, Standard>:
         GLWEToBackendMut<BE, Standard> + GLWEToBackendRef<BE, Standard> + CKKSCtBounds + SetCKKSInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE, Standard>: GLWETensorKeyPreparedToBackendRef<BE, Standard> + GGLWEInfos,
@@ -277,7 +277,7 @@ pub fn test_power_basis_populate_chebyshev_degree7<BE, F, E>(
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE, Standard>,
+    Module<BE>: TestContextModule<BE>,
     CKKSCiphertextOwned<BE, Standard>:
         GLWEToBackendMut<BE, Standard> + GLWEToBackendRef<BE, Standard> + CKKSCtBounds + SetCKKSInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE, Standard>: GLWETensorKeyPreparedToBackendRef<BE, Standard> + GGLWEInfos,
@@ -415,7 +415,7 @@ pub fn test_eval_poly_const_coeffs_cubic<BE, F, E>(
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE, Standard> + CKKSPolynomialEvaluationOps<BE, Standard>,
+    Module<BE>: TestContextModule<BE> + CKKSPolynomialEvaluationOps<BE, Standard>,
     CKKSCiphertextOwned<BE, Standard>:
         GLWEToBackendMut<BE, Standard> + GLWEToBackendRef<BE, Standard> + CKKSCtBounds + SetCKKSInfos,
     CKKSPlaintextOwned<BE, Standard>: GLWEToBackendRef<BE, Standard> + LWEInfos,
@@ -519,7 +519,7 @@ pub fn test_eval_poly_rejects_power_basis_mismatch<BE, F, E>(
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE, Standard> + CKKSPolynomialEvaluationOps<BE, Standard>,
+    Module<BE>: TestContextModule<BE> + CKKSPolynomialEvaluationOps<BE, Standard>,
     CKKSCiphertextOwned<BE, Standard>:
         GLWEToBackendMut<BE, Standard> + GLWEToBackendRef<BE, Standard> + CKKSCtBounds + SetCKKSInfos,
     CKKSPlaintextOwned<BE, Standard>: GLWEToBackendRef<BE, Standard> + LWEInfos,
@@ -790,7 +790,7 @@ pub fn test_eval_poly_const_coeffs_exp7<BE, F, E>(
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE, Standard> + CKKSPolynomialEvaluationOps<BE, Standard>,
+    Module<BE>: TestContextModule<BE> + CKKSPolynomialEvaluationOps<BE, Standard>,
     CKKSCiphertextOwned<BE, Standard>:
         GLWEToBackendMut<BE, Standard> + GLWEToBackendRef<BE, Standard> + CKKSCtBounds + SetCKKSInfos,
     CKKSPlaintextOwned<BE, Standard>: GLWEToBackendRef<BE, Standard> + LWEInfos,
@@ -883,7 +883,7 @@ pub fn test_eval_poly_const_coeffs_even_monomial<BE, F, E>(
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE, Standard> + CKKSPolynomialEvaluationOps<BE, Standard>,
+    Module<BE>: TestContextModule<BE> + CKKSPolynomialEvaluationOps<BE, Standard>,
     CKKSCiphertextOwned<BE, Standard>:
         GLWEToBackendMut<BE, Standard> + GLWEToBackendRef<BE, Standard> + CKKSCtBounds + SetCKKSInfos,
     CKKSPlaintextOwned<BE, Standard>: GLWEToBackendRef<BE, Standard> + LWEInfos,
@@ -972,7 +972,7 @@ pub fn test_eval_poly_const_coeffs_odd_monomial<BE, F, E>(
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE, Standard> + CKKSPolynomialEvaluationOps<BE, Standard>,
+    Module<BE>: TestContextModule<BE> + CKKSPolynomialEvaluationOps<BE, Standard>,
     CKKSCiphertextOwned<BE, Standard>:
         GLWEToBackendMut<BE, Standard> + GLWEToBackendRef<BE, Standard> + CKKSCtBounds + SetCKKSInfos,
     CKKSPlaintextOwned<BE, Standard>: GLWEToBackendRef<BE, Standard> + LWEInfos,
@@ -1061,7 +1061,7 @@ pub fn test_eval_poly_const_coeffs_chebyshev_degree31<BE, F, E>(
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE, Standard> + CKKSPolynomialEvaluationOps<BE, Standard>,
+    Module<BE>: TestContextModule<BE> + CKKSPolynomialEvaluationOps<BE, Standard>,
     CKKSCiphertextOwned<BE, Standard>:
         GLWEToBackendMut<BE, Standard> + GLWEToBackendRef<BE, Standard> + CKKSCtBounds + SetCKKSInfos,
     CKKSPlaintextOwned<BE, Standard>: GLWEToBackendRef<BE, Standard> + LWEInfos,
@@ -1139,7 +1139,7 @@ pub fn test_eval_poly_const_coeffs_chebyshev_degree31_min_mult<BE, F, E>(
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE, Standard> + CKKSPolynomialEvaluationOps<BE, Standard>,
+    Module<BE>: TestContextModule<BE> + CKKSPolynomialEvaluationOps<BE, Standard>,
     CKKSCiphertextOwned<BE, Standard>:
         GLWEToBackendMut<BE, Standard> + GLWEToBackendRef<BE, Standard> + CKKSCtBounds + SetCKKSInfos,
     CKKSPlaintextOwned<BE, Standard>: GLWEToBackendRef<BE, Standard> + LWEInfos,
@@ -1217,7 +1217,7 @@ pub fn test_eval_poly_const_coeffs_parity_folds<BE, F, E>(
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE, Standard> + CKKSPolynomialEvaluationOps<BE, Standard>,
+    Module<BE>: TestContextModule<BE> + CKKSPolynomialEvaluationOps<BE, Standard>,
     CKKSCiphertextOwned<BE, Standard>:
         GLWEToBackendMut<BE, Standard> + GLWEToBackendRef<BE, Standard> + CKKSCtBounds + SetCKKSInfos,
     CKKSPlaintextOwned<BE, Standard>: GLWEToBackendRef<BE, Standard> + LWEInfos,
@@ -1924,7 +1924,7 @@ pub fn test_eval_poly_consumed_bits_sweep<BE, F, E>(
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE, Standard> + CKKSPolynomialEvaluationOps<BE, Standard>,
+    Module<BE>: TestContextModule<BE> + CKKSPolynomialEvaluationOps<BE, Standard>,
     CKKSCiphertextOwned<BE, Standard>:
         GLWEToBackendMut<BE, Standard> + GLWEToBackendRef<BE, Standard> + CKKSCtBounds + SetCKKSInfos,
     CKKSPlaintextOwned<BE, Standard>: GLWEToBackendRef<BE, Standard> + LWEInfos,
@@ -2026,7 +2026,7 @@ pub fn test_polynomial_approximation_eval_rejects_insufficient_capacity<BE, F, E
 ) where
     BE: crate::test_suite::helpers::TestContextBackend,
     poulpy_hal::layouts::Module<BE>:
-        crate::test_suite::helpers::TestContextModule<BE, Standard> + crate::api::CKKSApproximationOps<BE, Standard>,
+        crate::test_suite::helpers::TestContextModule<BE> + crate::api::CKKSApproximationOps<BE, Standard>,
     F: crate::test_suite::helpers::TestScalar,
     E: ReimNew<F>,
 {

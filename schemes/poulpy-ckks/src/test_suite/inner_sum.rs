@@ -40,8 +40,9 @@ use crate::{
 };
 
 use super::helpers::{
-    QueryLog, TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, assert_ckks_error, assert_ct_meta,
-    assert_decrypt_precision, ckks_encrypt, dirty_ct, gen_atk, gen_sk_with_raw, test_vector_1, want_rotate,
+    QueryLog, TestContextBackend, TestContextModule, TestContextSharedModule, TestScalar, alloc_ct, alloc_scratch,
+    assert_ckks_error, assert_ct_meta, assert_decrypt_precision, ckks_encrypt, dirty_ct, gen_atk, gen_sk_with_raw, test_vector_1,
+    want_rotate,
 };
 
 /// Every window sums four batches.
@@ -136,26 +137,22 @@ fn windows(m: usize) -> [(usize, usize); 4] {
 type Keys<BE, Rg = Standard> = HashMap<i64, GLWEAutomorphismKeyPrepared<<BE as Backend>::OwnedBuf, BE, Rg>>;
 
 /// An encryption of `test_vector_1` at `params.k`, with its secret and encoder.
-struct Fixture<BE: Backend, F, E, Rg: Ring = Standard> {
+struct Fixture<BE: Backend, F, E> {
     encoder: ReferenceEncoder<E>,
     re: Vec<F>,
     im: Vec<F>,
-    sk_raw: BackendGLWESecret<BE, Rg>,
-    sk: GLWESecretPrepared<BE::OwnedBuf, BE, Rg>,
+    sk_raw: BackendGLWESecret<BE>,
+    sk: GLWESecretPrepared<BE::OwnedBuf, BE>,
     scratch: ScratchOwned<BE>,
-    ct: CKKSCiphertextOwned<BE, Rg>,
+    ct: CKKSCiphertextOwned<BE>,
 }
 
-fn fixture<BE, F, E, Rg: Ring>(
-    params: &CKKSTestParams,
-    module: &Module<BE>,
-    host_module: &Module<HostBytesBackend>,
-) -> Fixture<BE, F, E, Rg>
+fn fixture<BE, F, E>(params: &CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>) -> Fixture<BE, F, E>
 where
     BE: TestContextBackend,
     for<'a> <BE as Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE, Rg>,
+    Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -196,7 +193,7 @@ fn gen_keys<BE, Rg: Ring>(
 ) -> Keys<BE, Rg>
 where
     BE: TestContextBackend,
-    Module<BE>: TestContextModule<BE, Rg>,
+    Module<BE>: TestContextSharedModule<BE, Rg>,
 {
     let mut keys = HashMap::new();
     for &(log_batch, log_count) in windows {
@@ -234,11 +231,11 @@ where
     BE: TestContextBackend,
     for<'a> <BE as Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE, Standard>,
+    Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: ReimNew<F>,
 {
-    let mut f = fixture::<BE, F, E, Standard>(&params, module, host_module);
+    let mut f = fixture::<BE, F, E>(&params, module, host_module);
     let windows = windows(params.n / 2);
     let keys = gen_keys(&params, module, &f.sk_raw, &windows, &mut f.scratch.borrow());
     let atk = params.atk_layout();
@@ -279,11 +276,11 @@ pub fn test_inner_sum_smaller_output<BE, F, E>(
     BE: TestContextBackend,
     for<'a> <BE as Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE, Standard>,
+    Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: ReimNew<F>,
 {
-    let mut f = fixture::<BE, F, E, Standard>(&params, module, host_module);
+    let mut f = fixture::<BE, F, E>(&params, module, host_module);
     let windows = windows(params.n / 2);
     let keys = gen_keys(&params, module, &f.sk_raw, &windows, &mut f.scratch.borrow());
     let keys = QueryLog::new(&keys);
@@ -336,11 +333,11 @@ where
     BE: TestContextBackend,
     for<'a> <BE as Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE, Standard>,
+    Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: ReimNew<F>,
 {
-    let mut f = fixture::<BE, F, E, Standard>(&params, module, host_module);
+    let mut f = fixture::<BE, F, E>(&params, module, host_module);
     let windows = windows(params.n / 2);
     let keys = gen_keys(&params, module, &f.sk_raw, &windows, &mut f.scratch.borrow());
     let atk = params.atk_layout();
@@ -391,11 +388,11 @@ pub fn test_inner_sum_rejects_window<BE, F, E>(
     BE: TestContextBackend,
     for<'a> <BE as Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE, Standard>,
+    Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: ReimNew<F>,
 {
-    let f = fixture::<BE, F, E, Standard>(&params, module, host_module);
+    let f = fixture::<BE, F, E>(&params, module, host_module);
     let log_batch = (params.n / 2).ilog2() as usize - 1;
     let no_keys: Keys<BE, Standard> = HashMap::new();
     for kind in KINDS {
@@ -434,11 +431,11 @@ pub fn test_inner_sum_rejects_integer_slots<BE, F, E>(
     BE: TestContextBackend,
     for<'a> <BE as Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE, Standard>,
+    Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: ReimNew<F>,
 {
-    let mut f = fixture::<BE, F, E, Standard>(&params, module, host_module);
+    let mut f = fixture::<BE, F, E>(&params, module, host_module);
     f.ct.set_slots(SlotsKind::Integer);
     let no_keys: Keys<BE, Standard> = HashMap::new();
     let integer = |err: &CKKSError| {
@@ -491,11 +488,11 @@ pub fn test_inner_sum_rejects_missing_key<BE, F, E>(
     BE: TestContextBackend,
     for<'a> <BE as Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE, Standard>,
+    Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: ReimNew<F>,
 {
-    let mut f = fixture::<BE, F, E, Standard>(&params, module, host_module);
+    let mut f = fixture::<BE, F, E>(&params, module, host_module);
     let no_keys: Keys<BE, Standard> = HashMap::new();
     for kind in KINDS {
         let label = format!("{kind:?} absent key");
@@ -557,11 +554,11 @@ pub fn test_inner_sum_rejects_budget<BE, F, E>(
     BE: TestContextBackend,
     for<'a> <BE as Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE, Standard>,
+    Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: ReimNew<F>,
 {
-    let mut f = fixture::<BE, F, E, Standard>(&params, module, host_module);
+    let mut f = fixture::<BE, F, E>(&params, module, host_module);
     let keys = gen_keys(&params, module, &f.sk_raw, &[(0, LOG_COUNT)], &mut f.scratch.borrow());
     let (ct_k, log_delta, log_budget) = (f.ct.k().as_usize(), f.ct.log_delta(), f.ct.log_budget());
 
@@ -612,11 +609,11 @@ pub fn test_inner_sum_rejects_short_scratch<BE, F, E>(
     BE: TestContextBackend,
     for<'a> <BE as Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE, Standard>,
+    Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: ReimNew<F>,
 {
-    let mut f = fixture::<BE, F, E, Standard>(&params, module, host_module);
+    let mut f = fixture::<BE, F, E>(&params, module, host_module);
     let keys = gen_keys(&params, module, &f.sk_raw, &[(0, LOG_COUNT)], &mut f.scratch.borrow());
     let atk = params.atk_layout();
     for kind in KINDS {
@@ -650,11 +647,11 @@ pub fn test_inner_sum_below_module_degree<BE, F, E>(
     BE: TestContextBackend,
     for<'a> <BE as Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE, Standard>,
+    Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: ReimNew<F>,
 {
-    let mut f = fixture::<BE, F, E, Standard>(&params, module, host_module);
+    let mut f = fixture::<BE, F, E>(&params, module, host_module);
     let windows = windows(params.n / 2);
     let keys = gen_keys(&params, module, &f.sk_raw, &windows, &mut f.scratch.borrow());
     let wide = Module::<BE>::new((2 * params.n) as u64);

@@ -23,7 +23,7 @@ use std::collections::HashMap;
 use poulpy_core::{GLWECopy, TransferInto, api::GLWESecretPreparedFactory, layouts::GLWESecretAlloc};
 use poulpy_hal::{
     api::{CnvPVecAlloc, ReimNew, ScratchOwnedBorrow},
-    layouts::{HostBytesBackend, Module, Standard},
+    layouts::{HostBytesBackend, Module},
     source::Source,
 };
 
@@ -259,7 +259,7 @@ fn seq_bootstrap_case<BE, F, E>(
         module.ckks_paco_bootstrap_direct_into::<_, _>(&mut out, &ct_in, &ctx, &keys, s)
     })
     .unwrap();
-    assert_slots::<BE, F, E, Standard>(
+    assert_slots::<BE, F, E>(
         &format!("paco_seq_bootstrap[final]({paco_h},{paco_c},{slot_order:?})"),
         &module,
         &host_module,
@@ -289,7 +289,7 @@ fn seq_bootstrap_case<BE, F, E>(
             k_low,
             "reduced-level bootstrap must produce exactly the requested output level"
         );
-        assert_slots::<BE, F, E, Standard>(
+        assert_slots::<BE, F, E>(
             &format!("paco_seq_bootstrap[reduced-level]({paco_h},{paco_c},{slot_order:?})"),
             &module,
             &host_module,

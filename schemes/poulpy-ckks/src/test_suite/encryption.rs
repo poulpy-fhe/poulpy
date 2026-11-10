@@ -36,7 +36,7 @@ fn extract_src_prec(params: &CKKSTestParams) -> CKKSLayout {
     }
 }
 
-fn assert_decrypt_extract_success<BE, F, E, Rg: Ring>(
+fn assert_decrypt_extract_success<BE, F, E>(
     label: &str,
     params: &CKKSTestParams,
     module: &Module<BE>,
@@ -47,10 +47,9 @@ fn assert_decrypt_extract_success<BE, F, E, Rg: Ring>(
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE, Rg>,
+    Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: ReimNew<F>,
-    Module<BE>: CKKSDecryptOps<BE, Rg>,
 {
     let src_prec = extract_src_prec(params);
     let sk = gen_sk(params, module, host_module, [0u8; 32]);
@@ -95,7 +94,7 @@ where
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE, Standard> + GLWENoise<BE, Standard>,
+    Module<BE>: TestContextModule<BE> + GLWENoise<BE, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -249,7 +248,7 @@ pub fn test_decrypt_extract_same_meta<BE, F, E>(
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE, Standard>,
+    Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: ReimNew<F>,
     Module<BE>: CKKSDecryptOps<BE, Standard>,
@@ -274,7 +273,7 @@ pub fn test_decrypt_extract_truncates_log_budget<BE, F, E>(
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE, Standard>,
+    Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: ReimNew<F>,
     Module<BE>: CKKSDecryptOps<BE, Standard>,
@@ -300,7 +299,7 @@ pub fn test_decrypt_extract_rsh_for_smaller_log_delta<BE, F, E>(
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE, Standard>,
+    Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: ReimNew<F>,
     Module<BE>: CKKSDecryptOps<BE, Standard>,
@@ -326,7 +325,7 @@ pub fn test_decrypt_extract_lsh_for_larger_log_delta<BE, F, E>(
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE, Standard>,
+    Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: ReimNew<F>,
     Module<BE>: CKKSDecryptOps<BE, Standard>,
@@ -352,7 +351,7 @@ pub fn test_decrypt_rejects_output_hom_rem_too_large<BE, F, E>(
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE, Standard>,
+    Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -419,7 +418,7 @@ pub fn test_decrypt_rejects_base2k_mismatch<BE, F, E>(
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE, Standard>,
+    Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -479,7 +478,7 @@ pub fn test_decrypt_rejects_degree_mismatch<BE, F, E>(
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE, Standard>,
+    Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -575,7 +574,7 @@ pub fn test_decrypt_wipes_scratch<BE, F, E>(
     host_module: &poulpy_hal::layouts::Module<poulpy_hal::layouts::HostBytesBackend>,
 ) where
     BE: crate::test_suite::helpers::TestContextBackend,
-    poulpy_hal::layouts::Module<BE>: crate::test_suite::helpers::TestContextModule<BE, Standard>,
+    poulpy_hal::layouts::Module<BE>: crate::test_suite::helpers::TestContextModule<BE>,
     F: crate::test_suite::helpers::TestScalar,
     E: ReimNew<F>,
 {
@@ -613,7 +612,7 @@ pub fn test_decrypt_rejects_alignment_on_empty_arena<BE, F, E>(
     host_module: &poulpy_hal::layouts::Module<poulpy_hal::layouts::HostBytesBackend>,
 ) where
     BE: crate::test_suite::helpers::TestContextBackend,
-    poulpy_hal::layouts::Module<BE>: crate::test_suite::helpers::TestContextModule<BE, Standard>,
+    poulpy_hal::layouts::Module<BE>: crate::test_suite::helpers::TestContextModule<BE>,
     F: crate::test_suite::helpers::TestScalar,
     E: ReimNew<F>,
 {
@@ -660,7 +659,7 @@ pub fn test_encrypt_sk_rejects_plaintext_base2k_mismatch<BE, F, E>(
     host_module: &poulpy_hal::layouts::Module<poulpy_hal::layouts::HostBytesBackend>,
 ) where
     BE: crate::test_suite::helpers::TestContextBackend,
-    poulpy_hal::layouts::Module<BE>: crate::test_suite::helpers::TestContextModule<BE, Standard>,
+    poulpy_hal::layouts::Module<BE>: crate::test_suite::helpers::TestContextModule<BE>,
     F: crate::test_suite::helpers::TestScalar,
     E: ReimNew<F>,
 {

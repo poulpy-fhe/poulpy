@@ -157,7 +157,7 @@ pub fn test_blas_grid_to_vector<BE, F, E>(
     log_d: usize,
 ) where
     BE: TestContextBackend + BlasMatVecImpl<Standard> + BlasEncodingImpl<Standard>,
-    Module<BE>: TestContextModule<BE, Standard>
+    Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, F, Standard>
         + BlasEncodingOps<BE, F, Standard>
         + CKKSLinearTransformationOps<BE, Standard>
@@ -179,7 +179,7 @@ pub fn test_blas_grid_to_vector<BE, F, E>(
         let (line, layout, entry, proven) = (case.line, case.layout, case.entry, case.proven);
         let label = format!("grid_to_vector {line:?} {layout:?}, {proven} matrices proven");
         let model = grid_model(log_d, proven);
-        let mut a = encrypt_grid::<BE, F, E, Standard>(
+        let mut a = encrypt_grid::<BE, F, E>(
             &params,
             module,
             host_module,
@@ -339,7 +339,7 @@ pub fn test_blas_vector_to_grid<BE, F, E>(
     log_d: usize,
 ) where
     BE: TestContextBackend + BlasMatVecImpl<Standard> + BlasEncodingImpl<Standard>,
-    Module<BE>: TestContextModule<BE, Standard>
+    Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, F, Standard>
         + BlasEncodingOps<BE, F, Standard>
         + CKKSLinearTransformationOps<BE, Standard>
@@ -397,7 +397,7 @@ pub fn test_blas_vector_to_grid<BE, F, E>(
         module
             .blas_vector_to_grid(&mut have, line, &resident, &a, &keys, &mut op_scratch.borrow())
             .unwrap();
-        assert_grid_decrypt::<BE, F, E, Standard>(
+        assert_grid_decrypt::<BE, F, E>(
             &label,
             &params,
             module,
@@ -448,7 +448,7 @@ pub fn test_blas_repack_guards<BE, F, E>(
     log_d: usize,
 ) where
     BE: TestContextBackend + BlasMatVecImpl<Standard> + BlasEncodingImpl<Standard>,
-    Module<BE>: TestContextModule<BE, Standard>
+    Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, F, Standard>
         + BlasEncodingOps<BE, F, Standard>
         + CKKSLinearTransformationOps<BE, Standard>
@@ -487,7 +487,7 @@ pub fn test_blas_repack_guards<BE, F, E>(
     let (_, w) = matvec_operands_of::<BE, F, Standard>(module, &layout, entry);
     let keys = key_set(&layout, 0, &mut scratch.borrow());
     let encrypt = |model: &Grid, k: usize, label: usize, scratch: &mut ScratchArena<'_, BE>| {
-        encrypt_grid::<BE, F, E, Standard>(&params, module, host_module, &encoder, &sk, k, label, model, scratch)
+        encrypt_grid::<BE, F, E>(&params, module, host_module, &encoder, &sk, k, label, model, scratch)
     };
     let model = grid_model(log_d, case.proven);
     let a = encrypt(&model, params.k, case.label(slots), &mut scratch.borrow());

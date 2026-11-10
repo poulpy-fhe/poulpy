@@ -43,10 +43,10 @@ use crate::{
 };
 
 use super::helpers::{
-    PT_PREC, TestContextBackend, TestContextModule, TestScalar, TestVector, alloc_ct, alloc_scratch, assert_ckks_error,
-    assert_ckks_internal, assert_decrypt_precision, assert_decrypt_precision_at_log_delta, assert_invalid_operand, ckks_encrypt,
-    ckks_encrypt_with_prec, ckks_pt_cst_full, encode_and_upload_pt, gen_sk_with_raw, gen_tsk, precision_at, quantize,
-    quantized_const, quantized_vector, test_vector_1, test_vector_2, want_mul, want_rotate,
+    PT_PREC, TestContextBackend, TestContextModule, TestContextSharedModule, TestScalar, TestVector, alloc_ct, alloc_scratch,
+    assert_ckks_error, assert_ckks_internal, assert_decrypt_precision, assert_decrypt_precision_at_log_delta,
+    assert_invalid_operand, ckks_encrypt, ckks_encrypt_with_prec, ckks_pt_cst_full, encode_and_upload_pt, gen_sk_with_raw,
+    gen_tsk, precision_at, quantize, quantized_const, quantized_vector, test_vector_1, test_vector_2, want_mul, want_rotate,
 };
 use super::parity::helpers::{snapshot, with_scratch};
 
@@ -91,7 +91,7 @@ where
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE, Standard>,
+    Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -181,7 +181,7 @@ pub fn test_dot_product_ct_unaligned<BE, F, E>(
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE, Standard>,
+    Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -264,7 +264,7 @@ pub fn test_dot_product_ct_unaligned_b<BE, F, E>(
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE, Standard>,
+    Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -347,7 +347,7 @@ pub fn test_dot_product_ct_delta_log_delta<BE, F, E>(
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE, Standard>,
+    Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -460,7 +460,7 @@ pub fn test_dot_product_ct_smaller_output<BE, F, E>(
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE, Standard>,
+    Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -551,7 +551,7 @@ fn eager<BE: TestContextBackend, H: GetTensorKey<BE, Rg>, Rg: Ring>(
     tsk: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    Module<BE>: TestContextModule<BE, Rg>,
+    Module<BE>: TestContextSharedModule<BE, Rg>,
 {
     module.ckks_mul_into(dst, a[0], b[0], tsk, scratch).unwrap();
     for (ai, bi) in a.iter().zip(b).skip(1) {
@@ -584,7 +584,7 @@ fn assert_rejected<BE: TestContextBackend, H: GetTensorKey<BE, Rg>, Rg: Ring>(
     tsk: &H,
 ) -> CKKSError
 where
-    Module<BE>: TestContextModule<BE, Rg>,
+    Module<BE>: TestContextSharedModule<BE, Rg>,
 {
     let before = snapshot::<BE, _, Rg>(&*dst);
     let err = with_scratch::<BE, _>(0, |scratch| module.ckks_dot_product_ct(dst, a, b, tsk, scratch)).unwrap_err();
@@ -609,7 +609,7 @@ where
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE, Standard>,
+    Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -804,7 +804,7 @@ pub fn test_dot_product_ct_long_sum<BE, F, E>(
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE, Standard>,
+    Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -868,7 +868,7 @@ pub fn test_dot_product_ct_non_uniform<BE, F, E>(
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE, Standard>,
+    Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -932,7 +932,7 @@ fn assert_prepared_rejected<BE: TestContextBackend, H: GetTensorKey<BE, Rg>, Rg:
     tsk: &H,
 ) -> CKKSError
 where
-    Module<BE>: TestContextModule<BE, Rg>,
+    Module<BE>: TestContextSharedModule<BE, Rg>,
 {
     let before = snapshot::<BE, _, Rg>(&*dst);
     let err = with_scratch::<BE, _>(0, |scratch| module.ckks_dot_product_prepared(dst, a, b, tsk, scratch)).unwrap_err();
@@ -957,7 +957,7 @@ where
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE, Standard>,
+    Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -1191,7 +1191,7 @@ pub fn test_dot_product_pt_vec_aligned<BE, F, E>(
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE, Standard>,
+    Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -1283,7 +1283,7 @@ pub fn test_dot_product_prepared_pt_vec<BE, F, E>(
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE, Standard> + GLWEMulPreparedPlainSum<BE, Standard> + VecZnxDftAlloc<BE>,
+    Module<BE>: TestContextModule<BE> + GLWEMulPreparedPlainSum<BE, Standard> + VecZnxDftAlloc<BE>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -1513,7 +1513,7 @@ pub fn test_dot_product_prepared_pt_vec_add<BE, F, E>(
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE, Standard> + GLWEMulPreparedPlainSum<BE, Standard>,
+    Module<BE>: TestContextModule<BE> + GLWEMulPreparedPlainSum<BE, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -1680,7 +1680,7 @@ pub fn test_dot_product_const_aligned<BE, F, E>(
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE, Standard>,
+    Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: ReimNew<F>,
 {

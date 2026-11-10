@@ -12,8 +12,8 @@ use poulpy_ckks::{
     test_suite::{
         CKKSTestParams,
         helpers::{
-            TestContextBackend, TestContextModule, TestScalar, alloc_scratch, encode_and_upload_pt, gen_atk, gen_sk_with_raw,
-            gen_tsk,
+            TestContextBackend, TestContextModule, TestContextSharedModule, TestScalar, alloc_scratch, encode_and_upload_pt,
+            gen_atk, gen_sk_with_raw, gen_tsk,
         },
         parity::helpers::{Snapshot, with_scratch},
         reference_encoder::ReferenceEncoder,
@@ -218,7 +218,7 @@ pub fn test_blas_key_widths<BE, F, E>(
     log_d: usize,
 ) where
     BE: TestContextBackend + BlasImpl<Standard>,
-    Module<BE>: TestContextModule<BE, Standard>
+    Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, F, Standard>
         + BlasEncodingOps<BE, F, Standard>
         + CKKSLinearTransformationOps<BE, Standard>
@@ -247,14 +247,14 @@ pub fn test_blas_key_widths<BE, F, E>(
     let p_b = below.prec().log_delta();
     let encrypt = |rows: usize, cols: usize, k: usize, seed: u64, scratch: &mut ScratchArena<'_, BE>| {
         let grid = Grid::model(log_d, rows, cols, lanes, seed);
-        encrypt_grid::<BE, F, E, Standard>(&params, module, host_module, &encoder, &sk, k, 0, &grid, scratch)
+        encrypt_grid::<BE, F, E>(&params, module, host_module, &encoder, &sk, k, 0, &grid, scratch)
     };
     let a_k = params.k;
     let row = encrypt(1, 2, a_k, 11, &mut scratch.borrow());
     let column = encrypt(2, 1, a_k, 12, &mut scratch.borrow());
     let one = Grid::model(log_d, 2, 1, 1, 15);
     let spread = Grid::from_fn(log_d, 2, 1, lanes, |_, r, c| one.at(0, r, c));
-    let column_one = encrypt_grid::<BE, F, E, Standard>(
+    let column_one = encrypt_grid::<BE, F, E>(
         &params,
         module,
         host_module,
@@ -750,7 +750,7 @@ pub fn test_blas_key_widths<BE, F, E>(
             let (line, layout) = (case.line, at_below(case.layout));
             let (_, w) = matvec_operands_of::<BE, F, Standard>(module, &layout, case.entry);
             let keys = keys_of(&layout, &mut scratch.borrow());
-            let mut a = encrypt_grid::<BE, F, E, Standard>(
+            let mut a = encrypt_grid::<BE, F, E>(
                 &params,
                 module,
                 host_module,
@@ -921,7 +921,7 @@ pub(crate) fn slot_mask<BE, F, E, Rg: Ring>(
 ) -> CKKSRightOperandPrepared<BE, Rg>
 where
     BE: TestContextBackend,
-    Module<BE>: TestContextModule<BE, Rg>,
+    Module<BE>: TestContextSharedModule<BE, Rg>,
     F: TestScalar,
     E: ReimFFT<F> + ReimIFFT<F>,
 {
@@ -996,7 +996,7 @@ pub fn test_blas_key_stores_from_queries<BE, F, E>(
     log_d: usize,
 ) where
     BE: TestContextBackend + BlasImpl<Standard>,
-    Module<BE>: TestContextModule<BE, Standard>
+    Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, F, Standard>
         + BlasEncodingOps<BE, F, Standard>
         + CKKSLinearTransformationOps<BE, Standard>
@@ -1014,7 +1014,7 @@ pub fn test_blas_key_stores_from_queries<BE, F, E>(
     let ctx = blas_context::<BE, F, Standard>(&params, module, log_d);
     let encrypt = |rows: usize, cols: usize, seed: u64, scratch: &mut ScratchArena<'_, BE>| {
         let grid = Grid::model(log_d, rows, cols, lanes, seed);
-        let ct = encrypt_grid::<BE, F, E, Standard>(&params, module, host_module, &encoder, &sk, params.k, 0, &grid, scratch);
+        let ct = encrypt_grid::<BE, F, E>(&params, module, host_module, &encoder, &sk, params.k, 0, &grid, scratch);
         (grid, ct)
     };
     let ((grid_a, a), (grid_b, b)) = (
@@ -1071,7 +1071,7 @@ pub fn test_blas_key_stores_from_queries<BE, F, E>(
     let to_vector = repack_fits(slots, log_d).then(|| {
         let case = grid_to_vector_cases(&params, slots, log_d).swap_remove(0);
         let model = grid_model(log_d, case.proven);
-        let mut grid = encrypt_grid::<BE, F, E, Standard>(
+        let mut grid = encrypt_grid::<BE, F, E>(
             &params,
             module,
             host_module,
@@ -1213,7 +1213,7 @@ pub fn test_blas_key_stores_from_queries<BE, F, E>(
                 &mut poisoned_scratch::<BE>(bytes).borrow(),
             )
             .unwrap();
-        assert_grid_decrypt::<BE, F, E, Standard>(
+        assert_grid_decrypt::<BE, F, E>(
             &format!("matmul under the queries' keys, {mode}"),
             &params,
             module,
@@ -1235,7 +1235,7 @@ pub fn test_blas_key_stores_from_queries<BE, F, E>(
                 &mut poisoned_scratch::<BE>(bytes).borrow(),
             )
             .unwrap();
-        assert_grid_decrypt::<BE, F, E, Standard>(
+        assert_grid_decrypt::<BE, F, E>(
             &format!("matmul_pt_right under the queries' keys, {mode}"),
             &params,
             module,
@@ -1257,7 +1257,7 @@ pub fn test_blas_key_stores_from_queries<BE, F, E>(
         } else {
             mapped_layout(&a, 1, 2, params.k, p)
         };
-        assert_grid_decrypt::<BE, F, E, Standard>(
+        assert_grid_decrypt::<BE, F, E>(
             &format!("sum_rows under the queries' keys, {mode}"),
             &params,
             module,
@@ -1272,7 +1272,7 @@ pub fn test_blas_key_stores_from_queries<BE, F, E>(
         module
             .blas_sum_cols(&mut sums, &a, &ctx, &keys, &mut poisoned_scratch::<BE>(bytes).borrow())
             .unwrap();
-        assert_grid_decrypt::<BE, F, E, Standard>(
+        assert_grid_decrypt::<BE, F, E>(
             &format!("sum_cols under the queries' keys, {mode}"),
             &params,
             module,
@@ -1335,7 +1335,7 @@ pub fn test_blas_key_stores_from_queries<BE, F, E>(
             module
                 .blas_vector_to_grid(&mut res, case.line, w, x, &keys, &mut poisoned_scratch::<BE>(bytes).borrow())
                 .unwrap();
-            assert_grid_decrypt::<BE, F, E, Standard>(
+            assert_grid_decrypt::<BE, F, E>(
                 &format!("vector_to_grid under the queries' keys, {mode}"),
                 &params,
                 module,

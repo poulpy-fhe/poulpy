@@ -19,7 +19,7 @@ use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{GLWELayout, LWEInfos, Rank};
 use poulpy_hal::{
     api::{ReimFFT, ReimIFFT, ReimNew, ScratchOwnedBorrow},
-    layouts::{CyclotomicOrder, HostBytesBackend, Module, Ring, Standard, galois_element, galois_elements_from_rotations},
+    layouts::{CyclotomicOrder, HostBytesBackend, Module, Standard, galois_element, galois_elements_from_rotations},
 };
 use std::collections::HashMap;
 
@@ -82,19 +82,19 @@ fn to_cpx<F: TestScalar>(re: &[F], im: &[F]) -> Vec<Cpx> {
 /// distinguishable from oracle rounding; the bound is clamped accordingly
 /// (structural failures sit at signal level, far above the clamp).
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn assert_slots<BE, F, E, Rg: Ring>(
+pub(crate) fn assert_slots<BE, F, E>(
     label: &str,
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
     encoder: &ReferenceEncoder<E>,
-    ct: &CKKSCiphertextOwned<BE, Rg>,
-    sk: &poulpy_core::layouts::prepared::GLWESecretPrepared<BE::OwnedBuf, BE, Rg>,
+    ct: &CKKSCiphertextOwned<BE>,
+    sk: &poulpy_core::layouts::prepared::GLWESecretPrepared<BE::OwnedBuf, BE>,
     want: &[Cpx],
     bound: f64,
     scratch: &mut poulpy_hal::layouts::ScratchArena<'_, BE>,
 ) where
     BE: TestContextBackend,
-    Module<BE>: TestContextModule<BE, Rg>,
+    Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: ReimFFT<F> + ReimIFFT<F>,
 {
@@ -121,7 +121,8 @@ pub(crate) fn assert_slots<BE, F, E, Rg: Ring>(
     // Expected plaintext, encoded host-side at the same layout.
     let want_re: Vec<F> = want.iter().map(|x| F::from_f64(x.re).unwrap()).collect();
     let want_im: Vec<F> = want.iter().map(|x| F::from_f64(x.im).unwrap()).collect();
-    let mut want_pt = host_module.ckks_plaintext_alloc_from_slots::<Standard>(host_module.ckks_max_slots::<Rg>(), base2k, ct.k());
+    let mut want_pt =
+        host_module.ckks_plaintext_alloc_from_slots::<Standard>(host_module.ckks_max_slots::<Standard>(), base2k, ct.k());
     want_pt.set_meta(GLWEPlaintextMeta {
         scale: Scale::Log(log_delta),
         slots: SlotsKind::Complex,
@@ -192,7 +193,7 @@ where
         })
         .unwrap();
         assert_eq!(ct.log_budget(), budget_before, "trace({a}->{b}) must consume no budget");
-        assert_slots::<BE, F, E, Standard>(
+        assert_slots::<BE, F, E>(
             &format!("paco_slot_trace({a}->{b})"),
             module,
             host_module,
@@ -278,7 +279,7 @@ where
             levels * log_delta,
             "product({a}->{b}) must consume log(a/b) × log_delta budget bits"
         );
-        assert_slots::<BE, F, E, Standard>(
+        assert_slots::<BE, F, E>(
             &format!("paco_slot_product({a}->{b})"),
             &module,
             &host_module,
@@ -296,7 +297,7 @@ where
 pub fn test_paco_conj_rotate<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
     BE: TestContextBackend,
-    Module<BE>: TestContextModule<BE, Standard>,
+    Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -327,7 +328,7 @@ where
         })
         .unwrap();
         assert_eq!(out.log_budget(), ct.log_budget(), "conj_rotate must consume no budget");
-        assert_slots::<BE, F, E, Standard>(
+        assert_slots::<BE, F, E>(
             &format!("paco_conj_rotate(k={k})"),
             module,
             host_module,

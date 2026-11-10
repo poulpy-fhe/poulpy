@@ -12,7 +12,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::{CnvOps, CnvPVecAlloc, CnvPVecBytesOf, ReimNew, ScratchOwnedBorrow},
-    layouts::{HostBytesBackend, Module, Ring, ScratchOwned, Standard},
+    layouts::{HostBytesBackend, Module, ScratchOwned, Standard},
     source::Source,
 };
 
@@ -59,19 +59,19 @@ fn ship_suite_plan(params: &CKKSTestParams) -> ShipPlan {
 
 /// Like `gen_sk_with_raw` but also returns the host-side secret.
 #[allow(clippy::type_complexity)]
-fn gen_sk_with_host<BE, Rg: Ring>(
+fn gen_sk_with_host<BE>(
     params: &CKKSTestParams,
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
     seed: [u8; 32],
 ) -> (
-    BackendGLWESecret<HostBytesBackend, Rg>,
-    BackendGLWESecret<BE, Rg>,
-    GLWESecretPrepared<BE::OwnedBuf, BE, Rg>,
+    BackendGLWESecret<HostBytesBackend>,
+    BackendGLWESecret<BE>,
+    GLWESecretPrepared<BE::OwnedBuf, BE>,
 )
 where
     BE: TestContextBackend,
-    Module<BE>: TestContextModule<BE, Rg>,
+    Module<BE>: TestContextModule<BE>,
 {
     let glwe_infos = params.glwe_layout();
     let mut source = Source::new(seed);
@@ -100,7 +100,7 @@ fn cmul((ar, ai): (f64, f64), (br, bi): (f64, f64)) -> (f64, f64) {
 pub fn test_ship_host_replica<BE, F, E>(params: CKKSTestParams, _module: &Module<BE>, _host_module: &Module<HostBytesBackend>)
 where
     BE: TestContextBackend,
-    Module<BE>: TestContextModule<BE, Standard>,
+    Module<BE>: TestContextModule<BE>,
     F: TestScalar,
 {
     let plan = ShipPlan::new(params.log_n(), 6, 40, 0, 32, (params.n / 32) / 2, 4, 4).unwrap();

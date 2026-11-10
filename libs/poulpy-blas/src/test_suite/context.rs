@@ -85,7 +85,7 @@ pub fn test_blas_context<BE, F, E>(
     log_d: usize,
 ) where
     BE: TestContextBackend + BlasEncodingImpl<Standard>,
-    Module<BE>: TestContextModule<BE, Standard>
+    Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, F, Standard>
         + BlasEncodingOps<BE, F, Standard>
         + CKKSLinearTransformationOps<BE, Standard>

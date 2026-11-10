@@ -43,10 +43,10 @@ use crate::{
         CKKSTestParams,
         dot_product::TensorKeyAt,
         helpers::{
-            QueryLog, TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, assert_ckks_error,
-            assert_ckks_internal, assert_decrypt_precision, assert_invalid_operand, assert_mul_ct_output_meta, ckks_encrypt,
-            dirty_ct, gen_atk, gen_sk_with_raw, gen_tsk, pt_eval_tmp_bytes, pt_self_into_tmp_bytes, test_vector_1, test_vector_2,
-            want_add,
+            QueryLog, TestContextBackend, TestContextModule, TestContextSharedModule, TestScalar, alloc_ct, alloc_scratch,
+            assert_ckks_error, assert_ckks_internal, assert_decrypt_precision, assert_invalid_operand, assert_mul_ct_output_meta,
+            ckks_encrypt, dirty_ct, gen_atk, gen_sk_with_raw, gen_tsk, pt_eval_tmp_bytes, pt_self_into_tmp_bytes, test_vector_1,
+            test_vector_2, want_add,
         },
         parity::helpers::{snapshot, with_scratch},
     },
@@ -91,7 +91,7 @@ fn encode_lt<BE, F, Rg: Ring>(
 ) -> LinearTransformation<CKKSPlaintextOwned<BE, Rg>>
 where
     BE: TestContextBackend,
-    Module<BE>: TestContextModule<BE, Rg> + CKKSEncodingOps<BE, F, Rg>,
+    Module<BE>: TestContextSharedModule<BE, Rg> + CKKSEncodingOps<BE, F, Rg>,
     F: TestScalar,
 {
     crate::encoding::ckks_linear_transformation_encode_from_diagonals(
@@ -114,7 +114,7 @@ where
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE, Rg> + CKKSLinearTransformationOps<BE, Rg> + CnvPVecAlloc<BE>,
+    Module<BE>: TestContextSharedModule<BE, Rg> + CKKSLinearTransformationOps<BE, Rg> + CnvPVecAlloc<BE>,
     P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
 {
     let first = lt.first_diagonal_plaintext().expect("linear transformation has no diagonals");
@@ -132,10 +132,8 @@ where
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE, Standard>
-        + CKKSEncodingOps<BE, F, Standard>
-        + CKKSLinearTransformationOps<BE, Standard>
-        + CnvPVecAlloc<BE>,
+    Module<BE>:
+        TestContextModule<BE> + CKKSEncodingOps<BE, F, Standard> + CKKSLinearTransformationOps<BE, Standard> + CnvPVecAlloc<BE>,
     F: TestScalar,
     E: ReimNew<F>,
     for<'a> ScratchArena<'a, BE>: ScratchAvailable,
@@ -264,7 +262,7 @@ pub fn test_linear_transformation_sum<BE, F, E>(
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE, Standard>
+    Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, F, Standard>
         + CKKSLinearTransformationOps<BE, Standard>
         + poulpy_core::api::GLWELinearTransformationOps<BE, Standard>
@@ -627,10 +625,8 @@ pub fn test_linear_transformation_rhs_prepare_rejects_mixed_diagonals<BE, F, E>(
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE, Standard>
-        + CKKSEncodingOps<BE, F, Standard>
-        + CKKSLinearTransformationOps<BE, Standard>
-        + CnvPVecAlloc<BE>,
+    Module<BE>:
+        TestContextModule<BE> + CKKSEncodingOps<BE, F, Standard> + CKKSLinearTransformationOps<BE, Standard> + CnvPVecAlloc<BE>,
     F: TestScalar,
 {
     let m = params.n / 2;
@@ -678,10 +674,8 @@ pub fn test_linear_transformation_rhs_prepare_rejects_short_scratch<BE, F, E>(
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE, Standard>
-        + CKKSEncodingOps<BE, F, Standard>
-        + CKKSLinearTransformationOps<BE, Standard>
-        + CnvPVecAlloc<BE>,
+    Module<BE>:
+        TestContextModule<BE> + CKKSEncodingOps<BE, F, Standard> + CKKSLinearTransformationOps<BE, Standard> + CnvPVecAlloc<BE>,
     F: TestScalar,
 {
     let m = params.n / 2;
@@ -724,10 +718,8 @@ pub fn test_linear_transformation_rhs_prepare_rejects_foreign_layout<BE, F, E>(
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE, Standard>
-        + CKKSEncodingOps<BE, F, Standard>
-        + CKKSLinearTransformationOps<BE, Standard>
-        + CnvPVecAlloc<BE>,
+    Module<BE>:
+        TestContextModule<BE> + CKKSEncodingOps<BE, F, Standard> + CKKSLinearTransformationOps<BE, Standard> + CnvPVecAlloc<BE>,
     F: TestScalar,
 {
     let m = params.n / 2;
@@ -770,10 +762,8 @@ pub fn test_linear_transformation_rhs_prepare_rejects_malformed_schedule<BE, F, 
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE, Standard>
-        + CKKSEncodingOps<BE, F, Standard>
-        + CKKSLinearTransformationOps<BE, Standard>
-        + CnvPVecAlloc<BE>,
+    Module<BE>:
+        TestContextModule<BE> + CKKSEncodingOps<BE, F, Standard> + CKKSLinearTransformationOps<BE, Standard> + CnvPVecAlloc<BE>,
     F: TestScalar,
 {
     const OP: &str = "ckks_linear_transformation_rhs_prepare";
@@ -842,10 +832,8 @@ pub fn test_linear_transformation_rhs_prepare_lifecycle<BE, F, E>(
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE, Standard>
-        + CKKSEncodingOps<BE, F, Standard>
-        + CKKSLinearTransformationOps<BE, Standard>
-        + CnvPVecAlloc<BE>,
+    Module<BE>:
+        TestContextModule<BE> + CKKSEncodingOps<BE, F, Standard> + CKKSLinearTransformationOps<BE, Standard> + CnvPVecAlloc<BE>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -1109,10 +1097,8 @@ pub fn test_linear_transformation_pins_operation_precisions<BE, F, E>(
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE, Standard>
-        + CKKSEncodingOps<BE, F, Standard>
-        + CKKSLinearTransformationOps<BE, Standard>
-        + CnvPVecAlloc<BE>,
+    Module<BE>:
+        TestContextModule<BE> + CKKSEncodingOps<BE, F, Standard> + CKKSLinearTransformationOps<BE, Standard> + CnvPVecAlloc<BE>,
     F: TestScalar,
     E: ReimNew<F>,
     for<'a> ScratchArena<'a, BE>: ScratchAvailable,
@@ -1200,10 +1186,8 @@ pub fn test_linear_transformation_mixed_key_layouts<BE, F, E>(
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE, Standard>
-        + CKKSEncodingOps<BE, F, Standard>
-        + CKKSLinearTransformationOps<BE, Standard>
-        + CnvPVecAlloc<BE>,
+    Module<BE>:
+        TestContextModule<BE> + CKKSEncodingOps<BE, F, Standard> + CKKSLinearTransformationOps<BE, Standard> + CnvPVecAlloc<BE>,
     F: TestScalar,
     E: ReimNew<F>,
     for<'a> ScratchArena<'a, BE>: ScratchAvailable,
@@ -1292,7 +1276,7 @@ where
     BE: TestContextBackend,
     for<'b> <BE as Backend>::BufRef<'b>: poulpy_hal::layouts::HostDataRef,
     for<'b> <BE as Backend>::BufMut<'b>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE, Rg>,
+    Module<BE>: TestContextSharedModule<BE, Rg>,
 {
     fn new<F: TestScalar>(params: &'a CKKSTestParams, module: &'a Module<BE>, host_module: &'a Module<HostBytesBackend>) -> Self
     where
@@ -1386,7 +1370,7 @@ fn prepare_babies<BE, P, H, Rg: Ring>(
 ) -> LinearTransformationBabySteps<BE, Rg>
 where
     BE: TestContextBackend,
-    Module<BE>: TestContextModule<BE, Rg> + CKKSLinearTransformationOps<BE, Rg> + CnvPVecAlloc<BE>,
+    Module<BE>: TestContextSharedModule<BE, Rg> + CKKSLinearTransformationOps<BE, Rg> + CnvPVecAlloc<BE>,
     H: GetAutomorphismKey<BE, Rg>,
 {
     let mut babies = LinearTransformationBabySteps::alloc_for(module, lt, src);
@@ -1410,7 +1394,7 @@ pub fn test_linear_transformation_ct<BE, F, E>(
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE, Standard> + CKKSLinearTransformationOps<BE, Standard> + CnvPVecAlloc<BE>,
+    Module<BE>: TestContextModule<BE> + CKKSLinearTransformationOps<BE, Standard> + CnvPVecAlloc<BE>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -1597,7 +1581,7 @@ pub fn test_linear_transformation_sum_ct<BE, F, E>(
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE, Standard> + CKKSLinearTransformationOps<BE, Standard> + CnvPVecAlloc<BE>,
+    Module<BE>: TestContextModule<BE> + CKKSLinearTransformationOps<BE, Standard> + CnvPVecAlloc<BE>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -1710,7 +1694,7 @@ pub fn test_linear_transformation_ct_rejects_foreign_layouts<BE, F, E>(
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE, Standard> + CKKSLinearTransformationOps<BE, Standard> + CnvPVecAlloc<BE>,
+    Module<BE>: TestContextModule<BE> + CKKSLinearTransformationOps<BE, Standard> + CnvPVecAlloc<BE>,
     F: TestScalar,
 {
     const OP: &str = "ckks_linear_transformation_eval_into";

@@ -68,7 +68,7 @@ pub fn test_encode_coeffs_into_rejects_coefficient_count<BE, F, E>(
 ) where
     BE: crate::test_suite::helpers::TestContextBackend,
     poulpy_hal::layouts::Module<BE>:
-        crate::test_suite::helpers::TestContextModule<BE, Standard> + crate::api::CKKSEncodingOps<BE, F, Standard>,
+        crate::test_suite::helpers::TestContextModule<BE> + crate::api::CKKSEncodingOps<BE, F, Standard>,
     F: crate::test_suite::helpers::TestScalar,
     E: ReimNew<F>,
 {
@@ -112,7 +112,7 @@ pub fn test_encode_slots_host_into_rejects_slot_counts<BE, F, E>(
 ) where
     BE: crate::test_suite::helpers::TestContextBackend,
     poulpy_hal::layouts::Module<BE>:
-        crate::test_suite::helpers::TestContextModule<BE, Standard> + crate::api::CKKSEncodingOps<BE, F, Standard>,
+        crate::test_suite::helpers::TestContextModule<BE> + crate::api::CKKSEncodingOps<BE, F, Standard>,
     F: crate::test_suite::helpers::TestScalar,
     E: ReimNew<F>,
 {

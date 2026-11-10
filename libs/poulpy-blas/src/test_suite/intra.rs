@@ -45,7 +45,7 @@ pub fn test_blas_transpose<BE, F, E>(
     log_d: usize,
 ) where
     BE: TestContextBackend + BlasMatIntraImpl<Standard> + BlasEncodingImpl<Standard>,
-    Module<BE>: TestContextModule<BE, Standard>
+    Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, F, Standard>
         + BlasEncodingOps<BE, F, Standard>
         + CKKSLinearTransformationOps<BE, Standard>
@@ -67,7 +67,7 @@ pub fn test_blas_transpose<BE, F, E>(
     };
     let (rows, cols) = (2, 3);
     let a = Grid::model(log_d, rows, cols, slots >> (2 * log_d), 4);
-    let ct = encrypt_grid::<BE, F, E, Standard>(
+    let ct = encrypt_grid::<BE, F, E>(
         &params,
         module,
         host_module,
@@ -88,7 +88,7 @@ pub fn test_blas_transpose<BE, F, E>(
             module
                 .blas_transpose(&mut res, &ct, &ctx, &keys, &mut poisoned_scratch::<BE>(bytes).borrow())
                 .unwrap();
-            assert_grid_decrypt::<BE, F, E, Standard>(
+            assert_grid_decrypt::<BE, F, E>(
                 &format!("transpose p={p} res_k={res_k}"),
                 &maps,
                 module,
@@ -116,7 +116,7 @@ pub fn test_blas_rotate_rows_cols<BE, F, E>(
     log_d: usize,
 ) where
     BE: TestContextBackend + BlasMatIntraImpl<Standard> + BlasEncodingImpl<Standard>,
-    Module<BE>: TestContextModule<BE, Standard>
+    Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, F, Standard>
         + BlasEncodingOps<BE, F, Standard>
         + CKKSLinearTransformationOps<BE, Standard>
@@ -177,7 +177,7 @@ pub fn test_blas_rotate_rows_cols<BE, F, E>(
         } else {
             (Grid::model(log_d, rows, cols, lanes, 5), 0)
         };
-        let ct = encrypt_grid::<BE, F, E, Standard>(
+        let ct = encrypt_grid::<BE, F, E>(
             &params,
             module,
             host_module,
@@ -210,7 +210,7 @@ pub fn test_blas_rotate_rows_cols<BE, F, E>(
                 module
                     .blas_rotate_rows(k, &mut res, &ct, &ctx, &row_keys[k % d], &mut op_scratch.borrow())
                     .unwrap();
-                assert_grid_decrypt::<BE, F, E, Standard>(
+                assert_grid_decrypt::<BE, F, E>(
                     &format!("rotate_rows {rows}x{cols} k={k} res_k={res_k}"),
                     &params,
                     module,
@@ -227,7 +227,7 @@ pub fn test_blas_rotate_rows_cols<BE, F, E>(
                 module
                     .blas_rotate_cols(k, &mut res, &ct, &ctx, &col_keys[k % d], &mut op_scratch.borrow())
                     .unwrap();
-                assert_grid_decrypt::<BE, F, E, Standard>(
+                assert_grid_decrypt::<BE, F, E>(
                     &format!("rotate_cols {rows}x{cols} k={k} res_k={res_k}"),
                     &params,
                     module,
@@ -258,7 +258,7 @@ pub fn test_blas_rotate_rows_cols<BE, F, E>(
                 .blas_rotate_rows(1, &mut res, &ct, &ctx, &row_keys[1], &mut op_scratch.borrow())
                 .unwrap();
             let label = format!("rotate_rows {rows}x{cols} k=1 p={p}");
-            assert_grid_decrypt::<BE, F, E, Standard>(
+            assert_grid_decrypt::<BE, F, E>(
                 &label,
                 &maps,
                 module,
@@ -273,7 +273,7 @@ pub fn test_blas_rotate_rows_cols<BE, F, E>(
                 .blas_rotate_cols(1, &mut res, &ct, &ctx, &col_keys[1], &mut op_scratch.borrow())
                 .unwrap();
             let label = format!("rotate_cols {rows}x{cols} k=1 p={p}");
-            assert_grid_decrypt::<BE, F, E, Standard>(
+            assert_grid_decrypt::<BE, F, E>(
                 &label,
                 &maps,
                 module,
@@ -301,7 +301,7 @@ pub fn test_blas_sum_rows_cols<BE, F, E>(
     log_d: usize,
 ) where
     BE: TestContextBackend + BlasMatIntraImpl<Standard> + BlasEncodingImpl<Standard>,
-    Module<BE>: TestContextModule<BE, Standard>
+    Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, F, Standard>
         + BlasEncodingOps<BE, F, Standard>
         + CKKSLinearTransformationOps<BE, Standard>
@@ -335,7 +335,7 @@ pub fn test_blas_sum_rows_cols<BE, F, E>(
             (Grid::model(log_d, rows, cols, lanes, 10), 0),
             (spread, lanes.ilog2() as usize),
         ] {
-            let ct = encrypt_grid::<BE, F, E, Standard>(
+            let ct = encrypt_grid::<BE, F, E>(
                 &params,
                 module,
                 host_module,
@@ -361,7 +361,7 @@ pub fn test_blas_sum_rows_cols<BE, F, E>(
                 module
                     .blas_sum_rows(&mut res, &ct, &ctx, &row_keys, &mut op_scratch.borrow())
                     .unwrap();
-                assert_grid_decrypt::<BE, F, E, Standard>(
+                assert_grid_decrypt::<BE, F, E>(
                     &format!("sum_rows {label}"),
                     &params,
                     module,
@@ -376,7 +376,7 @@ pub fn test_blas_sum_rows_cols<BE, F, E>(
                 module
                     .blas_sum_cols(&mut res, &ct, &ctx, &col_keys, &mut op_scratch.borrow())
                     .unwrap();
-                assert_grid_decrypt::<BE, F, E, Standard>(
+                assert_grid_decrypt::<BE, F, E>(
                     &format!("sum_cols {label}"),
                     &params,
                     module,
@@ -407,7 +407,7 @@ pub fn test_blas_sum_rows_cols<BE, F, E>(
                     .blas_sum_rows(&mut res, &ct, &ctx, &row_keys, &mut op_scratch.borrow())
                     .unwrap();
                 let rows_maps = if rep { params } else { maps };
-                assert_grid_decrypt::<BE, F, E, Standard>(
+                assert_grid_decrypt::<BE, F, E>(
                     &format!("sum_rows p={p}"),
                     &rows_maps,
                     module,
@@ -422,7 +422,7 @@ pub fn test_blas_sum_rows_cols<BE, F, E>(
                 module
                     .blas_sum_cols(&mut res, &ct, &ctx, &col_keys, &mut op_scratch.borrow())
                     .unwrap();
-                assert_grid_decrypt::<BE, F, E, Standard>(
+                assert_grid_decrypt::<BE, F, E>(
                     &format!("sum_cols p={p}"),
                     &maps,
                     module,
@@ -452,7 +452,7 @@ pub fn test_blas_sum_rows_cols_lazy<BE, F, E>(
     log_d: usize,
 ) where
     BE: TestContextBackend + BlasMatIntraImpl<Standard> + BlasEncodingImpl<Standard>,
-    Module<BE>: TestContextModule<BE, Standard>
+    Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, F, Standard>
         + BlasEncodingOps<BE, F, Standard>
         + CKKSLinearTransformationOps<BE, Standard>
@@ -467,7 +467,7 @@ pub fn test_blas_sum_rows_cols_lazy<BE, F, E>(
     let (_, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
     let a = Grid::model(log_d, 4, 3, lanes, 12);
-    let ct = encrypt_grid::<BE, F, E, Standard>(
+    let ct = encrypt_grid::<BE, F, E>(
         &params,
         module,
         host_module,
@@ -534,7 +534,7 @@ pub fn test_blas_intra_guards<BE, F, E>(
     log_d: usize,
 ) where
     BE: TestContextBackend + BlasMatIntraImpl<Standard> + BlasEncodingImpl<Standard>,
-    Module<BE>: TestContextModule<BE, Standard>
+    Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, F, Standard>
         + BlasEncodingOps<BE, F, Standard>
         + CKKSLinearTransformationOps<BE, Standard>
@@ -560,7 +560,7 @@ pub fn test_blas_intra_guards<BE, F, E>(
     let keys = TestKeys::<BE, Standard> { atks, tsk: None };
     let (rows, cols) = (2, 3);
     let a = Grid::model(log_d, rows, cols, slots >> (2 * log_d), 6);
-    let ct = encrypt_grid::<BE, F, E, Standard>(
+    let ct = encrypt_grid::<BE, F, E>(
         &params,
         module,
         host_module,
@@ -698,7 +698,7 @@ pub fn test_blas_intra_guards<BE, F, E>(
     let lanes = slots >> (2 * log_d);
     let one = Grid::model(log_d, 1, 2, 1, 7);
     let spread = Grid::from_fn(log_d, 1, 2, lanes, |_, r, c| one.at(0, r, c));
-    let ct_one = encrypt_grid::<BE, F, E, Standard>(
+    let ct_one = encrypt_grid::<BE, F, E>(
         &params,
         module,
         host_module,

@@ -36,7 +36,7 @@ pub fn test_blas_rotate<BE, F, E>(
     log_d: usize,
 ) where
     BE: TestContextBackend + BlasMatInterImpl<Standard>,
-    Module<BE>: TestContextModule<BE, Standard>,
+    Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: ReimNew<F>,
     for<'a> BE::BufRef<'a>: HostDataRef,
@@ -47,7 +47,7 @@ pub fn test_blas_rotate<BE, F, E>(
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
     let a = Grid::model(log_d, 2, 2, slots >> (2 * log_d), 1);
-    let ct = encrypt_grid::<BE, F, E, Standard>(
+    let ct = encrypt_grid::<BE, F, E>(
         &params,
         module,
         host_module,
@@ -71,7 +71,7 @@ pub fn test_blas_rotate<BE, F, E>(
         let mut res = alloc_grid(&params, module, log_d, 2, 2, res_k);
         let mut op_scratch = poisoned_scratch::<BE>(module.blas_rotate_tmp_bytes(&res, &ct, &params.atk_layout()));
         module.blas_rotate(r, &mut res, &ct, &keys, &mut op_scratch.borrow()).unwrap();
-        assert_grid_decrypt::<BE, F, E, Standard>(
+        assert_grid_decrypt::<BE, F, E>(
             &format!("rotate r={r} res_k={res_k}"),
             &params,
             module,
@@ -89,7 +89,7 @@ pub fn test_blas_rotate<BE, F, E>(
 pub fn test_blas_sum<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>, log_d: usize)
 where
     BE: TestContextBackend + BlasMatInterImpl<Standard>,
-    Module<BE>: TestContextModule<BE, Standard>,
+    Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: ReimNew<F>,
     for<'a> BE::BufRef<'a>: HostDataRef,
@@ -100,7 +100,7 @@ where
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
     let a = Grid::model(log_d, 2, 2, slots >> (2 * log_d), 2);
-    let ct = encrypt_grid::<BE, F, E, Standard>(
+    let ct = encrypt_grid::<BE, F, E>(
         &params,
         module,
         host_module,
@@ -121,7 +121,7 @@ where
         let mut res = alloc_grid(&params, module, log_d, 2, 2, res_k);
         let mut op_scratch = poisoned_scratch::<BE>(module.blas_sum_tmp_bytes(&res, &ct, &params.atk_layout()));
         module.blas_sum(&mut res, &ct, &keys, &mut op_scratch.borrow()).unwrap();
-        assert_grid_decrypt::<BE, F, E, Standard>(
+        assert_grid_decrypt::<BE, F, E>(
             &format!("sum res_k={res_k}"),
             &params,
             module,
@@ -148,7 +148,7 @@ pub fn test_blas_inter_guards<BE, F, E>(
     log_d: usize,
 ) where
     BE: TestContextBackend + BlasMatInterImpl<Standard>,
-    Module<BE>: TestContextModule<BE, Standard>,
+    Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: ReimNew<F>,
     for<'a> BE::BufRef<'a>: HostDataRef,
@@ -160,7 +160,7 @@ pub fn test_blas_inter_guards<BE, F, E>(
     let mut scratch = alloc_scratch(&params, module);
     let lanes = slots >> (2 * log_d);
     let a = Grid::model(log_d, 2, 2, lanes, 3);
-    let ct = encrypt_grid::<BE, F, E, Standard>(
+    let ct = encrypt_grid::<BE, F, E>(
         &params,
         module,
         host_module,

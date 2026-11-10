@@ -261,7 +261,7 @@ pub fn matvec_layouts(params: &CKKSTestParams, slots: usize) -> Vec<BlasMatVecOp
 pub fn test_blas_matvec_pt<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
     BE: TestContextBackend + BlasMatVecImpl<Standard> + BlasEncodingImpl<Standard>,
-    Module<BE>: TestContextModule<BE, Standard>
+    Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, F, Standard>
         + BlasEncodingOps<BE, F, Standard>
         + CKKSLinearTransformationOps<BE, Standard>
@@ -449,7 +449,7 @@ where
 pub fn test_blas_matvec_pt_guards<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
     BE: TestContextBackend + BlasMatVecImpl<Standard> + BlasEncodingImpl<Standard>,
-    Module<BE>: TestContextModule<BE, Standard>
+    Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, F, Standard>
         + BlasEncodingOps<BE, F, Standard>
         + CKKSLinearTransformationOps<BE, Standard>
@@ -898,7 +898,7 @@ const APPENDS: [(AppendAxis, i64, usize, usize); 5] = [
 pub fn test_blas_matvec_diagonal<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
     BE: TestContextBackend + BlasMatVecImpl<Standard> + BlasEncodingImpl<Standard>,
-    Module<BE>: TestContextModule<BE, Standard> + CKKSLinearTransformationOps<BE, Standard> + CnvPVecAlloc<BE>,
+    Module<BE>: TestContextModule<BE> + CKKSLinearTransformationOps<BE, Standard> + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
     E: ReimNew<F>,
     for<'a> BE::BufRef<'a>: HostDataRef,
@@ -1191,7 +1191,7 @@ pub fn test_blas_matvec_diagonal_guards<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
 ) where
     BE: TestContextBackend + BlasMatVecImpl<Standard> + BlasEncodingImpl<Standard>,
-    Module<BE>: TestContextModule<BE, Standard> + CKKSLinearTransformationOps<BE, Standard> + CnvPVecAlloc<BE>,
+    Module<BE>: TestContextModule<BE> + CKKSLinearTransformationOps<BE, Standard> + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
     E: ReimNew<F>,
     for<'a> BE::BufRef<'a>: HostDataRef,

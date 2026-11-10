@@ -147,7 +147,7 @@ where
                 &mut scratch.borrow(),
             );
             let s64: Vec<Cpx> = s.iter().map(|x| x.to_f64().unwrap()).collect();
-            assert_slots::<BE, F, E, Standard>(
+            assert_slots::<BE, F, E>(
                 &format!("paco_bsk_{t}"),
                 &module,
                 &host_module,
@@ -300,7 +300,7 @@ where
                 .collect()
         }
     };
-    assert_slots::<BE, F, E, Standard>(
+    assert_slots::<BE, F, E>(
         &format!("paco_partial_pipeline_z7({slot_order:?})"),
         &module,
         &host_module,

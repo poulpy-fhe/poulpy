@@ -264,15 +264,15 @@ impl<BE: Backend, M, Rg: Ring> TestContextSharedModule<BE, Rg> for M where
 {
 }
 
-/// Aggregates all `Module<BE>` capabilities needed by the CKKS test suite on ring `Rg`:
-/// the shared ones and EvalMod, plus the standard-only conjugation and `i`.
-pub trait TestContextModule<BE: Backend, Rg: Ring = Standard>:
-    TestContextSharedModule<BE, Rg> + CKKSEvalModOps<BE, Rg> + CKKSConjugateOps<BE> + CKKSImagOps<BE>
+/// Aggregates all `Module<BE>` capabilities needed by the CKKS test suite on standard-ring operands:
+/// the shared ones plus EvalMod and the standard-only conjugation and `i`.
+pub trait TestContextModule<BE: Backend>:
+    TestContextSharedModule<BE> + CKKSEvalModOps<BE> + CKKSConjugateOps<BE> + CKKSImagOps<BE>
 {
 }
 
-impl<BE: Backend, M, Rg: Ring> TestContextModule<BE, Rg> for M where
-    M: TestContextSharedModule<BE, Rg> + CKKSEvalModOps<BE, Rg> + CKKSConjugateOps<BE> + CKKSImagOps<BE>
+impl<BE: Backend, M> TestContextModule<BE> for M where
+    M: TestContextSharedModule<BE> + CKKSEvalModOps<BE> + CKKSConjugateOps<BE> + CKKSImagOps<BE>
 {
 }
 

@@ -379,7 +379,7 @@ fn blas_hooks_run_on_accepted_calls_alone() {
         atks,
         tsk: Some(gen_tsk(&params, &module, &sk_raw, &mut scratch.borrow())),
     };
-    let a = encrypt_grid::<OverrideBackend, f64, EncodingFFTTable<f64>, Standard>(
+    let a = encrypt_grid::<OverrideBackend, f64, EncodingFFTTable<f64>>(
         &params,
         &module,
         &host_module,
@@ -390,7 +390,7 @@ fn blas_hooks_run_on_accepted_calls_alone() {
         &Grid::model(log_d, 2, 2, slots >> (2 * log_d), 7),
         &mut scratch.borrow(),
     );
-    let col = encrypt_grid::<OverrideBackend, f64, EncodingFFTTable<f64>, Standard>(
+    let col = encrypt_grid::<OverrideBackend, f64, EncodingFFTTable<f64>>(
         &params,
         &module,
         &host_module,
@@ -403,7 +403,7 @@ fn blas_hooks_run_on_accepted_calls_alone() {
     );
     let lanes = slots >> (2 * log_d);
     let one_matrix = Grid::model(log_d, 1, 2, 1, 9);
-    let one = encrypt_grid::<OverrideBackend, f64, EncodingFFTTable<f64>, Standard>(
+    let one = encrypt_grid::<OverrideBackend, f64, EncodingFFTTable<f64>>(
         &params,
         &module,
         &host_module,

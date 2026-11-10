@@ -257,20 +257,20 @@ pub(crate) fn to_f<F: TestScalar>(v: &[f64]) -> Vec<F> {
 
 /// Encrypts every block of `grid` at torus width `k` and labels it `log_sparsity`, which the grid records the batch of:
 /// `grid` holds at least `slots >> log_sparsity` matrices, repeated over the slots.
-pub fn encrypt_grid<BE, F, E, Rg: Ring>(
+pub fn encrypt_grid<BE, F, E>(
     params: &CKKSTestParams,
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
     encoder: &ReferenceEncoder<E>,
-    sk: &GLWESecretPrepared<BE::OwnedBuf, BE, Rg>,
+    sk: &GLWESecretPrepared<BE::OwnedBuf, BE>,
     k: usize,
     log_sparsity: usize,
     grid: &Grid,
     scratch: &mut ScratchArena<'_, BE>,
-) -> BlasCiphertextOwned<BE, Rg>
+) -> BlasCiphertextOwned<BE>
 where
     BE: TestContextBackend,
-    Module<BE>: TestContextSharedModule<BE, Rg>,
+    Module<BE>: TestContextSharedModule<BE>,
     F: TestScalar,
     E: ReimFFT<F> + ReimIFFT<F>,
 {
@@ -370,19 +370,19 @@ pub fn product_layout<Rg: Ring>(
 /// smaller of `layout`'s `log_delta` and that of `params.prec()`, the scale the maps and public matrices `ct` went
 /// through were encoded at ([`at_scale`]): a map below its input's scale bounds the result's precision with its own,
 /// although the result keeps its input's scale. A result left unwritten or stamped at another scale fails.
-pub fn assert_grid_decrypt<BE, F, E, Rg: Ring>(
+pub fn assert_grid_decrypt<BE, F, E>(
     label: &str,
     params: &CKKSTestParams,
     module: &Module<BE>,
     encoder: &ReferenceEncoder<E>,
-    ct: &BlasCiphertextOwned<BE, Rg>,
-    sk: &GLWESecretPrepared<BE::OwnedBuf, BE, Rg>,
+    ct: &BlasCiphertextOwned<BE>,
+    sk: &GLWESecretPrepared<BE::OwnedBuf, BE>,
     want: &Grid,
     layout: &BlasLayout,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: TestContextBackend,
-    Module<BE>: TestContextSharedModule<BE, Rg>,
+    Module<BE>: TestContextSharedModule<BE>,
     F: TestScalar,
     E: ReimFFT<F> + ReimIFFT<F>,
     for<'a> BE::BufRef<'a>: HostDataRef,
@@ -401,7 +401,7 @@ pub fn assert_grid_decrypt<BE, F, E, Rg: Ring>(
     assert_eq!(ct.mat_slots(), Some(batch), "{label}: batch record");
     let log_prec = want_block.log_delta().min(params.prec().log_delta());
     for (b, (block, (re, im))) in ct.blocks().iter().zip(want.blocks(params.n / 2)).enumerate() {
-        assert_decrypt_precision_at_log_delta::<BE, F, E, Rg>(
+        assert_decrypt_precision_at_log_delta::<BE, F, E, Standard>(
             &format!("{label} block {b}"),
             params,
             module,
