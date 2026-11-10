@@ -223,11 +223,11 @@ macro_rules! hal_impl_vec_znx_monomial {
             a: &::poulpy_hal::layouts::VecZnxBackendRef<'_, Self>,
             a_col: usize,
         ) {
-            <Self as $crate::hal_defaults::HalVecZnxDefault>::vec_znx_rotate_default(module, k, res, res_col, a, a_col)
+            <Self as $crate::hal_defaults::HalVecZnxMonomialDefault>::vec_znx_rotate_default(module, k, res, res_col, a, a_col)
         }
 
         fn vec_znx_rotate_assign_tmp_bytes(module: &::poulpy_hal::layouts::Module<Self>) -> usize {
-            <Self as $crate::hal_defaults::HalVecZnxDefault>::vec_znx_rotate_assign_tmp_bytes_default(module)
+            <Self as $crate::hal_defaults::HalVecZnxMonomialDefault>::vec_znx_rotate_assign_tmp_bytes_default(module)
         }
 
         fn vec_znx_rotate_assign(
@@ -238,11 +238,17 @@ macro_rules! hal_impl_vec_znx_monomial {
             scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
         ) {
             let mut scratch = scratch.borrow();
-            <Self as $crate::hal_defaults::HalVecZnxDefault>::vec_znx_rotate_assign_default(module, k, a, a_col, &mut scratch);
+            <Self as $crate::hal_defaults::HalVecZnxMonomialDefault>::vec_znx_rotate_assign_default(
+                module,
+                k,
+                a,
+                a_col,
+                &mut scratch,
+            );
         }
 
         fn vec_znx_mul_xp_minus_one_assign_tmp_bytes(module: &::poulpy_hal::layouts::Module<Self>, _size: usize) -> usize {
-            <Self as $crate::hal_defaults::HalVecZnxDefault>::vec_znx_mul_xp_minus_one_assign_tmp_bytes_default(module)
+            <Self as $crate::hal_defaults::HalVecZnxMonomialDefault>::vec_znx_mul_xp_minus_one_assign_tmp_bytes_default(module)
         }
 
         fn vec_znx_mul_xp_minus_one_assign(
@@ -253,7 +259,7 @@ macro_rules! hal_impl_vec_znx_monomial {
             scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
         ) {
             let mut scratch = scratch.borrow();
-            <Self as $crate::hal_defaults::HalVecZnxDefault>::vec_znx_mul_xp_minus_one_assign_default(
+            <Self as $crate::hal_defaults::HalVecZnxMonomialDefault>::vec_znx_mul_xp_minus_one_assign_default(
                 module,
                 k,
                 res,

@@ -10,16 +10,16 @@ use std::mem::size_of;
 
 use crate::{
     kernels::znx::{ZnxNegate, ZnxRotate, ZnxSubNegateAssign},
-    layouts::{Backend, HostDataMut, Ring, VecZnxBackendMut, ZnxView, ZnxViewMut},
+    layouts::{Backend, HostDataMut, VecZnxBackendMut, ZnxView, ZnxViewMut},
 };
 
 pub fn vec_znx_mul_xp_minus_one_assign_tmp_bytes_portable(n: usize) -> usize {
     n * size_of::<i64>()
 }
 
-pub fn vec_znx_mul_xp_minus_one_assign_portable<'r, BE, Rg: Ring>(
+pub fn vec_znx_mul_xp_minus_one_assign_portable<'r, BE>(
     p: i64,
-    res: &mut VecZnxBackendMut<'r, BE, Rg>,
+    res: &mut VecZnxBackendMut<'r, BE>,
     res_col: usize,
     tmp: &mut [i64],
 ) where

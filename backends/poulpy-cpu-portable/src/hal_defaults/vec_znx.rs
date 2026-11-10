@@ -232,43 +232,6 @@ where
         vec_znx_lsh_assign_portable::<Self, Rg>(base2k, k, res, res_col);
     }
 
-    fn vec_znx_rotate_default(
-        _module: &Module<Self>,
-        p: i64,
-        res: &mut VecZnxBackendMut<'_, Self, Rg>,
-        res_col: usize,
-        a: &VecZnxBackendRef<'_, Self, Rg>,
-        a_col: usize,
-    ) where
-        Self: ZnxRotate + ZnxZero,
-        for<'x> Self::BufMut<'x>: HostDataMut,
-        for<'x> Self::BufRef<'x>: poulpy_hal::layouts::HostDataRef,
-    {
-        vec_znx_rotate_portable::<Self, Rg>(p, res, res_col, a, a_col);
-    }
-
-    fn vec_znx_rotate_assign_tmp_bytes_default(module: &Module<Self>) -> usize {
-        vec_znx_rotate_assign_tmp_bytes_portable(module.n())
-    }
-
-    fn vec_znx_rotate_assign_default(
-        _module: &Module<Self>,
-        p: i64,
-        res: &mut VecZnxBackendMut<'_, Self, Rg>,
-        res_col: usize,
-        scratch: &mut ScratchArena<'_, Self>,
-    ) where
-        Self: ZnxRotate + ZnxCopy,
-        for<'x> Self::BufMut<'x>: HostDataMut,
-        for<'x> Self::BufMut<'x>: HostBufMut<'x>,
-    {
-        let (tmp, _) = take_host_typed::<Self, i64>(
-            scratch.borrow(),
-            vec_znx_rotate_assign_tmp_bytes_portable(res.n()) / size_of::<i64>(),
-        );
-        vec_znx_rotate_assign_portable::<Self, Rg>(p, res, res_col, tmp);
-    }
-
     fn vec_znx_automorphism_default(
         _module: &Module<Self>,
         p: i64,
@@ -304,32 +267,6 @@ where
             vec_znx_automorphism_assign_tmp_bytes_portable(res.n()) / size_of::<i64>(),
         );
         vec_znx_automorphism_assign_portable::<Self, Rg>(p, res, res_col, tmp);
-    }
-
-    fn vec_znx_mul_xp_minus_one_assign_tmp_bytes_default(module: &Module<Self>) -> usize {
-        vec_znx_mul_xp_minus_one_assign_tmp_bytes_portable(module.n())
-    }
-
-    /// CPU override of [`poulpy_hal::oep::vec_znx_mul_xp_minus_one_assign_derived`]:
-    /// a per-limb rotate through the one-limb temporary that
-    /// [`Self::vec_znx_mul_xp_minus_one_assign_tmp_bytes_default`] reports,
-    /// bit-exact with the default.
-    fn vec_znx_mul_xp_minus_one_assign_default(
-        _module: &Module<Self>,
-        p: i64,
-        res: &mut VecZnxBackendMut<'_, Self, Rg>,
-        res_col: usize,
-        scratch: &mut ScratchArena<'_, Self>,
-    ) where
-        Self: ZnxRotate + ZnxNegate + ZnxSubNegateAssign,
-        for<'x> Self::BufMut<'x>: HostDataMut,
-        for<'x> Self::BufMut<'x>: HostBufMut<'x>,
-    {
-        let (tmp, _) = take_host_typed::<Self, i64>(
-            scratch.borrow(),
-            vec_znx_mul_xp_minus_one_assign_tmp_bytes_portable(res.n()) / size_of::<i64>(),
-        );
-        vec_znx_mul_xp_minus_one_assign_portable::<Self, Rg>(p, res, res_col, tmp);
     }
 
     fn vec_znx_switch_ring_default(
@@ -376,3 +313,75 @@ where
 }
 
 impl<BE: Backend<ZnxWord = i64>, Rg: Ring> HalVecZnxDefault<Rg> for BE where BE::OwnedBuf: poulpy_hal::layouts::HostDataMut {}
+
+/// Standard-only `VecZnx` defaults, the monomial family's kernels.
+#[doc(hidden)]
+pub trait HalVecZnxMonomialDefault: Backend<ZnxWord = i64>
+where
+    Self::OwnedBuf: poulpy_hal::layouts::HostDataMut,
+{
+    fn vec_znx_rotate_default(
+        _module: &Module<Self>,
+        p: i64,
+        res: &mut VecZnxBackendMut<'_, Self, Standard>,
+        res_col: usize,
+        a: &VecZnxBackendRef<'_, Self, Standard>,
+        a_col: usize,
+    ) where
+        Self: ZnxRotate + ZnxZero,
+        for<'x> Self::BufMut<'x>: HostDataMut,
+        for<'x> Self::BufRef<'x>: poulpy_hal::layouts::HostDataRef,
+    {
+        vec_znx_rotate_portable::<Self>(p, res, res_col, a, a_col);
+    }
+
+    fn vec_znx_rotate_assign_tmp_bytes_default(module: &Module<Self>) -> usize {
+        vec_znx_rotate_assign_tmp_bytes_portable(module.n())
+    }
+
+    fn vec_znx_rotate_assign_default(
+        _module: &Module<Self>,
+        p: i64,
+        res: &mut VecZnxBackendMut<'_, Self, Standard>,
+        res_col: usize,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) where
+        Self: ZnxRotate + ZnxCopy,
+        for<'x> Self::BufMut<'x>: HostDataMut,
+        for<'x> Self::BufMut<'x>: HostBufMut<'x>,
+    {
+        let (tmp, _) = take_host_typed::<Self, i64>(
+            scratch.borrow(),
+            vec_znx_rotate_assign_tmp_bytes_portable(res.n()) / size_of::<i64>(),
+        );
+        vec_znx_rotate_assign_portable::<Self>(p, res, res_col, tmp);
+    }
+
+    fn vec_znx_mul_xp_minus_one_assign_tmp_bytes_default(module: &Module<Self>) -> usize {
+        vec_znx_mul_xp_minus_one_assign_tmp_bytes_portable(module.n())
+    }
+
+    /// CPU override of [`poulpy_hal::oep::vec_znx_mul_xp_minus_one_assign_derived`]:
+    /// a per-limb rotate through the one-limb temporary that
+    /// [`Self::vec_znx_mul_xp_minus_one_assign_tmp_bytes_default`] reports,
+    /// bit-exact with the default.
+    fn vec_znx_mul_xp_minus_one_assign_default(
+        _module: &Module<Self>,
+        p: i64,
+        res: &mut VecZnxBackendMut<'_, Self, Standard>,
+        res_col: usize,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) where
+        Self: ZnxRotate + ZnxNegate + ZnxSubNegateAssign,
+        for<'x> Self::BufMut<'x>: HostDataMut,
+        for<'x> Self::BufMut<'x>: HostBufMut<'x>,
+    {
+        let (tmp, _) = take_host_typed::<Self, i64>(
+            scratch.borrow(),
+            vec_znx_mul_xp_minus_one_assign_tmp_bytes_portable(res.n()) / size_of::<i64>(),
+        );
+        vec_znx_mul_xp_minus_one_assign_portable::<Self>(p, res, res_col, tmp);
+    }
+}
+
+impl<BE: Backend<ZnxWord = i64>> HalVecZnxMonomialDefault for BE where BE::OwnedBuf: poulpy_hal::layouts::HostDataMut {}
