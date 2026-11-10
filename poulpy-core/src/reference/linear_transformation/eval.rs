@@ -195,11 +195,12 @@ where
     R: GLWEInfos,
     K: GGLWEInfos,
 {
-    let prod_col_big = module.vec_znx_big_bytes_of(module.n(), 1, prod_size);
-    let prod_dft = module.vec_znx_dft_bytes_of(module.n(), cols, prod_size);
+    let n = res.n().as_usize();
+    let prod_col_big = module.vec_znx_big_bytes_of(n, 1, prod_size);
+    let prod_dft = module.vec_znx_dft_bytes_of(n, cols, prod_size);
     let lazy_size = key.size().max(prod_size);
-    let lazy_acc_dft = module.vec_znx_dft_bytes_of(module.n(), cols, lazy_size);
-    let lazy_acc_big = module.vec_znx_big_bytes_of(module.n(), cols, lazy_size);
+    let lazy_acc_dft = module.vec_znx_dft_bytes_of(n, cols, lazy_size);
+    let lazy_acc_big = module.vec_znx_big_bytes_of(n, cols, lazy_size);
     let lazy_dft = crate::reference::keyswitching::glwe::gglwe_product_from_dft_tmp_bytes(module, cols - 1, prod_size, key);
     let fallback_work = products_bytes
         .max(module.glwe_automorphism_tmp_bytes(res, res, key))
@@ -422,13 +423,17 @@ where
 {
     // A batch of buckets, each sized like the single budget's PROD buffer.
     let bucket = BE::glwe_giant_step_batch(module)
-        * BE::scratch_aligned(module.vec_znx_dft_bytes_of(module.n(), a.rank().as_usize() + 1, a.max_size() + pt.max_size()));
+        * BE::scratch_aligned(module.vec_znx_dft_bytes_of(
+            res.n().as_usize(),
+            a.rank().as_usize() + 1,
+            a.max_size() + pt.max_size(),
+        ));
     glwe_linear_transformation_eval_tmp_bytes_reference::<BE, _, _, _, _, _, Rg>(module, res, a, pt, plan, tsk, key) + bucket
 }
 
 /// Reference impl: scratch bytes for [`glwe_linear_transformation_eval_sum_into_reference`] over streamed transforms:
 /// the sum's budget plus the resident `CnvPVecR` diagonal slot and the `cnv_pvec_right_prepare` scratch of the streamed
-/// inner product, sized at the module degree.
+/// inner product, sized at the diagonals' degree.
 pub fn glwe_linear_transformation_eval_sum_unprepared_rhs_tmp_bytes_reference<BE, R, A, B, K, T, Rg: Ring>(
     module: &Module<BE>,
     res: &R,
@@ -472,7 +477,7 @@ where
     T: GGLWEInfos,
 {
     glwe_linear_transformation_eval_sum_tmp_bytes_reference::<BE, _, _, _, _, _, Rg>(module, res, a, pt, plan, tsk, key)
-        + module.cnv_pvec_right_bytes_of(module.n(), 1, pt.size(), PrepareHint::OneShot)
+        + module.cnv_pvec_right_bytes_of(pt.n().as_usize(), 1, pt.size(), PrepareHint::OneShot)
         + module.cnv_pvec_right_prepare_tmp_bytes(pt.size(), pt.size())
 }
 
@@ -597,6 +602,6 @@ where
     T: GGLWEInfos,
 {
     glwe_linear_transformation_eval_tmp_bytes_reference::<BE, _, _, _, _, _, Rg>(module, res, a, pt, plan, tsk, key)
-        + module.cnv_pvec_right_bytes_of(module.n(), 1, pt.size(), PrepareHint::OneShot)
+        + module.cnv_pvec_right_bytes_of(pt.n().as_usize(), 1, pt.size(), PrepareHint::OneShot)
         + module.cnv_pvec_right_prepare_tmp_bytes(pt.size(), pt.size())
 }

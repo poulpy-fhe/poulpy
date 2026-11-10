@@ -60,7 +60,7 @@ where
     where
         K: GGLWEInfos,
     {
-        let canonical: usize = BE::scratch_aligned(BE::vec_znx_bytes_of(self.n(), mask_cols + 1, a_size));
+        let canonical: usize = BE::scratch_aligned(BE::vec_znx_bytes_of(key_infos.n().as_usize(), mask_cols + 1, a_size));
         canonical
             + glwe_keyswitch_dft_fill_tmp_bytes(self, mask_cols, res_size, a_size, key_infos).max(self.glwe_normalize_tmp_bytes())
     }
@@ -258,7 +258,8 @@ where
     M: GLWEKeyswitchInternal<BE, Rg>,
     K: GGLWEInfos,
 {
-    let (operand_size, operand, transform) = glwe_keyswitch_operand_tmp_bytes(module, module.n(), mask_cols, a_size, key_infos);
+    let (operand_size, operand, transform) =
+        glwe_keyswitch_operand_tmp_bytes(module, key_infos.n().as_usize(), mask_cols, a_size, key_infos);
     operand
         + module
             .gglwe_product_dft_tmp_bytes_reference(res_size, operand_size, key_infos)
@@ -324,8 +325,22 @@ where
             // below); the layout infos do not carry it, so size for either
             // representation.
             let dense = self
-                .vmp_pmat_bytes_of(self.n(), dnum, cols_in, cols_out, key_size, PrepareHint::Reuse)
-                .max(self.vmp_pmat_bytes_of(self.n(), dnum, cols_in, cols_out, key_size, PrepareHint::OneShot));
+                .vmp_pmat_bytes_of(
+                    key_infos.n().as_usize(),
+                    dnum,
+                    cols_in,
+                    cols_out,
+                    key_size,
+                    PrepareHint::Reuse,
+                )
+                .max(self.vmp_pmat_bytes_of(
+                    key_infos.n().as_usize(),
+                    dnum,
+                    cols_in,
+                    cols_out,
+                    key_size,
+                    PrepareHint::OneShot,
+                ));
             dense + product
         }
     }
@@ -1142,7 +1157,7 @@ where
 {
     let key_size = key_infos.size();
     let operand_size = crate::gadget::gglwe_gadget_dft_operand_size(key_infos, source_size, key_size);
-    let operand = module.vec_znx_dft_bytes_of(module.n(), rank, operand_size);
+    let operand = module.vec_znx_dft_bytes_of(key_infos.n().as_usize(), rank, operand_size);
     BE::scratch_aligned(operand)
         + crate::gadget::gglwe_gadget_dft_apply_from_dft_tmp_bytes::<BE, _, _>(module, source_size, key_size, key_infos)
         + BE::gglwe_product_fused_tmp_bytes(module, source_size.max(key_size), key_size, operand_size, key_infos)

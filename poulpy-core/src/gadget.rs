@@ -360,7 +360,7 @@ where
     let mask_small_size = a_size.min(output_size);
     let (base2k, k_digit, dnum) = (key_infos.base2k(), key_infos.k_digit(), key_infos.dnum());
     let mask_k = TorusPrecision((mask_small_size * base2k.as_usize()) as u32);
-    BE::scratch_aligned(BE::vec_znx_bytes_of(module.n(), 1, mask_small_size))
+    BE::scratch_aligned(BE::vec_znx_bytes_of(key_infos.n().as_usize(), 1, mask_small_size))
         + module
             .vec_znx_idft_normalize_tmp_bytes(mask_small_size, a_size)
             .max(gglwe_gadget_dft_apply_tmp_bytes::<BE, _>(

@@ -138,9 +138,10 @@ where
 
     let (base2k, k_digit, dnum) = (key_infos.base2k(), key_infos.k_digit(), key_infos.dnum());
     let operand_size = gglwe_gadget_input_size(base2k, k_digit, dnum, a_infos.k(), a_size);
-    let hoisted_a_dft = module.vec_znx_dft_bytes_of(module.n(), cols - 1, operand_size);
+    let n = a_infos.n().as_usize();
+    let hoisted_a_dft = module.vec_znx_dft_bytes_of(n, cols - 1, operand_size);
     // The product, the normalized copy the automorphism reads, and their scratch.
-    let hoisted_rot = module.vec_znx_dft_bytes_of(module.n(), cols, key_size)
+    let hoisted_rot = module.vec_znx_dft_bytes_of(n, cols, key_size)
         + baby
         + BE::gglwe_product_idft_normalize_tmp_bytes(module, a_size, key_size, operand_size, key_infos);
     let hoisted_worker = worker_scratch_bytes::<BE>(baby + hoisted_rot.max(prepare));
@@ -362,7 +363,7 @@ pub(super) fn glwe_linear_transformation_baby_steps_prepare<BE, A, H, L, Rg: Rin
                 .iter()
                 .filter_map(|(index, _)| key_refs[*index].as_ref().map(|key| (key, key_sizes[*index])))
                 .map(|(key, key_size)| {
-                    module.vec_znx_dft_bytes_of(module.n(), cols, key_size)
+                    module.vec_znx_dft_bytes_of(a.n().as_usize(), cols, key_size)
                         + module.glwe_bytes_of_from_infos(a)
                         + BE::gglwe_product_idft_normalize_tmp_bytes(module, a_size, key_size, operand_size, key)
                 })
