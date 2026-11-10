@@ -5,7 +5,7 @@ use std::collections::HashMap;
 
 use poulpy_hal::{
     api::CnvPVecAlloc,
-    layouts::{Backend, CyclotomicOrder, Data, DataViewMut, GaloisElement, HostDataMut, Module, Ring, ZnxViewMut},
+    layouts::{Backend, Data, DataViewMut, HostDataMut, Module, Ring, ZnxViewMut},
     source::Source,
     test_suite::TestParams,
 };
@@ -17,7 +17,7 @@ use crate::{
         Base2K, Degree, DiagonalOperand, Dnum, GGLWEInfos, GLWE, GLWEAlloc, GLWEAutomorphismKeyAlloc, GLWEAutomorphismKeyLayout,
         GLWEBackendRef, GLWEInfos, GLWELayout, GLWETensorKeyAlloc, GLWETensorKeyLayout, GLWEToBackendRef, LWEInfos,
         LinearTransformation, LinearTransformationDiagonal, LinearTransformationGiantStep, LinearTransformationLayout,
-        LinearTransformationStrategy, Rank, TorusPrecision,
+        LinearTransformationStrategy, Rank, TorusPrecision, operand_galois_element,
         prepared::{LinearTransformationBabySteps, PreparedDiagonal},
     },
     test_suite::{
@@ -134,7 +134,7 @@ pub fn test_linear_transformation_parity<BR, BT, Rg: Ring>(
                 let mut keys_r = HashMap::new();
                 let mut keys_t = HashMap::new();
                 for rotation in [1, 3, 4] {
-                    let p = r.galois_element::<Rg>(rotation);
+                    let p = operand_galois_element::<Rg>(params.n, rotation);
                     let mut key_r = r.glwe_automorphism_key_alloc_from_infos(&key);
                     fill_by_digit(r, &mut key_r, 1, &mut source);
                     key_r.p = p;
@@ -715,7 +715,7 @@ pub fn test_linear_transformation_powers_of_two_parity<BR, BT, Rg: Ring>(
             let mut keys_r = HashMap::new();
             let mut keys_t = HashMap::new();
             for rotation in keyed {
-                let p = r.galois_element::<Rg>(rotation);
+                let p = operand_galois_element::<Rg>(params.n, rotation);
                 let mut key_r = r.glwe_automorphism_key_alloc_from_infos(&key);
                 fill_by_digit(r, &mut key_r, 1, &mut source);
                 key_r.p = p;
@@ -915,7 +915,7 @@ fn ciphertext_diagonals_parity<BR, BT, Rg: Ring>(
             };
             let mut atks_r = HashMap::new();
             let mut atks_t = HashMap::new();
-            for p in plan.galois_elements(r.cyclotomic_order::<Rg>()) {
+            for p in plan.galois_elements(Rg::CYCLOTOMIC_ORDER_FACTOR * params.n as i64) {
                 let mut key_r = r.glwe_automorphism_key_alloc_from_infos(&key);
                 fill_by_digit(r, &mut key_r, 1, source);
                 key_r.p = p;
