@@ -1,3 +1,5 @@
+use std::marker::PhantomData;
+
 use poulpy_hal::{
     layouts::{Backend, ConjugateInvariant, Data, ScratchArena},
     source::Source,
@@ -5,9 +7,11 @@ use poulpy_hal::{
 
 use crate::{
     GetDistribution, GetDistributionMut,
+    api::GLWESwitchingKeyPreparedFactory,
     layouts::{
-        GGLWEInfos, GGLWEToBackendMut, GLWECIEmbedKey, GLWECITraceKey, GLWEInfos, GLWESecretToBackendMut, GLWESecretToBackendRef,
-        GLWEToBackendMut, GLWEToBackendRef,
+        GGLWEInfos, GGLWEPreparedToBackendMut, GGLWEToBackendMut, GGLWEToBackendRef, GLWECIEmbedKey, GLWECIEmbedKeyPrepared,
+        GLWECIKeyPrepared, GLWECITraceKey, GLWECITraceKeyPrepared, GLWEInfos, GLWESecretToBackendMut, GLWESecretToBackendRef,
+        GLWESwitchingKeyDegrees, GLWESwitchingKeyPrepared, GLWEToBackendMut, GLWEToBackendRef,
     },
 };
 
@@ -127,4 +131,46 @@ pub trait GLWECIKeyEncryptSk<BE: Backend> {
         GLWECITraceKey<D, BE::ZnxWord>: GGLWEToBackendMut<BE>,
         S1: GLWESecretToBackendRef<BE, ConjugateInvariant> + GetDistribution,
         S2: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos;
+}
+
+pub trait GLWECIKeyPreparedFactory<BE: Backend>
+where
+    Self: GLWESwitchingKeyPreparedFactory<BE>,
+{
+    fn glwe_ci_embed_key_prepared_alloc_from_infos<A>(&self, infos: &A) -> GLWECIEmbedKeyPrepared<BE::OwnedBuf, BE>
+    where
+        A: GGLWEInfos,
+    {
+        GLWECIKeyPrepared(self.glwe_switching_key_prepared_alloc_from_infos(infos), PhantomData)
+    }
+
+    fn glwe_ci_trace_key_prepared_alloc_from_infos<A>(&self, infos: &A) -> GLWECITraceKeyPrepared<BE::OwnedBuf, BE>
+    where
+        A: GGLWEInfos,
+    {
+        GLWECIKeyPrepared(self.glwe_switching_key_prepared_alloc_from_infos(infos), PhantomData)
+    }
+
+    fn glwe_ci_key_prepared_bytes_of_from_infos<A>(&self, infos: &A) -> usize
+    where
+        A: GGLWEInfos,
+    {
+        self.glwe_switching_key_prepared_bytes_of_from_infos(infos)
+    }
+
+    fn glwe_ci_key_prepare_tmp_bytes<A>(&self, infos: &A) -> usize
+    where
+        A: GGLWEInfos;
+
+    /// Prepares `other`, a key of the direction of `res`, into `res`: a [`GLWECIKey`](crate::layouts::GLWECIKey) or its matrix moved to
+    /// any other holder, as [`GLWESwitchingKeyPreparedFactory::glwe_switching_key_prepare`] takes.
+    fn glwe_ci_key_prepare<DR, O, M>(
+        &self,
+        res: &mut GLWECIKeyPrepared<DR, BE, M>,
+        other: &O,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        DR: Data,
+        GLWESwitchingKeyPrepared<DR, BE>: GGLWEPreparedToBackendMut<BE>,
+        O: GGLWEToBackendRef<BE> + GLWESwitchingKeyDegrees;
 }

@@ -266,6 +266,10 @@ fn test_znx_normalize_delegating_fft64_portable() {
 
 poulpy_core::impl_core_reference_full!(ControlledSamplingFFT64Portable);
 poulpy_core::impl_conversion_reference_full!(ControlledSamplingFFT64Portable);
+poulpy_core::impl_lwe_keyswitch_reference_full!(ControlledSamplingFFT64Portable);
+poulpy_core::impl_lwe_key_encryption_reference_full!(ControlledSamplingFFT64Portable);
+poulpy_core::impl_lwe_key_preparation_derived_full!(ControlledSamplingFFT64Portable);
+poulpy_core::impl_lwe_key_decompression_derived_full!(ControlledSamplingFFT64Portable);
 poulpy_core::impl_glwe_pack_derived_full!(ControlledSamplingFFT64Portable);
 poulpy_core::impl_glwe_rotate_reference_full!(ControlledSamplingFFT64Portable);
 poulpy_core::impl_ggsw_rotate_derived_full!(ControlledSamplingFFT64Portable);
@@ -289,6 +293,14 @@ unsafe impl HalVecZnxMonomialImpl for DifferentSamplingFFT64Portable {
 poulpy_core::impl_core_reference_full!(DifferentSamplingFFT64Portable);
 #[cfg(test)]
 poulpy_core::impl_conversion_reference_full!(DifferentSamplingFFT64Portable);
+#[cfg(test)]
+poulpy_core::impl_lwe_keyswitch_reference_full!(DifferentSamplingFFT64Portable);
+#[cfg(test)]
+poulpy_core::impl_lwe_key_encryption_reference_full!(DifferentSamplingFFT64Portable);
+#[cfg(test)]
+poulpy_core::impl_lwe_key_preparation_derived_full!(DifferentSamplingFFT64Portable);
+#[cfg(test)]
+poulpy_core::impl_lwe_key_decompression_derived_full!(DifferentSamplingFFT64Portable);
 #[cfg(test)]
 poulpy_core::impl_glwe_pack_derived_full!(DifferentSamplingFFT64Portable);
 #[cfg(test)]

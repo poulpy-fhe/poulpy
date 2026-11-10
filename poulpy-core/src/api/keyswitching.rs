@@ -129,20 +129,15 @@ pub trait GGSWKeyswitch<BE: Backend, Rg: Ring = Standard> {
         R: GGSWToBackendMut<BE, Rg> + GGSWInfos;
 }
 
-pub trait LWEKeyswitch<BE: Backend, Rg: Ring = Standard> {
+pub trait LWEKeyswitch<BE: Backend> {
     fn lwe_keyswitch_tmp_bytes<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
         R: LWEInfos,
         A: LWEInfos,
         K: GGLWEInfos;
 
-    fn lwe_keyswitch<R, A>(
-        &self,
-        res: &mut R,
-        a: &A,
-        ksk: &GGLWEPreparedBackendRef<'_, BE, Rg>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: LWEToBackendMut<BE, Rg> + LWEInfos,
-        A: LWEToBackendRef<BE, Rg> + LWEInfos;
+    fn lwe_keyswitch<R, A>(&self, res: &mut R, a: &A, ksk: &GGLWEPreparedBackendRef<'_, BE>, scratch: &mut ScratchArena<'_, BE>)
+    where
+        R: LWEToBackendMut<BE> + LWEInfos,
+        A: LWEToBackendRef<BE> + LWEInfos;
 }

@@ -25,6 +25,19 @@ macro_rules! impl_gglwe_to_backend_for_field {
 }
 
 macro_rules! impl_gglwe_at_view_for_field {
+    ($ty:ty; ring = $ring:ty; $($field:tt)+) => {
+        impl<BE: Backend> GGLWEAtViewRef<BE, $ring> for $ty {
+            fn at_view(&self, row: usize, col: usize) -> GLWEViewRef<'_, BE, $ring> {
+                self.$($field)+.at_view(row, col)
+            }
+        }
+
+        impl<BE: Backend> GGLWEAtViewMut<BE, $ring> for $ty {
+            fn at_view_mut(&mut self, row: usize, col: usize) -> GLWEViewMut<'_, BE, $ring> {
+                self.$($field)+.at_view_mut(row, col)
+            }
+        }
+    };
     ($ty:ty; $($field:tt)+) => {
         impl<BE: Backend, Rg: ::poulpy_hal::layouts::Ring> GGLWEAtViewRef<BE, Rg> for $ty {
             fn at_view(&self, row: usize, col: usize) -> GLWEViewRef<'_, BE, Rg> {

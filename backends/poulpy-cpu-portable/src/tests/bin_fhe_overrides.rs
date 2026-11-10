@@ -34,7 +34,10 @@ poulpy_core::impl_glwe_external_product_reference_full!(OverrideBackend, Standar
 poulpy_core::impl_glwe_pack_derived_full!(OverrideBackend);
 poulpy_core::impl_glwe_trace_derived_full!(OverrideBackend, Standard);
 poulpy_core::impl_glwe_linear_transformation_reference_full!(OverrideBackend, Standard);
-poulpy_core::impl_lwe_keyswitch_reference_full!(OverrideBackend, Standard);
+poulpy_core::impl_lwe_keyswitch_reference_full!(OverrideBackend);
+poulpy_core::impl_lwe_key_encryption_reference_full!(OverrideBackend);
+poulpy_core::impl_lwe_key_preparation_derived_full!(OverrideBackend);
+poulpy_core::impl_lwe_key_decompression_derived_full!(OverrideBackend);
 poulpy_core::impl_glwe_tensoring_reference_full!(OverrideBackend, Standard);
 poulpy_core::impl_gglwe_product_digits_strided_reference_full!(OverrideBackend, Standard);
 const COPY_PER_LIMB: usize = 4096;

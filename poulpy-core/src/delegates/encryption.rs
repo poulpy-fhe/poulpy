@@ -22,10 +22,18 @@ use crate::{
         compressed::{GLWEPublicKeyCompressedSeedMut, GLWEPublicKeyCompressedToBackendMut},
         prepared::{GLWEPublicKeyPreparedToBackendRef, GLWESecretPreparedToBackendRef},
     },
-    oep::EncryptionImpl,
+    oep::{EncryptionImpl, LWEKeyEncryptionImpl},
 };
 
 macro_rules! impl_encryption_delegate {
+    (free $trait:ty, $($body:item),+ $(,)?) => {
+        impl<BE> $trait for Module<BE>
+        where
+            BE: Backend + LWEKeyEncryptionImpl,
+        {
+            $($body)+
+        }
+    };
     ($trait:ty, $($body:item),+ $(,)?) => {
         impl<BE, Rg: Ring> $trait for Module<BE>
         where
@@ -428,7 +436,7 @@ impl_encryption_delegate!(
 );
 
 impl_encryption_delegate!(
-    GLWEToLWEKeyEncryptSk<BE, Rg>,
+    free GLWEToLWEKeyEncryptSk<BE>,
     fn glwe_to_lwe_key_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos,
@@ -444,16 +452,16 @@ impl_encryption_delegate!(
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        S1: LWESecretToBackendRef<BE, Rg>,
-        S2: GLWESecretToBackendRef<BE, Rg>,
-        R: GGLWEToBackendMut<BE, Rg> + GGLWEInfos,
+        S1: LWESecretToBackendRef<BE>,
+        S2: GLWESecretToBackendRef<BE>,
+        R: GGLWEToBackendMut<BE> + GGLWEInfos,
     {
         BE::glwe_to_lwe_key_encrypt_sk(self, res, sk_lwe, sk_glwe, source_xe, source_xa, scratch)
     }
 );
 
 impl_encryption_delegate!(
-    LWESwitchingKeyEncryptSk<BE, Rg>,
+    free LWESwitchingKeyEncryptSk<BE>,
     fn lwe_switching_key_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos,
@@ -469,16 +477,16 @@ impl_encryption_delegate!(
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GGLWEToBackendMut<BE, Rg> + GLWESwitchingKeyDegreesMut + GGLWEInfos,
-        S1: LWESecretToBackendRef<BE, Rg>,
-        S2: LWESecretToBackendRef<BE, Rg>,
+        R: GGLWEToBackendMut<BE> + GLWESwitchingKeyDegreesMut + GGLWEInfos,
+        S1: LWESecretToBackendRef<BE>,
+        S2: LWESecretToBackendRef<BE>,
     {
         BE::lwe_switching_key_encrypt_sk(self, res, sk_lwe_in, sk_lwe_out, source_xe, source_xa, scratch)
     }
 );
 
 impl_encryption_delegate!(
-    LWEToGLWEKeyEncryptSk<BE, Rg>,
+    free LWEToGLWEKeyEncryptSk<BE>,
     fn lwe_to_glwe_key_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos,
@@ -494,9 +502,9 @@ impl_encryption_delegate!(
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        S1: LWESecretToBackendRef<BE, Rg>,
-        S2: GLWESecretPreparedToBackendRef<BE, Rg>,
-        R: GGLWEToBackendMut<BE, Rg> + GGLWEInfos,
+        S1: LWESecretToBackendRef<BE>,
+        S2: GLWESecretPreparedToBackendRef<BE>,
+        R: GGLWEToBackendMut<BE> + GGLWEInfos,
     {
         BE::lwe_to_glwe_key_encrypt_sk(self, res, sk_lwe, sk_glwe, source_xe, source_xa, scratch)
     }

@@ -1,26 +1,26 @@
-use poulpy_hal::layouts::{Backend, Data, Module, Ring, ScratchArena};
+use poulpy_hal::layouts::{Backend, Module, Ring, ScratchArena};
 
 use crate::{
     GetDistribution, GetDistributionMut,
     api::{
         GGLWEPreparedFactory, GGLWEToGGSWKeyPreparedFactory, GGSWPreparedFactory, GLWEAutomorphismKeyPreparedFactory,
-        GLWECIKeyPreparedFactory, GLWEPreparedFactory, GLWEPublicKeyPreparedFactory, GLWESwitchingKeyPreparedFactory,
-        GLWETensorKeyPreparedFactory, GLWEToLWEKeyPreparedFactory, LWESwitchingKeyPreparedFactory, LWEToGLWEKeyPreparedFactory,
+        GLWEPreparedFactory, GLWEPublicKeyPreparedFactory, GLWESwitchingKeyPreparedFactory, GLWETensorKeyPreparedFactory,
+        GLWEToLWEKeyPreparedFactory, LWESwitchingKeyPreparedFactory, LWEToGLWEKeyPreparedFactory,
     },
     layouts::{
         GGLWEInfos, GGLWEPreparedToBackendMut, GGLWEToBackendRef, GGLWEToGGSWKeyPreparedToBackendMut, GGLWEToGGSWKeyToBackendRef,
-        GGSWInfos, GGSWPreparedToBackendMut, GGSWToBackendRef, GLWECIKeyPrepared, GLWEInfos, GLWEPreparedToBackendMut,
+        GGSWInfos, GGSWPreparedToBackendMut, GGSWToBackendRef, GLWEInfos, GLWEPreparedToBackendMut,
         GLWEPublicKeyPreparedToBackendMut, GLWEPublicKeyToBackendRef, GLWESwitchingKeyDegrees, GLWESwitchingKeyDegreesMut,
-        GLWESwitchingKeyPrepared, GLWEToBackendRef, GetGaloisElement, SetGaloisElement,
+        GLWEToBackendRef, GetGaloisElement, SetGaloisElement,
     },
-    oep::PreparationImpl,
+    oep::{LWEKeyPreparationImpl, PreparationImpl},
 };
 
 macro_rules! impl_preparation_delegate {
     (free $trait:ty, $($body:item),+ $(,)?) => {
         impl<BE> $trait for Module<BE>
         where
-            BE: Backend + PreparationImpl,
+            BE: Backend + LWEKeyPreparationImpl,
         {
             $($body)+
         }
@@ -161,7 +161,7 @@ impl_preparation_delegate!(
 );
 
 impl_preparation_delegate!(
-    GLWEToLWEKeyPreparedFactory<BE, Rg>,
+    free GLWEToLWEKeyPreparedFactory<BE>,
     fn glwe_to_lwe_key_prepare_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos,
@@ -170,15 +170,15 @@ impl_preparation_delegate!(
     },
     fn glwe_to_lwe_key_prepare<R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GGLWEPreparedToBackendMut<BE, Rg> + GLWESwitchingKeyDegreesMut,
-        O: GGLWEToBackendRef<BE, Rg> + GLWESwitchingKeyDegrees,
+        R: GGLWEPreparedToBackendMut<BE> + GLWESwitchingKeyDegreesMut,
+        O: GGLWEToBackendRef<BE> + GLWESwitchingKeyDegrees,
     {
         BE::glwe_to_lwe_key_prepare(self, res, other, scratch)
     }
 );
 
 impl_preparation_delegate!(
-    LWESwitchingKeyPreparedFactory<BE, Rg>,
+    free LWESwitchingKeyPreparedFactory<BE>,
     fn lwe_switching_key_prepare_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos,
@@ -187,15 +187,15 @@ impl_preparation_delegate!(
     },
     fn lwe_switching_key_prepare<R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GGLWEPreparedToBackendMut<BE, Rg> + GLWESwitchingKeyDegreesMut,
-        O: GGLWEToBackendRef<BE, Rg> + GLWESwitchingKeyDegrees,
+        R: GGLWEPreparedToBackendMut<BE> + GLWESwitchingKeyDegreesMut,
+        O: GGLWEToBackendRef<BE> + GLWESwitchingKeyDegrees,
     {
         BE::lwe_switching_key_prepare(self, res, other, scratch)
     }
 );
 
 impl_preparation_delegate!(
-    LWEToGLWEKeyPreparedFactory<BE, Rg>,
+    free LWEToGLWEKeyPreparedFactory<BE>,
     fn lwe_to_glwe_key_prepare_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos,
@@ -204,8 +204,8 @@ impl_preparation_delegate!(
     },
     fn lwe_to_glwe_key_prepare<R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GGLWEPreparedToBackendMut<BE, Rg> + GLWESwitchingKeyDegreesMut,
-        O: GGLWEToBackendRef<BE, Rg> + GLWESwitchingKeyDegrees,
+        R: GGLWEPreparedToBackendMut<BE> + GLWESwitchingKeyDegreesMut,
+        O: GGLWEToBackendRef<BE> + GLWESwitchingKeyDegrees,
     {
         BE::lwe_to_glwe_key_prepare(self, res, other, scratch)
     }
@@ -225,23 +225,5 @@ impl_preparation_delegate!(
         O: GGLWEToGGSWKeyToBackendRef<BE, Rg>,
     {
         BE::gglwe_to_ggsw_key_prepare(self, res, other, scratch)
-    }
-);
-
-impl_preparation_delegate!(
-    free GLWECIKeyPreparedFactory<BE>,
-    fn glwe_ci_key_prepare_tmp_bytes<A>(&self, infos: &A) -> usize
-    where
-        A: GGLWEInfos,
-    {
-        BE::glwe_ci_key_prepare_tmp_bytes(self, infos)
-    },
-    fn glwe_ci_key_prepare<DR, O, M>(&self, res: &mut GLWECIKeyPrepared<DR, BE, M>, other: &O, scratch: &mut ScratchArena<'_, BE>)
-    where
-        DR: Data,
-        GLWESwitchingKeyPrepared<DR, BE>: GGLWEPreparedToBackendMut<BE>,
-        O: GGLWEToBackendRef<BE> + GLWESwitchingKeyDegrees,
-    {
-        BE::glwe_ci_key_prepare(self, res, other, scratch)
     }
 );

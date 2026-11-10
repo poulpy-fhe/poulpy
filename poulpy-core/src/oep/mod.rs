@@ -33,10 +33,12 @@
 //! have `impl_*_derived_full!` macros. [`crate::impl_core_reference_full!`] selects
 //! the provided implementations for all core families except [`SamplingImpl`] and
 //! the families without a ring parameter: the standard-only families (LWE conversion,
+//! LWE key switching, the encryption, preparation and decompression of the LWE keys,
 //! packing, GLWE/GGSW rotate, `mul_xp_minus_one`), whose traits take standard-ring
 //! operands, and
 //! [`GLWECIConversionImpl`], whose conversions take one standard and one
-//! conjugate-invariant operand and whose degree switch two standard ones.
+//! conjugate-invariant operand, and whose degree switch and conjugate-invariant key
+//! encryption and preparation take standard ones.
 //!
 //! Every other family, [`SamplingImpl`] included, takes the operand ring as its trait
 //! parameter and is implemented once per ring. Its opt-in macro implements both rings
@@ -121,7 +123,8 @@ pub use sampling::*;
 pub use secret::*;
 
 /// Forwards every core family except sampling, the standard-only families (LWE conversion,
-/// packing, GLWE/GGSW rotate, `mul_xp_minus_one`) and the conjugate-invariant conversions.
+/// LWE key switching, the LWE key encryption, preparation and decompression, packing,
+/// GLWE/GGSW rotate, `mul_xp_minus_one`) and the conjugate-invariant conversions.
 ///
 /// Select the individual family macros instead when replacing an operation. The
 /// reference gadget-product and external-product bodies require contiguous DFT limbs.
@@ -149,7 +152,6 @@ macro_rules! impl_core_reference_full {
         $crate::impl_glwe_external_product_reference_full!($be, $ring);
         $crate::impl_glwe_keyswitch_reference_full!($be, $ring);
         $crate::impl_glwe_linear_transformation_reference_full!($be, $ring);
-        $crate::impl_lwe_keyswitch_reference_full!($be, $ring);
         $crate::impl_glwe_tensoring_reference_full!($be, $ring);
         $crate::impl_gglwe_product_digits_strided_reference_full!($be, $ring);
         $crate::impl_glwe_trace_derived_full!($be, $ring);
@@ -169,6 +171,7 @@ pub use crate::{
     impl_glwe_mul_xp_minus_one_reference_full, impl_glwe_negate_reference_full, impl_glwe_normalize_reference_full,
     impl_glwe_pack_derived_full, impl_glwe_polynomial_evaluation_derived_full, impl_glwe_rotate_reference_full,
     impl_glwe_shift_reference_full, impl_glwe_sub_reference_full, impl_glwe_tensoring_reference_full,
-    impl_glwe_trace_derived_full, impl_glwe_zero_reference_full, impl_lwe_keyswitch_reference_full,
+    impl_glwe_trace_derived_full, impl_glwe_zero_reference_full, impl_lwe_key_decompression_derived_full,
+    impl_lwe_key_encryption_reference_full, impl_lwe_key_preparation_derived_full, impl_lwe_keyswitch_reference_full,
     impl_operations_reference_full, impl_preparation_reference_full, impl_secret_reference_full,
 };

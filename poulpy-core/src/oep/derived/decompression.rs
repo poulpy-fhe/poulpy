@@ -118,29 +118,29 @@ where
     BE::gglwe_decompress(module, res, other);
 }
 
-pub(crate) fn glwe_to_lwe_key_decompress_derived<BE, R, O, Rg: Ring>(module: &Module<BE>, res: &mut R, other: &O)
+pub(crate) fn glwe_to_lwe_key_decompress_derived<BE, R, O>(module: &Module<BE>, res: &mut R, other: &O)
 where
-    BE: DecompressionImpl<Rg>,
-    R: GGLWEToBackendMut<BE, Rg> + GGLWEInfos + GLWESwitchingKeyDegreesMut,
-    O: GGLWECompressedToBackendRef<BE, Rg> + GGLWEInfos + GLWESwitchingKeyDegrees,
+    BE: DecompressionImpl,
+    R: GGLWEToBackendMut<BE> + GGLWEInfos + GLWESwitchingKeyDegreesMut,
+    O: GGLWECompressedToBackendRef<BE> + GGLWEInfos + GLWESwitchingKeyDegrees,
 {
     BE::glwe_switching_key_decompress(module, res, other);
 }
 
-pub(crate) fn lwe_switching_key_decompress_derived<BE, R, O, Rg: Ring>(module: &Module<BE>, res: &mut R, other: &O)
+pub(crate) fn lwe_switching_key_decompress_derived<BE, R, O>(module: &Module<BE>, res: &mut R, other: &O)
 where
-    BE: DecompressionImpl<Rg>,
-    R: GGLWEToBackendMut<BE, Rg> + GGLWEInfos + GLWESwitchingKeyDegreesMut,
-    O: GGLWECompressedToBackendRef<BE, Rg> + GGLWEInfos + GLWESwitchingKeyDegrees,
+    BE: DecompressionImpl,
+    R: GGLWEToBackendMut<BE> + GGLWEInfos + GLWESwitchingKeyDegreesMut,
+    O: GGLWECompressedToBackendRef<BE> + GGLWEInfos + GLWESwitchingKeyDegrees,
 {
     BE::glwe_switching_key_decompress(module, res, other);
 }
 
-pub(crate) fn lwe_to_glwe_key_decompress_derived<BE, R, O, Rg: Ring>(module: &Module<BE>, res: &mut R, other: &O)
+pub(crate) fn lwe_to_glwe_key_decompress_derived<BE, R, O>(module: &Module<BE>, res: &mut R, other: &O)
 where
-    BE: DecompressionImpl<Rg>,
-    R: GGLWEToBackendMut<BE, Rg> + GGLWEInfos + GLWESwitchingKeyDegreesMut,
-    O: GGLWECompressedToBackendRef<BE, Rg> + GGLWEInfos + GLWESwitchingKeyDegrees,
+    BE: DecompressionImpl,
+    R: GGLWEToBackendMut<BE> + GGLWEInfos + GLWESwitchingKeyDegreesMut,
+    O: GGLWECompressedToBackendRef<BE> + GGLWEInfos + GLWESwitchingKeyDegrees,
 {
     BE::glwe_switching_key_decompress(module, res, other);
 }

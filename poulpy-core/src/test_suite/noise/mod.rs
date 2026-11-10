@@ -35,7 +35,7 @@ use crate::oep::{
     AutomorphismImpl, DecryptionImpl, GGLWECopyImpl, GGLWEExternalProductImpl, GGLWEKeyswitchImpl, GGLWEProductDigitsStridedImpl,
     GGSWConversionImpl, GGSWCopyImpl, GGSWExternalProductImpl, GGSWKeyswitchImpl, GLWEAddImpl, GLWECopyImpl,
     GLWEExternalProductImpl, GLWEKeyswitchImpl, GLWEMulConstImpl, GLWEMulPlainImpl, GLWENegateImpl, GLWENormalizeImpl,
-    GLWEShiftImpl, GLWESubImpl, GLWETensoringImpl, LWEKeyswitchImpl, SamplingImpl, SecretImpl,
+    GLWEShiftImpl, GLWESubImpl, GLWETensoringImpl, SamplingImpl, SecretImpl,
 };
 use crate::{
     GLWEDecrypt, GLWENoise,
@@ -63,7 +63,6 @@ pub trait TestBackend<Rg: Ring = Standard>:
     + GLWEKeyswitchImpl<Rg>
     + GGLWEKeyswitchImpl<Rg>
     + GGSWKeyswitchImpl<Rg>
-    + LWEKeyswitchImpl<Rg>
     + GLWEAddImpl<Rg>
     + GLWENegateImpl<Rg>
     + GLWESubImpl<Rg>
@@ -97,7 +96,6 @@ where
         + GLWEKeyswitchImpl<Rg>
         + GGLWEKeyswitchImpl<Rg>
         + GGSWKeyswitchImpl<Rg>
-        + LWEKeyswitchImpl<Rg>
         + GLWEAddImpl<Rg>
         + GLWENegateImpl<Rg>
         + GLWESubImpl<Rg>

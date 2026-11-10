@@ -18,7 +18,6 @@ macro_rules! impl_cpu_core_defaults {
         ::poulpy_core::impl_glwe_keyswitch_reference_full!($be, $ring);
         ::poulpy_core::impl_gglwe_keyswitch_derived_full!($be, $ring);
         ::poulpy_core::impl_ggsw_keyswitch_derived_full!($be, $ring);
-        ::poulpy_core::impl_lwe_keyswitch_reference_full!($be, $ring);
         ::poulpy_core::impl_encryption_reference_full!($be, $ring);
         ::poulpy_core::impl_glwe_external_product_reference_full!($be, $ring);
         ::poulpy_core::impl_gglwe_external_product_derived_full!($be, $ring);

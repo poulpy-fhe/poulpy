@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use poulpy_hal::layouts::{Backend, Data, Ring, Standard};
+use poulpy_hal::layouts::{Backend, Data};
 
 use crate::layouts::{
     Base2K, CIEmbed, CITrace, Degree, Dnum, GGLWEInfos, GGLWEPrepared, GGLWEPreparedBackendMut, GGLWEPreparedBackendRef,
@@ -10,18 +10,15 @@ use crate::layouts::{
 
 /// DFT-domain (prepared) [`GLWECIKey`](crate::layouts::GLWECIKey).
 #[derive(PartialEq)]
-pub struct GLWECIKeyPrepared<D: Data, B: Backend, M, Rg: Ring = Standard>(
-    pub(crate) GLWESwitchingKeyPrepared<D, B, Rg>,
-    pub(crate) PhantomData<M>,
-);
+pub struct GLWECIKeyPrepared<D: Data, B: Backend, M>(pub(crate) GLWESwitchingKeyPrepared<D, B>, pub(crate) PhantomData<M>);
 
 /// Prepared [`GLWECIEmbedKey`](crate::layouts::GLWECIEmbedKey).
-pub type GLWECIEmbedKeyPrepared<D, B, Rg = Standard> = GLWECIKeyPrepared<D, B, CIEmbed, Rg>;
+pub type GLWECIEmbedKeyPrepared<D, B> = GLWECIKeyPrepared<D, B, CIEmbed>;
 
 /// Prepared [`GLWECITraceKey`](crate::layouts::GLWECITraceKey).
-pub type GLWECITraceKeyPrepared<D, B, Rg = Standard> = GLWECIKeyPrepared<D, B, CITrace, Rg>;
+pub type GLWECITraceKeyPrepared<D, B> = GLWECIKeyPrepared<D, B, CITrace>;
 
-impl<D: Data, B: Backend, M, Rg: Ring> LWEInfos for GLWECIKeyPrepared<D, B, M, Rg> {
+impl<D: Data, B: Backend, M> LWEInfos for GLWECIKeyPrepared<D, B, M> {
     fn noise(&self) -> Option<crate::ComponentNoise> {
         self.0.noise()
     }
@@ -43,13 +40,13 @@ impl<D: Data, B: Backend, M, Rg: Ring> LWEInfos for GLWECIKeyPrepared<D, B, M, R
     }
 }
 
-impl<D: Data, B: Backend, M, Rg: Ring> GLWEInfos for GLWECIKeyPrepared<D, B, M, Rg> {
+impl<D: Data, B: Backend, M> GLWEInfos for GLWECIKeyPrepared<D, B, M> {
     fn rank(&self) -> Rank {
         self.rank_out()
     }
 }
 
-impl<D: Data, B: Backend, M, Rg: Ring> GGLWEInfos for GLWECIKeyPrepared<D, B, M, Rg> {
+impl<D: Data, B: Backend, M> GGLWEInfos for GLWECIKeyPrepared<D, B, M> {
     fn k_aux(&self) -> TorusPrecision {
         self.0.k_aux()
     }
@@ -79,29 +76,29 @@ impl<D: Data, B: Backend, M, Rg: Ring> GGLWEInfos for GLWECIKeyPrepared<D, B, M,
     }
 }
 
-impl<D: Data, B: Backend, M, Rg: Ring> GGLWEPreparedToBackendRef<B, Rg> for GLWECIKeyPrepared<D, B, M, Rg>
+impl<D: Data, B: Backend, M> GGLWEPreparedToBackendRef<B> for GLWECIKeyPrepared<D, B, M>
 where
-    GGLWEPrepared<D, B, Rg>: GGLWEPreparedToBackendRef<B, Rg>,
+    GGLWEPrepared<D, B>: GGLWEPreparedToBackendRef<B>,
 {
-    fn to_backend_ref(&self) -> GGLWEPreparedBackendRef<'_, B, Rg> {
+    fn to_backend_ref(&self) -> GGLWEPreparedBackendRef<'_, B> {
         self.0.key.to_backend_ref()
     }
 }
 
-impl<D: Data, B: Backend, M, Rg: Ring> GGLWEPreparedToBackendMut<B, Rg> for GLWECIKeyPrepared<D, B, M, Rg>
+impl<D: Data, B: Backend, M> GGLWEPreparedToBackendMut<B> for GLWECIKeyPrepared<D, B, M>
 where
-    GGLWEPrepared<D, B, Rg>: GGLWEPreparedToBackendMut<B, Rg>,
+    GGLWEPrepared<D, B>: GGLWEPreparedToBackendMut<B>,
 {
     fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
-        <_ as GGLWEPreparedToBackendMut<B, Rg>>::set_noise(&mut self.0.key, metadata);
+        <_ as GGLWEPreparedToBackendMut<B>>::set_noise(&mut self.0.key, metadata);
     }
 
-    fn to_backend_mut(&mut self) -> GGLWEPreparedBackendMut<'_, B, Rg> {
+    fn to_backend_mut(&mut self) -> GGLWEPreparedBackendMut<'_, B> {
         self.0.key.to_backend_mut()
     }
 }
 
-impl<D: Data, B: Backend, M, Rg: Ring> GLWESwitchingKeyDegreesMut for GLWECIKeyPrepared<D, B, M, Rg> {
+impl<D: Data, B: Backend, M> GLWESwitchingKeyDegreesMut for GLWECIKeyPrepared<D, B, M> {
     fn input_degree(&mut self) -> &mut Degree {
         &mut self.0.input_degree
     }
@@ -111,7 +108,7 @@ impl<D: Data, B: Backend, M, Rg: Ring> GLWESwitchingKeyDegreesMut for GLWECIKeyP
     }
 }
 
-impl<D: Data, B: Backend, M, Rg: Ring> GLWESwitchingKeyDegrees for GLWECIKeyPrepared<D, B, M, Rg> {
+impl<D: Data, B: Backend, M> GLWESwitchingKeyDegrees for GLWECIKeyPrepared<D, B, M> {
     fn input_degree(&self) -> &Degree {
         &self.0.input_degree
     }

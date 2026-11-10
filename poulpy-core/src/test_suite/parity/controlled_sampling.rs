@@ -253,6 +253,24 @@ macro_rules! core_encryption_parity_test_suite {
                 );
             }
             #[test]
+            fn lwe_key_encryption() {
+                use ::poulpy_hal::{layouts::Module, test_suite::TestParams};
+                use $crate::test_suite::parity::{ParityShapes, test_lwe_key_encryption_parity};
+                let params: TestParams = $params;
+                $crate::test_suite::parity::controlled_sampling::with_backend_samples(
+                    Module::<$backend_test>::new({
+                        #[allow(unused_mut)]
+                        let mut size = params.size;
+                        $( size = $test_size; )?
+                        size
+                    } as u64),
+                    |tested| {
+                        let reference = Module::<$backend_ref>::new(params.size as u64);
+                        test_lwe_key_encryption_parity(&params, &ParityShapes::default(), &reference, tested);
+                    },
+                );
+            }
+            #[test]
             fn lwe_encryption() {
                 use ::poulpy_hal::{layouts::Module, test_suite::TestParams};
                 use $crate::test_suite::parity::{ParityShapes, test_lwe_encryption_parity};

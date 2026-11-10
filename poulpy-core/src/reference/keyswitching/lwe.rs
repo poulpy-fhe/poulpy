@@ -5,7 +5,7 @@ use crate::api::GLWEKeyswitch;
 use crate::api::GLWEBytesOf;
 use poulpy_hal::{
     api::{ModuleN, VecZnxCopy, VecZnxZero},
-    layouts::{Backend, Ring, ScratchArena, vec_znx_backend_mut_from_mut, vec_znx_backend_ref_from_ref},
+    layouts::{Backend, ScratchArena, Standard, vec_znx_backend_mut_from_mut, vec_znx_backend_ref_from_ref},
 };
 
 use crate::layouts::operand_degree;
@@ -18,10 +18,10 @@ use crate::{
     reference::keyswitching::LWEKeyswitchReference,
 };
 
-pub fn lwe_keyswitch_tmp_bytes_reference<BE, M, R, A, K, Rg: Ring>(module: &M, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
+pub fn lwe_keyswitch_tmp_bytes_reference<BE, M, R, A, K>(module: &M, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
 where
     BE: Backend,
-    M: GLWEBytesOf<BE> + ModuleN + GLWEKeyswitch<BE, Rg>,
+    M: GLWEBytesOf<BE> + ModuleN + GLWEKeyswitch<BE>,
     R: LWEInfos,
     A: LWEInfos,
     K: GGLWEInfos,
@@ -49,22 +49,17 @@ where
     lvl_0 + lvl_1 + lvl_2
 }
 
-pub fn lwe_keyswitch_reference<BE, M, R, A, Rg: Ring>(
+pub fn lwe_keyswitch_reference<BE, M, R, A>(
     module: &M,
     res: &mut R,
     a: &A,
-    ksk: &GGLWEPreparedBackendRef<'_, BE, Rg>,
+    ksk: &GGLWEPreparedBackendRef<'_, BE>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
-    M: GLWEBytesOf<BE>
-        + LWEKeyswitchReference<BE, Rg>
-        + ModuleN
-        + GLWEKeyswitch<BE, Rg>
-        + VecZnxCopy<BE, Rg>
-        + VecZnxZero<BE, Rg>,
-    R: LWEToBackendMut<BE, Rg> + LWEInfos,
-    A: LWEToBackendRef<BE, Rg> + LWEInfos,
+    M: GLWEBytesOf<BE> + LWEKeyswitchReference<BE> + ModuleN + GLWEKeyswitch<BE> + VecZnxCopy<BE> + VecZnxZero<BE>,
+    R: LWEToBackendMut<BE> + LWEInfos,
+    A: LWEToBackendRef<BE> + LWEInfos,
 {
     operand_degree(module.n(), &[ksk.n()]);
     assert!(res.n() <= ksk.n());
@@ -90,13 +85,13 @@ pub fn lwe_keyswitch_reference<BE, M, R, A, Rg: Ring>(
     let n_lwe: usize = a.n().into();
 
     module.vec_znx_copy(
-        &mut vec_znx_backend_mut_from_mut::<BE, Rg>(&mut glwe_in.data).window_coeffs(0, 1),
+        &mut vec_znx_backend_mut_from_mut::<BE, Standard>(&mut glwe_in.data).window_coeffs(0, 1),
         0,
         &a_backend.body,
         0,
     );
     module.vec_znx_copy(
-        &mut vec_znx_backend_mut_from_mut::<BE, Rg>(&mut glwe_in.data).window_coeffs(0, n_lwe),
+        &mut vec_znx_backend_mut_from_mut::<BE, Standard>(&mut glwe_in.data).window_coeffs(0, n_lwe),
         1,
         &a_backend.mask,
         0,
@@ -111,25 +106,25 @@ pub fn lwe_keyswitch_reference<BE, M, R, A, Rg: Ring>(
         rank: Rank(1),
     });
 
-    let glwe_in_ref = glwe_backend_ref_from_mut::<BE, Rg>(&glwe_in);
+    let glwe_in_ref = glwe_backend_ref_from_mut::<BE, Standard>(&glwe_in);
     let glwe_in_view = &glwe_in_ref;
     crate::layouts::assert_no_row_offset("lwe_keyswitch", &ksk);
     module.glwe_keyswitch(&mut glwe_out, &glwe_in_view, &ksk.to_backend_ref(), &mut scratch_2);
 
     let mut res_backend = res.to_backend_mut();
-    let glwe_out_ref = glwe_backend_ref_from_mut::<BE, Rg>(&glwe_out);
+    let glwe_out_ref = glwe_backend_ref_from_mut::<BE, Standard>(&glwe_out);
     let n: usize = res_backend.n().into();
 
     module.vec_znx_copy(
         &mut res_backend.body,
         0,
-        &vec_znx_backend_ref_from_ref::<BE, Rg>(&glwe_out_ref.data).window_coeffs(0, 1),
+        &vec_znx_backend_ref_from_ref::<BE, Standard>(&glwe_out_ref.data).window_coeffs(0, 1),
         0,
     );
     module.vec_znx_copy(
         &mut res_backend.mask,
         0,
-        &vec_znx_backend_ref_from_ref::<BE, Rg>(&glwe_out_ref.data).window_coeffs(0, n),
+        &vec_znx_backend_ref_from_ref::<BE, Standard>(&glwe_out_ref.data).window_coeffs(0, n),
         1,
     );
 }

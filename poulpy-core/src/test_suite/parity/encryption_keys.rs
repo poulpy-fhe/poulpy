@@ -1,9 +1,10 @@
 //! Evaluation-key and gadget encryption compositions with controlled sampling.
 use super::encryption::{EncryptionParityBackend, Snapshot, assert_fresh_noise, secret, source_snapshot};
 use super::{ParityShapes, poisoned_scratch};
+use crate::oep::{LWEKeyDecompressionImpl, LWEKeyEncryptionImpl};
 use crate::{ComponentNoise, Distribution, GetDistributionMut, api::*, layouts::*};
 use poulpy_hal::{
-    layouts::{Backend, DataView, DataViewMut, Module, Ring, ScalarZnx},
+    layouts::{Backend, DataView, DataViewMut, Module, Ring, ScalarZnx, Standard},
     source::Source,
     test_suite::TestParams,
 };
@@ -133,10 +134,6 @@ pub fn test_key_encryption_parity<BR: EncryptionParityBackend<Rg>, BT: Encryptio
         *sk_in.dist_mut() = Distribution::TernaryProb(0.5);
         let mut skp = module.glwe_secret_prepared_alloc_from_infos(&sk);
         module.glwe_secret_prepare(&mut skp, &sk);
-        let mut lwe = module.lwe_secret_alloc(Degree((n / 2) as u32));
-        let coeffs: Vec<i64> = (0..n / 2).map(|i| (i % 3) as i64 - 1).collect();
-        B::copy_from_host(lwe.data.data_mut(), bytemuck::cast_slice(&coeffs));
-        lwe.dist = sk.dist;
         let mut e = Source::new([149; 32]);
         let mut a = Source::new([151; 32]);
         let seed = [157; 32];
@@ -412,114 +409,6 @@ pub fn test_key_encryption_parity<BR: EncryptionParityBackend<Rg>, BT: Encryptio
             result.push(gglwe_snapshot::<B, _, Rg>("gglwe_to_ggsw_key_compressed_encrypt_sk", row));
         }
         result.push(source_snapshot("row_key_compressed_sources", &mut e, &mut a));
-        // These three wrappers expose decompression without a corresponding
-        // compressed-encryption entry point. Stage the body and seeds explicitly.
-        macro_rules! decompress_wrapper {
-            ($alloc:ident,$plain:ident,$decompress:ident,$infos:ident) => {{
-                let mut compact = module.$alloc(&$infos);
-                {
-                    let mut view = GGLWECompressedToBackendMut::<B, Rg>::to_backend_mut(&mut compact);
-                    let data = view.data.data_mut();
-                    let words: Vec<i64> = (0..B::len_bytes_mut(data) / 8).map(|i| (i % 7) as i64 - 3).collect();
-                    B::copy_host_to_view(data, bytemuck::cast_slice(&words));
-                }
-                for (i, seed) in compact.0.key.seed.iter_mut().enumerate() {
-                    *seed = [(i + 17) as u8; 32];
-                }
-                let seeds = compact.0.key.seed.clone();
-                let mut out = module.$plain(&$infos);
-                poison_gglwe::<B, _, Rg>(&mut out);
-                module.$decompress(&mut out, &compact);
-                assert_eq!(
-                    GLWESwitchingKeyDegrees::input_degree(&out),
-                    GLWESwitchingKeyDegrees::input_degree(&compact)
-                );
-                assert_eq!(
-                    GLWESwitchingKeyDegrees::output_degree(&out),
-                    GLWESwitchingKeyDegrees::output_degree(&compact)
-                );
-                assert_eq!(compact.0.key.seed, seeds, "decompression changed seeds");
-                result.push(gglwe_snapshot::<B, _, Rg>(stringify!($decompress), &out));
-                result.push(seeds_snapshot(stringify!($decompress), &seeds));
-            }};
-        }
-        // Scalar LWE switching/conversion keys are defined only for dsize=1.
-        if dsize == 1 {
-            let kl = GLWEToLWEKeyLayout {
-                n: key.n,
-                base2k: key.base2k,
-                dnum: key.dnum,
-                k_aux: key.k_aux,
-                rank_in: key.rank_in,
-            };
-            decompress_wrapper!(
-                glwe_to_lwe_key_compressed_alloc_from_infos,
-                glwe_to_lwe_key_alloc_from_infos,
-                glwe_to_lwe_key_decompress,
-                kl
-            );
-            let mut out = module.glwe_to_lwe_key_alloc_from_infos(&kl);
-            poison_gglwe::<B, _, Rg>(&mut out);
-            module.glwe_to_lwe_key_encrypt_sk(
-                &mut out,
-                &lwe,
-                &sk,
-                &mut e,
-                &mut a,
-                &mut poisoned_scratch::<B>(module.glwe_to_lwe_key_encrypt_sk_tmp_bytes(&kl)).arena(),
-            );
-            result.push(gglwe_snapshot::<B, _, Rg>("glwe_to_lwe_key_encrypt_sk", &out));
-            result.push(source_snapshot("glwe_to_lwe_sources", &mut e, &mut a));
-            let kl = LWEToGLWEKeyLayout {
-                n: key.n,
-                base2k: key.base2k,
-                dnum: key.dnum,
-                k_aux: key.k_aux,
-                rank_out: key.rank_out,
-            };
-            decompress_wrapper!(
-                lwe_to_glwe_key_compressed_alloc_from_infos,
-                lwe_to_glwe_key_alloc_from_infos,
-                lwe_to_glwe_key_decompress,
-                kl
-            );
-            let mut out = module.lwe_to_glwe_key_alloc_from_infos(&kl);
-            poison_gglwe::<B, _, Rg>(&mut out);
-            module.lwe_to_glwe_key_encrypt_sk(
-                &mut out,
-                &lwe,
-                &skp,
-                &mut e,
-                &mut a,
-                &mut poisoned_scratch::<B>(module.lwe_to_glwe_key_encrypt_sk_tmp_bytes(&kl)).arena(),
-            );
-            result.push(gglwe_snapshot::<B, _, Rg>("lwe_to_glwe_key_encrypt_sk", &out));
-            result.push(source_snapshot("lwe_to_glwe_sources", &mut e, &mut a));
-            let kl = LWESwitchingKeyLayout {
-                n: key.n,
-                base2k: key.base2k,
-                dnum: key.dnum,
-                k_aux: key.k_aux,
-            };
-            decompress_wrapper!(
-                lwe_switching_key_compressed_alloc_from_infos,
-                lwe_switching_key_alloc_from_infos,
-                lwe_switching_key_decompress,
-                kl
-            );
-            let mut out = module.lwe_switching_key_alloc_from_infos(&kl);
-            poison_gglwe::<B, _, Rg>(&mut out);
-            module.lwe_switching_key_encrypt_sk(
-                &mut out,
-                &lwe,
-                &lwe,
-                &mut e,
-                &mut a,
-                &mut poisoned_scratch::<B>(module.lwe_switching_key_encrypt_sk_tmp_bytes(&kl)).arena(),
-            );
-            result.push(gglwe_snapshot::<B, _, Rg>("lwe_switching_key_encrypt_sk", &out));
-            result.push(source_snapshot("lwe_switching_sources", &mut e, &mut a));
-        }
         result
     }
     let b = params.base2k.min(12);
@@ -531,5 +420,156 @@ pub fn test_key_encryption_parity<BR: EncryptionParityBackend<Rg>, BT: Encryptio
                 "key encryption rank={rank} dsize={dsize}"
             );
         }
+    }
+}
+
+/// Covers the encryption and decompression of the LWE keys, standard-ring operations, as
+/// [`test_key_encryption_parity`] does the other keys: the pair receives identical realised samples.
+pub fn test_lwe_key_encryption_parity<BR, BT>(params: &TestParams, shapes: &ParityShapes, r: &Module<BR>, t: &Module<BT>)
+where
+    BR: EncryptionParityBackend + LWEKeyEncryptionImpl + LWEKeyDecompressionImpl,
+    BT: EncryptionParityBackend + LWEKeyEncryptionImpl + LWEKeyDecompressionImpl,
+{
+    fn run<B: EncryptionParityBackend + LWEKeyEncryptionImpl + LWEKeyDecompressionImpl>(
+        module: &Module<B>,
+        n: usize,
+        b: usize,
+        rank: usize,
+    ) -> Vec<Snapshot> {
+        let key = GGLWELayout {
+            n: (n as u32).into(),
+            base2k: (b as u32).into(),
+            dnum: Dnum(3),
+            k_digit: crate::layouts::k_digit_of(b, 1u32),
+            k_offset: TorusPrecision(0),
+            k_aux: TorusPrecision((b + (n.ilog2() as usize) + 1) as u32),
+            rank_in: Rank(rank as u32),
+            rank_out: Rank(rank as u32),
+            stride: 1,
+        };
+        let sk = secret::<B, Standard>(module, n, rank);
+        let mut skp = module.glwe_secret_prepared_alloc_from_infos(&sk);
+        module.glwe_secret_prepare(&mut skp, &sk);
+        let mut lwe = module.lwe_secret_alloc(Degree((n / 2) as u32));
+        let coeffs: Vec<i64> = (0..n / 2).map(|i| (i % 3) as i64 - 1).collect();
+        B::copy_from_host(lwe.data.data_mut(), bytemuck::cast_slice(&coeffs));
+        lwe.dist = sk.dist;
+        let mut e = Source::new([149; 32]);
+        let mut a = Source::new([151; 32]);
+        let mut result = Vec::new();
+        // These three wrappers expose decompression without a corresponding
+        // compressed-encryption entry point. Stage the body and seeds explicitly.
+        macro_rules! decompress_wrapper {
+            ($alloc:ident,$plain:ident,$decompress:ident,$infos:ident) => {{
+                let mut compact = module.$alloc(&$infos);
+                {
+                    let mut view = GGLWECompressedToBackendMut::<B, Standard>::to_backend_mut(&mut compact);
+                    let data = view.data.data_mut();
+                    let words: Vec<i64> = (0..B::len_bytes_mut(data) / 8).map(|i| (i % 7) as i64 - 3).collect();
+                    B::copy_host_to_view(data, bytemuck::cast_slice(&words));
+                }
+                for (i, seed) in compact.0.key.seed.iter_mut().enumerate() {
+                    *seed = [(i + 17) as u8; 32];
+                }
+                let seeds = compact.0.key.seed.clone();
+                let mut out = module.$plain(&$infos);
+                poison_gglwe::<B, _, Standard>(&mut out);
+                module.$decompress(&mut out, &compact);
+                assert_eq!(
+                    GLWESwitchingKeyDegrees::input_degree(&out),
+                    GLWESwitchingKeyDegrees::input_degree(&compact)
+                );
+                assert_eq!(
+                    GLWESwitchingKeyDegrees::output_degree(&out),
+                    GLWESwitchingKeyDegrees::output_degree(&compact)
+                );
+                assert_eq!(compact.0.key.seed, seeds, "decompression changed seeds");
+                result.push(gglwe_snapshot::<B, _, Standard>(stringify!($decompress), &out));
+                result.push(seeds_snapshot(stringify!($decompress), &seeds));
+            }};
+        }
+        let kl = GLWEToLWEKeyLayout {
+            n: key.n,
+            base2k: key.base2k,
+            dnum: key.dnum,
+            k_aux: key.k_aux,
+            rank_in: key.rank_in,
+        };
+        decompress_wrapper!(
+            glwe_to_lwe_key_compressed_alloc_from_infos,
+            glwe_to_lwe_key_alloc_from_infos,
+            glwe_to_lwe_key_decompress,
+            kl
+        );
+        let mut out = module.glwe_to_lwe_key_alloc_from_infos(&kl);
+        poison_gglwe::<B, _, Standard>(&mut out);
+        module.glwe_to_lwe_key_encrypt_sk(
+            &mut out,
+            &lwe,
+            &sk,
+            &mut e,
+            &mut a,
+            &mut poisoned_scratch::<B>(module.glwe_to_lwe_key_encrypt_sk_tmp_bytes(&kl)).arena(),
+        );
+        result.push(gglwe_snapshot::<B, _, Standard>("glwe_to_lwe_key_encrypt_sk", &out));
+        result.push(source_snapshot("glwe_to_lwe_sources", &mut e, &mut a));
+        let kl = LWEToGLWEKeyLayout {
+            n: key.n,
+            base2k: key.base2k,
+            dnum: key.dnum,
+            k_aux: key.k_aux,
+            rank_out: key.rank_out,
+        };
+        decompress_wrapper!(
+            lwe_to_glwe_key_compressed_alloc_from_infos,
+            lwe_to_glwe_key_alloc_from_infos,
+            lwe_to_glwe_key_decompress,
+            kl
+        );
+        let mut out = module.lwe_to_glwe_key_alloc_from_infos(&kl);
+        poison_gglwe::<B, _, Standard>(&mut out);
+        module.lwe_to_glwe_key_encrypt_sk(
+            &mut out,
+            &lwe,
+            &skp,
+            &mut e,
+            &mut a,
+            &mut poisoned_scratch::<B>(module.lwe_to_glwe_key_encrypt_sk_tmp_bytes(&kl)).arena(),
+        );
+        result.push(gglwe_snapshot::<B, _, Standard>("lwe_to_glwe_key_encrypt_sk", &out));
+        result.push(source_snapshot("lwe_to_glwe_sources", &mut e, &mut a));
+        let kl = LWESwitchingKeyLayout {
+            n: key.n,
+            base2k: key.base2k,
+            dnum: key.dnum,
+            k_aux: key.k_aux,
+        };
+        decompress_wrapper!(
+            lwe_switching_key_compressed_alloc_from_infos,
+            lwe_switching_key_alloc_from_infos,
+            lwe_switching_key_decompress,
+            kl
+        );
+        let mut out = module.lwe_switching_key_alloc_from_infos(&kl);
+        poison_gglwe::<B, _, Standard>(&mut out);
+        module.lwe_switching_key_encrypt_sk(
+            &mut out,
+            &lwe,
+            &lwe,
+            &mut e,
+            &mut a,
+            &mut poisoned_scratch::<B>(module.lwe_switching_key_encrypt_sk_tmp_bytes(&kl)).arena(),
+        );
+        result.push(gglwe_snapshot::<B, _, Standard>("lwe_switching_key_encrypt_sk", &out));
+        result.push(source_snapshot("lwe_switching_sources", &mut e, &mut a));
+        result
+    }
+    let b = params.base2k.min(12);
+    for &rank in &shapes.ranks {
+        assert_eq!(
+            run(r, params.n, b, rank),
+            run(t, params.n, b, rank),
+            "lwe key encryption rank={rank}"
+        );
     }
 }

@@ -11,6 +11,23 @@
 //! [`GLWEDecompress`](crate::api::GLWEDecompress).
 
 macro_rules! impl_gglwe_compressed_to_backend_for_field {
+    ($ty:ty, $field:tt, $inner:ty, ring = $ring:ty) => {
+        impl<BE: Backend> GGLWECompressedToBackendRef<BE, $ring> for $ty {
+            fn to_backend_ref(&self) -> GGLWECompressedBackendRef<'_, BE, $ring> {
+                <$inner as GGLWECompressedToBackendRef<BE, $ring>>::to_backend_ref(&self.$field)
+            }
+        }
+
+        impl<BE: Backend> GGLWECompressedToBackendMut<BE, $ring> for $ty {
+            fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
+                <_ as GGLWECompressedToBackendMut<BE, $ring>>::set_noise(&mut self.$field, metadata);
+            }
+
+            fn to_backend_mut(&mut self) -> GGLWECompressedBackendMut<'_, BE, $ring> {
+                <$inner as GGLWECompressedToBackendMut<BE, $ring>>::to_backend_mut(&mut self.$field)
+            }
+        }
+    };
     ($ty:ty, $field:tt, $inner:ty) => {
         impl<BE: Backend, Rg: ::poulpy_hal::layouts::Ring> GGLWECompressedToBackendRef<BE, Rg> for $ty {
             fn to_backend_ref(&self) -> GGLWECompressedBackendRef<'_, BE, Rg> {

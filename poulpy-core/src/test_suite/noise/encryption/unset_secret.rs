@@ -1,6 +1,6 @@
 use poulpy_hal::{
     api::{ScalarZnxAlloc, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Module, Ring, ScratchArena, ScratchOwned},
+    layouts::{Module, Ring, ScratchArena, ScratchOwned, Standard},
     source::Source,
     test_suite::TestParams,
 };
@@ -309,25 +309,23 @@ pub fn test_glwe_tensor_key_encrypt_sk_rejects_unset_secret<BE: crate::test_suit
 
 /// Encrypting a GLWE-to-LWE, LWE switching or LWE-to-GLWE key to an output secret that was never sampled is refused
 /// before any draw or carve.
-pub fn test_lwe_switching_key_encrypt_sk_rejects_unset_secret<BE: crate::test_suite::noise::TestBackend<Rg>, Rg: Ring>(
+pub fn test_lwe_switching_key_encrypt_sk_rejects_unset_secret<BE: crate::test_suite::noise::TestBackend>(
     params: &TestParams,
     module: &Module<BE>,
 ) where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: GLWEToLWEKeyEncryptSk<BE, Rg>
-        + LWESwitchingKeyEncryptSk<BE, Rg>
-        + LWEToGLWEKeyEncryptSk<BE, Rg>
-        + GLWESecretPreparedFactory<BE, Rg>,
+    Module<BE>:
+        GLWEToLWEKeyEncryptSk<BE> + LWESwitchingKeyEncryptSk<BE> + LWEToGLWEKeyEncryptSk<BE> + GLWESecretPreparedFactory<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let layout = gglwe_layout(params, module, 1, 1);
     let sk_glwe = unset_secret(module, 1);
-    let sk_glwe_prepared: Prepared<BE, Rg> = module.glwe_secret_prepared_alloc(Rank(1));
+    let sk_glwe_prepared: Prepared<BE, Standard> = module.glwe_secret_prepared_alloc(Rank(1));
     let n = Degree(module.n() as u32);
-    let sk_lwe_in: LWESecret<BE::OwnedBuf, BE::ZnxWord, Rg> = module.lwe_secret_alloc(n);
-    let sk_lwe_out: LWESecret<BE::OwnedBuf, BE::ZnxWord, Rg> = module.lwe_secret_alloc(n);
+    let sk_lwe_in: LWESecret<BE::OwnedBuf, BE::ZnxWord> = module.lwe_secret_alloc(n);
+    let sk_lwe_out: LWESecret<BE::OwnedBuf, BE::ZnxWord> = module.lwe_secret_alloc(n);
     let mut res = module.glwe_to_lwe_key_alloc_from_infos(&layout);
     assert_unset_secret_refused(GLWE_NONE, &mut res, |res, xe, xa, scratch| {
         module.glwe_to_lwe_key_encrypt_sk(res, &sk_lwe_out, &sk_glwe, xe, xa, scratch)

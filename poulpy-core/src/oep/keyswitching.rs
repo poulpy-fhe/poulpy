@@ -658,13 +658,13 @@ pub unsafe trait GGSWKeyswitchImpl<Rg: Ring = Standard>:
     }
 }
 
-/// Backend-provided LWE key-switching operations.
+/// Backend-provided LWE key-switching operations, on the standard ring only.
 ///
 /// # Safety
 /// Implementations reproduce the bodies their methods document bit for bit, report for each
 /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait LWEKeyswitchImpl<Rg: Ring = Standard>: Backend {
+pub unsafe trait LWEKeyswitchImpl: Backend {
     /// Scratch bound of [`Self::lwe_keyswitch`]; may report less than the reference, never less than the body takes.
     fn lwe_keyswitch_tmp_bytes<R, A, K>(module: &Module<Self>, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
@@ -679,11 +679,11 @@ pub unsafe trait LWEKeyswitchImpl<Rg: Ring = Standard>: Backend {
         module: &Module<Self>,
         res: &mut R,
         a: &A,
-        ksk: &GGLWEPreparedBackendRef<'_, Self, Rg>,
+        ksk: &GGLWEPreparedBackendRef<'_, Self>,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        R: LWEToBackendMut<Self, Rg> + LWEInfos,
-        A: LWEToBackendRef<Self, Rg> + LWEInfos;
+        R: LWEToBackendMut<Self> + LWEInfos,
+        A: LWEToBackendRef<Self> + LWEInfos;
 }
 
 // === Convenience macros for full-reference opt-in ===
@@ -804,17 +804,11 @@ macro_rules! impl_glwe_keyswitch_reference_full {
     };
 }
 
-/// Selects the portable HAL algorithms for this backend operation family.
-///
-/// `($be)` implements both rings and `($be, $ring)` one ring, as `docs/guides/layering-contract.md` describes.
+/// Selects the portable HAL algorithms for this standard-only backend operation family.
 #[macro_export]
 macro_rules! impl_lwe_keyswitch_reference_full {
     ($be:ty) => {
-        $crate::impl_lwe_keyswitch_reference_full!($be, ::poulpy_hal::layouts::Standard);
-        $crate::impl_lwe_keyswitch_reference_full!($be, ::poulpy_hal::layouts::ConjugateInvariant);
-    };
-    ($be:ty, $ring:ty) => {
-        unsafe impl $crate::oep::LWEKeyswitchImpl<$ring> for $be {
+        unsafe impl $crate::oep::LWEKeyswitchImpl for $be {
             fn lwe_keyswitch_tmp_bytes<R, A, K>(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 res_infos: &R,
@@ -826,7 +820,7 @@ macro_rules! impl_lwe_keyswitch_reference_full {
                 A: $crate::layouts::LWEInfos,
                 K: $crate::layouts::GGLWEInfos,
             {
-                $crate::reference::keyswitching::LWEKeyswitchReference::<$be, $ring>::lwe_keyswitch_tmp_bytes_reference(
+                $crate::reference::keyswitching::LWEKeyswitchReference::<$be>::lwe_keyswitch_tmp_bytes_reference(
                     module, res_infos, a_infos, key_infos,
                 )
             }
@@ -835,13 +829,13 @@ macro_rules! impl_lwe_keyswitch_reference_full {
                 module: &::poulpy_hal::layouts::Module<$be>,
                 res: &mut R,
                 a: &A,
-                ksk: &$crate::layouts::prepared::GGLWEPreparedBackendRef<'_, $be, $ring>,
+                ksk: &$crate::layouts::prepared::GGLWEPreparedBackendRef<'_, $be>,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
             ) where
-                R: $crate::layouts::LWEToBackendMut<$be, $ring> + $crate::layouts::LWEInfos,
-                A: $crate::layouts::LWEToBackendRef<$be, $ring> + $crate::layouts::LWEInfos,
+                R: $crate::layouts::LWEToBackendMut<$be> + $crate::layouts::LWEInfos,
+                A: $crate::layouts::LWEToBackendRef<$be> + $crate::layouts::LWEInfos,
             {
-                $crate::reference::keyswitching::LWEKeyswitchReference::<$be, $ring>::lwe_keyswitch_reference(
+                $crate::reference::keyswitching::LWEKeyswitchReference::<$be>::lwe_keyswitch_reference(
                     module, res, a, ksk, scratch,
                 )
             }

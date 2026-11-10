@@ -39,7 +39,7 @@ poulpy_core::impl_ggsw_keyswitch_derived_full!(Batched, Standard);
 poulpy_core::impl_automorphism_reference_full!(Batched, Standard);
 poulpy_core::impl_glwe_external_product_reference_full!(Batched, Standard);
 poulpy_core::impl_glwe_keyswitch_reference_full!(Batched, Standard);
-poulpy_core::impl_lwe_keyswitch_reference_full!(Batched, Standard);
+poulpy_core::impl_lwe_keyswitch_reference_full!(Batched);
 poulpy_core::impl_glwe_tensoring_reference_full!(Batched, Standard);
 poulpy_core::impl_gglwe_product_digits_strided_reference_full!(Batched, Standard);
 poulpy_core::impl_glwe_trace_derived_full!(Batched, Standard);

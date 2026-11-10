@@ -422,7 +422,7 @@ pub trait GLWETensorKeyEncryptSk<BE: Backend, Rg: Ring = Standard> {
 /// # Panics
 ///
 /// When the encrypting secret has the `NONE` distribution, before any draw or write.
-pub trait GLWEToLWEKeyEncryptSk<BE: Backend, Rg: Ring = Standard> {
+pub trait GLWEToLWEKeyEncryptSk<BE: Backend> {
     fn glwe_to_lwe_key_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos;
@@ -436,15 +436,15 @@ pub trait GLWEToLWEKeyEncryptSk<BE: Backend, Rg: Ring = Standard> {
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        S1: LWESecretToBackendRef<BE, Rg>,
-        S2: GLWESecretToBackendRef<BE, Rg>,
-        R: GGLWEToBackendMut<BE, Rg> + GGLWEInfos;
+        S1: LWESecretToBackendRef<BE>,
+        S2: GLWESecretToBackendRef<BE>,
+        R: GGLWEToBackendMut<BE> + GGLWEInfos;
 }
 
 /// # Panics
 ///
 /// When the encrypting secret has the `NONE` distribution, before any draw or write.
-pub trait LWESwitchingKeyEncryptSk<BE: Backend, Rg: Ring = Standard> {
+pub trait LWESwitchingKeyEncryptSk<BE: Backend> {
     fn lwe_switching_key_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos;
@@ -458,15 +458,15 @@ pub trait LWESwitchingKeyEncryptSk<BE: Backend, Rg: Ring = Standard> {
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GGLWEToBackendMut<BE, Rg> + GLWESwitchingKeyDegreesMut + GGLWEInfos,
-        S1: LWESecretToBackendRef<BE, Rg>,
-        S2: LWESecretToBackendRef<BE, Rg>;
+        R: GGLWEToBackendMut<BE> + GLWESwitchingKeyDegreesMut + GGLWEInfos,
+        S1: LWESecretToBackendRef<BE>,
+        S2: LWESecretToBackendRef<BE>;
 }
 
 /// # Panics
 ///
 /// When the encrypting secret has the `NONE` distribution, before any draw or write.
-pub trait LWEToGLWEKeyEncryptSk<BE: Backend, Rg: Ring = Standard> {
+pub trait LWEToGLWEKeyEncryptSk<BE: Backend> {
     fn lwe_to_glwe_key_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos;
@@ -480,9 +480,9 @@ pub trait LWEToGLWEKeyEncryptSk<BE: Backend, Rg: Ring = Standard> {
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        S1: LWESecretToBackendRef<BE, Rg>,
-        S2: GLWESecretPreparedToBackendRef<BE, Rg>,
-        R: GGLWEToBackendMut<BE, Rg> + GGLWEInfos;
+        S1: LWESecretToBackendRef<BE>,
+        S2: GLWESecretPreparedToBackendRef<BE>,
+        R: GGLWEToBackendMut<BE> + GGLWEInfos;
 }
 
 /// # Panics

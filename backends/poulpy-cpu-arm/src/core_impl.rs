@@ -112,6 +112,10 @@ impl_gglwe_product_digits_strided_reference_full!(FFT64NeonRayon);
 
 poulpy_cpu_portable::impl_cpu_core_defaults!(super::FFT64Neon, fft64);
 ::poulpy_core::impl_conversion_reference_full!(super::FFT64Neon);
+::poulpy_core::impl_lwe_keyswitch_reference_full!(super::FFT64Neon);
+::poulpy_core::impl_lwe_key_encryption_reference_full!(super::FFT64Neon);
+::poulpy_core::impl_lwe_key_preparation_derived_full!(super::FFT64Neon);
+::poulpy_core::impl_lwe_key_decompression_derived_full!(super::FFT64Neon);
 ::poulpy_core::impl_glwe_pack_derived_full!(super::FFT64Neon);
 ::poulpy_core::impl_glwe_rotate_reference_full!(super::FFT64Neon);
 ::poulpy_core::impl_ggsw_rotate_derived_full!(super::FFT64Neon);
@@ -119,6 +123,10 @@ poulpy_cpu_portable::impl_cpu_core_defaults!(super::FFT64Neon, fft64);
 ::poulpy_core::impl_glwe_ci_conversion_reference_full!(super::FFT64Neon);
 poulpy_cpu_portable::impl_cpu_core_defaults!(super::NTT4x30Neon, ntt4x30);
 ::poulpy_core::impl_conversion_reference_full!(super::NTT4x30Neon);
+::poulpy_core::impl_lwe_keyswitch_reference_full!(super::NTT4x30Neon);
+::poulpy_core::impl_lwe_key_encryption_reference_full!(super::NTT4x30Neon);
+::poulpy_core::impl_lwe_key_preparation_derived_full!(super::NTT4x30Neon);
+::poulpy_core::impl_lwe_key_decompression_derived_full!(super::NTT4x30Neon);
 ::poulpy_core::impl_glwe_pack_derived_full!(super::NTT4x30Neon);
 ::poulpy_core::impl_glwe_rotate_reference_full!(super::NTT4x30Neon);
 ::poulpy_core::impl_ggsw_rotate_derived_full!(super::NTT4x30Neon);
@@ -128,6 +136,14 @@ poulpy_cpu_portable::impl_cpu_core_defaults!(super::NTT4x30Neon, ntt4x30);
 poulpy_cpu_portable::impl_cpu_core_defaults!(super::FFT64NeonRayon, fft64);
 #[cfg(feature = "enable-rayon")]
 ::poulpy_core::impl_conversion_reference_full!(super::FFT64NeonRayon);
+#[cfg(feature = "enable-rayon")]
+::poulpy_core::impl_lwe_keyswitch_reference_full!(super::FFT64NeonRayon);
+#[cfg(feature = "enable-rayon")]
+::poulpy_core::impl_lwe_key_encryption_reference_full!(super::FFT64NeonRayon);
+#[cfg(feature = "enable-rayon")]
+::poulpy_core::impl_lwe_key_preparation_derived_full!(super::FFT64NeonRayon);
+#[cfg(feature = "enable-rayon")]
+::poulpy_core::impl_lwe_key_decompression_derived_full!(super::FFT64NeonRayon);
 #[cfg(feature = "enable-rayon")]
 ::poulpy_core::impl_glwe_pack_derived_full!(super::FFT64NeonRayon);
 #[cfg(feature = "enable-rayon")]
@@ -142,6 +158,14 @@ poulpy_cpu_portable::impl_cpu_core_defaults!(super::FFT64NeonRayon, fft64);
 poulpy_cpu_portable::impl_cpu_core_defaults!(super::NTT4x30NeonRayon, ntt4x30);
 #[cfg(feature = "enable-rayon")]
 ::poulpy_core::impl_conversion_reference_full!(super::NTT4x30NeonRayon);
+#[cfg(feature = "enable-rayon")]
+::poulpy_core::impl_lwe_keyswitch_reference_full!(super::NTT4x30NeonRayon);
+#[cfg(feature = "enable-rayon")]
+::poulpy_core::impl_lwe_key_encryption_reference_full!(super::NTT4x30NeonRayon);
+#[cfg(feature = "enable-rayon")]
+::poulpy_core::impl_lwe_key_preparation_derived_full!(super::NTT4x30NeonRayon);
+#[cfg(feature = "enable-rayon")]
+::poulpy_core::impl_lwe_key_decompression_derived_full!(super::NTT4x30NeonRayon);
 #[cfg(feature = "enable-rayon")]
 ::poulpy_core::impl_glwe_pack_derived_full!(super::NTT4x30NeonRayon);
 #[cfg(feature = "enable-rayon")]

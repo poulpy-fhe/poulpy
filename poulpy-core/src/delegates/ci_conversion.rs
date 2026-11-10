@@ -5,10 +5,11 @@ use poulpy_hal::{
 
 use crate::{
     GetDistribution, GetDistributionMut,
-    api::{GLWECIEmbed, GLWECIKeyEncryptSk, GLWECITrace, GLWESecretCIEmbed, GLWESwitchDegree},
+    api::{GLWECIEmbed, GLWECIKeyEncryptSk, GLWECIKeyPreparedFactory, GLWECITrace, GLWESecretCIEmbed, GLWESwitchDegree},
     layouts::{
-        GGLWEInfos, GGLWEToBackendMut, GLWECIEmbedKey, GLWECITraceKey, GLWEInfos, GLWESecretToBackendMut, GLWESecretToBackendRef,
-        GLWEToBackendMut, GLWEToBackendRef,
+        GGLWEInfos, GGLWEPreparedToBackendMut, GGLWEToBackendMut, GGLWEToBackendRef, GLWECIEmbedKey, GLWECIKeyPrepared,
+        GLWECITraceKey, GLWEInfos, GLWESecretToBackendMut, GLWESecretToBackendRef, GLWESwitchingKeyDegrees,
+        GLWESwitchingKeyPrepared, GLWEToBackendMut, GLWEToBackendRef,
     },
     oep::GLWECIConversionImpl,
 };
@@ -101,5 +102,23 @@ impl<BE: Backend + GLWECIConversionImpl> GLWECIKeyEncryptSk<BE> for Module<BE> {
         S2: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
     {
         BE::glwe_ci_trace_key_encrypt_sk(self, res, sk_ci, sk, source_xe, source_xa, scratch)
+    }
+}
+
+impl<BE: Backend + GLWECIConversionImpl> GLWECIKeyPreparedFactory<BE> for Module<BE> {
+    fn glwe_ci_key_prepare_tmp_bytes<A>(&self, infos: &A) -> usize
+    where
+        A: GGLWEInfos,
+    {
+        BE::glwe_ci_key_prepare_tmp_bytes(self, infos)
+    }
+
+    fn glwe_ci_key_prepare<DR, O, M>(&self, res: &mut GLWECIKeyPrepared<DR, BE, M>, other: &O, scratch: &mut ScratchArena<'_, BE>)
+    where
+        DR: Data,
+        GLWESwitchingKeyPrepared<DR, BE>: GGLWEPreparedToBackendMut<BE>,
+        O: GGLWEToBackendRef<BE> + GLWESwitchingKeyDegrees,
+    {
+        BE::glwe_ci_key_prepare(self, res, other, scratch)
     }
 }

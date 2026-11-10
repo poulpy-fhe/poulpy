@@ -208,12 +208,12 @@ transfer_key_matrix_into_view! {
     GLWETensorKey<D1, BE::ZnxWord, Rg> => 0;
 }
 
-impl<D1, BE, M, Rg: Ring> TransferInto<GGLWEViewMut<'_, BE, Rg>> for GLWECIKey<D1, BE::ZnxWord, M, Rg>
+impl<D1, BE, M> TransferInto<GGLWEViewMut<'_, BE>> for GLWECIKey<D1, BE::ZnxWord, M>
 where
     D1: Data + CopyToHost,
     BE: Backend,
 {
-    fn transfer_into(&self, dst: &mut GGLWEViewMut<'_, BE, Rg>) {
+    fn transfer_into(&self, dst: &mut GGLWEViewMut<'_, BE>) {
         self.0.transfer_into(dst);
     }
 }
@@ -330,13 +330,13 @@ where
     }
 }
 
-impl<D1, D2, W, M, Rg: Ring> TransferInto<GLWECIKey<D2, W, M, Rg>> for GLWECIKey<D1, W, M, Rg>
+impl<D1, D2, W, M> TransferInto<GLWECIKey<D2, W, M>> for GLWECIKey<D1, W, M>
 where
     D1: Data + CopyToHost,
     D2: Data + CopyFromHost,
     W: ZnxWord,
 {
-    fn transfer_into(&self, dst: &mut GLWECIKey<D2, W, M, Rg>) {
+    fn transfer_into(&self, dst: &mut GLWECIKey<D2, W, M>) {
         self.0.transfer_into(&mut dst.0);
     }
 }
@@ -390,13 +390,13 @@ where
     }
 }
 
-impl<D1, D2, W, Rg: Ring> TransferInto<GLWEToLWEKey<D2, W, Rg>> for GLWEToLWEKey<D1, W, Rg>
+impl<D1, D2, W> TransferInto<GLWEToLWEKey<D2, W>> for GLWEToLWEKey<D1, W>
 where
     D1: Data + CopyToHost,
     D2: Data + CopyFromHost,
     W: ZnxWord,
 {
-    fn transfer_into(&self, dst: &mut GLWEToLWEKey<D2, W, Rg>) {
+    fn transfer_into(&self, dst: &mut GLWEToLWEKey<D2, W>) {
         self.0.transfer_into(&mut dst.0);
     }
 }

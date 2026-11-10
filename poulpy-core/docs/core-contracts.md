@@ -63,10 +63,14 @@ before writing it.
 Every core family takes the operand ring as its trait parameter
 (`GLWEKeyswitchImpl<Rg>`, `SamplingImpl<Rg>`) and is selected per ring, as the
 [layering contract](../../docs/guides/layering-contract.md#selecting-an-implementation)
-states, except the standard-only families (LWE conversion, packing, GLWE/GGSW
-rotate, `mul_xp_minus_one`) and `GLWECIConversionImpl` (the conjugate-invariant
-conversions, one standard and one conjugate-invariant operand, and the standard
-degree switch), which carry no ring parameter and whose macros a backend registers once.
+states, except the standard-only families (LWE conversion, LWE key switching, the
+encryption, preparation and decompression of the LWE keys, packing, GLWE/GGSW rotate,
+`mul_xp_minus_one`) and `GLWECIConversionImpl` (the conjugate-invariant conversions, one
+standard and one conjugate-invariant operand, and the standard degree switch and
+conjugate-invariant key encryption and preparation), which carry no ring parameter and whose
+macros a backend registers once. A layout whose producers and consumers are all
+standard-only or cross-ring takes no ring: the LWE switching key, the keys between LWE and
+GLWE and the conjugate-invariant keys, in every tier, are standard-ring keys.
 
 Inside a hand-written `GGLWEProductDigitsStridedImpl<Rg>`,
 `impl_gglwe_product_digits_strided_reference!($ring)` forwards the step hooks it does not

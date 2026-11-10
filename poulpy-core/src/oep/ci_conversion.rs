@@ -7,19 +7,21 @@ use poulpy_hal::{
 use crate::{
     GetDistribution, GetDistributionMut,
     layouts::{
-        GGLWEInfos, GGLWEToBackendMut, GLWECIEmbedKey, GLWECITraceKey, GLWEInfos, GLWESecretToBackendMut, GLWESecretToBackendRef,
-        GLWEToBackendMut, GLWEToBackendRef,
+        GGLWEInfos, GGLWEPreparedToBackendMut, GGLWEToBackendMut, GGLWEToBackendRef, GLWECIEmbedKey, GLWECIKeyPrepared,
+        GLWECITraceKey, GLWEInfos, GLWESecretToBackendMut, GLWESecretToBackendRef, GLWESwitchingKeyDegrees,
+        GLWESwitchingKeyPrepared, GLWEToBackendMut, GLWEToBackendRef,
     },
-    oep::EncryptionImpl,
+    oep::{EncryptionImpl, PreparationImpl},
 };
 
 /// Backend-provided maps between conjugate-invariant GLWEs and secrets of degree `N` and
 /// standard GLWEs and secrets of degree `2N`, the degree switch between standard GLWEs of
-/// degrees `N` and `2N`, and the encryption of the switching keys between a standard secret and
-/// an embedded conjugate-invariant one, executed by a module of degree at least `2N`.
+/// degrees `N` and `2N`, and the encryption and preparation of the switching keys between a standard
+/// secret and an embedded conjugate-invariant one, executed by a module of degree at least `2N`.
 ///
 /// The key encryptions default to [`Self::glwe_secret_ci_embed`] into their scratch followed by the
-/// selected [`EncryptionImpl::glwe_switching_key_encrypt_sk`], and the degree switch to the selected
+/// selected [`EncryptionImpl::glwe_switching_key_encrypt_sk`], the key preparation to the selected
+/// [`PreparationImpl::glwe_switching_key_prepare`], and the degree switch to the selected
 /// [`HalVecZnxImpl::vec_znx_switch_ring`] on each column.
 ///
 /// # Safety
@@ -28,7 +30,7 @@ use crate::{
 /// The key encryptions wipe the scratch their query reports before returning.
 /// The memory, layout, synchrony and aliasing rules of
 /// `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait GLWECIConversionImpl: HalVecZnxImpl + EncryptionImpl {
+pub unsafe trait GLWECIConversionImpl: HalVecZnxImpl + EncryptionImpl + PreparationImpl {
     /// Reproduces [`glwe_ci_embed_reference`](crate::reference::ci_conversion::GLWECIConversionReference::glwe_ci_embed_reference) bit for bit;
     /// free in kernels.
     fn glwe_ci_embed<R, A>(module: &Module<Self>, res: &mut R, a: &A)
@@ -117,6 +119,29 @@ pub unsafe trait GLWECIConversionImpl: HalVecZnxImpl + EncryptionImpl {
         crate::oep::derived::ci_conversion::glwe_ci_trace_key_encrypt_sk_derived(
             module, res, sk_ci, sk, source_xe, source_xa, scratch,
         )
+    }
+
+    /// Default body: `glwe_ci_key_prepare_tmp_bytes_derived`, [`PreparationImpl::glwe_switching_key_prepare_tmp_bytes`].
+    fn glwe_ci_key_prepare_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
+    where
+        A: GGLWEInfos,
+    {
+        crate::oep::derived::ci_conversion::glwe_ci_key_prepare_tmp_bytes_derived(module, infos)
+    }
+
+    /// Default body: `glwe_ci_key_prepare_derived`, [`PreparationImpl::glwe_switching_key_prepare`] on the inner
+    /// switching key, within [`Self::glwe_ci_key_prepare_tmp_bytes`].
+    fn glwe_ci_key_prepare<DR, O, M>(
+        module: &Module<Self>,
+        res: &mut GLWECIKeyPrepared<DR, Self, M>,
+        other: &O,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) where
+        DR: Data,
+        GLWESwitchingKeyPrepared<DR, Self>: GGLWEPreparedToBackendMut<Self>,
+        O: GGLWEToBackendRef<Self> + GLWESwitchingKeyDegrees,
+    {
+        crate::oep::derived::ci_conversion::glwe_ci_key_prepare_derived(module, res, other, scratch)
     }
 }
 

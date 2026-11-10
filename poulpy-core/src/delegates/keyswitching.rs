@@ -11,6 +11,14 @@ use crate::{
 };
 
 macro_rules! impl_keyswitching_delegate {
+    (free $trait:ty, [$($bounds:tt)+], $($body:item)+) => {
+        impl<BE> $trait for Module<BE>
+        where
+            $($bounds)+
+        {
+            $($body)+
+        }
+    };
     ($trait:ty, [$($bounds:tt)+], $($body:item)+) => {
         impl<BE, Rg: Ring> $trait for Module<BE>
         where
@@ -170,8 +178,8 @@ impl_keyswitching_delegate!(
 );
 
 impl_keyswitching_delegate!(
-    LWEKeyswitch<BE, Rg>,
-    [BE: Backend + LWEKeyswitchImpl<Rg>],
+    free LWEKeyswitch<BE>,
+    [BE: Backend + LWEKeyswitchImpl],
     fn lwe_keyswitch_tmp_bytes<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
         R: LWEInfos,
@@ -185,11 +193,11 @@ impl_keyswitching_delegate!(
         &self,
         res: &mut R,
         a: &A,
-        ksk: &GGLWEPreparedBackendRef<'_, BE, Rg>,
+        ksk: &GGLWEPreparedBackendRef<'_, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: LWEToBackendMut<BE, Rg> + LWEInfos,
-        A: LWEToBackendRef<BE, Rg> + LWEInfos,
+        R: LWEToBackendMut<BE> + LWEInfos,
+        A: LWEToBackendRef<BE> + LWEInfos,
     {
         BE::lwe_keyswitch(self, res, a, ksk, scratch)
     }

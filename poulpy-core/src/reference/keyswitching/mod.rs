@@ -433,7 +433,7 @@ where
 
 /// Portable HAL algorithm helpers. Available when their capabilities are present;
 /// backend dispatch is selected independently through the corresponding `*Impl` trait.
-pub trait LWEKeyswitchReference<BE: Backend, Rg: Ring = Standard> {
+pub trait LWEKeyswitchReference<BE: Backend> {
     fn lwe_keyswitch_tmp_bytes_reference<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
         R: LWEInfos,
@@ -444,20 +444,20 @@ pub trait LWEKeyswitchReference<BE: Backend, Rg: Ring = Standard> {
         &self,
         res: &mut R,
         a: &A,
-        ksk: &GGLWEPreparedBackendRef<'_, BE, Rg>,
+        ksk: &GGLWEPreparedBackendRef<'_, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: LWEToBackendMut<BE, Rg> + LWEInfos,
-        A: LWEToBackendRef<BE, Rg> + LWEInfos;
+        R: LWEToBackendMut<BE> + LWEInfos,
+        A: LWEToBackendRef<BE> + LWEInfos;
 }
 
-impl<BE: Backend, Rg: Ring> LWEKeyswitchReference<BE, Rg> for ::poulpy_hal::layouts::Module<BE>
+impl<BE: Backend> LWEKeyswitchReference<BE> for ::poulpy_hal::layouts::Module<BE>
 where
     Module<BE>: crate::api::GLWEBytesOf<BE>
         + poulpy_hal::api::ModuleN
-        + crate::api::GLWEKeyswitch<BE, Rg>
-        + poulpy_hal::api::VecZnxCopy<BE, Rg>
-        + poulpy_hal::api::VecZnxZero<BE, Rg>,
+        + crate::api::GLWEKeyswitch<BE>
+        + poulpy_hal::api::VecZnxCopy<BE>
+        + poulpy_hal::api::VecZnxZero<BE>,
 {
     fn lwe_keyswitch_tmp_bytes_reference<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
@@ -465,7 +465,7 @@ where
         A: crate::layouts::LWEInfos,
         K: crate::layouts::GGLWEInfos,
     {
-        crate::reference::keyswitching::lwe::lwe_keyswitch_tmp_bytes_reference::<BE, _, _, _, _, Rg>(
+        crate::reference::keyswitching::lwe::lwe_keyswitch_tmp_bytes_reference::<BE, _, _, _, _>(
             self, res_infos, a_infos, key_infos,
         )
     }
@@ -474,12 +474,12 @@ where
         &self,
         res: &mut R,
         a: &A,
-        ksk: &crate::layouts::prepared::GGLWEPreparedBackendRef<'_, BE, Rg>,
+        ksk: &crate::layouts::prepared::GGLWEPreparedBackendRef<'_, BE>,
         scratch: &mut ::poulpy_hal::layouts::ScratchArena<BE>,
     ) where
-        R: crate::layouts::LWEToBackendMut<BE, Rg> + crate::layouts::LWEInfos,
-        A: crate::layouts::LWEToBackendRef<BE, Rg> + crate::layouts::LWEInfos,
+        R: crate::layouts::LWEToBackendMut<BE> + crate::layouts::LWEInfos,
+        A: crate::layouts::LWEToBackendRef<BE> + crate::layouts::LWEInfos,
     {
-        crate::reference::keyswitching::lwe::lwe_keyswitch_reference::<BE, _, _, _, Rg>(self, res, a, ksk, scratch)
+        crate::reference::keyswitching::lwe::lwe_keyswitch_reference::<BE, _, _, _>(self, res, a, ksk, scratch)
     }
 }

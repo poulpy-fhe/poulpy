@@ -96,29 +96,29 @@ pub trait GLWETensorKeyDecompress<BE: Backend, Rg: Ring = Standard> {
 
 /// Decompresses a [`GLWEToLWEKeyCompressed`](crate::layouts::GLWEToLWEKeyCompressed) into a
 /// [`GLWEToLWEKey`](crate::layouts::GLWEToLWEKey).
-pub trait GLWEToLWEKeyDecompress<BE: Backend, Rg: Ring = Standard> {
+pub trait GLWEToLWEKeyDecompress<BE: Backend> {
     fn glwe_to_lwe_key_decompress<R, O>(&self, res: &mut R, other: &O)
     where
-        R: GGLWEToBackendMut<BE, Rg> + GGLWEInfos + GLWESwitchingKeyDegreesMut,
-        O: GGLWECompressedToBackendRef<BE, Rg> + GGLWEInfos + GLWESwitchingKeyDegrees;
+        R: GGLWEToBackendMut<BE> + GGLWEInfos + GLWESwitchingKeyDegreesMut,
+        O: GGLWECompressedToBackendRef<BE> + GGLWEInfos + GLWESwitchingKeyDegrees;
 }
 
 /// Decompresses an [`LWESwitchingKeyCompressed`](crate::layouts::LWESwitchingKeyCompressed) into an
 /// [`LWESwitchingKey`](crate::layouts::LWESwitchingKey).
-pub trait LWESwitchingKeyDecompress<BE: Backend, Rg: Ring = Standard> {
+pub trait LWESwitchingKeyDecompress<BE: Backend> {
     fn lwe_switching_key_decompress<R, O>(&self, res: &mut R, other: &O)
     where
-        R: GGLWEToBackendMut<BE, Rg> + GGLWEInfos + GLWESwitchingKeyDegreesMut,
-        O: GGLWECompressedToBackendRef<BE, Rg> + GGLWEInfos + GLWESwitchingKeyDegrees;
+        R: GGLWEToBackendMut<BE> + GGLWEInfos + GLWESwitchingKeyDegreesMut,
+        O: GGLWECompressedToBackendRef<BE> + GGLWEInfos + GLWESwitchingKeyDegrees;
 }
 
 /// Decompresses an [`LWEToGLWEKeyCompressed`](crate::layouts::LWEToGLWEKeyCompressed) into an
 /// [`LWEToGLWEKey`](crate::layouts::LWEToGLWEKey).
-pub trait LWEToGLWEKeyDecompress<BE: Backend, Rg: Ring = Standard> {
+pub trait LWEToGLWEKeyDecompress<BE: Backend> {
     fn lwe_to_glwe_key_decompress<R, O>(&self, res: &mut R, other: &O)
     where
-        R: GGLWEToBackendMut<BE, Rg> + GGLWEInfos + GLWESwitchingKeyDegreesMut,
-        O: GGLWECompressedToBackendRef<BE, Rg> + GGLWEInfos + GLWESwitchingKeyDegrees;
+        R: GGLWEToBackendMut<BE> + GGLWEInfos + GLWESwitchingKeyDegreesMut,
+        O: GGLWECompressedToBackendRef<BE> + GGLWEInfos + GLWESwitchingKeyDegrees;
 }
 
 /// Decompresses a [`GGLWEToGGSWKeyCompressed`](crate::layouts::GGLWEToGGSWKeyCompressed) into an unprepared

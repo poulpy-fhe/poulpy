@@ -14,7 +14,7 @@ use crate::{
 /// Backend-provided decompression of seed-compressed ciphertexts and keys.
 ///
 /// `glwe_decompress` and `lwe_decompress` are required. The other methods default to compositions of
-/// `glwe_decompress`, `gglwe_decompress` and `glwe_switching_key_decompress`. An implementation reproduces
+/// `glwe_decompress` and `gglwe_decompress`. An implementation reproduces
 /// the body it replaces bit for bit: the copied bodies, the masks regenerated from the stored seeds,
 /// its refusals before any write to `res`, and the metadata it sets on `res`. No method takes scratch;
 /// the kernels are free.
@@ -100,33 +100,6 @@ pub unsafe trait DecompressionImpl<Rg: Ring = Standard>: Backend {
         super::derived::decompression::glwe_tensor_key_decompress_derived(module, res, other)
     }
 
-    /// Default body: `glwe_to_lwe_key_decompress_derived`, `glwe_switching_key_decompress`.
-    fn glwe_to_lwe_key_decompress<R, O>(module: &Module<Self>, res: &mut R, other: &O)
-    where
-        R: GGLWEToBackendMut<Self, Rg> + GGLWEInfos + GLWESwitchingKeyDegreesMut,
-        O: GGLWECompressedToBackendRef<Self, Rg> + GGLWEInfos + GLWESwitchingKeyDegrees,
-    {
-        super::derived::decompression::glwe_to_lwe_key_decompress_derived(module, res, other)
-    }
-
-    /// Default body: `lwe_switching_key_decompress_derived`, `glwe_switching_key_decompress`.
-    fn lwe_switching_key_decompress<R, O>(module: &Module<Self>, res: &mut R, other: &O)
-    where
-        R: GGLWEToBackendMut<Self, Rg> + GGLWEInfos + GLWESwitchingKeyDegreesMut,
-        O: GGLWECompressedToBackendRef<Self, Rg> + GGLWEInfos + GLWESwitchingKeyDegrees,
-    {
-        super::derived::decompression::lwe_switching_key_decompress_derived(module, res, other)
-    }
-
-    /// Default body: `lwe_to_glwe_key_decompress_derived`, `glwe_switching_key_decompress`.
-    fn lwe_to_glwe_key_decompress<R, O>(module: &Module<Self>, res: &mut R, other: &O)
-    where
-        R: GGLWEToBackendMut<Self, Rg> + GGLWEInfos + GLWESwitchingKeyDegreesMut,
-        O: GGLWECompressedToBackendRef<Self, Rg> + GGLWEInfos + GLWESwitchingKeyDegrees,
-    {
-        super::derived::decompression::lwe_to_glwe_key_decompress_derived(module, res, other)
-    }
-
     /// Default body: `gglwe_to_ggsw_key_decompress_derived`, after checking the key count and each key's digit
     /// width, row offset and row count, [`Self::gglwe_decompress`] on each key, then the source's noise on `res`.
     fn gglwe_to_ggsw_key_decompress<R, O>(module: &Module<Self>, res: &mut R, other: &O)
@@ -135,6 +108,42 @@ pub unsafe trait DecompressionImpl<Rg: Ring = Standard>: Backend {
         O: GGLWEToGGSWKeyCompressedToBackendRef<Self, Rg>,
     {
         super::derived::decompression::gglwe_to_ggsw_key_decompress_derived(module, res, other)
+    }
+}
+
+/// Backend-provided decompression of the LWE switching key and of the keys between LWE and GLWE, on the
+/// standard ring only: every method defaults to the selected [`DecompressionImpl::glwe_switching_key_decompress`].
+///
+/// # Safety
+/// Implementations read `other` and write `res` only within the regions their layouts describe,
+/// and leave `other` unchanged. The memory, layout, synchrony and aliasing rules of
+/// `poulpy-hal/docs/backend_safety_contract.md` apply.
+pub unsafe trait LWEKeyDecompressionImpl: Backend + DecompressionImpl {
+    /// Default body: `glwe_to_lwe_key_decompress_derived`, [`DecompressionImpl::glwe_switching_key_decompress`].
+    fn glwe_to_lwe_key_decompress<R, O>(module: &Module<Self>, res: &mut R, other: &O)
+    where
+        R: GGLWEToBackendMut<Self> + GGLWEInfos + GLWESwitchingKeyDegreesMut,
+        O: GGLWECompressedToBackendRef<Self> + GGLWEInfos + GLWESwitchingKeyDegrees,
+    {
+        super::derived::decompression::glwe_to_lwe_key_decompress_derived(module, res, other)
+    }
+
+    /// Default body: `lwe_switching_key_decompress_derived`, [`DecompressionImpl::glwe_switching_key_decompress`].
+    fn lwe_switching_key_decompress<R, O>(module: &Module<Self>, res: &mut R, other: &O)
+    where
+        R: GGLWEToBackendMut<Self> + GGLWEInfos + GLWESwitchingKeyDegreesMut,
+        O: GGLWECompressedToBackendRef<Self> + GGLWEInfos + GLWESwitchingKeyDegrees,
+    {
+        super::derived::decompression::lwe_switching_key_decompress_derived(module, res, other)
+    }
+
+    /// Default body: `lwe_to_glwe_key_decompress_derived`, [`DecompressionImpl::glwe_switching_key_decompress`].
+    fn lwe_to_glwe_key_decompress<R, O>(module: &Module<Self>, res: &mut R, other: &O)
+    where
+        R: GGLWEToBackendMut<Self> + GGLWEInfos + GLWESwitchingKeyDegreesMut,
+        O: GGLWECompressedToBackendRef<Self> + GGLWEInfos + GLWESwitchingKeyDegrees,
+    {
+        super::derived::decompression::lwe_to_glwe_key_decompress_derived(module, res, other)
     }
 }
 
@@ -168,5 +177,13 @@ macro_rules! impl_decompression_reference_full {
                 <::poulpy_hal::layouts::Module<$be> as $crate::reference::decompression::DecompressionReference<$be, $ring>>::lwe_decompress_reference(module, res, other)
             }
         }
+    };
+}
+
+/// Selects the derived defaults of the LWE key decompressions for this backend.
+#[macro_export]
+macro_rules! impl_lwe_key_decompression_derived_full {
+    ($be:ty) => {
+        unsafe impl $crate::oep::LWEKeyDecompressionImpl for $be {}
     };
 }

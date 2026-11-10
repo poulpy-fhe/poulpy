@@ -1,5 +1,5 @@
 use poulpy_hal::{
-    layouts::{Backend, Data, Module, Ring, ScratchArena, Standard},
+    layouts::{Backend, Module, Ring, ScratchArena, Standard},
     oep::HalVmpImpl,
 };
 
@@ -7,9 +7,9 @@ use crate::{
     GetDistribution, GetDistributionMut,
     layouts::{
         GGLWEInfos, GGLWEPreparedToBackendMut, GGLWEToBackendRef, GGLWEToGGSWKeyPreparedToBackendMut, GGLWEToGGSWKeyToBackendRef,
-        GGSWInfos, GGSWPreparedToBackendMut, GGSWToBackendRef, GLWECIKeyPrepared, GLWEInfos, GLWEPreparedToBackendMut,
+        GGSWInfos, GGSWPreparedToBackendMut, GGSWToBackendRef, GLWEInfos, GLWEPreparedToBackendMut,
         GLWEPublicKeyPreparedToBackendMut, GLWEPublicKeyToBackendRef, GLWESwitchingKeyDegrees, GLWESwitchingKeyDegreesMut,
-        GLWESwitchingKeyPrepared, GLWEToBackendRef, GetGaloisElement, SetGaloisElement,
+        GLWEToBackendRef, GetGaloisElement, SetGaloisElement,
     },
 };
 
@@ -150,60 +150,6 @@ pub unsafe trait PreparationImpl<Rg: Ring = Standard>: Backend + HalVmpImpl<Rg> 
         super::derived::preparation::glwe_tensor_key_prepare_derived(module, res, other, scratch)
     }
 
-    /// Default body: `glwe_to_lwe_key_prepare_tmp_bytes_derived`, [`Self::glwe_switching_key_prepare_tmp_bytes`].
-    fn glwe_to_lwe_key_prepare_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
-    where
-        A: GGLWEInfos,
-    {
-        super::derived::preparation::glwe_to_lwe_key_prepare_tmp_bytes_derived(module, infos)
-    }
-
-    /// Default body: `glwe_to_lwe_key_prepare_derived`, [`Self::glwe_switching_key_prepare`] after checking the
-    /// scratch against [`Self::glwe_to_lwe_key_prepare_tmp_bytes`].
-    fn glwe_to_lwe_key_prepare<R, O>(module: &Module<Self>, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, Self>)
-    where
-        R: GGLWEPreparedToBackendMut<Self, Rg> + GLWESwitchingKeyDegreesMut,
-        O: GGLWEToBackendRef<Self, Rg> + GLWESwitchingKeyDegrees,
-    {
-        super::derived::preparation::glwe_to_lwe_key_prepare_derived(module, res, other, scratch)
-    }
-
-    /// Default body: `lwe_switching_key_prepare_tmp_bytes_derived`, [`Self::glwe_switching_key_prepare_tmp_bytes`].
-    fn lwe_switching_key_prepare_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
-    where
-        A: GGLWEInfos,
-    {
-        super::derived::preparation::lwe_switching_key_prepare_tmp_bytes_derived(module, infos)
-    }
-
-    /// Default body: `lwe_switching_key_prepare_derived`, [`Self::glwe_switching_key_prepare`] after checking the
-    /// scratch against [`Self::lwe_switching_key_prepare_tmp_bytes`].
-    fn lwe_switching_key_prepare<R, O>(module: &Module<Self>, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, Self>)
-    where
-        R: GGLWEPreparedToBackendMut<Self, Rg> + GLWESwitchingKeyDegreesMut,
-        O: GGLWEToBackendRef<Self, Rg> + GLWESwitchingKeyDegrees,
-    {
-        super::derived::preparation::lwe_switching_key_prepare_derived(module, res, other, scratch)
-    }
-
-    /// Default body: `lwe_to_glwe_key_prepare_tmp_bytes_derived`, [`Self::glwe_switching_key_prepare_tmp_bytes`].
-    fn lwe_to_glwe_key_prepare_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
-    where
-        A: GGLWEInfos,
-    {
-        super::derived::preparation::lwe_to_glwe_key_prepare_tmp_bytes_derived(module, infos)
-    }
-
-    /// Default body: `lwe_to_glwe_key_prepare_derived`, [`Self::glwe_switching_key_prepare`] after checking the
-    /// scratch against [`Self::lwe_to_glwe_key_prepare_tmp_bytes`].
-    fn lwe_to_glwe_key_prepare<R, O>(module: &Module<Self>, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, Self>)
-    where
-        R: GGLWEPreparedToBackendMut<Self, Rg> + GLWESwitchingKeyDegreesMut,
-        O: GGLWEToBackendRef<Self, Rg> + GLWESwitchingKeyDegrees,
-    {
-        super::derived::preparation::lwe_to_glwe_key_prepare_derived(module, res, other, scratch)
-    }
-
     /// Scratch bytes of [`Self::gglwe_to_ggsw_key_prepare`]: those of
     /// [`gglwe_to_ggsw_key_prepare_tmp_bytes_reference`](crate::reference::preparation::PreparationReference::gglwe_to_ggsw_key_prepare_tmp_bytes_reference),
     /// or fewer for an override needing fewer.
@@ -218,28 +164,69 @@ pub unsafe trait PreparationImpl<Rg: Ring = Standard>: Backend + HalVmpImpl<Rg> 
     where
         R: GGLWEToGGSWKeyPreparedToBackendMut<Self, Rg>,
         O: GGLWEToGGSWKeyToBackendRef<Self, Rg>;
+}
 
-    /// Default body: `glwe_ci_key_prepare_tmp_bytes_derived`, [`Self::glwe_switching_key_prepare_tmp_bytes`].
-    fn glwe_ci_key_prepare_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
+/// Backend-provided preparation of the LWE switching key and of the keys between LWE and GLWE, on the
+/// standard ring only: every method defaults to the selected [`PreparationImpl::glwe_switching_key_prepare`]
+/// and its query.
+///
+/// # Safety
+/// Implementations read `other` and write `res` only within the regions their layouts describe, leave
+/// `other` unchanged, and use no more scratch than the method's query reports. The memory, layout,
+/// synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
+pub unsafe trait LWEKeyPreparationImpl: Backend + PreparationImpl {
+    /// Default body: `glwe_to_lwe_key_prepare_tmp_bytes_derived`, [`PreparationImpl::glwe_switching_key_prepare_tmp_bytes`].
+    fn glwe_to_lwe_key_prepare_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: GGLWEInfos,
     {
-        super::derived::preparation::glwe_ci_key_prepare_tmp_bytes_derived(module, infos)
+        super::derived::preparation::glwe_to_lwe_key_prepare_tmp_bytes_derived(module, infos)
     }
 
-    /// Default body: `glwe_ci_key_prepare_derived`, [`Self::glwe_switching_key_prepare`] on the inner switching key,
-    /// within [`Self::glwe_ci_key_prepare_tmp_bytes`].
-    fn glwe_ci_key_prepare<DR, O, M>(
-        module: &Module<Self>,
-        res: &mut GLWECIKeyPrepared<DR, Self, M, Rg>,
-        other: &O,
-        scratch: &mut ScratchArena<'_, Self>,
-    ) where
-        DR: Data,
-        GLWESwitchingKeyPrepared<DR, Self, Rg>: GGLWEPreparedToBackendMut<Self, Rg>,
-        O: GGLWEToBackendRef<Self, Rg> + GLWESwitchingKeyDegrees,
+    /// Default body: `glwe_to_lwe_key_prepare_derived`, [`PreparationImpl::glwe_switching_key_prepare`] after checking the
+    /// scratch against [`Self::glwe_to_lwe_key_prepare_tmp_bytes`].
+    fn glwe_to_lwe_key_prepare<R, O>(module: &Module<Self>, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, Self>)
+    where
+        R: GGLWEPreparedToBackendMut<Self> + GLWESwitchingKeyDegreesMut,
+        O: GGLWEToBackendRef<Self> + GLWESwitchingKeyDegrees,
     {
-        super::derived::preparation::glwe_ci_key_prepare_derived(module, res, other, scratch)
+        super::derived::preparation::glwe_to_lwe_key_prepare_derived(module, res, other, scratch)
+    }
+
+    /// Default body: `lwe_switching_key_prepare_tmp_bytes_derived`, [`PreparationImpl::glwe_switching_key_prepare_tmp_bytes`].
+    fn lwe_switching_key_prepare_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
+    where
+        A: GGLWEInfos,
+    {
+        super::derived::preparation::lwe_switching_key_prepare_tmp_bytes_derived(module, infos)
+    }
+
+    /// Default body: `lwe_switching_key_prepare_derived`, [`PreparationImpl::glwe_switching_key_prepare`] after checking the
+    /// scratch against [`Self::lwe_switching_key_prepare_tmp_bytes`].
+    fn lwe_switching_key_prepare<R, O>(module: &Module<Self>, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, Self>)
+    where
+        R: GGLWEPreparedToBackendMut<Self> + GLWESwitchingKeyDegreesMut,
+        O: GGLWEToBackendRef<Self> + GLWESwitchingKeyDegrees,
+    {
+        super::derived::preparation::lwe_switching_key_prepare_derived(module, res, other, scratch)
+    }
+
+    /// Default body: `lwe_to_glwe_key_prepare_tmp_bytes_derived`, [`PreparationImpl::glwe_switching_key_prepare_tmp_bytes`].
+    fn lwe_to_glwe_key_prepare_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
+    where
+        A: GGLWEInfos,
+    {
+        super::derived::preparation::lwe_to_glwe_key_prepare_tmp_bytes_derived(module, infos)
+    }
+
+    /// Default body: `lwe_to_glwe_key_prepare_derived`, [`PreparationImpl::glwe_switching_key_prepare`] after checking the
+    /// scratch against [`Self::lwe_to_glwe_key_prepare_tmp_bytes`].
+    fn lwe_to_glwe_key_prepare<R, O>(module: &Module<Self>, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, Self>)
+    where
+        R: GGLWEPreparedToBackendMut<Self> + GLWESwitchingKeyDegreesMut,
+        O: GGLWEToBackendRef<Self> + GLWESwitchingKeyDegrees,
+    {
+        super::derived::preparation::lwe_to_glwe_key_prepare_derived(module, res, other, scratch)
     }
 }
 
@@ -350,5 +337,13 @@ macro_rules! impl_preparation_reference_full {
                 <::poulpy_hal::layouts::Module<$be> as $crate::reference::preparation::PreparationReference<$be, $ring>>::gglwe_to_ggsw_key_prepare_reference(module, res, other, scratch)
             }
         }
+    };
+}
+
+/// Selects the derived defaults of the LWE key preparations for this backend.
+#[macro_export]
+macro_rules! impl_lwe_key_preparation_derived_full {
+    ($be:ty) => {
+        unsafe impl $crate::oep::LWEKeyPreparationImpl for $be {}
     };
 }

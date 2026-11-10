@@ -936,7 +936,7 @@ fn test_glwe_public_key_rank1_golden() {
 #[cfg(feature = "enable-core")]
 #[test]
 fn test_core_serialization_fft64_portable() {
-    poulpy_core::test_suite::serialization::test_serialization::<_, Standard>(&Module::<FFT64Portable>::new(64));
+    poulpy_core::test_suite::serialization::test_serialization(&Module::<FFT64Portable>::new(64));
 }
 
 #[cfg(feature = "enable-bin-fhe")]

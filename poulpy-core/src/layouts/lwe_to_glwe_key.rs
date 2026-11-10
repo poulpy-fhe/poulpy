@@ -2,7 +2,7 @@ use poulpy_hal::AlignedBuf;
 use poulpy_hal::layouts::ZnxWord;
 use std::fmt;
 
-use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, ReaderFrom, Ring, Standard, WriterTo};
+use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, ReaderFrom, Standard, WriterTo};
 
 use crate::layouts::{
     Base2K, Degree, Dnum, GGLWEAtViewMut, GGLWEAtViewRef, GGLWEBackendMut, GGLWEBackendRef, GGLWEInfos, GGLWEToBackendMut,
@@ -70,9 +70,9 @@ impl GGLWEInfos for LWEToGLWEKeyLayout {
 }
 
 #[derive(PartialEq, Eq, Clone)]
-pub struct LWEToGLWEKey<D: Data, W: ZnxWord, Rg: Ring = Standard>(pub(crate) GLWESwitchingKey<D, W, Rg>);
+pub struct LWEToGLWEKey<D: Data, W: ZnxWord>(pub(crate) GLWESwitchingKey<D, W>);
 
-impl<D: Data, W: ZnxWord, Rg: Ring> LWEInfos for LWEToGLWEKey<D, W, Rg> {
+impl<D: Data, W: ZnxWord> LWEInfos for LWEToGLWEKey<D, W> {
     fn noise(&self) -> Option<crate::ComponentNoise> {
         self.0.noise()
     }
@@ -94,12 +94,12 @@ impl<D: Data, W: ZnxWord, Rg: Ring> LWEInfos for LWEToGLWEKey<D, W, Rg> {
     }
 }
 
-impl<D: Data, W: ZnxWord, Rg: Ring> GLWEInfos for LWEToGLWEKey<D, W, Rg> {
+impl<D: Data, W: ZnxWord> GLWEInfos for LWEToGLWEKey<D, W> {
     fn rank(&self) -> Rank {
         self.rank_out()
     }
 }
-impl<D: Data, W: ZnxWord, Rg: Ring> GGLWEInfos for LWEToGLWEKey<D, W, Rg> {
+impl<D: Data, W: ZnxWord> GGLWEInfos for LWEToGLWEKey<D, W> {
     fn k_aux(&self) -> TorusPrecision {
         self.0.k_aux()
     }
@@ -125,25 +125,25 @@ impl<D: Data, W: ZnxWord, Rg: Ring> GGLWEInfos for LWEToGLWEKey<D, W, Rg> {
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord, Rg: Ring> fmt::Debug for LWEToGLWEKey<D, W, Rg> {
+impl<D: HostDataRef, W: ZnxWord> fmt::Debug for LWEToGLWEKey<D, W> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{self}")
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord, Rg: Ring> fmt::Display for LWEToGLWEKey<D, W, Rg> {
+impl<D: HostDataRef, W: ZnxWord> fmt::Display for LWEToGLWEKey<D, W> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "(LWEToGLWEKey) {}", self.0)
     }
 }
 
-impl<D: HostDataMut, W: ZnxWord, Rg: Ring> ReaderFrom for LWEToGLWEKey<D, W, Rg> {
+impl<D: HostDataMut, W: ZnxWord> ReaderFrom for LWEToGLWEKey<D, W> {
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
         self.0.read_from(reader)
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord, Rg: Ring> WriterTo for LWEToGLWEKey<D, W, Rg> {
+impl<D: HostDataRef, W: ZnxWord> WriterTo for LWEToGLWEKey<D, W> {
     fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
         self.0.write_to(writer)
     }
@@ -153,7 +153,7 @@ impl<D: HostDataRef, W: ZnxWord, Rg: Ring> WriterTo for LWEToGLWEKey<D, W, Rg> {
     dead_code,
     reason = "host-owned constructors are kept for serialization and host-only staging"
 )]
-impl<W: ZnxWord, Rg: Ring> LWEToGLWEKey<AlignedBuf, W, Rg> {
+impl<W: ZnxWord> LWEToGLWEKey<AlignedBuf, W> {
     pub(crate) fn alloc_from_infos<A>(infos: &A) -> Self
     where
         A: GGLWEInfos,
@@ -194,15 +194,15 @@ impl<W: ZnxWord, Rg: Ring> LWEToGLWEKey<AlignedBuf, W, Rg> {
     }
 
     pub fn bytes_of(n: Degree, base2k: Base2K, dnum: Dnum, k_aux: TorusPrecision, rank_out: Rank) -> usize {
-        GLWESwitchingKey::<AlignedBuf, W, Rg>::bytes_of(n, base2k, dnum, TorusPrecision::from(base2k), k_aux, Rank(1), rank_out)
+        GLWESwitchingKey::<AlignedBuf, W>::bytes_of(n, base2k, dnum, TorusPrecision::from(base2k), k_aux, Rank(1), rank_out)
     }
 }
 
-impl_gglwe_to_backend_for_field!(LWEToGLWEKey<D, BE::ZnxWord, Rg>, 0, GLWESwitchingKey<D, BE::ZnxWord, Rg>);
+impl_gglwe_to_backend_for_field!(LWEToGLWEKey<D, BE::ZnxWord>, 0, GLWESwitchingKey<D, BE::ZnxWord>);
 
-impl_gglwe_at_view_for_field!(LWEToGLWEKey<BE::OwnedBuf, BE::ZnxWord, Rg>; 0.key);
+impl_gglwe_at_view_for_field!(LWEToGLWEKey<BE::OwnedBuf, BE::ZnxWord>; ring = Standard; 0.key);
 
-impl<D: Data, W: ZnxWord, Rg: Ring> GLWESwitchingKeyDegreesMut for LWEToGLWEKey<D, W, Rg> {
+impl<D: Data, W: ZnxWord> GLWESwitchingKeyDegreesMut for LWEToGLWEKey<D, W> {
     fn input_degree(&mut self) -> &mut Degree {
         &mut self.0.input_degree
     }
@@ -212,7 +212,7 @@ impl<D: Data, W: ZnxWord, Rg: Ring> GLWESwitchingKeyDegreesMut for LWEToGLWEKey<
     }
 }
 
-impl<D: Data, W: ZnxWord, Rg: Ring> GLWESwitchingKeyDegrees for LWEToGLWEKey<D, W, Rg> {
+impl<D: Data, W: ZnxWord> GLWESwitchingKeyDegrees for LWEToGLWEKey<D, W> {
     fn input_degree(&self) -> &Degree {
         &self.0.input_degree
     }

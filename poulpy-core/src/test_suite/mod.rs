@@ -67,8 +67,6 @@ macro_rules! core_backend_test_suite {
                     $crate::test_suite::noise::encryption::test_glwe_automorphism_key_encrypt_sk_rejects_unset_secret,
                 glwe_tensor_key_encrypt_sk_rejects_unset_secret =>
                     $crate::test_suite::noise::encryption::test_glwe_tensor_key_encrypt_sk_rejects_unset_secret,
-                lwe_switching_key_encrypt_sk_rejects_unset_secret =>
-                    $crate::test_suite::noise::encryption::test_lwe_switching_key_encrypt_sk_rejects_unset_secret,
                 scalar_znx_fill_distribution => $crate::test_suite::sampling::test_scalar_znx_fill_distribution,
                 glwe_base2k_conv => $crate::test_suite::noise::test_glwe_base2k_conversion,
                 test_glwe_tensoring => $crate::test_suite::noise::glwe_tensor::test_glwe_tensoring,
@@ -188,7 +186,6 @@ macro_rules! core_backend_test_suite {
                 ggsw_copy => $crate::test_suite::noise::test_ggsw_copy,
                 ggsw_automorphism => $crate::test_suite::noise::automorphism::test_ggsw_automorphism,
                 ggsw_automorphism_assign => $crate::test_suite::noise::automorphism::test_ggsw_automorphism_assign,
-                lwe_keyswitch => $crate::test_suite::noise::keyswitch::test_lwe_keyswitch,
                 lwe_read_from_rejects_malformed_shape => $crate::test_suite::noise::test_lwe_read_from_rejects_malformed_shape,
                 lwe_secret_from_glwe_secret_flattens_rank_and_preserves_metadata =>
                     $crate::test_suite::noise::test_lwe_secret_from_glwe_secret_flattens_rank_and_preserves_metadata,
@@ -204,6 +201,9 @@ macro_rules! core_backend_test_suite {
                     $crate::test_suite::step_hooks::test_gglwe_gadget_dft_apply_from_dft_rejects_invalid_operands,
             },
             ring_free_tests = {
+                lwe_switching_key_encrypt_sk_rejects_unset_secret =>
+                    $crate::test_suite::noise::encryption::test_lwe_switching_key_encrypt_sk_rejects_unset_secret,
+                lwe_keyswitch => $crate::test_suite::noise::keyswitch::test_lwe_keyswitch,
                 glwe_ci_embed_key_encrypt_sk_rejects_mismatched_secrets =>
                     $crate::test_suite::noise::encryption::test_glwe_ci_embed_key_encrypt_sk_rejects_mismatched_secrets,
                 glwe_ci_trace_key_encrypt_sk_rejects_mismatched_secrets =>

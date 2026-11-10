@@ -108,7 +108,9 @@ and borrowing traits from `poulpy_hal::api`.
 ### Rings
 
 Every ciphertext, key, plaintext and secret layout takes its ring as its last type parameter, `Rg: Ring = Standard`
-(`GLWE<D, W, Rg>`, `GLWEPrepared<D, BE, Rg>`). `Standard` is `Z[X]/(X^n + 1)`;
+(`GLWE<D, W, Rg>`, `GLWEPrepared<D, BE, Rg>`), except the keys only standard-only and cross-ring operations
+produce and consume (the LWE switching key, the keys between LWE and GLWE, the conjugate-invariant keys), which
+are standard-ring keys without a ring parameter. `Standard` is `Z[X]/(X^n + 1)`;
 `ConjugateInvariant` is the ring of `n` coefficients fixed by `X -> X^-1` in
 `Z[X]/(X^(2n) + 1)`, of cyclotomic order `4n`. One module serves both rings and an
 operation takes operands of one ring. A type or trait path that leaves the ring out names

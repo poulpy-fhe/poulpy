@@ -162,9 +162,9 @@ pub type BackendGLWESecretTensorPrepared<BE, Rg = Standard> = GLWESecretTensorPr
 pub type BackendGLWESwitchingKeyPrepared<BE, Rg = Standard> = GLWESwitchingKeyPrepared<<BE as Backend>::OwnedBuf, BE, Rg>;
 pub type BackendGLWEAutomorphismKeyPrepared<BE, Rg = Standard> = GLWEAutomorphismKeyPrepared<<BE as Backend>::OwnedBuf, BE, Rg>;
 pub type BackendGLWETensorKeyPrepared<BE, Rg = Standard> = GLWETensorKeyPrepared<<BE as Backend>::OwnedBuf, BE, Rg>;
-pub type BackendGLWEToLWEKeyPrepared<BE, Rg = Standard> = GLWEToLWEKeyPrepared<<BE as Backend>::OwnedBuf, BE, Rg>;
-pub type BackendLWESwitchingKeyPrepared<BE, Rg = Standard> = LWESwitchingKeyPrepared<<BE as Backend>::OwnedBuf, BE, Rg>;
-pub type BackendLWEToGLWEKeyPrepared<BE, Rg = Standard> = LWEToGLWEKeyPrepared<<BE as Backend>::OwnedBuf, BE, Rg>;
+pub type BackendGLWEToLWEKeyPrepared<BE> = GLWEToLWEKeyPrepared<<BE as Backend>::OwnedBuf, BE>;
+pub type BackendLWESwitchingKeyPrepared<BE> = LWESwitchingKeyPrepared<<BE as Backend>::OwnedBuf, BE>;
+pub type BackendLWEToGLWEKeyPrepared<BE> = LWEToGLWEKeyPrepared<<BE as Backend>::OwnedBuf, BE>;
 pub type BackendGGLWEToGGSWKeyPrepared<BE, Rg = Standard> = GGLWEToGGSWKeyPrepared<<BE as Backend>::OwnedBuf, BE, Rg>;
 
 /// Provides access to the ring polynomial degree *N*.
@@ -782,22 +782,19 @@ impl<B: Backend> GLWECITraceKeyAlloc for Module<B> {
 
 /// Allocates [`GLWEToLWEKey`] layouts on a [`Module`].
 pub trait GLWEToLWEKeyAlloc: ModuleCoreAlloc {
-    fn glwe_to_lwe_key_alloc_from_infos<A: GGLWEInfos, Rg: Ring>(
-        &self,
-        infos: &A,
-    ) -> GLWEToLWEKey<Self::OwnedBuf, Self::ZnxWord, Rg>;
+    fn glwe_to_lwe_key_alloc_from_infos<A: GGLWEInfos>(&self, infos: &A) -> GLWEToLWEKey<Self::OwnedBuf, Self::ZnxWord>;
 
-    fn glwe_to_lwe_key_alloc<Rg: Ring>(
+    fn glwe_to_lwe_key_alloc(
         &self,
         base2k: Base2K,
         dnum: Dnum,
         k_aux: TorusPrecision,
         rank_in: Rank,
-    ) -> GLWEToLWEKey<Self::OwnedBuf, Self::ZnxWord, Rg>;
+    ) -> GLWEToLWEKey<Self::OwnedBuf, Self::ZnxWord>;
 }
 
 impl<B: Backend> GLWEToLWEKeyAlloc for Module<B> {
-    fn glwe_to_lwe_key_alloc_from_infos<A: GGLWEInfos, Rg: Ring>(&self, infos: &A) -> GLWEToLWEKey<B::OwnedBuf, B::ZnxWord, Rg> {
+    fn glwe_to_lwe_key_alloc_from_infos<A: GGLWEInfos>(&self, infos: &A) -> GLWEToLWEKey<B::OwnedBuf, B::ZnxWord> {
         assert_eq!(infos.rank_out().0, 1, "rank_out > 1 is not supported for GLWEToLWEKey");
         assert_eq!(
             infos.k_digit().0,
@@ -807,13 +804,13 @@ impl<B: Backend> GLWEToLWEKeyAlloc for Module<B> {
         GLWEToLWEKey(self.glwe_switching_key_alloc_from_infos(infos))
     }
 
-    fn glwe_to_lwe_key_alloc<Rg: Ring>(
+    fn glwe_to_lwe_key_alloc(
         &self,
         base2k: Base2K,
         dnum: Dnum,
         k_aux: TorusPrecision,
         rank_in: Rank,
-    ) -> GLWEToLWEKey<B::OwnedBuf, B::ZnxWord, Rg> {
+    ) -> GLWEToLWEKey<B::OwnedBuf, B::ZnxWord> {
         self.glwe_to_lwe_key_alloc_from_infos(&GGLWELayout {
             n: self.ring_degree(),
             base2k,
@@ -1001,25 +998,19 @@ impl<B: Backend> LWESecretAlloc for Module<B> {
 
 /// Allocates [`LWESwitchingKey`] layouts on a [`Module`].
 pub trait LWESwitchingKeyAlloc: ModuleCoreAlloc {
-    fn lwe_switching_key_alloc_from_infos<A: GGLWEInfos, Rg: Ring>(
-        &self,
-        infos: &A,
-    ) -> LWESwitchingKey<Self::OwnedBuf, Self::ZnxWord, Rg>;
+    fn lwe_switching_key_alloc_from_infos<A: GGLWEInfos>(&self, infos: &A) -> LWESwitchingKey<Self::OwnedBuf, Self::ZnxWord>;
 
-    fn lwe_switching_key_alloc<Rg: Ring>(
+    fn lwe_switching_key_alloc(
         &self,
         n: Degree,
         base2k: Base2K,
         dnum: Dnum,
         k_aux: TorusPrecision,
-    ) -> LWESwitchingKey<Self::OwnedBuf, Self::ZnxWord, Rg>;
+    ) -> LWESwitchingKey<Self::OwnedBuf, Self::ZnxWord>;
 }
 
 impl<B: Backend> LWESwitchingKeyAlloc for Module<B> {
-    fn lwe_switching_key_alloc_from_infos<A: GGLWEInfos, Rg: Ring>(
-        &self,
-        infos: &A,
-    ) -> LWESwitchingKey<B::OwnedBuf, B::ZnxWord, Rg> {
+    fn lwe_switching_key_alloc_from_infos<A: GGLWEInfos>(&self, infos: &A) -> LWESwitchingKey<B::OwnedBuf, B::ZnxWord> {
         assert_eq!(
             infos.k_digit().0,
             infos.base2k().0,
@@ -1030,36 +1021,33 @@ impl<B: Backend> LWESwitchingKeyAlloc for Module<B> {
         LWESwitchingKey(self.glwe_switching_key_alloc_from_infos(infos))
     }
 
-    fn lwe_switching_key_alloc<Rg: Ring>(
+    fn lwe_switching_key_alloc(
         &self,
         n: Degree,
         base2k: Base2K,
         dnum: Dnum,
         k_aux: TorusPrecision,
-    ) -> LWESwitchingKey<B::OwnedBuf, B::ZnxWord, Rg> {
+    ) -> LWESwitchingKey<B::OwnedBuf, B::ZnxWord> {
         self.lwe_switching_key_alloc_from_infos(&LWESwitchingKeyLayout { n, base2k, dnum, k_aux })
     }
 }
 
 /// Allocates [`LWEToGLWEKey`] layouts on a [`Module`].
 pub trait LWEToGLWEKeyAlloc: ModuleCoreAlloc {
-    fn lwe_to_glwe_key_alloc_from_infos<A: GGLWEInfos, Rg: Ring>(
-        &self,
-        infos: &A,
-    ) -> LWEToGLWEKey<Self::OwnedBuf, Self::ZnxWord, Rg>;
+    fn lwe_to_glwe_key_alloc_from_infos<A: GGLWEInfos>(&self, infos: &A) -> LWEToGLWEKey<Self::OwnedBuf, Self::ZnxWord>;
 
-    fn lwe_to_glwe_key_alloc<Rg: Ring>(
+    fn lwe_to_glwe_key_alloc(
         &self,
         n: Degree,
         base2k: Base2K,
         dnum: Dnum,
         k_aux: TorusPrecision,
         rank_out: Rank,
-    ) -> LWEToGLWEKey<Self::OwnedBuf, Self::ZnxWord, Rg>;
+    ) -> LWEToGLWEKey<Self::OwnedBuf, Self::ZnxWord>;
 }
 
 impl<B: Backend> LWEToGLWEKeyAlloc for Module<B> {
-    fn lwe_to_glwe_key_alloc_from_infos<A: GGLWEInfos, Rg: Ring>(&self, infos: &A) -> LWEToGLWEKey<B::OwnedBuf, B::ZnxWord, Rg> {
+    fn lwe_to_glwe_key_alloc_from_infos<A: GGLWEInfos>(&self, infos: &A) -> LWEToGLWEKey<B::OwnedBuf, B::ZnxWord> {
         assert_eq!(infos.rank_in().0, 1, "rank_in > 1 is not supported for LWEToGLWEKey");
         assert_eq!(
             infos.k_digit().0,
@@ -1069,14 +1057,14 @@ impl<B: Backend> LWEToGLWEKeyAlloc for Module<B> {
         LWEToGLWEKey(self.glwe_switching_key_alloc_from_infos(infos))
     }
 
-    fn lwe_to_glwe_key_alloc<Rg: Ring>(
+    fn lwe_to_glwe_key_alloc(
         &self,
         n: Degree,
         base2k: Base2K,
         dnum: Dnum,
         k_aux: TorusPrecision,
         rank_out: Rank,
-    ) -> LWEToGLWEKey<B::OwnedBuf, B::ZnxWord, Rg> {
+    ) -> LWEToGLWEKey<B::OwnedBuf, B::ZnxWord> {
         self.lwe_to_glwe_key_alloc_from_infos(&GGLWELayout {
             n,
             base2k,
@@ -1394,107 +1382,107 @@ impl<B: Backend> GLWETensorKeyCompressedAlloc for Module<B> {
 
 /// Allocates [`GLWEToLWEKeyCompressed`] layouts on a [`Module`].
 pub trait GLWEToLWEKeyCompressedAlloc: ModuleCoreCompressedAlloc {
-    fn glwe_to_lwe_key_compressed_alloc_from_infos<A: GGLWEInfos, Rg: Ring>(
+    fn glwe_to_lwe_key_compressed_alloc_from_infos<A: GGLWEInfos>(
         &self,
         infos: &A,
-    ) -> GLWEToLWEKeyCompressed<Self::OwnedBuf, Self::ZnxWord, Rg>;
+    ) -> GLWEToLWEKeyCompressed<Self::OwnedBuf, Self::ZnxWord>;
 
-    fn glwe_to_lwe_key_compressed_alloc<Rg: Ring>(
+    fn glwe_to_lwe_key_compressed_alloc(
         &self,
         base2k: Base2K,
         dnum: Dnum,
         k_aux: TorusPrecision,
         rank_in: Rank,
-    ) -> GLWEToLWEKeyCompressed<Self::OwnedBuf, Self::ZnxWord, Rg>;
+    ) -> GLWEToLWEKeyCompressed<Self::OwnedBuf, Self::ZnxWord>;
 }
 
 impl<B: Backend> GLWEToLWEKeyCompressedAlloc for Module<B> {
-    fn glwe_to_lwe_key_compressed_alloc_from_infos<A: GGLWEInfos, Rg: Ring>(
+    fn glwe_to_lwe_key_compressed_alloc_from_infos<A: GGLWEInfos>(
         &self,
         infos: &A,
-    ) -> GLWEToLWEKeyCompressed<B::OwnedBuf, B::ZnxWord, Rg> {
+    ) -> GLWEToLWEKeyCompressed<B::OwnedBuf, B::ZnxWord> {
         GLWEToLWEKeyCompressed::alloc_from_infos::<B, _>(infos)
     }
 
-    fn glwe_to_lwe_key_compressed_alloc<Rg: Ring>(
+    fn glwe_to_lwe_key_compressed_alloc(
         &self,
         base2k: Base2K,
         dnum: Dnum,
         k_aux: TorusPrecision,
         rank_in: Rank,
-    ) -> GLWEToLWEKeyCompressed<B::OwnedBuf, B::ZnxWord, Rg> {
+    ) -> GLWEToLWEKeyCompressed<B::OwnedBuf, B::ZnxWord> {
         GLWEToLWEKeyCompressed::alloc::<B>(self.ring_degree(), base2k, dnum, k_aux, rank_in)
     }
 }
 
 /// Allocates [`LWEToGLWEKeyCompressed`] layouts on a [`Module`].
 pub trait LWEToGLWEKeyCompressedAlloc: ModuleCoreCompressedAlloc {
-    fn lwe_to_glwe_key_compressed_alloc_from_infos<A: GGLWEInfos, Rg: Ring>(
+    fn lwe_to_glwe_key_compressed_alloc_from_infos<A: GGLWEInfos>(
         &self,
         infos: &A,
-    ) -> LWEToGLWEKeyCompressed<Self::OwnedBuf, Self::ZnxWord, Rg>;
+    ) -> LWEToGLWEKeyCompressed<Self::OwnedBuf, Self::ZnxWord>;
 
-    fn lwe_to_glwe_key_compressed_alloc<Rg: Ring>(
+    fn lwe_to_glwe_key_compressed_alloc(
         &self,
         n: Degree,
         base2k: Base2K,
         dnum: Dnum,
         k_aux: TorusPrecision,
         rank_out: Rank,
-    ) -> LWEToGLWEKeyCompressed<Self::OwnedBuf, Self::ZnxWord, Rg>;
+    ) -> LWEToGLWEKeyCompressed<Self::OwnedBuf, Self::ZnxWord>;
 }
 
 impl<B: Backend> LWEToGLWEKeyCompressedAlloc for Module<B> {
-    fn lwe_to_glwe_key_compressed_alloc_from_infos<A: GGLWEInfos, Rg: Ring>(
+    fn lwe_to_glwe_key_compressed_alloc_from_infos<A: GGLWEInfos>(
         &self,
         infos: &A,
-    ) -> LWEToGLWEKeyCompressed<B::OwnedBuf, B::ZnxWord, Rg> {
+    ) -> LWEToGLWEKeyCompressed<B::OwnedBuf, B::ZnxWord> {
         LWEToGLWEKeyCompressed::alloc_from_infos::<B, _>(infos)
     }
 
-    fn lwe_to_glwe_key_compressed_alloc<Rg: Ring>(
+    fn lwe_to_glwe_key_compressed_alloc(
         &self,
         n: Degree,
         base2k: Base2K,
         dnum: Dnum,
         k_aux: TorusPrecision,
         rank_out: Rank,
-    ) -> LWEToGLWEKeyCompressed<B::OwnedBuf, B::ZnxWord, Rg> {
+    ) -> LWEToGLWEKeyCompressed<B::OwnedBuf, B::ZnxWord> {
         LWEToGLWEKeyCompressed::alloc::<B>(n, base2k, dnum, k_aux, rank_out)
     }
 }
 
 /// Allocates [`LWESwitchingKeyCompressed`] layouts on a [`Module`].
 pub trait LWESwitchingKeyCompressedAlloc: ModuleCoreCompressedAlloc {
-    fn lwe_switching_key_compressed_alloc_from_infos<A: GGLWEInfos, Rg: Ring>(
+    fn lwe_switching_key_compressed_alloc_from_infos<A: GGLWEInfos>(
         &self,
         infos: &A,
-    ) -> LWESwitchingKeyCompressed<Self::OwnedBuf, Self::ZnxWord, Rg>;
+    ) -> LWESwitchingKeyCompressed<Self::OwnedBuf, Self::ZnxWord>;
 
-    fn lwe_switching_key_compressed_alloc<Rg: Ring>(
+    fn lwe_switching_key_compressed_alloc(
         &self,
         n: Degree,
         base2k: Base2K,
         dnum: Dnum,
         k_aux: TorusPrecision,
-    ) -> LWESwitchingKeyCompressed<Self::OwnedBuf, Self::ZnxWord, Rg>;
+    ) -> LWESwitchingKeyCompressed<Self::OwnedBuf, Self::ZnxWord>;
 }
 
 impl<B: Backend> LWESwitchingKeyCompressedAlloc for Module<B> {
-    fn lwe_switching_key_compressed_alloc_from_infos<A: GGLWEInfos, Rg: Ring>(
+    fn lwe_switching_key_compressed_alloc_from_infos<A: GGLWEInfos>(
         &self,
         infos: &A,
-    ) -> LWESwitchingKeyCompressed<B::OwnedBuf, B::ZnxWord, Rg> {
+    ) -> LWESwitchingKeyCompressed<B::OwnedBuf, B::ZnxWord> {
         LWESwitchingKeyCompressed::alloc_from_infos::<B, _>(infos)
     }
 
-    fn lwe_switching_key_compressed_alloc<Rg: Ring>(
+    fn lwe_switching_key_compressed_alloc(
         &self,
         n: Degree,
         base2k: Base2K,
         dnum: Dnum,
         k_aux: TorusPrecision,
-    ) -> LWESwitchingKeyCompressed<B::OwnedBuf, B::ZnxWord, Rg> {
+    ) -> LWESwitchingKeyCompressed<B::OwnedBuf, B::ZnxWord> {
         LWESwitchingKeyCompressed::alloc::<B>(n, base2k, dnum, k_aux)
     }
 }

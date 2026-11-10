@@ -56,7 +56,7 @@ poulpy_core::impl_ggsw_keyswitch_derived_full!(Probed, Standard);
 poulpy_core::impl_automorphism_reference_full!(Probed, Standard);
 poulpy_core::impl_glwe_external_product_reference_full!(Probed, Standard);
 poulpy_core::impl_glwe_keyswitch_reference_full!(Probed, Standard);
-poulpy_core::impl_lwe_keyswitch_reference_full!(Probed, Standard);
+poulpy_core::impl_lwe_keyswitch_reference_full!(Probed);
 poulpy_core::impl_glwe_tensoring_reference_full!(Probed, Standard);
 poulpy_core::impl_glwe_trace_derived_full!(Probed, Standard);
 poulpy_core::impl_glwe_linear_transformation_reference_full!(Probed, Standard);
