@@ -83,9 +83,7 @@ where
                 crate::layouts::assert_secret_set(&sk.to_backend_ref().dist);
                 assert!(
                     scratch.available() >= self.glwe_compressed_encrypt_sk_tmp_bytes_reference(&res_backend),
-                    "scratch.available(): {} < GLWECompressedEncryptSk::glwe_compressed_encrypt_sk_tmp_bytes: {}",
-                    scratch.available(),
-                    self.glwe_compressed_encrypt_sk_tmp_bytes_reference(&res_backend)
+                    "scratch.available() < GLWECompressedEncryptSk::glwe_compressed_encrypt_sk_tmp_bytes"
                 );
 
                 let (mut full_ct, mut scratch_1) = scratch.borrow().take_glwe_scratch(&res_backend);
@@ -125,9 +123,7 @@ where
             crate::layouts::assert_secret_set(&sk.to_backend_ref().dist);
             assert!(
                 scratch.available() >= self.glwe_compressed_encrypt_sk_tmp_bytes_reference(&res_backend),
-                "scratch.available(): {} < GLWECompressedEncryptSk::glwe_compressed_encrypt_sk_tmp_bytes: {}",
-                scratch.available(),
-                self.glwe_compressed_encrypt_sk_tmp_bytes_reference(&res_backend)
+                "scratch.available() < GLWECompressedEncryptSk::glwe_compressed_encrypt_sk_tmp_bytes"
             );
 
             let tmp_bytes: usize = self.glwe_compressed_encrypt_sk_tmp_bytes_reference(&res_backend);

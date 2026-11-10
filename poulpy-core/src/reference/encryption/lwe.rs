@@ -116,9 +116,7 @@ where
 
             assert!(
                 scratch.available() >= self.lwe_encrypt_sk_tmp_bytes_reference(res),
-                "scratch.available(): {} < LWEEncryptSk::lwe_encrypt_sk_tmp_bytes: {}",
-                scratch.available(),
-                self.lwe_encrypt_sk_tmp_bytes_reference(res)
+                "scratch.available() < LWEEncryptSk::lwe_encrypt_sk_tmp_bytes"
             );
             let tmp_bytes: usize = self.lwe_encrypt_sk_tmp_bytes_reference(res);
             {

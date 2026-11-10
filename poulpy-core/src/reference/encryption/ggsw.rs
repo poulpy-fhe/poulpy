@@ -78,9 +78,7 @@ where
             crate::layouts::assert_secret_set(&sk.to_backend_ref().dist);
             assert!(
                 scratch.available() >= self.ggsw_encrypt_sk_tmp_bytes_reference(res),
-                "scratch.available(): {} < GGSWEncryptSk::ggsw_encrypt_sk_tmp_bytes: {}",
-                scratch.available(),
-                self.ggsw_encrypt_sk_tmp_bytes_reference(res)
+                "scratch.available() < GGSWEncryptSk::ggsw_encrypt_sk_tmp_bytes"
             );
 
             let base2k: usize = res.base2k().into();

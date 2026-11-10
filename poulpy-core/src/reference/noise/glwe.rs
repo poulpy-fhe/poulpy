@@ -48,9 +48,7 @@ where
 {
     assert!(
         scratch.available() >= glwe_noise_body_tmp_bytes(module, res_backend),
-        "scratch.available(): {} < GLWENoise::glwe_noise_tmp_bytes: {}",
-        scratch.available(),
-        glwe_noise_body_tmp_bytes(module, res_backend)
+        "scratch.available() < GLWENoise::glwe_noise_tmp_bytes"
     );
 
     let (mut pt_have, mut scratch_1) = scratch.borrow().take_glwe_plaintext_scratch(res_backend);
@@ -102,9 +100,7 @@ where
     {
         assert!(
             scratch.available() >= self.glwe_noise_tmp_bytes(res),
-            "scratch.available(): {} < GLWENoise::glwe_noise_tmp_bytes: {}",
-            scratch.available(),
-            self.glwe_noise_tmp_bytes(res)
+            "scratch.available() < GLWENoise::glwe_noise_tmp_bytes"
         );
         let (mut res_tmp, mut scratch) = scratch.borrow().take_glwe_scratch(res);
         let res = if res.is_canonical() {

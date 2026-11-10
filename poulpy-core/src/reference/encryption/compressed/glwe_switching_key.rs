@@ -78,9 +78,7 @@ where
         crate::layouts::assert_secret_set(sk_out.dist());
         assert!(
             scratch.available() >= self.glwe_switching_key_compressed_encrypt_sk_tmp_bytes_reference(res),
-            "scratch.available(): {} < GLWESwitchingKeyCompressedEncryptSk::glwe_switching_key_compressed_encrypt_sk_tmp_bytes: {}",
-            scratch.available(),
-            self.glwe_switching_key_compressed_encrypt_sk_tmp_bytes_reference(res)
+            "scratch.available() < GLWESwitchingKeyCompressedEncryptSk::glwe_switching_key_compressed_encrypt_sk_tmp_bytes"
         );
         let tmp_bytes: usize = self.glwe_switching_key_compressed_encrypt_sk_tmp_bytes_reference(res);
         {

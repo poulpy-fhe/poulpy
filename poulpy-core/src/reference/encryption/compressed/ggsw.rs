@@ -83,9 +83,7 @@ where
             crate::layouts::assert_secret_set(&sk_ref.dist);
             assert!(
                 scratch.available() >= self.ggsw_compressed_encrypt_sk_tmp_bytes_reference(res),
-                "scratch.available(): {} < GGSWCompressedEncryptSk::ggsw_compressed_encrypt_sk_tmp_bytes: {}",
-                scratch.available(),
-                self.ggsw_compressed_encrypt_sk_tmp_bytes_reference(res)
+                "scratch.available() < GGSWCompressedEncryptSk::ggsw_compressed_encrypt_sk_tmp_bytes"
             );
 
             let mut seeds: Vec<[u8; 32]> = vec![[0u8; 32]; res.dnum().as_usize() * (res.rank().as_usize() + 1)];

@@ -80,9 +80,7 @@ pub fn glwe_decrypt_reference<M, BE: Backend, R, P, S, Rg: Ring>(
     operand_degree(module.n(), &[res.n(), pt.n(), sk.n()]);
     assert!(
         scratch.available() >= glwe_decrypt_tmp_bytes_reference::<M, BE, _, Rg>(module, res),
-        "scratch.available(): {} < GLWEDecrypt::glwe_decrypt_tmp_bytes: {}",
-        scratch.available(),
-        glwe_decrypt_tmp_bytes_reference::<M, BE, _, Rg>(module, res)
+        "scratch.available() < GLWEDecrypt::glwe_decrypt_tmp_bytes"
     );
     let tmp_bytes: usize = glwe_decrypt_tmp_bytes_reference::<M, BE, _, Rg>(module, res);
     {
@@ -124,9 +122,7 @@ pub(crate) fn glwe_decrypt_backend_inner<'arena, 'scratch, M, BE: Backend, Rg: R
     operand_degree(module.n(), &[res.n(), pt.n(), sk.n()]);
     assert!(
         scratch.available() >= glwe_decrypt_body_tmp_bytes::<M, _>(module, res),
-        "scratch.available(): {} < GLWEDecrypt::glwe_decrypt_tmp_bytes: {}",
-        scratch.available(),
-        glwe_decrypt_body_tmp_bytes::<M, _>(module, res)
+        "scratch.available() < GLWEDecrypt::glwe_decrypt_tmp_bytes"
     );
 
     phase_backend_inner(
@@ -249,9 +245,7 @@ pub fn glwe_mask_inner_product_reference<M, BE: Backend, R, A, S, Rg: Ring>(
     let tmp_bytes: usize = glwe_mask_inner_product_tmp_bytes_reference::<M, _>(module, mask);
     assert!(
         scratch.available() >= tmp_bytes,
-        "scratch.available(): {} < GLWEMaskInnerProduct::glwe_mask_inner_product_tmp_bytes: {}",
-        scratch.available(),
-        tmp_bytes
+        "scratch.available() < GLWEMaskInnerProduct::glwe_mask_inner_product_tmp_bytes"
     );
     {
         let mask = mask.to_mask_backend_ref();

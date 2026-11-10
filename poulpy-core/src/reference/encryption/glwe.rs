@@ -169,9 +169,7 @@ where
             crate::layouts::assert_secret_set(&sk_ref.dist);
             assert!(
                 scratch.available() >= self.glwe_encrypt_sk_tmp_bytes_reference(res),
-                "scratch.available(): {} < GLWE::encrypt_sk_tmp_bytes: {}",
-                scratch.available(),
-                self.glwe_encrypt_sk_tmp_bytes_reference(res)
+                "scratch.available() < GLWE::encrypt_sk_tmp_bytes"
             );
 
             {
@@ -217,9 +215,7 @@ where
             crate::layouts::assert_secret_set(&sk_ref.dist);
             assert!(
                 scratch.available() >= self.glwe_encrypt_sk_tmp_bytes_reference(res),
-                "scratch.available(): {} < GLWE::encrypt_sk_tmp_bytes: {}",
-                scratch.available(),
-                self.glwe_encrypt_sk_tmp_bytes_reference(res)
+                "scratch.available() < GLWE::encrypt_sk_tmp_bytes"
             );
 
             {
@@ -267,9 +263,7 @@ where
             crate::layouts::assert_secret_set(&sk_ref.dist);
             assert!(
                 scratch.available() >= self.glwe_encrypt_sk_tmp_bytes_reference(res),
-                "scratch.available(): {} < GLWE::encrypt_sk_tmp_bytes: {}",
-                scratch.available(),
-                self.glwe_encrypt_sk_tmp_bytes_reference(res)
+                "scratch.available() < GLWE::encrypt_sk_tmp_bytes"
             );
 
             self.glwe_encrypt_sk_internal(

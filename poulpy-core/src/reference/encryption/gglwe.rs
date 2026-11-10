@@ -89,9 +89,7 @@ where
             crate::layouts::assert_secret_set(&sk_ref.dist);
             assert!(
                 scratch.available() >= GGLWEEncryptSkReference::gglwe_encrypt_sk_tmp_bytes_reference(self, res),
-                "scratch.available(): {} < GGLWEEncryptSk::gglwe_encrypt_sk_tmp_bytes: {}",
-                scratch.available(),
-                GGLWEEncryptSkReference::gglwe_encrypt_sk_tmp_bytes_reference(self, res)
+                "scratch.available() < GGLWEEncryptSk::gglwe_encrypt_sk_tmp_bytes"
             );
             assert!(
                 res.k_offset().0 + res.dnum().0 * res.k_digit().0 <= res.k().0,

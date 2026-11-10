@@ -84,9 +84,7 @@ where
         crate::layouts::assert_secret_set(&sk.dist);
         assert!(
             scratch.available() >= self.glwe_automorphism_key_encrypt_sk_tmp_bytes_reference(res),
-            "scratch.available(): {} < GLWEAutomorphismKeyEncryptSk::glwe_automorphism_key_encrypt_sk_tmp_bytes: {}",
-            scratch.available(),
-            self.glwe_automorphism_key_encrypt_sk_tmp_bytes_reference(res)
+            "scratch.available() < GLWEAutomorphismKeyEncryptSk::glwe_automorphism_key_encrypt_sk_tmp_bytes"
         );
         let tmp_bytes: usize = self.glwe_automorphism_key_encrypt_sk_tmp_bytes_reference(res);
         {

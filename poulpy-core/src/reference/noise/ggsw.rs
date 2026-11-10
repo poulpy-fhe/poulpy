@@ -108,9 +108,7 @@ where
         let k_digit: usize = res_backend.k_digit().as_usize();
         assert!(
             scratch.available() >= self.ggsw_noise_tmp_bytes(res),
-            "scratch.available(): {} < GGSWNoise::ggsw_noise_tmp_bytes: {}",
-            scratch.available(),
-            self.ggsw_noise_tmp_bytes(res)
+            "scratch.available() < GGSWNoise::ggsw_noise_tmp_bytes"
         );
 
         let (mut pt, mut scratch_1) = scratch.borrow().take_glwe_plaintext_scratch(&res_backend);

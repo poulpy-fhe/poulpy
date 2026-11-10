@@ -92,9 +92,7 @@ where
     {
         assert!(
             scratch.available() >= self.gglwe_noise_tmp_bytes(res),
-            "scratch.available(): {} < GGLWENoise::gglwe_noise_tmp_bytes: {}",
-            scratch.available(),
-            self.gglwe_noise_tmp_bytes(res)
+            "scratch.available() < GGLWENoise::gglwe_noise_tmp_bytes"
         );
 
         let res_backend = res.to_backend_ref();

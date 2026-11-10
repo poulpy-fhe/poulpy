@@ -46,9 +46,7 @@ pub fn lwe_decrypt_reference<M, BE, R, P, S, Rg: Ring>(
     );
     assert!(
         scratch.available() >= lwe_decrypt_tmp_bytes_reference::<M, BE, _>(module, &res),
-        "scratch.available(): {} < LWEDecrypt::lwe_decrypt_tmp_bytes: {}",
-        scratch.available(),
-        lwe_decrypt_tmp_bytes_reference::<M, BE, _>(module, &res)
+        "scratch.available() < LWEDecrypt::lwe_decrypt_tmp_bytes"
     );
     let tmp_bytes: usize = lwe_decrypt_tmp_bytes_reference::<M, BE, _>(module, &res);
     {

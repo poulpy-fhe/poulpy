@@ -63,11 +63,9 @@ where
         if i == 0 {
             let before = dst.clone();
             // The core encryption, the body's only call, checks the same query.
-            let expected = format!(
-                "scratch.available(): {} < GLWESwitchingKeyCompressedEncryptSk::glwe_switching_key_compressed_encrypt_sk_tmp_bytes: {gen_bytes}",
-                gen_bytes.saturating_sub(1)
-            );
-            assert_short_scratch_panics::<BE>(gen_bytes, &expected, |s| {
+            let expected =
+                "scratch.available() < GLWESwitchingKeyCompressedEncryptSk::glwe_switching_key_compressed_encrypt_sk_tmp_bytes";
+            assert_short_scratch_panics::<BE>(gen_bytes, expected, |s| {
                 module.mhe_glwe_switching_key_share_gen(dst, sk_in, sk_out, SEEDS[0], &mut source_xe, s)
             });
             assert!(*dst == before);
@@ -129,11 +127,8 @@ where
         if i == 0 {
             let before = dst.clone();
             // The core encryption, the body's only call, checks the same query.
-            let expected = format!(
-                "scratch.available(): {} < GLWEAutomorphismKeyCompressedEncryptSk::glwe_automorphism_key_compressed_encrypt_sk_tmp_bytes: {gen_bytes}",
-                gen_bytes.saturating_sub(1)
-            );
-            assert_short_scratch_panics::<BE>(gen_bytes, &expected, |s| {
+            let expected = "scratch.available() < GLWEAutomorphismKeyCompressedEncryptSk::glwe_automorphism_key_compressed_encrypt_sk_tmp_bytes";
+            assert_short_scratch_panics::<BE>(gen_bytes, expected, |s| {
                 module.mhe_glwe_automorphism_key_share_gen(dst, P, sk, SEEDS[0], &mut source_xe, s)
             });
             assert!(*dst == before);

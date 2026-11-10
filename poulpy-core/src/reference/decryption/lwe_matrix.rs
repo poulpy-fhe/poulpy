@@ -49,9 +49,7 @@ pub fn lwe_matrix_decrypt_reference<BE, R, P, S, Rg: Ring>(
     assert!(res.n() == sk.n(), "lwe_matrix_decrypt: secret dimension mismatch");
     assert!(
         scratch.available() >= lwe_matrix_decrypt_tmp_bytes_reference::<BE, _>(module, &res),
-        "scratch.available(): {} < LWEMatrixDecrypt::lwe_matrix_decrypt_tmp_bytes: {}",
-        scratch.available(),
-        lwe_matrix_decrypt_tmp_bytes_reference::<BE, _>(module, &res)
+        "scratch.available() < LWEMatrixDecrypt::lwe_matrix_decrypt_tmp_bytes"
     );
     let tmp_bytes: usize = lwe_matrix_decrypt_tmp_bytes_reference::<BE, _>(module, &res);
     {

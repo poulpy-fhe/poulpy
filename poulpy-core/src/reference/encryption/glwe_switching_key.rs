@@ -78,9 +78,7 @@ where
         assert!(
             scratch.available()
                 >= GLWESwitchingKeyEncryptSkReference::glwe_switching_key_encrypt_sk_tmp_bytes_reference(self, res),
-            "scratch.available(): {} < GLWESwitchingKeyEncryptSk::glwe_switching_key_encrypt_sk_tmp_bytes: {}",
-            scratch.available(),
-            GLWESwitchingKeyEncryptSkReference::glwe_switching_key_encrypt_sk_tmp_bytes_reference(self, res)
+            "scratch.available() < GLWESwitchingKeyEncryptSk::glwe_switching_key_encrypt_sk_tmp_bytes"
         );
         let tmp_bytes: usize = GLWESwitchingKeyEncryptSkReference::glwe_switching_key_encrypt_sk_tmp_bytes_reference(self, res);
         {
