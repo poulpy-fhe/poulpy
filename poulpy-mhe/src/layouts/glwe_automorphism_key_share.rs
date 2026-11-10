@@ -139,13 +139,15 @@ impl<D: HostDataRef, W: ZnxWord> fmt::Display for MHEGLWEAutomorphismKeyShare<D,
 
 impl<D: HostDataMut, W: ZnxWord> ReaderFrom for MHEGLWEAutomorphismKeyShare<D, W> {
     /// Reads the format of [`WriterTo::write_to`]: a stream whose Galois element is not one of the standard ring at the
-    /// stream's degree is [`std::io::ErrorKind::InvalidData`], the Galois element left unchanged.
+    /// stream's degree is [`std::io::ErrorKind::InvalidData`], the Galois element left unchanged and the noise metadata
+    /// cleared.
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
         let mut p = [0u8; 8];
         reader.read_exact(&mut p)?;
         let p = i64::from_le_bytes(p);
         self.key.read_from(reader)?;
         if !is_galois_element(p, galois_order(self.key.n())) {
+            self.key.inner.clear_noise();
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
                 "the Galois element is not odd and below the ring's cyclotomic order",

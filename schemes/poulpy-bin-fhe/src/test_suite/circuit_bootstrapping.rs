@@ -3,7 +3,9 @@ use std::time::Instant;
 
 use poulpy_hal::{
     api::{ModuleN, ScalarZnxAlloc, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxRotateAssign},
-    layouts::{Backend, HostBackend, HostDataMut, HostDataRef, ScalarZnx, ScratchOwned, ZnxView, ZnxViewMut},
+    layouts::{
+        Backend, HostBackend, HostDataMut, HostDataRef, ReaderFrom, ScalarZnx, ScratchOwned, WriterTo, ZnxView, ZnxViewMut,
+    },
     source::Source,
 };
 
@@ -24,6 +26,7 @@ use poulpy_core::{
     layouts::{
         GGLWEToGGSWKeyLayout, GGSWAlloc, GGSWInfos, GGSWLayout, GLWEAlloc, GLWEAutomorphismKeyLayout, GLWEInfos,
         GLWEPlaintextAlloc, GLWESecretAlloc, LWEAlloc, LWELayout, LWEPlaintextAlloc, LWESecretAlloc, ModuleCoreAlloc,
+        SetGaloisElement,
     },
 };
 
@@ -500,7 +503,9 @@ pub fn test_circuit_bootstrapping_to_constant<
 }
 
 /// The LWE secret of another dimension than the blind rotation key, then the GLWE secret of another degree than the
-/// blind rotation, automorphism and tensor keys, each refused before any write or draw.
+/// blind rotation, automorphism and tensor keys, each refused before any write or draw; then an automorphism key of
+/// another Galois element than its entry's, refused by `read_from` before that key is read and by `write_to` before
+/// any write.
 pub fn test_circuit_bootstrapping_key_encrypt_sk_rejects_secret_shape<
     BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64> + poulpy_hal::oep::HalModuleImpl,
     BRA: BlindRotationAlgo,
@@ -514,8 +519,6 @@ pub fn test_circuit_bootstrapping_key_encrypt_sk_rejects_secret_shape<
         + GLWESecretAlloc
         + LWESecretAlloc,
 {
-    use poulpy_hal::layouts::WriterTo;
-
     let n = module.n();
     let half = poulpy_hal::layouts::Module::<BE>::new((n / 2) as u64);
     let layout = |n_brk: usize, n_atk: usize, n_tsk: usize| CircuitBootstrappingKeyLayout {
@@ -587,4 +590,25 @@ pub fn test_circuit_bootstrapping_key_encrypt_sk_rejects_secret_shape<
             "a refused key encryption drew from its sources"
         );
     }
+
+    let mut key: CircuitBootstrappingKey<AlignedBuf, BRA, i64> =
+        CircuitBootstrappingKey::alloc_from_infos(module, &layout(n, n, n));
+    let mut gal_els: Vec<i64> = key.atk.keys().copied().collect();
+    gal_els.sort_unstable();
+    let (first, other) = (gal_els[0], gal_els[1]);
+    let mut stream = Vec::new();
+    key.write_to(&mut stream).unwrap();
+    let mut brk = Vec::new();
+    key.brk.write_to(&mut brk).unwrap();
+    // The first entry's key opens after the blind rotation key, the entry count and the entry's Galois element.
+    let at = brk.len() + 16;
+    assert!(stream[at..at + 8] == first.to_le_bytes());
+    stream[at..at + 8].copy_from_slice(&other.to_le_bytes());
+    let err = key.read_from(&mut stream.as_slice()).unwrap_err();
+    assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+    assert_eq!(key.atk[&first].p(), first);
+    key.atk.get_mut(&first).unwrap().set_p(other);
+    let mut out = Vec::new();
+    assert_eq!(key.write_to(&mut out).unwrap_err().kind(), std::io::ErrorKind::InvalidInput);
+    assert!(out.is_empty());
 }

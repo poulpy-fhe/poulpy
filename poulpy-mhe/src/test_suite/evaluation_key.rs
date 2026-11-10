@@ -6,7 +6,7 @@ use poulpy_core::{
     api::{GLWESecretPreparedFactory, GLWESecretSampling},
     layouts::{
         Degree, GGLWELayout, GLWEAutomorphismKey, GLWEAutomorphismKeyAlloc, GLWEInfos, GLWESecret, GLWESecretAlloc,
-        GLWESecretLayout, GLWESecretPrepared, GLWESwitchingKey, GLWESwitchingKeyAlloc, GLWESwitchingKeyDegrees, Rank,
+        GLWESecretLayout, GLWESecretPrepared, GLWESwitchingKey, GLWESwitchingKeyAlloc, GLWESwitchingKeyDegrees, LWEInfos, Rank,
     },
     test_suite::with_scratch,
 };
@@ -148,13 +148,22 @@ where
     let mut decoded = module.mhe_glwe_automorphism_key_share_alloc_from_infos(&layout);
     decoded.read_from(&mut encoded.as_slice()).unwrap();
     assert!(decoded == acc);
+    assert!(decoded.noise().is_some());
     // A Galois element even or not below the cyclotomic order `2n`.
     for p in [2, 2 * module.n() as i64 + 1] {
         encoded[..8].copy_from_slice(&p.to_le_bytes());
         let err = decoded.read_from(&mut encoded.as_slice()).unwrap_err();
         assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
         assert_eq!(decoded.p, P);
+        assert!(decoded.noise().is_none());
     }
+    decoded.p = 2;
+    let mut refused = Vec::new();
+    assert_eq!(
+        decoded.write_to(&mut refused).unwrap_err().kind(),
+        std::io::ErrorKind::InvalidInput
+    );
+    assert!(refused.is_empty());
 
     let mut res: GLWEAutomorphismKey<AlignedBuf, i64> = module.glwe_automorphism_key_alloc_from_infos(&layout);
     let finalize_bytes = module.mhe_glwe_automorphism_key_share_finalize_tmp_bytes();

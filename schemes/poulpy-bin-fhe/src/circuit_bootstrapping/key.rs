@@ -3,8 +3,8 @@ use poulpy_core::{
     layouts::GGSWAlloc,
     layouts::{
         GGLWEInfos, GGLWEToGGSWKey, GGLWEToGGSWKeyAlloc, GGLWEToGGSWKeyLayout, GGSWInfos, GLWEAutomorphismKey,
-        GLWEAutomorphismKeyAlloc, GLWEAutomorphismKeyLayout, GLWEInfos, GLWESecretToBackendRef, GetGaloisElement, LWEInfos,
-        LWESecretToBackendRef, ModuleCoreAlloc, SetGaloisElement,
+        GLWEAutomorphismKeyAlloc, GLWEAutomorphismKeyLayout, GLWEInfos, GLWESecretToBackendRef, LWEInfos, LWESecretToBackendRef,
+        ModuleCoreAlloc, SetGaloisElement,
     },
 };
 use poulpy_hal::layouts::ZnxWord;
@@ -246,6 +246,8 @@ impl<D: Data, BRA: BlindRotationAlgo, W: ZnxWord> CircuitBootstrappingKeyInfos f
 }
 
 impl<D: HostDataMut, BRA: BlindRotationAlgo, W: ZnxWord> ReaderFrom for CircuitBootstrappingKey<D, BRA, W> {
+    /// Refuses with [`std::io::ErrorKind::InvalidData`] an automorphism key whose Galois element differs from its
+    /// entry's, before reading that key.
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
         self.brk.read_from(reader)?;
         let n = reader.read_u64::<LittleEndian>()? as usize;
@@ -260,20 +262,31 @@ impl<D: HostDataMut, BRA: BlindRotationAlgo, W: ZnxWord> ReaderFrom for CircuitB
             let atk = self.atk.get_mut(&gal_el).ok_or_else(|| {
                 std::io::Error::new(std::io::ErrorKind::InvalidData, format!("self.atk.get(gal_el={gal_el})=None"))
             })?;
-            atk.read_from(reader)?;
-            if atk.p() != gal_el {
+            // The key's stream opens with its Galois element, checked here so that a refusal leaves the entry untouched.
+            let p = reader.read_i64::<LittleEndian>()?;
+            if p != gal_el {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
                     "an automorphism key's Galois element differs from its entry's",
                 ));
             }
+            let p = p.to_le_bytes();
+            atk.read_from(&mut std::io::Read::chain(p.as_slice(), &mut *reader))?;
         }
         self.tsk.read_from(reader)
     }
 }
 
 impl<D: HostDataRef, BRA: BlindRotationAlgo, W: ZnxWord> WriterTo for CircuitBootstrappingKey<D, BRA, W> {
+    /// Refuses with [`std::io::ErrorKind::InvalidInput`], writing nothing, an automorphism key whose Galois element
+    /// differs from its entry's.
     fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
+        if self.atk.iter().any(|(gal_el, atk)| atk.p() != *gal_el) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "an automorphism key's Galois element differs from its entry's",
+            ));
+        }
         self.brk.write_to(writer)?;
         writer.write_u64::<LittleEndian>(self.atk.len() as u64)?;
         // HashMap iteration order is undefined; sort for stable, canonical blobs.

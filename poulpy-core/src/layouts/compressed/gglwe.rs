@@ -283,6 +283,11 @@ impl<D: Data, W: ZnxWord, Rg: Ring> GGLWECompressed<D, W, Rg> {
         &mut self.data
     }
 
+    /// Clears the component noise metadata, as a reader refusing a stream after reading it does.
+    pub fn clear_noise(&mut self) {
+        self.noise = None;
+    }
+
     /// Allocates a new compressed GGLWE by copying parameters from an existing info provider.
     pub(crate) fn alloc_from_infos<B: Backend<OwnedBuf = D, ZnxWord = W>, A>(infos: &A) -> Self
     where

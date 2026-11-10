@@ -62,7 +62,8 @@ pub trait CKKSConjugateOps<BE: Backend> {
     ///
     /// # Errors
     ///
-    /// `MissingAutomorphismKey` when `keys` has no conjugation key covering `dst.k()`. `dst` is untouched on `Err`.
+    /// `InvalidOperand` when `dst` exceeds the module degree, `MissingAutomorphismKey` when `keys` has no conjugation key
+    /// covering `dst.k()`. `dst` is untouched on `Err`.
     fn ckks_conjugate_assign<Dst, H>(&self, dst: &mut Dst, keys: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,

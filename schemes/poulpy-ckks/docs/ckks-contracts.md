@@ -56,12 +56,16 @@ compositions of selected operations are that method's derived default.
 
 Every operation takes ciphertexts of any degree `n` up to the module's: an
 implementation allocates and carves its working ciphertexts at the operand's
-degree, takes Galois elements at the operand's order
-`Rg::CYCLOTOMIC_ORDER_FACTOR * n` and slot counts from `n`, and refuses an
-operand above the module's degree with `InvalidOperand`;
+degree and takes Galois elements at the operand's order
+`Rg::CYCLOTOMIC_ORDER_FACTOR * n` and slot counts from `n`;
 `CKKSModuleInfos::ckks_galois_element` and `ckks_max_slots` answer at the
-module's degree. Queries size a temporary at its operand's degree or the
-module's, never below. PaCo and SHIP run at the degree of their plan, at most
+module's degree. The rotations (`ckks_rotate_into`, `ckks_rotate_assign`), the
+conjugations (`ckks_conjugate_into`, `ckks_conjugate_assign`,
+`ckks_conjugate_rotate_into`), the linear-transformation evaluations and baby
+steps, the PaCo slot folds, `ckks_fold` and the ring maps refuse an operand
+above the module's degree with `InvalidOperand` before any write; the other
+operations reach poulpy-core's degree assertion, which panics. Queries size a
+temporary at its operand's degree or the module's, never below. PaCo and SHIP run at the degree of their plan, at most
 the module's. A bootstrapping context is compiled at the degree of its module
 (`compile_ci`: at half of it, EvalMod running on the conjugate-invariant ring
 of that degree), and the bootstraps take ciphertexts of the degree their
