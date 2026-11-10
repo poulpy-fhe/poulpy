@@ -13,38 +13,11 @@ use poulpy_hal::{
 };
 
 use crate::kernels::ntt4x30::{
-    ntt::{NttTable, NttTableInv, intt_core, ntt_core},
+    ntt::{NttTable, NttTableInv, intt_core, modq_pow_portable, ntt_core},
     primes::PrimeSetCrt4,
     standard,
     vec_znx_dft::{NttAutomorphismPlan, NttPlan, NttPlanNew},
 };
-
-/// `a * b mod q`.
-fn mul_mod(a: u64, b: u64, q: u64) -> u64 {
-    ((a as u128 * b as u128) % q as u128) as u64
-}
-
-/// `a^e mod q`.
-fn pow_mod(mut a: u64, mut e: u64, q: u64) -> u64 {
-    let mut r = 1;
-    while e != 0 {
-        if e & 1 != 0 {
-            r = mul_mod(r, a, q);
-        }
-        a = mul_mod(a, a, q);
-        e >>= 1;
-    }
-    r
-}
-
-/// The primitive `4n`-th root of unity `omega^(2^(max_log_n - 1) / n)` of a primitive `2^(max_log_n + 1)`-th root `omega`.
-fn root(n: usize, q: u64, omega: u64, max_log_n: u32) -> u64 {
-    assert!(
-        n.is_power_of_two() && n <= 1 << (max_log_n - 1),
-        "the degree must be a power of two within the root order"
-    );
-    pow_mod(omega, (1u64 << (max_log_n - 1)) / n as u64, q)
-}
 
 /// Shoup product `x * w mod q` in `[0, 2q)` for any `x`, `w < q < 2^63` and `w_quo = floor(w * 2^64 / q)`.
 #[inline(always)]
@@ -70,19 +43,25 @@ pub struct BasisChangeTable<P: PrimeSetCrt4> {
 impl<P: PrimeSetCrt4> BasisChangeTable<P> {
     /// The table of degree `n`.
     pub(crate) fn new(n: usize) -> Self {
+        assert!(
+            n.is_power_of_two() && n <= 1 << (P::MAX_LOG_N - 1),
+            "basis change degree must be a power of two within the conjugate-invariant ring"
+        );
+        // `alpha` is this power of the primitive `2^(MAX_LOG_N + 1)`-th root `OMEGA`.
+        let e = (1i64 << (P::MAX_LOG_N - 1)) / n as i64;
         let mut powers = alloc_aligned::<u64>(4 * n);
         let mut quotients = alloc_aligned::<u64>(4 * n);
         powers.truncate(4 * n);
         quotients.truncate(4 * n);
         let mut i = [0; 4];
         let mut i_quotients = [0; 4];
-        for (p, &q) in P::Q.iter().enumerate() {
+        for (p, (&q, &omega)) in P::Q.iter().zip(&P::OMEGA).enumerate() {
+            let step = modq_pow_portable(omega, -e, q) as u64;
+            i[p] = modq_pow_portable(omega, e * n as i64, q) as u64;
             let q = q as u64;
             let (m, r) = (u64::MAX / q, u64::MAX % q + 1);
             // floor(w 2^64 / q) = w floor(2^64 / q) + floor(w (2^64 mod q) / q), with no 128-bit division for w < q < 2^32.
             let quotient = |w: u64| w * m + w * r / q;
-            let alpha = root(n, q, P::OMEGA[p] as u64, P::MAX_LOG_N);
-            let step = pow_mod(alpha, q - 2, q);
             let step_quotient = quotient(step);
             let mut f = 1;
             for k in 0..n {
@@ -91,7 +70,6 @@ impl<P: PrimeSetCrt4> BasisChangeTable<P> {
                 f = shoup_mul(f, step, step_quotient, q);
                 f -= if f >= q { q } else { 0 };
             }
-            i[p] = pow_mod(alpha, n as u64, q);
             i_quotients[p] = quotient(i[p]);
         }
         Self {
@@ -247,7 +225,7 @@ pub fn build_ntt4x30_automorphism_plan_portable(n: usize, p: i64) -> NttAutomorp
 mod tests {
     use super::*;
     use crate::{
-        kernels::ntt4x30::primes::{Primes29, Primes30, Primes31},
+        kernels::ntt4x30::primes::{PrimeSet, Primes29, Primes30, Primes31},
         test_suite::conjugate_invariant::test_conjugate_invariant_ntt_basis_change,
     };
 
@@ -264,5 +242,23 @@ mod tests {
         test_conjugate_invariant_ntt_basis_change::<Primes29>(kernel);
         test_conjugate_invariant_ntt_basis_change::<Primes30>(kernel);
         test_conjugate_invariant_ntt_basis_change::<Primes31>(kernel);
+    }
+
+    #[test]
+    fn degree_above_the_conjugate_invariant_ring_rejected() {
+        let n = 1 << Primes30::MAX_LOG_N;
+        let message = |build: &dyn Fn()| {
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(build))
+                .unwrap_err()
+                .downcast_ref::<&str>()
+                .copied()
+        };
+        let expected = Some("basis change degree must be a power of two within the conjugate-invariant ring");
+        assert_eq!(message(&|| drop(NttTable::<Primes30, ConjugateInvariant>::new(n))), expected);
+        assert_eq!(
+            message(&|| drop(NttTableInv::<Primes30, ConjugateInvariant>::new(n))),
+            expected
+        );
+        assert_eq!(message(&|| drop(NttPlan::<Primes30, ConjugateInvariant>::new(n))), expected);
     }
 }

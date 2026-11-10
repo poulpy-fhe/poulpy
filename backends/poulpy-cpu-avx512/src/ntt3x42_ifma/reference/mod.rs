@@ -16,9 +16,8 @@
 //! Production infrastructure (table types, traits, primes, generic glue) lives
 //! in sibling modules, not here.
 //!
-//! All items here are consumed only from `#[cfg(test)]` blocks in sibling
-//! modules; the module-level `allow(dead_code)` keeps the dead-code lint quiet
-//! in non-test builds.
+//! The module builds only under `cfg(test)`; `allow(dead_code)` covers the
+//! oracles no test calls yet.
 #![allow(dead_code)]
 
 pub mod arithmetic;

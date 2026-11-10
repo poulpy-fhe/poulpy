@@ -93,9 +93,10 @@ fn basis_change_reference<P: PrimeSetCrt4>(inverse: bool, data: &mut [u64]) {
 }
 
 /// Compares a q120b basis change `apply(table, inverse, data)` against scalar modular arithmetic, on the table of every
-/// degree up to `2^16` in both directions, and checks it rejects a vector shorter than the degree of its table.
+/// degree of the conjugate-invariant ring in both directions, and checks it rejects a vector shorter than the degree of
+/// its table.
 pub fn test_conjugate_invariant_ntt_basis_change<P: PrimeSetCrt4>(apply: impl Fn(&BasisChangeTable<P>, bool, &mut [u64])) {
-    for log_n in 0..=16 {
+    for log_n in 0..P::MAX_LOG_N {
         let n = 1 << log_n;
         let table = BasisChangeTable::<P>::new(n);
         for inverse in [false, true] {

@@ -173,7 +173,7 @@ impl Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, ConjugateInvariant>> fo
 /// canonical out.
 ///
 /// Lane `l` of a vector step handles the pair `(j + l, n - j - l)`; degrees below 16 take the scalar loop, which handles
-/// `(j, n - j)`.
+/// `(j, n - j)`. Reproduces the scalar definition `tests::reference`, which `basis_change_parity` compares with.
 #[target_feature(enable = "avx512ifma")]
 unsafe fn basis_change_plane<const INVERSE: bool>(prime: &BasisChangePrime, data: &mut [u64]) {
     let n = data.len();
@@ -248,7 +248,7 @@ unsafe fn basis_change_plane<const INVERSE: bool>(prime: &BasisChangePrime, data
 #[target_feature(enable = "avx512ifma")]
 unsafe fn basis_change<const INVERSE: bool>(basis: &BasisChangeTable, data: &mut [u64]) {
     let n = basis.0[0].factors.len();
-    assert_eq!(data.len(), 3 * n, "data must hold 3 planes of length n");
+    assert!(data.len() == 3 * n, "data must hold 3 planes of length n");
     for (prime, plane) in basis.0.iter().zip(data.chunks_exact_mut(n)) {
         // SAFETY: this function's `avx512ifma` feature covers the plane kernel, which asserts the lengths it reads.
         unsafe { basis_change_plane::<INVERSE>(prime, plane) };
@@ -332,7 +332,11 @@ mod tests {
         for n in [16, 64] {
             // SAFETY: this module only builds with `avx512ifma`, and the length check panics before any access.
             let mismatched = || unsafe { basis_change_plane::<false>(&table.0[0], &mut vec![0; n]) };
-            assert!(std::panic::catch_unwind(mismatched).is_err());
+            let payload = std::panic::catch_unwind(mismatched).unwrap_err();
+            assert_eq!(
+                payload.downcast_ref::<&str>(),
+                Some(&"basis change: the table is not of the degree of the plane")
+            );
         }
     }
 }

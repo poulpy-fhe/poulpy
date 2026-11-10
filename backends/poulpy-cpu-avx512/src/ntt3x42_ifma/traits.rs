@@ -2,7 +2,7 @@
 //!
 //! These traits are implemented by [`NTT3x42Ifma`](super::super::NTT3x42Ifma) using
 //! AVX-512-IFMA SIMD intrinsics. Their scalar reference companions live in
-//! [`super::reference`] and are used as test oracles.
+//! `super::reference` and are used as test oracles.
 
 use poulpy_cpu_portable::kernels::ntt4x30::{NttRingTable, vec_znx_dft::NttAutomorphismPlan};
 

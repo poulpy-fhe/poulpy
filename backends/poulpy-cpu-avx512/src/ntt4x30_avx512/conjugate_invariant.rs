@@ -70,6 +70,9 @@ impl NttDFTExecute<NttTableInv<Primes30, ConjugateInvariant>> for NTT4x30Avx512 
 /// Conjugate-invariant basis change of the q120b vector `data` of the degree of `table`, two coefficients per vector and
 /// one prime per lane: into the negacyclic basis, or back with `INVERSE`, canonical.
 ///
+/// Reproduces the portable `BasisChangeTable::forward_portable` and `inverse_portable`, checked against the same
+/// scalar reference by `test_conjugate_invariant_ntt_basis_change`.
+///
 /// # Safety
 ///
 /// The CPU must support AVX-512F.

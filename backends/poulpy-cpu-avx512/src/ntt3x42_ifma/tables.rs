@@ -7,8 +7,8 @@
 //! - `[ω₀, ω₁, ..., ωₘ₋₁]` — all twiddle values (4 u64 each)
 //! - `[ωq₀, ωq₁, ..., ωqₘ₋₁]` — all Harvey quotients (4 u64 each)
 //!
-//! This enables AVX-512 kernels to load 2 consecutive ω or ωq values with a
-//! single 512-bit load, instead of deinterleaving from `[ω, ωq]` pairs.
+//! Only the scalar reference reads this layout, built in tests only; the SIMD
+//! kernels read the prime-major `root` and `inv_root` tables.
 //!
 //! # Data layout
 //!
@@ -18,10 +18,9 @@
 use std::{marker::PhantomData, sync::Arc};
 
 use poulpy_cpu_portable::kernels::ntt4x30::NttRingTable;
-use poulpy_hal::{
-    AlignedVec, alloc_aligned,
-    layouts::{Ring, Standard},
-};
+use poulpy_hal::layouts::{Ring, Standard};
+#[cfg(test)]
+use poulpy_hal::{AlignedVec, alloc_aligned};
 
 use super::{
     conjugate_invariant::BasisChangeTable,
@@ -56,6 +55,8 @@ pub struct Ntt3x42IfmaTable<P: PrimeSetNtt3x42Ifma, R: Ring = Standard> {
 pub(crate) struct Ntt3x42IfmaTwiddles {
     /// Packed twiddle factors: each entry is 8 u64.
     /// Layout: level-0 (n entries), then butterfly levels (halfnn-1 entries each).
+    /// Only the scalar reference reads it.
+    #[cfg(test)]
     pub(crate) powomega: AlignedVec<u64>,
     /// Scrambled forward roots, prime-major.
     /// Entry for prime `k`, scrambled index `j` is at `[k*n + j]`.
@@ -103,6 +104,8 @@ impl<P: PrimeSetNtt3x42Ifma, R: Ring> NttRingTable for Ntt3x42IfmaTableInv<P, R>
 pub(crate) struct Ntt3x42IfmaTwiddlesInv {
     /// Packed twiddle factors: butterfly levels (halfnn-1 entries each),
     /// then last-pass (n entries with ω^{-i}/n baked in).
+    /// Only the scalar reference reads it.
+    #[cfg(test)]
     pub(crate) powomega: AlignedVec<u64>,
     /// Reordered inverse roots, prime-major (stride `n`).
     /// Entry for prime `k`, reordered index `j` is at `[k*n + j]`.
@@ -121,6 +124,7 @@ pub(super) fn max_ntt_degree<P: PrimeSetNtt3x42Ifma, R: Ring>() -> usize {
 // ──────────────────────────────────────────────────────────────────────────────
 
 /// Returns the primitive `2n`-th roots of unity for each of the 3 primes.
+#[cfg(test)]
 fn fill_omegas_ntt3x42_ifma<P: PrimeSetNtt3x42Ifma>(n: usize) -> [u64; 3] {
     assert!(n.is_power_of_two() && n <= (1 << P::MAX_LOG_N));
     std::array::from_fn(|k| modq_pow64(P::OMEGA[k], (1i64 << P::MAX_LOG_N) / n as i64, P::Q[k]))
@@ -311,6 +315,7 @@ pub(crate) fn cond_sub_2q(x: u64, q2: u64) -> u64 {
 /// `omega_base`: start of the ω section for this level segment.
 /// `quot_base`: start of the ωq section for this level segment.
 /// `idx`: index of this entry within the segment.
+#[cfg(test)]
 fn store_twiddle_split<P: PrimeSetNtt3x42Ifma>(
     powomega: &mut [u64],
     omega_base: usize,
@@ -326,6 +331,133 @@ fn store_twiddle_split<P: PrimeSetNtt3x42Ifma>(
     }
     powomega[o + 3] = 0;
     powomega[q + 3] = 0;
+}
+
+/// The forward twiddles of degree `n` in the split layout.
+#[cfg(test)]
+fn forward_powomega<P: PrimeSetNtt3x42Ifma>(n: usize) -> AlignedVec<u64> {
+    let omega_vec = fill_omegas_ntt3x42_ifma::<P>(n);
+
+    // Allocate powomega: level-0 needs n entries, butterfly levels need sum of (halfnn-1)
+    let total_entries = n
+        + (0..)
+            .scan(n, |nn, _| {
+                if *nn < 2 {
+                    return None;
+                }
+                let h = *nn / 2;
+                *nn /= 2;
+                Some(h.saturating_sub(1))
+            })
+            .sum::<usize>();
+
+    // Split layout: each segment has m entries of ω (4 u64 each) then m entries of ωq (4 u64 each)
+    // Total u64 count is same: 8 * total_entries
+    let mut powomega: AlignedVec<u64> = alloc_aligned::<u64>(8 * total_entries);
+    let mut seg_base = 0usize; // base offset (in u64) for current segment
+    if n <= 1 {
+        return powomega;
+    }
+
+    // ── Level 0: a[i] *= ω^i (n entries) ────────────────────────────
+    {
+        let omega_base = seg_base;
+        let quot_base = seg_base + 4 * n;
+        let mut pow_om: [u64; 3] = [1; 3]; // ω^0 = 1
+        for i in 0..n {
+            store_twiddle_split::<P>(&mut powomega, omega_base, quot_base, i, &pow_om);
+            for k in 0..3 {
+                pow_om[k] = ((pow_om[k] as u128 * omega_vec[k] as u128) % P::Q[k] as u128) as u64;
+            }
+        }
+        seg_base += 8 * n;
+    }
+
+    // ── Butterfly levels: nn = n, n/2, …, 2 ─────────────────────────
+    let mut nn = n;
+    while nn >= 2 {
+        let halfnn = nn / 2;
+        if halfnn > 1 {
+            let count = halfnn - 1;
+            let omega_base = seg_base;
+            let quot_base = seg_base + 4 * count;
+            let m = n / halfnn;
+            let omega_m: [u64; 3] = std::array::from_fn(|k| modq_pow64(omega_vec[k], m as i64, P::Q[k]));
+            let mut pow_om = omega_m;
+            for i in 0..count {
+                store_twiddle_split::<P>(&mut powomega, omega_base, quot_base, i, &pow_om);
+                for k in 0..3 {
+                    pow_om[k] = ((pow_om[k] as u128 * omega_m[k] as u128) % P::Q[k] as u128) as u64;
+                }
+            }
+            seg_base += 8 * count;
+        }
+        nn /= 2;
+    }
+
+    powomega
+}
+
+/// The inverse twiddles of degree `n` in the split layout, `n_inv` the inverse of `n` modulo each prime.
+#[cfg(test)]
+fn inverse_powomega<P: PrimeSetNtt3x42Ifma>(n: usize, n_inv: [u64; 3]) -> AlignedVec<u64> {
+    let omega_vec = fill_omegas_ntt3x42_ifma::<P>(n);
+    // butterfly levels + last pass (n entries)
+    let total_entries = n
+        + (0..)
+            .scan(2usize, |nn, _| {
+                if *nn > n {
+                    return None;
+                }
+                let h = *nn / 2;
+                *nn *= 2;
+                Some(h.saturating_sub(1))
+            })
+            .sum::<usize>();
+
+    let mut powomega: AlignedVec<u64> = alloc_aligned::<u64>(8 * total_entries);
+    let mut seg_base = 0usize;
+    if n <= 1 {
+        return powomega;
+    }
+
+    // ── Butterfly levels: nn = 2, 4, …, n ───────────────────────────
+    let mut nn = 2usize;
+    while nn <= n {
+        let halfnn = nn / 2;
+        if halfnn > 1 {
+            let count = halfnn - 1;
+            let omega_base = seg_base;
+            let quot_base = seg_base + 4 * count;
+            let m = n / halfnn;
+            let omega_neg_m: [u64; 3] = std::array::from_fn(|k| modq_pow64(omega_vec[k], -(m as i64), P::Q[k]));
+            let mut pow_om = omega_neg_m;
+            for i in 0..count {
+                store_twiddle_split::<P>(&mut powomega, omega_base, quot_base, i, &pow_om);
+                for k in 0..3 {
+                    pow_om[k] = ((pow_om[k] as u128 * omega_neg_m[k] as u128) % P::Q[k] as u128) as u64;
+                }
+            }
+            seg_base += 8 * count;
+        }
+        nn *= 2;
+    }
+
+    // ── Last pass: ω^{-i} / n (n entries) ──────────────────────────
+    {
+        let omega_base = seg_base;
+        let quot_base = seg_base + 4 * n;
+        let omega_inv: [u64; 3] = std::array::from_fn(|k| modq_pow64(omega_vec[k], -1, P::Q[k]));
+        let mut pow_om = n_inv; // i=0: just n^{-1}
+        for i in 0..n {
+            store_twiddle_split::<P>(&mut powomega, omega_base, quot_base, i, &pow_om);
+            for k in 0..3 {
+                pow_om[k] = ((pow_om[k] as u128 * omega_inv[k] as u128) % P::Q[k] as u128) as u64;
+            }
+        }
+    }
+
+    powomega
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -346,84 +478,13 @@ impl<P: PrimeSetNtt3x42Ifma> Ntt3x42IfmaTable<P, Standard> {
         let (root, root_quot) = build_root_table::<P>(n);
         let tail_quot = build_tail_quot_table::<P>(n);
 
-        let omega_vec = fill_omegas_ntt3x42_ifma::<P>(n);
-
-        // Allocate powomega: level-0 needs n entries, butterfly levels need sum of (halfnn-1)
-        let total_entries = n
-            + (0..)
-                .scan(n, |nn, _| {
-                    if *nn < 2 {
-                        return None;
-                    }
-                    let h = *nn / 2;
-                    *nn /= 2;
-                    Some(h.saturating_sub(1))
-                })
-                .sum::<usize>();
-
-        // Split layout: each segment has m entries of ω (4 u64 each) then m entries of ωq (4 u64 each)
-        // Total u64 count is same: 8 * total_entries
-        let mut powomega: AlignedVec<u64> = alloc_aligned::<u64>(8 * total_entries);
-        let mut seg_base = 0usize; // base offset (in u64) for current segment
-
-        if n <= 1 {
-            return Self {
-                n,
-                q2,
-                q4,
-                twiddles: Arc::new(Ntt3x42IfmaTwiddles {
-                    powomega,
-                    root,
-                    root_quot,
-                    tail_quot,
-                }),
-                basis: None,
-                _phantom: PhantomData,
-            };
-        }
-
-        // ── Level 0: a[i] *= ω^i (n entries) ────────────────────────────
-        {
-            let omega_base = seg_base;
-            let quot_base = seg_base + 4 * n;
-            let mut pow_om: [u64; 3] = [1; 3]; // ω^0 = 1
-            for i in 0..n {
-                store_twiddle_split::<P>(&mut powomega, omega_base, quot_base, i, &pow_om);
-                for k in 0..3 {
-                    pow_om[k] = ((pow_om[k] as u128 * omega_vec[k] as u128) % P::Q[k] as u128) as u64;
-                }
-            }
-            seg_base += 8 * n;
-        }
-
-        // ── Butterfly levels: nn = n, n/2, …, 2 ─────────────────────────
-        let mut nn = n;
-        while nn >= 2 {
-            let halfnn = nn / 2;
-            if halfnn > 1 {
-                let count = halfnn - 1;
-                let omega_base = seg_base;
-                let quot_base = seg_base + 4 * count;
-                let m = n / halfnn;
-                let omega_m: [u64; 3] = std::array::from_fn(|k| modq_pow64(omega_vec[k], m as i64, P::Q[k]));
-                let mut pow_om = omega_m;
-                for i in 0..count {
-                    store_twiddle_split::<P>(&mut powomega, omega_base, quot_base, i, &pow_om);
-                    for k in 0..3 {
-                        pow_om[k] = ((pow_om[k] as u128 * omega_m[k] as u128) % P::Q[k] as u128) as u64;
-                    }
-                }
-                seg_base += 8 * count;
-            }
-            nn /= 2;
-        }
-
         Self {
             n,
             q2,
             q4,
             twiddles: Arc::new(Ntt3x42IfmaTwiddles {
-                powomega,
+                #[cfg(test)]
+                powomega: forward_powomega::<P>(n),
                 root,
                 root_quot,
                 tail_quot,
@@ -464,7 +525,6 @@ impl<P: PrimeSetNtt3x42Ifma> Ntt3x42IfmaTableInv<P, Standard> {
 
         let q2: [u64; 4] = [2 * P::Q[0], 2 * P::Q[1], 2 * P::Q[2], 0];
         let q4: [u64; 4] = [4 * P::Q[0], 4 * P::Q[1], 4 * P::Q[2], 0];
-        let omega_vec = fill_omegas_ntt3x42_ifma::<P>(n);
 
         let (inv_root, inv_quot) = build_inv_root_table::<P>(n);
         let n_inv = std::array::from_fn(|k| modq_pow64(n as u64, -1, P::Q[k]));
@@ -472,83 +532,13 @@ impl<P: PrimeSetNtt3x42Ifma> Ntt3x42IfmaTableInv<P, Standard> {
         let final_root = std::array::from_fn(|k| ((inv_root[k * n + n - 1] as u128 * n_inv[k] as u128) % P::Q[k] as u128) as u64);
         let final_quot = std::array::from_fn(|k| harvey_quotient(final_root[k], P::Q[k]));
 
-        // butterfly levels + last pass (n entries)
-        let total_entries = n
-            + (0..)
-                .scan(2usize, |nn, _| {
-                    if *nn > n {
-                        return None;
-                    }
-                    let h = *nn / 2;
-                    *nn *= 2;
-                    Some(h.saturating_sub(1))
-                })
-                .sum::<usize>();
-
-        let mut powomega: AlignedVec<u64> = alloc_aligned::<u64>(8 * total_entries);
-        let mut seg_base = 0usize;
-
-        if n <= 1 {
-            return Self {
-                n,
-                q2,
-                q4,
-                twiddles: Arc::new(Ntt3x42IfmaTwiddlesInv {
-                    powomega,
-                    inv_root,
-                    inv_quot,
-                }),
-                n_inv,
-                n_inv_quot,
-                final_root,
-                final_quot,
-                basis: None,
-                _phantom: PhantomData,
-            };
-        }
-
-        // ── Butterfly levels: nn = 2, 4, …, n ───────────────────────────
-        let mut nn = 2usize;
-        while nn <= n {
-            let halfnn = nn / 2;
-            if halfnn > 1 {
-                let count = halfnn - 1;
-                let omega_base = seg_base;
-                let quot_base = seg_base + 4 * count;
-                let m = n / halfnn;
-                let omega_neg_m: [u64; 3] = std::array::from_fn(|k| modq_pow64(omega_vec[k], -(m as i64), P::Q[k]));
-                let mut pow_om = omega_neg_m;
-                for i in 0..count {
-                    store_twiddle_split::<P>(&mut powomega, omega_base, quot_base, i, &pow_om);
-                    for k in 0..3 {
-                        pow_om[k] = ((pow_om[k] as u128 * omega_neg_m[k] as u128) % P::Q[k] as u128) as u64;
-                    }
-                }
-                seg_base += 8 * count;
-            }
-            nn *= 2;
-        }
-
-        // ── Last pass: ω^{-i} / n (n entries) ──────────────────────────
-        {
-            let omega_base = seg_base;
-            let quot_base = seg_base + 4 * n;
-            let omega_inv: [u64; 3] = std::array::from_fn(|k| modq_pow64(omega_vec[k], -1, P::Q[k]));
-            let mut pow_om = n_inv; // i=0: just n^{-1}
-            for i in 0..n {
-                store_twiddle_split::<P>(&mut powomega, omega_base, quot_base, i, &pow_om);
-                for k in 0..3 {
-                    pow_om[k] = ((pow_om[k] as u128 * omega_inv[k] as u128) % P::Q[k] as u128) as u64;
-                }
-            }
-        }
-
         Self {
             n,
             q2,
             q4,
             twiddles: Arc::new(Ntt3x42IfmaTwiddlesInv {
-                powomega,
+                #[cfg(test)]
+                powomega: inverse_powomega::<P>(n, n_inv),
                 inv_root,
                 inv_quot,
             }),

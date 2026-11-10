@@ -2,7 +2,7 @@
 //!
 //! This module provides [`NTT3x42Ifma`], an AVX512-IFMA accelerated backend implementation for
 //! [`poulpy_hal`] that uses IFMA NTT arithmetic (CRT over three ~42-bit primes). The
-//! scalar reference for these kernels lives in the [`reference`] submodule.
+//! scalar reference for these kernels lives in the test-only `reference` submodule.
 //!
 //! # Current acceleration status
 //!
@@ -34,6 +34,7 @@ mod prim;
 pub(crate) mod primes;
 #[cfg(feature = "enable-rayon")]
 pub(crate) mod rayon;
+#[cfg(test)]
 pub(crate) mod reference;
 mod standard;
 pub(crate) mod svp;

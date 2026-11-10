@@ -179,6 +179,9 @@ impl Ntt32Table {
 ///
 /// With `alpha` a primitive `4 n`-th root of unity and the fourth root of unity `i = alpha^n`, plane `p` holds
 /// `f[k] = alpha^-k * 2^32 mod Q[p]` for every `k < n`.
+///
+/// Reproduces the portable packed `CiBasis` of `poulpy_cpu_portable::ntt4x30::ntt32`, and
+/// `matches_portable_conjugate_invariant` compares the transforms with the portable q120 ones.
 struct CiBasis {
     f: [Vec<u32>; 4],
     /// `i * 2^32 mod Q[p]`.
