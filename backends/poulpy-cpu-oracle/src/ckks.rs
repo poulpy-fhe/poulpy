@@ -129,11 +129,11 @@ macro_rules! impl_oracle_ckks_coeff_encodings {
                 use ::poulpy_ckks::layouts::CKKSCiphertextAlloc;
                 use ::poulpy_core::GLWECopy;
                 let plan = context.plan();
-                if module.n() != plan.n() {
+                if plan.n() > module.n() {
                     return Err(CKKSError::Internal(anyhow::anyhow!(
-                        "PaCo module degree {} does not match plan degree {}",
-                        module.n(),
-                        plan.n()
+                        "PaCo plan degree {} exceeds the module degree {}",
+                        plan.n(),
+                        module.n()
                     )));
                 }
                 let mut owned = module.ckks_ciphertext_alloc_from_infos(ciphertext);
@@ -182,11 +182,11 @@ macro_rules! impl_oracle_ckks_coeff_encodings {
             {
                 use ::poulpy_ckks::layouts::CKKSCiphertextAlloc;
                 use ::poulpy_core::GLWECopy;
-                if module.n() != plan.n() {
+                if plan.n() > module.n() {
                     return Err(CKKSError::Internal(anyhow::anyhow!(
-                        "SHIP module degree {} does not match plan degree {}",
-                        module.n(),
-                        plan.n()
+                        "SHIP plan degree {} exceeds the module degree {}",
+                        plan.n(),
+                        module.n()
                     )));
                 }
                 let mut owned = module.ckks_ciphertext_alloc_from_infos(ciphertext);

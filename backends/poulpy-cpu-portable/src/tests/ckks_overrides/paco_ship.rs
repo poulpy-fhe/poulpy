@@ -262,16 +262,16 @@ unsafe impl poulpy_ckks::oep::CKKSPaCoImpl for OverrideBackend {
         Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + poulpy_ckks::SetCKKSInfos,
         H: GetAutomorphismKey<Self>,
     {
-        use poulpy_hal::layouts::CyclotomicOrder;
         SLOT_TRACE_CALLS.fetch_add(1, Relaxed);
-        if !(a.is_power_of_two() && b.is_power_of_two() && b <= a && a <= module.n() / 2) {
+        let n = ct.n().as_usize();
+        if !(a.is_power_of_two() && b.is_power_of_two() && b <= a && a <= n / 2) {
             return Err(anyhow::anyhow!("invalid PaCo fold").into());
         }
         with_marked_bytes(SLOT_TRACE_EXTRA.load(Relaxed), scratch, |rest| {
             for level in 0..(a / b).trailing_zeros() {
                 let rotation = (a >> (level + 1)) as i64;
                 let key = keys
-                    .get_automorphism_key(galois_element(rotation, module.cyclotomic_order::<Standard>()), ct.k())
+                    .get_automorphism_key(galois_element(rotation, 2 * n as i64), ct.k())
                     .map_err(|source| poulpy_ckks::CKKSCompositionError::MissingAutomorphismKey {
                         op: "ckks_slot_trace_assign",
                         rotation,

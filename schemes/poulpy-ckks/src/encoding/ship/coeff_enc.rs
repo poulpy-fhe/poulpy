@@ -6,7 +6,6 @@
 //! w^{b_i})` from the body phases, and every rotated `Ecd(pi_k(a))` vector
 //! gathered from the mask phases without further trigonometry.
 
-use crate::CKKSModuleInfos;
 use anyhow::{Context, Result, ensure};
 use poulpy_core::layouts::{Base2K, GLWE, GLWEInfos, LWEInfos};
 use poulpy_hal::layouts::{Backend, HostDataRef, Module, Standard};
@@ -51,7 +50,7 @@ where
     values[..re.len()].copy_from_slice(re);
     values[re.len()..].copy_from_slice(im);
     let mut buffer = CKKSEncodingBuffer::<BE::OwnedBuf, F>::from_host::<BE>(&values);
-    let mut pt = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots::<Standard>(), base2k, k_pt.into());
+    let mut pt = module.ckks_plaintext_alloc_from_slots::<Standard>(re.len(), base2k, k_pt.into());
     pt.set_meta_checked(GLWEPlaintextMeta {
         scale: Scale::Log(log_delta),
         slots: SlotsKind::Complex,

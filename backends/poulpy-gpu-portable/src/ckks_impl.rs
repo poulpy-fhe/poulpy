@@ -292,12 +292,12 @@ where
 /// SHIP coefficient encodings read.
 macro_rules! staged_ciphertext {
     ($module:ident, $ct:ident, $plan:ident, $scratch:ident, $name:literal) => {{
-        if $module.n() != $plan.n() {
+        if $plan.n() > $module.n() {
             return Err(CKKSError::from(anyhow::anyhow!(
-                "{} module degree {} does not match plan degree {}",
+                "{} plan degree {} exceeds the module degree {}",
                 $name,
-                $module.n(),
-                $plan.n()
+                $plan.n(),
+                $module.n()
             )));
         }
         let mut owned = $module.ckks_ciphertext_alloc_from_infos($ct);

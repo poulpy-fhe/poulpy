@@ -208,10 +208,10 @@ where
     );
     ckks_ensure_operand!(
         op,
-        module.n() == plan.n(),
-        "PaCo module degree {} does not match plan degree {}",
-        module.n(),
-        plan.n()
+        plan.n() <= module.n(),
+        "PaCo plan degree {} exceeds the module degree {}",
+        plan.n(),
+        module.n()
     );
     ckks_ensure_operand!(
         op,
@@ -349,9 +349,9 @@ where
 }
 
 /// The layout of the accumulator and the temporary a branch evaluates in, at the branch's working width.
-pub(super) fn branch_work_layout<BE: Backend>(module: &Module<BE>, base2k: Base2K, working_k: usize) -> Result<GLWELayout> {
+pub(super) fn branch_work_layout(n: usize, base2k: Base2K, working_k: usize) -> Result<GLWELayout> {
     Ok(GLWELayout {
-        n: Degree(u32::try_from(module.n()).context("PaCo degree does not fit u32")?),
+        n: Degree(u32::try_from(n).context("PaCo degree does not fit u32")?),
         base2k,
         k: TorusPrecision(u32::try_from(working_k).context("PaCo branch working width does not fit u32")?),
         rank: Rank(1),
@@ -392,7 +392,7 @@ where
     // result is copied into `output` at the end. `output` is shadowed below so the
     // circuit body operates on the working accumulator unchanged.
     let working_k = branch_working_k(plan, expected_final_k)?;
-    let work_layout = branch_work_layout(module, context.base2k(), working_k)?;
+    let work_layout = branch_work_layout(plan.n(), context.base2k(), working_k)?;
     let (mut work, scratch_rest) = scratch
         .borrow()
         .take_ckks_ciphertext_scratch(&work_layout, GLWEPlaintextMeta::default());

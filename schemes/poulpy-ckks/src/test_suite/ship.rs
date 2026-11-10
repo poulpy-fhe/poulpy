@@ -327,6 +327,7 @@ where
         };
         let plans = ship_mux_plans(
             module,
+            params.n,
             [group_rot.as_slice(), group_id.as_slice(), group_zero.as_slice()].into_iter(),
         );
 
@@ -423,7 +424,7 @@ where
             .zip([0, 5])
             .map(|(&k_digit, rot)| gen_key(k_digit, false, rot, &mut scratch))
             .collect();
-        let plans = ship_mux_plans(module, [group.as_slice()].into_iter());
+        let plans = ship_mux_plans(module, params.n, [group.as_slice()].into_iter());
         let mut out = dirty(k);
         let before = snapshot::<BE, _, Standard>(&out);
         let err = with_scratch::<BE, _>(0, |s| BE::ckks_ship_mux_rotate(module, &mut out, &group, &plans, s)).unwrap_err();
@@ -444,7 +445,7 @@ where
 
     let group: Vec<_> = [0, 5].map(|rot| gen_key(b, false, rot, &mut scratch)).into();
     let wide_k = group[0].key.gglwe_layout().max_input_k().as_usize() + 1;
-    let plans = ship_mux_plans(module, [group.as_slice()].into_iter());
+    let plans = ship_mux_plans(module, params.n, [group.as_slice()].into_iter());
     let mut out = dirty(wide_k);
     let before = snapshot::<BE, _, Standard>(&out);
     let err = with_scratch::<BE, _>(0, |s| BE::ckks_ship_mux_rotate(module, &mut out, &group, &plans, s)).unwrap_err();
@@ -631,6 +632,8 @@ where
     E: ReimNew<F>,
 {
     ship_bootstrap_case::<BE, F, E>(params, module, host_module, false);
+    // A plan of half the module's degree runs on it.
+    ship_bootstrap_case::<BE, F, E>(params, &Module::<BE>::new(2 * params.n as u64), host_module, false);
 }
 
 /// End-to-end complex SHIP bootstrap: `Re`/`Im` coefficient halves refreshed

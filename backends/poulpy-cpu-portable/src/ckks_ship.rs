@@ -64,10 +64,10 @@ where
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
     ensure!(
-        module.n() == plan.n(),
-        "SHIP module degree {} does not match plan degree {}",
-        module.n(),
-        plan.n()
+        plan.n() <= module.n(),
+        "SHIP plan degree {} exceeds the module degree {}",
+        plan.n(),
+        module.n()
     );
     ensure!(
         ct.log_delta() <= ct.k().as_usize(),

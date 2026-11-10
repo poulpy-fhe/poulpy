@@ -19,13 +19,12 @@
 //! scheduled alone it is the unfused fast tail — one fused conj-rotate
 //! keyswitch and one μ-mask multiplication ([`PaCoPsiTailMaterial`]).
 
-use crate::CKKSModuleInfos;
 use crate::layouts::CKKSPlaintext;
 use std::marker::PhantomData;
 
 use anyhow::{Context, Result, ensure};
 use poulpy_core::layouts::{Base2K, DiagonalArithmetic, LWEInfos, TorusPrecision};
-use poulpy_hal::layouts::{Backend, CyclotomicOrder, Module, ScratchArena, Standard};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena, Standard};
 
 use super::plan::{PaCoDFTPlan, PaCoPlan};
 use crate::SlotsKind;
@@ -147,7 +146,7 @@ impl<BE: Backend, F> PaCoContext<BE, F> {
     /// backend-native slot encoding.
     ///
     /// Returns an error for a dimension-only or numerically unrepresentable
-    /// plan, incompatible module degree, invalid radix, or a
+    /// plan, a plan degree above the module's, invalid radix, or a
     /// factor/plaintext encoding failure.
     pub fn compile(module: &Module<BE>, base2k: Base2K, plan: PaCoPlan, scratch: &mut ScratchArena<'_, BE>) -> Result<Self>
     where
@@ -157,10 +156,10 @@ impl<BE: Backend, F> PaCoContext<BE, F> {
     {
         plan.check_evaluation().context("invalid PaCo evaluation plan")?;
         ensure!(
-            module.n() == plan.n(),
-            "PaCo backend module degree {} does not match plan degree {}",
-            module.n(),
-            plan.n()
+            plan.n() <= module.n(),
+            "PaCo plan degree {} exceeds the module degree {}",
+            plan.n(),
+            module.n()
         );
         ensure!(
             (1..=63).contains(&base2k.as_usize()),
@@ -273,7 +272,7 @@ impl<BE: Backend, F> PaCoContext<BE, F> {
                     .log_delta()
                     .checked_add(dft.log_budget())
                     .context("PaCo ψ mask torus width overflows usize")?;
-                let mut pt = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots::<Standard>(), base2k, k_pt.into());
+                let mut pt = module.ckks_plaintext_alloc_from_slots::<Standard>(full, base2k, k_pt.into());
                 pt.set_meta_checked(GLWEPlaintextMeta {
                     scale: Scale::Log(dft.log_delta()),
                     slots: SlotsKind::Complex,
@@ -294,7 +293,7 @@ impl<BE: Backend, F> PaCoContext<BE, F> {
             &coeffs_to_slots_factors,
             &psi_factors,
             &slots_to_coeffs_factors,
-            module.cyclotomic_order::<Standard>(),
+            2 * plan.n() as i64,
         );
 
         Ok(Self {

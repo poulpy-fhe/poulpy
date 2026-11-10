@@ -385,6 +385,19 @@ where
             },
         );
         assert_eq!(snapshot::<BE, _, Standard>(&narrow), before, "a refused bootstrap wrote res");
+        let mut half = in_spec;
+        half.glwe_layout.n = (n / 2).into();
+        let ct_half = fixture_ciphertext(&module, &half, 31);
+        let err = with_scratch::<BE, _>(0, |s| module.ckks_bootstrap(&mut narrow, &ct_half, &ctx, &bsk, s)).unwrap_err();
+        assert_ckks_error(
+            "a bootstrap of an input below the module degree",
+            &err,
+            CKKSCompositionError::InvalidOperand {
+                op: "ckks_bootstrap",
+                reason: "takes ciphertexts of the module degree, at which its context is compiled".into(),
+            },
+        );
+        assert_eq!(snapshot::<BE, _, Standard>(&narrow), before, "a refused bootstrap wrote res");
 
         let (re, im) = test_vector_1::<F>(m);
         let im_zero = vec![F::zero(); m];

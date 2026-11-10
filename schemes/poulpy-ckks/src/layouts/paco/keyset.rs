@@ -262,10 +262,10 @@ impl<D: Data, W: ZnxWord> PaCoKeySet<D, W> {
             PaCoKeyParameters::from_plan(plan),
         );
         ensure!(
-            module.n() == plan.n(),
-            "PaCo key-preparation module degree {} does not match plan degree {}",
-            module.n(),
+            plan.n() <= module.n(),
+            "PaCo plan degree {} exceeds the key-preparation module degree {}",
             plan.n(),
+            module.n(),
         );
         validate_material(
             plan,
@@ -328,10 +328,10 @@ impl<D: Data, W: ZnxWord> PaCoKeySet<D, W> {
             PaCoKeyParameters::from_plan(plan),
         );
         ensure!(
-            module.n() == plan.n(),
-            "PaCo key-preparation module degree {} does not match plan degree {}",
-            module.n(),
+            plan.n() <= module.n(),
+            "PaCo plan degree {} exceeds the key-preparation module degree {}",
             plan.n(),
+            module.n(),
         );
         validate_material(
             plan,

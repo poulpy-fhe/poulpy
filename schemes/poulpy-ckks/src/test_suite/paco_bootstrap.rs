@@ -31,15 +31,13 @@ use crate::{
     CKKSInfos,
     api::{CKKSLinearTransformationOps, CKKSPaCoOps, CKKSPaCoScalar},
     encoding::paco::coeff_enc::glwe_column_residues,
-    layouts::{
-        CKKSCiphertextAlloc, PaCoContext, PaCoDFTPlan, PaCoKeysPrepared, PaCoPlan, PaCoSecretSpec, ScratchArenaTakeCKKSCiphertext,
-    },
+    layouts::{PaCoContext, PaCoDFTPlan, PaCoKeysPrepared, PaCoPlan, PaCoSecretSpec, ScratchArenaTakeCKKSCiphertext},
     test_suite::reference_encoder::ReferenceEncoder,
     test_suite::{
         CKKSTestParams,
         helpers::{
-            TestContextBackend, TestContextModule, TestScalar, alloc_scratch, ckks_encrypt, ckks_encrypt_coeffs, ckks_spec,
-            gen_atk, gen_tsk,
+            TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, ckks_encrypt, ckks_encrypt_coeffs,
+            ckks_spec, gen_atk, gen_tsk,
         },
         paco_ops::assert_slots,
         paco_reference_model::seq_paco_reference,
@@ -70,12 +68,15 @@ where
         crate::layouts::PaCoSlotOrder::BitRevLow,
     ] {
         // Suite-scale case (C = 8).
-        seq_bootstrap_case::<BE, F, E>(params, PACO_H, PACO_C, vec![2, 3], vec![2, 1], slot_order);
+        seq_bootstrap_case::<BE, F, E>(params, params.n, PACO_H, PACO_C, vec![2, 3], vec![2, 1], slot_order);
         // Large-C payoff case (C = 32, g1 = 1): the configuration where
         // BitRevLow removes the folded StC′ permutation entirely (first
         // butterfly factor 14 → 3 diagonals, see the lt.rs pins).
-        seq_bootstrap_case::<BE, F, E>(params, 2, 32, vec![2, 2, 3], vec![1, 1, 1, 1, 1], slot_order);
+        seq_bootstrap_case::<BE, F, E>(params, params.n, 2, 32, vec![2, 2, 3], vec![1, 1, 1, 1, 1], slot_order);
     }
+    // A plan of half the module's degree runs on it.
+    let natural = crate::layouts::PaCoSlotOrder::Natural;
+    seq_bootstrap_case::<BE, F, E>(params, 2 * params.n, PACO_H, PACO_C, vec![2, 3], vec![2, 1], natural);
 }
 
 /// Paper-scale run (`N = 2^15`, `h = 64` — the PaCo I ring/weight): ignored
@@ -99,6 +100,7 @@ where
     ] {
         seq_bootstrap_case::<BE, F, E>(
             CKKSTestParams { n: 1 << 15, ..params },
+            1 << 15,
             64,
             8,
             vec![2, 3],
@@ -108,13 +110,14 @@ where
     }
 }
 
-/// Shared body: seqPaCo at the given `(h, C)` on `params.n` with the given
+/// Shared body: seqPaCo at the given `(h, C)` on `params.n`, on a module of degree `module_degree`, with the given
 /// chain schedules and slot-order convention, gated against the oracle's
 /// final result and the public metadata contract (both of which are
 /// convention-independent — the relabel lives strictly between the two DFT
 /// chains).
 fn seq_bootstrap_case<BE, F, E>(
     params: CKKSTestParams,
+    module_degree: usize,
     paco_h: usize,
     paco_c: usize,
     c2s_depth: Vec<usize>,
@@ -164,7 +167,7 @@ fn seq_bootstrap_case<BE, F, E>(
     let k_boot = plan.k_boot(params.base2k, log_msg + 8).unwrap();
     let params = CKKSTestParams { k: k_boot, ..params };
 
-    let module = Module::<BE>::new(params.n as u64);
+    let module = Module::<BE>::new(module_degree as u64);
     let host_module = Module::<HostBytesBackend>::new(params.n as u64);
     let encoder_full = ReferenceEncoder::<E>::new::<F>(params.n / 2).unwrap();
     let encoder_block = ReferenceEncoder::<E>::new::<F>(2 * p.c()).unwrap();
@@ -251,7 +254,7 @@ fn seq_bootstrap_case<BE, F, E>(
     // Run through the caller-allocated public direct API (one branch) and
     // compare only the final ciphertext with the independent cleartext model.
     let bsk_budget = k_boot - log_delta;
-    let mut out = module.ckks_ciphertext_alloc(params.base2k.into(), k_out);
+    let mut out = alloc_ct(&params, &module, k_out.as_usize());
     let paco_bytes = module
         .ckks_paco_bootstrap_direct_tmp_bytes(&out, &ct_in, &ctx, &keys)
         .unwrap();
@@ -276,7 +279,7 @@ fn seq_bootstrap_case<BE, F, E>(
     // width, so the whole circuit runs narrower and must still recover the message.
     if k_out.as_usize() > 2 * params.base2k {
         let k_low = k_out.as_usize() - 5;
-        let mut out_low = module.ckks_ciphertext_alloc(params.base2k.into(), k_low.into());
+        let mut out_low = alloc_ct(&params, &module, k_low);
         let low_bytes = module
             .ckks_paco_bootstrap_direct_tmp_bytes(&out_low, &ct_in, &ctx, &keys)
             .unwrap();
@@ -350,7 +353,7 @@ fn seq_bootstrap_case<BE, F, E>(
     let view_scratch = view_arena.borrow();
     let (mut ct_view, mut rest) = view_scratch.take_ckks_ciphertext_like_scratch(&ct_in);
     module.glwe_copy(&mut ct_view, &ct_in, &mut rest);
-    let mut out_view = module.ckks_ciphertext_alloc(params.base2k.into(), k_out);
+    let mut out_view = alloc_ct(&params, &module, k_out.as_usize());
     let view_bytes = module
         .ckks_paco_bootstrap_direct_tmp_bytes(&out_view, &ct_view, &ctx, &keys)
         .unwrap();

@@ -359,9 +359,9 @@ pub fn test_paco_parallel_bootstrap<BE, F, E>(
         CKKSCompositionError::InvalidOperand {
             op: "ckks_paco_bootstrap_parallel_direct_into",
             reason: format!(
-                "PaCo worker 1 module degree {} does not match plan degree {}",
-                params.n / 2,
-                params.n
+                "PaCo plan degree {} exceeds the module degree {} of worker 1",
+                params.n,
+                params.n / 2
             ),
         },
     );

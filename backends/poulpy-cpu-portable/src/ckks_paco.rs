@@ -65,10 +65,10 @@ where
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
     ensure!(
-        module.n() == plan.n(),
-        "PaCo module degree {} does not match plan degree {}",
-        module.n(),
-        plan.n()
+        plan.n() <= module.n(),
+        "PaCo plan degree {} exceeds the module degree {}",
+        plan.n(),
+        module.n()
     );
     ensure!(
         ct.n().as_usize() == plan.n(),

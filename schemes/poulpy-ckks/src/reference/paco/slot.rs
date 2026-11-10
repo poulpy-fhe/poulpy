@@ -4,7 +4,7 @@
 //! (`glwe_automorphism_add_assign`, `ct += σ(ct)`) but not `glwe_trace` itself:
 //! PaCo folds need an arbitrary upper bound `a` and the un-normalized sum.
 
-use crate::{CKKSResult as Result, ckks_ensure};
+use crate::{CKKSResult as Result, ckks_ensure, operand_cyclotomic_order};
 use poulpy_core::{
     GLWEAutomorphism, GLWEBytesOf,
     layouts::{
@@ -13,10 +13,7 @@ use poulpy_core::{
     },
     oep::AutomorphismImpl,
 };
-use poulpy_hal::{
-    api::ModuleN,
-    layouts::{CyclotomicOrder, Module, ScratchArena, Standard, galois_element},
-};
+use poulpy_hal::layouts::{CyclotomicOrder, Module, ScratchArena, Standard, galois_element};
 
 use crate::{
     CKKSCompositionError, CKKSCtBounds, SetCKKSInfos,
@@ -50,16 +47,17 @@ where
     H: GetAutomorphismKey<BE>,
 {
     const OP: &str = "ckks_slot_trace_assign";
-    let rotations = checked_fold_rotations(OP, module, a, b)?;
+    let n = ct.n().as_usize();
+    let rotations = checked_fold_rotations(OP, n, a, b)?;
     let k = ct.k();
     let mut bytes = 0;
     for &rotation in &rotations {
-        let key = rotation_key(OP, module, keys, rotation, k)?;
+        let key = rotation_key(OP, module, n, keys, rotation, k)?;
         bytes = bytes.max(ckks_slot_trace_assign_tmp_bytes(module, &*ct, &key));
     }
     ckks_ensure!(scratch.available() >= bytes, "{OP}: scratch below its query");
     for rotation in rotations {
-        let key = rotation_key(OP, module, keys, rotation, k)?;
+        let key = rotation_key(OP, module, n, keys, rotation, k)?;
         module.glwe_automorphism_add_assign(ct, &key, scratch);
     }
     Ok(())
@@ -102,7 +100,8 @@ where
     TH: GetTensorKey<BE>,
 {
     const OP: &str = "ckks_slot_product_assign";
-    let rotations = checked_fold_rotations(OP, module, a, b)?;
+    let n = ct.n().as_usize();
+    let rotations = checked_fold_rotations(OP, n, a, b)?;
     if rotations.is_empty() {
         return Ok(());
     }
@@ -112,7 +111,7 @@ where
     let mut bytes = 0;
     for &rotation in &rotations {
         let width = TorusPrecision(u32::try_from(k).expect("a ciphertext width fits u32"));
-        let key = rotation_key(OP, module, keys, rotation, width)?;
+        let key = rotation_key(OP, module, n, keys, rotation, width)?;
         let tensor_key = tsk
             .get_tensor_key(width)
             .map_err(|source| CKKSCompositionError::MissingRelinearizationKey {
@@ -135,10 +134,11 @@ where
     })
 }
 
-/// The automorphism key of a fold rotation at `k`.
+/// The automorphism key of a fold rotation of a ciphertext of degree `n` at `k`.
 fn rotation_key<'k, BE, M, H>(
     op: &'static str,
     module: &M,
+    n: usize,
     keys: &'k H,
     rotation: i64,
     k: TorusPrecision,
@@ -148,7 +148,8 @@ where
     M: CyclotomicOrder,
     H: GetAutomorphismKey<BE>,
 {
-    keys.get_automorphism_key(galois_element(rotation, module.cyclotomic_order::<Standard>()), k)
+    let order = operand_cyclotomic_order::<_, Standard>(op, module, n)?;
+    keys.get_automorphism_key(galois_element(rotation, order), k)
         .map_err(|source| {
             CKKSCompositionError::MissingAutomorphismKey {
                 op,
@@ -160,10 +161,10 @@ where
         })
 }
 
-/// Validates the fold bounds against the module's slot count and returns the
+/// Validates the fold bounds against the slot count of a ciphertext of degree `n` and returns the
 /// rotation schedule.
-fn checked_fold_rotations<M: ModuleN>(op: &'static str, module: &M, a: usize, b: usize) -> Result<Vec<i64>> {
-    if !(a.is_power_of_two() && b.is_power_of_two() && b <= a && a <= module.n() / 2) {
+fn checked_fold_rotations(op: &'static str, n: usize, a: usize, b: usize) -> Result<Vec<i64>> {
+    if !(a.is_power_of_two() && b.is_power_of_two() && b <= a && a <= n / 2) {
         return Err(CKKSCompositionError::InvalidOperand {
             op,
             reason: "the fold bounds are not powers of two with b <= a and a at most the slot count".into(),

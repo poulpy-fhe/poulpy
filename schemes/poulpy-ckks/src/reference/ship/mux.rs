@@ -45,14 +45,15 @@ where
     let operand_size = gglwe_gadget_input_size(base2k, k_digit, dnum, ct.k(), a_size);
     let layout = gglwe_gadget_dft_apply_tmp_bytes::<BE, _>(module, base2k, k_digit, dnum, ct.k(), a_size);
     let product = module.gglwe_product_dft_tmp_bytes_reference(output_size, operand_size, key);
-    let mux = 2 * module.vec_znx_dft_bytes_of(module.n(), 2, output_size) + product;
-    let finalize = module.vec_znx_big_bytes_of(module.n(), 2, output_size)
+    let n = ct.n().as_usize();
+    let mux = 2 * module.vec_znx_dft_bytes_of(n, 2, output_size) + product;
+    let finalize = module.vec_znx_big_bytes_of(n, 2, output_size)
         + module
             .vec_znx_big_normalize_tmp_bytes()
             .max(module.vec_znx_idft_apply_tmp_bytes());
     // The operand is laid out before the accumulator is taken.
-    module.vec_znx_dft_bytes_of(module.n(), 2, operand_size)
-        + layout.max(module.vec_znx_dft_bytes_of(module.n(), 2, output_size) + mux.max(finalize))
+    module.vec_znx_dft_bytes_of(n, 2, operand_size)
+        + layout.max(module.vec_znx_dft_bytes_of(n, 2, output_size) + mux.max(finalize))
 }
 
 /// `InvalidOperand` for `op` unless `keys`, one mux digit position, rotate ciphertexts `k` bits wide of radix `base2k`
@@ -128,9 +129,10 @@ where
     let (k_digit, dnum) = (keys[0].key.k_digit(), keys[0].key.dnum());
     let key_base2k = keys[0].key.base2k();
     let operand_size = gglwe_gadget_input_size(key_base2k, k_digit, dnum, ct.k(), a_size);
+    let n = ct.n().as_usize();
 
     let scratch = scratch.borrow();
-    let (mut a_dft, mut scratch_1) = scratch.take_vec_znx_dft_scratch(module.n(), 2, operand_size);
+    let (mut a_dft, mut scratch_1) = scratch.take_vec_znx_dft_scratch(n, 2, operand_size);
     {
         let a_ref = GLWEToBackendRef::<BE>::to_backend_ref(ct);
         let mut a_dft_mut = a_dft.to_backend_mut();
@@ -152,14 +154,14 @@ where
     }
     let a_dft_ref = a_dft.to_backend_ref();
 
-    let (mut sum_dft, mut scratch_2) = scratch_1.take_vec_znx_dft_scratch(module.n(), 2, output_size);
+    let (mut sum_dft, mut scratch_2) = scratch_1.take_vec_znx_dft_scratch(n, 2, output_size);
     {
         let mut sum_dft_mut = sum_dft.to_backend_mut();
         for col in 0..2 {
             module.vec_znx_dft_zero(&mut sum_dft_mut, col);
         }
-        let (mut prod_dft, scratch_3) = scratch_2.borrow().take_vec_znx_dft_scratch(module.n(), 2, output_size);
-        let (mut rot_dft, mut scratch_4) = scratch_3.take_vec_znx_dft_scratch(module.n(), 2, output_size);
+        let (mut prod_dft, scratch_3) = scratch_2.borrow().take_vec_znx_dft_scratch(n, 2, output_size);
+        let (mut rot_dft, mut scratch_4) = scratch_3.take_vec_znx_dft_scratch(n, 2, output_size);
         for key in keys {
             {
                 let mut prod_dft_mut = prod_dft.to_backend_mut();
@@ -198,7 +200,7 @@ where
         }
     }
 
-    let (mut res_big, mut scratch_3) = scratch_2.take_vec_znx_big_scratch(module.n(), 2, output_size);
+    let (mut res_big, mut scratch_3) = scratch_2.take_vec_znx_big_scratch(n, 2, output_size);
     {
         let mut res_big_mut = res_big.to_backend_mut();
         let sum_dft_ref = sum_dft.to_backend_ref();

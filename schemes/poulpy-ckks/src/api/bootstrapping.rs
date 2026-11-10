@@ -158,7 +158,8 @@ pub trait CKKSBootstrappingOps<BE: Backend> {
     /// or [`MissingRelinearizationKey`](crate::CKKSCompositionError::MissingRelinearizationKey),
     /// whose `source` is the key source's refusal. Keys laid out by a preset
     /// cover its `bootstrap_k`. A working width or an input narrower than the bits
-    /// the stages running on it consume fails with
+    /// the stages running on it consume, or ciphertexts of another degree than the
+    /// module's, at which the context is compiled, fail with
     /// [`InvalidOperand`](crate::CKKSCompositionError::InvalidOperand) before any work.
     fn ckks_bootstrap<F, K>(
         &self,
@@ -181,7 +182,7 @@ pub trait CKKSBootstrappingOps<BE: Backend> {
     /// of each transformed half, so `n` LUTs cost one bootstrap
     /// plus `n` polynomial evaluations. `ct_outs` and `luts` must have the same
     /// length, every LUT must have the same message modulus, and every output
-    /// must share one rank-1 layout.
+    /// must share one rank-1 layout, at the module's degree like `ct_in`.
     ///
     /// Inputs contain integer messages. Configure the plan with
     /// [`BootstrappingPlan::with_functional_bootstrap`](crate::layouts::BootstrappingPlan::with_functional_bootstrap).

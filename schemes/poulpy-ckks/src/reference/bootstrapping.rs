@@ -609,6 +609,11 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl> CKKSBoo
             ct_in.rank().as_usize(),
             ct_out.rank().as_usize()
         );
+        ckks_ensure_operand!(
+            OP,
+            ct_in.n().as_usize() == self.n() && ct_out.n().as_usize() == self.n(),
+            "takes ciphertexts of the module degree, at which its context is compiled"
+        );
 
         let encapsulation_keys = keys.encapsulation_keys();
         ckks_ensure_operand!(
@@ -814,6 +819,11 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl> CKKSBoo
                     ct.rank().as_usize() == 1 && ct.n() == head.n() && ct.base2k() == head.base2k() && ct.k() == head.k()
                 }),
             "functional bootstrapping outputs must share one rank-1 layout"
+        );
+        ckks_ensure_operand!(
+            OP,
+            ct_in.n().as_usize() == self.n() && out_n.as_usize() == self.n(),
+            "takes ciphertexts of the module degree, at which its context is compiled"
         );
         ckks_ensure_operand!(
             OP,

@@ -7,7 +7,7 @@ use poulpy_core::{
         BSGSMeta, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, IntPolyInfos, LWEInfos,
     },
 };
-use poulpy_hal::layouts::{Backend, Module, ScratchArena, Standard};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena, Standard, galois_element};
 
 use poulpy_ckks::{
     CKKSCtBounds, CKKSInfos, CKKSModuleInfos, SetCKKSInfos,
@@ -133,9 +133,9 @@ where
     where
         C: CKKSCtBounds,
     {
-        slot_shifts(self, input)
-            .map(|shift| self.ckks_galois_element::<Standard>(shift))
-            .collect()
+        // The rotations of `input` act at the order of its own degree.
+        let order = 2 * input.n().as_usize() as i64;
+        slot_shifts(self, input).map(|shift| galois_element(shift, order)).collect()
     }
 
     fn ckks_sum_slots_tmp_bytes<R, I, A>(&self, res: &R, input: &I, keys: &A) -> usize
