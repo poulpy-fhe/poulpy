@@ -37,7 +37,7 @@ use super::{
 /// No per-level metadata is needed — the IFMA-native butterfly keeps all
 /// values in `[0, 2q)` without explicit reduction levels.
 ///
-/// The conjugate-invariant table of a degree shares the arrays of the standard
+/// The conjugate-invariant table of a degree shares the twiddles of the standard
 /// table of that degree and only adds its basis change.
 pub struct Ntt3x42IfmaTable<P: PrimeSetNtt3x42Ifma, R: Ring = Standard> {
     /// NTT size (a power of two at most `(2 << P::MAX_LOG_N) / R::CYCLOTOMIC_ORDER_FACTOR`).
@@ -46,44 +46,41 @@ pub struct Ntt3x42IfmaTable<P: PrimeSetNtt3x42Ifma, R: Ring = Standard> {
     pub q2: [u64; 4],
     /// `4q[k]` for each prime (lane 3 = 0); used inside butterflies under the lazy `[0, 4q)` invariant.
     pub q4: [u64; 4],
-    /// Packed twiddle factors: each entry is 8 u64.
-    /// Layout: level-0 (n entries), then butterfly levels (halfnn-1 entries each).
-    pub powomega: Arc<AlignedVec<u64>>,
-    /// Scrambled forward roots, prime-major.
-    /// Entry for prime `k`, scrambled index `j` is at `[k*n + j]`.
-    /// `root[bitrev(i)] = w^i`, where `w` is the primitive `2n`-th root.
-    pub root: Arc<[u64]>,
-    /// Harvey/Shoup preconditioned quotients for `root`, same layout.
-    /// `root_quot[k*n + j] = harvey_quotient(root[k*n + j], Q[k])`.
-    pub root_quot: Arc<[u64]>,
-    /// Vectorized tail roots for the `t = 4, 2, 1` stages, prime-major, stride
-    /// `3n/2`. Per prime, three blocks of length `n/2` with each root duplicated
-    /// to match the stage operand width: 4× (distance 4), 2× (distance 2), 1×
-    /// (distance 1). Empty when `n < 16` (tail vectorization requires `n >= 16`).
-    pub tail_root: Arc<[u64]>,
-    /// Harvey/Shoup preconditioned quotients for `tail_root`, same layout.
-    pub tail_quot: Arc<[u64]>,
+    pub(crate) twiddles: Arc<Ntt3x42IfmaTwiddles>,
     /// Conjugate-invariant basis change of this degree, `None` on the standard ring.
     pub(super) basis: Option<Arc<BasisChangeTable>>,
     _phantom: PhantomData<(P, R)>,
 }
 
+/// Twiddle arrays of the forward NTT of one degree, shared by the tables of both rings.
+pub(crate) struct Ntt3x42IfmaTwiddles {
+    /// Packed twiddle factors: each entry is 8 u64.
+    /// Layout: level-0 (n entries), then butterfly levels (halfnn-1 entries each).
+    pub(crate) powomega: AlignedVec<u64>,
+    /// Scrambled forward roots, prime-major.
+    /// Entry for prime `k`, scrambled index `j` is at `[k*n + j]`.
+    /// `root[bitrev(i)] = w^i`, where `w` is the primitive `2n`-th root.
+    pub(crate) root: Vec<u64>,
+    /// Harvey/Shoup preconditioned quotients for `root`, same layout.
+    /// `root_quot[k*n + j] = harvey_quotient(root[k*n + j], Q[k])`.
+    pub(crate) root_quot: Vec<u64>,
+    /// Harvey/Shoup preconditioned quotients of the vectorized tail roots for the
+    /// `t = 4, 2, 1` stages, prime-major, stride `3n/2`. Per prime, three blocks of
+    /// length `n/2` with each root duplicated to match the stage operand width: 4×
+    /// (distance 4), 2× (distance 2), 1× (distance 1). Empty when `n < 16` (tail
+    /// vectorization requires `n >= 16`).
+    pub(crate) tail_quot: Vec<u64>,
+}
+
 /// Precomputed twiddle-factor table for the inverse NTT (3-prime IFMA).
 ///
-/// The conjugate-invariant table of a degree shares the arrays of the standard
+/// The conjugate-invariant table of a degree shares the twiddles of the standard
 /// table of that degree and only adds its basis change.
 pub struct Ntt3x42IfmaTableInv<P: PrimeSetNtt3x42Ifma, R: Ring = Standard> {
     pub n: usize,
     pub q2: [u64; 4],
     pub q4: [u64; 4],
-    /// Packed twiddle factors: butterfly levels (halfnn-1 entries each),
-    /// then last-pass (n entries with ω^{-i}/n baked in).
-    pub powomega: Arc<AlignedVec<u64>>,
-    /// Reordered inverse roots, prime-major (stride `n`).
-    /// Entry for prime `k`, reordered index `j` is at `[k*n + j]`.
-    pub inv_root: Arc<[u64]>,
-    /// Harvey/Shoup preconditioned quotients for `inv_root`, same layout.
-    pub inv_quot: Arc<[u64]>,
+    pub(crate) twiddles: Arc<Ntt3x42IfmaTwiddlesInv>,
     /// Precomputed inverse scale and scaled final-stage roots.
     pub n_inv: [u64; 3],
     pub n_inv_quot: [u64; 3],
@@ -100,6 +97,18 @@ impl<P: PrimeSetNtt3x42Ifma, R: Ring> NttRingTable for Ntt3x42IfmaTable<P, R> {
 
 impl<P: PrimeSetNtt3x42Ifma, R: Ring> NttRingTable for Ntt3x42IfmaTableInv<P, R> {
     type Ring = R;
+}
+
+/// Twiddle arrays of the inverse NTT of one degree, shared by the tables of both rings.
+pub(crate) struct Ntt3x42IfmaTwiddlesInv {
+    /// Packed twiddle factors: butterfly levels (halfnn-1 entries each),
+    /// then last-pass (n entries with ω^{-i}/n baked in).
+    pub(crate) powomega: AlignedVec<u64>,
+    /// Reordered inverse roots, prime-major (stride `n`).
+    /// Entry for prime `k`, reordered index `j` is at `[k*n + j]`.
+    pub(crate) inv_root: Vec<u64>,
+    /// Harvey/Shoup preconditioned quotients for `inv_root`, same layout.
+    pub(crate) inv_quot: Vec<u64>,
 }
 
 /// Largest degree `n` whose ambient order `CYCLOTOMIC_ORDER_FACTOR * n` fits the prime set.
@@ -138,11 +147,11 @@ fn reverse_bits(x: usize, bits: u32) -> usize {
 /// then `root[bitrev(i)] = w^i` for `i in 0..n` (`root[0] = 1`).
 /// Returns `(root, root_quot)`, each of length `3*n`, with entry for
 /// prime `k`, scrambled index `j` at `[k*n + j]`.
-fn build_root_table<P: PrimeSetNtt3x42Ifma>(n: usize) -> (Arc<[u64]>, Arc<[u64]>) {
+fn build_root_table<P: PrimeSetNtt3x42Ifma>(n: usize) -> (Vec<u64>, Vec<u64>) {
     let mut root_tbl = vec![0u64; 3 * n];
     let mut quot_tbl = vec![0u64; 3 * n];
     if n == 0 {
-        return (root_tbl.into(), quot_tbl.into());
+        return (root_tbl, quot_tbl);
     }
     let log_n = n.trailing_zeros();
     for k in 0..3 {
@@ -162,7 +171,7 @@ fn build_root_table<P: PrimeSetNtt3x42Ifma>(n: usize) -> (Arc<[u64]>, Arc<[u64]>
             quot_tbl[k * n + j] = harvey_quotient(root[j], q);
         }
     }
-    (root_tbl.into(), quot_tbl.into())
+    (root_tbl, quot_tbl)
 }
 
 /// Modular inverse via Fermat: `x^{q-2} mod q` (`q` prime).
@@ -177,11 +186,11 @@ fn modinv(x: u64, q: u64) -> u64 {
 /// reorder level-major: `temp[0] = inv_nat[0]`, then for `m in [n/2, n/4, …, 1]`
 /// append `inv_nat[m+i]` for `i in 0..m`.
 /// Returns `(inv_root, inv_quot)`, each of length `3*n`.
-fn build_inv_root_table<P: PrimeSetNtt3x42Ifma>(n: usize) -> (Arc<[u64]>, Arc<[u64]>) {
+fn build_inv_root_table<P: PrimeSetNtt3x42Ifma>(n: usize) -> (Vec<u64>, Vec<u64>) {
     let mut inv_root = vec![0u64; 3 * n];
     let mut inv_precon = vec![0u64; 3 * n];
     if n == 0 {
-        return (inv_root.into(), inv_precon.into());
+        return (inv_root, inv_precon);
     }
     let log_n = n.trailing_zeros();
     for k in 0..3 {
@@ -215,11 +224,11 @@ fn build_inv_root_table<P: PrimeSetNtt3x42Ifma>(n: usize) -> (Arc<[u64]>, Arc<[u
             inv_precon[k * n + j] = harvey_quotient(temp[j], q);
         }
     }
-    (inv_root.into(), inv_precon.into())
+    (inv_root, inv_precon)
 }
 
-/// Build the vectorized tail root tables for the `t = 4, 2, 1` stages
-/// (prime-major, stride `3n/2`).
+/// Build the Harvey quotients of the vectorized tail roots for the `t = 4, 2, 1`
+/// stages (prime-major, stride `3n/2`).
 ///
 /// Derived from each prime's non-duplicated scrambled `root[]`, each root is
 /// duplicated to the stage operand width:
@@ -227,13 +236,12 @@ fn build_inv_root_table<P: PrimeSetNtt3x42Ifma>(n: usize) -> (Arc<[u64]>, Arc<[u
 /// - distance-2 block (offset `n/2`, len `n/2`): `root[i]` 2× for `i in n/4..n/2`.
 /// - distance-1 block (offset `n`, len `n/2`): `root[i]` 1× for `i in n/2..n`.
 ///
-/// Only built for `n >= 16`; returns empty arrays otherwise.
-fn build_tail_root_table<P: PrimeSetNtt3x42Ifma>(n: usize) -> (Arc<[u64]>, Arc<[u64]>) {
+/// Only built for `n >= 16`; returns an empty vector otherwise.
+fn build_tail_quot_table<P: PrimeSetNtt3x42Ifma>(n: usize) -> Vec<u64> {
     if n < 16 {
-        return (Arc::default(), Arc::default());
+        return Vec::new();
     }
     let stride = 3 * n / 2;
-    let mut tail_root = vec![0u64; 3 * stride];
     let mut tail_quot = vec![0u64; 3 * stride];
     let log_n = n.trailing_zeros();
     for k in 0..3 {
@@ -251,7 +259,6 @@ fn build_tail_root_table<P: PrimeSetNtt3x42Ifma>(n: usize) -> (Arc<[u64]>, Arc<[
         let base = k * stride;
         let mut p = base;
         let mut push = |val: u64, p: &mut usize| {
-            tail_root[*p] = val;
             tail_quot[*p] = harvey_quotient(val, q);
             *p += 1;
         };
@@ -273,7 +280,7 @@ fn build_tail_root_table<P: PrimeSetNtt3x42Ifma>(n: usize) -> (Arc<[u64]>, Arc<[
         }
         assert_eq!(p - base, stride);
     }
-    (tail_root.into(), tail_quot.into())
+    tail_quot
 }
 
 /// Harvey modular multiply (scalar): `a * omega mod q`.
@@ -337,7 +344,7 @@ impl<P: PrimeSetNtt3x42Ifma> Ntt3x42IfmaTable<P, Standard> {
         let q4: [u64; 4] = [4 * P::Q[0], 4 * P::Q[1], 4 * P::Q[2], 0];
 
         let (root, root_quot) = build_root_table::<P>(n);
-        let (tail_root, tail_quot) = build_tail_root_table::<P>(n);
+        let tail_quot = build_tail_quot_table::<P>(n);
 
         let omega_vec = fill_omegas_ntt3x42_ifma::<P>(n);
 
@@ -364,11 +371,12 @@ impl<P: PrimeSetNtt3x42Ifma> Ntt3x42IfmaTable<P, Standard> {
                 n,
                 q2,
                 q4,
-                powomega: Arc::new(powomega),
-                root,
-                root_quot,
-                tail_root,
-                tail_quot,
+                twiddles: Arc::new(Ntt3x42IfmaTwiddles {
+                    powomega,
+                    root,
+                    root_quot,
+                    tail_quot,
+                }),
                 basis: None,
                 _phantom: PhantomData,
             };
@@ -414,11 +422,12 @@ impl<P: PrimeSetNtt3x42Ifma> Ntt3x42IfmaTable<P, Standard> {
             n,
             q2,
             q4,
-            powomega: Arc::new(powomega),
-            root,
-            root_quot,
-            tail_root,
-            tail_quot,
+            twiddles: Arc::new(Ntt3x42IfmaTwiddles {
+                powomega,
+                root,
+                root_quot,
+                tail_quot,
+            }),
             basis: None,
             _phantom: PhantomData,
         }
@@ -434,11 +443,7 @@ impl<P: PrimeSetNtt3x42Ifma> Ntt3x42IfmaTable<P, Standard> {
             n: self.n,
             q2: self.q2,
             q4: self.q4,
-            powomega: Arc::clone(&self.powomega),
-            root: Arc::clone(&self.root),
-            root_quot: Arc::clone(&self.root_quot),
-            tail_root: Arc::clone(&self.tail_root),
-            tail_quot: Arc::clone(&self.tail_quot),
+            twiddles: Arc::clone(&self.twiddles),
             basis: Some(basis),
             _phantom: PhantomData,
         }
@@ -488,9 +493,11 @@ impl<P: PrimeSetNtt3x42Ifma> Ntt3x42IfmaTableInv<P, Standard> {
                 n,
                 q2,
                 q4,
-                powomega: Arc::new(powomega),
-                inv_root,
-                inv_quot,
+                twiddles: Arc::new(Ntt3x42IfmaTwiddlesInv {
+                    powomega,
+                    inv_root,
+                    inv_quot,
+                }),
                 n_inv,
                 n_inv_quot,
                 final_root,
@@ -540,9 +547,11 @@ impl<P: PrimeSetNtt3x42Ifma> Ntt3x42IfmaTableInv<P, Standard> {
             n,
             q2,
             q4,
-            powomega: Arc::new(powomega),
-            inv_root,
-            inv_quot,
+            twiddles: Arc::new(Ntt3x42IfmaTwiddlesInv {
+                powomega,
+                inv_root,
+                inv_quot,
+            }),
             n_inv,
             n_inv_quot,
             final_root,
@@ -562,9 +571,7 @@ impl<P: PrimeSetNtt3x42Ifma> Ntt3x42IfmaTableInv<P, Standard> {
             n: self.n,
             q2: self.q2,
             q4: self.q4,
-            powomega: Arc::clone(&self.powomega),
-            inv_root: Arc::clone(&self.inv_root),
-            inv_quot: Arc::clone(&self.inv_quot),
+            twiddles: Arc::clone(&self.twiddles),
             n_inv: self.n_inv,
             n_inv_quot: self.n_inv_quot,
             final_root: self.final_root,

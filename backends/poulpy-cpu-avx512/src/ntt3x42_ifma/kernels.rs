@@ -554,8 +554,8 @@ pub(crate) unsafe fn ntt_avx512<P: PrimeSetNtt3x42Ifma>(
             let q = P::Q[k];
             let q2 = 2 * q;
             let plane = &mut data[k * n..(k + 1) * n];
-            let root = &table.root[k * n..(k + 1) * n];
-            let precon = &table.root_quot[k * n..(k + 1) * n];
+            let root = &table.twiddles.root[k * n..(k + 1) * n];
+            let precon = &table.twiddles.root_quot[k * n..(k + 1) * n];
 
             let q_v = _mm512_set1_epi64(q as i64);
             let q2_v = _mm512_set1_epi64(q2 as i64);
@@ -564,7 +564,7 @@ pub(crate) unsafe fn ntt_avx512<P: PrimeSetNtt3x42Ifma>(
 
             let tail_p = if n >= 16 {
                 let stride = 3 * n / 2;
-                &table.tail_quot[k * stride..(k + 1) * stride]
+                &table.twiddles.tail_quot[k * stride..(k + 1) * stride]
             } else {
                 &[]
             };
@@ -936,7 +936,7 @@ unsafe fn inv_plane(ptr: *mut u64, n_sub: usize, depth: u32, half: usize, ip: &[
 ///
 /// `data` holds 3 contiguous planes of length `n` (`data[k*n .. (k+1)*n]`); each
 /// plane is transformed in place with prime `Q[k]` and that plane's reordered
-/// inverse roots from `table.inv_root` / `table.inv_quot`. Input must be in
+/// inverse roots from `table.twiddles.inv_root` / `table.twiddles.inv_quot`. Input must be in
 /// `[0, q)`; output is left in `[0, 2q)` (congruent mod q to the natural result).
 ///
 /// For `n >= 32`, the last two stages share a pass with the `1/n` scale:
@@ -953,8 +953,8 @@ pub(crate) unsafe fn intt_avx512<P: PrimeSetNtt3x42Ifma>(table: &Ntt3x42IfmaTabl
         for k in 0..3 {
             let q = P::Q[k];
             let q2 = 2 * q;
-            let inv = &table.inv_root[k * n..(k + 1) * n];
-            let ip = &table.inv_quot[k * n..(k + 1) * n];
+            let inv = &table.twiddles.inv_root[k * n..(k + 1) * n];
+            let ip = &table.twiddles.inv_quot[k * n..(k + 1) * n];
 
             let q_v = _mm512_set1_epi64(q as i64);
             let q2_v = _mm512_set1_epi64(q2 as i64);
@@ -1053,8 +1053,8 @@ pub(crate) unsafe fn intt_finish_span<P: PrimeSetNtt3x42Ifma, R: Ring>(
         let n = table.n;
         let quarter = n / 4;
         let k = prime;
-        let inv = &table.inv_root[k * n..(k + 1) * n];
-        let ip = &table.inv_quot[k * n..(k + 1) * n];
+        let inv = &table.twiddles.inv_root[k * n..(k + 1) * n];
+        let ip = &table.twiddles.inv_quot[k * n..(k + 1) * n];
         let q_v = _mm512_set1_epi64(P::Q[k] as i64);
         let q2_v = _mm512_set1_epi64((2 * P::Q[k]) as i64);
         let n_inv_v = _mm512_set1_epi64(table.n_inv[k] as i64);
