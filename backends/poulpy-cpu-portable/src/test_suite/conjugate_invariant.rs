@@ -168,7 +168,7 @@ macro_rules! conjugate_invariant_test_suite {
     };
     ($name:ident, $backend:ty, reference = $reference:ty, large_radix_reference = $large_radix_reference:ty) => {
         mod $name {
-            use poulpy_hal::{api::*, layouts::*};
+            use ::poulpy_hal::{api::*, layouts::*};
             type BE = $backend;
             fn module(n: u64) -> Module<BE> {
                 Module::<BE>::new(n)
@@ -305,7 +305,7 @@ macro_rules! conjugate_invariant_test_suite {
                     module.svp_ppol_prepare(
                         &mut ppol.to_backend_mut(),
                         0,
-                        &poulpy_hal::test_suite::scalar_znx_backend_ref::<BE, ConjugateInvariant>(&b),
+                        &::poulpy_hal::test_suite::scalar_znx_backend_ref::<BE, ConjugateInvariant>(&b),
                         0,
                     );
                     module.svp_apply_dft(
@@ -338,38 +338,38 @@ macro_rules! conjugate_invariant_test_suite {
             fn conjugate_invariant_embed_convolution() {
                 let module = module(256);
                 for n in [8, 128, 256].into_iter().filter(|&n| n >= BE::MIN_DEGREE) {
-                    let params = poulpy_hal::test_suite::TestParams {
+                    let params = ::poulpy_hal::test_suite::TestParams {
                         size: 256,
                         n,
                         base2k: 10,
                     };
-                    poulpy_hal::test_suite::convolution::test_convolution_embed::<_, ConjugateInvariant>(&params, &module);
-                    poulpy_hal::test_suite::convolution::test_convolution_galois::<_, ConjugateInvariant>(&params, &module);
-                    poulpy_hal::test_suite::embed::test_vec_znx_embed_add_sub::<_, ConjugateInvariant>(&params, &module);
-                    poulpy_hal::test_suite::embed::test_vec_znx_big_embed_add_sub::<_, ConjugateInvariant>(&params, &module);
+                    ::poulpy_hal::test_suite::convolution::test_convolution_embed::<_, ConjugateInvariant>(&params, &module);
+                    ::poulpy_hal::test_suite::convolution::test_convolution_galois::<_, ConjugateInvariant>(&params, &module);
+                    ::poulpy_hal::test_suite::embed::test_vec_znx_embed_add_sub::<_, ConjugateInvariant>(&params, &module);
+                    ::poulpy_hal::test_suite::embed::test_vec_znx_big_embed_add_sub::<_, ConjugateInvariant>(&params, &module);
                 }
             }
 
             #[test]
             fn conjugate_invariant_products_parity() {
                 let module = module(256);
-                let reference = poulpy_hal::layouts::Module::<$reference>::new(256);
+                let reference = ::poulpy_hal::layouts::Module::<$reference>::new(256);
                 for n in [8, 256].into_iter().filter(|&n| n >= BE::MIN_DEGREE) {
-                    let params = poulpy_hal::test_suite::TestParams {
+                    let params = ::poulpy_hal::test_suite::TestParams {
                         size: 256,
                         n,
                         base2k: 10,
                     };
-                    poulpy_hal::test_suite::svp::test_svp_apply_dft_to_dft::<_, _, ConjugateInvariant>(
+                    ::poulpy_hal::test_suite::svp::test_svp_apply_dft_to_dft::<_, _, ConjugateInvariant>(
                         &params, &reference, &module,
                     );
-                    poulpy_hal::test_suite::svp::test_svp_apply_dft_to_dft_assign::<_, _, ConjugateInvariant>(
+                    ::poulpy_hal::test_suite::svp::test_svp_apply_dft_to_dft_assign::<_, _, ConjugateInvariant>(
                         &params, &reference, &module,
                     );
-                    poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft::<_, _, ConjugateInvariant>(
+                    ::poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft::<_, _, ConjugateInvariant>(
                         &params, &reference, &module,
                     );
-                    poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft_add::<_, _, ConjugateInvariant>(
+                    ::poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft_add::<_, _, ConjugateInvariant>(
                         &params, &reference, &module,
                     );
                 }
@@ -453,23 +453,27 @@ macro_rules! conjugate_invariant_test_suite {
                         }
                     }
                 }
-                poulpy_hal::test_suite::convolution::test_convolution_by_const::<_, BE, ConjugateInvariant>(&module, 32, 12);
-                poulpy_hal::test_suite::convolution::test_convolution_by_const_add::<_, BE, ConjugateInvariant>(&module, 32, 12);
+                ::poulpy_hal::test_suite::convolution::test_convolution_by_const::<_, BE, ConjugateInvariant>(&module, 32, 12);
+                ::poulpy_hal::test_suite::convolution::test_convolution_by_const_add::<_, BE, ConjugateInvariant>(
+                    &module, 32, 12,
+                );
             }
 
             #[test]
             fn conjugate_invariant_large_radix_products() {
                 let module = module(8192);
                 let reference = Module::<$large_radix_reference>::new(8192);
-                let params = poulpy_hal::test_suite::TestParams {
+                let params = ::poulpy_hal::test_suite::TestParams {
                     size: 8192,
                     n: 8192,
                     base2k: 19,
                 };
-                poulpy_hal::test_suite::svp::test_svp_apply_dft_to_dft::<_, _, ConjugateInvariant>(&params, &reference, &module);
+                ::poulpy_hal::test_suite::svp::test_svp_apply_dft_to_dft::<_, _, ConjugateInvariant>(
+                    &params, &reference, &module,
+                );
                 // The shapes are swept at small degrees: here only the largest
                 // accumulation of the sweep, where precision is tightest.
-                let shape = poulpy_hal::test_suite::vmp::VmpAddShape {
+                let shape = ::poulpy_hal::test_suite::vmp::VmpAddShape {
                     cols_in: 2,
                     cols_out: 2,
                     size_in: 4,
@@ -477,7 +481,7 @@ macro_rules! conjugate_invariant_test_suite {
                     mat_size: 4,
                     limb_offset: 0,
                 };
-                poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft_add_shape::<_, _, ConjugateInvariant>(
+                ::poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft_add_shape::<_, _, ConjugateInvariant>(
                     &params, &reference, &module, &shape,
                 );
             }
@@ -491,43 +495,52 @@ macro_rules! conjugate_invariant_test_suite {
 macro_rules! conjugate_invariant_core_test_suite {
     ($name:ident, $backend:ty, reference = $reference:ty) => {
         mod $name {
-            #[test]
-            fn conjugate_invariant_core_parity() {
-                let n = if std::env::var_os("POULPY_TEST_EMULATED").is_some_and(|value| value == "1") {
+            type Ci = ::poulpy_hal::layouts::ConjugateInvariant;
+
+            /// The modules, parameters and shapes of the suite, at a degree no backend's core override gate exceeds
+            /// (64 under emulation).
+            fn setup() -> (
+                ::poulpy_hal::layouts::Module<$reference>,
+                ::poulpy_hal::layouts::Module<$backend>,
+                ::poulpy_hal::test_suite::TestParams,
+                ::poulpy_core::test_suite::parity::ParityShapes,
+            ) {
+                let n = if ::std::env::var_os("POULPY_TEST_EMULATED").is_some_and(|value| value == "1") {
                     64
                 } else {
                     256
                 };
-                let reference = poulpy_hal::layouts::Module::<$reference>::new(n as u64);
-                let module = poulpy_hal::layouts::Module::<$backend>::new(n as u64);
-                let params = poulpy_hal::test_suite::TestParams { size: n, n, base2k: 10 };
-                let shapes = poulpy_core::test_suite::parity::ParityShapes {
-                    ranks: vec![1, 2],
-                    dsizes: Some(vec![1, 2]),
-                    unaligned_digits: true,
-                };
-                poulpy_core::test_suite::parity::test_glwe_keyswitch_parity::<_, _, ::poulpy_hal::layouts::ConjugateInvariant>(
-                    &params, &shapes, &reference, &module,
-                );
-                ::poulpy_core::test_suite::parity::test_glwe_keyswitch_dft_add_parity::<
-                    _,
-                    _,
-                    ::poulpy_hal::layouts::ConjugateInvariant,
-                >(&params, &shapes, &reference, &module);
-                poulpy_core::test_suite::parity::test_glwe_external_product_parity::<
-                    _,
-                    _,
-                    ::poulpy_hal::layouts::ConjugateInvariant,
-                >(&params, &shapes, &reference, &module);
-                poulpy_core::test_suite::parity::test_glwe_automorphism_parity::<_, _, ::poulpy_hal::layouts::ConjugateInvariant>(
-                    &params, &shapes, &reference, &module,
-                );
-                poulpy_core::test_suite::parity::test_glwe_automorphism_coarsened::<_, ::poulpy_hal::layouts::ConjugateInvariant>(
-                    &params, &module,
-                );
-                poulpy_core::test_suite::parity::test_glwe_trace_parity::<_, _, ::poulpy_hal::layouts::ConjugateInvariant>(
-                    &params, &shapes, &reference, &module,
-                );
+                (
+                    ::poulpy_hal::layouts::Module::<$reference>::new(n as u64),
+                    ::poulpy_hal::layouts::Module::<$backend>::new(n as u64),
+                    ::poulpy_hal::test_suite::TestParams { size: n, n, base2k: 10 },
+                    ::poulpy_core::test_suite::parity::ParityShapes {
+                        ranks: vec![1, 2],
+                        dsizes: Some(vec![1, 2]),
+                        unaligned_digits: true,
+                    },
+                )
+            }
+
+            #[test]
+            fn conjugate_invariant_core_parity() {
+                use ::poulpy_core::test_suite::parity::*;
+                let (reference, module, params, shapes) = setup();
+                test_glwe_keyswitch_parity::<_, _, Ci>(&params, &shapes, &reference, &module);
+                test_glwe_keyswitch_dft_add_parity::<_, _, Ci>(&params, &shapes, &reference, &module);
+                test_glwe_external_product_parity::<_, _, Ci>(&params, &shapes, &reference, &module);
+                test_glwe_automorphism_parity::<_, _, Ci>(&params, &shapes, &reference, &module);
+                test_glwe_automorphism_coarsened::<_, Ci>(&params, &module);
+                test_glwe_trace_parity::<_, _, Ci>(&params, &shapes, &reference, &module);
+            }
+
+            #[test]
+            fn conjugate_invariant_core_parity_products() {
+                use ::poulpy_core::test_suite::parity::*;
+                let (reference, module, params, shapes) = setup();
+                test_glwe_tensor_parity::<_, _, Ci>(&params, &shapes, &reference, &module);
+                test_glwe_multiplication_parity::<_, _, Ci>(&params, &shapes, &reference, &module);
+                test_tensor_relinearize_decrypt_parity::<_, _, Ci>(&params, &shapes, &reference, &module);
             }
         }
     };
