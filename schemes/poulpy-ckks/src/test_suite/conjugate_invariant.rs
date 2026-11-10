@@ -654,7 +654,7 @@ macro_rules! conjugate_invariant_ckks_test_suite {
             #[test]
             fn ckks_ci_eval_mod() {
                 let params = $params;
-                let module = Module::<$backend>::new(params.n as u64);
+                let module = Module::<$backend>::new((2 * params.n) as u64);
                 let host = Module::<HostBytesBackend>::new(params.n as u64);
                 $crate::test_suite::conjugate_invariant::test_conjugate_invariant_eval_mod(params, &module, &host);
             }
@@ -678,7 +678,8 @@ macro_rules! conjugate_invariant_ckks_test_suite {
 
 /// EvalMod on the conjugate-invariant ring: one ciphertext reduces `n` real slots,
 /// against the ideal `sin(2π·x)/(2π)`, and the complex-exponential variant, which
-/// needs complex slots, is rejected.
+/// needs complex slots, is rejected. `module` may exceed the operands' degree `params.n`,
+/// as on the module of degree `2n` of the bootstrap.
 pub fn test_conjugate_invariant_eval_mod<BE>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
     BE: TestContextBackend,

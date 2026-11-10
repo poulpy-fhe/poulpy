@@ -9,7 +9,7 @@ use num_traits::{FloatConst, FromPrimitive};
 use poulpy_core::GLWENormalize;
 use poulpy_core::layouts::GetAutomorphismKey;
 use poulpy_core::layouts::GetTensorKey;
-use poulpy_core::layouts::{GLWELayout, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, SetBSGSMeta};
+use poulpy_core::layouts::{GLWELayout, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank, SetBSGSMeta};
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
@@ -163,7 +163,10 @@ where
         .ok_or_else(|| anyhow!("ckks_lut_power_basis: at least one LUT is required"))?
         .re;
 
-    let mut x1 = module.ckks_ciphertext_alloc(layout.base2k, layout.k);
+    let mut x1 = module.ckks_ciphertext_alloc_from_glwe_infos(&GLWELayout {
+        rank: Rank(1),
+        ..*layout
+    });
     module.ckks_eval_mod(&mut x1, ct, eval_exp, tsk, scratch)?;
     let mut power_basis = PowerBasis::new(head.basis(), x1);
     for lut in &series {

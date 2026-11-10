@@ -173,8 +173,9 @@ pub trait CKKSModuleInfos {
     /// Slots a plaintext of degree `n` holds: `n / 2` complex slots, or `n` real slots on the invariant ring.
     fn ckks_slots_of_degree<Rg: Ring>(&self, n: usize) -> usize;
 
-    /// Automorphism identifier used by CKKS rotations and their evaluation keys.
-    /// `rotation` is reduced modulo [`Self::ckks_max_slots`], so a negative shift rotates backwards.
+    /// Automorphism identifier used by CKKS rotations of operands of the module's degree and their evaluation keys.
+    /// `rotation` is reduced modulo [`Self::ckks_max_slots`], so a negative shift rotates backwards. An operand of
+    /// degree `n` rotates by the element of the same rotation at the order `Rg::CYCLOTOMIC_ORDER_FACTOR * n`.
     fn ckks_galois_element<Rg: Ring>(&self, rotation: i64) -> i64;
 }
 
@@ -193,6 +194,18 @@ pub(crate) fn operand_cyclotomic_order<M: CyclotomicOrder + ?Sized, Rg: Ring>(
         .into());
     }
     Ok(module.cyclotomic_order::<Rg>() / module.n() as i64 * n as i64)
+}
+
+/// The Galois element of a slot rotation by `rotation` on the operands of degree `n` that `module` serves, `rotation`
+/// reduced modulo their slot count.
+pub(crate) fn operand_rotation_galois_element<M: CyclotomicOrder + ?Sized, Rg: Ring>(
+    op: &'static str,
+    module: &M,
+    n: usize,
+    rotation: i64,
+) -> CKKSResult<i64> {
+    let order = operand_cyclotomic_order::<M, Rg>(op, module, n)?;
+    Ok(galois_element(rotation.rem_euclid(order / 4), order))
 }
 
 impl<BE: Backend> CKKSModuleInfos for Module<BE> {

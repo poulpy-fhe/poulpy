@@ -3,9 +3,8 @@ use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAu
 use poulpy_hal::layouts::{Module, Ring, ScratchArena};
 
 use crate::{
-    CKKSCompositionError, CKKSCtBounds, CKKSResult as Result, SetCKKSInfos,
-    api::{CKKSCopyOps, CKKSModuleInfos},
-    oep::CKKSRotateImpl,
+    CKKSCompositionError, CKKSCtBounds, CKKSResult as Result, SetCKKSInfos, api::CKKSCopyOps, oep::CKKSRotateImpl,
+    operand_rotation_galois_element,
 };
 
 pub(crate) fn ckks_rotate_tmp_bytes_derived<BE: CKKSRotateImpl<Rg>, C: CKKSCtBounds, K: GGLWEInfos, Rg: Ring>(
@@ -30,7 +29,7 @@ where
     Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
 {
-    let p = module.ckks_galois_element::<Rg>(k);
+    let p = operand_rotation_galois_element::<_, Rg>("ckks_rotate_into", module, src.n().as_usize(), k)?;
     if p == 1 {
         module.ckks_copy(dst, src, scratch)?;
         dst.set_noise(None);
@@ -61,7 +60,7 @@ where
     H: GetAutomorphismKey<BE, Rg>,
     Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
 {
-    let p = module.ckks_galois_element::<Rg>(k);
+    let p = operand_rotation_galois_element::<_, Rg>("ckks_rotate_assign", module, dst.n().as_usize(), k)?;
     if p == 1 {
         dst.set_noise(None);
         return Ok(());

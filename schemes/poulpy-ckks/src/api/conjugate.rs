@@ -14,7 +14,8 @@ use crate::{CKKSCtBounds, SetCKKSInfos};
 /// maps every complex slot value `z_j` to its conjugate `z̄_j`.
 ///
 /// Conjugation requires one automorphism evaluation key (the key for the
-/// Galois element `2n − 1`).
+/// Galois element `2n − 1`, `-1`), and a conjugation composed with a rotation that
+/// of its Galois element at the operand's order `2n`, `n` the operand's degree.
 ///
 /// Conjugation does not consume homomorphic capacity.
 ///
@@ -75,9 +76,9 @@ pub trait CKKSConjugateOps<BE: Backend> {
     ///
     /// # Errors
     ///
-    /// `MissingAutomorphismKey` when `keys` has no key for the conjugate rotation covering
-    /// `min(src.k(), dst.k())`, and `InsufficientHomomorphicCapacity` when `dst` is narrower
-    /// than `src` by more than its budget. `dst` is untouched on `Err`.
+    /// `InvalidOperand` when `src` exceeds the module degree, `MissingAutomorphismKey` when `keys` has no key for the
+    /// conjugate rotation covering `min(src.k(), dst.k())`, and `InsufficientHomomorphicCapacity` when `dst` is
+    /// narrower than `src` by more than its budget. `dst` is untouched on `Err`.
     fn ckks_conjugate_rotate_into<Dst, Src, H>(
         &self,
         k: i64,

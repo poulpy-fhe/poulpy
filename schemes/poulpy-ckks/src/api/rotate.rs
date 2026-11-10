@@ -6,10 +6,12 @@ use crate::{CKKSCtBounds, SetCKKSInfos};
 
 /// Homomorphic cyclic slot rotation.
 ///
-/// Rotates the standard ring's `N/2` complex slots or the invariant ring's
-/// `N` real slots. Use [`super::CKKSModuleInfos::ckks_galois_element`] to obtain
-/// the evaluation-key identifier. Shifts wrap modulo the slot count, so a
-/// negative shift rotates backwards.
+/// Rotates the standard ring's `n/2` complex slots or the invariant ring's
+/// `n` real slots of an operand of degree `n`, at most the module's. The
+/// evaluation key is that of the Galois element of the shift at the operand's
+/// order `Rg::CYCLOTOMIC_ORDER_FACTOR * n`, which
+/// [`super::CKKSModuleInfos::ckks_galois_element`] gives at the module's degree.
+/// Shifts wrap modulo the slot count, so a negative shift rotates backwards.
 ///
 /// Non-identity rotation requires a set of automorphism evaluation keys (`keys`).  The
 /// key collection `H` must contain the key for the Galois element
@@ -43,8 +45,9 @@ pub trait CKKSRotateOps<BE: Backend, Rg: Ring = Standard> {
     ///
     /// # Errors
     ///
-    /// A shift of zero slots returns the errors of [`CKKSCopyOps::ckks_copy`](crate::api::CKKSCopyOps::ckks_copy).
-    /// Otherwise `MissingAutomorphismKey` when `keys` has no key for the shift covering
+    /// `InvalidOperand` when `src` exceeds the module degree. A shift of zero slots then returns the errors of
+    /// [`CKKSCopyOps::ckks_copy`](crate::api::CKKSCopyOps::ckks_copy), another
+    /// `MissingAutomorphismKey` when `keys` has no key for the shift covering
     /// `min(src.k(), dst.k())`, and `InsufficientHomomorphicCapacity` when `dst` is narrower
     /// than `src` by more than its budget. `dst` is untouched on `Err`.
     fn ckks_rotate_into<Dst, Src, H>(
@@ -65,7 +68,8 @@ pub trait CKKSRotateOps<BE: Backend, Rg: Ring = Standard> {
     ///
     /// # Errors
     ///
-    /// `MissingAutomorphismKey` when `keys` has no key for the shift covering `dst.k()`. `dst` is untouched on `Err`.
+    /// `InvalidOperand` when `dst` exceeds the module degree, then `MissingAutomorphismKey` when `keys` has no key for
+    /// the shift covering `dst.k()`. `dst` is untouched on `Err`.
     fn ckks_rotate_assign<Dst, H>(&self, k: i64, dst: &mut Dst, keys: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         H: GetAutomorphismKey<BE, Rg>,

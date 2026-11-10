@@ -1525,7 +1525,8 @@ pub fn assert_decrypt_precision_at_log_delta<BE, F, E, Rg: Ring>(
     // Encode the expected message at the ciphertext's full metadata, so the
     // reference spans the same limbs as a full-width decryption (no head-room
     // clipping — any corruption above the head-room shows up as noise).
-    let mut pt_want = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots::<Rg>(), ct.base2k(), ct.k());
+    let mut pt_want =
+        module.ckks_plaintext_alloc_from_slots(module.ckks_slots_of_degree::<Rg>(ct.n().as_usize()), ct.base2k(), ct.k());
     pt_want.set_meta(GLWEPlaintextMeta {
         scale: Scale::Log(ct.log_delta()),
         slots: SlotsKind::Complex,
@@ -1572,7 +1573,7 @@ pub fn assert_decrypt_precision_at_log_delta<BE, F, E, Rg: Ring>(
     // decoding the full storage width would overflow the decoder's
     // `log_delta + log_budget <= 127` limit.
     let mut pt_decode = module.ckks_plaintext_alloc_from_slots(
-        module.ckks_max_slots::<Rg>(),
+        module.ckks_slots_of_degree::<Rg>(ct.n().as_usize()),
         ct.base2k(),
         (ct.log_delta() + ct.log_budget().min(params.prec().log_budget())).into(),
     );

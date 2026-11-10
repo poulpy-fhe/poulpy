@@ -1225,6 +1225,27 @@ pub fn test_eval_poly_const_coeffs_parity_folds<BE, F, E>(
     F: TestScalar,
     E: ReimNew<F>,
 {
+    eval_poly_const_coeffs_parity_folds::<BE, F, E>(params, module, host_module);
+    // Inputs of half the module's degree take working ciphertexts of their own degree.
+    eval_poly_const_coeffs_parity_folds::<BE, F, E>(params, &Module::<BE>::new(2 * params.n as u64), host_module);
+}
+
+fn eval_poly_const_coeffs_parity_folds<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextModule<BE> + CKKSPolynomialEvaluationOps<BE, Standard>,
+    CKKSCiphertextOwned<BE, Standard>:
+        GLWEToBackendMut<BE, Standard> + GLWEToBackendRef<BE, Standard> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BE, Standard>: GLWEToBackendRef<BE, Standard> + LWEInfos,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE, Standard>: GLWETensorKeyPreparedToBackendRef<BE, Standard> + GGLWEInfos,
+    F: TestScalar,
+    E: ReimNew<F>,
+{
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let quarter = F::from_f64(0.25).unwrap();
@@ -1802,6 +1823,26 @@ pub fn test_eval_poly_const_coeffs_complex_odd<BE, F, E>(
 }
 
 pub fn test_eval_poly_const_coeffs_complex_fold<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextModule<BE> + CKKSPolynomialEvaluationOps<BE> + CKKSComplexPolynomialEvaluationOps<BE>,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+    F: TestScalar,
+    E: ReimNew<F>,
+{
+    eval_poly_const_coeffs_complex_fold::<BE, F, E>(params, module, host_module);
+    // Inputs of half the module's degree take working ciphertexts of their own degree.
+    eval_poly_const_coeffs_complex_fold::<BE, F, E>(params, &Module::<BE>::new(2 * params.n as u64), host_module);
+}
+
+fn eval_poly_const_coeffs_complex_fold<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,

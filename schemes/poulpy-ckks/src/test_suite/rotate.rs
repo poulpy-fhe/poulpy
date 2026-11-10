@@ -29,12 +29,31 @@ use poulpy_core::layouts::GLWEAutomorphismKeyPrepared;
 use poulpy_core::{GLWEAutomorphism, GLWEShift};
 use poulpy_hal::{
     api::{ReimNew, ScratchAvailable, ScratchOwnedBorrow},
-    layouts::{HostBytesBackend, Module, ScratchArena, Standard},
+    layouts::{HostBytesBackend, Module, ScratchArena, Standard, galois_element},
 };
 
 use crate::{test_suite::CKKSTestParams, test_suite::reference_encoder::ReferenceEncoder};
 
 pub fn test_rotate_aligned<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+    rotations: &[i64],
+) where
+    BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextModule<BE> + GLWEAutomorphism<BE, Standard> + GLWEShift<BE, Standard> + CKKSRotateOps<BE, Standard>,
+    F: TestScalar,
+    E: ReimNew<F>,
+    for<'a> ScratchArena<'a, BE>: ScratchAvailable,
+{
+    rotate_aligned::<BE, F, E>(params, module, host_module, rotations);
+    // Operands of half the module's degree rotate under the Galois elements of their own order.
+    rotate_aligned::<BE, F, E>(params, &Module::<BE>::new(2 * params.n as u64), host_module, rotations);
+}
+
+fn rotate_aligned<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
@@ -56,7 +75,7 @@ pub fn test_rotate_aligned<BE, F, E>(
 
     let mut atks = HashMap::new();
     for &r in rotations {
-        let gal = module.ckks_galois_element::<Standard>(r);
+        let gal = galois_element(r.rem_euclid(m as i64), 2 * params.n as i64);
         let atk = gen_atk(&params, module, gal, &sk_raw, &mut scratch.borrow());
         atks.insert(gal, atk);
     }

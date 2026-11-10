@@ -301,11 +301,23 @@ where
     F: TestScalar,
     E: ReimNew<F>,
 {
+    paco_conj_rotate::<BE, F, E>(params, module, host_module);
+    // Operands of half the module's degree take the conjugate rotations of their own order.
+    paco_conj_rotate::<BE, F, E>(params, &Module::<BE>::new(2 * params.n as u64), host_module);
+}
+
+fn paco_conj_rotate<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
+where
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE>,
+    F: TestScalar,
+    E: ReimNew<F>,
+{
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new::<F>(m).unwrap();
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
-    let order = module.cyclotomic_order::<Standard>();
+    let order = 2 * params.n as i64;
     let (a_re, a_im) = test_vector_1::<F>(m);
     let v = to_cpx(&a_re, &a_im);
 

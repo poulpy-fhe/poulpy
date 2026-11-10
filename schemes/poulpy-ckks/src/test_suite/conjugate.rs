@@ -41,6 +41,21 @@ where
     E: ReimNew<F>,
     for<'a> ScratchArena<'a, BE>: ScratchAvailable,
 {
+    conjugate_aligned::<BE, F, E>(params, module, host_module);
+    // Operands of half the module's degree conjugate under the module's conjugation key.
+    conjugate_aligned::<BE, F, E>(params, &Module::<BE>::new(2 * params.n as u64), host_module);
+}
+
+fn conjugate_aligned<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
+where
+    BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextModule<BE> + GLWEAutomorphism<BE> + GLWEShift<BE> + CKKSConjugateOps<BE>,
+    F: TestScalar,
+    E: ReimNew<F>,
+    for<'a> ScratchArena<'a, BE>: ScratchAvailable,
+{
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (re1, im1) = test_vector_1::<F>(m);
