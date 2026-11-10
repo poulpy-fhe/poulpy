@@ -2,7 +2,8 @@ use crate::{
     AlignedBuf, alloc_aligned,
     layouts::{
         Backend, Data, DataView, DataViewMut, DigestU64, HostDataMut, HostDataRef, MatZnxInfos, ReaderFrom, Ring, Standard,
-        ToOwnedDeep, VecZnx, WriterTo, ZnxInfos, ZnxWord, ZnxZero,
+        ToOwnedDeep, VecZnx, WriterTo, ZnxInfos, ZnxWord, ZnxZero, read_ring_tag, read_usize_fields, serialized_byte_len,
+        write_ring_tag,
     },
 };
 use std::{
@@ -11,7 +12,7 @@ use std::{
     marker::PhantomData,
 };
 
-use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use byteorder::{LittleEndian, WriteBytesExt};
 
 #[repr(C)]
 #[derive(PartialEq, Eq, Clone, Copy, Hash, Debug, Default)]
@@ -517,18 +518,14 @@ impl<D: Data, W: ZnxWord, Rg: Ring> MatZnx<D, W, Rg> {
 }
 
 impl<D: HostDataMut, W: ZnxWord, Rg: Ring> ReaderFrom for MatZnx<D, W, Rg> {
+    /// Reads the format of [`WriterTo::write_to`] into this matrix, which takes the stream's shape. A stream of another
+    /// ring, whose shape and byte length disagree, or larger than this matrix's buffer is
+    /// [`std::io::ErrorKind::InvalidData`], refused before its coefficients.
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
-        let new_n: usize = reader.read_u64::<LittleEndian>()? as usize;
-        let new_size: usize = reader.read_u64::<LittleEndian>()? as usize;
-        let new_rows: usize = reader.read_u64::<LittleEndian>()? as usize;
-        let new_cols_in: usize = reader.read_u64::<LittleEndian>()? as usize;
-        let new_cols_out: usize = reader.read_u64::<LittleEndian>()? as usize;
-        let len: usize = reader.read_u64::<LittleEndian>()? as usize;
+        read_ring_tag::<Rg, R>(reader)?;
+        let [new_n, new_size, new_rows, new_cols_in, new_cols_out, len] = read_usize_fields::<6, R>(reader)?;
 
-        let expected_len: usize = crate::layouts::checked_product(
-            &[new_rows, new_cols_in, new_n, new_cols_out, new_size, size_of::<W>()],
-            "MatZnx serialized byte size",
-        );
+        let expected_len: usize = serialized_byte_len::<W>(&[new_rows, new_cols_in, new_n, new_cols_out, new_size])?;
         if expected_len != len {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
@@ -554,12 +551,10 @@ impl<D: HostDataMut, W: ZnxWord, Rg: Ring> ReaderFrom for MatZnx<D, W, Rg> {
 }
 
 impl<D: HostDataRef, W: ZnxWord, Rg: Ring> WriterTo for MatZnx<D, W, Rg> {
+    /// Writes the ring's [`Ring::WIRE_TAG`] (one byte), then `n`, `size`, `rows`, `cols_in`, `cols_out` and the byte
+    /// length `rows * cols_in * n * cols_out * size * size_of::<W>()` as little-endian `u64`, then the coefficients in
+    /// buffer order.
     fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
-        writer.write_u64::<LittleEndian>(self.n() as u64)?;
-        writer.write_u64::<LittleEndian>(self.size() as u64)?;
-        writer.write_u64::<LittleEndian>(self.rows() as u64)?;
-        writer.write_u64::<LittleEndian>(self.cols_in() as u64)?;
-        writer.write_u64::<LittleEndian>(self.cols_out() as u64)?;
         let logical_len: usize =
             crate::layouts::checked_product(&[self.rows(), self.cols_in(), self.entry_bytes()], "MatZnx logical byte size");
         let buf: &[u8] = self.data.as_ref();
@@ -572,6 +567,12 @@ impl<D: HostDataRef, W: ZnxWord, Rg: Ring> WriterTo for MatZnx<D, W, Rg> {
                 ),
             ));
         }
+        write_ring_tag::<Rg, Wr>(writer)?;
+        writer.write_u64::<LittleEndian>(self.n() as u64)?;
+        writer.write_u64::<LittleEndian>(self.size() as u64)?;
+        writer.write_u64::<LittleEndian>(self.rows() as u64)?;
+        writer.write_u64::<LittleEndian>(self.cols_in() as u64)?;
+        writer.write_u64::<LittleEndian>(self.cols_out() as u64)?;
         writer.write_u64::<LittleEndian>(logical_len as u64)?;
         writer.write_all(&buf[..logical_len])?;
         Ok(())

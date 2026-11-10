@@ -7,7 +7,9 @@ use poulpy_core::layouts::{
         GGLWECompressedToBackendMut, GGLWECompressedToBackendRef,
     },
 };
-use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, ReaderFrom, WriterTo, ZnxWord};
+use poulpy_hal::layouts::{
+    Backend, Data, HostDataMut, HostDataRef, ReaderFrom, Ring, Standard, WriterTo, ZnxWord, is_galois_element,
+};
 
 use crate::layouts::MHEGGLWEPatCompressed;
 
@@ -136,19 +138,42 @@ impl<D: HostDataRef, W: ZnxWord> fmt::Display for MHEGLWEAutomorphismKeyShare<D,
 }
 
 impl<D: HostDataMut, W: ZnxWord> ReaderFrom for MHEGLWEAutomorphismKeyShare<D, W> {
+    /// Reads the format of [`WriterTo::write_to`]: a stream whose Galois element is not one of the standard ring at the
+    /// stream's degree is [`std::io::ErrorKind::InvalidData`], the Galois element left unchanged.
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
         let mut p = [0u8; 8];
         reader.read_exact(&mut p)?;
-        self.p = i64::from_le_bytes(p);
-        self.key.read_from(reader)
+        let p = i64::from_le_bytes(p);
+        self.key.read_from(reader)?;
+        if !is_galois_element(p, galois_order(self.key.n())) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "the Galois element is not odd and below the ring's cyclotomic order",
+            ));
+        }
+        self.p = p;
+        Ok(())
     }
 }
 
 impl<D: HostDataRef, W: ZnxWord> WriterTo for MHEGLWEAutomorphismKeyShare<D, W> {
+    /// The Galois element `p` (`i64`), then the key share. A `p` even or not below the standard ring's cyclotomic order
+    /// is [`std::io::ErrorKind::InvalidInput`], writing nothing.
     fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
+        if !is_galois_element(self.p, galois_order(self.key.n())) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "the Galois element is not odd and below the ring's cyclotomic order",
+            ));
+        }
         writer.write_all(&self.p.to_le_bytes())?;
         self.key.write_to(writer)
     }
+}
+
+/// Cyclotomic order of the standard ring of degree `n`, the bound of a share's Galois element.
+fn galois_order(n: Degree) -> i64 {
+    Standard::CYCLOTOMIC_ORDER_FACTOR * i64::from(n.0)
 }
 
 #[deprecated(note = "renamed MHEGLWEAutomorphismKeyShare")]

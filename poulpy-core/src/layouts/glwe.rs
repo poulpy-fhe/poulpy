@@ -360,7 +360,8 @@ impl<W: ZnxWord, Rg: Ring> GLWE<AlignedBuf, W, Rg> {
 }
 
 impl<D: HostDataMut, W: ZnxWord, Rg: Ring> ReaderFrom for GLWE<D, W, Rg> {
-    /// Deserialises a [`GLWE`] in little-endian binary format.
+    /// Deserialises a [`GLWE`] in little-endian binary format, refusing a stream of another ring with
+    /// [`std::io::ErrorKind::InvalidData`] before its limbs.
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
         self.read_expecting(reader, None)
     }
@@ -368,7 +369,7 @@ impl<D: HostDataMut, W: ZnxWord, Rg: Ring> ReaderFrom for GLWE<D, W, Rg> {
 
 impl<D: HostDataMut, W: ZnxWord, Rg: Ring> GLWE<D, W, Rg> {
     /// Deserialises a stream of [`Self::write_live_to`] as [`ReaderFrom::read_from`] does, at this [`GLWE`]'s `base2k`,
-    /// degree, column count and `ceil(k / base2k)` limbs, which it then holds: a stream of others is
+    /// degree, column count and `ceil(k / base2k)` limbs, which it then holds: a stream of others, or of another ring, is
     /// [`std::io::ErrorKind::InvalidData`] before its limbs are read.
     pub fn read_live_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
         let live = self.k.as_usize().div_ceil(self.base2k.as_usize());
@@ -582,7 +583,7 @@ impl<D: Data, W: ZnxWord, Rg: Ring> GLWE<D, W, Rg> {
 pub(in crate::layouts) mod tests {
     use std::io::ErrorKind;
 
-    use poulpy_hal::layouts::{HostBytesBackend, Module};
+    use poulpy_hal::layouts::{ConjugateInvariant, HostBytesBackend, Module};
 
     use super::*;
     use crate::layouts::{GLWEAlloc, GLWELayout, Scale, SlotsKind};
@@ -716,10 +717,19 @@ pub(in crate::layouts) mod tests {
         let mut receiver = GLWE::<AlignedBuf, i64>::alloc(Degree(16), Base2K(12), TorusPrecision(24), Rank(1));
         receiver.data_mut().at_mut(0, 0)[0] = 9;
         let before = (receiver.data().raw().to_vec(), receiver.data().size());
+        let other_ring = {
+            let mut glwe =
+                GLWE::<AlignedBuf, i64, ConjugateInvariant>::alloc(Degree(16), Base2K(12), TorusPrecision(24), Rank(1));
+            glwe.set_canonical(true);
+            let mut bytes = Vec::new();
+            glwe.write_live_to(&mut bytes).unwrap();
+            bytes
+        };
         for (label, bytes) in [
             ("degree", live(8, 12, 24)),
             ("radix", live(16, 11, 24)),
             ("limbs", live(16, 12, 36)),
+            ("ring", other_ring),
         ] {
             let err = receiver.read_live_from(&mut bytes.as_slice()).unwrap_err();
             assert_eq!(err.kind(), ErrorKind::InvalidData, "{label}");

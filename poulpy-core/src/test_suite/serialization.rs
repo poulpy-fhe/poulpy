@@ -1,7 +1,9 @@
+use std::io::ErrorKind;
+
 use poulpy_hal::{
     AlignedBuf,
     api::{VecZnxFillUniformSource, VecZnxFillUniformSourceAll},
-    layouts::{Backend, MatZnx, MatZnxAtBackendMut, Module, ReaderFrom, Standard, WriterTo},
+    layouts::{Backend, ConjugateInvariant, MatZnx, MatZnxAtBackendMut, Module, ReaderFrom, Ring, Standard, WriterTo},
     source::Source,
     test_suite::serialization::test_reader_writer_interface as check_roundtrip,
 };
@@ -9,7 +11,7 @@ use poulpy_hal::{
 use crate::dist::Distribution;
 use crate::layouts::{
     Base2K, Degree, Dnum, GGLWE, GGSW, GLWE, GLWEAutomorphismKey, GLWEInfos, GLWEPublicKey, GLWESwitchingKey, GLWETensorKey,
-    GLWEToLWEKey, LWE, LWEInfos, LWESwitchingKey, LWEToGLWEKey, Rank, TorusPrecision,
+    GLWEToLWEKey, GetGaloisElement, LWE, LWEInfos, LWESwitchingKey, LWEToGLWEKey, Rank, SetGaloisElement, TorusPrecision,
     compressed::{
         GGLWECompressed, GGSWCompressed, GLWEAutomorphismKeyCompressed, GLWECompressed, GLWESwitchingKeyCompressed,
         GLWETensorKeyCompressed, GLWEToLWEKeyCompressed, LWECompressed, LWESwitchingKeyCompressed, LWEToGLWEKeyCompressed,
@@ -79,6 +81,56 @@ where
     assert_eq!((receiver.n(), receiver.rank()), trusted_shape);
     assert!(receiver.noise().is_none());
     receiver.write_to(&mut Vec::new()).unwrap();
+}
+
+/// Writes a GLWE, an automorphism key and a public key of ring `Rg` and reads each into a receiver of ring `Rx`, which
+/// accepts it iff the rings agree and otherwise refuses it with `InvalidData`.
+fn test_ring_mismatch<Rg: Ring, Rx: Ring>(
+    glwe: &GLWE<AlignedBuf, i64, Rg>,
+    atk: &GLWEAutomorphismKey<AlignedBuf, i64, Rg>,
+    pk: &GLWEPublicKey<AlignedBuf, i64, Rg>,
+) {
+    fn read_into<Rg: Ring, Rx: Ring>(original: &impl WriterTo, mut receiver: impl ReaderFrom) {
+        let mut stream = Vec::new();
+        original.write_to(&mut stream).unwrap();
+        let read = receiver.read_from(&mut stream.as_slice());
+        if Rx::WIRE_TAG == Rg::WIRE_TAG {
+            read.unwrap();
+        } else {
+            assert_eq!(read.unwrap_err().kind(), ErrorKind::InvalidData);
+        }
+    }
+    read_into::<Rg, Rx>(glwe, GLWE::<AlignedBuf, i64, Rx>::alloc(N_GLWE, BASE2K, K, RANK));
+    read_into::<Rg, Rx>(
+        atk,
+        GLWEAutomorphismKey::<AlignedBuf, i64, Rx>::alloc(N_GLWE, BASE2K, DNUM, DSIZE, K_KEY_AUX, RANK),
+    );
+    read_into::<Rg, Rx>(pk, GLWEPublicKey::<AlignedBuf, i64, Rx>::alloc(N_GLWE, BASE2K, K, RANK));
+}
+
+/// A Galois element even or not below the ring's cyclotomic order `order`: the writer refuses it, writing nothing, and
+/// the reader before committing it.
+fn test_galois_element_bounds<T>(mut key: T, mut receiver: T, order: i64)
+where
+    T: WriterTo + ReaderFrom + GetGaloisElement + SetGaloisElement + LWEInfos,
+{
+    let mut valid = Vec::new();
+    key.write_to(&mut valid).unwrap();
+    let p = receiver.p();
+    for invalid in [0, 2, -2, order + 1, -order - 1] {
+        let mut stream = valid.clone();
+        stream[..8].copy_from_slice(&invalid.to_le_bytes());
+        assert_eq!(
+            receiver.read_from(&mut stream.as_slice()).unwrap_err().kind(),
+            ErrorKind::InvalidData
+        );
+        assert_eq!(receiver.p(), p);
+        assert!(receiver.noise().is_none());
+        key.set_p(invalid);
+        let mut written = Vec::new();
+        assert_eq!(key.write_to(&mut written).unwrap_err().kind(), ErrorKind::InvalidInput);
+        assert!(written.is_empty());
+    }
 }
 
 const N_GLWE: Degree = Degree(64);
@@ -255,6 +307,11 @@ where
     for value in &mut pk {
         value.dist = Distribution::TernaryProb(0.3);
     }
+    let order = Standard::CYCLOTOMIC_ORDER_FACTOR * i64::from(N_GLWE.0);
+    for (p, (key, key_c)) in [5, -(order - 1)].into_iter().zip(atk.iter_mut().zip(&mut atk_c)) {
+        key.p = p;
+        key_c.p = p;
+    }
 
     let mut none_prefix = Vec::new();
     ComponentNoise::write_optional(None, &mut none_prefix).unwrap();
@@ -286,6 +343,7 @@ where
     glwe_header.extend(BASE2K.0.to_le_bytes());
     // Unset plaintext metadata.
     glwe_header.push(0);
+    glwe_header.push(Standard::WIRE_TAG);
     for value in [0u64, 1u64 << 32, 1, 0] {
         glwe_header.extend(value.to_le_bytes());
     }
@@ -297,12 +355,29 @@ where
     gglwe_header.extend(0u32.to_le_bytes());
     gadget_header.extend(K_KEY_AUX.0.to_le_bytes());
     gglwe_header.extend(K_KEY_AUX.0.to_le_bytes());
+    gadget_header.push(Standard::WIRE_TAG);
+    gglwe_header.push(Standard::WIRE_TAG);
     for value in [0u64, 1, DNUM.0 as u64, RANK.0 as u64, 1u64 << 32, 0] {
         gadget_header.extend(value.to_le_bytes());
         gglwe_header.extend(value.to_le_bytes());
     }
     test_reused_reader_shape_bound(gglwe[1].clone(), &gglwe_header);
     test_reused_reader_shape_bound(ggsw[1].clone(), &gadget_header);
+
+    test_ring_mismatch::<Standard, Standard>(&glwe[0], &atk[0], &pk[0]);
+    test_ring_mismatch::<Standard, ConjugateInvariant>(&glwe[0], &atk[0], &pk[0]);
+    {
+        let glwe_ci = GLWE::<AlignedBuf, i64, ConjugateInvariant>::alloc(N_GLWE, BASE2K, K, RANK);
+        let mut atk_ci =
+            GLWEAutomorphismKey::<AlignedBuf, i64, ConjugateInvariant>::alloc(N_GLWE, BASE2K, DNUM, DSIZE, K_KEY_AUX, RANK);
+        atk_ci.p = 5;
+        let mut pk_ci = GLWEPublicKey::<AlignedBuf, i64, ConjugateInvariant>::alloc(N_GLWE, BASE2K, K, RANK);
+        pk_ci.dist = Distribution::TernaryProb(0.3);
+        test_ring_mismatch::<ConjugateInvariant, Standard>(&glwe_ci, &atk_ci, &pk_ci);
+        test_ring_mismatch::<ConjugateInvariant, ConjugateInvariant>(&glwe_ci, &atk_ci, &pk_ci);
+    }
+    test_galois_element_bounds(atk[0].clone(), atk[1].clone(), order);
+    test_galois_element_bounds(atk_c[0].clone(), atk_c[1].clone(), order);
 
     test_reader_writer_interface(glwe);
     // A stream is one row of `rank` encryptions of zero at the stated precision.

@@ -131,22 +131,31 @@ impl<D: Data, W: ZnxWord, Rg: Ring> GLWEAutomorphismKeyCompressed<D, W, Rg> {
 }
 
 impl<D: HostDataMut, W: ZnxWord, Rg: Ring> ReaderFrom for GLWEAutomorphismKeyCompressed<D, W, Rg> {
+    /// Reads the format of [`WriterTo::write_to`], refusing as
+    /// [`GLWEAutomorphismKey`](crate::layouts::GLWEAutomorphismKey)'s reader does.
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
         self.key.noise = None;
-        let p = reader.read_u64::<LittleEndian>()? as i64;
+        let p = reader.read_i64::<LittleEndian>()?;
         self.key.read_from(reader)?;
+        if let Err(err) = crate::layouts::validate_galois_element::<Rg>(p, self.key.n(), std::io::ErrorKind::InvalidData) {
+            self.key.noise = None;
+            return Err(err);
+        }
         self.p = p;
         Ok(())
     }
 }
 
 impl<D: HostDataRef, W: ZnxWord, Rg: Ring> WriterTo for GLWEAutomorphismKeyCompressed<D, W, Rg> {
+    /// The Galois element `p` (`i64`), then the compressed key, refusing `p` as
+    /// [`GLWEAutomorphismKey`](crate::layouts::GLWEAutomorphismKey)'s writer does.
     fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
         if let Some(noise) = &self.key.noise {
             noise.validate_wire()?;
             noise.validate_components(self.key.rank_out.as_usize() + 1)?;
         }
-        writer.write_u64::<LittleEndian>(self.p as u64)?;
+        crate::layouts::validate_galois_element::<Rg>(self.p, self.key.n(), std::io::ErrorKind::InvalidInput)?;
+        writer.write_i64::<LittleEndian>(self.p)?;
         self.key.write_to(writer)
     }
 }

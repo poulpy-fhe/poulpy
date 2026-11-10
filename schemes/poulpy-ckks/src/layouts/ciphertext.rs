@@ -203,7 +203,8 @@ impl<D: HostDataRef, W: ZnxWord, Rg: Ring> WriterTo for CKKSCiphertext<D, W, Rg>
 }
 
 impl<D: HostDataMut, W: ZnxWord, Rg: Ring> ReaderFrom for CKKSCiphertext<D, W, Rg> {
-    /// Reads the inner [`GLWE`]'s format into a ciphertext of this ring.
+    /// Reads the inner [`GLWE`]'s format into a ciphertext of this ring, refusing a stream of the other ring with
+    /// [`std::io::ErrorKind::InvalidData`].
     fn read_from<Rd: std::io::Read>(&mut self, reader: &mut Rd) -> std::io::Result<()> {
         self.inner.read_from(reader)
     }
@@ -470,7 +471,7 @@ impl<'a, BE: Backend> ScratchArenaTakeCKKSCiphertext<'a, BE> for ScratchArena<'a
 #[cfg(test)]
 mod tests {
     use poulpy_core::layouts::{Base2K, TorusPrecision};
-    use poulpy_hal::layouts::{HostBytesBackend, Module, ReaderFrom, Standard, WriterTo, ZnxViewMut};
+    use poulpy_hal::layouts::{ConjugateInvariant, HostBytesBackend, Module, ReaderFrom, Standard, WriterTo, ZnxViewMut};
 
     use crate::{CKKSInfos, GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotsKind, layouts::CKKSCiphertextAlloc};
 
@@ -500,5 +501,10 @@ mod tests {
         let mut again = Vec::new();
         back.write_to(&mut again).unwrap();
         assert!(again == bytes, "a read ciphertext serializes as the original");
+        let mut other_ring = module.ckks_ciphertext_alloc::<ConjugateInvariant>(Base2K(12), TorusPrecision(36));
+        assert_eq!(
+            other_ring.read_from(&mut bytes.as_slice()).unwrap_err().kind(),
+            std::io::ErrorKind::InvalidData
+        );
     }
 }

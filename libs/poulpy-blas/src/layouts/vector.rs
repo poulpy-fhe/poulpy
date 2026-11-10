@@ -260,8 +260,9 @@ impl<D: HostDataMut, W: ZnxWord, Rg: Ring> ReaderFrom for BlasVector<D, W, Rg> {
     /// Deserialises into a vector allocated from the writer's layout, or one of more limbs per ciphertext, which then
     /// holds the written limbs: a receiver whose ciphertexts differ in layout fails with
     /// [`std::io::ErrorKind::InvalidInput`], another shape, or ciphertext `n`, `base2k`, `k` or rank with
-    /// [`std::io::ErrorKind::InvalidData`], before any ciphertext is read, and a ciphertext of another `n`, `base2k` or
-    /// limb count than the header's with [`std::io::ErrorKind::InvalidData`] before its limbs are read.
+    /// [`std::io::ErrorKind::InvalidData`], before any ciphertext is read, and a ciphertext of another ring than the
+    /// receiver's, or of another `n`, `base2k` or limb count than the header's, with [`std::io::ErrorKind::InvalidData`]
+    /// before its limbs are read.
     fn read_from<Rd: std::io::Read>(&mut self, reader: &mut Rd) -> std::io::Result<()> {
         let header = self.header()?;
         let mut read = vec![0u8; header.len()];
@@ -374,7 +375,7 @@ where
 mod tests {
     use poulpy_ckks::SetGLWEPlaintextInfos;
     use poulpy_core::layouts::SetK;
-    use poulpy_hal::layouts::{HostBytesBackend, Module, Standard, ZnxView, ZnxViewMut};
+    use poulpy_hal::layouts::{ConjugateInvariant, HostBytesBackend, Module, Standard, ZnxView, ZnxViewMut};
 
     use super::*;
 
@@ -497,9 +498,16 @@ mod tests {
             Module::<HostBytesBackend>::new(64).blas_vector_alloc::<Standard>(shape, 13usize.into(), 26usize.into());
         receiver.ct_mut(0).data_mut().at_mut(0, 0)[0] = 7;
         let before = receiver.clone();
-        let err = receiver.read_from(&mut forged.as_slice()).unwrap_err();
-        assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
-        assert_eq!(receiver, before, "a refused read changed the vector");
+        let mut other_ring = Vec::new();
+        Module::<HostBytesBackend>::new(64)
+            .blas_vector_alloc::<ConjugateInvariant>(shape, 13usize.into(), 26usize.into())
+            .write_to(&mut other_ring)
+            .unwrap();
+        for stream in [forged, other_ring] {
+            let err = receiver.read_from(&mut stream.as_slice()).unwrap_err();
+            assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+            assert_eq!(receiver, before, "a refused read changed the vector");
+        }
     }
 
     #[test]

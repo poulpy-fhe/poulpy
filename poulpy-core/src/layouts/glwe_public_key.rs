@@ -317,10 +317,10 @@ impl<D: HostDataMut, W: ZnxWord, Rg: Ring> ReaderFrom for GLWEPublicKey<D, W, Rg
         let dist = Distribution::read_from(reader)?;
         let base2k = Base2K(reader.read_u32::<LittleEndian>()?);
         let k = TorusPrecision(reader.read_u32::<LittleEndian>()?);
-        // The matrix header (n, size, rows, cols_in, cols_out) is checked before the matrix overwrites the key.
-        let mut header = [0u8; 40];
+        // The matrix header (n, size, rows, cols_in, cols_out, past the ring tag HAL checks) is checked before the key changes.
+        let mut header = [0u8; 41];
         reader.read_exact(&mut header)?;
-        let field = |i: usize| u64::from_le_bytes(header[8 * i..8 * i + 8].try_into().unwrap());
+        let field = |i: usize| u64::from_le_bytes(header[1 + 8 * i..9 + 8 * i].try_into().unwrap());
         let (n, size, rows, cols_in, cols_out) = (field(0), field(1), field(2), field(3), field(4));
         if base2k.0 == 0
             || n == 0

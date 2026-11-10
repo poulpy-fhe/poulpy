@@ -76,6 +76,13 @@ Inside a hand-written `GGLWEProductDigitsStridedImpl<Rg>`,
 `impl_gglwe_product_digits_strided_reference!($ring)` forwards the step hooks it does not
 override, `$ring` naming the ring of the enclosing impl (`Rg` in a ring-generic one).
 
+Every serialized ciphertext and key carries its ring in the tag that opens each of
+its HAL coefficient layouts, and a reader refuses a stream of another ring with
+`InvalidData` before its coefficients. An automorphism key's writer refuses with
+`InvalidInput`, and its reader with `InvalidData` before committing it, a Galois
+element `p` that is even or whose absolute value is not below the ring's
+cyclotomic order `Rg::CYCLOTOMIC_ORDER_FACTOR * n` at the key's degree.
+
 ## Matching the result
 
 An override reproduces the reference as the [layering contract](../../docs/guides/layering-contract.md) states and passes

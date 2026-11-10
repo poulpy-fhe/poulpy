@@ -8,11 +8,12 @@ use crate::{
     AlignedBuf, alloc_aligned,
     layouts::{
         Backend, Data, DataView, DataViewMut, DigestU64, HostDataMut, HostDataRef, ReaderFrom, Ring, ScalarZnx, Standard,
-        ToOwnedDeep, VecZnxInfos, WriterTo, ZnxInfos, ZnxView, ZnxViewMut, ZnxWord, ZnxZero,
+        ToOwnedDeep, VecZnxInfos, WriterTo, ZnxInfos, ZnxView, ZnxViewMut, ZnxWord, ZnxZero, read_ring_tag, read_usize_fields,
+        serialized_byte_len, write_ring_tag,
     },
 };
 
-use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use byteorder::{LittleEndian, WriteBytesExt};
 
 /// Geometry of a vector-shaped container plus an optional window onto it.
 ///
@@ -737,17 +738,16 @@ pub fn vec_znx_backend_mut_with_size<'a, B: Backend, Rg: Ring>(
 }
 
 impl<D: HostDataMut, W: ZnxWord, Rg: Ring> ReaderFrom for VecZnx<D, W, Rg> {
+    /// Reads the format of [`WriterTo::write_to`] into this vector, which takes the stream's shape. A stream of another
+    /// ring, whose shape and byte length disagree, or larger than this vector's buffer is
+    /// [`std::io::ErrorKind::InvalidData`], refused before its coefficients.
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
         crate::layouts::assert_dense(self, "VecZnx::read_from");
+        read_ring_tag::<Rg, R>(reader)?;
         // Read into temporaries first to avoid leaving self in an inconsistent state on error.
-        let new_n: usize = reader.read_u64::<LittleEndian>()? as usize;
-        let new_cols: usize = reader.read_u64::<LittleEndian>()? as usize;
-        let new_size: usize = reader.read_u64::<LittleEndian>()? as usize;
-        let len: usize = reader.read_u64::<LittleEndian>()? as usize;
+        let [new_n, new_cols, new_size, len] = read_usize_fields::<4, R>(reader)?;
 
-        // Validate metadata consistency: n * cols * size * sizeof(W) must match data length.
-        let expected_len: usize =
-            crate::layouts::checked_product(&[new_n, new_cols, new_size, size_of::<W>()], "VecZnx serialized byte size");
+        let expected_len: usize = serialized_byte_len::<W>(&[new_n, new_cols, new_size])?;
         if expected_len != len {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
@@ -774,11 +774,10 @@ impl<D: HostDataMut, W: ZnxWord, Rg: Ring> ReaderFrom for VecZnx<D, W, Rg> {
 }
 
 impl<D: HostDataRef, W: ZnxWord, Rg: Ring> WriterTo for VecZnx<D, W, Rg> {
+    /// Writes the ring's [`Ring::WIRE_TAG`] (one byte), then `n`, `cols`, `size` and the byte length
+    /// `n * cols * size * size_of::<W>()` as little-endian `u64`, then the coefficients in buffer order.
     fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
         crate::layouts::assert_dense(self, "VecZnx::write_to");
-        writer.write_u64::<LittleEndian>(self.n() as u64)?;
-        writer.write_u64::<LittleEndian>(self.cols() as u64)?;
-        writer.write_u64::<LittleEndian>(self.size() as u64)?;
         let coeff_bytes: usize = crate::layouts::checked_product(
             &[self.n(), self.cols(), self.size(), size_of::<W>()],
             "VecZnx logical byte size",
@@ -793,6 +792,10 @@ impl<D: HostDataRef, W: ZnxWord, Rg: Ring> WriterTo for VecZnx<D, W, Rg> {
                 ),
             ));
         }
+        write_ring_tag::<Rg, Wr>(writer)?;
+        writer.write_u64::<LittleEndian>(self.n() as u64)?;
+        writer.write_u64::<LittleEndian>(self.cols() as u64)?;
+        writer.write_u64::<LittleEndian>(self.size() as u64)?;
         writer.write_u64::<LittleEndian>(coeff_bytes as u64)?;
         writer.write_all(&buf[..coeff_bytes])?;
         Ok(())

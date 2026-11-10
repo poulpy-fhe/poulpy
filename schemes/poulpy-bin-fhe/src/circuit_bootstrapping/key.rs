@@ -3,8 +3,8 @@ use poulpy_core::{
     layouts::GGSWAlloc,
     layouts::{
         GGLWEInfos, GGLWEToGGSWKey, GGLWEToGGSWKeyAlloc, GGLWEToGGSWKeyLayout, GGSWInfos, GLWEAutomorphismKey,
-        GLWEAutomorphismKeyAlloc, GLWEAutomorphismKeyLayout, GLWEInfos, GLWESecretToBackendRef, LWEInfos, LWESecretToBackendRef,
-        ModuleCoreAlloc,
+        GLWEAutomorphismKeyAlloc, GLWEAutomorphismKeyLayout, GLWEInfos, GLWESecretToBackendRef, GetGaloisElement, LWEInfos,
+        LWESecretToBackendRef, ModuleCoreAlloc, SetGaloisElement,
     },
 };
 use poulpy_hal::layouts::ZnxWord;
@@ -133,7 +133,8 @@ impl<D: Data, BRA: BlindRotationAlgo, W: ZnxWord> CircuitBootstrappingKey<D, BRA
             atk: gal_els
                 .iter()
                 .map(|&gal_el| {
-                    let key = module.glwe_automorphism_key_alloc_from_infos(atk_infos);
+                    let mut key = module.glwe_automorphism_key_alloc_from_infos(atk_infos);
+                    key.set_p(gal_el);
                     (gal_el, key)
                 })
                 .collect(),
@@ -260,6 +261,12 @@ impl<D: HostDataMut, BRA: BlindRotationAlgo, W: ZnxWord> ReaderFrom for CircuitB
                 std::io::Error::new(std::io::ErrorKind::InvalidData, format!("self.atk.get(gal_el={gal_el})=None"))
             })?;
             atk.read_from(reader)?;
+            if atk.p() != gal_el {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "an automorphism key's Galois element differs from its entry's",
+                ));
+            }
         }
         self.tsk.read_from(reader)
     }

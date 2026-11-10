@@ -10,7 +10,7 @@ The important design point is that the public API is centered on **backend-nativ
 
 This module defines backend-agnostic layouts. There are two main categories: user-facing types and backend types. User-facing types, such as `vec_znx`, serve as both inputs and outputs of computations, while backend types, such as `svp_ppol` (a.k.a. scalar vector product prepared polynomial), are pre-processed, write-only types stored in a backend-specific representation for optimized evaluation. For example, in the FFT64 AVX2 CPU implementation, an `svp_ppol` (the prepared form of `scalar_znx`) is stored in the DFT domain with an AVX-optimized data ordering.
 
-This module also provides helpers over these types, as well as serialization for the front-end types `scalar_znx`, `vec_znx` and `mat_znx`.
+This module also provides helpers over these types, as well as serialization for the front-end types `scalar_znx`, `vec_znx` and `mat_znx`. Each stream opens with its ring's tag (`Ring::WIRE_TAG`, one byte), then its little-endian `u64` shape fields and byte length, then the coefficients; a reader refuses a stream of another ring with `InvalidData` before its coefficients.
 
 #### Backend Model
 

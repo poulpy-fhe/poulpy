@@ -15,6 +15,10 @@ pub trait Ring: sealed::Sealed + Copy + Eq + Send + Sync + 'static {
     /// Ambient cyclotomic order divided by the coefficient dimension.
     const CYCLOTOMIC_ORDER_FACTOR: i64;
 
+    /// Byte naming this ring in a serialized layout header, a stable part of the format: `0` for [`Standard`], `1` for
+    /// [`ConjugateInvariant`].
+    const WIRE_TAG: u8;
+
     /// Averages of the degree-`n` product map, see [`ProductMoments`].
     fn product_moments(n: usize) -> ProductMoments;
 }
@@ -57,6 +61,7 @@ impl sealed::Sealed for ConjugateInvariant {}
 
 impl Ring for Standard {
     const CYCLOTOMIC_ORDER_FACTOR: i64 = 2;
+    const WIRE_TAG: u8 = 0;
 
     /// Each product of basis elements is a signed basis element: `(1 1)_c = 2c + 2 - n`.
     fn product_moments(n: usize) -> ProductMoments {
@@ -77,6 +82,7 @@ impl Ring for Standard {
 
 impl Ring for ConjugateInvariant {
     const CYCLOTOMIC_ORDER_FACTOR: i64 = 4;
+    const WIRE_TAG: u8 = 1;
 
     /// `(1 1)_0 = 2n - 1` and `(1 1)_c = 2(n - c)`; the other averages are exact
     /// fits to the products, checked against them.
@@ -616,6 +622,13 @@ pub fn galois_element(generator: i64, cyclotomic_order: i64) -> i64 {
 
     let g_exp: u64 = mod_exp_u64(GALOISGENERATOR, generator.unsigned_abs() as usize) & (cyclotomic_order - 1) as u64;
     g_exp as i64 * generator.signum()
+}
+
+/// Whether `p` is a Galois element modulo `cyclotomic_order`, as [`galois_element`] returns them: odd, with
+/// `|p| < cyclotomic_order`.
+#[inline]
+pub fn is_galois_element(p: i64, cyclotomic_order: i64) -> bool {
+    p & 1 == 1 && p.unsigned_abs() < cyclotomic_order.unsigned_abs()
 }
 
 /// Maps a set of slot rotations to the distinct Galois elements whose

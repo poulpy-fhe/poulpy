@@ -440,8 +440,9 @@ impl<D: HostDataMut, W: ZnxWord, Rg: Ring> ReaderFrom for BlasCiphertext<D, W, R
     /// Deserialises into a grid allocated from the writer's layout, or one of more limbs per block, which then holds the
     /// written limbs: a receiver whose blocks differ in layout fails with [`std::io::ErrorKind::InvalidInput`], another
     /// `log_d`, row or column count, or block `n`, `base2k`, `k` or rank with [`std::io::ErrorKind::InvalidData`], before
-    /// any block is read, and a block of another `n`, `base2k` or limb count than the header's with
-    /// [`std::io::ErrorKind::InvalidData`] before its limbs are read. The grid then records the written batch.
+    /// any block is read, and a block of another ring than the receiver's, or of another `n`, `base2k` or limb count than
+    /// the header's, with [`std::io::ErrorKind::InvalidData`] before its limbs are read. The grid then records the written
+    /// batch.
     fn read_from<Rd: std::io::Read>(&mut self, reader: &mut Rd) -> std::io::Result<()> {
         let header = self.header()?;
         let mut read = vec![0u8; header.len()];
@@ -558,7 +559,7 @@ mod tests {
         layouts::{CKKSLeftOperandPrepared, CKKSRightOperandPrepared},
     };
     use poulpy_core::layouts::{SetK, prepared::GLWETensorKeyPrepared};
-    use poulpy_hal::layouts::{HostBytesBackend, Standard};
+    use poulpy_hal::layouts::{ConjugateInvariant, HostBytesBackend, Standard};
     use poulpy_hal::layouts::{ReaderFrom, WriterTo, ZnxView, ZnxViewMut};
 
     type Grid<Rg> = BlasCiphertextOwned<HostBytesBackend, Rg>;
@@ -817,11 +818,18 @@ mod tests {
         receiver.blocks_mut()[0].data_mut().raw_mut()[0] = 7;
         let mut before = Vec::new();
         receiver.write_to(&mut before).unwrap();
-        let err = receiver.read_from(&mut forged.as_slice()).unwrap_err();
-        assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
-        let mut after = Vec::new();
-        receiver.write_to(&mut after).unwrap();
-        assert!(after == before, "a refused read changed the grid");
+        let mut other_ring = Vec::new();
+        Module::<HostBytesBackend>::new(64)
+            .blas_ciphertext_alloc::<ConjugateInvariant>(2, 2, 1, 19usize.into(), 57usize.into())
+            .write_to(&mut other_ring)
+            .unwrap();
+        for stream in [forged, other_ring] {
+            let err = receiver.read_from(&mut stream.as_slice()).unwrap_err();
+            assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+            let mut after = Vec::new();
+            receiver.write_to(&mut after).unwrap();
+            assert!(after == before, "a refused read changed the grid");
+        }
     }
 
     #[test]

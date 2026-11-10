@@ -404,7 +404,8 @@ operation that reads the digits through a DFT (products, rotations,
 conjugation, keyswitching, decryption) normalizes a flag-clear operand first,
 so a chain of linear steps costs one normalization. Normalize a value that
 several such operations read once, with `glwe_normalize_assign`. Serializing
-a ciphertext whose flag is clear fails: normalize it first.
+a ciphertext whose flag is clear fails: normalize it first. A ciphertext stream
+carries its ring: a ciphertext of the other ring refuses to read it.
 
 ## Backend selection
 

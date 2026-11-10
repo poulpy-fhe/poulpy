@@ -69,7 +69,7 @@ This crate defines three categories of layouts for `LWE`, `GLWE`, `GGLWE`, and `
 * **Compressed** → Compact serializable variants of the unprepared layouts. They are not usable for computation but significantly reduce storage size (e.g., `GLWEAutomorphismKeyCompressed`).
 * **Prepared** → Backend-optimized, opaque layouts prepared for backend-specific computation. These store preprocessed data for efficient execution on a specific backend (e.g., `GLWEAutomorphismKeyPrepared`).
 
-Host-resident **unprepared** and **compressed** layouts provide `WriterTo` and `ReaderFrom` implementations where their data supports host access, allowing serialization with `Write` and `Read`:
+Host-resident **unprepared** and **compressed** layouts provide `WriterTo` and `ReaderFrom` implementations where their data supports host access, allowing serialization with `Write` and `Read`. A stream carries its ring, and a reader of the other ring refuses it:
 
 ```rust
 pub trait WriterTo {

@@ -132,7 +132,8 @@ use std::{
 
 use crate::dist::Distribution;
 use poulpy_hal::layouts::{
-    Backend, Data, HostDataMut, MatZnx, Module, ReaderFrom, Ring, ScalarZnx, Standard, VecZnx, ZnxWord, vec_znx_alloc_zeroed,
+    Backend, Data, HostDataMut, MatZnx, Module, ReaderFrom, Ring, ScalarZnx, Standard, VecZnx, ZnxWord, is_galois_element,
+    vec_znx_alloc_zeroed,
 };
 
 /// Backend-indexed ownership aliases for the non-prepared layouts.
@@ -2033,6 +2034,8 @@ pub(crate) fn common_noise(mut keys: impl Iterator<Item = Option<crate::Componen
 /// Preflights the dimensions used to derive a later metadata allocation before
 /// the HAL reader commits its shape. The payload may change on a failed read,
 /// but the destination's component count remains trusted across retries.
+///
+/// The header opens with the ring tag, which the HAL reader checks.
 pub(crate) fn read_vec_znx_with_shape<D: HostDataMut, W: ZnxWord, R: Read, Rg: Ring>(
     data: &mut VecZnx<D, W, Rg>,
     reader: &mut R,
@@ -2040,9 +2043,9 @@ pub(crate) fn read_vec_znx_with_shape<D: HostDataMut, W: ZnxWord, R: Read, Rg: R
     cols: usize,
     size: Option<usize>,
 ) -> IoResult<()> {
-    let mut header = [0u8; 32];
+    let mut header = [0u8; 33];
     reader.read_exact(&mut header)?;
-    let fields = read_shape_fields::<4>(&header)?;
+    let fields = read_shape_fields::<4>(&header[1..])?;
     if fields[0] == 0 || degree.is_some_and(|n| n != fields[0]) || fields[1] != cols || size.is_some_and(|s| s != fields[2]) {
         return Err(invalid_serialized_shape());
     }
@@ -2057,9 +2060,9 @@ pub(crate) fn read_mat_znx_with_shape<D: HostDataMut, W: ZnxWord, R: Read, Rg: R
     cols_in: Option<usize>,
     cols_out: usize,
 ) -> IoResult<()> {
-    let mut header = [0u8; 48];
+    let mut header = [0u8; 49];
     reader.read_exact(&mut header)?;
-    let fields = read_shape_fields::<6>(&header)?;
+    let fields = read_shape_fields::<6>(&header[1..])?;
     if fields[0] == 0
         || rows.is_some_and(|rows| rows != fields[2])
         || cols_in.is_some_and(|cols| cols != fields[3])
@@ -2087,6 +2090,17 @@ fn validate_serialized_size<W: ZnxWord>(dimensions: &[usize], size: usize) -> Io
         .try_fold(std::mem::size_of::<W>(), |product, dimension| product.checked_mul(*dimension));
     if expected != Some(size) {
         return Err(invalid_serialized_shape());
+    }
+    Ok(())
+}
+
+/// Refuses with `kind` a Galois element `p` that is not one of the ring `Rg` at degree `n`.
+pub(crate) fn validate_galois_element<Rg: Ring>(p: i64, n: Degree, kind: ErrorKind) -> IoResult<()> {
+    if !is_galois_element(p, Rg::CYCLOTOMIC_ORDER_FACTOR * i64::from(n.0)) {
+        return Err(Error::new(
+            kind,
+            "the Galois element is not odd and below the ring's cyclotomic order",
+        ));
     }
     Ok(())
 }

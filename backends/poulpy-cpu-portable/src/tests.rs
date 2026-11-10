@@ -3,7 +3,7 @@ use poulpy_hal::api::{
     ScratchOwnedAlloc, VecZnxAddAssign, VecZnxBigAlloc, VecZnxBigFromSmall, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes,
     VecZnxFillUniformSourceAll, VecZnxSubNegateAssign,
 };
-use poulpy_hal::layouts::{HostDataRef, Ring, ScratchOwned, Standard};
+use poulpy_hal::layouts::{ConjugateInvariant, HostDataRef, Ring, ScratchOwned, Standard};
 use poulpy_hal::test_suite::TestBackend;
 use poulpy_hal::{
     layouts::Module,
@@ -905,6 +905,7 @@ poulpy_bin_fhe::bin_fhe_backend_test_suite!(mod bin_fhe_ntt4x30, backend = crate
 #[test]
 fn test_hal_serialization_fft64_portable() {
     poulpy_hal::test_suite::serialization::test_serialization::<_, Standard>(&Module::<FFT64Portable>::new(1024));
+    poulpy_hal::test_suite::serialization::test_serialization::<_, ConjugateInvariant>(&Module::<FFT64Portable>::new(1024));
 }
 
 #[cfg(feature = "enable-core")]
@@ -915,8 +916,8 @@ fn test_glwe_public_key_rank1_golden() {
     use poulpy_cpu_oracle::test_suite::{ControlledSamplingFFT64Oracle, ControlledSamplingNTT4x30Oracle};
     // Pins the discrete-Gaussian sampler and PNM3 component-noise wire format.
     // Digests cover the public key, encryption of a message, and encryption of zero.
-    const FFT64: [u64; 3] = [9615310425194628740, 1969118651227205468, 6537548132563225856];
-    const NTT4X30: [u64; 3] = [9915393708676454290, 9177372829677904665, 15298276994712787542];
+    const FFT64: [u64; 3] = [10730429572768833744, 6552976574473435114, 2808201506074398554];
+    const NTT4X30: [u64; 3] = [4602341734208517830, 18313272238932549559, 6020135798703935868];
     assert_eq!(
         (
             glwe_public_key_rank1_digests::<_, Standard>(&Module::<FFT64Portable>::new(256), 17),

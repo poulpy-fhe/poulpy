@@ -1,5 +1,5 @@
 use poulpy_hal::{
-    layouts::{Module, Ring, Standard},
+    layouts::{ConjugateInvariant, Module, Ring, Standard},
     test_suite::convolution::{
         test_convolution, test_convolution_add, test_convolution_by_const, test_convolution_by_const_add,
         test_convolution_pairwise, test_convolution_sum,
@@ -456,6 +456,7 @@ fn assert_f64_word_containers_are_eq() {
 #[test]
 fn test_hal_serialization_fft64_oracle() {
     poulpy_hal::test_suite::serialization::test_serialization::<_, Standard>(&Module::<FFT64Oracle>::new(1024));
+    poulpy_hal::test_suite::serialization::test_serialization::<_, ConjugateInvariant>(&Module::<FFT64Oracle>::new(1024));
 }
 
 #[cfg(feature = "enable-core")]
@@ -464,8 +465,8 @@ fn test_glwe_public_key_rank1_golden() {
     use poulpy_core::test_suite::noise::encryption::glwe_public_key_rank1_digests;
     // Pins the discrete-Gaussian sampler and PNM3 component-noise wire format.
     // Digests cover the public key, encryption of a message, and encryption of zero.
-    const FFT64: [u64; 3] = [13657436365380298677, 8939582948975383343, 10116498851724457224];
-    const NTT4X30: [u64; 3] = [5403517990711648908, 15222809472287623269, 16284224917881863181];
+    const FFT64: [u64; 3] = [15537167979345724497, 17143805215839013793, 6271276207481509326];
+    const NTT4X30: [u64; 3] = [5636386933788356712, 16751601622991553911, 17358964228673048827];
     assert_eq!(
         (
             glwe_public_key_rank1_digests::<_, Standard>(&Module::<FFT64Oracle>::new(256), 17),

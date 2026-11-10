@@ -14,8 +14,8 @@ use poulpy_hal::{
     AlignedBuf,
     api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAddScalarAssign, VecZnxAutomorphism},
     layouts::{
-        GaloisElement, HostBackend, HostDataMut, HostDataRef, Module, ScalarZnxAsVecZnxBackendMut, ScalarZnxAsVecZnxBackendRef,
-        ScratchOwned, Standard,
+        GaloisElement, HostBackend, HostDataMut, HostDataRef, Module, ReaderFrom, ScalarZnxAsVecZnxBackendMut,
+        ScalarZnxAsVecZnxBackendRef, ScratchOwned, Standard, WriterTo,
     },
     source::Source,
 };
@@ -141,6 +141,19 @@ where
         if i > 0 {
             module.mhe_glwe_automorphism_key_share_aggregate(&mut acc, &share);
         }
+    }
+
+    let mut encoded = Vec::new();
+    acc.write_to(&mut encoded).unwrap();
+    let mut decoded = module.mhe_glwe_automorphism_key_share_alloc_from_infos(&layout);
+    decoded.read_from(&mut encoded.as_slice()).unwrap();
+    assert!(decoded == acc);
+    // A Galois element even or not below the cyclotomic order `2n`.
+    for p in [2, 2 * module.n() as i64 + 1] {
+        encoded[..8].copy_from_slice(&p.to_le_bytes());
+        let err = decoded.read_from(&mut encoded.as_slice()).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+        assert_eq!(decoded.p, P);
     }
 
     let mut res: GLWEAutomorphismKey<AlignedBuf, i64> = module.glwe_automorphism_key_alloc_from_infos(&layout);

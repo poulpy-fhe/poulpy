@@ -9,6 +9,7 @@ use crate::{
     layouts::{
         Backend, Data, DataView, DataViewMut, DigestU64, HostDataMut, HostDataRef, ReaderFrom, Ring, Standard, ToOwnedDeep,
         VecZnx, VecZnxBackendMut, VecZnxBackendRef, VecZnxInfos, WriterTo, ZnxInfos, ZnxView, ZnxViewMut, ZnxWord, ZnxZero,
+        read_ring_tag, read_usize_fields, serialized_byte_len, write_ring_tag,
     },
 };
 
@@ -340,16 +341,17 @@ pub fn scalar_znx_as_vec_znx_backend_mut_from_mut<'a, 'b, B: Backend + 'b, Rg: R
     VecZnx::from_data(B::view_mut_ref(&mut scalar.data), shape.n(), shape.cols(), 1)
 }
 
-use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use byteorder::{LittleEndian, WriteBytesExt};
 
 impl<D: HostDataMut, W: ZnxWord, Rg: Ring> ReaderFrom for ScalarZnx<D, W, Rg> {
+    /// Reads the format of [`WriterTo::write_to`] into this scalar, which takes the stream's shape. A stream of another
+    /// ring, whose shape and byte length disagree, or larger than this scalar's buffer is
+    /// [`std::io::ErrorKind::InvalidData`], refused before its coefficients.
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
-        let new_n: usize = reader.read_u64::<LittleEndian>()? as usize;
-        let new_cols: usize = reader.read_u64::<LittleEndian>()? as usize;
-        let len: usize = reader.read_u64::<LittleEndian>()? as usize;
+        read_ring_tag::<Rg, R>(reader)?;
+        let [new_n, new_cols, len] = read_usize_fields::<3, R>(reader)?;
 
-        let expected_len: usize =
-            crate::layouts::checked_product(&[new_n, new_cols, size_of::<W>()], "ScalarZnx serialized byte size");
+        let expected_len: usize = serialized_byte_len::<W>(&[new_n, new_cols])?;
         if expected_len != len {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
@@ -375,9 +377,9 @@ impl<D: HostDataMut, W: ZnxWord, Rg: Ring> ReaderFrom for ScalarZnx<D, W, Rg> {
 }
 
 impl<D: HostDataRef, W: ZnxWord, Rg: Ring> WriterTo for ScalarZnx<D, W, Rg> {
+    /// Writes the ring's [`Ring::WIRE_TAG`] (one byte), then `n`, `cols` and the byte length `n * cols * size_of::<W>()`
+    /// as little-endian `u64`, then the coefficients in buffer order.
     fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
-        writer.write_u64::<LittleEndian>(self.n() as u64)?;
-        writer.write_u64::<LittleEndian>(self.cols() as u64)?;
         let coeff_bytes =
             crate::layouts::checked_product(&[self.n(), self.cols(), size_of::<W>()], "ScalarZnx logical byte size");
         let buf: &[u8] = self.data.as_ref();
@@ -390,6 +392,9 @@ impl<D: HostDataRef, W: ZnxWord, Rg: Ring> WriterTo for ScalarZnx<D, W, Rg> {
                 ),
             ));
         }
+        write_ring_tag::<Rg, Wr>(writer)?;
+        writer.write_u64::<LittleEndian>(self.n() as u64)?;
+        writer.write_u64::<LittleEndian>(self.cols() as u64)?;
         writer.write_u64::<LittleEndian>(coeff_bytes as u64)?;
         writer.write_all(&buf[..coeff_bytes])?;
         Ok(())

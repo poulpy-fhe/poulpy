@@ -26,7 +26,8 @@ use crate::{
     },
 };
 
-fn write_vec_znx_bytes(out: &mut Vec<u8>, n: u64, cols: u64, size: u64, coeffs: &[i64]) {
+fn write_vec_znx_bytes<Rg: Ring>(out: &mut Vec<u8>, n: u64, cols: u64, size: u64, coeffs: &[i64]) {
+    out.write_u8(Rg::WIRE_TAG).unwrap();
     out.write_u64::<LittleEndian>(n).unwrap();
     out.write_u64::<LittleEndian>(cols).unwrap();
     out.write_u64::<LittleEndian>(size).unwrap();
@@ -58,8 +59,8 @@ pub fn test_lwe_read_from_rejects_malformed_shape<BE: crate::test_suite::noise::
 
     crate::ComponentNoise::write_optional(None, &mut bytes).unwrap();
     bytes.write_u32::<LittleEndian>(32).unwrap();
-    write_vec_znx_bytes(&mut bytes, 1, 1, 1, &[123]);
-    write_vec_znx_bytes(&mut bytes, 2, 1, 2, &[1, 2, 3, 4]);
+    write_vec_znx_bytes::<Rg>(&mut bytes, 1, 1, 1, &[123]);
+    write_vec_znx_bytes::<Rg>(&mut bytes, 2, 1, 2, &[1, 2, 3, 4]);
 
     let err = lwe
         .read_from(&mut &bytes[..])

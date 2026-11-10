@@ -304,24 +304,32 @@ impl<D: Data, W: ZnxWord, Rg: Ring> SetGaloisElement for &mut GLWEAutomorphismKe
 impl_glwe_host_at_for_field!(GLWEAutomorphismKey<D, W, Rg>; key);
 
 impl<D: HostDataMut, W: ZnxWord, Rg: Ring> ReaderFrom for GLWEAutomorphismKey<D, W, Rg> {
-    /// Deserialises from little-endian binary format.
+    /// Deserialises from little-endian binary format. A stream of another ring, or whose Galois element is even or not
+    /// below the cyclotomic order of the ring at the stream's degree, is [`std::io::ErrorKind::InvalidData`], the
+    /// Galois element and noise metadata left unset.
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
         self.key.noise = None;
-        let p = reader.read_u64::<LittleEndian>()? as i64;
+        let p = reader.read_i64::<LittleEndian>()?;
         self.key.read_from(reader)?;
+        if let Err(err) = crate::layouts::validate_galois_element::<Rg>(p, self.key.n(), std::io::ErrorKind::InvalidData) {
+            self.key.noise = None;
+            return Err(err);
+        }
         self.p = p;
         Ok(())
     }
 }
 
 impl<D: HostDataRef, W: ZnxWord, Rg: Ring> WriterTo for GLWEAutomorphismKey<D, W, Rg> {
-    /// Serialises in little-endian binary format.
+    /// Serialises in little-endian binary format: the Galois element `p` (`i64`), then the key. A `p` even or not below
+    /// the ring's cyclotomic order is [`std::io::ErrorKind::InvalidInput`], writing nothing.
     fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
         if let Some(noise) = &self.key.noise {
             noise.validate_wire()?;
             noise.validate_components(self.key.data.cols_out())?;
         }
-        writer.write_u64::<LittleEndian>(self.p as u64)?;
+        crate::layouts::validate_galois_element::<Rg>(self.p, self.key.n(), std::io::ErrorKind::InvalidInput)?;
+        writer.write_i64::<LittleEndian>(self.p)?;
         self.key.write_to(writer)
     }
 }
