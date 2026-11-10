@@ -1,8 +1,28 @@
 use poulpy_ckks::ckks_determinism_test_suite;
 
-/// The small S2C-first and C2S-first presets at their 52-bit radix, by default.
+/// The small S2C-first and C2S-first presets at their 52-bit radix, the bootstrap key plan and the
+/// conjugate-invariant bootstrap refusals, by default.
 mod small_bootstrapping_presets {
-    use poulpy_ckks::test_suite::presets::{small_c2s_preset_meets_precision, small_s2c_preset_meets_precision};
+    use poulpy_ckks::test_suite::presets::{
+        bootstrapping_plan_keys_match_context, ci_bootstrap_refuses_invalid_inputs, small_c2s_preset_meets_precision,
+        small_s2c_preset_meets_precision,
+    };
+
+    #[test]
+    fn ntt4x30_bootstrapping_plan_keys_match_context() {
+        bootstrapping_plan_keys_match_context::<crate::NTT4x30Avx512>();
+    }
+
+    #[test]
+    fn ntt4x30_ci_bootstrap_refuses_invalid_inputs() {
+        ci_bootstrap_refuses_invalid_inputs::<crate::NTT4x30Avx512>();
+    }
+
+    #[cfg(feature = "enable-rayon")]
+    #[test]
+    fn ntt4x30_rayon_ci_bootstrap_refuses_invalid_inputs() {
+        ci_bootstrap_refuses_invalid_inputs::<crate::NTT4x30Avx512Rayon>();
+    }
 
     #[test]
     fn ntt4x30_small_s2c_preset_meets_precision() {
