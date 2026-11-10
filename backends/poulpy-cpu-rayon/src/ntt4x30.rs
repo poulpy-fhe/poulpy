@@ -873,7 +873,7 @@ where
         + $crate::ntt4x30::PackedNtt4x30Base<Rg>,
 {
     fn vmp_pmat_prepare_tmp_bytes(module: &Module<Self>, _rows: usize, _cols_in: usize, _cols_out: usize, _size: usize) -> usize {
-        <$base>::vmp_pmat_prepare_tmp_bytes(base_module(module), _rows, _cols_in, _cols_out, _size)
+        <$base as HalVmpImpl<Rg>>::vmp_pmat_prepare_tmp_bytes(base_module(module), _rows, _cols_in, _cols_out, _size)
     }
 
     fn vmp_pmat_prepare(
@@ -883,7 +883,7 @@ where
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let mut base_scratch = scratch.borrow().into_backend::<$base>();
-        <$base>::vmp_pmat_prepare(base_module(module), &mut base_vmp_mut(res), a, &mut base_scratch);
+        <$base as HalVmpImpl<Rg>>::vmp_pmat_prepare(base_module(module), &mut base_vmp_mut(res), a, &mut base_scratch);
     }
 
     fn vmp_apply_dft_to_dft_tmp_bytes(
@@ -991,7 +991,7 @@ where
         first_row: usize,
         row_step: usize,
     ) {
-        <$base>::vmp_extract_selected_rows(
+        <$base as HalVmpImpl<Rg>>::vmp_extract_selected_rows(
             base_module(module),
             &mut base_vmp_mut(res),
             &base_vmp_ref(a),
@@ -1391,7 +1391,7 @@ where
         a: &ScalarZnxBackendRef<'_, Self, Rg>,
         a_col: usize,
     ) {
-        <$base>::svp_ppol_prepare(
+        <$base as HalSvpImpl<Rg>>::svp_ppol_prepare(
             base_module(module),
             &mut base_svp_mut(res),
             res_col,
@@ -1407,7 +1407,7 @@ where
         a: &SvpPPolBackendRef<'_, Self, Rg>,
         a_col: usize,
     ) {
-        <$base>::svp_ppol_copy(
+        <$base as HalSvpImpl<Rg>>::svp_ppol_copy(
             base_module(module),
             &mut base_svp_mut(res),
             res_col,
@@ -1417,7 +1417,7 @@ where
     }
 
     fn svp_apply_dft_tmp_bytes(module: &Module<Self>, b_size: usize) -> usize {
-        <$base>::svp_apply_dft_tmp_bytes(base_module(module), b_size)
+        <$base as HalSvpImpl<Rg>>::svp_apply_dft_tmp_bytes(base_module(module), b_size)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1432,7 +1432,7 @@ where
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let mut base_scratch = scratch.borrow().into_backend::<$base>();
-        <$base>::svp_apply_dft(
+        <$base as HalSvpImpl<Rg>>::svp_apply_dft(
             base_module(module),
             &mut base_dft_mut(res),
             res_col,
@@ -1453,7 +1453,7 @@ where
         b: &VecZnxDftBackendRef<'_, Self, Rg>,
         b_col: usize,
     ) {
-        <$base>::svp_apply_dft_to_dft(
+        <$base as HalSvpImpl<Rg>>::svp_apply_dft_to_dft(
             base_module(module),
             &mut base_dft_mut(res),
             res_col,
@@ -1471,7 +1471,7 @@ where
         a: &SvpPPolBackendRef<'_, Self, Rg>,
         a_col: usize,
     ) {
-        <$base>::svp_apply_dft_to_dft_assign(
+        <$base as HalSvpImpl<Rg>>::svp_apply_dft_to_dft_assign(
             base_module(module),
             &mut base_dft_mut(res),
             res_col,
@@ -1583,7 +1583,7 @@ where
         $crate::__private::poulpy_hal::layouts::assert_dense(a, "vec_znx_dft_apply");
         assert!(step >= 1, "vec_znx_dft_apply: step must be >= 1");
         if !parallel_limb_tasks(res.size()) {
-            return <$base>::vec_znx_dft_apply(
+            return <$base as HalVecZnxDftImpl<Rg>>::vec_znx_dft_apply(
                 base_module(module),
                 step,
                 offset,
@@ -1612,7 +1612,7 @@ where
     }
 
     fn vec_znx_idft_apply_tmp_bytes(module: &Module<Self>) -> usize {
-        <$base>::vec_znx_idft_apply_tmp_bytes(base_module(module)).max(
+        <$base as HalVecZnxDftImpl<Rg>>::vec_znx_idft_apply_tmp_bytes(base_module(module)).max(
             $crate::workers(<Self as $crate::__private::poulpy_hal::execution::ScratchWorkers>::IDFT)
                 * <$base as $crate::ntt4x30::PackedNtt4x30Base<Rg>>::idft_tmp_words(module.n())
                 * size_of::<u64>(),
@@ -1631,7 +1631,7 @@ where
         $crate::ntt4x30::check_packed_operand(res.n(), a, a_col);
         if !parallel_limb_tasks(res.size()) {
             let mut base_scratch = scratch.borrow().into_backend::<$base>();
-            return <$base>::vec_znx_idft_apply(
+            return <$base as HalVecZnxDftImpl<Rg>>::vec_znx_idft_apply(
                 base_module(module),
                 &mut base_big_mut(res),
                 res_col,
@@ -1831,13 +1831,13 @@ where
     }
 
     fn vec_znx_dft_zero(module: &Module<Self>, res: &mut VecZnxDftBackendMut<'_, Self, Rg>, res_col: usize) {
-        <$base>::vec_znx_dft_zero(base_module(module), &mut base_dft_mut(res), res_col)
+        <$base as HalVecZnxDftImpl<Rg>>::vec_znx_dft_zero(base_module(module), &mut base_dft_mut(res), res_col)
     }
 
     type AutomorphismPlan = <$base as HalVecZnxDftImpl<Rg>>::AutomorphismPlan;
 
     fn vec_znx_dft_automorphism_plan(module: &Module<Self>, n: usize, p: i64) -> Self::AutomorphismPlan {
-        <$base>::vec_znx_dft_automorphism_plan(base_module(module), n, p)
+        <$base as HalVecZnxDftImpl<Rg>>::vec_znx_dft_automorphism_plan(base_module(module), n, p)
     }
 
     fn vec_znx_dft_automorphism_with_plan(
@@ -1848,7 +1848,7 @@ where
         a: &VecZnxDftBackendRef<'_, Self, Rg>,
         a_col: usize,
     ) {
-        <$base>::vec_znx_dft_automorphism_with_plan(base_module(_module), plan, &mut base_dft_mut(res), res_col, &base_dft_ref(a), a_col);
+        <$base as HalVecZnxDftImpl<Rg>>::vec_znx_dft_automorphism_with_plan(base_module(_module), plan, &mut base_dft_mut(res), res_col, &base_dft_ref(a), a_col);
     }
 
     fn vec_znx_dft_automorphism_add_with_plan_tmp_bytes(_module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
