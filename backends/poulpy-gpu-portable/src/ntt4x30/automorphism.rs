@@ -18,7 +18,7 @@ use super::{
 };
 use crate::runtime::{GpuRuntime, Label, launch};
 
-/// The automorphism plan of ring `R`, a [`Substitution`] built for operands of `R` only.
+/// The automorphism plan of ring `R`: the substitution `X -> X^p` built for operands of `R` only.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct AutomorphismPlan<R: Ring> {
     substitution: Substitution,
