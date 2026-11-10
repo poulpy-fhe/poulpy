@@ -15,6 +15,7 @@ It builds function-specific plans and circuits on Poulpy's reusable approximatio
 - Packed operations: sum, `fmax` and `fmin` reductions, and `softmax`.
 
 Function names follow `libm` when the usual meaning can be implemented sensibly with approximate encrypted arithmetic.
+Every operation acts on standard-ring ciphertexts; none serves the conjugate-invariant ring.
 Operations that depend on exact IEEE representations or discontinuous rounding are outside the current scope.
 
 ## Use

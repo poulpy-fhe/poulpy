@@ -3,6 +3,8 @@
 //! The API follows Poulpy: operations on `Module<BE>`, caller-owned scratch,
 //! host-built plans, and explicit precision and modulus costs. Names follow
 //! `libm` when the semantics transfer to approximate FHE.
+//!
+//! Every operation acts on standard-ring operands; none serves the conjugate-invariant ring.
 
 #![warn(missing_docs)]
 
