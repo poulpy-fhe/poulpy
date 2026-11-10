@@ -45,7 +45,7 @@ use poulpy_core::{
 use poulpy_hal::{
     api::CnvPVecAlloc,
     layouts::{
-        Backend, CyclotomicOrder, MaxBase2k, Module, PrepareHint,
+        Backend, ConjugateInvariant, CyclotomicOrder, MaxBase2k, Module, PrepareHint,
         PrepareHint::{OneShot, Reuse},
         Ring, Standard,
     },
@@ -73,12 +73,14 @@ use crate::{
         BlasGridInfos, BlasGridMut, BlasLayout, BlasMatMulOperandInfos, BlasMatVecOperandLayout, BlasPlan, BlasPtAlgorithm,
         BlasPtOperandAlloc, BlasPtOperandInfos, BlasPtOperandLayout, BlasPtOperandPrepared, BlasPtSide, BlasVector,
         BlasVectorInfos, BlasVectorLayout, BlasVectorOwned, BlasVectorShape, Left, Right, blas_grid_to_vector_max_base2k,
-        blas_matmul_left_term_layout, blas_matmul_max_base2k, blas_matmul_pt_left_max_base2k, blas_matmul_pt_right_max_base2k,
-        blas_matmul_right_term_layout, blas_matvec_diagonal_max_base2k, blas_matvec_pt_max_base2k,
-        blas_vector_to_grid_max_base2k,
+        blas_matmul_key_uses, blas_matmul_left_term_layout, blas_matmul_max_base2k, blas_matmul_pt_left_max_base2k,
+        blas_matmul_pt_right_max_base2k, blas_matmul_right_term_layout, blas_matvec_diagonal_max_base2k,
+        blas_matvec_pt_max_base2k, blas_vector_to_grid_max_base2k,
         context::module_layout,
         diagonal_ciphertext::AppendAxis,
-        matvec_pt_galois_elements, sum_galois_elements,
+        matvec_pt_galois_elements,
+        planning::RING_SLOTS,
+        sum_galois_elements,
         validate::{MASKLESS, MAX_BASE2K},
     },
     oep::BlasImpl,
@@ -2106,6 +2108,24 @@ where
         let (pt, a) = (left_operand(3, algorithm, p), layout(width(params), 0, 3, 2));
         assert_panics(&format!("{algorithm:?}: a context without masks"), MASKLESS, || {
             blas_matmul_pt_left_max_base2k::<B, Rg>(&pt, &a, &maskless, 128)
+        });
+    }
+
+    // The context holds the slots of `Rg`: the radix and key-use queries naming the other ring refuse it.
+    let (a, b) = (layout(77, 0, 2, 1), layout(77, 0, 1, 2));
+    if Rg::CYCLOTOMIC_ORDER_FACTOR == Standard::CYCLOTOMIC_ORDER_FACTOR {
+        assert_panics("radix of another ring", RING_SLOTS, || {
+            blas_matmul_max_base2k::<B, ConjugateInvariant>(&a, &b, &ctx, 128)
+        });
+        assert_panics("key uses of another ring", RING_SLOTS, || {
+            blas_matmul_key_uses::<B, ConjugateInvariant>(module, &a, &b, &ctx)
+        });
+    } else {
+        assert_panics("radix of another ring", RING_SLOTS, || {
+            blas_matmul_max_base2k::<B, Standard>(&a, &b, &ctx, 128)
+        });
+        assert_panics("key uses of another ring", RING_SLOTS, || {
+            blas_matmul_key_uses::<B, Standard>(module, &a, &b, &ctx)
         });
     }
 }
