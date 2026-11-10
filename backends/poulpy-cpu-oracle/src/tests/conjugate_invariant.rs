@@ -327,3 +327,31 @@ poulpy_core::core_parity_test_suite! {
         glwe_shift => poulpy_core::test_suite::parity::test_glwe_shift_parity,
     }
 }
+
+// Encryption parity and noise suites on the conjugate-invariant ring; their ring-free tests run once, in the standard ones.
+#[cfg(feature = "enable-core")]
+poulpy_core::core_encryption_parity_test_suite!(
+    mod core_encryption_ci,
+    backend_ref = crate::NTT4x30Oracle,
+    backend_test = crate::FFT64Oracle,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
+    params = ::poulpy_hal::test_suite::TestParams { size: 256, n: 256, base2k: 12 },
+);
+
+#[cfg(feature = "enable-core")]
+poulpy_core::core_backend_test_suite!(
+    mod core_noise_ci_fft64,
+    backend = crate::FFT64Oracle,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
+    // computes at the module degree, no sweep
+    params = TestParams { size: 1<<8, base2k: 17, n: 1<<8 },
+);
+
+#[cfg(feature = "enable-core")]
+poulpy_core::core_backend_test_suite!(
+    mod core_noise_ci_ntt4x30,
+    backend = crate::NTT4x30Oracle,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
+    // computes at the module degree, no sweep
+    params = TestParams { size: 1<<8, base2k: 52, n: 1<<8 },
+);

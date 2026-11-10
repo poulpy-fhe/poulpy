@@ -18,7 +18,9 @@ use std::collections::HashMap;
 
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, Data, HostDataMut, HostDataRef, Module, Ring, ScratchOwned, ZnxView, ZnxViewMut},
+    layouts::{
+        Backend, CyclotomicOrder, Data, HostDataMut, HostDataRef, Module, Ring, ScratchOwned, Standard, ZnxView, ZnxViewMut,
+    },
     source::Source,
     test_suite::TestParams,
 };
@@ -269,7 +271,10 @@ where
     let mut twins: HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE, Rg>> = HashMap::new();
     let mut trace_bytes: usize = 0;
 
-    let gal_els: Vec<i64> = module.glwe_trace_galois_elements(module.n().into(), 0..module.log_n(), false);
+    // The conjugate-invariant ring is fixed by the conjugation: its trace starts at level 1.
+    let first = usize::from(Rg::CYCLOTOMIC_ORDER_FACTOR != Standard::CYCLOTOMIC_ORDER_FACTOR);
+    let levels = first..module.cyclotomic_order::<Rg>().ilog2() as usize - 1;
+    let gal_els: Vec<i64> = module.glwe_trace_galois_elements(module.n().into(), levels.clone(), false);
     for (salt, gal_el) in gal_els.iter().enumerate() {
         let (dsize, dnum) = shapes[salt % shapes.len()];
         let stored = GLWEAutomorphismKeyLayout {
@@ -330,13 +335,13 @@ where
     let mut scratch = poisoned_scratch::<BE>(trace_bytes);
     module.glwe_trace_assign(
         &mut have,
-        0..module.log_n(),
+        levels.clone(),
         false,
         true,
         &AtDsize(&keys, effective),
         &mut scratch.borrow(),
     );
-    module.glwe_trace_assign(&mut want, 0..module.log_n(), false, true, &twins, &mut scratch.borrow());
+    module.glwe_trace_assign(&mut want, levels, false, true, &twins, &mut scratch.borrow());
     same(&have, &want, "trace");
 }
 

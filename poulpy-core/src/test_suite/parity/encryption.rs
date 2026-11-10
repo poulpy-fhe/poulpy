@@ -88,13 +88,13 @@ fn assert_noise(value: &impl LWEInfos, variance: f64) {
 pub(crate) fn snapshot_glwe<B: Backend, G: GLWEToBackendRef<B, Rg>, Rg: Ring>(label: &'static str, value: &G) -> Snapshot {
     let view = value.to_backend_ref();
     if label == "encrypt_pk" || label == "encrypt_zero_pk" {
-        let variance = (2.0 * view.rank().as_usize() as f64 * view.n().as_usize() as f64 * (2.0 / 3.0) + 1.0)
-            * crate::DEFAULT_SIGMA_XE.powi(2);
-        assert_noise(&view, variance);
+        let (rank, n) = (view.rank().as_usize() as f64, view.n().as_usize());
+        let sigma2 = crate::DEFAULT_SIGMA_XE.powi(2);
+        // The body carries the ephemeral products of the ring, the phase folds the masks at weight `n`.
+        let body = (rank * Rg::product_moments(n).weight * (2.0 / 3.0) + 1.0) * sigma2;
+        assert_noise(&view, body + rank * n as f64 * (2.0 / 3.0) * sigma2);
         let noise = LWEInfos::noise(&view).unwrap();
         assert_eq!(noise.rank(), view.rank().as_usize());
-        let sigma2 = crate::DEFAULT_SIGMA_XE.powi(2);
-        let body = (view.rank().as_usize() as f64 * view.n().as_usize() as f64 * (2.0 / 3.0) + 1.0) * sigma2;
         assert!((noise.body().variance() - body).abs() <= body * 1e-12);
         assert!(noise.masks().iter().all(|component| component.variance() == sigma2));
     } else if label.contains("encrypt") || label == "public_key_generate" {

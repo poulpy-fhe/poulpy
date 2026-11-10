@@ -191,9 +191,10 @@ where
             assert_eq!(prepared.noise(), Some(metadata));
 
             // Sum_l u_l e_l has rank terms, as Sum_j e_j s_j does.
-            let noise_want: f64 = ((2.0 * rank as f64 * n as f64 * 0.5 * DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE).sqrt()).log2()
-                - (ggsw_infos.k().as_usize() as f64)
-                + 0.5;
+            let noise_want: f64 =
+                ((2.0 * rank as f64 * Rg::product_moments(n).weight * 0.5 * DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE).sqrt()).log2()
+                    - (ggsw_infos.k().as_usize() as f64)
+                    + 0.5;
             for row in 0..ct.dnum().as_usize() {
                 for col in 0..ct.rank().as_usize() + 1 {
                     let noise_have: f64 = ct

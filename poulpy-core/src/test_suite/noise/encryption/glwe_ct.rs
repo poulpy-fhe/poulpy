@@ -561,7 +561,9 @@ where
                 let mut noise_variance = 0.0;
                 let mut modeled_variance = 0.0;
                 let mut coefficient_zero = 0.0;
+                let mut trial_ratios: Vec<f64> = Vec::with_capacity(TRIALS);
                 for _ in 0..TRIALS {
+                    let (noise_before, model_before) = (noise_variance, modeled_variance);
                     let mut ct: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&glwe_infos);
                     let mut pt_want: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord, Rg> =
                         module.glwe_plaintext_alloc_from_infos(&glwe_infos);
@@ -684,8 +686,13 @@ where
                     let stats = glwe_noise_checked(module, &ct, &zero, &sk_prepared, &mut scratch.borrow());
                     noise_variance += stats.second_moment();
                     modeled_variance += model(&ct);
+                    trial_ratios.push((noise_variance - noise_before) / (modeled_variance - model_before));
                 }
                 let ratio = noise_variance / modeled_variance;
+                // A binary secret's mean shares error across coefficients on the CI ring: four standard errors of the trials.
+                let mean = trial_ratios.iter().sum::<f64>() / TRIALS as f64;
+                let spread =
+                    4.0 * (trial_ratios.iter().map(|r| (r - mean).powi(2)).sum::<f64>() / ((TRIALS - 1) * TRIALS) as f64).sqrt();
                 if Rg::CYCLOTOMIC_ORDER_FACTOR == 4 {
                     assert!(
                         // Coefficient zero weighs about twice the average; the
@@ -696,9 +703,10 @@ where
                     );
                 }
                 // The metadata is the expected second moment averaged over coefficients.
-                let lower = 0.88;
+                let lower = 0.88_f64.min(1.0 - spread);
+                let upper = 1.1_f64.max(1.0 + spread);
                 assert!(
-                    ratio >= lower && ratio <= 1.1,
+                    ratio >= lower && ratio <= upper,
                     "empirical/model second moment={ratio}, binary={binary}, rank={rank}, key gap={}",
                     k_pk - k_ct
                 );

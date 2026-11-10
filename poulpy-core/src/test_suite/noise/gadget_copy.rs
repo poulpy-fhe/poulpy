@@ -19,10 +19,10 @@ use crate::{
 };
 
 /// `log2` of the noise of a fresh encryption at precision `k`, rounded at `res_k`, of a rank `rank` ternary secret
-/// of variance 1/2.
-fn rounded_log2_std(rank: usize, n: usize, k: usize, res_k: usize) -> f64 {
+/// of variance 1/2 in the ring `Rg` of degree `n`.
+fn rounded_log2_std<Rg: Ring>(rank: usize, n: usize, k: usize, res_k: usize) -> f64 {
     let fresh: f64 = DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE * (-2.0 * k as f64).exp2();
-    let rounding: f64 = (1.0 + (rank * n) as f64 * 0.5) * (-2.0 * res_k as f64).exp2() / 12.0;
+    let rounding: f64 = (1.0 + rank as f64 * Rg::product_moments(n).weight * 0.5) * (-2.0 * res_k as f64).exp2() / 12.0;
     (fresh + rounding).sqrt().log2()
 }
 
@@ -122,7 +122,7 @@ where
                 }
                 assert!(res.noise().is_none(), "a narrowing copy kept the noise estimate");
                 // The rows round at the copy's precision, their masks folded through the secret.
-                let max_noise: f64 = rounded_log2_std(rank, n, layout.k().as_usize(), res_layout.k().as_usize()) + 0.5;
+                let max_noise: f64 = rounded_log2_std::<Rg>(rank, n, layout.k().as_usize(), res_layout.k().as_usize()) + 0.5;
                 for row in 0..digits {
                     for col in 0..rank {
                         let noise_have: f64 = res
@@ -237,7 +237,7 @@ where
                 continue;
             }
             assert!(res.noise().is_none(), "a narrowing copy kept the noise estimate");
-            let max_noise: f64 = rounded_log2_std(rank, n, layout.k().as_usize(), res_layout.k().as_usize()) + 0.5;
+            let max_noise: f64 = rounded_log2_std::<Rg>(rank, n, layout.k().as_usize(), res_layout.k().as_usize()) + 0.5;
             for row in 0..digits {
                 for col in 0..rank + 1 {
                     let noise_have: f64 = res

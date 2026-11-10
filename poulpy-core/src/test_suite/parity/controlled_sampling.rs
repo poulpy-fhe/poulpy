@@ -170,8 +170,9 @@ pub fn add_noise_samples<R: ZnxViewMut>(
 ///
 /// `params` is optional and defaults to degree 256 with radix 12. Callers may
 /// select another supported degree; both modules use the supplied module size.
-/// The suite runs on standard-ring operands, which the LWE-matrix decryption case
-/// needs for `glwe_expand_lwe_matrix`.
+/// The ring-generic entries run on `ring`, optional and `::poulpy_hal::layouts::Standard` by default; the form
+/// without `ring` also runs the LWE-matrix decryption case, which needs standard-ring operands for
+/// `glwe_expand_lwe_matrix`, so that a pair registered on both rings runs it once.
 #[macro_export]
 macro_rules! core_encryption_parity_test_suite {
     (mod $name:ident, backend_ref = $backend_ref:ty, backend_test = $backend_test:ty $(,)?) => {
@@ -190,68 +191,14 @@ macro_rules! core_encryption_parity_test_suite {
         $(, test_size = $test_size:expr)? $(,)?
     ) => {
         mod $name {
-            #[test]
-            fn glwe_encrypt_degree_mismatch() {
-                $crate::test_suite::encryption::test_glwe_encrypt_degree_mismatch::<
-                    $backend_test,
-                    ::poulpy_hal::layouts::Standard,
-                >();
-            }
+            $crate::core_encryption_parity_test_suite!(
+                @ring_tests backend_ref = $backend_ref,
+                backend_test = $backend_test,
+                ring = ::poulpy_hal::layouts::Standard,
+                params = $params
+                $(, test_size = $test_size)?
+            );
 
-            #[test]
-            fn glwe_decrypt_degree_mismatch() {
-                $crate::test_suite::decryption::test_glwe_decrypt_degree_mismatch::<
-                    $backend_test,
-                    ::poulpy_hal::layouts::Standard,
-                >();
-            }
-
-            #[test]
-            fn glwe_encryption() {
-                use ::poulpy_hal::{layouts::Module, test_suite::TestParams};
-                use $crate::test_suite::parity::{ParityShapes, test_glwe_encryption_parity};
-                let params: TestParams = $params;
-                $crate::test_suite::parity::controlled_sampling::with_backend_samples(
-                    Module::<$backend_test>::new({
-                        #[allow(unused_mut)]
-                        let mut size = params.size;
-                        $( size = $test_size; )?
-                        size
-                    } as u64),
-                    |tested| {
-                        let reference = Module::<$backend_ref>::new(params.size as u64);
-                        test_glwe_encryption_parity::<_, _, ::poulpy_hal::layouts::Standard>(
-                            &params,
-                            &ParityShapes::default(),
-                            &reference,
-                            tested,
-                        );
-                    },
-                );
-            }
-            #[test]
-            fn key_encryption() {
-                use ::poulpy_hal::{layouts::Module, test_suite::TestParams};
-                use $crate::test_suite::parity::{ParityShapes, test_key_encryption_parity};
-                let params: TestParams = $params;
-                $crate::test_suite::parity::controlled_sampling::with_backend_samples(
-                    Module::<$backend_test>::new({
-                        #[allow(unused_mut)]
-                        let mut size = params.size;
-                        $( size = $test_size; )?
-                        size
-                    } as u64),
-                    |tested| {
-                        let reference = Module::<$backend_ref>::new(params.size as u64);
-                        test_key_encryption_parity::<_, _, ::poulpy_hal::layouts::Standard>(
-                            &params,
-                            &ParityShapes::default(),
-                            &reference,
-                            tested,
-                        );
-                    },
-                );
-            }
             #[test]
             fn lwe_key_encryption() {
                 use ::poulpy_hal::{layouts::Module, test_suite::TestParams};
@@ -267,29 +214,6 @@ macro_rules! core_encryption_parity_test_suite {
                     |tested| {
                         let reference = Module::<$backend_ref>::new(params.size as u64);
                         test_lwe_key_encryption_parity(&params, &ParityShapes::default(), &reference, tested);
-                    },
-                );
-            }
-            #[test]
-            fn lwe_encryption() {
-                use ::poulpy_hal::{layouts::Module, test_suite::TestParams};
-                use $crate::test_suite::parity::{ParityShapes, test_lwe_encryption_parity};
-                let params: TestParams = $params;
-                $crate::test_suite::parity::controlled_sampling::with_backend_samples(
-                    Module::<$backend_test>::new({
-                        #[allow(unused_mut)]
-                        let mut size = params.size;
-                        $( size = $test_size; )?
-                        size
-                    } as u64),
-                    |tested| {
-                        let reference = Module::<$backend_ref>::new(params.size as u64);
-                        test_lwe_encryption_parity::<_, _, ::poulpy_hal::layouts::Standard>(
-                            &params,
-                            &ParityShapes::default(),
-                            &reference,
-                            tested,
-                        );
                     },
                 );
             }
@@ -311,6 +235,98 @@ macro_rules! core_encryption_parity_test_suite {
                     },
                 );
             }
+        }
+    };
+    (
+        mod $name:ident,
+        backend_ref = $backend_ref:ty,
+        backend_test = $backend_test:ty,
+        ring = $ring:ty,
+        params = $params:expr
+        $(, test_size = $test_size:expr)? $(,)?
+    ) => {
+        mod $name {
+            $crate::core_encryption_parity_test_suite!(
+                @ring_tests backend_ref = $backend_ref,
+                backend_test = $backend_test,
+                ring = $ring,
+                params = $params
+                $(, test_size = $test_size)?
+            );
+        }
+    };
+    (
+        @ring_tests backend_ref = $backend_ref:ty,
+        backend_test = $backend_test:ty,
+        ring = $ring:ty,
+        params = $params:expr
+        $(, test_size = $test_size:expr)?
+    ) => {
+        #[test]
+        fn glwe_encrypt_degree_mismatch() {
+            $crate::test_suite::encryption::test_glwe_encrypt_degree_mismatch::<$backend_test, $ring>();
+        }
+
+        #[test]
+        fn glwe_decrypt_degree_mismatch() {
+            $crate::test_suite::decryption::test_glwe_decrypt_degree_mismatch::<$backend_test, $ring>();
+        }
+
+        #[test]
+        fn glwe_encryption() {
+            use ::poulpy_hal::{layouts::Module, test_suite::TestParams};
+            use $crate::test_suite::parity::{ParityShapes, test_glwe_encryption_parity};
+            let params: TestParams = $params;
+            $crate::test_suite::parity::controlled_sampling::with_backend_samples(
+                Module::<$backend_test>::new({
+                    #[allow(unused_mut)]
+                    let mut size = params.size;
+                    $( size = $test_size; )?
+                    size
+                } as u64),
+                |tested| {
+                    let reference = Module::<$backend_ref>::new(params.size as u64);
+                    test_glwe_encryption_parity::<_, _, $ring>(&params, &ParityShapes::default(), &reference, tested);
+                },
+            );
+        }
+
+        #[test]
+        fn key_encryption() {
+            use ::poulpy_hal::{layouts::Module, test_suite::TestParams};
+            use $crate::test_suite::parity::{ParityShapes, test_key_encryption_parity};
+            let params: TestParams = $params;
+            $crate::test_suite::parity::controlled_sampling::with_backend_samples(
+                Module::<$backend_test>::new({
+                    #[allow(unused_mut)]
+                    let mut size = params.size;
+                    $( size = $test_size; )?
+                    size
+                } as u64),
+                |tested| {
+                    let reference = Module::<$backend_ref>::new(params.size as u64);
+                    test_key_encryption_parity::<_, _, $ring>(&params, &ParityShapes::default(), &reference, tested);
+                },
+            );
+        }
+
+        #[test]
+        fn lwe_encryption() {
+            use ::poulpy_hal::{layouts::Module, test_suite::TestParams};
+            use $crate::test_suite::parity::{ParityShapes, test_lwe_encryption_parity};
+            let params: TestParams = $params;
+            $crate::test_suite::parity::controlled_sampling::with_backend_samples(
+                Module::<$backend_test>::new({
+                    #[allow(unused_mut)]
+                    let mut size = params.size;
+                    $( size = $test_size; )?
+                    size
+                } as u64),
+                |tested| {
+                    let reference = Module::<$backend_ref>::new(params.size as u64);
+                    test_lwe_encryption_parity::<_, _, $ring>(&params, &ParityShapes::default(), &reference, tested);
+                },
+            );
         }
     };
 }

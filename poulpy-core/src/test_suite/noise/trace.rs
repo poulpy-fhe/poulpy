@@ -114,8 +114,11 @@ where
             &mut scratch.borrow(),
         );
 
+        // The conjugate-invariant ring is fixed by the conjugation: its trace starts at level 1.
+        let first = usize::from(Rg::CYCLOTOMIC_ORDER_FACTOR != Standard::CYCLOTOMIC_ORDER_FACTOR);
+        let levels = first..module.cyclotomic_order::<Rg>().ilog2() as usize - 1;
         let mut auto_keys: HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE, Rg>> = HashMap::new();
-        let gal_els: Vec<i64> = module.glwe_trace_galois_elements(module.n().into(), 0..module.log_n(), false);
+        let gal_els: Vec<i64> = module.glwe_trace_galois_elements(module.n().into(), levels.clone(), false);
         let tmp_template: GLWEAutomorphismKey<BE::OwnedBuf, BE::ZnxWord, Rg> =
             module.glwe_automorphism_key_alloc_from_infos(&key_infos);
         gal_els.iter().for_each(|gal_el| {
@@ -136,7 +139,7 @@ where
 
         module.glwe_trace_assign(
             &mut glwe_out,
-            0..module.log_n(),
+            levels,
             false,
             true,
             &auto_keys,
@@ -180,13 +183,14 @@ where
             0.0,
         );
         // Residue left by the decomposition of the mask, folded against the secret.
-        noise_want += n as f64 * 1.0 / 12.0 * 0.5 * rank as f64 * (-2.0 * (k) as f64).exp2();
+        let weight: f64 = Rg::product_moments(n).weight;
+        noise_want += weight / 12.0 * 0.5 * rank as f64 * (-2.0 * (k) as f64).exp2();
         // Each rotation halves the running sum with `glwe_rsh_assign(1)`, which rounds
         // at precision `k`: one uniform rounding of variance `2^-2k / 12` on the
         // body and on each mask polynomial, the latter folded against the
         // secret. Later halvings shrink the earlier roundings, so the geometric
         // sum over the rotations is bounded by `4/3` of one step.
-        noise_want += 4.0 / 3.0 * (1.0 + n as f64 * 0.5 * rank as f64) / 12.0 * (-2.0 * (k) as f64).exp2();
+        noise_want += 4.0 / 3.0 * (1.0 + weight * 0.5 * rank as f64) / 12.0 * (-2.0 * (k) as f64).exp2();
         noise_want = noise_want.sqrt().log2();
 
         // The model is an upper bound, so only the upper side is asserted.

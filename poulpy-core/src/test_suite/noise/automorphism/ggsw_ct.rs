@@ -1,6 +1,6 @@
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAutomorphismAssign},
-    layouts::{Module, Ring, ScalarZnx, ScratchOwned},
+    layouts::{Module, ScalarZnx, ScratchOwned, Standard},
     source::Source,
     test_suite::TestParams,
 };
@@ -27,20 +27,21 @@ use crate::{
 };
 use poulpy_hal::test_suite::scalar_znx_backend_mut;
 
-pub fn test_ggsw_automorphism<BE: crate::test_suite::noise::TestBackend<Rg>, Rg: Ring>(params: &TestParams, module: &Module<BE>)
+/// On standard-ring operands: the GGSW key-switch noise model it is bounded by takes the standard ring's product weight.
+pub fn test_ggsw_automorphism<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: GGSWEncryptSk<BE, Rg>
-        + GLWEAutomorphismKeyEncryptSk<BE, Rg>
-        + GLWEAutomorphismKeyPreparedFactory<BE, Rg>
-        + GGSWAutomorphism<BE, Rg>
-        + GGLWEToGGSWKeyPreparedFactory<BE, Rg>
-        + GGLWEToGGSWKeyEncryptSk<BE, Rg>
-        + GLWESecretPreparedFactory<BE, Rg>
-        + VecZnxAutomorphismAssign<BE, Rg>
-        + GGSWNoise<BE, Rg>,
+    Module<BE>: GGSWEncryptSk<BE, Standard>
+        + GLWEAutomorphismKeyEncryptSk<BE, Standard>
+        + GLWEAutomorphismKeyPreparedFactory<BE, Standard>
+        + GGSWAutomorphism<BE, Standard>
+        + GGLWEToGGSWKeyPreparedFactory<BE, Standard>
+        + GGLWEToGGSWKeyEncryptSk<BE, Standard>
+        + GLWESecretPreparedFactory<BE, Standard>
+        + VecZnxAutomorphismAssign<BE, Standard>
+        + GGSWNoise<BE, Standard>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
@@ -101,13 +102,13 @@ where
                 rank: rank.into(),
             };
 
-            let ct_in_template: GGSW<BE::OwnedBuf, BE::ZnxWord, Rg> = module.ggsw_alloc_from_infos(&ggsw_in_layout);
-            let ct_out_template: GGSW<BE::OwnedBuf, BE::ZnxWord, Rg> = module.ggsw_alloc_from_infos(&ggsw_out_layout);
-            let tsk_template: GGLWEToGGSWKey<BE::OwnedBuf, BE::ZnxWord, Rg> =
+            let ct_in_template: GGSW<BE::OwnedBuf, BE::ZnxWord, Standard> = module.ggsw_alloc_from_infos(&ggsw_in_layout);
+            let ct_out_template: GGSW<BE::OwnedBuf, BE::ZnxWord, Standard> = module.ggsw_alloc_from_infos(&ggsw_out_layout);
+            let tsk_template: GGLWEToGGSWKey<BE::OwnedBuf, BE::ZnxWord, Standard> =
                 module.gglwe_to_ggsw_key_alloc_from_infos(&tsk_layout);
-            let auto_key_template: GLWEAutomorphismKey<BE::OwnedBuf, BE::ZnxWord, Rg> =
+            let auto_key_template: GLWEAutomorphismKey<BE::OwnedBuf, BE::ZnxWord, Standard> =
                 module.glwe_automorphism_key_alloc_from_infos(&auto_key_layout);
-            let mut pt_scalar: ScalarZnx<BE::OwnedBuf, BE::ZnxWord, Rg> = module.scalar_znx_alloc(module.n(), 1);
+            let mut pt_scalar: ScalarZnx<BE::OwnedBuf, BE::ZnxWord, Standard> = module.scalar_znx_alloc(module.n(), 1);
 
             let mut source_xs: Source = Source::new([0u8; 32]);
             let mut source_xe: Source = Source::new([0u8; 32]);
@@ -124,11 +125,12 @@ where
 
             let var_xs: f64 = 0.5;
 
-            let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_secret_alloc_from_infos(&ct_out_template);
+            let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord, Standard> = module.glwe_secret_alloc_from_infos(&ct_out_template);
             module.glwe_secret_fill_ternary_prob(&mut sk, var_xs, &mut source_xs);
             let sk_backend = upload_glwe_secret(module, &sk);
 
-            let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE, Rg> = module.glwe_secret_prepared_alloc_from_infos(&sk);
+            let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE, Standard> =
+                module.glwe_secret_prepared_alloc_from_infos(&sk);
             module.glwe_secret_prepare(&mut sk_prepared, &sk_backend);
 
             let mut auto_key = upload_glwe_automorphism_key(module, &auto_key_template);
@@ -151,12 +153,12 @@ where
             );
 
             module.scalar_znx_fill_distribution(
-                &mut scalar_znx_backend_mut::<BE, Rg>(&mut pt_scalar),
+                &mut scalar_znx_backend_mut::<BE, Standard>(&mut pt_scalar),
                 0,
                 Distribution::TernaryFixed(n),
                 &mut source_xs,
             );
-            let mut pt_scalar_backend = upload_scalar_znx::<BE, Rg>(&pt_scalar);
+            let mut pt_scalar_backend = upload_scalar_znx::<BE, Standard>(&pt_scalar);
             let mut ct_in = upload_ggsw(module, &ct_in_template);
 
             module.ggsw_encrypt_sk(
@@ -168,11 +170,11 @@ where
                 &mut scratch.borrow(),
             );
 
-            let mut auto_key_prepared: GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE, Rg> =
+            let mut auto_key_prepared: GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE, Standard> =
                 module.glwe_automorphism_key_prepared_alloc_from_infos(&auto_key_layout);
             module.glwe_automorphism_key_prepare(&mut auto_key_prepared, &auto_key, &mut scratch.borrow());
 
-            let mut tsk_prepared: GGLWEToGGSWKeyPrepared<BE::OwnedBuf, BE, Rg> =
+            let mut tsk_prepared: GGLWEToGGSWKeyPrepared<BE::OwnedBuf, BE, Standard> =
                 module.gglwe_to_ggsw_key_prepared_alloc_from_infos(&tsk);
             module.gglwe_to_ggsw_key_prepare(&mut tsk_prepared, &tsk, &mut scratch.borrow());
 
@@ -193,10 +195,10 @@ where
 
             {
                 let mut pt_scalar_backend_as_vec =
-                    crate::test_suite::noise::scalar_znx_as_vec_znx_backend_mut::<BE, Rg>(&mut pt_scalar_backend);
+                    crate::test_suite::noise::scalar_znx_as_vec_znx_backend_mut::<BE, Standard>(&mut pt_scalar_backend);
                 module.vec_znx_automorphism_assign(p, &mut pt_scalar_backend_as_vec, 0, &mut scratch.borrow());
             }
-            let pt_scalar_noise = download_scalar_znx::<BE, Rg>(&pt_scalar_backend);
+            let pt_scalar_noise = download_scalar_znx::<BE, Standard>(&pt_scalar_backend);
 
             let max_noise = |col_j: usize| -> f64 {
                 auto_key_layout.log2_std_noise_ggsw_keyswitch(
@@ -233,23 +235,22 @@ where
     }
 }
 
+/// On standard-ring operands: the GGSW key-switch noise model it is bounded by takes the standard ring's product weight.
 #[allow(clippy::too_many_arguments)]
-pub fn test_ggsw_automorphism_assign<BE: crate::test_suite::noise::TestBackend<Rg>, Rg: Ring>(
-    params: &TestParams,
-    module: &Module<BE>,
-) where
+pub fn test_ggsw_automorphism_assign<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
+where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: GGSWEncryptSk<BE, Rg>
-        + GLWEAutomorphismKeyEncryptSk<BE, Rg>
-        + GLWEAutomorphismKeyPreparedFactory<BE, Rg>
-        + GGSWAutomorphism<BE, Rg>
-        + GGLWEToGGSWKeyPreparedFactory<BE, Rg>
-        + GGLWEToGGSWKeyEncryptSk<BE, Rg>
-        + GLWESecretPreparedFactory<BE, Rg>
-        + VecZnxAutomorphismAssign<BE, Rg>
-        + GGSWNoise<BE, Rg>,
+    Module<BE>: GGSWEncryptSk<BE, Standard>
+        + GLWEAutomorphismKeyEncryptSk<BE, Standard>
+        + GLWEAutomorphismKeyPreparedFactory<BE, Standard>
+        + GGSWAutomorphism<BE, Standard>
+        + GGLWEToGGSWKeyPreparedFactory<BE, Standard>
+        + GGLWEToGGSWKeyEncryptSk<BE, Standard>
+        + GLWESecretPreparedFactory<BE, Standard>
+        + VecZnxAutomorphismAssign<BE, Standard>
+        + GGSWNoise<BE, Standard>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
@@ -295,12 +296,12 @@ pub fn test_ggsw_automorphism_assign<BE: crate::test_suite::noise::TestBackend<R
                 rank: rank.into(),
             };
 
-            let ct_template: GGSW<BE::OwnedBuf, BE::ZnxWord, Rg> = module.ggsw_alloc_from_infos(&ggsw_out_layout);
-            let tsk_template: GGLWEToGGSWKey<BE::OwnedBuf, BE::ZnxWord, Rg> =
+            let ct_template: GGSW<BE::OwnedBuf, BE::ZnxWord, Standard> = module.ggsw_alloc_from_infos(&ggsw_out_layout);
+            let tsk_template: GGLWEToGGSWKey<BE::OwnedBuf, BE::ZnxWord, Standard> =
                 module.gglwe_to_ggsw_key_alloc_from_infos(&tsk_layout);
-            let auto_key_template: GLWEAutomorphismKey<BE::OwnedBuf, BE::ZnxWord, Rg> =
+            let auto_key_template: GLWEAutomorphismKey<BE::OwnedBuf, BE::ZnxWord, Standard> =
                 module.glwe_automorphism_key_alloc_from_infos(&auto_key_layout);
-            let mut pt_scalar: ScalarZnx<BE::OwnedBuf, BE::ZnxWord, Rg> = module.scalar_znx_alloc(module.n(), 1);
+            let mut pt_scalar: ScalarZnx<BE::OwnedBuf, BE::ZnxWord, Standard> = module.scalar_znx_alloc(module.n(), 1);
 
             let mut source_xs: Source = Source::new([0u8; 32]);
             let mut source_xe: Source = Source::new([0u8; 32]);
@@ -317,11 +318,12 @@ pub fn test_ggsw_automorphism_assign<BE: crate::test_suite::noise::TestBackend<R
 
             let var_xs: f64 = 0.5;
 
-            let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_secret_alloc_from_infos(&ct_template);
+            let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord, Standard> = module.glwe_secret_alloc_from_infos(&ct_template);
             module.glwe_secret_fill_ternary_prob(&mut sk, var_xs, &mut source_xs);
             let sk_backend = upload_glwe_secret(module, &sk);
 
-            let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE, Rg> = module.glwe_secret_prepared_alloc_from_infos(&sk);
+            let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE, Standard> =
+                module.glwe_secret_prepared_alloc_from_infos(&sk);
             module.glwe_secret_prepare(&mut sk_prepared, &sk_backend);
 
             let mut auto_key = upload_glwe_automorphism_key(module, &auto_key_template);
@@ -344,12 +346,12 @@ pub fn test_ggsw_automorphism_assign<BE: crate::test_suite::noise::TestBackend<R
             );
 
             module.scalar_znx_fill_distribution(
-                &mut scalar_znx_backend_mut::<BE, Rg>(&mut pt_scalar),
+                &mut scalar_znx_backend_mut::<BE, Standard>(&mut pt_scalar),
                 0,
                 Distribution::TernaryFixed(n),
                 &mut source_xs,
             );
-            let mut pt_scalar_backend = upload_scalar_znx::<BE, Rg>(&pt_scalar);
+            let mut pt_scalar_backend = upload_scalar_znx::<BE, Standard>(&pt_scalar);
             let mut ct = upload_ggsw(module, &ct_template);
 
             module.ggsw_encrypt_sk(
@@ -361,11 +363,11 @@ pub fn test_ggsw_automorphism_assign<BE: crate::test_suite::noise::TestBackend<R
                 &mut scratch.borrow(),
             );
 
-            let mut auto_key_prepared: GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE, Rg> =
+            let mut auto_key_prepared: GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE, Standard> =
                 module.glwe_automorphism_key_prepared_alloc_from_infos(&auto_key_layout);
             module.glwe_automorphism_key_prepare(&mut auto_key_prepared, &auto_key, &mut scratch.borrow());
 
-            let mut tsk_prepared: GGLWEToGGSWKeyPrepared<BE::OwnedBuf, BE, Rg> =
+            let mut tsk_prepared: GGLWEToGGSWKeyPrepared<BE::OwnedBuf, BE, Standard> =
                 module.gglwe_to_ggsw_key_prepared_alloc_from_infos(&tsk);
             module.gglwe_to_ggsw_key_prepare(&mut tsk_prepared, &tsk, &mut scratch.borrow());
 
@@ -384,10 +386,10 @@ pub fn test_ggsw_automorphism_assign<BE: crate::test_suite::noise::TestBackend<R
 
             {
                 let mut pt_scalar_backend_as_vec =
-                    crate::test_suite::noise::scalar_znx_as_vec_znx_backend_mut::<BE, Rg>(&mut pt_scalar_backend);
+                    crate::test_suite::noise::scalar_znx_as_vec_znx_backend_mut::<BE, Standard>(&mut pt_scalar_backend);
                 module.vec_znx_automorphism_assign(p, &mut pt_scalar_backend_as_vec, 0, &mut scratch.borrow());
             }
-            let pt_scalar_noise = download_scalar_znx::<BE, Rg>(&pt_scalar_backend);
+            let pt_scalar_noise = download_scalar_znx::<BE, Standard>(&pt_scalar_backend);
 
             let max_noise = |col_j: usize| -> f64 {
                 auto_key_layout.log2_std_noise_ggsw_keyswitch(
