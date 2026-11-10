@@ -19,7 +19,7 @@ use poulpy_core::{
     },
 };
 use poulpy_hal::{
-    api::{CnvOps, CnvPVecBytesOf, VecZnxBigNormalizeTmpBytes, VecZnxRshTmpBytes},
+    api::{CnvOps, VecZnxBigNormalizeTmpBytes, VecZnxRshTmpBytes},
     layouts::{Backend, ConjugateInvariant, Module, Ring, ScratchArena, Standard},
 };
 
@@ -84,7 +84,6 @@ pub trait CKKSEvalModReference<BE: Backend, Rg: Ring = Standard> {
             + GLWENormalize<BE, Rg>
             + CKKSCopyOps<BE, Rg>
             + GLWECopy<BE, Rg>
-            + CnvPVecBytesOf
             + CnvOps<BE, Rg>
             + VecZnxRshTmpBytes
             + VecZnxBigNormalizeTmpBytes,
@@ -135,7 +134,6 @@ where
             + GLWENormalize<BE, Rg>
             + CKKSCopyOps<BE, Rg>
             + GLWECopy<BE, Rg>
-            + CnvPVecBytesOf
             + CnvOps<BE, Rg>
             + VecZnxRshTmpBytes
             + VecZnxBigNormalizeTmpBytes,
