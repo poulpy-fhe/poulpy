@@ -339,14 +339,21 @@ fn bootstrapping_n16_d35_k733_p20_s2c_replay() {
     crate::reset_launch_counters();
     let mut replay = crate::Replay::<super::Runtime>::record(|| run.borrow_mut().bootstrap_queued());
     let recording = crate::launch_counters();
+    // The trace leaves out the deferred zero fills of fresh buffers, which the counters include.
+    let fills = crate::launch_breakdown()
+        .iter()
+        .find(|kernel| kernel.label == crate::runtime::Label::BufferFill.name())
+        .map_or(0, |kernel| kernel.launches);
     println!(
-        "REPLAY recording  launches={} graph={} retained_bytes={}",
+        "REPLAY recording  launches={} counted={} fills={} graph={} retained_bytes={}",
         replay.launches(),
+        recording.launches,
+        fills,
         replay.is_graph(),
         replay.retained_bytes()
     );
     assert!(replay.is_graph());
-    assert_eq!(recording.launches, 2 * replay.launches() as u64);
+    assert_eq!(recording.launches - fills, 2 * replay.launches() as u64);
     meets_precision("recording");
     for _ in 0..4 {
         crate::reset_launch_counters();
