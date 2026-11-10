@@ -85,9 +85,8 @@ poulpy_ckks::impl_ckks_mul_add_derived_full!(OverrideBackend);
 poulpy_ckks::impl_ckks_affine_derived_full!(OverrideBackend);
 poulpy_ckks::impl_ckks_mul_sub_derived_full!(OverrideBackend);
 poulpy_ckks::impl_ckks_approximation_derived_full!(OverrideBackend);
-// The conjugate-invariant ring takes the reference of the families overridden on the standard ring.
+// The conjugate-invariant ring takes the reference of the families overridden on the standard ring, the addition aside.
 poulpy_ckks::impl_ckks_copy_reference_full!(OverrideBackend, ConjugateInvariant);
-poulpy_ckks::impl_ckks_add_reference_full!(OverrideBackend, ConjugateInvariant);
 poulpy_ckks::impl_ckks_sub_reference_full!(OverrideBackend, ConjugateInvariant);
 poulpy_ckks::impl_ckks_polynomial_evaluation_reference_full!(OverrideBackend, ConjugateInvariant);
 poulpy_ckks::impl_ckks_eval_mod_reference_full!(OverrideBackend, ConjugateInvariant);

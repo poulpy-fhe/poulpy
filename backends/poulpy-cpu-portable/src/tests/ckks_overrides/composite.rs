@@ -2,7 +2,8 @@
 //! constituents, are sized by their queries and match the portable backend.
 use super::OverrideBackend;
 use super::carry::{
-    ADD_ASSIGN_CALLS, ADD_ASSIGN_EXTRA, ADD_CONST_CALLS, ADD_PT_VEC_CALLS, ADD_PT_VEC_EXTRA, SUB_ASSIGN_CALLS, SUB_ASSIGN_EXTRA,
+    ADD_ASSIGN_CALLS, ADD_ASSIGN_EXTRA, ADD_CONST_CALLS, ADD_PT_VEC_CALLS, ADD_PT_VEC_EXTRA, CI_ADD_ASSIGN_CALLS,
+    CI_ADD_ASSIGN_EXTRA, SUB_ASSIGN_CALLS, SUB_ASSIGN_EXTRA,
 };
 use crate::FFT64Portable;
 use poulpy_ckks::{
@@ -28,7 +29,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, Module, ScratchOwned, Standard},
+    layouts::{Backend, ConjugateInvariant, Module, ScratchOwned, Standard},
     source::Source,
 };
 use std::cell::Cell;
@@ -142,6 +143,63 @@ fn add_many_enters_the_selected_additions() {
         assert_eq!(super::MAX_COPY_CAPACITY.get(), if terms == 1 { out.max_size() } else { 0 });
         assert_eq!(snapshot::<OverrideBackend, _, Standard>(&out), sum(&module_ref, terms));
     }
+
+    // On the conjugate-invariant ring the sum enters that ring's addition, sized by that ring's query.
+    let inputs_ref: Vec<_> = (0..3)
+        .map(|i| fixture_ciphertext::<_, ConjugateInvariant>(&module_ref, &source_layout(), 40 + i as u8))
+        .collect();
+    let mut want = fixture_ciphertext::<_, ConjugateInvariant>(&module_ref, &out_layout, 31);
+    let bytes = <Module<FFT64Portable> as CKKSAddManyOps<FFT64Portable, ConjugateInvariant>>::ckks_add_many_tmp_bytes(
+        &module_ref,
+        &want,
+        &inputs_ref[0],
+    );
+    with_scratch::<FFT64Portable, _>(bytes, |scratch| {
+        module_ref.ckks_add_many(usize::MAX, &mut want, &inputs_ref.iter().collect::<Vec<_>>(), scratch)
+    })
+    .unwrap();
+    let inputs: Vec<_> = (0..3)
+        .map(|i| fixture_ciphertext::<_, ConjugateInvariant>(&module_test, &source_layout(), 40 + i as u8))
+        .collect();
+    let mut out = fixture_ciphertext::<_, ConjugateInvariant>(&module_test, &out_layout, 31);
+    let add = <Module<OverrideBackend> as CKKSAddOps<OverrideBackend, ConjugateInvariant>>::ckks_add_tmp_bytes(
+        &module_test,
+        out.max_size(),
+    );
+    assert_eq!(
+        add,
+        <Module<FFT64Portable> as CKKSAddOps<FFT64Portable, ConjugateInvariant>>::ckks_add_tmp_bytes(&module_ref, out.max_size())
+            + CI_ADD_ASSIGN_EXTRA
+    );
+    let bytes = <Module<OverrideBackend> as CKKSAddManyOps<OverrideBackend, ConjugateInvariant>>::ckks_add_many_tmp_bytes(
+        &module_test,
+        &out,
+        &inputs[0],
+    );
+    assert_eq!(
+        bytes,
+        add.max(<Module<OverrideBackend> as poulpy_core::GLWENormalize<
+            OverrideBackend,
+            ConjugateInvariant,
+        >>::glwe_normalize_tmp_bytes(&module_test))
+            .max(<Module<OverrideBackend> as CKKSCopyOps<
+                OverrideBackend,
+                ConjugateInvariant,
+            >>::ckks_copy_tmp_bytes(&module_test, &out, &inputs[0]))
+    );
+    ADD_ASSIGN_CALLS.set(0);
+    let calls = count(&CI_ADD_ASSIGN_CALLS, || {
+        with_scratch::<OverrideBackend, _>(bytes, |scratch| {
+            module_test.ckks_add_many(usize::MAX, &mut out, &inputs.iter().collect::<Vec<_>>(), scratch)
+        })
+        .unwrap();
+    });
+    assert_eq!(calls, 1);
+    assert_eq!(ADD_ASSIGN_CALLS.get(), 0);
+    assert_eq!(
+        snapshot::<OverrideBackend, _, ConjugateInvariant>(&out),
+        snapshot::<FFT64Portable, _, ConjugateInvariant>(&want)
+    );
 
     let mut out = fixture_ciphertext::<_, Standard>(&module_test, &out_layout, 31);
     let bytes =
