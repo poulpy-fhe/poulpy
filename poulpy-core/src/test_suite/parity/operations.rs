@@ -756,18 +756,18 @@ pub fn test_glwe_copy_zero_parity<BR, BT, Rg: Ring>(
     );
 }
 
-/// Shift and monomial-product variants, including whole-ring and precision boundaries.
-pub fn test_glwe_shift_parity<BR, BT>(
+/// Shift variants, including precision boundaries and shifts past the operand.
+pub fn test_glwe_shift_parity<BR, BT, Rg: Ring>(
     params: &TestParams,
     shapes: &ParityShapes,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
-    BR: ParityBackend,
-    BT: ParityBackend,
+    BR: ParityBackend<Rg>,
+    BT: ParityBackend<Rg>,
     BR::OwnedBuf: HostDataMut,
-    Module<BR>: GLWEShift<BR> + GLWEMulXpMinusOne<BR>,
-    Module<BT>: GLWEShift<BT> + GLWEMulXpMinusOne<BT>,
+    Module<BR>: GLWEShift<BR, Rg>,
+    Module<BT>: GLWEShift<BT, Rg>,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
 {
@@ -866,6 +866,23 @@ pub fn test_glwe_shift_parity<BR, BT>(
             },
         );
     }
+}
+
+/// Monomial-product variants, including whole-ring boundaries and destinations of another radix.
+pub fn test_glwe_mul_xp_minus_one_parity<BR, BT>(
+    params: &TestParams,
+    shapes: &ParityShapes,
+    module_ref: &Module<BR>,
+    module_test: &Module<BT>,
+) where
+    BR: ParityBackend,
+    BT: ParityBackend,
+    BR::OwnedBuf: HostDataMut,
+    Module<BR>: GLWEMulXpMinusOne<BR>,
+    Module<BT>: GLWEMulXpMinusOne<BT>,
+    ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
+    ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
+{
     for k in [-5i64, 0, 1, params.n as i64, 2 * params.n as i64] {
         compare(
             params,
