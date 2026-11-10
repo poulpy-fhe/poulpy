@@ -6,13 +6,14 @@
 //! `<op>_derived` function, and its `_tmp_bytes` default calls
 //! `<op>_tmp_bytes_derived`.
 //!
-//! Free functions in this module are generic over the backend `BE` alone,
-//! bounded by the OEP trait of the op being decomposed (e.g.
-//! `BE: HalVmpImpl`); the supertrait chain supplies whichever other families
-//! the decomposition needs (e.g. `HalVecZnxDftImpl`), so every OEP call
-//! inside is `BE::method(module, ...)`. A trait default body passes `Self`,
-//! and a test that runs the decomposition directly on a concrete backend
-//! passes that backend.
+//! Free functions in this module are generic over the backend `BE` and the
+//! operand ring `Rg` (no ring for a standard-only or cross-ring op), bounded
+//! by the OEP trait of the op being decomposed at that ring (e.g.
+//! `BE: HalVmpImpl<Rg>`); the supertrait chain supplies whichever other families
+//! the decomposition needs (e.g. `HalVecZnxDftImpl<Rg>`), so every OEP call
+//! inside is `BE::method(module, ...)`. A trait default body passes `Self` and
+//! its ring, and a test that runs the decomposition directly on a concrete
+//! backend passes that backend and ring.
 //!
 //! Rules every function in this module obeys:
 //!

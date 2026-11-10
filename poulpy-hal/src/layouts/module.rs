@@ -387,7 +387,8 @@ unsafe impl<B: Backend> Send for Module<B> {}
 
 impl<B: Backend> Module<B> {
     /// Selects a radix through [`MaxBase2k`](super::MaxBase2k),
-    /// without constructing a module. `products` counts accumulated polynomial
+    /// without constructing a module, for degree-`n` operands of ring `Rg`,
+    /// whose product map the model counts. `products` counts accumulated polynomial
     /// products; `failure_bits` targets `2^(-failure_bits)` over one output.
     /// Set `squaring` if any term is a square; `products` still counts actual
     /// terms (one for a single square). Otherwise all operands are independent.

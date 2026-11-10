@@ -6,6 +6,9 @@ use super::{Backend, ConjugateInvariant, Ring, ZnxWord};
 pub trait MaxBase2k: Backend {
     /// Estimates the largest radix for `products` accumulated degree-`n` products
     /// with a whole-polynomial failure target of `2^(-failure_bits)`.
+    /// `Rg` is the ring of the operands, whose product map sets how many terms
+    /// a product coefficient sums (more on the conjugate-invariant ring than on
+    /// the standard ring of the same degree), so the two rings may get different radices.
     /// Set `squaring` if any term is a square; `products` still counts actual
     /// terms (one for a single square). Otherwise all operands are independent.
     /// Caps the radix at `Self::ZnxWord::BITS - 2` for coefficient headroom.

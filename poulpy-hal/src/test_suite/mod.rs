@@ -202,7 +202,8 @@ pub fn download_mat_znx<BE: Backend, Rg: Ring>(
 /// [`sweep_degrees`](crate::test_suite::sweep_degrees) on a module of degree `params.size`.
 ///
 /// An entry of `tests` is called as `path::<backend, ring>(&TestParams, &Module<backend>)`, the ring `Standard`
-/// unless `ring = ..` names it. An entry of `ring_free_tests` takes no ring and is called as `path::<backend>(..)`:
+/// unless `ring = ..` names it by an absolute path (`::poulpy_hal::layouts::ConjugateInvariant`), the tests expanding
+/// in a module of their own. An entry of `ring_free_tests` takes no ring and is called as `path::<backend>(..)`:
 /// a test of standard-only or cross-ring operations, whose operands have fixed rings, of operations serving both rings
 /// that it fixes at `Standard`, or of no ringed layout.
 #[macro_export]
@@ -273,10 +274,11 @@ macro_rules! backend_test_suite {
 /// [`sweep_degrees`](crate::test_suite::sweep_degrees) on modules of degree `params.size`.
 ///
 /// An entry of `tests` is called as `path::<backend_ref, backend_test, ring>(&TestParams, &Module<backend_ref>,
-/// &Module<backend_test>)`, the ring `Standard` unless `ring = ..` names it. An entry of `ring_free_tests` takes no
-/// ring and is called as `path::<backend_ref, backend_test>(..)`: a test of standard-only or cross-ring operations,
-/// whose operands have fixed rings, of operations serving both rings that it fixes at `Standard`, or of no ringed
-/// layout.
+/// &Module<backend_test>)`, the ring `Standard` unless `ring = ..` names it by an absolute path
+/// (`::poulpy_hal::layouts::ConjugateInvariant`), the tests expanding in a module of their own. An entry of
+/// `ring_free_tests` takes no ring and is called as `path::<backend_ref, backend_test>(..)`: a test of standard-only
+/// or cross-ring operations, whose operands have fixed rings, of operations serving both rings that it fixes at
+/// `Standard`, or of no ringed layout.
 #[macro_export]
 macro_rules! cross_backend_test_suite {
     (

@@ -498,7 +498,7 @@ pub unsafe trait HalVecZnxMonomialImpl: HalVecZnxImpl {
 ///
 /// # Safety
 /// Same contract as [`HalVecZnxImpl`].
-pub unsafe trait HalVecZnxCIImpl: HalVecZnxImpl {
+pub unsafe trait HalVecZnxCIImpl: Backend {
     fn vec_znx_ci_embed(
         module: &Module<Self>,
         res: &mut VecZnxBackendMut<'_, Self>,

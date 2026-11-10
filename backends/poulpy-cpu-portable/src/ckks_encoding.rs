@@ -8,7 +8,7 @@
 //! [`impl_ckks_encoding!`](crate::impl_ckks_encoding).
 //!
 //! A plan-cache entry holds the complete geometric family for one scalar
-//! precision. The encoder owns its twiddle tables rather than borrowing the
+//! precision and one ring, whose slot count bounds the family. The encoder owns its twiddle tables rather than borrowing the
 //! module's ring-FFT tables: the duplication is a geometric series bounded by
 //! `2·max_n` scalars (~100 KiB of `f64` at `n = 65536`), and in exchange every
 //! backend follows one code path and can use its own accelerated kernels.

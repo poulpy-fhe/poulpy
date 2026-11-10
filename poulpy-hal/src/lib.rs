@@ -36,9 +36,10 @@
 //!
 //! All layout types are generic over a data container `D` (owned [`AlignedBuf`], borrowed
 //! `&[u8]` / `&mut [u8]`), enabling zero-copy views and arena-style allocation via
-//! [`layouts::ScratchArena`], and over a word type `W` naming the byte-layout
+//! [`layouts::ScratchArena`], over a word type `W` naming the byte-layout
 //! convention of their coefficient domain (see [`layouts::ZnxWord`],
-//! [`layouts::BigWord`], [`layouts::DftWord`]).
+//! [`layouts::BigWord`], [`layouts::DftWord`]); the polynomial layouts are also
+//! generic over the ring `Rg` of their polynomials ([`layouts::Ring`]).
 //!
 //! ## Architecture
 //!
