@@ -121,6 +121,18 @@ impl<BE: Backend, Rg: Ring> DerefMut for GGLWEToGGSWKeyCompressedBackendMut<'_, 
     }
 }
 
+/// Mutable access to the PRNG seeds of each entry of a compressed GGLWE-to-GGSW key.
+pub trait GGLWEToGGSWKeyCompressedSeedMut {
+    /// Returns the seeds of entry `i`.
+    fn seed_mut_at(&mut self, i: usize) -> &mut Vec<[u8; 32]>;
+}
+
+impl<D: Data, W: ZnxWord, Rg: Ring> GGLWEToGGSWKeyCompressedSeedMut for GGLWEToGGSWKeyCompressed<D, W, Rg> {
+    fn seed_mut_at(&mut self, i: usize) -> &mut Vec<[u8; 32]> {
+        &mut self.keys[i].seed
+    }
+}
+
 impl_gglwe_infos_for_inner!(GGLWEToGGSWKeyCompressedBackendRef<'a, BE, Rg>, ['a, BE: Backend + 'a, Rg: Ring]; inner);
 impl_gglwe_infos_for_inner!(GGLWEToGGSWKeyCompressedBackendMut<'a, BE, Rg>, ['a, BE: Backend + 'a, Rg: Ring]; inner);
 

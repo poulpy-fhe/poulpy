@@ -115,7 +115,7 @@ pub fn test_gglwe_to_ggsw_key_encrypt_sk<BE: crate::test_suite::noise::TestBacke
     }
 }
 
-pub fn test_gglwe_to_ggsw_compressed_encrypt_sk<BE: crate::test_suite::noise::TestBackend<Rg>, Rg: Ring>(
+pub fn test_gglwe_to_ggsw_key_compressed_encrypt_sk<BE: crate::test_suite::noise::TestBackend<Rg>, Rg: Ring>(
     params: &TestParams,
     module: &Module<BE>,
 ) where

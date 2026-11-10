@@ -84,13 +84,13 @@ pub mod prepared;
 pub use self::compressed::GLWEToLWESwitchingKeyCompressed;
 pub use self::compressed::{
     GGLWECompressed, GGLWECompressedSeed, GGLWECompressedSeedMut, GGLWECompressedToBackendMut, GGLWECompressedToBackendRef,
-    GGLWEToGGSWKeyCompressed, GGLWEToGGSWKeyCompressedToBackendMut, GGLWEToGGSWKeyCompressedToBackendRef, GGSWCompressed,
-    GGSWCompressedSeed, GGSWCompressedSeedMut, GGSWCompressedToBackendMut, GGSWCompressedToBackendRef,
-    GLWEAutomorphismKeyCompressed, GLWECompressed, GLWECompressedSeed, GLWECompressedSeedMut, GLWECompressedToBackendMut,
-    GLWECompressedToBackendRef, GLWEPublicKeyCompressed, GLWEPublicKeyCompressedSeed, GLWEPublicKeyCompressedSeedMut,
-    GLWEPublicKeyCompressedToBackendMut, GLWEPublicKeyCompressedToBackendRef, GLWESwitchingKeyCompressed,
-    GLWETensorKeyCompressed, GLWEToLWEKeyCompressed, LWECompressed, LWECompressedToBackendMut, LWECompressedToBackendRef,
-    LWESwitchingKeyCompressed, LWEToGLWEKeyCompressed,
+    GGLWEToGGSWKeyCompressed, GGLWEToGGSWKeyCompressedSeedMut, GGLWEToGGSWKeyCompressedToBackendMut,
+    GGLWEToGGSWKeyCompressedToBackendRef, GGSWCompressed, GGSWCompressedSeed, GGSWCompressedSeedMut, GGSWCompressedToBackendMut,
+    GGSWCompressedToBackendRef, GLWEAutomorphismKeyCompressed, GLWECompressed, GLWECompressedSeed, GLWECompressedSeedMut,
+    GLWECompressedToBackendMut, GLWECompressedToBackendRef, GLWEPublicKeyCompressed, GLWEPublicKeyCompressedSeed,
+    GLWEPublicKeyCompressedSeedMut, GLWEPublicKeyCompressedToBackendMut, GLWEPublicKeyCompressedToBackendRef,
+    GLWESwitchingKeyCompressed, GLWETensorKeyCompressed, GLWEToLWEKeyCompressed, LWECompressed, LWECompressedToBackendMut,
+    LWECompressedToBackendRef, LWESwitchingKeyCompressed, LWEToGLWEKeyCompressed,
 };
 pub use diagonal_operand::*;
 pub use diagonals::*;

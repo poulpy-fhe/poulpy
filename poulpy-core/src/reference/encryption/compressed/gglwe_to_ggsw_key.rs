@@ -12,7 +12,10 @@ use crate::layouts::operand_degree;
 use crate::{
     GGLWECompressedEncryptSk, GetDistribution, ScratchArenaTakeGLWESecretPrepared, ScratchArenaTakeGLWESecretTensor,
     api::{GLWESecretPreparedFactory, GLWESecretTensorFromGLWESecret},
-    layouts::{GGLWEInfos, GGLWEToGGSWKeyCompressedToBackendMut, GLWEInfos, GLWESecretToBackendRef},
+    layouts::{
+        GGLWECompressedSeedMut, GGLWEInfos, GGLWEToGGSWKeyCompressedSeedMut, GGLWEToGGSWKeyCompressedToBackendMut, GLWEInfos,
+        GLWESecretToBackendRef,
+    },
 };
 
 /// Portable implementation using HAL operations.
@@ -31,7 +34,7 @@ pub trait GGLWEToGGSWKeyCompressedEncryptSkReference<BE: Backend, Rg: Ring = Sta
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GGLWEToGGSWKeyCompressedToBackendMut<BE, Rg> + GGLWEInfos,
+        R: GGLWEToGGSWKeyCompressedToBackendMut<BE, Rg> + GGLWEToGGSWKeyCompressedSeedMut + GGLWEInfos,
         S: GLWESecretToBackendRef<BE, Rg> + GetDistribution + GLWEInfos;
 }
 
@@ -69,7 +72,7 @@ where
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GGLWEToGGSWKeyCompressedToBackendMut<BE, Rg> + GGLWEInfos,
+        R: GGLWEToGGSWKeyCompressedToBackendMut<BE, Rg> + GGLWEToGGSWKeyCompressedSeedMut + GGLWEInfos,
         S: GLWESecretToBackendRef<BE, Rg> + GetDistribution + GLWEInfos,
     {
         let metadata = crate::component_noise::fresh_sk_noise(sk.to_backend_ref().dist, &res.to_backend_ref());
@@ -85,6 +88,7 @@ where
                 scratch.available() >= tmp_bytes,
                 "insufficient scratch for compressed GGLWE-to-GGSW key encryption"
             );
+            let mut seeds: Vec<Vec<[u8; 32]>> = Vec::with_capacity(res.rank_out().as_usize());
             {
                 let mut res = res.to_backend_mut();
                 let rank: usize = res.rank_out().as_usize();
@@ -115,7 +119,12 @@ where
                     let mut ct = res.at_view_mut(i);
 
                     self.gglwe_compressed_encrypt_sk(&mut ct, &sk_ij, &sk_prepared, seed_xa_tmp, source_xe, &mut scratch_3);
+                    seeds.push(std::mem::take(ct.seed_mut()));
                 }
+            }
+            // The entry views carry copies of the seeds: the owner keeps them.
+            for (i, seed) in seeds.into_iter().enumerate() {
+                *res.seed_mut_at(i) = seed;
             }
             scratch.wipe(tmp_bytes);
         }

@@ -9,11 +9,11 @@ use poulpy_hal::{
 use crate::{
     GetDistribution, GetDistributionMut,
     layouts::{
-        GGLWECompressedSeedMut, GGLWECompressedToBackendMut, GGLWEInfos, GGLWEToBackendMut, GGLWEToGGSWKeyCompressedToBackendMut,
-        GGLWEToGGSWKeyToBackendMut, GGSWAtViewMut, GGSWCompressedSeedMut, GGSWCompressedToBackendMut, GGSWInfos,
-        GGSWToBackendMut, GLWECompressedSeedMut, GLWECompressedToBackendMut, GLWEInfos, GLWEPublicKeyToBackendMut,
-        GLWESecretToBackendRef, GLWESwitchingKeyDegreesMut, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
-        LWEPlaintextToBackendRef, LWESecretToBackendRef, LWEToBackendMut, SetGaloisElement, TorusPrecision,
+        GGLWECompressedSeedMut, GGLWECompressedToBackendMut, GGLWEInfos, GGLWEToBackendMut, GGLWEToGGSWKeyCompressedSeedMut,
+        GGLWEToGGSWKeyCompressedToBackendMut, GGLWEToGGSWKeyToBackendMut, GGSWAtViewMut, GGSWCompressedSeedMut,
+        GGSWCompressedToBackendMut, GGSWInfos, GGSWToBackendMut, GLWECompressedSeedMut, GLWECompressedToBackendMut, GLWEInfos,
+        GLWEPublicKeyToBackendMut, GLWESecretToBackendRef, GLWESwitchingKeyDegreesMut, GLWEToBackendMut, GLWEToBackendRef,
+        LWEInfos, LWEPlaintextToBackendRef, LWESecretToBackendRef, LWEToBackendMut, SetGaloisElement, TorusPrecision,
         compressed::{GLWEPublicKeyCompressedSeedMut, GLWEPublicKeyCompressedToBackendMut},
         prepared::{GLWEPublicKeyPreparedToBackendRef, GLWESecretPreparedToBackendRef},
     },
@@ -616,7 +616,7 @@ pub unsafe trait EncryptionImpl<Rg: Ring = Standard>:
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        R: GGLWEToGGSWKeyCompressedToBackendMut<Self, Rg> + GGLWEInfos,
+        R: GGLWEToGGSWKeyCompressedToBackendMut<Self, Rg> + GGLWEToGGSWKeyCompressedSeedMut + GGLWEInfos,
         S: GLWESecretToBackendRef<Self, Rg> + GetDistribution + GLWEInfos;
 
     /// Scratch bound of [`Self::glwe_automorphism_key_compressed_encrypt_sk`]; may report less than the reference,
@@ -1132,7 +1132,9 @@ macro_rules! impl_encryption_reference_full {
         source_xe: &mut ::poulpy_hal::source::Source,
         scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
     ) where
-        R: $crate::layouts::GGLWEToGGSWKeyCompressedToBackendMut<$be, $ring> + $crate::layouts::GGLWEInfos,
+        R: $crate::layouts::GGLWEToGGSWKeyCompressedToBackendMut<$be, $ring>
+            + $crate::layouts::GGLWEToGGSWKeyCompressedSeedMut
+            + $crate::layouts::GGLWEInfos,
         S: $crate::layouts::GLWESecretToBackendRef<$be, $ring> + $crate::GetDistribution + $crate::layouts::GLWEInfos {
             <::poulpy_hal::layouts::Module<$be> as $crate::reference::encryption::GGLWEToGGSWKeyCompressedEncryptSkReference<$be, $ring>>::gglwe_to_ggsw_key_compressed_encrypt_sk_reference::<R, S>(module, res, sk, seed_xa, source_xe, scratch)
         }

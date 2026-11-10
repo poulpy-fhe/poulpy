@@ -8,11 +8,11 @@ use poulpy_hal::{
 use crate::{
     GetDistribution, GetDistributionMut,
     layouts::{
-        GGLWEInfos, GGLWEToBackendMut, GGLWEToGGSWKeyCompressedToBackendMut, GGLWEToGGSWKeyToBackendMut, GGSWAtViewMut,
-        GGSWCompressedSeedMut, GGSWCompressedToBackendMut, GGSWInfos, GGSWToBackendMut, GLWECompressedSeedMut,
-        GLWECompressedToBackendMut, GLWEInfos, GLWEPublicKeyToBackendMut, GLWESecretToBackendRef, GLWESwitchingKeyDegreesMut,
-        GLWEToBackendMut, GLWEToBackendRef, LWEInfos, LWEPlaintextToBackendRef, LWESecretToBackendRef, LWEToBackendMut,
-        SetGaloisElement,
+        GGLWEInfos, GGLWEToBackendMut, GGLWEToGGSWKeyCompressedSeedMut, GGLWEToGGSWKeyCompressedToBackendMut,
+        GGLWEToGGSWKeyToBackendMut, GGSWAtViewMut, GGSWCompressedSeedMut, GGSWCompressedToBackendMut, GGSWInfos,
+        GGSWToBackendMut, GLWECompressedSeedMut, GLWECompressedToBackendMut, GLWEInfos, GLWEPublicKeyToBackendMut,
+        GLWESecretToBackendRef, GLWESwitchingKeyDegreesMut, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
+        LWEPlaintextToBackendRef, LWESecretToBackendRef, LWEToBackendMut, SetGaloisElement,
         compressed::{
             GGLWECompressedSeedMut, GGLWECompressedToBackendMut, GLWEPublicKeyCompressedSeedMut,
             GLWEPublicKeyCompressedToBackendMut,
@@ -665,6 +665,6 @@ pub trait GGLWEToGGSWKeyCompressedEncryptSk<BE: Backend, Rg: Ring = Standard> {
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GGLWEToGGSWKeyCompressedToBackendMut<BE, Rg> + GGLWEInfos,
+        R: GGLWEToGGSWKeyCompressedToBackendMut<BE, Rg> + GGLWEToGGSWKeyCompressedSeedMut + GGLWEInfos,
         S: GLWESecretToBackendRef<BE, Rg> + GetDistribution + GLWEInfos;
 }
