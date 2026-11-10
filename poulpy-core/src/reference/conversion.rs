@@ -30,12 +30,12 @@ use crate::{
     reference::keyswitching::GGLWEProductReference,
 };
 
-pub fn lwe_sample_extract_reference<BE, M, R, A, Rg: Ring>(module: &M, res: &mut R, a: &A)
+pub fn lwe_sample_extract_reference<BE, M, R, A>(module: &M, res: &mut R, a: &A)
 where
     BE: Backend,
-    M: ModuleN + VecZnxCopy<BE, Rg>,
-    R: LWEToBackendMut<BE, Rg> + LWEInfos,
-    A: GLWEToBackendRef<BE, Rg> + GLWEInfos,
+    M: ModuleN + VecZnxCopy<BE>,
+    R: LWEToBackendMut<BE> + LWEInfos,
+    A: GLWEToBackendRef<BE> + GLWEInfos,
 {
     let mut res = res.to_backend_mut();
     let a = a.to_backend_ref();
@@ -48,13 +48,13 @@ where
     module.vec_znx_copy(
         &mut res.body,
         0,
-        &vec_znx_backend_ref_from_ref::<BE, Rg>(&a.data).window_coeffs(0, 1),
+        &vec_znx_backend_ref_from_ref::<BE, Standard>(&a.data).window_coeffs(0, 1),
         0,
     );
     module.vec_znx_copy(
         &mut res.mask,
         0,
-        &vec_znx_backend_ref_from_ref::<BE, Rg>(&a.data).window_coeffs(0, n),
+        &vec_znx_backend_ref_from_ref::<BE, Standard>(&a.data).window_coeffs(0, n),
         1,
     );
 }
@@ -223,15 +223,10 @@ where
     }
 }
 
-pub fn glwe_from_lwe_tmp_bytes_reference<BE, M, R, A, K, Rg: Ring>(
-    module: &M,
-    glwe_infos: &R,
-    lwe_infos: &A,
-    key_infos: &K,
-) -> usize
+pub fn glwe_from_lwe_tmp_bytes_reference<BE, M, R, A, K>(module: &M, glwe_infos: &R, lwe_infos: &A, key_infos: &K) -> usize
 where
     BE: Backend,
-    M: GLWEBytesOf<BE> + ModuleN + GLWEKeyswitch<BE, Rg> + VecZnxNormalizeTmpBytes,
+    M: GLWEBytesOf<BE> + ModuleN + GLWEKeyswitch<BE> + VecZnxNormalizeTmpBytes,
     R: GLWEInfos,
     A: LWEInfos,
     K: GGLWEInfos,
@@ -643,7 +638,7 @@ where
         R: crate::layouts::LWEToBackendMut<BE> + crate::layouts::LWEInfos,
         A: crate::layouts::GLWEToBackendRef<BE> + crate::layouts::GLWEInfos,
     {
-        crate::reference::conversion::lwe_sample_extract_reference::<BE, _, _, _, Standard>(self, res, a)
+        crate::reference::conversion::lwe_sample_extract_reference::<BE, _, _, _>(self, res, a)
     }
 
     fn glwe_from_lwe_tmp_bytes_reference<R, A, K>(&self, glwe_infos: &R, lwe_infos: &A, key_infos: &K) -> usize
@@ -652,9 +647,7 @@ where
         A: crate::layouts::LWEInfos,
         K: crate::layouts::GGLWEInfos,
     {
-        crate::reference::conversion::glwe_from_lwe_tmp_bytes_reference::<BE, _, _, _, _, Standard>(
-            self, glwe_infos, lwe_infos, key_infos,
-        )
+        crate::reference::conversion::glwe_from_lwe_tmp_bytes_reference::<BE, _, _, _, _>(self, glwe_infos, lwe_infos, key_infos)
     }
 
     fn glwe_from_lwe_reference<R, A>(
