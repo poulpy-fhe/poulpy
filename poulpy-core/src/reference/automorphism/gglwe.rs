@@ -5,7 +5,7 @@ use crate::api::GLWEKeyswitch;
 use crate::api::GLWEBytesOf;
 use poulpy_hal::{
     api::{ModuleN, VecZnxAutomorphism, VecZnxAutomorphismAssign, VecZnxAutomorphismAssignTmpBytes},
-    layouts::{Backend, CyclotomicOrder, GaloisElement, Ring, ScratchArena},
+    layouts::{Backend, GaloisElement, Ring, ScratchArena},
 };
 
 use crate::layouts::operand_degree;
@@ -58,8 +58,7 @@ pub fn glwe_automorphism_key_automorphism_reference<BE, M, R, A, Rg: Ring>(
         + GLWEKeyswitch<BE, Rg>
         + VecZnxAutomorphism<BE, Rg>
         + VecZnxAutomorphismAssign<BE, Rg>
-        + VecZnxAutomorphismAssignTmpBytes
-        + CyclotomicOrder,
+        + VecZnxAutomorphismAssignTmpBytes,
     R: GGLWEToBackendMut<BE, Rg> + SetGaloisElement + GGLWEInfos,
     A: GGLWEToBackendRef<BE, Rg> + GetGaloisElement + GGLWEInfos,
 {
@@ -138,7 +137,7 @@ pub fn glwe_automorphism_key_automorphism_reference<BE, M, R, A, Rg: Ring>(
         }
     }
 
-    res.set_p((p * key.p()) % module.cyclotomic_order::<Rg>());
+    res.set_p((p * key.p()) % (Rg::CYCLOTOMIC_ORDER_FACTOR * res.n().as_usize() as i64));
 }
 
 pub fn glwe_automorphism_key_automorphism_assign_reference<BE, M, R, Rg: Ring>(
@@ -148,7 +147,7 @@ pub fn glwe_automorphism_key_automorphism_assign_reference<BE, M, R, Rg: Ring>(
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
-    M: GaloisElement + GLWEKeyswitch<BE, Rg> + VecZnxAutomorphismAssign<BE, Rg> + CyclotomicOrder,
+    M: GaloisElement + GLWEKeyswitch<BE, Rg> + VecZnxAutomorphismAssign<BE, Rg>,
     R: GGLWEToBackendMut<BE, Rg> + SetGaloisElement + GetGaloisElement + GGLWEInfos,
 {
     assert_eq!(res.rank(), key.rank(), "key rank: {} != key rank: {}", res.rank(), key.rank());
@@ -178,5 +177,5 @@ pub fn glwe_automorphism_key_automorphism_assign_reference<BE, M, R, Rg: Ring>(
         }
     }
 
-    res.set_p((res.p() * key.p()) % module.cyclotomic_order::<Rg>());
+    res.set_p((res.p() * key.p()) % (Rg::CYCLOTOMIC_ORDER_FACTOR * res.n().as_usize() as i64));
 }
