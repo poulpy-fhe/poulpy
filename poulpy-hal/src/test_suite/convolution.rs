@@ -19,8 +19,8 @@ use crate::{
         VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxSwitchRing,
     },
     layouts::{
-        CnvDftAccTerm, CnvPVecL, CnvPVecR, DataView, Module, PrepareHint, Ring, ScratchArena, VecZnx, VecZnxOwned, ZnxView,
-        ZnxViewMut, ZnxZero,
+        CnvDftAccTerm, CnvPVecL, CnvPVecR, DataView, Module, PrepareHint, Ring, ScratchArena, Standard, VecZnx, VecZnxOwned,
+        ZnxView, ZnxViewMut, ZnxZero,
     },
     source::Source,
 };
@@ -840,13 +840,13 @@ pub fn bivariate_convolution_naive<M, BE: crate::test_suite::TestBackend<Rg>, Rg
                 res_limb += res_scale_abs;
 
                 if res_limb < res.size() {
-                    negacyclic_convolution_naive_add(res.at_mut(res_col, res_limb), a.at(a_col, a_limb), b.at(b_col, b_limb));
+                    ring_convolution_naive_add::<Rg>(res.at_mut(res_col, res_limb), a.at(a_col, a_limb), b.at(b_col, b_limb));
                 }
             } else if res_limb >= res_scale_abs {
                 res_limb -= res_scale_abs;
 
                 if res_limb < res.size() {
-                    negacyclic_convolution_naive_add(res.at_mut(res_col, res_limb), a.at(a_col, a_limb), b.at(b_col, b_limb));
+                    ring_convolution_naive_add::<Rg>(res.at_mut(res_col, res_limb), a.at(a_col, a_limb), b.at(b_col, b_limb));
                 }
             }
         }
@@ -893,7 +893,7 @@ fn bivariate_tensoring_naive<M, BE: crate::test_suite::TestBackend<Rg>, Rg: Ring
                         res_limb += res_scale_abs;
 
                         if res_limb < res.size() {
-                            negacyclic_convolution_naive_add(
+                            ring_convolution_naive_add::<Rg>(
                                 res.at_mut(a_col + b_col, res_limb),
                                 a.at(a_col, a_limb),
                                 b.at(b_col, b_limb),
@@ -903,7 +903,7 @@ fn bivariate_tensoring_naive<M, BE: crate::test_suite::TestBackend<Rg>, Rg: Ring
                         res_limb -= res_scale_abs;
 
                         if res_limb < res.size() {
-                            negacyclic_convolution_naive_add(
+                            ring_convolution_naive_add::<Rg>(
                                 res.at_mut(a_col + b_col, res_limb),
                                 a.at(a_col, a_limb),
                                 b.at(b_col, b_limb),
@@ -927,6 +927,26 @@ fn bivariate_tensoring_naive<M, BE: crate::test_suite::TestBackend<Rg>, Rg: Ring
         );
     }
     *res = download_vec_znx::<BE, Rg>(&res_backend);
+}
+
+/// Adds to `res` the product `a b` in the ring `Rg` of degree `res.len()`.
+fn ring_convolution_naive_add<Rg: Ring>(res: &mut [i64], a: &[i64], b: &[i64]) {
+    if Rg::CYCLOTOMIC_ORDER_FACTOR == Standard::CYCLOTOMIC_ORDER_FACTOR {
+        return negacyclic_convolution_naive_add(res, a, b);
+    }
+    // The conjugate-invariant element `a_0 + sum_j a_j (X^j + X^-j)`, multiplied in the negacyclic ring of degree 2n.
+    let n: usize = res.len();
+    let unfold = |a: &[i64]| -> Vec<i64> {
+        let mut r: Vec<i64> = vec![0; 2 * n];
+        r[..n].copy_from_slice(a);
+        for j in 1..n {
+            r[2 * n - j] = -a[j];
+        }
+        r
+    };
+    let mut product: Vec<i64> = vec![0; 2 * n];
+    negacyclic_convolution_naive_add(&mut product, &unfold(a), &unfold(b));
+    res.iter_mut().zip(&product).for_each(|(r, p)| *r += p);
 }
 
 fn negacyclic_convolution_naive_add(res: &mut [i64], a: &[i64], b: &[i64]) {
