@@ -195,7 +195,8 @@ cargo test -p poulpy-blas
 
 The `test-utils` feature exposes the functional suite, registered with `blas_backend_test_suite!` and run by
 `poulpy-cpu-oracle` and the serial `poulpy-cpu-portable` types, its conjugate-invariant counterpart, registered with
-`blas_conjugate_invariant_test_suite!` and run by every backend type on the conjugate-invariant ring, the parity suite, registered
+`blas_conjugate_invariant_test_suite!` and run on the conjugate-invariant ring by every CPU backend type and the oracle (the GPU
+type, whose buffers are not host-visible, covers that ring through parity), the parity suite, registered
 with `blas_parity_test_suite!`, and the radix helpers' test, registered with `blas_max_base2k_test_suite!` for a backend
 that implements `MaxBase2k`. Parity compares a tested backend with a reference backend bit for bit, at every block
 dimension that the optional `shapes` argument (`test_suite::parity::BlasParityShapes`, `log_d` 1 and 2 by default)

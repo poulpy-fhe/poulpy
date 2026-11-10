@@ -209,8 +209,9 @@ BLAS runs its functional suite on `poulpy-cpu-oracle` and the portable serial
 types and registers bit-exact parity through `blas_parity_test_suite!`: every
 other backend type, Rayon and IFMA variants included, is compared against the
 oracle of its family (`NTT3x42` types against the `NTT4x30` oracles) in `f64`
-and `Quad`. Every backend type, the oracle's included, also runs
-`blas_conjugate_invariant_test_suite!` on the conjugate-invariant ring. Native CI runs every BLAS test.
+and `Quad`. Every CPU backend type and the oracle also run
+`blas_conjugate_invariant_test_suite!` on the conjugate-invariant ring; the GPU
+type, whose buffers are not host-visible, covers that ring through parity. Native CI runs every BLAS test.
 Under Intel SDE, the AVX-512 job runs the `f64` parity of each of its serial
 types once, in a step with its own execution budget; the emulated AVX job and
 the optional QEMU run do not run BLAS. See

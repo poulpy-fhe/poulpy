@@ -1,7 +1,8 @@
 # Binary-FHE operation contracts
 
 Public `api` traits follow the [layering contract](../../../docs/guides/layering-contract.md). The `CGGI` marker
-selects the blind-rotation algorithm, independently of storage and scheduling.
+selects the blind-rotation algorithm, independently of storage and scheduling. Every family acts on standard-ring
+operands.
 
 ## Public API organization
 
