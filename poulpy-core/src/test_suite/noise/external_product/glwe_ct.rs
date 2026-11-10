@@ -177,10 +177,6 @@ where
             let noise = glwe_noise_checked(module, &glwe_out, &pt_out, &sk_prepared, &mut scratch.borrow())
                 .std()
                 .log2();
-            println!(
-                "DBG ext_prod have={noise:.2} max={max_noise:.2} slack={:.2}",
-                max_noise - noise
-            );
             assert!(noise <= max_noise, "noise: {noise} > max_noise: {max_noise}")
         }
     }
@@ -326,10 +322,6 @@ where
             let noise = glwe_noise_checked(module, &glwe_out, &pt_want, &sk_prepared, &mut scratch.borrow())
                 .std()
                 .log2();
-            println!(
-                "DBG ext_prod have={noise:.2} max={max_noise:.2} slack={:.2}",
-                max_noise - noise
-            );
             assert!(noise <= max_noise, "noise: {noise} > max_noise: {max_noise}")
         }
     }

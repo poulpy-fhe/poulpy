@@ -166,10 +166,6 @@ where
                     .std()
                     .log2();
 
-                println!(
-                    "DBG glwe_ks have={noise_have:.2} max={noise_max:.2} slack={:.2}",
-                    noise_max - noise_have
-                );
                 assert!(noise_have <= noise_max, "noise_have: {noise_have} > noise_max: {noise_max}");
 
                 let wide: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&GLWELayout {
@@ -313,10 +309,6 @@ pub fn test_glwe_keyswitch_assign<BE: crate::test_suite::noise::TestBackend<Rg>,
                 .std()
                 .log2();
 
-            println!(
-                "DBG glwe_ks have={noise_have:.2} max={noise_max:.2} slack={:.2}",
-                noise_max - noise_have
-            );
             assert!(noise_have <= noise_max, "noise_have: {noise_have} > noise_max: {noise_max}");
         }
     }

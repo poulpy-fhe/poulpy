@@ -214,10 +214,6 @@ where
                         .std()
                         .log2();
                     let max_noise = max_noise(col);
-                    println!(
-                        "DBG ggsw_ks col={col} have={noise:.2} max={max_noise:.2} slack={:.2}",
-                        max_noise - noise
-                    );
                     assert!(noise <= max_noise, "noise: {noise} > max_noise: {max_noise}")
                 }
             }
@@ -402,10 +398,6 @@ where
                         .std()
                         .log2();
                     let max_noise = max_noise(col);
-                    println!(
-                        "DBG ggsw_ks col={col} have={noise:.2} max={max_noise:.2} slack={:.2}",
-                        max_noise - noise
-                    );
                     assert!(noise <= max_noise, "noise: {noise} > max_noise: {max_noise}")
                 }
             }
