@@ -52,6 +52,21 @@ The table gives the reference of each family.
 implementations. Every API method dispatches through a same-named OEP method;
 compositions of selected operations are that method's derived default.
 
+## Operand degrees
+
+Every operation takes ciphertexts of any degree `n` up to the module's: an
+implementation allocates and carves its working ciphertexts at the operand's
+degree, takes Galois elements at the operand's order
+`Rg::CYCLOTOMIC_ORDER_FACTOR * n` and slot counts from `n`, and refuses an
+operand above the module's degree with `InvalidOperand`;
+`CKKSModuleInfos::ckks_galois_element` and `ckks_max_slots` answer at the
+module's degree. Queries size a temporary at its operand's degree or the
+module's, never below. PaCo and SHIP run at the degree of their plan, at most
+the module's. A bootstrapping context is compiled at the degree of its module
+(`compile_ci`: at half of it, EvalMod running on the conjugate-invariant ring
+of that degree), and the bootstraps take ciphertexts of the degree their
+context is compiled at.
+
 ## What an override must preserve
 
 An override reproduces the reference as the [layering contract](../../../docs/guides/layering-contract.md) states. CKKS
