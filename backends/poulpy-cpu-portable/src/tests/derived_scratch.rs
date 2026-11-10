@@ -36,10 +36,10 @@ where
         + HalVmpImpl<Rg>
         + HalVecZnxDftImpl<Rg>
         + HalCnvImpl<Rg>
-        + HalVecZnxBigImpl
-        + HalVmpImpl
-        + HalVecZnxDftImpl
-        + HalCnvImpl,
+        + HalVecZnxBigImpl<Standard>
+        + HalVmpImpl<Standard>
+        + HalVecZnxDftImpl<Standard>
+        + HalCnvImpl<Standard>,
 {
     test_vec_znx_lsh_add_derived(&PARAMS, module);
     test_vec_znx_lsh_sub_derived(&PARAMS, module);
@@ -53,7 +53,7 @@ where
 /// The VMP composites.
 fn run_vmp<BE, Rg: Ring>(module: &Module<BE>)
 where
-    BE: TestBackend<Rg> + HalVmpImpl<Rg> + HalVecZnxImpl<Rg> + HalVmpImpl + HalVecZnxDftImpl,
+    BE: TestBackend<Rg> + HalVmpImpl<Rg> + HalVecZnxImpl<Rg> + HalVmpImpl<Standard> + HalVecZnxDftImpl<Standard>,
 {
     test_vmp_apply_dft_derived(&PARAMS, module);
     test_vmp_apply_dft_to_dft_add_derived(&PARAMS, module);

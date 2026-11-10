@@ -55,7 +55,7 @@ impl_gglwe_product_digits_strided_reference_full!(FFT64Avx512);
 #[cfg(feature = "enable-rayon")]
 impl_gglwe_product_digits_strided_reference_full!(FFT64Avx512Rayon);
 
-trait RankOneTensorDft<Rg: Ring = Standard>: Backend {
+trait RankOneTensorDft<Rg: Ring>: Backend {
     fn tensor_finish_tmp_bytes(module: &Module<Self>, n: usize, size: usize) -> usize
     where
         Module<Self>: VecZnxBigBytesOf + VecZnxBigNormalizeTmpBytes + VecZnxIdftApplyTmpBytes,
@@ -478,7 +478,7 @@ where
 }
 
 /// Scratch the rank-one kernel of `glwe_mul_columns` adds to the reference one-pass products.
-fn rank_one_columns_tmp_bytes<BE: RankOneTensorDft, R: GLWEInfos>(res: &R, a_size: usize, b_size: usize) -> usize {
+fn rank_one_columns_tmp_bytes<BE: RankOneTensorDft<Rg>, R: GLWEInfos, Rg: Ring>(res: &R, a_size: usize, b_size: usize) -> usize {
     if rank_one_tensor_supported(res) {
         BE::rank_one_tensor_dft_tmp_bytes(a_size + b_size, a_size, b_size)
     } else {
@@ -1020,7 +1020,7 @@ macro_rules! impl_rank_one_tensoring {
                 // The kernel runs where the reference runs its convolutions: its scratch is added whole.
                 GLWETensoringReference::<$be, $ring>::glwe_mul_relinearize_tmp_bytes_reference(
                     module, res, a_size, b_size, tensor_k, tsk,
-                ) + rank_one_columns_tmp_bytes::<$be, _>(res, a_size, b_size)
+                ) + rank_one_columns_tmp_bytes::<$be, _, $ring>(res, a_size, b_size)
             }
 
             #[allow(clippy::too_many_arguments)]
@@ -1189,7 +1189,7 @@ macro_rules! impl_rank_one_tensoring {
             {
                 GLWETensoringReference::<$be, $ring>::glwe_mul_relinearize_sum_tmp_bytes_reference(
                     module, res, a_size, b_size, tensor_k, tsk,
-                ) + rank_one_columns_tmp_bytes::<$be, _>(res, a_size, b_size)
+                ) + rank_one_columns_tmp_bytes::<$be, _, $ring>(res, a_size, b_size)
             }
 
             fn glwe_mul_relinearize_sum<R, A, B, H>(
@@ -1226,7 +1226,7 @@ macro_rules! impl_rank_one_tensoring {
             {
                 GLWETensoringReference::<$be, $ring>::glwe_mul_prepared_relinearize_sum_tmp_bytes_reference(
                     module, res, a_size, b_size, tensor_k, tsk,
-                ) + rank_one_columns_tmp_bytes::<$be, _>(res, a_size, b_size)
+                ) + rank_one_columns_tmp_bytes::<$be, _, $ring>(res, a_size, b_size)
             }
 
             #[allow(clippy::too_many_arguments)]
