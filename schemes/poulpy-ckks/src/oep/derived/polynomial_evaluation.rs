@@ -3,7 +3,7 @@ use crate::api::{CKKSComplexPolynomialEvaluationOps, CKKSPolynomialEvaluationOps
 use poulpy_core::GLWENormalize;
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::IntPolyInfos;
-use poulpy_core::layouts::{GLWEInfos, GLWELayout, GLWEPlaintextMeta, GLWEToBackendMut, GLWEToBackendRef, Rank, SetBSGSMeta};
+use poulpy_core::layouts::{GLWEInfos, GLWEPlaintextMeta, GLWEToBackendMut, GLWEToBackendRef, SetBSGSMeta};
 use poulpy_core::oep::GLWEMulConstImpl;
 
 use poulpy_hal::layouts::{Backend, Module, Ring, ScratchArena};
@@ -13,7 +13,7 @@ use crate::{
     api::{BSGSPolynomialInfos, CKKSCopyOps, CKKSMulOps, CKKSPow2Ops, CKKSSubOps, PolynomialInputTransform},
     layouts::{CKKSCiphertextAlloc, CKKSCiphertextOwned, ScratchArenaTakeCKKSCiphertext},
     polynomial::ComplexBSGSPolynomial,
-    power_basis::{CKKSPowerBasisGen, PowerBasis},
+    power_basis::{CKKSPowerBasisGen, PowerBasis, power_layout},
 };
 
 /// Scratch upper bound for [`GLWEBSGSOps::eval_baby_linear_combination`]: the constant combination
@@ -23,16 +23,6 @@ where
     BE: GLWEMulConstImpl<Rg>,
 {
     BE::glwe_const_combination_tmp_bytes(module, ct_size + pt_size, ct_size, pt_size)
-}
-
-/// The layout of a rank-1 square of `src`, `k` bits wide, at the degree of `src`.
-fn squared_layout<S: GLWEInfos>(src: &S, k: usize) -> GLWELayout {
-    GLWELayout {
-        n: src.n(),
-        base2k: src.base2k(),
-        k: k.into(),
-        rank: Rank(1),
-    }
 }
 
 /// Builds the folded input (`x`, `x²`, or `T₂(x)`) for one-shot evaluation.
@@ -59,13 +49,13 @@ where
         }
         PolynomialInputTransform::Square | PolynomialInputTransform::SquareTimesInput => {
             let k = crate::power_basis::square_ct_k(src)?;
-            let mut squared = module.ckks_ciphertext_alloc_from_glwe_infos(&squared_layout(src, k));
+            let mut squared = module.ckks_ciphertext_alloc_from_glwe_infos(&power_layout(src, k));
             module.ckks_square_into(&mut squared, src, tsk, scratch)?;
             Ok(squared)
         }
         PolynomialInputTransform::ChebyshevT2 | PolynomialInputTransform::ChebyshevT2TimesInput => {
             let k = crate::power_basis::square_ct_k(src)?;
-            let layout = squared_layout(src, k);
+            let layout = power_layout(src, k);
             let mut doubled = module.ckks_ciphertext_alloc_from_glwe_infos(&layout);
             let (mut squared, mut scratch) = scratch
                 .borrow()
