@@ -190,12 +190,8 @@ pub(crate) fn operand_degree(module_n: usize, degrees: &[Degree]) -> usize {
 }
 
 /// Galois element of `generator` in the ring of an operand of degree `n`.
-pub(crate) fn operand_galois_element<M: poulpy_hal::layouts::GaloisElement + ?Sized, Rg: Ring>(
-    module: &M,
-    n: usize,
-    generator: i64,
-) -> i64 {
-    poulpy_hal::layouts::galois_element(generator, module.cyclotomic_order::<Rg>() / (module.n() / n) as i64)
+pub(crate) fn operand_galois_element<Rg: Ring>(n: usize, generator: i64) -> i64 {
+    poulpy_hal::layouts::galois_element(generator, Rg::CYCLOTOMIC_ORDER_FACTOR * n as i64)
 }
 
 /// The owned buffer and coefficient word of the core layouts a [`Module`] allocates.

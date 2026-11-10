@@ -382,7 +382,7 @@ where
     }
 }
 
-pub(crate) trait GLWEEncryptPkInternal<BE: Backend, Rg: Ring = Standard> {
+pub(crate) trait GLWEEncryptPkInternal<BE: Backend, Rg: Ring> {
     #[allow(clippy::too_many_arguments)]
     fn glwe_encrypt_pk_internal<R, K>(
         &self,
@@ -545,7 +545,7 @@ where
     }
 }
 
-pub(crate) trait GLWEEncryptSkInternal<BE: Backend, Rg: Ring = Standard> {
+pub(crate) trait GLWEEncryptSkInternal<BE: Backend, Rg: Ring> {
     #[allow(clippy::too_many_arguments)]
     fn glwe_encrypt_sk_internal<'pt, S>(
         &self,
@@ -560,7 +560,7 @@ pub(crate) trait GLWEEncryptSkInternal<BE: Backend, Rg: Ring = Standard> {
         S: GLWESecretPreparedToBackendRef<BE, Rg>;
 }
 
-type GLWEEncryptSkPlaintext<'a, BE, Rg = Standard> = Option<(GLWEBackendRef<'a, BE, Rg>, usize)>;
+type GLWEEncryptSkPlaintext<'a, BE, Rg> = Option<(GLWEBackendRef<'a, BE, Rg>, usize)>;
 
 impl<BE: Backend, Rg: Ring> GLWEEncryptSkInternal<BE, Rg> for Module<BE>
 where

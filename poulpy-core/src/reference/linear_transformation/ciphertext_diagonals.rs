@@ -13,7 +13,7 @@ use poulpy_hal::{
         ModuleN, ScratchArenaTakeVecZnxDft, VecZnxDftApply, VecZnxDftBytesOf, VecZnxGadgetDecompose,
         VecZnxGadgetDecomposeTmpBytes, VecZnxIdftNormalize, VecZnxIdftNormalizeTmpBytes,
     },
-    layouts::{Backend, Module, Ring, ScratchArena, Standard, VecZnxDftBackendMut},
+    layouts::{Backend, Module, Ring, ScratchArena, VecZnxDftBackendMut},
 };
 
 use crate::{
@@ -38,7 +38,7 @@ use crate::{
 
 /// The products of the transforms `lts` from the baby caches `babies`, into a result of the layout `res`: giant step
 /// `g`'s is the dot product of the baby rotations of every term by its diagonals of giant step `g`.
-pub(super) struct CiphertextProducts<'a, BE: Backend, P, L, Rg: Ring = Standard> {
+pub(super) struct CiphertextProducts<'a, BE: Backend, P, L, Rg: Ring> {
     babies: &'a [&'a LinearTransformationBabySteps<BE, Rg, L>],
     lts: &'a [&'a LinearTransformation<P>],
     diagonal: &'a P,
@@ -226,7 +226,7 @@ where
 }
 
 /// The tensor key looked up once, the source of every product.
-struct Resolved<'k, 'a, BE: Backend + 'a, Rg: Ring = Standard>(&'k GLWETensorKeyPreparedBackendRef<'a, BE, Rg>);
+struct Resolved<'k, 'a, BE: Backend + 'a, Rg: Ring>(&'k GLWETensorKeyPreparedBackendRef<'a, BE, Rg>);
 
 impl<'a, BE: Backend + 'a, Rg: Ring> GetTensorKey<BE, Rg> for Resolved<'_, 'a, BE, Rg> {
     fn lookup_tensor_key(&self, _k: TorusPrecision) -> crate::Result<GLWETensorKeyPreparedBackendRef<'_, BE, Rg>> {

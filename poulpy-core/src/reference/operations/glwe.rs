@@ -2054,7 +2054,7 @@ enum MulRest<'a, 'r, 'p, A, B, AP, BP> {
 }
 
 /// Names the unused operand type of the forms without a ciphertext operand.
-type NoOperand<BE, Rg = Standard> = GLWE<<BE as Backend>::OwnedBuf, <BE as Backend>::ZnxWord, Rg>;
+type NoOperand<BE, Rg> = GLWE<<BE as Backend>::OwnedBuf, <BE as Backend>::ZnxWord, Rg>;
 
 /// Shared body of the one-pass products.
 ///

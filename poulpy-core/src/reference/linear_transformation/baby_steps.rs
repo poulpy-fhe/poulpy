@@ -276,7 +276,7 @@ pub(super) fn glwe_linear_transformation_baby_steps_prepare<BE, A, H, L, Rg: Rin
         .keys()
         .map(|&rot| {
             (rot != 0).then(|| {
-                keys.get_automorphism_key(operand_galois_element::<_, Rg>(module, a.n().as_usize(), rot), a.k())
+                keys.get_automorphism_key(operand_galois_element::<Rg>(a.n().as_usize(), rot), a.k())
                     .unwrap_or_else(|e| panic!("baby-step rotation {rot}: {e}"))
             })
         })
@@ -455,7 +455,7 @@ fn glwe_prepare_baby_steps_doubling<'h, BE, H, L, Rg: Ring>(
     let pass_keys: Vec<GLWEAutomorphismKeyPreparedBackendRef<'_, BE, Rg>> = passes
         .iter()
         .map(|&(key_rot, _)| {
-            keys.get_automorphism_key(operand_galois_element::<_, Rg>(module, n, key_rot), a.k())
+            keys.get_automorphism_key(operand_galois_element::<Rg>(n, key_rot), a.k())
                 .unwrap_or_else(|e| panic!("baby-step doubling {key_rot}: {e}"))
         })
         .collect();

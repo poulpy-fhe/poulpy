@@ -141,12 +141,7 @@ mod trace {
     }
 
     /// The Galois elements a trace of a degree-`n` operand visits over `levels`, in order.
-    fn trace_rotations<M: GaloisElement + ?Sized, Rg: Ring>(
-        module: &M,
-        n: usize,
-        levels: Range<usize>,
-        reverse: bool,
-    ) -> impl Iterator<Item = i64> + use<'_, M, Rg> {
+    fn trace_rotations<Rg: Ring>(n: usize, levels: Range<usize>, reverse: bool) -> impl Iterator<Item = i64> + use<Rg> {
         let slots = Rg::CYCLOTOMIC_ORDER_FACTOR * n as i64 / 4;
         (0..levels.len()).map(move |t| {
             let level = if reverse { levels.end - 1 - t } else { levels.start + t };
@@ -154,7 +149,7 @@ mod trace {
                 return -1;
             }
             let rotation = 1i64 << (level - 1);
-            operand_galois_element::<_, Rg>(module, n, if reverse { slots - rotation } else { rotation })
+            operand_galois_element::<Rg>(n, if reverse { slots - rotation } else { rotation })
         })
     }
 
@@ -185,7 +180,7 @@ mod trace {
         // Keys may differ per rotation, so the radix and the scratch bound are read
         // off the first one the source resolves, as on any path sized from a single
         // key layout.
-        let Some(first) = trace_rotations::<_, Rg>(module, n, levels.clone(), reverse).next() else {
+        let Some(first) = trace_rotations::<Rg>(n, levels.clone(), reverse).next() else {
             return;
         };
         let ksk_infos = keys
@@ -226,7 +221,7 @@ mod trace {
             return;
         }
 
-        for p in trace_rotations::<_, Rg>(module, n, levels, reverse) {
+        for p in trace_rotations::<Rg>(n, levels, reverse) {
             if normalize {
                 module.glwe_rsh_assign(1, res, scratch);
             }
@@ -284,7 +279,7 @@ mod trace {
     {
         let n = operand_degree(module.n(), &[n]);
         assert_levels::<Rg>(n, &levels);
-        trace_rotations::<_, Rg>(module, n, levels, reverse).collect()
+        trace_rotations::<Rg>(n, levels, reverse).collect()
     }
 
     pub(crate) fn glwe_trace_tmp_bytes_derived<BE, M, R, A, K, Rg: Ring>(
@@ -357,7 +352,7 @@ mod trace {
         operand_degree(module.n(), &[res.n(), a.n()]);
         let n = res.n().as_usize();
         assert_levels::<Rg>(n, &levels);
-        let Some(first) = trace_rotations::<_, Rg>(module, n, levels.clone(), reverse).next() else {
+        let Some(first) = trace_rotations::<Rg>(n, levels.clone(), reverse).next() else {
             module.glwe_copy(res, a, scratch);
             res.set_noise(None);
             return;
@@ -607,7 +602,7 @@ mod packing {
             let p: i64 = if i == 0 {
                 -1
             } else {
-                operand_galois_element::<_, Standard>(module, 1 << log_n, 1 << (i - 1))
+                operand_galois_element::<Standard>(1 << log_n, 1 << (i - 1))
             };
 
             for j in 0..t {

@@ -10,7 +10,7 @@ use poulpy_hal::layouts::VecZnxBigToBackendMut;
 use poulpy_hal::layouts::VecZnxBigToBackendRef;
 use poulpy_hal::layouts::VecZnxDftToBackendMut;
 use poulpy_hal::layouts::VecZnxDftToBackendRef;
-use poulpy_hal::layouts::{CnvPVecLToBackendMut, DataView, Ring, Standard};
+use poulpy_hal::layouts::{CnvPVecLToBackendMut, DataView, Ring};
 use std::collections::HashMap;
 
 use poulpy_hal::{
@@ -48,7 +48,7 @@ use crate::{GLWEPreparedTensoring, GLWETensorKeyEncryptSk, api::GLWETensorKeyPre
 
 /// The stored keys, with the rotations listed in `coarse_ps` answered through a
 /// coarser `dsize`: one baby-step key set carrying two different layouts.
-struct MixedDsize<'a, BE: Backend, Rg: Ring = Standard> {
+struct MixedDsize<'a, BE: Backend, Rg: Ring> {
     atks: &'a AutomorphismKeys<BE, Rg>,
     coarse: TorusPrecision,
     coarse_ps: &'a [i64],
@@ -73,7 +73,7 @@ type Diagonals<BE, Rg> = HashMap<(i64, i64), GLWE<<BE as Backend>::OwnedBuf, <BE
 
 /// The rotation at position `i` of `baby_steps` (the unrotated one aside)
 /// answered by the keys of layout `i - 1`: one key set over several layouts.
-struct MixedLayouts<'a, BE: Backend, G: Fn(i64) -> i64, Rg: Ring = Standard> {
+struct MixedLayouts<'a, BE: Backend, G: Fn(i64) -> i64, Rg: Ring> {
     maps: &'a [AutomorphismKeys<BE, Rg>],
     baby_steps: &'a [i64],
     galois: G,

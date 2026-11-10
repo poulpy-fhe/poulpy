@@ -19,7 +19,7 @@ use poulpy_hal::{
         VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxIdftNormalizeTmpBytes, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes,
     },
     layouts::{
-        Backend, GaloisElement, PrepareHint, Ring, ScratchArena, Standard, VecZnxBigToBackendMut, VecZnxBigToBackendRef,
+        Backend, GaloisElement, PrepareHint, Ring, ScratchArena, VecZnxBigToBackendMut, VecZnxBigToBackendRef,
         VecZnxDftBackendMut, VecZnxDftToBackendMut, VecZnxDftToBackendRef, vec_znx_dft_backend_ref_from_mut,
     },
 };
@@ -84,7 +84,7 @@ impl<BE: Backend, Rg: Ring> GLWEDiagonalProd<BE, Rg> for PreparedDiagonal<BE::Ow
 /// The products of the giant steps of one evaluation, which [`glwe_eval_giant_steps`] rotates and sums: each
 /// `rank + 1` columns in DFT at the first diagonal's base2k on [`Self::size`] limbs, the low
 /// [`Self::cnv_offset_lo`] bits of the conversion offset left to the final normalization.
-pub(super) trait GiantProducts<BE: Backend, Rg: Ring = Standard> {
+pub(super) trait GiantProducts<BE: Backend, Rg: Ring> {
     fn size(&self) -> usize;
 
     fn cnv_offset_lo(&self) -> i64;
@@ -111,7 +111,7 @@ pub(super) trait GiantProducts<BE: Backend, Rg: Ring = Standard> {
 
 /// The products of the transforms `lts` from the baby caches `babies`, summed over the terms `(babies[t], lts[t])`,
 /// in the diagonals' base2k.
-struct PlainProducts<'a, BE: Backend, P, L, Rg: Ring = Standard> {
+struct PlainProducts<'a, BE: Backend, P, L, Rg: Ring> {
     babies: &'a [&'a LinearTransformationBabySteps<BE, Rg, L>],
     lts: &'a [&'a LinearTransformation<P>],
     cnv_offset_hi: usize,
@@ -317,7 +317,7 @@ pub(super) fn glwe_eval_giant_steps<BE, R, P, H, L: BabyStepOperand<BE, Rg>, Rg:
         .iter()
         .map(|gs| {
             (gs.rot != 0).then(|| {
-                keys.get_automorphism_key(operand_galois_element::<_, Rg>(module, res.n().as_usize(), gs.rot), res.k())
+                keys.get_automorphism_key(operand_galois_element::<Rg>(res.n().as_usize(), gs.rot), res.k())
                     .unwrap_or_else(|e| panic!("giant-step rotation {}: {e}", gs.rot))
             })
         })
@@ -396,7 +396,7 @@ pub(super) fn glwe_eval_giant_steps<BE, R, P, H, L: BabyStepOperand<BE, Rg>, Rg:
                         &key.key,
                         key_output_size,
                         nonzero_giant_rotations,
-                        operand_galois_element::<_, Rg>(module, res.n().as_usize(), rot),
+                        operand_galois_element::<Rg>(res.n().as_usize(), rot),
                         res_initialized,
                         &mut scratch_phase,
                     );
@@ -553,7 +553,7 @@ fn glwe_eval_giant_tree<BE, R, H, Rg: Ring>(
         .iter()
         .map(|level| {
             (!level.pairs.is_empty()).then(|| {
-                keys.get_automorphism_key(operand_galois_element::<_, Rg>(module, n, level.rot), res.k())
+                keys.get_automorphism_key(operand_galois_element::<Rg>(n, level.rot), res.k())
                     .unwrap_or_else(|e| panic!("giant-tree rotation {}: {e}", level.rot))
             })
         })
@@ -769,7 +769,7 @@ fn glwe_eval_giant_tree<BE, R, H, Rg: Ring>(
         }
         BE::gglwe_products_from_dft(
             module,
-            operand_galois_element::<_, Rg>(module, n, level.rot),
+            operand_galois_element::<Rg>(n, level.rot),
             switches,
             &mut dsts,
             key_output_size.min(key.size()),

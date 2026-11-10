@@ -110,9 +110,11 @@ and borrowing traits from `poulpy_hal::api`.
 Every ciphertext, key, plaintext and secret layout takes its ring as its last type parameter, `Rg: Ring = Standard`
 (`GLWE<D, W, Rg>`, `GLWEPrepared<D, BE, Rg>`). `Standard` is `Z[X]/(X^n + 1)`;
 `ConjugateInvariant` is the ring of `n` coefficients fixed by `X -> X^-1` in
-`Z[X]/(X^(2n) + 1)`, of cyclotomic order `4n`. One module serves both rings, an
-operation takes operands of one ring, and standard-ring code names no ring. The ring
-enters a call as follows, shown on the conjugate-invariant ring with `module: Module<BE>`:
+`Z[X]/(X^(2n) + 1)`, of cyclotomic order `4n`. One module serves both rings and an
+operation takes operands of one ring. A type or trait path that leaves the ring out names
+`Standard`; a call taking the ring as a method generic (allocation, carving) names it, on either
+ring, unless the type of its result fixes it. The ring enters a call as follows, shown on the
+conjugate-invariant ring with `module: Module<BE>`:
 
 | Call | Ring | Example |
 |------|------|---------|

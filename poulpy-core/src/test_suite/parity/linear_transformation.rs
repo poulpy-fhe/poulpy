@@ -5,7 +5,7 @@ use std::collections::HashMap;
 
 use poulpy_hal::{
     api::CnvPVecAlloc,
-    layouts::{Backend, CyclotomicOrder, Data, DataViewMut, GaloisElement, HostDataMut, Module, Ring, Standard, ZnxViewMut},
+    layouts::{Backend, CyclotomicOrder, Data, DataViewMut, GaloisElement, HostDataMut, Module, Ring, ZnxViewMut},
     source::Source,
     test_suite::TestParams,
 };
@@ -28,7 +28,7 @@ use crate::{
 };
 
 /// Scheme-independent test diagonal: its storage represents an integer polynomial.
-struct StreamedDiagonal<D: Data, Rg: Ring = Standard>(GLWE<D, i64, Rg>);
+struct StreamedDiagonal<D: Data, Rg: Ring>(GLWE<D, i64, Rg>);
 
 impl<D: Data, Rg: Ring> LWEInfos for StreamedDiagonal<D, Rg> {
     fn n(&self) -> Degree {

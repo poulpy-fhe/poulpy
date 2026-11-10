@@ -16,12 +16,12 @@ use crate::{
 use anyhow::{Result, bail};
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, Module, Ring, ScratchArena, ScratchOwned, Standard},
+    layouts::{Backend, Module, Ring, ScratchArena, ScratchOwned},
     test_suite::TestParams,
 };
 use std::cell::Cell;
 
-struct Value<BE: Backend, Rg: Ring = Standard> {
+struct Value<BE: Backend, Rg: Ring> {
     data: BackendGLWE<BE, Rg>,
     budget: usize,
     delta: usize,
@@ -111,7 +111,7 @@ where
     )));
     value
 }
-struct Step<BE: Backend, Rg: Ring = Standard> {
+struct Step<BE: Backend, Rg: Ring> {
     value: Value<BE, Rg>,
     degree: usize,
 }

@@ -21,7 +21,7 @@ use crate::{
 /// law of `sk`, and the message.
 type Case = (usize, usize, usize, usize, usize, Distribution, &'static str);
 
-type Secret<BE, Rg = Standard> =
+type Secret<BE, Rg> =
     GLWESecret<<BE as poulpy_hal::layouts::Backend>::OwnedBuf, <BE as poulpy_hal::layouts::Backend>::ZnxWord, Rg>;
 
 /// Encrypting an embed key from a conjugate-invariant secret of more than half the key degree or of a rank other than
@@ -196,7 +196,7 @@ where
         rank: 1_usize.into(),
     });
     module.glwe_secret_fill_ternary_prob(&mut sk_ci, 0.5, &mut source_xs);
-    let mut sk: Secret<BE> = module.glwe_secret_alloc_from_infos(&GLWESecretLayout {
+    let mut sk: Secret<BE, Standard> = module.glwe_secret_alloc_from_infos(&GLWESecretLayout {
         n: n.into(),
         rank: 1_usize.into(),
     });
@@ -251,7 +251,7 @@ fn assert_ci_key_refusals<BE, M>(
     encrypt: impl Fn(
         &mut GLWECIKey<BE::OwnedBuf, BE::ZnxWord, M>,
         &Secret<BE, ConjugateInvariant>,
-        &Secret<BE>,
+        &Secret<BE, Standard>,
         &mut Source,
         &mut Source,
         &mut ScratchArena<'_, BE>,
@@ -282,7 +282,7 @@ fn assert_ci_key_refusals<BE, M>(
             n: ci_n.into(),
             rank: ci_rank.into(),
         });
-        let mut sk: Secret<BE> = module.glwe_secret_alloc_from_infos(&GLWESecretLayout {
+        let mut sk: Secret<BE, Standard> = module.glwe_secret_alloc_from_infos(&GLWESecretLayout {
             n: sk_n.into(),
             rank: sk_rank.into(),
         });

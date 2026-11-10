@@ -8,7 +8,7 @@ use poulpy_hal::{
         VecZnxGadgetDecomposeTmpBytes, VecZnxIdftNormalize, VecZnxIdftNormalizeTmpBytes,
     },
     layouts::{
-        Backend, DataView, Module, Ring, ScratchOwned, Standard, VecZnx, VecZnxDft, VecZnxDftToBackendMut, VecZnxDftToBackendRef,
+        Backend, DataView, Module, Ring, ScratchOwned, VecZnx, VecZnxDft, VecZnxDftToBackendMut, VecZnxDftToBackendRef,
         VecZnxToBackendRef,
     },
     test_suite::{TestParams, vec_znx_backend_mut},
@@ -25,8 +25,8 @@ use crate::{
     test_suite::{poisoned_scratch, refusal::assert_refusal},
 };
 
-type Dft<BE, Rg = Standard> = VecZnxDft<<BE as Backend>::OwnedBuf, <BE as Backend>::DftWord, BE, Rg>;
-type Coefficients<BE, Rg = Standard> = VecZnx<<BE as Backend>::OwnedBuf, <BE as Backend>::ZnxWord, Rg>;
+type Dft<BE, Rg> = VecZnxDft<<BE as Backend>::OwnedBuf, <BE as Backend>::DftWord, BE, Rg>;
+type Coefficients<BE, Rg> = VecZnx<<BE as Backend>::OwnedBuf, <BE as Backend>::ZnxWord, Rg>;
 
 /// A zero key of rank `rank`, two rows of one limb each at `base2k`, and a row offset of
 /// `k_offset` bits.

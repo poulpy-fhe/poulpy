@@ -1,6 +1,6 @@
 use poulpy_hal::{
     api::{ScalarZnxAlloc, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Module, Ring, ScratchArena, ScratchOwned, Standard},
+    layouts::{Module, Ring, ScratchArena, ScratchOwned},
     source::Source,
     test_suite::TestParams,
 };
@@ -24,9 +24,9 @@ use crate::{
 
 const GLWE_NONE: &str = "glwe secret distribution is NONE (have you prepared the key?)";
 
-type Secret<BE, Rg = Standard> =
+type Secret<BE, Rg> =
     GLWESecret<<BE as poulpy_hal::layouts::Backend>::OwnedBuf, <BE as poulpy_hal::layouts::Backend>::ZnxWord, Rg>;
-type Prepared<BE, Rg = Standard> = GLWESecretPrepared<<BE as poulpy_hal::layouts::Backend>::OwnedBuf, BE, Rg>;
+type Prepared<BE, Rg> = GLWESecretPrepared<<BE as poulpy_hal::layouts::Backend>::OwnedBuf, BE, Rg>;
 
 /// Runs `encrypt` on `res` on an empty arena and asserts the full message, `res` and both sources unchanged.
 fn assert_unset_secret_refused<BE, T>(
