@@ -253,6 +253,17 @@ cross_backend_test_suite! {
     }
 }
 
+cross_backend_test_suite! {
+    mod word_compat_ci,
+    backend_ref =  poulpy_cpu_portable::FFT64Portable,
+    backend_test = crate::FFT64Neon,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
+    params = TestParams { size: 1<<8, base2k: 12, n: 8 },
+    tests = {
+        test_word_compat_dft_cross_idft => poulpy_hal::test_suite::word_compat::test_word_compat_dft_cross_idft,
+    }
+}
+
 // Fused-op conformance on the Rayon variant; the size crosses the parallel-work floors of the overrides that have them,
 // the gadget digit layout among them.
 #[cfg(feature = "enable-rayon")]

@@ -3,7 +3,7 @@
 //! # Safety
 //!
 //! Each impl asserts byte-identical buffer layouts with the portable backend
-//! for that container family, for every shape.
+//! for that container family, for every shape, on both rings.
 
 use poulpy_cpu_portable::{FFT64Portable, NTT4x30Portable};
 use poulpy_hal::layouts::{SvpPPolLayoutCompatible, VecZnxBigLayoutCompatible, VecZnxDftLayoutCompatible};

@@ -268,6 +268,17 @@ cross_backend_test_suite! {
     }
 }
 
+cross_backend_test_suite! {
+    mod word_compat_ci,
+    backend_ref =  poulpy_cpu_portable::FFT64Portable,
+    backend_test = crate::FFT64Avx,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
+    params = crate::tests::bounded_emulation_params(TestParams { size: 1<<8, base2k: 12, n: 8 }, 256),
+    tests = {
+        test_word_compat_dft_cross_idft => poulpy_hal::test_suite::word_compat::test_word_compat_dft_cross_idft,
+    }
+}
+
 // Fused-op conformance on Rayon; native degrees cross the parallel-work floors, while emulated CI bounds the degree.
 #[cfg(feature = "enable-rayon")]
 cross_backend_test_suite! {

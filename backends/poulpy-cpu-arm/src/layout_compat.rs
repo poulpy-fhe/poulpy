@@ -3,8 +3,8 @@
 //! # Safety
 //!
 //! Each impl asserts byte-identical buffer layouts with the portable backend
-//! for that container family, for every shape. Validated by the word-compat
-//! suite instantiated in the corresponding `tests.rs`. `VmpPMat` and
+//! for that container family, for every shape, on both rings. Validated by the
+//! word-compat suite instantiated at both rings in the corresponding `tests.rs`. `VmpPMat` and
 //! `CnvPVec*` markers are intentionally absent: the accelerated NTT4x30
 //! `VmpPMat` uses a prime-major planar layout (unlike Ref's block-interleaved
 //! q120c), and the `CnvPVec` layouts are unverified.
