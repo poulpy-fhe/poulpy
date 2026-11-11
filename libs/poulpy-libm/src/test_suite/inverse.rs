@@ -34,11 +34,11 @@ use super::helpers::{assert_precision_bits, params_for_with_headroom, sample_int
 
 fn alloc_inverse_scratch<BE>(params: &CKKSTestParams, module: &Module<BE>) -> ScratchOwned<BE>
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     Module<BE>: TestContextModule<BE> + CKKSInverseOps<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
-    let mut ct = module.ckks_ciphertext_alloc(params.base2k.into(), params.k.into());
+    let mut ct = module.ckks_ciphertext_alloc::<Standard>(params.base2k.into(), params.k.into());
     ct.set_meta(params.prec().meta);
     let size = module
         .ckks_all_ops_tmp_bytes(&ct, &PT_PREC, &params.tsk_layout())
@@ -52,9 +52,9 @@ pub fn test_goldschmidt_division_assign<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     Module<BE>: TestContextModule<BE> + CKKSInverseOps<BE> + CKKSInverseDomainOps<BE>,
-    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>:
+    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, Standard>:
         GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
@@ -97,16 +97,16 @@ pub fn test_goldschmidt_division_assign<BE, F, E>(
         .unwrap_or_else(|e| panic!("{label}: {e}"));
         assert_eq!(ct.log_delta(), log_delta);
         assert_eq!(input_budget - ct.log_budget(), (iters + 1) * log_delta);
-        let (re_out, _) = ckks_decrypt_decode::<BE, F, E>(&params, module, &encoder, &ct, &sk, &mut scratch.borrow());
+        let (re_out, _) = ckks_decrypt_decode::<BE, F, E, Standard>(&params, module, &encoder, &ct, &sk, &mut scratch.borrow());
         assert_precision_bits(label, &re_out, &want, required, params.n);
     }
 }
 
 pub fn test_rsqrt_assign<BE, F, E>(base: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     Module<BE>: TestContextModule<BE> + CKKSInverseOps<BE>,
-    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>:
+    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, Standard>:
         GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
@@ -163,7 +163,7 @@ where
         "rsqrt_assign: consumed bits mismatch"
     );
 
-    let (re_out, _) = ckks_decrypt_decode::<BE, F, E>(&params, module, &encoder, &y, &sk, &mut scratch.borrow());
+    let (re_out, _) = ckks_decrypt_decode::<BE, F, E, Standard>(&params, module, &encoder, &y, &sk, &mut scratch.borrow());
     let want: Vec<F> = x.iter().map(|&v| F::one() / v.sqrt()).collect();
 
     let required = log_delta as f64 - 15.0;
@@ -175,9 +175,9 @@ pub fn test_inverse_negative_domain_assign<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     Module<BE>: TestContextModule<BE> + CKKSInverseDomainOps<BE>,
-    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>:
+    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, Standard>:
         GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
@@ -215,7 +215,7 @@ pub fn test_inverse_negative_domain_assign<BE, F, E>(
     assert_eq!(ct.log_delta(), log_delta, "inverse_negative_domain_assign: log_delta");
     assert_eq!(input_budget - ct.log_budget(), (iters + 1) * log_delta);
 
-    let (re_out, _) = ckks_decrypt_decode::<BE, F, E>(&params, module, &encoder, &ct, &sk, &mut scratch.borrow());
+    let (re_out, _) = ckks_decrypt_decode::<BE, F, E, Standard>(&params, module, &encoder, &ct, &sk, &mut scratch.borrow());
     let want: Vec<F> = x.iter().map(|&v| F::one() / v).collect();
     let required = log_delta as f64 - 12.0;
     assert_precision_bits("inverse_negative_domain_assign", &re_out, &want, required, params.n);
@@ -226,11 +226,11 @@ pub fn test_inverse_full_domain_assign<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     Module<BE>: TestContextModule<BE> + CKKSInverseDomainOps<BE>,
-    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>:
+    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, Standard>:
         GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE> + LWEInfos + poulpy_core::layouts::IntPolyInfos,
+    CKKSPlaintext<BE::OwnedBuf, BE::ZnxWord, Standard>: GLWEToBackendRef<BE> + LWEInfos + poulpy_core::layouts::IntPolyInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
     E: ReimNew<F>,
@@ -277,7 +277,7 @@ pub fn test_inverse_full_domain_assign<BE, F, E>(
     let im = vec![F::zero(); slots];
 
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
-    let mut sizing = module.ckks_ciphertext_alloc(params.base2k.into(), params.k.into());
+    let mut sizing = module.ckks_ciphertext_alloc::<Standard>(params.base2k.into(), params.k.into());
     sizing.set_meta(params.prec().meta);
     let scratch_size = module.ckks_inverse_domain_tmp_bytes(&sizing, &coeff_meta, &params.tsk_layout(), &params.atk_layout());
     let mut scratch = ScratchOwned::<BE>::alloc(scratch_size);
@@ -303,7 +303,7 @@ pub fn test_inverse_full_domain_assign<BE, F, E>(
     assert_eq!(ct.log_delta(), log_delta, "inverse_full_domain_assign: log_delta");
     assert_eq!(input_budget - ct.log_budget(), consumed);
 
-    let (re_out, _) = ckks_decrypt_decode::<BE, F, E>(&params, module, &encoder, &ct, &sk, &mut scratch.borrow());
+    let (re_out, _) = ckks_decrypt_decode::<BE, F, E, Standard>(&params, module, &encoder, &ct, &sk, &mut scratch.borrow());
     let want: Vec<F> = x.iter().map(|&v| F::one() / v).collect();
     let required = log_delta as f64 - 15.0;
     assert_precision_bits("inverse_full_domain_assign", &re_out, &want, required, params.n);
@@ -314,11 +314,11 @@ pub fn test_interval_normalization_assign<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     Module<BE>: TestContextModule<BE> + CKKSInverseOps<BE> + CKKSInverseDomainOps<BE>,
-    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>:
+    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, Standard>:
         GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE> + LWEInfos + poulpy_core::layouts::IntPolyInfos,
+    CKKSPlaintext<BE::OwnedBuf, BE::ZnxWord, Standard>: GLWEToBackendRef<BE> + LWEInfos + poulpy_core::layouts::IntPolyInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
     E: ReimNew<F>,
@@ -345,7 +345,7 @@ pub fn test_interval_normalization_assign<BE, F, E>(
     let im = vec![F::zero(); slots];
 
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
-    let mut sizing = module.ckks_ciphertext_alloc(params.base2k.into(), params.k.into());
+    let mut sizing = module.ckks_ciphertext_alloc::<Standard>(params.base2k.into(), params.k.into());
     sizing.set_meta(params.prec().meta);
     let scratch_size = module
         .ckks_inverse_domain_tmp_bytes(&sizing, &coeff_meta, &params.tsk_layout(), &params.atk_layout())
@@ -381,7 +381,7 @@ pub fn test_interval_normalization_assign<BE, F, E>(
         .ckks_mul_assign(&mut ct, &norm, &tsk, &mut scratch.borrow())
         .expect("mul norm");
 
-    let (re_out, _) = ckks_decrypt_decode::<BE, F, E>(&params, module, &encoder, &ct, &sk, &mut scratch.borrow());
+    let (re_out, _) = ckks_decrypt_decode::<BE, F, E, Standard>(&params, module, &encoder, &ct, &sk, &mut scratch.borrow());
     let want: Vec<F> = x.iter().map(|&v| F::one() / v).collect();
     let required = log_delta as f64 - 15.0;
     assert_precision_bits("interval_normalization_assign", &re_out, &want, required, params.n);

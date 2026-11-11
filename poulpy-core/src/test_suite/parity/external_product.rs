@@ -3,7 +3,7 @@
 use super::poisoned_scratch;
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxDftAlloc, VecZnxIdftNormalize, VecZnxIdftNormalizeTmpBytes},
-    layouts::{HostDataMut, Module, ScratchOwned, VecZnx, VecZnxDftToBackendMut, VecZnxToBackendMut},
+    layouts::{HostDataMut, Module, Ring, ScratchOwned, VecZnx, VecZnxDftToBackendMut, VecZnxToBackendMut},
     source::Source,
     test_suite::TestParams,
 };
@@ -17,26 +17,26 @@ use crate::{
 };
 
 /// `glwe_external_product` agrees with the selected comparison backend byte-for-byte.
-pub fn test_glwe_external_product_parity<BR, BT>(
+pub fn test_glwe_external_product_parity<BR, BT, Rg: Ring>(
     params: &TestParams,
     shapes: &ParityShapes,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
-    BR: ParityBackend,
-    BT: ParityBackend,
+    BR: ParityBackend<Rg>,
+    BT: ParityBackend<Rg>,
     BR::OwnedBuf: HostDataMut,
-    Module<BR>: GLWEExternalProduct<BR>
-        + GGSWPreparedFactory<BR>
-        + GLWEExternalProductDft<BR>
+    Module<BR>: GLWEExternalProduct<BR, Rg>
+        + GGSWPreparedFactory<BR, Rg>
+        + GLWEExternalProductDft<BR, Rg>
         + VecZnxDftAlloc<BR>
-        + VecZnxIdftNormalize<BR>
+        + VecZnxIdftNormalize<BR, Rg>
         + VecZnxIdftNormalizeTmpBytes,
-    Module<BT>: GLWEExternalProduct<BT>
-        + GGSWPreparedFactory<BT>
-        + GLWEExternalProductDft<BT>
+    Module<BT>: GLWEExternalProduct<BT, Rg>
+        + GGSWPreparedFactory<BT, Rg>
+        + GLWEExternalProductDft<BT, Rg>
         + VecZnxDftAlloc<BT>
-        + VecZnxIdftNormalize<BT>
+        + VecZnxIdftNormalize<BT, Rg>
         + VecZnxIdftNormalizeTmpBytes,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
@@ -119,7 +119,7 @@ pub fn test_glwe_external_product_parity<BR, BT>(
                 );
 
                 let mut twin_test = module_test.glwe_alloc_from_infos(&a_infos);
-                unnormalized_twin::<BR, BT>(&a_ref, &mut twin_test);
+                unnormalized_twin::<BR, BT, Rg>(&a_ref, &mut twin_test);
                 module_test.glwe_external_product(
                     &mut res_test,
                     &twin_test,
@@ -142,7 +142,7 @@ pub fn test_glwe_external_product_parity<BR, BT>(
                 };
                 let mut wide_test = module_test.glwe_alloc_from_infos(&wide_infos);
                 module_test.glwe_fill_from_source(&mut wide_test, &mut source);
-                wide_twin::<BR, BT>(&a_ref, &mut wide_test);
+                wide_twin::<BR, BT, Rg>(&a_ref, &mut wide_test);
                 module_test.glwe_external_product(
                     &mut res_test,
                     &wide_test,
@@ -171,7 +171,7 @@ pub fn test_glwe_external_product_parity<BR, BT>(
                     let mut normalized=$module.glwe_alloc_from_infos(&res_infos);
                     for col in 0..rank+1 {
                         let tmp=$module.vec_znx_idft_normalize_tmp_bytes(normalized.data.size(),size);
-                        $module.vec_znx_idft_normalize(&mut <VecZnx<<$be as poulpy_hal::layouts::Backend>::OwnedBuf,i64> as VecZnxToBackendMut<$be>>::to_backend_mut(&mut normalized.data),base2k,res_infos.k.as_usize(),0,col,&mut dft.to_backend_mut(),col,base2k,None,&mut poisoned_scratch::<$be>(tmp).borrow());
+                        $module.vec_znx_idft_normalize(&mut <VecZnx<<$be as poulpy_hal::layouts::Backend>::OwnedBuf,i64, Rg> as VecZnxToBackendMut<$be, Rg>>::to_backend_mut(&mut normalized.data),base2k,res_infos.k.as_usize(),0,col,&mut dft.to_backend_mut(),col,base2k,None,&mut poisoned_scratch::<$be>(tmp).borrow());
                     }
                     normalized
                 }};

@@ -1,9 +1,9 @@
 use crate::{
     kernels::znx::ZnxZero,
-    layouts::{Backend, HostDataMut, VecZnxBackendMut, ZnxViewMut},
+    layouts::{Backend, HostDataMut, Ring, VecZnxBackendMut, ZnxViewMut},
 };
 
-pub fn vec_znx_zero_portable<'r, BE>(res: &mut VecZnxBackendMut<'r, BE>, res_col: usize)
+pub fn vec_znx_zero_portable<'r, BE, Rg: Ring>(res: &mut VecZnxBackendMut<'r, BE, Rg>, res_col: usize)
 where
     BE: Backend<ZnxWord = i64> + ZnxZero,
     BE::BufMut<'r>: HostDataMut,

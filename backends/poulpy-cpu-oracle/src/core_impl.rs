@@ -1,8 +1,8 @@
 //! Registers the generic Core compositions for the oracles.
 
 use crate::{
-    FFT64CIOracle, FFT64Oracle, NTT4x30CIOracle, NTT4x30Oracle,
-    test_suite::{ControlledSamplingFFT64CIOracle, ControlledSamplingFFT64Oracle, ControlledSamplingNTT4x30Oracle},
+    FFT64Oracle, NTT4x30Oracle,
+    test_suite::{ControlledSamplingFFT64Oracle, ControlledSamplingNTT4x30Oracle},
 };
 
 /// The compositions shared by both rings.
@@ -17,7 +17,6 @@ macro_rules! impl_oracle_core {
         ::poulpy_core::impl_glwe_keyswitch_reference_full!($be);
         ::poulpy_core::impl_gglwe_keyswitch_derived_full!($be);
         ::poulpy_core::impl_ggsw_keyswitch_derived_full!($be);
-        ::poulpy_core::impl_lwe_keyswitch_reference_full!($be);
         ::poulpy_core::impl_encryption_reference_full!($be);
         ::poulpy_core::impl_glwe_external_product_reference_full!($be);
         ::poulpy_core::impl_gglwe_external_product_derived_full!($be);
@@ -31,10 +30,14 @@ macro_rules! impl_oracle_core {
     };
 }
 
-/// The compositions that need monomial multiplication, on the standard ring only.
+/// The standard-only compositions.
 macro_rules! impl_oracle_core_standard {
     ($be:ty) => {
         ::poulpy_core::impl_conversion_reference_full!($be);
+        ::poulpy_core::impl_lwe_keyswitch_reference_full!($be);
+        ::poulpy_core::impl_lwe_key_encryption_reference_full!($be);
+        ::poulpy_core::impl_lwe_key_preparation_derived_full!($be);
+        ::poulpy_core::impl_lwe_key_decompression_derived_full!($be);
         ::poulpy_core::impl_glwe_pack_derived_full!($be);
         ::poulpy_core::impl_glwe_rotate_reference_full!($be);
         ::poulpy_core::impl_ggsw_rotate_derived_full!($be);
@@ -48,11 +51,8 @@ impl_oracle_core_standard!(FFT64Oracle);
 impl_oracle_core!(NTT4x30Oracle);
 impl_oracle_core_standard!(NTT4x30Oracle);
 ::poulpy_core::impl_glwe_ci_conversion_reference_full!(NTT4x30Oracle);
-impl_oracle_core!(FFT64CIOracle);
-impl_oracle_core!(NTT4x30CIOracle);
 impl_oracle_core!(ControlledSamplingFFT64Oracle);
 impl_oracle_core_standard!(ControlledSamplingFFT64Oracle);
 ::poulpy_core::impl_glwe_ci_conversion_reference_full!(ControlledSamplingFFT64Oracle);
 impl_oracle_core!(ControlledSamplingNTT4x30Oracle);
 impl_oracle_core_standard!(ControlledSamplingNTT4x30Oracle);
-impl_oracle_core!(ControlledSamplingFFT64CIOracle);

@@ -1,4 +1,4 @@
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Module, Ring, ScratchArena};
 
 use crate::{
     api::{GGSWExpandRows, GGSWFromGGLWE, GLWEExpandLWE, GLWEExpandLWEMatrix, GLWEFromLWE, LWEFromGLWE, LWESampleExtract},
@@ -11,8 +11,16 @@ use crate::{
 };
 
 macro_rules! impl_conversion_delegate {
-    ($trait:ty, [$($bounds:tt)+], $($body:item)+) => {
+    (free $trait:ty, [$($bounds:tt)+], $($body:item)+) => {
         impl<BE> $trait for Module<BE>
+        where
+            $($bounds)+
+        {
+            $($body)+
+        }
+    };
+    ($trait:ty, [$($bounds:tt)+], $($body:item)+) => {
+        impl<BE, Rg: Ring> $trait for Module<BE>
         where
             $($bounds)+
         {
@@ -22,7 +30,7 @@ macro_rules! impl_conversion_delegate {
 }
 
 impl_conversion_delegate!(
-    LWESampleExtract<BE>,
+    free LWESampleExtract<BE>,
     [BE: Backend + ConversionImpl],
     fn lwe_sample_extract<R, A>(&self, res: &mut R, a: &A)
     where
@@ -34,7 +42,7 @@ impl_conversion_delegate!(
 );
 
 impl_conversion_delegate!(
-    GLWEFromLWE<BE>,
+    free GLWEFromLWE<BE>,
     [BE: Backend + ConversionImpl],
     fn glwe_from_lwe_tmp_bytes<R, A, K>(&self, glwe_infos: &R, lwe_infos: &A, key_infos: &K) -> usize
     where
@@ -61,7 +69,7 @@ impl_conversion_delegate!(
 );
 
 impl_conversion_delegate!(
-    LWEFromGLWE<BE>,
+    free LWEFromGLWE<BE>,
     [BE: Backend + ConversionImpl],
     fn lwe_from_glwe_tmp_bytes<R, A, K>(&self, lwe_infos: &R, glwe_infos: &A, key_infos: &K) -> usize
     where
@@ -89,7 +97,7 @@ impl_conversion_delegate!(
 );
 
 impl_conversion_delegate!(
-    GLWEExpandLWE<BE>,
+    free GLWEExpandLWE<BE>,
     [BE: Backend + ConversionImpl],
     fn glwe_expand_lwe_tmp_bytes<R, A>(&self, lwe_infos: &R, a_infos: &A) -> usize
     where
@@ -109,7 +117,7 @@ impl_conversion_delegate!(
 );
 
 impl_conversion_delegate!(
-    GLWEExpandLWEMatrix<BE>,
+    free GLWEExpandLWEMatrix<BE>,
     [
         BE: Backend + ConversionImpl
     ],
@@ -131,8 +139,8 @@ impl_conversion_delegate!(
 );
 
 impl_conversion_delegate!(
-    GGSWFromGGLWE<BE>,
-    [BE: Backend + crate::oep::GGSWConversionImpl],
+    GGSWFromGGLWE<BE, Rg>,
+    [BE: Backend + crate::oep::GGSWConversionImpl<Rg>],
     fn ggsw_from_gglwe_tmp_bytes<R, A, T>(&self, res_infos: &R, a_infos: &A, tsk_infos: &T) -> usize
     where
         R: GGSWInfos,
@@ -146,20 +154,20 @@ impl_conversion_delegate!(
         &self,
         res: &mut R,
         a: &A,
-        tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, BE>,
+        tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, BE, Rg>,
         scratch: &mut ScratchArena<'_, BE>,
     )
     where
-        R: GGSWToBackendMut<BE> + GGSWInfos,
-        A: crate::layouts::GGLWEToBackendRef<BE> + GGLWEInfos,
+        R: GGSWToBackendMut<BE, Rg> + GGSWInfos,
+        A: crate::layouts::GGLWEToBackendRef<BE, Rg> + GGLWEInfos,
     {
         BE::ggsw_from_gglwe(self, res, a, tsk, scratch)
     }
 );
 
 impl_conversion_delegate!(
-    GGSWExpandRows<BE>,
-    [BE: Backend + crate::oep::GGSWConversionImpl],
+    GGSWExpandRows<BE, Rg>,
+    [BE: Backend + crate::oep::GGSWConversionImpl<Rg>],
     fn ggsw_expand_rows_assign_tmp_bytes<R, A>(&self, res_infos: &R, tsk_infos: &A) -> usize
     where
         R: GGSWInfos,
@@ -171,11 +179,11 @@ impl_conversion_delegate!(
     fn ggsw_expand_rows_assign<R>(
         &self,
         res: &mut R,
-        tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, BE>,
+        tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, BE, Rg>,
         scratch: &mut ScratchArena<'_, BE>,
     )
     where
-        R: GGSWToBackendMut<BE> + GGSWInfos,
+        R: GGSWToBackendMut<BE, Rg> + GGSWInfos,
     {
         BE::ggsw_expand_rows_assign(self, res, tsk, scratch)
     }

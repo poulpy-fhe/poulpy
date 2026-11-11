@@ -11,7 +11,7 @@ use poulpy_cpu_portable::FFT64Portable as BackendImpl;
 use poulpy_hal::AlignedBuf;
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxFillUniformSource},
-    layouts::{Backend, Module, ScratchOwned, VecZnxToBackendMut},
+    layouts::{Backend, Module, ScratchOwned, Standard, VecZnxToBackendMut},
     source::Source,
 };
 
@@ -42,8 +42,10 @@ fn main() {
     let mut source_xe: Source = Source::new([1u8; 32]);
     let mut source_xa: Source = Source::new([2u8; 32]);
 
-    let mut scratch: ScratchOwned<BackendImpl> =
-        ScratchOwned::alloc(module.glwe_encrypt_sk_tmp_bytes(&glwe_ct_infos) | module.glwe_decrypt_tmp_bytes(&glwe_ct_infos));
+    let mut scratch: ScratchOwned<BackendImpl> = ScratchOwned::alloc(
+        <Module<BackendImpl> as GLWEEncryptSk<BackendImpl, Standard>>::glwe_encrypt_sk_tmp_bytes(&module, &glwe_ct_infos)
+            | <Module<BackendImpl> as GLWEDecrypt<BackendImpl, Standard>>::glwe_decrypt_tmp_bytes(&module, &glwe_ct_infos),
+    );
 
     let mut sk: GLWESecret<AlignedBuf, i64> = module.glwe_secret_alloc_from_infos(&glwe_ct_infos);
     module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut source_xs);

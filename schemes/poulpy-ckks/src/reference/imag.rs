@@ -29,6 +29,7 @@ pub trait CKKSImagReference<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + GLWEInfos + CKKSInfos,
     {
+        crate::ensure_operand_degrees("ckks_mul_i_into", self, [dst.n(), src.n()])?;
         let offset = ckks_offset_unary(dst, src);
         let exact = ckks_unary_exact(dst, src);
         // Validate before mutating: on error `dst` must remain untouched.
@@ -53,6 +54,7 @@ pub trait CKKSImagReference<BE: Backend> {
         Self: GLWERotate<BE> + ModuleN,
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
     {
+        crate::ensure_operand_degrees("ckks_mul_i_assign", self, [dst.n()])?;
         let k = (dst.to_backend_mut().n().as_usize() / 2) as i64;
         self.glwe_rotate_assign(k, dst, scratch);
         dst.set_slots(SlotsKind::Complex);
@@ -72,6 +74,7 @@ pub trait CKKSImagReference<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + GLWEInfos + CKKSInfos,
     {
+        crate::ensure_operand_degrees("ckks_div_i_into", self, [dst.n(), src.n()])?;
         let offset = ckks_offset_unary(dst, src);
         let exact = ckks_unary_exact(dst, src);
         // Validate before mutating: on error `dst` must remain untouched.
@@ -96,6 +99,7 @@ pub trait CKKSImagReference<BE: Backend> {
         Self: GLWERotate<BE> + ModuleN,
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
     {
+        crate::ensure_operand_degrees("ckks_div_i_assign", self, [dst.n()])?;
         let k = -((dst.to_backend_mut().n().as_usize() / 2) as i64);
         self.glwe_rotate_assign(k, dst, scratch);
         dst.set_slots(SlotsKind::Complex);

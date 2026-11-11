@@ -8,7 +8,7 @@
 //! The apply kernels read both operands sequentially and tile four output
 //! limbs per pass over a zero-padded `a` window via
 //! [`NttMulBbc1ColX2::ntt_mul_bbc_tile4_x2`].
-use poulpy_hal::layouts::Module;
+use poulpy_hal::layouts::{Module, Ring};
 
 use bytemuck::{cast_slice, cast_slice_mut};
 use poulpy_hal::execution::TaskExecutor;
@@ -21,7 +21,7 @@ use crate::{
             ntt::NttTable,
             primes::{PrimeSet, Primes30},
             types::Q120bScalar,
-            vec_znx_dft::NttModuleHandle,
+            vec_znx_dft::{NttMetaHandle, NttModuleHandle},
         },
         right_read_ntt,
     },
@@ -106,8 +106,8 @@ fn gather_embedded_x2_rows(dst: &mut [u32], src: &[u32], size: usize, blk: usize
 /// its x2 rows are gathered block by block through [`gather_embedded_x2_rows`].
 /// `a` takes the module degree.
 #[allow(clippy::too_many_arguments)]
-unsafe fn ntt4x30_conv_block_group<BE, const ACC: bool, const PAIRWISE: bool>(
-    module: &(impl NttModuleHandle + Sync),
+unsafe fn ntt4x30_conv_block_group<BE, const ACC: bool, const PAIRWISE: bool, Rg: Ring>(
+    module: &(impl NttModuleHandle<Rg> + Sync),
     res_addr: usize,
     res_limb_words: usize,
     res_cols: usize,
@@ -235,10 +235,10 @@ unsafe fn ntt4x30_conv_block_group<BE, const ACC: bool, const PAIRWISE: bool>(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn ntt4x30_conv_columns<BE, const ACC: bool, const PAIRWISE: bool>(
-    module: &(impl NttModuleHandle + Sync),
+fn ntt4x30_conv_columns<BE, const ACC: bool, const PAIRWISE: bool, Rg: Ring>(
+    module: &(impl NttModuleHandle<Rg> + Sync),
     cnv_offset: usize,
-    res: &mut VecZnxDftBackendMut<'_, BE>,
+    res: &mut VecZnxDftBackendMut<'_, BE, Rg>,
     res_col: usize,
     a0_col: &[u32],
     a1_col: &[u32],
@@ -272,7 +272,7 @@ fn ntt4x30_conv_columns<BE, const ACC: bool, const PAIRWISE: bool>(
     if BE::TaskExecutor::is_parallel() && group_count > 1 {
         BE::TaskExecutor::for_each_chunked(group_count, tmp, task_tmp_bytes, |local_tmp, group| unsafe {
             let block_start = group * CNV_ACC_GROUP;
-            ntt4x30_conv_block_group::<BE, ACC, PAIRWISE>(
+            ntt4x30_conv_block_group::<BE, ACC, PAIRWISE, Rg>(
                 module,
                 res_addr,
                 res_limb_words,
@@ -296,7 +296,7 @@ fn ntt4x30_conv_columns<BE, const ACC: bool, const PAIRWISE: bool>(
         for group in 0..group_count {
             let block_start = group * CNV_ACC_GROUP;
             unsafe {
-                ntt4x30_conv_block_group::<BE, ACC, PAIRWISE>(
+                ntt4x30_conv_block_group::<BE, ACC, PAIRWISE, Rg>(
                     module,
                     res_addr,
                     res_limb_words,
@@ -339,14 +339,14 @@ fn col_slice_u32(raw: &[Q120bScalar], n: usize, size: usize, col: usize) -> &[u3
 ///
 /// Output limbs `min_size..res.size()` are zeroed.
 #[allow(clippy::too_many_arguments)]
-pub fn ntt4x30_cnv_apply_dft_portable<BE>(
-    module: &(impl NttModuleHandle + Sync),
+pub fn ntt4x30_cnv_apply_dft_portable<BE, Rg: Ring>(
+    module: &(impl NttModuleHandle<Rg> + Sync),
     cnv_offset: usize,
-    res: &mut VecZnxDftBackendMut<'_, BE>,
+    res: &mut VecZnxDftBackendMut<'_, BE, Rg>,
     res_col: usize,
-    a: &CnvPVecLBackendRef<'_, BE>,
+    a: &CnvPVecLBackendRef<'_, BE, Rg>,
     a_col: usize,
-    b: &CnvPVecRBackendRef<'_, BE>,
+    b: &CnvPVecRBackendRef<'_, BE, Rg>,
     b_col: usize,
     b_galois: i64,
     tmp: &mut [u8],
@@ -358,7 +358,7 @@ pub fn ntt4x30_cnv_apply_dft_portable<BE>(
     let n = res.n();
     check_degree::<BE>(module.n(), n);
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
-    let b_read = right_read_ntt::<BE::Ring>(n, b.n(), b_galois, BE::MIN_DEGREE);
+    let b_read = right_read_ntt::<Rg>(n, b.n(), b_galois, BE::MIN_DEGREE);
     let res_size = res.size();
     let a_size = a.size();
     let b_size = b.size();
@@ -371,7 +371,7 @@ pub fn ntt4x30_cnv_apply_dft_portable<BE>(
 
     let a_col_u32 = col_slice_u32(a.raw(), n, a_size, a_col);
     let b_col_u32 = col_slice_u32(b.raw(), b.n(), b_size, b_col);
-    ntt4x30_conv_columns::<BE, false, false>(
+    ntt4x30_conv_columns::<BE, false, false, Rg>(
         module, cnv_offset, res, res_col, a_col_u32, a_col_u32, a_size, b_col_u32, b_col_u32, b_size, b_read, tmp,
     );
 }
@@ -380,14 +380,14 @@ pub fn ntt4x30_cnv_apply_dft_portable<BE>(
 /// via the backend `ntt_add_assign` kernel (bit-identical to apply + DFT add).
 /// Limbs `>= min_size` are left untouched.
 #[allow(clippy::too_many_arguments)]
-pub fn ntt4x30_cnv_apply_dft_add_portable<BE>(
-    module: &(impl NttModuleHandle + Sync),
+pub fn ntt4x30_cnv_apply_dft_add_portable<BE, Rg: Ring>(
+    module: &(impl NttModuleHandle<Rg> + Sync),
     cnv_offset: usize,
-    res: &mut VecZnxDftBackendMut<'_, BE>,
+    res: &mut VecZnxDftBackendMut<'_, BE, Rg>,
     res_col: usize,
-    a: &CnvPVecLBackendRef<'_, BE>,
+    a: &CnvPVecLBackendRef<'_, BE, Rg>,
     a_col: usize,
-    b: &CnvPVecRBackendRef<'_, BE>,
+    b: &CnvPVecRBackendRef<'_, BE, Rg>,
     b_col: usize,
     b_galois: i64,
     tmp: &mut [u8],
@@ -399,7 +399,7 @@ pub fn ntt4x30_cnv_apply_dft_add_portable<BE>(
     let n = res.n();
     check_degree::<BE>(module.n(), n);
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
-    let b_read = right_read_ntt::<BE::Ring>(n, b.n(), b_galois, BE::MIN_DEGREE);
+    let b_read = right_read_ntt::<Rg>(n, b.n(), b_galois, BE::MIN_DEGREE);
     let res_size = res.size();
     let a_size = a.size();
     let b_size = b.size();
@@ -409,7 +409,7 @@ pub fn ntt4x30_cnv_apply_dft_add_portable<BE>(
 
     let a_col_u32 = col_slice_u32(a.raw(), n, a_size, a_col);
     let b_col_u32 = col_slice_u32(b.raw(), b.n(), b_size, b_col);
-    ntt4x30_conv_columns::<BE, true, false>(
+    ntt4x30_conv_columns::<BE, true, false, Rg>(
         module, cnv_offset, res, res_col, a_col_u32, a_col_u32, a_size, b_col_u32, b_col_u32, b_size, b_read, tmp,
     );
 }
@@ -473,15 +473,15 @@ pub fn cnv_accumulate_schedule_portable(
 /// reduced once, and the destination column is written exactly once through the
 /// staged group flush — the result is congruent to, but not bit-identical with,
 /// a sequence of [`ntt4x30_cnv_apply_dft_add_portable`] calls.
-pub fn ntt4x30_cnv_apply_dft_sum_portable<BE>(
+pub fn ntt4x30_cnv_apply_dft_sum_portable<BE, Rg: Ring>(
     module: &Module<BE>,
     cnv_offset: usize,
-    res: &mut VecZnxDftBackendMut<'_, BE>,
+    res: &mut VecZnxDftBackendMut<'_, BE, Rg>,
     res_col: usize,
-    terms: &[crate::layouts::CnvDftAccTerm<'_, BE>],
+    terms: &[crate::layouts::CnvDftAccTerm<'_, BE, Rg>],
     tmp: &mut [u8],
 ) where
-    Module<BE>: NttModuleHandle,
+    Module<BE>: NttModuleHandle<Rg>,
     BE: Backend<DftWord = Q120bScalar, ZnxWord = i64>,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
     for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
@@ -504,7 +504,7 @@ pub fn ntt4x30_cnv_apply_dft_sum_portable<BE>(
                 col_slice_u32(t.b.raw(), t.b.n(), b_size, t.b_col),
                 a_size,
                 b_size,
-                right_read_ntt::<BE::Ring>(n, t.b.n(), t.b_galois, BE::MIN_DEGREE),
+                right_read_ntt::<Rg>(n, t.b.n(), t.b_galois, BE::MIN_DEGREE),
             )
         })
         .collect();
@@ -599,13 +599,13 @@ pub fn ntt4x30_cnv_apply_dft_sum_portable<BE>(
 ///
 /// When `col_i == col_j` this delegates to [`ntt4x30_cnv_apply_dft_portable`].
 #[allow(clippy::too_many_arguments)]
-pub fn ntt4x30_cnv_pairwise_apply_dft_portable<BE>(
-    module: &(impl NttModuleHandle + Sync),
+pub fn ntt4x30_cnv_pairwise_apply_dft_portable<BE, Rg: Ring>(
+    module: &(impl NttModuleHandle<Rg> + Sync),
     cnv_offset: usize,
-    res: &mut VecZnxDftBackendMut<'_, BE>,
+    res: &mut VecZnxDftBackendMut<'_, BE, Rg>,
     res_col: usize,
-    a: &CnvPVecLBackendRef<'_, BE>,
-    b: &CnvPVecRBackendRef<'_, BE>,
+    a: &CnvPVecLBackendRef<'_, BE, Rg>,
+    b: &CnvPVecRBackendRef<'_, BE, Rg>,
     col_i: usize,
     col_j: usize,
     tmp: &mut [u8],
@@ -615,7 +615,7 @@ pub fn ntt4x30_cnv_pairwise_apply_dft_portable<BE>(
     for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
 {
     if col_i == col_j {
-        ntt4x30_cnv_apply_dft_portable::<BE>(module, cnv_offset, res, res_col, a, col_i, b, col_j, 1, tmp);
+        ntt4x30_cnv_apply_dft_portable::<BE, Rg>(module, cnv_offset, res, res_col, a, col_i, b, col_j, 1, tmp);
         return;
     }
 
@@ -637,7 +637,7 @@ pub fn ntt4x30_cnv_pairwise_apply_dft_portable<BE>(
     let a1 = col_slice_u32(a.raw(), n, a_size, col_j);
     let b0 = col_slice_u32(b.raw(), b.n(), b_size, col_i);
     let b1 = col_slice_u32(b.raw(), b.n(), b_size, col_j);
-    ntt4x30_conv_columns::<BE, false, true>(module, cnv_offset, res, res_col, a0, a1, a_size, b0, b1, b_size, b_read, tmp);
+    ntt4x30_conv_columns::<BE, false, true, Rg>(module, cnv_offset, res, res_col, a0, a1, a_size, b0, b1, b_size, b_read, tmp);
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -659,16 +659,16 @@ pub fn ntt4x30_cnv_pvec_left_prepare_tmp_bytes_portable(n: usize) -> usize {
 /// Encode a `VecZnx` into a `CnvPVecL` (canonical u32 rows, block-major).
 ///
 /// Limbs of `res` beyond `a.size()` are zeroed.
-pub fn ntt4x30_cnv_pvec_left_prepare_portable<BE>(
+pub fn ntt4x30_cnv_pvec_left_prepare_portable<BE, Rg: Ring>(
     module: &Module<BE>,
-    res: &mut CnvPVecLBackendMut<'_, BE>,
-    a: &VecZnxBackendRef<'_, BE>,
+    res: &mut CnvPVecLBackendMut<'_, BE, Rg>,
+    a: &VecZnxBackendRef<'_, BE, Rg>,
     tmp: &mut [u8],
 ) where
-    Module<BE>: NttModuleHandle,
+    Module<BE>: NttModuleHandle<Rg>,
     BE: Backend<DftWord = Q120bScalar, ZnxWord = i64>
         + NttFromZnx64
-        + NttDFTExecute<NttTable<Primes30, <Module<BE> as crate::kernels::ntt4x30::vec_znx_dft::NttModuleHandle>::Ring>>
+        + NttDFTExecute<NttTable<Primes30, Rg>>
         + NttPackLeft1BlkX2
         + 'static,
     for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
@@ -749,16 +749,16 @@ pub fn ntt4x30_cnv_pvec_right_prepare_tmp_bytes_portable(n: usize) -> usize {
 
 /// Encode a `VecZnx` into a `CnvPVecR` (q120c rows, block-major, reversed
 /// limb order). Limbs of `res` beyond `a.size()` are zeroed.
-pub fn ntt4x30_cnv_pvec_right_prepare_portable<BE>(
+pub fn ntt4x30_cnv_pvec_right_prepare_portable<BE, Rg: Ring>(
     module: &Module<BE>,
-    res: &mut CnvPVecRBackendMut<'_, BE>,
-    a: &VecZnxBackendRef<'_, BE>,
+    res: &mut CnvPVecRBackendMut<'_, BE, Rg>,
+    a: &VecZnxBackendRef<'_, BE, Rg>,
     tmp: &mut [u64],
 ) where
-    Module<BE>: NttModuleHandle,
+    Module<BE>: NttModuleHandle<Rg>,
     BE: Backend<DftWord = Q120bScalar, ZnxWord = i64>
         + NttFromZnx64
-        + NttDFTExecute<NttTable<Primes30, <Module<BE> as crate::kernels::ntt4x30::vec_znx_dft::NttModuleHandle>::Ring>>
+        + NttDFTExecute<NttTable<Primes30, Rg>>
         + NttCFromB
         + 'static,
     for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
@@ -829,17 +829,17 @@ pub fn ntt4x30_cnv_pvec_self_prepare_tmp_bytes_portable(n: usize) -> usize {
 }
 
 /// Encode a `VecZnx` into both `CnvPVecL` and `CnvPVecR` sharing the NTT.
-pub fn ntt4x30_cnv_pvec_self_prepare_portable<BE>(
+pub fn ntt4x30_cnv_pvec_self_prepare_portable<BE, Rg: Ring>(
     module: &Module<BE>,
-    left: &mut CnvPVecLBackendMut<'_, BE>,
-    right: &mut CnvPVecRBackendMut<'_, BE>,
-    a: &VecZnxBackendRef<'_, BE>,
+    left: &mut CnvPVecLBackendMut<'_, BE, Rg>,
+    right: &mut CnvPVecRBackendMut<'_, BE, Rg>,
+    a: &VecZnxBackendRef<'_, BE, Rg>,
     tmp: &mut [u8],
 ) where
-    Module<BE>: NttModuleHandle,
+    Module<BE>: NttModuleHandle<Rg>,
     BE: Backend<DftWord = Q120bScalar, ZnxWord = i64>
         + NttFromZnx64
-        + NttDFTExecute<NttTable<Primes30, <Module<BE> as crate::kernels::ntt4x30::vec_znx_dft::NttModuleHandle>::Ring>>
+        + NttDFTExecute<NttTable<Primes30, Rg>>
         + NttCFromB
         + NttPackLeft1BlkX2
         + 'static,
@@ -967,13 +967,13 @@ pub fn ntt4x30_cnv_by_const_apply_tmp_bytes_portable(_res_size: usize, _a_size: 
 /// Output limbs `min_size..res.size()` are zeroed by `ntt4x30_cnv_by_const_apply_portable`
 /// and left untouched by `ntt4x30_cnv_by_const_apply_add_portable`. `_tmp` is unused.
 #[allow(clippy::too_many_arguments)]
-pub fn ntt4x30_cnv_by_const_apply_portable<BE, E: TaskExecutor>(
+pub fn ntt4x30_cnv_by_const_apply_portable<BE, E: TaskExecutor, Rg: Ring>(
     cnv_offset: usize,
-    res: &mut VecZnxBigBackendMut<'_, BE>,
+    res: &mut VecZnxBigBackendMut<'_, BE, Rg>,
     res_col: usize,
-    a: &VecZnxBackendRef<'_, BE>,
+    a: &VecZnxBackendRef<'_, BE, Rg>,
     a_col: usize,
-    b: &VecZnxBackendRef<'_, BE>,
+    b: &VecZnxBackendRef<'_, BE, Rg>,
     b_col: usize,
     b_coeff: usize,
     _tmp: &mut [u8],
@@ -982,17 +982,17 @@ pub fn ntt4x30_cnv_by_const_apply_portable<BE, E: TaskExecutor>(
     for<'x> BE::BufRef<'x>: HostDataRef,
     for<'x> BE::BufMut<'x>: HostDataMut,
 {
-    ntt4x30_cnv_by_const_apply_impl::<BE, E, false>(cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff)
+    ntt4x30_cnv_by_const_apply_impl::<BE, E, false, Rg>(cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff)
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn ntt4x30_cnv_by_const_apply_add_portable<BE, E: TaskExecutor>(
+pub fn ntt4x30_cnv_by_const_apply_add_portable<BE, E: TaskExecutor, Rg: Ring>(
     cnv_offset: usize,
-    res: &mut VecZnxBigBackendMut<'_, BE>,
+    res: &mut VecZnxBigBackendMut<'_, BE, Rg>,
     res_col: usize,
-    a: &VecZnxBackendRef<'_, BE>,
+    a: &VecZnxBackendRef<'_, BE, Rg>,
     a_col: usize,
-    b: &VecZnxBackendRef<'_, BE>,
+    b: &VecZnxBackendRef<'_, BE, Rg>,
     b_col: usize,
     b_coeff: usize,
     _tmp: &mut [u8],
@@ -1001,17 +1001,17 @@ pub fn ntt4x30_cnv_by_const_apply_add_portable<BE, E: TaskExecutor>(
     for<'x> BE::BufRef<'x>: HostDataRef,
     for<'x> BE::BufMut<'x>: HostDataMut,
 {
-    ntt4x30_cnv_by_const_apply_impl::<BE, E, true>(cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff)
+    ntt4x30_cnv_by_const_apply_impl::<BE, E, true, Rg>(cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff)
 }
 
 #[allow(clippy::too_many_arguments)]
-fn ntt4x30_cnv_by_const_apply_impl<BE, E: TaskExecutor, const ADD: bool>(
+fn ntt4x30_cnv_by_const_apply_impl<BE, E: TaskExecutor, const ADD: bool, Rg: Ring>(
     cnv_offset: usize,
-    res: &mut VecZnxBigBackendMut<'_, BE>,
+    res: &mut VecZnxBigBackendMut<'_, BE, Rg>,
     res_col: usize,
-    a: &VecZnxBackendRef<'_, BE>,
+    a: &VecZnxBackendRef<'_, BE, Rg>,
     a_col: usize,
-    b: &VecZnxBackendRef<'_, BE>,
+    b: &VecZnxBackendRef<'_, BE, Rg>,
     b_col: usize,
     b_coeff: usize,
 ) where

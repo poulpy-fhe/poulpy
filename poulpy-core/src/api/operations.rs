@@ -1,7 +1,9 @@
 use crate::layouts::IntPolyInfos;
 use std::{collections::HashMap, ops::Range};
 
-use poulpy_hal::layouts::{Backend, CnvPVecLToBackendRef, CnvPVecRToBackendRef, ScratchArena, VecZnxDftBackendMut};
+use poulpy_hal::layouts::{
+    Backend, CnvPVecLToBackendRef, CnvPVecRToBackendRef, Ring, ScratchArena, Standard, VecZnxDftBackendMut,
+};
 
 use crate::layouts::{
     Degree, GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut,
@@ -23,7 +25,7 @@ use crate::layouts::{
 ///
 /// Before writing `res`, if `levels` ends past the ring's trace, starts after its end, or holds level 0 on the
 /// conjugate-invariant ring.
-pub trait GLWETrace<BE: Backend> {
+pub trait GLWETrace<BE: Backend, Rg: Ring = Standard> {
     /// The Galois elements a trace of a degree-`n` operand over `levels` in the direction `reverse` looks up.
     ///
     /// # Panics
@@ -57,9 +59,9 @@ pub trait GLWETrace<BE: Backend> {
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
-        H: GetAutomorphismKey<BE>;
+        R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+        A: GLWEToBackendRef<BE, Rg> + GLWEInfos,
+        H: GetAutomorphismKey<BE, Rg>;
 
     fn glwe_trace_assign<R, H>(
         &self,
@@ -70,8 +72,8 @@ pub trait GLWETrace<BE: Backend> {
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        H: GetAutomorphismKey<BE>;
+        R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+        H: GetAutomorphismKey<BE, Rg>;
 }
 
 /// Packs the selected coefficients through a merge tree and normalized trace.
@@ -115,7 +117,7 @@ pub trait GLWEPack<BE: Backend> {
 /// The ciphertext operand is read canonical at its `k` (see the normalized
 /// form on [`crate::layouts::GLWE`]): the product reads every bit of its live
 /// limbs, so an operand whose canonical flag is clear is normalized first.
-pub trait GLWEMulConst<BE: Backend> {
+pub trait GLWEMulConst<BE: Backend, Rg: Ring = Standard> {
     fn glwe_mul_const_tmp_bytes<R, A, B>(&self, res: &R, a: &A, b: &B) -> usize
     where
         R: GLWEInfos,
@@ -131,9 +133,9 @@ pub trait GLWEMulConst<BE: Backend> {
         b_coeff: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
-        B: GLWEToBackendRef<BE> + GLWEInfos;
+        R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+        A: GLWEToBackendRef<BE, Rg> + GLWEInfos,
+        B: GLWEToBackendRef<BE, Rg> + GLWEInfos;
 
     fn glwe_mul_const_assign<R, B>(
         &self,
@@ -143,8 +145,8 @@ pub trait GLWEMulConst<BE: Backend> {
         b_coeff: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        B: GLWEToBackendRef<BE> + GLWEInfos;
+        R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+        B: GLWEToBackendRef<BE, Rg> + GLWEInfos;
 }
 
 /// Multiplication of a GLWE ciphertext by a **plaintext** operand.
@@ -161,7 +163,7 @@ pub trait GLWEMulConst<BE: Backend> {
 /// `k` it declares, canonical at it (see the normalized form on
 /// [`crate::layouts::GLWE`]): the convolution reads every bit of its live
 /// limbs, so an operand whose canonical flag is clear is normalized first.
-pub trait GLWEMulPlain<BE: Backend> {
+pub trait GLWEMulPlain<BE: Backend, Rg: Ring = Standard> {
     /// The right operand may have a degree that is a power-of-two divisor of the
     /// module's, not below the backend floor, which stands for its ring
     /// embedding; the budget is an upper bound for it.
@@ -174,15 +176,15 @@ pub trait GLWEMulPlain<BE: Backend> {
     #[allow(clippy::too_many_arguments)]
     fn glwe_mul_plain<R, A, B>(&self, cnv_offset: usize, res: &mut R, a: &A, b: &B, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
-        B: GLWEToBackendRef<BE> + IntPolyInfos + GLWEInfos;
+        R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+        A: GLWEToBackendRef<BE, Rg> + GLWEInfos,
+        B: GLWEToBackendRef<BE, Rg> + IntPolyInfos + GLWEInfos;
 
     #[allow(clippy::too_many_arguments)]
     fn glwe_mul_plain_assign<R, A>(&self, cnv_offset: usize, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + IntPolyInfos + GLWEInfos;
+        R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+        A: GLWEToBackendRef<BE, Rg> + IntPolyInfos + GLWEInfos;
 }
 
 /// Sum of products of prepared GLWE ciphertexts by prepared plaintexts, each plaintext read through a Galois element:
@@ -197,7 +199,7 @@ pub trait GLWEMulPlain<BE: Backend> {
 /// convolution sum per column, and normalized once into `res`, canonical at `res.k()`. One term through `1`, prepared
 /// from a ciphertext of width `k` on `ceil(k / base2k)` limbs and from a plaintext on its limbs, is
 /// [`GLWEMulPlain::glwe_mul_plain`] of the two, bit for bit.
-pub trait GLWEMulPreparedPlainSum<BE: Backend> {
+pub trait GLWEMulPreparedPlainSum<BE: Backend, Rg: Ring = Standard> {
     /// Scratch bytes of [`Self::glwe_mul_prepared_plain_sum`] for operands of `a_size` and `b_size` limbs, whatever the
     /// number of terms.
     fn glwe_mul_prepared_plain_sum_tmp_bytes<R>(&self, res: &R, a_size: usize, b_size: usize) -> usize
@@ -223,9 +225,9 @@ pub trait GLWEMulPreparedPlainSum<BE: Backend> {
         base2k: crate::layouts::Base2K,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        AP: CnvPVecLToBackendRef<BE>,
-        BP: CnvPVecRToBackendRef<BE>;
+        R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+        AP: CnvPVecLToBackendRef<BE, Rg>,
+        BP: CnvPVecRToBackendRef<BE, Rg>;
 
     /// Scratch bytes of [`Self::glwe_mul_prepared_plain_sum_add`] for `res` and operands of `a_size` and `b_size` limbs,
     /// whatever the number of terms.
@@ -254,9 +256,9 @@ pub trait GLWEMulPreparedPlainSum<BE: Backend> {
         base2k: crate::layouts::Base2K,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        AP: CnvPVecLToBackendRef<BE>,
-        BP: CnvPVecRToBackendRef<BE>;
+        R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+        AP: CnvPVecLToBackendRef<BE, Rg>,
+        BP: CnvPVecRToBackendRef<BE, Rg>;
 
     /// Scratch bytes of [`Self::glwe_mul_prepared_plain_sum_dft`] for an accumulator of `res_size` limbs and operands of
     /// `a_size` and `b_size` limbs, whatever the number of terms.
@@ -278,7 +280,7 @@ pub trait GLWEMulPreparedPlainSum<BE: Backend> {
     fn glwe_mul_prepared_plain_sum_dft<AP, BP>(
         &self,
         cnv_offset: usize,
-        res: &mut VecZnxDftBackendMut<'_, BE>,
+        res: &mut VecZnxDftBackendMut<'_, BE, Rg>,
         a: &[&AP],
         a_size: usize,
         b: &[&BP],
@@ -287,8 +289,8 @@ pub trait GLWEMulPreparedPlainSum<BE: Backend> {
         base2k: crate::layouts::Base2K,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        AP: CnvPVecLToBackendRef<BE>,
-        BP: CnvPVecRToBackendRef<BE>;
+        AP: CnvPVecLToBackendRef<BE, Rg>,
+        BP: CnvPVecRToBackendRef<BE, Rg>;
 
     /// Scratch bytes of [`Self::glwe_mul_prepared_plain_sum_dft_add`]: a one-column sum of `res_size` limbs and the
     /// scratch of [`Self::glwe_mul_prepared_plain_sum_dft`].
@@ -303,7 +305,7 @@ pub trait GLWEMulPreparedPlainSum<BE: Backend> {
     fn glwe_mul_prepared_plain_sum_dft_add<AP, BP>(
         &self,
         cnv_offset: usize,
-        res: &mut VecZnxDftBackendMut<'_, BE>,
+        res: &mut VecZnxDftBackendMut<'_, BE, Rg>,
         a: &[&AP],
         a_size: usize,
         b: &[&BP],
@@ -312,8 +314,8 @@ pub trait GLWEMulPreparedPlainSum<BE: Backend> {
         base2k: crate::layouts::Base2K,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        AP: CnvPVecLToBackendRef<BE>,
-        BP: CnvPVecRToBackendRef<BE>;
+        AP: CnvPVecLToBackendRef<BE, Rg>,
+        BP: CnvPVecRToBackendRef<BE, Rg>;
 }
 
 /// Tensor products of GLWE ciphertexts.
@@ -322,7 +324,7 @@ pub trait GLWEMulPreparedPlainSum<BE: Backend> {
 /// normalized form on [`crate::layouts::GLWE`]): the convolution reads every
 /// bit of their live limbs, so an operand whose canonical flag is clear is
 /// normalized first.
-pub trait GLWETensoring<BE: Backend> {
+pub trait GLWETensoring<BE: Backend, Rg: Ring = Standard> {
     /// Scratch required for a tensor product with a reusable prepared right operand.
     /// `a_size` and `b_size` are the operands' effective limb counts.
     fn glwe_tensor_apply_prepared_right_tmp_bytes<R, A>(&self, res: &R, a: &A, a_size: usize, b_size: usize) -> usize
@@ -342,9 +344,9 @@ pub trait GLWETensoring<BE: Backend> {
         b_size: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
-        BP: CnvPVecRToBackendRef<BE>;
+        R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+        A: GLWEToBackendRef<BE, Rg> + GLWEInfos,
+        BP: CnvPVecRToBackendRef<BE, Rg>;
 
     fn glwe_tensor_apply_tmp_bytes<R, A, B>(&self, res: &R, a: &A, b: &B) -> usize
     where
@@ -359,20 +361,20 @@ pub trait GLWETensoring<BE: Backend> {
 
     fn glwe_tensor_apply<R, A, B>(&self, cnv_offset: usize, res: &mut R, a: &A, b: &B, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
-        B: GLWEToBackendRef<BE> + GLWEInfos;
+        R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+        A: GLWEToBackendRef<BE, Rg> + GLWEInfos,
+        B: GLWEToBackendRef<BE, Rg> + GLWEInfos;
 
     fn glwe_tensor_square_apply<R, A>(&self, cnv_offset: usize, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos;
+        R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+        A: GLWEToBackendRef<BE, Rg> + GLWEInfos;
 
     fn glwe_tensor_relinearize<R, A, H>(&self, res: &mut R, a: &A, tsk: &H, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
-        H: GetTensorKey<BE>;
+        R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+        A: GLWEToBackendRef<BE, Rg> + GLWEInfos,
+        H: GetTensorKey<BE, Rg>;
 
     fn glwe_tensor_relinearize_tmp_bytes<R, A, B>(&self, res: &R, a: &A, tsk: &B) -> usize
     where
@@ -424,10 +426,10 @@ pub trait GLWETensoring<BE: Backend> {
         tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
-        B: GLWEToBackendRef<BE> + GLWEInfos,
-        H: GetTensorKey<BE>;
+        R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+        A: GLWEToBackendRef<BE, Rg> + GLWEInfos,
+        B: GLWEToBackendRef<BE, Rg> + GLWEInfos,
+        H: GetTensorKey<BE, Rg>;
 
     /// [`Self::glwe_mul_relinearize`] with `res`, read at its current width, as the left operand.
     fn glwe_mul_relinearize_assign<R, A, H>(
@@ -439,9 +441,9 @@ pub trait GLWETensoring<BE: Backend> {
         tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
-        H: GetTensorKey<BE>;
+        R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+        A: GLWEToBackendRef<BE, Rg> + GLWEInfos,
+        H: GetTensorKey<BE, Rg>;
 
     /// [`Self::glwe_mul_relinearize`] of `a` by itself.
     fn glwe_square_relinearize<R, A, H>(
@@ -453,9 +455,9 @@ pub trait GLWETensoring<BE: Backend> {
         tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
-        H: GetTensorKey<BE>;
+        R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+        A: GLWEToBackendRef<BE, Rg> + GLWEInfos,
+        H: GetTensorKey<BE, Rg>;
 
     /// [`Self::glwe_square_relinearize`] of `res`, read at its current width.
     fn glwe_square_relinearize_assign<R, H>(
@@ -466,8 +468,8 @@ pub trait GLWETensoring<BE: Backend> {
         tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        H: GetTensorKey<BE>;
+        R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+        H: GetTensorKey<BE, Rg>;
 
     /// [`Self::glwe_mul_relinearize`] with a right operand prepared by [`crate::glwe_right_operand_prepare`]:
     /// `b_size` limbs of a ciphertext of width `b_k`.
@@ -484,10 +486,10 @@ pub trait GLWETensoring<BE: Backend> {
         tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
-        BP: poulpy_hal::layouts::CnvPVecRToBackendRef<BE>,
-        H: GetTensorKey<BE>;
+        R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+        A: GLWEToBackendRef<BE, Rg> + GLWEInfos,
+        BP: poulpy_hal::layouts::CnvPVecRToBackendRef<BE, Rg>,
+        H: GetTensorKey<BE, Rg>;
 
     /// [`Self::glwe_mul_prepared_relinearize`] with `res`, read at its current width, as the left operand.
     #[allow(clippy::too_many_arguments)]
@@ -502,14 +504,14 @@ pub trait GLWETensoring<BE: Backend> {
         tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        AP: poulpy_hal::layouts::CnvPVecRToBackendRef<BE>,
-        H: GetTensorKey<BE>;
+        R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+        AP: poulpy_hal::layouts::CnvPVecRToBackendRef<BE, Rg>,
+        H: GetTensorKey<BE, Rg>;
 }
 
 /// Sums of products of rank-1 GLWE ciphertexts, relinearized once. The operands are read canonical at their
 /// `k`, as for [`GLWETensoring`]: one whose canonical flag is clear is normalized into scratch first.
-pub trait GLWEMulRelinearizeSum<BE: Backend> {
+pub trait GLWEMulRelinearizeSum<BE: Backend, Rg: Ring = Standard> {
     /// Scratch bytes of [`Self::glwe_mul_relinearize_sum`], whatever the number of pairs.
     fn glwe_mul_relinearize_sum_tmp_bytes<R, B>(
         &self,
@@ -560,10 +562,10 @@ pub trait GLWEMulRelinearizeSum<BE: Backend> {
         tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
-        B: GLWEToBackendRef<BE> + GLWEInfos,
-        H: GetTensorKey<BE>;
+        R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+        A: GLWEToBackendRef<BE, Rg> + GLWEInfos,
+        B: GLWEToBackendRef<BE, Rg> + GLWEInfos,
+        H: GetTensorKey<BE, Rg>;
 }
 
 /// Products of GLWE ciphertexts over operands prepared once by [`crate::glwe_left_operand_prepare`] and
@@ -573,7 +575,7 @@ pub trait GLWEMulRelinearizeSum<BE: Backend> {
 /// holds it as the unprepared products read it: canonical at `k` (normalized first if its canonical flag is clear),
 /// each of its `rank + 1` columns on `ceil(k / base2k)` limbs. Operands prepared so give the unprepared products of
 /// the ciphertexts they were prepared from, bit for bit.
-pub trait GLWEPreparedTensoring<BE: Backend> {
+pub trait GLWEPreparedTensoring<BE: Backend, Rg: Ring = Standard> {
     /// Scratch bytes of [`Self::glwe_mul_prepared_relinearize_sum`], whatever the number of pairs and the form of the
     /// right operands, for operands of `a_size` and `b_size` limbs. One pair of prepared operands needs no more than
     /// [`GLWETensoring::glwe_mul_relinearize_tmp_bytes`] and a right operand of `b_size` limbs.
@@ -614,10 +616,10 @@ pub trait GLWEPreparedTensoring<BE: Backend> {
         tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        AP: CnvPVecLToBackendRef<BE> + 'a,
-        BP: CnvPVecRToBackendRef<BE> + 'a,
-        H: GetTensorKey<BE>;
+        R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+        AP: CnvPVecLToBackendRef<BE, Rg> + 'a,
+        BP: CnvPVecRToBackendRef<BE, Rg> + 'a,
+        H: GetTensorKey<BE, Rg>;
 
     /// Scratch bytes of [`Self::glwe_tensor_apply_prepared`] for the same sizes and radix.
     fn glwe_tensor_apply_prepared_tmp_bytes<R>(
@@ -650,58 +652,58 @@ pub trait GLWEPreparedTensoring<BE: Backend> {
         base2k: crate::layouts::Base2K,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        AP: CnvPVecLToBackendRef<BE>,
-        BP: CnvPVecRToBackendRef<BE>;
+        R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+        AP: CnvPVecLToBackendRef<BE, Rg>,
+        BP: CnvPVecRToBackendRef<BE, Rg>;
 }
 
-pub trait GLWEAdd<BE: Backend> {
+pub trait GLWEAdd<BE: Backend, Rg: Ring = Standard> {
     fn glwe_add_into<R, A, B>(&self, res: &mut R, a: &A, b: &B)
     where
-        R: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE>,
-        B: GLWEToBackendRef<BE>;
+        R: GLWEToBackendMut<BE, Rg>,
+        A: GLWEToBackendRef<BE, Rg>,
+        B: GLWEToBackendRef<BE, Rg>;
 
     fn glwe_add_assign<R, A>(&self, res: &mut R, a: &A)
     where
-        R: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE>;
+        R: GLWEToBackendMut<BE, Rg>,
+        A: GLWEToBackendRef<BE, Rg>;
 }
 
-pub trait GLWENegate<BE: Backend> {
+pub trait GLWENegate<BE: Backend, Rg: Ring = Standard> {
     fn glwe_negate<R, A>(&self, res: &mut R, a: &A)
     where
-        R: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE>;
+        R: GLWEToBackendMut<BE, Rg>,
+        A: GLWEToBackendRef<BE, Rg>;
 
     fn glwe_negate_assign<R>(&self, res: &mut R)
     where
-        R: GLWEToBackendMut<BE>;
+        R: GLWEToBackendMut<BE, Rg>;
 }
 
-pub trait GLWESub<BE: Backend> {
+pub trait GLWESub<BE: Backend, Rg: Ring = Standard> {
     fn glwe_sub<R, A, B>(&self, res: &mut R, a: &A, b: &B)
     where
-        R: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE>,
-        B: GLWEToBackendRef<BE>;
+        R: GLWEToBackendMut<BE, Rg>,
+        A: GLWEToBackendRef<BE, Rg>,
+        B: GLWEToBackendRef<BE, Rg>;
 
     fn glwe_sub_assign<R, A>(&self, res: &mut R, a: &A)
     where
-        R: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE>;
+        R: GLWEToBackendMut<BE, Rg>,
+        A: GLWEToBackendRef<BE, Rg>;
 
     /// Replaces `res` with `a - res`. For a rank-zero `a`, the old mask is negated.
     fn glwe_sub_negate_assign<R, A>(&self, res: &mut R, a: &A)
     where
-        R: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE>;
+        R: GLWEToBackendMut<BE, Rg>,
+        A: GLWEToBackendRef<BE, Rg>;
 }
 
-pub trait GLWEZero<BE: Backend> {
+pub trait GLWEZero<BE: Backend, Rg: Ring = Standard> {
     fn glwe_zero<R>(&self, res: &mut R)
     where
-        R: GLWEToBackendMut<BE>;
+        R: GLWEToBackendMut<BE, Rg>;
 }
 
 pub trait GLWERotate<BE: Backend> {
@@ -759,15 +761,15 @@ pub trait GLWEMulXpMinusOne<BE: Backend> {
 /// Equal-layout copies also preserve unnormalized digits verbatim; normalizing
 /// such an intermediate remains the caller's responsibility.
 /// Exact copies preserve noise metadata; narrowing the torus precision clears it.
-pub trait GLWECopy<BE: Backend> {
+pub trait GLWECopy<BE: Backend, Rg: Ring = Standard> {
     /// Scratch for the given source and destination layouts (zero for the
     /// equal-radix, non-narrowing path).
     fn glwe_copy_tmp_bytes<R: GLWEInfos, A: GLWEInfos>(&self, res: &R, a: &A) -> usize;
 
     fn glwe_copy<R, A>(&self, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE>;
+        R: GLWEToBackendMut<BE, Rg>,
+        A: GLWEToBackendRef<BE, Rg>;
 }
 
 /// Copies the first `res.dnum()` rows of a GGLWE into a GGLWE of the same gadget
@@ -779,68 +781,68 @@ pub trait GLWECopy<BE: Backend> {
 /// A key never covers its own layout but covers such a copy, which the `_assign`
 /// key switches and automorphisms switch in place. The metadata of a wrapping
 /// key is the caller's: an automorphism key's Galois element is not copied.
-pub trait GGLWECopy<BE: Backend> {
+pub trait GGLWECopy<BE: Backend, Rg: Ring = Standard> {
     /// Scratch for the given destination and source layouts (zero for the
     /// equal-radix, non-narrowing path).
     fn gglwe_copy_tmp_bytes<R: GGLWEInfos, A: GGLWEInfos>(&self, res: &R, a: &A) -> usize;
 
     fn gglwe_copy<R, A>(&self, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GGLWEToBackendMut<BE> + GGLWEInfos,
-        A: GGLWEToBackendRef<BE> + GGLWEInfos;
+        R: GGLWEToBackendMut<BE, Rg> + GGLWEInfos,
+        A: GGLWEToBackendRef<BE, Rg> + GGLWEInfos;
 }
 
 /// Copies the first `res.dnum()` rows of a GGSW into a GGSW of the same gadget
 /// and as many or fewer digits, as [`GGLWECopy`] copies a GGLWE.
-pub trait GGSWCopy<BE: Backend> {
+pub trait GGSWCopy<BE: Backend, Rg: Ring = Standard> {
     /// Scratch for the given destination and source layouts (zero for the
     /// equal-radix, non-narrowing path).
     fn ggsw_copy_tmp_bytes<R: GGSWInfos, A: GGSWInfos>(&self, res: &R, a: &A) -> usize;
 
     fn ggsw_copy<R, A>(&self, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GGSWToBackendMut<BE> + GGSWInfos,
-        A: GGSWToBackendRef<BE> + GGSWInfos;
+        R: GGSWToBackendMut<BE, Rg> + GGSWInfos,
+        A: GGSWToBackendRef<BE, Rg> + GGSWInfos;
 }
 
-pub trait GLWEShift<BE: Backend> {
+pub trait GLWEShift<BE: Backend, Rg: Ring = Standard> {
     /// Scratch bytes for the GLWE shift family, on a destination of
     /// `res_size` limbs.
     fn glwe_shift_tmp_bytes(&self, res_size: usize) -> usize;
 
     fn glwe_rsh_assign<R>(&self, k: usize, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWEToBackendMut<BE>;
+        R: GLWEToBackendMut<BE, Rg>;
 
     fn glwe_lsh_assign<R>(&self, res: &mut R, k: usize, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWEToBackendMut<BE>;
+        R: GLWEToBackendMut<BE, Rg>;
 
     fn glwe_lsh<R, A>(&self, res: &mut R, a: &A, k: usize, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE>;
+        R: GLWEToBackendMut<BE, Rg>,
+        A: GLWEToBackendRef<BE, Rg>;
 
     fn glwe_lsh_add<R, A>(&self, res: &mut R, a: &A, k: usize, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE>;
+        R: GLWEToBackendMut<BE, Rg>,
+        A: GLWEToBackendRef<BE, Rg>;
 
     fn glwe_lsh_sub<R, A>(&self, res: &mut R, a: &A, k: usize, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE>;
+        R: GLWEToBackendMut<BE, Rg>,
+        A: GLWEToBackendRef<BE, Rg>;
 }
 
-pub trait GLWENormalize<BE: Backend> {
+pub trait GLWENormalize<BE: Backend, Rg: Ring = Standard> {
     fn glwe_normalize_tmp_bytes(&self) -> usize;
 
     fn glwe_normalize<R, A>(&self, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE>;
+        R: GLWEToBackendMut<BE, Rg>,
+        A: GLWEToBackendRef<BE, Rg>;
 
     fn glwe_normalize_assign<R>(&self, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWEToBackendMut<BE>;
+        R: GLWEToBackendMut<BE, Rg>;
 }

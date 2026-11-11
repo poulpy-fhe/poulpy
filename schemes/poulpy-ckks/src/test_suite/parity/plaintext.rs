@@ -2,11 +2,14 @@
 use super::{arithmetic::layout, helpers::*};
 use crate::{CKKSInfos, SlotsKind, oep::CKKSPlaintextVecImpl, test_suite::CKKSTestParams};
 use poulpy_core::{GLWEFill, layouts::LWEInfos};
-use poulpy_hal::layouts::{Backend, Module};
+use poulpy_hal::layouts::{Backend, Module, Ring};
 
-fn exercise<BE: Backend<ZnxWord = i64> + CKKSPlaintextVecImpl>(params: CKKSTestParams, module: &Module<BE>) -> Vec<Snapshot>
+fn exercise<BE: Backend<ZnxWord = i64> + CKKSPlaintextVecImpl<Rg>, Rg: Ring>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+) -> Vec<Snapshot>
 where
-    Module<BE>: GLWEFill<BE>,
+    Module<BE>: GLWEFill<BE, Rg>,
 {
     let b = params.base2k;
     let mut results = Vec::new();
@@ -14,7 +17,7 @@ where
         for slots in [SlotsKind::Real, SlotsKind::Complex] {
             let input = layout(params, 0, 3 * b + 1, b, sparse, slots);
             let a = fixture_plaintext(module, &input, 43);
-            let before = snapshot::<BE, _>(&a);
+            let before = snapshot::<BE, _, Rg>(&a);
             for delta in [b - 3, b, b + 3] {
                 for budget in [0, b + 1] {
                     let output = layout(params, 0, delta + budget, delta, sparse, slots);
@@ -24,27 +27,27 @@ where
                     })
                     .unwrap();
                     assert_eq!(out.meta(), output.meta);
-                    results.push(snapshot::<BE, _>(&out));
-                    assert_eq!(before, snapshot::<BE, _>(&a));
+                    results.push(snapshot::<BE, _, Rg>(&out));
+                    assert_eq!(before, snapshot::<BE, _, Rg>(&a));
                 }
             }
             let mut invalid = input;
             invalid.glwe_layout.base2k = (b - 1).into();
             let mut out = fixture_plaintext(module, &invalid, 99);
-            let before_out = snapshot::<BE, _>(&out);
+            let before_out = snapshot::<BE, _, Rg>(&out);
             assert!(with_scratch::<BE, _>(0, |scratch| BE::ckks_extract_pt(module, &mut out, &a, scratch)).is_err());
-            assert_eq!(before_out, snapshot::<BE, _>(&out), "failed extraction mutated output");
+            assert_eq!(before_out, snapshot::<BE, _, Rg>(&out), "failed extraction mutated output");
         }
     }
     results
 }
 
-pub fn test_plaintext_parity<BR, BT, F>(params: CKKSTestParams, module_ref: &Module<BR>, module_test: &Module<BT>)
+pub fn test_plaintext_parity<BR, BT, F, Rg: Ring>(params: CKKSTestParams, module_ref: &Module<BR>, module_test: &Module<BT>)
 where
-    BR: Backend<ZnxWord = i64> + CKKSPlaintextVecImpl,
-    BT: Backend<ZnxWord = i64> + CKKSPlaintextVecImpl,
-    Module<BR>: GLWEFill<BR>,
-    Module<BT>: GLWEFill<BT>,
+    BR: Backend<ZnxWord = i64> + CKKSPlaintextVecImpl<Rg>,
+    BT: Backend<ZnxWord = i64> + CKKSPlaintextVecImpl<Rg>,
+    Module<BR>: GLWEFill<BR, Rg>,
+    Module<BT>: GLWEFill<BT, Rg>,
 {
     let _scalar = std::marker::PhantomData::<F>;
     let want = exercise(params, module_ref);

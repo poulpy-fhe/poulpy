@@ -14,7 +14,7 @@ use poulpy_core::{
     GLWEBytesOf, GLWEDiagonalProd,
     layouts::{GLWEInfos, GetDegree, LWEInfos},
 };
-use poulpy_hal::layouts::{PrepareHint, galois_elements_from_rotations};
+use poulpy_hal::layouts::{PrepareHint, Ring, Standard, galois_elements_from_rotations};
 use std::collections::BTreeSet;
 
 use super::encoding::{DiagonalShape, ring_slots, skeleton};
@@ -72,59 +72,59 @@ impl BlasDiagonalCiphertextInfos for BlasDiagonalCiphertextLayout {
 /// step `g` holding `rot(D_(b + g), -g)`. It is allocated zero; `blas_append_row_diagonal` and
 /// `blas_append_col_diagonal` write a row or a column into it, and a product reads it streamed, each diagonal prepared
 /// at its use, or prepared once into a [`BlasDiagonalCiphertextPrepared`].
-pub struct BlasDiagonalCiphertext<BE: Backend> {
+pub struct BlasDiagonalCiphertext<BE: Backend, Rg: Ring = Standard> {
     layout: BlasDiagonalCiphertextLayout,
-    pub(crate) diagonals: LinearTransformation<CKKSCiphertextOwned<BE>>,
+    pub(crate) diagonals: LinearTransformation<CKKSCiphertextOwned<BE, Rg>>,
 }
 
 /// A [`BlasDiagonalCiphertext`] prepared for products: its diagonals resident, in the backend's prepared form, filled
 /// by `blas_diagonal_ciphertext_prepare`.
-pub struct BlasDiagonalCiphertextPrepared<BE: Backend> {
+pub struct BlasDiagonalCiphertextPrepared<BE: Backend, Rg: Ring = Standard> {
     layout: BlasDiagonalCiphertextLayout,
-    pub(crate) diagonals: LinearTransformationPrepared<BE>,
+    pub(crate) diagonals: LinearTransformationPrepared<BE, Rg>,
 }
 
-impl<BE: Backend> BlasDiagonalCiphertextInfos for BlasDiagonalCiphertext<BE> {
+impl<BE: Backend, Rg: Ring> BlasDiagonalCiphertextInfos for BlasDiagonalCiphertext<BE, Rg> {
     fn blas_diagonal_ciphertext_layout(&self) -> BlasDiagonalCiphertextLayout {
         self.layout.clone()
     }
 }
 
-impl<BE: Backend> BlasDiagonalCiphertextInfos for BlasDiagonalCiphertextPrepared<BE> {
+impl<BE: Backend, Rg: Ring> BlasDiagonalCiphertextInfos for BlasDiagonalCiphertextPrepared<BE, Rg> {
     fn blas_diagonal_ciphertext_layout(&self) -> BlasDiagonalCiphertextLayout {
         self.layout.clone()
     }
 }
 
-impl<BE: Backend> BlasDiagonalCiphertext<BE> {
+impl<BE: Backend, Rg: Ring> BlasDiagonalCiphertext<BE, Rg> {
     /// The diagonal ciphertexts, in BSGS storage.
-    pub fn diagonals(&self) -> &LinearTransformation<CKKSCiphertextOwned<BE>> {
+    pub fn diagonals(&self) -> &LinearTransformation<CKKSCiphertextOwned<BE, Rg>> {
         &self.diagonals
     }
 
     /// The diagonal ciphertexts an append writes, keeping their schedule and layout.
-    pub fn diagonals_mut(&mut self) -> &mut LinearTransformation<CKKSCiphertextOwned<BE>> {
+    pub fn diagonals_mut(&mut self) -> &mut LinearTransformation<CKKSCiphertextOwned<BE, Rg>> {
         &mut self.diagonals
     }
 }
 
-impl<BE: Backend> BlasDiagonalCiphertextPrepared<BE> {
+impl<BE: Backend, Rg: Ring> BlasDiagonalCiphertextPrepared<BE, Rg> {
     /// The prepared diagonals, in BSGS storage.
-    pub fn diagonals(&self) -> &LinearTransformationPrepared<BE> {
+    pub fn diagonals(&self) -> &LinearTransformationPrepared<BE, Rg> {
         &self.diagonals
     }
 
     /// The prepared diagonals a preparation fills, keeping their schedule and layout.
-    pub fn diagonals_mut(&mut self) -> &mut LinearTransformationPrepared<BE> {
+    pub fn diagonals_mut(&mut self) -> &mut LinearTransformationPrepared<BE, Rg> {
         &mut self.diagonals
     }
 }
 
 /// A diagonal ciphertext as a product reads it: its diagonals unprepared, prepared at each use (streamed), or prepared
 /// (resident), with the same bits.
-pub trait BlasDiagonalCiphertextMap<BE: Backend>: BlasDiagonalCiphertextInfos + Sync {
+pub trait BlasDiagonalCiphertextMap<BE: Backend, Rg: Ring = Standard>: BlasDiagonalCiphertextInfos + Sync {
     /// The form of a diagonal.
-    type Diagonal: GLWEDiagonalProd<BE> + LtDiagonalMeta + Sync;
+    type Diagonal: GLWEDiagonalProd<BE, Rg> + LtDiagonalMeta + Sync;
 
     /// Whether the diagonals are ciphertexts a product prepares at each use.
     const STREAMED: bool;
@@ -133,23 +133,23 @@ pub trait BlasDiagonalCiphertextMap<BE: Backend>: BlasDiagonalCiphertextInfos + 
     fn map(&self) -> &LinearTransformation<Self::Diagonal>;
 }
 
-impl<BE: Backend> BlasDiagonalCiphertextMap<BE> for BlasDiagonalCiphertext<BE>
+impl<BE: Backend, Rg: Ring> BlasDiagonalCiphertextMap<BE, Rg> for BlasDiagonalCiphertext<BE, Rg>
 where
-    CKKSCiphertextOwned<BE>: GLWEDiagonalProd<BE> + Sync,
+    CKKSCiphertextOwned<BE, Rg>: GLWEDiagonalProd<BE, Rg> + Sync,
 {
-    type Diagonal = CKKSCiphertextOwned<BE>;
+    type Diagonal = CKKSCiphertextOwned<BE, Rg>;
     const STREAMED: bool = true;
 
-    fn map(&self) -> &LinearTransformation<CKKSCiphertextOwned<BE>> {
+    fn map(&self) -> &LinearTransformation<CKKSCiphertextOwned<BE, Rg>> {
         &self.diagonals
     }
 }
 
-impl<BE: Backend> BlasDiagonalCiphertextMap<BE> for BlasDiagonalCiphertextPrepared<BE> {
-    type Diagonal = PreparedDiagonal<BE::OwnedBuf, BE>;
+impl<BE: Backend, Rg: Ring> BlasDiagonalCiphertextMap<BE, Rg> for BlasDiagonalCiphertextPrepared<BE, Rg> {
+    type Diagonal = PreparedDiagonal<BE::OwnedBuf, BE, Rg>;
     const STREAMED: bool = false;
 
-    fn map(&self) -> &LinearTransformationPrepared<BE> {
+    fn map(&self) -> &LinearTransformationPrepared<BE, Rg> {
         &self.diagonals
     }
 }
@@ -185,9 +185,12 @@ pub(crate) fn append_rotations<P>(axis: AppendAxis, lt: &LinearTransformation<P>
 
 /// Panics unless `layout` fits `module`: its slots the module's, at least one diagonal, each in `0..slots`, diagonal
 /// ciphertexts of the module's degree, of rank at least 1, at a radix in `1..=62`.
-pub(crate) fn assert_fits(module: &(impl CKKSModuleInfos + GetDegree), layout: &BlasDiagonalCiphertextLayout) {
+pub(crate) fn assert_fits<Rg: Ring>(module: &(impl CKKSModuleInfos + GetDegree), layout: &BlasDiagonalCiphertextLayout) {
     let slots = layout.lt.slots;
-    assert!(slots == module.ckks_max_slots(), "the matrix's slots are not the module's");
+    assert!(
+        slots == module.ckks_max_slots::<Rg>(),
+        "the matrix's slots are not the module's"
+    );
     assert!(
         !layout.lt.indexes.is_empty() && layout.lt.indexes.iter().all(|&t| (0..slots as i64).contains(&t)),
         "the matrix holds no diagonal, or one outside its slots"
@@ -263,7 +266,10 @@ pub trait BlasDiagonalCiphertextAlloc<BE: Backend>: CKKSCiphertextAlloc<BE> + CK
     ///
     /// Panics unless the slots of `infos` are the module's, it holds at least one diagonal, each below the slots, and
     /// its diagonals are ciphertexts of the module's degree at a radix in `1..=62`.
-    fn blas_diagonal_ciphertext_alloc_from_infos<A: BlasDiagonalCiphertextInfos>(&self, infos: &A) -> BlasDiagonalCiphertext<BE> {
+    fn blas_diagonal_ciphertext_alloc_from_infos<A: BlasDiagonalCiphertextInfos, Rg: Ring>(
+        &self,
+        infos: &A,
+    ) -> BlasDiagonalCiphertext<BE, Rg> {
         alloc(self, &infos.blas_diagonal_ciphertext_layout())
     }
 }
@@ -285,12 +291,12 @@ pub trait BlasDiagonalCiphertextBytesOf<BE: Backend>: GLWEBytesOf<BE> + Sized {
 impl<BE: Backend> BlasDiagonalCiphertextBytesOf<BE> for Module<BE> {}
 
 /// [`BlasDiagonalCiphertextAlloc::blas_diagonal_ciphertext_alloc_from_infos`]: zero diagonals of the layout's metadata.
-fn alloc<BE, M>(module: &M, layout: &BlasDiagonalCiphertextLayout) -> BlasDiagonalCiphertext<BE>
+fn alloc<BE, M, Rg: Ring>(module: &M, layout: &BlasDiagonalCiphertextLayout) -> BlasDiagonalCiphertext<BE, Rg>
 where
     BE: Backend,
     M: CKKSCiphertextAlloc<BE> + CKKSModuleInfos + GetDegree,
 {
-    assert_fits(module, layout);
+    assert_fits::<Rg>(module, layout);
     let plan = layout.lt.index();
     let diagonals = LinearTransformation {
         baby_steps: plan.baby_steps.clone(),
@@ -319,13 +325,16 @@ where
 
 /// [`crate::api::BlasDiagonalCiphertextPreparedFactory::blas_diagonal_ciphertext_prepared_alloc_from_infos`]: prepared
 /// diagonals of zero carrying the layout's metadata.
-pub(crate) fn alloc_prepared<BE, M>(module: &M, layout: &BlasDiagonalCiphertextLayout) -> BlasDiagonalCiphertextPrepared<BE>
+pub(crate) fn alloc_prepared<BE, M, Rg: Ring>(
+    module: &M,
+    layout: &BlasDiagonalCiphertextLayout,
+) -> BlasDiagonalCiphertextPrepared<BE, Rg>
 where
     BE: Backend,
     M: CKKSModuleInfos + CnvPVecAlloc<BE> + GetDegree,
 {
-    assert_fits(module, layout);
-    let mut diagonals = LinearTransformationPrepared::<BE>::alloc_prepared_from_index(module, &layout.lt.index(), &layout.ct);
+    assert_fits::<Rg>(module, layout);
+    let mut diagonals = LinearTransformationPrepared::<BE, Rg>::alloc_prepared_from_index(module, &layout.lt.index(), &layout.ct);
     diagonals.set_plaintext_meta(layout.ct.meta);
     BlasDiagonalCiphertextPrepared {
         layout: layout.clone(),
@@ -363,7 +372,7 @@ mod tests {
         api::{LinearTransformationStrategy, ckks_linear_transformation_output_layout},
         layouts::CKKSCiphertextAlloc,
     };
-    use poulpy_hal::layouts::{CyclotomicOrder, HostBytesBackend};
+    use poulpy_hal::layouts::{CyclotomicOrder, HostBytesBackend, Standard};
 
     use super::*;
     use crate::layouts::{
@@ -376,20 +385,23 @@ mod tests {
         indexes: Vec<i64>,
         strategy: LinearTransformationStrategy,
     ) -> BlasDiagonalCiphertextLayout {
-        let mut ct = layout_of(&module.ckks_ciphertext_alloc(19usize.into(), 60usize.into()));
+        let mut ct = layout_of(&module.ckks_ciphertext_alloc::<Standard>(19usize.into(), 60usize.into()));
         ct.meta.scale = Scale::Log(20);
         BlasDiagonalCiphertextLayout::new(
             ct,
             LinearTransformationLayout {
                 indexes,
-                slots: module.ckks_max_slots(),
+                slots: module.ckks_max_slots::<Standard>(),
                 strategy,
             },
         )
     }
 
     fn elements(module: &Module<HostBytesBackend>, rotations: impl IntoIterator<Item = i64>) -> Vec<i64> {
-        let mut elements: Vec<i64> = rotations.into_iter().map(|r| module.ckks_galois_element(r)).collect();
+        let mut elements: Vec<i64> = rotations
+            .into_iter()
+            .map(|r| module.ckks_galois_element::<Standard>(r))
+            .collect();
         elements.sort_unstable();
         elements
     }
@@ -399,7 +411,7 @@ mod tests {
     #[test]
     fn append_key_sets_follow_the_schedule() {
         let module = Module::<HostBytesBackend>::new(64);
-        let order = module.cyclotomic_order();
+        let order = module.cyclotomic_order::<Standard>();
         let m = layout(
             &module,
             (0..8).collect(),
@@ -422,8 +434,8 @@ mod tests {
     #[test]
     fn key_uses_list_the_key_sets() {
         let module = Module::<HostBytesBackend>::new(64);
-        let order = module.cyclotomic_order();
-        let (slots, k) = (module.ckks_max_slots(), 60usize);
+        let order = module.cyclotomic_order::<Standard>();
+        let (slots, k) = (module.ckks_max_slots::<Standard>(), 60usize);
         let strategies = [
             LinearTransformationStrategy::Bsgs { giant_step: 4 },
             LinearTransformationStrategy::BsgsPowersOfTwo { giant_step: 4 },
@@ -434,7 +446,7 @@ mod tests {
             let v = BlasVectorLayout::new(m.ct, BlasVectorShape::new(slots, slots, 0, 1));
             let mut v_wide = v;
             v_wide.ct.glwe_layout.k = (k + 20).into();
-            let uses = blas_matvec_diagonal_key_uses(&module, &v, &m, &v_wide);
+            let uses = blas_matvec_diagonal_key_uses::<_, Standard>(&module, &v, &m, &v_wide);
             let mut listed: Vec<i64> = uses.rotations.iter().map(|&(p, _)| p).collect();
             listed.sort_unstable();
             listed.dedup();
@@ -448,11 +460,11 @@ mod tests {
             );
             for (uses, set) in [
                 (
-                    blas_append_row_diagonal_key_uses(&module, &m, &v),
+                    blas_append_row_diagonal_key_uses::<_, Standard>(&module, &m, &v),
                     append_row_diagonal_galois_elements(order, &m),
                 ),
                 (
-                    blas_append_col_diagonal_key_uses(&module, &m, &v),
+                    blas_append_col_diagonal_key_uses::<_, Standard>(&module, &m, &v),
                     append_col_diagonal_galois_elements(order, &m),
                 ),
             ] {

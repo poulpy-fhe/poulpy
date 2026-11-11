@@ -40,8 +40,10 @@
 //!
 //! ```text
 //! HalVecZnxImpl         (root)
-//! HalVecZnxMonomialImpl -> HalVecZnxImpl, Backend<Ring = Standard>
-//! HalVecZnxCIImpl       -> HalVecZnxImpl, Backend<Ring = Standard>
+//! HalScalarZnxImpl      -> HalVecZnxImpl
+//! HalVecZnxMonomialImpl -> HalVecZnxImpl (standard ring)
+//! HalVecZnxCIImpl       (root, cross-ring)
+//! HalScalarZnxCIImpl    -> HalVecZnxCIImpl
 //! HalMatZnxImpl         -> HalVecZnxImpl
 //! HalVecZnxBigImpl      (root)
 //! HalVecZnxDftImpl      -> HalVecZnxBigImpl
@@ -51,10 +53,12 @@
 //! ```
 //!
 //! The graph is acyclic; a new backend implements the families in topological
-//! order: `HalModuleImpl`, `HalVecZnxImpl` (and, on the standard ring,
-//! `HalVecZnxMonomialImpl` and `HalVecZnxCIImpl`), `HalMatZnxImpl`,
-//! `HalVecZnxBigImpl`, `HalVecZnxDftImpl`, then `HalSvpImpl` / `HalVmpImpl` /
-//! `HalCnvImpl` in any order.
+//! order: `HalModuleImpl`, `HalVecZnxImpl` (and the standard-only
+//! `HalVecZnxMonomialImpl`), the cross-ring `HalVecZnxCIImpl`, `HalScalarZnxImpl`,
+//! the cross-ring `HalScalarZnxCIImpl`, `HalMatZnxImpl`, `HalVecZnxBigImpl`,
+//! `HalVecZnxDftImpl`, then `HalSvpImpl` / `HalVmpImpl` / `HalCnvImpl` in any
+//! order. Every family but the standard-only and cross-ring ones takes the
+//! ring of its operands as a parameter and is implemented once per ring.
 
 pub mod derived;
 mod hal_impl;

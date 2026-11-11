@@ -666,7 +666,7 @@ mod tests {
     /// Checks both transforms against the portable q120 kernels of ring `R`, bit for bit.
     fn matches_portable<R: Ring>(log_ns: &[usize], new_table: impl Fn(usize) -> (NttTable<Primes30, R>, NttTableInv<Primes30, R>))
     where
-        NTT4x30Portable<R>: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>>,
+        NTT4x30Portable: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>>,
     {
         let mut state = 11u64;
         for &log_n in log_ns {
@@ -686,8 +686,8 @@ mod tests {
                     })
                     .collect();
                 let mut wide = vec![0u64; 4 * n];
-                <NTT4x30Portable<R> as NttFromZnx64>::ntt_from_znx64(&mut wide, &src);
-                <NTT4x30Portable<R> as NttDFTExecute<_>>::ntt_dft_execute(&fwd, &mut wide);
+                <NTT4x30Portable as NttFromZnx64>::ntt_from_znx64(&mut wide, &src);
+                <NTT4x30Portable as NttDFTExecute<_>>::ntt_dft_execute(&fwd, &mut wide);
                 for prepared in [false, true] {
                     let mut got = vec![0u32; 4 * n];
                     ntt32(&table, &mut got, &src, prepared);
@@ -717,9 +717,9 @@ mod tests {
                         wide[4 * i + p] = planes[p * n + i] as u64;
                     }
                 }
-                <NTT4x30Portable<R> as NttDFTExecute<_>>::ntt_dft_execute(&inv, &mut wide);
+                <NTT4x30Portable as NttDFTExecute<_>>::ntt_dft_execute(&inv, &mut wide);
                 let mut want = vec![0i128; n];
-                <NTT4x30Portable<R> as NttToZnx128>::ntt_to_znx128(&mut want, n, &wide);
+                <NTT4x30Portable as NttToZnx128>::ntt_to_znx128(&mut want, n, &wide);
                 let mut got = vec![0i128; n];
                 let mut work = vec![0u32; 4 * n];
                 unsafe { intt32(&table, got.as_mut_ptr(), planes.as_ptr(), work.as_mut_ptr()) };

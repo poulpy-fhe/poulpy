@@ -1,6 +1,6 @@
 use poulpy_hal::{
     api::{SvpPPolAlloc, SvpPPolBytesOf},
-    layouts::{Backend, PrepareHint, ScratchArena},
+    layouts::{Backend, PrepareHint, Ring, ScratchArena, Standard},
     source::Source,
 };
 
@@ -24,36 +24,36 @@ use crate::{
 /// Each entry point fills every one of the secret's `rank` polynomials and
 /// tags it with the matching [`Distribution`]. See [`Distribution`] for what
 /// that tag does and does not describe afterwards.
-pub trait GLWESecretSampling<BE: Backend> {
+pub trait GLWESecretSampling<BE: Backend, Rg: Ring = Standard> {
     /// Ternary `{-1, 0, 1}` coefficients, each non-zero with probability `prob`.
     fn glwe_secret_fill_ternary_prob<S>(&self, sk: &mut S, prob: f64, source: &mut Source)
     where
-        S: GLWESecretToBackendMut<BE> + GetDistributionMut + GLWEInfos;
+        S: GLWESecretToBackendMut<BE, Rg> + GetDistributionMut + GLWEInfos;
 
     /// Ternary `{-1, 0, 1}` coefficients with exactly `hw` non-zero entries.
     fn glwe_secret_fill_ternary_hw<S>(&self, sk: &mut S, hw: usize, source: &mut Source)
     where
-        S: GLWESecretToBackendMut<BE> + GetDistributionMut + GLWEInfos;
+        S: GLWESecretToBackendMut<BE, Rg> + GetDistributionMut + GLWEInfos;
 
     /// Binary `{0, 1}` coefficients, each set with probability `prob`.
     fn glwe_secret_fill_binary_prob<S>(&self, sk: &mut S, prob: f64, source: &mut Source)
     where
-        S: GLWESecretToBackendMut<BE> + GetDistributionMut + GLWEInfos;
+        S: GLWESecretToBackendMut<BE, Rg> + GetDistributionMut + GLWEInfos;
 
     /// Binary `{0, 1}` coefficients with exactly `hw` ones.
     fn glwe_secret_fill_binary_hw<S>(&self, sk: &mut S, hw: usize, source: &mut Source)
     where
-        S: GLWESecretToBackendMut<BE> + GetDistributionMut + GLWEInfos;
+        S: GLWESecretToBackendMut<BE, Rg> + GetDistributionMut + GLWEInfos;
 
     /// Binary coefficients with at most one `1` per block of `block_size`.
     fn glwe_secret_fill_binary_block<S>(&self, sk: &mut S, block_size: usize, source: &mut Source)
     where
-        S: GLWESecretToBackendMut<BE> + GetDistributionMut + GLWEInfos;
+        S: GLWESecretToBackendMut<BE, Rg> + GetDistributionMut + GLWEInfos;
 
     /// All-zero secret, tagged [`Distribution::ZERO`] (debug / testing only).
     fn glwe_secret_fill_zero<S>(&self, sk: &mut S)
     where
-        S: GLWESecretToBackendMut<BE> + GetDistributionMut + GLWEInfos;
+        S: GLWESecretToBackendMut<BE, Rg> + GetDistributionMut + GLWEInfos;
 }
 
 /// Secret-key sampling.
@@ -61,50 +61,50 @@ pub trait GLWESecretSampling<BE: Backend> {
 /// The LWE counterpart of [`GLWESecretSampling`]:
 /// each distribution is drawn in place by the backend through
 /// [`crate::ScalarZnxFillDistribution`].
-pub trait LWESecretSampling<BE: Backend> {
+pub trait LWESecretSampling<BE: Backend, Rg: Ring = Standard> {
     /// Ternary `{-1, 0, 1}` coefficients, each non-zero with probability `prob`.
     fn lwe_secret_fill_ternary_prob<S>(&self, sk: &mut S, prob: f64, source: &mut Source)
     where
-        S: LWESecretToBackendMut<BE> + GetDistributionMut;
+        S: LWESecretToBackendMut<BE, Rg> + GetDistributionMut;
 
     /// Ternary `{-1, 0, 1}` coefficients with exactly `hw` non-zero entries.
     fn lwe_secret_fill_ternary_hw<S>(&self, sk: &mut S, hw: usize, source: &mut Source)
     where
-        S: LWESecretToBackendMut<BE> + GetDistributionMut;
+        S: LWESecretToBackendMut<BE, Rg> + GetDistributionMut;
 
     /// Binary `{0, 1}` coefficients, each set with probability `prob`.
     fn lwe_secret_fill_binary_prob<S>(&self, sk: &mut S, prob: f64, source: &mut Source)
     where
-        S: LWESecretToBackendMut<BE> + GetDistributionMut;
+        S: LWESecretToBackendMut<BE, Rg> + GetDistributionMut;
 
     /// Binary `{0, 1}` coefficients with exactly `hw` ones.
     fn lwe_secret_fill_binary_hw<S>(&self, sk: &mut S, hw: usize, source: &mut Source)
     where
-        S: LWESecretToBackendMut<BE> + GetDistributionMut;
+        S: LWESecretToBackendMut<BE, Rg> + GetDistributionMut;
 
     /// Binary coefficients with at most one `1` per block of `block_size`.
     fn lwe_secret_fill_binary_block<S>(&self, sk: &mut S, block_size: usize, source: &mut Source)
     where
-        S: LWESecretToBackendMut<BE> + GetDistributionMut;
+        S: LWESecretToBackendMut<BE, Rg> + GetDistributionMut;
 
     /// All-zero secret, tagged [`Distribution::ZERO`] (debug / testing only).
     fn lwe_secret_fill_zero<S>(&self, sk: &mut S)
     where
-        S: LWESecretToBackendMut<BE> + GetDistributionMut;
+        S: LWESecretToBackendMut<BE, Rg> + GetDistributionMut;
 }
 
 /// Allocation and preparation of DFT-domain GLWE secrets.
-pub trait GLWESecretPreparedFactory<BE: Backend>
+pub trait GLWESecretPreparedFactory<BE: Backend, Rg: Ring = Standard>
 where
     Self: GetDegree + SvpPPolBytesOf + SvpPPolAlloc<BE>,
 {
-    fn glwe_secret_prepared_alloc(&self, rank: Rank) -> GLWESecretPrepared<BE::OwnedBuf, BE> {
+    fn glwe_secret_prepared_alloc(&self, rank: Rank) -> GLWESecretPrepared<BE::OwnedBuf, BE, Rg> {
         self.glwe_secret_prepared_alloc_from_infos(&GLWESecretLayout {
             n: self.ring_degree(),
             rank,
         })
     }
-    fn glwe_secret_prepared_alloc_from_infos<A>(&self, infos: &A) -> GLWESecretPrepared<BE::OwnedBuf, BE>
+    fn glwe_secret_prepared_alloc_from_infos<A>(&self, infos: &A) -> GLWESecretPrepared<BE::OwnedBuf, BE, Rg>
     where
         A: GLWEInfos,
     {
@@ -133,22 +133,22 @@ where
     /// [`Distribution`] tag onto `res`; it takes no scratch.
     fn glwe_secret_prepare<R, O>(&self, res: &mut R, other: &O)
     where
-        R: GLWESecretPreparedToBackendMut<BE> + GetDistributionMut,
-        O: GLWESecretToBackendRef<BE> + GetDistribution;
+        R: GLWESecretPreparedToBackendMut<BE, Rg> + GetDistributionMut,
+        O: GLWESecretToBackendRef<BE, Rg> + GetDistribution;
 }
 
 /// Allocation and preparation of DFT-domain GLWE secret tensors.
-pub trait GLWESecretTensorPreparedFactory<BE: Backend>
+pub trait GLWESecretTensorPreparedFactory<BE: Backend, Rg: Ring = Standard>
 where
     Self: GetDegree + SvpPPolBytesOf + SvpPPolAlloc<BE>,
 {
-    fn glwe_secret_tensor_prepared_alloc(&self, rank: Rank) -> GLWESecretTensorPrepared<BE::OwnedBuf, BE> {
+    fn glwe_secret_tensor_prepared_alloc(&self, rank: Rank) -> GLWESecretTensorPrepared<BE::OwnedBuf, BE, Rg> {
         self.glwe_secret_tensor_prepared_alloc_from_infos(&GLWESecretLayout {
             n: self.ring_degree(),
             rank,
         })
     }
-    fn glwe_secret_tensor_prepared_alloc_from_infos<A>(&self, infos: &A) -> GLWESecretTensorPrepared<BE::OwnedBuf, BE>
+    fn glwe_secret_tensor_prepared_alloc_from_infos<A>(&self, infos: &A) -> GLWESecretTensorPrepared<BE::OwnedBuf, BE, Rg>
     where
         A: GLWEInfos,
     {
@@ -187,12 +187,12 @@ where
     /// Before writing `res`, when the ranks or the column counts of `res` and `other` differ.
     fn glwe_secret_tensor_prepare<R, O>(&self, res: &mut R, other: &O)
     where
-        R: GLWESecretTensorPreparedToBackendMut<BE> + GetDistributionMut,
-        O: GLWESecretTensorToBackendRef<BE> + GetDistribution;
+        R: GLWESecretTensorPreparedToBackendMut<BE, Rg> + GetDistributionMut,
+        O: GLWESecretTensorToBackendRef<BE, Rg> + GetDistribution;
 }
 
 /// Tensoring of a GLWE secret with itself.
-pub trait GLWESecretTensorFromGLWESecret<BE: Backend> {
+pub trait GLWESecretTensorFromGLWESecret<BE: Backend, Rg: Ring = Standard> {
     /// Scratch bytes of [`Self::glwe_secret_tensor_from_glwe_secret`] for a base secret of rank `rank`.
     fn glwe_secret_tensor_from_glwe_secret_tmp_bytes(&self, rank: Rank) -> usize;
 
@@ -208,12 +208,12 @@ pub trait GLWESecretTensorFromGLWESecret<BE: Backend> {
     /// exceeds the module's, or the scratch is smaller than the query.
     fn glwe_secret_tensor_from_glwe_secret<R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWESecretTensorToBackendMut<BE> + GetDistributionMut + GLWEInfos,
-        O: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos;
+        R: GLWESecretTensorToBackendMut<BE, Rg> + GetDistributionMut + GLWEInfos,
+        O: GLWESecretToBackendRef<BE, Rg> + GetDistribution + GLWEInfos;
 }
 
 /// Derives a GLWE secret from an LWE secret.
-pub trait GLWESecretFromLWESecret<BE: Backend> {
+pub trait GLWESecretFromLWESecret<BE: Backend, Rg: Ring = Standard> {
     /// Derives the associated rank-1 `GLWESecret` from a `LWESecret` by applying
     /// the X → X⁻¹ automorphism (k = -1). The result is the GLWE polynomial key
     /// whose ring product with a mask decrypts LWE ciphertexts produced by
@@ -225,13 +225,13 @@ pub trait GLWESecretFromLWESecret<BE: Backend> {
     ///
     /// # Panics
     /// When the degree of `src` differs from the module degree.
-    fn glwe_secret_from_lwe_secret<S>(&self, src: &S) -> GLWESecret<BE::OwnedBuf, BE::ZnxWord>
+    fn glwe_secret_from_lwe_secret<S>(&self, src: &S) -> GLWESecret<BE::OwnedBuf, BE::ZnxWord, Rg>
     where
-        S: LWESecretToBackendRef<BE>;
+        S: LWESecretToBackendRef<BE, Rg>;
 }
 
 /// Derives an LWE secret from a GLWE secret.
-pub trait LWESecretFromGLWESecret<BE: Backend> {
+pub trait LWESecretFromGLWESecret<BE: Backend, Rg: Ring = Standard> {
     /// Scratch bytes of [`Self::lwe_secret_from_glwe_secret`] for a source GLWE secret of layout `infos`.
     fn lwe_secret_from_glwe_secret_tmp_bytes<A>(&self, infos: &A) -> usize
     where
@@ -268,7 +268,7 @@ pub trait LWESecretFromGLWESecret<BE: Backend> {
         src: &S,
         lwe_n: Degree,
         scratch: &mut ScratchArena<'_, BE>,
-    ) -> LWESecret<BE::OwnedBuf, BE::ZnxWord>
+    ) -> LWESecret<BE::OwnedBuf, BE::ZnxWord, Rg>
     where
-        S: GLWESecretToBackendRef<BE>;
+        S: GLWESecretToBackendRef<BE, Rg>;
 }

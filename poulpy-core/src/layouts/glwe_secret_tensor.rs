@@ -1,5 +1,7 @@
 use poulpy_hal::layouts::ZnxWord;
-use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, ScalarZnx, ScalarZnxToBackendRef, ZnxView, ZnxViewMut};
+use poulpy_hal::layouts::{
+    Backend, Data, HostDataMut, HostDataRef, Ring, ScalarZnx, ScalarZnxToBackendRef, Standard, ZnxView, ZnxViewMut,
+};
 use poulpy_hal::{AlignedBuf, alloc_aligned};
 
 use crate::{
@@ -23,39 +25,39 @@ pub(crate) fn pairs(rank: usize) -> usize {
 /// no [`Distribution`] variant describes them. The tag is kept because the
 /// products' own statistics are a closed-form function of the base
 /// distribution (see [`Distribution`] for the variance).
-pub struct GLWESecretTensor<D: Data, W: ZnxWord> {
-    pub(crate) data: ScalarZnx<D, W>,
+pub struct GLWESecretTensor<D: Data, W: ZnxWord, Rg: Ring = Standard> {
+    pub(crate) data: ScalarZnx<D, W, Rg>,
     pub(crate) rank: Rank,
     /// Distribution of the base secret this tensor was derived from, *not*
     /// of the `s_i * s_j` coefficients stored in `data`.
     pub(crate) dist: Distribution,
 }
 
-impl<W: ZnxWord> GLWESecretTensor<AlignedBuf, W> {}
+impl<W: ZnxWord, Rg: Ring> GLWESecretTensor<AlignedBuf, W, Rg> {}
 
-impl<D: Data, W: ZnxWord> GetDistribution for GLWESecretTensor<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> GetDistribution for GLWESecretTensor<D, W, Rg> {
     fn dist(&self) -> &Distribution {
         &self.dist
     }
 }
 
-impl<D: Data, W: ZnxWord> GetDistributionMut for GLWESecretTensor<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> GetDistributionMut for GLWESecretTensor<D, W, Rg> {
     fn dist_mut(&mut self) -> &mut Distribution {
         &mut self.dist
     }
 }
 
-impl<D: Data, W: ZnxWord> GLWESecretTensor<D, W> {
-    pub fn data(&self) -> &ScalarZnx<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> GLWESecretTensor<D, W, Rg> {
+    pub fn data(&self) -> &ScalarZnx<D, W, Rg> {
         &self.data
     }
 
-    pub fn data_mut(&mut self) -> &mut ScalarZnx<D, W> {
+    pub fn data_mut(&mut self) -> &mut ScalarZnx<D, W, Rg> {
         &mut self.data
     }
 }
 
-impl<D: Data, W: ZnxWord> LWEInfos for GLWESecretTensor<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> LWEInfos for GLWESecretTensor<D, W, Rg> {
     fn base2k(&self) -> Base2K {
         Base2K(0)
     }
@@ -73,8 +75,8 @@ impl<D: Data, W: ZnxWord> LWEInfos for GLWESecretTensor<D, W> {
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> GLWESecretTensor<D, W> {
-    pub fn at(&self, mut i: usize, mut j: usize) -> ScalarZnx<&[u8], W> {
+impl<D: HostDataRef, W: ZnxWord, Rg: Ring> GLWESecretTensor<D, W, Rg> {
+    pub fn at(&self, mut i: usize, mut j: usize) -> ScalarZnx<&[u8], W, Rg> {
         if i > j {
             std::mem::swap(&mut i, &mut j);
         };
@@ -87,8 +89,8 @@ impl<D: HostDataRef, W: ZnxWord> GLWESecretTensor<D, W> {
     }
 }
 
-impl<D: HostDataMut, W: ZnxWord> GLWESecretTensor<D, W> {
-    pub fn at_mut(&mut self, mut i: usize, mut j: usize) -> ScalarZnx<&mut [u8], W> {
+impl<D: HostDataMut, W: ZnxWord, Rg: Ring> GLWESecretTensor<D, W, Rg> {
+    pub fn at_mut(&mut self, mut i: usize, mut j: usize) -> ScalarZnx<&mut [u8], W, Rg> {
         if i > j {
             std::mem::swap(&mut i, &mut j);
         };
@@ -102,28 +104,30 @@ impl<D: HostDataMut, W: ZnxWord> GLWESecretTensor<D, W> {
     }
 }
 
-impl<D: Data, W: ZnxWord> GLWEInfos for GLWESecretTensor<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> GLWEInfos for GLWESecretTensor<D, W, Rg> {
     fn rank(&self) -> Rank {
         self.rank
     }
 }
 
-pub type GLWESecretTensorBackendRef<'a, BE> = GLWESecretTensor<<BE as Backend>::BufRef<'a>, <BE as Backend>::ZnxWord>;
-pub type GLWESecretTensorBackendMut<'a, BE> = GLWESecretTensor<<BE as Backend>::BufMut<'a>, <BE as Backend>::ZnxWord>;
+pub type GLWESecretTensorBackendRef<'a, BE, Rg = Standard> =
+    GLWESecretTensor<<BE as Backend>::BufRef<'a>, <BE as Backend>::ZnxWord, Rg>;
+pub type GLWESecretTensorBackendMut<'a, BE, Rg = Standard> =
+    GLWESecretTensor<<BE as Backend>::BufMut<'a>, <BE as Backend>::ZnxWord, Rg>;
 
 /// Backend view of a tensor secret.
 ///
 /// Deliberately distinct from [`GLWESecretToBackendRef`](crate::layouts::GLWESecretToBackendRef): a tensor secret is
 /// not interchangeable with the base secret it was derived from, so it is
 /// not accepted by APIs that ask for a [`GLWESecret`](crate::layouts::GLWESecret).
-pub trait GLWESecretTensorToBackendRef<BE: Backend> {
-    fn to_backend_ref(&self) -> GLWESecretTensorBackendRef<'_, BE>;
+pub trait GLWESecretTensorToBackendRef<BE: Backend, Rg: Ring = Standard> {
+    fn to_backend_ref(&self) -> GLWESecretTensorBackendRef<'_, BE, Rg>;
 }
 
-impl<BE: Backend> GLWESecretTensorToBackendRef<BE> for GLWESecretTensor<BE::OwnedBuf, BE::ZnxWord> {
-    fn to_backend_ref(&self) -> GLWESecretTensorBackendRef<'_, BE> {
+impl<BE: Backend, Rg: Ring> GLWESecretTensorToBackendRef<BE, Rg> for GLWESecretTensor<BE::OwnedBuf, BE::ZnxWord, Rg> {
+    fn to_backend_ref(&self) -> GLWESecretTensorBackendRef<'_, BE, Rg> {
         GLWESecretTensor {
-            data: <ScalarZnx<BE::OwnedBuf, BE::ZnxWord> as ScalarZnxToBackendRef<BE>>::to_backend_ref(&self.data),
+            data: <ScalarZnx<BE::OwnedBuf, BE::ZnxWord, Rg> as ScalarZnxToBackendRef<BE, Rg>>::to_backend_ref(&self.data),
             rank: self.rank,
             dist: self.dist,
         }
@@ -131,17 +135,18 @@ impl<BE: Backend> GLWESecretTensorToBackendRef<BE> for GLWESecretTensor<BE::Owne
 }
 
 /// Mutable backend view of a tensor secret. See [`GLWESecretTensorToBackendRef`].
-pub trait GLWESecretTensorToBackendMut<BE: Backend>: GLWESecretTensorToBackendRef<BE> {
-    fn to_backend_mut(&mut self) -> GLWESecretTensorBackendMut<'_, BE>;
+pub trait GLWESecretTensorToBackendMut<BE: Backend, Rg: Ring = Standard>: GLWESecretTensorToBackendRef<BE, Rg> {
+    fn to_backend_mut(&mut self) -> GLWESecretTensorBackendMut<'_, BE, Rg>;
 }
 
-impl<BE: Backend> GLWESecretTensorToBackendMut<BE> for GLWESecretTensor<BE::OwnedBuf, BE::ZnxWord> {
-    fn to_backend_mut(&mut self) -> GLWESecretTensorBackendMut<'_, BE> {
+impl<BE: Backend, Rg: Ring> GLWESecretTensorToBackendMut<BE, Rg> for GLWESecretTensor<BE::OwnedBuf, BE::ZnxWord, Rg> {
+    fn to_backend_mut(&mut self) -> GLWESecretTensorBackendMut<'_, BE, Rg> {
         let rank = self.rank;
         GLWESecretTensor {
-            data: <ScalarZnx<BE::OwnedBuf, BE::ZnxWord> as poulpy_hal::layouts::ScalarZnxToBackendMut<BE>>::to_backend_mut(
-                &mut self.data,
-            ),
+            data:
+                <ScalarZnx<BE::OwnedBuf, BE::ZnxWord, Rg> as poulpy_hal::layouts::ScalarZnxToBackendMut<BE, Rg>>::to_backend_mut(
+                    &mut self.data,
+                ),
             rank,
             dist: self.dist,
         }
@@ -152,7 +157,7 @@ impl<BE: Backend> GLWESecretTensorToBackendMut<BE> for GLWESecretTensor<BE::Owne
     dead_code,
     reason = "host-owned constructors are kept for serialization and host-only staging"
 )]
-impl<W: ZnxWord> GLWESecretTensor<AlignedBuf, W> {
+impl<W: ZnxWord, Rg: Ring> GLWESecretTensor<AlignedBuf, W, Rg> {
     pub(crate) fn alloc_from_infos<A>(infos: &A) -> Self
     where
         A: GLWEInfos,
@@ -163,7 +168,7 @@ impl<W: ZnxWord> GLWESecretTensor<AlignedBuf, W> {
     pub(crate) fn alloc(n: Degree, rank: Rank) -> Self {
         GLWESecretTensor {
             data: ScalarZnx::from_data(
-                alloc_aligned::<u8>(ScalarZnx::<AlignedBuf, W>::bytes_of(n.into(), pairs(rank.into()))),
+                alloc_aligned::<u8>(ScalarZnx::<AlignedBuf, W, Rg>::bytes_of(n.into(), pairs(rank.into()))),
                 n.into(),
                 pairs(rank.into()),
             ),
@@ -180,6 +185,6 @@ impl<W: ZnxWord> GLWESecretTensor<AlignedBuf, W> {
     }
 
     pub fn bytes_of(n: Degree, rank: Rank) -> usize {
-        ScalarZnx::<AlignedBuf, W>::bytes_of(n.into(), pairs(rank.into()))
+        ScalarZnx::<AlignedBuf, W, Rg>::bytes_of(n.into(), pairs(rank.into()))
     }
 }

@@ -8,11 +8,15 @@
 
 use crate::{
     kernels::znx_normalize::{Limbs, LimbsMut, ZnxNormalize},
-    layouts::{HostDataMut, VecZnxBackendMut, ZnxView, ZnxViewMut},
+    layouts::{HostDataMut, Ring, VecZnxBackendMut, ZnxView, ZnxViewMut},
 };
 
-pub fn vec_znx_lsh_assign_portable<'r, BE>(base2k: usize, k: usize, res: &mut VecZnxBackendMut<'r, BE>, res_col: usize)
-where
+pub fn vec_znx_lsh_assign_portable<'r, BE, Rg: Ring>(
+    base2k: usize,
+    k: usize,
+    res: &mut VecZnxBackendMut<'r, BE, Rg>,
+    res_col: usize,
+) where
     BE: ZnxNormalize,
     BE::BufMut<'r>: HostDataMut,
 {

@@ -2,16 +2,16 @@ use crate::{
     api::{CnvOps, CnvPVecAlloc, CnvPVecBytesOf},
     layouts::{
         Backend, CnvDftAccTerm, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecLOwned, CnvPVecRBackendMut, CnvPVecRBackendRef,
-        CnvPVecROwned, Module, PrepareHint, ScratchArena, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut,
+        CnvPVecROwned, Module, PrepareHint, Ring, ScratchArena, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut,
     },
     oep::{HalCnvImpl, HalVecZnxDftImpl},
 };
 
 macro_rules! impl_cnv_delegate {
     ($trait:ty, $($body:item),+ $(,)?) => {
-        impl<BE: Backend<ZnxWord = i64>> $trait for Module<BE>
+        impl<BE: Backend<ZnxWord = i64>, Rg: Ring> $trait for Module<BE>
         where
-            BE: HalCnvImpl + HalVecZnxDftImpl,
+            BE: HalCnvImpl<Rg> + HalVecZnxDftImpl<Rg>,
         {
             $($body)+
         }
@@ -19,12 +19,12 @@ macro_rules! impl_cnv_delegate {
 }
 
 impl<BE: Backend> CnvPVecAlloc<BE> for Module<BE> {
-    fn cnv_pvec_left_alloc(&self, n: usize, cols: usize, size: usize, hint: PrepareHint) -> CnvPVecLOwned<BE> {
-        CnvPVecLOwned::<BE>::alloc(n, cols, size, hint)
+    fn cnv_pvec_left_alloc<Rg: Ring>(&self, n: usize, cols: usize, size: usize, hint: PrepareHint) -> CnvPVecLOwned<BE, Rg> {
+        CnvPVecLOwned::<BE, Rg>::alloc(n, cols, size, hint)
     }
 
-    fn cnv_pvec_right_alloc(&self, n: usize, cols: usize, size: usize, hint: PrepareHint) -> CnvPVecROwned<BE> {
-        CnvPVecROwned::<BE>::alloc(n, cols, size, hint)
+    fn cnv_pvec_right_alloc<Rg: Ring>(&self, n: usize, cols: usize, size: usize, hint: PrepareHint) -> CnvPVecROwned<BE, Rg> {
+        CnvPVecROwned::<BE, Rg>::alloc(n, cols, size, hint)
     }
 }
 
@@ -39,14 +39,14 @@ impl<BE: Backend> CnvPVecBytesOf for Module<BE> {
 }
 
 impl_cnv_delegate!(
-    CnvOps<BE>,
+    CnvOps<BE, Rg>,
     fn cnv_pvec_left_prepare_tmp_bytes(&self, res_size: usize, a_size: usize) -> usize {
         BE::cnv_pvec_left_prepare_tmp_bytes(self, res_size, a_size)
     },
     fn cnv_pvec_left_prepare(
         &self,
-        res: &mut CnvPVecLBackendMut<'_, BE>,
-        a: &VecZnxBackendRef<'_, BE>,
+        res: &mut CnvPVecLBackendMut<'_, BE, Rg>,
+        a: &VecZnxBackendRef<'_, BE, Rg>,
         scratch: &mut ScratchArena<'_, BE>,
     ) {
         BE::cnv_pvec_left_prepare(self, res, a, scratch);
@@ -56,8 +56,8 @@ impl_cnv_delegate!(
     },
     fn cnv_pvec_right_prepare(
         &self,
-        res: &mut CnvPVecRBackendMut<'_, BE>,
-        a: &VecZnxBackendRef<'_, BE>,
+        res: &mut CnvPVecRBackendMut<'_, BE, Rg>,
+        a: &VecZnxBackendRef<'_, BE, Rg>,
         scratch: &mut ScratchArena<'_, BE>,
     ) {
         BE::cnv_pvec_right_prepare(self, res, a, scratch);
@@ -71,11 +71,11 @@ impl_cnv_delegate!(
     fn cnv_by_const_apply(
         &self,
         cnv_offset: usize,
-        res: &mut VecZnxBigBackendMut<'_, BE>,
+        res: &mut VecZnxBigBackendMut<'_, BE, Rg>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE>,
+        a: &VecZnxBackendRef<'_, BE, Rg>,
         a_col: usize,
-        b: &VecZnxBackendRef<'_, BE>,
+        b: &VecZnxBackendRef<'_, BE, Rg>,
         b_col: usize,
         b_coeff: usize,
         scratch: &mut ScratchArena<'_, BE>,
@@ -88,11 +88,11 @@ impl_cnv_delegate!(
     fn cnv_by_const_apply_add(
         &self,
         cnv_offset: usize,
-        res: &mut VecZnxBigBackendMut<'_, BE>,
+        res: &mut VecZnxBigBackendMut<'_, BE, Rg>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE>,
+        a: &VecZnxBackendRef<'_, BE, Rg>,
         a_col: usize,
-        b: &VecZnxBackendRef<'_, BE>,
+        b: &VecZnxBackendRef<'_, BE, Rg>,
         b_col: usize,
         b_coeff: usize,
         scratch: &mut ScratchArena<'_, BE>,
@@ -102,11 +102,11 @@ impl_cnv_delegate!(
     fn cnv_apply_dft(
         &self,
         cnv_offset: usize,
-        res: &mut VecZnxDftBackendMut<'_, BE>,
+        res: &mut VecZnxDftBackendMut<'_, BE, Rg>,
         res_col: usize,
-        a: &CnvPVecLBackendRef<'_, BE>,
+        a: &CnvPVecLBackendRef<'_, BE, Rg>,
         a_col: usize,
-        b: &CnvPVecRBackendRef<'_, BE>,
+        b: &CnvPVecRBackendRef<'_, BE, Rg>,
         b_col: usize,
         b_galois: i64,
         scratch: &mut ScratchArena<'_, BE>,
@@ -119,11 +119,11 @@ impl_cnv_delegate!(
     fn cnv_apply_dft_add(
         &self,
         cnv_offset: usize,
-        res: &mut VecZnxDftBackendMut<'_, BE>,
+        res: &mut VecZnxDftBackendMut<'_, BE, Rg>,
         res_col: usize,
-        a: &CnvPVecLBackendRef<'_, BE>,
+        a: &CnvPVecLBackendRef<'_, BE, Rg>,
         a_col: usize,
-        b: &CnvPVecRBackendRef<'_, BE>,
+        b: &CnvPVecRBackendRef<'_, BE, Rg>,
         b_col: usize,
         b_galois: i64,
         scratch: &mut ScratchArena<'_, BE>,
@@ -136,9 +136,9 @@ impl_cnv_delegate!(
     fn cnv_apply_dft_sum(
         &self,
         cnv_offset: usize,
-        res: &mut VecZnxDftBackendMut<'_, BE>,
+        res: &mut VecZnxDftBackendMut<'_, BE, Rg>,
         res_col: usize,
-        terms: &[CnvDftAccTerm<'_, BE>],
+        terms: &[CnvDftAccTerm<'_, BE, Rg>],
         scratch: &mut ScratchArena<'_, BE>,
     ) {
         BE::cnv_apply_dft_sum(self, cnv_offset, res, res_col, terms, scratch)
@@ -149,10 +149,10 @@ impl_cnv_delegate!(
     fn cnv_pairwise_apply_dft(
         &self,
         cnv_offset: usize,
-        res: &mut VecZnxDftBackendMut<'_, BE>,
+        res: &mut VecZnxDftBackendMut<'_, BE, Rg>,
         res_col: usize,
-        a: &CnvPVecLBackendRef<'_, BE>,
-        b: &CnvPVecRBackendRef<'_, BE>,
+        a: &CnvPVecLBackendRef<'_, BE, Rg>,
+        b: &CnvPVecRBackendRef<'_, BE, Rg>,
         i: usize,
         j: usize,
         scratch: &mut ScratchArena<'_, BE>,
@@ -164,9 +164,9 @@ impl_cnv_delegate!(
     },
     fn cnv_pvec_self_prepare(
         &self,
-        left: &mut CnvPVecLBackendMut<'_, BE>,
-        right: &mut CnvPVecRBackendMut<'_, BE>,
-        a: &VecZnxBackendRef<'_, BE>,
+        left: &mut CnvPVecLBackendMut<'_, BE, Rg>,
+        right: &mut CnvPVecRBackendMut<'_, BE, Rg>,
+        a: &VecZnxBackendRef<'_, BE, Rg>,
         scratch: &mut ScratchArena<'_, BE>,
     ) {
         BE::cnv_pvec_self_prepare(self, left, right, a, scratch)

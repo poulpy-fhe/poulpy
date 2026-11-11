@@ -4,14 +4,16 @@ use crate::kernels::znx::{
     ZnxZero,
     add::{znx_add_assign_portable, znx_add_portable},
     automorphism_rotate::znx_automorphism_rotate_portable,
+    conjugate_invariant,
     copy::znx_copy_portable,
     neg::{znx_negate_assign_portable, znx_negate_portable},
-    standard::znx_automorphism_portable,
+    standard,
     sub::{znx_sub_assign_portable, znx_sub_negate_assign_portable, znx_sub_portable},
     switch_ring::znx_switch_ring_portable,
     zero::znx_zero_portable,
     znx_mul_add_power_of_two_portable, znx_mul_power_of_two_assign_portable, znx_mul_power_of_two_portable, znx_rotate_portable,
 };
+use poulpy_hal::layouts::{ConjugateInvariant, Standard};
 
 pub struct ZnxPortable {}
 
@@ -57,19 +59,31 @@ impl ZnxSubNegateAssign for ZnxPortable {
     }
 }
 
-impl ZnxAutomorphism for ZnxPortable {
+impl ZnxAutomorphism<Standard> for ZnxPortable {
     #[inline(always)]
     fn znx_automorphism(p: i64, res: &mut [i64], a: &[i64]) {
-        znx_automorphism_portable(p, res, a);
+        standard::znx_automorphism_portable(p, res, a);
     }
 
     #[inline(always)]
     fn znx_automorphism_i128(p: i64, res: &mut [i128], a: &[i128]) {
-        znx_automorphism_portable(p, res, a)
+        standard::znx_automorphism_portable(p, res, a)
     }
 }
 
-impl ZnxAutomorphismRotate for ZnxPortable {
+impl ZnxAutomorphism<ConjugateInvariant> for ZnxPortable {
+    #[inline(always)]
+    fn znx_automorphism(p: i64, res: &mut [i64], a: &[i64]) {
+        conjugate_invariant::znx_automorphism_portable(p, res, a);
+    }
+
+    #[inline(always)]
+    fn znx_automorphism_i128(p: i64, res: &mut [i128], a: &[i128]) {
+        conjugate_invariant::znx_automorphism_portable(p, res, a)
+    }
+}
+
+impl ZnxAutomorphismRotate<Standard> for ZnxPortable {
     #[inline(always)]
     fn znx_automorphism_rotate(p: i64, k: i64, res: &mut [i64], a: &[i64]) {
         znx_automorphism_rotate_portable(p, k, res, a);

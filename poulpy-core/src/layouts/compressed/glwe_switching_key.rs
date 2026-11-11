@@ -1,5 +1,5 @@
 use poulpy_hal::AlignedBuf;
-use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, ReaderFrom, WriterTo};
+use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, ReaderFrom, Ring, Standard, WriterTo};
 
 use crate::layouts::{
     Base2K, Degree, Dnum, GGLWECompressed, GGLWECompressedSeedMut, GGLWEInfos, GLWEInfos, GLWESwitchingKeyDegrees,
@@ -17,25 +17,25 @@ use std::fmt;
 /// Wraps a [`GGLWECompressed`] with additional input/output degree metadata
 /// for key-switching between GLWE ciphertexts with different ring degrees.
 #[derive(PartialEq, Eq, Clone)]
-pub struct GLWESwitchingKeyCompressed<D: Data, W: ZnxWord> {
-    pub(crate) key: GGLWECompressed<D, W>,
+pub struct GLWESwitchingKeyCompressed<D: Data, W: ZnxWord, Rg: Ring = Standard> {
+    pub(crate) key: GGLWECompressed<D, W, Rg>,
     pub(crate) input_degree: Degree,  // Degree of sk_in
     pub(crate) output_degree: Degree, // Degree of sk_out
 }
 
-impl<D: Data, W: ZnxWord> crate::layouts::GGLWECompressedSeed for GLWESwitchingKeyCompressed<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> crate::layouts::GGLWECompressedSeed for GLWESwitchingKeyCompressed<D, W, Rg> {
     fn seed(&self) -> &Vec<[u8; 32]> {
         &self.key.seed
     }
 }
 
-impl<D: Data, W: ZnxWord> GGLWECompressedSeedMut for GLWESwitchingKeyCompressed<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> GGLWECompressedSeedMut for GLWESwitchingKeyCompressed<D, W, Rg> {
     fn seed_mut(&mut self) -> &mut Vec<[u8; 32]> {
         &mut self.key.seed
     }
 }
 
-impl<D: Data, W: ZnxWord> GLWESwitchingKeyDegrees for GLWESwitchingKeyCompressed<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> GLWESwitchingKeyDegrees for GLWESwitchingKeyCompressed<D, W, Rg> {
     fn output_degree(&self) -> &Degree {
         &self.output_degree
     }
@@ -45,7 +45,7 @@ impl<D: Data, W: ZnxWord> GLWESwitchingKeyDegrees for GLWESwitchingKeyCompressed
     }
 }
 
-impl<D: Data, W: ZnxWord> GLWESwitchingKeyDegreesMut for GLWESwitchingKeyCompressed<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> GLWESwitchingKeyDegreesMut for GLWESwitchingKeyCompressed<D, W, Rg> {
     fn output_degree(&mut self) -> &mut Degree {
         &mut self.output_degree
     }
@@ -55,7 +55,7 @@ impl<D: Data, W: ZnxWord> GLWESwitchingKeyDegreesMut for GLWESwitchingKeyCompres
     }
 }
 
-impl<D: Data, W: ZnxWord> LWEInfos for GLWESwitchingKeyCompressed<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> LWEInfos for GLWESwitchingKeyCompressed<D, W, Rg> {
     fn noise(&self) -> Option<crate::ComponentNoise> {
         self.key.noise()
     }
@@ -75,13 +75,13 @@ impl<D: Data, W: ZnxWord> LWEInfos for GLWESwitchingKeyCompressed<D, W> {
         self.key.k()
     }
 }
-impl<D: Data, W: ZnxWord> GLWEInfos for GLWESwitchingKeyCompressed<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> GLWEInfos for GLWESwitchingKeyCompressed<D, W, Rg> {
     fn rank(&self) -> Rank {
         self.rank_out()
     }
 }
 
-impl<D: Data, W: ZnxWord> GGLWEInfos for GLWESwitchingKeyCompressed<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> GGLWEInfos for GLWESwitchingKeyCompressed<D, W, Rg> {
     fn k_aux(&self) -> TorusPrecision {
         self.key.k_aux()
     }
@@ -107,13 +107,13 @@ impl<D: Data, W: ZnxWord> GGLWEInfos for GLWESwitchingKeyCompressed<D, W> {
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> fmt::Debug for GLWESwitchingKeyCompressed<D, W> {
+impl<D: HostDataRef, W: ZnxWord, Rg: Ring> fmt::Debug for GLWESwitchingKeyCompressed<D, W, Rg> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{self}")
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> fmt::Display for GLWESwitchingKeyCompressed<D, W> {
+impl<D: HostDataRef, W: ZnxWord, Rg: Ring> fmt::Display for GLWESwitchingKeyCompressed<D, W, Rg> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
@@ -123,7 +123,7 @@ impl<D: HostDataRef, W: ZnxWord> fmt::Display for GLWESwitchingKeyCompressed<D, 
     }
 }
 
-impl<D: Data, W: ZnxWord> GLWESwitchingKeyCompressed<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> GLWESwitchingKeyCompressed<D, W, Rg> {
     /// Allocates a new compressed GLWE switching key by copying parameters from an existing info provider.
     pub(crate) fn alloc_from_infos<B: Backend<OwnedBuf = D, ZnxWord = W>, A>(infos: &A) -> Self
     where
@@ -158,7 +158,7 @@ impl<D: Data, W: ZnxWord> GLWESwitchingKeyCompressed<D, W> {
     where
         A: GGLWEInfos,
     {
-        GGLWECompressed::<AlignedBuf, W>::bytes_of_from_infos(infos)
+        GGLWECompressed::<AlignedBuf, W, Rg>::bytes_of_from_infos(infos)
     }
 
     /// Returns the serialized byte size for a compressed GLWE switching key with the given parameters.
@@ -170,11 +170,11 @@ impl<D: Data, W: ZnxWord> GLWESwitchingKeyCompressed<D, W> {
         k_aux: TorusPrecision,
         rank_in: Rank,
     ) -> usize {
-        GGLWECompressed::<AlignedBuf, W>::bytes_of(n, base2k, dnum, k_digit, k_aux, rank_in)
+        GGLWECompressed::<AlignedBuf, W, Rg>::bytes_of(n, base2k, dnum, k_digit, k_aux, rank_in)
     }
 }
 
-impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GLWESwitchingKeyCompressed<D, W> {
+impl<D: HostDataMut, W: ZnxWord, Rg: Ring> ReaderFrom for GLWESwitchingKeyCompressed<D, W, Rg> {
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
         self.key.noise = None;
         let input_degree = Degree(reader.read_u32::<LittleEndian>()?);
@@ -186,7 +186,7 @@ impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GLWESwitchingKeyCompressed<D, W>
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> WriterTo for GLWESwitchingKeyCompressed<D, W> {
+impl<D: HostDataRef, W: ZnxWord, Rg: Ring> WriterTo for GLWESwitchingKeyCompressed<D, W, Rg> {
     fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
         if let Some(noise) = &self.key.noise {
             noise.validate_wire()?;
@@ -198,4 +198,4 @@ impl<D: HostDataRef, W: ZnxWord> WriterTo for GLWESwitchingKeyCompressed<D, W> {
     }
 }
 
-impl_gglwe_compressed_to_backend_for_field!(GLWESwitchingKeyCompressed<BE::OwnedBuf, BE::ZnxWord>, key, GGLWECompressed<BE::OwnedBuf, BE::ZnxWord>);
+impl_gglwe_compressed_to_backend_for_field!(GLWESwitchingKeyCompressed<BE::OwnedBuf, BE::ZnxWord, Rg>, key, GGLWECompressed<BE::OwnedBuf, BE::ZnxWord, Rg>);

@@ -5,7 +5,7 @@ use criterion::{Bencher, measurement::Measurement};
 
 use poulpy_hal::{
     api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxRotate, VecZnxRotateAssign, VecZnxRotateAssignTmpBytes},
-    layouts::{Backend, Module, ScratchOwned},
+    layouts::{Backend, Module, ScratchOwned, Standard},
     source::Source,
 };
 
@@ -26,8 +26,8 @@ where
     let mut res = upload_host_vec_znx::<B>(&res);
 
     bencher.iter(|| {
-        let a = vec_znx_backend_ref::<B>(&a);
-        let mut res = vec_znx_backend_mut::<B>(&mut res);
+        let a = vec_znx_backend_ref::<B, Standard>(&a);
+        let mut res = vec_znx_backend_mut::<B, Standard>(&mut res);
         for i in 0..sweep.cols {
             module.vec_znx_rotate(-7, &mut res, i, &a, i);
         }
@@ -53,7 +53,7 @@ pub fn runner_vec_znx_rotate_assign<B: Backend<ZnxWord = i64>, M: Measurement>(
     let mut res = upload_host_vec_znx::<B>(&res);
 
     bencher.iter(|| {
-        let mut res = vec_znx_backend_mut::<B>(&mut res);
+        let mut res = vec_znx_backend_mut::<B, Standard>(&mut res);
         for i in 0..sweep.cols {
             module.vec_znx_rotate_assign(-7, &mut res, i, &mut scratch.borrow());
         }

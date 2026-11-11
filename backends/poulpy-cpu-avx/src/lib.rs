@@ -121,9 +121,12 @@
 //! # Threading and concurrency
 //!
 //! - **`FFT64Avx` is `Send + Sync`**: Zero-sized marker type, no internal state.
-//! - **`Module<FFT64Avx>` is `Send + Sync`**: FFT tables are immutable after construction.
+//! - **`Module<FFT64Avx>` is `Send + Sync`**: FFT tables are never mutated once built, the
+//!   conjugate-invariant ones built once on first use.
 //! - **Operations require `&mut` for outputs**: Prevents data races at the API level.
-//! - **No internal locking**: All synchronization is caller's responsibility.
+//! - **Internal locking only for state built on first use**: The conjugate-invariant tables (a `OnceLock`) and the
+//!   plan families of the module's `ModulePlanCache` (an `RwLock` plus a per-family `Mutex`) block concurrent first
+//!   users; synchronizing operations is the caller's responsibility.
 //!
 //! # Feature flags
 //!
@@ -211,95 +214,60 @@ pub use ntt4x30::NTT4x30AvxRayon;
 #[cfg(feature = "enable-avx")]
 mod layout_compat;
 
-/// [`FFT64Avx`] over the conjugate invariant ring.
-#[cfg(feature = "enable-avx")]
-pub type FFT64CIAvx = FFT64Avx<poulpy_hal::layouts::ConjugateInvariant>;
-/// [`NTT4x30Avx`] over the conjugate invariant ring.
-#[cfg(feature = "enable-avx")]
-pub type NTT4x30CIAvx = NTT4x30Avx<poulpy_hal::layouts::ConjugateInvariant>;
-/// [`FFT64AvxRayon`] over the conjugate invariant ring.
-#[cfg(all(feature = "enable-avx", feature = "enable-rayon"))]
-pub type FFT64CIAvxRayon = FFT64AvxRayon<poulpy_hal::layouts::ConjugateInvariant>;
-/// [`NTT4x30AvxRayon`] over the conjugate invariant ring.
-#[cfg(all(feature = "enable-avx", feature = "enable-rayon"))]
-pub type NTT4x30CIAvxRayon = NTT4x30AvxRayon<poulpy_hal::layouts::ConjugateInvariant>;
-
 #[cfg(all(test, feature = "enable-avx"))]
 poulpy_cpu_portable::conjugate_invariant_test_suite!(
     ci_fft64avx,
-    crate::FFT64CIAvx,
     crate::FFT64Avx,
-    reference = poulpy_cpu_portable::FFT64CIPortable
+    reference = poulpy_cpu_portable::FFT64Portable
 );
 
 #[cfg(all(test, feature = "enable-avx"))]
 poulpy_cpu_portable::conjugate_invariant_test_suite!(
     ci_ntt4x30avx,
-    crate::NTT4x30CIAvx,
     crate::NTT4x30Avx,
-    reference = poulpy_cpu_portable::NTT4x30CIPortable
+    reference = poulpy_cpu_portable::NTT4x30Portable
 );
 
 #[cfg(all(test, feature = "enable-avx", feature = "enable-rayon"))]
-poulpy_cpu_portable::conjugate_invariant_test_suite!(
-    ci_fft64avxrayon,
-    crate::FFT64CIAvxRayon,
-    crate::FFT64AvxRayon,
-    reference = crate::FFT64CIAvx
-);
+poulpy_cpu_portable::conjugate_invariant_test_suite!(ci_fft64avxrayon, crate::FFT64AvxRayon, reference = crate::FFT64Avx);
 
 #[cfg(all(test, feature = "enable-avx", feature = "enable-rayon"))]
-poulpy_cpu_portable::conjugate_invariant_test_suite!(
-    ci_ntt4x30avxrayon,
-    crate::NTT4x30CIAvxRayon,
-    crate::NTT4x30AvxRayon,
-    reference = crate::NTT4x30CIAvx
-);
+poulpy_cpu_portable::conjugate_invariant_test_suite!(ci_ntt4x30avxrayon, crate::NTT4x30AvxRayon, reference = crate::NTT4x30Avx);
 
 #[cfg(all(test, feature = "enable-avx"))]
 poulpy_cpu_portable::conjugate_invariant_core_test_suite!(
     ci_core_fft64avx,
-    crate::FFT64CIAvx,
     crate::FFT64Avx,
-    reference = poulpy_cpu_portable::FFT64CIPortable
+    reference = poulpy_cpu_portable::FFT64Portable
 );
 
 #[cfg(all(test, feature = "enable-avx"))]
 poulpy_cpu_portable::conjugate_invariant_core_test_suite!(
     ci_core_ntt4x30avx,
-    crate::NTT4x30CIAvx,
     crate::NTT4x30Avx,
-    reference = poulpy_cpu_portable::NTT4x30CIPortable
+    reference = poulpy_cpu_portable::NTT4x30Portable
 );
 
 #[cfg(all(test, feature = "enable-avx", feature = "enable-rayon"))]
 poulpy_cpu_portable::conjugate_invariant_core_test_suite!(
     ci_core_fft64avxrayon,
-    crate::FFT64CIAvxRayon,
     crate::FFT64AvxRayon,
-    reference = crate::FFT64CIAvx
+    reference = crate::FFT64Avx
 );
 
 #[cfg(all(test, feature = "enable-avx", feature = "enable-rayon"))]
 poulpy_cpu_portable::conjugate_invariant_core_test_suite!(
     ci_core_ntt4x30avxrayon,
-    crate::NTT4x30CIAvxRayon,
     crate::NTT4x30AvxRayon,
-    reference = crate::NTT4x30CIAvx
+    reference = crate::NTT4x30Avx
 );
 
 #[cfg(all(test, feature = "enable-avx", feature = "enable-ckks"))]
-poulpy_ckks::conjugate_invariant_ckks_test_suite!(
-    ckks_ci_fft64avx,
-    crate::FFT64CIAvx,
-    crate::FFT64Avx,
-    poulpy_ckks::test_suite::BASE19_PARAMS_F64
-);
+poulpy_ckks::conjugate_invariant_ckks_test_suite!(ckks_ci_fft64avx, crate::FFT64Avx, poulpy_ckks::test_suite::BASE19_PARAMS_F64);
 
 #[cfg(all(test, feature = "enable-avx", feature = "enable-ckks"))]
 poulpy_ckks::conjugate_invariant_ckks_test_suite!(
     ckks_ci_ntt4x30avx,
-    crate::NTT4x30CIAvx,
     crate::NTT4x30Avx,
     poulpy_ckks::test_suite::BASE52_PARAMS_F64
 );
@@ -307,7 +275,6 @@ poulpy_ckks::conjugate_invariant_ckks_test_suite!(
 #[cfg(all(test, feature = "enable-avx", feature = "enable-ckks", feature = "enable-rayon"))]
 poulpy_ckks::conjugate_invariant_ckks_test_suite!(
     ckks_ci_fft64avxrayon,
-    crate::FFT64CIAvxRayon,
     crate::FFT64AvxRayon,
     poulpy_ckks::test_suite::BASE19_PARAMS_F64
 );
@@ -315,7 +282,6 @@ poulpy_ckks::conjugate_invariant_ckks_test_suite!(
 #[cfg(all(test, feature = "enable-avx", feature = "enable-ckks", feature = "enable-rayon"))]
 poulpy_ckks::conjugate_invariant_ckks_test_suite!(
     ckks_ci_ntt4x30avxrayon,
-    crate::NTT4x30CIAvxRayon,
     crate::NTT4x30AvxRayon,
     poulpy_ckks::test_suite::BASE52_PARAMS_F64
 );

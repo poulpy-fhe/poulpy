@@ -17,6 +17,7 @@
 
 use std::marker::PhantomData;
 
+use poulpy_cpu_portable::kernels::ntt4x30::NttRingTable;
 use poulpy_hal::{
     AlignedVec, alloc_aligned,
     layouts::{Ring, Standard},
@@ -85,6 +86,14 @@ pub struct Ntt3x42IfmaTableInv<P: PrimeSetNtt3x42Ifma, R: Ring = Standard> {
     /// Conjugate-invariant basis change per prime, empty on the standard ring.
     pub(super) basis: [BasisChangeTable; 3],
     _phantom: PhantomData<(P, R)>,
+}
+
+impl<P: PrimeSetNtt3x42Ifma, R: Ring> NttRingTable for Ntt3x42IfmaTable<P, R> {
+    type Ring = R;
+}
+
+impl<P: PrimeSetNtt3x42Ifma, R: Ring> NttRingTable for Ntt3x42IfmaTableInv<P, R> {
+    type Ring = R;
 }
 
 /// Largest degree `n` whose ambient order `CYCLOTOMIC_ORDER_FACTOR * n` fits the prime set.

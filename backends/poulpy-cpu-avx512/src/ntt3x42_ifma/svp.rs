@@ -48,23 +48,22 @@ unsafe fn mul_packed_limb(n: usize, dst: *mut u64, src: *const u64, prepared: &[
 
 /// Encode a scalar polynomial into IFMA prepared format.
 pub(crate) fn svp_ppol_prepare<R: Ring>(
-    module: &Module<NTT3x42Ifma<R>>,
-    res: &mut SvpPPolBackendMut<'_, NTT3x42Ifma<R>>,
+    module: &Module<NTT3x42Ifma>,
+    res: &mut SvpPPolBackendMut<'_, NTT3x42Ifma, R>,
     res_col: usize,
-    a: &ScalarZnxBackendRef<'_, NTT3x42Ifma<R>>,
+    a: &ScalarZnxBackendRef<'_, NTT3x42Ifma, R>,
     a_col: usize,
 ) where
-    NTT3x42Ifma<R>:
-        Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, R>> + Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, R>>,
+    NTT3x42Ifma: Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, R>> + Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, R>>,
 {
     let n = res.n();
-    check_degree::<NTT3x42Ifma<R>>(module.n(), n);
+    check_degree::<NTT3x42Ifma>(module.n(), n);
     assert!(a.n() == n, "svp_ppol_prepare: a.n() != res.n()");
 
     let mut tmp = vec![0u64; 3 * n];
-    NTT3x42Ifma::<R>::ntt3x42_ifma_from_znx64(&mut tmp, a.at(a_col, 0));
+    NTT3x42Ifma::ntt3x42_ifma_from_znx64(&mut tmp, a.at(a_col, 0));
     // Lazy [0, 4q): consumed only by c_from_b (re-reduces).
-    <NTT3x42Ifma<R> as Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, R>>>::ntt3x42_ifma_dft_execute_lazy(
+    <NTT3x42Ifma as Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, R>>>::ntt3x42_ifma_dft_execute_lazy(
         handle(module).table_ntt_for(n),
         &mut tmp,
     );
@@ -72,7 +71,7 @@ pub(crate) fn svp_ppol_prepare<R: Ring>(
     let res_u64: &mut [u64] = cast_slice_mut(res.data_mut());
     let prepared = &mut res_u64[6 * n * res_col..][..6 * n];
     let res_u32: &mut [u32] = cast_slice_mut(&mut prepared[..3 * n]);
-    NTT3x42Ifma::<R>::ntt3x42_ifma_c_from_b(n, res_u32, &tmp);
+    NTT3x42Ifma::ntt3x42_ifma_c_from_b(n, res_u32, &tmp);
     for p in 0..3 {
         let q = Primes42::Q[p];
         for i in 0..n {
@@ -82,9 +81,9 @@ pub(crate) fn svp_ppol_prepare<R: Ring>(
 }
 
 pub(crate) fn svp_ppol_copy<R: Ring>(
-    res: &mut SvpPPolBackendMut<'_, NTT3x42Ifma<R>>,
+    res: &mut SvpPPolBackendMut<'_, NTT3x42Ifma, R>,
     res_col: usize,
-    a: &SvpPPolBackendRef<'_, NTT3x42Ifma<R>>,
+    a: &SvpPPolBackendRef<'_, NTT3x42Ifma, R>,
     a_col: usize,
 ) {
     assert_eq!(res.n(), a.n(), "svp_ppol_copy: res.n() {} != a.n() {}", res.n(), a.n());
@@ -110,23 +109,22 @@ pub(crate) fn svp_apply_dft_tmp_bytes(n: usize) -> usize {
 /// the prepared SVP factor there: `res = svp ⊙ NTT(b)`.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn svp_apply_dft<R: Ring, E: poulpy_hal::execution::TaskExecutor>(
-    module: &Module<NTT3x42Ifma<R>>,
-    res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma<R>>,
+    module: &Module<NTT3x42Ifma>,
+    res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma, R>,
     res_col: usize,
-    a: &SvpPPolBackendRef<'_, NTT3x42Ifma<R>>,
+    a: &SvpPPolBackendRef<'_, NTT3x42Ifma, R>,
     a_col: usize,
-    b: &VecZnxBackendRef<'_, NTT3x42Ifma<R>>,
+    b: &VecZnxBackendRef<'_, NTT3x42Ifma, R>,
     b_col: usize,
     tmp: &mut [u64],
 ) where
-    NTT3x42Ifma<R>:
-        Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, R>> + Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, R>>,
+    NTT3x42Ifma: Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, R>> + Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, R>>,
 {
     poulpy_hal::layouts::assert_dense(b, "svp_apply_dft");
     let n = res.n();
     check_operand(n, res, res_col);
     check_operand(n, b, b_col);
-    check_degree::<NTT3x42Ifma<R>>(module.n(), n);
+    check_degree::<NTT3x42Ifma>(module.n(), n);
     assert_eq!(a.n(), n, "svp_apply_dft: a.n() != res.n()");
     assert!(tmp.len() >= 3 * n, "svp_apply_dft: scratch below its query");
     let res_size = res.size();
@@ -150,12 +148,12 @@ pub(crate) fn svp_apply_dft<R: Ring, E: poulpy_hal::execution::TaskExecutor>(
 
 /// Pointwise DFT-domain multiply: `res = a ⊙ b` (`b` and `res` packed).
 pub(crate) fn svp_apply_dft_to_dft<R: Ring, E: poulpy_hal::execution::TaskExecutor>(
-    _module: &Module<NTT3x42Ifma<R>>,
-    res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma<R>>,
+    _module: &Module<NTT3x42Ifma>,
+    res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma, R>,
     res_col: usize,
-    a: &SvpPPolBackendRef<'_, NTT3x42Ifma<R>>,
+    a: &SvpPPolBackendRef<'_, NTT3x42Ifma, R>,
     a_col: usize,
-    b: &VecZnxDftBackendRef<'_, NTT3x42Ifma<R>>,
+    b: &VecZnxDftBackendRef<'_, NTT3x42Ifma, R>,
     b_col: usize,
 ) {
     let n = res.n();
@@ -187,10 +185,10 @@ pub(crate) fn svp_apply_dft_to_dft<R: Ring, E: poulpy_hal::execution::TaskExecut
 
 /// Pointwise DFT-domain multiply in place: `res = a ⊙ res`.
 pub(crate) fn svp_apply_dft_to_dft_assign<R: Ring, E: poulpy_hal::execution::TaskExecutor>(
-    _module: &Module<NTT3x42Ifma<R>>,
-    res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma<R>>,
+    _module: &Module<NTT3x42Ifma>,
+    res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma, R>,
     res_col: usize,
-    a: &SvpPPolBackendRef<'_, NTT3x42Ifma<R>>,
+    a: &SvpPPolBackendRef<'_, NTT3x42Ifma, R>,
     a_col: usize,
 ) {
     let n = res.n();

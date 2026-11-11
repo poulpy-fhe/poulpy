@@ -120,7 +120,7 @@ impl Context {
 
     /// Decrypts and returns the real slots.
     pub fn decrypt(&mut self, ciphertext: &Ciphertext) -> Vec<f64> {
-        ckks_decrypt_decode::<Backend, f64, EncodingFFTTable<f64>>(
+        ckks_decrypt_decode::<Backend, f64, EncodingFFTTable<f64>, Standard>(
             &self.params,
             &self.module,
             &self.encoder,

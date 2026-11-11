@@ -34,7 +34,7 @@ use poulpy_core::{
         prepared::{GGLWEPreparedToBackendRef, GLWEAutomorphismKeyPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
     },
 };
-use poulpy_hal::layouts::{Backend, CyclotomicOrder, HostBytesBackend, HostStaged, Module};
+use poulpy_hal::layouts::{Backend, CyclotomicOrder, HostBytesBackend, HostStaged, Module, Standard};
 
 fn run<BE>(params: CKKSTestParams, module: &Module<BE>) -> Vec<(Result<(), String>, Snapshot, Snapshot)>
 where
@@ -127,8 +127,8 @@ where
             }
             results.push((
                 result.map_err(|error| error.to_string()),
-                snapshot::<BE, _>(&src),
-                snapshot::<BE, _>(&dst),
+                snapshot::<BE, _, Standard>(&src),
+                snapshot::<BE, _, Standard>(&dst),
             ));
         }
     }
@@ -212,8 +212,8 @@ where
             }
             results.push((
                 result.map_err(|error| error.to_string()),
-                snapshot::<BE, _>(&src),
-                snapshot::<BE, _>(&dst),
+                snapshot::<BE, _, Standard>(&src),
+                snapshot::<BE, _, Standard>(&dst),
             ));
         }
     }
@@ -380,7 +380,7 @@ where
         + CyclotomicOrder,
 {
     let rotation_keys = plan
-        .galois_elements(module.n().ilog2() as usize, module.cyclotomic_order())
+        .galois_elements(module.n().ilog2() as usize, module.cyclotomic_order::<Standard>())
         .into_iter()
         .chain([-1])
         .map(|p| (p, prepared_automorphism_key(module, atk, p, (p as u8).wrapping_add(71))))
@@ -491,7 +491,7 @@ where
                 BE::ckks_functional_bootstrap(module, &mut outs, &ct_in, &ctx, &luts, &keys, scratch)
             });
             assert!(result.is_ok(), "{pipeline:?}: {result:?}");
-            results.push((result.map_err(|e| e.to_string()), vec![snapshot::<BE, _>(&outs[0])]));
+            results.push((result.map_err(|e| e.to_string()), vec![snapshot::<BE, _, Standard>(&outs[0])]));
             continue;
         }
         let bytes = BE::ckks_bootstrap_tmp_bytes(module, &out_layout, &in_layout, &ctx, &layout);
@@ -500,21 +500,21 @@ where
             BE::ckks_bootstrap(module, &mut out, &ct_in, &ctx, &keys, scratch)
         });
         assert!(result.is_ok(), "{pipeline:?}: {result:?}");
-        results.push((result.map_err(|e| e.to_string()), vec![snapshot::<BE, _>(&out)]));
+        results.push((result.map_err(|e| e.to_string()), vec![snapshot::<BE, _, Standard>(&out)]));
         if pipeline == BootstrappingPipeline::C2SFirst {
             let mut raised = fixture_ciphertext(module, &out_layout, 101);
             let result = with_scratch::<BE, _>(BE::ckks_mod_up_tmp_bytes(module, raised.size()), |scratch| {
                 BE::ckks_mod_up_into(module, &mut raised, &ct_in, plan.eval_mod(), scratch)
             });
             assert!(result.is_ok(), "{pipeline:?}: {result:?}");
-            results.push((result.map_err(|e| e.to_string()), vec![snapshot::<BE, _>(&raised)]));
+            results.push((result.map_err(|e| e.to_string()), vec![snapshot::<BE, _, Standard>(&raised)]));
             let mut raised = fixture_ciphertext(module, &out_layout, 103);
             let bytes = BE::ckks_bootstrap_mod_up_tmp_bytes(module, &out_layout, &in_layout, &ctx, &layout);
             let result = with_scratch::<BE, _>(bytes, |scratch| {
                 BE::ckks_bootstrap_mod_up(module, &mut raised, &ct_in, plan.eval_mod(), &keys, scratch)
             });
             assert!(result.is_ok(), "{pipeline:?}: {result:?}");
-            results.push((result.map_err(|e| e.to_string()), vec![snapshot::<BE, _>(&raised)]));
+            results.push((result.map_err(|e| e.to_string()), vec![snapshot::<BE, _, Standard>(&raised)]));
         }
     }
     results

@@ -16,34 +16,34 @@ use crate::{
 use anyhow::{Result, bail};
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, Module, ScratchArena, ScratchOwned},
+    layouts::{Backend, Module, Ring, ScratchArena, ScratchOwned},
     test_suite::TestParams,
 };
 use std::cell::Cell;
 
-struct Value<BE: Backend> {
-    data: BackendGLWE<BE>,
+struct Value<BE: Backend, Rg: Ring> {
+    data: BackendGLWE<BE, Rg>,
     budget: usize,
     delta: usize,
 }
-impl<BE: Backend> GLWEToBackendRef<BE> for Value<BE> {
-    fn to_backend_ref(&self) -> GLWEBackendRef<'_, BE> {
-        <BackendGLWE<BE> as GLWEToBackendRef<BE>>::to_backend_ref(&self.data)
+impl<BE: Backend, Rg: Ring> GLWEToBackendRef<BE, Rg> for Value<BE, Rg> {
+    fn to_backend_ref(&self) -> GLWEBackendRef<'_, BE, Rg> {
+        <BackendGLWE<BE, Rg> as GLWEToBackendRef<BE, Rg>>::to_backend_ref(&self.data)
     }
 }
-impl<BE: Backend> GLWEToBackendMut<BE> for Value<BE> {
+impl<BE: Backend, Rg: Ring> GLWEToBackendMut<BE, Rg> for Value<BE, Rg> {
     fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
-        <BackendGLWE<BE> as GLWEToBackendMut<BE>>::set_noise(&mut self.data, metadata)
+        <BackendGLWE<BE, Rg> as GLWEToBackendMut<BE, Rg>>::set_noise(&mut self.data, metadata)
     }
 
-    fn to_backend_mut(&mut self) -> GLWEBackendMut<'_, BE> {
-        <BackendGLWE<BE> as GLWEToBackendMut<BE>>::to_backend_mut(&mut self.data)
+    fn to_backend_mut(&mut self) -> GLWEBackendMut<'_, BE, Rg> {
+        <BackendGLWE<BE, Rg> as GLWEToBackendMut<BE, Rg>>::to_backend_mut(&mut self.data)
     }
     fn set_canonical(&mut self, canonical: bool) {
-        <BackendGLWE<BE> as GLWEToBackendMut<BE>>::set_canonical(&mut self.data, canonical)
+        <BackendGLWE<BE, Rg> as GLWEToBackendMut<BE, Rg>>::set_canonical(&mut self.data, canonical)
     }
 }
-impl<BE: Backend> LWEInfos for Value<BE> {
+impl<BE: Backend, Rg: Ring> LWEInfos for Value<BE, Rg> {
     fn noise(&self) -> Option<crate::ComponentNoise> {
         self.data.noise()
     }
@@ -61,12 +61,12 @@ impl<BE: Backend> LWEInfos for Value<BE> {
         self.data.max_size()
     }
 }
-impl<BE: Backend> GLWEInfos for Value<BE> {
+impl<BE: Backend, Rg: Ring> GLWEInfos for Value<BE, Rg> {
     fn rank(&self) -> Rank {
         self.data.rank()
     }
 }
-impl<BE: Backend> BSGSMeta for Value<BE> {
+impl<BE: Backend, Rg: Ring> BSGSMeta for Value<BE, Rg> {
     fn bsgs_log_budget(&self) -> usize {
         self.budget
     }
@@ -74,7 +74,7 @@ impl<BE: Backend> BSGSMeta for Value<BE> {
         self.delta
     }
 }
-impl<BE: Backend> SetBSGSMeta for Value<BE> {
+impl<BE: Backend, Rg: Ring> SetBSGSMeta for Value<BE, Rg> {
     fn set_bsgs_log_budget(&mut self, budget: usize) {
         self.budget = budget;
     }
@@ -82,7 +82,7 @@ impl<BE: Backend> SetBSGSMeta for Value<BE> {
         self.delta = delta;
     }
 }
-impl<BE: Backend> Value<BE> {
+impl<BE: Backend, Rg: Ring> Value<BE, Rg> {
     fn read(&self, index: usize) -> i64 {
         let mut bytes = vec![0; BE::len_bytes(self.data.data.data())];
         BE::copy_to_host(self.data.data.data(), &mut bytes);
@@ -92,7 +92,7 @@ impl<BE: Backend> Value<BE> {
         BE::copy_from_host(self.data.data_mut().data_mut(), bytemuck::cast_slice(values));
     }
 }
-fn value<BE: ParityBackend>(module: &Module<BE>, values: &[i64], budget: usize) -> Value<BE>
+fn value<BE: ParityBackend<Rg>, Rg: Ring>(module: &Module<BE>, values: &[i64], budget: usize) -> Value<BE, Rg>
 where
     Module<BE>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
 {
@@ -111,12 +111,12 @@ where
     )));
     value
 }
-struct Step<BE: Backend> {
-    value: Value<BE>,
+struct Step<BE: Backend, Rg: Ring> {
+    value: Value<BE, Rg>,
     degree: usize,
 }
-impl<BE: Backend> BabyStep<BE> for Step<BE> {
-    type Value = Value<BE>;
+impl<BE: Backend, Rg: Ring> BabyStep<BE, Rg> for Step<BE, Rg> {
+    type Value = Value<BE, Rg>;
     fn degree(&self) -> usize {
         self.degree
     }
@@ -128,8 +128,8 @@ impl<BE: Backend> BabyStep<BE> for Step<BE> {
     }
 }
 struct NoKey;
-impl<BE: Backend> GetTensorKey<BE> for NoKey {
-    fn lookup_tensor_key(&self, _: TorusPrecision) -> crate::Result<GLWETensorKeyPreparedBackendRef<'_, BE>> {
+impl<BE: Backend, Rg: Ring> GetTensorKey<BE, Rg> for NoKey {
+    fn lookup_tensor_key(&self, _: TorusPrecision) -> crate::Result<GLWETensorKeyPreparedBackendRef<'_, BE, Rg>> {
         panic!("exact scalar policy must not request a cryptographic key")
     }
 }
@@ -138,13 +138,13 @@ struct ExactOps {
     prepare_calls: Cell<usize>,
     fail: bool,
 }
-impl<BE: Backend> GLWEBSGSOps<BE, Value<BE>, Value<BE>, Value<BE>> for ExactOps {
+impl<BE: Backend, Rg: Ring> GLWEBSGSOps<BE, Value<BE, Rg>, Value<BE, Rg>, Value<BE, Rg>, Value<BE, Rg>, Rg> for ExactOps {
     type Prepared = (i64, usize);
     fn init_accumulator(
         &self,
         _: &Module<BE>,
-        res: &mut Value<BE>,
-        seed: &Value<BE>,
+        res: &mut Value<BE, Rg>,
+        seed: &Value<BE, Rg>,
         _: &mut ScratchArena<'_, BE>,
     ) -> Result<()> {
         res.write(&[0]);
@@ -155,9 +155,9 @@ impl<BE: Backend> GLWEBSGSOps<BE, Value<BE>, Value<BE>, Value<BE>> for ExactOps 
     fn add_pt_const_assign(
         &self,
         _: &Module<BE>,
-        res: &mut Value<BE>,
+        res: &mut Value<BE, Rg>,
         res_coeff: usize,
-        coeffs: &Value<BE>,
+        coeffs: &Value<BE, Rg>,
         idx: usize,
         _: &mut ScratchArena<'_, BE>,
     ) -> Result<()> {
@@ -168,9 +168,9 @@ impl<BE: Backend> GLWEBSGSOps<BE, Value<BE>, Value<BE>, Value<BE>> for ExactOps 
     fn eval_baby_linear_combination(
         &self,
         _: &Module<BE>,
-        res: &mut Value<BE>,
-        terms: &[(&Value<BE>, usize)],
-        coeffs: &Value<BE>,
+        res: &mut Value<BE, Rg>,
+        terms: &[(&Value<BE, Rg>, usize)],
+        coeffs: &Value<BE, Rg>,
         _: &mut ScratchArena<'_, BE>,
     ) -> Result<bool> {
         if self.fail {
@@ -186,9 +186,9 @@ impl<BE: Backend> GLWEBSGSOps<BE, Value<BE>, Value<BE>, Value<BE>> for ExactOps 
     fn mul_pt_const(
         &self,
         _: &Module<BE>,
-        res: &mut Value<BE>,
-        a: &Value<BE>,
-        coeffs: &Value<BE>,
+        res: &mut Value<BE, Rg>,
+        a: &Value<BE, Rg>,
+        coeffs: &Value<BE, Rg>,
         idx: usize,
         _: &mut ScratchArena<'_, BE>,
     ) -> Result<()> {
@@ -199,23 +199,23 @@ impl<BE: Backend> GLWEBSGSOps<BE, Value<BE>, Value<BE>, Value<BE>> for ExactOps 
     fn mul_add_pt_const(
         &self,
         _: &Module<BE>,
-        res: &mut Value<BE>,
-        a: &Value<BE>,
-        coeffs: &Value<BE>,
+        res: &mut Value<BE, Rg>,
+        a: &Value<BE, Rg>,
+        coeffs: &Value<BE, Rg>,
         idx: usize,
         _: &mut ScratchArena<'_, BE>,
     ) -> Result<()> {
         res.write(&[res.read(0) + a.read(0) * coeffs.read(idx)]);
         Ok(())
     }
-    fn prepare_right(&self, _: &Module<BE>, a: &Value<BE>, _: &mut ScratchArena<'_, BE>) -> Result<Self::Prepared> {
+    fn prepare_right(&self, _: &Module<BE>, a: &Value<BE, Rg>, _: &mut ScratchArena<'_, BE>) -> Result<Self::Prepared> {
         self.prepare_calls.set(self.prepare_calls.get() + 1);
         Ok((a.read(0), a.budget))
     }
-    fn mul_prepared_assign<H: GetTensorKey<BE>>(
+    fn mul_prepared_assign<H: GetTensorKey<BE, Rg>>(
         &self,
         _: &Module<BE>,
-        dst: &mut Value<BE>,
+        dst: &mut Value<BE, Rg>,
         prepared: &Self::Prepared,
         _: &H,
         _: &mut ScratchArena<'_, BE>,
@@ -224,21 +224,21 @@ impl<BE: Backend> GLWEBSGSOps<BE, Value<BE>, Value<BE>, Value<BE>> for ExactOps 
         dst.budget = dst.budget.min(prepared.1) - 1;
         Ok(())
     }
-    fn add_assign(&self, _: &Module<BE>, dst: &mut Value<BE>, a: &Value<BE>, _: &mut ScratchArena<'_, BE>) -> Result<()> {
+    fn add_assign(&self, _: &Module<BE>, dst: &mut Value<BE, Rg>, a: &Value<BE, Rg>, _: &mut ScratchArena<'_, BE>) -> Result<()> {
         dst.write(&[dst.read(0) + a.read(0)]);
         dst.budget = dst.budget.min(a.budget);
         Ok(())
     }
-    fn copy(&self, _: &Module<BE>, res: &mut Value<BE>, src: &Value<BE>, _: &mut ScratchArena<'_, BE>) -> Result<()> {
+    fn copy(&self, _: &Module<BE>, res: &mut Value<BE, Rg>, src: &Value<BE, Rg>, _: &mut ScratchArena<'_, BE>) -> Result<()> {
         res.write(&[src.read(0)]);
         res.budget = src.budget;
         res.delta = src.delta;
         Ok(())
     }
 }
-fn exercise<BE: ParityBackend>(module: &Module<BE>) -> Vec<(i64, usize, usize)>
+fn exercise<BE: ParityBackend<Rg>, Rg: Ring>(module: &Module<BE>) -> Vec<(i64, usize, usize)>
 where
-    Module<BE>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64> + GLWEPolynomialEvaluation<BE>,
+    Module<BE>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64> + GLWEPolynomialEvaluation<BE, Rg>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let mut scratch = ScratchOwned::<BE>::alloc(0); // The exact policy needs no arena storage.
@@ -320,7 +320,7 @@ where
         let unchanged = single[0].value.noise();
         assert!(unchanged.is_some(), "copying a baby step must preserve its input tag");
         res.set_noise(unchanged.clone());
-        let mut empty: Vec<Step<BE>> = Vec::new();
+        let mut empty: Vec<Step<BE, Rg>> = Vec::new();
         assert!(
             module
                 .glwe_eval_giant_steps(&ops, &mut res, &mut empty, &basis, &NoKey, &mut scratch.borrow())
@@ -353,14 +353,14 @@ where
 /// Both BSGS phases agree with the selected comparison backend and exact
 /// integer expectations, including fused/fallback policies, parity, hoisting,
 /// metadata, zero scratch, missing powers and policy-error propagation.
-pub fn test_polynomial_evaluation_parity<BR: ParityBackend, BT: ParityBackend>(
+pub fn test_polynomial_evaluation_parity<BR: ParityBackend<Rg>, BT: ParityBackend<Rg>, Rg: Ring>(
     _: &TestParams,
     _: &ParityShapes,
     r: &Module<BR>,
     t: &Module<BT>,
 ) where
-    Module<BR>: ModuleCoreAlloc<OwnedBuf = BR::OwnedBuf, ZnxWord = i64> + GLWEPolynomialEvaluation<BR>,
-    Module<BT>: ModuleCoreAlloc<OwnedBuf = BT::OwnedBuf, ZnxWord = i64> + GLWEPolynomialEvaluation<BT>,
+    Module<BR>: ModuleCoreAlloc<OwnedBuf = BR::OwnedBuf, ZnxWord = i64> + GLWEPolynomialEvaluation<BR, Rg>,
+    Module<BT>: ModuleCoreAlloc<OwnedBuf = BT::OwnedBuf, ZnxWord = i64> + GLWEPolynomialEvaluation<BT, Rg>,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
 {

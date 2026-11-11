@@ -1,6 +1,6 @@
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxRotateAssign},
-    layouts::{Module, ScalarZnx, ScratchOwned, ZnxViewMut},
+    layouts::{Module, ScalarZnx, ScratchOwned, Standard, ZnxViewMut},
     source::Source,
     test_suite::TestParams,
 };
@@ -87,7 +87,7 @@ where
             let mut source_xa: Source = Source::new([0u8; 32]);
 
             module.scalar_znx_fill_distribution(
-                &mut scalar_znx_backend_mut::<BE>(&mut pt_in),
+                &mut scalar_znx_backend_mut::<BE, Standard>(&mut pt_in),
                 0,
                 Distribution::TernaryProb(0.5),
                 &mut source_xs,
@@ -144,7 +144,7 @@ where
             );
 
             {
-                let mut pt_in_as_vec = crate::test_suite::noise::scalar_znx_as_vec_znx_backend_mut::<BE>(&mut pt_in);
+                let mut pt_in_as_vec = crate::test_suite::noise::scalar_znx_as_vec_znx_backend_mut::<BE, Standard>(&mut pt_in);
                 module.vec_znx_rotate_assign(k as i64, &mut pt_in_as_vec, 0, &mut scratch.borrow());
             }
 
@@ -238,7 +238,7 @@ where
             let mut source_xa: Source = Source::new([0u8; 32]);
 
             module.scalar_znx_fill_distribution(
-                &mut scalar_znx_backend_mut::<BE>(&mut pt_in),
+                &mut scalar_znx_backend_mut::<BE, Standard>(&mut pt_in),
                 0,
                 Distribution::TernaryProb(0.5),
                 &mut source_xs,
@@ -294,7 +294,7 @@ where
             );
 
             {
-                let mut pt_in_as_vec = crate::test_suite::noise::scalar_znx_as_vec_znx_backend_mut::<BE>(&mut pt_in);
+                let mut pt_in_as_vec = crate::test_suite::noise::scalar_znx_as_vec_znx_backend_mut::<BE, Standard>(&mut pt_in);
                 module.vec_znx_rotate_assign(k as i64, &mut pt_in_as_vec, 0, &mut scratch.borrow());
             }
 

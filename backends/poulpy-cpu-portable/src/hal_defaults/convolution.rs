@@ -38,15 +38,15 @@ use poulpy_hal::{
     api::{HostBufMut, ModuleN, VecZnxDftBytesOf},
     execution::{ScratchWorkers, SerialTaskExecutor, scratch_workers, scratch_workers_within},
     layouts::{
-        Backend, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, HostDataRef, Module,
-        ScratchArena, VecZnxBackendRef, VecZnxBigToBackendMut, VecZnxDft, VecZnxDftToBackendMut, check_degree,
+        Backend, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, HostDataRef, Module, Ring,
+        ScratchArena, Standard, VecZnxBackendRef, VecZnxBigToBackendMut, VecZnxDft, VecZnxDftToBackendMut, check_degree,
         vec_znx_dft_backend_mut_from_mut,
     },
 };
 
 use super::take_host_typed;
 #[doc(hidden)]
-pub trait FFT64ConvolutionDefault: Backend<ZnxWord = i64> + ScratchWorkers
+pub trait FFT64ConvolutionDefault<Rg: Ring = Standard>: Backend<ZnxWord = i64> + ScratchWorkers
 where
     Self::OwnedBuf: poulpy_hal::layouts::HostDataMut,
 {
@@ -59,12 +59,12 @@ where
 
     fn cnv_pvec_left_prepare_default(
         module: &Module<Self>,
-        res: &mut CnvPVecLBackendMut<'_, Self>,
-        a: &VecZnxBackendRef<'_, Self>,
+        res: &mut CnvPVecLBackendMut<'_, Self, Rg>,
+        a: &VecZnxBackendRef<'_, Self, Rg>,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        Module<Self>: FFTModuleHandle<f64, Ring = Self::Ring> + ModuleN + VecZnxDftBytesOf,
-        Self: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec + Fft64RingArith + 'static,
+        Module<Self>: FFTModuleHandle<f64, Rg> + ModuleN + VecZnxDftBytesOf,
+        Self: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec + Fft64RingArith<Rg> + 'static,
         for<'x> Self: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
         for<'x> Self::BufMut<'x>: HostBufMut<'x>,
     {
@@ -74,8 +74,8 @@ where
         let tmp_size = res.size().min(a.size());
         let (tmp_bytes, _) = take_host_typed::<Self, u8>(scratch.borrow(), Self::vec_znx_dft_bytes_of(n, 1, tmp_size));
         let mut tmp = VecZnxDft::from_data(tmp_bytes, n, 1, tmp_size);
-        let mut tmp_ref = vec_znx_dft_backend_mut_from_mut::<Self>(&mut tmp);
-        convolution_prepare_left_portable::<Self>(module.get_fft_plan(n), res, a, &mut tmp_ref);
+        let mut tmp_ref = vec_znx_dft_backend_mut_from_mut::<Self, Rg>(&mut tmp);
+        convolution_prepare_left_portable::<Self, Rg>(module.get_fft_plan(n), res, a, &mut tmp_ref);
     }
 
     fn cnv_pvec_right_prepare_tmp_bytes_default(module: &Module<Self>, res_size: usize, a_size: usize) -> usize
@@ -87,12 +87,12 @@ where
 
     fn cnv_pvec_right_prepare_default(
         module: &Module<Self>,
-        res: &mut CnvPVecRBackendMut<'_, Self>,
-        a: &VecZnxBackendRef<'_, Self>,
+        res: &mut CnvPVecRBackendMut<'_, Self, Rg>,
+        a: &VecZnxBackendRef<'_, Self, Rg>,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        Module<Self>: FFTModuleHandle<f64, Ring = Self::Ring> + ModuleN + VecZnxDftBytesOf,
-        Self: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec + Fft64RingArith + 'static,
+        Module<Self>: FFTModuleHandle<f64, Rg> + ModuleN + VecZnxDftBytesOf,
+        Self: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec + Fft64RingArith<Rg> + 'static,
         for<'x> Self: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
         for<'x> Self::BufMut<'x>: HostBufMut<'x>,
     {
@@ -102,8 +102,8 @@ where
         let tmp_size = res.size().min(a.size());
         let (tmp_bytes, _) = take_host_typed::<Self, u8>(scratch.borrow(), Self::vec_znx_dft_bytes_of(n, 1, tmp_size));
         let mut tmp = VecZnxDft::from_data(tmp_bytes, n, 1, tmp_size);
-        let mut tmp_ref = vec_znx_dft_backend_mut_from_mut::<Self>(&mut tmp);
-        convolution_prepare_right_portable::<Self>(module.get_fft_plan(n), res, a, &mut tmp_ref);
+        let mut tmp_ref = vec_znx_dft_backend_mut_from_mut::<Self, Rg>(&mut tmp);
+        convolution_prepare_right_portable::<Self, Rg>(module.get_fft_plan(n), res, a, &mut tmp_ref);
     }
 
     fn cnv_apply_dft_tmp_bytes_default(
@@ -138,9 +138,9 @@ where
         cnv_offset: usize,
         res: &mut R,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, Self>,
+        a: &VecZnxBackendRef<'_, Self, Rg>,
         a_col: usize,
-        b: &VecZnxBackendRef<'_, Self>,
+        b: &VecZnxBackendRef<'_, Self, Rg>,
         b_col: usize,
         b_coeff: usize,
         scratch: &mut ScratchArena<'_, Self>,
@@ -149,12 +149,12 @@ where
         for<'x> Self: Backend<BufRef<'x> = &'x [u8], ZnxWord = i64>,
         for<'x> <Self as Backend>::BufMut<'x>: poulpy_hal::layouts::HostDataMut,
         for<'x> Self::BufMut<'x>: HostBufMut<'x>,
-        R: VecZnxBigToBackendMut<Self>,
+        R: VecZnxBigToBackendMut<Self, Rg>,
     {
         let mut res_ref = res.to_backend_mut();
         let bytes = convolution_by_const_apply_tmp_bytes_portable(res_ref.size(), a.size(), b.size());
         let (tmp, _) = take_host_typed::<Self, i64>(scratch.borrow(), bytes / size_of::<i64>());
-        convolution_by_const_apply_portable::<Self>(cnv_offset, &mut res_ref, res_col, a, a_col, b, b_col, b_coeff, tmp);
+        convolution_by_const_apply_portable::<Self, Rg>(cnv_offset, &mut res_ref, res_col, a, a_col, b, b_col, b_coeff, tmp);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -163,9 +163,9 @@ where
         cnv_offset: usize,
         res: &mut R,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, Self>,
+        a: &VecZnxBackendRef<'_, Self, Rg>,
         a_col: usize,
-        b: &VecZnxBackendRef<'_, Self>,
+        b: &VecZnxBackendRef<'_, Self, Rg>,
         b_col: usize,
         b_coeff: usize,
         scratch: &mut ScratchArena<'_, Self>,
@@ -174,12 +174,12 @@ where
         for<'x> Self: Backend<BufRef<'x> = &'x [u8], ZnxWord = i64>,
         for<'x> <Self as Backend>::BufMut<'x>: poulpy_hal::layouts::HostDataMut,
         for<'x> Self::BufMut<'x>: HostBufMut<'x>,
-        R: VecZnxBigToBackendMut<Self>,
+        R: VecZnxBigToBackendMut<Self, Rg>,
     {
         let mut res_ref = res.to_backend_mut();
         let bytes = convolution_by_const_apply_tmp_bytes_portable(res_ref.size(), a.size(), b.size());
         let (tmp, _) = take_host_typed::<Self, i64>(scratch.borrow(), bytes / size_of::<i64>());
-        convolution_by_const_apply_add_portable::<Self>(cnv_offset, &mut res_ref, res_col, a, a_col, b, b_col, b_coeff, tmp);
+        convolution_by_const_apply_add_portable::<Self, Rg>(cnv_offset, &mut res_ref, res_col, a, a_col, b, b_col, b_coeff, tmp);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -188,24 +188,24 @@ where
         cnv_offset: usize,
         res: &mut R,
         res_col: usize,
-        a: &CnvPVecLBackendRef<'_, Self>,
+        a: &CnvPVecLBackendRef<'_, Self, Rg>,
         a_col: usize,
-        b: &CnvPVecRBackendRef<'_, Self>,
+        b: &CnvPVecRBackendRef<'_, Self, Rg>,
         b_col: usize,
         b_galois: i64,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        Self: Backend<DftWord = f64, ZnxWord = i64> + Reim4BlkMatVec + Reim4Convolution + Fft64RingArith,
+        Self: Backend<DftWord = f64, ZnxWord = i64> + Reim4BlkMatVec + Reim4Convolution + Fft64RingArith<Rg>,
         for<'x> Self::BufMut<'x>: HostBufMut<'x>,
         for<'x> <Self as Backend>::BufRef<'x>: HostDataRef,
         for<'x> <Self as Backend>::BufMut<'x>: poulpy_hal::layouts::HostDataMut,
-        R: VecZnxDftToBackendMut<Self>,
+        R: VecZnxDftToBackendMut<Self, Rg>,
     {
         let mut res_ref = res.to_backend_mut();
         let per_worker = convolution_apply_dft_tmp_bytes_portable(res_ref.size(), a.size(), b.size());
         let bytes = reim4_block_workers_within::<Self>(res_ref.n(), per_worker, scratch.available()) * per_worker;
         let (tmp, _) = take_host_typed::<Self, f64>(scratch.borrow(), bytes / size_of::<f64>());
-        convolution_apply_dft_portable::<Self>(cnv_offset, &mut res_ref, res_col, a, a_col, b, b_col, b_galois, tmp);
+        convolution_apply_dft_portable::<Self, Rg>(cnv_offset, &mut res_ref, res_col, a, a_col, b, b_col, b_galois, tmp);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -214,24 +214,24 @@ where
         cnv_offset: usize,
         res: &mut R,
         res_col: usize,
-        a: &CnvPVecLBackendRef<'_, Self>,
+        a: &CnvPVecLBackendRef<'_, Self, Rg>,
         a_col: usize,
-        b: &CnvPVecRBackendRef<'_, Self>,
+        b: &CnvPVecRBackendRef<'_, Self, Rg>,
         b_col: usize,
         b_galois: i64,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        Self: Backend<DftWord = f64, ZnxWord = i64> + Reim4BlkMatVec + Reim4Convolution + Fft64RingArith,
+        Self: Backend<DftWord = f64, ZnxWord = i64> + Reim4BlkMatVec + Reim4Convolution + Fft64RingArith<Rg>,
         for<'x> Self::BufMut<'x>: HostBufMut<'x>,
         for<'x> <Self as Backend>::BufRef<'x>: HostDataRef,
         for<'x> <Self as Backend>::BufMut<'x>: poulpy_hal::layouts::HostDataMut,
-        R: VecZnxDftToBackendMut<Self>,
+        R: VecZnxDftToBackendMut<Self, Rg>,
     {
         let mut res_ref = res.to_backend_mut();
         let per_worker = convolution_apply_dft_tmp_bytes_portable(res_ref.size(), a.size(), b.size());
         let bytes = reim4_block_workers_within::<Self>(res_ref.n(), per_worker, scratch.available()) * per_worker;
         let (tmp, _) = take_host_typed::<Self, f64>(scratch.borrow(), bytes / size_of::<f64>());
-        convolution_apply_dft_add_portable::<Self>(cnv_offset, &mut res_ref, res_col, a, a_col, b, b_col, b_galois, tmp);
+        convolution_apply_dft_add_portable::<Self, Rg>(cnv_offset, &mut res_ref, res_col, a, a_col, b, b_col, b_galois, tmp);
     }
 
     fn cnv_pairwise_apply_dft_tmp_bytes_default(
@@ -253,25 +253,25 @@ where
         cnv_offset: usize,
         res: &mut R,
         res_col: usize,
-        a: &CnvPVecLBackendRef<'_, Self>,
-        b: &CnvPVecRBackendRef<'_, Self>,
+        a: &CnvPVecLBackendRef<'_, Self, Rg>,
+        b: &CnvPVecRBackendRef<'_, Self, Rg>,
         i: usize,
         j: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        Self: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec + Reim4Convolution + Fft64RingArith,
+        Self: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec + Reim4Convolution + Fft64RingArith<Rg>,
         for<'x> Self::BufMut<'x>: HostBufMut<'x>,
         for<'x> <Self as Backend>::BufRef<'x>: HostDataRef,
         for<'x> <Self as Backend>::BufMut<'x>: poulpy_hal::layouts::HostDataMut,
-        R: VecZnxDftToBackendMut<Self>,
+        R: VecZnxDftToBackendMut<Self, Rg>,
     {
         let mut res_ref = res.to_backend_mut();
-        poulpy_hal::layouts::check_cnv_dft_term::<Self>(res_ref.n(), a, i, b, i, 1);
-        poulpy_hal::layouts::check_cnv_dft_term::<Self>(res_ref.n(), a, j, b, j, 1);
+        poulpy_hal::layouts::check_cnv_dft_term::<Self, Rg>(res_ref.n(), a, i, b, i, 1);
+        poulpy_hal::layouts::check_cnv_dft_term::<Self, Rg>(res_ref.n(), a, j, b, j, 1);
         let per_worker = convolution_pairwise_apply_dft_tmp_bytes_portable(res_ref.size(), a.size(), b.size());
         let bytes = reim4_block_workers_within::<Self>(res_ref.n(), per_worker, scratch.available()) * per_worker;
         let (tmp, _) = take_host_typed::<Self, f64>(scratch.borrow(), bytes / size_of::<f64>());
-        convolution_pairwise_apply_dft_portable::<Self>(cnv_offset, &mut res_ref, res_col, a, b, i, j, tmp);
+        convolution_pairwise_apply_dft_portable::<Self, Rg>(cnv_offset, &mut res_ref, res_col, a, b, i, j, tmp);
     }
 
     fn cnv_pvec_self_prepare_tmp_bytes_default(module: &Module<Self>, res_size: usize, a_size: usize) -> usize
@@ -283,13 +283,13 @@ where
 
     fn cnv_pvec_self_prepare_default(
         module: &Module<Self>,
-        left: &mut CnvPVecLBackendMut<'_, Self>,
-        right: &mut CnvPVecRBackendMut<'_, Self>,
-        a: &VecZnxBackendRef<'_, Self>,
+        left: &mut CnvPVecLBackendMut<'_, Self, Rg>,
+        right: &mut CnvPVecRBackendMut<'_, Self, Rg>,
+        a: &VecZnxBackendRef<'_, Self, Rg>,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        Module<Self>: FFTModuleHandle<f64, Ring = Self::Ring> + ModuleN + VecZnxDftBytesOf,
-        Self: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec + Fft64RingArith + 'static,
+        Module<Self>: FFTModuleHandle<f64, Rg> + ModuleN + VecZnxDftBytesOf,
+        Self: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec + Fft64RingArith<Rg> + 'static,
         for<'x> Self: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
         for<'x> Self::BufMut<'x>: HostBufMut<'x>,
     {
@@ -300,12 +300,12 @@ where
         let tmp_size = left.size().min(a.size());
         let (tmp_bytes, _) = take_host_typed::<Self, u8>(scratch.borrow(), Self::vec_znx_dft_bytes_of(n, 1, tmp_size));
         let mut tmp = VecZnxDft::from_data(tmp_bytes, n, 1, tmp_size);
-        let mut tmp_ref = vec_znx_dft_backend_mut_from_mut::<Self>(&mut tmp);
-        convolution_prepare_self_portable::<Self>(module.get_fft_plan(n), left, right, a, &mut tmp_ref);
+        let mut tmp_ref = vec_znx_dft_backend_mut_from_mut::<Self, Rg>(&mut tmp);
+        convolution_prepare_self_portable::<Self, Rg>(module.get_fft_plan(n), left, right, a, &mut tmp_ref);
     }
 }
 
-impl<BE: Backend<ZnxWord = i64> + ScratchWorkers> FFT64ConvolutionDefault for BE where
+impl<BE: Backend<ZnxWord = i64> + ScratchWorkers, Rg: Ring> FFT64ConvolutionDefault<Rg> for BE where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut
 {
 }
@@ -333,7 +333,7 @@ fn cnv_groups(n: usize) -> usize {
 }
 
 #[doc(hidden)]
-pub trait NTT4x30ConvolutionDefault: Backend<ZnxWord = i64> + ScratchWorkers
+pub trait NTT4x30ConvolutionDefault<Rg: Ring = Standard>: Backend<ZnxWord = i64> + ScratchWorkers
 where
     Self::OwnedBuf: poulpy_hal::layouts::HostDataMut,
 {
@@ -347,14 +347,14 @@ where
 
     fn cnv_pvec_left_prepare_default(
         module: &Module<Self>,
-        res: &mut CnvPVecLBackendMut<'_, Self>,
-        a: &VecZnxBackendRef<'_, Self>,
+        res: &mut CnvPVecLBackendMut<'_, Self, Rg>,
+        a: &VecZnxBackendRef<'_, Self, Rg>,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        Module<Self>: NttModuleHandle,
+        Module<Self>: NttModuleHandle<Rg>,
         Self: Backend<DftWord = Q120bScalar, ZnxWord = i64>
             + NttFromZnx64
-            + NttDFTExecute<NttTable<Primes30, <Module<Self> as crate::kernels::ntt4x30::vec_znx_dft::NttModuleHandle>::Ring>>
+            + NttDFTExecute<NttTable<Primes30, Rg>>
             + NttPackLeft1BlkX2
             + 'static,
         for<'x> Self: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
@@ -364,7 +364,7 @@ where
         let bytes = scratch_workers_within::<Self::TaskExecutor>(res.size().min(Self::PREPARE), per_worker, scratch.available())
             * per_worker;
         let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
-        ntt4x30_cnv_pvec_left_prepare_portable::<Self>(module, res, a, tmp);
+        ntt4x30_cnv_pvec_left_prepare_portable::<Self, Rg>(module, res, a, tmp);
     }
 
     fn cnv_pvec_right_prepare_tmp_bytes_default(module: &Module<Self>, res_size: usize, _a_size: usize) -> usize
@@ -377,14 +377,14 @@ where
 
     fn cnv_pvec_right_prepare_default(
         module: &Module<Self>,
-        res: &mut CnvPVecRBackendMut<'_, Self>,
-        a: &VecZnxBackendRef<'_, Self>,
+        res: &mut CnvPVecRBackendMut<'_, Self, Rg>,
+        a: &VecZnxBackendRef<'_, Self, Rg>,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        Module<Self>: NttModuleHandle,
+        Module<Self>: NttModuleHandle<Rg>,
         Self: Backend<DftWord = Q120bScalar, ZnxWord = i64>
             + NttFromZnx64
-            + NttDFTExecute<NttTable<Primes30, <Module<Self> as crate::kernels::ntt4x30::vec_znx_dft::NttModuleHandle>::Ring>>
+            + NttDFTExecute<NttTable<Primes30, Rg>>
             + NttCFromB
             + 'static,
         for<'x> Self: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
@@ -394,7 +394,7 @@ where
         let bytes = scratch_workers_within::<Self::TaskExecutor>(res.size().min(Self::PREPARE), per_worker, scratch.available())
             * per_worker;
         let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        ntt4x30_cnv_pvec_right_prepare_portable::<Self>(module, res, a, tmp);
+        ntt4x30_cnv_pvec_right_prepare_portable::<Self, Rg>(module, res, a, tmp);
     }
 
     fn cnv_apply_dft_tmp_bytes_default(
@@ -429,9 +429,9 @@ where
         cnv_offset: usize,
         res: &mut R,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, Self>,
+        a: &VecZnxBackendRef<'_, Self, Rg>,
         a_col: usize,
-        b: &VecZnxBackendRef<'_, Self>,
+        b: &VecZnxBackendRef<'_, Self, Rg>,
         b_col: usize,
         b_coeff: usize,
         scratch: &mut ScratchArena<'_, Self>,
@@ -440,12 +440,12 @@ where
         for<'x> Self: Backend<BufRef<'x> = &'x [u8], ZnxWord = i64>,
         for<'x> <Self as Backend>::BufMut<'x>: poulpy_hal::layouts::HostDataMut,
         for<'x> Self::BufMut<'x>: HostBufMut<'x>,
-        R: VecZnxBigToBackendMut<Self>,
+        R: VecZnxBigToBackendMut<Self, Rg>,
     {
         let mut res_ref = res.to_backend_mut();
         let bytes = ntt4x30_cnv_by_const_apply_tmp_bytes_portable(0, 0, 0);
         let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
-        ntt4x30_cnv_by_const_apply_portable::<Self, SerialTaskExecutor>(
+        ntt4x30_cnv_by_const_apply_portable::<Self, SerialTaskExecutor, Rg>(
             cnv_offset,
             &mut res_ref,
             res_col,
@@ -464,9 +464,9 @@ where
         cnv_offset: usize,
         res: &mut R,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, Self>,
+        a: &VecZnxBackendRef<'_, Self, Rg>,
         a_col: usize,
-        b: &VecZnxBackendRef<'_, Self>,
+        b: &VecZnxBackendRef<'_, Self, Rg>,
         b_col: usize,
         b_coeff: usize,
         scratch: &mut ScratchArena<'_, Self>,
@@ -475,12 +475,12 @@ where
         for<'x> Self: Backend<BufRef<'x> = &'x [u8], ZnxWord = i64>,
         for<'x> <Self as Backend>::BufMut<'x>: poulpy_hal::layouts::HostDataMut,
         for<'x> Self::BufMut<'x>: HostBufMut<'x>,
-        R: VecZnxBigToBackendMut<Self>,
+        R: VecZnxBigToBackendMut<Self, Rg>,
     {
         let mut res_ref = res.to_backend_mut();
         let bytes = ntt4x30_cnv_by_const_apply_tmp_bytes_portable(0, 0, 0);
         let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
-        ntt4x30_cnv_by_const_apply_add_portable::<Self, SerialTaskExecutor>(
+        ntt4x30_cnv_by_const_apply_add_portable::<Self, SerialTaskExecutor, Rg>(
             cnv_offset,
             &mut res_ref,
             res_col,
@@ -499,25 +499,25 @@ where
         cnv_offset: usize,
         res: &mut R,
         res_col: usize,
-        a: &CnvPVecLBackendRef<'_, Self>,
+        a: &CnvPVecLBackendRef<'_, Self, Rg>,
         a_col: usize,
-        b: &CnvPVecRBackendRef<'_, Self>,
+        b: &CnvPVecRBackendRef<'_, Self, Rg>,
         b_col: usize,
         b_galois: i64,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        Module<Self>: NttModuleHandle,
+        Module<Self>: NttModuleHandle<Rg>,
         Self: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttAddAssign + NttMulBbc1ColX2,
         for<'x> Self::BufMut<'x>: HostBufMut<'x>,
         for<'x> <Self as Backend>::BufRef<'x>: HostDataRef,
         for<'x> <Self as Backend>::BufMut<'x>: poulpy_hal::layouts::HostDataMut,
-        R: VecZnxDftToBackendMut<Self>,
+        R: VecZnxDftToBackendMut<Self, Rg>,
     {
         let mut res_ref = res.to_backend_mut();
         let per_worker = ntt4x30_cnv_apply_dft_tmp_bytes_portable(res_ref.size(), a.size(), b.size());
         let bytes = cnv_group_workers_within::<Self>(res_ref.n(), per_worker, scratch.available()) * per_worker;
         let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
-        ntt4x30_cnv_apply_dft_portable::<Self>(module, cnv_offset, &mut res_ref, res_col, a, a_col, b, b_col, b_galois, tmp);
+        ntt4x30_cnv_apply_dft_portable::<Self, Rg>(module, cnv_offset, &mut res_ref, res_col, a, a_col, b, b_col, b_galois, tmp);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -526,25 +526,36 @@ where
         cnv_offset: usize,
         res: &mut R,
         res_col: usize,
-        a: &CnvPVecLBackendRef<'_, Self>,
+        a: &CnvPVecLBackendRef<'_, Self, Rg>,
         a_col: usize,
-        b: &CnvPVecRBackendRef<'_, Self>,
+        b: &CnvPVecRBackendRef<'_, Self, Rg>,
         b_col: usize,
         b_galois: i64,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        Module<Self>: NttModuleHandle,
+        Module<Self>: NttModuleHandle<Rg>,
         Self: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttAddAssign + NttMulBbc1ColX2,
         for<'x> Self::BufMut<'x>: HostBufMut<'x>,
         for<'x> <Self as Backend>::BufRef<'x>: HostDataRef,
         for<'x> <Self as Backend>::BufMut<'x>: poulpy_hal::layouts::HostDataMut,
-        R: VecZnxDftToBackendMut<Self>,
+        R: VecZnxDftToBackendMut<Self, Rg>,
     {
         let mut res_ref = res.to_backend_mut();
         let per_worker = ntt4x30_cnv_apply_dft_tmp_bytes_portable(res_ref.size(), a.size(), b.size());
         let bytes = cnv_group_workers_within::<Self>(res_ref.n(), per_worker, scratch.available()) * per_worker;
         let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
-        ntt4x30_cnv_apply_dft_add_portable::<Self>(module, cnv_offset, &mut res_ref, res_col, a, a_col, b, b_col, b_galois, tmp);
+        ntt4x30_cnv_apply_dft_add_portable::<Self, Rg>(
+            module,
+            cnv_offset,
+            &mut res_ref,
+            res_col,
+            a,
+            a_col,
+            b,
+            b_col,
+            b_galois,
+            tmp,
+        );
     }
 
     fn cnv_apply_dft_sum_tmp_bytes_default(
@@ -565,20 +576,20 @@ where
         cnv_offset: usize,
         res: &mut R,
         res_col: usize,
-        terms: &[poulpy_hal::layouts::CnvDftAccTerm<'_, Self>],
+        terms: &[poulpy_hal::layouts::CnvDftAccTerm<'_, Self, Rg>],
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        Module<Self>: NttModuleHandle,
+        Module<Self>: NttModuleHandle<Rg>,
         Self: Backend<DftWord = Q120bScalar, ZnxWord = i64>,
         for<'x> Self::BufMut<'x>: HostBufMut<'x>,
         for<'x> <Self as Backend>::BufRef<'x>: HostDataRef,
         for<'x> <Self as Backend>::BufMut<'x>: poulpy_hal::layouts::HostDataMut,
-        R: VecZnxDftToBackendMut<Self>,
+        R: VecZnxDftToBackendMut<Self, Rg>,
     {
         let mut res_ref = res.to_backend_mut();
         let bytes = ntt4x30_cnv_apply_dft_sum_tmp_bytes_portable(res_ref.size(), 0, 0);
         let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
-        ntt4x30_cnv_apply_dft_sum_portable::<Self>(module, cnv_offset, &mut res_ref, res_col, terms, tmp);
+        ntt4x30_cnv_apply_dft_sum_portable::<Self, Rg>(module, cnv_offset, &mut res_ref, res_col, terms, tmp);
     }
 
     fn cnv_pairwise_apply_dft_tmp_bytes_default(
@@ -600,26 +611,26 @@ where
         cnv_offset: usize,
         res: &mut R,
         res_col: usize,
-        a: &CnvPVecLBackendRef<'_, Self>,
-        b: &CnvPVecRBackendRef<'_, Self>,
+        a: &CnvPVecLBackendRef<'_, Self, Rg>,
+        b: &CnvPVecRBackendRef<'_, Self, Rg>,
         i: usize,
         j: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        Module<Self>: NttModuleHandle,
+        Module<Self>: NttModuleHandle<Rg>,
         Self: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttAddAssign + NttMulBbc1ColX2,
         for<'x> Self::BufMut<'x>: HostBufMut<'x>,
         for<'x> <Self as Backend>::BufRef<'x>: HostDataRef,
         for<'x> <Self as Backend>::BufMut<'x>: poulpy_hal::layouts::HostDataMut,
-        R: VecZnxDftToBackendMut<Self>,
+        R: VecZnxDftToBackendMut<Self, Rg>,
     {
         let mut res_ref = res.to_backend_mut();
-        poulpy_hal::layouts::check_cnv_dft_term::<Self>(res_ref.n(), a, i, b, i, 1);
-        poulpy_hal::layouts::check_cnv_dft_term::<Self>(res_ref.n(), a, j, b, j, 1);
+        poulpy_hal::layouts::check_cnv_dft_term::<Self, Rg>(res_ref.n(), a, i, b, i, 1);
+        poulpy_hal::layouts::check_cnv_dft_term::<Self, Rg>(res_ref.n(), a, j, b, j, 1);
         let per_worker = ntt4x30_cnv_pairwise_apply_dft_tmp_bytes_portable(res_ref.size(), a.size(), b.size());
         let bytes = cnv_group_workers_within::<Self>(res_ref.n(), per_worker, scratch.available()) * per_worker;
         let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
-        ntt4x30_cnv_pairwise_apply_dft_portable::<Self>(module, cnv_offset, &mut res_ref, res_col, a, b, i, j, tmp);
+        ntt4x30_cnv_pairwise_apply_dft_portable::<Self, Rg>(module, cnv_offset, &mut res_ref, res_col, a, b, i, j, tmp);
     }
 
     fn cnv_pvec_self_prepare_tmp_bytes_default(module: &Module<Self>, res_size: usize, _a_size: usize) -> usize
@@ -632,15 +643,15 @@ where
 
     fn cnv_pvec_self_prepare_default(
         module: &Module<Self>,
-        left: &mut CnvPVecLBackendMut<'_, Self>,
-        right: &mut CnvPVecRBackendMut<'_, Self>,
-        a: &VecZnxBackendRef<'_, Self>,
+        left: &mut CnvPVecLBackendMut<'_, Self, Rg>,
+        right: &mut CnvPVecRBackendMut<'_, Self, Rg>,
+        a: &VecZnxBackendRef<'_, Self, Rg>,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        Module<Self>: NttModuleHandle,
+        Module<Self>: NttModuleHandle<Rg>,
         Self: Backend<DftWord = Q120bScalar, ZnxWord = i64>
             + NttFromZnx64
-            + NttDFTExecute<NttTable<Primes30, <Module<Self> as crate::kernels::ntt4x30::vec_znx_dft::NttModuleHandle>::Ring>>
+            + NttDFTExecute<NttTable<Primes30, Rg>>
             + NttCFromB
             + NttPackLeft1BlkX2
             + 'static,
@@ -651,11 +662,11 @@ where
         let bytes = scratch_workers_within::<Self::TaskExecutor>(left.size().min(Self::PREPARE), per_worker, scratch.available())
             * per_worker;
         let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
-        ntt4x30_cnv_pvec_self_prepare_portable::<Self>(module, left, right, a, tmp);
+        ntt4x30_cnv_pvec_self_prepare_portable::<Self, Rg>(module, left, right, a, tmp);
     }
 }
 
-impl<BE: Backend<ZnxWord = i64> + ScratchWorkers> NTT4x30ConvolutionDefault for BE where
+impl<BE: Backend<ZnxWord = i64> + ScratchWorkers, Rg: Ring> NTT4x30ConvolutionDefault<Rg> for BE where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut
 {
 }

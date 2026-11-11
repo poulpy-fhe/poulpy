@@ -3,7 +3,7 @@ use poulpy_hal::{
         CnvOps, CnvPVecAlloc, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxFillUniformSource, VecZnxNormalize,
         VecZnxNormalizeAssign, VecZnxSwitchRing,
     },
-    layouts::{Backend, HostDataRef, Module, PrepareHint, ScratchOwned, VecZnx, ZnxView, ZnxViewMut},
+    layouts::{Backend, HostDataRef, Module, PrepareHint, Ring, ScratchOwned, Standard, VecZnx, ZnxView, ZnxViewMut},
     source::Source,
     test_suite::convolution::bivariate_convolution_naive,
     test_suite::{TestParams, vec_znx_backend_mut, vec_znx_backend_ref},
@@ -34,7 +34,7 @@ use crate::{
 
 use crate::reference::{noise::TENSOR_NOISE_MARGIN, operations::ONE_PASS_VARIANCE_SLACK};
 
-pub(crate) fn assert_canonical(a: &VecZnx<impl HostDataRef, i64>, base2k: usize, k: usize) {
+pub(crate) fn assert_canonical<Rg: Ring>(a: &VecZnx<impl HostDataRef, i64, Rg>, base2k: usize, k: usize) {
     let active_size = k.div_ceil(base2k);
     let half = 1i128 << (base2k - 1);
     for col in 0..a.cols() {
@@ -52,28 +52,29 @@ pub(crate) fn assert_canonical(a: &VecZnx<impl HostDataRef, i64>, base2k: usize,
     }
 }
 
+/// On standard-ring operands: the tensoring noise models it is bounded by take the standard ring's product weight.
 pub fn test_glwe_tensoring<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: GLWETensoring<BE>
-        + GLWEMulRelinearizeSum<BE>
-        + GLWEPreparedTensoring<BE>
+    Module<BE>: GLWETensoring<BE, Standard>
+        + GLWEMulRelinearizeSum<BE, Standard>
+        + GLWEPreparedTensoring<BE, Standard>
         + CnvPVecAlloc<BE>
-        + CnvOps<BE>
-        + GLWENormalize<BE>
-        + GLWEAdd<BE>
-        + GLWEEncryptSk<BE>
-        + GLWEDecrypt<BE>
-        + GLWETensorDecrypt<BE>
-        + GLWESecretPreparedFactory<BE>
-        + GLWESub<BE>
-        + VecZnxNormalizeAssign<BE>
-        + GLWESecretTensorFromGLWESecret<BE>
-        + VecZnxNormalize<BE>
-        + GLWETensorKeyEncryptSk<BE>
-        + GLWETensorKeyPreparedFactory<BE>,
+        + CnvOps<BE, Standard>
+        + GLWENormalize<BE, Standard>
+        + GLWEAdd<BE, Standard>
+        + GLWEEncryptSk<BE, Standard>
+        + GLWEDecrypt<BE, Standard>
+        + GLWETensorDecrypt<BE, Standard>
+        + GLWESecretPreparedFactory<BE, Standard>
+        + GLWESub<BE, Standard>
+        + VecZnxNormalizeAssign<BE, Standard>
+        + GLWESecretTensorFromGLWESecret<BE, Standard>
+        + VecZnxNormalize<BE, Standard>
+        + GLWETensorKeyEncryptSk<BE, Standard>
+        + GLWETensorKeyPreparedFactory<BE, Standard>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
@@ -108,14 +109,19 @@ where
             k_digit: crate::layouts::k_digit_of(tsk_base2k, Dsize(1)),
         };
 
-        let mut a: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_in_infos);
-        let mut b: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_in_infos);
-        let mut res_tensor: GLWETensor<BE::OwnedBuf, BE::ZnxWord> = module.glwe_tensor_alloc_from_infos(&glwe_out_infos);
-        let mut res_relin: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_out_infos);
-        let mut pt_in: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_in_infos);
-        let mut pt_have: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_out_infos);
-        let mut pt_want: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_out_infos);
-        let mut pt_tmp: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_out_infos);
+        let mut a: GLWE<BE::OwnedBuf, BE::ZnxWord, Standard> = module.glwe_alloc_from_infos(&glwe_in_infos);
+        let mut b: GLWE<BE::OwnedBuf, BE::ZnxWord, Standard> = module.glwe_alloc_from_infos(&glwe_in_infos);
+        let mut res_tensor: GLWETensor<BE::OwnedBuf, BE::ZnxWord, Standard> =
+            module.glwe_tensor_alloc_from_infos(&glwe_out_infos);
+        let mut res_relin: GLWE<BE::OwnedBuf, BE::ZnxWord, Standard> = module.glwe_alloc_from_infos(&glwe_out_infos);
+        let mut pt_in: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord, Standard> =
+            module.glwe_plaintext_alloc_from_infos(&glwe_in_infos);
+        let mut pt_have: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord, Standard> =
+            module.glwe_plaintext_alloc_from_infos(&glwe_out_infos);
+        let mut pt_want: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord, Standard> =
+            module.glwe_plaintext_alloc_from_infos(&glwe_out_infos);
+        let mut pt_tmp: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord, Standard> =
+            module.glwe_plaintext_alloc_from_infos(&glwe_out_infos);
 
         let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
             (module)
@@ -142,24 +148,24 @@ where
         let mut source_xe: Source = Source::new([1u8; 32]);
         let mut source_xa: Source = Source::new([2u8; 32]);
 
-        let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(rank.into());
+        let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord, Standard> = module.glwe_secret_alloc(rank.into());
         module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut source_xs);
 
-        let mut sk_dft: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc_from_infos(&sk);
+        let mut sk_dft: GLWESecretPrepared<BE::OwnedBuf, BE, Standard> = module.glwe_secret_prepared_alloc_from_infos(&sk);
         module.glwe_secret_prepare(&mut sk_dft, &sk);
 
-        let mut sk_tensor: GLWESecretTensor<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_tensor_alloc(rank.into());
+        let mut sk_tensor: GLWESecretTensor<BE::OwnedBuf, BE::ZnxWord, Standard> = module.glwe_secret_tensor_alloc(rank.into());
         module.glwe_secret_tensor_from_glwe_secret(
             &mut sk_tensor,
             &sk,
             &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
         );
 
-        let mut sk_tensor_prep: GLWESecretTensorPrepared<BE::OwnedBuf, BE> =
+        let mut sk_tensor_prep: GLWESecretTensorPrepared<BE::OwnedBuf, BE, Standard> =
             module.glwe_secret_tensor_prepared_alloc(rank.into());
         module.glwe_secret_tensor_prepare(&mut sk_tensor_prep, &sk_tensor);
 
-        let mut tsk: GLWETensorKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_tensor_key_alloc_from_infos(&tsk_infos);
+        let mut tsk: GLWETensorKey<BE::OwnedBuf, BE::ZnxWord, Standard> = module.glwe_tensor_key_alloc_from_infos(&tsk_infos);
         module.glwe_tensor_key_encrypt_sk(
             &mut tsk,
             &sk,
@@ -168,7 +174,8 @@ where
             &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
         );
 
-        let mut tsk_prep: GLWETensorKeyPrepared<BE::OwnedBuf, BE> = module.glwe_tensor_key_prepared_alloc_from_infos(&tsk_infos);
+        let mut tsk_prep: GLWETensorKeyPrepared<BE::OwnedBuf, BE, Standard> =
+            module.glwe_tensor_key_prepared_alloc_from_infos(&tsk_infos);
         module.glwe_tensor_key_prepare(&mut tsk_prep, &tsk, &mut scratch.borrow());
 
         let scale: usize = 2 * in_base2k;
@@ -215,8 +222,9 @@ where
             )
         };
 
-        let mut pt_want_base2k_in: VecZnx<BE::OwnedBuf, BE::ZnxWord> = module.vec_znx_alloc(module.n(), 1, pt_in.size());
-        bivariate_convolution_naive::<_, BE>(
+        let mut pt_want_base2k_in: VecZnx<BE::OwnedBuf, BE::ZnxWord, Standard> =
+            module.vec_znx_alloc(module.n(), 1, pt_in.size());
+        bivariate_convolution_naive::<_, BE, Standard>(
             module,
             in_base2k,
             2,
@@ -250,7 +258,8 @@ where
             k,
             &mut poisoned_scratch::<BE>(glwe_right_operand_prepare_tmp_bytes(module, k.div_ceil(in_base2k), &b)).borrow(),
         );
-        let mut res_prepared: GLWETensor<BE::OwnedBuf, BE::ZnxWord> = module.glwe_tensor_alloc_from_infos(&glwe_out_infos);
+        let mut res_prepared: GLWETensor<BE::OwnedBuf, BE::ZnxWord, Standard> =
+            module.glwe_tensor_alloc_from_infos(&glwe_out_infos);
 
         for res_offset in 0..scale {
             module.glwe_tensor_apply(
@@ -278,12 +287,12 @@ where
 
             module.glwe_tensor_decrypt(&res_tensor, &mut pt_have, &sk_dft, &sk_tensor_prep, &mut scratch.borrow());
             module.vec_znx_normalize(
-                &mut vec_znx_backend_mut::<BE>(&mut pt_want.data),
+                &mut vec_znx_backend_mut::<BE, Standard>(&mut pt_want.data),
                 out_base2k,
                 k,
                 res_offset as i64,
                 0,
-                &vec_znx_backend_ref::<BE>(&pt_want_base2k_in),
+                &vec_znx_backend_ref::<BE, Standard>(&pt_want_base2k_in),
                 in_base2k,
                 0,
                 &mut scratch.borrow(),
@@ -294,7 +303,7 @@ where
                 pt_tmp.base2k().as_usize(),
                 pt_tmp.data.size() * pt_tmp.base2k().as_usize(),
                 0,
-                &mut vec_znx_backend_mut::<BE>(&mut pt_tmp.data),
+                &mut vec_znx_backend_mut::<BE, Standard>(&mut pt_tmp.data),
                 0,
                 &mut scratch.borrow(),
             );
@@ -321,7 +330,7 @@ where
                 pt_tmp.base2k().as_usize(),
                 pt_tmp.data.size() * pt_tmp.base2k().as_usize(),
                 0,
-                &mut vec_znx_backend_mut::<BE>(&mut pt_tmp.data),
+                &mut vec_znx_backend_mut::<BE, Standard>(&mut pt_tmp.data),
                 0,
                 &mut scratch.borrow(),
             );
@@ -335,7 +344,7 @@ where
             );
         }
 
-        let wide: GLWETensor<BE::OwnedBuf, BE::ZnxWord> = module.glwe_tensor_alloc_from_infos(&GLWELayout {
+        let wide: GLWETensor<BE::OwnedBuf, BE::ZnxWord, Standard> = module.glwe_tensor_alloc_from_infos(&GLWELayout {
             k: TorusPrecision(tsk_infos.gglwe_layout().max_input_k().0 + 1),
             ..glwe_out_infos
         });
@@ -359,19 +368,21 @@ where
 /// and products of small messages, at widths of every remainder class tested and against keys of dsize 1 and 2, are
 /// held to the noise model of each path. Where the model rejects the one-pass path, and against a key without noise
 /// metadata, such products are the two-step product bit for bit.
-fn one_pass_product_key_coverage<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
-where
+fn one_pass_product_key_coverage<BE: crate::test_suite::noise::TestBackend<Rg>, Rg: Ring>(
+    params: &TestParams,
+    module: &Module<BE>,
+) where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: GLWETensoring<BE>
-        + GLWEEncryptSk<BE>
-        + GLWEDecrypt<BE>
-        + GLWESecretPreparedFactory<BE>
-        + GLWESub<BE>
-        + VecZnxNormalizeAssign<BE>
-        + GLWETensorKeyEncryptSk<BE>
-        + GLWETensorKeyPreparedFactory<BE>,
+    Module<BE>: GLWETensoring<BE, Rg>
+        + GLWEEncryptSk<BE, Rg>
+        + GLWEDecrypt<BE, Rg>
+        + GLWESecretPreparedFactory<BE, Rg>
+        + GLWESub<BE, Rg>
+        + VecZnxNormalizeAssign<BE, Rg>
+        + GLWETensorKeyEncryptSk<BE, Rg>
+        + GLWETensorKeyPreparedFactory<BE, Rg>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
@@ -410,9 +421,9 @@ where
     let mut source_xe: Source = Source::new([7u8; 32]);
     let mut source_xa: Source = Source::new([8u8; 32]);
 
-    let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(1u32.into());
+    let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_secret_alloc(1u32.into());
     module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut source_xs);
-    let mut sk_dft: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc_from_infos(&sk);
+    let mut sk_dft: GLWESecretPrepared<BE::OwnedBuf, BE, Rg> = module.glwe_secret_prepared_alloc_from_infos(&sk);
     module.glwe_secret_prepare(&mut sk_dft, &sk);
 
     let mut data = vec![0i64; n];
@@ -434,7 +445,7 @@ where
 
     for dsize in [1, 2] {
         let tsk_infos = tsk_infos(dsize);
-        let mut tsk: GLWETensorKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_tensor_key_alloc_from_infos(&tsk_infos);
+        let mut tsk: GLWETensorKey<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_tensor_key_alloc_from_infos(&tsk_infos);
         module.glwe_tensor_key_encrypt_sk(
             &mut tsk,
             &sk,
@@ -442,10 +453,12 @@ where
             &mut source_xa,
             &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
         );
-        let mut tsk_prep: GLWETensorKeyPrepared<BE::OwnedBuf, BE> = module.glwe_tensor_key_prepared_alloc_from_infos(&tsk_infos);
+        let mut tsk_prep: GLWETensorKeyPrepared<BE::OwnedBuf, BE, Rg> =
+            module.glwe_tensor_key_prepared_alloc_from_infos(&tsk_infos);
         module.glwe_tensor_key_prepare(&mut tsk_prep, &tsk, &mut scratch.borrow());
         // A key without noise metadata, which the one-pass model rejects.
-        let mut outside: GLWETensorKeyPrepared<BE::OwnedBuf, BE> = module.glwe_tensor_key_prepared_alloc_from_infos(&tsk_infos);
+        let mut outside: GLWETensorKeyPrepared<BE::OwnedBuf, BE, Rg> =
+            module.glwe_tensor_key_prepared_alloc_from_infos(&tsk_infos);
         module.glwe_tensor_key_prepare(&mut outside, &tsk, &mut scratch.borrow());
         outside.0.noise = None;
 
@@ -463,9 +476,9 @@ where
                 k: k.into(),
                 ..key_infos
             };
-            let mut tensor: GLWETensor<BE::OwnedBuf, BE::ZnxWord> = module.glwe_tensor_alloc_from_infos(&infos);
-            let mut pt_in: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&infos);
-            let mut pt_want: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&infos);
+            let mut tensor: GLWETensor<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_tensor_alloc_from_infos(&infos);
+            let mut pt_in: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_plaintext_alloc_from_infos(&infos);
+            let mut pt_want: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_plaintext_alloc_from_infos(&infos);
 
             // A result at the operands' width, and one a limb narrower as a rescaled product is.
             for res_k in [k, k - base2k] {
@@ -473,8 +486,9 @@ where
                     k: res_k.into(),
                     ..infos
                 };
-                let mut res: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&res_infos);
-                let mut pt_have: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&res_infos);
+                let mut res: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&res_infos);
+                let mut pt_have: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord, Rg> =
+                    module.glwe_plaintext_alloc_from_infos(&res_infos);
                 // The messages sit `r` bits above the offset `k`, and their square `r` bits under it, a few bits
                 // above the result's last bit.
                 let r = (k - res_k) / 2 + 4;
@@ -483,13 +497,13 @@ where
                 pt_want.encode_vec_i64(&square, TorusPrecision((k - 2 * r) as u32));
                 let mut want = vec![0i128; n];
                 pt_want.decode_vec_i128(&mut want, TorusPrecision(res_k as u32));
-                let mut a: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&infos);
-                let mut b: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&infos);
+                let mut a: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&infos);
+                let mut b: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&infos);
                 for ct in [&mut a, &mut b] {
                     module.glwe_encrypt_sk(ct, &pt_in, &sk_dft, &mut source_xe, &mut source_xa, &mut scratch.borrow());
                 }
                 // The largest error, in units of the result's last bit, and log2 of its standard deviation.
-                let mut error = |res: &GLWE<BE::OwnedBuf, BE::ZnxWord>, scratch: &mut ScratchOwned<BE>| -> (u128, f64) {
+                let mut error = |res: &GLWE<BE::OwnedBuf, BE::ZnxWord, Rg>, scratch: &mut ScratchOwned<BE>| -> (u128, f64) {
                     glwe_decrypt_checked(module, res, &mut pt_have, &sk_dft, &mut scratch.borrow());
                     let mut have = vec![0i128; n];
                     pt_have.decode_vec_i128(&mut have, TorusPrecision(res_k as u32));
@@ -503,7 +517,7 @@ where
                 // The model, with the operands' errors met by the messages, `e_a * m_b + e_b * m_a` lifted by `2^k`,
                 // and with them floored as the product does, at zero once the lift passes the operands' width.
                 let model = |var_operands: f64| {
-                    crate::reference::noise::var_noise_glwe_mul_relinearize(
+                    crate::reference::noise::var_noise_glwe_mul_relinearize::<_, Rg>(
                         &tsk_prep,
                         var_xs,
                         var_key_err_body,
@@ -519,7 +533,7 @@ where
                 let (floor_one_pass, floor_two_step) = model(0.0);
                 let one_pass_kept =
                     lo == 0 || d2_k <= cover || floor_one_pass <= floor_two_step * (1.0 + ONE_PASS_VARIANCE_SLACK);
-                let mut have: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&res_infos);
+                let mut have: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&res_infos);
                 for square in [true, false] {
                     let role = if square { "square" } else { "product" };
                     let (var_one_pass, var_two_step) = model(if square { 4.0 } else { 2.0 } * var_msg);
@@ -546,7 +560,7 @@ where
                         TorusPrecision(k as u32),
                         &tsk_infos,
                     );
-                    let one_pass_with = |key: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>, have: &mut GLWE<_, _>| {
+                    let one_pass_with = |key: &GLWETensorKeyPrepared<BE::OwnedBuf, BE, Rg>, have: &mut GLWE<_, _, Rg>| {
                         let mut owned = poisoned_scratch::<BE>(one_pass_bytes);
                         let scratch = &mut owned.borrow();
                         if square {
@@ -594,26 +608,26 @@ where
 /// Covers the operand roles: a product, a squaring, a product whose left operand is the destination, and a sum of
 /// three products over operands of two plaintexts, held to three times the bound on exactly its scratch. One pair,
 /// alone or beside a pair of zeros, is the product bit for bit, and pairs prepared once give the sum bit for bit.
-fn one_pass_product_noise<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
+fn one_pass_product_noise<BE: crate::test_suite::noise::TestBackend<Rg>, Rg: Ring>(params: &TestParams, module: &Module<BE>)
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: GLWETensoring<BE>
-        + GLWEMulRelinearizeSum<BE>
-        + GLWEPreparedTensoring<BE>
+    Module<BE>: GLWETensoring<BE, Rg>
+        + GLWEMulRelinearizeSum<BE, Rg>
+        + GLWEPreparedTensoring<BE, Rg>
         + CnvPVecAlloc<BE>
-        + CnvOps<BE>
-        + GLWENormalize<BE>
-        + GLWEAdd<BE>
-        + GLWEEncryptSk<BE>
-        + GLWEDecrypt<BE>
-        + GLWESecretPreparedFactory<BE>
-        + GLWESub<BE>
-        + VecZnxNormalizeAssign<BE>
-        + VecZnxNormalize<BE>
-        + GLWETensorKeyEncryptSk<BE>
-        + GLWETensorKeyPreparedFactory<BE>,
+        + CnvOps<BE, Rg>
+        + GLWENormalize<BE, Rg>
+        + GLWEAdd<BE, Rg>
+        + GLWEEncryptSk<BE, Rg>
+        + GLWEDecrypt<BE, Rg>
+        + GLWESecretPreparedFactory<BE, Rg>
+        + GLWESub<BE, Rg>
+        + VecZnxNormalizeAssign<BE, Rg>
+        + VecZnxNormalize<BE, Rg>
+        + GLWETensorKeyEncryptSk<BE, Rg>
+        + GLWETensorKeyPreparedFactory<BE, Rg>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
@@ -647,13 +661,13 @@ where
         ..tsk_infos
     };
 
-    let mut a: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_infos);
-    let mut b: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_infos);
-    let mut res: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_infos);
-    let mut pt_in: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
-    let mut pt_have: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
-    let mut pt_want: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
-    let mut pt_tmp: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
+    let mut a: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&glwe_infos);
+    let mut b: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&glwe_infos);
+    let mut res: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&glwe_infos);
+    let mut pt_in: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
+    let mut pt_have: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
+    let mut pt_want: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
+    let mut pt_tmp: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module
@@ -670,12 +684,12 @@ where
     let mut source_xe: Source = Source::new([4u8; 32]);
     let mut source_xa: Source = Source::new([5u8; 32]);
 
-    let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(1u32.into());
+    let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_secret_alloc(1u32.into());
     module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut source_xs);
-    let mut sk_dft: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc_from_infos(&sk);
+    let mut sk_dft: GLWESecretPrepared<BE::OwnedBuf, BE, Rg> = module.glwe_secret_prepared_alloc_from_infos(&sk);
     module.glwe_secret_prepare(&mut sk_dft, &sk);
 
-    let mut tsk: GLWETensorKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_tensor_key_alloc_from_infos(&tsk_infos);
+    let mut tsk: GLWETensorKey<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_tensor_key_alloc_from_infos(&tsk_infos);
     module.glwe_tensor_key_encrypt_sk(
         &mut tsk,
         &sk,
@@ -683,9 +697,9 @@ where
         &mut source_xa,
         &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
     );
-    let mut tsk_prep: GLWETensorKeyPrepared<BE::OwnedBuf, BE> = module.glwe_tensor_key_prepared_alloc_from_infos(&tsk_infos);
+    let mut tsk_prep: GLWETensorKeyPrepared<BE::OwnedBuf, BE, Rg> = module.glwe_tensor_key_prepared_alloc_from_infos(&tsk_infos);
     module.glwe_tensor_key_prepare(&mut tsk_prep, &tsk, &mut scratch.borrow());
-    let mut wide_tsk: GLWETensorKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_tensor_key_alloc_from_infos(&wide_tsk_infos);
+    let mut wide_tsk: GLWETensorKey<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_tensor_key_alloc_from_infos(&wide_tsk_infos);
     module.glwe_tensor_key_encrypt_sk(
         &mut wide_tsk,
         &sk,
@@ -693,7 +707,7 @@ where
         &mut source_xa,
         &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
     );
-    let mut wide_tsk_prep: GLWETensorKeyPrepared<BE::OwnedBuf, BE> =
+    let mut wide_tsk_prep: GLWETensorKeyPrepared<BE::OwnedBuf, BE, Rg> =
         module.glwe_tensor_key_prepared_alloc_from_infos(&wide_tsk_infos);
     module.glwe_tensor_key_prepare(&mut wide_tsk_prep, &wide_tsk, &mut scratch.borrow());
 
@@ -721,8 +735,8 @@ where
         )
     };
 
-    let mut pt_square: VecZnx<BE::OwnedBuf, BE::ZnxWord> = module.vec_znx_alloc(module.n(), 1, pt_in.size());
-    bivariate_convolution_naive::<_, BE>(
+    let mut pt_square: VecZnx<BE::OwnedBuf, BE::ZnxWord, Rg> = module.vec_znx_alloc(module.n(), 1, pt_in.size());
+    bivariate_convolution_naive::<_, BE, Rg>(
         module,
         base2k,
         2,
@@ -743,15 +757,15 @@ where
     // `c` encrypts another plaintext, so that a sum whose later pairs multiplied other operands would decrypt to
     // another value: `a * b + b * c + c * a` decrypts to `pt_in * (pt_in + 2 * pt_c)`.
     let data_c: Vec<i64> = (0..n).map(|_| (source_xa.next_i64() & 7) - 4).collect();
-    let mut pt_c: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
+    let mut pt_c: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
     pt_c.encode_vec_i64(&data_c, TorusPrecision(scale as u32));
-    let mut c: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_infos);
+    let mut c: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&glwe_infos);
     module.glwe_encrypt_sk(&mut c, &pt_c, &sk_dft, &mut source_xe, &mut source_xa, &mut scratch.borrow());
     let data_mix: Vec<i64> = data.iter().zip(&data_c).map(|(x, y)| x + 2 * y).collect();
-    let mut pt_mix: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
+    let mut pt_mix: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
     pt_mix.encode_vec_i64(&data_mix, TorusPrecision(scale as u32));
-    let mut pt_sum: VecZnx<BE::OwnedBuf, BE::ZnxWord> = module.vec_znx_alloc(module.n(), 1, pt_in.size());
-    bivariate_convolution_naive::<_, BE>(
+    let mut pt_sum: VecZnx<BE::OwnedBuf, BE::ZnxWord, Rg> = module.vec_znx_alloc(module.n(), 1, pt_in.size());
+    bivariate_convolution_naive::<_, BE, Rg>(
         module,
         base2k,
         2,
@@ -766,11 +780,11 @@ where
 
     // The sums run on exactly their scratch, whatever the number of pairs.
     let sum_bytes = module.glwe_mul_relinearize_sum_tmp_bytes(&glwe_infos, size, size, TorusPrecision(k as u32), &tsk_infos);
-    let zero: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_infos);
+    let zero: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&glwe_infos);
 
     // The same pairs prepared once, under both hints on each side, `s = a + c` among them: its canonical flag is
     // clear and its digits carry, so both forms normalize it first.
-    let mut s: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_infos);
+    let mut s: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&glwe_infos);
     module.glwe_add_into(&mut s, &a, &c);
     assert!(!s.is_canonical());
     let (mixed_a, mixed_b) = ([&a, &s, &c], [&b, &c, &s]);
@@ -805,7 +819,7 @@ where
 
     let res_k = TorusPrecision(k as u32);
     for res_offset in [0, 1, base2k - 1] {
-        let mut want: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_infos);
+        let mut want: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&glwe_infos);
         module.glwe_mul_relinearize_sum(
             scale + res_offset,
             &mut want,
@@ -815,7 +829,7 @@ where
             &tsk_prep,
             &mut poisoned_scratch::<BE>(sum_bytes).borrow(),
         );
-        let mut have: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_infos);
+        let mut have: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&glwe_infos);
         module.glwe_mul_prepared_relinearize_sum(
             scale + res_offset,
             &mut have,
@@ -837,12 +851,12 @@ where
         for role in ["product", "square", "left is the destination", "sum of three products"] {
             let sum_role = role == "sum of three products";
             module.vec_znx_normalize(
-                &mut vec_znx_backend_mut::<BE>(&mut pt_want.data),
+                &mut vec_znx_backend_mut::<BE, Rg>(&mut pt_want.data),
                 base2k,
                 k,
                 res_offset as i64,
                 0,
-                &vec_znx_backend_ref::<BE>(if sum_role { &pt_sum } else { &pt_square }),
+                &vec_znx_backend_ref::<BE, Rg>(if sum_role { &pt_sum } else { &pt_square }),
                 base2k,
                 0,
                 &mut scratch.borrow(),
@@ -894,7 +908,7 @@ where
                     let (sum_a, sum_b) = ([&a, &zero], [&b, &zero]);
                     for len in 1..=2 {
                         // A fresh result each time, so that a sum which left it unwritten fails.
-                        let mut sum: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_infos);
+                        let mut sum: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&glwe_infos);
                         module.glwe_mul_relinearize_sum(
                             cnv_offset,
                             &mut sum,
@@ -919,7 +933,7 @@ where
                 base2k,
                 pt_tmp.data.size() * base2k,
                 0,
-                &mut vec_znx_backend_mut::<BE>(&mut pt_tmp.data),
+                &mut vec_znx_backend_mut::<BE, Rg>(&mut pt_tmp.data),
                 0,
                 &mut scratch.borrow(),
             );
@@ -933,7 +947,7 @@ where
         }
     }
 
-    let mut wide: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&wide_infos);
+    let mut wide: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&wide_infos);
     let wide_bytes = module.glwe_mul_relinearize_tmp_bytes(&wide_infos, size, size, TorusPrecision(k as u32), &wide_tsk_infos);
     module.glwe_mul_relinearize(
         scale,
@@ -948,18 +962,18 @@ where
 }
 
 /// A sum needs a pair.
-pub fn test_glwe_mul_relinearize_sum_rejects_no_pairs<BE: Backend>(params: &TestParams, module: &Module<BE>)
+pub fn test_glwe_mul_relinearize_sum_rejects_no_pairs<BE: Backend, Rg: Ring>(params: &TestParams, module: &Module<BE>)
 where
-    Module<BE>: GLWEMulRelinearizeSum<BE> + GLWETensorKeyPreparedFactory<BE>,
+    Module<BE>: GLWEMulRelinearizeSum<BE, Rg> + GLWETensorKeyPreparedFactory<BE, Rg>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     rejected_sum(params, module, SumCase::NoPairs, "one-pass product sum has no pairs");
 }
 
 /// Every pair of a sum shares the first one's layouts, checked before `res` is written.
-pub fn test_glwe_mul_relinearize_sum_rejects_mismatched_layouts<BE: Backend>(params: &TestParams, module: &Module<BE>)
+pub fn test_glwe_mul_relinearize_sum_rejects_mismatched_layouts<BE: Backend, Rg: Ring>(params: &TestParams, module: &Module<BE>)
 where
-    Module<BE>: GLWEMulRelinearizeSum<BE> + GLWETensorKeyPreparedFactory<BE>,
+    Module<BE>: GLWEMulRelinearizeSum<BE, Rg> + GLWETensorKeyPreparedFactory<BE, Rg>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     rejected_sum(
@@ -971,9 +985,9 @@ where
 }
 
 /// A sum takes as many right operands as left ones, checked before `res` is written.
-pub fn test_glwe_mul_relinearize_sum_rejects_unequal_lengths<BE: Backend>(params: &TestParams, module: &Module<BE>)
+pub fn test_glwe_mul_relinearize_sum_rejects_unequal_lengths<BE: Backend, Rg: Ring>(params: &TestParams, module: &Module<BE>)
 where
-    Module<BE>: GLWEMulRelinearizeSum<BE> + GLWETensorKeyPreparedFactory<BE>,
+    Module<BE>: GLWEMulRelinearizeSum<BE, Rg> + GLWETensorKeyPreparedFactory<BE, Rg>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     rejected_sum(
@@ -993,9 +1007,9 @@ enum SumCase {
 }
 
 /// Runs a sum without scratch and with an unfilled key.
-fn rejected_sum<BE: Backend>(params: &TestParams, module: &Module<BE>, case: SumCase, message: &str)
+fn rejected_sum<BE: Backend, Rg: Ring>(params: &TestParams, module: &Module<BE>, case: SumCase, message: &str)
 where
-    Module<BE>: GLWEMulRelinearizeSum<BE> + GLWETensorKeyPreparedFactory<BE>,
+    Module<BE>: GLWEMulRelinearizeSum<BE, Rg> + GLWETensorKeyPreparedFactory<BE, Rg>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let base2k = params.base2k;
@@ -1005,26 +1019,27 @@ where
         k: (2 * base2k).into(),
         rank: 1u32.into(),
     };
-    let tsk: GLWETensorKeyPrepared<BE::OwnedBuf, BE> = module.glwe_tensor_key_prepared_alloc_from_infos(&GLWETensorKeyLayout {
-        n: infos.n,
-        base2k: infos.base2k,
-        dnum: Dnum(2),
-        k_aux: (base2k + 1).into(),
-        rank: infos.rank,
-        k_digit: base2k.into(),
-    });
-    let a: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&infos);
-    let narrow: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&GLWELayout {
+    let tsk: GLWETensorKeyPrepared<BE::OwnedBuf, BE, Rg> =
+        module.glwe_tensor_key_prepared_alloc_from_infos(&GLWETensorKeyLayout {
+            n: infos.n,
+            base2k: infos.base2k,
+            dnum: Dnum(2),
+            k_aux: (base2k + 1).into(),
+            rank: infos.rank,
+            k_digit: base2k.into(),
+        });
+    let a: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&infos);
+    let narrow: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&GLWELayout {
         k: base2k.into(),
         ..infos
     });
-    let mut res: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&infos);
+    let mut res: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&infos);
     let (left, right) = match case {
         SumCase::NoPairs => (vec![], vec![]),
         SumCase::NarrowPair => (vec![&a, &narrow], vec![&a, &a]),
         SumCase::UnequalLengths => (vec![&a, &a], vec![&a]),
     };
-    assert_refusal(message, &mut res, glwe_state::<BE>, |res| {
+    assert_refusal(message, &mut res, glwe_state::<BE, Rg>, |res| {
         module.glwe_mul_relinearize_sum(
             base2k,
             res,
@@ -1038,9 +1053,9 @@ where
 }
 
 /// A sum of prepared pairs needs a pair.
-pub fn test_glwe_mul_prepared_relinearize_sum_rejects_no_pairs<BE: Backend>(params: &TestParams, module: &Module<BE>)
+pub fn test_glwe_mul_prepared_relinearize_sum_rejects_no_pairs<BE: Backend, Rg: Ring>(params: &TestParams, module: &Module<BE>)
 where
-    Module<BE>: GLWEPreparedTensoring<BE> + GLWETensorKeyPreparedFactory<BE> + CnvPVecAlloc<BE>,
+    Module<BE>: GLWEPreparedTensoring<BE, Rg> + GLWETensorKeyPreparedFactory<BE, Rg> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     rejected_prepared_sum(params, module, PreparedSumCase::NoPairs, "one-pass product sum has no pairs");
@@ -1048,9 +1063,11 @@ where
 
 /// Every prepared pair of a sum is of the degree of `res`, of rank 1 and of the given sizes, checked before anything
 /// else.
-pub fn test_glwe_mul_prepared_relinearize_sum_rejects_mismatched_pairs<BE: Backend>(params: &TestParams, module: &Module<BE>)
-where
-    Module<BE>: GLWEPreparedTensoring<BE> + GLWETensorKeyPreparedFactory<BE> + CnvPVecAlloc<BE>,
+pub fn test_glwe_mul_prepared_relinearize_sum_rejects_mismatched_pairs<BE: Backend, Rg: Ring>(
+    params: &TestParams,
+    module: &Module<BE>,
+) where
+    Module<BE>: GLWEPreparedTensoring<BE, Rg> + GLWETensorKeyPreparedFactory<BE, Rg> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     rejected_prepared_sum(
@@ -1062,9 +1079,11 @@ where
 }
 
 /// The given sizes of a prepared sum are the limb counts of the given widths, checked before anything else.
-pub fn test_glwe_mul_prepared_relinearize_sum_rejects_size_of_another_width<BE: Backend>(params: &TestParams, module: &Module<BE>)
-where
-    Module<BE>: GLWEPreparedTensoring<BE> + GLWETensorKeyPreparedFactory<BE> + CnvPVecAlloc<BE>,
+pub fn test_glwe_mul_prepared_relinearize_sum_rejects_size_of_another_width<BE: Backend, Rg: Ring>(
+    params: &TestParams,
+    module: &Module<BE>,
+) where
+    Module<BE>: GLWEPreparedTensoring<BE, Rg> + GLWETensorKeyPreparedFactory<BE, Rg> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     rejected_prepared_sum(
@@ -1076,9 +1095,11 @@ where
 }
 
 /// A prepared sum takes as many right operands as left ones, checked before anything else.
-pub fn test_glwe_mul_prepared_relinearize_sum_rejects_unequal_lengths<BE: Backend>(params: &TestParams, module: &Module<BE>)
-where
-    Module<BE>: GLWEPreparedTensoring<BE> + GLWETensorKeyPreparedFactory<BE> + CnvPVecAlloc<BE>,
+pub fn test_glwe_mul_prepared_relinearize_sum_rejects_unequal_lengths<BE: Backend, Rg: Ring>(
+    params: &TestParams,
+    module: &Module<BE>,
+) where
+    Module<BE>: GLWEPreparedTensoring<BE, Rg> + GLWETensorKeyPreparedFactory<BE, Rg> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     rejected_prepared_sum(
@@ -1100,9 +1121,9 @@ enum PreparedSumCase {
 }
 
 /// Runs a sum of prepared pairs without scratch and with an unfilled key.
-fn rejected_prepared_sum<BE: Backend>(params: &TestParams, module: &Module<BE>, case: PreparedSumCase, message: &str)
+fn rejected_prepared_sum<BE: Backend, Rg: Ring>(params: &TestParams, module: &Module<BE>, case: PreparedSumCase, message: &str)
 where
-    Module<BE>: GLWEPreparedTensoring<BE> + GLWETensorKeyPreparedFactory<BE> + CnvPVecAlloc<BE>,
+    Module<BE>: GLWEPreparedTensoring<BE, Rg> + GLWETensorKeyPreparedFactory<BE, Rg> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let base2k = params.base2k;
@@ -1113,25 +1134,26 @@ where
         k: (2 * base2k).into(),
         rank: 1u32.into(),
     };
-    let tsk: GLWETensorKeyPrepared<BE::OwnedBuf, BE> = module.glwe_tensor_key_prepared_alloc_from_infos(&GLWETensorKeyLayout {
-        n: infos.n,
-        base2k: infos.base2k,
-        dnum: Dnum(2),
-        k_aux: (base2k + 1).into(),
-        rank: infos.rank,
-        k_digit: base2k.into(),
-    });
+    let tsk: GLWETensorKeyPrepared<BE::OwnedBuf, BE, Rg> =
+        module.glwe_tensor_key_prepared_alloc_from_infos(&GLWETensorKeyLayout {
+            n: infos.n,
+            base2k: infos.base2k,
+            dnum: Dnum(2),
+            k_aux: (base2k + 1).into(),
+            rank: infos.rank,
+            k_digit: base2k.into(),
+        });
     let a = module.cnv_pvec_left_alloc(n, 2, 2, PrepareHint::Reuse);
     let narrow = module.cnv_pvec_left_alloc(n, 2, 1, PrepareHint::Reuse);
     let b = module.cnv_pvec_right_alloc(n, 2, 2, PrepareHint::Reuse);
-    let mut res: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&infos);
+    let mut res: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&infos);
     let (left, right, a_k) = match case {
         PreparedSumCase::NoPairs => (vec![], vec![], infos.k),
         PreparedSumCase::NarrowPair => (vec![&a, &narrow], vec![&b, &b], infos.k),
         PreparedSumCase::WiderLeftWidth => (vec![&a], vec![&b], (3 * base2k).into()),
         PreparedSumCase::UnequalLengths => (vec![&a, &a], vec![&b], infos.k),
     };
-    assert_refusal(message, &mut res, glwe_state::<BE>, |res| {
+    assert_refusal(message, &mut res, glwe_state::<BE, Rg>, |res| {
         module.glwe_mul_prepared_relinearize_sum(
             base2k,
             res,
@@ -1150,9 +1172,11 @@ where
 
 /// The prepared operands of a tensor product are of the degree and rank of `res` and of the given sizes, checked
 /// before the scratch: the product runs without scratch on a right operand one limb narrower than the given size.
-pub fn test_glwe_tensor_apply_prepared_rejects_mismatched_operands<BE: Backend>(params: &TestParams, module: &Module<BE>)
-where
-    Module<BE>: GLWEPreparedTensoring<BE> + CnvPVecAlloc<BE>,
+pub fn test_glwe_tensor_apply_prepared_rejects_mismatched_operands<BE: Backend, Rg: Ring>(
+    params: &TestParams,
+    module: &Module<BE>,
+) where
+    Module<BE>: GLWEPreparedTensoring<BE, Rg> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let base2k = params.base2k;
@@ -1165,11 +1189,11 @@ where
     };
     let a = module.cnv_pvec_left_alloc(n, 2, 2, PrepareHint::Reuse);
     let narrow = module.cnv_pvec_right_alloc(n, 2, 1, PrepareHint::Reuse);
-    let mut res: GLWETensor<BE::OwnedBuf, BE::ZnxWord> = module.glwe_tensor_alloc_from_infos(&infos);
+    let mut res: GLWETensor<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_tensor_alloc_from_infos(&infos);
     assert_refusal(
         "prepared operands do not match res's degree and rank and the given sizes",
         &mut res,
-        glwe_tensor_state::<BE>,
+        glwe_tensor_state::<BE, Rg>,
         |res| {
             module.glwe_tensor_apply_prepared(
                 base2k,
@@ -1187,9 +1211,11 @@ where
 
 /// A prepared operand holds its ciphertext at the given width, checked before the scratch: the left operand is
 /// prepared without scratch into one limb more than `ceil(k / base2k)`.
-pub fn test_glwe_left_operand_prepare_rejects_size_of_another_width<BE: Backend>(params: &TestParams, module: &Module<BE>)
-where
-    Module<BE>: CnvPVecAlloc<BE> + CnvOps<BE> + GLWENormalize<BE>,
+pub fn test_glwe_left_operand_prepare_rejects_size_of_another_width<BE: Backend, Rg: Ring>(
+    params: &TestParams,
+    module: &Module<BE>,
+) where
+    Module<BE>: CnvPVecAlloc<BE> + CnvOps<BE, Rg> + GLWENormalize<BE, Rg>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let base2k = params.base2k;
@@ -1200,12 +1226,12 @@ where
         k: (2 * base2k).into(),
         rank: 1u32.into(),
     };
-    let a: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&infos);
+    let a: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&infos);
     let mut a_prep = module.cnv_pvec_left_alloc(n, 2, 3, PrepareHint::Reuse);
     assert_refusal(
         "assertion `left == right` failed: prepared operand size != ceil(a_k / base2k)\n  left: 3\n right: 2",
         &mut a_prep,
-        cnv_pvec_left_state::<BE>,
+        cnv_pvec_left_state::<BE, Rg>,
         |a_prep| {
             glwe_left_operand_prepare(
                 module,
@@ -1218,21 +1244,21 @@ where
     );
 }
 
-pub fn test_glwe_tensor_square<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
+pub fn test_glwe_tensor_square<BE: crate::test_suite::noise::TestBackend<Rg>, Rg: Ring>(params: &TestParams, module: &Module<BE>)
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: GLWETensoring<BE>
-        + GLWEEncryptSk<BE>
-        + GLWEDecrypt<BE>
-        + GLWESecretPreparedFactory<BE>
-        + GLWESub<BE>
-        + VecZnxNormalizeAssign<BE>
-        + GLWESecretTensorFromGLWESecret<BE>
-        + VecZnxNormalize<BE>
-        + GLWETensorKeyEncryptSk<BE>
-        + GLWETensorKeyPreparedFactory<BE>,
+    Module<BE>: GLWETensoring<BE, Rg>
+        + GLWEEncryptSk<BE, Rg>
+        + GLWEDecrypt<BE, Rg>
+        + GLWESecretPreparedFactory<BE, Rg>
+        + GLWESub<BE, Rg>
+        + VecZnxNormalizeAssign<BE, Rg>
+        + GLWESecretTensorFromGLWESecret<BE, Rg>
+        + VecZnxNormalize<BE, Rg>
+        + GLWETensorKeyEncryptSk<BE, Rg>
+        + GLWETensorKeyPreparedFactory<BE, Rg>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
@@ -1267,15 +1293,15 @@ where
             k_digit: crate::layouts::k_digit_of(tsk_base2k, Dsize(1)),
         };
 
-        let mut a: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_in_infos);
-        let mut res_square: GLWETensor<BE::OwnedBuf, BE::ZnxWord> = module.glwe_tensor_alloc_from_infos(&glwe_out_infos);
-        let mut res_tensor: GLWETensor<BE::OwnedBuf, BE::ZnxWord> = module.glwe_tensor_alloc_from_infos(&glwe_out_infos);
-        let mut res_relin_square: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_out_infos);
-        let mut res_relin_tensor: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_out_infos);
-        let mut pt_in: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_in_infos);
-        let mut pt_have: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_out_infos);
-        let mut pt_want: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_out_infos);
-        let mut pt_tmp: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_out_infos);
+        let mut a: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&glwe_in_infos);
+        let mut res_square: GLWETensor<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_tensor_alloc_from_infos(&glwe_out_infos);
+        let mut res_tensor: GLWETensor<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_tensor_alloc_from_infos(&glwe_out_infos);
+        let mut res_relin_square: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&glwe_out_infos);
+        let mut res_relin_tensor: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&glwe_out_infos);
+        let mut pt_in: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_plaintext_alloc_from_infos(&glwe_in_infos);
+        let mut pt_have: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_plaintext_alloc_from_infos(&glwe_out_infos);
+        let mut pt_want: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_plaintext_alloc_from_infos(&glwe_out_infos);
+        let mut pt_tmp: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_plaintext_alloc_from_infos(&glwe_out_infos);
 
         let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
             (module)
@@ -1297,12 +1323,12 @@ where
         let mut source_xe: Source = Source::new([1u8; 32]);
         let mut source_xa: Source = Source::new([2u8; 32]);
 
-        let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(rank.into());
+        let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_secret_alloc(rank.into());
         module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut source_xs);
 
-        let mut sk_dft: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc_from_infos(&sk);
+        let mut sk_dft: GLWESecretPrepared<BE::OwnedBuf, BE, Rg> = module.glwe_secret_prepared_alloc_from_infos(&sk);
         module.glwe_secret_prepare(&mut sk_dft, &sk);
-        let mut tsk: GLWETensorKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_tensor_key_alloc_from_infos(&tsk_infos);
+        let mut tsk: GLWETensorKey<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_tensor_key_alloc_from_infos(&tsk_infos);
         module.glwe_tensor_key_encrypt_sk(
             &mut tsk,
             &sk,
@@ -1311,7 +1337,8 @@ where
             &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
         );
 
-        let mut tsk_prep: GLWETensorKeyPrepared<BE::OwnedBuf, BE> = module.glwe_tensor_key_prepared_alloc_from_infos(&tsk_infos);
+        let mut tsk_prep: GLWETensorKeyPrepared<BE::OwnedBuf, BE, Rg> =
+            module.glwe_tensor_key_prepared_alloc_from_infos(&tsk_infos);
         module.glwe_tensor_key_prepare(&mut tsk_prep, &tsk, &mut scratch.borrow());
 
         let scale: usize = 2 * in_base2k;
@@ -1361,7 +1388,7 @@ where
                 pt_tmp.base2k().as_usize(),
                 pt_tmp.data.size() * pt_tmp.base2k().as_usize(),
                 0,
-                &mut vec_znx_backend_mut::<BE>(&mut pt_tmp.data),
+                &mut vec_znx_backend_mut::<BE, Rg>(&mut pt_tmp.data),
                 0,
                 &mut scratch.borrow(),
             );
@@ -1371,18 +1398,18 @@ where
     }
 }
 
-pub fn test_glwe_mul_plain<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
+pub fn test_glwe_mul_plain<BE: crate::test_suite::noise::TestBackend<Rg>, Rg: Ring>(params: &TestParams, module: &Module<BE>)
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: GLWEEncryptSk<BE>
-        + GLWEDecrypt<BE>
-        + GLWESecretPreparedFactory<BE>
-        + GLWESub<BE>
-        + VecZnxNormalizeAssign<BE>
-        + VecZnxNormalize<BE>
-        + GLWEMulPlain<BE>,
+    Module<BE>: GLWEEncryptSk<BE, Rg>
+        + GLWEDecrypt<BE, Rg>
+        + GLWESecretPreparedFactory<BE, Rg>
+        + GLWESub<BE, Rg>
+        + VecZnxNormalizeAssign<BE, Rg>
+        + VecZnxNormalize<BE, Rg>
+        + GLWEMulPlain<BE, Rg>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
@@ -1407,14 +1434,14 @@ where
             rank: rank.into(),
         };
 
-        let mut a: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_in_infos);
-        let mut res: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_out_infos);
-        let mut pt_a: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_in_infos);
-        let mut pt_b: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> =
+        let mut a: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&glwe_in_infos);
+        let mut res: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&glwe_out_infos);
+        let mut pt_a: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_plaintext_alloc_from_infos(&glwe_in_infos);
+        let mut pt_b: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord, Rg> =
             module.glwe_plaintext_alloc(in_base2k.into(), (2 * in_base2k).into());
-        let mut pt_have: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_out_infos);
-        let mut pt_want: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_out_infos);
-        let mut pt_tmp: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_out_infos);
+        let mut pt_have: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_plaintext_alloc_from_infos(&glwe_out_infos);
+        let mut pt_want: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_plaintext_alloc_from_infos(&glwe_out_infos);
+        let mut pt_tmp: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_plaintext_alloc_from_infos(&glwe_out_infos);
 
         let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
             (module)
@@ -1429,10 +1456,10 @@ where
         let mut source_xe: Source = Source::new([1u8; 32]);
         let mut source_xa: Source = Source::new([2u8; 32]);
 
-        let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(rank.into());
+        let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_secret_alloc(rank.into());
         module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut source_xs);
 
-        let mut sk_dft: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc_from_infos(&sk);
+        let mut sk_dft: GLWESecretPrepared<BE::OwnedBuf, BE, Rg> = module.glwe_secret_prepared_alloc_from_infos(&sk);
         module.glwe_secret_prepare(&mut sk_dft, &sk);
 
         let scale: usize = 2 * in_base2k;
@@ -1441,19 +1468,19 @@ where
         module.vec_znx_fill_uniform_source(
             17,
             b_size * 17,
-            &mut vec_znx_backend_mut::<BE>(pt_b.data_mut()),
+            &mut vec_znx_backend_mut::<BE, Rg>(pt_b.data_mut()),
             0,
             &mut source_xa,
         );
         module.vec_znx_fill_uniform_source(
             17,
             a_size * 17,
-            &mut vec_znx_backend_mut::<BE>(pt_a.data_mut()),
+            &mut vec_znx_backend_mut::<BE, Rg>(pt_a.data_mut()),
             0,
             &mut source_xa,
         );
 
-        let mut pt_want_base2k_in: VecZnx<BE::OwnedBuf, BE::ZnxWord> =
+        let mut pt_want_base2k_in: VecZnx<BE::OwnedBuf, BE::ZnxWord, Rg> =
             module.vec_znx_alloc(module.n(), 1, pt_a.size() + pt_b.size());
         bivariate_convolution_naive(
             module,
@@ -1483,12 +1510,12 @@ where
 
             glwe_decrypt_checked(module, &res, &mut pt_have, &sk_dft, &mut scratch.borrow());
             module.vec_znx_normalize(
-                &mut vec_znx_backend_mut::<BE>(&mut pt_want.data),
+                &mut vec_znx_backend_mut::<BE, Rg>(&mut pt_want.data),
                 out_base2k,
                 k,
                 res_offset as i64,
                 0,
-                &vec_znx_backend_ref::<BE>(&pt_want_base2k_in),
+                &vec_znx_backend_ref::<BE, Rg>(&pt_want_base2k_in),
                 in_base2k,
                 0,
                 &mut scratch.borrow(),
@@ -1499,7 +1526,7 @@ where
                 pt_tmp.base2k().as_usize(),
                 pt_tmp.data.size() * pt_tmp.base2k().as_usize(),
                 0,
-                &mut vec_znx_backend_mut::<BE>(&mut pt_tmp.data),
+                &mut vec_znx_backend_mut::<BE, Rg>(&mut pt_tmp.data),
                 0,
                 &mut scratch.borrow(),
             );
@@ -1515,12 +1542,14 @@ where
 /// `glwe_mul_plain` and `glwe_mul_plain_assign` with a plaintext of degree
 /// `n/2` and `n/4`, never below the backend floor, are bit-identical to the same
 /// product with the plaintext embedded at the module degree by `switch_ring`.
-pub fn test_glwe_mul_plain_plaintext_degree<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
-where
+pub fn test_glwe_mul_plain_plaintext_degree<BE: crate::test_suite::noise::TestBackend<Rg>, Rg: Ring>(
+    params: &TestParams,
+    module: &Module<BE>,
+) where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: GLWEMulPlain<BE> + VecZnxSwitchRing<BE> + GLWEFill<BE>,
+    Module<BE>: GLWEMulPlain<BE, Rg> + VecZnxSwitchRing<BE, Rg> + GLWEFill<BE, Rg>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let n: usize = params.n;
@@ -1534,31 +1563,31 @@ where
             k: k.into(),
             rank: rank.into(),
         };
-        let mut a: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&layout);
+        let mut a: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&layout);
         module.glwe_fill_from_source(&mut a, &mut source);
         for b_n in [n / 2, n / 4].into_iter().filter(|&d| d >= BE::MIN_DEGREE) {
-            let mut pt_small: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> =
+            let mut pt_small: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord, Rg> =
                 module.glwe_plaintext_alloc_from_infos(&GLWEPlaintextLayout {
                     n: b_n.into(),
                     base2k: base2k.into(),
                     k: (2 * base2k).into(),
                 });
             module.glwe_fill_from_source(&mut pt_small, &mut source);
-            let mut pt_dense: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> =
+            let mut pt_dense: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord, Rg> =
                 module.glwe_plaintext_alloc_from_infos(&GLWEPlaintextLayout {
                     n: n.into(),
                     base2k: base2k.into(),
                     k: (2 * base2k).into(),
                 });
             module.vec_znx_switch_ring(
-                &mut vec_znx_backend_mut::<BE>(pt_dense.data_mut()),
+                &mut vec_znx_backend_mut::<BE, Rg>(pt_dense.data_mut()),
                 0,
-                &vec_znx_backend_ref::<BE>(pt_small.data()),
+                &vec_znx_backend_ref::<BE, Rg>(pt_small.data()),
                 0,
             );
             for cnv_offset in [0usize, base2k] {
-                let mut res_small: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&layout);
-                let mut res_dense: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&layout);
+                let mut res_small: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&layout);
+                let mut res_dense: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&layout);
                 let small_bytes = module.glwe_mul_plain_tmp_bytes(&res_small, &a, &pt_small);
                 let dense_bytes = module.glwe_mul_plain_tmp_bytes(&res_dense, &a, &pt_dense);
                 module.glwe_mul_plain(
@@ -1581,8 +1610,8 @@ where
                     "glwe_mul_plain: b.n()={b_n} cnv_offset={cnv_offset} rank={rank}"
                 );
 
-                let mut assign_small: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&layout);
-                let mut assign_dense: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&layout);
+                let mut assign_small: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&layout);
+                let mut assign_dense: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&layout);
                 assign_small.data_mut().raw_mut().copy_from_slice(a.data().raw());
                 assign_dense.data_mut().raw_mut().copy_from_slice(a.data().raw());
                 // The assign form multiplies `res` in place, so its budget is the product one taken at `res` for both
@@ -1611,18 +1640,18 @@ where
     }
 }
 
-pub fn test_glwe_mul_const<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
+pub fn test_glwe_mul_const<BE: crate::test_suite::noise::TestBackend<Rg>, Rg: Ring>(params: &TestParams, module: &Module<BE>)
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: GLWEEncryptSk<BE>
-        + GLWEDecrypt<BE>
-        + GLWESecretPreparedFactory<BE>
-        + GLWESub<BE>
-        + VecZnxNormalizeAssign<BE>
-        + VecZnxNormalize<BE>
-        + GLWEMulConst<BE>,
+    Module<BE>: GLWEEncryptSk<BE, Rg>
+        + GLWEDecrypt<BE, Rg>
+        + GLWESecretPreparedFactory<BE, Rg>
+        + GLWESub<BE, Rg>
+        + VecZnxNormalizeAssign<BE, Rg>
+        + VecZnxNormalize<BE, Rg>
+        + GLWEMulConst<BE, Rg>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
@@ -1648,14 +1677,14 @@ where
             rank: rank.into(),
         };
 
-        let mut a: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_in_infos);
-        let mut res: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_out_infos);
-        let mut pt_a: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_in_infos);
-        let mut pt_b: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> =
+        let mut a: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&glwe_in_infos);
+        let mut res: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&glwe_out_infos);
+        let mut pt_a: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_plaintext_alloc_from_infos(&glwe_in_infos);
+        let mut pt_b: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord, Rg> =
             module.glwe_plaintext_alloc(in_base2k.into(), (2 * in_base2k).into());
-        let mut pt_have: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_out_infos);
-        let mut pt_want: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_out_infos);
-        let mut pt_tmp: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_out_infos);
+        let mut pt_have: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_plaintext_alloc_from_infos(&glwe_out_infos);
+        let mut pt_want: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_plaintext_alloc_from_infos(&glwe_out_infos);
+        let mut pt_tmp: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_plaintext_alloc_from_infos(&glwe_out_infos);
 
         let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
             (module)
@@ -1671,10 +1700,10 @@ where
         let mut source_xe: Source = Source::new([1u8; 32]);
         let mut source_xa: Source = Source::new([2u8; 32]);
 
-        let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(rank.into());
+        let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_secret_alloc(rank.into());
         module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut source_xs);
 
-        let mut sk_dft: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc_from_infos(&sk);
+        let mut sk_dft: GLWESecretPrepared<BE::OwnedBuf, BE, Rg> = module.glwe_secret_prepared_alloc_from_infos(&sk);
         module.glwe_secret_prepare(&mut sk_dft, &sk);
 
         let scale: usize = 2 * in_base2k;
@@ -1683,7 +1712,7 @@ where
         module.vec_znx_fill_uniform_source(
             17,
             a_size * 17,
-            &mut vec_znx_backend_mut::<BE>(pt_a.data_mut()),
+            &mut vec_znx_backend_mut::<BE, Rg>(pt_a.data_mut()),
             0,
             &mut source_xa,
         );
@@ -1694,7 +1723,7 @@ where
             pt_b.data_mut().at_mut(0, j)[b_coeff] = ((r << (64 - 17)) as i64) >> (64 - 17);
         }
 
-        let mut pt_want_base2k_in: VecZnx<BE::OwnedBuf, BE::ZnxWord> =
+        let mut pt_want_base2k_in: VecZnx<BE::OwnedBuf, BE::ZnxWord, Rg> =
             module.vec_znx_alloc(module.n(), 1, pt_a.size() + pt_b.size());
         bivariate_convolution_naive(
             module,
@@ -1723,12 +1752,12 @@ where
 
             glwe_decrypt_checked(module, &res, &mut pt_have, &sk_dft, &mut scratch.borrow());
             module.vec_znx_normalize(
-                &mut vec_znx_backend_mut::<BE>(&mut pt_want.data),
+                &mut vec_znx_backend_mut::<BE, Rg>(&mut pt_want.data),
                 out_base2k,
                 k,
                 res_offset as i64,
                 0,
-                &vec_znx_backend_ref::<BE>(&pt_want_base2k_in),
+                &vec_znx_backend_ref::<BE, Rg>(&pt_want_base2k_in),
                 in_base2k,
                 0,
                 &mut scratch.borrow(),
@@ -1739,7 +1768,7 @@ where
                 pt_tmp.base2k().as_usize(),
                 pt_tmp.data.size() * pt_tmp.base2k().as_usize(),
                 0,
-                &mut vec_znx_backend_mut::<BE>(&mut pt_tmp.data),
+                &mut vec_znx_backend_mut::<BE, Rg>(&mut pt_tmp.data),
                 0,
                 &mut scratch.borrow(),
             );
@@ -1767,23 +1796,23 @@ where
 /// and 2, also with a key at a quarter of the operand's radix: the call converts
 /// the operand to the key's radix a second time while it holds the key-switched
 /// sum, which the query must count.
-pub fn test_glwe_tensor_relinearize_cross_radix<BE: crate::test_suite::noise::TestBackend>(
+pub fn test_glwe_tensor_relinearize_cross_radix<BE: crate::test_suite::noise::TestBackend<Rg>, Rg: Ring>(
     params: &TestParams,
     module: &Module<BE>,
 ) where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: GLWETensoring<BE>
-        + GLWEEncryptSk<BE>
-        + GLWEDecrypt<BE>
-        + GLWESecretPreparedFactory<BE>
-        + GLWESub<BE>
-        + VecZnxNormalizeAssign<BE>
-        + GLWESecretTensorFromGLWESecret<BE>
-        + VecZnxNormalize<BE>
-        + GLWETensorKeyEncryptSk<BE>
-        + GLWETensorKeyPreparedFactory<BE>,
+    Module<BE>: GLWETensoring<BE, Rg>
+        + GLWEEncryptSk<BE, Rg>
+        + GLWEDecrypt<BE, Rg>
+        + GLWESecretPreparedFactory<BE, Rg>
+        + GLWESub<BE, Rg>
+        + VecZnxNormalizeAssign<BE, Rg>
+        + GLWESecretTensorFromGLWESecret<BE, Rg>
+        + VecZnxNormalize<BE, Rg>
+        + GLWETensorKeyEncryptSk<BE, Rg>
+        + GLWETensorKeyPreparedFactory<BE, Rg>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let n: usize = module.n();
@@ -1823,10 +1852,10 @@ pub fn test_glwe_tensor_relinearize_cross_radix<BE: crate::test_suite::noise::Te
         };
         let cross_infos = key_infos(key_base2k);
 
-        let mut a: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_infos);
-        let mut res_tensor: GLWETensor<BE::OwnedBuf, BE::ZnxWord> = module.glwe_tensor_alloc_from_infos(&glwe_infos);
-        let mut res_cross: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_infos);
-        let mut pt_in: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
+        let mut a: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&glwe_infos);
+        let mut res_tensor: GLWETensor<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_tensor_alloc_from_infos(&glwe_infos);
+        let mut res_cross: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&glwe_infos);
+        let mut pt_in: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
 
         let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
             module
@@ -1842,9 +1871,9 @@ pub fn test_glwe_tensor_relinearize_cross_radix<BE: crate::test_suite::noise::Te
         let mut source_xe: Source = Source::new([1u8; 32]);
         let mut source_xa: Source = Source::new([2u8; 32]);
 
-        let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(rank.into());
+        let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_secret_alloc(rank.into());
         module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut source_xs);
-        let mut sk_dft: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc_from_infos(&sk);
+        let mut sk_dft: GLWESecretPrepared<BE::OwnedBuf, BE, Rg> = module.glwe_secret_prepared_alloc_from_infos(&sk);
         module.glwe_secret_prepare(&mut sk_dft, &sk);
 
         let scale: usize = 2 * a_base2k;
@@ -1857,7 +1886,7 @@ pub fn test_glwe_tensor_relinearize_cross_radix<BE: crate::test_suite::noise::Te
         module.glwe_tensor_apply(scale, &mut res_tensor, &a, &a, &mut scratch.borrow());
         assert_canonical(res_tensor.data(), a_base2k, k);
 
-        let mut tsk: GLWETensorKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_tensor_key_alloc_from_infos(&cross_infos);
+        let mut tsk: GLWETensorKey<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_tensor_key_alloc_from_infos(&cross_infos);
         module.glwe_tensor_key_encrypt_sk(
             &mut tsk,
             &sk,
@@ -1865,7 +1894,7 @@ pub fn test_glwe_tensor_relinearize_cross_radix<BE: crate::test_suite::noise::Te
             &mut source_xa,
             &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
         );
-        let mut tsk_prep: GLWETensorKeyPrepared<BE::OwnedBuf, BE> =
+        let mut tsk_prep: GLWETensorKeyPrepared<BE::OwnedBuf, BE, Rg> =
             module.glwe_tensor_key_prepared_alloc_from_infos(&cross_infos);
         module.glwe_tensor_key_prepare(&mut tsk_prep, &tsk, &mut scratch.borrow());
         // Reaching the end is the regression: deriving the operand width from

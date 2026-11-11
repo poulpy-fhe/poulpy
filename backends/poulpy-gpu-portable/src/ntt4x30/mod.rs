@@ -23,6 +23,7 @@ pub(crate) mod tables;
 mod vmp;
 
 pub use automorphism::AutomorphismPlan;
+pub(crate) use automorphism::Substitution;
 pub(crate) use automorphism::automorphism;
 pub(crate) use cnv::{CAPACITY_STEP, convolution, convolution_pairwise, convolution_sum, convolution_tensor};
 #[cfg_attr(not(feature = "enable-core"), allow(unused_imports))]

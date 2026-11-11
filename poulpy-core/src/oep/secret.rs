@@ -1,5 +1,5 @@
 use poulpy_hal::{
-    layouts::{Backend, Module, ScratchArena},
+    layouts::{Backend, Module, Ring, ScratchArena, Standard},
     oep::HalVecZnxImpl,
     source::Source,
 };
@@ -33,12 +33,12 @@ use crate::{
 /// their layouts describe, leave the source operands unchanged, use no more scratch than the
 /// method's query reports and wipe that scratch before returning. The memory, layout, synchrony
 /// and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait SecretImpl: Backend + SamplingImpl + HalVecZnxImpl {
+pub unsafe trait SecretImpl<Rg: Ring = Standard>: Backend + SamplingImpl<Rg> + HalVecZnxImpl<Rg> {
     /// Default body: `glwe_secret_fill_ternary_prob_derived`, one
     /// [`SamplingImpl::scalar_znx_fill_distribution`] draw per column, then the tag.
     fn glwe_secret_fill_ternary_prob<S>(module: &Module<Self>, sk: &mut S, prob: f64, source: &mut Source)
     where
-        S: GLWESecretToBackendMut<Self> + GetDistributionMut + GLWEInfos,
+        S: GLWESecretToBackendMut<Self, Rg> + GetDistributionMut + GLWEInfos,
     {
         super::derived::secret::glwe_secret_fill_ternary_prob_derived(module, sk, prob, source)
     }
@@ -47,7 +47,7 @@ pub unsafe trait SecretImpl: Backend + SamplingImpl + HalVecZnxImpl {
     /// [`SamplingImpl::scalar_znx_fill_distribution`] draw per column, then the tag.
     fn glwe_secret_fill_ternary_hw<S>(module: &Module<Self>, sk: &mut S, hw: usize, source: &mut Source)
     where
-        S: GLWESecretToBackendMut<Self> + GetDistributionMut + GLWEInfos,
+        S: GLWESecretToBackendMut<Self, Rg> + GetDistributionMut + GLWEInfos,
     {
         super::derived::secret::glwe_secret_fill_ternary_hw_derived(module, sk, hw, source)
     }
@@ -56,7 +56,7 @@ pub unsafe trait SecretImpl: Backend + SamplingImpl + HalVecZnxImpl {
     /// [`SamplingImpl::scalar_znx_fill_distribution`] draw per column, then the tag.
     fn glwe_secret_fill_binary_prob<S>(module: &Module<Self>, sk: &mut S, prob: f64, source: &mut Source)
     where
-        S: GLWESecretToBackendMut<Self> + GetDistributionMut + GLWEInfos,
+        S: GLWESecretToBackendMut<Self, Rg> + GetDistributionMut + GLWEInfos,
     {
         super::derived::secret::glwe_secret_fill_binary_prob_derived(module, sk, prob, source)
     }
@@ -65,7 +65,7 @@ pub unsafe trait SecretImpl: Backend + SamplingImpl + HalVecZnxImpl {
     /// [`SamplingImpl::scalar_znx_fill_distribution`] draw per column, then the tag.
     fn glwe_secret_fill_binary_hw<S>(module: &Module<Self>, sk: &mut S, hw: usize, source: &mut Source)
     where
-        S: GLWESecretToBackendMut<Self> + GetDistributionMut + GLWEInfos,
+        S: GLWESecretToBackendMut<Self, Rg> + GetDistributionMut + GLWEInfos,
     {
         super::derived::secret::glwe_secret_fill_binary_hw_derived(module, sk, hw, source)
     }
@@ -74,7 +74,7 @@ pub unsafe trait SecretImpl: Backend + SamplingImpl + HalVecZnxImpl {
     /// [`SamplingImpl::scalar_znx_fill_distribution`] draw per column, then the tag.
     fn glwe_secret_fill_binary_block<S>(module: &Module<Self>, sk: &mut S, block_size: usize, source: &mut Source)
     where
-        S: GLWESecretToBackendMut<Self> + GetDistributionMut + GLWEInfos,
+        S: GLWESecretToBackendMut<Self, Rg> + GetDistributionMut + GLWEInfos,
     {
         super::derived::secret::glwe_secret_fill_binary_block_derived(module, sk, block_size, source)
     }
@@ -83,7 +83,7 @@ pub unsafe trait SecretImpl: Backend + SamplingImpl + HalVecZnxImpl {
     /// then the `ZERO` tag.
     fn glwe_secret_fill_zero<S>(module: &Module<Self>, sk: &mut S)
     where
-        S: GLWESecretToBackendMut<Self> + GetDistributionMut + GLWEInfos,
+        S: GLWESecretToBackendMut<Self, Rg> + GetDistributionMut + GLWEInfos,
     {
         super::derived::secret::glwe_secret_fill_zero_derived(module, sk)
     }
@@ -92,7 +92,7 @@ pub unsafe trait SecretImpl: Backend + SamplingImpl + HalVecZnxImpl {
     /// [`SamplingImpl::scalar_znx_fill_distribution`] draw, then the tag.
     fn lwe_secret_fill_ternary_prob<S>(module: &Module<Self>, sk: &mut S, prob: f64, source: &mut Source)
     where
-        S: LWESecretToBackendMut<Self> + GetDistributionMut,
+        S: LWESecretToBackendMut<Self, Rg> + GetDistributionMut,
     {
         super::derived::secret::lwe_secret_fill_ternary_prob_derived(module, sk, prob, source)
     }
@@ -101,7 +101,7 @@ pub unsafe trait SecretImpl: Backend + SamplingImpl + HalVecZnxImpl {
     /// [`SamplingImpl::scalar_znx_fill_distribution`] draw, then the tag.
     fn lwe_secret_fill_ternary_hw<S>(module: &Module<Self>, sk: &mut S, hw: usize, source: &mut Source)
     where
-        S: LWESecretToBackendMut<Self> + GetDistributionMut,
+        S: LWESecretToBackendMut<Self, Rg> + GetDistributionMut,
     {
         super::derived::secret::lwe_secret_fill_ternary_hw_derived(module, sk, hw, source)
     }
@@ -110,7 +110,7 @@ pub unsafe trait SecretImpl: Backend + SamplingImpl + HalVecZnxImpl {
     /// [`SamplingImpl::scalar_znx_fill_distribution`] draw, then the tag.
     fn lwe_secret_fill_binary_prob<S>(module: &Module<Self>, sk: &mut S, prob: f64, source: &mut Source)
     where
-        S: LWESecretToBackendMut<Self> + GetDistributionMut,
+        S: LWESecretToBackendMut<Self, Rg> + GetDistributionMut,
     {
         super::derived::secret::lwe_secret_fill_binary_prob_derived(module, sk, prob, source)
     }
@@ -119,7 +119,7 @@ pub unsafe trait SecretImpl: Backend + SamplingImpl + HalVecZnxImpl {
     /// [`SamplingImpl::scalar_znx_fill_distribution`] draw, then the tag.
     fn lwe_secret_fill_binary_hw<S>(module: &Module<Self>, sk: &mut S, hw: usize, source: &mut Source)
     where
-        S: LWESecretToBackendMut<Self> + GetDistributionMut,
+        S: LWESecretToBackendMut<Self, Rg> + GetDistributionMut,
     {
         super::derived::secret::lwe_secret_fill_binary_hw_derived(module, sk, hw, source)
     }
@@ -128,7 +128,7 @@ pub unsafe trait SecretImpl: Backend + SamplingImpl + HalVecZnxImpl {
     /// [`SamplingImpl::scalar_znx_fill_distribution`] draw, then the tag.
     fn lwe_secret_fill_binary_block<S>(module: &Module<Self>, sk: &mut S, block_size: usize, source: &mut Source)
     where
-        S: LWESecretToBackendMut<Self> + GetDistributionMut,
+        S: LWESecretToBackendMut<Self, Rg> + GetDistributionMut,
     {
         super::derived::secret::lwe_secret_fill_binary_block_derived(module, sk, block_size, source)
     }
@@ -137,7 +137,7 @@ pub unsafe trait SecretImpl: Backend + SamplingImpl + HalVecZnxImpl {
     /// then the `ZERO` tag.
     fn lwe_secret_fill_zero<S>(module: &Module<Self>, sk: &mut S)
     where
-        S: LWESecretToBackendMut<Self> + GetDistributionMut,
+        S: LWESecretToBackendMut<Self, Rg> + GetDistributionMut,
     {
         super::derived::secret::lwe_secret_fill_zero_derived(module, sk)
     }
@@ -147,16 +147,16 @@ pub unsafe trait SecretImpl: Backend + SamplingImpl + HalVecZnxImpl {
     /// bit for bit; it takes no scratch.
     fn glwe_secret_prepare<R, O>(module: &Module<Self>, res: &mut R, other: &O)
     where
-        R: GLWESecretPreparedToBackendMut<Self> + GetDistributionMut,
-        O: GLWESecretToBackendRef<Self> + GetDistribution;
+        R: GLWESecretPreparedToBackendMut<Self, Rg> + GetDistributionMut,
+        O: GLWESecretToBackendRef<Self, Rg> + GetDistribution;
 
     /// Reproduces
     /// [`glwe_secret_tensor_prepare_reference`](crate::reference::secret::SecretReference::glwe_secret_tensor_prepare_reference)
     /// bit for bit; it takes no scratch.
     fn glwe_secret_tensor_prepare<R, O>(module: &Module<Self>, res: &mut R, other: &O)
     where
-        R: GLWESecretTensorPreparedToBackendMut<Self> + GetDistributionMut,
-        O: GLWESecretTensorToBackendRef<Self> + GetDistribution;
+        R: GLWESecretTensorPreparedToBackendMut<Self, Rg> + GetDistributionMut,
+        O: GLWESecretTensorToBackendRef<Self, Rg> + GetDistribution;
 
     /// Scratch bytes of [`Self::glwe_secret_tensor_from_glwe_secret`]: those of
     /// [`glwe_secret_tensor_from_glwe_secret_tmp_bytes_reference`](crate::reference::secret::SecretReference::glwe_secret_tensor_from_glwe_secret_tmp_bytes_reference),
@@ -172,15 +172,15 @@ pub unsafe trait SecretImpl: Backend + SamplingImpl + HalVecZnxImpl {
         other: &O,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        R: GLWESecretTensorToBackendMut<Self> + GetDistributionMut + GLWEInfos,
-        O: GLWESecretToBackendRef<Self> + GetDistribution + GLWEInfos;
+        R: GLWESecretTensorToBackendMut<Self, Rg> + GetDistributionMut + GLWEInfos,
+        O: GLWESecretToBackendRef<Self, Rg> + GetDistribution + GLWEInfos;
 
     /// Reproduces
     /// [`glwe_secret_from_lwe_secret_reference`](crate::reference::secret::SecretReference::glwe_secret_from_lwe_secret_reference)
     /// bit for bit; it takes no scratch.
-    fn glwe_secret_from_lwe_secret<S>(module: &Module<Self>, src: &S) -> GLWESecret<Self::OwnedBuf, Self::ZnxWord>
+    fn glwe_secret_from_lwe_secret<S>(module: &Module<Self>, src: &S) -> GLWESecret<Self::OwnedBuf, Self::ZnxWord, Rg>
     where
-        S: LWESecretToBackendRef<Self>;
+        S: LWESecretToBackendRef<Self, Rg>;
 
     /// Scratch bytes of [`Self::lwe_secret_from_glwe_secret`]: those of
     /// [`lwe_secret_from_glwe_secret_tmp_bytes_reference`](crate::reference::secret::SecretReference::lwe_secret_from_glwe_secret_tmp_bytes_reference),
@@ -197,35 +197,41 @@ pub unsafe trait SecretImpl: Backend + SamplingImpl + HalVecZnxImpl {
         src: &S,
         lwe_n: Degree,
         scratch: &mut ScratchArena<'_, Self>,
-    ) -> LWESecret<Self::OwnedBuf, Self::ZnxWord>
+    ) -> LWESecret<Self::OwnedBuf, Self::ZnxWord, Rg>
     where
-        S: GLWESecretToBackendRef<Self>;
+        S: GLWESecretToBackendRef<Self, Rg>;
 }
 
 /// Selects the reference bodies of the required secret methods for this backend; the fills
 /// keep their derived defaults.
+///
+/// `($be)` implements both rings and `($be, $ring)` one ring, as `docs/guides/layering-contract.md` describes.
 #[macro_export]
 macro_rules! impl_secret_reference_full {
     ($be:ty) => {
-        unsafe impl $crate::oep::SecretImpl for $be {
+        $crate::impl_secret_reference_full!($be, ::poulpy_hal::layouts::Standard);
+        $crate::impl_secret_reference_full!($be, ::poulpy_hal::layouts::ConjugateInvariant);
+    };
+    ($be:ty, $ring:ty) => {
+        unsafe impl $crate::oep::SecretImpl<$ring> for $be {
             fn glwe_secret_prepare<R, O>(module: &::poulpy_hal::layouts::Module<$be>, res: &mut R, other: &O)
             where
-                R: $crate::layouts::GLWESecretPreparedToBackendMut<$be> + $crate::GetDistributionMut,
-                O: $crate::layouts::GLWESecretToBackendRef<$be> + $crate::GetDistribution,
+                R: $crate::layouts::GLWESecretPreparedToBackendMut<$be, $ring> + $crate::GetDistributionMut,
+                O: $crate::layouts::GLWESecretToBackendRef<$be, $ring> + $crate::GetDistribution,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::secret::SecretReference<$be>>::glwe_secret_prepare_reference(module, res, other)
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::secret::SecretReference<$be, $ring>>::glwe_secret_prepare_reference(module, res, other)
             }
 
             fn glwe_secret_tensor_prepare<R, O>(module: &::poulpy_hal::layouts::Module<$be>, res: &mut R, other: &O)
             where
-                R: $crate::layouts::GLWESecretTensorPreparedToBackendMut<$be> + $crate::GetDistributionMut,
-                O: $crate::layouts::GLWESecretTensorToBackendRef<$be> + $crate::GetDistribution,
+                R: $crate::layouts::GLWESecretTensorPreparedToBackendMut<$be, $ring> + $crate::GetDistributionMut,
+                O: $crate::layouts::GLWESecretTensorToBackendRef<$be, $ring> + $crate::GetDistribution,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::secret::SecretReference<$be>>::glwe_secret_tensor_prepare_reference(module, res, other)
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::secret::SecretReference<$be, $ring>>::glwe_secret_tensor_prepare_reference(module, res, other)
             }
 
             fn glwe_secret_tensor_from_glwe_secret_tmp_bytes(module: &::poulpy_hal::layouts::Module<$be>, rank: $crate::layouts::Rank) -> usize {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::secret::SecretReference<$be>>::glwe_secret_tensor_from_glwe_secret_tmp_bytes_reference(module, rank)
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::secret::SecretReference<$be, $ring>>::glwe_secret_tensor_from_glwe_secret_tmp_bytes_reference(module, rank)
             }
 
             fn glwe_secret_tensor_from_glwe_secret<R, O>(
@@ -234,27 +240,29 @@ macro_rules! impl_secret_reference_full {
                 other: &O,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) where
-                R: $crate::layouts::GLWESecretTensorToBackendMut<$be> + $crate::GetDistributionMut + $crate::layouts::GLWEInfos,
-                O: $crate::layouts::GLWESecretToBackendRef<$be> + $crate::GetDistribution + $crate::layouts::GLWEInfos,
+                R: $crate::layouts::GLWESecretTensorToBackendMut<$be, $ring>
+                    + $crate::GetDistributionMut
+                    + $crate::layouts::GLWEInfos,
+                O: $crate::layouts::GLWESecretToBackendRef<$be, $ring> + $crate::GetDistribution + $crate::layouts::GLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::secret::SecretReference<$be>>::glwe_secret_tensor_from_glwe_secret_reference(module, res, other, scratch)
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::secret::SecretReference<$be, $ring>>::glwe_secret_tensor_from_glwe_secret_reference(module, res, other, scratch)
             }
 
             fn glwe_secret_from_lwe_secret<S>(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 src: &S,
-            ) -> $crate::layouts::GLWESecret<<$be as ::poulpy_hal::layouts::Backend>::OwnedBuf, <$be as ::poulpy_hal::layouts::Backend>::ZnxWord>
+            ) -> $crate::layouts::GLWESecret<<$be as ::poulpy_hal::layouts::Backend>::OwnedBuf, <$be as ::poulpy_hal::layouts::Backend>::ZnxWord, $ring>
             where
-                S: $crate::layouts::LWESecretToBackendRef<$be>,
+                S: $crate::layouts::LWESecretToBackendRef<$be, $ring>,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::secret::SecretReference<$be>>::glwe_secret_from_lwe_secret_reference(module, src)
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::secret::SecretReference<$be, $ring>>::glwe_secret_from_lwe_secret_reference(module, src)
             }
 
             fn lwe_secret_from_glwe_secret_tmp_bytes<A>(module: &::poulpy_hal::layouts::Module<$be>, infos: &A) -> usize
             where
                 A: $crate::layouts::GLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::secret::SecretReference<$be>>::lwe_secret_from_glwe_secret_tmp_bytes_reference(module, infos)
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::secret::SecretReference<$be, $ring>>::lwe_secret_from_glwe_secret_tmp_bytes_reference(module, infos)
             }
 
             fn lwe_secret_from_glwe_secret<S>(
@@ -262,11 +270,11 @@ macro_rules! impl_secret_reference_full {
                 src: &S,
                 lwe_n: $crate::layouts::Degree,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
-            ) -> $crate::layouts::LWESecret<<$be as ::poulpy_hal::layouts::Backend>::OwnedBuf, <$be as ::poulpy_hal::layouts::Backend>::ZnxWord>
+            ) -> $crate::layouts::LWESecret<<$be as ::poulpy_hal::layouts::Backend>::OwnedBuf, <$be as ::poulpy_hal::layouts::Backend>::ZnxWord, $ring>
             where
-                S: $crate::layouts::GLWESecretToBackendRef<$be>,
+                S: $crate::layouts::GLWESecretToBackendRef<$be, $ring>,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::secret::SecretReference<$be>>::lwe_secret_from_glwe_secret_reference(module, src, lwe_n, scratch)
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::secret::SecretReference<$be, $ring>>::lwe_secret_from_glwe_secret_reference(module, src, lwe_n, scratch)
             }
         }
     };

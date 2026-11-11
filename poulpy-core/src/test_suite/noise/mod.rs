@@ -35,7 +35,7 @@ use crate::oep::{
     AutomorphismImpl, DecryptionImpl, GGLWECopyImpl, GGLWEExternalProductImpl, GGLWEKeyswitchImpl, GGLWEProductDigitsStridedImpl,
     GGSWConversionImpl, GGSWCopyImpl, GGSWExternalProductImpl, GGSWKeyswitchImpl, GLWEAddImpl, GLWECopyImpl,
     GLWEExternalProductImpl, GLWEKeyswitchImpl, GLWEMulConstImpl, GLWEMulPlainImpl, GLWENegateImpl, GLWENormalizeImpl,
-    GLWEShiftImpl, GLWESubImpl, GLWETensoringImpl, LWEKeyswitchImpl, SamplingImpl, SecretImpl,
+    GLWEShiftImpl, GLWESubImpl, GLWETensoringImpl, SamplingImpl, SecretImpl,
 };
 use crate::{
     GLWEDecrypt, GLWENoise,
@@ -50,41 +50,39 @@ use poulpy_hal::AlignedBuf;
 use poulpy_hal::{
     api::ScratchOwnedBorrow,
     layouts::{
-        Backend, DataView, HostBackend, HostDataMut, HostDataRef, HostStaged, Module, ScalarZnx, ScalarZnxAsVecZnxBackendMut,
-        ScalarZnxAsVecZnxBackendRef, ScratchArena, ScratchOwned, Stats, VecZnxBackendMut, VecZnxBackendRef,
+        Backend, DataView, HostBackend, HostDataMut, HostDataRef, HostStaged, Module, Ring, ScalarZnx,
+        ScalarZnxAsVecZnxBackendMut, ScalarZnxAsVecZnxBackendRef, ScratchArena, ScratchOwned, Standard, Stats, VecZnxBackendMut,
+        VecZnxBackendRef,
     },
-    oep::HalVecZnxImpl,
     test_suite::TestBackend as HalTestBackend,
     test_suite::{download_scalar_znx as hal_download_scalar_znx, upload_scalar_znx as hal_upload_scalar_znx},
 };
 
-pub trait TestBackend:
-    HalTestBackend
-    + GLWEKeyswitchImpl
-    + GGLWEKeyswitchImpl
-    + GGSWKeyswitchImpl
-    + LWEKeyswitchImpl
-    + GLWEAddImpl
-    + GLWENegateImpl
-    + GLWESubImpl
-    + GLWECopyImpl
-    + GGLWECopyImpl
-    + GGSWCopyImpl
-    + HalVecZnxImpl
-    + GLWEExternalProductImpl
-    + GGLWEExternalProductImpl
-    + GGSWExternalProductImpl
-    + GLWETensoringImpl
-    + GGLWEProductDigitsStridedImpl
-    + GLWEMulConstImpl
-    + GLWEMulPlainImpl
-    + GLWEShiftImpl
-    + GLWENormalizeImpl
-    + DecryptionImpl
-    + GGSWConversionImpl
-    + AutomorphismImpl
-    + SamplingImpl
-    + SecretImpl
+pub trait TestBackend<Rg: Ring = Standard>:
+    HalTestBackend<Rg>
+    + GLWEKeyswitchImpl<Rg>
+    + GGLWEKeyswitchImpl<Rg>
+    + GGSWKeyswitchImpl<Rg>
+    + GLWEAddImpl<Rg>
+    + GLWENegateImpl<Rg>
+    + GLWESubImpl<Rg>
+    + GLWECopyImpl<Rg>
+    + GGLWECopyImpl<Rg>
+    + GGSWCopyImpl<Rg>
+    + GLWEExternalProductImpl<Rg>
+    + GGLWEExternalProductImpl<Rg>
+    + GGSWExternalProductImpl<Rg>
+    + GLWETensoringImpl<Rg>
+    + GGLWEProductDigitsStridedImpl<Rg>
+    + GLWEMulConstImpl<Rg>
+    + GLWEMulPlainImpl<Rg>
+    + GLWEShiftImpl<Rg>
+    + GLWENormalizeImpl<Rg>
+    + DecryptionImpl<Rg>
+    + GGSWConversionImpl<Rg>
+    + AutomorphismImpl<Rg>
+    + SamplingImpl<Rg>
+    + SecretImpl<Rg>
 where
     Self: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     for<'a> Self::BufRef<'a>: HostDataRef,
@@ -92,34 +90,32 @@ where
 {
 }
 
-impl<BE> TestBackend for BE
+impl<BE, Rg: Ring> TestBackend<Rg> for BE
 where
-    BE: HalTestBackend
-        + GLWEKeyswitchImpl
-        + GGLWEKeyswitchImpl
-        + GGSWKeyswitchImpl
-        + LWEKeyswitchImpl
-        + GLWEAddImpl
-        + GLWENegateImpl
-        + GLWESubImpl
-        + GLWECopyImpl
-        + GGLWECopyImpl
-        + GGSWCopyImpl
-        + HalVecZnxImpl
-        + GLWEExternalProductImpl
-        + GGLWEExternalProductImpl
-        + GGSWExternalProductImpl
-        + GLWETensoringImpl
-        + GGLWEProductDigitsStridedImpl
-        + GLWEMulConstImpl
-        + GLWEMulPlainImpl
-        + GLWEShiftImpl
-        + GLWENormalizeImpl
-        + DecryptionImpl
-        + GGSWConversionImpl
-        + AutomorphismImpl
-        + SamplingImpl
-        + SecretImpl,
+    BE: HalTestBackend<Rg>
+        + GLWEKeyswitchImpl<Rg>
+        + GGLWEKeyswitchImpl<Rg>
+        + GGSWKeyswitchImpl<Rg>
+        + GLWEAddImpl<Rg>
+        + GLWENegateImpl<Rg>
+        + GLWESubImpl<Rg>
+        + GLWECopyImpl<Rg>
+        + GGLWECopyImpl<Rg>
+        + GGSWCopyImpl<Rg>
+        + GLWEExternalProductImpl<Rg>
+        + GGLWEExternalProductImpl<Rg>
+        + GGSWExternalProductImpl<Rg>
+        + GLWETensoringImpl<Rg>
+        + GGLWEProductDigitsStridedImpl<Rg>
+        + GLWEMulConstImpl<Rg>
+        + GLWEMulPlainImpl<Rg>
+        + GLWEShiftImpl<Rg>
+        + GLWENormalizeImpl<Rg>
+        + DecryptionImpl<Rg>
+        + GGSWConversionImpl<Rg>
+        + AutomorphismImpl<Rg>
+        + SamplingImpl<Rg>
+        + SecretImpl<Rg>,
     BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
@@ -134,10 +130,10 @@ where
 }
 
 /// Asserts that a GLWE flagged canonical is canonical at its `k`.
-pub fn assert_glwe_flag_honest<BE, R>(res: &R)
+pub fn assert_glwe_flag_honest<BE, R, Rg: Ring>(res: &R)
 where
     BE: Backend<ZnxWord = i64>,
-    R: GLWEToBackendRef<BE>,
+    R: GLWEToBackendRef<BE, Rg>,
 {
     let res = res.to_backend_ref();
     if !res.is_canonical() {
@@ -170,29 +166,35 @@ where
     assert!(no_limbs_past_k, "GLWE flagged canonical holds a non-zero limb past its k");
 }
 
-pub fn glwe_decrypt_checked<BE, M, R, P, S>(module: &M, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'_, BE>)
+pub fn glwe_decrypt_checked<BE, M, R, P, S, Rg: Ring>(module: &M, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'_, BE>)
 where
     BE: Backend<ZnxWord = i64>,
-    M: GLWEDecrypt<BE>,
-    R: GLWEToBackendRef<BE> + GLWEInfos,
-    P: GLWEToBackendMut<BE> + GLWEInfos + SetBase2k,
-    S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
+    M: GLWEDecrypt<BE, Rg>,
+    R: GLWEToBackendRef<BE, Rg> + GLWEInfos,
+    P: GLWEToBackendMut<BE, Rg> + GLWEInfos + SetBase2k,
+    S: GLWESecretPreparedToBackendRef<BE, Rg> + GLWEInfos,
 {
-    assert_glwe_flag_honest::<BE, _>(res);
+    assert_glwe_flag_honest::<BE, _, Rg>(res);
     module.glwe_decrypt(res, pt, sk, scratch);
 }
 
-pub fn glwe_noise_checked<BE, M, R, P, S>(module: &M, res: &R, pt_want: &P, sk: &S, scratch: &mut ScratchArena<'_, BE>) -> Stats
+pub fn glwe_noise_checked<BE, M, R, P, S, Rg: Ring>(
+    module: &M,
+    res: &R,
+    pt_want: &P,
+    sk: &S,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> Stats
 where
     BE: HostBackend<ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    M: GLWENoise<BE>,
-    R: GLWEToBackendRef<BE> + GLWEInfos,
-    P: GLWEToBackendRef<BE>,
-    S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
+    M: GLWENoise<BE, Rg>,
+    R: GLWEToBackendRef<BE, Rg> + GLWEInfos,
+    P: GLWEToBackendRef<BE, Rg>,
+    S: GLWESecretPreparedToBackendRef<BE, Rg> + GLWEInfos,
 {
-    assert_glwe_flag_honest::<BE, _>(res);
+    assert_glwe_flag_honest::<BE, _, Rg>(res);
     module.glwe_noise(res, pt_want, sk, scratch)
 }
 
@@ -210,41 +212,43 @@ pub fn assert_refuses_uncovered_input(what: &str, op: impl FnOnce()) {
     );
 }
 
-pub fn upload_scalar_znx<BE: Backend>(
-    src: &poulpy_hal::layouts::ScalarZnx<AlignedBuf, BE::ZnxWord>,
-) -> poulpy_hal::layouts::ScalarZnx<BE::OwnedBuf, BE::ZnxWord> {
-    hal_upload_scalar_znx::<BE>(src)
+pub fn upload_scalar_znx<BE: Backend, Rg: Ring>(
+    src: &poulpy_hal::layouts::ScalarZnx<AlignedBuf, BE::ZnxWord, Rg>,
+) -> poulpy_hal::layouts::ScalarZnx<BE::OwnedBuf, BE::ZnxWord, Rg> {
+    hal_upload_scalar_znx::<BE, Rg>(src)
 }
 
-pub fn download_scalar_znx<BE: Backend>(
-    src: &poulpy_hal::layouts::ScalarZnx<BE::OwnedBuf, BE::ZnxWord>,
-) -> poulpy_hal::layouts::ScalarZnx<AlignedBuf, BE::ZnxWord> {
-    hal_download_scalar_znx::<BE>(src)
+pub fn download_scalar_znx<BE: Backend, Rg: Ring>(
+    src: &poulpy_hal::layouts::ScalarZnx<BE::OwnedBuf, BE::ZnxWord, Rg>,
+) -> poulpy_hal::layouts::ScalarZnx<AlignedBuf, BE::ZnxWord, Rg> {
+    hal_download_scalar_znx::<BE, Rg>(src)
 }
 
-pub fn scalar_znx_as_vec_znx_backend_ref<BE: Backend>(src: &ScalarZnx<BE::OwnedBuf, BE::ZnxWord>) -> VecZnxBackendRef<'_, BE> {
-    <ScalarZnx<BE::OwnedBuf, BE::ZnxWord> as ScalarZnxAsVecZnxBackendRef<BE>>::as_vec_znx_backend(src)
+pub fn scalar_znx_as_vec_znx_backend_ref<BE: Backend, Rg: Ring>(
+    src: &ScalarZnx<BE::OwnedBuf, BE::ZnxWord, Rg>,
+) -> VecZnxBackendRef<'_, BE, Rg> {
+    <ScalarZnx<BE::OwnedBuf, BE::ZnxWord, Rg> as ScalarZnxAsVecZnxBackendRef<BE, Rg>>::as_vec_znx_backend(src)
 }
 
-pub fn scalar_znx_as_vec_znx_backend_mut<BE: Backend>(
-    src: &mut ScalarZnx<BE::OwnedBuf, BE::ZnxWord>,
-) -> VecZnxBackendMut<'_, BE> {
-    <ScalarZnx<BE::OwnedBuf, BE::ZnxWord> as ScalarZnxAsVecZnxBackendMut<BE>>::as_vec_znx_backend_mut(src)
+pub fn scalar_znx_as_vec_znx_backend_mut<BE: Backend, Rg: Ring>(
+    src: &mut ScalarZnx<BE::OwnedBuf, BE::ZnxWord, Rg>,
+) -> VecZnxBackendMut<'_, BE, Rg> {
+    <ScalarZnx<BE::OwnedBuf, BE::ZnxWord, Rg> as ScalarZnxAsVecZnxBackendMut<BE, Rg>>::as_vec_znx_backend_mut(src)
 }
 
-pub fn upload_glwe<BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64> + HostStaged>(
+pub fn upload_glwe<BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64> + HostStaged, Rg: Ring>(
     module: &Module<BE>,
-    src: &GLWE<AlignedBuf, i64>,
-) -> GLWE<BE::OwnedBuf, BE::ZnxWord> {
+    src: &GLWE<AlignedBuf, i64, Rg>,
+) -> GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> {
     let mut dst = module.glwe_alloc_from_infos(src);
     src.transfer_into(&mut dst);
     dst
 }
 
-pub fn download_glwe<BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>>(
+pub fn download_glwe<BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>, Rg: Ring>(
     _module: &Module<BE>,
-    src: &GLWE<BE::OwnedBuf, BE::ZnxWord>,
-) -> GLWE<AlignedBuf, BE::ZnxWord> {
+    src: &GLWE<BE::OwnedBuf, BE::ZnxWord, Rg>,
+) -> GLWE<AlignedBuf, BE::ZnxWord, Rg> {
     let shape = src.data.shape();
     GLWE {
         noise: src.noise.clone(),
@@ -256,19 +260,19 @@ pub fn download_glwe<BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>>(
     }
 }
 
-pub fn upload_glwe_plaintext<BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64> + HostStaged>(
+pub fn upload_glwe_plaintext<BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64> + HostStaged, Rg: Ring>(
     module: &Module<BE>,
-    src: &GLWEPlaintext<AlignedBuf, i64>,
-) -> GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> {
+    src: &GLWEPlaintext<AlignedBuf, i64, Rg>,
+) -> GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord, Rg> {
     let mut dst = module.glwe_plaintext_alloc_from_infos(src);
     src.transfer_into(&mut dst);
     dst
 }
 
-pub fn download_glwe_plaintext<BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>>(
+pub fn download_glwe_plaintext<BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>, Rg: Ring>(
     _module: &Module<BE>,
-    src: &GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord>,
-) -> GLWEPlaintext<AlignedBuf, BE::ZnxWord> {
+    src: &GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord, Rg>,
+) -> GLWEPlaintext<AlignedBuf, BE::ZnxWord, Rg> {
     let shape = src.data.shape();
     GLWEPlaintext {
         data: poulpy_hal::layouts::VecZnx::from_shape(AlignedBuf::from(BE::to_host_bytes(src.data.data())), shape),
@@ -278,37 +282,37 @@ pub fn download_glwe_plaintext<BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = 
     }
 }
 
-pub fn upload_glwe_secret<BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64> + HostStaged>(
+pub fn upload_glwe_secret<BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64> + HostStaged, Rg: Ring>(
     module: &Module<BE>,
-    src: &GLWESecret<AlignedBuf, i64>,
-) -> GLWESecret<BE::OwnedBuf, BE::ZnxWord> {
+    src: &GLWESecret<AlignedBuf, i64, Rg>,
+) -> GLWESecret<BE::OwnedBuf, BE::ZnxWord, Rg> {
     let mut dst = module.glwe_secret_alloc_from_infos(src);
     src.transfer_into(&mut dst);
     dst
 }
 
-pub fn upload_gglwe<BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64> + HostStaged>(
+pub fn upload_gglwe<BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64> + HostStaged, Rg: Ring>(
     module: &Module<BE>,
-    src: &GGLWE<AlignedBuf, i64>,
-) -> GGLWE<BE::OwnedBuf, BE::ZnxWord> {
+    src: &GGLWE<AlignedBuf, i64, Rg>,
+) -> GGLWE<BE::OwnedBuf, BE::ZnxWord, Rg> {
     let mut dst = module.gglwe_alloc_from_infos(src);
     src.transfer_into(&mut dst);
     dst
 }
 
-pub fn upload_ggsw<BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64> + HostStaged>(
+pub fn upload_ggsw<BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64> + HostStaged, Rg: Ring>(
     module: &Module<BE>,
-    src: &GGSW<AlignedBuf, i64>,
-) -> GGSW<BE::OwnedBuf, BE::ZnxWord> {
+    src: &GGSW<AlignedBuf, i64, Rg>,
+) -> GGSW<BE::OwnedBuf, BE::ZnxWord, Rg> {
     let mut dst = module.ggsw_alloc_from_infos(src);
     src.transfer_into(&mut dst);
     dst
 }
 
-pub fn download_ggsw<BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>>(
+pub fn download_ggsw<BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>, Rg: Ring>(
     _module: &Module<BE>,
-    src: &GGSW<BE::OwnedBuf, BE::ZnxWord>,
-) -> GGSW<AlignedBuf, BE::ZnxWord> {
+    src: &GGSW<BE::OwnedBuf, BE::ZnxWord, Rg>,
+) -> GGSW<AlignedBuf, BE::ZnxWord, Rg> {
     GGSW {
         noise: src.noise.clone(),
         data: poulpy_hal::layouts::MatZnx::from_data(
@@ -325,20 +329,20 @@ pub fn download_ggsw<BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>>(
     }
 }
 
-pub fn upload_glwe_automorphism_key<BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64> + HostStaged>(
+pub fn upload_glwe_automorphism_key<BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64> + HostStaged, Rg: Ring>(
     module: &Module<BE>,
-    src: &GLWEAutomorphismKey<AlignedBuf, i64>,
-) -> GLWEAutomorphismKey<BE::OwnedBuf, BE::ZnxWord> {
+    src: &GLWEAutomorphismKey<AlignedBuf, i64, Rg>,
+) -> GLWEAutomorphismKey<BE::OwnedBuf, BE::ZnxWord, Rg> {
     GLWEAutomorphismKey {
         key: upload_gglwe(module, &src.key),
         p: src.p,
     }
 }
 
-pub fn upload_gglwe_to_ggsw_key<BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64> + HostStaged>(
+pub fn upload_gglwe_to_ggsw_key<BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64> + HostStaged, Rg: Ring>(
     module: &Module<BE>,
-    src: &GGLWEToGGSWKey<AlignedBuf, i64>,
-) -> GGLWEToGGSWKey<BE::OwnedBuf, BE::ZnxWord> {
+    src: &GGLWEToGGSWKey<AlignedBuf, i64, Rg>,
+) -> GGLWEToGGSWKey<BE::OwnedBuf, BE::ZnxWord, Rg> {
     GGLWEToGGSWKey {
         keys: src.keys.iter().map(|key| upload_gglwe(module, key)).collect(),
     }

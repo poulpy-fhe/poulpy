@@ -276,7 +276,7 @@ macro_rules! ckks_backend_rank2_test_suite {
                     #[test]
                     fn $name() -> Result<()> {
                         use $path as __test_fn;
-                        __test_fn::<$backend, $scalar>($params, &*MODULE, &*HOST_MODULE)
+                        __test_fn::<$backend, $scalar, ::poulpy_hal::layouts::Standard>($params, &*MODULE, &*HOST_MODULE)
                     }
                 };
             }
@@ -490,7 +490,7 @@ macro_rules! ckks_backend_test_suite {
                     #[test]
                     fn $name() -> Result<()> {
                         use $path as __test_fn;
-                        __test_fn::<$backend, $scalar>($params, &*MODULE, &*HOST_MODULE)
+                        __test_fn::<$backend, $scalar, ::poulpy_hal::layouts::Standard>($params, &*MODULE, &*HOST_MODULE)
                     }
                 };
             }

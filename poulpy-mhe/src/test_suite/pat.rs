@@ -15,7 +15,10 @@ use poulpy_core::{
 use poulpy_hal::{
     AlignedBuf,
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAddAssign, VecZnxAddScalarAssign, VecZnxFillUniformSource},
-    layouts::{HostBackend, HostDataMut, HostDataRef, Module, ScalarZnx, ScratchOwned, vec_znx_backend_mut, vec_znx_backend_ref},
+    layouts::{
+        HostBackend, HostDataMut, HostDataRef, Module, ScalarZnx, ScratchOwned, Standard, vec_znx_backend_mut,
+        vec_znx_backend_ref,
+    },
     source::Source,
 };
 
@@ -70,7 +73,7 @@ where
             module.vec_znx_fill_uniform_source(
                 BASE2K.as_usize(),
                 K.as_usize(),
-                &mut vec_znx_backend_mut::<BE>(pt.data_mut()),
+                &mut vec_znx_backend_mut::<BE, Standard>(pt.data_mut()),
                 0,
                 &mut Source::new([30 + i as u8; 32]),
             );
@@ -80,9 +83,9 @@ where
     let mut pt_want: GLWEPlaintext<AlignedBuf, i64> = module.glwe_plaintext_alloc_from_infos(&pt_layout);
     for pt in &pts {
         module.vec_znx_add_assign(
-            &mut vec_znx_backend_mut::<BE>(pt_want.data_mut()),
+            &mut vec_znx_backend_mut::<BE, Standard>(pt_want.data_mut()),
             0,
-            &vec_znx_backend_ref::<BE>(pt.data()),
+            &vec_znx_backend_ref::<BE, Standard>(pt.data()),
             0,
         );
     }
@@ -250,7 +253,7 @@ where
                     module.vec_znx_fill_uniform_source(
                         BASE2K.as_usize(),
                         k.as_usize(),
-                        &mut vec_znx_backend_mut::<BE>(pt.data_mut()),
+                        &mut vec_znx_backend_mut::<BE, Standard>(pt.data_mut()),
                         0,
                         &mut source_xm,
                     );
@@ -258,9 +261,9 @@ where
                     module.glwe_encrypt_pk(&mut cell, &pt, &pk, &mut source_xu, &mut source_xe, &mut scratch.borrow());
                     metadata = cell.noise();
                     module.vec_znx_add_assign(
-                        &mut vec_znx_backend_mut::<BE>(pts_want[row * rank_in + col].data_mut()),
+                        &mut vec_znx_backend_mut::<BE, Standard>(pts_want[row * rank_in + col].data_mut()),
                         0,
-                        &vec_znx_backend_ref::<BE>(pt.data()),
+                        &vec_znx_backend_ref::<BE, Standard>(pt.data()),
                         0,
                     );
                 }

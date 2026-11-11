@@ -8,16 +8,16 @@ use poulpy_core::{
     LinearTransformationPrepared,
     layouts::{Base2K, GGLWEInfos, GLWEInfos, GLWEToBackendRef, LWEInfos, LinearTransformation},
 };
-use poulpy_hal::layouts::Backend;
+use poulpy_hal::layouts::{Backend, Ring};
 
 use crate::{CKKSCompositionError, SlotLayout, SlotsKind};
 
 /// `InvalidOperand` for `op` unless `prepared` was allocated for `lt`'s layout: the same schedule, every diagonal of
 /// both at one degree, radix, rank, width and prepared limb count (a ciphertext diagonal's live limbs, a plaintext's
 /// allocated ones), and `lt`'s baby steps led by the identity rotation.
-pub(crate) fn ensure_prepared_transformation_layout<BE: Backend, P: GLWEInfos>(
+pub(crate) fn ensure_prepared_transformation_layout<BE: Backend, P: GLWEInfos, Rg: Ring>(
     op: &'static str,
-    prepared: &LinearTransformationPrepared<BE>,
+    prepared: &LinearTransformationPrepared<BE, Rg>,
     lt: &LinearTransformation<P>,
 ) -> crate::CKKSResult<()> {
     let invalid = |reason: &str| -> crate::CKKSError {
@@ -200,10 +200,10 @@ pub(crate) fn validate_storage_capacity<K: LWEInfos + ?Sized>(name: &str, key: &
 /// ciphertext-like operand. This catches truncated or malformed custom key
 /// stores whose metadata still advertises more precision than their active
 /// view exposes.
-pub(crate) fn validate_backend_storage_capacity<BE, K>(name: &str, key: &K) -> Result<()>
+pub(crate) fn validate_backend_storage_capacity<BE, K, Rg: Ring>(name: &str, key: &K) -> Result<()>
 where
     BE: Backend,
-    K: GLWEInfos + GLWEToBackendRef<BE>,
+    K: GLWEInfos + GLWEToBackendRef<BE, Rg>,
 {
     validate_storage_capacity(name, key)?;
     let view = key.to_backend_ref();

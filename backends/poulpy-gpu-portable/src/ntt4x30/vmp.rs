@@ -27,7 +27,7 @@
 use cubecl::prelude::*;
 
 use super::{
-    AutomorphismPlan, DftColumn,
+    DftColumn, Substitution,
     ntt::gs,
     primes::{Consts, FOLD_TERMS, barrett60, fold64, sel4},
 };
@@ -79,7 +79,7 @@ pub(crate) struct Tail<'a> {
     /// limbs both have.
     pub(crate) addends: [Option<&'a DftColumn>; 2],
     /// The result is `sigma(product + addend)`.
-    pub(crate) automorphism: Option<&'a AutomorphismPlan>,
+    pub(crate) automorphism: Option<&'a Substitution>,
 }
 
 impl Terms {
@@ -386,7 +386,7 @@ pub(crate) fn digit_product<RT: GpuRuntime>(
     let [(add0, add0_size), (add1, add1_size)] = tail
         .addends
         .map(|addend| addend.map_or((a, 0), |addend| (addend, addend.size.min(res.size))));
-    let (mul, shift) = tail.automorphism.map_or((1, 1), AutomorphismPlan::scatter);
+    let (mul, shift) = tail.automorphism.map_or((1, 1), Substitution::scatter);
     let units = block;
     let key_limbs = pmat.size.min(res.size + dsize - 1);
     let words = limbs * pmat.cols_in
@@ -655,7 +655,7 @@ pub(crate) fn digit_products<RT: GpuRuntime>(
     product_limbs: usize,
     accumulate: bool,
     addends: Option<&[DftColumn]>,
-    automorphism: Option<&AutomorphismPlan>,
+    automorphism: Option<&Substitution>,
 ) {
     let m = res.len();
     assert!((1..=MANY_SOURCES).contains(&m), "vector-matrix products: {m} sources");
@@ -703,7 +703,7 @@ pub(crate) fn digit_products<RT: GpuRuntime>(
     let add_size = addends.map_or(0, |addends| addends[0].size.min(res[0].size));
     let base = |views: &[DftColumn], s: usize| views.get(s).map_or(views[0].base, |v| v.base);
     let add_base = |s: usize| addends.map_or(0, |addends| base(addends, s));
-    let (mul, shift) = automorphism.map_or((1, 1), AutomorphismPlan::scatter);
+    let (mul, shift) = automorphism.map_or((1, 1), Substitution::scatter);
     let key_limbs = pmat.size.min(res[0].size + dsize - 1);
     let words = pmat.cols_out * terms.rows() as usize * pmat.cols_in * key_limbs
         + m * (limbs * pmat.cols_in + pmat.cols_out * res[0].size * (1 + accumulate as usize) + add_size);

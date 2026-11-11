@@ -10,7 +10,7 @@ use poulpy_core::layouts::{
 };
 use poulpy_hal::{
     api::ScratchOwnedBorrow,
-    layouts::{Backend, HostBytesBackend, HostDataMut, HostDataRef, Module, ScratchOwned, Standard},
+    layouts::{Backend, HostBytesBackend, HostDataMut, HostDataRef, Module, Ring, ScratchOwned, Standard},
     source::Source,
 };
 
@@ -31,7 +31,7 @@ use crate::{
     },
 };
 
-type AutomorphismKeys<BE> = HashMap<i64, GLWEAutomorphismKeyPrepared<<BE as Backend>::OwnedBuf, BE>>;
+type AutomorphismKeys<BE, Rg = Standard> = HashMap<i64, GLWEAutomorphismKeyPrepared<<BE as Backend>::OwnedBuf, BE, Rg>>;
 
 /// Folds a complex input and two real pairs at the input width, decrypts and checks
 /// the folded messages, re-encrypts them wider as a bootstrap would, then unfolds and
@@ -39,7 +39,7 @@ type AutomorphismKeys<BE> = HashMap<i64, GLWEAutomorphismKeyPrepared<<BE as Back
 /// and under their own secret at half of it, paired then merged two per folded ciphertext.
 pub fn test_fold_unfold<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     Module<BE>: TestContextModule<BE> + CKKSFoldLayoutOps<BE> + CKKSFoldOps<BE, Standard>,
     F: TestScalar,
     for<'a> BE::BufRef<'a>: HostDataRef,
@@ -185,7 +185,7 @@ where
                     ),
                     "folded metadata {i}, {label}"
                 );
-                let got = decrypt_coeffs::<BE, F>(module, &params, ct, &sk, &mut refresh_scratch);
+                let got = decrypt_coeffs::<BE, F, Standard>(module, &params, ct, &sk, &mut refresh_scratch);
                 assert_precision(
                     &format!("folded, {label}"),
                     &got,
@@ -235,7 +235,7 @@ where
                 "unfolded {i}, {label}"
             );
             assert_eq!(out.noise(), None, "unfolded provenance {i}, {label}");
-            let got = decrypt_coeffs::<BE, F>(module, input_params, out, input_sk, &mut scratch);
+            let got = decrypt_coeffs::<BE, F, Standard>(module, input_params, out, input_sk, &mut scratch);
             assert_precision(&format!("unfolded {i}, {label}"), &got, msg, log_delta, n_in);
         }
 
@@ -288,16 +288,16 @@ pub(crate) fn folded_message<F: TestScalar>(msgs: &[Vec<F>], group: &[(usize, Op
     want
 }
 
-pub(crate) fn decrypt_coeffs<BE, F>(
+pub(crate) fn decrypt_coeffs<BE, F, Rg: Ring>(
     module: &Module<BE>,
     params: &CKKSTestParams,
-    ct: &CKKSCiphertextOwned<BE>,
-    sk: &GLWESecretPrepared<BE::OwnedBuf, BE>,
+    ct: &CKKSCiphertextOwned<BE, Rg>,
+    sk: &GLWESecretPrepared<BE::OwnedBuf, BE, Rg>,
     scratch: &mut ScratchOwned<BE>,
 ) -> Vec<F>
 where
     BE: TestContextBackend,
-    Module<BE>: TestContextSharedModule<BE>,
+    Module<BE>: TestContextSharedModule<BE, Rg>,
     F: TestScalar,
 {
     let prec = CKKSLayout {
@@ -355,7 +355,7 @@ pub fn test_fold_rejects_invalid_operands<BE, F, E>(
     module: &Module<BE>,
     _host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     Module<BE>: TestContextModule<BE> + CKKSFoldLayoutOps<BE> + CKKSFoldOps<BE, Standard>,
     F: TestScalar,
 {
@@ -498,11 +498,11 @@ pub fn test_fold_rejects_invalid_operands<BE, F, E>(
         ),
     ];
     for (label, ins, mut folded, inbound, reason) in cases {
-        let before: Vec<_> = folded.iter().map(snapshot::<BE, _>).collect();
+        let before: Vec<_> = folded.iter().map(snapshot::<BE, _, Standard>).collect();
         let err = with_scratch::<BE, _>(0, |s| module.ckks_fold(&mut folded, &ins, inbound, s)).unwrap_err();
         assert_ckks_error(label, &err, CKKSCompositionError::InvalidOperand { op: "ckks_fold", reason });
         assert_eq!(
-            folded.iter().map(snapshot::<BE, _>).collect::<Vec<_>>(),
+            folded.iter().map(snapshot::<BE, _, Standard>).collect::<Vec<_>>(),
             before,
             "{label}: a refused fold wrote folded"
         );
@@ -521,7 +521,7 @@ pub fn test_unfold_rejects_invalid_operands<BE, F, E>(
     module: &Module<BE>,
     _host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     Module<BE>: TestContextModule<BE> + CKKSFoldLayoutOps<BE> + CKKSFoldOps<BE, Standard>,
     F: TestScalar,
 {
@@ -702,8 +702,8 @@ pub fn test_unfold_rejects_invalid_operands<BE, F, E>(
     ];
     for (label, mut outs, mut folded, automorphisms, outbound, refusal) in cases {
         let before = (
-            outs.iter().map(snapshot::<BE, _>).collect::<Vec<_>>(),
-            folded.iter().map(snapshot::<BE, _>).collect::<Vec<_>>(),
+            outs.iter().map(snapshot::<BE, _, Standard>).collect::<Vec<_>>(),
+            folded.iter().map(snapshot::<BE, _, Standard>).collect::<Vec<_>>(),
         );
         let err =
             with_scratch::<BE, _>(0, |s| module.ckks_unfold(&mut outs, &mut folded, automorphisms, outbound, s)).unwrap_err();
@@ -728,8 +728,8 @@ pub fn test_unfold_rejects_invalid_operands<BE, F, E>(
         }
         assert_eq!(
             (
-                outs.iter().map(snapshot::<BE, _>).collect::<Vec<_>>(),
-                folded.iter().map(snapshot::<BE, _>).collect::<Vec<_>>(),
+                outs.iter().map(snapshot::<BE, _, Standard>).collect::<Vec<_>>(),
+                folded.iter().map(snapshot::<BE, _, Standard>).collect::<Vec<_>>(),
             ),
             before,
             "{label}: a refused unfold wrote outs or folded"

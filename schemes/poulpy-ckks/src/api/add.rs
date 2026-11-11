@@ -1,6 +1,6 @@
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef};
-use poulpy_hal::layouts::{Backend, ScratchArena};
+use poulpy_hal::layouts::{Backend, Ring, ScratchArena, Standard};
 
 use crate::{CKKSCtBounds, SetCKKSInfos};
 
@@ -63,7 +63,7 @@ use crate::{CKKSCtBounds, SetCKKSInfos};
 /// layout, which the sum carries. A constant reaches every slot, so it is
 /// rejected on a [`SlotLayout::Replicated`](crate::SlotLayout::Replicated)
 /// layout, whose guards it would shift.
-pub trait CKKSAddOps<BE: Backend> {
+pub trait CKKSAddOps<BE: Backend, Rg: Ring = Standard> {
     fn ckks_add_tmp_bytes(&self, res_size: usize) -> usize;
 
     /// Computes `dst = a + b`.
@@ -72,17 +72,17 @@ pub trait CKKSAddOps<BE: Backend> {
     /// See the trait-level documentation for the full metadata rule.
     fn ckks_add_into<Dst, A, B>(&self, dst: &mut Dst, a: &A, b: &B, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        B: GLWEToBackendRef<BE> + CKKSCtBounds;
+        Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        B: GLWEToBackendRef<BE, Rg> + CKKSCtBounds;
 
     /// Computes `dst += a` in-place.
     ///
     /// `dst` and `a` are aligned automatically if their `log_budget` differs.
     fn ckks_add_assign<Dst, A>(&self, dst: &mut Dst, a: &A, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<BE> + CKKSCtBounds;
+        Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE, Rg> + CKKSCtBounds;
 
     /// Scratch bytes for [`Self::ckks_add_one_assign`].
     fn ckks_add_one_tmp_bytes(&self, res_size: usize) -> usize;
@@ -95,7 +95,7 @@ pub trait CKKSAddOps<BE: Backend> {
     /// Size scratch with [`Self::ckks_add_one_tmp_bytes`].
     fn ckks_add_one_assign<Dst>(&self, dst: &mut Dst, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos;
+        Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos;
 
     fn ckks_add_pt_vec_tmp_bytes(&self, res_size: usize) -> usize;
 
@@ -111,15 +111,15 @@ pub trait CKKSAddOps<BE: Backend> {
     /// scale than the ciphertext.
     fn ckks_add_pt_vec_into<Dst, A, P>(&self, dst: &mut Dst, a: &A, pt: &P, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos;
+        Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos;
 
     /// Computes `dst += pt` in-place, where `pt` is a full plaintext polynomial.
     fn ckks_add_pt_vec_assign<Dst, P>(&self, dst: &mut Dst, pt: &P, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos;
+        Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos;
 
     fn ckks_add_pt_const_tmp_bytes(&self, res_size: usize) -> usize;
 
@@ -143,9 +143,9 @@ pub trait CKKSAddOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos;
+        Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos;
 
     /// Computes `dst += pt[pt_coeff]` in-place.
     ///
@@ -161,6 +161,6 @@ pub trait CKKSAddOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos;
+        Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos;
 }

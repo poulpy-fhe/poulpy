@@ -45,12 +45,12 @@ pub(super) fn gen_composite<F, BE>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) -> (
-    SignComposite<F, CKKSPlaintext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>>,
+    SignComposite<F, CKKSPlaintext<BE::OwnedBuf, BE::ZnxWord, Standard>>,
     SignComposite<F, CKKSPlaintext<AlignedBuf, i64, Standard>>,
     usize,
 )
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     Module<BE>: TestContextModule<BE>,
     F: CKKSScalar + TestScalar,
 {

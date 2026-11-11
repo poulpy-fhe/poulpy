@@ -1,7 +1,7 @@
 use crate::CKKSResult as Result;
 
 use poulpy_core::layouts::{Degree, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey};
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Module, Ring, ScratchArena, Standard};
 
 use crate::{CKKSCtBounds, SetCKKSInfos};
 
@@ -11,7 +11,7 @@ use crate::{CKKSCtBounds, SetCKKSInfos};
 /// Implementations reproduce the bodies their methods document bit for bit, report for each
 /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait CKKSInnerSumImpl: Backend {
+pub unsafe trait CKKSInnerSumImpl<Rg: Ring = Standard>: Backend {
     /// Returns
     /// [`ckks_inner_sum_galois_elements_reference`](crate::reference::inner_sum::CKKSInnerSumReference::ckks_inner_sum_galois_elements_reference),
     /// panicking on the same windows.
@@ -48,9 +48,9 @@ pub unsafe trait CKKSInnerSumImpl: Backend {
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<Self> + CKKSCtBounds,
-        H: GetAutomorphismKey<Self>;
+        R: GLWEToBackendMut<Self, Rg> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<Self, Rg> + CKKSCtBounds,
+        H: GetAutomorphismKey<Self, Rg>;
 
     /// Reproduces
     /// [`ckks_inner_sum_assign_reference`](crate::reference::inner_sum::CKKSInnerSumReference::ckks_inner_sum_assign_reference)
@@ -65,8 +65,8 @@ pub unsafe trait CKKSInnerSumImpl: Backend {
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
-        H: GetAutomorphismKey<Self>;
+        R: GLWEToBackendMut<Self, Rg> + CKKSCtBounds + SetCKKSInfos,
+        H: GetAutomorphismKey<Self, Rg>;
 
     /// Reproduces
     /// [`ckks_replicate_reference`](crate::reference::inner_sum::CKKSInnerSumReference::ckks_replicate_reference) bit
@@ -81,9 +81,9 @@ pub unsafe trait CKKSInnerSumImpl: Backend {
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<Self> + CKKSCtBounds,
-        H: GetAutomorphismKey<Self>;
+        R: GLWEToBackendMut<Self, Rg> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<Self, Rg> + CKKSCtBounds,
+        H: GetAutomorphismKey<Self, Rg>;
 
     /// Reproduces
     /// [`ckks_replicate_assign_reference`](crate::reference::inner_sum::CKKSInnerSumReference::ckks_replicate_assign_reference)
@@ -97,22 +97,26 @@ pub unsafe trait CKKSInnerSumImpl: Backend {
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
-        H: GetAutomorphismKey<Self>;
+        R: GLWEToBackendMut<Self, Rg> + CKKSCtBounds + SetCKKSInfos,
+        H: GetAutomorphismKey<Self, Rg>;
 }
 
 /// Selects the reference implementation of `CKKSInnerSumImpl` for `$be`.
 #[macro_export]
 macro_rules! impl_ckks_inner_sum_reference_full {
     ($be:ty) => {
-        unsafe impl $crate::oep::CKKSInnerSumImpl for $be {
+        $crate::impl_ckks_inner_sum_reference_full!($be, ::poulpy_hal::layouts::Standard);
+        $crate::impl_ckks_inner_sum_reference_full!($be, ::poulpy_hal::layouts::ConjugateInvariant);
+    };
+    ($be:ty, $ring:ty) => {
+        unsafe impl $crate::oep::CKKSInnerSumImpl<$ring> for $be {
             fn ckks_inner_sum_galois_elements(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 n: ::poulpy_core::layouts::Degree,
                 log_batch: usize,
                 log_count: usize,
             ) -> ::std::vec::Vec<i64> {
-                $crate::reference::inner_sum::CKKSInnerSumReference::ckks_inner_sum_galois_elements_reference(
+                $crate::reference::inner_sum::CKKSInnerSumReference::<Self, $ring>::ckks_inner_sum_galois_elements_reference(
                     module, n, log_batch, log_count,
                 )
             }
@@ -123,7 +127,7 @@ macro_rules! impl_ckks_inner_sum_reference_full {
                 log_batch: usize,
                 log_count: usize,
             ) -> ::std::vec::Vec<i64> {
-                $crate::reference::inner_sum::CKKSInnerSumReference::ckks_replicate_galois_elements_reference(
+                $crate::reference::inner_sum::CKKSInnerSumReference::<Self, $ring>::ckks_replicate_galois_elements_reference(
                     module, n, log_batch, log_count,
                 )
             }
@@ -134,7 +138,9 @@ macro_rules! impl_ckks_inner_sum_reference_full {
                 A: $crate::CKKSCtBounds,
                 K: ::poulpy_core::layouts::GGLWEInfos,
             {
-                $crate::reference::inner_sum::CKKSInnerSumReference::ckks_inner_sum_tmp_bytes_reference(module, res, a, key)
+                $crate::reference::inner_sum::CKKSInnerSumReference::<Self, $ring>::ckks_inner_sum_tmp_bytes_reference(
+                    module, res, a, key,
+                )
             }
 
             fn ckks_inner_sum<R, A, H>(
@@ -148,11 +154,11 @@ macro_rules! impl_ckks_inner_sum_reference_full {
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> $crate::CKKSResult<()>
             where
-                R: ::poulpy_core::layouts::GLWEToBackendMut<Self> + $crate::CKKSCtBounds + $crate::SetCKKSInfos,
-                A: ::poulpy_core::layouts::GLWEToBackendRef<Self> + $crate::CKKSCtBounds,
-                H: ::poulpy_core::layouts::GetAutomorphismKey<Self>,
+                R: ::poulpy_core::layouts::GLWEToBackendMut<Self, $ring> + $crate::CKKSCtBounds + $crate::SetCKKSInfos,
+                A: ::poulpy_core::layouts::GLWEToBackendRef<Self, $ring> + $crate::CKKSCtBounds,
+                H: ::poulpy_core::layouts::GetAutomorphismKey<Self, $ring>,
             {
-                $crate::reference::inner_sum::CKKSInnerSumReference::ckks_inner_sum_reference(
+                $crate::reference::inner_sum::CKKSInnerSumReference::<Self, $ring>::ckks_inner_sum_reference(
                     module, log_batch, log_count, normalize, res, a, keys, scratch,
                 )
             }
@@ -167,10 +173,10 @@ macro_rules! impl_ckks_inner_sum_reference_full {
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> $crate::CKKSResult<()>
             where
-                R: ::poulpy_core::layouts::GLWEToBackendMut<Self> + $crate::CKKSCtBounds + $crate::SetCKKSInfos,
-                H: ::poulpy_core::layouts::GetAutomorphismKey<Self>,
+                R: ::poulpy_core::layouts::GLWEToBackendMut<Self, $ring> + $crate::CKKSCtBounds + $crate::SetCKKSInfos,
+                H: ::poulpy_core::layouts::GetAutomorphismKey<Self, $ring>,
             {
-                $crate::reference::inner_sum::CKKSInnerSumReference::ckks_inner_sum_assign_reference(
+                $crate::reference::inner_sum::CKKSInnerSumReference::<Self, $ring>::ckks_inner_sum_assign_reference(
                     module, log_batch, log_count, normalize, res, keys, scratch,
                 )
             }
@@ -185,11 +191,11 @@ macro_rules! impl_ckks_inner_sum_reference_full {
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> $crate::CKKSResult<()>
             where
-                R: ::poulpy_core::layouts::GLWEToBackendMut<Self> + $crate::CKKSCtBounds + $crate::SetCKKSInfos,
-                A: ::poulpy_core::layouts::GLWEToBackendRef<Self> + $crate::CKKSCtBounds,
-                H: ::poulpy_core::layouts::GetAutomorphismKey<Self>,
+                R: ::poulpy_core::layouts::GLWEToBackendMut<Self, $ring> + $crate::CKKSCtBounds + $crate::SetCKKSInfos,
+                A: ::poulpy_core::layouts::GLWEToBackendRef<Self, $ring> + $crate::CKKSCtBounds,
+                H: ::poulpy_core::layouts::GetAutomorphismKey<Self, $ring>,
             {
-                $crate::reference::inner_sum::CKKSInnerSumReference::ckks_replicate_reference(
+                $crate::reference::inner_sum::CKKSInnerSumReference::<Self, $ring>::ckks_replicate_reference(
                     module, log_batch, log_count, res, a, keys, scratch,
                 )
             }
@@ -203,10 +209,10 @@ macro_rules! impl_ckks_inner_sum_reference_full {
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> $crate::CKKSResult<()>
             where
-                R: ::poulpy_core::layouts::GLWEToBackendMut<Self> + $crate::CKKSCtBounds + $crate::SetCKKSInfos,
-                H: ::poulpy_core::layouts::GetAutomorphismKey<Self>,
+                R: ::poulpy_core::layouts::GLWEToBackendMut<Self, $ring> + $crate::CKKSCtBounds + $crate::SetCKKSInfos,
+                H: ::poulpy_core::layouts::GetAutomorphismKey<Self, $ring>,
             {
-                $crate::reference::inner_sum::CKKSInnerSumReference::ckks_replicate_assign_reference(
+                $crate::reference::inner_sum::CKKSInnerSumReference::<Self, $ring>::ckks_replicate_assign_reference(
                     module, log_batch, log_count, res, keys, scratch,
                 )
             }

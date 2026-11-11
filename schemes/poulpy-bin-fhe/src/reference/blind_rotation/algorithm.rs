@@ -11,7 +11,7 @@ use poulpy_hal::{
     },
     execution::TaskExecutor,
     layouts::{
-        Backend, Module, ScratchArena, SvpPPolOwned, VecZnxDftToBackendMut, VecZnxDftViewMut, VecZnxToBackendRef,
+        Backend, Module, ScratchArena, Standard, SvpPPolOwned, VecZnxDftToBackendMut, VecZnxDftViewMut, VecZnxToBackendRef,
         vec_znx_backend_ref_from_mut, vec_znx_big_backend_ref_from_mut, vec_znx_dft_backend_ref_from_mut,
     },
     oep::HalVecZnxImpl,
@@ -301,7 +301,7 @@ fn execute_block_binary_extended<R, L, M, BE: Backend<ZnxWord = i64>>(
     for (ai, ski) in izip!(a.chunks_exact(block_size), brk.data.chunks_exact(block_size)) {
         for i in 0..extension_factor {
             for j in 0..cols {
-                let acc_ref = vec_znx_backend_ref_from_mut::<BE>(&acc[i]);
+                let acc_ref = vec_znx_backend_ref_from_mut::<BE, Standard>(&acc[i]);
                 module.vec_znx_dft_apply(1, 0, &mut acc_dft[i], j, &acc_ref, j);
                 module.vec_znx_dft_zero(&mut acc_add_dft[i], j)
             }
@@ -319,7 +319,7 @@ fn execute_block_binary_extended<R, L, M, BE: Backend<ZnxWord = i64>>(
                 scratch_5.scope(|mut scratch_local| {
                     module.vmp_apply_dft_to_dft(
                         &mut vmp_res[i],
-                        &vec_znx_dft_backend_ref_from_mut::<BE>(&acc_dft[i]),
+                        &vec_znx_dft_backend_ref_from_mut::<BE, Standard>(&acc_dft[i]),
                         &skii_ref,
                         0,
                         &mut scratch_local,
@@ -335,13 +335,13 @@ fn execute_block_binary_extended<R, L, M, BE: Backend<ZnxWord = i64>>(
                     for j in 0..extension_factor {
                         for i in 0..cols {
                             let x_pow_a_ref = x_pow_a[ai_hi].to_backend_ref();
-                            let vmp_res_j_ref = vec_znx_dft_backend_ref_from_mut::<BE>(&vmp_res[j]);
+                            let vmp_res_j_ref = vec_znx_dft_backend_ref_from_mut::<BE, Standard>(&vmp_res[j]);
                             {
                                 let mut vmp_xai_backend = vmp_xai.to_backend_mut();
                                 module.svp_apply_dft_to_dft(&mut vmp_xai_backend, 0, &x_pow_a_ref, 0, &vmp_res_j_ref, i);
                             }
-                            let vmp_res_ref = vec_znx_dft_backend_ref_from_mut::<BE>(&vmp_res[j]);
-                            let vmp_xai_ref = vec_znx_dft_backend_ref_from_mut::<BE>(&vmp_xai);
+                            let vmp_res_ref = vec_znx_dft_backend_ref_from_mut::<BE, Standard>(&vmp_res[j]);
+                            let vmp_xai_ref = vec_znx_dft_backend_ref_from_mut::<BE, Standard>(&vmp_xai);
                             module.vec_znx_dft_add_assign(&mut acc_add_dft[j], i, &vmp_xai_ref, 0);
                             module.vec_znx_dft_sub_assign(&mut acc_add_dft[j], i, &vmp_res_ref, i);
                         }
@@ -358,13 +358,13 @@ fn execute_block_binary_extended<R, L, M, BE: Backend<ZnxWord = i64>>(
                     for (i, j) in (0..ai_lo).zip(extension_factor - ai_lo..extension_factor) {
                         for k in 0..cols {
                             let x_pow_a_ref = x_pow_a[ai_hi + 1].to_backend_ref();
-                            let vmp_res_j_ref = vec_znx_dft_backend_ref_from_mut::<BE>(&vmp_res[j]);
+                            let vmp_res_j_ref = vec_znx_dft_backend_ref_from_mut::<BE, Standard>(&vmp_res[j]);
                             {
                                 let mut vmp_xai_backend = vmp_xai.to_backend_mut();
                                 module.svp_apply_dft_to_dft(&mut vmp_xai_backend, 0, &x_pow_a_ref, 0, &vmp_res_j_ref, k);
                             }
-                            let vmp_xai_ref = vec_znx_dft_backend_ref_from_mut::<BE>(&vmp_xai);
-                            let vmp_res_i_ref = vec_znx_dft_backend_ref_from_mut::<BE>(&vmp_res[i]);
+                            let vmp_xai_ref = vec_znx_dft_backend_ref_from_mut::<BE, Standard>(&vmp_xai);
+                            let vmp_res_i_ref = vec_znx_dft_backend_ref_from_mut::<BE, Standard>(&vmp_res[i]);
                             module.vec_znx_dft_add_assign(&mut acc_add_dft[i], k, &vmp_xai_ref, 0);
                             module.vec_znx_dft_sub_assign(&mut acc_add_dft[i], k, &vmp_res_i_ref, k);
                         }
@@ -377,13 +377,13 @@ fn execute_block_binary_extended<R, L, M, BE: Backend<ZnxWord = i64>>(
                     for (i, j) in (ai_lo..extension_factor).zip(0..extension_factor - ai_lo) {
                         for k in 0..cols {
                             let x_pow_a_ref = x_pow_a[ai_hi].to_backend_ref();
-                            let vmp_res_j_ref = vec_znx_dft_backend_ref_from_mut::<BE>(&vmp_res[j]);
+                            let vmp_res_j_ref = vec_znx_dft_backend_ref_from_mut::<BE, Standard>(&vmp_res[j]);
                             {
                                 let mut vmp_xai_backend = vmp_xai.to_backend_mut();
                                 module.svp_apply_dft_to_dft(&mut vmp_xai_backend, 0, &x_pow_a_ref, 0, &vmp_res_j_ref, k);
                             }
-                            let vmp_xai_ref = vec_znx_dft_backend_ref_from_mut::<BE>(&vmp_xai);
-                            let vmp_res_i_ref = vec_znx_dft_backend_ref_from_mut::<BE>(&vmp_res[i]);
+                            let vmp_xai_ref = vec_znx_dft_backend_ref_from_mut::<BE, Standard>(&vmp_xai);
+                            let vmp_res_i_ref = vec_znx_dft_backend_ref_from_mut::<BE, Standard>(&vmp_res[i]);
                             module.vec_znx_dft_add_assign(&mut acc_add_dft[i], k, &vmp_xai_ref, 0);
                             module.vec_znx_dft_sub_assign(&mut acc_add_dft[i], k, &vmp_res_i_ref, k);
                         }
@@ -397,13 +397,13 @@ fn execute_block_binary_extended<R, L, M, BE: Backend<ZnxWord = i64>>(
 
             for j in 0..extension_factor {
                 for i in 0..cols {
-                    let acc_add_dft_ref = vec_znx_dft_backend_ref_from_mut::<BE>(&acc_add_dft[j]);
+                    let acc_add_dft_ref = vec_znx_dft_backend_ref_from_mut::<BE, Standard>(&acc_add_dft[j]);
                     module.vec_znx_idft_apply(&mut acc_add_big, 0, &acc_add_dft_ref, i, &mut scratch7.borrow());
                     {
-                        let acc_ref = vec_znx_backend_ref_from_mut::<BE>(&acc[j]);
+                        let acc_ref = vec_znx_backend_ref_from_mut::<BE, Standard>(&acc[j]);
                         module.vec_znx_big_add_small_assign(&mut acc_add_big, 0, &acc_ref, i);
                     }
-                    let acc_add_big_ref = vec_znx_big_backend_ref_from_mut::<BE>(&acc_add_big);
+                    let acc_add_big_ref = vec_znx_big_backend_ref_from_mut::<BE, Standard>(&acc_add_big);
                     module.vec_znx_big_normalize(
                         &mut acc[j],
                         base2k,
@@ -422,7 +422,7 @@ fn execute_block_binary_extended<R, L, M, BE: Backend<ZnxWord = i64>>(
 
     res.set_canonical(true);
     let mut res_mut = res.to_backend_mut();
-    let acc_ref = vec_znx_backend_ref_from_mut::<BE>(&acc[0]);
+    let acc_ref = vec_znx_backend_ref_from_mut::<BE, Standard>(&acc[0]);
     for i in 0..cols {
         module.vec_znx_copy(res_mut.data_mut(), i, &acc_ref, i);
     }
@@ -507,7 +507,7 @@ fn execute_block_binary<R, L, M, BE: Backend<ZnxWord = i64>>(
             module.vec_znx_dft_zero(&mut acc_add_dft, j);
         }
 
-        let acc_dft_ref = vec_znx_dft_backend_ref_from_mut::<BE>(&acc_dft);
+        let acc_dft_ref = vec_znx_dft_backend_ref_from_mut::<BE, Standard>(&acc_dft);
         let product = worker_task::<BE, VecZnxDftViewMut<'_, BE>, _>(|index, vmp_res, scratch| {
             let skii_ref = ski[index].data().to_backend_ref();
             module.vmp_apply_dft_to_dft(vmp_res, &acc_dft_ref, &skii_ref, 0, scratch);
@@ -517,11 +517,11 @@ fn execute_block_binary<R, L, M, BE: Backend<ZnxWord = i64>>(
             let (mut vmp_xai, _) = scratch.borrow().take_vec_znx_dft_scratch(module.n(), 1, brk.size());
             for col in 0..cols {
                 {
-                    let vmp_res_ref = vec_znx_dft_backend_ref_from_mut::<BE>(vmp_res);
+                    let vmp_res_ref = vec_znx_dft_backend_ref_from_mut::<BE, Standard>(vmp_res);
                     let mut vmp_xai_backend = vmp_xai.to_backend_mut();
                     module.svp_apply_dft_to_dft(&mut vmp_xai_backend, 0, &x_pow_a_ref, 0, &vmp_res_ref, col);
                 }
-                let vmp_xai_ref = vec_znx_dft_backend_ref_from_mut::<BE>(&vmp_xai);
+                let vmp_xai_ref = vec_znx_dft_backend_ref_from_mut::<BE, Standard>(&vmp_xai);
                 module.vec_znx_dft_sub_negate_assign(vmp_res, col, &vmp_xai_ref, 0);
             }
         });
@@ -543,7 +543,7 @@ fn execute_block_binary<R, L, M, BE: Backend<ZnxWord = i64>>(
 
             for contribution in &vmp_res {
                 for col in 0..cols {
-                    let contribution_ref = vec_znx_dft_backend_ref_from_mut::<BE>(contribution);
+                    let contribution_ref = vec_znx_dft_backend_ref_from_mut::<BE, Standard>(contribution);
                     module.vec_znx_dft_add_assign(&mut acc_add_dft, col, &contribution_ref, col);
                 }
             }
@@ -551,13 +551,13 @@ fn execute_block_binary<R, L, M, BE: Backend<ZnxWord = i64>>(
 
         let (mut acc_add_big, mut scratch_4) = scratch_3.borrow().take_vec_znx_big_scratch(module.n(), 1, brk.size());
         for col in 0..cols {
-            let acc_add_dft_ref = vec_znx_dft_backend_ref_from_mut::<BE>(&acc_add_dft);
+            let acc_add_dft_ref = vec_znx_dft_backend_ref_from_mut::<BE, Standard>(&acc_add_dft);
             module.vec_znx_idft_apply(&mut acc_add_big, 0, &acc_add_dft_ref, col, &mut scratch_4.borrow());
             {
                 let out_ref = out_tmp.to_backend_ref();
                 module.vec_znx_big_add_small_assign(&mut acc_add_big, 0, out_ref.data(), col);
             }
-            let acc_add_big_ref = vec_znx_big_backend_ref_from_mut::<BE>(&acc_add_big);
+            let acc_add_big_ref = vec_znx_big_backend_ref_from_mut::<BE, Standard>(&acc_add_big);
             let mut out_backend = out_tmp.to_backend_mut();
             module.vec_znx_big_normalize(
                 out_backend.data_mut(),

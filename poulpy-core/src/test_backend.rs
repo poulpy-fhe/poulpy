@@ -15,7 +15,6 @@ pub(crate) type DstBackend = HostVecBackend<1>;
 
 impl<const ID: u8> Backend for HostVecBackend<ID> {
     type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;
-    type Ring = poulpy_hal::layouts::Standard;
     type ZnxWord = i64;
     type BigWord = i64;
     type DftWord = f64;

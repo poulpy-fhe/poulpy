@@ -14,7 +14,7 @@
 //!
 //! **Ring:** Polynomials have `N` coefficients, `N` a power of two (the *ring
 //! degree*), in `Z[X]/(X^N + 1)` or in the conjugate-invariant subring of
-//! `Z[X]/(X^(2N) + 1)`, as selected by [`Backend::Ring`](layouts::Backend::Ring).
+//! `Z[X]/(X^(2N) + 1)`, as selected by the ring parameter of each operand ([`layouts::Ring`]).
 //! A [`layouts::Module`] encapsulates `N` together with
 //! an optional backend-specific handle (e.g. precomputed FFT twiddle factors).
 //!
@@ -36,9 +36,10 @@
 //!
 //! All layout types are generic over a data container `D` (owned [`AlignedBuf`], borrowed
 //! `&[u8]` / `&mut [u8]`), enabling zero-copy views and arena-style allocation via
-//! [`layouts::ScratchArena`], and over a word type `W` naming the byte-layout
+//! [`layouts::ScratchArena`], over a word type `W` naming the byte-layout
 //! convention of their coefficient domain (see [`layouts::ZnxWord`],
-//! [`layouts::BigWord`], [`layouts::DftWord`]).
+//! [`layouts::BigWord`], [`layouts::DftWord`]); the polynomial layouts are also
+//! generic over the ring `Rg` of their polynomials ([`layouts::Ring`]).
 //!
 //! ## Architecture
 //!
@@ -71,7 +72,7 @@
 //!
 //! All [`oep`] extension points are `unsafe` to implement. Implementors must uphold the
 //! contract documented in [`doc::backend_safety`], covering memory domains,
-//! alignment, scratch lifetime, synchronization, aliasing, and the numerical
+//! alignment, rings, scratch lifetime, synchronization, aliasing, and the numerical
 //! contract.
 //!
 //! ## Non-Goals
@@ -141,7 +142,7 @@ pub mod test_suite;
 pub mod doc {
     /// Safety contract that all [`crate::oep`] trait implementations must uphold.
     ///
-    /// Covers memory domains, alignment, scratch lifetime, synchronization,
+    /// Covers memory domains, alignment, rings, scratch lifetime, synchronization,
     /// aliasing, and the numerical contract.
     #[doc = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/docs/backend_safety_contract.md"))]
     pub mod backend_safety {

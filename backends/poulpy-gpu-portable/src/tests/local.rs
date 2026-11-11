@@ -11,19 +11,17 @@ use poulpy_hal::{
         VmpPMatPrepareTmpBytes,
     },
     layouts::{
-        Backend, DataView, MatZnx, Module, PrepareHint, Ring, ScratchOwned, VecZnx, VecZnxBigToBackendMut, VecZnxDftOwned,
-        VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxShape, VmpPMatToBackendMut, VmpPMatToBackendRef, ZnxView,
+        Backend, ConjugateInvariant, DataView, MatZnx, Module, PrepareHint, Ring, ScratchOwned, Standard, VecZnx,
+        VecZnxBigToBackendMut, VecZnxDftOwned, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxShape, VmpPMatToBackendMut,
+        VmpPMatToBackendRef, ZnxView,
     },
     test_suite::{download_vec_znx, vec_znx_backend_mut, vec_znx_backend_ref},
 };
 
-type BE<R> = crate::NTT4x30Gpu<super::Runtime, R>;
-type Gpu = BE<poulpy_hal::layouts::Standard>;
-type GpuCI = BE<poulpy_hal::layouts::ConjugateInvariant>;
+type Gpu = crate::NTT4x30Gpu<super::Runtime>;
 
 const N: usize = 64;
 static MODULE: Lazy<Module<Gpu>> = Lazy::new(|| Module::<Gpu>::new(N as u64));
-static MODULE_CI: Lazy<Module<GpuCI>> = Lazy::new(|| Module::<GpuCI>::new(N as u64));
 
 /// `count` signed 50-bit coefficients.
 fn coefficients(count: usize, seed: &mut u64) -> Vec<u8> {
@@ -37,12 +35,12 @@ fn coefficients(count: usize, seed: &mut u64) -> Vec<u8> {
     bytes
 }
 
-fn vector<R: Ring>(n: usize, cols: usize, size: usize, seed: &mut u64) -> VecZnx<<BE<R> as Backend>::OwnedBuf, i64> {
-    VecZnx::from_data(BE::<R>::from_host_bytes(&coefficients(n * cols * size, seed)), n, cols, size)
+fn vector<R: Ring>(n: usize, cols: usize, size: usize, seed: &mut u64) -> VecZnx<<Gpu as Backend>::OwnedBuf, i64, R> {
+    VecZnx::from_data(Gpu::from_host_bytes(&coefficients(n * cols * size, seed)), n, cols, size)
 }
 
 /// The transform of a random vector: unrelated content for a destination.
-fn transformed<R: Ring>(module: &Module<BE<R>>, n: usize, cols: usize, size: usize, seed: &mut u64) -> VecZnxDftOwned<BE<R>> {
+fn transformed<R: Ring>(module: &Module<Gpu>, n: usize, cols: usize, size: usize, seed: &mut u64) -> VecZnxDftOwned<Gpu, R> {
     let source = vector::<R>(n, cols, size, seed);
     let mut dft = module.vec_znx_dft_alloc(n, cols, size);
     for col in 0..cols {
@@ -51,7 +49,7 @@ fn transformed<R: Ring>(module: &Module<BE<R>>, n: usize, cols: usize, size: usi
             0,
             &mut dft.to_backend_mut(),
             col,
-            &vec_znx_backend_ref::<BE<R>>(&source),
+            &vec_znx_backend_ref::<Gpu, R>(&source),
             col,
         );
     }
@@ -60,7 +58,7 @@ fn transformed<R: Ring>(module: &Module<BE<R>>, n: usize, cols: usize, size: usi
 
 #[allow(clippy::too_many_arguments)]
 fn digits_case<R: Ring>(
-    module: &Module<BE<R>>,
+    module: &Module<Gpu>,
     n: usize,
     a_size: usize,
     dsize: usize,
@@ -74,9 +72,9 @@ fn digits_case<R: Ring>(
     extreme: bool,
 ) {
     let mut seed = 0x1234_5678_9abc_def0u64 ^ ((a_size * 131 + dsize * 17 + rows * 7 + res_size) as u64);
-    let mut scratch = ScratchOwned::<BE<R>>::alloc(module.vmp_pmat_prepare_tmp_bytes(rows, cols_in, cols_out, key_size).max(
-        module.gglwe_product_digits_strided_tmp_bytes_reference(
-            res_size, cols_in, a_size, dsize, rows, cols_in, cols_out, key_size,
+    let mut scratch = ScratchOwned::<Gpu>::alloc(module.vmp_pmat_prepare_tmp_bytes(rows, cols_in, cols_out, key_size).max(
+        <Module<Gpu> as GGLWEProductDigitsStridedReference<Gpu, R>>::gglwe_product_digits_strided_tmp_bytes_reference(
+            module, res_size, cols_in, a_size, dsize, rows, cols_in, cols_out, key_size,
         ),
     ));
     let fill = |count: usize, seed: &mut u64| {
@@ -88,7 +86,7 @@ fn digits_case<R: Ring>(
     };
     let a = {
         let source = VecZnx::from_data(
-            BE::<R>::from_host_bytes(&fill(n * cols_in * a_size, &mut seed)),
+            Gpu::from_host_bytes(&fill(n * cols_in * a_size, &mut seed)),
             n,
             cols_in,
             a_size,
@@ -100,14 +98,14 @@ fn digits_case<R: Ring>(
                 0,
                 &mut dft.to_backend_mut(),
                 col,
-                &vec_znx_backend_ref::<BE<R>>(&source),
+                &vec_znx_backend_ref::<Gpu, R>(&source),
                 col,
             );
         }
         dft
     };
     let matrix = MatZnx::from_data(
-        BE::<R>::from_host_bytes(&fill(n * rows * cols_in * cols_out * key_size, &mut seed)),
+        Gpu::from_host_bytes(&fill(n * rows * cols_in * cols_out * key_size, &mut seed)),
         n,
         rows,
         cols_in,
@@ -117,14 +115,14 @@ fn digits_case<R: Ring>(
     let mut pmat = module.vmp_pmat_alloc(n, rows, cols_in, cols_out, key_size, PrepareHint::Reuse);
     module.vmp_pmat_prepare(
         &mut pmat.to_backend_mut(),
-        &poulpy_hal::layouts::MatZnxToBackendRef::<BE<R>>::to_backend_ref(&matrix),
+        &poulpy_hal::layouts::MatZnxToBackendRef::<Gpu, R>::to_backend_ref(&matrix),
         &mut scratch.arena(),
     );
 
     // Both destinations start from the same unrelated content.
     let mut destination_seed = seed;
-    let mut want = transformed(module, n, cols_out, res_size, &mut destination_seed);
-    let mut have = transformed(module, n, cols_out, res_size, &mut seed);
+    let mut want = transformed::<R>(module, n, cols_out, res_size, &mut destination_seed);
+    let mut have = transformed::<R>(module, n, cols_out, res_size, &mut seed);
     module.gglwe_product_digits_strided_reference(
         &mut want.to_backend_mut(),
         &a.to_backend_ref(),
@@ -160,11 +158,11 @@ fn digits_case<R: Ring>(
         ]
         .map(|(accumulate, body_size, product_size)| (p, accumulate, body_size, product_size))
     }) {
-        let body = transformed(module, n, cols_out, body_size, &mut seed);
-        let plan = module.vec_znx_dft_automorphism_plan(n, p);
+        let body = transformed::<R>(module, n, cols_out, body_size, &mut seed);
+        let plan = <Module<Gpu> as VecZnxDftAutomorphismPlan<Gpu, R>>::vec_znx_dft_automorphism_plan(module, n, p);
         let mut accumulator_seed = seed;
-        let mut rotated_want = transformed(module, n, cols_out, res_size, &mut accumulator_seed);
-        let mut rotated_have = transformed(module, n, cols_out, res_size, &mut seed);
+        let mut rotated_want = transformed::<R>(module, n, cols_out, res_size, &mut accumulator_seed);
+        let mut rotated_have = transformed::<R>(module, n, cols_out, res_size, &mut seed);
         let mut sum = module.vec_znx_dft_alloc(n, cols_out, product_size);
         for col in 0..cols_out {
             module.vec_znx_dft_copy(1, 0, &mut sum.to_backend_mut(), col, &want.to_backend_ref(), col);
@@ -198,7 +196,7 @@ fn digits_case<R: Ring>(
             product_limbs,
             &pmat.to_backend_ref(),
             [Some((&body.to_backend_ref(), 0)), None],
-            (p != 1).then_some(&plan),
+            (p != 1).then_some(plan.substitution()),
             accumulate,
         );
         assert!(
@@ -231,7 +229,7 @@ fn gglwe_product_digits_strided_matches_reference() {
         (40, 2, 20, 2, 2, 5, 4, 1),
     ];
     for (a_size, dsize, rows, cols_in, cols_out, key_size, res_size, product_limbs) in cases {
-        digits_case(
+        digits_case::<Standard>(
             &MODULE,
             16,
             a_size,
@@ -245,8 +243,8 @@ fn gglwe_product_digits_strided_matches_reference() {
             false,
         );
     }
-    digits_case(&MODULE, N, 27, 4, 7, 1, 2, 33, 30, 2, false);
-    digits_case(&MODULE_CI, 16, 27, 4, 7, 1, 2, 33, 30, 2, false);
+    digits_case::<Standard>(&MODULE, N, 27, 4, 7, 1, 2, 33, 30, 2, false);
+    digits_case::<ConjugateInvariant>(&MODULE, 16, 27, 4, 7, 1, 2, 33, 30, 2, false);
 }
 
 /// The product that runs the first inverse launch of its result itself,
@@ -293,9 +291,9 @@ fn product_with_fused_inverse_matches_product_then_inverse() {
             for extras in [false, true] {
                 let addend_size = res_size.max(2) - 1;
                 let addend = transformed(&module, n, 2, addend_size, &mut seed);
-                let body = vector::<poulpy_hal::layouts::Standard>(n, 1, res_size, &mut seed);
+                let body = vector::<Standard>(n, 1, res_size, &mut seed);
                 let addend_ref = addend.to_backend_ref();
-                let body_ref = vec_znx_backend_ref::<Gpu>(&body);
+                let body_ref = vec_znx_backend_ref::<Gpu, Standard>(&body);
                 let addends = if extras {
                     [Some((&addend_ref, 1)), Some((&addend_ref, 0))]
                 } else {
@@ -303,8 +301,8 @@ fn product_with_fused_inverse_matches_product_then_inverse() {
                 };
                 let mut want_dft = transformed(&module, n, 2, res_size, &mut seed);
                 let mut have_dft = transformed(&module, n, 2, res_size, &mut seed);
-                let mut want = vector::<poulpy_hal::layouts::Standard>(n, 2, res_size, &mut seed);
-                let mut have = vector::<poulpy_hal::layouts::Standard>(n, 2, res_size, &mut seed);
+                let mut want = vector::<Standard>(n, 2, res_size, &mut seed);
+                let mut have = vector::<Standard>(n, 2, res_size, &mut seed);
                 crate::hal_impl::gglwe_product_digits_strided(
                     &mut want_dft.to_backend_mut(),
                     &a.to_backend_ref(),
@@ -329,7 +327,7 @@ fn product_with_fused_inverse_matches_product_then_inverse() {
                 for col in 0..2 {
                     let body = if extras && col == 0 { Some((&body_ref, 0)) } else { None };
                     module.vec_znx_idft_normalize(
-                        &mut vec_znx_backend_mut::<Gpu>(&mut want),
+                        &mut vec_znx_backend_mut::<Gpu, Standard>(&mut want),
                         52,
                         res_size * 52,
                         0,
@@ -342,7 +340,7 @@ fn product_with_fused_inverse_matches_product_then_inverse() {
                     );
                     crate::hal_impl::idft_tail_normalize(
                         &module,
-                        &mut vec_znx_backend_mut::<Gpu>(&mut have),
+                        &mut vec_znx_backend_mut::<Gpu, Standard>(&mut have),
                         52,
                         res_size * 52,
                         0,
@@ -354,7 +352,7 @@ fn product_with_fused_inverse_matches_product_then_inverse() {
                     );
                 }
                 assert!(
-                    download_vec_znx::<Gpu>(&want) == download_vec_znx::<Gpu>(&have),
+                    download_vec_znx::<Gpu, Standard>(&want) == download_vec_znx::<Gpu, Standard>(&have),
                     "fused inverse differs: log_n={log_n} a_size={a_size} dsize={dsize} rows={rows} key_size={key_size} \
                      res_size={res_size} product_limbs={product_limbs} extras={extras}"
                 );
@@ -368,17 +366,17 @@ fn product_with_fused_inverse_matches_product_then_inverse() {
 /// accumulates eighteen products across digits whose own folds are skipped.
 #[test]
 fn gglwe_product_digits_strided_folds_across_skipped_digits() {
-    digits_case(&MODULE, 8, 63, 7, 9, 1, 2, 11, 11, 3, true);
-    digits_case(&MODULE, 8, 27, 4, 7, 1, 2, 33, 30, 2, true);
-    digits_case(&MODULE, 8, 27, 4, 7, 1, 2, 33, 30, 1, true);
-    digits_case(&MODULE, 8, 30, 5, 6, 2, 2, 12, 9, 2, true);
+    digits_case::<Standard>(&MODULE, 8, 63, 7, 9, 1, 2, 11, 11, 3, true);
+    digits_case::<Standard>(&MODULE, 8, 27, 4, 7, 1, 2, 33, 30, 2, true);
+    digits_case::<Standard>(&MODULE, 8, 27, 4, 7, 1, 2, 33, 30, 1, true);
+    digits_case::<Standard>(&MODULE, 8, 30, 5, 6, 2, 2, 12, 9, 2, true);
 }
 
 // The reference is core's, registered on the device with `enable-core`.
 #[cfg(feature = "enable-core")]
 #[allow(clippy::too_many_arguments)]
 fn mul_columns_case<R: Ring>(
-    module: &Module<BE<R>>,
+    module: &Module<Gpu>,
     n: usize,
     b_n: usize,
     a_size: usize,
@@ -387,15 +385,15 @@ fn mul_columns_case<R: Ring>(
     cross_size: usize,
     offset: usize,
 ) where
-    Module<BE<R>>: GLWETensoringReference<BE<R>>,
+    Module<Gpu>: GLWETensoringReference<Gpu, R>,
 {
     let mut seed = 0x0fed_cba9_8765_4321u64 ^ ((a_size * 31 + b_size * 7 + diag_size * 3 + cross_size + offset) as u64);
-    let mut scratch = ScratchOwned::<BE<R>>::alloc(
+    let mut scratch = ScratchOwned::<Gpu>::alloc(
         [
-            module.cnv_pvec_left_prepare_tmp_bytes(a_size, a_size),
-            module.cnv_pvec_right_prepare_tmp_bytes(b_size, b_size),
-            module.cnv_apply_dft_tmp_bytes(offset, diag_size, a_size, b_size),
-            module.cnv_pairwise_apply_dft_tmp_bytes(offset, cross_size, a_size, b_size),
+            <Module<Gpu> as CnvOps<Gpu, R>>::cnv_pvec_left_prepare_tmp_bytes(module, a_size, a_size),
+            <Module<Gpu> as CnvOps<Gpu, R>>::cnv_pvec_right_prepare_tmp_bytes(module, b_size, b_size),
+            <Module<Gpu> as CnvOps<Gpu, R>>::cnv_apply_dft_tmp_bytes(module, offset, diag_size, a_size, b_size),
+            <Module<Gpu> as CnvOps<Gpu, R>>::cnv_pairwise_apply_dft_tmp_bytes(module, offset, cross_size, a_size, b_size),
         ]
         .into_iter()
         .max()
@@ -406,23 +404,23 @@ fn mul_columns_case<R: Ring>(
     let mut right = module.cnv_pvec_right_alloc(b_n, 2, b_size, PrepareHint::Reuse);
     module.cnv_pvec_left_prepare(
         &mut poulpy_hal::layouts::CnvPVecLToBackendMut::to_backend_mut(&mut left),
-        &vec_znx_backend_ref::<BE<R>>(&a),
+        &vec_znx_backend_ref::<Gpu, R>(&a),
         &mut scratch.arena(),
     );
     module.cnv_pvec_right_prepare(
         &mut poulpy_hal::layouts::CnvPVecRToBackendMut::to_backend_mut(&mut right),
-        &vec_znx_backend_ref::<BE<R>>(&b),
+        &vec_znx_backend_ref::<Gpu, R>(&b),
         &mut scratch.arena(),
     );
     let left = poulpy_hal::layouts::CnvPVecLToBackendRef::to_backend_ref(&left);
     let right = poulpy_hal::layouts::CnvPVecRToBackendRef::to_backend_ref(&right);
 
     let mut diag_seed = seed;
-    let mut diag_want = transformed(module, n, 2, diag_size, &mut diag_seed);
-    let mut diag_have = transformed(module, n, 2, diag_size, &mut seed);
+    let mut diag_want = transformed::<R>(module, n, 2, diag_size, &mut diag_seed);
+    let mut diag_have = transformed::<R>(module, n, 2, diag_size, &mut seed);
     let mut cross_seed = seed;
-    let mut cross_want = transformed(module, n, 1, cross_size, &mut cross_seed);
-    let mut cross_have = transformed(module, n, 1, cross_size, &mut seed);
+    let mut cross_want = transformed::<R>(module, n, 1, cross_size, &mut cross_seed);
+    let mut cross_have = transformed::<R>(module, n, 1, cross_size, &mut seed);
 
     module.glwe_mul_columns_reference(
         offset,
@@ -453,16 +451,16 @@ fn mul_columns_case<R: Ring>(
     let mut right = module.cnv_pvec_right_alloc(n, 2, a_size, PrepareHint::Reuse);
     module.cnv_pvec_right_prepare(
         &mut poulpy_hal::layouts::CnvPVecRToBackendMut::to_backend_mut(&mut right),
-        &vec_znx_backend_ref::<BE<R>>(&a),
+        &vec_znx_backend_ref::<Gpu, R>(&a),
         &mut scratch.arena(),
     );
     let right = poulpy_hal::layouts::CnvPVecRToBackendRef::to_backend_ref(&right);
     let mut diag_seed = seed;
-    let mut diag_want = transformed(module, n, 2, diag_size, &mut diag_seed);
-    let mut diag_have = transformed(module, n, 2, diag_size, &mut seed);
+    let mut diag_want = transformed::<R>(module, n, 2, diag_size, &mut diag_seed);
+    let mut diag_have = transformed::<R>(module, n, 2, diag_size, &mut seed);
     let mut cross_seed = seed;
-    let mut cross_want = transformed(module, n, 1, cross_size, &mut cross_seed);
-    let mut cross_have = transformed(module, n, 1, cross_size, &mut seed);
+    let mut cross_want = transformed::<R>(module, n, 1, cross_size, &mut cross_seed);
+    let mut cross_have = transformed::<R>(module, n, 1, cross_size, &mut seed);
     {
         use poulpy_hal::{api::VecZnxDftSubAssign, layouts::vec_znx_dft_backend_ref_from_mut};
         let mut diag = diag_want.to_backend_mut();
@@ -509,9 +507,9 @@ fn glwe_mul_columns_matches_reference() {
         (N, 16, 6, 5, 8, 8, 3),
     ];
     for (n, b_n, a_size, b_size, diag_size, cross_size, offset) in cases {
-        mul_columns_case(&MODULE, n, b_n, a_size, b_size, diag_size, cross_size, offset);
+        mul_columns_case::<Standard>(&MODULE, n, b_n, a_size, b_size, diag_size, cross_size, offset);
     }
-    mul_columns_case(&MODULE_CI, N, 16, 6, 5, 8, 8, 3);
+    mul_columns_case::<ConjugateInvariant>(&MODULE, N, 16, 6, 5, 8, 8, 3);
 }
 
 /// The fused tensor product refuses what its reference composition refuses
@@ -521,12 +519,15 @@ fn glwe_mul_columns_rejects_a_right_operand_below_the_minimum_degree() {
     let module = &*MODULE;
     let (n, size) = (N, 3);
     let mut seed = 0x0dd0_0dd0_0dd0_0dd0u64;
-    let a = vector::<poulpy_hal::layouts::Standard>(n, 2, size, &mut seed);
+    let a = vector::<Standard>(n, 2, size, &mut seed);
     let mut left = module.cnv_pvec_left_alloc(n, 2, size, PrepareHint::Reuse);
     module.cnv_pvec_left_prepare(
         &mut poulpy_hal::layouts::CnvPVecLToBackendMut::to_backend_mut(&mut left),
-        &vec_znx_backend_ref::<Gpu>(&a),
-        &mut ScratchOwned::<Gpu>::alloc(module.cnv_pvec_left_prepare_tmp_bytes(size, size)).arena(),
+        &vec_znx_backend_ref::<Gpu, Standard>(&a),
+        &mut ScratchOwned::<Gpu>::alloc(<Module<Gpu> as CnvOps<Gpu>>::cnv_pvec_left_prepare_tmp_bytes(
+            module, size, size,
+        ))
+        .arena(),
     );
     let narrow: poulpy_hal::layouts::CnvPVecROwned<Gpu> =
         poulpy_hal::layouts::CnvPVecR::alloc(Gpu::MIN_DEGREE / 2, 2, size, PrepareHint::Reuse);
@@ -564,13 +565,13 @@ fn glwe_mul_columns_rejects_a_right_operand_below_the_minimum_degree() {
 /// one, limbs past the temporary's included, and leaves every residue it read
 /// zero: over the conjugate-invariant ring, a unit clears the residues of a
 /// coefficient and of its reflection only once it has read both.
-fn clearing_reconstruction_case<R: Ring>(module: &Module<BE<R>>) {
+fn clearing_reconstruction_case<R: Ring>(module: &Module<Gpu>) {
     let (n, size) = (N, 3);
     let (kept, cleared) = (
-        transformed(module, n, 1, size, &mut 7),
-        transformed(module, n, 1, size, &mut 7),
+        transformed::<R>(module, n, 1, size, &mut 7),
+        transformed::<R>(module, n, 1, size, &mut 7),
     );
-    let dft = |dft: &VecZnxDftOwned<BE<R>>| crate::ntt4x30::DftColumn {
+    let dft = |dft: &VecZnxDftOwned<Gpu, R>| crate::ntt4x30::DftColumn {
         binding: dft.data().view().binding().expect("vector holds storage"),
         base: 0,
         stride: (4 * n) as u32,
@@ -579,15 +580,15 @@ fn clearing_reconstruction_case<R: Ring>(module: &Module<BE<R>>) {
     };
     let before = coefficients(2 * n * (size + 1), &mut 11);
     let big = || {
-        poulpy_hal::layouts::VecZnxBig::<<BE<R> as Backend>::OwnedBuf, i128, BE<R>>::from_data(
-            BE::<R>::from_host_bytes(&before),
+        poulpy_hal::layouts::VecZnxBig::<<Gpu as Backend>::OwnedBuf, i128, Gpu, R>::from_data(
+            Gpu::from_host_bytes(&before),
             n,
             1,
             size + 1,
         )
     };
     let (want, have) = (big(), big());
-    let column = |big: &poulpy_hal::layouts::VecZnxBig<<BE<R> as Backend>::OwnedBuf, i128, BE<R>>| crate::znx::Column {
+    let column = |big: &poulpy_hal::layouts::VecZnxBig<<Gpu as Backend>::OwnedBuf, i128, Gpu, R>| crate::znx::Column {
         binding: big.data().view().binding().expect("vector holds storage"),
         base: 0,
         stride: (2 * n) as u32,
@@ -595,23 +596,23 @@ fn clearing_reconstruction_case<R: Ring>(module: &Module<BE<R>>) {
         n,
         size: size + 1,
     };
-    let tables = crate::module::handle(module).tables();
+    let tables = crate::module::handle(module).tables::<R>();
     crate::ntt4x30::to_big::<super::Runtime>(tables, &column(&want), &dft(&kept));
     crate::ntt4x30::to_big_clearing::<super::Runtime>(tables, &column(&have), &dft(&cleared));
     assert!(
-        BE::<R>::to_host_bytes(want.data()) == BE::<R>::to_host_bytes(have.data()),
+        Gpu::to_host_bytes(want.data()) == Gpu::to_host_bytes(have.data()),
         "the clearing reconstruction differs from the plain one"
     );
     assert!(
-        BE::<R>::to_host_bytes(cleared.data()).iter().all(|&byte| byte == 0),
+        Gpu::to_host_bytes(cleared.data()).iter().all(|&byte| byte == 0),
         "the clearing reconstruction left a residue in its source"
     );
 }
 
 #[test]
 fn clearing_reconstruction_matches_and_clears() {
-    clearing_reconstruction_case(&MODULE);
-    clearing_reconstruction_case(&MODULE_CI);
+    clearing_reconstruction_case::<Standard>(&MODULE);
+    clearing_reconstruction_case::<ConjugateInvariant>(&MODULE);
 }
 
 /// The copy back of an in-place permutation moves the temporary into the
@@ -653,16 +654,16 @@ fn move_from_temp_copies_and_clears() {
 /// The streamed sum of right operands of one limb, each term read through
 /// its own automorphism, against the same terms one product at a time: the
 /// upstream suite reads through automorphisms on several limbs only.
-fn one_limb_sum_case<R: Ring>(module: &Module<BE<R>>, n: usize, b_n: usize, galois: &[i64]) {
+fn one_limb_sum_case<R: Ring>(module: &Module<Gpu>, n: usize, b_n: usize, galois: &[i64]) {
     let (a_size, res_size, offset) = (5, 4, 1);
     let mut seed = 0x5eed_0f0e_e11bu64 ^ ((b_n * 31 + galois.len()) as u64);
-    let mut scratch = ScratchOwned::<BE<R>>::alloc(
+    let mut scratch = ScratchOwned::<Gpu>::alloc(
         [
-            module.cnv_pvec_left_prepare_tmp_bytes(a_size, a_size),
-            module.cnv_pvec_right_prepare_tmp_bytes(1, 1),
-            module.cnv_apply_dft_tmp_bytes(offset, res_size, a_size, 1),
-            module.cnv_apply_dft_add_tmp_bytes(offset, res_size, a_size, 1),
-            module.cnv_apply_dft_sum_tmp_bytes(offset, res_size, a_size, 1),
+            <Module<Gpu> as CnvOps<Gpu, R>>::cnv_pvec_left_prepare_tmp_bytes(module, a_size, a_size),
+            <Module<Gpu> as CnvOps<Gpu, R>>::cnv_pvec_right_prepare_tmp_bytes(module, 1, 1),
+            <Module<Gpu> as CnvOps<Gpu, R>>::cnv_apply_dft_tmp_bytes(module, offset, res_size, a_size, 1),
+            <Module<Gpu> as CnvOps<Gpu, R>>::cnv_apply_dft_add_tmp_bytes(module, offset, res_size, a_size, 1),
+            <Module<Gpu> as CnvOps<Gpu, R>>::cnv_apply_dft_sum_tmp_bytes(module, offset, res_size, a_size, 1),
         ]
         .into_iter()
         .max()
@@ -676,18 +677,18 @@ fn one_limb_sum_case<R: Ring>(module: &Module<BE<R>>, n: usize, b_n: usize, galo
             let mut right = module.cnv_pvec_right_alloc(b_n, 1, 1, PrepareHint::Reuse);
             module.cnv_pvec_left_prepare(
                 &mut poulpy_hal::layouts::CnvPVecLToBackendMut::to_backend_mut(&mut left),
-                &vec_znx_backend_ref::<BE<R>>(&a),
+                &vec_znx_backend_ref::<Gpu, R>(&a),
                 &mut scratch.arena(),
             );
             module.cnv_pvec_right_prepare(
                 &mut poulpy_hal::layouts::CnvPVecRToBackendMut::to_backend_mut(&mut right),
-                &vec_znx_backend_ref::<BE<R>>(&b),
+                &vec_znx_backend_ref::<Gpu, R>(&b),
                 &mut scratch.arena(),
             );
             (left, right)
         })
         .collect();
-    let terms: Vec<poulpy_hal::layouts::CnvDftAccTerm<'_, BE<R>>> = prepared
+    let terms: Vec<poulpy_hal::layouts::CnvDftAccTerm<'_, Gpu, R>> = prepared
         .iter()
         .zip(galois)
         .map(|((left, right), &b_galois)| poulpy_hal::layouts::CnvDftAccTerm {
@@ -701,8 +702,8 @@ fn one_limb_sum_case<R: Ring>(module: &Module<BE<R>>, n: usize, b_n: usize, galo
 
     // Both destinations start from the same unrelated content.
     let mut destination_seed = seed;
-    let mut want = transformed(module, n, 1, res_size, &mut destination_seed);
-    let mut have = transformed(module, n, 1, res_size, &mut seed);
+    let mut want = transformed::<R>(module, n, 1, res_size, &mut destination_seed);
+    let mut have = transformed::<R>(module, n, 1, res_size, &mut seed);
     for (index, term) in terms.iter().enumerate() {
         let mut res = want.to_backend_mut();
         if index == 0 {
@@ -742,11 +743,11 @@ fn one_limb_sum_case<R: Ring>(module: &Module<BE<R>>, n: usize, b_n: usize, galo
 fn one_limb_convolution_sum_reads_each_term_through_its_automorphism() {
     let galois = [5, -1, 3, 25];
     for b_n in [N, N / 4] {
-        one_limb_sum_case(&MODULE, N, b_n, &galois);
+        one_limb_sum_case::<Standard>(&MODULE, N, b_n, &galois);
         // A group of fewer terms than one launch takes, and a lone term.
-        one_limb_sum_case(&MODULE, N, b_n, &galois[..3]);
-        one_limb_sum_case(&MODULE, N, b_n, &galois[1..2]);
-        one_limb_sum_case(&MODULE_CI, N, b_n, &galois);
+        one_limb_sum_case::<Standard>(&MODULE, N, b_n, &galois[..3]);
+        one_limb_sum_case::<Standard>(&MODULE, N, b_n, &galois[1..2]);
+        one_limb_sum_case::<ConjugateInvariant>(&MODULE, N, b_n, &galois);
     }
 }
 
@@ -756,12 +757,12 @@ fn one_limb_convolution_sum_reads_each_term_through_its_automorphism() {
 fn products_match_their_references_at_full_degree() {
     let n = 1 << 16;
     let module = Module::<Gpu>::new(n as u64);
-    digits_case(&module, n, 27, 4, 7, 1, 2, 33, 30, 2, false);
-    digits_case(&module, n, 27, 4, 7, 1, 2, 33, 33, 4, false);
+    digits_case::<Standard>(&module, n, 27, 4, 7, 1, 2, 33, 30, 2, false);
+    digits_case::<Standard>(&module, n, 27, 4, 7, 1, 2, 33, 33, 4, false);
     #[cfg(feature = "enable-core")]
     {
-        mul_columns_case(&module, n, n, 30, 30, 31, 31, 30);
-        mul_columns_case(&module, n, n, 23, 23, 24, 24, 0);
+        mul_columns_case::<Standard>(&module, n, n, 30, 30, 31, 31, 30);
+        mul_columns_case::<Standard>(&module, n, n, 23, 23, 24, 24, 0);
     }
 }
 
@@ -817,7 +818,7 @@ macro_rules! bootstrap_shapes {
                     &mut arena(module.vec_znx_idft_apply_tmp_bytes()).arena(),
                 );
                 module.vec_znx_big_normalize(
-                    &mut vec_znx_backend_mut::<B>(&mut out),
+                    &mut vec_znx_backend_mut::<B, Standard>(&mut out),
                     base2k,
                     size * base2k,
                     0,
@@ -854,11 +855,19 @@ macro_rules! bootstrap_shapes {
             for a_size in a_sizes {
                 let a = upload(n, 1, a_size, &mut seed);
                 let mut a_dft = module.vec_znx_dft_alloc(n, 1, a_size);
-                module.vec_znx_dft_apply(1, 0, &mut a_dft.to_backend_mut(), 0, &vec_znx_backend_ref::<B>(&a), 0);
-                let mut switched = module.vec_znx_dft_alloc(n, 2, a_size + 2);
-                let bytes = module.gglwe_product_digits_strided_tmp_bytes_reference(
-                    a_size + 2, 1, a_size, dsize, rows, 1, 2, key_size,
+                module.vec_znx_dft_apply(
+                    1,
+                    0,
+                    &mut a_dft.to_backend_mut(),
+                    0,
+                    &vec_znx_backend_ref::<B, Standard>(&a),
+                    0,
                 );
+                let mut switched = module.vec_znx_dft_alloc(n, 2, a_size + 2);
+                let bytes =
+                    <Module<B> as GGLWEProductDigitsStridedReference<B>>::gglwe_product_digits_strided_tmp_bytes_reference(
+                        &module, a_size + 2, 1, a_size, dsize, rows, 1, 2, key_size,
+                    );
                 bootstrap_shapes!(@digits $path, &module, &mut switched.to_backend_mut(), &a_dft.to_backend_ref(), dsize, 3,
                     &pmat.to_backend_ref(), bytes);
                 results.push((format!("key switch dsize={dsize} a_size={a_size}"), normalized(&switched)));
@@ -890,13 +899,13 @@ macro_rules! bootstrap_shapes {
                 let mut right = module.cnv_pvec_right_alloc(n / ratio, 1, 1, PrepareHint::Reuse);
                 module.cnv_pvec_left_prepare(
                     &mut poulpy_hal::layouts::CnvPVecLToBackendMut::to_backend_mut(&mut left),
-                    &vec_znx_backend_ref::<B>(&left_source),
-                    &mut arena(module.cnv_pvec_left_prepare_tmp_bytes(size, size)).arena(),
+                    &vec_znx_backend_ref::<B, Standard>(&left_source),
+                    &mut arena(<Module<B> as CnvOps<B>>::cnv_pvec_left_prepare_tmp_bytes(&module, size, size)).arena(),
                 );
                 module.cnv_pvec_right_prepare(
                     &mut poulpy_hal::layouts::CnvPVecRToBackendMut::to_backend_mut(&mut right),
-                    &vec_znx_backend_ref::<B>(&right_source),
-                    &mut arena(module.cnv_pvec_right_prepare_tmp_bytes(1, 1)).arena(),
+                    &vec_znx_backend_ref::<B, Standard>(&right_source),
+                    &mut arena(<Module<B> as CnvOps<B>>::cnv_pvec_right_prepare_tmp_bytes(&module, 1, 1)).arena(),
                 );
                 lefts.push(left);
                 rights.push(right);
@@ -914,7 +923,7 @@ macro_rules! bootstrap_shapes {
                         b_galois: 1,
                     })
                     .collect();
-                let bytes = module.cnv_apply_dft_sum_tmp_bytes(0, size, size, 1);
+                let bytes = <Module<B> as CnvOps<B>>::cnv_apply_dft_sum_tmp_bytes(&module, 0, size, size, 1);
                 module.cnv_apply_dft_sum(0, &mut summed.to_backend_mut(), col, &terms, &mut arena(bytes).arena());
             }
             results.push((format!("convolution sum terms={terms} size={size} ratio={ratio}"), normalized(&summed)));
@@ -938,13 +947,13 @@ macro_rules! bootstrap_shapes {
             let mut right = module.cnv_pvec_right_alloc(n, 2, b_size, PrepareHint::Reuse);
             module.cnv_pvec_left_prepare(
                 &mut poulpy_hal::layouts::CnvPVecLToBackendMut::to_backend_mut(&mut left),
-                &vec_znx_backend_ref::<B>(&left_source),
-                &mut arena(module.cnv_pvec_left_prepare_tmp_bytes(a_size, a_size)).arena(),
+                &vec_znx_backend_ref::<B, Standard>(&left_source),
+                &mut arena(<Module<B> as CnvOps<B>>::cnv_pvec_left_prepare_tmp_bytes(&module, a_size, a_size)).arena(),
             );
             module.cnv_pvec_right_prepare(
                 &mut poulpy_hal::layouts::CnvPVecRToBackendMut::to_backend_mut(&mut right),
-                &vec_znx_backend_ref::<B>(&right_source),
-                &mut arena(module.cnv_pvec_right_prepare_tmp_bytes(b_size, b_size)).arena(),
+                &vec_znx_backend_ref::<B, Standard>(&right_source),
+                &mut arena(<Module<B> as CnvOps<B>>::cnv_pvec_right_prepare_tmp_bytes(&module, b_size, b_size)).arena(),
             );
             let (left, right) = (
                 poulpy_hal::layouts::CnvPVecLToBackendRef::to_backend_ref(&left),
@@ -952,9 +961,8 @@ macro_rules! bootstrap_shapes {
             );
             let mut diag = module.vec_znx_dft_alloc(n, 2, size);
             let mut cross = module.vec_znx_dft_alloc(n, 1, size);
-            let bytes = module
-                .cnv_apply_dft_tmp_bytes(offset, size, a_size, b_size)
-                .max(module.cnv_pairwise_apply_dft_tmp_bytes(offset, size, a_size, b_size));
+            let bytes = <Module<B> as CnvOps<B>>::cnv_apply_dft_tmp_bytes(&module, offset, size, a_size, b_size)
+                .max(<Module<B> as CnvOps<B>>::cnv_pairwise_apply_dft_tmp_bytes(&module, offset, size, a_size, b_size));
             bootstrap_shapes!(@tensor $path, module, offset, diag, cross, &left, &right, bytes);
             let shape = format!("a_size={a_size} b_size={b_size} offset={offset}");
             results.push((format!("product diagonal {shape}"), normalized(&diag)));
@@ -1006,7 +1014,7 @@ macro_rules! big_normalized {
         let mut res: VecZnx<<B as Backend>::OwnedBuf, i64> =
             VecZnx::from_data(B::from_host_bytes($res_bytes), $n, 1, $res_size);
         module.vec_znx_big_normalize(
-            &mut vec_znx_backend_mut::<B>(&mut res),
+            &mut vec_znx_backend_mut::<B, Standard>(&mut res),
             $res_base2k,
             $res_size * $res_base2k,
             $offset,
@@ -1072,10 +1080,17 @@ macro_rules! idft_normalized {
         let source = VecZnx::from_data(B::from_host_bytes($bytes), $n, 1, $size);
         let addend = VecZnx::from_data(B::from_host_bytes($addend), $n, 1, $size);
         let mut dft = module.vec_znx_dft_alloc($n, 1, $size);
-        module.vec_znx_dft_apply(1, 0, &mut dft.to_backend_mut(), 0, &vec_znx_backend_ref::<B>(&source), 0);
+        module.vec_znx_dft_apply(
+            1,
+            0,
+            &mut dft.to_backend_mut(),
+            0,
+            &vec_znx_backend_ref::<B, Standard>(&source),
+            0,
+        );
         let mut res: VecZnx<<B as Backend>::OwnedBuf, i64> = VecZnx::from_data(B::from_host_bytes($res_bytes), $n, 1, $res_size);
         module.vec_znx_idft_normalize(
-            &mut vec_znx_backend_mut::<B>(&mut res),
+            &mut vec_znx_backend_mut::<B, Standard>(&mut res),
             $res_base2k,
             $res_size * $res_base2k,
             0,
@@ -1083,7 +1098,7 @@ macro_rules! idft_normalized {
             &mut dft.to_backend_mut(),
             0,
             $a_base2k,
-            Some((&vec_znx_backend_ref::<B>(&addend), 0)),
+            Some((&vec_znx_backend_ref::<B, Standard>(&addend), 0)),
             &mut scratch.arena(),
         );
         B::to_host_bytes(res.data())
@@ -1123,8 +1138,8 @@ fn dft_limb_range_view() {
     let module = &*MODULE;
     let (n, cols, size) = (N, 2, 5);
     let mut seed = 0x5eed_5eed_5eed_5eedu64;
-    let outside = vector::<poulpy_hal::layouts::Standard>(n, cols, size, &mut seed);
-    let inside = vector::<poulpy_hal::layouts::Standard>(n, cols, 3, &mut seed);
+    let outside = vector::<Standard>(n, cols, size, &mut seed);
+    let inside = vector::<Standard>(n, cols, 3, &mut seed);
     let mut dft = module.vec_znx_dft_alloc(n, cols, size);
     for col in 0..cols {
         module.vec_znx_dft_apply(
@@ -1132,7 +1147,7 @@ fn dft_limb_range_view() {
             0,
             &mut dft.to_backend_mut(),
             col,
-            &vec_znx_backend_ref::<Gpu>(&outside),
+            &vec_znx_backend_ref::<Gpu, Standard>(&outside),
             col,
         );
     }
@@ -1140,7 +1155,7 @@ fn dft_limb_range_view() {
         let mut full = dft.to_backend_mut();
         let mut middle = full.with_limb_range_mut(1, 4);
         for col in 0..cols {
-            module.vec_znx_dft_apply(1, 0, &mut middle, col, &vec_znx_backend_ref::<Gpu>(&inside), col);
+            module.vec_znx_dft_apply(1, 0, &mut middle, col, &vec_znx_backend_ref::<Gpu, Standard>(&inside), col);
         }
     }
     let mut scratch = ScratchOwned::<Gpu>::alloc(module.vec_znx_idft_apply_tmp_bytes());
@@ -1155,7 +1170,10 @@ fn dft_limb_range_view() {
         );
     }
     let got: Vec<i128> = bytemuck::pod_collect_to_vec(&Gpu::to_host_bytes(big.data()));
-    let (outside, inside) = (download_vec_znx::<Gpu>(&outside), download_vec_znx::<Gpu>(&inside));
+    let (outside, inside) = (
+        download_vec_znx::<Gpu, Standard>(&outside),
+        download_vec_znx::<Gpu, Standard>(&inside),
+    );
     for limb in 0..size {
         for col in 0..cols {
             let want = if (1..4).contains(&limb) {
@@ -1185,10 +1203,13 @@ fn idft_normalize_windows() {
         let shape = VecZnxShape::new(N, 1, 6)
             .window_coeffs(coeff_offset, n)
             .window_limbs(limb_offset, limb_step, limbs);
-        let source = vector::<poulpy_hal::layouts::Standard>(n, 1, 3, &mut seed);
-        let addend = vector::<poulpy_hal::layouts::Standard>(N, 1, 6, &mut seed);
-        let mut res = vector::<poulpy_hal::layouts::Standard>(N, 1, 6, &mut seed);
-        let (addend_host, res_before) = (download_vec_znx::<Gpu>(&addend), download_vec_znx::<Gpu>(&res));
+        let source = vector::<Standard>(n, 1, 3, &mut seed);
+        let addend = vector::<Standard>(N, 1, 6, &mut seed);
+        let mut res = vector::<Standard>(N, 1, 6, &mut seed);
+        let (addend_host, res_before) = (
+            download_vec_znx::<Gpu, Standard>(&addend),
+            download_vec_znx::<Gpu, Standard>(&res),
+        );
         let dense = |host: &VecZnx<poulpy_hal::AlignedBuf, i64>| -> Vec<i64> {
             let view = VecZnx::<&[u8], i64>::from_shape(host.data().as_ref(), shape);
             (0..limbs).flat_map(|limb| view.at(0, limb).to_vec()).collect()
@@ -1200,12 +1221,19 @@ fn idft_normalize_windows() {
             let mut dft = module.vec_znx_dft_alloc(n, 1, 3);
             let mut dft_dense = module.vec_znx_dft_alloc(n, 1, 3);
             for dft in [&mut dft, &mut dft_dense] {
-                module.vec_znx_dft_apply(1, 0, &mut dft.to_backend_mut(), 0, &vec_znx_backend_ref::<Gpu>(&source), 0);
+                module.vec_znx_dft_apply(
+                    1,
+                    0,
+                    &mut dft.to_backend_mut(),
+                    0,
+                    &vec_znx_backend_ref::<Gpu, Standard>(&source),
+                    0,
+                );
             }
             {
-                let addend = vec_znx_backend_ref::<Gpu>(&addend).with_shape(shape);
+                let addend = vec_znx_backend_ref::<Gpu, Standard>(&addend).with_shape(shape);
                 module.vec_znx_idft_normalize(
-                    &mut vec_znx_backend_mut::<Gpu>(&mut res).with_shape(shape),
+                    &mut vec_znx_backend_mut::<Gpu, Standard>(&mut res).with_shape(shape),
                     base2k,
                     limbs * base2k,
                     offset,
@@ -1218,9 +1246,9 @@ fn idft_normalize_windows() {
                 );
             }
             {
-                let addend = vec_znx_backend_ref::<Gpu>(&addend_dense);
+                let addend = vec_znx_backend_ref::<Gpu, Standard>(&addend_dense);
                 module.vec_znx_idft_normalize(
-                    &mut vec_znx_backend_mut::<Gpu>(&mut res_dense),
+                    &mut vec_znx_backend_mut::<Gpu, Standard>(&mut res_dense),
                     base2k,
                     limbs * base2k,
                     offset,
@@ -1232,8 +1260,8 @@ fn idft_normalize_windows() {
                     &mut scratch.arena(),
                 );
             }
-            let res_after = download_vec_znx::<Gpu>(&res);
-            let want = download_vec_znx::<Gpu>(&res_dense);
+            let res_after = download_vec_znx::<Gpu, Standard>(&res);
+            let want = download_vec_znx::<Gpu, Standard>(&res_dense);
             let want: Vec<i64> = (0..limbs).flat_map(|limb| want.at(0, limb).to_vec()).collect();
             assert_eq!(dense(&res_after), want, "windowed result differs from the dense one");
             let selected: Vec<usize> = (0..limbs).map(|limb| limb_offset + limb * limb_step).collect();
@@ -1373,10 +1401,18 @@ fn device_noise_matches_its_host_model() {
                 // `i64` limbs: two columns, one limb past the precision.
                 let before = coefficients(n * 2 * (size + 1), &mut fill);
                 let mut small = VecZnx::from_data(Gpu::from_host_bytes(&before), n, 2, size + 1);
-                Gpu::vec_znx_add_noise(module, base2k, k, &mut vec_znx_backend_mut::<Gpu>(&mut small), 1, noise, seed);
+                Gpu::vec_znx_add_noise(
+                    module,
+                    base2k,
+                    k,
+                    &mut vec_znx_backend_mut::<Gpu, Standard>(&mut small),
+                    1,
+                    noise,
+                    seed,
+                );
                 let (old, new) = (
                     VecZnx::<&[u8], i64>::from_data(&before[..], n, 2, size + 1),
-                    download_vec_znx::<Gpu>(&small),
+                    download_vec_znx::<Gpu, Standard>(&small),
                 );
                 for limb in 0..=size {
                     assert_eq!(old.at(0, limb), new.at(0, limb), "{case}: column 0 changed");
@@ -1423,20 +1459,26 @@ fn convolution_capacity_step_keeps_the_product() {
         }
         let mut seed = 0x51e9_0000_0000_0001u64;
         let (a, b) = (
-            vector::<poulpy_hal::layouts::Standard>(n, 1, a_size, &mut seed),
-            vector::<poulpy_hal::layouts::Standard>(n, 1, b_size, &mut seed),
+            vector::<Standard>(n, 1, a_size, &mut seed),
+            vector::<Standard>(n, 1, b_size, &mut seed),
         );
         let mut left = module.cnv_pvec_left_alloc(n, 1, a_size, PrepareHint::Reuse);
         let mut right = module.cnv_pvec_right_alloc(n, 1, b_size, PrepareHint::Reuse);
         module.cnv_pvec_left_prepare(
             &mut poulpy_hal::layouts::CnvPVecLToBackendMut::to_backend_mut(&mut left),
-            &vec_znx_backend_ref::<Gpu>(&a),
-            &mut ScratchOwned::<Gpu>::alloc(module.cnv_pvec_left_prepare_tmp_bytes(a_size, a_size)).arena(),
+            &vec_znx_backend_ref::<Gpu, Standard>(&a),
+            &mut ScratchOwned::<Gpu>::alloc(<Module<Gpu> as CnvOps<Gpu>>::cnv_pvec_left_prepare_tmp_bytes(
+                &module, a_size, a_size,
+            ))
+            .arena(),
         );
         module.cnv_pvec_right_prepare(
             &mut poulpy_hal::layouts::CnvPVecRToBackendMut::to_backend_mut(&mut right),
-            &vec_znx_backend_ref::<Gpu>(&b),
-            &mut ScratchOwned::<Gpu>::alloc(module.cnv_pvec_right_prepare_tmp_bytes(b_size, b_size)).arena(),
+            &vec_znx_backend_ref::<Gpu, Standard>(&b),
+            &mut ScratchOwned::<Gpu>::alloc(<Module<Gpu> as CnvOps<Gpu>>::cnv_pvec_right_prepare_tmp_bytes(
+                &module, b_size, b_size,
+            ))
+            .arena(),
         );
         let mut res = transformed(&module, n, 1, res_size, &mut seed);
         module.cnv_apply_dft(
@@ -1448,7 +1490,10 @@ fn convolution_capacity_step_keeps_the_product() {
             &poulpy_hal::layouts::CnvPVecRToBackendRef::to_backend_ref(&right),
             0,
             1,
-            &mut ScratchOwned::<Gpu>::alloc(module.cnv_apply_dft_tmp_bytes(offset, res_size, a_size, b_size)).arena(),
+            &mut ScratchOwned::<Gpu>::alloc(<Module<Gpu> as CnvOps<Gpu>>::cnv_apply_dft_tmp_bytes(
+                &module, offset, res_size, a_size, b_size,
+            ))
+            .arena(),
         );
         Gpu::to_host_bytes(res.data())
     };
@@ -1480,14 +1525,14 @@ fn fresh_buffers_are_zero_and_prepare_overwrites_them() {
     let mut scratch = ScratchOwned::<Gpu>::alloc(1 << 22);
     assert!(Gpu::alloc_bytes(4096).to_host().iter().all(|&byte| byte == 0));
     for a_size in [5, 3] {
-        let a = vector::<poulpy_hal::layouts::Standard>(N, 2, a_size, &mut seed);
+        let a = vector::<Standard>(N, 2, a_size, &mut seed);
         let mut fresh = module.cnv_pvec_left_alloc(N, 2, 5, PrepareHint::Reuse);
         let mut settled = module.cnv_pvec_left_alloc(N, 2, 5, PrepareHint::Reuse);
         assert!(settled.data().to_host().iter().all(|&byte| byte == 0));
         for prepared in [&mut fresh, &mut settled] {
             module.cnv_pvec_left_prepare(
                 &mut poulpy_hal::layouts::CnvPVecLToBackendMut::to_backend_mut(prepared),
-                &vec_znx_backend_ref::<Gpu>(&a),
+                &vec_znx_backend_ref::<Gpu, Standard>(&a),
                 &mut scratch.arena(),
             );
         }
@@ -1509,7 +1554,7 @@ fn refused_prepare_keeps_the_zero_fill() {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         module.cnv_pvec_left_prepare(
             &mut poulpy_hal::layouts::CnvPVecLToBackendMut::to_backend_mut(&mut res),
-            &vec_znx_backend_ref::<Gpu>(&a),
+            &vec_znx_backend_ref::<Gpu, Standard>(&a),
             &mut scratch.arena(),
         );
     }))
@@ -1537,7 +1582,7 @@ fn linear_transformation_parity_takes_the_batched_giant_steps() {
     let comparison = Module::<poulpy_cpu_portable::NTT4x30Portable>::new(params.n as u64);
     let tested = Module::<Gpu>::new(params.n as u64);
     let tracer = Tracer::start(false);
-    test_linear_transformation_powers_of_two_parity(&params, &ParityShapes::default(), &comparison, &tested);
+    test_linear_transformation_powers_of_two_parity::<_, _, Standard>(&params, &ParityShapes::default(), &comparison, &tested);
     let (trace, _) = tracer.finish();
     for label in [Label::DftGather, Label::CnvScaleMany] {
         assert!(
@@ -1561,16 +1606,14 @@ fn const_combination_matches_reference() {
     for count in 1..=5usize {
         for (res_k, acc_size) in [(res_size * base2k, a_size + b_size), (res_size * base2k - 7, res_size)] {
             let mut seed = 0x0c0f_fee0_1234_5678u64 ^ ((count * 97 + res_k) as u64);
-            let operands: Vec<_> = (0..count)
-                .map(|_| vector::<poulpy_hal::layouts::Standard>(N, 2, a_size, &mut seed))
-                .collect();
-            let constants = vector::<poulpy_hal::layouts::Standard>(1, count, b_size, &mut seed);
+            let operands: Vec<_> = (0..count).map(|_| vector::<Standard>(N, 2, a_size, &mut seed)).collect();
+            let constants = vector::<Standard>(1, count, b_size, &mut seed);
             let terms: Vec<ConstTerm<'_, Gpu>> = operands
                 .iter()
                 .enumerate()
                 .map(|(index, a)| ConstTerm {
-                    a: vec_znx_backend_ref::<Gpu>(a),
-                    b: vec_znx_backend_ref::<Gpu>(&constants),
+                    a: vec_znx_backend_ref::<Gpu, Standard>(a),
+                    b: vec_znx_backend_ref::<Gpu, Standard>(&constants),
                     b_col: index,
                     b_coeff: 0,
                     shift: (index % 2) * 13,
@@ -1578,10 +1621,10 @@ fn const_combination_matches_reference() {
                 })
                 .collect();
             let mut destination_seed = seed;
-            let mut want = vector::<poulpy_hal::layouts::Standard>(N, 2, res_size, &mut destination_seed);
-            let mut have = vector::<poulpy_hal::layouts::Standard>(N, 2, res_size, &mut seed);
+            let mut want = vector::<Standard>(N, 2, res_size, &mut destination_seed);
+            let mut have = vector::<Standard>(N, 2, res_size, &mut seed);
             module.glwe_const_combination_reference(
-                &mut vec_znx_backend_mut::<Gpu>(&mut want),
+                &mut vec_znx_backend_mut::<Gpu, Standard>(&mut want),
                 base2k,
                 res_k,
                 acc_size,
@@ -1590,7 +1633,7 @@ fn const_combination_matches_reference() {
             );
             let fused = crate::core_impl::shifted_const_combination(
                 module,
-                &mut vec_znx_backend_mut::<Gpu>(&mut have),
+                &mut vec_znx_backend_mut::<Gpu, Standard>(&mut have),
                 base2k,
                 res_k,
                 acc_size,
@@ -1642,7 +1685,7 @@ fn many_source_products_match_one_launch_each_at_full_degree() {
         }
         DataView::data(&owned).to_host()
     };
-    let plan = crate::ntt4x30::AutomorphismPlan::new(n, 5, false);
+    let plan = crate::ntt4x30::Substitution::new(n, 5, false);
     for m in [2usize, 3, 4] {
         let sources: Vec<_> = (0..m).map(|_| transformed(&module, n, 1, a_size, &mut seed)).collect();
         let bodies: Vec<_> = (0..m).map(|_| transformed(&module, n, 2, res_size, &mut seed)).collect();

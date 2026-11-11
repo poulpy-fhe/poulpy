@@ -111,7 +111,7 @@ fn check_scalars<F: TestScalar>(key: &str, values: &[F]) {
     check_fixture(key, scalar_bytes(values));
 }
 
-fn check_plaintext<BE: Backend<ZnxWord = i64>>(key: &str, pt: &CKKSPlaintextOwned<BE>) {
+fn check_plaintext<BE: Backend<ZnxWord = i64>, Rg: Ring>(key: &str, pt: &CKKSPlaintextOwned<BE, Rg>) {
     let host = pt.to_host_owned::<BE>();
     let mut bytes = Vec::new();
     for limb in 0..host.size() {
@@ -140,19 +140,19 @@ fn precision<F>() -> usize {
 /// transforms, then encoding, decoding and dequantization at three scales,
 /// for each slot count, on a plaintext at the degree of its slots from the
 /// backend's minimum degree.
-pub fn encoding_fixtures<BE, F>(module: &Module<BE>)
+pub fn encoding_fixtures<BE, F, Rg: Ring>(module: &Module<BE>)
 where
     BE: Backend<ZnxWord = i64>,
     F: TestScalar,
-    Module<BE>: CKKSPlaintextAlloc<BE> + CKKSEncodingOps<BE, F>,
+    Module<BE>: CKKSPlaintextAlloc<BE> + CKKSEncodingOps<BE, F, Rg>,
 {
-    let ring = if BE::Ring::CYCLOTOMIC_ORDER_FACTOR == Standard::CYCLOTOMIC_ORDER_FACTOR {
+    let ring = if Rg::CYCLOTOMIC_ORDER_FACTOR == Standard::CYCLOTOMIC_ORDER_FACTOR {
         "standard"
     } else {
         "ci"
     };
     let bits = precision::<F>();
-    let max_slots = module.ckks_max_slots();
+    let max_slots = module.ckks_max_slots::<Rg>();
     let mut log_slots_set = vec![0, 1, 3, 6];
     log_slots_set.push(max_slots.ilog2() as usize);
     for log_slots in log_slots_set {
@@ -161,7 +161,7 @@ where
         let re = dyadic::<F>(slots, 1);
         let im = dyadic::<F>(slots, 2);
         // The invariant ring leaves workspace past its coefficients.
-        let coeffs = slot_coeff_count(module, 2 * slots);
+        let coeffs = slot_coeff_count::<BE, Rg>(module, 2 * slots);
 
         let mut values = CKKSEncodingBuffer::<BE::OwnedBuf, F>::from_host::<BE>(&[re.as_slice(), im.as_slice()].concat());
         module.ckks_encoding_buffer_slots_to_coeffs_assign(&mut values).unwrap();
@@ -182,7 +182,7 @@ where
             });
             let reim_bytes = module.ckks_encoding_host_tmp_bytes(slots);
             with_scratch::<BE, _>(reim_bytes, |s| module.ckks_encode_slots_host_into(&mut pt, &re, &im, s)).unwrap();
-            check_plaintext::<BE>(&format!("{key}-delta{log_delta}-plaintext"), &pt);
+            check_plaintext::<BE, Rg>(&format!("{key}-delta{log_delta}-plaintext"), &pt);
 
             let mut got_re = vec![F::zero(); slots];
             let mut got_im = vec![F::zero(); slots];
@@ -202,11 +202,11 @@ where
 /// Setup fixtures at precision `F`: the platform-independent math, the DFT
 /// matrices, the sign and minimax approximations, and the EvalMod polynomials
 /// with their encoded plaintexts.
-pub fn setup_fixtures<BE, F>(module: &Module<BE>)
+pub fn setup_fixtures<BE, F, Rg: Ring>(module: &Module<BE>)
 where
     BE: Backend<ZnxWord = i64>,
     F: TestScalar,
-    Module<BE>: CKKSEncodingOps<BE, F>,
+    Module<BE>: CKKSEncodingOps<BE, F, Rg>,
 {
     let bits = precision::<F>();
 
@@ -263,7 +263,7 @@ where
     .unwrap();
     check_scalars(&format!("setup-f{bits}-minimax"), &fit.poly.coeffs);
 
-    let compile_bytes = module.ckks_encoding_host_tmp_bytes(module.ckks_max_slots());
+    let compile_bytes = module.ckks_encoding_host_tmp_bytes(module.ckks_max_slots::<Rg>());
     for kind in [
         EvalModType::SinCheby,
         EvalModType::CosCheby,
@@ -283,8 +283,10 @@ where
             coeffs_meta: CoeffsMeta::from_delta_budget(100, 10),
             f_mod_log_delta: 110,
         };
-        let compiled =
-            with_scratch::<BE, _>(compile_bytes, |s| ckks_eval_mod_compile::<BE, F>(Base2K(20), plan, module, s)).unwrap();
+        let compiled = with_scratch::<BE, _>(compile_bytes, |s| {
+            ckks_eval_mod_compile::<BE, F, Rg>(Base2K(20), plan, module, s)
+        })
+        .unwrap();
         let scalars = match &compiled.f_mod_poly {
             EvalModPoly::Real(p) => p.coeffs.clone(),
             EvalModPoly::Complex(p) => p.re.iter().chain(&p.im).copied().collect(),
@@ -303,21 +305,21 @@ where
     }
 }
 
-/// Suite entry point for standard-ring backends: encoding fixtures at degree
+/// Suite entry point on the standard ring: encoding fixtures at degree
 /// 4096 and setup fixtures, registered by
 /// [`ckks_determinism_test_suite!`](crate::ckks_determinism_test_suite).
 pub fn test_encoding_determinism<BE, F>()
 where
-    BE: Backend<ZnxWord = i64, Ring = Standard>,
+    BE: Backend<ZnxWord = i64>,
     F: TestScalar,
-    Module<BE>: ModuleNew<BE> + CKKSEncodingOps<BE, F>,
+    Module<BE>: ModuleNew<BE> + CKKSEncodingOps<BE, F, Standard>,
 {
     let module = Module::<BE>::new(4096);
-    encoding_fixtures::<BE, F>(&module);
-    setup_fixtures::<BE, F>(&module);
+    encoding_fixtures::<BE, F, Standard>(&module);
+    setup_fixtures::<BE, F, Standard>(&module);
 }
 
-/// Registers the determinism fixtures of one standard-ring backend type, in
+/// Registers the standard-ring determinism fixtures of one backend type, in
 /// `f64` and in [`Quad`](crate::Quad): `encoding_determinism_f64` and
 /// `encoding_determinism_quad` run
 /// [`test_encoding_determinism`](crate::test_suite::determinism::test_encoding_determinism).
@@ -325,8 +327,8 @@ where
 /// A backend type with an `f32` encoding transform adds `, f32` after `backend = <type>`, which also
 /// registers `encoding_determinism_f32`.
 ///
-/// Every backend type implementing CKKS on the standard ring registers it; the
-/// conjugate-invariant types run their encoding fixtures in
+/// Every backend type implementing CKKS registers it; the conjugate-invariant
+/// encoding fixtures run in
 /// [`conjugate_invariant_ckks_test_suite!`](crate::conjugate_invariant_ckks_test_suite).
 #[macro_export]
 macro_rules! ckks_determinism_test_suite {

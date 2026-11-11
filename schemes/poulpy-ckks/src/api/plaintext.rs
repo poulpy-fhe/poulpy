@@ -1,7 +1,7 @@
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{GLWEInfos, GLWEToBackendRef};
-use poulpy_hal::layouts::{Backend, ScratchArena};
+use poulpy_hal::layouts::{Backend, Ring, ScratchArena, Standard};
 
 use crate::GLWEToBackendMut;
 
@@ -18,12 +18,12 @@ use crate::{CKKSInfos, SetCKKSInfos};
 /// log_delta_out  = src.log_delta
 /// log_budget_out = src.log_budget
 /// ```
-pub trait CKKSPlaintextVecOps<BE: Backend> {
+pub trait CKKSPlaintextVecOps<BE: Backend, Rg: Ring = Standard> {
     fn ckks_extract_pt_tmp_bytes(&self, res_size: usize) -> usize;
 
     /// Extracts the ZNX plaintext polynomial from `src` into `dst`.
     fn ckks_extract_pt<D, S>(&self, dst: &mut D, src: &S, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        D: GLWEToBackendMut<BE> + GLWEInfos + CKKSInfos + SetCKKSInfos + IntPolyInfos,
-        S: GLWEToBackendRef<BE> + GLWEInfos + CKKSInfos;
+        D: GLWEToBackendMut<BE, Rg> + GLWEInfos + CKKSInfos + SetCKKSInfos + IntPolyInfos,
+        S: GLWEToBackendRef<BE, Rg> + GLWEInfos + CKKSInfos;
 }

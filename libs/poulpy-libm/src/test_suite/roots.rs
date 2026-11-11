@@ -29,11 +29,11 @@ use super::helpers::{assert_precision_bits, params_for};
 
 pub fn test_root_family<BE, F, E>(base: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     Module<BE>: TestContextModule<BE> + CKKSRootOps<BE>,
-    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>:
+    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, Standard>:
         GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE> + LWEInfos + poulpy_core::layouts::IntPolyInfos,
+    CKKSPlaintext<BE::OwnedBuf, BE::ZnxWord, Standard>: GLWEToBackendRef<BE> + LWEInfos + poulpy_core::layouts::IntPolyInfos,
     CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
@@ -76,7 +76,7 @@ where
     let hy: Vec<F> = (0..slots).map(|_| F::from_f64(source.next_f64(0.5, 1.0)).unwrap()).collect();
     let im = vec![F::zero(); slots];
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0xc6u8; 32]);
-    let mut sizing = module.ckks_ciphertext_alloc(params.base2k.into(), params.k.into());
+    let mut sizing = module.ckks_ciphertext_alloc::<Standard>(params.base2k.into(), params.k.into());
     sizing.set_meta(params.prec().meta);
     let size = module
         .ckks_cbrt_tmp_bytes(&sizing, &sizing, &cbrt, &params.tsk_layout())
@@ -125,7 +125,7 @@ where
         .ckks_cbrt(&mut res, &cx, &cbrt, &tsk, &mut scratch.borrow())
         .expect("ckks_cbrt");
     assert_eq!(cx.log_budget() - res.log_budget(), cbrt.consumed_bits(log_delta));
-    let (re_out, _) = ckks_decrypt_decode::<BE, F, E>(&params, module, &encoder, &res, &sk, &mut scratch.borrow());
+    let (re_out, _) = ckks_decrypt_decode::<BE, F, E, Standard>(&params, module, &encoder, &res, &sk, &mut scratch.borrow());
     let want: Vec<F> = x.iter().map(|&v| v.cbrt()).collect();
     assert_precision_bits("cbrt", &re_out, &want, options.target_bits, params.n);
 
@@ -134,7 +134,7 @@ where
         .ckks_hypot(&mut res, &chx, &chy, &hypot, &tsk, &mut scratch.borrow())
         .expect("ckks_hypot");
     assert_eq!(chx.log_budget() - res.log_budget(), hypot.consumed_bits(log_delta));
-    let (re_out, _) = ckks_decrypt_decode::<BE, F, E>(&params, module, &encoder, &res, &sk, &mut scratch.borrow());
+    let (re_out, _) = ckks_decrypt_decode::<BE, F, E, Standard>(&params, module, &encoder, &res, &sk, &mut scratch.borrow());
     let want: Vec<F> = hx.iter().zip(&hy).map(|(&x, &y)| (x * x + y * y).sqrt()).collect();
     assert_precision_bits("hypot", &re_out, &want, options.target_bits, params.n);
 }

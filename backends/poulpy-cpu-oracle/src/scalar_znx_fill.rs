@@ -8,7 +8,7 @@
 //! [`SamplingImpl`](poulpy_core::oep::SamplingImpl) some other way.
 
 use poulpy_hal::{
-    layouts::{HostDataMut, ScalarZnx, ZnxViewMut, ZnxWord},
+    layouts::{HostDataMut, Ring, ScalarZnx, ZnxViewMut, ZnxWord},
     source::Source,
 };
 use rand::{Rng, seq::SliceRandom};
@@ -55,7 +55,7 @@ pub trait ScalarZnxFill {
     fn fill_binary_block(&mut self, col: usize, block_size: usize, source: &mut Source);
 }
 
-impl<D: HostDataMut, W: ZnxWord> ScalarZnxFill for ScalarZnx<D, W> {
+impl<D: HostDataMut, W: ZnxWord, Rg: Ring> ScalarZnxFill for ScalarZnx<D, W, Rg> {
     fn fill_ternary_prob(&mut self, col: usize, prob: f64, source: &mut Source) {
         let choices: [W; 3] = [W::from_i64(-1), W::zero(), W::from_i64(1)];
         let weights: [f64; 3] = [prob / 2.0, 1.0 - prob, prob / 2.0];
@@ -112,11 +112,15 @@ impl<D: HostDataMut, W: ZnxWord> ScalarZnxFill for ScalarZnx<D, W> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use poulpy_hal::layouts::ZnxView;
+    use poulpy_hal::layouts::{Standard, ZnxView};
     use poulpy_hal::{AlignedBuf, alloc_aligned};
 
-    fn fresh(n: usize, cols: usize) -> ScalarZnx<AlignedBuf, i64> {
-        ScalarZnx::from_data(alloc_aligned::<u8>(ScalarZnx::<AlignedBuf, i64>::bytes_of(n, cols)), n, cols)
+    fn fresh<Rg: Ring>(n: usize, cols: usize) -> ScalarZnx<AlignedBuf, i64, Rg> {
+        ScalarZnx::from_data(
+            alloc_aligned::<u8>(ScalarZnx::<AlignedBuf, i64, Rg>::bytes_of(n, cols)),
+            n,
+            cols,
+        )
     }
 
     #[test]
@@ -124,27 +128,27 @@ mod tests {
         let (n, cols, col) = (1usize << 10, 2usize, 1usize);
         let mut source = Source::new([3u8; 32]);
 
-        let mut s = fresh(n, cols);
+        let mut s = fresh::<Standard>(n, cols);
         s.fill_binary_hw(col, 37, &mut source);
         assert!(s.at(col, 0).iter().all(|&x| x == 0 || x == 1));
         assert_eq!(s.at(col, 0).iter().filter(|&&x| x == 1).count(), 37);
         assert!(s.at(0, 0).iter().all(|&x| x == 0), "other column untouched");
 
-        let mut s = fresh(n, cols);
+        let mut s = fresh::<Standard>(n, cols);
         s.fill_ternary_hw(col, 41, &mut source);
         assert!(s.at(col, 0).iter().all(|&x| (-1..=1).contains(&x)));
         assert_eq!(s.at(col, 0).iter().filter(|&&x| x != 0).count(), 41);
 
-        let mut s = fresh(n, cols);
+        let mut s = fresh::<Standard>(n, cols);
         s.fill_ternary_prob(col, 0.5, &mut source);
         assert!(s.at(col, 0).iter().all(|&x| (-1..=1).contains(&x)));
         assert!(s.at(col, 0).iter().any(|&x| x != 0));
 
-        let mut s = fresh(n, cols);
+        let mut s = fresh::<Standard>(n, cols);
         s.fill_binary_prob(col, 0.5, &mut source);
         assert!(s.at(col, 0).iter().all(|&x| x == 0 || x == 1));
 
-        let mut s = fresh(n, cols);
+        let mut s = fresh::<Standard>(n, cols);
         s.fill_binary_block(col, 8, &mut source);
         assert!(s.at(col, 0).iter().all(|&x| x == 0 || x == 1));
         assert!(
@@ -156,8 +160,8 @@ mod tests {
 
     #[test]
     fn host_fills_are_deterministic_in_the_source() {
-        let mut a = fresh(256, 1);
-        let mut b = fresh(256, 1);
+        let mut a = fresh::<Standard>(256, 1);
+        let mut b = fresh::<Standard>(256, 1);
         a.fill_ternary_hw(0, 17, &mut Source::new([9u8; 32]));
         b.fill_ternary_hw(0, 17, &mut Source::new([9u8; 32]));
         assert_eq!(a.at(0, 0), b.at(0, 0));

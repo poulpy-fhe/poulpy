@@ -2,7 +2,7 @@ use crate::CKKSResult as Result;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{GLWEInfos, GLWESecretPreparedToBackendRef, GLWEToBackendMut, GLWEToBackendRef};
 use poulpy_hal::{
-    layouts::{Backend, ScratchArena},
+    layouts::{Backend, Ring, ScratchArena, Standard},
     source::Source,
 };
 
@@ -32,7 +32,7 @@ use crate::{CKKSCtBounds, CKKSInfos, SetCKKSInfos};
 /// Returns `EncryptionDegreeMismatch` if the ciphertext and prepared secret
 /// key degrees differ or exceed the module degree, before changing the ciphertext
 /// or consuming randomness.
-pub trait CKKSEncryptOps<BE: Backend> {
+pub trait CKKSEncryptOps<BE: Backend, Rg: Ring = Standard> {
     fn ckks_encrypt_sk_tmp_bytes<A>(&self, ct_infos: &A) -> usize
     where
         A: CKKSCtBounds;
@@ -48,9 +48,9 @@ pub trait CKKSEncryptOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        S: GLWESecretPreparedToBackendRef<BE>,
-        Dct: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        Dpt: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds;
+        S: GLWESecretPreparedToBackendRef<BE, Rg>,
+        Dct: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        Dpt: GLWEToBackendRef<BE, Rg> + IntPolyInfos + CKKSCtBounds;
 }
 
 /// Secret-key decryption of a CKKS ciphertext.
@@ -90,7 +90,7 @@ pub trait CKKSEncryptOps<BE: Backend> {
 /// when `log2(N / n) <= ct.log_sparsity`: the slots repeat every `n / 2`, and
 /// `pt` receives every `(N / n)`-th coefficient of the decrypted polynomial.
 /// Any other degree is a `PlaintextDegreeMismatch`, before changing the plaintext.
-pub trait CKKSDecryptOps<BE: Backend> {
+pub trait CKKSDecryptOps<BE: Backend, Rg: Ring = Standard> {
     /// Scratch for the actual destination allocation and input ciphertext.
     /// The destination may retain more allocated limbs than its effective precision.
     fn ckks_decrypt_tmp_bytes<Pt, Ct>(&self, pt_infos: &Pt, ct_infos: &Ct) -> usize
@@ -100,7 +100,7 @@ pub trait CKKSDecryptOps<BE: Backend> {
 
     fn ckks_decrypt<Dpt, Dct, S>(&self, pt: &mut Dpt, ct: &Dct, sk: &S, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
-        Dpt: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + IntPolyInfos,
-        Dct: GLWEToBackendRef<BE> + CKKSCtBounds;
+        S: GLWESecretPreparedToBackendRef<BE, Rg> + GLWEInfos,
+        Dpt: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos + IntPolyInfos,
+        Dct: GLWEToBackendRef<BE, Rg> + CKKSCtBounds;
 }

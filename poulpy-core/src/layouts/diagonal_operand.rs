@@ -1,4 +1,4 @@
-use poulpy_hal::layouts::{Backend, CnvPVecROwned};
+use poulpy_hal::layouts::{Backend, CnvPVecROwned, Ring, Standard};
 
 use crate::layouts::GLWEBackendRef;
 
@@ -9,9 +9,9 @@ use crate::layouts::GLWEBackendRef;
     clippy::large_enum_variant,
     reason = "a GLWE view carries its plaintext metadata, a box would allocate per diagonal"
 )]
-pub enum DiagonalOperand<'a, BE: Backend + 'a, P = CnvPVecROwned<BE>> {
+pub enum DiagonalOperand<'a, BE: Backend + 'a, Rg: Ring = Standard, P = CnvPVecROwned<BE, Rg>> {
     /// Prepared as a right operand, on `ceil(k / base2k)` limbs.
     Prepared(&'a P),
     /// Not prepared yet: the product prepares it.
-    Unprepared(GLWEBackendRef<'a, BE>),
+    Unprepared(GLWEBackendRef<'a, BE, Rg>),
 }

@@ -1,6 +1,6 @@
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Module, ScratchOwned},
+    layouts::{Module, Ring, ScratchOwned},
     source::Source,
     test_suite::TestParams,
 };
@@ -19,16 +19,18 @@ use crate::{
     noise::GGLWENoiseModel,
 };
 
-pub fn test_gglwe_switching_key_keyswitch<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
-where
+pub fn test_gglwe_switching_key_keyswitch<BE: crate::test_suite::noise::TestBackend<Rg>, Rg: Ring>(
+    params: &TestParams,
+    module: &Module<BE>,
+) where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: GLWESwitchingKeyEncryptSk<BE>
-        + GGLWEKeyswitch<BE>
-        + GLWESwitchingKeyPreparedFactory<BE>
-        + GLWESecretPreparedFactory<BE>
-        + GGLWENoise<BE>,
+    Module<BE>: GLWESwitchingKeyEncryptSk<BE, Rg>
+        + GGLWEKeyswitch<BE, Rg>
+        + GLWESwitchingKeyPreparedFactory<BE, Rg>
+        + GLWESecretPreparedFactory<BE, Rg>
+        + GGLWENoise<BE, Rg>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
@@ -82,11 +84,11 @@ where
                         rank_out: rank_out_s1s2.into(),
                     };
 
-                    let mut gglwe_s0s1: GLWESwitchingKey<BE::OwnedBuf, BE::ZnxWord> =
+                    let mut gglwe_s0s1: GLWESwitchingKey<BE::OwnedBuf, BE::ZnxWord, Rg> =
                         module.glwe_switching_key_alloc_from_infos(&gglwe_s0s1_infos);
-                    let mut gglwe_s1s2: GLWESwitchingKey<BE::OwnedBuf, BE::ZnxWord> =
+                    let mut gglwe_s1s2: GLWESwitchingKey<BE::OwnedBuf, BE::ZnxWord, Rg> =
                         module.glwe_switching_key_alloc_from_infos(&gglwe_s1s2_infos);
-                    let mut gglwe_s0s2: GLWESwitchingKey<BE::OwnedBuf, BE::ZnxWord> =
+                    let mut gglwe_s0s2: GLWESwitchingKey<BE::OwnedBuf, BE::ZnxWord, Rg> =
                         module.glwe_switching_key_alloc_from_infos(&gglwe_s0s2_infos);
 
                     let mut source_xs: Source = Source::new([0u8; 32]);
@@ -103,16 +105,16 @@ where
                             | module.gglwe_noise_tmp_bytes(&gglwe_s0s2_infos),
                     );
 
-                    let mut sk0: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(rank_in_s0s1.into());
+                    let mut sk0: GLWESecret<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_secret_alloc(rank_in_s0s1.into());
                     module.glwe_secret_fill_ternary_prob(&mut sk0, 0.5, &mut source_xs);
 
-                    let mut sk1: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(rank_out_s0s1.into());
+                    let mut sk1: GLWESecret<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_secret_alloc(rank_out_s0s1.into());
                     module.glwe_secret_fill_ternary_prob(&mut sk1, 0.5, &mut source_xs);
 
-                    let mut sk2: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(rank_out_s1s2.into());
+                    let mut sk2: GLWESecret<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_secret_alloc(rank_out_s1s2.into());
                     module.glwe_secret_fill_ternary_prob(&mut sk2, 0.5, &mut source_xs);
 
-                    let mut sk2_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> =
+                    let mut sk2_prepared: GLWESecretPrepared<BE::OwnedBuf, BE, Rg> =
                         module.glwe_secret_prepared_alloc(rank_out_s1s2.into());
                     module.glwe_secret_prepare(&mut sk2_prepared, &sk2);
 
@@ -136,7 +138,7 @@ where
                         &mut scratch_enc.arena(),
                     );
 
-                    let mut gglwe_s1s2_prepared: GLWESwitchingKeyPrepared<BE::OwnedBuf, BE> =
+                    let mut gglwe_s1s2_prepared: GLWESwitchingKeyPrepared<BE::OwnedBuf, BE, Rg> =
                         module.glwe_switching_key_prepared_alloc_from_infos(&gglwe_s1s2);
                     module.glwe_switching_key_prepare(&mut gglwe_s1s2_prepared, &gglwe_s1s2, &mut scratch_prep.borrow());
 
@@ -187,18 +189,18 @@ where
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn test_gglwe_switching_key_keyswitch_assign<BE: crate::test_suite::noise::TestBackend>(
+pub fn test_gglwe_switching_key_keyswitch_assign<BE: crate::test_suite::noise::TestBackend<Rg>, Rg: Ring>(
     params: &TestParams,
     module: &Module<BE>,
 ) where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: GLWESwitchingKeyEncryptSk<BE>
-        + GGLWEKeyswitch<BE>
-        + GLWESecretPreparedFactory<BE>
-        + GGLWENoise<BE>
-        + GLWESwitchingKeyPreparedFactory<BE>,
+    Module<BE>: GLWESwitchingKeyEncryptSk<BE, Rg>
+        + GGLWEKeyswitch<BE, Rg>
+        + GLWESecretPreparedFactory<BE, Rg>
+        + GGLWENoise<BE, Rg>
+        + GLWESwitchingKeyPreparedFactory<BE, Rg>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
@@ -240,9 +242,9 @@ pub fn test_gglwe_switching_key_keyswitch_assign<BE: crate::test_suite::noise::T
                     rank_out: rank_out.into(),
                 };
 
-                let mut gglwe_s0s1: GLWESwitchingKey<BE::OwnedBuf, BE::ZnxWord> =
+                let mut gglwe_s0s1: GLWESwitchingKey<BE::OwnedBuf, BE::ZnxWord, Rg> =
                     module.glwe_switching_key_alloc_from_infos(&gglwe_s0s1_infos);
-                let mut gglwe_s1s2: GLWESwitchingKey<BE::OwnedBuf, BE::ZnxWord> =
+                let mut gglwe_s1s2: GLWESwitchingKey<BE::OwnedBuf, BE::ZnxWord, Rg> =
                     module.glwe_switching_key_alloc_from_infos(&gglwe_s1s2_infos);
 
                 let mut source_xs: Source = Source::new([0u8; 32]);
@@ -277,16 +279,17 @@ pub fn test_gglwe_switching_key_keyswitch_assign<BE: crate::test_suite::noise::T
 
                 let var_xs: f64 = 0.5;
 
-                let mut sk0: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(rank_in.into());
+                let mut sk0: GLWESecret<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_secret_alloc(rank_in.into());
                 module.glwe_secret_fill_ternary_prob(&mut sk0, var_xs, &mut source_xs);
 
-                let mut sk1: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(rank_out.into());
+                let mut sk1: GLWESecret<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_secret_alloc(rank_out.into());
                 module.glwe_secret_fill_ternary_prob(&mut sk1, var_xs, &mut source_xs);
 
-                let mut sk2: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(rank_out.into());
+                let mut sk2: GLWESecret<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_secret_alloc(rank_out.into());
                 module.glwe_secret_fill_ternary_prob(&mut sk2, var_xs, &mut source_xs);
 
-                let mut sk2_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc(rank_out.into());
+                let mut sk2_prepared: GLWESecretPrepared<BE::OwnedBuf, BE, Rg> =
+                    module.glwe_secret_prepared_alloc(rank_out.into());
                 module.glwe_secret_prepare(&mut sk2_prepared, &sk2);
 
                 // gglwe_{s1}(s0) = s0 -> s1
@@ -309,7 +312,7 @@ pub fn test_gglwe_switching_key_keyswitch_assign<BE: crate::test_suite::noise::T
                     &mut scratch_enc.arena(),
                 );
 
-                let mut gglwe_s1s2_prepared: GLWESwitchingKeyPrepared<BE::OwnedBuf, BE> =
+                let mut gglwe_s1s2_prepared: GLWESwitchingKeyPrepared<BE::OwnedBuf, BE, Rg> =
                     module.glwe_switching_key_prepared_alloc_from_infos(&gglwe_s1s2);
                 module.glwe_switching_key_prepare(&mut gglwe_s1s2_prepared, &gglwe_s1s2, &mut scratch_prep.borrow());
 
@@ -332,7 +335,7 @@ pub fn test_gglwe_switching_key_keyswitch_assign<BE: crate::test_suite::noise::T
                     .borrow(),
                 );
 
-                let gglwe_s0s2: GLWESwitchingKey<BE::OwnedBuf, BE::ZnxWord> = gglwe_s0s1;
+                let gglwe_s0s2: GLWESwitchingKey<BE::OwnedBuf, BE::ZnxWord, Rg> = gglwe_s0s1;
 
                 let max_noise: f64 = gglwe_s1s2_infos.log2_std_noise_keyswitch(
                     &gglwe_s0s1_infos,
@@ -369,19 +372,19 @@ pub fn test_gglwe_switching_key_keyswitch_assign<BE: crate::test_suite::noise::T
 /// A switching key switches a key of its own layout once `gglwe_copy` narrows
 /// it into a key of fewer digits, which the key covers, in place: the rows
 /// decrypt within the noise model of the copy's width.
-pub fn test_gglwe_switching_key_keyswitch_own_layout<BE: crate::test_suite::noise::TestBackend>(
+pub fn test_gglwe_switching_key_keyswitch_own_layout<BE: crate::test_suite::noise::TestBackend<Rg>, Rg: Ring>(
     params: &TestParams,
     module: &Module<BE>,
 ) where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: GLWESwitchingKeyEncryptSk<BE>
-        + GGLWEKeyswitch<BE>
-        + GLWESwitchingKeyPreparedFactory<BE>
-        + GLWESecretPreparedFactory<BE>
-        + GGLWECopy<BE>
-        + GGLWENoise<BE>,
+    Module<BE>: GLWESwitchingKeyEncryptSk<BE, Rg>
+        + GGLWEKeyswitch<BE, Rg>
+        + GLWESwitchingKeyPreparedFactory<BE, Rg>
+        + GLWESecretPreparedFactory<BE, Rg>
+        + GGLWECopy<BE, Rg>
+        + GGLWENoise<BE, Rg>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
@@ -416,15 +419,16 @@ pub fn test_gglwe_switching_key_keyswitch_own_layout<BE: crate::test_suite::nois
         let mut source_xs: Source = Source::new([1u8; 32]);
         let mut source_xe: Source = Source::new([2u8; 32]);
         let mut source_xa: Source = Source::new([3u8; 32]);
-        let mut sks: Vec<GLWESecret<BE::OwnedBuf, BE::ZnxWord>> = (0..3).map(|_| module.glwe_secret_alloc(rank.into())).collect();
+        let mut sks: Vec<GLWESecret<BE::OwnedBuf, BE::ZnxWord, Rg>> =
+            (0..3).map(|_| module.glwe_secret_alloc(rank.into())).collect();
         for sk in sks.iter_mut() {
             module.glwe_secret_fill_ternary_prob(sk, 0.5, &mut source_xs);
         }
-        let mut sk2_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc(rank.into());
+        let mut sk2_prepared: GLWESecretPrepared<BE::OwnedBuf, BE, Rg> = module.glwe_secret_prepared_alloc(rank.into());
         module.glwe_secret_prepare(&mut sk2_prepared, &sks[2]);
 
-        let mut s0s1: GLWESwitchingKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_switching_key_alloc_from_infos(&layout);
-        let mut s1s2: GLWESwitchingKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_switching_key_alloc_from_infos(&layout);
+        let mut s0s1: GLWESwitchingKey<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_switching_key_alloc_from_infos(&layout);
+        let mut s1s2: GLWESwitchingKey<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_switching_key_alloc_from_infos(&layout);
         module.glwe_switching_key_encrypt_sk(
             &mut s0s1,
             &sks[0],
@@ -441,11 +445,11 @@ pub fn test_gglwe_switching_key_keyswitch_own_layout<BE: crate::test_suite::nois
             &mut source_xa,
             &mut scratch.arena(),
         );
-        let mut s1s2_prepared: GLWESwitchingKeyPrepared<BE::OwnedBuf, BE> =
+        let mut s1s2_prepared: GLWESwitchingKeyPrepared<BE::OwnedBuf, BE, Rg> =
             module.glwe_switching_key_prepared_alloc_from_infos(&s1s2);
         module.glwe_switching_key_prepare(&mut s1s2_prepared, &s1s2, &mut scratch.borrow());
 
-        let mut s0s2: GLWESwitchingKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_switching_key_alloc_from_infos(&res_layout);
+        let mut s0s2: GLWESwitchingKey<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_switching_key_alloc_from_infos(&res_layout);
         module.gglwe_copy(&mut s0s2, &s0s1, &mut scratch.borrow());
         module.gglwe_keyswitch_assign(
             &mut s0s2,

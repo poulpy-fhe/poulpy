@@ -1,4 +1,4 @@
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Module, Ring, ScratchArena, Standard};
 
 use crate::layouts::{
     GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut,
@@ -11,7 +11,7 @@ use crate::layouts::{
 /// Implementations reproduce the bodies their methods document bit for bit, report for each
 /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait GLWEExternalProductImpl: Backend {
+pub unsafe trait GLWEExternalProductImpl<Rg: Ring = Standard>: Backend {
     /// Scratch bound of [`Self::glwe_external_product_dft`]; may report less than the reference, never less than the
     /// body takes.
     fn glwe_external_product_dft_tmp_bytes<R, A, B>(module: &Module<Self>, res_infos: &R, a_infos: &A, b_infos: &B) -> usize
@@ -30,12 +30,12 @@ pub unsafe trait GLWEExternalProductImpl: Backend {
     /// key.
     fn glwe_external_product_dft<'r, A>(
         module: &Module<Self>,
-        res_dft: &mut poulpy_hal::layouts::VecZnxDftBackendMut<'r, Self>,
+        res_dft: &mut poulpy_hal::layouts::VecZnxDftBackendMut<'r, Self, Rg>,
         a: &A,
-        ggsw: &GGSWPreparedBackendRef<'_, Self>,
+        ggsw: &GGSWPreparedBackendRef<'_, Self, Rg>,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        A: GLWEToBackendRef<Self>;
+        A: GLWEToBackendRef<Self, Rg>;
 
     /// Scratch bound of [`Self::glwe_external_product`] and [`Self::glwe_external_product_assign`]; may report less
     /// than the reference, never less than the body takes.
@@ -53,11 +53,11 @@ pub unsafe trait GLWEExternalProductImpl: Backend {
         module: &Module<Self>,
         res: &mut R,
         lhs: &A,
-        rhs: &GGSWPreparedBackendRef<'_, Self>,
+        rhs: &GGSWPreparedBackendRef<'_, Self, Rg>,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        R: GLWEToBackendMut<Self> + GLWEInfos,
-        A: GLWEToBackendRef<Self> + GLWEInfos;
+        R: GLWEToBackendMut<Self, Rg> + GLWEInfos,
+        A: GLWEToBackendRef<Self, Rg> + GLWEInfos;
 
     /// Reproduces
     /// [`glwe_external_product_assign_reference`](crate::reference::external_product::glwe::glwe_external_product_assign_reference)
@@ -66,10 +66,10 @@ pub unsafe trait GLWEExternalProductImpl: Backend {
     fn glwe_external_product_assign<R>(
         module: &Module<Self>,
         res: &mut R,
-        a: &GGSWPreparedBackendRef<'_, Self>,
+        a: &GGSWPreparedBackendRef<'_, Self, Rg>,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        R: GLWEToBackendMut<Self> + GLWEInfos;
+        R: GLWEToBackendMut<Self, Rg> + GLWEInfos;
 }
 
 /// Backend hook for batched GGLWE external products.
@@ -78,7 +78,9 @@ pub unsafe trait GLWEExternalProductImpl: Backend {
 /// Implementations reproduce the bodies their methods document bit for bit, report for each
 /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait GGLWEExternalProductImpl: Backend + GLWEExternalProductImpl + crate::oep::GLWEZeroImpl {
+pub unsafe trait GGLWEExternalProductImpl<Rg: Ring = Standard>:
+    Backend + GLWEExternalProductImpl<Rg> + crate::oep::GLWEZeroImpl<Rg>
+{
     /// Default body: `gglwe_external_product_tmp_bytes_derived`,
     /// [`GLWEExternalProductImpl::glwe_external_product_tmp_bytes`](crate::oep::GLWEExternalProductImpl::glwe_external_product_tmp_bytes).
     fn gglwe_external_product_tmp_bytes<R, A, B>(module: &Module<Self>, res_infos: &R, a_infos: &A, b_infos: &B) -> usize
@@ -87,7 +89,7 @@ pub unsafe trait GGLWEExternalProductImpl: Backend + GLWEExternalProductImpl + c
         A: GGLWEInfos,
         B: GGSWInfos,
     {
-        crate::oep::derived::external_product::gglwe_external_product_tmp_bytes_derived::<Self, _, _, _, _>(
+        crate::oep::derived::external_product::gglwe_external_product_tmp_bytes_derived::<Self, _, _, _, _, Rg>(
             module, res_infos, a_infos, b_infos,
         )
     }
@@ -102,13 +104,13 @@ pub unsafe trait GGLWEExternalProductImpl: Backend + GLWEExternalProductImpl + c
         module: &Module<Self>,
         res: &mut R,
         a: &A,
-        b: &GGSWPreparedBackendRef<'_, Self>,
+        b: &GGSWPreparedBackendRef<'_, Self, Rg>,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        R: GGLWEToBackendMut<Self> + GGLWEInfos,
-        A: GGLWEToBackendRef<Self> + GGLWEInfos,
+        R: GGLWEToBackendMut<Self, Rg> + GGLWEInfos,
+        A: GGLWEToBackendRef<Self, Rg> + GGLWEInfos,
     {
-        crate::oep::derived::external_product::gglwe_external_product_derived::<Self, _, _, _>(module, res, a, b, scratch)
+        crate::oep::derived::external_product::gglwe_external_product_derived::<Self, _, _, _, Rg>(module, res, a, b, scratch)
     }
 
     /// Default body: `gglwe_external_product_assign_derived`,
@@ -118,12 +120,12 @@ pub unsafe trait GGLWEExternalProductImpl: Backend + GLWEExternalProductImpl + c
     fn gglwe_external_product_assign<R>(
         module: &Module<Self>,
         res: &mut R,
-        a: &GGSWPreparedBackendRef<'_, Self>,
+        a: &GGSWPreparedBackendRef<'_, Self, Rg>,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        R: GGLWEToBackendMut<Self> + GGLWEInfos,
+        R: GGLWEToBackendMut<Self, Rg> + GGLWEInfos,
     {
-        crate::oep::derived::external_product::gglwe_external_product_assign_derived::<Self, _, _>(module, res, a, scratch)
+        crate::oep::derived::external_product::gglwe_external_product_assign_derived::<Self, _, _, Rg>(module, res, a, scratch)
     }
 }
 
@@ -133,7 +135,9 @@ pub unsafe trait GGLWEExternalProductImpl: Backend + GLWEExternalProductImpl + c
 /// Implementations reproduce the bodies their methods document bit for bit, report for each
 /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait GGSWExternalProductImpl: Backend + GLWEExternalProductImpl + crate::oep::GLWEZeroImpl {
+pub unsafe trait GGSWExternalProductImpl<Rg: Ring = Standard>:
+    Backend + GLWEExternalProductImpl<Rg> + crate::oep::GLWEZeroImpl<Rg>
+{
     /// Default body: `ggsw_external_product_tmp_bytes_derived`,
     /// [`GLWEExternalProductImpl::glwe_external_product_tmp_bytes`](crate::oep::GLWEExternalProductImpl::glwe_external_product_tmp_bytes).
     fn ggsw_external_product_tmp_bytes<R, A, B>(module: &Module<Self>, res_infos: &R, a_infos: &A, b_infos: &B) -> usize
@@ -142,7 +146,7 @@ pub unsafe trait GGSWExternalProductImpl: Backend + GLWEExternalProductImpl + cr
         A: GGSWInfos,
         B: GGSWInfos,
     {
-        crate::oep::derived::external_product::ggsw_external_product_tmp_bytes_derived::<Self, _, _, _, _>(
+        crate::oep::derived::external_product::ggsw_external_product_tmp_bytes_derived::<Self, _, _, _, _, Rg>(
             module, res_infos, a_infos, b_infos,
         )
     }
@@ -157,13 +161,13 @@ pub unsafe trait GGSWExternalProductImpl: Backend + GLWEExternalProductImpl + cr
         module: &Module<Self>,
         res: &mut R,
         a: &A,
-        b: &GGSWPreparedBackendRef<'_, Self>,
+        b: &GGSWPreparedBackendRef<'_, Self, Rg>,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        R: GGSWToBackendMut<Self> + GGSWAtViewMut<Self> + GGSWInfos,
-        A: GGSWToBackendRef<Self> + GGSWAtViewRef<Self> + GGSWInfos,
+        R: GGSWToBackendMut<Self, Rg> + GGSWAtViewMut<Self, Rg> + GGSWInfos,
+        A: GGSWToBackendRef<Self, Rg> + GGSWAtViewRef<Self, Rg> + GGSWInfos,
     {
-        crate::oep::derived::external_product::ggsw_external_product_derived::<Self, _, _, _>(module, res, a, b, scratch)
+        crate::oep::derived::external_product::ggsw_external_product_derived::<Self, _, _, _, Rg>(module, res, a, b, scratch)
     }
 
     /// Default body: `ggsw_external_product_assign_derived`,
@@ -173,20 +177,26 @@ pub unsafe trait GGSWExternalProductImpl: Backend + GLWEExternalProductImpl + cr
     fn ggsw_external_product_assign<R>(
         module: &Module<Self>,
         res: &mut R,
-        a: &GGSWPreparedBackendRef<'_, Self>,
+        a: &GGSWPreparedBackendRef<'_, Self, Rg>,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        R: GGSWToBackendMut<Self> + GGSWAtViewMut<Self> + GGSWInfos,
+        R: GGSWToBackendMut<Self, Rg> + GGSWAtViewMut<Self, Rg> + GGSWInfos,
     {
-        crate::oep::derived::external_product::ggsw_external_product_assign_derived::<Self, _, _>(module, res, a, scratch)
+        crate::oep::derived::external_product::ggsw_external_product_assign_derived::<Self, _, _, Rg>(module, res, a, scratch)
     }
 }
 
 /// Selects the portable HAL algorithms for this backend operation family.
+///
+/// `($be)` implements both rings and `($be, $ring)` one ring, as `docs/guides/layering-contract.md` describes.
 #[macro_export]
 macro_rules! impl_glwe_external_product_reference_full {
     ($be:ty) => {
-        unsafe impl $crate::oep::GLWEExternalProductImpl for $be {
+        $crate::impl_glwe_external_product_reference_full!($be, ::poulpy_hal::layouts::Standard);
+        $crate::impl_glwe_external_product_reference_full!($be, ::poulpy_hal::layouts::ConjugateInvariant);
+    };
+    ($be:ty, $ring:ty) => {
+        unsafe impl $crate::oep::GLWEExternalProductImpl<$ring> for $be {
             fn glwe_external_product_dft_tmp_bytes<R, A, B>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 res_infos: &R,
@@ -198,23 +208,25 @@ macro_rules! impl_glwe_external_product_reference_full {
                 A: $crate::layouts::GLWEInfos,
                 B: $crate::layouts::GGSWInfos,
             {
-                $crate::reference::external_product::glwe::GLWEExternalProductDftReference::glwe_external_product_dft_tmp_bytes_reference(
-                    module, res_infos, a_infos, b_infos,
-                )
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::external_product::glwe::GLWEExternalProductDftReference<
+                                            $be,
+                                            $ring,
+                                        >>::glwe_external_product_dft_tmp_bytes_reference(module, res_infos, a_infos, b_infos)
             }
 
             fn glwe_external_product_dft<'r, A>(
                 module: &::poulpy_hal::layouts::Module<Self>,
-                res_dft: &mut ::poulpy_hal::layouts::VecZnxDftBackendMut<'r, Self>,
+                res_dft: &mut ::poulpy_hal::layouts::VecZnxDftBackendMut<'r, Self, $ring>,
                 a: &A,
-                ggsw: &$crate::layouts::GGSWPreparedBackendRef<'_, Self>,
+                ggsw: &$crate::layouts::GGSWPreparedBackendRef<'_, Self, $ring>,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) where
-                A: $crate::layouts::GLWEToBackendRef<Self>,
+                A: $crate::layouts::GLWEToBackendRef<Self, $ring>,
             {
-                $crate::reference::external_product::glwe::GLWEExternalProductDftReference::glwe_external_product_dft_reference(
-                    module, res_dft, a, ggsw, scratch,
-                )
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::external_product::glwe::GLWEExternalProductDftReference<
+                                            $be,
+                                            $ring,
+                                        >>::glwe_external_product_dft_reference(module, res_dft, a, ggsw, scratch)
             }
 
             fn glwe_external_product_tmp_bytes<R, A, B>(
@@ -228,54 +240,69 @@ macro_rules! impl_glwe_external_product_reference_full {
                 A: $crate::layouts::GLWEInfos,
                 B: $crate::layouts::GGSWInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::external_product::GLWEExternalProductReference<$be>>::glwe_external_product_tmp_bytes_reference(
-                    module, res_infos, a_infos, b_infos,
-                )
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::external_product::GLWEExternalProductReference<
+                    $be,
+                    $ring,
+                >>::glwe_external_product_tmp_bytes_reference(module, res_infos, a_infos, b_infos)
             }
 
             fn glwe_external_product<R, A>(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 res: &mut R,
                 lhs: &A,
-                rhs: &$crate::layouts::prepared::GGSWPreparedBackendRef<'_, $be>,
+                rhs: &$crate::layouts::prepared::GGSWPreparedBackendRef<'_, $be, $ring>,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
             ) where
-                R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
-                A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
+                R: $crate::layouts::GLWEToBackendMut<$be, $ring> + $crate::layouts::GLWEInfos,
+                A: $crate::layouts::GLWEToBackendRef<$be, $ring> + $crate::layouts::GLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::external_product::GLWEExternalProductReference<$be>>::glwe_external_product_reference(
-                    module, res, lhs, rhs, scratch,
-                )
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::external_product::GLWEExternalProductReference<
+                    $be,
+                    $ring,
+                >>::glwe_external_product_reference(module, res, lhs, rhs, scratch)
             }
 
             fn glwe_external_product_assign<R>(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 res: &mut R,
-                a: &$crate::layouts::prepared::GGSWPreparedBackendRef<'_, $be>,
+                a: &$crate::layouts::prepared::GGSWPreparedBackendRef<'_, $be, $ring>,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
             ) where
-                R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
+                R: $crate::layouts::GLWEToBackendMut<$be, $ring> + $crate::layouts::GLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::external_product::GLWEExternalProductReference<$be>>::glwe_external_product_assign_reference(
-                    module, res, a, scratch,
-                )
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::external_product::GLWEExternalProductReference<
+                    $be,
+                    $ring,
+                >>::glwe_external_product_assign_reference(module, res, a, scratch)
             }
         }
     };
 }
 
 /// Selects the same-layer row composition for this backend.
+///
+/// `($be)` implements both rings and `($be, $ring)` one ring, as `docs/guides/layering-contract.md` describes.
 #[macro_export]
 macro_rules! impl_gglwe_external_product_derived_full {
     ($be:ty) => {
-        unsafe impl $crate::oep::GGLWEExternalProductImpl for $be {}
+        $crate::impl_gglwe_external_product_derived_full!($be, ::poulpy_hal::layouts::Standard);
+        $crate::impl_gglwe_external_product_derived_full!($be, ::poulpy_hal::layouts::ConjugateInvariant);
+    };
+    ($be:ty, $ring:ty) => {
+        unsafe impl $crate::oep::GGLWEExternalProductImpl<$ring> for $be {}
     };
 }
 
 /// Selects the same-layer row composition for this backend.
+///
+/// `($be)` implements both rings and `($be, $ring)` one ring, as `docs/guides/layering-contract.md` describes.
 #[macro_export]
 macro_rules! impl_ggsw_external_product_derived_full {
     ($be:ty) => {
-        unsafe impl $crate::oep::GGSWExternalProductImpl for $be {}
+        $crate::impl_ggsw_external_product_derived_full!($be, ::poulpy_hal::layouts::Standard);
+        $crate::impl_ggsw_external_product_derived_full!($be, ::poulpy_hal::layouts::ConjugateInvariant);
+    };
+    ($be:ty, $ring:ty) => {
+        unsafe impl $crate::oep::GGSWExternalProductImpl<$ring> for $be {}
     };
 }

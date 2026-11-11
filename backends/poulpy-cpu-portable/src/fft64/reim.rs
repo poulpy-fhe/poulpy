@@ -15,7 +15,7 @@
 //! All implementations use the default `_portable` implementations.
 
 use super::FFT64Portable;
-use poulpy_hal::layouts::Ring;
+use poulpy_hal::layouts::{ConjugateInvariant, Standard};
 
 use crate::kernels::fft64::{
     convolution::I64Ops,
@@ -23,30 +23,30 @@ use crate::kernels::fft64::{
     reim4::{Reim4BlkMatVec, Reim4Convolution},
 };
 
-impl<R: Ring> ReimFFTExecute<ReimFFTTable<f64>, f64> for FFT64Portable<R> {
+impl ReimFFTExecute<ReimFFTTable<f64>, f64> for FFT64Portable {
     fn reim_dft_execute(table: &ReimFFTTable<f64>, data: &mut [f64]) {
         fft_portable(table.m(), table.omg(), data);
     }
 }
 
-impl<R: Ring> ReimFFTExecute<ReimIFFTTable<f64>, f64> for FFT64Portable<R> {
+impl ReimFFTExecute<ReimIFFTTable<f64>, f64> for FFT64Portable {
     fn reim_dft_execute(table: &ReimIFFTTable<f64>, data: &mut [f64]) {
         ifft_portable(table.m(), table.omg(), data);
     }
 }
 
-impl<R: Ring> ReimArith for FFT64Portable<R> {}
+impl ReimArith for FFT64Portable {}
 
-impl<R: Ring> Reim4BlkMatVec for FFT64Portable<R> {}
+impl Reim4BlkMatVec for FFT64Portable {}
 
-impl<R: Ring> Reim4Convolution for FFT64Portable<R> {}
+impl Reim4Convolution for FFT64Portable {}
 
-impl<R: Ring> I64Ops for FFT64Portable<R> {}
+impl I64Ops for FFT64Portable {}
 
-impl crate::kernels::fft64::ring_arith::Fft64RingArith for FFT64Portable<poulpy_hal::layouts::Standard> {
+impl crate::kernels::fft64::ring_arith::Fft64RingArith<Standard> for FFT64Portable {
     crate::fft64_ring_arith_standard!();
 }
 
-impl crate::kernels::fft64::ring_arith::Fft64RingArith for FFT64Portable<poulpy_hal::layouts::ConjugateInvariant> {
+impl crate::kernels::fft64::ring_arith::Fft64RingArith<ConjugateInvariant> for FFT64Portable {
     crate::fft64_ring_arith_ci!();
 }

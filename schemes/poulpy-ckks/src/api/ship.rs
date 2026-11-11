@@ -85,7 +85,8 @@ pub trait CKKSShipOps<BE: Backend, F: CKKSShipScalar> {
     ///
     /// # Errors
     ///
-    /// An untyped error, before anything is built, when the module or `ciphertext` is not of the plan's degree,
+    /// An untyped error, before anything is built, when the plan's degree exceeds the module's, `ciphertext` is not of
+    /// the plan's degree,
     /// `ciphertext` is not of rank 1 or not one limb of `base2k`, or `base2k` is outside `1..63` or reaches
     /// [`CKKSShipScalar::MANTISSA_BITS`]; then an untyped error for a phase the scalar cannot represent.
     fn ckks_ship_coeff_encodings<Src>(
@@ -105,7 +106,7 @@ pub trait CKKSShipOps<BE: Backend, F: CKKSShipScalar> {
     ///
     /// # Errors
     ///
-    /// `InvalidOperand` when the module or `input` is not of the plan's degree, `input` is not of rank 1 or not one
+    /// `InvalidOperand` when the plan's degree exceeds the module's, `input` is not of the plan's degree, of rank 1 or one
     /// limb of the key radix, `output` is not of the plan's degree, of rank 1 and of the key radix or holds less than
     /// the raised precision, or a mux key group of `keys` has another radix than the key radix, a key whose
     /// `max_input_k` is below the width it rotates, digits off a limb boundary of more than one width and count, keys of

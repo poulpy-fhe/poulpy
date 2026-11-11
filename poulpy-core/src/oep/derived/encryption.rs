@@ -21,12 +21,12 @@ use crate::{
     oep::EncryptionImpl,
 };
 use poulpy_hal::{
-    layouts::{Module, ScalarZnxToBackendRef, ScratchArena, ZnxInfos},
+    layouts::{Module, Ring, ScalarZnxToBackendRef, ScratchArena, ZnxInfos},
     source::Source,
 };
 
 /// Reconstruct a mask using the backend's source-driven mask sampler.
-pub(crate) fn glwe_fill_mask_from_seed_derived<BE: EncryptionImpl, R: GLWEToBackendMut<BE>>(
+pub(crate) fn glwe_fill_mask_from_seed_derived<BE: EncryptionImpl<Rg>, R: GLWEToBackendMut<BE, Rg>, Rg: Ring>(
     module: &Module<BE>,
     res: &mut R,
     seed_xa: [u8; 32],
@@ -35,7 +35,7 @@ pub(crate) fn glwe_fill_mask_from_seed_derived<BE: EncryptionImpl, R: GLWEToBack
 }
 
 /// Reconstruct an LWE mask using the backend's source-driven mask sampler.
-pub(crate) fn lwe_fill_mask_from_seed_derived<BE: EncryptionImpl, R: LWEToBackendMut<BE>>(
+pub(crate) fn lwe_fill_mask_from_seed_derived<BE: EncryptionImpl<Rg>, R: LWEToBackendMut<BE, Rg>, Rg: Ring>(
     module: &Module<BE>,
     base2k: usize,
     res: &mut R,
@@ -44,7 +44,7 @@ pub(crate) fn lwe_fill_mask_from_seed_derived<BE: EncryptionImpl, R: LWEToBacken
     BE::lwe_fill_mask_from_source(module, base2k, res, &mut Source::new(seed_xa));
 }
 
-pub(crate) fn glwe_public_key_generate_tmp_bytes_derived<BE: EncryptionImpl, A: GLWEInfos>(
+pub(crate) fn glwe_public_key_generate_tmp_bytes_derived<BE: EncryptionImpl<Rg>, A: GLWEInfos, Rg: Ring>(
     module: &Module<BE>,
     infos: &A,
 ) -> usize {
@@ -52,7 +52,7 @@ pub(crate) fn glwe_public_key_generate_tmp_bytes_derived<BE: EncryptionImpl, A: 
     BE::glwe_encrypt_sk_tmp_bytes(module, infos).max(module.glwe_normalize_tmp_bytes())
 }
 
-pub(crate) fn glwe_public_key_generate_derived<BE, R, S>(
+pub(crate) fn glwe_public_key_generate_derived<BE, R, S, Rg: Ring>(
     module: &Module<BE>,
     res: &mut R,
     sk: &S,
@@ -60,9 +60,9 @@ pub(crate) fn glwe_public_key_generate_derived<BE, R, S>(
     source_xa: &mut Source,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: EncryptionImpl,
-    R: GLWEPublicKeyToBackendMut<BE> + GetDistributionMut + GLWEInfos,
-    S: GLWESecretPreparedToBackendRef<BE> + GetDistribution,
+    BE: EncryptionImpl<Rg>,
+    R: GLWEPublicKeyToBackendMut<BE, Rg> + GetDistributionMut + GLWEInfos,
+    S: GLWESecretPreparedToBackendRef<BE, Rg> + GetDistribution,
 {
     {
         let sk_ref = sk.to_backend_ref();
@@ -84,7 +84,7 @@ pub(crate) fn glwe_public_key_generate_derived<BE, R, S>(
         );
         let mut pk = res.to_backend_mut();
         for l in 0..pk.rank().as_usize() {
-            let mut entry = GLWEPublicKeyAtViewMut::<BE>::at_view_mut(&mut pk, l);
+            let mut entry = GLWEPublicKeyAtViewMut::<BE, Rg>::at_view_mut(&mut pk, l);
             BE::glwe_encrypt_zero_sk(module, &mut entry, sk, source_xe, source_xa, scratch);
             module.glwe_normalize_assign(&mut entry, scratch);
         }
@@ -94,7 +94,7 @@ pub(crate) fn glwe_public_key_generate_derived<BE, R, S>(
     *res.dist_mut() = *sk.dist();
 }
 
-pub(crate) fn glwe_public_key_compressed_generate_tmp_bytes_derived<BE: EncryptionImpl, A: GLWEInfos>(
+pub(crate) fn glwe_public_key_compressed_generate_tmp_bytes_derived<BE: EncryptionImpl<Rg>, A: GLWEInfos, Rg: Ring>(
     module: &Module<BE>,
     infos: &A,
 ) -> usize {
@@ -102,7 +102,7 @@ pub(crate) fn glwe_public_key_compressed_generate_tmp_bytes_derived<BE: Encrypti
     BE::glwe_compressed_encrypt_sk_tmp_bytes(module, infos)
 }
 
-pub(crate) fn glwe_public_key_compressed_generate_derived<BE, R, S>(
+pub(crate) fn glwe_public_key_compressed_generate_derived<BE, R, S, Rg: Ring>(
     module: &Module<BE>,
     res: &mut R,
     sk: &S,
@@ -110,9 +110,9 @@ pub(crate) fn glwe_public_key_compressed_generate_derived<BE, R, S>(
     source_xe: &mut Source,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: EncryptionImpl,
-    R: GLWEPublicKeyCompressedToBackendMut<BE> + GLWEPublicKeyCompressedSeedMut + GetDistributionMut + GLWEInfos,
-    S: GLWESecretPreparedToBackendRef<BE> + GetDistribution,
+    BE: EncryptionImpl<Rg>,
+    R: GLWEPublicKeyCompressedToBackendMut<BE, Rg> + GLWEPublicKeyCompressedSeedMut + GetDistributionMut + GLWEInfos,
+    S: GLWESecretPreparedToBackendRef<BE, Rg> + GetDistribution,
 {
     {
         let sk_ref = sk.to_backend_ref();
@@ -142,7 +142,7 @@ pub(crate) fn glwe_public_key_compressed_generate_derived<BE, R, S>(
     *res.dist_mut() = *sk.dist();
 }
 
-pub(crate) fn glwe_encrypt_pk_derived<BE, R, P, K>(
+pub(crate) fn glwe_encrypt_pk_derived<BE, R, P, K, Rg: Ring>(
     module: &Module<BE>,
     res: &mut R,
     pt: &P,
@@ -151,16 +151,16 @@ pub(crate) fn glwe_encrypt_pk_derived<BE, R, P, K>(
     source_xe: &mut Source,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: EncryptionImpl,
-    R: GLWEToBackendMut<BE> + GLWEInfos,
-    P: GLWEToBackendRef<BE> + GLWEInfos,
-    K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos,
+    BE: EncryptionImpl<Rg>,
+    R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+    P: GLWEToBackendRef<BE, Rg> + GLWEInfos,
+    K: GLWEPublicKeyPreparedToBackendRef<BE, Rg> + GLWEInfos,
 {
     glwe_encrypt_pk_at_col_derived(module, res, Some((pt, 0)), pk, source_xu, source_xe, scratch);
 }
 
 /// Draws the fresh errors at the precision the noise model selects, then records its estimate.
-pub(crate) fn glwe_encrypt_pk_at_col_derived<BE, R, P, K>(
+pub(crate) fn glwe_encrypt_pk_at_col_derived<BE, R, P, K, Rg: Ring>(
     module: &Module<BE>,
     res: &mut R,
     pt: Option<(&P, usize)>,
@@ -169,18 +169,18 @@ pub(crate) fn glwe_encrypt_pk_at_col_derived<BE, R, P, K>(
     source_xe: &mut Source,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: EncryptionImpl,
-    R: GLWEToBackendMut<BE> + GLWEInfos,
-    P: GLWEToBackendRef<BE> + GLWEInfos,
-    K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos,
+    BE: EncryptionImpl<Rg>,
+    R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+    P: GLWEToBackendRef<BE, Rg> + GLWEInfos,
+    K: GLWEPublicKeyPreparedToBackendRef<BE, Rg> + GLWEInfos,
 {
-    let noise = public_key_encryption_noise::<BE, _, _>(res, pk, PublicKeyBodyNoise::Sampled);
-    let k_sample = public_key_sample_precision::<BE, _, _>(res, pk);
+    let noise = public_key_encryption_noise::<BE, _, _, Rg>(res, pk, PublicKeyBodyNoise::Sampled);
+    let k_sample = public_key_sample_precision::<BE, _, _, Rg>(res, pk);
     BE::glwe_encrypt_pk_sampled_at(module, res, pt, true, pk, k_sample, source_xu, source_xe, scratch);
     res.set_noise(noise);
 }
 
-pub(crate) fn glwe_encrypt_pk_smudged_tmp_bytes_derived<BE: EncryptionImpl, R: GLWEInfos, K: GLWEInfos>(
+pub(crate) fn glwe_encrypt_pk_smudged_tmp_bytes_derived<BE: EncryptionImpl<Rg>, R: GLWEInfos, K: GLWEInfos, Rg: Ring>(
     module: &Module<BE>,
     res_infos: &R,
     pk_infos: &K,
@@ -190,7 +190,7 @@ pub(crate) fn glwe_encrypt_pk_smudged_tmp_bytes_derived<BE: EncryptionImpl, R: G
 
 /// Public-key encryption without a body error, then the flood on the canonical
 /// body at the output's precision, normalized once more.
-pub(crate) fn glwe_encrypt_pk_smudged_derived<BE, R, P, K>(
+pub(crate) fn glwe_encrypt_pk_smudged_derived<BE, R, P, K, Rg: Ring>(
     module: &Module<BE>,
     res: &mut R,
     pt: &P,
@@ -201,10 +201,10 @@ pub(crate) fn glwe_encrypt_pk_smudged_derived<BE, R, P, K>(
     source_smudge: &mut Source,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: EncryptionImpl,
-    R: GLWEToBackendMut<BE> + GLWEInfos,
-    P: GLWEToBackendRef<BE> + GLWEInfos,
-    K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos,
+    BE: EncryptionImpl<Rg>,
+    R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+    P: GLWEToBackendRef<BE, Rg> + GLWEInfos,
+    K: GLWEPublicKeyPreparedToBackendRef<BE, Rg> + GLWEInfos,
 {
     let (base2k, k): (usize, usize) = (res.base2k().into(), res.k().as_usize());
     flood.assert_valid_for(base2k, k);
@@ -213,8 +213,8 @@ pub(crate) fn glwe_encrypt_pk_smudged_derived<BE, R, P, K>(
         scratch.available() >= tmp_bytes,
         "insufficient scratch for smudged GLWE public-key encryption"
     );
-    let noise = public_key_encryption_noise::<BE, _, _>(res, pk, PublicKeyBodyNoise::Flood(flood));
-    let k_sample = public_key_sample_precision::<BE, _, _>(res, pk);
+    let noise = public_key_encryption_noise::<BE, _, _, Rg>(res, pk, PublicKeyBodyNoise::Flood(flood));
+    let k_sample = public_key_sample_precision::<BE, _, _, Rg>(res, pk);
     BE::glwe_encrypt_pk_sampled_at(module, res, Some((pt, 0)), false, pk, k_sample, source_xu, source_xe, scratch);
     {
         let mut res = res.to_backend_mut();
@@ -225,7 +225,7 @@ pub(crate) fn glwe_encrypt_pk_smudged_derived<BE, R, P, K>(
     res.set_noise(noise);
 }
 
-pub(crate) fn glwe_encrypt_zero_pk_derived<BE, R, K>(
+pub(crate) fn glwe_encrypt_zero_pk_derived<BE, R, K, Rg: Ring>(
     module: &Module<BE>,
     res: &mut R,
     pk: &K,
@@ -233,16 +233,16 @@ pub(crate) fn glwe_encrypt_zero_pk_derived<BE, R, K>(
     source_xe: &mut Source,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: EncryptionImpl,
-    R: GLWEToBackendMut<BE> + GLWEInfos,
-    K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos,
+    BE: EncryptionImpl<Rg>,
+    R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+    K: GLWEPublicKeyPreparedToBackendRef<BE, Rg> + GLWEInfos,
 {
-    glwe_encrypt_pk_at_col_derived::<BE, R, GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord>, K>(
+    glwe_encrypt_pk_at_col_derived::<BE, R, GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord, Rg>, K, Rg>(
         module, res, None, pk, source_xu, source_xe, scratch,
     );
 }
 
-pub(crate) fn ggsw_encrypt_pk_tmp_bytes_derived<BE: EncryptionImpl, R: GGSWInfos, K: GLWEInfos>(
+pub(crate) fn ggsw_encrypt_pk_tmp_bytes_derived<BE: EncryptionImpl<Rg>, R: GGSWInfos, K: GLWEInfos, Rg: Ring>(
     module: &Module<BE>,
     res_infos: &R,
     pk_infos: &K,
@@ -252,7 +252,7 @@ pub(crate) fn ggsw_encrypt_pk_tmp_bytes_derived<BE: EncryptionImpl, R: GGSWInfos
         + BE::glwe_encrypt_pk_tmp_bytes(module, res_infos, pk_infos).max(BE::vec_znx_normalize_tmp_bytes(module))
 }
 
-pub(crate) fn ggsw_encrypt_pk_derived<BE, R, P, K>(
+pub(crate) fn ggsw_encrypt_pk_derived<BE, R, P, K, Rg: Ring>(
     module: &Module<BE>,
     res: &mut R,
     pt: &P,
@@ -261,13 +261,13 @@ pub(crate) fn ggsw_encrypt_pk_derived<BE, R, P, K>(
     source_xe: &mut Source,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: EncryptionImpl,
-    R: GGSWToBackendMut<BE> + GGSWInfos + GGSWAtViewMut<BE>,
-    P: ScalarZnxToBackendRef<BE> + ZnxInfos,
-    K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos,
+    BE: EncryptionImpl<Rg>,
+    R: GGSWToBackendMut<BE, Rg> + GGSWInfos + GGSWAtViewMut<BE, Rg>,
+    P: ScalarZnxToBackendRef<BE, Rg> + ZnxInfos,
+    K: GLWEPublicKeyPreparedToBackendRef<BE, Rg> + GLWEInfos,
 {
-    let noise = public_key_encryption_noise::<BE, _, _>(res, pk, PublicKeyBodyNoise::Sampled);
-    let k_sample = public_key_sample_precision::<BE, _, _>(res, pk);
+    let noise = public_key_encryption_noise::<BE, _, _, Rg>(res, pk, PublicKeyBodyNoise::Sampled);
+    let k_sample = public_key_sample_precision::<BE, _, _, Rg>(res, pk);
     operand_degree(module.n(), &[res.n(), pt.n().into(), pk.n()]);
     assert!(
         scratch.available() >= ggsw_encrypt_pk_tmp_bytes_derived(module, res, pk),
@@ -313,9 +313,9 @@ pub(crate) fn ggsw_encrypt_pk_derived<BE, R, P, K>(
     res.set_noise(noise);
 }
 
-pub(crate) fn glwe_tensor_key_encrypt_sk_tmp_bytes_derived<BE, A>(module: &Module<BE>, infos: &A) -> usize
+pub(crate) fn glwe_tensor_key_encrypt_sk_tmp_bytes_derived<BE, A, Rg: Ring>(module: &Module<BE>, infos: &A) -> usize
 where
-    BE: EncryptionImpl,
+    BE: EncryptionImpl<Rg>,
     A: GGLWEInfos,
 {
     operand_degree(module.n(), &[infos.n()]);
@@ -331,7 +331,7 @@ where
     BE::scratch_aligned(lvl_0) + BE::scratch_aligned(lvl_1) + lvl_2_prepare.max(lvl_2_encrypt)
 }
 
-pub(crate) fn glwe_tensor_key_encrypt_sk_derived<BE, R, S>(
+pub(crate) fn glwe_tensor_key_encrypt_sk_derived<BE, R, S, Rg: Ring>(
     module: &Module<BE>,
     res: &mut R,
     sk: &S,
@@ -339,9 +339,9 @@ pub(crate) fn glwe_tensor_key_encrypt_sk_derived<BE, R, S>(
     source_xa: &mut Source,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: EncryptionImpl,
-    R: GGLWEToBackendMut<BE> + GGLWEInfos,
-    S: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
+    BE: EncryptionImpl<Rg>,
+    R: GGLWEToBackendMut<BE, Rg> + GGLWEInfos,
+    S: GLWESecretToBackendRef<BE, Rg> + GetDistribution + GLWEInfos,
 {
     assert!(
         res.rank_out() == sk.rank(),
@@ -376,9 +376,9 @@ pub(crate) fn glwe_tensor_key_encrypt_sk_derived<BE, R, S>(
     scratch.wipe(tmp_bytes);
 }
 
-pub(crate) fn glwe_tensor_key_compressed_encrypt_sk_tmp_bytes_derived<BE, A>(module: &Module<BE>, infos: &A) -> usize
+pub(crate) fn glwe_tensor_key_compressed_encrypt_sk_tmp_bytes_derived<BE, A, Rg: Ring>(module: &Module<BE>, infos: &A) -> usize
 where
-    BE: EncryptionImpl,
+    BE: EncryptionImpl<Rg>,
     A: GGLWEInfos,
 {
     operand_degree(module.n(), &[infos.n()]);
@@ -394,7 +394,7 @@ where
     BE::scratch_aligned(lvl_0) + BE::scratch_aligned(lvl_1) + lvl_2_prepare.max(lvl_2_encrypt)
 }
 
-pub(crate) fn glwe_tensor_key_compressed_encrypt_sk_derived<BE, R, S>(
+pub(crate) fn glwe_tensor_key_compressed_encrypt_sk_derived<BE, R, S, Rg: Ring>(
     module: &Module<BE>,
     res: &mut R,
     sk: &S,
@@ -402,9 +402,9 @@ pub(crate) fn glwe_tensor_key_compressed_encrypt_sk_derived<BE, R, S>(
     source_xe: &mut Source,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: EncryptionImpl,
-    R: GGLWEInfos + GGLWECompressedToBackendMut<BE> + GGLWECompressedSeedMut,
-    S: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
+    BE: EncryptionImpl<Rg>,
+    R: GGLWEInfos + GGLWECompressedToBackendMut<BE, Rg> + GGLWECompressedSeedMut,
+    S: GLWESecretToBackendRef<BE, Rg> + GetDistribution + GLWEInfos,
 {
     assert!(
         res.rank_out() == sk.rank(),

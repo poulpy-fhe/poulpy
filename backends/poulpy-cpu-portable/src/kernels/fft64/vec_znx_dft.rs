@@ -1,3 +1,5 @@
+use std::marker::PhantomData;
+
 use crate::kernels::fft64::ring_arith::Fft64RingArith;
 use bytemuck::cast_slice_mut;
 
@@ -12,7 +14,7 @@ use crate::{
         ZnxView, ZnxViewMut,
     },
 };
-use poulpy_hal::layouts::VecZnxInfos;
+use poulpy_hal::layouts::{Ring, VecZnxInfos};
 
 /// Panics unless `a` has degree `n` and a column `col`.
 ///
@@ -25,12 +27,12 @@ pub fn check_operand(n: usize, a: &impl VecZnxInfos, col: usize) {
     assert!(col < a.cols(), "operand column out of range");
 }
 
-pub fn vec_znx_dft_add_portable<BE>(
-    res: &mut VecZnxDftBackendMut<'_, BE>,
+pub fn vec_znx_dft_add_portable<BE, Rg: Ring>(
+    res: &mut VecZnxDftBackendMut<'_, BE, Rg>,
     res_col: usize,
-    a: &VecZnxDftBackendRef<'_, BE>,
+    a: &VecZnxDftBackendRef<'_, BE, Rg>,
     a_col: usize,
-    b: &VecZnxDftBackendRef<'_, BE>,
+    b: &VecZnxDftBackendRef<'_, BE, Rg>,
     b_col: usize,
 ) where
     BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith,
@@ -78,10 +80,10 @@ pub fn vec_znx_dft_add_portable<BE>(
     }
 }
 
-pub fn vec_znx_dft_add_assign_portable<BE>(
-    res: &mut VecZnxDftBackendMut<'_, BE>,
+pub fn vec_znx_dft_add_assign_portable<BE, Rg: Ring>(
+    res: &mut VecZnxDftBackendMut<'_, BE, Rg>,
     res_col: usize,
-    a: &VecZnxDftBackendRef<'_, BE>,
+    a: &VecZnxDftBackendRef<'_, BE, Rg>,
     a_col: usize,
 ) where
     BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith,
@@ -101,12 +103,12 @@ pub fn vec_znx_dft_add_assign_portable<BE>(
     }
 }
 
-pub fn vec_znx_dft_copy_portable<BE>(
+pub fn vec_znx_dft_copy_portable<BE, Rg: Ring>(
     step: usize,
     offset: usize,
-    res: &mut VecZnxDftBackendMut<'_, BE>,
+    res: &mut VecZnxDftBackendMut<'_, BE, Rg>,
     res_col: usize,
-    a: &VecZnxDftBackendRef<'_, BE>,
+    a: &VecZnxDftBackendRef<'_, BE, Rg>,
     a_col: usize,
 ) where
     BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith,
@@ -133,16 +135,16 @@ pub fn vec_znx_dft_copy_portable<BE>(
     })
 }
 
-pub fn vec_znx_dft_apply_portable<BE>(
-    plan: &FFT64Plan<f64, BE::Ring>,
+pub fn vec_znx_dft_apply_portable<BE, Rg: Ring>(
+    plan: &FFT64Plan<f64, Rg>,
     step: usize,
     offset: usize,
-    res: &mut VecZnxDftBackendMut<'_, BE>,
+    res: &mut VecZnxDftBackendMut<'_, BE, Rg>,
     res_col: usize,
-    a: &VecZnxBackendRef<'_, BE>,
+    a: &VecZnxBackendRef<'_, BE, Rg>,
     a_col: usize,
 ) where
-    BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Fft64RingArith + 'static,
+    BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Fft64RingArith<Rg> + 'static,
     for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
 {
     poulpy_hal::layouts::assert_dense(a, "vec_znx_dft_apply");
@@ -172,14 +174,14 @@ pub fn vec_znx_dft_apply_portable<BE>(
     });
 }
 
-pub fn vec_znx_idft_apply_portable<BE>(
-    plan: &FFT64Plan<f64, BE::Ring>,
-    res: &mut VecZnxBigBackendMut<'_, BE>,
+pub fn vec_znx_idft_apply_portable<BE, Rg: Ring>(
+    plan: &FFT64Plan<f64, Rg>,
+    res: &mut VecZnxBigBackendMut<'_, BE, Rg>,
     res_col: usize,
-    a: &VecZnxDftBackendRef<'_, BE>,
+    a: &VecZnxDftBackendRef<'_, BE, Rg>,
     a_col: usize,
 ) where
-    BE: Backend<DftWord = f64, BigWord = i64, ZnxWord = i64> + ReimArith + Fft64RingArith + ZnxZero,
+    BE: Backend<DftWord = f64, BigWord = i64, ZnxWord = i64> + ReimArith + Fft64RingArith<Rg> + ZnxZero,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
@@ -210,12 +212,12 @@ pub fn vec_znx_idft_apply_portable<BE>(
 // may still be useful as a future optimization, even though the current
 // public API now applies IDFT into a separately allocated VecZnxBig.
 #[allow(dead_code)]
-pub fn vec_znx_idft_apply_consume_portable<'a, BE>(
-    plan: &FFT64Plan<f64, BE::Ring>,
-    mut res: VecZnxDftBackendMut<'a, BE>,
-) -> VecZnxBigBackendMut<'a, BE>
+pub fn vec_znx_idft_apply_consume_portable<'a, BE, Rg: Ring>(
+    plan: &FFT64Plan<f64, Rg>,
+    mut res: VecZnxDftBackendMut<'a, BE, Rg>,
+) -> VecZnxBigBackendMut<'a, BE, Rg>
 where
-    BE: Backend<DftWord = f64, BigWord = i64, ZnxWord = i64> + ReimArith + Fft64RingArith,
+    BE: Backend<DftWord = f64, BigWord = i64, ZnxWord = i64> + ReimArith + Fft64RingArith<Rg>,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
 {
     {
@@ -234,12 +236,12 @@ where
     res.into_big()
 }
 
-pub fn vec_znx_dft_sub_portable<BE>(
-    res: &mut VecZnxDftBackendMut<'_, BE>,
+pub fn vec_znx_dft_sub_portable<BE, Rg: Ring>(
+    res: &mut VecZnxDftBackendMut<'_, BE, Rg>,
     res_col: usize,
-    a: &VecZnxDftBackendRef<'_, BE>,
+    a: &VecZnxDftBackendRef<'_, BE, Rg>,
     a_col: usize,
-    b: &VecZnxDftBackendRef<'_, BE>,
+    b: &VecZnxDftBackendRef<'_, BE, Rg>,
     b_col: usize,
 ) where
     BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith,
@@ -287,10 +289,10 @@ pub fn vec_znx_dft_sub_portable<BE>(
     }
 }
 
-pub fn vec_znx_dft_sub_assign_portable<BE>(
-    res: &mut VecZnxDftBackendMut<'_, BE>,
+pub fn vec_znx_dft_sub_assign_portable<BE, Rg: Ring>(
+    res: &mut VecZnxDftBackendMut<'_, BE, Rg>,
     res_col: usize,
-    a: &VecZnxDftBackendRef<'_, BE>,
+    a: &VecZnxDftBackendRef<'_, BE, Rg>,
     a_col: usize,
 ) where
     BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith,
@@ -310,10 +312,10 @@ pub fn vec_znx_dft_sub_assign_portable<BE>(
     }
 }
 
-pub fn vec_znx_dft_sub_negate_assign_portable<BE>(
-    res: &mut VecZnxDftBackendMut<'_, BE>,
+pub fn vec_znx_dft_sub_negate_assign_portable<BE, Rg: Ring>(
+    res: &mut VecZnxDftBackendMut<'_, BE, Rg>,
     res_col: usize,
-    a: &VecZnxDftBackendRef<'_, BE>,
+    a: &VecZnxDftBackendRef<'_, BE, Rg>,
     a_col: usize,
 ) where
     BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith,
@@ -337,7 +339,7 @@ pub fn vec_znx_dft_sub_negate_assign_portable<BE>(
     }
 }
 
-pub fn vec_znx_dft_zero_portable<BE>(res: &mut VecZnxDftBackendMut<'_, BE>, res_col: usize)
+pub fn vec_znx_dft_zero_portable<BE, Rg: Ring>(res: &mut VecZnxDftBackendMut<'_, BE, Rg>, res_col: usize)
 where
     BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
@@ -349,7 +351,7 @@ where
 }
 
 /// Precomputed permutation for `VecZnxDft` automorphism `tau_p : X -> X^p`
-/// in the FFT64 half-spectrum layout.
+/// in the FFT64 half-spectrum layout of ring `Rg`, which only applies to operands of `Rg`.
 ///
 /// `perm[i]` is the source complex slot that supplies output slot `i`. If
 /// `conj` is set, the imaginary half is globally negated on apply (driven
@@ -357,25 +359,26 @@ where
 /// standard degree-`2n` layout: `perm` indexes its real slots and `conj` is
 /// unused.
 #[derive(Clone, Debug)]
-pub struct Fft64AutomorphismPlan {
+pub struct Fft64AutomorphismPlan<Rg: Ring> {
     pub p: i64,
     pub perm: Vec<u32>,
     pub conj: bool,
+    pub(crate) ring: PhantomData<Rg>,
 }
 
 /// Applies a precomputed DFT-domain automorphism plan to `a`, writing the
 /// result into `res` (out-of-place).
 ///
 /// This is a pure data movement op, applied limb by limb through the
-/// backend ring's [`Fft64RingArith::fft64_automorphism`].
-pub fn vec_znx_dft_automorphism_portable<BE>(
-    plan: &Fft64AutomorphismPlan,
-    res: &mut VecZnxDftBackendMut<'_, BE>,
+/// ring's [`Fft64RingArith::fft64_automorphism`].
+pub fn vec_znx_dft_automorphism_portable<BE, Rg: Ring>(
+    plan: &Fft64AutomorphismPlan<Rg>,
+    res: &mut VecZnxDftBackendMut<'_, BE, Rg>,
     res_col: usize,
-    a: &VecZnxDftBackendRef<'_, BE>,
+    a: &VecZnxDftBackendRef<'_, BE, Rg>,
     a_col: usize,
 ) where
-    BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Fft64RingArith,
+    BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Fft64RingArith<Rg>,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
@@ -391,14 +394,14 @@ pub fn vec_znx_dft_automorphism_portable<BE>(
     }
 }
 
-pub fn vec_znx_dft_automorphism_add_portable<BE, E: poulpy_hal::execution::TaskExecutor>(
-    plan: &Fft64AutomorphismPlan,
-    res: &mut VecZnxDftBackendMut<'_, BE>,
+pub fn vec_znx_dft_automorphism_add_portable<BE, E: poulpy_hal::execution::TaskExecutor, Rg: Ring>(
+    plan: &Fft64AutomorphismPlan<Rg>,
+    res: &mut VecZnxDftBackendMut<'_, BE, Rg>,
     res_col: usize,
-    a: &VecZnxDftBackendRef<'_, BE>,
+    a: &VecZnxDftBackendRef<'_, BE, Rg>,
     a_col: usize,
 ) where
-    BE: Backend<DftWord = f64, ZnxWord = i64> + Fft64RingArith,
+    BE: Backend<DftWord = f64, ZnxWord = i64> + Fft64RingArith<Rg>,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {

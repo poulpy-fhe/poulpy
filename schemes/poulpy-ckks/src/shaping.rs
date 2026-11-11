@@ -46,7 +46,7 @@ pub enum ShapingRing {
 }
 
 impl ShapingRing {
-    /// The shaping ring of the backend ring `R`.
+    /// The shaping ring of the ring `R`.
     pub fn of<R: Ring>() -> Self {
         if R::CYCLOTOMIC_ORDER_FACTOR == Standard::CYCLOTOMIC_ORDER_FACTOR {
             Self::Standard
@@ -75,7 +75,7 @@ impl ShapingProfile {
         Self::from_coeffs(layout.log_r(), ShapingRing::Standard, 0, layout.shaping())
     }
 
-    /// The profile of `layout` on the backend ring `R`. The conjugate-invariant
+    /// The profile of `layout` on the ring `R`. The conjugate-invariant
     /// ring shapes with `Y^s*U`, the smallest shift `s < 2R` that makes `U`
     /// invariant, and refuses a `U` that has none.
     pub fn for_ring<R: Ring>(layout: &ReplicatedLayout) -> CKKSResult<Self> {

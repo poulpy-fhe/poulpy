@@ -5,7 +5,7 @@ use poulpy_hal::{
     execution::TaskExecutor,
     layouts::{
         CnvDftAccTerm, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, ConjugateInvariant,
-        HostDataMut, HostDataRef, Module, Ring, Standard, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef,
+        HostDataMut, HostDataRef, Module, Standard, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef,
         VmpPMatBackendRef,
     },
     oep::HalVecZnxDftImpl,
@@ -18,7 +18,7 @@ use crate::ntt4x30::{PackedNtt4x30Base, PackedWord};
 macro_rules! impl_packed_base {
     ($ring:ty) => {
         #[allow(clippy::too_many_arguments)]
-        impl PackedNtt4x30Base for NTT4x30Portable<$ring> {
+        impl PackedNtt4x30Base<$ring> for NTT4x30Portable {
             fn idft_tmp_words(n: usize) -> usize {
                 drivers::idft_tmp_words(n)
             }
@@ -41,9 +41,9 @@ macro_rules! impl_packed_base {
 
             fn vmp_apply_dft_to_dft<E: TaskExecutor>(
                 _module: &Module<Self>,
-                res: &mut VecZnxDftBackendMut<'_, Self>,
-                a: &VecZnxDftBackendRef<'_, Self>,
-                pmat: &VmpPMatBackendRef<'_, Self>,
+                res: &mut VecZnxDftBackendMut<'_, Self, $ring>,
+                a: &VecZnxDftBackendRef<'_, Self, $ring>,
+                pmat: &VmpPMatBackendRef<'_, Self, $ring>,
                 limb_offset: usize,
                 tmp: &mut [u64],
             ) {
@@ -52,9 +52,9 @@ macro_rules! impl_packed_base {
 
             fn vmp_apply_dft_to_dft_add<E: TaskExecutor>(
                 _module: &Module<Self>,
-                res: &mut VecZnxDftBackendMut<'_, Self>,
-                a: &VecZnxDftBackendRef<'_, Self>,
-                pmat: &VmpPMatBackendRef<'_, Self>,
+                res: &mut VecZnxDftBackendMut<'_, Self, $ring>,
+                a: &VecZnxDftBackendRef<'_, Self, $ring>,
+                pmat: &VmpPMatBackendRef<'_, Self, $ring>,
                 limb_offset: usize,
                 tmp: &mut [u64],
             ) {
@@ -62,49 +62,49 @@ macro_rules! impl_packed_base {
             }
 
             fn vec_znx_dft_add<E: TaskExecutor>(
-                res: &mut VecZnxDftBackendMut<'_, Self>,
+                res: &mut VecZnxDftBackendMut<'_, Self, $ring>,
                 res_col: usize,
-                a: &VecZnxDftBackendRef<'_, Self>,
+                a: &VecZnxDftBackendRef<'_, Self, $ring>,
                 a_col: usize,
-                b: &VecZnxDftBackendRef<'_, Self>,
+                b: &VecZnxDftBackendRef<'_, Self, $ring>,
                 b_col: usize,
             ) {
                 drivers::vec_znx_dft_add::<$ring, E>(res, res_col, a, a_col, b, b_col)
             }
 
             fn vec_znx_dft_add_assign<E: TaskExecutor>(
-                res: &mut VecZnxDftBackendMut<'_, Self>,
+                res: &mut VecZnxDftBackendMut<'_, Self, $ring>,
                 res_col: usize,
-                a: &VecZnxDftBackendRef<'_, Self>,
+                a: &VecZnxDftBackendRef<'_, Self, $ring>,
                 a_col: usize,
             ) {
                 drivers::vec_znx_dft_add_assign::<$ring, E>(res, res_col, a, a_col)
             }
 
             fn vec_znx_dft_sub<E: TaskExecutor>(
-                res: &mut VecZnxDftBackendMut<'_, Self>,
+                res: &mut VecZnxDftBackendMut<'_, Self, $ring>,
                 res_col: usize,
-                a: &VecZnxDftBackendRef<'_, Self>,
+                a: &VecZnxDftBackendRef<'_, Self, $ring>,
                 a_col: usize,
-                b: &VecZnxDftBackendRef<'_, Self>,
+                b: &VecZnxDftBackendRef<'_, Self, $ring>,
                 b_col: usize,
             ) {
                 drivers::vec_znx_dft_sub::<$ring, E>(res, res_col, a, a_col, b, b_col)
             }
 
             fn vec_znx_dft_sub_assign<E: TaskExecutor>(
-                res: &mut VecZnxDftBackendMut<'_, Self>,
+                res: &mut VecZnxDftBackendMut<'_, Self, $ring>,
                 res_col: usize,
-                a: &VecZnxDftBackendRef<'_, Self>,
+                a: &VecZnxDftBackendRef<'_, Self, $ring>,
                 a_col: usize,
             ) {
                 drivers::vec_znx_dft_sub_assign::<$ring, E>(res, res_col, a, a_col)
             }
 
             fn vec_znx_dft_sub_negate_assign<E: TaskExecutor>(
-                res: &mut VecZnxDftBackendMut<'_, Self>,
+                res: &mut VecZnxDftBackendMut<'_, Self, $ring>,
                 res_col: usize,
-                a: &VecZnxDftBackendRef<'_, Self>,
+                a: &VecZnxDftBackendRef<'_, Self, $ring>,
                 a_col: usize,
             ) {
                 drivers::vec_znx_dft_sub_negate_assign::<$ring, E>(res, res_col, a, a_col)
@@ -113,19 +113,19 @@ macro_rules! impl_packed_base {
             fn vec_znx_dft_copy<E: TaskExecutor>(
                 step: usize,
                 offset: usize,
-                res: &mut VecZnxDftBackendMut<'_, Self>,
+                res: &mut VecZnxDftBackendMut<'_, Self, $ring>,
                 res_col: usize,
-                a: &VecZnxDftBackendRef<'_, Self>,
+                a: &VecZnxDftBackendRef<'_, Self, $ring>,
                 a_col: usize,
             ) {
                 drivers::vec_znx_dft_copy::<$ring, E>(step, offset, res, res_col, a, a_col)
             }
 
             fn vec_znx_dft_automorphism_add<E: TaskExecutor>(
-                plan: &<Self as HalVecZnxDftImpl>::AutomorphismPlan,
-                res: &mut VecZnxDftBackendMut<'_, Self>,
+                plan: &<Self as HalVecZnxDftImpl<$ring>>::AutomorphismPlan,
+                res: &mut VecZnxDftBackendMut<'_, Self, $ring>,
                 res_col: usize,
-                a: &VecZnxDftBackendRef<'_, Self>,
+                a: &VecZnxDftBackendRef<'_, Self, $ring>,
                 a_col: usize,
             ) {
                 drivers::vec_znx_dft_automorphism_add::<$ring, E>(plan, res, res_col, a, a_col)
@@ -138,14 +138,14 @@ macro_rules! impl_packed_base {
             fn cnv_pvec_left_prepare<BE: PackedWord, E: TaskExecutor>(
                 base: &Module<Self>,
                 module: &Module<BE>,
-                res: &mut CnvPVecLBackendMut<'_, BE>,
-                a: &VecZnxBackendRef<'_, BE>,
+                res: &mut CnvPVecLBackendMut<'_, BE, $ring>,
+                a: &VecZnxBackendRef<'_, BE, $ring>,
                 tmp: &mut [u64],
             ) where
                 for<'a> BE::BufRef<'a>: HostDataRef,
                 for<'a> BE::BufMut<'a>: HostDataMut,
             {
-                drivers::cnv_pvec_left_prepare::<BE, E>(module, res, a, tmp, |n, dst, src, prepared| {
+                drivers::cnv_pvec_left_prepare::<BE, E, $ring>(module, res, a, tmp, |n, dst, src, prepared| {
                     drivers::dft_limb_scaled::<$ring, E>(base, n, dst, src, prepared)
                 })
             }
@@ -153,14 +153,14 @@ macro_rules! impl_packed_base {
             fn cnv_pvec_right_prepare<BE: PackedWord, E: TaskExecutor>(
                 base: &Module<Self>,
                 module: &Module<BE>,
-                res: &mut CnvPVecRBackendMut<'_, BE>,
-                a: &VecZnxBackendRef<'_, BE>,
+                res: &mut CnvPVecRBackendMut<'_, BE, $ring>,
+                a: &VecZnxBackendRef<'_, BE, $ring>,
                 tmp: &mut [u64],
             ) where
                 for<'a> BE::BufRef<'a>: HostDataRef,
                 for<'a> BE::BufMut<'a>: HostDataMut,
             {
-                drivers::cnv_pvec_right_prepare::<BE, E>(module, res, a, tmp, |n, dst, src, prepared| {
+                drivers::cnv_pvec_right_prepare::<BE, E, $ring>(module, res, a, tmp, |n, dst, src, prepared| {
                     drivers::dft_limb_scaled::<$ring, E>(base, n, dst, src, prepared)
                 })
             }
@@ -168,15 +168,15 @@ macro_rules! impl_packed_base {
             fn cnv_pvec_self_prepare<BE: PackedWord, E: TaskExecutor>(
                 base: &Module<Self>,
                 module: &Module<BE>,
-                left: &mut CnvPVecLBackendMut<'_, BE>,
-                right: &mut CnvPVecRBackendMut<'_, BE>,
-                a: &VecZnxBackendRef<'_, BE>,
+                left: &mut CnvPVecLBackendMut<'_, BE, $ring>,
+                right: &mut CnvPVecRBackendMut<'_, BE, $ring>,
+                a: &VecZnxBackendRef<'_, BE, $ring>,
                 tmp: &mut [u64],
             ) where
                 for<'a> BE::BufRef<'a>: HostDataRef,
                 for<'a> BE::BufMut<'a>: HostDataMut,
             {
-                drivers::cnv_pvec_self_prepare::<BE, E>(module, left, right, a, tmp, |n, dst, src, prepared| {
+                drivers::cnv_pvec_self_prepare::<BE, E, $ring>(module, left, right, a, tmp, |n, dst, src, prepared| {
                     drivers::dft_limb_scaled::<$ring, E>(base, n, dst, src, prepared)
                 })
             }
@@ -189,11 +189,11 @@ macro_rules! impl_packed_base {
                 _base: &Module<Self>,
                 module: &Module<BE>,
                 cnv_offset: usize,
-                res: &mut VecZnxDftBackendMut<'_, BE>,
+                res: &mut VecZnxDftBackendMut<'_, BE, $ring>,
                 res_col: usize,
-                a: &CnvPVecLBackendRef<'_, BE>,
+                a: &CnvPVecLBackendRef<'_, BE, $ring>,
                 a_col: usize,
-                b: &CnvPVecRBackendRef<'_, BE>,
+                b: &CnvPVecRBackendRef<'_, BE, $ring>,
                 b_col: usize,
                 b_galois: i64,
                 tmp: &mut [u32],
@@ -201,18 +201,18 @@ macro_rules! impl_packed_base {
                 for<'a> BE::BufRef<'a>: HostDataRef,
                 for<'a> BE::BufMut<'a>: HostDataMut,
             {
-                drivers::cnv_apply_dft::<BE, E>(module, cnv_offset, res, res_col, a, a_col, b, b_col, b_galois, tmp)
+                drivers::cnv_apply_dft::<BE, E, $ring>(module, cnv_offset, res, res_col, a, a_col, b, b_col, b_galois, tmp)
             }
 
             fn cnv_apply_dft_add<BE: PackedWord, E: TaskExecutor>(
                 _base: &Module<Self>,
                 module: &Module<BE>,
                 cnv_offset: usize,
-                res: &mut VecZnxDftBackendMut<'_, BE>,
+                res: &mut VecZnxDftBackendMut<'_, BE, $ring>,
                 res_col: usize,
-                a: &CnvPVecLBackendRef<'_, BE>,
+                a: &CnvPVecLBackendRef<'_, BE, $ring>,
                 a_col: usize,
-                b: &CnvPVecRBackendRef<'_, BE>,
+                b: &CnvPVecRBackendRef<'_, BE, $ring>,
                 b_col: usize,
                 b_galois: i64,
                 tmp: &mut [u32],
@@ -220,32 +220,32 @@ macro_rules! impl_packed_base {
                 for<'a> BE::BufRef<'a>: HostDataRef,
                 for<'a> BE::BufMut<'a>: HostDataMut,
             {
-                drivers::cnv_apply_dft_add::<BE, E>(module, cnv_offset, res, res_col, a, a_col, b, b_col, b_galois, tmp)
+                drivers::cnv_apply_dft_add::<BE, E, $ring>(module, cnv_offset, res, res_col, a, a_col, b, b_col, b_galois, tmp)
             }
 
             fn cnv_apply_dft_sum<BE: PackedWord, E: TaskExecutor>(
                 _base: &Module<Self>,
                 module: &Module<BE>,
                 cnv_offset: usize,
-                res: &mut VecZnxDftBackendMut<'_, BE>,
+                res: &mut VecZnxDftBackendMut<'_, BE, $ring>,
                 res_col: usize,
-                terms: &[CnvDftAccTerm<'_, BE>],
+                terms: &[CnvDftAccTerm<'_, BE, $ring>],
                 tmp: &mut [u32],
             ) where
                 for<'a> BE::BufRef<'a>: HostDataRef,
                 for<'a> BE::BufMut<'a>: HostDataMut,
             {
-                drivers::cnv_apply_dft_sum::<BE, E>(module, cnv_offset, res, res_col, terms, tmp)
+                drivers::cnv_apply_dft_sum::<BE, E, $ring>(module, cnv_offset, res, res_col, terms, tmp)
             }
 
             fn cnv_pairwise_apply_dft<BE: PackedWord, E: TaskExecutor>(
                 _base: &Module<Self>,
                 module: &Module<BE>,
                 cnv_offset: usize,
-                res: &mut VecZnxDftBackendMut<'_, BE>,
+                res: &mut VecZnxDftBackendMut<'_, BE, $ring>,
                 res_col: usize,
-                a: &CnvPVecLBackendRef<'_, BE>,
-                b: &CnvPVecRBackendRef<'_, BE>,
+                a: &CnvPVecLBackendRef<'_, BE, $ring>,
+                b: &CnvPVecRBackendRef<'_, BE, $ring>,
                 i: usize,
                 j: usize,
                 tmp: &mut [u32],
@@ -253,7 +253,7 @@ macro_rules! impl_packed_base {
                 for<'a> BE::BufRef<'a>: HostDataRef,
                 for<'a> BE::BufMut<'a>: HostDataMut,
             {
-                drivers::cnv_pairwise_apply_dft::<BE, E>(module, cnv_offset, res, res_col, a, b, i, j, tmp)
+                drivers::cnv_pairwise_apply_dft::<BE, E, $ring>(module, cnv_offset, res, res_col, a, b, i, j, tmp)
             }
         }
     };
@@ -262,9 +262,10 @@ macro_rules! impl_packed_base {
 impl_packed_base!(Standard);
 impl_packed_base!(ConjugateInvariant);
 
-mod standard {
+mod backend {
     use poulpy_cpu_portable::NTT4x30Portable;
     use poulpy_cpu_portable::kernels::znx::ZnxAutomorphismRotate;
+    use poulpy_hal::layouts::Standard;
 
     use super::NTT4x30PortableRayon;
 
@@ -278,32 +279,25 @@ mod standard {
         poulpy_cpu_portable::hal_impl_vec_znx_ci!();
     }
 
-    impl ZnxAutomorphismRotate for NTT4x30PortableRayon {
+    unsafe impl poulpy_hal::oep::HalScalarZnxCIImpl for NTT4x30PortableRayon {}
+
+    impl ZnxAutomorphismRotate<Standard> for NTT4x30PortableRayon {
         #[inline(always)]
         fn znx_automorphism_rotate(p: i64, k: i64, res: &mut [i64], a: &[i64]) {
-            <NTT4x30Portable as ZnxAutomorphismRotate>::znx_automorphism_rotate(p, k, res, a)
+            <NTT4x30Portable as ZnxAutomorphismRotate<Standard>>::znx_automorphism_rotate(p, k, res, a)
         }
     }
 }
 
-mod conjugate_invariant {
-    use poulpy_cpu_portable::NTT4x30Portable;
-    use poulpy_hal::layouts::ConjugateInvariant;
-
-    use super::NTT4x30PortableRayon;
-
-    crate::impl_ntt4x30_rayon_backend!(NTT4x30PortableRayon<ConjugateInvariant>, NTT4x30Portable<ConjugateInvariant>);
-}
-
 // Starting values, those of the NEON NTT4x30 wrapper.
-impl<R: Ring> poulpy_hal::execution::ScratchWorkers for NTT4x30PortableRayon<R> {
+impl poulpy_hal::execution::ScratchWorkers for NTT4x30PortableRayon {
     const PREPARE: usize = 32;
     const APPLY: usize = 32;
     const VMP: usize = 32;
     const IDFT: usize = 32;
 }
 
-impl<R: Ring> crate::RayonTuning for NTT4x30PortableRayon<R> {
+impl crate::RayonTuning for NTT4x30PortableRayon {
     const COEFF_MIN_LEN: usize = 1 << 17;
     const COEFF_MIN_TASK: usize = 1 << 13;
     const NORMALIZE_MIN_TASK: usize = 1 << 12;

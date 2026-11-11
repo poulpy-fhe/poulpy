@@ -3,16 +3,16 @@ use poulpy_core::{
     GLWEAutomorphism, GLWEShift,
     layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, prepared::GLWEAutomorphismKeyPreparedBackendRef},
 };
-use poulpy_hal::layouts::{Backend, ScratchArena};
+use poulpy_hal::layouts::{Backend, Ring, ScratchArena, Standard};
 
 use crate::{CKKSInfos, SetCKKSInfos, checked_log_budget_sub, ckks_offset_unary};
 
-pub trait CKKSRotateReference<BE: Backend> {
+pub trait CKKSRotateReference<BE: Backend, Rg: Ring = Standard> {
     fn ckks_rotate_with_key_tmp_bytes_reference<C, K>(&self, ct_infos: &C, key_infos: &K) -> usize
     where
         C: GLWEInfos,
         K: GGLWEInfos,
-        Self: GLWEAutomorphism<BE> + GLWEShift<BE>,
+        Self: GLWEAutomorphism<BE, Rg> + GLWEShift<BE, Rg>,
     {
         self.glwe_automorphism_tmp_bytes(ct_infos, ct_infos, key_infos)
             .max(self.glwe_shift_tmp_bytes(ct_infos.max_size()))
@@ -22,13 +22,13 @@ pub trait CKKSRotateReference<BE: Backend> {
         &self,
         dst: &mut Dst,
         src: &Src,
-        key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
+        key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE, Rg>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: GLWEAutomorphism<BE> + GLWEShift<BE>,
-        Dst: GLWEToBackendMut<BE> + GLWEInfos + CKKSInfos + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + GLWEInfos + CKKSInfos,
+        Self: GLWEAutomorphism<BE, Rg> + GLWEShift<BE, Rg>,
+        Dst: GLWEToBackendMut<BE, Rg> + GLWEInfos + CKKSInfos + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE, Rg> + GLWEInfos + CKKSInfos,
     {
         let offset = ckks_offset_unary(dst, src);
         // Validate before mutating: on error `dst` must remain untouched.
@@ -56,16 +56,16 @@ pub trait CKKSRotateReference<BE: Backend> {
     fn ckks_rotate_with_key_assign_reference<Dst>(
         &self,
         dst: &mut Dst,
-        key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
+        key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE, Rg>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: GLWEAutomorphism<BE>,
-        Dst: GLWEToBackendMut<BE> + GLWEInfos + CKKSInfos + SetCKKSInfos,
+        Self: GLWEAutomorphism<BE, Rg>,
+        Dst: GLWEToBackendMut<BE, Rg> + GLWEInfos + CKKSInfos + SetCKKSInfos,
     {
         self.glwe_automorphism_assign(dst, key, scratch);
         Ok(())
     }
 }
 
-impl<BE: Backend> CKKSRotateReference<BE> for poulpy_hal::layouts::Module<BE> {}
+impl<BE: Backend, Rg: Ring> CKKSRotateReference<BE, Rg> for poulpy_hal::layouts::Module<BE> {}

@@ -1,5 +1,5 @@
 use crate::layouts::{
-    Backend, PrepareHint, ScalarZnxBackendRef, ScratchArena, SvpPPolBackendMut, SvpPPolBackendRef, SvpPPolOwned,
+    Backend, PrepareHint, Ring, ScalarZnxBackendRef, ScratchArena, Standard, SvpPPolBackendMut, SvpPPolBackendRef, SvpPPolOwned,
     VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef,
 };
 
@@ -15,7 +15,7 @@ use crate::layouts::{
 /// ```
 pub trait SvpPPolAlloc<B: Backend> {
     /// Returns an owned degree-`n` [`SvpPPol`](crate::layouts::SvpPPol) with `cols` columns under `hint`.
-    fn svp_ppol_alloc(&self, n: usize, cols: usize, hint: PrepareHint) -> SvpPPolOwned<B>;
+    fn svp_ppol_alloc<Rg: Ring>(&self, n: usize, cols: usize, hint: PrepareHint) -> SvpPPolOwned<B, Rg>;
 }
 
 /// Returns the byte size of an [`SvpPPol`](crate::layouts::SvpPPol).
@@ -44,9 +44,15 @@ pub trait SvpPPolBytesOf {
 /// ensures    the selected scalar polynomial is prepared for multiplication
 /// test       test_svp_apply_dft_to_dft
 /// ```
-pub trait SvpPPolPrepare<B: Backend> {
+pub trait SvpPPolPrepare<B: Backend, Rg: Ring = Standard> {
     /// Writes `a[a_col]` into `res[res_col]` in the prepared representation.
-    fn svp_ppol_prepare(&self, res: &mut SvpPPolBackendMut<'_, B>, res_col: usize, a: &ScalarZnxBackendRef<'_, B>, a_col: usize);
+    fn svp_ppol_prepare(
+        &self,
+        res: &mut SvpPPolBackendMut<'_, B, Rg>,
+        res_col: usize,
+        a: &ScalarZnxBackendRef<'_, B, Rg>,
+        a_col: usize,
+    );
 }
 
 /// Copy of one prepared scalar polynomial column into another.
@@ -60,9 +66,15 @@ pub trait SvpPPolPrepare<B: Backend> {
 /// ensures    the selected prepared scalar polynomial is copied
 /// test       test_svp_apply_dft_to_dft
 /// ```
-pub trait SvpPPolCopy<B: Backend> {
+pub trait SvpPPolCopy<B: Backend, Rg: Ring = Standard> {
     /// Writes `a[a_col]` into `res[res_col]`.
-    fn svp_ppol_copy(&self, res: &mut SvpPPolBackendMut<'_, B>, res_col: usize, a: &SvpPPolBackendRef<'_, B>, a_col: usize);
+    fn svp_ppol_copy(
+        &self,
+        res: &mut SvpPPolBackendMut<'_, B, Rg>,
+        res_col: usize,
+        a: &SvpPPolBackendRef<'_, B, Rg>,
+        a_col: usize,
+    );
 }
 
 /// Returns scratch bytes required by [`SvpApplyDft::svp_apply_dft`].
@@ -94,16 +106,16 @@ pub trait SvpApplyDftTmpBytes {
 /// override   allowed, with svp_apply_dft_tmp_bytes
 /// test       test_svp_apply_dft, test_svp_apply_dft_derived
 /// ```
-pub trait SvpApplyDft<B: Backend> {
+pub trait SvpApplyDft<B: Backend, Rg: Ring = Standard> {
     /// Writes `a[a_col] * b[b_col]` into `res[res_col]`, zeroing the limbs from `b.size()` on.
     #[allow(clippy::too_many_arguments)]
     fn svp_apply_dft(
         &self,
-        res: &mut VecZnxDftBackendMut<'_, B>,
+        res: &mut VecZnxDftBackendMut<'_, B, Rg>,
         res_col: usize,
-        a: &SvpPPolBackendRef<'_, B>,
+        a: &SvpPPolBackendRef<'_, B, Rg>,
         a_col: usize,
-        b: &VecZnxBackendRef<'_, B>,
+        b: &VecZnxBackendRef<'_, B, Rg>,
         b_col: usize,
         scratch: &mut ScratchArena<'_, B>,
     );
@@ -120,15 +132,15 @@ pub trait SvpApplyDft<B: Backend> {
 /// ensures    the selected source limbs are multiplied by the prepared scalar polynomial; result limbs from b.size() onward are zero
 /// test       test_svp_apply_dft_to_dft
 /// ```
-pub trait SvpApplyDftToDft<B: Backend> {
+pub trait SvpApplyDftToDft<B: Backend, Rg: Ring = Standard> {
     /// Writes `a[a_col] * b[b_col]` into `res[res_col]`, zeroing the limbs from `b.size()` on.
     fn svp_apply_dft_to_dft(
         &self,
-        res: &mut VecZnxDftBackendMut<'_, B>,
+        res: &mut VecZnxDftBackendMut<'_, B, Rg>,
         res_col: usize,
-        a: &SvpPPolBackendRef<'_, B>,
+        a: &SvpPPolBackendRef<'_, B, Rg>,
         a_col: usize,
-        b: &VecZnxDftBackendRef<'_, B>,
+        b: &VecZnxDftBackendRef<'_, B, Rg>,
         b_col: usize,
     );
 }
@@ -144,13 +156,13 @@ pub trait SvpApplyDftToDft<B: Backend> {
 /// ensures    every limb of the selected result column is multiplied by the prepared scalar polynomial
 /// test       test_svp_apply_dft_to_dft_assign
 /// ```
-pub trait SvpApplyDftToDftAssign<B: Backend> {
+pub trait SvpApplyDftToDftAssign<B: Backend, Rg: Ring = Standard> {
     /// Multiplies every limb of `res[res_col]` by `a[a_col]`.
     fn svp_apply_dft_to_dft_assign(
         &self,
-        res: &mut VecZnxDftBackendMut<'_, B>,
+        res: &mut VecZnxDftBackendMut<'_, B, Rg>,
         res_col: usize,
-        a: &SvpPPolBackendRef<'_, B>,
+        a: &SvpPPolBackendRef<'_, B, Rg>,
         a_col: usize,
     );
 }

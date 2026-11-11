@@ -192,13 +192,13 @@ where
     Ok(())
 }
 
-/// Reference bodies of the coefficient codecs of [`CKKSEncodingImpl<F>`](crate::oep::CKKSEncodingImpl), forwarding to
+/// Reference bodies of the coefficient codecs of [`CKKSEncodingImpl<F, Rg>`](crate::oep::CKKSEncodingImpl), forwarding to
 /// [`ckks_quantize_coeffs_into_reference`] and [`ckks_dequantize_coeffs_into_reference`].
-pub trait CKKSEncodingReference<BE: Backend, F: CKKSEncodingScalar> {
+pub trait CKKSEncodingReference<BE: Backend, F: CKKSEncodingScalar, Rg: Ring = Standard> {
     fn ckks_quantize_coeffs_into_reference<P>(&self, pt: &mut P, coeffs: &CKKSEncodingBufferBackendRef<'_, BE, F>) -> Result<()>
     where
         F: NumCast,
-        P: CKKSPlaintextToBackendMut<BE> + IntPolyInfos + SetCKKSInfos;
+        P: CKKSPlaintextToBackendMut<BE, Rg> + IntPolyInfos + SetCKKSInfos;
 
     fn ckks_dequantize_coeffs_into_reference<P>(
         &self,
@@ -206,13 +206,13 @@ pub trait CKKSEncodingReference<BE: Backend, F: CKKSEncodingScalar> {
         coeffs: &mut CKKSEncodingBufferBackendMut<'_, BE, F>,
     ) -> Result<()>
     where
-        P: CKKSPlaintextToBackendRef<BE> + IntPolyInfos;
+        P: CKKSPlaintextToBackendRef<BE, Rg> + IntPolyInfos;
 }
 
-impl<BE, F> CKKSEncodingReference<BE, F> for Module<BE>
+impl<BE, F, Rg: Ring> CKKSEncodingReference<BE, F, Rg> for Module<BE>
 where
     BE: Backend<ZnxWord = i64>,
-    BE::Ring: CKKSSlotEmbedding,
+    Rg: CKKSSlotEmbedding,
     F: CKKSEncodingScalar,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
@@ -220,16 +220,16 @@ where
     fn ckks_quantize_coeffs_into_reference<P>(&self, pt: &mut P, coeffs: &CKKSEncodingBufferBackendRef<'_, BE, F>) -> Result<()>
     where
         F: NumCast,
-        P: CKKSPlaintextToBackendMut<BE> + IntPolyInfos + SetCKKSInfos,
+        P: CKKSPlaintextToBackendMut<BE, Rg> + IntPolyInfos + SetCKKSInfos,
     {
-        ckks_quantize_coeffs_into_reference::<BE, F, P>(pt, coeffs)
+        ckks_quantize_coeffs_into_reference::<BE, F, P, Rg>(pt, coeffs)
     }
 
     fn ckks_dequantize_coeffs_into_reference<P>(&self, pt: &P, coeffs: &mut CKKSEncodingBufferBackendMut<'_, BE, F>) -> Result<()>
     where
-        P: CKKSPlaintextToBackendRef<BE> + IntPolyInfos,
+        P: CKKSPlaintextToBackendRef<BE, Rg> + IntPolyInfos,
     {
-        ckks_dequantize_coeffs_into_reference::<BE, F, P>(pt, coeffs)
+        ckks_dequantize_coeffs_into_reference::<BE, F, P, Rg>(pt, coeffs)
     }
 }
 
@@ -242,12 +242,15 @@ where
 /// preserved, except the slot kind, which is narrowed to the ring's
 /// ([`CKKSSlotEmbedding::SLOTS`]). Host-access bounds are specific to this
 /// reference helper, not the resident encoding extension point.
-pub fn ckks_quantize_coeffs_into_reference<BE, F, P>(pt: &mut P, coeffs: &CKKSEncodingBufferBackendRef<'_, BE, F>) -> Result<()>
+pub fn ckks_quantize_coeffs_into_reference<BE, F, P, Rg>(
+    pt: &mut P,
+    coeffs: &CKKSEncodingBufferBackendRef<'_, BE, F>,
+) -> Result<()>
 where
     BE: Backend<ZnxWord = i64>,
-    BE::Ring: CKKSSlotEmbedding,
+    Rg: CKKSSlotEmbedding,
     F: CKKSEncodingScalar + NumCast,
-    P: CKKSPlaintextToBackendMut<BE> + IntPolyInfos + SetCKKSInfos,
+    P: CKKSPlaintextToBackendMut<BE, Rg> + IntPolyInfos + SetCKKSInfos,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
@@ -278,7 +281,7 @@ where
                 &layout,
                 log_delta,
                 log_budget,
-                ShapingRing::of::<BE::Ring>(),
+                ShapingRing::of::<Rg>(),
                 |r, values| {
                     let (m, stride) = (values.len(), n / values.len());
                     encode_i128_by_limb(base2k, k, values, &mut carry[..m], &mut limb[..m], |j, digits| {
@@ -294,7 +297,7 @@ where
                 raw[base..base + n].fill(0);
             }
         }
-        pt.set_slots(pt.slots().meet(BE::Ring::SLOTS));
+        pt.set_slots(pt.slots().meet(Rg::SLOTS));
         return Ok(());
     }
     {
@@ -320,18 +323,21 @@ where
             backend.data_mut().encode_vec_i128(base2k, 0, k, &data);
         }
     }
-    pt.set_slots(pt.slots().meet(BE::Ring::SLOTS));
+    pt.set_slots(pt.slots().meet(Rg::SLOTS));
     Ok(())
 }
 
 /// Host reference dequantization of canonical integer coefficients, rounded
 /// once ([`ckks_dequantize`](crate::numerics::CKKSFloat::ckks_dequantize)), one
 /// per coefficient of the plaintext. The plaintext and its metadata are preserved.
-pub fn ckks_dequantize_coeffs_into_reference<BE, F, P>(pt: &P, coeffs: &mut CKKSEncodingBufferBackendMut<'_, BE, F>) -> Result<()>
+pub fn ckks_dequantize_coeffs_into_reference<BE, F, P, Rg: Ring>(
+    pt: &P,
+    coeffs: &mut CKKSEncodingBufferBackendMut<'_, BE, F>,
+) -> Result<()>
 where
     BE: Backend<ZnxWord = i64>,
     F: CKKSEncodingScalar,
-    P: CKKSPlaintextToBackendRef<BE> + IntPolyInfos,
+    P: CKKSPlaintextToBackendRef<BE, Rg> + IntPolyInfos,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {

@@ -2,7 +2,7 @@
 //! backend overrides, so that every implementation refuses the same inputs.
 
 use crate::layouts::BabyStepOperand;
-use poulpy_hal::layouts::{Backend, VecZnxBackendMut, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef};
+use poulpy_hal::layouts::{Backend, Ring, VecZnxBackendMut, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef};
 
 use crate::{
     Distribution,
@@ -53,23 +53,23 @@ pub fn assert_key_covers<K: GGLWEInfos>(op: &str, k: TorusPrecision, key: &K) {
 }
 
 /// The checks of [`glwe_linear_transformation_eval_into_reference`](crate::reference::linear_transformation::GLWELinearTransformationReference::glwe_linear_transformation_eval_into_reference), run before it reads a key or writes `res`.
-pub fn assert_linear_transformation_into<BE, P, L: BabyStepOperand<BE>>(
-    lhs: &LinearTransformationBabySteps<BE, L>,
+pub fn assert_linear_transformation_into<BE, P, L: BabyStepOperand<BE, Rg>, Rg: Ring>(
+    lhs: &LinearTransformationBabySteps<BE, Rg, L>,
     rhs: &LinearTransformation<P>,
 ) where
     BE: Backend,
-    P: GLWEDiagonalProd<BE>,
+    P: GLWEDiagonalProd<BE, Rg>,
 {
     assert_linear_transformation_giant_steps(&[lhs], &[rhs]);
 }
 
 /// The checks of [`glwe_linear_transformation_eval_sum_into_reference`](crate::reference::linear_transformation::GLWELinearTransformationReference::glwe_linear_transformation_eval_sum_into_reference), run before it reads a key or writes `res`.
-pub fn assert_linear_transformation_sum<BE, P, L: BabyStepOperand<BE>>(
-    babies: &[&LinearTransformationBabySteps<BE, L>],
+pub fn assert_linear_transformation_sum<BE, P, L: BabyStepOperand<BE, Rg>, Rg: Ring>(
+    babies: &[&LinearTransformationBabySteps<BE, Rg, L>],
     lts: &[&LinearTransformation<P>],
 ) where
     BE: Backend,
-    P: GLWEDiagonalProd<BE>,
+    P: GLWEDiagonalProd<BE, Rg>,
 {
     assert_eq!(
         babies.len(),
@@ -110,8 +110,8 @@ pub fn assert_linear_transformation_sum<BE, P, L: BabyStepOperand<BE>>(
 ///
 /// Unless the first term has a giant step, and every giant step of every term has a diagonal as wide as its
 /// transform's first diagonal and reads only baby rotations its term's cache holds.
-fn assert_linear_transformation_giant_steps<BE, P, L: BabyStepOperand<BE>>(
-    babies: &[&LinearTransformationBabySteps<BE, L>],
+fn assert_linear_transformation_giant_steps<BE, P, L: BabyStepOperand<BE, Rg>, Rg: Ring>(
+    babies: &[&LinearTransformationBabySteps<BE, Rg, L>],
     lts: &[&LinearTransformation<P>],
 ) where
     BE: Backend,
@@ -152,13 +152,13 @@ fn assert_linear_transformation_giant_steps<BE, P, L: BabyStepOperand<BE>>(
 ///
 /// On more addends than output columns, a product wider than `res`, operands or addends of
 /// another degree, operand columns other than the key's or an addend column out of range.
-pub fn assert_gglwe_product<BE: Backend>(
+pub fn assert_gglwe_product<BE: Backend, Rg: Ring>(
     op: &str,
-    res: &VecZnxDftBackendMut<'_, BE>,
+    res: &VecZnxDftBackendMut<'_, BE, Rg>,
     product_size: usize,
-    a: &VecZnxDftBackendRef<'_, BE>,
-    key: &GGLWEPreparedBackendRef<'_, BE>,
-    addends: &[Option<(&VecZnxDftBackendRef<'_, BE>, usize)>],
+    a: &VecZnxDftBackendRef<'_, BE, Rg>,
+    key: &GGLWEPreparedBackendRef<'_, BE, Rg>,
+    addends: &[Option<(&VecZnxDftBackendRef<'_, BE, Rg>, usize)>],
 ) {
     assert!(addends.len() <= res.cols(), "{op}: more addends than output columns");
     assert!(product_size <= res.size(), "{op}: product wider than its destination");
@@ -188,14 +188,14 @@ pub fn assert_gglwe_product<BE: Backend>(
 ///
 /// As [`assert_gglwe_product`], and on a destination of another degree or with fewer columns
 /// than the product, or a body of another degree or column.
-pub fn assert_gglwe_product_idft_normalize<BE: Backend>(
+pub fn assert_gglwe_product_idft_normalize<BE: Backend, Rg: Ring>(
     op: &str,
-    res: &VecZnxBackendMut<'_, BE>,
-    res_dft: &VecZnxDftBackendMut<'_, BE>,
-    a: &VecZnxDftBackendRef<'_, BE>,
-    key: &GGLWEPreparedBackendRef<'_, BE>,
-    addends: &[Option<(&VecZnxDftBackendRef<'_, BE>, usize)>],
-    body: Option<(&VecZnxBackendRef<'_, BE>, usize)>,
+    res: &VecZnxBackendMut<'_, BE, Rg>,
+    res_dft: &VecZnxDftBackendMut<'_, BE, Rg>,
+    a: &VecZnxDftBackendRef<'_, BE, Rg>,
+    key: &GGLWEPreparedBackendRef<'_, BE, Rg>,
+    addends: &[Option<(&VecZnxDftBackendRef<'_, BE, Rg>, usize)>],
+    body: Option<(&VecZnxBackendRef<'_, BE, Rg>, usize)>,
 ) {
     assert_gglwe_product(op, res_dft, res_dft.size(), a, key, addends);
     assert!(
@@ -220,13 +220,13 @@ pub fn assert_gglwe_product_idft_normalize<BE: Backend>(
 /// On a source of another degree or column count than `res`, more limbs than it holds, a
 /// base2k other than the key's, a product wider than `res`, columns other than the key's or a
 /// key with a row offset.
-pub fn assert_gglwe_product_from_dft<BE: Backend>(
+pub fn assert_gglwe_product_from_dft<BE: Backend, Rg: Ring>(
     op: &str,
-    res: &VecZnxDftBackendMut<'_, BE>,
-    source: &VecZnxDftBackendMut<'_, BE>,
+    res: &VecZnxDftBackendMut<'_, BE, Rg>,
+    source: &VecZnxDftBackendMut<'_, BE, Rg>,
     source_size: usize,
     source_base2k: usize,
-    key: &GGLWEPreparedBackendRef<'_, BE>,
+    key: &GGLWEPreparedBackendRef<'_, BE, Rg>,
     output_size: usize,
 ) {
     assert!(

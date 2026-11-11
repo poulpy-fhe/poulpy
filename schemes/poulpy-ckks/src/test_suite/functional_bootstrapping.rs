@@ -59,7 +59,7 @@ pub fn test_functional_bootstrapping_e2e<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard> + Backend<OwnedBuf = AlignedBuf>,
+    BE: TestContextBackend + Backend<OwnedBuf = AlignedBuf>,
     Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
         + TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
@@ -89,7 +89,7 @@ pub fn test_functional_bootstrapping_non_power_of_two_e2e<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard> + Backend<OwnedBuf = AlignedBuf>,
+    BE: TestContextBackend + Backend<OwnedBuf = AlignedBuf>,
     Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
         + TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
@@ -122,7 +122,7 @@ pub fn test_functional_bootstrapping_multi_e2e<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard> + Backend<OwnedBuf = AlignedBuf>,
+    BE: TestContextBackend + Backend<OwnedBuf = AlignedBuf>,
     Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
         + TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
@@ -150,7 +150,7 @@ pub fn test_functional_bootstrapping_binary_e2e<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard> + Backend<OwnedBuf = AlignedBuf>,
+    BE: TestContextBackend + Backend<OwnedBuf = AlignedBuf>,
     Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
         + TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
@@ -185,7 +185,7 @@ fn run_case<BE, F, E>(
     guard_bits: usize,
     first_factor_on_raise: bool,
 ) where
-    BE: TestContextBackend<Ring = Standard> + Backend<OwnedBuf = AlignedBuf>,
+    BE: TestContextBackend + Backend<OwnedBuf = AlignedBuf>,
     Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
         + TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
@@ -329,7 +329,7 @@ fn run_case<BE, F, E>(
 
     let initial_tmp;
     let mut scratch = {
-        let mut ct = module.ckks_ciphertext_alloc(params.base2k.into(), k_boot.into());
+        let mut ct = module.ckks_ciphertext_alloc::<Standard>(params.base2k.into(), k_boot.into());
         ct.set_meta(tp.prec().meta);
         initial_tmp = module.ckks_all_ops_with_atk_tmp_bytes(
             &ct,
@@ -455,7 +455,8 @@ fn run_case<BE, F, E>(
             assert_eq!(output.k().as_usize(), expected_k);
             assert_eq!(output.log_delta(), output_log_delta);
             assert_eq!(output.slots(), slots_kind);
-            let (got_re, got_im) = ckks_decrypt_decode::<BE, F, E>(&tp, module, &encoder, output, &sk, &mut scratch.borrow());
+            let (got_re, got_im) =
+                ckks_decrypt_decode::<BE, F, E, Standard>(&tp, module, &encoder, output, &sk, &mut scratch.borrow());
             let want_re: Vec<F> = messages_re
                 .iter()
                 .map(|&message| table[message.rem_euclid(p as isize) as usize])
@@ -541,9 +542,9 @@ fn run_case<BE, F, E>(
             .unwrap();
             for (native, padded) in outputs.iter().zip(&padded_outputs) {
                 let (native_re, native_im) =
-                    ckks_decrypt_decode::<BE, F, E>(&tp, module, &encoder, native, &sk, &mut scratch.borrow());
+                    ckks_decrypt_decode::<BE, F, E, Standard>(&tp, module, &encoder, native, &sk, &mut scratch.borrow());
                 let (padded_re, padded_im) =
-                    ckks_decrypt_decode::<BE, F, E>(&tp, module, &encoder, padded, &sk, &mut scratch.borrow());
+                    ckks_decrypt_decode::<BE, F, E, Standard>(&tp, module, &encoder, padded, &sk, &mut scratch.borrow());
                 for (got, want) in [(&native_re, &padded_re), (&native_im, &padded_im)] {
                     let stats = precision_stats(got, want, native.log_delta());
                     assert!(

@@ -16,7 +16,7 @@ use crate::{GLWEPlaintextMeta, Scale, SetCKKSInfos, ckks_log_delta, layouts::CKK
 use poulpy_core::layouts::Base2K;
 use poulpy_hal::{
     AlignedBuf, alloc_aligned,
-    layouts::{Backend, VecZnx, galois_element},
+    layouts::{Backend, Ring, VecZnx, galois_element},
 };
 
 /// Builds the backend-resident constant-`1.0` plaintext used by the
@@ -24,8 +24,8 @@ use poulpy_hal::{
 ///
 /// Each call allocates and uploads a degree-1, single-limb monomial. The
 /// unit-operation scratch query covers the arithmetic workspace. A backend
-/// that keeps the constant builds it here, once per module and radix.
-pub fn ckks_plaintext_one<BE, M>(module: &M, base2k: Base2K) -> Result<CKKSPlaintextOwned<BE>>
+/// that keeps the constant builds it here, once per module, ring and radix.
+pub fn ckks_plaintext_one<BE, M, Rg: Ring>(module: &M, base2k: Base2K) -> Result<CKKSPlaintextOwned<BE, Rg>>
 where
     BE: Backend,
     M: CKKSPlaintextAlloc<BE> + ?Sized,
@@ -44,8 +44,8 @@ where
     // coefficient `1 << log_delta`, so its limbs are built on the host with the
     // integer codec and uploaded as raw bytes (no float codec, no transfer op).
     let size = k_total.div_ceil(base2k.as_usize());
-    let mut limbs = VecZnx::<AlignedBuf, i64>::from_data(
-        alloc_aligned::<u8>(VecZnx::<AlignedBuf, i64>::bytes_of(1, 1, size)),
+    let mut limbs = VecZnx::<AlignedBuf, i64, Rg>::from_data(
+        alloc_aligned::<u8>(VecZnx::<AlignedBuf, i64, Rg>::bytes_of(1, 1, size)),
         1,
         1,
         size,

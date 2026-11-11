@@ -1,14 +1,15 @@
 use poulpy_hal::{
-    layouts::{Backend, Data, Module, ScratchArena},
+    layouts::{Backend, ConjugateInvariant, Data, Module, ScratchArena},
     source::Source,
 };
 
 use crate::{
     GetDistribution, GetDistributionMut,
-    api::{GLWECIEmbed, GLWECIKeyEncryptSk, GLWECITrace, GLWESecretCIEmbed, GLWESwitchDegree},
+    api::{GLWECIEmbed, GLWECIKeyEncryptSk, GLWECIKeyPreparedFactory, GLWECITrace, GLWESecretCIEmbed, GLWESwitchDegree},
     layouts::{
-        GGLWEInfos, GGLWEToBackendMut, GLWECIEmbedKey, GLWECITraceKey, GLWEInfos, GLWESecretToBackendMut, GLWESecretToBackendRef,
-        GLWEToBackendMut, GLWEToBackendRef,
+        GGLWEInfos, GGLWEPreparedToBackendMut, GGLWEToBackendMut, GGLWEToBackendRef, GLWECIEmbedKey, GLWECIKeyPrepared,
+        GLWECITraceKey, GLWEInfos, GLWESecretToBackendMut, GLWESecretToBackendRef, GLWESwitchingKeyDegrees,
+        GLWESwitchingKeyPrepared, GLWEToBackendMut, GLWEToBackendRef,
     },
     oep::GLWECIConversionImpl,
 };
@@ -17,7 +18,7 @@ impl<BE: Backend + GLWECIConversionImpl> GLWECIEmbed<BE> for Module<BE> {
     fn glwe_ci_embed<R, A>(&self, res: &mut R, a: &A)
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE, ConjugateInvariant> + GLWEInfos,
     {
         BE::glwe_ci_embed(self, res, a)
     }
@@ -34,7 +35,7 @@ impl<BE: Backend + GLWECIConversionImpl> GLWECITrace<BE> for Module<BE> {
 
     fn glwe_ci_trace<R, A>(&self, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
+        R: GLWEToBackendMut<BE, ConjugateInvariant> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
     {
         BE::glwe_ci_trace(self, res, a, scratch)
@@ -55,7 +56,7 @@ impl<BE: Backend + GLWECIConversionImpl> GLWESecretCIEmbed<BE> for Module<BE> {
     fn glwe_secret_ci_embed<R, S>(&self, res: &mut R, src: &S)
     where
         R: GLWESecretToBackendMut<BE> + GetDistributionMut,
-        S: GLWESecretToBackendRef<BE>,
+        S: GLWESecretToBackendRef<BE, ConjugateInvariant>,
     {
         BE::glwe_secret_ci_embed(self, res, src)
     }
@@ -80,7 +81,7 @@ impl<BE: Backend + GLWECIConversionImpl> GLWECIKeyEncryptSk<BE> for Module<BE> {
     ) where
         D: Data,
         GLWECIEmbedKey<D, BE::ZnxWord>: GGLWEToBackendMut<BE>,
-        S1: GLWESecretToBackendRef<BE>,
+        S1: GLWESecretToBackendRef<BE, ConjugateInvariant>,
         S2: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
     {
         BE::glwe_ci_embed_key_encrypt_sk(self, res, sk_ci, sk, source_xe, source_xa, scratch)
@@ -97,9 +98,27 @@ impl<BE: Backend + GLWECIConversionImpl> GLWECIKeyEncryptSk<BE> for Module<BE> {
     ) where
         D: Data,
         GLWECITraceKey<D, BE::ZnxWord>: GGLWEToBackendMut<BE>,
-        S1: GLWESecretToBackendRef<BE> + GetDistribution,
+        S1: GLWESecretToBackendRef<BE, ConjugateInvariant> + GetDistribution,
         S2: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
     {
         BE::glwe_ci_trace_key_encrypt_sk(self, res, sk_ci, sk, source_xe, source_xa, scratch)
+    }
+}
+
+impl<BE: Backend + GLWECIConversionImpl> GLWECIKeyPreparedFactory<BE> for Module<BE> {
+    fn glwe_ci_key_prepare_tmp_bytes<A>(&self, infos: &A) -> usize
+    where
+        A: GGLWEInfos,
+    {
+        BE::glwe_ci_key_prepare_tmp_bytes(self, infos)
+    }
+
+    fn glwe_ci_key_prepare<DR, O, M>(&self, res: &mut GLWECIKeyPrepared<DR, BE, M>, other: &O, scratch: &mut ScratchArena<'_, BE>)
+    where
+        DR: Data,
+        GLWESwitchingKeyPrepared<DR, BE>: GGLWEPreparedToBackendMut<BE>,
+        O: GGLWEToBackendRef<BE> + GLWESwitchingKeyDegrees,
+    {
+        BE::glwe_ci_key_prepare(self, res, other, scratch)
     }
 }

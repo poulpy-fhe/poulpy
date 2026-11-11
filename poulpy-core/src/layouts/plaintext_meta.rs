@@ -381,7 +381,7 @@ mod tests {
 mod reader_tests {
     use std::io::ErrorKind;
 
-    use poulpy_hal::layouts::{HostBytesBackend, Module, ReaderFrom, WriterTo};
+    use poulpy_hal::layouts::{HostBytesBackend, Module, ReaderFrom, Standard, WriterTo};
 
     use crate::layouts::{
         Base2K, Degree, GLWEAlloc, GLWECompressedAlloc, GLWELayout, GLWEPlaintextMeta, LWEInfos, Rank, ReplicatedLayout, Scale,
@@ -450,8 +450,8 @@ mod reader_tests {
     #[test]
     fn glwe_reader_round_trips_replicated_layout() {
         let module = Module::<HostBytesBackend>::new(128);
-        let source = module.glwe_alloc_from_infos(&layout(128, 16));
-        let mut receiver = module.glwe_alloc_from_infos(&layout(64, 32));
+        let source = module.glwe_alloc_from_infos::<_, Standard>(&layout(128, 16));
+        let mut receiver = module.glwe_alloc_from_infos::<_, Standard>(&layout(64, 32));
         receiver.set_k(TorusPrecision(16));
         assert_accepts_larger_serialized_degree(source, receiver, replicated_meta());
     }
@@ -459,16 +459,16 @@ mod reader_tests {
     #[test]
     fn glwe_reader_rejects_replicated_layout_exceeding_smaller_serialized_degree() {
         let module = Module::<HostBytesBackend>::new(128);
-        let source = module.glwe_alloc_from_infos(&layout(64, 16));
-        let receiver = module.glwe_alloc_from_infos(&layout(128, 16));
+        let source = module.glwe_alloc_from_infos::<_, Standard>(&layout(64, 16));
+        let receiver = module.glwe_alloc_from_infos::<_, Standard>(&layout(128, 16));
         assert_rejects_meta_exceeding_serialized_degree(source, receiver, replicated_meta(), "slot layout");
     }
 
     #[test]
     fn compressed_glwe_reader_round_trips_replicated_layout() {
         let module = Module::<HostBytesBackend>::new(128);
-        let source = module.glwe_compressed_alloc_from_infos(&layout(128, 16));
-        let mut receiver = module.glwe_compressed_alloc_from_infos(&layout(64, 32));
+        let source = module.glwe_compressed_alloc_from_infos::<_, Standard>(&layout(128, 16));
+        let mut receiver = module.glwe_compressed_alloc_from_infos::<_, Standard>(&layout(64, 32));
         receiver.k = TorusPrecision(16);
         assert_accepts_larger_serialized_degree(source, receiver, replicated_meta());
     }

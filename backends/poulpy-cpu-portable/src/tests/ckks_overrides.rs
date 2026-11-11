@@ -8,6 +8,9 @@ use poulpy_ckks::api::{
 };
 use poulpy_ckks::layouts::{CKKSCiphertextAlloc, CKKSPlaintextAlloc, CKKSPlaintextOwned};
 use poulpy_ckks::oep::CKKSComplexPolynomialEvaluationImpl;
+use poulpy_ckks::reference::polynomial_evaluation::{
+    CKKSComplexPolynomialEvaluationReference, CKKSPolynomialEvaluationReference,
+};
 use poulpy_ckks::test_suite::{
     helpers::{assert_ckks_error, assert_ckks_internal},
     parity::helpers::{fixture_ciphertext, snapshot, with_scratch},
@@ -19,7 +22,7 @@ use poulpy_core::layouts::{
     prepared::GLWETensorKeyPreparedBackendRef,
 };
 use poulpy_cpu_oracle::FFT64Oracle;
-use poulpy_hal::layouts::{Backend, Module};
+use poulpy_hal::layouts::{Backend, ConjugateInvariant, Module, Standard};
 use std::cell::{Cell, RefCell};
 thread_local! {
  static REAL_CALLS: Cell<usize> = const { Cell::new(0) };
@@ -38,7 +41,7 @@ unsafe impl poulpy_ckks::oep::CKKSCopyImpl for OverrideBackend {
         src: &Src,
     ) -> usize {
         COPY_WORKSPACE * dst.max_size()
-            + poulpy_ckks::reference::copy::CKKSCopyReference::ckks_copy_tmp_bytes_reference(module, dst, src)
+            + <_ as poulpy_ckks::reference::copy::CKKSCopyReference<_, Standard>>::ckks_copy_tmp_bytes_reference(module, dst, src)
     }
     fn ckks_copy<Dst, Src>(
         module: &Module<Self>,
@@ -83,20 +86,25 @@ poulpy_ckks::impl_ckks_mul_add_derived_full!(OverrideBackend);
 poulpy_ckks::impl_ckks_affine_derived_full!(OverrideBackend);
 poulpy_ckks::impl_ckks_mul_sub_derived_full!(OverrideBackend);
 poulpy_ckks::impl_ckks_approximation_derived_full!(OverrideBackend);
-unsafe impl poulpy_ckks::oep::CKKSShapedRoundingImpl for OverrideBackend {
+unsafe impl<Rg: poulpy_hal::layouts::Ring> poulpy_ckks::oep::CKKSShapedRoundingImpl<Rg> for OverrideBackend {
     fn ckks_shaped_round_correction(
         _module: &Module<Self>,
-        carry: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self>,
-        h: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self>,
-        low: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self>,
+        carry: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self, Rg>,
+        h: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self, Rg>,
+        low: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self, Rg>,
         profile: &poulpy_ckks::shaping::ShapingProfile,
         lambda: usize,
     ) {
         SHAPING_CALLS.with(|calls| calls.set(calls.get() + 1));
-        crate::ckks_round::shaped_round_correction::<Self>(carry, h, low, profile, lambda);
+        crate::ckks_round::shaped_round_correction::<Self, Rg>(carry, h, low, profile, lambda);
     }
 }
 ::poulpy_ckks::impl_ckks_round_reference_full!(OverrideBackend);
+// The conjugate-invariant ring takes the reference of the families overridden on the standard ring, the addition aside.
+poulpy_ckks::impl_ckks_copy_reference_full!(OverrideBackend, ConjugateInvariant);
+poulpy_ckks::impl_ckks_sub_reference_full!(OverrideBackend, ConjugateInvariant);
+poulpy_ckks::impl_ckks_polynomial_evaluation_reference_full!(OverrideBackend, ConjugateInvariant);
+poulpy_ckks::impl_ckks_eval_mod_reference_full!(OverrideBackend, ConjugateInvariant);
 
 unsafe impl poulpy_ckks::oep::CKKSPolynomialEvaluationImpl for OverrideBackend {
     fn ckks_eval_poly_real_const_coeffs_from_power_basis<R, B, A, G, H>(
@@ -119,8 +127,13 @@ unsafe impl poulpy_ckks::oep::CKKSPolynomialEvaluationImpl for OverrideBackend {
         H: ::poulpy_core::layouts::GetTensorKey<Self>,
     {
         REAL_CALLS.with(|calls| calls.set(calls.get() + 1));
-        poulpy_ckks::reference::polynomial_evaluation::CKKSPolynomialEvaluationReference::ckks_eval_poly_real_const_coeffs_from_power_basis_reference::<R, B, A, G, H>(
-            module, res, power_basis, poly, tsk, scratch,
+        CKKSPolynomialEvaluationReference::ckks_eval_poly_real_const_coeffs_from_power_basis_reference::<R, B, A, G, H>(
+            module,
+            res,
+            power_basis,
+            poly,
+            tsk,
+            scratch,
         )
     }
 }
@@ -149,8 +162,13 @@ unsafe impl CKKSComplexPolynomialEvaluationImpl for OverrideBackend {
         H: ::poulpy_core::layouts::GetTensorKey<Self>,
     {
         COMPLEX_CALLS.with(|calls| calls.set(calls.get() + 1));
-        poulpy_ckks::reference::polynomial_evaluation::CKKSPolynomialEvaluationReference::ckks_eval_poly_complex_const_coeffs_from_power_basis_reference::<R, C, A, G, H>(
-            module, res, power_basis, poly, tsk, scratch,
+        CKKSComplexPolynomialEvaluationReference::ckks_eval_poly_complex_const_coeffs_from_power_basis_reference::<R, C, A, G, H>(
+            module,
+            res,
+            power_basis,
+            poly,
+            tsk,
+            scratch,
         )
     }
 }
@@ -265,7 +283,10 @@ fn one_shot_polynomials_dispatch_to_independent_prepared_overrides() {
     };
     let bytes = module_test.ckks_all_ops_tmp_bytes(&src, &coeff_meta, &key_infos);
     // The ordinary reference families use less than COPY_WORKSPACE here.
-    assert_eq!(bytes, module_test.ckks_copy_tmp_bytes(&src, &src));
+    assert_eq!(
+        bytes,
+        <Module<OverrideBackend> as CKKSCopyOps<OverrideBackend, Standard>>::ckks_copy_tmp_bytes(&module_test, &src, &src)
+    );
     let bytes_ref = module_ref.ckks_all_ops_tmp_bytes(&src, &coeff_meta, &key_infos);
     let real = polynomial(&module_test);
     let complex = ComplexBSGSPolynomial {
@@ -286,8 +307,8 @@ fn one_shot_polynomials_dispatch_to_independent_prepared_overrides() {
     .unwrap();
     assert_eq!(REAL_CALLS.get(), 1);
     assert_eq!(
-        snapshot::<OverrideBackend, _>(&dst),
-        snapshot::<FFT64Oracle, _>(&want),
+        snapshot::<OverrideBackend, _, Standard>(&dst),
+        snapshot::<FFT64Oracle, _, Standard>(&want),
         "ckks_eval_poly_real_const_coeffs"
     );
 
@@ -304,8 +325,8 @@ fn one_shot_polynomials_dispatch_to_independent_prepared_overrides() {
     .unwrap();
     assert_eq!(COMPLEX_CALLS.get(), 1);
     assert_eq!(
-        snapshot::<OverrideBackend, _>(&dst),
-        snapshot::<FFT64Oracle, _>(&want),
+        snapshot::<OverrideBackend, _, Standard>(&dst),
+        snapshot::<FFT64Oracle, _, Standard>(&want),
         "ckks_eval_poly_complex_const_coeffs"
     );
 }
@@ -351,17 +372,19 @@ fn eval_mod_dispatch_uses_its_independent_scratch_query() {
         dnum: 4usize.into(),
         k_digit: 16usize.into(),
     };
-    let bytes = module.ckks_eval_mod_tmp_bytes(&dst, &src, &params, &key_infos);
+    let bytes = <Module<OverrideBackend> as CKKSEvalModOps<OverrideBackend, Standard>>::ckks_eval_mod_tmp_bytes(
+        &module, &dst, &src, &params, &key_infos,
+    );
     assert_eq!(bytes, OVERRIDE_SCRATCH);
     module.glwe_fill_from_source(&mut dst, &mut poulpy_hal::source::Source::new([5u8; 32]));
-    let unchanged = snapshot::<OverrideBackend, _>(&dst);
+    let unchanged = snapshot::<OverrideBackend, _, Standard>(&dst);
     EVAL_MOD_CALLS.with(|calls| calls.set(0));
     let err = with_scratch::<OverrideBackend, _>(bytes, |s| module.ckks_eval_mod(&mut dst, &src, &params, &NoTensorKey, s))
         .unwrap_err();
     assert_ckks_internal("ckks_eval_mod", &err, "EvalMod override probe");
     assert_eq!(EVAL_MOD_CALLS.with(Cell::get), 1);
     assert_eq!(
-        snapshot::<OverrideBackend, _>(&dst),
+        snapshot::<OverrideBackend, _, Standard>(&dst),
         unchanged,
         "the probe wrote the destination"
     );
@@ -401,7 +424,7 @@ fn eval_mod_reference_sizes_the_final_destination_copy() {
     });
     src.data_mut().at_mut(0, 0)[0] = 128;
     src.data_mut().at_mut(1, 0)[1] = -64;
-    let source_before = snapshot::<OverrideBackend, _>(&src);
+    let source_before = snapshot::<OverrideBackend, _, Standard>(&src);
     for (complex, inverse) in [(false, false), (true, false), (false, true)] {
         let params = EvalMod {
             plan: EvalModPlan::complex_exponential(1, 1, 0, SplitStrategy::MinDepth, coeff_meta, 16),
@@ -431,7 +454,13 @@ fn eval_mod_reference_sizes_the_final_destination_copy() {
             assert!(dst.max_size() > src.max_size());
             let capacity = dst.max_size();
             let mut expected = dst.clone();
-            let expected_bytes = module_ref.ckks_eval_mod_tmp_bytes(&expected, &src, &params, &key_infos);
+            let expected_bytes = <Module<FFT64Oracle> as CKKSEvalModOps<FFT64Oracle, Standard>>::ckks_eval_mod_tmp_bytes(
+                &module_ref,
+                &expected,
+                &src,
+                &params,
+                &key_infos,
+            );
             with_scratch::<FFT64Oracle, _>(expected_bytes, |s| {
                 module_ref.ckks_eval_mod(&mut expected, &src, &params, &NoTensorKey, s)
             })
@@ -439,7 +468,8 @@ fn eval_mod_reference_sizes_the_final_destination_copy() {
 
             // Bypass the independent EvalMod dispatch probe and exercise its
             // real reference circuit with the destination-dependent copy override.
-            let bytes = ckks_eval_mod_tmp_bytes_reference(&module_test, &dst, &src, &params, &key_infos);
+            let bytes =
+                ckks_eval_mod_tmp_bytes_reference::<_, _, _, _, _, _, Standard>(&module_test, &dst, &src, &params, &key_infos);
             MAX_COPY_CAPACITY.set(0);
             with_scratch::<OverrideBackend, _>(bytes, |s| {
                 module_test.ckks_eval_mod_reference(&mut dst, &src, &params, &NoTensorKey, s)
@@ -447,13 +477,13 @@ fn eval_mod_reference_sizes_the_final_destination_copy() {
             .unwrap();
             assert_eq!(MAX_COPY_CAPACITY.get(), capacity);
             assert_eq!(
-                snapshot::<OverrideBackend, _>(&dst),
-                snapshot::<FFT64Oracle, _>(&expected),
+                snapshot::<OverrideBackend, _, Standard>(&dst),
+                snapshot::<FFT64Oracle, _, Standard>(&expected),
                 "EvalMod differs from the oracle's"
             );
             assert_eq!(dst.max_size(), capacity);
             assert_eq!(
-                snapshot::<OverrideBackend, _>(&src),
+                snapshot::<OverrideBackend, _, Standard>(&src),
                 source_before,
                 "EvalMod changed its source"
             );
@@ -498,15 +528,16 @@ fn add_many_and_inner_sum_queries_cover_the_selected_copy() {
 
     let mut res = destination();
     let mut expected = destination();
-    let bytes = module_ref.ckks_add_many_tmp_bytes(&expected, &a);
+    let bytes =
+        <Module<FFT64Oracle> as CKKSAddManyOps<FFT64Oracle, Standard>>::ckks_add_many_tmp_bytes(&module_ref, &expected, &a);
     with_scratch::<FFT64Oracle, _>(bytes, |s| module_ref.ckks_add_many(usize::MAX, &mut expected, &[&a], s)).unwrap();
-    let bytes = module_test.ckks_add_many_tmp_bytes(&res, &a);
-    let copy = module_test.ckks_copy_tmp_bytes(&res, &a);
+    let bytes =
+        <Module<OverrideBackend> as CKKSAddManyOps<OverrideBackend, Standard>>::ckks_add_many_tmp_bytes(&module_test, &res, &a);
+    let copy = <Module<OverrideBackend> as CKKSCopyOps<OverrideBackend, Standard>>::ckks_copy_tmp_bytes(&module_test, &res, &a);
     assert_eq!(
         bytes,
-        module_test
-            .ckks_add_tmp_bytes(res.max_size())
-            .max(module_test.glwe_normalize_tmp_bytes())
+        <Module<OverrideBackend> as CKKSAddOps<OverrideBackend, Standard>>::ckks_add_tmp_bytes(&module_test, res.max_size())
+            .max(<Module<OverrideBackend> as GLWENormalize<OverrideBackend, Standard>>::glwe_normalize_tmp_bytes(&module_test))
             .max(copy)
     );
     assert_eq!(bytes, copy, "the overriding copy does not bound the sum");
@@ -514,34 +545,53 @@ fn add_many_and_inner_sum_queries_cover_the_selected_copy() {
     with_scratch::<OverrideBackend, _>(bytes, |s| module_test.ckks_add_many(usize::MAX, &mut res, &[&a], s)).unwrap();
     assert_eq!(MAX_COPY_CAPACITY.get(), res.max_size());
     assert_eq!(
-        snapshot::<OverrideBackend, _>(&res),
-        snapshot::<FFT64Oracle, _>(&expected),
+        snapshot::<OverrideBackend, _, Standard>(&res),
+        snapshot::<FFT64Oracle, _, Standard>(&expected),
         "ckks_add_many"
     );
 
     let mut res = destination();
     let mut expected = destination();
-    let bytes = module_ref.ckks_inner_sum_tmp_bytes(&expected, &a, &key);
+    let bytes = <Module<FFT64Oracle> as CKKSInnerSumOps<FFT64Oracle, Standard>>::ckks_inner_sum_tmp_bytes(
+        &module_ref,
+        &expected,
+        &a,
+        &key,
+    );
     with_scratch::<FFT64Oracle, _>(bytes, |s| {
         module_ref.ckks_inner_sum(0, 0, false, &mut expected, &a, &no_keys_ref, s)
     })
     .unwrap();
-    let bytes = module_test.ckks_inner_sum_tmp_bytes(&res, &a, &key);
-    let copy = module_test.ckks_copy_tmp_bytes(&res, &a);
-    assert_eq!(bytes, copy.max(module_test.glwe_trace_assign_tmp_bytes(&res, &key)));
+    let bytes = <Module<OverrideBackend> as CKKSInnerSumOps<OverrideBackend, Standard>>::ckks_inner_sum_tmp_bytes(
+        &module_test,
+        &res,
+        &a,
+        &key,
+    );
+    let copy = <Module<OverrideBackend> as CKKSCopyOps<OverrideBackend, Standard>>::ckks_copy_tmp_bytes(&module_test, &res, &a);
+    assert_eq!(
+        bytes,
+        copy.max(
+            <Module<OverrideBackend> as GLWETrace<OverrideBackend, Standard>>::glwe_trace_assign_tmp_bytes(
+                &module_test,
+                &res,
+                &key
+            )
+        )
+    );
     assert_eq!(bytes, copy, "the overriding copy does not bound the inner sum");
     MAX_COPY_CAPACITY.set(0);
     with_scratch::<OverrideBackend, _>(bytes, |s| module_test.ckks_inner_sum(0, 0, false, &mut res, &a, &no_keys, s)).unwrap();
     assert_eq!(MAX_COPY_CAPACITY.get(), res.max_size());
     assert_eq!(
-        snapshot::<OverrideBackend, _>(&res),
-        snapshot::<FFT64Oracle, _>(&expected),
+        snapshot::<OverrideBackend, _, Standard>(&res),
+        snapshot::<FFT64Oracle, _, Standard>(&expected),
         "ckks_inner_sum"
     );
 
     MAX_COPY_CAPACITY.set(0);
     let mut res = destination();
-    let unchanged = snapshot::<OverrideBackend, _>(&res);
+    let unchanged = snapshot::<OverrideBackend, _, Standard>(&res);
     let err = with_scratch::<OverrideBackend, _>(0, |s| module_test.ckks_add_many(0, &mut res, &[&a], s)).unwrap_err();
     assert_ckks_error(
         "ckks_add_many with normalize_after 0",
@@ -551,7 +601,11 @@ fn add_many_and_inner_sum_queries_cover_the_selected_copy() {
             reason: "normalize_after must be at least 1".into(),
         },
     );
-    assert_eq!(snapshot::<OverrideBackend, _>(&res), unchanged, "a refused sum wrote res");
+    assert_eq!(
+        snapshot::<OverrideBackend, _, Standard>(&res),
+        unchanged,
+        "a refused sum wrote res"
+    );
     let err = with_scratch::<OverrideBackend, _>(0, |s| module_test.ckks_inner_sum(32, 1, false, &mut res, &a, &no_keys, s))
         .unwrap_err();
     assert_ckks_error(
@@ -559,11 +613,14 @@ fn add_many_and_inner_sum_queries_cover_the_selected_copy() {
         &err,
         CKKSCompositionError::InvalidOperand {
             op: "ckks_inner_sum",
-            reason: format!("2^1 batches of 2^32 slots exceed the {} slots", module_test.ckks_max_slots()),
+            reason: format!(
+                "2^1 batches of 2^32 slots exceed the {} slots",
+                module_test.ckks_max_slots::<Standard>()
+            ),
         },
     );
     assert_eq!(
-        snapshot::<OverrideBackend, _>(&res),
+        snapshot::<OverrideBackend, _, Standard>(&res),
         unchanged,
         "a refused inner sum wrote res"
     );
@@ -598,7 +655,7 @@ impl poulpy_ckks::api::CKKSRoundOps<OverrideBackend> for CoreQueryOverrides<'_> 
         dst: &Dst,
         src: &Src,
     ) -> usize {
-        self.module.ckks_round_tmp_bytes(dst, src)
+        poulpy_ckks::api::CKKSRoundOps::<OverrideBackend>::ckks_round_tmp_bytes(self.module, dst, src)
     }
 
     fn ckks_round<Dst, Src>(
@@ -624,7 +681,7 @@ impl poulpy_core::GLWECopy<OverrideBackend> for CoreQueryOverrides<'_> {
         self.copy_calls.borrow_mut().push((res.k(), res.max_size()));
         CORE_COPY_WORKSPACE
             + (res.k().as_usize() + res.max_size()) * 64
-            + poulpy_core::GLWECopy::glwe_copy_tmp_bytes(self.module, res, a)
+            + <_ as poulpy_core::GLWECopy<_, Standard>>::glwe_copy_tmp_bytes(self.module, res, a)
     }
     fn glwe_copy<R, A>(&self, res: &mut R, a: &A, scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, OverrideBackend>)
     where
@@ -645,7 +702,7 @@ impl poulpy_core::GLWECopy<OverrideBackend> for CoreQueryOverrides<'_> {
 
 impl poulpy_core::GLWEShift<OverrideBackend> for CoreQueryOverrides<'_> {
     fn glwe_shift_tmp_bytes(&self, res_size: usize) -> usize {
-        CORE_SHIFT_WORKSPACE + poulpy_core::GLWEShift::glwe_shift_tmp_bytes(self.module, res_size)
+        CORE_SHIFT_WORKSPACE + <_ as poulpy_core::GLWEShift<_, Standard>>::glwe_shift_tmp_bytes(self.module, res_size)
     }
     fn glwe_rsh_assign<R>(&self, k: usize, res: &mut R, scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, OverrideBackend>)
     where
@@ -733,7 +790,7 @@ impl poulpy_core::GLWEAutomorphism<OverrideBackend> for CoreQueryOverrides<'_> {
         A: poulpy_core::layouts::GLWEInfos,
         K: poulpy_core::layouts::GGLWEInfos,
     {
-        poulpy_core::GLWEAutomorphism::glwe_automorphism_tmp_bytes(self.module, res_infos, a_infos, key_infos)
+        <_ as poulpy_core::GLWEAutomorphism<_, Standard>>::glwe_automorphism_tmp_bytes(self.module, res_infos, a_infos, key_infos)
     }
     fn glwe_automorphism<R, A>(
         &self,
@@ -829,7 +886,12 @@ impl poulpy_core::GLWEAutomorphism<OverrideBackend> for CoreQueryOverrides<'_> {
         A: poulpy_core::layouts::GLWEInfos,
         K: poulpy_core::layouts::GGLWEInfos,
     {
-        poulpy_core::GLWEAutomorphism::glwe_automorphism_many_tmp_bytes(self.module, res_infos, a_infos, key_infos)
+        <_ as poulpy_core::GLWEAutomorphism<_, Standard>>::glwe_automorphism_many_tmp_bytes(
+            self.module,
+            res_infos,
+            a_infos,
+            key_infos,
+        )
     }
     fn glwe_automorphism_many<R, A>(
         &self,
@@ -882,9 +944,12 @@ fn reference_queries_follow_independent_core_copy_and_shift_workspaces() {
             let mut expected = dst.clone();
             expected.set_meta(src.meta());
             expected.set_log_budget(src.log_budget());
-            with_scratch::<OverrideBackend, _>(module.glwe_copy_tmp_bytes(&expected, &src), |s| {
-                module.glwe_copy(&mut expected, &src, s)
-            });
+            with_scratch::<OverrideBackend, _>(
+                <Module<OverrideBackend> as poulpy_core::GLWECopy<OverrideBackend, Standard>>::glwe_copy_tmp_bytes(
+                    &module, &expected, &src,
+                ),
+                |s| module.glwe_copy(&mut expected, &src, s),
+            );
 
             query.copy_calls.borrow_mut().clear();
             let bytes = query.ckks_copy_tmp_bytes_reference(&dst, &src);
@@ -976,18 +1041,28 @@ fn decrypt_query_uses_plaintext_allocation_width() {
     use poulpy_core::{GLWEDecrypt, GLWEPlaintextBytesOf};
 
     let module = Module::<OverrideBackend>::new(64);
-    let ct = module.ckks_ciphertext_alloc(16usize.into(), 64usize.into());
-    let narrow = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots(), 16usize.into(), 64usize.into());
-    let mut wide = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots(), 16usize.into(), 1024usize.into());
+    let ct = module.ckks_ciphertext_alloc::<Standard>(16usize.into(), 64usize.into());
+    let narrow =
+        module.ckks_plaintext_alloc_from_slots::<Standard>(module.ckks_max_slots::<Standard>(), 16usize.into(), 64usize.into());
+    let mut wide =
+        module.ckks_plaintext_alloc_from_slots::<Standard>(module.ckks_max_slots::<Standard>(), 16usize.into(), 1024usize.into());
     SetK::set_k(&mut wide, 32usize.into());
     let expected = |pt_size: usize| {
         module.glwe_plaintext_bytes_of_from_infos(&ct)
-            + module
-                .glwe_decrypt_tmp_bytes(&ct)
-                .max(module.ckks_extract_pt_tmp_bytes_reference(pt_size))
+            + <Module<OverrideBackend> as GLWEDecrypt<OverrideBackend, Standard>>::glwe_decrypt_tmp_bytes(&module, &ct)
+                .max(<Module<OverrideBackend> as CKKSPlaintextVecReference<
+                OverrideBackend,
+                Standard,
+            >>::ckks_extract_pt_tmp_bytes_reference(&module, pt_size))
     };
-    assert_eq!(module.ckks_decrypt_tmp_bytes(&wide, &ct), expected(wide.max_size()));
-    assert_eq!(module.ckks_decrypt_tmp_bytes(&narrow, &ct), expected(narrow.max_size()));
+    assert_eq!(
+        <Module<OverrideBackend> as CKKSDecryptOps<OverrideBackend, Standard>>::ckks_decrypt_tmp_bytes(&module, &wide, &ct),
+        expected(wide.max_size())
+    );
+    assert_eq!(
+        <Module<OverrideBackend> as CKKSDecryptOps<OverrideBackend, Standard>>::ckks_decrypt_tmp_bytes(&module, &narrow, &ct),
+        expected(narrow.max_size())
+    );
     assert!(
         expected(wide.max_size()) > expected(narrow.max_size()),
         "the plaintext allocation width does not reach the query"
@@ -1014,8 +1089,8 @@ fn ckks_round_reference_dispatches_shaping_correction() {
             ..Default::default()
         },
     };
-    let src = fixture_ciphertext(&module, &layout, 91);
-    let src_ref = fixture_ciphertext(&reference, &layout, 91);
+    let src = fixture_ciphertext::<_, Standard>(&module, &layout, 91);
+    let src_ref = fixture_ciphertext::<_, Standard>(&reference, &layout, 91);
     let dst_layout = CKKSLayout {
         glwe_layout: GLWELayout {
             k: 60usize.into(),
@@ -1023,20 +1098,22 @@ fn ckks_round_reference_dispatches_shaping_correction() {
         },
         ..layout
     };
-    let mut dst = fixture_ciphertext(&module, &dst_layout, 93);
-    let mut expected = fixture_ciphertext(&reference, &dst_layout, 93);
+    let mut dst = fixture_ciphertext::<_, Standard>(&module, &dst_layout, 93);
+    let mut expected = fixture_ciphertext::<_, Standard>(&reference, &dst_layout, 93);
     SHAPING_CALLS.with(|calls| calls.set(0));
-    with_scratch::<OverrideBackend, _>(module.ckks_round_tmp_bytes(&dst, &src), |scratch| {
-        module.ckks_round(&mut dst, &src, scratch)
-    })
+    with_scratch::<OverrideBackend, _>(
+        CKKSRoundOps::<OverrideBackend, Standard>::ckks_round_tmp_bytes(&module, &dst, &src),
+        |scratch| module.ckks_round(&mut dst, &src, scratch),
+    )
     .unwrap();
     assert_eq!(SHAPING_CALLS.with(Cell::get), 2);
-    with_scratch::<crate::FFT64Portable, _>(reference.ckks_round_tmp_bytes(&expected, &src_ref), |scratch| {
-        reference.ckks_round(&mut expected, &src_ref, scratch)
-    })
+    with_scratch::<crate::FFT64Portable, _>(
+        CKKSRoundOps::<crate::FFT64Portable, Standard>::ckks_round_tmp_bytes(&reference, &expected, &src_ref),
+        |scratch| reference.ckks_round(&mut expected, &src_ref, scratch),
+    )
     .unwrap();
     assert_eq!(
-        snapshot::<OverrideBackend, _>(&dst),
-        snapshot::<crate::FFT64Portable, _>(&expected)
+        snapshot::<OverrideBackend, _, _>(&dst),
+        snapshot::<crate::FFT64Portable, _, _>(&expected)
     );
 }

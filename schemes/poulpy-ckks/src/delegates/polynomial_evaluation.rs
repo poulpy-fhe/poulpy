@@ -2,7 +2,7 @@ use crate::CKKSResult as Result;
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{BSGSMeta, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, ModuleCoreAlloc, SetBSGSMeta};
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Module, Ring, ScratchArena};
 
 use crate::{
     CKKSCtBounds, SetCKKSInfos,
@@ -12,7 +12,7 @@ use crate::{
     polynomial::ComplexBSGSPolynomial,
 };
 
-impl<BE: Backend + CKKSPolynomialEvaluationImpl> CKKSPolynomialEvaluationOps<BE> for Module<BE>
+impl<BE: Backend + CKKSPolynomialEvaluationImpl<Rg>, Rg: Ring> CKKSPolynomialEvaluationOps<BE, Rg> for Module<BE>
 where
     Module<BE>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>,
 {
@@ -25,12 +25,12 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
-        B: BSGSPolynomialInfos<BE>,
+        R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        B: BSGSPolynomialInfos<BE, Rg>,
         B::Coeffs: CKKSCtBounds,
-        A: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta,
-        G: PowerBasisHelper<BE, A>,
-        H: GetTensorKey<BE>,
+        A: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + BSGSMeta,
+        G: PowerBasisHelper<BE, A, Rg>,
+        H: GetTensorKey<BE, Rg>,
     {
         BE::ckks_eval_poly_real_const_coeffs_from_power_basis::<R, B, A, G, H>(self, res, power_basis, poly, tsk, scratch)
     }
@@ -44,12 +44,12 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
-        S: GLWEToBackendRef<BE> + CKKSCtBounds,
-        B: BSGSPolynomialInfos<BE>,
+        R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        S: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        B: BSGSPolynomialInfos<BE, Rg>,
         B::Coeffs: CKKSCtBounds,
-        H: GetTensorKey<BE>,
-        CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        H: GetTensorKey<BE, Rg>,
+        CKKSCiphertextOwned<BE, Rg>: GLWEToBackendMut<BE, Rg> + GLWEToBackendRef<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
     {
         BE::ckks_eval_poly_real_const_coeffs::<R, S, B, H>(self, dst, src, bsgs, tsk, scratch)
     }

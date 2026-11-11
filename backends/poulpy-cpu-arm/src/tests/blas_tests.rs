@@ -1,7 +1,7 @@
 //! BLAS tests for the NEON backends: parity of each type, Rayon
 //! included, against its same-family oracle, bit for bit, the NTT types'
-//! also at radix 54 and the standard FFT64 types' also at `N = 32`, and the
-//! conjugate-invariant suite on the conjugate-invariant types.
+//! also at radix 54 and the FFT64 types' also at `N = 32` on the standard ring,
+//! and the conjugate-invariant suite on every type.
 //!
 //! All test logic lives in `poulpy_blas::test_suite` as backend-generic
 //! functions; this file only instantiates the parity suite for each concrete
@@ -134,40 +134,45 @@ blas_parity_test_suite! {
 
 blas_parity_test_suite! {
     mod blas_parity_ci_fft64neon_f64,
-    backend_ref = poulpy_cpu_oracle::FFT64CIOracle,
-    backend_test = crate::FFT64CINeon,
+    backend_ref = poulpy_cpu_oracle::FFT64Oracle,
+    backend_test = crate::FFT64Neon,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     scalar = f64,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
 }
 
 blas_parity_test_suite! {
     mod blas_parity_ci_fft64neon_quad,
-    backend_ref = poulpy_cpu_oracle::FFT64CIOracle,
-    backend_test = crate::FFT64CINeon,
+    backend_ref = poulpy_cpu_oracle::FFT64Oracle,
+    backend_test = crate::FFT64Neon,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     scalar = poulpy_ckks::Quad,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE52_PARAMS_QUAD },
 }
 
 blas_parity_test_suite! {
     mod blas_parity_ci_fft64neon_rank2,
-    backend_ref = poulpy_cpu_oracle::FFT64CIOracle,
-    backend_test = crate::FFT64CINeon,
+    backend_ref = poulpy_cpu_oracle::FFT64Oracle,
+    backend_test = crate::FFT64Neon,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     scalar = f64,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, rank: 2, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
 }
 
 blas_parity_test_suite! {
     mod blas_parity_ci_ntt4x30neon_f64,
-    backend_ref = poulpy_cpu_oracle::NTT4x30CIOracle,
-    backend_test = crate::NTT4x30CINeon,
+    backend_ref = poulpy_cpu_oracle::NTT4x30Oracle,
+    backend_test = crate::NTT4x30Neon,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     scalar = f64,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE52_PARAMS_F64 },
 }
 
 blas_parity_test_suite! {
     mod blas_parity_ci_ntt4x30neon_quad,
-    backend_ref = poulpy_cpu_oracle::NTT4x30CIOracle,
-    backend_test = crate::NTT4x30CINeon,
+    backend_ref = poulpy_cpu_oracle::NTT4x30Oracle,
+    backend_test = crate::NTT4x30Neon,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     scalar = poulpy_ckks::Quad,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE52_PARAMS_QUAD },
 }
@@ -175,8 +180,9 @@ blas_parity_test_suite! {
 // Radix 54 on the conjugate-invariant ring at N = 32, whose products are as long as the standard ring's at N = 64.
 blas_parity_test_suite! {
     mod blas_parity_ci_ntt4x30neon_base2k54,
-    backend_ref = poulpy_cpu_oracle::NTT4x30CIOracle,
-    backend_test = crate::NTT4x30CINeon,
+    backend_ref = poulpy_cpu_oracle::NTT4x30Oracle,
+    backend_test = crate::NTT4x30Neon,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     scalar = f64,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 32, hw: 16, base2k: 54, ..poulpy_ckks::test_suite::BASE52_PARAMS_F64 },
 }
@@ -184,8 +190,9 @@ blas_parity_test_suite! {
 #[cfg(feature = "enable-rayon")]
 blas_parity_test_suite! {
     mod blas_parity_ci_fft64neonrayon_f64,
-    backend_ref = poulpy_cpu_oracle::FFT64CIOracle,
-    backend_test = crate::FFT64CINeonRayon,
+    backend_ref = poulpy_cpu_oracle::FFT64Oracle,
+    backend_test = crate::FFT64NeonRayon,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     scalar = f64,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
 }
@@ -193,8 +200,9 @@ blas_parity_test_suite! {
 #[cfg(feature = "enable-rayon")]
 blas_parity_test_suite! {
     mod blas_parity_ci_fft64neonrayon_quad,
-    backend_ref = poulpy_cpu_oracle::FFT64CIOracle,
-    backend_test = crate::FFT64CINeonRayon,
+    backend_ref = poulpy_cpu_oracle::FFT64Oracle,
+    backend_test = crate::FFT64NeonRayon,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     scalar = poulpy_ckks::Quad,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE52_PARAMS_QUAD },
 }
@@ -202,8 +210,9 @@ blas_parity_test_suite! {
 #[cfg(feature = "enable-rayon")]
 blas_parity_test_suite! {
     mod blas_parity_ci_fft64neonrayon_rank2,
-    backend_ref = poulpy_cpu_oracle::FFT64CIOracle,
-    backend_test = crate::FFT64CINeonRayon,
+    backend_ref = poulpy_cpu_oracle::FFT64Oracle,
+    backend_test = crate::FFT64NeonRayon,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     scalar = f64,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, rank: 2, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
 }
@@ -211,8 +220,9 @@ blas_parity_test_suite! {
 #[cfg(feature = "enable-rayon")]
 blas_parity_test_suite! {
     mod blas_parity_ci_ntt4x30neonrayon_f64,
-    backend_ref = poulpy_cpu_oracle::NTT4x30CIOracle,
-    backend_test = crate::NTT4x30CINeonRayon,
+    backend_ref = poulpy_cpu_oracle::NTT4x30Oracle,
+    backend_test = crate::NTT4x30NeonRayon,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     scalar = f64,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE52_PARAMS_F64 },
 }
@@ -220,8 +230,9 @@ blas_parity_test_suite! {
 #[cfg(feature = "enable-rayon")]
 blas_parity_test_suite! {
     mod blas_parity_ci_ntt4x30neonrayon_quad,
-    backend_ref = poulpy_cpu_oracle::NTT4x30CIOracle,
-    backend_test = crate::NTT4x30CINeonRayon,
+    backend_ref = poulpy_cpu_oracle::NTT4x30Oracle,
+    backend_test = crate::NTT4x30NeonRayon,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     scalar = poulpy_ckks::Quad,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE52_PARAMS_QUAD },
 }
@@ -229,34 +240,35 @@ blas_parity_test_suite! {
 #[cfg(feature = "enable-rayon")]
 blas_parity_test_suite! {
     mod blas_parity_ci_ntt4x30neonrayon_base2k54,
-    backend_ref = poulpy_cpu_oracle::NTT4x30CIOracle,
-    backend_test = crate::NTT4x30CINeonRayon,
+    backend_ref = poulpy_cpu_oracle::NTT4x30Oracle,
+    backend_test = crate::NTT4x30NeonRayon,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     scalar = f64,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 32, hw: 16, base2k: 54, ..poulpy_ckks::test_suite::BASE52_PARAMS_F64 },
 }
 
 blas_conjugate_invariant_test_suite!(
     mod blas_ci_fft64neon,
-    backend = crate::FFT64CINeon,
+    backend = crate::FFT64Neon,
     params = poulpy_ckks::test_suite::BASE19_PARAMS_F64,
 );
 
 blas_conjugate_invariant_test_suite!(
     mod blas_ci_ntt4x30neon,
-    backend = crate::NTT4x30CINeon,
+    backend = crate::NTT4x30Neon,
     params = poulpy_ckks::test_suite::BASE52_PARAMS_F64,
 );
 
 #[cfg(feature = "enable-rayon")]
 blas_conjugate_invariant_test_suite!(
     mod blas_ci_fft64neonrayon,
-    backend = crate::FFT64CINeonRayon,
+    backend = crate::FFT64NeonRayon,
     params = poulpy_ckks::test_suite::BASE19_PARAMS_F64,
 );
 
 #[cfg(feature = "enable-rayon")]
 blas_conjugate_invariant_test_suite!(
     mod blas_ci_ntt4x30neonrayon,
-    backend = crate::NTT4x30CINeonRayon,
+    backend = crate::NTT4x30NeonRayon,
     params = poulpy_ckks::test_suite::BASE52_PARAMS_F64,
 );

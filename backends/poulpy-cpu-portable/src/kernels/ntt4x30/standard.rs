@@ -1,5 +1,7 @@
 //! Standard-ring NTT4x30 arithmetic: the negacyclic NTT.
 
+use std::marker::PhantomData;
+
 use poulpy_hal::layouts::Standard;
 
 use crate::kernels::ntt4x30::{
@@ -63,7 +65,7 @@ pub fn intt_portable<P: PrimeSetCrt4>(table: &NttTableInv<P, Standard>, data: &m
 /// The set `{1, 3, …, 2n - 1}` is closed under multiplication by any odd
 /// `p`, so the action is a pure permutation — no closure trick or
 /// conjugation flag is needed.
-pub fn build_ntt4x30_automorphism_plan_portable(n: usize, p: i64) -> NttAutomorphismPlan {
+pub fn build_ntt4x30_automorphism_plan_portable(n: usize, p: i64) -> NttAutomorphismPlan<Standard> {
     assert!(n.is_power_of_two(), "n must be a power of two, got {n}");
     assert!(p & 1 == 1, "p must be odd for an R/(X^N+1) automorphism, got {p}");
 
@@ -79,5 +81,9 @@ pub fn build_ntt4x30_automorphism_plan_portable(n: usize, p: i64) -> NttAutomorp
         let src: u32 = ((e_src - 1) >> 1) as u32;
         *mi = ir(src);
     }
-    NttAutomorphismPlan { p, perm }
+    NttAutomorphismPlan {
+        p,
+        perm,
+        ring: PhantomData,
+    }
 }

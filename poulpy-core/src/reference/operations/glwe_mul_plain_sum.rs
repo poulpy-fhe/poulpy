@@ -8,9 +8,9 @@ use poulpy_hal::{
         VecZnxRsh, VecZnxRshTmpBytes,
     },
     layouts::{
-        Backend, CnvDftAccTerm, CnvPVecLToBackendRef, CnvPVecRToBackendRef, Module, ScratchArena, VecZnxBigToBackendRef,
-        VecZnxDftBackendMut, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxToBackendMut, VecZnxToBackendRef,
-        vec_znx_backend_ref_from_mut,
+        Backend, CnvDftAccTerm, CnvPVecLToBackendRef, CnvPVecRToBackendRef, Module, Ring, ScratchArena, Standard,
+        VecZnxBigToBackendRef, VecZnxDftBackendMut, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxToBackendMut,
+        VecZnxToBackendRef, vec_znx_backend_ref_from_mut,
     },
 };
 
@@ -20,7 +20,7 @@ use crate::gadget::cnv_offset_to_limb_offset;
 
 /// The reference algorithm of [`GLWEMulPreparedPlainSumImpl`](crate::oep::GLWEMulPreparedPlainSumImpl), which
 /// `impl_glwe_mul_prepared_plain_sum_reference_full!` forwards to and an override can call.
-pub trait GLWEMulPreparedPlainSumReference<BE: Backend> {
+pub trait GLWEMulPreparedPlainSumReference<BE: Backend, Rg: Ring = Standard> {
     fn glwe_mul_prepared_plain_sum_tmp_bytes_reference<R>(&self, res: &R, a_size: usize, b_size: usize) -> usize
     where
         R: GLWEInfos;
@@ -38,9 +38,9 @@ pub trait GLWEMulPreparedPlainSumReference<BE: Backend> {
         base2k: Base2K,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        AP: CnvPVecLToBackendRef<BE>,
-        BP: CnvPVecRToBackendRef<BE>;
+        R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+        AP: CnvPVecLToBackendRef<BE, Rg>,
+        BP: CnvPVecRToBackendRef<BE, Rg>;
 
     fn glwe_mul_prepared_plain_sum_add_tmp_bytes_reference<R>(&self, res: &R, a_size: usize, b_size: usize) -> usize
     where
@@ -59,9 +59,9 @@ pub trait GLWEMulPreparedPlainSumReference<BE: Backend> {
         base2k: Base2K,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        AP: CnvPVecLToBackendRef<BE>,
-        BP: CnvPVecRToBackendRef<BE>;
+        R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+        AP: CnvPVecLToBackendRef<BE, Rg>,
+        BP: CnvPVecRToBackendRef<BE, Rg>;
 
     fn glwe_mul_prepared_plain_sum_dft_tmp_bytes_reference(&self, res_size: usize, a_size: usize, b_size: usize) -> usize;
 
@@ -69,7 +69,7 @@ pub trait GLWEMulPreparedPlainSumReference<BE: Backend> {
     fn glwe_mul_prepared_plain_sum_dft_reference<AP, BP>(
         &self,
         cnv_offset: usize,
-        res: &mut VecZnxDftBackendMut<'_, BE>,
+        res: &mut VecZnxDftBackendMut<'_, BE, Rg>,
         a: &[&AP],
         a_size: usize,
         b: &[&BP],
@@ -78,8 +78,8 @@ pub trait GLWEMulPreparedPlainSumReference<BE: Backend> {
         base2k: Base2K,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        AP: CnvPVecLToBackendRef<BE>,
-        BP: CnvPVecRToBackendRef<BE>;
+        AP: CnvPVecLToBackendRef<BE, Rg>,
+        BP: CnvPVecRToBackendRef<BE, Rg>;
 
     fn glwe_mul_prepared_plain_sum_dft_add_tmp_bytes_reference(&self, res_size: usize, a_size: usize, b_size: usize) -> usize;
 
@@ -87,7 +87,7 @@ pub trait GLWEMulPreparedPlainSumReference<BE: Backend> {
     fn glwe_mul_prepared_plain_sum_dft_add_reference<AP, BP>(
         &self,
         cnv_offset: usize,
-        res: &mut VecZnxDftBackendMut<'_, BE>,
+        res: &mut VecZnxDftBackendMut<'_, BE, Rg>,
         a: &[&AP],
         a_size: usize,
         b: &[&BP],
@@ -96,27 +96,27 @@ pub trait GLWEMulPreparedPlainSumReference<BE: Backend> {
         base2k: Base2K,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        AP: CnvPVecLToBackendRef<BE>,
-        BP: CnvPVecRToBackendRef<BE>;
+        AP: CnvPVecLToBackendRef<BE, Rg>,
+        BP: CnvPVecRToBackendRef<BE, Rg>;
 }
 
-impl<BE: Backend> GLWEMulPreparedPlainSumReference<BE> for Module<BE>
+impl<BE: Backend, Rg: Ring> GLWEMulPreparedPlainSumReference<BE, Rg> for Module<BE>
 where
     Self: ModuleN
         + VecZnxDftBytesOf
         + VecZnxBigBytesOf
-        + CnvOps<BE>
-        + VecZnxDftAddAssign<BE>
-        + VecZnxIdftApply<BE>
+        + CnvOps<BE, Rg>
+        + VecZnxDftAddAssign<BE, Rg>
+        + VecZnxIdftApply<BE, Rg>
         + VecZnxIdftApplyTmpBytes
-        + VecZnxBigNormalize<BE>
+        + VecZnxBigNormalize<BE, Rg>
         + VecZnxBigNormalizeTmpBytes
-        + VecZnxIdftNormalize<BE>
+        + VecZnxIdftNormalize<BE, Rg>
         + VecZnxIdftNormalizeTmpBytes
-        + VecZnxNormalize<BE>
+        + VecZnxNormalize<BE, Rg>
         + VecZnxNormalizeTmpBytes
-        + VecZnxAddAssign<BE>
-        + VecZnxRsh<BE>
+        + VecZnxAddAssign<BE, Rg>
+        + VecZnxRsh<BE, Rg>
         + VecZnxRshTmpBytes,
 {
     /// One column's sum, inverse transform and normalization: the call transforms no operand.
@@ -147,13 +147,13 @@ where
         base2k: Base2K,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        AP: CnvPVecLToBackendRef<BE>,
-        BP: CnvPVecRToBackendRef<BE>,
+        R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+        AP: CnvPVecLToBackendRef<BE, Rg>,
+        BP: CnvPVecRToBackendRef<BE, Rg>,
     {
         const OP: &str = "glwe_mul_prepared_plain_sum";
         let (n, cols) = (res.n().as_usize(), res.rank().as_usize() + 1);
-        check_terms::<BE, _, _>(OP, n, cols, a, a_size, b, b_size, galois);
+        check_terms::<BE, _, _, Rg>(OP, n, cols, a, a_size, b, b_size, galois);
         assert!(
             scratch.available() >= self.glwe_mul_prepared_plain_sum_tmp_bytes_reference(res, a_size, b_size),
             "glwe_mul_prepared_plain_sum: scratch below its query"
@@ -224,13 +224,13 @@ where
         base2k: Base2K,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        AP: CnvPVecLToBackendRef<BE>,
-        BP: CnvPVecRToBackendRef<BE>,
+        R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+        AP: CnvPVecLToBackendRef<BE, Rg>,
+        BP: CnvPVecRToBackendRef<BE, Rg>,
     {
         const OP: &str = "glwe_mul_prepared_plain_sum_add";
         let (n, cols) = (res.n().as_usize(), res.rank().as_usize() + 1);
-        check_terms::<BE, _, _>(OP, n, cols, a, a_size, b, b_size, galois);
+        check_terms::<BE, _, _, Rg>(OP, n, cols, a, a_size, b, b_size, galois);
         assert!(res.base2k() == base2k, "{OP}: res must be at the radix of the operands");
         assert!(
             scratch.available() >= self.glwe_mul_prepared_plain_sum_add_tmp_bytes_reference(res, a_size, b_size),
@@ -252,7 +252,7 @@ where
                 let (mut addend, mut scratch_2) = scratch_1.take_vec_znx_scratch(n, 1, res.size() + 1);
                 {
                     let res_backend = res.to_backend_mut();
-                    let res_data = vec_znx_backend_ref_from_mut::<BE>(&res_backend.data);
+                    let res_data = vec_znx_backend_ref_from_mut::<BE, Rg>(&res_backend.data);
                     let bits = cnv_offset_lo as usize;
                     self.vec_znx_rsh(
                         base2k,
@@ -296,7 +296,7 @@ where
                 );
                 {
                     let res_backend = res.to_backend_mut();
-                    let res_data = vec_znx_backend_ref_from_mut::<BE>(&res_backend.data);
+                    let res_data = vec_znx_backend_ref_from_mut::<BE, Rg>(&res_backend.data);
                     self.vec_znx_add_assign(&mut sum.to_backend_mut(), 0, &res_data, col);
                 }
                 let mut res_backend = res.to_backend_mut();
@@ -324,7 +324,7 @@ where
     fn glwe_mul_prepared_plain_sum_dft_reference<AP, BP>(
         &self,
         cnv_offset: usize,
-        res: &mut VecZnxDftBackendMut<'_, BE>,
+        res: &mut VecZnxDftBackendMut<'_, BE, Rg>,
         a: &[&AP],
         a_size: usize,
         b: &[&BP],
@@ -333,12 +333,12 @@ where
         base2k: Base2K,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        AP: CnvPVecLToBackendRef<BE>,
-        BP: CnvPVecRToBackendRef<BE>,
+        AP: CnvPVecLToBackendRef<BE, Rg>,
+        BP: CnvPVecRToBackendRef<BE, Rg>,
     {
         const OP: &str = "glwe_mul_prepared_plain_sum_dft";
         let (n, cols) = (operand_degree(self.n(), &[Degree(res.n() as u32)]), res.cols());
-        check_terms::<BE, _, _>(OP, n, cols, a, a_size, b, b_size, galois);
+        check_terms::<BE, _, _, Rg>(OP, n, cols, a, a_size, b, b_size, galois);
         assert!(
             scratch.available() >= self.glwe_mul_prepared_plain_sum_dft_tmp_bytes_reference(res.size(), a_size, b_size),
             "glwe_mul_prepared_plain_sum_dft: scratch below its query"
@@ -361,7 +361,7 @@ where
     fn glwe_mul_prepared_plain_sum_dft_add_reference<AP, BP>(
         &self,
         cnv_offset: usize,
-        res: &mut VecZnxDftBackendMut<'_, BE>,
+        res: &mut VecZnxDftBackendMut<'_, BE, Rg>,
         a: &[&AP],
         a_size: usize,
         b: &[&BP],
@@ -370,12 +370,12 @@ where
         base2k: Base2K,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        AP: CnvPVecLToBackendRef<BE>,
-        BP: CnvPVecRToBackendRef<BE>,
+        AP: CnvPVecLToBackendRef<BE, Rg>,
+        BP: CnvPVecRToBackendRef<BE, Rg>,
     {
         const OP: &str = "glwe_mul_prepared_plain_sum_dft_add";
         let (n, cols, size) = (operand_degree(self.n(), &[Degree(res.n() as u32)]), res.cols(), res.size());
-        check_terms::<BE, _, _>(OP, n, cols, a, a_size, b, b_size, galois);
+        check_terms::<BE, _, _, Rg>(OP, n, cols, a, a_size, b, b_size, galois);
         assert!(
             scratch.available() >= self.glwe_mul_prepared_plain_sum_dft_add_tmp_bytes_reference(size, a_size, b_size),
             "glwe_mul_prepared_plain_sum_dft_add: scratch below its query"
@@ -394,11 +394,19 @@ where
 
 /// The refusals of the summed products, `op` naming the public operation, for a result of degree `n` and `cols` columns.
 #[allow(clippy::too_many_arguments)]
-fn check_terms<BE, AP, BP>(op: &str, n: usize, cols: usize, a: &[&AP], a_size: usize, b: &[&BP], b_size: usize, galois: &[i64])
-where
+fn check_terms<BE, AP, BP, Rg: Ring>(
+    op: &str,
+    n: usize,
+    cols: usize,
+    a: &[&AP],
+    a_size: usize,
+    b: &[&BP],
+    b_size: usize,
+    galois: &[i64],
+) where
     BE: Backend,
-    AP: CnvPVecLToBackendRef<BE>,
-    BP: CnvPVecRToBackendRef<BE>,
+    AP: CnvPVecLToBackendRef<BE, Rg>,
+    BP: CnvPVecRToBackendRef<BE, Rg>,
 {
     assert!(
         !a.is_empty() && b.len() == a.len() && galois.len() == a.len(),
@@ -424,11 +432,16 @@ where
 }
 
 /// Refills `terms` with the convolution terms of column `col`.
-fn column_terms<'a, BE, AP, BP>(terms: &mut Vec<CnvDftAccTerm<'a, BE>>, col: usize, a: &'a [&AP], b: &'a [&BP], galois: &[i64])
-where
+fn column_terms<'a, BE, AP, BP, Rg: Ring>(
+    terms: &mut Vec<CnvDftAccTerm<'a, BE, Rg>>,
+    col: usize,
+    a: &'a [&AP],
+    b: &'a [&BP],
+    galois: &[i64],
+) where
     BE: Backend,
-    AP: CnvPVecLToBackendRef<BE>,
-    BP: CnvPVecRToBackendRef<BE>,
+    AP: CnvPVecLToBackendRef<BE, Rg>,
+    BP: CnvPVecRToBackendRef<BE, Rg>,
 {
     terms.clear();
     terms.extend(a.iter().zip(b).zip(galois).map(|((ap, bp), &b_galois)| CnvDftAccTerm {
@@ -441,59 +454,163 @@ where
 }
 
 /// Forwards every method of [`GLWEMulPreparedPlainSumReference`] to its HAL-based reference implementation.
+///
+/// `($be)` implements both rings and `($be, $ring)` one ring, as `docs/guides/layering-contract.md` describes.
 #[macro_export]
 macro_rules! impl_glwe_mul_prepared_plain_sum_reference_full {
     ($be:ty) => {
-        unsafe impl $crate::oep::GLWEMulPreparedPlainSumImpl for $be {
-    fn glwe_mul_prepared_plain_sum_tmp_bytes<R>(module: &::poulpy_hal::layouts::Module<$be>, res: &R, a_size: usize, b_size: usize) -> usize
-    where
-        R: $crate::layouts::GLWEInfos {
-            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWEMulPreparedPlainSumReference<$be>>::glwe_mul_prepared_plain_sum_tmp_bytes_reference::<R>(module, res, a_size, b_size)
-        }
+        $crate::impl_glwe_mul_prepared_plain_sum_reference_full!($be, ::poulpy_hal::layouts::Standard);
+        $crate::impl_glwe_mul_prepared_plain_sum_reference_full!($be, ::poulpy_hal::layouts::ConjugateInvariant);
+    };
+    ($be:ty, $ring:ty) => {
+        unsafe impl $crate::oep::GLWEMulPreparedPlainSumImpl<$ring> for $be {
+            fn glwe_mul_prepared_plain_sum_tmp_bytes<R>(
+                module: &::poulpy_hal::layouts::Module<$be>,
+                res: &R,
+                a_size: usize,
+                b_size: usize,
+            ) -> usize
+            where
+                R: $crate::layouts::GLWEInfos,
+            {
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWEMulPreparedPlainSumReference<
+                    $be,
+                    $ring,
+                >>::glwe_mul_prepared_plain_sum_tmp_bytes_reference::<R>(module, res, a_size, b_size)
+            }
 
-    fn glwe_mul_prepared_plain_sum<R, AP, BP>(module: &::poulpy_hal::layouts::Module<$be>, cnv_offset: usize, res: &mut R, a: &[&AP], a_size: usize, b: &[&BP], b_size: usize, galois: &[i64], base2k: $crate::layouts::Base2K, scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>)
-    where
-        R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
-        AP: ::poulpy_hal::layouts::CnvPVecLToBackendRef<$be>,
-        BP: ::poulpy_hal::layouts::CnvPVecRToBackendRef<$be> {
-            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWEMulPreparedPlainSumReference<$be>>::glwe_mul_prepared_plain_sum_reference::<R, AP, BP>(module, cnv_offset, res, a, a_size, b, b_size, galois, base2k, scratch)
-        }
+            fn glwe_mul_prepared_plain_sum<R, AP, BP>(
+                module: &::poulpy_hal::layouts::Module<$be>,
+                cnv_offset: usize,
+                res: &mut R,
+                a: &[&AP],
+                a_size: usize,
+                b: &[&BP],
+                b_size: usize,
+                galois: &[i64],
+                base2k: $crate::layouts::Base2K,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
+            ) where
+                R: $crate::layouts::GLWEToBackendMut<$be, $ring> + $crate::layouts::GLWEInfos,
+                AP: ::poulpy_hal::layouts::CnvPVecLToBackendRef<$be, $ring>,
+                BP: ::poulpy_hal::layouts::CnvPVecRToBackendRef<$be, $ring>,
+            {
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWEMulPreparedPlainSumReference<
+                    $be,
+                    $ring,
+                >>::glwe_mul_prepared_plain_sum_reference::<R, AP, BP>(
+                    module, cnv_offset, res, a, a_size, b, b_size, galois, base2k, scratch,
+                )
+            }
 
-    fn glwe_mul_prepared_plain_sum_add_tmp_bytes<R>(module: &::poulpy_hal::layouts::Module<$be>, res: &R, a_size: usize, b_size: usize) -> usize
-    where
-        R: $crate::layouts::GLWEInfos {
-            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWEMulPreparedPlainSumReference<$be>>::glwe_mul_prepared_plain_sum_add_tmp_bytes_reference::<R>(module, res, a_size, b_size)
-        }
+            fn glwe_mul_prepared_plain_sum_add_tmp_bytes<R>(
+                module: &::poulpy_hal::layouts::Module<$be>,
+                res: &R,
+                a_size: usize,
+                b_size: usize,
+            ) -> usize
+            where
+                R: $crate::layouts::GLWEInfos,
+            {
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWEMulPreparedPlainSumReference<
+                    $be,
+                    $ring,
+                >>::glwe_mul_prepared_plain_sum_add_tmp_bytes_reference::<R>(module, res, a_size, b_size)
+            }
 
-    fn glwe_mul_prepared_plain_sum_add<R, AP, BP>(module: &::poulpy_hal::layouts::Module<$be>, cnv_offset: usize, res: &mut R, a: &[&AP], a_size: usize, b: &[&BP], b_size: usize, galois: &[i64], base2k: $crate::layouts::Base2K, scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>)
-    where
-        R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
-        AP: ::poulpy_hal::layouts::CnvPVecLToBackendRef<$be>,
-        BP: ::poulpy_hal::layouts::CnvPVecRToBackendRef<$be> {
-            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWEMulPreparedPlainSumReference<$be>>::glwe_mul_prepared_plain_sum_add_reference::<R, AP, BP>(module, cnv_offset, res, a, a_size, b, b_size, galois, base2k, scratch)
-        }
+            fn glwe_mul_prepared_plain_sum_add<R, AP, BP>(
+                module: &::poulpy_hal::layouts::Module<$be>,
+                cnv_offset: usize,
+                res: &mut R,
+                a: &[&AP],
+                a_size: usize,
+                b: &[&BP],
+                b_size: usize,
+                galois: &[i64],
+                base2k: $crate::layouts::Base2K,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
+            ) where
+                R: $crate::layouts::GLWEToBackendMut<$be, $ring> + $crate::layouts::GLWEInfos,
+                AP: ::poulpy_hal::layouts::CnvPVecLToBackendRef<$be, $ring>,
+                BP: ::poulpy_hal::layouts::CnvPVecRToBackendRef<$be, $ring>,
+            {
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWEMulPreparedPlainSumReference<
+                    $be,
+                    $ring,
+                >>::glwe_mul_prepared_plain_sum_add_reference::<R, AP, BP>(
+                    module, cnv_offset, res, a, a_size, b, b_size, galois, base2k, scratch,
+                )
+            }
 
-    fn glwe_mul_prepared_plain_sum_dft_tmp_bytes(module: &::poulpy_hal::layouts::Module<$be>, res_size: usize, a_size: usize, b_size: usize) -> usize {
-            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWEMulPreparedPlainSumReference<$be>>::glwe_mul_prepared_plain_sum_dft_tmp_bytes_reference(module, res_size, a_size, b_size)
-        }
+            fn glwe_mul_prepared_plain_sum_dft_tmp_bytes(
+                module: &::poulpy_hal::layouts::Module<$be>,
+                res_size: usize,
+                a_size: usize,
+                b_size: usize,
+            ) -> usize {
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWEMulPreparedPlainSumReference<
+                    $be,
+                    $ring,
+                >>::glwe_mul_prepared_plain_sum_dft_tmp_bytes_reference(module, res_size, a_size, b_size)
+            }
 
-    fn glwe_mul_prepared_plain_sum_dft<AP, BP>(module: &::poulpy_hal::layouts::Module<$be>, cnv_offset: usize, res: &mut ::poulpy_hal::layouts::VecZnxDftBackendMut<'_, $be>, a: &[&AP], a_size: usize, b: &[&BP], b_size: usize, galois: &[i64], base2k: $crate::layouts::Base2K, scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>)
-    where
-        AP: ::poulpy_hal::layouts::CnvPVecLToBackendRef<$be>,
-        BP: ::poulpy_hal::layouts::CnvPVecRToBackendRef<$be> {
-            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWEMulPreparedPlainSumReference<$be>>::glwe_mul_prepared_plain_sum_dft_reference::<AP, BP>(module, cnv_offset, res, a, a_size, b, b_size, galois, base2k, scratch)
-        }
+            fn glwe_mul_prepared_plain_sum_dft<AP, BP>(
+                module: &::poulpy_hal::layouts::Module<$be>,
+                cnv_offset: usize,
+                res: &mut ::poulpy_hal::layouts::VecZnxDftBackendMut<'_, $be, $ring>,
+                a: &[&AP],
+                a_size: usize,
+                b: &[&BP],
+                b_size: usize,
+                galois: &[i64],
+                base2k: $crate::layouts::Base2K,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
+            ) where
+                AP: ::poulpy_hal::layouts::CnvPVecLToBackendRef<$be, $ring>,
+                BP: ::poulpy_hal::layouts::CnvPVecRToBackendRef<$be, $ring>,
+            {
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWEMulPreparedPlainSumReference<
+                    $be,
+                    $ring,
+                >>::glwe_mul_prepared_plain_sum_dft_reference::<AP, BP>(
+                    module, cnv_offset, res, a, a_size, b, b_size, galois, base2k, scratch,
+                )
+            }
 
-    fn glwe_mul_prepared_plain_sum_dft_add_tmp_bytes(module: &::poulpy_hal::layouts::Module<$be>, res_size: usize, a_size: usize, b_size: usize) -> usize {
-            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWEMulPreparedPlainSumReference<$be>>::glwe_mul_prepared_plain_sum_dft_add_tmp_bytes_reference(module, res_size, a_size, b_size)
-        }
+            fn glwe_mul_prepared_plain_sum_dft_add_tmp_bytes(
+                module: &::poulpy_hal::layouts::Module<$be>,
+                res_size: usize,
+                a_size: usize,
+                b_size: usize,
+            ) -> usize {
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWEMulPreparedPlainSumReference<
+                    $be,
+                    $ring,
+                >>::glwe_mul_prepared_plain_sum_dft_add_tmp_bytes_reference(module, res_size, a_size, b_size)
+            }
 
-    fn glwe_mul_prepared_plain_sum_dft_add<AP, BP>(module: &::poulpy_hal::layouts::Module<$be>, cnv_offset: usize, res: &mut ::poulpy_hal::layouts::VecZnxDftBackendMut<'_, $be>, a: &[&AP], a_size: usize, b: &[&BP], b_size: usize, galois: &[i64], base2k: $crate::layouts::Base2K, scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>)
-    where
-        AP: ::poulpy_hal::layouts::CnvPVecLToBackendRef<$be>,
-        BP: ::poulpy_hal::layouts::CnvPVecRToBackendRef<$be> {
-            <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWEMulPreparedPlainSumReference<$be>>::glwe_mul_prepared_plain_sum_dft_add_reference::<AP, BP>(module, cnv_offset, res, a, a_size, b, b_size, galois, base2k, scratch)
-        }
+            fn glwe_mul_prepared_plain_sum_dft_add<AP, BP>(
+                module: &::poulpy_hal::layouts::Module<$be>,
+                cnv_offset: usize,
+                res: &mut ::poulpy_hal::layouts::VecZnxDftBackendMut<'_, $be, $ring>,
+                a: &[&AP],
+                a_size: usize,
+                b: &[&BP],
+                b_size: usize,
+                galois: &[i64],
+                base2k: $crate::layouts::Base2K,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
+            ) where
+                AP: ::poulpy_hal::layouts::CnvPVecLToBackendRef<$be, $ring>,
+                BP: ::poulpy_hal::layouts::CnvPVecRToBackendRef<$be, $ring>,
+            {
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWEMulPreparedPlainSumReference<
+                    $be,
+                    $ring,
+                >>::glwe_mul_prepared_plain_sum_dft_add_reference::<AP, BP>(
+                    module, cnv_offset, res, a, a_size, b, b_size, galois, base2k, scratch,
+                )
+            }
         }
     };
 }

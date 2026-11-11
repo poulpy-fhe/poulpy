@@ -2,7 +2,7 @@
 
 use poulpy_hal::{
     backend_test_suite, cross_backend_test_suite,
-    layouts::Module,
+    layouts::{Module, Standard},
     test_suite::convolution::{
         test_convolution, test_convolution_add, test_convolution_by_const_add, test_convolution_pairwise, test_convolution_sum,
     },
@@ -49,7 +49,6 @@ backend_test_suite! {
         test_vec_znx_big_window_ops => poulpy_hal::test_suite::window::test_vec_znx_big_window_ops,
         test_vec_znx_window_normalize_ops => poulpy_hal::test_suite::window::test_vec_znx_window_normalize_ops,
         test_vec_znx_big_window_normalize => poulpy_hal::test_suite::window::test_vec_znx_big_window_normalize,
-        test_vec_znx_window_rejected_by_ring_ops => poulpy_hal::test_suite::window::test_vec_znx_window_rejected_by_ring_ops,
         test_vec_znx_dft_rejects_zero_step => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_rejects_zero_step,
         test_cnv_prepare_rejects_mismatched_shape => poulpy_hal::test_suite::convolution::test_cnv_prepare_rejects_mismatched_shape,
         test_vmp_apply_dft_to_dft_rejects_column_mismatch => poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft_rejects_column_mismatch,
@@ -58,33 +57,33 @@ backend_test_suite! {
         test_convolution_embed => poulpy_hal::test_suite::convolution::test_convolution_embed,
         test_convolution_galois => poulpy_hal::test_suite::convolution::test_convolution_galois,
         test_cnv_by_const_rejects_degree_mismatch => poulpy_hal::test_suite::convolution::test_cnv_by_const_rejects_degree_mismatch,
+    },
+    ring_free_tests = {
+        test_vec_znx_window_rejected_by_ring_ops => poulpy_hal::test_suite::window::test_vec_znx_window_rejected_by_ring_ops,
     }
 }
 
 #[test]
 fn test_convolution_fft64() {
     let module = Module::<FFT64PortableRayon>::new(1 << 8);
-    test_convolution(&module, module.n(), 12);
-    test_convolution_add(&module, module.n(), 12);
-    test_convolution_pairwise(&module, module.n(), 12);
-    test_convolution_sum(&module, module.n(), 12);
-    test_convolution_by_const_add(&module, module.n(), 12);
+    test_convolution::<_, _, Standard>(&module, module.n(), 12);
+    test_convolution_add::<_, _, Standard>(&module, module.n(), 12);
+    test_convolution_pairwise::<_, _, Standard>(&module, module.n(), 12);
+    test_convolution_sum::<_, _, Standard>(&module, module.n(), 12);
+    test_convolution_by_const_add::<_, _, Standard>(&module, module.n(), 12);
 }
 
 #[test]
 fn test_znx_normalize_portable_rayon() {
     use poulpy_cpu_portable::test_suite::znx_normalize::test_znx_normalize;
     test_znx_normalize::<crate::FFT64PortableRayon>();
-    test_znx_normalize::<crate::FFT64CIPortableRayon>();
     test_znx_normalize::<crate::NTT4x30PortableRayon>();
-    test_znx_normalize::<crate::NTT4x30CIPortableRayon>();
 }
 
 poulpy_cpu_portable::conjugate_invariant_test_suite!(
     ci_fft64,
-    crate::FFT64CIPortableRayon,
     crate::FFT64PortableRayon,
-    reference = poulpy_cpu_portable::FFT64CIPortable
+    reference = poulpy_cpu_portable::FFT64Portable
 );
 
 use super::NTT4x30PortableRayon;
@@ -145,7 +144,6 @@ backend_test_suite! {
         test_vec_znx_big_window_ops => poulpy_hal::test_suite::window::test_vec_znx_big_window_ops,
         test_vec_znx_window_normalize_ops => poulpy_hal::test_suite::window::test_vec_znx_window_normalize_ops,
         test_vec_znx_big_window_normalize => poulpy_hal::test_suite::window::test_vec_znx_big_window_normalize,
-        test_vec_znx_window_rejected_by_ring_ops => poulpy_hal::test_suite::window::test_vec_znx_window_rejected_by_ring_ops,
         test_vec_znx_dft_rejects_zero_step => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_rejects_zero_step,
         test_cnv_prepare_rejects_mismatched_shape => poulpy_hal::test_suite::convolution::test_cnv_prepare_rejects_mismatched_shape,
         test_vmp_apply_dft_to_dft_rejects_column_mismatch => poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft_rejects_column_mismatch,
@@ -154,6 +152,9 @@ backend_test_suite! {
         test_convolution_embed => poulpy_hal::test_suite::convolution::test_convolution_embed,
         test_convolution_galois => poulpy_hal::test_suite::convolution::test_convolution_galois,
         test_cnv_by_const_rejects_degree_mismatch => poulpy_hal::test_suite::convolution::test_cnv_by_const_rejects_degree_mismatch,
+    },
+    ring_free_tests = {
+        test_vec_znx_window_rejected_by_ring_ops => poulpy_hal::test_suite::window::test_vec_znx_window_rejected_by_ring_ops,
     }
 }
 
@@ -171,34 +172,33 @@ backend_test_suite! {
 fn test_convolution_ntt4x30() {
     let module = Module::<NTT4x30PortableRayon>::new(1 << 8);
     for n in [module.n(), module.n() >> 1, module.n() >> 2] {
-        test_convolution(&module, n, 50);
-        test_convolution_add(&module, n, 50);
-        test_convolution_pairwise(&module, n, 50);
-        test_convolution_sum(&module, n, 50);
+        test_convolution::<_, _, Standard>(&module, n, 50);
+        test_convolution_add::<_, _, Standard>(&module, n, 50);
+        test_convolution_pairwise::<_, _, Standard>(&module, n, 50);
+        test_convolution_sum::<_, _, Standard>(&module, n, 50);
     }
-    test_convolution_by_const_add(&module, module.n(), 50);
+    test_convolution_by_const_add::<_, _, Standard>(&module, module.n(), 50);
 }
 
 /// The degree gives the apply more than one task of blocks, so the staged outputs of several workers meet.
 #[test]
 fn test_convolution_ntt4x30_multi_task() {
     let module = Module::<NTT4x30PortableRayon>::new(1 << 11);
-    test_convolution(&module, module.n(), 50);
-    test_convolution_add(&module, module.n(), 50);
-    test_convolution_pairwise(&module, module.n(), 50);
-    test_convolution_sum(&module, module.n(), 50);
+    test_convolution::<_, _, Standard>(&module, module.n(), 50);
+    test_convolution_add::<_, _, Standard>(&module, module.n(), 50);
+    test_convolution_pairwise::<_, _, Standard>(&module, module.n(), 50);
+    test_convolution_sum::<_, _, Standard>(&module, module.n(), 50);
 }
 
 poulpy_cpu_portable::conjugate_invariant_test_suite!(
     ci_ntt4x30,
-    crate::NTT4x30CIPortableRayon,
     crate::NTT4x30PortableRayon,
-    reference = poulpy_cpu_portable::NTT4x30CIPortable
+    reference = poulpy_cpu_portable::NTT4x30Portable
 );
 
 #[cfg(feature = "enable-core")]
 mod core {
-    use poulpy_hal::layouts::Module;
+    use poulpy_hal::layouts::{Module, Standard};
 
     poulpy_core::core_parity_test_suite! {
         mod parity_ntt4x30,
@@ -243,21 +243,22 @@ mod core {
     /// The fused interleaved-digit product against the core reference body, on the same backend.
     #[test]
     fn test_gglwe_product_digits_strided_bit_identical() {
-        poulpy_core::test_suite::parity::test_gglwe_product_digits_strided(&Module::<crate::NTT4x30PortableRayon>::new(64), 50);
+        poulpy_core::test_suite::parity::test_gglwe_product_digits_strided::<_, Standard>(
+            &Module::<crate::NTT4x30PortableRayon>::new(64),
+            50,
+        );
     }
 
     poulpy_cpu_portable::conjugate_invariant_core_test_suite!(
         ci_core_fft64,
-        crate::FFT64CIPortableRayon,
         crate::FFT64PortableRayon,
-        reference = poulpy_cpu_portable::FFT64CIPortable
+        reference = poulpy_cpu_portable::FFT64Portable
     );
 
     poulpy_cpu_portable::conjugate_invariant_core_test_suite!(
         ci_core_ntt4x30,
-        crate::NTT4x30CIPortableRayon,
         crate::NTT4x30PortableRayon,
-        reference = poulpy_cpu_portable::NTT4x30CIPortable
+        reference = poulpy_cpu_portable::NTT4x30Portable
     );
 }
 
@@ -274,14 +275,12 @@ mod ckks {
 
     poulpy_ckks::conjugate_invariant_ckks_test_suite!(
         ckks_ci_fft64,
-        crate::FFT64CIPortableRayon,
         crate::FFT64PortableRayon,
         poulpy_ckks::test_suite::BASE19_PARAMS_F64
     );
 
     poulpy_ckks::conjugate_invariant_ckks_test_suite!(
         ckks_ci_ntt4x30,
-        crate::NTT4x30CIPortableRayon,
         crate::NTT4x30PortableRayon,
         poulpy_ckks::test_suite::BASE52_PARAMS_F64
     );
@@ -294,17 +293,19 @@ mod ckks {
         params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 52, ..poulpy_ckks::test_suite::BASE52_PARAMS_F64 },
         tests = {
             arithmetic => poulpy_ckks::test_suite::parity::test_arithmetic_parity,
-            imag => poulpy_ckks::test_suite::parity::test_imag_parity,
             multiplication => poulpy_ckks::test_suite::parity::test_multiplication_parity,
             rotate => poulpy_ckks::test_suite::parity::test_rotate_parity,
-            conjugate => poulpy_ckks::test_suite::parity::test_conjugate_parity,
             plaintext => poulpy_ckks::test_suite::parity::test_plaintext_parity,
             encoding => poulpy_ckks::test_suite::parity::test_encoding_parity,
             slot_encoding => poulpy_ckks::test_suite::parity::test_slot_encoding_parity,
+            real_polynomial => poulpy_ckks::test_suite::parity::test_real_polynomial_parity,
+        },
+        ring_free_tests = {
+            imag => poulpy_ckks::test_suite::parity::test_imag_parity,
+            conjugate => poulpy_ckks::test_suite::parity::test_conjugate_parity,
             paco_encoding => poulpy_ckks::test_suite::parity::test_paco_encoding_parity,
             ship_encoding => poulpy_ckks::test_suite::parity::test_ship_encoding_parity,
             dft => poulpy_ckks::test_suite::parity::test_dft_parity,
-            real_polynomial => poulpy_ckks::test_suite::parity::test_real_polynomial_parity,
             polynomial_eval_mod => poulpy_ckks::test_suite::parity::test_polynomial_eval_mod_parity,
             replicated => poulpy_ckks::test_suite::parity::test_replicated_parity,
             encapsulated_mod_up => poulpy_ckks::test_suite::parity::test_encapsulated_mod_up_parity,
@@ -323,6 +324,8 @@ mod ckks {
             arithmetic => poulpy_ckks::test_suite::parity::test_arithmetic_parity,
             multiplication => poulpy_ckks::test_suite::parity::test_multiplication_parity,
             rotate => poulpy_ckks::test_suite::parity::test_rotate_parity,
+        },
+        ring_free_tests = {
             encapsulated_mod_up => poulpy_ckks::test_suite::parity::test_encapsulated_mod_up_parity,
             bootstrapping => poulpy_ckks::test_suite::parity::test_bootstrapping_parity,
         }

@@ -4,7 +4,7 @@ use poulpy_core::layouts::{
     GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey,
     prepared::GLWEAutomorphismKeyPreparedBackendRef,
 };
-use poulpy_hal::layouts::{Backend, Module, ScratchArena, Standard};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{CKKSCtBounds, SetCKKSInfos};
 
@@ -14,7 +14,7 @@ use crate::{CKKSCtBounds, SetCKKSInfos};
 /// Implementations reproduce the bodies their methods document bit for bit, report for each
 /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait CKKSConjugateImpl: Backend<Ring = Standard> {
+pub unsafe trait CKKSConjugateImpl: Backend {
     /// Default body: `ckks_conjugate_into_derived`, the selected `ckks_conjugate_rotate_into` with `k = 0`, within
     /// [`Self::ckks_conjugate_tmp_bytes`].
     fn ckks_conjugate_into<Dst, Src, H>(

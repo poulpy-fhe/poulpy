@@ -8,10 +8,6 @@ mod reim;
 mod reim4;
 mod standard;
 
-use std::marker::PhantomData;
-
-use poulpy_hal::layouts::{Ring, Standard};
-
 /// AVX2/FMA-accelerated CPU backend for Poulpy HAL.
 ///
 /// `FFT64Avx` is a zero-sized marker type that selects the AVX2-optimized CPU backend
@@ -61,12 +57,12 @@ use poulpy_hal::layouts::{Ring, Standard};
 /// // Use module for FHE operations...
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct FFT64Avx<R: Ring = Standard>(PhantomData<R>);
+pub struct FFT64Avx;
 
 /// Rayon-scheduled variant of [`FFT64Avx`].
 #[cfg(feature = "enable-rayon")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct FFT64AvxRayon<R: Ring = Standard>(PhantomData<R>);
+pub struct FFT64AvxRayon;
 
 #[cfg(test)]
 pub mod tests;

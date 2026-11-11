@@ -2,7 +2,7 @@ use poulpy_hal::AlignedBuf;
 use poulpy_hal::layouts::ZnxWord;
 use std::fmt;
 
-use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, ReaderFrom, WriterTo};
+use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, ReaderFrom, Standard, WriterTo};
 
 use crate::layouts::{
     Base2K, Degree, Dnum, GGLWEInfos, GLWEInfos, GLWESwitchingKeyDegrees, LWEInfos, Rank, TorusPrecision,
@@ -170,5 +170,6 @@ impl<D: Data, W: ZnxWord> GLWEToLWEKeyCompressed<D, W> {
 impl_gglwe_compressed_to_backend_for_field!(
     GLWEToLWEKeyCompressed<BE::OwnedBuf, BE::ZnxWord>,
     0,
-    GLWESwitchingKeyCompressed<BE::OwnedBuf, BE::ZnxWord>
+    GLWESwitchingKeyCompressed<BE::OwnedBuf, BE::ZnxWord>,
+    ring = Standard
 );

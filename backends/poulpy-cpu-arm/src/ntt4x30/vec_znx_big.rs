@@ -2,7 +2,6 @@
 
 use super::NTT4x30Neon;
 use poulpy_cpu_portable::kernels::ntt4x30::I128BigOps;
-use poulpy_hal::layouts::Ring;
 
 #[cfg(target_arch = "aarch64")]
 use crate::neon::vec_znx_big::{
@@ -13,7 +12,7 @@ use crate::neon::vec_znx_big::{
 };
 
 #[cfg(target_arch = "aarch64")]
-impl<R: Ring> I128BigOps for NTT4x30Neon<R> {
+impl I128BigOps for NTT4x30Neon {
     #[inline(always)]
     fn i128_add(res: &mut [i128], a: &[i128], b: &[i128]) {
         vi128_add_neon(res.len(), res, a, b);
@@ -77,9 +76,9 @@ impl<R: Ring> I128BigOps for NTT4x30Neon<R> {
 }
 
 #[cfg(not(target_arch = "aarch64"))]
-impl<R: Ring> I128BigOps for NTT4x30Neon<R> {}
+impl I128BigOps for NTT4x30Neon {}
 
-impl<R: Ring> poulpy_cpu_portable::hal_defaults::BigWordHadamardProduct for NTT4x30Neon<R> {
+impl poulpy_cpu_portable::hal_defaults::BigWordHadamardProduct for NTT4x30Neon {
     #[inline(always)]
     fn big_word_hadamard_product(res: &mut [i128], a: &[i64], b: &[i64]) {
         <Self as I128BigOps>::i128_hadamard_product_i64(res, a, b)

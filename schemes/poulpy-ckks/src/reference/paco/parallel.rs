@@ -22,7 +22,7 @@ use std::{sync::mpsc::sync_channel, thread};
 use anyhow::Context;
 use poulpy_core::{
     GLWEKeyswitch, GLWERotate,
-    layouts::{GLWEToBackendMut, GLWEToBackendRef, TorusPrecision},
+    layouts::{GLWELayout, GLWEToBackendMut, GLWEToBackendRef, Rank, TorusPrecision},
 };
 use poulpy_hal::{
     api::ScratchOwnedBorrow,
@@ -357,8 +357,12 @@ where
                 .spawn_scoped(scope, move || {
                     for branch in ((worker + 1)..schedule.kappa).step_by(background_workers) {
                         let result = (|| -> Result<(usize, CKKSCiphertextOwned<BE>)> {
-                            let mut branch_output = worker_module
-                                .ckks_ciphertext_alloc(context.base2k(), TorusPrecision(schedule.output_meta.1 as u32));
+                            let mut branch_output = worker_module.ckks_ciphertext_alloc_from_glwe_infos(&GLWELayout {
+                                n: input.n(),
+                                base2k: context.base2k(),
+                                k: TorusPrecision(schedule.output_meta.1 as u32),
+                                rank: Rank(1),
+                            });
                             run_branch_into::<BE, F, K, _, _>(
                                 worker_module,
                                 &mut branch_output,
@@ -482,11 +486,11 @@ where
         let (worker_module, _) = worker_context.parts_mut();
         ckks_ensure_operand!(
             op,
-            worker_module.n() == context.plan().n(),
-            "PaCo worker {} module degree {} does not match plan degree {}",
-            worker + 1,
-            worker_module.n(),
+            context.plan().n() <= worker_module.n(),
+            "PaCo plan degree {} exceeds the module degree {} of worker {}",
             context.plan().n(),
+            worker_module.n(),
+            worker + 1,
         );
     }
     Ok(())

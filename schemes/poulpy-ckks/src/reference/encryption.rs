@@ -5,7 +5,7 @@ use poulpy_core::{ComponentNoise, GetDistribution};
 use poulpy_core::{GLWEDecrypt, GLWEEncryptSk, GLWENormalize, ScratchArenaTakeGLWEPlaintext};
 use poulpy_hal::{
     api::{ModuleN, VecZnxLsh, VecZnxLshAdd, VecZnxLshTmpBytes, VecZnxRsh, VecZnxRshAdd, VecZnxRshTmpBytes, VecZnxSwitchRing},
-    layouts::{Backend, ScratchArena},
+    layouts::{Backend, Ring, ScratchArena, Standard},
     source::Source,
 };
 
@@ -22,17 +22,17 @@ use crate::{
 use super::CKKSPlaintextVecReference;
 use poulpy_core::{GLWEBytesOf, GLWEPlaintextBytesOf};
 
-pub trait CKKSEncryptionReference<BE: Backend> {
+pub trait CKKSEncryptionReference<BE: Backend, Rg: Ring = Standard> {
     fn ckks_encrypt_sk_tmp_bytes_reference<A>(&self, ct_infos: &A) -> usize
     where
         A: GLWEInfos + CKKSInfos,
-        Self: GLWEEncryptSk<BE>
-            + GLWENormalize<BE>
+        Self: GLWEEncryptSk<BE, Rg>
+            + GLWENormalize<BE, Rg>
             + GLWEBytesOf<BE>
             + VecZnxLshTmpBytes
-            + VecZnxRshAdd<BE>
+            + VecZnxRshAdd<BE, Rg>
             + VecZnxRshTmpBytes
-            + CKKSRoundOps<BE>,
+            + CKKSRoundOps<BE, Rg>,
     {
         let plain = |infos: &GLWELayout| {
             self.glwe_encrypt_sk_tmp_bytes(infos)
@@ -64,10 +64,15 @@ pub trait CKKSEncryptionReference<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        S: GLWESecretPreparedToBackendRef<BE>,
-        Dct: GLWEToBackendMut<BE> + GLWEInfos + CKKSInfos + SetCKKSInfos,
-        Dpt: GLWEToBackendRef<BE> + CKKSInfos + IntPolyInfos,
-        Self: ModuleN + GLWEEncryptSk<BE> + GLWENormalize<BE> + VecZnxLshAdd<BE> + VecZnxRshAdd<BE> + CKKSRoundOps<BE>,
+        S: GLWESecretPreparedToBackendRef<BE, Rg>,
+        Dct: GLWEToBackendMut<BE, Rg> + GLWEInfos + CKKSInfos + SetCKKSInfos,
+        Dpt: GLWEToBackendRef<BE, Rg> + CKKSInfos + IntPolyInfos,
+        Self: ModuleN
+            + GLWEEncryptSk<BE, Rg>
+            + GLWENormalize<BE, Rg>
+            + VecZnxLshAdd<BE, Rg>
+            + VecZnxRshAdd<BE, Rg>
+            + CKKSRoundOps<BE, Rg>,
     {
         ensure_encryption_degrees(
             "ckks_encrypt_sk",
@@ -126,10 +131,10 @@ pub trait CKKSEncryptionReference<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        S: GLWESecretPreparedToBackendRef<BE>,
-        Dct: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
-        Dpt: GLWEToBackendRef<BE> + CKKSInfos + IntPolyInfos,
-        Self: GLWEEncryptSk<BE> + GLWENormalize<BE> + VecZnxLshAdd<BE> + VecZnxRshAdd<BE>,
+        S: GLWESecretPreparedToBackendRef<BE, Rg>,
+        Dct: GLWEToBackendMut<BE, Rg> + CKKSInfos + SetCKKSInfos,
+        Dpt: GLWEToBackendRef<BE, Rg> + CKKSInfos + IntPolyInfos,
+        Self: GLWEEncryptSk<BE, Rg> + GLWENormalize<BE, Rg> + VecZnxLshAdd<BE, Rg> + VecZnxRshAdd<BE, Rg>,
     {
         self.glwe_encrypt_zero_sk(ct, sk, source_xe, source_xa, scratch);
         ct.set_log_budget(log_budget);
@@ -152,12 +157,12 @@ pub trait CKKSEncryptionReference<BE: Backend> {
         Self: GLWEBytesOf<BE> + GLWEPlaintextBytesOf<BE>,
         Pt: CKKSInfos,
         Ct: GLWEInfos + CKKSInfos,
-        Self: GLWEDecrypt<BE>
-            + VecZnxLsh<BE>
+        Self: GLWEDecrypt<BE, Rg>
+            + VecZnxLsh<BE, Rg>
             + VecZnxLshTmpBytes
-            + VecZnxRsh<BE>
+            + VecZnxRsh<BE, Rg>
             + VecZnxRshTmpBytes
-            + CKKSPlaintextVecReference<BE>,
+            + CKKSPlaintextVecReference<BE, Rg>,
     {
         let below = if pt_infos.n() < ct_infos.n() {
             BE::scratch_aligned(self.glwe_plaintext_bytes_of_from_infos(&below_layout(pt_infos, ct_infos)))
@@ -181,19 +186,19 @@ pub trait CKKSEncryptionReference<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
-        Dpt: GLWEToBackendMut<BE> + CKKSInfos + IntPolyInfos + SetCKKSInfos,
-        Dct: GLWEToBackendRef<BE> + GLWEInfos + CKKSInfos,
+        S: GLWESecretPreparedToBackendRef<BE, Rg> + GLWEInfos,
+        Dpt: GLWEToBackendMut<BE, Rg> + CKKSInfos + IntPolyInfos + SetCKKSInfos,
+        Dct: GLWEToBackendRef<BE, Rg> + GLWEInfos + CKKSInfos,
         Self: GLWEPlaintextBytesOf<BE>
             + ModuleN
-            + GLWEDecrypt<BE>
+            + GLWEDecrypt<BE, Rg>
             + GLWEBytesOf<BE>
-            + CKKSPlaintextVecReference<BE>
-            + VecZnxLsh<BE>
+            + CKKSPlaintextVecReference<BE, Rg>
+            + VecZnxLsh<BE, Rg>
             + VecZnxLshTmpBytes
-            + VecZnxRsh<BE>
+            + VecZnxRsh<BE, Rg>
             + VecZnxRshTmpBytes
-            + VecZnxSwitchRing<BE>,
+            + VecZnxSwitchRing<BE, Rg>,
     {
         ensure_encryption_degrees("ckks_decrypt", self.n(), ct.n().as_usize(), sk.n().as_usize())?;
         let (ct_n, pt_n) = (ct.n().as_usize(), pt.n().as_usize());
@@ -232,7 +237,7 @@ pub trait CKKSEncryptionReference<BE: Backend> {
     }
 }
 
-impl<BE: Backend> CKKSEncryptionReference<BE> for poulpy_hal::layouts::Module<BE> {}
+impl<BE: Backend, Rg: Ring> CKKSEncryptionReference<BE, Rg> for poulpy_hal::layouts::Module<BE> {}
 
 /// The decrypted polynomial at the degree of `pt`.
 fn below_layout<P: LWEInfos, C: LWEInfos>(pt: &P, ct: &C) -> GLWELayout {

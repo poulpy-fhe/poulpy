@@ -15,39 +15,39 @@ use crate::{
         VecZnxBigBackendMut, VecZnxDftBackendMut, ZnxInfos, ZnxView, ZnxViewMut, ZnxZero,
     },
 };
-use poulpy_hal::execution::TaskExecutor;
+use poulpy_hal::{execution::TaskExecutor, layouts::Ring};
 
-pub fn convolution_prepare_left_portable<BE>(
-    plan: &FFT64Plan<f64, BE::Ring>,
-    res: &mut CnvPVecLBackendMut<'_, BE>,
-    a: &VecZnxBackendRef<'_, BE>,
-    tmp: &mut VecZnxDftBackendMut<'_, BE>,
+pub fn convolution_prepare_left_portable<BE, Rg: Ring>(
+    plan: &FFT64Plan<f64, Rg>,
+    res: &mut CnvPVecLBackendMut<'_, BE, Rg>,
+    a: &VecZnxBackendRef<'_, BE, Rg>,
+    tmp: &mut VecZnxDftBackendMut<'_, BE, Rg>,
 ) where
-    BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec + Fft64RingArith + 'static,
+    BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec + Fft64RingArith<Rg> + 'static,
     for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
 {
-    convolution_prepare::<_, BE>(plan, res, a, tmp)
+    convolution_prepare::<_, BE, Rg>(plan, res, a, tmp)
 }
 
-pub fn convolution_prepare_right_portable<BE>(
-    plan: &FFT64Plan<f64, BE::Ring>,
-    res: &mut CnvPVecRBackendMut<'_, BE>,
-    a: &VecZnxBackendRef<'_, BE>,
-    tmp: &mut VecZnxDftBackendMut<'_, BE>,
+pub fn convolution_prepare_right_portable<BE, Rg: Ring>(
+    plan: &FFT64Plan<f64, Rg>,
+    res: &mut CnvPVecRBackendMut<'_, BE, Rg>,
+    a: &VecZnxBackendRef<'_, BE, Rg>,
+    tmp: &mut VecZnxDftBackendMut<'_, BE, Rg>,
 ) where
-    BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec + Fft64RingArith + 'static,
+    BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec + Fft64RingArith<Rg> + 'static,
     for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
 {
-    convolution_prepare::<_, BE>(plan, res, a, tmp)
+    convolution_prepare::<_, BE, Rg>(plan, res, a, tmp)
 }
 
-fn convolution_prepare<R, BE>(
-    plan: &FFT64Plan<f64, BE::Ring>,
+fn convolution_prepare<R, BE, Rg: Ring>(
+    plan: &FFT64Plan<f64, Rg>,
     res: &mut R,
-    a: &VecZnxBackendRef<'_, BE>,
-    tmp: &mut VecZnxDftBackendMut<'_, BE>,
+    a: &VecZnxBackendRef<'_, BE, Rg>,
+    tmp: &mut VecZnxDftBackendMut<'_, BE, Rg>,
 ) where
-    BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec + Fft64RingArith + 'static,
+    BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec + Fft64RingArith<Rg> + 'static,
     for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
     R: ZnxInfos + ZnxViewMut<Scalar = BE::DftWord>,
 {
@@ -93,7 +93,7 @@ fn convolution_prepare<R, BE>(
     }
 
     for i in 0..cols {
-        vec_znx_dft_apply_portable::<BE>(plan, 1, 0, tmp, 0, a, i);
+        vec_znx_dft_apply_portable::<BE, Rg>(plan, 1, 0, tmp, 0, a, i);
 
         let tmp_raw: &[f64] = tmp.raw();
         let res_col: &mut [f64] = &mut res_raw[i * n * res_size..];
@@ -105,14 +105,14 @@ fn convolution_prepare<R, BE>(
     }
 }
 
-pub fn convolution_prepare_self_portable<BE>(
-    plan: &FFT64Plan<f64, BE::Ring>,
-    left: &mut CnvPVecLBackendMut<'_, BE>,
-    right: &mut CnvPVecRBackendMut<'_, BE>,
-    a: &VecZnxBackendRef<'_, BE>,
-    tmp: &mut VecZnxDftBackendMut<'_, BE>,
+pub fn convolution_prepare_self_portable<BE, Rg: Ring>(
+    plan: &FFT64Plan<f64, Rg>,
+    left: &mut CnvPVecLBackendMut<'_, BE, Rg>,
+    right: &mut CnvPVecRBackendMut<'_, BE, Rg>,
+    a: &VecZnxBackendRef<'_, BE, Rg>,
+    tmp: &mut VecZnxDftBackendMut<'_, BE, Rg>,
 ) where
-    BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec + Fft64RingArith + 'static,
+    BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec + Fft64RingArith<Rg> + 'static,
     for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
 {
     poulpy_hal::layouts::assert_dense(a, "convolution_prepare_self");
@@ -176,7 +176,7 @@ pub fn convolution_prepare_self_portable<BE>(
     }
 
     for i in 0..cols {
-        vec_znx_dft_apply_portable::<BE>(plan, 1, 0, tmp, 0, a, i);
+        vec_znx_dft_apply_portable::<BE, Rg>(plan, 1, 0, tmp, 0, a, i);
 
         let tmp_raw: &[f64] = tmp.raw();
         let left_col: &mut [f64] = &mut left_raw[i * n * res_size..];
@@ -198,13 +198,13 @@ pub fn convolution_by_const_apply_tmp_bytes_portable(res_size: usize, a_size: us
     size_of::<i64>() * ((min_size + a_size) * 8 + b_size)
 }
 
-pub fn convolution_by_const_apply_portable<BE>(
+pub fn convolution_by_const_apply_portable<BE, Rg: Ring>(
     cnv_offset: usize,
-    res: &mut VecZnxBigBackendMut<'_, BE>,
+    res: &mut VecZnxBigBackendMut<'_, BE, Rg>,
     res_col: usize,
-    a: &VecZnxBackendRef<'_, BE>,
+    a: &VecZnxBackendRef<'_, BE, Rg>,
     a_col: usize,
-    b: &VecZnxBackendRef<'_, BE>,
+    b: &VecZnxBackendRef<'_, BE, Rg>,
     b_col: usize,
     b_coeff: usize,
     tmp: &mut [i64],
@@ -213,17 +213,17 @@ pub fn convolution_by_const_apply_portable<BE>(
     for<'x> BE: Backend<BufRef<'x> = &'x [u8], ZnxWord = i64>,
     for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
 {
-    convolution_by_const_apply_impl::<BE, false>(cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff, tmp)
+    convolution_by_const_apply_impl::<BE, false, Rg>(cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff, tmp)
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn convolution_by_const_apply_add_portable<BE>(
+pub fn convolution_by_const_apply_add_portable<BE, Rg: Ring>(
     cnv_offset: usize,
-    res: &mut VecZnxBigBackendMut<'_, BE>,
+    res: &mut VecZnxBigBackendMut<'_, BE, Rg>,
     res_col: usize,
-    a: &VecZnxBackendRef<'_, BE>,
+    a: &VecZnxBackendRef<'_, BE, Rg>,
     a_col: usize,
-    b: &VecZnxBackendRef<'_, BE>,
+    b: &VecZnxBackendRef<'_, BE, Rg>,
     b_col: usize,
     b_coeff: usize,
     tmp: &mut [i64],
@@ -232,17 +232,17 @@ pub fn convolution_by_const_apply_add_portable<BE>(
     for<'x> BE: Backend<BufRef<'x> = &'x [u8], ZnxWord = i64>,
     for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
 {
-    convolution_by_const_apply_impl::<BE, true>(cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff, tmp)
+    convolution_by_const_apply_impl::<BE, true, Rg>(cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff, tmp)
 }
 
 #[allow(clippy::too_many_arguments)]
-fn convolution_by_const_apply_impl<BE, const ADD: bool>(
+fn convolution_by_const_apply_impl<BE, const ADD: bool, Rg: Ring>(
     cnv_offset: usize,
-    res: &mut VecZnxBigBackendMut<'_, BE>,
+    res: &mut VecZnxBigBackendMut<'_, BE, Rg>,
     res_col: usize,
-    a: &VecZnxBackendRef<'_, BE>,
+    a: &VecZnxBackendRef<'_, BE, Rg>,
     a_col: usize,
-    b: &VecZnxBackendRef<'_, BE>,
+    b: &VecZnxBackendRef<'_, BE, Rg>,
     b_col: usize,
     b_coeff: usize,
     tmp: &mut [i64],
@@ -313,24 +313,24 @@ pub fn convolution_apply_dft_tmp_bytes_portable(res_size: usize, a_size: usize, 
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn convolution_apply_dft_portable<BE>(
+pub fn convolution_apply_dft_portable<BE, Rg: Ring>(
     cnv_offset: usize,
-    res: &mut VecZnxDftBackendMut<'_, BE>,
+    res: &mut VecZnxDftBackendMut<'_, BE, Rg>,
     res_col: usize,
-    a: &CnvPVecLBackendRef<'_, BE>,
+    a: &CnvPVecLBackendRef<'_, BE, Rg>,
     a_col: usize,
-    b: &CnvPVecRBackendRef<'_, BE>,
+    b: &CnvPVecRBackendRef<'_, BE, Rg>,
     b_col: usize,
     b_galois: i64,
     tmp: &mut [f64],
 ) where
-    BE: Backend<DftWord = f64, ZnxWord = i64> + Reim4BlkMatVec + Reim4Convolution + Fft64RingArith,
+    BE: Backend<DftWord = f64, ZnxWord = i64> + Reim4BlkMatVec + Reim4Convolution + Fft64RingArith<Rg>,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
     for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
 {
     let n: usize = res.n();
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
-    let b_read: RightRead = right_read_fft64::<BE::Ring>(n, b.n(), b_galois, BE::MIN_DEGREE);
+    let b_read: RightRead = right_read_fft64::<Rg>(n, b.n(), b_galois, BE::MIN_DEGREE);
     let m: usize = n >> 1;
 
     let res_size: usize = res.size();
@@ -370,24 +370,24 @@ pub fn convolution_apply_dft_portable<BE>(
 /// Accumulating variant of [`convolution_apply_dft_portable`]: `res[res_col] += a (x) σ_{b_galois}(b)`,
 /// leaving limbs beyond `min(res.size(), a.size() + b.size() - 1)` untouched.
 #[allow(clippy::too_many_arguments)]
-pub fn convolution_apply_dft_add_portable<BE>(
+pub fn convolution_apply_dft_add_portable<BE, Rg: Ring>(
     cnv_offset: usize,
-    res: &mut VecZnxDftBackendMut<'_, BE>,
+    res: &mut VecZnxDftBackendMut<'_, BE, Rg>,
     res_col: usize,
-    a: &CnvPVecLBackendRef<'_, BE>,
+    a: &CnvPVecLBackendRef<'_, BE, Rg>,
     a_col: usize,
-    b: &CnvPVecRBackendRef<'_, BE>,
+    b: &CnvPVecRBackendRef<'_, BE, Rg>,
     b_col: usize,
     b_galois: i64,
     tmp: &mut [f64],
 ) where
-    BE: Backend<DftWord = f64, ZnxWord = i64> + Reim4BlkMatVec + Reim4Convolution + Fft64RingArith,
+    BE: Backend<DftWord = f64, ZnxWord = i64> + Reim4BlkMatVec + Reim4Convolution + Fft64RingArith<Rg>,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
     for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
 {
     let n: usize = res.n();
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
-    let b_read: RightRead = right_read_fft64::<BE::Ring>(n, b.n(), b_galois, BE::MIN_DEGREE);
+    let b_read: RightRead = right_read_fft64::<Rg>(n, b.n(), b_galois, BE::MIN_DEGREE);
     let m: usize = n >> 1;
 
     let res_size: usize = res.size();
@@ -425,22 +425,22 @@ pub fn convolution_pairwise_apply_dft_tmp_bytes_portable(res_size: usize, a_size
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn convolution_pairwise_apply_dft_portable<BE>(
+pub fn convolution_pairwise_apply_dft_portable<BE, Rg: Ring>(
     cnv_offset: usize,
-    res: &mut VecZnxDftBackendMut<'_, BE>,
+    res: &mut VecZnxDftBackendMut<'_, BE, Rg>,
     res_col: usize,
-    a: &CnvPVecLBackendRef<'_, BE>,
-    b: &CnvPVecRBackendRef<'_, BE>,
+    a: &CnvPVecLBackendRef<'_, BE, Rg>,
+    b: &CnvPVecRBackendRef<'_, BE, Rg>,
     col_i: usize,
     col_j: usize,
     tmp: &mut [f64],
 ) where
-    BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec + Reim4Convolution + Fft64RingArith,
+    BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec + Reim4Convolution + Fft64RingArith<Rg>,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
     for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
 {
     if col_i == col_j {
-        convolution_apply_dft_portable::<BE>(cnv_offset, res, res_col, a, col_i, b, col_j, 1, tmp);
+        convolution_apply_dft_portable::<BE, Rg>(cnv_offset, res, res_col, a, col_i, b, col_j, 1, tmp);
         return;
     }
 

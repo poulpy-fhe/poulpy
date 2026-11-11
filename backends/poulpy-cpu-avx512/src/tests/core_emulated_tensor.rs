@@ -10,7 +10,7 @@ use poulpy_core::{
     layouts::{Base2K, Degree, GLWELayout, Rank, TorusPrecision},
     test_suite::parity::test_glwe_tensor_parity_for_layout,
 };
-use poulpy_hal::layouts::Module;
+use poulpy_hal::layouts::{Module, Standard};
 
 macro_rules! tensor_case {
     ($name:ident, $comparison:ty, $tested:ty, $log_n:literal) => {
@@ -24,7 +24,7 @@ macro_rules! tensor_case {
             };
             let comparison = Module::<$comparison>::new(u64::from(layout.n.0));
             let tested = Module::<$tested>::new(u64::from(layout.n.0));
-            test_glwe_tensor_parity_for_layout(&layout, &[0, 51], &comparison, &tested);
+            test_glwe_tensor_parity_for_layout::<_, _, Standard>(&layout, &[0, 51], &comparison, &tested);
         }
     };
 }

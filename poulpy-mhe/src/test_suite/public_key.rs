@@ -15,7 +15,7 @@ use poulpy_core::{
 use poulpy_hal::{
     AlignedBuf,
     api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAddScalarAssign, VecZnxFillUniformSource},
-    layouts::{DataViewMut, HostBackend, HostDataMut, HostDataRef, Module, ReaderFrom, ScratchOwned, WriterTo},
+    layouts::{DataViewMut, HostBackend, HostDataMut, HostDataRef, Module, ReaderFrom, ScratchOwned, Standard, WriterTo},
     source::Source,
     test_suite::vec_znx_backend_mut,
 };
@@ -87,7 +87,7 @@ where
     module.vec_znx_fill_uniform_source(
         BASE2K.as_usize(),
         K.as_usize(),
-        &mut vec_znx_backend_mut::<BE>(pt.data_mut()),
+        &mut vec_znx_backend_mut::<BE, Standard>(pt.data_mut()),
         0,
         &mut Source::new([30u8; 32]),
     );

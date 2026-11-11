@@ -1,3 +1,4 @@
+use poulpy_hal::layouts::{Ring, Standard};
 mod add;
 mod arithmetic;
 mod automorphism_rotate;
@@ -45,14 +46,14 @@ pub trait ZnxSubNegateAssign {
     fn znx_sub_negate_assign(res: &mut [i64], a: &[i64]);
 }
 
-pub trait ZnxAutomorphism {
+pub trait ZnxAutomorphism<Rg: Ring = Standard> {
     fn znx_automorphism(p: i64, res: &mut [i64], a: &[i64]);
 
     /// [`Self::znx_automorphism`] on `i128` big coefficients.
     fn znx_automorphism_i128(p: i64, res: &mut [i128], a: &[i128]);
 }
 
-pub trait ZnxAutomorphismRotate {
+pub trait ZnxAutomorphismRotate<Rg: Ring = Standard> {
     /// Computes `res = X^k * auto(p, a)` (fused automorphism + rotation).
     fn znx_automorphism_rotate(p: i64, k: i64, res: &mut [i64], a: &[i64]);
 }

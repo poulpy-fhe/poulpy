@@ -1,6 +1,6 @@
-use super::{FFT64CINeon, FFT64Neon, NTT4x30CINeon, NTT4x30Neon};
+use super::{FFT64Neon, NTT4x30Neon};
 #[cfg(feature = "enable-rayon")]
-use super::{FFT64CINeonRayon, FFT64NeonRayon, NTT4x30CINeonRayon, NTT4x30NeonRayon};
+use super::{FFT64NeonRayon, NTT4x30NeonRayon};
 use poulpy_core::{
     impl_gglwe_product_digits_strided_reference_full, impl_glwe_tensoring_reference_full,
     reference::keyswitching::GGLWEProductDigitsStridedReference,
@@ -15,14 +15,11 @@ use crate::ntt4x30::vmp::{STRIDED_MAX_DSIZE, vmp_apply_dft_to_dft_digits_strided
 impl_glwe_tensoring_reference_full!(FFT64Neon);
 impl_glwe_tensoring_reference_full!(NTT4x30Neon);
 impl_gglwe_product_digits_strided_reference_full!(FFT64Neon);
-impl_glwe_tensoring_reference_full!(FFT64CINeon);
-impl_glwe_tensoring_reference_full!(NTT4x30CINeon);
-impl_gglwe_product_digits_strided_reference_full!(FFT64CINeon);
 
 /// Interleaved-digit product hook of the NTT backends, fused up to `STRIDED_MAX_DSIZE` digits.
 macro_rules! impl_ntt_digits_strided {
     ($be:ident, $ring:ty, $executor:ty, $workers:expr) => {
-        unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl for $be<$ring> {
+        unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl<$ring> for $be {
             fn gglwe_product_digits_strided_tmp_bytes(
                 module: &Module<Self>,
                 res_size: usize,
@@ -35,7 +32,8 @@ macro_rules! impl_ntt_digits_strided {
                 pmat_size: usize,
             ) -> usize {
                 if dsize > STRIDED_MAX_DSIZE {
-                    return module.gglwe_product_digits_strided_tmp_bytes_reference(
+                    return GGLWEProductDigitsStridedReference::<Self, $ring>::gglwe_product_digits_strided_tmp_bytes_reference(
+                        module,
                         res_size,
                         a_cols,
                         a_size,
@@ -51,11 +49,11 @@ macro_rules! impl_ntt_digits_strided {
 
             fn gglwe_product_digits_strided(
                 module: &Module<Self>,
-                res: &mut VecZnxDftBackendMut<'_, Self>,
-                a: &VecZnxDftBackendRef<'_, Self>,
+                res: &mut VecZnxDftBackendMut<'_, Self, $ring>,
+                a: &VecZnxDftBackendRef<'_, Self, $ring>,
                 dsize: usize,
                 product_limbs: usize,
-                pmat: &VmpPMatBackendRef<'_, Self>,
+                pmat: &VmpPMatBackendRef<'_, Self, $ring>,
                 scratch: &mut ScratchArena<'_, Self>,
             ) {
                 if dsize > STRIDED_MAX_DSIZE {
@@ -83,7 +81,7 @@ macro_rules! impl_ntt_digits_strided {
                 );
             }
 
-            ::poulpy_core::impl_gglwe_product_digits_strided_reference!();
+            ::poulpy_core::impl_gglwe_product_digits_strided_reference!($ring);
         }
     };
 }
@@ -102,7 +100,7 @@ impl_ntt_digits_strided!(
     NTT4x30NeonRayon,
     ConjugateInvariant,
     poulpy_cpu_rayon::RayonTaskExecutor,
-    poulpy_cpu_rayon::workers(<NTT4x30NeonRayon<ConjugateInvariant> as poulpy_hal::execution::ScratchWorkers>::VMP)
+    poulpy_cpu_rayon::workers(<NTT4x30NeonRayon as poulpy_hal::execution::ScratchWorkers>::VMP)
 );
 
 #[cfg(feature = "enable-rayon")]
@@ -111,15 +109,13 @@ impl_glwe_tensoring_reference_full!(FFT64NeonRayon);
 impl_glwe_tensoring_reference_full!(NTT4x30NeonRayon);
 #[cfg(feature = "enable-rayon")]
 impl_gglwe_product_digits_strided_reference_full!(FFT64NeonRayon);
-#[cfg(feature = "enable-rayon")]
-impl_glwe_tensoring_reference_full!(FFT64CINeonRayon);
-#[cfg(feature = "enable-rayon")]
-impl_glwe_tensoring_reference_full!(NTT4x30CINeonRayon);
-#[cfg(feature = "enable-rayon")]
-impl_gglwe_product_digits_strided_reference_full!(FFT64CINeonRayon);
 
 poulpy_cpu_portable::impl_cpu_core_defaults!(super::FFT64Neon, fft64);
 ::poulpy_core::impl_conversion_reference_full!(super::FFT64Neon);
+::poulpy_core::impl_lwe_keyswitch_reference_full!(super::FFT64Neon);
+::poulpy_core::impl_lwe_key_encryption_reference_full!(super::FFT64Neon);
+::poulpy_core::impl_lwe_key_preparation_derived_full!(super::FFT64Neon);
+::poulpy_core::impl_lwe_key_decompression_derived_full!(super::FFT64Neon);
 ::poulpy_core::impl_glwe_pack_derived_full!(super::FFT64Neon);
 ::poulpy_core::impl_glwe_rotate_reference_full!(super::FFT64Neon);
 ::poulpy_core::impl_ggsw_rotate_derived_full!(super::FFT64Neon);
@@ -127,17 +123,27 @@ poulpy_cpu_portable::impl_cpu_core_defaults!(super::FFT64Neon, fft64);
 ::poulpy_core::impl_glwe_ci_conversion_reference_full!(super::FFT64Neon);
 poulpy_cpu_portable::impl_cpu_core_defaults!(super::NTT4x30Neon, ntt4x30);
 ::poulpy_core::impl_conversion_reference_full!(super::NTT4x30Neon);
+::poulpy_core::impl_lwe_keyswitch_reference_full!(super::NTT4x30Neon);
+::poulpy_core::impl_lwe_key_encryption_reference_full!(super::NTT4x30Neon);
+::poulpy_core::impl_lwe_key_preparation_derived_full!(super::NTT4x30Neon);
+::poulpy_core::impl_lwe_key_decompression_derived_full!(super::NTT4x30Neon);
 ::poulpy_core::impl_glwe_pack_derived_full!(super::NTT4x30Neon);
 ::poulpy_core::impl_glwe_rotate_reference_full!(super::NTT4x30Neon);
 ::poulpy_core::impl_ggsw_rotate_derived_full!(super::NTT4x30Neon);
 ::poulpy_core::impl_glwe_mul_xp_minus_one_reference_full!(super::NTT4x30Neon);
 ::poulpy_core::impl_glwe_ci_conversion_reference_full!(super::NTT4x30Neon);
-poulpy_cpu_portable::impl_cpu_core_defaults!(super::FFT64CINeon, fft64);
-poulpy_cpu_portable::impl_cpu_core_defaults!(super::NTT4x30CINeon, ntt4x30);
 #[cfg(feature = "enable-rayon")]
 poulpy_cpu_portable::impl_cpu_core_defaults!(super::FFT64NeonRayon, fft64);
 #[cfg(feature = "enable-rayon")]
 ::poulpy_core::impl_conversion_reference_full!(super::FFT64NeonRayon);
+#[cfg(feature = "enable-rayon")]
+::poulpy_core::impl_lwe_keyswitch_reference_full!(super::FFT64NeonRayon);
+#[cfg(feature = "enable-rayon")]
+::poulpy_core::impl_lwe_key_encryption_reference_full!(super::FFT64NeonRayon);
+#[cfg(feature = "enable-rayon")]
+::poulpy_core::impl_lwe_key_preparation_derived_full!(super::FFT64NeonRayon);
+#[cfg(feature = "enable-rayon")]
+::poulpy_core::impl_lwe_key_decompression_derived_full!(super::FFT64NeonRayon);
 #[cfg(feature = "enable-rayon")]
 ::poulpy_core::impl_glwe_pack_derived_full!(super::FFT64NeonRayon);
 #[cfg(feature = "enable-rayon")]
@@ -153,6 +159,14 @@ poulpy_cpu_portable::impl_cpu_core_defaults!(super::NTT4x30NeonRayon, ntt4x30);
 #[cfg(feature = "enable-rayon")]
 ::poulpy_core::impl_conversion_reference_full!(super::NTT4x30NeonRayon);
 #[cfg(feature = "enable-rayon")]
+::poulpy_core::impl_lwe_keyswitch_reference_full!(super::NTT4x30NeonRayon);
+#[cfg(feature = "enable-rayon")]
+::poulpy_core::impl_lwe_key_encryption_reference_full!(super::NTT4x30NeonRayon);
+#[cfg(feature = "enable-rayon")]
+::poulpy_core::impl_lwe_key_preparation_derived_full!(super::NTT4x30NeonRayon);
+#[cfg(feature = "enable-rayon")]
+::poulpy_core::impl_lwe_key_decompression_derived_full!(super::NTT4x30NeonRayon);
+#[cfg(feature = "enable-rayon")]
 ::poulpy_core::impl_glwe_pack_derived_full!(super::NTT4x30NeonRayon);
 #[cfg(feature = "enable-rayon")]
 ::poulpy_core::impl_glwe_rotate_reference_full!(super::NTT4x30NeonRayon);
@@ -162,7 +176,3 @@ poulpy_cpu_portable::impl_cpu_core_defaults!(super::NTT4x30NeonRayon, ntt4x30);
 ::poulpy_core::impl_glwe_mul_xp_minus_one_reference_full!(super::NTT4x30NeonRayon);
 #[cfg(feature = "enable-rayon")]
 ::poulpy_core::impl_glwe_ci_conversion_reference_full!(super::NTT4x30NeonRayon);
-#[cfg(feature = "enable-rayon")]
-poulpy_cpu_portable::impl_cpu_core_defaults!(super::FFT64CINeonRayon, fft64);
-#[cfg(feature = "enable-rayon")]
-poulpy_cpu_portable::impl_cpu_core_defaults!(super::NTT4x30CINeonRayon, ntt4x30);

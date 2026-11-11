@@ -14,26 +14,26 @@ use crate::{
     runtime::GpuRuntime,
 };
 
-unsafe impl<RT: GpuRuntime, R: Ring> HalSvpImpl for NTT4x30Gpu<RT, R> {
+unsafe impl<RT: GpuRuntime, R: Ring> HalSvpImpl<R> for NTT4x30Gpu<RT> {
     fn svp_ppol_prepare(
         module: &Module<Self>,
-        res: &mut SvpPPolBackendMut<'_, Self>,
+        res: &mut SvpPPolBackendMut<'_, Self, R>,
         res_col: usize,
-        a: &ScalarZnxBackendRef<'_, Self>,
+        a: &ScalarZnxBackendRef<'_, Self, R>,
         a_col: usize,
     ) {
         check_degree::<Self>(module.n(), res.n());
         assert!(a.n() == res.n(), "svp_ppol_prepare: operand degrees differ");
         let Some(res) = svp_column(res, res_col) else { return };
         let a = scalar_column(a, a_col).expect("svp_ppol_prepare: a holds no storage");
-        forward::<RT>(handle(module).tables(), &res, &a, 1);
+        forward::<RT>(handle(module).tables::<R>(), &res, &a, 1);
     }
 
     fn svp_ppol_copy(
         _module: &Module<Self>,
-        res: &mut SvpPPolBackendMut<'_, Self>,
+        res: &mut SvpPPolBackendMut<'_, Self, R>,
         res_col: usize,
-        a: &SvpPPolBackendRef<'_, Self>,
+        a: &SvpPPolBackendRef<'_, Self, R>,
         a_col: usize,
     ) {
         assert!(a.n() == res.n(), "svp_ppol_copy: operand degrees differ");
@@ -49,11 +49,11 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalSvpImpl for NTT4x30Gpu<RT, R> {
 
     fn svp_apply_dft(
         module: &Module<Self>,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, R>,
         res_col: usize,
-        a: &SvpPPolBackendRef<'_, Self>,
+        a: &SvpPPolBackendRef<'_, Self, R>,
         a_col: usize,
-        b: &VecZnxBackendRef<'_, Self>,
+        b: &VecZnxBackendRef<'_, Self, R>,
         b_col: usize,
         _scratch: &mut ScratchArena<'_, Self>,
     ) {
@@ -66,11 +66,11 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalSvpImpl for NTT4x30Gpu<RT, R> {
 
     fn svp_apply_dft_to_dft(
         _module: &Module<Self>,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, R>,
         res_col: usize,
-        a: &SvpPPolBackendRef<'_, Self>,
+        a: &SvpPPolBackendRef<'_, Self, R>,
         a_col: usize,
-        b: &VecZnxDftBackendRef<'_, Self>,
+        b: &VecZnxDftBackendRef<'_, Self, R>,
         b_col: usize,
     ) {
         assert!(
@@ -85,9 +85,9 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalSvpImpl for NTT4x30Gpu<RT, R> {
 
     fn svp_apply_dft_to_dft_assign(
         _module: &Module<Self>,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, R>,
         res_col: usize,
-        a: &SvpPPolBackendRef<'_, Self>,
+        a: &SvpPPolBackendRef<'_, Self, R>,
         a_col: usize,
     ) {
         assert!(a.n() == res.n(), "svp_apply_dft_to_dft_assign: operand degrees differ");

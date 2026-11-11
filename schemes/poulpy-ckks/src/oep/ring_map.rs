@@ -3,17 +3,18 @@ use poulpy_core::layouts::{
     GGLWEInfos, GGLWEPreparedToBackendRef, GLWE, GLWECIEmbedKeyPrepared, GLWECITraceKeyPrepared, GLWEInfos, GLWEToBackendMut,
     GLWEToBackendRef,
 };
-use poulpy_hal::layouts::{Backend, ConjugateInvariant, Data, Module, ScratchArena, Standard};
+use poulpy_hal::layouts::{Backend, ConjugateInvariant, Data, Module, ScratchArena};
 
 use crate::{CKKSCtBounds, SetCKKSInfos, layouts::CKKSCiphertext};
 
-/// Backend contract of [`CKKSCIRingMapOps`](crate::api::CKKSCIRingMapOps), on the standard ring.
+/// Backend contract of [`CKKSCIRingMapOps`](crate::api::CKKSCIRingMapOps): each map takes one conjugate-invariant and
+/// one standard operand.
 ///
 /// # Safety
 /// Implementations reproduce the bodies their methods document bit for bit, report for each
 /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait CKKSCIRingMapImpl: Backend<Ring = Standard> {
+pub unsafe trait CKKSCIRingMapImpl: Backend {
     /// Scratch bound of [`Self::ckks_ci_embed`]; may report less than the reference, never less than the body takes.
     fn ckks_ci_embed_tmp_bytes<R, K>(module: &Module<Self>, res_infos: &R, key_infos: &K) -> usize
     where
@@ -32,7 +33,7 @@ pub unsafe trait CKKSCIRingMapImpl: Backend<Ring = Standard> {
     where
         Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
         D: Data,
-        GLWE<D, Self::ZnxWord>: GLWEToBackendRef<Self>,
+        GLWE<D, Self::ZnxWord, ConjugateInvariant>: GLWEToBackendRef<Self, ConjugateInvariant>,
         K: Data,
         GLWECIEmbedKeyPrepared<K, Self>: GGLWEPreparedToBackendRef<Self>;
 
@@ -54,13 +55,13 @@ pub unsafe trait CKKSCIRingMapImpl: Backend<Ring = Standard> {
     ) -> Result<()>
     where
         D: Data,
-        GLWE<D, Self::ZnxWord>: GLWEToBackendMut<Self>,
+        GLWE<D, Self::ZnxWord, ConjugateInvariant>: GLWEToBackendMut<Self, ConjugateInvariant>,
         Src: GLWEToBackendRef<Self> + CKKSCtBounds,
         K: Data,
         GLWECITraceKeyPrepared<K, Self>: GGLWEPreparedToBackendRef<Self>;
 }
 
-/// Selects the reference implementation of `CKKSCIRingMapImpl` for the standard backend `$be`.
+/// Selects the reference implementation of `CKKSCIRingMapImpl` for `$be`.
 #[macro_export]
 macro_rules! impl_ckks_ci_ring_map_reference_full {
     ($be:ty) => {
@@ -89,8 +90,11 @@ macro_rules! impl_ckks_ci_ring_map_reference_full {
             where
                 Dst: ::poulpy_core::layouts::GLWEToBackendMut<Self> + $crate::CKKSCtBounds + $crate::SetCKKSInfos,
                 D: ::poulpy_hal::layouts::Data,
-                ::poulpy_core::layouts::GLWE<D, <Self as ::poulpy_hal::layouts::Backend>::ZnxWord>:
-                    ::poulpy_core::layouts::GLWEToBackendRef<Self>,
+                ::poulpy_core::layouts::GLWE<
+                    D,
+                    <Self as ::poulpy_hal::layouts::Backend>::ZnxWord,
+                    ::poulpy_hal::layouts::ConjugateInvariant,
+                >: ::poulpy_core::layouts::GLWEToBackendRef<Self, ::poulpy_hal::layouts::ConjugateInvariant>,
                 K: ::poulpy_hal::layouts::Data,
                 ::poulpy_core::layouts::GLWECIEmbedKeyPrepared<K, Self>: ::poulpy_core::layouts::GGLWEPreparedToBackendRef<Self>,
             {
@@ -126,8 +130,11 @@ macro_rules! impl_ckks_ci_ring_map_reference_full {
             ) -> $crate::CKKSResult<()>
             where
                 D: ::poulpy_hal::layouts::Data,
-                ::poulpy_core::layouts::GLWE<D, <Self as ::poulpy_hal::layouts::Backend>::ZnxWord>:
-                    ::poulpy_core::layouts::GLWEToBackendMut<Self>,
+                ::poulpy_core::layouts::GLWE<
+                    D,
+                    <Self as ::poulpy_hal::layouts::Backend>::ZnxWord,
+                    ::poulpy_hal::layouts::ConjugateInvariant,
+                >: ::poulpy_core::layouts::GLWEToBackendMut<Self, ::poulpy_hal::layouts::ConjugateInvariant>,
                 Src: ::poulpy_core::layouts::GLWEToBackendRef<Self> + $crate::CKKSCtBounds,
                 K: ::poulpy_hal::layouts::Data,
                 ::poulpy_core::layouts::GLWECITraceKeyPrepared<K, Self>: ::poulpy_core::layouts::GGLWEPreparedToBackendRef<Self>,

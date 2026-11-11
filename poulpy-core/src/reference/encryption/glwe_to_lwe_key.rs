@@ -1,8 +1,8 @@
 use poulpy_hal::{
     api::{ModuleN, VecZnxAutomorphism, VecZnxCopy, VecZnxZero},
     layouts::{
-        Backend, Module, ScratchArena, scalar_znx_as_vec_znx_backend_mut_from_mut, scalar_znx_as_vec_znx_backend_ref_from_mut,
-        scalar_znx_as_vec_znx_backend_ref_from_ref, vec_znx_backend_mut_from_mut,
+        Backend, Module, ScratchArena, Standard, scalar_znx_as_vec_znx_backend_mut_from_mut,
+        scalar_znx_as_vec_znx_backend_ref_from_mut, scalar_znx_as_vec_znx_backend_ref_from_ref, vec_znx_backend_mut_from_mut,
     },
     source::Source,
 };
@@ -89,19 +89,22 @@ where
             sk_lwe_as_glwe.dist = sk_lwe.dist;
             {
                 let mut sk_lwe_as_glwe_src_backend =
-                    scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(sk_lwe_as_glwe_src.data_mut());
-                let sk_lwe_backend = scalar_znx_as_vec_znx_backend_ref_from_ref::<BE>(sk_lwe.data());
+                    scalar_znx_as_vec_znx_backend_mut_from_mut::<BE, Standard>(sk_lwe_as_glwe_src.data_mut());
+                let sk_lwe_backend = scalar_znx_as_vec_znx_backend_ref_from_ref::<BE, Standard>(sk_lwe.data());
                 self.vec_znx_zero(&mut sk_lwe_as_glwe_src_backend, 0);
                 self.vec_znx_copy(
-                    &mut vec_znx_backend_mut_from_mut::<BE>(&mut sk_lwe_as_glwe_src_backend).window_coeffs(0, sk_lwe.n().into()),
+                    &mut vec_znx_backend_mut_from_mut::<BE, Standard>(&mut sk_lwe_as_glwe_src_backend)
+                        .window_coeffs(0, sk_lwe.n().into()),
                     0,
                     &sk_lwe_backend,
                     0,
                 );
             }
             {
-                let sk_lwe_as_glwe_src_backend = scalar_znx_as_vec_znx_backend_ref_from_mut::<BE>(sk_lwe_as_glwe_src.data());
-                let mut sk_lwe_as_glwe_backend = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(sk_lwe_as_glwe.data_mut());
+                let sk_lwe_as_glwe_src_backend =
+                    scalar_znx_as_vec_znx_backend_ref_from_mut::<BE, Standard>(sk_lwe_as_glwe_src.data());
+                let mut sk_lwe_as_glwe_backend =
+                    scalar_znx_as_vec_znx_backend_mut_from_mut::<BE, Standard>(sk_lwe_as_glwe.data_mut());
                 self.vec_znx_automorphism(-1, &mut sk_lwe_as_glwe_backend, 0, &sk_lwe_as_glwe_src_backend, 0);
             }
             self.glwe_secret_prepare(&mut sk_lwe_as_glwe_prep, &sk_lwe_as_glwe);

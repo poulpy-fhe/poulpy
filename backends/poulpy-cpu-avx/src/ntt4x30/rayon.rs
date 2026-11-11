@@ -4,7 +4,7 @@ use std::mem::size_of;
 
 use poulpy_cpu_rayon::RayonTaskExecutor;
 use poulpy_hal::layouts::{
-    ConjugateInvariant, DataView, DataViewMut, Module, Ring, ScratchArena, Standard, VecZnxDft, VecZnxDftBackendMut,
+    ConjugateInvariant, DataView, DataViewMut, Module, ScratchArena, Standard, VecZnxDft, VecZnxDftBackendMut,
     VecZnxDftBackendRef, VmpPMat, VmpPMatBackendRef,
 };
 
@@ -20,7 +20,7 @@ mod drivers {
         NttDFTExecute,
         ntt::{NttTable, NttTableInv},
         primes::Primes30,
-        vec_znx_dft::NttModuleHandle,
+        vec_znx_dft::NttMetaHandle,
     };
     use poulpy_cpu_rayon::ntt4x30::PackedWord;
     use poulpy_hal::{
@@ -55,13 +55,9 @@ mod drivers {
 
     // `E` is part of the binding contract: the interleaved limb is transformed as one task.
     #[allow(clippy::extra_unused_type_parameters)]
-    pub(super) fn dft_limb<R: Ring, E: TaskExecutor>(
-        module: &Module<NTT4x30Avx<R>>,
-        n: usize,
-        dst: &mut [u32],
-        src: Option<&[i64]>,
-    ) where
-        NTT4x30Avx<R>: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>>,
+    pub(super) fn dft_limb<R: Ring, E: TaskExecutor>(module: &Module<NTT4x30Avx>, n: usize, dst: &mut [u32], src: Option<&[i64]>)
+    where
+        NTT4x30Avx: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>>,
     {
         vec_znx_dft::dft_limb(module, n, dst, src)
     }
@@ -69,13 +65,13 @@ mod drivers {
     // `E` is part of the binding contract: the interleaved limb is transformed as one task.
     #[allow(clippy::extra_unused_type_parameters)]
     pub(super) fn idft_limb<R: Ring, E: TaskExecutor>(
-        module: &Module<NTT4x30Avx<R>>,
+        module: &Module<NTT4x30Avx>,
         n: usize,
         dst: &mut [i128],
         src: &[u32],
         tmp: &mut [u64],
     ) where
-        NTT4x30Avx<R>: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>>,
+        NTT4x30Avx: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>>,
     {
         vec_znx_dft::idft_limb(module, n, dst, src, tmp)
     }
@@ -83,74 +79,74 @@ mod drivers {
     // `E` is part of the binding contract: the interleaved limb is transformed as one task.
     #[allow(clippy::extra_unused_type_parameters)]
     pub(super) fn idft_limb_compact<R: Ring, E: TaskExecutor>(
-        module: &Module<NTT4x30Avx<R>>,
+        module: &Module<NTT4x30Avx>,
         n: usize,
         slot: &mut [u32],
         tmp: &mut [u64],
     ) where
-        NTT4x30Avx<R>: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>>,
+        NTT4x30Avx: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>>,
     {
         vec_znx_dft::idft_compact_limb(module, n, slot, tmp)
     }
 
     pub(super) fn cnv_pvec_left_prepare<R: Ring, BE: PackedWord, E: TaskExecutor>(
-        base: &Module<NTT4x30Avx<R>>,
+        base: &Module<NTT4x30Avx>,
         module: &Module<BE>,
-        res: &mut CnvPVecLBackendMut<'_, BE>,
-        a: &VecZnxBackendRef<'_, BE>,
+        res: &mut CnvPVecLBackendMut<'_, BE, R>,
+        a: &VecZnxBackendRef<'_, BE, R>,
         tmp: &mut [u64],
     ) where
-        NTT4x30Avx<R>: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>>,
+        NTT4x30Avx: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>>,
         for<'a> BE::BufRef<'a>: HostDataRef,
         for<'a> BE::BufMut<'a>: HostDataMut,
     {
-        convolution::cnv_pvec_left_prepare::<BE, E>(module, res, a, tmp, |n, dst, src| {
+        convolution::cnv_pvec_left_prepare::<BE, E, R>(module, res, a, tmp, |n, dst, src| {
             vec_znx_dft::dft_limb_wide(base, n, dst, src)
         })
     }
 
     pub(super) fn cnv_pvec_right_prepare<R: Ring, BE: PackedWord, E: TaskExecutor>(
-        base: &Module<NTT4x30Avx<R>>,
+        base: &Module<NTT4x30Avx>,
         module: &Module<BE>,
-        res: &mut CnvPVecRBackendMut<'_, BE>,
-        a: &VecZnxBackendRef<'_, BE>,
+        res: &mut CnvPVecRBackendMut<'_, BE, R>,
+        a: &VecZnxBackendRef<'_, BE, R>,
         tmp: &mut [u64],
     ) where
-        NTT4x30Avx<R>: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>>,
+        NTT4x30Avx: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>>,
         for<'a> BE::BufRef<'a>: HostDataRef,
         for<'a> BE::BufMut<'a>: HostDataMut,
     {
-        convolution::cnv_pvec_right_prepare::<BE, E>(module, res, a, tmp, |n, dst, src| {
+        convolution::cnv_pvec_right_prepare::<BE, E, R>(module, res, a, tmp, |n, dst, src| {
             vec_znx_dft::dft_limb_wide(base, n, dst, src)
         })
     }
 
     pub(super) fn cnv_pvec_self_prepare<R: Ring, BE: PackedWord, E: TaskExecutor>(
-        base: &Module<NTT4x30Avx<R>>,
+        base: &Module<NTT4x30Avx>,
         module: &Module<BE>,
-        left: &mut CnvPVecLBackendMut<'_, BE>,
-        right: &mut CnvPVecRBackendMut<'_, BE>,
-        a: &VecZnxBackendRef<'_, BE>,
+        left: &mut CnvPVecLBackendMut<'_, BE, R>,
+        right: &mut CnvPVecRBackendMut<'_, BE, R>,
+        a: &VecZnxBackendRef<'_, BE, R>,
         tmp: &mut [u64],
     ) where
-        NTT4x30Avx<R>: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>>,
+        NTT4x30Avx: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>>,
         for<'a> BE::BufRef<'a>: HostDataRef,
         for<'a> BE::BufMut<'a>: HostDataMut,
     {
-        convolution::cnv_pvec_self_prepare::<BE, E>(module, left, right, a, tmp, |n, dst, src| {
+        convolution::cnv_pvec_self_prepare::<BE, E, R>(module, left, right, a, tmp, |n, dst, src| {
             vec_znx_dft::dft_limb_wide(base, n, dst, src)
         })
     }
 
     pub(super) fn cnv_apply_dft<R: Ring, BE: PackedWord, E: TaskExecutor>(
-        base: &Module<NTT4x30Avx<R>>,
+        base: &Module<NTT4x30Avx>,
         module: &Module<BE>,
         cnv_offset: usize,
-        res: &mut VecZnxDftBackendMut<'_, BE>,
+        res: &mut VecZnxDftBackendMut<'_, BE, R>,
         res_col: usize,
-        a: &CnvPVecLBackendRef<'_, BE>,
+        a: &CnvPVecLBackendRef<'_, BE, R>,
         a_col: usize,
-        b: &CnvPVecRBackendRef<'_, BE>,
+        b: &CnvPVecRBackendRef<'_, BE, R>,
         b_col: usize,
         b_galois: i64,
         _tmp: &mut [u32],
@@ -159,7 +155,7 @@ mod drivers {
         for<'a> BE::BufMut<'a>: HostDataMut,
     {
         unsafe {
-            convolution::cnv_apply_dft::<BE, E>(
+            convolution::cnv_apply_dft::<BE, E, R>(
                 module,
                 base.get_bbc_meta(),
                 cnv_offset,
@@ -175,14 +171,14 @@ mod drivers {
     }
 
     pub(super) fn cnv_apply_dft_add<R: Ring, BE: PackedWord, E: TaskExecutor>(
-        base: &Module<NTT4x30Avx<R>>,
+        base: &Module<NTT4x30Avx>,
         module: &Module<BE>,
         cnv_offset: usize,
-        res: &mut VecZnxDftBackendMut<'_, BE>,
+        res: &mut VecZnxDftBackendMut<'_, BE, R>,
         res_col: usize,
-        a: &CnvPVecLBackendRef<'_, BE>,
+        a: &CnvPVecLBackendRef<'_, BE, R>,
         a_col: usize,
-        b: &CnvPVecRBackendRef<'_, BE>,
+        b: &CnvPVecRBackendRef<'_, BE, R>,
         b_col: usize,
         b_galois: i64,
         _tmp: &mut [u32],
@@ -191,7 +187,7 @@ mod drivers {
         for<'a> BE::BufMut<'a>: HostDataMut,
     {
         unsafe {
-            convolution::cnv_apply_dft_add::<BE, E>(
+            convolution::cnv_apply_dft_add::<BE, E, R>(
                 module,
                 base.get_bbc_meta(),
                 cnv_offset,
@@ -207,13 +203,13 @@ mod drivers {
     }
 
     pub(super) fn cnv_pairwise_apply_dft<R: Ring, BE: PackedWord, E: TaskExecutor>(
-        base: &Module<NTT4x30Avx<R>>,
+        base: &Module<NTT4x30Avx>,
         module: &Module<BE>,
         cnv_offset: usize,
-        res: &mut VecZnxDftBackendMut<'_, BE>,
+        res: &mut VecZnxDftBackendMut<'_, BE, R>,
         res_col: usize,
-        a: &CnvPVecLBackendRef<'_, BE>,
-        b: &CnvPVecRBackendRef<'_, BE>,
+        a: &CnvPVecLBackendRef<'_, BE, R>,
+        b: &CnvPVecRBackendRef<'_, BE, R>,
         i: usize,
         j: usize,
         _tmp: &mut [u32],
@@ -221,12 +217,15 @@ mod drivers {
         for<'a> BE::BufRef<'a>: HostDataRef,
         for<'a> BE::BufMut<'a>: HostDataMut,
     {
-        unsafe { convolution::cnv_pairwise_apply_dft::<BE, E>(module, base.get_bbc_meta(), cnv_offset, res, res_col, a, b, i, j) }
+        unsafe {
+            convolution::cnv_pairwise_apply_dft::<BE, E, R>(module, base.get_bbc_meta(), cnv_offset, res, res_col, a, b, i, j)
+        }
     }
 }
 
-mod standard {
+mod backend {
     use poulpy_cpu_portable::kernels::znx::ZnxAutomorphismRotate;
+    use poulpy_hal::layouts::Standard;
 
     use super::{NTT4x30Avx, NTT4x30AvxRayon};
 
@@ -240,26 +239,20 @@ mod standard {
         poulpy_cpu_portable::hal_impl_vec_znx_ci!();
     }
 
-    impl ZnxAutomorphismRotate for NTT4x30AvxRayon {
+    unsafe impl poulpy_hal::oep::HalScalarZnxCIImpl for NTT4x30AvxRayon {}
+
+    impl ZnxAutomorphismRotate<Standard> for NTT4x30AvxRayon {
         #[inline(always)]
         fn znx_automorphism_rotate(p: i64, k: i64, res: &mut [i64], a: &[i64]) {
-            <NTT4x30Avx as ZnxAutomorphismRotate>::znx_automorphism_rotate(p, k, res, a)
+            <NTT4x30Avx as ZnxAutomorphismRotate<Standard>>::znx_automorphism_rotate(p, k, res, a)
         }
     }
-}
-
-mod conjugate_invariant {
-    use poulpy_hal::layouts::ConjugateInvariant;
-
-    use super::{NTT4x30Avx, NTT4x30AvxRayon};
-
-    poulpy_cpu_rayon::impl_ntt4x30_rayon_backend!(NTT4x30AvxRayon<ConjugateInvariant>, NTT4x30Avx<ConjugateInvariant>);
 }
 
 /// Interleaved-digit product of the Rayon backend over one ring, on per-worker scratch.
 macro_rules! impl_digits_strided {
     ($ring:ty) => {
-        unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl for NTT4x30AvxRayon<$ring> {
+        unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl<$ring> for NTT4x30AvxRayon {
             fn gglwe_product_digits_strided_tmp_bytes(
                 _module: &Module<Self>,
                 _res_size: usize,
@@ -283,11 +276,11 @@ macro_rules! impl_digits_strided {
 
             fn gglwe_product_digits_strided(
                 module: &Module<Self>,
-                res: &mut VecZnxDftBackendMut<'_, Self>,
-                a: &VecZnxDftBackendRef<'_, Self>,
+                res: &mut VecZnxDftBackendMut<'_, Self, $ring>,
+                a: &VecZnxDftBackendRef<'_, Self, $ring>,
                 dsize: usize,
                 product_limbs: usize,
-                pmat: &VmpPMatBackendRef<'_, Self>,
+                pmat: &VmpPMatBackendRef<'_, Self, $ring>,
                 scratch: &mut ScratchArena<'_, Self>,
             ) {
                 let metadata_bytes = 4 * dsize * size_of::<u64>();
@@ -321,7 +314,7 @@ macro_rules! impl_digits_strided {
                 );
             }
 
-            ::poulpy_core::impl_gglwe_product_digits_strided_reference!();
+            ::poulpy_core::impl_gglwe_product_digits_strided_reference!($ring);
         }
     };
 }
@@ -329,14 +322,14 @@ macro_rules! impl_digits_strided {
 impl_digits_strided!(Standard);
 impl_digits_strided!(ConjugateInvariant);
 
-impl<R: Ring> poulpy_hal::execution::ScratchWorkers for NTT4x30AvxRayon<R> {
+impl poulpy_hal::execution::ScratchWorkers for NTT4x30AvxRayon {
     const PREPARE: usize = 4;
     const APPLY: usize = 8;
     const VMP: usize = 8;
     const IDFT: usize = 8;
 }
 
-impl<R: Ring> poulpy_cpu_rayon::RayonTuning for NTT4x30AvxRayon<R> {
+impl poulpy_cpu_rayon::RayonTuning for NTT4x30AvxRayon {
     const COEFF_MIN_LEN: usize = 1 << 15;
     const COEFF_MIN_TASK: usize = 1 << 13;
     const NORMALIZE_MIN_TASK: usize = 1 << 12;
@@ -344,12 +337,15 @@ impl<R: Ring> poulpy_cpu_rayon::RayonTuning for NTT4x30AvxRayon<R> {
 
 #[cfg(test)]
 mod tests {
-    use poulpy_hal::{layouts::Module, test_suite::convolution::test_convolution_by_const};
+    use poulpy_hal::{
+        layouts::{Module, Standard},
+        test_suite::convolution::test_convolution_by_const,
+    };
 
     use super::NTT4x30AvxRayon;
 
     #[test]
     fn convolution_by_const() {
-        test_convolution_by_const(&Module::<NTT4x30AvxRayon>::new(1 << 8), 1 << 8, 50);
+        test_convolution_by_const::<_, _, Standard>(&Module::<NTT4x30AvxRayon>::new(1 << 8), 1 << 8, 50);
     }
 }

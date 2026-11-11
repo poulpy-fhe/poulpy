@@ -6,7 +6,7 @@ use poulpy_core::{
     api::{GLWESecretPreparedFactory, GLWESecretSampling},
     layouts::{
         Degree, GGLWELayout, GLWEAutomorphismKey, GLWEAutomorphismKeyAlloc, GLWEInfos, GLWESecret, GLWESecretAlloc,
-        GLWESecretLayout, GLWESecretPrepared, GLWESwitchingKey, GLWESwitchingKeyAlloc, GLWESwitchingKeyDegrees, Rank,
+        GLWESecretLayout, GLWESecretPrepared, GLWESwitchingKey, GLWESwitchingKeyAlloc, GLWESwitchingKeyDegrees, LWEInfos, Rank,
     },
     test_suite::with_scratch,
 };
@@ -14,8 +14,8 @@ use poulpy_hal::{
     AlignedBuf,
     api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAddScalarAssign, VecZnxAutomorphism},
     layouts::{
-        GaloisElement, HostBackend, HostDataMut, HostDataRef, Module, ScalarZnxAsVecZnxBackendMut, ScalarZnxAsVecZnxBackendRef,
-        ScratchOwned,
+        GaloisElement, HostBackend, HostDataMut, HostDataRef, Module, ReaderFrom, ScalarZnxAsVecZnxBackendMut,
+        ScalarZnxAsVecZnxBackendRef, ScratchOwned, Standard, WriterTo,
     },
     source::Source,
 };
@@ -63,11 +63,9 @@ where
         if i == 0 {
             let before = dst.clone();
             // The core encryption, the body's only call, checks the same query.
-            let expected = format!(
-                "scratch.available(): {} < GLWESwitchingKeyCompressedEncryptSk::glwe_switching_key_compressed_encrypt_sk_tmp_bytes: {gen_bytes}",
-                gen_bytes.saturating_sub(1)
-            );
-            assert_short_scratch_panics::<BE>(gen_bytes, &expected, |s| {
+            let expected =
+                "scratch.available() < GLWESwitchingKeyCompressedEncryptSk::glwe_switching_key_compressed_encrypt_sk_tmp_bytes";
+            assert_short_scratch_panics::<BE>(gen_bytes, expected, |s| {
                 module.mhe_glwe_switching_key_share_gen(dst, sk_in, sk_out, SEEDS[0], &mut source_xe, s)
             });
             assert!(*dst == before);
@@ -129,11 +127,8 @@ where
         if i == 0 {
             let before = dst.clone();
             // The core encryption, the body's only call, checks the same query.
-            let expected = format!(
-                "scratch.available(): {} < GLWEAutomorphismKeyCompressedEncryptSk::glwe_automorphism_key_compressed_encrypt_sk_tmp_bytes: {gen_bytes}",
-                gen_bytes.saturating_sub(1)
-            );
-            assert_short_scratch_panics::<BE>(gen_bytes, &expected, |s| {
+            let expected = "scratch.available() < GLWEAutomorphismKeyCompressedEncryptSk::glwe_automorphism_key_compressed_encrypt_sk_tmp_bytes";
+            assert_short_scratch_panics::<BE>(gen_bytes, expected, |s| {
                 module.mhe_glwe_automorphism_key_share_gen(dst, P, sk, SEEDS[0], &mut source_xe, s)
             });
             assert!(*dst == before);
@@ -147,6 +142,28 @@ where
             module.mhe_glwe_automorphism_key_share_aggregate(&mut acc, &share);
         }
     }
+
+    let mut encoded = Vec::new();
+    acc.write_to(&mut encoded).unwrap();
+    let mut decoded = module.mhe_glwe_automorphism_key_share_alloc_from_infos(&layout);
+    decoded.read_from(&mut encoded.as_slice()).unwrap();
+    assert!(decoded == acc);
+    assert!(decoded.noise().is_some());
+    // A Galois element even or not below the cyclotomic order `2n`.
+    for p in [2, 2 * module.n() as i64 + 1] {
+        encoded[..8].copy_from_slice(&p.to_le_bytes());
+        let err = decoded.read_from(&mut encoded.as_slice()).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+        assert_eq!(decoded.p, P);
+        assert!(decoded.noise().is_none());
+    }
+    decoded.p = 2;
+    let mut refused = Vec::new();
+    assert_eq!(
+        decoded.write_to(&mut refused).unwrap_err().kind(),
+        std::io::ErrorKind::InvalidInput
+    );
+    assert!(refused.is_empty());
 
     let mut res: GLWEAutomorphismKey<AlignedBuf, i64> = module.glwe_automorphism_key_alloc_from_infos(&layout);
     let finalize_bytes = module.mhe_glwe_automorphism_key_share_finalize_tmp_bytes();
@@ -229,7 +246,7 @@ where
         let src = ScalarZnxAsVecZnxBackendRef::<BE>::as_vec_znx_backend(sk.data());
         let mut dst = ScalarZnxAsVecZnxBackendMut::<BE>::as_vec_znx_backend_mut(sigma.data_mut());
         for col in 0..sk.rank().as_usize() {
-            module.vec_znx_automorphism(module.galois_element_inv(p), &mut dst, col, &src, col);
+            module.vec_znx_automorphism(module.galois_element_inv::<Standard>(p), &mut dst, col, &src, col);
         }
     }
     let mut prepared: GLWESecretPrepared<AlignedBuf, BE> = module.glwe_secret_prepared_alloc(sk.rank());

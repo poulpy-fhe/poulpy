@@ -2,7 +2,7 @@
 //! selected products and additions.
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetTensorKey, IntPolyInfos};
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Module, Ring, ScratchArena, Standard};
 
 use crate::{
     CKKSCtBounds, CKKSInfos, SetCKKSInfos,
@@ -25,7 +25,7 @@ use crate::{
 /// Implementations reproduce the bodies their methods document bit for bit, report for each
 /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait CKKSAddManyImpl: Backend {
+pub unsafe trait CKKSAddManyImpl<Rg: Ring = Standard>: Backend {
     /// Scratch bound of [`Self::ckks_add_many`]; may report less than the reference, never less than the body takes.
     fn ckks_add_many_tmp_bytes<R, A>(module: &Module<Self>, res: &R, a: &A) -> usize
     where
@@ -43,8 +43,8 @@ pub unsafe trait CKKSAddManyImpl: Backend {
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<Self> + CKKSCtBounds;
+        R: GLWEToBackendMut<Self, Rg> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<Self, Rg> + CKKSCtBounds;
 }
 
 /// Backend contract of [`CKKSMulAddOps`](crate::api::CKKSMulAddOps).
@@ -57,7 +57,7 @@ pub unsafe trait CKKSAddManyImpl: Backend {
 /// Implementations reproduce the bodies their methods document bit for bit, report for each
 /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait CKKSMulAddImpl: Backend + CKKSMulImpl + CKKSAddImpl {
+pub unsafe trait CKKSMulAddImpl<Rg: Ring = Standard>: Backend + CKKSMulImpl<Rg> + CKKSAddImpl<Rg> {
     /// Default body: `ckks_mul_add_ct_tmp_bytes_derived`, the bytes of the `dst`-shaped temporary plus the larger of
     /// the selected `ckks_mul_tmp_bytes` and `ckks_add_tmp_bytes` at `res.size()`. Scratch bound of
     /// [`Self::ckks_mul_add_ct_into`]; may report less than the reference, never less than the body takes.
@@ -108,10 +108,10 @@ pub unsafe trait CKKSMulAddImpl: Backend + CKKSMulImpl + CKKSAddImpl {
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<Self> + CKKSCtBounds,
-        B: GLWEToBackendRef<Self> + CKKSCtBounds,
-        H: GetTensorKey<Self>,
+        Dst: GLWEToBackendMut<Self, Rg> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<Self, Rg> + CKKSCtBounds,
+        B: GLWEToBackendRef<Self, Rg> + CKKSCtBounds,
+        H: GetTensorKey<Self, Rg>,
     {
         ckks_mul_add_ct_into_derived(module, dst, a, b, tsk, scratch)
     }
@@ -128,9 +128,9 @@ pub unsafe trait CKKSMulAddImpl: Backend + CKKSMulImpl + CKKSAddImpl {
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<Self> + CKKSCtBounds,
-        P: GLWEToBackendRef<Self> + IntPolyInfos + CKKSCtBounds,
+        Dst: GLWEToBackendMut<Self, Rg> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<Self, Rg> + CKKSCtBounds,
+        P: GLWEToBackendRef<Self, Rg> + IntPolyInfos + CKKSCtBounds,
     {
         ckks_mul_add_pt_vec_into_derived(module, dst, a, pt, scratch)
     }
@@ -148,9 +148,9 @@ pub unsafe trait CKKSMulAddImpl: Backend + CKKSMulImpl + CKKSAddImpl {
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<Self> + CKKSCtBounds,
-        P: GLWEToBackendRef<Self> + IntPolyInfos + CKKSCtBounds,
+        Dst: GLWEToBackendMut<Self, Rg> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<Self, Rg> + CKKSCtBounds,
+        P: GLWEToBackendRef<Self, Rg> + IntPolyInfos + CKKSCtBounds,
     {
         ckks_mul_add_pt_const_into_derived(module, dst, a, pt, pt_coeff, scratch)
     }
@@ -166,7 +166,7 @@ pub unsafe trait CKKSMulAddImpl: Backend + CKKSMulImpl + CKKSAddImpl {
 /// Implementations reproduce the bodies their methods document bit for bit, report for each
 /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait CKKSAffineImpl: Backend + CKKSMulImpl + CKKSAddImpl {
+pub unsafe trait CKKSAffineImpl<Rg: Ring = Standard>: Backend + CKKSMulImpl<Rg> + CKKSAddImpl<Rg> {
     /// Default body: `ckks_affine_pt_const_tmp_bytes_derived`, the larger of the selected `ckks_mul_pt_const_tmp_bytes`
     /// and `ckks_add_pt_const_tmp_bytes` at `res.size()`. Scratch bound of [`Self::ckks_affine_pt_const_into`] and
     /// [`Self::ckks_affine_pt_const_assign`]; may report less than the reference, never less than the body takes.
@@ -193,9 +193,9 @@ pub unsafe trait CKKSAffineImpl: Backend + CKKSMulImpl + CKKSAddImpl {
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<Self> + CKKSCtBounds,
-        P: GLWEToBackendRef<Self> + IntPolyInfos + CKKSCtBounds,
+        Dst: GLWEToBackendMut<Self, Rg> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<Self, Rg> + CKKSCtBounds,
+        P: GLWEToBackendRef<Self, Rg> + IntPolyInfos + CKKSCtBounds,
     {
         ckks_affine_pt_const_into_derived(module, dst, a, affine_const, offset_coeff, scale_coeff, scratch)
     }
@@ -213,8 +213,8 @@ pub unsafe trait CKKSAffineImpl: Backend + CKKSMulImpl + CKKSAddImpl {
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
-        P: GLWEToBackendRef<Self> + IntPolyInfos + CKKSCtBounds,
+        Dst: GLWEToBackendMut<Self, Rg> + GLWEToBackendRef<Self, Rg> + CKKSCtBounds + SetCKKSInfos,
+        P: GLWEToBackendRef<Self, Rg> + IntPolyInfos + CKKSCtBounds,
     {
         ckks_affine_pt_const_assign_derived(module, dst, affine_const, offset_coeff, scale_coeff, scratch)
     }
@@ -244,10 +244,10 @@ pub unsafe trait CKKSAffineImpl: Backend + CKKSMulImpl + CKKSAddImpl {
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<Self> + CKKSCtBounds,
-        S: GLWEToBackendRef<Self> + CKKSCtBounds + IntPolyInfos,
-        P: GLWEToBackendRef<Self> + IntPolyInfos + CKKSCtBounds,
+        Dst: GLWEToBackendMut<Self, Rg> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<Self, Rg> + CKKSCtBounds,
+        S: GLWEToBackendRef<Self, Rg> + CKKSCtBounds + IntPolyInfos,
+        P: GLWEToBackendRef<Self, Rg> + IntPolyInfos + CKKSCtBounds,
     {
         ckks_affine_pt_vec_into_derived(module, dst, a, scale, offset, scratch)
     }
@@ -264,9 +264,9 @@ pub unsafe trait CKKSAffineImpl: Backend + CKKSMulImpl + CKKSAddImpl {
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
-        S: GLWEToBackendRef<Self> + CKKSCtBounds + IntPolyInfos,
-        P: GLWEToBackendRef<Self> + IntPolyInfos + CKKSCtBounds,
+        Dst: GLWEToBackendMut<Self, Rg> + GLWEToBackendRef<Self, Rg> + CKKSCtBounds + SetCKKSInfos,
+        S: GLWEToBackendRef<Self, Rg> + CKKSCtBounds + IntPolyInfos,
+        P: GLWEToBackendRef<Self, Rg> + IntPolyInfos + CKKSCtBounds,
     {
         ckks_affine_pt_vec_assign_derived(module, dst, scale, offset, scratch)
     }
@@ -282,7 +282,7 @@ pub unsafe trait CKKSAffineImpl: Backend + CKKSMulImpl + CKKSAddImpl {
 /// Implementations reproduce the bodies their methods document bit for bit, report for each
 /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait CKKSMulSubImpl: Backend + CKKSMulImpl + CKKSSubImpl {
+pub unsafe trait CKKSMulSubImpl<Rg: Ring = Standard>: Backend + CKKSMulImpl<Rg> + CKKSSubImpl<Rg> {
     /// Default body: `ckks_mul_sub_ct_tmp_bytes_derived`, the bytes of the `dst`-shaped temporary plus the larger of
     /// the selected `ckks_mul_tmp_bytes` and `ckks_sub_tmp_bytes` at `res.size()`. Scratch bound of
     /// [`Self::ckks_mul_sub_ct_into`]; may report less than the reference, never less than the body takes.
@@ -333,10 +333,10 @@ pub unsafe trait CKKSMulSubImpl: Backend + CKKSMulImpl + CKKSSubImpl {
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<Self> + CKKSCtBounds,
-        B: GLWEToBackendRef<Self> + CKKSCtBounds,
-        H: GetTensorKey<Self>,
+        Dst: GLWEToBackendMut<Self, Rg> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<Self, Rg> + CKKSCtBounds,
+        B: GLWEToBackendRef<Self, Rg> + CKKSCtBounds,
+        H: GetTensorKey<Self, Rg>,
     {
         ckks_mul_sub_ct_into_derived(module, dst, a, b, tsk, scratch)
     }
@@ -353,9 +353,9 @@ pub unsafe trait CKKSMulSubImpl: Backend + CKKSMulImpl + CKKSSubImpl {
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<Self> + CKKSCtBounds,
-        P: GLWEToBackendRef<Self> + IntPolyInfos + CKKSCtBounds,
+        Dst: GLWEToBackendMut<Self, Rg> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<Self, Rg> + CKKSCtBounds,
+        P: GLWEToBackendRef<Self, Rg> + IntPolyInfos + CKKSCtBounds,
     {
         ckks_mul_sub_pt_vec_into_derived(module, dst, a, pt, scratch)
     }
@@ -373,9 +373,9 @@ pub unsafe trait CKKSMulSubImpl: Backend + CKKSMulImpl + CKKSSubImpl {
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<Self> + CKKSCtBounds,
-        P: GLWEToBackendRef<Self> + IntPolyInfos + CKKSCtBounds,
+        Dst: GLWEToBackendMut<Self, Rg> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<Self, Rg> + CKKSCtBounds,
+        P: GLWEToBackendRef<Self, Rg> + IntPolyInfos + CKKSCtBounds,
     {
         ckks_mul_sub_pt_const_into_derived(module, dst, a, pt, pt_coeff, scratch)
     }
@@ -385,13 +385,19 @@ pub unsafe trait CKKSMulSubImpl: Backend + CKKSMulImpl + CKKSSubImpl {
 #[macro_export]
 macro_rules! impl_ckks_add_many_reference_full {
     ($be:ty) => {
-        unsafe impl $crate::oep::CKKSAddManyImpl for $be {
+        $crate::impl_ckks_add_many_reference_full!($be, ::poulpy_hal::layouts::Standard);
+        $crate::impl_ckks_add_many_reference_full!($be, ::poulpy_hal::layouts::ConjugateInvariant);
+    };
+    ($be:ty, $ring:ty) => {
+        unsafe impl $crate::oep::CKKSAddManyImpl<$ring> for $be {
             fn ckks_add_many_tmp_bytes<R, A>(module: &::poulpy_hal::layouts::Module<Self>, res: &R, a: &A) -> usize
             where
                 R: $crate::CKKSCtBounds,
                 A: $crate::CKKSCtBounds,
             {
-                $crate::reference::composite::CKKSAddManyReference::ckks_add_many_tmp_bytes_reference(module, res, a)
+                $crate::reference::composite::CKKSAddManyReference::<Self, $ring>::ckks_add_many_tmp_bytes_reference(
+                    module, res, a,
+                )
             }
 
             fn ckks_add_many<R, A>(
@@ -402,10 +408,10 @@ macro_rules! impl_ckks_add_many_reference_full {
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> $crate::CKKSResult<()>
             where
-                R: ::poulpy_core::layouts::GLWEToBackendMut<Self> + $crate::CKKSCtBounds + $crate::SetCKKSInfos,
-                A: ::poulpy_core::layouts::GLWEToBackendRef<Self> + $crate::CKKSCtBounds,
+                R: ::poulpy_core::layouts::GLWEToBackendMut<Self, $ring> + $crate::CKKSCtBounds + $crate::SetCKKSInfos,
+                A: ::poulpy_core::layouts::GLWEToBackendRef<Self, $ring> + $crate::CKKSCtBounds,
             {
-                $crate::reference::composite::CKKSAddManyReference::ckks_add_many_reference(
+                $crate::reference::composite::CKKSAddManyReference::<Self, $ring>::ckks_add_many_reference(
                     module,
                     normalize_after,
                     res,
@@ -421,7 +427,11 @@ macro_rules! impl_ckks_add_many_reference_full {
 #[macro_export]
 macro_rules! impl_ckks_mul_add_derived_full {
     ($be:ty) => {
-        unsafe impl $crate::oep::CKKSMulAddImpl for $be {}
+        $crate::impl_ckks_mul_add_derived_full!($be, ::poulpy_hal::layouts::Standard);
+        $crate::impl_ckks_mul_add_derived_full!($be, ::poulpy_hal::layouts::ConjugateInvariant);
+    };
+    ($be:ty, $ring:ty) => {
+        unsafe impl $crate::oep::CKKSMulAddImpl<$ring> for $be {}
     };
 }
 
@@ -429,7 +439,11 @@ macro_rules! impl_ckks_mul_add_derived_full {
 #[macro_export]
 macro_rules! impl_ckks_affine_derived_full {
     ($be:ty) => {
-        unsafe impl $crate::oep::CKKSAffineImpl for $be {}
+        $crate::impl_ckks_affine_derived_full!($be, ::poulpy_hal::layouts::Standard);
+        $crate::impl_ckks_affine_derived_full!($be, ::poulpy_hal::layouts::ConjugateInvariant);
+    };
+    ($be:ty, $ring:ty) => {
+        unsafe impl $crate::oep::CKKSAffineImpl<$ring> for $be {}
     };
 }
 
@@ -437,7 +451,11 @@ macro_rules! impl_ckks_affine_derived_full {
 #[macro_export]
 macro_rules! impl_ckks_mul_sub_derived_full {
     ($be:ty) => {
-        unsafe impl $crate::oep::CKKSMulSubImpl for $be {}
+        $crate::impl_ckks_mul_sub_derived_full!($be, ::poulpy_hal::layouts::Standard);
+        $crate::impl_ckks_mul_sub_derived_full!($be, ::poulpy_hal::layouts::ConjugateInvariant);
+    };
+    ($be:ty, $ring:ty) => {
+        unsafe impl $crate::oep::CKKSMulSubImpl<$ring> for $be {}
     };
 }
 

@@ -29,11 +29,11 @@ use super::helpers::{assert_precision_bits, gen_composite, params_for};
 
 pub fn test_max_min<BE, F, E>(base: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     Module<BE>: TestContextModule<BE> + CKKSSignOps<BE> + CKKSComparisonOps<BE>,
-    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>:
+    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, Standard>:
         GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE> + LWEInfos + poulpy_core::layouts::IntPolyInfos,
+    CKKSPlaintext<BE::OwnedBuf, BE::ZnxWord, Standard>: GLWEToBackendRef<BE> + LWEInfos + poulpy_core::layouts::IntPolyInfos,
     CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
@@ -80,7 +80,7 @@ where
 
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
 
-    let mut sizing = module.ckks_ciphertext_alloc(params.base2k.into(), params.k.into());
+    let mut sizing = module.ckks_ciphertext_alloc::<Standard>(params.base2k.into(), params.k.into());
     sizing.set_meta(params.prec().meta);
     let scratch_size = module.ckks_comparison_tmp_bytes(
         &sizing,
@@ -155,7 +155,7 @@ where
         };
         assert_eq!(input_budget - res.log_budget(), expected, "{label}: consumed bits");
 
-        let (re_out, _) = ckks_decrypt_decode::<BE, F, E>(&params, module, &encoder, &res, &sk, &mut scratch.borrow());
+        let (re_out, _) = ckks_decrypt_decode::<BE, F, E, Standard>(&params, module, &encoder, &res, &sk, &mut scratch.borrow());
         assert_precision_bits(label, &re_out, want, required, params.n);
     }
 }

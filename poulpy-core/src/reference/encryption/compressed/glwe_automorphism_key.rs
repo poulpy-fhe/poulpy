@@ -3,7 +3,7 @@
 use poulpy_hal::{
     api::{ModuleN, VecZnxAutomorphism},
     layouts::{
-        Backend, GaloisElement, Module, ScratchArena, scalar_znx_as_vec_znx_backend_mut_from_mut,
+        Backend, GaloisElement, Module, Ring, ScratchArena, Standard, scalar_znx_as_vec_znx_backend_mut_from_mut,
         scalar_znx_as_vec_znx_backend_ref_from_ref,
     },
     source::Source,
@@ -23,7 +23,7 @@ use crate::{
 /// Portable implementation using HAL operations.
 ///
 /// Backend implementations may call this helper without changing their override selection.
-pub trait GLWEAutomorphismKeyCompressedEncryptSkReference<BE: Backend> {
+pub trait GLWEAutomorphismKeyCompressedEncryptSkReference<BE: Backend, Rg: Ring = Standard> {
     fn glwe_automorphism_key_compressed_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos;
@@ -37,13 +37,17 @@ pub trait GLWEAutomorphismKeyCompressedEncryptSkReference<BE: Backend> {
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GGLWECompressedToBackendMut<BE> + GGLWECompressedSeedMut + SetGaloisElement + GGLWEInfos,
-        S: GLWESecretToBackendRef<BE> + GLWEInfos;
+        R: GGLWECompressedToBackendMut<BE, Rg> + GGLWECompressedSeedMut + SetGaloisElement + GGLWEInfos,
+        S: GLWESecretToBackendRef<BE, Rg> + GLWEInfos;
 }
 
-impl<BE: Backend> GLWEAutomorphismKeyCompressedEncryptSkReference<BE> for Module<BE>
+impl<BE: Backend, Rg: Ring> GLWEAutomorphismKeyCompressedEncryptSkReference<BE, Rg> for Module<BE>
 where
-    Self: ModuleN + GaloisElement + VecZnxAutomorphism<BE> + GGLWECompressedEncryptSk<BE> + GLWESecretPreparedFactory<BE>,
+    Self: ModuleN
+        + GaloisElement
+        + VecZnxAutomorphism<BE, Rg>
+        + GGLWECompressedEncryptSk<BE, Rg>
+        + GLWESecretPreparedFactory<BE, Rg>,
 {
     fn glwe_automorphism_key_compressed_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
@@ -67,8 +71,8 @@ where
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GGLWECompressedToBackendMut<BE> + GGLWECompressedSeedMut + SetGaloisElement + GGLWEInfos,
-        S: GLWESecretToBackendRef<BE> + GLWEInfos,
+        R: GGLWECompressedToBackendMut<BE, Rg> + GGLWECompressedSeedMut + SetGaloisElement + GGLWEInfos,
+        S: GLWESecretToBackendRef<BE, Rg> + GLWEInfos,
     {
         let sk = sk.to_backend_ref();
         operand_degree(self.n(), &[res.n(), sk.n()]);
@@ -80,9 +84,7 @@ where
         crate::layouts::assert_secret_set(&sk.dist);
         assert!(
             scratch.available() >= self.glwe_automorphism_key_compressed_encrypt_sk_tmp_bytes_reference(res),
-            "scratch.available(): {} < GLWEAutomorphismKeyCompressedEncryptSk::glwe_automorphism_key_compressed_encrypt_sk_tmp_bytes: {}",
-            scratch.available(),
-            self.glwe_automorphism_key_compressed_encrypt_sk_tmp_bytes_reference(res)
+            "scratch.available() < GLWEAutomorphismKeyCompressedEncryptSk::glwe_automorphism_key_compressed_encrypt_sk_tmp_bytes"
         );
         let tmp_bytes: usize = self.glwe_automorphism_key_compressed_encrypt_sk_tmp_bytes_reference(res);
         {
@@ -91,10 +93,10 @@ where
             let (mut sk_out, scratch_2) = scratch_1.take_glwe_secret_scratch(res.n().as_usize().into(), sk.rank());
             sk_out.dist = sk.dist;
             {
-                let sk_backend = scalar_znx_as_vec_znx_backend_ref_from_ref::<BE>(sk.data());
-                let mut sk_out_backend = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(sk_out.data_mut());
+                let sk_backend = scalar_znx_as_vec_znx_backend_ref_from_ref::<BE, Rg>(sk.data());
+                let mut sk_out_backend = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE, Rg>(sk_out.data_mut());
                 for i in 0..sk.rank().into() {
-                    self.vec_znx_automorphism(self.galois_element_inv(p), &mut sk_out_backend, i, &sk_backend, i);
+                    self.vec_znx_automorphism(self.galois_element_inv::<Rg>(p), &mut sk_out_backend, i, &sk_backend, i);
                 }
             }
             self.glwe_secret_prepare(&mut sk_out_prepared, &sk_out);

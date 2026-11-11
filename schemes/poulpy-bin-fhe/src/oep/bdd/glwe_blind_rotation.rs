@@ -7,7 +7,7 @@ use poulpy_hal::layouts::*;
 /// Implementations reproduce the bodies their methods document bit for bit, report for each
 /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait GLWEBlindRotationImpl: Backend<Ring = Standard> {
+pub unsafe trait GLWEBlindRotationImpl: Backend {
     /// Scratch bound of [`Self::glwe_blind_rotation`] and [`Self::glwe_blind_rotation_assign`]; may report less than the
     /// reference, never less than the body takes.
     #[allow(clippy::too_many_arguments)]

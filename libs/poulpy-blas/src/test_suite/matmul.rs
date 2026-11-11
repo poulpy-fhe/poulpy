@@ -15,8 +15,8 @@ use poulpy_ckks::{
     test_suite::{
         CKKSTestParams,
         helpers::{
-            TestContextBackend, TestContextModule, TestScalar, alloc_scratch, assert_decrypt_precision_at_log_delta,
-            gen_sk_with_raw, gen_tsk,
+            TestContextBackend, TestContextModule, TestContextSharedModule, TestScalar, alloc_scratch,
+            assert_decrypt_precision_at_log_delta, gen_sk_with_raw, gen_tsk,
         },
         parity::helpers::{Snapshot, snapshot, with_scratch},
         reference_encoder::ReferenceEncoder,
@@ -36,7 +36,7 @@ use poulpy_hal::{
     layouts::{
         Backend, CyclotomicOrder, DataView, HostBytesBackend, HostDataMut, HostDataRef, Module, PrepareHint,
         PrepareHint::{OneShot, Reuse},
-        ScratchArena, ScratchOwned, Standard, ZnxViewMut,
+        Ring, ScratchArena, ScratchOwned, Standard, ZnxViewMut,
     },
 };
 
@@ -86,11 +86,11 @@ pub fn test_blas_matmul<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
     log_d: usize,
 ) where
-    BE: TestContextBackend<Ring = Standard> + BlasMatMulImpl + BlasEncodingImpl,
+    BE: TestContextBackend + BlasMatMulImpl<Standard> + BlasEncodingImpl<Standard>,
     Module<BE>: TestContextModule<BE>
-        + CKKSEncodingOps<BE, F>
-        + BlasEncodingOps<BE, F>
-        + CKKSLinearTransformationOps<BE>
+        + CKKSEncodingOps<BE, F, Standard>
+        + BlasEncodingOps<BE, F, Standard>
+        + CKKSLinearTransformationOps<BE, Standard>
         + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
     E: ReimNew<F>,
@@ -102,8 +102,8 @@ pub fn test_blas_matmul<BE, F, E>(
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
     // The keys of the products' set alone, which covers both preparations and the prepared product, at any scale.
-    let elements = BlasPlan::new(log_d).matmul_galois_elements(module.cyclotomic_order());
-    let keys = TestKeys::<BE> {
+    let elements = BlasPlan::new(log_d).matmul_galois_elements(module.cyclotomic_order::<Standard>());
+    let keys = TestKeys::<BE, Standard> {
         atks: rotation_keys(&params, module, &sk_raw, elements, &mut scratch.borrow()),
         tsk: Some(gen_tsk(&params, module, &sk_raw, &mut scratch.borrow())),
     };
@@ -158,34 +158,35 @@ pub fn test_blas_matmul<BE, F, E>(
     let scales: Vec<usize> = [delta].into_iter().chain(other_scales(&params)).collect();
     let contexts: Vec<_> = scales
         .iter()
-        .map(|&p| blas_context::<BE, F>(&at_scale(&params, p), module, log_d))
+        .map(|&p| blas_context::<BE, F, Standard>(&at_scale(&params, p), module, log_d))
         .collect();
     // Each preparation and product on exactly the scratch its query reports.
-    let prepare_left = |x: &BlasCiphertextOwned<BE>, ctx: &BlasContextPrepared<BE>, hint| {
+    let prepare_left = |x: &BlasCiphertextOwned<BE, Standard>, ctx: &BlasContextPrepared<BE, Standard>, hint| {
         let bytes = module.blas_matmul_left_operand_prepare_tmp_bytes(x, ctx, &atk_layout, hint);
         matmul_left_operand(module, x, ctx, &keys, hint, &mut poisoned_scratch::<BE>(bytes).borrow()).unwrap()
     };
-    let prepare_right = |y: &BlasCiphertextOwned<BE>, ctx: &BlasContextPrepared<BE>, hint| {
+    let prepare_right = |y: &BlasCiphertextOwned<BE, Standard>, ctx: &BlasContextPrepared<BE, Standard>, hint| {
         let bytes = module.blas_matmul_right_operand_prepare_tmp_bytes(y, ctx, &atk_layout, hint);
         matmul_right_operand(module, y, ctx, &keys, hint, &mut poisoned_scratch::<BE>(bytes).borrow()).unwrap()
     };
-    let product =
-        |left: &BlasMatMulLeftOperandPrepared<BE>, right: &BlasMatMulRightOperandPrepared<BE>, ctx: &BlasContextPrepared<BE>| {
-            let mut res = alloc_grid(&params, module, log_d, m, n, params.k);
-            let bytes = module.blas_matmul_prepared_tmp_bytes(&res, left, right, ctx, &tsk_layout, &atk_layout);
-            module
-                .blas_matmul_prepared(
-                    &mut res,
-                    left,
-                    right,
-                    ctx,
-                    &keys,
-                    &keys,
-                    &mut poisoned_scratch::<BE>(bytes).borrow(),
-                )
-                .unwrap();
-            res
-        };
+    let product = |left: &BlasMatMulLeftOperandPrepared<BE, Standard>,
+                   right: &BlasMatMulRightOperandPrepared<BE, Standard>,
+                   ctx: &BlasContextPrepared<BE, Standard>| {
+        let mut res = alloc_grid(&params, module, log_d, m, n, params.k);
+        let bytes = module.blas_matmul_prepared_tmp_bytes(&res, left, right, ctx, &tsk_layout, &atk_layout);
+        module
+            .blas_matmul_prepared(
+                &mut res,
+                left,
+                right,
+                ctx,
+                &keys,
+                &keys,
+                &mut poisoned_scratch::<BE>(bytes).borrow(),
+            )
+            .unwrap();
+        res
+    };
     // Hot operands of every factor, prepared once under the context at the factors' scale: the product evaluates their
     // terms under its own, so they serve the products under every context. Those of `A` and `B` come from copies,
     // dropped or overwritten once prepared, which the operands, owning their storage, do not see.
@@ -241,7 +242,7 @@ pub fn test_blas_matmul<BE, F, E>(
                 &res,
                 &sk,
                 &a.matmul(&b),
-                &product_layout::<BE::Ring>(x, y, m, n, params.k, p),
+                &product_layout::<Standard>(x, y, m, n, params.k, p),
                 &mut scratch.borrow(),
             );
             // One relinearization leaves every block normalized.
@@ -257,7 +258,7 @@ pub fn test_blas_matmul<BE, F, E>(
                 ("left", x, (operand_infos(&hot_lefts[i]), operand_infos(&cold_lefts[i]))),
                 ("right", y, (operand_infos(&hot_rights[j]), operand_infos(&cold_rights[j]))),
             ] {
-                let scale = if side == "right" && replicated::<BE::Ring>(ct) {
+                let scale = if side == "right" && replicated::<Standard>(ct) {
                     p
                 } else {
                     2 * p
@@ -279,8 +280,8 @@ pub fn test_blas_matmul<BE, F, E>(
                 let left = if hl == OneShot { &hot_lefts[i] } else { &cold_lefts[i] };
                 let right = if hr == OneShot { &hot_rights[j] } else { &cold_rights[j] };
                 assert_eq!(
-                    grid_snapshot::<BE, _>(&product(left, right, ctx)),
-                    grid_snapshot::<BE, _>(&res),
+                    grid_snapshot::<BE, _, Standard>(&product(left, right, ctx)),
+                    grid_snapshot::<BE, _, Standard>(&res),
                     "{label}: {hl:?} x {hr:?}"
                 );
             }
@@ -296,7 +297,7 @@ pub fn test_blas_matmul<BE, F, E>(
     // each runs on exactly the scratch its query reports, and gives `A B`'s bits under every mix of hot and cold
     // operands.
     let ctx = &contexts[0];
-    let want = grid_snapshot::<BE, _>(&product(&hot_lefts[0], &hot_rights[0], ctx));
+    let want = grid_snapshot::<BE, _, Standard>(&product(&hot_lefts[0], &hot_rights[0], ctx));
     let mut wide_a = alloc_grid(&params, module, log_d, m, inner, params.k + params.base2k);
     for (dst, src) in wide_a.blocks_mut().iter_mut().zip(ct_a.blocks()) {
         module.ckks_copy(dst, src, &mut scratch.borrow()).unwrap();
@@ -314,11 +315,11 @@ pub fn test_blas_matmul<BE, F, E>(
             &mut poisoned_scratch::<BE>(bytes).borrow(),
         )
         .unwrap();
-    assert_eq!(grid_snapshot::<BE, _>(&res), want, "matmul k < max_k");
+    assert_eq!(grid_snapshot::<BE, _, Standard>(&res), want, "matmul k < max_k");
     for (hl, hr) in MIXES {
         let (left, right) = (prepare_left(&wide_a, ctx, hl), prepare_right(&ct_b, ctx, hr));
         assert_eq!(
-            grid_snapshot::<BE, _>(&product(&left, &right, ctx)),
+            grid_snapshot::<BE, _, Standard>(&product(&left, &right, ctx)),
             want,
             "matmul k < max_k: {hl:?} x {hr:?}"
         );
@@ -339,12 +340,12 @@ pub fn test_blas_matmul<BE, F, E>(
         &want,
         &sk,
         &a.matmul(&b),
-        &product_layout::<BE::Ring>(&cold_a, &cold_b, m, n, params.k, 0),
+        &product_layout::<Standard>(&cold_a, &cold_b, m, n, params.k, 0),
         &mut scratch.borrow(),
     );
     assert_eq!(
-        grid_snapshot::<BE, _>(&product(&hot_lefts[0], &cold_b, high)),
-        grid_snapshot::<BE, _>(&want),
+        grid_snapshot::<BE, _, Standard>(&product(&hot_lefts[0], &cold_b, high)),
+        grid_snapshot::<BE, _, Standard>(&want),
         "matmul across contexts: hot A x cold B"
     );
 }
@@ -374,28 +375,28 @@ impl<'a, K> CountingKeys<'a, K> {
     }
 }
 
-impl<BE: Backend, K: GetAutomorphismKey<BE>> GetAutomorphismKey<BE> for CountingKeys<'_, K> {
+impl<BE: Backend, K: GetAutomorphismKey<BE, Rg>, Rg: Ring> GetAutomorphismKey<BE, Rg> for CountingKeys<'_, K> {
     fn lookup_automorphism_key(
         &self,
         p: i64,
         k: TorusPrecision,
-    ) -> poulpy_core::Result<GLWEAutomorphismKeyPreparedBackendRef<'_, BE>> {
+    ) -> poulpy_core::Result<GLWEAutomorphismKeyPreparedBackendRef<'_, BE, Rg>> {
         *self.lookups.lock().unwrap().entry(k.as_usize()).or_default() += 1;
         self.keys.lookup_automorphism_key(p, k)
     }
 }
 
-impl<BE: Backend, K: GetTensorKey<BE>> GetTensorKey<BE> for CountingKeys<'_, K> {
+impl<BE: Backend, K: GetTensorKey<BE, Rg>, Rg: Ring> GetTensorKey<BE, Rg> for CountingKeys<'_, K> {
     fn lookup_tensor_key(
         &self,
         k: TorusPrecision,
-    ) -> poulpy_core::Result<poulpy_core::layouts::prepared::GLWETensorKeyPreparedBackendRef<'_, BE>> {
+    ) -> poulpy_core::Result<poulpy_core::layouts::prepared::GLWETensorKeyPreparedBackendRef<'_, BE, Rg>> {
         self.keys.lookup_tensor_key(k)
     }
 }
 
 /// Rotating giant steps of `lt` that hold diagonals: the key switches of one evaluation.
-fn rotating_giant_steps<BE: Backend>(lt: &LinearTransformationPrepared<BE>) -> usize {
+fn rotating_giant_steps<BE: Backend, Rg: Ring>(lt: &LinearTransformationPrepared<BE, Rg>) -> usize {
     lt.giant_steps
         .iter()
         .filter(|gs| gs.rot != 0 && !gs.diagonals.is_empty())
@@ -406,18 +407,18 @@ fn rotating_giant_steps<BE: Backend>(lt: &LinearTransformationPrepared<BE>) -> u
 /// linear transformation of the `inner` terms `term(i, j, l)`, a source block and a map, in ascending `l`, each source
 /// with its own baby-step cache, then takes the product's joint label, `label`: `pt_label` of the input and the operand's
 /// count, `min(a.log_sparsity, log2(S / (count d^2)))`, not its sources'.
-fn summed_terms<'t, BE>(
+fn summed_terms<'t, BE, Rg: Ring>(
     module: &Module<BE>,
-    mut res: BlasCiphertextOwned<BE>,
+    mut res: BlasCiphertextOwned<BE, Rg>,
     inner: usize,
     label: usize,
-    term: impl Fn(usize, usize, usize) -> (&'t CKKSCiphertextOwned<BE>, &'t LinearTransformationPrepared<BE>),
-    keys: &(impl GetAutomorphismKey<BE> + GetTensorKey<BE>),
+    term: impl Fn(usize, usize, usize) -> (&'t CKKSCiphertextOwned<BE, Rg>, &'t LinearTransformationPrepared<BE, Rg>),
+    keys: &(impl GetAutomorphismKey<BE, Rg> + GetTensorKey<BE, Rg>),
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Vec<Snapshot>
 where
     BE: TestContextBackend + 't,
-    Module<BE>: CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    Module<BE>: CKKSLinearTransformationOps<BE, Rg> + CnvPVecAlloc<BE>,
 {
     let cols = res.cols();
     for (t, dst) in res.blocks_mut().iter_mut().enumerate() {
@@ -439,23 +440,23 @@ where
             .unwrap();
         dst.set_log_sparsity(label);
     }
-    grid_snapshot::<BE, _>(&res)
+    grid_snapshot::<BE, _, Rg>(&res)
 }
 
 /// The grid a product by public matrices of `a` through `b` sums the terms of: `a` itself, or under JKLS every block of
 /// `a` through `b`'s first map, at scale `p_b`, into a block of the width it leaves, labelled as its source.
-fn staged<BE, S>(
+fn staged<BE, S, Rg: Ring>(
     params: &CKKSTestParams,
     module: &Module<BE>,
-    a: &BlasCiphertextOwned<BE>,
-    b: &BlasPtOperandPrepared<BE, S>,
+    a: &BlasCiphertextOwned<BE, Rg>,
+    b: &BlasPtOperandPrepared<BE, S, Rg>,
     p_b: usize,
-    keys: &(impl GetAutomorphismKey<BE> + GetTensorKey<BE>),
+    keys: &(impl GetAutomorphismKey<BE, Rg> + GetTensorKey<BE, Rg>),
     scratch: &mut ScratchArena<'_, BE>,
-) -> BlasCiphertextOwned<BE>
+) -> BlasCiphertextOwned<BE, Rg>
 where
     BE: TestContextBackend,
-    Module<BE>: CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    Module<BE>: CKKSLinearTransformationOps<BE, Rg> + CnvPVecAlloc<BE>,
 {
     let Some(first) = b.first() else {
         return a.clone();
@@ -490,11 +491,11 @@ pub fn test_blas_matmul_pt_right<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
     log_d: usize,
 ) where
-    BE: TestContextBackend<Ring = Standard> + BlasMatMulImpl + BlasEncodingImpl,
+    BE: TestContextBackend + BlasMatMulImpl<Standard> + BlasEncodingImpl<Standard>,
     Module<BE>: TestContextModule<BE>
-        + CKKSEncodingOps<BE, F>
-        + BlasEncodingOps<BE, F>
-        + CKKSLinearTransformationOps<BE>
+        + CKKSEncodingOps<BE, F, Standard>
+        + BlasEncodingOps<BE, F, Standard>
+        + CKKSLinearTransformationOps<BE, Standard>
         + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
     E: ReimNew<F>,
@@ -503,11 +504,11 @@ pub fn test_blas_matmul_pt_right<BE, F, E>(
 {
     let slots = params.n / 2;
     let lanes = slots >> (2 * log_d);
-    let ctx = blas_context::<BE, F>(&params, module, log_d);
+    let ctx = blas_context::<BE, F, Standard>(&params, module, log_d);
     let encoder = ReferenceEncoder::<E>::new(slots).unwrap();
     let (m, inner, n) = (2, 3, 2);
     let encode = |params: &CKKSTestParams, algorithm: BlasPtAlgorithm, count: usize| {
-        pt_operand::<BE, F, Right>(
+        pt_operand::<BE, F, Right, Standard>(
             module,
             BlasPlan::new(log_d).with_pt_algorithm(algorithm),
             inner,
@@ -519,7 +520,7 @@ pub fn test_blas_matmul_pt_right<BE, F, E>(
         )
     };
     // The keys of the plan's set alone, whatever the operand's count.
-    let elements = BlasPlan::new(log_d).matmul_pt_right_galois_elements(module.cyclotomic_order());
+    let elements = BlasPlan::new(log_d).matmul_pt_right_galois_elements(module.cyclotomic_order::<Standard>());
     let a = Grid::model(log_d, m, inner, lanes, 9);
 
     {
@@ -527,7 +528,7 @@ pub fn test_blas_matmul_pt_right<BE, F, E>(
         let mut scratch = alloc_scratch(&params, module);
         let mut counts: Vec<usize> = [1, 2, lanes].into_iter().filter(|c| lanes.is_multiple_of(*c)).collect();
         counts.dedup();
-        let keys = TestKeys::<BE> {
+        let keys = TestKeys::<BE, Standard> {
             atks: rotation_keys(&params, module, &sk_raw, elements.iter().copied(), &mut scratch.borrow()),
             tsk: None,
         };
@@ -601,7 +602,7 @@ pub fn test_blas_matmul_pt_right<BE, F, E>(
                     &keys,
                     &mut op_scratch.borrow(),
                 );
-                assert_eq!(grid_snapshot::<BE, _>(&res), want, "{label}: summed terms");
+                assert_eq!(grid_snapshot::<BE, _, Standard>(&res), want, "{label}: summed terms");
             }
         }
     }
@@ -616,7 +617,7 @@ pub fn test_blas_matmul_pt_right<BE, F, E>(
     };
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
-    let keys = TestKeys::<BE> {
+    let keys = TestKeys::<BE, Standard> {
         atks: rotation_keys(&params, module, &sk_raw, elements, &mut scratch.borrow()),
         tsk: None,
     };
@@ -658,7 +659,7 @@ pub fn test_blas_matmul_pt_right<BE, F, E>(
             &mut op_scratch.borrow(),
         );
         assert_eq!(
-            grid_snapshot::<BE, _>(&res),
+            grid_snapshot::<BE, _, Standard>(&res),
             want,
             "matmul_pt_right {algorithm:?} at radix 26: summed terms"
         );
@@ -670,7 +671,7 @@ pub fn test_blas_matmul_pt_right<BE, F, E>(
 /// records them all, so that a record stamped on failure shows.
 fn res_below_scale<BE>(params: &CKKSTestParams, module: &Module<BE>, log_d: usize, log_delta: usize) -> BlasCiphertextOwned<BE>
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
 {
     let res = alloc_grid(params, module, log_d, 1, 1, log_delta - 1);
     if (params.n / 2) >> (2 * log_d) < 2 {
@@ -708,11 +709,11 @@ pub fn test_blas_matmul_pt_right_guards<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
     log_d: usize,
 ) where
-    BE: TestContextBackend<Ring = Standard> + BlasMatMulImpl + BlasEncodingImpl,
+    BE: TestContextBackend + BlasMatMulImpl<Standard> + BlasEncodingImpl<Standard>,
     Module<BE>: TestContextModule<BE>
-        + CKKSEncodingOps<BE, F>
-        + BlasEncodingOps<BE, F>
-        + CKKSLinearTransformationOps<BE>
+        + CKKSEncodingOps<BE, F, Standard>
+        + BlasEncodingOps<BE, F, Standard>
+        + CKKSLinearTransformationOps<BE, Standard>
         + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
     E: ReimNew<F>,
@@ -721,12 +722,12 @@ pub fn test_blas_matmul_pt_right_guards<BE, F, E>(
 {
     let slots = params.n / 2;
     let lanes = slots >> (2 * log_d);
-    let ctx = blas_context::<BE, F>(&params, module, log_d);
+    let ctx = blas_context::<BE, F, Standard>(&params, module, log_d);
     let encoder = ReferenceEncoder::<E>::new(slots).unwrap();
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
     let encode = |module: &Module<BE>, log_d: usize, count: usize, base2k: usize| {
-        pt_operand::<BE, F, Right>(
+        pt_operand::<BE, F, Right, Standard>(
             module,
             BlasPlan::new(log_d),
             2,
@@ -753,8 +754,8 @@ pub fn test_blas_matmul_pt_right_guards<BE, F, E>(
         .chain(&other)
         .chain(foreign.iter().map(|(_, b)| b))
         .flat_map(|b| (0..b.rows()).flat_map(move |l| (0..b.cols()).map(move |j| b.block(l, j))));
-    let elements = map_galois_elements(blocks, module.cyclotomic_order());
-    let keys = TestKeys::<BE> {
+    let elements = map_galois_elements(blocks, module.cyclotomic_order::<Standard>());
+    let keys = TestKeys::<BE, Standard> {
         atks: rotation_keys(&params, module, &sk_raw, elements, &mut scratch.borrow()),
         tsk: None,
     };
@@ -788,20 +789,20 @@ pub fn test_blas_matmul_pt_right_guards<BE, F, E>(
         ("sparsity 65", 1, 1, &sparse_65),
     ] {
         let mut res = alloc_grid(&params, module, log_d, rows, cols, params.k);
-        assert_guard::<BE, _>(label, "blas_matmul_pt_right", InvalidOperand, &mut res, |res| {
+        assert_guard::<BE, _, Standard>(label, "blas_matmul_pt_right", InvalidOperand, &mut res, |res| {
             module.blas_matmul_pt_right(res, a, &b, &ctx, &keys, &mut op_scratch.borrow())
         });
     }
     for (label, b) in &foreign {
         let mut res = alloc_grid(&params, module, log_d, 1, 1, params.k);
-        assert_guard::<BE, _>(label, "blas_matmul_pt_right", InvalidOperand, &mut res, |res| {
+        assert_guard::<BE, _, Standard>(label, "blas_matmul_pt_right", InvalidOperand, &mut res, |res| {
             module.blas_matmul_pt_right(res, &ct, b, &ctx, &keys, &mut op_scratch.borrow())
         });
     }
     // An operand encoded at another dimension, which `ct` and `res` are not read at.
     if let Some(other) = &other {
         let mut res = alloc_grid(&params, module, log_d, 1, 1, params.k);
-        assert_guard::<BE, _>("operand dimension", "blas_matmul_pt_right", InvalidOperand, &mut res, |res| {
+        assert_guard::<BE, _, Standard>("operand dimension", "blas_matmul_pt_right", InvalidOperand, &mut res, |res| {
             module.blas_matmul_pt_right(res, &ct, other, &ctx, &keys, &mut op_scratch.borrow())
         });
     }
@@ -814,14 +815,14 @@ pub fn test_blas_matmul_pt_right_guards<BE, F, E>(
         .zip(rejected_grids(module, &res_2x1))
     {
         let mut res = res_2x1.clone();
-        assert_guard::<BE, _>(
+        assert_guard::<BE, _, Standard>(
             &format!("{label} a"),
             "blas_matmul_pt_right",
             InvalidOperand,
             &mut res,
             |res| module.blas_matmul_pt_right(res, &a, &one, &ctx, &keys, &mut op_scratch.borrow()),
         );
-        assert_guard::<BE, _>(
+        assert_guard::<BE, _, Standard>(
             &format!("{label} res"),
             "blas_matmul_pt_right",
             InvalidOperand,
@@ -830,7 +831,7 @@ pub fn test_blas_matmul_pt_right_guards<BE, F, E>(
         );
     }
     for (label, mut bad) in foreign_layouts(module, &res_2x1) {
-        assert_guard::<BE, _>(
+        assert_guard::<BE, _, Standard>(
             &format!("{label} res"),
             "blas_matmul_pt_right",
             InvalidOperand,
@@ -840,34 +841,37 @@ pub fn test_blas_matmul_pt_right_guards<BE, F, E>(
     }
 
     let mut res = alloc_grid(&params, module, log_d, 1, 1, params.k);
-    let no_keys = TestKeys::<BE> {
+    let no_keys = TestKeys::<BE, Standard> {
         atks: HashMap::new(),
         tsk: None,
     };
-    assert_guard::<BE, _>("no keys", "blas_matmul_pt_right", MissingKey, &mut res, |res| {
+    assert_guard::<BE, _, Standard>("no keys", "blas_matmul_pt_right", MissingKey, &mut res, |res| {
         module.blas_matmul_pt_right(res, &ct, &b, &ctx, &no_keys, &mut op_scratch.borrow())
     });
 
     // `a` and `res` both of another rank than the keys, which the first key of `b`'s maps rejects.
     let ([.., (_, rank_a)], [.., (_, mut rank_res)]) = (foreign_layouts(module, &ct), foreign_layouts(module, &res));
-    assert_guard::<BE, _>("key rank", "blas_matmul_pt_right", InvalidOperand, &mut rank_res, |res| {
+    assert_guard::<BE, _, Standard>("key rank", "blas_matmul_pt_right", InvalidOperand, &mut rank_res, |res| {
         module.blas_matmul_pt_right(res, &rank_a, &b, &ctx, &keys, &mut op_scratch.borrow())
     });
 
     // `res` narrower than the scale of `a`: poulpy-ckks rejects the budget of the first block's summed transformation
     // inside the implementation, before any write.
-    let input = grid_snapshot::<BE, _>(&ct);
+    let input = grid_snapshot::<BE, _, Standard>(&ct);
     let mut narrow_res = res_below_scale(&params, module, log_d, ct.block_layout().log_delta());
-    assert_guard::<BE, _>(
+    assert_guard::<BE, _, Standard>(
         "budget",
         "ckks_linear_transformation_eval_sum_into",
         Budget,
         &mut narrow_res,
         |res| module.blas_matmul_pt_right(res, &ct, &b, &ctx, &keys, &mut op_scratch.borrow()),
     );
-    assert!(grid_snapshot::<BE, _>(&ct) == input, "budget: blas_matmul_pt_right changed a");
+    assert!(
+        grid_snapshot::<BE, _, Standard>(&ct) == input,
+        "budget: blas_matmul_pt_right changed a"
+    );
 
-    let jkls = pt_operand::<BE, F, Right>(
+    let jkls = pt_operand::<BE, F, Right, Standard>(
         module,
         BlasPlan::new(log_d).with_pt_algorithm(BlasPtAlgorithm::Jkls),
         2,
@@ -890,10 +894,10 @@ pub fn test_blas_matmul_pt_right_guards<BE, F, E>(
             &Grid::model(log_d, 1, 2, lanes, 14),
             &mut scratch.borrow(),
         );
-        let input = grid_snapshot::<BE, _>(&short);
+        let input = grid_snapshot::<BE, _, Standard>(&short);
         let mut res = alloc_grid(&params, module, log_d, 1, 1, params.k);
         let bytes = module.blas_matmul_pt_right_tmp_bytes(&res, &short, &jkls, &ctx, &params.atk_layout());
-        assert_guard::<BE, _>(
+        assert_guard::<BE, _, Standard>(
             label,
             if label == "jkls second map" {
                 "ckks_linear_transformation_eval_sum_into"
@@ -905,17 +909,17 @@ pub fn test_blas_matmul_pt_right_guards<BE, F, E>(
             |res| module.blas_matmul_pt_right(res, &short, &jkls, &ctx, &keys, &mut poisoned_scratch::<BE>(bytes).borrow()),
         );
         assert!(
-            grid_snapshot::<BE, _>(&short) == input,
+            grid_snapshot::<BE, _, Standard>(&short) == input,
             "{label}: blas_matmul_pt_right changed a"
         );
     }
     let bytes = module.blas_matmul_pt_right_tmp_bytes(&res, &ct, &jkls, &ctx, &params.atk_layout());
-    assert_short_scratch::<BE, _>("blas_matmul_pt_right jkls", &mut res, bytes, |res, s| {
+    assert_short_scratch::<BE, _, Standard>("blas_matmul_pt_right jkls", &mut res, bytes, |res, s| {
         module.blas_matmul_pt_right(res, &ct, &jkls, &ctx, &keys, s)
     });
 
     let bytes = module.blas_matmul_pt_right_tmp_bytes(&res, &ct, &b, &ctx, &params.atk_layout());
-    assert_short_scratch::<BE, _>("blas_matmul_pt_right", &mut res, bytes, |res, s| {
+    assert_short_scratch::<BE, _, Standard>("blas_matmul_pt_right", &mut res, bytes, |res, s| {
         module.blas_matmul_pt_right(res, &ct, &b, &ctx, &keys, s)
     });
 
@@ -924,7 +928,7 @@ pub fn test_blas_matmul_pt_right_guards<BE, F, E>(
         "overflow",
         "the operand's grid has no block or more than a usize counts",
         || {
-            module.blas_pt_operand_alloc::<Right>(
+            module.blas_pt_operand_alloc::<Right, Standard>(
                 BlasPlan::new(log_d),
                 usize::MAX / 4 + 2,
                 4,
@@ -954,7 +958,7 @@ pub fn test_blas_matmul_pt_right_guards<BE, F, E>(
     let relabelled = relabel(&dense, |meta| meta.log_sparsity = one_label);
     let two_label = (lanes / 2).ilog2() as usize;
     for algorithm in PT_ALGORITHMS {
-        let pair = pt_operand::<BE, F, Right>(
+        let pair = pt_operand::<BE, F, Right, Standard>(
             module,
             BlasPlan::new(log_d).with_pt_algorithm(algorithm),
             2,
@@ -983,7 +987,7 @@ pub fn test_blas_matmul_pt_right_guards<BE, F, E>(
                 .all(|block| block.log_sparsity() == two_label.min(one_label)),
             "{label}: label"
         );
-        assert!(!replicated::<BE::Ring>(&res), "{label}: replicated");
+        assert!(!replicated::<Standard>(&res), "{label}: replicated");
     }
 }
 
@@ -1002,11 +1006,11 @@ pub fn test_blas_matmul_pt_left<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
     log_d: usize,
 ) where
-    BE: TestContextBackend<Ring = Standard> + BlasImpl,
+    BE: TestContextBackend + BlasImpl<Standard>,
     Module<BE>: TestContextModule<BE>
-        + CKKSEncodingOps<BE, F>
-        + BlasEncodingOps<BE, F>
-        + CKKSLinearTransformationOps<BE>
+        + CKKSEncodingOps<BE, F, Standard>
+        + BlasEncodingOps<BE, F, Standard>
+        + CKKSLinearTransformationOps<BE, Standard>
         + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
     E: ReimNew<F>,
@@ -1015,11 +1019,11 @@ pub fn test_blas_matmul_pt_left<BE, F, E>(
 {
     let slots = params.n / 2;
     let lanes = slots >> (2 * log_d);
-    let ctx = blas_context::<BE, F>(&params, module, log_d);
+    let ctx = blas_context::<BE, F, Standard>(&params, module, log_d);
     let encoder = ReferenceEncoder::<E>::new(slots).unwrap();
     let (m, inner, n) = (2, 3, 2);
     let encode = |params: &CKKSTestParams, algorithm: BlasPtAlgorithm, count: usize| -> BlasPtOperandPrepared<BE, Left> {
-        pt_operand::<BE, F, Left>(
+        pt_operand::<BE, F, Left, Standard>(
             module,
             BlasPlan::new(log_d).with_pt_algorithm(algorithm),
             m,
@@ -1030,7 +1034,7 @@ pub fn test_blas_matmul_pt_left<BE, F, E>(
             params.prec().into(),
         )
     };
-    let (order, plan) = (module.cyclotomic_order(), BlasPlan::new(log_d));
+    let (order, plan) = (module.cyclotomic_order::<Standard>(), BlasPlan::new(log_d));
     // The keys of the plan's left set alone, whatever the operand's count.
     let elements = plan.matmul_pt_left_galois_elements(order);
     let a = Grid::model(log_d, inner, n, lanes, 10);
@@ -1038,7 +1042,7 @@ pub fn test_blas_matmul_pt_left<BE, F, E>(
     {
         let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
         let mut scratch = alloc_scratch(&params, module);
-        let keys = TestKeys::<BE> {
+        let keys = TestKeys::<BE, Standard> {
             atks: rotation_keys(&params, module, &sk_raw, elements.iter().copied(), &mut scratch.borrow()),
             tsk: None,
         };
@@ -1098,7 +1102,7 @@ pub fn test_blas_matmul_pt_left<BE, F, E>(
                     &keys,
                     &mut op_scratch.borrow(),
                 );
-                assert_eq!(grid_snapshot::<BE, _>(&res), want, "{label}: summed terms");
+                assert_eq!(grid_snapshot::<BE, _, Standard>(&res), want, "{label}: summed terms");
             }
         }
 
@@ -1106,16 +1110,16 @@ pub fn test_blas_matmul_pt_left<BE, F, E>(
         // maps at one scale other than `a`'s and `B^T` at the other: the left product spends `B`'s scale, `p_b`, the
         // transposes the context's, `p`, twice more.
         let [p, p_b] = other_scales(&params);
-        let ctx = blas_context::<BE, F>(&at_scale(&params, p), module, log_d);
+        let ctx = blas_context::<BE, F, Standard>(&at_scale(&params, p), module, log_d);
         let route = plan
             .transpose_galois_elements(order)
             .into_iter()
             .chain(plan.matmul_pt_right_galois_elements(order));
-        let keys = TestKeys::<BE> {
+        let keys = TestKeys::<BE, Standard> {
             atks: rotation_keys(&params, module, &sk_raw, route, &mut scratch.borrow()),
             tsk: None,
         };
-        let bt = pt_operand::<BE, F, Right>(
+        let bt = pt_operand::<BE, F, Right, Standard>(
             module,
             BlasPlan::new(log_d),
             inner,
@@ -1183,7 +1187,7 @@ pub fn test_blas_matmul_pt_left<BE, F, E>(
     };
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
-    let keys = TestKeys::<BE> {
+    let keys = TestKeys::<BE, Standard> {
         atks: rotation_keys(&params, module, &sk_raw, elements, &mut scratch.borrow()),
         tsk: None,
     };
@@ -1225,7 +1229,7 @@ pub fn test_blas_matmul_pt_left<BE, F, E>(
             &mut op_scratch.borrow(),
         );
         assert_eq!(
-            grid_snapshot::<BE, _>(&res),
+            grid_snapshot::<BE, _, Standard>(&res),
             want,
             "matmul_pt_left {algorithm:?} at radix 26: summed terms"
         );
@@ -1245,11 +1249,11 @@ pub fn test_blas_matmul_pt_left_replicated<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
     log_d: usize,
 ) where
-    BE: TestContextBackend<Ring = Standard> + BlasImpl,
+    BE: TestContextBackend + BlasImpl<Standard>,
     Module<BE>: TestContextModule<BE>
-        + CKKSEncodingOps<BE, F>
-        + BlasEncodingOps<BE, F>
-        + CKKSLinearTransformationOps<BE>
+        + CKKSEncodingOps<BE, F, Standard>
+        + BlasEncodingOps<BE, F, Standard>
+        + CKKSLinearTransformationOps<BE, Standard>
         + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
     E: ReimNew<F>,
@@ -1262,11 +1266,11 @@ pub fn test_blas_matmul_pt_left_replicated<BE, F, E>(
         eprintln!("test_blas_matmul_pt_left_replicated skips log_d {log_d}: it needs 2 d^2 <= {slots} slots");
         return;
     }
-    let ctx = blas_context::<BE, F>(&params, module, log_d);
+    let ctx = blas_context::<BE, F, Standard>(&params, module, log_d);
     let encoder = ReferenceEncoder::<E>::new(slots).unwrap();
     let (m, inner, n) = (2, 3, 2);
-    let encode = |algorithm: BlasPtAlgorithm, count: usize| -> BlasPtOperandPrepared<BE, Left> {
-        pt_operand::<BE, F, Left>(
+    let encode = |algorithm: BlasPtAlgorithm, count: usize| -> BlasPtOperandPrepared<BE, Left, Standard> {
+        pt_operand::<BE, F, Left, Standard>(
             module,
             BlasPlan::new(log_d).with_pt_algorithm(algorithm),
             m,
@@ -1279,12 +1283,12 @@ pub fn test_blas_matmul_pt_left_replicated<BE, F, E>(
     };
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
-    let keys = TestKeys::<BE> {
+    let keys = TestKeys::<BE, Standard> {
         atks: rotation_keys(
             &params,
             module,
             &sk_raw,
-            BlasPlan::new(log_d).matmul_pt_left_galois_elements(module.cyclotomic_order()),
+            BlasPlan::new(log_d).matmul_pt_left_galois_elements(module.cyclotomic_order::<Standard>()),
             &mut scratch.borrow(),
         ),
         tsk: None,
@@ -1307,8 +1311,8 @@ pub fn test_blas_matmul_pt_left_replicated<BE, F, E>(
     };
     let ct_one = encrypt(&spread, lanes.ilog2() as usize, &mut scratch.borrow());
     let ct_distinct = encrypt(&distinct, 0, &mut scratch.borrow());
-    assert!(replicated::<BE::Ring>(&ct_one), "the fixture holds one matrix");
-    assert!(!replicated::<BE::Ring>(&ct_distinct), "the fixture holds several matrices");
+    assert!(replicated::<Standard>(&ct_one), "the fixture holds one matrix");
+    assert!(!replicated::<Standard>(&ct_distinct), "the fixture holds several matrices");
 
     let b = encode(BlasPtAlgorithm::Diagonal, 1);
     assert!(
@@ -1323,7 +1327,7 @@ pub fn test_blas_matmul_pt_left_replicated<BE, F, E>(
         assert!(held.block_replicated(0, 0).is_none(), "{label}: no replicated maps");
     }
 
-    let run = |ct: &BlasCiphertextOwned<BE>, scratch: &mut ScratchArena<'_, BE>| {
+    let run = |ct: &BlasCiphertextOwned<BE, Standard>, scratch: &mut ScratchArena<'_, BE>| {
         let mut res = alloc_grid(&params, module, log_d, m, n, params.k);
         let bytes = module.blas_matmul_pt_left_tmp_bytes(&res, &b, ct, &ctx, &params.atk_layout());
         module
@@ -1335,7 +1339,7 @@ pub fn test_blas_matmul_pt_left_replicated<BE, F, E>(
             inner,
             pt_label(b.slots(), ct, b.count()),
             |i, j, l| {
-                let lt = if replicated::<BE::Ring>(ct) {
+                let lt = if replicated::<Standard>(ct) {
                     b.block_replicated(i, l).unwrap()
                 } else {
                     b.block(i, l)
@@ -1360,8 +1364,8 @@ pub fn test_blas_matmul_pt_left_replicated<BE, F, E>(
         &mapped_layout(&ct_one, m, n, params.k, p),
         &mut scratch.borrow(),
     );
-    assert_eq!(grid_snapshot::<BE, _>(&res), want, "replicated input: summed terms");
-    assert!(replicated::<BE::Ring>(&res), "replicated input: the result is replicated");
+    assert_eq!(grid_snapshot::<BE, _, Standard>(&res), want, "replicated input: summed terms");
+    assert!(replicated::<Standard>(&res), "replicated input: the result is replicated");
 
     let (res, want) = run(&ct_distinct, &mut scratch.borrow());
     assert_grid_decrypt::<BE, F, E>(
@@ -1375,7 +1379,11 @@ pub fn test_blas_matmul_pt_left_replicated<BE, F, E>(
         &mapped_layout(&ct_distinct, m, n, params.k, p),
         &mut scratch.borrow(),
     );
-    assert_eq!(grid_snapshot::<BE, _>(&res), want, "distinct matrices: summed terms");
+    assert_eq!(
+        grid_snapshot::<BE, _, Standard>(&res),
+        want,
+        "distinct matrices: summed terms"
+    );
 }
 
 /// The guards of [`test_blas_matmul_pt_right_guards`] for `B A`, through `blas_matmul_pt_left`: an inner-dimension or `res`
@@ -1395,11 +1403,11 @@ pub fn test_blas_matmul_pt_left_guards<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
     log_d: usize,
 ) where
-    BE: TestContextBackend<Ring = Standard> + BlasMatMulImpl + BlasEncodingImpl,
+    BE: TestContextBackend + BlasMatMulImpl<Standard> + BlasEncodingImpl<Standard>,
     Module<BE>: TestContextModule<BE>
-        + CKKSEncodingOps<BE, F>
-        + BlasEncodingOps<BE, F>
-        + CKKSLinearTransformationOps<BE>
+        + CKKSEncodingOps<BE, F, Standard>
+        + BlasEncodingOps<BE, F, Standard>
+        + CKKSLinearTransformationOps<BE, Standard>
         + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
     E: ReimNew<F>,
@@ -1409,13 +1417,13 @@ pub fn test_blas_matmul_pt_left_guards<BE, F, E>(
     let op = "blas_matmul_pt_left";
     let slots = params.n / 2;
     let lanes = slots >> (2 * log_d);
-    let ctx = blas_context::<BE, F>(&params, module, log_d);
+    let ctx = blas_context::<BE, F, Standard>(&params, module, log_d);
     let encoder = ReferenceEncoder::<E>::new(slots).unwrap();
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
     // `1 x 2` blocks of public matrices: their products take `a` of two block rows.
     let encode = |module: &Module<BE>, log_d: usize, count: usize, base2k: usize| {
-        pt_operand::<BE, F, Left>(
+        pt_operand::<BE, F, Left, Standard>(
             module,
             BlasPlan::new(log_d),
             1,
@@ -1441,8 +1449,8 @@ pub fn test_blas_matmul_pt_left_guards<BE, F, E>(
         .chain(&other)
         .chain(foreign.iter().map(|(_, b)| b))
         .flat_map(|b| (0..b.rows()).flat_map(move |i| (0..b.cols()).map(move |l| b.block(i, l))));
-    let elements = map_galois_elements(blocks, module.cyclotomic_order());
-    let keys = TestKeys::<BE> {
+    let elements = map_galois_elements(blocks, module.cyclotomic_order::<Standard>());
+    let keys = TestKeys::<BE, Standard> {
         atks: rotation_keys(&params, module, &sk_raw, elements, &mut scratch.borrow()),
         tsk: None,
     };
@@ -1479,20 +1487,20 @@ pub fn test_blas_matmul_pt_left_guards<BE, F, E>(
         ("sparsity 65", 1, 1, &sparse_65),
     ] {
         let mut res = alloc_grid(&params, module, log_d, rows, cols, params.k);
-        assert_guard::<BE, _>(label, op, InvalidOperand, &mut res, |res| {
+        assert_guard::<BE, _, Standard>(label, op, InvalidOperand, &mut res, |res| {
             module.blas_matmul_pt_left(res, &b, a, &ctx, &keys, &mut op_scratch.borrow())
         });
     }
     for (label, b) in &foreign {
         let mut res = alloc_grid(&params, module, log_d, 1, 1, params.k);
-        assert_guard::<BE, _>(label, op, InvalidOperand, &mut res, |res| {
+        assert_guard::<BE, _, Standard>(label, op, InvalidOperand, &mut res, |res| {
             module.blas_matmul_pt_left(res, b, &ct, &ctx, &keys, &mut op_scratch.borrow())
         });
     }
     // An operand encoded at another dimension, which `ct` and `res` are not read at.
     if let Some(other) = &other {
         let mut res = alloc_grid(&params, module, log_d, 1, 1, params.k);
-        assert_guard::<BE, _>("operand dimension", op, InvalidOperand, &mut res, |res| {
+        assert_guard::<BE, _, Standard>("operand dimension", op, InvalidOperand, &mut res, |res| {
             module.blas_matmul_pt_left(res, other, &ct, &ctx, &keys, &mut op_scratch.borrow())
         });
     }
@@ -1503,48 +1511,51 @@ pub fn test_blas_matmul_pt_left_guards<BE, F, E>(
         .zip(rejected_grids(module, &res_1x2))
     {
         let mut res = res_1x2.clone();
-        assert_guard::<BE, _>(&format!("{label} a"), op, InvalidOperand, &mut res, |res| {
+        assert_guard::<BE, _, Standard>(&format!("{label} a"), op, InvalidOperand, &mut res, |res| {
             module.blas_matmul_pt_left(res, &one, &a, &ctx, &keys, &mut op_scratch.borrow())
         });
-        assert_guard::<BE, _>(&format!("{label} res"), op, InvalidOperand, &mut bad, |res| {
+        assert_guard::<BE, _, Standard>(&format!("{label} res"), op, InvalidOperand, &mut bad, |res| {
             module.blas_matmul_pt_left(res, &one, &square, &ctx, &keys, &mut op_scratch.borrow())
         });
     }
     for (label, mut bad) in foreign_layouts(module, &res_1x2) {
-        assert_guard::<BE, _>(&format!("{label} res"), op, InvalidOperand, &mut bad, |res| {
+        assert_guard::<BE, _, Standard>(&format!("{label} res"), op, InvalidOperand, &mut bad, |res| {
             module.blas_matmul_pt_left(res, &one, &square, &ctx, &keys, &mut op_scratch.borrow())
         });
     }
 
     let mut res = alloc_grid(&params, module, log_d, 1, 1, params.k);
-    let no_keys = TestKeys::<BE> {
+    let no_keys = TestKeys::<BE, Standard> {
         atks: HashMap::new(),
         tsk: None,
     };
-    assert_guard::<BE, _>("no keys", op, MissingKey, &mut res, |res| {
+    assert_guard::<BE, _, Standard>("no keys", op, MissingKey, &mut res, |res| {
         module.blas_matmul_pt_left(res, &b, &ct, &ctx, &no_keys, &mut op_scratch.borrow())
     });
 
     // `a` and `res` both of another rank than the keys, which the first key of `b`'s maps rejects.
     let ([.., (_, rank_a)], [.., (_, mut rank_res)]) = (foreign_layouts(module, &ct), foreign_layouts(module, &res));
-    assert_guard::<BE, _>("key rank", op, InvalidOperand, &mut rank_res, |res| {
+    assert_guard::<BE, _, Standard>("key rank", op, InvalidOperand, &mut rank_res, |res| {
         module.blas_matmul_pt_left(res, &b, &rank_a, &ctx, &keys, &mut op_scratch.borrow())
     });
 
     // `res` narrower than the scale of `a`: poulpy-ckks rejects the budget of the first block's summed transformation
     // inside the implementation, before any write.
-    let input = grid_snapshot::<BE, _>(&ct);
+    let input = grid_snapshot::<BE, _, Standard>(&ct);
     let mut narrow_res = res_below_scale(&params, module, log_d, ct.block_layout().log_delta());
-    assert_guard::<BE, _>(
+    assert_guard::<BE, _, Standard>(
         "budget",
         "ckks_linear_transformation_eval_sum_into",
         Budget,
         &mut narrow_res,
         |res| module.blas_matmul_pt_left(res, &b, &ct, &ctx, &keys, &mut op_scratch.borrow()),
     );
-    assert!(grid_snapshot::<BE, _>(&ct) == input, "budget: blas_matmul_pt_left changed a");
+    assert!(
+        grid_snapshot::<BE, _, Standard>(&ct) == input,
+        "budget: blas_matmul_pt_left changed a"
+    );
 
-    let jkls = pt_operand::<BE, F, Left>(
+    let jkls = pt_operand::<BE, F, Left, Standard>(
         module,
         BlasPlan::new(log_d).with_pt_algorithm(BlasPtAlgorithm::Jkls),
         1,
@@ -1567,10 +1578,10 @@ pub fn test_blas_matmul_pt_left_guards<BE, F, E>(
             &Grid::model(log_d, 2, 1, lanes, 14),
             &mut scratch.borrow(),
         );
-        let input = grid_snapshot::<BE, _>(&short);
+        let input = grid_snapshot::<BE, _, Standard>(&short);
         let mut res = alloc_grid(&params, module, log_d, 1, 1, params.k);
         let bytes = module.blas_matmul_pt_left_tmp_bytes(&res, &jkls, &short, &ctx, &params.atk_layout());
-        assert_guard::<BE, _>(
+        assert_guard::<BE, _, Standard>(
             label,
             if label == "jkls second map" {
                 "ckks_linear_transformation_eval_sum_into"
@@ -1582,17 +1593,17 @@ pub fn test_blas_matmul_pt_left_guards<BE, F, E>(
             |res| module.blas_matmul_pt_left(res, &jkls, &short, &ctx, &keys, &mut poisoned_scratch::<BE>(bytes).borrow()),
         );
         assert!(
-            grid_snapshot::<BE, _>(&short) == input,
+            grid_snapshot::<BE, _, Standard>(&short) == input,
             "{label}: blas_matmul_pt_left changed a"
         );
     }
     let bytes = module.blas_matmul_pt_left_tmp_bytes(&res, &jkls, &ct, &ctx, &params.atk_layout());
-    assert_short_scratch::<BE, _>("blas_matmul_pt_left jkls", &mut res, bytes, |res, s| {
+    assert_short_scratch::<BE, _, Standard>("blas_matmul_pt_left jkls", &mut res, bytes, |res, s| {
         module.blas_matmul_pt_left(res, &jkls, &ct, &ctx, &keys, s)
     });
 
     let bytes = module.blas_matmul_pt_left_tmp_bytes(&res, &b, &ct, &ctx, &params.atk_layout());
-    assert_short_scratch::<BE, _>(op, &mut res, bytes, |res, s| {
+    assert_short_scratch::<BE, _, Standard>(op, &mut res, bytes, |res, s| {
         module.blas_matmul_pt_left(res, &b, &ct, &ctx, &keys, s)
     });
 
@@ -1601,7 +1612,7 @@ pub fn test_blas_matmul_pt_left_guards<BE, F, E>(
         "overflow",
         "the operand's grid has no block or more than a usize counts",
         || {
-            module.blas_pt_operand_alloc::<Left>(
+            module.blas_pt_operand_alloc::<Left, Standard>(
                 BlasPlan::new(log_d),
                 usize::MAX / 4 + 2,
                 4,
@@ -1631,7 +1642,7 @@ pub fn test_blas_matmul_pt_left_guards<BE, F, E>(
     let relabelled = relabel(&dense, |meta| meta.log_sparsity = one_label);
     let two_label = (lanes / 2).ilog2() as usize;
     for algorithm in PT_ALGORITHMS {
-        let pair = pt_operand::<BE, F, Left>(
+        let pair = pt_operand::<BE, F, Left, Standard>(
             module,
             BlasPlan::new(log_d).with_pt_algorithm(algorithm),
             1,
@@ -1660,7 +1671,7 @@ pub fn test_blas_matmul_pt_left_guards<BE, F, E>(
                 .all(|block| block.log_sparsity() == two_label.min(one_label)),
             "{label}: label"
         );
-        assert!(!replicated::<BE::Ring>(&res), "{label}: replicated");
+        assert!(!replicated::<Standard>(&res), "{label}: replicated");
     }
 }
 
@@ -1684,16 +1695,20 @@ fn masked_fixture<BE, F, E>(
     log_d: usize,
 ) -> MaskedFixture<BE, E>
 where
-    BE: TestContextBackend<Ring = Standard> + BlasEncodingImpl,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + BlasEncodingOps<BE, F> + CKKSLinearTransformationOps<BE>,
+    BE: TestContextBackend + BlasEncodingImpl,
+    Module<BE>: TestContextSharedModule<BE> + CKKSEncodingOps<BE, F> + BlasEncodingOps<BE, F> + CKKSLinearTransformationOps<BE>,
     F: TestScalar + DiagonalArithmetic,
     E: ReimNew<F>,
 {
     let (sk_raw, sk) = gen_sk_with_raw(params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(params, module);
-    let (base2k, meta, order) = (params.base2k.into(), params.prec().into(), module.cyclotomic_order());
+    let (base2k, meta, order) = (
+        params.base2k.into(),
+        params.prec().into(),
+        module.cyclotomic_order::<Standard>(),
+    );
     let masked = BlasPlan::new(log_d).with_pt_algorithm(BlasPtAlgorithm::JklsGalois);
-    let ctx = encoded_context::<BE, F>(module, masked, base2k, meta);
+    let ctx = encoded_context::<BE, F, Standard>(module, masked, base2k, meta);
     let plans = MASKED_PT_ALGORITHMS.map(|algorithm| BlasPlan::new(log_d).with_pt_algorithm(algorithm));
     let elements: BTreeSet<i64> = plans
         .iter()
@@ -1733,8 +1748,8 @@ fn assert_masked_product<BE, F, E>(
     call: impl FnOnce(&mut BlasCiphertextOwned<BE>, &StrictKeys<'_, BE>) -> CKKSResult<()>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F>,
+    BE: TestContextBackend,
+    Module<BE>: TestContextSharedModule<BE> + CKKSEncodingOps<BE, F>,
     F: TestScalar,
     E: ReimNew<F>,
     for<'a> BE::BufRef<'a>: HostDataRef,
@@ -1750,7 +1765,7 @@ fn assert_masked_product<BE, F, E>(
     let mut again = alloc_grid(params, module, res.log_d(), res.rows(), res.cols(), params.k);
     call(&mut again, &strict).unwrap();
     assert!(
-        grid_snapshot::<BE, _>(&again) == grid_snapshot::<BE, _>(res),
+        grid_snapshot::<BE, _, Standard>(&again) == grid_snapshot::<BE, _, Standard>(res),
         "{label}: the result under the queried keys differs"
     );
 }
@@ -1769,11 +1784,11 @@ pub fn test_blas_matmul_pt_masked<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
     log_d: usize,
 ) where
-    BE: TestContextBackend<Ring = Standard> + BlasMatMulImpl + BlasEncodingImpl,
+    BE: TestContextBackend + BlasMatMulImpl<Standard> + BlasEncodingImpl<Standard>,
     Module<BE>: TestContextModule<BE>
-        + CKKSEncodingOps<BE, F>
-        + BlasEncodingOps<BE, F>
-        + CKKSLinearTransformationOps<BE>
+        + CKKSEncodingOps<BE, F, Standard>
+        + BlasEncodingOps<BE, F, Standard>
+        + CKKSLinearTransformationOps<BE, Standard>
         + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
     E: ReimNew<F>,
@@ -1812,7 +1827,7 @@ pub fn test_blas_matmul_pt_masked<BE, F, E>(
             _ => (1, 1),
         };
 
-        let b = pt_operand::<BE, F, Right>(module, *plan, inner, n, 1, entry, base2k, meta);
+        let b = pt_operand::<BE, F, Right, Standard>(module, *plan, inner, n, 1, entry, base2k, meta);
         let label = format!("matmul_pt_right {algorithm:?}");
         assert_eq!(
             (b.maps().count(), b.block_plaintexts(inner - 1, n - 1).len()),
@@ -1824,7 +1839,7 @@ pub fn test_blas_matmul_pt_masked<BE, F, E>(
         let layouts = (
             mapped_layout(&ct, m, n, params.k, 3 * delta),
             blas_matmul_pt_right_output_layout(&res, &ct, &b, &ctx),
-            blas_matmul_pt_right_key_uses(module, &res, &ct, &b, &ctx),
+            blas_matmul_pt_right_key_uses::<_, Standard>(module, &res, &ct, &b, &ctx),
         );
         module
             .blas_matmul_pt_right(&mut res, &ct, &b, &ctx, &keys, &mut poisoned_scratch::<BE>(bytes).borrow())
@@ -1844,7 +1859,7 @@ pub fn test_blas_matmul_pt_masked<BE, F, E>(
         );
 
         for &count in &counts {
-            let b = pt_operand::<BE, F, Left>(module, *plan, m, inner, count, entry, base2k, meta);
+            let b = pt_operand::<BE, F, Left, Standard>(module, *plan, m, inner, count, entry, base2k, meta);
             let label = format!("matmul_pt_left {algorithm:?} count={count}");
             assert_eq!(
                 (b.maps().count(), b.block_plaintexts(m - 1, inner - 1).len()),
@@ -1856,7 +1871,7 @@ pub fn test_blas_matmul_pt_masked<BE, F, E>(
             let layouts = (
                 mapped_layout(&ct_left, m, n, params.k, 3 * delta),
                 blas_matmul_pt_left_output_layout(&res, &b, &ct_left, &ctx),
-                blas_matmul_pt_left_key_uses(module, &res, &b, &ct_left, &ctx),
+                blas_matmul_pt_left_key_uses::<_, Standard>(module, &res, &b, &ct_left, &ctx),
             );
             module
                 .blas_matmul_pt_left(
@@ -1899,11 +1914,11 @@ pub fn test_blas_matmul_pt_masked_guards<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
     log_d: usize,
 ) where
-    BE: TestContextBackend<Ring = Standard> + BlasMatMulImpl + BlasEncodingImpl,
+    BE: TestContextBackend + BlasMatMulImpl<Standard> + BlasEncodingImpl<Standard>,
     Module<BE>: TestContextModule<BE>
-        + CKKSEncodingOps<BE, F>
-        + BlasEncodingOps<BE, F>
-        + CKKSLinearTransformationOps<BE>
+        + CKKSEncodingOps<BE, F, Standard>
+        + BlasEncodingOps<BE, F, Standard>
+        + CKKSLinearTransformationOps<BE, Standard>
         + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
     E: ReimNew<F>,
@@ -1922,20 +1937,20 @@ pub fn test_blas_matmul_pt_masked_guards<BE, F, E>(
         mut keys,
     } = masked_fixture::<BE, F, E>(&params, module, host_module, log_d);
     let (base2k, meta, atk) = (params.base2k.into(), params.prec().into(), params.atk_layout());
-    let plain = blas_context::<BE, F>(&params, module, log_d);
+    let plain = blas_context::<BE, F, Standard>(&params, module, log_d);
     // Every foreign context holds the masks, so its mismatch alone rejects it on either side.
     let masked = ctx.plan();
     let mut foreign: Vec<_> =
-        foreign_contexts::<BE, F>(&params, module, masked, &sk_raw, &mut keys.atks, &mut scratch.borrow()).into();
+        foreign_contexts::<BE, F, Standard>(&params, module, masked, &sk_raw, &mut keys.atks, &mut scratch.borrow()).into();
     if let Some(other) = other_log_d("test_blas_matmul_pt_masked_guards", log_d, slots) {
         let plan = BlasPlan::new(other).with_pt_algorithm(masked.pt_algorithm());
-        foreign.push(("dimension", encoded_context::<BE, F>(module, plan, base2k, meta)));
+        foreign.push(("dimension", encoded_context::<BE, F, Standard>(module, plan, base2k, meta)));
     }
     let wide = CoeffsMeta {
         k: (params.k + 1).into(),
         ..params.prec().into()
     };
-    foreign.push(("width", encoded_context::<BE, F>(module, masked, base2k, wide)));
+    foreign.push(("width", encoded_context::<BE, F, Standard>(module, masked, base2k, wide)));
     let a = Grid::model(log_d, 1, 1, lanes, 3);
     let ct = encrypt_grid::<BE, F, E>(
         &params,
@@ -1956,9 +1971,9 @@ pub fn test_blas_matmul_pt_masked_guards<BE, F, E>(
         let algorithm = plan.pt_algorithm();
         let mut res = alloc_grid(&params, module, log_d, 1, 1, params.k);
         if lanes > 1 {
-            let two = pt_operand::<BE, F, Right>(module, *plan, 1, 1, 2, entry, base2k, meta);
+            let two = pt_operand::<BE, F, Right, Standard>(module, *plan, 1, 1, 2, entry, base2k, meta);
             let bytes = module.blas_matmul_pt_right_tmp_bytes(&res, &ct, &two, &ctx, &atk);
-            assert_guard::<BE, _>(
+            assert_guard::<BE, _, Standard>(
                 &format!("{algorithm:?} on the right of two public matrices"),
                 "blas_matmul_pt_right",
                 InvalidOperand,
@@ -1966,9 +1981,9 @@ pub fn test_blas_matmul_pt_masked_guards<BE, F, E>(
                 |res| module.blas_matmul_pt_right(res, &ct, &two, &ctx, &keys, &mut poisoned_scratch::<BE>(bytes).borrow()),
             );
         }
-        let left = pt_operand::<BE, F, Left>(module, *plan, 1, 1, 1, entry, base2k, meta);
+        let left = pt_operand::<BE, F, Left, Standard>(module, *plan, 1, 1, 1, entry, base2k, meta);
         let bytes = module.blas_matmul_pt_left_tmp_bytes(&res, &left, &ct, &ctx, &atk);
-        assert_guard::<BE, _>(
+        assert_guard::<BE, _, Standard>(
             &format!("{algorithm:?} on the left under a context without masks"),
             "blas_matmul_pt_left",
             InvalidOperand,
@@ -1980,13 +1995,13 @@ pub fn test_blas_matmul_pt_masked_guards<BE, F, E>(
             MASKLESS,
             || module.blas_matmul_pt_left_tmp_bytes(&res, &left, &ct, &plain, &atk),
         );
-        assert_short_scratch::<BE, _>("blas_matmul_pt_left", &mut res, bytes, |res, s| {
+        assert_short_scratch::<BE, _, Standard>("blas_matmul_pt_left", &mut res, bytes, |res, s| {
             module.blas_matmul_pt_left(res, &left, &ct, &ctx, &keys, s)
         });
-        let right = pt_operand::<BE, F, Right>(module, *plan, 1, 1, 1, entry, base2k, meta);
+        let right = pt_operand::<BE, F, Right, Standard>(module, *plan, 1, 1, 1, entry, base2k, meta);
         let right_bytes = module.blas_matmul_pt_right_tmp_bytes(&res, &ct, &right, &ctx, &atk);
         for (label, foreign) in &foreign {
-            assert_guard::<BE, _>(
+            assert_guard::<BE, _, Standard>(
                 &format!("{algorithm:?} on the right under a context of another {label}"),
                 "blas_matmul_pt_right",
                 InvalidOperand,
@@ -2002,7 +2017,7 @@ pub fn test_blas_matmul_pt_masked_guards<BE, F, E>(
                     )
                 },
             );
-            assert_guard::<BE, _>(
+            assert_guard::<BE, _, Standard>(
                 &format!("{algorithm:?} on the left under a context of another {label}"),
                 "blas_matmul_pt_left",
                 InvalidOperand,
@@ -2010,7 +2025,7 @@ pub fn test_blas_matmul_pt_masked_guards<BE, F, E>(
                 |res| module.blas_matmul_pt_left(res, &left, &ct, foreign, &keys, &mut poisoned_scratch::<BE>(bytes).borrow()),
             );
         }
-        assert_short_scratch::<BE, _>("blas_matmul_pt_right", &mut res, right_bytes, |res, s| {
+        assert_short_scratch::<BE, _, Standard>("blas_matmul_pt_right", &mut res, right_bytes, |res, s| {
             module.blas_matmul_pt_right(res, &ct, &right, &ctx, &keys, s)
         });
     }
@@ -2041,11 +2056,11 @@ pub fn test_blas_matmul_guards<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
     log_d: usize,
 ) where
-    BE: TestContextBackend<Ring = Standard> + BlasMatMulImpl + BlasEncodingImpl,
+    BE: TestContextBackend + BlasMatMulImpl<Standard> + BlasEncodingImpl<Standard>,
     Module<BE>: TestContextModule<BE>
-        + CKKSEncodingOps<BE, F>
-        + BlasEncodingOps<BE, F>
-        + CKKSLinearTransformationOps<BE>
+        + CKKSEncodingOps<BE, F, Standard>
+        + BlasEncodingOps<BE, F, Standard>
+        + CKKSLinearTransformationOps<BE, Standard>
         + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
     E: ReimNew<F>,
@@ -2057,8 +2072,8 @@ pub fn test_blas_matmul_guards<BE, F, E>(
     let encoder = ReferenceEncoder::<E>::new(slots).unwrap();
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
-    let (ctx, mut atks) = context_and_keys::<BE, F>(&params, module, log_d, &sk_raw, &mut scratch.borrow());
-    let mut foreign: Vec<_> = foreign_contexts::<BE, F>(
+    let (ctx, mut atks) = context_and_keys::<BE, F, Standard>(&params, module, log_d, &sk_raw, &mut scratch.borrow());
+    let mut foreign: Vec<_> = foreign_contexts::<BE, F, Standard>(
         &params,
         module,
         BlasPlan::new(log_d),
@@ -2068,9 +2083,9 @@ pub fn test_blas_matmul_guards<BE, F, E>(
     )
     .into();
     if let Some(other) = other_log_d("test_blas_matmul_guards", log_d, slots) {
-        foreign.push(("dimension", blas_context::<BE, F>(&params, module, other)));
+        foreign.push(("dimension", blas_context::<BE, F, Standard>(&params, module, other)));
     }
-    let keys = TestKeys::<BE> {
+    let keys = TestKeys::<BE, Standard> {
         atks,
         tsk: Some(gen_tsk(&params, module, &sk_raw, &mut scratch.borrow())),
     };
@@ -2094,7 +2109,7 @@ pub fn test_blas_matmul_guards<BE, F, E>(
 
     // `ct` is 1 x 2 and `column` 2 x 1: `ct ct` has a mismatched inner dimension, `ct column` is 1 x 1, not 1 x 2.
     for (label, mut res, b) in [("inner", alloc(1, 2), &ct), ("shape", alloc(1, 2), &column)] {
-        assert_guard::<BE, _>(label, "blas_matmul", InvalidOperand, &mut res, |res| {
+        assert_guard::<BE, _, Standard>(label, "blas_matmul", InvalidOperand, &mut res, |res| {
             module.blas_matmul(res, &ct, b, &ctx, &keys, &keys, &mut op_scratch.borrow())
         });
     }
@@ -2109,7 +2124,7 @@ pub fn test_blas_matmul_guards<BE, F, E>(
     for (hl, hr) in MIXES {
         for (label, right) in [("inner", &row_right[side(hr)]), ("shape", &right[side(hr)])] {
             let label = &format!("{label} {hl:?} x {hr:?}");
-            assert_guard::<BE, _>(label, "blas_matmul_prepared", InvalidOperand, &mut wide, |res| {
+            assert_guard::<BE, _, Standard>(label, "blas_matmul_prepared", InvalidOperand, &mut wide, |res| {
                 module.blas_matmul_prepared(res, &left[side(hl)], right, &ctx, &keys, &keys, &mut op_scratch.borrow())
             });
         }
@@ -2119,7 +2134,7 @@ pub fn test_blas_matmul_guards<BE, F, E>(
     for (label, bad) in rejected_grids(module, &column) {
         let label = &format!("{label} column");
         let mut res = alloc(2, 2);
-        assert_guard::<BE, _>(label, "blas_matmul", InvalidOperand, &mut res, |res| {
+        assert_guard::<BE, _, Standard>(label, "blas_matmul", InvalidOperand, &mut res, |res| {
             module.blas_matmul(res, &bad, &ct, &ctx, &keys, &keys, &mut op_scratch.borrow())
         });
         for hint in HINTS {
@@ -2133,7 +2148,7 @@ pub fn test_blas_matmul_guards<BE, F, E>(
     for (label, bad) in rejected_grids(module, &ct) {
         let label = &format!("{label} row");
         let mut res = alloc(2, 2);
-        assert_guard::<BE, _>(label, "blas_matmul", InvalidOperand, &mut res, |res| {
+        assert_guard::<BE, _, Standard>(label, "blas_matmul", InvalidOperand, &mut res, |res| {
             module.blas_matmul(res, &column, &bad, &ctx, &keys, &keys, &mut op_scratch.borrow())
         });
     }
@@ -2144,12 +2159,12 @@ pub fn test_blas_matmul_guards<BE, F, E>(
         .chain(foreign_layouts(module, &alloc(2, 2)));
     for (label, mut bad) in bad_res {
         let label = &format!("{label} res");
-        assert_guard::<BE, _>(label, "blas_matmul", InvalidOperand, &mut bad, |res| {
+        assert_guard::<BE, _, Standard>(label, "blas_matmul", InvalidOperand, &mut bad, |res| {
             module.blas_matmul(res, &column, &ct, &ctx, &keys, &keys, &mut op_scratch.borrow())
         });
         for (hl, hr) in MIXES {
             let (l, r) = (&left_column[side(hl)], &row_right[side(hr)]);
-            assert_guard::<BE, _>(
+            assert_guard::<BE, _, Standard>(
                 &format!("{label} {hl:?} x {hr:?}"),
                 "blas_matmul_prepared",
                 InvalidOperand,
@@ -2164,7 +2179,7 @@ pub fn test_blas_matmul_guards<BE, F, E>(
         for (side, a, b) in [("a", &bad_column, &ct), ("b", &column, &bad_row)] {
             let label = &format!("{label} {side}");
             let mut res = alloc(2, 2);
-            assert_guard::<BE, _>(label, "blas_matmul", InvalidOperand, &mut res, |res| {
+            assert_guard::<BE, _, Standard>(label, "blas_matmul", InvalidOperand, &mut res, |res| {
                 module.blas_matmul(res, a, b, &ctx, &keys, &keys, &mut op_scratch.borrow())
             });
         }
@@ -2195,7 +2210,7 @@ pub fn test_blas_matmul_guards<BE, F, E>(
         let sparse_row = relabel(&ct, |meta| meta.log_sparsity = log_sparsity);
         let sparse_column = relabel(&column, |meta| meta.log_sparsity = log_sparsity);
         let mut res = alloc(1, 1);
-        assert_guard::<BE, _>(label, "blas_matmul", InvalidOperand, &mut res, |res| {
+        assert_guard::<BE, _, Standard>(label, "blas_matmul", InvalidOperand, &mut res, |res| {
             module.blas_matmul(res, &sparse_row, &column, &ctx, &keys, &keys, &mut op_scratch.borrow())
         });
         for hint in HINTS {
@@ -2211,7 +2226,7 @@ pub fn test_blas_matmul_guards<BE, F, E>(
     // context, which must read them; two cold operands bring their terms and read none.
     for (label, ctx) in &foreign {
         let mut res = alloc(1, 1);
-        assert_guard::<BE, _>(label, "blas_matmul", InvalidOperand, &mut res, |res| {
+        assert_guard::<BE, _, Standard>(label, "blas_matmul", InvalidOperand, &mut res, |res| {
             module.blas_matmul(res, &ct, &column, ctx, &keys, &keys, &mut op_scratch.borrow())
         });
         for hint in HINTS {
@@ -2223,14 +2238,14 @@ pub fn test_blas_matmul_guards<BE, F, E>(
         }
         for (hl, hr) in MIXES {
             let (l, r) = (&left[side(hl)], &right[side(hr)]);
-            let mut call = |res: &mut BlasCiphertextOwned<BE>| {
+            let mut call = |res: &mut BlasCiphertextOwned<BE, Standard>| {
                 module.blas_matmul_prepared(res, l, r, ctx, &keys, &keys, &mut op_scratch.borrow())
             };
             let label = &format!("{label} context {hl:?} x {hr:?}");
             if (hl, hr) == (Reuse, Reuse) {
                 call(&mut res).unwrap_or_else(|e| panic!("{label}: {e}"));
             } else {
-                assert_guard::<BE, _>(label, "blas_matmul_prepared", InvalidOperand, &mut res, call);
+                assert_guard::<BE, _, Standard>(label, "blas_matmul_prepared", InvalidOperand, &mut res, call);
             }
         }
     }
@@ -2243,7 +2258,7 @@ pub fn test_blas_matmul_guards<BE, F, E>(
     let radix = |rows: usize, cols: usize| alloc_grid(&below, module, log_d, rows, cols, params.k);
     for (label, a, b) in [("radix a", radix(1, 2), column.clone()), ("radix b", ct.clone(), radix(2, 1))] {
         let mut res = alloc(1, 1);
-        assert_guard::<BE, _>(label, "blas_matmul", InvalidOperand, &mut res, |res| {
+        assert_guard::<BE, _, Standard>(label, "blas_matmul", InvalidOperand, &mut res, |res| {
             module.blas_matmul(res, &a, &b, &ctx, &keys, &keys, &mut op_scratch.borrow())
         });
     }
@@ -2268,13 +2283,13 @@ pub fn test_blas_matmul_guards<BE, F, E>(
     // before the comparison with the factors' radix.
     let radix_63 = CKKSTestParams { base2k: 63, ..params };
     let mut res = alloc_grid(&radix_63, module, log_d, 1, 1, params.k);
-    assert_guard::<BE, _>("radix 63", "blas_matmul", InvalidOperand, &mut res, |res| {
+    assert_guard::<BE, _, Standard>("radix 63", "blas_matmul", InvalidOperand, &mut res, |res| {
         module.blas_matmul(res, &ct, &column, &ctx, &keys, &keys, &mut op_scratch.borrow())
     });
     for (hl, hr) in MIXES {
         let (l, r) = (&left[side(hl)], &right[side(hr)]);
         let label = &format!("radix 63 {hl:?} x {hr:?}");
-        assert_guard::<BE, _>(label, "blas_matmul_prepared", InvalidOperand, &mut res, |res| {
+        assert_guard::<BE, _, Standard>(label, "blas_matmul_prepared", InvalidOperand, &mut res, |res| {
             module.blas_matmul_prepared(res, l, r, &ctx, &keys, &keys, &mut op_scratch.borrow())
         });
     }
@@ -2329,7 +2344,7 @@ pub fn test_blas_matmul_guards<BE, F, E>(
     });
     let ([.., (_, rank_row)], [.., (_, rank_column)]) = (foreign_layouts(module, &ct), foreign_layouts(module, &column));
     let [.., (_, mut rank_res)] = foreign_layouts(module, &res);
-    assert_guard::<BE, _>("key rank", "blas_matmul", InvalidOperand, &mut rank_res, |res| {
+    assert_guard::<BE, _, Standard>("key rank", "blas_matmul", InvalidOperand, &mut rank_res, |res| {
         module.blas_matmul(res, &rank_row, &rank_column, &ctx, &rank_tsk, &keys, &mut op_scratch.borrow())
     });
     for (hl, hr) in MIXES {
@@ -2338,12 +2353,12 @@ pub fn test_blas_matmul_guards<BE, F, E>(
         assert_rejected(&format!("key rank {hl:?} x {hr:?} infos"), op, InvalidOperand, infos);
     }
     let mut res = alloc(1, 1);
-    assert_guard::<BE, _>("tensor key rank", "blas_matmul", InvalidOperand, &mut res, |res| {
+    assert_guard::<BE, _, Standard>("tensor key rank", "blas_matmul", InvalidOperand, &mut res, |res| {
         module.blas_matmul(res, &ct, &column, &ctx, &rank_tsk, &keys, &mut op_scratch.borrow())
     });
     for (hl, hr) in MIXES {
         let (l, r) = (&left[side(hl)], &right[side(hr)]);
-        assert_guard::<BE, _>(
+        assert_guard::<BE, _, Standard>(
             &format!("tensor key rank {hl:?} x {hr:?}"),
             op,
             InvalidOperand,
@@ -2354,16 +2369,16 @@ pub fn test_blas_matmul_guards<BE, F, E>(
 
     // `res` narrower than the factors' scale: poulpy-ckks rejects the budget of the first block's JKLS kernel inside the
     // implementation, after the terms of the hot sides, before any write.
-    let factors = [&ct, &column].map(grid_snapshot::<BE, _>);
+    let factors = [&ct, &column].map(grid_snapshot::<BE, _, Standard>);
     let infos = || (left.each_ref().map(operand_infos), right.each_ref().map(operand_infos));
     let operands = infos();
     let mut narrow_res = res_below_scale(&params, module, log_d, ct.block_layout().log_delta());
-    assert_guard::<BE, _>("budget", "ckks_dot_product_prepared", Budget, &mut narrow_res, |res| {
+    assert_guard::<BE, _, Standard>("budget", "ckks_dot_product_prepared", Budget, &mut narrow_res, |res| {
         module.blas_matmul(res, &ct, &column, &ctx, &keys, &keys, &mut op_scratch.borrow())
     });
     for (hl, hr) in MIXES {
         let (l, r) = (&left[side(hl)], &right[side(hr)]);
-        assert_guard::<BE, _>(
+        assert_guard::<BE, _, Standard>(
             &format!("budget {hl:?} x {hr:?}"),
             "ckks_dot_product_prepared",
             Budget,
@@ -2372,7 +2387,7 @@ pub fn test_blas_matmul_guards<BE, F, E>(
         );
     }
     assert!(
-        [&ct, &column].map(grid_snapshot::<BE, _>) == factors,
+        [&ct, &column].map(grid_snapshot::<BE, _, Standard>) == factors,
         "budget: blas_matmul changed a factor"
     );
     // The prepared operands are opaque: their infos are what a test reads.
@@ -2394,17 +2409,17 @@ pub fn test_blas_matmul_guards<BE, F, E>(
     };
     let short = short_by(2 * p);
     let mut short_right = short.clone();
-    if replicated::<BE::Ring>(&short_right) {
+    if replicated::<Standard>(&short_right) {
         // Its terms spend `p`, so a budget in `[p, 2p)` passes.
         matmul_right_operand(module, &short_right, &ctx, &keys, Reuse, &mut op_scratch.borrow()).unwrap();
         short_right = short_by(p);
     }
-    let inputs = [&short, &short_right].map(grid_snapshot::<BE, _>);
+    let inputs = [&short, &short_right].map(grid_snapshot::<BE, _, Standard>);
     let left_short = matmul_left_operand(module, &short, &ctx, &keys, Reuse, &mut op_scratch.borrow());
     assert_rejected("budget", "ckks_linear_transformation_eval_into", Budget, left_short);
     let right_short = matmul_right_operand(module, &short_right, &ctx, &keys, Reuse, &mut op_scratch.borrow());
     assert_rejected("budget", "ckks_linear_transformation_eval_into", Budget, right_short);
-    assert_guard::<BE, _>(
+    assert_guard::<BE, _, Standard>(
         "budget factor",
         "ckks_linear_transformation_eval_into",
         Budget,
@@ -2412,7 +2427,7 @@ pub fn test_blas_matmul_guards<BE, F, E>(
         |res| module.blas_matmul(res, &short, &column, &ctx, &keys, &keys, &mut op_scratch.borrow()),
     );
     let hot_short = matmul_left_operand(module, &short, &ctx, &keys, OneShot, &mut op_scratch.borrow()).unwrap();
-    assert_guard::<BE, _>(
+    assert_guard::<BE, _, Standard>(
         "budget hot left",
         "ckks_linear_transformation_eval_into",
         Budget,
@@ -2421,7 +2436,7 @@ pub fn test_blas_matmul_guards<BE, F, E>(
     );
     // `short_right` is 1 x 2: on the right, it multiplies `column`'s 2 x 1 operand into 2 x 2.
     let hot_short = matmul_right_operand(module, &short_right, &ctx, &keys, OneShot, &mut op_scratch.borrow()).unwrap();
-    assert_guard::<BE, _>(
+    assert_guard::<BE, _, Standard>(
         "budget hot right",
         "ckks_linear_transformation_eval_into",
         Budget,
@@ -2432,7 +2447,7 @@ pub fn test_blas_matmul_guards<BE, F, E>(
         },
     );
     assert!(
-        [&short, &short_right].map(grid_snapshot::<BE, _>) == inputs,
+        [&short, &short_right].map(grid_snapshot::<BE, _, Standard>) == inputs,
         "budget: a preparation changed its input"
     );
     // Both factors short, `A` by one bit and `B` by two bits: whichever side the product holds, `A`'s terms come first,
@@ -2451,7 +2466,10 @@ pub fn test_blas_matmul_guards<BE, F, E>(
     );
     let as_column = |g: &BlasCiphertextOwned<BE>| BlasCiphertext::from_blocks(g.clone().into_blocks(), log_d, 2, 1).unwrap();
     let (short_column, short_b_column) = (as_column(&short), as_column(&short_b));
-    let (ct_block, short_b_block) = (corner::<BE>(&ct, ct.rows(), 1), corner::<BE>(&short_b, short_b.rows(), 1));
+    let (ct_block, short_b_block) = (
+        corner::<BE, Standard>(&ct, ct.rows(), 1),
+        corner::<BE, Standard>(&short_b, short_b.rows(), 1),
+    );
     let error = |result: &Result<(), poulpy_ckks::CKKSError>| result.as_ref().err().and_then(|e| e.composition().cloned());
     for (label, short_a, short_b, a, b) in [
         ("A held", &short, &short_b_column, &ct, &column),
@@ -2468,7 +2486,7 @@ pub fn test_blas_matmul_guards<BE, F, E>(
             "{label}: one error for both sides"
         );
         let mut both = None;
-        assert_guard::<BE, _>(
+        assert_guard::<BE, _, Standard>(
             &format!("budget {label}"),
             "ckks_linear_transformation_eval_into",
             Budget,
@@ -2494,7 +2512,7 @@ pub fn test_blas_matmul_guards<BE, F, E>(
     // Each operation, under every hint and mix, on exactly its query, then one byte short of it.
     let mut res = alloc(1, 1);
     let bytes = module.blas_matmul_tmp_bytes(&res, &ct, &column, &ctx, &tsk_layout, &atk_layout);
-    assert_short_scratch::<BE, _>("blas_matmul", &mut res, bytes, |res, s| {
+    assert_short_scratch::<BE, _, Standard>("blas_matmul", &mut res, bytes, |res, s| {
         module.blas_matmul(res, &ct, &column, &ctx, &keys, &keys, s)
     });
     for (hl, hr) in MIXES {
@@ -2506,7 +2524,7 @@ pub fn test_blas_matmul_guards<BE, F, E>(
             module.blas_matmul_prepared(&mut alloc(1, 1), l, r, &ctx, &keys, &keys, s)
         })
         .unwrap_or_else(|e| panic!("{op}: {e}"));
-        assert_short_scratch::<BE, _>(op, &mut alloc(1, 1), bytes, |res, s| {
+        assert_short_scratch::<BE, _, Standard>(op, &mut alloc(1, 1), bytes, |res, s| {
             module.blas_matmul_prepared(res, l, r, &ctx, &keys, &keys, s)
         });
     }
@@ -2527,16 +2545,16 @@ pub fn test_blas_matmul_guards<BE, F, E>(
     // under either hint and no tensor key; the prepared product looks up the tensor key, and the rotation keys of a hot
     // side's terms.
     let TestKeys { atks, tsk } = keys;
-    let no_atks = TestKeys::<BE> {
+    let no_atks = TestKeys::<BE, Standard> {
         atks: HashMap::new(),
         tsk,
     };
-    let no_tsk = TestKeys::<BE> { atks, tsk: None };
+    let no_tsk = TestKeys::<BE, Standard> { atks, tsk: None };
     let mut res = alloc(1, 1);
-    assert_guard::<BE, _>("no rotation keys", "blas_matmul", MissingKey, &mut res, |res| {
+    assert_guard::<BE, _, Standard>("no rotation keys", "blas_matmul", MissingKey, &mut res, |res| {
         module.blas_matmul(res, &ct, &column, &ctx, &no_atks, &no_atks, &mut op_scratch.borrow())
     });
-    assert_guard::<BE, _>("no tensor key", "blas_matmul", MissingTensorKey, &mut res, |res| {
+    assert_guard::<BE, _, Standard>("no tensor key", "blas_matmul", MissingTensorKey, &mut res, |res| {
         module.blas_matmul(res, &ct, &column, &ctx, &no_tsk, &no_tsk, &mut op_scratch.borrow())
     });
     for hint in HINTS {
@@ -2551,17 +2569,17 @@ pub fn test_blas_matmul_guards<BE, F, E>(
     for (hl, hr) in MIXES {
         let (l, r) = (&left[side(hl)], &right[side(hr)]);
         let label = &format!("no tensor key {hl:?} x {hr:?}");
-        assert_guard::<BE, _>(label, op, MissingTensorKey, &mut res, |res| {
+        assert_guard::<BE, _, Standard>(label, op, MissingTensorKey, &mut res, |res| {
             module.blas_matmul_prepared(res, l, r, &ctx, &no_tsk, &no_tsk, &mut op_scratch.borrow())
         });
-        let mut call = |res: &mut BlasCiphertextOwned<BE>| {
+        let mut call = |res: &mut BlasCiphertextOwned<BE, Standard>| {
             module.blas_matmul_prepared(res, l, r, &ctx, &no_atks, &no_atks, &mut op_scratch.borrow())
         };
         let label = &format!("no rotation keys {hl:?} x {hr:?}");
         if (hl, hr) == (Reuse, Reuse) {
             call(&mut res).unwrap_or_else(|e| panic!("{label}: {e}"));
         } else {
-            assert_guard::<BE, _>(label, op, MissingKey, &mut res, call);
+            assert_guard::<BE, _, Standard>(label, op, MissingKey, &mut res, call);
         }
     }
 }
@@ -2576,11 +2594,11 @@ pub fn test_blas_matmul_guards<BE, F, E>(
 /// `blas_matmul_pt_right` documents.
 pub fn test_blas_matmul_long_sums<BE, F, E>(params: CKKSTestParams, _module: &Module<BE>, _host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard> + BlasMatMulImpl + BlasEncodingImpl,
+    BE: TestContextBackend + BlasMatMulImpl<Standard> + BlasEncodingImpl<Standard>,
     Module<BE>: TestContextModule<BE>
-        + CKKSEncodingOps<BE, F>
-        + BlasEncodingOps<BE, F>
-        + CKKSLinearTransformationOps<BE>
+        + CKKSEncodingOps<BE, F, Standard>
+        + BlasEncodingOps<BE, F, Standard>
+        + CKKSLinearTransformationOps<BE, Standard>
         + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
     E: ReimNew<F>,
@@ -2597,9 +2615,9 @@ where
     let encoder = ReferenceEncoder::<E>::new(slots).unwrap();
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
-    let (ctx, atks) = context_and_keys::<BE, F>(&params, module, log_d, &sk_raw, &mut scratch.borrow());
+    let (ctx, atks) = context_and_keys::<BE, F, Standard>(&params, module, log_d, &sk_raw, &mut scratch.borrow());
     let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
-    let keys = TestKeys::<BE> { atks, tsk: Some(tsk) };
+    let keys = TestKeys::<BE, Standard> { atks, tsk: Some(tsk) };
     let (tsk_layout, atk_layout) = (params.tsk_layout(), params.atk_layout());
     // `d` terms per inner block.
     let inner = 8;
@@ -2618,10 +2636,10 @@ where
         )
     });
     // `inner` blocks add their noise: at most `log2(inner)` bits of precision go.
-    let check = |label: &str, res: &BlasCiphertextOwned<BE>, want: &Grid, scratch: &mut ScratchArena<'_, BE>| {
+    let check = |label: &str, res: &BlasCiphertextOwned<BE, Standard>, want: &Grid, scratch: &mut ScratchArena<'_, BE>| {
         let (block, (re, im)) = (res.block(0, 0), &want.blocks(slots)[0]);
         let log_delta = block.log_delta() - inner.next_power_of_two().ilog2() as usize;
-        assert_decrypt_precision_at_log_delta::<BE, F, E>(
+        assert_decrypt_precision_at_log_delta::<BE, F, E, Standard>(
             label,
             &params,
             module,
@@ -2669,7 +2687,10 @@ where
             &mut poisoned_scratch::<BE>(bytes).borrow(),
         )
         .unwrap();
-    assert_eq!(grid_snapshot::<BE, _>(&prepared), grid_snapshot::<BE, _>(&res));
+    assert_eq!(
+        grid_snapshot::<BE, _, Standard>(&prepared),
+        grid_snapshot::<BE, _, Standard>(&res)
+    );
 }
 
 /// On a grid holding one matrix repeated over the slots, each `rotate_rows_rep(k)`, a product by 1 encoded at
@@ -2681,12 +2702,12 @@ pub fn test_blas_replicated_shifts<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
     log_d: usize,
 ) where
-    BE: TestContextBackend<Ring = Standard> + BlasMatMulImpl + BlasEncodingImpl,
+    BE: TestContextBackend + BlasMatMulImpl<Standard> + BlasEncodingImpl<Standard>,
     Module<BE>: TestContextModule<BE>
-        + CKKSEncodingOps<BE, F>
-        + BlasEncodingOps<BE, F>
-        + CKKSLinearTransformationOps<BE>
-        + CKKSRotateOps<BE>
+        + CKKSEncodingOps<BE, F, Standard>
+        + BlasEncodingOps<BE, F, Standard>
+        + CKKSLinearTransformationOps<BE, Standard>
+        + CKKSRotateOps<BE, Standard>
         + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
     E: ReimNew<F>,
@@ -2697,8 +2718,8 @@ pub fn test_blas_replicated_shifts<BE, F, E>(
     let encoder = ReferenceEncoder::<E>::new(slots).unwrap();
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
-    let (ctx, atks) = context_and_keys::<BE, F>(&params, module, log_d, &sk_raw, &mut scratch.borrow());
-    let keys = TestKeys::<BE> { atks, tsk: None };
+    let (ctx, atks) = context_and_keys::<BE, F, Standard>(&params, module, log_d, &sk_raw, &mut scratch.borrow());
+    let keys = TestKeys::<BE, Standard> { atks, tsk: None };
     let one_slot = slots.ilog2() as usize - 2 * log_d;
     let ct = encrypt_grid::<BE, F, E>(
         &params,
@@ -2757,7 +2778,10 @@ pub fn test_blas_replicated_shifts<BE, F, E>(
             layout_of(via_rotation.block(0, 0)),
             "k={k}: metadata"
         );
-        let (mut a, mut b) = (grid_snapshot::<BE, _>(&via_map), grid_snapshot::<BE, _>(&via_rotation));
+        let (mut a, mut b) = (
+            grid_snapshot::<BE, _, Standard>(&via_map),
+            grid_snapshot::<BE, _, Standard>(&via_rotation),
+        );
         assert_eq!(carried(&a[0]), carried(&b[0]), "k={k}: torus value");
         (a[0].digits, b[0].digits) = (Vec::new(), Vec::new());
         assert_eq!(a, b, "k={k}: layout, flag and noise");
@@ -2776,11 +2800,11 @@ pub fn test_blas_matmul_operands<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
     log_d: usize,
 ) where
-    BE: TestContextBackend<Ring = Standard> + BlasImpl,
+    BE: TestContextBackend + BlasImpl<Standard>,
     Module<BE>: TestContextModule<BE>
-        + CKKSEncodingOps<BE, F>
-        + BlasEncodingOps<BE, F>
-        + CKKSLinearTransformationOps<BE>
+        + CKKSEncodingOps<BE, F, Standard>
+        + BlasEncodingOps<BE, F, Standard>
+        + CKKSLinearTransformationOps<BE, Standard>
         + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
     E: ReimNew<F>,
@@ -2791,8 +2815,8 @@ pub fn test_blas_matmul_operands<BE, F, E>(
     let encoder = ReferenceEncoder::<E>::new(slots).unwrap();
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
-    let (ctx, atks) = context_and_keys::<BE, F>(&params, module, log_d, &sk_raw, &mut scratch.borrow());
-    let keys = TestKeys::<BE> { atks, tsk: None };
+    let (ctx, atks) = context_and_keys::<BE, F, Standard>(&params, module, log_d, &sk_raw, &mut scratch.borrow());
+    let keys = TestKeys::<BE, Standard> { atks, tsk: None };
     let lanes = slots >> (2 * log_d);
     let mut encrypt = |params: &CKKSTestParams, k: usize, seed: u64| {
         let grid = Grid::model(log_d, 2, 2, lanes, seed);
@@ -2835,7 +2859,7 @@ pub fn test_blas_matmul_operands<BE, F, E>(
             ("left", &fresh_left, &prepared_right),
             ("right", &prepared_left, &fresh_right),
         ] {
-            assert_guard::<BE, _>(
+            assert_guard::<BE, _, Standard>(
                 &format!("unprepared {side} {hint:?}"),
                 "blas_matmul_prepared",
                 InvalidOperand,
@@ -2909,28 +2933,28 @@ pub fn test_blas_matmul_operands<BE, F, E>(
 }
 
 /// A grid rejected in a refill, by label: the rejection and the op that raises it.
-type Refused<'a, BE> = (&'a str, &'a BlasCiphertextOwned<BE>, Rejection, &'a str);
+type Refused<'a, BE, Rg = Standard> = (&'a str, &'a BlasCiphertextOwned<BE, Rg>, Rejection, &'a str);
 
 /// An operand from `alloc` holds `bytes_of` bytes. `prepare`, the reference, fills it from
 /// `first`, then from `second`: it keeps every buffer, holds a fresh preparation's bytes and hot blocks (digits,
 /// metadata, flag and noise) and reports `infos(second)` and `second`'s batch. Each of `rejected` then fails as it
 /// states and leaves the operand as it was.
-fn check_operand_refill<BE, P, V>(
+fn check_operand_refill<BE, P, V, Rg: Ring>(
     label: &str,
-    alloc: impl Fn() -> BlasMatMulOperandPrepared<BE, P>,
+    alloc: impl Fn() -> BlasMatMulOperandPrepared<BE, P, Rg>,
     bytes_of: usize,
     cnv: fn(&P) -> &V,
-    prepare: impl Fn(&mut BlasMatMulOperandPrepared<BE, P>, &BlasCiphertextOwned<BE>) -> CKKSResult<()>,
-    infos: impl Fn(&BlasCiphertextOwned<BE>) -> BlasMatMulOperandLayout,
-    [first, second]: [&BlasCiphertextOwned<BE>; 2],
-    rejected: &[Refused<'_, BE>],
+    prepare: impl Fn(&mut BlasMatMulOperandPrepared<BE, P, Rg>, &BlasCiphertextOwned<BE, Rg>) -> CKKSResult<()>,
+    infos: impl Fn(&BlasCiphertextOwned<BE, Rg>) -> BlasMatMulOperandLayout,
+    [first, second]: [&BlasCiphertextOwned<BE, Rg>; 2],
+    rejected: &[Refused<'_, BE, Rg>],
 ) where
     BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     V: DataView<D = AlignedBuf>,
 {
-    let state = |op: &BlasMatMulOperandPrepared<BE, P>| {
+    let state = |op: &BlasMatMulOperandPrepared<BE, P, Rg>| {
         let bytes: Vec<Vec<u8>> = operand_buffers(op, cnv).iter().map(|b| b.to_vec()).collect();
-        let blocks: Vec<Snapshot> = op.blocks.iter().map(snapshot::<BE, _>).collect();
+        let blocks: Vec<Snapshot> = op.blocks.iter().map(snapshot::<BE, _, Rg>).collect();
         (bytes, blocks, operand_infos(op))
     };
     let mut op = alloc();
@@ -2969,7 +2993,10 @@ fn check_operand_refill<BE, P, V>(
 }
 
 /// The bytes of every buffer `op` holds, in order: its blocks' when hot, `cnv` of each term when cold.
-fn operand_buffers<'a, BE, P, V>(op: &'a BlasMatMulOperandPrepared<BE, P>, cnv: impl Fn(&'a P) -> &'a V) -> Vec<&'a [u8]>
+fn operand_buffers<'a, BE, P, V, Rg: Ring>(
+    op: &'a BlasMatMulOperandPrepared<BE, P, Rg>,
+    cnv: impl Fn(&'a P) -> &'a V,
+) -> Vec<&'a [u8]>
 where
     BE: Backend<OwnedBuf = AlignedBuf>,
     V: DataView<D = AlignedBuf> + 'a,
@@ -2988,11 +3015,11 @@ pub fn test_blas_matmul_flag_clear<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
     log_d: usize,
 ) where
-    BE: TestContextBackend<Ring = Standard> + BlasImpl,
+    BE: TestContextBackend + BlasImpl<Standard>,
     Module<BE>: TestContextModule<BE>
-        + CKKSEncodingOps<BE, F>
-        + BlasEncodingOps<BE, F>
-        + CKKSLinearTransformationOps<BE>
+        + CKKSEncodingOps<BE, F, Standard>
+        + BlasEncodingOps<BE, F, Standard>
+        + CKKSLinearTransformationOps<BE, Standard>
         + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
     E: ReimNew<F>,
@@ -3003,8 +3030,8 @@ pub fn test_blas_matmul_flag_clear<BE, F, E>(
     let encoder = ReferenceEncoder::<E>::new(slots).unwrap();
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
-    let (ctx, atks) = context_and_keys::<BE, F>(&params, module, log_d, &sk_raw, &mut scratch.borrow());
-    let keys = TestKeys::<BE> {
+    let (ctx, atks) = context_and_keys::<BE, F, Standard>(&params, module, log_d, &sk_raw, &mut scratch.borrow());
+    let keys = TestKeys::<BE, Standard> {
         atks,
         tsk: Some(gen_tsk(&params, module, &sk_raw, &mut scratch.borrow())),
     };
@@ -3046,7 +3073,7 @@ pub fn test_blas_matmul_flag_clear<BE, F, E>(
         &in_place,
         &sk,
         &models[0].matmul(&models[1]),
-        &product_layout::<BE::Ring>(&a, &b, 2, 2, params.k, params.prec().log_delta()),
+        &product_layout::<Standard>(&a, &b, 2, 2, params.k, params.prec().log_delta()),
         &mut scratch.borrow(),
     );
     let left = matmul_left_operand(module, &a, &ctx, &keys, OneShot, &mut op_scratch.borrow()).unwrap();
@@ -3056,21 +3083,21 @@ pub fn test_blas_matmul_flag_clear<BE, F, E>(
         .blas_matmul_prepared(&mut prepared, &left, &right, &ctx, &keys, &keys, &mut op_scratch.borrow())
         .unwrap();
     assert!(
-        grid_snapshot::<BE, _>(&in_place) == grid_snapshot::<BE, _>(&prepared),
+        grid_snapshot::<BE, _, Standard>(&in_place) == grid_snapshot::<BE, _, Standard>(&prepared),
         "blas_matmul and the prepared product of hot operands differ on flag-clear factors"
     );
 }
 
 /// `grid` with every block one limb wider and flag-clear, of the same value: every limb but the first, the new one
 /// included, holds one unit of the limb above it.
-fn flag_clear<BE>(
+fn flag_clear<BE, Rg: Ring>(
     module: &Module<BE>,
-    grid: &BlasCiphertextOwned<BE>,
+    grid: &BlasCiphertextOwned<BE, Rg>,
     scratch: &mut ScratchArena<'_, BE>,
-) -> BlasCiphertextOwned<BE>
+) -> BlasCiphertextOwned<BE, Rg>
 where
     BE: TestContextBackend,
-    Module<BE>: CKKSCiphertextAlloc<BE> + CKKSCopyOps<BE>,
+    Module<BE>: CKKSCiphertextAlloc<BE> + CKKSCopyOps<BE, Rg>,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
     let blocks = grid
@@ -3092,7 +3119,7 @@ where
                     }
                 }
             }
-            GLWEToBackendMut::<BE>::set_canonical(&mut wide, false);
+            GLWEToBackendMut::<BE, Rg>::set_canonical(&mut wide, false);
             wide
         })
         .collect();

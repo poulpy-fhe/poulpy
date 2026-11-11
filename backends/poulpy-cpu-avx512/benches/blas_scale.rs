@@ -9,21 +9,22 @@
 //! ```
 
 use poulpy_bench::{blas::scale, heap::Counting};
-use poulpy_cpu_avx512::{FFT64Avx512, FFT64CIAvx512, NTT4x30Avx512, NTT4x30CIAvx512};
+use poulpy_cpu_avx512::{FFT64Avx512, NTT4x30Avx512};
+use poulpy_hal::layouts::{ConjugateInvariant, Standard};
 
 #[global_allocator]
 static HEAP: Counting = Counting;
 
 fn main() {
     let filter: Vec<String> = std::env::args().skip(1).filter(|arg| !arg.starts_with("--")).collect();
-    scale::max_base2k_table::<FFT64Avx512>(&filter);
-    scale::max_base2k_table::<FFT64CIAvx512>(&filter);
-    scale::max_base2k_table::<NTT4x30Avx512>(&filter);
-    scale::max_base2k_table::<NTT4x30CIAvx512>(&filter);
+    scale::max_base2k_table::<FFT64Avx512, Standard>(&filter);
+    scale::max_base2k_table::<FFT64Avx512, ConjugateInvariant>(&filter);
+    scale::max_base2k_table::<NTT4x30Avx512, Standard>(&filter);
+    scale::max_base2k_table::<NTT4x30Avx512, ConjugateInvariant>(&filter);
     #[cfg(feature = "enable-ifma")]
     {
-        scale::max_base2k_table::<poulpy_cpu_avx512::NTT3x42Ifma>(&filter);
-        scale::max_base2k_table::<poulpy_cpu_avx512::NTT3x42CIIfma>(&filter);
+        scale::max_base2k_table::<poulpy_cpu_avx512::NTT3x42Ifma, Standard>(&filter);
+        scale::max_base2k_table::<poulpy_cpu_avx512::NTT3x42Ifma, ConjugateInvariant>(&filter);
     }
     let failed = scale::validate::<NTT4x30Avx512>(&filter);
     #[cfg(feature = "enable-ifma")]

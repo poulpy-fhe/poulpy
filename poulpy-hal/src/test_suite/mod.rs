@@ -8,8 +8,8 @@
 
 use crate::AlignedBuf;
 use crate::layouts::{
-    Backend, DataView, HostDataRef, MatZnx, ScalarZnx, ScalarZnxBackendMut, ScalarZnxBackendRef, ScalarZnxToBackendMut,
-    ScalarZnxToBackendRef, VecZnx, VecZnxBackendMut, VecZnxOwned,
+    Backend, DataView, HostDataRef, MatZnx, Ring, ScalarZnx, ScalarZnxBackendMut, ScalarZnxBackendRef, ScalarZnxToBackendMut,
+    ScalarZnxToBackendRef, Standard, VecZnx, VecZnxBackendMut, VecZnxOwned,
 };
 use crate::oep::HalVecZnxImpl;
 
@@ -68,10 +68,10 @@ pub fn sweep_degrees(params: &TestParams) -> Vec<usize> {
 ///
 /// Pinned to `ZnxWord = i64`: the suites drive `encode_*`/`decode_*` and
 /// `vec_znx_fill_uniform_source`, which are i64-only. A backend with a narrower
-/// coefficient word needs its own suites.
-pub trait TestBackend: Backend<ZnxWord = i64> + HalVecZnxImpl {}
+/// coefficient word needs its own suites. The `Standard` impl answers the ring-free queries.
+pub trait TestBackend<Rg: Ring = Standard>: Backend<ZnxWord = i64> + HalVecZnxImpl<Rg> + HalVecZnxImpl<Standard> {}
 
-impl<BE: Backend<ZnxWord = i64> + HalVecZnxImpl> TestBackend for BE {}
+impl<BE: Backend<ZnxWord = i64> + HalVecZnxImpl<Rg> + HalVecZnxImpl<Standard>, Rg: Ring> TestBackend<Rg> for BE {}
 
 pub use crate::layouts::{vec_znx_backend_mut, vec_znx_backend_ref};
 
@@ -109,21 +109,23 @@ impl<BE: Backend> PoisonedArena<BE> {
 ///
 /// Lets a test hand a kernel fewer limbs than were allocated, so that writes
 /// past `size` show up in the full-buffer comparison.
-pub fn vec_znx_backend_mut_sized<'a, BE: Backend>(
-    vec: &'a mut VecZnx<BE::OwnedBuf, BE::ZnxWord>,
+pub fn vec_znx_backend_mut_sized<'a, BE: Backend, Rg: Ring>(
+    vec: &'a mut VecZnx<BE::OwnedBuf, BE::ZnxWord, Rg>,
     size: usize,
-) -> VecZnxBackendMut<'a, BE> {
-    crate::layouts::vec_znx_backend_mut_with_size::<BE>(vec_znx_backend_mut::<BE>(vec), size)
+) -> VecZnxBackendMut<'a, BE, Rg> {
+    crate::layouts::vec_znx_backend_mut_with_size::<BE, Rg>(vec_znx_backend_mut::<BE, Rg>(vec), size)
 }
 
-pub fn scalar_znx_backend_ref<'a, BE: Backend>(scalar: &'a ScalarZnx<BE::OwnedBuf, BE::ZnxWord>) -> ScalarZnxBackendRef<'a, BE> {
-    <ScalarZnx<BE::OwnedBuf, BE::ZnxWord> as ScalarZnxToBackendRef<BE>>::to_backend_ref(scalar)
+pub fn scalar_znx_backend_ref<'a, BE: Backend, Rg: Ring>(
+    scalar: &'a ScalarZnx<BE::OwnedBuf, BE::ZnxWord, Rg>,
+) -> ScalarZnxBackendRef<'a, BE, Rg> {
+    <ScalarZnx<BE::OwnedBuf, BE::ZnxWord, Rg> as ScalarZnxToBackendRef<BE, Rg>>::to_backend_ref(scalar)
 }
 
-pub fn scalar_znx_backend_mut<'a, BE: Backend>(
-    scalar: &'a mut ScalarZnx<BE::OwnedBuf, BE::ZnxWord>,
-) -> ScalarZnxBackendMut<'a, BE> {
-    <ScalarZnx<BE::OwnedBuf, BE::ZnxWord> as ScalarZnxToBackendMut<BE>>::to_backend_mut(scalar)
+pub fn scalar_znx_backend_mut<'a, BE: Backend, Rg: Ring>(
+    scalar: &'a mut ScalarZnx<BE::OwnedBuf, BE::ZnxWord, Rg>,
+) -> ScalarZnxBackendMut<'a, BE, Rg> {
+    <ScalarZnx<BE::OwnedBuf, BE::ZnxWord, Rg> as ScalarZnxToBackendMut<BE, Rg>>::to_backend_mut(scalar)
 }
 
 /// Zeroed host template sized for `BE`'s coefficient word.
@@ -131,36 +133,46 @@ pub fn scalar_znx_backend_mut<'a, BE: Backend>(
 /// Sizing has to use `BE::ZnxWord` and not the host's own word: the result is
 /// uploaded to `BE`, and a backend with a narrower word needs a proportionally
 /// smaller buffer for the same shape.
-pub fn alloc_host_vec_znx<BE: Backend>(n: usize, cols: usize, size: usize) -> VecZnxOwned<BE::ZnxWord> {
+pub fn alloc_host_vec_znx<BE: Backend, Rg: Ring>(n: usize, cols: usize, size: usize) -> VecZnxOwned<BE::ZnxWord, Rg> {
     VecZnx::from_data(
-        crate::alloc_aligned::<u8>(VecZnxOwned::<BE::ZnxWord>::bytes_of(n, cols, size)),
+        crate::alloc_aligned::<u8>(VecZnxOwned::<BE::ZnxWord, Rg>::bytes_of(n, cols, size)),
         n,
         cols,
         size,
     )
 }
 
-pub fn upload_scalar_znx<BE: Backend>(host: &ScalarZnx<impl HostDataRef, BE::ZnxWord>) -> ScalarZnx<BE::OwnedBuf, BE::ZnxWord> {
+pub fn upload_scalar_znx<BE: Backend, Rg: Ring>(
+    host: &ScalarZnx<impl HostDataRef, BE::ZnxWord, Rg>,
+) -> ScalarZnx<BE::OwnedBuf, BE::ZnxWord, Rg> {
     let shape = host.shape();
     ScalarZnx::from_data(BE::from_host_bytes(host.data.as_ref()), shape.n(), shape.cols())
 }
 
-pub fn download_scalar_znx<BE: Backend>(backend: &ScalarZnx<BE::OwnedBuf, BE::ZnxWord>) -> ScalarZnx<AlignedBuf, BE::ZnxWord> {
+pub fn download_scalar_znx<BE: Backend, Rg: Ring>(
+    backend: &ScalarZnx<BE::OwnedBuf, BE::ZnxWord, Rg>,
+) -> ScalarZnx<AlignedBuf, BE::ZnxWord, Rg> {
     let shape = backend.shape();
     ScalarZnx::from_data(AlignedBuf::from(BE::to_host_bytes(&backend.data)), shape.n(), shape.cols())
 }
 
-pub fn upload_vec_znx<BE: Backend>(host: &VecZnx<impl HostDataRef, BE::ZnxWord>) -> VecZnx<BE::OwnedBuf, BE::ZnxWord> {
+pub fn upload_vec_znx<BE: Backend, Rg: Ring>(
+    host: &VecZnx<impl HostDataRef, BE::ZnxWord, Rg>,
+) -> VecZnx<BE::OwnedBuf, BE::ZnxWord, Rg> {
     let shape = host.shape();
     VecZnx::from_shape(BE::from_host_bytes(host.data().as_ref()), shape)
 }
 
-pub fn download_vec_znx<BE: Backend>(backend: &VecZnx<BE::OwnedBuf, BE::ZnxWord>) -> VecZnx<AlignedBuf, BE::ZnxWord> {
+pub fn download_vec_znx<BE: Backend, Rg: Ring>(
+    backend: &VecZnx<BE::OwnedBuf, BE::ZnxWord, Rg>,
+) -> VecZnx<AlignedBuf, BE::ZnxWord, Rg> {
     let shape = backend.shape();
     VecZnx::from_shape(AlignedBuf::from(BE::to_host_bytes(backend.data())), shape)
 }
 
-pub fn upload_mat_znx<BE: Backend>(host: &MatZnx<impl HostDataRef, BE::ZnxWord>) -> MatZnx<BE::OwnedBuf, BE::ZnxWord> {
+pub fn upload_mat_znx<BE: Backend, Rg: Ring>(
+    host: &MatZnx<impl HostDataRef, BE::ZnxWord, Rg>,
+) -> MatZnx<BE::OwnedBuf, BE::ZnxWord, Rg> {
     let shape = host.shape();
     MatZnx::from_data(
         BE::from_host_bytes(host.data().as_ref()),
@@ -172,7 +184,9 @@ pub fn upload_mat_znx<BE: Backend>(host: &MatZnx<impl HostDataRef, BE::ZnxWord>)
     )
 }
 
-pub fn download_mat_znx<BE: Backend>(backend: &MatZnx<BE::OwnedBuf, BE::ZnxWord>) -> MatZnx<AlignedBuf, BE::ZnxWord> {
+pub fn download_mat_znx<BE: Backend, Rg: Ring>(
+    backend: &MatZnx<BE::OwnedBuf, BE::ZnxWord, Rg>,
+) -> MatZnx<AlignedBuf, BE::ZnxWord, Rg> {
     let shape = backend.shape();
     MatZnx::from_data(
         AlignedBuf::from(BE::to_host_bytes(backend.data())),
@@ -184,18 +198,44 @@ pub fn download_mat_znx<BE: Backend>(backend: &MatZnx<BE::OwnedBuf, BE::ZnxWord>
     )
 }
 
+/// Registers HAL suite tests on `backend`, each run at every degree of
+/// [`sweep_degrees`](crate::test_suite::sweep_degrees) on a module of degree `params.size`.
+///
+/// An entry of `tests` is called as `path::<backend, ring>(&TestParams, &Module<backend>)`, the ring `Standard`
+/// unless `ring = ..` names it by an absolute path (`::poulpy_hal::layouts::ConjugateInvariant`), the tests expanding
+/// in a module of their own. An entry of `ring_free_tests` takes no ring and is called as `path::<backend>(..)`:
+/// a test of standard-only or cross-ring operations, whose operands have fixed rings, of operations serving both rings
+/// that it fixes at `Standard`, or of no ringed layout.
 #[macro_export]
 macro_rules! backend_test_suite {
     (
         mod $modname:ident,
         backend = $backend:ty,
-        params = $params:expr,
-        tests = {
-            $( $(#[$attr:meta])* $test_name:ident => $impl:path ),+ $(,)?
-        }
+        params = $params:expr
+        $(, tests = { $( $(#[$attr:meta])* $test_name:ident => $impl:path ),* $(,)? })?
+        $(, ring_free_tests = { $( $(#[$fattr:meta])* $ftest_name:ident => $fimpl:path ),* $(,)? })?
+        $(,)?
+    ) => {
+        $crate::backend_test_suite!(
+            mod $modname,
+            backend = $backend,
+            ring = $crate::layouts::Standard,
+            params = $params
+            $(, tests = { $( $(#[$attr])* $test_name => $impl ),* })?
+            $(, ring_free_tests = { $( $(#[$fattr])* $ftest_name => $fimpl ),* })?
+        );
+    };
+    (
+        mod $modname:ident,
+        backend = $backend:ty,
+        ring = $ring:ty,
+        params = $params:expr
+        $(, tests = { $( $(#[$attr:meta])* $test_name:ident => $impl:path ),* $(,)? })?
+        $(, ring_free_tests = { $( $(#[$fattr:meta])* $ftest_name:ident => $fimpl:path ),* $(,)? })?
+        $(,)?
     ) => {
         mod $modname {
-            use poulpy_hal::{api::ModuleNew, layouts::Module, test_suite::TestParams};
+            use $crate::{api::ModuleNew, layouts::Module, test_suite::TestParams};
 
             use once_cell::sync::Lazy;
 
@@ -203,33 +243,75 @@ macro_rules! backend_test_suite {
             static MODULE: Lazy<Module<$backend>> =
                 Lazy::new(|| Module::<$backend>::new(PARAMS.size as u64));
 
-            $(
+            $($(
                 $(#[$attr])*
                 #[test]
                 fn $test_name() {
-                    for n in poulpy_hal::test_suite::sweep_degrees(&PARAMS) {
+                    use $impl as helper;
+                    for n in $crate::test_suite::sweep_degrees(&PARAMS) {
                         let params = TestParams { n, ..*PARAMS };
-                        ($impl)(&params, &*MODULE);
+                        helper::<$backend, $ring>(&params, &*MODULE);
                     }
                 }
-            )+
+            )*)?
+
+            $($(
+                $(#[$fattr])*
+                #[test]
+                fn $ftest_name() {
+                    use $fimpl as helper;
+                    for n in $crate::test_suite::sweep_degrees(&PARAMS) {
+                        let params = TestParams { n, ..*PARAMS };
+                        helper::<$backend>(&params, &*MODULE);
+                    }
+                }
+            )*)?
         }
     };
 }
 
+/// Registers HAL suite tests comparing `backend_test` with `backend_ref`, each run at every degree of
+/// [`sweep_degrees`](crate::test_suite::sweep_degrees) on modules of degree `params.size`.
+///
+/// An entry of `tests` is called as `path::<backend_ref, backend_test, ring>(&TestParams, &Module<backend_ref>,
+/// &Module<backend_test>)`, the ring `Standard` unless `ring = ..` names it by an absolute path
+/// (`::poulpy_hal::layouts::ConjugateInvariant`), the tests expanding in a module of their own. An entry of
+/// `ring_free_tests` takes no ring and is called as `path::<backend_ref, backend_test>(..)`: a test of standard-only
+/// or cross-ring operations, whose operands have fixed rings, of operations serving both rings that it fixes at
+/// `Standard`, or of no ringed layout.
 #[macro_export]
 macro_rules! cross_backend_test_suite {
     (
         mod $modname:ident,
         backend_ref = $backend_ref:ty,
         backend_test = $backend_test:ty,
-        params = $params:expr,
-        tests = {
-            $( $(#[$attr:meta])* $test_name:ident => $impl:path ),+ $(,)?
-        }
+        params = $params:expr
+        $(, tests = { $( $(#[$attr:meta])* $test_name:ident => $impl:path ),* $(,)? })?
+        $(, ring_free_tests = { $( $(#[$fattr:meta])* $ftest_name:ident => $fimpl:path ),* $(,)? })?
+        $(,)?
+    ) => {
+        $crate::cross_backend_test_suite!(
+            mod $modname,
+            backend_ref = $backend_ref,
+            backend_test = $backend_test,
+            ring = $crate::layouts::Standard,
+            params = $params
+            $(, tests = { $( $(#[$attr])* $test_name => $impl ),* })?
+            $(, ring_free_tests = { $( $(#[$fattr])* $ftest_name => $fimpl ),* })?
+        );
+    };
+    (
+        mod $modname:ident,
+        backend_ref = $backend_ref:ty,
+        backend_test = $backend_test:ty,
+        ring = $ring:ty,
+        params = $params:expr
+        $(, tests = { $( $(#[$attr:meta])* $test_name:ident => $impl:path ),* $(,)? })?
+        $(, ring_free_tests = { $( $(#[$fattr:meta])* $ftest_name:ident => $fimpl:path ),* $(,)? })?
+        $(,)?
     ) => {
         mod $modname {
-            use poulpy_hal::{api::ModuleNew, layouts::Module, test_suite::TestParams};
+            use $crate::{api::ModuleNew, layouts::Module, test_suite::TestParams};
 
             use once_cell::sync::Lazy;
 
@@ -239,16 +321,29 @@ macro_rules! cross_backend_test_suite {
             static MODULE_TEST: Lazy<Module<$backend_test>> =
                 Lazy::new(|| Module::<$backend_test>::new(PARAMS.size as u64));
 
-            $(
+            $($(
                 $(#[$attr])*
                 #[test]
                 fn $test_name() {
-                    for n in poulpy_hal::test_suite::sweep_degrees(&PARAMS) {
+                    use $impl as helper;
+                    for n in $crate::test_suite::sweep_degrees(&PARAMS) {
                         let params = TestParams { n, ..*PARAMS };
-                        ($impl)(&params, &*MODULE_REF, &*MODULE_TEST);
+                        helper::<$backend_ref, $backend_test, $ring>(&params, &*MODULE_REF, &*MODULE_TEST);
                     }
                 }
-            )+
+            )*)?
+
+            $($(
+                $(#[$fattr])*
+                #[test]
+                fn $ftest_name() {
+                    use $fimpl as helper;
+                    for n in $crate::test_suite::sweep_degrees(&PARAMS) {
+                        let params = TestParams { n, ..*PARAMS };
+                        helper::<$backend_ref, $backend_test>(&params, &*MODULE_REF, &*MODULE_TEST);
+                    }
+                }
+            )*)?
         }
     };
 }

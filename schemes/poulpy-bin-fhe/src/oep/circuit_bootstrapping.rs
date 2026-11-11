@@ -14,7 +14,7 @@ use poulpy_core::{
     },
 };
 use poulpy_hal::{
-    layouts::{Backend, Module, ScratchArena, Standard},
+    layouts::{Backend, Module, ScratchArena},
     source::Source,
 };
 /// Backend implementation contract for [`CircuitBootstrappingExecute`](crate::api::CircuitBootstrappingExecute), on the
@@ -24,7 +24,7 @@ use poulpy_hal::{
 /// Implementations reproduce the bodies their methods document bit for bit, report for each
 /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait CircuitBootstrappingExecuteImpl<BRA: BlindRotationAlgo>: Backend<ZnxWord = i64, Ring = Standard> {
+pub unsafe trait CircuitBootstrappingExecuteImpl<BRA: BlindRotationAlgo>: Backend<ZnxWord = i64> {
     /// Default body: `circuit_bootstrapping_execute_to_constant_tmp_bytes_derived`, the selected
     /// [`Self::circuit_bootstrapping_execute_prepared_tmp_bytes`] at a plan layout over `res_infos` with no `log_domain`
     /// or gaps, which bounds every domain at that output layout.

@@ -209,7 +209,7 @@ fn setup() -> Result<SetupArtifacts> {
     module.glwe_secret_prepare(&mut sk, &sk_raw);
     println!("  prepared secret key");
 
-    let ct_infos = module.ckks_ciphertext_alloc_from_glwe_infos(&glwe_layout());
+    let ct_infos = module.ckks_ciphertext_alloc_from_glwe_infos::<_, Standard>(&glwe_layout());
     // Scratch sizing wants the full plaintext layout: the ring/radix the
     // coefficient plaintexts will actually live in, plus the coefficient meta.
     let coeff_prec = CKKSLayout {
@@ -263,9 +263,10 @@ fn encoding(setup: &mut SetupArtifacts) -> Result<EncodingArtifacts> {
     let bsgs = poly.encode_bsgs(&host_module, BASE2K.into(), COEFF_META)?;
     println!("  BSGS baby steps: {}, parity={:?}", bsgs.baby_steps().len(), bsgs.parity());
 
-    let mut pt_znx = setup
-        .module
-        .ckks_plaintext_alloc_from_slots(setup.module.ckks_max_slots(), BASE2K.into(), PREC_CT.k());
+    let mut pt_znx =
+        setup
+            .module
+            .ckks_plaintext_alloc_from_slots(setup.module.ckks_max_slots::<Standard>(), BASE2K.into(), PREC_CT.k());
     pt_znx.set_meta(PREC_CT.meta());
     setup
         .module

@@ -1,14 +1,14 @@
 use crate::{
     kernels::{noise::add_noise_portable, znx::znx_fill_uniform_portable},
-    layouts::{Backend, HostDataMut, VecZnxBackendMut, ZnxViewMut},
+    layouts::{Backend, HostDataMut, Ring, VecZnxBackendMut, ZnxViewMut},
     source::Source,
 };
 use poulpy_core::Noise;
 
-pub fn vec_znx_fill_uniform_portable<'r, BE>(
+pub fn vec_znx_fill_uniform_portable<'r, BE, Rg: Ring>(
     base2k: usize,
     k: usize,
-    res: &mut VecZnxBackendMut<'r, BE>,
+    res: &mut VecZnxBackendMut<'r, BE, Rg>,
     res_col: usize,
     source: &mut Source,
 ) where
@@ -34,10 +34,10 @@ pub fn vec_znx_fill_uniform_portable<'r, BE>(
     }
 }
 
-pub fn vec_znx_add_noise_portable<'r, BE>(
+pub fn vec_znx_add_noise_portable<'r, BE, Rg: Ring>(
     base2k: usize,
     k: usize,
-    res: &mut VecZnxBackendMut<'r, BE>,
+    res: &mut VecZnxBackendMut<'r, BE, Rg>,
     res_col: usize,
     noise: Noise,
     source: &mut Source,

@@ -1,6 +1,6 @@
 # Failure estimates for base-2^K arithmetic
 
-`Module::<BE>::max_base2k(N, d, failure_bits, squaring)` delegates to `MaxBase2k` to select a radix for one output polynomial $C=\sum_{r=1}^{d}A_rB_r$ in $\mathbb Z[X]/(X^N+1)$, or in the conjugate-invariant ring of degree $N$ ([below](#conjugate-invariant-ring)). Here $d$ counts accumulated polynomial products, and `failure_bits` $=\lambda$ requests an estimated probability at most $2^{-\lambda}$ that any output coefficient fails.
+`Module::<BE>::max_base2k::<Rg>(N, d, failure_bits, squaring)` delegates to `MaxBase2k` to select a radix for one output polynomial $C=\sum_{r=1}^{d}A_rB_r$ in $\mathbb Z[X]/(X^N+1)$ (`Rg = Standard`), or in the conjugate-invariant ring of degree $N$ (`Rg = ConjugateInvariant`, [below](#conjugate-invariant-ring)). Here $d$ counts accumulated polynomial products, and `failure_bits` $=\lambda$ requests an estimated probability at most $2^{-\lambda}$ that any output coefficient fails.
 
 Use `squaring = false` for independent products, and `true` if any term is a square $A_r^2$. Count each square once: a single square uses `d = 1`. The square model conservatively budgets every term as a square. Distinct terms must use independent inputs, with independent centered uniform coefficients of magnitude at most $2^{K-1}$. The models neglect discrete endpoint corrections and approximate output tails as Gaussian. These estimates are not guarantees for arbitrary inputs or other correlations, including operand reuse across terms.
 

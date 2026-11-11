@@ -6,7 +6,7 @@ use poulpy_hal::{
     api::{
         ModuleNew, ModuleSynchronize, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxGadgetDecompose, VecZnxGadgetDecomposeTmpBytes,
     },
-    layouts::{Backend, Module, ScratchOwned},
+    layouts::{Backend, Module, ScratchOwned, Standard},
     source::Source,
 };
 
@@ -35,8 +35,8 @@ pub fn runner_vec_znx_gadget_decompose<B: Backend<ZnxWord = i64>, M: Measurement
     let mut scratch: ScratchOwned<B> = ScratchOwned::alloc(module.vec_znx_gadget_decompose_tmp_bytes());
 
     bencher.iter(|| {
-        let a = vec_znx_backend_ref::<B>(&a);
-        let mut res = vec_znx_backend_mut::<B>(&mut res);
+        let a = vec_znx_backend_ref::<B, Standard>(&a);
+        let mut res = vec_znx_backend_mut::<B, Standard>(&mut res);
         for i in 0..sweep.cols {
             module.vec_znx_gadget_decompose(&mut res, i, &a, i, params.base2k, params.k_digit, &mut scratch.borrow());
         }

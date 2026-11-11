@@ -78,7 +78,7 @@ const DELTA_LOG_DELTA: usize = 8;
 
 pub fn test_mul_ct_aligned<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -139,7 +139,7 @@ where
     assert_eq!(ckks_snapshot(&prepared_result), ckks_snapshot(&ct_res));
 
     let mut unknown = ct2.clone();
-    GLWEToBackendMut::<BE>::set_noise(&mut unknown, None);
+    GLWEToBackendMut::<BE, Standard>::set_noise(&mut unknown, None);
     let prepared = with_scratch::<BE, _>(module.ckks_right_operand_prepare_tmp_bytes(&unknown), |s| {
         module.ckks_right_operand_prepare_alloc(&unknown, PrepareHint::Reuse, s)
     })
@@ -166,7 +166,7 @@ where
 
 pub fn test_mul_ct_delta_a_lt_b<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -225,7 +225,7 @@ where
 
 pub fn test_mul_ct_delta_a_gt_b<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -284,7 +284,7 @@ where
 
 pub fn test_mul_ct_delta_log_delta<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -352,7 +352,7 @@ pub fn test_mul_ct_larger_budget_smaller_scale<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -458,7 +458,7 @@ pub fn test_mul_ct_larger_budget_smaller_scale<BE, F, E>(
 
 pub fn test_mul_ct_smaller_output<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -528,7 +528,7 @@ pub fn test_mul_ct_smaller_output_exact_scratch<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -588,7 +588,7 @@ pub fn test_mul_ct_smaller_output_exact_scratch<BE, F, E>(
 
 pub fn test_mul_ct_assign_aligned<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -653,7 +653,7 @@ where
 
 pub fn test_mul_ct_assign_self_lt<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -718,7 +718,7 @@ where
 
 pub fn test_mul_ct_assign_self_gt<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -785,7 +785,7 @@ where
 
 pub fn test_square_aligned<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -832,7 +832,7 @@ where
 
 pub fn test_square_rescaled_input<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -879,7 +879,7 @@ where
 
 pub fn test_square_smaller_output<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -929,7 +929,7 @@ where
 
 pub fn test_square_assign<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -978,7 +978,7 @@ where
 
 pub fn test_mul_pt_vec_into_aligned<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -1034,7 +1034,7 @@ pub fn test_mul_pt_vec_into_delta_log_delta<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -1091,7 +1091,7 @@ pub fn test_mul_pt_vec_into_smaller_output<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -1147,7 +1147,7 @@ pub fn test_mul_pt_vec_into_smaller_output<BE, F, E>(
 
 pub fn test_mul_pt_vec_assign<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -1205,7 +1205,7 @@ pub fn test_mul_pt_const_into_aligned<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -1233,7 +1233,7 @@ pub fn test_mul_pt_const_into_aligned<BE, F, E>(
     );
     let (want_re, want_im) = super::helpers::want_mul_const(&re1, &im1, const_re, const_im);
     let mut ct_res = alloc_ct(&params, module, params.k);
-    let cst = ckks_pt_cst_full::<BE, F>(
+    let cst = ckks_pt_cst_full::<BE, F, Standard>(
         host_module,
         module,
         params.base2k.into(),
@@ -1262,7 +1262,7 @@ pub fn test_mul_pt_const_into_aligned<BE, F, E>(
 
 pub fn test_mul_pt_const_assign<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -1290,7 +1290,7 @@ where
     );
     let (want_re, want_im) = super::helpers::want_mul_const(&re1, &im1, const_re, const_im);
     let ct_meta = ckks_snapshot(&ct);
-    let cst = ckks_pt_cst_full::<BE, F>(
+    let cst = ckks_pt_cst_full::<BE, F, Standard>(
         host_module,
         module,
         params.base2k.into(),
@@ -1322,7 +1322,7 @@ pub fn test_mul_pt_const_into_delta_log_delta<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -1350,7 +1350,7 @@ pub fn test_mul_pt_const_into_delta_log_delta<BE, F, E>(
     );
     let (want_re, want_im) = super::helpers::want_mul_const(&a_re, &a_im, const_re, const_im);
     let mut ct_res = alloc_ct(&params, module, params.k);
-    let cst = ckks_pt_cst_full::<BE, F>(
+    let cst = ckks_pt_cst_full::<BE, F, Standard>(
         host_module,
         module,
         params.base2k.into(),
@@ -1383,7 +1383,7 @@ pub fn test_mul_pt_const_into_delta_log_delta<BE, F, E>(
 /// `pt.log_delta()` bits of budget.
 pub fn test_mul_pt_scale_above_ct<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -1410,7 +1410,7 @@ where
     );
     let pt_prec = precision_at(&params, params.prec().log_delta() + DELTA_LOG_DELTA);
     let pt = encode_and_upload_pt(host_module, module, &encoder, params.base2k.into(), pt_prec, &re2, &im2);
-    let cst = ckks_pt_cst_full::<BE, F>(host_module, module, params.base2k.into(), pt_prec, m, Some(MUL_CONST.0), None);
+    let cst = ckks_pt_cst_full::<BE, F, Standard>(host_module, module, params.base2k.into(), pt_prec, m, Some(MUL_CONST.0), None);
     let want_vec = want_mul(
         &re1,
         &im1,
@@ -1474,7 +1474,7 @@ pub fn test_mul_prepared_assign_rejects_layout_mismatch<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -1507,7 +1507,7 @@ pub fn test_mul_prepared_assign_rejects_layout_mismatch<BE, F, E>(
         module.ckks_right_operand_prepare_alloc(&other, PrepareHint::Reuse, s)
     })
     .unwrap();
-    let before = snapshot::<BE, _>(&dst);
+    let before = snapshot::<BE, _, Standard>(&dst);
     let err = with_scratch::<BE, _>(0, |s| module.ckks_mul_prepared_assign(&mut dst, &prepared, &tsk, s)).unwrap_err();
     assert_ckks_error(
         "mul_prepared_layout_mismatch",
@@ -1523,7 +1523,7 @@ pub fn test_mul_prepared_assign_rejects_layout_mismatch<BE, F, E>(
         },
     );
     assert_eq!(
-        snapshot::<BE, _>(&dst),
+        snapshot::<BE, _, Standard>(&dst),
         before,
         "a refused ckks_mul_prepared_assign wrote res"
     );
@@ -1534,7 +1534,7 @@ pub fn test_mul_prepared_assign_rejects_layout_mismatch<BE, F, E>(
 /// it keeps its buffer and gives them again, and a source of another layout is rejected before any write.
 pub fn test_prepare_into<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -1654,7 +1654,7 @@ pub fn test_mul_into_rejects_explicit_metadata<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -1694,7 +1694,7 @@ pub fn test_mul_into_rejects_explicit_metadata<BE, F, E>(
     ct1.set_log_budget(8);
     ct2.set_log_budget(9);
     let mut ct_res = dirty_ct(module, &ct1, params.k);
-    let before = snapshot::<BE, _>(&ct_res);
+    let before = snapshot::<BE, _, Standard>(&ct_res);
     let err = with_scratch::<BE, _>(0, |s| module.ckks_mul_into(&mut ct_res, &ct1, &ct2, &tsk, s)).unwrap_err();
     assert_ckks_error(
         "mul_into_rejects_explicit_metadata",
@@ -1707,7 +1707,11 @@ pub fn test_mul_into_rejects_explicit_metadata<BE, F, E>(
             rhs_log_delta: params.prec().log_delta(),
         },
     );
-    assert_eq!(snapshot::<BE, _>(&ct_res), before, "a refused ckks_mul_into wrote res");
+    assert_eq!(
+        snapshot::<BE, _, Standard>(&ct_res),
+        before,
+        "a refused ckks_mul_into wrote res"
+    );
 }
 
 /// A plaintext of another radix than the ciphertext is `PlaintextBase2KMismatch`, and a constant coefficient past the
@@ -1717,7 +1721,7 @@ pub fn test_mul_pt_const_into_rejects_base2k_mismatch<BE, F, E>(
     module: &poulpy_hal::layouts::Module<BE>,
     _host_module: &poulpy_hal::layouts::Module<poulpy_hal::layouts::HostBytesBackend>,
 ) where
-    BE: crate::test_suite::helpers::TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
+    BE: crate::test_suite::helpers::TestContextBackend,
     poulpy_hal::layouts::Module<BE>: crate::test_suite::helpers::TestContextModule<BE>,
     F: crate::test_suite::helpers::TestScalar,
     E: ReimNew<F>,
@@ -1753,7 +1757,7 @@ pub fn test_mul_pt_const_into_rejects_base2k_mismatch<BE, F, E>(
         pt_base2k: b - 1,
     };
     for bytes in [0, module.ckks_mul_pt_const_tmp_bytes(&res, &a, &pt)] {
-        let before = snapshot::<BE, _>(&res);
+        let before = snapshot::<BE, _, Standard>(&res);
         let err = with_scratch::<BE, _>(bytes, |s| module.ckks_mul_pt_const_into(&mut res, &a, &pt, 0, s)).unwrap_err();
         assert_ckks_error(
             "mul_pt_const_into: plaintext of another radix",
@@ -1777,7 +1781,7 @@ pub fn test_mul_pt_const_into_rejects_base2k_mismatch<BE, F, E>(
                 n,
             },
         );
-        assert_eq!(snapshot::<BE, _>(&res), before, "a refused product wrote dst");
+        assert_eq!(snapshot::<BE, _, Standard>(&res), before, "a refused product wrote dst");
     }
 }
 
@@ -1788,7 +1792,7 @@ pub fn test_mul_pt_vec_into_rejects_base2k_mismatch<BE, F, E>(
     module: &poulpy_hal::layouts::Module<BE>,
     _host_module: &poulpy_hal::layouts::Module<poulpy_hal::layouts::HostBytesBackend>,
 ) where
-    BE: crate::test_suite::helpers::TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
+    BE: crate::test_suite::helpers::TestContextBackend,
     poulpy_hal::layouts::Module<BE>: crate::test_suite::helpers::TestContextModule<BE>,
     F: crate::test_suite::helpers::TestScalar,
     E: ReimNew<F>,
@@ -1821,7 +1825,7 @@ pub fn test_mul_pt_vec_into_rejects_base2k_mismatch<BE, F, E>(
         pt_base2k: b - 1,
     };
     for bytes in [0, module.ckks_mul_pt_vec_tmp_bytes(&res, &a, &pt)] {
-        let before = snapshot::<BE, _>(&res);
+        let before = snapshot::<BE, _, Standard>(&res);
         let err = with_scratch::<BE, _>(bytes, |s| module.ckks_mul_pt_vec_into(&mut res, &a, &pt, s)).unwrap_err();
         assert_ckks_error(
             "mul_pt_vec_into: plaintext of another radix",
@@ -1834,6 +1838,6 @@ pub fn test_mul_pt_vec_into_rejects_base2k_mismatch<BE, F, E>(
             &err,
             radix("ckks_mul_pt_vec_assign"),
         );
-        assert_eq!(snapshot::<BE, _>(&res), before, "a refused product wrote dst");
+        assert_eq!(snapshot::<BE, _, Standard>(&res), before, "a refused product wrote dst");
     }
 }

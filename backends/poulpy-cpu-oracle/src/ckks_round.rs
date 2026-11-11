@@ -1,14 +1,15 @@
 use poulpy_ckks::shaping::{ShapingProfile, ShapingRing};
-use poulpy_hal::layouts::{Backend, HostDataMut, HostDataRef, VecZnxBackendMut, VecZnxBackendRef, ZnxView, ZnxViewMut};
+use poulpy_hal::layouts::{Backend, HostDataMut, HostDataRef, Ring, VecZnxBackendMut, VecZnxBackendRef, ZnxView, ZnxViewMut};
 
-pub(crate) fn shaped_round_correction<BE>(
-    carry: &mut VecZnxBackendMut<'_, BE>,
-    h: &mut VecZnxBackendMut<'_, BE>,
-    low: &VecZnxBackendRef<'_, BE>,
+pub(crate) fn shaped_round_correction<BE, Rg>(
+    carry: &mut VecZnxBackendMut<'_, BE, Rg>,
+    h: &mut VecZnxBackendMut<'_, BE, Rg>,
+    low: &VecZnxBackendRef<'_, BE, Rg>,
     profile: &ShapingProfile,
     lambda: usize,
 ) where
     BE: Backend<ZnxWord = i64>,
+    Rg: Ring,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {

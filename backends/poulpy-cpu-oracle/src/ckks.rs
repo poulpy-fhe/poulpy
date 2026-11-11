@@ -7,9 +7,9 @@ use poulpy_ckks::{
     api::CKKSEncodingScalar,
     reference::encoding::{CKKSSlotEmbedding, EncodingPermutation},
 };
-use poulpy_hal::api::ReimNew;
+use poulpy_hal::{api::ReimNew, layouts::Ring};
 
-use crate::{FFT64CIOracle, FFT64Oracle, NTT4x30CIOracle, NTT4x30Oracle, ckks_fft::EncodingFft};
+use crate::{FFT64Oracle, NTT4x30Oracle, ckks_fft::EncodingFft};
 
 /// Encoding plans at precision `S`: the slot permutation and the transform
 /// for every power-of-two slot count up to the module capacity, by `log2(slots)`.
@@ -39,7 +39,7 @@ impl<S: CKKSEncodingScalar> EncodingPlans<S> {
 /// The encoding extension point, entirely from the CKKS reference.
 macro_rules! impl_oracle_ckks_encoding {
     ($be:ty) => {
-        unsafe impl<S: CKKSEncodingScalar> ::poulpy_ckks::oep::CKKSEncodingImpl<S> for $be {
+        unsafe impl<S: CKKSEncodingScalar, Rg: Ring + CKKSSlotEmbedding> ::poulpy_ckks::oep::CKKSEncodingImpl<S, Rg> for $be {
             type Plans = EncodingPlans<S>;
 
             fn ckks_encoding_plan_cache(module: &::poulpy_hal::layouts::Module<$be>) -> &::poulpy_hal::layouts::ModulePlanCache {
@@ -47,7 +47,7 @@ macro_rules! impl_oracle_ckks_encoding {
             }
 
             fn ckks_encoding_plans_create(module: &::poulpy_hal::layouts::Module<$be>) -> CKKSResult<Self::Plans> {
-                EncodingPlans::new(::poulpy_ckks::api::CKKSModuleInfos::ckks_max_slots(module))
+                EncodingPlans::new(::poulpy_ckks::api::CKKSModuleInfos::ckks_max_slots::<Rg>(module))
             }
 
             fn ckks_quantize_coeffs_into<P>(
@@ -56,11 +56,11 @@ macro_rules! impl_oracle_ckks_encoding {
                 coeffs: &::poulpy_ckks::layouts::CKKSEncodingBufferBackendRef<'_, $be, S>,
             ) -> CKKSResult<()>
             where
-                P: ::poulpy_ckks::CKKSPlaintextToBackendMut<$be>
+                P: ::poulpy_ckks::CKKSPlaintextToBackendMut<$be, Rg>
                     + ::poulpy_core::layouts::IntPolyInfos
                     + ::poulpy_ckks::SetCKKSInfos,
             {
-                Ok(::poulpy_ckks::reference::encoding::ckks_quantize_coeffs_into_reference::<$be, S, P>(pt, coeffs)?)
+                Ok(::poulpy_ckks::reference::encoding::ckks_quantize_coeffs_into_reference::<$be, S, P, Rg>(pt, coeffs)?)
             }
 
             fn ckks_dequantize_coeffs_into<P>(
@@ -69,9 +69,9 @@ macro_rules! impl_oracle_ckks_encoding {
                 coeffs: &mut ::poulpy_ckks::layouts::CKKSEncodingBufferBackendMut<'_, $be, S>,
             ) -> CKKSResult<()>
             where
-                P: ::poulpy_ckks::CKKSPlaintextToBackendRef<$be> + ::poulpy_core::layouts::IntPolyInfos,
+                P: ::poulpy_ckks::CKKSPlaintextToBackendRef<$be, Rg> + ::poulpy_core::layouts::IntPolyInfos,
             {
-                Ok(::poulpy_ckks::reference::encoding::ckks_dequantize_coeffs_into_reference::<$be, S, P>(pt, coeffs)?)
+                Ok(::poulpy_ckks::reference::encoding::ckks_dequantize_coeffs_into_reference::<$be, S, P, Rg>(pt, coeffs)?)
             }
 
             fn ckks_encoding_buffer_slots_to_coeffs_assign_with_plan(
@@ -80,7 +80,7 @@ macro_rules! impl_oracle_ckks_encoding {
                 values: &mut ::poulpy_ckks::layouts::CKKSEncodingBufferBackendMut<'_, $be, S>,
             ) -> CKKSResult<()> {
                 let (map, fft) = plans.for_slots(::poulpy_ckks::layouts::CKKSEncodingBufferInfos::len(values) / 2)?;
-                let ring = <<$be as ::poulpy_hal::layouts::Backend>::Ring as CKKSSlotEmbedding>::slots_to_coeffs_assign;
+                let ring = <Rg as CKKSSlotEmbedding>::slots_to_coeffs_assign;
                 Ok(ring(map, fft, values.as_mut_slice())?)
             }
 
@@ -90,7 +90,7 @@ macro_rules! impl_oracle_ckks_encoding {
                 values: &mut ::poulpy_ckks::layouts::CKKSEncodingBufferBackendMut<'_, $be, S>,
             ) -> CKKSResult<()> {
                 let (map, fft) = plans.for_slots(::poulpy_ckks::layouts::CKKSEncodingBufferInfos::len(values) / 2)?;
-                let ring = <<$be as ::poulpy_hal::layouts::Backend>::Ring as CKKSSlotEmbedding>::coeffs_to_slots_assign;
+                let ring = <Rg as CKKSSlotEmbedding>::coeffs_to_slots_assign;
                 Ok(ring(map, fft, values.as_mut_slice())?)
             }
         }
@@ -129,11 +129,11 @@ macro_rules! impl_oracle_ckks_coeff_encodings {
                 use ::poulpy_ckks::layouts::CKKSCiphertextAlloc;
                 use ::poulpy_core::GLWECopy;
                 let plan = context.plan();
-                if module.n() != plan.n() {
+                if plan.n() > module.n() {
                     return Err(CKKSError::Internal(anyhow::anyhow!(
-                        "PaCo module degree {} does not match plan degree {}",
-                        module.n(),
-                        plan.n()
+                        "PaCo plan degree {} exceeds the module degree {}",
+                        plan.n(),
+                        module.n()
                     )));
                 }
                 let mut owned = module.ckks_ciphertext_alloc_from_infos(ciphertext);
@@ -182,11 +182,11 @@ macro_rules! impl_oracle_ckks_coeff_encodings {
             {
                 use ::poulpy_ckks::layouts::CKKSCiphertextAlloc;
                 use ::poulpy_core::GLWECopy;
-                if module.n() != plan.n() {
+                if plan.n() > module.n() {
                     return Err(CKKSError::Internal(anyhow::anyhow!(
-                        "SHIP module degree {} does not match plan degree {}",
-                        module.n(),
-                        plan.n()
+                        "SHIP plan degree {} exceeds the module degree {}",
+                        plan.n(),
+                        module.n()
                     )));
                 }
                 let mut owned = module.ckks_ciphertext_alloc_from_infos(ciphertext);
@@ -204,16 +204,16 @@ macro_rules! impl_oracle_ckks_coeff_encodings {
 macro_rules! impl_oracle_ckks {
     ($be:ty) => {
         impl_oracle_ckks_encoding!($be);
-        unsafe impl ::poulpy_ckks::oep::CKKSShapedRoundingImpl for $be {
+        unsafe impl<Rg: ::poulpy_hal::layouts::Ring> ::poulpy_ckks::oep::CKKSShapedRoundingImpl<Rg> for $be {
             fn ckks_shaped_round_correction(
                 _module: &::poulpy_hal::layouts::Module<Self>,
-                carry: &mut ::poulpy_hal::layouts::VecZnxBackendMut<'_, Self>,
-                h: &mut ::poulpy_hal::layouts::VecZnxBackendMut<'_, Self>,
-                low: &::poulpy_hal::layouts::VecZnxBackendRef<'_, Self>,
+                carry: &mut ::poulpy_hal::layouts::VecZnxBackendMut<'_, Self, Rg>,
+                h: &mut ::poulpy_hal::layouts::VecZnxBackendMut<'_, Self, Rg>,
+                low: &::poulpy_hal::layouts::VecZnxBackendRef<'_, Self, Rg>,
                 profile: &::poulpy_ckks::shaping::ShapingProfile,
                 lambda: usize,
             ) {
-                crate::ckks_round::shaped_round_correction::<Self>(carry, h, low, profile, lambda);
+                crate::ckks_round::shaped_round_correction::<Self, Rg>(carry, h, low, profile, lambda);
             }
         }
         ::poulpy_ckks::impl_ckks_round_reference_full!($be);
@@ -221,9 +221,10 @@ macro_rules! impl_oracle_ckks {
     };
 }
 
-/// The CKKS compositions of the standard ring, with bootstrapping.
+/// The CKKS compositions of both rings, with the standard-only and cross-ring families (the ring maps, the fold) and
+/// bootstrapping.
 macro_rules! impl_oracle_ckks_standard {
-    ($be:ty, $ci:ty) => {
+    ($be:ty) => {
         impl_oracle_ckks!($be);
         impl_oracle_ckks_coeff_encodings!($be);
         ::poulpy_ckks::impl_ckks_encapsulated_mod_up_reference_full!($be);
@@ -231,7 +232,7 @@ macro_rules! impl_oracle_ckks_standard {
         ::poulpy_ckks::impl_ckks_conjugate_reference_full!($be);
         ::poulpy_ckks::impl_ckks_imag_reference_full!($be);
         ::poulpy_ckks::impl_ckks_bootstrapping_reference_full!($be);
-        ::poulpy_ckks::impl_ckks_bootstrapping_ci_reference_full!($be, $ci);
+        ::poulpy_ckks::impl_ckks_bootstrapping_ci_reference_full!($be);
         ::poulpy_ckks::impl_ckks_fold_layout_reference_full!($be);
         ::poulpy_ckks::impl_ckks_fold_reference_full!($be);
         ::poulpy_ckks::impl_ckks_complex_polynomial_evaluation_reference_full!($be);
@@ -243,12 +244,6 @@ macro_rules! impl_oracle_ckks_standard {
     };
 }
 
-impl_oracle_ckks_standard!(FFT64Oracle, FFT64CIOracle);
-impl_oracle_ckks_standard!(NTT4x30Oracle, NTT4x30CIOracle);
-impl_oracle_ckks!(FFT64CIOracle);
-impl_oracle_ckks!(NTT4x30CIOracle);
-impl_oracle_ckks_standard!(
-    crate::test_suite::ControlledSamplingFFT64Oracle,
-    crate::test_suite::ControlledSamplingFFT64CIOracle
-);
-impl_oracle_ckks!(crate::test_suite::ControlledSamplingFFT64CIOracle);
+impl_oracle_ckks_standard!(FFT64Oracle);
+impl_oracle_ckks_standard!(NTT4x30Oracle);
+impl_oracle_ckks_standard!(crate::test_suite::ControlledSamplingFFT64Oracle);

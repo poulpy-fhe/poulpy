@@ -23,9 +23,12 @@
 //! caller-selected comparison backend. Validation across backends is transitive.
 //!
 //! Conjugation, multiplication by `i`, complex polynomial evaluation, DFT,
-//! encapsulated ModUp, the conjugate-invariant ring maps, PaCo and SHIP exist
-//! only on the standard ring: conjugate-invariant backends do not implement them.
-//! EvalMod runs on both rings; the conjugate-invariant ring refuses `ExpCmplx`.
+//! encapsulated ModUp, PaCo and SHIP exist only on the standard ring: their
+//! traits take standard-ring operands only and no ring parameter. The
+//! conjugate-invariant ring maps carry no ring parameter either: they take one
+//! conjugate-invariant and one standard operand. The fold takes the ring of its
+//! inputs as its parameter and writes standard ciphertexts. EvalMod runs on both
+//! rings; the conjugate-invariant ring refuses `ExpCmplx`.
 
 mod add;
 mod approximation;
@@ -107,36 +110,41 @@ pub use sub::CKKSSubImpl;
 pub use sub::impl_ckks_sub_reference_full;
 
 /// Selects the reference implementation of every scalar-independent CKKS family that serves both rings, the
-/// families [`CKKSImpl`] bundles minus the standard-only ones.
+/// families [`CKKSImpl`] bundles minus the standard-only and cross-ring ones.
 ///
-/// Left out: the standard-only families, each selected by its own macro (`CKKSImagImpl`, `CKKSConjugateImpl`,
-/// `CKKSComplexPolynomialEvaluationImpl`, `CKKSDFTImpl`, `CKKSCIRingMapImpl`, `CKKSFoldLayoutImpl`, `CKKSFoldImpl<R>`,
-/// `CKKSBootstrappingImpl`, `CKKSBootstrappingCIImpl`, `CKKSEncapsulatedModUpImpl`, `CKKSModUpFirstFactorImpl`,
-/// `CKKSPaCoImpl`, `CKKSShipImpl`), the scalar-generic families (`CKKSEncodingImpl<F>`, which each backend implements,
-/// and `CKKSDFTMatrixImpl<F>`, selected by its own macro) and the PaCo and SHIP coefficient encodings, which have no
-/// reference opt-in.
+/// Left out, each selected by its own macro: the standard-only families (`CKKSImagImpl`, `CKKSConjugateImpl`,
+/// `CKKSComplexPolynomialEvaluationImpl`, `CKKSDFTImpl`, `CKKSBootstrappingImpl`, `CKKSBootstrappingCIImpl`,
+/// `CKKSEncapsulatedModUpImpl`, `CKKSModUpFirstFactorImpl`, `CKKSPaCoImpl`, `CKKSShipImpl`) and the cross-ring ones, the
+/// ring maps (`CKKSCIRingMapImpl`) and the fold of inputs of either ring into standard ciphertexts (`CKKSFoldLayoutImpl`,
+/// `CKKSFoldImpl<R>`). Also left out: the scalar-generic families (`CKKSEncodingImpl<F, Rg>`, which each backend
+/// implements for each scalar and each ring, and `CKKSDFTMatrixImpl<F>`, selected by its own macro) and the PaCo and
+/// SHIP coefficient encodings, which have no reference opt-in.
 #[macro_export]
 macro_rules! impl_ckks_reference_full {
     ($be:ty) => {
-        $crate::impl_ckks_plaintext_vec_reference_full!($be);
-        $crate::impl_ckks_copy_reference_full!($be);
-        $crate::impl_ckks_add_reference_full!($be);
-        $crate::impl_ckks_sub_reference_full!($be);
-        $crate::impl_ckks_encryption_reference_full!($be);
-        $crate::impl_ckks_neg_reference_full!($be);
-        $crate::impl_ckks_pow2_reference_full!($be);
-        $crate::impl_ckks_rotate_reference_full!($be);
-        $crate::impl_ckks_inner_sum_reference_full!($be);
-        $crate::impl_ckks_mul_reference_full!($be);
-        $crate::impl_ckks_dot_product_reference_full!($be);
-        $crate::impl_ckks_linear_transformation_reference_full!($be);
-        $crate::impl_ckks_polynomial_evaluation_reference_full!($be);
-        $crate::impl_ckks_eval_mod_reference_full!($be);
-        $crate::impl_ckks_add_many_reference_full!($be);
-        $crate::impl_ckks_mul_add_derived_full!($be);
-        $crate::impl_ckks_affine_derived_full!($be);
-        $crate::impl_ckks_mul_sub_derived_full!($be);
-        $crate::impl_ckks_approximation_derived_full!($be);
+        $crate::impl_ckks_reference_full!($be, ::poulpy_hal::layouts::Standard);
+        $crate::impl_ckks_reference_full!($be, ::poulpy_hal::layouts::ConjugateInvariant);
+    };
+    ($be:ty, $ring:ty) => {
+        $crate::impl_ckks_plaintext_vec_reference_full!($be, $ring);
+        $crate::impl_ckks_copy_reference_full!($be, $ring);
+        $crate::impl_ckks_add_reference_full!($be, $ring);
+        $crate::impl_ckks_sub_reference_full!($be, $ring);
+        $crate::impl_ckks_encryption_reference_full!($be, $ring);
+        $crate::impl_ckks_neg_reference_full!($be, $ring);
+        $crate::impl_ckks_pow2_reference_full!($be, $ring);
+        $crate::impl_ckks_rotate_reference_full!($be, $ring);
+        $crate::impl_ckks_inner_sum_reference_full!($be, $ring);
+        $crate::impl_ckks_mul_reference_full!($be, $ring);
+        $crate::impl_ckks_dot_product_reference_full!($be, $ring);
+        $crate::impl_ckks_linear_transformation_reference_full!($be, $ring);
+        $crate::impl_ckks_polynomial_evaluation_reference_full!($be, $ring);
+        $crate::impl_ckks_eval_mod_reference_full!($be, $ring);
+        $crate::impl_ckks_add_many_reference_full!($be, $ring);
+        $crate::impl_ckks_mul_add_derived_full!($be, $ring);
+        $crate::impl_ckks_affine_derived_full!($be, $ring);
+        $crate::impl_ckks_mul_sub_derived_full!($be, $ring);
+        $crate::impl_ckks_approximation_derived_full!($be, $ring);
     };
 }
 pub use crate::impl_ckks_reference_full;

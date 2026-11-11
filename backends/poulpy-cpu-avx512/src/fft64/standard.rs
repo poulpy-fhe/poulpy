@@ -4,11 +4,12 @@ use poulpy_cpu_portable::kernels::{
     fft64::ring_arith::Fft64RingArith,
     znx::{ZnxAutomorphism, ZnxAutomorphismRotate, standard::znx_automorphism_portable},
 };
+use poulpy_hal::layouts::Standard;
 
 use super::FFT64Avx512;
 use crate::znx_avx512::{znx_automorphism_avx512, znx_automorphism_rotate_avx512};
 
-impl ZnxAutomorphism for FFT64Avx512 {
+impl ZnxAutomorphism<Standard> for FFT64Avx512 {
     #[inline(always)]
     fn znx_automorphism(p: i64, res: &mut [i64], a: &[i64]) {
         unsafe {
@@ -22,7 +23,7 @@ impl ZnxAutomorphism for FFT64Avx512 {
     }
 }
 
-impl ZnxAutomorphismRotate for FFT64Avx512 {
+impl ZnxAutomorphismRotate<Standard> for FFT64Avx512 {
     #[inline(always)]
     fn znx_automorphism_rotate(p: i64, k: i64, res: &mut [i64], a: &[i64]) {
         unsafe {
@@ -31,6 +32,6 @@ impl ZnxAutomorphismRotate for FFT64Avx512 {
     }
 }
 
-impl Fft64RingArith for FFT64Avx512 {
+impl Fft64RingArith<Standard> for FFT64Avx512 {
     poulpy_cpu_portable::fft64_ring_arith_standard!();
 }

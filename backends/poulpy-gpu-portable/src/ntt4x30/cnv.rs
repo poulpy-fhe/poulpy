@@ -27,7 +27,7 @@
 use cubecl::prelude::*;
 
 use super::{
-    AutomorphismPlan, DftColumn,
+    DftColumn, Substitution,
     primes::{Consts, FOLD_TERMS, barrett60, fold64, sel4},
 };
 use crate::runtime::{GpuRuntime, Label, launch};
@@ -843,7 +843,7 @@ pub(crate) fn convolution_sum<RT: GpuRuntime>(
 }
 
 /// One term `a * sigma(b)` of [`convolution_sum`].
-pub(crate) type SumTerm = (DftColumn, DftColumn, AutomorphismPlan);
+pub(crate) type SumTerm = (DftColumn, DftColumn, Substitution);
 
 /// Consecutive terms of one shape, at most [`SUM_TERMS`], launched together.
 #[derive(Default)]
@@ -997,7 +997,7 @@ struct Operands<'a> {
     a2: &'a DftColumn,
     b: &'a DftColumn,
     b2: &'a DftColumn,
-    b_plan: AutomorphismPlan,
+    b_plan: Substitution,
 }
 
 impl Operands<'_> {
@@ -1084,7 +1084,7 @@ pub(crate) fn convolution<RT: GpuRuntime>(
     res: &DftColumn,
     a: &DftColumn,
     b: &DftColumn,
-    b_plan: &AutomorphismPlan,
+    b_plan: &Substitution,
     offset: usize,
     accumulate: bool,
     step: usize,
@@ -1117,7 +1117,7 @@ pub(crate) fn convolution_pairwise<RT: GpuRuntime>(
     offset: usize,
     step: usize,
 ) {
-    let b_plan = AutomorphismPlan::new(b.n, 1, false);
+    let b_plan = Substitution::new(b.n, 1, false);
     launch::<RT>(
         PAIRWISE,
         false,
@@ -1152,7 +1152,7 @@ pub(crate) fn convolution_tensor<RT: GpuRuntime>(
         a2: a1,
         b: b0,
         b2: b1,
-        b_plan: AutomorphismPlan::new(b0.n, 1, false),
+        b_plan: Substitution::new(b0.n, 1, false),
     };
     operands.check(diag0.n);
     let limbs = cross.size.max(diag0.size);

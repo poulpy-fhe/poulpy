@@ -32,7 +32,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::CnvPVecAlloc,
-    layouts::{Backend, Module, ScratchArena},
+    layouts::{Backend, Module, ScratchArena, Standard},
 };
 
 use crate::{
@@ -105,7 +105,7 @@ where
         .zip(&plan.schedule.steps)
         .map(|(cd, step)| {
             let strategy = plan.factor_strategy(step.giant_step);
-            crate::encoding::ckks_linear_transformation_encode_from_diagonals::<BE, F>(
+            crate::encoding::ckks_linear_transformation_encode_from_diagonals::<BE, F, Standard>(
                 module,
                 base2k,
                 plan.coeffs_meta,
@@ -143,6 +143,13 @@ where
     P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + GLWEDiagonalProd<BE>,
 {
     const OP: &str = "ckks_dft_matrix_prepare";
+    crate::ensure_operand_degrees(
+        OP,
+        module,
+        dft.factor_operands()
+            .iter()
+            .filter_map(|lt| lt.first_diagonal_plaintext().map(|pt| pt.n())),
+    )?;
     if res.factor_operands().len() != dft.factor_operands().len() {
         return Err(CKKSCompositionError::InvalidOperand {
             op: OP,
@@ -238,7 +245,7 @@ where
     let (_, factors) = dft_plan_diagonals::<F>(&literal, module.log_n())?;
     Ok(factors
         .iter()
-        .map(|factor| crate::encoding::ckks_linear_transformation_encode_tmp_bytes::<BE, _, F>(module, factor.period()))
+        .map(|factor| crate::encoding::ckks_linear_transformation_encode_tmp_bytes::<BE, _, F, Standard>(module, factor.period()))
         .max()
         .unwrap_or(0))
 }
@@ -297,6 +304,7 @@ where
     H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
 {
     crate::layouts::validation::ensure_full_layout("ckks_dft_matrix_eval_assign", crate::GLWEPlaintextInfos::slot_layout(ct))?;
+    crate::ensure_operand_degrees("ckks_dft_matrix_eval_assign", module, [ct.n()])?;
     // One factor at a time, in place on `ct`; compact `ct` after each so the next
     // factor's baby-step keyswitches operate on fewer limbs as the budget shrinks.
     for factor in dft.factor_operands() {

@@ -8,7 +8,7 @@ use poulpy_hal::{
         ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAlloc, VecZnxLsh, VecZnxLshAdd, VecZnxLshAssign, VecZnxLshSub,
         VecZnxLshTmpBytes, VecZnxRsh, VecZnxRshAdd, VecZnxRshAssign, VecZnxRshSub, VecZnxRshTmpBytes,
     },
-    layouts::{Backend, Module, ScratchOwned},
+    layouts::{Backend, Module, ScratchOwned, Standard},
 };
 
 use crate::hal::helpers::{random_host_vec_znx, upload_host_vec_znx, vec_znx_backend_mut, vec_znx_backend_ref};
@@ -31,7 +31,7 @@ where
     let mut b = upload_host_vec_znx::<B>(&b);
 
     bencher.iter(|| {
-        let mut b = vec_znx_backend_mut::<B>(&mut b);
+        let mut b = vec_znx_backend_mut::<B, Standard>(&mut b);
         for i in 0..sweep.cols {
             module.vec_znx_lsh_assign(base2k, base2k - 1, &mut b, i, &mut scratch.borrow());
         }
@@ -58,8 +58,8 @@ where
     let mut res = module.vec_znx_alloc(module.n(), sweep.cols, sweep.size);
 
     bencher.iter(|| {
-        let a = vec_znx_backend_ref::<B>(&a);
-        let mut res = vec_znx_backend_mut::<B>(&mut res);
+        let a = vec_znx_backend_ref::<B, Standard>(&a);
+        let mut res = vec_znx_backend_mut::<B, Standard>(&mut res);
         for i in 0..sweep.cols {
             module.vec_znx_lsh(base2k, base2k - 1, &mut res, i, &a, i, &mut scratch.borrow());
         }
@@ -85,7 +85,7 @@ where
     let mut b = upload_host_vec_znx::<B>(&b);
 
     bencher.iter(|| {
-        let mut b = vec_znx_backend_mut::<B>(&mut b);
+        let mut b = vec_znx_backend_mut::<B, Standard>(&mut b);
         for i in 0..sweep.cols {
             module.vec_znx_rsh_assign(base2k, base2k - 1, &mut b, i, &mut scratch.borrow());
         }
@@ -112,8 +112,8 @@ where
     let mut res = module.vec_znx_alloc(module.n(), sweep.cols, sweep.size);
 
     bencher.iter(|| {
-        let a = vec_znx_backend_ref::<B>(&a);
-        let mut res = vec_znx_backend_mut::<B>(&mut res);
+        let a = vec_znx_backend_ref::<B, Standard>(&a);
+        let mut res = vec_znx_backend_mut::<B, Standard>(&mut res);
         for i in 0..sweep.cols {
             module.vec_znx_rsh(base2k, base2k - 1, &mut res, i, &a, i, &mut scratch.borrow());
         }
@@ -141,8 +141,8 @@ where
     let mut res = upload_host_vec_znx::<B>(&res);
 
     bencher.iter(|| {
-        let a = vec_znx_backend_ref::<B>(&a);
-        let mut res = vec_znx_backend_mut::<B>(&mut res);
+        let a = vec_znx_backend_ref::<B, Standard>(&a);
+        let mut res = vec_znx_backend_mut::<B, Standard>(&mut res);
         for i in 0..sweep.cols {
             module.vec_znx_lsh_add(base2k, base2k - 1, &mut res, i, &a, i, &mut scratch.borrow());
         }
@@ -170,8 +170,8 @@ where
     let mut res = upload_host_vec_znx::<B>(&res);
 
     bencher.iter(|| {
-        let a = vec_znx_backend_ref::<B>(&a);
-        let mut res = vec_znx_backend_mut::<B>(&mut res);
+        let a = vec_znx_backend_ref::<B, Standard>(&a);
+        let mut res = vec_znx_backend_mut::<B, Standard>(&mut res);
         for i in 0..sweep.cols {
             module.vec_znx_lsh_sub(base2k, base2k - 1, &mut res, i, &a, i, &mut scratch.borrow());
         }
@@ -199,8 +199,8 @@ where
     let mut res = upload_host_vec_znx::<B>(&res);
 
     bencher.iter(|| {
-        let a = vec_znx_backend_ref::<B>(&a);
-        let mut res = vec_znx_backend_mut::<B>(&mut res);
+        let a = vec_znx_backend_ref::<B, Standard>(&a);
+        let mut res = vec_znx_backend_mut::<B, Standard>(&mut res);
         for i in 0..sweep.cols {
             module.vec_znx_rsh_add(base2k, base2k - 1, &mut res, i, &a, i, &mut scratch.borrow());
         }
@@ -228,8 +228,8 @@ where
     let mut res = upload_host_vec_znx::<B>(&res);
 
     bencher.iter(|| {
-        let a = vec_znx_backend_ref::<B>(&a);
-        let mut res = vec_znx_backend_mut::<B>(&mut res);
+        let a = vec_znx_backend_ref::<B, Standard>(&a);
+        let mut res = vec_znx_backend_mut::<B, Standard>(&mut res);
         for i in 0..sweep.cols {
             module.vec_znx_rsh_sub(base2k, base2k - 1, &mut res, i, &a, i, &mut scratch.borrow());
         }

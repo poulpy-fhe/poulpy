@@ -2,8 +2,8 @@ use poulpy_core::GLWECopy;
 use poulpy_core::layouts::{
     Base2K, Degree, GGLWEInfos, GLWEInfos, GLWEPlaintextInfos, GLWEPlaintextMeta, LWEInfos, Rank, Scale, TorusPrecision,
 };
-use poulpy_hal::api::{CnvOps, CnvPVecBytesOf, VecZnxBigNormalizeTmpBytes, VecZnxRshTmpBytes};
-use poulpy_hal::layouts::{Backend, Module, PrepareHint};
+use poulpy_hal::api::{CnvOps, VecZnxBigNormalizeTmpBytes, VecZnxRshTmpBytes};
+use poulpy_hal::layouts::{Backend, Module, Ring};
 
 use crate::SlotsKind;
 use crate::{
@@ -54,7 +54,7 @@ impl GLWEPlaintextInfos for EvalModWorkCtInfos {
 
 impl CKKSInfos for EvalModWorkCtInfos {}
 
-pub fn ckks_eval_mod_tmp_bytes_reference<BE: Backend + poulpy_core::oep::GLWEMulConstImpl, R, C, P, F, T>(
+pub fn ckks_eval_mod_tmp_bytes_reference<BE: Backend + poulpy_core::oep::GLWEMulConstImpl<Rg>, R, C, P, F, T, Rg: Ring>(
     module: &Module<BE>,
     res: &R,
     ct: &C,
@@ -62,15 +62,14 @@ pub fn ckks_eval_mod_tmp_bytes_reference<BE: Backend + poulpy_core::oep::GLWEMul
     tsk: &T,
 ) -> usize
 where
-    Module<BE>: CKKSAddOps<BE>
-        + CKKSSubOps<BE>
-        + CKKSMulOps<BE>
-        + crate::api::CKKSPow2Ops<BE>
-        + poulpy_core::GLWENormalize<BE>
-        + CKKSCopyOps<BE>
-        + GLWECopy<BE>
-        + CnvPVecBytesOf
-        + CnvOps<BE>
+    Module<BE>: CKKSAddOps<BE, Rg>
+        + CKKSSubOps<BE, Rg>
+        + CKKSMulOps<BE, Rg>
+        + crate::api::CKKSPow2Ops<BE, Rg>
+        + poulpy_core::GLWENormalize<BE, Rg>
+        + CKKSCopyOps<BE, Rg>
+        + GLWECopy<BE, Rg>
+        + CnvOps<BE, Rg>
         + VecZnxRshTmpBytes
         + VecZnxBigNormalizeTmpBytes,
     R: CKKSCtBounds,
@@ -96,14 +95,10 @@ where
 
     let cols: usize = (work.rank() + 1).into();
     let compact_work = BE::vec_znx_bytes_of(work.n().into(), cols, work.max_size());
-    // The giant step hoists the prepared `X^{gsp}` right operand, kept alive
-    // across the baby-step pairs that share it.
-    let hoisted_right = module.cnv_pvec_right_bytes_of(module.n(), cols, work.max_size(), PrepareHint::Reuse);
     let bsgs_giant = module
         .ckks_mul_tmp_bytes(&work, &work, &work, tsk)
         .max(module.ckks_add_tmp_bytes(work.max_size()))
-        + 3 * compact_work
-        + hoisted_right;
+        + 3 * compact_work;
     let square_scope = (module.ckks_square_tmp_bytes(&work, &work, tsk) + compact_work).max(
         // Scratch is a physical working-set budget: size the square-scope
         // copy off `res`'s allocated capacity, the upper bound on the limbs

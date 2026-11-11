@@ -4,13 +4,13 @@
 //! AVX-512-IFMA SIMD intrinsics. Their scalar reference companions live in
 //! [`super::reference`] and are used as test oracles.
 
-use poulpy_cpu_portable::kernels::ntt4x30::vec_znx_dft::NttAutomorphismPlan;
+use poulpy_cpu_portable::kernels::ntt4x30::{NttRingTable, vec_znx_dft::NttAutomorphismPlan};
 
 use super::bbc_meta::Bbc126IfmaMeta;
 use super::primes::Primes42;
 
 /// Execute a forward or inverse NTT using a precomputed table.
-pub trait Ntt3x42IfmaDFTExecute<Table> {
+pub trait Ntt3x42IfmaDFTExecute<Table: NttRingTable> {
     fn ntt3x42_ifma_dft_execute(table: &Table, data: &mut [u64]);
 
     /// Same transform with output only reduced to `[0, 4q)`, for consumers that re-reduce.
@@ -18,10 +18,8 @@ pub trait Ntt3x42IfmaDFTExecute<Table> {
         Self::ntt3x42_ifma_dft_execute(table, data)
     }
 
-    /// Slot permutation of `X -> X^p` in this transform's layout (shared with NTT4x30).
-    fn ntt_automorphism_plan(n: usize, p: i64) -> NttAutomorphismPlan {
-        poulpy_cpu_portable::kernels::ntt4x30::standard::build_ntt4x30_automorphism_plan_portable(n, p)
-    }
+    /// Slot permutation of `X -> X^p` in this transform's layout (shared with NTT4x30), on the table's ring.
+    fn ntt_automorphism_plan(n: usize, p: i64) -> NttAutomorphismPlan<Table::Ring>;
 }
 
 /// Load a polynomial from i64 coefficients into 3-prime CRT format.

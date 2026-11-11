@@ -186,11 +186,11 @@ fn public_key_noise<R: GLWEInfos>(
 /// Precision at which a public-key encryption into `res` draws its fresh errors:
 /// one limb past the output, at most the key's. The product uses the key's
 /// leading `ceil(k_sample / base2k)` limbs.
-pub fn public_key_sample_precision<BE, R, K>(res: &R, pk: &K) -> TorusPrecision
+pub fn public_key_sample_precision<BE, R, K, Rg: Ring>(res: &R, pk: &K) -> TorusPrecision
 where
     BE: Backend,
     R: GLWEInfos,
-    K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos,
+    K: GLWEPublicKeyPreparedToBackendRef<BE, Rg> + GLWEInfos,
 {
     sample_precision(res.k(), pk.k(), res.base2k().as_usize())
 }
@@ -198,18 +198,18 @@ where
 /// Output metadata of a public-key encryption drawing its fresh errors at
 /// [`public_key_sample_precision`], normalized once to the output's `k`.
 /// Returns `None` for a key without metadata.
-pub fn public_key_encryption_noise<BE, R, K>(res: &R, pk: &K, body_noise: PublicKeyBodyNoise) -> Option<ComponentNoise>
+pub fn public_key_encryption_noise<BE, R, K, Rg: Ring>(res: &R, pk: &K, body_noise: PublicKeyBodyNoise) -> Option<ComponentNoise>
 where
     BE: Backend,
     R: GLWEInfos,
-    K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos,
+    K: GLWEPublicKeyPreparedToBackendRef<BE, Rg> + GLWEInfos,
 {
     public_key_noise(
         pk.noise(),
         res,
         pk.k(),
         *pk.to_backend_ref().dist(),
-        <BE::Ring as Ring>::product_moments(res.n().as_usize()),
+        Rg::product_moments(res.n().as_usize()),
         body_noise,
     )
 }

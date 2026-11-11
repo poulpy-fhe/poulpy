@@ -21,7 +21,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::{ModuleNew, ReimNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, HostBytesBackend, Module, ScratchOwned, Standard},
+    layouts::{Backend, HostBytesBackend, Module, Ring, ScratchOwned, Standard},
     source::Source,
 };
 
@@ -44,13 +44,12 @@ fn assert_decrypt_extract_success<BE, F, E>(
     encoder: &ReferenceEncoder<E>,
     dst_prec: CKKSLayout,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: ReimNew<F>,
-    Module<BE>: CKKSDecryptOps<BE>,
 {
     let src_prec = extract_src_prec(params);
     let sk = gen_sk(params, module, host_module, [0u8; 32]);
@@ -92,10 +91,10 @@ fn assert_decrypt_extract_success<BE, F, E>(
 /// Verifies that encrypt → decrypt → decode recovers the original message.
 pub fn test_encrypt_decrypt<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE> + GLWENoise<BE>,
+    Module<BE>: TestContextModule<BE> + GLWENoise<BE, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -127,8 +126,11 @@ where
         metadata.phase_noise(ct.n().as_usize()).std_dev(),
         poulpy_core::DEFAULT_SIGMA_XE
     );
-    let mut host_pt =
-        host_module.ckks_plaintext_alloc_from_slots(host_module.ckks_max_slots(), params.base2k.into(), params.prec().k());
+    let mut host_pt = host_module.ckks_plaintext_alloc_from_slots::<Standard>(
+        host_module.ckks_max_slots::<Standard>(),
+        params.base2k.into(),
+        params.prec().k(),
+    );
     host_pt.set_meta(params.prec().meta());
     encoder.encode_reim(&mut host_pt, &re1, &im1).unwrap();
     // CKKS aligns the encoded integer message to the ciphertext's torus grid.
@@ -176,16 +178,16 @@ where
         params.prec().log_delta(),
         params.k - params.prec().log_delta(),
     );
-    let (re_out, im_out) = ckks_decrypt_decode::<BE, F, E>(&params, module, &encoder, &ct, &sk, &mut scratch.borrow());
+    let (re_out, im_out) = ckks_decrypt_decode::<BE, F, E, Standard>(&params, module, &encoder, &ct, &sk, &mut scratch.borrow());
     assert_precision_for_log_delta("encrypt_decrypt re", &re_out, &re1, ct.log_delta(), params.n);
     assert_precision_for_log_delta("encrypt_decrypt im", &im_out, &im1, ct.log_delta(), params.n);
 }
 
 /// CKKS returns a degree error without changing outputs or consuming randomness.
-pub fn test_encrypt_sk_rejects_degree_mismatch<BE>()
+pub fn test_encrypt_sk_rejects_degree_mismatch<BE, Rg: Ring>()
 where
-    BE: Backend<ZnxWord = i64> + crate::oep::CKKSEncryptionImpl,
-    Module<BE>: ModuleNew<BE> + GLWESecretPreparedFactory<BE>,
+    BE: Backend<ZnxWord = i64> + crate::oep::CKKSEncryptionImpl<Rg>,
+    Module<BE>: ModuleNew<BE> + GLWESecretPreparedFactory<BE, Rg>,
 {
     let n = BE::MIN_DEGREE.max(16);
     let module = Module::<BE>::new(n as u64);
@@ -197,10 +199,10 @@ where
         rank: 1usize.into(),
     };
     let mut ct = module.ckks_ciphertext_alloc_from_glwe_infos(&enc);
-    let mut pt = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots(), 8usize.into(), 8usize.into());
+    let mut pt = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots::<Rg>(), 8usize.into(), 8usize.into());
     let sk = other.glwe_secret_prepared_alloc(1usize.into());
-    let ct_before = snapshot::<BE, _>(&ct);
-    let pt_before = snapshot::<BE, _>(&pt);
+    let ct_before = snapshot::<BE, _, Rg>(&ct);
+    let pt_before = snapshot::<BE, _, Rg>(&pt);
     let mut xe = Source::new([1; 32]);
     let mut xa = Source::new([2; 32]);
 
@@ -213,11 +215,11 @@ where
         };
         let err = with_scratch::<BE, _>(0, |s| call_module.ckks_decrypt(&mut pt, &ct, &sk, s)).unwrap_err();
         assert_ckks_error("decrypt_degree_mismatch", &err, expected("ckks_decrypt"));
-        assert_eq!(pt_before, snapshot::<BE, _>(&pt));
+        assert_eq!(pt_before, snapshot::<BE, _, Rg>(&pt));
 
         let err = with_scratch::<BE, _>(0, |s| call_module.ckks_encrypt_sk(&mut ct, &pt, &sk, &mut xe, &mut xa, s)).unwrap_err();
         assert_ckks_error("encrypt_degree_mismatch", &err, expected("ckks_encrypt_sk"));
-        assert_eq!(ct_before, snapshot::<BE, _>(&ct));
+        assert_eq!(ct_before, snapshot::<BE, _, Rg>(&ct));
     }
 
     // A plaintext scale above the ciphertext precision fails before encryption.
@@ -233,7 +235,7 @@ where
             required_bits: 9,
         },
     );
-    assert_eq!(ct_before, snapshot::<BE, _>(&ct));
+    assert_eq!(ct_before, snapshot::<BE, _, Rg>(&ct));
     assert_eq!(xe.new_seed(), Source::new([1; 32]).new_seed());
     assert_eq!(xa.new_seed(), Source::new([2; 32]).new_seed());
 }
@@ -243,13 +245,13 @@ pub fn test_decrypt_extract_same_meta<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: ReimNew<F>,
-    Module<BE>: CKKSDecryptOps<BE>,
+    Module<BE>: CKKSDecryptOps<BE, Standard>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -268,13 +270,13 @@ pub fn test_decrypt_extract_truncates_log_budget<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: ReimNew<F>,
-    Module<BE>: CKKSDecryptOps<BE>,
+    Module<BE>: CKKSDecryptOps<BE, Standard>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -294,13 +296,13 @@ pub fn test_decrypt_extract_rsh_for_smaller_log_delta<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: ReimNew<F>,
-    Module<BE>: CKKSDecryptOps<BE>,
+    Module<BE>: CKKSDecryptOps<BE, Standard>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -320,13 +322,13 @@ pub fn test_decrypt_extract_lsh_for_larger_log_delta<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: ReimNew<F>,
-    Module<BE>: CKKSDecryptOps<BE>,
+    Module<BE>: CKKSDecryptOps<BE, Standard>,
 {
     let m = params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
@@ -346,7 +348,7 @@ pub fn test_decrypt_rejects_output_hom_rem_too_large<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -373,7 +375,7 @@ pub fn test_decrypt_rejects_output_hom_rem_too_large<BE, F, E>(
         &mut scratch.borrow(),
     );
     let mut pt = module.ckks_plaintext_alloc_from_slots(
-        module.ckks_max_slots(),
+        module.ckks_max_slots::<Standard>(),
         params.base2k.into(),
         (src_prec.log_delta() + src_prec.log_budget() + 1).into(),
     );
@@ -383,7 +385,7 @@ pub fn test_decrypt_rejects_output_hom_rem_too_large<BE, F, E>(
         log_sparsity: 0,
         slot_layout: SlotLayout::Full,
     });
-    let (pt_before, ct_before) = (snapshot::<BE, _>(&pt), snapshot::<BE, _>(&ct));
+    let (pt_before, ct_before) = (snapshot::<BE, _, Standard>(&pt), snapshot::<BE, _, Standard>(&ct));
     let err = with_scratch::<BE, _>(0, |s| module.ckks_decrypt(&mut pt, &ct, &sk, s)).unwrap_err();
     assert_ckks_error(
         "decrypt_rejects_output_hom_rem_too_large",
@@ -397,8 +399,16 @@ pub fn test_decrypt_rejects_output_hom_rem_too_large<BE, F, E>(
             pt_k: src_prec.log_delta() + src_prec.log_budget() + 1,
         },
     );
-    assert_eq!(snapshot::<BE, _>(&pt), pt_before, "a refused ckks_decrypt wrote res");
-    assert_eq!(snapshot::<BE, _>(&ct), ct_before, "a refused ckks_decrypt changed its source");
+    assert_eq!(
+        snapshot::<BE, _, Standard>(&pt),
+        pt_before,
+        "a refused ckks_decrypt wrote res"
+    );
+    assert_eq!(
+        snapshot::<BE, _, Standard>(&ct),
+        ct_before,
+        "a refused ckks_decrypt changed its source"
+    );
 }
 
 pub fn test_decrypt_rejects_base2k_mismatch<BE, F, E>(
@@ -406,7 +416,7 @@ pub fn test_decrypt_rejects_base2k_mismatch<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -433,9 +443,10 @@ pub fn test_decrypt_rejects_base2k_mismatch<BE, F, E>(
         &mut scratch.borrow(),
     );
     let mismatched_base2k = (params.base2k / 2).into();
-    let mut pt = host_module.ckks_plaintext_alloc_from_slots(host_module.ckks_max_slots(), mismatched_base2k, src_prec.k());
+    let mut pt =
+        host_module.ckks_plaintext_alloc_from_slots(host_module.ckks_max_slots::<Standard>(), mismatched_base2k, src_prec.k());
     pt.set_meta(src_prec.meta());
-    let (pt_before, ct_before) = (snapshot::<BE, _>(&pt), snapshot::<BE, _>(&ct));
+    let (pt_before, ct_before) = (snapshot::<BE, _, Standard>(&pt), snapshot::<BE, _, Standard>(&ct));
     let err = with_scratch::<BE, _>(0, |s| module.ckks_decrypt(&mut pt, &ct, &sk, s)).unwrap_err();
     assert_ckks_error(
         "decrypt_extract_base2k_mismatch",
@@ -446,8 +457,16 @@ pub fn test_decrypt_rejects_base2k_mismatch<BE, F, E>(
             pt_base2k: mismatched_base2k.as_usize(),
         },
     );
-    assert_eq!(snapshot::<BE, _>(&pt), pt_before, "a refused ckks_decrypt wrote res");
-    assert_eq!(snapshot::<BE, _>(&ct), ct_before, "a refused ckks_decrypt changed its source");
+    assert_eq!(
+        snapshot::<BE, _, Standard>(&pt),
+        pt_before,
+        "a refused ckks_decrypt wrote res"
+    );
+    assert_eq!(
+        snapshot::<BE, _, Standard>(&ct),
+        ct_before,
+        "a refused ckks_decrypt changed its source"
+    );
 }
 
 /// Decrypting a dense ciphertext into a plaintext of half its degree is a `PlaintextDegreeMismatch`; a ciphertext
@@ -457,7 +476,7 @@ pub fn test_decrypt_rejects_degree_mismatch<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -485,7 +504,7 @@ pub fn test_decrypt_rejects_degree_mismatch<BE, F, E>(
     );
     let mut pt = host_module.ckks_plaintext_alloc_from_slots(m / 2, params.base2k.into(), src_prec.k());
     pt.set_meta(src_prec.meta());
-    let (pt_before, ct_before) = (snapshot::<BE, _>(&pt), snapshot::<BE, _>(&ct));
+    let (pt_before, ct_before) = (snapshot::<BE, _, Standard>(&pt), snapshot::<BE, _, Standard>(&ct));
     let err = with_scratch::<BE, _>(0, |s| module.ckks_decrypt(&mut pt, &ct, &sk, s)).unwrap_err();
     assert_ckks_error(
         "decrypt_extract_degree_mismatch",
@@ -496,8 +515,16 @@ pub fn test_decrypt_rejects_degree_mismatch<BE, F, E>(
             pt_n: params.n / 2,
         },
     );
-    assert_eq!(snapshot::<BE, _>(&pt), pt_before, "a refused ckks_decrypt wrote res");
-    assert_eq!(snapshot::<BE, _>(&ct), ct_before, "a refused ckks_decrypt changed its source");
+    assert_eq!(
+        snapshot::<BE, _, Standard>(&pt),
+        pt_before,
+        "a refused ckks_decrypt wrote res"
+    );
+    assert_eq!(
+        snapshot::<BE, _, Standard>(&ct),
+        ct_before,
+        "a refused ckks_decrypt changed its source"
+    );
 
     let half = ReferenceEncoder::<E>::new(m / 2).unwrap();
     let (re2, im2) = test_vector_1::<F>(m / 2);
@@ -522,7 +549,8 @@ pub fn test_decrypt_rejects_degree_mismatch<BE, F, E>(
     })
     .unwrap();
     let (mut re_out, mut im_out) = (vec![F::zero(); m / 2], vec![F::zero(); m / 2]);
-    half.decode_reim(&download_pt::<BE>(&pt), &mut re_out, &mut im_out).unwrap();
+    half.decode_reim(&download_pt::<BE, Standard>(&pt), &mut re_out, &mut im_out)
+        .unwrap();
     assert_precision(
         "decrypt into half the degree re",
         &re_out,
@@ -546,7 +574,7 @@ pub fn test_decrypt_wipes_scratch<BE, F, E>(
     module: &poulpy_hal::layouts::Module<BE>,
     host_module: &poulpy_hal::layouts::Module<poulpy_hal::layouts::HostBytesBackend>,
 ) where
-    BE: crate::test_suite::helpers::TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
+    BE: crate::test_suite::helpers::TestContextBackend,
     poulpy_hal::layouts::Module<BE>: crate::test_suite::helpers::TestContextModule<BE>,
     F: crate::test_suite::helpers::TestScalar,
     E: ReimNew<F>,
@@ -569,7 +597,7 @@ pub fn test_decrypt_wipes_scratch<BE, F, E>(
     );
     // Half the degree reads every second coefficient, which a sparsity of one allows.
     poulpy_core::layouts::SetGLWEPlaintextInfos::set_log_sparsity(&mut ct, 1);
-    for slots in [module.ckks_max_slots(), module.ckks_max_slots() / 2] {
+    for slots in [module.ckks_max_slots::<Standard>(), module.ckks_max_slots::<Standard>() / 2] {
         let mut pt = module.ckks_plaintext_alloc_from_slots(slots, params.base2k.into(), ct.k());
         pt.set_meta(ct.meta());
         let bytes = module.ckks_decrypt_tmp_bytes(&pt, &ct);
@@ -584,7 +612,7 @@ pub fn test_decrypt_rejects_alignment_on_empty_arena<BE, F, E>(
     module: &poulpy_hal::layouts::Module<BE>,
     host_module: &poulpy_hal::layouts::Module<poulpy_hal::layouts::HostBytesBackend>,
 ) where
-    BE: crate::test_suite::helpers::TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
+    BE: crate::test_suite::helpers::TestContextBackend,
     poulpy_hal::layouts::Module<BE>: crate::test_suite::helpers::TestContextModule<BE>,
     F: crate::test_suite::helpers::TestScalar,
     E: ReimNew<F>,
@@ -597,7 +625,7 @@ pub fn test_decrypt_rejects_alignment_on_empty_arena<BE, F, E>(
         &layout(params, params.rank, 3 * b + 5, b - 1, 0, SlotsKind::Complex),
         41,
     );
-    let mut pt = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots(), b.into(), (3 * b + 6).into());
+    let mut pt = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots::<Standard>(), b.into(), (3 * b + 6).into());
     pt.set_meta(GLWEPlaintextMeta {
         slot_layout: poulpy_core::layouts::SlotLayout::Full,
         scale: Scale::Log(b - 1),
@@ -605,7 +633,7 @@ pub fn test_decrypt_rejects_alignment_on_empty_arena<BE, F, E>(
         log_sparsity: 0,
     });
     for bytes in [0, module.ckks_decrypt_tmp_bytes(&pt, &ct)] {
-        let before = snapshot::<BE, _>(&pt);
+        let before = snapshot::<BE, _, Standard>(&pt);
         let err = with_scratch::<BE, _>(bytes, |s| module.ckks_decrypt(&mut pt, &ct, &sk, s)).unwrap_err();
         assert_ckks_error(
             "decrypt: plaintext wider than the budget",
@@ -617,7 +645,11 @@ pub fn test_decrypt_rejects_alignment_on_empty_arena<BE, F, E>(
                 pt_k: 3 * b + 6,
             },
         );
-        assert_eq!(snapshot::<BE, _>(&pt), before, "a refused decryption wrote the plaintext");
+        assert_eq!(
+            snapshot::<BE, _, Standard>(&pt),
+            before,
+            "a refused decryption wrote the plaintext"
+        );
     }
 }
 
@@ -628,7 +660,7 @@ pub fn test_encrypt_sk_rejects_plaintext_base2k_mismatch<BE, F, E>(
     module: &poulpy_hal::layouts::Module<BE>,
     host_module: &poulpy_hal::layouts::Module<poulpy_hal::layouts::HostBytesBackend>,
 ) where
-    BE: crate::test_suite::helpers::TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
+    BE: crate::test_suite::helpers::TestContextBackend,
     poulpy_hal::layouts::Module<BE>: crate::test_suite::helpers::TestContextModule<BE>,
     F: crate::test_suite::helpers::TestScalar,
     E: ReimNew<F>,
@@ -657,7 +689,7 @@ pub fn test_encrypt_sk_rejects_plaintext_base2k_mismatch<BE, F, E>(
         43,
     );
     for bytes in [0, module.ckks_encrypt_sk_tmp_bytes(&ct)] {
-        let before = snapshot::<BE, _>(&ct);
+        let before = snapshot::<BE, _, Standard>(&ct);
         let (mut source_xe, mut source_xa) = (Source::new([5u8; 32]), Source::new([6u8; 32]));
         let err = with_scratch::<BE, _>(bytes, |s| {
             module.ckks_encrypt_sk(&mut ct, &pt, &sk, &mut source_xe, &mut source_xa, s)
@@ -672,7 +704,11 @@ pub fn test_encrypt_sk_rejects_plaintext_base2k_mismatch<BE, F, E>(
                 pt_base2k: b - 1,
             },
         );
-        assert_eq!(snapshot::<BE, _>(&ct), before, "a refused encryption wrote the ciphertext");
+        assert_eq!(
+            snapshot::<BE, _, Standard>(&ct),
+            before,
+            "a refused encryption wrote the ciphertext"
+        );
         assert_eq!(
             source_xe.new_seed(),
             Source::new([5u8; 32]).new_seed(),

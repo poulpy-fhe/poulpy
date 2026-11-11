@@ -36,9 +36,13 @@ fn prepared_factors(
         .map(|factor| {
             let first = factor.first_diagonal_plaintext().unwrap();
             let mut prepared = LinearTransformationPrepared::alloc_prepared_from_index(module, &factor.index(), first);
-            with_scratch::<FFT64Portable, _>(module.ckks_linear_transformation_rhs_prepare_tmp_bytes(first), |s| {
-                module.ckks_linear_transformation_rhs_prepare(&mut prepared, factor, s)
-            })
+            with_scratch::<FFT64Portable, _>(
+                <Module<FFT64Portable> as CKKSLinearTransformationOps<
+                    FFT64Portable,
+                    poulpy_hal::layouts::Standard,
+                >>::ckks_linear_transformation_rhs_prepare_tmp_bytes(module, first),
+                |s| module.ckks_linear_transformation_rhs_prepare(&mut prepared, factor, s),
+            )
             .unwrap();
             prepared
         })
@@ -172,7 +176,11 @@ fn checked_dft_construction_rejects_repeated_and_inconsistent_diagonals() {
     let dft_plan = || DFTPlan::new(DFTType::Encode, vec![(1, 1)], DFTOutputFormat::Standard, meta).unwrap();
     // A diagonal of the plan's precision, stored across `storage_k` bits.
     let diagonal = |baby: i64, storage_k: usize, real: bool| {
-        let mut pt = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots(), 16usize.into(), storage_k.into());
+        let mut pt = module.ckks_plaintext_alloc_from_slots::<poulpy_hal::layouts::Standard>(
+            module.ckks_max_slots::<poulpy_hal::layouts::Standard>(),
+            16usize.into(),
+            storage_k.into(),
+        );
         pt.set_meta(meta.meta);
         poulpy_core::layouts::SetK::set_k(&mut pt, meta.k);
         if real {
@@ -429,7 +437,11 @@ fn dft_format_wrapper_reenters_selected_evaluation() {
     use poulpy_core::layouts::{LinearTransformationDiagonal, LinearTransformationGiantStep};
     let module = Module::<OverrideBackend>::new(64);
     let meta = CoeffsMeta::from_delta_budget(12, 2);
-    let mut pt = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots(), 16usize.into(), meta.k);
+    let mut pt = module.ckks_plaintext_alloc_from_slots(
+        module.ckks_max_slots::<poulpy_hal::layouts::Standard>(),
+        16usize.into(),
+        meta.k,
+    );
     pt.set_meta(meta.meta);
     let matrix = DFTMatrix::<OverrideBackend, Decode, Repack, _>::try_from_factor_operands(
         &module,
@@ -450,7 +462,7 @@ fn dft_format_wrapper_reenters_selected_evaluation() {
         }],
     )
     .unwrap();
-    let src = module.ckks_ciphertext_alloc(16usize.into(), 64usize.into());
+    let src = module.ckks_ciphertext_alloc::<poulpy_hal::layouts::Standard>(16usize.into(), 64usize.into());
     let mut dst = module.ckks_ciphertext_alloc_from_infos(&src);
     let key = poulpy_core::layouts::GLWETensorKeyLayout {
         n: 64usize.into(),
@@ -565,8 +577,8 @@ fn bootstrap_sizing_includes_selected_dft_workspace() {
         tensor_key: key,
         encapsulation: None,
     };
-    let src = module.ckks_ciphertext_alloc(16usize.into(), 64usize.into());
-    let dst = module.ckks_ciphertext_alloc(16usize.into(), 256usize.into());
+    let src = module.ckks_ciphertext_alloc::<poulpy_hal::layouts::Standard>(16usize.into(), 64usize.into());
+    let dst = module.ckks_ciphertext_alloc::<poulpy_hal::layouts::Standard>(16usize.into(), 256usize.into());
     assert_query_takes_extra(
         "ckks_bootstrap_tmp_bytes",
         |bytes| DFT_EXTRA.set(bytes),
@@ -602,7 +614,11 @@ fn dft_scratch_covers_factor_copy_with_working_buffer() {
     use poulpy_core::layouts::{LinearTransformationDiagonal, LinearTransformationGiantStep};
     let module = Module::<OverrideBackend>::new(64);
     let meta = CoeffsMeta::from_delta_budget(12, 2);
-    let mut pt = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots(), 16usize.into(), meta.k);
+    let mut pt = module.ckks_plaintext_alloc_from_slots(
+        module.ckks_max_slots::<poulpy_hal::layouts::Standard>(),
+        16usize.into(),
+        meta.k,
+    );
     pt.set_meta(meta.meta);
     let matrix = DFTMatrix::<OverrideBackend, Encode, Standard, _>::try_from_factor_operands(
         &module,

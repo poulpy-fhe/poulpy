@@ -17,13 +17,13 @@ use poulpy_core::layouts::{
 };
 use poulpy_hal::{
     api::CnvPVecAlloc,
-    layouts::{Backend, ScratchArena},
+    layouts::{Backend, Ring, ScratchArena, Standard},
 };
 
 use super::validate::assert_scratch;
 
 /// A map encoded on a module's plaintexts.
-pub(crate) type Encoded<BE> = LinearTransformation<CKKSPlaintextOwned<BE>>;
+pub(crate) type Encoded<BE, Rg = Standard> = LinearTransformation<CKKSPlaintextOwned<BE, Rg>>;
 
 /// One real map, the schedule it is evaluated by and the metadata its diagonals are encoded at.
 pub(crate) struct Scheduled<F> {
@@ -79,14 +79,14 @@ impl MapLayout {
     }
 
     /// The layout of every diagonal on `module`: at the degree of the map's period.
-    pub(crate) fn plaintext<BE, M>(&self, module: &M, base2k: Base2K) -> CKKSLayout
+    pub(crate) fn plaintext<BE, M, Rg: Ring>(&self, module: &M, base2k: Base2K) -> CKKSLayout
     where
         BE: Backend,
         M: CKKSModuleInfos + GetDegree,
     {
         CKKSLayout {
             glwe_layout: GLWELayout {
-                n: (self.period * module.ring_degree().as_usize() / module.ckks_max_slots())
+                n: (self.period * module.ring_degree().as_usize() / module.ckks_max_slots::<Rg>())
                     .max(BE::MIN_DEGREE)
                     .into(),
                 base2k,
@@ -113,34 +113,34 @@ impl MapLayout {
     }
 
     /// The map's zero allocation on `module`, at radix `base2k`.
-    pub(crate) fn alloc<BE, M>(&self, module: &M, base2k: Base2K) -> Encoded<BE>
+    pub(crate) fn alloc<BE, M, Rg: Ring>(&self, module: &M, base2k: Base2K) -> Encoded<BE, Rg>
     where
         BE: Backend,
         M: CKKSLinearTransformationAlloc<BE> + GetDegree,
     {
-        module.ckks_linear_transformation_alloc_from_infos(&self.lt, &self.plaintext::<BE, M>(module, base2k))
+        module.ckks_linear_transformation_alloc_from_infos(&self.lt, &self.plaintext::<BE, M, Rg>(module, base2k))
     }
 
     /// The prepared map's allocation on `module`, as poulpy-ckks prepares an encoding of this shape into.
-    pub(crate) fn alloc_prepared<BE, M>(&self, module: &M, base2k: Base2K) -> LinearTransformationPrepared<BE>
+    pub(crate) fn alloc_prepared<BE, M, Rg: Ring>(&self, module: &M, base2k: Base2K) -> LinearTransformationPrepared<BE, Rg>
     where
         BE: Backend,
         M: CnvPVecAlloc<BE> + CKKSModuleInfos + GetDegree,
     {
-        LinearTransformationPrepared::<BE>::alloc_prepared_from_index(
+        LinearTransformationPrepared::<BE, Rg>::alloc_prepared_from_index(
             module,
             &self.prepared_index(),
-            &self.plaintext::<BE, M>(module, base2k),
+            &self.plaintext::<BE, M, Rg>(module, base2k),
         )
     }
 
     /// Scratch of poulpy-ckks's preparation of the map.
-    pub(crate) fn prepare_tmp_bytes<BE, M>(&self, module: &M, base2k: Base2K) -> usize
+    pub(crate) fn prepare_tmp_bytes<BE, M, Rg: Ring>(&self, module: &M, base2k: Base2K) -> usize
     where
         BE: Backend,
-        M: CKKSLinearTransformationOps<BE> + CKKSModuleInfos + GetDegree,
+        M: CKKSLinearTransformationOps<BE, Rg> + CKKSModuleInfos + GetDegree,
     {
-        module.ckks_linear_transformation_rhs_prepare_tmp_bytes(&self.plaintext::<BE, M>(module, base2k))
+        module.ckks_linear_transformation_rhs_prepare_tmp_bytes(&self.plaintext::<BE, M, Rg>(module, base2k))
     }
 }
 
@@ -215,15 +215,15 @@ pub(crate) fn shape(map: &MapLayout) -> LinearTransformation<DiagonalShape> {
 }
 
 /// Encodes `map` into `lt`, allocated from its layout.
-pub(crate) fn encode_map_into<BE, M, F>(
+pub(crate) fn encode_map_into<BE, M, F, Rg: Ring>(
     module: &M,
-    lt: &mut Encoded<BE>,
+    lt: &mut Encoded<BE, Rg>,
     map: Scheduled<F>,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> CKKSResult<()>
 where
     BE: Backend,
-    M: CKKSModuleInfos + CKKSEncodingOps<BE, F>,
+    M: CKKSModuleInfos + CKKSEncodingOps<BE, F, Rg>,
     F: DiagonalArithmetic + CKKSEncodingScalar,
 {
     ckks_linear_transformation_encode_into(module, lt, map.meta.meta, &map.map, map.strategy, scratch)
@@ -231,7 +231,7 @@ where
 
 /// Whether every diagonal of `map` shares the first one's scale, encoded width and slot kind, which its preparation
 /// requires.
-fn uniform<BE: Backend>(map: &Encoded<BE>) -> bool {
+fn uniform<BE: Backend, Rg: Ring>(map: &Encoded<BE, Rg>) -> bool {
     let mut diagonals = map
         .giant_steps
         .iter()
@@ -244,19 +244,19 @@ fn uniform<BE: Backend>(map: &Encoded<BE>) -> bool {
 /// one scale, width and slot kind and `scratch` holds the largest preparation's bytes and the `rest` its caller takes
 /// after them; `op` names the caller in the panics of both checks, which run before the first map is prepared, and
 /// prefixes the panic carrying any refusal of poulpy-ckks.
-pub(crate) fn prepare_maps_into<'a, BE, M>(
+pub(crate) fn prepare_maps_into<'a, BE, M, Rg: Ring>(
     module: &M,
     op: &'static str,
-    res: impl Iterator<Item = &'a mut LinearTransformationPrepared<BE>>,
-    maps: impl Iterator<Item = &'a Encoded<BE>> + Clone,
+    res: impl Iterator<Item = &'a mut LinearTransformationPrepared<BE, Rg>>,
+    maps: impl Iterator<Item = &'a Encoded<BE, Rg>> + Clone,
     rest: usize,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend + 'a,
-    M: CKKSLinearTransformationOps<BE>,
+    M: CKKSLinearTransformationOps<BE, Rg>,
 {
     assert!(
-        maps.clone().all(uniform::<BE>),
+        maps.clone().all(uniform::<BE, Rg>),
         "{op}: a map's diagonals do not share one scale, width and slot kind"
     );
     let bytes = maps

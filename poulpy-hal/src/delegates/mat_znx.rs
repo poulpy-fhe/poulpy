@@ -1,11 +1,11 @@
 use crate::{
     api::{MatZnxAddAssign, MatZnxCopy, MatZnxNormalize, MatZnxNormalizeAssign, MatZnxNormalizeTmpBytes},
-    layouts::{Backend, MatZnxBackendMut, MatZnxBackendRef, Module, ScratchArena},
+    layouts::{Backend, MatZnxBackendMut, MatZnxBackendRef, Module, Ring, ScratchArena},
     oep::HalMatZnxImpl,
 };
 
 macro_rules! impl_mat_znx_delegate {
-    ($trait:ty, $($body:item)+) => {
+    (free $trait:ty, $($body:item)+) => {
         impl<B> $trait for Module<B>
         where
             B: Backend<ZnxWord = i64> + HalMatZnxImpl,
@@ -13,40 +13,48 @@ macro_rules! impl_mat_znx_delegate {
             $($body)+
         }
     };
+    ($trait:ty, $($body:item)+) => {
+        impl<B, Rg: Ring> $trait for Module<B>
+        where
+            B: Backend<ZnxWord = i64> + HalMatZnxImpl<Rg>,
+        {
+            $($body)+
+        }
+    };
 }
 
 impl_mat_znx_delegate!(
-    MatZnxAddAssign<B>,
-    fn mat_znx_add_assign(&self, res: &mut MatZnxBackendMut<'_, B>, a: &MatZnxBackendRef<'_, B>) {
+    MatZnxAddAssign<B, Rg>,
+    fn mat_znx_add_assign(&self, res: &mut MatZnxBackendMut<'_, B, Rg>, a: &MatZnxBackendRef<'_, B, Rg>) {
         B::mat_znx_add_assign(self, res, a);
     }
 );
 
 impl_mat_znx_delegate!(
-    MatZnxCopy<B>,
-    fn mat_znx_copy(&self, res: &mut MatZnxBackendMut<'_, B>, res_col: usize, a: &MatZnxBackendRef<'_, B>, a_col: usize) {
+    MatZnxCopy<B, Rg>,
+    fn mat_znx_copy(&self, res: &mut MatZnxBackendMut<'_, B, Rg>, res_col: usize, a: &MatZnxBackendRef<'_, B, Rg>, a_col: usize) {
         B::mat_znx_copy(self, res, res_col, a, a_col);
     }
 );
 
 impl_mat_znx_delegate!(
-    MatZnxNormalizeTmpBytes,
+    free MatZnxNormalizeTmpBytes,
     fn mat_znx_normalize_tmp_bytes(&self) -> usize {
         B::mat_znx_normalize_tmp_bytes(self)
     }
 );
 
 impl_mat_znx_delegate!(
-    MatZnxNormalize<B>,
+    MatZnxNormalize<B, Rg>,
     #[allow(clippy::too_many_arguments)]
     fn mat_znx_normalize(
         &self,
-        res: &mut MatZnxBackendMut<'_, B>,
+        res: &mut MatZnxBackendMut<'_, B, Rg>,
         res_base2k: usize,
         res_k: usize,
         res_offset: i64,
         res_col: usize,
-        a: &MatZnxBackendRef<'_, B>,
+        a: &MatZnxBackendRef<'_, B, Rg>,
         a_base2k: usize,
         a_col: usize,
         scratch: &mut ScratchArena<'_, B>,
@@ -56,13 +64,13 @@ impl_mat_znx_delegate!(
 );
 
 impl_mat_znx_delegate!(
-    MatZnxNormalizeAssign<B>,
+    MatZnxNormalizeAssign<B, Rg>,
     fn mat_znx_normalize_assign(
         &self,
         base2k: usize,
         k: usize,
         a_offset: i64,
-        a: &mut MatZnxBackendMut<'_, B>,
+        a: &mut MatZnxBackendMut<'_, B, Rg>,
         a_col: usize,
         scratch: &mut ScratchArena<'_, B>,
     ) {

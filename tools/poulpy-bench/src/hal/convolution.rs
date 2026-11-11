@@ -7,7 +7,8 @@ use poulpy_hal::{
     api::{CnvOps, CnvPVecAlloc, ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxBigAlloc, VecZnxDftAlloc},
     layouts::{
         Backend, CnvDftAccTerm, CnvPVecLOwned, CnvPVecLToBackendMut, CnvPVecLToBackendRef, CnvPVecROwned, CnvPVecRToBackendMut,
-        CnvPVecRToBackendRef, Module, PrepareHint, ScratchOwned, VecZnxBigOwned, VecZnxBigToBackendMut, VecZnxDftToBackendMut,
+        CnvPVecRToBackendRef, Module, PrepareHint, ScratchOwned, Standard, VecZnxBigOwned, VecZnxBigToBackendMut,
+        VecZnxDftToBackendMut,
     },
     source::Source,
 };
@@ -38,7 +39,7 @@ where
 
     bencher.iter(|| {
         let mut a_prep_backend = a_prep.to_backend_mut();
-        let a_backend = vec_znx_backend_ref::<BE>(&a);
+        let a_backend = vec_znx_backend_ref::<BE, Standard>(&a);
         module.cnv_pvec_left_prepare(&mut a_prep_backend, &a_backend, &mut scratch.borrow());
         module.synchronize();
         black_box(());
@@ -66,7 +67,7 @@ where
 
     bencher.iter(|| {
         let mut a_prep_backend = a_prep.to_backend_mut();
-        let a_backend = vec_znx_backend_ref::<BE>(&a);
+        let a_backend = vec_znx_backend_ref::<BE, Standard>(&a);
         module.cnv_pvec_right_prepare(&mut a_prep_backend, &a_backend, &mut scratch.borrow());
         module.synchronize();
         black_box(());
@@ -310,8 +311,8 @@ where
 
     bencher.iter(|| {
         let mut c_big_backend = c_big.to_backend_mut();
-        let a_backend = vec_znx_backend_ref::<BE>(&a);
-        let b_backend = vec_znx_backend_ref::<BE>(&b);
+        let a_backend = vec_znx_backend_ref::<BE, Standard>(&a);
+        let b_backend = vec_znx_backend_ref::<BE, Standard>(&b);
         module.cnv_by_const_apply(
             0,
             &mut c_big_backend,
@@ -353,8 +354,8 @@ where
 
     bencher.iter(|| {
         let mut c_big_backend = c_big.to_backend_mut();
-        let a_backend = vec_znx_backend_ref::<BE>(&a);
-        let b_backend = vec_znx_backend_ref::<BE>(&b);
+        let a_backend = vec_znx_backend_ref::<BE, Standard>(&a);
+        let b_backend = vec_znx_backend_ref::<BE, Standard>(&b);
         module.cnv_by_const_apply_add(
             0,
             &mut c_big_backend,
@@ -394,7 +395,7 @@ where
     bencher.iter(|| {
         let mut left_backend = left.to_backend_mut();
         let mut right_backend = right.to_backend_mut();
-        let a_backend = vec_znx_backend_ref::<BE>(&a);
+        let a_backend = vec_znx_backend_ref::<BE, Standard>(&a);
         module.cnv_pvec_self_prepare(&mut left_backend, &mut right_backend, &a_backend, &mut scratch.borrow());
         module.synchronize();
         black_box(());

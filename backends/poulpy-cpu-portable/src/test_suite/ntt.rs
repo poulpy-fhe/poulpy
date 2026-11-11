@@ -3,7 +3,7 @@ use poulpy_hal::{
         ModuleNew, ScratchOwnedAlloc, VecZnxBigAlloc, VecZnxDftAlloc, VecZnxDftApply, VecZnxIdftApply, VecZnxIdftApplyTmpBytes,
     },
     layouts::{
-        Backend, HostBytesBackend, HostDataRef, Module, ScratchOwned, VecZnxBigToBackendMut, VecZnxDftToBackendMut,
+        Backend, HostBytesBackend, HostDataRef, Module, ScratchOwned, Standard, VecZnxBigToBackendMut, VecZnxDftToBackendMut,
         VecZnxDftToBackendRef, ZnxView, ZnxViewMut,
     },
     test_suite::{upload_vec_znx, vec_znx_backend_ref},
@@ -34,10 +34,17 @@ where
             };
         }
     }
-    let input = upload_vec_znx::<BE>(&a);
+    let input = upload_vec_znx::<BE, Standard>(&a);
     let mut dft = module.vec_znx_dft_alloc(n, 1, 2);
     let mut big = module.vec_znx_big_alloc(n, 1, 2);
-    module.vec_znx_dft_apply(1, 0, &mut dft.to_backend_mut(), 0, &vec_znx_backend_ref::<BE>(&input), 0);
+    module.vec_znx_dft_apply(
+        1,
+        0,
+        &mut dft.to_backend_mut(),
+        0,
+        &vec_znx_backend_ref::<BE, Standard>(&input),
+        0,
+    );
     let mut scratch = ScratchOwned::<BE>::alloc(module.vec_znx_idft_apply_tmp_bytes());
     module.vec_znx_idft_apply(&mut big.to_backend_mut(), 0, &dft.to_backend_ref(), 0, &mut scratch.arena());
     for limb in 0..2 {

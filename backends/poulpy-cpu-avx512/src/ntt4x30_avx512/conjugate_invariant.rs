@@ -22,7 +22,7 @@ use super::{
     ntt::{intt_avx512, ntt_avx512},
 };
 
-impl ZnxAutomorphism for NTT4x30Avx512<ConjugateInvariant> {
+impl ZnxAutomorphism<ConjugateInvariant> for NTT4x30Avx512 {
     #[inline(always)]
     fn znx_automorphism(p: i64, res: &mut [i64], a: &[i64]) {
         znx_automorphism_portable(p, res, a)
@@ -34,7 +34,7 @@ impl ZnxAutomorphism for NTT4x30Avx512<ConjugateInvariant> {
     }
 }
 
-impl NttDFTExecute<NttTable<Primes30, ConjugateInvariant>> for NTT4x30Avx512<ConjugateInvariant> {
+impl NttDFTExecute<NttTable<Primes30, ConjugateInvariant>> for NTT4x30Avx512 {
     #[inline(always)]
     fn ntt_dft_execute(table: &NttTable<Primes30, ConjugateInvariant>, data: &mut [u64]) {
         // SAFETY: NTT4x30Avx512::new() verifies AVX-512F availability at construction time.
@@ -44,12 +44,12 @@ impl NttDFTExecute<NttTable<Primes30, ConjugateInvariant>> for NTT4x30Avx512<Con
         }
     }
 
-    fn ntt_automorphism_plan(n: usize, p: i64) -> NttAutomorphismPlan {
+    fn ntt_automorphism_plan(n: usize, p: i64) -> NttAutomorphismPlan<ConjugateInvariant> {
         build_ntt4x30_automorphism_plan_portable(n, p)
     }
 }
 
-impl NttDFTExecute<NttTableInv<Primes30, ConjugateInvariant>> for NTT4x30Avx512<ConjugateInvariant> {
+impl NttDFTExecute<NttTableInv<Primes30, ConjugateInvariant>> for NTT4x30Avx512 {
     #[inline(always)]
     fn ntt_dft_execute(table: &NttTableInv<Primes30, ConjugateInvariant>, data: &mut [u64]) {
         // SAFETY: NTT4x30Avx512::new() verifies AVX-512F availability at construction time.
@@ -59,7 +59,7 @@ impl NttDFTExecute<NttTableInv<Primes30, ConjugateInvariant>> for NTT4x30Avx512<
         }
     }
 
-    fn ntt_automorphism_plan(n: usize, p: i64) -> NttAutomorphismPlan {
+    fn ntt_automorphism_plan(n: usize, p: i64) -> NttAutomorphismPlan<ConjugateInvariant> {
         build_ntt4x30_automorphism_plan_portable(n, p)
     }
 }

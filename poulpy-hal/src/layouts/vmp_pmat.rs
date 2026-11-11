@@ -4,7 +4,8 @@ use std::{
 };
 
 use crate::layouts::{
-    Backend, Data, DataView, DataViewMut, DftWord, DigestU64, HostDataMut, HostDataRef, MatZnxInfos, PrepareHint, ZnxInfos,
+    Backend, Data, DataView, DataViewMut, DftWord, DigestU64, HostDataMut, HostDataRef, MatZnxInfos, PrepareHint, Ring, Standard,
+    ZnxInfos,
 };
 
 #[repr(C)]
@@ -79,39 +80,39 @@ impl VmpPMatShape {
 /// representation the [`PrepareHint`] chosen at allocation selected (see
 /// [`VmpPMatShape::hint`]).
 #[repr(C)]
-pub struct VmpPMat<D: Data, W: DftWord, B: Backend<DftWord = W>> {
+pub struct VmpPMat<D: Data, W: DftWord, B: Backend<DftWord = W>, Rg: Ring = Standard> {
     data: D,
     shape: VmpPMatShape,
-    _phantom: PhantomData<(W, B)>,
+    _phantom: PhantomData<(W, B, Rg)>,
 }
 
 // Equality (and hashing, where provided) is defined directly on the
 // representation: same shape, same buffer bytes. No `W`/`B` value is ever
 // compared, so no bound on them is needed — in particular `Eq` holds even
 // for non-`Eq` words like `f64` (byte equality is a total equivalence).
-impl<D: Data, W: DftWord, B: Backend<DftWord = W>> PartialEq for VmpPMat<D, W, B> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>, Rg: Ring> PartialEq for VmpPMat<D, W, B, Rg> {
     fn eq(&self, other: &Self) -> bool {
         self.shape == other.shape && self.data == other.data
     }
 }
 
-impl<D: Data, W: DftWord, B: Backend<DftWord = W>> Eq for VmpPMat<D, W, B> {}
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>, Rg: Ring> Eq for VmpPMat<D, W, B, Rg> {}
 
 /// The shape only: the representation is opaque.
-impl<D: Data, W: DftWord, B: Backend<DftWord = W>> std::fmt::Debug for VmpPMat<D, W, B> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>, Rg: Ring> std::fmt::Debug for VmpPMat<D, W, B, Rg> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("VmpPMat").field("shape", &self.shape).finish()
     }
 }
 
-impl<D: Data + std::hash::Hash, W: DftWord, B: Backend<DftWord = W>> std::hash::Hash for VmpPMat<D, W, B> {
+impl<D: Data + std::hash::Hash, W: DftWord, B: Backend<DftWord = W>, Rg: Ring> std::hash::Hash for VmpPMat<D, W, B, Rg> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.shape.hash(state);
         self.data.hash(state);
     }
 }
 
-impl<D: HostDataRef, W: DftWord, B: Backend<DftWord = W>> DigestU64 for VmpPMat<D, W, B> {
+impl<D: HostDataRef, W: DftWord, B: Backend<DftWord = W>, Rg: Ring> DigestU64 for VmpPMat<D, W, B, Rg> {
     fn digest_u64(&self) -> u64 {
         let mut h: DefaultHasher = DefaultHasher::new();
         h.write(self.data.as_ref());
@@ -124,7 +125,7 @@ impl<D: HostDataRef, W: DftWord, B: Backend<DftWord = W>> DigestU64 for VmpPMat<
     }
 }
 
-impl<D: HostDataRef, W: DftWord, B: Backend<DftWord = W>> VmpPMat<D, W, B> {
+impl<D: HostDataRef, W: DftWord, B: Backend<DftWord = W>, Rg: Ring> VmpPMat<D, W, B, Rg> {
     /// Returns the whole element view as a scalar slice.
     ///
     /// The prepared matrix is packed in a backend-defined order with no flat
@@ -136,7 +137,7 @@ impl<D: HostDataRef, W: DftWord, B: Backend<DftWord = W>> VmpPMat<D, W, B> {
     }
 }
 
-impl<D: HostDataMut, W: DftWord, B: Backend<DftWord = W>> VmpPMat<D, W, B> {
+impl<D: HostDataMut, W: DftWord, B: Backend<DftWord = W>, Rg: Ring> VmpPMat<D, W, B, Rg> {
     /// Mutable counterpart of [`Self::raw`].
     pub fn raw_mut(&mut self) -> &mut [W] {
         let span: usize = crate::layouts::element_view_span(self);
@@ -144,7 +145,7 @@ impl<D: HostDataMut, W: DftWord, B: Backend<DftWord = W>> VmpPMat<D, W, B> {
     }
 }
 
-impl<D: Data, W: DftWord, B: Backend<DftWord = W>> ZnxInfos for VmpPMat<D, W, B> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>, Rg: Ring> ZnxInfos for VmpPMat<D, W, B, Rg> {
     fn n(&self) -> usize {
         self.shape.n()
     }
@@ -161,7 +162,7 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> ZnxInfos for VmpPMat<D, W, B>
     }
 }
 
-impl<D: Data, W: DftWord, B: Backend<DftWord = W>> MatZnxInfos for VmpPMat<D, W, B> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>, Rg: Ring> MatZnxInfos for VmpPMat<D, W, B, Rg> {
     fn rows(&self) -> usize {
         self.shape.rows()
     }
@@ -175,20 +176,20 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> MatZnxInfos for VmpPMat<D, W,
     }
 }
 
-impl<D: Data, W: DftWord, B: Backend<DftWord = W>> DataView for VmpPMat<D, W, B> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>, Rg: Ring> DataView for VmpPMat<D, W, B, Rg> {
     type D = D;
     fn data(&self) -> &Self::D {
         &self.data
     }
 }
 
-impl<D: Data, W: DftWord, B: Backend<DftWord = W>> DataViewMut for VmpPMat<D, W, B> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>, Rg: Ring> DataViewMut for VmpPMat<D, W, B, Rg> {
     fn data_mut(&mut self) -> &mut Self::D {
         &mut self.data
     }
 }
 
-impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VmpPMat<D, W, B> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>, Rg: Ring> VmpPMat<D, W, B, Rg> {
     pub fn shape(&self) -> VmpPMatShape {
         self.shape
     }
@@ -220,9 +221,9 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VmpPMat<D, W, B> {
     }
 }
 
-impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VmpPMat<D, W, B> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>, Rg: Ring> VmpPMat<D, W, B, Rg> {
     /// Allocates a zero-initialized backend-owned `VmpPMat`.
-    pub fn alloc(n: usize, rows: usize, cols_in: usize, cols_out: usize, size: usize, hint: PrepareHint) -> VmpPMatOwned<B>
+    pub fn alloc(n: usize, rows: usize, cols_in: usize, cols_out: usize, size: usize, hint: PrepareHint) -> VmpPMatOwned<B, Rg>
     where
         B: Backend<OwnedBuf = D>,
     {
@@ -236,18 +237,18 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VmpPMat<D, W, B> {
 }
 
 /// Owned `VmpPMat` backed by a backend-owned buffer.
-pub type VmpPMatOwned<B> = VmpPMat<<B as Backend>::OwnedBuf, <B as Backend>::DftWord, B>;
+pub type VmpPMatOwned<B, Rg = Standard> = VmpPMat<<B as Backend>::OwnedBuf, <B as Backend>::DftWord, B, Rg>;
 /// Immutably borrowed `VmpPMat`.
-pub type VmpPMatRef<'a, B> = VmpPMat<&'a [u8], <B as Backend>::DftWord, B>;
+pub type VmpPMatRef<'a, B, Rg = Standard> = VmpPMat<&'a [u8], <B as Backend>::DftWord, B, Rg>;
 /// Shared backend-native borrow of a `VmpPMat`.
-pub type VmpPMatBackendRef<'a, B> = VmpPMat<<B as Backend>::BufRef<'a>, <B as Backend>::DftWord, B>;
+pub type VmpPMatBackendRef<'a, B, Rg = Standard> = VmpPMat<<B as Backend>::BufRef<'a>, <B as Backend>::DftWord, B, Rg>;
 /// Mutable backend-native borrow of a `VmpPMat`.
-pub type VmpPMatBackendMut<'a, B> = VmpPMat<<B as Backend>::BufMut<'a>, <B as Backend>::DftWord, B>;
+pub type VmpPMatBackendMut<'a, B, Rg = Standard> = VmpPMat<<B as Backend>::BufMut<'a>, <B as Backend>::DftWord, B, Rg>;
 
 /// Reborrow an immutable backend-native `VmpPMat` view as a shared backend-native view.
-pub fn vmp_pmat_backend_ref_from_ref<'a, 'b, B: Backend + 'b>(
-    pmat: &'a VmpPMat<B::BufRef<'b>, B::DftWord, B>,
-) -> VmpPMatBackendRef<'a, B> {
+pub fn vmp_pmat_backend_ref_from_ref<'a, 'b, B: Backend + 'b, Rg: Ring>(
+    pmat: &'a VmpPMat<B::BufRef<'b>, B::DftWord, B, Rg>,
+) -> VmpPMatBackendRef<'a, B, Rg> {
     VmpPMat {
         data: B::view_ref(&pmat.data),
         shape: pmat.shape,
@@ -256,7 +257,9 @@ pub fn vmp_pmat_backend_ref_from_ref<'a, 'b, B: Backend + 'b>(
 }
 
 /// Reborrow a mutable backend-native `VmpPMat` view as a shared backend-native view.
-pub fn vmp_pmat_backend_ref_from_mut<'a, B: Backend>(pmat: &'a VmpPMatBackendMut<'a, B>) -> VmpPMatBackendRef<'a, B> {
+pub fn vmp_pmat_backend_ref_from_mut<'a, B: Backend, Rg: Ring>(
+    pmat: &'a VmpPMatBackendMut<'a, B, Rg>,
+) -> VmpPMatBackendRef<'a, B, Rg> {
     VmpPMat {
         data: B::view_ref_mut(&pmat.data),
         shape: pmat.shape,
@@ -264,9 +267,9 @@ pub fn vmp_pmat_backend_ref_from_mut<'a, B: Backend>(pmat: &'a VmpPMatBackendMut
     }
 }
 
-pub fn vmp_pmat_backend_mut_from_mut<'a, 'b, B: Backend + 'b>(
-    pmat: &'a mut VmpPMatBackendMut<'b, B>,
-) -> VmpPMatBackendMut<'a, B> {
+pub fn vmp_pmat_backend_mut_from_mut<'a, 'b, B: Backend + 'b, Rg: Ring>(
+    pmat: &'a mut VmpPMatBackendMut<'b, B, Rg>,
+) -> VmpPMatBackendMut<'a, B, Rg> {
     VmpPMat {
         data: B::view_mut_ref(&mut pmat.data),
         shape: pmat.shape,
@@ -275,12 +278,12 @@ pub fn vmp_pmat_backend_mut_from_mut<'a, 'b, B: Backend + 'b>(
 }
 
 /// Borrow a backend-owned `VmpPMat` using the backend's native view type.
-pub trait VmpPMatToBackendRef<B: Backend> {
-    fn to_backend_ref(&self) -> VmpPMatBackendRef<'_, B>;
+pub trait VmpPMatToBackendRef<B: Backend, Rg: Ring = Standard> {
+    fn to_backend_ref(&self) -> VmpPMatBackendRef<'_, B, Rg>;
 }
 
-impl<B: Backend> VmpPMatToBackendRef<B> for VmpPMat<B::OwnedBuf, B::DftWord, B> {
-    fn to_backend_ref(&self) -> VmpPMatBackendRef<'_, B> {
+impl<B: Backend, Rg: Ring> VmpPMatToBackendRef<B, Rg> for VmpPMat<B::OwnedBuf, B::DftWord, B, Rg> {
+    fn to_backend_ref(&self) -> VmpPMatBackendRef<'_, B, Rg> {
         VmpPMat {
             data: B::view(&self.data),
             shape: self.shape,
@@ -289,8 +292,8 @@ impl<B: Backend> VmpPMatToBackendRef<B> for VmpPMat<B::OwnedBuf, B::DftWord, B> 
     }
 }
 
-impl<B: Backend> VmpPMatToBackendRef<B> for &VmpPMat<B::BufRef<'_>, B::DftWord, B> {
-    fn to_backend_ref(&self) -> VmpPMatBackendRef<'_, B> {
+impl<B: Backend, Rg: Ring> VmpPMatToBackendRef<B, Rg> for &VmpPMat<B::BufRef<'_>, B::DftWord, B, Rg> {
+    fn to_backend_ref(&self) -> VmpPMatBackendRef<'_, B, Rg> {
         VmpPMat {
             data: B::view_ref(&self.data),
             shape: self.shape,
@@ -300,12 +303,12 @@ impl<B: Backend> VmpPMatToBackendRef<B> for &VmpPMat<B::BufRef<'_>, B::DftWord, 
 }
 
 /// Reborrow an already backend-borrowed `VmpPMat` as a shared backend-native view.
-pub trait VmpPMatReborrowBackendRef<B: Backend> {
-    fn reborrow_backend_ref(&self) -> VmpPMatBackendRef<'_, B>;
+pub trait VmpPMatReborrowBackendRef<B: Backend, Rg: Ring = Standard> {
+    fn reborrow_backend_ref(&self) -> VmpPMatBackendRef<'_, B, Rg>;
 }
 
-impl<B: Backend> VmpPMatReborrowBackendRef<B> for VmpPMat<B::BufMut<'_>, B::DftWord, B> {
-    fn reborrow_backend_ref(&self) -> VmpPMatBackendRef<'_, B> {
+impl<B: Backend, Rg: Ring> VmpPMatReborrowBackendRef<B, Rg> for VmpPMat<B::BufMut<'_>, B::DftWord, B, Rg> {
+    fn reborrow_backend_ref(&self) -> VmpPMatBackendRef<'_, B, Rg> {
         VmpPMat {
             data: B::view_ref_mut(&self.data),
             shape: self.shape,
@@ -315,12 +318,12 @@ impl<B: Backend> VmpPMatReborrowBackendRef<B> for VmpPMat<B::BufMut<'_>, B::DftW
 }
 
 /// Mutably borrow a backend-owned `VmpPMat` using the backend's native view type.
-pub trait VmpPMatToBackendMut<B: Backend> {
-    fn to_backend_mut(&mut self) -> VmpPMatBackendMut<'_, B>;
+pub trait VmpPMatToBackendMut<B: Backend, Rg: Ring = Standard> {
+    fn to_backend_mut(&mut self) -> VmpPMatBackendMut<'_, B, Rg>;
 }
 
-impl<B: Backend> VmpPMatToBackendMut<B> for VmpPMat<B::OwnedBuf, B::DftWord, B> {
-    fn to_backend_mut(&mut self) -> VmpPMatBackendMut<'_, B> {
+impl<B: Backend, Rg: Ring> VmpPMatToBackendMut<B, Rg> for VmpPMat<B::OwnedBuf, B::DftWord, B, Rg> {
+    fn to_backend_mut(&mut self) -> VmpPMatBackendMut<'_, B, Rg> {
         VmpPMat {
             data: B::view_mut(&mut self.data),
             shape: self.shape,
@@ -329,24 +332,24 @@ impl<B: Backend> VmpPMatToBackendMut<B> for VmpPMat<B::OwnedBuf, B::DftWord, B> 
     }
 }
 
-impl<B: Backend> VmpPMatToBackendMut<B> for &mut VmpPMat<B::BufMut<'_>, B::DftWord, B> {
-    fn to_backend_mut(&mut self) -> VmpPMatBackendMut<'_, B> {
-        vmp_pmat_backend_mut_from_mut::<B>(self)
+impl<B: Backend, Rg: Ring> VmpPMatToBackendMut<B, Rg> for &mut VmpPMat<B::BufMut<'_>, B::DftWord, B, Rg> {
+    fn to_backend_mut(&mut self) -> VmpPMatBackendMut<'_, B, Rg> {
+        vmp_pmat_backend_mut_from_mut::<B, Rg>(self)
     }
 }
 
 /// Reborrow an already backend-borrowed `VmpPMat` as a mutable backend-native view.
-pub trait VmpPMatReborrowBackendMut<B: Backend> {
-    fn reborrow_backend_mut(&mut self) -> VmpPMatBackendMut<'_, B>;
+pub trait VmpPMatReborrowBackendMut<B: Backend, Rg: Ring = Standard> {
+    fn reborrow_backend_mut(&mut self) -> VmpPMatBackendMut<'_, B, Rg>;
 }
 
-impl<B: Backend> VmpPMatReborrowBackendMut<B> for VmpPMat<B::BufMut<'_>, B::DftWord, B> {
-    fn reborrow_backend_mut(&mut self) -> VmpPMatBackendMut<'_, B> {
-        vmp_pmat_backend_mut_from_mut::<B>(self)
+impl<B: Backend, Rg: Ring> VmpPMatReborrowBackendMut<B, Rg> for VmpPMat<B::BufMut<'_>, B::DftWord, B, Rg> {
+    fn reborrow_backend_mut(&mut self) -> VmpPMatBackendMut<'_, B, Rg> {
+        vmp_pmat_backend_mut_from_mut::<B, Rg>(self)
     }
 }
 
-impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VmpPMat<D, W, B> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>, Rg: Ring> VmpPMat<D, W, B, Rg> {
     pub fn from_data(data: D, n: usize, rows: usize, cols_in: usize, cols_out: usize, size: usize, hint: PrepareHint) -> Self {
         Self {
             data,
@@ -356,14 +359,14 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VmpPMat<D, W, B> {
     }
 }
 
-impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VmpPMat<D, W, B> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>, Rg: Ring> VmpPMat<D, W, B, Rg> {
     /// Zero-copy re-tag of this container to a layout-compatible backend `B2`.
     ///
     /// The buffer moves as-is; only the type tag changes. Requires the
     /// [`VmpPMatLayoutCompatible`](crate::layouts::VmpPMatLayoutCompatible) marker declared by the backend
     /// pair. `D` is kept, so for further backend-native use `B2`'s buffer
     /// types must match `D` (true for every backend in the workspace).
-    pub fn into_backend<B2>(self) -> VmpPMat<D, W, B2>
+    pub fn into_backend<B2>(self) -> VmpPMat<D, W, B2, Rg>
     where
         B2: Backend<DftWord = W>,
         B: crate::layouts::VmpPMatLayoutCompatible<B2>,

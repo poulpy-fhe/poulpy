@@ -7,8 +7,8 @@
 use poulpy_hal::{
     AlignedBuf, alloc_aligned,
     layouts::{
-        Backend, VecZnx, VecZnxBackendRef, VecZnxBig, VecZnxBigBackendRef, VecZnxBigToBackendRef, VecZnxToBackendRef, ZnxView,
-        ZnxViewMut, assert_dense,
+        Backend, Ring, VecZnx, VecZnxBackendRef, VecZnxBig, VecZnxBigBackendRef, VecZnxBigToBackendRef, VecZnxToBackendRef,
+        ZnxView, ZnxViewMut, assert_dense,
     },
 };
 
@@ -33,39 +33,43 @@ fn embed_into<A: ZnxView, R: ZnxViewMut<Scalar = A::Scalar>>(res: &mut R, a: &A)
 }
 
 /// Calls `f` with `a` at degree `n`, embedding it first when its degree is below `n`.
-pub(crate) fn with_vec_znx<BE, T>(a: &VecZnxBackendRef<'_, BE>, n: usize, f: impl FnOnce(&VecZnxBackendRef<'_, BE>) -> T) -> T
+pub(crate) fn with_vec_znx<BE, T, Rg: Ring>(
+    a: &VecZnxBackendRef<'_, BE, Rg>,
+    n: usize,
+    f: impl FnOnce(&VecZnxBackendRef<'_, BE, Rg>) -> T,
+) -> T
 where
     BE: Backend<ZnxWord = i64>,
-    VecZnx<AlignedBuf, i64>: VecZnxToBackendRef<BE>,
-    for<'x> VecZnxBackendRef<'x, BE>: ZnxView<Scalar = i64>,
+    VecZnx<AlignedBuf, i64, Rg>: VecZnxToBackendRef<BE, Rg>,
+    for<'x> VecZnxBackendRef<'x, BE, Rg>: ZnxView<Scalar = i64>,
 {
     if a.n() == n {
         return f(a);
     }
     assert_dense(a, "embedded operand");
     let bytes = n * a.cols() * a.size() * size_of::<i64>();
-    let mut dense = VecZnx::<AlignedBuf, i64>::from_data(alloc_aligned::<u8>(bytes), n, a.cols(), a.size());
+    let mut dense = VecZnx::<AlignedBuf, i64, Rg>::from_data(alloc_aligned::<u8>(bytes), n, a.cols(), a.size());
     embed_into(&mut dense, a);
     f(&dense.to_backend_ref())
 }
 
 /// Calls `f` with `a` at degree `n`, embedding it first when its degree is below `n`.
-pub(crate) fn with_vec_znx_big<BE, T>(
-    a: &VecZnxBigBackendRef<'_, BE>,
+pub(crate) fn with_vec_znx_big<BE, T, Rg: Ring>(
+    a: &VecZnxBigBackendRef<'_, BE, Rg>,
     n: usize,
-    f: impl FnOnce(&VecZnxBigBackendRef<'_, BE>) -> T,
+    f: impl FnOnce(&VecZnxBigBackendRef<'_, BE, Rg>) -> T,
 ) -> T
 where
     BE: Backend,
-    VecZnxBig<AlignedBuf, BE::BigWord, BE>: VecZnxBigToBackendRef<BE> + ZnxViewMut<Scalar = BE::BigWord>,
-    for<'x> VecZnxBigBackendRef<'x, BE>: ZnxView<Scalar = BE::BigWord>,
+    VecZnxBig<AlignedBuf, BE::BigWord, BE, Rg>: VecZnxBigToBackendRef<BE, Rg> + ZnxViewMut<Scalar = BE::BigWord>,
+    for<'x> VecZnxBigBackendRef<'x, BE, Rg>: ZnxView<Scalar = BE::BigWord>,
 {
     if a.n() == n {
         return f(a);
     }
     assert_dense(a, "embedded operand");
     let bytes = n * a.cols() * a.size() * size_of::<BE::BigWord>();
-    let mut dense = VecZnxBig::<AlignedBuf, BE::BigWord, BE>::from_data(alloc_aligned::<u8>(bytes), n, a.cols(), a.size());
+    let mut dense = VecZnxBig::<AlignedBuf, BE::BigWord, BE, Rg>::from_data(alloc_aligned::<u8>(bytes), n, a.cols(), a.size());
     embed_into(&mut dense, a);
     f(&dense.to_backend_ref())
 }

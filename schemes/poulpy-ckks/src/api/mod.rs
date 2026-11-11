@@ -51,4 +51,4 @@ pub use rotate::CKKSRotateOps;
 pub use round::CKKSRoundOps;
 pub use ship::{CKKSShipOps, CKKSShipScalar};
 pub use sub::CKKSSubOps;
-pub use tmp_bytes::CKKSAllOpsTmpBytes;
+pub use tmp_bytes::{CKKSAllOpsTmpBytes, CKKSAllOpsTmpBytesAt};

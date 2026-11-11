@@ -11,8 +11,9 @@ use poulpy_hal::{
         VecZnxNormalize, VecZnxNormalizeTmpBytes, VecZnxRotate, VecZnxZero,
     },
     layouts::{
-        Backend, Module, ScratchArena, VecZnxBackendRef, VecZnxBigToBackendRef, VecZnxDftBackendRef, VecZnxDftToBackendRef,
-        VecZnxToBackendMut, VecZnxToBackendRef, ZnxInfos, vec_znx_backend_mut_from_mut, vec_znx_backend_ref_from_ref,
+        Backend, Module, Ring, ScratchArena, Standard, VecZnxBackendRef, VecZnxBigToBackendRef, VecZnxDftBackendRef,
+        VecZnxDftToBackendRef, VecZnxToBackendMut, VecZnxToBackendRef, ZnxInfos, vec_znx_backend_mut_from_mut,
+        vec_znx_backend_ref_from_ref,
     },
 };
 
@@ -47,13 +48,13 @@ where
     module.vec_znx_copy(
         &mut res.body,
         0,
-        &vec_znx_backend_ref_from_ref::<BE>(&a.data).window_coeffs(0, 1),
+        &vec_znx_backend_ref_from_ref::<BE, Standard>(&a.data).window_coeffs(0, 1),
         0,
     );
     module.vec_znx_copy(
         &mut res.mask,
         0,
-        &vec_znx_backend_ref_from_ref::<BE>(&a.data).window_coeffs(0, n),
+        &vec_znx_backend_ref_from_ref::<BE, Standard>(&a.data).window_coeffs(0, n),
         1,
     );
 }
@@ -120,7 +121,7 @@ where
             module.vec_znx_copy(
                 &mut lwe.body,
                 0,
-                &vec_znx_backend_ref_from_ref::<BE>(&a.data).window_coeffs(i, 1),
+                &vec_znx_backend_ref_from_ref::<BE, Standard>(&a.data).window_coeffs(i, 1),
                 0,
             );
             module.vec_znx_rotate(-(i as i64), &mut lwe.mask, 0, &a.data, 1);
@@ -133,7 +134,7 @@ where
             module.vec_znx_copy(
                 &mut lwe.body,
                 0,
-                &vec_znx_backend_ref_from_ref::<BE>(&a.data).window_coeffs(i, 1),
+                &vec_znx_backend_ref_from_ref::<BE, Standard>(&a.data).window_coeffs(i, 1),
                 0,
             );
             for j in 0..rank {
@@ -143,7 +144,7 @@ where
                 }
                 let tmp_ref = tmp.to_backend_ref();
                 module.vec_znx_copy(
-                    &mut vec_znx_backend_mut_from_mut::<BE>(&mut lwe.mask).window_coeffs(j * n, n),
+                    &mut vec_znx_backend_mut_from_mut::<BE, Standard>(&mut lwe.mask).window_coeffs(j * n, n),
                     0,
                     &tmp_ref,
                     0,
@@ -199,7 +200,7 @@ where
     module.vec_znx_copy(
         &mut res.body,
         0,
-        &vec_znx_backend_ref_from_ref::<BE>(&a.data).window_coeffs(0, rows),
+        &vec_znx_backend_ref_from_ref::<BE, Standard>(&a.data).window_coeffs(0, rows),
         0,
     );
 
@@ -212,9 +213,9 @@ where
             let tmp_ref = tmp.to_backend_ref();
             for coeff in 0..n {
                 module.vec_znx_copy(
-                    &mut vec_znx_backend_mut_from_mut::<BE>(&mut res.mask).window_coeffs(row, 1),
+                    &mut vec_znx_backend_mut_from_mut::<BE, Standard>(&mut res.mask).window_coeffs(row, 1),
                     glwe_col * n + coeff,
-                    &vec_znx_backend_ref_from_ref::<BE>(&tmp_ref).window_coeffs(coeff, 1),
+                    &vec_znx_backend_ref_from_ref::<BE, Standard>(&tmp_ref).window_coeffs(coeff, 1),
                     0,
                 );
             }
@@ -303,13 +304,13 @@ pub fn glwe_from_lwe_reference<BE, M, R, A>(
 
     if lwe.base2k() == ksk.base2k() {
         module.vec_znx_copy(
-            &mut vec_znx_backend_mut_from_mut::<BE>(&mut glwe.data).window_coeffs(0, 1),
+            &mut vec_znx_backend_mut_from_mut::<BE, Standard>(&mut glwe.data).window_coeffs(0, 1),
             0,
             &lwe.body,
             0,
         );
         module.vec_znx_copy(
-            &mut vec_znx_backend_mut_from_mut::<BE>(&mut glwe.data).window_coeffs(0, n_lwe),
+            &mut vec_znx_backend_mut_from_mut::<BE, Standard>(&mut glwe.data).window_coeffs(0, n_lwe),
             1,
             &lwe.mask,
             0,
@@ -351,19 +352,19 @@ pub fn glwe_from_lwe_reference<BE, M, R, A>(
     glwe.set_canonical(true);
     res.set_canonical(true);
     let mut res_backend = res.to_backend_mut();
-    let glwe_ref = glwe_backend_ref_from_mut::<BE>(&glwe);
+    let glwe_ref = glwe_backend_ref_from_mut::<BE, Standard>(&glwe);
     let glwe_view = &glwe_ref;
     let mut res_view = &mut res_backend;
     crate::layouts::assert_no_row_offset("glwe_from_lwe", &ksk);
     module.glwe_keyswitch(&mut res_view, &glwe_view, &ksk.to_backend_ref(), &mut scratch_1)
 }
 
-pub fn ggsw_expand_rows_assign_tmp_bytes_reference<BE, M, R, A>(module: &M, res_infos: &R, tsk_infos: &A) -> usize
+pub fn ggsw_expand_rows_assign_tmp_bytes_reference<BE, M, R, A, Rg: Ring>(module: &M, res_infos: &R, tsk_infos: &A) -> usize
 where
     BE: Backend,
     M: GLWEBytesOf<BE>
         + ModuleN
-        + GGLWEProductReference<BE>
+        + GGLWEProductReference<BE, Rg>
         + VecZnxBigBytesOf
         + VecZnxBigNormalizeTmpBytes
         + VecZnxDftBytesOf
@@ -401,30 +402,30 @@ where
     lvl_0 + lvl_1.max(lvl_2)
 }
 
-pub fn ggsw_expand_rows_assign_reference<BE, M, R>(
+pub fn ggsw_expand_rows_assign_reference<BE, M, R, Rg: Ring>(
     module: &M,
     res: &mut R,
-    tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, BE>,
+    tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, BE, Rg>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
     M: GLWEBytesOf<BE>
         + ModuleN
-        + GGLWEProductReference<BE>
+        + GGLWEProductReference<BE, Rg>
         + VecZnxBigNormalizeTmpBytes
         + VecZnxDftBytesOf
         + VecZnxIdftApplyTmpBytes
         + VecZnxNormalizeTmpBytes
-        + VecZnxBigAddSmallAssign<BE>
+        + VecZnxBigAddSmallAssign<BE, Rg>
         + VecZnxBigBytesOf
-        + VecZnxBigNormalize<BE>
-        + VecZnxDftApply<BE>
-        + VecZnxDftZero<BE>
-        + VecZnxIdftApply<BE>
-        + VecZnxNormalize<BE>
-        + VecZnxGadgetDecompose<BE>
+        + VecZnxBigNormalize<BE, Rg>
+        + VecZnxDftApply<BE, Rg>
+        + VecZnxDftZero<BE, Rg>
+        + VecZnxIdftApply<BE, Rg>
+        + VecZnxNormalize<BE, Rg>
+        + VecZnxGadgetDecompose<BE, Rg>
         + VecZnxGadgetDecomposeTmpBytes,
-    R: GGSWToBackendMut<BE> + GGSWInfos,
+    R: GGSWToBackendMut<BE, Rg> + GGSWInfos,
 {
     let mut res_backend = res.to_backend_mut();
 
@@ -433,10 +434,10 @@ pub fn ggsw_expand_rows_assign_reference<BE, M, R>(
     let tsk_base2k: usize = tsk.base2k().into();
 
     assert!(
-        scratch.available() >= ggsw_expand_rows_assign_tmp_bytes_reference::<BE, _, _, _>(module, &res_backend, tsk),
+        scratch.available() >= ggsw_expand_rows_assign_tmp_bytes_reference::<BE, _, _, _, Rg>(module, &res_backend, tsk),
         "scratch.available(): {} < GGSWExpandRows::ggsw_expand_rows_assign_tmp_bytes: {}",
         scratch.available(),
-        ggsw_expand_rows_assign_tmp_bytes_reference::<BE, _, _, _>(module, &res_backend, tsk)
+        ggsw_expand_rows_assign_tmp_bytes_reference::<BE, _, _, _, Rg>(module, &res_backend, tsk)
     );
     let rank: usize = res_backend.rank().into();
     let cols: usize = rank + 1;
@@ -458,7 +459,7 @@ pub fn ggsw_expand_rows_assign_reference<BE, M, R>(
 
         for row in 0..res_backend.dnum().as_usize() {
             {
-                let glwe_mi_1: GLWEViewRef<'_, BE> = res_backend.at_view(row, 0);
+                let glwe_mi_1: GLWEViewRef<'_, BE, Rg> = res_backend.at_view(row, 0);
 
                 for i in 0..cols - 1 {
                     module.vec_znx_normalize(
@@ -472,7 +473,7 @@ pub fn ggsw_expand_rows_assign_reference<BE, M, R>(
                         i + 1,
                         &mut scratch_2.borrow(),
                     );
-                    let a_0_ref: VecZnxBackendRef<'_, BE> = a_0.to_backend_ref();
+                    let a_0_ref: VecZnxBackendRef<'_, BE, Rg> = a_0.to_backend_ref();
                     gglwe_gadget_dft_apply(
                         module,
                         &mut a_dft,
@@ -499,8 +500,8 @@ pub fn ggsw_expand_rows_assign_reference<BE, M, R>(
                 );
             }
 
-            let a_0_ref: VecZnxBackendRef<'_, BE> = a_0.to_backend_ref();
-            let a_dft_ref: VecZnxDftBackendRef<'_, BE> = a_dft.to_backend_ref();
+            let a_0_ref: VecZnxBackendRef<'_, BE, Rg> = a_0.to_backend_ref();
+            let a_dft_ref: VecZnxDftBackendRef<'_, BE, Rg> = a_dft.to_backend_ref();
             let mut scratch_row = scratch_2.borrow();
             ggsw_expand_rows_assign_internal(
                 module,
@@ -517,25 +518,25 @@ pub fn ggsw_expand_rows_assign_reference<BE, M, R>(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn ggsw_expand_rows_assign_internal<'a, 'b, R, M, BE: Backend>(
+fn ggsw_expand_rows_assign_internal<'a, 'b, R, M, BE: Backend, Rg: Ring>(
     module: &M,
     row: usize,
     res: &mut R,
-    a_0: &VecZnxBackendRef<'a, BE>,
-    a_dft: &VecZnxDftBackendRef<'b, BE>,
-    tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, BE>,
+    a_0: &VecZnxBackendRef<'a, BE, Rg>,
+    a_dft: &VecZnxDftBackendRef<'b, BE, Rg>,
+    tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, BE, Rg>,
     output_size: usize,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     M: GLWEBytesOf<BE>
-        + GGLWEProductReference<BE>
+        + GGLWEProductReference<BE, Rg>
         + ModuleN
         + VecZnxBigBytesOf
-        + VecZnxBigAddSmallAssign<BE>
-        + VecZnxBigNormalize<BE>
-        + VecZnxDftZero<BE>
-        + VecZnxIdftApply<BE>,
-    R: GGSWAtViewMut<BE> + GGSWInfos,
+        + VecZnxBigAddSmallAssign<BE, Rg>
+        + VecZnxBigNormalize<BE, Rg>
+        + VecZnxDftZero<BE, Rg>
+        + VecZnxIdftApply<BE, Rg>,
+    R: GGSWAtViewMut<BE, Rg> + GGSWInfos,
 {
     let cols: usize = res.rank().as_usize() + 1;
     let res_base2k = res.base2k().as_usize();
@@ -558,7 +559,7 @@ fn ggsw_expand_rows_assign_internal<'a, 'b, R, M, BE: Backend>(
         module.vec_znx_big_add_small_assign(&mut res_big, col, a_0, 0);
         let res_big_ref = res_big.to_backend_ref();
 
-        let mut res_col: GLWEViewMut<'_, _> = res.at_view_mut(row, col);
+        let mut res_col: GLWEViewMut<'_, _, Rg> = res.at_view_mut(row, col);
         for j in 0..cols {
             let scratch_norm = &mut scratch_2.borrow();
             module.vec_znx_big_normalize(
@@ -700,7 +701,7 @@ where
 }
 
 /// Portable GGSW conversion helpers, available on every ring.
-pub trait GGSWConversionReference<BE: Backend> {
+pub trait GGSWConversionReference<BE: Backend, Rg: Ring = Standard> {
     fn ggsw_expand_rows_assign_tmp_bytes_reference<R, A>(&self, res_infos: &R, tsk_infos: &A) -> usize
     where
         R: GGSWInfos,
@@ -709,47 +710,47 @@ pub trait GGSWConversionReference<BE: Backend> {
     fn ggsw_expand_rows_assign_reference<R>(
         &self,
         res: &mut R,
-        tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, BE>,
+        tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, BE, Rg>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GGSWToBackendMut<BE> + GGSWInfos;
+        R: GGSWToBackendMut<BE, Rg> + GGSWInfos;
 }
 
-impl<BE: Backend> GGSWConversionReference<BE> for Module<BE>
+impl<BE: Backend, Rg: Ring> GGSWConversionReference<BE, Rg> for Module<BE>
 where
     Module<BE>: GLWEBytesOf<BE>
         + ModuleN
-        + VecZnxGadgetDecompose<BE>
+        + VecZnxGadgetDecompose<BE, Rg>
         + VecZnxGadgetDecomposeTmpBytes
-        + GGLWEProductReference<BE>
+        + GGLWEProductReference<BE, Rg>
         + VecZnxBigNormalizeTmpBytes
         + VecZnxDftBytesOf
         + VecZnxIdftApplyTmpBytes
         + VecZnxNormalizeTmpBytes
-        + VecZnxBigAddSmallAssign<BE>
+        + VecZnxBigAddSmallAssign<BE, Rg>
         + VecZnxBigBytesOf
-        + VecZnxBigNormalize<BE>
-        + VecZnxDftApply<BE>
-        + VecZnxDftZero<BE>
-        + VecZnxIdftApply<BE>
-        + VecZnxNormalize<BE>,
+        + VecZnxBigNormalize<BE, Rg>
+        + VecZnxDftApply<BE, Rg>
+        + VecZnxDftZero<BE, Rg>
+        + VecZnxIdftApply<BE, Rg>
+        + VecZnxNormalize<BE, Rg>,
 {
     fn ggsw_expand_rows_assign_tmp_bytes_reference<R, A>(&self, res_infos: &R, tsk_infos: &A) -> usize
     where
         R: crate::layouts::GGSWInfos,
         A: crate::layouts::GGLWEInfos,
     {
-        crate::reference::conversion::ggsw_expand_rows_assign_tmp_bytes_reference::<BE, _, _, _>(self, res_infos, tsk_infos)
+        crate::reference::conversion::ggsw_expand_rows_assign_tmp_bytes_reference::<BE, _, _, _, Rg>(self, res_infos, tsk_infos)
     }
 
     fn ggsw_expand_rows_assign_reference<R>(
         &self,
         res: &mut R,
-        tsk: &crate::layouts::prepared::GGLWEToGGSWKeyPreparedBackendRef<'_, BE>,
+        tsk: &crate::layouts::prepared::GGLWEToGGSWKeyPreparedBackendRef<'_, BE, Rg>,
         scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, BE>,
     ) where
-        R: crate::layouts::GGSWToBackendMut<BE> + crate::layouts::GGSWInfos,
+        R: crate::layouts::GGSWToBackendMut<BE, Rg> + crate::layouts::GGSWInfos,
     {
-        crate::reference::conversion::ggsw_expand_rows_assign_reference::<BE, _, _>(self, res, tsk, scratch)
+        crate::reference::conversion::ggsw_expand_rows_assign_reference::<BE, _, _, Rg>(self, res, tsk, scratch)
     }
 }

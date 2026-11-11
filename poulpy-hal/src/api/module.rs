@@ -1,4 +1,4 @@
-use crate::layouts::{Backend, MatZnx, ScalarZnx, VecZnx};
+use crate::layouts::{Backend, MatZnx, Ring, ScalarZnx, VecZnx};
 
 /// Instantiates a [`Module`](crate::layouts::Module).
 ///
@@ -7,11 +7,11 @@ use crate::layouts::{Backend, MatZnx, ScalarZnx, VecZnx};
 /// class      support
 /// mutation   none
 /// domain     n: a power of two, the ring degree N
-/// ensures    returns the backend's module for R_N and every R_n, n a power of two with MIN_DEGREE <= n <= N, carrying the transform tables of each
+/// ensures    returns the backend's module for R_N and every R_n, n a power of two with MIN_DEGREE <= n <= N, on both rings, carrying the transform tables of each or building those of a ring on its first use
 /// test       none
 /// ```
 pub trait ModuleNew<B: Backend> {
-    /// Returns the module of ring degree `n`, carrying its precomputed transform tables.
+    /// Returns the module of ring degree `n`, serving both rings.
     fn new(n: u64) -> Self;
 }
 
@@ -82,7 +82,7 @@ where
 /// ```
 pub trait ScalarZnxAlloc<B: Backend>: ModuleN {
     /// Returns an owned degree-`n` [`ScalarZnx`](crate::layouts::ScalarZnx) of `cols` columns.
-    fn scalar_znx_alloc(&self, n: usize, cols: usize) -> ScalarZnx<B::OwnedBuf, B::ZnxWord>;
+    fn scalar_znx_alloc<Rg: Ring>(&self, n: usize, cols: usize) -> ScalarZnx<B::OwnedBuf, B::ZnxWord, Rg>;
 }
 
 /// Allocates a [`VecZnx`](crate::layouts::VecZnx).
@@ -97,7 +97,7 @@ pub trait ScalarZnxAlloc<B: Backend>: ModuleN {
 /// ```
 pub trait VecZnxAlloc<B: Backend>: ModuleN {
     /// Returns an owned degree-`n` [`VecZnx`](crate::layouts::VecZnx) of `cols` columns and `size` limbs.
-    fn vec_znx_alloc(&self, n: usize, cols: usize, size: usize) -> VecZnx<B::OwnedBuf, B::ZnxWord>;
+    fn vec_znx_alloc<Rg: Ring>(&self, n: usize, cols: usize, size: usize) -> VecZnx<B::OwnedBuf, B::ZnxWord, Rg>;
 }
 
 /// Allocates a [`MatZnx`](crate::layouts::MatZnx).
@@ -112,12 +112,12 @@ pub trait VecZnxAlloc<B: Backend>: ModuleN {
 /// ```
 pub trait MatZnxAlloc<B: Backend>: ModuleN {
     /// Returns an owned degree-`n` [`MatZnx`](crate::layouts::MatZnx) of the given dimensions.
-    fn mat_znx_alloc(
+    fn mat_znx_alloc<Rg: Ring>(
         &self,
         n: usize,
         rows: usize,
         cols_in: usize,
         cols_out: usize,
         size: usize,
-    ) -> MatZnx<B::OwnedBuf, B::ZnxWord>;
+    ) -> MatZnx<B::OwnedBuf, B::ZnxWord, Rg>;
 }

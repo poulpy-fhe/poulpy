@@ -1,4 +1,4 @@
-use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Data, Module, Ring, ScratchArena};
 
 use crate::{
     api::{GLWEDecrypt, GLWEMaskInnerProduct, GLWETensorDecrypt, LWEDecrypt, LWEMatrixDecrypt},
@@ -13,9 +13,9 @@ use crate::{
 
 macro_rules! impl_decryption_delegate {
     ($trait:ty, $($body:item),+ $(,)?) => {
-        impl<BE> $trait for Module<BE>
+        impl<BE, Rg: Ring> $trait for Module<BE>
         where
-            BE: Backend + DecryptionImpl,
+            BE: Backend + DecryptionImpl<Rg>,
         {
             $($body)+
         }
@@ -23,7 +23,7 @@ macro_rules! impl_decryption_delegate {
 }
 
 impl_decryption_delegate!(
-    GLWEDecrypt<BE>,
+    GLWEDecrypt<BE, Rg>,
     fn glwe_decrypt_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GLWEInfos,
@@ -32,16 +32,16 @@ impl_decryption_delegate!(
     },
     fn glwe_decrypt<R, P, S>(&self, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWEToBackendRef<BE> + GLWEInfos,
-        P: GLWEToBackendMut<BE> + GLWEInfos + SetBase2k,
-        S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
+        R: GLWEToBackendRef<BE, Rg> + GLWEInfos,
+        P: GLWEToBackendMut<BE, Rg> + GLWEInfos + SetBase2k,
+        S: GLWESecretPreparedToBackendRef<BE, Rg> + GLWEInfos,
     {
         BE::glwe_decrypt(self, res, pt, sk, scratch)
     }
 );
 
 impl_decryption_delegate!(
-    GLWEMaskInnerProduct<BE>,
+    GLWEMaskInnerProduct<BE, Rg>,
     fn glwe_mask_inner_product_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GLWEInfos,
@@ -50,21 +50,21 @@ impl_decryption_delegate!(
     },
     fn glwe_mask_inner_product<R, A, S>(&self, res: &mut R, mask: &A, sk: &S, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWEToBackendMut<BE> + GLWEInfos + SetBase2k,
-        A: GLWEMaskToBackendRef<BE> + GLWEInfos,
-        S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
+        R: GLWEToBackendMut<BE, Rg> + GLWEInfos + SetBase2k,
+        A: GLWEMaskToBackendRef<BE, Rg> + GLWEInfos,
+        S: GLWESecretPreparedToBackendRef<BE, Rg> + GLWEInfos,
     {
         BE::glwe_mask_inner_product(self, res, mask, sk, scratch)
     }
 );
 
 impl_decryption_delegate!(
-    LWEDecrypt<BE>,
+    LWEDecrypt<BE, Rg>,
     fn lwe_decrypt<R, P, S>(&self, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: LWEToBackendRef<BE> + LWEInfos,
-        P: LWEPlaintextToBackendMut<BE> + SetBase2k + LWEInfos,
-        S: LWESecretToBackendRef<BE> + LWEInfos,
+        R: LWEToBackendRef<BE, Rg> + LWEInfos,
+        P: LWEPlaintextToBackendMut<BE, Rg> + SetBase2k + LWEInfos,
+        S: LWESecretToBackendRef<BE, Rg> + LWEInfos,
     {
         BE::lwe_decrypt(self, res, pt, sk, scratch)
     },
@@ -77,7 +77,7 @@ impl_decryption_delegate!(
 );
 
 impl_decryption_delegate!(
-    LWEMatrixDecrypt<BE>,
+    LWEMatrixDecrypt<BE, Rg>,
     fn lwe_matrix_decrypt_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: LWEMatrixInfos,
@@ -86,16 +86,16 @@ impl_decryption_delegate!(
     },
     fn lwe_matrix_decrypt<R, P, S>(&self, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: LWEMatrixToBackendRef<BE> + LWEMatrixInfos,
-        P: GLWEToBackendMut<BE> + SetBase2k + GLWEInfos,
-        S: LWESecretToBackendRef<BE> + LWEInfos,
+        R: LWEMatrixToBackendRef<BE, Rg> + LWEMatrixInfos,
+        P: GLWEToBackendMut<BE, Rg> + SetBase2k + GLWEInfos,
+        S: LWESecretToBackendRef<BE, Rg> + LWEInfos,
     {
         BE::lwe_matrix_decrypt(self, res, pt, sk, scratch)
     }
 );
 
 impl_decryption_delegate!(
-    GLWETensorDecrypt<BE>,
+    GLWETensorDecrypt<BE, Rg>,
     fn glwe_tensor_decrypt_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GLWEInfos,
@@ -104,16 +104,16 @@ impl_decryption_delegate!(
     },
     fn glwe_tensor_decrypt<R: Data, P: Data, S0: Data, S1: Data>(
         &self,
-        res: &GLWETensor<R, BE::ZnxWord>,
-        pt: &mut GLWEPlaintext<P, BE::ZnxWord>,
-        sk: &GLWESecretPrepared<S0, BE>,
-        sk_tensor: &GLWESecretTensorPrepared<S1, BE>,
+        res: &GLWETensor<R, BE::ZnxWord, Rg>,
+        pt: &mut GLWEPlaintext<P, BE::ZnxWord, Rg>,
+        sk: &GLWESecretPrepared<S0, BE, Rg>,
+        sk_tensor: &GLWESecretTensorPrepared<S1, BE, Rg>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        GLWETensor<R, BE::ZnxWord>: GLWEToBackendRef<BE> + GLWEInfos,
-        GLWEPlaintext<P, BE::ZnxWord>: GLWEToBackendMut<BE> + GLWEInfos + SetBase2k,
-        GLWESecretPrepared<S0, BE>: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
-        GLWESecretTensorPrepared<S1, BE>: GLWESecretTensorPreparedToBackendRef<BE> + GLWEInfos,
+        GLWETensor<R, BE::ZnxWord, Rg>: GLWEToBackendRef<BE, Rg> + GLWEInfos,
+        GLWEPlaintext<P, BE::ZnxWord, Rg>: GLWEToBackendMut<BE, Rg> + GLWEInfos + SetBase2k,
+        GLWESecretPrepared<S0, BE, Rg>: GLWESecretPreparedToBackendRef<BE, Rg> + GLWEInfos,
+        GLWESecretTensorPrepared<S1, BE, Rg>: GLWESecretTensorPreparedToBackendRef<BE, Rg> + GLWEInfos,
     {
         BE::glwe_tensor_decrypt(self, res, pt, sk, sk_tensor, scratch)
     }

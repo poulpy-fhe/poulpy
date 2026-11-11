@@ -2,7 +2,7 @@ use crate::CKKSResult as Result;
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{BSGSMeta, GLWEToBackendMut, GLWEToBackendRef, SetBSGSMeta};
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Module, Ring, ScratchArena, Standard};
 
 use crate::{CKKSCtBounds, SetCKKSInfos, layouts::eval_mod::EvalMod};
 
@@ -15,7 +15,7 @@ use crate::{CKKSCtBounds, SetCKKSInfos, layouts::eval_mod::EvalMod};
 /// Implementations reproduce the bodies their methods document bit for bit, report for each
 /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait CKKSEvalModImpl: Backend {
+pub unsafe trait CKKSEvalModImpl<Rg: Ring = Standard>: Backend {
     /// Scratch bound of [`Self::ckks_eval_mod`]; may report less than the reference, never less than the body takes.
     /// Pass the `res`, `ct`, `params` and `tsk` the evaluation uses: EvalMod raises the input to the plan's
     /// `f_mod_log_delta` internally.
@@ -38,17 +38,21 @@ pub unsafe trait CKKSEvalModImpl: Backend {
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
-        C: GLWEToBackendRef<Self> + CKKSCtBounds,
-        P: GLWEToBackendRef<Self> + IntPolyInfos + CKKSCtBounds + BSGSMeta,
-        H: GetTensorKey<Self>;
+        R: GLWEToBackendMut<Self, Rg> + GLWEToBackendRef<Self, Rg> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        C: GLWEToBackendRef<Self, Rg> + CKKSCtBounds,
+        P: GLWEToBackendRef<Self, Rg> + IntPolyInfos + CKKSCtBounds + BSGSMeta,
+        H: GetTensorKey<Self, Rg>;
 }
 
 /// Selects the reference implementation of `CKKSEvalModImpl` for `$be`.
 #[macro_export]
 macro_rules! impl_ckks_eval_mod_reference_full {
     ($be:ty) => {
-        unsafe impl $crate::oep::CKKSEvalModImpl for $be {
+        $crate::impl_ckks_eval_mod_reference_full!($be, ::poulpy_hal::layouts::Standard);
+        $crate::impl_ckks_eval_mod_reference_full!($be, ::poulpy_hal::layouts::ConjugateInvariant);
+    };
+    ($be:ty, $ring:ty) => {
+        unsafe impl $crate::oep::CKKSEvalModImpl<$ring> for $be {
             fn ckks_eval_mod_tmp_bytes<R, C, P, F, T>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 res: &R,
@@ -62,7 +66,9 @@ macro_rules! impl_ckks_eval_mod_reference_full {
                 P: $crate::CKKSCtBounds,
                 T: ::poulpy_core::layouts::GGLWEInfos,
             {
-                $crate::reference::eval_mod::CKKSEvalModReference::ckks_eval_mod_tmp_bytes_reference(module, res, ct, params, tsk)
+                $crate::reference::eval_mod::CKKSEvalModReference::<Self, $ring>::ckks_eval_mod_tmp_bytes_reference(
+                    module, res, ct, params, tsk,
+                )
             }
             fn ckks_eval_mod<R, C, P, F, H>(
                 module: &::poulpy_hal::layouts::Module<Self>,
@@ -73,19 +79,21 @@ macro_rules! impl_ckks_eval_mod_reference_full {
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> $crate::CKKSResult<()>
             where
-                R: ::poulpy_core::layouts::GLWEToBackendMut<Self>
-                    + ::poulpy_core::layouts::GLWEToBackendRef<Self>
+                R: ::poulpy_core::layouts::GLWEToBackendMut<Self, $ring>
+                    + ::poulpy_core::layouts::GLWEToBackendRef<Self, $ring>
                     + $crate::CKKSCtBounds
                     + $crate::SetCKKSInfos
                     + ::poulpy_core::layouts::SetBSGSMeta,
-                C: ::poulpy_core::layouts::GLWEToBackendRef<Self> + $crate::CKKSCtBounds,
-                P: ::poulpy_core::layouts::GLWEToBackendRef<Self>
+                C: ::poulpy_core::layouts::GLWEToBackendRef<Self, $ring> + $crate::CKKSCtBounds,
+                P: ::poulpy_core::layouts::GLWEToBackendRef<Self, $ring>
                     + ::poulpy_core::layouts::IntPolyInfos
                     + $crate::CKKSCtBounds
                     + ::poulpy_core::layouts::BSGSMeta,
-                H: ::poulpy_core::layouts::GetTensorKey<Self>,
+                H: ::poulpy_core::layouts::GetTensorKey<Self, $ring>,
             {
-                $crate::reference::eval_mod::CKKSEvalModReference::ckks_eval_mod_reference(module, res, ct, params, tsk, scratch)
+                $crate::reference::eval_mod::CKKSEvalModReference::<Self, $ring>::ckks_eval_mod_reference(
+                    module, res, ct, params, tsk, scratch,
+                )
             }
         }
     };

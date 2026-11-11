@@ -12,7 +12,7 @@ use crate::{
     NTT4x30Gpu,
     module::handle,
     ntt4x30::{
-        AutomorphismPlan, DftColumn, DftTerm, Tail, combine, digit_product, digit_product_inverse, digit_products,
+        DftColumn, DftTerm, Substitution, Tail, combine, digit_product, digit_product_inverse, digit_products,
         digit_products_inverse, extract_rows, forward, inverse_head,
     },
     runtime::GpuRuntime,
@@ -27,11 +27,11 @@ use crate::{
 // The body of the core hook `GGLWEProductDigitsStridedImpl`.
 #[cfg_attr(not(feature = "enable-core"), allow(dead_code))]
 pub(crate) fn gglwe_product_digits_strided<RT: GpuRuntime, R: Ring>(
-    res: &mut VecZnxDftBackendMut<'_, NTT4x30Gpu<RT, R>>,
-    a: &VecZnxDftBackendRef<'_, NTT4x30Gpu<RT, R>>,
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Gpu<RT>, R>,
+    a: &VecZnxDftBackendRef<'_, NTT4x30Gpu<RT>, R>,
     dsize: usize,
     product_limbs: usize,
-    pmat: &VmpPMatBackendRef<'_, NTT4x30Gpu<RT, R>>,
+    pmat: &VmpPMatBackendRef<'_, NTT4x30Gpu<RT>, R>,
 ) {
     product::<RT, R>(res, a, pmat, dsize, product_limbs, 0, false);
 }
@@ -44,14 +44,14 @@ pub(crate) fn gglwe_product_digits_strided<RT: GpuRuntime, R: Ring>(
 #[cfg_attr(not(feature = "enable-core"), allow(dead_code))]
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub(crate) fn gglwe_product_fused<RT: GpuRuntime, R: Ring>(
-    res: &mut VecZnxDftBackendMut<'_, NTT4x30Gpu<RT, R>>,
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Gpu<RT>, R>,
     product_size: usize,
-    a: &VecZnxDftBackendRef<'_, NTT4x30Gpu<RT, R>>,
+    a: &VecZnxDftBackendRef<'_, NTT4x30Gpu<RT>, R>,
     dsize: usize,
     product_limbs: usize,
-    pmat: &VmpPMatBackendRef<'_, NTT4x30Gpu<RT, R>>,
-    addends: [Option<(&VecZnxDftBackendRef<'_, NTT4x30Gpu<RT, R>>, usize)>; 2],
-    plan: Option<&AutomorphismPlan>,
+    pmat: &VmpPMatBackendRef<'_, NTT4x30Gpu<RT>, R>,
+    addends: [Option<(&VecZnxDftBackendRef<'_, NTT4x30Gpu<RT>, R>, usize)>; 2],
+    plan: Option<&Substitution>,
     accumulate: bool,
 ) {
     assert!(
@@ -103,14 +103,14 @@ pub(crate) fn gglwe_product_fused<RT: GpuRuntime, R: Ring>(
 #[cfg_attr(not(feature = "enable-core"), allow(dead_code))]
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn gglwe_products_fused<RT: GpuRuntime, R: Ring>(
-    res: &mut [VecZnxDftBackendMut<'_, NTT4x30Gpu<RT, R>>],
+    res: &mut [VecZnxDftBackendMut<'_, NTT4x30Gpu<RT>, R>],
     product_size: usize,
-    a: &[VecZnxDftBackendRef<'_, NTT4x30Gpu<RT, R>>],
+    a: &[VecZnxDftBackendRef<'_, NTT4x30Gpu<RT>, R>],
     dsize: usize,
     product_limbs: usize,
-    pmat: &VmpPMatBackendRef<'_, NTT4x30Gpu<RT, R>>,
-    addends: Option<&[&VecZnxDftBackendRef<'_, NTT4x30Gpu<RT, R>>]>,
-    plan: Option<&AutomorphismPlan>,
+    pmat: &VmpPMatBackendRef<'_, NTT4x30Gpu<RT>, R>,
+    addends: Option<&[&VecZnxDftBackendRef<'_, NTT4x30Gpu<RT>, R>]>,
+    plan: Option<&Substitution>,
     accumulate: bool,
 ) -> bool {
     let columns = |views: &mut dyn Iterator<Item = Option<DftColumn>>| views.collect::<Option<Vec<DftColumn>>>();
@@ -176,12 +176,12 @@ pub(crate) fn gglwe_products_fused<RT: GpuRuntime, R: Ring>(
 /// allocation, a layout and a size.
 #[cfg_attr(not(feature = "enable-core"), allow(dead_code))]
 pub(crate) fn gglwe_products_digits_strided_inverse<RT: GpuRuntime, R: Ring>(
-    module: &Module<NTT4x30Gpu<RT, R>>,
-    res: &mut [VecZnxDftBackendMut<'_, NTT4x30Gpu<RT, R>>],
-    a: &[VecZnxDftBackendRef<'_, NTT4x30Gpu<RT, R>>],
+    module: &Module<NTT4x30Gpu<RT>>,
+    res: &mut [VecZnxDftBackendMut<'_, NTT4x30Gpu<RT>, R>],
+    a: &[VecZnxDftBackendRef<'_, NTT4x30Gpu<RT>, R>],
     dsize: usize,
     product_limbs: usize,
-    pmat: &VmpPMatBackendRef<'_, NTT4x30Gpu<RT, R>>,
+    pmat: &VmpPMatBackendRef<'_, NTT4x30Gpu<RT>, R>,
 ) -> bool {
     let Some(mt) = inverse_head::<RT>(res[0].n().ilog2(), res.len() * res[0].cols()).filter(|_| res[0].cols() == 2) else {
         return false;
@@ -210,7 +210,7 @@ pub(crate) fn gglwe_products_digits_strided_inverse<RT: GpuRuntime, R: Ring>(
     {
         return false;
     }
-    let table = handle(module).tables().of(res_columns[0].n);
+    let table = handle(module).tables::<R>().of(res_columns[0].n);
     digit_products_inverse::<RT>(table, &res_columns, &a_columns, &pmat, dsize, product_limbs, mt);
     true
 }
@@ -223,13 +223,13 @@ pub(crate) fn gglwe_products_digits_strided_inverse<RT: GpuRuntime, R: Ring>(
 #[cfg_attr(not(feature = "enable-core"), allow(dead_code))]
 #[allow(clippy::type_complexity)]
 pub(crate) fn gglwe_product_digits_strided_inverse<RT: GpuRuntime, R: Ring>(
-    module: &Module<NTT4x30Gpu<RT, R>>,
-    res: &mut VecZnxDftBackendMut<'_, NTT4x30Gpu<RT, R>>,
-    a: &VecZnxDftBackendRef<'_, NTT4x30Gpu<RT, R>>,
+    module: &Module<NTT4x30Gpu<RT>>,
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Gpu<RT>, R>,
+    a: &VecZnxDftBackendRef<'_, NTT4x30Gpu<RT>, R>,
     dsize: usize,
     product_limbs: usize,
-    pmat: &VmpPMatBackendRef<'_, NTT4x30Gpu<RT, R>>,
-    addends: [Option<(&VecZnxDftBackendRef<'_, NTT4x30Gpu<RT, R>>, usize)>; 2],
+    pmat: &VmpPMatBackendRef<'_, NTT4x30Gpu<RT>, R>,
+    addends: [Option<(&VecZnxDftBackendRef<'_, NTT4x30Gpu<RT>, R>, usize)>; 2],
 ) -> bool {
     assert!(
         a.n() == res.n() && pmat.n() == res.n(),
@@ -249,7 +249,7 @@ pub(crate) fn gglwe_product_digits_strided_inverse<RT: GpuRuntime, R: Ring>(
             dft_column_ref(addend, col).expect("fused product: an addend holds no storage")
         })
     });
-    let table = handle(module).tables().of(res.n);
+    let table = handle(module).tables::<R>().of(res.n);
     digit_product_inverse::<RT>(
         table,
         &res,
@@ -264,9 +264,9 @@ pub(crate) fn gglwe_product_digits_strided_inverse<RT: GpuRuntime, R: Ring>(
 }
 
 fn product<RT: GpuRuntime, R: Ring>(
-    res: &mut VecZnxDftBackendMut<'_, NTT4x30Gpu<RT, R>>,
-    a: &VecZnxDftBackendRef<'_, NTT4x30Gpu<RT, R>>,
-    b: &VmpPMatBackendRef<'_, NTT4x30Gpu<RT, R>>,
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Gpu<RT>, R>,
+    a: &VecZnxDftBackendRef<'_, NTT4x30Gpu<RT>, R>,
+    b: &VmpPMatBackendRef<'_, NTT4x30Gpu<RT>, R>,
     dsize: usize,
     product_limbs: usize,
     limb_offset: usize,
@@ -293,7 +293,7 @@ fn product<RT: GpuRuntime, R: Ring>(
     digit_product::<RT>(&res, &a, &b, dsize, product_limbs, limb_offset, accumulate, Tail::default());
 }
 
-unsafe impl<RT: GpuRuntime, R: Ring> HalVmpImpl for NTT4x30Gpu<RT, R> {
+unsafe impl<RT: GpuRuntime, R: Ring> HalVmpImpl<R> for NTT4x30Gpu<RT> {
     fn vmp_pmat_prepare_tmp_bytes(
         _module: &Module<Self>,
         _rows: usize,
@@ -306,8 +306,8 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalVmpImpl for NTT4x30Gpu<RT, R> {
 
     fn vmp_pmat_prepare(
         module: &Module<Self>,
-        res: &mut VmpPMatBackendMut<'_, Self>,
-        a: &MatZnxBackendRef<'_, Self>,
+        res: &mut VmpPMatBackendMut<'_, Self, R>,
+        a: &MatZnxBackendRef<'_, Self, R>,
         _scratch: &mut ScratchArena<'_, Self>,
     ) {
         check_degree::<Self>(module.n(), res.n());
@@ -323,7 +323,7 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalVmpImpl for NTT4x30Gpu<RT, R> {
         let a = mat_blocks(a).expect("vmp_pmat_prepare: a holds no storage");
         // Both matrices order their polynomials alike: one batched transform.
         let blocks = res.blocks();
-        forward::<RT>(handle(module).tables(), &blocks, &a, blocks.size);
+        forward::<RT>(handle(module).tables::<R>(), &blocks, &a, blocks.size);
     }
 
     fn vmp_apply_dft_tmp_bytes(
@@ -341,11 +341,11 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalVmpImpl for NTT4x30Gpu<RT, R> {
     fn vmp_apply_dft<D>(
         module: &Module<Self>,
         res: &mut D,
-        a: &VecZnxBackendRef<'_, Self>,
-        b: &VmpPMatBackendRef<'_, Self>,
+        a: &VecZnxBackendRef<'_, Self, R>,
+        b: &VmpPMatBackendRef<'_, Self, R>,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        D: VecZnxDftToBackendMut<Self>,
+        D: VecZnxDftToBackendMut<Self, R>,
     {
         assert_dense(a, "vmp_apply_dft");
         check_degree::<Self>(module.n(), a.n());
@@ -359,7 +359,12 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalVmpImpl for NTT4x30Gpu<RT, R> {
                 // Same columns on both sides: every block in one batched transform.
                 let source = column_ref(a, 0).expect("vmp_apply_dft: a holds no storage");
                 let all = all_dft_blocks(&a_dft0, limbs);
-                forward::<RT>(handle(module).tables(), &all, &all_blocks(&source, cols_in, limbs), all.size);
+                forward::<RT>(
+                    handle(module).tables::<R>(),
+                    &all,
+                    &all_blocks(&source, cols_in, limbs),
+                    all.size,
+                );
             } else {
                 for col in 0..first {
                     Self::vec_znx_dft_zero(module, &mut a_dft, col);
@@ -395,9 +400,9 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalVmpImpl for NTT4x30Gpu<RT, R> {
 
     fn vmp_apply_dft_to_dft(
         _module: &Module<Self>,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
-        a: &VecZnxDftBackendRef<'_, Self>,
-        b: &VmpPMatBackendRef<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, R>,
+        a: &VecZnxDftBackendRef<'_, Self, R>,
+        b: &VmpPMatBackendRef<'_, Self, R>,
         limb_offset: usize,
         _scratch: &mut ScratchArena<'_, Self>,
     ) {
@@ -418,9 +423,9 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalVmpImpl for NTT4x30Gpu<RT, R> {
 
     fn vmp_apply_dft_to_dft_add(
         _module: &Module<Self>,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
-        a: &VecZnxDftBackendRef<'_, Self>,
-        b: &VmpPMatBackendRef<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, R>,
+        a: &VecZnxDftBackendRef<'_, Self, R>,
+        b: &VmpPMatBackendRef<'_, Self, R>,
         limb_offset: usize,
         _scratch: &mut ScratchArena<'_, Self>,
     ) {
@@ -429,8 +434,8 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalVmpImpl for NTT4x30Gpu<RT, R> {
 
     fn vmp_extract_selected_rows(
         _module: &Module<Self>,
-        res: &mut VmpPMatBackendMut<'_, Self>,
-        a: &VmpPMatBackendRef<'_, Self>,
+        res: &mut VmpPMatBackendMut<'_, Self, R>,
+        a: &VmpPMatBackendRef<'_, Self, R>,
         first_row: usize,
         row_step: usize,
     ) {
@@ -440,7 +445,7 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalVmpImpl for NTT4x30Gpu<RT, R> {
         extract_rows::<RT>(&res, &a, first_row, row_step);
     }
 
-    fn vmp_zero(_module: &Module<Self>, res: &mut VmpPMatBackendMut<'_, Self>) {
+    fn vmp_zero(_module: &Module<Self>, res: &mut VmpPMatBackendMut<'_, Self, R>) {
         let Some(res) = pmat(res) else { return };
         let blocks = res.blocks();
         combine::<RT>(&blocks, blocks.size, DftTerm::zero(&blocks), DftTerm::zero(&blocks));

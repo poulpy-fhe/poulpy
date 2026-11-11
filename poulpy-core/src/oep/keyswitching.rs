@@ -1,6 +1,8 @@
 #![allow(clippy::too_many_arguments)]
 
-use poulpy_hal::layouts::{Backend, Module, ScratchArena, VecZnxDftBackendMut, VecZnxDftBackendRef, VmpPMatBackendRef};
+use poulpy_hal::layouts::{
+    Backend, Module, Ring, ScratchArena, Standard, VecZnxDftBackendMut, VecZnxDftBackendRef, VmpPMatBackendRef,
+};
 
 use crate::layouts::{
     GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWEInfos, GLWEToBackendMut,
@@ -32,7 +34,7 @@ pub fn gglwe_product_digit_output_size(res_size: usize, key_size: usize, dsize: 
 /// Implementations reproduce the bodies their methods document bit for bit, report for each
 /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait GGLWEProductDigitsStridedImpl: Backend {
+pub unsafe trait GGLWEProductDigitsStridedImpl<Rg: Ring = Standard>: Backend {
     /// Scratch bound of [`Self::gglwe_product_digits_strided`]; may report less than the reference, never less than
     /// the body takes.
     #[allow(clippy::too_many_arguments)]
@@ -58,11 +60,11 @@ pub unsafe trait GGLWEProductDigitsStridedImpl: Backend {
     /// caller records no metadata.
     fn gglwe_product_digits_strided(
         module: &Module<Self>,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
-        a: &VecZnxDftBackendRef<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, Rg>,
+        a: &VecZnxDftBackendRef<'_, Self, Rg>,
         dsize: usize,
         product_limbs: usize,
-        pmat: &VmpPMatBackendRef<'_, Self>,
+        pmat: &VmpPMatBackendRef<'_, Self, Rg>,
         scratch: &mut ScratchArena<'_, Self>,
     );
 
@@ -96,12 +98,12 @@ pub unsafe trait GGLWEProductDigitsStridedImpl: Backend {
     #[allow(clippy::too_many_arguments)]
     fn gglwe_product_fused(
         module: &Module<Self>,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, Rg>,
         product_size: usize,
-        a: &VecZnxDftBackendRef<'_, Self>,
-        key: &GGLWEPreparedBackendRef<'_, Self>,
+        a: &VecZnxDftBackendRef<'_, Self, Rg>,
+        key: &GGLWEPreparedBackendRef<'_, Self, Rg>,
         term_count: usize,
-        addends: &[Option<(&VecZnxDftBackendRef<'_, Self>, usize)>],
+        addends: &[Option<(&VecZnxDftBackendRef<'_, Self, Rg>, usize)>],
         p: i64,
         accumulate: bool,
         scratch: &mut ScratchArena<'_, Self>,
@@ -140,13 +142,13 @@ pub unsafe trait GGLWEProductDigitsStridedImpl: Backend {
         module: &Module<Self>,
         p: i64,
         term_count: usize,
-        res: &mut [VecZnxDftBackendMut<'_, Self>],
+        res: &mut [VecZnxDftBackendMut<'_, Self, Rg>],
         output_size: usize,
         accumulate: &[bool],
-        sources: &mut [VecZnxDftBackendMut<'_, Self>],
+        sources: &mut [VecZnxDftBackendMut<'_, Self, Rg>],
         source_sizes: &[usize],
         source_base2k: usize,
-        key: &GGLWEPreparedBackendRef<'_, Self>,
+        key: &GGLWEPreparedBackendRef<'_, Self, Rg>,
         scratch: &mut ScratchArena<'_, Self>,
     );
 
@@ -182,16 +184,16 @@ pub unsafe trait GGLWEProductDigitsStridedImpl: Backend {
     #[allow(clippy::too_many_arguments)]
     fn gglwe_product_idft_normalize(
         module: &Module<Self>,
-        res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self>,
+        res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self, Rg>,
         res_base2k: usize,
         res_k: usize,
         res_offset: i64,
-        res_dft: &mut VecZnxDftBackendMut<'_, Self>,
-        a: &VecZnxDftBackendRef<'_, Self>,
-        key: &GGLWEPreparedBackendRef<'_, Self>,
+        res_dft: &mut VecZnxDftBackendMut<'_, Self, Rg>,
+        a: &VecZnxDftBackendRef<'_, Self, Rg>,
+        key: &GGLWEPreparedBackendRef<'_, Self, Rg>,
         term_count: usize,
-        addends: &[Option<(&VecZnxDftBackendRef<'_, Self>, usize)>],
-        body: Option<(&poulpy_hal::layouts::VecZnxBackendRef<'_, Self>, usize)>,
+        addends: &[Option<(&VecZnxDftBackendRef<'_, Self, Rg>, usize)>],
+        body: Option<(&poulpy_hal::layouts::VecZnxBackendRef<'_, Self, Rg>, usize)>,
         a_base2k: usize,
         scratch: &mut ScratchArena<'_, Self>,
     );
@@ -206,16 +208,16 @@ pub unsafe trait GGLWEProductDigitsStridedImpl: Backend {
     #[allow(clippy::too_many_arguments, clippy::type_complexity)]
     fn gglwe_products_idft_normalize(
         module: &Module<Self>,
-        res: &mut [poulpy_hal::layouts::VecZnxBackendMut<'_, Self>],
+        res: &mut [poulpy_hal::layouts::VecZnxBackendMut<'_, Self, Rg>],
         res_base2k: usize,
         res_k: usize,
         res_offset: i64,
-        res_dft: &mut [VecZnxDftBackendMut<'_, Self>],
-        a: &[VecZnxDftBackendRef<'_, Self>],
-        key: &GGLWEPreparedBackendRef<'_, Self>,
+        res_dft: &mut [VecZnxDftBackendMut<'_, Self, Rg>],
+        a: &[VecZnxDftBackendRef<'_, Self, Rg>],
+        key: &GGLWEPreparedBackendRef<'_, Self, Rg>,
         term_count: usize,
-        addends: &[&[Option<(&VecZnxDftBackendRef<'_, Self>, usize)>]],
-        body: &[Option<(&poulpy_hal::layouts::VecZnxBackendRef<'_, Self>, usize)>],
+        addends: &[&[Option<(&VecZnxDftBackendRef<'_, Self, Rg>, usize)>]],
+        body: &[Option<(&poulpy_hal::layouts::VecZnxBackendRef<'_, Self, Rg>, usize)>],
         a_base2k: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
@@ -229,9 +231,12 @@ pub unsafe trait GGLWEProductDigitsStridedImpl: Backend {
 /// `gglwe_product_idft_normalize`, `gglwe_products_from_dft` and their queries) forwarding to
 /// their reference bodies,
 /// for an `impl` block that writes the rest of the family by hand.
+///
+/// `$ring` is the ring of the enclosing `GGLWEProductDigitsStridedImpl<$ring>` impl: `Rg` in a
+/// ring-generic `unsafe impl<Rg: Ring> GGLWEProductDigitsStridedImpl<Rg> for MyBackend`.
 #[macro_export]
 macro_rules! impl_gglwe_product_digits_strided_reference {
-    () => {
+    ($ring:ty) => {
         fn gglwe_product_fused_tmp_bytes<K>(
             module: &::poulpy_hal::layouts::Module<Self>,
             res_size: usize,
@@ -242,28 +247,28 @@ macro_rules! impl_gglwe_product_digits_strided_reference {
         where
             K: $crate::layouts::GGLWEInfos,
         {
-            <::poulpy_hal::layouts::Module<Self> as $crate::reference::keyswitching::GGLWEProductDigitsStridedReference<Self>>::gglwe_product_fused_tmp_bytes_reference(
-                module,
-                res_size,
-                product_size,
-                a_size,
-                key_infos,
-            )
+            <::poulpy_hal::layouts::Module<Self> as $crate::reference::keyswitching::GGLWEProductDigitsStridedReference<
+                Self,
+                $ring,
+            >>::gglwe_product_fused_tmp_bytes_reference(module, res_size, product_size, a_size, key_infos)
         }
 
         fn gglwe_product_fused(
             module: &::poulpy_hal::layouts::Module<Self>,
-            res: &mut ::poulpy_hal::layouts::VecZnxDftBackendMut<'_, Self>,
+            res: &mut ::poulpy_hal::layouts::VecZnxDftBackendMut<'_, Self, $ring>,
             product_size: usize,
-            a: &::poulpy_hal::layouts::VecZnxDftBackendRef<'_, Self>,
-            key: &$crate::layouts::prepared::GGLWEPreparedBackendRef<'_, Self>,
+            a: &::poulpy_hal::layouts::VecZnxDftBackendRef<'_, Self, $ring>,
+            key: &$crate::layouts::prepared::GGLWEPreparedBackendRef<'_, Self, $ring>,
             term_count: usize,
-            addends: &[Option<(&::poulpy_hal::layouts::VecZnxDftBackendRef<'_, Self>, usize)>],
+            addends: &[Option<(&::poulpy_hal::layouts::VecZnxDftBackendRef<'_, Self, $ring>, usize)>],
             p: i64,
             accumulate: bool,
             scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
         ) {
-            <::poulpy_hal::layouts::Module<Self> as $crate::reference::keyswitching::GGLWEProductDigitsStridedReference<Self>>::gglwe_product_fused_reference(
+            <::poulpy_hal::layouts::Module<Self> as $crate::reference::keyswitching::GGLWEProductDigitsStridedReference<
+                Self,
+                $ring,
+            >>::gglwe_product_fused_reference(
                 module,
                 res,
                 product_size,
@@ -287,31 +292,31 @@ macro_rules! impl_gglwe_product_digits_strided_reference {
         where
             K: $crate::layouts::GGLWEInfos,
         {
-            <::poulpy_hal::layouts::Module<Self> as $crate::reference::keyswitching::GGLWEProductDigitsStridedReference<Self>>::gglwe_product_idft_normalize_tmp_bytes_reference(
-                module,
-                res_size,
-                product_size,
-                a_size,
-                key_infos,
-            )
+            <::poulpy_hal::layouts::Module<Self> as $crate::reference::keyswitching::GGLWEProductDigitsStridedReference<
+                Self,
+                $ring,
+            >>::gglwe_product_idft_normalize_tmp_bytes_reference(module, res_size, product_size, a_size, key_infos)
         }
 
         fn gglwe_product_idft_normalize(
             module: &::poulpy_hal::layouts::Module<Self>,
-            res: &mut ::poulpy_hal::layouts::VecZnxBackendMut<'_, Self>,
+            res: &mut ::poulpy_hal::layouts::VecZnxBackendMut<'_, Self, $ring>,
             res_base2k: usize,
             res_k: usize,
             res_offset: i64,
-            res_dft: &mut ::poulpy_hal::layouts::VecZnxDftBackendMut<'_, Self>,
-            a: &::poulpy_hal::layouts::VecZnxDftBackendRef<'_, Self>,
-            key: &$crate::layouts::prepared::GGLWEPreparedBackendRef<'_, Self>,
+            res_dft: &mut ::poulpy_hal::layouts::VecZnxDftBackendMut<'_, Self, $ring>,
+            a: &::poulpy_hal::layouts::VecZnxDftBackendRef<'_, Self, $ring>,
+            key: &$crate::layouts::prepared::GGLWEPreparedBackendRef<'_, Self, $ring>,
             term_count: usize,
-            addends: &[Option<(&::poulpy_hal::layouts::VecZnxDftBackendRef<'_, Self>, usize)>],
-            body: Option<(&::poulpy_hal::layouts::VecZnxBackendRef<'_, Self>, usize)>,
+            addends: &[Option<(&::poulpy_hal::layouts::VecZnxDftBackendRef<'_, Self, $ring>, usize)>],
+            body: Option<(&::poulpy_hal::layouts::VecZnxBackendRef<'_, Self, $ring>, usize)>,
             a_base2k: usize,
             scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
         ) {
-            <::poulpy_hal::layouts::Module<Self> as $crate::reference::keyswitching::GGLWEProductDigitsStridedReference<Self>>::gglwe_product_idft_normalize_reference(
+            <::poulpy_hal::layouts::Module<Self> as $crate::reference::keyswitching::GGLWEProductDigitsStridedReference<
+                Self,
+                $ring,
+            >>::gglwe_product_idft_normalize_reference(
                 module, res, res_base2k, res_k, res_offset, res_dft, a, key, term_count, addends, body, a_base2k, scratch,
             )
         }
@@ -326,29 +331,29 @@ macro_rules! impl_gglwe_product_digits_strided_reference {
         where
             K: $crate::layouts::GGLWEInfos,
         {
-            <::poulpy_hal::layouts::Module<Self> as $crate::reference::keyswitching::GGLWEProductDigitsStridedReference<Self>>::gglwe_products_from_dft_tmp_bytes_reference(
-                module,
-                count,
-                rank,
-                source_size,
-                key_infos,
-            )
+            <::poulpy_hal::layouts::Module<Self> as $crate::reference::keyswitching::GGLWEProductDigitsStridedReference<
+                Self,
+                $ring,
+            >>::gglwe_products_from_dft_tmp_bytes_reference(module, count, rank, source_size, key_infos)
         }
 
         fn gglwe_products_from_dft(
             module: &::poulpy_hal::layouts::Module<Self>,
             p: i64,
             term_count: usize,
-            res: &mut [::poulpy_hal::layouts::VecZnxDftBackendMut<'_, Self>],
+            res: &mut [::poulpy_hal::layouts::VecZnxDftBackendMut<'_, Self, $ring>],
             output_size: usize,
             accumulate: &[bool],
-            sources: &mut [::poulpy_hal::layouts::VecZnxDftBackendMut<'_, Self>],
+            sources: &mut [::poulpy_hal::layouts::VecZnxDftBackendMut<'_, Self, $ring>],
             source_sizes: &[usize],
             source_base2k: usize,
-            key: &$crate::layouts::prepared::GGLWEPreparedBackendRef<'_, Self>,
+            key: &$crate::layouts::prepared::GGLWEPreparedBackendRef<'_, Self, $ring>,
             scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
         ) {
-            <::poulpy_hal::layouts::Module<Self> as $crate::reference::keyswitching::GGLWEProductDigitsStridedReference<Self>>::gglwe_products_from_dft_reference(
+            <::poulpy_hal::layouts::Module<Self> as $crate::reference::keyswitching::GGLWEProductDigitsStridedReference<
+                Self,
+                $ring,
+            >>::gglwe_products_from_dft_reference(
                 module,
                 p,
                 term_count,
@@ -366,10 +371,16 @@ macro_rules! impl_gglwe_product_digits_strided_reference {
 }
 
 /// Selects the reference implementation of `GGLWEProductDigitsStridedImpl` for `$be`.
+///
+/// `($be)` implements both rings and `($be, $ring)` one ring, as `docs/guides/layering-contract.md` describes.
 #[macro_export]
 macro_rules! impl_gglwe_product_digits_strided_reference_full {
     ($be:ty) => {
-        unsafe impl $crate::oep::GGLWEProductDigitsStridedImpl for $be {
+        $crate::impl_gglwe_product_digits_strided_reference_full!($be, ::poulpy_hal::layouts::Standard);
+        $crate::impl_gglwe_product_digits_strided_reference_full!($be, ::poulpy_hal::layouts::ConjugateInvariant);
+    };
+    ($be:ty, $ring:ty) => {
+        unsafe impl $crate::oep::GGLWEProductDigitsStridedImpl<$ring> for $be {
             fn gglwe_product_digits_strided_tmp_bytes(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 res_size: usize,
@@ -381,7 +392,10 @@ macro_rules! impl_gglwe_product_digits_strided_reference_full {
                 pmat_cols_out: usize,
                 pmat_size: usize,
             ) -> usize {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::keyswitching::GGLWEProductDigitsStridedReference<$be>>::gglwe_product_digits_strided_tmp_bytes_reference(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::keyswitching::GGLWEProductDigitsStridedReference<
+                    $be,
+                    $ring,
+                >>::gglwe_product_digits_strided_tmp_bytes_reference(
                     module,
                     res_size,
                     a_cols,
@@ -396,25 +410,20 @@ macro_rules! impl_gglwe_product_digits_strided_reference_full {
 
             fn gglwe_product_digits_strided(
                 module: &::poulpy_hal::layouts::Module<$be>,
-                res: &mut ::poulpy_hal::layouts::VecZnxDftBackendMut<'_, $be>,
-                a: &::poulpy_hal::layouts::VecZnxDftBackendRef<'_, $be>,
+                res: &mut ::poulpy_hal::layouts::VecZnxDftBackendMut<'_, $be, $ring>,
+                a: &::poulpy_hal::layouts::VecZnxDftBackendRef<'_, $be, $ring>,
                 dsize: usize,
                 product_limbs: usize,
-                pmat: &::poulpy_hal::layouts::VmpPMatBackendRef<'_, $be>,
+                pmat: &::poulpy_hal::layouts::VmpPMatBackendRef<'_, $be, $ring>,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::keyswitching::GGLWEProductDigitsStridedReference<$be>>::gglwe_product_digits_strided_reference(
-                    module,
-                    res,
-                    a,
-                    dsize,
-                    product_limbs,
-                    pmat,
-                    scratch,
-                )
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::keyswitching::GGLWEProductDigitsStridedReference<
+                    $be,
+                    $ring,
+                >>::gglwe_product_digits_strided_reference(module, res, a, dsize, product_limbs, pmat, scratch)
             }
 
-            $crate::impl_gglwe_product_digits_strided_reference!();
+            $crate::impl_gglwe_product_digits_strided_reference!($ring);
         }
     };
 }
@@ -425,7 +434,7 @@ macro_rules! impl_gglwe_product_digits_strided_reference_full {
 /// Implementations reproduce the bodies their methods document bit for bit, report for each
 /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait GLWEKeyswitchImpl: Backend {
+pub unsafe trait GLWEKeyswitchImpl<Rg: Ring = Standard>: Backend {
     /// Scratch bound of [`Self::glwe_keyswitch`] and [`Self::glwe_keyswitch_assign`]; may report less than the
     /// reference, never less than the body takes.
     fn glwe_keyswitch_tmp_bytes<R, A, B>(module: &Module<Self>, res_infos: &R, a_infos: &A, key_infos: &B) -> usize
@@ -442,11 +451,11 @@ pub unsafe trait GLWEKeyswitchImpl: Backend {
         module: &Module<Self>,
         res: &mut R,
         a: &A,
-        key: &GGLWEPreparedBackendRef<'_, Self>,
+        key: &GGLWEPreparedBackendRef<'_, Self, Rg>,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        R: GLWEToBackendMut<Self> + GLWEInfos,
-        A: GLWEToBackendRef<Self> + GLWEInfos;
+        R: GLWEToBackendMut<Self, Rg> + GLWEInfos,
+        A: GLWEToBackendRef<Self, Rg> + GLWEInfos;
 
     /// Reproduces
     /// [`glwe_keyswitch_assign_reference`](crate::reference::keyswitching::glwe::glwe_keyswitch_assign_reference) bit
@@ -456,10 +465,10 @@ pub unsafe trait GLWEKeyswitchImpl: Backend {
     fn glwe_keyswitch_assign<R>(
         module: &Module<Self>,
         res: &mut R,
-        key: &GGLWEPreparedBackendRef<'_, Self>,
+        key: &GGLWEPreparedBackendRef<'_, Self, Rg>,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        R: GLWEToBackendMut<Self> + GLWEInfos;
+        R: GLWEToBackendMut<Self, Rg> + GLWEInfos;
 
     /// Scratch bound of [`Self::glwe_keyswitch_dft`]; may report less than the reference, never less than the body
     /// takes.
@@ -500,12 +509,12 @@ pub unsafe trait GLWEKeyswitchImpl: Backend {
     /// Validate with parity against a caller-selected comparison backend as well as the noise bound.
     fn glwe_keyswitch_dft<A>(
         module: &Module<Self>,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, Rg>,
         a: &A,
-        key: &GGLWEPreparedBackendRef<'_, Self>,
+        key: &GGLWEPreparedBackendRef<'_, Self, Rg>,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        A: GLWEToBackendRef<Self> + GLWEInfos;
+        A: GLWEToBackendRef<Self, Rg> + GLWEInfos;
 
     /// Scratch bound of [`Self::glwe_keyswitch_dft_add`]; may report less than the reference, never less than the
     /// body takes.
@@ -520,12 +529,12 @@ pub unsafe trait GLWEKeyswitchImpl: Backend {
     /// [`Self::glwe_keyswitch_dft_add_tmp_bytes`]; free in kernels and scratch use.
     fn glwe_keyswitch_dft_add<A>(
         module: &Module<Self>,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, Rg>,
         a: &A,
-        key: &GGLWEPreparedBackendRef<'_, Self>,
+        key: &GGLWEPreparedBackendRef<'_, Self, Rg>,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        A: GLWEToBackendRef<Self> + GLWEInfos;
+        A: GLWEToBackendRef<Self, Rg> + GLWEInfos;
 }
 
 /// Backend-provided GGLWE key-switching operations.
@@ -534,7 +543,7 @@ pub unsafe trait GLWEKeyswitchImpl: Backend {
 /// Implementations reproduce the bodies their methods document bit for bit, report for each
 /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait GGLWEKeyswitchImpl: Backend + GLWEKeyswitchImpl {
+pub unsafe trait GGLWEKeyswitchImpl<Rg: Ring = Standard>: Backend + GLWEKeyswitchImpl<Rg> {
     /// Default body: `gglwe_keyswitch_tmp_bytes_derived`,
     /// [`GLWEKeyswitchImpl::glwe_keyswitch_tmp_bytes`](crate::oep::GLWEKeyswitchImpl::glwe_keyswitch_tmp_bytes).
     fn gglwe_keyswitch_tmp_bytes<R, A, K>(module: &Module<Self>, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
@@ -543,7 +552,7 @@ pub unsafe trait GGLWEKeyswitchImpl: Backend + GLWEKeyswitchImpl {
         A: GGLWEInfos,
         K: GGLWEInfos,
     {
-        crate::oep::derived::keyswitching::gglwe_keyswitch_tmp_bytes_derived::<Self, _, _, _, _>(
+        crate::oep::derived::keyswitching::gglwe_keyswitch_tmp_bytes_derived::<Self, _, _, _, _, Rg>(
             module, res_infos, a_infos, key_infos,
         )
     }
@@ -556,13 +565,13 @@ pub unsafe trait GGLWEKeyswitchImpl: Backend + GLWEKeyswitchImpl {
         module: &Module<Self>,
         res: &mut R,
         a: &A,
-        key: &GGLWEPreparedBackendRef<'_, Self>,
+        key: &GGLWEPreparedBackendRef<'_, Self, Rg>,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        R: GGLWEToBackendMut<Self> + GGLWEInfos,
-        A: GGLWEToBackendRef<Self> + GGLWEInfos,
+        R: GGLWEToBackendMut<Self, Rg> + GGLWEInfos,
+        A: GGLWEToBackendRef<Self, Rg> + GGLWEInfos,
     {
-        crate::oep::derived::keyswitching::gglwe_keyswitch_derived::<Self, _, _, _>(module, res, a, key, scratch)
+        crate::oep::derived::keyswitching::gglwe_keyswitch_derived::<Self, _, _, _, Rg>(module, res, a, key, scratch)
     }
 
     /// Default body: `gglwe_keyswitch_assign_derived`,
@@ -572,12 +581,12 @@ pub unsafe trait GGLWEKeyswitchImpl: Backend + GLWEKeyswitchImpl {
     fn gglwe_keyswitch_assign<R>(
         module: &Module<Self>,
         res: &mut R,
-        key: &GGLWEPreparedBackendRef<'_, Self>,
+        key: &GGLWEPreparedBackendRef<'_, Self, Rg>,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        R: GGLWEToBackendMut<Self> + GGLWEInfos,
+        R: GGLWEToBackendMut<Self, Rg> + GGLWEInfos,
     {
-        crate::oep::derived::keyswitching::gglwe_keyswitch_assign_derived::<Self, _, _>(module, res, key, scratch)
+        crate::oep::derived::keyswitching::gglwe_keyswitch_assign_derived::<Self, _, _, Rg>(module, res, key, scratch)
     }
 }
 
@@ -587,7 +596,9 @@ pub unsafe trait GGLWEKeyswitchImpl: Backend + GLWEKeyswitchImpl {
 /// Implementations reproduce the bodies their methods document bit for bit, report for each
 /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait GGSWKeyswitchImpl: Backend + GLWEKeyswitchImpl + crate::oep::GGSWConversionImpl {
+pub unsafe trait GGSWKeyswitchImpl<Rg: Ring = Standard>:
+    Backend + GLWEKeyswitchImpl<Rg> + crate::oep::GGSWConversionImpl<Rg>
+{
     /// Default body: `ggsw_keyswitch_tmp_bytes_derived`, the larger of
     /// [`GLWEKeyswitchImpl::glwe_keyswitch_tmp_bytes`](crate::oep::GLWEKeyswitchImpl::glwe_keyswitch_tmp_bytes) and
     /// [`GGSWConversionImpl::ggsw_expand_rows_assign_tmp_bytes`](crate::oep::GGSWConversionImpl::ggsw_expand_rows_assign_tmp_bytes).
@@ -604,7 +615,7 @@ pub unsafe trait GGSWKeyswitchImpl: Backend + GLWEKeyswitchImpl + crate::oep::GG
         K: GGLWEInfos,
         T: GGLWEInfos,
     {
-        crate::oep::derived::keyswitching::ggsw_keyswitch_tmp_bytes_derived::<Self, _, _, _, _, _>(
+        crate::oep::derived::keyswitching::ggsw_keyswitch_tmp_bytes_derived::<Self, _, _, _, _, _, Rg>(
             module, res_infos, a_infos, key_infos, tsk_infos,
         )
     }
@@ -618,14 +629,14 @@ pub unsafe trait GGSWKeyswitchImpl: Backend + GLWEKeyswitchImpl + crate::oep::GG
         module: &Module<Self>,
         res: &mut R,
         a: &A,
-        key: &GGLWEPreparedBackendRef<'_, Self>,
-        tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, Self>,
+        key: &GGLWEPreparedBackendRef<'_, Self, Rg>,
+        tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, Self, Rg>,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        R: GGSWToBackendMut<Self> + GGSWInfos,
-        A: GGSWToBackendRef<Self> + GGSWInfos,
+        R: GGSWToBackendMut<Self, Rg> + GGSWInfos,
+        A: GGSWToBackendRef<Self, Rg> + GGSWInfos,
     {
-        crate::oep::derived::keyswitching::ggsw_keyswitch_derived::<Self, _, _, _>(module, res, a, key, tsk, scratch)
+        crate::oep::derived::keyswitching::ggsw_keyswitch_derived::<Self, _, _, _, Rg>(module, res, a, key, tsk, scratch)
     }
 
     /// Default body: `ggsw_keyswitch_assign_derived`,
@@ -637,17 +648,17 @@ pub unsafe trait GGSWKeyswitchImpl: Backend + GLWEKeyswitchImpl + crate::oep::GG
     fn ggsw_keyswitch_assign<R>(
         module: &Module<Self>,
         res: &mut R,
-        key: &GGLWEPreparedBackendRef<'_, Self>,
-        tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, Self>,
+        key: &GGLWEPreparedBackendRef<'_, Self, Rg>,
+        tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, Self, Rg>,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        R: GGSWToBackendMut<Self> + GGSWInfos,
+        R: GGSWToBackendMut<Self, Rg> + GGSWInfos,
     {
-        crate::oep::derived::keyswitching::ggsw_keyswitch_assign_derived::<Self, _, _>(module, res, key, tsk, scratch)
+        crate::oep::derived::keyswitching::ggsw_keyswitch_assign_derived::<Self, _, _, Rg>(module, res, key, tsk, scratch)
     }
 }
 
-/// Backend-provided LWE key-switching operations.
+/// Backend-provided LWE key-switching operations, on the standard ring only.
 ///
 /// # Safety
 /// Implementations reproduce the bodies their methods document bit for bit, report for each
@@ -678,10 +689,16 @@ pub unsafe trait LWEKeyswitchImpl: Backend {
 // === Convenience macros for full-reference opt-in ===
 
 /// Selects the portable HAL algorithms for this backend operation family.
+///
+/// `($be)` implements both rings and `($be, $ring)` one ring, as `docs/guides/layering-contract.md` describes.
 #[macro_export]
 macro_rules! impl_glwe_keyswitch_reference_full {
     ($be:ty) => {
-        unsafe impl $crate::oep::GLWEKeyswitchImpl for $be {
+        $crate::impl_glwe_keyswitch_reference_full!($be, ::poulpy_hal::layouts::Standard);
+        $crate::impl_glwe_keyswitch_reference_full!($be, ::poulpy_hal::layouts::ConjugateInvariant);
+    };
+    ($be:ty, $ring:ty) => {
+        unsafe impl $crate::oep::GLWEKeyswitchImpl<$ring> for $be {
             fn glwe_keyswitch_tmp_bytes<R, A, B>(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 res_infos: &R,
@@ -693,31 +710,37 @@ macro_rules! impl_glwe_keyswitch_reference_full {
                 A: $crate::layouts::GLWEInfos,
                 B: $crate::layouts::GGLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::keyswitching::GLWEKeyswitchReference<$be>>::glwe_keyswitch_tmp_bytes_reference(module, res_infos, a_infos, key_infos)
+                $crate::reference::keyswitching::GLWEKeyswitchReference::<$be, $ring>::glwe_keyswitch_tmp_bytes_reference(
+                    module, res_infos, a_infos, key_infos,
+                )
             }
 
             fn glwe_keyswitch<R, A>(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 res: &mut R,
                 a: &A,
-                key: &$crate::layouts::prepared::GGLWEPreparedBackendRef<'_, $be>,
+                key: &$crate::layouts::prepared::GGLWEPreparedBackendRef<'_, $be, $ring>,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
             ) where
-                R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
-                A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
+                R: $crate::layouts::GLWEToBackendMut<$be, $ring> + $crate::layouts::GLWEInfos,
+                A: $crate::layouts::GLWEToBackendRef<$be, $ring> + $crate::layouts::GLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::keyswitching::GLWEKeyswitchReference<$be>>::glwe_keyswitch_reference(module, res, a, key, scratch)
+                $crate::reference::keyswitching::GLWEKeyswitchReference::<$be, $ring>::glwe_keyswitch_reference(
+                    module, res, a, key, scratch,
+                )
             }
 
             fn glwe_keyswitch_assign<R>(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 res: &mut R,
-                key: &$crate::layouts::prepared::GGLWEPreparedBackendRef<'_, $be>,
+                key: &$crate::layouts::prepared::GGLWEPreparedBackendRef<'_, $be, $ring>,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
             ) where
-                R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
+                R: $crate::layouts::GLWEToBackendMut<$be, $ring> + $crate::layouts::GLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::keyswitching::GLWEKeyswitchReference<$be>>::glwe_keyswitch_assign_reference(module, res, key, scratch)
+                $crate::reference::keyswitching::GLWEKeyswitchReference::<$be, $ring>::glwe_keyswitch_assign_reference(
+                    module, res, key, scratch,
+                )
             }
 
             fn glwe_keyswitch_dft_tmp_bytes<A, K>(
@@ -730,21 +753,21 @@ macro_rules! impl_glwe_keyswitch_reference_full {
                 A: $crate::layouts::GLWEInfos,
                 K: $crate::layouts::GGLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::keyswitching::GLWEKeyswitchReference<$be>>::glwe_keyswitch_dft_tmp_bytes_reference(
+                $crate::reference::keyswitching::GLWEKeyswitchReference::<$be, $ring>::glwe_keyswitch_dft_tmp_bytes_reference(
                     module, res_size, a_infos, key_infos,
                 )
             }
 
             fn glwe_keyswitch_dft<A>(
                 module: &::poulpy_hal::layouts::Module<$be>,
-                res: &mut ::poulpy_hal::layouts::VecZnxDftBackendMut<'_, $be>,
+                res: &mut ::poulpy_hal::layouts::VecZnxDftBackendMut<'_, $be, $ring>,
                 a: &A,
-                key: &$crate::layouts::prepared::GGLWEPreparedBackendRef<'_, $be>,
+                key: &$crate::layouts::prepared::GGLWEPreparedBackendRef<'_, $be, $ring>,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
             ) where
-                A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
+                A: $crate::layouts::GLWEToBackendRef<$be, $ring> + $crate::layouts::GLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::keyswitching::GLWEKeyswitchReference<$be>>::glwe_keyswitch_dft_reference(
+                $crate::reference::keyswitching::GLWEKeyswitchReference::<$be, $ring>::glwe_keyswitch_dft_reference(
                     module, res, a, key, scratch,
                 )
             }
@@ -759,21 +782,21 @@ macro_rules! impl_glwe_keyswitch_reference_full {
                 A: $crate::layouts::GLWEInfos,
                 K: $crate::layouts::GGLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::keyswitching::GLWEKeyswitchReference<$be>>::glwe_keyswitch_dft_add_tmp_bytes_reference(
+                $crate::reference::keyswitching::GLWEKeyswitchReference::<$be, $ring>::glwe_keyswitch_dft_add_tmp_bytes_reference(
                     module, res_size, a_infos, key_infos,
                 )
             }
 
             fn glwe_keyswitch_dft_add<A>(
                 module: &::poulpy_hal::layouts::Module<$be>,
-                res: &mut ::poulpy_hal::layouts::VecZnxDftBackendMut<'_, $be>,
+                res: &mut ::poulpy_hal::layouts::VecZnxDftBackendMut<'_, $be, $ring>,
                 a: &A,
-                key: &$crate::layouts::prepared::GGLWEPreparedBackendRef<'_, $be>,
+                key: &$crate::layouts::prepared::GGLWEPreparedBackendRef<'_, $be, $ring>,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
             ) where
-                A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
+                A: $crate::layouts::GLWEToBackendRef<$be, $ring> + $crate::layouts::GLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::keyswitching::GLWEKeyswitchReference<$be>>::glwe_keyswitch_dft_add_reference(
+                $crate::reference::keyswitching::GLWEKeyswitchReference::<$be, $ring>::glwe_keyswitch_dft_add_reference(
                     module, res, a, key, scratch,
                 )
             }
@@ -781,7 +804,7 @@ macro_rules! impl_glwe_keyswitch_reference_full {
     };
 }
 
-/// Selects the portable HAL algorithms for this backend operation family.
+/// Selects the portable HAL algorithms for this standard-only backend operation family.
 #[macro_export]
 macro_rules! impl_lwe_keyswitch_reference_full {
     ($be:ty) => {
@@ -797,7 +820,7 @@ macro_rules! impl_lwe_keyswitch_reference_full {
                 A: $crate::layouts::LWEInfos,
                 K: $crate::layouts::GGLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::keyswitching::LWEKeyswitchReference<$be>>::lwe_keyswitch_tmp_bytes_reference(
+                $crate::reference::keyswitching::LWEKeyswitchReference::<$be>::lwe_keyswitch_tmp_bytes_reference(
                     module, res_infos, a_infos, key_infos,
                 )
             }
@@ -812,25 +835,39 @@ macro_rules! impl_lwe_keyswitch_reference_full {
                 R: $crate::layouts::LWEToBackendMut<$be> + $crate::layouts::LWEInfos,
                 A: $crate::layouts::LWEToBackendRef<$be> + $crate::layouts::LWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::keyswitching::LWEKeyswitchReference<$be>>::lwe_keyswitch_reference(module, res, a, ksk, scratch)
+                $crate::reference::keyswitching::LWEKeyswitchReference::<$be>::lwe_keyswitch_reference(
+                    module, res, a, ksk, scratch,
+                )
             }
         }
     };
 }
 
 /// Selects the same-layer row composition for this backend.
+///
+/// `($be)` implements both rings and `($be, $ring)` one ring, as `docs/guides/layering-contract.md` describes.
 #[macro_export]
 macro_rules! impl_gglwe_keyswitch_derived_full {
     ($be:ty) => {
-        unsafe impl $crate::oep::GGLWEKeyswitchImpl for $be {}
+        $crate::impl_gglwe_keyswitch_derived_full!($be, ::poulpy_hal::layouts::Standard);
+        $crate::impl_gglwe_keyswitch_derived_full!($be, ::poulpy_hal::layouts::ConjugateInvariant);
+    };
+    ($be:ty, $ring:ty) => {
+        unsafe impl $crate::oep::GGLWEKeyswitchImpl<$ring> for $be {}
     };
 }
 
 /// Selects the same-layer row composition for this backend.
+///
+/// `($be)` implements both rings and `($be, $ring)` one ring, as `docs/guides/layering-contract.md` describes.
 #[macro_export]
 macro_rules! impl_ggsw_keyswitch_derived_full {
     ($be:ty) => {
-        unsafe impl $crate::oep::GGSWKeyswitchImpl for $be {}
+        $crate::impl_ggsw_keyswitch_derived_full!($be, ::poulpy_hal::layouts::Standard);
+        $crate::impl_ggsw_keyswitch_derived_full!($be, ::poulpy_hal::layouts::ConjugateInvariant);
+    };
+    ($be:ty, $ring:ty) => {
+        unsafe impl $crate::oep::GGSWKeyswitchImpl<$ring> for $be {}
     };
 }
 

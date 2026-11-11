@@ -1,10 +1,10 @@
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::{Degree, GGLWEInfos, GLWELayout, GetAutomorphismKey, prepared::GGLWEPreparedToBackendRef};
-use poulpy_hal::layouts::{Backend, Ring, ScratchArena};
+use poulpy_hal::layouts::{Backend, Ring, ScratchArena, Standard};
 
 use crate::{
     CKKSCtBounds,
-    layouts::{CKKSCiphertextOwned, CKKSFoldKeysLayout, CKKSRingCiphertext},
+    layouts::{CKKSCiphertextOwned, CKKSFoldKeysLayout},
 };
 
 /// Planning queries of [`CKKSFoldOps`], from layouts only and for inputs of any ring:
@@ -44,7 +44,7 @@ pub trait CKKSFoldLayoutOps<BE: Backend> {
 /// layout, scale and sparsity; outputs their layout, and are labeled like the inputs.
 pub trait CKKSFoldOps<BE: Backend, R: Ring> {
     /// Number of ciphertexts of `degree` that `ins` folds into.
-    fn ckks_fold_count(&self, degree: Degree, ins: &[CKKSRingCiphertext<BE, R>]) -> usize;
+    fn ckks_fold_count(&self, degree: Degree, ins: &[CKKSCiphertextOwned<BE, R>]) -> usize;
 
     /// Galois elements of the input-secret automorphism keys [`Self::ckks_unfold`] may
     /// use on inputs like `ct_in`, from its metadata alone: `−1` splits pairs of real
@@ -80,13 +80,13 @@ pub trait CKKSFoldOps<BE: Backend, R: Ring> {
     /// `folded` is untouched on `Err`.
     fn ckks_fold<S>(
         &self,
-        folded: &mut [CKKSCiphertextOwned<BE>],
-        ins: &[CKKSRingCiphertext<BE, R>],
+        folded: &mut [CKKSCiphertextOwned<BE, Standard>],
+        ins: &[CKKSCiphertextOwned<BE, R>],
         inbound: Option<&S>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        S: GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
+        S: GGLWEPreparedToBackendRef<BE, Standard> + GGLWEInfos;
 
     /// Unfolds `folded`, the ciphertexts of [`Self::ckks_fold`] once bootstrapped, into
     /// `outs`, labeled like the inputs they were folded from: their slot kinds give the
@@ -115,13 +115,13 @@ pub trait CKKSFoldOps<BE: Backend, R: Ring> {
     /// contradicts. `outs` and `folded` are untouched on `Err`.
     fn ckks_unfold<S, H>(
         &self,
-        outs: &mut [CKKSRingCiphertext<BE, R>],
-        folded: &mut [CKKSCiphertextOwned<BE>],
+        outs: &mut [CKKSCiphertextOwned<BE, R>],
+        folded: &mut [CKKSCiphertextOwned<BE, Standard>],
         automorphisms: Option<&H>,
         outbound: Option<&S>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        S: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-        H: GetAutomorphismKey<BE>;
+        S: GGLWEPreparedToBackendRef<BE, Standard> + GGLWEInfos,
+        H: GetAutomorphismKey<BE, Standard>;
 }

@@ -3,7 +3,7 @@
 use poulpy_hal::layouts::ToOwnedDeep;
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{HostDataMut, HostDataRef, Module, ScratchOwned, VecZnx, ZnxView, ZnxViewMut},
+    layouts::{HostDataMut, HostDataRef, Module, Ring, ScratchOwned, VecZnx, ZnxView, ZnxViewMut},
     test_suite::TestParams,
 };
 
@@ -15,7 +15,7 @@ use crate::{
 };
 
 /// Decode the centered digits independently of the normalization implementation.
-fn numerator(data: &VecZnx<impl HostDataRef, i64>, col: usize, j: usize, base: usize, k: usize) -> i128 {
+fn numerator<Rg: Ring>(data: &VecZnx<impl HostDataRef, i64, Rg>, col: usize, j: usize, base: usize, k: usize) -> i128 {
     let mut value = 0i128;
     for limb in 0..k.div_ceil(base) {
         let digit = i128::from(data.at(col, limb)[j]);

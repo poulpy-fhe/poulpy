@@ -12,7 +12,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     layouts::{
-        Backend, Module, ScratchArena, VecZnxBackendMut, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef,
+        Backend, Module, ScratchArena, Standard, VecZnxBackendMut, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef,
         VmpPMatBackendRef,
     },
     test_suite::TestParams,
@@ -42,26 +42,26 @@ fn probed(
 }
 
 crate::impl_sampling_host!(Probed, fft64);
-poulpy_core::impl_ggsw_conversion_reference_full!(Probed);
-poulpy_core::impl_decryption_reference_full!(Probed);
-poulpy_core::impl_encryption_reference_full!(Probed);
-poulpy_core::impl_operations_reference_full!(Probed);
-poulpy_core::impl_glwe_polynomial_evaluation_derived_full!(Probed);
-poulpy_core::impl_preparation_reference_full!(Probed);
-poulpy_core::impl_secret_reference_full!(Probed);
-poulpy_core::impl_gglwe_external_product_derived_full!(Probed);
-poulpy_core::impl_gglwe_keyswitch_derived_full!(Probed);
-poulpy_core::impl_ggsw_external_product_derived_full!(Probed);
-poulpy_core::impl_ggsw_keyswitch_derived_full!(Probed);
-poulpy_core::impl_automorphism_reference_full!(Probed);
-poulpy_core::impl_glwe_external_product_reference_full!(Probed);
-poulpy_core::impl_glwe_keyswitch_reference_full!(Probed);
+poulpy_core::impl_ggsw_conversion_reference_full!(Probed, Standard);
+poulpy_core::impl_decryption_reference_full!(Probed, Standard);
+poulpy_core::impl_encryption_reference_full!(Probed, Standard);
+poulpy_core::impl_operations_reference_full!(Probed, Standard);
+poulpy_core::impl_glwe_polynomial_evaluation_derived_full!(Probed, Standard);
+poulpy_core::impl_preparation_reference_full!(Probed, Standard);
+poulpy_core::impl_secret_reference_full!(Probed, Standard);
+poulpy_core::impl_gglwe_external_product_derived_full!(Probed, Standard);
+poulpy_core::impl_gglwe_keyswitch_derived_full!(Probed, Standard);
+poulpy_core::impl_ggsw_external_product_derived_full!(Probed, Standard);
+poulpy_core::impl_ggsw_keyswitch_derived_full!(Probed, Standard);
+poulpy_core::impl_automorphism_reference_full!(Probed, Standard);
+poulpy_core::impl_glwe_external_product_reference_full!(Probed, Standard);
+poulpy_core::impl_glwe_keyswitch_reference_full!(Probed, Standard);
 poulpy_core::impl_lwe_keyswitch_reference_full!(Probed);
-poulpy_core::impl_glwe_tensoring_reference_full!(Probed);
-poulpy_core::impl_glwe_trace_derived_full!(Probed);
-poulpy_core::impl_glwe_linear_transformation_reference_full!(Probed);
+poulpy_core::impl_glwe_tensoring_reference_full!(Probed, Standard);
+poulpy_core::impl_glwe_trace_derived_full!(Probed, Standard);
+poulpy_core::impl_glwe_linear_transformation_reference_full!(Probed, Standard);
 
-unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl for Probed {
+unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl<Standard> for Probed {
     fn gglwe_product_digits_strided_tmp_bytes(
         module: &Module<Self>,
         res_size: usize,
@@ -73,7 +73,8 @@ unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl for Probed {
         pmat_cols_out: usize,
         pmat_size: usize,
     ) -> usize {
-        module.gglwe_product_digits_strided_tmp_bytes_reference(
+        GGLWEProductDigitsStridedReference::<Probed, Standard>::gglwe_product_digits_strided_tmp_bytes_reference(
+            module,
             res_size,
             a_cols,
             a_size,
@@ -87,11 +88,11 @@ unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl for Probed {
 
     fn gglwe_product_digits_strided(
         module: &Module<Self>,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
-        a: &VecZnxDftBackendRef<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, Standard>,
+        a: &VecZnxDftBackendRef<'_, Self, Standard>,
         dsize: usize,
         product_limbs: usize,
-        pmat: &VmpPMatBackendRef<'_, Self>,
+        pmat: &VmpPMatBackendRef<'_, Self, Standard>,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         module.gglwe_product_digits_strided_reference(res, a, dsize, product_limbs, pmat, scratch)
@@ -107,17 +108,24 @@ unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl for Probed {
     where
         K: GGLWEInfos,
     {
-        EXTRA + module.gglwe_product_fused_tmp_bytes_reference(res_size, product_size, a_size, key_infos)
+        EXTRA
+            + GGLWEProductDigitsStridedReference::<Probed, Standard>::gglwe_product_fused_tmp_bytes_reference(
+                module,
+                res_size,
+                product_size,
+                a_size,
+                key_infos,
+            )
     }
 
     fn gglwe_product_fused(
         module: &Module<Self>,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, Standard>,
         product_size: usize,
-        a: &VecZnxDftBackendRef<'_, Self>,
-        key: &GGLWEPreparedBackendRef<'_, Self>,
+        a: &VecZnxDftBackendRef<'_, Self, Standard>,
+        key: &GGLWEPreparedBackendRef<'_, Self, Standard>,
         term_count: usize,
-        addends: &[Option<(&VecZnxDftBackendRef<'_, Self>, usize)>],
+        addends: &[Option<(&VecZnxDftBackendRef<'_, Self, Standard>, usize)>],
         p: i64,
         accumulate: bool,
         scratch: &mut ScratchArena<'_, Self>,
@@ -135,20 +143,27 @@ unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl for Probed {
     where
         K: GGLWEInfos,
     {
-        EXTRA + module.gglwe_products_from_dft_tmp_bytes_reference(count, rank, source_size, key_infos)
+        EXTRA
+            + GGLWEProductDigitsStridedReference::<Probed, Standard>::gglwe_products_from_dft_tmp_bytes_reference(
+                module,
+                count,
+                rank,
+                source_size,
+                key_infos,
+            )
     }
 
     fn gglwe_products_from_dft(
         module: &Module<Self>,
         p: i64,
         term_count: usize,
-        res: &mut [VecZnxDftBackendMut<'_, Self>],
+        res: &mut [VecZnxDftBackendMut<'_, Self, Standard>],
         output_size: usize,
         accumulate: &[bool],
-        sources: &mut [VecZnxDftBackendMut<'_, Self>],
+        sources: &mut [VecZnxDftBackendMut<'_, Self, Standard>],
         source_sizes: &[usize],
         source_base2k: usize,
-        key: &GGLWEPreparedBackendRef<'_, Self>,
+        key: &GGLWEPreparedBackendRef<'_, Self, Standard>,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         probed(&PRODUCTS_FROM_DFT, scratch, |rest| {
@@ -177,21 +192,28 @@ unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl for Probed {
     where
         K: GGLWEInfos,
     {
-        EXTRA + module.gglwe_product_idft_normalize_tmp_bytes_reference(res_size, product_size, a_size, key_infos)
+        EXTRA
+            + GGLWEProductDigitsStridedReference::<Probed, Standard>::gglwe_product_idft_normalize_tmp_bytes_reference(
+                module,
+                res_size,
+                product_size,
+                a_size,
+                key_infos,
+            )
     }
 
     fn gglwe_product_idft_normalize(
         module: &Module<Self>,
-        res: &mut VecZnxBackendMut<'_, Self>,
+        res: &mut VecZnxBackendMut<'_, Self, Standard>,
         res_base2k: usize,
         res_k: usize,
         res_offset: i64,
-        res_dft: &mut VecZnxDftBackendMut<'_, Self>,
-        a: &VecZnxDftBackendRef<'_, Self>,
-        key: &GGLWEPreparedBackendRef<'_, Self>,
+        res_dft: &mut VecZnxDftBackendMut<'_, Self, Standard>,
+        a: &VecZnxDftBackendRef<'_, Self, Standard>,
+        key: &GGLWEPreparedBackendRef<'_, Self, Standard>,
         term_count: usize,
-        addends: &[Option<(&VecZnxDftBackendRef<'_, Self>, usize)>],
-        body: Option<(&VecZnxBackendRef<'_, Self>, usize)>,
+        addends: &[Option<(&VecZnxDftBackendRef<'_, Self, Standard>, usize)>],
+        body: Option<(&VecZnxBackendRef<'_, Self, Standard>, usize)>,
         a_base2k: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
@@ -212,7 +234,7 @@ fn powers_of_two_linear_transformation_enters_the_step_hooks() {
     };
     let counters = [&PRODUCTS_FROM_DFT, &PRODUCT_IDFT_NORMALIZE];
     let before = counters.map(|counter| counter.get());
-    test_linear_transformation_powers_of_two_parity::<FFT64Portable, Probed>(
+    test_linear_transformation_powers_of_two_parity::<FFT64Portable, Probed, Standard>(
         &params,
         &ParityShapes::default(),
         &Module::<FFT64Portable>::new(params.size as u64),

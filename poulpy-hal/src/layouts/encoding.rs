@@ -1,11 +1,11 @@
 use dashu_float::{Context, FBig, round::mode::HalfEven};
 use itertools::izip;
 
-use crate::layouts::{HostDataMut, HostDataRef, VecZnx, ZnxView, ZnxViewMut};
+use crate::layouts::{HostDataMut, HostDataRef, Ring, VecZnx, ZnxView, ZnxViewMut};
 
 // i64-only: the encode/decode routines below use i64/i128 limb arithmetic and
 // `u64::BITS` carry extraction. A narrower `ZnxWord` needs its own implementation.
-impl<D: HostDataMut> VecZnx<D, i64> {
+impl<D: HostDataMut, Rg: Ring> VecZnx<D, i64, Rg> {
     /// Encodes an `i64` slice into the limb-decomposed (base-2^k) representation.
     ///
     /// The input `data` (length `N`) is placed at the appropriate limb position
@@ -21,7 +21,7 @@ impl<D: HostDataMut> VecZnx<D, i64> {
 
         {
             let shape = self.shape();
-            let a = VecZnx::<_, i64>::from_shape(self.data().as_ref(), shape);
+            let a = VecZnx::<_, i64, Rg>::from_shape(self.data().as_ref(), shape);
             assert!(
                 size <= a.size(),
                 "invalid argument k.div_ceil(base2k)={} > a.size()={}",
@@ -33,7 +33,7 @@ impl<D: HostDataMut> VecZnx<D, i64> {
         }
 
         let shape = self.shape();
-        let mut a = VecZnx::from_shape(self.data_mut().as_mut(), shape);
+        let mut a = VecZnx::<_, i64, Rg>::from_shape(self.data_mut().as_mut(), shape);
         let a_size: usize = a.size();
 
         // Zeroes coefficients of the col-th column
@@ -68,7 +68,7 @@ impl<D: HostDataMut> VecZnx<D, i64> {
 
         {
             let shape = self.shape();
-            let a = VecZnx::<_, i64>::from_shape(self.data().as_ref(), shape);
+            let a = VecZnx::<_, i64, Rg>::from_shape(self.data().as_ref(), shape);
             assert!(
                 size <= a.size(),
                 "invalid argument k.div_ceil(base2k)={} > a.size()={}",
@@ -80,7 +80,7 @@ impl<D: HostDataMut> VecZnx<D, i64> {
         }
 
         let shape = self.shape();
-        let mut a = VecZnx::from_shape(self.data_mut().as_mut(), shape);
+        let mut a = VecZnx::<_, i64, Rg>::from_shape(self.data_mut().as_mut(), shape);
         let a_size: usize = a.size();
 
         {
@@ -122,7 +122,7 @@ impl<D: HostDataMut> VecZnx<D, i64> {
 
         {
             let shape = self.shape();
-            let a = VecZnx::<_, i64>::from_shape(self.data().as_ref(), shape);
+            let a = VecZnx::<_, i64, Rg>::from_shape(self.data().as_ref(), shape);
             assert!(idx < a.n());
             assert!(
                 size <= a.size(),
@@ -134,7 +134,7 @@ impl<D: HostDataMut> VecZnx<D, i64> {
         }
 
         let shape = self.shape();
-        let mut a = VecZnx::from_shape(self.data_mut().as_mut(), shape);
+        let mut a = VecZnx::<_, i64, Rg>::from_shape(self.data_mut().as_mut(), shape);
         let a_size = a.size();
 
         for j in 0..a_size {
@@ -161,20 +161,20 @@ impl<D: HostDataMut> VecZnx<D, i64> {
 }
 
 // i64-only: see the note on the encode impl above.
-impl<D: HostDataRef> VecZnx<D, i64> {
+impl<D: HostDataRef, Rg: Ring> VecZnx<D, i64, Rg> {
     /// Decodes column `col` from the limb-decomposed representation back into
     /// an `i64` slice, reconstructing values up to `k` bits of precision.
     pub fn decode_vec_i64(&self, base2k: usize, col: usize, k: usize, data: &mut [i64]) {
         let size: usize = k.div_ceil(base2k);
         {
             let shape = self.shape();
-            let a = VecZnx::<_, i64>::from_shape(self.data().as_ref(), shape);
+            let a = VecZnx::<_, i64, Rg>::from_shape(self.data().as_ref(), shape);
             assert!(data.len() == a.n(), "data length must equal the ring degree");
             assert!(col < a.cols());
         }
 
         let shape = self.shape();
-        let a = VecZnx::<_, i64>::from_shape(self.data().as_ref(), shape);
+        let a = VecZnx::<_, i64, Rg>::from_shape(self.data().as_ref(), shape);
         let limb0 = a.at(col, 0);
         for (j, d) in data.iter_mut().enumerate() {
             *d = limb0[j];
@@ -205,13 +205,13 @@ impl<D: HostDataRef> VecZnx<D, i64> {
         let size: usize = k.div_ceil(base2k);
         {
             let shape = self.shape();
-            let a = VecZnx::<_, i64>::from_shape(self.data().as_ref(), shape);
+            let a = VecZnx::<_, i64, Rg>::from_shape(self.data().as_ref(), shape);
             assert!(data.len() == a.n(), "data length must equal the ring degree");
             assert!(col < a.cols());
         }
 
         let shape = self.shape();
-        let a = VecZnx::<_, i64>::from_shape(self.data().as_ref(), shape);
+        let a = VecZnx::<_, i64, Rg>::from_shape(self.data().as_ref(), shape);
         let limb0 = a.at(col, 0);
         for (j, d) in data.iter_mut().enumerate() {
             *d = limb0[j] as i128;
@@ -244,13 +244,13 @@ impl<D: HostDataRef> VecZnx<D, i64> {
     pub fn decode_coeff_i64(&self, base2k: usize, col: usize, k: usize, idx: usize) -> i64 {
         {
             let shape = self.shape();
-            let a = VecZnx::<_, i64>::from_shape(self.data().as_ref(), shape);
+            let a = VecZnx::<_, i64, Rg>::from_shape(self.data().as_ref(), shape);
             assert!(idx < a.n());
             assert!(col < a.cols())
         }
 
         let shape = self.shape();
-        let a = VecZnx::<_, i64>::from_shape(self.data().as_ref(), shape);
+        let a = VecZnx::<_, i64, Rg>::from_shape(self.data().as_ref(), shape);
         let size: usize = k.div_ceil(base2k);
         let mut res: i64 = 0;
         let rem: usize = base2k - (k % base2k);
@@ -272,7 +272,7 @@ impl<D: HostDataRef> VecZnx<D, i64> {
     pub fn decode_vec_float(&self, base2k: usize, col: usize, data: &mut [FBig<HalfEven>]) {
         {
             let shape = self.shape();
-            let a = VecZnx::<_, i64>::from_shape(self.data().as_ref(), shape);
+            let a = VecZnx::<_, i64, Rg>::from_shape(self.data().as_ref(), shape);
             assert!(
                 data.len() >= a.n(),
                 "invalid data: data.len()={} < a.n()={}",
@@ -283,7 +283,7 @@ impl<D: HostDataRef> VecZnx<D, i64> {
         }
 
         let shape = self.shape();
-        let a = VecZnx::<_, i64>::from_shape(self.data().as_ref(), shape);
+        let a = VecZnx::<_, i64, Rg>::from_shape(self.data().as_ref(), shape);
         let size: usize = a.size();
         // Extra 256 guard bits absorb cancellation in downstream reduce(x * 2^offset)
         // operations (offset up to 128 bits) without affecting the public f64 API.
@@ -471,8 +471,11 @@ fn znx_normalize_final_step_assign(base2k: usize, lsh: usize, x: &mut [i64], car
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{AlignedBuf, layouts::VecZnx};
-
+    use crate::{
+        AlignedBuf,
+        layouts::{VecZnx, VecZnxOwned, ZnxViewMut},
+        source::Source,
+    };
     #[test]
     fn encode_by_limb_matches_encode_vec_i128() {
         let n = 8;
@@ -492,6 +495,33 @@ mod tests {
             for (j, limb) in got.iter().enumerate() {
                 assert_eq!(expected.at(0, j), &limb[..], "base2k {base2k}, k {k}, limb {j}");
             }
+        }
+    }
+
+    #[test]
+    fn encode_vec_i64_round_trips_through_decode() {
+        let n: usize = 32;
+        let base2k: usize = 17;
+        let size: usize = 5;
+        for k in [1, base2k / 2, size * base2k - 5] {
+            let mut a = VecZnxOwned::<i64>::alloc(n, 2, size);
+            let mut source = Source::new([0u8; 32]);
+            let raw: &mut [i64] = a.raw_mut();
+            raw.iter_mut().enumerate().for_each(|(i, x)| *x = i as i64);
+            (0..a.cols()).for_each(|col_i| {
+                let mut have: Vec<i64> = vec![i64::default(); n];
+                have.iter_mut().for_each(|x| {
+                    if k < 64 {
+                        *x = source.next_u64n(1 << k, (1 << k) - 1) as i64 - (1 << (k - 1));
+                    } else {
+                        *x = source.next_i64();
+                    }
+                });
+                a.encode_vec_i64(base2k, col_i, k, &have);
+                let mut want: Vec<i64> = vec![i64::default(); n];
+                a.decode_vec_i64(base2k, col_i, k, &mut want);
+                assert_eq!(have, want);
+            })
         }
     }
 }

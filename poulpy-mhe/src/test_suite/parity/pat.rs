@@ -4,7 +4,13 @@ use poulpy_core::{
     layouts::{GGLWEAlloc, GGLWELayout, GLWEAlloc, GLWELayout, GLWEPlaintextAlloc},
     test_suite::with_scratch,
 };
-use poulpy_hal::{AlignedBuf, api::VecZnxFillUniformSource, layouts::Module, source::Source, test_suite::vec_znx_backend_mut};
+use poulpy_hal::{
+    AlignedBuf,
+    api::VecZnxFillUniformSource,
+    layouts::{Module, Standard},
+    source::Source,
+    test_suite::vec_znx_backend_mut,
+};
 
 use super::{
     ParityBackend, ReferenceBackend, Snapshot, poison_gglwe, poison_glwe, snapshot_gglwe, snapshot_gglwe_compressed,
@@ -50,7 +56,7 @@ where
         module_ref.vec_znx_fill_uniform_source(
             layout.base2k.as_usize(),
             layout.k.as_usize(),
-            &mut vec_znx_backend_mut::<BR>(pt.data_mut()),
+            &mut vec_znx_backend_mut::<BR, Standard>(pt.data_mut()),
             0,
             &mut Source::new([30 + i as u8; 32]),
         );

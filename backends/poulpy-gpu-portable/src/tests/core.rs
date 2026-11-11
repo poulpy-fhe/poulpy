@@ -1,9 +1,8 @@
 //! The upstream `poulpy-core` suites, with `NTT4x30Portable` as the comparison backend.
 
-use poulpy_hal::layouts::{ConjugateInvariant, Module};
+use poulpy_hal::layouts::{ConjugateInvariant, Module, Standard};
 
-type Gpu = crate::NTT4x30Gpu<super::Runtime, poulpy_hal::layouts::Standard>;
-type GpuCI = crate::NTT4x30Gpu<super::Runtime, ConjugateInvariant>;
+type Gpu = crate::NTT4x30Gpu<super::Runtime>;
 
 poulpy_core::core_parity_test_suite! {
     mod core_parity,
@@ -19,16 +18,12 @@ poulpy_core::core_parity_test_suite! {
         glwe_automorphism => poulpy_core::test_suite::parity::test_glwe_automorphism_parity,
         glwe_external_product => poulpy_core::test_suite::parity::test_glwe_external_product_parity,
         glwe_copy_zero => poulpy_core::test_suite::parity::test_glwe_copy_zero_parity,
-        glwe_shift => poulpy_core::test_suite::parity::test_glwe_shift_parity,
         glwe_multiplication => poulpy_core::test_suite::parity::test_glwe_multiplication_parity,
-        ggsw_rotate => poulpy_core::test_suite::parity::test_ggsw_rotate_parity,
         gadget_external_product => poulpy_core::test_suite::parity::test_gadget_external_product_parity,
         gadget_conversion => poulpy_core::test_suite::parity::test_gadget_conversion_parity,
-        lwe_conversion => poulpy_core::test_suite::parity::test_lwe_conversion_parity,
         gglwe_product_digits_strided => poulpy_core::test_suite::parity::test_gglwe_product_digits_strided_parity,
         polynomial_evaluation => poulpy_core::test_suite::parity::test_polynomial_evaluation_parity,
         glwe_trace => poulpy_core::test_suite::parity::test_glwe_trace_parity,
-        trace_packing => poulpy_core::test_suite::parity::test_trace_packing_parity,
         tensor_relinearize_decrypt => poulpy_core::test_suite::parity::test_tensor_relinearize_decrypt_parity,
         linear_transformation => poulpy_core::test_suite::parity::test_linear_transformation_parity,
         linear_transformation_powers_of_two => poulpy_core::test_suite::parity::test_linear_transformation_powers_of_two_parity,
@@ -38,8 +33,15 @@ poulpy_core::core_parity_test_suite! {
         glwe_sub => poulpy_core::test_suite::parity::test_glwe_sub_parity,
         glwe_negate => poulpy_core::test_suite::parity::test_glwe_negate_parity,
         glwe_normalize => poulpy_core::test_suite::parity::test_glwe_normalize_parity,
-        glwe_rotate => poulpy_core::test_suite::parity::test_glwe_rotate_parity,
         glwe_tensor => poulpy_core::test_suite::parity::test_glwe_tensor_parity,
+        glwe_shift => poulpy_core::test_suite::parity::test_glwe_shift_parity,
+    },
+    ring_free_tests = {
+        glwe_mul_xp_minus_one => poulpy_core::test_suite::parity::test_glwe_mul_xp_minus_one_parity,
+        ggsw_rotate => poulpy_core::test_suite::parity::test_ggsw_rotate_parity,
+        lwe_conversion => poulpy_core::test_suite::parity::test_lwe_conversion_parity,
+        trace_packing => poulpy_core::test_suite::parity::test_trace_packing_parity,
+        glwe_rotate => poulpy_core::test_suite::parity::test_glwe_rotate_parity,
     }
 }
 
@@ -112,41 +114,36 @@ fn test_glwe_tensor_many_limbs() {
     };
     let comparison = Module::<poulpy_cpu_portable::NTT4x30Portable>::new(u64::from(layout.n.0));
     let tested = Module::<Gpu>::new(u64::from(layout.n.0));
-    test_glwe_tensor_parity_for_layout(&layout, &[0, 51], &comparison, &tested);
+    test_glwe_tensor_parity_for_layout::<_, _, Standard>(&layout, &[0, 51], &comparison, &tested);
 }
 
-// `conjugate_invariant_core_test_suite!` of `poulpy-cpu-portable` without its
-// coarsened-automorphism check, which reads backend allocations as host slices.
-#[test]
-fn conjugate_invariant_core_parity() {
-    let n = 256;
-    let reference = Module::<poulpy_cpu_portable::NTT4x30CIPortable>::new(n as u64);
-    let module = Module::<GpuCI>::new(n as u64);
-    let params = poulpy_hal::test_suite::TestParams { size: n, n, base2k: 10 };
-    let shapes = poulpy_core::test_suite::parity::ParityShapes {
-        ranks: vec![1, 2],
-        dsizes: Some(vec![1, 2]),
-        unaligned_digits: true,
-    };
-    poulpy_core::test_suite::parity::test_glwe_keyswitch_parity(&params, &shapes, &reference, &module);
-    poulpy_core::test_suite::parity::test_glwe_external_product_parity(&params, &shapes, &reference, &module);
-    poulpy_core::test_suite::parity::test_glwe_automorphism_parity(&params, &shapes, &reference, &module);
-    poulpy_core::test_suite::parity::test_glwe_trace_parity(&params, &shapes, &reference, &module);
-}
+poulpy_cpu_portable::conjugate_invariant_core_test_suite!(
+    conjugate_invariant_core,
+    crate::tests::Gpu,
+    reference = poulpy_cpu_portable::NTT4x30Portable,
+    device_memory
+);
 
 /// The conjugate-invariant key switches at a degree whose inverse transform takes two launches,
 /// where the products with the first inverse launch fused in run.
 #[test]
 fn conjugate_invariant_core_parity_n8192() {
     let n = 1 << 13;
-    let reference = Module::<poulpy_cpu_portable::NTT4x30CIPortable>::new(n as u64);
-    let module = Module::<GpuCI>::new(n as u64);
+    let reference = Module::<poulpy_cpu_portable::NTT4x30Portable>::new(n as u64);
+    let module = Module::<Gpu>::new(n as u64);
     let params = poulpy_hal::test_suite::TestParams { size: n, n, base2k: 10 };
     let shapes = poulpy_core::test_suite::parity::ParityShapes {
         ranks: vec![1],
         dsizes: Some(vec![1, 2]),
         unaligned_digits: false,
     };
-    poulpy_core::test_suite::parity::test_glwe_keyswitch_parity(&params, &shapes, &reference, &module);
-    poulpy_core::test_suite::parity::test_glwe_automorphism_parity(&params, &shapes, &reference, &module);
+    poulpy_core::test_suite::parity::test_glwe_keyswitch_parity::<_, _, ConjugateInvariant>(
+        &params, &shapes, &reference, &module,
+    );
+    poulpy_core::test_suite::parity::test_glwe_keyswitch_dft_add_parity::<_, _, ConjugateInvariant>(
+        &params, &shapes, &reference, &module,
+    );
+    poulpy_core::test_suite::parity::test_glwe_automorphism_parity::<_, _, ConjugateInvariant>(
+        &params, &shapes, &reference, &module,
+    );
 }

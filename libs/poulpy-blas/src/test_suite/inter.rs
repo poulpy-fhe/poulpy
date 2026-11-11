@@ -35,7 +35,7 @@ pub fn test_blas_rotate<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
     log_d: usize,
 ) where
-    BE: TestContextBackend<Ring = Standard> + BlasMatInterImpl,
+    BE: TestContextBackend + BlasMatInterImpl<Standard>,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: ReimNew<F>,
@@ -61,8 +61,8 @@ pub fn test_blas_rotate<BE, F, E>(
     let plan = BlasPlan::new(log_d);
     for r in [1i64, -1, 3] {
         // The keys of the rotation's set alone.
-        let elements = plan.rotate_galois_elements(module.cyclotomic_order(), r);
-        let keys = TestKeys::<BE> {
+        let elements = plan.rotate_galois_elements(module.cyclotomic_order::<Standard>(), r);
+        let keys = TestKeys::<BE, Standard> {
             atks: rotation_keys(&params, module, &sk_raw, elements, &mut scratch.borrow()),
             tsk: None,
         };
@@ -88,7 +88,7 @@ pub fn test_blas_rotate<BE, F, E>(
 /// `dec(sum(enc(A)))` holds the sum of every matrix of `A` in each matrix slot, in every block of a `2 x 2` grid.
 pub fn test_blas_sum<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>, log_d: usize)
 where
-    BE: TestContextBackend<Ring = Standard> + BlasMatInterImpl,
+    BE: TestContextBackend + BlasMatInterImpl<Standard>,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: ReimNew<F>,
@@ -111,11 +111,11 @@ where
         &a,
         &mut scratch.borrow(),
     );
-    let atks = sum_galois_elements(module.cyclotomic_order(), &ct)
+    let atks = sum_galois_elements(module.cyclotomic_order::<Standard>(), &ct)
         .into_iter()
         .map(|p| (p, gen_atk(&params, module, p, &sk_raw, &mut scratch.borrow())))
         .collect();
-    let keys = TestKeys::<BE> { atks, tsk: None };
+    let keys = TestKeys::<BE, Standard> { atks, tsk: None };
     // Once with `res` as wide as `a`, once one limb wider.
     for res_k in [params.k, params.k + params.base2k] {
         let mut res = alloc_grid(&params, module, log_d, 2, 2, res_k);
@@ -147,7 +147,7 @@ pub fn test_blas_inter_guards<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
     log_d: usize,
 ) where
-    BE: TestContextBackend<Ring = Standard> + BlasMatInterImpl,
+    BE: TestContextBackend + BlasMatInterImpl<Standard>,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: ReimNew<F>,
@@ -171,7 +171,7 @@ pub fn test_blas_inter_guards<BE, F, E>(
         &a,
         &mut scratch.borrow(),
     );
-    let keys = TestKeys::<BE> {
+    let keys = TestKeys::<BE, Standard> {
         atks: HashMap::new(),
         tsk: None,
     };
@@ -193,7 +193,7 @@ pub fn test_blas_inter_guards<BE, F, E>(
         .chain(foreign_layouts(module, &ct))
         .map(|(label, res)| (format!("{label} res"), res, &ct));
     // `a` and `res` both of another degree than the module's.
-    let wide = |grid: &BlasCiphertextOwned<BE>| foreign_layouts(module, grid).into_iter().next().unwrap().1;
+    let wide = |grid: &BlasCiphertextOwned<BE, Standard>| foreign_layouts(module, grid).into_iter().next().unwrap().1;
     let wide_a = wide(&ct);
     let others = [
         ("shape", alloc(log_d, 2, 1), &ct),
@@ -203,29 +203,29 @@ pub fn test_blas_inter_guards<BE, F, E>(
     ]
     .map(|(label, res, a)| (label.to_string(), res, a));
     for (label, mut res, a) in as_a.chain(as_res).chain(others) {
-        assert_guard::<BE, _>(&label, "blas_rotate", InvalidOperand, &mut res, |res| {
+        assert_guard::<BE, _, Standard>(&label, "blas_rotate", InvalidOperand, &mut res, |res| {
             module.blas_rotate(1, res, a, &keys, &mut op_scratch.borrow())
         });
-        assert_guard::<BE, _>(&label, "blas_sum", InvalidOperand, &mut res, |res| {
+        assert_guard::<BE, _, Standard>(&label, "blas_sum", InvalidOperand, &mut res, |res| {
             module.blas_sum(res, a, &keys, &mut op_scratch.borrow())
         });
     }
 
     // A grid one block row short of the shape it reports, as `a`, then as `res`.
-    let short = |grid: BlasCiphertextOwned<BE>| Misshapen {
+    let short = |grid: BlasCiphertextOwned<BE, Standard>| Misshapen {
         rows: grid.rows() + 1,
         cols: grid.cols(),
         grid,
     };
-    let (one_row, mut res) = (short(corner::<BE>(&ct, 1, ct.cols())), alloc(log_d, 2, 2));
-    assert_guard::<BE, _>("misshapen a", "blas_rotate", InvalidOperand, &mut res, |res| {
+    let (one_row, mut res) = (short(corner::<BE, Standard>(&ct, 1, ct.cols())), alloc(log_d, 2, 2));
+    assert_guard::<BE, _, Standard>("misshapen a", "blas_rotate", InvalidOperand, &mut res, |res| {
         module.blas_rotate(1, res, &one_row, &keys, &mut op_scratch.borrow())
     });
-    assert_guard::<BE, _>("misshapen a", "blas_sum", InvalidOperand, &mut res, |res| {
+    assert_guard::<BE, _, Standard>("misshapen a", "blas_sum", InvalidOperand, &mut res, |res| {
         module.blas_sum(res, &one_row, &keys, &mut op_scratch.borrow())
     });
     let mut short_res = short(alloc(log_d, 1, 2));
-    assert_guard_on::<BE, _, _>(
+    assert_guard_on::<BE, _, _, Standard>(
         "misshapen res",
         "blas_rotate",
         InvalidOperand,
@@ -233,7 +233,7 @@ pub fn test_blas_inter_guards<BE, F, E>(
         |res| &res.grid,
         |res| module.blas_rotate(1, res, &ct, &keys, &mut op_scratch.borrow()),
     );
-    assert_guard_on::<BE, _, _>(
+    assert_guard_on::<BE, _, _, Standard>(
         "misshapen res",
         "blas_sum",
         InvalidOperand,
@@ -245,10 +245,10 @@ pub fn test_blas_inter_guards<BE, F, E>(
     // Valid grids, empty key store; on one matrix slot every rotation is the identity, which takes no key.
     let mut res = alloc(log_d, 2, 2);
     if lanes > 1 {
-        assert_guard::<BE, _>("no keys", "blas_rotate", MissingKey, &mut res, |res| {
+        assert_guard::<BE, _, Standard>("no keys", "blas_rotate", MissingKey, &mut res, |res| {
             module.blas_rotate(1, res, &ct, &keys, &mut op_scratch.borrow())
         });
-        assert_guard::<BE, _>("no keys", "blas_sum", MissingKey, &mut res, |res| {
+        assert_guard::<BE, _, Standard>("no keys", "blas_sum", MissingKey, &mut res, |res| {
             module.blas_sum(res, &ct, &keys, &mut op_scratch.borrow())
         });
     }
@@ -257,16 +257,16 @@ pub fn test_blas_inter_guards<BE, F, E>(
     let log_d_wide = (params.n / 2).ilog2() as usize / 2 + 1;
     let wide = BlasCiphertext::from_blocks(ct.clone().into_blocks(), log_d_wide, 2, 2).unwrap();
     let mut res_wide = alloc(log_d_wide, 2, 2);
-    assert_guard::<BE, _>("wide", "blas_rotate", InvalidOperand, &mut res_wide, |res| {
+    assert_guard::<BE, _, Standard>("wide", "blas_rotate", InvalidOperand, &mut res_wide, |res| {
         module.blas_rotate(1, res, &wide, &keys, &mut op_scratch.borrow())
     });
-    assert_guard::<BE, _>("wide", "blas_sum", InvalidOperand, &mut res_wide, |res| {
+    assert_guard::<BE, _, Standard>("wide", "blas_sum", InvalidOperand, &mut res_wide, |res| {
         module.blas_sum(res, &wide, &keys, &mut op_scratch.borrow())
     });
 
     // The keys of the sum's rotations, the first by one matrix slot; none on one matrix slot.
-    let sum_keys = TestKeys::<BE> {
-        atks: sum_galois_elements(module.cyclotomic_order(), &ct)
+    let sum_keys = TestKeys::<BE, Standard> {
+        atks: sum_galois_elements(module.cyclotomic_order::<Standard>(), &ct)
             .into_iter()
             .map(|p| (p, gen_atk(&params, module, p, &sk_raw, &mut scratch.borrow())))
             .collect(),
@@ -276,10 +276,10 @@ pub fn test_blas_inter_guards<BE, F, E>(
     // in the rotation, or in the copy that replaces it on one matrix slot, and in the inner sum that makes the sum.
     let mut narrow = alloc_grid(&params, module, log_d, 2, 2, ct.block_layout().log_delta() - 1);
     let rotate = if lanes > 1 { "ckks_rotate_into" } else { "ckks_copy" };
-    assert_guard::<BE, _>("budget", rotate, Budget, &mut narrow, |res| {
+    assert_guard::<BE, _, Standard>("budget", rotate, Budget, &mut narrow, |res| {
         module.blas_rotate(1, res, &ct, &sum_keys, &mut op_scratch.borrow())
     });
-    assert_guard::<BE, _>("budget", "ckks_inner_sum", Budget, &mut narrow, |res| {
+    assert_guard::<BE, _, Standard>("budget", "ckks_inner_sum", Budget, &mut narrow, |res| {
         module.blas_sum(res, &ct, &sum_keys, &mut op_scratch.borrow())
     });
 
@@ -287,10 +287,10 @@ pub fn test_blas_inter_guards<BE, F, E>(
     if lanes > 1 {
         let [.., (_, rank_a)] = foreign_layouts(module, &ct);
         let mut rank_res = rank_a.clone();
-        assert_guard::<BE, _>("key rank", "blas_rotate", InvalidOperand, &mut rank_res, |res| {
+        assert_guard::<BE, _, Standard>("key rank", "blas_rotate", InvalidOperand, &mut rank_res, |res| {
             module.blas_rotate(1, res, &rank_a, &sum_keys, &mut op_scratch.borrow())
         });
-        assert_guard::<BE, _>("key rank", "blas_sum", InvalidOperand, &mut rank_res, |res| {
+        assert_guard::<BE, _, Standard>("key rank", "blas_sum", InvalidOperand, &mut rank_res, |res| {
             module.blas_sum(res, &rank_a, &sum_keys, &mut op_scratch.borrow())
         });
     }
@@ -298,11 +298,11 @@ pub fn test_blas_inter_guards<BE, F, E>(
     // A call that looks up no key, on one matrix slot, asserts no scratch.
     if lanes > 1 {
         let bytes = module.blas_rotate_tmp_bytes(&res, &ct, &params.atk_layout());
-        assert_short_scratch::<BE, _>("blas_rotate", &mut res, bytes, |res, s| {
+        assert_short_scratch::<BE, _, Standard>("blas_rotate", &mut res, bytes, |res, s| {
             module.blas_rotate(1, res, &ct, &sum_keys, s)
         });
         let bytes = module.blas_sum_tmp_bytes(&res, &ct, &params.atk_layout());
-        assert_short_scratch::<BE, _>("blas_sum", &mut res, bytes, |res, s| module.blas_sum(res, &ct, &sum_keys, s));
+        assert_short_scratch::<BE, _, Standard>("blas_sum", &mut res, bytes, |res, s| module.blas_sum(res, &ct, &sum_keys, s));
     }
 
     // (2^62 + 1) x 4 wraps to the 4 blocks of `ct` on 64 bits.

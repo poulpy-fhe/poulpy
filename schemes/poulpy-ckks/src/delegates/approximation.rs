@@ -1,6 +1,6 @@
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::{BSGSMeta, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, IntPolyInfos, LWEInfos, SetBSGSMeta};
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Module, Ring, ScratchArena};
 
 use crate::{
     CKKSCtBounds, CKKSInfos, CKKSResult as Result, SetCKKSInfos,
@@ -9,7 +9,7 @@ use crate::{
     oep::CKKSApproximationImpl,
 };
 
-impl<BE: Backend + CKKSApproximationImpl> CKKSApproximationOps<BE> for Module<BE>
+impl<BE: Backend + CKKSApproximationImpl<Rg>, Rg: Ring> CKKSApproximationOps<BE, Rg> for Module<BE>
 where
     Module<BE>: CKKSAllOpsTmpBytes<BE>,
 {
@@ -38,10 +38,10 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
-        I: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta + IntPolyInfos,
-        H: GetTensorKey<BE>,
+        R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        I: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + BSGSMeta + IntPolyInfos,
+        H: GetTensorKey<BE, Rg>,
     {
         BE::ckks_polynomial_approximation_eval(self, res, input, approximation, tsk, scratch)
     }

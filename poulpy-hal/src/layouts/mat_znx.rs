@@ -1,8 +1,9 @@
 use crate::{
     AlignedBuf, alloc_aligned,
     layouts::{
-        Backend, Data, DataView, DataViewMut, DigestU64, HostDataMut, HostDataRef, MatZnxInfos, ReaderFrom, ToOwnedDeep, VecZnx,
-        WriterTo, ZnxInfos, ZnxWord, ZnxZero,
+        Backend, Data, DataView, DataViewMut, DigestU64, HostDataMut, HostDataRef, MatZnxInfos, ReaderFrom, Ring, Standard,
+        ToOwnedDeep, VecZnx, WriterTo, ZnxInfos, ZnxWord, ZnxZero, read_ring_tag, read_usize_fields, serialized_byte_len,
+        write_ring_tag,
     },
 };
 use std::{
@@ -11,7 +12,7 @@ use std::{
     marker::PhantomData,
 };
 
-use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use byteorder::{LittleEndian, WriteBytesExt};
 
 #[repr(C)]
 #[derive(PartialEq, Eq, Clone, Copy, Hash, Debug, Default)]
@@ -55,27 +56,28 @@ impl MatZnxShape {
     }
 }
 
-/// Matrix of polynomials in `Z[X]/(X^N + 1)`.
+/// Matrix of polynomials of the ring `Rg`.
 ///
 /// A `MatZnx` has `rows` rows, each containing `cols_in` entries.
 /// Each entry is itself a [`VecZnx`] with `cols_out` columns and `size` limbs.
 /// This gives a total of `rows * cols_in * cols_out * size` small polynomials.
 ///
 /// The type parameter `W` names the coefficient word (byte-layout contract)
-/// of the buffer.
+/// of the buffer, and `Rg` the ring of the polynomials (see
+/// [layouts](crate::layouts#value-model)).
 ///
 /// Used primarily as the plaintext input to [`VmpPMatPrepare`](crate::api::VmpPMatPrepare),
 /// which converts a `MatZnx` into a prepared [`VmpPMat`](crate::layouts::VmpPMat)
 /// for vector-matrix products.
 #[repr(C)]
 #[derive(PartialEq, Eq, Clone, Hash)]
-pub struct MatZnx<D: Data, W: ZnxWord> {
+pub struct MatZnx<D: Data, W: ZnxWord, Rg: Ring = Standard> {
     data: D,
     shape: MatZnxShape,
-    pub _phantom: PhantomData<W>,
+    pub _phantom: PhantomData<(W, Rg)>,
 }
 
-impl<D: HostDataRef, W: ZnxWord> DigestU64 for MatZnx<D, W> {
+impl<D: HostDataRef, W: ZnxWord, Rg: Ring> DigestU64 for MatZnx<D, W, Rg> {
     fn digest_u64(&self) -> u64 {
         let mut h: DefaultHasher = DefaultHasher::new();
         h.write(self.data.as_ref());
@@ -88,8 +90,8 @@ impl<D: HostDataRef, W: ZnxWord> DigestU64 for MatZnx<D, W> {
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> ToOwnedDeep for MatZnx<D, W> {
-    type Owned = MatZnx<AlignedBuf, W>;
+impl<D: HostDataRef, W: ZnxWord, Rg: Ring> ToOwnedDeep for MatZnx<D, W, Rg> {
+    type Owned = MatZnx<AlignedBuf, W, Rg>;
     fn to_owned_deep(&self) -> Self::Owned {
         MatZnx {
             data: AlignedBuf::from(self.data.as_ref()),
@@ -99,13 +101,13 @@ impl<D: HostDataRef, W: ZnxWord> ToOwnedDeep for MatZnx<D, W> {
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> fmt::Debug for MatZnx<D, W> {
+impl<D: HostDataRef, W: ZnxWord, Rg: Ring> fmt::Debug for MatZnx<D, W, Rg> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{self}")
     }
 }
 
-impl<D: Data, W: ZnxWord> ZnxInfos for MatZnx<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> ZnxInfos for MatZnx<D, W, Rg> {
     fn n(&self) -> usize {
         self.shape.n()
     }
@@ -122,7 +124,7 @@ impl<D: Data, W: ZnxWord> ZnxInfos for MatZnx<D, W> {
     }
 }
 
-impl<D: Data, W: ZnxWord> MatZnxInfos for MatZnx<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> MatZnxInfos for MatZnx<D, W, Rg> {
     fn rows(&self) -> usize {
         self.shape.rows()
     }
@@ -136,20 +138,20 @@ impl<D: Data, W: ZnxWord> MatZnxInfos for MatZnx<D, W> {
     }
 }
 
-impl<D: Data, W: ZnxWord> DataView for MatZnx<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> DataView for MatZnx<D, W, Rg> {
     type D = D;
     fn data(&self) -> &Self::D {
         &self.data
     }
 }
 
-impl<D: Data, W: ZnxWord> DataViewMut for MatZnx<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> DataViewMut for MatZnx<D, W, Rg> {
     fn data_mut(&mut self) -> &mut Self::D {
         &mut self.data
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> MatZnx<D, W> {
+impl<D: HostDataRef, W: ZnxWord, Rg: Ring> MatZnx<D, W, Rg> {
     /// Returns the whole element view as a scalar slice.
     ///
     /// A matrix container has no flat `(col, limb)` indexing, so it exposes the
@@ -161,7 +163,7 @@ impl<D: HostDataRef, W: ZnxWord> MatZnx<D, W> {
     }
 }
 
-impl<D: HostDataMut, W: ZnxWord> MatZnx<D, W> {
+impl<D: HostDataMut, W: ZnxWord, Rg: Ring> MatZnx<D, W, Rg> {
     /// Mutable counterpart of [`Self::raw`].
     pub fn raw_mut(&mut self) -> &mut [W] {
         let span: usize = crate::layouts::element_view_span(self);
@@ -169,7 +171,7 @@ impl<D: HostDataMut, W: ZnxWord> MatZnx<D, W> {
     }
 }
 
-impl<D: Data, W: ZnxWord> MatZnx<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> MatZnx<D, W, Rg> {
     pub fn shape(&self) -> MatZnxShape {
         self.shape
     }
@@ -211,17 +213,17 @@ impl<D: Data, W: ZnxWord> MatZnx<D, W> {
     }
 }
 
-impl<D: Data, W: ZnxWord> MatZnx<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> MatZnx<D, W, Rg> {
     /// Returns the number of bytes required to store the matrix.
     pub fn bytes_of(n: usize, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> usize {
         crate::layouts::checked_product(
-            &[rows, cols_in, VecZnx::<AlignedBuf, W>::bytes_of(n, cols_out, size)],
+            &[rows, cols_in, VecZnx::<AlignedBuf, W, Rg>::bytes_of(n, cols_out, size)],
             "MatZnx byte size",
         )
     }
 }
 
-impl<W: ZnxWord> MatZnx<AlignedBuf, W> {
+impl<W: ZnxWord, Rg: Ring> MatZnx<AlignedBuf, W, Rg> {
     /// Allocates a zero-initialized `MatZnx` aligned to [`DEFAULTALIGN`](crate::DEFAULTALIGN).
     pub(crate) fn alloc(n: usize, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> Self {
         let data: AlignedBuf = alloc_aligned(Self::bytes_of(n, rows, cols_in, cols_out, size));
@@ -243,13 +245,13 @@ impl<W: ZnxWord> MatZnx<AlignedBuf, W> {
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> MatZnx<D, W> {
+impl<D: HostDataRef, W: ZnxWord, Rg: Ring> MatZnx<D, W, Rg> {
     /// Returns a shared [`VecZnx`] view of the entry at `(row, col)`.
     ///
     /// # Panics
     ///
     /// Panics if `row >= rows` or `col >= cols_in`.
-    pub fn at(&self, row: usize, col: usize) -> VecZnx<&[u8], W> {
+    pub fn at(&self, row: usize, col: usize) -> VecZnx<&[u8], W, Rg> {
         assert!(row < self.rows(), "rows: {} >= {}", row, self.rows());
         assert!(col < self.cols_in(), "cols: {} >= {}", col, self.cols_in());
 
@@ -265,13 +267,13 @@ impl<D: HostDataRef, W: ZnxWord> MatZnx<D, W> {
     }
 }
 
-impl<D: HostDataMut, W: ZnxWord> MatZnx<D, W> {
+impl<D: HostDataMut, W: ZnxWord, Rg: Ring> MatZnx<D, W, Rg> {
     /// Returns a mutable [`VecZnx`] view of the entry at `(row, col)`.
     ///
     /// # Panics
     ///
     /// Panics if `row >= rows` or `col >= cols_in`.
-    pub fn at_mut(&mut self, row: usize, col: usize) -> VecZnx<&mut [u8], W> {
+    pub fn at_mut(&mut self, row: usize, col: usize) -> VecZnx<&mut [u8], W, Rg> {
         assert!(row < self.rows(), "rows: {} >= {}", row, self.rows());
         assert!(col < self.cols_in(), "cols: {} >= {}", col, self.cols_in());
 
@@ -293,12 +295,12 @@ impl<D: HostDataMut, W: ZnxWord> MatZnx<D, W> {
 }
 
 /// Returns a shared backend-native entry view of a backend-owned `MatZnx`.
-pub trait MatZnxAtBackendRef<B: Backend> {
-    fn at_backend(&self, row: usize, col: usize) -> VecZnx<B::BufRef<'_>, B::ZnxWord>;
+pub trait MatZnxAtBackendRef<B: Backend, Rg: Ring = Standard> {
+    fn at_backend(&self, row: usize, col: usize) -> VecZnx<B::BufRef<'_>, B::ZnxWord, Rg>;
 }
 
-impl<B: Backend> MatZnxAtBackendRef<B> for MatZnx<B::OwnedBuf, B::ZnxWord> {
-    fn at_backend(&self, row: usize, col: usize) -> VecZnx<B::BufRef<'_>, B::ZnxWord> {
+impl<B: Backend, Rg: Ring> MatZnxAtBackendRef<B, Rg> for MatZnx<B::OwnedBuf, B::ZnxWord, Rg> {
+    fn at_backend(&self, row: usize, col: usize) -> VecZnx<B::BufRef<'_>, B::ZnxWord, Rg> {
         assert!(row < self.rows(), "rows: {} >= {}", row, self.rows());
         assert!(col < self.cols_in(), "cols: {} >= {}", col, self.cols_in());
 
@@ -319,11 +321,11 @@ impl<B: Backend> MatZnxAtBackendRef<B> for MatZnx<B::OwnedBuf, B::ZnxWord> {
     }
 }
 
-pub fn mat_znx_at_backend_ref_from_ref<'a, 'b, B: Backend + 'b>(
-    mat: &'a MatZnx<B::BufRef<'b>, B::ZnxWord>,
+pub fn mat_znx_at_backend_ref_from_ref<'a, 'b, B: Backend + 'b, Rg: Ring>(
+    mat: &'a MatZnx<B::BufRef<'b>, B::ZnxWord, Rg>,
     row: usize,
     col: usize,
-) -> VecZnx<B::BufRef<'a>, B::ZnxWord> {
+) -> VecZnx<B::BufRef<'a>, B::ZnxWord, Rg> {
     assert!(row < mat.rows(), "rows: {} >= {}", row, mat.rows());
     assert!(col < mat.cols_in(), "cols: {} >= {}", col, mat.cols_in());
 
@@ -343,11 +345,11 @@ pub fn mat_znx_at_backend_ref_from_ref<'a, 'b, B: Backend + 'b>(
     )
 }
 
-pub fn mat_znx_at_backend_ref_from_mut<'a, 'b, B: Backend + 'b>(
-    mat: &'a MatZnx<B::BufMut<'b>, B::ZnxWord>,
+pub fn mat_znx_at_backend_ref_from_mut<'a, 'b, B: Backend + 'b, Rg: Ring>(
+    mat: &'a MatZnx<B::BufMut<'b>, B::ZnxWord, Rg>,
     row: usize,
     col: usize,
-) -> VecZnx<B::BufRef<'a>, B::ZnxWord> {
+) -> VecZnx<B::BufRef<'a>, B::ZnxWord, Rg> {
     assert!(row < mat.rows(), "rows: {} >= {}", row, mat.rows());
     assert!(col < mat.cols_in(), "cols: {} >= {}", col, mat.cols_in());
 
@@ -368,12 +370,12 @@ pub fn mat_znx_at_backend_ref_from_mut<'a, 'b, B: Backend + 'b>(
 }
 
 /// Returns a mutable backend-native entry view of a backend-owned `MatZnx`.
-pub trait MatZnxAtBackendMut<B: Backend> {
-    fn at_backend_mut(&mut self, row: usize, col: usize) -> VecZnx<B::BufMut<'_>, B::ZnxWord>;
+pub trait MatZnxAtBackendMut<B: Backend, Rg: Ring = Standard> {
+    fn at_backend_mut(&mut self, row: usize, col: usize) -> VecZnx<B::BufMut<'_>, B::ZnxWord, Rg>;
 }
 
-impl<B: Backend> MatZnxAtBackendMut<B> for MatZnx<B::OwnedBuf, B::ZnxWord> {
-    fn at_backend_mut(&mut self, row: usize, col: usize) -> VecZnx<B::BufMut<'_>, B::ZnxWord> {
+impl<B: Backend, Rg: Ring> MatZnxAtBackendMut<B, Rg> for MatZnx<B::OwnedBuf, B::ZnxWord, Rg> {
+    fn at_backend_mut(&mut self, row: usize, col: usize) -> VecZnx<B::BufMut<'_>, B::ZnxWord, Rg> {
         assert!(row < self.rows(), "rows: {} >= {}", row, self.rows());
         assert!(col < self.cols_in(), "cols: {} >= {}", col, self.cols_in());
 
@@ -393,11 +395,11 @@ impl<B: Backend> MatZnxAtBackendMut<B> for MatZnx<B::OwnedBuf, B::ZnxWord> {
     }
 }
 
-pub fn mat_znx_at_backend_mut_from_mut<'a, 'b, B: Backend + 'b>(
-    mat: &'a mut MatZnx<B::BufMut<'b>, B::ZnxWord>,
+pub fn mat_znx_at_backend_mut_from_mut<'a, 'b, B: Backend + 'b, Rg: Ring>(
+    mat: &'a mut MatZnx<B::BufMut<'b>, B::ZnxWord, Rg>,
     row: usize,
     col: usize,
-) -> VecZnx<B::BufMut<'a>, B::ZnxWord> {
+) -> VecZnx<B::BufMut<'a>, B::ZnxWord, Rg> {
     assert!(row < mat.rows(), "rows: {} >= {}", row, mat.rows());
     assert!(col < mat.cols_in(), "cols: {} >= {}", col, mat.cols_in());
 
@@ -417,23 +419,23 @@ pub fn mat_znx_at_backend_mut_from_mut<'a, 'b, B: Backend + 'b>(
 }
 
 /// Owned `MatZnx` backed by an `AlignedBuf`.
-pub type MatZnxOwned<W> = MatZnx<AlignedBuf, W>;
+pub type MatZnxOwned<W, Rg = Standard> = MatZnx<AlignedBuf, W, Rg>;
 /// Mutably borrowed `MatZnx`.
-pub type MatZnxMut<'a, W> = MatZnx<&'a mut [u8], W>;
+pub type MatZnxMut<'a, W, Rg = Standard> = MatZnx<&'a mut [u8], W, Rg>;
 /// Immutably borrowed `MatZnx`.
-pub type MatZnxRef<'a, W> = MatZnx<&'a [u8], W>;
+pub type MatZnxRef<'a, W, Rg = Standard> = MatZnx<&'a [u8], W, Rg>;
 /// Shared backend-native borrow of a `MatZnx`.
-pub type MatZnxBackendRef<'a, B> = MatZnx<<B as Backend>::BufRef<'a>, <B as Backend>::ZnxWord>;
+pub type MatZnxBackendRef<'a, B, Rg = Standard> = MatZnx<<B as Backend>::BufRef<'a>, <B as Backend>::ZnxWord, Rg>;
 /// Mutable backend-native borrow of a `MatZnx`.
-pub type MatZnxBackendMut<'a, B> = MatZnx<<B as Backend>::BufMut<'a>, <B as Backend>::ZnxWord>;
+pub type MatZnxBackendMut<'a, B, Rg = Standard> = MatZnx<<B as Backend>::BufMut<'a>, <B as Backend>::ZnxWord, Rg>;
 
 /// Borrow a backend-owned `MatZnx` using the backend's native view type.
-pub trait MatZnxToBackendRef<B: Backend> {
-    fn to_backend_ref(&self) -> MatZnxBackendRef<'_, B>;
+pub trait MatZnxToBackendRef<B: Backend, Rg: Ring = Standard> {
+    fn to_backend_ref(&self) -> MatZnxBackendRef<'_, B, Rg>;
 }
 
-impl<B: Backend> MatZnxToBackendRef<B> for MatZnx<B::OwnedBuf, B::ZnxWord> {
-    fn to_backend_ref(&self) -> MatZnxBackendRef<'_, B> {
+impl<B: Backend, Rg: Ring> MatZnxToBackendRef<B, Rg> for MatZnx<B::OwnedBuf, B::ZnxWord, Rg> {
+    fn to_backend_ref(&self) -> MatZnxBackendRef<'_, B, Rg> {
         MatZnx {
             data: B::view(&self.data),
             shape: self.shape,
@@ -442,21 +444,21 @@ impl<B: Backend> MatZnxToBackendRef<B> for MatZnx<B::OwnedBuf, B::ZnxWord> {
     }
 }
 
-impl<B: Backend> MatZnxToBackendRef<B> for &MatZnx<B::BufRef<'_>, B::ZnxWord> {
-    fn to_backend_ref(&self) -> MatZnxBackendRef<'_, B> {
-        mat_znx_backend_ref_from_ref::<B>(self)
+impl<B: Backend, Rg: Ring> MatZnxToBackendRef<B, Rg> for &MatZnx<B::BufRef<'_>, B::ZnxWord, Rg> {
+    fn to_backend_ref(&self) -> MatZnxBackendRef<'_, B, Rg> {
+        mat_znx_backend_ref_from_ref::<B, Rg>(self)
     }
 }
 
-impl<B: Backend> MatZnxToBackendRef<B> for &mut MatZnx<B::BufMut<'_>, B::ZnxWord> {
-    fn to_backend_ref(&self) -> MatZnxBackendRef<'_, B> {
-        mat_znx_backend_ref_from_mut::<B>(self)
+impl<B: Backend, Rg: Ring> MatZnxToBackendRef<B, Rg> for &mut MatZnx<B::BufMut<'_>, B::ZnxWord, Rg> {
+    fn to_backend_ref(&self) -> MatZnxBackendRef<'_, B, Rg> {
+        mat_znx_backend_ref_from_mut::<B, Rg>(self)
     }
 }
 
-pub fn mat_znx_backend_ref_from_ref<'a, 'b, B: Backend + 'b>(
-    mat: &'a MatZnx<B::BufRef<'b>, B::ZnxWord>,
-) -> MatZnxBackendRef<'a, B> {
+pub fn mat_znx_backend_ref_from_ref<'a, 'b, B: Backend + 'b, Rg: Ring>(
+    mat: &'a MatZnx<B::BufRef<'b>, B::ZnxWord, Rg>,
+) -> MatZnxBackendRef<'a, B, Rg> {
     MatZnx {
         data: B::view_ref(&mat.data),
         shape: mat.shape,
@@ -464,9 +466,9 @@ pub fn mat_znx_backend_ref_from_ref<'a, 'b, B: Backend + 'b>(
     }
 }
 
-pub fn mat_znx_backend_ref_from_mut<'a, 'b, B: Backend + 'b>(
-    mat: &'a MatZnx<B::BufMut<'b>, B::ZnxWord>,
-) -> MatZnxBackendRef<'a, B> {
+pub fn mat_znx_backend_ref_from_mut<'a, 'b, B: Backend + 'b, Rg: Ring>(
+    mat: &'a MatZnx<B::BufMut<'b>, B::ZnxWord, Rg>,
+) -> MatZnxBackendRef<'a, B, Rg> {
     MatZnx {
         data: B::view_ref_mut(&mat.data),
         shape: mat.shape,
@@ -475,12 +477,12 @@ pub fn mat_znx_backend_ref_from_mut<'a, 'b, B: Backend + 'b>(
 }
 
 /// Mutably borrow a backend-owned `MatZnx` using the backend's native view type.
-pub trait MatZnxToBackendMut<B: Backend> {
-    fn to_backend_mut(&mut self) -> MatZnxBackendMut<'_, B>;
+pub trait MatZnxToBackendMut<B: Backend, Rg: Ring = Standard> {
+    fn to_backend_mut(&mut self) -> MatZnxBackendMut<'_, B, Rg>;
 }
 
-impl<B: Backend> MatZnxToBackendMut<B> for MatZnx<B::OwnedBuf, B::ZnxWord> {
-    fn to_backend_mut(&mut self) -> MatZnxBackendMut<'_, B> {
+impl<B: Backend, Rg: Ring> MatZnxToBackendMut<B, Rg> for MatZnx<B::OwnedBuf, B::ZnxWord, Rg> {
+    fn to_backend_mut(&mut self) -> MatZnxBackendMut<'_, B, Rg> {
         MatZnx {
             data: B::view_mut(&mut self.data),
             shape: self.shape,
@@ -489,15 +491,15 @@ impl<B: Backend> MatZnxToBackendMut<B> for MatZnx<B::OwnedBuf, B::ZnxWord> {
     }
 }
 
-impl<B: Backend> MatZnxToBackendMut<B> for &mut MatZnx<B::BufMut<'_>, B::ZnxWord> {
-    fn to_backend_mut(&mut self) -> MatZnxBackendMut<'_, B> {
-        mat_znx_backend_mut_from_mut::<B>(self)
+impl<B: Backend, Rg: Ring> MatZnxToBackendMut<B, Rg> for &mut MatZnx<B::BufMut<'_>, B::ZnxWord, Rg> {
+    fn to_backend_mut(&mut self) -> MatZnxBackendMut<'_, B, Rg> {
+        mat_znx_backend_mut_from_mut::<B, Rg>(self)
     }
 }
 
-pub fn mat_znx_backend_mut_from_mut<'a, 'b, B: Backend + 'b>(
-    mat: &'a mut MatZnx<B::BufMut<'b>, B::ZnxWord>,
-) -> MatZnxBackendMut<'a, B> {
+pub fn mat_znx_backend_mut_from_mut<'a, 'b, B: Backend + 'b, Rg: Ring>(
+    mat: &'a mut MatZnx<B::BufMut<'b>, B::ZnxWord, Rg>,
+) -> MatZnxBackendMut<'a, B, Rg> {
     MatZnx {
         data: B::view_mut_ref(&mut mat.data),
         shape: mat.shape,
@@ -505,7 +507,7 @@ pub fn mat_znx_backend_mut_from_mut<'a, 'b, B: Backend + 'b>(
     }
 }
 
-impl<D: Data, W: ZnxWord> MatZnx<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> MatZnx<D, W, Rg> {
     pub fn from_data(data: D, n: usize, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> Self {
         Self {
             data,
@@ -515,19 +517,15 @@ impl<D: Data, W: ZnxWord> MatZnx<D, W> {
     }
 }
 
-impl<D: HostDataMut, W: ZnxWord> ReaderFrom for MatZnx<D, W> {
+impl<D: HostDataMut, W: ZnxWord, Rg: Ring> ReaderFrom for MatZnx<D, W, Rg> {
+    /// Reads the format of [`WriterTo::write_to`] into this matrix, which takes the stream's shape. A stream of another
+    /// ring, whose shape and byte length disagree, or larger than this matrix's buffer is
+    /// [`std::io::ErrorKind::InvalidData`], refused before its coefficients.
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
-        let new_n: usize = reader.read_u64::<LittleEndian>()? as usize;
-        let new_size: usize = reader.read_u64::<LittleEndian>()? as usize;
-        let new_rows: usize = reader.read_u64::<LittleEndian>()? as usize;
-        let new_cols_in: usize = reader.read_u64::<LittleEndian>()? as usize;
-        let new_cols_out: usize = reader.read_u64::<LittleEndian>()? as usize;
-        let len: usize = reader.read_u64::<LittleEndian>()? as usize;
+        read_ring_tag::<Rg, R>(reader)?;
+        let [new_n, new_size, new_rows, new_cols_in, new_cols_out, len] = read_usize_fields::<6, R>(reader)?;
 
-        let expected_len: usize = crate::layouts::checked_product(
-            &[new_rows, new_cols_in, new_n, new_cols_out, new_size, size_of::<W>()],
-            "MatZnx serialized byte size",
-        );
+        let expected_len: usize = serialized_byte_len::<W>(&[new_rows, new_cols_in, new_n, new_cols_out, new_size])?;
         if expected_len != len {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
@@ -552,13 +550,11 @@ impl<D: HostDataMut, W: ZnxWord> ReaderFrom for MatZnx<D, W> {
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> WriterTo for MatZnx<D, W> {
+impl<D: HostDataRef, W: ZnxWord, Rg: Ring> WriterTo for MatZnx<D, W, Rg> {
+    /// Writes the ring's [`Ring::WIRE_TAG`] (one byte), then `n`, `size`, `rows`, `cols_in`, `cols_out` and the byte
+    /// length `rows * cols_in * n * cols_out * size * size_of::<W>()` as little-endian `u64`, then the coefficients in
+    /// buffer order.
     fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
-        writer.write_u64::<LittleEndian>(self.n() as u64)?;
-        writer.write_u64::<LittleEndian>(self.size() as u64)?;
-        writer.write_u64::<LittleEndian>(self.rows() as u64)?;
-        writer.write_u64::<LittleEndian>(self.cols_in() as u64)?;
-        writer.write_u64::<LittleEndian>(self.cols_out() as u64)?;
         let logical_len: usize =
             crate::layouts::checked_product(&[self.rows(), self.cols_in(), self.entry_bytes()], "MatZnx logical byte size");
         let buf: &[u8] = self.data.as_ref();
@@ -571,13 +567,19 @@ impl<D: HostDataRef, W: ZnxWord> WriterTo for MatZnx<D, W> {
                 ),
             ));
         }
+        write_ring_tag::<Rg, Wr>(writer)?;
+        writer.write_u64::<LittleEndian>(self.n() as u64)?;
+        writer.write_u64::<LittleEndian>(self.size() as u64)?;
+        writer.write_u64::<LittleEndian>(self.rows() as u64)?;
+        writer.write_u64::<LittleEndian>(self.cols_in() as u64)?;
+        writer.write_u64::<LittleEndian>(self.cols_out() as u64)?;
         writer.write_u64::<LittleEndian>(logical_len as u64)?;
         writer.write_all(&buf[..logical_len])?;
         Ok(())
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> fmt::Display for MatZnx<D, W> {
+impl<D: HostDataRef, W: ZnxWord, Rg: Ring> fmt::Display for MatZnx<D, W, Rg> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(
             f,
@@ -600,7 +602,7 @@ impl<D: HostDataRef, W: ZnxWord> fmt::Display for MatZnx<D, W> {
     }
 }
 
-impl<D: HostDataMut, W: ZnxWord> ZnxZero for MatZnx<D, W> {
+impl<D: HostDataMut, W: ZnxWord, Rg: Ring> ZnxZero for MatZnx<D, W, Rg> {
     fn zero(&mut self) {
         self.raw_mut().fill(W::zero())
     }

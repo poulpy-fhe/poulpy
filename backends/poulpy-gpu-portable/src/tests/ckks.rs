@@ -1,7 +1,6 @@
 //! The upstream `poulpy-ckks` suites, with `NTT4x30Portable` as the comparison backend.
 
-type Gpu = crate::NTT4x30Gpu<super::Runtime, poulpy_hal::layouts::Standard>;
-type GpuCI = crate::NTT4x30Gpu<super::Runtime, poulpy_hal::layouts::ConjugateInvariant>;
+type Gpu = crate::NTT4x30Gpu<super::Runtime>;
 
 // The encoding fixtures every CKKS type reproduces byte for byte.
 poulpy_ckks::ckks_determinism_test_suite!(mod ckks_determinism, backend = super::Gpu, f32);
@@ -14,22 +13,24 @@ poulpy_ckks::ckks_parity_test_suite! {
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 52, ..poulpy_ckks::test_suite::BASE52_PARAMS_F64 },
     tests = {
         arithmetic => poulpy_ckks::test_suite::parity::test_arithmetic_parity,
-        imag => poulpy_ckks::test_suite::parity::test_imag_parity,
         multiplication => poulpy_ckks::test_suite::parity::test_multiplication_parity,
-        replicated => poulpy_ckks::test_suite::parity::test_replicated_parity,
         rotate => poulpy_ckks::test_suite::parity::test_rotate_parity,
-        conjugate => poulpy_ckks::test_suite::parity::test_conjugate_parity,
         plaintext => poulpy_ckks::test_suite::parity::test_plaintext_parity,
         encoding => poulpy_ckks::test_suite::parity::test_encoding_parity,
         slot_encoding => poulpy_ckks::test_suite::parity::test_slot_encoding_parity,
+        real_polynomial => poulpy_ckks::test_suite::parity::test_real_polynomial_parity,
+    },
+    ring_free_tests = {
+        imag => poulpy_ckks::test_suite::parity::test_imag_parity,
+        conjugate => poulpy_ckks::test_suite::parity::test_conjugate_parity,
         paco_encoding => poulpy_ckks::test_suite::parity::test_paco_encoding_parity,
         ship_encoding => poulpy_ckks::test_suite::parity::test_ship_encoding_parity,
         dft => poulpy_ckks::test_suite::parity::test_dft_parity,
-        real_polynomial => poulpy_ckks::test_suite::parity::test_real_polynomial_parity,
         polynomial_eval_mod => poulpy_ckks::test_suite::parity::test_polynomial_eval_mod_parity,
         encapsulated_mod_up => poulpy_ckks::test_suite::parity::test_encapsulated_mod_up_parity,
         bootstrapping => poulpy_ckks::test_suite::parity::test_bootstrapping_parity,
         fold => poulpy_ckks::test_suite::parity::test_fold_parity,
+        replicated => poulpy_ckks::test_suite::parity::test_replicated_parity,
     }
 }
 
@@ -44,13 +45,9 @@ poulpy_ckks::ckks_parity_test_suite! {
         #[ignore = "full degree; run in release with --ignored"]
         arithmetic => poulpy_ckks::test_suite::parity::test_arithmetic_parity,
         #[ignore = "full degree; run in release with --ignored"]
-        imag => poulpy_ckks::test_suite::parity::test_imag_parity,
-        #[ignore = "full degree; run in release with --ignored"]
         multiplication => poulpy_ckks::test_suite::parity::test_multiplication_parity,
         #[ignore = "full degree; run in release with --ignored"]
         rotate => poulpy_ckks::test_suite::parity::test_rotate_parity,
-        #[ignore = "full degree; run in release with --ignored"]
-        conjugate => poulpy_ckks::test_suite::parity::test_conjugate_parity,
         #[ignore = "full degree; run in release with --ignored"]
         plaintext => poulpy_ckks::test_suite::parity::test_plaintext_parity,
         #[ignore = "full degree; run in release with --ignored"]
@@ -58,13 +55,19 @@ poulpy_ckks::ckks_parity_test_suite! {
         #[ignore = "full degree; run in release with --ignored"]
         slot_encoding => poulpy_ckks::test_suite::parity::test_slot_encoding_parity,
         #[ignore = "full degree; run in release with --ignored"]
+        real_polynomial => poulpy_ckks::test_suite::parity::test_real_polynomial_parity,
+    },
+    ring_free_tests = {
+        #[ignore = "full degree; run in release with --ignored"]
+        imag => poulpy_ckks::test_suite::parity::test_imag_parity,
+        #[ignore = "full degree; run in release with --ignored"]
+        conjugate => poulpy_ckks::test_suite::parity::test_conjugate_parity,
+        #[ignore = "full degree; run in release with --ignored"]
         paco_encoding => poulpy_ckks::test_suite::parity::test_paco_encoding_parity,
         #[ignore = "full degree; run in release with --ignored"]
         ship_encoding => poulpy_ckks::test_suite::parity::test_ship_encoding_parity,
         #[ignore = "full degree; run in release with --ignored"]
         dft => poulpy_ckks::test_suite::parity::test_dft_parity,
-        #[ignore = "full degree; run in release with --ignored"]
-        real_polynomial => poulpy_ckks::test_suite::parity::test_real_polynomial_parity,
         #[ignore = "full degree; run in release with --ignored"]
         polynomial_eval_mod => poulpy_ckks::test_suite::parity::test_polynomial_eval_mod_parity,
         #[ignore = "full degree; run in release with --ignored"]
@@ -84,22 +87,24 @@ poulpy_ckks::ckks_parity_test_suite! {
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 52, ..poulpy_ckks::test_suite::BASE52_PARAMS_QUAD },
     tests = {
         arithmetic => poulpy_ckks::test_suite::parity::test_arithmetic_parity,
-        imag => poulpy_ckks::test_suite::parity::test_imag_parity,
         multiplication => poulpy_ckks::test_suite::parity::test_multiplication_parity,
-        replicated => poulpy_ckks::test_suite::parity::test_replicated_parity,
         rotate => poulpy_ckks::test_suite::parity::test_rotate_parity,
-        conjugate => poulpy_ckks::test_suite::parity::test_conjugate_parity,
         plaintext => poulpy_ckks::test_suite::parity::test_plaintext_parity,
         encoding => poulpy_ckks::test_suite::parity::test_encoding_parity,
         slot_encoding => poulpy_ckks::test_suite::parity::test_slot_encoding_parity,
+        real_polynomial => poulpy_ckks::test_suite::parity::test_real_polynomial_parity,
+    },
+    ring_free_tests = {
+        imag => poulpy_ckks::test_suite::parity::test_imag_parity,
+        conjugate => poulpy_ckks::test_suite::parity::test_conjugate_parity,
         paco_encoding => poulpy_ckks::test_suite::parity::test_paco_encoding_parity,
         ship_encoding => poulpy_ckks::test_suite::parity::test_ship_encoding_parity,
         dft => poulpy_ckks::test_suite::parity::test_dft_parity,
-        real_polynomial => poulpy_ckks::test_suite::parity::test_real_polynomial_parity,
         polynomial_eval_mod => poulpy_ckks::test_suite::parity::test_polynomial_eval_mod_parity,
         encapsulated_mod_up => poulpy_ckks::test_suite::parity::test_encapsulated_mod_up_parity,
         bootstrapping => poulpy_ckks::test_suite::parity::test_bootstrapping_parity,
         fold => poulpy_ckks::test_suite::parity::test_fold_parity,
+        replicated => poulpy_ckks::test_suite::parity::test_replicated_parity,
     }
 }
 
@@ -112,22 +117,24 @@ poulpy_ckks::ckks_parity_test_suite! {
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, rank: 2, base2k: 52, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
     tests = {
         arithmetic => poulpy_ckks::test_suite::parity::test_arithmetic_parity,
-        imag => poulpy_ckks::test_suite::parity::test_imag_parity,
         multiplication => poulpy_ckks::test_suite::parity::test_multiplication_parity,
-        replicated => poulpy_ckks::test_suite::parity::test_replicated_parity,
         rotate => poulpy_ckks::test_suite::parity::test_rotate_parity,
-        conjugate => poulpy_ckks::test_suite::parity::test_conjugate_parity,
         plaintext => poulpy_ckks::test_suite::parity::test_plaintext_parity,
         encoding => poulpy_ckks::test_suite::parity::test_encoding_parity,
         slot_encoding => poulpy_ckks::test_suite::parity::test_slot_encoding_parity,
+        real_polynomial => poulpy_ckks::test_suite::parity::test_real_polynomial_parity,
+    },
+    ring_free_tests = {
+        imag => poulpy_ckks::test_suite::parity::test_imag_parity,
+        conjugate => poulpy_ckks::test_suite::parity::test_conjugate_parity,
         paco_encoding => poulpy_ckks::test_suite::parity::test_paco_encoding_parity,
         ship_encoding => poulpy_ckks::test_suite::parity::test_ship_encoding_parity,
         dft => poulpy_ckks::test_suite::parity::test_dft_parity,
-        real_polynomial => poulpy_ckks::test_suite::parity::test_real_polynomial_parity,
         polynomial_eval_mod => poulpy_ckks::test_suite::parity::test_polynomial_eval_mod_parity,
         encapsulated_mod_up => poulpy_ckks::test_suite::parity::test_encapsulated_mod_up_parity,
         bootstrapping => poulpy_ckks::test_suite::parity::test_bootstrapping_parity,
         fold => poulpy_ckks::test_suite::parity::test_fold_parity,
+        replicated => poulpy_ckks::test_suite::parity::test_replicated_parity,
     }
 }
 
@@ -145,11 +152,12 @@ poulpy_ckks::ckks_encryption_parity_test_suite! {
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, rank: 2, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
 }
 
-// The families of the conjugate-invariant ring, as `NTT4x30CIPortable` registers them.
+// The families of the conjugate-invariant ring, as `NTT4x30Portable` registers them.
 poulpy_ckks::ckks_parity_test_suite! {
     mod ckks_parity_ci_f64,
-    backend_ref = poulpy_cpu_portable::NTT4x30CIPortable,
-    backend_test = super::GpuCI,
+    backend_ref = poulpy_cpu_portable::NTT4x30Portable,
+    backend_test = super::Gpu,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     scalar = f64,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 52, ..poulpy_ckks::test_suite::BASE52_PARAMS_F64 },
     tests = {
@@ -166,8 +174,9 @@ poulpy_ckks::ckks_parity_test_suite! {
 
 poulpy_ckks::ckks_parity_test_suite! {
     mod ckks_parity_ci_quad,
-    backend_ref = poulpy_cpu_portable::NTT4x30CIPortable,
-    backend_test = super::GpuCI,
+    backend_ref = poulpy_cpu_portable::NTT4x30Portable,
+    backend_test = super::Gpu,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     scalar = poulpy_ckks::Quad,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 52, ..poulpy_ckks::test_suite::BASE52_PARAMS_QUAD },
     tests = {
@@ -184,15 +193,17 @@ poulpy_ckks::ckks_parity_test_suite! {
 
 poulpy_ckks::ckks_encryption_parity_test_suite! {
     mod ckks_parity_ci_encryption,
-    backend_ref = poulpy_cpu_portable::test_suite::ControlledSamplingFFT64CIPortable,
-    backend_test = super::GpuCI,
+    backend_ref = poulpy_cpu_portable::test_suite::ControlledSamplingFFT64Portable,
+    backend_test = super::Gpu,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
 }
 
 poulpy_ckks::ckks_parity_test_suite! {
     mod ckks_parity_ci_rank2,
-    backend_ref = poulpy_cpu_portable::NTT4x30CIPortable,
-    backend_test = super::GpuCI,
+    backend_ref = poulpy_cpu_portable::NTT4x30Portable,
+    backend_test = super::Gpu,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     scalar = f64,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, rank: 2, base2k: 52, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
     tests = {
@@ -205,8 +216,9 @@ poulpy_ckks::ckks_parity_test_suite! {
 
 poulpy_ckks::ckks_encryption_parity_test_suite! {
     mod ckks_parity_ci_encryption_rank2,
-    backend_ref = poulpy_cpu_portable::test_suite::ControlledSamplingFFT64CIPortable,
-    backend_test = super::GpuCI,
+    backend_ref = poulpy_cpu_portable::test_suite::ControlledSamplingFFT64Portable,
+    backend_test = super::Gpu,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, rank: 2, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
 }
 
@@ -240,7 +252,7 @@ fn bootstrapping_n16_d35_k733_p20_s2c_precision_and_launches() {
     let _serial = FULL_SIZE.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     use poulpy_ckks::test_suite::presets::{BootstrappingPresetRun, preset_for_backend};
     let preset = poulpy_ckks::presets::bootstrapping::n16_d35_k733_p20_s2c().unwrap();
-    let preset = preset_for_backend::<Gpu, GpuCI>(&preset).unwrap();
+    let preset = preset_for_backend::<Gpu>(&preset).unwrap();
     let mut run = BootstrappingPresetRun::<Gpu, poulpy_cpu_portable::NTT4x30Portable>::setup(preset);
     // What the device holds once the keys are prepared, and what the pools reserve for it.
     {
@@ -314,7 +326,7 @@ fn bootstrapping_n16_d35_k733_p20_s2c_replay() {
     use std::cell::RefCell;
 
     let preset = poulpy_ckks::presets::bootstrapping::n16_d35_k733_p20_s2c().unwrap();
-    let preset = preset_for_backend::<Gpu, GpuCI>(&preset).unwrap();
+    let preset = preset_for_backend::<Gpu>(&preset).unwrap();
     let advertised = preset.log2_precision() as f64;
     let run = RefCell::new(BootstrappingPresetRun::<Gpu, poulpy_cpu_portable::NTT4x30Portable>::setup(
         preset,
@@ -333,14 +345,21 @@ fn bootstrapping_n16_d35_k733_p20_s2c_replay() {
     crate::reset_launch_counters();
     let mut replay = crate::Replay::<super::Runtime>::record(|| run.borrow_mut().bootstrap_queued());
     let recording = crate::launch_counters();
+    // The trace leaves out the deferred zero fills of fresh buffers, which the counters include.
+    let fills = crate::launch_breakdown()
+        .iter()
+        .find(|kernel| kernel.label == crate::runtime::Label::BufferFill.name())
+        .map_or(0, |kernel| kernel.launches);
     println!(
-        "REPLAY recording  launches={} graph={} retained_bytes={}",
+        "REPLAY recording  launches={} counted={} fills={} graph={} retained_bytes={}",
         replay.launches(),
+        recording.launches,
+        fills,
         replay.is_graph(),
         replay.retained_bytes()
     );
     assert!(replay.is_graph());
-    assert_eq!(recording.launches, 2 * replay.launches() as u64);
+    assert_eq!(recording.launches - fills, 2 * replay.launches() as u64);
     meets_precision("recording");
     for _ in 0..4 {
         crate::reset_launch_counters();
@@ -383,12 +402,17 @@ fn conjugate_invariant_encoding_matches_portable() {
 
     fn encode<BE>(module: &Module<BE>, slots: usize, re: &[f64]) -> Encoded
     where
-        BE: Backend<Ring = ConjugateInvariant, ZnxWord = i64>,
-        Module<BE>: ModuleN + CKKSPlaintextAlloc<BE> + CKKSEncodingOps<BE, f64> + CKKSEncodingHostOps<BE, f64>,
+        BE: Backend<ZnxWord = i64>,
+        Module<BE>: ModuleN
+            + CKKSPlaintextAlloc<BE>
+            + CKKSEncodingOps<BE, f64, ConjugateInvariant>
+            + CKKSEncodingHostOps<BE, f64, ConjugateInvariant>,
         ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
     {
-        let mut scratch = ScratchOwned::<BE>::alloc(module.ckks_encoding_host_tmp_bytes(module.n()));
-        let mut pt = module.ckks_plaintext_alloc_from_slots(slots, 19usize.into(), 76usize.into());
+        let bytes =
+            <Module<BE> as CKKSEncodingHostOps<BE, f64, ConjugateInvariant>>::ckks_encoding_host_tmp_bytes(module, module.n());
+        let mut scratch = ScratchOwned::<BE>::alloc(bytes);
+        let mut pt = module.ckks_plaintext_alloc_from_slots::<ConjugateInvariant>(slots, 19usize.into(), 76usize.into());
         pt.set_meta(GLWEPlaintextMeta {
             scale: Scale::Log(40),
             ..Default::default()
@@ -404,15 +428,15 @@ fn conjugate_invariant_encoding_matches_portable() {
             .unwrap();
         assert!(got_im.iter().all(|&value| value == 0.0));
         let host = pt.to_host_owned::<BE>();
-        let limbs = GLWEToBackendRef::<HostBytesBackend<ConjugateInvariant>>::to_backend_ref(&host);
+        let limbs = GLWEToBackendRef::<HostBytesBackend, ConjugateInvariant>::to_backend_ref(&host);
         (limbs.data().data().to_vec(), got_re)
     }
 
     let n = 64;
-    let device = Module::<crate::NTT4x30Gpu<super::Runtime, ConjugateInvariant>>::new(n);
-    let portable = Module::<poulpy_cpu_portable::NTT4x30CIPortable>::new(n);
+    let device = Module::<crate::NTT4x30Gpu<super::Runtime>>::new(n);
+    let portable = Module::<poulpy_cpu_portable::NTT4x30Portable>::new(n);
     // A vector plaintext has the degree of its slots on this ring, at least the backend's minimum.
-    let min_log_slots = <crate::NTT4x30Gpu<super::Runtime, ConjugateInvariant> as Backend>::MIN_DEGREE.ilog2();
+    let min_log_slots = <crate::NTT4x30Gpu<super::Runtime> as Backend>::MIN_DEGREE.ilog2();
     for log_slots in min_log_slots..=n.ilog2() {
         let slots = 1usize << log_slots;
         let re: Vec<f64> = (0..slots).map(|i| ((17 * i + 3) % 31) as f64 / 37.0).collect();

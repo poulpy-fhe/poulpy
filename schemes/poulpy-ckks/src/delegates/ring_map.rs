@@ -26,7 +26,7 @@ impl<BE: Backend + CKKSCIRingMapImpl> CKKSCIRingMapOps<BE> for Module<BE> {
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         D: Data,
-        GLWE<D, BE::ZnxWord>: GLWEToBackendRef<BE>,
+        GLWE<D, BE::ZnxWord, ConjugateInvariant>: GLWEToBackendRef<BE, ConjugateInvariant>,
         K: Data,
         GLWECIEmbedKeyPrepared<K, BE>: GGLWEPreparedToBackendRef<BE>,
     {
@@ -51,7 +51,7 @@ impl<BE: Backend + CKKSCIRingMapImpl> CKKSCIRingMapOps<BE> for Module<BE> {
     ) -> Result<()>
     where
         D: Data,
-        GLWE<D, BE::ZnxWord>: GLWEToBackendMut<BE>,
+        GLWE<D, BE::ZnxWord, ConjugateInvariant>: GLWEToBackendMut<BE, ConjugateInvariant>,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: Data,
         GLWECITraceKeyPrepared<K, BE>: GGLWEPreparedToBackendRef<BE>,

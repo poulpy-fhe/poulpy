@@ -66,26 +66,26 @@ fn column(binding: Option<Binding>, shape: VecZnxShape, col: usize, words: u32) 
 }
 
 /// Column `col` of a shared view, or `None` when the view holds no storage.
-pub(crate) fn column_ref<RT: GpuRuntime>(a: &VecZnx<GpuRef<'_, RT>, i64>, col: usize) -> Option<Column> {
+pub(crate) fn column_ref<RT: GpuRuntime, Rg: Ring>(a: &VecZnx<GpuRef<'_, RT>, i64, Rg>, col: usize) -> Option<Column> {
     column(a.data().binding(), a.shape(), col, 1)
 }
 
 /// Column `col` of an exclusive view, or `None` when the view holds no storage.
-pub(crate) fn column_mut<RT: GpuRuntime>(a: &VecZnx<GpuMut<'_, RT>, i64>, col: usize) -> Option<Column> {
+pub(crate) fn column_mut<RT: GpuRuntime, Rg: Ring>(a: &VecZnx<GpuMut<'_, RT>, i64, Rg>, col: usize) -> Option<Column> {
     column(a.data().binding(), a.shape(), col, 1)
 }
 
 /// Column `col` of a shared big view, or `None` when the view holds no storage.
-pub(crate) fn big_column_ref<RT: GpuRuntime, B: Backend<BigWord = i128>>(
-    a: &VecZnxBig<GpuRef<'_, RT>, i128, B>,
+pub(crate) fn big_column_ref<RT: GpuRuntime, B: Backend<BigWord = i128>, Rg: Ring>(
+    a: &VecZnxBig<GpuRef<'_, RT>, i128, B, Rg>,
     col: usize,
 ) -> Option<Column> {
     column(a.data().binding(), a.shape(), col, 2)
 }
 
 /// Column `col` of an exclusive big view, or `None` when the view holds no storage.
-pub(crate) fn big_column_mut<RT: GpuRuntime, B: Backend<BigWord = i128>>(
-    a: &VecZnxBig<GpuMut<'_, RT>, i128, B>,
+pub(crate) fn big_column_mut<RT: GpuRuntime, B: Backend<BigWord = i128>, Rg: Ring>(
+    a: &VecZnxBig<GpuMut<'_, RT>, i128, B, Rg>,
     col: usize,
 ) -> Option<Column> {
     column(a.data().binding(), a.shape(), col, 2)
@@ -108,16 +108,16 @@ fn dft_column(binding: Option<Binding>, n: usize, cols: usize, size: usize, col:
 }
 
 /// Column `col` of a shared DFT view, or `None` when the view holds no storage.
-pub(crate) fn dft_column_ref<RT: GpuRuntime, B: Backend<DftWord = Word>>(
-    a: &VecZnxDft<GpuRef<'_, RT>, Word, B>,
+pub(crate) fn dft_column_ref<RT: GpuRuntime, B: Backend<DftWord = Word>, Rg: Ring>(
+    a: &VecZnxDft<GpuRef<'_, RT>, Word, B, Rg>,
     col: usize,
 ) -> Option<DftColumn> {
     dft_column(a.data().binding(), a.n(), a.cols(), a.size(), col)
 }
 
 /// Column `col` of an exclusive DFT view, or `None` when the view holds no storage.
-pub(crate) fn dft_column_mut<RT: GpuRuntime, B: Backend<DftWord = Word>>(
-    a: &VecZnxDft<GpuMut<'_, RT>, Word, B>,
+pub(crate) fn dft_column_mut<RT: GpuRuntime, B: Backend<DftWord = Word>, Rg: Ring>(
+    a: &VecZnxDft<GpuMut<'_, RT>, Word, B, Rg>,
     col: usize,
 ) -> Option<DftColumn> {
     dft_column(a.data().binding(), a.n(), a.cols(), a.size(), col)
@@ -159,35 +159,44 @@ fn prepared_column<RT: GpuRuntime>(data: &GpuMut<'_, RT>, n: usize, cols: usize,
     )
 }
 
-pub(crate) fn cnv_left_overwritten<RT: GpuRuntime, B: Backend<DftWord = Word>>(
-    a: &CnvPVecL<GpuMut<'_, RT>, Word, B>,
+pub(crate) fn cnv_left_overwritten<RT: GpuRuntime, B: Backend<DftWord = Word>, Rg: Ring>(
+    a: &CnvPVecL<GpuMut<'_, RT>, Word, B, Rg>,
 ) -> Option<DftColumn> {
     prepared_column(a.data(), a.n(), a.cols(), a.size())
 }
 
-pub(crate) fn cnv_right_overwritten<RT: GpuRuntime, B: Backend<DftWord = Word>>(
-    a: &CnvPVecR<GpuMut<'_, RT>, Word, B>,
+pub(crate) fn cnv_right_overwritten<RT: GpuRuntime, B: Backend<DftWord = Word>, Rg: Ring>(
+    a: &CnvPVecR<GpuMut<'_, RT>, Word, B, Rg>,
 ) -> Option<DftColumn> {
     prepared_column(a.data(), a.n(), a.cols(), a.size())
 }
 
 /// Column `col` of a prepared left convolution operand, which has the layout of a DFT-domain vector.
-pub(crate) fn cnv_left_column<D: Bind, B: Backend<DftWord = Word>>(a: &CnvPVecL<D, Word, B>, col: usize) -> Option<DftColumn> {
+pub(crate) fn cnv_left_column<D: Bind, B: Backend<DftWord = Word>, Rg: Ring>(
+    a: &CnvPVecL<D, Word, B, Rg>,
+    col: usize,
+) -> Option<DftColumn> {
     dft_column(a.data().bind(), a.n(), a.cols(), a.size(), col)
 }
 
 /// Column `col` of a prepared right convolution operand, which has the layout of a DFT-domain vector.
-pub(crate) fn cnv_right_column<D: Bind, B: Backend<DftWord = Word>>(a: &CnvPVecR<D, Word, B>, col: usize) -> Option<DftColumn> {
+pub(crate) fn cnv_right_column<D: Bind, B: Backend<DftWord = Word>, Rg: Ring>(
+    a: &CnvPVecR<D, Word, B, Rg>,
+    col: usize,
+) -> Option<DftColumn> {
     dft_column(a.data().bind(), a.n(), a.cols(), a.size(), col)
 }
 
 /// Column `col` of a prepared scalar polynomial: one block per column.
-pub(crate) fn svp_column<D: Bind, B: Backend<DftWord = Word>>(a: &SvpPPol<D, Word, B>, col: usize) -> Option<DftColumn> {
+pub(crate) fn svp_column<D: Bind, B: Backend<DftWord = Word>, Rg: Ring>(
+    a: &SvpPPol<D, Word, B, Rg>,
+    col: usize,
+) -> Option<DftColumn> {
     dft_column(a.data().bind(), a.n(), a.cols(), 1, col)
 }
 
 /// A prepared matrix, or `None` when it holds no storage.
-pub(crate) fn pmat<D: Bind, B: Backend<DftWord = Word>>(a: &VmpPMat<D, Word, B>) -> Option<Pmat> {
+pub(crate) fn pmat<D: Bind, B: Backend<DftWord = Word>, Rg: Ring>(a: &VmpPMat<D, Word, B, Rg>) -> Option<Pmat> {
     let binding = a.data().bind()?;
     assert_holds::<u32>(&binding, elems(&[a.rows(), a.cols_in(), a.cols_out(), a.size(), 4, a.n()]));
     Some(Pmat {
@@ -203,7 +212,7 @@ pub(crate) fn pmat<D: Bind, B: Backend<DftWord = Word>>(a: &VmpPMat<D, Word, B>)
 
 /// Every polynomial of a coefficient-domain matrix as the limbs of one
 /// column, in the block order of the prepared matrix.
-pub(crate) fn mat_blocks<D: Bind>(a: &MatZnx<D, i64>) -> Option<Column> {
+pub(crate) fn mat_blocks<D: Bind, Rg: Ring>(a: &MatZnx<D, i64, Rg>) -> Option<Column> {
     let binding = a.data().bind()?;
     assert_holds::<u64>(&binding, elems(&[a.rows(), a.cols_in(), a.cols_out(), a.size(), a.n()]));
     Some(Column {
@@ -217,7 +226,7 @@ pub(crate) fn mat_blocks<D: Bind>(a: &MatZnx<D, i64>) -> Option<Column> {
 }
 
 /// Column `col` of a scalar polynomial vector, as a one-limb column.
-pub(crate) fn scalar_column<D: Bind>(a: &ScalarZnx<D, i64>, col: usize) -> Option<Column> {
+pub(crate) fn scalar_column<D: Bind, Rg: Ring>(a: &ScalarZnx<D, i64, Rg>, col: usize) -> Option<Column> {
     assert!(col < a.cols(), "operand column out of range");
     let binding = a.data().bind()?;
     assert_holds::<u64>(&binding, elems(&[a.cols(), a.n()]));
@@ -293,7 +302,7 @@ pub(crate) fn automorphism_map<R: Ring>(p: i64) -> Map {
 
 /// `res = map(res)` through the module's device temporary, which the copy
 /// back clears.
-pub(crate) fn permute_assign<RT: GpuRuntime, R: Ring>(module: &Module<NTT4x30Gpu<RT, R>>, res: &Column, map: Map) {
+pub(crate) fn permute_assign<RT: GpuRuntime>(module: &Module<NTT4x30Gpu<RT>>, res: &Column, map: Map) {
     let words = res.n * res.size * res.words as usize;
     handle(module).with_temp(words * size_of::<u64>(), |temp| {
         let tmp = Column {

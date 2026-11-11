@@ -7,7 +7,7 @@ use poulpy_core::{
         BSGSMeta, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, IntPolyInfos, LWEInfos,
     },
 };
-use poulpy_hal::layouts::{Backend, Module, ScratchArena, Standard};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use poulpy_ckks::{
     CKKSCtBounds, CKKSInfos, SetCKKSInfos,
@@ -37,7 +37,7 @@ pub(crate) fn ckks_sign_into<BE, R, I, F, P, H, K>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    BE: Backend<Ring = Standard>,
+    BE: Backend,
     Module<BE>: CKKSPolynomialEvaluationOps<BE> + CKKSCopyOps<BE> + CKKSConjugateOps<BE> + CKKSAddOps<BE> + CKKSPow2Ops<BE>,
     R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     I: GLWEToBackendRef<BE> + CKKSCtBounds,
@@ -172,7 +172,7 @@ pub trait CKKSSignOps<BE: Backend> {
         K: GetAutomorphismKey<BE>;
 }
 
-impl<BE: Backend<Ring = Standard>> CKKSSignOps<BE> for Module<BE>
+impl<BE: Backend> CKKSSignOps<BE> for Module<BE>
 where
     Module<BE>: CKKSPolynomialEvaluationOps<BE>
         + CKKSCopyOps<BE>

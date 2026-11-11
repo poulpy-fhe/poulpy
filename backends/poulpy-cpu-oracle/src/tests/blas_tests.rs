@@ -100,13 +100,13 @@ blas_backend_test_suite!(
 // The conjugate-invariant ring, whose slots are real.
 blas_conjugate_invariant_test_suite!(
     mod blas_ci_fft64,
-    backend = crate::FFT64CIOracle,
+    backend = crate::FFT64Oracle,
     params = poulpy_ckks::test_suite::BASE19_PARAMS_F64,
 );
 
 blas_conjugate_invariant_test_suite!(
     mod blas_ci_ntt4x30,
-    backend = crate::NTT4x30CIOracle,
+    backend = crate::NTT4x30Oracle,
     params = poulpy_ckks::test_suite::BASE52_PARAMS_F64,
 );
 
@@ -143,35 +143,39 @@ blas_parity_test_suite! {
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE52_PARAMS_QUAD },
 }
 
-// Conjugate-invariant backends run the same pairs.
+// The same pairs on the conjugate-invariant ring.
 blas_parity_test_suite! {
     mod blas_parity_ci_fft64oracle_f64,
-    backend_ref = crate::NTT4x30CIOracle,
-    backend_test = crate::FFT64CIOracle,
+    backend_ref = crate::NTT4x30Oracle,
+    backend_test = crate::FFT64Oracle,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     scalar = f64,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
 }
 
 blas_parity_test_suite! {
     mod blas_parity_ci_fft64oracle_quad,
-    backend_ref = crate::NTT4x30CIOracle,
-    backend_test = crate::FFT64CIOracle,
+    backend_ref = crate::NTT4x30Oracle,
+    backend_test = crate::FFT64Oracle,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     scalar = poulpy_ckks::Quad,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE52_PARAMS_QUAD },
 }
 
 blas_parity_test_suite! {
     mod blas_parity_ci_ntt4x30oracle_f64,
-    backend_ref = crate::FFT64CIOracle,
-    backend_test = crate::NTT4x30CIOracle,
+    backend_ref = crate::FFT64Oracle,
+    backend_test = crate::NTT4x30Oracle,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     scalar = f64,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE52_PARAMS_F64 },
 }
 
 blas_parity_test_suite! {
     mod blas_parity_ci_ntt4x30oracle_quad,
-    backend_ref = crate::FFT64CIOracle,
-    backend_test = crate::NTT4x30CIOracle,
+    backend_ref = crate::FFT64Oracle,
+    backend_test = crate::NTT4x30Oracle,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     scalar = poulpy_ckks::Quad,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE52_PARAMS_QUAD },
 }

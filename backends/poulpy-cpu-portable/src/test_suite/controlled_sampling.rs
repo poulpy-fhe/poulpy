@@ -1,8 +1,8 @@
-//! Optional FFT64 comparison adapters, one per ring, for controlled encryption parity.
+//! Optional FFT64 comparison adapter, on both rings, for controlled encryption parity.
 //!
 //! The generic parity suite and sample provider live in `poulpy-core`; callers
 //! may select this adapter, another adapter, or backends with matching streams.
-use super::{ControlledSamplingFFT64CIPortable, ControlledSamplingFFT64Portable};
+use super::ControlledSamplingFFT64Portable;
 use poulpy_core::{
     Distribution, Noise,
     oep::SamplingImpl,
@@ -14,10 +14,10 @@ use poulpy_hal::layouts::*;
 // the backend under test and mutate only the selected coefficient/limb column.
 macro_rules! impl_controlled_sampling {
     ($($be:ty),+) => {$(
-        unsafe impl SamplingImpl for $be {
+        unsafe impl<Rg: Ring> SamplingImpl<Rg> for $be {
             fn scalar_znx_fill_distribution(
                 _: &Module<Self>,
-                res: &mut ScalarZnxBackendMut<'_, Self>,
+                res: &mut ScalarZnxBackendMut<'_, Self, Rg>,
                 col: usize,
                 dist: Distribution,
                 seed: [u8; 32],
@@ -29,7 +29,7 @@ macro_rules! impl_controlled_sampling {
                 _: &Module<Self>,
                 base2k: usize,
                 k: usize,
-                res: &mut VecZnxBackendMut<'_, Self>,
+                res: &mut VecZnxBackendMut<'_, Self, Rg>,
                 col: usize,
                 noise: Noise,
                 seed: [u8; 32],
@@ -40,7 +40,7 @@ macro_rules! impl_controlled_sampling {
                 _: &Module<Self>,
                 base2k: usize,
                 k: usize,
-                res: &mut VecZnxBigBackendMut<'_, Self>,
+                res: &mut VecZnxBigBackendMut<'_, Self, Rg>,
                 col: usize,
                 noise: Noise,
                 seed: [u8; 32],
@@ -51,7 +51,7 @@ macro_rules! impl_controlled_sampling {
     )+};
 }
 
-impl_controlled_sampling!(ControlledSamplingFFT64Portable, ControlledSamplingFFT64CIPortable);
+impl_controlled_sampling!(ControlledSamplingFFT64Portable);
 
 #[cfg(test)]
 mod tests {
@@ -65,10 +65,13 @@ mod tests {
     }
     // Safety: forwarding to the same correct samplers with a bijection on seeds
     // preserves their distribution, buffer bounds, and per-backend determinism.
-    unsafe impl SamplingImpl for DifferentSamplingFFT64Portable {
+    unsafe impl<Rg: Ring> SamplingImpl<Rg> for DifferentSamplingFFT64Portable
+    where
+        FFT64Portable: SamplingImpl<Rg>,
+    {
         fn scalar_znx_fill_distribution(
             module: &Module<Self>,
-            res: &mut ScalarZnxBackendMut<'_, Self>,
+            res: &mut ScalarZnxBackendMut<'_, Self, Rg>,
             col: usize,
             dist: Distribution,
             seed: [u8; 32],
@@ -79,7 +82,7 @@ mod tests {
             module: &Module<Self>,
             base2k: usize,
             k: usize,
-            res: &mut VecZnxBackendMut<'_, Self>,
+            res: &mut VecZnxBackendMut<'_, Self, Rg>,
             col: usize,
             noise: Noise,
             seed: [u8; 32],
@@ -90,7 +93,7 @@ mod tests {
             module: &Module<Self>,
             base2k: usize,
             k: usize,
-            res: &mut VecZnxBigBackendMut<'_, Self>,
+            res: &mut VecZnxBigBackendMut<'_, Self, Rg>,
             col: usize,
             noise: Noise,
             seed: [u8; 32],
@@ -127,8 +130,8 @@ mod tests {
                 dsizes: None,
                 unaligned_digits: true,
             };
-            poulpy_core::test_suite::parity::test_glwe_encryption_parity(&params, &shapes, &reference, tested);
-            poulpy_core::test_suite::parity::test_lwe_encryption_parity(&params, &shapes, &reference, tested);
+            poulpy_core::test_suite::parity::test_glwe_encryption_parity::<_, _, Standard>(&params, &shapes, &reference, tested);
+            poulpy_core::test_suite::parity::test_lwe_encryption_parity::<_, _, Standard>(&params, &shapes, &reference, tested);
             poulpy_core::test_suite::parity::test_lwe_matrix_decrypt_parity(&params, &shapes, &reference, tested);
         });
     }

@@ -166,8 +166,14 @@ pub fn error_bound<R: Ring>(bp: &BlasBenchParams) -> f64 {
 }
 
 /// Prints the error of a runner's first call and asserts it within [`error_bound`].
-pub(super) fn verify<BE: Backend>(op: &str, bp: &BlasBenchParams, max_err: f64, max_base2k: Option<usize>, keys: usize) {
-    verify_within::<BE>(op, bp, max_err, error_bound::<BE::Ring>(bp), max_base2k, keys);
+pub(super) fn verify<BE: Backend, Rg: Ring>(
+    op: &str,
+    bp: &BlasBenchParams,
+    max_err: f64,
+    max_base2k: Option<usize>,
+    keys: usize,
+) {
+    verify_within::<BE>(op, bp, max_err, error_bound::<Rg>(bp), max_base2k, keys);
 }
 
 /// [`verify`] against `bound`.
@@ -229,77 +235,83 @@ impl BlasPoint {
 }
 
 /// The budget of the first block of a grid.
-pub(super) fn log_budget<BE: Backend>(ct: &BlasCiphertextOwned<BE>) -> usize {
+pub(super) fn log_budget<BE: Backend, Rg: Ring>(ct: &BlasCiphertextOwned<BE, Rg>) -> usize {
     ct.blocks()[0].log_budget()
 }
 
 /// Records the check of a point's first call, the consumed budget being what `res` holds less than the input's
 /// `input_log_budget`.
-pub(super) fn check<BE: Backend>(
+pub(super) fn check<BE: Backend, Rg: Ring>(
     bp: &BlasBenchParams,
     max_err: f64,
     max_base2k: Option<usize>,
     keys: usize,
     input_log_budget: usize,
-    res: &BlasCiphertextOwned<BE>,
+    res: &BlasCiphertextOwned<BE, Rg>,
 ) -> BlasCheck {
     BlasCheck {
         max_err,
-        bound: error_bound::<BE::Ring>(bp),
+        bound: error_bound::<Rg>(bp),
         max_base2k,
         keys,
-        consumed_bits: input_log_budget - log_budget::<BE>(res),
-        output_log_budget: log_budget::<BE>(res),
+        consumed_bits: input_log_budget - log_budget::<BE, _>(res),
+        output_log_budget: log_budget::<BE, _>(res),
         key_layout: atk_layout(bp),
     }
 }
 
 /// What a point asks of the evaluated module beyond the operation itself: allocation, the encoding of the maps and
 /// their preparation, the preparation of the keys the client made, and the synchronization that ends a timed call.
-pub trait BlasEvalModule<BE: Backend>:
+pub trait BlasEvalModule<BE: Backend, Rg: Ring = Standard>:
     ModuleNew<BE>
     + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
     + CKKSModuleInfos
     + CyclotomicOrder
-    + GLWEAutomorphismKeyPreparedFactory<BE>
-    + GLWETensorKeyPreparedFactory<BE>
-    + CKKSEncodingOps<BE, f64>
-    + BlasEncodingOps<BE, f64>
-    + BlasContextPreparedFactory<BE>
-    + BlasPtOperandPreparedFactory<BE>
-    + BlasMatVecOperandPreparedFactory<BE>
-    + BlasDiagonalCiphertextPreparedFactory<BE>
-    + CKKSLinearTransformationOps<BE>
-    + CKKSMulOps<BE>
+    + GLWEAutomorphismKeyPreparedFactory<BE, Rg>
+    + GLWETensorKeyPreparedFactory<BE, Rg>
+    + CKKSEncodingOps<BE, f64, Rg>
+    + BlasEncodingOps<BE, f64, Rg>
+    + BlasContextPreparedFactory<BE, Rg>
+    + BlasPtOperandPreparedFactory<BE, Rg>
+    + BlasMatVecOperandPreparedFactory<BE, Rg>
+    + BlasDiagonalCiphertextPreparedFactory<BE, Rg>
+    + CKKSLinearTransformationOps<BE, Rg>
+    + CKKSMulOps<BE, Rg>
     + CnvPVecAlloc<BE>
     + ModuleSynchronize<BE>
 {
 }
 
-impl<BE: Backend, M> BlasEvalModule<BE> for M where
+impl<BE: Backend, M, Rg: Ring> BlasEvalModule<BE, Rg> for M where
     M: ModuleNew<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
         + CKKSModuleInfos
         + CyclotomicOrder
-        + GLWEAutomorphismKeyPreparedFactory<BE>
-        + GLWETensorKeyPreparedFactory<BE>
-        + CKKSEncodingOps<BE, f64>
-        + BlasEncodingOps<BE, f64>
-        + BlasContextPreparedFactory<BE>
-        + BlasPtOperandPreparedFactory<BE>
-        + BlasMatVecOperandPreparedFactory<BE>
-        + BlasDiagonalCiphertextPreparedFactory<BE>
-        + CKKSLinearTransformationOps<BE>
-        + CKKSMulOps<BE>
+        + GLWEAutomorphismKeyPreparedFactory<BE, Rg>
+        + GLWETensorKeyPreparedFactory<BE, Rg>
+        + CKKSEncodingOps<BE, f64, Rg>
+        + BlasEncodingOps<BE, f64, Rg>
+        + BlasContextPreparedFactory<BE, Rg>
+        + BlasPtOperandPreparedFactory<BE, Rg>
+        + BlasMatVecOperandPreparedFactory<BE, Rg>
+        + BlasDiagonalCiphertextPreparedFactory<BE, Rg>
+        + CKKSLinearTransformationOps<BE, Rg>
+        + CKKSMulOps<BE, Rg>
         + CnvPVecAlloc<BE>
         + ModuleSynchronize<BE>
 {
 }
 
 /// What a point asks of the client module: the key generation, encryption and decryption of poulpy-ckks.
-pub trait BlasClientModule<BC: Backend>: TestContextSharedModule<BC> + CKKSEncodingOps<BC, f64> {}
+pub trait BlasClientModule<BC: Backend, Rg: Ring = Standard>:
+    TestContextSharedModule<BC, Rg> + CKKSEncodingOps<BC, f64, Rg>
+{
+}
 
-impl<BC: Backend, M> BlasClientModule<BC> for M where M: TestContextSharedModule<BC> + CKKSEncodingOps<BC, f64> {}
+impl<BC: Backend, M, Rg: Ring> BlasClientModule<BC, Rg> for M where
+    M: TestContextSharedModule<BC, Rg> + CKKSEncodingOps<BC, f64, Rg>
+{
+}
 
 /// A module that evaluates and is its own client, what a runner asks of a module.
 pub trait BlasBenchModule<BE: Backend>: BlasEvalModule<BE> + BlasClientModule<BE> {}
@@ -308,11 +320,11 @@ impl<BE: Backend, M> BlasBenchModule<BE> for M where M: BlasEvalModule<BE> + Bla
 
 /// The two sides of a point: the evaluated module, and the client module with the secret key and one arena for key
 /// generation, encoding, encryption and decryption.
-pub(super) struct Client<BE: Backend, BC: Backend> {
+pub(super) struct Client<BE: Backend, BC: Backend, Rg: Ring = Standard> {
     pub(super) module: Module<BE>,
     client: Module<BC>,
-    sk_raw: BackendGLWESecret<BC>,
-    sk: GLWESecretPrepared<BC::OwnedBuf, BC>,
+    sk_raw: BackendGLWESecret<BC, Rg>,
+    sk: GLWESecretPrepared<BC::OwnedBuf, BC, Rg>,
     arena: ScratchOwned<BC>,
     /// The evaluated module's arena for preparing the moved keys.
     prepare: ScratchOwned<BE>,
@@ -320,19 +332,19 @@ pub(super) struct Client<BE: Backend, BC: Backend> {
     xa: Source,
 }
 
-impl<BE, BC> Client<BE, BC>
+impl<BE, BC, Rg: Ring> Client<BE, BC, Rg>
 where
     BE: Backend + HostStaged + 'static,
-    BC: Backend<Ring = BE::Ring> + HostStaged + 'static,
-    Module<BE>: CKKSRightOperandPreparedFactory<BE> + BlasEvalModule<BE>,
-    Module<BC>: BlasClientModule<BC>,
+    BC: Backend + HostStaged + 'static,
+    Module<BE>: CKKSRightOperandPreparedFactory<BE, Rg> + BlasEvalModule<BE, Rg>,
+    Module<BC>: BlasClientModule<BC, Rg>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     ScratchOwned<BC>: ScratchOwnedAlloc<BC> + ScratchOwnedBorrow<BC>,
 {
     pub(super) fn new(bp: &BlasBenchParams) -> Self {
         let module = Module::<BE>::new(bp.n as u64);
         let client = Module::<BC>::new(bp.n as u64);
-        let layout = block_layout::<BE::Ring>(bp);
+        let layout = block_layout::<Rg>(bp);
         let mut xs = Source::new([0u8; 32]);
         let mut sk_raw = client.glwe_secret_alloc_from_infos(&layout);
         client.glwe_secret_fill_ternary_hw(&mut sk_raw, HW, &mut xs);
@@ -340,10 +352,7 @@ where
         client.glwe_secret_prepare(&mut sk, &sk_raw);
         let bytes = client
             .ckks_all_ops_with_atk_tmp_bytes(&layout, &layout, &tsk_layout(bp), &atk_layout(bp))
-            .max(<Module<BC> as CKKSEncodingHostOps<BC, f64>>::ckks_encoding_host_tmp_bytes(
-                &client,
-                bp.slots_on::<BE::Ring>(),
-            ));
+            .max(<Module<BC> as CKKSEncodingHostOps<BC, f64, Rg>>::ckks_encoding_host_tmp_bytes(&client, bp.slots_on::<Rg>()));
         let prepare = module
             .glwe_tensor_key_prepare_tmp_bytes(&tsk_layout(bp))
             .max(module.glwe_automorphism_key_prepare_tmp_bytes(&atk_layout(bp)));
@@ -360,7 +369,7 @@ where
     }
 
     /// The prepared maps of the context of `plan` at scale `p`.
-    pub(super) fn context(&self, bp: &BlasBenchParams, plan: BlasPlan) -> BlasContextPrepared<BE> {
+    pub(super) fn context(&self, bp: &BlasBenchParams, plan: BlasPlan) -> BlasContextPrepared<BE, Rg> {
         let module = &self.module;
         let meta = CoeffsMeta::from_delta_budget(bp.p, HEADROOM);
         let mut ctx = module.blas_context_alloc(plan, base2k(bp), meta);
@@ -384,11 +393,11 @@ where
         rows: usize,
         cols: usize,
         entry: impl Fn(usize, usize, usize) -> f64,
-    ) -> BlasPtOperandPrepared<BE, S> {
+    ) -> BlasPtOperandPrepared<BE, S, Rg> {
         let module = &self.module;
         let plan = BlasPlan::new(bp.log_d).with_pt_algorithm(algorithm);
         let meta = CoeffsMeta::from_delta_budget(bp.p, HEADROOM);
-        let mut op = module.blas_pt_operand_alloc::<S>(plan, rows, cols, 1, base2k(bp), meta);
+        let mut op = module.blas_pt_operand_alloc::<S, Rg>(plan, rows, cols, 1, base2k(bp), meta);
         let mut prepared = module.blas_pt_operand_prepared_alloc_from_infos(&op);
         let mut arena = ScratchOwned::<BE>::alloc(
             module
@@ -405,7 +414,7 @@ where
         &mut self,
         bp: &BlasBenchParams,
         elements: Vec<i64>,
-    ) -> HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>> {
+    ) -> HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE, Rg>> {
         let layout = atk_layout(bp);
         elements
             .into_iter()
@@ -432,7 +441,7 @@ where
     }
 
     /// The tensor key, made on the client and prepared on the evaluated module.
-    pub(super) fn tensor_key(&mut self, bp: &BlasBenchParams) -> GLWETensorKeyPrepared<BE::OwnedBuf, BE> {
+    pub(super) fn tensor_key(&mut self, bp: &BlasBenchParams) -> GLWETensorKeyPrepared<BE::OwnedBuf, BE, Rg> {
         let layout = tsk_layout(bp);
         let mut tsk = self.client.glwe_tensor_key_alloc_from_infos(&layout);
         self.client
@@ -455,13 +464,13 @@ where
         cols: usize,
         matrices: usize,
         entry: impl Fn(usize, usize, usize) -> f64,
-    ) -> BlasCiphertextOwned<BE> {
+    ) -> BlasCiphertextOwned<BE, Rg> {
         let slots = matrices << (2 * bp.log_d);
-        let held = slots.max(self.module.ckks_slots_of_degree(BE::MIN_DEGREE));
+        let held = slots.max(self.module.ckks_slots_of_degree::<Rg>(BE::MIN_DEGREE));
         let mut pt =
             self.client
                 .ckks_plaintext_alloc_from_slots(held, base2k(bp), TorusPrecision((bp.log_delta + HEADROOM) as u32));
-        pt.set_meta(block_layout::<BE::Ring>(bp).meta);
+        pt.set_meta(block_layout::<Rg>(bp).meta);
         let im = vec![0.0; held];
         let blocks = split_into_blocks(rows, cols, bp.log_d, slots, matrices, entry)
             .into_iter()
@@ -483,19 +492,19 @@ where
     }
 
     /// A result grid of `rows x cols` blocks at the width of a fresh ciphertext.
-    pub(super) fn result(&self, bp: &BlasBenchParams, rows: usize, cols: usize) -> BlasCiphertextOwned<BE> {
+    pub(super) fn result(&self, bp: &BlasBenchParams, rows: usize, cols: usize) -> BlasCiphertextOwned<BE, Rg> {
         self.module
             .blas_ciphertext_alloc(bp.log_d, rows, cols, base2k(bp), TorusPrecision(bp.k as u32))
     }
 
     /// A ciphertext of the slot values `re`, every slot of the ring, encrypted on the client as [`Self::encrypt`]'s blocks
     /// and moved to the evaluated module.
-    pub(super) fn encrypt_slots(&mut self, bp: &BlasBenchParams, re: &[f64]) -> CKKSCiphertextOwned<BE> {
-        let slots = bp.slots_on::<BE::Ring>();
+    pub(super) fn encrypt_slots(&mut self, bp: &BlasBenchParams, re: &[f64]) -> CKKSCiphertextOwned<BE, Rg> {
+        let slots = bp.slots_on::<Rg>();
         let mut pt =
             self.client
                 .ckks_plaintext_alloc_from_slots(slots, base2k(bp), TorusPrecision((bp.log_delta + HEADROOM) as u32));
-        pt.set_meta(block_layout::<BE::Ring>(bp).meta);
+        pt.set_meta(block_layout::<Rg>(bp).meta);
         self.client
             .ckks_encode_slots_host_into(&mut pt, re, &vec![0.0; slots], &mut self.arena.borrow())
             .unwrap();
@@ -510,8 +519,8 @@ where
     }
 
     /// The real and imaginary slot values of `moved`, moved back to the client and decrypted there.
-    pub(super) fn decrypt_slots(&mut self, bp: &BlasBenchParams, moved: &CKKSCiphertextOwned<BE>) -> (Vec<f64>, Vec<f64>) {
-        let slots = bp.slots_on::<BE::Ring>();
+    pub(super) fn decrypt_slots(&mut self, bp: &BlasBenchParams, moved: &CKKSCiphertextOwned<BE, Rg>) -> (Vec<f64>, Vec<f64>) {
+        let slots = bp.slots_on::<Rg>();
         // The allocation keeps the fresh width, the operation narrowed `k`.
         let mut ct = self.client.ckks_ciphertext_alloc(base2k(bp), TorusPrecision(bp.k as u32));
         ct.set_k(moved.k());
@@ -523,7 +532,7 @@ where
                 .ckks_plaintext_alloc_from_slots(slots, base2k(bp), TorusPrecision((log_delta + DECODE_HEADROOM) as u32));
         pt.set_meta(GLWEPlaintextMeta {
             scale: Scale::Log(log_delta),
-            slots: slots_kind::<BE::Ring>(),
+            slots: slots_kind::<Rg>(),
             log_sparsity: 0,
             slot_layout: SlotLayout::Full,
         });
@@ -542,13 +551,13 @@ where
     pub(super) fn max_error(
         &mut self,
         bp: &BlasBenchParams,
-        res: &BlasCiphertextOwned<BE>,
+        res: &BlasCiphertextOwned<BE, Rg>,
         want: impl Fn(usize, usize, usize) -> f64,
     ) -> f64 {
         let (re, im): (Vec<_>, Vec<_>) = res.blocks().iter().map(|block| self.decrypt_slots(bp, block)).unzip();
         let (rows, cols) = (res.rows(), res.cols());
         let mut err = 0.0f64;
-        let batch = bp.batch_on::<BE::Ring>();
+        let batch = bp.batch_on::<Rg>();
         join_blocks(&re, rows, cols, bp.log_d, batch, |s, r, c, have| {
             err = err.max((have - want(s, r, c)).abs())
         });
@@ -558,19 +567,19 @@ where
 }
 
 /// The point of `blas_transpose` of a grid of `batch` matrices.
-pub fn point_blas_transpose<BE, BC>(bp: &BlasBenchParams) -> BlasPoint
+pub fn point_blas_transpose<BE, BC, Rg: Ring>(bp: &BlasBenchParams) -> BlasPoint
 where
-    BE: Backend + HostStaged + 'static + BlasMatIntraImpl,
-    BC: Backend<Ring = BE::Ring> + HostStaged + 'static,
-    Module<BE>: CKKSRightOperandPreparedFactory<BE> + BlasEvalModule<BE>,
-    Module<BC>: BlasClientModule<BC>,
+    BE: Backend + HostStaged + 'static + BlasMatIntraImpl<Rg>,
+    BC: Backend + HostStaged + 'static,
+    Module<BE>: CKKSRightOperandPreparedFactory<BE, Rg> + BlasEvalModule<BE, Rg>,
+    Module<BC>: BlasClientModule<BC, Rg>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     ScratchOwned<BC>: ScratchOwnedAlloc<BC> + ScratchOwnedBorrow<BC>,
 {
-    let mut client = Client::<BE, BC>::new(bp);
+    let mut client = Client::<BE, BC, Rg>::new(bp);
     let ctx = client.context(bp, BlasPlan::new(bp.log_d));
-    let ct_a = client.encrypt(bp, 1, 1, bp.batch_on::<BE::Ring>(), a_entry);
-    let order = client.module.cyclotomic_order();
+    let ct_a = client.encrypt(bp, 1, 1, bp.batch_on::<Rg>(), a_entry);
+    let order = client.module.cyclotomic_order::<Rg>();
     let atks = client.rotation_keys(bp, BlasPlan::new(bp.log_d).transpose_galois_elements(order));
     let mut res = client.result(bp, 1, 1);
     let mut scratch = ScratchOwned::<BE>::alloc(client.module.blas_transpose_tmp_bytes(&res, &ct_a, &ctx, &atk_layout(bp)));
@@ -579,7 +588,7 @@ where
         .blas_transpose(&mut res, &ct_a, &ctx, &atks, &mut scratch.borrow())
         .unwrap();
     let max_err = client.max_error(bp, &res, |s, r, c| a_entry(s, c, r));
-    let check = check::<BE>(bp, max_err, None, atks.len(), log_budget::<BE>(&ct_a), &res);
+    let check = check::<BE, Rg>(bp, max_err, None, atks.len(), log_budget::<BE, _>(&ct_a), &res);
     let module = client.module;
     BlasPoint {
         call: Box::new(move || {
@@ -595,42 +604,42 @@ where
 /// `blas_transpose` of a grid of `batch` matrices.
 pub fn runner_blas_transpose<BE, M>(bencher: &mut Bencher<'_, M>, bp: &BlasBenchParams)
 where
-    BE: Backend<Ring = Standard> + HostStaged + 'static + BlasMatIntraImpl,
+    BE: Backend + HostStaged + 'static + BlasMatIntraImpl,
     Module<BE>: BlasBenchModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     M: Measurement,
 {
     timed::<BE, M, _>(bencher, "blas_transpose", bp, || {
-        point_blas_transpose::<BE, BE>(bp).reported::<BE>("blas_transpose", bp)
+        point_blas_transpose::<BE, BE, Standard>(bp).reported::<BE>("blas_transpose", bp)
     });
 }
 
 /// The point of `blas_matmul` of `bp.batch()` matrices by as many distinct matrices on the right (`dense`), or by one
 /// matrix encrypted from a plaintext of `d^2` slots, which proves it, so that the right factor takes the replicated maps.
-pub fn point_blas_matmul<BE, BC>(bp: &BlasBenchParams, dense: bool) -> BlasPoint
+pub fn point_blas_matmul<BE, BC, Rg: Ring>(bp: &BlasBenchParams, dense: bool) -> BlasPoint
 where
-    BE: Backend + HostStaged + 'static + BlasMatMulImpl + MaxBase2k,
-    BC: Backend<Ring = BE::Ring> + HostStaged + 'static,
-    Module<BE>: BlasEvalModule<BE>,
-    Module<BC>: BlasClientModule<BC>,
+    BE: Backend + HostStaged + 'static + BlasMatMulImpl<Rg> + MaxBase2k,
+    BC: Backend + HostStaged + 'static,
+    Module<BE>: BlasEvalModule<BE, Rg>,
+    Module<BC>: BlasClientModule<BC, Rg>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     ScratchOwned<BC>: ScratchOwnedAlloc<BC> + ScratchOwnedBorrow<BC>,
 {
-    let mut client = Client::<BE, BC>::new(bp);
+    let mut client = Client::<BE, BC, Rg>::new(bp);
     let ctx = client.context(bp, BlasPlan::new(bp.log_d));
-    let right = if dense { bp.batch_on::<BE::Ring>() } else { 1 };
-    let ct_a = client.encrypt(bp, 1, 1, bp.batch_on::<BE::Ring>(), a_entry);
+    let right = if dense { bp.batch_on::<Rg>() } else { 1 };
+    let ct_a = client.encrypt(bp, 1, 1, bp.batch_on::<Rg>(), a_entry);
     let ct_b = client.encrypt(bp, 1, 1, right, b_entry(bp.d()));
     assert!(
-        replicated::<BE::Ring>(&ct_b) != dense,
+        replicated::<Rg>(&ct_b) != dense,
         "blas_matmul: the right factor is not the one the runner names"
     );
-    let max_base2k = blas_matmul_max_base2k::<BE>(&ct_a, &ct_b, &ctx, FAILURE_BITS);
+    let max_base2k = blas_matmul_max_base2k::<BE, Rg>(&ct_a, &ct_b, &ctx, FAILURE_BITS);
     assert!(
         max_base2k >= bp.base2k,
         "blas_matmul: base2k exceeds the radix its lazy sums allow at 128 failure bits"
     );
-    let order = client.module.cyclotomic_order();
+    let order = client.module.cyclotomic_order::<Rg>();
     let atks = client.rotation_keys(bp, BlasPlan::new(bp.log_d).matmul_galois_elements(order));
     let tsk = client.tensor_key(bp);
     let mut res = client.result(bp, 1, 1);
@@ -650,7 +659,7 @@ where
     let max_err = client.max_error(bp, &res, |s, r, c| {
         (0..bp.d()).map(|l| a_entry(s, r, l) * b(s % right, l, c)).sum()
     });
-    let check = check::<BE>(bp, max_err, Some(max_base2k), atks.len(), log_budget::<BE>(&ct_a), &res);
+    let check = check::<BE, Rg>(bp, max_err, Some(max_base2k), atks.len(), log_budget::<BE, _>(&ct_a), &res);
     let module = client.module;
     BlasPoint {
         call: Box::new(move || {
@@ -665,20 +674,20 @@ where
 
 fn matmul<BE, M>(bencher: &mut Bencher<'_, M>, bp: &BlasBenchParams, op: &'static str, dense: bool)
 where
-    BE: Backend<Ring = Standard> + HostStaged + 'static + BlasMatMulImpl + MaxBase2k,
+    BE: Backend + HostStaged + 'static + BlasMatMulImpl + MaxBase2k,
     Module<BE>: BlasBenchModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     M: Measurement,
 {
     timed::<BE, M, _>(bencher, op, bp, || {
-        point_blas_matmul::<BE, BE>(bp, dense).reported::<BE>(op, bp)
+        point_blas_matmul::<BE, BE, Standard>(bp, dense).reported::<BE>(op, bp)
     });
 }
 
 /// `blas_matmul` with a dense right factor, distinct matrices per matrix slot: needs `bp.batch() > 1`.
 pub fn runner_blas_matmul<BE, M>(bencher: &mut Bencher<'_, M>, bp: &BlasBenchParams)
 where
-    BE: Backend<Ring = Standard> + HostStaged + 'static + BlasMatMulImpl + MaxBase2k,
+    BE: Backend + HostStaged + 'static + BlasMatMulImpl + MaxBase2k,
     Module<BE>: BlasBenchModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     M: Measurement,
@@ -689,7 +698,7 @@ where
 /// `blas_matmul` with a replicated right factor, one matrix in every matrix slot.
 pub fn runner_blas_matmul_replicated<BE, M>(bencher: &mut Bencher<'_, M>, bp: &BlasBenchParams)
 where
-    BE: Backend<Ring = Standard> + HostStaged + 'static + BlasMatMulImpl + MaxBase2k,
+    BE: Backend + HostStaged + 'static + BlasMatMulImpl + MaxBase2k,
     Module<BE>: BlasBenchModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     M: Measurement,
@@ -698,25 +707,25 @@ where
 }
 
 /// The point of `blas_matmul_pt_right` by the public matrix under `algorithm`.
-pub fn point_blas_matmul_pt_right<BE, BC>(bp: &BlasBenchParams, algorithm: BlasPtAlgorithm) -> BlasPoint
+pub fn point_blas_matmul_pt_right<BE, BC, Rg: Ring>(bp: &BlasBenchParams, algorithm: BlasPtAlgorithm) -> BlasPoint
 where
-    BE: Backend + HostStaged + 'static + BlasMatMulImpl + MaxBase2k,
-    BC: Backend<Ring = BE::Ring> + HostStaged + 'static,
-    Module<BE>: BlasEvalModule<BE>,
-    Module<BC>: BlasClientModule<BC>,
+    BE: Backend + HostStaged + 'static + BlasMatMulImpl<Rg> + MaxBase2k,
+    BC: Backend + HostStaged + 'static,
+    Module<BE>: BlasEvalModule<BE, Rg>,
+    Module<BC>: BlasClientModule<BC, Rg>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     ScratchOwned<BC>: ScratchOwnedAlloc<BC> + ScratchOwnedBorrow<BC>,
 {
-    let mut client = Client::<BE, BC>::new(bp);
+    let mut client = Client::<BE, BC, Rg>::new(bp);
     let pt = client.public::<Right>(bp, algorithm, 1, 1, p_entry(bp.d()));
     let ctx = client.context(bp, BlasPlan::new(bp.log_d));
-    let ct_a = client.encrypt(bp, 1, 1, bp.batch_on::<BE::Ring>(), a_entry);
-    let max_base2k = blas_matmul_pt_right_max_base2k::<BE>(&ct_a, &pt, &ctx, FAILURE_BITS);
+    let ct_a = client.encrypt(bp, 1, 1, bp.batch_on::<Rg>(), a_entry);
+    let max_base2k = blas_matmul_pt_right_max_base2k::<BE, Rg>(&ct_a, &pt, &ctx, FAILURE_BITS);
     assert!(
         max_base2k >= bp.base2k,
         "blas_matmul_pt_right: base2k exceeds the radix its lazy sums allow at 128 failure bits"
     );
-    let order = client.module.cyclotomic_order();
+    let order = client.module.cyclotomic_order::<Rg>();
     let atks = client.rotation_keys(bp, BlasPlan::new(bp.log_d).matmul_pt_right_galois_elements(order));
     let mut res = client.result(bp, 1, 1);
     let bytes = client
@@ -729,7 +738,7 @@ where
         .unwrap();
     let p = p_entry(bp.d());
     let max_err = client.max_error(bp, &res, |s, r, c| (0..bp.d()).map(|l| a_entry(s, r, l) * p(0, l, c)).sum());
-    let check = check::<BE>(bp, max_err, Some(max_base2k), atks.len(), log_budget::<BE>(&ct_a), &res);
+    let check = check::<BE, Rg>(bp, max_err, Some(max_base2k), atks.len(), log_budget::<BE, _>(&ct_a), &res);
     let module = client.module;
     BlasPoint {
         call: Box::new(move || {
@@ -744,20 +753,20 @@ where
 
 fn pt_right<BE, M>(bencher: &mut Bencher<'_, M>, bp: &BlasBenchParams, op: &'static str, algorithm: BlasPtAlgorithm)
 where
-    BE: Backend<Ring = Standard> + HostStaged + 'static + BlasMatMulImpl + MaxBase2k,
+    BE: Backend + HostStaged + 'static + BlasMatMulImpl + MaxBase2k,
     Module<BE>: BlasBenchModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     M: Measurement,
 {
     timed::<BE, M, _>(bencher, op, bp, || {
-        point_blas_matmul_pt_right::<BE, BE>(bp, algorithm).reported::<BE>(op, bp)
+        point_blas_matmul_pt_right::<BE, BE, Standard>(bp, algorithm).reported::<BE>(op, bp)
     });
 }
 
 /// `blas_matmul_pt_right` under `Diagonal`.
 pub fn runner_blas_matmul_pt_right_diagonal<BE, M>(bencher: &mut Bencher<'_, M>, bp: &BlasBenchParams)
 where
-    BE: Backend<Ring = Standard> + HostStaged + 'static + BlasMatMulImpl + MaxBase2k,
+    BE: Backend + HostStaged + 'static + BlasMatMulImpl + MaxBase2k,
     Module<BE>: BlasBenchModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     M: Measurement,
@@ -768,7 +777,7 @@ where
 /// `blas_matmul_pt_right` under `Jkls`.
 pub fn runner_blas_matmul_pt_right_jkls<BE, M>(bencher: &mut Bencher<'_, M>, bp: &BlasBenchParams)
 where
-    BE: Backend<Ring = Standard> + HostStaged + 'static + BlasMatMulImpl + MaxBase2k,
+    BE: Backend + HostStaged + 'static + BlasMatMulImpl + MaxBase2k,
     Module<BE>: BlasBenchModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     M: Measurement,
@@ -779,7 +788,7 @@ where
 /// `blas_matmul_pt_left` by the public matrix under `algorithm`.
 fn pt_left<BE, M>(bencher: &mut Bencher<'_, M>, bp: &BlasBenchParams, op: &'static str, algorithm: BlasPtAlgorithm)
 where
-    BE: Backend<Ring = Standard> + HostStaged + 'static + BlasMatMulImpl + MaxBase2k,
+    BE: Backend + HostStaged + 'static + BlasMatMulImpl + MaxBase2k,
     Module<BE>: BlasBenchModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     M: Measurement,
@@ -789,12 +798,12 @@ where
         let pt = client.public::<Left>(bp, algorithm, 1, 1, p_entry(bp.d()));
         let ctx = client.context(bp, BlasPlan::new(bp.log_d));
         let ct_a = client.encrypt(bp, 1, 1, bp.batch(), a_entry);
-        let max_base2k = blas_matmul_pt_left_max_base2k::<BE>(&pt, &ct_a, &ctx, FAILURE_BITS);
+        let max_base2k = blas_matmul_pt_left_max_base2k::<BE, Standard>(&pt, &ct_a, &ctx, FAILURE_BITS);
         assert!(
             max_base2k >= bp.base2k,
             "blas_matmul_pt_left: base2k exceeds the radix its lazy sums allow at 128 failure bits"
         );
-        let order = client.module.cyclotomic_order();
+        let order = client.module.cyclotomic_order::<Standard>();
         let atks = client.rotation_keys(bp, BlasPlan::new(bp.log_d).matmul_pt_left_galois_elements(order));
         let mut res = client.result(bp, 1, 1);
         let bytes = client
@@ -807,7 +816,7 @@ where
             .unwrap();
         let p = p_entry(bp.d());
         let max_err = client.max_error(bp, &res, |s, r, c| (0..bp.d()).map(|l| p(0, r, l) * a_entry(s, l, c)).sum());
-        verify::<BE>(op, bp, max_err, Some(max_base2k), atks.len());
+        verify::<BE, Standard>(op, bp, max_err, Some(max_base2k), atks.len());
         let module = client.module;
         Box::new(move || {
             module
@@ -821,7 +830,7 @@ where
 /// `blas_matmul_pt_left` under `Diagonal`.
 pub fn runner_blas_matmul_pt_left_diagonal<BE, M>(bencher: &mut Bencher<'_, M>, bp: &BlasBenchParams)
 where
-    BE: Backend<Ring = Standard> + HostStaged + 'static + BlasMatMulImpl + MaxBase2k,
+    BE: Backend + HostStaged + 'static + BlasMatMulImpl + MaxBase2k,
     Module<BE>: BlasBenchModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     M: Measurement,
@@ -832,7 +841,7 @@ where
 /// `blas_matmul_pt_left` under `Jkls`.
 pub fn runner_blas_matmul_pt_left_jkls<BE, M>(bencher: &mut Bencher<'_, M>, bp: &BlasBenchParams)
 where
-    BE: Backend<Ring = Standard> + HostStaged + 'static + BlasMatMulImpl + MaxBase2k,
+    BE: Backend + HostStaged + 'static + BlasMatMulImpl + MaxBase2k,
     Module<BE>: BlasBenchModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     M: Measurement,

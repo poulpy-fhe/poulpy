@@ -8,9 +8,10 @@
 //! alignment exceeds a limb.
 
 use poulpy_hal::{
-    layouts::Module,
+    layouts::{Module, Ring, Standard},
+    oep::{HalCnvImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl},
     test_suite::{
-        TestParams,
+        TestBackend, TestParams,
         convolution::{test_convolution_add, test_convolution_by_const_add},
         derived::{
             test_cnv_apply_dft_add_derived, test_cnv_by_const_apply_add_derived, test_vec_znx_idft_normalize_derived,
@@ -28,46 +29,50 @@ const PARAMS: TestParams = TestParams {
     n: 8,
 };
 
-fn run<BE>(module: &Module<BE>)
+fn run<BE, Rg: Ring>(module: &Module<BE>)
 where
-    BE: poulpy_hal::test_suite::TestBackend
-        + poulpy_hal::oep::HalVecZnxImpl
-        + poulpy_hal::oep::HalVmpImpl
-        + poulpy_hal::oep::HalVecZnxDftImpl
-        + poulpy_hal::oep::HalCnvImpl,
+    BE: TestBackend<Rg>
+        + HalVecZnxImpl<Rg>
+        + HalVmpImpl<Rg>
+        + HalVecZnxDftImpl<Rg>
+        + HalCnvImpl<Rg>
+        + HalVecZnxBigImpl<Standard>
+        + HalVmpImpl<Standard>
+        + HalVecZnxDftImpl<Standard>
+        + HalCnvImpl<Standard>,
 {
-    test_vec_znx_lsh_add_derived(&PARAMS, module);
-    test_vec_znx_lsh_sub_derived(&PARAMS, module);
-    test_vec_znx_rsh_add_derived(&PARAMS, module);
-    test_vec_znx_rsh_sub_derived(&PARAMS, module);
-    test_vec_znx_idft_normalize_derived(&PARAMS, module);
-    test_cnv_apply_dft_add_derived(&PARAMS, module);
-    test_cnv_by_const_apply_add_derived(&PARAMS, module);
+    test_vec_znx_lsh_add_derived::<BE, Rg>(&PARAMS, module);
+    test_vec_znx_lsh_sub_derived::<BE, Rg>(&PARAMS, module);
+    test_vec_znx_rsh_add_derived::<BE, Rg>(&PARAMS, module);
+    test_vec_znx_rsh_sub_derived::<BE, Rg>(&PARAMS, module);
+    test_vec_znx_idft_normalize_derived::<BE, Rg>(&PARAMS, module);
+    test_cnv_apply_dft_add_derived::<BE, Rg>(&PARAMS, module);
+    test_cnv_by_const_apply_add_derived::<BE, Rg>(&PARAMS, module);
 }
 
 /// The VMP composites.
-fn run_vmp<BE>(module: &Module<BE>)
+fn run_vmp<BE, Rg: Ring>(module: &Module<BE>)
 where
-    BE: poulpy_hal::test_suite::TestBackend + poulpy_hal::oep::HalVmpImpl + poulpy_hal::oep::HalVecZnxImpl,
+    BE: TestBackend<Rg> + HalVmpImpl<Rg> + HalVecZnxImpl<Rg> + HalVmpImpl<Standard> + HalVecZnxDftImpl<Standard>,
 {
-    test_vmp_apply_dft_derived(&PARAMS, module);
-    test_vmp_apply_dft_to_dft_add_derived(&PARAMS, module);
+    test_vmp_apply_dft_derived::<BE, Rg>(&PARAMS, module);
+    test_vmp_apply_dft_to_dft_add_derived::<BE, Rg>(&PARAMS, module);
 }
 
 #[test]
 fn derived_scratch_fft64_oracle_n8() {
     let module = Module::<FFT64Oracle>::new(8);
-    run(&module);
-    run_vmp(&module);
-    test_convolution_add(&module, 8, 17);
-    test_convolution_by_const_add(&module, 8, 17);
+    run::<_, Standard>(&module);
+    run_vmp::<_, Standard>(&module);
+    test_convolution_add::<_, _, Standard>(&module, 8, 17);
+    test_convolution_by_const_add::<_, _, Standard>(&module, 8, 17);
 }
 
 #[test]
 fn derived_scratch_ntt4x30_oracle_n8() {
     let module = Module::<NTT4x30Oracle>::new(8);
-    run(&module);
-    run_vmp(&module);
-    test_convolution_add(&module, 8, 17);
-    test_convolution_by_const_add(&module, 8, 17);
+    run::<_, Standard>(&module);
+    run_vmp::<_, Standard>(&module);
+    test_convolution_add::<_, _, Standard>(&module, 8, 17);
+    test_convolution_by_const_add::<_, _, Standard>(&module, 8, 17);
 }

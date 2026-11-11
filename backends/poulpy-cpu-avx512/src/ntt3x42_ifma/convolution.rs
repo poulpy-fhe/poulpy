@@ -92,7 +92,7 @@ pub(crate) fn cnv_tensor_rank1_dft_ifma_tmp_bytes(res_size: usize, a_size: usize
 
 /// Zero the packed limb `(col, j)` of a `VecZnxDft`.
 #[inline]
-fn zero_res_limb<R: Ring>(res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma<R>>, col: usize, j: usize) {
+fn zero_res_limb<R: Ring>(res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma, R>, col: usize, j: usize) {
     let n = res.n();
     let cols = res.cols();
     let off = 2 * n * (j * cols + col);
@@ -494,7 +494,7 @@ unsafe fn conv_columns_packed_group<const ACC: bool, const PAIRWISE: bool>(
 #[target_feature(enable = "avx512ifma,avx512vl")]
 unsafe fn conv_columns_packed<R: Ring, E: TaskExecutor, const ACC: bool, const PAIRWISE: bool>(
     cnv_offset: usize,
-    res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma<R>>,
+    res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma, R>,
     res_col: usize,
     a0_col: &[u64],
     a1_col: &[u64],
@@ -738,10 +738,10 @@ unsafe fn conv_tensor_rank1_packed_group(
 /// Rank-one tensor product into columns 0, 1, 2 of `res`: `a0 * b0`, `(a0 + a1) * (b0 + b1)` and `a1 * b1`.
 #[target_feature(enable = "avx512ifma,avx512vl")]
 pub(crate) unsafe fn cnv_tensor_rank1_dft_ifma<R: Ring, E: TaskExecutor>(
-    res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma<R>>,
+    res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma, R>,
     cnv_offset: usize,
-    a: &CnvPVecLBackendRef<'_, NTT3x42Ifma<R>>,
-    b: &CnvPVecRBackendRef<'_, NTT3x42Ifma<R>>,
+    a: &CnvPVecLBackendRef<'_, NTT3x42Ifma, R>,
+    b: &CnvPVecRBackendRef<'_, NTT3x42Ifma, R>,
     tmp: &mut [u8],
 ) {
     assert!(res.cols() >= 3);
@@ -762,11 +762,11 @@ pub(crate) unsafe fn cnv_tensor_rank1_dft_ifma<R: Ring, E: TaskExecutor>(
 /// Column 0 of `cross` receives `d1 = (a0 + a1) * (b0 + b1) - d0 - d2`.
 #[target_feature(enable = "avx512ifma,avx512vl")]
 pub(crate) unsafe fn cnv_tensor_rank1_cross_dft_ifma<R: Ring, E: TaskExecutor>(
-    diag: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma<R>>,
-    cross: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma<R>>,
+    diag: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma, R>,
+    cross: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma, R>,
     cnv_offset: usize,
-    a: &CnvPVecLBackendRef<'_, NTT3x42Ifma<R>>,
-    b: &CnvPVecRBackendRef<'_, NTT3x42Ifma<R>>,
+    a: &CnvPVecLBackendRef<'_, NTT3x42Ifma, R>,
+    b: &CnvPVecRBackendRef<'_, NTT3x42Ifma, R>,
     tmp: &mut [u8],
 ) {
     assert!(diag.cols() >= 2);
@@ -823,8 +823,8 @@ unsafe fn tensor_rank1_run<R: Ring, E: TaskExecutor>(
     n: usize,
     res_size: usize,
     cnv_offset: usize,
-    a: &CnvPVecLBackendRef<'_, NTT3x42Ifma<R>>,
-    b: &CnvPVecRBackendRef<'_, NTT3x42Ifma<R>>,
+    a: &CnvPVecLBackendRef<'_, NTT3x42Ifma, R>,
+    b: &CnvPVecRBackendRef<'_, NTT3x42Ifma, R>,
     tmp: &mut [u8],
 ) -> usize {
     assert!(a.cols() >= 2);
@@ -910,21 +910,21 @@ unsafe fn tensor_rank1_run<R: Ring, E: TaskExecutor>(
 #[allow(clippy::too_many_arguments)]
 #[target_feature(enable = "avx512ifma,avx512vl")]
 pub(crate) unsafe fn cnv_apply_dft_ifma<R: Ring, E: TaskExecutor>(
-    module: &Module<NTT3x42Ifma<R>>,
-    res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma<R>>,
+    module: &Module<NTT3x42Ifma>,
+    res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma, R>,
     cnv_offset: usize,
     res_col: usize,
-    a: &CnvPVecLBackendRef<'_, NTT3x42Ifma<R>>,
+    a: &CnvPVecLBackendRef<'_, NTT3x42Ifma, R>,
     a_col: usize,
-    b: &CnvPVecRBackendRef<'_, NTT3x42Ifma<R>>,
+    b: &CnvPVecRBackendRef<'_, NTT3x42Ifma, R>,
     b_col: usize,
     b_galois: i64,
     tmp: &mut [u8],
 ) {
     let n = res.n();
-    check_degree::<NTT3x42Ifma<R>>(module.n(), n);
+    check_degree::<NTT3x42Ifma>(module.n(), n);
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
-    let b_read = right_read_ntt::<R>(n, b.n(), b_galois, <NTT3x42Ifma<R> as Backend>::MIN_DEGREE);
+    let b_read = right_read_ntt::<R>(n, b.n(), b_galois, <NTT3x42Ifma as Backend>::MIN_DEGREE);
     let res_size = res.size();
     let a_size = a.size();
     let b_size = b.size();
@@ -952,21 +952,21 @@ pub(crate) unsafe fn cnv_apply_dft_ifma<R: Ring, E: TaskExecutor>(
 #[allow(clippy::too_many_arguments)]
 #[target_feature(enable = "avx512ifma,avx512vl")]
 pub(crate) unsafe fn cnv_apply_dft_add_ifma<R: Ring, E: TaskExecutor>(
-    module: &Module<NTT3x42Ifma<R>>,
-    res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma<R>>,
+    module: &Module<NTT3x42Ifma>,
+    res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma, R>,
     cnv_offset: usize,
     res_col: usize,
-    a: &CnvPVecLBackendRef<'_, NTT3x42Ifma<R>>,
+    a: &CnvPVecLBackendRef<'_, NTT3x42Ifma, R>,
     a_col: usize,
-    b: &CnvPVecRBackendRef<'_, NTT3x42Ifma<R>>,
+    b: &CnvPVecRBackendRef<'_, NTT3x42Ifma, R>,
     b_col: usize,
     b_galois: i64,
     tmp: &mut [u8],
 ) {
     let n = res.n();
-    check_degree::<NTT3x42Ifma<R>>(module.n(), n);
+    check_degree::<NTT3x42Ifma>(module.n(), n);
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
-    let b_read = right_read_ntt::<R>(n, b.n(), b_galois, <NTT3x42Ifma<R> as Backend>::MIN_DEGREE);
+    let b_read = right_read_ntt::<R>(n, b.n(), b_galois, <NTT3x42Ifma as Backend>::MIN_DEGREE);
     let res_size = res.size();
     let a_size = a.size();
     let b_size = b.size();
@@ -1158,16 +1158,16 @@ unsafe fn conv_accumulate_terms_group(
 
 #[target_feature(enable = "avx512ifma,avx512vl")]
 pub(crate) unsafe fn cnv_apply_dft_sum_ifma<R: Ring, E: TaskExecutor>(
-    module: &Module<NTT3x42Ifma<R>>,
-    res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma<R>>,
+    module: &Module<NTT3x42Ifma>,
+    res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma, R>,
     cnv_offset: usize,
     res_col: usize,
-    terms: &[CnvDftAccTerm<'_, NTT3x42Ifma<R>>],
+    terms: &[CnvDftAccTerm<'_, NTT3x42Ifma, R>],
     tmp: &mut [u8],
 ) {
     let n = res.n();
-    check_degree::<NTT3x42Ifma<R>>(module.n(), n);
-    check_cnv_dft_terms::<NTT3x42Ifma<R>>(n, terms);
+    check_degree::<NTT3x42Ifma>(module.n(), n);
+    check_cnv_dft_terms::<NTT3x42Ifma, R>(n, terms);
     let res_size = res.size();
     let n_groups = n / 8;
     let mut max_size = 0;
@@ -1178,7 +1178,7 @@ pub(crate) unsafe fn cnv_apply_dft_sum_ifma<R: Ring, E: TaskExecutor>(
         .map(|term| {
             (
                 term,
-                right_read_ntt::<R>(n, term.b.n(), term.b_galois, <NTT3x42Ifma<R> as Backend>::MIN_DEGREE),
+                right_read_ntt::<R>(n, term.b.n(), term.b_galois, <NTT3x42Ifma as Backend>::MIN_DEGREE),
             )
         })
         .filter(|(term, _)| term.a.size() != 0 && term.b.size() != 0)
@@ -1328,12 +1328,12 @@ pub(crate) unsafe fn cnv_apply_dft_sum_ifma<R: Ring, E: TaskExecutor>(
 #[allow(clippy::too_many_arguments)]
 #[target_feature(enable = "avx512ifma,avx512vl")]
 pub(crate) unsafe fn cnv_pairwise_apply_dft_ifma<R: Ring, E: TaskExecutor>(
-    module: &Module<NTT3x42Ifma<R>>,
-    res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma<R>>,
+    module: &Module<NTT3x42Ifma>,
+    res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma, R>,
     cnv_offset: usize,
     res_col: usize,
-    a: &CnvPVecLBackendRef<'_, NTT3x42Ifma<R>>,
-    b: &CnvPVecRBackendRef<'_, NTT3x42Ifma<R>>,
+    a: &CnvPVecLBackendRef<'_, NTT3x42Ifma, R>,
+    b: &CnvPVecRBackendRef<'_, NTT3x42Ifma, R>,
     col_0: usize,
     col_1: usize,
     tmp: &mut [u8],
@@ -1344,9 +1344,9 @@ pub(crate) unsafe fn cnv_pairwise_apply_dft_ifma<R: Ring, E: TaskExecutor>(
     }
 
     let n = res.n();
-    check_degree::<NTT3x42Ifma<R>>(module.n(), n);
+    check_degree::<NTT3x42Ifma>(module.n(), n);
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
-    let b_read = RightRead::embedded(n, b.n(), <NTT3x42Ifma<R> as Backend>::MIN_DEGREE);
+    let b_read = RightRead::embedded(n, b.n(), <NTT3x42Ifma as Backend>::MIN_DEGREE);
     let res_size = res.size();
     let a_size = a.size();
     let b_size = b.size();
@@ -1446,17 +1446,16 @@ pub(crate) fn cnv_pvec_left_prepare_tmp_bytes(n: usize) -> usize {
 }
 
 pub(crate) fn cnv_pvec_left_prepare<R: Ring, E: TaskExecutor>(
-    module: &Module<NTT3x42Ifma<R>>,
-    res: &mut CnvPVecLBackendMut<'_, NTT3x42Ifma<R>>,
-    a: &VecZnxBackendRef<'_, NTT3x42Ifma<R>>,
+    module: &Module<NTT3x42Ifma>,
+    res: &mut CnvPVecLBackendMut<'_, NTT3x42Ifma, R>,
+    a: &VecZnxBackendRef<'_, NTT3x42Ifma, R>,
     tmp: &mut [u8],
 ) where
-    NTT3x42Ifma<R>:
-        Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, R>> + Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, R>>,
+    NTT3x42Ifma: Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, R>> + Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, R>>,
 {
     poulpy_hal::layouts::assert_dense(a, "cnv_pvec_left_prepare");
     let n = res.n();
-    check_degree::<NTT3x42Ifma<R>>(module.n(), n);
+    check_degree::<NTT3x42Ifma>(module.n(), n);
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
     let table = handle(module).table_ntt_for(n);
     let cols = res.cols();
@@ -1475,8 +1474,8 @@ pub(crate) fn cnv_pvec_left_prepare<R: Ring, E: TaskExecutor>(
             let limb_b = &mut tmp[..3 * n];
             let dst = unsafe { res_ptr.get().add(col * col_stride) };
             if j < min_size {
-                NTT3x42Ifma::<R>::ntt3x42_ifma_from_znx64(limb_b, a.at(col, j));
-                <NTT3x42Ifma<R> as Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, R>>>::ntt3x42_ifma_dft_execute_lazy(
+                NTT3x42Ifma::ntt3x42_ifma_from_znx64(limb_b, a.at(col, j));
+                <NTT3x42Ifma as Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, R>>>::ntt3x42_ifma_dft_execute_lazy(
                     table, limb_b,
                 );
                 unsafe { pack_limb_packed::<false>(dst, limb_b, n, res_size, j, std::ptr::null_mut()) };
@@ -1498,11 +1497,9 @@ pub(crate) fn cnv_pvec_left_prepare<R: Ring, E: TaskExecutor>(
     for col in 0..cols {
         let dst = col_slice_mut(res_raw, n, res_size, col).as_mut_ptr();
         for j in 0..min_size {
-            NTT3x42Ifma::<R>::ntt3x42_ifma_from_znx64(limb_b, a.at(col, j));
+            NTT3x42Ifma::ntt3x42_ifma_from_znx64(limb_b, a.at(col, j));
             // Packing also reduces the lazy transform output.
-            <NTT3x42Ifma<R> as Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, R>>>::ntt3x42_ifma_dft_execute_lazy(
-                table, limb_b,
-            );
+            <NTT3x42Ifma as Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, R>>>::ntt3x42_ifma_dft_execute_lazy(table, limb_b);
             unsafe { pack_limb_packed::<false>(dst, limb_b, n, res_size, j, std::ptr::null_mut()) };
         }
         for j in min_size..res_size {
@@ -1519,17 +1516,16 @@ pub(crate) fn cnv_pvec_right_prepare_tmp_bytes(n: usize) -> usize {
 }
 
 pub(crate) fn cnv_pvec_right_prepare<R: Ring, E: TaskExecutor>(
-    module: &Module<NTT3x42Ifma<R>>,
-    res: &mut CnvPVecRBackendMut<'_, NTT3x42Ifma<R>>,
-    a: &VecZnxBackendRef<'_, NTT3x42Ifma<R>>,
+    module: &Module<NTT3x42Ifma>,
+    res: &mut CnvPVecRBackendMut<'_, NTT3x42Ifma, R>,
+    a: &VecZnxBackendRef<'_, NTT3x42Ifma, R>,
     tmp: &mut [u64],
 ) where
-    NTT3x42Ifma<R>:
-        Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, R>> + Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, R>>,
+    NTT3x42Ifma: Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, R>> + Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, R>>,
 {
     poulpy_hal::layouts::assert_dense(a, "cnv_pvec_right_prepare");
     let n = res.n();
-    check_degree::<NTT3x42Ifma<R>>(module.n(), n);
+    check_degree::<NTT3x42Ifma>(module.n(), n);
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
     let table = handle(module).table_ntt_for(n);
     let cols = res.cols();
@@ -1548,8 +1544,8 @@ pub(crate) fn cnv_pvec_right_prepare<R: Ring, E: TaskExecutor>(
             let limb_b = &mut tmp[..3 * n];
             let dst = unsafe { res_ptr.get().add(col * col_stride) };
             if j < min_size {
-                NTT3x42Ifma::<R>::ntt3x42_ifma_from_znx64(limb_b, a.at(col, j));
-                <NTT3x42Ifma<R> as Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, R>>>::ntt3x42_ifma_dft_execute_lazy(
+                NTT3x42Ifma::ntt3x42_ifma_from_znx64(limb_b, a.at(col, j));
+                <NTT3x42Ifma as Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, R>>>::ntt3x42_ifma_dft_execute_lazy(
                     table, limb_b,
                 );
                 unsafe { pack_limb_packed::<false>(dst, limb_b, n, res_size, res_size - 1 - j, std::ptr::null_mut()) };
@@ -1568,11 +1564,9 @@ pub(crate) fn cnv_pvec_right_prepare<R: Ring, E: TaskExecutor>(
     for col in 0..cols {
         let dst = col_slice_mut(res_raw, n, res_size, col).as_mut_ptr();
         for j in 0..min_size {
-            NTT3x42Ifma::<R>::ntt3x42_ifma_from_znx64(limb_b, a.at(col, j));
+            NTT3x42Ifma::ntt3x42_ifma_from_znx64(limb_b, a.at(col, j));
             // Packing also reduces the lazy transform output.
-            <NTT3x42Ifma<R> as Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, R>>>::ntt3x42_ifma_dft_execute_lazy(
-                table, limb_b,
-            );
+            <NTT3x42Ifma as Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, R>>>::ntt3x42_ifma_dft_execute_lazy(table, limb_b);
             unsafe { pack_limb_packed::<false>(dst, limb_b, n, res_size, res_size - 1 - j, std::ptr::null_mut()) };
         }
         for j in min_size..res_size {
@@ -1589,18 +1583,17 @@ pub(crate) fn cnv_pvec_self_prepare_tmp_bytes(n: usize) -> usize {
 }
 
 pub(crate) fn cnv_pvec_self_prepare<R: Ring, E: TaskExecutor>(
-    module: &Module<NTT3x42Ifma<R>>,
-    left: &mut CnvPVecLBackendMut<'_, NTT3x42Ifma<R>>,
-    right: &mut CnvPVecRBackendMut<'_, NTT3x42Ifma<R>>,
-    a: &VecZnxBackendRef<'_, NTT3x42Ifma<R>>,
+    module: &Module<NTT3x42Ifma>,
+    left: &mut CnvPVecLBackendMut<'_, NTT3x42Ifma, R>,
+    right: &mut CnvPVecRBackendMut<'_, NTT3x42Ifma, R>,
+    a: &VecZnxBackendRef<'_, NTT3x42Ifma, R>,
     tmp: &mut [u8],
 ) where
-    NTT3x42Ifma<R>:
-        Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, R>> + Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, R>>,
+    NTT3x42Ifma: Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, R>> + Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, R>>,
 {
     poulpy_hal::layouts::assert_dense(a, "cnv_pvec_self_prepare");
     let n = left.n();
-    check_degree::<NTT3x42Ifma<R>>(module.n(), n);
+    check_degree::<NTT3x42Ifma>(module.n(), n);
     assert_eq!(a.n(), n, "cnv_pvec_self_prepare: a.n():{} != left.n():{n}", a.n());
     assert_eq!(right.n(), n, "cnv_pvec_self_prepare: right.n():{} != left.n():{n}", right.n());
     let table = handle(module).table_ntt_for(n);
@@ -1629,8 +1622,8 @@ pub(crate) fn cnv_pvec_self_prepare<R: Ring, E: TaskExecutor>(
             let dst_l = unsafe { left_ptr.get().add(col * col_stride) };
             let dst_r = unsafe { right_ptr.get().add(col * col_stride) };
             if j < min_size {
-                NTT3x42Ifma::<R>::ntt3x42_ifma_from_znx64(limb_b, a.at(col, j));
-                <NTT3x42Ifma<R> as Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, R>>>::ntt3x42_ifma_dft_execute_lazy(
+                NTT3x42Ifma::ntt3x42_ifma_from_znx64(limb_b, a.at(col, j));
+                <NTT3x42Ifma as Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, R>>>::ntt3x42_ifma_dft_execute_lazy(
                     table, limb_b,
                 );
                 unsafe { pack_limb_packed::<true>(dst_l, limb_b, n, res_size, j, dst_r) };
@@ -1657,11 +1650,9 @@ pub(crate) fn cnv_pvec_self_prepare<R: Ring, E: TaskExecutor>(
         let dst_l = col_slice_mut(left_raw, n, res_size, col).as_mut_ptr();
         let dst_r = col_slice_mut(right_raw, n, res_size, col).as_mut_ptr();
         for j in 0..min_size {
-            NTT3x42Ifma::<R>::ntt3x42_ifma_from_znx64(limb_b, a.at(col, j));
+            NTT3x42Ifma::ntt3x42_ifma_from_znx64(limb_b, a.at(col, j));
             // Packing also reduces the lazy transform output.
-            <NTT3x42Ifma<R> as Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, R>>>::ntt3x42_ifma_dft_execute_lazy(
-                table, limb_b,
-            );
+            <NTT3x42Ifma as Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, R>>>::ntt3x42_ifma_dft_execute_lazy(table, limb_b);
             unsafe { pack_limb_packed::<true>(dst_l, limb_b, n, res_size, j, dst_r) };
         }
         for j in min_size..res_size {

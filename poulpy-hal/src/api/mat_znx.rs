@@ -1,4 +1,4 @@
-use crate::layouts::{Backend, MatZnxBackendMut, MatZnxBackendRef, ScratchArena};
+use crate::layouts::{Backend, MatZnxBackendMut, MatZnxBackendRef, Ring, ScratchArena, Standard};
 
 /// In-place entrywise addition of a matrix.
 ///
@@ -13,9 +13,9 @@ use crate::layouts::{Backend, MatZnxBackendMut, MatZnxBackendRef, ScratchArena};
 /// override   allowed, scratch-free
 /// test       test_mat_znx_add_assign
 /// ```
-pub trait MatZnxAddAssign<B: Backend> {
+pub trait MatZnxAddAssign<B: Backend, Rg: Ring = Standard> {
     /// Adds every entry of `a` into the matching entry of `res`.
-    fn mat_znx_add_assign(&self, res: &mut MatZnxBackendMut<'_, B>, a: &MatZnxBackendRef<'_, B>);
+    fn mat_znx_add_assign(&self, res: &mut MatZnxBackendMut<'_, B, Rg>, a: &MatZnxBackendRef<'_, B, Rg>);
 }
 
 /// Copy of one output column of every entry of a matrix into another.
@@ -31,9 +31,9 @@ pub trait MatZnxAddAssign<B: Backend> {
 /// override   allowed, scratch-free
 /// test       test_mat_znx_copy
 /// ```
-pub trait MatZnxCopy<B: Backend> {
+pub trait MatZnxCopy<B: Backend, Rg: Ring = Standard> {
     /// Writes `a[i,c][a_col]` into `res[i,c][res_col]` for every entry of `res`, zero past the rows of `a`.
-    fn mat_znx_copy(&self, res: &mut MatZnxBackendMut<'_, B>, res_col: usize, a: &MatZnxBackendRef<'_, B>, a_col: usize);
+    fn mat_znx_copy(&self, res: &mut MatZnxBackendMut<'_, B, Rg>, res_col: usize, a: &MatZnxBackendRef<'_, B, Rg>, a_col: usize);
 }
 
 /// Scratch requirement of the matrix normalization operations.
@@ -66,18 +66,18 @@ pub trait MatZnxNormalizeTmpBytes {
 /// override   allowed
 /// test       test_mat_znx_normalize
 /// ```
-pub trait MatZnxNormalize<B: Backend> {
+pub trait MatZnxNormalize<B: Backend, Rg: Ring = Standard> {
     /// Writes `a[i,c][a_col]`, scaled by `2^res_offset` and normalized at `res_base2k` and `res_k`, into
     /// `res[i,c][res_col]` for every entry of `res`, zero past the rows of `a`.
     #[allow(clippy::too_many_arguments)]
     fn mat_znx_normalize(
         &self,
-        res: &mut MatZnxBackendMut<'_, B>,
+        res: &mut MatZnxBackendMut<'_, B, Rg>,
         res_base2k: usize,
         res_k: usize,
         res_offset: i64,
         res_col: usize,
-        a: &MatZnxBackendRef<'_, B>,
+        a: &MatZnxBackendRef<'_, B, Rg>,
         a_base2k: usize,
         a_col: usize,
         scratch: &mut ScratchArena<'_, B>,
@@ -99,7 +99,7 @@ pub trait MatZnxNormalize<B: Backend> {
 /// override   allowed
 /// test       test_mat_znx_normalize
 /// ```
-pub trait MatZnxNormalizeAssign<B: Backend> {
+pub trait MatZnxNormalizeAssign<B: Backend, Rg: Ring = Standard> {
     /// Replaces `a[i,c][a_col]` with its value scaled by `2^a_offset` and normalized at `base2k` and `k`, for every
     /// entry.
     fn mat_znx_normalize_assign(
@@ -107,7 +107,7 @@ pub trait MatZnxNormalizeAssign<B: Backend> {
         base2k: usize,
         k: usize,
         a_offset: i64,
-        a: &mut MatZnxBackendMut<'_, B>,
+        a: &mut MatZnxBackendMut<'_, B, Rg>,
         a_col: usize,
         scratch: &mut ScratchArena<'_, B>,
     );

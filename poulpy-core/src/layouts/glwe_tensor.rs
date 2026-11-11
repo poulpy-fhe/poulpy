@@ -1,4 +1,4 @@
-use poulpy_hal::layouts::{Backend, Data, HostDataRef, VecZnx, VecZnxToBackendMut, VecZnxToBackendRef};
+use poulpy_hal::layouts::{Backend, Data, HostDataRef, Ring, Standard, VecZnx, VecZnxToBackendMut, VecZnxToBackendRef};
 use poulpy_hal::{AlignedBuf, alloc_aligned};
 
 use crate::layouts::{
@@ -9,35 +9,35 @@ use poulpy_hal::layouts::ZnxWord;
 use std::fmt;
 
 #[derive(PartialEq, Eq, Clone)]
-pub struct GLWETensor<D: Data, W: ZnxWord> {
-    pub(crate) data: VecZnx<D, W>,
+pub struct GLWETensor<D: Data, W: ZnxWord, Rg: Ring = Standard> {
+    pub(crate) data: VecZnx<D, W, Rg>,
     pub(crate) k: TorusPrecision,
     pub(crate) base2k: Base2K,
     pub(crate) rank: Rank,
 }
 
-pub type GLWETensorBackendRef<'a, BE> = GLWETensor<<BE as Backend>::BufRef<'a>, <BE as Backend>::ZnxWord>;
-pub type GLWETensorBackendMut<'a, BE> = GLWETensor<<BE as Backend>::BufMut<'a>, <BE as Backend>::ZnxWord>;
+pub type GLWETensorBackendRef<'a, BE, Rg = Standard> = GLWETensor<<BE as Backend>::BufRef<'a>, <BE as Backend>::ZnxWord, Rg>;
+pub type GLWETensorBackendMut<'a, BE, Rg = Standard> = GLWETensor<<BE as Backend>::BufMut<'a>, <BE as Backend>::ZnxWord, Rg>;
 
-impl<D: Data, W: ZnxWord> SetBase2k for GLWETensor<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> SetBase2k for GLWETensor<D, W, Rg> {
     fn set_base2k(&mut self, base2k: Base2K) {
         self.base2k = base2k
     }
 }
 
-impl<D: Data, W: ZnxWord> GLWETensor<D, W> {
-    pub fn data(&self) -> &VecZnx<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> GLWETensor<D, W, Rg> {
+    pub fn data(&self) -> &VecZnx<D, W, Rg> {
         &self.data
     }
 }
 
-impl<D: Data, W: ZnxWord> GLWETensor<D, W> {
-    pub fn data_mut(&mut self) -> &mut VecZnx<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> GLWETensor<D, W, Rg> {
+    pub fn data_mut(&mut self) -> &mut VecZnx<D, W, Rg> {
         &mut self.data
     }
 }
 
-impl<D: Data, W: ZnxWord> LWEInfos for GLWETensor<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> LWEInfos for GLWETensor<D, W, Rg> {
     fn base2k(&self) -> Base2K {
         self.base2k
     }
@@ -55,20 +55,20 @@ impl<D: Data, W: ZnxWord> LWEInfos for GLWETensor<D, W> {
     }
 }
 
-impl<D: Data, W: ZnxWord> GLWEInfos for GLWETensor<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> GLWEInfos for GLWETensor<D, W, Rg> {
     ///NOTE: self.rank() != self.to_ref().rank() if self is of type [GLWETensor]
     fn rank(&self) -> Rank {
         self.rank
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> fmt::Debug for GLWETensor<D, W> {
+impl<D: HostDataRef, W: ZnxWord, Rg: Ring> fmt::Debug for GLWETensor<D, W, Rg> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{self}")
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> fmt::Display for GLWETensor<D, W> {
+impl<D: HostDataRef, W: ZnxWord, Rg: Ring> fmt::Display for GLWETensor<D, W, Rg> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "GLWETensor: base2k={} k={}: {}", self.base2k().0, self.k().0, self.data)
     }
@@ -78,7 +78,7 @@ impl<D: HostDataRef, W: ZnxWord> fmt::Display for GLWETensor<D, W> {
     dead_code,
     reason = "host-owned constructors are kept for serialization and host-only staging"
 )]
-impl<W: ZnxWord> GLWETensor<AlignedBuf, W> {
+impl<W: ZnxWord, Rg: Ring> GLWETensor<AlignedBuf, W, Rg> {
     pub(crate) fn alloc_from_infos<A>(infos: &A) -> Self
     where
         A: GLWEInfos,
@@ -92,7 +92,7 @@ impl<W: ZnxWord> GLWETensor<AlignedBuf, W> {
         let size: usize = k.0.div_ceil(base2k.0) as usize;
         GLWETensor {
             data: VecZnx::from_data(
-                alloc_aligned::<u8>(VecZnx::<AlignedBuf, W>::bytes_of(n.into(), pairs, size)),
+                alloc_aligned::<u8>(VecZnx::<AlignedBuf, W, Rg>::bytes_of(n.into(), pairs, size)),
                 n.into(),
                 pairs,
                 size,
@@ -113,15 +113,15 @@ impl<W: ZnxWord> GLWETensor<AlignedBuf, W> {
     pub fn bytes_of(n: Degree, base2k: Base2K, k: TorusPrecision, rank: Rank) -> usize {
         let cols: usize = rank.as_usize() + 1;
         let pairs: usize = (((cols + 1) * cols) >> 1).max(1);
-        VecZnx::<AlignedBuf, W>::bytes_of(n.into(), pairs, k.0.div_ceil(base2k.0) as usize)
+        VecZnx::<AlignedBuf, W, Rg>::bytes_of(n.into(), pairs, k.0.div_ceil(base2k.0) as usize)
     }
 }
 
-impl<BE: Backend, D: Data> GLWEToBackendRef<BE> for GLWETensor<D, BE::ZnxWord>
+impl<BE: Backend, D: Data, Rg: Ring> GLWEToBackendRef<BE, Rg> for GLWETensor<D, BE::ZnxWord, Rg>
 where
-    VecZnx<D, BE::ZnxWord>: VecZnxToBackendRef<BE>,
+    VecZnx<D, BE::ZnxWord, Rg>: VecZnxToBackendRef<BE, Rg>,
 {
-    fn to_backend_ref(&self) -> GLWEBackendRef<'_, BE> {
+    fn to_backend_ref(&self) -> GLWEBackendRef<'_, BE, Rg> {
         GLWE {
             noise: None,
             base2k: self.base2k,
@@ -133,11 +133,11 @@ where
     }
 }
 
-impl<BE: Backend, D: Data> GLWEToBackendRef<BE> for &GLWETensor<D, BE::ZnxWord>
+impl<BE: Backend, D: Data, Rg: Ring> GLWEToBackendRef<BE, Rg> for &GLWETensor<D, BE::ZnxWord, Rg>
 where
-    VecZnx<D, BE::ZnxWord>: VecZnxToBackendRef<BE>,
+    VecZnx<D, BE::ZnxWord, Rg>: VecZnxToBackendRef<BE, Rg>,
 {
-    fn to_backend_ref(&self) -> GLWEBackendRef<'_, BE> {
+    fn to_backend_ref(&self) -> GLWEBackendRef<'_, BE, Rg> {
         GLWE {
             noise: None,
             base2k: self.base2k,
@@ -149,13 +149,13 @@ where
     }
 }
 
-impl<BE: Backend, D: Data> GLWEToBackendMut<BE> for GLWETensor<D, BE::ZnxWord>
+impl<BE: Backend, D: Data, Rg: Ring> GLWEToBackendMut<BE, Rg> for GLWETensor<D, BE::ZnxWord, Rg>
 where
-    VecZnx<D, BE::ZnxWord>: VecZnxToBackendRef<BE> + VecZnxToBackendMut<BE>,
+    VecZnx<D, BE::ZnxWord, Rg>: VecZnxToBackendRef<BE, Rg> + VecZnxToBackendMut<BE, Rg>,
 {
     fn set_noise(&mut self, _: Option<crate::ComponentNoise>) {}
 
-    fn to_backend_mut(&mut self) -> GLWEBackendMut<'_, BE> {
+    fn to_backend_mut(&mut self) -> GLWEBackendMut<'_, BE, Rg> {
         GLWE {
             noise: None,
             base2k: self.base2k,
@@ -169,36 +169,36 @@ where
     fn set_canonical(&mut self, _canonical: bool) {}
 }
 
-impl<BE: Backend> GLWEToBackendRef<BE> for &mut GLWETensor<BE::BufMut<'_>, BE::ZnxWord> {
-    fn to_backend_ref(&self) -> GLWEBackendRef<'_, BE> {
+impl<BE: Backend, Rg: Ring> GLWEToBackendRef<BE, Rg> for &mut GLWETensor<BE::BufMut<'_>, BE::ZnxWord, Rg> {
+    fn to_backend_ref(&self) -> GLWEBackendRef<'_, BE, Rg> {
         GLWE {
             noise: None,
             base2k: self.base2k,
             k: self.k,
             canonical: true,
             plaintext_meta: None,
-            data: poulpy_hal::layouts::vec_znx_backend_ref_from_mut::<BE>(&self.data),
+            data: poulpy_hal::layouts::vec_znx_backend_ref_from_mut::<BE, Rg>(&self.data),
         }
     }
 }
 
-impl<BE: Backend> GLWEToBackendMut<BE> for &mut GLWETensor<BE::BufMut<'_>, BE::ZnxWord> {
+impl<BE: Backend, Rg: Ring> GLWEToBackendMut<BE, Rg> for &mut GLWETensor<BE::BufMut<'_>, BE::ZnxWord, Rg> {
     fn set_noise(&mut self, _: Option<crate::ComponentNoise>) {}
 
-    fn to_backend_mut(&mut self) -> GLWEBackendMut<'_, BE> {
+    fn to_backend_mut(&mut self) -> GLWEBackendMut<'_, BE, Rg> {
         GLWE {
             noise: None,
             base2k: self.base2k,
             k: self.k,
             canonical: true,
             plaintext_meta: None,
-            data: poulpy_hal::layouts::vec_znx_backend_mut_from_mut::<BE>(&mut self.data),
+            data: poulpy_hal::layouts::vec_znx_backend_mut_from_mut::<BE, Rg>(&mut self.data),
         }
     }
 
     fn set_canonical(&mut self, _canonical: bool) {}
 }
 
-impl<D: Data, W: ZnxWord> GLWETensor<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> GLWETensor<D, W, Rg> {
     pub(crate) fn record_noise(&mut self, _: Option<crate::ComponentNoise>) {}
 }

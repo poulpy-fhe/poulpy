@@ -1,10 +1,10 @@
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef};
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Module, Ring, ScratchArena};
 
 use crate::{CKKSCtBounds, SetCKKSInfos, api::CKKSRoundOps, oep::CKKSRoundImpl};
 
-impl<BE: Backend + CKKSRoundImpl> CKKSRoundOps<BE> for Module<BE> {
+impl<BE: Backend + CKKSRoundImpl<Rg>, Rg: Ring> CKKSRoundOps<BE, Rg> for Module<BE> {
     fn ckks_round_tmp_bytes<R, A>(&self, res: &R, a: &A) -> usize
     where
         R: CKKSCtBounds,
@@ -15,8 +15,8 @@ impl<BE: Backend + CKKSRoundImpl> CKKSRoundOps<BE> for Module<BE> {
 
     fn ckks_round<R, A>(&self, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<BE> + CKKSCtBounds,
+        R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
     {
         BE::ckks_round(self, res, a, scratch)
     }

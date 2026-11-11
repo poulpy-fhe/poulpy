@@ -12,7 +12,7 @@ pub trait LookupTableFactory<D: Data, W: ZnxWord> {
     /// message.
     ///
     /// `k` is the message-bit count (e.g., 1 for a binary-valued LUT).
-    /// `f` must be nonempty and have length at most the module's ring degree,
+    /// `f` must be nonempty and have length at most the module degree,
     /// including when `res` uses an extended LUT domain.
     fn lookup_table_set(&self, k: usize, res: &mut LookupTable<D, W>, f: &[i64]);
 

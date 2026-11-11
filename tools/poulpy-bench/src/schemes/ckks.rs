@@ -29,7 +29,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::{CnvPVecAlloc, ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, CyclotomicOrder, GaloisElement, Module, PrepareHint, ScratchOwned},
+    layouts::{Backend, CyclotomicOrder, GaloisElement, Module, PrepareHint, ScratchOwned, Standard},
     source::Source,
 };
 
@@ -154,8 +154,8 @@ where
 
     let mut atks = HashMap::new();
     let mut rotate_key = module.glwe_automorphism_key_prepared_alloc_from_infos(&atk_layout);
-    rotate_key.set_p(module.galois_element(ROTATION));
-    atks.insert(module.galois_element(ROTATION), rotate_key);
+    rotate_key.set_p(module.galois_element::<Standard>(ROTATION));
+    atks.insert(module.galois_element::<Standard>(ROTATION), rotate_key);
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ckks_rotate_tmp_bytes(&ct_a, &atk_layout));
 
@@ -211,8 +211,11 @@ where
     ct_a.set_meta_checked(meta).unwrap();
     ct_dst.set_meta_checked(meta).unwrap();
 
-    let mut pt =
-        module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots(), Base2K(cp.base2k as u32), TorusPrecision(cp.k as u32));
+    let mut pt = module.ckks_plaintext_alloc_from_slots(
+        module.ckks_max_slots::<Standard>(),
+        Base2K(cp.base2k as u32),
+        TorusPrecision(cp.k as u32),
+    );
     pt.set_meta(meta);
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ckks_add_pt_vec_tmp_bytes(ct_layout.size()));
@@ -297,8 +300,11 @@ where
     ct_a.set_meta_checked(meta).unwrap();
     ct_dst.set_meta_checked(meta).unwrap();
 
-    let mut pt =
-        module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots(), Base2K(cp.base2k as u32), TorusPrecision(cp.k as u32));
+    let mut pt = module.ckks_plaintext_alloc_from_slots(
+        module.ckks_max_slots::<Standard>(),
+        Base2K(cp.base2k as u32),
+        TorusPrecision(cp.k as u32),
+    );
     pt.set_meta(meta);
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ckks_sub_pt_vec_tmp_bytes(ct_layout.size()));
@@ -457,8 +463,11 @@ where
     ct_a.set_meta_checked(meta).unwrap();
     ct_dst.set_meta_checked(meta).unwrap();
 
-    let mut pt =
-        module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots(), Base2K(cp.base2k as u32), TorusPrecision(cp.k as u32));
+    let mut pt = module.ckks_plaintext_alloc_from_slots(
+        module.ckks_max_slots::<Standard>(),
+        Base2K(cp.base2k as u32),
+        TorusPrecision(cp.k as u32),
+    );
     pt.set_meta(meta);
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ckks_mul_pt_vec_tmp_bytes(&ct_dst, &ct_a, &pt));
@@ -488,8 +497,11 @@ pub fn runner_ckks_mul_pt_const_into<BE: Backend<ZnxWord = i64>, M: Measurement>
     ct_a.set_meta_checked(meta).unwrap();
     ct_dst.set_meta_checked(meta).unwrap();
 
-    let mut const_full =
-        module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots(), Base2K(cp.base2k as u32), TorusPrecision(cp.k as u32));
+    let mut const_full = module.ckks_plaintext_alloc_from_slots(
+        module.ckks_max_slots::<Standard>(),
+        Base2K(cp.base2k as u32),
+        TorusPrecision(cp.k as u32),
+    );
     const_full.set_meta(meta);
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ckks_mul_pt_const_tmp_bytes(&ct_dst, &ct_a, &const_full));
@@ -515,7 +527,7 @@ pub fn runner_ckks_encode_slots_into<BE: Backend<ZnxWord = i64>, M: Measurement>
 {
     let module = Module::<BE>::new(cp.n as u64);
 
-    let mut pt = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots(), cp.base2k.into(), cp.k.into());
+    let mut pt = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots::<Standard>(), cp.base2k.into(), cp.k.into());
     pt.set_meta(ckks_ct_meta(cp));
 
     let values = ckks_encoding_values(cp.n);
@@ -536,7 +548,7 @@ pub fn runner_ckks_decode_slots_into<BE: Backend<ZnxWord = i64>, M: Measurement>
 {
     let module = Module::<BE>::new(cp.n as u64);
 
-    let mut pt = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots(), cp.base2k.into(), 127usize.into()); // TODO: should this be a benchmark parameter?
+    let mut pt = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots::<Standard>(), cp.base2k.into(), 127usize.into()); // TODO: should this be a benchmark parameter?
     pt.set_meta(ckks_ct_meta(cp));
 
     let values = ckks_encoding_values(cp.n);
@@ -560,7 +572,7 @@ pub fn runner_ckks_encode_coeffs_into<BE: Backend<ZnxWord = i64>, M: Measurement
 {
     let module = Module::<BE>::new(cp.n as u64);
 
-    let mut pt = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots(), cp.base2k.into(), 127usize.into()); // TODO: should this be a benchmark parameter?
+    let mut pt = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots::<Standard>(), cp.base2k.into(), 127usize.into()); // TODO: should this be a benchmark parameter?
     pt.set_meta(ckks_ct_meta(cp));
 
     let values = ckks_encoding_values(cp.n);
@@ -581,7 +593,7 @@ pub fn runner_ckks_decode_coeffs_into<BE: Backend<ZnxWord = i64>, M: Measurement
 {
     let module = Module::<BE>::new(cp.n as u64);
 
-    let mut pt = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots(), cp.base2k.into(), 127usize.into()); // TODO: should this be a benchmark parameter?
+    let mut pt = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots::<Standard>(), cp.base2k.into(), 127usize.into()); // TODO: should this be a benchmark parameter?
     pt.set_meta(ckks_ct_meta(cp));
 
     let values = ckks_encoding_values(cp.n);
@@ -635,7 +647,7 @@ where
     let src = ciphertext(&mut source);
     let plan = LinearTransformationLayout {
         indexes: (0..CT_LT_DIAGONALS).collect(),
-        slots: module.ckks_max_slots(),
+        slots: module.ckks_max_slots::<Standard>(),
         strategy: LinearTransformationStrategy::Bsgs {
             giant_step: CT_LT_GIANT_STEP,
         },
@@ -667,7 +679,7 @@ where
             .max(module.glwe_tensor_key_prepare_tmp_bytes(&tsk_layout)),
     );
     let atks = plan
-        .galois_elements(module.cyclotomic_order())
+        .galois_elements(module.cyclotomic_order::<Standard>())
         .into_iter()
         .map(|p| {
             let mut key = module.glwe_automorphism_key_alloc_from_infos(&atk_layout);

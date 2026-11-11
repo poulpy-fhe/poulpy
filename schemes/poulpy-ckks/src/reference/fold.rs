@@ -29,7 +29,7 @@ use crate::{
     api::{CKKSAddOps, CKKSConjugateOps, CKKSImagOps, CKKSSubOps},
     invalid_operand,
     layouts::{
-        CKKSCiphertextAlloc, CKKSCiphertextOwned, CKKSFoldKeysLayout, CKKSRingCiphertext,
+        CKKSCiphertextAlloc, CKKSCiphertextOwned, CKKSFoldKeysLayout,
         validation::{validate_gadget_backend_view, validate_storage_capacity},
     },
     reference::ring_map::{ckks_ci_embed_keyless, ckks_ci_trace_keyless},
@@ -39,11 +39,11 @@ use crate::{
 pub(crate) type Unit = (usize, Option<usize>);
 
 /// Per-ring step of the fold around ring packing, for inputs of this ring
-/// refreshed on the standard backend `BE`.
+/// refreshed on the standard ring of `BE`.
 pub(crate) trait FoldRing<BE: Backend>: Ring {
     /// Groups `ins`, or outputs labeled like them, into units; a pair shares one
     /// packed ciphertext as `re + i·im`.
-    fn units(ins: &[CKKSRingCiphertext<BE, Self>]) -> Vec<Unit>;
+    fn units(ins: &[CKKSCiphertextOwned<BE, Self>]) -> Vec<Unit>;
 
     /// Whether real pairs split with the conjugation key of the input secret.
     const CONJUGATE_PAIRS: bool;
@@ -58,8 +58,8 @@ pub(crate) trait FoldRing<BE: Backend>: Ring {
     /// its width.
     fn to_standard(
         module: &Module<BE>,
-        dst: &mut CKKSCiphertextOwned<BE>,
-        src: &CKKSRingCiphertext<BE, Self>,
+        dst: &mut CKKSCiphertextOwned<BE, Standard>,
+        src: &CKKSCiphertextOwned<BE, Self>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>;
 
@@ -68,13 +68,13 @@ pub(crate) trait FoldRing<BE: Backend>: Ring {
     /// `part` is canonical at the output radix; required keys are prevalidated.
     fn from_standard<H>(
         module: &Module<BE>,
-        outs: &mut [CKKSRingCiphertext<BE, Self>],
-        part: &CKKSCiphertextOwned<BE>,
+        outs: &mut [CKKSCiphertextOwned<BE, Self>],
+        part: &CKKSCiphertextOwned<BE, Standard>,
         automorphisms: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        H: GetAutomorphismKey<BE>;
+        H: GetAutomorphismKey<BE, Standard>;
 }
 
 /// Standard inputs: complex ones alone, consecutive real ones in pairs, split back
@@ -82,7 +82,7 @@ pub(crate) trait FoldRing<BE: Backend>: Ring {
 /// `(z − conj(z))/i`. Halving drops one bit of the paired outputs.
 impl<BE> FoldRing<BE> for Standard
 where
-    BE: Backend<Ring = Standard>,
+    BE: Backend,
     Module<BE>: ModuleN
         + VecZnxSwitchRing<BE>
         + GLWENormalize<BE>
@@ -93,7 +93,7 @@ where
         + CKKSCiphertextAlloc<BE>,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
 {
-    fn units(ins: &[CKKSCiphertextOwned<BE>]) -> Vec<Unit> {
+    fn units(ins: &[CKKSCiphertextOwned<BE, Self>]) -> Vec<Unit> {
         let mut units = Vec::new();
         let mut i = 0;
         while i < ins.len() {
@@ -116,8 +116,8 @@ where
 
     fn to_standard(
         module: &Module<BE>,
-        dst: &mut CKKSCiphertextOwned<BE>,
-        src: &CKKSCiphertextOwned<BE>,
+        dst: &mut CKKSCiphertextOwned<BE, Standard>,
+        src: &CKKSCiphertextOwned<BE, Self>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()> {
         // Normalizing reads every limb of `src`, so non-canonical digits and limbs past
@@ -129,13 +129,13 @@ where
 
     fn from_standard<H>(
         module: &Module<BE>,
-        outs: &mut [CKKSCiphertextOwned<BE>],
-        part: &CKKSCiphertextOwned<BE>,
+        outs: &mut [CKKSCiphertextOwned<BE, Self>],
+        part: &CKKSCiphertextOwned<BE, Standard>,
         automorphisms: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        H: GetAutomorphismKey<BE>,
+        H: GetAutomorphismKey<BE, Standard>,
     {
         let meta = outs[0].meta();
         match outs {
@@ -170,21 +170,24 @@ where
 /// fill and split at degree `2n`, with automorphism keys of the embedded secret.
 impl<BE> FoldRing<BE> for ConjugateInvariant
 where
-    BE: Backend<Ring = Standard>,
+    BE: Backend,
     Module<BE>: ModuleN
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
         + VecZnxSwitchRing<BE>
         + GLWERotate<BE>
         + GLWENormalize<BE>
+        + GLWENormalize<BE, ConjugateInvariant>
         + GLWECIEmbed<BE>
         + GLWECITrace<BE>
         + CKKSCiphertextAlloc<BE>,
     GLWE<BE::OwnedBuf, BE::ZnxWord>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
+    GLWE<BE::OwnedBuf, BE::ZnxWord, ConjugateInvariant>:
+        GLWEToBackendMut<BE, ConjugateInvariant> + GLWEToBackendRef<BE, ConjugateInvariant>,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
 {
     const CONJUGATE_PAIRS: bool = false;
 
-    fn units(ins: &[CKKSRingCiphertext<BE, Self>]) -> Vec<Unit> {
+    fn units(ins: &[CKKSCiphertextOwned<BE, Self>]) -> Vec<Unit> {
         (0..ins.len())
             .step_by(2)
             .map(|i| (i, (i + 1 < ins.len()).then_some(i + 1)))
@@ -204,13 +207,13 @@ where
 
     fn to_standard(
         module: &Module<BE>,
-        dst: &mut CKKSCiphertextOwned<BE>,
-        src: &CKKSRingCiphertext<BE, Self>,
+        dst: &mut CKKSCiphertextOwned<BE, Standard>,
+        src: &CKKSCiphertextOwned<BE, Self>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()> {
         // Embedding copies the stored limbs as they are, so the input is normalized at
         // its degree first: non-canonical digits and limbs past its width carry in.
-        let mut canonical = CKKSRingCiphertext::<BE, Self>::from_inner(module.glwe_alloc_from_infos(src), src.meta());
+        let mut canonical = CKKSCiphertextOwned::<BE, Self>::from_inner(module.glwe_alloc_from_infos(src), src.meta());
         module.glwe_normalize(&mut canonical.inner, &src.inner, scratch);
         ckks_ci_embed_keyless("ckks_fold", module, dst, &canonical)?;
         dst.set_meta(<Self as FoldRing<BE>>::packed_meta(src.meta()));
@@ -219,13 +222,13 @@ where
 
     fn from_standard<H>(
         module: &Module<BE>,
-        outs: &mut [CKKSRingCiphertext<BE, Self>],
-        part: &CKKSCiphertextOwned<BE>,
+        outs: &mut [CKKSCiphertextOwned<BE, Self>],
+        part: &CKKSCiphertextOwned<BE, Standard>,
         _automorphisms: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        H: GetAutomorphismKey<BE>,
+        H: GetAutomorphismKey<BE, Standard>,
     {
         let log_delta = outs[0].log_delta();
         // The imaginary part is the real part of `−i·part`, `X^(−n)·part` at degree `2n`.
@@ -259,6 +262,7 @@ where
     BE: Backend,
     Module<BE>: GLWEKeyswitch<BE>
         + GLWENormalize<BE>
+        + GLWENormalize<BE, ConjugateInvariant>
         + GLWEAutomorphism<BE>
         + GLWEShift<BE>
         + GLWECITrace<BE>
@@ -312,7 +316,10 @@ where
             .max(self.ckks_add_tmp_bytes(size))
             .max(self.ckks_mul_i_tmp_bytes(size))
             .max(split)
-            .max(self.glwe_normalize_tmp_bytes())
+            .max(<Self as GLWENormalize<BE>>::glwe_normalize_tmp_bytes(self))
+            .max(<Self as GLWENormalize<BE, ConjugateInvariant>>::glwe_normalize_tmp_bytes(
+                self,
+            ))
             .max(self.ckks_add_tmp_bytes(part.size()))
             .max(self.ckks_sub_tmp_bytes(part.size()))
             .max(self.ckks_div_i_tmp_bytes(part.size()))
@@ -322,34 +329,34 @@ where
 
 /// Reference fold of inputs of ring `R`, [`CKKSFoldOps`](crate::api::CKKSFoldOps).
 pub trait CKKSFoldReference<BE: Backend, R: Ring> {
-    fn ckks_fold_count_reference(&self, degree: Degree, ins: &[CKKSRingCiphertext<BE, R>]) -> usize;
+    fn ckks_fold_count_reference(&self, degree: Degree, ins: &[CKKSCiphertextOwned<BE, R>]) -> usize;
 
     fn ckks_unfold_galois_elements_reference<C: CKKSCtBounds>(&self, ct_in: &C) -> Vec<i64>;
 
     fn ckks_fold_reference<S>(
         &self,
-        folded: &mut [CKKSCiphertextOwned<BE>],
-        ins: &[CKKSRingCiphertext<BE, R>],
+        folded: &mut [CKKSCiphertextOwned<BE, Standard>],
+        ins: &[CKKSCiphertextOwned<BE, R>],
         inbound: Option<&S>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        S: GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
+        S: GGLWEPreparedToBackendRef<BE, Standard> + GGLWEInfos;
 
     /// Unfolds `folded`, the ciphertexts of [`Self::ckks_fold_reference`] once
     /// bootstrapped, into `outs`, labeled like the inputs they were folded from;
     /// `folded` is switched back and normalized in place.
     fn ckks_unfold_reference<S, H>(
         &self,
-        outs: &mut [CKKSRingCiphertext<BE, R>],
-        folded: &mut [CKKSCiphertextOwned<BE>],
+        outs: &mut [CKKSCiphertextOwned<BE, R>],
+        folded: &mut [CKKSCiphertextOwned<BE, Standard>],
         automorphisms: Option<&H>,
         outbound: Option<&S>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        S: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-        H: GetAutomorphismKey<BE>;
+        S: GGLWEPreparedToBackendRef<BE, Standard> + GGLWEInfos,
+        H: GetAutomorphismKey<BE, Standard>;
 }
 
 impl<BE, R> CKKSFoldReference<BE, R> for Module<BE>
@@ -358,22 +365,23 @@ where
     R: FoldRing<BE>,
     Module<BE>: ModuleN
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
-        + VecZnxSwitchRing<BE>
+        + VecZnxSwitchRing<BE, Standard>
         + GLWERotate<BE>
-        + GLWEAdd<BE>
-        + GLWESub<BE>
-        + GLWEZero<BE>
-        + GLWEShift<BE>
-        + GLWENormalize<BE>
-        + GLWEAutomorphism<BE>
-        + GLWEKeyswitch<BE>
-        + CKKSAddOps<BE>
+        + GLWEAdd<BE, Standard>
+        + GLWESub<BE, Standard>
+        + GLWEZero<BE, Standard>
+        + GLWEShift<BE, Standard>
+        + GLWENormalize<BE, Standard>
+        + GLWEAutomorphism<BE, Standard>
+        + GLWEKeyswitch<BE, Standard>
+        + CKKSAddOps<BE, Standard>
         + CKKSImagOps<BE>
         + CKKSCiphertextAlloc<BE>,
-    GLWE<BE::OwnedBuf, BE::ZnxWord>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    GLWE<BE::OwnedBuf, BE::ZnxWord, Standard>: GLWEToBackendMut<BE, Standard> + GLWEToBackendRef<BE, Standard>,
+    CKKSCiphertextOwned<BE, Standard>:
+        GLWEToBackendMut<BE, Standard> + GLWEToBackendRef<BE, Standard> + CKKSCtBounds + SetCKKSInfos,
 {
-    fn ckks_fold_count_reference(&self, degree: Degree, ins: &[CKKSRingCiphertext<BE, R>]) -> usize {
+    fn ckks_fold_count_reference(&self, degree: Degree, ins: &[CKKSCiphertextOwned<BE, R>]) -> usize {
         let Some(input) = ins.first() else {
             return 0;
         };
@@ -395,13 +403,13 @@ where
 
     fn ckks_fold_reference<S>(
         &self,
-        folded: &mut [CKKSCiphertextOwned<BE>],
-        ins: &[CKKSRingCiphertext<BE, R>],
+        folded: &mut [CKKSCiphertextOwned<BE, Standard>],
+        ins: &[CKKSCiphertextOwned<BE, R>],
         inbound: Option<&S>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        S: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
+        S: GGLWEPreparedToBackendRef<BE, Standard> + GGLWEInfos,
     {
         for ct in ins {
             crate::layouts::validation::ensure_full_layout("ckks_fold", crate::GLWEPlaintextInfos::slot_layout(ct))?;
@@ -476,15 +484,15 @@ where
 
     fn ckks_unfold_reference<S, H>(
         &self,
-        outs: &mut [CKKSRingCiphertext<BE, R>],
-        folded: &mut [CKKSCiphertextOwned<BE>],
+        outs: &mut [CKKSCiphertextOwned<BE, R>],
+        folded: &mut [CKKSCiphertextOwned<BE, Standard>],
         automorphisms: Option<&H>,
         outbound: Option<&S>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        S: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-        H: GetAutomorphismKey<BE>,
+        S: GGLWEPreparedToBackendRef<BE, Standard> + GGLWEInfos,
+        H: GetAutomorphismKey<BE, Standard>,
     {
         for ct in folded.iter() {
             crate::layouts::validation::ensure_full_layout("ckks_unfold", crate::GLWEPlaintextInfos::slot_layout(ct))?;
@@ -687,7 +695,7 @@ where
 fn validate_fold<BE, R>(
     op: &'static str,
     module: &Module<BE>,
-    cts: &[CKKSRingCiphertext<BE, R>],
+    cts: &[CKKSCiphertextOwned<BE, R>],
     degree: usize,
     ring_switch: bool,
 ) -> Result<usize>

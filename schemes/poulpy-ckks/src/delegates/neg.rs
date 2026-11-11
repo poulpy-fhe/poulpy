@@ -1,27 +1,27 @@
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef};
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Module, Ring, ScratchArena};
 
 use crate::{CKKSCtBounds, SetCKKSInfos, oep::CKKSNegImpl};
 
 use crate::api::CKKSNegOps;
 
-impl<BE: Backend + CKKSNegImpl> CKKSNegOps<BE> for Module<BE> {
+impl<BE: Backend + CKKSNegImpl<Rg>, Rg: Ring> CKKSNegOps<BE, Rg> for Module<BE> {
     fn ckks_neg_tmp_bytes(&self, res_size: usize) -> usize {
         BE::ckks_neg_tmp_bytes(self, res_size)
     }
 
     fn ckks_neg_into<Dst, Src>(&self, dst: &mut Dst, src: &Src, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
+        Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
     {
         BE::ckks_neg_into(self, dst, src, scratch)
     }
 
     fn ckks_neg_assign<Dst>(&self, dst: &mut Dst) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
     {
         BE::ckks_neg_assign(self, dst)
     }

@@ -11,8 +11,8 @@ use poulpy_core::{
     },
 };
 use poulpy_hal::{
-    api::{CnvOps, VecZnxCopy},
-    layouts::{Backend, ScratchArena},
+    api::{CnvOps, ModuleN, VecZnxCopy},
+    layouts::{Backend, Ring, ScratchArena, Standard},
 };
 
 use crate::{CKKSCompositionError, SlotsKind};
@@ -23,7 +23,7 @@ use crate::{
 };
 use poulpy_core::{GLWEBytesOf, GLWETensorBytesOf};
 
-pub trait CKKSMulReference<BE: Backend> {
+pub trait CKKSMulReference<BE: Backend, Rg: Ring = Standard>: ModuleN {
     fn ckks_mul_tmp_bytes_reference<R, A, B, T>(&self, res: &R, a: &A, b: &B, tsk: &T) -> usize
     where
         Self: GLWEBytesOf<BE> + GLWETensorBytesOf<BE>,
@@ -31,7 +31,7 @@ pub trait CKKSMulReference<BE: Backend> {
         A: GLWEInfos,
         B: GLWEInfos,
         T: GGLWEInfos,
-        Self: GLWETensoring<BE>,
+        Self: GLWETensoring<BE, Rg>,
     {
         // The op carves its tensor intermediate at the operands' effective
         // width `max(a.k, b.k)` (`ckks_mul_into`) or `max(dst.k, a.k)`
@@ -68,14 +68,15 @@ pub trait CKKSMulReference<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: GLWETensoring<BE> + GLWECopy<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>,
-        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
-        A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
-        B: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
-        T: GetTensorKey<BE>,
+        Self: GLWETensoring<BE, Rg> + GLWECopy<BE, Rg> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>,
+        Dst: GLWEToBackendMut<BE, Rg> + CKKSInfos + SetCKKSInfos + GLWEInfos,
+        A: GLWEToBackendRef<BE, Rg> + CKKSInfos + GLWEInfos,
+        B: GLWEToBackendRef<BE, Rg> + CKKSInfos + GLWEInfos,
+        T: GetTensorKey<BE, Rg>,
     {
         crate::layouts::validation::ensure_full_layout("ckks_mul_into", crate::GLWEPlaintextInfos::slot_layout(a))?;
         crate::layouts::validation::ensure_full_layout("ckks_mul_into", crate::GLWEPlaintextInfos::slot_layout(b))?;
+        crate::ensure_operand_degrees("ckks_mul_into", self, [dst.n(), a.n(), b.n()])?;
         let k = a.k().max(b.k());
         tsk.get_tensor_key(k)
             .map_err(|source| CKKSCompositionError::MissingRelinearizationKey {
@@ -116,13 +117,14 @@ pub trait CKKSMulReference<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: GLWETensoring<BE> + GLWECopy<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
-        A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
-        T: GetTensorKey<BE>,
+        Self: GLWETensoring<BE, Rg> + GLWECopy<BE, Rg> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>,
+        Dst: GLWEToBackendMut<BE, Rg> + GLWEToBackendRef<BE, Rg> + CKKSInfos + SetCKKSInfos + GLWEInfos,
+        A: GLWEToBackendRef<BE, Rg> + CKKSInfos + GLWEInfos,
+        T: GetTensorKey<BE, Rg>,
     {
         crate::layouts::validation::ensure_full_layout("ckks_mul_assign", crate::GLWEPlaintextInfos::slot_layout(&*dst))?;
         crate::layouts::validation::ensure_full_layout("ckks_mul_assign", crate::GLWEPlaintextInfos::slot_layout(a))?;
+        crate::ensure_operand_degrees("ckks_mul_assign", self, [dst.n(), a.n()])?;
         let k = dst.k().max(a.k());
         tsk.get_tensor_key(k)
             .map_err(|source| CKKSCompositionError::MissingRelinearizationKey {
@@ -160,7 +162,7 @@ pub trait CKKSMulReference<BE: Backend> {
     /// What `glwe_left_operand_prepare` takes to prepare `a` on its own limbs.
     fn ckks_left_operand_prepare_tmp_bytes_reference<A>(&self, a: &A) -> usize
     where
-        Self: GLWEBytesOf<BE> + GLWENormalize<BE> + CnvOps<BE> + Sized,
+        Self: GLWEBytesOf<BE> + GLWENormalize<BE, Rg> + CnvOps<BE, Rg> + Sized,
         A: GLWEInfos,
     {
         glwe_left_operand_prepare_tmp_bytes(self, a.size(), a)
@@ -169,7 +171,7 @@ pub trait CKKSMulReference<BE: Backend> {
     /// What `glwe_right_operand_prepare` takes to prepare `a` on its own limbs.
     fn ckks_right_operand_prepare_tmp_bytes_reference<A>(&self, a: &A) -> usize
     where
-        Self: GLWEBytesOf<BE> + GLWENormalize<BE> + CnvOps<BE> + Sized,
+        Self: GLWEBytesOf<BE> + GLWENormalize<BE, Rg> + CnvOps<BE, Rg> + Sized,
         A: GLWEInfos,
     {
         glwe_right_operand_prepare_tmp_bytes(self, a.size(), a)
@@ -180,14 +182,15 @@ pub trait CKKSMulReference<BE: Backend> {
     /// before any write.
     fn ckks_left_operand_prepare_reference<A>(
         &self,
-        res: &mut CKKSLeftOperandPrepared<BE>,
+        res: &mut CKKSLeftOperandPrepared<BE, Rg>,
         a: &A,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: CnvOps<BE> + GLWENormalize<BE> + Sized,
-        A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
+        Self: CnvOps<BE, Rg> + GLWENormalize<BE, Rg> + Sized,
+        A: GLWEToBackendRef<BE, Rg> + CKKSInfos + GLWEInfos,
     {
+        crate::ensure_operand_degrees("ckks_left_operand_prepare", self, [res.n(), a.n()])?;
         check_source_layout("ckks_left_operand_prepare", res, a)?;
         glwe_left_operand_prepare(self, &mut res.prep, a, a.k().as_usize(), scratch);
         res.meta = a.plaintext_meta();
@@ -197,14 +200,15 @@ pub trait CKKSMulReference<BE: Backend> {
     /// As [`Self::ckks_left_operand_prepare_reference`], by `glwe_right_operand_prepare` into a right operand.
     fn ckks_right_operand_prepare_reference<A>(
         &self,
-        res: &mut CKKSRightOperandPrepared<BE>,
+        res: &mut CKKSRightOperandPrepared<BE, Rg>,
         a: &A,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: CnvOps<BE> + GLWENormalize<BE> + Sized,
-        A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
+        Self: CnvOps<BE, Rg> + GLWENormalize<BE, Rg> + Sized,
+        A: GLWEToBackendRef<BE, Rg> + CKKSInfos + GLWEInfos,
     {
+        crate::ensure_operand_degrees("ckks_right_operand_prepare", self, [res.n(), a.n()])?;
         check_source_layout("ckks_right_operand_prepare", res, a)?;
         glwe_right_operand_prepare(self, &mut res.prep, a, a.k().as_usize(), scratch);
         res.meta = a.plaintext_meta();
@@ -214,14 +218,14 @@ pub trait CKKSMulReference<BE: Backend> {
     fn ckks_mul_prepared_assign_reference<Dst, T>(
         &self,
         dst: &mut Dst,
-        prepared: &CKKSRightOperandPrepared<BE>,
+        prepared: &CKKSRightOperandPrepared<BE, Rg>,
         tsk: &T,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: GLWETensoring<BE>,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
-        T: GetTensorKey<BE>,
+        Self: GLWETensoring<BE, Rg>,
+        Dst: GLWEToBackendMut<BE, Rg> + GLWEToBackendRef<BE, Rg> + CKKSInfos + SetCKKSInfos + GLWEInfos,
+        T: GetTensorKey<BE, Rg>,
     {
         crate::layouts::validation::ensure_full_layout(
             "ckks_mul_prepared_assign",
@@ -231,6 +235,7 @@ pub trait CKKSMulReference<BE: Backend> {
             "ckks_mul_prepared_assign",
             crate::GLWEPlaintextInfos::slot_layout(prepared),
         )?;
+        crate::ensure_operand_degrees("ckks_mul_prepared_assign", self, [dst.n(), prepared.n()])?;
         let k = dst.k().max(prepared.k());
         tsk.get_tensor_key(k)
             .map_err(|source| CKKSCompositionError::MissingRelinearizationKey {
@@ -283,7 +288,7 @@ pub trait CKKSMulReference<BE: Backend> {
         R: GLWEInfos,
         A: GLWEInfos,
         T: GGLWEInfos,
-        Self: GLWETensoring<BE>,
+        Self: GLWETensoring<BE, Rg>,
     {
         // Mirror of `ckks_mul_tmp_bytes_reference`: the op's tensor intermediate is
         // carved at the operand's effective width, which may exceed the
@@ -317,12 +322,13 @@ pub trait CKKSMulReference<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: GLWETensoring<BE> + GLWECopy<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>,
-        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
-        A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
-        T: GetTensorKey<BE>,
+        Self: GLWETensoring<BE, Rg> + GLWECopy<BE, Rg> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>,
+        Dst: GLWEToBackendMut<BE, Rg> + CKKSInfos + SetCKKSInfos + GLWEInfos,
+        A: GLWEToBackendRef<BE, Rg> + CKKSInfos + GLWEInfos,
+        T: GetTensorKey<BE, Rg>,
     {
         crate::layouts::validation::ensure_full_layout("ckks_square_into", crate::GLWEPlaintextInfos::slot_layout(a))?;
+        crate::ensure_operand_degrees("ckks_square_into", self, [dst.n(), a.n()])?;
         let k = a.k();
         tsk.get_tensor_key(k)
             .map_err(|source| CKKSCompositionError::MissingRelinearizationKey {
@@ -356,11 +362,12 @@ pub trait CKKSMulReference<BE: Backend> {
 
     fn ckks_square_assign_reference<Dst, T>(&self, dst: &mut Dst, tsk: &T, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Self: GLWETensoring<BE> + GLWECopy<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
-        T: GetTensorKey<BE>,
+        Self: GLWETensoring<BE, Rg> + GLWECopy<BE, Rg> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>,
+        Dst: GLWEToBackendMut<BE, Rg> + GLWEToBackendRef<BE, Rg> + CKKSInfos + SetCKKSInfos + GLWEInfos,
+        T: GetTensorKey<BE, Rg>,
     {
         crate::layouts::validation::ensure_full_layout("ckks_square_assign", crate::GLWEPlaintextInfos::slot_layout(&*dst))?;
+        crate::ensure_operand_degrees("ckks_square_assign", self, [dst.n()])?;
         let k = dst.k();
         tsk.get_tensor_key(k)
             .map_err(|source| CKKSCompositionError::MissingRelinearizationKey {
@@ -401,7 +408,7 @@ pub trait CKKSMulReference<BE: Backend> {
         R: GLWEInfos,
         A: GLWEInfos,
         P: CKKSInfos,
-        Self: GLWEMulPlain<BE>,
+        Self: GLWEMulPlain<BE, Rg>,
     {
         let b_infos = GLWEPlaintextLayout {
             n: res.n(),
@@ -417,7 +424,7 @@ pub trait CKKSMulReference<BE: Backend> {
         R: GLWEInfos,
         A: GLWEInfos,
         P: CKKSInfos,
-        Self: GLWEMulConst<BE>,
+        Self: GLWEMulConst<BE, Rg>,
     {
         let b_infos = GLWEPlaintextLayout {
             n: res.n(),
@@ -435,13 +442,17 @@ pub trait CKKSMulReference<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: GLWEToBackendRef<BE> + LWEInfos + IntPolyInfos + GLWEInfos + CKKSInfos,
-        Self: GLWECopy<BE> + GLWEMulPlain<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord> + VecZnxCopy<BE>,
-        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
-        A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
+        P: GLWEToBackendRef<BE, Rg> + LWEInfos + IntPolyInfos + GLWEInfos + CKKSInfos,
+        Self: GLWECopy<BE, Rg>
+            + GLWEMulPlain<BE, Rg>
+            + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
+            + VecZnxCopy<BE, Rg>,
+        Dst: GLWEToBackendMut<BE, Rg> + CKKSInfos + SetCKKSInfos + GLWEInfos,
+        A: GLWEToBackendRef<BE, Rg> + CKKSInfos + GLWEInfos,
     {
         crate::layouts::validation::ensure_full_layout("ckks_mul_pt_vec_into", crate::GLWEPlaintextInfos::slot_layout(a))?;
         crate::layouts::validation::ensure_full_layout("ckks_mul_pt_vec_into", crate::GLWEPlaintextInfos::slot_layout(pt))?;
+        crate::ensure_operand_degrees("ckks_mul_pt_vec_into", self, [dst.n(), a.n()])?;
         let (res_log_budget, res_log_delta, cnv_offset) =
             ckks_mul_pt_vec_checks::<BE, _, _, _>("ckks_mul_pt_vec_into", dst, a, pt)?;
         // Set the result metadata first: `dst.size()` is meta-derived and a fresh
@@ -459,12 +470,16 @@ pub trait CKKSMulReference<BE: Backend> {
 
     fn ckks_mul_pt_vec_assign_reference<Dst, P>(&self, dst: &mut Dst, pt: &P, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        P: GLWEToBackendRef<BE> + LWEInfos + IntPolyInfos + GLWEInfos + CKKSInfos,
-        Self: GLWECopy<BE> + GLWEMulPlain<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord> + VecZnxCopy<BE>,
-        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
+        P: GLWEToBackendRef<BE, Rg> + LWEInfos + IntPolyInfos + GLWEInfos + CKKSInfos,
+        Self: GLWECopy<BE, Rg>
+            + GLWEMulPlain<BE, Rg>
+            + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
+            + VecZnxCopy<BE, Rg>,
+        Dst: GLWEToBackendMut<BE, Rg> + CKKSInfos + SetCKKSInfos + GLWEInfos,
     {
         crate::layouts::validation::ensure_full_layout("ckks_mul_pt_vec_assign", crate::GLWEPlaintextInfos::slot_layout(&*dst))?;
         crate::layouts::validation::ensure_full_layout("ckks_mul_pt_vec_assign", crate::GLWEPlaintextInfos::slot_layout(pt))?;
+        crate::ensure_operand_degrees("ckks_mul_pt_vec_assign", self, [dst.n()])?;
         let (res_log_budget, res_log_delta, cnv_offset) =
             ckks_mul_pt_vec_checks::<BE, _, _, _>("ckks_mul_pt_vec_assign", dst, dst, pt)?;
         let log_sparsity = dst.log_sparsity().min(dst.log_n() - pt.log_n());
@@ -490,12 +505,13 @@ pub trait CKKSMulReference<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: GLWEToBackendRef<BE> + LWEInfos + IntPolyInfos + GLWEInfos + CKKSInfos,
-        Self: GLWEMulConst<BE>,
-        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
-        A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
+        P: GLWEToBackendRef<BE, Rg> + LWEInfos + IntPolyInfos + GLWEInfos + CKKSInfos,
+        Self: GLWEMulConst<BE, Rg>,
+        Dst: GLWEToBackendMut<BE, Rg> + CKKSInfos + SetCKKSInfos + GLWEInfos,
+        A: GLWEToBackendRef<BE, Rg> + CKKSInfos + GLWEInfos,
     {
         crate::layouts::validation::ensure_full_layout("ckks_mul_pt_const_into", crate::GLWEPlaintextInfos::slot_layout(a))?;
+        crate::ensure_operand_degrees("ckks_mul_pt_const_into", self, [dst.n(), a.n()])?;
         let (res_log_budget, res_log_delta, cnv_offset) =
             ckks_mul_pt_const_checks("ckks_mul_pt_const_into", dst, a, pt, pt_coeff)?;
         // Set the result metadata first: `dst.size()` is meta-derived and a fresh
@@ -520,14 +536,18 @@ pub trait CKKSMulReference<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: GLWEToBackendRef<BE> + LWEInfos + IntPolyInfos + GLWEInfos + CKKSInfos,
-        Self: GLWECopy<BE> + GLWEMulConst<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord> + VecZnxCopy<BE>,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
+        P: GLWEToBackendRef<BE, Rg> + LWEInfos + IntPolyInfos + GLWEInfos + CKKSInfos,
+        Self: GLWECopy<BE, Rg>
+            + GLWEMulConst<BE, Rg>
+            + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
+            + VecZnxCopy<BE, Rg>,
+        Dst: GLWEToBackendMut<BE, Rg> + GLWEToBackendRef<BE, Rg> + CKKSInfos + SetCKKSInfos + GLWEInfos,
     {
         crate::layouts::validation::ensure_full_layout(
             "ckks_mul_pt_const_assign",
             crate::GLWEPlaintextInfos::slot_layout(&*dst),
         )?;
+        crate::ensure_operand_degrees("ckks_mul_pt_const_assign", self, [dst.n()])?;
         let (res_log_budget, res_log_delta, cnv_offset) =
             ckks_mul_pt_const_checks("ckks_mul_pt_const_assign", dst, dst, cnst, cnst_coeff)?;
         scratch.scope(|scratch_local| {
@@ -577,7 +597,7 @@ pub(crate) enum StampOrder {
 /// relinearized product into `dst` at the stamped width, reading `dst` first when
 /// `dst` is an operand, so `dst` is stamped after it whatever `order` says.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn tensor_mul_core<BE, M, Dst, T>(
+pub(crate) fn tensor_mul_core<BE, M, Dst, T, Rg: Ring>(
     module: &M,
     dst: &mut Dst,
     tsk: &T,
@@ -586,13 +606,13 @@ pub(crate) fn tensor_mul_core<BE, M, Dst, T>(
     order: StampOrder,
     scratch: &mut ScratchArena<'_, BE>,
     one_pass: Option<impl FnOnce(&mut Dst, TorusPrecision, &mut ScratchArena<'_, BE>)>,
-    apply: impl for<'t> FnOnce(&mut GLWETensorViewMut<'t, BE>, &Dst, &mut ScratchArena<'t, BE>),
+    apply: impl for<'t> FnOnce(&mut GLWETensorViewMut<'t, BE, Rg>, &Dst, &mut ScratchArena<'t, BE>),
 ) -> Result<()>
 where
     BE: Backend,
-    M: GLWETensoring<BE> + ?Sized,
-    Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
-    T: GetTensorKey<BE>,
+    M: GLWETensoring<BE, Rg> + ?Sized,
+    Dst: GLWEToBackendMut<BE, Rg> + CKKSInfos + SetCKKSInfos + GLWEInfos,
+    T: GetTensorKey<BE, Rg>,
 {
     let do_stamp = |dst: &mut Dst| {
         dst.set_log_budget(stamp.log_budget);
@@ -632,14 +652,14 @@ where
 }
 
 /// The tensor key of a product of width `k`, `MissingRelinearizationKey` for `op` where `tsk` holds none.
-pub(crate) fn tensor_key_at<'k, BE, T>(
+pub(crate) fn tensor_key_at<'k, BE, T, Rg: Ring>(
     op: &'static str,
     tsk: &'k T,
     k: TorusPrecision,
-) -> Result<GLWETensorKeyPreparedBackendRef<'k, BE>>
+) -> Result<GLWETensorKeyPreparedBackendRef<'k, BE, Rg>>
 where
     BE: Backend,
-    T: GetTensorKey<BE>,
+    T: GetTensorKey<BE, Rg>,
 {
     tsk.get_tensor_key(k)
         .map_err(|source| CKKSCompositionError::MissingRelinearizationKey { op, k: k.into(), source }.into())
@@ -649,7 +669,7 @@ where
 ///
 /// The one-pass path needs rank 1, one `base2k` across `dst`, the operands other than `dst` and the
 /// tensor key, and `cnv_offset >= base2k`. Other products go through the tensor intermediate.
-pub(crate) fn mul_one_pass<BE, Dst, T>(
+pub(crate) fn mul_one_pass<BE, Dst, T, Rg: Ring>(
     dst: &Dst,
     operands_base2k: &[poulpy_core::layouts::Base2K],
     tensor_k: TorusPrecision,
@@ -659,7 +679,7 @@ pub(crate) fn mul_one_pass<BE, Dst, T>(
 where
     BE: Backend,
     Dst: GLWEInfos,
-    T: GetTensorKey<BE>,
+    T: GetTensorKey<BE, Rg>,
 {
     dst.rank().as_usize() == 1
         && cnv_offset >= dst.base2k().as_usize()
@@ -702,9 +722,9 @@ fn check_source_layout(op: &'static str, res: &impl GLWEInfos, a: &impl GLWEInfo
 /// Batch delegates call this for every lane before resolving any bound or
 /// writing any destination, so a late insufficient-budget error cannot leave
 /// an earlier lane modified.
-pub(crate) fn get_mul_prepared_params<BE: Backend, D: GLWEInfos + CKKSInfos>(
+pub(crate) fn get_mul_prepared_params<BE: Backend, D: GLWEInfos + CKKSInfos, Rg: Ring>(
     dst: &D,
-    prepared: &CKKSRightOperandPrepared<BE>,
+    prepared: &CKKSRightOperandPrepared<BE, Rg>,
 ) -> Result<(usize, usize, usize, TorusPrecision)> {
     const OP: &str = "ckks_mul_prepared_assign";
     check_prepared_layout(OP, dst, prepared)?;
@@ -719,4 +739,4 @@ pub(crate) fn get_mul_prepared_params<BE: Backend, D: GLWEInfos + CKKSInfos>(
     )?;
     Ok((log_budget, log_delta, cnv_offset, tensor_k))
 }
-impl<BE: Backend> CKKSMulReference<BE> for poulpy_hal::layouts::Module<BE> {}
+impl<BE: Backend, Rg: Ring> CKKSMulReference<BE, Rg> for poulpy_hal::layouts::Module<BE> {}

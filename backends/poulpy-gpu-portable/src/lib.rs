@@ -70,12 +70,12 @@ pub(crate) use runtime::{launch_breakdown, launch_counters, reset_launch_counter
 
 /// NTT4x30 on CubeCL's CUDA runtime.
 #[cfg(feature = "enable-cuda")]
-pub type NTT4x30Cuda<R = poulpy_hal::layouts::Standard> = NTT4x30Gpu<runtime::Cuda, R>;
+pub type NTT4x30Cuda = NTT4x30Gpu<runtime::Cuda>;
 
 /// NTT4x30 on CubeCL's HIP runtime.
 #[cfg(feature = "enable-hip")]
-pub type NTT4x30Hip<R = poulpy_hal::layouts::Standard> = NTT4x30Gpu<runtime::Hip, R>;
+pub type NTT4x30Hip = NTT4x30Gpu<runtime::Hip>;
 
 /// NTT4x30 on CubeCL's wgpu runtime: Metal, Vulkan and the other wgpu targets.
 #[cfg(any(feature = "enable-metal", feature = "enable-vulkan", feature = "enable-wgpu"))]
-pub type NTT4x30Wgpu<R = poulpy_hal::layouts::Standard> = NTT4x30Gpu<runtime::Wgpu, R>;
+pub type NTT4x30Wgpu = NTT4x30Gpu<runtime::Wgpu>;

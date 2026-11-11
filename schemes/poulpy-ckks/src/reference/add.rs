@@ -5,7 +5,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::{VecZnxLshAdd, VecZnxLshTmpBytes, VecZnxRshAdd, VecZnxRshTmpBytes},
-    layouts::{Backend, ScratchArena},
+    layouts::{Backend, Ring, ScratchArena},
 };
 
 use crate::{
@@ -23,4 +23,4 @@ ckks_carry_verb_reference! {
     pt_vec_bounds: [VecZnxLshAdd, VecZnxRshAdd],
 }
 
-impl<BE: Backend> CKKSAddReference<BE> for poulpy_hal::layouts::Module<BE> {}
+impl<BE: Backend, Rg: Ring> CKKSAddReference<BE, Rg> for poulpy_hal::layouts::Module<BE> {}

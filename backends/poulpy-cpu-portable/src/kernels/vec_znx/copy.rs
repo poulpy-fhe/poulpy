@@ -1,12 +1,12 @@
 use crate::{
     kernels::znx::{ZnxCopy, ZnxZero},
-    layouts::{Backend, HostDataMut, HostDataRef, VecZnxBackendMut, VecZnxBackendRef, ZnxView, ZnxViewMut},
+    layouts::{Backend, HostDataMut, HostDataRef, Ring, VecZnxBackendMut, VecZnxBackendRef, ZnxView, ZnxViewMut},
 };
 
-pub fn vec_znx_copy_portable<'r, 'a, BE>(
-    res: &mut VecZnxBackendMut<'r, BE>,
+pub fn vec_znx_copy_portable<'r, 'a, BE, Rg: Ring>(
+    res: &mut VecZnxBackendMut<'r, BE, Rg>,
     res_col: usize,
-    a: &VecZnxBackendRef<'a, BE>,
+    a: &VecZnxBackendRef<'a, BE, Rg>,
     a_col: usize,
 ) where
     BE: Backend<ZnxWord = i64> + ZnxCopy + ZnxZero,

@@ -3,14 +3,12 @@
 //! This module defines:
 //!
 //! - [`NTT4x30PortableHandle`]: the opaque handle stored inside a `Module<NTT4x30Portable>`
-//!   (and, over the conjugate invariant ring, `Module<NTT4x30CIPortable>`),
-//!   holding the tables of the packed NTT.
+//!   holding the tables of the packed NTT of both rings, the conjugate-invariant ones built on first use.
 //! - The [`Backend`] trait implementation, which defines scalar types and the
 //!   handle destruction path.
 //! - The [`NttHandleFactory`] implementation, which builds the handle stored
 //!   inside the `Module`.
 
-use std::marker::PhantomData;
 use std::ptr::NonNull;
 
 use poulpy_hal::{
@@ -19,44 +17,60 @@ use poulpy_hal::{
 };
 
 use crate::kernels::ntt4x30::{primes::Primes30, vec_znx_dft::NttHandleFactory};
-use poulpy_hal::layouts::{CrtWord, Ring, Standard};
+use crate::kernels::{PerRing, RingFamily};
+use poulpy_hal::layouts::{ConjugateInvariant, CrtWord, Ring, Standard};
 
 use super::NTT4x30Portable;
 use super::ntt32::{MIN_N, Ntt32Table};
 
-/// Opaque handle for the NTT4x30 portable backends over ring `R`
-/// ([`NTT4x30Portable`](super::NTT4x30Portable) and [`NTT4x30CIPortable`](crate::NTT4x30CIPortable)).
+/// Opaque handle of [`NTT4x30Portable`](super::NTT4x30Portable), holding the tables of both rings.
 ///
 /// Holds the tables of the packed NTT of every degree the module serves.
 ///
 /// This struct is heap-allocated during module creation and freed when the
 /// `Module` is dropped (via [`Backend::destroy`]).
 #[repr(C)]
-pub struct NTT4x30PortableHandle<R: Ring = Standard> {
-    _ring: PhantomData<R>,
+pub struct NTT4x30PortableHandle {
     table_cache: crate::table_cache::ModuleTableCache,
-    /// Tables of the packed NTT, indexed by `log2(n)`.
-    packed: Vec<Option<Ntt32Table>>,
+    /// Tables of the packed NTT of each ring, indexed by `log2(n)`.
+    packed: PerRing<PackedTables>,
 }
 
-impl<R: Ring> NTT4x30PortableHandle<R> {
-    /// Tables of the packed NTT of degree `n`.
+/// The packed NTT tables of each ring, indexed by `log2(n)`.
+struct PackedTables;
+
+impl RingFamily for PackedTables {
+    type Of<R: Ring> = Vec<Option<Ntt32Table>>;
+}
+
+fn packed_tables<Rg: Ring>(n: usize) -> Vec<Option<Ntt32Table>> {
+    (0..=n.ilog2())
+        .map(|log_n| {
+            let n = 1usize << log_n;
+            (n >= MIN_N).then(|| Ntt32Table::new(n, Rg::CYCLOTOMIC_ORDER_FACTOR == 4))
+        })
+        .collect()
+}
+
+impl NTT4x30PortableHandle {
+    /// Tables of the packed NTT of degree `n` on ring `Rg`.
     ///
     /// Panics below the smallest degree the kernels accept, which is the smallest degree of the backend.
     #[inline]
-    pub(crate) fn packed_table(&self, n: usize) -> &Ntt32Table {
+    pub(crate) fn packed_table<Rg: Ring>(&self, n: usize) -> &Ntt32Table {
         self.packed
+            .on_ring::<Rg>()
             .get(n.trailing_zeros() as usize)
             .and_then(Option::as_ref)
             .expect("no packed NTT table for this degree")
     }
 }
 
-impl<R: Ring> poulpy_hal::execution::ScratchWorkers for NTT4x30Portable<R> {}
+impl poulpy_hal::execution::ScratchWorkers for NTT4x30Portable {}
 
-impl<R: Ring> poulpy_hal::layouts::MaxBase2k for NTT4x30Portable<R> {
-    fn max_base2k(n: usize, products: usize, failure_bits: usize, squaring: bool) -> usize {
-        poulpy_hal::layouts::max_base2k_ntt::<Self>(
+impl poulpy_hal::layouts::MaxBase2k for NTT4x30Portable {
+    fn max_base2k<Rg: Ring>(n: usize, products: usize, failure_bits: usize, squaring: bool) -> usize {
+        poulpy_hal::layouts::max_base2k_ntt::<Self, Rg>(
             <Primes30 as poulpy_hal::layouts::PrimeSet>::LOG_Q_PRODUCT,
             n,
             products,
@@ -65,8 +79,8 @@ impl<R: Ring> poulpy_hal::layouts::MaxBase2k for NTT4x30Portable<R> {
         )
     }
 
-    fn max_base2k_squares(n: usize, products: usize, squares: usize, failure_bits: usize) -> usize {
-        poulpy_hal::layouts::max_base2k_ntt_squares::<Self>(
+    fn max_base2k_squares<Rg: Ring>(n: usize, products: usize, squares: usize, failure_bits: usize) -> usize {
+        poulpy_hal::layouts::max_base2k_ntt_squares::<Self, Rg>(
             <Primes30 as poulpy_hal::layouts::PrimeSet>::LOG_Q_PRODUCT,
             n,
             products,
@@ -76,18 +90,17 @@ impl<R: Ring> poulpy_hal::layouts::MaxBase2k for NTT4x30Portable<R> {
     }
 }
 
-impl<R: Ring> Backend for NTT4x30Portable<R> {
+impl Backend for NTT4x30Portable {
     const DFT_LIMBS_CONTIGUOUS: bool = true;
 
     type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;
-    type Ring = R;
     type DftWord = CrtWord<Primes30, u32>;
     type ZnxWord = i64;
     type BigWord = i128;
     type OwnedBuf = AlignedBuf;
     type BufRef<'a> = &'a [u8];
     type BufMut<'a> = &'a mut [u8];
-    type Handle = NTT4x30PortableHandle<R>;
+    type Handle = NTT4x30PortableHandle;
     type Location = Host;
 
     fn alloc_bytes(len: usize) -> Self::OwnedBuf {
@@ -192,22 +205,16 @@ impl<R: Ring> Backend for NTT4x30Portable<R> {
 /// # Safety
 ///
 /// The returned handle must be fully initialized for `n`.
-unsafe impl<R: Ring> NttHandleFactory for NTT4x30PortableHandle<R> {
+unsafe impl NttHandleFactory for NTT4x30PortableHandle {
     fn create_ntt_handle(n: usize) -> Self {
         NTT4x30PortableHandle {
-            _ring: PhantomData,
             table_cache: Default::default(),
-            packed: (0..=n.ilog2())
-                .map(|log_n| {
-                    let n = 1usize << log_n;
-                    (n >= MIN_N).then(|| Ntt32Table::new(n, R::CYCLOTOMIC_ORDER_FACTOR == 4))
-                })
-                .collect(),
+            packed: PerRing::new(packed_tables::<Standard>(n), n, packed_tables::<ConjugateInvariant>),
         }
     }
 }
 
-unsafe impl<R: Ring> crate::table_cache::ModuleTableCacheProvider for NTT4x30PortableHandle<R> {
+unsafe impl crate::table_cache::ModuleTableCacheProvider for NTT4x30PortableHandle {
     fn module_plan_cache(&self) -> &crate::table_cache::ModuleTableCache {
         &self.table_cache
     }

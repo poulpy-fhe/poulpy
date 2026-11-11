@@ -12,7 +12,7 @@ use rand_distr::num_traits::Zero;
 /// [`VecZnxInfos`] and [`MatZnxInfos`] respectively, so a caller cannot ask a
 /// `VmpPMat` for "its" column count and silently get `cols_in`.
 pub trait ZnxInfos {
-    /// Returns the ring degree `N` of the polynomials in `Z[X]/(X^N + 1)`.
+    /// Returns the ring degree `N` of the polynomials, their coefficient count.
     fn n(&self) -> usize;
 
     /// Returns the base two logarithm of the ring dimension of the polynomials.

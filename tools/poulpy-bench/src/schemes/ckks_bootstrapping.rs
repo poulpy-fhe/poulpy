@@ -21,20 +21,20 @@ use poulpy_ckks::{
     presets::bootstrapping::{BootstrappingPreset, all},
     test_suite::{
         helpers::{PrecisionStats, TestContextBackend, TestContextModule, TestContextSharedModule},
-        presets::{BootstrappingPresetRun, CIBackend, PresetRunModule, preset_for_backend, preset_label},
+        presets::{BootstrappingPresetRun, PresetRunModule, preset_for_backend, preset_label},
     },
 };
 use poulpy_core::{
     GLWECIKeyEncryptSk,
     api::{GLWECIKeyPreparedFactory, GLWETensorKeyPreparedFactory},
     layouts::{
-        GGLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, ModuleCoreAlloc,
+        GGLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
         prepared::GLWETensorKeyPreparedToBackendRef,
     },
 };
 use poulpy_hal::{
-    api::{ModuleNew, ScratchOwnedAlloc},
-    layouts::{Backend, HostDataMut, HostDataRef, HostStaged, MaxBase2k, Module, ScratchOwned, Standard},
+    api::ScratchOwnedAlloc,
+    layouts::{Backend, ConjugateInvariant, HostDataMut, HostDataRef, HostStaged, MaxBase2k, Module, ScratchOwned},
 };
 
 /// Records the queued bootstrap it receives, for the benchmark named by the
@@ -47,8 +47,8 @@ fn runner_ckks_bootstrapping<BE, BC>(
     setup: impl Fn(BootstrappingPreset) -> BootstrappingPresetRun<BE, BC>,
     record: Option<Record<'_>>,
 ) where
-    BE: Backend<Ring = Standard, ZnxWord = i64> + HostStaged + 'static,
-    BC: TestContextBackend<Ring = Standard> + 'static,
+    BE: Backend<ZnxWord = i64> + HostStaged + 'static,
+    BC: TestContextBackend + 'static,
     Module<BE>: CKKSDFTMatrixPreparedFactory<BE> + PresetRunModule<BE>,
     Module<BC>: TestContextModule<BC> + CKKSEncodingOps<BC, f64>,
     for<'a> <BC as Backend>::BufRef<'a>: HostDataRef,
@@ -120,12 +120,11 @@ fn check_precision(backend: &str, id: &str, preset: &BootstrappingPreset, (re, i
 
 /// Exercises every preset at the radix
 /// [`preset_for_backend`](poulpy_ckks::test_suite::presets::preset_for_backend)
-/// selects for `BE`, the twin [`CIBackend`] running EvalMod for the presets that
-/// put it on the conjugate-invariant ring.
+/// selects for `BE`, EvalMod running on the conjugate-invariant ring for the presets
+/// that put it there.
 pub fn bench_ckks_bootstrapping<BE>(c: &mut Criterion<WallTime>)
 where
-    BE: TestContextBackend<Ring = Standard> + HostStaged + MaxBase2k,
-    CIBackend<BE>: TestContextBackend + MaxBase2k,
+    BE: TestContextBackend + HostStaged + MaxBase2k,
     Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
         + TestContextModule<BE>
         + PresetRunModule<BE>
@@ -133,9 +132,9 @@ where
         + CKKSBootstrappingCIOps<BE>
         + GLWECIKeyEncryptSk<BE>
         + GLWECIKeyPreparedFactory<BE>,
-    Module<CIBackend<BE>>: TestContextSharedModule<CIBackend<BE>>
-        + CKKSEncodingOps<CIBackend<BE>, f64>
-        + GLWETensorKeyPreparedFactory<CIBackend<BE>>,
+    Module<BE>: TestContextSharedModule<BE, ConjugateInvariant>
+        + CKKSEncodingOps<BE, f64, ConjugateInvariant>
+        + GLWETensorKeyPreparedFactory<BE, ConjugateInvariant>,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
@@ -146,29 +145,25 @@ where
 }
 
 /// [`bench_ckks_bootstrapping`] for an evaluated backend `BE` whose keys and
-/// ciphertexts come from the client backend `BC`, each with its conjugate-invariant
-/// twin [`CIBackend`]. The timed region is the bootstrap on `BE`, synchronized.
+/// ciphertexts come from the client backend `BC`. The timed region is the bootstrap on `BE`, synchronized.
 pub fn bench_ckks_bootstrapping_with_client<BE, BC>(c: &mut Criterion<WallTime>)
 where
-    BE: Backend<Ring = Standard, ZnxWord = i64> + HostStaged + MaxBase2k + 'static,
-    CIBackend<BE>: MaxBase2k,
-    BC: TestContextBackend<Ring = Standard> + 'static,
-    CIBackend<BC>: TestContextBackend,
+    BE: Backend<ZnxWord = i64> + HostStaged + MaxBase2k + 'static,
+    BC: TestContextBackend + 'static,
     Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
         + PresetRunModule<BE>
         + CKKSDFTOps<BE>
         + CKKSBootstrappingCIOps<BE>
-        + GLWECIKeyPreparedFactory<BE>,
-    Module<CIBackend<BE>>: ModuleNew<CIBackend<BE>>
-        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
-        + CKKSEncodingOps<CIBackend<BE>, f64>
-        + GLWETensorKeyPreparedFactory<CIBackend<BE>>,
-    Module<BC>: TestContextModule<BC> + CKKSEncodingOps<BC, f64> + CKKSBootstrappingCIOps<BC> + GLWECIKeyEncryptSk<BC>,
-    Module<CIBackend<BC>>: TestContextSharedModule<CIBackend<BC>>,
+        + GLWECIKeyPreparedFactory<BE>
+        + CKKSEncodingOps<BE, f64, ConjugateInvariant>
+        + GLWETensorKeyPreparedFactory<BE, ConjugateInvariant>,
+    Module<BC>: TestContextModule<BC>
+        + CKKSEncodingOps<BC, f64>
+        + GLWECIKeyEncryptSk<BC>
+        + TestContextSharedModule<BC, ConjugateInvariant>,
     for<'a> <BC as Backend>::BufRef<'a>: HostDataRef,
     for<'a> <BC as Backend>::BufMut<'a>: HostDataMut,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
-    ScratchOwned<CIBackend<BE>>: ScratchOwnedAlloc<CIBackend<BE>>,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos + CKKSCtBounds + poulpy_core::layouts::GLWEDiagonalProd<BE>,
     CKKSCiphertextOwned<BC>: GLWEToBackendMut<BC> + GLWEToBackendRef<BC> + CKKSCtBounds + SetCKKSInfos,
@@ -188,25 +183,22 @@ pub fn bench_ckks_bootstrapping_replayed_with_client<BE, BC>(
     c: &mut Criterion<WallTime>,
     record: impl Fn(&str, &str, Box<dyn FnMut()>) -> Box<dyn FnMut()>,
 ) where
-    BE: Backend<Ring = Standard, ZnxWord = i64> + HostStaged + MaxBase2k + 'static,
-    CIBackend<BE>: MaxBase2k,
-    BC: TestContextBackend<Ring = Standard> + 'static,
-    CIBackend<BC>: TestContextBackend,
+    BE: Backend<ZnxWord = i64> + HostStaged + MaxBase2k + 'static,
+    BC: TestContextBackend + 'static,
     Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
         + PresetRunModule<BE>
         + CKKSDFTOps<BE>
         + CKKSBootstrappingCIOps<BE>
-        + GLWECIKeyPreparedFactory<BE>,
-    Module<CIBackend<BE>>: ModuleNew<CIBackend<BE>>
-        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
-        + CKKSEncodingOps<CIBackend<BE>, f64>
-        + GLWETensorKeyPreparedFactory<CIBackend<BE>>,
-    Module<BC>: TestContextModule<BC> + CKKSEncodingOps<BC, f64> + CKKSBootstrappingCIOps<BC> + GLWECIKeyEncryptSk<BC>,
-    Module<CIBackend<BC>>: TestContextSharedModule<CIBackend<BC>>,
+        + GLWECIKeyPreparedFactory<BE>
+        + CKKSEncodingOps<BE, f64, ConjugateInvariant>
+        + GLWETensorKeyPreparedFactory<BE, ConjugateInvariant>,
+    Module<BC>: TestContextModule<BC>
+        + CKKSEncodingOps<BC, f64>
+        + GLWECIKeyEncryptSk<BC>
+        + TestContextSharedModule<BC, ConjugateInvariant>,
     for<'a> <BC as Backend>::BufRef<'a>: HostDataRef,
     for<'a> <BC as Backend>::BufMut<'a>: HostDataMut,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
-    ScratchOwned<CIBackend<BE>>: ScratchOwnedAlloc<CIBackend<BE>>,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos + CKKSCtBounds + poulpy_core::layouts::GLWEDiagonalProd<BE>,
     CKKSCiphertextOwned<BC>: GLWEToBackendMut<BC> + GLWEToBackendRef<BC> + CKKSCtBounds + SetCKKSInfos,
@@ -218,25 +210,22 @@ pub fn bench_ckks_bootstrapping_replayed_with_client<BE, BC>(
 
 fn bootstrapping_group<BE, BC>(c: &mut Criterion<WallTime>, name: &str, record: Option<Record<'_>>)
 where
-    BE: Backend<Ring = Standard, ZnxWord = i64> + HostStaged + MaxBase2k + 'static,
-    CIBackend<BE>: MaxBase2k,
-    BC: TestContextBackend<Ring = Standard> + 'static,
-    CIBackend<BC>: TestContextBackend,
+    BE: Backend<ZnxWord = i64> + HostStaged + MaxBase2k + 'static,
+    BC: TestContextBackend + 'static,
     Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
         + PresetRunModule<BE>
         + CKKSDFTOps<BE>
         + CKKSBootstrappingCIOps<BE>
-        + GLWECIKeyPreparedFactory<BE>,
-    Module<CIBackend<BE>>: ModuleNew<CIBackend<BE>>
-        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
-        + CKKSEncodingOps<CIBackend<BE>, f64>
-        + GLWETensorKeyPreparedFactory<CIBackend<BE>>,
-    Module<BC>: TestContextModule<BC> + CKKSEncodingOps<BC, f64> + CKKSBootstrappingCIOps<BC> + GLWECIKeyEncryptSk<BC>,
-    Module<CIBackend<BC>>: TestContextSharedModule<CIBackend<BC>>,
+        + GLWECIKeyPreparedFactory<BE>
+        + CKKSEncodingOps<BE, f64, ConjugateInvariant>
+        + GLWETensorKeyPreparedFactory<BE, ConjugateInvariant>,
+    Module<BC>: TestContextModule<BC>
+        + CKKSEncodingOps<BC, f64>
+        + GLWECIKeyEncryptSk<BC>
+        + TestContextSharedModule<BC, ConjugateInvariant>,
     for<'a> <BC as Backend>::BufRef<'a>: HostDataRef,
     for<'a> <BC as Backend>::BufMut<'a>: HostDataMut,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
-    ScratchOwned<CIBackend<BE>>: ScratchOwnedAlloc<CIBackend<BE>>,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos + CKKSCtBounds + poulpy_core::layouts::GLWEDiagonalProd<BE>,
     CKKSCiphertextOwned<BC>: GLWEToBackendMut<BC> + GLWEToBackendRef<BC> + CKKSCtBounds + SetCKKSInfos,
@@ -250,7 +239,7 @@ where
         let ring = nominal.plan().eval_mod_ring();
         // Each preset, then its variant with the keys of power-of-two rotations only.
         for preset in [nominal.clone(), nominal.with_power_of_two_keys().unwrap()] {
-            let preset = preset_for_backend::<BE, CIBackend<BE>>(&preset).unwrap();
+            let preset = preset_for_backend::<BE>(&preset).unwrap();
             match ring {
                 EvalModRing::Standard => {
                     runner_ckks_bootstrapping(&mut group, preset, BootstrappingPresetRun::<BE, BC>::setup, record)

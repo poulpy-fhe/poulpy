@@ -44,11 +44,11 @@ pub fn test_blas_transpose<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
     log_d: usize,
 ) where
-    BE: TestContextBackend<Ring = Standard> + BlasMatIntraImpl + BlasEncodingImpl,
+    BE: TestContextBackend + BlasMatIntraImpl<Standard> + BlasEncodingImpl<Standard>,
     Module<BE>: TestContextModule<BE>
-        + CKKSEncodingOps<BE, F>
-        + BlasEncodingOps<BE, F>
-        + CKKSLinearTransformationOps<BE>
+        + CKKSEncodingOps<BE, F, Standard>
+        + BlasEncodingOps<BE, F, Standard>
+        + CKKSLinearTransformationOps<BE, Standard>
         + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
     E: ReimNew<F>,
@@ -60,8 +60,8 @@ pub fn test_blas_transpose<BE, F, E>(
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
     // The keys of the transpose's set alone, whatever the maps' scale.
-    let elements = BlasPlan::new(log_d).transpose_galois_elements(module.cyclotomic_order());
-    let keys = TestKeys::<BE> {
+    let elements = BlasPlan::new(log_d).transpose_galois_elements(module.cyclotomic_order::<Standard>());
+    let keys = TestKeys::<BE, Standard> {
         atks: rotation_keys(&params, module, &sk_raw, elements, &mut scratch.borrow()),
         tsk: None,
     };
@@ -81,7 +81,7 @@ pub fn test_blas_transpose<BE, F, E>(
     // Maps at `a`'s scale, then at scales below and above it, each into `res` as wide as `a` and one limb wider.
     for p in [params.prec().log_delta()].into_iter().chain(other_scales(&params)) {
         let maps = at_scale(&params, p);
-        let ctx = blas_context::<BE, F>(&maps, module, log_d);
+        let ctx = blas_context::<BE, F, Standard>(&maps, module, log_d);
         for res_k in [params.k, params.k + params.base2k] {
             let mut res = alloc_grid(&params, module, log_d, cols, rows, res_k);
             let bytes = module.blas_transpose_tmp_bytes(&res, &ct, &ctx, &params.atk_layout());
@@ -115,11 +115,11 @@ pub fn test_blas_rotate_rows_cols<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
     log_d: usize,
 ) where
-    BE: TestContextBackend<Ring = Standard> + BlasMatIntraImpl + BlasEncodingImpl,
+    BE: TestContextBackend + BlasMatIntraImpl<Standard> + BlasEncodingImpl<Standard>,
     Module<BE>: TestContextModule<BE>
-        + CKKSEncodingOps<BE, F>
-        + BlasEncodingOps<BE, F>
-        + CKKSLinearTransformationOps<BE>
+        + CKKSEncodingOps<BE, F, Standard>
+        + BlasEncodingOps<BE, F, Standard>
+        + CKKSLinearTransformationOps<BE, Standard>
         + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
     E: ReimNew<F>,
@@ -130,12 +130,12 @@ pub fn test_blas_rotate_rows_cols<BE, F, E>(
     let encoder = ReferenceEncoder::<E>::new(slots).unwrap();
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
-    let ctx = blas_context::<BE, F>(&params, module, log_d);
+    let ctx = blas_context::<BE, F, Standard>(&params, module, log_d);
     // Each shift runs on the keys of its own set alone: one store per row and per column shift below `d`.
-    let (d, order) = (1 << log_d, module.cyclotomic_order());
-    let mut stores = |elements: fn(&BlasPlan, i64, usize) -> Vec<i64>| -> Vec<TestKeys<BE>> {
+    let (d, order) = (1 << log_d, module.cyclotomic_order::<Standard>());
+    let mut stores = |elements: fn(&BlasPlan, i64, usize) -> Vec<i64>| -> Vec<TestKeys<BE, Standard>> {
         (0..d)
-            .map(|k| TestKeys::<BE> {
+            .map(|k| TestKeys::<BE, Standard> {
                 atks: rotation_keys(
                     &params,
                     module,
@@ -191,7 +191,7 @@ pub fn test_blas_rotate_rows_cols<BE, F, E>(
         // A shift by whole blocks copies them, a row shift of a replicated grid one block high rotates them, any other
         // one maps every block; all narrow to the width `res` has when the shift writes it.
         let rotates = rows == 1 && replicated::<Standard>(&ct);
-        let want_layout = |k: usize, res: &BlasCiphertextOwned<BE>, unmapped: bool| {
+        let want_layout = |k: usize, res: &BlasCiphertextOwned<BE, Standard>, unmapped: bool| {
             let res_k = res.block_layout().k().as_usize();
             if k.is_multiple_of(d) || unmapped {
                 copied_layout(&ct, rows, cols, res_k)
@@ -247,7 +247,7 @@ pub fn test_blas_rotate_rows_cols<BE, F, E>(
         // consumes in place of `a`'s.
         for p in other_scales(&params) {
             let maps = at_scale(&params, p);
-            let ctx = blas_context::<BE, F>(&maps, module, log_d);
+            let ctx = blas_context::<BE, F, Standard>(&maps, module, log_d);
             let mut res = alloc_grid(&params, module, log_d, rows, cols, params.k);
             let bytes = module
                 .blas_rotate_rows_tmp_bytes(&res, &ct, &ctx, &params.atk_layout())
@@ -300,11 +300,11 @@ pub fn test_blas_sum_rows_cols<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
     log_d: usize,
 ) where
-    BE: TestContextBackend<Ring = Standard> + BlasMatIntraImpl + BlasEncodingImpl,
+    BE: TestContextBackend + BlasMatIntraImpl<Standard> + BlasEncodingImpl<Standard>,
     Module<BE>: TestContextModule<BE>
-        + CKKSEncodingOps<BE, F>
-        + BlasEncodingOps<BE, F>
-        + CKKSLinearTransformationOps<BE>
+        + CKKSEncodingOps<BE, F, Standard>
+        + BlasEncodingOps<BE, F, Standard>
+        + CKKSLinearTransformationOps<BE, Standard>
         + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
     E: ReimNew<F>,
@@ -316,9 +316,9 @@ pub fn test_blas_sum_rows_cols<BE, F, E>(
     let encoder = ReferenceEncoder::<E>::new(slots).unwrap();
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
-    let ctx = blas_context::<BE, F>(&params, module, log_d);
-    let (plan, order) = (ctx.plan(), module.cyclotomic_order());
-    let mut store = |elements: Vec<i64>| TestKeys::<BE> {
+    let ctx = blas_context::<BE, F, Standard>(&params, module, log_d);
+    let (plan, order) = (ctx.plan(), module.cyclotomic_order::<Standard>());
+    let mut store = |elements: Vec<i64>| TestKeys::<BE, Standard> {
         atks: rotation_keys(&params, module, &sk_raw, elements, &mut scratch.borrow()),
         tsk: None,
     };
@@ -394,7 +394,7 @@ pub fn test_blas_sum_rows_cols<BE, F, E>(
             // Projections at scales below and above `a`'s, whose scale the reductions consume in place of `a`'s.
             for p in other_scales(&params) {
                 let maps = at_scale(&params, p);
-                let ctx = blas_context::<BE, F>(&maps, module, log_d);
+                let ctx = blas_context::<BE, F, Standard>(&maps, module, log_d);
                 let mut res = alloc_grid(&params, module, log_d, rows, cols, params.k);
                 let layout = mapped_layout(&ct, rows, cols, params.k, p);
                 let rows_layout = if rep {
@@ -451,11 +451,11 @@ pub fn test_blas_sum_rows_cols_lazy<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
     log_d: usize,
 ) where
-    BE: TestContextBackend<Ring = Standard> + BlasMatIntraImpl + BlasEncodingImpl,
+    BE: TestContextBackend + BlasMatIntraImpl<Standard> + BlasEncodingImpl<Standard>,
     Module<BE>: TestContextModule<BE>
-        + CKKSEncodingOps<BE, F>
-        + BlasEncodingOps<BE, F>
-        + CKKSLinearTransformationOps<BE>
+        + CKKSEncodingOps<BE, F, Standard>
+        + BlasEncodingOps<BE, F, Standard>
+        + CKKSLinearTransformationOps<BE, Standard>
         + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
     E: ReimNew<F>,
@@ -485,7 +485,7 @@ pub fn test_blas_sum_rows_cols_lazy<BE, F, E>(
             .ckks_add_into(pair, &ct.blocks()[3 * i + 1], &ct.blocks()[3 * i + 2], &mut scratch.borrow())
             .unwrap();
         assert!(
-            !GLWEToBackendRef::<BE>::is_canonical(pair),
+            !GLWEToBackendRef::<BE, Standard>::is_canonical(pair),
             "a sum of two blocks is flag-clear"
         );
     }
@@ -498,9 +498,9 @@ pub fn test_blas_sum_rows_cols_lazy<BE, F, E>(
             sum_line(module, &mut out.blocks_mut()[0], line, terms, s)
         })
         .unwrap();
-        let lazy = grid_snapshot::<BE, _>(&out).remove(0).digits;
+        let lazy = grid_snapshot::<BE, _, Standard>(&out).remove(0).digits;
         module.glwe_normalize_assign(&mut out.blocks_mut()[0], &mut scratch.borrow());
-        (lazy, grid_snapshot::<BE, _>(&out).remove(0).digits)
+        (lazy, grid_snapshot::<BE, _, Standard>(&out).remove(0).digits)
     };
     for (label, line, bounds) in [("mixed", &mixed, &[4, 3, 2][..]), ("canonical", &canonical, &[2][..])] {
         let (never, normalized) = sum(line, usize::MAX);
@@ -533,11 +533,11 @@ pub fn test_blas_intra_guards<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
     log_d: usize,
 ) where
-    BE: TestContextBackend<Ring = Standard> + BlasMatIntraImpl + BlasEncodingImpl,
+    BE: TestContextBackend + BlasMatIntraImpl<Standard> + BlasEncodingImpl<Standard>,
     Module<BE>: TestContextModule<BE>
-        + CKKSEncodingOps<BE, F>
-        + BlasEncodingOps<BE, F>
-        + CKKSLinearTransformationOps<BE>
+        + CKKSEncodingOps<BE, F, Standard>
+        + BlasEncodingOps<BE, F, Standard>
+        + CKKSLinearTransformationOps<BE, Standard>
         + CnvPVecAlloc<BE>,
     F: TestScalar + DiagonalArithmetic,
     E: ReimNew<F>,
@@ -548,8 +548,8 @@ pub fn test_blas_intra_guards<BE, F, E>(
     let encoder = ReferenceEncoder::<E>::new(slots).unwrap();
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
-    let (ctx, mut atks) = context_and_keys::<BE, F>(&params, module, log_d, &sk_raw, &mut scratch.borrow());
-    let foreign = foreign_contexts::<BE, F>(
+    let (ctx, mut atks) = context_and_keys::<BE, F, Standard>(&params, module, log_d, &sk_raw, &mut scratch.borrow());
+    let foreign = foreign_contexts::<BE, F, Standard>(
         &params,
         module,
         BlasPlan::new(log_d),
@@ -557,7 +557,7 @@ pub fn test_blas_intra_guards<BE, F, E>(
         &mut atks,
         &mut scratch.borrow(),
     );
-    let keys = TestKeys::<BE> { atks, tsk: None };
+    let keys = TestKeys::<BE, Standard> { atks, tsk: None };
     let (rows, cols) = (2, 3);
     let a = Grid::model(log_d, rows, cols, slots >> (2 * log_d), 6);
     let ct = encrypt_grid::<BE, F, E>(
@@ -584,19 +584,19 @@ pub fn test_blas_intra_guards<BE, F, E>(
 
     // `res` shaped like `a` for the transpose, like its transpose for the rotations and the reductions.
     let (mut wrong, mut wrong_t) = (alloc(cols, rows), alloc(rows, cols));
-    assert_guard::<BE, _>("shape", "blas_transpose", InvalidOperand, &mut wrong_t, |res| {
+    assert_guard::<BE, _, Standard>("shape", "blas_transpose", InvalidOperand, &mut wrong_t, |res| {
         module.blas_transpose(res, &ct, &ctx, &keys, &mut op_scratch.borrow())
     });
-    assert_guard::<BE, _>("shape", "blas_rotate_rows", InvalidOperand, &mut wrong, |res| {
+    assert_guard::<BE, _, Standard>("shape", "blas_rotate_rows", InvalidOperand, &mut wrong, |res| {
         module.blas_rotate_rows(1, res, &ct, &ctx, &keys, &mut op_scratch.borrow())
     });
-    assert_guard::<BE, _>("shape", "blas_rotate_cols", InvalidOperand, &mut wrong, |res| {
+    assert_guard::<BE, _, Standard>("shape", "blas_rotate_cols", InvalidOperand, &mut wrong, |res| {
         module.blas_rotate_cols(1, res, &ct, &ctx, &keys, &mut op_scratch.borrow())
     });
-    assert_guard::<BE, _>("shape", "blas_sum_rows", InvalidOperand, &mut wrong, |res| {
+    assert_guard::<BE, _, Standard>("shape", "blas_sum_rows", InvalidOperand, &mut wrong, |res| {
         module.blas_sum_rows(res, &ct, &ctx, &keys, &mut op_scratch.borrow())
     });
-    assert_guard::<BE, _>("shape", "blas_sum_cols", InvalidOperand, &mut wrong, |res| {
+    assert_guard::<BE, _, Standard>("shape", "blas_sum_cols", InvalidOperand, &mut wrong, |res| {
         module.blas_sum_cols(res, &ct, &ctx, &keys, &mut op_scratch.borrow())
     });
 
@@ -611,19 +611,19 @@ pub fn test_blas_intra_guards<BE, F, E>(
         .chain(foreign_layouts(module, &ct))
         .map(|(label, a)| (format!("{label} a"), a));
     for (label, a) in rejected.chain(sparse) {
-        assert_guard::<BE, _>(&label, "blas_transpose", InvalidOperand, &mut res_t, |res| {
+        assert_guard::<BE, _, Standard>(&label, "blas_transpose", InvalidOperand, &mut res_t, |res| {
             module.blas_transpose(res, &a, &ctx, &keys, &mut op_scratch.borrow())
         });
-        assert_guard::<BE, _>(&label, "blas_rotate_rows", InvalidOperand, &mut res, |res| {
+        assert_guard::<BE, _, Standard>(&label, "blas_rotate_rows", InvalidOperand, &mut res, |res| {
             module.blas_rotate_rows(1, res, &a, &ctx, &keys, &mut op_scratch.borrow())
         });
-        assert_guard::<BE, _>(&label, "blas_rotate_cols", InvalidOperand, &mut res, |res| {
+        assert_guard::<BE, _, Standard>(&label, "blas_rotate_cols", InvalidOperand, &mut res, |res| {
             module.blas_rotate_cols(1, res, &a, &ctx, &keys, &mut op_scratch.borrow())
         });
-        assert_guard::<BE, _>(&label, "blas_sum_rows", InvalidOperand, &mut res, |res| {
+        assert_guard::<BE, _, Standard>(&label, "blas_sum_rows", InvalidOperand, &mut res, |res| {
             module.blas_sum_rows(res, &a, &ctx, &keys, &mut op_scratch.borrow())
         });
-        assert_guard::<BE, _>(&label, "blas_sum_cols", InvalidOperand, &mut res, |res| {
+        assert_guard::<BE, _, Standard>(&label, "blas_sum_cols", InvalidOperand, &mut res, |res| {
             module.blas_sum_cols(res, &a, &ctx, &keys, &mut op_scratch.borrow())
         });
     }
@@ -633,60 +633,60 @@ pub fn test_blas_intra_guards<BE, F, E>(
         .chain(foreign_layouts(module, &res_t));
     for ((label, mut bad), (_, mut bad_t)) in bad_res.zip(bad_res_t) {
         let label = &format!("{label} res");
-        assert_guard::<BE, _>(label, "blas_transpose", InvalidOperand, &mut bad_t, |res| {
+        assert_guard::<BE, _, Standard>(label, "blas_transpose", InvalidOperand, &mut bad_t, |res| {
             module.blas_transpose(res, &ct, &ctx, &keys, &mut op_scratch.borrow())
         });
-        assert_guard::<BE, _>(label, "blas_rotate_rows", InvalidOperand, &mut bad, |res| {
+        assert_guard::<BE, _, Standard>(label, "blas_rotate_rows", InvalidOperand, &mut bad, |res| {
             module.blas_rotate_rows(1, res, &ct, &ctx, &keys, &mut op_scratch.borrow())
         });
-        assert_guard::<BE, _>(label, "blas_rotate_cols", InvalidOperand, &mut bad, |res| {
+        assert_guard::<BE, _, Standard>(label, "blas_rotate_cols", InvalidOperand, &mut bad, |res| {
             module.blas_rotate_cols(1, res, &ct, &ctx, &keys, &mut op_scratch.borrow())
         });
-        assert_guard::<BE, _>(label, "blas_sum_rows", InvalidOperand, &mut bad, |res| {
+        assert_guard::<BE, _, Standard>(label, "blas_sum_rows", InvalidOperand, &mut bad, |res| {
             module.blas_sum_rows(res, &ct, &ctx, &keys, &mut op_scratch.borrow())
         });
-        assert_guard::<BE, _>(label, "blas_sum_cols", InvalidOperand, &mut bad, |res| {
+        assert_guard::<BE, _, Standard>(label, "blas_sum_cols", InvalidOperand, &mut bad, |res| {
             module.blas_sum_cols(res, &ct, &ctx, &keys, &mut op_scratch.borrow())
         });
     }
     // `a` and `res` both of another degree than the module's, then both of another rank than the keys, which the first
     // key of the maps rejects.
     for (label, i) in [("degree a and res", 0), ("rank a and res", 2)] {
-        let other = |grid: &BlasCiphertextOwned<BE>| foreign_layouts(module, grid).into_iter().nth(i).unwrap().1;
+        let other = |grid: &BlasCiphertextOwned<BE, Standard>| foreign_layouts(module, grid).into_iter().nth(i).unwrap().1;
         let (other_a, mut other_res, mut other_res_t) = (other(&ct), other(&res), other(&res_t));
-        assert_guard::<BE, _>(label, "blas_transpose", InvalidOperand, &mut other_res_t, |res| {
+        assert_guard::<BE, _, Standard>(label, "blas_transpose", InvalidOperand, &mut other_res_t, |res| {
             module.blas_transpose(res, &other_a, &ctx, &keys, &mut op_scratch.borrow())
         });
-        assert_guard::<BE, _>(label, "blas_rotate_rows", InvalidOperand, &mut other_res, |res| {
+        assert_guard::<BE, _, Standard>(label, "blas_rotate_rows", InvalidOperand, &mut other_res, |res| {
             module.blas_rotate_rows(1, res, &other_a, &ctx, &keys, &mut op_scratch.borrow())
         });
-        assert_guard::<BE, _>(label, "blas_rotate_cols", InvalidOperand, &mut other_res, |res| {
+        assert_guard::<BE, _, Standard>(label, "blas_rotate_cols", InvalidOperand, &mut other_res, |res| {
             module.blas_rotate_cols(1, res, &other_a, &ctx, &keys, &mut op_scratch.borrow())
         });
-        assert_guard::<BE, _>(label, "blas_sum_rows", InvalidOperand, &mut other_res, |res| {
+        assert_guard::<BE, _, Standard>(label, "blas_sum_rows", InvalidOperand, &mut other_res, |res| {
             module.blas_sum_rows(res, &other_a, &ctx, &keys, &mut op_scratch.borrow())
         });
-        assert_guard::<BE, _>(label, "blas_sum_cols", InvalidOperand, &mut other_res, |res| {
+        assert_guard::<BE, _, Standard>(label, "blas_sum_cols", InvalidOperand, &mut other_res, |res| {
             module.blas_sum_cols(res, &other_a, &ctx, &keys, &mut op_scratch.borrow())
         });
     }
     for (label, ctx) in &foreign {
-        assert_guard::<BE, _>(label, "blas_transpose", InvalidOperand, &mut res_t, |res| {
+        assert_guard::<BE, _, Standard>(label, "blas_transpose", InvalidOperand, &mut res_t, |res| {
             module.blas_transpose(res, &ct, ctx, &keys, &mut op_scratch.borrow())
         });
-        assert_guard::<BE, _>(label, "blas_rotate_rows", InvalidOperand, &mut res, |res| {
+        assert_guard::<BE, _, Standard>(label, "blas_rotate_rows", InvalidOperand, &mut res, |res| {
             module.blas_rotate_rows(1, res, &ct, ctx, &keys, &mut op_scratch.borrow())
         });
-        assert_guard::<BE, _>(label, "blas_rotate_cols", InvalidOperand, &mut res, |res| {
+        assert_guard::<BE, _, Standard>(label, "blas_rotate_cols", InvalidOperand, &mut res, |res| {
             module.blas_rotate_cols(1, res, &ct, ctx, &keys, &mut op_scratch.borrow())
         });
         // The row sum of a grid holding one matrix reads no map: only another slot count rejects it.
         if *label == "degree" || !replicated::<Standard>(&ct) {
-            assert_guard::<BE, _>(label, "blas_sum_rows", InvalidOperand, &mut res, |res| {
+            assert_guard::<BE, _, Standard>(label, "blas_sum_rows", InvalidOperand, &mut res, |res| {
                 module.blas_sum_rows(res, &ct, ctx, &keys, &mut op_scratch.borrow())
             });
         }
-        assert_guard::<BE, _>(label, "blas_sum_cols", InvalidOperand, &mut res, |res| {
+        assert_guard::<BE, _, Standard>(label, "blas_sum_cols", InvalidOperand, &mut res, |res| {
             module.blas_sum_cols(res, &ct, ctx, &keys, &mut op_scratch.borrow())
         });
     }
@@ -714,7 +714,7 @@ pub fn test_blas_intra_guards<BE, F, E>(
         k: (params.k + 1).into(),
         ..params.prec().into()
     };
-    let wide = encoded_context::<BE, F>(module, BlasPlan::new(log_d), params.base2k.into(), wide);
+    let wide = encoded_context::<BE, F, Standard>(module, BlasPlan::new(log_d), params.base2k.into(), wide);
     let mut res_one = alloc(1, 2);
     let mut unmapped_scratch = poisoned_scratch::<BE>(
         module
@@ -722,57 +722,57 @@ pub fn test_blas_intra_guards<BE, F, E>(
             .max(module.blas_rotate_rows_tmp_bytes(&res_one, &ct_one, &ctx, &atk))
             .max(module.blas_sum_rows_tmp_bytes(&res_one, &ct_one, &ctx, &atk)),
     );
-    let mut unmapped = |ctx: &BlasContextPrepared<BE>| {
+    let mut unmapped = |ctx: &BlasContextPrepared<BE, Standard>| {
         let (mut shifted, mut rotated, mut summed) = (alloc(rows, cols), alloc(1, 2), alloc(1, 2));
         let mut s = unmapped_scratch.borrow();
         module.blas_rotate_rows(d, &mut shifted, &ct, ctx, &keys, &mut s).unwrap();
         module.blas_rotate_rows(1, &mut rotated, &ct_one, ctx, &keys, &mut s).unwrap();
         module.blas_sum_rows(&mut summed, &ct_one, ctx, &keys, &mut s).unwrap();
-        [shifted, rotated, summed].map(|g| grid_snapshot::<BE, _>(&g))
+        [shifted, rotated, summed].map(|g| grid_snapshot::<BE, _, Standard>(&g))
     };
     let want = unmapped(&ctx);
     for (label, other) in foreign.iter().map(|(label, ctx)| (*label, ctx)).chain([("width", &wide)]) {
         if label == "degree" {
-            assert_guard::<BE, _>(label, "blas_rotate_rows", InvalidOperand, &mut res, |res| {
+            assert_guard::<BE, _, Standard>(label, "blas_rotate_rows", InvalidOperand, &mut res, |res| {
                 module.blas_rotate_rows(d, res, &ct, other, &keys, &mut op_scratch.borrow())
             });
-            assert_guard::<BE, _>(label, "blas_rotate_rows", InvalidOperand, &mut res_one, |res| {
+            assert_guard::<BE, _, Standard>(label, "blas_rotate_rows", InvalidOperand, &mut res_one, |res| {
                 module.blas_rotate_rows(1, res, &ct_one, other, &keys, &mut op_scratch.borrow())
             });
-            assert_guard::<BE, _>(label, "blas_sum_rows", InvalidOperand, &mut res_one, |res| {
+            assert_guard::<BE, _, Standard>(label, "blas_sum_rows", InvalidOperand, &mut res_one, |res| {
                 module.blas_sum_rows(res, &ct_one, other, &keys, &mut op_scratch.borrow())
             });
             continue;
         }
         assert!(unmapped(other) == want, "{label}: a path without a map read the context");
-        assert_guard::<BE, _>(label, "blas_sum_cols", InvalidOperand, &mut res_one, |res| {
+        assert_guard::<BE, _, Standard>(label, "blas_sum_cols", InvalidOperand, &mut res_one, |res| {
             module.blas_sum_cols(res, &ct_one, other, &keys, &mut op_scratch.borrow())
         });
     }
     // A grid one block row short of the shape it reports, as `a`, then as `res`: its shape alone would pass.
-    let short = |grid: BlasCiphertextOwned<BE>| Misshapen {
+    let short = |grid: BlasCiphertextOwned<BE, Standard>| Misshapen {
         rows: grid.rows() + 1,
         cols: grid.cols(),
         grid,
     };
-    let short_a = short(corner::<BE>(&ct, 1, ct.cols()));
-    assert_guard::<BE, _>("misshapen a", "blas_transpose", InvalidOperand, &mut res_t, |res| {
+    let short_a = short(corner::<BE, Standard>(&ct, 1, ct.cols()));
+    assert_guard::<BE, _, Standard>("misshapen a", "blas_transpose", InvalidOperand, &mut res_t, |res| {
         module.blas_transpose(res, &short_a, &ctx, &keys, &mut op_scratch.borrow())
     });
-    assert_guard::<BE, _>("misshapen a", "blas_rotate_rows", InvalidOperand, &mut res, |res| {
+    assert_guard::<BE, _, Standard>("misshapen a", "blas_rotate_rows", InvalidOperand, &mut res, |res| {
         module.blas_rotate_rows(1, res, &short_a, &ctx, &keys, &mut op_scratch.borrow())
     });
-    assert_guard::<BE, _>("misshapen a", "blas_rotate_cols", InvalidOperand, &mut res, |res| {
+    assert_guard::<BE, _, Standard>("misshapen a", "blas_rotate_cols", InvalidOperand, &mut res, |res| {
         module.blas_rotate_cols(1, res, &short_a, &ctx, &keys, &mut op_scratch.borrow())
     });
-    assert_guard::<BE, _>("misshapen a", "blas_sum_rows", InvalidOperand, &mut res, |res| {
+    assert_guard::<BE, _, Standard>("misshapen a", "blas_sum_rows", InvalidOperand, &mut res, |res| {
         module.blas_sum_rows(res, &short_a, &ctx, &keys, &mut op_scratch.borrow())
     });
-    assert_guard::<BE, _>("misshapen a", "blas_sum_cols", InvalidOperand, &mut res, |res| {
+    assert_guard::<BE, _, Standard>("misshapen a", "blas_sum_cols", InvalidOperand, &mut res, |res| {
         module.blas_sum_cols(res, &short_a, &ctx, &keys, &mut op_scratch.borrow())
     });
     let (mut short_res, mut short_res_t) = (short(alloc(rows - 1, cols)), short(alloc(cols - 1, rows)));
-    assert_guard_on::<BE, _, _>(
+    assert_guard_on::<BE, _, _, Standard>(
         "misshapen res",
         "blas_transpose",
         InvalidOperand,
@@ -780,7 +780,7 @@ pub fn test_blas_intra_guards<BE, F, E>(
         |res| &res.grid,
         |res| module.blas_transpose(res, &ct, &ctx, &keys, &mut op_scratch.borrow()),
     );
-    assert_guard_on::<BE, _, _>(
+    assert_guard_on::<BE, _, _, Standard>(
         "misshapen res",
         "blas_rotate_rows",
         InvalidOperand,
@@ -788,7 +788,7 @@ pub fn test_blas_intra_guards<BE, F, E>(
         |res| &res.grid,
         |res| module.blas_rotate_rows(1, res, &ct, &ctx, &keys, &mut op_scratch.borrow()),
     );
-    assert_guard_on::<BE, _, _>(
+    assert_guard_on::<BE, _, _, Standard>(
         "misshapen res",
         "blas_rotate_cols",
         InvalidOperand,
@@ -796,7 +796,7 @@ pub fn test_blas_intra_guards<BE, F, E>(
         |res| &res.grid,
         |res| module.blas_rotate_cols(1, res, &ct, &ctx, &keys, &mut op_scratch.borrow()),
     );
-    assert_guard_on::<BE, _, _>(
+    assert_guard_on::<BE, _, _, Standard>(
         "misshapen res",
         "blas_sum_rows",
         InvalidOperand,
@@ -804,7 +804,7 @@ pub fn test_blas_intra_guards<BE, F, E>(
         |res| &res.grid,
         |res| module.blas_sum_rows(res, &ct, &ctx, &keys, &mut op_scratch.borrow()),
     );
-    assert_guard_on::<BE, _, _>(
+    assert_guard_on::<BE, _, _, Standard>(
         "misshapen res",
         "blas_sum_cols",
         InvalidOperand,
@@ -813,23 +813,23 @@ pub fn test_blas_intra_guards<BE, F, E>(
         |res| module.blas_sum_cols(res, &ct, &ctx, &keys, &mut op_scratch.borrow()),
     );
 
-    let no_keys = TestKeys::<BE> {
+    let no_keys = TestKeys::<BE, Standard> {
         atks: HashMap::new(),
         tsk: None,
     };
-    assert_guard::<BE, _>("no keys", "blas_rotate_rows", MissingKey, &mut res, |res| {
+    assert_guard::<BE, _, Standard>("no keys", "blas_rotate_rows", MissingKey, &mut res, |res| {
         module.blas_rotate_rows(1, res, &ct, &ctx, &no_keys, &mut op_scratch.borrow())
     });
-    assert_guard::<BE, _>("no keys", "blas_rotate_cols", MissingKey, &mut res, |res| {
+    assert_guard::<BE, _, Standard>("no keys", "blas_rotate_cols", MissingKey, &mut res, |res| {
         module.blas_rotate_cols(1, res, &ct, &ctx, &no_keys, &mut op_scratch.borrow())
     });
-    assert_guard::<BE, _>("no keys", "blas_transpose", MissingKey, &mut res_t, |res| {
+    assert_guard::<BE, _, Standard>("no keys", "blas_transpose", MissingKey, &mut res_t, |res| {
         module.blas_transpose(res, &ct, &ctx, &no_keys, &mut op_scratch.borrow())
     });
-    assert_guard::<BE, _>("no keys", "blas_sum_rows", MissingKey, &mut res, |res| {
+    assert_guard::<BE, _, Standard>("no keys", "blas_sum_rows", MissingKey, &mut res, |res| {
         module.blas_sum_rows(res, &ct, &ctx, &no_keys, &mut op_scratch.borrow())
     });
-    assert_guard::<BE, _>("no keys", "blas_sum_cols", MissingKey, &mut res, |res| {
+    assert_guard::<BE, _, Standard>("no keys", "blas_sum_cols", MissingKey, &mut res, |res| {
         module.blas_sum_cols(res, &ct, &ctx, &no_keys, &mut op_scratch.borrow())
     });
 
@@ -840,21 +840,21 @@ pub fn test_blas_intra_guards<BE, F, E>(
         alloc_grid(&params, module, log_d, rows, cols, narrow),
         alloc_grid(&params, module, log_d, cols, rows, narrow),
     );
-    assert_guard::<BE, _>(
+    assert_guard::<BE, _, Standard>(
         "budget",
         "ckks_linear_transformation_eval_into",
         Budget,
         &mut narrow_res_t,
         |res| module.blas_transpose(res, &ct, &ctx, &keys, &mut op_scratch.borrow()),
     );
-    assert_guard::<BE, _>(
+    assert_guard::<BE, _, Standard>(
         "budget",
         "ckks_linear_transformation_eval_into",
         Budget,
         &mut narrow_res,
         |res| module.blas_rotate_rows(1, res, &ct, &ctx, &keys, &mut op_scratch.borrow()),
     );
-    assert_guard::<BE, _>(
+    assert_guard::<BE, _, Standard>(
         "budget",
         "ckks_linear_transformation_eval_into",
         Budget,
@@ -867,10 +867,10 @@ pub fn test_blas_intra_guards<BE, F, E>(
     } else {
         "ckks_linear_transformation_eval_into"
     };
-    assert_guard::<BE, _>("budget", sum_rows_op, Budget, &mut narrow_res, |res| {
+    assert_guard::<BE, _, Standard>("budget", sum_rows_op, Budget, &mut narrow_res, |res| {
         module.blas_sum_rows(res, &ct, &ctx, &keys, &mut op_scratch.borrow())
     });
-    assert_guard::<BE, _>(
+    assert_guard::<BE, _, Standard>(
         "budget",
         "ckks_linear_transformation_eval_into",
         Budget,
@@ -879,28 +879,31 @@ pub fn test_blas_intra_guards<BE, F, E>(
     );
 
     // A shift by 1 takes both half maps along two or three blocks, the whole map along one.
-    let (one_row, one_column) = (corner::<BE>(&ct, 1, ct.cols()), corner::<BE>(&ct, ct.rows(), 1));
+    let (one_row, one_column) = (
+        corner::<BE, Standard>(&ct, 1, ct.cols()),
+        corner::<BE, Standard>(&ct, ct.rows(), 1),
+    );
     for a in [&ct, &one_row, &one_column] {
         let mut res = alloc(a.rows(), a.cols());
         let bytes = module.blas_rotate_rows_tmp_bytes(&res, a, &ctx, &atk);
-        assert_short_scratch::<BE, _>("blas_rotate_rows", &mut res, bytes, |res, s| {
+        assert_short_scratch::<BE, _, Standard>("blas_rotate_rows", &mut res, bytes, |res, s| {
             module.blas_rotate_rows(1, res, a, &ctx, &keys, s)
         });
         let bytes = module.blas_rotate_cols_tmp_bytes(&res, a, &ctx, &atk);
-        assert_short_scratch::<BE, _>("blas_rotate_cols", &mut res, bytes, |res, s| {
+        assert_short_scratch::<BE, _, Standard>("blas_rotate_cols", &mut res, bytes, |res, s| {
             module.blas_rotate_cols(1, res, a, &ctx, &keys, s)
         });
         let bytes = module.blas_sum_rows_tmp_bytes(&res, a, &ctx, &atk);
-        assert_short_scratch::<BE, _>("blas_sum_rows", &mut res, bytes, |res, s| {
+        assert_short_scratch::<BE, _, Standard>("blas_sum_rows", &mut res, bytes, |res, s| {
             module.blas_sum_rows(res, a, &ctx, &keys, s)
         });
         let bytes = module.blas_sum_cols_tmp_bytes(&res, a, &ctx, &atk);
-        assert_short_scratch::<BE, _>("blas_sum_cols", &mut res, bytes, |res, s| {
+        assert_short_scratch::<BE, _, Standard>("blas_sum_cols", &mut res, bytes, |res, s| {
             module.blas_sum_cols(res, a, &ctx, &keys, s)
         });
     }
     let bytes = module.blas_transpose_tmp_bytes(&res_t, &ct, &ctx, &atk);
-    assert_short_scratch::<BE, _>("blas_transpose", &mut res_t, bytes, |res, s| {
+    assert_short_scratch::<BE, _, Standard>("blas_transpose", &mut res_t, bytes, |res, s| {
         module.blas_transpose(res, &ct, &ctx, &keys, s)
     });
 }

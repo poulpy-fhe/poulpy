@@ -1,6 +1,6 @@
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Module, ScratchOwned},
+    layouts::{Module, Ring, ScratchOwned},
     source::Source,
     test_suite::TestParams,
 };
@@ -19,16 +19,18 @@ use crate::{
     },
 };
 
-pub fn test_gglwe_tensor_key_encrypt_sk<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
-where
+pub fn test_gglwe_tensor_key_encrypt_sk<BE: crate::test_suite::noise::TestBackend<Rg>, Rg: Ring>(
+    params: &TestParams,
+    module: &Module<BE>,
+) where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: GLWETensorKeyEncryptSk<BE>
-        + GLWESecretPreparedFactory<BE>
-        + GLWEDecrypt<BE>
-        + GLWESecretTensorFromGLWESecret<BE>
-        + GGLWENoise<BE>,
+    Module<BE>: GLWETensorKeyEncryptSk<BE, Rg>
+        + GLWESecretPreparedFactory<BE, Rg>
+        + GLWEDecrypt<BE, Rg>
+        + GLWESecretTensorFromGLWESecret<BE, Rg>
+        + GGLWENoise<BE, Rg>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
@@ -47,7 +49,8 @@ where
             rank: rank.into(),
         };
 
-        let mut tensor_key: GLWETensorKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_tensor_key_alloc_from_infos(&tensor_key_infos);
+        let mut tensor_key: GLWETensorKey<BE::OwnedBuf, BE::ZnxWord, Rg> =
+            module.glwe_tensor_key_alloc_from_infos(&tensor_key_infos);
 
         let mut source_xs: Source = Source::new([0u8; 32]);
         let mut source_xe: Source = Source::new([0u8; 32]);
@@ -59,9 +62,9 @@ where
                 .max(module.gglwe_noise_tmp_bytes(&tensor_key_infos)),
         );
 
-        let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc_from_infos(&tensor_key_infos);
+        let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_secret_alloc_from_infos(&tensor_key_infos);
         module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut source_xs);
-        let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc(rank.into());
+        let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE, Rg> = module.glwe_secret_prepared_alloc(rank.into());
         module.glwe_secret_prepare(&mut sk_prepared, &sk);
 
         module.glwe_tensor_key_encrypt_sk(
@@ -72,7 +75,7 @@ where
             &mut poisoned_scratch::<BE>(module.glwe_tensor_key_encrypt_sk_tmp_bytes(&tensor_key_infos)).borrow(),
         );
 
-        let mut sk_tensor: GLWESecretTensor<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_tensor_alloc_from_infos(&sk);
+        let mut sk_tensor: GLWESecretTensor<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_secret_tensor_alloc_from_infos(&sk);
         module.glwe_secret_tensor_from_glwe_secret(
             &mut sk_tensor,
             &sk,
@@ -101,20 +104,20 @@ where
     }
 }
 
-pub fn test_gglwe_tensor_key_compressed_encrypt_sk<BE: crate::test_suite::noise::TestBackend>(
+pub fn test_gglwe_tensor_key_compressed_encrypt_sk<BE: crate::test_suite::noise::TestBackend<Rg>, Rg: Ring>(
     params: &TestParams,
     module: &Module<BE>,
 ) where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: GLWETensorKeyEncryptSk<BE>
-        + GLWESecretPreparedFactory<BE>
-        + GLWETensorKeyCompressedEncryptSk<BE>
-        + GLWEDecrypt<BE>
-        + GLWESecretTensorFromGLWESecret<BE>
-        + GGLWENoise<BE>
-        + GLWETensorKeyDecompress<BE>,
+    Module<BE>: GLWETensorKeyEncryptSk<BE, Rg>
+        + GLWESecretPreparedFactory<BE, Rg>
+        + GLWETensorKeyCompressedEncryptSk<BE, Rg>
+        + GLWEDecrypt<BE, Rg>
+        + GLWESecretTensorFromGLWESecret<BE, Rg>
+        + GGLWENoise<BE, Rg>
+        + GLWETensorKeyDecompress<BE, Rg>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
@@ -133,7 +136,7 @@ pub fn test_gglwe_tensor_key_compressed_encrypt_sk<BE: crate::test_suite::noise:
             rank: rank.into(),
         };
 
-        let mut tensor_key_compressed: GLWETensorKeyCompressed<BE::OwnedBuf, BE::ZnxWord> =
+        let mut tensor_key_compressed: GLWETensorKeyCompressed<BE::OwnedBuf, BE::ZnxWord, Rg> =
             module.glwe_tensor_key_compressed_alloc_from_infos(&tensor_key_infos);
 
         let mut source_xs: Source = Source::new([0u8; 32]);
@@ -145,9 +148,9 @@ pub fn test_gglwe_tensor_key_compressed_encrypt_sk<BE: crate::test_suite::noise:
                 .max(module.gglwe_noise_tmp_bytes(&tensor_key_infos)),
         );
 
-        let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc_from_infos(&tensor_key_infos);
+        let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_secret_alloc_from_infos(&tensor_key_infos);
         module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut source_xs);
-        let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc(rank.into());
+        let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE, Rg> = module.glwe_secret_prepared_alloc(rank.into());
         module.glwe_secret_prepare(&mut sk_prepared, &sk);
 
         let seed_xa: [u8; 32] = [1u8; 32];
@@ -160,10 +163,11 @@ pub fn test_gglwe_tensor_key_compressed_encrypt_sk<BE: crate::test_suite::noise:
             &mut poisoned_scratch::<BE>(module.glwe_tensor_key_compressed_encrypt_sk_tmp_bytes(&tensor_key_infos)).borrow(),
         );
 
-        let mut tensor_key: GLWETensorKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_tensor_key_alloc_from_infos(&tensor_key_infos);
+        let mut tensor_key: GLWETensorKey<BE::OwnedBuf, BE::ZnxWord, Rg> =
+            module.glwe_tensor_key_alloc_from_infos(&tensor_key_infos);
         module.glwe_tensor_key_decompress(&mut tensor_key, &tensor_key_compressed);
 
-        let mut sk_tensor: GLWESecretTensor<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_tensor_alloc_from_infos(&sk);
+        let mut sk_tensor: GLWESecretTensor<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_secret_tensor_alloc_from_infos(&sk);
         module.glwe_secret_tensor_from_glwe_secret(
             &mut sk_tensor,
             &sk,

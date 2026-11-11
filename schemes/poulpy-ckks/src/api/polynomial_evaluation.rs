@@ -1,7 +1,7 @@
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::IntPolyInfos;
-use poulpy_hal::layouts::{Backend, ScratchArena};
+use poulpy_hal::layouts::{Backend, Ring, ScratchArena, Standard};
 
 use poulpy_core::layouts::{BSGSMeta, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, SetBSGSMeta};
 
@@ -9,7 +9,7 @@ use crate::{CKKSCtBounds, SetCKKSInfos, layouts::CKKSCiphertextOwned, polynomial
 
 pub use poulpy_core::layouts::{BSGSPolynomialInfos, BabyStep, Basis, Parity, PolynomialInputTransform, PowerBasisHelper};
 
-pub trait CKKSPolynomialEvaluationOps<BE: Backend> {
+pub trait CKKSPolynomialEvaluationOps<BE: Backend, Rg: Ring = Standard> {
     /// Evaluates the real-coefficient polynomial `poly` on the powers of `power_basis` into `res`.
     ///
     /// Scratch is bounded by [`CKKSAllOpsTmpBytes::ckks_all_ops_tmp_bytes`](crate::api::CKKSAllOpsTmpBytes::ckks_all_ops_tmp_bytes).
@@ -30,12 +30,12 @@ pub trait CKKSPolynomialEvaluationOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
-        B: BSGSPolynomialInfos<BE>,
+        R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        B: BSGSPolynomialInfos<BE, Rg>,
         B::Coeffs: CKKSCtBounds,
-        A: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta,
-        G: PowerBasisHelper<BE, A>,
-        H: GetTensorKey<BE>;
+        A: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + BSGSMeta,
+        G: PowerBasisHelper<BE, A, Rg>,
+        H: GetTensorKey<BE, Rg>;
 
     /// Builds the power basis internally then evaluates a real-coefficient
     /// polynomial.
@@ -58,12 +58,12 @@ pub trait CKKSPolynomialEvaluationOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
-        S: GLWEToBackendRef<BE> + CKKSCtBounds,
-        B: BSGSPolynomialInfos<BE>,
+        R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        S: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        B: BSGSPolynomialInfos<BE, Rg>,
         B::Coeffs: CKKSCtBounds,
-        H: GetTensorKey<BE>,
-        CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos;
+        H: GetTensorKey<BE, Rg>,
+        CKKSCiphertextOwned<BE, Rg>: GLWEToBackendMut<BE, Rg> + GLWEToBackendRef<BE, Rg> + CKKSCtBounds + SetCKKSInfos;
 }
 
 /// Complex-coefficient polynomial evaluation; standard ring only.

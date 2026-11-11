@@ -2,7 +2,7 @@
 
 use poulpy_hal::{
     api::{VecZnxDftApply, VmpPMatPrepare, VmpPMatPrepareTmpBytes},
-    layouts::{Backend, Module, ScratchArena},
+    layouts::{Backend, Module, Ring, ScratchArena, Standard},
 };
 
 use crate::{
@@ -17,15 +17,15 @@ use crate::{
 
 /// Reference bodies of the required [`PreparationImpl`](crate::oep::PreparationImpl) methods, which
 /// [`impl_preparation_reference_full!`](crate::impl_preparation_reference_full) forwards to.
-pub trait PreparationReference<BE: Backend> {
+pub trait PreparationReference<BE: Backend, Rg: Ring = Standard> {
     fn glwe_prepare_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
         A: GLWEInfos;
 
     fn glwe_prepare_reference<R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWEPreparedToBackendMut<BE>,
-        O: GLWEToBackendRef<BE> + GLWEInfos;
+        R: GLWEPreparedToBackendMut<BE, Rg>,
+        O: GLWEToBackendRef<BE, Rg> + GLWEInfos;
 
     fn gglwe_prepare_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
@@ -33,8 +33,8 @@ pub trait PreparationReference<BE: Backend> {
 
     fn gglwe_prepare_reference<R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GGLWEPreparedToBackendMut<BE>,
-        O: GGLWEToBackendRef<BE>;
+        R: GGLWEPreparedToBackendMut<BE, Rg>,
+        O: GGLWEToBackendRef<BE, Rg>;
 
     fn ggsw_prepare_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
@@ -42,8 +42,8 @@ pub trait PreparationReference<BE: Backend> {
 
     fn ggsw_prepare_reference<R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GGSWPreparedToBackendMut<BE>,
-        O: GGSWToBackendRef<BE>;
+        R: GGSWPreparedToBackendMut<BE, Rg>,
+        O: GGSWToBackendRef<BE, Rg>;
 
     fn glwe_public_key_prepare_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
@@ -51,8 +51,8 @@ pub trait PreparationReference<BE: Backend> {
 
     fn glwe_public_key_prepare_reference<R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWEPublicKeyPreparedToBackendMut<BE> + GetDistributionMut,
-        O: GLWEPublicKeyToBackendRef<BE> + GetDistribution;
+        R: GLWEPublicKeyPreparedToBackendMut<BE, Rg> + GetDistributionMut,
+        O: GLWEPublicKeyToBackendRef<BE, Rg> + GetDistribution;
 
     fn gglwe_to_ggsw_key_prepare_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
@@ -60,13 +60,13 @@ pub trait PreparationReference<BE: Backend> {
 
     fn gglwe_to_ggsw_key_prepare_reference<R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GGLWEToGGSWKeyPreparedToBackendMut<BE>,
-        O: GGLWEToGGSWKeyToBackendRef<BE>;
+        R: GGLWEToGGSWKeyPreparedToBackendMut<BE, Rg>,
+        O: GGLWEToGGSWKeyToBackendRef<BE, Rg>;
 }
 
-impl<BE: Backend> PreparationReference<BE> for Module<BE>
+impl<BE: Backend, Rg: Ring> PreparationReference<BE, Rg> for Module<BE>
 where
-    Module<BE>: GLWENormalize<BE> + VecZnxDftApply<BE> + VmpPMatPrepare<BE> + VmpPMatPrepareTmpBytes,
+    Module<BE>: GLWENormalize<BE, Rg> + VecZnxDftApply<BE, Rg> + VmpPMatPrepare<BE, Rg> + VmpPMatPrepareTmpBytes,
 {
     fn glwe_prepare_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
@@ -77,8 +77,8 @@ where
 
     fn glwe_prepare_reference<R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWEPreparedToBackendMut<BE>,
-        O: GLWEToBackendRef<BE> + GLWEInfos,
+        R: GLWEPreparedToBackendMut<BE, Rg>,
+        O: GLWEToBackendRef<BE, Rg> + GLWEInfos,
     {
         {
             let res = res.to_backend_mut();
@@ -128,8 +128,8 @@ where
 
     fn gglwe_prepare_reference<R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GGLWEPreparedToBackendMut<BE>,
-        O: GGLWEToBackendRef<BE>,
+        R: GGLWEPreparedToBackendMut<BE, Rg>,
+        O: GGLWEToBackendRef<BE, Rg>,
     {
         let noise = other.to_backend_ref().noise();
         {
@@ -168,8 +168,8 @@ where
 
     fn ggsw_prepare_reference<R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GGSWPreparedToBackendMut<BE>,
-        O: GGSWToBackendRef<BE>,
+        R: GGSWPreparedToBackendMut<BE, Rg>,
+        O: GGSWToBackendRef<BE, Rg>,
     {
         let noise = other.to_backend_ref().noise();
         {
@@ -199,8 +199,8 @@ where
 
     fn glwe_public_key_prepare_reference<R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWEPublicKeyPreparedToBackendMut<BE> + GetDistributionMut,
-        O: GLWEPublicKeyToBackendRef<BE> + GetDistribution,
+        R: GLWEPublicKeyPreparedToBackendMut<BE, Rg> + GetDistributionMut,
+        O: GLWEPublicKeyToBackendRef<BE, Rg> + GetDistribution,
     {
         {
             let mut res = res.to_backend_mut();
@@ -235,8 +235,8 @@ where
 
     fn gglwe_to_ggsw_key_prepare_reference<R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GGLWEToGGSWKeyPreparedToBackendMut<BE>,
-        O: GGLWEToGGSWKeyToBackendRef<BE>,
+        R: GGLWEToGGSWKeyPreparedToBackendMut<BE, Rg>,
+        O: GGLWEToGGSWKeyToBackendRef<BE, Rg>,
     {
         let noise = other.to_backend_ref().noise();
         {

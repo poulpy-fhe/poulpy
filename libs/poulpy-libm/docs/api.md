@@ -1,6 +1,7 @@
 # API
 
 `poulpy-libm` exposes CKKS operations on `Module<BE>`. Function names follow `libm`; operation methods add the `ckks_` prefix.
+Every operation acts on standard-ring operands; none serves the conjugate-invariant ring.
 
 ## Conventions
 

@@ -8,7 +8,7 @@ use poulpy_hal::{
         VecZnxGadgetDecomposeTmpBytes, VecZnxIdftNormalize, VecZnxIdftNormalizeTmpBytes,
     },
     layouts::{
-        Backend, DataView, Module, ScratchOwned, VecZnx, VecZnxDft, VecZnxDftToBackendMut, VecZnxDftToBackendRef,
+        Backend, DataView, Module, Ring, ScratchOwned, VecZnx, VecZnxDft, VecZnxDftToBackendMut, VecZnxDftToBackendRef,
         VecZnxToBackendRef,
     },
     test_suite::{TestParams, vec_znx_backend_mut},
@@ -25,14 +25,14 @@ use crate::{
     test_suite::{poisoned_scratch, refusal::assert_refusal},
 };
 
-type Dft<BE> = VecZnxDft<<BE as Backend>::OwnedBuf, <BE as Backend>::DftWord, BE>;
-type Coefficients<BE> = VecZnx<<BE as Backend>::OwnedBuf, <BE as Backend>::ZnxWord>;
+type Dft<BE, Rg> = VecZnxDft<<BE as Backend>::OwnedBuf, <BE as Backend>::DftWord, BE, Rg>;
+type Coefficients<BE, Rg> = VecZnx<<BE as Backend>::OwnedBuf, <BE as Backend>::ZnxWord, Rg>;
 
 /// A zero key of rank `rank`, two rows of one limb each at `base2k`, and a row offset of
 /// `k_offset` bits.
-fn key<BE: Backend>(module: &Module<BE>, base2k: usize, rank: u32, k_offset: u32) -> GGLWEPrepared<BE::OwnedBuf, BE>
+fn key<BE: Backend, Rg: Ring>(module: &Module<BE>, base2k: usize, rank: u32, k_offset: u32) -> GGLWEPrepared<BE::OwnedBuf, BE, Rg>
 where
-    Module<BE>: GGLWEPreparedFactory<BE>,
+    Module<BE>: GGLWEPreparedFactory<BE, Rg>,
 {
     module.gglwe_prepared_alloc_from_infos(&GLWESwitchingKeyLayout {
         n: Degree(module.n() as u32),
@@ -46,21 +46,21 @@ where
     })
 }
 
-fn dft_bytes<BE: Backend>(vectors: &[Dft<BE>]) -> Vec<Vec<u8>> {
+fn dft_bytes<BE: Backend, Rg: Ring>(vectors: &[Dft<BE, Rg>]) -> Vec<Vec<u8>> {
     vectors.iter().map(|v| BE::to_host_bytes(v.data())).collect()
 }
 
-fn coefficient_bytes<BE: Backend>(vectors: &[Coefficients<BE>]) -> Vec<Vec<u8>> {
+fn coefficient_bytes<BE: Backend, Rg: Ring>(vectors: &[Coefficients<BE, Rg>]) -> Vec<Vec<u8>> {
     vectors.iter().map(|v| BE::to_host_bytes(v.data())).collect()
 }
 
 /// `gglwe_product_fused` refuses too many addends, a product wider than its destination,
 /// operands of another degree, operand columns other than the key's, an addend column out of
 /// range and a scratch below its query, before writing `res`.
-pub fn test_gglwe_product_fused_rejects_invalid_operands<BE>(params: &TestParams, module: &Module<BE>)
+pub fn test_gglwe_product_fused_rejects_invalid_operands<BE, Rg: Ring>(params: &TestParams, module: &Module<BE>)
 where
-    BE: Backend + GGLWEProductDigitsStridedImpl,
-    Module<BE>: GGLWEPreparedFactory<BE> + VecZnxDftAlloc<BE>,
+    BE: Backend + GGLWEProductDigitsStridedImpl<Rg>,
+    Module<BE>: GGLWEPreparedFactory<BE, Rg> + VecZnxDftAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let (n, base2k) = (module.n(), params.base2k);
@@ -123,7 +123,7 @@ where
         assert_refusal(
             message,
             &mut res,
-            |res| dft_bytes::<BE>(res),
+            |res| dft_bytes::<BE, Rg>(res),
             |res| {
                 BE::gglwe_product_fused(
                     module,
@@ -144,10 +144,10 @@ where
 
 /// `gglwe_product_idft_normalize` refuses a destination of fewer columns than the product, a
 /// body column out of range and a scratch below its query, before writing `res`.
-pub fn test_gglwe_product_idft_normalize_rejects_invalid_operands<BE>(params: &TestParams, module: &Module<BE>)
+pub fn test_gglwe_product_idft_normalize_rejects_invalid_operands<BE, Rg: Ring>(params: &TestParams, module: &Module<BE>)
 where
-    BE: Backend + GGLWEProductDigitsStridedImpl,
-    Module<BE>: GGLWEPreparedFactory<BE> + VecZnxDftAlloc<BE>,
+    BE: Backend + GGLWEProductDigitsStridedImpl<Rg>,
+    Module<BE>: GGLWEPreparedFactory<BE, Rg> + VecZnxDftAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let (n, base2k) = (module.n(), params.base2k);
@@ -156,7 +156,7 @@ where
     let wide = BE::gglwe_product_idft_normalize_tmp_bytes(module, 2, size, 2, &key);
     let a = module.vec_znx_dft_alloc(n, 1, 2);
     let body = module.vec_znx_alloc(n, 1, 2);
-    let body = VecZnxToBackendRef::<BE>::to_backend_ref(&body);
+    let body = VecZnxToBackendRef::<BE, Rg>::to_backend_ref(&body);
     let cases = [
         (
             "gglwe_product_idft_normalize: the destination differs from the product in degree or columns",
@@ -187,11 +187,11 @@ where
         assert_refusal(
             message,
             &mut state,
-            |(res, _)| coefficient_bytes::<BE>(res),
+            |(res, _)| coefficient_bytes::<BE, Rg>(res),
             |(res, res_dft)| {
                 BE::gglwe_product_idft_normalize(
                     module,
-                    &mut vec_znx_backend_mut::<BE>(&mut res[0]),
+                    &mut vec_znx_backend_mut::<BE, Rg>(&mut res[0]),
                     base2k,
                     2 * base2k,
                     0,
@@ -211,10 +211,10 @@ where
 
 /// `gglwe_products_idft_normalize` refuses items of different lengths, an invalid later item
 /// and a scratch below its query, before writing the first destination.
-pub fn test_gglwe_products_idft_normalize_rejects_invalid_items<BE>(params: &TestParams, module: &Module<BE>)
+pub fn test_gglwe_products_idft_normalize_rejects_invalid_items<BE, Rg: Ring>(params: &TestParams, module: &Module<BE>)
 where
-    BE: Backend + GGLWEProductDigitsStridedImpl,
-    Module<BE>: GGLWEPreparedFactory<BE> + VecZnxDftAlloc<BE>,
+    BE: Backend + GGLWEProductDigitsStridedImpl<Rg>,
+    Module<BE>: GGLWEPreparedFactory<BE, Rg> + VecZnxDftAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let (n, base2k) = (module.n(), params.base2k);
@@ -254,9 +254,9 @@ where
         assert_refusal(
             message,
             &mut state,
-            |(res, _)| coefficient_bytes::<BE>(res),
+            |(res, _)| coefficient_bytes::<BE, Rg>(res),
             |(res, res_dft)| {
-                let mut res: Vec<_> = res.iter_mut().map(|v| vec_znx_backend_mut::<BE>(v)).collect();
+                let mut res: Vec<_> = res.iter_mut().map(|v| vec_znx_backend_mut::<BE, Rg>(v)).collect();
                 let mut res_dft: Vec<_> = res_dft.iter_mut().map(|v| v.to_backend_mut()).collect();
                 BE::gglwe_products_idft_normalize(
                     module,
@@ -282,10 +282,10 @@ where
 /// its destination, more source limbs than it holds, a source radix other than the key's, a
 /// product wider than its destination, columns other than the key's, a key with a row offset
 /// and a scratch below its query, before writing a destination or a source.
-pub fn test_gglwe_products_from_dft_rejects_invalid_items<BE>(params: &TestParams, module: &Module<BE>)
+pub fn test_gglwe_products_from_dft_rejects_invalid_items<BE, Rg: Ring>(params: &TestParams, module: &Module<BE>)
 where
-    BE: Backend + GGLWEProductDigitsStridedImpl,
-    Module<BE>: GGLWEPreparedFactory<BE> + VecZnxDftAlloc<BE>,
+    BE: Backend + GGLWEProductDigitsStridedImpl<Rg>,
+    Module<BE>: GGLWEPreparedFactory<BE, Rg> + VecZnxDftAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let (n, base2k) = (module.n(), params.base2k);
@@ -394,7 +394,7 @@ where
         assert_refusal(
             message,
             &mut state,
-            |(res, sources)| (dft_bytes::<BE>(res), dft_bytes::<BE>(sources)),
+            |(res, sources)| (dft_bytes::<BE, Rg>(res), dft_bytes::<BE, Rg>(sources)),
             |(res, sources)| {
                 let mut res: Vec<_> = res.iter_mut().map(|v| v.to_backend_mut()).collect();
                 let mut sources: Vec<_> = sources.iter_mut().map(|v| v.to_backend_mut()).collect();
@@ -418,15 +418,15 @@ where
 
 /// `gglwe_gadget_dft_apply_from_dft` refuses a source radix other than the key's and a scratch below
 /// its query, before writing `res` or the source.
-pub fn test_gglwe_gadget_dft_apply_from_dft_rejects_invalid_operands<BE>(params: &TestParams, module: &Module<BE>)
+pub fn test_gglwe_gadget_dft_apply_from_dft_rejects_invalid_operands<BE, Rg: Ring>(params: &TestParams, module: &Module<BE>)
 where
-    BE: Backend + GGLWEProductDigitsStridedImpl,
-    Module<BE>: GGLWEPreparedFactory<BE>
+    BE: Backend + GGLWEProductDigitsStridedImpl<Rg>,
+    Module<BE>: GGLWEPreparedFactory<BE, Rg>
         + VecZnxDftAlloc<BE>
-        + VecZnxDftApply<BE>
-        + VecZnxIdftNormalize<BE>
+        + VecZnxDftApply<BE, Rg>
+        + VecZnxIdftNormalize<BE, Rg>
         + VecZnxIdftNormalizeTmpBytes
-        + VecZnxGadgetDecompose<BE>
+        + VecZnxGadgetDecompose<BE, Rg>
         + VecZnxGadgetDecomposeTmpBytes,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
@@ -447,7 +447,7 @@ where
         assert_refusal(
             message,
             &mut state,
-            |(res, source)| (dft_bytes::<BE>(res), dft_bytes::<BE>(source)),
+            |(res, source)| (dft_bytes::<BE, Rg>(res), dft_bytes::<BE, Rg>(source)),
             |(res, source)| {
                 gglwe_gadget_dft_apply_from_dft(
                     module,

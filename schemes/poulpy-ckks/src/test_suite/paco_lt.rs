@@ -97,7 +97,7 @@ fn chain_params(base: &CKKSTestParams, num_factors: usize) -> CKKSTestParams {
 /// budget consumption.
 fn run_chain<BE, F, E>(base: &CKKSTestParams, factors: &[ComplexDiagonals<F>], label: &str)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     Module<BE>:
         TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE> + GLWENoise<BE>,
     F: TestScalar,
@@ -146,7 +146,7 @@ where
         })
         .collect();
 
-    let order = module.cyclotomic_order();
+    let order = module.cyclotomic_order::<Standard>();
     let mut atks = HashMap::new();
     for lt in &lts {
         for p_el in lt.galois_elements(order) {
@@ -193,7 +193,7 @@ where
     let want_re: Vec<F> = w.iter().map(|x| x.re).collect();
     let want_im: Vec<F> = w.iter().map(|x| x.im).collect();
 
-    let mut pt_want = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots(), ct.base2k(), ct.k());
+    let mut pt_want = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots::<Standard>(), ct.base2k(), ct.k());
     pt_want.set_meta(GLWEPlaintextMeta {
         scale: Scale::Log(ct.log_delta()),
         slots: SlotsKind::Complex,
@@ -210,9 +210,12 @@ where
 /// `n = 2hC` slots), grouped at radices 1 and 2.
 pub fn test_paco_partial_c2s<BE, F, E>(params: CKKSTestParams, _module: &Module<BE>, _host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
-    Module<BE>:
-        TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE> + GLWENoise<BE>,
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE>
+        + CKKSEncodingOps<BE, F, Standard>
+        + CKKSLinearTransformationOps<BE, Standard>
+        + CnvPVecAlloc<BE>
+        + GLWENoise<BE, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
@@ -241,9 +244,12 @@ where
 /// `C/2` slots), grouped at radices 1 and 2.
 pub fn test_paco_stc<BE, F, E>(params: CKKSTestParams, _module: &Module<BE>, _host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
-    Module<BE>:
-        TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE> + GLWENoise<BE>,
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE>
+        + CKKSEncodingOps<BE, F, Standard>
+        + CKKSLinearTransformationOps<BE, Standard>
+        + CnvPVecAlloc<BE>
+        + GLWENoise<BE, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
@@ -287,8 +293,8 @@ where
 /// inverse).
 pub fn test_paco_packing<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, _host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
-    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F>,
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F, Standard>,
     F: TestScalar,
 {
     use crate::layouts::paco::secret::pack_chunk;

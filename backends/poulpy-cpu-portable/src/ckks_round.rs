@@ -1,17 +1,18 @@
 //! CPU coefficient correction for shaped CKKS rounding.
 
 use poulpy_ckks::shaping::ShapingProfile;
-use poulpy_hal::layouts::{Backend, HostDataMut, HostDataRef, VecZnxBackendMut, VecZnxBackendRef, ZnxView, ZnxViewMut};
+use poulpy_hal::layouts::{Backend, HostDataMut, HostDataRef, Ring, VecZnxBackendMut, VecZnxBackendRef, ZnxView, ZnxViewMut};
 
 /// Writes the two correction limbs and the centered shaping preimage.
-pub fn shaped_round_correction<BE>(
-    carry: &mut VecZnxBackendMut<'_, BE>,
-    h: &mut VecZnxBackendMut<'_, BE>,
-    low: &VecZnxBackendRef<'_, BE>,
+pub fn shaped_round_correction<BE, Rg>(
+    carry: &mut VecZnxBackendMut<'_, BE, Rg>,
+    h: &mut VecZnxBackendMut<'_, BE, Rg>,
+    low: &VecZnxBackendRef<'_, BE, Rg>,
     profile: &ShapingProfile,
     lambda: usize,
 ) where
     BE: Backend<ZnxWord = i64>,
+    Rg: Ring,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
@@ -37,20 +38,25 @@ pub fn shaped_round_correction<BE>(
     }
 }
 
-/// Selects the CPU shaping correction for a host-visible backend.
+/// Selects the CPU shaping correction for a host-visible backend, on both rings
+/// from `($be)` and on one from `($be, $ring)`.
 #[macro_export]
 macro_rules! impl_cpu_ckks_shaped_rounding {
     ($be:ty) => {
-        unsafe impl ::poulpy_ckks::oep::CKKSShapedRoundingImpl for $be {
+        $crate::impl_cpu_ckks_shaped_rounding!($be, ::poulpy_hal::layouts::Standard);
+        $crate::impl_cpu_ckks_shaped_rounding!($be, ::poulpy_hal::layouts::ConjugateInvariant);
+    };
+    ($be:ty, $ring:ty) => {
+        unsafe impl ::poulpy_ckks::oep::CKKSShapedRoundingImpl<$ring> for $be {
             fn ckks_shaped_round_correction(
                 _module: &::poulpy_hal::layouts::Module<Self>,
-                carry: &mut ::poulpy_hal::layouts::VecZnxBackendMut<'_, Self>,
-                h: &mut ::poulpy_hal::layouts::VecZnxBackendMut<'_, Self>,
-                low: &::poulpy_hal::layouts::VecZnxBackendRef<'_, Self>,
+                carry: &mut ::poulpy_hal::layouts::VecZnxBackendMut<'_, Self, $ring>,
+                h: &mut ::poulpy_hal::layouts::VecZnxBackendMut<'_, Self, $ring>,
+                low: &::poulpy_hal::layouts::VecZnxBackendRef<'_, Self, $ring>,
                 profile: &::poulpy_ckks::shaping::ShapingProfile,
                 lambda: usize,
             ) {
-                $crate::ckks_round::shaped_round_correction::<Self>(carry, h, low, profile, lambda);
+                $crate::ckks_round::shaped_round_correction::<Self, $ring>(carry, h, low, profile, lambda);
             }
         }
     };

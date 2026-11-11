@@ -9,7 +9,7 @@ use poulpy_core::{
     reference::{keyswitching::glwe::GGLWEProductReference, linear_transformation::GLWELinearTransformationReference},
 };
 use poulpy_hal::{api::*, layouts::*};
-unsafe impl poulpy_core::oep::GLWELinearTransformationImpl for BE {
+unsafe impl poulpy_core::oep::GLWELinearTransformationImpl<Standard> for BE {
     fn glwe_linear_transformation_eval_tmp_bytes<R, A, B, K, T>(
         module: &Module<BE>,
         res: &R,
@@ -26,7 +26,9 @@ unsafe impl poulpy_core::oep::GLWELinearTransformationImpl for BE {
         K: poulpy_core::layouts::GGLWEInfos,
         T: poulpy_core::layouts::GGLWEInfos,
     {
-        module.glwe_linear_transformation_eval_tmp_bytes_reference(res, a, pt, plan, tsk, key)
+        GLWELinearTransformationReference::<BE, Standard>::glwe_linear_transformation_eval_tmp_bytes_reference(
+            module, res, a, pt, plan, tsk, key,
+        )
     }
 
     fn glwe_linear_transformation_eval_unprepared_rhs_tmp_bytes<R, A, B, K, T>(
@@ -45,7 +47,9 @@ unsafe impl poulpy_core::oep::GLWELinearTransformationImpl for BE {
         K: poulpy_core::layouts::GGLWEInfos,
         T: poulpy_core::layouts::GGLWEInfos,
     {
-        module.glwe_linear_transformation_eval_unprepared_rhs_tmp_bytes_reference(res, a, pt, plan, tsk, key)
+        GLWELinearTransformationReference::<BE, Standard>::glwe_linear_transformation_eval_unprepared_rhs_tmp_bytes_reference(
+            module, res, a, pt, plan, tsk, key,
+        )
     }
 
     fn glwe_linear_transformation_eval_sum_tmp_bytes<R, A, B, K, T>(
@@ -64,7 +68,9 @@ unsafe impl poulpy_core::oep::GLWELinearTransformationImpl for BE {
         K: poulpy_core::layouts::GGLWEInfos,
         T: poulpy_core::layouts::GGLWEInfos,
     {
-        module.glwe_linear_transformation_eval_sum_tmp_bytes_reference(res, a, pt, plan, tsk, key)
+        GLWELinearTransformationReference::<BE, Standard>::glwe_linear_transformation_eval_sum_tmp_bytes_reference(
+            module, res, a, pt, plan, tsk, key,
+        )
     }
 
     fn glwe_linear_transformation_eval_sum_unprepared_rhs_tmp_bytes<R, A, B, K, T>(
@@ -83,7 +89,9 @@ unsafe impl poulpy_core::oep::GLWELinearTransformationImpl for BE {
         K: poulpy_core::layouts::GGLWEInfos,
         T: poulpy_core::layouts::GGLWEInfos,
     {
-        module.glwe_linear_transformation_eval_sum_unprepared_rhs_tmp_bytes_reference(res, a, pt, plan, tsk, key)
+        GLWELinearTransformationReference::<BE, Standard>::glwe_linear_transformation_eval_sum_unprepared_rhs_tmp_bytes_reference(
+            module, res, a, pt, plan, tsk, key,
+        )
     }
 
     fn glwe_linear_transformation_baby_steps_prepare_tmp_bytes<A, K>(
@@ -96,14 +104,18 @@ unsafe impl poulpy_core::oep::GLWELinearTransformationImpl for BE {
         A: poulpy_core::layouts::GLWEInfos,
         K: poulpy_core::layouts::GGLWEInfos,
     {
-        module.glwe_linear_transformation_baby_steps_prepare_tmp_bytes_reference(a, plan, key)
+        GLWELinearTransformationReference::<BE, Standard>::glwe_linear_transformation_baby_steps_prepare_tmp_bytes_reference(
+            module, a, plan, key,
+        )
     }
 
     fn glwe_linear_transformation_rhs_prepare_tmp_bytes<P>(module: &Module<BE>, pt_infos: &P) -> usize
     where
         P: poulpy_core::layouts::GLWEInfos,
     {
-        module.glwe_linear_transformation_rhs_prepare_tmp_bytes_reference(pt_infos)
+        GLWELinearTransformationReference::<BE, Standard>::glwe_linear_transformation_rhs_prepare_tmp_bytes_reference(
+            module, pt_infos,
+        )
     }
 
     fn glwe_linear_transformation_rhs_prepare<P>(
@@ -116,12 +128,14 @@ unsafe impl poulpy_core::oep::GLWELinearTransformationImpl for BE {
     ) where
         P: poulpy_core::layouts::GLWEToBackendRef<BE> + poulpy_core::layouts::GLWEInfos,
     {
-        module.glwe_linear_transformation_rhs_prepare_reference(prepared, lt, scratch)
+        GLWELinearTransformationReference::<BE, Standard>::glwe_linear_transformation_rhs_prepare_reference(
+            module, prepared, lt, scratch,
+        )
     }
 
-    fn glwe_linear_transformation_baby_steps_prepare<A, H, L: BabyStepOperand<BE>>(
+    fn glwe_linear_transformation_baby_steps_prepare<A, H, L: BabyStepOperand<BE, Standard>>(
         module: &Module<BE>,
-        cache: &mut poulpy_core::layouts::prepared::LinearTransformationBabySteps<BE, L>,
+        cache: &mut poulpy_core::layouts::prepared::LinearTransformationBabySteps<BE, Standard, L>,
         a: &A,
         keys: &H,
         scratch: &mut ::poulpy_hal::layouts::ScratchArena<BE>,
@@ -129,14 +143,16 @@ unsafe impl poulpy_core::oep::GLWELinearTransformationImpl for BE {
         A: poulpy_core::layouts::GLWEToBackendRef<BE> + poulpy_core::layouts::GLWEInfos,
         H: poulpy_core::layouts::GetAutomorphismKey<BE>,
     {
-        module.glwe_linear_transformation_baby_steps_prepare_reference(cache, a, keys, scratch)
+        GLWELinearTransformationReference::<BE, Standard>::glwe_linear_transformation_baby_steps_prepare_reference(
+            module, cache, a, keys, scratch,
+        )
     }
 
-    fn glwe_linear_transformation_eval_into<R, P, H, L: BabyStepOperand<BE>>(
+    fn glwe_linear_transformation_eval_into<R, P, H, L: BabyStepOperand<BE, Standard>>(
         module: &Module<BE>,
         cnv_offset: usize,
         res: &mut R,
-        lhs: &poulpy_core::layouts::prepared::LinearTransformationBabySteps<BE, L>,
+        lhs: &poulpy_core::layouts::prepared::LinearTransformationBabySteps<BE, Standard, L>,
         rhs: &poulpy_core::layouts::LinearTransformation<P>,
         keys: &H,
         scratch: &mut ::poulpy_hal::layouts::ScratchArena<BE>,
@@ -147,15 +163,17 @@ unsafe impl poulpy_core::oep::GLWELinearTransformationImpl for BE {
     {
         assert_linear_transformation_into(lhs, rhs);
         if !eval(module, cnv_offset, res, &[lhs], &[rhs], keys, scratch) {
-            module.glwe_linear_transformation_eval_into_reference(cnv_offset, res, lhs, rhs, keys, scratch)
+            GLWELinearTransformationReference::<BE, Standard>::glwe_linear_transformation_eval_into_reference(
+                module, cnv_offset, res, lhs, rhs, keys, scratch,
+            )
         }
     }
 
-    fn glwe_linear_transformation_eval_sum_into<R, P, H, L: BabyStepOperand<BE>>(
+    fn glwe_linear_transformation_eval_sum_into<R, P, H, L: BabyStepOperand<BE, Standard>>(
         module: &Module<BE>,
         cnv_offset: usize,
         res: &mut R,
-        babies: &[&poulpy_core::layouts::prepared::LinearTransformationBabySteps<BE, L>],
+        babies: &[&poulpy_core::layouts::prepared::LinearTransformationBabySteps<BE, Standard, L>],
         lts: &[&poulpy_core::layouts::LinearTransformation<P>],
         keys: &H,
         scratch: &mut ::poulpy_hal::layouts::ScratchArena<BE>,
@@ -166,25 +184,34 @@ unsafe impl poulpy_core::oep::GLWELinearTransformationImpl for BE {
     {
         assert_linear_transformation_sum(babies, lts);
         if !eval(module, cnv_offset, res, babies, lts, keys, scratch) {
-            module.glwe_linear_transformation_eval_sum_into_reference(cnv_offset, res, babies, lts, keys, scratch)
+            GLWELinearTransformationReference::<BE, Standard>::glwe_linear_transformation_eval_sum_into_reference(
+                module, cnv_offset, res, babies, lts, keys, scratch,
+            )
         }
     }
 
     fn glwe_giant_step_batch(module: &Module<BE>) -> usize {
-        module.glwe_giant_step_batch_reference()
+        GLWELinearTransformationReference::<BE, Standard>::glwe_giant_step_batch_reference(module)
     }
 
-    fn glwe_accumulate_giant_steps<L: BabyStepOperand<BE>>(
+    fn glwe_accumulate_giant_steps<L: BabyStepOperand<BE, Standard>>(
         module: &Module<BE>,
         cnv_offset_hi: usize,
-        prods: &mut [VecZnxDftBackendMut<'_, BE>],
-        lhs: &poulpy_core::layouts::prepared::LinearTransformationBabySteps<BE, L>,
+        prods: &mut [VecZnxDftBackendMut<'_, BE, Standard>],
+        lhs: &poulpy_core::layouts::prepared::LinearTransformationBabySteps<BE, Standard, L>,
         steps: &[poulpy_core::layouts::LinearTransformationGiantStep<
-            poulpy_core::layouts::prepared::PreparedDiagonal<<BE as Backend>::OwnedBuf, BE>,
+            poulpy_core::layouts::prepared::PreparedDiagonal<<BE as Backend>::OwnedBuf, BE, Standard>,
         >],
         scratch: &mut ScratchArena<'_, BE>,
     ) {
-        module.glwe_accumulate_giant_steps_reference(cnv_offset_hi, prods, lhs, steps, scratch)
+        GLWELinearTransformationReference::<BE, Standard>::glwe_accumulate_giant_steps_reference(
+            module,
+            cnv_offset_hi,
+            prods,
+            lhs,
+            steps,
+            scratch,
+        )
     }
 }
 
@@ -193,11 +220,11 @@ const PARALLEL_EVAL_MIN_SIZE: usize = if cfg!(test) { 2 } else { 16 };
 
 /// The parallel evaluation of `Σ_t M_t(a_t)` over checked terms of plaintext diagonals, each giant step's PROD summed
 /// over the terms as the reference sums it. Returns `false`, with `res` untouched, where it does not apply.
-fn eval<R, P, H, L: BabyStepOperand<BE>>(
+fn eval<R, P, H, L: BabyStepOperand<BE, Standard>>(
     module: &Module<BE>,
     cnv_offset: usize,
     res: &mut R,
-    babies: &[&LinearTransformationBabySteps<BE, L>],
+    babies: &[&LinearTransformationBabySteps<BE, Standard, L>],
     lts: &[&LinearTransformation<P>],
     keys: &H,
     scratch: &mut ScratchArena<'_, BE>,
@@ -230,7 +257,7 @@ where
         .iter()
         .map(|gs| {
             (gs.rot != 0).then(|| {
-                keys.get_automorphism_key(module.galois_element(gs.rot), res.k())
+                keys.get_automorphism_key(module.galois_element::<Standard>(gs.rot), res.k())
                     .unwrap_or_else(|e| panic!("giant-step rotation {}: {e}", gs.rot))
             })
         })
@@ -314,8 +341,8 @@ where
 #[allow(clippy::too_many_arguments)]
 fn finish_giant(
     module: &Module<BE>,
-    acc: &mut VecZnxDftBackendMut<'_, BE>,
-    prod: &mut VecZnxDftBackendMut<'_, BE>,
+    acc: &mut VecZnxDftBackendMut<'_, BE, Standard>,
+    prod: &mut VecZnxDftBackendMut<'_, BE, Standard>,
     base: usize,
     rot: i64,
     key: Option<&GLWEAutomorphismKeyPreparedBackendRef<'_, BE>>,
@@ -359,7 +386,11 @@ fn finish_giant(
     }
 
     let key = GGLWEPreparedToBackendRef::<BE>::to_backend_ref(&key);
-    let plan = module.vec_znx_dft_automorphism_plan(module.n(), module.galois_element(rot));
+    let plan = <Module<BE> as VecZnxDftAutomorphismPlan<BE, Standard>>::vec_znx_dft_automorphism_plan(
+        module,
+        module.n(),
+        module.galois_element::<Standard>(rot),
+    );
     let product_terms = module
         .n()
         .saturating_mul(key.dnum().as_usize())
@@ -374,11 +405,11 @@ fn finish_giant(
     let a_shape = a_dft.shape();
     let acc_shape = acc.shape();
     let body_shape = prod.shape();
-    let a = VecZnxDft::<_, _, crate::NTT3x42Ifma>::from_shape(&**a_dft.data(), a_shape);
-    let mut acc = VecZnxDft::<_, _, crate::NTT3x42Ifma>::from_shape(&mut **acc.data_mut(), acc_shape);
-    let body = VecZnxDft::<_, _, crate::NTT3x42Ifma>::from_shape(&**prod.data(), body_shape);
+    let a = VecZnxDft::<_, _, crate::NTT3x42Ifma, Standard>::from_shape(&**a_dft.data(), a_shape);
+    let mut acc = VecZnxDft::<_, _, crate::NTT3x42Ifma, Standard>::from_shape(&mut **acc.data_mut(), acc_shape);
+    let body = VecZnxDft::<_, _, crate::NTT3x42Ifma, Standard>::from_shape(&**prod.data(), body_shape);
     let data = key.data();
-    let pmat = VmpPMat::<_, _, crate::NTT3x42Ifma>::from_data(
+    let pmat = VmpPMat::<_, _, crate::NTT3x42Ifma, Standard>::from_data(
         &**data.data(),
         data.n(),
         data.rows(),
@@ -387,7 +418,12 @@ fn finish_giant(
         data.size(),
         data.hint(),
     );
-    let bytes = module.gglwe_product_dft_tmp_bytes_reference(output_size, operand_size, &key);
+    let bytes = <Module<BE> as GGLWEProductReference<BE, Standard>>::gglwe_product_dft_tmp_bytes_reference(
+        module,
+        output_size,
+        operand_size,
+        &key,
+    );
     let (tmp, _) = crate::hal_impl::take_host_typed::<BE, u64>(arena, bytes / 8);
     super::vmp::vmp_rotate_add::<_, E>(
         &mut acc,
@@ -407,12 +443,12 @@ fn finish_giant(
 #[allow(clippy::too_many_arguments)]
 fn consume(
     module: &Module<BE>,
-    res: &mut VecZnxBackendMut<'_, BE>,
+    res: &mut VecZnxBackendMut<'_, BE, Standard>,
     res_base: usize,
     res_k: usize,
     offset: i64,
     res_col: usize,
-    a: &mut VecZnxDftBackendMut<'_, BE>,
+    a: &mut VecZnxDftBackendMut<'_, BE, Standard>,
     a_col: usize,
     base: usize,
     scratch: &mut ScratchArena<'_, BE>,
@@ -422,7 +458,7 @@ fn consume(
         poulpy_hal::execution::scratch_workers_within::<E>(a.size().min(8), 3 * n * size_of::<u64>(), scratch.available());
     let (tmp, _) = crate::hal_impl::take_host_typed::<BE, u64>(scratch.borrow(), workers * 3 * n);
     let shape = a.shape();
-    let mut a = VecZnxDft::<_, _, crate::NTT3x42Ifma>::from_shape(&mut **a.data_mut(), shape);
+    let mut a = VecZnxDft::<_, _, crate::NTT3x42Ifma, Standard>::from_shape(&mut **a.data_mut(), shape);
     let shape = res.shape();
     let mut res = VecZnx::from_shape(&mut **res.data_mut(), shape);
     super::vec_znx_dft::idft_normalize_ifma::<_, E>(

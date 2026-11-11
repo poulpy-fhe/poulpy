@@ -8,8 +8,8 @@
 //! [`impl_ckks_encoding!`](crate::impl_ckks_encoding).
 //!
 //! A plan-cache entry holds the complete geometric family for one scalar
-//! precision. The encoder owns its twiddle tables rather than borrowing the
-//! backend's ring-FFT tables: the duplication is a geometric series bounded by
+//! precision and one ring, whose slot count bounds the family. The encoder owns its twiddle tables rather than borrowing the
+//! module's ring-FFT tables: the duplication is a geometric series bounded by
 //! `2·max_n` scalars (~100 KiB of `f64` at `n = 65536`), and in exchange every
 //! backend follows one code path and can use its own accelerated kernels.
 
@@ -232,12 +232,17 @@ pub trait CKKSEncodingTransform<F> {
 ///
 /// The scheme math comes from the CKKS reference helpers; the backend supplies
 /// its transform through [`CKKSEncodingTransform`](crate::ckks_encoding::CKKSEncodingTransform),
-/// so this expands to a single implementation covering every precision that
-/// backend selects a transform for.
+/// so this expands to one implementation per ring covering every precision that
+/// backend selects a transform for. `impl_ckks_encoding!(Backend)` implements
+/// both rings and `impl_ckks_encoding!(Backend, Ring)` implements `Ring` only.
 #[macro_export]
 macro_rules! impl_ckks_encoding {
     ($be:ty) => {
-        unsafe impl<F> ::poulpy_ckks::oep::CKKSEncodingImpl<F> for $be
+        $crate::impl_ckks_encoding!($be, ::poulpy_hal::layouts::Standard);
+        $crate::impl_ckks_encoding!($be, ::poulpy_hal::layouts::ConjugateInvariant);
+    };
+    ($be:ty, $ring:ty) => {
+        unsafe impl<F> ::poulpy_ckks::oep::CKKSEncodingImpl<F, $ring> for $be
         where
             F: ::poulpy_ckks::api::CKKSEncodingScalar,
             $be: $crate::ckks_encoding::CKKSEncodingTransform<F>,
@@ -245,17 +250,15 @@ macro_rules! impl_ckks_encoding {
             type Plans =
                 $crate::ckks_encoding::OwnedEncodingPlanSet<F, <$be as $crate::ckks_encoding::CKKSEncodingTransform<F>>::Fft>;
 
-            fn ckks_encoding_plan_cache(
-                module: &::poulpy_hal::layouts::Module<$be>,
-            ) -> &::poulpy_hal::layouts::ModulePlanCache {
+            fn ckks_encoding_plan_cache(module: &::poulpy_hal::layouts::Module<$be>) -> &::poulpy_hal::layouts::ModulePlanCache {
                 $crate::table_cache::ModuleTableCacheAccess::module_table_cache(module)
             }
 
-            fn ckks_encoding_plans_create(
-                module: &::poulpy_hal::layouts::Module<$be>,
-            ) -> ::poulpy_ckks::CKKSResult<Self::Plans> {
-                $crate::ckks_encoding::OwnedEncodingPlanSet::new(2 * ::poulpy_ckks::api::CKKSModuleInfos::ckks_max_slots(module))
-                    .map_err(::poulpy_ckks::CKKSError::from)
+            fn ckks_encoding_plans_create(module: &::poulpy_hal::layouts::Module<$be>) -> ::poulpy_ckks::CKKSResult<Self::Plans> {
+                $crate::ckks_encoding::OwnedEncodingPlanSet::new(
+                    2 * ::poulpy_ckks::api::CKKSModuleInfos::ckks_max_slots::<$ring>(module),
+                )
+                .map_err(::poulpy_ckks::CKKSError::from)
             }
 
             fn ckks_quantize_coeffs_into<P>(
@@ -264,11 +267,11 @@ macro_rules! impl_ckks_encoding {
                 coeffs: &::poulpy_ckks::layouts::CKKSEncodingBufferBackendRef<'_, $be, F>,
             ) -> ::poulpy_ckks::CKKSResult<()>
             where
-                P: ::poulpy_ckks::CKKSPlaintextToBackendMut<$be>
+                P: ::poulpy_ckks::CKKSPlaintextToBackendMut<$be, $ring>
                     + ::poulpy_core::layouts::IntPolyInfos
                     + ::poulpy_ckks::SetCKKSInfos,
             {
-                ::poulpy_ckks::reference::encoding::ckks_quantize_coeffs_into_reference::<$be, F, P>(pt, coeffs)
+                ::poulpy_ckks::reference::encoding::ckks_quantize_coeffs_into_reference::<$be, F, P, $ring>(pt, coeffs)
                     .map_err(::poulpy_ckks::CKKSError::from)
             }
 
@@ -278,9 +281,9 @@ macro_rules! impl_ckks_encoding {
                 coeffs: &mut ::poulpy_ckks::layouts::CKKSEncodingBufferBackendMut<'_, $be, F>,
             ) -> ::poulpy_ckks::CKKSResult<()>
             where
-                P: ::poulpy_ckks::CKKSPlaintextToBackendRef<$be> + ::poulpy_core::layouts::IntPolyInfos,
+                P: ::poulpy_ckks::CKKSPlaintextToBackendRef<$be, $ring> + ::poulpy_core::layouts::IntPolyInfos,
             {
-                ::poulpy_ckks::reference::encoding::ckks_dequantize_coeffs_into_reference::<$be, F, P>(pt, coeffs)
+                ::poulpy_ckks::reference::encoding::ckks_dequantize_coeffs_into_reference::<$be, F, P, $ring>(pt, coeffs)
                     .map_err(::poulpy_ckks::CKKSError::from)
             }
 
@@ -291,7 +294,7 @@ macro_rules! impl_ckks_encoding {
             ) -> ::poulpy_ckks::CKKSResult<()> {
                 let slots = ::poulpy_ckks::layouts::CKKSEncodingBufferInfos::len(values) / 2;
                 let (map, fft) = plans.for_slots(slots)?;
-                <<$be as ::poulpy_hal::layouts::Backend>::Ring as ::poulpy_ckks::reference::encoding::CKKSSlotEmbedding>::slots_to_coeffs_assign(
+                <$ring as ::poulpy_ckks::reference::encoding::CKKSSlotEmbedding>::slots_to_coeffs_assign(
                     map,
                     fft,
                     values.as_mut_slice(),
@@ -306,7 +309,7 @@ macro_rules! impl_ckks_encoding {
             ) -> ::poulpy_ckks::CKKSResult<()> {
                 let slots = ::poulpy_ckks::layouts::CKKSEncodingBufferInfos::len(values) / 2;
                 let (map, fft) = plans.for_slots(slots)?;
-                <<$be as ::poulpy_hal::layouts::Backend>::Ring as ::poulpy_ckks::reference::encoding::CKKSSlotEmbedding>::coeffs_to_slots_assign(
+                <$ring as ::poulpy_ckks::reference::encoding::CKKSSlotEmbedding>::coeffs_to_slots_assign(
                     map,
                     fft,
                     values.as_mut_slice(),
@@ -329,7 +332,7 @@ mod tests {
     use poulpy_hal::{
         AlignedBuf,
         api::ScratchOwnedAlloc,
-        layouts::{Backend, Module, ScratchOwned},
+        layouts::{Backend, Module, ScratchOwned, Standard},
     };
 
     fn assert_close<F: CKKSEncodingScalar>(got_re: &[F], got_im: &[F], re: &[F], im: &[F]) {
@@ -385,7 +388,7 @@ mod tests {
     #[test]
     fn coefficient_only_encoding_accepts_scratch_plaintext_views() {
         let module = Module::<FFT64Portable>::new(32);
-        let mut layout = module.ckks_plaintext_alloc(Degree(16), Base2K(20), TorusPrecision(80));
+        let mut layout = module.ckks_plaintext_alloc::<Standard>(Degree(16), Base2K(20), TorusPrecision(80));
         layout.set_meta(GLWEPlaintextMeta {
             scale: Scale::Log(40),
             slots: SlotsKind::Complex,
@@ -394,7 +397,7 @@ mod tests {
         });
         let bytes = GLWEPlaintext::<AlignedBuf, i64>::bytes_of_from_infos(&layout);
         let mut pt_scratch = ScratchOwned::<FFT64Portable>::alloc(bytes);
-        let (mut pt, _) = pt_scratch.arena().take_ckks_plaintext_like_scratch(&layout);
+        let (mut pt, _) = pt_scratch.arena().take_ckks_plaintext_like_scratch::<_, Standard>(&layout);
 
         let slots = 8;
         let re: Vec<f64> = (0..slots).map(|i| (i as f64 + 1.0) / 17.0).collect();
@@ -443,7 +446,7 @@ mod tests {
     #[test]
     fn encoding_rejects_invalid_slot_shapes() {
         let module = Module::<FFT64Portable>::new(32);
-        let mut pt = module.ckks_plaintext_alloc(Degree(16), Base2K(20), TorusPrecision(80));
+        let mut pt = module.ckks_plaintext_alloc::<Standard>(Degree(16), Base2K(20), TorusPrecision(80));
         pt.set_meta(GLWEPlaintextMeta {
             scale: Scale::Log(40),
             slots: SlotsKind::Complex,

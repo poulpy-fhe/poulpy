@@ -6,25 +6,42 @@
 //! halves (rank-1) the serialised size at the cost of a
 //! decompression step before use.
 //!
-//! Every compressed type expands back into the corresponding standard
+//! Every compressed type expands back into the corresponding unprepared
 //! layout through a decompression operation of [`crate::api`], such as
 //! [`GLWEDecompress`](crate::api::GLWEDecompress).
 
 macro_rules! impl_gglwe_compressed_to_backend_for_field {
-    ($ty:ty, $field:tt, $inner:ty) => {
-        impl<BE: Backend> GGLWECompressedToBackendRef<BE> for $ty {
-            fn to_backend_ref(&self) -> GGLWECompressedBackendRef<'_, BE> {
-                <$inner as GGLWECompressedToBackendRef<BE>>::to_backend_ref(&self.$field)
+    ($ty:ty, $field:tt, $inner:ty, ring = $ring:ty) => {
+        impl<BE: Backend> GGLWECompressedToBackendRef<BE, $ring> for $ty {
+            fn to_backend_ref(&self) -> GGLWECompressedBackendRef<'_, BE, $ring> {
+                <$inner as GGLWECompressedToBackendRef<BE, $ring>>::to_backend_ref(&self.$field)
             }
         }
 
-        impl<BE: Backend> GGLWECompressedToBackendMut<BE> for $ty {
+        impl<BE: Backend> GGLWECompressedToBackendMut<BE, $ring> for $ty {
             fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
-                <_ as GGLWECompressedToBackendMut<BE>>::set_noise(&mut self.$field, metadata);
+                <_ as GGLWECompressedToBackendMut<BE, $ring>>::set_noise(&mut self.$field, metadata);
             }
 
-            fn to_backend_mut(&mut self) -> GGLWECompressedBackendMut<'_, BE> {
-                <$inner as GGLWECompressedToBackendMut<BE>>::to_backend_mut(&mut self.$field)
+            fn to_backend_mut(&mut self) -> GGLWECompressedBackendMut<'_, BE, $ring> {
+                <$inner as GGLWECompressedToBackendMut<BE, $ring>>::to_backend_mut(&mut self.$field)
+            }
+        }
+    };
+    ($ty:ty, $field:tt, $inner:ty) => {
+        impl<BE: Backend, Rg: ::poulpy_hal::layouts::Ring> GGLWECompressedToBackendRef<BE, Rg> for $ty {
+            fn to_backend_ref(&self) -> GGLWECompressedBackendRef<'_, BE, Rg> {
+                <$inner as GGLWECompressedToBackendRef<BE, Rg>>::to_backend_ref(&self.$field)
+            }
+        }
+
+        impl<BE: Backend, Rg: ::poulpy_hal::layouts::Ring> GGLWECompressedToBackendMut<BE, Rg> for $ty {
+            fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
+                <_ as GGLWECompressedToBackendMut<BE, Rg>>::set_noise(&mut self.$field, metadata);
+            }
+
+            fn to_backend_mut(&mut self) -> GGLWECompressedBackendMut<'_, BE, Rg> {
+                <$inner as GGLWECompressedToBackendMut<BE, Rg>>::to_backend_mut(&mut self.$field)
             }
         }
     };

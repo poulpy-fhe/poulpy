@@ -16,48 +16,42 @@ use crate::{
 };
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{DataView, Module, ScratchOwned},
+    layouts::{DataView, Module, Ring, ScratchOwned, Standard},
     test_suite::TestParams,
 };
 
-pub trait PreparationBounds<BE: ParityBackend>:
+pub trait PreparationBounds<BE: ParityBackend<Rg>, Rg: Ring = Standard>:
     ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>
-    + GLWEPreparedFactory<BE>
-    + GLWEPublicKeyPreparedFactory<BE>
-    + GLWESecretPreparedFactory<BE>
-    + GLWESecretTensorPreparedFactory<BE>
-    + GGLWEPreparedFactory<BE>
-    + GGSWPreparedFactory<BE>
-    + GLWEAutomorphismKeyPreparedFactory<BE>
-    + GLWESwitchingKeyPreparedFactory<BE>
-    + GLWETensorKeyPreparedFactory<BE>
-    + LWESwitchingKeyPreparedFactory<BE>
-    + GLWEToLWEKeyPreparedFactory<BE>
-    + LWEToGLWEKeyPreparedFactory<BE>
-    + GGLWEToGGSWKeyPreparedFactory<BE>
+    + GLWEPreparedFactory<BE, Rg>
+    + GLWEPublicKeyPreparedFactory<BE, Rg>
+    + GLWESecretPreparedFactory<BE, Rg>
+    + GLWESecretTensorPreparedFactory<BE, Rg>
+    + GGLWEPreparedFactory<BE, Rg>
+    + GGSWPreparedFactory<BE, Rg>
+    + GLWEAutomorphismKeyPreparedFactory<BE, Rg>
+    + GLWESwitchingKeyPreparedFactory<BE, Rg>
+    + GLWETensorKeyPreparedFactory<BE, Rg>
+    + GGLWEToGGSWKeyPreparedFactory<BE, Rg>
 {
 }
-impl<BE: ParityBackend> PreparationBounds<BE> for Module<BE> where
+impl<BE: ParityBackend<Rg>, Rg: Ring> PreparationBounds<BE, Rg> for Module<BE> where
     Self: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>
-        + GLWEPreparedFactory<BE>
-        + GLWEPublicKeyPreparedFactory<BE>
-        + GLWESecretPreparedFactory<BE>
-        + GLWESecretTensorPreparedFactory<BE>
-        + GGLWEPreparedFactory<BE>
-        + GGSWPreparedFactory<BE>
-        + GLWEAutomorphismKeyPreparedFactory<BE>
-        + GLWESwitchingKeyPreparedFactory<BE>
-        + GLWETensorKeyPreparedFactory<BE>
-        + LWESwitchingKeyPreparedFactory<BE>
-        + GLWEToLWEKeyPreparedFactory<BE>
-        + LWEToGLWEKeyPreparedFactory<BE>
-        + GGLWEToGGSWKeyPreparedFactory<BE>
+        + GLWEPreparedFactory<BE, Rg>
+        + GLWEPublicKeyPreparedFactory<BE, Rg>
+        + GLWESecretPreparedFactory<BE, Rg>
+        + GLWESecretTensorPreparedFactory<BE, Rg>
+        + GGLWEPreparedFactory<BE, Rg>
+        + GGSWPreparedFactory<BE, Rg>
+        + GLWEAutomorphismKeyPreparedFactory<BE, Rg>
+        + GLWESwitchingKeyPreparedFactory<BE, Rg>
+        + GLWETensorKeyPreparedFactory<BE, Rg>
+        + GGLWEToGGSWKeyPreparedFactory<BE, Rg>
 {
 }
 
-fn exercise<BE: ParityBackend>(params: &TestParams, shapes: &ParityShapes, m: &Module<BE>)
+fn exercise<BE: ParityBackend<Rg>, Rg: Ring>(params: &TestParams, shapes: &ParityShapes, m: &Module<BE>)
 where
-    Module<BE>: PreparationBounds<BE>,
+    Module<BE>: PreparationBounds<BE, Rg>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     macro_rules! check {
@@ -108,15 +102,6 @@ where
                 k_aux: aux,
                 rank,
             };
-            let lwe = GGLWELayout {
-                k_digit: crate::layouts::k_digit_of(b, 1u32),
-                k_offset: TorusPrecision(0),
-                rank_in: Rank(1),
-                rank_out: Rank(1),
-                ..gadget
-            };
-            let to_lwe = GGLWELayout { rank_in: rank, ..lwe };
-            let from_lwe = GGLWELayout { rank_out: rank, ..lwe };
             let mut prepared = check!(
                 glwe_prepared_alloc,
                 glwe_prepared_alloc_from_infos,
@@ -274,10 +259,68 @@ where
                 &source,
                 &mut poisoned_scratch::<BE>(m.glwe_tensor_key_prepare_tmp_bytes(&source)).borrow(),
             );
-            let borrowed = GLWETensorKeyPreparedToBackendRef::<BE>::to_backend_ref(&prepared);
+            let borrowed = GLWETensorKeyPreparedToBackendRef::<BE, Rg>::to_backend_ref(&prepared);
             let borrowed_ref = &borrowed;
-            let view = GGLWEPreparedToBackendRef::<BE>::to_backend_ref(&borrowed_ref);
+            let view = GGLWEPreparedToBackendRef::<BE, Rg>::to_backend_ref(&borrowed_ref);
             assert_eq!(view.noise(), source.noise());
+            let mut prepared = check!(
+                gglwe_to_ggsw_key_prepared_alloc,
+                gglwe_to_ggsw_key_prepared_alloc_from_infos,
+                gglwe_to_ggsw_key_prepared_bytes_of,
+                gglwe_to_ggsw_key_prepared_bytes_of_from_infos,
+                gadget,
+                [b, dn, crate::layouts::k_digit_of(b, ds), aux, rank],
+                p,
+                p.keys.iter().map(|key| BE::len_bytes(key.data.data())).sum::<usize>()
+            );
+            let source = m.gglwe_to_ggsw_key_alloc_from_infos(&gadget);
+            m.gglwe_to_ggsw_key_prepare(
+                &mut prepared,
+                &source,
+                &mut poisoned_scratch::<BE>(m.gglwe_to_ggsw_key_prepare_tmp_bytes(&source)).borrow(),
+            );
+        }
+    }
+}
+/// The LWE key factories of the standard ring, exercised as [`exercise`] does the others.
+fn exercise_lwe_keys<BE: ParityBackend>(params: &TestParams, shapes: &ParityShapes, m: &Module<BE>)
+where
+    Module<BE>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>
+        + LWESwitchingKeyPreparedFactory<BE>
+        + GLWEToLWEKeyPreparedFactory<BE>
+        + LWEToGLWEKeyPreparedFactory<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    macro_rules! check {
+        ($alloc:ident,$from:ident,$size:ident,$size_from:ident,$infos:expr,[$($arg:expr),*],$p:ident,$bytes:expr) => {{
+            let expected=m.$size($($arg),*);
+            let $p=m.$alloc($($arg),*);
+            assert_eq!($bytes,expected,"allocation size: {}",stringify!($alloc));
+            let $p=m.$from(&$infos);
+            assert_eq!($bytes,expected,"allocation from infos: {}",stringify!($from));
+            assert_eq!(m.$size_from(&$infos),expected,"size from infos: {}",stringify!($size_from));
+            $p
+        }};
+    }
+    for &rank in &shapes.ranks {
+        for dsize in [1u32, 2] {
+            let rank = Rank(rank as u32);
+            let b = Base2K(params.base2k as u32);
+            let dn = Dnum(2);
+            let aux = TorusPrecision(b.as_u32() * dsize + 1);
+            let lwe = GGLWELayout {
+                n: Degree(m.n() as u32),
+                base2k: b,
+                dnum: dn,
+                k_digit: crate::layouts::k_digit_of(b, 1u32),
+                k_offset: TorusPrecision(0),
+                k_aux: aux,
+                rank_in: Rank(1),
+                rank_out: Rank(1),
+                stride: 1,
+            };
+            let to_lwe = GGLWELayout { rank_in: rank, ..lwe };
+            let from_lwe = GGLWELayout { rank_out: rank, ..lwe };
             let mut prepared = check!(
                 lwe_switching_key_prepared_alloc,
                 lwe_switching_key_prepared_alloc_from_infos,
@@ -326,38 +369,31 @@ where
                 &source,
                 &mut poisoned_scratch::<BE>(m.lwe_to_glwe_key_prepare_tmp_bytes(&source)).borrow(),
             );
-            let mut prepared = check!(
-                gglwe_to_ggsw_key_prepared_alloc,
-                gglwe_to_ggsw_key_prepared_alloc_from_infos,
-                gglwe_to_ggsw_key_prepared_bytes_of,
-                gglwe_to_ggsw_key_prepared_bytes_of_from_infos,
-                gadget,
-                [b, dn, crate::layouts::k_digit_of(b, ds), aux, rank],
-                p,
-                p.keys.iter().map(|key| BE::len_bytes(key.data.data())).sum::<usize>()
-            );
-            let source = m.gglwe_to_ggsw_key_alloc_from_infos(&gadget);
-            m.gglwe_to_ggsw_key_prepare(
-                &mut prepared,
-                &source,
-                &mut poisoned_scratch::<BE>(m.gglwe_to_ggsw_key_prepare_tmp_bytes(&source)).borrow(),
-            );
         }
     }
 }
+
 /// Exercises each prepared factory's direct/from-info allocation and size
 /// queries, then prepares with an independently budgeted poisoned arena.
-pub fn test_preparation_contract<BR: ParityBackend, BT: ParityBackend>(
+pub fn test_preparation_contract<BR: ParityBackend<Rg> + ParityBackend, BT: ParityBackend<Rg> + ParityBackend, Rg: Ring>(
     params: &TestParams,
     shapes: &ParityShapes,
     r: &Module<BR>,
     t: &Module<BT>,
 ) where
-    Module<BR>: PreparationBounds<BR>,
-    Module<BT>: PreparationBounds<BT>,
+    Module<BR>: PreparationBounds<BR, Rg>
+        + LWESwitchingKeyPreparedFactory<BR>
+        + GLWEToLWEKeyPreparedFactory<BR>
+        + LWEToGLWEKeyPreparedFactory<BR>,
+    Module<BT>: PreparationBounds<BT, Rg>
+        + LWESwitchingKeyPreparedFactory<BT>
+        + GLWEToLWEKeyPreparedFactory<BT>
+        + LWEToGLWEKeyPreparedFactory<BT>,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
 {
-    exercise(params, shapes, r);
-    exercise(params, shapes, t);
+    exercise::<_, Rg>(params, shapes, r);
+    exercise::<_, Rg>(params, shapes, t);
+    exercise_lwe_keys(params, shapes, r);
+    exercise_lwe_keys(params, shapes, t);
 }

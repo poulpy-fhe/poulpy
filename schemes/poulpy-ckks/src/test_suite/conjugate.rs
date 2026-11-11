@@ -33,7 +33,22 @@ use crate::{test_suite::CKKSTestParams, test_suite::reference_encoder::Reference
 
 pub fn test_conjugate_aligned<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextModule<BE> + GLWEAutomorphism<BE> + GLWEShift<BE> + CKKSConjugateOps<BE>,
+    F: TestScalar,
+    E: ReimNew<F>,
+    for<'a> ScratchArena<'a, BE>: ScratchAvailable,
+{
+    conjugate_aligned::<BE, F, E>(params, module, host_module);
+    // Operands of half the module's degree conjugate under the module's conjugation key.
+    conjugate_aligned::<BE, F, E>(params, &Module::<BE>::new(2 * params.n as u64), host_module);
+}
+
+fn conjugate_aligned<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
+where
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE> + GLWEAutomorphism<BE> + GLWEShift<BE> + CKKSConjugateOps<BE>,
@@ -79,7 +94,7 @@ where
     })
     .unwrap();
     assert!(
-        snapshot::<BE, _>(&ct_res) == snapshot::<BE, _>(&ct_rotated),
+        snapshot::<BE, _, Standard>(&ct_res) == snapshot::<BE, _, Standard>(&ct_rotated),
         "ckks_conjugate_into is not ckks_conjugate_rotate_into at k = 0"
     );
     assert_unary_output_meta("conjugate", &ct_res, params.k, &ct1);
@@ -101,7 +116,7 @@ pub fn test_conjugate_smaller_output<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE> + GLWEAutomorphism<BE> + GLWEShift<BE> + CKKSConjugateOps<BE>,
@@ -150,7 +165,7 @@ pub fn test_conjugate_smaller_output<BE, F, E>(
 
 pub fn test_conjugate_assign<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE> + GLWEAutomorphism<BE> + GLWEShift<BE> + CKKSConjugateOps<BE>,

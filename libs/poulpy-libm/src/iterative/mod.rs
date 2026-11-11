@@ -10,7 +10,7 @@ use poulpy_core::{
         BSGSMeta, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, IntPolyInfos, LWEInfos,
     },
 };
-use poulpy_hal::layouts::{Backend, Module, ScratchArena, Standard};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use poulpy_ckks::{
     CKKSCtBounds, CKKSInfos, SetCKKSInfos,
@@ -335,7 +335,7 @@ where
     }
 }
 
-impl<BE: Backend<Ring = Standard>> CKKSInverseDomainOps<BE> for Module<BE>
+impl<BE: Backend> CKKSInverseDomainOps<BE> for Module<BE>
 where
     Module<BE>: CKKSInverseOps<BE>
         + CKKSAllOpsTmpBytes<BE>

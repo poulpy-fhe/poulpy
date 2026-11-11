@@ -5,7 +5,7 @@
 //! at `blk * nrows * ncols * cell + cell_offset(..)`, paired columns sharing a
 //! `2 * cell` slot and a trailing odd column using a `cell`-wide one.
 
-use crate::layouts::{Backend, VmpPMatBackendMut, VmpPMatBackendRef};
+use crate::layouts::{Backend, Ring, VmpPMatBackendMut, VmpPMatBackendRef};
 
 /// Rejects a selection the kernel must not be handed: mismatched prepared
 /// shapes or [`PrepareHint`](crate::layouts::PrepareHint)s, a truncation that widens, or a last row that
@@ -14,9 +14,9 @@ use crate::layouts::{Backend, VmpPMatBackendMut, VmpPMatBackendRef};
 ///
 /// Every kernel entry point calls it first, so the kernel may index without
 /// bounds checks in release.
-pub fn assert_extractable_portable<BE: Backend>(
-    res: &VmpPMatBackendMut<'_, BE>,
-    a: &VmpPMatBackendRef<'_, BE>,
+pub fn assert_extractable_portable<BE: Backend, Rg: Ring>(
+    res: &VmpPMatBackendMut<'_, BE, Rg>,
+    a: &VmpPMatBackendRef<'_, BE, Rg>,
     first_row: usize,
     row_step: usize,
 ) {

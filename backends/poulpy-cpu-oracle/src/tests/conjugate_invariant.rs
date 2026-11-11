@@ -1,12 +1,13 @@
-//! HAL suites on the conjugate-invariant oracles. Monomial operations are
-//! absent from that ring and have no suites here.
+//! HAL suites of the oracles on the conjugate-invariant ring. Monomial
+//! operations are absent from that ring and have no suites here.
 
 use poulpy_hal::{backend_test_suite, cross_backend_test_suite};
 
 cross_backend_test_suite! {
     mod vec_znx_ci,
-    backend_ref =  crate::FFT64CIOracle,
-    backend_test = crate::NTT4x30CIOracle,
+    backend_ref =  crate::FFT64Oracle,
+    backend_test = crate::NTT4x30Oracle,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     params = TestParams { size: 1<<8, base2k: 12, n: 8 },
     tests = {
         test_vec_znx_zero_matches_wrapper => poulpy_hal::test_suite::vec_znx::test_vec_znx_zero_matches_wrapper,
@@ -43,8 +44,9 @@ cross_backend_test_suite! {
 
 cross_backend_test_suite! {
     mod svp_ci,
-    backend_ref =  crate::FFT64CIOracle,
-    backend_test = crate::NTT4x30CIOracle,
+    backend_ref =  crate::FFT64Oracle,
+    backend_test = crate::NTT4x30Oracle,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     params = TestParams { size: 1<<8, base2k: 12, n: 8 },
     tests = {
         test_svp_apply_dft => poulpy_hal::test_suite::svp::test_svp_apply_dft,
@@ -55,8 +57,9 @@ cross_backend_test_suite! {
 
 cross_backend_test_suite! {
     mod vec_znx_big_ci,
-    backend_ref =  crate::FFT64CIOracle,
-    backend_test = crate::NTT4x30CIOracle,
+    backend_ref =  crate::FFT64Oracle,
+    backend_test = crate::NTT4x30Oracle,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     params = TestParams { size: 1<<8, base2k: 12, n: 8 },
     tests = {
         test_vec_znx_big_add => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_add,
@@ -84,8 +87,9 @@ cross_backend_test_suite! {
 
 cross_backend_test_suite! {
     mod vec_znx_dft_ci,
-    backend_ref =  crate::FFT64CIOracle,
-    backend_test = crate::NTT4x30CIOracle,
+    backend_ref =  crate::FFT64Oracle,
+    backend_test = crate::NTT4x30Oracle,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     params = TestParams { size: 1<<8, base2k: 12, n: 8 },
     tests = {
         test_vec_znx_dft_add => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_add,
@@ -102,8 +106,9 @@ cross_backend_test_suite! {
 
 cross_backend_test_suite! {
     mod vec_znx_dft_automorphism_ci,
-    backend_ref =  crate::FFT64CIOracle,
-    backend_test = crate::NTT4x30CIOracle,
+    backend_ref =  crate::FFT64Oracle,
+    backend_test = crate::NTT4x30Oracle,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     params = TestParams { size: 1<<8, base2k: 12, n: 8 },
     tests = {
         test_vec_znx_dft_automorphism => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_automorphism,
@@ -114,8 +119,9 @@ cross_backend_test_suite! {
 
 cross_backend_test_suite! {
     mod vmp_ci,
-    backend_ref =  crate::FFT64CIOracle,
-    backend_test = crate::NTT4x30CIOracle,
+    backend_ref =  crate::FFT64Oracle,
+    backend_test = crate::NTT4x30Oracle,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     params = TestParams { size: 1<<8, base2k: 12, n: 8 },
     tests = {
         test_vmp_apply_dft => poulpy_hal::test_suite::vmp::test_vmp_apply_dft,
@@ -129,7 +135,8 @@ cross_backend_test_suite! {
 
 backend_test_suite! {
     mod derived_fft64_ci,
-    backend = crate::FFT64CIOracle,
+    backend = crate::FFT64Oracle,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     params = TestParams { size: 1<<8, base2k: 12, n: 8 },
     tests = {
         test_vmp_apply_dft_derived => poulpy_hal::test_suite::derived::test_vmp_apply_dft_derived,
@@ -162,7 +169,8 @@ backend_test_suite! {
 
 backend_test_suite! {
     mod derived_ntt4x30_ci,
-    backend = crate::NTT4x30CIOracle,
+    backend = crate::NTT4x30Oracle,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     params = TestParams { size: 1<<8, base2k: 12, n: 8 },
     tests = {
         test_vmp_apply_dft_derived => poulpy_hal::test_suite::derived::test_vmp_apply_dft_derived,
@@ -195,7 +203,8 @@ backend_test_suite! {
 
 backend_test_suite! {
     mod sampling_ci,
-    backend = crate::NTT4x30CIOracle,
+    backend = crate::NTT4x30Oracle,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     params = TestParams { size: 1<<12, base2k: 12, n: 8 },
     tests = {
         test_vec_znx_fill_uniform => poulpy_hal::test_suite::vec_znx::test_vec_znx_fill_uniform,
@@ -205,7 +214,8 @@ backend_test_suite! {
 #[cfg(feature = "enable-core")]
 backend_test_suite! {
     mod sampling_core_ci,
-    backend = crate::NTT4x30CIOracle,
+    backend = crate::NTT4x30Oracle,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     // the core suite computes at the module degree, no sweep
     params = TestParams { size: 1<<12, base2k: 12, n: 1<<12 },
     tests = {
@@ -217,7 +227,8 @@ backend_test_suite! {
 #[cfg(feature = "enable-core")]
 backend_test_suite! {
     mod sampling_core_fft64_ci,
-    backend = crate::FFT64CIOracle,
+    backend = crate::FFT64Oracle,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     // the core suite computes at the module degree, no sweep
     params = TestParams { size: 1<<12, base2k: 17, n: 1<<12 },
     tests = {
@@ -228,7 +239,8 @@ backend_test_suite! {
 
 backend_test_suite! {
     mod window_fft64_ci,
-    backend = crate::FFT64CIOracle,
+    backend = crate::FFT64Oracle,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     params = TestParams { size: 1 << 8, base2k: 12, n: 8 },
     tests = {
         test_vec_znx_window_ops => poulpy_hal::test_suite::window::test_vec_znx_window_ops,
@@ -243,13 +255,13 @@ backend_test_suite! {
         test_convolution_embed => poulpy_hal::test_suite::convolution::test_convolution_embed,
         test_convolution_galois => poulpy_hal::test_suite::convolution::test_convolution_galois,
         test_cnv_by_const_rejects_degree_mismatch => poulpy_hal::test_suite::convolution::test_cnv_by_const_rejects_degree_mismatch,
-        test_transfer_padded_lengths => poulpy_hal::test_suite::transfer::test_transfer_padded_lengths,
     }
 }
 
 backend_test_suite! {
     mod window_ntt4x30_ci,
-    backend = crate::NTT4x30CIOracle,
+    backend = crate::NTT4x30Oracle,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     params = TestParams { size: 1 << 8, base2k: 12, n: 8 },
     tests = {
         test_vec_znx_window_ops => poulpy_hal::test_suite::window::test_vec_znx_window_ops,
@@ -264,7 +276,6 @@ backend_test_suite! {
         test_convolution_embed => poulpy_hal::test_suite::convolution::test_convolution_embed,
         test_convolution_galois => poulpy_hal::test_suite::convolution::test_convolution_galois,
         test_cnv_by_const_rejects_degree_mismatch => poulpy_hal::test_suite::convolution::test_cnv_by_const_rejects_degree_mismatch,
-        test_transfer_padded_lengths => poulpy_hal::test_suite::transfer::test_transfer_padded_lengths,
     }
 }
 
@@ -273,19 +284,20 @@ cross_backend_test_suite! {
     backend_ref =  crate::FFT64Oracle,
     backend_test = crate::NTT4x30Oracle,
     params = TestParams { size: 1<<8, base2k: 12, n: 8 },
-    tests = {
+    ring_free_tests = {
         test_vec_znx_ci_embed_trace => poulpy_hal::test_suite::vec_znx::test_vec_znx_ci_embed_trace,
         test_scalar_znx_ci_embed => poulpy_hal::test_suite::vec_znx::test_scalar_znx_ci_embed,
     }
 }
 
-// Core parity between the two conjugate-invariant oracles, over the families
+// Core parity between the two oracles on the conjugate-invariant ring, over the families
 // that do not need monomial multiplication.
 #[cfg(feature = "enable-core")]
 poulpy_core::core_parity_test_suite! {
     mod core_parity_ci,
-    backend_ref = crate::NTT4x30CIOracle,
-    backend_test = crate::FFT64CIOracle,
+    backend_ref = crate::NTT4x30Oracle,
+    backend_test = crate::FFT64Oracle,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     // computes at the module degree, no sweep
     params = TestParams { size: 1<<8, base2k: 12, n: 1<<8 },
     tests = {
@@ -312,5 +324,34 @@ poulpy_core::core_parity_test_suite! {
         glwe_negate => poulpy_core::test_suite::parity::test_glwe_negate_parity,
         glwe_normalize => poulpy_core::test_suite::parity::test_glwe_normalize_parity,
         glwe_tensor => poulpy_core::test_suite::parity::test_glwe_tensor_parity,
+        glwe_shift => poulpy_core::test_suite::parity::test_glwe_shift_parity,
     }
 }
+
+// Encryption parity and noise suites on the conjugate-invariant ring; their ring-free tests run once, in the standard ones.
+#[cfg(feature = "enable-core")]
+poulpy_core::core_encryption_parity_test_suite!(
+    mod core_encryption_ci,
+    backend_ref = crate::NTT4x30Oracle,
+    backend_test = crate::FFT64Oracle,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
+    params = ::poulpy_hal::test_suite::TestParams { size: 256, n: 256, base2k: 12 },
+);
+
+#[cfg(feature = "enable-core")]
+poulpy_core::core_backend_test_suite!(
+    mod core_noise_ci_fft64,
+    backend = crate::FFT64Oracle,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
+    // computes at the module degree, no sweep
+    params = TestParams { size: 1<<8, base2k: 17, n: 1<<8 },
+);
+
+#[cfg(feature = "enable-core")]
+poulpy_core::core_backend_test_suite!(
+    mod core_noise_ci_ntt4x30,
+    backend = crate::NTT4x30Oracle,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
+    // computes at the module degree, no sweep
+    params = TestParams { size: 1<<8, base2k: 52, n: 1<<8 },
+);

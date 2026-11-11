@@ -74,15 +74,10 @@ pub mod drivers {
 #[cfg(feature = "enable-core")]
 pub(crate) use vmp_strided::{STRIDED_MAX_DSIZE, gglwe_product_digits_strided, gglwe_product_digits_strided_tmp_bytes};
 
-use std::marker::PhantomData;
-
-use poulpy_hal::layouts::{Ring, Standard};
-
 /// Portable CPU backend using Q120 NTT arithmetic.
 ///
-/// `NTT4x30Portable<R>` is a zero-sized marker type that selects the portable NTT4x30 CPU backend
-/// over ring `R` (the standard ring by default, [`NTT4x30CIPortable`](crate::NTT4x30CIPortable) for the
-/// conjugate invariant ring)
+/// `NTT4x30Portable` is a zero-sized marker type that selects the portable NTT4x30 CPU backend,
+/// on both rings,
 /// when used as the type parameter `B` in [`poulpy_hal::layouts::Module<B>`](poulpy_hal::layouts::Module)
 /// and related HAL types. It implements all open extension point (OEP) traits from
 /// `poulpy_hal::oep`.
@@ -101,4 +96,4 @@ use poulpy_hal::layouts::{Ring, Standard};
 /// The `Module<NTT4x30Portable>` that holds the NTT tables is also `Send + Sync`, so modules can
 /// be shared across threads.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct NTT4x30Portable<R: Ring = Standard>(PhantomData<R>);
+pub struct NTT4x30Portable;

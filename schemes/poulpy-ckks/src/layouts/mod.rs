@@ -25,27 +25,38 @@
 #[macro_export]
 macro_rules! impl_ckks_infos {
     (ckks_inner $name:ident) => {
-        impl<'a, BE: ::poulpy_hal::layouts::Backend + 'a> ::poulpy_core::layouts::GLWEPlaintextInfos for $name<'a, BE> {
+        impl<'a, BE: ::poulpy_hal::layouts::Backend + 'a, Rg: ::poulpy_hal::layouts::Ring>
+            ::poulpy_core::layouts::GLWEPlaintextInfos for $name<'a, BE, Rg>
+        {
             fn plaintext_meta(&self) -> Option<::poulpy_core::layouts::GLWEPlaintextMeta> {
                 ::poulpy_core::layouts::GLWEPlaintextInfos::plaintext_meta(&self.inner)
             }
         }
 
-        impl<'a, BE: ::poulpy_hal::layouts::Backend + 'a> ::poulpy_core::layouts::SetGLWEPlaintextInfos for $name<'a, BE> {
+        impl<'a, BE: ::poulpy_hal::layouts::Backend + 'a, Rg: ::poulpy_hal::layouts::Ring>
+            ::poulpy_core::layouts::SetGLWEPlaintextInfos for $name<'a, BE, Rg>
+        {
             fn set_plaintext_meta(&mut self, meta: Option<::poulpy_core::layouts::GLWEPlaintextMeta>) {
                 ::poulpy_core::layouts::SetGLWEPlaintextInfos::set_plaintext_meta(&mut self.inner, meta)
             }
         }
 
-        impl<'a, BE: ::poulpy_hal::layouts::Backend + 'a> $crate::CKKSInfos for $name<'a, BE> {}
+        impl<'a, BE: ::poulpy_hal::layouts::Backend + 'a, Rg: ::poulpy_hal::layouts::Ring> $crate::CKKSInfos
+            for $name<'a, BE, Rg>
+        {
+        }
 
-        impl<'a, BE: ::poulpy_hal::layouts::Backend + 'a> ::poulpy_core::layouts::SetK for $name<'a, BE> {
+        impl<'a, BE: ::poulpy_hal::layouts::Backend + 'a, Rg: ::poulpy_hal::layouts::Ring> ::poulpy_core::layouts::SetK
+            for $name<'a, BE, Rg>
+        {
             fn set_k(&mut self, k: ::poulpy_core::layouts::TorusPrecision) {
                 ::poulpy_core::layouts::SetK::set_k(&mut self.inner, k);
             }
         }
 
-        impl<'a, BE: ::poulpy_hal::layouts::Backend + 'a> ::poulpy_core::layouts::BSGSMeta for $name<'a, BE> {
+        impl<'a, BE: ::poulpy_hal::layouts::Backend + 'a, Rg: ::poulpy_hal::layouts::Ring> ::poulpy_core::layouts::BSGSMeta
+            for $name<'a, BE, Rg>
+        {
             fn bsgs_log_budget(&self) -> usize {
                 $crate::CKKSInfos::log_budget(self)
             }
@@ -55,7 +66,9 @@ macro_rules! impl_ckks_infos {
             }
         }
 
-        impl<'a, BE: ::poulpy_hal::layouts::Backend + 'a> ::poulpy_core::layouts::SetBSGSMeta for $name<'a, BE> {
+        impl<'a, BE: ::poulpy_hal::layouts::Backend + 'a, Rg: ::poulpy_hal::layouts::Ring> ::poulpy_core::layouts::SetBSGSMeta
+            for $name<'a, BE, Rg>
+        {
             fn set_bsgs_log_budget(&mut self, log_budget: usize) {
                 $crate::SetCKKSInfos::set_log_budget(self, log_budget);
             }
@@ -66,7 +79,9 @@ macro_rules! impl_ckks_infos {
         }
     };
     (glwe_inner $name:ident) => {
-        impl<'a, BE: ::poulpy_hal::layouts::Backend + 'a> ::poulpy_core::layouts::LWEInfos for $name<'a, BE> {
+        impl<'a, BE: ::poulpy_hal::layouts::Backend + 'a, Rg: ::poulpy_hal::layouts::Ring> ::poulpy_core::layouts::LWEInfos
+            for $name<'a, BE, Rg>
+        {
             fn noise(&self) -> Option<::poulpy_core::ComponentNoise> {
                 ::poulpy_core::layouts::LWEInfos::noise(&self.inner)
             }
@@ -88,7 +103,9 @@ macro_rules! impl_ckks_infos {
             }
         }
 
-        impl<'a, BE: ::poulpy_hal::layouts::Backend + 'a> ::poulpy_core::layouts::GLWEInfos for $name<'a, BE> {
+        impl<'a, BE: ::poulpy_hal::layouts::Backend + 'a, Rg: ::poulpy_hal::layouts::Ring> ::poulpy_core::layouts::GLWEInfos
+            for $name<'a, BE, Rg>
+        {
             fn rank(&self) -> ::poulpy_core::layouts::Rank {
                 ::poulpy_core::layouts::GLWEInfos::rank(&self.inner)
             }
@@ -130,9 +147,11 @@ pub use bootstrapping_keys::{
     BootstrappingLinearKeys, CKKSFoldKeysLayout, EncapsulationKeys, EncapsulationKeysLayout, RingSwitchKeySet, RingSwitchKeys,
     RingSwitchKeysLayout, RingSwitchKeysPrepared,
 };
+#[allow(deprecated)]
+pub use ciphertext::CKKSRingCiphertext;
 pub use ciphertext::{
-    CKKSCiphertext, CKKSCiphertextOwned, CKKSCiphertextViewMut, CKKSCiphertextViewRef, CKKSRingCiphertext,
-    ScratchArenaTakeCKKSCiphertext, ScratchArenaTakeCKKSEncodingBuffer, ScratchArenaTakeCKKSPlaintext,
+    CKKSCiphertext, CKKSCiphertextOwned, CKKSCiphertextViewMut, CKKSCiphertextViewRef, ScratchArenaTakeCKKSCiphertext,
+    ScratchArenaTakeCKKSEncodingBuffer, ScratchArenaTakeCKKSPlaintext,
 };
 pub use complex_diagonals::ComplexDiagonals;
 pub use dft::{

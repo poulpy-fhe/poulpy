@@ -9,7 +9,6 @@ use poulpy_cpu_portable::kernels::fft64::{
 };
 
 use super::FFT64Neon;
-use poulpy_hal::layouts::Ring;
 
 /// Negacyclic transform for CKKS encoding in `f64`: the NEON kernels on
 /// the correctly rounded twiddles of
@@ -56,35 +55,35 @@ impl ReimFFTExecute<ReimIFFTTable<f64>, f64> for ReimIFFTNeon {
 }
 
 #[cfg(target_arch = "aarch64")]
-impl<R: Ring> ReimFFTExecute<ReimFFTTable<f64>, f64> for FFT64Neon<R> {
+impl ReimFFTExecute<ReimFFTTable<f64>, f64> for FFT64Neon {
     fn reim_dft_execute(table: &ReimFFTTable<f64>, data: &mut [f64]) {
         crate::neon::fft::fft_neon(table.m(), table.omg(), data);
     }
 }
 
 #[cfg(not(target_arch = "aarch64"))]
-impl<R: Ring> ReimFFTExecute<ReimFFTTable<f64>, f64> for FFT64Neon<R> {
+impl ReimFFTExecute<ReimFFTTable<f64>, f64> for FFT64Neon {
     fn reim_dft_execute(table: &ReimFFTTable<f64>, data: &mut [f64]) {
         fft_portable(table.m(), table.omg(), data);
     }
 }
 
 #[cfg(target_arch = "aarch64")]
-impl<R: Ring> ReimFFTExecute<ReimIFFTTable<f64>, f64> for FFT64Neon<R> {
+impl ReimFFTExecute<ReimIFFTTable<f64>, f64> for FFT64Neon {
     fn reim_dft_execute(table: &ReimIFFTTable<f64>, data: &mut [f64]) {
         crate::neon::fft::ifft_neon(table.m(), table.omg(), data);
     }
 }
 
 #[cfg(not(target_arch = "aarch64"))]
-impl<R: Ring> ReimFFTExecute<ReimIFFTTable<f64>, f64> for FFT64Neon<R> {
+impl ReimFFTExecute<ReimIFFTTable<f64>, f64> for FFT64Neon {
     fn reim_dft_execute(table: &ReimIFFTTable<f64>, data: &mut [f64]) {
         ifft_portable(table.m(), table.omg(), data);
     }
 }
 
 #[cfg(target_arch = "aarch64")]
-impl<R: Ring> ReimArith for FFT64Neon<R> {
+impl ReimArith for FFT64Neon {
     // reim_add / reim_add_assign: defer to the portable autovec impl. The
     // hand-NEON loop (see neon::reim_arith::reim_add_neon) is memory-bandwidth
     // bound at large n; the autovec reference is as fast or faster.
@@ -143,10 +142,10 @@ impl<R: Ring> ReimArith for FFT64Neon<R> {
 }
 
 #[cfg(not(target_arch = "aarch64"))]
-impl<R: Ring> ReimArith for FFT64Neon<R> {}
+impl ReimArith for FFT64Neon {}
 
 #[cfg(target_arch = "aarch64")]
-impl<R: Ring> Reim4BlkMatVec for FFT64Neon<R> {
+impl Reim4BlkMatVec for FFT64Neon {
     #[inline(always)]
     fn reim4_extract_1blk_contiguous(m: usize, rows: usize, blk: usize, dst: &mut [f64], src: &[f64]) {
         crate::neon::reim4_arith::reim4_extract_1blk_contiguous_neon(m, rows, blk, dst, src);
@@ -190,10 +189,10 @@ impl<R: Ring> Reim4BlkMatVec for FFT64Neon<R> {
 }
 
 #[cfg(not(target_arch = "aarch64"))]
-impl<R: Ring> Reim4BlkMatVec for FFT64Neon<R> {}
+impl Reim4BlkMatVec for FFT64Neon {}
 
 #[cfg(target_arch = "aarch64")]
-impl<R: Ring> Reim4Convolution for FFT64Neon<R> {
+impl Reim4Convolution for FFT64Neon {
     #[inline(always)]
     fn reim4_convolution_1coeff(k: usize, dst: &mut [f64; 8], a: &[f64], a_size: usize, b: &[f64], b_size: usize) {
         crate::neon::reim4_conv::reim4_convolution_1coeff_neon(k, dst, a, a_size, b, b_size);
@@ -223,10 +222,10 @@ impl<R: Ring> Reim4Convolution for FFT64Neon<R> {
 }
 
 #[cfg(not(target_arch = "aarch64"))]
-impl<R: Ring> Reim4Convolution for FFT64Neon<R> {}
+impl Reim4Convolution for FFT64Neon {}
 
 #[cfg(target_arch = "aarch64")]
-impl<R: Ring> I64Ops for FFT64Neon<R> {
+impl I64Ops for FFT64Neon {
     #[inline(always)]
     fn i64_extract_1blk_contiguous(n: usize, offset: usize, rows: usize, blk: usize, dst: &mut [i64], src: &[i64]) {
         crate::neon::conv_i64::i64_extract_1blk_contiguous_neon(n, offset, rows, blk, dst, src);
@@ -246,9 +245,9 @@ impl<R: Ring> I64Ops for FFT64Neon<R> {
 }
 
 #[cfg(not(target_arch = "aarch64"))]
-impl<R: Ring> I64Ops for FFT64Neon<R> {}
+impl I64Ops for FFT64Neon {}
 
-impl<R: Ring> poulpy_cpu_portable::hal_defaults::BigWordHadamardProduct for FFT64Neon<R> {
+impl poulpy_cpu_portable::hal_defaults::BigWordHadamardProduct for FFT64Neon {
     #[inline(always)]
     fn big_word_hadamard_product(res: &mut [i64], a: &[i64], b: &[i64]) {
         <Self as I64Ops>::i64_hadamard_product(res, a, b)

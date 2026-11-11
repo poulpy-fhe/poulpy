@@ -1,6 +1,6 @@
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef};
-use poulpy_hal::layouts::{Backend, ScratchArena};
+use poulpy_hal::layouts::{Backend, Ring, ScratchArena, Standard};
 
 use crate::{CKKSCtBounds, SetCKKSInfos};
 
@@ -24,7 +24,7 @@ use crate::{CKKSCtBounds, SetCKKSInfos};
 /// most-significant bits that do not fit are silently dropped and
 /// `log_budget` is reduced by the deficit. A level drop clears noise metadata;
 /// a lossless copy preserves it.
-pub trait CKKSCopyOps<BE: Backend> {
+pub trait CKKSCopyOps<BE: Backend, Rg: Ring = Standard> {
     /// Scratch required for these source and destination layouts. The query
     /// includes the selected core copy and shift implementations.
     fn ckks_copy_tmp_bytes<Dst: CKKSCtBounds, Src: CKKSCtBounds>(&self, dst: &Dst, src: &Src) -> usize;
@@ -32,6 +32,6 @@ pub trait CKKSCopyOps<BE: Backend> {
     /// Copies `src` into `dst`.
     fn ckks_copy<Dst, Src>(&self, dst: &mut Dst, src: &Src, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds;
+        Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE, Rg> + CKKSCtBounds;
 }

@@ -1,10 +1,11 @@
 //! Maps between conjugate-invariant GLWEs and secrets of degree `N` and standard
-//! GLWEs and secrets of degree `2N`, expressed with HAL operations of the standard module.
+//! GLWEs and secrets of degree `2N`, expressed with the cross-ring HAL embedding and
+//! trace, which take one operand of each ring, the trace normalized on the conjugate-invariant ring.
 use poulpy_hal::{
     api::{
         ModuleN, ScalarZnxCIEmbed, ScratchArenaTakeVecZnx, VecZnxCIEmbed, VecZnxCITrace, VecZnxNormalize, VecZnxNormalizeTmpBytes,
     },
-    layouts::{Backend, Module, ScratchArena, VecZnxToBackendMut, VecZnxToBackendRef},
+    layouts::{Backend, ConjugateInvariant, Module, ScratchArena, VecZnxToBackendMut, VecZnxToBackendRef},
 };
 
 use crate::{
@@ -19,12 +20,12 @@ pub trait GLWECIConversionReference<BE: Backend> {
     fn glwe_ci_embed_reference<R, A>(&self, res: &mut R, a: &A)
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos;
+        A: GLWEToBackendRef<BE, ConjugateInvariant> + GLWEInfos;
 
     fn glwe_secret_ci_embed_reference<R, S>(&self, res: &mut R, src: &S)
     where
         R: GLWESecretToBackendMut<BE> + GetDistributionMut,
-        S: GLWESecretToBackendRef<BE>;
+        S: GLWESecretToBackendRef<BE, ConjugateInvariant>;
 
     fn glwe_ci_trace_tmp_bytes_reference<R, A>(&self, res_infos: &R, a_infos: &A) -> usize
     where
@@ -33,19 +34,23 @@ pub trait GLWECIConversionReference<BE: Backend> {
 
     fn glwe_ci_trace_reference<R, A>(&self, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
+        R: GLWEToBackendMut<BE, ConjugateInvariant> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos;
 }
 
 impl<BE: Backend> GLWECIConversionReference<BE> for Module<BE>
 where
-    Module<BE>:
-        ModuleN + ScalarZnxCIEmbed<BE> + VecZnxCIEmbed<BE> + VecZnxCITrace<BE> + VecZnxNormalize<BE> + VecZnxNormalizeTmpBytes,
+    Module<BE>: ModuleN
+        + ScalarZnxCIEmbed<BE>
+        + VecZnxCIEmbed<BE>
+        + VecZnxCITrace<BE>
+        + VecZnxNormalize<BE, ConjugateInvariant>
+        + VecZnxNormalizeTmpBytes,
 {
     fn glwe_ci_embed_reference<R, A>(&self, res: &mut R, a: &A)
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE, ConjugateInvariant> + GLWEInfos,
     {
         glwe_ci_embed_reference::<BE, _, _, _>(self, res, a)
     }
@@ -53,7 +58,7 @@ where
     fn glwe_secret_ci_embed_reference<R, S>(&self, res: &mut R, src: &S)
     where
         R: GLWESecretToBackendMut<BE> + GetDistributionMut,
-        S: GLWESecretToBackendRef<BE>,
+        S: GLWESecretToBackendRef<BE, ConjugateInvariant>,
     {
         glwe_secret_ci_embed_reference::<BE, _, _>(self, res, src)
     }
@@ -68,7 +73,7 @@ where
 
     fn glwe_ci_trace_reference<R, A>(&self, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
+        R: GLWEToBackendMut<BE, ConjugateInvariant> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
     {
         glwe_ci_trace_reference::<BE, _, _, _>(self, res, a, scratch)
@@ -82,7 +87,7 @@ where
     BE: Backend,
     M: ModuleN + VecZnxCIEmbed<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
-    A: GLWEToBackendRef<BE> + GLWEInfos,
+    A: GLWEToBackendRef<BE, ConjugateInvariant> + GLWEInfos,
 {
     res.set_canonical(false);
     let mut res = res.to_backend_mut();
@@ -111,8 +116,8 @@ where
 pub fn glwe_ci_trace_reference<BE, M, R, A>(module: &M, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
 where
     BE: Backend,
-    M: ModuleN + VecZnxCITrace<BE> + VecZnxNormalize<BE> + VecZnxNormalizeTmpBytes,
-    R: GLWEToBackendMut<BE> + GLWEInfos,
+    M: ModuleN + VecZnxCITrace<BE> + VecZnxNormalize<BE, ConjugateInvariant> + VecZnxNormalizeTmpBytes,
+    R: GLWEToBackendMut<BE, ConjugateInvariant> + GLWEInfos,
     A: GLWEToBackendRef<BE> + GLWEInfos,
 {
     assert!(
@@ -129,7 +134,10 @@ where
     assert_eq!(res.rank(), a.rank());
     let (res_base2k, res_k) = (res.base2k().as_usize(), res.k().as_usize());
     for col in 0..res.rank().as_usize() + 1 {
-        let (mut tmp, mut scratch_1) = scratch.borrow().take_vec_znx_scratch(res.n().as_usize(), 1, a.size());
+        let (mut tmp, mut scratch_1) =
+            scratch
+                .borrow()
+                .take_vec_znx_scratch::<ConjugateInvariant>(res.n().as_usize(), 1, a.size());
         module.vec_znx_ci_trace(&mut tmp.to_backend_mut(), 0, &a.data, col);
         module.vec_znx_normalize(
             &mut res.data,
@@ -154,7 +162,7 @@ where
     BE: Backend,
     Module<BE>: ScalarZnxCIEmbed<BE>,
     R: GLWESecretToBackendMut<BE> + GetDistributionMut,
-    S: GLWESecretToBackendRef<BE>,
+    S: GLWESecretToBackendRef<BE, ConjugateInvariant>,
 {
     let src = src.to_backend_ref();
     {

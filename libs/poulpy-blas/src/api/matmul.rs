@@ -3,11 +3,11 @@ use poulpy_ckks::{
     api::{CKKSLeftOperandPreparedFactory, CKKSRightOperandPreparedFactory},
 };
 use poulpy_core::layouts::{GGLWEInfos, GetAutomorphismKey, GetTensorKey};
-use poulpy_hal::layouts::{Backend, PrepareHint, ScratchArena};
+use poulpy_hal::layouts::{Backend, PrepareHint, Ring, ScratchArena, Standard};
 
 use crate::layouts::{
     BlasCiphertextAlloc, BlasCiphertextBytesOf, BlasContextPrepared, BlasGrid, BlasGridInfos, BlasGridMut,
-    BlasMatMulLeftOperandPrepared, BlasMatMulOperandInfos, BlasMatMulRightOperandPrepared, BlasPtOperandPrepared, Left,
+    BlasMatMulLeftOperandPrepared, BlasMatMulOperandInfos, BlasMatMulRightOperandPrepared, BlasPtOperandPrepared, Left, Right,
     matmul_operand,
 };
 
@@ -39,7 +39,7 @@ use crate::layouts::{
 /// The products by public matrices give no circuit privacy: as for every evaluation in this workspace (`SECURITY.md`),
 /// `res` may reveal `b` to the holder of the secret key. Re-randomize `res`, or flood its noise, before returning it
 /// when `b` must stay private.
-pub trait BlasMatMulOps<BE: Backend> {
+pub trait BlasMatMulOps<BE: Backend, Rg: Ring = Standard> {
     /// Scratch bytes [`Self::blas_matmul`] needs into `res` from `a` and `b` with the maps of `ctx`, a tensor key of
     /// layout `tsk` and rotation keys of layout `keys`. The right factor's label selects its terms, so a layout given in
     /// its place carries its label.
@@ -54,7 +54,7 @@ pub trait BlasMatMulOps<BE: Backend> {
         res: &R,
         a: &A,
         b: &B,
-        ctx: &BlasContextPrepared<BE>,
+        ctx: &BlasContextPrepared<BE, Rg>,
         tsk: &T,
         keys: &K,
     ) -> usize
@@ -127,17 +127,17 @@ pub trait BlasMatMulOps<BE: Backend> {
         res: &mut R,
         a: &A,
         b: &B,
-        ctx: &BlasContextPrepared<BE>,
+        ctx: &BlasContextPrepared<BE, Rg>,
         tsk: &T,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: BlasGridMut<BE>,
-        A: BlasGrid<BE>,
-        B: BlasGrid<BE>,
-        T: GetTensorKey<BE> + Sync,
-        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync;
+        R: BlasGridMut<BE, Rg>,
+        A: BlasGrid<BE, Rg>,
+        B: BlasGrid<BE, Rg>,
+        T: GetTensorKey<BE, Rg> + Sync,
+        K: GetAutomorphismKey<BE, Rg> + GetTensorKey<BE, Rg> + Sync;
 
     /// Scratch bytes [`Self::blas_matmul_prepared`] needs into `res` under `ctx`, with a tensor key of layout `tsk` and
     /// rotation keys of layout `keys`, from the prepared operands `a` and `b`, or, before preparing them, from the layouts
@@ -156,7 +156,7 @@ pub trait BlasMatMulOps<BE: Backend> {
         res: &R,
         a: &A,
         b: &B,
-        ctx: &BlasContextPrepared<BE>,
+        ctx: &BlasContextPrepared<BE, Rg>,
         tsk: &T,
         keys: &K,
     ) -> usize
@@ -223,17 +223,17 @@ pub trait BlasMatMulOps<BE: Backend> {
     fn blas_matmul_prepared<R, T, K>(
         &self,
         res: &mut R,
-        a: &BlasMatMulLeftOperandPrepared<BE>,
-        b: &BlasMatMulRightOperandPrepared<BE>,
-        ctx: &BlasContextPrepared<BE>,
+        a: &BlasMatMulLeftOperandPrepared<BE, Rg>,
+        b: &BlasMatMulRightOperandPrepared<BE, Rg>,
+        ctx: &BlasContextPrepared<BE, Rg>,
         tsk: &T,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: BlasGridMut<BE>,
-        T: GetTensorKey<BE> + Sync,
-        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync;
+        R: BlasGridMut<BE, Rg>,
+        T: GetTensorKey<BE, Rg> + Sync,
+        K: GetAutomorphismKey<BE, Rg> + GetTensorKey<BE, Rg> + Sync;
 
     /// Scratch bytes [`Self::blas_matmul_pt_right`] needs into `res` from `a` through `b` with rotation keys of layout
     /// `keys`, under `ctx`, read under `JklsStored` and `JklsGalois` alone.
@@ -247,8 +247,8 @@ pub trait BlasMatMulOps<BE: Backend> {
         &self,
         res: &R,
         a: &A,
-        b: &BlasPtOperandPrepared<BE>,
-        ctx: &BlasContextPrepared<BE>,
+        b: &BlasPtOperandPrepared<BE, Right, Rg>,
+        ctx: &BlasContextPrepared<BE, Rg>,
         keys: &K,
     ) -> usize
     where
@@ -327,15 +327,15 @@ pub trait BlasMatMulOps<BE: Backend> {
         &self,
         res: &mut R,
         a: &A,
-        b: &BlasPtOperandPrepared<BE>,
-        ctx: &BlasContextPrepared<BE>,
+        b: &BlasPtOperandPrepared<BE, Right, Rg>,
+        ctx: &BlasContextPrepared<BE, Rg>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: BlasGridMut<BE>,
-        A: BlasGrid<BE>,
-        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync;
+        R: BlasGridMut<BE, Rg>,
+        A: BlasGrid<BE, Rg>,
+        K: GetAutomorphismKey<BE, Rg> + GetTensorKey<BE, Rg> + Sync;
 
     /// Scratch bytes [`Self::blas_matmul_pt_left`] needs into `res` through `b` from `a` with rotation keys of layout
     /// `keys`, under `ctx`, read under `JklsStored` and `JklsGalois` alone.
@@ -348,9 +348,9 @@ pub trait BlasMatMulOps<BE: Backend> {
     fn blas_matmul_pt_left_tmp_bytes<R, A, K>(
         &self,
         res: &R,
-        b: &BlasPtOperandPrepared<BE, Left>,
+        b: &BlasPtOperandPrepared<BE, Left, Rg>,
         a: &A,
-        ctx: &BlasContextPrepared<BE>,
+        ctx: &BlasContextPrepared<BE, Rg>,
         keys: &K,
     ) -> usize
     where
@@ -399,24 +399,24 @@ pub trait BlasMatMulOps<BE: Backend> {
     fn blas_matmul_pt_left<R, A, K>(
         &self,
         res: &mut R,
-        b: &BlasPtOperandPrepared<BE, Left>,
+        b: &BlasPtOperandPrepared<BE, Left, Rg>,
         a: &A,
-        ctx: &BlasContextPrepared<BE>,
+        ctx: &BlasContextPrepared<BE, Rg>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: BlasGridMut<BE>,
-        A: BlasGrid<BE>,
-        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync;
+        R: BlasGridMut<BE, Rg>,
+        A: BlasGrid<BE, Rg>,
+        K: GetAutomorphismKey<BE, Rg> + GetTensorKey<BE, Rg> + Sync;
 }
 
 /// Allocation, sizing and preparation of the left operands of [`BlasMatMulOps::blas_matmul_prepared`]. The allocation
 /// and its size are direct on the module; the preparation and its query dispatch through
 /// [`BlasMatMulImpl`](crate::oep::BlasMatMulImpl). The `# Metadata` and `# Errors` sections use the notation of
 /// [`BlasMatMulOps`].
-pub trait BlasMatMulLeftOperandPreparedFactory<BE: Backend>:
-    CKKSLeftOperandPreparedFactory<BE> + BlasCiphertextAlloc<BE> + BlasCiphertextBytesOf<BE> + Sized
+pub trait BlasMatMulLeftOperandPreparedFactory<BE: Backend, Rg: Ring = Standard>:
+    CKKSLeftOperandPreparedFactory<BE, Rg> + BlasCiphertextAlloc<BE> + BlasCiphertextBytesOf<BE> + Sized
 {
     /// A left operand of `infos`, holding all its storage, which [`Self::blas_matmul_left_operand_prepare`] fills: the
     /// infos [`blas_matmul_left_operand_layout`](crate::layouts::blas_matmul_left_operand_layout) gives for a grid, a
@@ -428,7 +428,7 @@ pub trait BlasMatMulLeftOperandPreparedFactory<BE: Backend>:
     fn blas_matmul_left_operand_prepared_alloc_from_infos<A: BlasMatMulOperandInfos>(
         &self,
         infos: &A,
-    ) -> BlasMatMulLeftOperandPrepared<BE> {
+    ) -> BlasMatMulLeftOperandPrepared<BE, Rg> {
         matmul_operand::alloc_prepared(self, infos, |term| {
             self.ckks_left_operand_prepared_alloc_from_infos(term, PrepareHint::Reuse)
         })
@@ -454,7 +454,7 @@ pub trait BlasMatMulLeftOperandPreparedFactory<BE: Backend>:
     fn blas_matmul_left_operand_prepare_tmp_bytes<A, K>(
         &self,
         a: &A,
-        ctx: &BlasContextPrepared<BE>,
+        ctx: &BlasContextPrepared<BE, Rg>,
         keys: &K,
         hint: PrepareHint,
     ) -> usize
@@ -510,23 +510,23 @@ pub trait BlasMatMulLeftOperandPreparedFactory<BE: Backend>:
     /// `res` as it was.
     fn blas_matmul_left_operand_prepare<A, K>(
         &self,
-        res: &mut BlasMatMulLeftOperandPrepared<BE>,
+        res: &mut BlasMatMulLeftOperandPrepared<BE, Rg>,
         a: &A,
-        ctx: &BlasContextPrepared<BE>,
+        ctx: &BlasContextPrepared<BE, Rg>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        A: BlasGrid<BE>,
-        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync;
+        A: BlasGrid<BE, Rg>,
+        K: GetAutomorphismKey<BE, Rg> + GetTensorKey<BE, Rg> + Sync;
 }
 
 /// Allocation, sizing and preparation of the right operands of [`BlasMatMulOps::blas_matmul_prepared`]. The allocation
 /// and its size are direct on the module; the preparation and its query dispatch through
 /// [`BlasMatMulImpl`](crate::oep::BlasMatMulImpl). The `# Metadata` and `# Errors` sections use the notation of
 /// [`BlasMatMulOps`].
-pub trait BlasMatMulRightOperandPreparedFactory<BE: Backend>:
-    CKKSRightOperandPreparedFactory<BE> + BlasCiphertextAlloc<BE> + BlasCiphertextBytesOf<BE> + Sized
+pub trait BlasMatMulRightOperandPreparedFactory<BE: Backend, Rg: Ring = Standard>:
+    CKKSRightOperandPreparedFactory<BE, Rg> + BlasCiphertextAlloc<BE> + BlasCiphertextBytesOf<BE> + Sized
 {
     /// As [`BlasMatMulLeftOperandPreparedFactory::blas_matmul_left_operand_prepared_alloc_from_infos`], a right
     /// operand, which [`Self::blas_matmul_right_operand_prepare`] fills from the infos
@@ -538,7 +538,7 @@ pub trait BlasMatMulRightOperandPreparedFactory<BE: Backend>:
     fn blas_matmul_right_operand_prepared_alloc_from_infos<A: BlasMatMulOperandInfos>(
         &self,
         infos: &A,
-    ) -> BlasMatMulRightOperandPrepared<BE> {
+    ) -> BlasMatMulRightOperandPrepared<BE, Rg> {
         matmul_operand::alloc_prepared(self, infos, |term| {
             self.ckks_right_operand_prepared_alloc_from_infos(term, PrepareHint::Reuse)
         })
@@ -562,7 +562,7 @@ pub trait BlasMatMulRightOperandPreparedFactory<BE: Backend>:
     fn blas_matmul_right_operand_prepare_tmp_bytes<B, K>(
         &self,
         b: &B,
-        ctx: &BlasContextPrepared<BE>,
+        ctx: &BlasContextPrepared<BE, Rg>,
         keys: &K,
         hint: PrepareHint,
     ) -> usize
@@ -591,13 +591,13 @@ pub trait BlasMatMulRightOperandPreparedFactory<BE: Backend>:
     /// budget is below `p`.
     fn blas_matmul_right_operand_prepare<B, K>(
         &self,
-        res: &mut BlasMatMulRightOperandPrepared<BE>,
+        res: &mut BlasMatMulRightOperandPrepared<BE, Rg>,
         b: &B,
-        ctx: &BlasContextPrepared<BE>,
+        ctx: &BlasContextPrepared<BE, Rg>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        B: BlasGrid<BE>,
-        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync;
+        B: BlasGrid<BE, Rg>,
+        K: GetAutomorphismKey<BE, Rg> + GetTensorKey<BE, Rg> + Sync;
 }

@@ -43,15 +43,15 @@ use poulpy_hal::api::CnvPVecAlloc;
 pub fn test_conjugate_invariant_leveled<BE>(
     mut params: CKKSTestParams,
     module: &Module<BE>,
-    host_module: &Module<HostBytesBackend<BE::Ring>>,
+    host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = ConjugateInvariant>,
+    BE: TestContextBackend,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: TestContextSharedModule<BE>
-        + CKKSEncodingHostOps<BE, f64>
-        + CKKSLinearTransformationOps<BE>
-        + CKKSPolynomialEvaluationOps<BE>
+    Module<BE>: TestContextSharedModule<BE, ConjugateInvariant>
+        + CKKSEncodingHostOps<BE, f64, ConjugateInvariant>
+        + CKKSLinearTransformationOps<BE, ConjugateInvariant>
+        + CKKSPolynomialEvaluationOps<BE, ConjugateInvariant>
         + CnvPVecAlloc<BE>,
 {
     params.prec_meta.slots = SlotsKind::Real;
@@ -63,7 +63,11 @@ pub fn test_conjugate_invariant_leveled<BE>(
     let re2 = (0..slots).map(|i| (slots - i) as f64 / 389.0).collect::<Vec<_>>();
     let im = vec![0.0; slots];
 
-    let mut pt1 = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots(), params.base2k.into(), params.prec().k());
+    let mut pt1 = module.ckks_plaintext_alloc_from_slots(
+        module.ckks_max_slots::<ConjugateInvariant>(),
+        params.base2k.into(),
+        params.prec().k(),
+    );
     pt1.set_meta(params.prec().meta());
     module
         .ckks_encode_slots_host_into(&mut pt1, &re1, &im, &mut scratch.borrow())
@@ -77,7 +81,11 @@ pub fn test_conjugate_invariant_leveled<BE>(
         &mut scratch.borrow(),
     );
 
-    let mut pt2 = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots(), params.base2k.into(), params.prec().k());
+    let mut pt2 = module.ckks_plaintext_alloc_from_slots(
+        module.ckks_max_slots::<ConjugateInvariant>(),
+        params.base2k.into(),
+        params.prec().k(),
+    );
     pt2.set_meta(params.prec().meta());
     module
         .ckks_encode_slots_host_into(&mut pt2, &re2, &im, &mut scratch.borrow())
@@ -91,7 +99,11 @@ pub fn test_conjugate_invariant_leveled<BE>(
         &mut scratch.borrow(),
     );
 
-    let mut decrypted = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots(), params.base2k.into(), params.prec().k());
+    let mut decrypted = module.ckks_plaintext_alloc_from_slots(
+        module.ckks_max_slots::<ConjugateInvariant>(),
+        params.base2k.into(),
+        params.prec().k(),
+    );
     let mut got_re = vec![0.0; slots];
     let mut got_im = vec![0.0; slots];
     macro_rules! assert_output {
@@ -187,7 +199,7 @@ pub fn test_conjugate_invariant_leveled<BE>(
     ];
     let mut keys = HashMap::new();
     for rotation in rotations {
-        let p = module.ckks_galois_element(rotation);
+        let p = module.ckks_galois_element::<ConjugateInvariant>(rotation);
         keys.insert(p, gen_atk(&params, module, p, &sk_raw, &mut scratch.borrow()));
     }
     for rotation in rotations {
@@ -208,7 +220,7 @@ pub fn test_conjugate_invariant_leveled<BE>(
         assert_output!(&assigned, &want);
     }
 
-    let empty = HashMap::<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>>::new();
+    let empty = HashMap::<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE, ConjugateInvariant>>::new();
     let rotation_bytes = module.ckks_rotate_tmp_bytes(&ct1, &params.atk_layout());
     for rotation in [0, slots as i64, -(slots as i64), i64::MIN] {
         let mut rotated = ct1.clone();
@@ -340,7 +352,7 @@ pub fn test_conjugate_invariant_leveled<BE>(
             )
             .unwrap();
             let mut keys = HashMap::new();
-            for p in lt.galois_elements(module.cyclotomic_order()) {
+            for p in lt.galois_elements(module.cyclotomic_order::<ConjugateInvariant>()) {
                 keys.entry(p)
                     .or_insert_with(|| gen_atk(&params, module, p, &sk_raw, &mut scratch.arena()));
             }
@@ -356,7 +368,8 @@ pub fn test_conjugate_invariant_leveled<BE>(
             .unwrap();
             assert_output!(&result, &want);
             let first = lt.first_diagonal_plaintext().unwrap();
-            let mut prepared = LinearTransformationPrepared::<BE>::alloc_prepared_from_index(module, &lt.index(), first);
+            let mut prepared =
+                LinearTransformationPrepared::<BE, ConjugateInvariant>::alloc_prepared_from_index(module, &lt.index(), first);
             let prepare_bytes = module.ckks_linear_transformation_rhs_prepare_tmp_bytes(first);
             with_scratch::<BE, _>(prepare_bytes, |s| {
                 module.ckks_linear_transformation_rhs_prepare(&mut prepared, &lt, s)
@@ -377,12 +390,12 @@ pub fn test_conjugate_invariant_leveled<BE>(
 pub fn test_conjugate_invariant_inner_sum<BE>(
     mut params: CKKSTestParams,
     module: &Module<BE>,
-    host_module: &Module<HostBytesBackend<BE::Ring>>,
+    host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = ConjugateInvariant>,
+    BE: TestContextBackend,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: TestContextSharedModule<BE> + CKKSEncodingHostOps<BE, f64>,
+    Module<BE>: TestContextSharedModule<BE, ConjugateInvariant> + CKKSEncodingHostOps<BE, f64, ConjugateInvariant>,
 {
     params.prec_meta.slots = SlotsKind::Real;
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
@@ -390,7 +403,11 @@ pub fn test_conjugate_invariant_inner_sum<BE>(
     let slots = params.n;
     let re = (0..slots).map(|i| (i as f64 + 1.0) / 521.0).collect::<Vec<_>>();
     let im = vec![0.0; slots];
-    let mut pt = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots(), params.base2k.into(), params.prec().k());
+    let mut pt = module.ckks_plaintext_alloc_from_slots(
+        module.ckks_max_slots::<ConjugateInvariant>(),
+        params.base2k.into(),
+        params.prec().k(),
+    );
     pt.set_meta(params.prec().meta());
     module
         .ckks_encode_slots_host_into(&mut pt, &re, &im, &mut scratch.borrow())
@@ -418,7 +435,11 @@ pub fn test_conjugate_invariant_inner_sum<BE>(
         }
     }
     let atk = params.atk_layout();
-    let mut decrypted = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots(), params.base2k.into(), params.prec().k());
+    let mut decrypted = module.ckks_plaintext_alloc_from_slots(
+        module.ckks_max_slots::<ConjugateInvariant>(),
+        params.base2k.into(),
+        params.prec().k(),
+    );
     let (mut got_re, mut got_im) = (vec![0.0; slots], vec![0.0; slots]);
     for (log_batch, log_count) in windows {
         for (replicate, normalize) in [(false, false), (false, true), (true, false)] {
@@ -461,7 +482,7 @@ pub fn test_conjugate_invariant_inner_sum<BE>(
             })
             .unwrap();
             assert!(
-                snapshot::<BE, _>(&assigned) == snapshot::<BE, _>(&res),
+                snapshot::<BE, _, ConjugateInvariant>(&assigned) == snapshot::<BE, _, ConjugateInvariant>(&res),
                 "{label}: in place differs from out of place"
             );
         }
@@ -477,14 +498,14 @@ fn assert_reim_close(re: &[f64], im: &[f64], want: &[f64]) {
 
 pub fn test_conjugate_invariant_encoding<BE, F>(module: &Module<BE>, log_delta: usize, tolerance: f64)
 where
-    BE: TestContextBackend<Ring = ConjugateInvariant>,
+    BE: TestContextBackend,
     F: CKKSEncodingScalar,
-    Module<BE>: CKKSPlaintextAlloc<BE> + CKKSEncodingOps<BE, F>,
+    Module<BE>: CKKSPlaintextAlloc<BE> + CKKSEncodingOps<BE, F, ConjugateInvariant>,
 {
     use crate::{GLWEPlaintextMeta, api::CKKSEncodingOps, layouts::CKKSEncodingBuffer};
     use poulpy_hal::AlignedBuf;
 
-    assert_eq!(module.ckks_max_slots(), module.n());
+    assert_eq!(module.ckks_max_slots::<ConjugateInvariant>(), module.n());
     for log_slots in 0..=module.n().ilog2() {
         let slots = 1usize << log_slots;
         let reim_bytes = module.ckks_encoding_host_tmp_bytes(slots);
@@ -560,18 +581,23 @@ where
     }
     let mut oversized = CKKSEncodingBuffer::<AlignedBuf, F>::from_host::<BE>(&vec![F::zero(); 4 * module.n()]);
     assert!(module.ckks_encoding_buffer_slots_to_coeffs_assign(&mut oversized).is_err());
-    let mut pt = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots(), 19usize.into(), (log_delta + 36).into());
+    let mut pt = module.ckks_plaintext_alloc_from_slots(
+        module.ckks_max_slots::<ConjugateInvariant>(),
+        19usize.into(),
+        (log_delta + 36).into(),
+    );
     assert!(module.ckks_encode_coeffs_into(&mut pt, &oversized).is_err());
 }
 
-/// Instantiates conjugate invariant encoding and leveled-operation tests.
+/// Instantiates the conjugate-invariant encoding, ring-map, fold and leveled-operation
+/// tests of one backend.
 #[macro_export]
 macro_rules! conjugate_invariant_ckks_test_suite {
-    ($name:ident, $backend:ty, $standard:ty, $params:expr) => {
+    ($name:ident, $backend:ty, $params:expr) => {
         mod $name {
             use ::poulpy_hal::{
                 api::ModuleNew,
-                layouts::{HostBytesBackend, Module},
+                layouts::{ConjugateInvariant, HostBytesBackend, Module},
             };
             #[test]
             fn ckks_ci_encoding_f64() {
@@ -587,11 +613,17 @@ macro_rules! conjugate_invariant_ckks_test_suite {
             }
             #[test]
             fn ckks_ci_encoding_determinism_f64() {
-                $crate::test_suite::determinism::encoding_fixtures::<$backend, f64>(&Module::<$backend>::new(2048));
+                $crate::test_suite::determinism::encoding_fixtures::<$backend, f64, ConjugateInvariant>(
+                    &Module::<$backend>::new(2048),
+                );
             }
             #[test]
             fn ckks_ci_encoding_determinism_quad() {
-                $crate::test_suite::determinism::encoding_fixtures::<$backend, $crate::Quad>(&Module::<$backend>::new(2048));
+                $crate::test_suite::determinism::encoding_fixtures::<$backend, $crate::Quad, ConjugateInvariant>(&Module::<
+                    $backend,
+                >::new(
+                    2048
+                ));
             }
             #[test]
             fn ckks_ci_ring_map() {
@@ -599,7 +631,7 @@ macro_rules! conjugate_invariant_ckks_test_suite {
                 $crate::test_suite::conjugate_invariant::test_conjugate_invariant_ring_map(
                     params,
                     Module::<$backend>::new(params.n as u64),
-                    Module::<$standard>::new((2 * params.n) as u64),
+                    Module::<$backend>::new((2 * params.n) as u64),
                 );
             }
             #[test]
@@ -608,7 +640,7 @@ macro_rules! conjugate_invariant_ckks_test_suite {
                 $crate::test_suite::conjugate_invariant::test_conjugate_invariant_ring_map(
                     params,
                     Module::<$backend>::new(params.n as u64),
-                    Module::<$standard>::new((4 * params.n) as u64),
+                    Module::<$backend>::new((4 * params.n) as u64),
                 );
             }
             #[test]
@@ -617,21 +649,28 @@ macro_rules! conjugate_invariant_ckks_test_suite {
                 $crate::test_suite::conjugate_invariant::test_conjugate_invariant_fold(
                     params,
                     Module::<$backend>::new(params.n as u64),
-                    Module::<$standard>::new((4 * params.n) as u64),
+                    Module::<$backend>::new((4 * params.n) as u64),
                 );
             }
             #[test]
             fn ckks_ci_eval_mod() {
                 let params = $params;
                 let module = Module::<$backend>::new(params.n as u64);
-                let host = Module::<HostBytesBackend<<$backend as ::poulpy_hal::layouts::Backend>::Ring>>::new(params.n as u64);
+                let host = Module::<HostBytesBackend>::new(params.n as u64);
+                $crate::test_suite::conjugate_invariant::test_conjugate_invariant_eval_mod(params, &module, &host);
+            }
+            #[test]
+            fn ckks_ci_eval_mod_sub_degree() {
+                let params = $params;
+                let module = Module::<$backend>::new((2 * params.n) as u64);
+                let host = Module::<HostBytesBackend>::new(params.n as u64);
                 $crate::test_suite::conjugate_invariant::test_conjugate_invariant_eval_mod(params, &module, &host);
             }
             #[test]
             fn ckks_ci_inner_sum() {
                 let params = $params;
                 let module = Module::<$backend>::new(params.n as u64);
-                let host = Module::<HostBytesBackend<<$backend as ::poulpy_hal::layouts::Backend>::Ring>>::new(params.n as u64);
+                let host = Module::<HostBytesBackend>::new(params.n as u64);
                 $crate::test_suite::conjugate_invariant::test_conjugate_invariant_inner_sum(params, &module, &host);
             }
             // Replicated-layout tests shared with the standard suites.
@@ -641,9 +680,8 @@ macro_rules! conjugate_invariant_ckks_test_suite {
                     fn $test() -> anyhow::Result<()> {
                         let params = $params;
                         let module = Module::<$backend>::new(params.n as u64);
-                        let host =
-                            Module::<HostBytesBackend<<$backend as poulpy_hal::layouts::Backend>::Ring>>::new(params.n as u64);
-                        $crate::test_suite::replicated::$test::<$backend, f64>(params, &module, &host)
+                        let host = Module::<HostBytesBackend>::new(params.n as u64);
+                        $crate::test_suite::replicated::$test::<$backend, f64, ConjugateInvariant>(params, &module, &host)
                     }
                 };
             }
@@ -657,14 +695,14 @@ macro_rules! conjugate_invariant_ckks_test_suite {
             fn ckks_ci_round_error_is_shaped() {
                 let params = $params;
                 let module = Module::<$backend>::new(params.n as u64);
-                let host = Module::<HostBytesBackend<<$backend as poulpy_hal::layouts::Backend>::Ring>>::new(params.n as u64);
+                let host = Module::<HostBytesBackend>::new(params.n as u64);
                 $crate::test_suite::round::test_round_error_is_shaped_conjugate_invariant(params, &module, &host).unwrap();
             }
             #[test]
             fn ckks_ci_leveled() {
                 let params = $params;
                 let module = Module::<$backend>::new(params.n as u64);
-                let host = Module::<HostBytesBackend<<$backend as ::poulpy_hal::layouts::Backend>::Ring>>::new(params.n as u64);
+                let host = Module::<HostBytesBackend>::new(params.n as u64);
                 $crate::test_suite::conjugate_invariant::test_conjugate_invariant_leveled(params, &module, &host);
             }
         }
@@ -673,16 +711,16 @@ macro_rules! conjugate_invariant_ckks_test_suite {
 
 /// EvalMod on the conjugate-invariant ring: one ciphertext reduces `n` real slots,
 /// against the ideal `sin(2π·x)/(2π)`, and the complex-exponential variant, which
-/// needs complex slots, is rejected.
-pub fn test_conjugate_invariant_eval_mod<BE>(
-    params: CKKSTestParams,
-    module: &Module<BE>,
-    host_module: &Module<HostBytesBackend<BE::Ring>>,
-) where
-    BE: TestContextBackend<Ring = ConjugateInvariant>,
+/// needs complex slots, is rejected. `module` may exceed the operands' degree `params.n`,
+/// as on the module of degree `2n` of the bootstrap.
+pub fn test_conjugate_invariant_eval_mod<BE>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
+where
+    BE: TestContextBackend,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: TestContextSharedModule<BE> + CKKSEncodingHostOps<BE, f64> + CKKSEvalModOps<BE>,
+    Module<BE>: TestContextSharedModule<BE, ConjugateInvariant>
+        + CKKSEncodingHostOps<BE, f64, ConjugateInvariant>
+        + CKKSEvalModOps<BE, ConjugateInvariant>,
 {
     let lit = EvalModPlan {
         eval_mod_type: EvalModType::CosHKEven,
@@ -714,14 +752,14 @@ pub fn test_conjugate_invariant_eval_mod<BE>(
     };
     let compile_bytes = module.ckks_encoding_host_tmp_bytes(params.n);
     let eval_mod = with_scratch::<BE, _>(compile_bytes, |s| {
-        ckks_eval_mod_compile::<BE, f64>(params.base2k.into(), lit, module, s)
+        ckks_eval_mod_compile::<BE, f64, ConjugateInvariant>(params.base2k.into(), lit, module, s)
     })
     .unwrap();
 
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [3u8; 32]);
     let res_k = params.k + lit.f_mod_log_delta - input_log_delta;
     let mut res = alloc_ct(&params, module, res_k);
-    let ct_layout = alloc_ct(&params, module, params.k);
+    let ct_layout = alloc_ct::<_, ConjugateInvariant>(&params, module, params.k);
     // The tensor key covers the width EvalMod multiplies at.
     let tsk_params = CKKSTestParams { k: res_k, ..params };
     let bytes = module.ckks_eval_mod_tmp_bytes(&res, &ct_layout, &eval_mod, &tsk_params.tsk_layout());
@@ -783,7 +821,7 @@ pub fn test_conjugate_invariant_eval_mod<BE>(
         ..lit
     };
     let complex = with_scratch::<BE, _>(compile_bytes, |s| {
-        ckks_eval_mod_compile::<BE, f64>(params.base2k.into(), complex, module, s)
+        ckks_eval_mod_compile::<BE, f64, ConjugateInvariant>(params.base2k.into(), complex, module, s)
     })
     .unwrap();
     let before = res.to_host_owned::<BE>();
@@ -805,17 +843,17 @@ pub fn test_conjugate_invariant_eval_mod<BE>(
 /// Embeds a CI ciphertext into the standard ring of twice its degree, switches
 /// it to the standard secret and decrypts it there, then switches back and takes the trace;
 /// then pins the refusals of both maps.
-pub fn test_conjugate_invariant_ring_map<BE, STD>(mut params: CKKSTestParams, ci: Module<BE>, standard: Module<STD>)
+pub fn test_conjugate_invariant_ring_map<BE>(mut params: CKKSTestParams, ci: Module<BE>, standard: Module<BE>)
 where
-    BE: TestContextBackend<Ring = ConjugateInvariant>,
-    STD: TestContextBackend<Ring = Standard>,
-    Module<BE>: TestContextSharedModule<BE> + CKKSEncodingOps<BE, f64>,
-    Module<STD>: TestContextSharedModule<STD>
-        + CKKSEncodingOps<STD, f64>
-        + CKKSCIRingMapOps<STD>
-        + GLWECIKeyEncryptSk<STD>
-        + GLWECIKeyPreparedFactory<STD>
-        + poulpy_core::GLWECITrace<STD>,
+    BE: TestContextBackend,
+    Module<BE>: TestContextSharedModule<BE, ConjugateInvariant>
+        + CKKSEncodingOps<BE, f64, ConjugateInvariant>
+        + TestContextSharedModule<BE>
+        + CKKSEncodingOps<BE, f64>
+        + CKKSCIRingMapOps<BE>
+        + GLWECIKeyEncryptSk<BE>
+        + GLWECIKeyPreparedFactory<BE>
+        + poulpy_core::GLWECITrace<BE>,
 {
     params.prec_meta.slots = SlotsKind::Real;
     // One bit above the radix grid, so the trace output (`k − 1` bits) can fill `back` exactly.
@@ -824,12 +862,12 @@ where
         n: 2 * params.n,
         ..params
     };
-    let ci_host = Module::<HostBytesBackend<ConjugateInvariant>>::new(params.n as u64);
+    let ci_host = Module::<HostBytesBackend>::new(params.n as u64);
     let standard_host = Module::<HostBytesBackend>::new(standard_params.n as u64);
     let (ci_sk_raw, ci_sk) = gen_sk_with_raw(&params, &ci, &ci_host, [21; 32]);
     let (standard_sk_raw, standard_sk) = gen_sk_with_raw(&standard_params, &standard, &standard_host, [22; 32]);
-    let mut scratch = alloc_scratch(&params, &ci);
-    let mut standard_scratch = alloc_scratch(&standard_params, &standard);
+    let mut scratch = alloc_scratch::<_, ConjugateInvariant>(&params, &ci);
+    let mut standard_scratch = alloc_scratch::<_, Standard>(&standard_params, &standard);
 
     let (embed_key, trace_key) = gen_ci_keys(
         &standard_params,
@@ -843,7 +881,11 @@ where
     let slots = params.n;
     let want = (0..slots).map(|i| (i as f64 + 1.0) / 521.0).collect::<Vec<_>>();
     let zeros = vec![0.0; slots];
-    let mut pt = ci.ckks_plaintext_alloc_from_slots(ci.ckks_max_slots(), params.base2k.into(), params.prec().k());
+    let mut pt = ci.ckks_plaintext_alloc_from_slots(
+        ci.ckks_max_slots::<ConjugateInvariant>(),
+        params.base2k.into(),
+        params.prec().k(),
+    );
     pt.set_meta(params.prec().meta());
     ci.ckks_encode_slots_host_into(&mut pt, &want, &zeros, &mut scratch.borrow())
         .unwrap();
@@ -871,7 +913,7 @@ where
     }
 
     let mut extended = alloc_ct(&standard_params, &standard, params.k);
-    with_scratch::<STD, _>(standard.ckks_ci_embed_tmp_bytes(&extended, &embed_key), |s| {
+    with_scratch::<BE, _>(standard.ckks_ci_embed_tmp_bytes(&extended, &embed_key), |s| {
         standard.ckks_ci_embed(&mut extended, &ct, &embed_key, s)
     })
     .unwrap();
@@ -884,7 +926,7 @@ where
     }
 
     let mut back = alloc_ct(&params, &ci, params.k - 1);
-    with_scratch::<STD, _>(standard.ckks_ci_trace_tmp_bytes(&back, &extended, &trace_key), |s| {
+    with_scratch::<BE, _>(standard.ckks_ci_trace_tmp_bytes(&back, &extended, &trace_key), |s| {
         standard.ckks_ci_trace(&mut back, &extended, &trace_key, s)
     })
     .unwrap();
@@ -978,18 +1020,27 @@ where
             "{label}: {err}"
         );
     };
-    let embed_refused = |label: &str, res: &CKKSLayout, src: &crate::layouts::CKKSCiphertextOwned<BE>, bytes: usize| {
-        let mut res = fixture_ciphertext(&standard, res, 61);
-        let before = snapshot::<STD, _>(&res);
-        let err = with_scratch::<STD, _>(bytes, |s| standard.ckks_ci_embed(&mut res, src, &embed_key, s)).unwrap_err();
-        assert_eq!(snapshot::<STD, _>(&res), before, "{label}: the refusal wrote the output");
-        err
-    };
-    let trace_refused = |label: &str, res: &CKKSLayout, src: &crate::layouts::CKKSCiphertextOwned<STD>, bytes: usize| {
+    let embed_refused =
+        |label: &str, res: &CKKSLayout, src: &crate::layouts::CKKSCiphertextOwned<BE, ConjugateInvariant>, bytes: usize| {
+            let mut res = fixture_ciphertext(&standard, res, 61);
+            let before = snapshot::<BE, _, Standard>(&res);
+            let err = with_scratch::<BE, _>(bytes, |s| standard.ckks_ci_embed(&mut res, src, &embed_key, s)).unwrap_err();
+            assert_eq!(
+                snapshot::<BE, _, Standard>(&res),
+                before,
+                "{label}: the refusal wrote the output"
+            );
+            err
+        };
+    let trace_refused = |label: &str, res: &CKKSLayout, src: &crate::layouts::CKKSCiphertextOwned<BE>, bytes: usize| {
         let mut res = fixture_ciphertext(&ci, res, 62);
-        let before = snapshot::<BE, _>(&res);
-        let err = with_scratch::<STD, _>(bytes, |s| standard.ckks_ci_trace(&mut res, src, &trace_key, s)).unwrap_err();
-        assert_eq!(snapshot::<BE, _>(&res), before, "{label}: the refusal wrote the output");
+        let before = snapshot::<BE, _, ConjugateInvariant>(&res);
+        let err = with_scratch::<BE, _>(bytes, |s| standard.ckks_ci_trace(&mut res, src, &trace_key, s)).unwrap_err();
+        assert_eq!(
+            snapshot::<BE, _, ConjugateInvariant>(&res),
+            before,
+            "{label}: the refusal wrote the output"
+        );
         err
     };
     let (k, base2k) = (params.k, params.base2k);
@@ -1030,24 +1081,24 @@ where
     assert_ckks_internal("short arena", &err, "ckks_ci_trace: scratch below its query");
 }
 
-/// Folds five CI inputs on a standard module of four times their degree at the input
+/// Folds five CI inputs on a module of four times their degree at the input
 /// width, checks the folded messages against the embedded inputs, re-encrypts them
 /// wider as a bootstrap would, then unfolds and checks the inputs return: under the
 /// embedded CI secret at twice the CI degree, dense and sparse, and switched to a
 /// standard secret at four times it, two pairs per folded ciphertext.
-pub fn test_conjugate_invariant_fold<BE, STD>(params: CKKSTestParams, ci: Module<BE>, standard: Module<STD>)
+pub fn test_conjugate_invariant_fold<BE>(params: CKKSTestParams, ci: Module<BE>, standard: Module<BE>)
 where
-    BE: TestContextBackend<Ring = ConjugateInvariant>,
-    STD: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    for<'a> STD::BufRef<'a>: HostDataRef,
-    for<'a> STD::BufMut<'a>: HostDataMut,
-    Module<BE>: TestContextSharedModule<BE>,
-    Module<STD>: TestContextModule<STD> + GLWESecretCIEmbed<STD> + CKKSFoldLayoutOps<STD> + CKKSFoldOps<STD, ConjugateInvariant>,
+    Module<BE>: TestContextSharedModule<BE, ConjugateInvariant>
+        + TestContextModule<BE>
+        + GLWESecretCIEmbed<BE>
+        + CKKSFoldLayoutOps<BE>
+        + CKKSFoldOps<BE, ConjugateInvariant>,
 {
     let n = ci.n();
-    let ci_host = Module::<HostBytesBackend<ConjugateInvariant>>::new(n as u64);
+    let ci_host = Module::<HostBytesBackend>::new(n as u64);
     let std_host = Module::<HostBytesBackend>::new(standard.n() as u64);
     let ci_params = CKKSTestParams { n, ..params };
     let embedded_params = CKKSTestParams { n: 2 * n, ..params };
@@ -1058,8 +1109,8 @@ where
     let k_in = params.prec().k().as_usize();
     let k_out = 2 * k_in;
     let log_delta = ckks_log_delta(&params.prec_meta);
-    let mut ci_scratch = alloc_scratch(&ci_params, &ci);
-    let mut scratch = alloc_scratch(&std_params, &standard);
+    let mut ci_scratch = alloc_scratch::<_, ConjugateInvariant>(&ci_params, &ci);
+    let mut scratch = alloc_scratch::<_, Standard>(&std_params, &standard);
     let (ci_sk_raw, ci_sk) = gen_sk_with_raw(&ci_params, &ci, &ci_host, [41; 32]);
     let mut embedded = standard.glwe_secret_alloc_from_infos(&embedded_params.glwe_layout());
     standard.glwe_secret_ci_embed(&mut embedded, &ci_sk_raw);
@@ -1143,7 +1194,7 @@ where
         let mut folded: Vec<_> = (0..count)
             .map(|_| standard.ckks_ciphertext_alloc_from_glwe_infos(&folded_layout))
             .collect();
-        with_scratch::<STD, _>(fold_bytes, |s| {
+        with_scratch::<BE, _>(fold_bytes, |s| {
             standard.ckks_fold(&mut folded, &ins, ring_switch.map(|keys| &keys.inbound), s)
         })
         .unwrap();
@@ -1157,7 +1208,7 @@ where
             .iter()
             .zip(units.chunks(span))
             .map(|(ct, group)| {
-                let got = decrypt_coeffs::<STD, f64>(&standard, fold_params, ct, fold_sk, &mut scratch);
+                let got = decrypt_coeffs::<BE, f64, Standard>(&standard, fold_params, ct, fold_sk, &mut scratch);
                 assert_precision(
                     &format!("folded, {label}"),
                     &got,
@@ -1190,7 +1241,7 @@ where
                 out
             })
             .collect();
-        with_scratch::<STD, _>(fold_bytes, |s| {
+        with_scratch::<BE, _>(fold_bytes, |s| {
             standard.ckks_unfold(
                 &mut outs,
                 &mut refreshed,
@@ -1207,7 +1258,7 @@ where
                 "unfolded {i}, {label}"
             );
             assert_eq!(out.noise(), None, "unfolded provenance {i}, {label}");
-            let got = decrypt_coeffs::<BE, f64>(&ci, &ci_params, out, &ci_sk, &mut ci_scratch);
+            let got = decrypt_coeffs::<BE, f64, ConjugateInvariant>(&ci, &ci_params, out, &ci_sk, &mut ci_scratch);
             assert_precision(&format!("unfolded {i}, {label}"), &got, msg, log_delta, n);
         }
     }

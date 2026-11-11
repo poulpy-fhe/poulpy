@@ -1,4 +1,4 @@
-use super::{FFT64Avx, FFT64CIAvx, NTT4x30Avx, NTT4x30CIAvx};
+use super::{FFT64Avx, NTT4x30Avx};
 use poulpy_ckks::{
     impl_ckks_bootstrapping_ci_reference_full, impl_ckks_bootstrapping_reference_full, impl_ckks_ci_ring_map_reference_full,
     impl_ckks_complex_polynomial_evaluation_reference_full, impl_ckks_conjugate_reference_full,
@@ -36,14 +36,12 @@ macro_rules! select_avx_encoding_transform {
 
 select_avx_encoding_transform!(FFT64Avx);
 select_avx_encoding_transform!(NTT4x30Avx);
-select_avx_encoding_transform!(FFT64CIAvx);
-select_avx_encoding_transform!(NTT4x30CIAvx);
 
 poulpy_cpu_portable::impl_cpu_ckks_defaults!(super::FFT64Avx);
 impl_ckks_conjugate_reference_full!(super::FFT64Avx);
 impl_ckks_imag_reference_full!(super::FFT64Avx);
 impl_ckks_bootstrapping_reference_full!(super::FFT64Avx);
-impl_ckks_bootstrapping_ci_reference_full!(super::FFT64Avx, super::FFT64CIAvx);
+impl_ckks_bootstrapping_ci_reference_full!(super::FFT64Avx);
 impl_ckks_fold_layout_reference_full!(super::FFT64Avx);
 impl_ckks_fold_reference_full!(super::FFT64Avx);
 impl_ckks_complex_polynomial_evaluation_reference_full!(super::FFT64Avx);
@@ -58,7 +56,7 @@ poulpy_cpu_portable::impl_cpu_ckks_defaults!(super::NTT4x30Avx);
 impl_ckks_conjugate_reference_full!(super::NTT4x30Avx);
 impl_ckks_imag_reference_full!(super::NTT4x30Avx);
 impl_ckks_bootstrapping_reference_full!(super::NTT4x30Avx);
-impl_ckks_bootstrapping_ci_reference_full!(super::NTT4x30Avx, super::NTT4x30CIAvx);
+impl_ckks_bootstrapping_ci_reference_full!(super::NTT4x30Avx);
 impl_ckks_fold_layout_reference_full!(super::NTT4x30Avx);
 impl_ckks_fold_reference_full!(super::NTT4x30Avx);
 impl_ckks_complex_polynomial_evaluation_reference_full!(super::NTT4x30Avx);
@@ -69,8 +67,6 @@ poulpy_cpu_portable::impl_ckks_ship_coeff_encoding!(super::NTT4x30Avx);
 impl_ckks_ci_ring_map_reference_full!(super::NTT4x30Avx);
 impl_ckks_paco_reference_full!(super::NTT4x30Avx);
 impl_ckks_ship_reference_full!(super::NTT4x30Avx);
-poulpy_cpu_portable::impl_cpu_ckks_defaults!(super::FFT64CIAvx);
-poulpy_cpu_portable::impl_cpu_ckks_defaults!(super::NTT4x30CIAvx);
 #[cfg(feature = "enable-rayon")]
 poulpy_cpu_portable::impl_cpu_ckks_defaults!(super::FFT64AvxRayon);
 #[cfg(feature = "enable-rayon")]
@@ -80,7 +76,7 @@ impl_ckks_imag_reference_full!(super::FFT64AvxRayon);
 #[cfg(feature = "enable-rayon")]
 impl_ckks_bootstrapping_reference_full!(super::FFT64AvxRayon);
 #[cfg(feature = "enable-rayon")]
-impl_ckks_bootstrapping_ci_reference_full!(super::FFT64AvxRayon, super::FFT64CIAvxRayon);
+impl_ckks_bootstrapping_ci_reference_full!(super::FFT64AvxRayon);
 #[cfg(feature = "enable-rayon")]
 impl_ckks_fold_layout_reference_full!(super::FFT64AvxRayon);
 #[cfg(feature = "enable-rayon")]
@@ -110,7 +106,7 @@ impl_ckks_imag_reference_full!(super::NTT4x30AvxRayon);
 #[cfg(feature = "enable-rayon")]
 impl_ckks_bootstrapping_reference_full!(super::NTT4x30AvxRayon);
 #[cfg(feature = "enable-rayon")]
-impl_ckks_bootstrapping_ci_reference_full!(super::NTT4x30AvxRayon, super::NTT4x30CIAvxRayon);
+impl_ckks_bootstrapping_ci_reference_full!(super::NTT4x30AvxRayon);
 #[cfg(feature = "enable-rayon")]
 impl_ckks_fold_layout_reference_full!(super::NTT4x30AvxRayon);
 #[cfg(feature = "enable-rayon")]
@@ -132,10 +128,6 @@ impl_ckks_paco_reference_full!(super::NTT4x30AvxRayon);
 #[cfg(feature = "enable-rayon")]
 impl_ckks_ship_reference_full!(super::NTT4x30AvxRayon);
 #[cfg(feature = "enable-rayon")]
-poulpy_cpu_portable::impl_cpu_ckks_defaults!(super::FFT64CIAvxRayon);
-#[cfg(feature = "enable-rayon")]
-poulpy_cpu_portable::impl_cpu_ckks_defaults!(super::NTT4x30CIAvxRayon);
-#[cfg(feature = "enable-rayon")]
 select_avx_encoding_transform!(super::FFT64AvxRayon);
 #[cfg(feature = "enable-rayon")]
 impl_ckks_encapsulated_mod_up_reference_full!(super::FFT64AvxRayon);
@@ -143,7 +135,3 @@ impl_ckks_encapsulated_mod_up_reference_full!(super::FFT64AvxRayon);
 impl_ckks_mod_up_first_factor_reference_full!(super::FFT64AvxRayon);
 #[cfg(feature = "enable-rayon")]
 select_avx_encoding_transform!(super::NTT4x30AvxRayon);
-#[cfg(feature = "enable-rayon")]
-select_avx_encoding_transform!(super::FFT64CIAvxRayon);
-#[cfg(feature = "enable-rayon")]
-select_avx_encoding_transform!(super::NTT4x30CIAvxRayon);

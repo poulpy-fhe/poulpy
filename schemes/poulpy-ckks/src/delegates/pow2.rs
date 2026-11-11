@@ -1,12 +1,12 @@
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef};
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Module, Ring, ScratchArena};
 
 use crate::{CKKSCtBounds, SetCKKSInfos, oep::CKKSPow2Impl};
 
 use crate::api::CKKSPow2Ops;
 
-impl<BE: Backend + CKKSPow2Impl> CKKSPow2Ops<BE> for Module<BE> {
+impl<BE: Backend + CKKSPow2Impl<Rg>, Rg: Ring> CKKSPow2Ops<BE, Rg> for Module<BE> {
     fn ckks_mul_pow2_tmp_bytes(&self, res_size: usize) -> usize {
         BE::ckks_mul_pow2_tmp_bytes(self, res_size)
     }
@@ -19,15 +19,15 @@ impl<BE: Backend + CKKSPow2Impl> CKKSPow2Ops<BE> for Module<BE> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
+        Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
     {
         BE::ckks_mul_pow2_into(self, bits, dst, src, scratch)
     }
 
     fn ckks_mul_pow2_assign<Dst>(&self, bits: usize, dst: &mut Dst, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
     {
         BE::ckks_mul_pow2_assign(self, bits, dst, scratch)
     }
@@ -38,8 +38,8 @@ impl<BE: Backend + CKKSPow2Impl> CKKSPow2Ops<BE> for Module<BE> {
 
     fn ckks_double_into<Dst, Src>(&self, dst: &mut Dst, src: &Src, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
+        Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
     {
         BE::ckks_double_into(self, dst, src, scratch)
     }
@@ -56,15 +56,15 @@ impl<BE: Backend + CKKSPow2Impl> CKKSPow2Ops<BE> for Module<BE> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
+        Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
     {
         BE::ckks_div_pow2_into(self, bits, dst, src, scratch)
     }
 
     fn ckks_div_pow2_assign<Dst>(&self, bits: usize, dst: &mut Dst) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
     {
         BE::ckks_div_pow2_assign(self, bits, dst)
     }

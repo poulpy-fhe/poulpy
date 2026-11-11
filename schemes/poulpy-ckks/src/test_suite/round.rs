@@ -16,7 +16,7 @@ use poulpy_core::layouts::{GLWEInfos, GLWEToBackendRef, LWEInfos};
 use poulpy_hal::{
     api::{ReimNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxNormalize, VecZnxNormalizeTmpBytes},
     layouts::{
-        ConjugateInvariant, HostBytesBackend, HostDataMut, HostDataRef, Module, ScratchOwned, Standard, VecZnxToBackendMut,
+        ConjugateInvariant, HostBytesBackend, HostDataMut, HostDataRef, Module, Ring, ScratchOwned, VecZnxToBackendMut,
         VecZnxToBackendRef, ZnxView,
     },
 };
@@ -27,7 +27,7 @@ use super::helpers::{
 };
 use crate::{
     CKKSInfos, GLWEPlaintextInfos, ReplicatedLayout, Scale, SetCKKSInfos, SetGLWEPlaintextInfos, SlotLayout, SlotsKind,
-    api::{CKKSEncodingHostOps, CKKSModuleInfos, CKKSRoundOps},
+    api::{CKKSEncodingHostOps, CKKSRoundOps},
     layouts::{CKKSCiphertextOwned, CKKSPlaintextAlloc},
     shaping::{ShapingProfile, ShapingUnit},
     test_suite::{CKKSTestParams, reference_encoder::ReferenceEncoder},
@@ -39,7 +39,7 @@ fn encrypted<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
 ) -> CKKSCiphertextOwned<BE>
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: ReimNew<F>,
@@ -62,15 +62,15 @@ where
     )
 }
 
-fn round<BE>(
+fn round<BE, Rg: Ring>(
     module: &Module<BE>,
-    src: &CKKSCiphertextOwned<BE>,
+    src: &CKKSCiphertextOwned<BE, Rg>,
     params: &CKKSTestParams,
     k: usize,
-) -> Result<CKKSCiphertextOwned<BE>>
+) -> Result<CKKSCiphertextOwned<BE, Rg>>
 where
     BE: TestContextBackend,
-    Module<BE>: TestContextSharedModule<BE>,
+    Module<BE>: TestContextSharedModule<BE, Rg>,
 {
     let mut dst = alloc_ct(params, module, k);
     let mut scratch = ScratchOwned::<BE>::alloc(module.ckks_round_tmp_bytes(&dst, src));
@@ -97,17 +97,17 @@ where
 }
 
 /// `ct · 2^offset` read modulo `2^bits` to `bits` bits of precision, centered.
-fn window<BE>(module: &Module<BE>, ct: &CKKSCiphertextOwned<BE>, col: usize, offset: i64, bits: usize) -> Vec<i64>
+fn window<BE, Rg: Ring>(module: &Module<BE>, ct: &CKKSCiphertextOwned<BE, Rg>, col: usize, offset: i64, bits: usize) -> Vec<i64>
 where
     BE: TestContextBackend,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
-    Module<BE>: TestContextSharedModule<BE> + VecZnxNormalize<BE> + VecZnxNormalizeTmpBytes,
+    Module<BE>: TestContextSharedModule<BE, Rg> + VecZnxNormalize<BE, Rg> + VecZnxNormalizeTmpBytes,
 {
-    let mut out = module.vec_znx_alloc(ct.n().as_usize(), 1, 1);
+    let mut out = module.vec_znx_alloc::<Rg>(ct.n().as_usize(), 1, 1);
     let mut scratch = ScratchOwned::<BE>::alloc(module.vec_znx_normalize_tmp_bytes());
-    let glwe = GLWEToBackendRef::<BE>::to_backend_ref(ct);
+    let glwe = GLWEToBackendRef::<BE, Rg>::to_backend_ref(ct);
     module.vec_znx_normalize(
-        &mut VecZnxToBackendMut::<BE>::to_backend_mut(&mut out),
+        &mut VecZnxToBackendMut::<BE, Rg>::to_backend_mut(&mut out),
         bits,
         bits,
         offset,
@@ -117,7 +117,7 @@ where
         col,
         &mut scratch.borrow(),
     );
-    VecZnxToBackendRef::<BE>::to_backend_ref(&out).at(0, 0).to_vec()
+    VecZnxToBackendRef::<BE, Rg>::to_backend_ref(&out).at(0, 0).to_vec()
 }
 
 /// `Σ_t coeffs[t] · X^(t·stride) · x` in `Z[X]/(X^N + 1)`, in `i128`.
@@ -149,7 +149,7 @@ pub fn test_round_unit_shaping_is_plain<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
 ) -> Result<()>
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -174,7 +174,7 @@ pub fn test_round_error_is_shaped<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
 ) -> Result<()>
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE> + VecZnxNormalize<BE> + VecZnxNormalizeTmpBytes,
@@ -227,20 +227,23 @@ where
 pub fn test_round_error_is_shaped_conjugate_invariant<BE>(
     mut params: CKKSTestParams,
     module: &Module<BE>,
-    host_module: &Module<HostBytesBackend<ConjugateInvariant>>,
+    host_module: &Module<HostBytesBackend>,
 ) -> Result<()>
 where
-    BE: TestContextBackend<Ring = ConjugateInvariant>,
+    BE: TestContextBackend,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    Module<BE>: TestContextSharedModule<BE> + CKKSEncodingHostOps<BE, f64> + VecZnxNormalize<BE> + VecZnxNormalizeTmpBytes,
+    Module<BE>: TestContextSharedModule<BE, ConjugateInvariant>
+        + CKKSEncodingHostOps<BE, f64, ConjugateInvariant>
+        + VecZnxNormalize<BE, ConjugateInvariant>
+        + VecZnxNormalizeTmpBytes,
 {
     params.prec_meta.slots = SlotsKind::Real;
-    let (_, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
-    let mut scratch = alloc_scratch(&params, module);
+    let (_, sk) = gen_sk_with_raw::<BE, ConjugateInvariant>(&params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch::<BE, ConjugateInvariant>(&params, module);
     let n = params.n;
     let values: Vec<f64> = (0..n).map(|i| (i as f64 + 1.0) / (n as f64 + 3.0)).collect();
-    let mut pt = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots(), params.base2k.into(), params.prec().k());
+    let mut pt = module.ckks_plaintext_alloc_from_slots::<ConjugateInvariant>(n, params.base2k.into(), params.prec().k());
     pt.set_meta(params.prec().meta());
     module.ckks_encode_slots_host_into(&mut pt, &values, &vec![0.0; n], &mut scratch.borrow())?;
     let mut src = ckks_encrypt_pt(
@@ -302,7 +305,7 @@ pub fn test_round_beyond_pass_rounds_plainly_first<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
 ) -> Result<()>
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -328,7 +331,7 @@ pub fn test_round_rejects_invalid_widths<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
 ) -> Result<()>
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -349,7 +352,7 @@ pub fn test_round_rejects_incompatible_layouts<BE, F, E>(
     _host_module: &Module<HostBytesBackend>,
 ) -> Result<()>
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     Module<BE>: TestContextModule<BE> + poulpy_core::GLWEFill<BE>,
     F: TestScalar,
     E: ReimNew<F>,
@@ -375,7 +378,7 @@ where
             },
         };
         let src = fixture_ciphertext(module, &src_layout, 81);
-        let src_before = snapshot::<BE, _>(&src);
+        let src_before = snapshot::<BE, _, _>(&src);
         for (rank, n, reason) in [
             (0usize, params.n, "source and destination ranks differ"),
             (2, params.n, "source and destination ranks differ"),
@@ -394,7 +397,7 @@ where
                 },
             };
             let mut dst = fixture_ciphertext(module, &dst_layout, 83);
-            let before = snapshot::<BE, _>(&dst);
+            let before = snapshot::<BE, _, _>(&dst);
             let err = with_scratch::<BE, _>(module.ckks_round_tmp_bytes(&dst, &src), |scratch| {
                 module.ckks_round(&mut dst, &src, scratch)
             })
@@ -402,8 +405,8 @@ where
             assert!(
                 matches!(err.composition(), Some(CKKSCompositionError::InvalidOperand {op: "ckks_round", reason: got}) if got == reason)
             );
-            assert_eq!(snapshot::<BE, _>(&dst), before);
-            assert_eq!(snapshot::<BE, _>(&src), src_before);
+            assert_eq!(snapshot::<BE, _, _>(&dst), before);
+            assert_eq!(snapshot::<BE, _, _>(&src), src_before);
         }
         let mut dst = fixture_ciphertext(
             module,
@@ -419,12 +422,12 @@ where
             },
             83,
         );
-        let before = snapshot::<BE, _>(&dst);
+        let before = snapshot::<BE, _, _>(&dst);
         let err = with_scratch::<BE, _>(0, |scratch| module.ckks_round(&mut dst, &src, scratch)).unwrap_err();
         assert!(matches!(&err, crate::CKKSError::Internal(_)));
         assert_eq!(err.to_string(), "ckks_round: insufficient scratch");
-        assert_eq!(snapshot::<BE, _>(&dst), before);
-        assert_eq!(snapshot::<BE, _>(&src), src_before);
+        assert_eq!(snapshot::<BE, _, _>(&dst), before);
+        assert_eq!(snapshot::<BE, _, _>(&src), src_before);
     }
     Ok(())
 }

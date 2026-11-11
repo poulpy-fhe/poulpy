@@ -15,11 +15,11 @@ use crate::{
     znx::{Term, col_weighted_sum, inner_sum, lincomb, normalize, permute, scalar_product},
 };
 
-unsafe impl<RT: GpuRuntime, R: Ring> HalVecZnxBigImpl for NTT4x30Gpu<RT, R> {
+unsafe impl<RT: GpuRuntime, R: Ring> HalVecZnxBigImpl<R> for NTT4x30Gpu<RT> {
     fn vec_znx_big_from_small(
-        res: &mut VecZnxBigBackendMut<'_, Self>,
+        res: &mut VecZnxBigBackendMut<'_, Self, R>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, Self>,
+        a: &VecZnxBackendRef<'_, Self, R>,
         a_col: usize,
     ) {
         let Some(res) = big_column_mut(res, res_col) else { return };
@@ -29,11 +29,11 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalVecZnxBigImpl for NTT4x30Gpu<RT, R> {
 
     fn vec_znx_big_add(
         _module: &Module<Self>,
-        res: &mut VecZnxBigBackendMut<'_, Self>,
+        res: &mut VecZnxBigBackendMut<'_, Self, R>,
         res_col: usize,
-        a: &VecZnxBigBackendRef<'_, Self>,
+        a: &VecZnxBigBackendRef<'_, Self, R>,
         a_col: usize,
-        b: &VecZnxBigBackendRef<'_, Self>,
+        b: &VecZnxBigBackendRef<'_, Self, R>,
         b_col: usize,
     ) {
         let Some(res) = big_column_mut(res, res_col) else { return };
@@ -44,9 +44,9 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalVecZnxBigImpl for NTT4x30Gpu<RT, R> {
 
     fn vec_znx_big_add_assign(
         _module: &Module<Self>,
-        res: &mut VecZnxBigBackendMut<'_, Self>,
+        res: &mut VecZnxBigBackendMut<'_, Self, R>,
         res_col: usize,
-        a: &VecZnxBigBackendRef<'_, Self>,
+        a: &VecZnxBigBackendRef<'_, Self, R>,
         a_col: usize,
     ) {
         let Some(res) = big_column_mut(res, res_col) else { return };
@@ -56,9 +56,9 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalVecZnxBigImpl for NTT4x30Gpu<RT, R> {
 
     fn vec_znx_big_add_small_assign(
         _module: &Module<Self>,
-        res: &mut VecZnxBigBackendMut<'_, Self>,
+        res: &mut VecZnxBigBackendMut<'_, Self, R>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, Self>,
+        a: &VecZnxBackendRef<'_, Self, R>,
         a_col: usize,
     ) {
         let Some(res) = big_column_mut(res, res_col) else { return };
@@ -68,11 +68,11 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalVecZnxBigImpl for NTT4x30Gpu<RT, R> {
 
     fn vec_znx_big_sub(
         _module: &Module<Self>,
-        res: &mut VecZnxBigBackendMut<'_, Self>,
+        res: &mut VecZnxBigBackendMut<'_, Self, R>,
         res_col: usize,
-        a: &VecZnxBigBackendRef<'_, Self>,
+        a: &VecZnxBigBackendRef<'_, Self, R>,
         a_col: usize,
-        b: &VecZnxBigBackendRef<'_, Self>,
+        b: &VecZnxBigBackendRef<'_, Self, R>,
         b_col: usize,
     ) {
         let Some(res) = big_column_mut(res, res_col) else { return };
@@ -83,9 +83,9 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalVecZnxBigImpl for NTT4x30Gpu<RT, R> {
 
     fn vec_znx_big_sub_assign(
         _module: &Module<Self>,
-        res: &mut VecZnxBigBackendMut<'_, Self>,
+        res: &mut VecZnxBigBackendMut<'_, Self, R>,
         res_col: usize,
-        a: &VecZnxBigBackendRef<'_, Self>,
+        a: &VecZnxBigBackendRef<'_, Self, R>,
         a_col: usize,
     ) {
         let Some(res) = big_column_mut(res, res_col) else { return };
@@ -95,9 +95,9 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalVecZnxBigImpl for NTT4x30Gpu<RT, R> {
 
     fn vec_znx_big_sub_negate_assign(
         _module: &Module<Self>,
-        res: &mut VecZnxBigBackendMut<'_, Self>,
+        res: &mut VecZnxBigBackendMut<'_, Self, R>,
         res_col: usize,
-        a: &VecZnxBigBackendRef<'_, Self>,
+        a: &VecZnxBigBackendRef<'_, Self, R>,
         a_col: usize,
     ) {
         let Some(res) = big_column_mut(res, res_col) else { return };
@@ -107,9 +107,9 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalVecZnxBigImpl for NTT4x30Gpu<RT, R> {
 
     fn vec_znx_big_sub_small_assign(
         _module: &Module<Self>,
-        res: &mut VecZnxBigBackendMut<'_, Self>,
+        res: &mut VecZnxBigBackendMut<'_, Self, R>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, Self>,
+        a: &VecZnxBackendRef<'_, Self, R>,
         a_col: usize,
     ) {
         let Some(res) = big_column_mut(res, res_col) else { return };
@@ -119,9 +119,9 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalVecZnxBigImpl for NTT4x30Gpu<RT, R> {
 
     fn vec_znx_big_sub_small_negate_assign(
         _module: &Module<Self>,
-        res: &mut VecZnxBigBackendMut<'_, Self>,
+        res: &mut VecZnxBigBackendMut<'_, Self, R>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, Self>,
+        a: &VecZnxBackendRef<'_, Self, R>,
         a_col: usize,
     ) {
         let Some(res) = big_column_mut(res, res_col) else { return };
@@ -131,10 +131,10 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalVecZnxBigImpl for NTT4x30Gpu<RT, R> {
 
     fn vec_znx_big_inner_sum(
         _module: &Module<Self>,
-        res: &mut VecZnxBigBackendMut<'_, Self>,
+        res: &mut VecZnxBigBackendMut<'_, Self, R>,
         res_col: usize,
         res_coeff: usize,
-        a: &VecZnxBigBackendRef<'_, Self>,
+        a: &VecZnxBigBackendRef<'_, Self, R>,
         a_col: usize,
     ) {
         poulpy_hal::layouts::assert_dense(res, "vec_znx_big_inner_sum");
@@ -146,10 +146,10 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalVecZnxBigImpl for NTT4x30Gpu<RT, R> {
 
     fn vec_znx_big_col_weighted_sum(
         _module: &Module<Self>,
-        res: &mut VecZnxBigBackendMut<'_, Self>,
+        res: &mut VecZnxBigBackendMut<'_, Self, R>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, Self>,
-        weights: &ScalarZnxBackendRef<'_, Self>,
+        a: &VecZnxBackendRef<'_, Self, R>,
+        weights: &ScalarZnxBackendRef<'_, Self, R>,
         weights_col: usize,
         cols: usize,
         coeffs: usize,
@@ -177,11 +177,11 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalVecZnxBigImpl for NTT4x30Gpu<RT, R> {
 
     fn vec_znx_big_scalar_product(
         _module: &Module<Self>,
-        res: &mut VecZnxBigBackendMut<'_, Self>,
+        res: &mut VecZnxBigBackendMut<'_, Self, R>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, Self>,
+        a: &VecZnxBackendRef<'_, Self, R>,
         a_col: usize,
-        b: &ScalarZnxBackendRef<'_, Self>,
+        b: &ScalarZnxBackendRef<'_, Self, R>,
         b_col: usize,
     ) {
         poulpy_hal::layouts::assert_dense(res, "vec_znx_big_scalar_product");
@@ -196,9 +196,9 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalVecZnxBigImpl for NTT4x30Gpu<RT, R> {
 
     fn vec_znx_big_negate(
         _module: &Module<Self>,
-        res: &mut VecZnxBigBackendMut<'_, Self>,
+        res: &mut VecZnxBigBackendMut<'_, Self, R>,
         res_col: usize,
-        a: &VecZnxBigBackendRef<'_, Self>,
+        a: &VecZnxBigBackendRef<'_, Self, R>,
         a_col: usize,
     ) {
         let Some(res) = big_column_mut(res, res_col) else { return };
@@ -207,7 +207,7 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalVecZnxBigImpl for NTT4x30Gpu<RT, R> {
         lincomb::<RT>(&res, res.size, Term::minus(&a), Term::zero(&a));
     }
 
-    fn vec_znx_big_negate_assign(_module: &Module<Self>, a: &mut VecZnxBigBackendMut<'_, Self>, a_col: usize) {
+    fn vec_znx_big_negate_assign(_module: &Module<Self>, a: &mut VecZnxBigBackendMut<'_, Self, R>, a_col: usize) {
         let Some(a) = big_column_mut(a, a_col) else { return };
         lincomb::<RT>(&a, a.size, Term::minus(&a), Term::zero(&a));
     }
@@ -218,12 +218,12 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalVecZnxBigImpl for NTT4x30Gpu<RT, R> {
 
     fn vec_znx_big_normalize(
         _module: &Module<Self>,
-        res: &mut VecZnxBackendMut<'_, Self>,
+        res: &mut VecZnxBackendMut<'_, Self, R>,
         res_base2k: usize,
         res_k: usize,
         res_offset: i64,
         res_col: usize,
-        a: &VecZnxBigBackendRef<'_, Self>,
+        a: &VecZnxBigBackendRef<'_, Self, R>,
         a_base2k: usize,
         a_col: usize,
         _scratch: &mut ScratchArena<'_, Self>,
@@ -240,9 +240,9 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalVecZnxBigImpl for NTT4x30Gpu<RT, R> {
     fn vec_znx_big_automorphism(
         _module: &Module<Self>,
         k: i64,
-        res: &mut VecZnxBigBackendMut<'_, Self>,
+        res: &mut VecZnxBigBackendMut<'_, Self, R>,
         res_col: usize,
-        a: &VecZnxBigBackendRef<'_, Self>,
+        a: &VecZnxBigBackendRef<'_, Self, R>,
         a_col: usize,
     ) {
         poulpy_hal::layouts::assert_dense(res, "vec_znx_big_automorphism");
@@ -260,7 +260,7 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalVecZnxBigImpl for NTT4x30Gpu<RT, R> {
     fn vec_znx_big_automorphism_assign(
         module: &Module<Self>,
         k: i64,
-        a: &mut VecZnxBigBackendMut<'_, Self>,
+        a: &mut VecZnxBigBackendMut<'_, Self, R>,
         a_col: usize,
         _scratch: &mut ScratchArena<'_, Self>,
     ) {

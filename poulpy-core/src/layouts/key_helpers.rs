@@ -8,7 +8,7 @@
 
 use std::collections::HashMap;
 
-use poulpy_hal::layouts::{Backend, Data};
+use poulpy_hal::layouts::{Backend, Data, Ring, Standard};
 
 use crate::{
     error::{CoreError, Result},
@@ -23,17 +23,17 @@ use crate::{
 
 /// Automorphism key for Galois element `p`, at the precision `k` it will be
 /// used at.
-pub trait GetAutomorphismKey<BE: Backend> {
+pub trait GetAutomorphismKey<BE: Backend, Rg: Ring = Standard> {
     /// Answers with a key for `p`. Which key and which decomposition is the
     /// implementor's business; answering with a key for another element is not.
-    fn lookup_automorphism_key(&self, p: i64, k: TorusPrecision) -> Result<GLWEAutomorphismKeyPreparedBackendRef<'_, BE>>;
+    fn lookup_automorphism_key(&self, p: i64, k: TorusPrecision) -> Result<GLWEAutomorphismKeyPreparedBackendRef<'_, BE, Rg>>;
 
     /// The answer to [`Self::lookup_automorphism_key`], checked to be a key for
     /// the element that was asked for, covering an input of `k` bits.
     ///
     /// Operations rotate by the `p` they were given and key-switch with what
     /// the source returns, so a mismatch is silent: this is where it stops.
-    fn get_automorphism_key(&self, p: i64, k: TorusPrecision) -> Result<GLWEAutomorphismKeyPreparedBackendRef<'_, BE>> {
+    fn get_automorphism_key(&self, p: i64, k: TorusPrecision) -> Result<GLWEAutomorphismKeyPreparedBackendRef<'_, BE, Rg>> {
         let key = self.lookup_automorphism_key(p, k)?;
         if key.p != p {
             return Err(CoreError::GGLWEKeyUse {
@@ -47,13 +47,13 @@ pub trait GetAutomorphismKey<BE: Backend> {
 }
 
 /// Tensor (relinearization) key, at the precision `k` it will be used at.
-pub trait GetTensorKey<BE: Backend> {
+pub trait GetTensorKey<BE: Backend, Rg: Ring = Standard> {
     /// Answers with a tensor key. Which key and which decomposition is the
     /// implementor's business.
-    fn lookup_tensor_key(&self, k: TorusPrecision) -> Result<GLWETensorKeyPreparedBackendRef<'_, BE>>;
+    fn lookup_tensor_key(&self, k: TorusPrecision) -> Result<GLWETensorKeyPreparedBackendRef<'_, BE, Rg>>;
 
     /// The answer to [`Self::lookup_tensor_key`], checked to cover an input of `k` bits.
-    fn get_tensor_key(&self, k: TorusPrecision) -> Result<GLWETensorKeyPreparedBackendRef<'_, BE>> {
+    fn get_tensor_key(&self, k: TorusPrecision) -> Result<GLWETensorKeyPreparedBackendRef<'_, BE, Rg>> {
         let key = self.lookup_tensor_key(k)?;
         check_covers("get_tensor_key", &key, k)?;
         Ok(key)
@@ -74,8 +74,8 @@ fn check_covers<K: GGLWEInfos>(op: &'static str, key: &K, k: TorusPrecision) -> 
 }
 
 /// A map answers with each key as stored.
-impl<BE: Backend, K: GLWEAutomorphismKeyPreparedToBackendRef<BE>> GetAutomorphismKey<BE> for HashMap<i64, K> {
-    fn lookup_automorphism_key(&self, p: i64, _k: TorusPrecision) -> Result<GLWEAutomorphismKeyPreparedBackendRef<'_, BE>> {
+impl<BE: Backend, K: GLWEAutomorphismKeyPreparedToBackendRef<BE, Rg>, Rg: Ring> GetAutomorphismKey<BE, Rg> for HashMap<i64, K> {
+    fn lookup_automorphism_key(&self, p: i64, _k: TorusPrecision) -> Result<GLWEAutomorphismKeyPreparedBackendRef<'_, BE, Rg>> {
         self.get(&p)
             .map(GLWEAutomorphismKeyPreparedToBackendRef::to_backend_ref)
             .ok_or(CoreError::GGLWEKeyUse {
@@ -86,8 +86,8 @@ impl<BE: Backend, K: GLWEAutomorphismKeyPreparedToBackendRef<BE>> GetAutomorphis
 }
 
 /// A map of automorphism keys holds no tensor key: a transform of plaintext diagonals never asks for one.
-impl<BE: Backend, K: GLWEAutomorphismKeyPreparedToBackendRef<BE>> GetTensorKey<BE> for HashMap<i64, K> {
-    fn lookup_tensor_key(&self, _k: TorusPrecision) -> Result<GLWETensorKeyPreparedBackendRef<'_, BE>> {
+impl<BE: Backend, K: GLWEAutomorphismKeyPreparedToBackendRef<BE, Rg>, Rg: Ring> GetTensorKey<BE, Rg> for HashMap<i64, K> {
+    fn lookup_tensor_key(&self, _k: TorusPrecision) -> Result<GLWETensorKeyPreparedBackendRef<'_, BE, Rg>> {
         Err(CoreError::GGLWEKeyUse {
             op: "get_tensor_key",
             detail: "a map of automorphism keys holds no tensor key".into(),
@@ -96,21 +96,21 @@ impl<BE: Backend, K: GLWEAutomorphismKeyPreparedToBackendRef<BE>> GetTensorKey<B
 }
 
 /// A bare key answers "this key, as stored, for every rotation".
-impl<D: Data, BE: Backend> GetAutomorphismKey<BE> for GLWEAutomorphismKeyPrepared<D, BE>
+impl<D: Data, BE: Backend, Rg: Ring> GetAutomorphismKey<BE, Rg> for GLWEAutomorphismKeyPrepared<D, BE, Rg>
 where
-    Self: GLWEAutomorphismKeyPreparedToBackendRef<BE>,
+    Self: GLWEAutomorphismKeyPreparedToBackendRef<BE, Rg>,
 {
-    fn lookup_automorphism_key(&self, _p: i64, _k: TorusPrecision) -> Result<GLWEAutomorphismKeyPreparedBackendRef<'_, BE>> {
+    fn lookup_automorphism_key(&self, _p: i64, _k: TorusPrecision) -> Result<GLWEAutomorphismKeyPreparedBackendRef<'_, BE, Rg>> {
         Ok(self.to_backend_ref())
     }
 }
 
 /// A bare key is its own source, as stored.
-impl<D: Data, BE: Backend> GetTensorKey<BE> for GLWETensorKeyPrepared<D, BE>
+impl<D: Data, BE: Backend, Rg: Ring> GetTensorKey<BE, Rg> for GLWETensorKeyPrepared<D, BE, Rg>
 where
-    Self: GLWETensorKeyPreparedToBackendRef<BE>,
+    Self: GLWETensorKeyPreparedToBackendRef<BE, Rg>,
 {
-    fn lookup_tensor_key(&self, _k: TorusPrecision) -> Result<GLWETensorKeyPreparedBackendRef<'_, BE>> {
+    fn lookup_tensor_key(&self, _k: TorusPrecision) -> Result<GLWETensorKeyPreparedBackendRef<'_, BE, Rg>> {
         Ok(self.to_backend_ref())
     }
 }

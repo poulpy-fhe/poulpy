@@ -1,6 +1,6 @@
 use poulpy_ckks::CKKSResult as Result;
 use poulpy_core::layouts::{GGLWEInfos, GetAutomorphismKey, GetTensorKey};
-use poulpy_hal::layouts::{Backend, ScratchArena};
+use poulpy_hal::layouts::{Backend, Ring, ScratchArena, Standard};
 
 use crate::layouts::{BlasContextPrepared, BlasGrid, BlasGridInfos, BlasGridMut};
 
@@ -13,7 +13,7 @@ use crate::layouts::{BlasContextPrepared, BlasGrid, BlasGridInfos, BlasGridMut};
 /// of `ctx` is evaluated by poulpy-ckks's `ckks_linear_transformation_eval_into`, then labelled as its source; its
 /// slots are `Real`. A copy is poulpy-ckks's `ckks_copy`: it keeps the canonical flag of `a` when `res.k >= a.k` and
 /// `res` has room for every limb of a non-canonical `a`, and otherwise normalizes, which sets it.
-pub trait BlasMatIntraOps<BE: Backend> {
+pub trait BlasMatIntraOps<BE: Backend, Rg: Ring = Standard> {
     /// Scratch bytes [`Self::blas_transpose`] needs into `res` from `a` with the maps of `ctx` and rotation keys of layout
     /// `keys`.
     ///
@@ -21,7 +21,7 @@ pub trait BlasMatIntraOps<BE: Backend> {
     ///
     /// May panic on layouts [`validate_blas_transpose`](crate::layouts::validate_blas_transpose) rejects: blocks of a
     /// degree other than the module's, or `rows * cols` overflowing `usize`.
-    fn blas_transpose_tmp_bytes<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContextPrepared<BE>, keys: &K) -> usize
+    fn blas_transpose_tmp_bytes<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContextPrepared<BE, Rg>, keys: &K) -> usize
     where
         R: BlasGridInfos,
         A: BlasGridInfos,
@@ -58,14 +58,14 @@ pub trait BlasMatIntraOps<BE: Backend> {
         &self,
         res: &mut R,
         a: &A,
-        ctx: &BlasContextPrepared<BE>,
+        ctx: &BlasContextPrepared<BE, Rg>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: BlasGridMut<BE>,
-        A: BlasGrid<BE>,
-        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync;
+        R: BlasGridMut<BE, Rg>,
+        A: BlasGrid<BE, Rg>,
+        K: GetAutomorphismKey<BE, Rg> + GetTensorKey<BE, Rg> + Sync;
 
     /// Scratch bytes [`Self::blas_rotate_rows`] needs into `res` from `a` with the maps of `ctx` and rotation keys of
     /// layout `keys`.
@@ -74,7 +74,7 @@ pub trait BlasMatIntraOps<BE: Backend> {
     ///
     /// As [`Self::blas_transpose_tmp_bytes`], on layouts
     /// [`validate_blas_rotate_rows`](crate::layouts::validate_blas_rotate_rows) rejects.
-    fn blas_rotate_rows_tmp_bytes<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContextPrepared<BE>, keys: &K) -> usize
+    fn blas_rotate_rows_tmp_bytes<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContextPrepared<BE, Rg>, keys: &K) -> usize
     where
         R: BlasGridInfos,
         A: BlasGridInfos,
@@ -119,14 +119,14 @@ pub trait BlasMatIntraOps<BE: Backend> {
         k: usize,
         res: &mut R,
         a: &A,
-        ctx: &BlasContextPrepared<BE>,
+        ctx: &BlasContextPrepared<BE, Rg>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: BlasGridMut<BE>,
-        A: BlasGrid<BE>,
-        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync;
+        R: BlasGridMut<BE, Rg>,
+        A: BlasGrid<BE, Rg>,
+        K: GetAutomorphismKey<BE, Rg> + GetTensorKey<BE, Rg> + Sync;
 
     /// Scratch bytes [`Self::blas_rotate_cols`] needs into `res` from `a` with the maps of `ctx` and rotation keys of
     /// layout `keys`.
@@ -135,7 +135,7 @@ pub trait BlasMatIntraOps<BE: Backend> {
     ///
     /// As [`Self::blas_transpose_tmp_bytes`], on layouts
     /// [`validate_blas_rotate_cols`](crate::layouts::validate_blas_rotate_cols) rejects.
-    fn blas_rotate_cols_tmp_bytes<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContextPrepared<BE>, keys: &K) -> usize
+    fn blas_rotate_cols_tmp_bytes<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContextPrepared<BE, Rg>, keys: &K) -> usize
     where
         R: BlasGridInfos,
         A: BlasGridInfos,
@@ -160,14 +160,14 @@ pub trait BlasMatIntraOps<BE: Backend> {
         k: usize,
         res: &mut R,
         a: &A,
-        ctx: &BlasContextPrepared<BE>,
+        ctx: &BlasContextPrepared<BE, Rg>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: BlasGridMut<BE>,
-        A: BlasGrid<BE>,
-        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync;
+        R: BlasGridMut<BE, Rg>,
+        A: BlasGrid<BE, Rg>,
+        K: GetAutomorphismKey<BE, Rg> + GetTensorKey<BE, Rg> + Sync;
 
     /// Scratch bytes [`Self::blas_sum_rows`] needs into `res` from `a` with the maps of `ctx` and rotation keys of
     /// layout `keys`.
@@ -176,7 +176,7 @@ pub trait BlasMatIntraOps<BE: Backend> {
     ///
     /// As [`Self::blas_transpose_tmp_bytes`], on layouts [`validate_blas_sum_rows`](crate::layouts::validate_blas_sum_rows)
     /// rejects.
-    fn blas_sum_rows_tmp_bytes<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContextPrepared<BE>, keys: &K) -> usize
+    fn blas_sum_rows_tmp_bytes<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContextPrepared<BE, Rg>, keys: &K) -> usize
     where
         R: BlasGridInfos,
         A: BlasGridInfos,
@@ -226,14 +226,14 @@ pub trait BlasMatIntraOps<BE: Backend> {
         &self,
         res: &mut R,
         a: &A,
-        ctx: &BlasContextPrepared<BE>,
+        ctx: &BlasContextPrepared<BE, Rg>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: BlasGridMut<BE>,
-        A: BlasGrid<BE>,
-        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync;
+        R: BlasGridMut<BE, Rg>,
+        A: BlasGrid<BE, Rg>,
+        K: GetAutomorphismKey<BE, Rg> + GetTensorKey<BE, Rg> + Sync;
 
     /// Scratch bytes [`Self::blas_sum_cols`] needs into `res` from `a` with the maps of `ctx` and rotation keys of
     /// layout `keys`.
@@ -242,7 +242,7 @@ pub trait BlasMatIntraOps<BE: Backend> {
     ///
     /// As [`Self::blas_transpose_tmp_bytes`], on layouts [`validate_blas_sum_cols`](crate::layouts::validate_blas_sum_cols)
     /// rejects.
-    fn blas_sum_cols_tmp_bytes<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContextPrepared<BE>, keys: &K) -> usize
+    fn blas_sum_cols_tmp_bytes<R, A, K>(&self, res: &R, a: &A, ctx: &BlasContextPrepared<BE, Rg>, keys: &K) -> usize
     where
         R: BlasGridInfos,
         A: BlasGridInfos,
@@ -266,12 +266,12 @@ pub trait BlasMatIntraOps<BE: Backend> {
         &self,
         res: &mut R,
         a: &A,
-        ctx: &BlasContextPrepared<BE>,
+        ctx: &BlasContextPrepared<BE, Rg>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: BlasGridMut<BE>,
-        A: BlasGrid<BE>,
-        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync;
+        R: BlasGridMut<BE, Rg>,
+        A: BlasGrid<BE, Rg>,
+        K: GetAutomorphismKey<BE, Rg> + GetTensorKey<BE, Rg> + Sync;
 }

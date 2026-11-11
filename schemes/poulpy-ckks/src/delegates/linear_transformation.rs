@@ -6,7 +6,7 @@ use poulpy_core::{
         GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LinearTransformationPlan,
     },
 };
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Module, Ring, ScratchArena};
 
 use crate::{
     CKKSCtBounds, SetCKKSInfos,
@@ -14,7 +14,7 @@ use crate::{
     oep::CKKSLinearTransformationImpl,
 };
 
-impl<BE: Backend + CKKSLinearTransformationImpl> CKKSLinearTransformationOps<BE> for Module<BE> {
+impl<BE: Backend + CKKSLinearTransformationImpl<Rg>, Rg: Ring> CKKSLinearTransformationOps<BE, Rg> for Module<BE> {
     fn ckks_linear_transformation_rhs_prepare_tmp_bytes<P>(&self, pt_infos: &P) -> usize
     where
         P: GLWEInfos,
@@ -123,78 +123,78 @@ impl<BE: Backend + CKKSLinearTransformationImpl> CKKSLinearTransformationOps<BE>
 
     fn ckks_linear_transformation_rhs_prepare<P>(
         &self,
-        prepared: &mut LinearTransformationPrepared<BE>,
+        prepared: &mut LinearTransformationPrepared<BE, Rg>,
         lt: &LinearTransformation<P>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: GLWEToBackendRef<BE> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
     {
         BE::ckks_linear_transformation_rhs_prepare(self, prepared, lt, scratch)
     }
 
-    fn ckks_linear_transformation_baby_steps_prepare<Src, H, L: BabyStepOperand<BE>>(
+    fn ckks_linear_transformation_baby_steps_prepare<Src, H, L: BabyStepOperand<BE, Rg>>(
         &self,
-        babies: &mut LinearTransformationBabySteps<BE, L>,
+        babies: &mut LinearTransformationBabySteps<BE, Rg, L>,
         src: &Src,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        H: GetAutomorphismKey<BE>,
+        Src: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        H: GetAutomorphismKey<BE, Rg>,
     {
         BE::ckks_linear_transformation_baby_steps_prepare(self, babies, src, keys, scratch)
     }
 
-    fn ckks_linear_transformation_eval_into<Dst, Src, P, H, L: BabyStepOperand<BE>>(
+    fn ckks_linear_transformation_eval_into<Dst, Src, P, H, L: BabyStepOperand<BE, Rg>>(
         &self,
         dst: &mut Dst,
         src: &Src,
-        babies: &LinearTransformationBabySteps<BE, L>,
+        babies: &LinearTransformationBabySteps<BE, Rg, L>,
         lt: &LinearTransformation<P>,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
-        H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
+        Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        P: GLWEDiagonalProd<BE, Rg> + LtDiagonalMeta,
+        H: GetAutomorphismKey<BE, Rg> + GetTensorKey<BE, Rg>,
     {
         BE::ckks_linear_transformation_eval_into(self, dst, src, babies, lt, keys, scratch)
     }
 
-    fn ckks_linear_transformation_eval_assign<Dst, P, H, L: BabyStepOperand<BE>>(
+    fn ckks_linear_transformation_eval_assign<Dst, P, H, L: BabyStepOperand<BE, Rg>>(
         &self,
         dst: &mut Dst,
-        babies: &LinearTransformationBabySteps<BE, L>,
+        babies: &LinearTransformationBabySteps<BE, Rg, L>,
         lt: &LinearTransformation<P>,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
-        H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
+        Dst: GLWEToBackendMut<BE, Rg> + GLWEToBackendRef<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        P: GLWEDiagonalProd<BE, Rg> + LtDiagonalMeta,
+        H: GetAutomorphismKey<BE, Rg> + GetTensorKey<BE, Rg>,
     {
         BE::ckks_linear_transformation_eval_assign(self, dst, babies, lt, keys, scratch)
     }
 
-    fn ckks_linear_transformation_eval_sum_into<Dst, Src, P, H, L: BabyStepOperand<BE>>(
+    fn ckks_linear_transformation_eval_sum_into<Dst, Src, P, H, L: BabyStepOperand<BE, Rg>>(
         &self,
         dst: &mut Dst,
         srcs: &[&Src],
-        babies: &[&LinearTransformationBabySteps<BE, L>],
+        babies: &[&LinearTransformationBabySteps<BE, Rg, L>],
         lts: &[&LinearTransformation<P>],
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
-        H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
+        Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        P: GLWEDiagonalProd<BE, Rg> + LtDiagonalMeta,
+        H: GetAutomorphismKey<BE, Rg> + GetTensorKey<BE, Rg>,
     {
         BE::ckks_linear_transformation_eval_sum_into(self, dst, srcs, babies, lts, keys, scratch)
     }
@@ -208,10 +208,10 @@ impl<BE: Backend + CKKSLinearTransformationImpl> CKKSLinearTransformationOps<BE>
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
-        H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
+        Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        P: GLWEDiagonalProd<BE, Rg> + LtDiagonalMeta,
+        H: GetAutomorphismKey<BE, Rg> + GetTensorKey<BE, Rg>,
     {
         BE::ckks_linear_transformation_eval_self_into(self, dst, src, lt, keys, scratch)
     }
@@ -224,9 +224,9 @@ impl<BE: Backend + CKKSLinearTransformationImpl> CKKSLinearTransformationOps<BE>
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
-        H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
+        Dst: GLWEToBackendMut<BE, Rg> + GLWEToBackendRef<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        P: GLWEDiagonalProd<BE, Rg> + LtDiagonalMeta,
+        H: GetAutomorphismKey<BE, Rg> + GetTensorKey<BE, Rg>,
     {
         BE::ckks_linear_transformation_eval_self_assign(self, dst, lt, keys, scratch)
     }

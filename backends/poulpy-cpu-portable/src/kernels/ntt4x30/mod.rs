@@ -138,14 +138,12 @@ pub(super) fn pow2_mod(exp: u64, q: u64) -> u64 {
 /// `Table` is either [`NttTable`] or [`NttTableInv`] (both generic over a
 /// [`PrimeSet`]).  `data` is a flat `u64` slice of length `4 * n` in
 /// q120b layout.
-pub trait NttDFTExecute<Table> {
+pub trait NttDFTExecute<Table: NttRingTable> {
     /// Apply the NTT (or iNTT) described by `table` to `data` in place.
     fn ntt_dft_execute(table: &Table, data: &mut [u64]);
 
-    /// Slot permutation of `X -> X^p` in this transform's layout.
-    fn ntt_automorphism_plan(n: usize, p: i64) -> vec_znx_dft::NttAutomorphismPlan {
-        standard::build_ntt4x30_automorphism_plan_portable(n, p)
-    }
+    /// Slot permutation of `X -> X^p` in this transform's layout, on the table's ring.
+    fn ntt_automorphism_plan(n: usize, p: i64) -> vec_znx_dft::NttAutomorphismPlan<Table::Ring>;
 }
 
 /// Load a polynomial from the standard `i64` coefficient representation
@@ -198,7 +196,7 @@ pub trait NttCopy {
 /// Multiplies each of the `ell` rows of a column vector `b` (in q120b
 /// format) by the corresponding entry in `a` (also q120b), accumulating
 /// the results into `res`. `meta` carries the precomputed lazy-reduction
-/// constants and should be obtained via [`vec_znx_dft::NttModuleHandle::get_bbb_meta`].
+/// constants and should be obtained via [`vec_znx_dft::NttMetaHandle::get_bbb_meta`].
 pub trait NttMulBbb {
     /// `res += a[0..ell] ⊙ b[0..ell]` using lazy modular arithmetic.
     fn ntt_mul_bbb(meta: &BbbMeta<Primes30>, ell: usize, res: &mut [u64], a: &[u64], b: &[u64]);
