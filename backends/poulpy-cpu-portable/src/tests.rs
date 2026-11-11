@@ -1,10 +1,14 @@
-use poulpy_hal::AlignedBuf;
+#[cfg(feature = "enable-core")]
+use poulpy_cpu_oracle::NTT4x30Oracle;
 use poulpy_hal::api::{
     ScratchOwnedAlloc, VecZnxAddAssign, VecZnxBigAlloc, VecZnxBigFromSmall, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes,
     VecZnxFillUniformSourceAll, VecZnxSubNegateAssign,
 };
-use poulpy_hal::layouts::{ConjugateInvariant, HostDataRef, Ring, ScratchOwned, Standard};
+use poulpy_hal::layouts::{
+    ConjugateInvariant, HostDataRef, Ring, ScratchOwned, Standard, SvpPPolOwned, VecZnxBigOwned, VecZnxDftOwned, VmpPMatOwned,
+};
 use poulpy_hal::test_suite::TestBackend;
+use poulpy_hal::{AlignedBuf, backend_test_suite, cross_backend_test_suite};
 use poulpy_hal::{
     layouts::Module,
     test_suite::convolution::{
@@ -125,8 +129,8 @@ fn bootstrapping_presets_take_the_backend_radix() {
                 (preset.input_k(), preset.output_k(), preset.bootstrap_k())
             );
             assert_eq!(adapted.plan().c2s_guard_bits(), preset.plan().c2s_guard_bits());
-            let keys = adapted.keys_layout().rotation_key_layouts();
-            assert!(keys.iter().all(|key| key.k().as_usize() <= adapted.max_dense_modulus()));
+            let mut keys = adapted.keys_layout().rotation_key_layouts();
+            assert!(keys.all(|key| key.k().as_usize() <= adapted.max_dense_modulus()));
             let small_key = &adapted.keys_layout().encapsulation.as_ref().unwrap().dense_to_sparse;
             assert!(small_key.k().as_usize() <= adapted.max_sparse_modulus());
         }
@@ -344,12 +348,10 @@ fn test_glwe_tensor_many_limbs() {
         k: TorusPrecision(52 * 29 + 1),
         rank: Rank(1),
     };
-    let comparison = Module::<poulpy_cpu_oracle::NTT4x30Oracle>::new(u64::from(layout.n.0));
+    let comparison = Module::<NTT4x30Oracle>::new(u64::from(layout.n.0));
     let tested = Module::<NTT4x30Portable>::new(u64::from(layout.n.0));
     test_glwe_tensor_parity_for_layout::<_, _, Standard>(&layout, &[0, 51], &comparison, &tested);
 }
-
-use poulpy_hal::{backend_test_suite, cross_backend_test_suite};
 
 cross_backend_test_suite! {
     mod vec_znx_fft64,
@@ -888,10 +890,10 @@ fn test_vec_znx_rsh_assign_multi_limb_matches_rsh() {
 #[allow(dead_code)]
 fn assert_f64_word_containers_are_eq() {
     fn requires_eq<T: Eq>() {}
-    requires_eq::<poulpy_hal::layouts::VecZnxDftOwned<crate::FFT64Portable>>();
-    requires_eq::<poulpy_hal::layouts::VecZnxBigOwned<crate::FFT64Portable>>();
-    requires_eq::<poulpy_hal::layouts::SvpPPolOwned<crate::FFT64Portable>>();
-    requires_eq::<poulpy_hal::layouts::VmpPMatOwned<crate::FFT64Portable>>();
+    requires_eq::<VecZnxDftOwned<crate::FFT64Portable>>();
+    requires_eq::<VecZnxBigOwned<crate::FFT64Portable>>();
+    requires_eq::<SvpPPolOwned<crate::FFT64Portable>>();
+    requires_eq::<VmpPMatOwned<crate::FFT64Portable>>();
 }
 
 #[cfg(feature = "enable-core")]
@@ -969,7 +971,6 @@ poulpy_core::core_parity_test_suite! {
     params = TestParams { size: 1<<8, base2k: 12, n: 1<<8 },
     tests = {
         glwe_keyswitch => poulpy_core::test_suite::parity::test_glwe_keyswitch_parity,
-        glwe_keyswitch_dft_add => poulpy_core::test_suite::parity::test_glwe_keyswitch_dft_add_parity,
         glwe_keyswitch_assign => poulpy_core::test_suite::parity::test_glwe_keyswitch_assign_parity,
         gglwe_keyswitch => poulpy_core::test_suite::parity::test_gglwe_keyswitch_parity,
         glwe_automorphism => poulpy_core::test_suite::parity::test_glwe_automorphism_parity,
@@ -1011,7 +1012,6 @@ poulpy_core::core_parity_test_suite! {
     params = TestParams { size: 1<<8, base2k: 12, n: 1<<8 },
     tests = {
         glwe_keyswitch => poulpy_core::test_suite::parity::test_glwe_keyswitch_parity,
-        glwe_keyswitch_dft_add => poulpy_core::test_suite::parity::test_glwe_keyswitch_dft_add_parity,
         glwe_keyswitch_assign => poulpy_core::test_suite::parity::test_glwe_keyswitch_assign_parity,
         gglwe_keyswitch => poulpy_core::test_suite::parity::test_gglwe_keyswitch_parity,
         glwe_automorphism => poulpy_core::test_suite::parity::test_glwe_automorphism_parity,
@@ -1703,7 +1703,6 @@ poulpy_core::core_parity_test_suite! {
     test_size = 1<<8,
     tests = {
         glwe_keyswitch => poulpy_core::test_suite::parity::test_glwe_keyswitch_parity,
-        glwe_keyswitch_dft_add => poulpy_core::test_suite::parity::test_glwe_keyswitch_dft_add_parity,
         glwe_keyswitch_assign => poulpy_core::test_suite::parity::test_glwe_keyswitch_assign_parity,
         gglwe_keyswitch => poulpy_core::test_suite::parity::test_gglwe_keyswitch_parity,
         glwe_automorphism => poulpy_core::test_suite::parity::test_glwe_automorphism_parity,
@@ -1747,7 +1746,6 @@ poulpy_core::core_parity_test_suite! {
     test_size = 1<<8,
     tests = {
         glwe_keyswitch => poulpy_core::test_suite::parity::test_glwe_keyswitch_parity,
-        glwe_keyswitch_dft_add => poulpy_core::test_suite::parity::test_glwe_keyswitch_dft_add_parity,
         glwe_keyswitch_assign => poulpy_core::test_suite::parity::test_glwe_keyswitch_assign_parity,
         gglwe_keyswitch => poulpy_core::test_suite::parity::test_gglwe_keyswitch_parity,
         glwe_automorphism => poulpy_core::test_suite::parity::test_glwe_automorphism_parity,

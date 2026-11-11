@@ -1,7 +1,8 @@
 use crate::Scale;
-use crate::api::CKKSEncodingOps;
+use crate::api::{CKKSCopyOps, CKKSEncodingOps};
 use poulpy_core::layouts::{
-    GGLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, prepared::GLWETensorKeyPreparedToBackendRef,
+    GGLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, SetK,
+    prepared::GLWETensorKeyPreparedToBackendRef,
 };
 use poulpy_hal::{
     api::{ReimNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
@@ -225,7 +226,7 @@ fn run_eval_mod_case<BE, F, E>(
     let mut rank2 = test_params.prec();
     rank2.glwe_layout.rank = 2usize.into();
     let short = ckks_spec(test_params.n, test_params.base2k, input_log_delta, consumed - 1);
-    for (case, input, want) in [
+    for (case, mut input, want) in [
         (
             "rank 2",
             fixture_ciphertext(module, &rank2, 71),
@@ -245,7 +246,7 @@ fn run_eval_mod_case<BE, F, E>(
         ),
     ] {
         let before = snapshot::<BE, _, Standard>(&res);
-        let err = with_scratch::<BE, _>(0, |s| module.ckks_eval_mod(&mut res, &input, &params_be, &tsk, s)).unwrap_err();
+        let err = with_scratch::<BE, _>(0, |s| module.ckks_eval_mod(&mut res, &mut input, &params_be, &tsk, s)).unwrap_err();
         assert_ckks_error(&format!("{label}: {case}"), &err, want);
         assert_eq!(
             snapshot::<BE, _, Standard>(&res),
@@ -253,7 +254,45 @@ fn run_eval_mod_case<BE, F, E>(
             "{label}: {case}: a refused EvalMod wrote res"
         );
     }
-    with_scratch::<BE, _>(eval_bytes, |s| module.ckks_eval_mod(&mut res, &ct_input, &params_be, &tsk, s)).expect("ckks_eval_mod");
+    with_scratch::<BE, _>(eval_bytes, |s| {
+        module.ckks_eval_mod(&mut res, &mut ct_input.clone(), &params_be, &tsk, s)
+    })
+    .expect("ckks_eval_mod");
+
+    // `ct` is working storage in place when its allocation holds the working width, and a carved copy stands in for it
+    // otherwise: the same output on either side of that width.
+    let plan_scale = params_be.plan.f_mod_log_delta;
+    let past_allocation = plan_scale + ct_input.k().as_usize() - ct_input.max_k().as_usize() - 1;
+    for scale in [past_allocation, plan_scale + 1] {
+        let mut narrow = ct_input.clone();
+        narrow.set_meta(GLWEPlaintextMeta {
+            scale: Scale::Log(scale),
+            ..narrow.meta()
+        });
+        let width = narrow.log_budget() + plan_scale;
+        assert_eq!(
+            width > narrow.max_k().as_usize(),
+            scale == past_allocation,
+            "{label}: the case at scale {scale}"
+        );
+        let mut wide = module.ckks_ciphertext_alloc(test_params.base2k.into(), width.max(narrow.k().as_usize()).into());
+        wide.set_meta(narrow.meta());
+        wide.set_k(narrow.k());
+        with_scratch::<BE, _>(module.ckks_copy_tmp_bytes(&wide, &narrow), |s| {
+            module.ckks_copy(&mut wide, &narrow, s)
+        })
+        .unwrap();
+        let mut copied = module.ckks_ciphertext_alloc(test_params.base2k.into(), res_k.into());
+        let mut in_place = module.ckks_ciphertext_alloc(test_params.base2k.into(), res_k.into());
+        let bytes = module.ckks_eval_mod_tmp_bytes(&copied, &narrow, &params_be, &tsk);
+        with_scratch::<BE, _>(bytes, |s| module.ckks_eval_mod(&mut copied, &mut narrow, &params_be, &tsk, s)).unwrap();
+        with_scratch::<BE, _>(bytes, |s| module.ckks_eval_mod(&mut in_place, &mut wide, &params_be, &tsk, s)).unwrap();
+        assert_eq!(
+            snapshot::<BE, _, Standard>(&in_place),
+            snapshot::<BE, _, Standard>(&copied),
+            "{label}: EvalMod at scale {scale}"
+        );
+    }
 
     // Exact externally visible bit-consumption: EvalMod arithmetic is charged at
     // the plan scale. Returning from that raised scale to the input scale

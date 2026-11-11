@@ -3,13 +3,13 @@ use crate::api::{
     CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSDFTMatrixPreparedFactory, CKKSDFTOps, CKKSImagOps, CKKSRotateOps, CKKSSubOps,
     LtDiagonalMeta,
 };
-use crate::layouts::{DFTMatrix, DFTMatrixPrepared, Decode, Encode, Repack, ScratchArenaTakeCKKSCiphertext, Split, Standard};
+use crate::layouts::{
+    CKKSDFTFactors, DFTMatrix, DFTMatrixPrepared, Decode, Encode, Repack, ScratchArenaTakeCKKSCiphertext, Split, Standard,
+};
 use crate::oep::CKKSDFTImpl;
 use crate::{CKKSCtBounds, CKKSResult as Result, SetCKKSInfos, SlotsKind};
 use poulpy_core::GLWEDiagonalProd;
-use poulpy_core::layouts::{
-    GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, IntPolyInfos, LinearTransformation,
-};
+use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, IntPolyInfos, LinearTransformation};
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 /// A prepared matrix of `dft`'s layout, allocated then prepared into from `dft`.
@@ -32,42 +32,44 @@ where
     Ok(res)
 }
 
-/// Homomorphic encoding (CoeffsToSlots), `Standard` format: evaluates the Encode
-/// (IDFT) matrix in place, retaining selected raw DFT dispatch.
-pub(crate) fn ckks_encoding_buffer_coeffs_to_slots_assign_derived<BE, P, Dst, H>(
+/// Homomorphic encoding (CoeffsToSlots), `Standard` format: evaluates the Encode (IDFT) factors in place,
+/// retaining selected raw DFT dispatch.
+pub(crate) fn ckks_encoding_buffer_coeffs_to_slots_assign_derived<BE, D, Dst, H>(
     module: &Module<BE>,
     ct: &mut Dst,
-    dft: &DFTMatrix<BE, Encode, Standard, LinearTransformation<P>>,
+    dft: &D,
     keys: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
     BE: Backend,
-    P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
+    D: CKKSDFTFactors<BE, Encode, Standard>,
     Module<BE>: crate::api::CKKSDFTOps<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
+    H: GetAutomorphismKey<BE>,
 {
     module.ckks_dft_matrix_eval_assign(ct, dft, keys, scratch)
 }
 
-/// Homomorphic decoding (SlotsToCoeffs), `Standard` format: evaluates the Decode
-/// (DFT) matrix in place, retaining selected raw DFT dispatch.
-pub(crate) fn ckks_encoding_buffer_slots_to_coeffs_assign_derived<BE, P, Dst, H>(
+/// Homomorphic decoding (SlotsToCoeffs), `Standard` format: evaluates the Decode (DFT) factors in place,
+/// retaining selected raw DFT dispatch, then lets `dft` label the output.
+pub(crate) fn ckks_encoding_buffer_slots_to_coeffs_assign_derived<BE, D, Dst, H>(
     module: &Module<BE>,
     ct: &mut Dst,
-    dft: &DFTMatrix<BE, Decode, Standard, LinearTransformation<P>>,
+    dft: &D,
     keys: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
     BE: Backend,
-    P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
+    D: CKKSDFTFactors<BE, Decode, Standard>,
     Module<BE>: crate::api::CKKSDFTOps<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
+    H: GetAutomorphismKey<BE>,
 {
-    module.ckks_dft_matrix_eval_assign(ct, dft, keys, scratch)
+    module.ckks_dft_matrix_eval_assign(ct, dft, keys, scratch)?;
+    dft.stamp_transform_output(ct);
+    Ok(())
 }
 
 /// `CoeffsToSlots` with the real and imaginary parts returned in two separate
@@ -96,26 +98,40 @@ where
         crate::api::CKKSDFTOps<BE> + CKKSCopyOps<BE> + CKKSConjugateOps<BE> + CKKSAddOps<BE> + CKKSSubOps<BE> + CKKSImagOps<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-    H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
+    H: GetAutomorphismKey<BE>,
 {
     crate::ensure_operand_degrees("ckks_coeffs_to_slots_split", module, [ct_real.n(), ct_imag.n(), ct_in.n()])?;
     // ct_real := z = Encode(ct_in).
     module.ckks_copy(ct_real, ct_in, scratch)?;
     module.ckks_dft_matrix_eval_assign(ct_real, dft, keys, scratch)?;
+    ckks_split_real_imag(module, ct_real, ct_imag, keys, scratch)
+}
 
-    // ct_imag := conj(z).
-    module.ckks_conjugate_into(ct_imag, ct_real, keys, scratch)?;
-
-    // tmp := z − conj(z); ct_real := z + conj(z) = 2·Re(z); ct_imag := −i·tmp = 2·Im(z).
+/// `re = z + conj(z)` and `im = (z - conj(z)) / i`, from `z` in `re`.
+fn ckks_split_real_imag<BE, Re, Im, H>(
+    module: &Module<BE>,
+    re: &mut Re,
+    im: &mut Im,
+    keys: &H,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> Result<()>
+where
+    BE: Backend,
+    Module<BE>: CKKSConjugateOps<BE> + CKKSAddOps<BE> + CKKSSubOps<BE> + CKKSImagOps<BE>,
+    Re: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    Im: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    H: GetAutomorphismKey<BE>,
+{
+    module.ckks_conjugate_into(im, re, keys, scratch)?;
     scratch.scope(|scratch_local| -> Result<()> {
-        let (mut tmp, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(&*ct_real);
-        module.ckks_sub_into(&mut tmp, ct_real, ct_imag, &mut scratch_local.borrow())?;
-        module.ckks_add_assign(ct_real, ct_imag, &mut scratch_local.borrow())?;
-        module.ckks_div_i_into(ct_imag, &tmp, &mut scratch_local)
+        let (mut tmp, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(&*re);
+        module.ckks_sub_into(&mut tmp, re, im, &mut scratch_local.borrow())?;
+        module.ckks_add_assign(re, im, &mut scratch_local.borrow())?;
+        module.ckks_div_i_into(im, &tmp, &mut scratch_local)
     })?;
     // Both halves are the (real) coefficients of the input polynomial.
-    ct_real.set_slots(SlotsKind::Real);
-    ct_imag.set_slots(SlotsKind::Real);
+    re.set_slots(SlotsKind::Real);
+    im.set_slots(SlotsKind::Real);
     Ok(())
 }
 
@@ -139,7 +155,7 @@ where
     Module<BE>: crate::api::CKKSDFTOps<BE> + CKKSAddOps<BE> + CKKSImagOps<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-    H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
+    H: GetAutomorphismKey<BE>,
 {
     crate::ensure_operand_degrees("ckks_slots_to_coeffs_split", module, [op_out.n(), ct_real.n(), ct_imag.n()])?;
     // op_out := ct_real + i·ct_imag, then Decode.
@@ -176,7 +192,7 @@ where
         + CKKSRotateOps<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-    H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
+    H: GetAutomorphismKey<BE>,
 {
     crate::ensure_operand_degrees("ckks_coeffs_to_slots_repack", module, [ct_out.n(), ct_in.n()])?;
     let slots = 1i64 << dft.plan().log_slots();
@@ -228,7 +244,7 @@ where
     Module<BE>: crate::api::CKKSDFTOps<BE> + CKKSCopyOps<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-    H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
+    H: GetAutomorphismKey<BE>,
 {
     crate::ensure_operand_degrees("ckks_slots_to_coeffs_repack", module, [op_out.n(), ct_in.n()])?;
     module.ckks_copy(op_out, ct_in, scratch)?;

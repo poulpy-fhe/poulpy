@@ -1,16 +1,29 @@
 use crate::FFT64Portable;
 use poulpy_ckks::CKKSModuleInfos;
-use poulpy_ckks::api::{CKKSDFTMatrixOps, CKKSDFTMatrixPreparedFactory, CKKSDFTOps, CKKSLinearTransformationOps};
-use poulpy_ckks::layouts::{DFTMatrix, DFTOutputFormat, DFTPlan, Decode, Encode, Repack, Standard};
+use poulpy_ckks::api::{
+    CKKSDFTMatrixOps, CKKSDFTMatrixPreparedFactory, CKKSDFTOps, CKKSEncodingScalar, CKKSLinearTransformationOps, LtDiagonalMeta,
+};
+use poulpy_ckks::layouts::{
+    BootstrappingKeys, BootstrappingKeysLayout, BootstrappingLinearKeys, CKKSCiphertextAlloc, CKKSDFTFactors, CKKSEvalModInfos,
+    CKKSModRaiseInfos, CKKSPlaintextAlloc, CKKSPlaintextOwned, DFTMatrix, DFTMatrixPrepared, DFTOutputFormat, DFTPlan, DFTType,
+    Decode, DftDirection, DftFormat, DftScalar, Encode, EncodedLut, Repack, Standard,
+};
+use poulpy_ckks::oep::{CKKSBootstrappingImpl, CKKSDFTImpl, CKKSDFTMatrixImpl};
+use poulpy_ckks::reference::dft::CKKSDFTReference;
 use poulpy_ckks::test_suite::{
+    CKKSTestParams,
     helpers::{assert_ckks_error, assert_ckks_internal},
     parity::helpers::with_scratch,
 };
-use poulpy_ckks::{CKKSCompositionError, CKKSInfos, CoeffsMeta};
-use poulpy_core::layouts::LinearTransformationPrepared;
-use poulpy_hal::layouts::Module;
+use poulpy_ckks::{CKKSCompositionError, CKKSInfos, CKKSResult, CoeffsMeta, SlotsKind};
+use poulpy_core::layouts::{
+    Base2K, GGLWEInfos, GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPreparedBackendRef, GLWEInfos, GLWETensorKeyLayout,
+    GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, IntPolyInfos, LinearTransformation, LinearTransformationPrepared,
+    SetBSGSMeta, SetGLWEPlaintextInfos, SetK, TorusPrecision,
+};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
-fn plan(kind: poulpy_ckks::layouts::DFTType, format: DFTOutputFormat) -> DFTPlan {
+fn plan(kind: DFTType, format: DFTOutputFormat) -> DFTPlan {
     DFTPlan::new(kind, vec![(1, 1), (2, 2)], format, CoeffsMeta::from_delta_budget(12, 2)).unwrap()
 }
 
@@ -37,7 +50,7 @@ fn prepared_factors(
             let first = factor.first_diagonal_plaintext().unwrap();
             let mut prepared = LinearTransformationPrepared::alloc_prepared_from_index(module, &factor.index(), first);
             with_scratch::<FFT64Portable, _>(
-                <Module<FFT64Portable> as CKKSLinearTransformationOps<
+                <poulpy_hal::layouts::Module<FFT64Portable> as CKKSLinearTransformationOps<
                     FFT64Portable,
                     poulpy_hal::layouts::Standard,
                 >>::ckks_linear_transformation_rhs_prepare_tmp_bytes(module, first),
@@ -52,7 +65,7 @@ fn prepared_factors(
 #[test]
 fn downstream_dft_preparation_preserves_plan_and_factors() {
     let module = Module::<FFT64Portable>::new(64);
-    let plan = plan(poulpy_ckks::layouts::DFTType::Encode, DFTOutputFormat::Standard);
+    let plan = plan(DFTType::Encode, DFTOutputFormat::Standard);
     let matrix = new_matrix(&module, &plan);
     let custom = matrix
         .try_with_factor_operands(&module, prepared_factors(&module, &matrix))
@@ -88,7 +101,7 @@ fn checked_dft_construction_rejects_invalid_markers_and_layouts() {
         DFTMatrix::<FFT64Portable, Encode, Standard, _>::try_from_factor_operands(&module, matrix.plan().clone(), factors())
             .is_ok()
     );
-    let refused = |label: &str, result: poulpy_ckks::CKKSResult<()>, op: &'static str, reason: &str| {
+    let refused = |label: &str, result: CKKSResult<()>, op: &'static str, reason: &str| {
         assert_ckks_error(
             label,
             &result.expect_err("an invalid matrix was accepted"),
@@ -182,9 +195,9 @@ fn checked_dft_construction_rejects_repeated_and_inconsistent_diagonals() {
             storage_k.into(),
         );
         pt.set_meta(meta.meta);
-        poulpy_core::layouts::SetK::set_k(&mut pt, meta.k);
+        SetK::set_k(&mut pt, meta.k);
         if real {
-            pt.set_slots(poulpy_ckks::SlotsKind::Real);
+            pt.set_slots(SlotsKind::Real);
         }
         LinearTransformationDiagonal { baby, plaintext: pt }
     };
@@ -269,8 +282,8 @@ fn checked_dft_construction_preserves_exact_encoded_width() {
         fn lt_log_scale(&self) -> usize {
             12
         }
-        fn lt_slots(&self) -> poulpy_ckks::SlotsKind {
-            poulpy_ckks::SlotsKind::Complex
+        fn lt_slots(&self) -> SlotsKind {
+            SlotsKind::Complex
         }
         fn lt_log_sparsity(&self, log_n: usize) -> usize {
             log_n.saturating_sub(self.log_n())
@@ -328,15 +341,9 @@ fn checked_dft_construction_preserves_exact_encoded_width() {
 
 use super::OverrideBackend;
 use super::carry::assert_query_takes_extra;
-use poulpy_ckks::api::LtDiagonalMeta;
-use poulpy_ckks::layouts::{CKKSCiphertextAlloc, CKKSPlaintextAlloc, DFTMatrixPrepared};
+use poulpy_ckks::reference::bootstrapping::{CKKSBootstrapEvalModReference, CKKSEvalLutReference, CKKSModRaiseReference};
 use poulpy_ckks::{CKKSCtBounds, CKKSResult as Result, SetCKKSInfos};
 use poulpy_core::GLWEDiagonalProd;
-use poulpy_core::layouts::{
-    GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, IntPolyInfos, LinearTransformation,
-    SetGLWEPlaintextInfos,
-};
-use poulpy_hal::layouts::ScratchArena;
 use std::cell::{Cell, RefCell};
 const DFT_EXTRA_DEFAULT: usize = 1 << 25;
 const DFT_PREPARE_DEFAULT: usize = 512;
@@ -347,34 +354,33 @@ thread_local! {
     /// Transform kind, destination width and source width of each query, in bits.
     static DFT_QUERY_LAYOUTS: RefCell<Vec<(poulpy_ckks::layouts::DFTType, usize, usize)>> = const { RefCell::new(Vec::new()) };
     static DFT_CALLS: Cell<usize> = const { Cell::new(0) };
+    /// Whether the evaluation hook counts and runs the reference instead of failing.
+    static DFT_FORWARD: Cell<bool> = const { Cell::new(false) };
+    static RAISE_CALLS: Cell<usize> = const { Cell::new(0) };
+    static BOOTSTRAP_EVAL_MOD_CALLS: Cell<usize> = const { Cell::new(0) };
+    static EVAL_LUT_CALLS: Cell<usize> = const { Cell::new(0) };
 }
-unsafe impl poulpy_ckks::oep::CKKSDFTImpl for OverrideBackend {
+unsafe impl CKKSDFTImpl for OverrideBackend {
     fn ckks_dft_matrix_prepare_tmp_bytes<Dir, Fmt, P>(
         module: &Module<Self>,
         dft: &DFTMatrix<Self, Dir, Fmt, LinearTransformation<P>>,
     ) -> usize
     where
-        P: poulpy_core::layouts::GLWEInfos,
+        P: GLWEInfos,
     {
         DFT_PREPARE_EXTRA.get() + poulpy_ckks::reference::dft::ckks_dft_matrix_prepare_tmp_bytes_reference(module, dft)
     }
 
-    fn ckks_dft_tmp_bytes<Dir, Fmt, P, Dst, Src, K>(
-        module: &Module<Self>,
-        dst: &Dst,
-        src: &Src,
-        dft: &DFTMatrix<Self, Dir, Fmt, LinearTransformation<P>>,
-        key: &K,
-    ) -> usize
+    fn ckks_dft_tmp_bytes<Dir, Fmt, D, Dst, Src, K>(module: &Module<Self>, dst: &Dst, src: &Src, dft: &D, key: &K) -> usize
     where
-        P: poulpy_core::layouts::GLWEInfos,
+        D: CKKSDFTFactors<Self, Dir, Fmt>,
         Dst: CKKSCtBounds,
         Src: CKKSCtBounds,
-        K: poulpy_core::layouts::GGLWEInfos,
+        K: GGLWEInfos,
     {
         DFT_QUERIES.set(DFT_QUERIES.get() + 1);
         DFT_QUERY_LAYOUTS
-            .with_borrow_mut(|layouts| layouts.push((dft.plan().kind(), dst.max_k().as_usize(), src.max_k().as_usize())));
+            .with_borrow_mut(|layouts| layouts.push((dft.dft_plan().kind(), dst.max_k().as_usize(), src.max_k().as_usize())));
         poulpy_ckks::reference::dft::ckks_dft_tmp_bytes_reference(module, dst, src, dft, key) + DFT_EXTRA.get()
     }
 
@@ -392,42 +398,37 @@ unsafe impl poulpy_ckks::oep::CKKSDFTImpl for OverrideBackend {
         })
     }
 
-    fn ckks_dft_matrix_eval_assign<Dir, Fmt, P, Dst, H>(
+    fn ckks_dft_matrix_eval_assign<Dir, Fmt, D, Dst, H>(
         module: &Module<Self>,
         ct: &mut Dst,
-        dft: &DFTMatrix<Self, Dir, Fmt, LinearTransformation<P>>,
+        dft: &D,
         keys: &H,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        P: GLWEDiagonalProd<Self> + LtDiagonalMeta,
+        D: CKKSDFTFactors<Self, Dir, Fmt>,
         Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
         H: GetAutomorphismKey<Self>,
     {
-        let _ = (module, ct, dft, keys);
+        if DFT_FORWARD.get() {
+            DFT_CALLS.set(DFT_CALLS.get() + 1);
+            return CKKSDFTReference::ckks_dft_matrix_eval_assign_reference(module, ct, dft, keys, scratch);
+        }
         let extra = DFT_EXTRA.get();
         let (mut workspace, _) = scratch.borrow().take_region(extra);
-        <Self as poulpy_hal::layouts::Backend>::copy_host_to_view(&mut workspace, &vec![0x3C; extra]);
+        <Self as Backend>::copy_host_to_view(&mut workspace, &vec![0x3C; extra]);
         DFT_CALLS.set(DFT_CALLS.get() + 1);
         Err(anyhow::anyhow!("DFT override probe").into())
     }
 }
 
 struct NoAutomorphismKey;
-impl<BE: poulpy_hal::layouts::Backend> GetAutomorphismKey<BE> for NoAutomorphismKey {
+impl<BE: Backend> GetAutomorphismKey<BE, ::poulpy_hal::layouts::Standard> for NoAutomorphismKey {
     fn lookup_automorphism_key(
         &self,
         _: i64,
-        _: poulpy_core::layouts::TorusPrecision,
-    ) -> poulpy_core::Result<poulpy_core::layouts::GLWEAutomorphismKeyPreparedBackendRef<'_, BE>> {
-        panic!("DFT dispatch probe must not request keys")
-    }
-}
-impl<BE: poulpy_hal::layouts::Backend> GetTensorKey<BE> for NoAutomorphismKey {
-    fn lookup_tensor_key(
-        &self,
-        _: poulpy_core::layouts::TorusPrecision,
-    ) -> poulpy_core::Result<poulpy_core::layouts::prepared::GLWETensorKeyPreparedBackendRef<'_, BE>> {
+        _: TorusPrecision,
+    ) -> poulpy_core::Result<GLWEAutomorphismKeyPreparedBackendRef<'_, BE, ::poulpy_hal::layouts::Standard>> {
         panic!("DFT dispatch probe must not request keys")
     }
 }
@@ -445,13 +446,7 @@ fn dft_format_wrapper_reenters_selected_evaluation() {
     pt.set_meta(meta.meta);
     let matrix = DFTMatrix::<OverrideBackend, Decode, Repack, _>::try_from_factor_operands(
         &module,
-        DFTPlan::new(
-            poulpy_ckks::layouts::DFTType::Decode,
-            vec![(2, 1)],
-            DFTOutputFormat::RepackImagAsReal,
-            meta,
-        )
-        .unwrap(),
+        DFTPlan::new(DFTType::Decode, vec![(2, 1)], DFTOutputFormat::RepackImagAsReal, meta).unwrap(),
         vec![LinearTransformation {
             baby_steps: vec![0],
             rotations: Default::default(),
@@ -462,9 +457,9 @@ fn dft_format_wrapper_reenters_selected_evaluation() {
         }],
     )
     .unwrap();
-    let src = module.ckks_ciphertext_alloc::<poulpy_hal::layouts::Standard>(16usize.into(), 64usize.into());
+    let src = module.ckks_ciphertext_alloc(16usize.into(), 64usize.into());
     let mut dst = module.ckks_ciphertext_alloc_from_infos(&src);
-    let key = poulpy_core::layouts::GLWETensorKeyLayout {
+    let key = GLWETensorKeyLayout {
         n: 64usize.into(),
         base2k: 16usize.into(),
         k_aux: 16usize.into(),
@@ -486,26 +481,124 @@ fn dft_format_wrapper_reenters_selected_evaluation() {
     assert_eq!(DFT_CALLS.get(), 1);
 }
 
-impl<F: poulpy_ckks::api::CKKSEncodingScalar> crate::ckks_encoding::CKKSEncodingTransform<F> for OverrideBackend {
+impl<F: CKKSEncodingScalar> crate::ckks_encoding::CKKSEncodingTransform<F> for OverrideBackend {
     type Fft = crate::ckks_encoding::EncodingFFTTable<F>;
 }
 crate::impl_ckks_encoding!(OverrideBackend);
 poulpy_ckks::impl_ckks_encapsulated_mod_up_reference_full!(OverrideBackend);
 poulpy_ckks::impl_ckks_mod_up_first_factor_reference_full!(OverrideBackend);
-poulpy_ckks::impl_ckks_bootstrapping_reference_full!(OverrideBackend);
-unsafe impl<F: poulpy_ckks::api::CKKSEncodingScalar + poulpy_ckks::layouts::DftScalar> poulpy_ckks::oep::CKKSDFTMatrixImpl<F>
-    for OverrideBackend
-{
-    fn ckks_dft_matrix_new_tmp_bytes<Dir: poulpy_ckks::layouts::DftDirection, Fmt: poulpy_ckks::layouts::DftFormat>(
+unsafe impl CKKSBootstrappingImpl for OverrideBackend {
+    fn ckks_mod_raise_tmp_bytes<R, A, P>(
         module: &Module<Self>,
-        plan: &DFTPlan,
-    ) -> Result<usize> {
+        res: &R,
+        a: &A,
+        plan: &P,
+        keys_layout: &BootstrappingKeysLayout,
+    ) -> usize
+    where
+        R: CKKSCtBounds,
+        A: CKKSCtBounds,
+        P: CKKSModRaiseInfos<Self>,
+    {
+        CKKSModRaiseReference::ckks_mod_raise_tmp_bytes_reference(module, res, a, plan, keys_layout)
+    }
+
+    fn ckks_mod_raise<R, A, P, K>(
+        module: &Module<Self>,
+        res: &mut R,
+        a: &mut A,
+        plan: &P,
+        keys: &K,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) -> Result<()>
+    where
+        R: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
+        P: CKKSModRaiseInfos<Self>,
+        K: BootstrappingLinearKeys<Self>,
+    {
+        RAISE_CALLS.set(RAISE_CALLS.get() + 1);
+        CKKSModRaiseReference::ckks_mod_raise_reference(module, res, a, plan, keys, scratch)
+    }
+
+    fn ckks_bootstrap_eval_mod_tmp_bytes<R, A, P, F>(
+        module: &Module<Self>,
+        res: &R,
+        a: &A,
+        plan: &P,
+        keys_layout: &BootstrappingKeysLayout,
+    ) -> usize
+    where
+        R: CKKSCtBounds,
+        A: CKKSCtBounds,
+        P: CKKSEvalModInfos<Self, F>,
+    {
+        CKKSBootstrapEvalModReference::ckks_bootstrap_eval_mod_tmp_bytes_reference(module, res, a, plan, keys_layout)
+    }
+
+    fn ckks_bootstrap_eval_mod<R, A, P, F, K>(
+        module: &Module<Self>,
+        res: &mut R,
+        a: &A,
+        plan: &P,
+        keys: &K,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) -> Result<()>
+    where
+        F: Sync,
+        R: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + Send,
+        A: GLWEToBackendRef<Self> + CKKSCtBounds,
+        P: CKKSEvalModInfos<Self, F>,
+        K: BootstrappingKeys<Self> + Sync,
+        K::TensorKey: Sync,
+    {
+        BOOTSTRAP_EVAL_MOD_CALLS.set(BOOTSTRAP_EVAL_MOD_CALLS.get() + 1);
+        CKKSBootstrapEvalModReference::ckks_bootstrap_eval_mod_reference(module, res, a, plan, keys, scratch)
+    }
+
+    fn ckks_eval_lut_tmp_bytes<R, A, P, F>(
+        module: &Module<Self>,
+        res: &R,
+        a: &A,
+        plan: &P,
+        luts: &[EncodedLut<CKKSPlaintextOwned<Self>>],
+        keys_layout: &BootstrappingKeysLayout,
+    ) -> usize
+    where
+        R: CKKSCtBounds,
+        A: CKKSCtBounds,
+        P: CKKSEvalModInfos<Self, F>,
+    {
+        CKKSEvalLutReference::ckks_eval_lut_tmp_bytes_reference(module, res, a, plan, luts, keys_layout)
+    }
+
+    fn ckks_eval_lut<R, A, P, F, K>(
+        module: &Module<Self>,
+        res: &mut [R],
+        a: &A,
+        plan: &P,
+        luts: &[EncodedLut<CKKSPlaintextOwned<Self>>],
+        keys: &K,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) -> Result<()>
+    where
+        R: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        A: GLWEToBackendRef<Self> + CKKSCtBounds,
+        P: CKKSEvalModInfos<Self, F>,
+        K: BootstrappingKeys<Self>,
+    {
+        EVAL_LUT_CALLS.set(EVAL_LUT_CALLS.get() + 1);
+        CKKSEvalLutReference::ckks_eval_lut_reference(module, res, a, plan, luts, keys, scratch)
+    }
+}
+unsafe impl<F: CKKSEncodingScalar + DftScalar> CKKSDFTMatrixImpl<F> for OverrideBackend {
+    fn ckks_dft_matrix_new_tmp_bytes<Dir: DftDirection, Fmt: DftFormat>(module: &Module<Self>, plan: &DFTPlan) -> Result<usize> {
         poulpy_ckks::reference::dft::ckks_dft_matrix_new_tmp_bytes_reference::<Dir, Fmt, Self, F>(module, plan)
     }
 
-    fn ckks_dft_matrix_new<Dir: poulpy_ckks::layouts::DftDirection, Fmt: poulpy_ckks::layouts::DftFormat>(
+    fn ckks_dft_matrix_new<Dir: DftDirection, Fmt: DftFormat>(
         module: &Module<Self>,
-        base2k: poulpy_core::layouts::Base2K,
+        base2k: Base2K,
         plan: &DFTPlan,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<DFTMatrix<Self, Dir, Fmt>> {
@@ -528,17 +621,16 @@ fn bootstrap_sizing_includes_selected_dft_workspace() {
     let plan = BootstrappingPlan::new(
         BootstrappingPipeline::S2CFirst,
         BootstrappingTechniques::default(),
-        plan(poulpy_ckks::layouts::DFTType::Encode, DFTOutputFormat::SplitRealAndImag),
+        plan(DFTType::Encode, DFTOutputFormat::SplitRealAndImag),
         eval_mod,
-        plan(poulpy_ckks::layouts::DFTType::Decode, DFTOutputFormat::SplitRealAndImag),
+        plan(DFTType::Decode, DFTOutputFormat::SplitRealAndImag),
     )
     .unwrap();
     type Context = BootstrappingContextPrepared<OverrideBackend, f64>;
     let compile = |plan: &BootstrappingPlan| {
-        let unprepared = with_scratch::<OverrideBackend, _>(Context::compile_unprepared_tmp_bytes(&module, plan).unwrap(), |s| {
-            Context::compile_unprepared(&module, 16usize.into(), plan, s)
-        })
-        .unwrap();
+        let bytes = Context::compile_unprepared_tmp_bytes(&module, plan).unwrap();
+        let unprepared =
+            with_scratch::<OverrideBackend, _>(bytes, |s| Context::compile_unprepared(&module, 16usize.into(), plan, s)).unwrap();
         // Every matrix preparation adds the probe's workspace, so their maximum moves one for one with it.
         assert_query_takes_extra(
             "prepare_tmp_bytes",
@@ -549,7 +641,7 @@ fn bootstrap_sizing_includes_selected_dft_workspace() {
         with_scratch::<OverrideBackend, _>(unprepared.prepare_tmp_bytes(&module), |s| unprepared.prepare(&module, s)).unwrap()
     };
     let context = compile(&plan);
-    let key = poulpy_core::layouts::GLWETensorKeyLayout {
+    let key = GLWETensorKeyLayout {
         n: 64usize.into(),
         base2k: 16usize.into(),
         k_aux: 16usize.into(),
@@ -557,7 +649,7 @@ fn bootstrap_sizing_includes_selected_dft_workspace() {
         dnum: 16usize.into(),
         k_digit: 16usize.into(),
     };
-    let rotation_key = poulpy_core::layouts::GLWEAutomorphismKeyLayout {
+    let rotation_key = GLWEAutomorphismKeyLayout {
         n: key.n,
         base2k: key.base2k,
         k_aux: key.k_aux,
@@ -622,13 +714,7 @@ fn dft_scratch_covers_factor_copy_with_working_buffer() {
     pt.set_meta(meta.meta);
     let matrix = DFTMatrix::<OverrideBackend, Encode, Standard, _>::try_from_factor_operands(
         &module,
-        DFTPlan::new(
-            poulpy_ckks::layouts::DFTType::Encode,
-            vec![(1, 1)],
-            DFTOutputFormat::Standard,
-            meta,
-        )
-        .unwrap(),
+        DFTPlan::new(DFTType::Encode, vec![(1, 1)], DFTOutputFormat::Standard, meta).unwrap(),
         vec![LinearTransformation {
             baby_steps: vec![0],
             rotations: Default::default(),
@@ -641,7 +727,7 @@ fn dft_scratch_covers_factor_copy_with_working_buffer() {
     .unwrap();
     let mut ct = module.ckks_ciphertext_alloc(16usize.into(), 64usize.into());
     ct.set_meta(CoeffsMeta::from_delta_budget(32, 32).meta);
-    let key = poulpy_core::layouts::GLWETensorKeyLayout {
+    let key = GLWETensorKeyLayout {
         n: 64usize.into(),
         base2k: 16usize.into(),
         k_aux: 16usize.into(),
@@ -660,7 +746,7 @@ fn dft_scratch_covers_factor_copy_with_working_buffer() {
 #[test]
 fn dft_preparation_uses_selected_scratch() {
     let module = Module::<OverrideBackend>::new(64);
-    let plan = plan(poulpy_ckks::layouts::DFTType::Encode, DFTOutputFormat::Standard);
+    let plan = plan(DFTType::Encode, DFTOutputFormat::Standard);
     type Ops = Module<OverrideBackend>;
     let matrix = with_scratch::<OverrideBackend, _>(
         <Ops as CKKSDFTMatrixOps<OverrideBackend, f64>>::ckks_dft_matrix_new_tmp_bytes::<Encode, Standard>(&module, &plan)
@@ -684,4 +770,28 @@ fn dft_preparation_uses_selected_scratch() {
     for (factor, prepared) in matrix.factor_operands().iter().zip(prepared.factor_operands()) {
         assert_eq!(factor.index(), prepared.index());
     }
+}
+
+#[test]
+fn bootstrap_enters_each_step_hook() {
+    let params = CKKSTestParams {
+        n: 64,
+        hw: 48,
+        base2k: 12,
+        ..poulpy_ckks::test_suite::BASE19_PARAMS_F64
+    };
+    let module = Module::<OverrideBackend>::new(64);
+    for counter in [&RAISE_CALLS, &BOOTSTRAP_EVAL_MOD_CALLS, &EVAL_LUT_CALLS, &DFT_CALLS] {
+        counter.set(0);
+    }
+    DFT_FORWARD.set(true);
+    super::EVAL_MOD_FORWARD.set(true);
+    poulpy_ckks::test_suite::parity::run_bootstrap::<_, f64>(params, &module);
+    DFT_FORWARD.set(false);
+    super::EVAL_MOD_FORWARD.set(false);
+    // Seven bootstraps raise: five reach EvalMod through the hook, real slots included, two the LUTs.
+    assert!(RAISE_CALLS.get() >= 7);
+    assert!(BOOTSTRAP_EVAL_MOD_CALLS.get() >= 5);
+    assert!(EVAL_LUT_CALLS.get() >= 2);
+    assert!(DFT_CALLS.get() >= 14);
 }

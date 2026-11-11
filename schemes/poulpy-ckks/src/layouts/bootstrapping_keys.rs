@@ -6,14 +6,17 @@
 //!   of the Galois elements of `CoeffsToSlots` (incl. the optional high-precision
 //!   bypass) and `SlotsToCoeffs`;
 //! - a **conjugation key** (Galois element `−1`) for the split `CoeffsToSlots`;
-//! - a **tensor (relinearization) key** for EvalMod's `ct×ct` squaring;
+//! - a **tensor (relinearization) key** for EvalMod's `ct×ct` squaring, on the ring
+//!   the plan runs EvalMod on;
 //! - optionally, one **first-factor key** per diagonal of the first
 //!   `CoeffsToSlots` factor, when the plan leaves that factor to the modulus
 //!   raise ([`DFTPlan::with_first_factor_on_raise`](crate::layouts::DFTPlan::with_first_factor_on_raise));
 //! - optionally, the **sparse-secret encapsulation** key-switching keys
 //!   (`denseToSparse`, `sparseToDense`; <https://eprint.iacr.org/2022/024>),
 //!   whose sparse ephemeral secret is sampled inside
-//!   [`BootstrappingContextPrepared::generate_keys`] and never escapes it.
+//!   [`BootstrappingContextPrepared::generate_keys`] and never escapes it;
+//! - with EvalMod on the conjugate-invariant ring, the **trace** and **embedding**
+//!   keys there and back.
 //!
 //! ## Unprepared vs prepared
 //!
@@ -47,16 +50,17 @@ use poulpy_core::{
         GLWECIKeyPrepared, GLWECITraceKey, GLWECITraceKeyAlloc, GLWECITraceKeyPrepared, GLWEInfos, GLWESecretBackendRef,
         GLWESecretToBackendRef, GLWESwitchingKey, GLWESwitchingKeyAlloc, GLWESwitchingKeyDegrees, GLWESwitchingKeyDegreesMut,
         GLWESwitchingKeyLayout, GLWESwitchingKeyPrepared, GLWETensorKey, GLWETensorKeyAlloc, GLWETensorKeyLayout,
-        GLWETensorKeyPrepared, GetAutomorphismKey, GetGaloisElement, GetTensorKey, LWEInfos, ModuleCoreAlloc,
-        prepared::{GLWEAutomorphismKeyPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
+        GLWETensorKeyPrepared, GetAutomorphismKey, GetGaloisElement, GetTensorKey, LWEInfos, ModuleCoreAlloc, TorusPrecision,
+        prepared::{
+            GLWEAutomorphismKeyPreparedBackendRef, GLWEAutomorphismKeyPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef,
+        },
     },
 };
 use poulpy_hal::{
     api::VecZnxAutomorphism,
     layouts::{
-        Backend, ConjugateInvariant, CopyToHost, CyclotomicOrder, Data, HostDataMut, HostDataRef, Module, Ring, ScratchArena,
-        Standard, ZnxWord, galois_element, scalar_znx_as_vec_znx_backend_mut_from_mut,
-        scalar_znx_as_vec_znx_backend_ref_from_ref,
+        Backend, ConjugateInvariant, CopyToHost, CyclotomicOrder, Data, HostDataMut, HostDataRef, Module, ScratchArena, Standard,
+        ZnxWord, galois_element, scalar_znx_as_vec_znx_backend_mut_from_mut, scalar_znx_as_vec_znx_backend_ref_from_ref,
     },
     source::Source,
 };
@@ -75,15 +79,12 @@ use poulpy_core::{Distribution, GetDistribution, GetDistributionMut};
 /// The key types are associated (not fixed to a backend buffer), so an implementation
 /// is free to back them with any data representation and to prepare them lazily / on
 /// the fly. [`BootstrappingKeysPrepared`] is the eager in-memory implementation.
-pub trait BootstrappingLinearKeys<BE: Backend> {
-    /// The rotation-key collection passed to the homomorphic DFT stages.
-    type RotationKeys: GetAutomorphismKey<BE> + GetTensorKey<BE>;
-
+///
+/// As a [`GetAutomorphismKey`] it answers with the rotation keys of the homomorphic DFT
+/// stages, Galois element `−1` among them, so a DFT operation takes these keys directly.
+pub trait BootstrappingLinearKeys<BE: Backend>: GetAutomorphismKey<BE> {
     /// The prepared key-switching key type for sparse-secret encapsulation.
     type SwitchingKey: GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
-
-    /// Rotation (automorphism) keys, Galois element `−1` among them.
-    fn rotation_keys(&self) -> &Self::RotationKeys;
 
     /// Sparse-secret encapsulation keys `(denseToSparse, sparseToDense)`, or
     /// `None` when the trick is disabled. There is no `sparseToDense` key when
@@ -98,26 +99,24 @@ pub trait BootstrappingLinearKeys<BE: Backend> {
     fn first_factor_key(&self, _rotation: i64) -> Option<&Self::SwitchingKey> {
         None
     }
+
+    /// Layouts of these keys, against whose scratch query the bootstrap checks its
+    /// arena at entry, or `None`, the default, to leave the arena unchecked.
+    fn keys_layout(&self) -> Option<&BootstrappingKeysLayout> {
+        None
+    }
 }
 
-/// The prepared keys of a CKKS bootstrap with EvalMod on the standard ring: the
-/// [linear keys](BootstrappingLinearKeys) and EvalMod's relinearization key.
+/// The prepared keys of a CKKS bootstrap: the [linear keys](BootstrappingLinearKeys) and
+/// EvalMod's relinearization key, on the ring the plan runs EvalMod on, with the conversion
+/// keys on the conjugate-invariant ring. A key of the other ring is `None`, and a bootstrap
+/// refuses the absence of one it reads.
 pub trait BootstrappingKeys<BE: Backend>: BootstrappingLinearKeys<BE> {
-    /// The prepared tensor (relinearization) key type for EvalMod.
+    /// The prepared tensor (relinearization) key type for EvalMod on the standard ring.
     type TensorKey: GetTensorKey<BE>;
 
-    /// Relinearization (tensor) key for EvalMod's `ct×ct` squaring. It covers
-    /// the widest ciphertext EvalMod relinearizes.
-    fn tensor_key(&self) -> &Self::TensorKey;
-}
-
-/// The prepared keys of a CKKS bootstrap with EvalMod on the conjugate-invariant
-/// ring ([`EvalModRing::ConjugateInvariant`]): the
-/// [linear keys](BootstrappingLinearKeys), EvalMod's relinearization key on the
-/// conjugate-invariant ring and the conversion keys there and back.
-pub trait BootstrappingCIKeys<BE: Backend>: BootstrappingLinearKeys<BE> {
     /// The prepared tensor (relinearization) key type for EvalMod on the conjugate-invariant ring.
-    type TensorKey: GetTensorKey<BE, ConjugateInvariant>;
+    type CITensorKey: GetTensorKey<BE, ConjugateInvariant>;
 
     /// The prepared trace key type, from `s(X²)` to the embedded CI secret.
     type TraceKey: GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
@@ -125,19 +124,16 @@ pub trait BootstrappingCIKeys<BE: Backend>: BootstrappingLinearKeys<BE> {
     /// The prepared embedding key type, from the embedded CI secret to `s(X²)`.
     type EmbedKey: GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
 
+    /// Relinearization (tensor) key for EvalMod's `ct×ct` squaring on the standard ring,
+    /// covering the widest ciphertext EvalMod relinearizes.
+    fn tensor_key(&self) -> Option<&Self::TensorKey>;
+
     /// Relinearization (tensor) key for EvalMod on the conjugate-invariant ring, covering
     /// the widest ciphertext EvalMod relinearizes.
-    fn tensor_key(&self) -> &Self::TensorKey;
+    fn ci_tensor_key(&self) -> Option<&Self::CITensorKey>;
 
-    /// Trace and embedding keys of degree `2N`, or `None` for keys prepared
-    /// without them.
+    /// Trace and embedding keys of degree `2N`, with EvalMod on the conjugate-invariant ring.
     fn conversion_keys(&self) -> Option<(&Self::TraceKey, &Self::EmbedKey)>;
-
-    /// Layouts of these keys, against whose scratch query the bootstrap checks its
-    /// arena at entry, or `None`, the default, to leave the arena unchecked.
-    fn keys_layout(&self) -> Option<BootstrappingKeysLayout> {
-        None
-    }
 }
 
 /// Sparse-secret encapsulation keys `(denseToSparse, sparseToDense)`, without
@@ -150,13 +146,16 @@ pub type EncapsulationKeys<K> = (K, Option<K>);
 /// form to serialize / store (incl. GPU device memory). Generic over the key data
 /// buffer `D` (backend agnostic). Call [`Self::prepare`] to obtain the prepared
 /// [`BootstrappingKeysPrepared`] the pipeline consumes, or prepare individual keys
-/// on the fly. `Rg` is the ring EvalMod runs on, that of the tensor key.
-pub struct BootstrappingKeySet<D: Data, W: ZnxWord, Rg: Ring = Standard> {
+/// on the fly.
+pub struct BootstrappingKeySet<D: Data, W: ZnxWord> {
     /// Rotation keys indexed by Galois element (the engine-wide convention),
     /// conjugation (`−1`) among them.
     pub rotation_keys: HashMap<i64, GLWEAutomorphismKey<D, W>>,
-    /// Relinearization (tensor) key for EvalMod, on its ring, covering its widest ciphertext.
-    pub tensor_key: GLWETensorKey<D, W, Rg>,
+    /// Relinearization (tensor) key for EvalMod on the standard ring, covering its widest ciphertext.
+    pub tensor_key: Option<GLWETensorKey<D, W>>,
+    /// Relinearization (tensor) key for EvalMod on the conjugate-invariant ring, covering its
+    /// widest ciphertext.
+    pub ci_tensor_key: Option<GLWETensorKey<D, W, ConjugateInvariant>>,
     /// `(denseToSparse, sparseToDense)` encapsulation keys, or `None`; no
     /// `sparseToDense` key with the first factor on the raise.
     pub encapsulation_keys: Option<EncapsulationKeys<GLWESwitchingKey<D, W>>>,
@@ -164,22 +163,24 @@ pub struct BootstrappingKeySet<D: Data, W: ZnxWord, Rg: Ring = Standard> {
     /// the rotated raise secret (the sparse one under encapsulation) to the
     /// dense one, see [`BootstrappingKeysLayout::first_factor_key`].
     pub first_factor_keys: HashMap<i64, GLWESwitchingKey<D, W>>,
-    /// Trace and embedding keys of degree `2N` with EvalMod on the
-    /// conjugate-invariant ring.
+    /// Trace and embedding keys of degree `2N` with EvalMod on the conjugate-invariant ring.
     pub conversion_keys: Option<(GLWECITraceKey<D, W>, GLWECIEmbedKey<D, W>)>,
 }
 
 /// The **prepared** (preprocessed) bootstrapping keys, ready for the pipeline.
 ///
-/// Generic over the key data buffer `D` and the ring `Rg` of its tensor key; implements
-/// [`BootstrappingKeys`] on the standard ring and [`BootstrappingCIKeys`] on the
-/// conjugate-invariant ring. Built eagerly by [`BootstrappingKeySet::prepare`], or
-/// [`BootstrappingKeySet::prepare_ci`] for EvalMod on the conjugate-invariant ring.
-pub struct BootstrappingKeysPrepared<D: Data, BE: Backend, Rg: Ring = Standard> {
+/// Generic over the key data buffer `D`; implements [`BootstrappingKeys`]. Built
+/// eagerly by [`BootstrappingKeySet::prepare`]. The plan's ring says which tensor key a
+/// run reads: a single generic impl cannot serve both rings otherwise.
+pub struct BootstrappingKeysPrepared<D: Data, BE: Backend> {
     /// Prepared rotation keys indexed by Galois element, conjugation among them.
     pub rotation_keys: HashMap<i64, GLWEAutomorphismKeyPrepared<D, BE>>,
-    /// Prepared relinearization (tensor) key for EvalMod, on its ring, covering its widest ciphertext.
-    pub tensor_key: GLWETensorKeyPrepared<D, BE, Rg>,
+    /// Prepared relinearization (tensor) key for EvalMod on the standard ring, covering its
+    /// widest ciphertext.
+    pub tensor_key: Option<GLWETensorKeyPrepared<D, BE>>,
+    /// Prepared relinearization (tensor) key for EvalMod on the conjugate-invariant ring,
+    /// covering its widest ciphertext.
+    pub ci_tensor_key: Option<GLWETensorKeyPrepared<D, BE, ConjugateInvariant>>,
     /// Prepared `(denseToSparse, sparseToDense)` encapsulation keys, or `None`;
     /// no `sparseToDense` key with the first factor on the raise.
     pub encapsulation_keys: Option<EncapsulationKeys<GLWESwitchingKeyPrepared<D, BE>>>,
@@ -187,63 +188,23 @@ pub struct BootstrappingKeysPrepared<D: Data, BE: Backend, Rg: Ring = Standard> 
     pub first_factor_keys: HashMap<i64, GLWESwitchingKeyPrepared<D, BE>>,
     /// Prepared trace and embedding keys, with EvalMod on the conjugate-invariant ring.
     pub conversion_keys: Option<(GLWECITraceKeyPrepared<D, BE>, GLWECIEmbedKeyPrepared<D, BE>)>,
+    /// The layouts of these keys, read once at preparation: every step checks its arena against them, and a key
+    /// replaced later does not update them.
+    pub(crate) keys_layout: Option<BootstrappingKeysLayout>,
 }
 
-impl<D: Data, BE: Backend, Rg: Ring> BootstrappingLinearKeys<BE> for BootstrappingKeysPrepared<D, BE, Rg>
+impl<D: Data, BE: Backend> BootstrappingKeysPrepared<D, BE>
 where
     GLWEAutomorphismKeyPrepared<D, BE>: GLWEAutomorphismKeyPreparedToBackendRef<BE>,
     GLWESwitchingKeyPrepared<D, BE>: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
 {
-    type RotationKeys = HashMap<i64, GLWEAutomorphismKeyPrepared<D, BE>>;
-    type SwitchingKey = GLWESwitchingKeyPrepared<D, BE>;
-
-    fn rotation_keys(&self) -> &Self::RotationKeys {
-        &self.rotation_keys
-    }
-
-    fn encapsulation_keys(&self) -> Option<(&Self::SwitchingKey, Option<&Self::SwitchingKey>)> {
-        self.encapsulation_keys.as_ref().map(|(d2s, s2d)| (d2s, s2d.as_ref()))
-    }
-
-    fn first_factor_key(&self, rotation: i64) -> Option<&Self::SwitchingKey> {
-        self.first_factor_keys.get(&rotation)
-    }
-}
-
-impl<D: Data, BE: Backend> BootstrappingKeys<BE> for BootstrappingKeysPrepared<D, BE>
-where
-    GLWEAutomorphismKeyPrepared<D, BE>: GLWEAutomorphismKeyPreparedToBackendRef<BE>,
-    GLWETensorKeyPrepared<D, BE>: GLWETensorKeyPreparedToBackendRef<BE>,
-    GLWESwitchingKeyPrepared<D, BE>: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-{
-    type TensorKey = GLWETensorKeyPrepared<D, BE>;
-
-    fn tensor_key(&self) -> &Self::TensorKey {
-        &self.tensor_key
-    }
-}
-
-impl<D: Data, BE: Backend> BootstrappingCIKeys<BE> for BootstrappingKeysPrepared<D, BE, ConjugateInvariant>
-where
-    GLWEAutomorphismKeyPrepared<D, BE>: GLWEAutomorphismKeyPreparedToBackendRef<BE>,
-    GLWETensorKeyPrepared<D, BE, ConjugateInvariant>: GLWETensorKeyPreparedToBackendRef<BE, ConjugateInvariant>,
-    GLWESwitchingKeyPrepared<D, BE>: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-    GLWECITraceKeyPrepared<D, BE>: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-    GLWECIEmbedKeyPrepared<D, BE>: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-{
-    type TensorKey = GLWETensorKeyPrepared<D, BE, ConjugateInvariant>;
-    type TraceKey = GLWECITraceKeyPrepared<D, BE>;
-    type EmbedKey = GLWECIEmbedKeyPrepared<D, BE>;
-
-    fn tensor_key(&self) -> &Self::TensorKey {
-        &self.tensor_key
-    }
-
-    fn conversion_keys(&self) -> Option<(&Self::TraceKey, &Self::EmbedKey)> {
-        self.conversion_keys.as_ref().map(|(trace, embed)| (trace, embed))
-    }
-
-    fn keys_layout(&self) -> Option<BootstrappingKeysLayout> {
+    /// The layouts of the keys of this bundle, `None` without a tensor key.
+    fn read_keys_layout(&self) -> Option<BootstrappingKeysLayout> {
+        let tensor_key = match (&self.tensor_key, &self.ci_tensor_key) {
+            (Some(key), _) => key.gglwe_layout(),
+            (None, Some(key)) => key.gglwe_layout(),
+            (None, None) => return None,
+        };
         let rotation_keys = self
             .rotation_keys
             .iter()
@@ -252,7 +213,7 @@ where
         let switching = |key: &GLWESwitchingKeyPrepared<D, BE>| GLWESwitchingKeyLayout::from(key.gglwe_layout());
         Some(BootstrappingKeysLayout {
             rotation_keys,
-            tensor_key: self.tensor_key.gglwe_layout().into(),
+            tensor_key: tensor_key.into(),
             encapsulation: self.encapsulation_keys.as_ref().map(|(d2s, s2d)| EncapsulationKeysLayout {
                 dense_to_sparse: switching(d2s),
                 sparse_to_dense: s2d.as_ref().map(switching),
@@ -266,51 +227,95 @@ where
     }
 }
 
+impl<D: Data, BE: Backend> GetAutomorphismKey<BE> for BootstrappingKeysPrepared<D, BE>
+where
+    GLWEAutomorphismKeyPrepared<D, BE>: GLWEAutomorphismKeyPreparedToBackendRef<BE>,
+{
+    fn lookup_automorphism_key(
+        &self,
+        p: i64,
+        k: TorusPrecision,
+    ) -> poulpy_core::Result<GLWEAutomorphismKeyPreparedBackendRef<'_, BE>> {
+        self.rotation_keys.lookup_automorphism_key(p, k)
+    }
+}
+
+impl<D: Data, BE: Backend> BootstrappingLinearKeys<BE> for BootstrappingKeysPrepared<D, BE>
+where
+    GLWEAutomorphismKeyPrepared<D, BE>: GLWEAutomorphismKeyPreparedToBackendRef<BE>,
+    GLWESwitchingKeyPrepared<D, BE>: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
+{
+    type SwitchingKey = GLWESwitchingKeyPrepared<D, BE>;
+
+    fn encapsulation_keys(&self) -> Option<(&Self::SwitchingKey, Option<&Self::SwitchingKey>)> {
+        self.encapsulation_keys.as_ref().map(|(d2s, s2d)| (d2s, s2d.as_ref()))
+    }
+
+    fn first_factor_key(&self, rotation: i64) -> Option<&Self::SwitchingKey> {
+        self.first_factor_keys.get(&rotation)
+    }
+
+    fn keys_layout(&self) -> Option<&BootstrappingKeysLayout> {
+        self.keys_layout.as_ref()
+    }
+}
+
+impl<D: Data, BE: Backend> BootstrappingKeys<BE> for BootstrappingKeysPrepared<D, BE>
+where
+    GLWEAutomorphismKeyPrepared<D, BE>: GLWEAutomorphismKeyPreparedToBackendRef<BE>,
+    GLWETensorKeyPrepared<D, BE>: GLWETensorKeyPreparedToBackendRef<BE>,
+    GLWETensorKeyPrepared<D, BE, ConjugateInvariant>: GLWETensorKeyPreparedToBackendRef<BE, ConjugateInvariant>,
+    GLWESwitchingKeyPrepared<D, BE>: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
+    GLWECITraceKeyPrepared<D, BE>: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
+    GLWECIEmbedKeyPrepared<D, BE>: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
+{
+    type TensorKey = GLWETensorKeyPrepared<D, BE>;
+    type CITensorKey = GLWETensorKeyPrepared<D, BE, ConjugateInvariant>;
+    type TraceKey = GLWECITraceKeyPrepared<D, BE>;
+    type EmbedKey = GLWECIEmbedKeyPrepared<D, BE>;
+
+    fn tensor_key(&self) -> Option<&Self::TensorKey> {
+        self.tensor_key.as_ref()
+    }
+
+    fn ci_tensor_key(&self) -> Option<&Self::CITensorKey> {
+        self.ci_tensor_key.as_ref()
+    }
+
+    fn conversion_keys(&self) -> Option<(&Self::TraceKey, &Self::EmbedKey)> {
+        self.conversion_keys.as_ref().map(|(trace, embed)| (trace, embed))
+    }
+}
+
 impl<D: Data, W: ZnxWord> BootstrappingKeySet<D, W> {
-    /// Preprocesses every key into a [`BootstrappingKeysPrepared`] bundle.
+    /// Preprocesses every key into a [`BootstrappingKeysPrepared`] bundle: the conversion
+    /// keys at degree `2N` and the tensor key of the set's ring.
     ///
     /// Convenience for the CPU path that prepares the whole set up front; streaming
     /// callers (e.g. GPU) can instead prepare individual keys on the fly from the
     /// public fields. `scratch` holds [`BootstrappingKeysLayout::prepare_tmp_bytes`].
-    pub fn prepare<BE: Backend>(
+    ///
+    /// # Errors
+    ///
+    /// None: it always returns `Ok`.
+    pub fn prepare<BE>(
         &self,
         module: &Module<BE>,
         scratch: &mut ScratchArena<'_, BE>,
-    ) -> BootstrappingKeysPrepared<BE::OwnedBuf, BE>
+    ) -> Result<BootstrappingKeysPrepared<BE::OwnedBuf, BE>>
     where
         D: HostDataRef,
+        BE: Backend<ZnxWord = W>,
         GLWEAutomorphismKey<D, W>: GGLWEToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         GLWETensorKey<D, W>: GGLWEToBackendRef<BE> + GGLWEInfos,
+        GLWETensorKey<D, W, ConjugateInvariant>: GGLWEToBackendRef<BE, ConjugateInvariant> + GGLWEInfos,
         GLWESwitchingKey<D, W>: GGLWEToBackendRef<BE> + GLWESwitchingKeyDegrees + GGLWEInfos,
         Module<BE>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
             + GLWEAutomorphismKeyPreparedFactory<BE>
             + GLWETensorKeyPreparedFactory<BE>
-            + GLWESwitchingKeyPreparedFactory<BE>,
-    {
-        self.prepare_with(module, scratch, |tensor_key, scratch| {
-            let mut prepared = module.glwe_tensor_key_prepared_alloc_from_infos(tensor_key);
-            module.glwe_tensor_key_prepare(&mut prepared, tensor_key, scratch);
-            prepared
-        })
-    }
-}
-
-impl<D: Data, W: ZnxWord, Rg: Ring> BootstrappingKeySet<D, W, Rg> {
-    /// [`BootstrappingKeySet::prepare`], with the tensor key prepared by `tensor_key`.
-    fn prepare_with<BE: Backend, T>(
-        &self,
-        module: &Module<BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-        tensor_key: T,
-    ) -> BootstrappingKeysPrepared<BE::OwnedBuf, BE, Rg>
-    where
-        D: HostDataRef,
-        T: FnOnce(&GLWETensorKey<D, W, Rg>, &mut ScratchArena<'_, BE>) -> GLWETensorKeyPrepared<BE::OwnedBuf, BE, Rg>,
-        GLWEAutomorphismKey<D, W>: GGLWEToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        GLWESwitchingKey<D, W>: GGLWEToBackendRef<BE> + GLWESwitchingKeyDegrees + GGLWEInfos,
-        Module<BE>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
-            + GLWEAutomorphismKeyPreparedFactory<BE>
-            + GLWESwitchingKeyPreparedFactory<BE>,
+            + GLWESwitchingKeyPreparedFactory<BE>
+            + GLWECIKeyPreparedFactory<BE>,
+        Module<BE>: GLWETensorKeyPreparedFactory<BE, ConjugateInvariant>,
     {
         let mut rotation_keys = HashMap::with_capacity(self.rotation_keys.len());
         for (&p, atk) in &self.rotation_keys {
@@ -319,7 +324,19 @@ impl<D: Data, W: ZnxWord, Rg: Ring> BootstrappingKeySet<D, W, Rg> {
             rotation_keys.insert(p, prepared);
         }
 
-        let tensor_key = tensor_key(&self.tensor_key, scratch);
+        let tensor_key = self.tensor_key.as_ref().map(|key| {
+            let mut prepared = module.glwe_tensor_key_prepared_alloc_from_infos(key);
+            module.glwe_tensor_key_prepare(&mut prepared, key, scratch);
+            prepared
+        });
+        let ci_tensor_key = self.ci_tensor_key.as_ref().map(|key| {
+            let mut prepared =
+                <Module<BE> as GLWETensorKeyPreparedFactory<BE, ConjugateInvariant>>::glwe_tensor_key_prepared_alloc_from_infos(
+                    module, key,
+                );
+            module.glwe_tensor_key_prepare(&mut prepared, key, scratch);
+            prepared
+        });
 
         let encapsulation_keys = self.encapsulation_keys.as_ref().map(|(d2s, s2d)| {
             let mut d2s_prepared = module.glwe_switching_key_prepared_alloc_from_infos(d2s);
@@ -339,13 +356,25 @@ impl<D: Data, W: ZnxWord, Rg: Ring> BootstrappingKeySet<D, W, Rg> {
             first_factor_keys.insert(rotation, prepared);
         }
 
-        BootstrappingKeysPrepared {
+        let conversion_keys = self.conversion_keys.as_ref().map(|(trace, embed)| {
+            let mut trace_key = module.glwe_ci_trace_key_prepared_alloc_from_infos(trace);
+            module.glwe_ci_key_prepare(&mut trace_key, trace, scratch);
+            let mut embed_key = module.glwe_ci_embed_key_prepared_alloc_from_infos(embed);
+            module.glwe_ci_key_prepare(&mut embed_key, embed, scratch);
+            (trace_key, embed_key)
+        });
+
+        let mut keys = BootstrappingKeysPrepared {
             rotation_keys,
             tensor_key,
+            ci_tensor_key,
             encapsulation_keys,
             first_factor_keys,
-            conversion_keys: None,
-        }
+            conversion_keys,
+            keys_layout: None,
+        };
+        keys.keys_layout = keys.read_keys_layout();
+        Ok(keys)
     }
 }
 
@@ -362,8 +391,8 @@ pub struct BootstrappingKeysLayout {
     /// widest ciphertext its key switches, which a key used on narrow ciphertexts only
     /// can do with a wider digit, hence fewer rows, under the same modulus bound.
     pub rotation_keys: BTreeMap<i64, GLWEAutomorphismKeyLayout>,
-    /// Layout of the EvalMod relinearization (tensor) key. It must cover the
-    /// widest ciphertext EvalMod relinearizes.
+    /// Layout of the EvalMod relinearization (tensor) key, on the ring EvalMod
+    /// runs on. It must cover the widest ciphertext EvalMod relinearizes.
     pub tensor_key: GLWETensorKeyLayout,
     /// Physical layouts for the sparse-secret encapsulation keys required by
     /// the recipe, or `None` when the recipe disables the technique.
@@ -376,21 +405,19 @@ pub struct BootstrappingKeysLayout {
     /// bits lower, and reach the width the raise sums its terms at.
     pub first_factor_key: Option<GLWESwitchingKeyLayout>,
     /// Layouts of the trace and embedding keys of degree `2N`, with EvalMod on
-    /// the conjugate-invariant ring, whose tensor key `tensor_key` then is: they
-    /// cover what CoeffsToSlots and EvalMod leave.
+    /// the conjugate-invariant ring: they cover what CoeffsToSlots and EvalMod leave.
     pub conversion_keys: Option<(GLWESwitchingKeyLayout, GLWESwitchingKeyLayout)>,
 }
 
 impl BootstrappingKeysLayout {
     /// The distinct rotation key layouts, in the order of their first Galois element.
-    pub fn rotation_key_layouts(&self) -> Vec<GLWEAutomorphismKeyLayout> {
-        let mut layouts = Vec::new();
-        for layout in self.rotation_keys.values() {
-            if !layouts.contains(layout) {
-                layouts.push(*layout);
-            }
-        }
+    pub fn rotation_key_layouts(&self) -> impl Iterator<Item = &GLWEAutomorphismKeyLayout> {
+        let layouts = &self.rotation_keys;
         layouts
+            .values()
+            .enumerate()
+            .filter(move |&(index, layout)| !layouts.values().take(index).any(|seen| seen == layout))
+            .map(|(_, layout)| layout)
     }
 
     /// The switching keys of the raise: the encapsulation keys and the first-factor key.
@@ -431,100 +458,79 @@ impl BootstrappingKeysLayout {
         bytes
     }
 
-    /// Scratch of [`BootstrappingContextPrepared::generate_keys`] for these layouts: the
-    /// encryption of each key, beside the secrets carved for the raise keys.
+    /// Scratch of [`BootstrappingPlan::generate_keys`] for these layouts: the encryption of
+    /// each key, beside the secrets carved for the raise keys. With EvalMod on the
+    /// conjugate-invariant ring, the tensor and conversion keys sit beside the
+    /// conjugate-invariant secret.
     pub fn generate_tmp_bytes<BE>(&self, module: &Module<BE>) -> usize
     where
         BE: Backend,
-        Module<BE>: GLWEAutomorphismKeyEncryptSk<BE> + GLWESwitchingKeyEncryptSk<BE> + GLWETensorKeyEncryptSk<BE>,
-    {
-        self.linear_keys_tmp_bytes(module)
-            .max(module.glwe_tensor_key_encrypt_sk_tmp_bytes(&self.tensor_key))
-    }
-
-    /// Scratch of [`BootstrappingContextPrepared::generate_keys_ci`] for these layouts, one
-    /// arena serving both rings: the encryption of each key, beside the secrets carved for the
-    /// raise keys, and the tensor and conversion keys beside the conjugate-invariant secret.
-    /// Zero without conversion key layouts.
-    pub fn generate_ci_tmp_bytes<BE>(&self, module: &Module<BE>) -> usize
-    where
-        BE: Backend,
         Module<BE>: GLWEAutomorphismKeyEncryptSk<BE>
+            + GLWETensorKeyEncryptSk<BE>
             + GLWESwitchingKeyEncryptSk<BE>
-            + GLWECIKeyEncryptSk<BE>
-            + GLWETensorKeyEncryptSk<BE, ConjugateInvariant>,
+            + GLWECIKeyEncryptSk<BE>,
+        Module<BE>: GLWETensorKeyEncryptSk<BE, ConjugateInvariant>,
     {
-        let Some((trace, embed)) = &self.conversion_keys else {
-            return 0;
-        };
-        let ci_keys = <Module<BE> as GLWETensorKeyEncryptSk<BE, ConjugateInvariant>>::glwe_tensor_key_encrypt_sk_tmp_bytes(
-            module,
-            &self.tensor_key,
-        )
-        .max(module.glwe_ci_key_encrypt_sk_tmp_bytes(trace))
-        .max(module.glwe_ci_key_encrypt_sk_tmp_bytes(embed));
-        self.linear_keys_tmp_bytes(module).max(self.secret_bytes::<BE>() + ci_keys)
+        let linear = self.linear_keys_tmp_bytes(module);
+        match &self.conversion_keys {
+            Some((trace, embed)) => {
+                let ci_keys =
+                    <Module<BE> as GLWETensorKeyEncryptSk<BE, ConjugateInvariant>>::glwe_tensor_key_encrypt_sk_tmp_bytes(
+                        module,
+                        &self.tensor_key,
+                    )
+                    .max(module.glwe_ci_key_encrypt_sk_tmp_bytes(trace))
+                    .max(module.glwe_ci_key_encrypt_sk_tmp_bytes(embed));
+                linear.max(self.secret_bytes::<BE>() + ci_keys)
+            }
+            None => linear
+                .max(<Module<BE> as GLWETensorKeyEncryptSk<BE>>::glwe_tensor_key_encrypt_sk_tmp_bytes(module, &self.tensor_key)),
+        }
     }
 
     /// Scratch of [`BootstrappingKeySet::prepare`] and [`BootstrappingKeySet::transfer_and_prepare`]
-    /// for these layouts: the preparation of each key on `module`, beside the copy of it the
-    /// latter carves, which the former leaves unused.
+    /// for these layouts: the preparation of each key, beside the copy of it the latter carves,
+    /// which the former leaves unused.
     pub fn prepare_tmp_bytes<BE>(&self, module: &Module<BE>) -> usize
     where
         BE: Backend,
         Module<BE>: GLWEAutomorphismKeyPreparedFactory<BE>
             + GLWESwitchingKeyPreparedFactory<BE>
             + GLWETensorKeyPreparedFactory<BE>
+            + GLWECIKeyPreparedFactory<BE>
             + GLWEBytesOf<BE>
             + GGLWEBytesOf<BE>,
+        Module<BE>: GLWETensorKeyPreparedFactory<BE, ConjugateInvariant>,
     {
         // Each key's preparation, beside the copy [`BootstrappingKeySet::transfer_and_prepare`]
         // moves it into.
         let moved = |layout: &dyn GGLWEInfos| BE::scratch_aligned(module.gglwe_bytes_of_from_infos(&layout));
-        let mut bytes = moved(&self.tensor_key) + module.glwe_tensor_key_prepare_tmp_bytes(&self.tensor_key);
+        let mut bytes = 0;
         for layout in self.rotation_key_layouts() {
             bytes = bytes.max(moved(&layout) + module.glwe_automorphism_key_prepare_tmp_bytes(&layout));
         }
         for layout in self.raise_key_layouts() {
             bytes = bytes.max(moved(&layout) + module.glwe_switching_key_prepare_tmp_bytes(&layout));
         }
-        bytes
-    }
-
-    /// Scratch of [`BootstrappingKeySet::prepare_ci`] and [`BootstrappingKeySet::transfer_and_prepare_ci`] for these
-    /// layouts, one arena serving both rings: the preparation of each key, beside the copy of it the latter carves.
-    /// Zero without conversion key layouts.
-    pub fn prepare_ci_tmp_bytes<BE>(&self, module: &Module<BE>) -> usize
-    where
-        BE: Backend,
-        Module<BE>: GLWEAutomorphismKeyPreparedFactory<BE>
-            + GLWESwitchingKeyPreparedFactory<BE>
-            + GLWECIKeyPreparedFactory<BE>
-            + GLWETensorKeyPreparedFactory<BE, ConjugateInvariant>
-            + GLWEBytesOf<BE>
-            + GGLWEBytesOf<BE>,
-    {
-        let Some((trace, embed)) = &self.conversion_keys else {
-            return 0;
-        };
-        // Each key's preparation, beside the copy [`BootstrappingKeySet::transfer_and_prepare_ci`]
-        // moves it into.
-        let moved = |layout: &dyn GGLWEInfos| BE::scratch_aligned(module.gglwe_bytes_of_from_infos(&layout));
-        let mut bytes = (moved(trace) + module.glwe_ci_key_prepare_tmp_bytes(trace))
-            .max(moved(embed) + module.glwe_ci_key_prepare_tmp_bytes(embed));
-        for layout in self.rotation_key_layouts() {
-            bytes = bytes.max(moved(&layout) + module.glwe_automorphism_key_prepare_tmp_bytes(&layout));
+        match &self.conversion_keys {
+            Some((trace, embed)) => {
+                bytes
+                    .max(moved(trace) + module.glwe_ci_key_prepare_tmp_bytes(trace))
+                    .max(moved(embed) + module.glwe_ci_key_prepare_tmp_bytes(embed))
+                    + moved(&self.tensor_key)
+                    + <Module<BE> as GLWETensorKeyPreparedFactory<BE, ConjugateInvariant>>::glwe_tensor_key_prepare_tmp_bytes(
+                        module,
+                        &self.tensor_key,
+                    )
+            }
+            None => bytes.max(
+                moved(&self.tensor_key)
+                    + <Module<BE> as GLWETensorKeyPreparedFactory<BE>>::glwe_tensor_key_prepare_tmp_bytes(
+                        module,
+                        &self.tensor_key,
+                    ),
+            ),
         }
-        for layout in self.raise_key_layouts() {
-            bytes = bytes.max(moved(&layout) + module.glwe_switching_key_prepare_tmp_bytes(&layout));
-        }
-        bytes.max(
-            moved(&self.tensor_key)
-                + <Module<BE> as GLWETensorKeyPreparedFactory<BE, ConjugateInvariant>>::glwe_tensor_key_prepare_tmp_bytes(
-                    module,
-                    &self.tensor_key,
-                ),
-        )
     }
 }
 
@@ -568,10 +574,27 @@ impl<BE: Backend, F> BootstrappingContextPrepared<BE, F> {
     /// [`Distribution::ENCAPSULATED`], so it can neither back a public key nor
     /// be serialized.
     ///
+    /// With EvalMod on the conjugate-invariant ring, a conjugate-invariant secret of the
+    /// dense secret's Hamming weight and degree `N`, sampled after the raise keys, has the
+    /// tensor key; the trace and embedding keys switch between it and the dense secret
+    /// lifted to `s(X²)`, of degree `2N`, the degree of `module`, which also serves the
+    /// bootstrap's degree `N`.
+    ///
     /// [`BootstrappingKeysLayout::generate_tmp_bytes`] sizes `scratch`, which holds the
-    /// ephemeral sparse secret with encapsulation and the rotated raise secret with
-    /// first-factor keys, and which is wiped before returning.
-    #[allow(clippy::too_many_arguments)]
+    /// ephemeral sparse secret with encapsulation, the rotated raise secret with
+    /// first-factor keys and the conjugate-invariant secret, and which is wiped before
+    /// returning.
+    ///
+    /// # Errors
+    ///
+    /// [`InvalidOperand`](crate::CKKSCompositionError::InvalidOperand) with EvalMod on the
+    /// conjugate-invariant ring, for missing conversion key layouts, a dense secret not of
+    /// fixed-weight ternary law, or a module of another degree than twice the secret's,
+    /// before any draw.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "key generation takes the module, the secret, the layout, three sources and a scratch arena"
+    )]
     pub fn generate_keys(
         &self,
         module: &Module<BE>,
@@ -590,55 +613,12 @@ impl<BE: Backend, F> BootstrappingContextPrepared<BE, F> {
             + GLWETensorKeyEncryptSk<BE>
             + GLWESwitchingKeyEncryptSk<BE>
             + GLWESecretSampling<BE>
-            + VecZnxAutomorphism<BE>,
-    {
-        // The cyclotomic order of the secret's degree, which the module may exceed.
-        let order = crate::operand_cyclotomic_order::<_, Standard>("generate_keys", module, sk_dense.n().as_usize())?;
-        self.plan
-            .key_recipe(sk_dense.n().as_usize(), order)?
-            .generate_keys(module, sk_dense, layout, source_xs, source_xe, source_xa, scratch)
-    }
-}
-
-impl<BE: Backend, F> BootstrappingContextPrepared<BE, F> {
-    /// [`Self::generate_keys`] with EvalMod on the conjugate-invariant ring, on `module`, of
-    /// degree `2N`: a conjugate-invariant secret of the dense secret's Hamming weight and of
-    /// degree `N`, sampled after the raise keys, has the tensor key; the trace and embedding
-    /// keys switch between it and the dense secret lifted to `s(X²)`, of degree `2N`.
-    /// [`BootstrappingKeysLayout::generate_ci_tmp_bytes`] sizes `scratch`, which holds the
-    /// secrets of [`Self::generate_keys`] and the conjugate-invariant one, and which is wiped
-    /// before returning. Without conversion key layouts, with a dense secret not of
-    /// fixed-weight ternary law, or on a module of another degree than twice the secret's
-    /// ([`CKKSCompositionError::InvalidOperand`] in the chain), it fails before any draw.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "key generation takes the module, the secret, the layout, three sources and a scratch arena"
-    )]
-    pub fn generate_keys_ci(
-        &self,
-        module: &Module<BE>,
-        sk_dense: &BackendGLWESecret<BE>,
-        layout: &BootstrappingKeysLayout,
-        source_xs: &mut Source,
-        source_xe: &mut Source,
-        source_xa: &mut Source,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<BootstrappingKeySet<BE::OwnedBuf, BE::ZnxWord, ConjugateInvariant>>
-    where
-        BE::OwnedBuf: HostDataMut,
-        Module<BE>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
-            + GLWEAutomorphismKeyEncryptSk<BE>
-            + GLWESwitchingKeyEncryptSk<BE>
-            + GLWESecretSampling<BE>
             + VecZnxAutomorphism<BE>
-            + GLWECIKeyEncryptSk<BE>
-            + GLWETensorKeyEncryptSk<BE, ConjugateInvariant>
-            + GLWESecretSampling<BE, ConjugateInvariant>,
+            + GLWECIKeyEncryptSk<BE>,
+        Module<BE>: GLWETensorKeyEncryptSk<BE, ConjugateInvariant> + GLWESecretSampling<BE, ConjugateInvariant>,
     {
-        let order = crate::operand_cyclotomic_order::<_, Standard>("generate_keys_ci", module, sk_dense.n().as_usize())?;
         self.plan
-            .key_recipe(sk_dense.n().as_usize(), order)?
-            .generate_keys_ci(module, sk_dense, layout, source_xs, source_xe, source_xa, scratch)
+            .generate_keys(module, sk_dense, layout, source_xs, source_xe, source_xa, scratch)
     }
 }
 
@@ -646,7 +626,10 @@ impl BootstrappingPlan {
     /// [`BootstrappingContextPrepared::generate_keys`] from the plan alone, for a key
     /// owner that does not compile the context: the client of an evaluation on
     /// another backend. The keys are those the compiled context generates.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "key generation takes the module, the secret, the layout, three sources and a scratch arena"
+    )]
     pub fn generate_keys<BE>(
         &self,
         module: &Module<BE>,
@@ -666,45 +649,14 @@ impl BootstrappingPlan {
             + GLWETensorKeyEncryptSk<BE>
             + GLWESwitchingKeyEncryptSk<BE>
             + GLWESecretSampling<BE>
-            + VecZnxAutomorphism<BE>,
+            + VecZnxAutomorphism<BE>
+            + GLWECIKeyEncryptSk<BE>,
+        Module<BE>: GLWETensorKeyEncryptSk<BE, ConjugateInvariant> + GLWESecretSampling<BE, ConjugateInvariant>,
     {
+        // The cyclotomic order of the secret's degree, which the module may exceed.
         let order = crate::operand_cyclotomic_order::<_, Standard>("generate_keys", module, sk_dense.n().as_usize())?;
         self.key_recipe(sk_dense.n().as_usize(), order)?
             .generate_keys(module, sk_dense, layout, source_xs, source_xe, source_xa, scratch)
-    }
-
-    /// [`BootstrappingContextPrepared::generate_keys_ci`] from the plan alone, as
-    /// [`Self::generate_keys`].
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "key generation takes the module, the secret, the layout, three sources and a scratch arena"
-    )]
-    pub fn generate_keys_ci<BE>(
-        &self,
-        module: &Module<BE>,
-        sk_dense: &BackendGLWESecret<BE>,
-        layout: &BootstrappingKeysLayout,
-        source_xs: &mut Source,
-        source_xe: &mut Source,
-        source_xa: &mut Source,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<BootstrappingKeySet<BE::OwnedBuf, BE::ZnxWord, ConjugateInvariant>>
-    where
-        BE: Backend,
-        BE::OwnedBuf: HostDataMut,
-        Module<BE>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
-            + CyclotomicOrder
-            + GLWEAutomorphismKeyEncryptSk<BE>
-            + GLWESwitchingKeyEncryptSk<BE>
-            + GLWESecretSampling<BE>
-            + VecZnxAutomorphism<BE>
-            + GLWECIKeyEncryptSk<BE>
-            + GLWETensorKeyEncryptSk<BE, ConjugateInvariant>
-            + GLWESecretSampling<BE, ConjugateInvariant>,
-    {
-        let order = crate::operand_cyclotomic_order::<_, Standard>("generate_keys_ci", module, sk_dense.n().as_usize())?;
-        self.key_recipe(sk_dense.n().as_usize(), order)?
-            .generate_keys_ci(module, sk_dense, layout, source_xs, source_xe, source_xa, scratch)
     }
 
     /// The keys' recipe, on a ring of degree `n`, whose slots must hold both transforms, as
@@ -763,7 +715,10 @@ impl KeyRecipe {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "key generation takes the module, the secret, the layout, three sources and a scratch arena"
+    )]
     fn generate_keys<BE>(
         &self,
         module: &Module<BE>,
@@ -782,38 +737,62 @@ impl KeyRecipe {
             + GLWETensorKeyEncryptSk<BE>
             + GLWESwitchingKeyEncryptSk<BE>
             + GLWESecretSampling<BE>
-            + VecZnxAutomorphism<BE>,
+            + VecZnxAutomorphism<BE>
+            + GLWECIKeyEncryptSk<BE>,
+        Module<BE>: GLWETensorKeyEncryptSk<BE, ConjugateInvariant> + GLWESecretSampling<BE, ConjugateInvariant>,
     {
-        anyhow::ensure!(
-            self.eval_mod_ring == EvalModRing::Standard,
-            "keys for EvalMod on the conjugate-invariant ring are generated by generate_keys_ci"
-        );
-        let keys = self.generate_linear_keys(
-            module,
-            sk_dense,
-            layout,
-            source_xs,
-            source_xe,
-            source_xa,
-            scratch,
-            |source_xe, source_xa, scratch| {
-                let mut tensor_key = module.glwe_tensor_key_alloc_from_infos(&layout.tensor_key);
-                module.glwe_tensor_key_encrypt_sk(&mut tensor_key, sk_dense, source_xe, source_xa, scratch);
-                tensor_key
-            },
-        )?;
+        if self.eval_mod_ring == EvalModRing::Standard {
+            let keys = self.generate_linear_keys(module, sk_dense, layout, source_xs, source_xe, source_xa, scratch)?;
+            scratch.wipe(layout.generate_tmp_bytes(module));
+            return Ok(keys);
+        }
+        let refuse = |reason: &str| -> anyhow::Error {
+            CKKSCompositionError::InvalidOperand {
+                op: "generate_keys",
+                reason: reason.into(),
+            }
+            .into()
+        };
+        let (Some((trace_layout, embed_layout)), Distribution::TernaryFixed(hamming_weight)) =
+            (layout.conversion_keys, *sk_dense.dist())
+        else {
+            return Err(refuse(
+                "EvalMod on the CI ring takes conversion key layouts and a fixed-weight ternary dense secret",
+            ));
+        };
+        if 2 * sk_dense.n().as_usize() != module.n() {
+            return Err(refuse(
+                "EvalMod on the CI ring takes a module of twice the degree of the dense secret",
+            ));
+        }
+        let mut keys = self.generate_linear_keys(module, sk_dense, layout, source_xs, source_xe, source_xa, scratch)?;
+        let mut ci_tensor_key = module.glwe_tensor_key_alloc_from_infos::<_, ConjugateInvariant>(&layout.tensor_key);
+        let conversion_keys = {
+            let (mut sk_ci, mut scratch) = scratch
+                .borrow()
+                .take_glwe_secret_scratch::<ConjugateInvariant>(sk_dense.n(), sk_dense.rank());
+            module.glwe_secret_fill_ternary_hw(&mut sk_ci, hamming_weight, source_xs);
+            // Created here and wiped before returning: it backs no public key and is not serialized.
+            *sk_ci.dist_mut() = Distribution::ENCAPSULATED("ci-eval-mod");
+            module.glwe_tensor_key_encrypt_sk(&mut ci_tensor_key, &sk_ci, source_xe, source_xa, &mut scratch);
+            let mut trace_key = module.glwe_ci_trace_key_alloc_from_infos(&trace_layout);
+            module.glwe_ci_trace_key_encrypt_sk(&mut trace_key, &sk_ci, sk_dense, source_xe, source_xa, &mut scratch);
+            let mut embed_key = module.glwe_ci_embed_key_alloc_from_infos(&embed_layout);
+            module.glwe_ci_embed_key_encrypt_sk(&mut embed_key, &sk_ci, sk_dense, source_xe, source_xa, &mut scratch);
+            (trace_key, embed_key)
+        };
         scratch.wipe(layout.generate_tmp_bytes(module));
+        keys.ci_tensor_key = Some(ci_tensor_key);
+        keys.conversion_keys = Some(conversion_keys);
         Ok(keys)
     }
 
-    /// The keys of the linear stages, with the tensor key of `tensor_key`, which draws it
-    /// between the rotation keys and the raise keys: on the conjugate-invariant ring, it is
-    /// left to [`Self::generate_keys_ci`], unencrypted.
+    /// The keys of [`Self::generate_keys`] common to both rings, and the tensor key of the standard ring.
     #[expect(
         clippy::too_many_arguments,
-        reason = "key generation takes the secret, the layout, three sources, a scratch arena and the tensor key"
+        reason = "key generation takes the secret, the layout, three sources and a scratch arena"
     )]
-    fn generate_linear_keys<BE, Rg: Ring, T>(
+    fn generate_linear_keys<BE>(
         &self,
         module: &Module<BE>,
         sk_dense: &BackendGLWESecret<BE>,
@@ -822,14 +801,13 @@ impl KeyRecipe {
         source_xe: &mut Source,
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
-        tensor_key: T,
-    ) -> Result<BootstrappingKeySet<BE::OwnedBuf, BE::ZnxWord, Rg>>
+    ) -> Result<BootstrappingKeySet<BE::OwnedBuf, BE::ZnxWord>>
     where
         BE: Backend,
         BE::OwnedBuf: HostDataMut,
-        T: FnOnce(&mut Source, &mut Source, &mut ScratchArena<'_, BE>) -> GLWETensorKey<BE::OwnedBuf, BE::ZnxWord, Rg>,
         Module<BE>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
             + GLWEAutomorphismKeyEncryptSk<BE>
+            + GLWETensorKeyEncryptSk<BE>
             + GLWESwitchingKeyEncryptSk<BE>
             + GLWESecretSampling<BE>
             + VecZnxAutomorphism<BE>,
@@ -871,7 +849,12 @@ impl KeyRecipe {
             rotation_keys.insert(p, atk);
         }
 
-        let tensor_key = tensor_key(source_xe, source_xa, scratch);
+        // Tensor (relinearization) key for EvalMod's ct×ct squaring.
+        let tensor_key = (self.eval_mod_ring == EvalModRing::Standard).then(|| {
+            let mut key = module.glwe_tensor_key_alloc_from_infos(&layout.tensor_key);
+            module.glwe_tensor_key_encrypt_sk(&mut key, sk_dense, source_xe, source_xa, scratch);
+            key
+        });
 
         // First-factor keys: each diagonal's term is rotated with no key, which leaves
         // it under the rotated raise secret, then switched to the dense secret.
@@ -949,119 +932,11 @@ impl KeyRecipe {
         Ok(BootstrappingKeySet {
             rotation_keys,
             tensor_key,
+            ci_tensor_key: None,
             encapsulation_keys,
             first_factor_keys,
             conversion_keys: None,
         })
-    }
-
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "key generation takes the module, the secret, the layout, three sources and a scratch arena"
-    )]
-    fn generate_keys_ci<BE>(
-        &self,
-        module: &Module<BE>,
-        sk_dense: &BackendGLWESecret<BE>,
-        layout: &BootstrappingKeysLayout,
-        source_xs: &mut Source,
-        source_xe: &mut Source,
-        source_xa: &mut Source,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<BootstrappingKeySet<BE::OwnedBuf, BE::ZnxWord, ConjugateInvariant>>
-    where
-        BE: Backend,
-        BE::OwnedBuf: HostDataMut,
-        Module<BE>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
-            + GLWEAutomorphismKeyEncryptSk<BE>
-            + GLWESwitchingKeyEncryptSk<BE>
-            + GLWESecretSampling<BE>
-            + VecZnxAutomorphism<BE>
-            + GLWECIKeyEncryptSk<BE>
-            + GLWETensorKeyEncryptSk<BE, ConjugateInvariant>
-            + GLWESecretSampling<BE, ConjugateInvariant>,
-    {
-        let (Some((trace_layout, embed_layout)), Distribution::TernaryFixed(hamming_weight)) =
-            (layout.conversion_keys, *sk_dense.dist())
-        else {
-            anyhow::bail!("EvalMod on the CI ring takes conversion key layouts and a fixed-weight ternary dense secret");
-        };
-        anyhow::ensure!(
-            self.eval_mod_ring != EvalModRing::Standard,
-            "generate_keys_ci takes a recipe with EvalMod on the CI ring"
-        );
-        if 2 * sk_dense.n().as_usize() != module.n() {
-            return Err(CKKSCompositionError::InvalidOperand {
-                op: "generate_keys_ci",
-                reason: "takes a module of twice the degree of the dense secret".into(),
-            }
-            .into());
-        }
-        let mut keys = self.generate_linear_keys(
-            module,
-            sk_dense,
-            layout,
-            source_xs,
-            source_xe,
-            source_xa,
-            scratch,
-            |_, _, _| module.glwe_tensor_key_alloc_from_infos::<_, ConjugateInvariant>(&layout.tensor_key),
-        )?;
-        let conversion_keys = {
-            let (mut sk_ci, mut scratch) = scratch
-                .borrow()
-                .take_glwe_secret_scratch::<ConjugateInvariant>(sk_dense.n(), sk_dense.rank());
-            module.glwe_secret_fill_ternary_hw(&mut sk_ci, hamming_weight, source_xs);
-            // Created here and wiped before returning: it backs no public key and is not serialized.
-            *sk_ci.dist_mut() = Distribution::ENCAPSULATED("ci-eval-mod");
-            module.glwe_tensor_key_encrypt_sk(&mut keys.tensor_key, &sk_ci, source_xe, source_xa, &mut scratch);
-            let mut trace_key = module.glwe_ci_trace_key_alloc_from_infos(&trace_layout);
-            module.glwe_ci_trace_key_encrypt_sk(&mut trace_key, &sk_ci, sk_dense, source_xe, source_xa, &mut scratch);
-            let mut embed_key = module.glwe_ci_embed_key_alloc_from_infos(&embed_layout);
-            module.glwe_ci_embed_key_encrypt_sk(&mut embed_key, &sk_ci, sk_dense, source_xe, source_xa, &mut scratch);
-            (trace_key, embed_key)
-        };
-        scratch.wipe(layout.generate_ci_tmp_bytes(module));
-        keys.conversion_keys = Some(conversion_keys);
-        Ok(keys)
-    }
-}
-
-impl<D: Data, W: ZnxWord> BootstrappingKeySet<D, W, ConjugateInvariant> {
-    /// [`BootstrappingKeySet::prepare`] with EvalMod on the conjugate-invariant ring: the tensor
-    /// key on that ring, the conversion keys at degree `2N`, on the one `module`.
-    /// [`BootstrappingKeysLayout::prepare_ci_tmp_bytes`] sizes the arena.
-    pub fn prepare_ci<BE>(
-        &self,
-        module: &Module<BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<BootstrappingKeysPrepared<BE::OwnedBuf, BE, ConjugateInvariant>>
-    where
-        D: HostDataRef,
-        BE: Backend<ZnxWord = W>,
-        GLWEAutomorphismKey<D, W>: GGLWEToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        GLWETensorKey<D, W, ConjugateInvariant>: GGLWEToBackendRef<BE, ConjugateInvariant> + GGLWEInfos,
-        GLWESwitchingKey<D, W>: GGLWEToBackendRef<BE> + GLWESwitchingKeyDegrees + GGLWEInfos,
-        Module<BE>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
-            + GLWEAutomorphismKeyPreparedFactory<BE>
-            + GLWESwitchingKeyPreparedFactory<BE>
-            + GLWECIKeyPreparedFactory<BE>
-            + GLWETensorKeyPreparedFactory<BE, ConjugateInvariant>,
-    {
-        let Some((trace, embed)) = &self.conversion_keys else {
-            anyhow::bail!("the key set has no conversion keys, which EvalMod on the CI ring takes");
-        };
-        let mut keys = self.prepare_with(module, scratch, |tensor_key, scratch| {
-            let mut prepared = module.glwe_tensor_key_prepared_alloc_from_infos(tensor_key);
-            module.glwe_tensor_key_prepare(&mut prepared, tensor_key, scratch);
-            prepared
-        });
-        let mut trace_key = module.glwe_ci_trace_key_prepared_alloc_from_infos(trace);
-        module.glwe_ci_key_prepare(&mut trace_key, trace, scratch);
-        let mut embed_key = module.glwe_ci_embed_key_prepared_alloc_from_infos(embed);
-        module.glwe_ci_key_prepare(&mut embed_key, embed, scratch);
-        keys.conversion_keys = Some((trace_key, embed_key));
-        Ok(keys)
     }
 }
 
@@ -1070,75 +945,23 @@ impl<D: Data, W: ZnxWord> BootstrappingKeySet<D, W> {
     /// into `module`'s storage, prepared there, and its moved copy dropped
     /// before the next one, so that one unprepared key at most is resident.
     /// `scratch` holds [`BootstrappingKeysLayout::prepare_tmp_bytes`].
+    ///
+    /// # Errors
+    ///
+    /// None: it always returns `Ok`.
     pub fn transfer_and_prepare<BE>(
         &self,
         module: &Module<BE>,
         scratch: &mut ScratchArena<'_, BE>,
-    ) -> BootstrappingKeysPrepared<BE::OwnedBuf, BE>
-    where
-        D: CopyToHost,
-        BE: Backend<ZnxWord = W>,
-        Module<BE>:
-            GLWEAutomorphismKeyPreparedFactory<BE> + GLWETensorKeyPreparedFactory<BE> + GLWESwitchingKeyPreparedFactory<BE>,
-    {
-        self.transfer_and_prepare_with(module, scratch, |tensor_key, scratch| {
-            let (mut moved, mut scratch) = scratch.borrow().take_gglwe_scratch(tensor_key);
-            tensor_key.transfer_into(&mut moved);
-            let mut prepared = module.glwe_tensor_key_prepared_alloc_from_infos(tensor_key);
-            module.glwe_tensor_key_prepare(&mut prepared, &moved, &mut scratch);
-            prepared
-        })
-    }
-}
-
-impl<D: Data, W: ZnxWord> BootstrappingKeySet<D, W, ConjugateInvariant> {
-    /// [`Self::prepare_ci`] for keys held by another backend, as
-    /// [`BootstrappingKeySet::transfer_and_prepare`]: the conversion keys at degree `2N`, on the one
-    /// `module`. `scratch` holds [`BootstrappingKeysLayout::prepare_ci_tmp_bytes`].
-    pub fn transfer_and_prepare_ci<BE>(
-        &self,
-        module: &Module<BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<BootstrappingKeysPrepared<BE::OwnedBuf, BE, ConjugateInvariant>>
+    ) -> Result<BootstrappingKeysPrepared<BE::OwnedBuf, BE>>
     where
         D: CopyToHost,
         BE: Backend<ZnxWord = W>,
         Module<BE>: GLWEAutomorphismKeyPreparedFactory<BE>
+            + GLWETensorKeyPreparedFactory<BE>
             + GLWESwitchingKeyPreparedFactory<BE>
-            + GLWECIKeyPreparedFactory<BE>
-            + GLWETensorKeyPreparedFactory<BE, ConjugateInvariant>,
-    {
-        let Some((trace, embed)) = &self.conversion_keys else {
-            anyhow::bail!("the key set has no conversion keys, which EvalMod on the CI ring takes");
-        };
-        let mut keys = self.transfer_and_prepare_with(module, scratch, |tensor_key, scratch| {
-            let (mut moved, mut scratch) = scratch.borrow().take_gglwe_scratch::<_, ConjugateInvariant>(tensor_key);
-            tensor_key.transfer_into(&mut moved);
-            let mut prepared = module.glwe_tensor_key_prepared_alloc_from_infos(tensor_key);
-            module.glwe_tensor_key_prepare(&mut prepared, &moved, &mut scratch);
-            prepared
-        });
-        let mut trace_key = module.glwe_ci_trace_key_prepared_alloc_from_infos(trace);
-        prepare_moved_ci_key(module, &mut trace_key, trace, scratch);
-        let mut embed_key = module.glwe_ci_embed_key_prepared_alloc_from_infos(embed);
-        prepare_moved_ci_key(module, &mut embed_key, embed, scratch);
-        keys.conversion_keys = Some((trace_key, embed_key));
-        Ok(keys)
-    }
-}
-
-impl<D: Data, W: ZnxWord, Rg: Ring> BootstrappingKeySet<D, W, Rg> {
-    /// [`BootstrappingKeySet::transfer_and_prepare`], with the tensor key moved and prepared by `tensor_key`.
-    fn transfer_and_prepare_with<BE: Backend<ZnxWord = W>, T>(
-        &self,
-        module: &Module<BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-        tensor_key: T,
-    ) -> BootstrappingKeysPrepared<BE::OwnedBuf, BE, Rg>
-    where
-        D: CopyToHost,
-        T: FnOnce(&GLWETensorKey<D, W, Rg>, &mut ScratchArena<'_, BE>) -> GLWETensorKeyPrepared<BE::OwnedBuf, BE, Rg>,
-        Module<BE>: GLWEAutomorphismKeyPreparedFactory<BE> + GLWESwitchingKeyPreparedFactory<BE>,
+            + GLWECIKeyPreparedFactory<BE>,
+        Module<BE>: GLWETensorKeyPreparedFactory<BE, ConjugateInvariant>,
     {
         let mut rotation_keys = HashMap::with_capacity(self.rotation_keys.len());
         for (&p, atk) in &self.rotation_keys {
@@ -1149,7 +972,23 @@ impl<D: Data, W: ZnxWord, Rg: Ring> BootstrappingKeySet<D, W, Rg> {
             rotation_keys.insert(p, prepared);
         }
 
-        let tensor_key = tensor_key(&self.tensor_key, scratch);
+        let tensor_key = self.tensor_key.as_ref().map(|key| {
+            let (mut moved, mut scratch) = scratch.borrow().take_gglwe_scratch(key);
+            key.transfer_into(&mut moved);
+            let mut prepared = module.glwe_tensor_key_prepared_alloc_from_infos(key);
+            module.glwe_tensor_key_prepare(&mut prepared, &moved, &mut scratch);
+            prepared
+        });
+        let ci_tensor_key = self.ci_tensor_key.as_ref().map(|key| {
+            let (mut moved, mut scratch) = scratch.borrow().take_gglwe_scratch::<_, ConjugateInvariant>(key);
+            key.transfer_into(&mut moved);
+            let mut prepared =
+                <Module<BE> as GLWETensorKeyPreparedFactory<BE, ConjugateInvariant>>::glwe_tensor_key_prepared_alloc_from_infos(
+                    module, key,
+                );
+            module.glwe_tensor_key_prepare(&mut prepared, &moved, &mut scratch);
+            prepared
+        });
 
         let mut switching = |key: &GLWESwitchingKey<D, W>| {
             let mut prepared = module.glwe_switching_key_prepared_alloc_from_infos(key);
@@ -1166,13 +1005,25 @@ impl<D: Data, W: ZnxWord, Rg: Ring> BootstrappingKeySet<D, W, Rg> {
             .map(|(&rotation, key)| (rotation, switching(key)))
             .collect();
 
-        BootstrappingKeysPrepared {
+        let conversion_keys = self.conversion_keys.as_ref().map(|(trace, embed)| {
+            let mut trace_key = module.glwe_ci_trace_key_prepared_alloc_from_infos(trace);
+            prepare_moved_ci_key(module, &mut trace_key, trace, scratch);
+            let mut embed_key = module.glwe_ci_embed_key_prepared_alloc_from_infos(embed);
+            prepare_moved_ci_key(module, &mut embed_key, embed, scratch);
+            (trace_key, embed_key)
+        });
+
+        let mut keys = BootstrappingKeysPrepared {
             rotation_keys,
             tensor_key,
+            ci_tensor_key,
             encapsulation_keys,
             first_factor_keys,
-            conversion_keys: None,
-        }
+            conversion_keys,
+            keys_layout: None,
+        };
+        keys.keys_layout = keys.read_keys_layout();
+        Ok(keys)
     }
 }
 

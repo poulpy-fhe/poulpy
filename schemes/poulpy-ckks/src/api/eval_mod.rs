@@ -28,21 +28,25 @@ pub trait CKKSEvalModOps<BE: Backend, Rg: Ring = Standard> {
 
     /// Evaluates the configured `x mod 1` approximation of `ct` into `res`.
     ///
-    /// Consumes `params.eval_depth() * log_delta` bits of `log_budget`; errors if
+    /// `ct` is working storage: it becomes the first power of the evaluation, with no copy, so its content and metadata
+    /// are unspecified on a successful return, and a caller that needs it again passes a copy. An allocation narrower
+    /// than the `log_budget + f_mod_log_delta` bits EvalMod works at costs a copy in `scratch`, which the query counts.
+    ///
+    /// Consumes `params.consumed_bits()` bits of `log_budget`; errors if
     /// `ct` has insufficient remaining capacity. `tsk` is the tensor
     /// (relinearization) key used by the squaring steps, and `scratch` must hold
     /// at least [`Self::ckks_eval_mod_tmp_bytes`] bytes.
     fn ckks_eval_mod<R, C, P, F, H>(
         &self,
         res: &mut R,
-        ct: &C,
+        ct: &mut C,
         params: &EvalMod<F, P>,
         tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         R: GLWEToBackendMut<BE, Rg> + GLWEToBackendRef<BE, Rg> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
-        C: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        C: GLWEToBackendMut<BE, Rg> + GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
         P: GLWEToBackendRef<BE, Rg> + IntPolyInfos + CKKSCtBounds + BSGSMeta,
         H: GetTensorKey<BE, Rg>;
 }

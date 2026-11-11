@@ -43,17 +43,17 @@
 
 use crate::numerics::CKKSFloat;
 use anyhow::{Result, anyhow, ensure};
-use poulpy_core::layouts::{Base2K, bsgs_consumed_bits, bsgs_eval_depth, bsgs_op_counts};
+use poulpy_core::layouts::{Base2K, GLWELayout, Rank, bsgs_consumed_bits, bsgs_eval_depth, bsgs_op_counts};
 use poulpy_hal::layouts::{Backend, Module, Ring, ScratchArena};
 
 use crate::{
-    CoeffsMeta,
+    CKKSCtBounds, CKKSResult, CoeffsMeta, GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotsKind,
     api::{Basis, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar, Parity},
     ckks_log_delta, cosine,
     polynomial::{BSGSPolynomial, ComplexBSGSPolynomial, ComplexPolynomial, Polynomial, SplitStrategy},
 };
 
-use super::{CKKSPlaintextAlloc, CKKSPlaintextOwned, CKKSScalar};
+use super::{CKKSPlaintextAlloc, CKKSPlaintextOwned, CKKSScalar, EncodedLut, EvalModCIPrepared};
 
 // Fallible scalar conversions: building the host-side polynomials goes through
 // the generic float `F`, and a conversion that is not exactly representable in
@@ -134,6 +134,26 @@ pub enum EvalModType {
 
 /// User-facing recipe for an `x mod 1` evaluation. Compiled into the encoded
 /// [`EvalMod`] by [`ckks_eval_mod_compile`].
+///
+/// # Evaluation
+///
+/// The parameters act in this order, with `K = f_mod_interval` and `r = f_mod_log_interval_reduction`:
+///
+/// 1. **Input.** The transform feeding EvalMod carries [`Self::input_scaling`], `1/K`. The input is relabelled at
+///    `f_mod_log_delta`, keeping its budget, and every product runs at that scale.
+/// 2. **Base polynomial.** `eval_mod_type` picks `f` and how it is fitted over `[-K/2^r, K/2^r]`, at degree
+///    `f_mod_degree` with coefficients at `coeffs_meta`, and `split_strategy` trades depth against rotations.
+/// 3. **Range extension.** `r` squarings, each consuming `f_mod_log_delta` bits, extend the range back to `[-K, K]`: a
+///    larger `r` allows a lower `f_mod_degree` for more depth.
+/// 4. **Inverse.** `f_mod_inv_degree` composes `f⁻¹`, which makes the result linear in `m` across the interval.
+/// 5. **Output.** `scaling` sets the amplitude, `scaling/(2π)`, and the result is relabelled at the input's scale,
+///    which keeps its budget and lowers `k` by the difference.
+///
+/// [`Self::consumed_bits`] sums those stages. `log_msg_ratio` places `Δ·m` under `I(X)·q`, so on a C2S-first raise
+/// `f_mod_log_delta` is at least the lifted input's scale plus `log_msg_ratio`.
+///
+/// The choice of `eval_mod_type` restricts the rest: the discrete fits take `f_mod_degree >= 2·(K - 1)`,
+/// [`EvalModType::SinCheby`] takes no range extension and [`EvalModType::ExpCmplx`] no inverse.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct EvalModPlan {
     /// Which periodic-function approximation and output form to use.
@@ -283,6 +303,44 @@ impl EvalModPlan {
             "CosHKEven cannot beat CosHK's BSGS cost at this plan: adjust f_mod_degree, or use CosHK"
         );
         Ok(())
+    }
+
+    /// Layout and label EvalMod works at on an input like `ct`: its budget, at the plan's scale.
+    pub(crate) fn work_layout<C: CKKSCtBounds>(&self, ct: &C) -> (GLWELayout, GLWEPlaintextMeta) {
+        let layout = GLWELayout {
+            n: ct.n(),
+            base2k: ct.base2k(),
+            k: (ct.log_budget() + self.f_mod_log_delta).into(),
+            rank: Rank(1),
+        };
+        let meta = GLWEPlaintextMeta {
+            scale: Scale::Log(self.f_mod_log_delta),
+            slots: ct.slots(),
+            log_sparsity: ct.log_sparsity(),
+            slot_layout: ct.slot_layout(),
+        };
+        (layout, meta)
+    }
+
+    /// Layout of a carved input holding `ct` and the width EvalMod works at, so that EvalMod copies nothing.
+    pub(crate) fn input_layout<C: CKKSCtBounds>(&self, ct: &C) -> GLWELayout {
+        let (work, _) = self.work_layout(ct);
+        GLWELayout {
+            k: work.k.max(ct.k()),
+            ..work
+        }
+    }
+
+    /// Widest ciphertext this EvalMod relinearizes, in bits, on an input of `log_budget` bits of budget: it relabels
+    /// its input at its own scale and keeps that budget.
+    pub(crate) fn relinearization_k(&self, log_budget: usize) -> usize {
+        log_budget + self.f_mod_log_delta
+    }
+
+    /// Widths of the ciphertexts the conversions of the conjugate-invariant ring switch around
+    /// this EvalMod, from the `traced` bits of its input: to that ring, and back at what it leaves.
+    pub(crate) fn conversion_widths(&self, traced: usize) -> (usize, usize) {
+        (traced, traced.saturating_sub(self.consumed_bits()))
     }
 
     /// `log_budget` bits the eval_mod pipeline consumes on an input ciphertext of
@@ -461,6 +519,96 @@ pub struct EvalMod<F, P> {
     /// Host-side inverse `f⁻¹` post-composition polynomial that `f_mod_inv_bsgs`
     /// encodes, when present.
     pub f_mod_inv_poly: Option<Polynomial<F>>,
+}
+
+/// What the EvalMod step of a bootstrap reads of a compiled plan, on either ring.
+pub trait CKKSEvalModInfos<BE: Backend, F> {
+    /// The EvalMod recipe, on either ring.
+    fn eval_mod_plan(&self) -> &EvalModPlan;
+
+    /// EvalMod on the standard ring, when it runs there.
+    fn eval_mod_standard(&self) -> Option<&EvalMod<F, CKKSPlaintextOwned<BE>>>;
+
+    /// EvalMod on the conjugate-invariant ring and its conversions, when it runs there.
+    fn eval_mod_ci(&self) -> Option<&EvalModCIPrepared<BE, F>>;
+
+    /// Guard bits the input of the step carries above its message: 0 on a plain [`EvalMod`].
+    fn c2s_guard_bits(&self) -> usize;
+
+    /// Whether real slots read the real part of the input alone: an S2C-first pipeline, whose raise leaves only integer
+    /// multiples of the modulus in the imaginary part. A plain [`EvalMod`] has no pipeline and trusts the label of its
+    /// input. The LUT step reads this: it runs no bypass.
+    fn real_part_on_real_slots(&self) -> bool;
+
+    /// Whether real slots take one EvalMod: [`Self::real_part_on_real_slots`] without a bypass, which needs both halves.
+    fn one_eval_mod_on_real_slots(&self) -> bool {
+        self.real_part_on_real_slots() && !self.eval_round_plus()
+    }
+
+    /// Whether the plan runs EvalRound+: the step leaves `EvalMod(x) - K·x` and the guard bits to the bypass.
+    fn eval_round_plus(&self) -> bool;
+
+    /// The slots of the message, which pick the route. `None`: the step reads the label of its input.
+    fn message_slots(&self) -> Option<SlotsKind>;
+
+    /// Removes the guard bits and labels an EvalMod output as the message. It runs once: in
+    /// [`ckks_bootstrap_eval_mod`](crate::api::CKKSBootstrappingOps::ckks_bootstrap_eval_mod), and by the composer only
+    /// under a bypass, after adding it back. `InvalidOperand`, with `res` unchanged, when `res` holds fewer scale bits
+    /// than the guard bits.
+    fn stamp_eval_mod_output<C: SetCKKSInfos>(&self, res: &mut C) -> CKKSResult<()>;
+
+    /// The metadata and the width of the output of `lut` from an input of `a_k` bits, past CoeffsToSlots, or a typed
+    /// refusal of `op` when the plan or that input cannot give them. `None`: the output keeps what the evaluation leaves
+    /// it.
+    fn eval_lut_output(
+        &self,
+        op: &'static str,
+        lut: &EncodedLut<CKKSPlaintextOwned<BE>>,
+        a_k: usize,
+    ) -> CKKSResult<Option<(GLWEPlaintextMeta, usize)>>;
+}
+
+impl<BE: Backend, F> CKKSEvalModInfos<BE, F> for EvalMod<F, CKKSPlaintextOwned<BE>> {
+    fn eval_mod_plan(&self) -> &EvalModPlan {
+        &self.plan
+    }
+
+    fn eval_mod_standard(&self) -> Option<&EvalMod<F, CKKSPlaintextOwned<BE>>> {
+        Some(self)
+    }
+
+    fn eval_mod_ci(&self) -> Option<&EvalModCIPrepared<BE, F>> {
+        None
+    }
+
+    fn c2s_guard_bits(&self) -> usize {
+        0
+    }
+
+    fn real_part_on_real_slots(&self) -> bool {
+        true
+    }
+
+    fn eval_round_plus(&self) -> bool {
+        false
+    }
+
+    fn message_slots(&self) -> Option<SlotsKind> {
+        None
+    }
+
+    fn stamp_eval_mod_output<C: SetCKKSInfos>(&self, _res: &mut C) -> CKKSResult<()> {
+        Ok(())
+    }
+
+    fn eval_lut_output(
+        &self,
+        _op: &'static str,
+        _lut: &EncodedLut<CKKSPlaintextOwned<BE>>,
+        _a_k: usize,
+    ) -> CKKSResult<Option<(GLWEPlaintextMeta, usize)>> {
+        Ok(None)
+    }
 }
 
 /// [`encode_bsgs_backend`] through the parity fold (`u = T_2(t)`).

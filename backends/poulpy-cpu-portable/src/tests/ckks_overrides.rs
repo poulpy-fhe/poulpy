@@ -1,69 +1,79 @@
 //! Downstream specialization probes: reference families remain available while
 //! polynomial kernels and EvalMod independently select execution and scratch.
 use crate::hal_impl::delegating_backend::DifferentSamplingFFT64Portable as OverrideBackend;
-use poulpy_ckks::CKKSModuleInfos;
-use poulpy_ckks::Scale;
 use poulpy_ckks::api::{
-    CKKSAllOpsTmpBytes, CKKSComplexPolynomialEvaluationOps, CKKSCopyOps, CKKSEvalModOps, CKKSPolynomialEvaluationOps,
+    BSGSPolynomialInfos, CKKSAllOpsTmpBytes, CKKSComplexPolynomialEvaluationOps, CKKSCopyOps, CKKSEvalModOps,
+    CKKSPolynomialEvaluationOps, PowerBasisHelper,
 };
+use poulpy_ckks::layouts::eval_mod::EvalMod;
 use poulpy_ckks::layouts::{CKKSCiphertextAlloc, CKKSPlaintextAlloc, CKKSPlaintextOwned};
-use poulpy_ckks::oep::CKKSComplexPolynomialEvaluationImpl;
+use poulpy_ckks::oep::{CKKSComplexPolynomialEvaluationImpl, CKKSCopyImpl, CKKSEvalModImpl, CKKSPolynomialEvaluationImpl};
+use poulpy_ckks::polynomial::{BSGSPolynomial, ComplexBSGSPolynomial};
+use poulpy_ckks::reference::conjugate::CKKSConjugateReference;
+use poulpy_ckks::reference::copy::CKKSCopyReference;
+use poulpy_ckks::reference::eval_mod::CKKSEvalModReference;
+use poulpy_ckks::reference::imag::CKKSImagReference;
 use poulpy_ckks::reference::polynomial_evaluation::{
     CKKSComplexPolynomialEvaluationReference, CKKSPolynomialEvaluationReference,
 };
+use poulpy_ckks::reference::rotate::CKKSRotateReference;
 use poulpy_ckks::test_suite::{
     helpers::{assert_ckks_error, assert_ckks_internal},
     parity::helpers::{fixture_ciphertext, snapshot, with_scratch},
 };
-use poulpy_ckks::{CKKSCompositionError, CoeffsMeta, GLWEPlaintextMeta, SetCKKSInfos, SlotLayout};
-use poulpy_core::GLWEFill;
+use poulpy_ckks::{
+    CKKSCompositionError, CKKSCtBounds, CKKSLayout, CKKSModuleInfos, CKKSResult, CoeffsMeta, GLWEPlaintextMeta, Scale,
+    SetCKKSInfos, SlotLayout,
+};
+use poulpy_core::layouts::prepared::GLWEAutomorphismKeyPreparedBackendRef;
 use poulpy_core::layouts::{
-    GLWEPlaintextInfos, GetTensorKey, LWEInfos, SetGLWEPlaintextInfos, SetK, TorusPrecision,
+    BSGSMeta, GGLWEInfos, GLWEInfos, GLWELayout, GLWEPlaintextInfos, GLWETensorKeyLayout, GLWEToBackendMut, GLWEToBackendRef,
+    GetTensorKey, IntPolyInfos, LWEInfos, SetBSGSMeta, SetGLWEPlaintextInfos, SetK, TorusPrecision,
     prepared::GLWETensorKeyPreparedBackendRef,
 };
+use poulpy_core::{GLWEAutomorphism, GLWECopy, GLWEFill, GLWERotate, GLWEShift};
 use poulpy_cpu_oracle::FFT64Oracle;
-use poulpy_hal::layouts::{Backend, ConjugateInvariant, Module, Standard};
+use poulpy_hal::api::ModuleN;
+use poulpy_hal::layouts::{Backend, ConjugateInvariant, Module, ScratchArena, Standard};
+use poulpy_hal::source::Source;
 use std::cell::{Cell, RefCell};
 thread_local! {
  static REAL_CALLS: Cell<usize> = const { Cell::new(0) };
  static COMPLEX_CALLS: Cell<usize> = const { Cell::new(0) };
  static EVAL_MOD_CALLS: Cell<usize> = const { Cell::new(0) };
  static SHAPING_CALLS: Cell<usize> = const { Cell::new(0) };
+ /// Whether the EvalMod hook runs the reference instead of failing, for probes that need a whole bootstrap.
+ static EVAL_MOD_FORWARD: Cell<bool> = const { Cell::new(false) };
  static MAX_COPY_CAPACITY: Cell<usize> = const { Cell::new(0) };
 }
 const OVERRIDE_SCRATCH: usize = 256;
 poulpy_ckks::impl_ckks_plaintext_vec_reference_full!(OverrideBackend);
 const COPY_WORKSPACE: usize = 1 << 20;
-unsafe impl poulpy_ckks::oep::CKKSCopyImpl for OverrideBackend {
-    fn ckks_copy_tmp_bytes<Dst: poulpy_ckks::CKKSCtBounds, Src: poulpy_ckks::CKKSCtBounds>(
-        module: &Module<Self>,
-        dst: &Dst,
-        src: &Src,
-    ) -> usize {
-        COPY_WORKSPACE * dst.max_size()
-            + <_ as poulpy_ckks::reference::copy::CKKSCopyReference<_, Standard>>::ckks_copy_tmp_bytes_reference(module, dst, src)
+unsafe impl CKKSCopyImpl<Standard> for OverrideBackend {
+    fn ckks_copy_tmp_bytes<Dst: CKKSCtBounds, Src: CKKSCtBounds>(module: &Module<Self>, dst: &Dst, src: &Src) -> usize {
+        COPY_WORKSPACE * dst.max_size() + <_ as CKKSCopyReference<_, Standard>>::ckks_copy_tmp_bytes_reference(module, dst, src)
     }
     fn ckks_copy<Dst, Src>(
         module: &Module<Self>,
         dst: &mut Dst,
         src: &Src,
-        scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
-    ) -> poulpy_ckks::CKKSResult<()>
+        scratch: &mut ScratchArena<'_, Self>,
+    ) -> CKKSResult<()>
     where
-        Dst: poulpy_core::layouts::GLWEToBackendMut<Self> + poulpy_ckks::CKKSCtBounds + SetCKKSInfos,
-        Src: poulpy_core::layouts::GLWEToBackendRef<Self> + poulpy_ckks::CKKSCtBounds,
+        Dst: GLWEToBackendMut<Self, Standard> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<Self, Standard> + CKKSCtBounds,
     {
         MAX_COPY_CAPACITY.with(|capacity| capacity.set(capacity.get().max(dst.max_size())));
         let workspace = COPY_WORKSPACE * dst.max_size();
         // The reference refuses before any scratch use, so an arena short of the workspace goes to it and must refuse.
         if scratch.available() < workspace {
-            let result = poulpy_ckks::reference::copy::CKKSCopyReference::ckks_copy_reference(module, dst, src, scratch);
+            let result = CKKSCopyReference::ckks_copy_reference(module, dst, src, scratch);
             assert!(result.is_err(), "ckks_copy: scratch below the probe's query");
             return result;
         }
         let (mut region, mut remaining) = scratch.borrow().take_region(workspace);
         Self::copy_host_to_view(&mut region, &vec![0x5A; workspace]);
-        poulpy_ckks::reference::copy::CKKSCopyReference::ckks_copy_reference(module, dst, src, &mut remaining)
+        CKKSCopyReference::ckks_copy_reference(module, dst, src, &mut remaining)
     }
 }
 mod carry;
@@ -100,31 +110,29 @@ unsafe impl<Rg: poulpy_hal::layouts::Ring> poulpy_ckks::oep::CKKSShapedRoundingI
     }
 }
 ::poulpy_ckks::impl_ckks_round_reference_full!(OverrideBackend);
-// The conjugate-invariant ring takes the reference of the families overridden on the standard ring, the addition aside.
+// The conjugate-invariant ring, on which a bootstrap's EvalMod runs, takes the reference of the overridden families,
+// the addition aside.
 poulpy_ckks::impl_ckks_copy_reference_full!(OverrideBackend, ConjugateInvariant);
 poulpy_ckks::impl_ckks_sub_reference_full!(OverrideBackend, ConjugateInvariant);
 poulpy_ckks::impl_ckks_polynomial_evaluation_reference_full!(OverrideBackend, ConjugateInvariant);
 poulpy_ckks::impl_ckks_eval_mod_reference_full!(OverrideBackend, ConjugateInvariant);
 
-unsafe impl poulpy_ckks::oep::CKKSPolynomialEvaluationImpl for OverrideBackend {
+unsafe impl CKKSPolynomialEvaluationImpl<Standard> for OverrideBackend {
     fn ckks_eval_poly_real_const_coeffs_from_power_basis<R, B, A, G, H>(
-        module: &::poulpy_hal::layouts::Module<Self>,
+        module: &Module<Self>,
         res: &mut R,
         power_basis: &G,
         poly: &B,
         tsk: &H,
-        scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
-    ) -> poulpy_ckks::CKKSResult<()>
+        scratch: &mut ScratchArena<'_, Self>,
+    ) -> CKKSResult<()>
     where
-        R: ::poulpy_core::layouts::GLWEToBackendMut<Self>
-            + poulpy_ckks::CKKSCtBounds
-            + poulpy_ckks::SetCKKSInfos
-            + ::poulpy_core::layouts::SetBSGSMeta,
-        B: poulpy_ckks::api::BSGSPolynomialInfos<Self>,
-        B::Coeffs: poulpy_ckks::CKKSCtBounds,
-        A: ::poulpy_core::layouts::GLWEToBackendRef<Self> + poulpy_ckks::CKKSCtBounds + poulpy_core::layouts::BSGSMeta,
-        G: poulpy_ckks::api::PowerBasisHelper<Self, A>,
-        H: ::poulpy_core::layouts::GetTensorKey<Self>,
+        R: GLWEToBackendMut<Self, Standard> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        B: BSGSPolynomialInfos<Self, Standard>,
+        B::Coeffs: CKKSCtBounds,
+        A: GLWEToBackendRef<Self, Standard> + CKKSCtBounds + BSGSMeta,
+        G: PowerBasisHelper<Self, A, Standard>,
+        H: GetTensorKey<Self, Standard>,
     {
         REAL_CALLS.with(|calls| calls.set(calls.get() + 1));
         CKKSPolynomialEvaluationReference::ckks_eval_poly_real_const_coeffs_from_power_basis_reference::<R, B, A, G, H>(
@@ -140,26 +148,19 @@ unsafe impl poulpy_ckks::oep::CKKSPolynomialEvaluationImpl for OverrideBackend {
 
 unsafe impl CKKSComplexPolynomialEvaluationImpl for OverrideBackend {
     fn ckks_eval_poly_complex_const_coeffs_from_power_basis<R, C, A, G, H>(
-        module: &::poulpy_hal::layouts::Module<Self>,
+        module: &Module<Self>,
         res: &mut R,
         power_basis: &G,
-        poly: &poulpy_ckks::polynomial::ComplexBSGSPolynomial<C>,
+        poly: &ComplexBSGSPolynomial<C>,
         tsk: &H,
-        scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
-    ) -> poulpy_ckks::CKKSResult<()>
+        scratch: &mut ScratchArena<'_, Self>,
+    ) -> CKKSResult<()>
     where
-        R: ::poulpy_core::layouts::GLWEToBackendMut<Self>
-            + poulpy_ckks::CKKSCtBounds
-            + poulpy_ckks::SetCKKSInfos
-            + ::poulpy_core::layouts::SetBSGSMeta,
-        C: ::poulpy_core::layouts::GLWEToBackendRef<Self>
-            + ::poulpy_core::layouts::GLWEInfos
-            + poulpy_core::layouts::BSGSMeta
-            + poulpy_ckks::CKKSCtBounds
-            + ::poulpy_core::layouts::IntPolyInfos,
-        A: ::poulpy_core::layouts::GLWEToBackendRef<Self> + poulpy_ckks::CKKSCtBounds + poulpy_core::layouts::BSGSMeta,
-        G: poulpy_ckks::api::PowerBasisHelper<Self, A>,
-        H: ::poulpy_core::layouts::GetTensorKey<Self>,
+        R: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        C: GLWEToBackendRef<Self> + GLWEInfos + BSGSMeta + CKKSCtBounds + IntPolyInfos,
+        A: GLWEToBackendRef<Self> + CKKSCtBounds + BSGSMeta,
+        G: PowerBasisHelper<Self, A>,
+        H: GetTensorKey<Self>,
     {
         COMPLEX_CALLS.with(|calls| calls.set(calls.get() + 1));
         CKKSComplexPolynomialEvaluationReference::ckks_eval_poly_complex_const_coeffs_from_power_basis_reference::<R, C, A, G, H>(
@@ -173,46 +174,37 @@ unsafe impl CKKSComplexPolynomialEvaluationImpl for OverrideBackend {
     }
 }
 
-unsafe impl poulpy_ckks::oep::CKKSEvalModImpl for OverrideBackend {
-    fn ckks_eval_mod_tmp_bytes<R, C, P, F, T>(
-        module: &::poulpy_hal::layouts::Module<Self>,
-        res: &R,
-        ct: &C,
-        params: &poulpy_ckks::layouts::eval_mod::EvalMod<F, P>,
-        tsk: &T,
-    ) -> usize
+unsafe impl CKKSEvalModImpl<Standard> for OverrideBackend {
+    fn ckks_eval_mod_tmp_bytes<R, C, P, F, T>(module: &Module<Self>, res: &R, ct: &C, params: &EvalMod<F, P>, tsk: &T) -> usize
     where
-        R: poulpy_ckks::CKKSCtBounds,
-        C: poulpy_ckks::CKKSCtBounds,
-        P: poulpy_ckks::CKKSCtBounds,
-        T: poulpy_core::layouts::GGLWEInfos,
+        R: CKKSCtBounds,
+        C: CKKSCtBounds,
+        P: CKKSCtBounds,
+        T: GGLWEInfos,
     {
-        let _ = (module, res, ct, params, tsk);
+        if EVAL_MOD_FORWARD.get() {
+            return <_ as CKKSEvalModReference<_, Standard>>::ckks_eval_mod_tmp_bytes_reference(module, res, ct, params, tsk);
+        }
         OVERRIDE_SCRATCH
     }
     fn ckks_eval_mod<R, C, P, F, H>(
-        module: &::poulpy_hal::layouts::Module<Self>,
+        module: &Module<Self>,
         res: &mut R,
-        ct: &C,
-        params: &poulpy_ckks::layouts::eval_mod::EvalMod<F, P>,
+        ct: &mut C,
+        params: &EvalMod<F, P>,
         tsk: &H,
-        scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
-    ) -> poulpy_ckks::CKKSResult<()>
+        scratch: &mut ScratchArena<'_, Self>,
+    ) -> CKKSResult<()>
     where
-        R: ::poulpy_core::layouts::GLWEToBackendMut<Self>
-            + ::poulpy_core::layouts::GLWEToBackendRef<Self>
-            + poulpy_ckks::CKKSCtBounds
-            + poulpy_ckks::SetCKKSInfos
-            + ::poulpy_core::layouts::SetBSGSMeta,
-        C: ::poulpy_core::layouts::GLWEToBackendRef<Self> + poulpy_ckks::CKKSCtBounds,
-        P: ::poulpy_core::layouts::GLWEToBackendRef<Self>
-            + ::poulpy_core::layouts::IntPolyInfos
-            + poulpy_ckks::CKKSCtBounds
-            + ::poulpy_core::layouts::BSGSMeta,
-        H: ::poulpy_core::layouts::GetTensorKey<Self>,
+        R: GLWEToBackendMut<Self, Standard> + GLWEToBackendRef<Self, Standard> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        C: GLWEToBackendMut<Self, Standard> + GLWEToBackendRef<Self, Standard> + CKKSCtBounds,
+        P: GLWEToBackendRef<Self, Standard> + IntPolyInfos + CKKSCtBounds + BSGSMeta,
+        H: GetTensorKey<Self, Standard>,
     {
-        let _ = (module, res, ct, params, tsk);
         EVAL_MOD_CALLS.with(|calls| calls.set(calls.get() + 1));
+        if EVAL_MOD_FORWARD.get() {
+            return CKKSEvalModReference::ckks_eval_mod_reference(module, res, ct, params, tsk, scratch);
+        }
         let (mut region, _remaining) = scratch.borrow().take_region(OVERRIDE_SCRATCH);
         Self::copy_host_to_view(&mut region, &[0x5A; OVERRIDE_SCRATCH]);
         Err(anyhow::anyhow!("EvalMod override probe").into())
@@ -220,13 +212,13 @@ unsafe impl poulpy_ckks::oep::CKKSEvalModImpl for OverrideBackend {
 }
 
 struct NoTensorKey;
-impl<BE: Backend> GetTensorKey<BE> for NoTensorKey {
-    fn lookup_tensor_key(&self, _: TorusPrecision) -> poulpy_core::Result<GLWETensorKeyPreparedBackendRef<'_, BE>> {
+impl<BE: Backend> GetTensorKey<BE, Standard> for NoTensorKey {
+    fn lookup_tensor_key(&self, _: TorusPrecision) -> poulpy_core::Result<GLWETensorKeyPreparedBackendRef<'_, BE, Standard>> {
         panic!("linear polynomial dispatch must not request a tensor key")
     }
 }
 
-fn polynomial(module: &Module<OverrideBackend>) -> poulpy_ckks::polynomial::BSGSPolynomial<CKKSPlaintextOwned<OverrideBackend>> {
+fn polynomial(module: &Module<OverrideBackend>) -> BSGSPolynomial<CKKSPlaintextOwned<OverrideBackend>> {
     use poulpy_ckks::polynomial::{Basis, Polynomial, SplitStrategy};
     Polynomial::new(Basis::Monomial, vec![0.0f64, 1.0])
         .decompose_bsgs_with(SplitStrategy::MinDepth, |coeffs| -> anyhow::Result<_> {
@@ -247,8 +239,8 @@ fn one_shot_polynomials_dispatch_to_independent_prepared_overrides() {
     use poulpy_ckks::polynomial::ComplexBSGSPolynomial;
     let module_ref = Module::<FFT64Oracle>::new(64);
     let module_test = Module::<OverrideBackend>::new(64);
-    let layout = poulpy_ckks::CKKSLayout {
-        glwe_layout: poulpy_core::layouts::GLWELayout {
+    let layout = CKKSLayout {
+        glwe_layout: GLWELayout {
             n: 64usize.into(),
             base2k: 16usize.into(),
             k: 64usize.into(),
@@ -260,7 +252,7 @@ fn one_shot_polynomials_dispatch_to_independent_prepared_overrides() {
         },
     };
     let src = fixture_ciphertext(&module_test, &layout, 61);
-    let key_infos = poulpy_core::layouts::GLWETensorKeyLayout {
+    let key_infos = GLWETensorKeyLayout {
         n: 64usize.into(),
         base2k: 16usize.into(),
         k_aux: 16usize.into(),
@@ -268,8 +260,8 @@ fn one_shot_polynomials_dispatch_to_independent_prepared_overrides() {
         dnum: 4usize.into(),
         k_digit: 16usize.into(),
     };
-    let coeff_meta = poulpy_ckks::CKKSLayout {
-        glwe_layout: poulpy_core::layouts::GLWELayout {
+    let coeff_meta = CKKSLayout {
+        glwe_layout: GLWELayout {
             n: 2usize.into(),
             base2k: 16usize.into(),
             k: 32usize.into(),
@@ -364,7 +356,7 @@ fn eval_mod_dispatch_uses_its_independent_scratch_query() {
         f_mod_poly: EvalModPoly::Real(Polynomial::new(Basis::Monomial, vec![0.0f64, 1.0])),
         f_mod_inv_poly: None,
     };
-    let key_infos = poulpy_core::layouts::GLWETensorKeyLayout {
+    let key_infos = GLWETensorKeyLayout {
         n: 64usize.into(),
         base2k: 16usize.into(),
         k_aux: 16usize.into(),
@@ -376,11 +368,13 @@ fn eval_mod_dispatch_uses_its_independent_scratch_query() {
         &module, &dst, &src, &params, &key_infos,
     );
     assert_eq!(bytes, OVERRIDE_SCRATCH);
-    module.glwe_fill_from_source(&mut dst, &mut poulpy_hal::source::Source::new([5u8; 32]));
+    module.glwe_fill_from_source(&mut dst, &mut Source::new([5u8; 32]));
     let unchanged = snapshot::<OverrideBackend, _, Standard>(&dst);
     EVAL_MOD_CALLS.with(|calls| calls.set(0));
-    let err = with_scratch::<OverrideBackend, _>(bytes, |s| module.ckks_eval_mod(&mut dst, &src, &params, &NoTensorKey, s))
-        .unwrap_err();
+    let err = with_scratch::<OverrideBackend, _>(bytes, |s| {
+        module.ckks_eval_mod(&mut dst, &mut src.clone(), &params, &NoTensorKey, s)
+    })
+    .unwrap_err();
     assert_ckks_internal("ckks_eval_mod", &err, "EvalMod override probe");
     assert_eq!(EVAL_MOD_CALLS.with(Cell::get), 1);
     assert_eq!(
@@ -409,7 +403,7 @@ fn eval_mod_reference_sizes_the_final_destination_copy() {
             .encode_bsgs_with(&host, 16usize.into(), coeff_meta, SplitStrategy::MinDepth)
             .unwrap()
     };
-    let key_infos = poulpy_core::layouts::GLWETensorKeyLayout {
+    let key_infos = GLWETensorKeyLayout {
         n: 64usize.into(),
         base2k: 16usize.into(),
         k_aux: 16usize.into(),
@@ -462,7 +456,7 @@ fn eval_mod_reference_sizes_the_final_destination_copy() {
                 &key_infos,
             );
             with_scratch::<FFT64Oracle, _>(expected_bytes, |s| {
-                module_ref.ckks_eval_mod(&mut expected, &src, &params, &NoTensorKey, s)
+                module_ref.ckks_eval_mod(&mut expected, &mut src.clone(), &params, &NoTensorKey, s)
             })
             .unwrap();
 
@@ -472,7 +466,7 @@ fn eval_mod_reference_sizes_the_final_destination_copy() {
                 ckks_eval_mod_tmp_bytes_reference::<_, _, _, _, _, _, Standard>(&module_test, &dst, &src, &params, &key_infos);
             MAX_COPY_CAPACITY.set(0);
             with_scratch::<OverrideBackend, _>(bytes, |s| {
-                module_test.ckks_eval_mod_reference(&mut dst, &src, &params, &NoTensorKey, s)
+                module_test.ckks_eval_mod_reference(&mut dst, &mut src.clone(), &params, &NoTensorKey, s)
             })
             .unwrap();
             assert_eq!(MAX_COPY_CAPACITY.get(), capacity);
@@ -497,8 +491,8 @@ fn eval_mod_reference_sizes_the_final_destination_copy() {
 #[test]
 fn add_many_and_inner_sum_queries_cover_the_selected_copy() {
     use poulpy_ckks::api::{CKKSAddManyOps, CKKSAddOps, CKKSInnerSumOps};
+    use poulpy_core::GLWETrace;
     use poulpy_core::layouts::{GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPrepared};
-    use poulpy_core::{GLWENormalize, GLWETrace};
     use poulpy_hal::layouts::ZnxViewMut;
     use std::collections::HashMap;
     let module_test = Module::<OverrideBackend>::new(64);
@@ -537,7 +531,10 @@ fn add_many_and_inner_sum_queries_cover_the_selected_copy() {
     assert_eq!(
         bytes,
         <Module<OverrideBackend> as CKKSAddOps<OverrideBackend, Standard>>::ckks_add_tmp_bytes(&module_test, res.max_size())
-            .max(<Module<OverrideBackend> as GLWENormalize<OverrideBackend, Standard>>::glwe_normalize_tmp_bytes(&module_test))
+            .max(<Module<OverrideBackend> as poulpy_core::GLWENormalize<
+                OverrideBackend,
+                Standard,
+            >>::glwe_normalize_tmp_bytes(&module_test))
             .max(copy)
     );
     assert_eq!(bytes, copy, "the overriding copy does not bound the sum");
@@ -644,10 +641,10 @@ enum ImagCoreCall {
 }
 const CORE_COPY_WORKSPACE: usize = 3 << 20;
 const CORE_SHIFT_WORKSPACE: usize = 2 << 20;
-impl poulpy_ckks::reference::copy::CKKSCopyReference<OverrideBackend> for CoreQueryOverrides<'_> {}
-impl poulpy_ckks::reference::rotate::CKKSRotateReference<OverrideBackend> for CoreQueryOverrides<'_> {}
-impl poulpy_ckks::reference::conjugate::CKKSConjugateReference<OverrideBackend> for CoreQueryOverrides<'_> {}
-impl poulpy_ckks::reference::imag::CKKSImagReference<OverrideBackend> for CoreQueryOverrides<'_> {}
+impl CKKSCopyReference<OverrideBackend, Standard> for CoreQueryOverrides<'_> {}
+impl CKKSRotateReference<OverrideBackend, Standard> for CoreQueryOverrides<'_> {}
+impl CKKSConjugateReference<OverrideBackend> for CoreQueryOverrides<'_> {}
+impl CKKSImagReference<OverrideBackend> for CoreQueryOverrides<'_> {}
 
 impl poulpy_ckks::api::CKKSRoundOps<OverrideBackend> for CoreQueryOverrides<'_> {
     fn ckks_round_tmp_bytes<Dst: poulpy_ckks::CKKSCtBounds, Src: poulpy_ckks::CKKSCtBounds>(
@@ -672,21 +669,17 @@ impl poulpy_ckks::api::CKKSRoundOps<OverrideBackend> for CoreQueryOverrides<'_> 
     }
 }
 
-impl poulpy_core::GLWECopy<OverrideBackend> for CoreQueryOverrides<'_> {
-    fn glwe_copy_tmp_bytes<R: poulpy_core::layouts::GLWEInfos, A: poulpy_core::layouts::GLWEInfos>(
-        &self,
-        res: &R,
-        a: &A,
-    ) -> usize {
+impl GLWECopy<OverrideBackend, Standard> for CoreQueryOverrides<'_> {
+    fn glwe_copy_tmp_bytes<R: GLWEInfos, A: GLWEInfos>(&self, res: &R, a: &A) -> usize {
         self.copy_calls.borrow_mut().push((res.k(), res.max_size()));
         CORE_COPY_WORKSPACE
             + (res.k().as_usize() + res.max_size()) * 64
-            + <_ as poulpy_core::GLWECopy<_, Standard>>::glwe_copy_tmp_bytes(self.module, res, a)
+            + <_ as GLWECopy<_, Standard>>::glwe_copy_tmp_bytes(self.module, res, a)
     }
-    fn glwe_copy<R, A>(&self, res: &mut R, a: &A, scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, OverrideBackend>)
+    fn glwe_copy<R, A>(&self, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, OverrideBackend>)
     where
-        R: poulpy_core::layouts::GLWEToBackendMut<OverrideBackend>,
-        A: poulpy_core::layouts::GLWEToBackendRef<OverrideBackend>,
+        R: GLWEToBackendMut<OverrideBackend, Standard>,
+        A: GLWEToBackendRef<OverrideBackend, Standard>,
     {
         let layout = {
             let res = res.to_backend_ref();
@@ -696,214 +689,199 @@ impl poulpy_core::GLWECopy<OverrideBackend> for CoreQueryOverrides<'_> {
         let (_workspace, mut remaining) = scratch
             .borrow()
             .take_region(CORE_COPY_WORKSPACE + (layout.0.as_usize() + layout.1) * 64);
-        poulpy_core::GLWECopy::glwe_copy(self.module, res, a, &mut remaining)
+        GLWECopy::glwe_copy(self.module, res, a, &mut remaining)
     }
 }
 
-impl poulpy_core::GLWEShift<OverrideBackend> for CoreQueryOverrides<'_> {
+impl GLWEShift<OverrideBackend, Standard> for CoreQueryOverrides<'_> {
     fn glwe_shift_tmp_bytes(&self, res_size: usize) -> usize {
-        CORE_SHIFT_WORKSPACE + <_ as poulpy_core::GLWEShift<_, Standard>>::glwe_shift_tmp_bytes(self.module, res_size)
+        CORE_SHIFT_WORKSPACE + <_ as GLWEShift<_, Standard>>::glwe_shift_tmp_bytes(self.module, res_size)
     }
-    fn glwe_rsh_assign<R>(&self, k: usize, res: &mut R, scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, OverrideBackend>)
+    fn glwe_rsh_assign<R>(&self, k: usize, res: &mut R, scratch: &mut ScratchArena<'_, OverrideBackend>)
     where
-        R: poulpy_core::layouts::GLWEToBackendMut<OverrideBackend>,
+        R: GLWEToBackendMut<OverrideBackend, Standard>,
     {
         let (_workspace, mut remaining) = scratch.borrow().take_region(CORE_SHIFT_WORKSPACE);
-        poulpy_core::GLWEShift::glwe_rsh_assign(self.module, k, res, &mut remaining)
+        GLWEShift::glwe_rsh_assign(self.module, k, res, &mut remaining)
     }
-    fn glwe_lsh_assign<R>(&self, res: &mut R, k: usize, scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, OverrideBackend>)
+    fn glwe_lsh_assign<R>(&self, res: &mut R, k: usize, scratch: &mut ScratchArena<'_, OverrideBackend>)
     where
-        R: poulpy_core::layouts::GLWEToBackendMut<OverrideBackend>,
+        R: GLWEToBackendMut<OverrideBackend, Standard>,
     {
         let (_workspace, mut remaining) = scratch.borrow().take_region(CORE_SHIFT_WORKSPACE);
-        poulpy_core::GLWEShift::glwe_lsh_assign(self.module, res, k, &mut remaining)
+        GLWEShift::glwe_lsh_assign(self.module, res, k, &mut remaining)
     }
-    fn glwe_lsh<R, A>(&self, res: &mut R, a: &A, k: usize, scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, OverrideBackend>)
+    fn glwe_lsh<R, A>(&self, res: &mut R, a: &A, k: usize, scratch: &mut ScratchArena<'_, OverrideBackend>)
     where
-        R: poulpy_core::layouts::GLWEToBackendMut<OverrideBackend>,
-        A: poulpy_core::layouts::GLWEToBackendRef<OverrideBackend>,
+        R: GLWEToBackendMut<OverrideBackend, Standard>,
+        A: GLWEToBackendRef<OverrideBackend, Standard>,
     {
         self.imag_calls.borrow_mut().push(ImagCoreCall::LeftShift(k));
         let (_workspace, mut remaining) = scratch.borrow().take_region(CORE_SHIFT_WORKSPACE);
-        poulpy_core::GLWEShift::glwe_lsh(self.module, res, a, k, &mut remaining)
+        GLWEShift::glwe_lsh(self.module, res, a, k, &mut remaining)
     }
-    fn glwe_lsh_add<R, A>(
-        &self,
-        res: &mut R,
-        a: &A,
-        k: usize,
-        scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, OverrideBackend>,
-    ) where
-        R: poulpy_core::layouts::GLWEToBackendMut<OverrideBackend>,
-        A: poulpy_core::layouts::GLWEToBackendRef<OverrideBackend>,
+    fn glwe_lsh_add<R, A>(&self, res: &mut R, a: &A, k: usize, scratch: &mut ScratchArena<'_, OverrideBackend>)
+    where
+        R: GLWEToBackendMut<OverrideBackend, Standard>,
+        A: GLWEToBackendRef<OverrideBackend, Standard>,
     {
         let (_workspace, mut remaining) = scratch.borrow().take_region(CORE_SHIFT_WORKSPACE);
-        poulpy_core::GLWEShift::glwe_lsh_add(self.module, res, a, k, &mut remaining)
+        GLWEShift::glwe_lsh_add(self.module, res, a, k, &mut remaining)
     }
-    fn glwe_lsh_sub<R, A>(
-        &self,
-        res: &mut R,
-        a: &A,
-        k: usize,
-        scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, OverrideBackend>,
-    ) where
-        R: poulpy_core::layouts::GLWEToBackendMut<OverrideBackend>,
-        A: poulpy_core::layouts::GLWEToBackendRef<OverrideBackend>,
+    fn glwe_lsh_sub<R, A>(&self, res: &mut R, a: &A, k: usize, scratch: &mut ScratchArena<'_, OverrideBackend>)
+    where
+        R: GLWEToBackendMut<OverrideBackend, Standard>,
+        A: GLWEToBackendRef<OverrideBackend, Standard>,
     {
         let (_workspace, mut remaining) = scratch.borrow().take_region(CORE_SHIFT_WORKSPACE);
-        poulpy_core::GLWEShift::glwe_lsh_sub(self.module, res, a, k, &mut remaining)
+        GLWEShift::glwe_lsh_sub(self.module, res, a, k, &mut remaining)
     }
 }
 
-impl poulpy_hal::api::ModuleN for CoreQueryOverrides<'_> {
+impl ModuleN for CoreQueryOverrides<'_> {
     fn n(&self) -> usize {
-        poulpy_hal::api::ModuleN::n(self.module)
+        ModuleN::n(self.module)
     }
 }
 
-impl poulpy_core::GLWERotate<OverrideBackend> for CoreQueryOverrides<'_> {
+impl GLWERotate<OverrideBackend> for CoreQueryOverrides<'_> {
     fn glwe_rotate_tmp_bytes(&self) -> usize {
-        self.rotate_workspace + poulpy_core::GLWERotate::glwe_rotate_tmp_bytes(self.module)
+        self.rotate_workspace + GLWERotate::glwe_rotate_tmp_bytes(self.module)
     }
     fn glwe_rotate<R, A>(&self, k: i64, res: &mut R, a: &A)
     where
-        R: poulpy_core::layouts::GLWEToBackendMut<OverrideBackend>,
-        A: poulpy_core::layouts::GLWEToBackendRef<OverrideBackend>,
+        R: GLWEToBackendMut<OverrideBackend>,
+        A: GLWEToBackendRef<OverrideBackend>,
     {
         self.imag_calls.borrow_mut().push(ImagCoreCall::Rotate(k));
-        poulpy_core::GLWERotate::glwe_rotate(self.module, k, res, a)
+        GLWERotate::glwe_rotate(self.module, k, res, a)
     }
-    fn glwe_rotate_assign<R>(&self, k: i64, res: &mut R, scratch: &mut poulpy_hal::layouts::ScratchArena<'_, OverrideBackend>)
+    fn glwe_rotate_assign<R>(&self, k: i64, res: &mut R, scratch: &mut ScratchArena<'_, OverrideBackend>)
     where
-        R: poulpy_core::layouts::GLWEToBackendMut<OverrideBackend>,
+        R: GLWEToBackendMut<OverrideBackend>,
     {
         self.imag_calls.borrow_mut().push(ImagCoreCall::RotateAssign(k));
         let (_workspace, mut remaining) = scratch.borrow().take_region(self.rotate_workspace);
-        poulpy_core::GLWERotate::glwe_rotate_assign(self.module, k, res, &mut remaining)
+        GLWERotate::glwe_rotate_assign(self.module, k, res, &mut remaining)
     }
 }
 
-impl poulpy_core::GLWEAutomorphism<OverrideBackend> for CoreQueryOverrides<'_> {
+impl GLWEAutomorphism<OverrideBackend, Standard> for CoreQueryOverrides<'_> {
     fn glwe_automorphism_tmp_bytes<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
-        R: poulpy_core::layouts::GLWEInfos,
-        A: poulpy_core::layouts::GLWEInfos,
-        K: poulpy_core::layouts::GGLWEInfos,
+        R: GLWEInfos,
+        A: GLWEInfos,
+        K: GGLWEInfos,
     {
-        <_ as poulpy_core::GLWEAutomorphism<_, Standard>>::glwe_automorphism_tmp_bytes(self.module, res_infos, a_infos, key_infos)
+        <_ as GLWEAutomorphism<_, Standard>>::glwe_automorphism_tmp_bytes(self.module, res_infos, a_infos, key_infos)
     }
     fn glwe_automorphism<R, A>(
         &self,
         res: &mut R,
         a: &A,
-        key: &poulpy_core::layouts::prepared::GLWEAutomorphismKeyPreparedBackendRef<'_, OverrideBackend>,
-        scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, OverrideBackend>,
+        key: &GLWEAutomorphismKeyPreparedBackendRef<'_, OverrideBackend, Standard>,
+        scratch: &mut ScratchArena<'_, OverrideBackend>,
     ) where
-        R: poulpy_core::layouts::GLWEToBackendMut<OverrideBackend> + poulpy_core::layouts::GLWEInfos,
-        A: poulpy_core::layouts::GLWEToBackendRef<OverrideBackend> + poulpy_core::layouts::GLWEInfos,
+        R: GLWEToBackendMut<OverrideBackend, Standard> + GLWEInfos,
+        A: GLWEToBackendRef<OverrideBackend, Standard> + GLWEInfos,
     {
-        poulpy_core::GLWEAutomorphism::glwe_automorphism(self.module, res, a, key, scratch)
+        GLWEAutomorphism::glwe_automorphism(self.module, res, a, key, scratch)
     }
     fn glwe_automorphism_assign<R>(
         &self,
         res: &mut R,
-        key: &poulpy_core::layouts::prepared::GLWEAutomorphismKeyPreparedBackendRef<'_, OverrideBackend>,
-        scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, OverrideBackend>,
+        key: &GLWEAutomorphismKeyPreparedBackendRef<'_, OverrideBackend, Standard>,
+        scratch: &mut ScratchArena<'_, OverrideBackend>,
     ) where
-        R: poulpy_core::layouts::GLWEToBackendMut<OverrideBackend> + poulpy_core::layouts::GLWEInfos,
+        R: GLWEToBackendMut<OverrideBackend, Standard> + GLWEInfos,
     {
-        poulpy_core::GLWEAutomorphism::glwe_automorphism_assign(self.module, res, key, scratch)
+        GLWEAutomorphism::glwe_automorphism_assign(self.module, res, key, scratch)
     }
     fn glwe_automorphism_add<R, A>(
         &self,
         res: &mut R,
         a: &A,
-        key: &poulpy_core::layouts::prepared::GLWEAutomorphismKeyPreparedBackendRef<'_, OverrideBackend>,
-        scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, OverrideBackend>,
+        key: &GLWEAutomorphismKeyPreparedBackendRef<'_, OverrideBackend, Standard>,
+        scratch: &mut ScratchArena<'_, OverrideBackend>,
     ) where
-        R: poulpy_core::layouts::GLWEToBackendMut<OverrideBackend> + poulpy_core::layouts::GLWEInfos,
-        A: poulpy_core::layouts::GLWEToBackendRef<OverrideBackend> + poulpy_core::layouts::GLWEInfos,
+        R: GLWEToBackendMut<OverrideBackend, Standard> + GLWEInfos,
+        A: GLWEToBackendRef<OverrideBackend, Standard> + GLWEInfos,
     {
-        poulpy_core::GLWEAutomorphism::glwe_automorphism_add(self.module, res, a, key, scratch)
+        GLWEAutomorphism::glwe_automorphism_add(self.module, res, a, key, scratch)
     }
     fn glwe_automorphism_add_assign<R>(
         &self,
         res: &mut R,
-        key: &poulpy_core::layouts::prepared::GLWEAutomorphismKeyPreparedBackendRef<'_, OverrideBackend>,
-        scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, OverrideBackend>,
+        key: &GLWEAutomorphismKeyPreparedBackendRef<'_, OverrideBackend, Standard>,
+        scratch: &mut ScratchArena<'_, OverrideBackend>,
     ) where
-        R: poulpy_core::layouts::GLWEToBackendMut<OverrideBackend> + poulpy_core::layouts::GLWEInfos,
+        R: GLWEToBackendMut<OverrideBackend, Standard> + GLWEInfos,
     {
-        poulpy_core::GLWEAutomorphism::glwe_automorphism_add_assign(self.module, res, key, scratch)
+        GLWEAutomorphism::glwe_automorphism_add_assign(self.module, res, key, scratch)
     }
     fn glwe_automorphism_sub<R, A>(
         &self,
         res: &mut R,
         a: &A,
-        key: &poulpy_core::layouts::prepared::GLWEAutomorphismKeyPreparedBackendRef<'_, OverrideBackend>,
-        scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, OverrideBackend>,
+        key: &GLWEAutomorphismKeyPreparedBackendRef<'_, OverrideBackend, Standard>,
+        scratch: &mut ScratchArena<'_, OverrideBackend>,
     ) where
-        R: poulpy_core::layouts::GLWEToBackendMut<OverrideBackend> + poulpy_core::layouts::GLWEInfos,
-        A: poulpy_core::layouts::GLWEToBackendRef<OverrideBackend> + poulpy_core::layouts::GLWEInfos,
+        R: GLWEToBackendMut<OverrideBackend, Standard> + GLWEInfos,
+        A: GLWEToBackendRef<OverrideBackend, Standard> + GLWEInfos,
     {
-        poulpy_core::GLWEAutomorphism::glwe_automorphism_sub(self.module, res, a, key, scratch)
+        GLWEAutomorphism::glwe_automorphism_sub(self.module, res, a, key, scratch)
     }
     fn glwe_automorphism_sub_negate<R, A>(
         &self,
         res: &mut R,
         a: &A,
-        key: &poulpy_core::layouts::prepared::GLWEAutomorphismKeyPreparedBackendRef<'_, OverrideBackend>,
-        scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, OverrideBackend>,
+        key: &GLWEAutomorphismKeyPreparedBackendRef<'_, OverrideBackend, Standard>,
+        scratch: &mut ScratchArena<'_, OverrideBackend>,
     ) where
-        R: poulpy_core::layouts::GLWEToBackendMut<OverrideBackend> + poulpy_core::layouts::GLWEInfos,
-        A: poulpy_core::layouts::GLWEToBackendRef<OverrideBackend> + poulpy_core::layouts::GLWEInfos,
+        R: GLWEToBackendMut<OverrideBackend, Standard> + GLWEInfos,
+        A: GLWEToBackendRef<OverrideBackend, Standard> + GLWEInfos,
     {
-        poulpy_core::GLWEAutomorphism::glwe_automorphism_sub_negate(self.module, res, a, key, scratch)
+        GLWEAutomorphism::glwe_automorphism_sub_negate(self.module, res, a, key, scratch)
     }
     fn glwe_automorphism_sub_assign<R>(
         &self,
         res: &mut R,
-        key: &poulpy_core::layouts::prepared::GLWEAutomorphismKeyPreparedBackendRef<'_, OverrideBackend>,
-        scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, OverrideBackend>,
+        key: &GLWEAutomorphismKeyPreparedBackendRef<'_, OverrideBackend, Standard>,
+        scratch: &mut ScratchArena<'_, OverrideBackend>,
     ) where
-        R: poulpy_core::layouts::GLWEToBackendMut<OverrideBackend> + poulpy_core::layouts::GLWEInfos,
+        R: GLWEToBackendMut<OverrideBackend, Standard> + GLWEInfos,
     {
-        poulpy_core::GLWEAutomorphism::glwe_automorphism_sub_assign(self.module, res, key, scratch)
+        GLWEAutomorphism::glwe_automorphism_sub_assign(self.module, res, key, scratch)
     }
     fn glwe_automorphism_sub_negate_assign<R>(
         &self,
         res: &mut R,
-        key: &poulpy_core::layouts::prepared::GLWEAutomorphismKeyPreparedBackendRef<'_, OverrideBackend>,
-        scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, OverrideBackend>,
+        key: &GLWEAutomorphismKeyPreparedBackendRef<'_, OverrideBackend, Standard>,
+        scratch: &mut ScratchArena<'_, OverrideBackend>,
     ) where
-        R: poulpy_core::layouts::GLWEToBackendMut<OverrideBackend> + poulpy_core::layouts::GLWEInfos,
+        R: GLWEToBackendMut<OverrideBackend, Standard> + GLWEInfos,
     {
-        poulpy_core::GLWEAutomorphism::glwe_automorphism_sub_negate_assign(self.module, res, key, scratch)
+        GLWEAutomorphism::glwe_automorphism_sub_negate_assign(self.module, res, key, scratch)
     }
     fn glwe_automorphism_many_tmp_bytes<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
-        R: poulpy_core::layouts::GLWEInfos,
-        A: poulpy_core::layouts::GLWEInfos,
-        K: poulpy_core::layouts::GGLWEInfos,
+        R: GLWEInfos,
+        A: GLWEInfos,
+        K: GGLWEInfos,
     {
-        <_ as poulpy_core::GLWEAutomorphism<_, Standard>>::glwe_automorphism_many_tmp_bytes(
-            self.module,
-            res_infos,
-            a_infos,
-            key_infos,
-        )
+        <_ as GLWEAutomorphism<_, Standard>>::glwe_automorphism_many_tmp_bytes(self.module, res_infos, a_infos, key_infos)
     }
     fn glwe_automorphism_many<R, A>(
         &self,
         res: &mut [&mut R],
         a: &A,
-        keys: &[&poulpy_core::layouts::prepared::GLWEAutomorphismKeyPreparedBackendRef<'_, OverrideBackend>],
-        scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, OverrideBackend>,
+        keys: &[&GLWEAutomorphismKeyPreparedBackendRef<'_, OverrideBackend, Standard>],
+        scratch: &mut ScratchArena<'_, OverrideBackend>,
     ) where
-        R: poulpy_core::layouts::GLWEToBackendMut<OverrideBackend> + poulpy_core::layouts::GLWEInfos,
-        A: poulpy_core::layouts::GLWEToBackendRef<OverrideBackend> + poulpy_core::layouts::GLWEInfos,
+        R: GLWEToBackendMut<OverrideBackend, Standard> + GLWEInfos,
+        A: GLWEToBackendRef<OverrideBackend, Standard> + GLWEInfos,
     {
-        poulpy_core::GLWEAutomorphism::glwe_automorphism_many(self.module, res, a, keys, scratch)
+        GLWEAutomorphism::glwe_automorphism_many(self.module, res, a, keys, scratch)
     }
 }
 
@@ -920,7 +898,7 @@ fn reference_queries_follow_independent_core_copy_and_shift_workspaces() {
         copy_calls: RefCell::default(),
         imag_calls: RefCell::default(),
     };
-    let mut src = module.ckks_ciphertext_alloc(16usize.into(), 64usize.into());
+    let mut src = module.ckks_ciphertext_alloc::<Standard>(16usize.into(), 64usize.into());
     src.set_meta(GLWEPlaintextMeta {
         scale: Scale::Log(16),
         ..Default::default()
@@ -945,9 +923,7 @@ fn reference_queries_follow_independent_core_copy_and_shift_workspaces() {
             expected.set_meta(src.meta());
             expected.set_log_budget(src.log_budget());
             with_scratch::<OverrideBackend, _>(
-                <Module<OverrideBackend> as poulpy_core::GLWECopy<OverrideBackend, Standard>>::glwe_copy_tmp_bytes(
-                    &module, &expected, &src,
-                ),
+                <Module<OverrideBackend> as GLWECopy<OverrideBackend, Standard>>::glwe_copy_tmp_bytes(&module, &expected, &src),
                 |s| module.glwe_copy(&mut expected, &src, s),
             );
 
@@ -961,7 +937,7 @@ fn reference_queries_follow_independent_core_copy_and_shift_workspaces() {
             assert_eq!(dst.max_size(), original_layout.1);
         }
     }
-    let key = poulpy_core::layouts::GLWETensorKeyLayout {
+    let key = GLWETensorKeyLayout {
         n: 64usize.into(),
         base2k: 16usize.into(),
         k_aux: 16usize.into(),
@@ -971,7 +947,7 @@ fn reference_queries_follow_independent_core_copy_and_shift_workspaces() {
     };
     // Both queries are the larger of the automorphism's and the aligning shift's, the overriding shift here.
     let shift_bytes = query.glwe_shift_tmp_bytes(src.max_size());
-    let automorphism_bytes = poulpy_core::GLWEAutomorphism::glwe_automorphism_tmp_bytes(&query, &src, &src, &key);
+    let automorphism_bytes = GLWEAutomorphism::glwe_automorphism_tmp_bytes(&query, &src, &src, &key);
     assert!(shift_bytes > automorphism_bytes);
     assert_eq!(query.ckks_rotate_with_key_tmp_bytes_reference(&src, &key), shift_bytes);
     assert_eq!(query.ckks_conjugate_with_key_tmp_bytes_reference(&src, &key), shift_bytes);
@@ -1001,7 +977,8 @@ fn division_by_i_uses_negative_monomials_and_selected_core_workspaces() {
         };
         for output_k in [64usize, 47] {
             let mut dst = module.ckks_ciphertext_alloc(16usize.into(), output_k.into());
-            let shift_bytes = query.glwe_shift_tmp_bytes(dst.max_size());
+            let shift_bytes =
+                <CoreQueryOverrides<'_> as GLWEShift<OverrideBackend, Standard>>::glwe_shift_tmp_bytes(&query, dst.max_size());
             let rotate_bytes = query.glwe_rotate_tmp_bytes();
             assert_eq!(rotate_bytes > shift_bytes, rotate_workspace > CORE_SHIFT_WORKSPACE);
             let bytes = query.ckks_div_i_tmp_bytes_reference(dst.max_size());

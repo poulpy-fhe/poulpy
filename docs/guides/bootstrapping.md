@@ -47,7 +47,7 @@ The raised-from modulus `q` becomes an explicit, un-reduced multiple `I(X)·q` i
 The shift stops `scale_up` bits short of the natural magnitude `k_large − k_small`, a lift fused into the raise: the value is multiplied by `2^scale_up` and `log_delta` grows by `scale_up`, so the message lands at the plan's working scale while the encoded value is unchanged.
 The headroom now spans the full raised modulus, so `log_budget = k_large − log_delta`.
 
-`ckks_mod_up_into` then relabels the ciphertext by the message ratio, adding `log_msg_ratio` to `log_delta`: this free division reinterprets `q·I + Δ·m` as `I + m·Δ/q`, separating the integer part `I` from the residue.
+`ckks_mod_raise` then relabels the ciphertext by the message ratio, adding `log_msg_ratio` to `log_delta`: this free division reinterprets `q·I + Δ·m` as `I + m·Δ/q`, separating the integer part `I` from the residue.
 The message ratio is `q/Δ = 2^log_msg_ratio`, the bit gap between the payload and the integer part.
 
 ### Sparse-secret encapsulation
@@ -100,6 +100,40 @@ The evaluation has up to three sub-stages.
 
 EvalMod runs at its own scale.
 `ckks_eval_mod` raises the ciphertext to `f_mod_log_delta` on entry and restores the input scale on exit — a budget-neutral reinterpretation — so its `ct × ct` chain keeps more precision than the message scale alone would allow.
+
+## The steps
+
+`ckks_bootstrap` and `ckks_functional_bootstrap` are compositions of steps, and each step runs alone on the same context and keys. The plan decides how a step runs (real slots, EvalMod on the standard or the conjugate-invariant ring, a bypass); a flavor is never a separate method.
+
+| Step | Call | Notes |
+|---|---|---|
+| SlotsToCoeffs | `ckks_slots_to_coeffs_assign(ct, &run, keys, scratch)` | any `Standard` `CKKSDFTFactors`, `BootstrappingRun` included, which labels the output that ends a C2S-first bootstrap |
+| ModRaise | `ckks_mod_raise(res, a, &run, keys, scratch)` | `a` is clobbered by a C2S-first lift and the dense-to-sparse switch, and only read without them; `ctx`, `ctx.mod_raise()` also serve, and `plan.mod_raise()` on a plan that leaves no CoeffsToSlots factor to the raise |
+| CoeffsToSlots | `ckks_coeffs_to_slots_assign(ct, &run, keys, scratch)` | leaves the slot label Complex; a run or `&bypass` leaves half a `Standard` encode, which the split of the next step or the composer doubles |
+| EvalMod | `ckks_bootstrap_eval_mod(res, a, &run, keys, scratch)` | real slots, split halves, or the conjugate-invariant ring, by the plan and the slots of the message |
+| EvalLut | `ckks_eval_lut(res, a, &run, luts, keys, scratch)` | `res` is a slice, one output per LUT |
+
+`ckks_mod_raise` uses `a` as working storage: a composition does not read it again, so writing it saves a ciphertext of scratch and a copy. After a success its content is unspecified, so pass a copy if you need `a` again. A refusal leaves it unchanged for a retry. EvalMod and EvalLut only read `a`.
+
+Each has its `_tmp_bytes`, and a step refuses a short arena, a wrong operand, a key that does not cover it or a missing budget before it writes `res`. `ckks_bootstrap_eval_mod` and `ckks_eval_lut` remove the guard bits of the plan; only a bypass leaves them to the composer.
+`EvalModCIPrepared` implements no `CKKSEvalModInfos`: EvalMod on the conjugate-invariant ring runs through a run, not through its compiled part alone.
+
+A composition stamps nothing. The transforms overwrite the label and the raise relabels the scale, so `ctx.run(meta)` binds the labels of the message to the compiled plan and the steps read them there. It takes the metadata, not a ciphertext: the raise clobbers its input, and a composer may state a message kind the label does not carry. `BootstrappingContextPrepared` itself takes no SlotsToCoeffs, EvalMod or EvalLut, so forgetting the run does not compile.
+
+The S2C-first bootstrap composed by hand:
+
+```rust
+let run = ctx.run(input.meta());
+module.ckks_double_into(&mut coeffs, &input, s)?;
+module.ckks_slots_to_coeffs_assign(&mut coeffs, &run, &keys, s)?;
+module.ckks_mod_raise(&mut raised, &mut coeffs, &run, &keys, s)?;
+module.ckks_coeffs_to_slots_assign(&mut raised, &run, &keys, s)?;
+module.ckks_bootstrap_eval_mod(&mut res, &raised, &run, &keys, s)?;
+```
+
+C2S-first copies `input` into `coeffs`, skips the SlotsToCoeffs above the raise, and ends in `module.ckks_slots_to_coeffs_assign(&mut res, &run, &keys, s)?`.
+
+Under a bypass (EvalRound+), `ckks_bootstrap_eval_mod` returns `EvalMod(x) - K·x`, on every route, with its working label and the guard bits still on. The caller copies the raised ciphertext before CoeffsToSlots, runs the bypass on the copy (`ckks_coeffs_to_slots_assign(&mut z_hp, &bypass, ..)`, `bypass` from `run.bypass()`), doubles it (`ckks_mul_pow2_assign(1, ..)`), adds the step's output, and only then calls `run.stamp_eval_mod_output(&mut res)?`: removing the guard bits earlier lowers `k` and changes the bits of the conjugate-invariant route. `ckks_eval_lut` removes the guard bits itself, before its exponential, and runs no bypass: on a real message of an S2C-first plan it reads the real part alone, with or without one in the plan.
 
 ## Scale and budget chain
 
@@ -165,7 +199,7 @@ For now it still uses a `BootstrappingPlan` containing an EvalMod plan because E
 After an unsplit CoeffsToSlots, the `N` coefficients sit in `N/2` complex slots `z_j = c_j + i·c_{j+N/2}`, and EvalMod's real polynomial runs once per half. The conjugate-invariant (CI) ring of degree `N` has `N` real slots, so one EvalMod there reduces them all (`BootstrappingPlan::with_eval_mod_ring(EvalModRing::ConjugateInvariant { .. })`, S2C-first only).
 The ciphertext is embedded in the standard ring of degree `2N` as `z(X²)`, which holds each slot twice, multiplied by `u` (`1` on one copy, `−i` on the other) and traced onto the CI ring with a key switch, which leaves `c_j` and `c_{j+N/2}` in two real slots. After EvalMod on the CI ring, the result is embedded back and multiplied by `v` (`2` and `2i`), and its even coefficients, back at degree `N`, pair the halves again as `r_j + i·r_{j+N/2}`. The two products consume the scales of `u` and `v`; the trace and embedding keys are of degree `2N`.
 The product by `u` can instead be folded into the last CoeffsToSlots factor (`CIConversion::Folded`). Writing `u = u_e(X²) + X·u_o(X²)`, `u·z(X²) = (u_e·z)(X²) + X·(u_o·z)(X²)`, where `u_e·z` and `u_o·z` are slot-wise products at degree `N`: the last factor runs twice from the same baby steps, scaled by the slots of `u_e`, `(1 − i)/2`, and of `u_o`, `(1 + i)/(2ω_j)` at the root `ω_j` of slot `j`. The fold costs no level, which narrows the raised width and so every key, at the price of the second pass over the factor. `v` does not fold: nothing linear follows EvalMod in the S2C-first pipeline.
-`CKKSBootstrappingCIOps::ckks_bootstrap_ci_into` runs it on one module of degree exactly `2N`, which serves both rings: the conversions at degree `2N`, the stages at degree `N` and EvalMod on the conjugate-invariant ring of degree `N`. The context comes from `BootstrappingContextPrepared::compile_ci` and the keys from `generate_keys_ci` and `prepare_ci`, on that one module: no conjugation key, a tensor key of a CI secret, and the conversion keys, all checked at entry, as are the module's degree and its one arena against `ckks_bootstrap_ci_tmp_bytes`. Backends override it through `CKKSBootstrappingCIImpl`.
+`ckks_bootstrap` runs it on one module of degree exactly `2N`, which serves both rings: the conversions at degree `2N`, and the stages and EvalMod at degree `N`, on the conjugate-invariant ring for EvalMod. The context comes from `BootstrappingContextPrepared::compile` and the keys from `generate_keys` and `prepare`, on that one module: no conjugation key, a tensor key of a CI secret, and the conversion keys, all checked at entry, as are the module's degree and its one arena against `ckks_bootstrap_tmp_bytes`.
 
 ## Pipeline order and EvalRound+
 

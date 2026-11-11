@@ -64,8 +64,7 @@ pub use add::CKKSAddImpl;
 pub use add::impl_ckks_add_reference_full;
 pub use approximation::{CKKSApproximationImpl, impl_ckks_approximation_derived_full};
 pub use bootstrapping::{
-    CKKSBootstrappingCIImpl, CKKSBootstrappingImpl, CKKSEncapsulatedModUpImpl, CKKSModUpFirstFactorImpl,
-    impl_ckks_bootstrapping_ci_reference_full, impl_ckks_bootstrapping_reference_full,
+    CKKSBootstrappingImpl, CKKSEncapsulatedModUpImpl, CKKSModUpFirstFactorImpl, impl_ckks_bootstrapping_reference_full,
     impl_ckks_encapsulated_mod_up_reference_full, impl_ckks_mod_up_first_factor_reference_full,
 };
 pub use ckks_impl::CKKSImpl;
@@ -113,9 +112,9 @@ pub use sub::impl_ckks_sub_reference_full;
 /// families [`CKKSImpl`] bundles minus the standard-only and cross-ring ones.
 ///
 /// Left out, each selected by its own macro: the standard-only families (`CKKSImagImpl`, `CKKSConjugateImpl`,
-/// `CKKSComplexPolynomialEvaluationImpl`, `CKKSDFTImpl`, `CKKSBootstrappingImpl`, `CKKSBootstrappingCIImpl`,
-/// `CKKSEncapsulatedModUpImpl`, `CKKSModUpFirstFactorImpl`, `CKKSPaCoImpl`, `CKKSShipImpl`) and the cross-ring ones, the
-/// ring maps (`CKKSCIRingMapImpl`) and the fold of inputs of either ring into standard ciphertexts (`CKKSFoldLayoutImpl`,
+/// `CKKSComplexPolynomialEvaluationImpl`, `CKKSDFTImpl`, `CKKSBootstrappingImpl`, `CKKSEncapsulatedModUpImpl`,
+/// `CKKSModUpFirstFactorImpl`, `CKKSPaCoImpl`, `CKKSShipImpl`) and the cross-ring ones, the ring maps
+/// (`CKKSCIRingMapImpl`) and the fold of inputs of either ring into standard ciphertexts (`CKKSFoldLayoutImpl`,
 /// `CKKSFoldImpl<R>`). Also left out: the scalar-generic families (`CKKSEncodingImpl<F, Rg>`, which each backend
 /// implements for each scalar and each ring, and `CKKSDFTMatrixImpl<F>`, selected by its own macro) and the PaCo and
 /// SHIP coefficient encodings, which have no reference opt-in.
