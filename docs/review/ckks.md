@@ -100,7 +100,8 @@
 - **Bootstrap entry checks.** A bootstrap checks before any work what its steps would refuse, every key's coverage of the run's widths included, and each step checks its own operands and keys before it writes `res`.
 - **One key-width model.** Preset key layouts, entry checks and stage widths derive from one width model, which a change of a stage's working width updates.
 - **Presets state what was measured.** A public preset states its measured precision rounded down, a test pins its widths, consumed bits and key shapes, and an insecure preset stays out of the public list.
-- **Preset key shapes are derived.** Preset key layouts are derived from their use, each key covering its stage's widest input, and the digit cap is the only override.
+- **Preset key shapes are derived.** Preset key layouts are derived from their use through one policy, each key covering the widest ciphertext it switches, and the digit cap is the only override.
+- **Key widths are exact.** The width a plan gives a key equals its widest lookup in a run, which the bootstrap tests assert, so a route changing where a key switches updates the plan's offsets with it.
 - **Preset modulus bounds.** Every preset declares a cited modulus bound per secret, checked against the bootstrap width and every key's modulus.
 - **PaCo slot order.** The default slot order stays stable for persisted keys.
 - **Key-bundle checks are structural.** PaCo and SHIP key-bundle constructors and preflight validate structure only.

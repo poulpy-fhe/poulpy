@@ -596,9 +596,7 @@ where
     let keys = preset.keys_layout();
     let rows = |key: &dyn GGLWEInfos| key.dnum().as_usize();
     let wide_rows = keys.rotation_keys.values().map(|key| rows(key)).max().unwrap();
-    // The conjugation runs below the raised width, and SlotsToCoeffs on the
-    // narrow input: both get keys of fewer rows than those of the raised width.
-    assert!(rows(&keys.rotation_keys[&-1]) < wide_rows);
+    // SlotsToCoeffs runs on the narrow input: its keys take fewer rows than those of the raised width.
     let cyclotomic_order = 2 * preset.n() as i64;
     let (log_n, plan) = (preset.log_n(), preset.plan());
     let c2s = plan.coeffs_to_slots().galois_elements(log_n, cyclotomic_order);
