@@ -27,10 +27,10 @@ pub(super) fn ship_bottom_layout(plan: &ShipPlan, base2k: usize) -> GLWELayout {
     }
 }
 
-/// The layout of a temporary of the final combination of the product-tree roots, at width `k`.
-fn ship_root_layout<BE: Backend>(module: &Module<BE>, base2k: Base2K, k: TorusPrecision) -> GLWELayout {
+/// The layout of a leaf, a product-tree node or a temporary of the final combination of the roots, at width `k`.
+fn ship_root_layout(plan: &ShipPlan, base2k: Base2K, k: TorusPrecision) -> GLWELayout {
     GLWELayout {
-        n: (module.n() as u32).into(),
+        n: (plan.n() as u32).into(),
         base2k,
         k,
         rank: Rank(1),
@@ -55,10 +55,10 @@ where
     let base2k = params.base2k();
     ckks_ensure_operand!(
         op,
-        module.n() == plan.n(),
-        "{op}: module degree {} does not match plan degree {}",
-        module.n(),
-        plan.n()
+        plan.n() <= module.n(),
+        "{op}: plan degree {} exceeds the module degree {}",
+        plan.n(),
+        module.n()
     );
     ckks_ensure_operand!(
         op,
@@ -160,7 +160,7 @@ where
         } else {
             enc.pt0_2.as_ref().expect("complex encodings carry pt0_2")
         };
-        let mut leaf0 = module.ckks_ciphertext_alloc(b2k_t, TorusPrecision(kk as u32));
+        let mut leaf0 = module.ckks_ciphertext_alloc_from_glwe_infos(&ship_root_layout(&plan, b2k_t, TorusPrecision(kk as u32)));
         module.glwe_zero(&mut leaf0);
         leaf0.set_meta_checked(GLWEPlaintextMeta {
             scale: Scale::Log(ld),
@@ -179,6 +179,7 @@ where
     // amounts recur across slots, so their automorphism plans are built once.
     let plans = ship_mux_plans(
         module,
+        plan.n(),
         keys.index_keys()
             .iter()
             .flat_map(|ik| ik.mux_keys().iter().map(Vec::as_slice)),
@@ -188,7 +189,8 @@ where
         ckks_ensure!(pi.len() == 4 * theta, "{op}: malformed pi encodings at slot {slot}");
         for (half, half_leaves) in leaves.iter_mut().enumerate() {
             let masks = if half == 0 { ik.masks() } else { ik.masks2() };
-            let mut acc = module.ckks_ciphertext_alloc(b2k_t, TorusPrecision(kk as u32));
+            let mut acc =
+                module.ckks_ciphertext_alloc_from_glwe_infos(&ship_root_layout(&plan, b2k_t, TorusPrecision(kk as u32)));
             BE::ckks_ship_masking_accumulate(module, &mut acc, &plan, masks, pi, scratch)?;
             for group in ik.mux_keys() {
                 BE::ckks_ship_mux_rotate(module, &mut acc, group, &plans, scratch)?;
@@ -209,7 +211,11 @@ where
                     Some(y) => {
                         let k_dst = checked_mul_ct_log_budget(op, x.log_budget(), y.log_budget(), x.log_delta(), y.log_delta())?
                             + x.log_delta().min(y.log_delta());
-                        let mut dst = module.ckks_ciphertext_alloc(b2k_t, TorusPrecision(k_dst as u32));
+                        let mut dst = module.ckks_ciphertext_alloc_from_glwe_infos(&ship_root_layout(
+                            &plan,
+                            b2k_t,
+                            TorusPrecision(k_dst as u32),
+                        ));
                         module.ckks_mul_into(&mut dst, &x, &y, keys.tensor_key(), scratch)?;
                         next.push(dst);
                     }
@@ -244,9 +250,10 @@ where
     let mut roots = ship_bootstrap_roots::<BE, F, _>(OP, module, input, keys, false, scratch)?;
 
     let root = roots.pop().expect("real bootstrap has one root");
-    let (mut conj, mut scratch_rest) = scratch
-        .borrow()
-        .take_ckks_ciphertext_scratch(&ship_root_layout(module, base2k, root.k()), GLWEPlaintextMeta::default());
+    let (mut conj, mut scratch_rest) = scratch.borrow().take_ckks_ciphertext_scratch(
+        &ship_root_layout(keys.parameters().plan(), base2k, root.k()),
+        GLWEPlaintextMeta::default(),
+    );
     module.ckks_conjugate_into(&mut conj, &root, keys.conjugation_key(), &mut scratch_rest.borrow())?;
     module.ckks_add_into(output, &root, &conj, &mut scratch_rest)?;
     // `root + conj(root) = 2·Re(root)`.
@@ -278,18 +285,25 @@ where
     let v2 = roots.pop().expect("complex bootstrap has two roots");
     let v1 = roots.pop().expect("complex bootstrap has two roots");
     let k_eff = v1.k();
-    let (mut iv2, scratch_rest) = scratch
-        .borrow()
-        .take_ckks_ciphertext_scratch(&ship_root_layout(module, base2k, v2.k()), GLWEPlaintextMeta::default());
-    let (mut w_plus, scratch_rest) =
-        scratch_rest.take_ckks_ciphertext_scratch(&ship_root_layout(module, base2k, k_eff), GLWEPlaintextMeta::default());
-    let (mut w_minus, mut scratch_rest) =
-        scratch_rest.take_ckks_ciphertext_scratch(&ship_root_layout(module, base2k, k_eff), GLWEPlaintextMeta::default());
+    let (mut iv2, scratch_rest) = scratch.borrow().take_ckks_ciphertext_scratch(
+        &ship_root_layout(keys.parameters().plan(), base2k, v2.k()),
+        GLWEPlaintextMeta::default(),
+    );
+    let (mut w_plus, scratch_rest) = scratch_rest.take_ckks_ciphertext_scratch(
+        &ship_root_layout(keys.parameters().plan(), base2k, k_eff),
+        GLWEPlaintextMeta::default(),
+    );
+    let (mut w_minus, mut scratch_rest) = scratch_rest.take_ckks_ciphertext_scratch(
+        &ship_root_layout(keys.parameters().plan(), base2k, k_eff),
+        GLWEPlaintextMeta::default(),
+    );
     module.ckks_mul_i_into(&mut iv2, &v2, &mut scratch_rest.borrow())?;
     module.ckks_add_into(&mut w_plus, &v1, &iv2, &mut scratch_rest.borrow())?;
     module.ckks_sub_into(&mut w_minus, &v1, &iv2, &mut scratch_rest.borrow())?;
-    let (mut conj, mut scratch_rest) =
-        scratch_rest.take_ckks_ciphertext_scratch(&ship_root_layout(module, base2k, w_minus.k()), GLWEPlaintextMeta::default());
+    let (mut conj, mut scratch_rest) = scratch_rest.take_ckks_ciphertext_scratch(
+        &ship_root_layout(keys.parameters().plan(), base2k, w_minus.k()),
+        GLWEPlaintextMeta::default(),
+    );
     module.ckks_conjugate_into(&mut conj, &w_minus, keys.conjugation_key(), &mut scratch_rest.borrow())?;
     module.ckks_add_into(output, &w_plus, &conj, &mut scratch_rest)?;
     Ok(())

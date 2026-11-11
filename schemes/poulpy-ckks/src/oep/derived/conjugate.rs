@@ -1,9 +1,9 @@
 use crate::{
     CKKSCompositionError, CKKSCtBounds, CKKSResult, SetCKKSInfos, api::CKKSConjugateOps,
-    layouts::slots::conj_rotate_galois_element, oep::CKKSConjugateImpl,
+    layouts::slots::conj_rotate_galois_element, oep::CKKSConjugateImpl, operand_cyclotomic_order,
 };
 use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey};
-use poulpy_hal::layouts::{CyclotomicOrder, Module, ScratchArena};
+use poulpy_hal::layouts::{Module, ScratchArena, Standard};
 
 pub(crate) fn ckks_conjugate_tmp_bytes_derived<BE: CKKSConjugateImpl, C: CKKSCtBounds, K: GGLWEInfos>(
     module: &Module<BE>,
@@ -43,7 +43,8 @@ where
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     H: GetAutomorphismKey<BE>,
 {
-    let p = conj_rotate_galois_element(k, module.cyclotomic_order());
+    let order = operand_cyclotomic_order::<_, Standard>("ckks_conjugate_into", module, src.n().as_usize())?;
+    let p = conj_rotate_galois_element(k, order);
     // The switch reads `src` at `dst.k()` when `dst` is narrower.
     let switch_k = src.k().min(dst.k());
     let key = keys
@@ -68,6 +69,7 @@ where
     Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     H: GetAutomorphismKey<BE>,
 {
+    operand_cyclotomic_order::<_, Standard>("ckks_conjugate_assign", module, dst.n().as_usize())?;
     let key = keys
         .get_automorphism_key(-1, dst.k())
         .map_err(|source| CKKSCompositionError::MissingAutomorphismKey {

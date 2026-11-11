@@ -29,11 +29,11 @@ use super::helpers::{assert_precision_bits, params_for};
 
 pub fn test_exp<BE, F, E>(base: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     Module<BE>: TestContextModule<BE> + CKKSExpOps<BE>,
-    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>:
+    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, Standard>:
         GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE> + LWEInfos + poulpy_core::layouts::IntPolyInfos,
+    CKKSPlaintext<BE::OwnedBuf, BE::ZnxWord, Standard>: GLWEToBackendRef<BE> + LWEInfos + poulpy_core::layouts::IntPolyInfos,
     CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
@@ -76,7 +76,7 @@ where
     let im = vec![F::zero(); slots];
 
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
-    let mut sizing = module.ckks_ciphertext_alloc(params.base2k.into(), params.k.into());
+    let mut sizing = module.ckks_ciphertext_alloc::<Standard>(params.base2k.into(), params.k.into());
     sizing.set_meta(params.prec().meta);
     let size = plans
         .iter()
@@ -113,7 +113,7 @@ where
         assert_eq!(res.log_delta(), plan.approximation.output_log_delta(log_delta), "{label}");
         assert_eq!(input_budget - res.log_budget(), plan.consumed_bits(log_delta), "{label}");
 
-        let (re_out, _) = ckks_decrypt_decode::<BE, F, E>(&params, module, &encoder, &res, &sk, &mut scratch.borrow());
+        let (re_out, _) = ckks_decrypt_decode::<BE, F, E, Standard>(&params, module, &encoder, &res, &sk, &mut scratch.borrow());
         assert_precision_bits(&format!("exp/{label}"), &re_out, &want, options.target_bits, params.n);
     }
 }
@@ -122,7 +122,7 @@ where
 /// `max(1, floor(log2(M)) + 2)` for the largest result `M = exp(3)`: the result must not wrap.
 pub fn test_exp_headroom<BE, F, E>(base: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     Module<BE>: TestContextModule<BE> + CKKSExpOps<BE>,
     CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
     F: TestScalar,
@@ -153,7 +153,7 @@ where
     let encoder = ReferenceEncoder::<E>::new::<F>(slots).unwrap();
     let im = vec![F::zero(); slots];
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
-    let mut sizing = module.ckks_ciphertext_alloc(params.base2k.into(), k_in.into());
+    let mut sizing = module.ckks_ciphertext_alloc::<Standard>(params.base2k.into(), k_in.into());
     sizing.set_meta(params.prec().meta);
     let size = module.ckks_exp_tmp_bytes(&sizing, &sizing, &plan, &params.tsk_layout());
     let mut scratch = ScratchOwned::<BE>::alloc(size);
@@ -181,17 +181,17 @@ where
         .ckks_exp(&mut res, &input, &plan, &tsk, &mut scratch.borrow())
         .expect("ckks_exp");
     assert_eq!(res.log_budget(), headroom);
-    let (re_out, _) = ckks_decrypt_decode::<BE, F, E>(&params, module, &encoder, &res, &sk, &mut scratch.borrow());
+    let (re_out, _) = ckks_decrypt_decode::<BE, F, E, Standard>(&params, module, &encoder, &res, &sk, &mut scratch.borrow());
     assert_precision_bits("exp/headroom", &re_out, &want, options.target_bits, params.n);
 }
 
 pub fn test_exp2_expm1<BE, F, E>(base: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     Module<BE>: TestContextModule<BE> + CKKSExpOps<BE>,
-    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>:
+    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, Standard>:
         GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE> + LWEInfos + poulpy_core::layouts::IntPolyInfos,
+    CKKSPlaintext<BE::OwnedBuf, BE::ZnxWord, Standard>: GLWEToBackendRef<BE> + LWEInfos + poulpy_core::layouts::IntPolyInfos,
     CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
@@ -225,7 +225,7 @@ where
     let im = vec![F::zero(); slots];
 
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
-    let mut sizing = module.ckks_ciphertext_alloc(params.base2k.into(), params.k.into());
+    let mut sizing = module.ckks_ciphertext_alloc::<Standard>(params.base2k.into(), params.k.into());
     sizing.set_meta(params.prec().meta);
     let size = module
         .ckks_exp2_tmp_bytes(&sizing, &sizing, &exp2, &params.tsk_layout())
@@ -265,18 +265,18 @@ where
         .unwrap_or_else(|e| panic!("ckks_{label}: {e}"));
         assert_eq!(input.log_budget() - res.log_budget(), consumed, "{label}");
 
-        let (re_out, _) = ckks_decrypt_decode::<BE, F, E>(&params, module, &encoder, &res, &sk, &mut scratch.borrow());
+        let (re_out, _) = ckks_decrypt_decode::<BE, F, E, Standard>(&params, module, &encoder, &res, &sk, &mut scratch.borrow());
         assert_precision_bits(label, &re_out, &want, options.target_bits, params.n);
     }
 }
 
 pub fn test_exp10<BE, F, E>(base: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     Module<BE>: TestContextModule<BE> + CKKSExpOps<BE>,
-    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>:
+    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, Standard>:
         GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE> + LWEInfos + poulpy_core::layouts::IntPolyInfos,
+    CKKSPlaintext<BE::OwnedBuf, BE::ZnxWord, Standard>: GLWEToBackendRef<BE> + LWEInfos + poulpy_core::layouts::IntPolyInfos,
     CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
@@ -301,7 +301,7 @@ where
     x[2] = hi;
     let im = vec![F::zero(); slots];
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0xa6u8; 32]);
-    let mut sizing = module.ckks_ciphertext_alloc(params.base2k.into(), params.k.into());
+    let mut sizing = module.ckks_ciphertext_alloc::<Standard>(params.base2k.into(), params.k.into());
     sizing.set_meta(params.prec().meta);
     let size = module.ckks_exp10_tmp_bytes(&sizing, &sizing, &plan, &params.tsk_layout());
     let mut scratch = ScratchOwned::<BE>::alloc(size);
@@ -323,7 +323,7 @@ where
         .ckks_exp10(&mut res, &input, &plan, &tsk, &mut scratch.borrow())
         .expect("ckks_exp10");
     assert_eq!(input.log_budget() - res.log_budget(), consumed);
-    let (re_out, _) = ckks_decrypt_decode::<BE, F, E>(&params, module, &encoder, &res, &sk, &mut scratch.borrow());
+    let (re_out, _) = ckks_decrypt_decode::<BE, F, E, Standard>(&params, module, &encoder, &res, &sk, &mut scratch.borrow());
     let ten = F::from_f64(10.0).unwrap();
     let want: Vec<F> = x.iter().map(|&v| ten.powf(v)).collect();
     assert_precision_bits("exp10", &re_out, &want, options.target_bits, params.n);

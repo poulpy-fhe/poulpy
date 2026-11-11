@@ -6,7 +6,7 @@ use poulpy_core::{
     ScratchArenaTakeGLWELinearTransformationBabySteps,
     layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LinearTransformationPlan},
 };
-use poulpy_hal::layouts::{Module, ScratchArena};
+use poulpy_hal::layouts::{Module, Ring, ScratchArena};
 
 use crate::{
     CKKSCtBounds, CKKSResult as Result, SetCKKSInfos,
@@ -16,20 +16,21 @@ use crate::{
     oep::CKKSLinearTransformationImpl,
 };
 
-pub(crate) fn ckks_linear_transformation_eval_assign_derived<BE, Dst, P, H, L: BabyStepOperand<BE>>(
+pub(crate) fn ckks_linear_transformation_eval_assign_derived<BE, Dst, P, H, L: BabyStepOperand<BE, Rg>, Rg: Ring>(
     module: &Module<BE>,
     dst: &mut Dst,
-    babies: &LinearTransformationBabySteps<BE, L>,
+    babies: &LinearTransformationBabySteps<BE, Rg, L>,
     lt: &LinearTransformation<P>,
     keys: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    BE: CKKSLinearTransformationImpl,
-    Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
-    H: GetAutomorphismKey<BE> + poulpy_core::layouts::GetTensorKey<BE>,
+    BE: CKKSLinearTransformationImpl<Rg>,
+    Dst: GLWEToBackendMut<BE, Rg> + GLWEToBackendRef<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+    P: GLWEDiagonalProd<BE, Rg> + LtDiagonalMeta,
+    H: GetAutomorphismKey<BE, Rg> + poulpy_core::layouts::GetTensorKey<BE, Rg>,
 {
+    crate::ensure_operand_degrees("ckks_linear_transformation_eval_assign", module, [dst.n()])?;
     // The evaluation checks its own query on what the working copy leaves.
     ckks_ensure!(
         scratch.available() >= BE::scratch_aligned(module.glwe_bytes_of_from_infos(&*dst)),
@@ -43,7 +44,7 @@ where
     })
 }
 
-pub(crate) fn ckks_linear_transformation_eval_self_into_derived<BE, Dst, Src, P, H>(
+pub(crate) fn ckks_linear_transformation_eval_self_into_derived<BE, Dst, Src, P, H, Rg: Ring>(
     module: &Module<BE>,
     dst: &mut Dst,
     src: &Src,
@@ -52,12 +53,13 @@ pub(crate) fn ckks_linear_transformation_eval_self_into_derived<BE, Dst, Src, P,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    BE: CKKSLinearTransformationImpl,
-    Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-    Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-    P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
-    H: GetAutomorphismKey<BE> + poulpy_core::layouts::GetTensorKey<BE>,
+    BE: CKKSLinearTransformationImpl<Rg>,
+    Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+    Src: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+    P: GLWEDiagonalProd<BE, Rg> + LtDiagonalMeta,
+    H: GetAutomorphismKey<BE, Rg> + poulpy_core::layouts::GetTensorKey<BE, Rg>,
 {
+    crate::ensure_operand_degrees("ckks_linear_transformation_eval_self_into", module, [dst.n(), src.n()])?;
     // Only the baby cache is carved: an unprepared `lt` streams its diagonals inside the evaluation, and the nested
     // calls check their own queries on what the cache leaves.
     let plan = lt.index();
@@ -72,7 +74,7 @@ where
     BE::ckks_linear_transformation_eval_into(module, dst, src, &babies, lt, keys, &mut scratch)
 }
 
-pub(crate) fn ckks_linear_transformation_eval_self_assign_derived<BE, Dst, P, H>(
+pub(crate) fn ckks_linear_transformation_eval_self_assign_derived<BE, Dst, P, H, Rg: Ring>(
     module: &Module<BE>,
     dst: &mut Dst,
     lt: &LinearTransformation<P>,
@@ -80,11 +82,12 @@ pub(crate) fn ckks_linear_transformation_eval_self_assign_derived<BE, Dst, P, H>
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    BE: CKKSLinearTransformationImpl,
-    Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
-    H: GetAutomorphismKey<BE> + poulpy_core::layouts::GetTensorKey<BE>,
+    BE: CKKSLinearTransformationImpl<Rg>,
+    Dst: GLWEToBackendMut<BE, Rg> + GLWEToBackendRef<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+    P: GLWEDiagonalProd<BE, Rg> + LtDiagonalMeta,
+    H: GetAutomorphismKey<BE, Rg> + poulpy_core::layouts::GetTensorKey<BE, Rg>,
 {
+    crate::ensure_operand_degrees("ckks_linear_transformation_eval_self_assign", module, [dst.n()])?;
     // The evaluation checks its own query on what the working copy leaves.
     ckks_ensure!(
         scratch.available() >= BE::scratch_aligned(module.glwe_bytes_of_from_infos(&*dst)),
@@ -98,7 +101,7 @@ where
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn ckks_linear_transformation_eval_self_tmp_bytes_derived<BE, C, D, K, T>(
+pub(crate) fn ckks_linear_transformation_eval_self_tmp_bytes_derived<BE, C, D, K, T, Rg: Ring>(
     module: &Module<BE>,
     streamed: bool,
     ct: &C,
@@ -108,7 +111,7 @@ pub(crate) fn ckks_linear_transformation_eval_self_tmp_bytes_derived<BE, C, D, K
     key: &K,
 ) -> usize
 where
-    BE: CKKSLinearTransformationImpl,
+    BE: CKKSLinearTransformationImpl<Rg>,
     C: CKKSCtBounds,
     D: GLWEInfos,
     K: GGLWEInfos,

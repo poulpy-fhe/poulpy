@@ -47,7 +47,7 @@ pub trait CKKSCIRingMapReference<BE: Backend> {
         Self: ModuleN + GLWECIEmbed<BE> + GLWEKeyswitch<BE>,
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         D: Data,
-        GLWE<D, BE::ZnxWord>: GLWEToBackendRef<BE>,
+        GLWE<D, BE::ZnxWord, ConjugateInvariant>: GLWEToBackendRef<BE, ConjugateInvariant>,
         K: Data,
         GLWECIEmbedKeyPrepared<K, BE>: GGLWEPreparedToBackendRef<BE>,
     {
@@ -90,7 +90,7 @@ pub trait CKKSCIRingMapReference<BE: Backend> {
     where
         Self: ModuleN + GLWEBytesOf<BE> + GLWEKeyswitch<BE> + GLWECITrace<BE>,
         D: Data,
-        GLWE<D, BE::ZnxWord>: GLWEToBackendMut<BE>,
+        GLWE<D, BE::ZnxWord, ConjugateInvariant>: GLWEToBackendMut<BE, ConjugateInvariant>,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: Data,
         GLWECITraceKeyPrepared<K, BE>: GGLWEPreparedToBackendRef<BE>,
@@ -124,7 +124,7 @@ where
     M: ModuleN + GLWECIEmbed<BE> + ?Sized,
     Dst: GLWEToBackendMut<BE> + GLWEInfos + SetCKKSInfos,
     D: Data,
-    GLWE<D, BE::ZnxWord>: GLWEToBackendRef<BE>,
+    GLWE<D, BE::ZnxWord, ConjugateInvariant>: GLWEToBackendRef<BE, ConjugateInvariant>,
 {
     check_embed(op, module, dst, src)?;
     embed(module, dst, src);
@@ -143,7 +143,7 @@ where
     BE: Backend,
     M: ModuleN + GLWECITrace<BE> + ?Sized,
     D: Data,
-    GLWE<D, BE::ZnxWord>: GLWEToBackendMut<BE>,
+    GLWE<D, BE::ZnxWord, ConjugateInvariant>: GLWEToBackendMut<BE, ConjugateInvariant>,
     Src: GLWEToBackendRef<BE> + GLWEInfos + CKKSInfos,
 {
     check_trace(op, module, dst, src)?;
@@ -162,7 +162,7 @@ where
     M: GLWECIEmbed<BE> + ?Sized,
     Dst: GLWEToBackendMut<BE> + GLWEInfos + SetCKKSInfos,
     D: Data,
-    GLWE<D, BE::ZnxWord>: GLWEToBackendRef<BE>,
+    GLWE<D, BE::ZnxWord, ConjugateInvariant>: GLWEToBackendRef<BE, ConjugateInvariant>,
 {
     dst.set_meta(GLWEPlaintextMeta {
         slots: SlotsKind::Real,
@@ -182,7 +182,7 @@ fn trace<BE, M, D, Src>(
     BE: Backend,
     M: GLWECITrace<BE> + ?Sized,
     D: Data,
-    GLWE<D, BE::ZnxWord>: GLWEToBackendMut<BE>,
+    GLWE<D, BE::ZnxWord, ConjugateInvariant>: GLWEToBackendMut<BE, ConjugateInvariant>,
     Src: GLWEToBackendRef<BE> + GLWEInfos + CKKSInfos,
 {
     dst.set_meta(GLWEPlaintextMeta {

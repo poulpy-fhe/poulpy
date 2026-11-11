@@ -1,6 +1,6 @@
 use crate::layouts::{
-    Backend, MatZnxBackendRef, PrepareHint, ScratchArena, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef,
-    VecZnxDftToBackendMut, VmpPMatBackendMut, VmpPMatBackendRef, VmpPMatOwned,
+    Backend, MatZnxBackendRef, PrepareHint, Ring, ScratchArena, Standard, VecZnxBackendRef, VecZnxDftBackendMut,
+    VecZnxDftBackendRef, VecZnxDftToBackendMut, VmpPMatBackendMut, VmpPMatBackendRef, VmpPMatOwned,
 };
 
 /// Allocates a [`VmpPMat`](crate::layouts::VmpPMat).
@@ -15,7 +15,7 @@ use crate::layouts::{
 /// ```
 pub trait VmpPMatAlloc<B: Backend> {
     /// Returns an owned degree-`n` [`VmpPMat`](crate::layouts::VmpPMat) of the given dimensions under `hint`.
-    fn vmp_pmat_alloc(
+    fn vmp_pmat_alloc<Rg: Ring>(
         &self,
         n: usize,
         rows: usize,
@@ -23,7 +23,7 @@ pub trait VmpPMatAlloc<B: Backend> {
         cols_out: usize,
         size: usize,
         hint: PrepareHint,
-    ) -> VmpPMatOwned<B>;
+    ) -> VmpPMatOwned<B, Rg>;
 }
 
 /// Returns the byte size of a [`VmpPMat`](crate::layouts::VmpPMat).
@@ -68,12 +68,12 @@ pub trait VmpPMatPrepareTmpBytes {
 /// ensures    every prepared matrix entry reads the corresponding source entry
 /// test       test_vmp_apply_dft_to_dft
 /// ```
-pub trait VmpPMatPrepare<B: Backend> {
+pub trait VmpPMatPrepare<B: Backend, Rg: Ring = Standard> {
     /// Writes every entry of `mat` into `pmat` in the prepared representation.
     fn vmp_pmat_prepare(
         &self,
-        pmat: &mut VmpPMatBackendMut<'_, B>,
-        mat: &MatZnxBackendRef<'_, B>,
+        pmat: &mut VmpPMatBackendMut<'_, B, Rg>,
+        mat: &MatZnxBackendRef<'_, B, Rg>,
         scratch: &mut ScratchArena<'_, B>,
     );
 }
@@ -116,16 +116,16 @@ pub trait VmpApplyDftTmpBytes {
 /// override   allowed, with vmp_apply_dft_tmp_bytes
 /// test       test_vmp_apply_dft, test_vmp_apply_dft_derived
 /// ```
-pub trait VmpApplyDft<B: Backend> {
+pub trait VmpApplyDft<B: Backend, Rg: Ring = Standard> {
     /// Writes `a * pmat` into `res`.
     fn vmp_apply_dft<R>(
         &self,
         res: &mut R,
-        a: &VecZnxBackendRef<'_, B>,
-        pmat: &VmpPMatBackendRef<'_, B>,
+        a: &VecZnxBackendRef<'_, B, Rg>,
+        pmat: &VmpPMatBackendRef<'_, B, Rg>,
         scratch: &mut ScratchArena<'_, B>,
     ) where
-        R: VecZnxDftToBackendMut<B>;
+        R: VecZnxDftToBackendMut<B, Rg>;
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -188,13 +188,13 @@ pub trait VmpApplyDftToDftAddTmpBytes {
 /// ensures    limb i of a pairs with matrix row i; result limb j reads matrix limb j + limb_offset; limbs j >= max(pmat.size() - limb_offset, 0) are zero
 /// test       test_vmp_apply_dft_to_dft
 /// ```
-pub trait VmpApplyDftToDft<B: Backend> {
+pub trait VmpApplyDftToDft<B: Backend, Rg: Ring = Standard> {
     /// Writes `a * pmat` into `res`, reading the matrix limbs from `limb_offset` on.
     fn vmp_apply_dft_to_dft<'r>(
         &self,
-        res: &mut VecZnxDftBackendMut<'r, B>,
-        a: &VecZnxDftBackendRef<'_, B>,
-        pmat: &VmpPMatBackendRef<'_, B>,
+        res: &mut VecZnxDftBackendMut<'r, B, Rg>,
+        a: &VecZnxDftBackendRef<'_, B, Rg>,
+        pmat: &VmpPMatBackendRef<'_, B, Rg>,
         limb_offset: usize,
         scratch: &mut ScratchArena<'_, B>,
     );
@@ -214,13 +214,13 @@ pub trait VmpApplyDftToDft<B: Backend> {
 /// override   allowed, with vmp_apply_dft_to_dft_add_tmp_bytes
 /// test       test_vmp_apply_dft_to_dft_add, test_vmp_apply_dft_to_dft_add_derived
 /// ```
-pub trait VmpApplyDftToDftAdd<B: Backend> {
+pub trait VmpApplyDftToDftAdd<B: Backend, Rg: Ring = Standard> {
     /// Adds `a * pmat` to `res`, reading the matrix limbs from `limb_offset` on.
     fn vmp_apply_dft_to_dft_add<'r>(
         &self,
-        res: &mut VecZnxDftBackendMut<'r, B>,
-        a: &VecZnxDftBackendRef<'_, B>,
-        pmat: &VmpPMatBackendRef<'_, B>,
+        res: &mut VecZnxDftBackendMut<'r, B, Rg>,
+        a: &VecZnxDftBackendRef<'_, B, Rg>,
+        pmat: &VmpPMatBackendRef<'_, B, Rg>,
         limb_offset: usize,
         scratch: &mut ScratchArena<'_, B>,
     );
@@ -237,12 +237,12 @@ pub trait VmpApplyDftToDftAdd<B: Backend> {
 /// ensures    the selected rows and leading res.size() limbs retain their source values
 /// test       test_vmp_extract_selected_rows
 /// ```
-pub trait VmpExtractSelectedRows<B: Backend> {
+pub trait VmpExtractSelectedRows<B: Backend, Rg: Ring = Standard> {
     /// Writes row `first_row + r * row_step` of `a` into row `r` of `res`.
     fn vmp_extract_selected_rows(
         &self,
-        res: &mut VmpPMatBackendMut<'_, B>,
-        a: &VmpPMatBackendRef<'_, B>,
+        res: &mut VmpPMatBackendMut<'_, B, Rg>,
+        a: &VmpPMatBackendRef<'_, B, Rg>,
         first_row: usize,
         row_step: usize,
     );
@@ -259,7 +259,7 @@ pub trait VmpExtractSelectedRows<B: Backend> {
 /// ensures    every prepared matrix entry reads as zero
 /// test       test_vmp_zero
 /// ```
-pub trait VmpZero<B: Backend> {
+pub trait VmpZero<B: Backend, Rg: Ring = Standard> {
     /// Writes zero into every entry of `res`.
-    fn vmp_zero(&self, res: &mut VmpPMatBackendMut<'_, B>);
+    fn vmp_zero(&self, res: &mut VmpPMatBackendMut<'_, B, Rg>);
 }

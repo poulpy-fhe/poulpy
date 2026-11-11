@@ -5,7 +5,7 @@ use criterion::{Bencher, measurement::Measurement};
 
 use poulpy_hal::{
     api::{ModuleNew, VecZnxAlloc, VecZnxNegate, VecZnxNegateAssign},
-    layouts::{Backend, Module},
+    layouts::{Backend, Module, Standard},
 };
 
 use crate::hal::helpers::{random_host_vec_znx, upload_host_vec_znx, vec_znx_backend_mut, vec_znx_backend_ref};
@@ -24,8 +24,8 @@ where
     let mut b = module.vec_znx_alloc(module.n(), sweep.cols, sweep.size);
 
     bencher.iter(|| {
-        let a = vec_znx_backend_ref::<B>(&a);
-        let mut b = vec_znx_backend_mut::<B>(&mut b);
+        let a = vec_znx_backend_ref::<B, Standard>(&a);
+        let mut b = vec_znx_backend_mut::<B, Standard>(&mut b);
         for i in 0..sweep.cols {
             module.vec_znx_negate(&mut b, i, &a, i);
         }
@@ -48,7 +48,7 @@ pub fn runner_vec_znx_negate_assign<B: Backend<ZnxWord = i64>, M: Measurement>(
     let mut a = upload_host_vec_znx::<B>(&a);
 
     bencher.iter(|| {
-        let mut a = vec_znx_backend_mut::<B>(&mut a);
+        let mut a = vec_znx_backend_mut::<B, Standard>(&mut a);
         for i in 0..sweep.cols {
             module.vec_znx_negate_assign(&mut a, i);
         }

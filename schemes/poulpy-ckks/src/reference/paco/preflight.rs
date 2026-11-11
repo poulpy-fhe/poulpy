@@ -254,7 +254,11 @@ where
         .max(BE::ckks_paco_coeff_encodings_tmp_bytes::<F, _>(module, context, &structured)?);
 
     // The shifted input, the accumulator and the temporary coexist through the whole branch.
-    let work = BE::scratch_aligned(module.glwe_bytes_of_from_infos(&branch_work_layout(module, canonical.base2k(), working_k)?));
+    let work = BE::scratch_aligned(module.glwe_bytes_of_from_infos(&branch_work_layout(
+        context.plan().n(),
+        canonical.base2k(),
+        working_k,
+    )?));
     let shifted = module
         .glwe_bytes_of_from_infos(input)
         .max(module.glwe_bytes_of_from_infos(&structured));

@@ -21,14 +21,17 @@
 //! their arithmetic interpretation.  Use [`bytemuck::cast_slice`] /
 //! [`bytemuck::cast_slice_mut`] to obtain the appropriate `&[u32]` or
 //! `&[u64]` view.
-use poulpy_hal::layouts::Module;
+use poulpy_hal::layouts::{Module, Ring};
 
 use bytemuck::{cast_slice, cast_slice_mut};
 
 use crate::{
     kernels::ntt4x30::{
-        NttCFromB, NttDFTExecute, NttFromZnx64, NttMulBbc, NttZero, ntt::NttTable, primes::Primes30, types::Q120bScalar,
-        vec_znx_dft::NttModuleHandle,
+        NttCFromB, NttDFTExecute, NttFromZnx64, NttMulBbc, NttZero,
+        ntt::NttTable,
+        primes::Primes30,
+        types::Q120bScalar,
+        vec_znx_dft::{NttMetaHandle, NttModuleHandle},
     },
     layouts::{
         Backend, HostDataMut, HostDataRef, ScalarZnxBackendRef, SvpPPolBackendMut, SvpPPolBackendRef, VecZnxDftBackendMut,
@@ -50,18 +53,15 @@ use crate::{
 /// `res` must be a [`SvpPPol`](poulpy_hal::layouts::SvpPPol) with `DftWord = Q120bScalar`.
 /// A temporary heap buffer of `4 * n` u64 values is allocated internally
 /// (this is a setup/key-preparation function, not a hot path).
-pub fn ntt4x30_svp_ppol_prepare_portable<'r, 'a, BE>(
+pub fn ntt4x30_svp_ppol_prepare_portable<'r, 'a, BE, Rg: Ring>(
     module: &Module<BE>,
-    res: &mut SvpPPolBackendMut<'r, BE>,
+    res: &mut SvpPPolBackendMut<'r, BE, Rg>,
     res_col: usize,
-    a: &ScalarZnxBackendRef<'a, BE>,
+    a: &ScalarZnxBackendRef<'a, BE, Rg>,
     a_col: usize,
 ) where
-    Module<BE>: NttModuleHandle,
-    BE: Backend<DftWord = Q120bScalar, ZnxWord = i64>
-        + NttDFTExecute<NttTable<Primes30, <Module<BE> as crate::kernels::ntt4x30::vec_znx_dft::NttModuleHandle>::Ring>>
-        + NttFromZnx64
-        + NttCFromB,
+    Module<BE>: NttModuleHandle<Rg>,
+    BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttDFTExecute<NttTable<Primes30, Rg>> + NttFromZnx64 + NttCFromB,
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,
 {
@@ -94,16 +94,16 @@ pub fn ntt4x30_svp_ppol_prepare_portable<'r, 'a, BE>(
 /// `a`: prepared [`SvpPPol`](poulpy_hal::layouts::SvpPPol) in q120c format.
 /// `b`: input [`VecZnxDft`](poulpy_hal::layouts::VecZnxDft) in q120b format.
 /// `res`: output [`VecZnxDft`](poulpy_hal::layouts::VecZnxDft) in q120b format.
-pub fn ntt4x30_svp_apply_dft_to_dft_portable<'r, 'a, 'b, BE>(
+pub fn ntt4x30_svp_apply_dft_to_dft_portable<'r, 'a, 'b, BE, Rg: Ring>(
     module: &Module<BE>,
-    res: &mut VecZnxDftBackendMut<'r, BE>,
+    res: &mut VecZnxDftBackendMut<'r, BE, Rg>,
     res_col: usize,
-    a: &SvpPPolBackendRef<'a, BE>,
+    a: &SvpPPolBackendRef<'a, BE, Rg>,
     a_col: usize,
-    b: &VecZnxDftBackendRef<'b, BE>,
+    b: &VecZnxDftBackendRef<'b, BE, Rg>,
     b_col: usize,
 ) where
-    Module<BE>: NttModuleHandle,
+    Module<BE>: NttModuleHandle<Rg>,
     BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttMulBbc + NttZero,
     BE::BufMut<'r>: HostDataMut,
     for<'x> BE::BufRef<'x>: HostDataRef,
@@ -151,14 +151,14 @@ pub fn ntt4x30_svp_apply_dft_to_dft_portable<'r, 'a, 'b, BE>(
 ///
 /// Processes each q120b coefficient by copying it (since [`Q120bScalar`] is
 /// `Copy`) before overwriting to avoid aliasing conflicts.
-pub fn ntt4x30_svp_apply_dft_to_dft_assign_portable<'r, 'a, BE>(
+pub fn ntt4x30_svp_apply_dft_to_dft_assign_portable<'r, 'a, BE, Rg: Ring>(
     module: &Module<BE>,
-    res: &mut VecZnxDftBackendMut<'r, BE>,
+    res: &mut VecZnxDftBackendMut<'r, BE, Rg>,
     res_col: usize,
-    a: &SvpPPolBackendRef<'a, BE>,
+    a: &SvpPPolBackendRef<'a, BE, Rg>,
     a_col: usize,
 ) where
-    Module<BE>: NttModuleHandle,
+    Module<BE>: NttModuleHandle<Rg>,
     BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttMulBbc,
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,

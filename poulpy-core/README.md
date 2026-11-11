@@ -65,11 +65,11 @@ composition parity using controlled sampled inputs.
 
 This crate defines three categories of layouts for `LWE`, `GLWE`, `GGLWE`, and `GGSW` objects (and their derivatives), all instantiated using **`poulpy-hal`** layouts. Each serves a distinct purpose:
 
-* **Standard** → Front-end, serializable layouts. These are backend-agnostic and act as inputs/outputs of computations (e.g., `GLWEAutomorphismKey`).
-* **Compressed** → Compact serializable variants of the standard layouts. They are not usable for computation but significantly reduce storage size (e.g., `GLWEAutomorphismKeyCompressed`).
+* **Unprepared** → Front-end, serializable layouts. These are backend-agnostic and act as inputs/outputs of computations (e.g., `GLWEAutomorphismKey`).
+* **Compressed** → Compact serializable variants of the unprepared layouts. They are not usable for computation but significantly reduce storage size (e.g., `GLWEAutomorphismKeyCompressed`).
 * **Prepared** → Backend-optimized, opaque layouts prepared for backend-specific computation. These store preprocessed data for efficient execution on a specific backend (e.g., `GLWEAutomorphismKeyPrepared`).
 
-Host-resident **standard** and **compressed** layouts provide `WriterTo` and `ReaderFrom` implementations where their data supports host access, allowing serialization with `Write` and `Read`:
+Host-resident **unprepared** and **compressed** layouts provide `WriterTo` and `ReaderFrom` implementations where their data supports host access, allowing serialization with `Write` and `Read`. A stream carries its ring, and a reader of the other ring refuses it:
 
 ```rust
 pub trait WriterTo {
@@ -88,7 +88,7 @@ flowchart TD
     A[GLWEAutomorphismKeyCompressed]-->|decompress|B[GLWEAutomorphismKey]-->|prepare|C[GLWEAutomorphismKeyPrepared]
 ```
 
-Use the module factories to allocate standard and prepared objects. Given a
+Use the module factories to allocate unprepared and prepared objects. Given a
 compressed automorphism key and `module: &Module<BE>`:
 
 ```rust,ignore
@@ -102,8 +102,34 @@ module.glwe_automorphism_key_prepare(&mut prepared, &key, &mut scratch.borrow())
 ```
 
 The decompression and preparation traits come from `poulpy_core::api`, the
-standard allocation traits from `poulpy_core::layouts`, and scratch allocation
+unprepared allocation traits from `poulpy_core::layouts`, and scratch allocation
 and borrowing traits from `poulpy_hal::api`.
+
+### Rings
+
+Every ciphertext, key, plaintext and secret layout takes its ring as its last type parameter, `Rg: Ring = Standard`
+(`GLWE<D, W, Rg>`, `GLWEPrepared<D, BE, Rg>`), except the keys only standard-only and cross-ring operations
+produce and consume (the LWE switching key, the keys between LWE and GLWE, the conjugate-invariant keys), which
+are standard-ring keys without a ring parameter. `Standard` is `Z[X]/(X^n + 1)`;
+`ConjugateInvariant` is the ring of `n` coefficients fixed by `X -> X^-1` in
+`Z[X]/(X^(2n) + 1)`, of cyclotomic order `4n`. One module serves both rings and an
+operation takes operands of one ring. A type or trait path that leaves the ring out names
+`Standard`; a call taking the ring as a method generic (allocation, carving) names it, on either
+ring, unless the type of its result fixes it. The ring enters a call as follows, shown on the
+conjugate-invariant ring with `module: Module<BE>`:
+
+| Call | Ring | Example |
+|------|------|---------|
+| Operations | the trait's (`GLWEAdd<BE, Rg>`), inferred from the operands | `module.glwe_add_into(&mut res, &a, &b)` |
+| Unprepared allocation and scratch carving | the last method generic | `module.glwe_alloc::<ConjugateInvariant>(base2k, k, rank)`, `module.glwe_alloc_from_infos::<_, ConjugateInvariant>(&infos)`, `scratch.borrow().take_glwe_scratch::<_, ConjugateInvariant>(&infos)` |
+| Prepared factories | the trait's (`GLWEPreparedFactory<BE, Rg>`) | `<Module<BE> as GLWEPreparedFactory<BE, ConjugateInvariant>>::glwe_prepared_alloc_from_infos(&module, &infos)` |
+| Queries of ringed traits (`*_tmp_bytes`, `*_galois_elements`) | the trait's | `<Module<BE> as GLWEEncryptSk<BE, ConjugateInvariant>>::glwe_encrypt_sk_tmp_bytes(&module, &infos)` |
+
+Generic code bounding `Module<BE>` by one ring's trait (`Module<BE>: GLWEEncryptSk<BE, Rg>`)
+calls these queries and factories as methods. On a concrete module both rings' impls
+apply, so the call names the trait as above, or a typed destination fixes the ring of
+a factory (`let ct: GLWEPrepared<_, BE, ConjugateInvariant> = module.glwe_prepared_alloc_from_infos(&infos);`).
+Byte counts of unprepared layouts (`GLWEBytesOf`) take no ring.
 
 ---
 
@@ -157,8 +183,9 @@ Concrete backend crates instantiate the noise/sampling suite through
 `core_backend_test_suite!` and deterministic parity through
 `core_parity_test_suite!`. Encryption parity uses
 `core_encryption_parity_test_suite!`. Both parity macros accept explicit
-`backend_ref` and `backend_test` types. Core also supplies optional
-[controlled-sampling support](src/test_suite/parity/controlled_sampling.rs) for
+`backend_ref` and `backend_test` types, and `core_parity_test_suite!` runs on
+the conjugate-invariant ring with `ring = ::poulpy_hal::layouts::ConjugateInvariant`.
+Core also supplies optional [controlled-sampling support](src/test_suite/parity/controlled_sampling.rs) for
 comparisons between backends with different random streams. Callers supply any
 sampling adapters needed by their selected pair.
 The [backend guide](docs/core-contracts.md) describes the implementation and

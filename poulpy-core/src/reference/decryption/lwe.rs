@@ -3,7 +3,7 @@ use poulpy_hal::{
         ScratchArenaTakeVecZnxBig, VecZnxBigAddSmallAssign, VecZnxBigBytesOf, VecZnxBigInnerSum, VecZnxBigNormalize,
         VecZnxBigNormalizeTmpBytes, VecZnxBigScalarProduct,
     },
-    layouts::{Backend, ScratchArena, VecZnxBigToBackendRef},
+    layouts::{Backend, Ring, ScratchArena, VecZnxBigToBackendRef},
 };
 
 use crate::layouts::{LWEInfos, LWEPlaintextToBackendMut, LWESecretToBackendRef, LWEToBackendRef, SetBase2k};
@@ -19,17 +19,22 @@ where
         + 2 * (BE::SCRATCH_ALIGN - 1)
 }
 
-pub fn lwe_decrypt_reference<M, BE, R, P, S>(module: &M, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'_, BE>)
-where
-    M: VecZnxBigScalarProduct<BE>
-        + VecZnxBigInnerSum<BE>
-        + VecZnxBigAddSmallAssign<BE>
-        + VecZnxBigNormalize<BE>
+pub fn lwe_decrypt_reference<M, BE, R, P, S, Rg: Ring>(
+    module: &M,
+    res: &R,
+    pt: &mut P,
+    sk: &S,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
+    M: VecZnxBigScalarProduct<BE, Rg>
+        + VecZnxBigInnerSum<BE, Rg>
+        + VecZnxBigAddSmallAssign<BE, Rg>
+        + VecZnxBigNormalize<BE, Rg>
         + VecZnxBigBytesOf
         + VecZnxBigNormalizeTmpBytes,
-    R: LWEToBackendRef<BE> + LWEInfos,
-    P: LWEPlaintextToBackendMut<BE> + SetBase2k + LWEInfos,
-    S: LWESecretToBackendRef<BE> + LWEInfos,
+    R: LWEToBackendRef<BE, Rg> + LWEInfos,
+    P: LWEPlaintextToBackendMut<BE, Rg> + SetBase2k + LWEInfos,
+    S: LWESecretToBackendRef<BE, Rg> + LWEInfos,
     BE: Backend,
 {
     let res = res.to_backend_ref();
@@ -41,9 +46,7 @@ where
     );
     assert!(
         scratch.available() >= lwe_decrypt_tmp_bytes_reference::<M, BE, _>(module, &res),
-        "scratch.available(): {} < LWEDecrypt::lwe_decrypt_tmp_bytes: {}",
-        scratch.available(),
-        lwe_decrypt_tmp_bytes_reference::<M, BE, _>(module, &res)
+        "scratch.available() < LWEDecrypt::lwe_decrypt_tmp_bytes"
     );
     let tmp_bytes: usize = lwe_decrypt_tmp_bytes_reference::<M, BE, _>(module, &res);
     {

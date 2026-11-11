@@ -25,7 +25,7 @@ use poulpy_core::{
 use poulpy_cpu_oracle::FFT64Oracle;
 use poulpy_hal::{
     api::ScratchOwnedBorrow,
-    layouts::{Backend, CnvPVecL, HostBytesBackend, Module, ScratchArena, ScratchOwned, galois_element},
+    layouts::{Backend, CnvPVecL, HostBytesBackend, Module, ScratchArena, ScratchOwned, Standard, galois_element},
     source::Source,
 };
 use std::{
@@ -245,7 +245,9 @@ unsafe impl poulpy_ckks::oep::CKKSPaCoImpl for OverrideBackend {
         K: GGLWEInfos,
     {
         SLOT_TRACE_EXTRA.load(Relaxed)
-            + poulpy_core::GLWEAutomorphism::glwe_automorphism_tmp_bytes(module, ct_infos, ct_infos, key_infos)
+            + <_ as poulpy_core::GLWEAutomorphism<_, Standard>>::glwe_automorphism_tmp_bytes(
+                module, ct_infos, ct_infos, key_infos,
+            )
     }
 
     fn ckks_slot_trace_assign<Dst, H>(
@@ -260,16 +262,16 @@ unsafe impl poulpy_ckks::oep::CKKSPaCoImpl for OverrideBackend {
         Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + poulpy_ckks::SetCKKSInfos,
         H: GetAutomorphismKey<Self>,
     {
-        use poulpy_hal::layouts::CyclotomicOrder;
         SLOT_TRACE_CALLS.fetch_add(1, Relaxed);
-        if !(a.is_power_of_two() && b.is_power_of_two() && b <= a && a <= module.n() / 2) {
+        let n = ct.n().as_usize();
+        if !(a.is_power_of_two() && b.is_power_of_two() && b <= a && a <= n / 2) {
             return Err(anyhow::anyhow!("invalid PaCo fold").into());
         }
         with_marked_bytes(SLOT_TRACE_EXTRA.load(Relaxed), scratch, |rest| {
             for level in 0..(a / b).trailing_zeros() {
                 let rotation = (a >> (level + 1)) as i64;
                 let key = keys
-                    .get_automorphism_key(galois_element(rotation, module.cyclotomic_order()), ct.k())
+                    .get_automorphism_key(galois_element(rotation, 2 * n as i64), ct.k())
                     .map_err(|source| poulpy_ckks::CKKSCompositionError::MissingAutomorphismKey {
                         op: "ckks_slot_trace_assign",
                         rotation,
@@ -418,7 +420,7 @@ fn paco_drivers_enter_the_selected_coefficient_encoding() {
     let module_test = Module::<OverrideBackend>::new(params.n as u64);
     let host = Module::<HostBytesBackend>::new(params.n as u64);
     let encoder_full = ReferenceEncoder::<crate::ckks_encoding::EncodingFFTTable<f64>>::new::<f64>(params.n / 2).unwrap();
-    let mut scratch = alloc_scratch(&params, &module_ref);
+    let mut scratch = alloc_scratch::<_, Standard>(&params, &module_ref);
 
     let (sk_dense_raw, sk_dense) = gen_sk_with_raw(&params, &module_ref, &host, [21u8; 32]);
     let spec = PaCoSecretSpec::sample(&plan, &mut Source::new([22u8; 32])).unwrap();
@@ -500,11 +502,11 @@ fn paco_drivers_enter_the_selected_coefficient_encoding() {
             }
         })
         .unwrap();
-        snapshot::<FFT64Oracle, _>(&out)
+        snapshot::<FFT64Oracle, _, Standard>(&out)
     };
     let (want_encapsulated, want_direct) = (oracle(false), oracle(true));
 
-    let mut setup = alloc_scratch(&params, &module_test);
+    let mut setup = alloc_scratch::<_, Standard>(&params, &module_test);
     let keys = keyset.prepare(&plan, &module_test, &mut setup.borrow()).unwrap();
     let ctx = PaCoContext::<OverrideBackend, f64>::compile(&module_test, params.base2k.into(), plan.clone(), &mut setup.borrow())
         .unwrap();
@@ -575,7 +577,7 @@ fn paco_drivers_enter_the_selected_coefficient_encoding() {
     ];
     for (label, want, bytes, run) in drivers.iter_mut() {
         let mut out = dirty();
-        let unchanged = snapshot::<OverrideBackend, _>(&out);
+        let unchanged = snapshot::<OverrideBackend, _, Standard>(&out);
         let (result, calls) = count(hooks, || with_scratch::<OverrideBackend, _>(*bytes - 1, |s| run(&mut out, s)));
         assert_ckks_internal(
             &format!("{label}: one byte short"),
@@ -587,7 +589,7 @@ fn paco_drivers_enter_the_selected_coefficient_encoding() {
         );
         assert_eq!(calls, [0, 0], "{label}: a refused arena entered a hook");
         assert_eq!(
-            snapshot::<OverrideBackend, _>(&out),
+            snapshot::<OverrideBackend, _, Standard>(&out),
             unchanged,
             "{label}: a refused arena wrote the output"
         );
@@ -595,7 +597,7 @@ fn paco_drivers_enter_the_selected_coefficient_encoding() {
         result.unwrap();
         assert_eq!(calls, [kappa, kappa], "{label}: hook calls");
         assert_eq!(
-            &snapshot::<OverrideBackend, _>(&out),
+            &snapshot::<OverrideBackend, _, Standard>(&out),
             *want,
             "{label}: output differs from the oracle's"
         );
@@ -621,7 +623,7 @@ fn paco_drivers_enter_the_selected_coefficient_encoding() {
     ];
     for (label, run) in refusals.iter_mut() {
         let mut out = dirty();
-        let unchanged = snapshot::<OverrideBackend, _>(&out);
+        let unchanged = snapshot::<OverrideBackend, _, Standard>(&out);
         let (result, calls) = count(hooks, || with_scratch::<OverrideBackend, _>(0, |s| run(&mut out, s)));
         assert_ckks_error(
             &format!("{label}: wide input"),
@@ -633,7 +635,7 @@ fn paco_drivers_enter_the_selected_coefficient_encoding() {
         );
         assert_eq!(calls, [0, 0], "{label}: a refused input entered a hook");
         assert_eq!(
-            snapshot::<OverrideBackend, _>(&out),
+            snapshot::<OverrideBackend, _, Standard>(&out),
             unchanged,
             "{label}: a refused input wrote the output"
         );
@@ -651,7 +653,7 @@ fn paco_drivers_enter_the_selected_coefficient_encoding() {
     ];
     for (label, bytes, run) in refusals.iter_mut() {
         let mut out = dirty();
-        let unchanged = snapshot::<OverrideBackend, _>(&out);
+        let unchanged = snapshot::<OverrideBackend, _, Standard>(&out);
         let (result, calls) = count(hooks, || with_scratch::<OverrideBackend, _>(*bytes, |s| run(&mut out, s)));
         assert_ckks_internal(
             &format!("{label}: short worker"),
@@ -660,7 +662,7 @@ fn paco_drivers_enter_the_selected_coefficient_encoding() {
         );
         assert_eq!(calls, [0, 0], "{label}: a refused worker entered a hook");
         assert_eq!(
-            snapshot::<OverrideBackend, _>(&out),
+            snapshot::<OverrideBackend, _, Standard>(&out),
             unchanged,
             "{label}: a refused worker wrote the output"
         );
@@ -706,7 +708,7 @@ fn ship_drivers_enter_the_selected_masking_and_mux() {
     let module_ref = Module::<FFT64Oracle>::new(n as u64);
     let module_test = Module::<OverrideBackend>::new(n as u64);
     let host = Module::<HostBytesBackend>::new(n as u64);
-    let mut scratch = alloc_scratch(&big, &module_test);
+    let mut scratch = alloc_scratch::<_, Standard>(&big, &module_test);
     let (sk_raw, sk) = gen_sk_with_raw(&big, &module_test, &host, [0u8; 32]);
     let mut sk_host = host.glwe_secret_alloc_from_infos(&big.glwe_layout());
     sk_raw.transfer_into(&mut sk_host);
@@ -749,7 +751,7 @@ fn ship_drivers_enter_the_selected_masking_and_mux() {
             })
             .collect();
         let bottom = ckks_spec(n, base2k, base2k, 0);
-        let mut host_pt = host.ckks_plaintext_alloc_from_slots(host.ckks_max_slots(), base2k.into(), bottom.k());
+        let mut host_pt = host.ckks_plaintext_alloc_from_slots(host.ckks_max_slots::<Standard>(), base2k.into(), bottom.k());
         host_pt.set_meta(bottom.meta());
         host_pt.encode_host_floats(&coeffs).unwrap();
         let ct0 = ckks_encrypt_pt(&big, &module_test, &sk, base2k, &host_pt, &mut scratch.borrow());
@@ -766,7 +768,7 @@ fn ship_drivers_enter_the_selected_masking_and_mux() {
             };
         }
         let keys_ref = key_set
-            .prepare(&module_ref, &mut alloc_scratch(&big, &module_ref).borrow())
+            .prepare(&module_ref, &mut alloc_scratch::<_, Standard>(&big, &module_ref).borrow())
             .unwrap();
         let mut want = alloc_ct(&big, &module_ref, kk);
         let bytes = CKKSShipOps::<FFT64Oracle, f64>::ckks_ship_bootstrap_tmp_bytes(&module_ref, &want, &ct0, &keys_ref).unwrap();
@@ -775,7 +777,7 @@ fn ship_drivers_enter_the_selected_masking_and_mux() {
         let keys = key_set.prepare(&module_test, &mut scratch.borrow()).unwrap();
         let mut out = alloc_ct(&big, &module_test, kk);
         module_test.glwe_fill_from_source(&mut out, &mut Source::new([5u8; 32]));
-        let unchanged = snapshot::<OverrideBackend, _>(&out);
+        let unchanged = snapshot::<OverrideBackend, _, Standard>(&out);
         for (label, extra, default) in [
             ("masking", &SHIP_MASKING_EXTRA, SHIP_MASKING_DEFAULT),
             ("mux", &SHIP_MUX_EXTRA, SHIP_MUX_DEFAULT),
@@ -805,7 +807,7 @@ fn ship_drivers_enter_the_selected_masking_and_mux() {
         );
         assert_eq!(calls, [0, 0], "{op}: a refused input entered a hook");
         assert_eq!(
-            snapshot::<OverrideBackend, _>(&out),
+            snapshot::<OverrideBackend, _, Standard>(&out),
             unchanged,
             "{op}: a refused input wrote the output"
         );
@@ -819,7 +821,7 @@ fn ship_drivers_enter_the_selected_masking_and_mux() {
         );
         assert_eq!(calls, [0, 0], "{op}: a refused arena entered a hook");
         assert_eq!(
-            snapshot::<OverrideBackend, _>(&out),
+            snapshot::<OverrideBackend, _, Standard>(&out),
             unchanged,
             "{op}: a refused arena wrote the output"
         );
@@ -832,8 +834,8 @@ fn ship_drivers_enter_the_selected_masking_and_mux() {
         let groups: usize = keys.index_keys().iter().map(|index| index.mux_keys().len()).sum();
         assert_eq!(calls, [halves * keys.index_keys().len(), halves * groups], "{op}: hook calls");
         assert_eq!(
-            snapshot::<OverrideBackend, _>(&out),
-            snapshot::<FFT64Oracle, _>(&want),
+            snapshot::<OverrideBackend, _, Standard>(&out),
+            snapshot::<FFT64Oracle, _, Standard>(&want),
             "{op}: output differs from the oracle's"
         );
     }

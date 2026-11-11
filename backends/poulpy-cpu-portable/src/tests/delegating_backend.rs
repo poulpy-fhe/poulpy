@@ -22,7 +22,7 @@ use poulpy_hal::AlignedBuf;
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxFillUniformSource},
     layouts::{
-        Backend, Module, ScratchArena, ScratchOwned, VecZnxDftBackendMut, VecZnxDftBackendRef, VmpPMatBackendRef,
+        Backend, Module, ScratchArena, ScratchOwned, Standard, VecZnxDftBackendMut, VecZnxDftBackendRef, VmpPMatBackendRef,
         vec_znx_backend_mut,
     },
     source::Source,
@@ -52,12 +52,19 @@ fn downstream_baby_step_preparation_preserves_cache_shape() {
     let module = Module::<FFT64Portable>::new(256);
     let input = sample_glwe();
     let mut normalized = module.glwe_alloc_from_infos(&input);
-    let mut scratch = ScratchOwned::<FFT64Portable>::alloc(module.glwe_normalize_tmp_bytes());
+    let mut scratch = ScratchOwned::<FFT64Portable>::alloc(
+        <Module<FFT64Portable> as GLWENormalize<FFT64Portable, Standard>>::glwe_normalize_tmp_bytes(&module),
+    );
     module.glwe_normalize(&mut normalized, &input, &mut scratch.borrow());
     let mut cache = LinearTransformationBabySteps::alloc(&module, &[0, 1, 1], &normalized);
     let mut expected = LinearTransformationBabySteps::alloc(&module, &[0], &normalized);
-    let mut scratch =
-        ScratchOwned::<FFT64Portable>::alloc(module.cnv_pvec_left_prepare_tmp_bytes(cache.size(), normalized.size()));
+    let mut scratch = ScratchOwned::<FFT64Portable>::alloc(
+        <Module<FFT64Portable> as CnvOps<FFT64Portable, Standard>>::cnv_pvec_left_prepare_tmp_bytes(
+            &module,
+            cache.size(),
+            normalized.size(),
+        ),
+    );
     module.cnv_pvec_left_prepare(
         &mut expected.baby_step_mut(0),
         GLWEToBackendRef::<FFT64Portable>::to_backend_ref(&normalized).data(),
@@ -106,12 +113,12 @@ unsafe impl GLWERotateImpl for DelegatingFFT64Portable {
 }
 
 // Selecting a backend implementation is independent of reference helper availability.
-unsafe impl GLWEAddImpl for DelegatingFFT64Portable {
+unsafe impl GLWEAddImpl<Standard> for DelegatingFFT64Portable {
     fn glwe_add_into<R, A, B>(module: &Module<Self>, res: &mut R, a: &A, b: &B)
     where
-        R: GLWEToBackendMut<Self>,
-        A: GLWEToBackendRef<Self>,
-        B: GLWEToBackendRef<Self>,
+        R: GLWEToBackendMut<Self, Standard>,
+        A: GLWEToBackendRef<Self, Standard>,
+        B: GLWEToBackendRef<Self, Standard>,
     {
         ADD_IMPL_CALLS.set(ADD_IMPL_CALLS.get() + 1);
         module.glwe_add_into_reference(res, a, b);
@@ -119,8 +126,8 @@ unsafe impl GLWEAddImpl for DelegatingFFT64Portable {
 
     fn glwe_add_assign<R, A>(module: &Module<Self>, res: &mut R, a: &A)
     where
-        R: GLWEToBackendMut<Self>,
-        A: GLWEToBackendRef<Self>,
+        R: GLWEToBackendMut<Self, Standard>,
+        A: GLWEToBackendRef<Self, Standard>,
     {
         module.glwe_add_assign_reference(res, a);
     }
@@ -128,20 +135,20 @@ unsafe impl GLWEAddImpl for DelegatingFFT64Portable {
 
 // Other families independently select their portable bodies.
 poulpy_core::impl_glwe_mul_xp_minus_one_reference_full!(DelegatingFFT64Portable);
-poulpy_core::impl_glwe_sub_reference_full!(DelegatingFFT64Portable);
-poulpy_core::impl_glwe_negate_reference_full!(DelegatingFFT64Portable);
-poulpy_core::impl_glwe_copy_reference_full!(DelegatingFFT64Portable);
-poulpy_core::impl_glwe_normalize_reference_full!(DelegatingFFT64Portable);
-poulpy_core::impl_glwe_shift_reference_full!(DelegatingFFT64Portable);
-poulpy_core::impl_glwe_keyswitch_reference_full!(DelegatingFFT64Portable);
-poulpy_core::impl_encryption_reference_full!(DelegatingFFT64Portable);
-poulpy_core::impl_decryption_reference_full!(DelegatingFFT64Portable);
-poulpy_core::impl_preparation_reference_full!(DelegatingFFT64Portable);
-poulpy_core::impl_secret_reference_full!(DelegatingFFT64Portable);
+poulpy_core::impl_glwe_sub_reference_full!(DelegatingFFT64Portable, Standard);
+poulpy_core::impl_glwe_negate_reference_full!(DelegatingFFT64Portable, Standard);
+poulpy_core::impl_glwe_copy_reference_full!(DelegatingFFT64Portable, Standard);
+poulpy_core::impl_glwe_normalize_reference_full!(DelegatingFFT64Portable, Standard);
+poulpy_core::impl_glwe_shift_reference_full!(DelegatingFFT64Portable, Standard);
+poulpy_core::impl_glwe_keyswitch_reference_full!(DelegatingFFT64Portable, Standard);
+poulpy_core::impl_encryption_reference_full!(DelegatingFFT64Portable, Standard);
+poulpy_core::impl_decryption_reference_full!(DelegatingFFT64Portable, Standard);
+poulpy_core::impl_preparation_reference_full!(DelegatingFFT64Portable, Standard);
+poulpy_core::impl_secret_reference_full!(DelegatingFFT64Portable, Standard);
 crate::impl_sampling_host!(DelegatingFFT64Portable, fft64);
 // The pairwise suite must use a selected comparison backend's implementation
 // and its own scratch query, even when that backend delegates its arithmetic.
-unsafe impl GGLWEProductDigitsStridedImpl for DelegatingFFT64Portable {
+unsafe impl GGLWEProductDigitsStridedImpl<Standard> for DelegatingFFT64Portable {
     fn gglwe_product_digits_strided_tmp_bytes(
         module: &Module<Self>,
         res_size: usize,
@@ -155,7 +162,11 @@ unsafe impl GGLWEProductDigitsStridedImpl for DelegatingFFT64Portable {
     ) -> usize {
         DIGIT_PRODUCT_QUERY_CALLS.set(DIGIT_PRODUCT_QUERY_CALLS.get() + 1);
         DIGIT_PRODUCT_EXTRA_SCRATCH
-            + module.gglwe_product_digits_strided_tmp_bytes_reference(
+            + <Module<DelegatingFFT64Portable> as GGLWEProductDigitsStridedReference<
+                DelegatingFFT64Portable,
+                Standard,
+            >>::gglwe_product_digits_strided_tmp_bytes_reference(
+                module,
                 res_size,
                 a_cols,
                 a_size,
@@ -169,11 +180,11 @@ unsafe impl GGLWEProductDigitsStridedImpl for DelegatingFFT64Portable {
 
     fn gglwe_product_digits_strided(
         module: &Module<Self>,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
-        a: &VecZnxDftBackendRef<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, Standard>,
+        a: &VecZnxDftBackendRef<'_, Self, Standard>,
         dsize: usize,
         product_limbs: usize,
-        pmat: &VmpPMatBackendRef<'_, Self>,
+        pmat: &VmpPMatBackendRef<'_, Self, Standard>,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         DIGIT_PRODUCT_CALLS.set(DIGIT_PRODUCT_CALLS.get() + 1);
@@ -183,11 +194,11 @@ unsafe impl GGLWEProductDigitsStridedImpl for DelegatingFFT64Portable {
         assert!(marker.iter().all(|&byte| byte == 0x39));
     }
 
-    ::poulpy_core::impl_gglwe_product_digits_strided_reference!();
+    ::poulpy_core::impl_gglwe_product_digits_strided_reference!(Standard);
 }
 poulpy_core::impl_conversion_reference_full!(DelegatingFFT64Portable);
-poulpy_core::impl_ggsw_conversion_reference_full!(DelegatingFFT64Portable);
-poulpy_core::impl_automorphism_reference_full!(DelegatingFFT64Portable);
+poulpy_core::impl_ggsw_conversion_reference_full!(DelegatingFFT64Portable, Standard);
+poulpy_core::impl_automorphism_reference_full!(DelegatingFFT64Portable, Standard);
 
 // Inherit derived rotate and sizing, and override only the derived assign hook.
 unsafe impl GGSWRotateImpl for DelegatingFFT64Portable {
@@ -208,7 +219,7 @@ unsafe impl GGSWRotateImpl for DelegatingFFT64Portable {
 
 // The out-of-place trace inherits its derived body and scratch query. Its
 // selected assign operation deliberately needs more workspace than FFT64Portable.
-unsafe impl GLWETraceImpl for DelegatingFFT64Portable {
+unsafe impl GLWETraceImpl<Standard> for DelegatingFFT64Portable {
     fn glwe_trace_assign_tmp_bytes<A, K>(module: &Module<Self>, a_infos: &A, key_infos: &K) -> usize
     where
         A: GLWEInfos,
@@ -239,8 +250,8 @@ unsafe impl GLWETraceImpl for DelegatingFFT64Portable {
         keys: &H,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        R: GLWEToBackendMut<Self> + GLWEInfos,
-        H: GetAutomorphismKey<Self>,
+        R: GLWEToBackendMut<Self, Standard> + GLWEInfos,
+        H: GetAutomorphismKey<Self, Standard>,
     {
         TRACE_ASSIGN_CALLS.set(TRACE_ASSIGN_CALLS.get() + 1);
         let (marker, mut remaining) = scratch.borrow().take_region(TRACE_EXTRA_SCRATCH);
@@ -261,7 +272,7 @@ unsafe impl GLWETraceImpl for DelegatingFFT64Portable {
             }
             {
                 let mut work = match &mut converted {
-                    Some(converted) => GLWEToBackendMut::<Self>::to_backend_mut(converted),
+                    Some(converted) => GLWEToBackendMut::<Self, Standard>::to_backend_mut(converted),
                     None => res.to_backend_mut(),
                 };
                 let mut work = &mut work;
@@ -293,7 +304,7 @@ where
     scratch
 }
 
-fn sample_glwe() -> GLWE<AlignedBuf, i64> {
+fn sample_glwe() -> GLWE<AlignedBuf, i64, Standard> {
     let layout = GLWELayout {
         n: Degree(256),
         base2k: Base2K(17),
@@ -301,13 +312,13 @@ fn sample_glwe() -> GLWE<AlignedBuf, i64> {
         rank: Rank(2),
     };
     let module: Module<FFT64Portable> = Module::new(256);
-    let mut ct: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&layout);
+    let mut ct: GLWE<AlignedBuf, i64, Standard> = module.glwe_alloc_from_infos(&layout);
     let mut source = Source::new([7u8; 32]);
     for col in 0..layout.rank.as_usize() + 1 {
         module.vec_znx_fill_uniform_source(
             40,
             ct.size() * 40,
-            &mut vec_znx_backend_mut::<FFT64Portable>(ct.data_mut()),
+            &mut vec_znx_backend_mut::<FFT64Portable, Standard>(ct.data_mut()),
             col,
             &mut source,
         );
@@ -319,8 +330,8 @@ fn sample_glwe() -> GLWE<AlignedBuf, i64> {
 fn delegating_backend_manual_family_matches_fft64_portable() {
     for squaring in [false, true] {
         assert_eq!(
-            Module::<DelegatingFFT64Portable>::max_base2k(1 << 16, 32, 128, squaring),
-            Module::<FFT64Portable>::max_base2k(1 << 16, 32, 128, squaring)
+            Module::<DelegatingFFT64Portable>::max_base2k::<Standard>(1 << 16, 32, 128, squaring),
+            Module::<FFT64Portable>::max_base2k::<Standard>(1 << 16, 32, 128, squaring)
         );
     }
     let module_delegating: Module<DelegatingFFT64Portable> = Module::new(256);
@@ -464,7 +475,12 @@ fn derived_trace_uses_selected_assign_and_its_larger_scratch_query() {
         rank: input.rank(),
     };
     let levels = input.log_n() - 1..input.log_n();
-    let p = reference.glwe_trace_galois_elements(input.n(), levels.clone(), false)[0];
+    let p = <Module<FFT64Portable> as GLWETrace<FFT64Portable, Standard>>::glwe_trace_galois_elements(
+        &reference,
+        input.n(),
+        levels.clone(),
+        false,
+    )[0];
     let mut key = reference.glwe_automorphism_key_alloc_from_infos(&key_layout);
     fill_by_digit(&reference, &mut key, 1, &mut Source::new([89; 32]));
     key.set_p(p);
@@ -474,22 +490,38 @@ fn derived_trace_uses_selected_assign_and_its_larger_scratch_query() {
     module.glwe_automorphism_key_prepare(
         &mut prepared_actual,
         &key,
-        &mut poisoned_scratch::<DelegatingFFT64Portable>(module.glwe_automorphism_key_prepare_tmp_bytes(&key)).borrow(),
+        &mut poisoned_scratch::<DelegatingFFT64Portable>(
+            <Module<DelegatingFFT64Portable> as GLWEAutomorphismKeyPreparedFactory<
+                DelegatingFFT64Portable,
+                Standard,
+            >>::glwe_automorphism_key_prepare_tmp_bytes(&module, &key),
+        )
+        .borrow(),
     );
     reference.glwe_automorphism_key_prepare(
         &mut prepared_expected,
         &key,
-        &mut poisoned_scratch::<FFT64Portable>(reference.glwe_automorphism_key_prepare_tmp_bytes(&key)).borrow(),
+        &mut poisoned_scratch::<FFT64Portable>(<Module<FFT64Portable> as GLWEAutomorphismKeyPreparedFactory<
+            FFT64Portable,
+            Standard,
+        >>::glwe_automorphism_key_prepare_tmp_bytes(&reference, &key))
+        .borrow(),
     );
     let keys_actual = HashMap::from([(p, prepared_actual)]);
     let keys_expected = HashMap::from([(p, prepared_expected)]);
     let mut actual = module.glwe_alloc_from_infos(&input);
     let mut expected = reference.glwe_alloc_from_infos(&input);
-    let actual_bytes = module.glwe_trace_tmp_bytes(&actual, &input, &key);
-    let expected_bytes = reference.glwe_trace_tmp_bytes(&expected, &input, &key);
+    let actual_bytes = <Module<DelegatingFFT64Portable> as GLWETrace<DelegatingFFT64Portable, Standard>>::glwe_trace_tmp_bytes(
+        &module, &actual, &input, &key,
+    );
+    let expected_bytes =
+        <Module<FFT64Portable> as GLWETrace<FFT64Portable, Standard>>::glwe_trace_tmp_bytes(&reference, &expected, &input, &key);
     assert_eq!(
-        module.glwe_trace_assign_tmp_bytes(&input, &key),
-        reference.glwe_trace_assign_tmp_bytes(&input, &key) + TRACE_EXTRA_SCRATCH,
+        <Module<DelegatingFFT64Portable> as GLWETrace<DelegatingFFT64Portable, Standard>>::glwe_trace_assign_tmp_bytes(
+            &module, &input, &key
+        ),
+        <Module<FFT64Portable> as GLWETrace<FFT64Portable, Standard>>::glwe_trace_assign_tmp_bytes(&reference, &input, &key)
+            + TRACE_EXTRA_SCRATCH,
     );
     assert_eq!(actual_bytes, expected_bytes + TRACE_EXTRA_SCRATCH);
     let before = TRACE_ASSIGN_CALLS.get();
@@ -523,7 +555,7 @@ fn core_parity_dispatches_comparison_backend_override_and_scratch() {
     let tested = Module::<FFT64Portable>::new(64);
     let calls = DIGIT_PRODUCT_CALLS.get();
     let queries = DIGIT_PRODUCT_QUERY_CALLS.get();
-    poulpy_core::test_suite::parity::test_gglwe_product_digits_strided_parity(
+    poulpy_core::test_suite::parity::test_gglwe_product_digits_strided_parity::<_, _, Standard>(
         &poulpy_hal::test_suite::TestParams {
             size: 64,
             n: 64,

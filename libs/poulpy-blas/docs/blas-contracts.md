@@ -29,8 +29,9 @@ changes bits.
 
 Each operation's `_tmp_bytes` query belongs to the same family. The encodings
 take poulpy-ckks's encoding scalar `F` as a method parameter bounded by
-`Self: CKKSEncodingImpl<F>`, and the allocations of contexts and public
-operands, prepared or not, stay direct on the module. `BlasImpl`
+`Self: CKKSEncodingImpl<F, Rg>`, the CKKS encoder of the family's ring, and the
+allocations of contexts and public operands, prepared or not, stay direct on
+the module. `BlasImpl`
 aggregates the six families as a test bound; it has a blanket implementation
 and is never implemented directly.
 
@@ -43,8 +44,8 @@ reaches every operation built on it. The provided body is crate-private,
 `blas_transpose_derived` with its query `blas_transpose_tmp_bytes_derived`, in
 the family's file under `oep::derived`.
 
-The prepared operands of the products, `BlasMatMulLeftOperandPrepared<BE>` and
-`BlasMatMulRightOperandPrepared<BE>`, are `poulpy_blas::layouts::BlasMatMulOperandPrepared`s of the
+The prepared operands of the products, `BlasMatMulLeftOperandPrepared<BE, Rg>` and
+`BlasMatMulRightOperandPrepared<BE, Rg>`, are `poulpy_blas::layouts::BlasMatMulOperandPrepared`s of the
 backend's poulpy-ckks storage, a type the backend does not choose.
 `BlasMatMulLeftOperandPreparedFactory` and `BlasMatMulRightOperandPreparedFactory`
 allocate them; an implementation of the preparations and of the prepared product
@@ -69,7 +70,7 @@ APIs, so a backend's CKKS and core overrides remain effective inside them.
 cold preparations call the backend's map hook, and the reference prepared
 product, like the reference `blas_matmul`, calls it for the terms of a hot
 operand, then its JKLS kernel. So `impl_blas_mat_mul_reference_full!` needs the intra
-and JKLS families. The reference `blas_matmul` is the reference prepared
+and JKLS families on the same rings. The reference `blas_matmul` is the reference prepared
 product of two hot operands, bit for bit, on the grids read in place, without
 the preparations' copies.
 
@@ -95,22 +96,30 @@ the same `#[cfg]` gates as `ckks_impl.rs`:
 ::poulpy_blas::impl_blas_reference_full!(crate::MyBackend);
 ```
 
-To replace a family, replace the type's `impl_blas_reference_full!` line with
-the macros of the four families it keeps, as the [layering contract](../../../docs/guides/layering-contract.md)
-states. The expansion of each family macro, in [`oep`](../src/oep/), spells out
-every signature and its forwarding call, and the docs of each family's methods
-and hooks state what an implementation must reproduce. Three replacements cover most needs:
+A backend implements every family once per ring, `Standard` and
+`ConjugateInvariant` of `poulpy_hal::layouts`, selecting each per ring as the
+[layering contract](../../../docs/guides/layering-contract.md#selecting-an-implementation)
+states. To replace a family, replace the type's `impl_blas_reference_full!`
+line with the macros of the five families it keeps. The expansion of each
+family macro, in [`oep`](../src/oep/), spells out every signature and its
+forwarding call, and the docs of each family's methods and hooks state what an
+implementation must reproduce. Three replacements cover most needs, shown on
+the standard ring:
 
 - **The map hook**, for a backend that evaluates maps its own way. It covers
   the transpose, both shifts, both reductions, the cold preparations and the hot
   sides of the products, `blas_matmul` included:
 
   ```rust
+  use poulpy_hal::layouts::{ConjugateInvariant, Standard};
+
   ::poulpy_blas::impl_blas_mat_inter_reference_full!(MyBackend);
   ::poulpy_blas::impl_blas_mat_mul_reference_full!(MyBackend);
+  ::poulpy_blas::impl_blas_mat_vec_reference_full!(MyBackend);
   ::poulpy_blas::impl_blas_jkls_reference_full!(MyBackend);
   ::poulpy_blas::impl_blas_encoding_reference_full!(MyBackend);
-  unsafe impl poulpy_blas::oep::BlasMatIntraImpl for MyBackend {
+  ::poulpy_blas::impl_blas_mat_intra_reference_full!(MyBackend, ConjugateInvariant);
+  unsafe impl poulpy_blas::oep::BlasMatIntraImpl<Standard> for MyBackend {
       /* the hook and its query; the shifts, the reductions and their queries forwarded to BlasMatIntraReference */
   }
   ```
@@ -121,15 +130,22 @@ and hooks state what an implementation must reproduce. Three replacements cover 
   masked-unit hook, which may stream every term of its unit:
 
   ```rust
+  use poulpy_hal::layouts::{ConjugateInvariant, Standard};
+
   ::poulpy_blas::impl_blas_mat_inter_reference_full!(MyBackend);
   ::poulpy_blas::impl_blas_mat_intra_reference_full!(MyBackend);
   ::poulpy_blas::impl_blas_mat_mul_reference_full!(MyBackend);
+  ::poulpy_blas::impl_blas_mat_vec_reference_full!(MyBackend);
   ::poulpy_blas::impl_blas_encoding_reference_full!(MyBackend);
-  unsafe impl poulpy_blas::oep::BlasJklsImpl for MyBackend { /* the kernel, the masked-unit hook and their queries */ }
+  ::poulpy_blas::impl_blas_jkls_reference_full!(MyBackend, ConjugateInvariant);
+  unsafe impl poulpy_blas::oep::BlasJklsImpl<Standard> for MyBackend {
+      /* the kernel, the masked-unit hook and their queries */
+  }
   ```
 
-- **The products**, in the backend's own evaluation. The inter, intra, JKLS
-  and encoding families keep their macros, and `BlasMatMulImpl` is written by hand: it
+- **The products**, in the backend's own evaluation. The inter, intra, matrix-vector,
+  JKLS and encoding families keep their macros, and `BlasMatMulImpl<Standard>` is written by hand,
+  beside `impl_blas_mat_mul_reference_full!(MyBackend, ConjugateInvariant)`: it
   implements the methods it replaces, each running its validator and stamping
   the batch as the reference does, and forwards the others to
   `BlasMatMulReference`, `blas_matmul` to `blas_matmul_reference` as the macro
@@ -142,8 +158,8 @@ fixes.
 
 ## Grids and keys
 
-`res` is a `BlasGridMut<BE>` and every ciphertext input a `BlasGrid<BE>`,
-which expose the blocks of a grid as a row-major slice. The prepared product
+`res` is a `BlasGridMut<BE, Rg>` and every ciphertext input a `BlasGrid<BE, Rg>`,
+`Rg` being the family's ring; both traits expose the blocks of a grid as a row-major slice. The prepared product
 reads prepared operands instead, and the products by public matrices also read
 a `BlasPtOperandPrepared`. A grid's blocks number exactly `rows x cols`, at least one,
 and every operation rejects a grid that breaks this. `BlasCiphertext` over
@@ -479,7 +495,12 @@ bit for bit equal to the same call run alone.
 ## Testing a backend
 
 Enable `test-utils` on a `poulpy-blas` dev-dependency. It exports four
-registration macros.
+registration macros. The parity and radix suite functions take the ring as
+their last type parameter (`test_blas_matmul_parity::<BR, BT, F, Rg>`), which
+their macros fill from an optional `ring = …`, the standard ring by default, so
+a backend serving both rings registers each of these suites once per ring; the
+functional tests run on the standard ring and `test_blas_conjugate_invariant`
+on the conjugate-invariant one, neither taking a ring.
 
 `blas_backend_test_suite!` registers the functional tests for one backend,
 scalar, encoder and parameter set. They encrypt, run every operation, and check
@@ -509,8 +530,7 @@ radix, at another dimension or wider than its input, and a left product under a
 context without masks. `test_blas_key_widths` runs with the maps and the public matrices a
 quarter below that scale, where a key width taken from the inputs' scale in
 place of `p` or `p_B`, or capped by it, finds no key. They read coefficients on
-the host and use the standard ring, so they need a host backend of the standard
-ring. An optional `log_d = …` sets the blocks to `2^log_d x 2^log_d`, 2 by
+the host and use the standard ring, so they need a host backend. An optional `log_d = …` sets the blocks to `2^log_d x 2^log_d`, 2 by
 default. The ring degree `N` is free within two bounds: the blocks fit the
 `N / 2` slots, `d^2 <= N / 2` (`N >= 32` at the default), and the guards encode
 on a module of degree `2N`, which the backend must support (`N <= 2^16` at
@@ -535,7 +555,7 @@ diagonal-ciphertext cases of `test_blas_key_widths`,
 cases also below `4 d^2` slots.
 
 `blas_conjugate_invariant_test_suite!(mod m, backend = …, params = …)`
-registers the test `conjugate_invariant` for a backend of the
+registers the test `conjugate_invariant` for a backend, on the
 conjugate-invariant ring, whose `N` slots are real. It encrypts real matrices
 of `4 x 4` blocks with the module's own encoder, runs every operation once,
 each on exactly the bytes its query reports, the products also by a right
@@ -559,7 +579,9 @@ poulpy_blas::blas_parity_test_suite! {
 }
 ```
 
-It registers the tests `inter`, `intra`, `matmul` and `matvec`, each on its own
+On the conjugate-invariant ring, a second registration adds
+`ring = ::poulpy_hal::layouts::ConjugateInvariant` after `backend_test`. It
+registers the tests `inter`, `intra`, `matmul` and `matvec`, each on its own
 pair of modules of degree `params.n` (`matvec` skipped with a message below 16
 slots, which its vectors span), and `concurrency`, on the tested
 backend's module alone ([Parallelism](#parallelism)). Both backends
@@ -597,10 +619,10 @@ product of a hot operand one bit short of the `2p` its terms spend, the product
 by a right factor of budget `3p - 1` holding distinct matrices, which one
 holding one matrix passes, and the JKLS products by public matrices one bit
 short of the first map's scale, then of both maps': both backends return the
-same error and leave `res` and the inputs unchanged. Storage and ring are free:
-the bounds are `BlasParityBackend` (`Backend<ZnxWord = i64>` and every BLAS
-family) and `BlasParityModule`. Rank and `dsize` follow `params`, as in CKKS
-parity.
+same error and leave `res` and the inputs unchanged. Storage is free: the
+bounds are `BlasParityBackend<Rg>` (`Backend<ZnxWord = i64>` and every BLAS
+family on the registration's ring) and `BlasParityModule`. Rank and `dsize`
+follow `params`, as in CKKS parity.
 
 The optional `shapes` argument, a `BlasParityShapes`, sets the swept block
 dimensions `log_d` (default `[1, 2]`). A `log_d` below 1, or whose `d^2`
@@ -619,7 +641,8 @@ macro registers every family, so none can be dropped silently.
 scalar and parameter set: `blas_matmul_max_base2k`,
 `blas_matmul_pt_right_max_base2k` and `blas_matmul_pt_left_max_base2k` on
 `4 x 4` blocks on 32 slots (`n = 64`, or `n = 32` on the conjugate-invariant
-ring), under every algorithm, `blas_matvec_pt_max_base2k`,
+ring, which `ring = ::poulpy_hal::layouts::ConjugateInvariant` after `backend`
+selects), under every algorithm, `blas_matvec_pt_max_base2k`,
 `blas_grid_to_vector_max_base2k` and `blas_vector_to_grid_max_base2k` on
 vectors of one and several ciphertexts, and `blas_matvec_diagonal_max_base2k` on
 a diagonal ciphertext, against counts made by hand, at every failure target from 1

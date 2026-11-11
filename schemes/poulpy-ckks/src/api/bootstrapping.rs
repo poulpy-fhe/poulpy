@@ -1,6 +1,6 @@
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef};
-use poulpy_hal::layouts::{Backend, ConjugateInvariant, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, ScratchArena};
 
 use crate::{
     CKKSCtBounds, SetCKKSInfos,
@@ -158,7 +158,8 @@ pub trait CKKSBootstrappingOps<BE: Backend> {
     /// or [`MissingRelinearizationKey`](crate::CKKSCompositionError::MissingRelinearizationKey),
     /// whose `source` is the key source's refusal. Keys laid out by a preset
     /// cover its `bootstrap_k`. A working width or an input narrower than the bits
-    /// the stages running on it consume fails with
+    /// the stages running on it consume, or ciphertexts of another degree than the
+    /// module's, at which the context is compiled, fail with
     /// [`InvalidOperand`](crate::CKKSCompositionError::InvalidOperand) before any work.
     fn ckks_bootstrap<F, K>(
         &self,
@@ -181,7 +182,7 @@ pub trait CKKSBootstrappingOps<BE: Backend> {
     /// of each transformed half, so `n` LUTs cost one bootstrap
     /// plus `n` polynomial evaluations. `ct_outs` and `luts` must have the same
     /// length, every LUT must have the same message modulus, and every output
-    /// must share one rank-1 layout.
+    /// must share one rank-1 layout, at the module's degree like `ct_in`.
     ///
     /// Inputs contain integer messages. Configure the plan with
     /// [`BootstrappingPlan::with_functional_bootstrap`](crate::layouts::BootstrappingPlan::with_functional_bootstrap).
@@ -204,38 +205,32 @@ pub trait CKKSBootstrappingOps<BE: Backend> {
 
 /// [`CKKSBootstrappingOps::ckks_bootstrap`] with EvalMod on the
 /// conjugate-invariant ring ([`EvalModRing::ConjugateInvariant`](crate::layouts::EvalModRing::ConjugateInvariant)),
-/// for a context compiled by [`BootstrappingContextPrepared::compile_ci`]: this module
-/// serves degree `2N` for the conversions and `N` for the other stages, and `ci`
-/// is the CI module of degree `N`, on the twin [`Self::CI`].
+/// for a context compiled by [`BootstrappingContextPrepared::compile_ci`]: this module, of degree
+/// `2N`, serves the conversions at degree `2N`, the other stages at degree `N` and EvalMod on the
+/// conjugate-invariant ring of degree `N`, in one arena.
 /// The keys, the conversion keys included, are checked at entry.
 pub trait CKKSBootstrappingCIOps<BE: Backend> {
-    /// The conjugate-invariant twin of `BE` that runs EvalMod, sharing its buffers.
-    type CI: Backend<Ring = ConjugateInvariant, OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
-        + for<'a> Backend<BufRef<'a> = BE::BufRef<'a>, BufMut<'a> = BE::BufMut<'a>>
-        + 'static;
-
-    /// Scratch of [`Self::ckks_bootstrap_ci_into`]: `(scratch, scratch_ci)`.
+    /// Scratch of [`Self::ckks_bootstrap_ci_into`].
     fn ckks_bootstrap_ci_tmp_bytes<C1, C2, F>(
         &self,
-        ci: &Module<Self::CI>,
         ct_out: &C1,
         ct_in: &C2,
         ctx: &BootstrappingContextPrepared<BE, F>,
         keys_layout: &BootstrappingKeysLayout,
-    ) -> (usize, usize)
+    ) -> usize
     where
         C1: CKKSCtBounds,
         C2: CKKSCtBounds;
 
-    /// Bootstraps `src` into `dst`, at the width of `dst`, with `scratch`
-    /// and `scratch_ci` of [`Self::ckks_bootstrap_ci_tmp_bytes`].
+    /// Bootstraps `src` into `dst`, at the width of `dst`, with `scratch` of
+    /// [`Self::ckks_bootstrap_ci_tmp_bytes`].
     ///
     /// # Errors
     ///
     /// Before any work, and leaving `dst` unchanged:
     /// [`InvalidOperand`](crate::CKKSCompositionError::InvalidOperand) for a context not compiled
-    /// by `compile_ci` or keys not prepared by `prepare_ci`, modules of other degrees than `2N`
-    /// and `N`, ciphertexts of another degree or rank, an encapsulation that does not match the
+    /// by `compile_ci` or keys not prepared by `prepare_ci`, a module of another degree than `2N`,
+    /// ciphertexts of another degree or rank, an encapsulation that does not match the
     /// recipe, a working width or an input narrower than the bits the stages running on it
     /// consume, or conversion keys of another degree, radix or rank, or narrower than the widths
     /// they switch; [`MissingAutomorphismKey`](crate::CKKSCompositionError::MissingAutomorphismKey)
@@ -248,22 +243,16 @@ pub trait CKKSBootstrappingCIOps<BE: Backend> {
     ///
     /// `dst` ends at the output width of the recipe below its working width, at the scale,
     /// slot kind and sparsity of `src`.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "the bootstrap takes a module and a scratch arena per ring"
-    )]
     fn ckks_bootstrap_ci_into<Dst, Src, F, K>(
         &self,
-        ci: &Module<Self::CI>,
         dst: &mut Dst,
         src: &Src,
         ctx: &BootstrappingContextPrepared<BE, F>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
-        scratch_ci: &mut ScratchArena<'_, Self::CI>,
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        K: BootstrappingCIKeys<BE, Self::CI>;
+        K: BootstrappingCIKeys<BE>;
 }

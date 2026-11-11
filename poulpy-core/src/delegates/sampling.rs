@@ -1,5 +1,5 @@
 use poulpy_hal::{
-    layouts::{Backend, Module, ScalarZnxBackendMut, VecZnxBackendMut, VecZnxBigBackendMut},
+    layouts::{Backend, Module, Ring, ScalarZnxBackendMut, VecZnxBackendMut, VecZnxBigBackendMut},
     source::Source,
 };
 
@@ -9,13 +9,13 @@ use crate::{
     oep::SamplingImpl,
 };
 
-impl<BE> ScalarZnxFillDistribution<BE> for Module<BE>
+impl<BE, Rg: Ring> ScalarZnxFillDistribution<BE, Rg> for Module<BE>
 where
-    BE: Backend + SamplingImpl,
+    BE: Backend + SamplingImpl<Rg>,
 {
     fn scalar_znx_fill_distribution(
         &self,
-        res: &mut ScalarZnxBackendMut<'_, BE>,
+        res: &mut ScalarZnxBackendMut<'_, BE, Rg>,
         res_col: usize,
         dist: Distribution,
         source: &mut Source,
@@ -24,15 +24,15 @@ where
     }
 }
 
-impl<BE> VecZnxAddNoise<BE> for Module<BE>
+impl<BE, Rg: Ring> VecZnxAddNoise<BE, Rg> for Module<BE>
 where
-    BE: Backend + SamplingImpl,
+    BE: Backend + SamplingImpl<Rg>,
 {
     fn vec_znx_add_noise(
         &self,
         base2k: usize,
         k: usize,
-        res: &mut VecZnxBackendMut<'_, BE>,
+        res: &mut VecZnxBackendMut<'_, BE, Rg>,
         res_col: usize,
         noise: Noise,
         source: &mut Source,
@@ -41,15 +41,15 @@ where
     }
 }
 
-impl<BE> VecZnxBigAddNoise<BE> for Module<BE>
+impl<BE, Rg: Ring> VecZnxBigAddNoise<BE, Rg> for Module<BE>
 where
-    BE: Backend + SamplingImpl,
+    BE: Backend + SamplingImpl<Rg>,
 {
     fn vec_znx_big_add_noise(
         &self,
         base2k: usize,
         k: usize,
-        res: &mut VecZnxBigBackendMut<'_, BE>,
+        res: &mut VecZnxBigBackendMut<'_, BE, Rg>,
         res_col: usize,
         noise: Noise,
         source: &mut Source,

@@ -2,46 +2,45 @@
 
 use std::ptr::NonNull;
 
-use poulpy_hal::layouts::{Ring, Standard};
-
 use poulpy_cpu_portable::kernels::fft64::module::{FFT64HandleFactory, FFT64Plan, FFT64PlanSet, FFTHandleProvider};
+use poulpy_cpu_portable::kernels::{FFT64Plans, PerRing};
 use poulpy_hal::{
     AlignedBuf, alloc_aligned,
-    layouts::{Backend, Host},
+    layouts::{Backend, Host, Ring},
 };
 
 use super::FFT64Neon;
 
-/// Opaque handle for the [`FFT64Neon`](super::FFT64Neon) backend.
+/// Opaque handle for the [`FFT64Neon`](super::FFT64Neon) backend, holding the plans of both rings.
 /// Holds precomputed twiddle-factor tables for the forward FFT and inverse FFT
 /// of size `m = n / 2`, where `n` is the ring dimension passed to
-/// [`Module::new`](poulpy_hal::api::ModuleNew::new).
+/// [`Module::new`](poulpy_hal::api::ModuleNew::new), the conjugate-invariant ones
+/// built on first use.
 #[repr(C)]
-pub struct FFT64NeonHandle<R: Ring = Standard> {
-    ring_plans: FFT64PlanSet<f64, R>,
+pub struct FFT64NeonHandle {
+    ring_plans: PerRing<FFT64Plans>,
     table_cache: ::poulpy_cpu_portable::table_cache::ModuleTableCache,
 }
 
-impl<R: Ring> poulpy_hal::execution::ScratchWorkers for FFT64Neon<R> {}
+impl poulpy_hal::execution::ScratchWorkers for FFT64Neon {}
 
-impl<R: Ring> poulpy_hal::layouts::MaxBase2k for FFT64Neon<R> {
-    fn max_base2k(n: usize, products: usize, failure_bits: usize, squaring: bool) -> usize {
-        poulpy_hal::layouts::max_base2k_fft64::<Self>(n, products, failure_bits, squaring)
+impl poulpy_hal::layouts::MaxBase2k for FFT64Neon {
+    fn max_base2k<Rg: Ring>(n: usize, products: usize, failure_bits: usize, squaring: bool) -> usize {
+        poulpy_hal::layouts::max_base2k_fft64::<Self, Rg>(n, products, failure_bits, squaring)
     }
 }
 
-impl<R: Ring> Backend for FFT64Neon<R> {
+impl Backend for FFT64Neon {
     const DFT_LIMBS_CONTIGUOUS: bool = true;
 
     type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;
-    type Ring = R;
     type DftWord = f64;
     type ZnxWord = i64;
     type BigWord = i64;
     type OwnedBuf = AlignedBuf;
     type BufRef<'a> = &'a [u8];
     type BufMut<'a> = &'a mut [u8];
-    type Handle = FFT64NeonHandle<R>;
+    type Handle = FFT64NeonHandle;
     type Location = Host;
     fn alloc_bytes(len: usize) -> Self::OwnedBuf {
         alloc_aligned::<u8>(len)
@@ -144,26 +143,22 @@ impl<R: Ring> Backend for FFT64Neon<R> {
 /// # Safety
 /// The returned handle must be fully initialized for `n`.
 /// NEON/ASIMD is part of the AArch64 baseline; the runtime check is a no-op.
-unsafe impl<R: Ring> FFT64HandleFactory for FFT64NeonHandle<R>
-where
-    FFT64Plan<f64, R>: poulpy_cpu_portable::kernels::fft64::module::FFT64PlanNew,
-{
+unsafe impl FFT64HandleFactory for FFT64NeonHandle {
     fn create_fft64_handle(n: usize) -> Self {
         FFT64NeonHandle {
             table_cache: Default::default(),
-            ring_plans: FFT64PlanSet::new(n),
+            ring_plans: PerRing::new(FFT64PlanSet::new(n), n, FFT64PlanSet::new),
         }
     }
 }
 
-unsafe impl<R: Ring> FFTHandleProvider<f64> for FFT64NeonHandle<R> {
-    type Ring = R;
-    fn get_fft_plan(&self, n: usize) -> &FFT64Plan<f64, R> {
-        self.ring_plans.for_ring(n)
+unsafe impl<Rg: Ring> FFTHandleProvider<f64, Rg> for FFT64NeonHandle {
+    fn get_fft_plan(&self, n: usize) -> &FFT64Plan<f64, Rg> {
+        self.ring_plans.on_ring::<Rg>().for_ring(n)
     }
 }
 
-unsafe impl<R: Ring> ::poulpy_cpu_portable::table_cache::ModuleTableCacheProvider for FFT64NeonHandle<R> {
+unsafe impl ::poulpy_cpu_portable::table_cache::ModuleTableCacheProvider for FFT64NeonHandle {
     fn module_plan_cache(&self) -> &::poulpy_cpu_portable::table_cache::ModuleTableCache {
         &self.table_cache
     }

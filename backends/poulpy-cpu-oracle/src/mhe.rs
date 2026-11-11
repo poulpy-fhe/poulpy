@@ -1,5 +1,5 @@
-//! Registers the generic multiparty compositions for the standard oracles and
-//! the controlled-sampling FFT64 oracle.
+//! Registers the generic multiparty compositions for the oracles and the
+//! controlled-sampling FFT64 oracle.
 
 use crate::{FFT64Oracle, NTT4x30Oracle, test_suite::ControlledSamplingFFT64Oracle};
 

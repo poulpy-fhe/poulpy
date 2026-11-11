@@ -24,6 +24,12 @@ pub mod sampling;
 pub mod serialization;
 pub mod step_hooks;
 
+/// Registers the core noise and sampling suites for `backend`, at every swept degree.
+///
+/// A test generic over the ring is called as `<test>::<backend, ring>(&TestParams, &Module<backend>)`, `ring` being
+/// optional and `::poulpy_hal::layouts::Standard` by default. A test without a ring parameter is called as
+/// `<test>::<backend>(..)` by the form without `ring`, so that a type registering this suite on both rings runs it
+/// once: `ring = ::poulpy_hal::layouts::ConjugateInvariant` registers only the ring-generic tests.
 #[macro_export]
 macro_rules! core_backend_test_suite {
     (
@@ -31,9 +37,73 @@ macro_rules! core_backend_test_suite {
         backend = $backend:ty,
         params = $params:expr $(,)?
     ) => {
-        poulpy_hal::backend_test_suite!(
+        $crate::core_backend_test_suite!(
+            @suite mod $modname,
+            backend = $backend,
+            ring = ::poulpy_hal::layouts::Standard,
+            params = $params,
+            ring_free_tests = {
+                lwe_switching_key_encrypt_sk_rejects_unset_secret =>
+                    $crate::test_suite::noise::encryption::test_lwe_switching_key_encrypt_sk_rejects_unset_secret,
+                lwe_keyswitch => $crate::test_suite::noise::keyswitch::test_lwe_keyswitch,
+                glwe_ci_embed_key_encrypt_sk_rejects_mismatched_secrets =>
+                    $crate::test_suite::noise::encryption::test_glwe_ci_embed_key_encrypt_sk_rejects_mismatched_secrets,
+                glwe_ci_trace_key_encrypt_sk_rejects_mismatched_secrets =>
+                    $crate::test_suite::noise::encryption::test_glwe_ci_trace_key_encrypt_sk_rejects_mismatched_secrets,
+                glwe_ci_key_encrypt_sk_wipes_scratch =>
+                    $crate::test_suite::noise::encryption::test_glwe_ci_key_encrypt_sk_wipes_scratch,
+                glwe_copy => $crate::test_suite::copy::test_glwe_copy,
+                glwe_external_product => $crate::test_suite::noise::external_product::test_glwe_external_product,
+                glwe_external_product_assign => $crate::test_suite::noise::external_product::test_glwe_external_product_assign,
+                glwe_external_product_k_digit => $crate::test_suite::noise::test_glwe_external_product_k_digit,
+                glwe_rotate => $crate::test_suite::noise::test_glwe_rotate,
+                glwe_packing => $crate::test_suite::noise::test_glwe_packing,
+                gglwe_switching_key_external_product =>
+                    $crate::test_suite::noise::external_product::test_gglwe_switching_key_external_product,
+                gglwe_switching_key_external_product_assign =>
+                    $crate::test_suite::noise::external_product::test_gglwe_switching_key_external_product_assign,
+                ggsw_external_product => $crate::test_suite::noise::external_product::test_ggsw_external_product,
+                ggsw_external_product_assign => $crate::test_suite::noise::external_product::test_ggsw_external_product_assign,
+                glwe_to_lwe => $crate::test_suite::noise::test_glwe_to_lwe,
+                lwe_to_glwe => $crate::test_suite::noise::test_lwe_to_glwe,
+                glwe_expand_lwe => $crate::test_suite::noise::test_glwe_expand_lwe,
+                glwe_expand_lwe_matrix_decrypt => $crate::test_suite::noise::test_glwe_expand_lwe_matrix_decrypt,
+                glwe_expand_lwe_rejects_incompatible_lwe_layout =>
+                    $crate::test_suite::noise::test_glwe_expand_lwe_rejects_incompatible_lwe_layout,
+                test_glwe_tensoring => $crate::test_suite::noise::glwe_tensor::test_glwe_tensoring,
+                ggsw_keyswitch => $crate::test_suite::noise::keyswitch::test_ggsw_keyswitch,
+                ggsw_keyswitch_assign => $crate::test_suite::noise::keyswitch::test_ggsw_keyswitch_assign,
+                ggsw_keyswitch_own_layout => $crate::test_suite::noise::keyswitch::test_ggsw_keyswitch_own_layout,
+                ggsw_automorphism => $crate::test_suite::noise::automorphism::test_ggsw_automorphism,
+                ggsw_automorphism_assign => $crate::test_suite::noise::automorphism::test_ggsw_automorphism_assign,
+            }
+        );
+    };
+    (
+        mod $modname:ident,
+        backend = $backend:ty,
+        ring = $ring:ty,
+        params = $params:expr $(,)?
+    ) => {
+        $crate::core_backend_test_suite!(
+            @suite mod $modname,
+            backend = $backend,
+            ring = $ring,
+            params = $params,
+            ring_free_tests = {}
+        );
+    };
+    (
+        @suite mod $modname:ident,
+        backend = $backend:ty,
+        ring = $ring:ty,
+        params = $params:expr,
+        ring_free_tests = { $($ring_free:tt)* }
+    ) => {
+        ::poulpy_hal::backend_test_suite!(
             mod $modname,
             backend = $backend,
+            ring = $ring,
             params = $params,
             tests = {
                 glwe_encrypt_sk => $crate::test_suite::noise::encryption::test_glwe_encrypt_sk,
@@ -47,12 +117,6 @@ macro_rules! core_backend_test_suite {
                 glwe_encrypt_zero_pk_rejects_nan_ephemeral => $crate::test_suite::noise::encryption::test_glwe_encrypt_zero_pk_rejects_nan_ephemeral,
                 #[should_panic(expected = "invalid public key: rank must be at least 1")]
                 glwe_public_key_alloc_rejects_rank_zero => $crate::test_suite::noise::encryption::test_glwe_public_key_alloc_rejects_rank_zero,
-                glwe_ci_embed_key_encrypt_sk_rejects_mismatched_secrets =>
-                    $crate::test_suite::noise::encryption::test_glwe_ci_embed_key_encrypt_sk_rejects_mismatched_secrets,
-                glwe_ci_trace_key_encrypt_sk_rejects_mismatched_secrets =>
-                    $crate::test_suite::noise::encryption::test_glwe_ci_trace_key_encrypt_sk_rejects_mismatched_secrets,
-                glwe_ci_key_encrypt_sk_wipes_scratch =>
-                    $crate::test_suite::noise::encryption::test_glwe_ci_key_encrypt_sk_wipes_scratch,
                 lwe_encrypt_sk_rejects_unset_secret =>
                     $crate::test_suite::noise::encryption::test_lwe_encrypt_sk_rejects_unset_secret,
                 glwe_encrypt_sk_rejects_unset_secret =>
@@ -69,12 +133,8 @@ macro_rules! core_backend_test_suite {
                     $crate::test_suite::noise::encryption::test_glwe_automorphism_key_encrypt_sk_rejects_unset_secret,
                 glwe_tensor_key_encrypt_sk_rejects_unset_secret =>
                     $crate::test_suite::noise::encryption::test_glwe_tensor_key_encrypt_sk_rejects_unset_secret,
-                lwe_switching_key_encrypt_sk_rejects_unset_secret =>
-                    $crate::test_suite::noise::encryption::test_lwe_switching_key_encrypt_sk_rejects_unset_secret,
                 scalar_znx_fill_distribution => $crate::test_suite::sampling::test_scalar_znx_fill_distribution,
                 glwe_base2k_conv => $crate::test_suite::noise::test_glwe_base2k_conversion,
-                glwe_copy => $crate::test_suite::copy::test_glwe_copy,
-                test_glwe_tensoring => $crate::test_suite::noise::glwe_tensor::test_glwe_tensoring,
                 glwe_mul_relinearize_sum_rejects_no_pairs =>
                     $crate::test_suite::noise::glwe_tensor::test_glwe_mul_relinearize_sum_rejects_no_pairs,
                 glwe_mul_relinearize_sum_rejects_mismatched_layouts =>
@@ -109,15 +169,11 @@ macro_rules! core_backend_test_suite {
                 glwe_automorphism_coarsened => $crate::test_suite::parity::test_glwe_automorphism_coarsened,
                 glwe_tensor_relinearize_cross_radix =>
                     $crate::test_suite::noise::glwe_tensor::test_glwe_tensor_relinearize_cross_radix,
-                glwe_external_product => $crate::test_suite::noise::external_product::test_glwe_external_product,
-                glwe_external_product_assign => $crate::test_suite::noise::external_product::test_glwe_external_product_assign,
                 glwe_keyswitch_k_digit => $crate::test_suite::noise::test_glwe_keyswitch_k_digit,
-                glwe_external_product_k_digit => $crate::test_suite::noise::test_glwe_external_product_k_digit,
                 glwe_keyswitch_ignores_dirty_scratch =>
                     $crate::test_suite::noise::keyswitch::test_glwe_keyswitch_ignores_dirty_scratch,
                 glwe_external_product_ignores_dirty_scratch =>
                     $crate::test_suite::noise::keyswitch::test_glwe_external_product_ignores_dirty_scratch,
-                glwe_rotate => $crate::test_suite::noise::test_glwe_rotate,
                 glwe_shift_saturates => $crate::test_suite::noise::test_glwe_shift_saturates,
                 glwe_shift_exact_scratch => $crate::test_suite::noise::test_glwe_shift_exact_scratch,
                 glwe_trace_assign => $crate::test_suite::noise::test_glwe_trace_assign,
@@ -160,7 +216,6 @@ macro_rules! core_backend_test_suite {
                     $crate::test_suite::noise::linear_transformation::test_glwe_linear_transformation_rejects_uneven_giant_step_width,
                 glwe_linear_transformation_sum_rejects_uneven_giant_step_width =>
                     $crate::test_suite::noise::linear_transformation::test_glwe_linear_transformation_sum_rejects_uneven_giant_step_width,
-                glwe_packing => $crate::test_suite::noise::test_glwe_packing,
                 gglwe_switching_key_encrypt_sk => $crate::test_suite::noise::encryption::test_gglwe_switching_key_encrypt_sk,
                 gglwe_switching_key_compressed_encrypt_sk =>
                     $crate::test_suite::noise::encryption::test_gglwe_switching_key_compressed_encrypt_sk,
@@ -173,15 +228,13 @@ macro_rules! core_backend_test_suite {
                 gglwe_tensor_key_compressed_encrypt_sk =>
                     $crate::test_suite::noise::encryption::test_gglwe_tensor_key_compressed_encrypt_sk,
                 gglwe_to_ggsw_key_encrypt_sk => $crate::test_suite::noise::encryption::test_gglwe_to_ggsw_key_encrypt_sk,
+                gglwe_to_ggsw_key_compressed_encrypt_sk =>
+                    $crate::test_suite::noise::encryption::test_gglwe_to_ggsw_key_compressed_encrypt_sk,
                 gglwe_switching_key_keyswitch => $crate::test_suite::noise::keyswitch::test_gglwe_switching_key_keyswitch,
                 gglwe_switching_key_keyswitch_assign => $crate::test_suite::noise::keyswitch::test_gglwe_switching_key_keyswitch_assign,
                 gglwe_switching_key_keyswitch_own_layout =>
                     $crate::test_suite::noise::keyswitch::test_gglwe_switching_key_keyswitch_own_layout,
                 gglwe_copy => $crate::test_suite::noise::test_gglwe_copy,
-                gglwe_switching_key_external_product =>
-                    $crate::test_suite::noise::external_product::test_gglwe_switching_key_external_product,
-                gglwe_switching_key_external_product_assign =>
-                    $crate::test_suite::noise::external_product::test_gglwe_switching_key_external_product_assign,
                 gglwe_automorphism_key_automorphism =>
                     $crate::test_suite::noise::automorphism::test_gglwe_automorphism_key_automorphism,
                 gglwe_automorphism_key_automorphism_assign =>
@@ -194,21 +247,7 @@ macro_rules! core_backend_test_suite {
                 ggsw_encrypt_pk_unnormalized_plaintext =>
                     $crate::test_suite::noise::encryption::test_ggsw_encrypt_pk_unnormalized_plaintext,
                 ggsw_compressed_encrypt_sk => $crate::test_suite::noise::encryption::test_ggsw_compressed_encrypt_sk,
-                ggsw_keyswitch => $crate::test_suite::noise::keyswitch::test_ggsw_keyswitch,
-                ggsw_keyswitch_assign => $crate::test_suite::noise::keyswitch::test_ggsw_keyswitch_assign,
-                ggsw_keyswitch_own_layout => $crate::test_suite::noise::keyswitch::test_ggsw_keyswitch_own_layout,
                 ggsw_copy => $crate::test_suite::noise::test_ggsw_copy,
-                ggsw_external_product => $crate::test_suite::noise::external_product::test_ggsw_external_product,
-                ggsw_external_product_assign => $crate::test_suite::noise::external_product::test_ggsw_external_product_assign,
-                ggsw_automorphism => $crate::test_suite::noise::automorphism::test_ggsw_automorphism,
-                ggsw_automorphism_assign => $crate::test_suite::noise::automorphism::test_ggsw_automorphism_assign,
-                lwe_keyswitch => $crate::test_suite::noise::keyswitch::test_lwe_keyswitch,
-                glwe_to_lwe => $crate::test_suite::noise::test_glwe_to_lwe,
-                lwe_to_glwe => $crate::test_suite::noise::test_lwe_to_glwe,
-                glwe_expand_lwe => $crate::test_suite::noise::test_glwe_expand_lwe,
-                glwe_expand_lwe_matrix_decrypt => $crate::test_suite::noise::test_glwe_expand_lwe_matrix_decrypt,
-                glwe_expand_lwe_rejects_incompatible_lwe_layout =>
-                    $crate::test_suite::noise::test_glwe_expand_lwe_rejects_incompatible_lwe_layout,
                 lwe_read_from_rejects_malformed_shape => $crate::test_suite::noise::test_lwe_read_from_rejects_malformed_shape,
                 lwe_secret_from_glwe_secret_flattens_rank_and_preserves_metadata =>
                     $crate::test_suite::noise::test_lwe_secret_from_glwe_secret_flattens_rank_and_preserves_metadata,
@@ -222,7 +261,8 @@ macro_rules! core_backend_test_suite {
                     $crate::test_suite::step_hooks::test_gglwe_products_from_dft_rejects_invalid_items,
                 gglwe_gadget_dft_apply_from_dft_rejects_invalid_operands =>
                     $crate::test_suite::step_hooks::test_gglwe_gadget_dft_apply_from_dft_rejects_invalid_operands,
-            }
+            },
+            ring_free_tests = { $($ring_free)* }
         );
     };
 }

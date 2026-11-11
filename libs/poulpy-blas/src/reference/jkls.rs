@@ -8,7 +8,7 @@ use poulpy_core::layouts::{
 };
 use poulpy_hal::{
     api::{ScratchArenaTakeVecZnxDft, VecZnxDftBytesOf},
-    layouts::{Backend, Module, PrepareHint, ScratchArena, VecZnxDftToBackendMut},
+    layouts::{Backend, Module, PrepareHint, Ring, ScratchArena, Standard, VecZnxDftToBackendMut},
 };
 
 use crate::{
@@ -24,11 +24,11 @@ use crate::{
 /// [`impl_blas_jkls_reference_full!`](crate::impl_blas_jkls_reference_full) forwards to and the reference products of
 /// [`crate::oep::BlasMatMulImpl`] call once per block of `res`. It runs on inputs the prepared product's validator,
 /// [`crate::layouts::validate_blas_matmul_prepared`], accepted, and checks nothing but its scratch.
-pub trait BlasJklsReference<BE: Backend> {
+pub trait BlasJklsReference<BE: Backend, Rg: Ring = Standard> {
     /// poulpy-ckks's `ckks_dot_product_prepared` query for `terms` pairs prepared from terms of these layouts.
     fn blas_jkls_block_tmp_bytes_reference<R, L, Rh, T>(&self, terms: usize, res: &R, lhs: &L, rhs: &Rh, tsk: &T) -> usize
     where
-        Self: CKKSDotProductOps<BE>,
+        Self: CKKSDotProductOps<BE, Rg>,
         R: CKKSCtBounds,
         L: CKKSCtBounds,
         Rh: CKKSCtBounds,
@@ -52,15 +52,15 @@ pub trait BlasJklsReference<BE: Backend> {
     fn blas_jkls_block_reference<R, T>(
         &self,
         res: &mut R,
-        lhs: &[&CKKSLeftOperandPrepared<BE>],
-        rhs: &[&CKKSRightOperandPrepared<BE>],
+        lhs: &[&CKKSLeftOperandPrepared<BE, Rg>],
+        rhs: &[&CKKSRightOperandPrepared<BE, Rg>],
         tsk: &T,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: CKKSDotProductOps<BE>,
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        T: GetTensorKey<BE> + Sync,
+        Self: CKKSDotProductOps<BE, Rg>,
+        R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        T: GetTensorKey<BE, Rg> + Sync,
     {
         if let (Some(&l), Some(&r)) = (lhs.first(), rhs.first()) {
             let op = "blas_jkls_block";
@@ -86,14 +86,18 @@ pub trait BlasJklsReference<BE: Backend> {
         outputs: usize,
         res: &R,
         src: &S,
-        first: &LinearTransformationPrepared<BE>,
-        masks: &[&LinearTransformationPrepared<BE>],
-        plaintext: &CKKSRightOperandPrepared<BE>,
+        first: &LinearTransformationPrepared<BE, Rg>,
+        masks: &[&LinearTransformationPrepared<BE, Rg>],
+        plaintext: &CKKSRightOperandPrepared<BE, Rg>,
         keys: &K,
     ) -> usize
     where
-        BE: BlasMatIntraImpl,
-        Self: CKKSCopyOps<BE> + CKKSMulOps<BE> + CKKSLeftOperandPreparedFactory<BE> + CKKSDotProductOps<BE> + VecZnxDftBytesOf,
+        BE: BlasMatIntraImpl<Rg>,
+        Self: CKKSCopyOps<BE, Rg>
+            + CKKSMulOps<BE, Rg>
+            + CKKSLeftOperandPreparedFactory<BE, Rg>
+            + CKKSDotProductOps<BE, Rg>
+            + VecZnxDftBytesOf,
         R: CKKSCtBounds,
         S: CKKSCtBounds,
         K: GGLWEInfos;
@@ -114,42 +118,46 @@ pub trait BlasJklsReference<BE: Backend> {
         &self,
         res: &mut [&mut D],
         sources: &[&S],
-        first: &LinearTransformationPrepared<BE>,
-        masks: &[&LinearTransformationPrepared<BE>],
-        plaintexts: &[&[CKKSRightOperandPrepared<BE>]],
+        first: &LinearTransformationPrepared<BE, Rg>,
+        masks: &[&LinearTransformationPrepared<BE, Rg>],
+        plaintexts: &[&[CKKSRightOperandPrepared<BE, Rg>]],
         galois: &[i64],
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        BE: BlasMatIntraImpl,
-        Self: CKKSCopyOps<BE>
-            + CKKSMulOps<BE>
-            + CKKSLeftOperandPreparedFactory<BE>
-            + CKKSDotProductOps<BE>
+        BE: BlasMatIntraImpl<Rg>,
+        Self: CKKSCopyOps<BE, Rg>
+            + CKKSMulOps<BE, Rg>
+            + CKKSLeftOperandPreparedFactory<BE, Rg>
+            + CKKSDotProductOps<BE, Rg>
             + CKKSCiphertextAlloc<BE>
             + CKKSModuleInfos
             + VecZnxDftBytesOf,
-        D: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + Send,
-        S: GLWEToBackendRef<BE> + CKKSCtBounds + Sync,
-        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync;
+        D: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos + Send,
+        S: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + Sync,
+        K: GetAutomorphismKey<BE, Rg> + GetTensorKey<BE, Rg> + Sync;
 }
 
-impl<BE: Backend> BlasJklsReference<BE> for Module<BE> {
+impl<BE: Backend, Rg: Ring> BlasJklsReference<BE, Rg> for Module<BE> {
     #[allow(clippy::too_many_arguments)]
     fn blas_jkls_pt_unit_tmp_bytes_reference<R, S, K>(
         &self,
         outputs: usize,
         res: &R,
         src: &S,
-        first: &LinearTransformationPrepared<BE>,
-        masks: &[&LinearTransformationPrepared<BE>],
-        plaintext: &CKKSRightOperandPrepared<BE>,
+        first: &LinearTransformationPrepared<BE, Rg>,
+        masks: &[&LinearTransformationPrepared<BE, Rg>],
+        plaintext: &CKKSRightOperandPrepared<BE, Rg>,
         keys: &K,
     ) -> usize
     where
-        BE: BlasMatIntraImpl,
-        Self: CKKSCopyOps<BE> + CKKSMulOps<BE> + CKKSLeftOperandPreparedFactory<BE> + CKKSDotProductOps<BE> + VecZnxDftBytesOf,
+        BE: BlasMatIntraImpl<Rg>,
+        Self: CKKSCopyOps<BE, Rg>
+            + CKKSMulOps<BE, Rg>
+            + CKKSLeftOperandPreparedFactory<BE, Rg>
+            + CKKSDotProductOps<BE, Rg>
+            + VecZnxDftBytesOf,
         R: CKKSCtBounds,
         S: CKKSCtBounds,
         K: GGLWEInfos,
@@ -175,25 +183,25 @@ impl<BE: Backend> BlasJklsReference<BE> for Module<BE> {
         &self,
         res: &mut [&mut D],
         sources: &[&S],
-        first: &LinearTransformationPrepared<BE>,
-        masks: &[&LinearTransformationPrepared<BE>],
-        plaintexts: &[&[CKKSRightOperandPrepared<BE>]],
+        first: &LinearTransformationPrepared<BE, Rg>,
+        masks: &[&LinearTransformationPrepared<BE, Rg>],
+        plaintexts: &[&[CKKSRightOperandPrepared<BE, Rg>]],
         galois: &[i64],
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        BE: BlasMatIntraImpl,
-        Self: CKKSCopyOps<BE>
-            + CKKSMulOps<BE>
-            + CKKSLeftOperandPreparedFactory<BE>
-            + CKKSDotProductOps<BE>
+        BE: BlasMatIntraImpl<Rg>,
+        Self: CKKSCopyOps<BE, Rg>
+            + CKKSMulOps<BE, Rg>
+            + CKKSLeftOperandPreparedFactory<BE, Rg>
+            + CKKSDotProductOps<BE, Rg>
             + CKKSCiphertextAlloc<BE>
             + CKKSModuleInfos
             + VecZnxDftBytesOf,
-        D: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + Send,
-        S: GLWEToBackendRef<BE> + CKKSCtBounds + Sync,
-        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync,
+        D: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos + Send,
+        S: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + Sync,
+        K: GetAutomorphismKey<BE, Rg> + GetTensorKey<BE, Rg> + Sync,
     {
         let op = "blas_jkls_pt_unit";
         let (Some(&src0), Some(res0)) = (sources.first(), res.first()) else {
@@ -216,7 +224,7 @@ impl<BE: Backend> BlasJklsReference<BE> for Module<BE> {
         let mut sigma = vec![self.ckks_ciphertext_alloc_from_infos(&staged)];
         let mut shifted: Vec<_> = masks.iter().map(|_| self.ckks_ciphertext_alloc_from_infos(&term)).collect();
         let mut narrowed = self.ckks_ciphertext_alloc_from_infos(&term);
-        let mut lefts: Vec<CKKSLeftOperandPrepared<BE>> = (0..per)
+        let mut lefts: Vec<CKKSLeftOperandPrepared<BE, Rg>> = (0..per)
             .map(|_| self.ckks_left_operand_prepared_alloc_from_infos(&term, PrepareHint::OneShot))
             .collect();
         let (n, cols, size) = (dst.n().as_usize(), dst.rank().as_usize() + 1, term.size() + plaintext.size());
@@ -237,7 +245,7 @@ impl<BE: Backend> BlasJklsReference<BE> for Module<BE> {
             for (left, shift) in tail.iter_mut().zip(&shifted) {
                 self.ckks_left_operand_prepare(left, shift, &mut rest)?;
             }
-            let terms: Vec<&CKKSLeftOperandPrepared<BE>> = lefts.iter().collect();
+            let terms: Vec<&CKKSLeftOperandPrepared<BE, Rg>> = lefts.iter().collect();
             for (o, (block, acc)) in res.iter().zip(&mut accs).enumerate() {
                 let block_pts = plaintexts[o * inner + l];
                 pts.clear();

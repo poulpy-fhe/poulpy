@@ -1,4 +1,4 @@
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Module, Ring, ScratchArena, Standard};
 
 use crate::layouts::{
     GGLWEInfos, GGLWEToBackendRef, GGSWInfos, GGSWToBackendMut, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
@@ -103,13 +103,13 @@ pub unsafe trait ConversionImpl: Backend + crate::oep::GLWEKeyswitchImpl + crate
         A: GLWEToBackendRef<Self> + GLWEInfos;
 }
 
-/// Backend-provided GGSW conversions (ring independent).
+/// Backend-provided GGSW conversions, serving both rings.
 ///
 /// # Safety
 /// Implementations reproduce the bodies their methods document bit for bit, report for each
 /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait GGSWConversionImpl: Backend + crate::oep::GLWECopyImpl {
+pub unsafe trait GGSWConversionImpl<Rg: Ring = Standard>: Backend + crate::oep::GLWECopyImpl<Rg> {
     /// Scratch bound of [`Self::ggsw_expand_rows_assign`]; may report less than the reference, never less than the body
     /// takes.
     fn ggsw_expand_rows_assign_tmp_bytes<R, A>(module: &Module<Self>, res_infos: &R, tsk_infos: &A) -> usize
@@ -123,10 +123,10 @@ pub unsafe trait GGSWConversionImpl: Backend + crate::oep::GLWECopyImpl {
     fn ggsw_expand_rows_assign<R>(
         module: &Module<Self>,
         res: &mut R,
-        tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, Self>,
+        tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, Self, Rg>,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        R: GGSWToBackendMut<Self> + GGSWInfos;
+        R: GGSWToBackendMut<Self, Rg> + GGSWInfos;
 
     /// Default body: `ggsw_from_gglwe_tmp_bytes_derived`, the larger of [`Self::ggsw_expand_rows_assign_tmp_bytes`] and
     /// [`GLWECopyImpl::glwe_copy_tmp_bytes`](crate::oep::GLWECopyImpl::glwe_copy_tmp_bytes).
@@ -136,7 +136,7 @@ pub unsafe trait GGSWConversionImpl: Backend + crate::oep::GLWECopyImpl {
         A: GGLWEInfos,
         T: GGLWEInfos,
     {
-        crate::oep::derived::conversion::ggsw_from_gglwe_tmp_bytes_derived::<Self, _, _, _, _>(
+        crate::oep::derived::conversion::ggsw_from_gglwe_tmp_bytes_derived::<Self, _, _, _, _, Rg>(
             module, res_infos, a_infos, tsk_infos,
         )
     }
@@ -149,13 +149,13 @@ pub unsafe trait GGSWConversionImpl: Backend + crate::oep::GLWECopyImpl {
         module: &Module<Self>,
         res: &mut R,
         a: &A,
-        tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, Self>,
+        tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, Self, Rg>,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        R: GGSWToBackendMut<Self> + GGSWInfos,
-        A: GGLWEToBackendRef<Self> + GGLWEInfos,
+        R: GGSWToBackendMut<Self, Rg> + GGSWInfos,
+        A: GGLWEToBackendRef<Self, Rg> + GGLWEInfos,
     {
-        crate::oep::derived::conversion::ggsw_from_gglwe_derived::<Self, _, _, _>(module, res, a, tsk, scratch)
+        crate::oep::derived::conversion::ggsw_from_gglwe_derived::<Self, _, _, _, Rg>(module, res, a, tsk, scratch)
     }
 }
 
@@ -251,10 +251,16 @@ macro_rules! impl_conversion_reference_full {
 }
 
 /// Selects the portable GGSW conversion algorithms.
+///
+/// `($be)` implements both rings and `($be, $ring)` one ring, as `docs/guides/layering-contract.md` describes.
 #[macro_export]
 macro_rules! impl_ggsw_conversion_reference_full {
     ($be:ty) => {
-        unsafe impl $crate::oep::GGSWConversionImpl for $be {
+        $crate::impl_ggsw_conversion_reference_full!($be, ::poulpy_hal::layouts::Standard);
+        $crate::impl_ggsw_conversion_reference_full!($be, ::poulpy_hal::layouts::ConjugateInvariant);
+    };
+    ($be:ty, $ring:ty) => {
+        unsafe impl $crate::oep::GGSWConversionImpl<$ring> for $be {
             fn ggsw_expand_rows_assign_tmp_bytes<R, A>(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 res_infos: &R,
@@ -264,7 +270,7 @@ macro_rules! impl_ggsw_conversion_reference_full {
                 R: $crate::layouts::GGSWInfos,
                 A: $crate::layouts::GGLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::conversion::GGSWConversionReference<$be>>::ggsw_expand_rows_assign_tmp_bytes_reference(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::conversion::GGSWConversionReference<$be, $ring>>::ggsw_expand_rows_assign_tmp_bytes_reference(
                     module, res_infos, tsk_infos,
                 )
             }
@@ -272,12 +278,12 @@ macro_rules! impl_ggsw_conversion_reference_full {
             fn ggsw_expand_rows_assign<R>(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 res: &mut R,
-                tsk: &$crate::layouts::prepared::GGLWEToGGSWKeyPreparedBackendRef<'_, $be>,
+                tsk: &$crate::layouts::prepared::GGLWEToGGSWKeyPreparedBackendRef<'_, $be, $ring>,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) where
-                R: $crate::layouts::GGSWToBackendMut<$be> + $crate::layouts::GGSWInfos,
+                R: $crate::layouts::GGSWToBackendMut<$be, $ring> + $crate::layouts::GGSWInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::conversion::GGSWConversionReference<$be>>::ggsw_expand_rows_assign_reference(module, res, tsk, scratch)
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::conversion::GGSWConversionReference<$be, $ring>>::ggsw_expand_rows_assign_reference(module, res, tsk, scratch)
             }
         }
     };

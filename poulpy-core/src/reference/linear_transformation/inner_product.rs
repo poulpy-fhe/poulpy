@@ -8,7 +8,7 @@
 use crate::layouts::BabyStepOperand;
 use poulpy_hal::{
     api::CnvOps,
-    layouts::{Backend, ScratchArena, VecZnxDftBackendMut},
+    layouts::{Backend, Ring, ScratchArena, VecZnxDftBackendMut},
 };
 
 use crate::{
@@ -28,16 +28,16 @@ pub fn glwe_giant_step_batch_reference<BE: Backend>(_module: &poulpy_hal::layout
 /// Reference of [`GLWELinearTransformationImpl::glwe_accumulate_giant_steps`](crate::oep::GLWELinearTransformationImpl::glwe_accumulate_giant_steps),
 /// which `impl_glwe_linear_transformation_reference_full!` forwards to: each product accumulated on
 /// its own with `cnv_apply_dft_sum`.
-pub fn glwe_accumulate_giant_steps_reference<BE, M, L: BabyStepOperand<BE>>(
+pub fn glwe_accumulate_giant_steps_reference<BE, M, L: BabyStepOperand<BE, Rg>, Rg: Ring>(
     module: &M,
     cnv_offset_hi: usize,
-    prods: &mut [VecZnxDftBackendMut<'_, BE>],
-    lhs: &LinearTransformationBabySteps<BE, L>,
-    steps: &[LinearTransformationGiantStep<PreparedDiagonal<BE::OwnedBuf, BE>>],
+    prods: &mut [VecZnxDftBackendMut<'_, BE, Rg>],
+    lhs: &LinearTransformationBabySteps<BE, Rg, L>,
+    steps: &[LinearTransformationGiantStep<PreparedDiagonal<BE::OwnedBuf, BE, Rg>>],
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
-    M: CnvOps<BE>,
+    M: CnvOps<BE, Rg>,
 {
     assert_eq!(prods.len(), steps.len());
     for (prod, step) in prods.iter_mut().zip(steps) {
@@ -46,7 +46,7 @@ pub fn glwe_accumulate_giant_steps_reference<BE, M, L: BabyStepOperand<BE>>(
 }
 
 /// Scratch bytes required by the prepared PROD of one giant step, `glwe_accumulate_prepared_baby_steps_dft`.
-pub(super) fn glwe_accumulate_prepared_baby_steps_dft_tmp_bytes<BE, M>(
+pub(super) fn glwe_accumulate_prepared_baby_steps_dft_tmp_bytes<BE, M, Rg: Ring>(
     module: &M,
     cnv_offset_hi: usize,
     baby_size: usize,
@@ -54,7 +54,7 @@ pub(super) fn glwe_accumulate_prepared_baby_steps_dft_tmp_bytes<BE, M>(
 ) -> usize
 where
     BE: Backend,
-    M: CnvOps<BE>,
+    M: CnvOps<BE, Rg>,
 {
     let res_dft_size = prod_dft_size(baby_size, diagonal_size, cnv_offset_hi);
     module.cnv_apply_dft_sum_tmp_bytes(cnv_offset_hi, res_dft_size, baby_size, diagonal_size)

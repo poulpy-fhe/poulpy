@@ -36,18 +36,19 @@ where
     let a_size = plan.raised_k(base2k).div_ceil(base2k);
     let b_size = (plan.log_delta_work() + base2k).div_ceil(base2k);
     let res_dft_size = a_size + b_size;
-    // Each right slot is taken at its plaintext's degree, at most the module's.
-    let preps = 4 * plan.theta() * module.cnv_pvec_right_bytes_of(module.n(), 1, b_size, PrepareHint::Reuse);
+    // Each right slot is taken at its plaintext's degree, at most the plan's.
+    let n = plan.n();
+    let preps = 4 * plan.theta() * module.cnv_pvec_right_bytes_of(n, 1, b_size, PrepareHint::Reuse);
     let work = module
         .cnv_pvec_right_prepare_tmp_bytes(b_size, b_size)
         .max(module.cnv_apply_dft_sum_tmp_bytes(0, res_dft_size, a_size, b_size))
         .max(
-            module.vec_znx_big_bytes_of(module.n(), 2, res_dft_size)
+            module.vec_znx_big_bytes_of(n, 2, res_dft_size)
                 + module
                     .vec_znx_big_normalize_tmp_bytes()
                     .max(module.vec_znx_idft_apply_tmp_bytes()),
         );
-    module.vec_znx_dft_bytes_of(module.n(), 2, res_dft_size) + preps + work
+    module.vec_znx_dft_bytes_of(n, 2, res_dft_size) + preps + work
 }
 
 /// Lazy masking accumulation: `acc = sum_i masks[i] * pis[i]` over the
@@ -97,8 +98,9 @@ where
     };
     let res_dft_size = a_size + b_size - cnv_offset_hi;
 
+    let n = acc.n().as_usize();
     let scratch = scratch.borrow();
-    let (mut sum_dft, scratch_1) = scratch.take_vec_znx_dft_scratch(module.n(), 2, res_dft_size);
+    let (mut sum_dft, scratch_1) = scratch.take_vec_znx_dft_scratch(n, 2, res_dft_size);
 
     let mut preps = Vec::with_capacity(pis.len());
     let mut rest = scratch_1;
@@ -131,7 +133,7 @@ where
         }
     }
 
-    let (mut res_big, mut scratch_2) = rest.take_vec_znx_big_scratch(module.n(), 2, res_dft_size);
+    let (mut res_big, mut scratch_2) = rest.take_vec_znx_big_scratch(n, 2, res_dft_size);
     {
         let mut res_big_mut = res_big.to_backend_mut();
         let sum_dft_ref = sum_dft.to_backend_ref();

@@ -13,10 +13,11 @@ use core::arch::x86_64::{
 };
 
 use poulpy_cpu_portable::kernels::fft64::{standard::fft64_automorphism_portable, vec_znx_dft::Fft64AutomorphismPlan};
+use poulpy_hal::layouts::Standard;
 
 /// One limb of [`Fft64AutomorphismPlan`]: `res = tau_p(a)`; scalar below the 8-slot SIMD width.
 #[inline(always)]
-pub(crate) fn reim_automorphism_avx512(plan: &Fft64AutomorphismPlan, res: &mut [f64], a: &[f64]) {
+pub(crate) fn reim_automorphism_avx512(plan: &Fft64AutomorphismPlan<Standard>, res: &mut [f64], a: &[f64]) {
     let m: usize = res.len() >> 1;
     assert_eq!(a.len(), res.len());
     assert_eq!(plan.perm.len(), m);

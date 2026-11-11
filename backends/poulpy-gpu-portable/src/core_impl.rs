@@ -21,8 +21,8 @@ use poulpy_core::{
 };
 use poulpy_cpu_portable::kernels::noise::{gaussian_cumulative_table_portable, gaussian_rejection_constants_portable};
 use poulpy_hal::layouts::{
-    Backend, ConjugateInvariant, Module, Ring, ScalarZnxBackendMut, ScratchArena, VecZnxBackendMut, VecZnxBackendRef,
-    VecZnxBigBackendMut, VecZnxDftBackendMut, VecZnxDftBackendRef, VmpPMatBackendRef, vec_znx_dft_backend_ref_from_mut,
+    Backend, Module, Ring, ScalarZnxBackendMut, ScratchArena, VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut,
+    VecZnxDftBackendMut, VecZnxDftBackendRef, VmpPMatBackendRef, vec_znx_dft_backend_ref_from_mut,
 };
 
 use crate::{
@@ -32,7 +32,7 @@ use crate::{
         scalar_column,
     },
     module::handle,
-    ntt4x30::AutomorphismPlan,
+    ntt4x30::Substitution,
     runtime::{GpuBuf, GpuRuntime, access},
     znx::{
         CONST_TERMS, Column, KERNEL_RADIX, Term, lincomb, normalize_products,
@@ -40,7 +40,7 @@ use crate::{
     },
 };
 
-unsafe impl<RT: GpuRuntime, R: Ring> GGLWEProductDigitsStridedImpl for NTT4x30Gpu<RT, R> {
+unsafe impl<RT: GpuRuntime, R: Ring> GGLWEProductDigitsStridedImpl<R> for NTT4x30Gpu<RT> {
     fn gglwe_product_digits_strided_tmp_bytes(
         _module: &Module<Self>,
         _res_size: usize,
@@ -57,11 +57,11 @@ unsafe impl<RT: GpuRuntime, R: Ring> GGLWEProductDigitsStridedImpl for NTT4x30Gp
 
     fn gglwe_product_digits_strided(
         _module: &Module<Self>,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
-        a: &VecZnxDftBackendRef<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, R>,
+        a: &VecZnxDftBackendRef<'_, Self, R>,
         dsize: usize,
         product_limbs: usize,
-        pmat: &VmpPMatBackendRef<'_, Self>,
+        pmat: &VmpPMatBackendRef<'_, Self, R>,
         _scratch: &mut ScratchArena<'_, Self>,
     ) {
         gglwe_product_digits_strided(res, a, dsize, product_limbs, pmat);
@@ -77,25 +77,38 @@ unsafe impl<RT: GpuRuntime, R: Ring> GGLWEProductDigitsStridedImpl for NTT4x30Gp
     where
         K: GGLWEInfos,
     {
-        module.gglwe_product_fused_tmp_bytes_reference(res_size, product_size, a_size, key_infos)
+        <Module<Self> as GGLWEProductDigitsStridedReference<Self, R>>::gglwe_product_fused_tmp_bytes_reference(
+            module,
+            res_size,
+            product_size,
+            a_size,
+            key_infos,
+        )
     }
 
     // One launch: the product adds, rotates and accumulates as it stores.
     fn gglwe_product_fused(
         module: &Module<Self>,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, R>,
         product_size: usize,
-        a: &VecZnxDftBackendRef<'_, Self>,
-        key: &GGLWEPreparedBackendRef<'_, Self>,
+        a: &VecZnxDftBackendRef<'_, Self, R>,
+        key: &GGLWEPreparedBackendRef<'_, Self, R>,
         term_count: usize,
-        addends: &[Option<(&VecZnxDftBackendRef<'_, Self>, usize)>],
+        addends: &[Option<(&VecZnxDftBackendRef<'_, Self, R>, usize)>],
         p: i64,
         accumulate: bool,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         assert_gglwe_product("gglwe_product_fused", res, product_size, a, key, addends);
         assert!(
-            scratch.available() >= Self::gglwe_product_fused_tmp_bytes(module, res.size(), product_size, a.size(), key),
+            scratch.available()
+                >= <Self as GGLWEProductDigitsStridedImpl<R>>::gglwe_product_fused_tmp_bytes(
+                    module,
+                    res.size(),
+                    product_size,
+                    a.size(),
+                    key
+                ),
             "gglwe_product_fused: scratch below its query"
         );
         // The kernel takes a dense key, a source to multiply and an addend on each of the first two columns.
@@ -106,7 +119,7 @@ unsafe impl<RT: GpuRuntime, R: Ring> GGLWEProductDigitsStridedImpl for NTT4x30Gp
         // One limb per digit is a plain vector-matrix product.
         let product_limbs = if dsize == 1 { 1 } else { gglwe_product_limbs(key, term_count) };
         // The identity stores without a rotation.
-        let plan = (p != 1).then(|| AutomorphismPlan::new(res.n(), p, handle(module).tables().invariant()));
+        let plan = (p != 1).then(|| Substitution::new(res.n(), p, handle(module).tables::<R>().invariant()));
         let addend = |column: usize| addends.get(column).copied().flatten();
         gglwe_product_fused(
             res,
@@ -134,8 +147,13 @@ unsafe impl<RT: GpuRuntime, R: Ring> GGLWEProductDigitsStridedImpl for NTT4x30Gp
         // The operands of every source side by side, then the work of one source.
         let operand_size = gglwe_gadget_dft_operand_size(key_infos, source_size, key_infos.size());
         let operand = Self::scratch_aligned(Self::vec_znx_dft_bytes_of(module.n(), rank, operand_size));
-        module.gglwe_products_from_dft_tmp_bytes_reference(count, rank, source_size, key_infos)
-            + count.saturating_sub(1) * operand
+        <Module<Self> as GGLWEProductDigitsStridedReference<Self, R>>::gglwe_products_from_dft_tmp_bytes_reference(
+            module,
+            count,
+            rank,
+            source_size,
+            key_infos,
+        ) + count.saturating_sub(1) * operand
     }
 
     // The operands of the sources laid out side by side, then their products in launches of up
@@ -144,13 +162,13 @@ unsafe impl<RT: GpuRuntime, R: Ring> GGLWEProductDigitsStridedImpl for NTT4x30Gp
         module: &Module<Self>,
         p: i64,
         term_count: usize,
-        res: &mut [VecZnxDftBackendMut<'_, Self>],
+        res: &mut [VecZnxDftBackendMut<'_, Self, R>],
         output_size: usize,
         accumulate: &[bool],
-        sources: &mut [VecZnxDftBackendMut<'_, Self>],
+        sources: &mut [VecZnxDftBackendMut<'_, Self, R>],
         source_sizes: &[usize],
         source_base2k: usize,
-        key: &GGLWEPreparedBackendRef<'_, Self>,
+        key: &GGLWEPreparedBackendRef<'_, Self, R>,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         use poulpy_hal::api::ScratchArenaTakeVecZnxDft;
@@ -173,7 +191,14 @@ unsafe impl<RT: GpuRuntime, R: Ring> GGLWEProductDigitsStridedImpl for NTT4x30Gp
         let (n, rank) = (first.n(), first.cols() - 1);
         let source_size = source_sizes[0];
         assert!(
-            scratch.available() >= Self::gglwe_products_from_dft_tmp_bytes(module, res.len(), rank, source_size, key),
+            scratch.available()
+                >= <Self as GGLWEProductDigitsStridedImpl<R>>::gglwe_products_from_dft_tmp_bytes(
+                    module,
+                    res.len(),
+                    rank,
+                    source_size,
+                    key
+                ),
             "gglwe_products_from_dft: scratch below its query"
         );
         // The kernel takes a dense key, sources of one size and one accumulation for all.
@@ -197,23 +222,23 @@ unsafe impl<RT: GpuRuntime, R: Ring> GGLWEProductDigitsStridedImpl for NTT4x30Gp
         let (mut operands, mut rest) = scratch
             .borrow()
             .take_vec_znx_dft_slice_scratch(n, res.len(), rank, operand_size);
-        let mut sources: Vec<VecZnxDftBackendMut<'_, Self>> = sources
+        let mut sources: Vec<VecZnxDftBackendMut<'_, Self, R>> = sources
             .iter_mut()
             .map(|source| source.with_limb_range_mut(0, source_size))
             .collect();
         for (operand, source) in operands.iter_mut().zip(sources.iter_mut()) {
             gglwe_gadget_dft_apply_from_dft(module, operand, source, source_base2k, key, output_size, &mut rest);
         }
-        let operands: Vec<VecZnxDftBackendRef<'_, Self>> = operands
+        let operands: Vec<VecZnxDftBackendRef<'_, Self, R>> = operands
             .iter()
             .map(|operand| vec_znx_dft_backend_ref_from_mut(operand))
             .collect();
-        let bodies: Vec<VecZnxDftBackendRef<'_, Self>> = sources.iter().map(vec_znx_dft_backend_ref_from_mut).collect();
+        let bodies: Vec<VecZnxDftBackendRef<'_, Self, R>> = sources.iter().map(vec_znx_dft_backend_ref_from_mut).collect();
         let dsize = key.dsize().as_usize();
         let product_limbs = if dsize == 1 { 1 } else { gglwe_product_limbs(key, term_count) };
         // The identity stores without a rotation.
-        let plan = (p != 1).then(|| AutomorphismPlan::new(n, p, handle(module).tables().invariant()));
-        let mut body_refs: Vec<&VecZnxDftBackendRef<'_, Self>> = Vec::with_capacity(crate::ntt4x30::MANY_SOURCES);
+        let plan = (p != 1).then(|| Substitution::new(n, p, handle(module).tables::<R>().invariant()));
+        let mut body_refs: Vec<&VecZnxDftBackendRef<'_, Self, R>> = Vec::with_capacity(crate::ntt4x30::MANY_SOURCES);
         let mut start = 0;
         while start < res.len() {
             let end = (start + crate::ntt4x30::MANY_SOURCES).min(res.len());
@@ -261,30 +286,42 @@ unsafe impl<RT: GpuRuntime, R: Ring> GGLWEProductDigitsStridedImpl for NTT4x30Gp
     where
         K: GGLWEInfos,
     {
-        module.gglwe_product_idft_normalize_tmp_bytes_reference(res_size, product_size, a_size, key_infos)
+        <Module<Self> as GGLWEProductDigitsStridedReference<Self, R>>::gglwe_product_idft_normalize_tmp_bytes_reference(
+            module,
+            res_size,
+            product_size,
+            a_size,
+            key_infos,
+        )
     }
 
     // At rank 1 and the kernel's radices, the product runs the first inverse launch of its
     // result; each column then takes the remaining launches and the normalization.
     fn gglwe_product_idft_normalize(
         module: &Module<Self>,
-        res: &mut VecZnxBackendMut<'_, Self>,
+        res: &mut VecZnxBackendMut<'_, Self, R>,
         res_base2k: usize,
         res_k: usize,
         res_offset: i64,
-        res_dft: &mut VecZnxDftBackendMut<'_, Self>,
-        a: &VecZnxDftBackendRef<'_, Self>,
-        key: &GGLWEPreparedBackendRef<'_, Self>,
+        res_dft: &mut VecZnxDftBackendMut<'_, Self, R>,
+        a: &VecZnxDftBackendRef<'_, Self, R>,
+        key: &GGLWEPreparedBackendRef<'_, Self, R>,
         term_count: usize,
-        addends: &[Option<(&VecZnxDftBackendRef<'_, Self>, usize)>],
-        body: Option<(&VecZnxBackendRef<'_, Self>, usize)>,
+        addends: &[Option<(&VecZnxDftBackendRef<'_, Self, R>, usize)>],
+        body: Option<(&VecZnxBackendRef<'_, Self, R>, usize)>,
         a_base2k: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         assert_gglwe_product_idft_normalize("gglwe_product_idft_normalize", res, res_dft, a, key, addends, body);
         assert!(
             scratch.available()
-                >= Self::gglwe_product_idft_normalize_tmp_bytes(module, res.size(), res_dft.size(), a.size(), key),
+                >= <Self as GGLWEProductDigitsStridedImpl<R>>::gglwe_product_idft_normalize_tmp_bytes(
+                    module,
+                    res.size(),
+                    res_dft.size(),
+                    a.size(),
+                    key
+                ),
             "gglwe_product_idft_normalize: scratch below its query"
         );
         let dsize = key.dsize().as_usize();
@@ -331,16 +368,16 @@ unsafe impl<RT: GpuRuntime, R: Ring> GGLWEProductDigitsStridedImpl for NTT4x30Gp
     // normalization.
     fn gglwe_products_idft_normalize(
         module: &Module<Self>,
-        res: &mut [VecZnxBackendMut<'_, Self>],
+        res: &mut [VecZnxBackendMut<'_, Self, R>],
         res_base2k: usize,
         res_k: usize,
         res_offset: i64,
-        res_dft: &mut [VecZnxDftBackendMut<'_, Self>],
-        a: &[VecZnxDftBackendRef<'_, Self>],
-        key: &GGLWEPreparedBackendRef<'_, Self>,
+        res_dft: &mut [VecZnxDftBackendMut<'_, Self, R>],
+        a: &[VecZnxDftBackendRef<'_, Self, R>],
+        key: &GGLWEPreparedBackendRef<'_, Self, R>,
         term_count: usize,
-        addends: &[&[Option<(&VecZnxDftBackendRef<'_, Self>, usize)>]],
-        body: &[Option<(&VecZnxBackendRef<'_, Self>, usize)>],
+        addends: &[&[Option<(&VecZnxDftBackendRef<'_, Self, R>, usize)>]],
+        body: &[Option<(&VecZnxBackendRef<'_, Self, R>, usize)>],
         a_base2k: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
@@ -363,13 +400,15 @@ unsafe impl<RT: GpuRuntime, R: Ring> GGLWEProductDigitsStridedImpl for NTT4x30Gp
                 addend(i),
                 body[i],
             );
-            need = need.max(Self::gglwe_product_idft_normalize_tmp_bytes(
-                module,
-                res[i].size(),
-                res_dft[i].size(),
-                a[i].size(),
-                key,
-            ));
+            need = need.max(
+                <Self as GGLWEProductDigitsStridedImpl<R>>::gglwe_product_idft_normalize_tmp_bytes(
+                    module,
+                    res[i].size(),
+                    res_dft[i].size(),
+                    a[i].size(),
+                    key,
+                ),
+            );
         }
         assert!(
             scratch.available() >= need,
@@ -438,12 +477,9 @@ unsafe impl<RT: GpuRuntime, R: Ring> GGLWEProductDigitsStridedImpl for NTT4x30Gp
 
 /// Scratch of [`shifted_const_combination`]: every constant of a combination
 /// shifted at once.
-pub(crate) fn const_combination_shift_tmp_bytes<RT: GpuRuntime, R: Ring>(
-    module: &Module<NTT4x30Gpu<RT, R>>,
-    b_size: usize,
-) -> usize {
+pub(crate) fn const_combination_shift_tmp_bytes<RT: GpuRuntime>(module: &Module<NTT4x30Gpu<RT>>, b_size: usize) -> usize {
     use poulpy_hal::{api::VecZnxRshTmpBytes, layouts::Backend};
-    NTT4x30Gpu::<RT, R>::scratch_aligned(NTT4x30Gpu::<RT, R>::vec_znx_bytes_of(1, CONST_TERMS, b_size + 1))
+    NTT4x30Gpu::<RT>::scratch_aligned(NTT4x30Gpu::<RT>::vec_znx_bytes_of(1, CONST_TERMS, b_size + 1))
         + module.vec_znx_rsh_tmp_bytes(b_size + 1)
 }
 
@@ -452,13 +488,13 @@ pub(crate) fn const_combination_shift_tmp_bytes<RT: GpuRuntime, R: Ring>(
 /// carved from `scratch` side by side, one column per term. `false` when the sum
 /// takes no fused launch or `scratch` cannot hold the shifted constants.
 pub(crate) fn shifted_const_combination<RT: GpuRuntime, R: Ring>(
-    module: &Module<NTT4x30Gpu<RT, R>>,
-    res: &mut VecZnxBackendMut<'_, NTT4x30Gpu<RT, R>>,
+    module: &Module<NTT4x30Gpu<RT>>,
+    res: &mut VecZnxBackendMut<'_, NTT4x30Gpu<RT>, R>,
     base2k: usize,
     res_k: usize,
     acc_size: usize,
-    terms: &[ConstTerm<'_, NTT4x30Gpu<RT, R>>],
-    scratch: &mut ScratchArena<'_, NTT4x30Gpu<RT, R>>,
+    terms: &[ConstTerm<'_, NTT4x30Gpu<RT>, R>],
+    scratch: &mut ScratchArena<'_, NTT4x30Gpu<RT>>,
 ) -> bool {
     use poulpy_hal::{
         api::{ScratchArenaTakeVecZnx, VecZnxRsh},
@@ -482,28 +518,28 @@ pub(crate) fn shifted_const_combination<RT: GpuRuntime, R: Ring>(
                 term.shift,
                 &mut shifted.to_backend_mut(),
                 index,
-                &vec_znx_backend_ref_from_ref::<NTT4x30Gpu<RT, R>>(&term.b).window_coeffs(term.b_coeff, 1),
+                &vec_znx_backend_ref_from_ref::<NTT4x30Gpu<RT>, R>(&term.b).window_coeffs(term.b_coeff, 1),
                 term.b_col,
                 &mut scratch.borrow(),
             );
         }
     }
     let shifted = shifted.to_backend_ref();
-    let terms: Vec<ConstTerm<'_, NTT4x30Gpu<RT, R>>> = terms
+    let terms: Vec<ConstTerm<'_, NTT4x30Gpu<RT>, R>> = terms
         .iter()
         .enumerate()
         .map(|(index, term)| {
             let (b, b_col, b_coeff) = if term.shift == 0 {
                 (
-                    vec_znx_backend_ref_from_ref::<NTT4x30Gpu<RT, R>>(&term.b),
+                    vec_znx_backend_ref_from_ref::<NTT4x30Gpu<RT>, R>(&term.b),
                     term.b_col,
                     term.b_coeff,
                 )
             } else {
-                (vec_znx_backend_ref_from_ref::<NTT4x30Gpu<RT, R>>(&shifted), index, 0)
+                (vec_znx_backend_ref_from_ref::<NTT4x30Gpu<RT>, R>(&shifted), index, 0)
             };
             ConstTerm {
-                a: vec_znx_backend_ref_from_ref::<NTT4x30Gpu<RT, R>>(&term.a),
+                a: vec_znx_backend_ref_from_ref::<NTT4x30Gpu<RT>, R>(&term.a),
                 b,
                 b_col,
                 b_coeff,
@@ -520,11 +556,11 @@ pub(crate) fn shifted_const_combination<RT: GpuRuntime, R: Ring>(
 /// nothing, for more terms than one launch takes, a radix the kernel does not
 /// handle, operands without storage or a destination that is one of them.
 pub(crate) fn const_combination<RT: GpuRuntime, R: Ring>(
-    res: &mut VecZnxBackendMut<'_, NTT4x30Gpu<RT, R>>,
+    res: &mut VecZnxBackendMut<'_, NTT4x30Gpu<RT>, R>,
     base2k: usize,
     res_k: usize,
     acc_size: usize,
-    terms: &[ConstTerm<'_, NTT4x30Gpu<RT, R>>],
+    terms: &[ConstTerm<'_, NTT4x30Gpu<RT>, R>],
 ) -> bool {
     if terms.is_empty() || terms.len() > CONST_TERMS || acc_size == 0 || base2k > KERNEL_RADIX {
         return false;
@@ -576,14 +612,18 @@ pub(crate) fn const_combination<RT: GpuRuntime, R: Ring>(
 /// registers it, with the constant combination summed in one launch per column.
 macro_rules! impl_mul_const {
     ($be:ty) => {
-        unsafe impl ::poulpy_core::oep::GLWEMulConstImpl for $be {
+        impl_mul_const!($be, ::poulpy_hal::layouts::Standard);
+        impl_mul_const!($be, ::poulpy_hal::layouts::ConjugateInvariant);
+    };
+    ($be:ty, $ring:ty) => {
+        unsafe impl ::poulpy_core::oep::GLWEMulConstImpl<$ring> for $be {
             fn glwe_mul_const_tmp_bytes<R, A, B>(module: &::poulpy_hal::layouts::Module<$be>, res: &R, a: &A, b: &B) -> usize
             where
                 R: ::poulpy_core::layouts::GLWEInfos,
                 A: ::poulpy_core::layouts::GLWEInfos,
                 B: ::poulpy_core::layouts::GLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as ::poulpy_core::reference::operations::GLWEMulConstReference<$be>>::glwe_mul_const_tmp_bytes_reference::<R, A, B>(module, res, a, b)
+                <::poulpy_hal::layouts::Module<$be> as ::poulpy_core::reference::operations::GLWEMulConstReference<$be, $ring>>::glwe_mul_const_tmp_bytes_reference::<R, A, B>(module, res, a, b)
             }
 
             fn glwe_mul_const<R, A, B>(
@@ -595,11 +635,11 @@ macro_rules! impl_mul_const {
                 b_coeff: usize,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) where
-                R: ::poulpy_core::layouts::GLWEToBackendMut<$be> + ::poulpy_core::layouts::GLWEInfos,
-                A: ::poulpy_core::layouts::GLWEToBackendRef<$be> + ::poulpy_core::layouts::GLWEInfos,
-                B: ::poulpy_core::layouts::GLWEToBackendRef<$be> + ::poulpy_core::layouts::GLWEInfos,
+                R: ::poulpy_core::layouts::GLWEToBackendMut<$be, $ring> + ::poulpy_core::layouts::GLWEInfos,
+                A: ::poulpy_core::layouts::GLWEToBackendRef<$be, $ring> + ::poulpy_core::layouts::GLWEInfos,
+                B: ::poulpy_core::layouts::GLWEToBackendRef<$be, $ring> + ::poulpy_core::layouts::GLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as ::poulpy_core::reference::operations::GLWEMulConstReference<$be>>::glwe_mul_const_reference::<R, A, B>(module, cnv_offset, res, a, b, b_coeff, scratch)
+                <::poulpy_hal::layouts::Module<$be> as ::poulpy_core::reference::operations::GLWEMulConstReference<$be, $ring>>::glwe_mul_const_reference::<R, A, B>(module, cnv_offset, res, a, b, b_coeff, scratch)
             }
 
             fn glwe_mul_const_assign<R, B>(
@@ -610,10 +650,10 @@ macro_rules! impl_mul_const {
                 b_coeff: usize,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) where
-                R: ::poulpy_core::layouts::GLWEToBackendMut<$be> + ::poulpy_core::layouts::GLWEInfos,
-                B: ::poulpy_core::layouts::GLWEToBackendRef<$be> + ::poulpy_core::layouts::GLWEInfos,
+                R: ::poulpy_core::layouts::GLWEToBackendMut<$be, $ring> + ::poulpy_core::layouts::GLWEInfos,
+                B: ::poulpy_core::layouts::GLWEToBackendRef<$be, $ring> + ::poulpy_core::layouts::GLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as ::poulpy_core::reference::operations::GLWEMulConstReference<$be>>::glwe_mul_const_assign_reference::<R, B>(module, cnv_offset, res, b, b_coeff, scratch)
+                <::poulpy_hal::layouts::Module<$be> as ::poulpy_core::reference::operations::GLWEMulConstReference<$be, $ring>>::glwe_mul_const_assign_reference::<R, B>(module, cnv_offset, res, b, b_coeff, scratch)
             }
 
             fn glwe_const_combination_tmp_bytes(
@@ -622,21 +662,21 @@ macro_rules! impl_mul_const {
                 a_size: usize,
                 b_size: usize,
             ) -> usize {
-                <::poulpy_hal::layouts::Module<$be> as ::poulpy_core::reference::operations::GLWEMulConstReference<$be>>::glwe_const_combination_tmp_bytes_reference(module, acc_size, a_size, b_size)
+                <::poulpy_hal::layouts::Module<$be> as ::poulpy_core::reference::operations::GLWEMulConstReference<$be, $ring>>::glwe_const_combination_tmp_bytes_reference(module, acc_size, a_size, b_size)
                     .max($crate::core_impl::const_combination_shift_tmp_bytes(module, b_size))
             }
 
             fn glwe_const_combination(
                 module: &::poulpy_hal::layouts::Module<$be>,
-                res: &mut ::poulpy_hal::layouts::VecZnxBackendMut<'_, $be>,
+                res: &mut ::poulpy_hal::layouts::VecZnxBackendMut<'_, $be, $ring>,
                 base2k: usize,
                 res_k: usize,
                 acc_size: usize,
-                terms: &[::poulpy_core::oep::ConstTerm<'_, $be>],
+                terms: &[::poulpy_core::oep::ConstTerm<'_, $be, $ring>],
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) {
                 if !$crate::core_impl::shifted_const_combination(module, res, base2k, res_k, acc_size, terms, scratch) {
-                    <::poulpy_hal::layouts::Module<$be> as ::poulpy_core::reference::operations::GLWEMulConstReference<$be>>::glwe_const_combination_reference(
+                    <::poulpy_hal::layouts::Module<$be> as ::poulpy_core::reference::operations::GLWEMulConstReference<$be, $ring>>::glwe_const_combination_reference(
                         module, res, base2k, res_k, acc_size, terms, scratch,
                     )
                 }
@@ -656,7 +696,7 @@ enum GaussianPlan<RT: GpuRuntime> {
 
 struct GaussianPlans<RT: GpuRuntime>(Mutex<HashMap<u64, Arc<GaussianPlan<RT>>>>);
 
-fn gaussian_plan<RT: GpuRuntime, R: Ring>(module: &Module<NTT4x30Gpu<RT, R>>, sigma: f64) -> Arc<GaussianPlan<RT>> {
+fn gaussian_plan<RT: GpuRuntime>(module: &Module<NTT4x30Gpu<RT>>, sigma: f64) -> Arc<GaussianPlan<RT>> {
     let build = || {
         let (_, _, bound) = Noise::gaussian_parts(sigma);
         if u64::try_from(&bound).is_ok_and(|bound| bound <= 64) {
@@ -750,13 +790,7 @@ fn noise_placement(
 }
 
 /// Adds a draw of `noise` to `res`, an `i64` or `i128` column.
-fn add_noise<RT: GpuRuntime, R: Ring>(
-    module: &Module<NTT4x30Gpu<RT, R>>,
-    res: &Column,
-    place: &Placement,
-    noise: Noise,
-    seed: &[u8; 32],
-) {
+fn add_noise<RT: GpuRuntime>(module: &Module<NTT4x30Gpu<RT>>, res: &Column, place: &Placement, noise: Noise, seed: &[u8; 32]) {
     match noise {
         Noise::Uniform { bits } => add_uniform::<RT>(res, place, bits, seed),
         Noise::Gaussian { sigma } => match &*gaussian_plan(module, sigma) {
@@ -783,10 +817,10 @@ fn add_noise<RT: GpuRuntime, R: Ring>(
 
 /// The device samplers. A draw depends only on the seed, the degree, the law
 /// and the placement: every coefficient has its own keystream.
-unsafe impl<RT: GpuRuntime, R: Ring> SamplingImpl for NTT4x30Gpu<RT, R> {
+unsafe impl<RT: GpuRuntime, R: Ring> SamplingImpl<R> for NTT4x30Gpu<RT> {
     fn scalar_znx_fill_distribution(
         _module: &Module<Self>,
-        res: &mut ScalarZnxBackendMut<'_, Self>,
+        res: &mut ScalarZnxBackendMut<'_, Self, R>,
         res_col: usize,
         dist: Distribution,
         seed: [u8; 32],
@@ -834,7 +868,7 @@ unsafe impl<RT: GpuRuntime, R: Ring> SamplingImpl for NTT4x30Gpu<RT, R> {
         module: &Module<Self>,
         base2k: usize,
         k: usize,
-        res: &mut VecZnxBackendMut<'_, Self>,
+        res: &mut VecZnxBackendMut<'_, Self, R>,
         res_col: usize,
         noise: Noise,
         seed: [u8; 32],
@@ -848,7 +882,7 @@ unsafe impl<RT: GpuRuntime, R: Ring> SamplingImpl for NTT4x30Gpu<RT, R> {
         module: &Module<Self>,
         base2k: usize,
         k: usize,
-        res: &mut VecZnxBigBackendMut<'_, Self>,
+        res: &mut VecZnxBigBackendMut<'_, Self, R>,
         res_col: usize,
         noise: Noise,
         seed: [u8; 32],
@@ -859,8 +893,8 @@ unsafe impl<RT: GpuRuntime, R: Ring> SamplingImpl for NTT4x30Gpu<RT, R> {
     }
 }
 
-/// The families registered through the upstream macros, which take a
-/// concrete backend type: one invocation per runtime and ring.
+/// The families of both rings, registered through the upstream macros, which
+/// take a concrete backend type and expand once per ring: one invocation per runtime.
 macro_rules! impl_core {
     ($be:ty) => {
         ::poulpy_core::impl_automorphism_reference_full!($be);
@@ -870,7 +904,6 @@ macro_rules! impl_core {
         ::poulpy_core::impl_glwe_keyswitch_reference_full!($be);
         ::poulpy_core::impl_gglwe_keyswitch_derived_full!($be);
         ::poulpy_core::impl_ggsw_keyswitch_derived_full!($be);
-        ::poulpy_core::impl_lwe_keyswitch_reference_full!($be);
         ::poulpy_core::impl_encryption_reference_full!($be);
         ::poulpy_core::impl_glwe_external_product_reference_full!($be);
         ::poulpy_core::impl_gglwe_external_product_derived_full!($be);
@@ -895,10 +928,14 @@ macro_rules! impl_core {
     };
 }
 
-/// The families of the standard ring only.
+/// The standard-only and cross-ring families.
 macro_rules! impl_core_standard {
     ($be:ty) => {
         ::poulpy_core::impl_conversion_reference_full!($be);
+        ::poulpy_core::impl_lwe_keyswitch_reference_full!($be);
+        ::poulpy_core::impl_lwe_key_encryption_reference_full!($be);
+        ::poulpy_core::impl_lwe_key_preparation_derived_full!($be);
+        ::poulpy_core::impl_lwe_key_decompression_derived_full!($be);
         ::poulpy_core::impl_glwe_pack_derived_full!($be);
         ::poulpy_core::impl_glwe_rotate_reference_full!($be);
         ::poulpy_core::impl_ggsw_rotate_derived_full!($be);
@@ -912,7 +949,11 @@ macro_rules! impl_core_standard {
 /// `glwe_mul_columns`, which is the fused three-column product.
 macro_rules! impl_tensoring {
     ($be:ty) => {
-        unsafe impl ::poulpy_core::oep::GLWETensoringImpl for $be {
+        impl_tensoring!($be, ::poulpy_hal::layouts::Standard);
+        impl_tensoring!($be, ::poulpy_hal::layouts::ConjugateInvariant);
+    };
+    ($be:ty, $ring:ty) => {
+        unsafe impl ::poulpy_core::oep::GLWETensoringImpl<$ring> for $be {
             fn glwe_tensor_apply_prepared_right_tmp_bytes<R, A>(
                 module: &::poulpy_hal::layouts::Module<$be>, res: &R, a: &A, a_size: usize, b_size: usize,
             ) -> usize
@@ -920,7 +961,7 @@ macro_rules! impl_tensoring {
                 R: ::poulpy_core::layouts::GLWEInfos,
                 A: ::poulpy_core::layouts::GLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as ::poulpy_core::reference::operations::GLWETensoringReference<$be>>::glwe_tensor_apply_prepared_right_tmp_bytes_reference(
+                <::poulpy_hal::layouts::Module<$be> as ::poulpy_core::reference::operations::GLWETensoringReference<$be, $ring>>::glwe_tensor_apply_prepared_right_tmp_bytes_reference(
                     module, res, a, a_size, b_size,
                 )
             }
@@ -929,11 +970,11 @@ macro_rules! impl_tensoring {
                 module: &::poulpy_hal::layouts::Module<$be>, cnv_offset: usize, res: &mut R, a: &A, b: &BP, b_size: usize,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) where
-                R: ::poulpy_core::layouts::GLWEToBackendMut<$be> + ::poulpy_core::layouts::GLWEInfos,
-                A: ::poulpy_core::layouts::GLWEToBackendRef<$be> + ::poulpy_core::layouts::GLWEInfos,
-                BP: ::poulpy_hal::layouts::CnvPVecRToBackendRef<$be>,
+                R: ::poulpy_core::layouts::GLWEToBackendMut<$be, $ring> + ::poulpy_core::layouts::GLWEInfos,
+                A: ::poulpy_core::layouts::GLWEToBackendRef<$be, $ring> + ::poulpy_core::layouts::GLWEInfos,
+                BP: ::poulpy_hal::layouts::CnvPVecRToBackendRef<$be, $ring>,
             {
-                <::poulpy_hal::layouts::Module<$be> as ::poulpy_core::reference::operations::GLWETensoringReference<$be>>::glwe_tensor_apply_prepared_right_reference(
+                <::poulpy_hal::layouts::Module<$be> as ::poulpy_core::reference::operations::GLWETensoringReference<$be, $ring>>::glwe_tensor_apply_prepared_right_reference(
                     module, cnv_offset, res, a, b, b_size, scratch,
                 )
             }
@@ -949,7 +990,7 @@ macro_rules! impl_tensoring {
                 A: ::poulpy_core::layouts::GLWEInfos,
                 B: ::poulpy_core::layouts::GLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as ::poulpy_core::reference::operations::GLWETensoringReference<$be>>::glwe_tensor_apply_tmp_bytes_reference(
+                <::poulpy_hal::layouts::Module<$be> as ::poulpy_core::reference::operations::GLWETensoringReference<$be, $ring>>::glwe_tensor_apply_tmp_bytes_reference(
                     module, res, a, b,
                 )
             }
@@ -963,7 +1004,7 @@ macro_rules! impl_tensoring {
                 R: ::poulpy_core::layouts::GLWEInfos,
                 A: ::poulpy_core::layouts::GLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as ::poulpy_core::reference::operations::GLWETensoringReference<$be>>::glwe_tensor_square_apply_tmp_bytes_reference(
+                <::poulpy_hal::layouts::Module<$be> as ::poulpy_core::reference::operations::GLWETensoringReference<$be, $ring>>::glwe_tensor_square_apply_tmp_bytes_reference(
                     module, res, a,
                 )
             }
@@ -976,11 +1017,11 @@ macro_rules! impl_tensoring {
                 b: &B,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) where
-                R: ::poulpy_core::layouts::GLWEToBackendMut<$be> + ::poulpy_core::layouts::GLWEInfos,
-                A: ::poulpy_core::layouts::GLWEToBackendRef<$be> + ::poulpy_core::layouts::GLWEInfos,
-                B: ::poulpy_core::layouts::GLWEToBackendRef<$be> + ::poulpy_core::layouts::GLWEInfos,
+                R: ::poulpy_core::layouts::GLWEToBackendMut<$be, $ring> + ::poulpy_core::layouts::GLWEInfos,
+                A: ::poulpy_core::layouts::GLWEToBackendRef<$be, $ring> + ::poulpy_core::layouts::GLWEInfos,
+                B: ::poulpy_core::layouts::GLWEToBackendRef<$be, $ring> + ::poulpy_core::layouts::GLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as ::poulpy_core::reference::operations::GLWETensoringReference<$be>>::glwe_tensor_apply_reference(
+                <::poulpy_hal::layouts::Module<$be> as ::poulpy_core::reference::operations::GLWETensoringReference<$be, $ring>>::glwe_tensor_apply_reference(
                     module, cnv_offset, res, a, b, scratch,
                 )
             }
@@ -992,10 +1033,10 @@ macro_rules! impl_tensoring {
                 a: &A,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) where
-                R: ::poulpy_core::layouts::GLWEToBackendMut<$be> + ::poulpy_core::layouts::GLWEInfos,
-                A: ::poulpy_core::layouts::GLWEToBackendRef<$be> + ::poulpy_core::layouts::GLWEInfos,
+                R: ::poulpy_core::layouts::GLWEToBackendMut<$be, $ring> + ::poulpy_core::layouts::GLWEInfos,
+                A: ::poulpy_core::layouts::GLWEToBackendRef<$be, $ring> + ::poulpy_core::layouts::GLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as ::poulpy_core::reference::operations::GLWETensoringReference<$be>>::glwe_tensor_square_apply_reference(
+                <::poulpy_hal::layouts::Module<$be> as ::poulpy_core::reference::operations::GLWETensoringReference<$be, $ring>>::glwe_tensor_square_apply_reference(
                     module, cnv_offset, res, a, scratch,
                 )
             }
@@ -1007,11 +1048,11 @@ macro_rules! impl_tensoring {
                 tsk: &H,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) where
-                R: ::poulpy_core::layouts::GLWEToBackendMut<$be> + ::poulpy_core::layouts::GLWEInfos,
-                A: ::poulpy_core::layouts::GLWEToBackendRef<$be> + ::poulpy_core::layouts::GLWEInfos,
-                H: ::poulpy_core::layouts::GetTensorKey<$be>,
+                R: ::poulpy_core::layouts::GLWEToBackendMut<$be, $ring> + ::poulpy_core::layouts::GLWEInfos,
+                A: ::poulpy_core::layouts::GLWEToBackendRef<$be, $ring> + ::poulpy_core::layouts::GLWEInfos,
+                H: ::poulpy_core::layouts::GetTensorKey<$be, $ring>,
             {
-                <::poulpy_hal::layouts::Module<$be> as ::poulpy_core::reference::operations::GLWETensoringReference<$be>>::glwe_tensor_relinearize_reference(
+                <::poulpy_hal::layouts::Module<$be> as ::poulpy_core::reference::operations::GLWETensoringReference<$be, $ring>>::glwe_tensor_relinearize_reference(
                     module, res, a, tsk, scratch,
                 )
             }
@@ -1027,7 +1068,7 @@ macro_rules! impl_tensoring {
                 A: ::poulpy_core::layouts::GLWEInfos,
                 B: ::poulpy_core::layouts::GGLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as ::poulpy_core::reference::operations::GLWETensoringReference<$be>>::glwe_tensor_relinearize_tmp_bytes_reference(
+                <::poulpy_hal::layouts::Module<$be> as ::poulpy_core::reference::operations::GLWETensoringReference<$be, $ring>>::glwe_tensor_relinearize_tmp_bytes_reference(
                     module, res, a, tsk,
                 )
             }
@@ -1044,7 +1085,7 @@ macro_rules! impl_tensoring {
                 R: ::poulpy_core::layouts::GLWEInfos,
                 B: ::poulpy_core::layouts::GGLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as ::poulpy_core::reference::operations::GLWETensoringReference<$be>>::glwe_mul_relinearize_tmp_bytes_reference(
+                <::poulpy_hal::layouts::Module<$be> as ::poulpy_core::reference::operations::GLWETensoringReference<$be, $ring>>::glwe_mul_relinearize_tmp_bytes_reference(
                     module, res, a_size, b_size, tensor_k, tsk,
                 )
             }
@@ -1060,12 +1101,12 @@ macro_rules! impl_tensoring {
                 tsk: &H,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) where
-                R: ::poulpy_core::layouts::GLWEToBackendMut<$be> + ::poulpy_core::layouts::GLWEInfos,
-                A: ::poulpy_core::layouts::GLWEToBackendRef<$be> + ::poulpy_core::layouts::GLWEInfos,
-                B: ::poulpy_core::layouts::GLWEToBackendRef<$be> + ::poulpy_core::layouts::GLWEInfos,
-                H: ::poulpy_core::layouts::GetTensorKey<$be>,
+                R: ::poulpy_core::layouts::GLWEToBackendMut<$be, $ring> + ::poulpy_core::layouts::GLWEInfos,
+                A: ::poulpy_core::layouts::GLWEToBackendRef<$be, $ring> + ::poulpy_core::layouts::GLWEInfos,
+                B: ::poulpy_core::layouts::GLWEToBackendRef<$be, $ring> + ::poulpy_core::layouts::GLWEInfos,
+                H: ::poulpy_core::layouts::GetTensorKey<$be, $ring>,
             {
-                <::poulpy_hal::layouts::Module<$be> as ::poulpy_core::reference::operations::GLWETensoringReference<$be>>::glwe_mul_relinearize_reference(
+                <::poulpy_hal::layouts::Module<$be> as ::poulpy_core::reference::operations::GLWETensoringReference<$be, $ring>>::glwe_mul_relinearize_reference(
                     module, cnv_offset, res, res_k, a, b, tsk, scratch,
                 )
             }
@@ -1079,11 +1120,11 @@ macro_rules! impl_tensoring {
                 tsk: &H,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) where
-                R: ::poulpy_core::layouts::GLWEToBackendMut<$be> + ::poulpy_core::layouts::GLWEInfos,
-                A: ::poulpy_core::layouts::GLWEToBackendRef<$be> + ::poulpy_core::layouts::GLWEInfos,
-                H: ::poulpy_core::layouts::GetTensorKey<$be>,
+                R: ::poulpy_core::layouts::GLWEToBackendMut<$be, $ring> + ::poulpy_core::layouts::GLWEInfos,
+                A: ::poulpy_core::layouts::GLWEToBackendRef<$be, $ring> + ::poulpy_core::layouts::GLWEInfos,
+                H: ::poulpy_core::layouts::GetTensorKey<$be, $ring>,
             {
-                <::poulpy_hal::layouts::Module<$be> as ::poulpy_core::reference::operations::GLWETensoringReference<$be>>::glwe_mul_relinearize_assign_reference(
+                <::poulpy_hal::layouts::Module<$be> as ::poulpy_core::reference::operations::GLWETensoringReference<$be, $ring>>::glwe_mul_relinearize_assign_reference(
                     module, cnv_offset, res, res_k, a, tsk, scratch,
                 )
             }
@@ -1097,11 +1138,11 @@ macro_rules! impl_tensoring {
                 tsk: &H,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) where
-                R: ::poulpy_core::layouts::GLWEToBackendMut<$be> + ::poulpy_core::layouts::GLWEInfos,
-                A: ::poulpy_core::layouts::GLWEToBackendRef<$be> + ::poulpy_core::layouts::GLWEInfos,
-                H: ::poulpy_core::layouts::GetTensorKey<$be>,
+                R: ::poulpy_core::layouts::GLWEToBackendMut<$be, $ring> + ::poulpy_core::layouts::GLWEInfos,
+                A: ::poulpy_core::layouts::GLWEToBackendRef<$be, $ring> + ::poulpy_core::layouts::GLWEInfos,
+                H: ::poulpy_core::layouts::GetTensorKey<$be, $ring>,
             {
-                <::poulpy_hal::layouts::Module<$be> as ::poulpy_core::reference::operations::GLWETensoringReference<$be>>::glwe_square_relinearize_reference(
+                <::poulpy_hal::layouts::Module<$be> as ::poulpy_core::reference::operations::GLWETensoringReference<$be, $ring>>::glwe_square_relinearize_reference(
                     module, cnv_offset, res, res_k, a, tsk, scratch,
                 )
             }
@@ -1114,10 +1155,10 @@ macro_rules! impl_tensoring {
                 tsk: &H,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) where
-                R: ::poulpy_core::layouts::GLWEToBackendMut<$be> + ::poulpy_core::layouts::GLWEInfos,
-                H: ::poulpy_core::layouts::GetTensorKey<$be>,
+                R: ::poulpy_core::layouts::GLWEToBackendMut<$be, $ring> + ::poulpy_core::layouts::GLWEInfos,
+                H: ::poulpy_core::layouts::GetTensorKey<$be, $ring>,
             {
-                <::poulpy_hal::layouts::Module<$be> as ::poulpy_core::reference::operations::GLWETensoringReference<$be>>::glwe_square_relinearize_assign_reference(
+                <::poulpy_hal::layouts::Module<$be> as ::poulpy_core::reference::operations::GLWETensoringReference<$be, $ring>>::glwe_square_relinearize_assign_reference(
                     module, cnv_offset, res, res_k, tsk, scratch,
                 )
             }
@@ -1135,12 +1176,12 @@ macro_rules! impl_tensoring {
                 tsk: &H,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) where
-                R: ::poulpy_core::layouts::GLWEToBackendMut<$be> + ::poulpy_core::layouts::GLWEInfos,
-                A: ::poulpy_core::layouts::GLWEToBackendRef<$be> + ::poulpy_core::layouts::GLWEInfos,
-                BP: ::poulpy_hal::layouts::CnvPVecRToBackendRef<$be>,
-                H: ::poulpy_core::layouts::GetTensorKey<$be>,
+                R: ::poulpy_core::layouts::GLWEToBackendMut<$be, $ring> + ::poulpy_core::layouts::GLWEInfos,
+                A: ::poulpy_core::layouts::GLWEToBackendRef<$be, $ring> + ::poulpy_core::layouts::GLWEInfos,
+                BP: ::poulpy_hal::layouts::CnvPVecRToBackendRef<$be, $ring>,
+                H: ::poulpy_core::layouts::GetTensorKey<$be, $ring>,
             {
-                <::poulpy_hal::layouts::Module<$be> as ::poulpy_core::reference::operations::GLWETensoringReference<$be>>::glwe_mul_prepared_relinearize_reference(
+                <::poulpy_hal::layouts::Module<$be> as ::poulpy_core::reference::operations::GLWETensoringReference<$be, $ring>>::glwe_mul_prepared_relinearize_reference(
                     module, cnv_offset, res, res_k, a, b, b_size, b_k, tsk, scratch,
                 )
             }
@@ -1157,11 +1198,11 @@ macro_rules! impl_tensoring {
                 tsk: &H,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) where
-                R: ::poulpy_core::layouts::GLWEToBackendMut<$be> + ::poulpy_core::layouts::GLWEInfos,
-                AP: ::poulpy_hal::layouts::CnvPVecRToBackendRef<$be>,
-                H: ::poulpy_core::layouts::GetTensorKey<$be>,
+                R: ::poulpy_core::layouts::GLWEToBackendMut<$be, $ring> + ::poulpy_core::layouts::GLWEInfos,
+                AP: ::poulpy_hal::layouts::CnvPVecRToBackendRef<$be, $ring>,
+                H: ::poulpy_core::layouts::GetTensorKey<$be, $ring>,
             {
-                <::poulpy_hal::layouts::Module<$be> as ::poulpy_core::reference::operations::GLWETensoringReference<$be>>::glwe_mul_prepared_relinearize_assign_reference(
+                <::poulpy_hal::layouts::Module<$be> as ::poulpy_core::reference::operations::GLWETensoringReference<$be, $ring>>::glwe_mul_prepared_relinearize_assign_reference(
                     module, cnv_offset, res, res_k, a, a_size, a_k, tsk, scratch,
                 )
             }
@@ -1170,9 +1211,9 @@ macro_rules! impl_tensoring {
             // one alone and reads it on both sides.
             fn glwe_square_operand_prepare(
                 module: &::poulpy_hal::layouts::Module<$be>,
-                left: &mut ::poulpy_hal::layouts::CnvPVecLBackendMut<'_, $be>,
-                right: &mut ::poulpy_hal::layouts::CnvPVecRBackendMut<'_, $be>,
-                a: &::poulpy_hal::layouts::VecZnxBackendRef<'_, $be>,
+                left: &mut ::poulpy_hal::layouts::CnvPVecLBackendMut<'_, $be, $ring>,
+                right: &mut ::poulpy_hal::layouts::CnvPVecRBackendMut<'_, $be, $ring>,
+                a: &::poulpy_hal::layouts::VecZnxBackendRef<'_, $be, $ring>,
                 _scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) {
                 crate::hal_impl::cnv_pvec_self_prepare_left(module, left, right, a);
@@ -1181,10 +1222,10 @@ macro_rules! impl_tensoring {
             fn glwe_square_columns(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 cnv_offset_hi: usize,
-                diag: &mut ::poulpy_hal::layouts::VecZnxDftBackendMut<'_, $be>,
-                cross: &mut ::poulpy_hal::layouts::VecZnxDftBackendMut<'_, $be>,
-                left: &::poulpy_hal::layouts::CnvPVecLBackendRef<'_, $be>,
-                right: &::poulpy_hal::layouts::CnvPVecRBackendRef<'_, $be>,
+                diag: &mut ::poulpy_hal::layouts::VecZnxDftBackendMut<'_, $be, $ring>,
+                cross: &mut ::poulpy_hal::layouts::VecZnxDftBackendMut<'_, $be, $ring>,
+                left: &::poulpy_hal::layouts::CnvPVecLBackendRef<'_, $be, $ring>,
+                right: &::poulpy_hal::layouts::CnvPVecRBackendRef<'_, $be, $ring>,
                 _scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) {
                 crate::hal_impl::glwe_mul_columns(module, cnv_offset_hi, diag, cross, left, right, true)
@@ -1194,10 +1235,10 @@ macro_rules! impl_tensoring {
             fn glwe_mul_columns(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 cnv_offset_hi: usize,
-                diag: &mut ::poulpy_hal::layouts::VecZnxDftBackendMut<'_, $be>,
-                cross: &mut ::poulpy_hal::layouts::VecZnxDftBackendMut<'_, $be>,
-                a: &::poulpy_hal::layouts::CnvPVecLBackendRef<'_, $be>,
-                b: &::poulpy_hal::layouts::CnvPVecRBackendRef<'_, $be>,
+                diag: &mut ::poulpy_hal::layouts::VecZnxDftBackendMut<'_, $be, $ring>,
+                cross: &mut ::poulpy_hal::layouts::VecZnxDftBackendMut<'_, $be, $ring>,
+                a: &::poulpy_hal::layouts::CnvPVecLBackendRef<'_, $be, $ring>,
+                b: &::poulpy_hal::layouts::CnvPVecRBackendRef<'_, $be, $ring>,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) {
                 let _ = scratch;
@@ -1216,7 +1257,7 @@ macro_rules! impl_tensoring {
                 R: ::poulpy_core::layouts::GLWEInfos,
                 B: ::poulpy_core::layouts::GGLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as ::poulpy_core::reference::operations::GLWETensoringReference<$be>>::glwe_mul_relinearize_sum_tmp_bytes_reference(
+                <::poulpy_hal::layouts::Module<$be> as ::poulpy_core::reference::operations::GLWETensoringReference<$be, $ring>>::glwe_mul_relinearize_sum_tmp_bytes_reference(
                     module, res, a_size, b_size, tensor_k, tsk,
                 )
             }
@@ -1231,12 +1272,12 @@ macro_rules! impl_tensoring {
                 tsk: &H,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) where
-                R: ::poulpy_core::layouts::GLWEToBackendMut<$be> + ::poulpy_core::layouts::GLWEInfos,
-                A: ::poulpy_core::layouts::GLWEToBackendRef<$be> + ::poulpy_core::layouts::GLWEInfos,
-                B: ::poulpy_core::layouts::GLWEToBackendRef<$be> + ::poulpy_core::layouts::GLWEInfos,
-                H: ::poulpy_core::layouts::GetTensorKey<$be>,
+                R: ::poulpy_core::layouts::GLWEToBackendMut<$be, $ring> + ::poulpy_core::layouts::GLWEInfos,
+                A: ::poulpy_core::layouts::GLWEToBackendRef<$be, $ring> + ::poulpy_core::layouts::GLWEInfos,
+                B: ::poulpy_core::layouts::GLWEToBackendRef<$be, $ring> + ::poulpy_core::layouts::GLWEInfos,
+                H: ::poulpy_core::layouts::GetTensorKey<$be, $ring>,
             {
-                <::poulpy_hal::layouts::Module<$be> as ::poulpy_core::reference::operations::GLWETensoringReference<$be>>::glwe_mul_relinearize_sum_reference(
+                <::poulpy_hal::layouts::Module<$be> as ::poulpy_core::reference::operations::GLWETensoringReference<$be, $ring>>::glwe_mul_relinearize_sum_reference(
                     module, cnv_offset, res, res_k, a, b, tsk, scratch,
                 )
             }
@@ -1253,7 +1294,7 @@ macro_rules! impl_tensoring {
                 R: ::poulpy_core::layouts::GLWEInfos,
                 B: ::poulpy_core::layouts::GGLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as ::poulpy_core::reference::operations::GLWETensoringReference<$be>>::glwe_mul_prepared_relinearize_sum_tmp_bytes_reference(
+                <::poulpy_hal::layouts::Module<$be> as ::poulpy_core::reference::operations::GLWETensoringReference<$be, $ring>>::glwe_mul_prepared_relinearize_sum_tmp_bytes_reference(
                     module, res, a_size, b_size, tensor_k, tsk,
                 )
             }
@@ -1273,12 +1314,12 @@ macro_rules! impl_tensoring {
                 tsk: &H,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) where
-                R: ::poulpy_core::layouts::GLWEToBackendMut<$be> + ::poulpy_core::layouts::GLWEInfos,
-                AP: ::poulpy_hal::layouts::CnvPVecLToBackendRef<$be> + 'a,
-                BP: ::poulpy_hal::layouts::CnvPVecRToBackendRef<$be> + 'a,
-                H: ::poulpy_core::layouts::GetTensorKey<$be>,
+                R: ::poulpy_core::layouts::GLWEToBackendMut<$be, $ring> + ::poulpy_core::layouts::GLWEInfos,
+                AP: ::poulpy_hal::layouts::CnvPVecLToBackendRef<$be, $ring> + 'a,
+                BP: ::poulpy_hal::layouts::CnvPVecRToBackendRef<$be, $ring> + 'a,
+                H: ::poulpy_core::layouts::GetTensorKey<$be, $ring>,
             {
-                <::poulpy_hal::layouts::Module<$be> as ::poulpy_core::reference::operations::GLWETensoringReference<$be>>::glwe_mul_prepared_relinearize_sum_reference(
+                <::poulpy_hal::layouts::Module<$be> as ::poulpy_core::reference::operations::GLWETensoringReference<$be, $ring>>::glwe_mul_prepared_relinearize_sum_reference(
                     module, cnv_offset, res, res_k, a, a_size, a_k, b, b_size, b_k, tsk, scratch,
                 )
             }
@@ -1292,7 +1333,7 @@ macro_rules! impl_tensoring {
             where
                 R: ::poulpy_core::layouts::GLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as ::poulpy_core::reference::operations::GLWETensoringReference<$be>>::glwe_tensor_apply_prepared_sum_dft_tmp_bytes_reference(
+                <::poulpy_hal::layouts::Module<$be> as ::poulpy_core::reference::operations::GLWETensoringReference<$be, $ring>>::glwe_tensor_apply_prepared_sum_dft_tmp_bytes_reference(
                     module, res, a_size, b_size,
                 )
             }
@@ -1301,17 +1342,17 @@ macro_rules! impl_tensoring {
             fn glwe_tensor_apply_prepared_sum_dft<'a, AP>(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 cnv_offset_hi: usize,
-                diag: &mut ::poulpy_hal::layouts::VecZnxDftBackendMut<'_, $be>,
-                cross: &mut ::poulpy_hal::layouts::VecZnxDftBackendMut<'_, $be>,
-                pairs: impl IntoIterator<Item = (&'a AP, ::poulpy_core::layouts::DiagonalOperand<'a, $be>)>,
+                diag: &mut ::poulpy_hal::layouts::VecZnxDftBackendMut<'_, $be, $ring>,
+                cross: &mut ::poulpy_hal::layouts::VecZnxDftBackendMut<'_, $be, $ring>,
+                pairs: impl IntoIterator<Item = (&'a AP, ::poulpy_core::layouts::DiagonalOperand<'a, $be, $ring>)>,
                 b_size: usize,
                 b_k: ::poulpy_core::layouts::TorusPrecision,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) where
                 $be: 'a,
-                AP: ::poulpy_hal::layouts::CnvPVecLToBackendRef<$be> + 'a,
+                AP: ::poulpy_hal::layouts::CnvPVecLToBackendRef<$be, $ring> + 'a,
             {
-                <::poulpy_hal::layouts::Module<$be> as ::poulpy_core::reference::operations::GLWETensoringReference<$be>>::glwe_tensor_apply_prepared_sum_dft_reference(
+                <::poulpy_hal::layouts::Module<$be> as ::poulpy_core::reference::operations::GLWETensoringReference<$be, $ring>>::glwe_tensor_apply_prepared_sum_dft_reference(
                     module, cnv_offset_hi, diag, cross, pairs, b_size, b_k, scratch,
                 )
             }
@@ -1326,7 +1367,7 @@ macro_rules! impl_tensoring {
             where
                 R: ::poulpy_core::layouts::GLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as ::poulpy_core::reference::operations::GLWETensoringReference<$be>>::glwe_tensor_apply_prepared_tmp_bytes_reference(
+                <::poulpy_hal::layouts::Module<$be> as ::poulpy_core::reference::operations::GLWETensoringReference<$be, $ring>>::glwe_tensor_apply_prepared_tmp_bytes_reference(
                     module, res, a_size, b_size, base2k,
                 )
             }
@@ -1343,11 +1384,11 @@ macro_rules! impl_tensoring {
                 base2k: ::poulpy_core::layouts::Base2K,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) where
-                R: ::poulpy_core::layouts::GLWEToBackendMut<$be> + ::poulpy_core::layouts::GLWEInfos,
-                AP: ::poulpy_hal::layouts::CnvPVecLToBackendRef<$be>,
-                BP: ::poulpy_hal::layouts::CnvPVecRToBackendRef<$be>,
+                R: ::poulpy_core::layouts::GLWEToBackendMut<$be, $ring> + ::poulpy_core::layouts::GLWEInfos,
+                AP: ::poulpy_hal::layouts::CnvPVecLToBackendRef<$be, $ring>,
+                BP: ::poulpy_hal::layouts::CnvPVecRToBackendRef<$be, $ring>,
             {
-                <::poulpy_hal::layouts::Module<$be> as ::poulpy_core::reference::operations::GLWETensoringReference<$be>>::glwe_tensor_apply_prepared_reference(
+                <::poulpy_hal::layouts::Module<$be> as ::poulpy_core::reference::operations::GLWETensoringReference<$be, $ring>>::glwe_tensor_apply_prepared_reference(
                     module, cnv_offset, res, a, a_size, b, b_size, base2k, scratch,
                 )
             }
@@ -1357,30 +1398,21 @@ macro_rules! impl_tensoring {
 
 #[cfg(any(feature = "enable-metal", feature = "enable-vulkan", feature = "enable-wgpu"))]
 mod wgpu {
-    use super::ConjugateInvariant;
     impl_core!(crate::NTT4x30Wgpu);
     impl_tensoring!(crate::NTT4x30Wgpu);
     impl_core_standard!(crate::NTT4x30Wgpu);
-    impl_core!(crate::NTT4x30Wgpu<ConjugateInvariant>);
-    impl_tensoring!(crate::NTT4x30Wgpu<ConjugateInvariant>);
 }
 
 #[cfg(feature = "enable-cuda")]
 mod cuda {
-    use super::ConjugateInvariant;
     impl_core!(crate::NTT4x30Cuda);
     impl_tensoring!(crate::NTT4x30Cuda);
     impl_core_standard!(crate::NTT4x30Cuda);
-    impl_core!(crate::NTT4x30Cuda<ConjugateInvariant>);
-    impl_tensoring!(crate::NTT4x30Cuda<ConjugateInvariant>);
 }
 
 #[cfg(feature = "enable-hip")]
 mod hip {
-    use super::ConjugateInvariant;
     impl_core!(crate::NTT4x30Hip);
     impl_tensoring!(crate::NTT4x30Hip);
     impl_core_standard!(crate::NTT4x30Hip);
-    impl_core!(crate::NTT4x30Hip<ConjugateInvariant>);
-    impl_tensoring!(crate::NTT4x30Hip<ConjugateInvariant>);
 }

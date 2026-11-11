@@ -1,7 +1,8 @@
 use poulpy_hal::{
     api::{ModuleN, ScratchArenaTakeScalarZnx, VecZnxSwitchRing},
     layouts::{
-        Backend, Module, ScratchArena, scalar_znx_as_vec_znx_backend_mut_from_mut, scalar_znx_as_vec_znx_backend_ref_from_ref,
+        Backend, Module, Ring, ScratchArena, Standard, scalar_znx_as_vec_znx_backend_mut_from_mut,
+        scalar_znx_as_vec_znx_backend_ref_from_ref,
     },
     source::Source,
 };
@@ -19,7 +20,7 @@ use crate::{
 /// Portable implementation using HAL operations.
 ///
 /// Backend implementations may call this helper without changing their override selection.
-pub trait GLWESwitchingKeyCompressedEncryptSkReference<BE: Backend> {
+pub trait GLWESwitchingKeyCompressedEncryptSkReference<BE: Backend, Rg: Ring = Standard> {
     fn glwe_switching_key_compressed_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos;
@@ -33,14 +34,14 @@ pub trait GLWESwitchingKeyCompressedEncryptSkReference<BE: Backend> {
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GGLWECompressedToBackendMut<BE> + GGLWECompressedSeedMut + GLWESwitchingKeyDegreesMut + GGLWEInfos,
-        S1: GLWESecretToBackendRef<BE> + GLWEInfos,
-        S2: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos;
+        R: GGLWECompressedToBackendMut<BE, Rg> + GGLWECompressedSeedMut + GLWESwitchingKeyDegreesMut + GGLWEInfos,
+        S1: GLWESecretToBackendRef<BE, Rg> + GLWEInfos,
+        S2: GLWESecretToBackendRef<BE, Rg> + GetDistribution + GLWEInfos;
 }
 
-impl<BE: Backend> GLWESwitchingKeyCompressedEncryptSkReference<BE> for Module<BE>
+impl<BE: Backend, Rg: Ring> GLWESwitchingKeyCompressedEncryptSkReference<BE, Rg> for Module<BE>
 where
-    Self: ModuleN + GGLWECompressedEncryptSk<BE> + GLWESecretPreparedFactory<BE> + VecZnxSwitchRing<BE>,
+    Self: ModuleN + GGLWECompressedEncryptSk<BE, Rg> + GLWESecretPreparedFactory<BE, Rg> + VecZnxSwitchRing<BE, Rg>,
 {
     fn glwe_switching_key_compressed_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
@@ -65,9 +66,9 @@ where
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GGLWECompressedToBackendMut<BE> + GGLWECompressedSeedMut + GLWESwitchingKeyDegreesMut + GGLWEInfos,
-        S1: GLWESecretToBackendRef<BE> + GLWEInfos,
-        S2: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
+        R: GGLWECompressedToBackendMut<BE, Rg> + GGLWECompressedSeedMut + GLWESwitchingKeyDegreesMut + GGLWEInfos,
+        S1: GLWESecretToBackendRef<BE, Rg> + GLWEInfos,
+        S2: GLWESecretToBackendRef<BE, Rg> + GetDistribution + GLWEInfos,
     {
         let sk_in = sk_in.to_backend_ref();
         let sk_out_ref = sk_out.to_backend_ref();
@@ -77,26 +78,25 @@ where
         crate::layouts::assert_secret_set(sk_out.dist());
         assert!(
             scratch.available() >= self.glwe_switching_key_compressed_encrypt_sk_tmp_bytes_reference(res),
-            "scratch.available(): {} < GLWESwitchingKeyCompressedEncryptSk::glwe_switching_key_compressed_encrypt_sk_tmp_bytes: {}",
-            scratch.available(),
-            self.glwe_switching_key_compressed_encrypt_sk_tmp_bytes_reference(res)
+            "scratch.available() < GLWESwitchingKeyCompressedEncryptSk::glwe_switching_key_compressed_encrypt_sk_tmp_bytes"
         );
         let tmp_bytes: usize = self.glwe_switching_key_compressed_encrypt_sk_tmp_bytes_reference(res);
         {
             let (mut sk_in_lifted, scratch_1) = scratch
                 .borrow()
                 .take_scalar_znx_scratch(res.n().as_usize(), sk_in.rank().into());
-            let sk_in_backend_vec = scalar_znx_as_vec_znx_backend_ref_from_ref::<BE>(sk_in.data());
+            let sk_in_backend_vec = scalar_znx_as_vec_znx_backend_ref_from_ref::<BE, Rg>(sk_in.data());
             for i in 0..sk_in.rank().into() {
-                let mut sk_in_lifted_backend_vec = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(&mut sk_in_lifted);
+                let mut sk_in_lifted_backend_vec = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE, Rg>(&mut sk_in_lifted);
                 self.vec_znx_switch_ring(&mut sk_in_lifted_backend_vec, i, &sk_in_backend_vec, i);
             }
 
             let (mut sk_out_lifted, scratch_2) = scratch_1.take_glwe_secret_scratch(res.n().as_usize().into(), sk_out_ref.rank());
             sk_out_lifted.dist = *sk_out.dist();
-            let sk_out_backend_vec = scalar_znx_as_vec_znx_backend_ref_from_ref::<BE>(sk_out_ref.data());
+            let sk_out_backend_vec = scalar_znx_as_vec_znx_backend_ref_from_ref::<BE, Rg>(sk_out_ref.data());
             for i in 0..sk_out_ref.rank().into() {
-                let mut sk_out_lifted_backend_vec = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(sk_out_lifted.data_mut());
+                let mut sk_out_lifted_backend_vec =
+                    scalar_znx_as_vec_znx_backend_mut_from_mut::<BE, Rg>(sk_out_lifted.data_mut());
                 self.vec_znx_switch_ring(&mut sk_out_lifted_backend_vec, i, &sk_out_backend_vec, i);
             }
 

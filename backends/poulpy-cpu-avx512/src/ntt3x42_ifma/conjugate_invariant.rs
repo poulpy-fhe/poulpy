@@ -6,7 +6,6 @@ use core::arch::x86_64::{
 
 use poulpy_cpu_portable::kernels::{
     ntt4x30::{
-        NttHandleFactory,
         conjugate_invariant::{BasisChange, build_ntt4x30_automorphism_plan_portable},
         vec_znx_dft::NttAutomorphismPlan,
     },
@@ -17,7 +16,7 @@ use poulpy_hal::layouts::ConjugateInvariant;
 use super::{
     NTT3x42Ifma,
     kernels::{cond_sub_2q_si512, harvey_modmul_si512, intt_avx512, ntt_avx512},
-    module::NTT3x42IfmaHandle,
+    module::RingTables,
     primes::{PrimeSetNtt3x42Ifma, Primes42},
     tables::{Ntt3x42IfmaTable, Ntt3x42IfmaTableInv, cond_sub_2q, harvey_modmul, harvey_quotient},
     traits::Ntt3x42IfmaDFTExecute,
@@ -74,17 +73,16 @@ impl<P: PrimeSetNtt3x42Ifma> Ntt3x42IfmaTableInv<P, ConjugateInvariant> {
     }
 }
 
-unsafe impl NttHandleFactory for NTT3x42IfmaHandle<ConjugateInvariant> {
-    fn create_ntt_handle(n: usize) -> Self {
-        Self::with_tables(
-            n,
-            Ntt3x42IfmaTable::<Primes42, ConjugateInvariant>::new,
-            Ntt3x42IfmaTableInv::<Primes42, ConjugateInvariant>::new,
-        )
-    }
+/// The conjugate-invariant tables of every degree up to `n`.
+pub(super) fn tables(n: usize) -> RingTables<ConjugateInvariant> {
+    RingTables::build(
+        n,
+        Ntt3x42IfmaTable::<Primes42, ConjugateInvariant>::new,
+        Ntt3x42IfmaTableInv::<Primes42, ConjugateInvariant>::new,
+    )
 }
 
-impl ZnxAutomorphism for NTT3x42Ifma<ConjugateInvariant> {
+impl ZnxAutomorphism<ConjugateInvariant> for NTT3x42Ifma {
     #[inline(always)]
     fn znx_automorphism(p: i64, res: &mut [i64], a: &[i64]) {
         znx_automorphism_portable(p, res, a)
@@ -96,7 +94,7 @@ impl ZnxAutomorphism for NTT3x42Ifma<ConjugateInvariant> {
     }
 }
 
-impl Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, ConjugateInvariant>> for NTT3x42Ifma<ConjugateInvariant> {
+impl Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, ConjugateInvariant>> for NTT3x42Ifma {
     #[inline(always)]
     fn ntt3x42_ifma_dft_execute(table: &Ntt3x42IfmaTable<Primes42, ConjugateInvariant>, data: &mut [u64]) {
         unsafe {
@@ -113,12 +111,12 @@ impl Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, ConjugateInvariant>> for N
         }
     }
 
-    fn ntt_automorphism_plan(n: usize, p: i64) -> NttAutomorphismPlan {
+    fn ntt_automorphism_plan(n: usize, p: i64) -> NttAutomorphismPlan<ConjugateInvariant> {
         build_ntt4x30_automorphism_plan_portable(n, p)
     }
 }
 
-impl Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, ConjugateInvariant>> for NTT3x42Ifma<ConjugateInvariant> {
+impl Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, ConjugateInvariant>> for NTT3x42Ifma {
     #[inline(always)]
     fn ntt3x42_ifma_dft_execute(table: &Ntt3x42IfmaTableInv<Primes42, ConjugateInvariant>, data: &mut [u64]) {
         unsafe {
@@ -127,7 +125,7 @@ impl Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, ConjugateInvariant>> fo
         }
     }
 
-    fn ntt_automorphism_plan(n: usize, p: i64) -> NttAutomorphismPlan {
+    fn ntt_automorphism_plan(n: usize, p: i64) -> NttAutomorphismPlan<ConjugateInvariant> {
         build_ntt4x30_automorphism_plan_portable(n, p)
     }
 }

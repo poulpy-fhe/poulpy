@@ -27,7 +27,7 @@ use poulpy_hal::{
     execution::ScratchWorkers,
     layouts::{
         Backend, CnvPVecLOwned, CnvPVecLToBackendMut, CnvPVecLToBackendRef, CnvPVecROwned, CnvPVecRToBackendMut,
-        CnvPVecRToBackendRef, MatZnx, MatZnxAtBackendMut, MatZnxToBackendRef, Module, PrepareHint, ScratchOwned, VecZnx,
+        CnvPVecRToBackendRef, MatZnx, MatZnxAtBackendMut, MatZnxToBackendRef, Module, PrepareHint, Ring, ScratchOwned, VecZnx,
         VecZnxBigOwned, VecZnxBigToBackendMut, VecZnxDftOwned, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxToBackendMut,
         VecZnxToBackendRef, VmpPMatOwned, VmpPMatToBackendMut, VmpPMatToBackendRef,
     },
@@ -254,7 +254,7 @@ impl TuningReport {
 /// Times one primitive per kernel family at each pool width in `threads`.
 ///
 /// Pass the shape the application will actually use: the knee moves with it.
-pub fn thread_scaling<BE>(shape: ProbeShape, threads: &[usize], mode: Mode) -> TuningReport
+pub fn thread_scaling<BE, Rg: Ring>(shape: ProbeShape, threads: &[usize], mode: Mode) -> TuningReport
 where
     BE: Backend<ZnxWord = i64, OwnedBuf: poulpy_hal::layouts::HostDataMut> + ScratchWorkers + 'static,
     Module<BE>: ModuleNew<BE>
@@ -264,15 +264,15 @@ where
         + MatZnxAlloc<BE>
         + VmpPMatAlloc<BE>
         + CnvPVecAlloc<BE>
-        + VmpPMatPrepare<BE>
+        + VmpPMatPrepare<BE, Rg>
         + VmpPMatPrepareTmpBytes
-        + VecZnxDftApply<BE>
-        + VecZnxAdd<BE>
-        + VecZnxFillUniformSource<BE>
-        + VecZnxIdftApply<BE>
+        + VecZnxDftApply<BE, Rg>
+        + VecZnxAdd<BE, Rg>
+        + VecZnxFillUniformSource<BE, Rg>
+        + VecZnxIdftApply<BE, Rg>
         + VecZnxIdftApplyTmpBytes
-        + CnvOps<BE>
-        + VmpApplyDftToDft<BE>
+        + CnvOps<BE, Rg>
+        + VmpApplyDftToDft<BE, Rg>
         + VmpApplyDftToDftTmpBytes,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
@@ -283,43 +283,43 @@ where
     let cnv_size = 2 * size - 1;
     let mut source: Source = Source::new([0u8; 32]);
 
-    let mut small: VecZnx<BE::OwnedBuf, i64> = module.vec_znx_alloc(module.n(), cols, size);
-    let mut addend: VecZnx<BE::OwnedBuf, i64> = module.vec_znx_alloc(module.n(), cols, size);
+    let mut small: VecZnx<BE::OwnedBuf, i64, Rg> = module.vec_znx_alloc(module.n(), cols, size);
+    let mut addend: VecZnx<BE::OwnedBuf, i64, Rg> = module.vec_znx_alloc(module.n(), cols, size);
     for col in 0..cols {
         module.vec_znx_fill_uniform_source(
             16,
             size * 16,
-            &mut VecZnxToBackendMut::<BE>::to_backend_mut(&mut small),
+            &mut VecZnxToBackendMut::<BE, Rg>::to_backend_mut(&mut small),
             col,
             &mut source,
         );
         module.vec_znx_fill_uniform_source(
             16,
             size * 16,
-            &mut VecZnxToBackendMut::<BE>::to_backend_mut(&mut addend),
+            &mut VecZnxToBackendMut::<BE, Rg>::to_backend_mut(&mut addend),
             col,
             &mut source,
         );
     }
-    let mut sum: VecZnx<BE::OwnedBuf, i64> = module.vec_znx_alloc(module.n(), cols, size);
+    let mut sum: VecZnx<BE::OwnedBuf, i64, Rg> = module.vec_znx_alloc(module.n(), cols, size);
 
-    let mut mat: MatZnx<BE::OwnedBuf, i64> = module.mat_znx_alloc(module.n(), rows, cols, cols, size);
+    let mut mat: MatZnx<BE::OwnedBuf, i64, Rg> = module.mat_znx_alloc(module.n(), rows, cols, cols, size);
     for row in 0..rows {
         for col_in in 0..cols {
-            let mut entry = MatZnxAtBackendMut::<BE>::at_backend_mut(&mut mat, row, col_in);
+            let mut entry = MatZnxAtBackendMut::<BE, Rg>::at_backend_mut(&mut mat, row, col_in);
             for col_out in 0..cols {
                 module.vec_znx_fill_uniform_source(16, size * 16, &mut entry, col_out, &mut source);
             }
         }
     }
 
-    let mut pmat: VmpPMatOwned<BE> = module.vmp_pmat_alloc(module.n(), rows, cols, cols, size, PrepareHint::Reuse);
-    let mut a: VecZnxDftOwned<BE> = module.vec_znx_dft_alloc(module.n(), cols, size);
-    let mut res: VecZnxDftOwned<BE> = module.vec_znx_dft_alloc(module.n(), cols, size);
-    let mut big: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(module.n(), cols, size);
-    let mut left: CnvPVecLOwned<BE> = module.cnv_pvec_left_alloc(module.n(), cols, size, PrepareHint::Reuse);
-    let mut right: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(module.n(), cols, size, PrepareHint::Reuse);
-    let mut cnv_res: VecZnxDftOwned<BE> = module.vec_znx_dft_alloc(module.n(), cols, cnv_size);
+    let mut pmat: VmpPMatOwned<BE, Rg> = module.vmp_pmat_alloc(module.n(), rows, cols, cols, size, PrepareHint::Reuse);
+    let mut a: VecZnxDftOwned<BE, Rg> = module.vec_znx_dft_alloc(module.n(), cols, size);
+    let mut res: VecZnxDftOwned<BE, Rg> = module.vec_znx_dft_alloc(module.n(), cols, size);
+    let mut big: VecZnxBigOwned<BE, Rg> = module.vec_znx_big_alloc(module.n(), cols, size);
+    let mut left: CnvPVecLOwned<BE, Rg> = module.cnv_pvec_left_alloc(module.n(), cols, size, PrepareHint::Reuse);
+    let mut right: CnvPVecROwned<BE, Rg> = module.cnv_pvec_right_alloc(module.n(), cols, size, PrepareHint::Reuse);
+    let mut cnv_res: VecZnxDftOwned<BE, Rg> = module.vec_znx_dft_alloc(module.n(), cols, cnv_size);
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module
@@ -332,7 +332,7 @@ where
 
     module.vmp_pmat_prepare(
         &mut pmat.to_backend_mut(),
-        &MatZnxToBackendRef::<BE>::to_backend_ref(&mat),
+        &MatZnxToBackendRef::<BE, Rg>::to_backend_ref(&mat),
         &mut scratch.borrow(),
     );
     for col in 0..cols {
@@ -341,14 +341,14 @@ where
             0,
             &mut a.to_backend_mut(),
             col,
-            &VecZnxToBackendRef::<BE>::to_backend_ref(&small),
+            &VecZnxToBackendRef::<BE, Rg>::to_backend_ref(&small),
             col,
         );
     }
     module.cnv_pvec_self_prepare(
         &mut left.to_backend_mut(),
         &mut right.to_backend_mut(),
-        &VecZnxToBackendRef::<BE>::to_backend_ref(&small),
+        &VecZnxToBackendRef::<BE, Rg>::to_backend_ref(&small),
         &mut scratch.borrow(),
     );
 
@@ -459,23 +459,23 @@ where
 
 /// Runs one call of the probe identified by `probe`.
 #[allow(clippy::too_many_arguments)]
-fn run_probe<BE>(
+fn run_probe<BE, Rg: Ring>(
     probe: usize,
     module: &Module<BE>,
-    res: &mut VecZnxDftOwned<BE>,
-    a: &VecZnxDftOwned<BE>,
-    pmat: &VmpPMatOwned<BE>,
-    cnv_res: &mut VecZnxDftOwned<BE>,
-    left: &CnvPVecLOwned<BE>,
-    right: &CnvPVecROwned<BE>,
-    big: &mut VecZnxBigOwned<BE>,
-    sum: &mut VecZnx<BE::OwnedBuf, i64>,
-    small: &VecZnx<BE::OwnedBuf, i64>,
-    addend: &VecZnx<BE::OwnedBuf, i64>,
+    res: &mut VecZnxDftOwned<BE, Rg>,
+    a: &VecZnxDftOwned<BE, Rg>,
+    pmat: &VmpPMatOwned<BE, Rg>,
+    cnv_res: &mut VecZnxDftOwned<BE, Rg>,
+    left: &CnvPVecLOwned<BE, Rg>,
+    right: &CnvPVecROwned<BE, Rg>,
+    big: &mut VecZnxBigOwned<BE, Rg>,
+    sum: &mut VecZnx<BE::OwnedBuf, i64, Rg>,
+    small: &VecZnx<BE::OwnedBuf, i64, Rg>,
+    addend: &VecZnx<BE::OwnedBuf, i64, Rg>,
     scratch: &mut ScratchOwned<BE>,
 ) where
     BE: Backend<ZnxWord = i64, OwnedBuf: poulpy_hal::layouts::HostDataMut> + 'static,
-    Module<BE>: VecZnxAdd<BE> + VecZnxIdftApply<BE> + CnvOps<BE> + VmpApplyDftToDft<BE>,
+    Module<BE>: VecZnxAdd<BE, Rg> + VecZnxIdftApply<BE, Rg> + CnvOps<BE, Rg> + VmpApplyDftToDft<BE, Rg>,
     ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
 {
     match probe {
@@ -499,11 +499,11 @@ fn run_probe<BE>(
         ),
         2 => module.vec_znx_idft_apply(&mut big.to_backend_mut(), 0, &a.to_backend_ref(), 0, &mut scratch.borrow()),
         _ => module.vec_znx_add(
-            &mut VecZnxToBackendMut::<BE>::to_backend_mut(sum),
+            &mut VecZnxToBackendMut::<BE, Rg>::to_backend_mut(sum),
             0,
-            &VecZnxToBackendRef::<BE>::to_backend_ref(small),
+            &VecZnxToBackendRef::<BE, Rg>::to_backend_ref(small),
             0,
-            &VecZnxToBackendRef::<BE>::to_backend_ref(addend),
+            &VecZnxToBackendRef::<BE, Rg>::to_backend_ref(addend),
             0,
         ),
     }

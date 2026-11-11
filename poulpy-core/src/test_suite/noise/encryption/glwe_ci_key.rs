@@ -5,7 +5,7 @@ use std::{
 
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{DataViewMut, Module, ScratchArena, ScratchOwned},
+    layouts::{ConjugateInvariant, DataViewMut, Module, ScratchArena, ScratchOwned, Standard},
     source::Source,
     test_suite::TestParams,
 };
@@ -21,7 +21,8 @@ use crate::{
 /// law of `sk`, and the message.
 type Case = (usize, usize, usize, usize, usize, Distribution, &'static str);
 
-type Secret<BE> = GLWESecret<<BE as poulpy_hal::layouts::Backend>::OwnedBuf, <BE as poulpy_hal::layouts::Backend>::ZnxWord>;
+type Secret<BE, Rg> =
+    GLWESecret<<BE as poulpy_hal::layouts::Backend>::OwnedBuf, <BE as poulpy_hal::layouts::Backend>::ZnxWord, Rg>;
 
 /// Encrypting an embed key from a conjugate-invariant secret of more than half the key degree or of a rank other than
 /// the key's input rank, or to a secret wider than the key, of a rank other than its output rank or of the `NONE` law,
@@ -173,7 +174,7 @@ where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: GLWECIKeyEncryptSk<BE>,
+    Module<BE>: GLWECIKeyEncryptSk<BE> + GLWESecretSampling<BE> + GLWESecretSampling<BE, ConjugateInvariant>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let n = module.n();
@@ -190,12 +191,12 @@ where
         stride: 1,
     };
     let mut source_xs = Source::new([6u8; 32]);
-    let mut sk_ci: Secret<BE> = module.glwe_secret_alloc_from_infos(&GLWESecretLayout {
+    let mut sk_ci: Secret<BE, ConjugateInvariant> = module.glwe_secret_alloc_from_infos(&GLWESecretLayout {
         n: (n / 2).into(),
         rank: 1_usize.into(),
     });
     module.glwe_secret_fill_ternary_prob(&mut sk_ci, 0.5, &mut source_xs);
-    let mut sk: Secret<BE> = module.glwe_secret_alloc_from_infos(&GLWESecretLayout {
+    let mut sk: Secret<BE, Standard> = module.glwe_secret_alloc_from_infos(&GLWESecretLayout {
         n: n.into(),
         rank: 1_usize.into(),
     });
@@ -249,8 +250,8 @@ fn assert_ci_key_refusals<BE, M>(
     cases: &[Case],
     encrypt: impl Fn(
         &mut GLWECIKey<BE::OwnedBuf, BE::ZnxWord, M>,
-        &Secret<BE>,
-        &Secret<BE>,
+        &Secret<BE, ConjugateInvariant>,
+        &Secret<BE, Standard>,
         &mut Source,
         &mut Source,
         &mut ScratchArena<'_, BE>,
@@ -277,11 +278,11 @@ fn assert_ci_key_refusals<BE, M>(
             rank_out: 2_usize.into(),
             stride: 1,
         };
-        let sk_ci: Secret<BE> = module.glwe_secret_alloc_from_infos(&GLWESecretLayout {
+        let sk_ci: Secret<BE, ConjugateInvariant> = module.glwe_secret_alloc_from_infos(&GLWESecretLayout {
             n: ci_n.into(),
             rank: ci_rank.into(),
         });
-        let mut sk: Secret<BE> = module.glwe_secret_alloc_from_infos(&GLWESecretLayout {
+        let mut sk: Secret<BE, Standard> = module.glwe_secret_alloc_from_infos(&GLWESecretLayout {
             n: sk_n.into(),
             rank: sk_rank.into(),
         });

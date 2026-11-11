@@ -1,10 +1,8 @@
 use std::ptr::NonNull;
 
-use poulpy_hal::layouts::{Ring, Standard};
-
 use poulpy_cpu_portable::hal_defaults::BigWordHadamardProduct;
 use poulpy_cpu_portable::kernels::{
-    RightRead,
+    FFT64Plans, PerRing, RightRead,
     fft64::{
         convolution::I64Ops,
         module::{FFT64HandleFactory, FFT64Plan, FFT64PlanSet, FFTHandleProvider},
@@ -18,7 +16,10 @@ use poulpy_cpu_portable::kernels::{
         znx_zero_portable,
     },
 };
-use poulpy_hal::{AlignedBuf, alloc_aligned, layouts::Backend};
+use poulpy_hal::{
+    AlignedBuf, alloc_aligned,
+    layouts::{Backend, Ring, Standard},
+};
 
 use crate::{
     FFT64Avx512,
@@ -49,12 +50,12 @@ use crate::{
     },
 };
 
-/// Backend-specific handle storing precomputed FFT/IFFT twiddle factors.
+/// Backend-specific handle storing precomputed FFT/IFFT twiddle factors of both rings.
 ///
 /// This structure is allocated once during [`Module::new()`](poulpy_hal::layouts::Module::new)
-/// and persists for the lifetime of the module. It contains precomputed complex roots of unity
-/// (twiddle factors) required for efficient FFT and inverse FFT operations on ring elements
-/// of degree `n`.
+/// and persists for the lifetime of the module. It contains the precomputed complex roots of unity
+/// (twiddle factors) of the FFT and inverse FFT of every degree the module serves, those of the
+/// standard ring built at construction and those of the conjugate-invariant ring on first use.
 ///
 /// # Memory layout
 ///
@@ -64,28 +65,29 @@ use crate::{
 ///
 /// # Thread safety
 ///
-/// Twiddle tables are **immutable** after construction, making this type safe to share across threads
-/// via `&Module<FFT64Avx512>`. The `Module` type enforces `Send + Sync` bounds.
+/// Twiddle tables are never mutated once built, and the conjugate-invariant ones are built once
+/// through a `OnceLock`, making this type safe to share across threads via `&Module<FFT64Avx512>`.
+/// The `Module` type enforces `Send + Sync` bounds.
 ///
 /// # Destruction
 ///
 /// The handle is destroyed via [`Backend::destroy()`](poulpy_hal::layouts::Backend::destroy)
 /// when the module is dropped, which reconstructs the `Box` from the raw pointer and drops it.
 #[repr(C)]
-pub struct FFT64Avx512Handle<R: Ring = Standard> {
-    ring_plans: FFT64PlanSet<f64, R>,
+pub struct FFT64Avx512Handle {
+    ring_plans: PerRing<FFT64Plans>,
     table_cache: ::poulpy_cpu_portable::table_cache::ModuleTableCache,
 }
 
-impl<R: Ring> poulpy_hal::execution::ScratchWorkers for FFT64Avx512<R> {}
+impl poulpy_hal::execution::ScratchWorkers for FFT64Avx512 {}
 
-impl<R: Ring> poulpy_hal::layouts::MaxBase2k for FFT64Avx512<R> {
-    fn max_base2k(n: usize, products: usize, failure_bits: usize, squaring: bool) -> usize {
-        poulpy_hal::layouts::max_base2k_fft64::<Self>(n, products, failure_bits, squaring)
+impl poulpy_hal::layouts::MaxBase2k for FFT64Avx512 {
+    fn max_base2k<Rg: Ring>(n: usize, products: usize, failure_bits: usize, squaring: bool) -> usize {
+        poulpy_hal::layouts::max_base2k_fft64::<Self, Rg>(n, products, failure_bits, squaring)
     }
 }
 
-impl<R: Ring> Backend for FFT64Avx512<R> {
+impl Backend for FFT64Avx512 {
     const DFT_LIMBS_CONTIGUOUS: bool = true;
 
     // The AVX-512 complex multiply steps eight complex slots at a time with no
@@ -93,14 +95,13 @@ impl<R: Ring> Backend for FFT64Avx512<R> {
     const MIN_DEGREE: usize = 16;
 
     type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;
-    type Ring = R;
     type DftWord = f64;
     type ZnxWord = i64;
     type BigWord = i64;
     type OwnedBuf = AlignedBuf;
     type BufRef<'a> = &'a [u8];
     type BufMut<'a> = &'a mut [u8];
-    type Handle = FFT64Avx512Handle<R>;
+    type Handle = FFT64Avx512Handle;
     type Location = poulpy_hal::layouts::Host;
     fn alloc_bytes(len: usize) -> Self::OwnedBuf {
         alloc_aligned::<u8>(len)
@@ -200,14 +201,11 @@ impl<R: Ring> Backend for FFT64Avx512<R> {
 /// # Safety
 ///
 /// The returned handle must be fully initialized for `n`.
-unsafe impl<R: Ring> FFT64HandleFactory for FFT64Avx512Handle<R>
-where
-    FFT64Plan<f64, R>: poulpy_cpu_portable::kernels::fft64::module::FFT64PlanNew,
-{
+unsafe impl FFT64HandleFactory for FFT64Avx512Handle {
     fn create_fft64_handle(n: usize) -> Self {
         FFT64Avx512Handle {
             table_cache: Default::default(),
-            ring_plans: FFT64PlanSet::new(n),
+            ring_plans: PerRing::new(FFT64PlanSet::new(n), n, FFT64PlanSet::new),
         }
     }
 
@@ -221,14 +219,13 @@ where
     }
 }
 
-unsafe impl<R: Ring> FFTHandleProvider<f64> for FFT64Avx512Handle<R> {
-    type Ring = R;
-    fn get_fft_plan(&self, n: usize) -> &FFT64Plan<f64, R> {
-        self.ring_plans.for_ring(n)
+unsafe impl<Rg: Ring> FFTHandleProvider<f64, Rg> for FFT64Avx512Handle {
+    fn get_fft_plan(&self, n: usize) -> &FFT64Plan<f64, Rg> {
+        self.ring_plans.on_ring::<Rg>().for_ring(n)
     }
 }
 
-impl<R: Ring> ZnxAdd for FFT64Avx512<R> {
+impl ZnxAdd for FFT64Avx512 {
     #[inline(always)]
     fn znx_add(res: &mut [i64], a: &[i64], b: &[i64]) {
         unsafe {
@@ -237,7 +234,7 @@ impl<R: Ring> ZnxAdd for FFT64Avx512<R> {
     }
 }
 
-impl<R: Ring> ZnxAddAssign for FFT64Avx512<R> {
+impl ZnxAddAssign for FFT64Avx512 {
     #[inline(always)]
     fn znx_add_assign(res: &mut [i64], a: &[i64]) {
         unsafe {
@@ -246,7 +243,7 @@ impl<R: Ring> ZnxAddAssign for FFT64Avx512<R> {
     }
 }
 
-impl<R: Ring> ZnxSub for FFT64Avx512<R> {
+impl ZnxSub for FFT64Avx512 {
     #[inline(always)]
     fn znx_sub(res: &mut [i64], a: &[i64], b: &[i64]) {
         unsafe {
@@ -255,7 +252,7 @@ impl<R: Ring> ZnxSub for FFT64Avx512<R> {
     }
 }
 
-impl<R: Ring> ZnxSubAssign for FFT64Avx512<R> {
+impl ZnxSubAssign for FFT64Avx512 {
     #[inline(always)]
     fn znx_sub_assign(res: &mut [i64], a: &[i64]) {
         unsafe {
@@ -264,7 +261,7 @@ impl<R: Ring> ZnxSubAssign for FFT64Avx512<R> {
     }
 }
 
-impl<R: Ring> ZnxSubNegateAssign for FFT64Avx512<R> {
+impl ZnxSubNegateAssign for FFT64Avx512 {
     #[inline(always)]
     fn znx_sub_negate_assign(res: &mut [i64], a: &[i64]) {
         unsafe {
@@ -273,14 +270,14 @@ impl<R: Ring> ZnxSubNegateAssign for FFT64Avx512<R> {
     }
 }
 
-impl<R: Ring> ZnxCopy for FFT64Avx512<R> {
+impl ZnxCopy for FFT64Avx512 {
     #[inline(always)]
     fn znx_copy(res: &mut [i64], a: &[i64]) {
         znx_copy_portable(res, a);
     }
 }
 
-impl<R: Ring> ZnxNegate for FFT64Avx512<R> {
+impl ZnxNegate for FFT64Avx512 {
     #[inline(always)]
     fn znx_negate(res: &mut [i64], src: &[i64]) {
         unsafe {
@@ -289,7 +286,7 @@ impl<R: Ring> ZnxNegate for FFT64Avx512<R> {
     }
 }
 
-impl<R: Ring> ZnxNegateAssign for FFT64Avx512<R> {
+impl ZnxNegateAssign for FFT64Avx512 {
     #[inline(always)]
     fn znx_negate_assign(res: &mut [i64]) {
         unsafe {
@@ -298,7 +295,7 @@ impl<R: Ring> ZnxNegateAssign for FFT64Avx512<R> {
     }
 }
 
-impl<R: Ring> ZnxMulAddPowerOfTwo for FFT64Avx512<R> {
+impl ZnxMulAddPowerOfTwo for FFT64Avx512 {
     #[inline(always)]
     fn znx_muladd_power_of_two(k: i64, res: &mut [i64], a: &[i64]) {
         unsafe {
@@ -307,7 +304,7 @@ impl<R: Ring> ZnxMulAddPowerOfTwo for FFT64Avx512<R> {
     }
 }
 
-impl<R: Ring> ZnxMulPowerOfTwo for FFT64Avx512<R> {
+impl ZnxMulPowerOfTwo for FFT64Avx512 {
     #[inline(always)]
     fn znx_mul_power_of_two(k: i64, res: &mut [i64], a: &[i64]) {
         unsafe {
@@ -316,7 +313,7 @@ impl<R: Ring> ZnxMulPowerOfTwo for FFT64Avx512<R> {
     }
 }
 
-impl<R: Ring> ZnxMulPowerOfTwoAssign for FFT64Avx512<R> {
+impl ZnxMulPowerOfTwoAssign for FFT64Avx512 {
     #[inline(always)]
     fn znx_mul_power_of_two_assign(k: i64, res: &mut [i64]) {
         unsafe {
@@ -325,21 +322,21 @@ impl<R: Ring> ZnxMulPowerOfTwoAssign for FFT64Avx512<R> {
     }
 }
 
-impl<R: Ring> ZnxRotate for FFT64Avx512<R> {
+impl ZnxRotate for FFT64Avx512 {
     #[inline(always)]
     fn znx_rotate(p: i64, res: &mut [i64], src: &[i64]) {
         znx_rotate_portable::<Self>(p, res, src);
     }
 }
 
-impl<R: Ring> ZnxZero for FFT64Avx512<R> {
+impl ZnxZero for FFT64Avx512 {
     #[inline(always)]
     fn znx_zero(res: &mut [i64]) {
         znx_zero_portable(res);
     }
 }
 
-impl<R: Ring> ZnxSwitchRing for FFT64Avx512<R> {
+impl ZnxSwitchRing for FFT64Avx512 {
     #[inline(always)]
     fn znx_switch_ring(res: &mut [i64], a: &[i64]) {
         unsafe {
@@ -348,26 +345,26 @@ impl<R: Ring> ZnxSwitchRing for FFT64Avx512<R> {
     }
 }
 
-impl<R: Ring> poulpy_cpu_portable::kernels::znx_normalize::ZnxNormalize for FFT64Avx512<R> {
+impl poulpy_cpu_portable::kernels::znx_normalize::ZnxNormalize for FFT64Avx512 {
     type WideLanes = poulpy_cpu_portable::kernels::znx_normalize::SimdLanes<16>;
     type BigWideLanes = poulpy_cpu_portable::kernels::znx_normalize::SimdLanes<16>;
 }
 
-impl<R: Ring> ReimFFTExecute<ReimFFTTable<f64>, f64> for FFT64Avx512<R> {
+impl ReimFFTExecute<ReimFFTTable<f64>, f64> for FFT64Avx512 {
     #[inline(always)]
     fn reim_dft_execute(table: &ReimFFTTable<f64>, data: &mut [f64]) {
         ReimFFTAvx512::reim_dft_execute(table, data);
     }
 }
 
-impl<R: Ring> ReimFFTExecute<ReimIFFTTable<f64>, f64> for FFT64Avx512<R> {
+impl ReimFFTExecute<ReimIFFTTable<f64>, f64> for FFT64Avx512 {
     #[inline(always)]
     fn reim_dft_execute(table: &ReimIFFTTable<f64>, data: &mut [f64]) {
         ReimIFFTAvx512::reim_dft_execute(table, data);
     }
 }
 
-impl<R: Ring> ReimArith for FFT64Avx512<R> {
+impl ReimArith for FFT64Avx512 {
     #[inline(always)]
     fn reim_from_znx(res: &mut [f64], a: &[i64]) {
         unsafe { reim_from_znx_i64_bnd50_fma(res, a) }
@@ -444,12 +441,12 @@ impl<R: Ring> ReimArith for FFT64Avx512<R> {
     }
 
     #[inline(always)]
-    fn reim_automorphism(plan: &Fft64AutomorphismPlan, res: &mut [f64], a: &[f64]) {
+    fn reim_automorphism(plan: &Fft64AutomorphismPlan<Standard>, res: &mut [f64], a: &[f64]) {
         super::automorphism::reim_automorphism_avx512(plan, res, a)
     }
 }
 
-impl<R: Ring> Reim4BlkMatVec for FFT64Avx512<R> {
+impl Reim4BlkMatVec for FFT64Avx512 {
     #[inline(always)]
     fn reim4_extract_1blk_contiguous(m: usize, rows: usize, blk: usize, dst: &mut [f64], src: &[f64]) {
         unsafe { reim4_extract_1blk_from_reim_contiguous_avx512(m, rows, blk, dst, src) }
@@ -486,7 +483,7 @@ impl<R: Ring> Reim4BlkMatVec for FFT64Avx512<R> {
     }
 }
 
-impl<R: Ring> Reim4Convolution for FFT64Avx512<R> {
+impl Reim4Convolution for FFT64Avx512 {
     #[inline(always)]
     fn reim4_convolution_1coeff(k: usize, dst: &mut [f64; 8], a: &[f64], a_size: usize, b: &[f64], b_size: usize) {
         unsafe { reim4_convolution_1coeff_avx512(k, dst, a, a_size, b, b_size) }
@@ -595,7 +592,7 @@ impl<R: Ring> Reim4Convolution for FFT64Avx512<R> {
     }
 }
 
-impl<R: Ring> I64Ops for FFT64Avx512<R> {
+impl I64Ops for FFT64Avx512 {
     #[inline(always)]
     fn i64_hadamard_product(res: &mut [i64], a: &[i64], b: &[i64]) {
         unsafe { crate::znx_avx512::znx_hadamard_product_i64_avx512(res, a, b) }
@@ -622,14 +619,14 @@ impl<R: Ring> I64Ops for FFT64Avx512<R> {
     }
 }
 
-impl<R: Ring> BigWordHadamardProduct for FFT64Avx512<R> {
+impl BigWordHadamardProduct for FFT64Avx512 {
     #[inline(always)]
     fn big_word_hadamard_product(res: &mut [i64], a: &[i64], b: &[i64]) {
         Self::i64_hadamard_product(res, a, b)
     }
 }
 
-unsafe impl<R: Ring> ::poulpy_cpu_portable::table_cache::ModuleTableCacheProvider for FFT64Avx512Handle<R> {
+unsafe impl ::poulpy_cpu_portable::table_cache::ModuleTableCacheProvider for FFT64Avx512Handle {
     fn module_plan_cache(&self) -> &::poulpy_cpu_portable::table_cache::ModuleTableCache {
         &self.table_cache
     }

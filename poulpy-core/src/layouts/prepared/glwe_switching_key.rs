@@ -1,4 +1,4 @@
-use poulpy_hal::layouts::{Backend, Data};
+use poulpy_hal::layouts::{Backend, Data, Ring, Standard};
 
 use crate::layouts::{
     Base2K, Degree, Dnum, GGLWEInfos, GGLWEPreparedBackendMut, GGLWEPreparedBackendRef, GLWEInfos, GLWESwitchingKeyDegrees,
@@ -12,13 +12,13 @@ use crate::layouts::{
 /// key-switching between GLWE ciphertexts. Tied to a specific backend
 /// via `B: Backend`.
 #[derive(PartialEq)]
-pub struct GLWESwitchingKeyPrepared<D: Data, B: Backend> {
-    pub(crate) key: GGLWEPrepared<D, B>,
+pub struct GLWESwitchingKeyPrepared<D: Data, B: Backend, Rg: Ring = Standard> {
+    pub(crate) key: GGLWEPrepared<D, B, Rg>,
     pub(crate) input_degree: Degree,  // Degree of sk_in
     pub(crate) output_degree: Degree, // Degree of sk_out
 }
 
-impl<D: Data, BE: Backend> GLWESwitchingKeyDegrees for GLWESwitchingKeyPrepared<D, BE> {
+impl<D: Data, BE: Backend, Rg: Ring> GLWESwitchingKeyDegrees for GLWESwitchingKeyPrepared<D, BE, Rg> {
     fn output_degree(&self) -> &Degree {
         &self.output_degree
     }
@@ -28,7 +28,7 @@ impl<D: Data, BE: Backend> GLWESwitchingKeyDegrees for GLWESwitchingKeyPrepared<
     }
 }
 
-impl<D: Data, BE: Backend> GLWESwitchingKeyDegreesMut for GLWESwitchingKeyPrepared<D, BE> {
+impl<D: Data, BE: Backend, Rg: Ring> GLWESwitchingKeyDegreesMut for GLWESwitchingKeyPrepared<D, BE, Rg> {
     fn output_degree(&mut self) -> &mut Degree {
         &mut self.output_degree
     }
@@ -38,7 +38,7 @@ impl<D: Data, BE: Backend> GLWESwitchingKeyDegreesMut for GLWESwitchingKeyPrepar
     }
 }
 
-impl<D: Data, B: Backend> LWEInfos for GLWESwitchingKeyPrepared<D, B> {
+impl<D: Data, B: Backend, Rg: Ring> LWEInfos for GLWESwitchingKeyPrepared<D, B, Rg> {
     fn noise(&self) -> Option<crate::ComponentNoise> {
         self.key.noise()
     }
@@ -60,13 +60,13 @@ impl<D: Data, B: Backend> LWEInfos for GLWESwitchingKeyPrepared<D, B> {
     }
 }
 
-impl<D: Data, B: Backend> GLWEInfos for GLWESwitchingKeyPrepared<D, B> {
+impl<D: Data, B: Backend, Rg: Ring> GLWEInfos for GLWESwitchingKeyPrepared<D, B, Rg> {
     fn rank(&self) -> Rank {
         self.rank_out()
     }
 }
 
-impl<D: Data, B: Backend> GGLWEInfos for GLWESwitchingKeyPrepared<D, B> {
+impl<D: Data, B: Backend, Rg: Ring> GGLWEInfos for GLWESwitchingKeyPrepared<D, B, Rg> {
     fn k_aux(&self) -> TorusPrecision {
         self.key.k_aux()
     }
@@ -96,18 +96,18 @@ impl<D: Data, B: Backend> GGLWEInfos for GLWESwitchingKeyPrepared<D, B> {
     }
 }
 
-pub type GLWESwitchingKeyPreparedBackendRef<'a, B> = GLWESwitchingKeyPrepared<<B as Backend>::BufRef<'a>, B>;
-pub type GLWESwitchingKeyPreparedBackendMut<'a, B> = GLWESwitchingKeyPrepared<<B as Backend>::BufMut<'a>, B>;
+pub type GLWESwitchingKeyPreparedBackendRef<'a, B, Rg = Standard> = GLWESwitchingKeyPrepared<<B as Backend>::BufRef<'a>, B, Rg>;
+pub type GLWESwitchingKeyPreparedBackendMut<'a, B, Rg = Standard> = GLWESwitchingKeyPrepared<<B as Backend>::BufMut<'a>, B, Rg>;
 
-pub trait GLWESwitchingKeyPreparedToBackendRef<B: Backend> {
-    fn to_backend_ref(&self) -> GLWESwitchingKeyPreparedBackendRef<'_, B>;
+pub trait GLWESwitchingKeyPreparedToBackendRef<B: Backend, Rg: Ring = Standard> {
+    fn to_backend_ref(&self) -> GLWESwitchingKeyPreparedBackendRef<'_, B, Rg>;
 }
 
-impl<D: Data, B: Backend> GLWESwitchingKeyPreparedToBackendRef<B> for GLWESwitchingKeyPrepared<D, B>
+impl<D: Data, B: Backend, Rg: Ring> GLWESwitchingKeyPreparedToBackendRef<B, Rg> for GLWESwitchingKeyPrepared<D, B, Rg>
 where
-    GGLWEPrepared<D, B>: GGLWEPreparedToBackendRef<B>,
+    GGLWEPrepared<D, B, Rg>: GGLWEPreparedToBackendRef<B, Rg>,
 {
-    fn to_backend_ref(&self) -> GLWESwitchingKeyPreparedBackendRef<'_, B> {
+    fn to_backend_ref(&self) -> GLWESwitchingKeyPreparedBackendRef<'_, B, Rg> {
         GLWESwitchingKeyPrepared {
             key: self.key.to_backend_ref(),
             input_degree: self.input_degree,
@@ -116,38 +116,38 @@ where
     }
 }
 
-impl<D: Data, B: Backend> GGLWEPreparedToBackendRef<B> for GLWESwitchingKeyPrepared<D, B>
+impl<D: Data, B: Backend, Rg: Ring> GGLWEPreparedToBackendRef<B, Rg> for GLWESwitchingKeyPrepared<D, B, Rg>
 where
-    GGLWEPrepared<D, B>: GGLWEPreparedToBackendRef<B>,
+    GGLWEPrepared<D, B, Rg>: GGLWEPreparedToBackendRef<B, Rg>,
 {
-    fn to_backend_ref(&self) -> GGLWEPreparedBackendRef<'_, B> {
+    fn to_backend_ref(&self) -> GGLWEPreparedBackendRef<'_, B, Rg> {
         self.key.to_backend_ref()
     }
 }
 
-impl<D: Data, B: Backend> GGLWEPreparedToBackendMut<B> for GLWESwitchingKeyPrepared<D, B>
+impl<D: Data, B: Backend, Rg: Ring> GGLWEPreparedToBackendMut<B, Rg> for GLWESwitchingKeyPrepared<D, B, Rg>
 where
-    GGLWEPrepared<D, B>: GGLWEPreparedToBackendMut<B>,
+    GGLWEPrepared<D, B, Rg>: GGLWEPreparedToBackendMut<B, Rg>,
 {
     fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
-        <_ as GGLWEPreparedToBackendMut<B>>::set_noise(&mut self.key, metadata);
+        <_ as GGLWEPreparedToBackendMut<B, Rg>>::set_noise(&mut self.key, metadata);
     }
 
-    fn to_backend_mut(&mut self) -> GGLWEPreparedBackendMut<'_, B> {
+    fn to_backend_mut(&mut self) -> GGLWEPreparedBackendMut<'_, B, Rg> {
         self.key.to_backend_mut()
     }
 }
 
-pub trait GLWESwitchingKeyPreparedToBackendMut<B: Backend> {
+pub trait GLWESwitchingKeyPreparedToBackendMut<B: Backend, Rg: Ring = Standard> {
     /// Borrows coefficients mutably and clears the owner's component noise metadata.
-    fn to_backend_mut(&mut self) -> GLWESwitchingKeyPreparedBackendMut<'_, B>;
+    fn to_backend_mut(&mut self) -> GLWESwitchingKeyPreparedBackendMut<'_, B, Rg>;
 }
 
-impl<D: Data, B: Backend> GLWESwitchingKeyPreparedToBackendMut<B> for GLWESwitchingKeyPrepared<D, B>
+impl<D: Data, B: Backend, Rg: Ring> GLWESwitchingKeyPreparedToBackendMut<B, Rg> for GLWESwitchingKeyPrepared<D, B, Rg>
 where
-    GGLWEPrepared<D, B>: GGLWEPreparedToBackendMut<B>,
+    GGLWEPrepared<D, B, Rg>: GGLWEPreparedToBackendMut<B, Rg>,
 {
-    fn to_backend_mut(&mut self) -> GLWESwitchingKeyPreparedBackendMut<'_, B> {
+    fn to_backend_mut(&mut self) -> GLWESwitchingKeyPreparedBackendMut<'_, B, Rg> {
         GLWESwitchingKeyPrepared {
             key: self.key.to_backend_mut(),
             input_degree: self.input_degree,

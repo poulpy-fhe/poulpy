@@ -11,8 +11,6 @@ use poulpy_cpu_portable::kernels::znx::{
     znx_zero_portable,
 };
 
-use poulpy_hal::layouts::Ring;
-
 use crate::znx_avx512::{
     znx_add_assign_avx512, znx_add_avx512, znx_mul_add_power_of_two_avx512, znx_mul_power_of_two_assign_avx512,
     znx_mul_power_of_two_avx512, znx_negate_assign_avx512, znx_negate_avx512, znx_sub_assign_avx512, znx_sub_avx512,
@@ -21,105 +19,105 @@ use crate::znx_avx512::{
 
 use super::NTT4x30Avx512;
 
-impl<R: Ring> ZnxAdd for NTT4x30Avx512<R> {
+impl ZnxAdd for NTT4x30Avx512 {
     #[inline(always)]
     fn znx_add(res: &mut [i64], a: &[i64], b: &[i64]) {
         unsafe { znx_add_avx512(res, a, b) }
     }
 }
 
-impl<R: Ring> ZnxAddAssign for NTT4x30Avx512<R> {
+impl ZnxAddAssign for NTT4x30Avx512 {
     #[inline(always)]
     fn znx_add_assign(res: &mut [i64], a: &[i64]) {
         unsafe { znx_add_assign_avx512(res, a) }
     }
 }
 
-impl<R: Ring> ZnxSub for NTT4x30Avx512<R> {
+impl ZnxSub for NTT4x30Avx512 {
     #[inline(always)]
     fn znx_sub(res: &mut [i64], a: &[i64], b: &[i64]) {
         unsafe { znx_sub_avx512(res, a, b) }
     }
 }
 
-impl<R: Ring> ZnxSubAssign for NTT4x30Avx512<R> {
+impl ZnxSubAssign for NTT4x30Avx512 {
     #[inline(always)]
     fn znx_sub_assign(res: &mut [i64], a: &[i64]) {
         unsafe { znx_sub_assign_avx512(res, a) }
     }
 }
 
-impl<R: Ring> ZnxSubNegateAssign for NTT4x30Avx512<R> {
+impl ZnxSubNegateAssign for NTT4x30Avx512 {
     #[inline(always)]
     fn znx_sub_negate_assign(res: &mut [i64], a: &[i64]) {
         unsafe { znx_sub_negate_assign_avx512(res, a) }
     }
 }
 
-impl<R: Ring> ZnxMulAddPowerOfTwo for NTT4x30Avx512<R> {
+impl ZnxMulAddPowerOfTwo for NTT4x30Avx512 {
     #[inline(always)]
     fn znx_muladd_power_of_two(k: i64, res: &mut [i64], a: &[i64]) {
         unsafe { znx_mul_add_power_of_two_avx512(k, res, a) }
     }
 }
 
-impl<R: Ring> ZnxMulPowerOfTwo for NTT4x30Avx512<R> {
+impl ZnxMulPowerOfTwo for NTT4x30Avx512 {
     #[inline(always)]
     fn znx_mul_power_of_two(k: i64, res: &mut [i64], a: &[i64]) {
         unsafe { znx_mul_power_of_two_avx512(k, res, a) }
     }
 }
 
-impl<R: Ring> ZnxMulPowerOfTwoAssign for NTT4x30Avx512<R> {
+impl ZnxMulPowerOfTwoAssign for NTT4x30Avx512 {
     #[inline(always)]
     fn znx_mul_power_of_two_assign(k: i64, res: &mut [i64]) {
         unsafe { znx_mul_power_of_two_assign_avx512(k, res) }
     }
 }
 
-impl<R: Ring> ZnxCopy for NTT4x30Avx512<R> {
+impl ZnxCopy for NTT4x30Avx512 {
     #[inline(always)]
     fn znx_copy(res: &mut [i64], a: &[i64]) {
         znx_copy_portable(res, a);
     }
 }
 
-impl<R: Ring> ZnxNegate for NTT4x30Avx512<R> {
+impl ZnxNegate for NTT4x30Avx512 {
     #[inline(always)]
     fn znx_negate(res: &mut [i64], src: &[i64]) {
         unsafe { znx_negate_avx512(res, src) }
     }
 }
 
-impl<R: Ring> ZnxNegateAssign for NTT4x30Avx512<R> {
+impl ZnxNegateAssign for NTT4x30Avx512 {
     #[inline(always)]
     fn znx_negate_assign(res: &mut [i64]) {
         unsafe { znx_negate_assign_avx512(res) }
     }
 }
 
-impl<R: Ring> ZnxRotate for NTT4x30Avx512<R> {
+impl ZnxRotate for NTT4x30Avx512 {
     #[inline(always)]
     fn znx_rotate(p: i64, res: &mut [i64], src: &[i64]) {
         znx_rotate_portable::<Self>(p, res, src);
     }
 }
 
-impl<R: Ring> ZnxZero for NTT4x30Avx512<R> {
+impl ZnxZero for NTT4x30Avx512 {
     #[inline(always)]
     fn znx_zero(res: &mut [i64]) {
         znx_zero_portable(res);
     }
 }
 
-impl<R: Ring> ZnxSwitchRing for NTT4x30Avx512<R> {
+impl ZnxSwitchRing for NTT4x30Avx512 {
     #[inline(always)]
     fn znx_switch_ring(res: &mut [i64], a: &[i64]) {
         unsafe { znx_switch_ring_avx512(res, a) }
     }
 }
 
-impl<R: Ring> poulpy_cpu_portable::kernels::znx_normalize::ZnxNormalize for NTT4x30Avx512<R> {
+impl poulpy_cpu_portable::kernels::znx_normalize::ZnxNormalize for NTT4x30Avx512 {
     type WideLanes = poulpy_cpu_portable::kernels::znx_normalize::SimdLanes<16>;
     type BigLanes = poulpy_cpu_portable::kernels::znx_normalize::SimdI128Lanes<8, false>;
     type BigWideLanes = poulpy_cpu_portable::kernels::znx_normalize::SimdI128Lanes<16, false>;

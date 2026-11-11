@@ -1,4 +1,4 @@
-use poulpy_hal::layouts::{Backend, Module, ScratchArena, VecZnxDftBackendMut};
+use poulpy_hal::layouts::{Backend, Module, Ring, ScratchArena, VecZnxDftBackendMut};
 
 use crate::{
     api::{GGLWEKeyswitch, GGSWKeyswitch, GLWEKeyswitch, LWEKeyswitch},
@@ -11,8 +11,16 @@ use crate::{
 };
 
 macro_rules! impl_keyswitching_delegate {
-    ($trait:ty, [$($bounds:tt)+], $($body:item)+) => {
+    (free $trait:ty, [$($bounds:tt)+], $($body:item)+) => {
         impl<BE> $trait for Module<BE>
+        where
+            $($bounds)+
+        {
+            $($body)+
+        }
+    };
+    ($trait:ty, [$($bounds:tt)+], $($body:item)+) => {
+        impl<BE, Rg: Ring> $trait for Module<BE>
         where
             $($bounds)+
         {
@@ -22,8 +30,8 @@ macro_rules! impl_keyswitching_delegate {
 }
 
 impl_keyswitching_delegate!(
-    GLWEKeyswitch<BE>,
-    [BE: Backend + GLWEKeyswitchImpl],
+    GLWEKeyswitch<BE, Rg>,
+    [BE: Backend + GLWEKeyswitchImpl<Rg>],
     fn glwe_keyswitch_tmp_bytes<R, A, B>(&self, res_infos: &R, a_infos: &A, key_infos: &B) -> usize
     where
         R: GLWEInfos,
@@ -33,17 +41,22 @@ impl_keyswitching_delegate!(
         BE::glwe_keyswitch_tmp_bytes(self, res_infos, a_infos, key_infos)
     }
 
-    fn glwe_keyswitch<R, A>(&self, res: &mut R, a: &A, key: &GGLWEPreparedBackendRef<'_, BE>, scratch: &mut ScratchArena<'_, BE>)
-    where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
+    fn glwe_keyswitch<R, A>(
+        &self,
+        res: &mut R,
+        a: &A,
+        key: &GGLWEPreparedBackendRef<'_, BE, Rg>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+        A: GLWEToBackendRef<BE, Rg> + GLWEInfos,
     {
         BE::glwe_keyswitch(self, res, a, key, scratch)
     }
 
-    fn glwe_keyswitch_assign<R>(&self, res: &mut R, key: &GGLWEPreparedBackendRef<'_, BE>, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_keyswitch_assign<R>(&self, res: &mut R, key: &GGLWEPreparedBackendRef<'_, BE, Rg>, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
+        R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
     {
         BE::glwe_keyswitch_assign(self, res, key, scratch)
     }
@@ -58,12 +71,12 @@ impl_keyswitching_delegate!(
 
     fn glwe_keyswitch_dft<A>(
         &self,
-        res: &mut VecZnxDftBackendMut<'_, BE>,
+        res: &mut VecZnxDftBackendMut<'_, BE, Rg>,
         a: &A,
-        key: &GGLWEPreparedBackendRef<'_, BE>,
+        key: &GGLWEPreparedBackendRef<'_, BE, Rg>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        A: GLWEToBackendRef<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE, Rg> + GLWEInfos,
     {
         BE::glwe_keyswitch_dft(self, res, a, key, scratch)
     }
@@ -78,20 +91,20 @@ impl_keyswitching_delegate!(
 
     fn glwe_keyswitch_dft_add<A>(
         &self,
-        res: &mut VecZnxDftBackendMut<'_, BE>,
+        res: &mut VecZnxDftBackendMut<'_, BE, Rg>,
         a: &A,
-        key: &GGLWEPreparedBackendRef<'_, BE>,
+        key: &GGLWEPreparedBackendRef<'_, BE, Rg>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        A: GLWEToBackendRef<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE, Rg> + GLWEInfos,
     {
         BE::glwe_keyswitch_dft_add(self, res, a, key, scratch)
     }
 );
 
 impl_keyswitching_delegate!(
-    GGLWEKeyswitch<BE>,
-    [BE: Backend + GGLWEKeyswitchImpl],
+    GGLWEKeyswitch<BE, Rg>,
+    [BE: Backend + GGLWEKeyswitchImpl<Rg>],
     fn gglwe_keyswitch_tmp_bytes<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
         R: GGLWEInfos,
@@ -101,25 +114,30 @@ impl_keyswitching_delegate!(
         BE::gglwe_keyswitch_tmp_bytes(self, res_infos, a_infos, key_infos)
     }
 
-    fn gglwe_keyswitch<R, A>(&self, res: &mut R, a: &A, b: &GGLWEPreparedBackendRef<'_, BE>, scratch: &mut ScratchArena<'_, BE>)
-    where
-        R: GGLWEToBackendMut<BE> + GGLWEInfos,
-        A: GGLWEToBackendRef<BE> + GGLWEInfos,
+    fn gglwe_keyswitch<R, A>(
+        &self,
+        res: &mut R,
+        a: &A,
+        b: &GGLWEPreparedBackendRef<'_, BE, Rg>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GGLWEToBackendMut<BE, Rg> + GGLWEInfos,
+        A: GGLWEToBackendRef<BE, Rg> + GGLWEInfos,
     {
         BE::gglwe_keyswitch(self, res, a, b, scratch)
     }
 
-    fn gglwe_keyswitch_assign<R>(&self, res: &mut R, a: &GGLWEPreparedBackendRef<'_, BE>, scratch: &mut ScratchArena<'_, BE>)
+    fn gglwe_keyswitch_assign<R>(&self, res: &mut R, a: &GGLWEPreparedBackendRef<'_, BE, Rg>, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GGLWEToBackendMut<BE> + GGLWEInfos,
+        R: GGLWEToBackendMut<BE, Rg> + GGLWEInfos,
     {
         BE::gglwe_keyswitch_assign(self, res, a, scratch)
     }
 );
 
 impl_keyswitching_delegate!(
-    GGSWKeyswitch<BE>,
-    [BE: Backend + GGSWKeyswitchImpl],
+    GGSWKeyswitch<BE, Rg>,
+    [BE: Backend + GGSWKeyswitchImpl<Rg>],
     fn ggsw_keyswitch_tmp_bytes<R, A, K, T>(&self, res_infos: &R, a_infos: &A, key_infos: &K, tsk_infos: &T) -> usize
     where
         R: GGSWInfos,
@@ -134,13 +152,13 @@ impl_keyswitching_delegate!(
         &self,
         res: &mut R,
         a: &A,
-        key: &GGLWEPreparedBackendRef<'_, BE>,
-        tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, BE>,
+        key: &GGLWEPreparedBackendRef<'_, BE, Rg>,
+        tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, BE, Rg>,
         scratch: &mut ScratchArena<'_, BE>,
     )
     where
-        R: GGSWToBackendMut<BE> + GGSWInfos,
-        A: GGSWToBackendRef<BE> + GGSWInfos,
+        R: GGSWToBackendMut<BE, Rg> + GGSWInfos,
+        A: GGSWToBackendRef<BE, Rg> + GGSWInfos,
     {
         BE::ggsw_keyswitch(self, res, a, key, tsk, scratch)
     }
@@ -148,19 +166,19 @@ impl_keyswitching_delegate!(
     fn ggsw_keyswitch_assign<R>(
         &self,
         res: &mut R,
-        key: &GGLWEPreparedBackendRef<'_, BE>,
-        tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, BE>,
+        key: &GGLWEPreparedBackendRef<'_, BE, Rg>,
+        tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, BE, Rg>,
         scratch: &mut ScratchArena<'_, BE>,
     )
     where
-        R: GGSWToBackendMut<BE> + GGSWInfos,
+        R: GGSWToBackendMut<BE, Rg> + GGSWInfos,
     {
         BE::ggsw_keyswitch_assign(self, res, key, tsk, scratch)
     }
 );
 
 impl_keyswitching_delegate!(
-    LWEKeyswitch<BE>,
+    free LWEKeyswitch<BE>,
     [BE: Backend + LWEKeyswitchImpl],
     fn lwe_keyswitch_tmp_bytes<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
@@ -171,8 +189,13 @@ impl_keyswitching_delegate!(
         BE::lwe_keyswitch_tmp_bytes(self, res_infos, a_infos, key_infos)
     }
 
-    fn lwe_keyswitch<R, A>(&self, res: &mut R, a: &A, ksk: &GGLWEPreparedBackendRef<'_, BE>, scratch: &mut ScratchArena<'_, BE>)
-    where
+    fn lwe_keyswitch<R, A>(
+        &self,
+        res: &mut R,
+        a: &A,
+        ksk: &GGLWEPreparedBackendRef<'_, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
         R: LWEToBackendMut<BE> + LWEInfos,
         A: LWEToBackendRef<BE> + LWEInfos,
     {

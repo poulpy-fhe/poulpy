@@ -90,7 +90,7 @@ The implementation is written once, and each CubeCL runtime has its own backend 
 | `NTT4x30Hip` | HIP | AMD | `enable-hip` |
 | `NTT4x30Wgpu` | wgpu | Metal on Apple, Vulkan, other wgpu targets | `enable-metal`, `enable-vulkan`, `enable-wgpu` |
 
-Each type is generic over the ring like the CPU types (`NTT4x30Wgpu<ConjugateInvariant>`), and `enable-core`, `enable-ckks` and `enable-blas` add the scheme layers.
+Each type serves both rings like the CPU types, and `enable-core`, `enable-ckks` and `enable-blas` add the scheme layers.
 A backend type owns one device for the life of the process: the first device of its runtime, or the one chosen with `GpuRuntime::select_device` before the first module or buffer of that runtime is created.
 
 Buffers live on the device, so data moves explicitly: generate keys and encrypt with a host backend, move the layouts with `TransferInto`, prepare and evaluate on the GPU backend, and move results back to decrypt.
@@ -117,6 +117,7 @@ replay.replay();
 ```
 
 The closure must bind the same buffers and issue the same launches at every call, and must not read from the device, write host data to it or synchronize; `Replay` documents the contract, and `Replay::check` tests a closure against its recording.
+The first conjugate-invariant operation of a module uploads the transform tables of that ring, so a closure making it is not recorded: run one before recording.
 A recording keeps the temporaries of the closure reserved on the device until it is dropped, and while a closure is recorded or a graph is queued, other threads wait for the device.
 
 CKKS bootstrapping on a GPU is usually faster with the keys of power-of-two rotations only (`BootstrappingPreset::with_power_of_two_keys`, see [Default presets](bootstrapping.md#default-presets)).
@@ -160,12 +161,12 @@ let module = Module::<BackendImpl>::new(n as u64);
 
 ## Choosing a subfamily
 
-Select `base2k` with the runtime query `Module::<BE>::max_base2k(n, products, failure_bits, squaring)`, which delegates to `MaxBase2k` without constructing a module.
+Select `base2k` with the runtime query `Module::<BE>::max_base2k::<Rg>(n, products, failure_bits, squaring)`, which delegates to `MaxBase2k` without constructing a module; `Rg` is the ring of the operands.
 `products` counts the polynomial products accumulated into one output; `failure_bits` requests an estimated whole-polynomial failure probability of at most `2^(-failure_bits)`.
 Set `squaring = false` for independent products and `true` if any term is a square, counting each square once.
-For a sum of 32 products, `Module::<NTT4x30Portable>::max_base2k(1 << 16, 32, 128, false)` returns 54; the same query gives 19 for `FFT64Portable` and 57 for `NTT3x42Ifma`.
-For a single square, `Module::<NTT4x30Portable>::max_base2k(1 << 16, 1, 128, true)` returns 55; the same query gives 19 for `FFT64Portable` and 58 for `NTT3x42Ifma`.
-On the conjugate-invariant ring the same two queries give 53 and 52 for `NTT4x30CIPortable`, 18 and 17 for `FFT64CIPortable`, and 56 and 55 for `NTT3x42CIIfma`: its constant coefficient has twice the variance, and a square's has a positive mean.
+For a sum of 32 products, `Module::<NTT4x30Portable>::max_base2k::<Standard>(1 << 16, 32, 128, false)` returns 54; the same query gives 19 for `FFT64Portable` and 57 for `NTT3x42Ifma`.
+For a single square, `Module::<NTT4x30Portable>::max_base2k::<Standard>(1 << 16, 1, 128, true)` returns 55; the same query gives 19 for `FFT64Portable` and 58 for `NTT3x42Ifma`.
+On the conjugate-invariant ring (`::<ConjugateInvariant>`) the same two queries give 53 and 52 for `NTT4x30Portable`, 18 and 17 for `FFT64Portable`, and 56 and 55 for `NTT3x42Ifma`: its constant coefficient has twice the variance, and a square's has a positive mean.
 The estimates cover independent accumulated products or squares of centered-uniform inputs, with Gaussian tails and a stochastic roundoff model for FFT64. They are not guarantees for arbitrary inputs.
 See [Failure estimates for base-2^K arithmetic](base2k-failure-probability.md) for the models and an example.
 0 means no positive radix fits; a backend without a model does not implement `MaxBase2k`.
@@ -200,5 +201,5 @@ A backend implementing `CKKSEncodingImpl` keeps this by following one arithmetic
 
 Two tests check the contract.
 `test_reim_fft_bit_exact` in the HAL test suite compares a transform with `EncodingFFTTable` byte for byte, and the oracle's independent `EncodingFft` checks the portable table the same way.
-The determinism tests hash the encodings and setup constants and compare them with `schemes/poulpy-ckks/src/test_suite/determinism.txt`: `ckks_determinism_test_suite!`, which every CKKS backend type of the standard ring registers, and the encoding fixtures of `conjugate_invariant_ckks_test_suite!` on the conjugate-invariant ring, so every backend is held to the same bytes.
+The determinism tests hash the encodings and setup constants and compare them with `schemes/poulpy-ckks/src/test_suite/determinism.txt`: `ckks_determinism_test_suite!`, which every CKKS backend type registers on the standard ring, and the encoding fixtures of `conjugate_invariant_ckks_test_suite!` on the conjugate-invariant ring, so every backend is held to the same bytes.
 After an intended change to the encoding or the setup math, `POULPY_UPDATE_FIXTURES=1` records new hashes, and every backend must then pass without the variable.

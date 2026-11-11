@@ -5,7 +5,7 @@
 //! `&[i64]` slices, which are backend-independent.
 
 use super::NTT4x30Portable;
-use poulpy_hal::layouts::{ConjugateInvariant, Ring, Standard};
+use poulpy_hal::layouts::{ConjugateInvariant, Standard};
 
 use crate::kernels::znx::{
     ZnxAdd, ZnxAddAssign, ZnxAutomorphism, ZnxAutomorphismRotate, ZnxCopy, ZnxMulAddPowerOfTwo, ZnxMulPowerOfTwo,
@@ -16,63 +16,63 @@ use crate::kernels::znx::{
     znx_sub_negate_assign_portable, znx_sub_portable, znx_switch_ring_portable, znx_zero_portable,
 };
 
-impl<R: Ring> ZnxAdd for NTT4x30Portable<R> {
+impl ZnxAdd for NTT4x30Portable {
     #[inline(always)]
     fn znx_add(res: &mut [i64], a: &[i64], b: &[i64]) {
         znx_add_portable(res, a, b);
     }
 }
 
-impl<R: Ring> ZnxAddAssign for NTT4x30Portable<R> {
+impl ZnxAddAssign for NTT4x30Portable {
     #[inline(always)]
     fn znx_add_assign(res: &mut [i64], a: &[i64]) {
         znx_add_assign_portable(res, a);
     }
 }
 
-impl<R: Ring> ZnxSub for NTT4x30Portable<R> {
+impl ZnxSub for NTT4x30Portable {
     #[inline(always)]
     fn znx_sub(res: &mut [i64], a: &[i64], b: &[i64]) {
         znx_sub_portable(res, a, b);
     }
 }
 
-impl<R: Ring> ZnxSubAssign for NTT4x30Portable<R> {
+impl ZnxSubAssign for NTT4x30Portable {
     #[inline(always)]
     fn znx_sub_assign(res: &mut [i64], a: &[i64]) {
         znx_sub_assign_portable(res, a);
     }
 }
 
-impl<R: Ring> ZnxSubNegateAssign for NTT4x30Portable<R> {
+impl ZnxSubNegateAssign for NTT4x30Portable {
     #[inline(always)]
     fn znx_sub_negate_assign(res: &mut [i64], a: &[i64]) {
         znx_sub_negate_assign_portable(res, a);
     }
 }
 
-impl<R: Ring> ZnxMulAddPowerOfTwo for NTT4x30Portable<R> {
+impl ZnxMulAddPowerOfTwo for NTT4x30Portable {
     #[inline(always)]
     fn znx_muladd_power_of_two(k: i64, res: &mut [i64], a: &[i64]) {
         znx_mul_add_power_of_two_portable(k, res, a);
     }
 }
 
-impl<R: Ring> ZnxMulPowerOfTwo for NTT4x30Portable<R> {
+impl ZnxMulPowerOfTwo for NTT4x30Portable {
     #[inline(always)]
     fn znx_mul_power_of_two(k: i64, res: &mut [i64], a: &[i64]) {
         znx_mul_power_of_two_portable(k, res, a);
     }
 }
 
-impl<R: Ring> ZnxMulPowerOfTwoAssign for NTT4x30Portable<R> {
+impl ZnxMulPowerOfTwoAssign for NTT4x30Portable {
     #[inline(always)]
     fn znx_mul_power_of_two_assign(k: i64, res: &mut [i64]) {
         znx_mul_power_of_two_assign_portable(k, res);
     }
 }
 
-impl ZnxAutomorphism for NTT4x30Portable<Standard> {
+impl ZnxAutomorphism<Standard> for NTT4x30Portable {
     #[inline(always)]
     fn znx_automorphism(p: i64, res: &mut [i64], a: &[i64]) {
         standard::znx_automorphism_portable(p, res, a);
@@ -84,7 +84,7 @@ impl ZnxAutomorphism for NTT4x30Portable<Standard> {
     }
 }
 
-impl ZnxAutomorphism for NTT4x30Portable<ConjugateInvariant> {
+impl ZnxAutomorphism<ConjugateInvariant> for NTT4x30Portable {
     #[inline(always)]
     fn znx_automorphism(p: i64, res: &mut [i64], a: &[i64]) {
         conjugate_invariant::znx_automorphism_portable(p, res, a);
@@ -96,53 +96,53 @@ impl ZnxAutomorphism for NTT4x30Portable<ConjugateInvariant> {
     }
 }
 
-impl ZnxAutomorphismRotate for NTT4x30Portable<Standard> {
+impl ZnxAutomorphismRotate<Standard> for NTT4x30Portable {
     #[inline(always)]
     fn znx_automorphism_rotate(p: i64, k: i64, res: &mut [i64], a: &[i64]) {
         znx_automorphism_rotate_portable(p, k, res, a);
     }
 }
 
-impl<R: Ring> ZnxCopy for NTT4x30Portable<R> {
+impl ZnxCopy for NTT4x30Portable {
     #[inline(always)]
     fn znx_copy(res: &mut [i64], a: &[i64]) {
         znx_copy_portable(res, a);
     }
 }
 
-impl<R: Ring> ZnxNegate for NTT4x30Portable<R> {
+impl ZnxNegate for NTT4x30Portable {
     #[inline(always)]
     fn znx_negate(res: &mut [i64], src: &[i64]) {
         znx_negate_portable(res, src);
     }
 }
 
-impl<R: Ring> ZnxNegateAssign for NTT4x30Portable<R> {
+impl ZnxNegateAssign for NTT4x30Portable {
     #[inline(always)]
     fn znx_negate_assign(res: &mut [i64]) {
         znx_negate_assign_portable(res);
     }
 }
 
-impl<R: Ring> ZnxRotate for NTT4x30Portable<R> {
+impl ZnxRotate for NTT4x30Portable {
     #[inline(always)]
     fn znx_rotate(p: i64, res: &mut [i64], src: &[i64]) {
         znx_rotate_portable::<Self>(p, res, src);
     }
 }
 
-impl<R: Ring> ZnxZero for NTT4x30Portable<R> {
+impl ZnxZero for NTT4x30Portable {
     #[inline(always)]
     fn znx_zero(res: &mut [i64]) {
         znx_zero_portable(res);
     }
 }
 
-impl<R: Ring> ZnxSwitchRing for NTT4x30Portable<R> {
+impl ZnxSwitchRing for NTT4x30Portable {
     #[inline(always)]
     fn znx_switch_ring(res: &mut [i64], a: &[i64]) {
         znx_switch_ring_portable(res, a);
     }
 }
 
-impl<R: Ring> crate::kernels::znx_normalize::ZnxNormalize for NTT4x30Portable<R> {}
+impl crate::kernels::znx_normalize::ZnxNormalize for NTT4x30Portable {}

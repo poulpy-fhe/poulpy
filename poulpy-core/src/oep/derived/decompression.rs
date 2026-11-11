@@ -1,5 +1,5 @@
 //! Decompressions of gadget layouts and key wrappers composed from GLWE and GGLWE decompression.
-use poulpy_hal::layouts::Module;
+use poulpy_hal::layouts::{Module, Ring};
 
 use crate::{
     GetDistribution, GetDistributionMut,
@@ -12,11 +12,11 @@ use crate::{
     oep::DecompressionImpl,
 };
 
-pub(crate) fn gglwe_decompress_derived<BE, R, O>(module: &Module<BE>, res: &mut R, other: &O)
+pub(crate) fn gglwe_decompress_derived<BE, R, O, Rg: Ring>(module: &Module<BE>, res: &mut R, other: &O)
 where
-    BE: DecompressionImpl,
-    R: GGLWEToBackendMut<BE> + GGLWEInfos,
-    O: GGLWECompressedToBackendRef<BE> + GGLWEInfos,
+    BE: DecompressionImpl<Rg>,
+    R: GGLWEToBackendMut<BE, Rg> + GGLWEInfos,
+    O: GGLWECompressedToBackendRef<BE, Rg> + GGLWEInfos,
 {
     let noise = other.to_backend_ref().noise();
     {
@@ -40,11 +40,11 @@ where
     res.set_noise(noise);
 }
 
-pub(crate) fn ggsw_decompress_derived<BE, R, O>(module: &Module<BE>, res: &mut R, other: &O)
+pub(crate) fn ggsw_decompress_derived<BE, R, O, Rg: Ring>(module: &Module<BE>, res: &mut R, other: &O)
 where
-    BE: DecompressionImpl,
-    R: GGSWToBackendMut<BE> + GGSWInfos,
-    O: GGSWCompressedToBackendRef<BE> + GGSWInfos,
+    BE: DecompressionImpl<Rg>,
+    R: GGSWToBackendMut<BE, Rg> + GGSWInfos,
+    O: GGSWCompressedToBackendRef<BE, Rg> + GGSWInfos,
 {
     let noise = other.to_backend_ref().noise();
     {
@@ -66,11 +66,11 @@ where
     res.set_noise(noise);
 }
 
-pub(crate) fn glwe_public_key_decompress_derived<BE, R, O>(module: &Module<BE>, res: &mut R, other: &O)
+pub(crate) fn glwe_public_key_decompress_derived<BE, R, O, Rg: Ring>(module: &Module<BE>, res: &mut R, other: &O)
 where
-    BE: DecompressionImpl,
-    R: GLWEPublicKeyToBackendMut<BE> + GetDistributionMut + GLWEInfos,
-    O: GLWEPublicKeyCompressedToBackendRef<BE> + GetDistribution + GLWEInfos,
+    BE: DecompressionImpl<Rg>,
+    R: GLWEPublicKeyToBackendMut<BE, Rg> + GetDistributionMut + GLWEInfos,
+    O: GLWEPublicKeyCompressedToBackendRef<BE, Rg> + GetDistribution + GLWEInfos,
 {
     assert!(
         res.glwe_layout() == other.glwe_layout(),
@@ -87,21 +87,21 @@ where
     *res.dist_mut() = *other.dist();
 }
 
-pub(crate) fn glwe_automorphism_key_decompress_derived<BE, R, O>(module: &Module<BE>, res: &mut R, other: &O)
+pub(crate) fn glwe_automorphism_key_decompress_derived<BE, R, O, Rg: Ring>(module: &Module<BE>, res: &mut R, other: &O)
 where
-    BE: DecompressionImpl,
-    R: GGLWEToBackendMut<BE> + GGLWEInfos + SetGaloisElement,
-    O: GGLWECompressedToBackendRef<BE> + GGLWEInfos + GetGaloisElement,
+    BE: DecompressionImpl<Rg>,
+    R: GGLWEToBackendMut<BE, Rg> + GGLWEInfos + SetGaloisElement,
+    O: GGLWECompressedToBackendRef<BE, Rg> + GGLWEInfos + GetGaloisElement,
 {
     BE::gglwe_decompress(module, res, other);
     res.set_p(other.p());
 }
 
-pub(crate) fn glwe_switching_key_decompress_derived<BE, R, O>(module: &Module<BE>, res: &mut R, other: &O)
+pub(crate) fn glwe_switching_key_decompress_derived<BE, R, O, Rg: Ring>(module: &Module<BE>, res: &mut R, other: &O)
 where
-    BE: DecompressionImpl,
-    R: GGLWEToBackendMut<BE> + GGLWEInfos + GLWESwitchingKeyDegreesMut,
-    O: GGLWECompressedToBackendRef<BE> + GGLWEInfos + GLWESwitchingKeyDegrees,
+    BE: DecompressionImpl<Rg>,
+    R: GGLWEToBackendMut<BE, Rg> + GGLWEInfos + GLWESwitchingKeyDegreesMut,
+    O: GGLWECompressedToBackendRef<BE, Rg> + GGLWEInfos + GLWESwitchingKeyDegrees,
 {
     BE::gglwe_decompress(module, res, other);
 
@@ -109,11 +109,11 @@ where
     *res.output_degree() = *other.output_degree();
 }
 
-pub(crate) fn glwe_tensor_key_decompress_derived<BE, R, O>(module: &Module<BE>, res: &mut R, other: &O)
+pub(crate) fn glwe_tensor_key_decompress_derived<BE, R, O, Rg: Ring>(module: &Module<BE>, res: &mut R, other: &O)
 where
-    BE: DecompressionImpl,
-    R: GGLWEToBackendMut<BE> + GGLWEInfos,
-    O: GGLWECompressedToBackendRef<BE> + GGLWEInfos,
+    BE: DecompressionImpl<Rg>,
+    R: GGLWEToBackendMut<BE, Rg> + GGLWEInfos,
+    O: GGLWECompressedToBackendRef<BE, Rg> + GGLWEInfos,
 {
     BE::gglwe_decompress(module, res, other);
 }
@@ -145,11 +145,11 @@ where
     BE::glwe_switching_key_decompress(module, res, other);
 }
 
-pub(crate) fn gglwe_to_ggsw_key_decompress_derived<BE, R, O>(module: &Module<BE>, res: &mut R, other: &O)
+pub(crate) fn gglwe_to_ggsw_key_decompress_derived<BE, R, O, Rg: Ring>(module: &Module<BE>, res: &mut R, other: &O)
 where
-    BE: DecompressionImpl,
-    R: GGLWEToGGSWKeyToBackendMut<BE>,
-    O: GGLWEToGGSWKeyCompressedToBackendRef<BE>,
+    BE: DecompressionImpl<Rg>,
+    R: GGLWEToGGSWKeyToBackendMut<BE, Rg>,
+    O: GGLWEToGGSWKeyCompressedToBackendRef<BE, Rg>,
 {
     let noise = other.to_backend_ref().noise();
     {

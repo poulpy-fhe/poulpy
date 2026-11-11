@@ -13,7 +13,7 @@ use poulpy_hal::{
         VecZnxBigSubSmallAssign, VecZnxBigSubSmallNegateAssign, VecZnxDftBytesOf, VecZnxGadgetDecomposeTmpBytes, VecZnxIdftApply,
         VecZnxIdftApplyTmpBytes,
     },
-    layouts::{Backend, Module, ScratchArena, VecZnxBigToBackendRef, VecZnxDftToBackendRef},
+    layouts::{Backend, Module, Ring, ScratchArena, VecZnxBigToBackendRef, VecZnxDftToBackendRef},
 };
 
 use crate::layouts::operand_degree;
@@ -35,16 +35,21 @@ use crate::{
     },
 };
 
-pub fn glwe_automorphism_tmp_bytes_reference<BE, M, R, A, K>(module: &M, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
+pub fn glwe_automorphism_tmp_bytes_reference<BE, M, R, A, K, Rg: Ring>(
+    module: &M,
+    res_infos: &R,
+    a_infos: &A,
+    key_infos: &K,
+) -> usize
 where
     BE: Backend,
     M: GLWEBytesOf<BE>
         + ModuleN
-        + GLWEKeyswitch<BE>
+        + GLWEKeyswitch<BE, Rg>
         + VecZnxAutomorphismAssignTmpBytes
         + VecZnxBigAutomorphismAssignTmpBytes
-        + GLWEKeyswitchInternal<BE>
-        + GLWENormalize<BE>
+        + GLWEKeyswitchInternal<BE, Rg>
+        + GLWENormalize<BE, Rg>
         + VecZnxDftBytesOf
         + VecZnxBigBytesOf
         + VecZnxIdftApplyTmpBytes
@@ -93,17 +98,17 @@ where
     lvl_plain.max(lvl_accumulate)
 }
 
-pub fn glwe_automorphism_reference<BE, M, R, A>(
+pub fn glwe_automorphism_reference<BE, M, R, A, Rg: Ring>(
     module: &M,
     res: &mut R,
     a: &A,
-    key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
+    key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE, Rg>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
-    M: GLWEAutomorphismReference<BE> + GLWEKeyswitch<BE> + VecZnxAutomorphismAssign<BE>,
-    R: GLWEToBackendMut<BE> + GLWEInfos,
-    A: GLWEToBackendRef<BE> + GLWEInfos,
+    M: GLWEAutomorphismReference<BE, Rg> + GLWEKeyswitch<BE, Rg> + VecZnxAutomorphismAssign<BE, Rg>,
+    R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+    A: GLWEToBackendRef<BE, Rg> + GLWEInfos,
 {
     let p = key.p();
     let key = key.to_backend_ref();
@@ -123,15 +128,15 @@ pub fn glwe_automorphism_reference<BE, M, R, A>(
     }
 }
 
-pub fn glwe_automorphism_assign_reference<BE, M, R>(
+pub fn glwe_automorphism_assign_reference<BE, M, R, Rg: Ring>(
     module: &M,
     res: &mut R,
-    key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
+    key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE, Rg>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
-    M: GLWEAutomorphismReference<BE> + GLWEKeyswitch<BE> + VecZnxAutomorphismAssign<BE>,
-    R: GLWEToBackendMut<BE> + GLWEInfos,
+    M: GLWEAutomorphismReference<BE, Rg> + GLWEKeyswitch<BE, Rg> + VecZnxAutomorphismAssign<BE, Rg>,
+    R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
 {
     let p = key.p();
     let key = key.to_backend_ref();
@@ -152,27 +157,27 @@ pub fn glwe_automorphism_assign_reference<BE, M, R>(
     }
 }
 
-pub fn glwe_automorphism_add_reference<BE, M, R, A>(
+pub fn glwe_automorphism_add_reference<BE, M, R, A, Rg: Ring>(
     module: &M,
     res: &mut R,
     a: &A,
-    key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
+    key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE, Rg>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
     M: GLWEBytesOf<BE>
-        + GLWEAutomorphismReference<BE>
-        + GLWEKeyswitch<BE>
-        + GLWEKeyswitchInternal<BE>
-        + GLWENormalize<BE>
-        + VecZnxBigAutomorphismAssign<BE>
-        + VecZnxBigAddSmallAssign<BE>
+        + GLWEAutomorphismReference<BE, Rg>
+        + GLWEKeyswitch<BE, Rg>
+        + GLWEKeyswitchInternal<BE, Rg>
+        + GLWENormalize<BE, Rg>
+        + VecZnxBigAutomorphismAssign<BE, Rg>
+        + VecZnxBigAddSmallAssign<BE, Rg>
         + VecZnxBigBytesOf
-        + VecZnxBigNormalize<BE>
+        + VecZnxBigNormalize<BE, Rg>
         + VecZnxDftBytesOf
-        + VecZnxIdftApply<BE>,
-    R: GLWEToBackendMut<BE> + GLWEInfos,
-    A: GLWEToBackendRef<BE> + GLWEInfos,
+        + VecZnxIdftApply<BE, Rg>,
+    R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+    A: GLWEToBackendRef<BE, Rg> + GLWEInfos,
 {
     let p = key.p();
     let key = key.to_backend_ref();
@@ -234,25 +239,25 @@ pub fn glwe_automorphism_add_reference<BE, M, R, A>(
     }
 }
 
-pub fn glwe_automorphism_add_assign_reference<BE, M, R>(
+pub fn glwe_automorphism_add_assign_reference<BE, M, R, Rg: Ring>(
     module: &M,
     res: &mut R,
-    key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
+    key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE, Rg>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
     M: GLWEBytesOf<BE>
-        + GLWEAutomorphismReference<BE>
-        + GLWEKeyswitch<BE>
-        + GLWEKeyswitchInternal<BE>
-        + GLWENormalize<BE>
-        + VecZnxBigAutomorphismAssign<BE>
-        + VecZnxBigAddSmallAssign<BE>
+        + GLWEAutomorphismReference<BE, Rg>
+        + GLWEKeyswitch<BE, Rg>
+        + GLWEKeyswitchInternal<BE, Rg>
+        + GLWENormalize<BE, Rg>
+        + VecZnxBigAutomorphismAssign<BE, Rg>
+        + VecZnxBigAddSmallAssign<BE, Rg>
         + VecZnxBigBytesOf
-        + VecZnxBigNormalize<BE>
+        + VecZnxBigNormalize<BE, Rg>
         + VecZnxDftBytesOf
-        + VecZnxIdftApply<BE>,
-    R: GLWEToBackendMut<BE> + GLWEInfos,
+        + VecZnxIdftApply<BE, Rg>,
+    R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
 {
     let p = key.p();
     let key = key.to_backend_ref();
@@ -313,27 +318,27 @@ pub fn glwe_automorphism_add_assign_reference<BE, M, R>(
     }
 }
 
-pub fn glwe_automorphism_sub_reference<BE, M, R, A>(
+pub fn glwe_automorphism_sub_reference<BE, M, R, A, Rg: Ring>(
     module: &M,
     res: &mut R,
     a: &A,
-    key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
+    key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE, Rg>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
     M: GLWEBytesOf<BE>
-        + GLWEAutomorphismReference<BE>
-        + GLWEKeyswitch<BE>
-        + GLWEKeyswitchInternal<BE>
-        + GLWENormalize<BE>
-        + VecZnxBigAutomorphismAssign<BE>
-        + VecZnxBigSubSmallAssign<BE>
+        + GLWEAutomorphismReference<BE, Rg>
+        + GLWEKeyswitch<BE, Rg>
+        + GLWEKeyswitchInternal<BE, Rg>
+        + GLWENormalize<BE, Rg>
+        + VecZnxBigAutomorphismAssign<BE, Rg>
+        + VecZnxBigSubSmallAssign<BE, Rg>
         + VecZnxBigBytesOf
-        + VecZnxBigNormalize<BE>
+        + VecZnxBigNormalize<BE, Rg>
         + VecZnxDftBytesOf
-        + VecZnxIdftApply<BE>,
-    R: GLWEToBackendMut<BE> + GLWEInfos,
-    A: GLWEToBackendRef<BE> + GLWEInfos,
+        + VecZnxIdftApply<BE, Rg>,
+    R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+    A: GLWEToBackendRef<BE, Rg> + GLWEInfos,
 {
     let p = key.p();
     let key = key.to_backend_ref();
@@ -394,27 +399,27 @@ pub fn glwe_automorphism_sub_reference<BE, M, R, A>(
     }
 }
 
-pub fn glwe_automorphism_sub_negate_reference<BE, M, R, A>(
+pub fn glwe_automorphism_sub_negate_reference<BE, M, R, A, Rg: Ring>(
     module: &M,
     res: &mut R,
     a: &A,
-    key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
+    key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE, Rg>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
     M: GLWEBytesOf<BE>
-        + GLWEAutomorphismReference<BE>
-        + GLWEKeyswitch<BE>
-        + GLWEKeyswitchInternal<BE>
-        + GLWENormalize<BE>
-        + VecZnxBigAutomorphismAssign<BE>
-        + VecZnxBigSubSmallNegateAssign<BE>
+        + GLWEAutomorphismReference<BE, Rg>
+        + GLWEKeyswitch<BE, Rg>
+        + GLWEKeyswitchInternal<BE, Rg>
+        + GLWENormalize<BE, Rg>
+        + VecZnxBigAutomorphismAssign<BE, Rg>
+        + VecZnxBigSubSmallNegateAssign<BE, Rg>
         + VecZnxBigBytesOf
-        + VecZnxBigNormalize<BE>
+        + VecZnxBigNormalize<BE, Rg>
         + VecZnxDftBytesOf
-        + VecZnxIdftApply<BE>,
-    R: GLWEToBackendMut<BE> + GLWEInfos,
-    A: GLWEToBackendRef<BE> + GLWEInfos,
+        + VecZnxIdftApply<BE, Rg>,
+    R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+    A: GLWEToBackendRef<BE, Rg> + GLWEInfos,
 {
     let p = key.p();
     let key = key.to_backend_ref();
@@ -475,25 +480,25 @@ pub fn glwe_automorphism_sub_negate_reference<BE, M, R, A>(
     }
 }
 
-pub fn glwe_automorphism_sub_assign_reference<BE, M, R>(
+pub fn glwe_automorphism_sub_assign_reference<BE, M, R, Rg: Ring>(
     module: &M,
     res: &mut R,
-    key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
+    key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE, Rg>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
     M: GLWEBytesOf<BE>
-        + GLWEAutomorphismReference<BE>
-        + GLWEKeyswitch<BE>
-        + GLWEKeyswitchInternal<BE>
-        + GLWENormalize<BE>
-        + VecZnxBigAutomorphismAssign<BE>
-        + VecZnxBigSubSmallAssign<BE>
+        + GLWEAutomorphismReference<BE, Rg>
+        + GLWEKeyswitch<BE, Rg>
+        + GLWEKeyswitchInternal<BE, Rg>
+        + GLWENormalize<BE, Rg>
+        + VecZnxBigAutomorphismAssign<BE, Rg>
+        + VecZnxBigSubSmallAssign<BE, Rg>
         + VecZnxBigBytesOf
-        + VecZnxBigNormalize<BE>
+        + VecZnxBigNormalize<BE, Rg>
         + VecZnxDftBytesOf
-        + VecZnxIdftApply<BE>,
-    R: GLWEToBackendMut<BE> + GLWEInfos,
+        + VecZnxIdftApply<BE, Rg>,
+    R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
 {
     let p = key.p();
     let key = key.to_backend_ref();
@@ -553,25 +558,25 @@ pub fn glwe_automorphism_sub_assign_reference<BE, M, R>(
     }
 }
 
-pub fn glwe_automorphism_sub_negate_assign_reference<BE, M, R>(
+pub fn glwe_automorphism_sub_negate_assign_reference<BE, M, R, Rg: Ring>(
     module: &M,
     res: &mut R,
-    key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
+    key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE, Rg>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
     M: GLWEBytesOf<BE>
-        + GLWEAutomorphismReference<BE>
-        + GLWEKeyswitch<BE>
-        + GLWEKeyswitchInternal<BE>
-        + GLWENormalize<BE>
-        + VecZnxBigAutomorphismAssign<BE>
-        + VecZnxBigSubSmallNegateAssign<BE>
+        + GLWEAutomorphismReference<BE, Rg>
+        + GLWEKeyswitch<BE, Rg>
+        + GLWEKeyswitchInternal<BE, Rg>
+        + GLWENormalize<BE, Rg>
+        + VecZnxBigAutomorphismAssign<BE, Rg>
+        + VecZnxBigSubSmallNegateAssign<BE, Rg>
         + VecZnxBigBytesOf
-        + VecZnxBigNormalize<BE>
+        + VecZnxBigNormalize<BE, Rg>
         + VecZnxDftBytesOf
-        + VecZnxIdftApply<BE>,
-    R: GLWEToBackendMut<BE> + GLWEInfos,
+        + VecZnxIdftApply<BE, Rg>,
+    R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
 {
     let p = key.p();
     let key = key.to_backend_ref();
@@ -642,17 +647,17 @@ fn operand_class<K: GGLWEInfos>(key: &K) -> Option<(TorusPrecision, Dnum)> {
     (!digits_aligned(key.base2k(), key.k_digit())).then(|| (key.k_digit(), key.dnum()))
 }
 
-pub fn glwe_automorphism_many_tmp_bytes_reference<BE, R, A, K>(
+pub fn glwe_automorphism_many_tmp_bytes_reference<BE, R, A, K, Rg: Ring>(
     module: &Module<BE>,
     res_infos: &R,
     a_infos: &A,
     key_infos: &K,
 ) -> usize
 where
-    BE: Backend + GGLWEProductDigitsStridedImpl,
-    Module<BE>: GLWEAutomorphism<BE>
+    BE: Backend + GGLWEProductDigitsStridedImpl<Rg>,
+    Module<BE>: GLWEAutomorphism<BE, Rg>
         + GLWEBytesOf<BE>
-        + GLWENormalize<BE>
+        + GLWENormalize<BE, Rg>
         + ModuleN
         + VecZnxAutomorphismAssignTmpBytes
         + VecZnxDftBytesOf
@@ -681,25 +686,25 @@ where
 /// `res[t] = sigma(a)` by `keys[t]` for every `t`, each output [`glwe_automorphism_reference`] of `a` by its key bit
 /// for bit. The keys at the radix of `a` without row offset share one gadget operand per digit layout, taken from `a`
 /// normalized once; the others run [`GLWEAutomorphism::glwe_automorphism`].
-pub fn glwe_automorphism_many_reference<BE, R, A>(
+pub fn glwe_automorphism_many_reference<BE, R, A, Rg: Ring>(
     module: &Module<BE>,
     res: &mut [&mut R],
     a: &A,
-    keys: &[&GLWEAutomorphismKeyPreparedBackendRef<'_, BE>],
+    keys: &[&GLWEAutomorphismKeyPreparedBackendRef<'_, BE, Rg>],
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: Backend + GGLWEProductDigitsStridedImpl,
-    Module<BE>: GLWEAutomorphism<BE>
+    BE: Backend + GGLWEProductDigitsStridedImpl<Rg>,
+    Module<BE>: GLWEAutomorphism<BE, Rg>
         + GLWEBytesOf<BE>
-        + GLWEKeyswitchInternal<BE>
-        + GLWENormalize<BE>
+        + GLWEKeyswitchInternal<BE, Rg>
+        + GLWENormalize<BE, Rg>
         + ModuleN
-        + VecZnxAutomorphismAssign<BE>
+        + VecZnxAutomorphismAssign<BE, Rg>
         + VecZnxAutomorphismAssignTmpBytes
         + VecZnxDftBytesOf
         + VecZnxGadgetDecomposeTmpBytes,
-    R: GLWEToBackendMut<BE> + GLWEInfos,
-    A: GLWEToBackendRef<BE> + GLWEInfos,
+    R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+    A: GLWEToBackendRef<BE, Rg> + GLWEInfos,
 {
     assert!(
         res.len() == keys.len(),

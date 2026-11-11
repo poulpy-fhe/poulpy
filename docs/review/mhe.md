@@ -76,7 +76,7 @@
 
 ## 6. Serialization
 
-- **Core wire format.** Every PAT and share type implements `ReaderFrom` and `WriterTo` exactly as its wrapped core layout, as its type doc states, wrapper metadata first, in core's field order (switching key share: input, output degree `u32`; automorphism key share: `p`, 8 bytes); a share without core counterpart documents its part order (GGSW share: `col0`, `circ_u`, `circ_s`).
+- **Core wire format.** Every PAT and share type implements `ReaderFrom` and `WriterTo` exactly as its wrapped core layout, as its type doc states, wrapper metadata first, in core's field order (switching key share: input, output degree `u32`; automorphism key share: `p`, 8 bytes); a share without core counterpart documents its part order (GGSW share: `col0`, `circ_u`, `circ_s`), and a share validates its ring-dependent fields as its core counterpart does (automorphism key share: `p` odd and below `2n`, committed after the key, a refusal clearing the noise metadata the key brought).
 - **Share readers.** A share reader returns `InvalidData` unless the bytes form one share of the receiver's allocation (rank, part count, part layouts).
 
 ## 7. Layouts and the MatZnx family

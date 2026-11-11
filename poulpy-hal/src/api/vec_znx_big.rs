@@ -1,6 +1,6 @@
 use crate::layouts::{
-    Backend, ScalarZnxBackendRef, ScratchArena, VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxBigBackendRef,
-    VecZnxBigOwned,
+    Backend, Ring, ScalarZnxBackendRef, ScratchArena, Standard, VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut,
+    VecZnxBigBackendRef, VecZnxBigOwned,
 };
 
 /// Conversion of a coefficient-domain vector column into a big-word vector column.
@@ -15,13 +15,13 @@ use crate::layouts::{
 /// embed      a is the embedding slot, as for vec_znx_big_add
 /// test       test_vec_znx_big_from_small, test_vec_znx_big_window_ops, test_vec_znx_big_embed_add_sub
 /// ```
-pub trait VecZnxBigFromSmall<B: Backend> {
+pub trait VecZnxBigFromSmall<B: Backend, Rg: Ring = Standard> {
     /// Writes column `a_col` of `a` into column `res_col` of `res`.
     fn vec_znx_big_from_small(
         &self,
-        res: &mut VecZnxBigBackendMut<'_, B>,
+        res: &mut VecZnxBigBackendMut<'_, B, Rg>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, B>,
+        a: &VecZnxBackendRef<'_, B, Rg>,
         a_col: usize,
     );
 }
@@ -38,7 +38,7 @@ pub trait VecZnxBigFromSmall<B: Backend> {
 /// ```
 pub trait VecZnxBigAlloc<B: Backend> {
     /// Returns an owned degree-`n` big-word vector with `cols` columns and `size` limbs.
-    fn vec_znx_big_alloc(&self, n: usize, cols: usize, size: usize) -> VecZnxBigOwned<B>;
+    fn vec_znx_big_alloc<Rg: Ring>(&self, n: usize, cols: usize, size: usize) -> VecZnxBigOwned<B, Rg>;
 }
 
 /// Byte size of a big-word vector.
@@ -68,15 +68,15 @@ pub trait VecZnxBigBytesOf {
 /// embed      a and b are the embedding slots: a dense degree-n operand, n dividing N, stands for switch_ring_{n->N} of itself; a window in these slots has the width of res
 /// test       test_vec_znx_big_add, test_vec_znx_big_embed_add_sub
 /// ```
-pub trait VecZnxBigAdd<B: Backend> {
+pub trait VecZnxBigAdd<B: Backend, Rg: Ring = Standard> {
     /// Writes `a + b` into `res`.
     fn vec_znx_big_add(
         &self,
-        res: &mut VecZnxBigBackendMut<'_, B>,
+        res: &mut VecZnxBigBackendMut<'_, B, Rg>,
         res_col: usize,
-        a: &VecZnxBigBackendRef<'_, B>,
+        a: &VecZnxBigBackendRef<'_, B, Rg>,
         a_col: usize,
-        b: &VecZnxBigBackendRef<'_, B>,
+        b: &VecZnxBigBackendRef<'_, B, Rg>,
         b_col: usize,
     );
 }
@@ -93,13 +93,13 @@ pub trait VecZnxBigAdd<B: Backend> {
 /// embed      a is the embedding slot, as for vec_znx_big_add
 /// test       test_vec_znx_big_add_assign, test_vec_znx_big_embed_add_sub
 /// ```
-pub trait VecZnxBigAddAssign<B: Backend> {
+pub trait VecZnxBigAddAssign<B: Backend, Rg: Ring = Standard> {
     /// Adds `a` into `res`.
     fn vec_znx_big_add_assign(
         &self,
-        res: &mut VecZnxBigBackendMut<'_, B>,
+        res: &mut VecZnxBigBackendMut<'_, B, Rg>,
         res_col: usize,
-        a: &VecZnxBigBackendRef<'_, B>,
+        a: &VecZnxBigBackendRef<'_, B, Rg>,
         a_col: usize,
     );
 }
@@ -118,15 +118,15 @@ pub trait VecZnxBigAddAssign<B: Backend> {
 /// override   allowed, scratch-free
 /// test       test_vec_znx_big_add_small, test_vec_znx_big_add_small_derived, test_vec_znx_big_embed_add_sub
 /// ```
-pub trait VecZnxBigAddSmall<B: Backend> {
+pub trait VecZnxBigAddSmall<B: Backend, Rg: Ring = Standard> {
     /// Writes the sum of `a` and the coefficient-domain `b` into `res`.
     fn vec_znx_big_add_small(
         &self,
-        res: &mut VecZnxBigBackendMut<'_, B>,
+        res: &mut VecZnxBigBackendMut<'_, B, Rg>,
         res_col: usize,
-        a: &VecZnxBigBackendRef<'_, B>,
+        a: &VecZnxBigBackendRef<'_, B, Rg>,
         a_col: usize,
-        b: &VecZnxBackendRef<'_, B>,
+        b: &VecZnxBackendRef<'_, B, Rg>,
         b_col: usize,
     );
 }
@@ -143,13 +143,13 @@ pub trait VecZnxBigAddSmall<B: Backend> {
 /// embed      a is the embedding slot, as for vec_znx_big_add
 /// test       test_vec_znx_big_add_small_assign, test_vec_znx_big_embed_add_sub
 /// ```
-pub trait VecZnxBigAddSmallAssign<B: Backend> {
+pub trait VecZnxBigAddSmallAssign<B: Backend, Rg: Ring = Standard> {
     /// Adds the coefficient-domain `a` into `res`.
     fn vec_znx_big_add_small_assign(
         &self,
-        res: &mut VecZnxBigBackendMut<'_, B>,
+        res: &mut VecZnxBigBackendMut<'_, B, Rg>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, B>,
+        a: &VecZnxBackendRef<'_, B, Rg>,
         a_col: usize,
     );
 }
@@ -166,15 +166,15 @@ pub trait VecZnxBigAddSmallAssign<B: Backend> {
 /// embed      a and b are the embedding slots, as for vec_znx_big_add
 /// test       test_vec_znx_big_sub, test_vec_znx_big_embed_add_sub
 /// ```
-pub trait VecZnxBigSub<B: Backend> {
+pub trait VecZnxBigSub<B: Backend, Rg: Ring = Standard> {
     /// Writes `a - b` into `res`.
     fn vec_znx_big_sub(
         &self,
-        res: &mut VecZnxBigBackendMut<'_, B>,
+        res: &mut VecZnxBigBackendMut<'_, B, Rg>,
         res_col: usize,
-        a: &VecZnxBigBackendRef<'_, B>,
+        a: &VecZnxBigBackendRef<'_, B, Rg>,
         a_col: usize,
-        b: &VecZnxBigBackendRef<'_, B>,
+        b: &VecZnxBigBackendRef<'_, B, Rg>,
         b_col: usize,
     );
 }
@@ -191,13 +191,13 @@ pub trait VecZnxBigSub<B: Backend> {
 /// embed      a is the embedding slot, as for vec_znx_big_add
 /// test       test_vec_znx_big_sub_assign, test_vec_znx_big_embed_add_sub
 /// ```
-pub trait VecZnxBigSubAssign<B: Backend> {
+pub trait VecZnxBigSubAssign<B: Backend, Rg: Ring = Standard> {
     /// Subtracts `a` from `res`.
     fn vec_znx_big_sub_assign(
         &self,
-        res: &mut VecZnxBigBackendMut<'_, B>,
+        res: &mut VecZnxBigBackendMut<'_, B, Rg>,
         res_col: usize,
-        a: &VecZnxBigBackendRef<'_, B>,
+        a: &VecZnxBigBackendRef<'_, B, Rg>,
         a_col: usize,
     );
 }
@@ -214,13 +214,13 @@ pub trait VecZnxBigSubAssign<B: Backend> {
 /// embed      a is the embedding slot, as for vec_znx_big_add
 /// test       test_vec_znx_big_sub_negate_assign, test_vec_znx_big_embed_add_sub
 /// ```
-pub trait VecZnxBigSubNegateAssign<B: Backend> {
+pub trait VecZnxBigSubNegateAssign<B: Backend, Rg: Ring = Standard> {
     /// Writes `a - res` into `res`.
     fn vec_znx_big_sub_negate_assign(
         &self,
-        res: &mut VecZnxBigBackendMut<'_, B>,
+        res: &mut VecZnxBigBackendMut<'_, B, Rg>,
         res_col: usize,
-        a: &VecZnxBigBackendRef<'_, B>,
+        a: &VecZnxBigBackendRef<'_, B, Rg>,
         a_col: usize,
     );
 }
@@ -239,15 +239,15 @@ pub trait VecZnxBigSubNegateAssign<B: Backend> {
 /// override   allowed, scratch-free
 /// test       test_vec_znx_big_sub_small_a, test_vec_znx_big_sub_small_a_derived, test_vec_znx_big_embed_add_sub
 /// ```
-pub trait VecZnxBigSubSmallA<B: Backend> {
+pub trait VecZnxBigSubSmallA<B: Backend, Rg: Ring = Standard> {
     /// Writes the difference of the coefficient-domain `a` and `b` into `res`.
     fn vec_znx_big_sub_small_a(
         &self,
-        res: &mut VecZnxBigBackendMut<'_, B>,
+        res: &mut VecZnxBigBackendMut<'_, B, Rg>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, B>,
+        a: &VecZnxBackendRef<'_, B, Rg>,
         a_col: usize,
-        b: &VecZnxBigBackendRef<'_, B>,
+        b: &VecZnxBigBackendRef<'_, B, Rg>,
         b_col: usize,
     );
 }
@@ -264,13 +264,13 @@ pub trait VecZnxBigSubSmallA<B: Backend> {
 /// embed      a is the embedding slot, as for vec_znx_big_add
 /// test       test_vec_znx_big_sub_small_a_assign, test_vec_znx_big_embed_add_sub
 /// ```
-pub trait VecZnxBigSubSmallAssign<B: Backend> {
+pub trait VecZnxBigSubSmallAssign<B: Backend, Rg: Ring = Standard> {
     /// Subtracts the coefficient-domain `a` from `res`.
     fn vec_znx_big_sub_small_assign(
         &self,
-        res: &mut VecZnxBigBackendMut<'_, B>,
+        res: &mut VecZnxBigBackendMut<'_, B, Rg>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, B>,
+        a: &VecZnxBackendRef<'_, B, Rg>,
         a_col: usize,
     );
 }
@@ -289,15 +289,15 @@ pub trait VecZnxBigSubSmallAssign<B: Backend> {
 /// override   allowed, scratch-free
 /// test       test_vec_znx_big_sub_small_b, test_vec_znx_big_sub_small_b_derived, test_vec_znx_big_embed_add_sub
 /// ```
-pub trait VecZnxBigSubSmallB<B: Backend> {
+pub trait VecZnxBigSubSmallB<B: Backend, Rg: Ring = Standard> {
     /// Writes the difference of `a` and the coefficient-domain `b` into `res`.
     fn vec_znx_big_sub_small_b(
         &self,
-        res: &mut VecZnxBigBackendMut<'_, B>,
+        res: &mut VecZnxBigBackendMut<'_, B, Rg>,
         res_col: usize,
-        a: &VecZnxBigBackendRef<'_, B>,
+        a: &VecZnxBigBackendRef<'_, B, Rg>,
         a_col: usize,
-        b: &VecZnxBackendRef<'_, B>,
+        b: &VecZnxBackendRef<'_, B, Rg>,
         b_col: usize,
     );
 }
@@ -314,13 +314,13 @@ pub trait VecZnxBigSubSmallB<B: Backend> {
 /// embed      a is the embedding slot, as for vec_znx_big_add
 /// test       test_vec_znx_big_sub_small_b_assign, test_vec_znx_big_embed_add_sub
 /// ```
-pub trait VecZnxBigSubSmallNegateAssign<B: Backend> {
+pub trait VecZnxBigSubSmallNegateAssign<B: Backend, Rg: Ring = Standard> {
     /// Writes the difference of the coefficient-domain `a` and `res` into `res`.
     fn vec_znx_big_sub_small_negate_assign(
         &self,
-        res: &mut VecZnxBigBackendMut<'_, B>,
+        res: &mut VecZnxBigBackendMut<'_, B, Rg>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, B>,
+        a: &VecZnxBackendRef<'_, B, Rg>,
         a_col: usize,
     );
 }
@@ -336,14 +336,14 @@ pub trait VecZnxBigSubSmallNegateAssign<B: Backend> {
 /// ensures    only coefficient res_coeff in the selected column is written in each limb
 /// test       test_vec_znx_big_inner_sum
 /// ```
-pub trait VecZnxBigInnerSum<B: Backend> {
+pub trait VecZnxBigInnerSum<B: Backend, Rg: Ring = Standard> {
     /// Writes the coefficient sum of each limb of `a` into coefficient `res_coeff` of `res`.
     fn vec_znx_big_inner_sum(
         &self,
-        res: &mut VecZnxBigBackendMut<'_, B>,
+        res: &mut VecZnxBigBackendMut<'_, B, Rg>,
         res_col: usize,
         res_coeff: usize,
-        a: &VecZnxBigBackendRef<'_, B>,
+        a: &VecZnxBigBackendRef<'_, B, Rg>,
         a_col: usize,
     );
 }
@@ -360,14 +360,14 @@ pub trait VecZnxBigInnerSum<B: Backend> {
 /// ensures    every coefficient in the selected output column is written; coefficients from coeffs onward are zero
 /// test       test_vec_znx_big_col_weighted_sum
 /// ```
-pub trait VecZnxBigColWeightedSum<B: Backend> {
+pub trait VecZnxBigColWeightedSum<B: Backend, Rg: Ring = Standard> {
     /// Writes into `res` the sum of the first `cols` columns of `a` weighted by `weights`, over the first `coeffs` coefficients.
     fn vec_znx_big_col_weighted_sum<'r, 'a, 'b>(
         &self,
-        res: &mut VecZnxBigBackendMut<'r, B>,
+        res: &mut VecZnxBigBackendMut<'r, B, Rg>,
         res_col: usize,
-        a: &VecZnxBackendRef<'a, B>,
-        weights: &ScalarZnxBackendRef<'b, B>,
+        a: &VecZnxBackendRef<'a, B, Rg>,
+        weights: &ScalarZnxBackendRef<'b, B, Rg>,
         weights_col: usize,
         cols: usize,
         coeffs: usize,
@@ -385,15 +385,15 @@ pub trait VecZnxBigColWeightedSum<B: Backend> {
 /// ensures    only the first a.n() coefficients in each selected output limb are written
 /// test       test_vec_znx_big_scalar_product
 /// ```
-pub trait VecZnxBigScalarProduct<B: Backend> {
+pub trait VecZnxBigScalarProduct<B: Backend, Rg: Ring = Standard> {
     /// Writes the coefficient-wise product of `a` and `b` into `res`.
     fn vec_znx_big_scalar_product(
         &self,
-        res: &mut VecZnxBigBackendMut<'_, B>,
+        res: &mut VecZnxBigBackendMut<'_, B, Rg>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, B>,
+        a: &VecZnxBackendRef<'_, B, Rg>,
         a_col: usize,
-        b: &ScalarZnxBackendRef<'_, B>,
+        b: &ScalarZnxBackendRef<'_, B, Rg>,
         b_col: usize,
     );
 }
@@ -409,13 +409,13 @@ pub trait VecZnxBigScalarProduct<B: Backend> {
 /// ensures    res[res_col] = -a[a_col] limb by limb; limbs of res past a.size() are zero
 /// test       test_vec_znx_big_negate
 /// ```
-pub trait VecZnxBigNegate<B: Backend> {
+pub trait VecZnxBigNegate<B: Backend, Rg: Ring = Standard> {
     /// Writes `-a` into `res`.
     fn vec_znx_big_negate(
         &self,
-        res: &mut VecZnxBigBackendMut<'_, B>,
+        res: &mut VecZnxBigBackendMut<'_, B, Rg>,
         res_col: usize,
-        a: &VecZnxBigBackendRef<'_, B>,
+        a: &VecZnxBigBackendRef<'_, B, Rg>,
         a_col: usize,
     );
 }
@@ -431,9 +431,9 @@ pub trait VecZnxBigNegate<B: Backend> {
 /// ensures    every limb of res[res_col] is negated in place
 /// test       test_vec_znx_big_negate_assign
 /// ```
-pub trait VecZnxBigNegateAssign<B: Backend> {
+pub trait VecZnxBigNegateAssign<B: Backend, Rg: Ring = Standard> {
     /// Negates column `res_col` of `res`.
-    fn vec_znx_big_negate_assign(&self, res: &mut VecZnxBigBackendMut<'_, B>, res_col: usize);
+    fn vec_znx_big_negate_assign(&self, res: &mut VecZnxBigBackendMut<'_, B, Rg>, res_col: usize);
 }
 
 /// Scratch size of the normalization of a big-word vector.
@@ -464,16 +464,16 @@ pub trait VecZnxBigNormalizeTmpBytes {
 /// ensures    the selected output column is canonical at res_base2k and res_k and congruent modulo 1 to rnd([[a[a_col]]]_a_base2k * 2^res_offset, res_k)
 /// test       test_vec_znx_big_normalize, test_vec_znx_big_window_normalize
 /// ```
-pub trait VecZnxBigNormalize<B: Backend> {
+pub trait VecZnxBigNormalize<B: Backend, Rg: Ring = Standard> {
     /// Writes column `a_col` of `a`, scaled by `2^res_offset` and normalized at `res_base2k` and `res_k`, into `res`.
     fn vec_znx_big_normalize(
         &self,
-        res: &mut VecZnxBackendMut<'_, B>,
+        res: &mut VecZnxBackendMut<'_, B, Rg>,
         res_base2k: usize,
         res_k: usize,
         res_offset: i64,
         res_col: usize,
-        a: &VecZnxBigBackendRef<'_, B>,
+        a: &VecZnxBigBackendRef<'_, B, Rg>,
         a_base2k: usize,
         a_col: usize,
         scratch: &mut ScratchArena<'_, B>,
@@ -506,14 +506,14 @@ pub trait VecZnxBigAutomorphismAssignTmpBytes {
 /// ensures    the selected output column is the limbwise automorphism with zero extension or truncation
 /// test       test_vec_znx_big_automorphism
 /// ```
-pub trait VecZnxBigAutomorphism<B: Backend> {
+pub trait VecZnxBigAutomorphism<B: Backend, Rg: Ring = Standard> {
     /// Writes the automorphism `X -> X^p` of `a` into `res`.
     fn vec_znx_big_automorphism(
         &self,
         p: i64,
-        res: &mut VecZnxBigBackendMut<'_, B>,
+        res: &mut VecZnxBigBackendMut<'_, B, Rg>,
         res_col: usize,
-        a: &VecZnxBigBackendRef<'_, B>,
+        a: &VecZnxBigBackendRef<'_, B, Rg>,
         a_col: usize,
     );
 }
@@ -532,12 +532,12 @@ pub trait VecZnxBigAutomorphism<B: Backend> {
 /// override   required
 /// test       test_vec_znx_big_automorphism_assign
 /// ```
-pub trait VecZnxBigAutomorphismAssign<B: Backend> {
+pub trait VecZnxBigAutomorphismAssign<B: Backend, Rg: Ring = Standard> {
     /// Replaces column `res_col` of `res` by its automorphism `X -> X^p`.
     fn vec_znx_big_automorphism_assign(
         &self,
         p: i64,
-        res: &mut VecZnxBigBackendMut<'_, B>,
+        res: &mut VecZnxBigBackendMut<'_, B, Rg>,
         res_col: usize,
         scratch: &mut ScratchArena<'_, B>,
     );

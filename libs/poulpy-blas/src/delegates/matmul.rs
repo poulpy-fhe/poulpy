@@ -1,23 +1,23 @@
 use poulpy_ckks::CKKSResult as Result;
 use poulpy_core::layouts::{GGLWEInfos, GetAutomorphismKey, GetTensorKey};
-use poulpy_hal::layouts::{Module, PrepareHint, ScratchArena};
+use poulpy_hal::layouts::{Module, PrepareHint, Ring, ScratchArena};
 
 use crate::{
     api::{BlasMatMulLeftOperandPreparedFactory, BlasMatMulOps, BlasMatMulRightOperandPreparedFactory},
     layouts::{
         BlasContextPrepared, BlasGrid, BlasGridInfos, BlasGridMut, BlasMatMulLeftOperandPrepared, BlasMatMulOperandInfos,
-        BlasMatMulRightOperandPrepared, BlasPtOperandPrepared, Left,
+        BlasMatMulRightOperandPrepared, BlasPtOperandPrepared, Left, Right,
     },
     oep::BlasMatMulImpl,
 };
 
-impl<BE: BlasMatMulImpl> BlasMatMulOps<BE> for Module<BE> {
+impl<BE: BlasMatMulImpl<Rg>, Rg: Ring> BlasMatMulOps<BE, Rg> for Module<BE> {
     fn blas_matmul_tmp_bytes<R, A, B, T, K>(
         &self,
         res: &R,
         a: &A,
         b: &B,
-        ctx: &BlasContextPrepared<BE>,
+        ctx: &BlasContextPrepared<BE, Rg>,
         tsk: &T,
         keys: &K,
     ) -> usize
@@ -36,17 +36,17 @@ impl<BE: BlasMatMulImpl> BlasMatMulOps<BE> for Module<BE> {
         res: &mut R,
         a: &A,
         b: &B,
-        ctx: &BlasContextPrepared<BE>,
+        ctx: &BlasContextPrepared<BE, Rg>,
         tsk: &T,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: BlasGridMut<BE>,
-        A: BlasGrid<BE>,
-        B: BlasGrid<BE>,
-        T: GetTensorKey<BE> + Sync,
-        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync,
+        R: BlasGridMut<BE, Rg>,
+        A: BlasGrid<BE, Rg>,
+        B: BlasGrid<BE, Rg>,
+        T: GetTensorKey<BE, Rg> + Sync,
+        K: GetAutomorphismKey<BE, Rg> + GetTensorKey<BE, Rg> + Sync,
     {
         BE::blas_matmul(self, res, a, b, ctx, tsk, keys, scratch)
     }
@@ -56,7 +56,7 @@ impl<BE: BlasMatMulImpl> BlasMatMulOps<BE> for Module<BE> {
         res: &R,
         a: &A,
         b: &B,
-        ctx: &BlasContextPrepared<BE>,
+        ctx: &BlasContextPrepared<BE, Rg>,
         tsk: &T,
         keys: &K,
     ) -> usize
@@ -73,17 +73,17 @@ impl<BE: BlasMatMulImpl> BlasMatMulOps<BE> for Module<BE> {
     fn blas_matmul_prepared<R, T, K>(
         &self,
         res: &mut R,
-        a: &BlasMatMulLeftOperandPrepared<BE>,
-        b: &BlasMatMulRightOperandPrepared<BE>,
-        ctx: &BlasContextPrepared<BE>,
+        a: &BlasMatMulLeftOperandPrepared<BE, Rg>,
+        b: &BlasMatMulRightOperandPrepared<BE, Rg>,
+        ctx: &BlasContextPrepared<BE, Rg>,
         tsk: &T,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: BlasGridMut<BE>,
-        T: GetTensorKey<BE> + Sync,
-        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync,
+        R: BlasGridMut<BE, Rg>,
+        T: GetTensorKey<BE, Rg> + Sync,
+        K: GetAutomorphismKey<BE, Rg> + GetTensorKey<BE, Rg> + Sync,
     {
         BE::blas_matmul_prepared(self, res, a, b, ctx, tsk, keys, scratch)
     }
@@ -92,8 +92,8 @@ impl<BE: BlasMatMulImpl> BlasMatMulOps<BE> for Module<BE> {
         &self,
         res: &R,
         a: &A,
-        b: &BlasPtOperandPrepared<BE>,
-        ctx: &BlasContextPrepared<BE>,
+        b: &BlasPtOperandPrepared<BE, Right, Rg>,
+        ctx: &BlasContextPrepared<BE, Rg>,
         keys: &K,
     ) -> usize
     where
@@ -108,15 +108,15 @@ impl<BE: BlasMatMulImpl> BlasMatMulOps<BE> for Module<BE> {
         &self,
         res: &mut R,
         a: &A,
-        b: &BlasPtOperandPrepared<BE>,
-        ctx: &BlasContextPrepared<BE>,
+        b: &BlasPtOperandPrepared<BE, Right, Rg>,
+        ctx: &BlasContextPrepared<BE, Rg>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: BlasGridMut<BE>,
-        A: BlasGrid<BE>,
-        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync,
+        R: BlasGridMut<BE, Rg>,
+        A: BlasGrid<BE, Rg>,
+        K: GetAutomorphismKey<BE, Rg> + GetTensorKey<BE, Rg> + Sync,
     {
         BE::blas_matmul_pt_right(self, res, a, b, ctx, keys, scratch)
     }
@@ -124,9 +124,9 @@ impl<BE: BlasMatMulImpl> BlasMatMulOps<BE> for Module<BE> {
     fn blas_matmul_pt_left_tmp_bytes<R, A, K>(
         &self,
         res: &R,
-        b: &BlasPtOperandPrepared<BE, Left>,
+        b: &BlasPtOperandPrepared<BE, Left, Rg>,
         a: &A,
-        ctx: &BlasContextPrepared<BE>,
+        ctx: &BlasContextPrepared<BE, Rg>,
         keys: &K,
     ) -> usize
     where
@@ -140,26 +140,26 @@ impl<BE: BlasMatMulImpl> BlasMatMulOps<BE> for Module<BE> {
     fn blas_matmul_pt_left<R, A, K>(
         &self,
         res: &mut R,
-        b: &BlasPtOperandPrepared<BE, Left>,
+        b: &BlasPtOperandPrepared<BE, Left, Rg>,
         a: &A,
-        ctx: &BlasContextPrepared<BE>,
+        ctx: &BlasContextPrepared<BE, Rg>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: BlasGridMut<BE>,
-        A: BlasGrid<BE>,
-        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync,
+        R: BlasGridMut<BE, Rg>,
+        A: BlasGrid<BE, Rg>,
+        K: GetAutomorphismKey<BE, Rg> + GetTensorKey<BE, Rg> + Sync,
     {
         BE::blas_matmul_pt_left(self, res, b, a, ctx, keys, scratch)
     }
 }
 
-impl<BE: BlasMatMulImpl> BlasMatMulLeftOperandPreparedFactory<BE> for Module<BE> {
+impl<BE: BlasMatMulImpl<Rg>, Rg: Ring> BlasMatMulLeftOperandPreparedFactory<BE, Rg> for Module<BE> {
     fn blas_matmul_left_operand_prepare_tmp_bytes<A, K>(
         &self,
         a: &A,
-        ctx: &BlasContextPrepared<BE>,
+        ctx: &BlasContextPrepared<BE, Rg>,
         keys: &K,
         hint: PrepareHint,
     ) -> usize
@@ -172,25 +172,25 @@ impl<BE: BlasMatMulImpl> BlasMatMulLeftOperandPreparedFactory<BE> for Module<BE>
 
     fn blas_matmul_left_operand_prepare<A, K>(
         &self,
-        res: &mut BlasMatMulLeftOperandPrepared<BE>,
+        res: &mut BlasMatMulLeftOperandPrepared<BE, Rg>,
         a: &A,
-        ctx: &BlasContextPrepared<BE>,
+        ctx: &BlasContextPrepared<BE, Rg>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        A: BlasGrid<BE>,
-        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync,
+        A: BlasGrid<BE, Rg>,
+        K: GetAutomorphismKey<BE, Rg> + GetTensorKey<BE, Rg> + Sync,
     {
         BE::blas_matmul_left_operand_prepare(self, res, a, ctx, keys, scratch)
     }
 }
 
-impl<BE: BlasMatMulImpl> BlasMatMulRightOperandPreparedFactory<BE> for Module<BE> {
+impl<BE: BlasMatMulImpl<Rg>, Rg: Ring> BlasMatMulRightOperandPreparedFactory<BE, Rg> for Module<BE> {
     fn blas_matmul_right_operand_prepare_tmp_bytes<B, K>(
         &self,
         b: &B,
-        ctx: &BlasContextPrepared<BE>,
+        ctx: &BlasContextPrepared<BE, Rg>,
         keys: &K,
         hint: PrepareHint,
     ) -> usize
@@ -203,15 +203,15 @@ impl<BE: BlasMatMulImpl> BlasMatMulRightOperandPreparedFactory<BE> for Module<BE
 
     fn blas_matmul_right_operand_prepare<B, K>(
         &self,
-        res: &mut BlasMatMulRightOperandPrepared<BE>,
+        res: &mut BlasMatMulRightOperandPrepared<BE, Rg>,
         b: &B,
-        ctx: &BlasContextPrepared<BE>,
+        ctx: &BlasContextPrepared<BE, Rg>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        B: BlasGrid<BE>,
-        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync,
+        B: BlasGrid<BE, Rg>,
+        K: GetAutomorphismKey<BE, Rg> + GetTensorKey<BE, Rg> + Sync,
     {
         BE::blas_matmul_right_operand_prepare(self, res, b, ctx, keys, scratch)
     }

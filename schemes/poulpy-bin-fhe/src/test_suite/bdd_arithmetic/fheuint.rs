@@ -13,7 +13,7 @@ use poulpy_hal::AlignedBuf;
 use poulpy_hal::layouts::HostDataRef;
 use poulpy_hal::{
     api::ModuleNew,
-    layouts::{Backend, HostBackend, HostDataMut, Module},
+    layouts::{Backend, HostBackend, HostDataMut, Module, Standard},
     oep::HalModuleImpl,
     source::Source,
 };
@@ -42,7 +42,7 @@ where
         + GLWEDecrypt<BE>,
     S: poulpy_core::layouts::GLWESecretPreparedToBackendRef<BE> + poulpy_core::layouts::GLWEInfos,
 {
-    assert_glwe_flag_honest::<BE, _>(a);
+    assert_glwe_flag_honest::<BE, _, Standard>(a);
     with_scratch::<BE, _>(a.decrypt_tmp_bytes(module), |s| a.decrypt(module, sk, s))
 }
 

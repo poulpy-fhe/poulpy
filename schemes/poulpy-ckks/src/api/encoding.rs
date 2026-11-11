@@ -2,14 +2,14 @@
 //!
 //! The four primitive operations use a backend-resident scalar buffer. Host
 //! slices are convenience ingress/egress only and are staged through the
-//! caller's standard backend arena. This lets a device backend compose its
+//! caller's backend arena. This lets a device backend compose its
 //! native FFT and plaintext codec without a device-to-host round-trip.
 
 use crate::{CKKSResult as Result, ckks_ensure, ckks_ensure_operand};
 use bytemuck::Pod;
 use num_traits::FloatConst;
 use poulpy_core::layouts::IntPolyInfos;
-use poulpy_hal::layouts::{Backend, ScratchArena};
+use poulpy_hal::layouts::{Backend, Ring, ScratchArena, Standard};
 
 use crate::{
     CKKSPlaintextToBackendMut, CKKSPlaintextToBackendRef, SetCKKSInfos,
@@ -29,9 +29,9 @@ pub trait CKKSEncodingScalar: CKKSScalar + FloatConst + Pod + Send + Sync + 'sta
 
 impl<T> CKKSEncodingScalar for T where T: CKKSScalar + FloatConst + Pod + Send + Sync + 'static {}
 
-/// Backend-resident CKKS encoding operations at scalar precision `F`.
+/// Backend-resident CKKS encoding operations at scalar precision `F`, on ring `Rg`.
 ///
-/// A conjugate invariant module packs up to `N` real slots. Encoding discards
+/// On the conjugate-invariant ring, a plaintext of degree `N` packs up to `N` real slots. Encoding discards
 /// imaginary inputs; decoding returns zero imaginary parts. Slot transforms
 /// use `2m` scalars for `m` slots, with the independent invariant coefficients
 /// in the first `m` entries. Every encoding fills its plaintext: `n`
@@ -44,35 +44,35 @@ impl<T> CKKSEncodingScalar for T where T: CKKSScalar + FloatConst + Pod + Send +
 ///
 /// The scalar is a trait parameter so the methods stay free of backend bounds:
 /// the delegating impl on `Module<BE>` requires the
-/// [`CKKSEncodingImpl<F>`](crate::oep::CKKSEncodingImpl) seam at the impl
+/// [`CKKSEncodingImpl<F, Rg>`](crate::oep::CKKSEncodingImpl) seam at the impl
 /// level, and a backend overrides that seam independently of any bounds the
 /// reference implementation carries.
-pub trait CKKSEncodingOps<BE: Backend, F: CKKSEncodingScalar> {
+pub trait CKKSEncodingOps<BE: Backend, F: CKKSEncodingScalar, Rg: Ring = Standard> {
     /// Destructively encodes a planar backend slot buffer `[re | im]` into a
     /// plaintext by composing the slot→coefficient transform and coefficient
     /// mapping.
     fn ckks_encode_slots_into<P, C>(&self, pt: &mut P, slots: &mut C) -> Result<()>
     where
-        P: CKKSPlaintextToBackendMut<BE> + IntPolyInfos + SetCKKSInfos,
+        P: CKKSPlaintextToBackendMut<BE, Rg> + IntPolyInfos + SetCKKSInfos,
         C: CKKSEncodingBufferToBackendMut<BE, F>;
 
     /// Decodes a plaintext into a planar backend slot buffer `[re | im]` by
     /// composing coefficient mapping and the coefficient→slot transform.
     fn ckks_decode_slots_into<P, C>(&self, pt: &P, slots: &mut C) -> Result<()>
     where
-        P: CKKSPlaintextToBackendRef<BE> + IntPolyInfos,
+        P: CKKSPlaintextToBackendRef<BE, Rg> + IntPolyInfos,
         C: CKKSEncodingBufferToBackendMut<BE, F>;
 
     /// Quantizes backend-resident polynomial coefficients without an IFFT.
     fn ckks_encode_coeffs_into<P, C>(&self, pt: &mut P, coeffs: &C) -> Result<()>
     where
-        P: CKKSPlaintextToBackendMut<BE> + IntPolyInfos + SetCKKSInfos,
+        P: CKKSPlaintextToBackendMut<BE, Rg> + IntPolyInfos + SetCKKSInfos,
         C: CKKSEncodingBufferToBackendRef<BE, F>;
 
     /// Dequantizes a plaintext into backend-resident polynomial coefficients.
     fn ckks_decode_coeffs_into<P, C>(&self, pt: &P, coeffs: &mut C) -> Result<()>
     where
-        P: CKKSPlaintextToBackendRef<BE> + IntPolyInfos,
+        P: CKKSPlaintextToBackendRef<BE, Rg> + IntPolyInfos,
         C: CKKSEncodingBufferToBackendMut<BE, F>;
 
     /// In-place planar slots → polynomial coefficients.
@@ -89,9 +89,9 @@ pub trait CKKSEncodingOps<BE: Backend, F: CKKSEncodingScalar> {
 /// Host-slice adapters over [`CKKSEncodingOps`].
 ///
 /// These methods make the host/backend transfer boundary explicit. They stage
-/// through the caller's standard backend arena and delegate all transforms and
+/// through the caller's backend arena and delegate all transforms and
 /// plaintext mapping to the backend-resident operations above.
-pub trait CKKSEncodingHostOps<BE: Backend, F: CKKSEncodingScalar>: CKKSEncodingOps<BE, F> {
+pub trait CKKSEncodingHostOps<BE: Backend, F: CKKSEncodingScalar, Rg: Ring = Standard>: CKKSEncodingOps<BE, F, Rg> {
     /// Standard-arena bytes required by a host-slice encode/decode adapter.
     fn ckks_encoding_host_tmp_bytes(&self, slots: usize) -> usize {
         let len = slots.checked_mul(2).expect("CKKS slot count overflow");
@@ -101,7 +101,7 @@ pub trait CKKSEncodingHostOps<BE: Backend, F: CKKSEncodingScalar>: CKKSEncodingO
     /// Encodes host complex slots through one backend-native arena buffer.
     fn ckks_encode_slots_host_into<P>(&self, pt: &mut P, re: &[F], im: &[F], scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        P: CKKSPlaintextToBackendMut<BE> + IntPolyInfos + SetCKKSInfos,
+        P: CKKSPlaintextToBackendMut<BE, Rg> + IntPolyInfos + SetCKKSInfos,
     {
         ckks_ensure_operand!(
             "ckks_encode_slots_host_into",
@@ -135,7 +135,7 @@ pub trait CKKSEncodingHostOps<BE: Backend, F: CKKSEncodingScalar>: CKKSEncodingO
     /// arena buffer.
     fn ckks_decode_slots_host_into<P>(&self, pt: &P, re: &mut [F], im: &mut [F], scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        P: CKKSPlaintextToBackendRef<BE> + IntPolyInfos,
+        P: CKKSPlaintextToBackendRef<BE, Rg> + IntPolyInfos,
     {
         ckks_ensure_operand!(
             "ckks_decode_slots_host_into",
@@ -168,7 +168,7 @@ pub trait CKKSEncodingHostOps<BE: Backend, F: CKKSEncodingScalar>: CKKSEncodingO
     /// Quantizes host polynomial coefficients without applying an IFFT.
     fn ckks_encode_coeffs_host_into<P>(&self, pt: &mut P, coeffs: &[F], scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        P: CKKSPlaintextToBackendMut<BE> + IntPolyInfos + SetCKKSInfos,
+        P: CKKSPlaintextToBackendMut<BE, Rg> + IntPolyInfos + SetCKKSInfos,
     {
         let required = CKKSEncodingBuffer::<BE::OwnedBuf, F>::bytes_of(coeffs.len());
         ckks_ensure!(
@@ -186,7 +186,7 @@ pub trait CKKSEncodingHostOps<BE: Backend, F: CKKSEncodingScalar>: CKKSEncodingO
     /// Dequantizes polynomial coefficients to a host slice without an FFT.
     fn ckks_decode_coeffs_host_into<P>(&self, pt: &P, coeffs: &mut [F], scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        P: CKKSPlaintextToBackendRef<BE> + IntPolyInfos,
+        P: CKKSPlaintextToBackendRef<BE, Rg> + IntPolyInfos,
     {
         let required = CKKSEncodingBuffer::<BE::OwnedBuf, F>::bytes_of(coeffs.len());
         ckks_ensure!(
@@ -202,10 +202,10 @@ pub trait CKKSEncodingHostOps<BE: Backend, F: CKKSEncodingScalar>: CKKSEncodingO
     }
 }
 
-impl<BE, F, T> CKKSEncodingHostOps<BE, F> for T
+impl<BE, F, T, Rg: Ring> CKKSEncodingHostOps<BE, F, Rg> for T
 where
     BE: Backend,
     F: CKKSEncodingScalar,
-    T: CKKSEncodingOps<BE, F>,
+    T: CKKSEncodingOps<BE, F, Rg>,
 {
 }

@@ -18,7 +18,9 @@ use std::collections::HashMap;
 
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, Data, HostDataMut, HostDataRef, Module, ScratchOwned, ZnxView, ZnxViewMut},
+    layouts::{
+        Backend, CyclotomicOrder, Data, HostDataMut, HostDataRef, Module, Ring, ScratchOwned, Standard, ZnxView, ZnxViewMut,
+    },
     source::Source,
     test_suite::TestParams,
 };
@@ -43,11 +45,12 @@ use crate::{
 /// Answers from `keys`, every key read through `dsize`.
 struct AtDsize<'a, K>(&'a K, TorusPrecision);
 
-impl<BE: Backend, D: Data> GetAutomorphismKey<BE> for AtDsize<'_, HashMap<i64, GLWEAutomorphismKeyPrepared<D, BE>>>
+impl<BE: Backend, D: Data, Rg: Ring> GetAutomorphismKey<BE, Rg>
+    for AtDsize<'_, HashMap<i64, GLWEAutomorphismKeyPrepared<D, BE, Rg>>>
 where
-    GGLWEPrepared<D, BE>: GGLWEPreparedToBackendRef<BE>,
+    GGLWEPrepared<D, BE, Rg>: GGLWEPreparedToBackendRef<BE, Rg>,
 {
-    fn lookup_automorphism_key(&self, p: i64, _k: TorusPrecision) -> Result<GLWEAutomorphismKeyPreparedBackendRef<'_, BE>> {
+    fn lookup_automorphism_key(&self, p: i64, _k: TorusPrecision) -> Result<GLWEAutomorphismKeyPreparedBackendRef<'_, BE, Rg>> {
         self.0
             .get(&p)
             .ok_or(CoreError::GGLWEKeyUse {
@@ -58,20 +61,20 @@ where
     }
 }
 
-impl<BE: Backend, D: Data> GetAutomorphismKey<BE> for AtDsize<'_, GLWEAutomorphismKeyPrepared<D, BE>>
+impl<BE: Backend, D: Data, Rg: Ring> GetAutomorphismKey<BE, Rg> for AtDsize<'_, GLWEAutomorphismKeyPrepared<D, BE, Rg>>
 where
-    GGLWEPrepared<D, BE>: GGLWEPreparedToBackendRef<BE>,
+    GGLWEPrepared<D, BE, Rg>: GGLWEPreparedToBackendRef<BE, Rg>,
 {
-    fn lookup_automorphism_key(&self, _p: i64, _k: TorusPrecision) -> Result<GLWEAutomorphismKeyPreparedBackendRef<'_, BE>> {
+    fn lookup_automorphism_key(&self, _p: i64, _k: TorusPrecision) -> Result<GLWEAutomorphismKeyPreparedBackendRef<'_, BE, Rg>> {
         self.0.with_k_digit(self.1)
     }
 }
 
-impl<BE: Backend, D: Data> GetTensorKey<BE> for AtDsize<'_, GLWETensorKeyPrepared<D, BE>>
+impl<BE: Backend, D: Data, Rg: Ring> GetTensorKey<BE, Rg> for AtDsize<'_, GLWETensorKeyPrepared<D, BE, Rg>>
 where
-    GGLWEPrepared<D, BE>: GGLWEPreparedToBackendRef<BE>,
+    GGLWEPrepared<D, BE, Rg>: GGLWEPreparedToBackendRef<BE, Rg>,
 {
-    fn lookup_tensor_key(&self, _k: TorusPrecision) -> Result<GLWETensorKeyPreparedBackendRef<'_, BE>> {
+    fn lookup_tensor_key(&self, _k: TorusPrecision) -> Result<GLWETensorKeyPreparedBackendRef<'_, BE, Rg>> {
         self.0.with_k_digit(self.1)
     }
 }
@@ -90,7 +93,7 @@ fn twin_layout(parent: &GGLWELayout, k_digit: TorusPrecision) -> (GGLWELayout, u
 }
 
 /// Byte equality of two GLWE ciphertexts.
-fn same<D: HostDataRef, E: HostDataRef>(have: &GLWE<D, i64>, want: &GLWE<E, i64>, what: &str) {
+fn same<D: HostDataRef, E: HostDataRef, Rg: Ring>(have: &GLWE<D, i64, Rg>, want: &GLWE<E, i64, Rg>, what: &str) {
     assert_eq!(have.glwe_layout(), want.glwe_layout(), "{what}: metadata");
     assert_eq!(have.data.to_owned_deep(), want.data.to_owned_deep(), "{what}");
     assert_eq!(have.is_canonical(), want.is_canonical(), "{what}: canonical flag");
@@ -98,9 +101,9 @@ fn same<D: HostDataRef, E: HostDataRef>(have: &GLWE<D, i64>, want: &GLWE<E, i64>
 
 /// `glwe_automorphism` over a coarsened key equals it over the key it stands
 /// in for, for the plain, `add_assign` and `assign` forms.
-pub fn test_glwe_automorphism_coarsened<BE: CoarsenBackend>(params: &TestParams, module: &Module<BE>)
+pub fn test_glwe_automorphism_coarsened<BE: CoarsenBackend, Rg: Ring>(params: &TestParams, module: &Module<BE>)
 where
-    Module<BE>: GLWEAutomorphism<BE> + GLWEAutomorphismKeyPreparedFactory<BE> + GLWEFill<BE>,
+    Module<BE>: GLWEAutomorphism<BE, Rg> + GLWEAutomorphismKeyPreparedFactory<BE, Rg> + GLWEFill<BE, Rg>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
@@ -136,9 +139,9 @@ where
         key.p = p;
         key_twin.p = p;
 
-        let mut key_prep: GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE> =
+        let mut key_prep: GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE, Rg> =
             module.glwe_automorphism_key_prepared_alloc_from_infos(&stored);
-        let mut twin_prep: GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE> =
+        let mut twin_prep: GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE, Rg> =
             module.glwe_automorphism_key_prepared_alloc_from_infos(&twin);
         module.glwe_automorphism_key_prepare(
             &mut key_prep,
@@ -251,9 +254,9 @@ where
 /// The rotations carry different keys, and the stored shapes differ from one
 /// another, so no single `GGLWELayout` describes the set: scratch is the
 /// maximum over the keys the loop actually visits.
-pub fn test_glwe_trace_coarsened<BE: CoarsenBackend>(params: &TestParams, module: &Module<BE>)
+pub fn test_glwe_trace_coarsened<BE: CoarsenBackend, Rg: Ring>(params: &TestParams, module: &Module<BE>)
 where
-    Module<BE>: GLWETrace<BE> + GLWEAutomorphismKeyPreparedFactory<BE> + GLWEFill<BE>,
+    Module<BE>: GLWETrace<BE, Rg> + GLWEAutomorphismKeyPreparedFactory<BE, Rg> + GLWEFill<BE, Rg>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
@@ -264,11 +267,14 @@ where
 
     // Deliberately unequal shapes: the set has no common layout.
     let shapes: [(usize, usize); 3] = [(1, 8), (1, 12), (2, 8)];
-    let mut keys: HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>> = HashMap::new();
-    let mut twins: HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>> = HashMap::new();
+    let mut keys: HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE, Rg>> = HashMap::new();
+    let mut twins: HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE, Rg>> = HashMap::new();
     let mut trace_bytes: usize = 0;
 
-    let gal_els: Vec<i64> = module.glwe_trace_galois_elements(module.n().into(), 0..module.log_n(), false);
+    // The conjugate-invariant ring is fixed by the conjugation: its trace starts at level 1.
+    let first = usize::from(Rg::CYCLOTOMIC_ORDER_FACTOR != Standard::CYCLOTOMIC_ORDER_FACTOR);
+    let levels = first..module.cyclotomic_order::<Rg>().ilog2() as usize - 1;
+    let gal_els: Vec<i64> = module.glwe_trace_galois_elements(module.n().into(), levels.clone(), false);
     for (salt, gal_el) in gal_els.iter().enumerate() {
         let (dsize, dnum) = shapes[salt % shapes.len()];
         let stored = GLWEAutomorphismKeyLayout {
@@ -329,21 +335,21 @@ where
     let mut scratch = poisoned_scratch::<BE>(trace_bytes);
     module.glwe_trace_assign(
         &mut have,
-        0..module.log_n(),
+        levels.clone(),
         false,
         true,
         &AtDsize(&keys, effective),
         &mut scratch.borrow(),
     );
-    module.glwe_trace_assign(&mut want, 0..module.log_n(), false, true, &twins, &mut scratch.borrow());
+    module.glwe_trace_assign(&mut want, levels, false, true, &twins, &mut scratch.borrow());
     same(&have, &want, "trace");
 }
 
 /// `glwe_tensor_relinearize` over a coarsened tensor key equals it over the
 /// tensor key natively stored at that `dsize`.
-pub fn test_glwe_tensor_relinearize_coarsened<BE: CoarsenBackend>(params: &TestParams, module: &Module<BE>)
+pub fn test_glwe_tensor_relinearize_coarsened<BE: CoarsenBackend, Rg: Ring>(params: &TestParams, module: &Module<BE>)
 where
-    Module<BE>: GLWETensoring<BE> + GLWETensorKeyPreparedFactory<BE> + GLWEFill<BE>,
+    Module<BE>: GLWETensoring<BE, Rg> + GLWETensorKeyPreparedFactory<BE, Rg> + GLWEFill<BE, Rg>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
@@ -374,8 +380,8 @@ where
         fill_by_digit(module, &mut tsk.0, stride, &mut Source::new(seed));
         fill_by_digit(module, &mut tsk_twin.0, 1, &mut Source::new(seed));
 
-        let mut tsk_prep: GLWETensorKeyPrepared<BE::OwnedBuf, BE> = module.glwe_tensor_key_prepared_alloc_from_infos(&stored);
-        let mut twin_prep: GLWETensorKeyPrepared<BE::OwnedBuf, BE> = module.glwe_tensor_key_prepared_alloc_from_infos(&twin);
+        let mut tsk_prep: GLWETensorKeyPrepared<BE::OwnedBuf, BE, Rg> = module.glwe_tensor_key_prepared_alloc_from_infos(&stored);
+        let mut twin_prep: GLWETensorKeyPrepared<BE::OwnedBuf, BE, Rg> = module.glwe_tensor_key_prepared_alloc_from_infos(&twin);
         module.glwe_tensor_key_prepare(
             &mut tsk_prep,
             &tsk,

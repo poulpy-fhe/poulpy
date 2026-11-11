@@ -379,7 +379,7 @@ fn normalize_big_on_host<RT: GpuRuntime>(
     use poulpy_cpu_portable::{NTT4x30Portable, kernels::vec_znx_big_normalize::vec_znx_big_normalize_portable};
     use poulpy_hal::{
         AlignedBuf,
-        layouts::{DataViewMut, VecZnx, VecZnxBig, VecZnxBigToBackendRef, VecZnxToBackendMut},
+        layouts::{DataViewMut, Standard, VecZnx, VecZnxBig, VecZnxBigToBackendRef, VecZnxToBackendMut},
     };
     assert!(res.words == 1, "normalization writes `i64` limbs");
     if res.size == 0 || res.n == 0 {
@@ -394,7 +394,7 @@ fn normalize_big_on_host<RT: GpuRuntime>(
     }
     let mut source = VecZnxBig::<AlignedBuf, i128, NTT4x30Portable>::from_data(source, n, 1, a.size);
     let mut target = VecZnx::<AlignedBuf, i64>::from_data(AlignedBuf::from(vec![0u8; n * res.size * 8]), n, 1, res.size);
-    vec_znx_big_normalize_portable::<NTT4x30Portable>(
+    vec_znx_big_normalize_portable::<NTT4x30Portable, Standard>(
         &mut VecZnxToBackendMut::<NTT4x30Portable>::to_backend_mut(&mut target),
         res_base2k,
         res_k,

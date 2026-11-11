@@ -7,7 +7,10 @@
 //! exponent is taken modulo `4n`, for the sign of `p` that is `1 mod 4`: the
 //! other sign maps to the conjugate points, where the values are the same.
 
+use std::marker::PhantomData;
+
 use cubecl::prelude::*;
+use poulpy_hal::layouts::Ring;
 
 use super::{
     DftColumn,
@@ -15,10 +18,30 @@ use super::{
 };
 use crate::runtime::{GpuRuntime, Label, launch};
 
+/// The automorphism plan of ring `R`: the substitution `X -> X^p` built for operands of `R` only.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AutomorphismPlan<R: Ring> {
+    substitution: Substitution,
+    ring: PhantomData<R>,
+}
+
+impl<R: Ring> AutomorphismPlan<R> {
+    pub(crate) fn new(substitution: Substitution) -> Self {
+        Self {
+            substitution,
+            ring: PhantomData,
+        }
+    }
+
+    pub(crate) fn substitution(&self) -> &Substitution {
+        &self.substitution
+    }
+}
+
 /// The substitution `X -> X^p` on DFT-domain vectors of degree `n`. It holds
 /// no device state: the kernels derive the permutation from `mul`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct AutomorphismPlan {
+pub(crate) struct Substitution {
     pub(super) n: usize,
     /// `p` (or `-p`) modulo the order of the evaluation points.
     pub(super) mul: u32,
@@ -27,7 +50,7 @@ pub struct AutomorphismPlan {
     pub(super) shift: u32,
 }
 
-impl AutomorphismPlan {
+impl Substitution {
     pub(crate) fn new(n: usize, p: i64, invariant: bool) -> Self {
         assert!(n.is_power_of_two(), "ring degree must be a power of two");
         assert!(p & 1 == 1, "automorphism exponent must be odd");
@@ -107,7 +130,7 @@ fn automorphism_kernel(
 /// `res = sigma(a)` over every limb of `res` (limbs past `a`'s are zero), or
 /// `res += sigma(a)` over the limbs both have when `accumulate`. `res` and
 /// `a` must not overlap.
-pub(crate) fn automorphism<RT: GpuRuntime>(plan: &AutomorphismPlan, res: &DftColumn, a: &DftColumn, accumulate: bool) {
+pub(crate) fn automorphism<RT: GpuRuntime>(plan: &Substitution, res: &DftColumn, a: &DftColumn, accumulate: bool) {
     assert!(
         res.n == plan.n && a.n == plan.n,
         "automorphism plan applied at another degree"

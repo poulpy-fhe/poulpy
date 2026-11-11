@@ -12,20 +12,20 @@ use poulpy_ckks::{
     presets::bootstrapping::{BootstrappingPreset, all},
     test_suite::{
         helpers::{PrecisionStats, TestContextBackend, TestContextModule, TestContextSharedModule},
-        presets::{BOOTSTRAP_FAILURE_BITS, BootstrappingPresetRun, CIBackend, PresetRunModule, preset_for_backend, preset_label},
+        presets::{BOOTSTRAP_FAILURE_BITS, BootstrappingPresetRun, PresetRunModule, preset_for_backend, preset_label},
     },
 };
 use poulpy_core::{
     GLWECIKeyEncryptSk,
     api::{GLWECIKeyPreparedFactory, GLWETensorKeyPreparedFactory},
     layouts::{
-        GGLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, ModuleCoreAlloc,
+        GGLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
         prepared::GLWETensorKeyPreparedToBackendRef,
     },
 };
 use poulpy_hal::{
-    api::{ModuleNew, ScratchOwnedAlloc},
-    layouts::{Backend, HostDataMut, HostDataRef, HostStaged, MaxBase2k, Module, ScratchOwned, Standard},
+    api::ScratchOwnedAlloc,
+    layouts::{Backend, ConjugateInvariant, HostDataMut, HostDataRef, HostStaged, MaxBase2k, Module, ScratchOwned},
 };
 use serde_json::{Value, json};
 
@@ -124,18 +124,14 @@ pub fn replay<RT: poulpy_gpu_portable::GpuRuntime>(
 
 /// The preset of the release set named `name`, with power-of-two rotation keys
 /// when `pow2`, at the radix [`preset_for_backend`] selects for `BE`.
-fn preset_for<BE, BCI>(name: &str, pow2: bool) -> Result<(BootstrappingPreset, usize)>
-where
-    BE: MaxBase2k,
-    BCI: MaxBase2k,
-{
+fn preset_for<BE: MaxBase2k>(name: &str, pow2: bool) -> Result<(BootstrappingPreset, usize)> {
     let preset = all()?
         .into_iter()
         .find(|preset| preset.name() == name)
         .with_context(|| format!("no bootstrapping preset named {name}"))?;
     let preset = if pow2 { preset.with_power_of_two_keys()? } else { preset };
     let nominal_base2k = preset.base2k();
-    Ok((preset_for_backend::<BE, BCI>(&preset)?, nominal_base2k))
+    Ok((preset_for_backend::<BE>(&preset)?, nominal_base2k))
 }
 
 fn precision_json(stats: &PrecisionStats) -> Value {
@@ -187,32 +183,29 @@ fn preset_json(preset: &BootstrappingPreset, nominal_base2k: usize, pow2: bool) 
 /// is the bootstrap alone, synchronized.
 pub fn run<BE, BC>(args: &RunArgs, measure: Measure) -> Result<Value>
 where
-    BE: Backend<Ring = Standard, ZnxWord = i64> + HostStaged + MaxBase2k + 'static,
-    CIBackend<BE>: MaxBase2k,
-    BC: TestContextBackend<Ring = Standard>,
-    CIBackend<BC>: TestContextBackend,
+    BE: Backend<ZnxWord = i64> + HostStaged + MaxBase2k + 'static,
+    BC: TestContextBackend,
     Module<BE>: PresetRunModule<BE>
         + CKKSDFTOps<BE>
         + CKKSDFTMatrixPreparedFactory<BE>
         + CKKSBootstrappingCIOps<BE>
-        + GLWECIKeyPreparedFactory<BE>,
-    Module<CIBackend<BE>>: ModuleNew<CIBackend<BE>>
-        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
-        + CKKSEncodingOps<CIBackend<BE>, f64>
-        + GLWETensorKeyPreparedFactory<CIBackend<BE>>,
-    Module<BC>: TestContextModule<BC> + CKKSEncodingOps<BC, f64> + CKKSBootstrappingCIOps<BC> + GLWECIKeyEncryptSk<BC>,
-    Module<CIBackend<BC>>: TestContextSharedModule<CIBackend<BC>>,
+        + GLWECIKeyPreparedFactory<BE>
+        + CKKSEncodingOps<BE, f64, ConjugateInvariant>
+        + GLWETensorKeyPreparedFactory<BE, ConjugateInvariant>,
+    Module<BC>: TestContextModule<BC>
+        + CKKSEncodingOps<BC, f64>
+        + GLWECIKeyEncryptSk<BC>
+        + TestContextSharedModule<BC, ConjugateInvariant>,
     for<'a> <BC as Backend>::BufRef<'a>: HostDataRef,
     for<'a> <BC as Backend>::BufMut<'a>: HostDataMut,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
-    ScratchOwned<CIBackend<BE>>: ScratchOwnedAlloc<CIBackend<BE>>,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos + CKKSCtBounds + poulpy_core::layouts::GLWEDiagonalProd<BE>,
     CKKSCiphertextOwned<BC>: GLWEToBackendMut<BC> + GLWEToBackendRef<BC> + CKKSCtBounds + SetCKKSInfos,
     CKKSPlaintextOwned<BC>: GLWEToBackendRef<BC> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
-    let (preset, nominal_base2k) = preset_for::<BE, CIBackend<BE>>(&args.preset, args.pow2)?;
+    let (preset, nominal_base2k) = preset_for::<BE>(&args.preset, args.pow2)?;
     let preset_info = preset_json(&preset, nominal_base2k, args.pow2);
 
     let start = Instant::now();

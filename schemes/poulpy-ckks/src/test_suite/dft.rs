@@ -195,10 +195,11 @@ fn noise_bound(log_delta: usize) -> f64 {
 /// `ct` — the scale [`GLWENoise`] needs the expected value at.
 fn want_plaintext<BE>(module: &Module<BE>, ct: &CKKSCiphertextOwned<BE>) -> CKKSPlaintextOwned<BE>
 where
-    BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
+    BE: TestContextBackend,
     Module<BE>: CKKSPlaintextAlloc<BE>,
 {
-    let mut pt = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots(), ct.base2k(), ct.k());
+    let mut pt =
+        module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots::<poulpy_hal::layouts::Standard>(), ct.base2k(), ct.k());
     pt.set_meta(GLWEPlaintextMeta {
         scale: Scale::Log(ct.log_delta()),
         slots: SlotsKind::Complex,
@@ -215,7 +216,7 @@ pub fn test_dft_coeffs_to_slots_standard<BE, F, E>(
     _module: &Module<BE>,
     _host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
+    BE: TestContextBackend,
     Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
         + TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
@@ -246,7 +247,7 @@ pub fn test_dft_coeffs_to_slots_standard<BE, F, E>(
     );
     let enc_dft = prepare_dft(&module, &enc_lt);
 
-    let order = module.cyclotomic_order();
+    let order = module.cyclotomic_order::<poulpy_hal::layouts::Standard>();
     let mut atks = HashMap::new();
     for p in enc_dft.galois_elements(order) {
         atks.entry(p)
@@ -294,7 +295,7 @@ pub fn test_dft_slots_to_coeffs_standard<BE, F, E>(
     _module: &Module<BE>,
     _host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
+    BE: TestContextBackend,
     Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
         + TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
@@ -325,7 +326,7 @@ pub fn test_dft_slots_to_coeffs_standard<BE, F, E>(
     );
     let dec_dft = prepare_dft(&module, &dec_lt);
 
-    let order = module.cyclotomic_order();
+    let order = module.cyclotomic_order::<poulpy_hal::layouts::Standard>();
     let mut atks = HashMap::new();
     for p in dec_dft.galois_elements(order) {
         atks.entry(p)
@@ -373,7 +374,7 @@ pub fn test_dft_coeffs_to_slots_split<BE, F, E>(
     _module: &Module<BE>,
     _host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
+    BE: TestContextBackend,
     Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
         + TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
@@ -404,7 +405,7 @@ pub fn test_dft_coeffs_to_slots_split<BE, F, E>(
     );
     let enc_dft = prepare_dft(&module, &enc_lt);
 
-    let order = module.cyclotomic_order();
+    let order = module.cyclotomic_order::<poulpy_hal::layouts::Standard>();
     let mut atks = HashMap::new();
     for p in enc_dft.galois_elements(order) {
         atks.entry(p)
@@ -461,7 +462,7 @@ pub fn test_dft_coeffs_to_slots_repack_sparse<BE, F, E>(
     _module: &Module<BE>,
     _host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
+    BE: TestContextBackend,
     Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
         + TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
@@ -493,7 +494,7 @@ pub fn test_dft_coeffs_to_slots_repack_sparse<BE, F, E>(
     let enc_dft = prepare_dft(&module, &enc_lt);
     assert!(enc_dft.is_sparse(), "expected sparse repack path");
 
-    let order = module.cyclotomic_order();
+    let order = module.cyclotomic_order::<poulpy_hal::layouts::Standard>();
     let mut atks = HashMap::new();
     for p in enc_dft.galois_elements(order) {
         atks.entry(p)
@@ -558,7 +559,7 @@ pub fn test_dft_slots_to_coeffs_split<BE, F, E>(
     _module: &Module<BE>,
     _host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
+    BE: TestContextBackend,
     Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
         + TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
@@ -589,7 +590,7 @@ pub fn test_dft_slots_to_coeffs_split<BE, F, E>(
     );
     let dec_dft = prepare_dft(&module, &dec_lt);
 
-    let order = module.cyclotomic_order();
+    let order = module.cyclotomic_order::<poulpy_hal::layouts::Standard>();
     let mut atks = HashMap::new();
     for p in dec_dft.galois_elements(order) {
         atks.entry(p)
@@ -650,7 +651,7 @@ pub fn test_dft_slots_to_coeffs_repack_sparse<BE, F, E>(
     _module: &Module<BE>,
     _host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
+    BE: TestContextBackend,
     Module<BE>: CKKSDFTMatrixPreparedFactory<BE>
         + TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
@@ -682,7 +683,7 @@ pub fn test_dft_slots_to_coeffs_repack_sparse<BE, F, E>(
     let dec_dft = prepare_dft(&module, &dec_lt);
     assert!(dec_dft.is_sparse(), "expected sparse repack path");
 
-    let order = module.cyclotomic_order();
+    let order = module.cyclotomic_order::<poulpy_hal::layouts::Standard>();
     let mut atks = HashMap::new();
     for p in dec_dft.galois_elements(order) {
         atks.entry(p)
@@ -699,7 +700,7 @@ pub fn test_dft_slots_to_coeffs_repack_sparse<BE, F, E>(
     want_re[slots..].copy_from_slice(im);
     let want_im = vec![F::from_f64(0.0).unwrap(); 2 * slots];
     let mut host_pt = host_module.ckks_plaintext_alloc_from_slots(
-        host_module.ckks_max_slots(),
+        host_module.ckks_max_slots::<poulpy_hal::layouts::Standard>(),
         Base2K(base2k as u32),
         ((log_delta + 10) as u32).into(),
     );
@@ -767,7 +768,7 @@ fn assert_factor_degrees<BE: Backend, Dir, Fmt: DftFormat>(
 /// and any scratch, its bytes and infos unchanged.
 pub fn test_dft_matrix_prepare<BE, F, E>(params: CKKSTestParams, _module: &Module<BE>, _host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
+    BE: TestContextBackend,
     Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSDFTOps<BE>
@@ -781,7 +782,7 @@ where
     let params = sparse_params(&params);
     let module = Module::<BE>::new(params.n as u64);
     let base2k = Base2K(params.base2k as u32);
-    let log_slots = module.ckks_max_slots().ilog2() as usize;
+    let log_slots = module.ckks_max_slots::<poulpy_hal::layouts::Standard>().ilog2() as usize;
     let build = |giant_step: usize| -> DFTMatrix<BE, Encode, Standard> {
         let plan = DFTPlan::new(
             DFTType::Encode,
@@ -907,7 +908,7 @@ pub fn test_dft_plan_helpers_match_compiled<BE, F, E>(
     _module: &Module<BE>,
     _host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
+    BE: TestContextBackend,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSDFTOps<BE> + CKKSDFTMatrixOps<BE, F>,
     F: TestScalar,
     E: ReimNew<F>,
@@ -919,7 +920,7 @@ pub fn test_dft_plan_helpers_match_compiled<BE, F, E>(
         let p = dense_params(&params);
         let module = Module::<BE>::new(p.n as u64);
         let log_n = p.n.ilog2() as usize;
-        let order = module.cyclotomic_order();
+        let order = module.cyclotomic_order::<poulpy_hal::layouts::Standard>();
         let base2k = Base2K(p.base2k as u32);
         let ld = p.prec().log_delta();
 
@@ -949,7 +950,7 @@ pub fn test_dft_plan_helpers_match_compiled<BE, F, E>(
         let p = sparse_params(&params);
         let module = Module::<BE>::new(p.n as u64);
         let log_n = p.n.ilog2() as usize;
-        let order = module.cyclotomic_order();
+        let order = module.cyclotomic_order::<poulpy_hal::layouts::Standard>();
         let base2k = Base2K(p.base2k as u32);
         let ld = p.prec().log_delta();
 

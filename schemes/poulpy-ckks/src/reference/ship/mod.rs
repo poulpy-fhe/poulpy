@@ -67,10 +67,11 @@ impl<BE> ShipBackend for BE where
 /// Automorphism plans of the mux output twists, keyed by Galois element.
 pub(crate) type ShipMuxPlans<BE> = HashMap<i64, <BE as HalVecZnxDftImpl>::AutomorphismPlan>;
 
-/// Builds the automorphism plans of every distinct mux Galois element once;
+/// Builds the automorphism plans of every distinct mux Galois element once, for ciphertexts of degree `n`;
 /// the same rotation amounts recur across all support slots.
 pub(crate) fn ship_mux_plans<'a, BE>(
     module: &Module<BE>,
+    n: usize,
     groups: impl Iterator<Item = &'a [HMuxRotKeyPrepared<BE::OwnedBuf, BE>]>,
 ) -> ShipMuxPlans<BE>
 where
@@ -82,7 +83,7 @@ where
             if key.gal_el != 1 {
                 plans
                     .entry(key.gal_el)
-                    .or_insert_with(|| BE::vec_znx_dft_automorphism_plan(module, module.n(), key.gal_el));
+                    .or_insert_with(|| BE::vec_znx_dft_automorphism_plan(module, n, key.gal_el));
             }
         }
     }

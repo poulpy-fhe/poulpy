@@ -17,6 +17,18 @@ Implementors must uphold all of the following for **every** call:
   that capability; whole-buffer reborrows preserve every layout. Reference
   compositions that require narrowing must declare and enforce that requirement.
 
+* **Rings**: One backend type serves both rings (`Standard` and
+  `ConjugateInvariant`), implementing each ringed family once per ring, while
+  the byte counts and the `*TmpBytes` scratch queries take no ring. Such a
+  query answers from the family's `Standard` impl, which must return enough
+  for the call on either ring. `Backend::*_bytes_of` sizes the layouts of both
+  rings, so each ring's representation of a shape must fit that count, and a
+  capability such as `DFT_LIMBS_CONTIGUOUS` holds on both rings. A
+  layout-compatibility marker asserts byte-identical buffers on both rings,
+  since `into_backend` keeps the ring. Each ring's impl of a ring-free query
+  also covers that ring's call, and a plan type of a family serving both
+  rings is a distinct type per ring.
+
 * **Scratch lifetime**: Any region carved from a `ScratchArena` must remain
   valid for the duration of the call; it may be reused by the caller
   afterwards.

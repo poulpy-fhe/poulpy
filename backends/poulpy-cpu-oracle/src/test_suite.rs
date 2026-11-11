@@ -3,8 +3,6 @@
 
 use std::marker::PhantomData;
 
-use poulpy_hal::layouts::{ConjugateInvariant, Standard};
-
 use crate::{DFTFamily, Fft64, Ntt4x30, Oracle};
 
 /// The transform family `F`, whose oracle samples by copying the draws of the
@@ -57,10 +55,7 @@ impl<F: DFTFamily> DFTFamily for ControlledSampling<F> {
 }
 
 /// [`crate::FFT64Oracle`] with controlled sampling.
-pub type ControlledSamplingFFT64Oracle<R = Standard> = Oracle<ControlledSampling<Fft64>, R>;
+pub type ControlledSamplingFFT64Oracle = Oracle<ControlledSampling<Fft64>>;
 
 /// [`crate::NTT4x30Oracle`] with controlled sampling.
-pub type ControlledSamplingNTT4x30Oracle<R = Standard> = Oracle<ControlledSampling<Ntt4x30>, R>;
-
-/// [`crate::FFT64CIOracle`] with controlled sampling.
-pub type ControlledSamplingFFT64CIOracle = ControlledSamplingFFT64Oracle<ConjugateInvariant>;
+pub type ControlledSamplingNTT4x30Oracle = Oracle<ControlledSampling<Ntt4x30>>;

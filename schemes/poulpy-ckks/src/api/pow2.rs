@@ -1,6 +1,6 @@
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef};
-use poulpy_hal::layouts::{Backend, ScratchArena};
+use poulpy_hal::layouts::{Backend, Ring, ScratchArena, Standard};
 
 use crate::{CKKSCtBounds, SetCKKSInfos};
 
@@ -58,7 +58,7 @@ use crate::{CKKSCtBounds, SetCKKSInfos};
 ///
 /// **Capacity consumed**: `bits` bits (plus `offset` for undersized destinations).
 /// Errors with `InsufficientHomomorphicCapacity` if `bits (+ offset) > src.log_budget`.
-pub trait CKKSPow2Ops<BE: Backend> {
+pub trait CKKSPow2Ops<BE: Backend, Rg: Ring = Standard> {
     fn ckks_mul_pow2_tmp_bytes(&self, res_size: usize) -> usize;
 
     /// Computes `dst = src * 2^bits`.
@@ -77,14 +77,14 @@ pub trait CKKSPow2Ops<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds;
+        Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE, Rg> + CKKSCtBounds;
 
     /// Computes `dst *= 2^bits` in-place, preserving CKKS layout and scale metadata.
     /// Component noise metadata is cleared.
     fn ckks_mul_pow2_assign<Dst>(&self, bits: usize, dst: &mut Dst, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos;
+        Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos;
 
     /// Scratch bytes for [`Self::ckks_double_into`].
     fn ckks_double_tmp_bytes(&self, res_size: usize) -> usize;
@@ -101,8 +101,8 @@ pub trait CKKSPow2Ops<BE: Backend> {
     /// As [`Self::ckks_mul_pow2_into`], under the op `ckks_double_into`.
     fn ckks_double_into<Dst, Src>(&self, dst: &mut Dst, src: &Src, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds;
+        Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE, Rg> + CKKSCtBounds;
 
     fn ckks_div_pow2_tmp_bytes(&self, res_size: usize) -> usize;
 
@@ -123,8 +123,8 @@ pub trait CKKSPow2Ops<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds;
+        Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE, Rg> + CKKSCtBounds;
 
     /// Computes `dst /= 2^bits` in-place.
     ///
@@ -139,5 +139,5 @@ pub trait CKKSPow2Ops<BE: Backend> {
     /// when `bits > dst.log_budget`. `dst` is untouched on `Err`.
     fn ckks_div_pow2_assign<Dst>(&self, bits: usize, dst: &mut Dst) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos;
+        Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos;
 }

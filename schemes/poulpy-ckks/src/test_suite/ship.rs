@@ -70,7 +70,7 @@ fn gen_sk_with_host<BE>(
     GLWESecretPrepared<BE::OwnedBuf, BE>,
 )
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     Module<BE>: TestContextModule<BE>,
 {
     let glwe_infos = params.glwe_layout();
@@ -99,7 +99,7 @@ fn cmul((ar, ai): (f64, f64), (br, bi): (f64, f64)) -> (f64, f64) {
 /// recombination conventions before any homomorphic code runs.
 pub fn test_ship_host_replica<BE, F, E>(params: CKKSTestParams, _module: &Module<BE>, _host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
 {
@@ -257,7 +257,7 @@ where
 /// all-zero group yields (an encryption of) zero.
 pub fn test_ship_mux_rotate<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard> + CKKSShipImpl + poulpy_hal::oep::HalVecZnxDftImpl,
+    BE: TestContextBackend + CKKSShipImpl + poulpy_hal::oep::HalVecZnxDftImpl,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: ReimNew<F>,
@@ -318,10 +318,16 @@ where
         ];
 
         let mux_bytes = |group: &[HMuxRotKeyPrepared<BE::OwnedBuf, BE>]| {
-            BE::ckks_ship_mux_rotate_tmp_bytes(module, &alloc_ct(&params, module, k), &group[0].key, group.len())
+            BE::ckks_ship_mux_rotate_tmp_bytes(
+                module,
+                &alloc_ct::<_, Standard>(&params, module, k),
+                &group[0].key,
+                group.len(),
+            )
         };
         let plans = ship_mux_plans(
             module,
+            params.n,
             [group_rot.as_slice(), group_id.as_slice(), group_zero.as_slice()].into_iter(),
         );
 
@@ -418,9 +424,9 @@ where
             .zip([0, 5])
             .map(|(&k_digit, rot)| gen_key(k_digit, false, rot, &mut scratch))
             .collect();
-        let plans = ship_mux_plans(module, [group.as_slice()].into_iter());
+        let plans = ship_mux_plans(module, params.n, [group.as_slice()].into_iter());
         let mut out = dirty(k);
-        let before = snapshot::<BE, _>(&out);
+        let before = snapshot::<BE, _, Standard>(&out);
         let err = with_scratch::<BE, _>(0, |s| BE::ckks_ship_mux_rotate(module, &mut out, &group, &plans, s)).unwrap_err();
         assert_ckks_error(
             label,
@@ -430,14 +436,18 @@ where
                 reason: "key digits off a limb boundary differ in width or count within the group".into(),
             },
         );
-        assert_eq!(snapshot::<BE, _>(&out), before, "a refused mux_rotate wrote its ciphertext");
+        assert_eq!(
+            snapshot::<BE, _, Standard>(&out),
+            before,
+            "a refused mux_rotate wrote its ciphertext"
+        );
     }
 
     let group: Vec<_> = [0, 5].map(|rot| gen_key(b, false, rot, &mut scratch)).into();
     let wide_k = group[0].key.gglwe_layout().max_input_k().as_usize() + 1;
-    let plans = ship_mux_plans(module, [group.as_slice()].into_iter());
+    let plans = ship_mux_plans(module, params.n, [group.as_slice()].into_iter());
     let mut out = dirty(wide_k);
-    let before = snapshot::<BE, _>(&out);
+    let before = snapshot::<BE, _, Standard>(&out);
     let err = with_scratch::<BE, _>(0, |s| BE::ckks_ship_mux_rotate(module, &mut out, &group, &plans, s)).unwrap_err();
     assert_ckks_error(
         "input one bit past its keys",
@@ -447,7 +457,11 @@ where
             reason: "the input is wider than a key's max_input_k".into(),
         },
     );
-    assert_eq!(snapshot::<BE, _>(&out), before, "a refused mux_rotate wrote its ciphertext");
+    assert_eq!(
+        snapshot::<BE, _, Standard>(&out),
+        before,
+        "a refused mux_rotate wrote its ciphertext"
+    );
 }
 
 /// End-to-end SHIP bootstrap driver: a one-limb bottom ciphertext under the
@@ -460,7 +474,7 @@ fn ship_bootstrap_case<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
     complex: bool,
 ) where
-    BE: TestContextBackend<Ring = Standard> + CKKSShipCoeffEncodingImpl + CKKSEncodingImpl<F>,
+    BE: TestContextBackend + CKKSShipCoeffEncodingImpl + CKKSEncodingImpl<F>,
     Module<BE>: TestContextModule<BE>
         + CKKSShipOps<BE, F>
         + CKKSEncodingOps<BE, F>
@@ -532,7 +546,8 @@ fn ship_bootstrap_case<BE, F, E>(
         })
         .collect();
     let bottom_prec = ckks_spec(n, base2k, base2k, 0);
-    let mut host_pt = host_module.ckks_plaintext_alloc_from_slots(host_module.ckks_max_slots(), base2k.into(), bottom_prec.k());
+    let mut host_pt =
+        host_module.ckks_plaintext_alloc_from_slots(host_module.ckks_max_slots::<Standard>(), base2k.into(), bottom_prec.k());
     host_pt.set_meta(bottom_prec.meta());
     host_pt.encode_host_floats(&coeffs).unwrap();
     let mut coeffs_quant = vec![F::zero(); n];
@@ -557,7 +572,7 @@ fn ship_bootstrap_case<BE, F, E>(
     } else {
         "ckks_ship_bootstrap_into"
     };
-    let before = snapshot::<BE, _>(&out);
+    let before = snapshot::<BE, _, Standard>(&out);
     let err = bootstrap(&mut out, ship_bytes - 1).unwrap_err();
     assert_ckks_internal(
         "ship_bootstrap: one byte short",
@@ -565,7 +580,7 @@ fn ship_bootstrap_case<BE, F, E>(
         &format!("{op}: scratch below its query"),
     );
     assert_eq!(
-        snapshot::<BE, _>(&out),
+        snapshot::<BE, _, Standard>(&out),
         before,
         "ship_bootstrap: a refused call wrote the output"
     );
@@ -582,7 +597,8 @@ fn ship_bootstrap_case<BE, F, E>(
         plan.log_budget_out()
     );
 
-    let (got_re, got_im) = ckks_decrypt_decode::<BE, F, E>(&big, module, &encoder, &out, &sk_dense, &mut scratch.borrow());
+    let (got_re, got_im) =
+        ckks_decrypt_decode::<BE, F, E, Standard>(&big, module, &encoder, &out, &sk_dense, &mut scratch.borrow());
     let mut max_err: f64 = 0.0;
     for i in 0..m {
         let er = (got_re[i].to_f64().unwrap() - mu_quant_re[i]).abs();
@@ -604,7 +620,7 @@ fn ship_bootstrap_case<BE, F, E>(
 /// End-to-end SHIP half bootstrap over real cleartexts.
 pub fn test_ship_bootstrap<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard> + CKKSShipCoeffEncodingImpl + CKKSEncodingImpl<F>,
+    BE: TestContextBackend + CKKSShipCoeffEncodingImpl + CKKSEncodingImpl<F>,
     Module<BE>: TestContextModule<BE>
         + CKKSShipOps<BE, F>
         + CKKSEncodingOps<BE, F>
@@ -616,13 +632,15 @@ where
     E: ReimNew<F>,
 {
     ship_bootstrap_case::<BE, F, E>(params, module, host_module, false);
+    // A plan of half the module's degree runs on it.
+    ship_bootstrap_case::<BE, F, E>(params, &Module::<BE>::new(2 * params.n as u64), host_module, false);
 }
 
 /// End-to-end complex SHIP bootstrap: `Re`/`Im` coefficient halves refreshed
 /// into complex slots through the shared mux keys and the `omega_2` masks.
 pub fn test_ship_bootstrap_complex<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard> + CKKSShipCoeffEncodingImpl + CKKSEncodingImpl<F>,
+    BE: TestContextBackend + CKKSShipCoeffEncodingImpl + CKKSEncodingImpl<F>,
     Module<BE>: TestContextModule<BE>
         + CKKSShipOps<BE, F>
         + CKKSEncodingOps<BE, F>
@@ -643,7 +661,7 @@ pub fn test_ship_bootstrap_into_rejects_output_radix<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard> + CKKSShipCoeffEncodingImpl + CKKSEncodingImpl<F>,
+    BE: TestContextBackend + CKKSShipCoeffEncodingImpl + CKKSEncodingImpl<F>,
     Module<BE>: TestContextModule<BE>
         + CKKSShipOps<BE, F>
         + CKKSEncodingOps<BE, F>
@@ -706,19 +724,27 @@ pub fn test_ship_bootstrap_into_rejects_output_radix<BE, F, E>(
         },
         32,
     );
-    let before = snapshot::<BE, _>(&bad_radix);
+    let before = snapshot::<BE, _, Standard>(&bad_radix);
     let err = with_scratch::<BE, _>(0, |s| {
         CKKSShipOps::<BE, F>::ckks_ship_bootstrap_into(module, &mut bad_radix, &ct0, &keys, s)
     })
     .unwrap_err();
     refused("ckks_ship_bootstrap_into", "output base2k", &err);
-    assert_eq!(snapshot::<BE, _>(&bad_radix), before, "a refused bootstrap wrote the output");
+    assert_eq!(
+        snapshot::<BE, _, Standard>(&bad_radix),
+        before,
+        "a refused bootstrap wrote the output"
+    );
 
-    let before = snapshot::<BE, _>(&bad);
+    let before = snapshot::<BE, _, Standard>(&bad);
     let err = with_scratch::<BE, _>(0, |s| {
         CKKSShipOps::<BE, F>::ckks_ship_bootstrap_complex_into(module, &mut bad, &ct0, &keys, s)
     })
     .unwrap_err();
     refused("ckks_ship_bootstrap_complex_into", "omega_2 masks", &err);
-    assert_eq!(snapshot::<BE, _>(&bad), before, "a refused bootstrap wrote the output");
+    assert_eq!(
+        snapshot::<BE, _, Standard>(&bad),
+        before,
+        "a refused bootstrap wrote the output"
+    );
 }

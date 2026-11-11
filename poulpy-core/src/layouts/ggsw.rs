@@ -1,6 +1,6 @@
 use poulpy_hal::layouts::{
     Backend, Data, HostDataMut, HostDataRef, MatZnx, MatZnxAtBackendMut, MatZnxAtBackendRef, MatZnxToBackendMut,
-    MatZnxToBackendRef, ReaderFrom, WriterTo,
+    MatZnxToBackendRef, ReaderFrom, Ring, Standard, WriterTo,
 };
 use poulpy_hal::{AlignedBuf, alloc_aligned};
 use std::{
@@ -112,78 +112,78 @@ impl GGSWInfos for GGSWLayout {
 ///
 /// `D: Data` is the storage backend (e.g. `AlignedBuf`, `&[u8]`, `&mut [u8]`).
 #[derive(PartialEq, Eq, Clone)]
-pub struct GGSW<D: Data, W: ZnxWord> {
+pub struct GGSW<D: Data, W: ZnxWord, Rg: Ring = Standard> {
     pub(crate) noise: Option<crate::ComponentNoise>,
-    pub(crate) data: MatZnx<D, W>,
+    pub(crate) data: MatZnx<D, W, Rg>,
     pub(crate) k_aux: TorusPrecision,
     pub(crate) base2k: Base2K,
     pub(crate) k_digit: TorusPrecision,
 }
 
-pub struct GGSWBackendRef<'a, BE: Backend + 'a> {
-    inner: GGSW<BE::BufRef<'a>, BE::ZnxWord>,
+pub struct GGSWBackendRef<'a, BE: Backend + 'a, Rg: Ring = Standard> {
+    inner: GGSW<BE::BufRef<'a>, BE::ZnxWord, Rg>,
 }
 
-impl<'a, BE: Backend + 'a> GGSWBackendRef<'a, BE> {
-    pub fn from_inner(inner: GGSW<BE::BufRef<'a>, BE::ZnxWord>) -> Self {
+impl<'a, BE: Backend + 'a, Rg: Ring> GGSWBackendRef<'a, BE, Rg> {
+    pub fn from_inner(inner: GGSW<BE::BufRef<'a>, BE::ZnxWord, Rg>) -> Self {
         Self { inner }
     }
 
-    pub fn into_inner(self) -> GGSW<BE::BufRef<'a>, BE::ZnxWord> {
+    pub fn into_inner(self) -> GGSW<BE::BufRef<'a>, BE::ZnxWord, Rg> {
         self.inner
     }
 
-    pub fn at_view(&self, row: usize, col: usize) -> GLWEViewRef<'_, BE> {
-        GLWEViewRef::from_inner(ggsw_at_backend_ref_from_ref::<BE>(&self.inner, row, col))
+    pub fn at_view(&self, row: usize, col: usize) -> GLWEViewRef<'_, BE, Rg> {
+        GLWEViewRef::from_inner(ggsw_at_backend_ref_from_ref::<BE, Rg>(&self.inner, row, col))
     }
 }
 
-impl<'a, BE: Backend + 'a> Deref for GGSWBackendRef<'a, BE> {
-    type Target = GGSW<BE::BufRef<'a>, BE::ZnxWord>;
+impl<'a, BE: Backend + 'a, Rg: Ring> Deref for GGSWBackendRef<'a, BE, Rg> {
+    type Target = GGSW<BE::BufRef<'a>, BE::ZnxWord, Rg>;
 
     fn deref(&self) -> &Self::Target {
         &self.inner
     }
 }
 
-pub struct GGSWBackendMut<'a, BE: Backend + 'a> {
-    inner: GGSW<BE::BufMut<'a>, BE::ZnxWord>,
+pub struct GGSWBackendMut<'a, BE: Backend + 'a, Rg: Ring = Standard> {
+    inner: GGSW<BE::BufMut<'a>, BE::ZnxWord, Rg>,
 }
 
-impl<'a, BE: Backend + 'a> GGSWBackendMut<'a, BE> {
-    pub fn from_inner(inner: GGSW<BE::BufMut<'a>, BE::ZnxWord>) -> Self {
+impl<'a, BE: Backend + 'a, Rg: Ring> GGSWBackendMut<'a, BE, Rg> {
+    pub fn from_inner(inner: GGSW<BE::BufMut<'a>, BE::ZnxWord, Rg>) -> Self {
         Self { inner }
     }
 
-    pub fn into_inner(self) -> GGSW<BE::BufMut<'a>, BE::ZnxWord> {
+    pub fn into_inner(self) -> GGSW<BE::BufMut<'a>, BE::ZnxWord, Rg> {
         self.inner
     }
 
-    pub fn at_view(&self, row: usize, col: usize) -> GLWEViewRef<'_, BE> {
-        GLWEViewRef::from_inner(ggsw_at_backend_ref_from_mut::<BE>(&self.inner, row, col))
+    pub fn at_view(&self, row: usize, col: usize) -> GLWEViewRef<'_, BE, Rg> {
+        GLWEViewRef::from_inner(ggsw_at_backend_ref_from_mut::<BE, Rg>(&self.inner, row, col))
     }
 
     /// Clears the owner's component noise metadata.
-    pub fn at_view_mut(&mut self, row: usize, col: usize) -> GLWEViewMut<'_, BE> {
-        GLWEViewMut::from_inner(ggsw_at_backend_mut_from_mut::<BE>(&mut self.inner, row, col))
+    pub fn at_view_mut(&mut self, row: usize, col: usize) -> GLWEViewMut<'_, BE, Rg> {
+        GLWEViewMut::from_inner(ggsw_at_backend_mut_from_mut::<BE, Rg>(&mut self.inner, row, col))
     }
 }
 
-impl<'a, BE: Backend + 'a> Deref for GGSWBackendMut<'a, BE> {
-    type Target = GGSW<BE::BufMut<'a>, BE::ZnxWord>;
+impl<'a, BE: Backend + 'a, Rg: Ring> Deref for GGSWBackendMut<'a, BE, Rg> {
+    type Target = GGSW<BE::BufMut<'a>, BE::ZnxWord, Rg>;
 
     fn deref(&self) -> &Self::Target {
         &self.inner
     }
 }
 
-impl<BE: Backend> DerefMut for GGSWBackendMut<'_, BE> {
+impl<BE: Backend, Rg: Ring> DerefMut for GGSWBackendMut<'_, BE, Rg> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner
     }
 }
 
-impl<BE: Backend> LWEInfos for GGSWBackendRef<'_, BE> {
+impl<BE: Backend, Rg: Ring> LWEInfos for GGSWBackendRef<'_, BE, Rg> {
     fn noise(&self) -> Option<crate::ComponentNoise> {
         self.inner.noise()
     }
@@ -205,13 +205,13 @@ impl<BE: Backend> LWEInfos for GGSWBackendRef<'_, BE> {
     }
 }
 
-impl<BE: Backend> GLWEInfos for GGSWBackendRef<'_, BE> {
+impl<BE: Backend, Rg: Ring> GLWEInfos for GGSWBackendRef<'_, BE, Rg> {
     fn rank(&self) -> Rank {
         self.inner.rank()
     }
 }
 
-impl<BE: Backend> GGSWInfos for GGSWBackendRef<'_, BE> {
+impl<BE: Backend, Rg: Ring> GGSWInfos for GGSWBackendRef<'_, BE, Rg> {
     fn k_aux(&self) -> TorusPrecision {
         self.inner.k_aux()
     }
@@ -225,7 +225,7 @@ impl<BE: Backend> GGSWInfos for GGSWBackendRef<'_, BE> {
     }
 }
 
-impl<BE: Backend> LWEInfos for GGSWBackendMut<'_, BE> {
+impl<BE: Backend, Rg: Ring> LWEInfos for GGSWBackendMut<'_, BE, Rg> {
     fn noise(&self) -> Option<crate::ComponentNoise> {
         self.inner.noise()
     }
@@ -247,13 +247,13 @@ impl<BE: Backend> LWEInfos for GGSWBackendMut<'_, BE> {
     }
 }
 
-impl<BE: Backend> GLWEInfos for GGSWBackendMut<'_, BE> {
+impl<BE: Backend, Rg: Ring> GLWEInfos for GGSWBackendMut<'_, BE, Rg> {
     fn rank(&self) -> Rank {
         self.inner.rank()
     }
 }
 
-impl<BE: Backend> GGSWInfos for GGSWBackendMut<'_, BE> {
+impl<BE: Backend, Rg: Ring> GGSWInfos for GGSWBackendMut<'_, BE, Rg> {
     fn k_aux(&self) -> TorusPrecision {
         self.inner.k_aux()
     }
@@ -267,66 +267,66 @@ impl<BE: Backend> GGSWInfos for GGSWBackendMut<'_, BE> {
     }
 }
 
-impl<BE: Backend> GGSWToBackendRef<BE> for GGSWBackendRef<'_, BE> {
-    fn to_backend_ref(&self) -> GGSWBackendRef<'_, BE> {
+impl<BE: Backend, Rg: Ring> GGSWToBackendRef<BE, Rg> for GGSWBackendRef<'_, BE, Rg> {
+    fn to_backend_ref(&self) -> GGSWBackendRef<'_, BE, Rg> {
         GGSWBackendRef::from_inner(GGSW {
             noise: crate::layouts::LWEInfos::noise(&self.inner),
             k_digit: self.inner.k_digit(),
             base2k: self.inner.base2k(),
             k_aux: self.inner.k_aux(),
-            data: poulpy_hal::layouts::mat_znx_backend_ref_from_ref::<BE>(&self.inner.data),
+            data: poulpy_hal::layouts::mat_znx_backend_ref_from_ref::<BE, Rg>(&self.inner.data),
         })
     }
 }
 
-impl<BE: Backend> GGSWToBackendRef<BE> for GGSWBackendMut<'_, BE> {
-    fn to_backend_ref(&self) -> GGSWBackendRef<'_, BE> {
+impl<BE: Backend, Rg: Ring> GGSWToBackendRef<BE, Rg> for GGSWBackendMut<'_, BE, Rg> {
+    fn to_backend_ref(&self) -> GGSWBackendRef<'_, BE, Rg> {
         GGSWBackendRef::from_inner(GGSW {
             noise: crate::layouts::LWEInfos::noise(&self.inner),
             k_digit: self.inner.k_digit,
             base2k: self.inner.base2k,
             k_aux: self.inner.k_aux,
-            data: poulpy_hal::layouts::mat_znx_backend_ref_from_mut::<BE>(&self.inner.data),
+            data: poulpy_hal::layouts::mat_znx_backend_ref_from_mut::<BE, Rg>(&self.inner.data),
         })
     }
 }
 
-impl<BE: Backend> GGSWToBackendMut<BE> for GGSWBackendMut<'_, BE> {
+impl<BE: Backend, Rg: Ring> GGSWToBackendMut<BE, Rg> for GGSWBackendMut<'_, BE, Rg> {
     fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
         self.inner.noise = crate::layouts::checked_noise(metadata, crate::layouts::GLWEInfos::rank(self).as_usize() + 1);
     }
 
-    fn to_backend_mut(&mut self) -> GGSWBackendMut<'_, BE> {
+    fn to_backend_mut(&mut self) -> GGSWBackendMut<'_, BE, Rg> {
         self.inner.noise = None;
         GGSWBackendMut::from_inner(GGSW {
             noise: None,
             k_digit: self.inner.k_digit,
             base2k: self.inner.base2k,
             k_aux: self.inner.k_aux,
-            data: poulpy_hal::layouts::mat_znx_backend_mut_from_mut::<BE>(&mut self.inner.data),
+            data: poulpy_hal::layouts::mat_znx_backend_mut_from_mut::<BE, Rg>(&mut self.inner.data),
         })
     }
 }
 
-impl<BE: Backend> GGSWAtViewRef<BE> for GGSWBackendRef<'_, BE> {
-    fn at_view(&self, row: usize, col: usize) -> GLWEViewRef<'_, BE> {
+impl<BE: Backend, Rg: Ring> GGSWAtViewRef<BE, Rg> for GGSWBackendRef<'_, BE, Rg> {
+    fn at_view(&self, row: usize, col: usize) -> GLWEViewRef<'_, BE, Rg> {
         GGSWBackendRef::at_view(self, row, col)
     }
 }
 
-impl<BE: Backend> GGSWAtViewRef<BE> for GGSWBackendMut<'_, BE> {
-    fn at_view(&self, row: usize, col: usize) -> GLWEViewRef<'_, BE> {
+impl<BE: Backend, Rg: Ring> GGSWAtViewRef<BE, Rg> for GGSWBackendMut<'_, BE, Rg> {
+    fn at_view(&self, row: usize, col: usize) -> GLWEViewRef<'_, BE, Rg> {
         GGSWBackendMut::at_view(self, row, col)
     }
 }
 
-impl<BE: Backend> GGSWAtViewRef<BE> for &GGSWBackendRef<'_, BE> {
-    fn at_view(&self, row: usize, col: usize) -> GLWEViewRef<'_, BE> {
+impl<BE: Backend, Rg: Ring> GGSWAtViewRef<BE, Rg> for &GGSWBackendRef<'_, BE, Rg> {
+    fn at_view(&self, row: usize, col: usize) -> GLWEViewRef<'_, BE, Rg> {
         GGSWBackendRef::at_view(self, row, col)
     }
 }
 
-impl<D: Data, W: ZnxWord> LWEInfos for GGSW<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> LWEInfos for GGSW<D, W, Rg> {
     fn noise(&self) -> Option<crate::ComponentNoise> {
         self.noise.clone()
     }
@@ -348,13 +348,13 @@ impl<D: Data, W: ZnxWord> LWEInfos for GGSW<D, W> {
     }
 }
 
-impl<D: Data, W: ZnxWord> GLWEInfos for GGSW<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> GLWEInfos for GGSW<D, W, Rg> {
     fn rank(&self) -> Rank {
         Rank(self.data.cols_out() as u32 - 1)
     }
 }
 
-impl<D: Data, W: ZnxWord> GGSWInfos for GGSW<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> GGSWInfos for GGSW<D, W, Rg> {
     fn k_aux(&self) -> TorusPrecision {
         self.k_aux
     }
@@ -368,13 +368,13 @@ impl<D: Data, W: ZnxWord> GGSWInfos for GGSW<D, W> {
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> fmt::Debug for GGSW<D, W> {
+impl<D: HostDataRef, W: ZnxWord, Rg: Ring> fmt::Debug for GGSW<D, W, Rg> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.data)
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> fmt::Display for GGSW<D, W> {
+impl<D: HostDataRef, W: ZnxWord, Rg: Ring> fmt::Display for GGSW<D, W, Rg> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
@@ -387,8 +387,8 @@ impl<D: HostDataRef, W: ZnxWord> fmt::Display for GGSW<D, W> {
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> GGSW<D, W> {
-    pub fn at(&self, row: usize, col: usize) -> GLWE<&[u8], W> {
+impl<D: HostDataRef, W: ZnxWord, Rg: Ring> GGSW<D, W, Rg> {
+    pub fn at(&self, row: usize, col: usize) -> GLWE<&[u8], W, Rg> {
         let data = self.data.at(row, col);
         GLWE {
             noise: crate::layouts::LWEInfos::noise(&self),
@@ -402,13 +402,13 @@ impl<D: HostDataRef, W: ZnxWord> GGSW<D, W> {
 }
 
 /// Backend-native shared view of one GLWE row.
-pub trait GGSWAtBackendRef<BE: Backend> {
-    fn at_backend(&self, row: usize, col: usize) -> GLWE<BE::BufRef<'_>, BE::ZnxWord>;
+pub trait GGSWAtBackendRef<BE: Backend, Rg: Ring = Standard> {
+    fn at_backend(&self, row: usize, col: usize) -> GLWE<BE::BufRef<'_>, BE::ZnxWord, Rg>;
 }
 
-impl<BE: Backend> GGSWAtBackendRef<BE> for GGSW<BE::OwnedBuf, BE::ZnxWord> {
-    fn at_backend(&self, row: usize, col: usize) -> GLWE<BE::BufRef<'_>, BE::ZnxWord> {
-        let data = <MatZnx<BE::OwnedBuf, BE::ZnxWord> as MatZnxAtBackendRef<BE>>::at_backend(&self.data, row, col);
+impl<BE: Backend, Rg: Ring> GGSWAtBackendRef<BE, Rg> for GGSW<BE::OwnedBuf, BE::ZnxWord, Rg> {
+    fn at_backend(&self, row: usize, col: usize) -> GLWE<BE::BufRef<'_>, BE::ZnxWord, Rg> {
+        let data = <MatZnx<BE::OwnedBuf, BE::ZnxWord, Rg> as MatZnxAtBackendRef<BE, Rg>>::at_backend(&self.data, row, col);
         GLWE {
             noise: crate::layouts::LWEInfos::noise(&self),
             base2k: self.base2k,
@@ -420,12 +420,12 @@ impl<BE: Backend> GGSWAtBackendRef<BE> for GGSW<BE::OwnedBuf, BE::ZnxWord> {
     }
 }
 
-pub(crate) fn ggsw_at_backend_ref_from_ref<'a, 'b, BE: Backend>(
-    ggsw: &'a GGSW<BE::BufRef<'b>, BE::ZnxWord>,
+pub(crate) fn ggsw_at_backend_ref_from_ref<'a, 'b, BE: Backend, Rg: Ring>(
+    ggsw: &'a GGSW<BE::BufRef<'b>, BE::ZnxWord, Rg>,
     row: usize,
     col: usize,
-) -> GLWE<BE::BufRef<'a>, BE::ZnxWord> {
-    let data = poulpy_hal::layouts::mat_znx_at_backend_ref_from_ref::<BE>(&ggsw.data, row, col);
+) -> GLWE<BE::BufRef<'a>, BE::ZnxWord, Rg> {
+    let data = poulpy_hal::layouts::mat_znx_at_backend_ref_from_ref::<BE, Rg>(&ggsw.data, row, col);
     GLWE {
         noise: crate::layouts::LWEInfos::noise(&ggsw),
         base2k: ggsw.base2k,
@@ -436,24 +436,24 @@ pub(crate) fn ggsw_at_backend_ref_from_ref<'a, 'b, BE: Backend>(
     }
 }
 
-pub trait GGSWAtViewRef<BE: Backend> {
-    fn at_view(&self, row: usize, col: usize) -> GLWEViewRef<'_, BE>;
+pub trait GGSWAtViewRef<BE: Backend, Rg: Ring = Standard> {
+    fn at_view(&self, row: usize, col: usize) -> GLWEViewRef<'_, BE, Rg>;
 }
 
-impl<BE: Backend> GGSWAtViewRef<BE> for GGSW<BE::OwnedBuf, BE::ZnxWord> {
-    fn at_view(&self, row: usize, col: usize) -> GLWEViewRef<'_, BE> {
-        GLWEViewRef::from_inner(<GGSW<BE::OwnedBuf, BE::ZnxWord> as GGSWAtBackendRef<BE>>::at_backend(
+impl<BE: Backend, Rg: Ring> GGSWAtViewRef<BE, Rg> for GGSW<BE::OwnedBuf, BE::ZnxWord, Rg> {
+    fn at_view(&self, row: usize, col: usize) -> GLWEViewRef<'_, BE, Rg> {
+        GLWEViewRef::from_inner(<GGSW<BE::OwnedBuf, BE::ZnxWord, Rg> as GGSWAtBackendRef<BE, Rg>>::at_backend(
             self, row, col,
         ))
     }
 }
 
-pub(crate) fn ggsw_at_backend_ref_from_mut<'a, 'b, BE: Backend>(
-    ggsw: &'a GGSW<BE::BufMut<'b>, BE::ZnxWord>,
+pub(crate) fn ggsw_at_backend_ref_from_mut<'a, 'b, BE: Backend, Rg: Ring>(
+    ggsw: &'a GGSW<BE::BufMut<'b>, BE::ZnxWord, Rg>,
     row: usize,
     col: usize,
-) -> GLWE<BE::BufRef<'a>, BE::ZnxWord> {
-    let data = poulpy_hal::layouts::mat_znx_at_backend_ref_from_mut::<BE>(&ggsw.data, row, col);
+) -> GLWE<BE::BufRef<'a>, BE::ZnxWord, Rg> {
+    let data = poulpy_hal::layouts::mat_znx_at_backend_ref_from_mut::<BE, Rg>(&ggsw.data, row, col);
     GLWE {
         noise: crate::layouts::LWEInfos::noise(&ggsw),
         base2k: ggsw.base2k,
@@ -464,8 +464,8 @@ pub(crate) fn ggsw_at_backend_ref_from_mut<'a, 'b, BE: Backend>(
     }
 }
 
-impl<D: HostDataMut, W: ZnxWord> GGSW<D, W> {
-    pub fn at_mut(&mut self, row: usize, col: usize) -> GLWE<&mut [u8], W> {
+impl<D: HostDataMut, W: ZnxWord, Rg: Ring> GGSW<D, W, Rg> {
+    pub fn at_mut(&mut self, row: usize, col: usize) -> GLWE<&mut [u8], W, Rg> {
         let base2k = self.base2k;
         let k = self.k();
         let data = self.data.at_mut(row, col);
@@ -482,17 +482,18 @@ impl<D: HostDataMut, W: ZnxWord> GGSW<D, W> {
 }
 
 /// Backend-native mutable view of one GLWE row.
-pub trait GGSWAtBackendMut<BE: Backend> {
+pub trait GGSWAtBackendMut<BE: Backend, Rg: Ring = Standard> {
     /// Clears the owner's component noise metadata.
-    fn at_backend_mut(&mut self, row: usize, col: usize) -> GLWE<BE::BufMut<'_>, BE::ZnxWord>;
+    fn at_backend_mut(&mut self, row: usize, col: usize) -> GLWE<BE::BufMut<'_>, BE::ZnxWord, Rg>;
 }
 
-impl<BE: Backend> GGSWAtBackendMut<BE> for GGSW<BE::OwnedBuf, BE::ZnxWord> {
+impl<BE: Backend, Rg: Ring> GGSWAtBackendMut<BE, Rg> for GGSW<BE::OwnedBuf, BE::ZnxWord, Rg> {
     /// Clears the owner's component noise metadata.
-    fn at_backend_mut(&mut self, row: usize, col: usize) -> GLWE<BE::BufMut<'_>, BE::ZnxWord> {
+    fn at_backend_mut(&mut self, row: usize, col: usize) -> GLWE<BE::BufMut<'_>, BE::ZnxWord, Rg> {
         let base2k = self.base2k;
         let k = self.k();
-        let data = <MatZnx<BE::OwnedBuf, BE::ZnxWord> as MatZnxAtBackendMut<BE>>::at_backend_mut(&mut self.data, row, col);
+        let data =
+            <MatZnx<BE::OwnedBuf, BE::ZnxWord, Rg> as MatZnxAtBackendMut<BE, Rg>>::at_backend_mut(&mut self.data, row, col);
         self.noise = None;
         GLWE {
             noise: None,
@@ -505,14 +506,14 @@ impl<BE: Backend> GGSWAtBackendMut<BE> for GGSW<BE::OwnedBuf, BE::ZnxWord> {
     }
 }
 
-pub(crate) fn ggsw_at_backend_mut_from_mut<'a, 'b, BE: Backend>(
-    ggsw: &'a mut GGSW<BE::BufMut<'b>, BE::ZnxWord>,
+pub(crate) fn ggsw_at_backend_mut_from_mut<'a, 'b, BE: Backend, Rg: Ring>(
+    ggsw: &'a mut GGSW<BE::BufMut<'b>, BE::ZnxWord, Rg>,
     row: usize,
     col: usize,
-) -> GLWE<BE::BufMut<'a>, BE::ZnxWord> {
+) -> GLWE<BE::BufMut<'a>, BE::ZnxWord, Rg> {
     let base2k = ggsw.base2k;
     let k = ggsw.k();
-    let data = poulpy_hal::layouts::mat_znx_at_backend_mut_from_mut::<BE>(&mut ggsw.data, row, col);
+    let data = poulpy_hal::layouts::mat_znx_at_backend_mut_from_mut::<BE, Rg>(&mut ggsw.data, row, col);
     ggsw.noise = None;
     GLWE {
         noise: None,
@@ -524,27 +525,25 @@ pub(crate) fn ggsw_at_backend_mut_from_mut<'a, 'b, BE: Backend>(
     }
 }
 
-pub trait GGSWAtViewMut<BE: Backend> {
-    fn at_view_mut(&mut self, row: usize, col: usize) -> GLWEViewMut<'_, BE>;
+pub trait GGSWAtViewMut<BE: Backend, Rg: Ring = Standard> {
+    fn at_view_mut(&mut self, row: usize, col: usize) -> GLWEViewMut<'_, BE, Rg>;
 }
 
-impl<BE: Backend> GGSWAtViewMut<BE> for GGSW<BE::OwnedBuf, BE::ZnxWord> {
-    fn at_view_mut(&mut self, row: usize, col: usize) -> GLWEViewMut<'_, BE> {
-        GLWEViewMut::from_inner(<GGSW<BE::OwnedBuf, BE::ZnxWord> as GGSWAtBackendMut<BE>>::at_backend_mut(
-            self, row, col,
-        ))
+impl<BE: Backend, Rg: Ring> GGSWAtViewMut<BE, Rg> for GGSW<BE::OwnedBuf, BE::ZnxWord, Rg> {
+    fn at_view_mut(&mut self, row: usize, col: usize) -> GLWEViewMut<'_, BE, Rg> {
+        GLWEViewMut::from_inner(<GGSW<BE::OwnedBuf, BE::ZnxWord, Rg> as GGSWAtBackendMut<BE, Rg>>::at_backend_mut(self, row, col))
     }
 }
 
-impl<BE: Backend> GGSWAtViewMut<BE> for GGSWBackendMut<'_, BE> {
-    fn at_view_mut(&mut self, row: usize, col: usize) -> GLWEViewMut<'_, BE> {
+impl<BE: Backend, Rg: Ring> GGSWAtViewMut<BE, Rg> for GGSWBackendMut<'_, BE, Rg> {
+    fn at_view_mut(&mut self, row: usize, col: usize) -> GLWEViewMut<'_, BE, Rg> {
         GGSWBackendMut::at_view_mut(self, row, col)
     }
 }
 
-impl<D: Data, W: ZnxWord> GGSW<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> GGSW<D, W, Rg> {
     /// Zero-cost rename when both backends share the same `OwnedBuf`.
-    pub fn reinterpret<To>(self) -> GGSW<To::OwnedBuf, To::ZnxWord>
+    pub fn reinterpret<To>(self) -> GGSW<To::OwnedBuf, To::ZnxWord, Rg>
     where
         To: Backend<OwnedBuf = D, ZnxWord = W>,
     {
@@ -569,7 +568,7 @@ impl<D: Data, W: ZnxWord> GGSW<D, W> {
     dead_code,
     reason = "host-owned constructors are kept for serialization and host-only staging"
 )]
-impl<W: ZnxWord> GGSW<AlignedBuf, W> {
+impl<W: ZnxWord, Rg: Ring> GGSW<AlignedBuf, W, Rg> {
     pub(crate) fn alloc_from_infos<A>(infos: &A) -> Self
     where
         A: GGSWInfos,
@@ -597,7 +596,7 @@ impl<W: ZnxWord> GGSW<AlignedBuf, W> {
         GGSW {
             noise: None,
             data: MatZnx::from_data(
-                alloc_aligned::<u8>(MatZnx::<AlignedBuf, W>::bytes_of(
+                alloc_aligned::<u8>(MatZnx::<AlignedBuf, W, Rg>::bytes_of(
                     n.into(),
                     dnum.into(),
                     (rank + 1).into(),
@@ -633,13 +632,13 @@ impl<W: ZnxWord> GGSW<AlignedBuf, W> {
     pub fn bytes_of(n: Degree, base2k: Base2K, dnum: Dnum, k_digit: TorusPrecision, k_aux: TorusPrecision, rank: Rank) -> usize {
         let size: usize = crate::layouts::key_size(base2k, dnum, k_digit, k_aux);
 
-        MatZnx::<AlignedBuf, W>::bytes_of(n.into(), dnum.into(), (rank + 1).into(), (rank + 1).into(), size)
+        MatZnx::<AlignedBuf, W, Rg>::bytes_of(n.into(), dnum.into(), (rank + 1).into(), (rank + 1).into(), size)
     }
 }
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
-impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GGSW<D, W> {
+impl<D: HostDataMut, W: ZnxWord, Rg: Ring> ReaderFrom for GGSW<D, W, Rg> {
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
         self.noise = None;
         let components = self.data.cols_out();
@@ -657,7 +656,7 @@ impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GGSW<D, W> {
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> WriterTo for GGSW<D, W> {
+impl<D: HostDataRef, W: ZnxWord, Rg: Ring> WriterTo for GGSW<D, W, Rg> {
     fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
         crate::layouts::validate_noise_components(self.noise.as_ref(), self.data.cols_out())?;
         crate::ComponentNoise::write_optional(self.noise.as_ref(), writer)?;
@@ -668,23 +667,23 @@ impl<D: HostDataRef, W: ZnxWord> WriterTo for GGSW<D, W> {
     }
 }
 
-pub trait GGSWToBackendMut<BE: Backend>: GGSWToBackendRef<BE> {
+pub trait GGSWToBackendMut<BE: Backend, Rg: Ring = Standard>: GGSWToBackendRef<BE, Rg> {
     /// Backend hook for recording or propagating component noise metadata.
     fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>);
 
     /// Borrows coefficients mutably and clears the owner's component noise metadata.
-    fn to_backend_mut(&mut self) -> GGSWBackendMut<'_, BE>;
+    fn to_backend_mut(&mut self) -> GGSWBackendMut<'_, BE, Rg>;
 }
 
-impl<BE: Backend, D: Data> GGSWToBackendMut<BE> for GGSW<D, BE::ZnxWord>
+impl<BE: Backend, D: Data, Rg: Ring> GGSWToBackendMut<BE, Rg> for GGSW<D, BE::ZnxWord, Rg>
 where
-    MatZnx<D, BE::ZnxWord>: MatZnxToBackendRef<BE> + MatZnxToBackendMut<BE>,
+    MatZnx<D, BE::ZnxWord, Rg>: MatZnxToBackendRef<BE, Rg> + MatZnxToBackendMut<BE, Rg>,
 {
     fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
         self.noise = crate::layouts::checked_noise(metadata, crate::layouts::GLWEInfos::rank(self).as_usize() + 1);
     }
 
-    fn to_backend_mut(&mut self) -> GGSWBackendMut<'_, BE> {
+    fn to_backend_mut(&mut self) -> GGSWBackendMut<'_, BE, Rg> {
         self.noise = None;
         GGSWBackendMut::from_inner(GGSW {
             noise: None,
@@ -696,53 +695,55 @@ where
     }
 }
 
-impl<BE: Backend> GGSWToBackendRef<BE> for &mut GGSW<BE::BufMut<'_>, BE::ZnxWord> {
-    fn to_backend_ref(&self) -> GGSWBackendRef<'_, BE> {
+impl<BE: Backend, Rg: Ring> GGSWToBackendRef<BE, Rg> for &mut GGSW<BE::BufMut<'_>, BE::ZnxWord, Rg> {
+    fn to_backend_ref(&self) -> GGSWBackendRef<'_, BE, Rg> {
         GGSWBackendRef::from_inner(GGSW {
             noise: crate::layouts::LWEInfos::noise(&self),
             k_digit: self.k_digit,
             base2k: self.base2k,
             k_aux: self.k_aux,
-            data: poulpy_hal::layouts::mat_znx_backend_ref_from_mut::<BE>(&self.data),
+            data: poulpy_hal::layouts::mat_znx_backend_ref_from_mut::<BE, Rg>(&self.data),
         })
     }
 }
 
-impl<BE: Backend> GGSWToBackendMut<BE> for &mut GGSW<BE::BufMut<'_>, BE::ZnxWord> {
+impl<BE: Backend, Rg: Ring> GGSWToBackendMut<BE, Rg> for &mut GGSW<BE::BufMut<'_>, BE::ZnxWord, Rg> {
     fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
         self.noise = crate::layouts::checked_noise(metadata, crate::layouts::GLWEInfos::rank(self).as_usize() + 1);
     }
 
-    fn to_backend_mut(&mut self) -> GGSWBackendMut<'_, BE> {
-        ggsw_backend_mut_from_mut::<BE>(self)
+    fn to_backend_mut(&mut self) -> GGSWBackendMut<'_, BE, Rg> {
+        ggsw_backend_mut_from_mut::<BE, Rg>(self)
     }
 }
 
-pub fn ggsw_backend_mut_from_mut<'a, 'b, BE: Backend>(ggsw: &'a mut GGSW<BE::BufMut<'b>, BE::ZnxWord>) -> GGSWBackendMut<'a, BE> {
+pub fn ggsw_backend_mut_from_mut<'a, 'b, BE: Backend, Rg: Ring>(
+    ggsw: &'a mut GGSW<BE::BufMut<'b>, BE::ZnxWord, Rg>,
+) -> GGSWBackendMut<'a, BE, Rg> {
     ggsw.noise = None;
     GGSWBackendMut::from_inner(GGSW {
         noise: None,
         k_digit: ggsw.k_digit,
         base2k: ggsw.base2k,
         k_aux: ggsw.k_aux,
-        data: poulpy_hal::layouts::mat_znx_backend_mut_from_mut::<BE>(&mut ggsw.data),
+        data: poulpy_hal::layouts::mat_znx_backend_mut_from_mut::<BE, Rg>(&mut ggsw.data),
     })
 }
 
 /// Row-view adapter that lets a `GGSWToBackendMut` type satisfy both `GGSWAtViewRef` and
 /// `GGSWAtViewMut` simultaneously, which is required by several reference algorithms that need
 /// to read and write individual GLWE rows through the trait interface.
-pub struct GGSWBackendRowViewMut<'a, BE: Backend + 'a> {
-    inner: GGSWBackendMut<'a, BE>,
+pub struct GGSWBackendRowViewMut<'a, BE: Backend + 'a, Rg: Ring = Standard> {
+    inner: GGSWBackendMut<'a, BE, Rg>,
 }
 
-impl<'a, BE: Backend + 'a> GGSWBackendRowViewMut<'a, BE> {
-    pub fn from_inner(inner: GGSWBackendMut<'a, BE>) -> Self {
+impl<'a, BE: Backend + 'a, Rg: Ring> GGSWBackendRowViewMut<'a, BE, Rg> {
+    pub fn from_inner(inner: GGSWBackendMut<'a, BE, Rg>) -> Self {
         Self { inner }
     }
 }
 
-impl<BE: Backend> LWEInfos for GGSWBackendRowViewMut<'_, BE> {
+impl<BE: Backend, Rg: Ring> LWEInfos for GGSWBackendRowViewMut<'_, BE, Rg> {
     fn noise(&self) -> Option<crate::ComponentNoise> {
         self.inner.noise()
     }
@@ -761,13 +762,13 @@ impl<BE: Backend> LWEInfos for GGSWBackendRowViewMut<'_, BE> {
     }
 }
 
-impl<BE: Backend> GLWEInfos for GGSWBackendRowViewMut<'_, BE> {
+impl<BE: Backend, Rg: Ring> GLWEInfos for GGSWBackendRowViewMut<'_, BE, Rg> {
     fn rank(&self) -> Rank {
         self.inner.rank()
     }
 }
 
-impl<BE: Backend> GGSWInfos for GGSWBackendRowViewMut<'_, BE> {
+impl<BE: Backend, Rg: Ring> GGSWInfos for GGSWBackendRowViewMut<'_, BE, Rg> {
     fn k_aux(&self) -> TorusPrecision {
         self.inner.k_aux()
     }
@@ -779,50 +780,50 @@ impl<BE: Backend> GGSWInfos for GGSWBackendRowViewMut<'_, BE> {
     }
 }
 
-impl<BE: Backend> GGSWToBackendRef<BE> for GGSWBackendRowViewMut<'_, BE> {
-    fn to_backend_ref(&self) -> GGSWBackendRef<'_, BE> {
+impl<BE: Backend, Rg: Ring> GGSWToBackendRef<BE, Rg> for GGSWBackendRowViewMut<'_, BE, Rg> {
+    fn to_backend_ref(&self) -> GGSWBackendRef<'_, BE, Rg> {
         self.inner.to_backend_ref()
     }
 }
 
-impl<BE: Backend> GGSWToBackendMut<BE> for GGSWBackendRowViewMut<'_, BE> {
+impl<BE: Backend, Rg: Ring> GGSWToBackendMut<BE, Rg> for GGSWBackendRowViewMut<'_, BE, Rg> {
     fn set_noise(&mut self, metadata: Option<crate::ComponentNoise>) {
         self.inner.noise = crate::layouts::checked_noise(metadata, crate::layouts::GLWEInfos::rank(self).as_usize() + 1);
     }
 
-    fn to_backend_mut(&mut self) -> GGSWBackendMut<'_, BE> {
+    fn to_backend_mut(&mut self) -> GGSWBackendMut<'_, BE, Rg> {
         self.inner.noise = None;
         GGSWBackendMut::from_inner(GGSW {
             noise: None,
             k_digit: self.inner.inner.k_digit,
             base2k: self.inner.inner.base2k,
             k_aux: self.inner.inner.k_aux,
-            data: poulpy_hal::layouts::mat_znx_backend_mut_from_mut::<BE>(&mut self.inner.inner.data),
+            data: poulpy_hal::layouts::mat_znx_backend_mut_from_mut::<BE, Rg>(&mut self.inner.inner.data),
         })
     }
 }
 
-impl<BE: Backend> GGSWAtViewRef<BE> for GGSWBackendRowViewMut<'_, BE> {
-    fn at_view(&self, row: usize, col: usize) -> GLWEViewRef<'_, BE> {
+impl<BE: Backend, Rg: Ring> GGSWAtViewRef<BE, Rg> for GGSWBackendRowViewMut<'_, BE, Rg> {
+    fn at_view(&self, row: usize, col: usize) -> GLWEViewRef<'_, BE, Rg> {
         self.inner.at_view(row, col)
     }
 }
 
-impl<BE: Backend> GGSWAtViewMut<BE> for GGSWBackendRowViewMut<'_, BE> {
-    fn at_view_mut(&mut self, row: usize, col: usize) -> GLWEViewMut<'_, BE> {
+impl<BE: Backend, Rg: Ring> GGSWAtViewMut<BE, Rg> for GGSWBackendRowViewMut<'_, BE, Rg> {
+    fn at_view_mut(&mut self, row: usize, col: usize) -> GLWEViewMut<'_, BE, Rg> {
         self.inner.at_view_mut(row, col)
     }
 }
 
-pub trait GGSWToBackendRef<BE: Backend> {
-    fn to_backend_ref(&self) -> GGSWBackendRef<'_, BE>;
+pub trait GGSWToBackendRef<BE: Backend, Rg: Ring = Standard> {
+    fn to_backend_ref(&self) -> GGSWBackendRef<'_, BE, Rg>;
 }
 
-impl<BE: Backend, D: Data> GGSWToBackendRef<BE> for GGSW<D, BE::ZnxWord>
+impl<BE: Backend, D: Data, Rg: Ring> GGSWToBackendRef<BE, Rg> for GGSW<D, BE::ZnxWord, Rg>
 where
-    MatZnx<D, BE::ZnxWord>: MatZnxToBackendRef<BE>,
+    MatZnx<D, BE::ZnxWord, Rg>: MatZnxToBackendRef<BE, Rg>,
 {
-    fn to_backend_ref(&self) -> GGSWBackendRef<'_, BE> {
+    fn to_backend_ref(&self) -> GGSWBackendRef<'_, BE, Rg> {
         GGSWBackendRef::from_inner(GGSW {
             noise: crate::layouts::LWEInfos::noise(&self),
             k_digit: self.k_digit,

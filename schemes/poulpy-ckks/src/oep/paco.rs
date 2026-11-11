@@ -3,7 +3,7 @@ use crate::layouts::CKKSPlaintextOwned;
 use poulpy_core::layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey};
 use poulpy_hal::{
     api::ScratchOwnedBorrow,
-    layouts::{Backend, Module, ScratchArena, ScratchOwned, Standard},
+    layouts::{Backend, Module, ScratchArena, ScratchOwned},
 };
 
 use crate::{
@@ -35,7 +35,7 @@ use crate::{
 /// [`ckks_paco_coeff_encodings_host`](crate::reference::encoding::ckks_paco_coeff_encodings_host) on every backend and
 /// platform, report for the `_tmp_bytes` query a bound that covers the body, and refuse as documented. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait CKKSPaCoCoeffEncodingImpl: Backend<Ring = Standard> {
+pub unsafe trait CKKSPaCoCoeffEncodingImpl: Backend {
     /// Scratch bound of [`Self::ckks_paco_coeff_encodings`] for an input of the layout `input`, the scalar buffers of
     /// native FFT kernels included. That method refuses a smaller arena with `CKKSError::Internal` before any work.
     fn ckks_paco_coeff_encodings_tmp_bytes<F, A>(
@@ -76,7 +76,7 @@ pub unsafe trait CKKSPaCoCoeffEncodingImpl: Backend<Ring = Standard> {
 /// Implementations reproduce the bodies their methods document bit for bit, report for each
 /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait CKKSPaCoImpl: Backend<Ring = Standard> {
+pub unsafe trait CKKSPaCoImpl: Backend {
     /// Returns
     /// [`ckks_paco_bootstrap_direct_tmp_bytes_reference`](crate::reference::paco::CKKSPaCoReference::ckks_paco_bootstrap_direct_tmp_bytes_reference)
     /// or a smaller bound covering the body, refusing as it does. Scratch bound of
@@ -243,7 +243,7 @@ pub unsafe trait CKKSPaCoImpl: Backend<Ring = Standard> {
         TH: GetTensorKey<Self>;
 }
 
-/// Selects the reference implementation of `CKKSPaCoImpl` for the standard backend `$be`.
+/// Selects the reference implementation of `CKKSPaCoImpl` for `$be`, on the standard ring.
 #[macro_export]
 macro_rules! impl_ckks_paco_reference_full {
     ($be:ty) => {

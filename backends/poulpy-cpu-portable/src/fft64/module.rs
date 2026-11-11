@@ -3,8 +3,7 @@
 //! This module defines:
 //!
 //! - [`FFT64PortableHandle`]: the opaque handle stored inside a `Module<FFT64Portable>`
-//!   (and, over the conjugate invariant ring, `Module<FFT64CIPortable>`),
-//!   holding precomputed FFT and IFFT twiddle-factor tables.
+//!   holding precomputed FFT and IFFT twiddle-factor tables of both rings, the conjugate-invariant ones built on first use.
 //! - The [`Backend`] trait implementation, which defines scalar types and the
 //!   handle destruction path.
 //! - The [`FFT64HandleFactory`] implementation, which builds the handle stored
@@ -17,16 +16,15 @@ use std::ptr::NonNull;
 
 use poulpy_hal::{
     AlignedBuf, alloc_aligned,
-    layouts::{Backend, Host},
+    layouts::{Backend, Host, Ring},
 };
 
 use crate::kernels::fft64::module::{FFT64HandleFactory, FFT64Plan, FFT64PlanSet, FFTHandleProvider};
-use poulpy_hal::layouts::{Ring, Standard};
+use crate::kernels::{FFT64Plans, PerRing};
 
 use super::FFT64Portable;
 
-/// Opaque handle for the FFT64 portable backends over ring `R`
-/// ([`FFT64Portable`](super::FFT64Portable) and [`FFT64CIPortable`](crate::FFT64CIPortable)).
+/// Opaque handle of [`FFT64Portable`](super::FFT64Portable), holding the plans of both rings.
 ///
 /// Holds precomputed twiddle-factor tables for the forward FFT and inverse FFT
 /// of size `m = n / 2`, where `n` is the ring dimension passed to
@@ -35,31 +33,30 @@ use super::FFT64Portable;
 /// This struct is heap-allocated during module creation and freed when the
 /// `Module` is dropped (via [`Backend::destroy`]).
 #[repr(C)]
-pub struct FFT64PortableHandle<R: Ring = Standard> {
-    ring_plans: FFT64PlanSet<f64, R>,
+pub struct FFT64PortableHandle {
+    ring_plans: PerRing<FFT64Plans>,
     table_cache: crate::table_cache::ModuleTableCache,
 }
 
-impl<R: Ring> poulpy_hal::execution::ScratchWorkers for FFT64Portable<R> {}
+impl poulpy_hal::execution::ScratchWorkers for FFT64Portable {}
 
-impl<R: Ring> poulpy_hal::layouts::MaxBase2k for FFT64Portable<R> {
-    fn max_base2k(n: usize, products: usize, failure_bits: usize, squaring: bool) -> usize {
-        poulpy_hal::layouts::max_base2k_fft64::<Self>(n, products, failure_bits, squaring)
+impl poulpy_hal::layouts::MaxBase2k for FFT64Portable {
+    fn max_base2k<Rg: Ring>(n: usize, products: usize, failure_bits: usize, squaring: bool) -> usize {
+        poulpy_hal::layouts::max_base2k_fft64::<Self, Rg>(n, products, failure_bits, squaring)
     }
 }
 
-impl<R: Ring> Backend for FFT64Portable<R> {
+impl Backend for FFT64Portable {
     const DFT_LIMBS_CONTIGUOUS: bool = true;
 
     type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;
-    type Ring = R;
     type DftWord = f64;
     type ZnxWord = i64;
     type BigWord = i64;
     type OwnedBuf = AlignedBuf;
     type BufRef<'a> = &'a [u8];
     type BufMut<'a> = &'a mut [u8];
-    type Handle = FFT64PortableHandle<R>;
+    type Handle = FFT64PortableHandle;
     type Location = Host;
 
     fn alloc_bytes(len: usize) -> Self::OwnedBuf {
@@ -163,26 +160,22 @@ impl<R: Ring> Backend for FFT64Portable<R> {
 /// # Safety
 ///
 /// The returned handle must be fully initialized for `n`.
-unsafe impl<R: Ring> FFT64HandleFactory for FFT64PortableHandle<R>
-where
-    crate::kernels::fft64::module::FFT64Plan<f64, R>: crate::kernels::fft64::module::FFT64PlanNew,
-{
+unsafe impl FFT64HandleFactory for FFT64PortableHandle {
     fn create_fft64_handle(n: usize) -> Self {
         FFT64PortableHandle {
             table_cache: Default::default(),
-            ring_plans: FFT64PlanSet::new(n),
+            ring_plans: PerRing::new(FFT64PlanSet::new(n), n, FFT64PlanSet::new),
         }
     }
 }
 
-unsafe impl<R: Ring> FFTHandleProvider<f64> for FFT64PortableHandle<R> {
-    type Ring = R;
-    fn get_fft_plan(&self, n: usize) -> &FFT64Plan<f64, R> {
-        self.ring_plans.for_ring(n)
+unsafe impl<Rg: Ring> FFTHandleProvider<f64, Rg> for FFT64PortableHandle {
+    fn get_fft_plan(&self, n: usize) -> &FFT64Plan<f64, Rg> {
+        self.ring_plans.on_ring::<Rg>().for_ring(n)
     }
 }
 
-unsafe impl<R: Ring> crate::table_cache::ModuleTableCacheProvider for FFT64PortableHandle<R> {
+unsafe impl crate::table_cache::ModuleTableCacheProvider for FFT64PortableHandle {
     fn module_plan_cache(&self) -> &crate::table_cache::ModuleTableCache {
         &self.table_cache
     }

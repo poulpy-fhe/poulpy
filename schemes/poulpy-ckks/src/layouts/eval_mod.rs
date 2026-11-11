@@ -44,7 +44,7 @@
 use crate::numerics::CKKSFloat;
 use anyhow::{Result, anyhow, ensure};
 use poulpy_core::layouts::{Base2K, bsgs_consumed_bits, bsgs_eval_depth, bsgs_op_counts};
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Module, Ring, ScratchArena};
 
 use crate::{
     CoeffsMeta,
@@ -464,17 +464,17 @@ pub struct EvalMod<F, P> {
 }
 
 /// [`encode_bsgs_backend`] through the parity fold (`u = T_2(t)`).
-fn encode_bsgs_folded_backend<BE, F>(
+fn encode_bsgs_folded_backend<BE, F, Rg: Ring>(
     polynomial: &Polynomial<F>,
     module: &Module<BE>,
     base2k: Base2K,
     coeff_meta: CoeffsMeta,
     strategy: SplitStrategy,
     scratch: &mut ScratchArena<'_, BE>,
-) -> Result<BSGSPolynomial<CKKSPlaintextOwned<BE>>>
+) -> Result<BSGSPolynomial<CKKSPlaintextOwned<BE, Rg>>>
 where
     BE: Backend,
-    Module<BE>: CKKSPlaintextAlloc<BE> + CKKSEncodingOps<BE, F>,
+    Module<BE>: CKKSPlaintextAlloc<BE> + CKKSEncodingOps<BE, F, Rg>,
     F: CKKSEncodingScalar,
 {
     let mut step_idx = 0usize;
@@ -489,17 +489,17 @@ where
     })
 }
 
-fn encode_bsgs_backend<BE, F>(
+fn encode_bsgs_backend<BE, F, Rg: Ring>(
     polynomial: &Polynomial<F>,
     module: &Module<BE>,
     base2k: Base2K,
     coeff_meta: CoeffsMeta,
     strategy: SplitStrategy,
     scratch: &mut ScratchArena<'_, BE>,
-) -> Result<BSGSPolynomial<CKKSPlaintextOwned<BE>>>
+) -> Result<BSGSPolynomial<CKKSPlaintextOwned<BE, Rg>>>
 where
     BE: Backend,
-    Module<BE>: CKKSPlaintextAlloc<BE> + CKKSEncodingOps<BE, F>,
+    Module<BE>: CKKSPlaintextAlloc<BE> + CKKSEncodingOps<BE, F, Rg>,
     F: CKKSEncodingScalar,
 {
     let mut step_idx = 0usize;
@@ -514,17 +514,17 @@ where
     })
 }
 
-fn encode_complex_bsgs_backend<BE, F>(
+fn encode_complex_bsgs_backend<BE, F, Rg: Ring>(
     polynomial: &ComplexPolynomial<F>,
     module: &Module<BE>,
     base2k: Base2K,
     coeff_meta: CoeffsMeta,
     strategy: SplitStrategy,
     scratch: &mut ScratchArena<'_, BE>,
-) -> Result<ComplexBSGSPolynomial<CKKSPlaintextOwned<BE>>>
+) -> Result<ComplexBSGSPolynomial<CKKSPlaintextOwned<BE, Rg>>>
 where
     BE: Backend,
-    Module<BE>: CKKSEncodingOps<BE, F>,
+    Module<BE>: CKKSEncodingOps<BE, F, Rg>,
     F: CKKSEncodingScalar,
 {
     let (re, im) = polynomial.split_with_shared_parity();
@@ -545,15 +545,15 @@ where
 /// Returns an error if the plan is inconsistent, a generated coefficient is
 /// not representable, or `scratch` is too small for the largest coefficient
 /// block.
-pub fn ckks_eval_mod_compile<BE, F>(
+pub fn ckks_eval_mod_compile<BE, F, Rg: Ring>(
     base2k: Base2K,
     lit: EvalModPlan,
     module: &Module<BE>,
     scratch: &mut ScratchArena<'_, BE>,
-) -> Result<EvalMod<F, CKKSPlaintextOwned<BE>>>
+) -> Result<EvalMod<F, CKKSPlaintextOwned<BE, Rg>>>
 where
     BE: Backend,
-    Module<BE>: CKKSPlaintextAlloc<BE> + CKKSEncodingOps<BE, F>,
+    Module<BE>: CKKSPlaintextAlloc<BE> + CKKSEncodingOps<BE, F, Rg>,
     F: CKKSEncodingScalar,
 {
     lit.validate()?;
@@ -718,15 +718,15 @@ where
 /// single [`ComplexPolynomial`] and BSGS-encodes it. The `r` range-extension
 /// steps are plain complex squarings (`exp 2θ = (exp θ)²`), so no offset or
 /// per-step constant is needed.
-fn compile_eval_mod_exp<BE, F>(
+fn compile_eval_mod_exp<BE, F, Rg: Ring>(
     base2k: Base2K,
     lit: EvalModPlan,
     module: &Module<BE>,
     scratch: &mut ScratchArena<'_, BE>,
-) -> Result<EvalMod<F, CKKSPlaintextOwned<BE>>>
+) -> Result<EvalMod<F, CKKSPlaintextOwned<BE, Rg>>>
 where
     BE: Backend,
-    Module<BE>: CKKSEncodingOps<BE, F>,
+    Module<BE>: CKKSEncodingOps<BE, F, Rg>,
     F: CKKSEncodingScalar,
 {
     let coeff_meta = lit.coeffs_meta;

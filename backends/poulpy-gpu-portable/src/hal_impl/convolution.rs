@@ -15,7 +15,7 @@ use crate::{
     NTT4x30Gpu,
     module::handle,
     ntt4x30::{
-        AutomorphismPlan, DftColumn, DftTerm, combine, convolution, convolution_pairwise, convolution_sum, convolution_tensor,
+        DftColumn, DftTerm, Substitution, combine, convolution, convolution_pairwise, convolution_sum, convolution_tensor,
         forward,
     },
     runtime::GpuRuntime,
@@ -26,21 +26,21 @@ use crate::{
 /// `cnv_apply_dft` into `diag` and one `cnv_pairwise_apply_dft` into `cross`,
 /// in its order.
 fn check_mul_columns<RT: GpuRuntime, R: Ring>(
-    module: &Module<NTT4x30Gpu<RT, R>>,
-    diag: &VecZnxDftBackendMut<'_, NTT4x30Gpu<RT, R>>,
-    cross: &VecZnxDftBackendMut<'_, NTT4x30Gpu<RT, R>>,
-    a: &CnvPVecLBackendRef<'_, NTT4x30Gpu<RT, R>>,
-    b: &CnvPVecRBackendRef<'_, NTT4x30Gpu<RT, R>>,
+    module: &Module<NTT4x30Gpu<RT>>,
+    diag: &VecZnxDftBackendMut<'_, NTT4x30Gpu<RT>, R>,
+    cross: &VecZnxDftBackendMut<'_, NTT4x30Gpu<RT>, R>,
+    a: &CnvPVecLBackendRef<'_, NTT4x30Gpu<RT>, R>,
+    b: &CnvPVecRBackendRef<'_, NTT4x30Gpu<RT>, R>,
 ) {
-    type BE<RT, R> = NTT4x30Gpu<RT, R>;
+    type BE<RT> = NTT4x30Gpu<RT>;
     for col in [0, 1] {
-        check_degree::<BE<RT, R>>(module.n(), diag.n());
-        check_cnv_dft_term::<BE<RT, R>>(diag.n(), a, col, b, col, 1);
+        check_degree::<BE<RT>>(module.n(), diag.n());
+        check_cnv_dft_term::<BE<RT>, R>(diag.n(), a, col, b, col, 1);
         assert!(col < diag.cols(), "operand column out of range");
     }
-    check_degree::<BE<RT, R>>(module.n(), cross.n());
+    check_degree::<BE<RT>>(module.n(), cross.n());
     for col in [0, 1] {
-        check_cnv_dft_term::<BE<RT, R>>(cross.n(), a, col, b, col, 1);
+        check_cnv_dft_term::<BE<RT>, R>(cross.n(), a, col, b, col, 1);
     }
     assert!(cross.cols() > 0, "operand column out of range");
 }
@@ -53,12 +53,12 @@ fn check_mul_columns<RT: GpuRuntime, R: Ring>(
 // The body of the core hooks `GLWETensoringImpl::glwe_mul_columns` and `glwe_square_columns`.
 #[cfg_attr(not(feature = "enable-core"), allow(dead_code))]
 pub(crate) fn glwe_mul_columns<RT: GpuRuntime, R: Ring>(
-    module: &Module<NTT4x30Gpu<RT, R>>,
+    module: &Module<NTT4x30Gpu<RT>>,
     cnv_offset: usize,
-    diag: &mut VecZnxDftBackendMut<'_, NTT4x30Gpu<RT, R>>,
-    cross: &mut VecZnxDftBackendMut<'_, NTT4x30Gpu<RT, R>>,
-    a: &CnvPVecLBackendRef<'_, NTT4x30Gpu<RT, R>>,
-    b: &CnvPVecRBackendRef<'_, NTT4x30Gpu<RT, R>>,
+    diag: &mut VecZnxDftBackendMut<'_, NTT4x30Gpu<RT>, R>,
+    cross: &mut VecZnxDftBackendMut<'_, NTT4x30Gpu<RT>, R>,
+    a: &CnvPVecLBackendRef<'_, NTT4x30Gpu<RT>, R>,
+    b: &CnvPVecRBackendRef<'_, NTT4x30Gpu<RT>, R>,
     square: bool,
 ) {
     check_mul_columns(module, diag, cross, a, b);
@@ -86,10 +86,10 @@ pub(crate) fn glwe_mul_columns<RT: GpuRuntime, R: Ring>(
 /// reads the left form on both sides and leaves `right` unwritten.
 #[cfg_attr(not(feature = "enable-core"), allow(dead_code))]
 pub(crate) fn cnv_pvec_self_prepare_left<RT: GpuRuntime, R: Ring>(
-    module: &Module<NTT4x30Gpu<RT, R>>,
-    left: &mut CnvPVecLBackendMut<'_, NTT4x30Gpu<RT, R>>,
-    right: &CnvPVecRBackendMut<'_, NTT4x30Gpu<RT, R>>,
-    a: &VecZnxBackendRef<'_, NTT4x30Gpu<RT, R>>,
+    module: &Module<NTT4x30Gpu<RT>>,
+    left: &mut CnvPVecLBackendMut<'_, NTT4x30Gpu<RT>, R>,
+    right: &CnvPVecRBackendMut<'_, NTT4x30Gpu<RT>, R>,
+    a: &VecZnxBackendRef<'_, NTT4x30Gpu<RT>, R>,
 ) -> Option<DftColumn> {
     assert!(
         right.size() == left.size(),
@@ -111,12 +111,12 @@ pub(crate) fn cnv_pvec_self_prepare_left<RT: GpuRuntime, R: Ring>(
 /// made before its view is taken: a view that overwrites a zeroed buffer
 /// drops the fill it owes.
 fn check_prepare<RT: GpuRuntime, R: Ring>(
-    module: &Module<NTT4x30Gpu<RT, R>>,
+    module: &Module<NTT4x30Gpu<RT>>,
     res_n: usize,
-    a: &VecZnxBackendRef<'_, NTT4x30Gpu<RT, R>>,
+    a: &VecZnxBackendRef<'_, NTT4x30Gpu<RT>, R>,
 ) {
     assert_dense(a, "cnv_prepare");
-    check_degree::<NTT4x30Gpu<RT, R>>(module.n(), res_n);
+    check_degree::<NTT4x30Gpu<RT>>(module.n(), res_n);
     assert!(a.n() == res_n, "cnv_prepare: a.n() != res.n()");
 }
 
@@ -124,16 +124,21 @@ fn check_prepare<RT: GpuRuntime, R: Ring>(
 /// prepared vector whose column 0 is `res0`, truncating or zero-extending to
 /// its limbs.
 fn prepare<RT: GpuRuntime, R: Ring>(
-    module: &Module<NTT4x30Gpu<RT, R>>,
+    module: &Module<NTT4x30Gpu<RT>>,
     res0: &DftColumn,
     cols: usize,
-    a: &VecZnxBackendRef<'_, NTT4x30Gpu<RT, R>>,
+    a: &VecZnxBackendRef<'_, NTT4x30Gpu<RT>, R>,
 ) {
     let limbs = res0.size.min(a.size());
     let all = all_dft_blocks(res0, res0.size);
     if let Some(a0) = column_ref(a, 0).filter(|_| limbs != 0) {
         // Both vectors order their blocks alike: one batched transform.
-        forward::<RT>(handle(module).tables(), &all, &all_blocks(&a0, cols, limbs), limbs * cols);
+        forward::<RT>(
+            handle(module).tables::<R>(),
+            &all,
+            &all_blocks(&a0, cols, limbs),
+            limbs * cols,
+        );
     }
     let tail = all.limbs(limbs * cols, 1, all.size - limbs * cols);
     combine::<RT>(&tail, tail.size, DftTerm::zero(&tail), DftTerm::zero(&tail));
@@ -142,22 +147,22 @@ fn prepare<RT: GpuRuntime, R: Ring>(
 /// The read of a right operand through `sigma_{b_galois}`, at its own degree,
 /// `b_galois` being checked by `check_cnv_dft_term`.
 fn right_plan<RT: GpuRuntime, R: Ring>(
-    module: &Module<NTT4x30Gpu<RT, R>>,
-    b: &CnvPVecRBackendRef<'_, NTT4x30Gpu<RT, R>>,
+    module: &Module<NTT4x30Gpu<RT>>,
+    b: &CnvPVecRBackendRef<'_, NTT4x30Gpu<RT>, R>,
     b_galois: i64,
-) -> AutomorphismPlan {
-    AutomorphismPlan::new(b.n(), b_galois, handle(module).tables().invariant())
+) -> Substitution {
+    Substitution::new(b.n(), b_galois, handle(module).tables::<R>().invariant())
 }
 
-unsafe impl<RT: GpuRuntime, R: Ring> HalCnvImpl for NTT4x30Gpu<RT, R> {
+unsafe impl<RT: GpuRuntime, R: Ring> HalCnvImpl<R> for NTT4x30Gpu<RT> {
     fn cnv_pvec_left_prepare_tmp_bytes(_module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
         0
     }
 
     fn cnv_pvec_left_prepare(
         module: &Module<Self>,
-        res: &mut CnvPVecLBackendMut<'_, Self>,
-        a: &VecZnxBackendRef<'_, Self>,
+        res: &mut CnvPVecLBackendMut<'_, Self, R>,
+        a: &VecZnxBackendRef<'_, Self, R>,
         _scratch: &mut ScratchArena<'_, Self>,
     ) {
         assert!(a.cols() == res.cols(), "cnv_pvec_left_prepare: res.cols() != a.cols()");
@@ -172,8 +177,8 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalCnvImpl for NTT4x30Gpu<RT, R> {
 
     fn cnv_pvec_right_prepare(
         module: &Module<Self>,
-        res: &mut CnvPVecRBackendMut<'_, Self>,
-        a: &VecZnxBackendRef<'_, Self>,
+        res: &mut CnvPVecRBackendMut<'_, Self, R>,
+        a: &VecZnxBackendRef<'_, Self, R>,
         _scratch: &mut ScratchArena<'_, Self>,
     ) {
         assert!(a.cols() == res.cols(), "cnv_pvec_right_prepare: res.cols() != a.cols()");
@@ -188,9 +193,9 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalCnvImpl for NTT4x30Gpu<RT, R> {
 
     fn cnv_pvec_self_prepare(
         module: &Module<Self>,
-        left: &mut CnvPVecLBackendMut<'_, Self>,
-        right: &mut CnvPVecRBackendMut<'_, Self>,
-        a: &VecZnxBackendRef<'_, Self>,
+        left: &mut CnvPVecLBackendMut<'_, Self, R>,
+        right: &mut CnvPVecRBackendMut<'_, Self, R>,
+        a: &VecZnxBackendRef<'_, Self, R>,
         _scratch: &mut ScratchArena<'_, Self>,
     ) {
         let Some(left0) = cnv_pvec_self_prepare_left(module, left, right, a) else {
@@ -215,17 +220,17 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalCnvImpl for NTT4x30Gpu<RT, R> {
     fn cnv_apply_dft(
         module: &Module<Self>,
         cnv_offset: usize,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, R>,
         res_col: usize,
-        a: &CnvPVecLBackendRef<'_, Self>,
+        a: &CnvPVecLBackendRef<'_, Self, R>,
         a_col: usize,
-        b: &CnvPVecRBackendRef<'_, Self>,
+        b: &CnvPVecRBackendRef<'_, Self, R>,
         b_col: usize,
         b_galois: i64,
         _scratch: &mut ScratchArena<'_, Self>,
     ) {
         check_degree::<Self>(module.n(), res.n());
-        check_cnv_dft_term::<Self>(res.n(), a, a_col, b, b_col, b_galois);
+        check_cnv_dft_term::<Self, R>(res.n(), a, a_col, b, b_col, b_galois);
         let Some(res) = dft_column_mut(res, res_col) else { return };
         let a = cnv_left_column(a, a_col).unwrap_or_else(|| empty_dft_like(&res));
         let plan = right_plan(module, b, b_galois);
@@ -254,17 +259,17 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalCnvImpl for NTT4x30Gpu<RT, R> {
     fn cnv_apply_dft_add(
         module: &Module<Self>,
         cnv_offset: usize,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, R>,
         res_col: usize,
-        a: &CnvPVecLBackendRef<'_, Self>,
+        a: &CnvPVecLBackendRef<'_, Self, R>,
         a_col: usize,
-        b: &CnvPVecRBackendRef<'_, Self>,
+        b: &CnvPVecRBackendRef<'_, Self, R>,
         b_col: usize,
         b_galois: i64,
         _scratch: &mut ScratchArena<'_, Self>,
     ) {
         check_degree::<Self>(module.n(), res.n());
-        check_cnv_dft_term::<Self>(res.n(), a, a_col, b, b_col, b_galois);
+        check_cnv_dft_term::<Self, R>(res.n(), a, a_col, b, b_col, b_galois);
         let Some(res) = dft_column_mut(res, res_col) else { return };
         let plan = right_plan(module, b, b_galois);
         let (Some(a), Some(b)) = (cnv_left_column(a, a_col), cnv_right_column(b, b_col)) else {
@@ -294,14 +299,14 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalCnvImpl for NTT4x30Gpu<RT, R> {
     fn cnv_apply_dft_sum(
         module: &Module<Self>,
         cnv_offset: usize,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, R>,
         res_col: usize,
-        terms: &[CnvDftAccTerm<'_, Self>],
+        terms: &[CnvDftAccTerm<'_, Self, R>],
         _scratch: &mut ScratchArena<'_, Self>,
     ) {
         // Every term is checked before the first launch writes `res`.
         check_degree::<Self>(module.n(), res.n());
-        check_cnv_dft_terms::<Self>(res.n(), terms);
+        check_cnv_dft_terms::<Self, R>(res.n(), terms);
         let Some(res) = dft_column_mut(res, res_col) else { return };
         // The storage checks of the operand views, before the launches that resolve them again.
         for term in terms {
@@ -333,17 +338,17 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalCnvImpl for NTT4x30Gpu<RT, R> {
     fn cnv_pairwise_apply_dft(
         module: &Module<Self>,
         cnv_offset: usize,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, R>,
         res_col: usize,
-        a: &CnvPVecLBackendRef<'_, Self>,
-        b: &CnvPVecRBackendRef<'_, Self>,
+        a: &CnvPVecLBackendRef<'_, Self, R>,
+        b: &CnvPVecRBackendRef<'_, Self, R>,
         i: usize,
         j: usize,
         _scratch: &mut ScratchArena<'_, Self>,
     ) {
         check_degree::<Self>(module.n(), res.n());
-        check_cnv_dft_term::<Self>(res.n(), a, i, b, i, 1);
-        check_cnv_dft_term::<Self>(res.n(), a, j, b, j, 1);
+        check_cnv_dft_term::<Self, R>(res.n(), a, i, b, i, 1);
+        check_cnv_dft_term::<Self, R>(res.n(), a, j, b, j, 1);
         let Some(res) = dft_column_mut(res, res_col) else { return };
         let left = |col: usize| cnv_left_column(a, col).unwrap_or_else(|| empty_dft_like(&res));
         let right = |col: usize| cnv_right_column(b, col).unwrap_or_else(|| empty_dft_like(&res));
@@ -352,7 +357,7 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalCnvImpl for NTT4x30Gpu<RT, R> {
                 &res,
                 &left(i),
                 &right(i),
-                &AutomorphismPlan::new(b.n(), 1, false),
+                &Substitution::new(b.n(), 1, false),
                 cnv_offset,
                 false,
                 handle(module).convolution_capacity_step(),
@@ -383,11 +388,11 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalCnvImpl for NTT4x30Gpu<RT, R> {
     fn cnv_by_const_apply(
         _module: &Module<Self>,
         cnv_offset: usize,
-        res: &mut VecZnxBigBackendMut<'_, Self>,
+        res: &mut VecZnxBigBackendMut<'_, Self, R>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, Self>,
+        a: &VecZnxBackendRef<'_, Self, R>,
         a_col: usize,
-        b: &VecZnxBackendRef<'_, Self>,
+        b: &VecZnxBackendRef<'_, Self, R>,
         b_col: usize,
         b_coeff: usize,
         _scratch: &mut ScratchArena<'_, Self>,
@@ -408,11 +413,11 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalCnvImpl for NTT4x30Gpu<RT, R> {
     fn cnv_by_const_apply_add(
         _module: &Module<Self>,
         cnv_offset: usize,
-        res: &mut VecZnxBigBackendMut<'_, Self>,
+        res: &mut VecZnxBigBackendMut<'_, Self, R>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, Self>,
+        a: &VecZnxBackendRef<'_, Self, R>,
         a_col: usize,
-        b: &VecZnxBackendRef<'_, Self>,
+        b: &VecZnxBackendRef<'_, Self, R>,
         b_col: usize,
         b_coeff: usize,
         _scratch: &mut ScratchArena<'_, Self>,
@@ -424,11 +429,11 @@ unsafe impl<RT: GpuRuntime, R: Ring> HalCnvImpl for NTT4x30Gpu<RT, R> {
 #[allow(clippy::too_many_arguments)]
 fn by_const<RT: GpuRuntime, R: Ring>(
     cnv_offset: usize,
-    res: &mut VecZnxBigBackendMut<'_, NTT4x30Gpu<RT, R>>,
+    res: &mut VecZnxBigBackendMut<'_, NTT4x30Gpu<RT>, R>,
     res_col: usize,
-    a: &VecZnxBackendRef<'_, NTT4x30Gpu<RT, R>>,
+    a: &VecZnxBackendRef<'_, NTT4x30Gpu<RT>, R>,
     a_col: usize,
-    b: &VecZnxBackendRef<'_, NTT4x30Gpu<RT, R>>,
+    b: &VecZnxBackendRef<'_, NTT4x30Gpu<RT>, R>,
     b_col: usize,
     b_coeff: usize,
     accumulate: bool,

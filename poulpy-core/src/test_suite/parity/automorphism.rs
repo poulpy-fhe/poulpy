@@ -2,7 +2,7 @@
 
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{HostDataMut, Module, ScratchOwned},
+    layouts::{HostDataMut, Module, Ring, ScratchOwned},
     source::Source,
     test_suite::TestParams,
 };
@@ -22,14 +22,14 @@ use crate::{
 };
 
 /// Allocates an automorphism key on the reference module, filled with noise.
-fn ref_key<BR>(
+fn ref_key<BR, Rg: Ring>(
     module_ref: &Module<BR>,
     infos: &GLWEAutomorphismKeyLayout,
     p: i64,
     source: &mut Source,
-) -> BackendGLWEAutomorphismKey<BR>
+) -> BackendGLWEAutomorphismKey<BR, Rg>
 where
-    BR: ParityBackend,
+    BR: ParityBackend<Rg>,
 {
     let mut key = module_ref.glwe_automorphism_key_alloc_from_infos(infos);
     fill_by_digit(module_ref, &mut key, 1, source);
@@ -38,17 +38,17 @@ where
 }
 
 /// `glwe_automorphism` agrees with the selected comparison backend byte-for-byte.
-pub fn test_glwe_automorphism_parity<BR, BT>(
+pub fn test_glwe_automorphism_parity<BR, BT, Rg: Ring>(
     params: &TestParams,
     shapes: &ParityShapes,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
-    BR: ParityBackend,
-    BT: ParityBackend,
+    BR: ParityBackend<Rg>,
+    BT: ParityBackend<Rg>,
     BR::OwnedBuf: HostDataMut,
-    Module<BR>: GLWEAutomorphism<BR> + GLWEAutomorphismKeyPreparedFactory<BR>,
-    Module<BT>: GLWEAutomorphism<BT> + GLWEAutomorphismKeyPreparedFactory<BT>,
+    Module<BR>: GLWEAutomorphism<BR, Rg> + GLWEAutomorphismKeyPreparedFactory<BR, Rg>,
+    Module<BT>: GLWEAutomorphism<BT, Rg> + GLWEAutomorphismKeyPreparedFactory<BT, Rg>,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
 {
@@ -121,10 +121,10 @@ pub fn test_glwe_automorphism_parity<BR, BT>(
                         let mut scratch_test = poisoned_scratch::<BT>(module_test.glwe_automorphism_tmp_bytes(&res_infos, input_infos, &key_infos));
                         let mut twin_a = module_test.glwe_alloc_from_infos(&a_infos);
                         if $assign {
-                            unnormalized_twin::<BR, BT>(&initial, &mut res_test);
+                            unnormalized_twin::<BR, BT, Rg>(&initial, &mut res_test);
                         } else {
                             initial.transfer_into(&mut res_test);
-                            unnormalized_twin::<BR, BT>(&a_ref, &mut twin_a);
+                            unnormalized_twin::<BR, BT, Rg>(&a_ref, &mut twin_a);
                         }
                         check!(@call module_test, res_test, twin_a, key_test, scratch_test, $method, $assign);
                         res_test.transfer_into(&mut have);

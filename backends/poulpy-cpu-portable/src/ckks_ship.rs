@@ -21,7 +21,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::ModuleN,
-    layouts::{Backend, HostDataRef, Module, ScratchArena, Standard},
+    layouts::{Backend, HostDataRef, Module, ScratchArena},
 };
 
 /// The one-limb rank-1 layout of a SHIP bottom ciphertext of `plan` at `base2k`.
@@ -57,17 +57,17 @@ pub fn ship_coeff_encodings_staged<BE, F, Src>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<ShipCoeffEncodings<BE::OwnedBuf, BE::ZnxWord>>
 where
-    BE: Backend<ZnxWord = i64, Ring = Standard> + CKKSEncodingImpl<F>,
+    BE: Backend<ZnxWord = i64> + CKKSEncodingImpl<F>,
     for<'x> BE::BufRef<'x>: HostDataRef,
     Module<BE>: ModuleN + CKKSEncodingOps<BE, F> + GLWEBytesOf<BE> + GLWENormalize<BE>,
     F: CKKSShipScalar,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
     ensure!(
-        module.n() == plan.n(),
-        "SHIP module degree {} does not match plan degree {}",
-        module.n(),
-        plan.n()
+        plan.n() <= module.n(),
+        "SHIP plan degree {} exceeds the module degree {}",
+        plan.n(),
+        module.n()
     );
     ensure!(
         ct.log_delta() <= ct.k().as_usize(),

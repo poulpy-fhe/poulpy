@@ -2,7 +2,7 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use poulpy_hal::{
     api::{ModuleNew, ScratchOwnedAlloc},
-    layouts::{Backend, Module, ScratchOwned},
+    layouts::{Backend, Module, Ring, ScratchOwned},
     source::Source,
 };
 
@@ -14,9 +14,9 @@ use crate::{
 };
 
 /// Secret-key encryption rejects mismatched operand degrees and degrees above the module in all builds.
-pub fn test_glwe_encrypt_degree_mismatch<BE: Backend>()
+pub fn test_glwe_encrypt_degree_mismatch<BE: Backend, Rg: Ring>()
 where
-    Module<BE>: ModuleNew<BE> + GLWEEncryptSk<BE> + GLWESecretPreparedFactory<BE>,
+    Module<BE>: ModuleNew<BE> + GLWEEncryptSk<BE, Rg> + GLWESecretPreparedFactory<BE, Rg>,
 {
     let n = 2 * BE::MIN_DEGREE.max(16);
     let module = Module::<BE>::new(n as u64);
@@ -64,7 +64,7 @@ where
 /// bit, which for `k_digit = dsize * base2k` is the old limb placement. Where
 /// the vector fits an `i128`, the recomposed value is also checked exactly.
 /// The selected column is fully overwritten and the other is untouched.
-pub fn test_gglwe_gadget_row_plaintext<BE: crate::test_suite::noise::TestBackend>(
+pub fn test_gglwe_gadget_row_plaintext<BE: crate::test_suite::noise::TestBackend<Rg>, Rg: Ring>(
     params: &poulpy_hal::test_suite::TestParams,
     module: &Module<BE>,
 ) where
@@ -83,7 +83,7 @@ pub fn test_gglwe_gadget_row_plaintext<BE: crate::test_suite::noise::TestBackend
     let b: usize = params.base2k;
     let mut source = Source::new([5; 32]);
     // Column 0 holds small digits, column 1 digits near the normalization domain.
-    let mut pt: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = module.scalar_znx_alloc(n, 2);
+    let mut pt: ScalarZnx<BE::OwnedBuf, BE::ZnxWord, Rg> = module.scalar_znx_alloc(n, 2);
     for x in pt.at_mut(0, 0) {
         *x = source.next_i64().rem_euclid(7) - 3;
     }
@@ -99,7 +99,7 @@ pub fn test_gglwe_gadget_row_plaintext<BE: crate::test_suite::noise::TestBackend
             let size: usize = k.div_ceil(b);
             for (row, pt_col, res_col) in (0..dnum).flat_map(|r| [(r, 0, 0), (r, 1, 1), (r, 0, 1)]) {
                 let position: usize = k_offset + (row + 1) * k_digit;
-                let garbage = |v: &mut poulpy_hal::layouts::VecZnx<BE::OwnedBuf, BE::ZnxWord>, seed: u8| {
+                let garbage = |v: &mut poulpy_hal::layouts::VecZnx<BE::OwnedBuf, BE::ZnxWord, Rg>, seed: u8| {
                     let mut s = Source::new([seed; 32]);
                     for col in 0..2 {
                         for j in 0..size {
@@ -107,40 +107,40 @@ pub fn test_gglwe_gadget_row_plaintext<BE: crate::test_suite::noise::TestBackend
                         }
                     }
                 };
-                let mut res = vec_znx_alloc_zeroed::<BE>(n, 2, size);
+                let mut res = vec_znx_alloc_zeroed::<BE, Rg>(n, 2, size);
                 garbage(&mut res, 9);
                 crate::gadget::gglwe_gadget_row_plaintext(
                     module,
-                    &mut vec_znx_backend_mut::<BE>(&mut res),
+                    &mut vec_znx_backend_mut::<BE, Rg>(&mut res),
                     res_col,
                     b,
                     k,
                     row,
                     k_digit,
                     k_offset,
-                    &scalar_znx_backend_ref::<BE>(&pt),
+                    &scalar_znx_backend_ref::<BE, Rg>(&pt),
                     pt_col,
                     &mut poisoned_scratch::<BE>(module.vec_znx_normalize_tmp_bytes()).borrow(),
                 );
 
                 let limb: usize = position.div_ceil(b) - 1;
-                let mut placed = vec_znx_alloc_zeroed::<BE>(n, 1, limb + 1);
+                let mut placed = vec_znx_alloc_zeroed::<BE, Rg>(n, 1, limb + 1);
                 module.vec_znx_add_scalar_assign(
-                    &mut vec_znx_backend_mut::<BE>(&mut placed),
+                    &mut vec_znx_backend_mut::<BE, Rg>(&mut placed),
                     0,
                     limb,
-                    &scalar_znx_backend_ref::<BE>(&pt),
+                    &scalar_znx_backend_ref::<BE, Rg>(&pt),
                     pt_col,
                 );
-                let mut want = vec_znx_alloc_zeroed::<BE>(n, 2, size);
+                let mut want = vec_znx_alloc_zeroed::<BE, Rg>(n, 2, size);
                 garbage(&mut want, 9);
                 module.vec_znx_normalize(
-                    &mut vec_znx_backend_mut::<BE>(&mut want),
+                    &mut vec_znx_backend_mut::<BE, Rg>(&mut want),
                     b,
                     k,
                     ((limb + 1) * b - position) as i64,
                     res_col,
-                    &vec_znx_backend_ref::<BE>(&placed),
+                    &vec_znx_backend_ref::<BE, Rg>(&placed),
                     b,
                     0,
                     &mut scratch.borrow(),

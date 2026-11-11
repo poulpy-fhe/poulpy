@@ -29,7 +29,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::{ReimNew, ScratchOwnedBorrow, VecZnxDftAlloc},
-    layouts::{Backend, HostBytesBackend, Module, PrepareHint, ScratchArena, Standard, VecZnxDftToBackendMut},
+    layouts::{Backend, HostBytesBackend, Module, PrepareHint, Ring, ScratchArena, Standard, VecZnxDftToBackendMut},
 };
 
 use crate::{
@@ -43,10 +43,10 @@ use crate::{
 };
 
 use super::helpers::{
-    PT_PREC, TestContextBackend, TestContextModule, TestScalar, TestVector, alloc_ct, alloc_scratch, assert_ckks_error,
-    assert_ckks_internal, assert_decrypt_precision, assert_decrypt_precision_at_log_delta, assert_invalid_operand, ckks_encrypt,
-    ckks_encrypt_with_prec, ckks_pt_cst_full, encode_and_upload_pt, gen_sk_with_raw, gen_tsk, precision_at, quantize,
-    quantized_const, quantized_vector, test_vector_1, test_vector_2, want_mul, want_rotate,
+    PT_PREC, TestContextBackend, TestContextModule, TestContextSharedModule, TestScalar, TestVector, alloc_ct, alloc_scratch,
+    assert_ckks_error, assert_ckks_internal, assert_decrypt_precision, assert_decrypt_precision_at_log_delta,
+    assert_invalid_operand, ckks_encrypt, ckks_encrypt_with_prec, ckks_pt_cst_full, encode_and_upload_pt, gen_sk_with_raw,
+    gen_tsk, precision_at, quantize, quantized_const, quantized_vector, test_vector_1, test_vector_2, want_mul, want_rotate,
 };
 use super::parity::helpers::{snapshot, with_scratch};
 
@@ -88,7 +88,7 @@ fn cmul_scalar_acc<F: TestScalar>(acc_re: &mut [F], acc_im: &mut [F], a_re: &[F]
 
 pub fn test_dot_product_ct_aligned<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -178,7 +178,7 @@ pub fn test_dot_product_ct_unaligned<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -261,7 +261,7 @@ pub fn test_dot_product_ct_unaligned_b<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -344,7 +344,7 @@ pub fn test_dot_product_ct_delta_log_delta<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -457,7 +457,7 @@ pub fn test_dot_product_ct_smaller_output<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -543,15 +543,15 @@ pub fn test_dot_product_ct_smaller_output<BE, F, E>(
 }
 
 /// The eager path: `ckks_mul_into` of the first pair, then `ckks_mul_add_ct_into` of each other.
-fn eager<BE: TestContextBackend, H: GetTensorKey<BE>>(
+fn eager<BE: TestContextBackend, H: GetTensorKey<BE, Rg>, Rg: Ring>(
     module: &Module<BE>,
-    dst: &mut CKKSCiphertextOwned<BE>,
-    a: &[&CKKSCiphertextOwned<BE>],
-    b: &[&CKKSCiphertextOwned<BE>],
+    dst: &mut CKKSCiphertextOwned<BE, Rg>,
+    a: &[&CKKSCiphertextOwned<BE, Rg>],
+    b: &[&CKKSCiphertextOwned<BE, Rg>],
     tsk: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextSharedModule<BE, Rg>,
 {
     module.ckks_mul_into(dst, a[0], b[0], tsk, scratch).unwrap();
     for (ai, bi) in a.iter().zip(b).skip(1) {
@@ -562,8 +562,8 @@ fn eager<BE: TestContextBackend, H: GetTensorKey<BE>>(
 /// A tensor-key store that holds its key at one width only.
 pub(crate) struct TensorKeyAt<'a, K>(pub(crate) &'a K, pub(crate) TorusPrecision);
 
-impl<BE: Backend, K: GetTensorKey<BE>> GetTensorKey<BE> for TensorKeyAt<'_, K> {
-    fn lookup_tensor_key(&self, k: TorusPrecision) -> poulpy_core::Result<GLWETensorKeyPreparedBackendRef<'_, BE>> {
+impl<BE: Backend, K: GetTensorKey<BE, Rg>, Rg: Ring> GetTensorKey<BE, Rg> for TensorKeyAt<'_, K> {
+    fn lookup_tensor_key(&self, k: TorusPrecision) -> poulpy_core::Result<GLWETensorKeyPreparedBackendRef<'_, BE, Rg>> {
         if k != self.1 {
             return Err(CoreError::GGLWEKeyUse {
                 op: "get_tensor_key",
@@ -576,19 +576,23 @@ impl<BE: Backend, K: GetTensorKey<BE>> GetTensorKey<BE> for TensorKeyAt<'_, K> {
 
 /// Runs a dot product expected to fail before its scratch check on an empty arena, checks that `dst` is
 /// untouched, and returns the error.
-fn assert_rejected<BE: TestContextBackend, H: GetTensorKey<BE>>(
+fn assert_rejected<BE: TestContextBackend, H: GetTensorKey<BE, Rg>, Rg: Ring>(
     module: &Module<BE>,
-    dst: &mut CKKSCiphertextOwned<BE>,
-    a: &[&CKKSCiphertextOwned<BE>],
-    b: &[&CKKSCiphertextOwned<BE>],
+    dst: &mut CKKSCiphertextOwned<BE, Rg>,
+    a: &[&CKKSCiphertextOwned<BE, Rg>],
+    b: &[&CKKSCiphertextOwned<BE, Rg>],
     tsk: &H,
 ) -> CKKSError
 where
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextSharedModule<BE, Rg>,
 {
-    let before = snapshot::<BE, _>(&*dst);
+    let before = snapshot::<BE, _, Rg>(&*dst);
     let err = with_scratch::<BE, _>(0, |scratch| module.ckks_dot_product_ct(dst, a, b, tsk, scratch)).unwrap_err();
-    assert_eq!(snapshot::<BE, _>(&*dst), before, "a rejected dot product wrote dst: {err}");
+    assert_eq!(
+        snapshot::<BE, _, Rg>(&*dst),
+        before,
+        "a rejected dot product wrote dst: {err}"
+    );
     err
 }
 
@@ -602,7 +606,7 @@ where
 /// narrow `dst` are rejected with `dst` untouched.
 pub fn test_dot_product_ct_lazy<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -672,10 +676,10 @@ where
             module.ckks_dot_product_ct(&mut lazy, &a_refs, &b_refs, &tsk, scratch)
         })
         .unwrap();
-        let have = snapshot::<BE, _>(&lazy);
+        let have = snapshot::<BE, _, Standard>(&lazy);
 
         // Pairs of zeros add nothing to the products, whichever circuit sums them.
-        let zero = |ct: &CKKSCiphertextOwned<BE>| {
+        let zero = |ct: &CKKSCiphertextOwned<BE, Standard>| {
             let mut zero = ct.clone();
             module.glwe_sub(&mut zero, ct, ct);
             zero
@@ -692,14 +696,14 @@ where
         })
         .unwrap();
         assert_eq!(
-            snapshot::<BE, _>(&padded),
-            snapshot::<BE, _>(&product),
+            snapshot::<BE, _, Standard>(&padded),
+            snapshot::<BE, _, Standard>(&product),
             "{label}: a pair beside pairs of zeros is not its product"
         );
 
         let mut want = alloc_ct(&params, module, dst_k);
         eager(module, &mut want, &a_refs, &b_refs, &tsk, &mut scratch.borrow());
-        let want = snapshot::<BE, _>(&want);
+        let want = snapshot::<BE, _, Standard>(&want);
         assert_eq!(
             (have.layout, &have.noise),
             (want.layout, &want.noise),
@@ -729,7 +733,11 @@ where
             module.ckks_dot_product_ct(&mut keyed, &a_refs, &b_refs, &TensorKeyAt(&tsk, key_k), scratch)
         })
         .unwrap();
-        assert_eq!(snapshot::<BE, _>(&keyed), have, "{label}: a key held at {key_k:?} only");
+        assert_eq!(
+            snapshot::<BE, _, Standard>(&keyed),
+            have,
+            "{label}: a key held at {key_k:?} only"
+        );
         if dst_k > a_k.max(b_k) {
             let at_dst = TensorKeyAt(&tsk, TorusPrecision(dst_k as u32));
             let err = assert_rejected(module, &mut lazy, &a_refs, &b_refs, &at_dst);
@@ -793,7 +801,7 @@ pub fn test_dot_product_ct_long_sum<BE, F, E>(
     _module: &Module<BE>,
     _host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -857,7 +865,7 @@ pub fn test_dot_product_ct_non_uniform<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -907,8 +915,8 @@ pub fn test_dot_product_ct_non_uniform<BE, F, E>(
         let mut want = alloc_ct(&params, module, params.k);
         eager(module, &mut want, &a, &b, &tsk, &mut scratch.borrow());
         assert_eq!(
-            snapshot::<BE, _>(&have),
-            snapshot::<BE, _>(&want),
+            snapshot::<BE, _, Standard>(&have),
+            snapshot::<BE, _, Standard>(&want),
             "dot_product_ct_non_uniform {label}: not the eager path"
         );
     }
@@ -916,20 +924,20 @@ pub fn test_dot_product_ct_non_uniform<BE, F, E>(
 
 /// Runs a prepared dot product expected to fail before its scratch check on an empty arena, checks that `dst` is
 /// untouched, and returns the error.
-fn assert_prepared_rejected<BE: TestContextBackend, H: GetTensorKey<BE>>(
+fn assert_prepared_rejected<BE: TestContextBackend, H: GetTensorKey<BE, Rg>, Rg: Ring>(
     module: &Module<BE>,
-    dst: &mut CKKSCiphertextOwned<BE>,
-    a: &[&CKKSLeftOperandPrepared<BE>],
-    b: &[&CKKSRightOperandPrepared<BE>],
+    dst: &mut CKKSCiphertextOwned<BE, Rg>,
+    a: &[&CKKSLeftOperandPrepared<BE, Rg>],
+    b: &[&CKKSRightOperandPrepared<BE, Rg>],
     tsk: &H,
 ) -> CKKSError
 where
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextSharedModule<BE, Rg>,
 {
-    let before = snapshot::<BE, _>(&*dst);
+    let before = snapshot::<BE, _, Rg>(&*dst);
     let err = with_scratch::<BE, _>(0, |scratch| module.ckks_dot_product_prepared(dst, a, b, tsk, scratch)).unwrap_err();
     assert_eq!(
-        snapshot::<BE, _>(&*dst),
+        snapshot::<BE, _, Rg>(&*dst),
         before,
         "a rejected prepared dot product wrote dst: {err}"
     );
@@ -946,7 +954,7 @@ where
 /// that order, with `dst` untouched.
 pub fn test_dot_product_prepared<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -961,13 +969,13 @@ where
     let (re1, im1) = test_vector_1::<F>(m);
     let (re2, im2) = test_vector_2::<F>(m);
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
-    let prepare_left = |ct: &CKKSCiphertextOwned<BE>, hint| {
+    let prepare_left = |ct: &CKKSCiphertextOwned<BE, Standard>, hint| {
         with_scratch::<BE, _>(module.ckks_left_operand_prepare_tmp_bytes(ct), |s| {
             module.ckks_left_operand_prepare_alloc(ct, hint, s)
         })
         .unwrap()
     };
-    let prepare_right = |ct: &CKKSCiphertextOwned<BE>, hint| {
+    let prepare_right = |ct: &CKKSCiphertextOwned<BE, Standard>, hint| {
         with_scratch::<BE, _>(module.ckks_right_operand_prepare_tmp_bytes(ct), |s| {
             module.ckks_right_operand_prepare_alloc(ct, hint, s)
         })
@@ -1008,7 +1016,7 @@ where
         let mut want = alloc_ct(p, module, p.k);
         let bytes = module.ckks_dot_product_ct_tmp_bytes(n, &want, a[0], b[0], tsk);
         with_scratch::<BE, _>(bytes, |scratch| module.ckks_dot_product_ct(&mut want, &a, &b, tsk, scratch)).unwrap();
-        let want = snapshot::<BE, _>(&want);
+        let want = snapshot::<BE, _, Standard>(&want);
         for (ha, hb) in [(0, 0), (1, 1), (0, 1), (1, 0)] {
             let label = format!("dot_product_prepared pairs={n} hints={:?}", (HINTS[ha], HINTS[hb]));
             let lhs: Vec<&_> = left[ha][..n].iter().collect();
@@ -1019,7 +1027,7 @@ where
                 module.ckks_dot_product_prepared(&mut have, &lhs, &rhs, tsk, scratch)
             })
             .unwrap();
-            assert_eq!(snapshot::<BE, _>(&have), want, "{label}: not ckks_dot_product_ct");
+            assert_eq!(snapshot::<BE, _, Standard>(&have), want, "{label}: not ckks_dot_product_ct");
         }
     }
 
@@ -1180,7 +1188,7 @@ pub fn test_dot_product_pt_vec_aligned<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -1272,10 +1280,10 @@ pub fn test_dot_product_prepared_pt_vec<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE> + GLWEMulPreparedPlainSum<BE> + VecZnxDftAlloc<BE>,
+    Module<BE>: TestContextModule<BE> + GLWEMulPreparedPlainSum<BE, Standard> + VecZnxDftAlloc<BE>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -1288,7 +1296,7 @@ pub fn test_dot_product_prepared_pt_vec<BE, F, E>(
     let sk = super::helpers::gen_sk(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
     let log_delta = params.prec().log_delta();
-    let prepare_left = |ct: &CKKSCiphertextOwned<BE>| {
+    let prepare_left = |ct: &CKKSCiphertextOwned<BE, Standard>| {
         with_scratch::<BE, _>(module.ckks_left_operand_prepare_tmp_bytes(ct), |s| {
             module.ckks_left_operand_prepare_alloc(ct, PrepareHint::Reuse, s)
         })
@@ -1333,7 +1341,7 @@ pub fn test_dot_product_prepared_pt_vec<BE, F, E>(
             .unwrap()
         })
         .collect();
-    let galois: Vec<i64> = ROTATIONS.iter().map(|&r| module.ckks_galois_element(r)).collect();
+    let galois: Vec<i64> = ROTATIONS.iter().map(|&r| module.ckks_galois_element::<Standard>(r)).collect();
     let (a, b): (Vec<&_>, Vec<&_>) = (lefts.iter().collect(), rights.iter().collect());
 
     let mut dst = alloc_ct(&params, module, params.k);
@@ -1387,7 +1395,7 @@ pub fn test_dot_product_prepared_pt_vec<BE, F, E>(
     )
     .unwrap();
     assert!(
-        snapshot::<BE, _>(&from_dft) == snapshot::<BE, _>(&dst),
+        snapshot::<BE, _, Standard>(&from_dft) == snapshot::<BE, _, Standard>(&dst),
         "{OP}: the DFT forms are not the summed product"
     );
     let mut short = module.vec_znx_dft_alloc(params.n, cols, acc_size - 1);
@@ -1404,7 +1412,7 @@ pub fn test_dot_product_prepared_pt_vec<BE, F, E>(
             reason: reason.into(),
         },
     );
-    let before = snapshot::<BE, _>(&from_dft);
+    let before = snapshot::<BE, _, Standard>(&from_dft);
     let err = with_scratch::<BE, _>(0, |s| {
         module.ckks_dot_product_prepared_pt_vec_from_dft(&mut from_dft, &mut short.to_backend_mut(), a[0], b[0], s)
     })
@@ -1418,7 +1426,7 @@ pub fn test_dot_product_prepared_pt_vec<BE, F, E>(
         },
     );
     assert!(
-        snapshot::<BE, _>(&from_dft) == before,
+        snapshot::<BE, _, Standard>(&from_dft) == before,
         "{OP}_from_dft: a rejection changed res"
     );
 
@@ -1433,11 +1441,11 @@ pub fn test_dot_product_prepared_pt_vec<BE, F, E>(
     })
     .unwrap();
     assert!(
-        snapshot::<BE, _>(&have) == snapshot::<BE, _>(&want),
+        snapshot::<BE, _, Standard>(&have) == snapshot::<BE, _, Standard>(&want),
         "{OP}: one term through 1 is not ckks_mul_pt_vec_into"
     );
 
-    let before = snapshot::<BE, _>(&have);
+    let before = snapshot::<BE, _, Standard>(&have);
     let even = [galois[0], 2, galois[2]];
     let err = with_scratch::<BE, _>(0, |s| module.ckks_dot_product_prepared_pt_vec(&mut have, &a, &b, &even, s)).unwrap_err();
     assert_ckks_error(
@@ -1488,7 +1496,7 @@ pub fn test_dot_product_prepared_pt_vec<BE, F, E>(
             reason: "every a[t] must share one layout and scale, and every b[t] one".into(),
         },
     );
-    assert!(snapshot::<BE, _>(&have) == before, "{OP}: a rejection changed dst");
+    assert!(snapshot::<BE, _, Standard>(&have) == before, "{OP}: a rejection changed dst");
 }
 
 /// `res += Σ a[t] · σ_{galois[t]}(b[t])` on `res` at the sum's frame, the scale of the terms and the width the product
@@ -1502,10 +1510,10 @@ pub fn test_dot_product_prepared_pt_vec_add<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE> + GLWEMulPreparedPlainSum<BE>,
+    Module<BE>: TestContextModule<BE> + GLWEMulPreparedPlainSum<BE, Standard>,
     F: TestScalar,
     E: ReimNew<F>,
 {
@@ -1519,7 +1527,7 @@ pub fn test_dot_product_prepared_pt_vec_add<BE, F, E>(
     let encrypt = |k: usize, re: &[F], im: &[F], scratch: &mut ScratchArena<'_, BE>| {
         ckks_encrypt(&params, module, host_module, &encoder, &sk, k, re, im, scratch)
     };
-    let left = |ct: &CKKSCiphertextOwned<BE>| {
+    let left = |ct: &CKKSCiphertextOwned<BE, Standard>| {
         with_scratch::<BE, _>(module.ckks_left_operand_prepare_tmp_bytes(ct), |s| {
             module.ckks_left_operand_prepare_alloc(ct, PrepareHint::Reuse, s)
         })
@@ -1556,7 +1564,10 @@ pub fn test_dot_product_prepared_pt_vec_add<BE, F, E>(
         for (terms, r) in [(1, 0), (1, 1), (2, -3)] {
             let label = format!("{OP} p={p} terms={terms} r={r}");
             let rotations = [r, r + 2];
-            let galois: Vec<i64> = rotations[..terms].iter().map(|&r| module.ckks_galois_element(r)).collect();
+            let galois: Vec<i64> = rotations[..terms]
+                .iter()
+                .map(|&r| module.ckks_galois_element::<Standard>(r))
+                .collect();
             let (mut want_re, mut want_im) = (im1.clone(), re1.clone());
             // Term `t` multiplies `a[t]`'s values by the rotation of `b[t]`'s, the other test vector.
             let values = [((&re1, &im1), (&re2, &im2)), ((&re2, &im2), (&re1, &im1))];
@@ -1564,8 +1575,8 @@ pub fn test_dot_product_prepared_pt_vec_add<BE, F, E>(
                 let (b_re, b_im) = want_rotate(&quantize(b_re, p), &quantize(b_im, p), rotation, m);
                 cmul_acc(&mut want_re, &mut want_im, a_re, a_im, &b_re, &b_im);
             }
-            let a_refs: Vec<&CKKSLeftOperandPrepared<BE>> = a[..terms].iter().collect();
-            let b_refs: Vec<&CKKSRightOperandPrepared<BE>> = b[..terms].iter().collect();
+            let a_refs: Vec<&CKKSLeftOperandPrepared<BE, Standard>> = a[..terms].iter().collect();
+            let b_refs: Vec<&CKKSRightOperandPrepared<BE, Standard>> = b[..terms].iter().collect();
 
             let mut res = encrypt(k_frame, &im1, &re1, &mut scratch.borrow());
             let layout = (res.glwe_layout(), res.log_delta(), res.log_budget());
@@ -1624,13 +1635,13 @@ pub fn test_dot_product_prepared_pt_vec_add<BE, F, E>(
         }
 
         // Refused before any write: `res` at another scale, `res` wider than the sum, and a scratch one byte short.
-        let galois = [module.ckks_galois_element(1)];
+        let galois = [module.ckks_galois_element::<Standard>(1)];
         let (a_refs, b_refs) = ([&a[0]], [&b[0]]);
         let mut other_scale = encrypt(k_frame, &re1, &im1, &mut scratch.borrow());
         other_scale.set_log_delta(other_scale.log_delta() - 1);
         let mut wider = encrypt(k_frame + params.base2k, &re1, &im1, &mut scratch.borrow());
         for (label, res) in [("another scale", &mut other_scale), ("wider than the sum", &mut wider)] {
-            let before = snapshot::<BE, _>(&*res);
+            let before = snapshot::<BE, _, Standard>(&*res);
             let bytes = module.ckks_dot_product_prepared_pt_vec_add_tmp_bytes(&*res, &a[0], &b[0]);
             let err = with_scratch::<BE, _>(bytes, |s| {
                 module.ckks_dot_product_prepared_pt_vec_add(res, &a_refs, &b_refs, &galois, s)
@@ -1638,12 +1649,12 @@ pub fn test_dot_product_prepared_pt_vec_add<BE, F, E>(
             .unwrap_err();
             assert_invalid_operand(label, &err, OP, "the product's scale and budget");
             assert!(
-                snapshot::<BE, _>(&*res) == before,
+                snapshot::<BE, _, Standard>(&*res) == before,
                 "{OP} p={p} {label}: res written before the refusal"
             );
         }
         let mut res = encrypt(k_frame, &im1, &re1, &mut scratch.borrow());
-        let before = snapshot::<BE, _>(&res);
+        let before = snapshot::<BE, _, Standard>(&res);
         let bytes = module.ckks_dot_product_prepared_pt_vec_add_tmp_bytes(&res, &a[0], &b[0]);
         let err = with_scratch::<BE, _>(bytes - 1, |s| {
             module.ckks_dot_product_prepared_pt_vec_add(&mut res, &a_refs, &b_refs, &galois, s)
@@ -1654,7 +1665,10 @@ pub fn test_dot_product_prepared_pt_vec_add<BE, F, E>(
             &err,
             &format!("{OP}: scratch below its query"),
         );
-        assert!(snapshot::<BE, _>(&res) == before, "{OP} p={p}: a refused call wrote res");
+        assert!(
+            snapshot::<BE, _, Standard>(&res) == before,
+            "{OP} p={p}: a refused call wrote res"
+        );
     }
 }
 
@@ -1663,7 +1677,7 @@ pub fn test_dot_product_const_aligned<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -1713,9 +1727,9 @@ pub fn test_dot_product_const_aligned<BE, F, E>(
             )
         })
         .collect();
-    let consts: Vec<CKKSPlaintext<_, _, _>> = const_coeffs
+    let consts: Vec<CKKSPlaintext<_, _, Standard>> = const_coeffs
         .iter()
-        .map(|r| ckks_pt_cst_full::<BE, F>(host_module, module, params.base2k.into(), PT_PREC, m, Some(*r), None))
+        .map(|r| ckks_pt_cst_full::<BE, F, Standard>(host_module, module, params.base2k.into(), PT_PREC, m, Some(*r), None))
         .collect();
     let pt_coeffs = vec![0usize; N];
 

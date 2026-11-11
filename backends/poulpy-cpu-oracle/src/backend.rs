@@ -4,30 +4,25 @@ use std::{marker::PhantomData, ptr::NonNull};
 
 use poulpy_hal::{
     AlignedBuf, alloc_aligned,
-    layouts::{Backend, ConjugateInvariant, Host, Module, Standard},
+    layouts::{Backend, ConjugateInvariant, Host, Module, Ring},
     oep::HalModuleImpl,
 };
 
 use crate::{family::DFTFamily, fft::Fft64, ntt::Ntt4x30, ring::OracleRing};
 
-/// Scalar correctness oracle over the transform family `F` and the ring `R`.
+/// Scalar correctness oracle over the transform family `F`, on both rings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Oracle<F: DFTFamily, R: OracleRing = Standard>(PhantomData<(F, R)>);
+pub struct Oracle<F: DFTFamily>(PhantomData<F>);
 
 /// Oracle using a scalar `f64` FFT.
-pub type FFT64Oracle<R = Standard> = Oracle<Fft64, R>;
+pub type FFT64Oracle = Oracle<Fft64>;
 
 /// Oracle using a scalar NTT over four 30-bit primes.
-pub type NTT4x30Oracle<R = Standard> = Oracle<Ntt4x30, R>;
+pub type NTT4x30Oracle = Oracle<Ntt4x30>;
 
-/// [`FFT64Oracle`] over the conjugate-invariant ring.
-pub type FFT64CIOracle = FFT64Oracle<ConjugateInvariant>;
-
-/// [`NTT4x30Oracle`] over the conjugate-invariant ring.
-pub type NTT4x30CIOracle = NTT4x30Oracle<ConjugateInvariant>;
-
-/// Transform tables for every standard degree up to that of the module degree,
-/// by `log2(n)`.
+/// Transform tables for every standard degree up to twice the module degree, by
+/// `log2(n)`: an operand of the conjugate-invariant ring computes in the standard
+/// ring of twice its degree.
 pub struct Handle<F: DFTFamily> {
     tables: Vec<F::Table>,
     /// Plans built on demand by the CKKS encoding.
@@ -37,25 +32,23 @@ pub struct Handle<F: DFTFamily> {
 
 /// The scheme plan cache of `module`.
 #[cfg(feature = "enable-ckks")]
-pub(crate) fn plan_cache<F: DFTFamily, R: OracleRing>(module: &Module<Oracle<F, R>>) -> &poulpy_hal::layouts::ModulePlanCache {
+pub(crate) fn plan_cache<F: DFTFamily>(module: &Module<Oracle<F>>) -> &poulpy_hal::layouts::ModulePlanCache {
     let handle: &Handle<F> = unsafe { &*module.ptr() };
     &handle.plans
 }
 
-/// The transform tables of `module` for degree `n`.
-pub(crate) fn table<F: DFTFamily, R: OracleRing>(module: &Module<Oracle<F, R>>, n: usize) -> &F::Table {
+/// The transform tables of `module` for the standard image of a degree-`n` operand of ring `Rg`.
+pub(crate) fn table<F: DFTFamily, Rg: OracleRing>(module: &Module<Oracle<F>>, n: usize) -> &F::Table {
+    assert!(n.is_power_of_two() && n <= module.n(), "degree is not served by the module");
     let handle: &Handle<F> = unsafe { &*module.ptr() };
-    assert!(
-        n.is_power_of_two() && (n.ilog2() as usize) < handle.tables.len(),
-        "degree is not served by the module"
-    );
-    &handle.tables[n.ilog2() as usize]
+    &handle.tables[Rg::std_degree(n).ilog2() as usize]
 }
 
-unsafe impl<F: DFTFamily, R: OracleRing> HalModuleImpl for Oracle<F, R> {
+unsafe impl<F: DFTFamily> HalModuleImpl for Oracle<F> {
     fn new(n: u64) -> Module<Self> {
         assert!(n.is_power_of_two(), "module degree must be a power of two, got {n}");
-        let top = R::std_degree(n as usize).ilog2();
+        // The conjugate-invariant ring of degree n embeds in the standard ring of degree 2n.
+        let top = ConjugateInvariant::std_degree(n as usize).ilog2();
         let tables = (0..=top).map(|log_n| F::table(1 << log_n)).collect();
         let ptr = NonNull::from(Box::leak(Box::new(Handle::<F> {
             tables,
@@ -66,11 +59,11 @@ unsafe impl<F: DFTFamily, R: OracleRing> HalModuleImpl for Oracle<F, R> {
     }
 }
 
-impl<F: DFTFamily, R: OracleRing> poulpy_hal::execution::ScratchWorkers for Oracle<F, R> {}
+impl<F: DFTFamily> poulpy_hal::execution::ScratchWorkers for Oracle<F> {}
 
-impl<R: OracleRing> poulpy_hal::layouts::MaxBase2k for NTT4x30Oracle<R> {
-    fn max_base2k(n: usize, products: usize, failure_bits: usize, squaring: bool) -> usize {
-        poulpy_hal::layouts::max_base2k_ntt::<Self>(
+impl poulpy_hal::layouts::MaxBase2k for NTT4x30Oracle {
+    fn max_base2k<Rg: Ring>(n: usize, products: usize, failure_bits: usize, squaring: bool) -> usize {
+        poulpy_hal::layouts::max_base2k_ntt::<Self, Rg>(
             <crate::Primes30 as poulpy_hal::layouts::PrimeSet>::LOG_Q_PRODUCT,
             n,
             products,
@@ -79,8 +72,8 @@ impl<R: OracleRing> poulpy_hal::layouts::MaxBase2k for NTT4x30Oracle<R> {
         )
     }
 
-    fn max_base2k_squares(n: usize, products: usize, squares: usize, failure_bits: usize) -> usize {
-        poulpy_hal::layouts::max_base2k_ntt_squares::<Self>(
+    fn max_base2k_squares<Rg: Ring>(n: usize, products: usize, squares: usize, failure_bits: usize) -> usize {
+        poulpy_hal::layouts::max_base2k_ntt_squares::<Self, Rg>(
             <crate::Primes30 as poulpy_hal::layouts::PrimeSet>::LOG_Q_PRODUCT,
             n,
             products,
@@ -90,17 +83,16 @@ impl<R: OracleRing> poulpy_hal::layouts::MaxBase2k for NTT4x30Oracle<R> {
     }
 }
 
-impl<R: OracleRing> poulpy_hal::layouts::MaxBase2k for FFT64Oracle<R> {
-    fn max_base2k(n: usize, products: usize, failure_bits: usize, squaring: bool) -> usize {
-        poulpy_hal::layouts::max_base2k_fft64::<Self>(n, products, failure_bits, squaring)
+impl poulpy_hal::layouts::MaxBase2k for FFT64Oracle {
+    fn max_base2k<Rg: Ring>(n: usize, products: usize, failure_bits: usize, squaring: bool) -> usize {
+        poulpy_hal::layouts::max_base2k_fft64::<Self, Rg>(n, products, failure_bits, squaring)
     }
 }
 
-impl<F: DFTFamily, R: OracleRing> Backend for Oracle<F, R> {
+impl<F: DFTFamily> Backend for Oracle<F> {
     const DFT_LIMBS_CONTIGUOUS: bool = true;
 
     type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;
-    type Ring = R;
     type DftWord = F::Dft;
     type ZnxWord = i64;
     type BigWord = F::Big;

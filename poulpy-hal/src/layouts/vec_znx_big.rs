@@ -7,8 +7,8 @@ use std::fmt;
 
 use crate::AlignedBuf;
 use crate::layouts::{
-    Backend, BigWord, Data, DataView, DataViewMut, DigestU64, HostDataMut, HostDataRef, VecZnxInfos, VecZnxShape, ZnxInfos,
-    ZnxView, ZnxViewMut, ZnxZero,
+    Backend, BigWord, Data, DataView, DataViewMut, DigestU64, HostDataMut, HostDataRef, Ring, Standard, VecZnxInfos, VecZnxShape,
+    ZnxInfos, ZnxView, ZnxViewMut, ZnxZero,
 };
 
 /// Extended-precision polynomial vector used as a result accumulator.
@@ -27,17 +27,17 @@ use crate::layouts::{
 /// this type implements, and [windows](crate::layouts#windows) for the
 /// semantics of `window_coeffs`/`window_limbs`.
 #[repr(C)]
-pub struct VecZnxBig<D: Data, W: BigWord, B: Backend<BigWord = W>> {
+pub struct VecZnxBig<D: Data, W: BigWord, B: Backend<BigWord = W>, Rg: Ring = Standard> {
     pub data: D,
     shape: VecZnxShape,
-    pub _phantom: PhantomData<(W, B)>,
+    pub _phantom: PhantomData<(W, B, Rg)>,
 }
 
 // Equality (and hashing, where provided) is defined directly on the
 // representation: same shape, same buffer bytes. No `W`/`B` value is ever
 // compared, so no bound on them is needed — in particular `Eq` holds even
 // for non-`Eq` words like `f64` (byte equality is a total equivalence).
-impl<D: Data, W: BigWord, B: Backend<BigWord = W>> PartialEq for VecZnxBig<D, W, B> {
+impl<D: Data, W: BigWord, B: Backend<BigWord = W>, Rg: Ring> PartialEq for VecZnxBig<D, W, B, Rg> {
     fn eq(&self, other: &Self) -> bool {
         crate::layouts::assert_dense(self, "VecZnxBig::eq");
         crate::layouts::assert_dense(other, "VecZnxBig::eq");
@@ -45,16 +45,16 @@ impl<D: Data, W: BigWord, B: Backend<BigWord = W>> PartialEq for VecZnxBig<D, W,
     }
 }
 
-impl<D: Data, W: BigWord, B: Backend<BigWord = W>> Eq for VecZnxBig<D, W, B> {}
+impl<D: Data, W: BigWord, B: Backend<BigWord = W>, Rg: Ring> Eq for VecZnxBig<D, W, B, Rg> {}
 
 /// The shape only: the representation is opaque.
-impl<D: Data, W: BigWord, B: Backend<BigWord = W>> std::fmt::Debug for VecZnxBig<D, W, B> {
+impl<D: Data, W: BigWord, B: Backend<BigWord = W>, Rg: Ring> std::fmt::Debug for VecZnxBig<D, W, B, Rg> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("VecZnxBig").field("shape", &self.shape).finish()
     }
 }
 
-impl<D: Data + std::hash::Hash, W: BigWord, B: Backend<BigWord = W>> std::hash::Hash for VecZnxBig<D, W, B> {
+impl<D: Data + std::hash::Hash, W: BigWord, B: Backend<BigWord = W>, Rg: Ring> std::hash::Hash for VecZnxBig<D, W, B, Rg> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         crate::layouts::assert_dense(self, "VecZnxBig::hash");
         self.shape.hash(state);
@@ -62,7 +62,7 @@ impl<D: Data + std::hash::Hash, W: BigWord, B: Backend<BigWord = W>> std::hash::
     }
 }
 
-impl<D: HostDataRef, W: BigWord, B: Backend<BigWord = W>> DigestU64 for VecZnxBig<D, W, B> {
+impl<D: HostDataRef, W: BigWord, B: Backend<BigWord = W>, Rg: Ring> DigestU64 for VecZnxBig<D, W, B, Rg> {
     fn digest_u64(&self) -> u64 {
         crate::layouts::assert_dense(self, "VecZnxBig::digest_u64");
         let mut h: DefaultHasher = DefaultHasher::new();
@@ -74,11 +74,11 @@ impl<D: HostDataRef, W: BigWord, B: Backend<BigWord = W>> DigestU64 for VecZnxBi
     }
 }
 
-impl<D: HostDataRef, W: BigWord, B: Backend<BigWord = W>> ZnxView for VecZnxBig<D, W, B> {
+impl<D: HostDataRef, W: BigWord, B: Backend<BigWord = W>, Rg: Ring> ZnxView for VecZnxBig<D, W, B, Rg> {
     type Scalar = W;
 }
 
-impl<D: Data, W: BigWord, B: Backend<BigWord = W>> ZnxInfos for VecZnxBig<D, W, B> {
+impl<D: Data, W: BigWord, B: Backend<BigWord = W>, Rg: Ring> ZnxInfos for VecZnxBig<D, W, B, Rg> {
     fn n(&self) -> usize {
         self.shape.n()
     }
@@ -92,7 +92,7 @@ impl<D: Data, W: BigWord, B: Backend<BigWord = W>> ZnxInfos for VecZnxBig<D, W, 
     }
 }
 
-impl<D: Data, W: BigWord, B: Backend<BigWord = W>> VecZnxInfos for VecZnxBig<D, W, B> {
+impl<D: Data, W: BigWord, B: Backend<BigWord = W>, Rg: Ring> VecZnxInfos for VecZnxBig<D, W, B, Rg> {
     fn cols(&self) -> usize {
         self.shape.cols()
     }
@@ -110,20 +110,20 @@ impl<D: Data, W: BigWord, B: Backend<BigWord = W>> VecZnxInfos for VecZnxBig<D, 
     }
 }
 
-impl<D: Data, W: BigWord, B: Backend<BigWord = W>> DataView for VecZnxBig<D, W, B> {
+impl<D: Data, W: BigWord, B: Backend<BigWord = W>, Rg: Ring> DataView for VecZnxBig<D, W, B, Rg> {
     type D = D;
     fn data(&self) -> &Self::D {
         &self.data
     }
 }
 
-impl<D: Data, W: BigWord, B: Backend<BigWord = W>> DataViewMut for VecZnxBig<D, W, B> {
+impl<D: Data, W: BigWord, B: Backend<BigWord = W>, Rg: Ring> DataViewMut for VecZnxBig<D, W, B, Rg> {
     fn data_mut(&mut self) -> &mut Self::D {
         &mut self.data
     }
 }
 
-impl<D: Data, W: BigWord, B: Backend<BigWord = W>> VecZnxBig<D, W, B> {
+impl<D: Data, W: BigWord, B: Backend<BigWord = W>, Rg: Ring> VecZnxBig<D, W, B, Rg> {
     pub fn n(&self) -> usize {
         self.shape.n()
     }
@@ -141,7 +141,7 @@ impl<D: Data, W: BigWord, B: Backend<BigWord = W>> VecZnxBig<D, W, B> {
     }
 }
 
-impl<D: HostDataMut, W: BigWord, B: Backend<BigWord = W>> ZnxZero for VecZnxBig<D, W, B> {
+impl<D: HostDataMut, W: BigWord, B: Backend<BigWord = W>, Rg: Ring> ZnxZero for VecZnxBig<D, W, B, Rg> {
     fn zero(&mut self) {
         if self.is_dense() {
             self.raw_mut().fill(W::zero());
@@ -158,9 +158,9 @@ impl<D: HostDataMut, W: BigWord, B: Backend<BigWord = W>> ZnxZero for VecZnxBig<
     }
 }
 
-impl<D: Data, W: BigWord, B: Backend<BigWord = W>> VecZnxBig<D, W, B> {
+impl<D: Data, W: BigWord, B: Backend<BigWord = W>, Rg: Ring> VecZnxBig<D, W, B, Rg> {
     /// Allocates a zero-initialized backend-owned `VecZnxBig`.
-    pub(crate) fn alloc(n: usize, cols: usize, size: usize) -> VecZnxBigOwned<B>
+    pub(crate) fn alloc(n: usize, cols: usize, size: usize) -> VecZnxBigOwned<B, Rg>
     where
         B: Backend<OwnedBuf = D>,
     {
@@ -179,7 +179,7 @@ impl<D: Data, W: BigWord, B: Backend<BigWord = W>> VecZnxBig<D, W, B> {
     /// Panics if the buffer length does not equal `B::vec_znx_big_bytes_of(n, cols, size)`;
     /// a `Vec<u8>` argument is first copied into storage padded to a 64-byte multiple, so
     /// its padded length is what is compared.
-    pub fn from_bytes(n: usize, cols: usize, size: usize, bytes: impl Into<AlignedBuf>) -> VecZnxBigOwned<B>
+    pub fn from_bytes(n: usize, cols: usize, size: usize, bytes: impl Into<AlignedBuf>) -> VecZnxBigOwned<B, Rg>
     where
         B: Backend<OwnedBuf = D>,
     {
@@ -194,7 +194,7 @@ impl<D: Data, W: BigWord, B: Backend<BigWord = W>> VecZnxBig<D, W, B> {
     }
 }
 
-impl<D: Data, W: BigWord, B: Backend<BigWord = W>> VecZnxBig<D, W, B> {
+impl<D: Data, W: BigWord, B: Backend<BigWord = W>, Rg: Ring> VecZnxBig<D, W, B, Rg> {
     pub fn from_data(data: D, n: usize, cols: usize, size: usize) -> Self {
         Self {
             data,
@@ -204,7 +204,7 @@ impl<D: Data, W: BigWord, B: Backend<BigWord = W>> VecZnxBig<D, W, B> {
     }
 }
 
-impl<D: Data, W: BigWord, B: Backend<BigWord = W>> VecZnxBig<D, W, B> {
+impl<D: Data, W: BigWord, B: Backend<BigWord = W>, Rg: Ring> VecZnxBig<D, W, B, Rg> {
     /// Wraps `data` with an explicit shape, windowed or dense. No validation;
     /// element access is bounds-checked against the buffer.
     pub fn from_shape(data: D, shape: VecZnxShape) -> Self {
@@ -238,16 +238,16 @@ impl<D: Data, W: BigWord, B: Backend<BigWord = W>> VecZnxBig<D, W, B> {
 }
 
 /// Owned `VecZnxBig` backed by a backend-owned buffer.
-pub type VecZnxBigOwned<B> = VecZnxBig<<B as Backend>::OwnedBuf, <B as Backend>::BigWord, B>;
+pub type VecZnxBigOwned<B, Rg = Standard> = VecZnxBig<<B as Backend>::OwnedBuf, <B as Backend>::BigWord, B, Rg>;
 /// Shared backend-native borrow of a `VecZnxBig`.
-pub type VecZnxBigBackendRef<'a, B> = VecZnxBig<<B as Backend>::BufRef<'a>, <B as Backend>::BigWord, B>;
+pub type VecZnxBigBackendRef<'a, B, Rg = Standard> = VecZnxBig<<B as Backend>::BufRef<'a>, <B as Backend>::BigWord, B, Rg>;
 /// Mutable backend-native borrow of a `VecZnxBig`.
-pub type VecZnxBigBackendMut<'a, B> = VecZnxBig<<B as Backend>::BufMut<'a>, <B as Backend>::BigWord, B>;
+pub type VecZnxBigBackendMut<'a, B, Rg = Standard> = VecZnxBig<<B as Backend>::BufMut<'a>, <B as Backend>::BigWord, B, Rg>;
 
 /// Reborrow a mutable backend-native `VecZnxBig` view as a shared backend-native view.
-pub fn vec_znx_big_backend_ref_from_mut<'a, 'b, B: Backend + 'b>(
-    vec: &'a VecZnxBigBackendMut<'b, B>,
-) -> VecZnxBigBackendRef<'a, B> {
+pub fn vec_znx_big_backend_ref_from_mut<'a, 'b, B: Backend + 'b, Rg: Ring>(
+    vec: &'a VecZnxBigBackendMut<'b, B, Rg>,
+) -> VecZnxBigBackendRef<'a, B, Rg> {
     VecZnxBig {
         data: B::view_ref_mut(&vec.data),
         shape: vec.shape,
@@ -256,12 +256,12 @@ pub fn vec_znx_big_backend_ref_from_mut<'a, 'b, B: Backend + 'b>(
 }
 
 /// Borrow a backend-owned `VecZnxBig` using the backend's native view type.
-pub trait VecZnxBigToBackendRef<B: Backend> {
-    fn to_backend_ref(&self) -> VecZnxBigBackendRef<'_, B>;
+pub trait VecZnxBigToBackendRef<B: Backend, Rg: Ring = Standard> {
+    fn to_backend_ref(&self) -> VecZnxBigBackendRef<'_, B, Rg>;
 }
 
-impl<B: Backend> VecZnxBigToBackendRef<B> for VecZnxBig<B::OwnedBuf, B::BigWord, B> {
-    fn to_backend_ref(&self) -> VecZnxBigBackendRef<'_, B> {
+impl<B: Backend, Rg: Ring> VecZnxBigToBackendRef<B, Rg> for VecZnxBig<B::OwnedBuf, B::BigWord, B, Rg> {
+    fn to_backend_ref(&self) -> VecZnxBigBackendRef<'_, B, Rg> {
         VecZnxBig {
             data: B::view(&self.data),
             shape: self.shape,
@@ -270,8 +270,8 @@ impl<B: Backend> VecZnxBigToBackendRef<B> for VecZnxBig<B::OwnedBuf, B::BigWord,
     }
 }
 
-impl<B: Backend> VecZnxBigToBackendRef<B> for &VecZnxBig<B::BufRef<'_>, B::BigWord, B> {
-    fn to_backend_ref(&self) -> VecZnxBigBackendRef<'_, B> {
+impl<B: Backend, Rg: Ring> VecZnxBigToBackendRef<B, Rg> for &VecZnxBig<B::BufRef<'_>, B::BigWord, B, Rg> {
+    fn to_backend_ref(&self) -> VecZnxBigBackendRef<'_, B, Rg> {
         VecZnxBig {
             data: B::view_ref(&self.data),
             shape: self.shape,
@@ -281,23 +281,23 @@ impl<B: Backend> VecZnxBigToBackendRef<B> for &VecZnxBig<B::BufRef<'_>, B::BigWo
 }
 
 /// Reborrow an already backend-borrowed `VecZnxBig` as a shared backend-native view.
-pub trait VecZnxBigReborrowBackendRef<B: Backend> {
-    fn reborrow_backend_ref(&self) -> VecZnxBigBackendRef<'_, B>;
+pub trait VecZnxBigReborrowBackendRef<B: Backend, Rg: Ring = Standard> {
+    fn reborrow_backend_ref(&self) -> VecZnxBigBackendRef<'_, B, Rg>;
 }
 
-impl<B: Backend> VecZnxBigReborrowBackendRef<B> for VecZnxBig<B::BufMut<'_>, B::BigWord, B> {
-    fn reborrow_backend_ref(&self) -> VecZnxBigBackendRef<'_, B> {
-        vec_znx_big_backend_ref_from_mut::<B>(self)
+impl<B: Backend, Rg: Ring> VecZnxBigReborrowBackendRef<B, Rg> for VecZnxBig<B::BufMut<'_>, B::BigWord, B, Rg> {
+    fn reborrow_backend_ref(&self) -> VecZnxBigBackendRef<'_, B, Rg> {
+        vec_znx_big_backend_ref_from_mut::<B, Rg>(self)
     }
 }
 
 /// Mutably borrow a backend-owned `VecZnxBig` using the backend's native view type.
-pub trait VecZnxBigToBackendMut<B: Backend> {
-    fn to_backend_mut(&mut self) -> VecZnxBigBackendMut<'_, B>;
+pub trait VecZnxBigToBackendMut<B: Backend, Rg: Ring = Standard> {
+    fn to_backend_mut(&mut self) -> VecZnxBigBackendMut<'_, B, Rg>;
 }
 
-impl<B: Backend> VecZnxBigToBackendMut<B> for VecZnxBig<B::OwnedBuf, B::BigWord, B> {
-    fn to_backend_mut(&mut self) -> VecZnxBigBackendMut<'_, B> {
+impl<B: Backend, Rg: Ring> VecZnxBigToBackendMut<B, Rg> for VecZnxBig<B::OwnedBuf, B::BigWord, B, Rg> {
+    fn to_backend_mut(&mut self) -> VecZnxBigBackendMut<'_, B, Rg> {
         VecZnxBig {
             data: B::view_mut(&mut self.data),
             shape: self.shape,
@@ -306,8 +306,8 @@ impl<B: Backend> VecZnxBigToBackendMut<B> for VecZnxBig<B::OwnedBuf, B::BigWord,
     }
 }
 
-impl<B: Backend> VecZnxBigToBackendMut<B> for &mut VecZnxBig<B::BufMut<'_>, B::BigWord, B> {
-    fn to_backend_mut(&mut self) -> VecZnxBigBackendMut<'_, B> {
+impl<B: Backend, Rg: Ring> VecZnxBigToBackendMut<B, Rg> for &mut VecZnxBig<B::BufMut<'_>, B::BigWord, B, Rg> {
+    fn to_backend_mut(&mut self) -> VecZnxBigBackendMut<'_, B, Rg> {
         VecZnxBig {
             data: B::view_mut_ref(&mut self.data),
             shape: self.shape,
@@ -317,12 +317,12 @@ impl<B: Backend> VecZnxBigToBackendMut<B> for &mut VecZnxBig<B::BufMut<'_>, B::B
 }
 
 /// Reborrow an already backend-borrowed `VecZnxBig` as a mutable backend-native view.
-pub trait VecZnxBigReborrowBackendMut<B: Backend> {
-    fn reborrow_backend_mut(&mut self) -> VecZnxBigBackendMut<'_, B>;
+pub trait VecZnxBigReborrowBackendMut<B: Backend, Rg: Ring = Standard> {
+    fn reborrow_backend_mut(&mut self) -> VecZnxBigBackendMut<'_, B, Rg>;
 }
 
-impl<B: Backend> VecZnxBigReborrowBackendMut<B> for VecZnxBig<B::BufMut<'_>, B::BigWord, B> {
-    fn reborrow_backend_mut(&mut self) -> VecZnxBigBackendMut<'_, B> {
+impl<B: Backend, Rg: Ring> VecZnxBigReborrowBackendMut<B, Rg> for VecZnxBig<B::BufMut<'_>, B::BigWord, B, Rg> {
+    fn reborrow_backend_mut(&mut self) -> VecZnxBigBackendMut<'_, B, Rg> {
         VecZnxBig {
             data: B::view_mut_ref(&mut self.data),
             shape: self.shape,
@@ -331,7 +331,7 @@ impl<B: Backend> VecZnxBigReborrowBackendMut<B> for VecZnxBig<B::BufMut<'_>, B::
     }
 }
 
-impl<D: HostDataRef, W: BigWord, B: Backend<BigWord = W>> fmt::Display for VecZnxBig<D, W, B> {
+impl<D: HostDataRef, W: BigWord, B: Backend<BigWord = W>, Rg: Ring> fmt::Display for VecZnxBig<D, W, B, Rg> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "VecZnxBig(n={}, cols={}, size={})", self.n(), self.cols(), self.size())?;
 
@@ -362,14 +362,14 @@ impl<D: HostDataRef, W: BigWord, B: Backend<BigWord = W>> fmt::Display for VecZn
     }
 }
 
-impl<D: Data, W: BigWord, B: Backend<BigWord = W>> VecZnxBig<D, W, B> {
+impl<D: Data, W: BigWord, B: Backend<BigWord = W>, Rg: Ring> VecZnxBig<D, W, B, Rg> {
     /// Zero-copy re-tag of this container to a layout-compatible backend `B2`.
     ///
     /// The buffer moves as-is; only the type tag changes. Requires the
     /// [`VecZnxBigLayoutCompatible`](crate::layouts::VecZnxBigLayoutCompatible) marker declared by the backend
     /// pair. `D` is kept, so for further backend-native use `B2`'s buffer
     /// types must match `D` (true for every backend in the workspace).
-    pub fn into_backend<B2>(self) -> VecZnxBig<D, W, B2>
+    pub fn into_backend<B2>(self) -> VecZnxBig<D, W, B2, Rg>
     where
         B2: Backend<BigWord = W>,
         B: crate::layouts::VecZnxBigLayoutCompatible<B2>,

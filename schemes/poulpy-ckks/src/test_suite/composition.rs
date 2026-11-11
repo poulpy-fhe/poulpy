@@ -28,7 +28,7 @@ fn constant<BE, F, E>(
     m: usize,
 ) -> CKKSPlaintextOwned<BE>
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     F: TestScalar,
@@ -94,7 +94,7 @@ fn mul_by_y_expected<F: TestScalar>(
 /// Adding two plaintext-scaled copies of the same ciphertext stays accurate.
 pub fn test_linear_sum<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -163,7 +163,7 @@ where
 /// A mixed `c1*x + c2*x^2` composition remains decryptable and accurate.
 pub fn test_poly2_sum<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -239,7 +239,7 @@ where
 /// Adding a constant plaintext to `c1*x + c2*x^2` keeps the expected value.
 pub fn test_poly2_sum_with_const<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -317,7 +317,7 @@ where
 /// Evaluates `y * (c0 + c1*x + c2*x^2)` with encrypted `x` and `y`.
 pub fn test_poly2_mul<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -416,7 +416,7 @@ pub fn test_square_into_rejects_exhausted_capacity<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -471,7 +471,7 @@ pub fn test_square_into_rejects_exhausted_capacity<BE, F, E>(
         ct.log_budget() < ct.log_delta(),
         "expected squaring to consume all HE capacity"
     );
-    let (got_re, got_im) = ckks_decrypt_decode::<BE, F, E>(&params, module, &encoder, &ct, &sk, &mut scratch.borrow());
+    let (got_re, got_im) = ckks_decrypt_decode::<BE, F, E, Standard>(&params, module, &encoder, &ct, &sk, &mut scratch.borrow());
     for (idx, (re, im)) in got_re.iter().zip(got_im.iter()).enumerate() {
         assert!(
             re.is_finite() && im.is_finite(),
@@ -485,7 +485,7 @@ pub fn test_square_into_rejects_exhausted_capacity<BE, F, E>(
     }
 
     let mut no_capacity = dirty_ct(module, &ct, params.k);
-    let before = snapshot::<BE, _>(&no_capacity);
+    let before = snapshot::<BE, _, Standard>(&no_capacity);
     let err = with_scratch::<BE, _>(0, |s| module.ckks_square_into(&mut no_capacity, &ct, &tsk, s)).unwrap_err();
     assert_ckks_error(
         "square_into_rejects_exhausted_capacity",
@@ -499,7 +499,7 @@ pub fn test_square_into_rejects_exhausted_capacity<BE, F, E>(
         },
     );
     assert_eq!(
-        snapshot::<BE, _>(&no_capacity),
+        snapshot::<BE, _, Standard>(&no_capacity),
         before,
         "a refused ckks_square_into wrote res"
     );

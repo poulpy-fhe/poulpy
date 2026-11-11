@@ -1,6 +1,6 @@
 use poulpy_ckks::CKKSResult as Result;
 use poulpy_core::layouts::{GGLWEInfos, GetAutomorphismKey, GetTensorKey};
-use poulpy_hal::layouts::{Backend, ScratchArena};
+use poulpy_hal::layouts::{Backend, Ring, ScratchArena, Standard};
 
 use poulpy_ckks::layouts::CKKSRightOperandPrepared;
 use poulpy_core::layouts::GLWEInfos;
@@ -17,7 +17,7 @@ use crate::layouts::{
 /// call, `S` the slots of a ciphertext, and `p_W` the scale a public operand was encoded at. For a diagonal ciphertext `m`,
 /// `m.k`, `m.log_delta`, `m.log_sparsity` and `m.slots` are those of its diagonals' layout
 /// ([`BlasDiagonalCiphertextLayout::ct`](crate::layouts::BlasDiagonalCiphertextLayout)), which appends keep.
-pub trait BlasMatVecOps<BE: Backend> {
+pub trait BlasMatVecOps<BE: Backend, Rg: Ring = Standard> {
     /// Scratch bytes [`Self::blas_matvec_pt`] needs into `res` from `a` through `w` with rotation keys of layout
     /// `keys`, which it reads only when `w`'s maps rotate, resident or streamed by `w`'s form.
     ///
@@ -28,7 +28,7 @@ pub trait BlasMatVecOps<BE: Backend> {
     fn blas_matvec_pt_tmp_bytes<R, W, A, K>(&self, res: &R, w: &W, a: &A, keys: &K) -> usize
     where
         R: BlasVectorInfos,
-        W: BlasMatVecMaps<BE>,
+        W: BlasMatVecMaps<BE, Rg>,
         A: BlasVectorInfos,
         K: GGLWEInfos;
 
@@ -78,10 +78,10 @@ pub trait BlasMatVecOps<BE: Backend> {
     /// [`BlasMatVecOperand`]: crate::layouts::BlasMatVecOperand
     fn blas_matvec_pt<R, W, A, K>(&self, res: &mut R, w: &W, a: &A, keys: &K, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        R: BlasVectorMut<BE>,
-        W: BlasMatVecMaps<BE>,
-        A: BlasVectorRef<BE>,
-        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync;
+        R: BlasVectorMut<BE, Rg>,
+        W: BlasMatVecMaps<BE, Rg>,
+        A: BlasVectorRef<BE, Rg>,
+        K: GetAutomorphismKey<BE, Rg> + GetTensorKey<BE, Rg> + Sync;
 
     /// Scratch bytes [`Self::blas_grid_to_vector`] needs into `res` from a line of `a` through `w` with rotation keys of
     /// layout `keys`, which it reads only when `w`'s maps rotate, resident or streamed by `w`'s form, whatever the line.
@@ -93,7 +93,7 @@ pub trait BlasMatVecOps<BE: Backend> {
     fn blas_grid_to_vector_tmp_bytes<R, W, A, K>(&self, res: &R, w: &W, a: &A, keys: &K) -> usize
     where
         R: BlasVectorInfos,
-        W: BlasMatVecMaps<BE>,
+        W: BlasMatVecMaps<BE, Rg>,
         A: BlasGridInfos,
         K: GGLWEInfos;
 
@@ -131,10 +131,10 @@ pub trait BlasMatVecOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: BlasVectorMut<BE>,
-        W: BlasMatVecMaps<BE>,
-        A: BlasGrid<BE>,
-        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync;
+        R: BlasVectorMut<BE, Rg>,
+        W: BlasMatVecMaps<BE, Rg>,
+        A: BlasGrid<BE, Rg>,
+        K: GetAutomorphismKey<BE, Rg> + GetTensorKey<BE, Rg> + Sync;
 
     /// Scratch bytes [`Self::blas_vector_to_grid`] needs into a line of `res` from `a` through `w` with rotation keys
     /// of layout `keys`, which it reads only when `w`'s maps rotate, resident or streamed by `w`'s form, whatever the
@@ -147,7 +147,7 @@ pub trait BlasMatVecOps<BE: Backend> {
     fn blas_vector_to_grid_tmp_bytes<R, W, A, K>(&self, res: &R, w: &W, a: &A, keys: &K) -> usize
     where
         R: BlasGridInfos,
-        W: BlasMatVecMaps<BE>,
+        W: BlasMatVecMaps<BE, Rg>,
         A: BlasVectorInfos,
         K: GGLWEInfos;
 
@@ -187,10 +187,10 @@ pub trait BlasMatVecOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: BlasGridMut<BE>,
-        W: BlasMatVecMaps<BE>,
-        A: BlasVectorRef<BE>,
-        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync;
+        R: BlasGridMut<BE, Rg>,
+        W: BlasMatVecMaps<BE, Rg>,
+        A: BlasVectorRef<BE, Rg>,
+        K: GetAutomorphismKey<BE, Rg> + GetTensorKey<BE, Rg> + Sync;
 
     /// Scratch bytes [`Self::blas_matvec_diagonal`] needs into `res` from `a` through a matrix of `m`, with a tensor key of
     /// layout `tsk` and rotation keys of layout `keys`.
@@ -201,7 +201,7 @@ pub trait BlasMatVecOps<BE: Backend> {
     fn blas_matvec_diagonal_tmp_bytes<R, M, A, T, K>(&self, res: &R, m: &M, a: &A, tsk: &T, keys: &K) -> usize
     where
         R: BlasVectorInfos,
-        M: BlasDiagonalCiphertextMap<BE>,
+        M: BlasDiagonalCiphertextMap<BE, Rg>,
         A: BlasVectorInfos,
         T: GGLWEInfos,
         K: GGLWEInfos;
@@ -253,10 +253,10 @@ pub trait BlasMatVecOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: BlasVectorMut<BE>,
-        M: BlasDiagonalCiphertextMap<BE>,
-        A: BlasVectorRef<BE>,
-        K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync;
+        R: BlasVectorMut<BE, Rg>,
+        M: BlasDiagonalCiphertextMap<BE, Rg>,
+        A: BlasVectorRef<BE, Rg>,
+        K: GetAutomorphismKey<BE, Rg> + GetTensorKey<BE, Rg> + Sync;
 
     /// Scratch bytes [`Self::blas_append_row_diagonal`] needs on a matrix of `m` from `v` by a mask of layout `mask`, with
     /// rotation keys of layout `keys`, which it reads only when the append rotates `v`.
@@ -306,16 +306,16 @@ pub trait BlasMatVecOps<BE: Backend> {
     /// - Any other `Err` is a backend fault, and `m` is then unspecified.
     fn blas_append_row_diagonal<V, K>(
         &self,
-        m: &mut BlasDiagonalCiphertext<BE>,
+        m: &mut BlasDiagonalCiphertext<BE, Rg>,
         row: i64,
         v: &V,
-        mask: &CKKSRightOperandPrepared<BE>,
+        mask: &CKKSRightOperandPrepared<BE, Rg>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        V: BlasVectorRef<BE>,
-        K: GetAutomorphismKey<BE> + Sync;
+        V: BlasVectorRef<BE, Rg>,
+        K: GetAutomorphismKey<BE, Rg> + Sync;
 
     /// Scratch bytes [`Self::blas_append_col_diagonal`] needs, as [`Self::blas_append_row_diagonal_tmp_bytes`].
     ///
@@ -336,14 +336,14 @@ pub trait BlasMatVecOps<BE: Backend> {
     /// validator [`validate_blas_append_col_diagonal`](crate::layouts::validate_blas_append_col_diagonal).
     fn blas_append_col_diagonal<V, K>(
         &self,
-        m: &mut BlasDiagonalCiphertext<BE>,
+        m: &mut BlasDiagonalCiphertext<BE, Rg>,
         col: i64,
         v: &V,
-        mask: &CKKSRightOperandPrepared<BE>,
+        mask: &CKKSRightOperandPrepared<BE, Rg>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        V: BlasVectorRef<BE>,
-        K: GetAutomorphismKey<BE> + Sync;
+        V: BlasVectorRef<BE, Rg>,
+        K: GetAutomorphismKey<BE, Rg> + Sync;
 }

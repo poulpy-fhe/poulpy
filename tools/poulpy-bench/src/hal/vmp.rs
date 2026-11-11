@@ -10,8 +10,8 @@ use poulpy_hal::{
         VmpPMatPrepareTmpBytes,
     },
     layouts::{
-        Backend, Module, PrepareHint, ScratchOwned, VecZnxDftOwned, VecZnxDftToBackendMut, VmpPMatOwned, VmpPMatToBackendMut,
-        VmpPMatToBackendRef,
+        Backend, Module, PrepareHint, ScratchOwned, Standard, VecZnxDftOwned, VecZnxDftToBackendMut, VmpPMatOwned,
+        VmpPMatToBackendMut, VmpPMatToBackendRef,
     },
     source::Source,
 };
@@ -81,7 +81,7 @@ where
 
     bencher.iter(|| {
         let pmat = pmat.to_backend_ref();
-        let a = vec_znx_backend_ref::<B>(&a);
+        let a = vec_znx_backend_ref::<B, Standard>(&a);
         module.vmp_apply_dft(&mut res, &a, &pmat, &mut scratch.borrow());
         module.synchronize();
         black_box(());

@@ -27,7 +27,7 @@ pub fn test_encode_decode_slots_host_roundtrip<BE, F, E>(
     _module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     F: TestScalar,
@@ -39,8 +39,8 @@ pub fn test_encode_decode_slots_host_roundtrip<BE, F, E>(
 
     let (re_in, im_in) = test_vector_1::<F>(m);
 
-    let mut pt = host_module.ckks_plaintext_alloc_from_slots(
-        host_module.ckks_max_slots(),
+    let mut pt = host_module.ckks_plaintext_alloc_from_slots::<Standard>(
+        host_module.ckks_max_slots::<Standard>(),
         Base2K(params.base2k as u32),
         poulpy_core::layouts::TorusPrecision((log_delta + 10) as u32),
     );
@@ -66,8 +66,9 @@ pub fn test_encode_coeffs_into_rejects_coefficient_count<BE, F, E>(
     module: &poulpy_hal::layouts::Module<BE>,
     host_module: &poulpy_hal::layouts::Module<poulpy_hal::layouts::HostBytesBackend>,
 ) where
-    BE: crate::test_suite::helpers::TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
-    poulpy_hal::layouts::Module<BE>: crate::test_suite::helpers::TestContextModule<BE> + crate::api::CKKSEncodingOps<BE, F>,
+    BE: crate::test_suite::helpers::TestContextBackend,
+    poulpy_hal::layouts::Module<BE>:
+        crate::test_suite::helpers::TestContextModule<BE> + crate::api::CKKSEncodingOps<BE, F, Standard>,
     F: crate::test_suite::helpers::TestScalar,
     E: ReimNew<F>,
 {
@@ -85,7 +86,7 @@ pub fn test_encode_coeffs_into_rejects_coefficient_count<BE, F, E>(
     let mut pt = fixture_plaintext(module, &layout(params, 0, b + 3, b - 1, 0, SlotsKind::Complex), 43);
     let n = pt.n().as_usize();
     let coeffs = CKKSEncodingBuffer::<BE::OwnedBuf, F>::from_host::<BE>(&vec![F::from_f64(0.0).unwrap(); n - 1]);
-    let before = snapshot::<BE, _>(&pt);
+    let before = snapshot::<BE, _, Standard>(&pt);
     let err = module.ckks_encode_coeffs_into(&mut pt, &coeffs).unwrap_err();
     assert_ckks_error(
         "encode_coeffs_into: one coefficient short",
@@ -95,7 +96,11 @@ pub fn test_encode_coeffs_into_rejects_coefficient_count<BE, F, E>(
             reason: format!("coefficient count {} must equal plaintext degree {n}", n - 1),
         },
     );
-    assert_eq!(snapshot::<BE, _>(&pt), before, "a refused encoding wrote the plaintext");
+    assert_eq!(
+        snapshot::<BE, _, Standard>(&pt),
+        before,
+        "a refused encoding wrote the plaintext"
+    );
 }
 
 /// The host slot adapters refuse real and imaginary slices of two lengths, and a slot count that is not a nonzero
@@ -105,8 +110,9 @@ pub fn test_encode_slots_host_into_rejects_slot_counts<BE, F, E>(
     module: &poulpy_hal::layouts::Module<BE>,
     host_module: &poulpy_hal::layouts::Module<poulpy_hal::layouts::HostBytesBackend>,
 ) where
-    BE: crate::test_suite::helpers::TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
-    poulpy_hal::layouts::Module<BE>: crate::test_suite::helpers::TestContextModule<BE> + crate::api::CKKSEncodingOps<BE, F>,
+    BE: crate::test_suite::helpers::TestContextBackend,
+    poulpy_hal::layouts::Module<BE>:
+        crate::test_suite::helpers::TestContextModule<BE> + crate::api::CKKSEncodingOps<BE, F, Standard>,
     F: crate::test_suite::helpers::TestScalar,
     E: ReimNew<F>,
 {
@@ -133,7 +139,7 @@ pub fn test_encode_slots_host_into_rejects_slot_counts<BE, F, E>(
         ),
     ] {
         let (mut re, mut im): (Vec<F>, Vec<F>) = ((0..re_len).map(value).collect(), (0..im_len).map(value).collect());
-        let before = (snapshot::<BE, _>(&pt), re.clone(), im.clone());
+        let before = (snapshot::<BE, _, Standard>(&pt), re.clone(), im.clone());
         let err = with_scratch::<BE, _>(0, |s| module.ckks_encode_slots_host_into(&mut pt, &re, &im, s)).unwrap_err();
         assert_ckks_error(
             &format!("encode_slots_host_into: {case}"),
@@ -153,7 +159,7 @@ pub fn test_encode_slots_host_into_rejects_slot_counts<BE, F, E>(
             },
         );
         assert_eq!(
-            (snapshot::<BE, _>(&pt), re, im),
+            (snapshot::<BE, _, Standard>(&pt), re, im),
             before,
             "{case}: a refused adapter wrote the plaintext or slices"
         );

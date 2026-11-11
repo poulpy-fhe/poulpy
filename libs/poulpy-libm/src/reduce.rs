@@ -7,7 +7,7 @@ use poulpy_core::{
         BSGSMeta, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, IntPolyInfos, LWEInfos,
     },
 };
-use poulpy_hal::layouts::{Backend, Module, ScratchArena, Standard};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena, Standard, galois_element};
 
 use poulpy_ckks::{
     CKKSCtBounds, CKKSInfos, CKKSModuleInfos, SetCKKSInfos,
@@ -125,7 +125,7 @@ pub trait CKKSReductionOps<BE: Backend> {
         K: GetAutomorphismKey<BE>;
 }
 
-impl<BE: Backend<Ring = Standard>> CKKSReductionOps<BE> for Module<BE>
+impl<BE: Backend> CKKSReductionOps<BE> for Module<BE>
 where
     Module<BE>: CKKSAddOps<BE> + CKKSComparisonOps<BE> + CKKSCopyOps<BE> + CKKSRotateOps<BE> + GLWEBytesOf<BE>,
 {
@@ -133,9 +133,9 @@ where
     where
         C: CKKSCtBounds,
     {
-        slot_shifts(self, input)
-            .map(|shift| self.ckks_galois_element(shift))
-            .collect()
+        // The rotations of `input` act at the order of its own degree.
+        let order = 2 * input.n().as_usize() as i64;
+        slot_shifts(self, input).map(|shift| galois_element(shift, order)).collect()
     }
 
     fn ckks_sum_slots_tmp_bytes<R, I, A>(&self, res: &R, input: &I, keys: &A) -> usize
@@ -241,7 +241,7 @@ fn ensure_dense(op: &'static str, input: &impl CKKSCtBounds) -> Result<()> {
 
 /// Rotations `1, 2, 4, ...` below the slot count of `input`.
 fn slot_shifts<BE: Backend>(module: &Module<BE>, input: &impl CKKSCtBounds) -> impl Iterator<Item = i64> {
-    let log_slots = module.ckks_slots_of_degree(input.n().as_usize()).ilog2();
+    let log_slots = module.ckks_slots_of_degree::<Standard>(input.n().as_usize()).ilog2();
     (0..log_slots).map(|i| 1i64 << i)
 }
 

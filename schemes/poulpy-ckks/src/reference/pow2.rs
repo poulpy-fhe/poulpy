@@ -1,23 +1,26 @@
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::GLWEToBackendMut;
 use poulpy_core::{GLWEAdd, GLWECopy, GLWEShift, layouts::GLWEInfos};
-use poulpy_hal::layouts::{Backend, ScratchArena};
+use poulpy_hal::{
+    api::ModuleN,
+    layouts::{Backend, Ring, ScratchArena, Standard},
+};
 
 use crate::GLWEToBackendRef;
 
 use crate::{CKKSInfos, Scale, SetCKKSInfos, SlotsKind, checked_log_budget_sub, ckks_log_delta, ckks_unary_exact};
 
-pub trait CKKSPow2Reference<BE: Backend> {
+pub trait CKKSPow2Reference<BE: Backend, Rg: Ring = Standard>: ModuleN {
     fn ckks_mul_pow2_tmp_bytes_reference(&self, res_size: usize) -> usize
     where
-        Self: GLWEShift<BE>,
+        Self: GLWEShift<BE, Rg>,
     {
         self.glwe_shift_tmp_bytes(res_size)
     }
 
     fn ckks_div_pow2_tmp_bytes_reference(&self, res_size: usize) -> usize
     where
-        Self: GLWEShift<BE>,
+        Self: GLWEShift<BE, Rg>,
     {
         self.glwe_shift_tmp_bytes(res_size)
     }
@@ -30,29 +33,32 @@ pub trait CKKSPow2Reference<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: GLWEShift<BE>,
-        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + GLWEInfos + CKKSInfos,
+        Self: GLWEShift<BE, Rg>,
+        Dst: GLWEToBackendMut<BE, Rg> + CKKSInfos + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE, Rg> + GLWEInfos + CKKSInfos,
     {
+        crate::ensure_operand_degrees("ckks_mul_pow2_into", self, [dst.n(), src.n()])?;
         crate::ckks_shift_stamp_unary(self, "ckks_mul_pow2_into", dst, src, bits, 0, 0, scratch)?;
         Ok(())
     }
 
     fn ckks_mul_pow2_assign_reference<Dst>(&self, bits: usize, dst: &mut Dst, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Self: GLWEShift<BE>,
-        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
+        Self: GLWEShift<BE, Rg>,
+        Dst: GLWEToBackendMut<BE, Rg> + CKKSInfos + SetCKKSInfos,
     {
+        crate::ensure_operand_degrees("ckks_mul_pow2_assign", self, [dst.n()])?;
         self.glwe_lsh_assign(dst, bits, scratch);
         Ok(())
     }
 
     fn ckks_double_into_reference<Dst, Src>(&self, dst: &mut Dst, src: &Src, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Self: GLWEAdd<BE> + GLWEShift<BE>,
-        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + GLWEInfos + CKKSInfos,
+        Self: GLWEAdd<BE, Rg> + GLWEShift<BE, Rg>,
+        Dst: GLWEToBackendMut<BE, Rg> + CKKSInfos + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE, Rg> + GLWEInfos + CKKSInfos,
     {
+        crate::ensure_operand_degrees("ckks_double_into", self, [dst.n(), src.n()])?;
         if !ckks_unary_exact(dst, src) {
             return crate::ckks_shift_stamp_unary(self, "ckks_double_into", dst, src, 1, 0, 0, scratch);
         }
@@ -70,10 +76,11 @@ pub trait CKKSPow2Reference<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: GLWEShift<BE> + GLWECopy<BE>,
-        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + GLWEInfos + CKKSInfos,
+        Self: GLWEShift<BE, Rg> + GLWECopy<BE, Rg>,
+        Dst: GLWEToBackendMut<BE, Rg> + CKKSInfos + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE, Rg> + GLWEInfos + CKKSInfos,
     {
+        crate::ensure_operand_degrees("ckks_div_pow2_into", self, [dst.n(), src.n()])?;
         ensure_not_integer("ckks_div_pow2_into", src.slots(), bits)?;
         // The `bits` charged to the budget move under `log_delta` inside the
         // stamp, so the shift normalizes at the width the result reports.
@@ -83,8 +90,9 @@ pub trait CKKSPow2Reference<BE: Backend> {
 
     fn ckks_div_pow2_assign_reference<Dst>(&self, bits: usize, dst: &mut Dst) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE, Rg> + CKKSInfos + SetCKKSInfos,
     {
+        crate::ensure_operand_degrees("ckks_div_pow2_assign", self, [dst.n()])?;
         // Lossless relabel, mirroring `_into` with `offset = 0`: the `bits`
         // charged to the budget move under `log_delta`, leaving `k`, and so the
         // canonical flag, unchanged.
@@ -98,7 +106,7 @@ pub trait CKKSPow2Reference<BE: Backend> {
     }
 }
 
-impl<BE: Backend> CKKSPow2Reference<BE> for poulpy_hal::layouts::Module<BE> {}
+impl<BE: Backend, Rg: Ring> CKKSPow2Reference<BE, Rg> for poulpy_hal::layouts::Module<BE> {}
 
 /// Halving an integer need not give an integer, so `Integer` slots cannot be
 /// carried through a division; relabel them `Real` first.

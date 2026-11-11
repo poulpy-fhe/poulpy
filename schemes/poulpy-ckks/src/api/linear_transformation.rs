@@ -42,7 +42,7 @@ use poulpy_core::{
         TorusPrecision,
     },
 };
-use poulpy_hal::layouts::{Backend, ScratchArena};
+use poulpy_hal::layouts::{Backend, Ring, ScratchArena, Standard};
 
 use crate::{CKKSCtBounds, CKKSLayout, SetCKKSInfos, SlotsKind};
 
@@ -158,7 +158,7 @@ pub fn ckks_linear_transformation_output_layout<P: LtDiagonalMeta>(
 ///
 /// The `_self_` variants allocate and prepare the baby cache internally for code
 /// paths that evaluate a transform once.
-pub trait CKKSLinearTransformationOps<BE: Backend> {
+pub trait CKKSLinearTransformationOps<BE: Backend, Rg: Ring = Standard> {
     // ----- tmp_bytes -----
 
     /// Scratch bytes required by [`Self::ckks_linear_transformation_rhs_prepare`].
@@ -291,12 +291,12 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
     /// and slot kind.
     fn ckks_linear_transformation_rhs_prepare<P>(
         &self,
-        prepared: &mut LinearTransformationPrepared<BE>,
+        prepared: &mut LinearTransformationPrepared<BE, Rg>,
         lt: &LinearTransformation<P>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: GLWEToBackendRef<BE> + CKKSCtBounds;
+        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds;
 
     /// Fills `babies` with the prepared baby-step rotations of `src`.
     ///
@@ -304,16 +304,16 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
     /// [`LinearTransformationBabySteps::alloc`], or carved by poulpy-core's
     /// `ScratchArenaTakeGLWELinearTransformationBabySteps::take_glwe_linear_transformation_baby_steps_scratch`, for the
     /// rotations the caller wants populated. Performs zero `CnvPVecL` allocations.
-    fn ckks_linear_transformation_baby_steps_prepare<Src, H, L: BabyStepOperand<BE>>(
+    fn ckks_linear_transformation_baby_steps_prepare<Src, H, L: BabyStepOperand<BE, Rg>>(
         &self,
-        babies: &mut LinearTransformationBabySteps<BE, L>,
+        babies: &mut LinearTransformationBabySteps<BE, Rg, L>,
         src: &Src,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        H: GetAutomorphismKey<BE>;
+        Src: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        H: GetAutomorphismKey<BE, Rg>;
 
     // ----- eval (caller-supplied baby cache) -----
 
@@ -348,35 +348,35 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
     ///   at `dst`'s width;
     /// - `MissingAutomorphismKey` for a non-zero giant rotation of `lt` with no key at the output width;
     /// - `CKKSError::Internal` when `lt` has no diagonals or `babies` lacks one of `lt`'s baby rotations.
-    fn ckks_linear_transformation_eval_into<Dst, Src, P, H, L: BabyStepOperand<BE>>(
+    fn ckks_linear_transformation_eval_into<Dst, Src, P, H, L: BabyStepOperand<BE, Rg>>(
         &self,
         dst: &mut Dst,
         src: &Src,
-        babies: &LinearTransformationBabySteps<BE, L>,
+        babies: &LinearTransformationBabySteps<BE, Rg, L>,
         lt: &LinearTransformation<P>,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
-        H: GetAutomorphismKey<BE> + GetTensorKey<BE>;
+        Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        P: GLWEDiagonalProd<BE, Rg> + LtDiagonalMeta,
+        H: GetAutomorphismKey<BE, Rg> + GetTensorKey<BE, Rg>;
 
     /// In-place `dst = M · dst` with a caller-supplied baby cache (see
     /// [`Self::ckks_linear_transformation_eval_into`]).
-    fn ckks_linear_transformation_eval_assign<Dst, P, H, L: BabyStepOperand<BE>>(
+    fn ckks_linear_transformation_eval_assign<Dst, P, H, L: BabyStepOperand<BE, Rg>>(
         &self,
         dst: &mut Dst,
-        babies: &LinearTransformationBabySteps<BE, L>,
+        babies: &LinearTransformationBabySteps<BE, Rg, L>,
         lt: &LinearTransformation<P>,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
-        H: GetAutomorphismKey<BE> + GetTensorKey<BE>;
+        Dst: GLWEToBackendMut<BE, Rg> + GLWEToBackendRef<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        P: GLWEDiagonalProd<BE, Rg> + LtDiagonalMeta,
+        H: GetAutomorphismKey<BE, Rg> + GetTensorKey<BE, Rg>;
 
     /// Computes `dst = Σ_t M_t · src_t` over resident transforms that share one
     /// giant schedule, at the giant key switches of one transform. Term `t` is
@@ -392,20 +392,20 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
     /// schedule, diagonal layout, width, scale and slot kind, source layout and
     /// scale, or baby-cache layout and width. Also returns an error before writing `dst`
     /// if a term fails the checks of [`Self::ckks_linear_transformation_eval_into`].
-    fn ckks_linear_transformation_eval_sum_into<Dst, Src, P, H, L: BabyStepOperand<BE>>(
+    fn ckks_linear_transformation_eval_sum_into<Dst, Src, P, H, L: BabyStepOperand<BE, Rg>>(
         &self,
         dst: &mut Dst,
         srcs: &[&Src],
-        babies: &[&LinearTransformationBabySteps<BE, L>],
+        babies: &[&LinearTransformationBabySteps<BE, Rg, L>],
         lts: &[&LinearTransformation<P>],
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
-        H: GetAutomorphismKey<BE> + GetTensorKey<BE>;
+        Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        P: GLWEDiagonalProd<BE, Rg> + LtDiagonalMeta,
+        H: GetAutomorphismKey<BE, Rg> + GetTensorKey<BE, Rg>;
 
     // ----- eval (baby cache carved from scratch) -----
 
@@ -431,10 +431,10 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
-        H: GetAutomorphismKey<BE> + GetTensorKey<BE>;
+        Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        P: GLWEDiagonalProd<BE, Rg> + LtDiagonalMeta,
+        H: GetAutomorphismKey<BE, Rg> + GetTensorKey<BE, Rg>;
 
     /// In-place `dst = M · dst`, carving the baby cache from `scratch` (see
     /// [`Self::ckks_linear_transformation_eval_self_into`]), within
@@ -452,7 +452,7 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
-        H: GetAutomorphismKey<BE> + GetTensorKey<BE>;
+        Dst: GLWEToBackendMut<BE, Rg> + GLWEToBackendRef<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        P: GLWEDiagonalProd<BE, Rg> + LtDiagonalMeta,
+        H: GetAutomorphismKey<BE, Rg> + GetTensorKey<BE, Rg>;
 }

@@ -1,5 +1,5 @@
 use poulpy_hal::{
-    layouts::{Backend, ScalarZnxBackendMut, VecZnxBackendMut, VecZnxBigBackendMut},
+    layouts::{Backend, Ring, ScalarZnxBackendMut, Standard, VecZnxBackendMut, VecZnxBigBackendMut},
     source::Source,
 };
 
@@ -11,10 +11,10 @@ use crate::{Distribution, Noise};
 /// See [`Distribution`] for distribution semantics and
 /// [`SamplingImpl`](crate::oep::SamplingImpl) for the
 /// treatment of `NONE` / `ENCAPSULATED`.
-pub trait ScalarZnxFillDistribution<BE: Backend> {
+pub trait ScalarZnxFillDistribution<BE: Backend, Rg: Ring = Standard> {
     fn scalar_znx_fill_distribution(
         &self,
-        res: &mut ScalarZnxBackendMut<'_, BE>,
+        res: &mut ScalarZnxBackendMut<'_, BE, Rg>,
         res_col: usize,
         dist: Distribution,
         source: &mut Source,
@@ -25,12 +25,12 @@ pub trait ScalarZnxFillDistribution<BE: Backend> {
 ///
 /// See [`SamplingImpl`](crate::oep::SamplingImpl) for the exact placement and
 /// distribution. `res` is left un-normalized.
-pub trait VecZnxAddNoise<BE: Backend> {
+pub trait VecZnxAddNoise<BE: Backend, Rg: Ring = Standard> {
     fn vec_znx_add_noise(
         &self,
         base2k: usize,
         k: usize,
-        res: &mut VecZnxBackendMut<'_, BE>,
+        res: &mut VecZnxBackendMut<'_, BE, Rg>,
         res_col: usize,
         noise: Noise,
         source: &mut Source,
@@ -41,12 +41,12 @@ pub trait VecZnxAddNoise<BE: Backend> {
 ///
 /// See [`SamplingImpl`](crate::oep::SamplingImpl) for the exact placement and
 /// distribution. `res` is left un-normalized.
-pub trait VecZnxBigAddNoise<BE: Backend> {
+pub trait VecZnxBigAddNoise<BE: Backend, Rg: Ring = Standard> {
     fn vec_znx_big_add_noise(
         &self,
         base2k: usize,
         k: usize,
-        res: &mut VecZnxBigBackendMut<'_, BE>,
+        res: &mut VecZnxBigBackendMut<'_, BE, Rg>,
         res_col: usize,
         noise: Noise,
         source: &mut Source,

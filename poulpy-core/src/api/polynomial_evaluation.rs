@@ -1,6 +1,6 @@
 use crate::layouts::GetTensorKey;
 use anyhow::Result;
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Module, Ring, ScratchArena, Standard};
 
 use crate::layouts::{BabyStep, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, Parity, PowerBasisHelper};
 
@@ -11,13 +11,13 @@ use crate::layouts::{BabyStep, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, Pa
 /// terms, the hoisted `ct×ct` giant-step multiply, the `ct+ct` add, the
 /// accumulator seed and the final copy) is supplied by the scheme through this
 /// trait, which owns all precision bookkeeping and normalization.
-pub trait GLWEBSGSOps<BE, V, P, A, R = V>
+pub trait GLWEBSGSOps<BE, V, P, A, R = V, Rg: Ring = Standard>
 where
     BE: Backend,
-    V: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
-    P: GLWEToBackendRef<BE>,
-    A: GLWEToBackendRef<BE>,
-    R: GLWEToBackendMut<BE>,
+    V: GLWEToBackendMut<BE, Rg> + GLWEToBackendRef<BE, Rg>,
+    P: GLWEToBackendRef<BE, Rg>,
+    A: GLWEToBackendRef<BE, Rg>,
+    R: GLWEToBackendMut<BE, Rg>,
 {
     /// Backend-resident prepared right multiply operand, reusable across a
     /// giant-step level.
@@ -87,7 +87,7 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        H: GetTensorKey<BE>;
+        H: GetTensorKey<BE, Rg>;
 
     /// Computes `dst += a` with budget alignment, normalizing `dst`.
     fn add_assign(&self, module: &Module<BE>, dst: &mut V, a: &V, scratch: &mut ScratchArena<'_, BE>) -> Result<()>;
@@ -100,7 +100,7 @@ where
 ///
 /// All arithmetic is supplied by the scheme through `ops`; the engine only
 /// sequences the GLWE BSGS schedule.
-pub trait GLWEPolynomialEvaluation<BE: Backend> {
+pub trait GLWEPolynomialEvaluation<BE: Backend, Rg: Ring = Standard> {
     /// Evaluates a single baby step into `res`.
     #[allow(clippy::too_many_arguments)]
     fn glwe_eval_baby_step<Ops, V, P, A, G>(
@@ -113,11 +113,11 @@ pub trait GLWEPolynomialEvaluation<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Ops: GLWEBSGSOps<BE, V, P, A, V>,
-        V: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
-        P: GLWEToBackendRef<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE>,
-        G: PowerBasisHelper<BE, A>;
+        Ops: GLWEBSGSOps<BE, V, P, A, V, Rg>,
+        V: GLWEToBackendMut<BE, Rg> + GLWEToBackendRef<BE, Rg>,
+        P: GLWEToBackendRef<BE, Rg> + GLWEInfos,
+        A: GLWEToBackendRef<BE, Rg>,
+        G: PowerBasisHelper<BE, A, Rg>;
 
     /// Folds the evaluated baby steps into `res` using the giant-step schedule.
     fn glwe_eval_giant_steps<Ops, R, B, V, P, A, G, H>(
@@ -130,12 +130,12 @@ pub trait GLWEPolynomialEvaluation<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Ops: GLWEBSGSOps<BE, V, P, A, R>,
-        R: GLWEToBackendMut<BE>,
-        B: BabyStep<BE, Value = V>,
-        V: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
-        P: GLWEToBackendRef<BE>,
-        A: GLWEToBackendRef<BE>,
-        G: PowerBasisHelper<BE, A>,
-        H: GetTensorKey<BE>;
+        Ops: GLWEBSGSOps<BE, V, P, A, R, Rg>,
+        R: GLWEToBackendMut<BE, Rg>,
+        B: BabyStep<BE, Rg, Value = V>,
+        V: GLWEToBackendMut<BE, Rg> + GLWEToBackendRef<BE, Rg>,
+        P: GLWEToBackendRef<BE, Rg>,
+        A: GLWEToBackendRef<BE, Rg>,
+        G: PowerBasisHelper<BE, A, Rg>,
+        H: GetTensorKey<BE, Rg>;
 }

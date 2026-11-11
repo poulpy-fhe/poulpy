@@ -1,5 +1,8 @@
 use std::{error::Error, fmt};
 
+use poulpy_core::layouts::Degree;
+use poulpy_hal::api::ModuleN;
+
 /// Typed error returned by every fallible CKKS **operation** (the `api` op
 /// traits and the layers backing them).
 ///
@@ -8,6 +11,12 @@ use std::{error::Error, fmt};
 /// means "bootstrap now"; the layout/plan mismatch variants mean caller misuse.
 /// [`CKKSError::Internal`] carries an [`anyhow::Error`] context chain for
 /// invariant or backend failures and is not intended for matching.
+///
+/// Every operation refuses a ciphertext or linear-transformation diagonal above its module's degree before any write:
+/// with [`CKKSCompositionError::EncryptionDegreeMismatch`] for encryption and decryption, with
+/// [`CKKSCompositionError::InvalidOperand`] otherwise. A plaintext polynomial is checked to embed into its ciphertext's
+/// degree instead, and a constant plaintext only supplies coefficients. The `# Errors` section of an operation lists its
+/// other refusals.
 ///
 /// Setup-time constructors (plan compilation, key-set assembly) still return
 /// `anyhow::Result`; typed variants they raise internally are recovered by the
@@ -361,6 +370,22 @@ pub(crate) fn ensure_encryption_degrees(op: &'static str, module_n: usize, ct_n:
             module_n,
             ct_n,
             sk_n,
+        }
+        .into());
+    }
+    Ok(())
+}
+
+/// `InvalidOperand` for `op` when one of the operand `degrees` exceeds the degree of `module`.
+pub(crate) fn ensure_operand_degrees<M: ModuleN + ?Sized>(
+    op: &'static str,
+    module: &M,
+    degrees: impl IntoIterator<Item = Degree>,
+) -> Result<()> {
+    if degrees.into_iter().any(|n| n.as_usize() > module.n()) {
+        return Err(CKKSCompositionError::InvalidOperand {
+            op,
+            reason: "operand degree exceeds the module degree".into(),
         }
         .into());
     }

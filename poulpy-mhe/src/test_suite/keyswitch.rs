@@ -14,7 +14,7 @@ use poulpy_core::{
 use poulpy_hal::{
     AlignedBuf,
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAddScalarAssign, VecZnxCopy, VecZnxFillUniformSource},
-    layouts::{HostBackend, HostDataMut, HostDataRef, Module, ScratchOwned},
+    layouts::{HostBackend, HostDataMut, HostDataRef, Module, ScratchOwned, Standard},
     source::Source,
     test_suite::{vec_znx_backend_mut, vec_znx_backend_ref},
 };
@@ -699,7 +699,7 @@ where
     module.vec_znx_fill_uniform_source(
         BASE2K.as_usize(),
         K.as_usize(),
-        &mut vec_znx_backend_mut::<BE>(pt.data_mut()),
+        &mut vec_znx_backend_mut::<BE, Standard>(pt.data_mut()),
         0,
         &mut Source::new([30u8; 32]),
     );
@@ -752,9 +752,9 @@ where
     let mut mask = module.glwe_mask_alloc_from_infos(ct);
     for j in 0..ct.rank().as_usize() {
         module.vec_znx_copy(
-            &mut vec_znx_backend_mut::<BE>(mask.data_mut()),
+            &mut vec_znx_backend_mut::<BE, Standard>(mask.data_mut()),
             j,
-            &vec_znx_backend_ref::<BE>(ct.data()),
+            &vec_znx_backend_ref::<BE, Standard>(ct.data()),
             j + 1,
         );
     }

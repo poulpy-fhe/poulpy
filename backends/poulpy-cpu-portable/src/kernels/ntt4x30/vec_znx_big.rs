@@ -28,6 +28,7 @@
 //! [`fft64`]: crate::kernels::fft64
 
 use poulpy_core::Noise;
+use poulpy_hal::layouts::{HostBytesBackend, Ring};
 
 use crate::{
     kernels::{
@@ -178,12 +179,18 @@ pub fn ntt4x30_vec_znx_big_automorphism_assign_tmp_bytes_portable(n: usize) -> u
 ///
 /// Limbs present in both `a` and `b` are summed; limbs present in only one are copied;
 /// extra res limbs beyond both are zeroed.
-pub fn ntt4x30_vec_znx_big_add_portable<R, A, B, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize, b: &B, b_col: usize)
-where
+pub fn ntt4x30_vec_znx_big_add_portable<R, A, B, BE, Rg: Ring>(
+    res: &mut R,
+    res_col: usize,
+    a: &A,
+    a_col: usize,
+    b: &B,
+    b_col: usize,
+) where
     BE: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps,
-    R: VecZnxBigToBackendMut<BE>,
-    A: VecZnxBigToBackendRef<BE>,
-    B: VecZnxBigToBackendRef<BE>,
+    R: VecZnxBigToBackendMut<BE, Rg>,
+    A: VecZnxBigToBackendRef<BE, Rg>,
+    B: VecZnxBigToBackendRef<BE, Rg>,
     for<'x> BE::BufMut<'x>: HostDataMut,
     for<'x> BE::BufRef<'x>: HostDataRef,
 {
@@ -227,11 +234,11 @@ where
 
 /// In-place addition: `res[res_col] += a[a_col]` over the first `min(res.size(), a.size())`
 /// limbs.
-pub fn ntt4x30_vec_znx_big_add_assign_portable<R, A, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize)
+pub fn ntt4x30_vec_znx_big_add_assign_portable<R, A, BE, Rg: Ring>(res: &mut R, res_col: usize, a: &A, a_col: usize)
 where
     BE: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps,
-    R: VecZnxBigToBackendMut<BE>,
-    A: VecZnxBigToBackendRef<BE>,
+    R: VecZnxBigToBackendMut<BE, Rg>,
+    A: VecZnxBigToBackendRef<BE, Rg>,
     for<'x> BE::BufMut<'x>: HostDataMut,
     for<'x> BE::BufRef<'x>: HostDataRef,
 {
@@ -250,12 +257,18 @@ where
 
 /// Add a small (`i64`) polynomial `b` to a big (`i128`) polynomial `a`:
 /// `res[res_col] = a[a_col] + b[b_col]`.
-pub fn ntt4x30_vec_znx_big_add_small_portable<R, A, B, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize, b: &B, b_col: usize)
-where
+pub fn ntt4x30_vec_znx_big_add_small_portable<R, A, B, BE, Rg: Ring>(
+    res: &mut R,
+    res_col: usize,
+    a: &A,
+    a_col: usize,
+    b: &B,
+    b_col: usize,
+) where
     BE: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps,
-    R: VecZnxBigToBackendMut<BE>,
-    A: VecZnxBigToBackendRef<BE>,
-    B: VecZnxToBackendRef,
+    R: VecZnxBigToBackendMut<BE, Rg>,
+    A: VecZnxBigToBackendRef<BE, Rg>,
+    B: VecZnxToBackendRef<HostBytesBackend, Rg>,
     for<'x> BE::BufMut<'x>: HostDataMut,
     for<'x> BE::BufRef<'x>: HostDataRef,
 {
@@ -289,11 +302,11 @@ where
 }
 
 /// In-place: `res[res_col] += a[a_col]` where `a` is a `VecZnx` (i64 limbs).
-pub fn ntt4x30_vec_znx_big_add_small_assign_portable<R, A, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize)
+pub fn ntt4x30_vec_znx_big_add_small_assign_portable<R, A, BE, Rg: Ring>(res: &mut R, res_col: usize, a: &A, a_col: usize)
 where
     BE: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps,
-    R: VecZnxBigToBackendMut<BE>,
-    A: VecZnxToBackendRef,
+    R: VecZnxBigToBackendMut<BE, Rg>,
+    A: VecZnxToBackendRef<HostBytesBackend, Rg>,
     for<'x> BE::BufMut<'x>: HostDataMut,
 {
     let mut res = res.to_backend_mut();
@@ -310,12 +323,18 @@ where
 }
 
 /// Subtraction: `res[res_col] = a[a_col] - b[b_col]`.
-pub fn ntt4x30_vec_znx_big_sub_portable<R, A, B, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize, b: &B, b_col: usize)
-where
+pub fn ntt4x30_vec_znx_big_sub_portable<R, A, B, BE, Rg: Ring>(
+    res: &mut R,
+    res_col: usize,
+    a: &A,
+    a_col: usize,
+    b: &B,
+    b_col: usize,
+) where
     BE: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps,
-    R: VecZnxBigToBackendMut<BE>,
-    A: VecZnxBigToBackendRef<BE>,
-    B: VecZnxBigToBackendRef<BE>,
+    R: VecZnxBigToBackendMut<BE, Rg>,
+    A: VecZnxBigToBackendRef<BE, Rg>,
+    B: VecZnxBigToBackendRef<BE, Rg>,
     for<'x> BE::BufMut<'x>: HostDataMut,
     for<'x> BE::BufRef<'x>: HostDataRef,
 {
@@ -356,11 +375,11 @@ where
 }
 
 /// In-place subtraction: `res[res_col] -= a[a_col]`.
-pub fn ntt4x30_vec_znx_big_sub_assign_portable<R, A, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize)
+pub fn ntt4x30_vec_znx_big_sub_assign_portable<R, A, BE, Rg: Ring>(res: &mut R, res_col: usize, a: &A, a_col: usize)
 where
     BE: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps,
-    R: VecZnxBigToBackendMut<BE>,
-    A: VecZnxBigToBackendRef<BE>,
+    R: VecZnxBigToBackendMut<BE, Rg>,
+    A: VecZnxBigToBackendRef<BE, Rg>,
     for<'x> BE::BufMut<'x>: HostDataMut,
     for<'x> BE::BufRef<'x>: HostDataRef,
 {
@@ -378,11 +397,11 @@ where
 }
 
 /// Swap-subtract in-place: `res[res_col] = a[a_col] - res[res_col]`.
-pub fn ntt4x30_vec_znx_big_sub_negate_assign_portable<R, A, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize)
+pub fn ntt4x30_vec_znx_big_sub_negate_assign_portable<R, A, BE, Rg: Ring>(res: &mut R, res_col: usize, a: &A, a_col: usize)
 where
     BE: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps,
-    R: VecZnxBigToBackendMut<BE>,
-    A: VecZnxBigToBackendRef<BE>,
+    R: VecZnxBigToBackendMut<BE, Rg>,
+    A: VecZnxBigToBackendRef<BE, Rg>,
     for<'x> BE::BufMut<'x>: HostDataMut,
     for<'x> BE::BufRef<'x>: HostDataRef,
 {
@@ -405,7 +424,7 @@ where
 }
 
 /// `res = a - b` where `a` is `VecZnx` (i64) and `b` is `VecZnxBig` (i128).
-pub fn ntt4x30_vec_znx_big_sub_small_a_portable<R, A, B, BE>(
+pub fn ntt4x30_vec_znx_big_sub_small_a_portable<R, A, B, BE, Rg: Ring>(
     res: &mut R,
     res_col: usize,
     a: &A,
@@ -414,9 +433,9 @@ pub fn ntt4x30_vec_znx_big_sub_small_a_portable<R, A, B, BE>(
     b_col: usize,
 ) where
     BE: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps,
-    R: VecZnxBigToBackendMut<BE>,
-    A: VecZnxToBackendRef,
-    B: VecZnxBigToBackendRef<BE>,
+    R: VecZnxBigToBackendMut<BE, Rg>,
+    A: VecZnxToBackendRef<HostBytesBackend, Rg>,
+    B: VecZnxBigToBackendRef<BE, Rg>,
     for<'x> BE::BufMut<'x>: HostDataMut,
     for<'x> BE::BufRef<'x>: HostDataRef,
 {
@@ -452,7 +471,7 @@ pub fn ntt4x30_vec_znx_big_sub_small_a_portable<R, A, B, BE>(
 }
 
 /// `res = a - b` where `a` is `VecZnxBig` (i128) and `b` is `VecZnx` (i64).
-pub fn ntt4x30_vec_znx_big_sub_small_b_portable<R, A, B, BE>(
+pub fn ntt4x30_vec_znx_big_sub_small_b_portable<R, A, B, BE, Rg: Ring>(
     res: &mut R,
     res_col: usize,
     a: &A,
@@ -461,9 +480,9 @@ pub fn ntt4x30_vec_znx_big_sub_small_b_portable<R, A, B, BE>(
     b_col: usize,
 ) where
     BE: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps,
-    R: VecZnxBigToBackendMut<BE>,
-    A: VecZnxBigToBackendRef<BE>,
-    B: VecZnxToBackendRef,
+    R: VecZnxBigToBackendMut<BE, Rg>,
+    A: VecZnxBigToBackendRef<BE, Rg>,
+    B: VecZnxToBackendRef<HostBytesBackend, Rg>,
     for<'x> BE::BufMut<'x>: HostDataMut,
     for<'x> BE::BufRef<'x>: HostDataRef,
 {
@@ -497,11 +516,11 @@ pub fn ntt4x30_vec_znx_big_sub_small_b_portable<R, A, B, BE>(
 }
 
 /// In-place: `res[res_col] -= a[a_col]` where `a` is a `VecZnx` (i64).
-pub fn ntt4x30_vec_znx_big_sub_small_assign_portable<R, A, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize)
+pub fn ntt4x30_vec_znx_big_sub_small_assign_portable<R, A, BE, Rg: Ring>(res: &mut R, res_col: usize, a: &A, a_col: usize)
 where
     BE: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps,
-    R: VecZnxBigToBackendMut<BE>,
-    A: VecZnxToBackendRef,
+    R: VecZnxBigToBackendMut<BE, Rg>,
+    A: VecZnxToBackendRef<HostBytesBackend, Rg>,
     for<'x> BE::BufMut<'x>: HostDataMut,
 {
     let mut res = res.to_backend_mut();
@@ -518,11 +537,11 @@ where
 }
 
 /// In-place: `res[res_col] = a[a_col] - res[res_col]` where `a` is a `VecZnx` (i64).
-pub fn ntt4x30_vec_znx_big_sub_small_negate_assign_portable<R, A, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize)
+pub fn ntt4x30_vec_znx_big_sub_small_negate_assign_portable<R, A, BE, Rg: Ring>(res: &mut R, res_col: usize, a: &A, a_col: usize)
 where
     BE: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps,
-    R: VecZnxBigToBackendMut<BE>,
-    A: VecZnxToBackendRef,
+    R: VecZnxBigToBackendMut<BE, Rg>,
+    A: VecZnxToBackendRef<HostBytesBackend, Rg>,
     for<'x> BE::BufMut<'x>: HostDataMut,
 {
     let mut res = res.to_backend_mut();
@@ -544,11 +563,11 @@ where
 }
 
 /// Negate: `res[res_col] = -a[a_col]`.
-pub fn ntt4x30_vec_znx_big_negate_portable<R, A, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize)
+pub fn ntt4x30_vec_znx_big_negate_portable<R, A, BE, Rg: Ring>(res: &mut R, res_col: usize, a: &A, a_col: usize)
 where
     BE: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps,
-    R: VecZnxBigToBackendMut<BE>,
-    A: VecZnxBigToBackendRef<BE>,
+    R: VecZnxBigToBackendMut<BE, Rg>,
+    A: VecZnxBigToBackendRef<BE, Rg>,
     for<'x> BE::BufMut<'x>: HostDataMut,
     for<'x> BE::BufRef<'x>: HostDataRef,
 {
@@ -567,10 +586,10 @@ where
 }
 
 /// In-place negation: `res[res_col] = -res[res_col]`.
-pub fn ntt4x30_vec_znx_big_negate_assign_portable<R, BE>(res: &mut R, res_col: usize)
+pub fn ntt4x30_vec_znx_big_negate_assign_portable<R, BE, Rg: Ring>(res: &mut R, res_col: usize)
 where
     BE: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps,
-    R: VecZnxBigToBackendMut<BE>,
+    R: VecZnxBigToBackendMut<BE, Rg>,
     for<'x> BE::BufMut<'x>: HostDataMut,
 {
     let mut res = res.to_backend_mut();
@@ -582,11 +601,11 @@ where
 /// Sign-extend `i64` coefficients from `a[a_col]` into `i128` limbs of `res[res_col]`.
 ///
 /// Limbs beyond `a.size()` are zeroed.
-pub fn ntt4x30_vec_znx_big_from_small_portable<R, A, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize)
+pub fn ntt4x30_vec_znx_big_from_small_portable<R, A, BE, Rg: Ring>(res: &mut R, res_col: usize, a: &A, a_col: usize)
 where
     BE: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps,
-    R: VecZnxBigToBackendMut<BE>,
-    A: VecZnxToBackendRef,
+    R: VecZnxBigToBackendMut<BE, Rg>,
+    A: VecZnxToBackendRef<HostBytesBackend, Rg>,
     for<'x> BE::BufMut<'x>: HostDataMut,
 {
     let mut res = res.to_backend_mut();
@@ -610,11 +629,11 @@ where
 /// Apply the Galois automorphism `X → X^p` to `a[a_col]`, writing to `res[res_col]`.
 ///
 /// Limbs of `res` beyond `a.size()` are zeroed.
-pub fn ntt4x30_vec_znx_big_automorphism_portable<R, A, BE>(p: i64, res: &mut R, res_col: usize, a: &A, a_col: usize)
+pub fn ntt4x30_vec_znx_big_automorphism_portable<R, A, BE, Rg: Ring>(p: i64, res: &mut R, res_col: usize, a: &A, a_col: usize)
 where
-    BE: Backend<BigWord = i128, ZnxWord = i64> + crate::kernels::znx::ZnxAutomorphism,
-    R: VecZnxBigToBackendMut<BE>,
-    A: VecZnxBigToBackendRef<BE>,
+    BE: Backend<BigWord = i128, ZnxWord = i64> + crate::kernels::znx::ZnxAutomorphism<Rg>,
+    R: VecZnxBigToBackendMut<BE, Rg>,
+    A: VecZnxBigToBackendRef<BE, Rg>,
     for<'x> BE::BufMut<'x>: HostDataMut,
     for<'x> BE::BufRef<'x>: HostDataRef,
 {
@@ -637,10 +656,10 @@ where
 ///
 /// `tmp` must have at least `ntt4x30_vec_znx_big_automorphism_assign_tmp_bytes(n) / 16`
 /// elements (i.e., `n` `i128` values).
-pub fn ntt4x30_vec_znx_big_automorphism_assign_portable<R, BE>(p: i64, res: &mut R, res_col: usize, tmp: &mut [i128])
+pub fn ntt4x30_vec_znx_big_automorphism_assign_portable<R, BE, Rg: Ring>(p: i64, res: &mut R, res_col: usize, tmp: &mut [i128])
 where
-    BE: Backend<BigWord = i128, ZnxWord = i64> + crate::kernels::znx::ZnxAutomorphism,
-    R: VecZnxBigToBackendMut<BE>,
+    BE: Backend<BigWord = i128, ZnxWord = i64> + crate::kernels::znx::ZnxAutomorphism<Rg>,
+    R: VecZnxBigToBackendMut<BE, Rg>,
     for<'x> BE::BufMut<'x>: HostDataMut,
 {
     let mut res = res.to_backend_mut();
@@ -654,7 +673,7 @@ where
 }
 
 /// Add full-width integer noise at precision `k`, in radix `2^base2k`.
-pub fn ntt4x30_vec_znx_big_add_noise_portable<R, BE>(
+pub fn ntt4x30_vec_znx_big_add_noise_portable<R, BE, Rg: Ring>(
     base2k: usize,
     k: usize,
     res: &mut R,
@@ -664,7 +683,7 @@ pub fn ntt4x30_vec_znx_big_add_noise_portable<R, BE>(
 ) where
     BE: Backend<BigWord = i128, ZnxWord = i64>,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    R: VecZnxBigToBackendMut<BE>,
+    R: VecZnxBigToBackendMut<BE, Rg>,
 {
     add_noise_portable(base2k, k, &mut res.to_backend_mut(), res_col, noise, source);
 }

@@ -11,38 +11,33 @@ use poulpy_core::layouts::{
     GLWEPlaintextReborrowBackendMut, GLWEPlaintextReborrowBackendRef, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank,
     SetBSGSMeta, SetBase2k, SetGLWEPlaintextInfos, SetK, TorusPrecision,
 };
-use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, Ring, ZnxWord};
+use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, Ring, Standard, ZnxWord};
 
 use crate::{CKKSInfos, SetCKKSInfos, ckks_log_delta};
 
 use super::CKKSScalar;
 
 /// CKKS plaintext in the ZNX (torus) domain.
-pub struct CKKSPlaintext<D: Data, W: ZnxWord, R: Ring> {
+pub struct CKKSPlaintext<D: Data, W: ZnxWord, Rg: Ring = Standard> {
     /// Raw GLWE plaintext limb storage; its plaintext metadata holds the CKKS
     /// scale and slot kind.
-    pub(crate) inner: GLWEPlaintext<D, W>,
-    _ring: std::marker::PhantomData<R>,
+    pub(crate) inner: GLWEPlaintext<D, W, Rg>,
 }
 
-impl<D: Data, W: ZnxWord, R: Ring> CKKSPlaintext<D, W, R> {
-    pub(crate) fn from_inner(inner: GLWEPlaintext<D, W>, meta: GLWEPlaintextMeta) -> Self {
-        let mut pt = Self {
-            inner,
-            _ring: std::marker::PhantomData,
-        };
+impl<D: Data, W: ZnxWord, Rg: Ring> CKKSPlaintext<D, W, Rg> {
+    pub(crate) fn from_inner(inner: GLWEPlaintext<D, W, Rg>, meta: GLWEPlaintextMeta) -> Self {
+        let mut pt = Self { inner };
         pt.set_meta(meta);
         pt
     }
 
-    /// Rebuilds this backend-owned plaintext as a host-owned [`CKKSPlaintext<AlignedBuf, W, R>`].
-    pub fn to_host_owned<BE>(&self) -> CKKSPlaintext<AlignedBuf, W, R>
+    /// Rebuilds this backend-owned plaintext as a host-owned [`CKKSPlaintext<AlignedBuf, W, Rg>`].
+    pub fn to_host_owned<BE>(&self) -> CKKSPlaintext<AlignedBuf, W, Rg>
     where
         BE: Backend<OwnedBuf = D, ZnxWord = W>,
     {
         CKKSPlaintext {
             inner: self.inner.to_host_owned::<BE>(),
-            _ring: std::marker::PhantomData,
         }
     }
 
@@ -75,20 +70,20 @@ impl<D: Data, W: ZnxWord, R: Ring> CKKSPlaintext<D, W, R> {
     }
 }
 
-impl<BE: Backend, D: Data> GLWEToBackendRef<BE> for CKKSPlaintext<D, BE::ZnxWord, BE::Ring>
+impl<BE: Backend, D: Data, Rg: Ring> GLWEToBackendRef<BE, Rg> for CKKSPlaintext<D, BE::ZnxWord, Rg>
 where
-    GLWEPlaintext<D, BE::ZnxWord>: GLWEToBackendRef<BE>,
+    GLWEPlaintext<D, BE::ZnxWord, Rg>: GLWEToBackendRef<BE, Rg>,
 {
-    fn to_backend_ref(&self) -> GLWE<BE::BufRef<'_>, BE::ZnxWord> {
+    fn to_backend_ref(&self) -> GLWE<BE::BufRef<'_>, BE::ZnxWord, Rg> {
         GLWEToBackendRef::to_backend_ref(&self.inner)
     }
 }
 
-impl<BE: Backend, D: Data> GLWEToBackendMut<BE> for CKKSPlaintext<D, BE::ZnxWord, BE::Ring>
+impl<BE: Backend, D: Data, Rg: Ring> GLWEToBackendMut<BE, Rg> for CKKSPlaintext<D, BE::ZnxWord, Rg>
 where
-    GLWEPlaintext<D, BE::ZnxWord>: GLWEToBackendMut<BE>,
+    GLWEPlaintext<D, BE::ZnxWord, Rg>: GLWEToBackendMut<BE, Rg>,
 {
-    fn to_backend_mut(&mut self) -> GLWE<BE::BufMut<'_>, BE::ZnxWord> {
+    fn to_backend_mut(&mut self) -> GLWE<BE::BufMut<'_>, BE::ZnxWord, Rg> {
         GLWEToBackendMut::to_backend_mut(&mut self.inner)
     }
 
@@ -98,44 +93,46 @@ where
 }
 
 /// Backend-owned CKKS plaintext: the backend's buffer type and its coefficient word.
-pub type CKKSPlaintextOwned<BE> = CKKSPlaintext<<BE as Backend>::OwnedBuf, <BE as Backend>::ZnxWord, <BE as Backend>::Ring>;
+pub type CKKSPlaintextOwned<BE, Rg = Standard> = CKKSPlaintext<<BE as Backend>::OwnedBuf, <BE as Backend>::ZnxWord, Rg>;
 
 poulpy_core::view_wrapper!(
     /// Scratch-backed mutable CKKS plaintext view.
     ///
     /// This nominal wrapper contains an ordinary
-    /// `CKKSPlaintext<BE::BufMut<'a>, BE::ZnxWord, BE::Ring>`; both its polynomial storage and CKKS
+    /// `CKKSPlaintext<BE::BufMut<'a>, BE::ZnxWord, Rg>`; both its polynomial storage and CKKS
     /// metadata therefore have exactly the same representation as other CKKS
     /// plaintexts.
     CKKSPlaintextViewMut,
-    CKKSPlaintext<BE::BufMut<'a>, BE::ZnxWord, BE::Ring>
+    CKKSPlaintext<BE::BufMut<'a>, BE::ZnxWord, Rg>
 );
 poulpy_core::impl_glwe_infos!(CKKSPlaintextViewMut);
 crate::impl_ckks_infos!(ckks_inner CKKSPlaintextViewMut);
 
-impl<'a, BE: poulpy_hal::layouts::Backend + 'a> poulpy_core::layouts::IntPolyInfos for CKKSPlaintextViewMut<'a, BE> {
+impl<'a, BE: poulpy_hal::layouts::Backend + 'a, Rg: Ring> poulpy_core::layouts::IntPolyInfos
+    for CKKSPlaintextViewMut<'a, BE, Rg>
+{
     fn encoded_k(&self) -> TorusPrecision {
         self.inner.encoded_k()
     }
 }
 
-impl<BE: Backend> SetBase2k for CKKSPlaintextViewMut<'_, BE> {
+impl<BE: Backend, Rg: Ring> SetBase2k for CKKSPlaintextViewMut<'_, BE, Rg> {
     fn set_base2k(&mut self, base2k: Base2K) {
         SetBase2k::set_base2k(&mut self.inner, base2k);
     }
 }
 
-impl<'a, BE: Backend + 'a> GLWEToBackendRef<BE> for CKKSPlaintextViewMut<'a, BE> {
-    fn to_backend_ref(&self) -> GLWE<BE::BufRef<'_>, BE::ZnxWord> {
-        <GLWEPlaintext<BE::BufMut<'a>, BE::ZnxWord> as GLWEPlaintextReborrowBackendRef<BE>>::reborrow_backend_ref(
+impl<'a, BE: Backend + 'a, Rg: Ring> GLWEToBackendRef<BE, Rg> for CKKSPlaintextViewMut<'a, BE, Rg> {
+    fn to_backend_ref(&self) -> GLWE<BE::BufRef<'_>, BE::ZnxWord, Rg> {
+        <GLWEPlaintext<BE::BufMut<'a>, BE::ZnxWord, Rg> as GLWEPlaintextReborrowBackendRef<BE, Rg>>::reborrow_backend_ref(
             &self.inner.inner,
         )
     }
 }
 
-impl<'a, BE: Backend + 'a> GLWEToBackendMut<BE> for CKKSPlaintextViewMut<'a, BE> {
-    fn to_backend_mut(&mut self) -> GLWE<BE::BufMut<'_>, BE::ZnxWord> {
-        <GLWEPlaintext<BE::BufMut<'a>, BE::ZnxWord> as GLWEPlaintextReborrowBackendMut<BE>>::reborrow_backend_mut(
+impl<'a, BE: Backend + 'a, Rg: Ring> GLWEToBackendMut<BE, Rg> for CKKSPlaintextViewMut<'a, BE, Rg> {
+    fn to_backend_mut(&mut self) -> GLWE<BE::BufMut<'_>, BE::ZnxWord, Rg> {
+        <GLWEPlaintext<BE::BufMut<'a>, BE::ZnxWord, Rg> as GLWEPlaintextReborrowBackendMut<BE, Rg>>::reborrow_backend_mut(
             &mut self.inner.inner,
         )
     }
@@ -145,21 +142,21 @@ impl<'a, BE: Backend + 'a> GLWEToBackendMut<BE> for CKKSPlaintextViewMut<'a, BE>
     fn set_noise(&mut self, _metadata: Option<poulpy_core::ComponentNoise>) {}
 }
 
-impl<D: Data, W: ZnxWord, R: Ring> Deref for CKKSPlaintext<D, W, R> {
-    type Target = GLWEPlaintext<D, W>;
+impl<D: Data, W: ZnxWord, Rg: Ring> Deref for CKKSPlaintext<D, W, Rg> {
+    type Target = GLWEPlaintext<D, W, Rg>;
 
     fn deref(&self) -> &Self::Target {
         &self.inner
     }
 }
 
-impl<D: Data, W: ZnxWord, R: Ring> DerefMut for CKKSPlaintext<D, W, R> {
+impl<D: Data, W: ZnxWord, Rg: Ring> DerefMut for CKKSPlaintext<D, W, Rg> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner
     }
 }
 
-impl<D: Data, W: ZnxWord, R: Ring> LWEInfos for CKKSPlaintext<D, W, R> {
+impl<D: Data, W: ZnxWord, Rg: Ring> LWEInfos for CKKSPlaintext<D, W, Rg> {
     fn base2k(&self) -> Base2K {
         self.inner.base2k()
     }
@@ -177,25 +174,25 @@ impl<D: Data, W: ZnxWord, R: Ring> LWEInfos for CKKSPlaintext<D, W, R> {
     }
 }
 
-impl<D: Data, W: ZnxWord, R: Ring> IntPolyInfos for CKKSPlaintext<D, W, R> {
+impl<D: Data, W: ZnxWord, Rg: Ring> IntPolyInfos for CKKSPlaintext<D, W, Rg> {
     fn encoded_k(&self) -> TorusPrecision {
         self.inner.encoded_k()
     }
 }
 
-impl<D: Data, W: ZnxWord, R: Ring> GLWEInfos for CKKSPlaintext<D, W, R> {
+impl<D: Data, W: ZnxWord, Rg: Ring> GLWEInfos for CKKSPlaintext<D, W, Rg> {
     fn rank(&self) -> Rank {
         self.inner.rank()
     }
 }
 
-impl<D: Data, W: ZnxWord, R: Ring> SetK for CKKSPlaintext<D, W, R> {
+impl<D: Data, W: ZnxWord, Rg: Ring> SetK for CKKSPlaintext<D, W, Rg> {
     fn set_k(&mut self, k: TorusPrecision) {
         SetK::set_k(&mut self.inner, k);
     }
 }
 
-impl<D: Data, W: ZnxWord, R: Ring> SetBSGSMeta for CKKSPlaintext<D, W, R> {
+impl<D: Data, W: ZnxWord, Rg: Ring> SetBSGSMeta for CKKSPlaintext<D, W, Rg> {
     fn set_bsgs_log_budget(&mut self, log_budget: usize) {
         SetCKKSInfos::set_log_budget(self, log_budget);
     }
@@ -204,33 +201,33 @@ impl<D: Data, W: ZnxWord, R: Ring> SetBSGSMeta for CKKSPlaintext<D, W, R> {
     }
 }
 
-impl<D: Data, W: ZnxWord, R: Ring> SetBase2k for CKKSPlaintext<D, W, R> {
+impl<D: Data, W: ZnxWord, Rg: Ring> SetBase2k for CKKSPlaintext<D, W, Rg> {
     fn set_base2k(&mut self, base2k: Base2K) {
         self.inner.set_base2k(base2k);
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord, R: Ring> fmt::Display for CKKSPlaintext<D, W, R> {
+impl<D: HostDataRef, W: ZnxWord, Rg: Ring> fmt::Display for CKKSPlaintext<D, W, Rg> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.inner)
     }
 }
 
-impl<D: Data, W: ZnxWord, R: Ring> GLWEPlaintextInfos for CKKSPlaintext<D, W, R> {
+impl<D: Data, W: ZnxWord, Rg: Ring> GLWEPlaintextInfos for CKKSPlaintext<D, W, Rg> {
     fn plaintext_meta(&self) -> Option<GLWEPlaintextMeta> {
         self.inner.plaintext_meta()
     }
 }
 
-impl<D: Data, W: ZnxWord, R: Ring> CKKSInfos for CKKSPlaintext<D, W, R> {}
+impl<D: Data, W: ZnxWord, Rg: Ring> CKKSInfos for CKKSPlaintext<D, W, Rg> {}
 
-impl<D: Data, W: ZnxWord, R: Ring> SetGLWEPlaintextInfos for CKKSPlaintext<D, W, R> {
+impl<D: Data, W: ZnxWord, Rg: Ring> SetGLWEPlaintextInfos for CKKSPlaintext<D, W, Rg> {
     fn set_plaintext_meta(&mut self, meta: Option<GLWEPlaintextMeta>) {
         self.inner.set_plaintext_meta(meta)
     }
 }
 
-impl<D: Data, W: ZnxWord, R: Ring> BSGSMeta for CKKSPlaintext<D, W, R> {
+impl<D: Data, W: ZnxWord, Rg: Ring> BSGSMeta for CKKSPlaintext<D, W, Rg> {
     fn bsgs_log_budget(&self) -> usize {
         CKKSInfos::log_budget(self)
     }
@@ -258,7 +255,7 @@ fn check_coefficient_count<F>(coeffs: &[F], n: usize) -> Result<()> {
 }
 
 /// Quantizes `coeffs`, one per coefficient, into the plaintext.
-fn quantize_into_plaintext<F, D, R: Ring>(pt: &mut CKKSPlaintext<D, i64, R>, coeffs: &[F]) -> Result<()>
+fn quantize_into_plaintext<F, D, Rg: Ring>(pt: &mut CKKSPlaintext<D, i64, Rg>, coeffs: &[F]) -> Result<()>
 where
     F: CKKSScalar,
     D: HostDataMut + HostDataRef,
@@ -295,7 +292,7 @@ where
 }
 
 /// Dequantizes every coefficient of `pt` into `coeffs`, inverse of [`quantize_into_plaintext`].
-fn dequantize_from_plaintext<F, D, R: Ring>(pt: &CKKSPlaintext<D, i64, R>, coeffs: &mut [F]) -> Result<()>
+fn dequantize_from_plaintext<F, D, Rg: Ring>(pt: &CKKSPlaintext<D, i64, Rg>, coeffs: &mut [F]) -> Result<()>
 where
     F: CKKSScalar,
     D: HostDataRef,
@@ -324,7 +321,7 @@ where
     Ok(())
 }
 
-impl<F: CKKSScalar, D: HostDataMut + HostDataRef, R: Ring> CKKSPlaintextVecHostCodec<F> for CKKSPlaintext<D, i64, R> {
+impl<F: CKKSScalar, D: HostDataMut + HostDataRef, Rg: Ring> CKKSPlaintextVecHostCodec<F> for CKKSPlaintext<D, i64, Rg> {
     fn encode_host_floats(&mut self, coeffs: &[F]) -> Result<()> {
         check_coefficient_count(coeffs, self.n().as_usize())?;
         quantize_into_plaintext(self, coeffs)
@@ -342,16 +339,22 @@ mod tests {
     use crate::CKKSModuleInfos;
     use crate::layouts::CKKSPlaintextAlloc;
     use crate::{Scale, SlotsKind};
-    use poulpy_hal::layouts::{Backend, HostBytesBackend, Module};
+    use poulpy_hal::layouts::{Backend, HostBytesBackend, Module, Standard};
 
     #[test]
     fn plaintext_alloc_from_slots_takes_twice_the_slots() {
         let module = Module::<HostBytesBackend>::new(64);
         let (base2k, k) = (Base2K(12), TorusPrecision(24));
-        assert_eq!(module.ckks_plaintext_alloc_from_slots(8, base2k, k).n().as_usize(), 16);
         assert_eq!(
             module
-                .ckks_plaintext_alloc_from_slots(module.ckks_max_slots(), base2k, k)
+                .ckks_plaintext_alloc_from_slots::<Standard>(8, base2k, k)
+                .n()
+                .as_usize(),
+            16
+        );
+        assert_eq!(
+            module
+                .ckks_plaintext_alloc_from_slots::<Standard>(module.ckks_max_slots::<Standard>(), base2k, k)
                 .n()
                 .as_usize(),
             64
@@ -362,7 +365,11 @@ mod tests {
     #[should_panic(expected = "ckks_plaintext_alloc_from_slots: the slot count needs a degree below the backend's minimum")]
     fn plaintext_alloc_from_slots_rejects_a_degree_below_the_floor() {
         let module = Module::<HostBytesBackend>::new(64);
-        module.ckks_plaintext_alloc_from_slots(<HostBytesBackend as Backend>::MIN_DEGREE / 4, Base2K(12), TorusPrecision(24));
+        module.ckks_plaintext_alloc_from_slots::<Standard>(
+            <HostBytesBackend as Backend>::MIN_DEGREE / 4,
+            Base2K(12),
+            TorusPrecision(24),
+        );
     }
 
     #[test]
@@ -375,7 +382,7 @@ mod tests {
         };
         let base2k: Base2K = 52usize.into();
 
-        let mut pt = module.ckks_plaintext_alloc(3usize.into(), base2k, (12usize + 40).into());
+        let mut pt = module.ckks_plaintext_alloc::<Standard>(3usize.into(), base2k, (12usize + 40).into());
         pt.set_meta(prec);
 
         assert_eq!(pt.n().as_usize(), 3);

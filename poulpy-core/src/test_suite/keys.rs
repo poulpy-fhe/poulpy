@@ -1,5 +1,5 @@
 use poulpy_hal::{
-    layouts::{Backend, Module},
+    layouts::{Backend, Module, Ring},
     source::Source,
 };
 
@@ -19,10 +19,10 @@ use crate::{
 /// 1, each with an identically seeded `source`, makes the shared digits
 /// byte-identical without copying anything: the two keys are interchangeable
 /// exactly where the coarsening says they are and nowhere else.
-pub fn fill_by_digit<BE: Backend, K>(module: &Module<BE>, key: &mut K, stride: usize, source: &mut Source)
+pub fn fill_by_digit<BE: Backend, K, Rg: Ring>(module: &Module<BE>, key: &mut K, stride: usize, source: &mut Source)
 where
-    Module<BE>: GLWEFill<BE>,
-    K: GGLWEAtViewMut<BE> + GGLWEInfos,
+    Module<BE>: GLWEFill<BE, Rg>,
+    K: GGLWEAtViewMut<BE, Rg> + GGLWEInfos,
 {
     let (rows, cols_in) = (key.dnum().as_usize(), key.rank_in().as_usize());
     let mut poison: Source = Source::new([0xFFu8; 32]);
@@ -44,14 +44,18 @@ pub struct TransformKeys<'a, A, T> {
     pub tensor: &'a T,
 }
 
-impl<BE: Backend, A: GetAutomorphismKey<BE>, T> GetAutomorphismKey<BE> for TransformKeys<'_, A, T> {
-    fn lookup_automorphism_key(&self, p: i64, k: TorusPrecision) -> crate::Result<GLWEAutomorphismKeyPreparedBackendRef<'_, BE>> {
+impl<BE: Backend, A: GetAutomorphismKey<BE, Rg>, T, Rg: Ring> GetAutomorphismKey<BE, Rg> for TransformKeys<'_, A, T> {
+    fn lookup_automorphism_key(
+        &self,
+        p: i64,
+        k: TorusPrecision,
+    ) -> crate::Result<GLWEAutomorphismKeyPreparedBackendRef<'_, BE, Rg>> {
         self.automorphism.lookup_automorphism_key(p, k)
     }
 }
 
-impl<BE: Backend, A, T: GetTensorKey<BE>> GetTensorKey<BE> for TransformKeys<'_, A, T> {
-    fn lookup_tensor_key(&self, k: TorusPrecision) -> crate::Result<GLWETensorKeyPreparedBackendRef<'_, BE>> {
+impl<BE: Backend, A, T: GetTensorKey<BE, Rg>, Rg: Ring> GetTensorKey<BE, Rg> for TransformKeys<'_, A, T> {
+    fn lookup_tensor_key(&self, k: TorusPrecision) -> crate::Result<GLWETensorKeyPreparedBackendRef<'_, BE, Rg>> {
         self.tensor.lookup_tensor_key(k)
     }
 }

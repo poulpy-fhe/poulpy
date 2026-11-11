@@ -9,7 +9,7 @@ use crate::{
     layouts::{BabyStep, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetTensorKey, Parity, PowerBasisHelper},
 };
 use anyhow::{Result, ensure};
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Module, Ring, ScratchArena};
 
 /// Evaluates a single baby step into `res`.
 ///
@@ -17,7 +17,7 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 /// computes the parity schedule, seeds the accumulator from the *highest* power
 /// (the lowest-budget operand, so every term writes at the final result width)
 /// and sequences the terms.
-pub(crate) fn glwe_eval_baby_step_derived<BE: Backend, Ops, V, P, G, A>(
+pub(crate) fn glwe_eval_baby_step_derived<BE: Backend, Ops, V, P, G, A, Rg: Ring>(
     module: &Module<BE>,
     ops: &Ops,
     res: &mut V,
@@ -27,11 +27,11 @@ pub(crate) fn glwe_eval_baby_step_derived<BE: Backend, Ops, V, P, G, A>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    Ops: GLWEBSGSOps<BE, V, P, A, V>,
-    V: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
-    P: GLWEToBackendRef<BE> + GLWEInfos,
-    A: GLWEToBackendRef<BE>,
-    G: PowerBasisHelper<BE, A>,
+    Ops: GLWEBSGSOps<BE, V, P, A, V, Rg>,
+    V: GLWEToBackendMut<BE, Rg> + GLWEToBackendRef<BE, Rg>,
+    P: GLWEToBackendRef<BE, Rg> + GLWEInfos,
+    A: GLWEToBackendRef<BE, Rg>,
+    G: PowerBasisHelper<BE, A, Rg>,
 {
     let degree = coeffs.n().as_usize() - 1;
 
@@ -75,7 +75,7 @@ where
 /// level via [`GLWEBSGSOps::prepare_right`] and reused across the level's
 /// sibling pairs); the per-pair `ct×ct`/`ct+ct` arithmetic and the final copy are
 /// delegated to the scheme.
-pub(crate) fn glwe_eval_giant_steps_derived<R, B, V, P, A, G, H, BE: Backend, Ops>(
+pub(crate) fn glwe_eval_giant_steps_derived<R, B, V, P, A, G, H, BE: Backend, Ops, Rg: Ring>(
     module: &Module<BE>,
     ops: &Ops,
     res: &mut R,
@@ -85,14 +85,14 @@ pub(crate) fn glwe_eval_giant_steps_derived<R, B, V, P, A, G, H, BE: Backend, Op
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    Ops: GLWEBSGSOps<BE, V, P, A, R>,
-    R: GLWEToBackendMut<BE>,
-    B: BabyStep<BE, Value = V>,
-    V: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
-    P: GLWEToBackendRef<BE>,
-    A: GLWEToBackendRef<BE>,
-    G: PowerBasisHelper<BE, A>,
-    H: GetTensorKey<BE>,
+    Ops: GLWEBSGSOps<BE, V, P, A, R, Rg>,
+    R: GLWEToBackendMut<BE, Rg>,
+    B: BabyStep<BE, Rg, Value = V>,
+    V: GLWEToBackendMut<BE, Rg> + GLWEToBackendRef<BE, Rg>,
+    P: GLWEToBackendRef<BE, Rg>,
+    A: GLWEToBackendRef<BE, Rg>,
+    G: PowerBasisHelper<BE, A, Rg>,
+    H: GetTensorKey<BE, Rg>,
 {
     ensure!(
         !baby_steps.is_empty(),

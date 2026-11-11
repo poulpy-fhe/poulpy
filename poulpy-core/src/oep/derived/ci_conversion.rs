@@ -1,7 +1,7 @@
 //! Degree switch expressed by composing HAL operations, and the conjugate-invariant key
 //! encryptions composed from the secret embedding and the selected switching-key encryption.
 use poulpy_hal::{
-    layouts::{Backend, Data, Module, ScratchArena},
+    layouts::{Backend, ConjugateInvariant, Data, Module, ScratchArena},
     source::Source,
 };
 
@@ -9,8 +9,9 @@ use crate::{
     GetDistribution, ScratchArenaTakeGLWESecret,
     api::GLWESecretBytesOf,
     layouts::{
-        Degree, GGLWEInfos, GGLWEToBackendMut, GLWECIEmbedKey, GLWECITraceKey, GLWEInfos, GLWESecretToBackendRef,
-        GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank,
+        Degree, GGLWEInfos, GGLWEPreparedToBackendMut, GGLWEToBackendMut, GGLWEToBackendRef, GLWECIEmbedKey, GLWECIKeyPrepared,
+        GLWECITraceKey, GLWEInfos, GLWESecretToBackendRef, GLWESwitchingKeyDegrees, GLWESwitchingKeyPrepared, GLWEToBackendMut,
+        GLWEToBackendRef, LWEInfos, Rank,
     },
     oep::GLWECIConversionImpl,
 };
@@ -39,7 +40,7 @@ fn assert_ci_key_secrets<BE, K, S1, S2>(key: &K, sk_ci: &S1, sk: &S2, ci_rank: R
 where
     BE: Backend,
     K: GGLWEInfos,
-    S1: GLWESecretToBackendRef<BE>,
+    S1: GLWESecretToBackendRef<BE, ConjugateInvariant>,
     S2: GLWEInfos,
 {
     let sk_ci = sk_ci.to_backend_ref();
@@ -82,7 +83,7 @@ pub(crate) fn glwe_ci_embed_key_encrypt_sk_derived<BE, D, S1, S2>(
     BE: GLWECIConversionImpl,
     D: Data,
     GLWECIEmbedKey<D, BE::ZnxWord>: GGLWEToBackendMut<BE>,
-    S1: GLWESecretToBackendRef<BE>,
+    S1: GLWESecretToBackendRef<BE, ConjugateInvariant>,
     S2: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
 {
     assert_ci_key_secrets::<BE, _, _, _>(res, sk_ci, sk, res.rank_in(), res.rank_out());
@@ -114,7 +115,7 @@ pub(crate) fn glwe_ci_trace_key_encrypt_sk_derived<BE, D, S1, S2>(
     BE: GLWECIConversionImpl,
     D: Data,
     GLWECITraceKey<D, BE::ZnxWord>: GGLWEToBackendMut<BE>,
-    S1: GLWESecretToBackendRef<BE> + GetDistribution,
+    S1: GLWESecretToBackendRef<BE, ConjugateInvariant> + GetDistribution,
     S2: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
 {
     assert_ci_key_secrets::<BE, _, _, _>(res, sk_ci, sk, res.rank_out(), res.rank_in());
@@ -132,4 +133,26 @@ pub(crate) fn glwe_ci_trace_key_encrypt_sk_derived<BE, D, S1, S2>(
         BE::glwe_switching_key_encrypt_sk(module, res, sk, &sk_embedded, source_xe, source_xa, &mut scratch_1);
     }
     scratch.wipe(tmp_bytes);
+}
+
+pub(crate) fn glwe_ci_key_prepare_tmp_bytes_derived<BE, A>(module: &Module<BE>, infos: &A) -> usize
+where
+    BE: GLWECIConversionImpl,
+    A: GGLWEInfos,
+{
+    BE::glwe_switching_key_prepare_tmp_bytes(module, infos)
+}
+
+pub(crate) fn glwe_ci_key_prepare_derived<BE, DR, O, M>(
+    module: &Module<BE>,
+    res: &mut GLWECIKeyPrepared<DR, BE, M>,
+    other: &O,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
+    BE: GLWECIConversionImpl,
+    DR: Data,
+    GLWESwitchingKeyPrepared<DR, BE>: GGLWEPreparedToBackendMut<BE>,
+    O: GGLWEToBackendRef<BE> + GLWESwitchingKeyDegrees,
+{
+    BE::glwe_switching_key_prepare(module, &mut res.0, other, scratch);
 }

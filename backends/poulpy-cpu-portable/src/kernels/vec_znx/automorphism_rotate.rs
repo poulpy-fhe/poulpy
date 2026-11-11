@@ -1,6 +1,6 @@
 use crate::{
     kernels::znx::{ZnxAutomorphismRotate, ZnxZero},
-    layouts::{Backend, HostDataMut, HostDataRef, VecZnxBackendMut, VecZnxBackendRef, ZnxView, ZnxViewMut},
+    layouts::{Backend, HostDataMut, HostDataRef, Ring, VecZnxBackendMut, VecZnxBackendRef, ZnxView, ZnxViewMut},
 };
 
 /// Fused automorphism + rotation on a single column: computes
@@ -9,15 +9,15 @@ use crate::{
 /// Equivalent to applying [`vec_znx_automorphism_portable`](super::vec_znx_automorphism_portable)
 /// with `p` followed by [`vec_znx_rotate_portable`](super::vec_znx_rotate_portable) with `k`, but
 /// in a single pass and without an intermediate buffer.
-pub fn vec_znx_automorphism_rotate_portable<'r, 'a, BE>(
+pub fn vec_znx_automorphism_rotate_portable<'r, 'a, BE, Rg: Ring>(
     p: i64,
     k: i64,
-    res: &mut VecZnxBackendMut<'r, BE>,
+    res: &mut VecZnxBackendMut<'r, BE, Rg>,
     res_col: usize,
-    a: &VecZnxBackendRef<'a, BE>,
+    a: &VecZnxBackendRef<'a, BE, Rg>,
     a_col: usize,
 ) where
-    BE: Backend<ZnxWord = i64> + ZnxAutomorphismRotate + ZnxZero,
+    BE: Backend<ZnxWord = i64> + ZnxAutomorphismRotate<Rg> + ZnxZero,
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,
 {

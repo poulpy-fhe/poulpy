@@ -19,6 +19,8 @@
 //!
 //! All arithmetic uses [`Primes30`] (Q ≈ 2^120).  Generalisation to `Primes29` / `Primes31`
 //! is future work.
+use std::marker::PhantomData;
+
 use poulpy_hal::layouts::{Ring, Standard};
 
 use bytemuck::{cast_slice, cast_slice_mut};
@@ -117,18 +119,22 @@ impl<P: PrimeSetCrt4, R: Ring> NttPlanSet<P, R> {
 /// <!-- DOCUMENTED EXCEPTION: Primes30 is the default NTT4x30 prime set.
 ///   Generalisation path: add `type PrimeSet: PrimeSet` as an associated type here,
 ///   then parameterise NttTable/NttTableInv/BbcMeta accordingly. -->
-pub trait NttModuleHandle: poulpy_hal::api::ModuleN {
-    type Ring: Ring;
+pub trait NttModuleHandle<Rg: Ring = Standard>: poulpy_hal::api::ModuleN + NttMetaHandle {
     /// Combined NTT plan for an explicit ring degree.
-    fn get_ntt_plan(&self, n: usize) -> &NttPlan<Primes30, Self::Ring>;
+    fn get_ntt_plan(&self, n: usize) -> &NttPlan<Primes30, Rg>;
     /// Precomputed forward NTT twiddle table (Primes30, size `n`).
-    fn get_ntt_table_for(&self, n: usize) -> &NttTable<Primes30, Self::Ring> {
+    fn get_ntt_table_for(&self, n: usize) -> &NttTable<Primes30, Rg> {
         self.get_ntt_plan(n).ntt()
     }
     /// Precomputed inverse NTT twiddle table (Primes30, size `n`).
-    fn get_intt_table_for(&self, n: usize) -> &NttTableInv<Primes30, Self::Ring> {
+    fn get_intt_table_for(&self, n: usize) -> &NttTableInv<Primes30, Rg> {
         self.get_ntt_plan(n).intt()
     }
+}
+
+/// Ring-free lazy multiply–accumulate metadata of a `Module<B>`, implemented for any `Module<B>` whose
+/// `B::Handle` implements [`NttMetaProvider`].
+pub trait NttMetaHandle {
     /// Precomputed metadata for `q120b × q120c` lazy multiply–accumulate.
     fn get_bbc_meta(&self) -> &BbcMeta<Primes30>;
     /// Precomputed metadata for `q120b × q120b` lazy multiply–accumulate.
@@ -144,17 +150,20 @@ pub trait NttModuleHandle: poulpy_hal::api::ModuleN {
 ///
 /// # Safety
 ///
-/// Implementors must ensure the returned references are valid for the lifetime
-/// of `&self` and that the tables were fully initialised before first use.
-///
-/// The blanket `impl<B> NttModuleHandle for Module<B>` assumes the handle is
-/// fully initialised before `Module::new()` returns.  This invariant is
-/// established by the module defaults (or a backend override).  There is no
-/// runtime check in release builds.
-pub unsafe trait NttHandleProvider {
-    type Ring: Ring;
+/// Implementors must return references that stay valid for the lifetime of `&self`, to plans
+/// built at construction or once on first use under internal synchronization, as
+/// [`PerRing`](crate::kernels::PerRing) builds the conjugate-invariant ones.
+pub unsafe trait NttHandleProvider<Rg: Ring = Standard>: NttMetaProvider {
     /// Returns the combined NTT plan for `n`.
-    fn get_ntt_plan(&self, n: usize) -> &NttPlan<Primes30, Self::Ring>;
+    fn get_ntt_plan(&self, n: usize) -> &NttPlan<Primes30, Rg>;
+}
+
+/// Implemented by backend `Handle` types that store the lazy multiply–accumulate metadata, which no ring changes.
+///
+/// # Safety
+///
+/// Implementors must ensure the returned references are valid for the lifetime of `&self`.
+pub unsafe trait NttMetaProvider {
     /// Returns a reference to the `q120b × q120c` lazy multiply–accumulate metadata.
     fn get_bbc_meta(&self) -> &BbcMeta<Primes30>;
     /// Returns a reference to the `q120b × q120b` lazy multiply–accumulate metadata.
@@ -178,24 +187,31 @@ pub unsafe trait NttHandleFactory: Sized {
 
 /// Blanket impl: any `Module<B>` whose handle implements `NttHandleProvider`
 /// automatically satisfies `NttModuleHandle`.
-impl<B> NttModuleHandle for Module<B>
+impl<B, Rg: Ring> NttModuleHandle<Rg> for Module<B>
 where
     B: Backend<ZnxWord = i64>,
-    B::Handle: NttHandleProvider,
+    B::Handle: NttHandleProvider<Rg>,
 {
-    type Ring = <B::Handle as NttHandleProvider>::Ring;
-    fn get_ntt_plan(&self, n: usize) -> &NttPlan<Primes30, Self::Ring> {
+    fn get_ntt_plan(&self, n: usize) -> &NttPlan<Primes30, Rg> {
         // SAFETY: `ptr()` returns a valid, non-null pointer to `B::Handle`
         // that was initialised by the module defaults and is kept alive by
         // the `Module`.
         unsafe { (&*self.ptr()).get_ntt_plan(n) }
     }
+}
 
+impl<B> NttMetaHandle for Module<B>
+where
+    B: Backend<ZnxWord = i64>,
+    B::Handle: NttMetaProvider,
+{
     fn get_bbc_meta(&self) -> &BbcMeta<Primes30> {
+        // SAFETY: `ptr()` returns a valid, non-null pointer to the initialised `B::Handle`.
         unsafe { (&*self.ptr()).get_bbc_meta() }
     }
 
     fn get_bbb_meta(&self) -> &BbbMeta<Primes30> {
+        // SAFETY: see `get_bbc_meta`.
         unsafe { (&*self.ptr()).get_bbb_meta() }
     }
 }
@@ -209,8 +225,8 @@ where
 /// `at(col, limb)` returns `&[Q120bScalar]` of length `n`; we cast to
 /// `&[u64]` of length `4*n`.
 #[inline(always)]
-fn limb_u64<D: crate::layouts::HostDataRef, BE: Backend<DftWord = Q120bScalar, ZnxWord = i64>>(
-    v: &VecZnxDft<D, BE::DftWord, BE>,
+fn limb_u64<D: crate::layouts::HostDataRef, BE: Backend<DftWord = Q120bScalar, ZnxWord = i64>, Rg: Ring>(
+    v: &VecZnxDft<D, BE::DftWord, BE, Rg>,
     col: usize,
     limb: usize,
 ) -> &[u64] {
@@ -218,8 +234,8 @@ fn limb_u64<D: crate::layouts::HostDataRef, BE: Backend<DftWord = Q120bScalar, Z
 }
 
 #[inline(always)]
-fn limb_u64_mut<D: crate::layouts::HostDataMut, BE: Backend<DftWord = Q120bScalar, ZnxWord = i64>>(
-    v: &mut VecZnxDft<D, BE::DftWord, BE>,
+fn limb_u64_mut<D: crate::layouts::HostDataMut, BE: Backend<DftWord = Q120bScalar, ZnxWord = i64>, Rg: Ring>(
+    v: &mut VecZnxDft<D, BE::DftWord, BE, Rg>,
     col: usize,
     limb: usize,
 ) -> &mut [u64] {
@@ -237,21 +253,17 @@ fn limb_u64_mut<D: crate::layouts::HostDataMut, BE: Backend<DftWord = Q120bScala
 /// - Converts i64 coefficients to q120b with [`NttFromZnx64`],
 ///   then applies the forward NTT in-place via [`NttDFTExecute`].
 /// - Missing input limbs (out of range) are zeroed in `res`.
-pub fn ntt4x30_vec_znx_dft_apply_portable<BE>(
+pub fn ntt4x30_vec_znx_dft_apply_portable<BE, Rg: Ring>(
     module: &Module<BE>,
     step: usize,
     offset: usize,
-    res: &mut VecZnxDftBackendMut<'_, BE>,
+    res: &mut VecZnxDftBackendMut<'_, BE, Rg>,
     res_col: usize,
-    a: &VecZnxBackendRef<'_, BE>,
+    a: &VecZnxBackendRef<'_, BE, Rg>,
     a_col: usize,
 ) where
-    Module<BE>: NttModuleHandle,
-    BE: Backend<DftWord = Q120bScalar, ZnxWord = i64>
-        + NttDFTExecute<NttTable<Primes30, <Module<BE> as crate::kernels::ntt4x30::vec_znx_dft::NttModuleHandle>::Ring>>
-        + NttFromZnx64
-        + NttZero
-        + 'static,
+    Module<BE>: NttModuleHandle<Rg>,
+    BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttDFTExecute<NttTable<Primes30, Rg>> + NttFromZnx64 + NttZero + 'static,
     for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
 {
     poulpy_hal::layouts::assert_dense(a, "ntt4x30_vec_znx_dft_apply");
@@ -270,16 +282,16 @@ pub fn ntt4x30_vec_znx_dft_apply_portable<BE>(
     for j in 0..min_steps {
         let limb = offset + j * step;
         if limb < a_size {
-            let res_slice: &mut [u64] = limb_u64_mut::<_, BE>(res, res_col, j);
+            let res_slice: &mut [u64] = limb_u64_mut::<_, BE, Rg>(res, res_col, j);
             BE::ntt_from_znx64(res_slice, a.at(a_col, limb));
             BE::ntt_dft_execute(table, res_slice);
         } else {
-            BE::ntt_zero(limb_u64_mut::<_, BE>(res, res_col, j));
+            BE::ntt_zero(limb_u64_mut::<_, BE, Rg>(res, res_col, j));
         }
     }
 
     for j in min_steps..res_size {
-        BE::ntt_zero(limb_u64_mut::<_, BE>(res, res_col, j));
+        BE::ntt_zero(limb_u64_mut::<_, BE, Rg>(res, res_col, j));
     }
 }
 
@@ -302,17 +314,17 @@ pub fn ntt4x30_vec_znx_idft_apply_tmp_bytes_portable(n: usize) -> usize {
 /// 3. CRT-reconstructs the `i128` coefficients via [`NttToZnx128`].
 ///
 /// `tmp` must hold at least `4 * n` `u64` values.
-pub fn ntt4x30_vec_znx_idft_apply_portable<BE>(
+pub fn ntt4x30_vec_znx_idft_apply_portable<BE, Rg: Ring>(
     module: &Module<BE>,
-    res: &mut VecZnxBigBackendMut<'_, BE>,
+    res: &mut VecZnxBigBackendMut<'_, BE, Rg>,
     res_col: usize,
-    a: &VecZnxDftBackendRef<'_, BE>,
+    a: &VecZnxDftBackendRef<'_, BE, Rg>,
     a_col: usize,
     tmp: &mut [u64],
 ) where
-    Module<BE>: NttModuleHandle,
+    Module<BE>: NttModuleHandle<Rg>,
     BE: Backend<DftWord = Q120bScalar, BigWord = i128, ZnxWord = i64>
-        + NttDFTExecute<NttTableInv<Primes30, <Module<BE> as crate::kernels::ntt4x30::vec_znx_dft::NttModuleHandle>::Ring>>
+        + NttDFTExecute<NttTableInv<Primes30, Rg>>
         + NttToZnx128
         + NttCopy,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
@@ -328,7 +340,7 @@ pub fn ntt4x30_vec_znx_idft_apply_portable<BE>(
     let table = module.get_intt_table_for(n);
 
     for j in 0..min_size {
-        let a_slice: &[u64] = limb_u64::<_, BE>(a, a_col, j);
+        let a_slice: &[u64] = limb_u64::<_, BE, Rg>(a, a_col, j);
         let tmp_n: &mut [u64] = &mut tmp[..4 * n];
         BE::ntt_copy(tmp_n, a_slice);
         BE::ntt_dft_execute(table, tmp_n);
@@ -345,14 +357,13 @@ pub fn ntt4x30_vec_znx_idft_apply_portable<BE>(
 // logic may still be useful as a future optimization, even though the current
 // public API now applies IDFT into a separately allocated VecZnxBig.
 #[allow(dead_code)]
-pub fn ntt4x30_vec_znx_idft_apply_consume_portable<'a, BE>(
+pub fn ntt4x30_vec_znx_idft_apply_consume_portable<'a, BE, Rg: Ring>(
     module: &Module<BE>,
-    mut a: VecZnxDftBackendMut<'a, BE>,
-) -> VecZnxBigBackendMut<'a, BE>
+    mut a: VecZnxDftBackendMut<'a, BE, Rg>,
+) -> VecZnxBigBackendMut<'a, BE, Rg>
 where
-    Module<BE>: NttModuleHandle,
-    BE: Backend<DftWord = Q120bScalar, BigWord = i128, ZnxWord = i64>
-        + NttDFTExecute<NttTableInv<Primes30, <Module<BE> as NttModuleHandle>::Ring>>,
+    Module<BE>: NttModuleHandle<Rg>,
+    BE: Backend<DftWord = Q120bScalar, BigWord = i128, ZnxWord = i64> + NttDFTExecute<NttTableInv<Primes30, Rg>>,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
 {
     let n = a.n();
@@ -464,12 +475,12 @@ where
 /// DFT-domain add: `res[res_col] = a[a_col] + b[b_col]`.
 ///
 /// Uses lazy q120b addition; out-of-range limbs are copied or zeroed.
-pub fn ntt4x30_vec_znx_dft_add_portable<BE>(
-    res: &mut VecZnxDftBackendMut<'_, BE>,
+pub fn ntt4x30_vec_znx_dft_add_portable<BE, Rg: Ring>(
+    res: &mut VecZnxDftBackendMut<'_, BE, Rg>,
     res_col: usize,
-    a: &VecZnxDftBackendRef<'_, BE>,
+    a: &VecZnxDftBackendRef<'_, BE, Rg>,
     a_col: usize,
-    b: &VecZnxDftBackendRef<'_, BE>,
+    b: &VecZnxDftBackendRef<'_, BE, Rg>,
     b_col: usize,
 ) where
     BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttAdd + NttCopy + NttZero,
@@ -485,41 +496,41 @@ pub fn ntt4x30_vec_znx_dft_add_portable<BE>(
         let cpy_size = b_size.min(res_size);
         for j in 0..sum_size {
             BE::ntt_add(
-                limb_u64_mut::<_, BE>(res, res_col, j),
-                limb_u64::<_, BE>(a, a_col, j),
-                limb_u64::<_, BE>(b, b_col, j),
+                limb_u64_mut::<_, BE, Rg>(res, res_col, j),
+                limb_u64::<_, BE, Rg>(a, a_col, j),
+                limb_u64::<_, BE, Rg>(b, b_col, j),
             );
         }
         for j in sum_size..cpy_size {
-            BE::ntt_copy(limb_u64_mut::<_, BE>(res, res_col, j), limb_u64::<_, BE>(b, b_col, j));
+            BE::ntt_copy(limb_u64_mut::<_, BE, Rg>(res, res_col, j), limb_u64::<_, BE, Rg>(b, b_col, j));
         }
         for j in cpy_size..res_size {
-            BE::ntt_zero(limb_u64_mut::<_, BE>(res, res_col, j));
+            BE::ntt_zero(limb_u64_mut::<_, BE, Rg>(res, res_col, j));
         }
     } else {
         let sum_size = b_size.min(res_size);
         let cpy_size = a_size.min(res_size);
         for j in 0..sum_size {
             BE::ntt_add(
-                limb_u64_mut::<_, BE>(res, res_col, j),
-                limb_u64::<_, BE>(a, a_col, j),
-                limb_u64::<_, BE>(b, b_col, j),
+                limb_u64_mut::<_, BE, Rg>(res, res_col, j),
+                limb_u64::<_, BE, Rg>(a, a_col, j),
+                limb_u64::<_, BE, Rg>(b, b_col, j),
             );
         }
         for j in sum_size..cpy_size {
-            BE::ntt_copy(limb_u64_mut::<_, BE>(res, res_col, j), limb_u64::<_, BE>(a, a_col, j));
+            BE::ntt_copy(limb_u64_mut::<_, BE, Rg>(res, res_col, j), limb_u64::<_, BE, Rg>(a, a_col, j));
         }
         for j in cpy_size..res_size {
-            BE::ntt_zero(limb_u64_mut::<_, BE>(res, res_col, j));
+            BE::ntt_zero(limb_u64_mut::<_, BE, Rg>(res, res_col, j));
         }
     }
 }
 
 /// DFT-domain in-place add: `res[res_col] += a[a_col]`.
-pub fn ntt4x30_vec_znx_dft_add_assign_portable<BE>(
-    res: &mut VecZnxDftBackendMut<'_, BE>,
+pub fn ntt4x30_vec_znx_dft_add_assign_portable<BE, Rg: Ring>(
+    res: &mut VecZnxDftBackendMut<'_, BE, Rg>,
     res_col: usize,
-    a: &VecZnxDftBackendRef<'_, BE>,
+    a: &VecZnxDftBackendRef<'_, BE, Rg>,
     a_col: usize,
 ) where
     BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttAddAssign,
@@ -528,17 +539,17 @@ pub fn ntt4x30_vec_znx_dft_add_assign_portable<BE>(
 {
     let sum_size = res.size().min(a.size());
     for j in 0..sum_size {
-        BE::ntt_add_assign(limb_u64_mut::<_, BE>(res, res_col, j), limb_u64::<_, BE>(a, a_col, j));
+        BE::ntt_add_assign(limb_u64_mut::<_, BE, Rg>(res, res_col, j), limb_u64::<_, BE, Rg>(a, a_col, j));
     }
 }
 
 /// DFT-domain sub: `res[res_col] = a[a_col] - b[b_col]`.
-pub fn ntt4x30_vec_znx_dft_sub_portable<BE>(
-    res: &mut VecZnxDftBackendMut<'_, BE>,
+pub fn ntt4x30_vec_znx_dft_sub_portable<BE, Rg: Ring>(
+    res: &mut VecZnxDftBackendMut<'_, BE, Rg>,
     res_col: usize,
-    a: &VecZnxDftBackendRef<'_, BE>,
+    a: &VecZnxDftBackendRef<'_, BE, Rg>,
     a_col: usize,
-    b: &VecZnxDftBackendRef<'_, BE>,
+    b: &VecZnxDftBackendRef<'_, BE, Rg>,
     b_col: usize,
 ) where
     BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttSub + NttNegate + NttCopy + NttZero,
@@ -554,41 +565,41 @@ pub fn ntt4x30_vec_znx_dft_sub_portable<BE>(
         let cpy_size = b_size.min(res_size);
         for j in 0..sum_size {
             BE::ntt_sub(
-                limb_u64_mut::<_, BE>(res, res_col, j),
-                limb_u64::<_, BE>(a, a_col, j),
-                limb_u64::<_, BE>(b, b_col, j),
+                limb_u64_mut::<_, BE, Rg>(res, res_col, j),
+                limb_u64::<_, BE, Rg>(a, a_col, j),
+                limb_u64::<_, BE, Rg>(b, b_col, j),
             );
         }
         for j in sum_size..cpy_size {
-            BE::ntt_negate(limb_u64_mut::<_, BE>(res, res_col, j), limb_u64::<_, BE>(b, b_col, j));
+            BE::ntt_negate(limb_u64_mut::<_, BE, Rg>(res, res_col, j), limb_u64::<_, BE, Rg>(b, b_col, j));
         }
         for j in cpy_size..res_size {
-            BE::ntt_zero(limb_u64_mut::<_, BE>(res, res_col, j));
+            BE::ntt_zero(limb_u64_mut::<_, BE, Rg>(res, res_col, j));
         }
     } else {
         let sum_size = b_size.min(res_size);
         let cpy_size = a_size.min(res_size);
         for j in 0..sum_size {
             BE::ntt_sub(
-                limb_u64_mut::<_, BE>(res, res_col, j),
-                limb_u64::<_, BE>(a, a_col, j),
-                limb_u64::<_, BE>(b, b_col, j),
+                limb_u64_mut::<_, BE, Rg>(res, res_col, j),
+                limb_u64::<_, BE, Rg>(a, a_col, j),
+                limb_u64::<_, BE, Rg>(b, b_col, j),
             );
         }
         for j in sum_size..cpy_size {
-            BE::ntt_copy(limb_u64_mut::<_, BE>(res, res_col, j), limb_u64::<_, BE>(a, a_col, j));
+            BE::ntt_copy(limb_u64_mut::<_, BE, Rg>(res, res_col, j), limb_u64::<_, BE, Rg>(a, a_col, j));
         }
         for j in cpy_size..res_size {
-            BE::ntt_zero(limb_u64_mut::<_, BE>(res, res_col, j));
+            BE::ntt_zero(limb_u64_mut::<_, BE, Rg>(res, res_col, j));
         }
     }
 }
 
 /// DFT-domain in-place sub: `res[res_col] -= a[a_col]`.
-pub fn ntt4x30_vec_znx_dft_sub_assign_portable<BE>(
-    res: &mut VecZnxDftBackendMut<'_, BE>,
+pub fn ntt4x30_vec_znx_dft_sub_assign_portable<BE, Rg: Ring>(
+    res: &mut VecZnxDftBackendMut<'_, BE, Rg>,
     res_col: usize,
-    a: &VecZnxDftBackendRef<'_, BE>,
+    a: &VecZnxDftBackendRef<'_, BE, Rg>,
     a_col: usize,
 ) where
     BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttSubAssign,
@@ -597,17 +608,17 @@ pub fn ntt4x30_vec_znx_dft_sub_assign_portable<BE>(
 {
     let sum_size = res.size().min(a.size());
     for j in 0..sum_size {
-        BE::ntt_sub_assign(limb_u64_mut::<_, BE>(res, res_col, j), limb_u64::<_, BE>(a, a_col, j));
+        BE::ntt_sub_assign(limb_u64_mut::<_, BE, Rg>(res, res_col, j), limb_u64::<_, BE, Rg>(a, a_col, j));
     }
 }
 
 /// DFT-domain in-place swap-sub: `res[res_col] = a[a_col] - res[res_col]`.
 ///
 /// Extra `res` limbs beyond `a.size()` are negated.
-pub fn ntt4x30_vec_znx_dft_sub_negate_assign_portable<BE>(
-    res: &mut VecZnxDftBackendMut<'_, BE>,
+pub fn ntt4x30_vec_znx_dft_sub_negate_assign_portable<BE, Rg: Ring>(
+    res: &mut VecZnxDftBackendMut<'_, BE, Rg>,
     res_col: usize,
-    a: &VecZnxDftBackendRef<'_, BE>,
+    a: &VecZnxDftBackendRef<'_, BE, Rg>,
     a_col: usize,
 ) where
     BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttSubNegateAssign + NttNegateAssign,
@@ -617,22 +628,22 @@ pub fn ntt4x30_vec_znx_dft_sub_negate_assign_portable<BE>(
     let res_size = res.size();
     let sum_size = res_size.min(a.size());
     for j in 0..sum_size {
-        BE::ntt_sub_negate_assign(limb_u64_mut::<_, BE>(res, res_col, j), limb_u64::<_, BE>(a, a_col, j));
+        BE::ntt_sub_negate_assign(limb_u64_mut::<_, BE, Rg>(res, res_col, j), limb_u64::<_, BE, Rg>(a, a_col, j));
     }
     for j in sum_size..res_size {
-        BE::ntt_negate_assign(limb_u64_mut::<_, BE>(res, res_col, j));
+        BE::ntt_negate_assign(limb_u64_mut::<_, BE, Rg>(res, res_col, j));
     }
 }
 
 /// DFT-domain copy with stride: `res[res_col][j] = a[a_col][offset + j*step]`.
 ///
 /// Mirrors `vec_znx_dft_copy_portable` from the FFT64 backend.
-pub fn ntt4x30_vec_znx_dft_copy_portable<BE>(
+pub fn ntt4x30_vec_znx_dft_copy_portable<BE, Rg: Ring>(
     step: usize,
     offset: usize,
-    res: &mut VecZnxDftBackendMut<'_, BE>,
+    res: &mut VecZnxDftBackendMut<'_, BE, Rg>,
     res_col: usize,
-    a: &VecZnxDftBackendRef<'_, BE>,
+    a: &VecZnxDftBackendRef<'_, BE, Rg>,
     a_col: usize,
 ) where
     BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttCopy + NttZero,
@@ -650,37 +661,41 @@ pub fn ntt4x30_vec_znx_dft_copy_portable<BE>(
     for j in 0..min_steps {
         let limb = offset + j * step;
         if limb < a.size() {
-            BE::ntt_copy(limb_u64_mut::<_, BE>(res, res_col, j), limb_u64::<_, BE>(a, a_col, limb));
+            BE::ntt_copy(
+                limb_u64_mut::<_, BE, Rg>(res, res_col, j),
+                limb_u64::<_, BE, Rg>(a, a_col, limb),
+            );
         } else {
-            BE::ntt_zero(limb_u64_mut::<_, BE>(res, res_col, j));
+            BE::ntt_zero(limb_u64_mut::<_, BE, Rg>(res, res_col, j));
         }
     }
     for j in min_steps..res.size() {
-        BE::ntt_zero(limb_u64_mut::<_, BE>(res, res_col, j));
+        BE::ntt_zero(limb_u64_mut::<_, BE, Rg>(res, res_col, j));
     }
 }
 
 /// Zero all limbs of `res[res_col]`.
-pub fn ntt4x30_vec_znx_dft_zero_portable<BE>(res: &mut VecZnxDftBackendMut<'_, BE>, res_col: usize)
+pub fn ntt4x30_vec_znx_dft_zero_portable<BE, Rg: Ring>(res: &mut VecZnxDftBackendMut<'_, BE, Rg>, res_col: usize)
 where
     BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttZero,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
 {
     for j in 0..res.size() {
-        BE::ntt_zero(limb_u64_mut::<_, BE>(res, res_col, j));
+        BE::ntt_zero(limb_u64_mut::<_, BE, Rg>(res, res_col, j));
     }
 }
 
 /// Precomputed permutation for `VecZnxDft` automorphism `tau_p : X -> X^p`
-/// in the NTT4x30 layout.
+/// in the NTT4x30 layout of ring `Rg`, which only applies to operands of `Rg`.
 ///
 /// `perm[i]` is the source slot (in q120b units of 4 u64) that supplies
 /// output slot `i`. NTT4x30 stores all `n` evaluations, so the action is a
 /// pure permutation with no sign / conjugate flag.
 #[derive(Clone, Debug)]
-pub struct NttAutomorphismPlan {
+pub struct NttAutomorphismPlan<Rg: Ring> {
     pub p: i64,
     pub perm: Vec<u32>,
+    pub(crate) ring: PhantomData<Rg>,
 }
 
 /// Applies a precomputed NTT4x30 automorphism plan to `a`, writing the
@@ -689,11 +704,11 @@ pub struct NttAutomorphismPlan {
 /// Per output slot, one 4-u64 q120b copy from the indexed source slot.
 /// No modular arithmetic, no negation — full-spectrum NTT layout makes
 /// the action a pure permutation.
-pub fn ntt4x30_vec_znx_dft_automorphism_portable<BE>(
-    plan: &NttAutomorphismPlan,
-    res: &mut VecZnxDftBackendMut<'_, BE>,
+pub fn ntt4x30_vec_znx_dft_automorphism_portable<BE, Rg: Ring>(
+    plan: &NttAutomorphismPlan<Rg>,
+    res: &mut VecZnxDftBackendMut<'_, BE, Rg>,
     res_col: usize,
-    a: &VecZnxDftBackendRef<'_, BE>,
+    a: &VecZnxDftBackendRef<'_, BE, Rg>,
     a_col: usize,
 ) where
     BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttZero,
@@ -712,8 +727,8 @@ pub fn ntt4x30_vec_znx_dft_automorphism_portable<BE>(
     let perm: &[u32] = &plan.perm;
 
     for limb in 0..min_size {
-        let a_slice: &[u64] = limb_u64::<_, BE>(a, a_col, limb);
-        let res_slice: &mut [u64] = limb_u64_mut::<_, BE>(res, res_col, limb);
+        let a_slice: &[u64] = limb_u64::<_, BE, Rg>(a, a_col, limb);
+        let res_slice: &mut [u64] = limb_u64_mut::<_, BE, Rg>(res, res_col, limb);
 
         for i in 0..n {
             let s = perm[i] as usize;
@@ -724,15 +739,15 @@ pub fn ntt4x30_vec_znx_dft_automorphism_portable<BE>(
     }
 
     for limb in min_size..res_size {
-        BE::ntt_zero(limb_u64_mut::<_, BE>(res, res_col, limb));
+        BE::ntt_zero(limb_u64_mut::<_, BE, Rg>(res, res_col, limb));
     }
 }
 
-pub fn ntt4x30_vec_znx_dft_automorphism_add_portable<BE, E: poulpy_hal::execution::TaskExecutor>(
-    plan: &NttAutomorphismPlan,
-    res: &mut VecZnxDftBackendMut<'_, BE>,
+pub fn ntt4x30_vec_znx_dft_automorphism_add_portable<BE, E: poulpy_hal::execution::TaskExecutor, Rg: Ring>(
+    plan: &NttAutomorphismPlan<Rg>,
+    res: &mut VecZnxDftBackendMut<'_, BE, Rg>,
     res_col: usize,
-    a: &VecZnxDftBackendRef<'_, BE>,
+    a: &VecZnxDftBackendRef<'_, BE, Rg>,
     a_col: usize,
 ) where
     BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttAddAssign,
@@ -749,7 +764,7 @@ pub fn ntt4x30_vec_znx_dft_automorphism_add_portable<BE, E: poulpy_hal::executio
     let size = res.size().min(a.size());
     let res_ptr = SendPtr::new(cast_slice_mut::<_, u64>(res.raw_mut()).as_mut_ptr());
     let apply = |limb: usize| {
-        let a_limb = limb_u64::<_, BE>(a, a_col, limb);
+        let a_limb = limb_u64::<_, BE, Rg>(a, a_col, limb);
         let start = 4 * n * (limb * cols + res_col);
         let res_limb = unsafe { std::slice::from_raw_parts_mut(res_ptr.get().add(start), 4 * n) };
         for (i, &source) in plan.perm.iter().enumerate() {

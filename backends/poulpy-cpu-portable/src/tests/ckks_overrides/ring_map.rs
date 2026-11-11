@@ -2,7 +2,7 @@
 //! their queries and match the oracle.
 use super::OverrideBackend;
 use super::carry::with_marked_region;
-use crate::FFT64CIPortable;
+use crate::FFT64Portable;
 use poulpy_ckks::{
     CKKSCompositionError, SlotsKind,
     api::CKKSCIRingMapOps,
@@ -44,11 +44,13 @@ unsafe impl poulpy_hal::oep::HalVecZnxCIImpl for OverrideBackend {
     crate::hal_impl_vec_znx_ci!();
 }
 
+unsafe impl poulpy_hal::oep::HalScalarZnxCIImpl for OverrideBackend {}
+
 unsafe impl poulpy_core::oep::GLWECIConversionImpl for OverrideBackend {
     fn glwe_ci_embed<R, A>(module: &Module<Self>, res: &mut R, a: &A)
     where
         R: GLWEToBackendMut<Self> + GLWEInfos,
-        A: GLWEToBackendRef<Self> + GLWEInfos,
+        A: GLWEToBackendRef<Self, ConjugateInvariant> + GLWEInfos,
     {
         CI_EMBED_CALLS.set(CI_EMBED_CALLS.get() + 1);
         module.glwe_ci_embed_reference(res, a)
@@ -57,7 +59,7 @@ unsafe impl poulpy_core::oep::GLWECIConversionImpl for OverrideBackend {
     fn glwe_secret_ci_embed<R, S>(module: &Module<Self>, res: &mut R, src: &S)
     where
         R: GLWESecretToBackendMut<Self> + poulpy_core::GetDistributionMut,
-        S: GLWESecretToBackendRef<Self>,
+        S: GLWESecretToBackendRef<Self, ConjugateInvariant>,
     {
         module.glwe_secret_ci_embed_reference(res, src)
     }
@@ -72,7 +74,7 @@ unsafe impl poulpy_core::oep::GLWECIConversionImpl for OverrideBackend {
 
     fn glwe_ci_trace<R, A>(module: &Module<Self>, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, Self>)
     where
-        R: GLWEToBackendMut<Self> + GLWEInfos,
+        R: GLWEToBackendMut<Self, ConjugateInvariant> + GLWEInfos,
         A: GLWEToBackendRef<Self> + GLWEInfos,
     {
         CI_TRACE_CALLS.set(CI_TRACE_CALLS.get() + 1);
@@ -104,7 +106,7 @@ struct Fixtures {
     trace: GLWECITraceKey<AlignedBuf, i64>,
 }
 
-fn fixtures(module_ref: &Module<FFT64Oracle>, ci: &Module<FFT64CIPortable>) -> Fixtures {
+fn fixtures(module_ref: &Module<FFT64Oracle>, ci: &Module<FFT64Portable>) -> Fixtures {
     let infos = params(64).ksk_layout(49);
     let mut ci_sk = ci.glwe_secret_alloc_from_infos(&params(32).glwe_layout());
     ci.glwe_secret_fill_ternary_hw(&mut ci_sk, 8, &mut Source::new([1; 32]));
@@ -147,7 +149,7 @@ type PreparedKeys<BE> = (GLWECIEmbedKeyPrepared<AlignedBuf, BE>, GLWECITraceKeyP
 /// on its own query.
 fn round_trip<BE>(module: &Module<BE>, fixtures: &Fixtures) -> (Snapshot, Snapshot)
 where
-    BE: Backend<ZnxWord = i64, OwnedBuf = AlignedBuf, Ring = Standard>,
+    BE: Backend<ZnxWord = i64, OwnedBuf = AlignedBuf>,
     Module<BE>: CKKSCIRingMapOps<BE> + GLWECIKeyPreparedFactory<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
@@ -158,12 +160,15 @@ where
     let mut back = fixtures.back.clone();
     let bytes = module.ckks_ci_trace_tmp_bytes(&back, &extended, &trace_key);
     with_scratch::<BE, _>(bytes, |s| module.ckks_ci_trace(&mut back, &extended, &trace_key, s)).unwrap();
-    (snapshot::<BE, _>(&extended), snapshot::<FFT64CIPortable, _>(&back))
+    (
+        snapshot::<BE, _, Standard>(&extended),
+        snapshot::<BE, _, ConjugateInvariant>(&back),
+    )
 }
 
 #[test]
 fn ring_maps_enter_the_selected_core_maps() {
-    let ci = Module::<FFT64CIPortable>::new(32);
+    let ci = Module::<FFT64Portable>::new(32);
     let module_ref = Module::<FFT64Oracle>::new(64);
     let module_test = Module::<OverrideBackend>::new(64);
     let fixtures = fixtures(&module_ref, &ci);
@@ -178,15 +183,28 @@ fn ring_maps_enter_the_selected_core_maps() {
     };
     assert_eq!(
         module_test.ckks_ci_embed_tmp_bytes(extended, &key_infos),
-        module_test.glwe_keyswitch_tmp_bytes(&allocated, &allocated, &key_infos)
+        <Module<OverrideBackend> as GLWEKeyswitch<OverrideBackend>>::glwe_keyswitch_tmp_bytes(
+            &module_test,
+            &allocated,
+            &allocated,
+            &key_infos
+        )
     );
     let trace_bytes = module_test.ckks_ci_trace_tmp_bytes(back, extended, &key_infos);
     assert_eq!(
         trace_bytes,
         OverrideBackend::scratch_aligned(module_test.glwe_bytes_of_from_infos(extended))
-            + module_test.glwe_keyswitch_tmp_bytes(extended, extended, &key_infos).max(
-                poulpy_core::GLWECITrace::glwe_ci_trace_tmp_bytes(&module_test, back, extended)
+            + <Module<OverrideBackend> as GLWEKeyswitch<OverrideBackend>>::glwe_keyswitch_tmp_bytes(
+                &module_test,
+                extended,
+                extended,
+                &key_infos
             )
+            .max(poulpy_core::GLWECITrace::glwe_ci_trace_tmp_bytes(
+                &module_test,
+                back,
+                extended
+            ))
     );
     assert!(
         poulpy_core::GLWECITrace::glwe_ci_trace_tmp_bytes(&module_test, back, extended)
@@ -204,12 +222,12 @@ fn ring_maps_enter_the_selected_core_maps() {
 
     // A conjugate-invariant output of the wrong degree is refused before the trace is entered.
     let (_, trace_key) = prepared_keys(&module_test, &fixtures);
-    let mut wrong = fixture_ciphertext(
-        &Module::<FFT64CIPortable>::new(16),
+    let mut wrong = fixture_ciphertext::<_, ConjugateInvariant>(
+        &Module::<FFT64Portable>::new(16),
         &layout(params(16), 1, 48, 16, 0, SlotsKind::Complex),
         54,
     );
-    let unchanged = snapshot::<FFT64CIPortable, _>(&wrong);
+    let unchanged = snapshot::<FFT64Portable, _, ConjugateInvariant>(&wrong);
     CI_TRACE_CALLS.set(0);
     let err =
         with_scratch::<OverrideBackend, _>(0, |s| module_test.ckks_ci_trace(&mut wrong, extended, &trace_key, s)).unwrap_err();
@@ -221,5 +239,5 @@ fn ring_maps_enter_the_selected_core_maps() {
         "wrong output degree: {err}"
     );
     assert_eq!(CI_TRACE_CALLS.get(), 0);
-    assert_eq!(snapshot::<FFT64CIPortable, _>(&wrong), unchanged);
+    assert_eq!(snapshot::<FFT64Portable, _, ConjugateInvariant>(&wrong), unchanged);
 }

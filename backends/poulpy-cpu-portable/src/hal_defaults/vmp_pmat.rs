@@ -35,15 +35,15 @@ use poulpy_hal::{
     api::HostBufMut,
     execution::TaskExecutor,
     layouts::{
-        Backend, HostDataMut, HostDataRef, MatZnxBackendRef, Module, ScratchArena, VecZnxDftBackendMut, VecZnxDftBackendRef,
-        VmpPMatBackendMut, VmpPMatBackendRef, check_degree,
+        Backend, HostDataMut, HostDataRef, MatZnxBackendRef, Module, Ring, ScratchArena, Standard, VecZnxDftBackendMut,
+        VecZnxDftBackendRef, VmpPMatBackendMut, VmpPMatBackendRef, check_degree,
     },
 };
 
 use super::take_host_typed;
 
 #[doc(hidden)]
-pub trait FFT64VmpDefault: Backend<ZnxWord = i64>
+pub trait FFT64VmpDefault<Rg: Ring = Standard>: Backend<ZnxWord = i64>
 where
     Self::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'x> Self::BufMut<'x>: HostDataMut,
@@ -64,12 +64,12 @@ where
 
     fn vmp_pmat_prepare_default(
         module: &Module<Self>,
-        res: &mut VmpPMatBackendMut<'_, Self>,
-        a: &MatZnxBackendRef<'_, Self>,
+        res: &mut VmpPMatBackendMut<'_, Self, Rg>,
+        a: &MatZnxBackendRef<'_, Self, Rg>,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        Module<Self>: FFTModuleHandle<f64, Ring = Self::Ring>,
-        Self: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec + Fft64RingArith + 'static,
+        Module<Self>: FFTModuleHandle<f64, Rg>,
+        Self: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec + Fft64RingArith<Rg> + 'static,
         for<'x> Self: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
         for<'x> <Self as Backend>::BufMut<'x>: HostDataMut,
         for<'x> Self::BufMut<'x>: HostBufMut<'x>,
@@ -79,7 +79,7 @@ where
         assert_eq!(a.n(), n, "vmp_pmat_prepare: a.n():{} != res.n():{n}", a.n());
         let bytes = fft64_vmp_pmat_prepare_tmp_bytes(n);
         let (tmp, _) = take_host_typed::<Self, f64>(scratch.borrow(), bytes / size_of::<f64>());
-        fft64_vmp_pmat_prepare::<Self>(module.get_fft_plan(n), res, a, tmp);
+        fft64_vmp_pmat_prepare::<Self, Rg>(module.get_fft_plan(n), res, a, tmp);
     }
 
     fn vmp_apply_dft_to_dft_tmp_bytes_default(
@@ -100,13 +100,13 @@ where
     #[inline(always)]
     fn vmp_apply_dft_to_dft_default(
         _module: &Module<Self>,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
-        a: &VecZnxDftBackendRef<'_, Self>,
-        b: &VmpPMatBackendRef<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, Rg>,
+        a: &VecZnxDftBackendRef<'_, Self, Rg>,
+        b: &VmpPMatBackendRef<'_, Self, Rg>,
         limb_offset: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        Self: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec + Fft64RingArith,
+        Self: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec + Fft64RingArith<Rg>,
         for<'x> <Self as Backend>::BufRef<'x>: HostDataRef,
         for<'x> <Self as Backend>::BufMut<'x>: HostDataMut,
         for<'x> Self::BufMut<'x>: HostBufMut<'x>,
@@ -118,15 +118,15 @@ where
     #[inline(always)]
     fn vmp_apply_dft_to_dft_with_kernel_default<KERNEL, E>(
         _module: &Module<Self>,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
-        a: &VecZnxDftBackendRef<'_, Self>,
-        b: &VmpPMatBackendRef<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, Rg>,
+        a: &VecZnxDftBackendRef<'_, Self, Rg>,
+        b: &VmpPMatBackendRef<'_, Self, Rg>,
         limb_offset: usize,
         workers: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
         Self: Backend<DftWord = f64, ZnxWord = i64>,
-        KERNEL: ReimArith + Reim4BlkMatVec + Fft64RingArith,
+        KERNEL: ReimArith + Reim4BlkMatVec + Fft64RingArith<Rg>,
         E: TaskExecutor,
         for<'x> <Self as Backend>::BufRef<'x>: HostDataRef,
         for<'x> <Self as Backend>::BufMut<'x>: HostDataMut,
@@ -135,19 +135,19 @@ where
         let per_worker = fft64_vmp_apply_dft_to_dft_tmp_bytes(a.size(), b.rows(), b.cols_in());
         let bytes = workers.max(1).min(scratch.available() / per_worker.max(1)).max(1) * per_worker;
         let (tmp, _) = take_host_typed::<Self, f64>(scratch.borrow(), bytes / size_of::<f64>());
-        fft64_vmp_apply_dft_to_dft_with_kernel::<Self, KERNEL, E>(res, a, b, limb_offset, tmp);
+        fft64_vmp_apply_dft_to_dft_with_kernel::<Self, KERNEL, E, Rg>(res, a, b, limb_offset, tmp);
     }
 
     #[inline(always)]
     fn vmp_apply_dft_to_dft_add_default(
         _module: &Module<Self>,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
-        a: &VecZnxDftBackendRef<'_, Self>,
-        b: &VmpPMatBackendRef<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, Rg>,
+        a: &VecZnxDftBackendRef<'_, Self, Rg>,
+        b: &VmpPMatBackendRef<'_, Self, Rg>,
         limb_offset: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        Self: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec + Fft64RingArith,
+        Self: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec + Fft64RingArith<Rg>,
         for<'x> <Self as Backend>::BufRef<'x>: HostDataRef,
         for<'x> <Self as Backend>::BufMut<'x>: HostDataMut,
         for<'x> Self::BufMut<'x>: HostBufMut<'x>,
@@ -168,15 +168,15 @@ where
     #[inline(always)]
     fn vmp_apply_dft_to_dft_add_with_kernel_default<KERNEL, E>(
         _module: &Module<Self>,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
-        a: &VecZnxDftBackendRef<'_, Self>,
-        b: &VmpPMatBackendRef<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, Rg>,
+        a: &VecZnxDftBackendRef<'_, Self, Rg>,
+        b: &VmpPMatBackendRef<'_, Self, Rg>,
         limb_offset: usize,
         workers: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
         Self: Backend<DftWord = f64, ZnxWord = i64>,
-        KERNEL: ReimArith + Reim4BlkMatVec + Fft64RingArith,
+        KERNEL: ReimArith + Reim4BlkMatVec + Fft64RingArith<Rg>,
         E: TaskExecutor,
         for<'x> <Self as Backend>::BufRef<'x>: HostDataRef,
         for<'x> <Self as Backend>::BufMut<'x>: HostDataMut,
@@ -185,13 +185,13 @@ where
         let per_worker = fft64_vmp_apply_dft_to_dft_tmp_bytes(a.size(), b.rows(), b.cols_in());
         let bytes = workers.max(1).min(scratch.available() / per_worker.max(1)).max(1) * per_worker;
         let (tmp, _) = take_host_typed::<Self, f64>(scratch.borrow(), bytes / size_of::<f64>());
-        fft64_vmp_apply_dft_to_dft_add_with_kernel::<Self, KERNEL, E>(res, a, b, limb_offset, tmp);
+        fft64_vmp_apply_dft_to_dft_add_with_kernel::<Self, KERNEL, E, Rg>(res, a, b, limb_offset, tmp);
     }
 
     fn vmp_extract_selected_rows_default(
         _module: &Module<Self>,
-        res: &mut VmpPMatBackendMut<'_, Self>,
-        a: &VmpPMatBackendRef<'_, Self>,
+        res: &mut VmpPMatBackendMut<'_, Self, Rg>,
+        a: &VmpPMatBackendRef<'_, Self, Rg>,
         first_row: usize,
         row_step: usize,
     ) where
@@ -199,19 +199,19 @@ where
         for<'x> <Self as Backend>::BufMut<'x>: HostDataMut,
         for<'x> <Self as Backend>::BufRef<'x>: HostDataRef,
     {
-        fft64_vmp_extract_selected_rows::<Self>(res, a, first_row, row_step);
+        fft64_vmp_extract_selected_rows::<Self, Rg>(res, a, first_row, row_step);
     }
 
-    fn vmp_zero_default(_module: &Module<Self>, res: &mut VmpPMatBackendMut<'_, Self>)
+    fn vmp_zero_default(_module: &Module<Self>, res: &mut VmpPMatBackendMut<'_, Self, Rg>)
     where
         Self: Backend<DftWord = f64, ZnxWord = i64>,
         for<'x> <Self as Backend>::BufMut<'x>: HostDataMut,
     {
-        fft64_vmp_zero::<Self>(res);
+        fft64_vmp_zero::<Self, Rg>(res);
     }
 }
 
-impl<BE: Backend<ZnxWord = i64>> FFT64VmpDefault for BE
+impl<BE: Backend<ZnxWord = i64>, Rg: Ring> FFT64VmpDefault<Rg> for BE
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'x> BE::BufMut<'x>: HostDataMut,
@@ -220,7 +220,7 @@ where
 }
 
 #[doc(hidden)]
-pub trait NTT4x30VmpDefault: Backend<ZnxWord = i64>
+pub trait NTT4x30VmpDefault<Rg: Ring = Standard>: Backend<ZnxWord = i64>
 where
     Self::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'x> Self::BufMut<'x>: HostDataMut,
@@ -241,22 +241,19 @@ where
 
     fn vmp_pmat_prepare_default(
         module: &Module<Self>,
-        res: &mut VmpPMatBackendMut<'_, Self>,
-        a: &MatZnxBackendRef<'_, Self>,
+        res: &mut VmpPMatBackendMut<'_, Self, Rg>,
+        a: &MatZnxBackendRef<'_, Self, Rg>,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        Module<Self>: NttModuleHandle,
-        Self: Backend<DftWord = Q120bScalar, ZnxWord = i64>
-            + NttDFTExecute<NttTable<Primes30, <Module<Self> as crate::kernels::ntt4x30::vec_znx_dft::NttModuleHandle>::Ring>>
-            + NttFromZnx64
-            + NttCFromB,
+        Module<Self>: NttModuleHandle<Rg>,
+        Self: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttDFTExecute<NttTable<Primes30, Rg>> + NttFromZnx64 + NttCFromB,
         for<'x> <Self as Backend>::BufMut<'x>: HostDataMut,
         for<'x> <Self as Backend>::BufRef<'x>: HostDataRef,
         for<'x> Self::BufMut<'x>: HostBufMut<'x>,
     {
         let bytes = ntt4x30_vmp_pmat_prepare_tmp_bytes_portable(res.n());
         let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        ntt4x30_vmp_pmat_prepare_portable::<Self>(module, res, a, tmp);
+        ntt4x30_vmp_pmat_prepare_portable::<Self, Rg>(module, res, a, tmp);
     }
 
     fn vmp_apply_dft_to_dft_tmp_bytes_default(
@@ -276,13 +273,13 @@ where
 
     fn vmp_apply_dft_to_dft_default(
         module: &Module<Self>,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
-        a: &VecZnxDftBackendRef<'_, Self>,
-        b: &VmpPMatBackendRef<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, Rg>,
+        a: &VecZnxDftBackendRef<'_, Self, Rg>,
+        b: &VmpPMatBackendRef<'_, Self, Rg>,
         limb_offset: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        Module<Self>: NttModuleHandle,
+        Module<Self>: NttModuleHandle<Rg>,
         Self: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttExtract1BlkContiguous + NttMulBbc1ColX2 + NttMulBbc2ColsX2,
         for<'x> <Self as Backend>::BufMut<'x>: HostDataMut,
         for<'x> <Self as Backend>::BufRef<'x>: HostDataRef,
@@ -290,31 +287,31 @@ where
     {
         let bytes = ntt4x30_vmp_apply_dft_to_dft_tmp_bytes_portable(a.size(), b.rows(), b.cols_in());
         let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        ntt4x30_vmp_apply_dft_to_dft_portable::<Self>(module, res, a, b, limb_offset, tmp);
+        ntt4x30_vmp_apply_dft_to_dft_portable::<Self, Rg>(module, res, a, b, limb_offset, tmp);
     }
 
     fn vmp_extract_selected_rows_default(
         _module: &Module<Self>,
-        res: &mut VmpPMatBackendMut<'_, Self>,
-        a: &VmpPMatBackendRef<'_, Self>,
+        res: &mut VmpPMatBackendMut<'_, Self, Rg>,
+        a: &VmpPMatBackendRef<'_, Self, Rg>,
         first_row: usize,
         row_step: usize,
     ) where
         for<'x> <Self as Backend>::BufMut<'x>: HostDataMut,
         for<'x> <Self as Backend>::BufRef<'x>: HostDataRef,
     {
-        ntt4x30_vmp_extract_selected_rows_portable::<Self>(res, a, first_row, row_step);
+        ntt4x30_vmp_extract_selected_rows_portable::<Self, Rg>(res, a, first_row, row_step);
     }
 
-    fn vmp_zero_default(_module: &Module<Self>, res: &mut VmpPMatBackendMut<'_, Self>)
+    fn vmp_zero_default(_module: &Module<Self>, res: &mut VmpPMatBackendMut<'_, Self, Rg>)
     where
         for<'x> <Self as Backend>::BufMut<'x>: HostDataMut,
     {
-        ntt4x30_vmp_zero_portable::<Self>(res);
+        ntt4x30_vmp_zero_portable::<Self, Rg>(res);
     }
 }
 
-impl<BE: Backend<ZnxWord = i64>> NTT4x30VmpDefault for BE
+impl<BE: Backend<ZnxWord = i64>, Rg: Ring> NTT4x30VmpDefault<Rg> for BE
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'x> BE::BufMut<'x>: HostDataMut,

@@ -188,8 +188,8 @@ CKKS keeps its independent mathematical conformance tests
 (`ckks_backend_test_suite!`, on the oracle and the portable serial types) and
 adds caller-selected circuit parity through `ckks_parity_test_suite!`.
 Registrations cover `f64` and `Quad` on all 16 CPU backend types, with Rayon
-variants compared against their serial siblings. Every standard-ring CKKS type
-also registers `ckks_determinism_test_suite!`, which checks its encodings and
+variants compared against their serial siblings. Every CKKS backend type
+also registers `ckks_determinism_test_suite!` on the standard ring, which checks its encodings and
 setup constants in `f64`, `f32` and `Quad` against frozen fixtures. Portable encoding
 and DFT matrix/evaluation parity also exercise `f32`. Native CI and optional
 QEMU runs include the `ckks_parity` groups, including controlled-sampling
@@ -209,8 +209,9 @@ BLAS runs its functional suite on `poulpy-cpu-oracle` and the portable serial
 types and registers bit-exact parity through `blas_parity_test_suite!`: every
 other backend type, Rayon and IFMA variants included, is compared against the
 oracle of its family (`NTT3x42` types against the `NTT4x30` oracles) in `f64`
-and `Quad`. Every conjugate-invariant backend type, the oracle's included, also
-runs `blas_conjugate_invariant_test_suite!`. Native CI runs every BLAS test.
+and `Quad`. Every CPU backend type and the oracle also run
+`blas_conjugate_invariant_test_suite!` on the conjugate-invariant ring; the GPU
+type, whose buffers are not host-visible, covers that ring through parity. Native CI runs every BLAS test.
 Under Intel SDE, the AVX-512 job runs the `f64` parity of each of its serial
 types once, in a step with its own execution budget; the emulated AVX job and
 the optional QEMU run do not run BLAS. See
@@ -228,10 +229,10 @@ in `f64`, in `Quad` and at rank 2, each also at radix 54 (`N = 128`), and parity
 between its FFT64 and NTT4x30 families in both directions. `FFT64Portable` runs
 them in `f64` and `NTT4x30Portable` in `f64` and `Quad`. The NTT types also
 register parity at radix 54, at `N = 64` on the standard ring and `N = 32` on
-the conjugate-invariant ring, and the FFT64 types of the standard ring at
+the conjugate-invariant ring, and the FFT64 types on the standard ring at
 `N = 32`, where one `4 x 4` block fills the 16 slots. `poulpy-cpu-portable`
-registers `blas_max_base2k_test_suite!` for its FFT64 and NTT4x30 types and
-their conjugate-invariant counterparts.
+registers `blas_max_base2k_test_suite!` for its FFT64 and NTT4x30 types on
+both rings.
 [`blas_tests.rs`](backends/poulpy-cpu-portable/src/tests/blas_tests.rs) shows the
 registrations, and [`blas_overrides.rs`](backends/poulpy-cpu-portable/src/tests/blas_overrides.rs)
 overrides the map hook and the JKLS kernel, checks parity with the oracle

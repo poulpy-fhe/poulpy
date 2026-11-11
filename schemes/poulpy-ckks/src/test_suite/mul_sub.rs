@@ -56,7 +56,7 @@ fn cmul_scalar<F: TestScalar>(a_re: &[F], a_im: &[F], c_re: F, c_im: F) -> (Vec<
 
 pub fn test_mul_sub_ct_aligned<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -117,7 +117,7 @@ where
         &mut scratch.borrow(),
     );
     let bytes = module.ckks_mul_sub_ct_tmp_bytes(&dst, &a, &b, &tsk);
-    let before = snapshot::<BE, _>(&dst);
+    let before = snapshot::<BE, _, Standard>(&dst);
     let err = with_scratch::<BE, _>(bytes - 1, |s| module.ckks_mul_sub_ct_into(&mut dst, &a, &b, &tsk, s)).unwrap_err();
     assert_ckks_internal(
         "ckks_mul_sub_ct_into: one byte short",
@@ -125,7 +125,7 @@ where
         "ckks_mul_sub_ct_into: scratch below its query",
     );
     assert_eq!(
-        snapshot::<BE, _>(&dst),
+        snapshot::<BE, _, Standard>(&dst),
         before,
         "ckks_mul_sub_ct_into: a refused call wrote dst"
     );
@@ -148,7 +148,7 @@ pub fn test_mul_sub_ct_unaligned_dst<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -228,7 +228,7 @@ pub fn test_mul_sub_ct_unaligned_dst<BE, F, E>(
 
 pub fn test_mul_sub_pt_vec_aligned<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -290,7 +290,7 @@ where
         &b_im_raw,
     );
     let bytes = module.ckks_mul_sub_pt_vec_tmp_bytes(&dst, &a, &pt);
-    let before = snapshot::<BE, _>(&dst);
+    let before = snapshot::<BE, _, Standard>(&dst);
     let err = with_scratch::<BE, _>(bytes - 1, |s| module.ckks_mul_sub_pt_vec_into(&mut dst, &a, &pt, s)).unwrap_err();
     assert_ckks_internal(
         "ckks_mul_sub_pt_vec_into: one byte short",
@@ -298,7 +298,7 @@ where
         "ckks_mul_sub_pt_vec_into: scratch below its query",
     );
     assert_eq!(
-        snapshot::<BE, _>(&dst),
+        snapshot::<BE, _, Standard>(&dst),
         before,
         "ckks_mul_sub_pt_vec_into: a refused call wrote dst"
     );
@@ -321,7 +321,7 @@ pub fn test_mul_sub_pt_vec_into_delta_log_delta<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -402,7 +402,7 @@ pub fn test_mul_sub_pt_const_into_aligned<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -450,9 +450,9 @@ pub fn test_mul_sub_pt_const_into_aligned<BE, F, E>(
         &a_im,
         &mut scratch.borrow(),
     );
-    let cst = ckks_pt_cst_full::<BE, F>(host_module, module, params.base2k.into(), PT_PREC, m, Some(c_re_f64), None);
+    let cst = ckks_pt_cst_full::<BE, F, Standard>(host_module, module, params.base2k.into(), PT_PREC, m, Some(c_re_f64), None);
     let bytes = module.ckks_mul_sub_pt_const_tmp_bytes(&dst, &a, &cst);
-    let before = snapshot::<BE, _>(&dst);
+    let before = snapshot::<BE, _, Standard>(&dst);
     let err = with_scratch::<BE, _>(bytes - 1, |s| module.ckks_mul_sub_pt_const_into(&mut dst, &a, &cst, 0, s)).unwrap_err();
     assert_ckks_internal(
         "ckks_mul_sub_pt_const_into: one byte short",
@@ -460,7 +460,7 @@ pub fn test_mul_sub_pt_const_into_aligned<BE, F, E>(
         "ckks_mul_sub_pt_const_into: scratch below its query",
     );
     assert_eq!(
-        snapshot::<BE, _>(&dst),
+        snapshot::<BE, _, Standard>(&dst),
         before,
         "ckks_mul_sub_pt_const_into: a refused call wrote dst"
     );
@@ -483,7 +483,7 @@ pub fn test_mul_sub_pt_const_zero_preserves_dst_meta<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -527,7 +527,7 @@ pub fn test_mul_sub_pt_const_zero_preserves_dst_meta<BE, F, E>(
     );
     let dst_meta = ckks_snapshot(&dst);
     let zero_prec = ckks_spec(params.n, params.base2k, 0, PT_PREC.log_budget());
-    let cst = ckks_pt_cst_full::<BE, F>(host_module, module, params.base2k.into(), zero_prec, m, None, None);
+    let cst = ckks_pt_cst_full::<BE, F, Standard>(host_module, module, params.base2k.into(), zero_prec, m, None, None);
     with_scratch::<BE, _>(module.ckks_mul_sub_pt_const_tmp_bytes(&dst, &a, &cst), |s| {
         module.ckks_mul_sub_pt_const_into(&mut dst, &a, &cst, 0, s)
     })
@@ -554,7 +554,7 @@ pub fn test_mul_sub_pt_vec_into_rejects_base2k_mismatch<BE, F, E>(
     module: &poulpy_hal::layouts::Module<BE>,
     _host_module: &poulpy_hal::layouts::Module<poulpy_hal::layouts::HostBytesBackend>,
 ) where
-    BE: crate::test_suite::helpers::TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
+    BE: crate::test_suite::helpers::TestContextBackend,
     poulpy_hal::layouts::Module<BE>: crate::test_suite::helpers::TestContextModule<BE>,
     F: crate::test_suite::helpers::TestScalar,
     E: ReimNew<F>,
@@ -587,23 +587,31 @@ pub fn test_mul_sub_pt_vec_into_rejects_base2k_mismatch<BE, F, E>(
         pt_base2k: b - 1,
     };
     for bytes in [0, module.ckks_mul_sub_pt_vec_tmp_bytes(&res, &a, &pt)] {
-        let before = snapshot::<BE, _>(&res);
+        let before = snapshot::<BE, _, Standard>(&res);
         let err = with_scratch::<BE, _>(bytes, |s| module.ckks_mul_sub_pt_vec_into(&mut res, &a, &pt, s)).unwrap_err();
         assert_ckks_error(
             "mul_sub_pt_vec_into: plaintext of another radix",
             &err,
             want("ckks_mul_sub_pt_vec_into"),
         );
-        assert_eq!(snapshot::<BE, _>(&res), before, "a refused multiply-accumulate wrote dst");
+        assert_eq!(
+            snapshot::<BE, _, Standard>(&res),
+            before,
+            "a refused multiply-accumulate wrote dst"
+        );
     }
     for bytes in [0, module.ckks_mul_sub_pt_const_tmp_bytes(&res, &a, &pt)] {
-        let before = snapshot::<BE, _>(&res);
+        let before = snapshot::<BE, _, Standard>(&res);
         let err = with_scratch::<BE, _>(bytes, |s| module.ckks_mul_sub_pt_const_into(&mut res, &a, &pt, 0, s)).unwrap_err();
         assert_ckks_error(
             "mul_sub_pt_const_into: plaintext of another radix",
             &err,
             want("ckks_mul_sub_pt_const_into"),
         );
-        assert_eq!(snapshot::<BE, _>(&res), before, "a refused multiply-accumulate wrote dst");
+        assert_eq!(
+            snapshot::<BE, _, Standard>(&res),
+            before,
+            "a refused multiply-accumulate wrote dst"
+        );
     }
 }

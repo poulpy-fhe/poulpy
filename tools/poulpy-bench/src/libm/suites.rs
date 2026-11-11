@@ -6,7 +6,7 @@ use criterion::{
 };
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, HostStaged, Module, ScratchOwned, Standard},
+    layouts::{Backend, HostStaged, Module, ScratchOwned},
 };
 
 use crate::{
@@ -20,7 +20,7 @@ use crate::{
 /// `ckks_exp`, `ckks_log` and `ckks_pow`.
 pub fn libm_ops<BE, M>() -> [BenchOp<M, LibmBenchParams>; 3]
 where
-    BE: Backend<Ring = Standard> + HostStaged + 'static,
+    BE: Backend + HostStaged + 'static,
     Module<BE>: LibmBenchModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     M: Measurement,
@@ -48,7 +48,7 @@ where
 /// a `criterion_group!` registers it once per backend to cover.
 pub fn bench_libm<BE>(c: &mut Criterion<WallTime>)
 where
-    BE: Backend<Ring = Standard> + HostStaged + 'static,
+    BE: Backend + HostStaged + 'static,
     Module<BE>: LibmBenchModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
@@ -62,7 +62,7 @@ pub mod standard {
     use criterion::{Criterion, measurement::WallTime};
     use poulpy_hal::{
         api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
-        layouts::{Backend, HostStaged, Module, ScratchOwned, Standard},
+        layouts::{Backend, HostStaged, Module, ScratchOwned},
     };
 
     use super::libm_ops;
@@ -74,7 +74,7 @@ pub mod standard {
     /// Every libm operation over the standard degrees.
     pub fn bench_libm<BE>(c: &mut Criterion<WallTime>)
     where
-        BE: Backend<Ring = Standard> + HostStaged + 'static,
+        BE: Backend + HostStaged + 'static,
         Module<BE>: LibmBenchModule<BE>,
         ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     {
@@ -90,7 +90,7 @@ pub mod light {
     use criterion::{Criterion, measurement::WallTime};
     use poulpy_hal::{
         api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
-        layouts::{Backend, HostStaged, Module, ScratchOwned, Standard},
+        layouts::{Backend, HostStaged, Module, ScratchOwned},
     };
 
     use super::libm_ops;
@@ -102,7 +102,7 @@ pub mod light {
     /// Every libm operation at the light degree.
     pub fn bench_libm<BE>(c: &mut Criterion<WallTime>)
     where
-        BE: Backend<Ring = Standard> + HostStaged + 'static,
+        BE: Backend + HostStaged + 'static,
         Module<BE>: LibmBenchModule<BE>,
         ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     {

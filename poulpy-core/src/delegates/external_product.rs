@@ -1,4 +1,4 @@
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Module, Ring, ScratchArena};
 
 use crate::{
     api::{GGLWEExternalProduct, GGSWExternalProduct, GLWEExternalProduct},
@@ -11,7 +11,7 @@ use crate::{
 
 macro_rules! impl_external_product_delegate {
     ($trait:ty, [$($bounds:tt)+], $($body:item)+) => {
-        impl<BE> $trait for Module<BE>
+        impl<BE, Rg: Ring> $trait for Module<BE>
         where
             $($bounds)+
         {
@@ -21,8 +21,8 @@ macro_rules! impl_external_product_delegate {
 }
 
 impl_external_product_delegate!(
-    GLWEExternalProduct<BE>,
-    [BE: Backend + GLWEExternalProductImpl],
+    GLWEExternalProduct<BE, Rg>,
+    [BE: Backend + GLWEExternalProductImpl<Rg>],
     fn glwe_external_product_tmp_bytes<R, A, B>(&self, res_infos: &R, a_infos: &A, b_infos: &B) -> usize
     where
         R: GLWEInfos,
@@ -35,11 +35,11 @@ impl_external_product_delegate!(
     fn glwe_external_product_assign<R>(
         &self,
         res: &mut R,
-        rhs: &GGSWPreparedBackendRef<'_, BE>,
+        rhs: &GGSWPreparedBackendRef<'_, BE, Rg>,
         scratch: &mut ScratchArena<'_, BE>,
     )
     where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
+        R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
     {
         BE::glwe_external_product_assign(self, res, rhs, scratch)
     }
@@ -48,20 +48,20 @@ impl_external_product_delegate!(
         &self,
         res: &mut R,
         lhs: &A,
-        rhs: &GGSWPreparedBackendRef<'_, BE>,
+        rhs: &GGSWPreparedBackendRef<'_, BE, Rg>,
         scratch: &mut ScratchArena<'_, BE>,
     )
     where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
+        R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+        A: GLWEToBackendRef<BE, Rg> + GLWEInfos,
     {
         BE::glwe_external_product(self, res, lhs, rhs, scratch)
     }
 );
 
 impl_external_product_delegate!(
-    GGLWEExternalProduct<BE>,
-    [BE: Backend + GGLWEExternalProductImpl],
+    GGLWEExternalProduct<BE, Rg>,
+    [BE: Backend + GGLWEExternalProductImpl<Rg>],
     fn gglwe_external_product_tmp_bytes<R, A, B>(&self, res_infos: &R, a_infos: &A, b_infos: &B) -> usize
     where
         R: GGLWEInfos,
@@ -75,12 +75,12 @@ impl_external_product_delegate!(
         &self,
         res: &mut R,
         a: &A,
-        b: &GGSWPreparedBackendRef<'_, BE>,
+        b: &GGSWPreparedBackendRef<'_, BE, Rg>,
         scratch: &mut ScratchArena<'_, BE>,
     )
     where
-        R: GGLWEToBackendMut<BE> + GGLWEInfos,
-        A: GGLWEToBackendRef<BE> + GGLWEInfos,
+        R: GGLWEToBackendMut<BE, Rg> + GGLWEInfos,
+        A: GGLWEToBackendRef<BE, Rg> + GGLWEInfos,
     {
         BE::gglwe_external_product(self, res, a, b, scratch)
     }
@@ -88,19 +88,19 @@ impl_external_product_delegate!(
     fn gglwe_external_product_assign<R>(
         &self,
         res: &mut R,
-        a: &GGSWPreparedBackendRef<'_, BE>,
+        a: &GGSWPreparedBackendRef<'_, BE, Rg>,
         scratch: &mut ScratchArena<'_, BE>,
     )
     where
-        R: GGLWEToBackendMut<BE> + GGLWEInfos,
+        R: GGLWEToBackendMut<BE, Rg> + GGLWEInfos,
     {
         BE::gglwe_external_product_assign(self, res, a, scratch)
     }
 );
 
 impl_external_product_delegate!(
-    GGSWExternalProduct<BE>,
-    [BE: Backend + GGSWExternalProductImpl],
+    GGSWExternalProduct<BE, Rg>,
+    [BE: Backend + GGSWExternalProductImpl<Rg>],
     fn ggsw_external_product_tmp_bytes<R, A, B>(&self, res_infos: &R, a_infos: &A, b_infos: &B) -> usize
     where
         R: GGSWInfos,
@@ -114,12 +114,12 @@ impl_external_product_delegate!(
         &self,
         res: &mut R,
         a: &A,
-        b: &GGSWPreparedBackendRef<'_, BE>,
+        b: &GGSWPreparedBackendRef<'_, BE, Rg>,
         scratch: &mut ScratchArena<'_, BE>,
     )
     where
-        R: GGSWToBackendMut<BE> + GGSWAtViewMut<BE> + GGSWInfos,
-        A: GGSWToBackendRef<BE> + GGSWAtViewRef<BE> + GGSWInfos,
+        R: GGSWToBackendMut<BE, Rg> + GGSWAtViewMut<BE, Rg> + GGSWInfos,
+        A: GGSWToBackendRef<BE, Rg> + GGSWAtViewRef<BE, Rg> + GGSWInfos,
     {
         BE::ggsw_external_product(self, res, a, b, scratch)
     }
@@ -127,17 +127,17 @@ impl_external_product_delegate!(
     fn ggsw_external_product_assign<R>(
         &self,
         res: &mut R,
-        a: &GGSWPreparedBackendRef<'_, BE>,
+        a: &GGSWPreparedBackendRef<'_, BE, Rg>,
         scratch: &mut ScratchArena<'_, BE>,
     )
     where
-        R: GGSWToBackendMut<BE> + GGSWAtViewMut<BE> + GGSWInfos,
+        R: GGSWToBackendMut<BE, Rg> + GGSWAtViewMut<BE, Rg> + GGSWInfos,
     {
         BE::ggsw_external_product_assign(self, res, a, scratch)
     }
 );
 
-impl<BE: Backend + GLWEExternalProductImpl> crate::api::GLWEExternalProductDft<BE> for Module<BE> {
+impl<BE: Backend + GLWEExternalProductImpl<Rg>, Rg: Ring> crate::api::GLWEExternalProductDft<BE, Rg> for Module<BE> {
     fn glwe_external_product_dft_tmp_bytes<R, A, B>(&self, res_infos: &R, a_infos: &A, b_infos: &B) -> usize
     where
         R: GLWEInfos,
@@ -149,12 +149,12 @@ impl<BE: Backend + GLWEExternalProductImpl> crate::api::GLWEExternalProductDft<B
 
     fn glwe_external_product_dft<'r, A>(
         &self,
-        res_dft: &mut poulpy_hal::layouts::VecZnxDftBackendMut<'r, BE>,
+        res_dft: &mut poulpy_hal::layouts::VecZnxDftBackendMut<'r, BE, Rg>,
         a: &A,
-        ggsw: &GGSWPreparedBackendRef<'_, BE>,
+        ggsw: &GGSWPreparedBackendRef<'_, BE, Rg>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        A: GLWEToBackendRef<BE>,
+        A: GLWEToBackendRef<BE, Rg>,
     {
         BE::glwe_external_product_dft(self, res_dft, a, ggsw, scratch)
     }

@@ -61,7 +61,7 @@
 ### 4.1. Serialization
 
 - **Serialized types.** Only raw ciphertexts and the raw keys `BlindRotationKey`, `BlindRotationKeyCompressed`, `CircuitBootstrappingKey` and `BDDKey` implement `WriterTo` and `ReaderFrom`.
-- **Key wire format.** An optional component is a `u8` tag 0 or 1 then its payload, and a Galois map a count then `(element, key)` pairs in ascending order.
+- **Key wire format.** An optional component is a `u8` tag 0 or 1 then its payload, and a Galois map a count then `(element, key)` pairs in ascending order, each key holding its pair's element: the writer refuses a mismatch with `InvalidInput` before its first byte, the reader with `InvalidData` before reading that key.
 
 ### 4.2. Key encryption
 

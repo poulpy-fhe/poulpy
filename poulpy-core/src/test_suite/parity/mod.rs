@@ -67,7 +67,7 @@ pub use structure::*;
 
 pub(crate) use super::poisoned_scratch;
 use crate::oep::EncryptionImpl;
-use poulpy_hal::layouts::{ZnxView, ZnxViewMut};
+use poulpy_hal::layouts::{Ring, Standard, ZnxView, ZnxViewMut};
 use poulpy_hal::oep::HalVecZnxImpl;
 use poulpy_hal::{
     layouts::{Backend, CopyFromHost, CopyToHost, Module},
@@ -133,9 +133,15 @@ impl ParityShapes {
 }
 
 /// Coefficient word shared by every backend this suite compares.
-pub trait ParityBackend: Backend<ZnxWord = i64, OwnedBuf: CopyToHost + CopyFromHost> + EncryptionImpl + HalVecZnxImpl {}
+pub trait ParityBackend<Rg: Ring = Standard>:
+    Backend<ZnxWord = i64, OwnedBuf: CopyToHost + CopyFromHost> + EncryptionImpl<Rg> + HalVecZnxImpl<Rg>
+{
+}
 
-impl<BE: Backend<ZnxWord = i64, OwnedBuf: CopyToHost + CopyFromHost> + EncryptionImpl + HalVecZnxImpl> ParityBackend for BE {}
+impl<BE: Backend<ZnxWord = i64, OwnedBuf: CopyToHost + CopyFromHost> + EncryptionImpl<Rg> + HalVecZnxImpl<Rg>, Rg: Ring>
+    ParityBackend<Rg> for BE
+{
+}
 
 /// Allocates a GLWE on the reference module and fills it with uniform noise,
 /// canonical at the `k` it reports. It carries a fresh noise estimate, so an
@@ -144,20 +150,23 @@ impl<BE: Backend<ZnxWord = i64, OwnedBuf: CopyToHost + CopyFromHost> + Encryptio
 /// The operations read an operand at exactly the width it reports, so a
 /// layout whose `k` is not limb-aligned must carry nothing below it: the
 /// padding bits of the last live limb and every limb past it are zero.
-pub(crate) fn ref_glwe<BR, A>(module_ref: &Module<BR>, infos: &A, source: &mut Source) -> BackendGLWE<BR>
+pub(crate) fn ref_glwe<BR, A, Rg: Ring>(module_ref: &Module<BR>, infos: &A, source: &mut Source) -> BackendGLWE<BR, Rg>
 where
-    BR: ParityBackend,
+    BR: ParityBackend<Rg>,
     A: GLWEInfos,
 {
     let mut glwe = module_ref.glwe_alloc_from_infos(infos);
     module_ref.glwe_fill_from_source(&mut glwe, source);
-    GLWEToBackendMut::<BR>::set_noise(&mut glwe, Some(fixture_noise(infos.k(), infos.rank())));
+    GLWEToBackendMut::<BR, Rg>::set_noise(&mut glwe, Some(fixture_noise(infos.k(), infos.rank())));
     glwe
 }
 
 /// Writes into `dst` the value of the canonical `a` with carries left in its
 /// digits and bits below its `k`, flagged non-canonical.
-pub(crate) fn unnormalized_twin<BS: ParityBackend, BD: ParityBackend>(a: &BackendGLWE<BS>, dst: &mut BackendGLWE<BD>) {
+pub(crate) fn unnormalized_twin<BS: ParityBackend<Rg>, BD: ParityBackend<Rg>, Rg: Ring>(
+    a: &BackendGLWE<BS, Rg>,
+    dst: &mut BackendGLWE<BD, Rg>,
+) {
     let mut twin = a.to_host_owned::<BS>();
     let base2k: usize = twin.base2k().into();
     let k: usize = twin.k().as_usize();
@@ -190,7 +199,10 @@ pub(crate) fn unnormalized_twin<BS: ParityBackend, BD: ParityBackend>(a: &Backen
 /// Writes the canonical `a` into `dst`, a buffer of more limbs than `a`'s `k`
 /// covers, at `a`'s precision: the limbs past it keep what `dst` held, so an
 /// operation sized from `k` must read only the limbs `k` covers.
-pub(crate) fn wide_twin<BS: ParityBackend, BD: ParityBackend>(a: &BackendGLWE<BS>, dst: &mut BackendGLWE<BD>) {
+pub(crate) fn wide_twin<BS: ParityBackend<Rg>, BD: ParityBackend<Rg>, Rg: Ring>(
+    a: &BackendGLWE<BS, Rg>,
+    dst: &mut BackendGLWE<BD, Rg>,
+) {
     let narrow = a.to_host_owned::<BS>();
     let mut wide = dst.to_host_owned::<BD>();
     assert_eq!(narrow.base2k(), wide.base2k());
@@ -209,14 +221,14 @@ pub(crate) fn wide_twin<BS: ParityBackend, BD: ParityBackend>(a: &BackendGLWE<BS
 
 /// Allocates a GGLWE on the reference module and fills it with uniform noise,
 /// tagged like [`ref_glwe`].
-pub(crate) fn ref_gglwe<BR, A>(module_ref: &Module<BR>, infos: &A, source: &mut Source) -> BackendGGLWE<BR>
+pub(crate) fn ref_gglwe<BR, A, Rg: Ring>(module_ref: &Module<BR>, infos: &A, source: &mut Source) -> BackendGGLWE<BR, Rg>
 where
-    BR: ParityBackend,
+    BR: ParityBackend<Rg>,
     A: GGLWEInfos,
 {
     let mut gglwe = module_ref.gglwe_alloc_from_infos(infos);
     fill_by_digit(module_ref, &mut gglwe, 1, source);
-    GGLWEToBackendMut::<BR>::set_noise(&mut gglwe, Some(fixture_noise(infos.k(), infos.rank_out())));
+    GGLWEToBackendMut::<BR, Rg>::set_noise(&mut gglwe, Some(fixture_noise(infos.k(), infos.rank_out())));
     gglwe
 }
 
@@ -230,8 +242,13 @@ fn fixture_noise(k: TorusPrecision, rank: Rank) -> ComponentNoise {
 /// backend under test. An already validated backend can serve as the comparison
 /// backend for the same operations and parameter ranges.
 ///
-/// Each test receives `(&TestParams, &ParityShapes, &Module<Ref>, &Module<Test>)`.
-/// `shapes` is optional and defaults to the full sweep.
+/// Each entry of `tests` maps a test name to the path of a suite function, called as
+/// `<path>::<backend_ref, backend_test, ring>(&TestParams, &ParityShapes, &Module<Ref>, &Module<Test>)`.
+/// `ring` is optional and defaults to `::poulpy_hal::layouts::Standard`;
+/// `ring = ::poulpy_hal::layouts::ConjugateInvariant` registers the entries on the conjugate-invariant ring.
+/// An entry of the optional `ring_free_tests` takes no ring and is called as
+/// `<path>::<backend_ref, backend_test>(..)`: a test of standard-only or cross-ring operations, or one fixing
+/// `Standard`. `shapes` is optional and defaults to the full sweep.
 ///
 /// The two modules are `Lazy` statics shared by every test in the generated
 /// module, and the test harness runs those tests in parallel. Their types must
@@ -250,6 +267,38 @@ macro_rules! core_parity_test_suite {
         tests = {
             $( $(#[$attr:meta])* $test_name:ident => $impl:path ),+ $(,)?
         }
+        $(, ring_free_tests = {
+            $( $(#[$fattr:meta])* $ftest_name:ident => $fimpl:path ),* $(,)?
+        })?
+        $(,)?
+    ) => {
+        $crate::core_parity_test_suite!(
+            mod $modname,
+            backend_ref = $backend_ref,
+            backend_test = $backend_test,
+            ring = ::poulpy_hal::layouts::Standard,
+            params = $params,
+            $(shapes = $shapes,)?
+            $(test_size = $test_size,)?
+            tests = { $( $(#[$attr])* $test_name => $impl ),+ }
+            $(, ring_free_tests = { $( $(#[$fattr])* $ftest_name => $fimpl ),* })?
+        );
+    };
+    (
+        mod $modname:ident,
+        backend_ref = $backend_ref:ty,
+        backend_test = $backend_test:ty,
+        ring = $ring:ty,
+        params = $params:expr,
+        $(shapes = $shapes:expr,)?
+        $(test_size = $test_size:expr,)?
+        tests = {
+            $( $(#[$attr:meta])* $test_name:ident => $impl:path ),+ $(,)?
+        }
+        $(, ring_free_tests = {
+            $( $(#[$fattr:meta])* $ftest_name:ident => $fimpl:path ),* $(,)?
+        })?
+        $(,)?
     ) => {
         mod $modname {
             use poulpy_hal::{api::ModuleNew, layouts::Module, test_suite::TestParams};
@@ -275,9 +324,19 @@ macro_rules! core_parity_test_suite {
                 $(#[$attr])*
                 #[test]
                 fn $test_name() {
-                    ($impl)(&*PARAMS, &*SHAPES, &*MODULE_REF, &*MODULE_TEST);
+                    use $impl as helper;
+                    helper::<$backend_ref, $backend_test, $ring>(&*PARAMS, &*SHAPES, &*MODULE_REF, &*MODULE_TEST);
                 }
             )+
+
+            $($(
+                $(#[$fattr])*
+                #[test]
+                fn $ftest_name() {
+                    use $fimpl as helper;
+                    helper::<$backend_ref, $backend_test>(&*PARAMS, &*SHAPES, &*MODULE_REF, &*MODULE_TEST);
+                }
+            )*)?
         }
     };
 }

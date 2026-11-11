@@ -28,19 +28,19 @@ use crate::{
     },
 };
 
-pub fn test_glwe_trace_assign<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
+pub fn test_glwe_trace_assign<BE: crate::test_suite::noise::TestBackend<Rg>, Rg: Ring>(params: &TestParams, module: &Module<BE>)
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: GLWETrace<BE>
-        + GLWEEncryptSk<BE>
-        + GLWEDecrypt<BE>
-        + GLWEAutomorphismKeyEncryptSk<BE>
-        + GLWEAutomorphismKeyPreparedFactory<BE>
-        + GLWESecretPreparedFactory<BE>
-        + VecZnxNormalizeAssign<BE>
-        + VecZnxSubAssign<BE>,
+    Module<BE>: GLWETrace<BE, Rg>
+        + GLWEEncryptSk<BE, Rg>
+        + GLWEDecrypt<BE, Rg>
+        + GLWEAutomorphismKeyEncryptSk<BE, Rg>
+        + GLWEAutomorphismKeyPreparedFactory<BE, Rg>
+        + GLWESecretPreparedFactory<BE, Rg>
+        + VecZnxNormalizeAssign<BE, Rg>
+        + VecZnxSubAssign<BE, Rg>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
@@ -71,9 +71,9 @@ where
             k_digit: crate::layouts::k_digit_of(key_base2k, dsize),
         };
 
-        let glwe_out_template: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_out_infos);
-        let pt_template: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_out_infos);
-        let mut pt_want: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord>;
+        let glwe_out_template: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&glwe_out_infos);
+        let pt_template: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_plaintext_alloc_from_infos(&glwe_out_infos);
+        let mut pt_want: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord, Rg>;
 
         let mut source_xs: Source = Source::new([0u8; 32]);
         let mut source_xe: Source = Source::new([0u8; 32]);
@@ -86,11 +86,11 @@ where
                 | module.glwe_automorphism_key_prepare_tmp_bytes(&key_infos),
         );
 
-        let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc_from_infos(&glwe_out_infos);
+        let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_secret_alloc_from_infos(&glwe_out_infos);
         module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut source_xs);
         let sk_backend = upload_glwe_secret(module, &sk);
 
-        let mut sk_dft: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc_from_infos(&sk);
+        let mut sk_dft: GLWESecretPrepared<BE::OwnedBuf, BE, Rg> = module.glwe_secret_prepared_alloc_from_infos(&sk);
         module.glwe_secret_prepare(&mut sk_dft, &sk_backend);
 
         let mut data_want: Vec<i64> = vec![0i64; n];
@@ -114,9 +114,12 @@ where
             &mut scratch.borrow(),
         );
 
-        let mut auto_keys: HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>> = HashMap::new();
-        let gal_els: Vec<i64> = module.glwe_trace_galois_elements(module.n().into(), 0..module.log_n(), false);
-        let tmp_template: GLWEAutomorphismKey<BE::OwnedBuf, BE::ZnxWord> =
+        // The conjugate-invariant ring is fixed by the conjugation: its trace starts at level 1.
+        let first = usize::from(Rg::CYCLOTOMIC_ORDER_FACTOR != Standard::CYCLOTOMIC_ORDER_FACTOR);
+        let levels = first..module.cyclotomic_order::<Rg>().ilog2() as usize - 1;
+        let mut auto_keys: HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE, Rg>> = HashMap::new();
+        let gal_els: Vec<i64> = module.glwe_trace_galois_elements(module.n().into(), levels.clone(), false);
+        let tmp_template: GLWEAutomorphismKey<BE::OwnedBuf, BE::ZnxWord, Rg> =
             module.glwe_automorphism_key_alloc_from_infos(&key_infos);
         gal_els.iter().for_each(|gal_el| {
             let mut tmp = upload_glwe_automorphism_key(module, &tmp_template);
@@ -128,7 +131,7 @@ where
                 &mut source_xa,
                 &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
             );
-            let mut atk_prepared: GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE> =
+            let mut atk_prepared: GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE, Rg> =
                 module.glwe_automorphism_key_prepared_alloc_from_infos(&tmp);
             module.glwe_automorphism_key_prepare(&mut atk_prepared, &tmp, &mut scratch.borrow());
             auto_keys.insert(*gal_el, atk_prepared);
@@ -136,7 +139,7 @@ where
 
         module.glwe_trace_assign(
             &mut glwe_out,
-            0..module.log_n(),
+            levels,
             false,
             true,
             &auto_keys,
@@ -144,15 +147,17 @@ where
         );
         let mut pt_have_backend = upload_glwe_plaintext(module, &pt_template);
         glwe_decrypt_checked(module, &glwe_out, &mut pt_have_backend, &sk_dft, &mut scratch.borrow());
-        let pt_have: GLWEPlaintext<AlignedBuf, BE::ZnxWord> = download_glwe_plaintext(module, &pt_have_backend);
+        let pt_have: GLWEPlaintext<AlignedBuf, BE::ZnxWord, Rg> = download_glwe_plaintext(module, &pt_have_backend);
 
         {
             let mut pt_want_data =
-                <poulpy_hal::layouts::VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendMut<BE>>::to_backend_mut(
+                <poulpy_hal::layouts::VecZnx<BE::OwnedBuf, BE::ZnxWord, Rg> as VecZnxToBackendMut<BE, Rg>>::to_backend_mut(
                     &mut pt_want.data,
                 );
             let pt_have_data =
-                <poulpy_hal::layouts::VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendRef<BE>>::to_backend_ref(&pt_have.data);
+                <poulpy_hal::layouts::VecZnx<BE::OwnedBuf, BE::ZnxWord, Rg> as VecZnxToBackendRef<BE, Rg>>::to_backend_ref(
+                    &pt_have.data,
+                );
             module.vec_znx_sub_assign(&mut pt_want_data, 0, &pt_have_data, 0);
         }
         let mut pt_noise = upload_glwe_plaintext(module, &pt_want);
@@ -160,7 +165,7 @@ where
             pt_noise.base2k().as_usize(),
             pt_noise.data.size() * pt_noise.base2k().as_usize(),
             0,
-            &mut vec_znx_backend_mut::<BE>(&mut pt_noise.data),
+            &mut vec_znx_backend_mut::<BE, Rg>(&mut pt_noise.data),
             0,
             &mut scratch.borrow(),
         );
@@ -178,13 +183,14 @@ where
             0.0,
         );
         // Residue left by the decomposition of the mask, folded against the secret.
-        noise_want += n as f64 * 1.0 / 12.0 * 0.5 * rank as f64 * (-2.0 * (k) as f64).exp2();
+        let weight: f64 = Rg::product_moments(n).weight;
+        noise_want += weight / 12.0 * 0.5 * rank as f64 * (-2.0 * (k) as f64).exp2();
         // Each rotation halves the running sum with `glwe_rsh_assign(1)`, which rounds
         // at precision `k`: one uniform rounding of variance `2^-2k / 12` on the
         // body and on each mask polynomial, the latter folded against the
         // secret. Later halvings shrink the earlier roundings, so the geometric
         // sum over the rotations is bounded by `4/3` of one step.
-        noise_want += 4.0 / 3.0 * (1.0 + n as f64 * 0.5 * rank as f64) / 12.0 * (-2.0 * (k) as f64).exp2();
+        noise_want += 4.0 / 3.0 * (1.0 + weight * 0.5 * rank as f64) / 12.0 * (-2.0 * (k) as f64).exp2();
         noise_want = noise_want.sqrt().log2();
 
         // The model is an upper bound, so only the upper side is asserted.
@@ -197,21 +203,21 @@ where
 /// plaintext, `x <- x + phi(x)` per visited level, within `2^levels` times the noise of one key switch, on either ring.
 /// The forward elements are the conjugation on the standard ring, then `5^(2^(i-1))`, and the reversed ones their
 /// inverses, visited from the last level down.
-pub fn test_glwe_trace_sum<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
+pub fn test_glwe_trace_sum<BE: crate::test_suite::noise::TestBackend<Rg>, Rg: Ring>(params: &TestParams, module: &Module<BE>)
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: GLWETrace<BE>
-        + GLWEEncryptSk<BE>
-        + GLWEDecrypt<BE>
-        + GLWEAutomorphismKeyEncryptSk<BE>
-        + GLWEAutomorphismKeyPreparedFactory<BE>
-        + GLWESecretPreparedFactory<BE>
-        + VecZnxAutomorphism<BE>
-        + VecZnxAddAssign<BE>
-        + VecZnxNormalizeAssign<BE>
-        + VecZnxSubAssign<BE>,
+    Module<BE>: GLWETrace<BE, Rg>
+        + GLWEEncryptSk<BE, Rg>
+        + GLWEDecrypt<BE, Rg>
+        + GLWEAutomorphismKeyEncryptSk<BE, Rg>
+        + GLWEAutomorphismKeyPreparedFactory<BE, Rg>
+        + GLWESecretPreparedFactory<BE, Rg>
+        + VecZnxAutomorphism<BE, Rg>
+        + VecZnxAddAssign<BE, Rg>
+        + VecZnxNormalizeAssign<BE, Rg>
+        + VecZnxSubAssign<BE, Rg>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
@@ -219,9 +225,9 @@ where
     let k: usize = 4 * base2k + 1;
     let n: usize = module.n();
     let log_n = module.log_n();
-    let order = module.cyclotomic_order();
+    let order = module.cyclotomic_order::<Rg>();
     // The conjugate-invariant ring is fixed by the conjugation: its trace starts at level 1.
-    let first = usize::from(<BE::Ring as Ring>::CYCLOTOMIC_ORDER_FACTOR != Standard::CYCLOTOMIC_ORDER_FACTOR);
+    let first = usize::from(Rg::CYCLOTOMIC_ORDER_FACTOR != Standard::CYCLOTOMIC_ORDER_FACTOR);
     let end = order.ilog2() as usize - 1;
 
     let forward = module.glwe_trace_galois_elements(n.into(), first..end, false);
@@ -230,7 +236,7 @@ where
         let want = if level == 0 {
             -1
         } else {
-            module.galois_element(1 << (level - 1))
+            module.galois_element::<Rg>(1 << (level - 1))
         };
         assert_eq!(element, want, "level {level}");
     }
@@ -269,14 +275,15 @@ where
     );
     let trace_bytes = module.glwe_trace_assign_tmp_bytes(&glwe_infos, &key_infos);
 
-    let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc_from_infos(&glwe_infos);
+    let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_secret_alloc_from_infos(&glwe_infos);
     module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut source_xs);
     let sk_backend = upload_glwe_secret(module, &sk);
-    let mut sk_dft: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc_from_infos(&sk);
+    let mut sk_dft: GLWESecretPrepared<BE::OwnedBuf, BE, Rg> = module.glwe_secret_prepared_alloc_from_infos(&sk);
     module.glwe_secret_prepare(&mut sk_dft, &sk_backend);
 
-    let mut auto_keys: HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>> = HashMap::new();
-    let key_template: GLWEAutomorphismKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_automorphism_key_alloc_from_infos(&key_infos);
+    let mut auto_keys: HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE, Rg>> = HashMap::new();
+    let key_template: GLWEAutomorphismKey<BE::OwnedBuf, BE::ZnxWord, Rg> =
+        module.glwe_automorphism_key_alloc_from_infos(&key_infos);
     for &gal_el in forward.iter().chain(&reversed) {
         if auto_keys.contains_key(&gal_el) {
             continue;
@@ -290,14 +297,14 @@ where
             &mut source_xa,
             &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
         );
-        let mut prepared: GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE> =
+        let mut prepared: GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE, Rg> =
             module.glwe_automorphism_key_prepared_alloc_from_infos(&key);
         module.glwe_automorphism_key_prepare(&mut prepared, &key, &mut scratch.borrow());
         auto_keys.insert(gal_el, prepared);
     }
 
-    let pt_template: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
-    let mut pt: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
+    let pt_template: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
+    let mut pt: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
     for j in 0..pt.data.size() {
         pt.data.at_mut(0, j).fill(0);
     }
@@ -310,15 +317,15 @@ where
         for gal_el in module.glwe_trace_galois_elements(module.n().into(), levels.clone(), reverse) {
             module.vec_znx_automorphism(
                 gal_el,
-                &mut vec_znx_backend_mut::<BE>(&mut conjugate.data),
+                &mut vec_znx_backend_mut::<BE, Rg>(&mut conjugate.data),
                 0,
-                &vec_znx_backend_ref::<BE>(&want.data),
+                &vec_znx_backend_ref::<BE, Rg>(&want.data),
                 0,
             );
             module.vec_znx_add_assign(
-                &mut vec_znx_backend_mut::<BE>(&mut want.data),
+                &mut vec_znx_backend_mut::<BE, Rg>(&mut want.data),
                 0,
-                &vec_znx_backend_ref::<BE>(&conjugate.data),
+                &vec_znx_backend_ref::<BE, Rg>(&conjugate.data),
                 0,
             );
         }
@@ -344,16 +351,16 @@ where
         glwe_decrypt_checked(module, &ct, &mut have, &sk_dft, &mut scratch.borrow());
 
         module.vec_znx_sub_assign(
-            &mut vec_znx_backend_mut::<BE>(&mut want.data),
+            &mut vec_znx_backend_mut::<BE, Rg>(&mut want.data),
             0,
-            &vec_znx_backend_ref::<BE>(&have.data),
+            &vec_znx_backend_ref::<BE, Rg>(&have.data),
             0,
         );
         module.vec_znx_normalize_assign(
             base2k,
             want.data.size() * base2k,
             0,
-            &mut vec_znx_backend_mut::<BE>(&mut want.data),
+            &mut vec_znx_backend_mut::<BE, Rg>(&mut want.data),
             0,
             &mut scratch.borrow(),
         );

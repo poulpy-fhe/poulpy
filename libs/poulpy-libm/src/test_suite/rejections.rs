@@ -59,7 +59,7 @@ fn assert_rejects<T>(
 /// Every evaluation-time rejection of libm, with `res` and `&mut` operands checked unchanged.
 pub fn test_rejections<BE, F, E>(base: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     Module<BE>: TestContextModule<BE>
         + GLWEFill<BE>
         + CKKSExpOps<BE>
@@ -109,8 +109,10 @@ where
     let mut sparse = setup.fixture(module, 11);
     sparse.set_log_sparsity(1);
     let fresh_res = || setup.fixture(module, 12);
-    let one = |c: &CKKSCiphertextOwned<BE>| vec![snapshot::<BE, _>(c)];
-    let two = |c: &(CKKSCiphertextOwned<BE>, CKKSCiphertextOwned<BE>)| vec![snapshot::<BE, _>(&c.0), snapshot::<BE, _>(&c.1)];
+    let one = |c: &CKKSCiphertextOwned<BE>| vec![snapshot::<BE, _, Standard>(c)];
+    let two = |c: &(CKKSCiphertextOwned<BE>, CKKSCiphertextOwned<BE>)| {
+        vec![snapshot::<BE, _, Standard>(&c.0), snapshot::<BE, _, Standard>(&c.1)]
+    };
 
     macro_rules! rejects {
         ($label:expr, $expected:expr, |$res:ident, $s:ident| $call:expr) => {{

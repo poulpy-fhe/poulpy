@@ -45,7 +45,7 @@ pub mod test_suite;
 #[cfg(test)]
 mod tests;
 
-pub use backend::{FFT64CIOracle, FFT64Oracle, Handle, NTT4x30CIOracle, NTT4x30Oracle, Oracle};
+pub use backend::{FFT64Oracle, Handle, NTT4x30Oracle, Oracle};
 pub use family::DFTFamily;
 pub use fft::{ComplexFft, Fft64};
 pub use ntt::{Ntt4x30, Primes30};

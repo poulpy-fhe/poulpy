@@ -24,12 +24,13 @@
 //!
 //! | Layer | Purpose | Generic params |
 //! |---|---|---|
-//! | **Standard** (`GLWE<D>`, `GGSW<D>`, ...) | Serializable, platform-independent | `D: Data` |
-//! | **Compressed** (`GLWECompressed<D>`, ...) | Reduced storage via seed-based mask regeneration | `D: Data` |
-//! | **Prepared** (`GLWEPrepared<D, B>`, ...) | DFT-domain, optimised for fast polynomial arithmetic | `D: Data, B: Backend` |
+//! | **Unprepared** (`GLWE`, `GGSW`, ...) | Serializable, platform-independent | `D: Data, W: ZnxWord, Rg: Ring` |
+//! | **Compressed** (`GLWECompressed`, ...) | Reduced storage: masks regenerated from seeds | `D: Data, W: ZnxWord, Rg: Ring` |
+//! | **Prepared** (`GLWEPrepared`, ...) | DFT-domain, for fast polynomial arithmetic | `D: Data, B: Backend, Rg: Ring` |
 //!
 //! `D: Data` abstracts ownership: `AlignedBuf` (owned), `&[u8]` (borrowed),
-//! or `&mut [u8]` (mutable borrow).
+//! or `&mut [u8]` (mutable borrow). `W: ZnxWord` is the coefficient word and
+//! `Rg: Ring` the [ring](crate::layouts#rings) of the operand, `Standard` by default.
 //!
 //! ## Scratch-space allocation
 //!

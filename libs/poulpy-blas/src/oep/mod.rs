@@ -13,6 +13,7 @@
 //! concurrently over a shared module, context, public operands, prepared operands and key stores. An override keeps no
 //! state across calls, so disjoint concurrent calls stay valid.
 
+use poulpy_hal::layouts::{Ring, Standard};
 pub(crate) mod derived;
 mod encoding;
 mod inter;
@@ -28,16 +29,20 @@ pub use jkls::BlasJklsImpl;
 pub use matmul::BlasMatMulImpl;
 pub use matvec::BlasMatVecImpl;
 
-/// Selects every reference implementation for `$be`.
+/// Selects every reference implementation for `$be` on both rings, or on `$ring` alone through `($be, $ring)`.
 #[macro_export]
 macro_rules! impl_blas_reference_full {
     ($be:ty) => {
-        $crate::impl_blas_mat_inter_reference_full!($be);
-        $crate::impl_blas_mat_intra_reference_full!($be);
-        $crate::impl_blas_mat_mul_reference_full!($be);
-        $crate::impl_blas_mat_vec_reference_full!($be);
-        $crate::impl_blas_jkls_reference_full!($be);
-        $crate::impl_blas_encoding_reference_full!($be);
+        $crate::impl_blas_reference_full!($be, ::poulpy_hal::layouts::Standard);
+        $crate::impl_blas_reference_full!($be, ::poulpy_hal::layouts::ConjugateInvariant);
+    };
+    ($be:ty, $ring:ty) => {
+        $crate::impl_blas_mat_inter_reference_full!($be, $ring);
+        $crate::impl_blas_mat_intra_reference_full!($be, $ring);
+        $crate::impl_blas_mat_mul_reference_full!($be, $ring);
+        $crate::impl_blas_mat_vec_reference_full!($be, $ring);
+        $crate::impl_blas_jkls_reference_full!($be, $ring);
+        $crate::impl_blas_encoding_reference_full!($be, $ring);
     };
 }
 
@@ -46,12 +51,23 @@ macro_rules! impl_blas_reference_full {
 /// # Safety
 ///
 /// Implemented only through the blanket impl.
-pub unsafe trait BlasImpl:
-    BlasMatInterImpl + BlasMatIntraImpl + BlasMatMulImpl + BlasMatVecImpl + BlasJklsImpl + BlasEncodingImpl
+pub unsafe trait BlasImpl<Rg: Ring = Standard>
+where
+    Self: BlasMatInterImpl<Rg>
+        + BlasMatIntraImpl<Rg>
+        + BlasMatMulImpl<Rg>
+        + BlasMatVecImpl<Rg>
+        + BlasJklsImpl<Rg>
+        + BlasEncodingImpl<Rg>,
 {
 }
 
-unsafe impl<BE> BlasImpl for BE where
-    BE: BlasMatInterImpl + BlasMatIntraImpl + BlasMatMulImpl + BlasMatVecImpl + BlasJklsImpl + BlasEncodingImpl
+unsafe impl<BE, Rg: Ring> BlasImpl<Rg> for BE where
+    BE: BlasMatInterImpl<Rg>
+        + BlasMatIntraImpl<Rg>
+        + BlasMatMulImpl<Rg>
+        + BlasMatVecImpl<Rg>
+        + BlasJklsImpl<Rg>
+        + BlasEncodingImpl<Rg>
 {
 }

@@ -10,10 +10,14 @@ Each family's opt-in macro is `impl_<family>_reference_full!`, or
 OEP trait in snake case without `Impl` (`CKKSAddImpl`: `impl_ckks_add_reference_full!`,
 `CKKSDFTImpl`: `impl_ckks_dft_reference_full!`, `CKKSAffineImpl`: `impl_ckks_affine_derived_full!`).
 `impl_ckks_reference_full!` selects every scalar-independent family that serves both
-rings, the families `CKKSImpl` bundles minus the standard-only ones; a standard backend
-adds the standard-only opt-ins, `CKKSDFTMatrixImpl<F>` among them, and every backend
-implements `CKKSEncodingImpl<F>` and the PaCo and SHIP coefficient encodings itself. A
-backend replacing one of the umbrella's families selects the others with their own opt-ins.
+rings, for each ring, the families `CKKSImpl` bundles minus the standard-only and
+cross-ring ones. The
+backend adds the opt-ins of the standard-only families, which act on standard-ring
+operands, `CKKSDFTMatrixImpl<F>` among them, of the conjugate-invariant ring maps, which
+take one conjugate-invariant and one standard operand, and of the fold, which registers
+every input ring; every backend implements `CKKSEncodingImpl<F, Rg>` for each scalar and
+each ring, and the PaCo and SHIP coefficient encodings, itself. A backend replacing one of
+the umbrella's families selects the others with their own opt-ins.
 The table gives the reference of each family.
 
 | OEP family | Canonical implementation |
@@ -27,26 +31,45 @@ The table gives the reference of each family.
 | `CKKSInnerSumImpl` | [`reference/inner_sum.rs`](../src/reference/inner_sum.rs) (`CKKSInnerSumReference`), registered by `impl_ckks_inner_sum_reference_full!`: `ckks_copy`, poulpy-core's summed trace over a window of levels, forward for the inner sum and reversed for the replicate, and, for a mean, `ckks_div_pow2_assign`; the Galois elements are poulpy-core's `glwe_trace_galois_elements` over those levels at the ciphertext's degree. |
 | `CKKSPlaintextVecImpl` | [`reference/plaintext.rs`](../src/reference/plaintext.rs). |
 | `CKKSEncryptionImpl` | [`reference/encryption.rs`](../src/reference/encryption.rs), for encryption and decryption. |
-| `CKKSEncodingImpl<F>` | [`reference/encoding.rs`](../src/reference/encoding.rs) (`CKKSEncodingReference<BE, F>` for the coefficient codecs): slot ordering, transform normalization, and quantization behind the four required kernels `ckks_{quantize,dequantize}_coeffs_into` and `ckks_encoding_buffer_{slots_to_coeffs,coeffs_to_slots}_assign_with_plan`; backend-owned plans and cache. The six API operations are derived defaults that check the buffer and plaintext shapes and read the plans from the cache. |
+| `CKKSEncodingImpl<F, Rg>` | [`reference/encoding.rs`](../src/reference/encoding.rs) (`CKKSEncodingReference<BE, F, Rg>` for the coefficient codecs): slot ordering, transform normalization, and quantization behind the four required kernels `ckks_{quantize,dequantize}_coeffs_into` and `ckks_encoding_buffer_{slots_to_coeffs,coeffs_to_slots}_assign_with_plan`; backend-owned plans and cache. The six API operations are derived defaults that check the buffer and plaintext shapes and read the plans from the cache. |
 | `CKKSDFTMatrixImpl<F>`, `CKKSDFTImpl` | [`reference/dft`](../src/reference/dft/) (`CKKSDFTMatrixReference<BE, F>`, `CKKSDFTReference`): matrix generation, preparation, and evaluation; the six standard/split/repack direction wrappers are derived defaults. A prepared matrix is allocated by `CKKSDFTMatrixPreparedFactory::ckks_dft_matrix_prepared_alloc_from_infos` from the unprepared one and filled by `ckks_dft_matrix_prepare` with no allocation, which refuses a matrix of another layout with `InvalidOperand` before any write; the allocating `ckks_dft_matrix_prepare_alloc` is a derived default. |
 | `CKKSPolynomialEvaluationImpl`, `CKKSComplexPolynomialEvaluationImpl` | [`reference/polynomial_evaluation.rs`](../src/reference/polynomial_evaluation.rs) for evaluation from a power basis; one-shot real/complex evaluation derives from CKKS input mapping and power-basis construction. The complex family is standard-only. |
 | `CKKSEvalModImpl` | [`reference/eval_mod.rs`](../src/reference/eval_mod.rs), including the selected scratch query. Serves both rings; the conjugate-invariant ring refuses `ExpCmplx`. |
 | `CKKSEncapsulatedModUpImpl` | [`reference/bootstrapping.rs`](../src/reference/bootstrapping.rs) (`CKKSEncapsulatedModUpReference`). |
 | `CKKSModUpFirstFactorImpl` | [`reference/first_factor.rs`](../src/reference/first_factor.rs) (`CKKSModUpFirstFactorReference`): the modulus raise applying the first `CoeffsToSlots` factor while the raised ciphertext is small, registered per type by `impl_ckks_mod_up_first_factor_reference_full!`. |
 | `CKKSBootstrappingImpl` | [`reference/bootstrapping.rs`](../src/reference/bootstrapping.rs): the ModUp stages and the identity and functional pipelines; the raise step's query defaults to the bootstrap's. |
-| `CKKSBootstrappingCIImpl` | [`reference/bootstrapping.rs`](../src/reference/bootstrapping.rs) (`CKKSBootstrappingCIReference`), registered by `impl_ckks_bootstrapping_ci_reference_full!($be, $ci)`, `$ci` its conjugate-invariant twin. |
+| `CKKSBootstrappingCIImpl` | [`reference/bootstrapping.rs`](../src/reference/bootstrapping.rs) (`CKKSBootstrappingCIReference`), registered by `impl_ckks_bootstrapping_ci_reference_full!($be)`, whose EvalMod on the conjugate-invariant ring runs on the same module. |
 | `CKKSFoldLayoutImpl`, `CKKSFoldImpl<R>` | [`reference/fold.rs`](../src/reference/fold.rs): `CKKSFoldLayoutReference` and `CKKSFoldReference<BE, R>`, a crate-private per-ring step around ring packing; `impl_ckks_fold_layout_reference_full!` selects the layout and scratch query, and `impl_ckks_fold_reference_full!` registers every input ring the reference folds. |
 | `CKKSPaCoCoeffEncodingImpl`, `CKKSShipCoeffEncodingImpl` | Scheme embeddings exposed by [`reference::encoding`](../src/reference/encoding.rs), with explicitly named host reference helpers. |
 | `CKKSAddManyImpl` | [`reference/composite.rs`](../src/reference/composite.rs) (`CKKSAddManyReference`), registered by `impl_ckks_add_many_reference_full!`: the lazy sum over the selected additions and copy, normalized in place by poulpy-core. |
 | `CKKSMulAddImpl`, `CKKSAffineImpl`, `CKKSMulSubImpl` | Derived defaults ([`oep/derived/composite.rs`](../src/oep/derived/composite.rs)): multiply-accumulate and affine forms over the selected products, additions and subtractions. |
 | `CKKSApproximationImpl` | Derived defaults ([`oep/derived/approximation.rs`](../src/oep/derived/approximation.rs)): the interval map through the selected power-of-two, copy, addition or affine operation, then the selected real polynomial evaluation; sized by `ckks_all_ops_tmp_bytes`. |
-| `CKKSCIRingMapImpl` | Standard-only: [`reference/ring_map.rs`](../src/reference/ring_map.rs) (`CKKSCIRingMapReference`), registered by `impl_ckks_ci_ring_map_reference_full!`: the core conjugate-invariant embedding and trace composed with the key switch, every refusal before any write. |
+| `CKKSCIRingMapImpl` | [`reference/ring_map.rs`](../src/reference/ring_map.rs) (`CKKSCIRingMapReference`), registered by `impl_ckks_ci_ring_map_reference_full!`: the core conjugate-invariant embedding and trace composed with the key switch, every refusal before any write. |
 | `CKKSPaCoImpl` | Standard-only: [`reference/paco`](../src/reference/paco/) (`CKKSPaCoReference`), registered by `impl_ckks_paco_reference_full!`: the sequential and parallel PaCo drivers, their scratch queries and the slot folds `ckks_slot_{trace,product}_assign` with their queries, over the selected CKKS and core operations and `CKKSPaCoCoeffEncodingImpl`. |
 | `CKKSShipImpl` | Standard-only: [`reference/ship`](../src/reference/ship/) (`CKKSShipReference`), registered by `impl_ckks_ship_reference_full!`: the SHIP drivers and their query, the masking accumulation and the hoisted mux rotation, over the selected CKKS and core operations and `CKKSShipCoeffEncodingImpl`. |
 
 `CKKSImpl` aggregates capabilities; it does not choose operation
 implementations. Every API method dispatches through a same-named OEP method;
 compositions of selected operations are that method's derived default.
+
+## Operand degrees
+
+Every operation takes ciphertexts of any degree `n` up to the module's: an
+implementation allocates and carves its working ciphertexts at the operand's
+degree and takes Galois elements at the operand's order
+`Rg::CYCLOTOMIC_ORDER_FACTOR * n` and slot counts from `n`;
+`CKKSModuleInfos::ckks_galois_element` and `ckks_max_slots` answer at the
+module's degree. Every fallible operation refuses a ciphertext or
+linear-transformation diagonal above the module's degree before any write or
+scratch carve, with `EncryptionDegreeMismatch` for encryption and decryption and
+`InvalidOperand` otherwise, so poulpy-core's degree assertion is never reached;
+a plaintext polynomial embeds into its ciphertext's degree, and a constant
+plaintext, which only supplies coefficients, may be of any degree. Queries size a
+temporary at its operand's degree or the module's, never below. PaCo and SHIP run at the degree of their plan, at most
+the module's. A bootstrapping context is compiled at the degree of its module
+(`compile_ci`: at half of it, EvalMod running on the conjugate-invariant ring
+of that degree), and the bootstraps take ciphertexts of the degree their
+context is compiled at.
 
 ## What an override must preserve
 
@@ -99,9 +122,18 @@ parity.
 Enable `test-utils` and register the relevant helpers from
 [`test_suite::parity`](../src/test_suite/parity/) with
 `ckks_parity_test_suite!`. Both the comparison backend and tested backend, the
-scalar, and the test parameters are caller-selected. A previously validated
-implementation can validate another: this is transitive for the same operations
-and supported parameter ranges. No particular backend is a mandatory oracle.
+scalar, the ring and the test parameters are caller-selected: the optional
+`ring = ..` argument of `ckks_parity_test_suite!` and
+`ckks_encryption_parity_test_suite!` is `::poulpy_hal::layouts::Standard` when
+absent, the conjugate-invariant lists passing
+`ring = ::poulpy_hal::layouts::ConjugateInvariant`, and
+`ckks_parity_test_suite!` calls each helper of `tests` as
+`helper::<BR, BT, F, Rg>` and each of `ring_free_tests`, a test of
+standard-only or cross-ring operations or one fixing the standard ring, as
+`helper::<BR, BT, F>`. A
+previously validated implementation can validate another: this is transitive for
+the same operations and supported parameter ranges. No particular backend is a
+mandatory oracle.
 
 The paired helpers upload identical logical fixtures and prepare keys, plans,
 and transformed objects independently. They compare canonical coefficients and
@@ -116,7 +148,7 @@ controlled-sampling comparison adapter; retain the separate sampling contract
 tests and independent mathematical conformance suite.
 
 Register `ckks_determinism_test_suite!(mod <name>, backend = <type>)` for each
-standard-ring type, adding `, f32` when the type encodes in `f32`. It checks the
+backend type, adding `, f32` when the type encodes in `f32`. It checks the
 encoding and the setup constants, in `f64` and `Quad` (and `f32`), against the
 frozen fixtures of
 [`test_suite/determinism.txt`](../src/test_suite/determinism.txt), which every

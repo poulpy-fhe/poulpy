@@ -3,7 +3,7 @@
 
 use poulpy_ckks::CKKSResult as Result;
 use poulpy_core::layouts::{GGLWEInfos, GGLWELayout, GLWEInfos, GetAutomorphismKey, GetTensorKey, LWEInfos};
-use poulpy_hal::layouts::{Module, ScratchArena};
+use poulpy_hal::layouts::{Module, Ring, ScratchArena};
 
 use crate::{
     layouts::{
@@ -14,15 +14,15 @@ use crate::{
 
 /// The provided `blas_transpose_tmp_bytes`: the hook's scratch for the transpose of every block of `a` into a
 /// block of `res`.
-pub(crate) fn blas_transpose_tmp_bytes_derived<BE, R, A, K>(
+pub(crate) fn blas_transpose_tmp_bytes_derived<BE, R, A, K, Rg: Ring>(
     module: &Module<BE>,
     res: &R,
     a: &A,
-    ctx: &BlasContextPrepared<BE>,
+    ctx: &BlasContextPrepared<BE, Rg>,
     keys: &K,
 ) -> usize
 where
-    BE: BlasMatIntraImpl,
+    BE: BlasMatIntraImpl<Rg>,
     R: BlasGridInfos,
     A: BlasGridInfos,
     K: GGLWEInfos,
@@ -40,19 +40,19 @@ where
 
 /// The provided `blas_transpose`, `res_ji = transpose(a_ij)`: one hook call, its sources in the order of `res`'s
 /// blocks.
-pub(crate) fn blas_transpose_derived<BE, R, A, K>(
+pub(crate) fn blas_transpose_derived<BE, R, A, K, Rg: Ring>(
     module: &Module<BE>,
     res: &mut R,
     a: &A,
-    ctx: &BlasContextPrepared<BE>,
+    ctx: &BlasContextPrepared<BE, Rg>,
     keys: &K,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    BE: BlasMatIntraImpl,
-    R: BlasGridMut<BE>,
-    A: BlasGrid<BE>,
-    K: GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync,
+    BE: BlasMatIntraImpl<Rg>,
+    R: BlasGridMut<BE, Rg>,
+    A: BlasGrid<BE, Rg>,
+    K: GetAutomorphismKey<BE, Rg> + GetTensorKey<BE, Rg> + Sync,
 {
     let batch = validate_blas_transpose(module, &*res, a, ctx, keys)?;
     let lts = [ctx.transpose()];

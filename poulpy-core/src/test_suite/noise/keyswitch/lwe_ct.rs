@@ -1,6 +1,6 @@
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxNormalize},
-    layouts::{Module, ScratchOwned, ZnxView},
+    layouts::{Module, ScratchOwned, Standard, ZnxView},
     source::Source,
     test_suite::{TestParams, vec_znx_backend_mut, vec_znx_backend_ref},
 };
@@ -122,12 +122,12 @@ where
 
     let mut lwe_pt_want: LWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.lwe_plaintext_alloc_from_infos(&lwe_out_infos);
     module.vec_znx_normalize(
-        &mut vec_znx_backend_mut::<BE>(&mut lwe_pt_want.data),
+        &mut vec_znx_backend_mut::<BE, Standard>(&mut lwe_pt_want.data),
         out_base2k,
         lwe_out_infos.k.as_usize(),
         0,
         0,
-        &vec_znx_backend_ref::<BE>(&lwe_pt_in.data),
+        &vec_znx_backend_ref::<BE, Standard>(&lwe_pt_in.data),
         in_base2k,
         0,
         &mut scratch.borrow(),

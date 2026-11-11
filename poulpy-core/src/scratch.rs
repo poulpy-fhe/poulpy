@@ -6,7 +6,7 @@ use poulpy_hal::{
         ModuleN, ScratchArenaTakeCnvPVecL, ScratchArenaTakeMatZnx, ScratchArenaTakeScalarZnx, ScratchArenaTakeSvpPPol,
         ScratchArenaTakeVecZnx, ScratchArenaTakeVmpPMat, VmpPMatBytesOf,
     },
-    layouts::{Backend, CnvPVecLViewMut, PrepareHint, ScratchArena},
+    layouts::{Backend, CnvPVecLViewMut, PrepareHint, Ring, ScratchArena},
 };
 
 use crate::layouts::operand_degree;
@@ -33,12 +33,12 @@ pub trait ScratchArenaTakeGLWELinearTransformationBabySteps<'a, B: Backend>: Scr
     /// # Panics
     ///
     /// When the module does not serve the degree of `a`, or the arena is below that size.
-    fn take_glwe_linear_transformation_baby_steps_scratch<M, A>(
+    fn take_glwe_linear_transformation_baby_steps_scratch<M, A, Rg: Ring>(
         self,
         module: &M,
         plan: &LinearTransformationPlan,
         a: &A,
-    ) -> (LinearTransformationBabySteps<B, CnvPVecLViewMut<'a, B>>, Self)
+    ) -> (LinearTransformationBabySteps<B, Rg, CnvPVecLViewMut<'a, B, Rg>>, Self)
     where
         B: 'a,
         M: ModuleN,
@@ -70,7 +70,7 @@ pub trait ScratchArenaTakeGLWELinearTransformationBabySteps<'a, B: Backend>: Scr
 /// Carves [`LWE`] layouts from a [`ScratchArena`].
 pub trait ScratchArenaTakeLWE<'a, B: Backend>: ScratchArenaTakeVecZnx<'a, B> + Sized {
     /// Allocates an [`LWE`] ciphertext from scratch space.
-    fn take_lwe_scratch<A>(self, infos: &A) -> (LWEViewMut<'a, B>, Self)
+    fn take_lwe_scratch<A, Rg: Ring>(self, infos: &A) -> (LWEViewMut<'a, B, Rg>, Self)
     where
         B: 'a,
         A: LWEInfos,
@@ -93,7 +93,7 @@ pub trait ScratchArenaTakeLWE<'a, B: Backend>: ScratchArenaTakeVecZnx<'a, B> + S
 /// Carves [`LWEPlaintext`] layouts from a [`ScratchArena`].
 pub trait ScratchArenaTakeLWEPlaintext<'a, B: Backend>: ScratchArenaTakeVecZnx<'a, B> + Sized {
     /// Allocates an [`LWEPlaintext`] from scratch space.
-    fn take_lwe_plaintext_scratch<A>(self, infos: &A) -> (LWEPlaintextViewMut<'a, B>, Self)
+    fn take_lwe_plaintext_scratch<A, Rg: Ring>(self, infos: &A) -> (LWEPlaintextViewMut<'a, B, Rg>, Self)
     where
         B: 'a,
         A: LWEInfos,
@@ -113,7 +113,7 @@ pub trait ScratchArenaTakeLWEPlaintext<'a, B: Backend>: ScratchArenaTakeVecZnx<'
 /// Carves [`GLWE`] layouts from a [`ScratchArena`].
 pub trait ScratchArenaTakeGLWE<'a, B: Backend>: ScratchArenaTakeVecZnx<'a, B> + Sized {
     /// Allocates a [`GLWE`] ciphertext from scratch space.
-    fn take_glwe_scratch<A>(self, infos: &A) -> (GLWEViewMut<'a, B>, Self)
+    fn take_glwe_scratch<A, Rg: Ring>(self, infos: &A) -> (GLWEViewMut<'a, B, Rg>, Self)
     where
         B: 'a,
         A: GLWEInfos,
@@ -133,13 +133,13 @@ pub trait ScratchArenaTakeGLWE<'a, B: Backend>: ScratchArenaTakeVecZnx<'a, B> + 
     }
 
     /// Allocates a `Vec` of `len` [`GLWE`] ciphertexts from scratch space.
-    fn take_glwe_slice_scratch<A>(self, len: usize, infos: &A) -> (Vec<GLWEViewMut<'a, B>>, Self)
+    fn take_glwe_slice_scratch<A, Rg: Ring>(self, len: usize, infos: &A) -> (Vec<GLWEViewMut<'a, B, Rg>>, Self)
     where
         B: 'a,
         A: GLWEInfos,
     {
         let mut scratch: Self = self;
-        let mut cts: Vec<GLWEViewMut<'a, B>> = Vec::with_capacity(len);
+        let mut cts: Vec<GLWEViewMut<'a, B, Rg>> = Vec::with_capacity(len);
         for _ in 0..len {
             let (ct, new_scratch) = scratch.take_glwe_scratch(infos);
             scratch = new_scratch;
@@ -152,7 +152,7 @@ pub trait ScratchArenaTakeGLWE<'a, B: Backend>: ScratchArenaTakeVecZnx<'a, B> + 
 /// Carves [`GLWETensor`] layouts from a [`ScratchArena`].
 pub trait ScratchArenaTakeGLWETensor<'a, B: Backend>: ScratchArenaTakeVecZnx<'a, B> + Sized {
     /// Allocates a [`GLWETensor`] from scratch space.
-    fn take_glwe_tensor_scratch<A>(self, infos: &A) -> (GLWETensorViewMut<'a, B>, Self)
+    fn take_glwe_tensor_scratch<A, Rg: Ring>(self, infos: &A) -> (GLWETensorViewMut<'a, B, Rg>, Self)
     where
         B: 'a,
         A: GLWEInfos,
@@ -175,7 +175,7 @@ pub trait ScratchArenaTakeGLWETensor<'a, B: Backend>: ScratchArenaTakeVecZnx<'a,
 /// Carves [`GLWEPlaintext`] layouts from a [`ScratchArena`].
 pub trait ScratchArenaTakeGLWEPlaintext<'a, B: Backend>: ScratchArenaTakeVecZnx<'a, B> + Sized {
     /// Allocates a [`GLWEPlaintext`] from scratch space.
-    fn take_glwe_plaintext_scratch<A>(self, infos: &A) -> (GLWEPlaintextViewMut<'a, B>, Self)
+    fn take_glwe_plaintext_scratch<A, Rg: Ring>(self, infos: &A) -> (GLWEPlaintextViewMut<'a, B, Rg>, Self)
     where
         B: 'a,
         A: GLWEInfos,
@@ -196,7 +196,7 @@ pub trait ScratchArenaTakeGLWEPlaintext<'a, B: Backend>: ScratchArenaTakeVecZnx<
 /// Carves [`GLWESecretPrepared`] layouts from a [`ScratchArena`].
 pub trait ScratchArenaTakeGLWESecretPrepared<'a, B: Backend>: ScratchArenaTakeSvpPPol<'a, B> + Sized {
     /// Allocates a [`GLWESecretPrepared`] (DFT-domain secret key) from scratch space.
-    fn take_glwe_secret_prepared_scratch(self, n: Degree, rank: Rank) -> (GLWESecretPreparedViewMut<'a, B>, Self)
+    fn take_glwe_secret_prepared_scratch<Rg: Ring>(self, n: Degree, rank: Rank) -> (GLWESecretPreparedViewMut<'a, B, Rg>, Self)
     where
         B: 'a,
     {
@@ -214,7 +214,7 @@ pub trait ScratchArenaTakeGLWESecretPrepared<'a, B: Backend>: ScratchArenaTakeSv
 /// Carves [`GLWESecret`] layouts from a [`ScratchArena`].
 pub trait ScratchArenaTakeGLWESecret<'a, B: Backend>: ScratchArenaTakeScalarZnx<'a, B> + Sized {
     /// Allocates a [`GLWESecret`] from scratch space.
-    fn take_glwe_secret_scratch(self, n: Degree, rank: Rank) -> (GLWESecretViewMut<'a, B>, Self)
+    fn take_glwe_secret_scratch<Rg: Ring>(self, n: Degree, rank: Rank) -> (GLWESecretViewMut<'a, B, Rg>, Self)
     where
         B: 'a,
     {
@@ -232,7 +232,7 @@ pub trait ScratchArenaTakeGLWESecret<'a, B: Backend>: ScratchArenaTakeScalarZnx<
 /// Carves [`GLWESecretTensor`] layouts from a [`ScratchArena`].
 pub trait ScratchArenaTakeGLWESecretTensor<'a, B: Backend>: ScratchArenaTakeScalarZnx<'a, B> + Sized {
     /// Allocates a [`GLWESecretTensor`] from scratch space.
-    fn take_glwe_secret_tensor_scratch(self, n: Degree, rank: Rank) -> (GLWESecretTensorViewMut<'a, B>, Self)
+    fn take_glwe_secret_tensor_scratch<Rg: Ring>(self, n: Degree, rank: Rank) -> (GLWESecretTensorViewMut<'a, B, Rg>, Self)
     where
         B: 'a,
     {
@@ -251,7 +251,7 @@ pub trait ScratchArenaTakeGLWESecretTensor<'a, B: Backend>: ScratchArenaTakeScal
 /// Carves [`GGLWE`] layouts from a [`ScratchArena`].
 pub trait ScratchArenaTakeGGLWE<'a, B: Backend>: ScratchArenaTakeMatZnx<'a, B> + Sized {
     /// Allocates a [`GGLWE`] ciphertext from scratch space.
-    fn take_gglwe_scratch<A>(self, infos: &A) -> (GGLWEViewMut<'a, B>, Self)
+    fn take_gglwe_scratch<A, Rg: Ring>(self, infos: &A) -> (GGLWEViewMut<'a, B, Rg>, Self)
     where
         B: 'a,
         A: GGLWEInfos,
@@ -281,7 +281,7 @@ pub trait ScratchArenaTakeGGLWE<'a, B: Backend>: ScratchArenaTakeMatZnx<'a, B> +
 /// Carves [`GGLWEPrepared`] layouts from a [`ScratchArena`].
 pub trait ScratchArenaTakeGGLWEPrepared<'a, B: Backend>: ScratchArenaTakeVmpPMat<'a, B> + Sized {
     /// Allocates a [`GGLWEPrepared`] (DFT-domain GGLWE) from scratch space.
-    fn take_gglwe_prepared_scratch<A, M>(self, module: &M, infos: &A) -> (GGLWEPreparedViewMut<'a, B>, Self)
+    fn take_gglwe_prepared_scratch<A, M, Rg: Ring>(self, module: &M, infos: &A) -> (GGLWEPreparedViewMut<'a, B, Rg>, Self)
     where
         B: 'a,
         A: GGLWEInfos,
@@ -315,7 +315,7 @@ pub trait ScratchArenaTakeGGLWEPrepared<'a, B: Backend>: ScratchArenaTakeVmpPMat
 /// Carves [`GGSW`] layouts from a [`ScratchArena`].
 pub trait ScratchArenaTakeGGSW<'a, B: Backend>: ScratchArenaTakeMatZnx<'a, B> + Sized {
     /// Allocates a [`GGSW`] ciphertext from scratch space.
-    fn take_ggsw_scratch<A>(self, infos: &A) -> (GGSWViewMut<'a, B>, Self)
+    fn take_ggsw_scratch<A, Rg: Ring>(self, infos: &A) -> (GGSWViewMut<'a, B, Rg>, Self)
     where
         B: 'a,
         A: GGSWInfos,
@@ -343,7 +343,7 @@ pub trait ScratchArenaTakeGGSW<'a, B: Backend>: ScratchArenaTakeMatZnx<'a, B> + 
 /// Carves [`GGSWPrepared`] layouts from a [`ScratchArena`].
 pub trait ScratchArenaTakeGGSWPrepared<'a, B: Backend>: ScratchArenaTakeVmpPMat<'a, B> + Sized {
     /// Allocates a [`GGSWPrepared`] (DFT-domain GGSW) from scratch space.
-    fn take_ggsw_prepared_scratch<A, M>(self, module: &M, infos: &A) -> (GGSWPreparedViewMut<'a, B>, Self)
+    fn take_ggsw_prepared_scratch<A, M, Rg: Ring>(self, module: &M, infos: &A) -> (GGSWPreparedViewMut<'a, B, Rg>, Self)
     where
         B: 'a,
         A: GGSWInfos,
@@ -389,7 +389,7 @@ impl<'a, B: Backend> ScratchArenaTakeGGSWPrepared<'a, B> for ScratchArena<'a, B>
 mod tests {
     use std::marker::PhantomData;
 
-    use poulpy_hal::layouts::{Backend, DataViewMut, Module, ScratchOwned};
+    use poulpy_hal::layouts::{Backend, DataViewMut, Module, ScratchOwned, Standard};
 
     use super::*;
     use crate::{
@@ -424,13 +424,13 @@ mod tests {
         let arena = scratch.arena();
         let available_before = arena.available();
 
-        let (mut glwe, arena) = arena.take_glwe_scratch(&glwe_infos);
+        let (mut glwe, arena) = arena.take_glwe_scratch::<_, Standard>(&glwe_infos);
         let glwe_bytes = glwe.data_mut().data_mut();
         glwe_bytes[0] = 0x5a;
         let glwe_ptr = glwe_bytes.as_mut_ptr() as usize;
         let glwe_len = glwe_bytes.len();
 
-        let (mut prepared, arena) = arena.take_ggsw_prepared_scratch(&module, &ggsw_infos);
+        let (mut prepared, arena) = arena.take_ggsw_prepared_scratch::<_, _, Standard>(&module, &ggsw_infos);
         let prepared_bytes = prepared.data.data_mut();
         prepared_bytes[0] = 0xa5;
         let prepared_ptr = prepared_bytes.as_mut_ptr() as usize;

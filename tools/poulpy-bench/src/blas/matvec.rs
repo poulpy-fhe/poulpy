@@ -66,7 +66,7 @@ fn x_entry(e: usize) -> f64 {
 /// `blas_matvec_pt` by the operand, prepared when `resident`, else streamed from its encoding.
 fn matvec<BE, M>(bencher: &mut Bencher<'_, M>, bp: &BlasBenchParams, op: &'static str, resident: bool)
 where
-    BE: Backend<Ring = Standard> + HostStaged + 'static + BlasMatVecImpl + MaxBase2k,
+    BE: Backend + HostStaged + 'static + BlasMatVecImpl + MaxBase2k,
     Module<BE>: BlasBenchModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     M: Measurement,
@@ -86,12 +86,15 @@ where
             .blas_matvec_operand_encode(&mut streamed, w_entry(d), &mut arena.borrow())
             .unwrap();
         module.blas_matvec_operand_prepare(&mut prepared, &streamed, &mut arena.borrow());
-        let atks = client.rotation_keys(bp, matvec_pt_galois_elements(client.module.cyclotomic_order(), &layout));
+        let atks = client.rotation_keys(
+            bp,
+            matvec_pt_galois_elements(client.module.cyclotomic_order::<Standard>(), &layout),
+        );
         let x: Vec<f64> = (0..d).map(x_entry).collect();
         let mut slots = vec![0.0; bp.slots()];
         x.iter().enumerate().for_each(|(e, &v)| slots[e * layout.input.stride] = v);
         let a = BlasVector::from_cts(vec![client.encrypt_slots(bp, &slots)], layout.input).unwrap();
-        let max_base2k = blas_matvec_pt_max_base2k::<BE>(&layout, &a, FAILURE_BITS);
+        let max_base2k = blas_matvec_pt_max_base2k::<BE, Standard>(&layout, &a, FAILURE_BITS);
         assert!(
             max_base2k >= bp.base2k,
             "blas_matvec_pt: base2k exceeds the radix its lazy sums allow at 128 failure bits"
@@ -115,7 +118,7 @@ where
             };
             max_err = max_err.max((have - want).abs());
         }
-        verify::<BE>(op, bp, max_err, Some(max_base2k), atks.len());
+        verify::<BE, Standard>(op, bp, max_err, Some(max_base2k), atks.len());
         let module = client.module;
         if resident {
             Box::new(move || {
@@ -145,7 +148,7 @@ fn run<BE, W, K>(
     bp: &BlasBenchParams,
 ) -> ScratchOwned<BE>
 where
-    BE: Backend<Ring = Standard> + 'static + BlasMatVecImpl,
+    BE: Backend + 'static + BlasMatVecImpl,
     W: BlasMatVecMaps<BE>,
     K: poulpy_core::layouts::GetAutomorphismKey<BE> + poulpy_core::layouts::GetTensorKey<BE> + Sync,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
@@ -159,7 +162,7 @@ where
 /// `blas_matvec_pt` by the prepared operand.
 pub fn runner_blas_matvec_pt_resident<BE, M>(bencher: &mut Bencher<'_, M>, bp: &BlasBenchParams)
 where
-    BE: Backend<Ring = Standard> + HostStaged + 'static + BlasMatVecImpl + MaxBase2k,
+    BE: Backend + HostStaged + 'static + BlasMatVecImpl + MaxBase2k,
     Module<BE>: BlasBenchModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     M: Measurement,
@@ -170,7 +173,7 @@ where
 /// `blas_matvec_pt` streaming the operand's encoded diagonals.
 pub fn runner_blas_matvec_pt_streamed<BE, M>(bencher: &mut Bencher<'_, M>, bp: &BlasBenchParams)
 where
-    BE: Backend<Ring = Standard> + HostStaged + 'static + BlasMatVecImpl + MaxBase2k,
+    BE: Backend + HostStaged + 'static + BlasMatVecImpl + MaxBase2k,
     Module<BE>: BlasBenchModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     M: Measurement,
@@ -199,7 +202,7 @@ fn diagonal_ciphertext_layout(bp: &BlasBenchParams) -> BlasDiagonalCiphertextLay
 /// The prepared mask of slot 0, at scale `p`.
 fn slot_mask<BE>(client: &Client<BE, BE>, bp: &BlasBenchParams) -> CKKSRightOperandPrepared<BE>
 where
-    BE: Backend<Ring = Standard> + HostStaged + 'static,
+    BE: Backend + HostStaged + 'static,
     Module<BE>: BlasBenchModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
@@ -263,7 +266,7 @@ enum Timed {
 /// product's, so the product's keys append them too.
 fn diagonal_ciphertext<BE, M>(bencher: &mut Bencher<'_, M>, bp: &BlasBenchParams, op: &'static str, timed_call: Timed)
 where
-    BE: Backend<Ring = Standard> + HostStaged + 'static + BlasMatVecImpl + MaxBase2k,
+    BE: Backend + HostStaged + 'static + BlasMatVecImpl + MaxBase2k,
     Module<BE>: BlasBenchModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     M: Measurement,
@@ -271,7 +274,7 @@ where
     timed::<BE, M, _>(bencher, op, bp, || {
         let mut client = Client::<BE, BE>::new(bp);
         let (layout, slots, d) = (diagonal_ciphertext_layout(bp), bp.slots(), bp.d());
-        let order = client.module.cyclotomic_order();
+        let order = client.module.cyclotomic_order::<Standard>();
         let elements = if timed_call == Timed::Append {
             append_row_diagonal_galois_elements(order, &layout)
         } else {
@@ -300,7 +303,7 @@ where
         let a = BlasVector::from_cts(vec![client.encrypt_slots(bp, &x)], whole).unwrap();
         if timed_call == Timed::Append {
             let max_err = diagonals_error(&mut client, bp, &m, &rows);
-            verify::<BE>(op, bp, max_err, None, atks.len());
+            verify::<BE, Standard>(op, bp, max_err, None, atks.len());
             let module = client.module;
             return Box::new(move || {
                 module
@@ -336,7 +339,7 @@ where
                 .unwrap();
             scratch
         };
-        let max_base2k = blas_matvec_diagonal_max_base2k::<BE>(&m, &a, FAILURE_BITS);
+        let max_base2k = blas_matvec_diagonal_max_base2k::<BE, Standard>(&m, &a, FAILURE_BITS);
         assert!(
             max_base2k >= bp.base2k,
             "blas_matvec_diagonal: base2k exceeds the radix its lazy sums allow at 128 failure bits"
@@ -349,7 +352,7 @@ where
                 .map_or(0.0, |row| (0..d).map(|t| row[(i + t) % slots] * x[(i + t) % slots]).sum());
             max_err = max_err.max((have - want).abs());
         }
-        verify::<BE>(op, bp, max_err, Some(max_base2k), keys.atks.len());
+        verify::<BE, Standard>(op, bp, max_err, Some(max_base2k), keys.atks.len());
         let module = client.module;
         if timed_call == Timed::Resident {
             return Box::new(move || {
@@ -377,7 +380,7 @@ fn diagonals_error<BE>(
     rows: &[Vec<f64>],
 ) -> f64
 where
-    BE: Backend<Ring = Standard> + HostStaged + 'static,
+    BE: Backend + HostStaged + 'static,
     Module<BE>: BlasBenchModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
@@ -402,7 +405,7 @@ where
 /// `blas_matvec_diagonal` of a prepared diagonal ciphertext of `d` diagonals by a whole ciphertext.
 pub fn runner_blas_matvec_diagonal_resident<BE, M>(bencher: &mut Bencher<'_, M>, bp: &BlasBenchParams)
 where
-    BE: Backend<Ring = Standard> + HostStaged + 'static + BlasMatVecImpl + MaxBase2k,
+    BE: Backend + HostStaged + 'static + BlasMatVecImpl + MaxBase2k,
     Module<BE>: BlasBenchModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     M: Measurement,
@@ -413,7 +416,7 @@ where
 /// `blas_matvec_diagonal` of a diagonal ciphertext of `d` diagonals, each prepared at its use, by a whole ciphertext.
 pub fn runner_blas_matvec_diagonal_streamed<BE, M>(bencher: &mut Bencher<'_, M>, bp: &BlasBenchParams)
 where
-    BE: Backend<Ring = Standard> + HostStaged + 'static + BlasMatVecImpl + MaxBase2k,
+    BE: Backend + HostStaged + 'static + BlasMatVecImpl + MaxBase2k,
     Module<BE>: BlasBenchModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     M: Measurement,
@@ -424,7 +427,7 @@ where
 /// `blas_append_row_diagonal` of a whole ciphertext into a diagonal ciphertext of `d` diagonals.
 pub fn runner_blas_append_row_diagonal<BE, M>(bencher: &mut Bencher<'_, M>, bp: &BlasBenchParams)
 where
-    BE: Backend<Ring = Standard> + HostStaged + 'static + BlasMatVecImpl + MaxBase2k,
+    BE: Backend + HostStaged + 'static + BlasMatVecImpl + MaxBase2k,
     Module<BE>: BlasBenchModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     M: Measurement,
@@ -437,7 +440,7 @@ where
 /// stores every diagonal of a `d x d` matrix between these shapes, `2d - 1`, whatever its values.
 pub fn runner_blas_grid_to_vector_resident<BE, M>(bencher: &mut Bencher<'_, M>, bp: &BlasBenchParams)
 where
-    BE: Backend<Ring = Standard> + HostStaged + 'static + BlasMatVecImpl + MaxBase2k,
+    BE: Backend + HostStaged + 'static + BlasMatVecImpl + MaxBase2k,
     Module<BE>: BlasBenchModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     M: Measurement,
@@ -465,8 +468,11 @@ where
             .blas_matvec_operand_encode(&mut streamed, identity, &mut arena.borrow())
             .unwrap();
         module.blas_matvec_operand_prepare(&mut prepared, &streamed, &mut arena.borrow());
-        let atks = client.rotation_keys(bp, matvec_pt_galois_elements(client.module.cyclotomic_order(), &layout));
-        let max_base2k = blas_grid_to_vector_max_base2k::<BE>(&layout, &a, FAILURE_BITS);
+        let atks = client.rotation_keys(
+            bp,
+            matvec_pt_galois_elements(client.module.cyclotomic_order::<Standard>(), &layout),
+        );
+        let max_base2k = blas_grid_to_vector_max_base2k::<BE, Standard>(&layout, &a, FAILURE_BITS);
         assert!(
             max_base2k >= bp.base2k,
             "{op}: base2k exceeds the radix its lazy sums allow at 128 failure bits"
@@ -483,7 +489,7 @@ where
             let want = if s < d { entry(6, 0, 1, s) } else { 0.0 };
             max_err = max_err.max((have - want).abs());
         }
-        verify::<BE>(op, bp, max_err, Some(max_base2k), atks.len());
+        verify::<BE, Standard>(op, bp, max_err, Some(max_base2k), atks.len());
         let module = client.module;
         Box::new(move || {
             module

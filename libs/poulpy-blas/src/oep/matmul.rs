@@ -1,10 +1,10 @@
 use poulpy_ckks::{CKKSResult as Result, oep::CKKSMulImpl};
 use poulpy_core::layouts::{GGLWEInfos, GetAutomorphismKey, GetTensorKey};
-use poulpy_hal::layouts::{Backend, Module, PrepareHint, ScratchArena};
+use poulpy_hal::layouts::{Backend, Module, PrepareHint, Ring, ScratchArena, Standard};
 
 use crate::layouts::{
     BlasContextPrepared, BlasGrid, BlasGridInfos, BlasGridMut, BlasMatMulLeftOperandPrepared, BlasMatMulOperandInfos,
-    BlasMatMulRightOperandPrepared, BlasPtOperandPrepared, Left,
+    BlasMatMulRightOperandPrepared, BlasPtOperandPrepared, Left, Right,
 };
 
 /// Extension point of [`crate::api::BlasMatMulOps`] and of the preparations of
@@ -25,13 +25,13 @@ use crate::layouts::{
 /// validator gap or a device failure), and `res` is then unspecified.
 ///
 /// The memory, layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait BlasMatMulImpl: Backend + CKKSMulImpl {
+pub unsafe trait BlasMatMulImpl<Rg: Ring = Standard>: Backend + CKKSMulImpl<Rg> {
     /// Scratch bound of [`Self::blas_matmul_left_operand_prepare`] under the hint `hint`; may report less than the reference,
     /// never less than the body takes.
     fn blas_matmul_left_operand_prepare_tmp_bytes<A, K>(
         module: &Module<Self>,
         a: &A,
-        ctx: &BlasContextPrepared<Self>,
+        ctx: &BlasContextPrepared<Self, Rg>,
         keys: &K,
         hint: PrepareHint,
     ) -> usize
@@ -56,7 +56,7 @@ pub unsafe trait BlasMatMulImpl: Backend + CKKSMulImpl {
     /// [`blas_matmul_left_operand_layout`](crate::layouts::blas_matmul_left_operand_layout)
     /// ([`blas_matmul_right_operand_layout`](crate::layouts::blas_matmul_right_operand_layout)) gives for its source
     /// under the preparation's `ctx`, and the source's batch,
-    /// [`grid_batch::<Self::Ring>(a)`](crate::layouts::grid_batch). A cold preparation looks up the rotation keys of
+    /// [`grid_batch::<Rg>(a)`](crate::layouts::grid_batch). A cold preparation looks up the rotation keys of
     /// its terms and a hot one none, after its validator checked them under either hint.
     ///
     /// **Fixed:**
@@ -71,22 +71,22 @@ pub unsafe trait BlasMatMulImpl: Backend + CKKSMulImpl {
     /// **Free:** as [`Self::blas_matmul`].
     fn blas_matmul_left_operand_prepare<A, K>(
         module: &Module<Self>,
-        res: &mut BlasMatMulLeftOperandPrepared<Self>,
+        res: &mut BlasMatMulLeftOperandPrepared<Self, Rg>,
         a: &A,
-        ctx: &BlasContextPrepared<Self>,
+        ctx: &BlasContextPrepared<Self, Rg>,
         keys: &K,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        A: BlasGrid<Self>,
-        K: GetAutomorphismKey<Self> + GetTensorKey<Self> + Sync;
+        A: BlasGrid<Self, Rg>,
+        K: GetAutomorphismKey<Self, Rg> + GetTensorKey<Self, Rg> + Sync;
 
     /// Scratch bound of [`Self::blas_matmul_right_operand_prepare`] under the hint `hint`; may report less than the reference,
     /// never less than the body takes.
     fn blas_matmul_right_operand_prepare_tmp_bytes<B, K>(
         module: &Module<Self>,
         b: &B,
-        ctx: &BlasContextPrepared<Self>,
+        ctx: &BlasContextPrepared<Self, Rg>,
         keys: &K,
         hint: PrepareHint,
     ) -> usize
@@ -114,15 +114,15 @@ pub unsafe trait BlasMatMulImpl: Backend + CKKSMulImpl {
     /// **Free:** as [`Self::blas_matmul`].
     fn blas_matmul_right_operand_prepare<B, K>(
         module: &Module<Self>,
-        res: &mut BlasMatMulRightOperandPrepared<Self>,
+        res: &mut BlasMatMulRightOperandPrepared<Self, Rg>,
         b: &B,
-        ctx: &BlasContextPrepared<Self>,
+        ctx: &BlasContextPrepared<Self, Rg>,
         keys: &K,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        B: BlasGrid<Self>,
-        K: GetAutomorphismKey<Self> + GetTensorKey<Self> + Sync;
+        B: BlasGrid<Self, Rg>,
+        K: GetAutomorphismKey<Self, Rg> + GetTensorKey<Self, Rg> + Sync;
 
     /// Scratch bound of [`Self::blas_matmul_prepared`] under `ctx`; `a` and `b` are the operands or the layouts
     /// [`blas_matmul_left_operand_layout`](crate::layouts::blas_matmul_left_operand_layout) and
@@ -133,7 +133,7 @@ pub unsafe trait BlasMatMulImpl: Backend + CKKSMulImpl {
         res: &R,
         a: &A,
         b: &B,
-        ctx: &BlasContextPrepared<Self>,
+        ctx: &BlasContextPrepared<Self, Rg>,
         tsk: &T,
         keys: &K,
     ) -> usize
@@ -180,17 +180,17 @@ pub unsafe trait BlasMatMulImpl: Backend + CKKSMulImpl {
     fn blas_matmul_prepared<R, T, K>(
         module: &Module<Self>,
         res: &mut R,
-        a: &BlasMatMulLeftOperandPrepared<Self>,
-        b: &BlasMatMulRightOperandPrepared<Self>,
-        ctx: &BlasContextPrepared<Self>,
+        a: &BlasMatMulLeftOperandPrepared<Self, Rg>,
+        b: &BlasMatMulRightOperandPrepared<Self, Rg>,
+        ctx: &BlasContextPrepared<Self, Rg>,
         tsk: &T,
         keys: &K,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        R: BlasGridMut<Self>,
-        T: GetTensorKey<Self> + Sync,
-        K: GetAutomorphismKey<Self> + GetTensorKey<Self> + Sync;
+        R: BlasGridMut<Self, Rg>,
+        T: GetTensorKey<Self, Rg> + Sync,
+        K: GetAutomorphismKey<Self, Rg> + GetTensorKey<Self, Rg> + Sync;
 
     /// Scratch bound of [`Self::blas_matmul_pt_right`]; may report less than the reference, never less than the body
     /// takes.
@@ -198,8 +198,8 @@ pub unsafe trait BlasMatMulImpl: Backend + CKKSMulImpl {
         module: &Module<Self>,
         res: &R,
         a: &A,
-        b: &BlasPtOperandPrepared<Self>,
-        ctx: &BlasContextPrepared<Self>,
+        b: &BlasPtOperandPrepared<Self, Right, Rg>,
+        ctx: &BlasContextPrepared<Self, Rg>,
         keys: &K,
     ) -> usize
     where
@@ -240,24 +240,24 @@ pub unsafe trait BlasMatMulImpl: Backend + CKKSMulImpl {
         module: &Module<Self>,
         res: &mut R,
         a: &A,
-        b: &BlasPtOperandPrepared<Self>,
-        ctx: &BlasContextPrepared<Self>,
+        b: &BlasPtOperandPrepared<Self, Right, Rg>,
+        ctx: &BlasContextPrepared<Self, Rg>,
         keys: &K,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        R: BlasGridMut<Self>,
-        A: BlasGrid<Self>,
-        K: GetAutomorphismKey<Self> + GetTensorKey<Self> + Sync;
+        R: BlasGridMut<Self, Rg>,
+        A: BlasGrid<Self, Rg>,
+        K: GetAutomorphismKey<Self, Rg> + GetTensorKey<Self, Rg> + Sync;
 
     /// Scratch bound of [`Self::blas_matmul_pt_left`]; may report less than the reference, never less than the body
     /// takes. It does not read the block maps of the operand.
     fn blas_matmul_pt_left_tmp_bytes<R, A, K>(
         module: &Module<Self>,
         res: &R,
-        b: &BlasPtOperandPrepared<Self, Left>,
+        b: &BlasPtOperandPrepared<Self, Left, Rg>,
         a: &A,
-        ctx: &BlasContextPrepared<Self>,
+        ctx: &BlasContextPrepared<Self, Rg>,
         keys: &K,
     ) -> usize
     where
@@ -288,16 +288,16 @@ pub unsafe trait BlasMatMulImpl: Backend + CKKSMulImpl {
     fn blas_matmul_pt_left<R, A, K>(
         module: &Module<Self>,
         res: &mut R,
-        b: &BlasPtOperandPrepared<Self, Left>,
+        b: &BlasPtOperandPrepared<Self, Left, Rg>,
         a: &A,
-        ctx: &BlasContextPrepared<Self>,
+        ctx: &BlasContextPrepared<Self, Rg>,
         keys: &K,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        R: BlasGridMut<Self>,
-        A: BlasGrid<Self>,
-        K: GetAutomorphismKey<Self> + GetTensorKey<Self> + Sync;
+        R: BlasGridMut<Self, Rg>,
+        A: BlasGrid<Self, Rg>,
+        K: GetAutomorphismKey<Self, Rg> + GetTensorKey<Self, Rg> + Sync;
 
     /// Scratch bound of [`Self::blas_matmul`] under `ctx`; may report less than the reference, never less than the body
     /// takes.
@@ -306,7 +306,7 @@ pub unsafe trait BlasMatMulImpl: Backend + CKKSMulImpl {
         res: &R,
         a: &A,
         b: &B,
-        ctx: &BlasContextPrepared<Self>,
+        ctx: &BlasContextPrepared<Self, Rg>,
         tsk: &T,
         keys: &K,
     ) -> usize
@@ -349,31 +349,35 @@ pub unsafe trait BlasMatMulImpl: Backend + CKKSMulImpl {
         res: &mut R,
         a: &A,
         b: &B,
-        ctx: &BlasContextPrepared<Self>,
+        ctx: &BlasContextPrepared<Self, Rg>,
         tsk: &T,
         keys: &K,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        R: BlasGridMut<Self>,
-        A: BlasGrid<Self>,
-        B: BlasGrid<Self>,
-        T: GetTensorKey<Self> + Sync,
-        K: GetAutomorphismKey<Self> + GetTensorKey<Self> + Sync;
+        R: BlasGridMut<Self, Rg>,
+        A: BlasGrid<Self, Rg>,
+        B: BlasGrid<Self, Rg>,
+        T: GetTensorKey<Self, Rg> + Sync,
+        K: GetAutomorphismKey<Self, Rg> + GetTensorKey<Self, Rg> + Sync;
 }
 
-/// Selects [`BlasMatMulReference`](crate::reference::BlasMatMulReference) for `$be`. The reference prepares cold
-/// operands, and the terms of hot ones inside the product, through `$be`'s map hook, converts them through its
-/// poulpy-ckks preparations and multiplies them through its JKLS kernel, so `$be` also implements
-/// [`crate::oep::BlasMatIntraImpl`] and [`crate::oep::BlasJklsImpl`].
+/// Selects [`BlasMatMulReference`](crate::reference::BlasMatMulReference) for `$be` on both rings, or on `$ring` alone
+/// through `($be, $ring)`. The reference prepares cold operands, and the terms of hot ones inside the product, through
+/// `$be`'s map hook, converts them through its poulpy-ckks preparations and multiplies them through its JKLS kernel, so
+/// `$be` also implements [`crate::oep::BlasMatIntraImpl`] and [`crate::oep::BlasJklsImpl`] on the same rings.
 #[macro_export]
 macro_rules! impl_blas_mat_mul_reference_full {
     ($be:ty) => {
-        unsafe impl $crate::oep::BlasMatMulImpl for $be {
+        $crate::impl_blas_mat_mul_reference_full!($be, ::poulpy_hal::layouts::Standard);
+        $crate::impl_blas_mat_mul_reference_full!($be, ::poulpy_hal::layouts::ConjugateInvariant);
+    };
+    ($be:ty, $ring:ty) => {
+        unsafe impl $crate::oep::BlasMatMulImpl<$ring> for $be {
             fn blas_matmul_left_operand_prepare_tmp_bytes<A, K>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 a: &A,
-                ctx: &$crate::layouts::BlasContextPrepared<Self>,
+                ctx: &$crate::layouts::BlasContextPrepared<Self, $ring>,
                 keys: &K,
                 hint: ::poulpy_hal::layouts::PrepareHint,
             ) -> usize
@@ -381,24 +385,26 @@ macro_rules! impl_blas_mat_mul_reference_full {
                 A: $crate::layouts::BlasGridInfos,
                 K: ::poulpy_core::layouts::GGLWEInfos,
             {
-                $crate::reference::BlasMatMulReference::blas_matmul_left_operand_prepare_tmp_bytes_reference(
+                $crate::reference::BlasMatMulReference::<Self, $ring>::blas_matmul_left_operand_prepare_tmp_bytes_reference(
                     module, a, ctx, keys, hint,
                 )
             }
 
             fn blas_matmul_left_operand_prepare<A, K>(
                 module: &::poulpy_hal::layouts::Module<Self>,
-                res: &mut $crate::layouts::BlasMatMulLeftOperandPrepared<Self>,
+                res: &mut $crate::layouts::BlasMatMulLeftOperandPrepared<Self, $ring>,
                 a: &A,
-                ctx: &$crate::layouts::BlasContextPrepared<Self>,
+                ctx: &$crate::layouts::BlasContextPrepared<Self, $ring>,
                 keys: &K,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> ::poulpy_ckks::CKKSResult<()>
             where
-                A: $crate::layouts::BlasGrid<Self>,
-                K: ::poulpy_core::layouts::GetAutomorphismKey<Self> + ::poulpy_core::layouts::GetTensorKey<Self> + Sync,
+                A: $crate::layouts::BlasGrid<Self, $ring>,
+                K: ::poulpy_core::layouts::GetAutomorphismKey<Self, $ring>
+                    + ::poulpy_core::layouts::GetTensorKey<Self, $ring>
+                    + Sync,
             {
-                $crate::reference::BlasMatMulReference::blas_matmul_left_operand_prepare_reference(
+                $crate::reference::BlasMatMulReference::<Self, $ring>::blas_matmul_left_operand_prepare_reference(
                     module, res, a, ctx, keys, scratch,
                 )
             }
@@ -406,7 +412,7 @@ macro_rules! impl_blas_mat_mul_reference_full {
             fn blas_matmul_right_operand_prepare_tmp_bytes<B, K>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 b: &B,
-                ctx: &$crate::layouts::BlasContextPrepared<Self>,
+                ctx: &$crate::layouts::BlasContextPrepared<Self, $ring>,
                 keys: &K,
                 hint: ::poulpy_hal::layouts::PrepareHint,
             ) -> usize
@@ -414,24 +420,26 @@ macro_rules! impl_blas_mat_mul_reference_full {
                 B: $crate::layouts::BlasGridInfos,
                 K: ::poulpy_core::layouts::GGLWEInfos,
             {
-                $crate::reference::BlasMatMulReference::blas_matmul_right_operand_prepare_tmp_bytes_reference(
+                $crate::reference::BlasMatMulReference::<Self, $ring>::blas_matmul_right_operand_prepare_tmp_bytes_reference(
                     module, b, ctx, keys, hint,
                 )
             }
 
             fn blas_matmul_right_operand_prepare<B, K>(
                 module: &::poulpy_hal::layouts::Module<Self>,
-                res: &mut $crate::layouts::BlasMatMulRightOperandPrepared<Self>,
+                res: &mut $crate::layouts::BlasMatMulRightOperandPrepared<Self, $ring>,
                 b: &B,
-                ctx: &$crate::layouts::BlasContextPrepared<Self>,
+                ctx: &$crate::layouts::BlasContextPrepared<Self, $ring>,
                 keys: &K,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> ::poulpy_ckks::CKKSResult<()>
             where
-                B: $crate::layouts::BlasGrid<Self>,
-                K: ::poulpy_core::layouts::GetAutomorphismKey<Self> + ::poulpy_core::layouts::GetTensorKey<Self> + Sync,
+                B: $crate::layouts::BlasGrid<Self, $ring>,
+                K: ::poulpy_core::layouts::GetAutomorphismKey<Self, $ring>
+                    + ::poulpy_core::layouts::GetTensorKey<Self, $ring>
+                    + Sync,
             {
-                $crate::reference::BlasMatMulReference::blas_matmul_right_operand_prepare_reference(
+                $crate::reference::BlasMatMulReference::<Self, $ring>::blas_matmul_right_operand_prepare_reference(
                     module, res, b, ctx, keys, scratch,
                 )
             }
@@ -441,7 +449,7 @@ macro_rules! impl_blas_mat_mul_reference_full {
                 res: &R,
                 a: &A,
                 b: &B,
-                ctx: &$crate::layouts::BlasContextPrepared<Self>,
+                ctx: &$crate::layouts::BlasContextPrepared<Self, $ring>,
                 tsk: &T,
                 keys: &K,
             ) -> usize
@@ -452,7 +460,7 @@ macro_rules! impl_blas_mat_mul_reference_full {
                 T: ::poulpy_core::layouts::GGLWEInfos,
                 K: ::poulpy_core::layouts::GGLWEInfos,
             {
-                $crate::reference::BlasMatMulReference::blas_matmul_prepared_tmp_bytes_reference(
+                $crate::reference::BlasMatMulReference::<Self, $ring>::blas_matmul_prepared_tmp_bytes_reference(
                     module, res, a, b, ctx, tsk, keys,
                 )
             }
@@ -460,19 +468,23 @@ macro_rules! impl_blas_mat_mul_reference_full {
             fn blas_matmul_prepared<R, T, K>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 res: &mut R,
-                a: &$crate::layouts::BlasMatMulLeftOperandPrepared<Self>,
-                b: &$crate::layouts::BlasMatMulRightOperandPrepared<Self>,
-                ctx: &$crate::layouts::BlasContextPrepared<Self>,
+                a: &$crate::layouts::BlasMatMulLeftOperandPrepared<Self, $ring>,
+                b: &$crate::layouts::BlasMatMulRightOperandPrepared<Self, $ring>,
+                ctx: &$crate::layouts::BlasContextPrepared<Self, $ring>,
                 tsk: &T,
                 keys: &K,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> ::poulpy_ckks::CKKSResult<()>
             where
-                R: $crate::layouts::BlasGridMut<Self>,
-                T: ::poulpy_core::layouts::GetTensorKey<Self> + Sync,
-                K: ::poulpy_core::layouts::GetAutomorphismKey<Self> + ::poulpy_core::layouts::GetTensorKey<Self> + Sync,
+                R: $crate::layouts::BlasGridMut<Self, $ring>,
+                T: ::poulpy_core::layouts::GetTensorKey<Self, $ring> + Sync,
+                K: ::poulpy_core::layouts::GetAutomorphismKey<Self, $ring>
+                    + ::poulpy_core::layouts::GetTensorKey<Self, $ring>
+                    + Sync,
             {
-                $crate::reference::BlasMatMulReference::blas_matmul_prepared_reference(module, res, a, b, ctx, tsk, keys, scratch)
+                $crate::reference::BlasMatMulReference::<Self, $ring>::blas_matmul_prepared_reference(
+                    module, res, a, b, ctx, tsk, keys, scratch,
+                )
             }
 
             fn blas_matmul_tmp_bytes<R, A, B, T, K>(
@@ -480,7 +492,7 @@ macro_rules! impl_blas_mat_mul_reference_full {
                 res: &R,
                 a: &A,
                 b: &B,
-                ctx: &$crate::layouts::BlasContextPrepared<Self>,
+                ctx: &$crate::layouts::BlasContextPrepared<Self, $ring>,
                 tsk: &T,
                 keys: &K,
             ) -> usize
@@ -491,7 +503,9 @@ macro_rules! impl_blas_mat_mul_reference_full {
                 T: ::poulpy_core::layouts::GGLWEInfos,
                 K: ::poulpy_core::layouts::GGLWEInfos,
             {
-                $crate::reference::BlasMatMulReference::blas_matmul_tmp_bytes_reference(module, res, a, b, ctx, tsk, keys)
+                $crate::reference::BlasMatMulReference::<Self, $ring>::blas_matmul_tmp_bytes_reference(
+                    module, res, a, b, ctx, tsk, keys,
+                )
             }
 
             fn blas_matmul<R, A, B, T, K>(
@@ -499,27 +513,31 @@ macro_rules! impl_blas_mat_mul_reference_full {
                 res: &mut R,
                 a: &A,
                 b: &B,
-                ctx: &$crate::layouts::BlasContextPrepared<Self>,
+                ctx: &$crate::layouts::BlasContextPrepared<Self, $ring>,
                 tsk: &T,
                 keys: &K,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> ::poulpy_ckks::CKKSResult<()>
             where
-                R: $crate::layouts::BlasGridMut<Self>,
-                A: $crate::layouts::BlasGrid<Self>,
-                B: $crate::layouts::BlasGrid<Self>,
-                T: ::poulpy_core::layouts::GetTensorKey<Self> + Sync,
-                K: ::poulpy_core::layouts::GetAutomorphismKey<Self> + ::poulpy_core::layouts::GetTensorKey<Self> + Sync,
+                R: $crate::layouts::BlasGridMut<Self, $ring>,
+                A: $crate::layouts::BlasGrid<Self, $ring>,
+                B: $crate::layouts::BlasGrid<Self, $ring>,
+                T: ::poulpy_core::layouts::GetTensorKey<Self, $ring> + Sync,
+                K: ::poulpy_core::layouts::GetAutomorphismKey<Self, $ring>
+                    + ::poulpy_core::layouts::GetTensorKey<Self, $ring>
+                    + Sync,
             {
-                $crate::reference::BlasMatMulReference::blas_matmul_reference(module, res, a, b, ctx, tsk, keys, scratch)
+                $crate::reference::BlasMatMulReference::<Self, $ring>::blas_matmul_reference(
+                    module, res, a, b, ctx, tsk, keys, scratch,
+                )
             }
 
             fn blas_matmul_pt_right_tmp_bytes<R, A, K>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 res: &R,
                 a: &A,
-                b: &$crate::layouts::BlasPtOperandPrepared<Self>,
-                ctx: &$crate::layouts::BlasContextPrepared<Self>,
+                b: &$crate::layouts::BlasPtOperandPrepared<Self, $crate::layouts::Right, $ring>,
+                ctx: &$crate::layouts::BlasContextPrepared<Self, $ring>,
                 keys: &K,
             ) -> usize
             where
@@ -527,32 +545,38 @@ macro_rules! impl_blas_mat_mul_reference_full {
                 A: $crate::layouts::BlasGridInfos,
                 K: ::poulpy_core::layouts::GGLWEInfos,
             {
-                $crate::reference::BlasMatMulReference::blas_matmul_pt_right_tmp_bytes_reference(module, res, a, b, ctx, keys)
+                $crate::reference::BlasMatMulReference::<Self, $ring>::blas_matmul_pt_right_tmp_bytes_reference(
+                    module, res, a, b, ctx, keys,
+                )
             }
 
             fn blas_matmul_pt_right<R, A, K>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 res: &mut R,
                 a: &A,
-                b: &$crate::layouts::BlasPtOperandPrepared<Self>,
-                ctx: &$crate::layouts::BlasContextPrepared<Self>,
+                b: &$crate::layouts::BlasPtOperandPrepared<Self, $crate::layouts::Right, $ring>,
+                ctx: &$crate::layouts::BlasContextPrepared<Self, $ring>,
                 keys: &K,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> ::poulpy_ckks::CKKSResult<()>
             where
-                R: $crate::layouts::BlasGridMut<Self>,
-                A: $crate::layouts::BlasGrid<Self>,
-                K: ::poulpy_core::layouts::GetAutomorphismKey<Self> + ::poulpy_core::layouts::GetTensorKey<Self> + Sync,
+                R: $crate::layouts::BlasGridMut<Self, $ring>,
+                A: $crate::layouts::BlasGrid<Self, $ring>,
+                K: ::poulpy_core::layouts::GetAutomorphismKey<Self, $ring>
+                    + ::poulpy_core::layouts::GetTensorKey<Self, $ring>
+                    + Sync,
             {
-                $crate::reference::BlasMatMulReference::blas_matmul_pt_right_reference(module, res, a, b, ctx, keys, scratch)
+                $crate::reference::BlasMatMulReference::<Self, $ring>::blas_matmul_pt_right_reference(
+                    module, res, a, b, ctx, keys, scratch,
+                )
             }
 
             fn blas_matmul_pt_left_tmp_bytes<R, A, K>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 res: &R,
-                b: &$crate::layouts::BlasPtOperandPrepared<Self, $crate::layouts::Left>,
+                b: &$crate::layouts::BlasPtOperandPrepared<Self, $crate::layouts::Left, $ring>,
                 a: &A,
-                ctx: &$crate::layouts::BlasContextPrepared<Self>,
+                ctx: &$crate::layouts::BlasContextPrepared<Self, $ring>,
                 keys: &K,
             ) -> usize
             where
@@ -560,24 +584,30 @@ macro_rules! impl_blas_mat_mul_reference_full {
                 A: $crate::layouts::BlasGridInfos,
                 K: ::poulpy_core::layouts::GGLWEInfos,
             {
-                $crate::reference::BlasMatMulReference::blas_matmul_pt_left_tmp_bytes_reference(module, res, b, a, ctx, keys)
+                $crate::reference::BlasMatMulReference::<Self, $ring>::blas_matmul_pt_left_tmp_bytes_reference(
+                    module, res, b, a, ctx, keys,
+                )
             }
 
             fn blas_matmul_pt_left<R, A, K>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 res: &mut R,
-                b: &$crate::layouts::BlasPtOperandPrepared<Self, $crate::layouts::Left>,
+                b: &$crate::layouts::BlasPtOperandPrepared<Self, $crate::layouts::Left, $ring>,
                 a: &A,
-                ctx: &$crate::layouts::BlasContextPrepared<Self>,
+                ctx: &$crate::layouts::BlasContextPrepared<Self, $ring>,
                 keys: &K,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> ::poulpy_ckks::CKKSResult<()>
             where
-                R: $crate::layouts::BlasGridMut<Self>,
-                A: $crate::layouts::BlasGrid<Self>,
-                K: ::poulpy_core::layouts::GetAutomorphismKey<Self> + ::poulpy_core::layouts::GetTensorKey<Self> + Sync,
+                R: $crate::layouts::BlasGridMut<Self, $ring>,
+                A: $crate::layouts::BlasGrid<Self, $ring>,
+                K: ::poulpy_core::layouts::GetAutomorphismKey<Self, $ring>
+                    + ::poulpy_core::layouts::GetTensorKey<Self, $ring>
+                    + Sync,
             {
-                $crate::reference::BlasMatMulReference::blas_matmul_pt_left_reference(module, res, b, a, ctx, keys, scratch)
+                $crate::reference::BlasMatMulReference::<Self, $ring>::blas_matmul_pt_left_reference(
+                    module, res, b, a, ctx, keys, scratch,
+                )
             }
         }
     };

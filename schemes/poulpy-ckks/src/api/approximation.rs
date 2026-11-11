@@ -2,12 +2,12 @@
 
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::{BSGSMeta, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, IntPolyInfos, LWEInfos, SetBSGSMeta};
-use poulpy_hal::layouts::{Backend, ScratchArena};
+use poulpy_hal::layouts::{Backend, Ring, ScratchArena, Standard};
 
 use crate::{CKKSCtBounds, CKKSInfos, CKKSResult as Result, SetCKKSInfos, layouts::PolynomialApproximation};
 
 /// Homomorphic evaluation of reusable, interval-mapped polynomial plans.
-pub trait CKKSApproximationOps<BE: Backend> {
+pub trait CKKSApproximationOps<BE: Backend, Rg: Ring = Standard> {
     /// Scratch bytes for evaluation with these input and output layouts.
     fn ckks_polynomial_approximation_eval_tmp_bytes<R, I, T, P>(
         &self,
@@ -33,8 +33,8 @@ pub trait CKKSApproximationOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
-        I: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta + IntPolyInfos,
-        H: GetTensorKey<BE>;
+        R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        I: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + BSGSMeta + IntPolyInfos,
+        H: GetTensorKey<BE, Rg>;
 }

@@ -1,7 +1,7 @@
 use crate::CKKSResult as Result;
 
 use poulpy_core::layouts::{GLWEInfos, GLWEToBackendMut, GLWEToBackendRef};
-use poulpy_hal::layouts::{Backend, Module, ScratchArena, Standard};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{CKKSCtBounds, SetCKKSInfos};
 
@@ -11,7 +11,7 @@ use crate::{CKKSCtBounds, SetCKKSInfos};
 /// Implementations reproduce the bodies their methods document bit for bit, report for each
 /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait CKKSImagImpl: Backend<Ring = Standard> {
+pub unsafe trait CKKSImagImpl: Backend {
     /// Scratch bound of [`Self::ckks_mul_i_into`] and [`Self::ckks_mul_i_assign`]; may report less than the reference,
     /// never less than the body takes.
     fn ckks_mul_i_tmp_bytes(module: &Module<Self>, res_size: usize) -> usize;

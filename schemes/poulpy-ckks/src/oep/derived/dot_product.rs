@@ -1,9 +1,9 @@
 //! Dot products over plaintexts compose the ct × pt products with the additions.
 use poulpy_core::{
     GLWEBytesOf,
-    layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, IntPolyInfos},
+    layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, IntPolyInfos, LWEInfos},
 };
-use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Data, Module, Ring, ScratchArena};
 
 use crate::{
     CKKSCtBounds, CKKSInfos, CKKSResult as Result, SetCKKSInfos,
@@ -29,7 +29,7 @@ pub(crate) fn check_slice_lengths(op: &'static str, other: &str, a_len: usize, b
 }
 
 /// Adds the products `1..n`, each formed into a `dst`-shaped temporary, to `dst`.
-pub(crate) fn accumulate<BE, M, Dst, F>(
+pub(crate) fn accumulate<BE, M, Dst, F, Rg: Ring>(
     module: &M,
     dst: &mut Dst,
     n: usize,
@@ -38,9 +38,9 @@ pub(crate) fn accumulate<BE, M, Dst, F>(
 ) -> Result<()>
 where
     BE: Backend,
-    M: CKKSAddOps<BE>,
-    Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-    F: for<'a> FnMut(&mut CKKSCiphertextViewMut<'a, BE>, usize, &mut ScratchArena<'a, BE>) -> Result<()>,
+    M: CKKSAddOps<BE, Rg>,
+    Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+    F: for<'a> FnMut(&mut CKKSCiphertextViewMut<'a, BE, Rg>, usize, &mut ScratchArena<'a, BE>) -> Result<()>,
 {
     if n <= 1 {
         return Ok(());
@@ -55,7 +55,7 @@ where
     })
 }
 
-pub(crate) fn ckks_dot_product_prepared_tmp_bytes_derived<BE, R, A, B, T>(
+pub(crate) fn ckks_dot_product_prepared_tmp_bytes_derived<BE, R, A, B, T, Rg: Ring>(
     module: &Module<BE>,
     n: usize,
     res: &R,
@@ -64,7 +64,7 @@ pub(crate) fn ckks_dot_product_prepared_tmp_bytes_derived<BE, R, A, B, T>(
     tsk: &T,
 ) -> usize
 where
-    BE: CKKSDotProductImpl,
+    BE: CKKSDotProductImpl<Rg>,
     R: CKKSCtBounds,
     A: CKKSCtBounds,
     B: CKKSCtBounds,
@@ -73,9 +73,14 @@ where
     BE::ckks_dot_product_ct_tmp_bytes(module, n, res, a, b, tsk)
 }
 
-pub(crate) fn ckks_dot_product_pt_vec_tmp_bytes_derived<BE, R, A, P>(module: &Module<BE>, res: &R, a: &A, b: &P) -> usize
+pub(crate) fn ckks_dot_product_pt_vec_tmp_bytes_derived<BE, R, A, P, Rg: Ring>(
+    module: &Module<BE>,
+    res: &R,
+    a: &A,
+    b: &P,
+) -> usize
 where
-    BE: CKKSDotProductImpl,
+    BE: CKKSDotProductImpl<Rg>,
     R: CKKSCtBounds,
     A: CKKSCtBounds,
     P: CKKSInfos,
@@ -86,9 +91,14 @@ where
             .max(module.ckks_add_tmp_bytes(res.size()))
 }
 
-pub(crate) fn ckks_dot_product_pt_const_tmp_bytes_derived<BE, R, A, P>(module: &Module<BE>, res: &R, a: &A, b: &P) -> usize
+pub(crate) fn ckks_dot_product_pt_const_tmp_bytes_derived<BE, R, A, P, Rg: Ring>(
+    module: &Module<BE>,
+    res: &R,
+    a: &A,
+    b: &P,
+) -> usize
 where
-    BE: CKKSDotProductImpl,
+    BE: CKKSDotProductImpl<Rg>,
     R: CKKSCtBounds,
     A: CKKSCtBounds,
     P: CKKSInfos,
@@ -99,42 +109,52 @@ where
             .max(module.ckks_add_tmp_bytes(res.size()))
 }
 
-pub(crate) fn ckks_dot_product_pt_vec_derived<BE, Dst: Data, D: Data, E>(
+pub(crate) fn ckks_dot_product_pt_vec_derived<BE, Dst: Data, D: Data, E, Rg: Ring>(
     module: &Module<BE>,
-    dst: &mut CKKSCiphertext<Dst, BE::ZnxWord, BE::Ring>,
-    a: &[&CKKSCiphertext<D, BE::ZnxWord, BE::Ring>],
+    dst: &mut CKKSCiphertext<Dst, BE::ZnxWord, Rg>,
+    a: &[&CKKSCiphertext<D, BE::ZnxWord, Rg>],
     b: &[&E],
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    BE: CKKSDotProductImpl,
-    CKKSCiphertext<Dst, BE::ZnxWord, BE::Ring>: GLWEToBackendMut<BE>,
-    CKKSCiphertext<D, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE> + GLWEInfos,
-    E: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
+    BE: CKKSDotProductImpl<Rg>,
+    CKKSCiphertext<Dst, BE::ZnxWord, Rg>: GLWEToBackendMut<BE, Rg>,
+    CKKSCiphertext<D, BE::ZnxWord, Rg>: GLWEToBackendRef<BE, Rg> + GLWEInfos,
+    E: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos,
 {
     check_lengths("ckks_dot_product_pt_vec", a.len(), b.len())?;
+    crate::ensure_operand_degrees(
+        "ckks_dot_product_pt_vec",
+        module,
+        std::iter::once(dst.n()).chain(a.iter().map(|t| t.n())),
+    )?;
     module.ckks_mul_pt_vec_into(dst, a[0], b[0], scratch)?;
     accumulate(module, dst, a.len(), scratch, |tmp, i, s| {
         module.ckks_mul_pt_vec_into(tmp, a[i], b[i], s)
     })
 }
 
-pub(crate) fn ckks_dot_product_pt_const_derived<BE, Dst: Data, D: Data, E>(
+pub(crate) fn ckks_dot_product_pt_const_derived<BE, Dst: Data, D: Data, E, Rg: Ring>(
     module: &Module<BE>,
-    dst: &mut CKKSCiphertext<Dst, BE::ZnxWord, BE::Ring>,
-    a: &[&CKKSCiphertext<D, BE::ZnxWord, BE::Ring>],
+    dst: &mut CKKSCiphertext<Dst, BE::ZnxWord, Rg>,
+    a: &[&CKKSCiphertext<D, BE::ZnxWord, Rg>],
     b: &[&E],
     pt_coeffs: &[usize],
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    BE: CKKSDotProductImpl,
-    CKKSCiphertext<Dst, BE::ZnxWord, BE::Ring>: GLWEToBackendMut<BE>,
-    CKKSCiphertext<D, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE> + GLWEInfos,
-    E: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
+    BE: CKKSDotProductImpl<Rg>,
+    CKKSCiphertext<Dst, BE::ZnxWord, Rg>: GLWEToBackendMut<BE, Rg>,
+    CKKSCiphertext<D, BE::ZnxWord, Rg>: GLWEToBackendRef<BE, Rg> + GLWEInfos,
+    E: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos,
 {
     check_lengths("ckks_dot_product_pt_const", a.len(), b.len())?;
     check_slice_lengths("ckks_dot_product_pt_const", "coefficient vector", a.len(), pt_coeffs.len())?;
+    crate::ensure_operand_degrees(
+        "ckks_dot_product_pt_const",
+        module,
+        std::iter::once(dst.n()).chain(a.iter().map(|t| t.n())),
+    )?;
     module.ckks_mul_pt_const_into(dst, a[0], b[0], pt_coeffs[0], scratch)?;
     accumulate(module, dst, a.len(), scratch, |tmp, i, s| {
         module.ckks_mul_pt_const_into(tmp, a[i], b[i], pt_coeffs[i], s)

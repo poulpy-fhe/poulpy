@@ -1,18 +1,18 @@
 #![allow(clippy::too_many_arguments)]
 
 use poulpy_hal::{
-    layouts::{Backend, ScalarZnxToBackendRef, ScratchArena, ZnxInfos},
+    layouts::{Backend, Ring, ScalarZnxToBackendRef, ScratchArena, Standard, ZnxInfos},
     source::Source,
 };
 
 use crate::{
     GetDistribution, GetDistributionMut,
     layouts::{
-        GGLWEInfos, GGLWEToBackendMut, GGLWEToGGSWKeyCompressedToBackendMut, GGLWEToGGSWKeyToBackendMut, GGSWAtViewMut,
-        GGSWCompressedSeedMut, GGSWCompressedToBackendMut, GGSWInfos, GGSWToBackendMut, GLWECompressedSeedMut,
-        GLWECompressedToBackendMut, GLWEInfos, GLWEPublicKeyToBackendMut, GLWESecretToBackendRef, GLWESwitchingKeyDegreesMut,
-        GLWEToBackendMut, GLWEToBackendRef, LWEInfos, LWEPlaintextToBackendRef, LWESecretToBackendRef, LWEToBackendMut,
-        SetGaloisElement,
+        GGLWEInfos, GGLWEToBackendMut, GGLWEToGGSWKeyCompressedSeedMut, GGLWEToGGSWKeyCompressedToBackendMut,
+        GGLWEToGGSWKeyToBackendMut, GGSWAtViewMut, GGSWCompressedSeedMut, GGSWCompressedToBackendMut, GGSWInfos,
+        GGSWToBackendMut, GLWECompressedSeedMut, GLWECompressedToBackendMut, GLWEInfos, GLWEPublicKeyToBackendMut,
+        GLWESecretToBackendRef, GLWESwitchingKeyDegreesMut, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
+        LWEPlaintextToBackendRef, LWESecretToBackendRef, LWEToBackendMut, SetGaloisElement,
         compressed::{
             GGLWECompressedSeedMut, GGLWECompressedToBackendMut, GLWEPublicKeyCompressedSeedMut,
             GLWEPublicKeyCompressedToBackendMut,
@@ -21,42 +21,42 @@ use crate::{
     },
 };
 
-pub trait GLWEFill<BE: Backend> {
+pub trait GLWEFill<BE: Backend, Rg: Ring = Standard> {
     /// Clears the previous noise metadata.
     /// Fills the mask columns `1..=rank` of `res`, uniform at its radix and `k`, from `source_xa`.
     fn glwe_fill_mask_from_source<R>(&self, res: &mut R, source_xa: &mut Source)
     where
-        R: GLWEToBackendMut<BE>;
+        R: GLWEToBackendMut<BE, Rg>;
 
     /// Fills the mask of `res` as [`Self::glwe_fill_mask_from_source`] does from `Source::new(seed_xa)`.
     fn glwe_fill_mask_from_seed<R>(&self, res: &mut R, seed_xa: [u8; 32])
     where
-        R: GLWEToBackendMut<BE>;
+        R: GLWEToBackendMut<BE, Rg>;
 
     /// Fills every column of `res`, body included, uniform at its radix and `k`, from `source`.
     fn glwe_fill_from_source<R>(&self, res: &mut R, source: &mut Source)
     where
-        R: GLWEToBackendMut<BE>;
+        R: GLWEToBackendMut<BE, Rg>;
 }
 
-pub trait LWEFillMask<BE: Backend> {
+pub trait LWEFillMask<BE: Backend, Rg: Ring = Standard> {
     /// Clears the previous noise metadata.
     /// Fill the LWE mask from `source_xa`.
     fn lwe_fill_mask_from_source<R>(&self, base2k: usize, res: &mut R, source_xa: &mut Source)
     where
-        R: LWEToBackendMut<BE>;
+        R: LWEToBackendMut<BE, Rg>;
 
     /// Clears the previous noise metadata.
     /// Fill the LWE mask from a deterministic seed.
     fn lwe_fill_mask_from_seed<R>(&self, base2k: usize, res: &mut R, seed_xa: [u8; 32])
     where
-        R: LWEToBackendMut<BE>;
+        R: LWEToBackendMut<BE, Rg>;
 }
 
 /// # Panics
 ///
 /// When the encrypting secret has the `NONE` distribution, before any draw or write.
-pub trait LWEEncryptSk<BE: Backend> {
+pub trait LWEEncryptSk<BE: Backend, Rg: Ring = Standard> {
     fn lwe_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: LWEInfos;
@@ -70,15 +70,15 @@ pub trait LWEEncryptSk<BE: Backend> {
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: LWEToBackendMut<BE> + LWEInfos,
-        P: LWEPlaintextToBackendRef<BE>,
-        S: LWESecretToBackendRef<BE>;
+        R: LWEToBackendMut<BE, Rg> + LWEInfos,
+        P: LWEPlaintextToBackendRef<BE, Rg>,
+        S: LWESecretToBackendRef<BE, Rg>;
 }
 
 /// # Panics
 ///
 /// When the encrypting secret has the `NONE` distribution, before any draw or write.
-pub trait GLWEEncryptSk<BE: Backend> {
+pub trait GLWEEncryptSk<BE: Backend, Rg: Ring = Standard> {
     fn glwe_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GLWEInfos;
@@ -92,9 +92,9 @@ pub trait GLWEEncryptSk<BE: Backend> {
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE>,
-        P: GLWEToBackendRef<BE>,
-        S: GLWESecretPreparedToBackendRef<BE>;
+        R: GLWEToBackendMut<BE, Rg>,
+        P: GLWEToBackendRef<BE, Rg>,
+        S: GLWESecretPreparedToBackendRef<BE, Rg>;
 
     fn glwe_encrypt_zero_sk<R, S>(
         &self,
@@ -104,8 +104,8 @@ pub trait GLWEEncryptSk<BE: Backend> {
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE>,
-        S: GLWESecretPreparedToBackendRef<BE>;
+        R: GLWEToBackendMut<BE, Rg>,
+        S: GLWESecretPreparedToBackendRef<BE, Rg>;
 
     /// Encrypts `pt` under `sk` over the mask columns already in `res`, which
     /// are kept: the body becomes `pt - Sum_k mask_k s_k + e`. The masks must be
@@ -120,9 +120,9 @@ pub trait GLWEEncryptSk<BE: Backend> {
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE>,
-        P: GLWEToBackendRef<BE>,
-        S: GLWESecretPreparedToBackendRef<BE>;
+        R: GLWEToBackendMut<BE, Rg>,
+        P: GLWEToBackendRef<BE, Rg>,
+        S: GLWESecretPreparedToBackendRef<BE, Rg>;
 }
 
 /// Public-key encryption under a [`GLWEPublicKeyPrepared`](crate::layouts::GLWEPublicKeyPrepared)
@@ -139,7 +139,7 @@ pub trait GLWEEncryptSk<BE: Backend> {
 /// # Panics
 ///
 /// On a provenance mismatch, before mutation.
-pub trait GLWEEncryptPk<BE: Backend> {
+pub trait GLWEEncryptPk<BE: Backend, Rg: Ring = Standard> {
     /// Scratch required to encrypt into `res_infos` under a public key of layout `pk_infos`.
     fn glwe_encrypt_pk_tmp_bytes<R, K>(&self, res_infos: &R, pk_infos: &K) -> usize
     where
@@ -160,9 +160,9 @@ pub trait GLWEEncryptPk<BE: Backend> {
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        P: GLWEToBackendRef<BE> + GLWEInfos,
-        K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos;
+        R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+        P: GLWEToBackendRef<BE, Rg> + GLWEInfos,
+        K: GLWEPublicKeyPreparedToBackendRef<BE, Rg> + GLWEInfos;
 
     /// Same precondition as [`Self::glwe_encrypt_pk`].
     fn glwe_encrypt_zero_pk<R, K>(
@@ -173,8 +173,8 @@ pub trait GLWEEncryptPk<BE: Backend> {
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos;
+        R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+        K: GLWEPublicKeyPreparedToBackendRef<BE, Rg> + GLWEInfos;
 
     /// [`Self::glwe_encrypt_pk`] with `pt` added to column `col` of the output
     /// (`0` is the body), under the same precondition and scratch.
@@ -192,12 +192,12 @@ pub trait GLWEEncryptPk<BE: Backend> {
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        P: GLWEToBackendRef<BE> + GLWEInfos,
-        K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos;
+        R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+        P: GLWEToBackendRef<BE, Rg> + GLWEInfos,
+        K: GLWEPublicKeyPreparedToBackendRef<BE, Rg> + GLWEInfos;
 }
 
-pub trait GLWEPublicKeyGenerate<BE: Backend> {
+pub trait GLWEPublicKeyGenerate<BE: Backend, Rg: Ring = Standard> {
     /// Scratch required to generate a public key with the given output layout.
     fn glwe_public_key_generate_tmp_bytes<A>(&self, infos: &A) -> usize
     where
@@ -216,11 +216,11 @@ pub trait GLWEPublicKeyGenerate<BE: Backend> {
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEPublicKeyToBackendMut<BE> + GetDistributionMut + GLWEInfos,
-        S: GLWESecretPreparedToBackendRef<BE> + GetDistribution;
+        R: GLWEPublicKeyToBackendMut<BE, Rg> + GetDistributionMut + GLWEInfos,
+        S: GLWESecretPreparedToBackendRef<BE, Rg> + GetDistribution;
 }
 
-pub trait GLWEPublicKeyCompressedGenerate<BE: Backend> {
+pub trait GLWEPublicKeyCompressedGenerate<BE: Backend, Rg: Ring = Standard> {
     /// Scratch required to generate a compressed public key with the given layout.
     fn glwe_public_key_compressed_generate_tmp_bytes<A>(&self, infos: &A) -> usize
     where
@@ -238,14 +238,14 @@ pub trait GLWEPublicKeyCompressedGenerate<BE: Backend> {
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEPublicKeyCompressedToBackendMut<BE> + GLWEPublicKeyCompressedSeedMut + GetDistributionMut + GLWEInfos,
-        S: GLWESecretPreparedToBackendRef<BE> + GetDistribution;
+        R: GLWEPublicKeyCompressedToBackendMut<BE, Rg> + GLWEPublicKeyCompressedSeedMut + GetDistributionMut + GLWEInfos,
+        S: GLWESecretPreparedToBackendRef<BE, Rg> + GetDistribution;
 }
 
 /// # Panics
 ///
 /// When the encrypting secret has the `NONE` distribution, before any draw or write.
-pub trait GGLWEEncryptSk<BE: Backend> {
+pub trait GGLWEEncryptSk<BE: Backend, Rg: Ring = Standard> {
     fn gglwe_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos;
@@ -259,15 +259,15 @@ pub trait GGLWEEncryptSk<BE: Backend> {
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GGLWEToBackendMut<BE>,
-        P: ScalarZnxToBackendRef<BE>,
-        S: GLWESecretPreparedToBackendRef<BE>;
+        R: GGLWEToBackendMut<BE, Rg>,
+        P: ScalarZnxToBackendRef<BE, Rg>,
+        S: GLWESecretPreparedToBackendRef<BE, Rg>;
 }
 
 /// # Panics
 ///
 /// When the encrypting secret has the `NONE` distribution, before any draw or write.
-pub trait GGSWEncryptSk<BE: Backend> {
+pub trait GGSWEncryptSk<BE: Backend, Rg: Ring = Standard> {
     fn ggsw_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GGSWInfos;
@@ -281,9 +281,9 @@ pub trait GGSWEncryptSk<BE: Backend> {
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GGSWToBackendMut<BE> + GGSWInfos + GGSWAtViewMut<BE>,
-        P: ScalarZnxToBackendRef<BE> + ZnxInfos,
-        S: GLWESecretPreparedToBackendRef<BE> + LWEInfos + GLWEInfos;
+        R: GGSWToBackendMut<BE, Rg> + GGSWInfos + GGSWAtViewMut<BE, Rg>,
+        P: ScalarZnxToBackendRef<BE, Rg> + ZnxInfos,
+        S: GLWESecretPreparedToBackendRef<BE, Rg> + LWEInfos + GLWEInfos;
 }
 
 /// [`GLWEEncryptPk`] whose body error is a flood: outputs
@@ -296,7 +296,7 @@ pub trait GGSWEncryptSk<BE: Backend> {
 /// # Panics
 ///
 /// On a provenance mismatch, before mutation.
-pub trait GLWEEncryptPkSmudged<BE: Backend> {
+pub trait GLWEEncryptPkSmudged<BE: Backend, Rg: Ring = Standard> {
     fn glwe_encrypt_pk_smudged_tmp_bytes<R, K>(&self, res_infos: &R, pk_infos: &K) -> usize
     where
         R: GLWEInfos,
@@ -319,9 +319,9 @@ pub trait GLWEEncryptPkSmudged<BE: Backend> {
         source_smudge: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        P: GLWEToBackendRef<BE> + GLWEInfos,
-        K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos;
+        R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+        P: GLWEToBackendRef<BE, Rg> + GLWEInfos,
+        K: GLWEPublicKeyPreparedToBackendRef<BE, Rg> + GLWEInfos;
 }
 
 /// Public-key GGSW encryption: entry `(row, col)` is
@@ -333,7 +333,7 @@ pub trait GLWEEncryptPkSmudged<BE: Backend> {
 /// # Panics
 ///
 /// On a provenance mismatch, before mutation.
-pub trait GGSWEncryptPk<BE: Backend> {
+pub trait GGSWEncryptPk<BE: Backend, Rg: Ring = Standard> {
     /// Scratch required to encrypt into `res_infos` under a public key of layout `pk_infos`.
     fn ggsw_encrypt_pk_tmp_bytes<R, K>(&self, res_infos: &R, pk_infos: &K) -> usize
     where
@@ -352,15 +352,15 @@ pub trait GGSWEncryptPk<BE: Backend> {
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GGSWToBackendMut<BE> + GGSWInfos + GGSWAtViewMut<BE>,
-        P: ScalarZnxToBackendRef<BE> + ZnxInfos,
-        K: GLWEPublicKeyPreparedToBackendRef<BE> + GLWEInfos;
+        R: GGSWToBackendMut<BE, Rg> + GGSWInfos + GGSWAtViewMut<BE, Rg>,
+        P: ScalarZnxToBackendRef<BE, Rg> + ZnxInfos,
+        K: GLWEPublicKeyPreparedToBackendRef<BE, Rg> + GLWEInfos;
 }
 
 /// # Panics
 ///
 /// When the encrypting secret has the `NONE` distribution, before any draw or write.
-pub trait GGLWEToGGSWKeyEncryptSk<BE: Backend> {
+pub trait GGLWEToGGSWKeyEncryptSk<BE: Backend, Rg: Ring = Standard> {
     fn gglwe_to_ggsw_key_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos;
@@ -373,14 +373,14 @@ pub trait GGLWEToGGSWKeyEncryptSk<BE: Backend> {
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GGLWEToGGSWKeyToBackendMut<BE>,
-        S: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos;
+        R: GGLWEToGGSWKeyToBackendMut<BE, Rg>,
+        S: GLWESecretToBackendRef<BE, Rg> + GetDistribution + GLWEInfos;
 }
 
 /// # Panics
 ///
 /// When the encrypting secret has the `NONE` distribution, before any draw or write.
-pub trait GLWESwitchingKeyEncryptSk<BE: Backend> {
+pub trait GLWESwitchingKeyEncryptSk<BE: Backend, Rg: Ring = Standard> {
     fn glwe_switching_key_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos;
@@ -394,15 +394,15 @@ pub trait GLWESwitchingKeyEncryptSk<BE: Backend> {
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GGLWEToBackendMut<BE> + GLWESwitchingKeyDegreesMut + GGLWEInfos,
-        S1: GLWESecretToBackendRef<BE> + GLWEInfos,
-        S2: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos;
+        R: GGLWEToBackendMut<BE, Rg> + GLWESwitchingKeyDegreesMut + GGLWEInfos,
+        S1: GLWESecretToBackendRef<BE, Rg> + GLWEInfos,
+        S2: GLWESecretToBackendRef<BE, Rg> + GetDistribution + GLWEInfos;
 }
 
 /// # Panics
 ///
 /// When the encrypting secret has the `NONE` distribution, before any draw or write.
-pub trait GLWETensorKeyEncryptSk<BE: Backend> {
+pub trait GLWETensorKeyEncryptSk<BE: Backend, Rg: Ring = Standard> {
     fn glwe_tensor_key_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos;
@@ -415,8 +415,8 @@ pub trait GLWETensorKeyEncryptSk<BE: Backend> {
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GGLWEToBackendMut<BE> + GGLWEInfos,
-        S: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos;
+        R: GGLWEToBackendMut<BE, Rg> + GGLWEInfos,
+        S: GLWESecretToBackendRef<BE, Rg> + GetDistribution + GLWEInfos;
 }
 
 /// # Panics
@@ -488,7 +488,7 @@ pub trait LWEToGLWEKeyEncryptSk<BE: Backend> {
 /// # Panics
 ///
 /// When the encrypting secret has the `NONE` distribution, before any draw or write.
-pub trait GLWEAutomorphismKeyEncryptSk<BE: Backend> {
+pub trait GLWEAutomorphismKeyEncryptSk<BE: Backend, Rg: Ring = Standard> {
     fn glwe_automorphism_key_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos;
@@ -502,14 +502,14 @@ pub trait GLWEAutomorphismKeyEncryptSk<BE: Backend> {
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GGLWEToBackendMut<BE> + SetGaloisElement + GGLWEInfos,
-        S: GLWESecretToBackendRef<BE> + GLWEInfos;
+        R: GGLWEToBackendMut<BE, Rg> + SetGaloisElement + GGLWEInfos,
+        S: GLWESecretToBackendRef<BE, Rg> + GLWEInfos;
 }
 
 /// # Panics
 ///
 /// When the encrypting secret has the `NONE` distribution, before any draw or write.
-pub trait GLWECompressedEncryptSk<BE: Backend> {
+pub trait GLWECompressedEncryptSk<BE: Backend, Rg: Ring = Standard> {
     fn glwe_compressed_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GLWEInfos;
@@ -523,9 +523,9 @@ pub trait GLWECompressedEncryptSk<BE: Backend> {
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWECompressedToBackendMut<BE> + GLWECompressedSeedMut,
-        P: GLWEToBackendRef<BE>,
-        S: GLWESecretPreparedToBackendRef<BE>;
+        R: GLWECompressedToBackendMut<BE, Rg> + GLWECompressedSeedMut,
+        P: GLWEToBackendRef<BE, Rg>,
+        S: GLWESecretPreparedToBackendRef<BE, Rg>;
 
     /// Encrypts zero: the draws and the output of [`Self::glwe_compressed_encrypt_sk`]
     /// with a zero plaintext, without one. Scratch is
@@ -538,14 +538,14 @@ pub trait GLWECompressedEncryptSk<BE: Backend> {
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWECompressedToBackendMut<BE> + GLWECompressedSeedMut,
-        S: GLWESecretPreparedToBackendRef<BE>;
+        R: GLWECompressedToBackendMut<BE, Rg> + GLWECompressedSeedMut,
+        S: GLWESecretPreparedToBackendRef<BE, Rg>;
 }
 
 /// # Panics
 ///
 /// When the encrypting secret has the `NONE` distribution, before any draw or write.
-pub trait GGLWECompressedEncryptSk<BE: Backend> {
+pub trait GGLWECompressedEncryptSk<BE: Backend, Rg: Ring = Standard> {
     fn gglwe_compressed_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos;
@@ -559,15 +559,15 @@ pub trait GGLWECompressedEncryptSk<BE: Backend> {
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GGLWECompressedToBackendMut<BE> + GGLWECompressedSeedMut,
-        P: ScalarZnxToBackendRef<BE>,
-        S: GLWESecretPreparedToBackendRef<BE>;
+        R: GGLWECompressedToBackendMut<BE, Rg> + GGLWECompressedSeedMut,
+        P: ScalarZnxToBackendRef<BE, Rg>,
+        S: GLWESecretPreparedToBackendRef<BE, Rg>;
 }
 
 /// # Panics
 ///
 /// When the encrypting secret has the `NONE` distribution, before any draw or write.
-pub trait GGSWCompressedEncryptSk<BE: Backend> {
+pub trait GGSWCompressedEncryptSk<BE: Backend, Rg: Ring = Standard> {
     fn ggsw_compressed_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GGSWInfos;
@@ -581,15 +581,15 @@ pub trait GGSWCompressedEncryptSk<BE: Backend> {
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GGSWCompressedToBackendMut<BE> + GGSWCompressedSeedMut + GGSWInfos,
-        P: ScalarZnxToBackendRef<BE>,
-        S: GLWESecretPreparedToBackendRef<BE>;
+        R: GGSWCompressedToBackendMut<BE, Rg> + GGSWCompressedSeedMut + GGSWInfos,
+        P: ScalarZnxToBackendRef<BE, Rg>,
+        S: GLWESecretPreparedToBackendRef<BE, Rg>;
 }
 
 /// # Panics
 ///
 /// When the encrypting secret has the `NONE` distribution, before any draw or write.
-pub trait GLWESwitchingKeyCompressedEncryptSk<BE: Backend> {
+pub trait GLWESwitchingKeyCompressedEncryptSk<BE: Backend, Rg: Ring = Standard> {
     fn glwe_switching_key_compressed_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos;
@@ -603,15 +603,15 @@ pub trait GLWESwitchingKeyCompressedEncryptSk<BE: Backend> {
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GGLWECompressedToBackendMut<BE> + GGLWECompressedSeedMut + GLWESwitchingKeyDegreesMut + GGLWEInfos,
-        S1: GLWESecretToBackendRef<BE> + GLWEInfos,
-        S2: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos;
+        R: GGLWECompressedToBackendMut<BE, Rg> + GGLWECompressedSeedMut + GLWESwitchingKeyDegreesMut + GGLWEInfos,
+        S1: GLWESecretToBackendRef<BE, Rg> + GLWEInfos,
+        S2: GLWESecretToBackendRef<BE, Rg> + GetDistribution + GLWEInfos;
 }
 
 /// # Panics
 ///
 /// When the encrypting secret has the `NONE` distribution, before any draw or write.
-pub trait GLWEAutomorphismKeyCompressedEncryptSk<BE: Backend> {
+pub trait GLWEAutomorphismKeyCompressedEncryptSk<BE: Backend, Rg: Ring = Standard> {
     fn glwe_automorphism_key_compressed_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos;
@@ -625,14 +625,14 @@ pub trait GLWEAutomorphismKeyCompressedEncryptSk<BE: Backend> {
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GGLWECompressedToBackendMut<BE> + GGLWECompressedSeedMut + SetGaloisElement + GGLWEInfos,
-        S: GLWESecretToBackendRef<BE> + GLWEInfos;
+        R: GGLWECompressedToBackendMut<BE, Rg> + GGLWECompressedSeedMut + SetGaloisElement + GGLWEInfos,
+        S: GLWESecretToBackendRef<BE, Rg> + GLWEInfos;
 }
 
 /// # Panics
 ///
 /// When the encrypting secret has the `NONE` distribution, before any draw or write.
-pub trait GLWETensorKeyCompressedEncryptSk<BE: Backend> {
+pub trait GLWETensorKeyCompressedEncryptSk<BE: Backend, Rg: Ring = Standard> {
     fn glwe_tensor_key_compressed_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos;
@@ -645,14 +645,14 @@ pub trait GLWETensorKeyCompressedEncryptSk<BE: Backend> {
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GGLWECompressedToBackendMut<BE> + GGLWEInfos + GGLWECompressedSeedMut,
-        S: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos;
+        R: GGLWECompressedToBackendMut<BE, Rg> + GGLWEInfos + GGLWECompressedSeedMut,
+        S: GLWESecretToBackendRef<BE, Rg> + GetDistribution + GLWEInfos;
 }
 
 /// # Panics
 ///
 /// When the encrypting secret has the `NONE` distribution, before any draw or write.
-pub trait GGLWEToGGSWKeyCompressedEncryptSk<BE: Backend> {
+pub trait GGLWEToGGSWKeyCompressedEncryptSk<BE: Backend, Rg: Ring = Standard> {
     fn gglwe_to_ggsw_key_compressed_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos;
@@ -665,6 +665,6 @@ pub trait GGLWEToGGSWKeyCompressedEncryptSk<BE: Backend> {
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GGLWEToGGSWKeyCompressedToBackendMut<BE> + GGLWEInfos,
-        S: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos;
+        R: GGLWEToGGSWKeyCompressedToBackendMut<BE, Rg> + GGLWEToGGSWKeyCompressedSeedMut + GGLWEInfos,
+        S: GLWESecretToBackendRef<BE, Rg> + GetDistribution + GLWEInfos;
 }

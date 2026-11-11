@@ -1,6 +1,6 @@
 use crate::layouts::{
-    Backend, ScratchArena, VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut, VecZnxDftBackendRef,
-    VecZnxDftOwned,
+    Backend, Ring, ScratchArena, Standard, VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut,
+    VecZnxDftBackendRef, VecZnxDftOwned,
 };
 
 /// Allocation of a DFT-domain vector.
@@ -15,7 +15,7 @@ use crate::layouts::{
 /// ```
 pub trait VecZnxDftAlloc<B: Backend> {
     /// Returns an owned degree-`n` DFT-domain vector with `cols` columns and `size` limbs.
-    fn vec_znx_dft_alloc(&self, n: usize, cols: usize, size: usize) -> VecZnxDftOwned<B>;
+    fn vec_znx_dft_alloc<Rg: Ring>(&self, n: usize, cols: usize, size: usize) -> VecZnxDftOwned<B, Rg>;
 }
 
 /// Byte size of a DFT-domain vector.
@@ -44,15 +44,15 @@ pub trait VecZnxDftBytesOf {
 /// ensures    the selected source limbs are transformed; result limbs whose source index is at least a.size() are zero
 /// test       test_vec_znx_dft_apply, test_vec_znx_idft_apply, test_vec_znx_dft_rejects_zero_step
 /// ```
-pub trait VecZnxDftApply<B: Backend> {
+pub trait VecZnxDftApply<B: Backend, Rg: Ring = Standard> {
     /// Writes the forward DFT of the limbs of `a` selected by `step` and `offset` into `res`.
     fn vec_znx_dft_apply(
         &self,
         step: usize,
         offset: usize,
-        res: &mut VecZnxDftBackendMut<'_, B>,
+        res: &mut VecZnxDftBackendMut<'_, B, Rg>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, B>,
+        a: &VecZnxBackendRef<'_, B, Rg>,
         a_col: usize,
     );
 }
@@ -84,13 +84,13 @@ pub trait VecZnxIdftApplyTmpBytes {
 /// ensures    the selected column is inverse-transformed into big words; result limbs from a.size() onward are zero and a is unchanged
 /// test       test_vec_znx_idft_apply
 /// ```
-pub trait VecZnxIdftApply<B: Backend> {
+pub trait VecZnxIdftApply<B: Backend, Rg: Ring = Standard> {
     /// Writes the inverse DFT of `a` into `res`.
     fn vec_znx_idft_apply(
         &self,
-        res: &mut VecZnxBigBackendMut<'_, B>,
+        res: &mut VecZnxBigBackendMut<'_, B, Rg>,
         res_col: usize,
-        a: &VecZnxDftBackendRef<'_, B>,
+        a: &VecZnxDftBackendRef<'_, B, Rg>,
         a_col: usize,
         scratch: &mut ScratchArena<'_, B>,
     );
@@ -125,20 +125,20 @@ pub trait VecZnxIdftNormalizeTmpBytes {
 /// override   allowed, with vec_znx_idft_normalize_tmp_bytes
 /// test       test_vec_znx_idft_normalize, test_vec_znx_idft_normalize_derived
 /// ```
-pub trait VecZnxIdftNormalize<B: Backend> {
+pub trait VecZnxIdftNormalize<B: Backend, Rg: Ring = Standard> {
     /// Writes the inverse DFT of the pre-call `a` plus the optional `addend`, scaled by `2^res_offset` and normalized at `res_base2k` and `res_k`, into `res`.
     #[allow(clippy::too_many_arguments)]
     fn vec_znx_idft_normalize(
         &self,
-        res: &mut VecZnxBackendMut<'_, B>,
+        res: &mut VecZnxBackendMut<'_, B, Rg>,
         res_base2k: usize,
         res_k: usize,
         res_offset: i64,
         res_col: usize,
-        a: &mut VecZnxDftBackendMut<'_, B>,
+        a: &mut VecZnxDftBackendMut<'_, B, Rg>,
         a_col: usize,
         a_base2k: usize,
-        addend: Option<(&VecZnxBackendRef<'_, B>, usize)>,
+        addend: Option<(&VecZnxBackendRef<'_, B, Rg>, usize)>,
         scratch: &mut ScratchArena<'_, B>,
     );
 }
@@ -154,15 +154,15 @@ pub trait VecZnxIdftNormalize<B: Backend> {
 /// ensures    the selected columns are added limb by limb with zero extension and destination truncation
 /// test       test_vec_znx_dft_add
 /// ```
-pub trait VecZnxDftAdd<B: Backend> {
+pub trait VecZnxDftAdd<B: Backend, Rg: Ring = Standard> {
     /// Writes `a + b` into `res`.
     fn vec_znx_dft_add(
         &self,
-        res: &mut VecZnxDftBackendMut<'_, B>,
+        res: &mut VecZnxDftBackendMut<'_, B, Rg>,
         res_col: usize,
-        a: &VecZnxDftBackendRef<'_, B>,
+        a: &VecZnxDftBackendRef<'_, B, Rg>,
         a_col: usize,
-        b: &VecZnxDftBackendRef<'_, B>,
+        b: &VecZnxDftBackendRef<'_, B, Rg>,
         b_col: usize,
     );
 }
@@ -178,13 +178,13 @@ pub trait VecZnxDftAdd<B: Backend> {
 /// ensures    the selected result column gains the selected source column limb by limb
 /// test       test_vec_znx_dft_add_assign
 /// ```
-pub trait VecZnxDftAddAssign<B: Backend> {
+pub trait VecZnxDftAddAssign<B: Backend, Rg: Ring = Standard> {
     /// Adds `a` into `res`.
     fn vec_znx_dft_add_assign(
         &self,
-        res: &mut VecZnxDftBackendMut<'_, B>,
+        res: &mut VecZnxDftBackendMut<'_, B, Rg>,
         res_col: usize,
-        a: &VecZnxDftBackendRef<'_, B>,
+        a: &VecZnxDftBackendRef<'_, B, Rg>,
         a_col: usize,
     );
 }
@@ -200,15 +200,15 @@ pub trait VecZnxDftAddAssign<B: Backend> {
 /// ensures    the selected columns are subtracted limb by limb with zero extension and destination truncation
 /// test       test_vec_znx_dft_sub
 /// ```
-pub trait VecZnxDftSub<B: Backend> {
+pub trait VecZnxDftSub<B: Backend, Rg: Ring = Standard> {
     /// Writes `a - b` into `res`.
     fn vec_znx_dft_sub(
         &self,
-        res: &mut VecZnxDftBackendMut<'_, B>,
+        res: &mut VecZnxDftBackendMut<'_, B, Rg>,
         res_col: usize,
-        a: &VecZnxDftBackendRef<'_, B>,
+        a: &VecZnxDftBackendRef<'_, B, Rg>,
         a_col: usize,
-        b: &VecZnxDftBackendRef<'_, B>,
+        b: &VecZnxDftBackendRef<'_, B, Rg>,
         b_col: usize,
     );
 }
@@ -224,13 +224,13 @@ pub trait VecZnxDftSub<B: Backend> {
 /// ensures    the selected result column loses the selected source column limb by limb
 /// test       test_vec_znx_dft_sub_assign
 /// ```
-pub trait VecZnxDftSubAssign<B: Backend> {
+pub trait VecZnxDftSubAssign<B: Backend, Rg: Ring = Standard> {
     /// Subtracts `a` from `res`.
     fn vec_znx_dft_sub_assign(
         &self,
-        res: &mut VecZnxDftBackendMut<'_, B>,
+        res: &mut VecZnxDftBackendMut<'_, B, Rg>,
         res_col: usize,
-        a: &VecZnxDftBackendRef<'_, B>,
+        a: &VecZnxDftBackendRef<'_, B, Rg>,
         a_col: usize,
     );
 }
@@ -246,13 +246,13 @@ pub trait VecZnxDftSubAssign<B: Backend> {
 /// ensures    the pre-call selected result column is subtracted from the selected source column; result limbs from a.size() onward are negated
 /// test       test_vec_znx_dft_sub_negate_assign
 /// ```
-pub trait VecZnxDftSubNegateAssign<B: Backend> {
+pub trait VecZnxDftSubNegateAssign<B: Backend, Rg: Ring = Standard> {
     /// Writes `a - res` into `res`.
     fn vec_znx_dft_sub_negate_assign(
         &self,
-        res: &mut VecZnxDftBackendMut<'_, B>,
+        res: &mut VecZnxDftBackendMut<'_, B, Rg>,
         res_col: usize,
-        a: &VecZnxDftBackendRef<'_, B>,
+        a: &VecZnxDftBackendRef<'_, B, Rg>,
         a_col: usize,
     );
 }
@@ -268,15 +268,15 @@ pub trait VecZnxDftSubNegateAssign<B: Backend> {
 /// ensures    the selected source limbs are copied; result limbs whose source index is at least a.size() are zero
 /// test       test_vec_znx_dft_copy, test_vec_znx_dft_rejects_zero_step
 /// ```
-pub trait VecZnxDftCopy<B: Backend> {
+pub trait VecZnxDftCopy<B: Backend, Rg: Ring = Standard> {
     /// Writes the limbs of `a` selected by `step` and `offset` into `res`.
     fn vec_znx_dft_copy(
         &self,
         step: usize,
         offset: usize,
-        res: &mut VecZnxDftBackendMut<'_, B>,
+        res: &mut VecZnxDftBackendMut<'_, B, Rg>,
         res_col: usize,
-        a: &VecZnxDftBackendRef<'_, B>,
+        a: &VecZnxDftBackendRef<'_, B, Rg>,
         a_col: usize,
     );
 }
@@ -292,9 +292,9 @@ pub trait VecZnxDftCopy<B: Backend> {
 /// ensures    every limb of the selected result column reads as zero
 /// test       test_vec_znx_dft_zero
 /// ```
-pub trait VecZnxDftZero<B: Backend> {
+pub trait VecZnxDftZero<B: Backend, Rg: Ring = Standard> {
     /// Zeroes every limb of column `res_col` of `res`.
-    fn vec_znx_dft_zero(&self, res: &mut VecZnxDftBackendMut<'_, B>, res_col: usize);
+    fn vec_znx_dft_zero(&self, res: &mut VecZnxDftBackendMut<'_, B, Rg>, res_col: usize);
 }
 
 /// Reusable plan for the DFT-domain automorphism `X -> X^p`.
@@ -304,10 +304,10 @@ pub trait VecZnxDftZero<B: Backend> {
 /// class      support
 /// mutation   none
 /// domain     n: a power of two, MIN_DEGREE <= n <= the module's degree, the degree of the objects the plan is applied to; p odd
-/// ensures    returns a reusable plan for the substitution X -> X^p in R_n
+/// ensures    returns a reusable plan for the substitution X -> X^p in R_n, of a type serving only operands of ring Rg
 /// test       test_vec_znx_dft_automorphism
 /// ```
-pub trait VecZnxDftAutomorphismPlan<B: Backend> {
+pub trait VecZnxDftAutomorphismPlan<B: Backend, Rg: Ring = Standard> {
     type Plan;
 
     /// Returns a reusable plan for the substitution `X -> X^p` in `R_n`.
@@ -337,18 +337,18 @@ pub trait VecZnxDftAutomorphismAddWithPlanTmpBytes {
 /// class      basis
 /// mutation   out-of-place
 /// definition idft(res)[res_col,j] = sigma_plan.p(idft(a)[a_col,j]) in R_N; other columns of res are unchanged
-/// domain     res, a: VecZnxDft of degree N; plan: built by vec_znx_dft_automorphism_plan for this degree and an odd exponent
+/// domain     res, a: VecZnxDft of degree N; plan: built by vec_znx_dft_automorphism_plan on the ring of res and a, for this degree and an odd exponent
 /// ensures    the planned substitution is applied to the selected source column limb by limb; result limbs from a.size() onward are zero
 /// test       test_vec_znx_dft_automorphism
 /// ```
-pub trait VecZnxDftAutomorphism<B: Backend>: VecZnxDftAutomorphismPlan<B> {
+pub trait VecZnxDftAutomorphism<B: Backend, Rg: Ring = Standard>: VecZnxDftAutomorphismPlan<B, Rg> {
     /// Writes the substitution of `plan` applied to `a` into `res`.
     fn vec_znx_dft_automorphism_with_plan(
         &self,
         plan: &Self::Plan,
-        res: &mut VecZnxDftBackendMut<'_, B>,
+        res: &mut VecZnxDftBackendMut<'_, B, Rg>,
         res_col: usize,
-        a: &VecZnxDftBackendRef<'_, B>,
+        a: &VecZnxDftBackendRef<'_, B, Rg>,
         a_col: usize,
     );
 
@@ -359,7 +359,7 @@ pub trait VecZnxDftAutomorphism<B: Backend>: VecZnxDftAutomorphismPlan<B> {
     /// class      derived
     /// mutation   accumulate
     /// definition idft(res)[res_col,j] = idft(old(res))[res_col,j] + sigma_plan.p(idft(a)[a_col,j]) in R_N; result limbs from a.size() onward and other columns of res are unchanged
-    /// domain     res, a: VecZnxDft of degree N; plan: built by vec_znx_dft_automorphism_plan for this degree and an odd exponent
+    /// domain     res, a: VecZnxDft of degree N; plan: built by vec_znx_dft_automorphism_plan on the ring of res and a, for this degree and an odd exponent
     /// requires   scratch >= vec_znx_dft_automorphism_add_with_plan_tmp_bytes(res.size(), a.size())
     /// ensures    the selected result column gains the planned substitution of the selected source column limb by limb
     /// fallback   apply the plan into a one-column VecZnxDft with min(res.size(), a.size()) limbs, then add its column 0 into res[res_col]
@@ -370,9 +370,9 @@ pub trait VecZnxDftAutomorphism<B: Backend>: VecZnxDftAutomorphismPlan<B> {
     fn vec_znx_dft_automorphism_add_with_plan(
         &self,
         plan: &Self::Plan,
-        res: &mut VecZnxDftBackendMut<'_, B>,
+        res: &mut VecZnxDftBackendMut<'_, B, Rg>,
         res_col: usize,
-        a: &VecZnxDftBackendRef<'_, B>,
+        a: &VecZnxDftBackendRef<'_, B, Rg>,
         a_col: usize,
         scratch: &mut ScratchArena<'_, B>,
     );
@@ -393,9 +393,9 @@ pub trait VecZnxDftAutomorphism<B: Backend>: VecZnxDftAutomorphismPlan<B> {
     fn vec_znx_dft_automorphism(
         &self,
         p: i64,
-        res: &mut VecZnxDftBackendMut<'_, B>,
+        res: &mut VecZnxDftBackendMut<'_, B, Rg>,
         res_col: usize,
-        a: &VecZnxDftBackendRef<'_, B>,
+        a: &VecZnxDftBackendRef<'_, B, Rg>,
         a_col: usize,
     );
 }

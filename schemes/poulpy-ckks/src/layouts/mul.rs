@@ -6,6 +6,7 @@ use poulpy_core::layouts::{
 };
 use poulpy_hal::layouts::{
     Backend, CnvPVecLBackendRef, CnvPVecLOwned, CnvPVecLToBackendRef, CnvPVecRBackendRef, CnvPVecROwned, CnvPVecRToBackendRef,
+    Ring, Standard,
 };
 
 /// A CKKS ciphertext prepared as the left operand of a `ct×ct` product.
@@ -22,9 +23,9 @@ use poulpy_hal::layouts::{
 /// metadata of the ciphertext it was prepared from, which its infos report, so
 /// a product reads the operand without its source. It carries no noise
 /// estimate: only fresh ciphertexts do.
-pub struct CKKSLeftOperandPrepared<BE: Backend> {
+pub struct CKKSLeftOperandPrepared<BE: Backend, Rg: Ring = Standard> {
     /// Backend-resident prepared convolution operand.
-    pub(crate) prep: CnvPVecLOwned<BE>,
+    pub(crate) prep: CnvPVecLOwned<BE, Rg>,
     /// Limb count consumed at prepare time: `ceil(k / base2k)`.
     pub(crate) size: usize,
     /// Ring degree, radix, width `k` and rank of the source ciphertext.
@@ -51,9 +52,9 @@ pub struct CKKSLeftOperandPrepared<BE: Backend> {
 /// Preparing once and multiplying many times (e.g. the same `X^{gsp}` across a
 /// BSGS giant-step level) hoists the forward transform out of the per-multiply
 /// path.
-pub struct CKKSRightOperandPrepared<BE: Backend> {
+pub struct CKKSRightOperandPrepared<BE: Backend, Rg: Ring = Standard> {
     /// Backend-resident prepared convolution operand.
-    pub(crate) prep: CnvPVecROwned<BE>,
+    pub(crate) prep: CnvPVecROwned<BE, Rg>,
     /// Limb count consumed at prepare time: `ceil(k / base2k)`.
     pub(crate) size: usize,
     /// Ring degree, radix, width `k` and rank of the source ciphertext;
@@ -66,31 +67,31 @@ pub struct CKKSRightOperandPrepared<BE: Backend> {
 
 /// The former name of [`CKKSRightOperandPrepared`].
 #[deprecated(note = "renamed to `CKKSRightOperandPrepared`")]
-pub type CKKSPreparedRight<BE> = CKKSRightOperandPrepared<BE>;
+pub type CKKSPreparedRight<BE, Rg = Standard> = CKKSRightOperandPrepared<BE, Rg>;
 
-impl<BE: Backend> CKKSLeftOperandPrepared<BE> {
+impl<BE: Backend, Rg: Ring> CKKSLeftOperandPrepared<BE, Rg> {
     /// The prepared convolution operand, on `ceil(k / base2k)` limbs and `rank + 1` columns of the source.
-    pub fn cnv(&self) -> &CnvPVecLOwned<BE> {
+    pub fn cnv(&self) -> &CnvPVecLOwned<BE, Rg> {
         &self.prep
     }
 }
 
-impl<BE: Backend> CKKSRightOperandPrepared<BE> {
+impl<BE: Backend, Rg: Ring> CKKSRightOperandPrepared<BE, Rg> {
     /// The prepared convolution operand, on `ceil(k / base2k)` limbs and `rank + 1` columns of the source.
-    pub fn cnv(&self) -> &CnvPVecROwned<BE> {
+    pub fn cnv(&self) -> &CnvPVecROwned<BE, Rg> {
         &self.prep
     }
 }
 
 // The core products read a prepared operand where it is, through its convolution operand.
-impl<BE: Backend> CnvPVecLToBackendRef<BE> for CKKSLeftOperandPrepared<BE> {
-    fn to_backend_ref(&self) -> CnvPVecLBackendRef<'_, BE> {
+impl<BE: Backend, Rg: Ring> CnvPVecLToBackendRef<BE, Rg> for CKKSLeftOperandPrepared<BE, Rg> {
+    fn to_backend_ref(&self) -> CnvPVecLBackendRef<'_, BE, Rg> {
         self.prep.to_backend_ref()
     }
 }
 
-impl<BE: Backend> CnvPVecRToBackendRef<BE> for CKKSRightOperandPrepared<BE> {
-    fn to_backend_ref(&self) -> CnvPVecRBackendRef<'_, BE> {
+impl<BE: Backend, Rg: Ring> CnvPVecRToBackendRef<BE, Rg> for CKKSRightOperandPrepared<BE, Rg> {
+    fn to_backend_ref(&self) -> CnvPVecRBackendRef<'_, BE, Rg> {
         self.prep.to_backend_ref()
     }
 }
@@ -99,7 +100,7 @@ impl<BE: Backend> CnvPVecRToBackendRef<BE> for CKKSRightOperandPrepared<BE> {
 // `CKKSCtBounds`; `max_size` is the prepared limb count.
 macro_rules! impl_prepared_infos {
     ($name:ident) => {
-        impl<BE: Backend> LWEInfos for $name<BE> {
+        impl<BE: Backend, Rg: Ring> LWEInfos for $name<BE, Rg> {
             fn n(&self) -> Degree {
                 self.layout.n
             }
@@ -117,19 +118,19 @@ macro_rules! impl_prepared_infos {
             }
         }
 
-        impl<BE: Backend> GLWEInfos for $name<BE> {
+        impl<BE: Backend, Rg: Ring> GLWEInfos for $name<BE, Rg> {
             fn rank(&self) -> Rank {
                 self.layout.rank
             }
         }
 
-        impl<BE: Backend> GLWEPlaintextInfos for $name<BE> {
+        impl<BE: Backend, Rg: Ring> GLWEPlaintextInfos for $name<BE, Rg> {
             fn plaintext_meta(&self) -> Option<GLWEPlaintextMeta> {
                 self.meta
             }
         }
 
-        impl<BE: Backend> CKKSInfos for $name<BE> {}
+        impl<BE: Backend, Rg: Ring> CKKSInfos for $name<BE, Rg> {}
     };
 }
 

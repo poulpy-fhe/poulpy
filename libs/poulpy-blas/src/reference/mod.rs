@@ -29,7 +29,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::{CnvPVecAlloc, ModuleN},
-    layouts::{Backend, ScratchArena},
+    layouts::{Backend, Ring, ScratchArena},
 };
 
 use crate::layouts::ciphertext::layout_of;
@@ -45,10 +45,16 @@ pub(crate) enum LtEval {
 
 /// Scratch of the baby steps of a block of layout `a` and of one linear transformation evaluated as `eval`, from
 /// blocks of layout `a` into a block of layout `res`.
-pub(crate) fn lt_tmp_bytes<BE, M, K>(module: &M, res: &impl CKKSCtBounds, a: &impl CKKSCtBounds, key: &K, eval: LtEval) -> usize
+pub(crate) fn lt_tmp_bytes<BE, M, K, Rg: Ring>(
+    module: &M,
+    res: &impl CKKSCtBounds,
+    a: &impl CKKSCtBounds,
+    key: &K,
+    eval: LtEval,
+) -> usize
 where
     BE: Backend,
-    M: CKKSLinearTransformationOps<BE> + ?Sized,
+    M: CKKSLinearTransformationOps<BE, Rg> + ?Sized,
     K: GGLWEInfos,
 {
     // A `res` of no width is never read: its map fails the budget check before any scratch.
@@ -71,16 +77,16 @@ where
 }
 
 /// `count` baby-step caches for sources of `src`'s layout, each covering the baby steps of every map of `maps`.
-pub(crate) fn baby_caches<BE, M, S, P>(
+pub(crate) fn baby_caches<BE, M, S, P, Rg: Ring>(
     module: &M,
     maps: &[&LinearTransformation<P>],
     src: &S,
     count: usize,
-) -> Vec<LinearTransformationBabySteps<BE>>
+) -> Vec<LinearTransformationBabySteps<BE, Rg>>
 where
     BE: Backend,
-    M: CKKSLinearTransformationOps<BE> + ModuleN + CnvPVecAlloc<BE>,
-    S: GLWEToBackendRef<BE> + CKKSCtBounds,
+    M: CKKSLinearTransformationOps<BE, Rg> + ModuleN + CnvPVecAlloc<BE>,
+    S: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
 {
     let rotations: Vec<i64> = maps.iter().flat_map(|lt| lt.baby_steps().iter().copied()).collect();
     (0..count)
@@ -94,9 +100,9 @@ where
 /// product's [`pt_label`]. The caches are filled from a group's sources and serve all its blocks. The groups run in
 /// order, refilling the same caches, and the first error stops them.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn shared_giants<'s, 'm, BE, M, D, S, P, K>(
+pub(crate) fn shared_giants<'s, 'm, BE, M, D, S, P, K, Rg: Ring>(
     module: &M,
-    caches: &mut [LinearTransformationBabySteps<BE>],
+    caches: &mut [LinearTransformationBabySteps<BE, Rg>],
     groups: Vec<Vec<&mut D>>,
     source: impl Fn(usize, usize) -> &'s S,
     map: impl Fn(usize, usize, usize) -> &'m LinearTransformation<P>,
@@ -106,11 +112,11 @@ pub(crate) fn shared_giants<'s, 'm, BE, M, D, S, P, K>(
 ) -> Result<()>
 where
     BE: Backend + 's + 'm,
-    M: CKKSLinearTransformationOps<BE>,
-    D: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-    S: GLWEToBackendRef<BE> + CKKSCtBounds + 's,
-    P: GLWEDiagonalProd<BE> + LtDiagonalMeta + 'm,
-    K: GetAutomorphismKey<BE> + GetTensorKey<BE>,
+    M: CKKSLinearTransformationOps<BE, Rg>,
+    D: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+    S: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + 's,
+    P: GLWEDiagonalProd<BE, Rg> + LtDiagonalMeta + 'm,
+    K: GetAutomorphismKey<BE, Rg> + GetTensorKey<BE, Rg>,
 {
     let inner = caches.len();
     let (mut srcs, mut lts) = (Vec::with_capacity(inner), Vec::with_capacity(inner));

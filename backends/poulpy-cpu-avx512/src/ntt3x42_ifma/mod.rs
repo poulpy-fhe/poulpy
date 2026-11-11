@@ -20,9 +20,8 @@
 //!   42-bit prime residues into two `u64` words per coefficient.
 //! - `BigWord  = i128` — CRT-reconstructed large coefficients.
 
-use std::marker::PhantomData;
-
-use poulpy_hal::layouts::{Ring, Standard};
+#[cfg(feature = "enable-rayon")]
+use poulpy_hal::layouts::{MaxBase2k, Ring};
 
 pub(crate) mod bbc_meta;
 mod conjugate_invariant;
@@ -73,12 +72,12 @@ mod tests;
 ///
 /// `NTT3x42Ifma` is `Send + Sync` (derived from being a zero-sized, field-less struct).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct NTT3x42Ifma<R: Ring = Standard>(PhantomData<R>);
+pub struct NTT3x42Ifma;
 
 /// Rayon-parallel AVX512-IFMA backend.
 #[cfg(feature = "enable-rayon")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct NTT3x42IfmaRayon<R: Ring = Standard>(PhantomData<R>);
+pub struct NTT3x42IfmaRayon;
 
 #[cfg(feature = "enable-rayon")]
 pub use cache_pools::NTT3x42IfmaRayonExecutor;
@@ -87,19 +86,16 @@ pub use cache_pools::NTT3x42IfmaRayonExecutor;
 pub(crate) mod cache_pools;
 
 #[cfg(feature = "enable-rayon")]
-poulpy_hal::impl_backend_from!(NTT3x42IfmaRayon<R>, NTT3x42Ifma<R>, NTT3x42IfmaRayonExecutor; generic R: Ring);
+poulpy_hal::impl_backend_from!(NTT3x42IfmaRayon, NTT3x42Ifma, NTT3x42IfmaRayonExecutor);
 
 #[cfg(feature = "enable-rayon")]
-impl<R: Ring> poulpy_hal::layouts::MaxBase2k for NTT3x42IfmaRayon<R>
-where
-    NTT3x42Ifma<R>: poulpy_hal::layouts::MaxBase2k,
-{
-    fn max_base2k(n: usize, products: usize, failure_bits: usize, squaring: bool) -> usize {
-        <NTT3x42Ifma<R> as poulpy_hal::layouts::MaxBase2k>::max_base2k(n, products, failure_bits, squaring)
+impl MaxBase2k for NTT3x42IfmaRayon {
+    fn max_base2k<Rg: Ring>(n: usize, products: usize, failure_bits: usize, squaring: bool) -> usize {
+        <NTT3x42Ifma as MaxBase2k>::max_base2k::<Rg>(n, products, failure_bits, squaring)
     }
 
-    fn max_base2k_squares(n: usize, products: usize, squares: usize, failure_bits: usize) -> usize {
-        <NTT3x42Ifma<R> as poulpy_hal::layouts::MaxBase2k>::max_base2k_squares(n, products, squares, failure_bits)
+    fn max_base2k_squares<Rg: Ring>(n: usize, products: usize, squares: usize, failure_bits: usize) -> usize {
+        <NTT3x42Ifma as MaxBase2k>::max_base2k_squares::<Rg>(n, products, squares, failure_bits)
     }
 }
 

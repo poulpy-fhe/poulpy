@@ -1,8 +1,28 @@
 use poulpy_ckks::ckks_determinism_test_suite;
 
-/// The small S2C-first and C2S-first presets at their 52-bit radix, by default.
+/// The small S2C-first and C2S-first presets at their 52-bit radix, the bootstrap key plan and the
+/// conjugate-invariant bootstrap refusals, by default.
 mod small_bootstrapping_presets {
-    use poulpy_ckks::test_suite::presets::{small_c2s_preset_meets_precision, small_s2c_preset_meets_precision};
+    use poulpy_ckks::test_suite::presets::{
+        bootstrapping_plan_keys_match_context, ci_bootstrap_refuses_invalid_inputs, small_c2s_preset_meets_precision,
+        small_s2c_preset_meets_precision,
+    };
+
+    #[test]
+    fn ntt4x30_bootstrapping_plan_keys_match_context() {
+        bootstrapping_plan_keys_match_context::<crate::NTT4x30Avx512>();
+    }
+
+    #[test]
+    fn ntt4x30_ci_bootstrap_refuses_invalid_inputs() {
+        ci_bootstrap_refuses_invalid_inputs::<crate::NTT4x30Avx512>();
+    }
+
+    #[cfg(feature = "enable-rayon")]
+    #[test]
+    fn ntt4x30_rayon_ci_bootstrap_refuses_invalid_inputs() {
+        ci_bootstrap_refuses_invalid_inputs::<crate::NTT4x30Avx512Rayon>();
+    }
 
     #[test]
     fn ntt4x30_small_s2c_preset_meets_precision() {
@@ -34,11 +54,8 @@ mod bootstrapping_presets {
         let presets = poulpy_ckks::presets::bootstrapping::all().unwrap().into_iter();
         for preset in presets.filter(|preset| preset.plan().eval_mod_ring() == EvalModRing::Standard) {
             // The 126-bit prime product leaves three bits more than NTT4x30's.
-            assert_eq!(
-                preset.max_backend_base2k::<crate::NTT3x42Ifma, crate::NTT3x42CIIfma>(BOOTSTRAP_FAILURE_BITS),
-                56
-            );
-            let adapted = preset_for_backend::<crate::NTT3x42Ifma, crate::NTT3x42CIIfma>(&preset).unwrap();
+            assert_eq!(preset.max_backend_base2k::<crate::NTT3x42Ifma>(BOOTSTRAP_FAILURE_BITS), 56);
+            let adapted = preset_for_backend::<crate::NTT3x42Ifma>(&preset).unwrap();
             assert_eq!(adapted.base2k(), 56);
             let keys = adapted.keys_layout().rotation_key_layouts();
             assert!(keys.iter().all(|key| key.k().as_usize() <= adapted.max_dense_modulus()));
@@ -87,17 +104,19 @@ poulpy_ckks::ckks_parity_test_suite! {
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 19, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
     tests = {
         arithmetic => poulpy_ckks::test_suite::parity::test_arithmetic_parity,
-        imag => poulpy_ckks::test_suite::parity::test_imag_parity,
         multiplication => poulpy_ckks::test_suite::parity::test_multiplication_parity,
         rotate => poulpy_ckks::test_suite::parity::test_rotate_parity,
-        conjugate => poulpy_ckks::test_suite::parity::test_conjugate_parity,
         plaintext => poulpy_ckks::test_suite::parity::test_plaintext_parity,
         encoding => poulpy_ckks::test_suite::parity::test_encoding_parity,
         slot_encoding => poulpy_ckks::test_suite::parity::test_slot_encoding_parity,
+        real_polynomial => poulpy_ckks::test_suite::parity::test_real_polynomial_parity,
+    },
+    ring_free_tests = {
+        imag => poulpy_ckks::test_suite::parity::test_imag_parity,
+        conjugate => poulpy_ckks::test_suite::parity::test_conjugate_parity,
         paco_encoding => poulpy_ckks::test_suite::parity::test_paco_encoding_parity,
         ship_encoding => poulpy_ckks::test_suite::parity::test_ship_encoding_parity,
         dft => poulpy_ckks::test_suite::parity::test_dft_parity,
-        real_polynomial => poulpy_ckks::test_suite::parity::test_real_polynomial_parity,
         polynomial_eval_mod => poulpy_ckks::test_suite::parity::test_polynomial_eval_mod_parity,
         encapsulated_mod_up => poulpy_ckks::test_suite::parity::test_encapsulated_mod_up_parity,
         bootstrapping => poulpy_ckks::test_suite::parity::test_bootstrapping_parity,
@@ -113,17 +132,19 @@ poulpy_ckks::ckks_parity_test_suite! {
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 19, ..poulpy_ckks::test_suite::BASE52_PARAMS_QUAD },
     tests = {
         arithmetic => poulpy_ckks::test_suite::parity::test_arithmetic_parity,
-        imag => poulpy_ckks::test_suite::parity::test_imag_parity,
         multiplication => poulpy_ckks::test_suite::parity::test_multiplication_parity,
         rotate => poulpy_ckks::test_suite::parity::test_rotate_parity,
-        conjugate => poulpy_ckks::test_suite::parity::test_conjugate_parity,
         plaintext => poulpy_ckks::test_suite::parity::test_plaintext_parity,
         encoding => poulpy_ckks::test_suite::parity::test_encoding_parity,
         slot_encoding => poulpy_ckks::test_suite::parity::test_slot_encoding_parity,
+        real_polynomial => poulpy_ckks::test_suite::parity::test_real_polynomial_parity,
+    },
+    ring_free_tests = {
+        imag => poulpy_ckks::test_suite::parity::test_imag_parity,
+        conjugate => poulpy_ckks::test_suite::parity::test_conjugate_parity,
         paco_encoding => poulpy_ckks::test_suite::parity::test_paco_encoding_parity,
         ship_encoding => poulpy_ckks::test_suite::parity::test_ship_encoding_parity,
         dft => poulpy_ckks::test_suite::parity::test_dft_parity,
-        real_polynomial => poulpy_ckks::test_suite::parity::test_real_polynomial_parity,
         polynomial_eval_mod => poulpy_ckks::test_suite::parity::test_polynomial_eval_mod_parity,
         encapsulated_mod_up => poulpy_ckks::test_suite::parity::test_encapsulated_mod_up_parity,
         bootstrapping => poulpy_ckks::test_suite::parity::test_bootstrapping_parity,
@@ -146,17 +167,19 @@ poulpy_ckks::ckks_parity_test_suite! {
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 52, ..poulpy_ckks::test_suite::BASE52_PARAMS_F64 },
     tests = {
         arithmetic => poulpy_ckks::test_suite::parity::test_arithmetic_parity,
-        imag => poulpy_ckks::test_suite::parity::test_imag_parity,
         multiplication => poulpy_ckks::test_suite::parity::test_multiplication_parity,
         rotate => poulpy_ckks::test_suite::parity::test_rotate_parity,
-        conjugate => poulpy_ckks::test_suite::parity::test_conjugate_parity,
         plaintext => poulpy_ckks::test_suite::parity::test_plaintext_parity,
         encoding => poulpy_ckks::test_suite::parity::test_encoding_parity,
         slot_encoding => poulpy_ckks::test_suite::parity::test_slot_encoding_parity,
+        real_polynomial => poulpy_ckks::test_suite::parity::test_real_polynomial_parity,
+    },
+    ring_free_tests = {
+        imag => poulpy_ckks::test_suite::parity::test_imag_parity,
+        conjugate => poulpy_ckks::test_suite::parity::test_conjugate_parity,
         paco_encoding => poulpy_ckks::test_suite::parity::test_paco_encoding_parity,
         ship_encoding => poulpy_ckks::test_suite::parity::test_ship_encoding_parity,
         dft => poulpy_ckks::test_suite::parity::test_dft_parity,
-        real_polynomial => poulpy_ckks::test_suite::parity::test_real_polynomial_parity,
         polynomial_eval_mod => poulpy_ckks::test_suite::parity::test_polynomial_eval_mod_parity,
         encapsulated_mod_up => poulpy_ckks::test_suite::parity::test_encapsulated_mod_up_parity,
         bootstrapping => poulpy_ckks::test_suite::parity::test_bootstrapping_parity,
@@ -172,17 +195,19 @@ poulpy_ckks::ckks_parity_test_suite! {
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 52, ..poulpy_ckks::test_suite::BASE52_PARAMS_QUAD },
     tests = {
         arithmetic => poulpy_ckks::test_suite::parity::test_arithmetic_parity,
-        imag => poulpy_ckks::test_suite::parity::test_imag_parity,
         multiplication => poulpy_ckks::test_suite::parity::test_multiplication_parity,
         rotate => poulpy_ckks::test_suite::parity::test_rotate_parity,
-        conjugate => poulpy_ckks::test_suite::parity::test_conjugate_parity,
         plaintext => poulpy_ckks::test_suite::parity::test_plaintext_parity,
         encoding => poulpy_ckks::test_suite::parity::test_encoding_parity,
         slot_encoding => poulpy_ckks::test_suite::parity::test_slot_encoding_parity,
+        real_polynomial => poulpy_ckks::test_suite::parity::test_real_polynomial_parity,
+    },
+    ring_free_tests = {
+        imag => poulpy_ckks::test_suite::parity::test_imag_parity,
+        conjugate => poulpy_ckks::test_suite::parity::test_conjugate_parity,
         paco_encoding => poulpy_ckks::test_suite::parity::test_paco_encoding_parity,
         ship_encoding => poulpy_ckks::test_suite::parity::test_ship_encoding_parity,
         dft => poulpy_ckks::test_suite::parity::test_dft_parity,
-        real_polynomial => poulpy_ckks::test_suite::parity::test_real_polynomial_parity,
         polynomial_eval_mod => poulpy_ckks::test_suite::parity::test_polynomial_eval_mod_parity,
         encapsulated_mod_up => poulpy_ckks::test_suite::parity::test_encapsulated_mod_up_parity,
         bootstrapping => poulpy_ckks::test_suite::parity::test_bootstrapping_parity,
@@ -206,17 +231,19 @@ poulpy_ckks::ckks_parity_test_suite! {
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 52, ..poulpy_ckks::test_suite::BASE52_PARAMS_F64 },
     tests = {
         arithmetic => poulpy_ckks::test_suite::parity::test_arithmetic_parity,
-        imag => poulpy_ckks::test_suite::parity::test_imag_parity,
         multiplication => poulpy_ckks::test_suite::parity::test_multiplication_parity,
         rotate => poulpy_ckks::test_suite::parity::test_rotate_parity,
-        conjugate => poulpy_ckks::test_suite::parity::test_conjugate_parity,
         plaintext => poulpy_ckks::test_suite::parity::test_plaintext_parity,
         encoding => poulpy_ckks::test_suite::parity::test_encoding_parity,
         slot_encoding => poulpy_ckks::test_suite::parity::test_slot_encoding_parity,
+        real_polynomial => poulpy_ckks::test_suite::parity::test_real_polynomial_parity,
+    },
+    ring_free_tests = {
+        imag => poulpy_ckks::test_suite::parity::test_imag_parity,
+        conjugate => poulpy_ckks::test_suite::parity::test_conjugate_parity,
         paco_encoding => poulpy_ckks::test_suite::parity::test_paco_encoding_parity,
         ship_encoding => poulpy_ckks::test_suite::parity::test_ship_encoding_parity,
         dft => poulpy_ckks::test_suite::parity::test_dft_parity,
-        real_polynomial => poulpy_ckks::test_suite::parity::test_real_polynomial_parity,
         polynomial_eval_mod => poulpy_ckks::test_suite::parity::test_polynomial_eval_mod_parity,
         encapsulated_mod_up => poulpy_ckks::test_suite::parity::test_encapsulated_mod_up_parity,
         bootstrapping => poulpy_ckks::test_suite::parity::test_bootstrapping_parity,
@@ -233,17 +260,19 @@ poulpy_ckks::ckks_parity_test_suite! {
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 52, ..poulpy_ckks::test_suite::BASE52_PARAMS_QUAD },
     tests = {
         arithmetic => poulpy_ckks::test_suite::parity::test_arithmetic_parity,
-        imag => poulpy_ckks::test_suite::parity::test_imag_parity,
         multiplication => poulpy_ckks::test_suite::parity::test_multiplication_parity,
         rotate => poulpy_ckks::test_suite::parity::test_rotate_parity,
-        conjugate => poulpy_ckks::test_suite::parity::test_conjugate_parity,
         plaintext => poulpy_ckks::test_suite::parity::test_plaintext_parity,
         encoding => poulpy_ckks::test_suite::parity::test_encoding_parity,
         slot_encoding => poulpy_ckks::test_suite::parity::test_slot_encoding_parity,
+        real_polynomial => poulpy_ckks::test_suite::parity::test_real_polynomial_parity,
+    },
+    ring_free_tests = {
+        imag => poulpy_ckks::test_suite::parity::test_imag_parity,
+        conjugate => poulpy_ckks::test_suite::parity::test_conjugate_parity,
         paco_encoding => poulpy_ckks::test_suite::parity::test_paco_encoding_parity,
         ship_encoding => poulpy_ckks::test_suite::parity::test_ship_encoding_parity,
         dft => poulpy_ckks::test_suite::parity::test_dft_parity,
-        real_polynomial => poulpy_ckks::test_suite::parity::test_real_polynomial_parity,
         polynomial_eval_mod => poulpy_ckks::test_suite::parity::test_polynomial_eval_mod_parity,
         encapsulated_mod_up => poulpy_ckks::test_suite::parity::test_encapsulated_mod_up_parity,
         bootstrapping => poulpy_ckks::test_suite::parity::test_bootstrapping_parity,
@@ -268,17 +297,19 @@ poulpy_ckks::ckks_parity_test_suite! {
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 19, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
     tests = {
         arithmetic => poulpy_ckks::test_suite::parity::test_arithmetic_parity,
-        imag => poulpy_ckks::test_suite::parity::test_imag_parity,
         multiplication => poulpy_ckks::test_suite::parity::test_multiplication_parity,
         rotate => poulpy_ckks::test_suite::parity::test_rotate_parity,
-        conjugate => poulpy_ckks::test_suite::parity::test_conjugate_parity,
         plaintext => poulpy_ckks::test_suite::parity::test_plaintext_parity,
         encoding => poulpy_ckks::test_suite::parity::test_encoding_parity,
         slot_encoding => poulpy_ckks::test_suite::parity::test_slot_encoding_parity,
+        real_polynomial => poulpy_ckks::test_suite::parity::test_real_polynomial_parity,
+    },
+    ring_free_tests = {
+        imag => poulpy_ckks::test_suite::parity::test_imag_parity,
+        conjugate => poulpy_ckks::test_suite::parity::test_conjugate_parity,
         paco_encoding => poulpy_ckks::test_suite::parity::test_paco_encoding_parity,
         ship_encoding => poulpy_ckks::test_suite::parity::test_ship_encoding_parity,
         dft => poulpy_ckks::test_suite::parity::test_dft_parity,
-        real_polynomial => poulpy_ckks::test_suite::parity::test_real_polynomial_parity,
         polynomial_eval_mod => poulpy_ckks::test_suite::parity::test_polynomial_eval_mod_parity,
         encapsulated_mod_up => poulpy_ckks::test_suite::parity::test_encapsulated_mod_up_parity,
         bootstrapping => poulpy_ckks::test_suite::parity::test_bootstrapping_parity,
@@ -295,17 +326,19 @@ poulpy_ckks::ckks_parity_test_suite! {
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 19, ..poulpy_ckks::test_suite::BASE52_PARAMS_QUAD },
     tests = {
         arithmetic => poulpy_ckks::test_suite::parity::test_arithmetic_parity,
-        imag => poulpy_ckks::test_suite::parity::test_imag_parity,
         multiplication => poulpy_ckks::test_suite::parity::test_multiplication_parity,
         rotate => poulpy_ckks::test_suite::parity::test_rotate_parity,
-        conjugate => poulpy_ckks::test_suite::parity::test_conjugate_parity,
         plaintext => poulpy_ckks::test_suite::parity::test_plaintext_parity,
         encoding => poulpy_ckks::test_suite::parity::test_encoding_parity,
         slot_encoding => poulpy_ckks::test_suite::parity::test_slot_encoding_parity,
+        real_polynomial => poulpy_ckks::test_suite::parity::test_real_polynomial_parity,
+    },
+    ring_free_tests = {
+        imag => poulpy_ckks::test_suite::parity::test_imag_parity,
+        conjugate => poulpy_ckks::test_suite::parity::test_conjugate_parity,
         paco_encoding => poulpy_ckks::test_suite::parity::test_paco_encoding_parity,
         ship_encoding => poulpy_ckks::test_suite::parity::test_ship_encoding_parity,
         dft => poulpy_ckks::test_suite::parity::test_dft_parity,
-        real_polynomial => poulpy_ckks::test_suite::parity::test_real_polynomial_parity,
         polynomial_eval_mod => poulpy_ckks::test_suite::parity::test_polynomial_eval_mod_parity,
         encapsulated_mod_up => poulpy_ckks::test_suite::parity::test_encapsulated_mod_up_parity,
         bootstrapping => poulpy_ckks::test_suite::parity::test_bootstrapping_parity,
@@ -330,17 +363,19 @@ poulpy_ckks::ckks_parity_test_suite! {
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 52, ..poulpy_ckks::test_suite::BASE52_PARAMS_F64 },
     tests = {
         arithmetic => poulpy_ckks::test_suite::parity::test_arithmetic_parity,
-        imag => poulpy_ckks::test_suite::parity::test_imag_parity,
         multiplication => poulpy_ckks::test_suite::parity::test_multiplication_parity,
         rotate => poulpy_ckks::test_suite::parity::test_rotate_parity,
-        conjugate => poulpy_ckks::test_suite::parity::test_conjugate_parity,
         plaintext => poulpy_ckks::test_suite::parity::test_plaintext_parity,
         encoding => poulpy_ckks::test_suite::parity::test_encoding_parity,
         slot_encoding => poulpy_ckks::test_suite::parity::test_slot_encoding_parity,
+        real_polynomial => poulpy_ckks::test_suite::parity::test_real_polynomial_parity,
+    },
+    ring_free_tests = {
+        imag => poulpy_ckks::test_suite::parity::test_imag_parity,
+        conjugate => poulpy_ckks::test_suite::parity::test_conjugate_parity,
         paco_encoding => poulpy_ckks::test_suite::parity::test_paco_encoding_parity,
         ship_encoding => poulpy_ckks::test_suite::parity::test_ship_encoding_parity,
         dft => poulpy_ckks::test_suite::parity::test_dft_parity,
-        real_polynomial => poulpy_ckks::test_suite::parity::test_real_polynomial_parity,
         polynomial_eval_mod => poulpy_ckks::test_suite::parity::test_polynomial_eval_mod_parity,
         encapsulated_mod_up => poulpy_ckks::test_suite::parity::test_encapsulated_mod_up_parity,
         bootstrapping => poulpy_ckks::test_suite::parity::test_bootstrapping_parity,
@@ -357,17 +392,19 @@ poulpy_ckks::ckks_parity_test_suite! {
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 52, ..poulpy_ckks::test_suite::BASE52_PARAMS_QUAD },
     tests = {
         arithmetic => poulpy_ckks::test_suite::parity::test_arithmetic_parity,
-        imag => poulpy_ckks::test_suite::parity::test_imag_parity,
         multiplication => poulpy_ckks::test_suite::parity::test_multiplication_parity,
         rotate => poulpy_ckks::test_suite::parity::test_rotate_parity,
-        conjugate => poulpy_ckks::test_suite::parity::test_conjugate_parity,
         plaintext => poulpy_ckks::test_suite::parity::test_plaintext_parity,
         encoding => poulpy_ckks::test_suite::parity::test_encoding_parity,
         slot_encoding => poulpy_ckks::test_suite::parity::test_slot_encoding_parity,
+        real_polynomial => poulpy_ckks::test_suite::parity::test_real_polynomial_parity,
+    },
+    ring_free_tests = {
+        imag => poulpy_ckks::test_suite::parity::test_imag_parity,
+        conjugate => poulpy_ckks::test_suite::parity::test_conjugate_parity,
         paco_encoding => poulpy_ckks::test_suite::parity::test_paco_encoding_parity,
         ship_encoding => poulpy_ckks::test_suite::parity::test_ship_encoding_parity,
         dft => poulpy_ckks::test_suite::parity::test_dft_parity,
-        real_polynomial => poulpy_ckks::test_suite::parity::test_real_polynomial_parity,
         polynomial_eval_mod => poulpy_ckks::test_suite::parity::test_polynomial_eval_mod_parity,
         encapsulated_mod_up => poulpy_ckks::test_suite::parity::test_encapsulated_mod_up_parity,
         bootstrapping => poulpy_ckks::test_suite::parity::test_bootstrapping_parity,
@@ -392,17 +429,19 @@ poulpy_ckks::ckks_parity_test_suite! {
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 52, ..poulpy_ckks::test_suite::BASE52_PARAMS_F64 },
     tests = {
         arithmetic => poulpy_ckks::test_suite::parity::test_arithmetic_parity,
-        imag => poulpy_ckks::test_suite::parity::test_imag_parity,
         multiplication => poulpy_ckks::test_suite::parity::test_multiplication_parity,
         rotate => poulpy_ckks::test_suite::parity::test_rotate_parity,
-        conjugate => poulpy_ckks::test_suite::parity::test_conjugate_parity,
         plaintext => poulpy_ckks::test_suite::parity::test_plaintext_parity,
         encoding => poulpy_ckks::test_suite::parity::test_encoding_parity,
         slot_encoding => poulpy_ckks::test_suite::parity::test_slot_encoding_parity,
+        real_polynomial => poulpy_ckks::test_suite::parity::test_real_polynomial_parity,
+    },
+    ring_free_tests = {
+        imag => poulpy_ckks::test_suite::parity::test_imag_parity,
+        conjugate => poulpy_ckks::test_suite::parity::test_conjugate_parity,
         paco_encoding => poulpy_ckks::test_suite::parity::test_paco_encoding_parity,
         ship_encoding => poulpy_ckks::test_suite::parity::test_ship_encoding_parity,
         dft => poulpy_ckks::test_suite::parity::test_dft_parity,
-        real_polynomial => poulpy_ckks::test_suite::parity::test_real_polynomial_parity,
         polynomial_eval_mod => poulpy_ckks::test_suite::parity::test_polynomial_eval_mod_parity,
         encapsulated_mod_up => poulpy_ckks::test_suite::parity::test_encapsulated_mod_up_parity,
         bootstrapping => poulpy_ckks::test_suite::parity::test_bootstrapping_parity,
@@ -419,17 +458,19 @@ poulpy_ckks::ckks_parity_test_suite! {
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 52, ..poulpy_ckks::test_suite::BASE52_PARAMS_QUAD },
     tests = {
         arithmetic => poulpy_ckks::test_suite::parity::test_arithmetic_parity,
-        imag => poulpy_ckks::test_suite::parity::test_imag_parity,
         multiplication => poulpy_ckks::test_suite::parity::test_multiplication_parity,
         rotate => poulpy_ckks::test_suite::parity::test_rotate_parity,
-        conjugate => poulpy_ckks::test_suite::parity::test_conjugate_parity,
         plaintext => poulpy_ckks::test_suite::parity::test_plaintext_parity,
         encoding => poulpy_ckks::test_suite::parity::test_encoding_parity,
         slot_encoding => poulpy_ckks::test_suite::parity::test_slot_encoding_parity,
+        real_polynomial => poulpy_ckks::test_suite::parity::test_real_polynomial_parity,
+    },
+    ring_free_tests = {
+        imag => poulpy_ckks::test_suite::parity::test_imag_parity,
+        conjugate => poulpy_ckks::test_suite::parity::test_conjugate_parity,
         paco_encoding => poulpy_ckks::test_suite::parity::test_paco_encoding_parity,
         ship_encoding => poulpy_ckks::test_suite::parity::test_ship_encoding_parity,
         dft => poulpy_ckks::test_suite::parity::test_dft_parity,
-        real_polynomial => poulpy_ckks::test_suite::parity::test_real_polynomial_parity,
         polynomial_eval_mod => poulpy_ckks::test_suite::parity::test_polynomial_eval_mod_parity,
         encapsulated_mod_up => poulpy_ckks::test_suite::parity::test_encapsulated_mod_up_parity,
         bootstrapping => poulpy_ckks::test_suite::parity::test_bootstrapping_parity,
@@ -454,9 +495,11 @@ poulpy_ckks::ckks_parity_test_suite! {
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, rank: 2, base2k: 19, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
     tests = {
         arithmetic => poulpy_ckks::test_suite::parity::test_arithmetic_parity,
-        imag => poulpy_ckks::test_suite::parity::test_imag_parity,
         multiplication => poulpy_ckks::test_suite::parity::test_multiplication_parity,
         rotate => poulpy_ckks::test_suite::parity::test_rotate_parity,
+    },
+    ring_free_tests = {
+        imag => poulpy_ckks::test_suite::parity::test_imag_parity,
         conjugate => poulpy_ckks::test_suite::parity::test_conjugate_parity,
     }
 }
@@ -476,9 +519,11 @@ poulpy_ckks::ckks_parity_test_suite! {
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, rank: 2, base2k: 52, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
     tests = {
         arithmetic => poulpy_ckks::test_suite::parity::test_arithmetic_parity,
-        imag => poulpy_ckks::test_suite::parity::test_imag_parity,
         multiplication => poulpy_ckks::test_suite::parity::test_multiplication_parity,
         rotate => poulpy_ckks::test_suite::parity::test_rotate_parity,
+    },
+    ring_free_tests = {
+        imag => poulpy_ckks::test_suite::parity::test_imag_parity,
         conjugate => poulpy_ckks::test_suite::parity::test_conjugate_parity,
     }
 }
@@ -499,9 +544,11 @@ poulpy_ckks::ckks_parity_test_suite! {
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, rank: 2, base2k: 52, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
     tests = {
         arithmetic => poulpy_ckks::test_suite::parity::test_arithmetic_parity,
-        imag => poulpy_ckks::test_suite::parity::test_imag_parity,
         multiplication => poulpy_ckks::test_suite::parity::test_multiplication_parity,
         rotate => poulpy_ckks::test_suite::parity::test_rotate_parity,
+    },
+    ring_free_tests = {
+        imag => poulpy_ckks::test_suite::parity::test_imag_parity,
         conjugate => poulpy_ckks::test_suite::parity::test_conjugate_parity,
     }
 }
@@ -523,9 +570,11 @@ poulpy_ckks::ckks_parity_test_suite! {
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, rank: 2, base2k: 19, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
     tests = {
         arithmetic => poulpy_ckks::test_suite::parity::test_arithmetic_parity,
-        imag => poulpy_ckks::test_suite::parity::test_imag_parity,
         multiplication => poulpy_ckks::test_suite::parity::test_multiplication_parity,
         rotate => poulpy_ckks::test_suite::parity::test_rotate_parity,
+    },
+    ring_free_tests = {
+        imag => poulpy_ckks::test_suite::parity::test_imag_parity,
         conjugate => poulpy_ckks::test_suite::parity::test_conjugate_parity,
     }
 }
@@ -547,9 +596,11 @@ poulpy_ckks::ckks_parity_test_suite! {
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, rank: 2, base2k: 52, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
     tests = {
         arithmetic => poulpy_ckks::test_suite::parity::test_arithmetic_parity,
-        imag => poulpy_ckks::test_suite::parity::test_imag_parity,
         multiplication => poulpy_ckks::test_suite::parity::test_multiplication_parity,
         rotate => poulpy_ckks::test_suite::parity::test_rotate_parity,
+    },
+    ring_free_tests = {
+        imag => poulpy_ckks::test_suite::parity::test_imag_parity,
         conjugate => poulpy_ckks::test_suite::parity::test_conjugate_parity,
     }
 }
@@ -571,9 +622,11 @@ poulpy_ckks::ckks_parity_test_suite! {
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, rank: 2, base2k: 52, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
     tests = {
         arithmetic => poulpy_ckks::test_suite::parity::test_arithmetic_parity,
-        imag => poulpy_ckks::test_suite::parity::test_imag_parity,
         multiplication => poulpy_ckks::test_suite::parity::test_multiplication_parity,
         rotate => poulpy_ckks::test_suite::parity::test_rotate_parity,
+    },
+    ring_free_tests = {
+        imag => poulpy_ckks::test_suite::parity::test_imag_parity,
         conjugate => poulpy_ckks::test_suite::parity::test_conjugate_parity,
     }
 }
@@ -586,11 +639,12 @@ poulpy_ckks::ckks_encryption_parity_test_suite! {
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, rank: 2, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
 }
 
-// Conjugate-invariant backends run the ring-generic suites against the same pairs.
+// The same pairs run the ring-generic suites on the conjugate-invariant ring.
 poulpy_ckks::ckks_parity_test_suite! {
     mod ckks_parity_ci_fft64avx512_f64,
-    backend_ref = poulpy_cpu_avx::FFT64CIAvx,
-    backend_test = crate::FFT64CIAvx512,
+    backend_ref = poulpy_cpu_avx::FFT64Avx,
+    backend_test = crate::FFT64Avx512,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     scalar = f64,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 19, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
     tests = {
@@ -606,8 +660,9 @@ poulpy_ckks::ckks_parity_test_suite! {
 
 poulpy_ckks::ckks_parity_test_suite! {
     mod ckks_parity_ci_fft64avx512_quad,
-    backend_ref = poulpy_cpu_avx::FFT64CIAvx,
-    backend_test = crate::FFT64CIAvx512,
+    backend_ref = poulpy_cpu_avx::FFT64Avx,
+    backend_test = crate::FFT64Avx512,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     scalar = poulpy_ckks::Quad,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 19, ..poulpy_ckks::test_suite::BASE52_PARAMS_QUAD },
     tests = {
@@ -623,15 +678,17 @@ poulpy_ckks::ckks_parity_test_suite! {
 
 poulpy_ckks::ckks_encryption_parity_test_suite! {
     mod ckks_parity_ci_fft64avx512_encryption,
-    backend_ref = poulpy_cpu_avx::FFT64CIAvx,
-    backend_test = crate::FFT64CIAvx512,
+    backend_ref = poulpy_cpu_avx::FFT64Avx,
+    backend_test = crate::FFT64Avx512,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
 }
 
 poulpy_ckks::ckks_parity_test_suite! {
     mod ckks_parity_ci_ntt4x30avx512_f64,
-    backend_ref = poulpy_cpu_avx::NTT4x30CIAvx,
-    backend_test = crate::NTT4x30CIAvx512,
+    backend_ref = poulpy_cpu_avx::NTT4x30Avx,
+    backend_test = crate::NTT4x30Avx512,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     scalar = f64,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 52, ..poulpy_ckks::test_suite::BASE52_PARAMS_F64 },
     tests = {
@@ -647,8 +704,9 @@ poulpy_ckks::ckks_parity_test_suite! {
 
 poulpy_ckks::ckks_parity_test_suite! {
     mod ckks_parity_ci_ntt4x30avx512_quad,
-    backend_ref = poulpy_cpu_avx::NTT4x30CIAvx,
-    backend_test = crate::NTT4x30CIAvx512,
+    backend_ref = poulpy_cpu_avx::NTT4x30Avx,
+    backend_test = crate::NTT4x30Avx512,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     scalar = poulpy_ckks::Quad,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 52, ..poulpy_ckks::test_suite::BASE52_PARAMS_QUAD },
     tests = {
@@ -664,16 +722,18 @@ poulpy_ckks::ckks_parity_test_suite! {
 
 poulpy_ckks::ckks_encryption_parity_test_suite! {
     mod ckks_parity_ci_ntt4x30avx512_encryption,
-    backend_ref = poulpy_cpu_avx::NTT4x30CIAvx,
-    backend_test = crate::NTT4x30CIAvx512,
+    backend_ref = poulpy_cpu_avx::NTT4x30Avx,
+    backend_test = crate::NTT4x30Avx512,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
 }
 
 #[cfg(feature = "enable-ifma")]
 poulpy_ckks::ckks_parity_test_suite! {
     mod ckks_parity_ci_ntt3x42ifma_f64,
-    backend_ref = crate::NTT4x30CIAvx512,
-    backend_test = crate::NTT3x42CIIfma,
+    backend_ref = crate::NTT4x30Avx512,
+    backend_test = crate::NTT3x42Ifma,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     scalar = f64,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 52, ..poulpy_ckks::test_suite::BASE52_PARAMS_F64 },
     tests = {
@@ -690,8 +750,9 @@ poulpy_ckks::ckks_parity_test_suite! {
 #[cfg(feature = "enable-ifma")]
 poulpy_ckks::ckks_parity_test_suite! {
     mod ckks_parity_ci_ntt3x42ifma_quad,
-    backend_ref = crate::NTT4x30CIAvx512,
-    backend_test = crate::NTT3x42CIIfma,
+    backend_ref = crate::NTT4x30Avx512,
+    backend_test = crate::NTT3x42Ifma,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     scalar = poulpy_ckks::Quad,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 52, ..poulpy_ckks::test_suite::BASE52_PARAMS_QUAD },
     tests = {
@@ -708,16 +769,18 @@ poulpy_ckks::ckks_parity_test_suite! {
 #[cfg(feature = "enable-ifma")]
 poulpy_ckks::ckks_encryption_parity_test_suite! {
     mod ckks_parity_ci_ntt3x42ifma_encryption,
-    backend_ref = crate::NTT4x30CIAvx512,
-    backend_test = crate::NTT3x42CIIfma,
+    backend_ref = crate::NTT4x30Avx512,
+    backend_test = crate::NTT3x42Ifma,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
 }
 
 #[cfg(feature = "enable-rayon")]
 poulpy_ckks::ckks_parity_test_suite! {
     mod ckks_parity_ci_fft64avx512rayon_f64,
-    backend_ref = crate::FFT64CIAvx512,
-    backend_test = crate::FFT64CIAvx512Rayon,
+    backend_ref = crate::FFT64Avx512,
+    backend_test = crate::FFT64Avx512Rayon,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     scalar = f64,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 19, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
     tests = {
@@ -734,8 +797,9 @@ poulpy_ckks::ckks_parity_test_suite! {
 #[cfg(feature = "enable-rayon")]
 poulpy_ckks::ckks_parity_test_suite! {
     mod ckks_parity_ci_fft64avx512rayon_quad,
-    backend_ref = crate::FFT64CIAvx512,
-    backend_test = crate::FFT64CIAvx512Rayon,
+    backend_ref = crate::FFT64Avx512,
+    backend_test = crate::FFT64Avx512Rayon,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     scalar = poulpy_ckks::Quad,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 19, ..poulpy_ckks::test_suite::BASE52_PARAMS_QUAD },
     tests = {
@@ -752,16 +816,18 @@ poulpy_ckks::ckks_parity_test_suite! {
 #[cfg(feature = "enable-rayon")]
 poulpy_ckks::ckks_encryption_parity_test_suite! {
     mod ckks_parity_ci_fft64avx512rayon_encryption,
-    backend_ref = crate::FFT64CIAvx512,
-    backend_test = crate::FFT64CIAvx512Rayon,
+    backend_ref = crate::FFT64Avx512,
+    backend_test = crate::FFT64Avx512Rayon,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
 }
 
 #[cfg(feature = "enable-rayon")]
 poulpy_ckks::ckks_parity_test_suite! {
     mod ckks_parity_ci_ntt4x30avx512rayon_f64,
-    backend_ref = crate::NTT4x30CIAvx512,
-    backend_test = crate::NTT4x30CIAvx512Rayon,
+    backend_ref = crate::NTT4x30Avx512,
+    backend_test = crate::NTT4x30Avx512Rayon,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     scalar = f64,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 52, ..poulpy_ckks::test_suite::BASE52_PARAMS_F64 },
     tests = {
@@ -778,8 +844,9 @@ poulpy_ckks::ckks_parity_test_suite! {
 #[cfg(feature = "enable-rayon")]
 poulpy_ckks::ckks_parity_test_suite! {
     mod ckks_parity_ci_ntt4x30avx512rayon_quad,
-    backend_ref = crate::NTT4x30CIAvx512,
-    backend_test = crate::NTT4x30CIAvx512Rayon,
+    backend_ref = crate::NTT4x30Avx512,
+    backend_test = crate::NTT4x30Avx512Rayon,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     scalar = poulpy_ckks::Quad,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 52, ..poulpy_ckks::test_suite::BASE52_PARAMS_QUAD },
     tests = {
@@ -796,16 +863,18 @@ poulpy_ckks::ckks_parity_test_suite! {
 #[cfg(feature = "enable-rayon")]
 poulpy_ckks::ckks_encryption_parity_test_suite! {
     mod ckks_parity_ci_ntt4x30avx512rayon_encryption,
-    backend_ref = crate::NTT4x30CIAvx512,
-    backend_test = crate::NTT4x30CIAvx512Rayon,
+    backend_ref = crate::NTT4x30Avx512,
+    backend_test = crate::NTT4x30Avx512Rayon,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
 }
 
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
 poulpy_ckks::ckks_parity_test_suite! {
     mod ckks_parity_ci_ntt3x42ifmarayon_f64,
-    backend_ref = crate::NTT3x42CIIfma,
-    backend_test = crate::NTT3x42CIIfmaRayon,
+    backend_ref = crate::NTT3x42Ifma,
+    backend_test = crate::NTT3x42IfmaRayon,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     scalar = f64,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 52, ..poulpy_ckks::test_suite::BASE52_PARAMS_F64 },
     tests = {
@@ -822,8 +891,9 @@ poulpy_ckks::ckks_parity_test_suite! {
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
 poulpy_ckks::ckks_parity_test_suite! {
     mod ckks_parity_ci_ntt3x42ifmarayon_quad,
-    backend_ref = crate::NTT3x42CIIfma,
-    backend_test = crate::NTT3x42CIIfmaRayon,
+    backend_ref = crate::NTT3x42Ifma,
+    backend_test = crate::NTT3x42IfmaRayon,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     scalar = poulpy_ckks::Quad,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 52, ..poulpy_ckks::test_suite::BASE52_PARAMS_QUAD },
     tests = {
@@ -840,15 +910,17 @@ poulpy_ckks::ckks_parity_test_suite! {
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
 poulpy_ckks::ckks_encryption_parity_test_suite! {
     mod ckks_parity_ci_ntt3x42ifmarayon_encryption,
-    backend_ref = crate::NTT3x42CIIfma,
-    backend_test = crate::NTT3x42CIIfmaRayon,
+    backend_ref = crate::NTT3x42Ifma,
+    backend_test = crate::NTT3x42IfmaRayon,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
 }
 
 poulpy_ckks::ckks_parity_test_suite! {
     mod ckks_parity_ci_fft64avx512_rank2,
-    backend_ref = poulpy_cpu_avx::FFT64CIAvx,
-    backend_test = crate::FFT64CIAvx512,
+    backend_ref = poulpy_cpu_avx::FFT64Avx,
+    backend_test = crate::FFT64Avx512,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     scalar = f64,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, rank: 2, base2k: 19, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
     tests = {
@@ -860,15 +932,17 @@ poulpy_ckks::ckks_parity_test_suite! {
 
 poulpy_ckks::ckks_encryption_parity_test_suite! {
     mod ckks_parity_ci_fft64avx512_encryption_rank2,
-    backend_ref = poulpy_cpu_avx::FFT64CIAvx,
-    backend_test = crate::FFT64CIAvx512,
+    backend_ref = poulpy_cpu_avx::FFT64Avx,
+    backend_test = crate::FFT64Avx512,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, rank: 2, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
 }
 
 poulpy_ckks::ckks_parity_test_suite! {
     mod ckks_parity_ci_ntt4x30avx512_rank2,
-    backend_ref = poulpy_cpu_avx::NTT4x30CIAvx,
-    backend_test = crate::NTT4x30CIAvx512,
+    backend_ref = poulpy_cpu_avx::NTT4x30Avx,
+    backend_test = crate::NTT4x30Avx512,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     scalar = f64,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, rank: 2, base2k: 52, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
     tests = {
@@ -880,16 +954,18 @@ poulpy_ckks::ckks_parity_test_suite! {
 
 poulpy_ckks::ckks_encryption_parity_test_suite! {
     mod ckks_parity_ci_ntt4x30avx512_encryption_rank2,
-    backend_ref = poulpy_cpu_avx::NTT4x30CIAvx,
-    backend_test = crate::NTT4x30CIAvx512,
+    backend_ref = poulpy_cpu_avx::NTT4x30Avx,
+    backend_test = crate::NTT4x30Avx512,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, rank: 2, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
 }
 
 #[cfg(feature = "enable-ifma")]
 poulpy_ckks::ckks_parity_test_suite! {
     mod ckks_parity_ci_ntt3x42ifma_rank2,
-    backend_ref = crate::NTT4x30CIAvx512,
-    backend_test = crate::NTT3x42CIIfma,
+    backend_ref = crate::NTT4x30Avx512,
+    backend_test = crate::NTT3x42Ifma,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     scalar = f64,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, rank: 2, base2k: 52, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
     tests = {
@@ -902,16 +978,18 @@ poulpy_ckks::ckks_parity_test_suite! {
 #[cfg(feature = "enable-ifma")]
 poulpy_ckks::ckks_encryption_parity_test_suite! {
     mod ckks_parity_ci_ntt3x42ifma_encryption_rank2,
-    backend_ref = crate::NTT4x30CIAvx512,
-    backend_test = crate::NTT3x42CIIfma,
+    backend_ref = crate::NTT4x30Avx512,
+    backend_test = crate::NTT3x42Ifma,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, rank: 2, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
 }
 
 #[cfg(feature = "enable-rayon")]
 poulpy_ckks::ckks_parity_test_suite! {
     mod ckks_parity_ci_fft64avx512rayon_rank2,
-    backend_ref = crate::FFT64CIAvx512,
-    backend_test = crate::FFT64CIAvx512Rayon,
+    backend_ref = crate::FFT64Avx512,
+    backend_test = crate::FFT64Avx512Rayon,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     scalar = f64,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, rank: 2, base2k: 19, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
     tests = {
@@ -924,16 +1002,18 @@ poulpy_ckks::ckks_parity_test_suite! {
 #[cfg(feature = "enable-rayon")]
 poulpy_ckks::ckks_encryption_parity_test_suite! {
     mod ckks_parity_ci_fft64avx512rayon_encryption_rank2,
-    backend_ref = crate::FFT64CIAvx512,
-    backend_test = crate::FFT64CIAvx512Rayon,
+    backend_ref = crate::FFT64Avx512,
+    backend_test = crate::FFT64Avx512Rayon,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, rank: 2, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
 }
 
 #[cfg(feature = "enable-rayon")]
 poulpy_ckks::ckks_parity_test_suite! {
     mod ckks_parity_ci_ntt4x30avx512rayon_rank2,
-    backend_ref = crate::NTT4x30CIAvx512,
-    backend_test = crate::NTT4x30CIAvx512Rayon,
+    backend_ref = crate::NTT4x30Avx512,
+    backend_test = crate::NTT4x30Avx512Rayon,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     scalar = f64,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, rank: 2, base2k: 52, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
     tests = {
@@ -946,16 +1026,18 @@ poulpy_ckks::ckks_parity_test_suite! {
 #[cfg(feature = "enable-rayon")]
 poulpy_ckks::ckks_encryption_parity_test_suite! {
     mod ckks_parity_ci_ntt4x30avx512rayon_encryption_rank2,
-    backend_ref = crate::NTT4x30CIAvx512,
-    backend_test = crate::NTT4x30CIAvx512Rayon,
+    backend_ref = crate::NTT4x30Avx512,
+    backend_test = crate::NTT4x30Avx512Rayon,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, rank: 2, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
 }
 
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
 poulpy_ckks::ckks_parity_test_suite! {
     mod ckks_parity_ci_ntt3x42ifmarayon_rank2,
-    backend_ref = crate::NTT3x42CIIfma,
-    backend_test = crate::NTT3x42CIIfmaRayon,
+    backend_ref = crate::NTT3x42Ifma,
+    backend_test = crate::NTT3x42IfmaRayon,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     scalar = f64,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, rank: 2, base2k: 52, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
     tests = {
@@ -968,8 +1050,9 @@ poulpy_ckks::ckks_parity_test_suite! {
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
 poulpy_ckks::ckks_encryption_parity_test_suite! {
     mod ckks_parity_ci_ntt3x42ifmarayon_encryption_rank2,
-    backend_ref = crate::NTT3x42CIIfma,
-    backend_test = crate::NTT3x42CIIfmaRayon,
+    backend_ref = crate::NTT3x42Ifma,
+    backend_test = crate::NTT3x42IfmaRayon,
+    ring = ::poulpy_hal::layouts::ConjugateInvariant,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 64, hw: 48, rank: 2, base2k: 12, ..poulpy_ckks::test_suite::BASE19_PARAMS_F64 },
 }
 
@@ -980,7 +1063,7 @@ poulpy_ckks::ckks_parity_test_suite! {
     backend_test = crate::NTT3x42IfmaRayon,
     scalar = f64,
     params = poulpy_ckks::test_suite::CKKSTestParams { n: 1 << 16, base2k: 52, rank: 1, ..poulpy_ckks::test_suite::BASE52_PARAMS_F64 },
-    tests = {
+    ring_free_tests = {
         multiplication => poulpy_ckks::test_suite::parity::test_prepared_multiplication_parity,
     }
 }

@@ -31,7 +31,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::{ModuleNew, ModuleSynchronize, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, HostBytesBackend, HostStaged, Module, ScratchOwned, Standard},
+    layouts::{Backend, HostBytesBackend, HostStaged, Module, ScratchOwned},
     source::Source,
 };
 use poulpy_libm::{
@@ -267,8 +267,8 @@ struct Client<BE: Backend, BC: Backend> {
 
 impl<BE, BC> Client<BE, BC>
 where
-    BE: Backend<Ring = Standard, ZnxWord = i64> + HostStaged + 'static,
-    BC: TestContextBackend<Ring = Standard>,
+    BE: Backend<ZnxWord = i64> + HostStaged + 'static,
+    BC: TestContextBackend,
     Module<BE>: LibmModule<BE>,
     Module<BC>: LibmClientModule<BC>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
@@ -416,8 +416,8 @@ struct Point {
 
 fn rsqrt<BE, BC>(min: f64) -> Result<Point>
 where
-    BE: Backend<Ring = Standard, ZnxWord = i64> + HostStaged + 'static,
-    BC: TestContextBackend<Ring = Standard>,
+    BE: Backend<ZnxWord = i64> + HostStaged + 'static,
+    BC: TestContextBackend,
     Module<BE>: LibmModule<BE>,
     Module<BC>: LibmClientModule<BC>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
@@ -481,8 +481,8 @@ where
 
 fn softmax<BE, BC>(target_bits: f64) -> Result<Point>
 where
-    BE: Backend<Ring = Standard, ZnxWord = i64> + HostStaged + 'static,
-    BC: TestContextBackend<Ring = Standard>,
+    BE: Backend<ZnxWord = i64> + HostStaged + 'static,
+    BC: TestContextBackend,
     Module<BE>: LibmModule<BE>,
     Module<BC>: LibmClientModule<BC>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
@@ -550,8 +550,8 @@ where
 
 fn inverse<BE, BC>(min: f64) -> Result<Point>
 where
-    BE: Backend<Ring = Standard, ZnxWord = i64> + HostStaged + 'static,
-    BC: TestContextBackend<Ring = Standard>,
+    BE: Backend<ZnxWord = i64> + HostStaged + 'static,
+    BC: TestContextBackend,
     Module<BE>: LibmModule<BE>,
     Module<BC>: LibmClientModule<BC>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
@@ -608,8 +608,8 @@ where
 /// Builds the case `args.case` on `BE` with `BC` as the client, times its calls, and reports its parameters, modulus and precision.
 pub fn run<BE, BC>(args: &CaseArgs) -> Result<Value>
 where
-    BE: Backend<Ring = Standard, ZnxWord = i64> + HostStaged + 'static,
-    BC: TestContextBackend<Ring = Standard>,
+    BE: Backend<ZnxWord = i64> + HostStaged + 'static,
+    BC: TestContextBackend,
     Module<BE>: LibmModule<BE>,
     Module<BC>: LibmClientModule<BC>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,

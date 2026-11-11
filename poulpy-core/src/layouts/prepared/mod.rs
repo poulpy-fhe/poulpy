@@ -7,7 +7,7 @@
 //!
 //! Every prepared type is parametrised by `B: Backend` in addition
 //! to `D: Data`, making it tied to a specific backend instance.
-//! Prepared layouts are created from their standard counterparts
+//! Prepared layouts are created from their unprepared counterparts
 //! via `prepare` / `prepare_*` methods. The factories of [`crate::api`]
 //! allocate and size them; the ciphertext, public-key and
 //! evaluation-key preparations dispatch through

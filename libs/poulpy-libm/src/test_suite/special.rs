@@ -31,11 +31,11 @@ use super::helpers::{assert_error, assert_precision_bits, params_for};
 
 pub fn test_special_functions<BE, F, E>(base: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     Module<BE>: TestContextModule<BE> + CKKSBesselOps<BE> + CKKSGammaOps<BE>,
-    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>:
+    CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, Standard>:
         GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE> + LWEInfos + poulpy_core::layouts::IntPolyInfos,
+    CKKSPlaintext<BE::OwnedBuf, BE::ZnxWord, Standard>: GLWEToBackendRef<BE> + LWEInfos + poulpy_core::layouts::IntPolyInfos,
     CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
@@ -155,7 +155,7 @@ where
 
     for (op, &expected_consumed) in consumed.iter().enumerate() {
         #[allow(clippy::type_complexity)]
-        let (label, input, x, want): (&str, &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, BE::Ring>, &[F], Vec<F>) = match op {
+        let (label, input, x, want): (&str, &CKKSCiphertext<BE::OwnedBuf, BE::ZnxWord, Standard>, &[F], Vec<F>) = match op {
             0 => (
                 "tgamma",
                 &cg,
@@ -234,7 +234,8 @@ where
         };
         result.unwrap_or_else(|e| panic!("ckks_{label}: {e}"));
         assert_eq!(input.log_budget() - sizing.log_budget(), expected_consumed, "{label}");
-        let (re_out, _) = ckks_decrypt_decode::<BE, F, E>(&params, module, &encoder, &sizing, &sk, &mut scratch.borrow());
+        let (re_out, _) =
+            ckks_decrypt_decode::<BE, F, E, Standard>(&params, module, &encoder, &sizing, &sk, &mut scratch.borrow());
         assert_precision_bits(label, &re_out, &want, options.target_bits, params.n);
     }
 }

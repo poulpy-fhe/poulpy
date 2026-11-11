@@ -79,7 +79,7 @@ fn main() -> Result<()> {
     module.glwe_secret_prepare(&mut sk, &sk_raw);
 
     // One arena sized for every op this example runs.
-    let ct_infos = module.ckks_ciphertext_alloc_from_glwe_infos(&glwe_layout());
+    let ct_infos = module.ckks_ciphertext_alloc_from_glwe_infos::<_, Standard>(&glwe_layout());
     let meta = GLWEPlaintextMeta {
         scale: Scale::Log(LOG_DELTA),
         slots: SlotsKind::Complex,
@@ -98,7 +98,8 @@ fn main() -> Result<()> {
     let zeros = vec![0.0f64; M];
 
     let mut encrypt = |re: &[f64]| -> Result<CKKSCiphertext<AlignedBuf, i64, Standard>> {
-        let mut pt = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots(), BASE2K.into(), CT_K.into());
+        let mut pt =
+            module.ckks_plaintext_alloc_from_slots::<Standard>(module.ckks_max_slots::<Standard>(), BASE2K.into(), CT_K.into());
         pt.set_meta(meta);
         module.ckks_encode_slots_host_into(&mut pt, re, &zeros, &mut scratch.borrow())?;
         let mut ct = module.ckks_ciphertext_alloc(BASE2K.into(), CT_K.into());

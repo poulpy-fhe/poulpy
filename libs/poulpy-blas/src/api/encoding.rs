@@ -5,7 +5,7 @@ use poulpy_ckks::{
 use poulpy_core::layouts::{DiagonalArithmetic, GetDegree};
 use poulpy_hal::{
     api::{CnvPVecAlloc, CnvPVecBytesOf},
-    layouts::{Backend, ScratchArena},
+    layouts::{Backend, Ring, ScratchArena, Standard},
 };
 
 use crate::layouts::{
@@ -17,9 +17,9 @@ use crate::layouts::{
 /// Encoding of public operands, and of contexts, into their allocations, at poulpy-ckks's encoding scalar `F`.
 ///
 /// The scalar is a trait parameter, as for poulpy-ckks's encoder: the delegating impl on `Module<BE>` requires
-/// [`CKKSEncodingImpl<F>`](poulpy_ckks::oep::CKKSEncodingImpl), and a call that cannot infer `F` from its arguments names
-/// it, `BlasEncodingOps::<BE, f64>::blas_context_encode(&module, &mut ctx, scratch)`.
-pub trait BlasEncodingOps<BE: Backend, F: CKKSEncodingScalar + DiagonalArithmetic> {
+/// [`CKKSEncodingImpl<F, Rg>`](poulpy_ckks::oep::CKKSEncodingImpl), and a call that cannot infer `F` from its arguments
+/// names it, `BlasEncodingOps::<BE, f64>::blas_context_encode(&module, &mut ctx, scratch)`.
+pub trait BlasEncodingOps<BE: Backend, F: CKKSEncodingScalar + DiagonalArithmetic, Rg: Ring = Standard> {
     /// Scratch bytes [`Self::blas_pt_operand_encode`] needs for an operand of `infos`: the encoding of one diagonal
     /// of a map of period `count d^2`.
     ///
@@ -62,7 +62,7 @@ pub trait BlasEncodingOps<BE: Backend, F: CKKSEncodingScalar + DiagonalArithmeti
     /// [`maps::left_mul_rep`]: crate::layouts::maps::left_mul_rep
     fn blas_pt_operand_encode<S: BlasPtSide>(
         &self,
-        res: &mut BlasPtOperand<BE, S>,
+        res: &mut BlasPtOperand<BE, S, Rg>,
         entry: impl Fn(usize, usize, usize) -> F,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> CKKSResult<()>;
@@ -97,7 +97,7 @@ pub trait BlasEncodingOps<BE: Backend, F: CKKSEncodingScalar + DiagonalArithmeti
     /// [`Self::blas_matvec_operand_encode_tmp_bytes`].
     fn blas_matvec_operand_encode(
         &self,
-        res: &mut BlasMatVecOperand<BE>,
+        res: &mut BlasMatVecOperand<BE, Rg>,
         entry: impl Fn(usize, usize) -> F,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> CKKSResult<()>;
@@ -125,23 +125,26 @@ pub trait BlasEncodingOps<BE: Backend, F: CKKSEncodingScalar + DiagonalArithmeti
     ///
     /// # Panics
     ///
-    /// Panics if `res` was allocated on a module of another ring, or, before any write, if `scratch` holds less than
-    /// [`Self::blas_context_encode_tmp_bytes`].
-    fn blas_context_encode(&self, res: &mut BlasContext<BE>, scratch: &mut ScratchArena<'_, BE>) -> CKKSResult<()>;
+    /// Panics if `res` is laid out for another degree or ring than the call's, or, before any write, if `scratch` holds
+    /// less than [`Self::blas_context_encode_tmp_bytes`].
+    fn blas_context_encode(&self, res: &mut BlasContext<BE, Rg>, scratch: &mut ScratchArena<'_, BE>) -> CKKSResult<()>;
 }
 
 /// Allocation, sizing and preparation of prepared public operands. The allocation is direct on the module; the
 /// preparation and its query dispatch through [`BlasEncodingImpl`](crate::oep::BlasEncodingImpl).
-pub trait BlasPtOperandPreparedFactory<BE: Backend>: CKKSModuleInfos + GetDegree + Sized {
+pub trait BlasPtOperandPreparedFactory<BE: Backend, Rg: Ring = Standard>: CKKSModuleInfos + GetDegree + Sized {
     /// A prepared operand of `infos`, which must be of this module's slots. Under `JklsStored` and `JklsGalois` it holds
     /// the first map and, per term, a right operand of poulpy-ckks's products at the layout of the term's plaintext.
     ///
     /// # Panics
     ///
     /// As [`BlasPtOperandAlloc::blas_pt_operand_alloc_from_infos`](crate::layouts::BlasPtOperandAlloc::blas_pt_operand_alloc_from_infos).
-    fn blas_pt_operand_prepared_alloc_from_infos<A: BlasPtOperandInfos>(&self, infos: &A) -> BlasPtOperandPrepared<BE, A::Side>
+    fn blas_pt_operand_prepared_alloc_from_infos<A: BlasPtOperandInfos>(
+        &self,
+        infos: &A,
+    ) -> BlasPtOperandPrepared<BE, A::Side, Rg>
     where
-        Self: CKKSRightOperandPreparedFactory<BE>,
+        Self: CKKSRightOperandPreparedFactory<BE, Rg>,
     {
         pt_operand::alloc_prepared(self, &infos.blas_pt_operand_layout())
     }
@@ -164,8 +167,8 @@ pub trait BlasPtOperandPreparedFactory<BE: Backend>: CKKSModuleInfos + GetDegree
     /// slot kind.
     fn blas_pt_operand_prepare<S: BlasPtSide>(
         &self,
-        res: &mut BlasPtOperandPrepared<BE, S>,
-        other: &BlasPtOperand<BE, S>,
+        res: &mut BlasPtOperandPrepared<BE, S, Rg>,
+        other: &BlasPtOperand<BE, S, Rg>,
         scratch: &mut ScratchArena<'_, BE>,
     );
 }
@@ -173,7 +176,9 @@ pub trait BlasPtOperandPreparedFactory<BE: Backend>: CKKSModuleInfos + GetDegree
 /// Allocation, sizing and preparation of prepared public operands of products of a vector by a matrix. The allocation
 /// is direct on the module; the preparation and its query dispatch through
 /// [`BlasEncodingImpl`](crate::oep::BlasEncodingImpl).
-pub trait BlasMatVecOperandPreparedFactory<BE: Backend>: CnvPVecAlloc<BE> + CKKSModuleInfos + GetDegree + Sized {
+pub trait BlasMatVecOperandPreparedFactory<BE: Backend, Rg: Ring = Standard>:
+    CnvPVecAlloc<BE> + CKKSModuleInfos + GetDegree + Sized
+{
     /// A prepared operand of `infos`, which must be of this module's slots.
     ///
     /// # Panics
@@ -182,7 +187,7 @@ pub trait BlasMatVecOperandPreparedFactory<BE: Backend>: CnvPVecAlloc<BE> + CKKS
     fn blas_matvec_operand_prepared_alloc_from_infos<A: BlasMatVecOperandInfos>(
         &self,
         infos: &A,
-    ) -> BlasMatVecOperandPrepared<BE> {
+    ) -> BlasMatVecOperandPrepared<BE, Rg> {
         matvec_operand::alloc_prepared(self, &infos.blas_matvec_operand_layout())
     }
 
@@ -203,15 +208,15 @@ pub trait BlasMatVecOperandPreparedFactory<BE: Backend>: CnvPVecAlloc<BE> + CKKS
     /// width or slot kind.
     fn blas_matvec_operand_prepare(
         &self,
-        res: &mut BlasMatVecOperandPrepared<BE>,
-        other: &BlasMatVecOperand<BE>,
+        res: &mut BlasMatVecOperandPrepared<BE, Rg>,
+        other: &BlasMatVecOperand<BE, Rg>,
         scratch: &mut ScratchArena<'_, BE>,
     );
 }
 
 /// Allocation, sizing and preparation of prepared diagonal ciphertexts. The allocation and its size are direct on the
 /// module; the preparation and its query dispatch through [`BlasEncodingImpl`](crate::oep::BlasEncodingImpl).
-pub trait BlasDiagonalCiphertextPreparedFactory<BE: Backend>:
+pub trait BlasDiagonalCiphertextPreparedFactory<BE: Backend, Rg: Ring = Standard>:
     CnvPVecAlloc<BE> + CnvPVecBytesOf + CKKSModuleInfos + GetDegree + Sized
 {
     /// A prepared diagonal ciphertext of `infos`, every diagonal zero, carrying the layout's metadata.
@@ -222,7 +227,7 @@ pub trait BlasDiagonalCiphertextPreparedFactory<BE: Backend>:
     fn blas_diagonal_ciphertext_prepared_alloc_from_infos<A: BlasDiagonalCiphertextInfos>(
         &self,
         infos: &A,
-    ) -> BlasDiagonalCiphertextPrepared<BE> {
+    ) -> BlasDiagonalCiphertextPrepared<BE, Rg> {
         diagonal_ciphertext::alloc_prepared(self, &infos.blas_diagonal_ciphertext_layout())
     }
 
@@ -247,21 +252,23 @@ pub trait BlasDiagonalCiphertextPreparedFactory<BE: Backend>:
     /// [`Self::blas_diagonal_ciphertext_prepare_tmp_bytes`].
     fn blas_diagonal_ciphertext_prepare(
         &self,
-        res: &mut BlasDiagonalCiphertextPrepared<BE>,
-        other: &BlasDiagonalCiphertext<BE>,
+        res: &mut BlasDiagonalCiphertextPrepared<BE, Rg>,
+        other: &BlasDiagonalCiphertext<BE, Rg>,
         scratch: &mut ScratchArena<'_, BE>,
     );
 }
 
 /// Allocation, sizing and preparation of prepared contexts. The allocation is direct on the module; the preparation and
 /// its query dispatch through [`BlasEncodingImpl`](crate::oep::BlasEncodingImpl).
-pub trait BlasContextPreparedFactory<BE: Backend>: CnvPVecAlloc<BE> + CKKSModuleInfos + GetDegree + Sized {
-    /// A prepared context of `infos`, which must be of this module's ring.
+pub trait BlasContextPreparedFactory<BE: Backend, Rg: Ring = Standard>:
+    CnvPVecAlloc<BE> + CKKSModuleInfos + GetDegree + Sized
+{
+    /// A prepared context of `infos`, on the ring `Rg`.
     ///
     /// # Panics
     ///
     /// As [`BlasContextAlloc::blas_context_alloc_from_infos`](crate::layouts::BlasContextAlloc::blas_context_alloc_from_infos).
-    fn blas_context_prepared_alloc_from_infos<A: BlasContextInfos>(&self, infos: &A) -> BlasContextPrepared<BE> {
+    fn blas_context_prepared_alloc_from_infos<A: BlasContextInfos>(&self, infos: &A) -> BlasContextPrepared<BE, Rg> {
         context::alloc_prepared(self, &infos.blas_context_layout())
     }
 
@@ -282,8 +289,8 @@ pub trait BlasContextPreparedFactory<BE: Backend>: CnvPVecAlloc<BE> + CKKSModule
     /// slot kind.
     fn blas_context_prepare(
         &self,
-        res: &mut BlasContextPrepared<BE>,
-        other: &BlasContext<BE>,
+        res: &mut BlasContextPrepared<BE, Rg>,
+        other: &BlasContext<BE, Rg>,
         scratch: &mut ScratchArena<'_, BE>,
     );
 }

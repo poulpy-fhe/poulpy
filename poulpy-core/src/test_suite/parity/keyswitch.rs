@@ -11,8 +11,8 @@ use poulpy_hal::{
         VmpPMatPrepare, VmpPMatPrepareTmpBytes,
     },
     layouts::{
-        Backend, HostDataMut, HostDataRef, MatZnx, MatZnxAtBackendMut, MatZnxToBackendRef, Module, PrepareHint, ScratchOwned,
-        VecZnx, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxToBackendMut, VecZnxToBackendRef, VmpPMat,
+        Backend, HostDataMut, HostDataRef, MatZnx, MatZnxAtBackendMut, MatZnxToBackendRef, Module, PrepareHint, Ring,
+        ScratchOwned, VecZnx, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxToBackendMut, VecZnxToBackendRef, VmpPMat,
         VmpPMatToBackendMut, VmpPMatToBackendRef,
     },
     source::Source,
@@ -24,7 +24,7 @@ use crate::{
     api::{GGLWEPreparedFactory, TransferInto},
     layouts::{
         BackendGLWE, Base2K, Degree, Dnum, Dsize, GGLWEAlloc, GGLWELayout, GGLWEPrepared, GGLWEPreparedBackendRef, GLWEAlloc,
-        GLWELayout, GLWEToBackendRef, LWEInfos, Rank, TorusPrecision, gadget_product_limbs, key_size,
+        GLWEInfos, GLWELayout, GLWEToBackendRef, LWEInfos, Rank, TorusPrecision, gadget_product_limbs, key_size,
     },
     oep::GGLWEProductDigitsStridedImpl,
     reference::keyswitching::{GGLWEProductDigitsStridedReference, GGLWEProductReference},
@@ -35,24 +35,24 @@ use crate::{
 };
 
 /// Checks a backend's interleaved-digit product against the Core definition.
-pub fn test_gglwe_product_digits_strided<BE>(module: &Module<BE>, base2k: usize)
+pub fn test_gglwe_product_digits_strided<BE, Rg: Ring>(module: &Module<BE>, base2k: usize)
 where
-    BE: poulpy_hal::test_suite::TestBackend + GGLWEProductDigitsStridedImpl,
+    BE: poulpy_hal::test_suite::TestBackend<Rg> + GGLWEProductDigitsStridedImpl<Rg>,
     BE::OwnedBuf: HostDataMut,
     Module<BE>: VecZnxAlloc<BE>
         + VecZnxDftAlloc<BE>
-        + VecZnxDftApply<BE>
+        + VecZnxDftApply<BE, Rg>
         + VecZnxDftBytesOf
-        + VecZnxDftCopy<BE>
-        + VecZnxDftZero<BE>
-        + VmpApplyDftToDft<BE>
-        + VmpApplyDftToDftAdd<BE>
+        + VecZnxDftCopy<BE, Rg>
+        + VecZnxDftZero<BE, Rg>
+        + VmpApplyDftToDft<BE, Rg>
+        + VmpApplyDftToDftAdd<BE, Rg>
         + VmpApplyDftToDftTmpBytes
         + VmpApplyDftToDftAddTmpBytes
         + VmpPMatAlloc<BE>
-        + VmpPMatPrepare<BE>
+        + VmpPMatPrepare<BE, Rg>
         + VmpPMatPrepareTmpBytes
-        + GGLWEProductDigitsStridedReference<BE>,
+        + GGLWEProductDigitsStridedReference<BE, Rg>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
@@ -96,7 +96,7 @@ where
         module.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a, &mut source);
         let mut a_dft = module.vec_znx_dft_alloc(module.n(), cols_in, a_size);
         for col in 0..cols_in {
-            let a = <VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendRef<BE>>::to_backend_ref(&a);
+            let a = <VecZnx<BE::OwnedBuf, BE::ZnxWord, Rg> as VecZnxToBackendRef<BE, Rg>>::to_backend_ref(&a);
             module.vec_znx_dft_apply(1, 0, &mut a_dft.to_backend_mut(), col, &a, col);
         }
         if sparse && a_size > 1 {
@@ -110,14 +110,14 @@ where
         let mut mat = module.mat_znx_alloc(module.n(), rows, cols_in, cols_out, size_out);
         for row in 0..rows {
             for col in 0..cols_in {
-                let mut view = MatZnxAtBackendMut::<BE>::at_backend_mut(&mut mat, row, col);
+                let mut view = MatZnxAtBackendMut::<BE, Rg>::at_backend_mut(&mut mat, row, col);
                 for out in 0..cols_out {
                     module.vec_znx_fill_uniform_source(base2k, size_out * base2k, &mut view, out, &mut source);
                 }
             }
         }
         let mut pmat = module.vmp_pmat_alloc(module.n(), rows, cols_in, cols_out, size_out, PrepareHint::Reuse);
-        let mat = <MatZnx<BE::OwnedBuf, i64> as MatZnxToBackendRef<BE>>::to_backend_ref(&mat);
+        let mat = <MatZnx<BE::OwnedBuf, i64, Rg> as MatZnxToBackendRef<BE, Rg>>::to_backend_ref(&mat);
         module.vmp_pmat_prepare(&mut pmat.to_backend_mut(), &mat, &mut scratch.borrow());
 
         let mut want = module.vec_znx_dft_alloc(module.n(), cols_out, size_out);
@@ -191,20 +191,20 @@ fn key_layout_offset(
 
 /// `a0`'s product in a fresh accumulator of `acc_size` limbs, `a1`'s added to it, then one inverse transform per column
 /// into a GLWE of `res_infos`, each call on exactly its query at `a_infos`.
-fn keyswitch_dft_add_driver<BE, A0, A1>(
+fn keyswitch_dft_add_driver<BE, A0, A1, Rg: Ring>(
     module: &Module<BE>,
     res_infos: &GLWELayout,
     a_infos: &GLWELayout,
     a0: &A0,
     a1: &A1,
-    key: &GGLWEPrepared<BE::OwnedBuf, BE>,
-) -> BackendGLWE<BE>
+    key: &GGLWEPrepared<BE::OwnedBuf, BE, Rg>,
+) -> BackendGLWE<BE, Rg>
 where
-    BE: ParityBackend,
-    Module<BE>: GLWEKeyswitch<BE> + VecZnxDftAlloc<BE> + VecZnxIdftNormalize<BE> + VecZnxIdftNormalizeTmpBytes,
-    A0: GLWEToBackendRef<BE> + crate::layouts::GLWEInfos,
-    A1: GLWEToBackendRef<BE> + crate::layouts::GLWEInfos,
-    GGLWEPrepared<BE::OwnedBuf, BE>: GGLWEPreparedToBackendRef<BE>,
+    BE: ParityBackend<Rg>,
+    Module<BE>: GLWEKeyswitch<BE, Rg> + VecZnxDftAlloc<BE> + VecZnxIdftNormalize<BE, Rg> + VecZnxIdftNormalizeTmpBytes,
+    A0: GLWEToBackendRef<BE, Rg> + GLWEInfos,
+    A1: GLWEToBackendRef<BE, Rg> + GLWEInfos,
+    GGLWEPrepared<BE::OwnedBuf, BE, Rg>: GGLWEPreparedToBackendRef<BE, Rg>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let (n, cols, acc_size) = (res_infos.n.as_usize(), res_infos.rank.as_usize() + 1, res_infos.size());
@@ -222,12 +222,12 @@ where
         &key,
         &mut poisoned_scratch::<BE>(module.glwe_keyswitch_dft_add_tmp_bytes(acc_size, a_infos, &key)).borrow(),
     );
-    let mut res: BackendGLWE<BE> = module.glwe_alloc_from_infos(res_infos);
+    let mut res: BackendGLWE<BE, Rg> = module.glwe_alloc_from_infos(res_infos);
     let (base2k, res_k) = (res_infos.base2k.as_usize(), res_infos.k.as_usize());
     let tmp_bytes = module.vec_znx_idft_normalize_tmp_bytes(acc_size, acc_size);
     for col in 0..cols {
         module.vec_znx_idft_normalize(
-            &mut <VecZnx<BE::OwnedBuf, i64> as VecZnxToBackendMut<BE>>::to_backend_mut(&mut res.data),
+            &mut <VecZnx<BE::OwnedBuf, i64, Rg> as VecZnxToBackendMut<BE, Rg>>::to_backend_mut(&mut res.data),
             base2k,
             res_k,
             0,
@@ -244,19 +244,25 @@ where
 
 /// `glwe_keyswitch_dft_add` on an accumulator of `glwe_keyswitch_dft`, at every key layout, compared after the inverse
 /// transform, on a canonical, a flag-clear and a wide input, and its refusal of an input past the key.
-pub fn test_glwe_keyswitch_dft_add_parity<BR, BT>(
+pub fn test_glwe_keyswitch_dft_add_parity<BR, BT, Rg: Ring>(
     params: &TestParams,
     shapes: &ParityShapes,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
-    BR: ParityBackend,
-    BT: ParityBackend,
+    BR: ParityBackend<Rg>,
+    BT: ParityBackend<Rg>,
     BR::OwnedBuf: HostDataMut,
-    Module<BR>:
-        GLWEKeyswitch<BR> + GGLWEPreparedFactory<BR> + VecZnxDftAlloc<BR> + VecZnxIdftNormalize<BR> + VecZnxIdftNormalizeTmpBytes,
-    Module<BT>:
-        GLWEKeyswitch<BT> + GGLWEPreparedFactory<BT> + VecZnxDftAlloc<BT> + VecZnxIdftNormalize<BT> + VecZnxIdftNormalizeTmpBytes,
+    Module<BR>: GLWEKeyswitch<BR, Rg>
+        + GGLWEPreparedFactory<BR, Rg>
+        + VecZnxDftAlloc<BR>
+        + VecZnxIdftNormalize<BR, Rg>
+        + VecZnxIdftNormalizeTmpBytes,
+    Module<BT>: GLWEKeyswitch<BT, Rg>
+        + GGLWEPreparedFactory<BT, Rg>
+        + VecZnxDftAlloc<BT>
+        + VecZnxIdftNormalize<BT, Rg>
+        + VecZnxIdftNormalizeTmpBytes,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
 {
@@ -323,7 +329,7 @@ pub fn test_glwe_keyswitch_dft_add_parity<BR, BT>(
                         "glwe_keyswitch_dft_add: rank_in={rank_in} rank_out={rank_out} k_digit={k_digit} k_offset={k_offset}"
                     );
 
-                    unnormalized_twin::<BR, BT>(&a1_ref, &mut a1_test);
+                    unnormalized_twin::<BR, BT, Rg>(&a1_ref, &mut a1_test);
                     keyswitch_dft_add_driver(module_test, &res_infos, &a_infos, &a0_test, &a1_test, &key_test)
                         .transfer_into(&mut have);
                     assert_glwe_eq!(
@@ -338,7 +344,7 @@ pub fn test_glwe_keyswitch_dft_add_parity<BR, BT>(
                         ..a_infos
                     });
                     module_test.glwe_fill_from_source(&mut wide_test, &mut source);
-                    wide_twin::<BR, BT>(&a1_ref, &mut wide_test);
+                    wide_twin::<BR, BT, Rg>(&a1_ref, &mut wide_test);
                     keyswitch_dft_add_driver(module_test, &res_infos, &a_infos, &a0_test, &wide_test, &key_test)
                         .transfer_into(&mut have);
                     assert_glwe_eq!(
@@ -382,17 +388,17 @@ pub fn test_glwe_keyswitch_dft_add_parity<BR, BT>(
 /// Sweeps `dsize` and both ranks, so every branch of the digit loop is compared:
 /// the `dsize == 1` short circuit, the `di == 0` overwriting pass, and the
 /// narrowed accumulating passes above it.
-pub fn test_glwe_keyswitch_parity<BR, BT>(
+pub fn test_glwe_keyswitch_parity<BR, BT, Rg: Ring>(
     params: &TestParams,
     shapes: &ParityShapes,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
-    BR: ParityBackend,
-    BT: ParityBackend,
+    BR: ParityBackend<Rg>,
+    BT: ParityBackend<Rg>,
     BR::OwnedBuf: HostDataMut,
-    Module<BR>: GLWEKeyswitch<BR> + GGLWEPreparedFactory<BR>,
-    Module<BT>: GLWEKeyswitch<BT> + GGLWEPreparedFactory<BT>,
+    Module<BR>: GLWEKeyswitch<BR, Rg> + GGLWEPreparedFactory<BR, Rg>,
+    Module<BT>: GLWEKeyswitch<BT, Rg> + GGLWEPreparedFactory<BT, Rg>,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
 {
@@ -475,7 +481,7 @@ pub fn test_glwe_keyswitch_parity<BR, BT>(
                         "glwe_keyswitch: rank_in={rank_in} rank_out={rank_out} k_digit={k_digit} k_offset={k_offset} k_in={k_in} a_base2k={a_base2k}"
                     );
 
-                    unnormalized_twin::<BR, BT>(&a_ref, &mut a_test);
+                    unnormalized_twin::<BR, BT, Rg>(&a_ref, &mut a_test);
                     module_test.glwe_keyswitch(
                         &mut res_test,
                         &a_test,
@@ -499,7 +505,7 @@ pub fn test_glwe_keyswitch_parity<BR, BT>(
                     };
                     let mut wide_test = module_test.glwe_alloc_from_infos(&wide_infos);
                     module_test.glwe_fill_from_source(&mut wide_test, &mut source);
-                    wide_twin::<BR, BT>(&a_ref, &mut wide_test);
+                    wide_twin::<BR, BT, Rg>(&a_ref, &mut wide_test);
                     module_test.glwe_keyswitch(
                         &mut res_test,
                         &wide_test,
@@ -572,17 +578,17 @@ pub fn test_glwe_keyswitch_parity<BR, BT>(
 }
 
 /// `glwe_keyswitch_assign` agrees with the selected comparison backend byte-for-byte.
-pub fn test_glwe_keyswitch_assign_parity<BR, BT>(
+pub fn test_glwe_keyswitch_assign_parity<BR, BT, Rg: Ring>(
     params: &TestParams,
     shapes: &ParityShapes,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
-    BR: ParityBackend,
-    BT: ParityBackend,
+    BR: ParityBackend<Rg>,
+    BT: ParityBackend<Rg>,
     BR::OwnedBuf: HostDataMut,
-    Module<BR>: GLWEKeyswitch<BR> + GGLWEPreparedFactory<BR>,
-    Module<BT>: GLWEKeyswitch<BT> + GGLWEPreparedFactory<BT>,
+    Module<BR>: GLWEKeyswitch<BR, Rg> + GGLWEPreparedFactory<BR, Rg>,
+    Module<BT>: GLWEKeyswitch<BT, Rg> + GGLWEPreparedFactory<BT, Rg>,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
 {
@@ -626,7 +632,7 @@ pub fn test_glwe_keyswitch_assign_parity<BR, BT>(
                     poisoned_scratch::<BT>(module_test.glwe_keyswitch_tmp_bytes(&res_infos, &res_infos, &key_infos));
 
                 let mut twin_test = module_test.glwe_alloc_from_infos(&res_infos);
-                unnormalized_twin::<BR, BT>(&res_ref, &mut twin_test);
+                unnormalized_twin::<BR, BT, Rg>(&res_ref, &mut twin_test);
 
                 module_ref.glwe_keyswitch_assign(&mut res_ref, &key_ref.to_backend_ref(), &mut scratch_ref.borrow());
                 module_test.glwe_keyswitch_assign(&mut res_test, &key_test.to_backend_ref(), &mut scratch_test.borrow());
@@ -657,17 +663,17 @@ pub fn test_glwe_keyswitch_assign_parity<BR, BT>(
 }
 
 /// `gglwe_keyswitch` agrees with the selected comparison backend byte-for-byte.
-pub fn test_gglwe_keyswitch_parity<BR, BT>(
+pub fn test_gglwe_keyswitch_parity<BR, BT, Rg: Ring>(
     params: &TestParams,
     shapes: &ParityShapes,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
-    BR: ParityBackend,
-    BT: ParityBackend,
+    BR: ParityBackend<Rg>,
+    BT: ParityBackend<Rg>,
     BR::OwnedBuf: HostDataMut,
-    Module<BR>: GGLWEKeyswitch<BR> + GGLWEPreparedFactory<BR>,
-    Module<BT>: GGLWEKeyswitch<BT> + GGLWEPreparedFactory<BT>,
+    Module<BR>: GGLWEKeyswitch<BR, Rg> + GGLWEPreparedFactory<BR, Rg>,
+    Module<BT>: GGLWEKeyswitch<BT, Rg> + GGLWEPreparedFactory<BT, Rg>,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
 {
@@ -737,14 +743,14 @@ pub fn test_gglwe_keyswitch_parity<BR, BT>(
 ///
 /// This is the coarsening oracle: it pins the row map `(i + 1) * stride - 1`
 /// and the derived `dnum`/`k_aux`, and that no skipped row is ever read.
-pub fn test_gglwe_product_dft_selected<BE>(module: &Module<BE>, base2k: usize)
+pub fn test_gglwe_product_dft_selected<BE, Rg: Ring>(module: &Module<BE>, base2k: usize)
 where
-    BE: poulpy_hal::test_suite::TestBackend<ZnxWord = i64>,
-    Module<BE>: GGLWEProductReference<BE>
+    BE: poulpy_hal::test_suite::TestBackend<Rg, ZnxWord = i64>,
+    Module<BE>: GGLWEProductReference<BE, Rg>
         + VecZnxDftAlloc<BE>
-        + VecZnxDftApply<BE>
+        + VecZnxDftApply<BE, Rg>
         + VmpPMatAlloc<BE>
-        + VmpPMatPrepare<BE>
+        + VmpPMatPrepare<BE, Rg>
         + VmpPMatPrepareTmpBytes,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
@@ -790,25 +796,25 @@ where
         module.vec_znx_fill_uniform_source_all(base2k, input_size * base2k, &mut a, &mut source);
         let mut a_dft = module.vec_znx_dft_alloc(module.n(), cols_in, input_size);
         for col in 0..cols_in {
-            let a = <VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendRef<BE>>::to_backend_ref(&a);
+            let a = <VecZnx<BE::OwnedBuf, BE::ZnxWord, Rg> as VecZnxToBackendRef<BE, Rg>>::to_backend_ref(&a);
             module.vec_znx_dft_apply(1, 0, &mut a_dft.to_backend_mut(), col, &a, col);
         }
 
         let mut sampled = module.mat_znx_alloc(module.n(), rows, cols_in, cols_out, size);
         for row in 0..rows {
             for col in 0..cols_in {
-                let mut view = MatZnxAtBackendMut::<BE>::at_backend_mut(&mut sampled, row, col);
+                let mut view = MatZnxAtBackendMut::<BE, Rg>::at_backend_mut(&mut sampled, row, col);
                 for out in 0..cols_out {
                     module.vec_znx_fill_uniform_source(base2k, size * base2k, &mut view, out, &mut source);
                 }
             }
         }
-        let mut mat = download_mat_znx::<BE>(&sampled);
+        let mut mat = download_mat_znx::<BE, Rg>(&sampled);
 
         let selected: Vec<usize> = (0..sel_rows).map(|i| (i + 1) * s as usize - 1).collect();
         let row_len: usize = n as usize * cols_out * size;
         // Poison every skipped row: reading any of it changes the result.
-        let poison = |mat: &mut MatZnx<AlignedBuf, i64>, with: i64| {
+        let poison = |mat: &mut MatZnx<AlignedBuf, i64, Rg>, with: i64| {
             for row in 0..rows {
                 for c in 0..cols_in {
                     if !selected.contains(&row) {
@@ -822,7 +828,7 @@ where
 
         // Oracle: a key holding exactly the selected rows, used natively. It is built
         // on the host and uploaded, so the backend's buffers need not be host-resident.
-        let mut sel = download_mat_znx::<BE>(&module.mat_znx_alloc(module.n(), sel_rows, cols_in, cols_out, size));
+        let mut sel = download_mat_znx::<BE, Rg>(&module.mat_znx_alloc(module.n(), sel_rows, cols_in, cols_out, size));
         for (i, &src_row) in selected.iter().enumerate() {
             for c in 0..cols_in {
                 let (src, dst) = ((src_row * cols_in + c) * row_len, (i * cols_in + c) * row_len);
@@ -831,11 +837,11 @@ where
             }
         }
 
-        let prepare = |m: &MatZnx<AlignedBuf, i64>, rows: usize, scratch: &mut ScratchOwned<BE>| {
+        let prepare = |m: &MatZnx<AlignedBuf, i64, Rg>, rows: usize, scratch: &mut ScratchOwned<BE>| {
             let mut pmat = module.vmp_pmat_alloc(module.n(), rows, cols_in, cols_out, size, PrepareHint::Reuse);
             module.vmp_pmat_prepare(
                 &mut pmat.to_backend_mut(),
-                &<MatZnx<BE::OwnedBuf, i64> as MatZnxToBackendRef<BE>>::to_backend_ref(&upload_mat_znx::<BE>(m)),
+                &<MatZnx<BE::OwnedBuf, i64, Rg> as MatZnxToBackendRef<BE, Rg>>::to_backend_ref(&upload_mat_znx::<BE, Rg>(m)),
                 &mut scratch.borrow(),
             );
             pmat
@@ -845,13 +851,13 @@ where
 
         // Both keys are read at the effective decomposition; only the stride
         // and the matrix behind them differ.
-        fn key_of<'a, BE: Backend>(
-            pmat: &'a VmpPMat<BE::OwnedBuf, BE::DftWord, BE>,
+        fn key_of<'a, BE: Backend, Rg: Ring>(
+            pmat: &'a VmpPMat<BE::OwnedBuf, BE::DftWord, BE, Rg>,
             layout: &GGLWELayout,
             stride: usize,
-        ) -> GGLWEPreparedBackendRef<'a, BE>
+        ) -> GGLWEPreparedBackendRef<'a, BE, Rg>
         where
-            VmpPMat<BE::OwnedBuf, BE::DftWord, BE>: VmpPMatToBackendRef<BE>,
+            VmpPMat<BE::OwnedBuf, BE::DftWord, BE, Rg>: VmpPMatToBackendRef<BE, Rg>,
         {
             GGLWEPrepared {
                 noise: None,
@@ -873,7 +879,7 @@ where
             ..parent
         };
 
-        let product = |key: &GGLWEPreparedBackendRef<'_, BE>, scratch: &mut ScratchOwned<BE>| {
+        let product = |key: &GGLWEPreparedBackendRef<'_, BE, Rg>, scratch: &mut ScratchOwned<BE>| {
             let mut res = module.vec_znx_dft_alloc(module.n(), cols_out, size);
             module.gglwe_product_dft_reference(
                 &mut res.to_backend_mut(),

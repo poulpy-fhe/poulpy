@@ -4,7 +4,7 @@ use poulpy_ckks::{
     encoding::ckks_linear_transformation_encode_tmp_bytes,
 };
 use poulpy_core::layouts::DiagonalArithmetic;
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Module, Ring, ScratchArena, Standard};
 
 use crate::layouts::{
     BlasContext, BlasContextInfos, BlasContextPrepared, BlasDiagonalCiphertext, BlasDiagonalCiphertextInfos,
@@ -24,11 +24,11 @@ use crate::layouts::{
 /// poulpy-ckks's `ckks_linear_transformation_encode_into`, map after map in walking order, and the first error stops it;
 /// a preparation prepares each map by poulpy-ckks's `ckks_linear_transformation_rhs_prepare`, and a masked operand's
 /// terms by `ckks_right_operand_prepare`, into the allocations of `res`.
-pub trait BlasEncodingReference<BE: Backend> {
+pub trait BlasEncodingReference<BE: Backend, Rg: Ring = Standard> {
     /// poulpy-ckks's query for the encoding of one diagonal of a map of period `count d^2`.
     fn blas_pt_operand_encode_tmp_bytes_reference<F, A>(&self, infos: &A) -> usize
     where
-        Self: CKKSEncodingOps<BE, F>,
+        Self: CKKSEncodingOps<BE, F, Rg>,
         F: CKKSEncodingScalar,
         A: BlasPtOperandInfos;
 
@@ -36,114 +36,114 @@ pub trait BlasEncodingReference<BE: Backend> {
     /// block's terms in order, then the replicated-input maps, every block sharing the first block's schedule.
     fn blas_pt_operand_encode_reference<F, S>(
         &self,
-        res: &mut BlasPtOperand<BE, S>,
+        res: &mut BlasPtOperand<BE, S, Rg>,
         entry: impl Fn(usize, usize, usize) -> F,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: CKKSEncodingOps<BE, F>,
+        Self: CKKSEncodingOps<BE, F, Rg>,
         F: DiagonalArithmetic + CKKSEncodingScalar,
         S: BlasPtSide;
 
     /// poulpy-ckks's query for the encoding of one diagonal of a map of the operand's larger period.
     fn blas_matvec_operand_encode_tmp_bytes_reference<F, A>(&self, infos: &A) -> usize
     where
-        Self: CKKSEncodingOps<BE, F>,
+        Self: CKKSEncodingOps<BE, F, Rg>,
         F: CKKSEncodingScalar,
         A: BlasMatVecOperandInfos;
 
     /// After asserting its scratch query, the map of every block, output-major.
     fn blas_matvec_operand_encode_reference<F>(
         &self,
-        res: &mut BlasMatVecOperand<BE>,
+        res: &mut BlasMatVecOperand<BE, Rg>,
         entry: impl Fn(usize, usize) -> F,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: CKKSEncodingOps<BE, F>,
+        Self: CKKSEncodingOps<BE, F, Rg>,
         F: DiagonalArithmetic + CKKSEncodingScalar;
 
     /// poulpy-ckks's query for the encoding of one diagonal of a map of period `d^2`.
     fn blas_context_encode_tmp_bytes_reference<F, A>(&self, infos: &A) -> usize
     where
-        Self: CKKSEncodingOps<BE, F>,
+        Self: CKKSEncodingOps<BE, F, Rg>,
         F: CKKSEncodingScalar,
         A: BlasContextInfos;
 
     /// After asserting its scratch query, every map of the plan of `res`, in walking order.
-    fn blas_context_encode_reference<F>(&self, res: &mut BlasContext<BE>, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn blas_context_encode_reference<F>(&self, res: &mut BlasContext<BE, Rg>, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Self: CKKSEncodingOps<BE, F>,
+        Self: CKKSEncodingOps<BE, F, Rg>,
         F: DiagonalArithmetic + CKKSEncodingScalar;
 
     /// The largest of poulpy-ckks's preparation queries over the maps, and over one term's plaintext under `JklsStored`
     /// and `JklsGalois`.
     fn blas_pt_operand_prepare_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
-        Self: CKKSLinearTransformationOps<BE> + CKKSMulOps<BE> + CKKSRightOperandPreparedFactory<BE>,
+        Self: CKKSLinearTransformationOps<BE, Rg> + CKKSMulOps<BE, Rg> + CKKSRightOperandPreparedFactory<BE, Rg>,
         A: BlasPtOperandInfos;
 
     /// Every map of `other` prepared into the same position of `res`; under `JklsStored` and `JklsGalois` the first
     /// map, then each term's one plaintext by `ckks_right_operand_prepare`.
     fn blas_pt_operand_prepare_reference<S>(
         &self,
-        res: &mut BlasPtOperandPrepared<BE, S>,
-        other: &BlasPtOperand<BE, S>,
+        res: &mut BlasPtOperandPrepared<BE, S, Rg>,
+        other: &BlasPtOperand<BE, S, Rg>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        Self: CKKSLinearTransformationOps<BE> + CKKSMulOps<BE> + CKKSRightOperandPreparedFactory<BE>,
+        Self: CKKSLinearTransformationOps<BE, Rg> + CKKSMulOps<BE, Rg> + CKKSRightOperandPreparedFactory<BE, Rg>,
         S: BlasPtSide;
 
     /// poulpy-ckks's preparation query of the maps' shared shape.
     fn blas_matvec_operand_prepare_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
-        Self: CKKSLinearTransformationOps<BE>,
+        Self: CKKSLinearTransformationOps<BE, Rg>,
         A: BlasMatVecOperandInfos;
 
     /// Every map of `other` prepared into the same position of `res`.
     fn blas_matvec_operand_prepare_reference(
         &self,
-        res: &mut BlasMatVecOperandPrepared<BE>,
-        other: &BlasMatVecOperand<BE>,
+        res: &mut BlasMatVecOperandPrepared<BE, Rg>,
+        other: &BlasMatVecOperand<BE, Rg>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        Self: CKKSLinearTransformationOps<BE>;
+        Self: CKKSLinearTransformationOps<BE, Rg>;
 
     /// poulpy-ckks's preparation query of a diagonal of `infos`.
     fn blas_diagonal_ciphertext_prepare_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
-        Self: CKKSLinearTransformationOps<BE>,
+        Self: CKKSLinearTransformationOps<BE, Rg>,
         A: BlasDiagonalCiphertextInfos;
 
     /// After asserting its scratch query, every diagonal of `other` prepared into the same position of `res`.
     fn blas_diagonal_ciphertext_prepare_reference(
         &self,
-        res: &mut BlasDiagonalCiphertextPrepared<BE>,
-        other: &BlasDiagonalCiphertext<BE>,
+        res: &mut BlasDiagonalCiphertextPrepared<BE, Rg>,
+        other: &BlasDiagonalCiphertext<BE, Rg>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        Self: CKKSLinearTransformationOps<BE>;
+        Self: CKKSLinearTransformationOps<BE, Rg>;
 
     /// The largest of poulpy-ckks's preparation queries over the maps.
     fn blas_context_prepare_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
-        Self: CKKSLinearTransformationOps<BE>,
+        Self: CKKSLinearTransformationOps<BE, Rg>,
         A: BlasContextInfos;
 
     /// Every map of `other` prepared into the same position of `res`.
     fn blas_context_prepare_reference(
         &self,
-        res: &mut BlasContextPrepared<BE>,
-        other: &BlasContext<BE>,
+        res: &mut BlasContextPrepared<BE, Rg>,
+        other: &BlasContext<BE, Rg>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        Self: CKKSLinearTransformationOps<BE>;
+        Self: CKKSLinearTransformationOps<BE, Rg>;
 }
 
-impl<BE: Backend> BlasEncodingReference<BE> for Module<BE> {
+impl<BE: Backend, Rg: Ring> BlasEncodingReference<BE, Rg> for Module<BE> {
     fn blas_pt_operand_encode_tmp_bytes_reference<F, A>(&self, infos: &A) -> usize
     where
-        Self: CKKSEncodingOps<BE, F>,
+        Self: CKKSEncodingOps<BE, F, Rg>,
         F: CKKSEncodingScalar,
         A: BlasPtOperandInfos,
     {
@@ -151,22 +151,22 @@ impl<BE: Backend> BlasEncodingReference<BE> for Module<BE> {
             .checked_shl(2 * infos.log_d() as u32)
             .and_then(|d2| d2.checked_mul(infos.count()))
             .expect("count d^2 overflows usize");
-        ckks_linear_transformation_encode_tmp_bytes::<BE, Self, F>(self, slots)
+        ckks_linear_transformation_encode_tmp_bytes::<BE, Self, F, Rg>(self, slots)
     }
 
     fn blas_pt_operand_encode_reference<F, S>(
         &self,
-        res: &mut BlasPtOperand<BE, S>,
+        res: &mut BlasPtOperand<BE, S, Rg>,
         entry: impl Fn(usize, usize, usize) -> F,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: CKKSEncodingOps<BE, F>,
+        Self: CKKSEncodingOps<BE, F, Rg>,
         F: DiagonalArithmetic + CKKSEncodingScalar,
         S: BlasPtSide,
     {
         let layout = res.blas_pt_operand_layout();
-        assert_module_slots(self, &layout);
+        assert_module_slots::<S, Rg>(self, &layout);
         let bytes = self.blas_pt_operand_encode_tmp_bytes_reference::<F, _>(&layout);
         assert_scratch("blas_pt_operand_encode", bytes, scratch);
         if let (Some(lt), Some(map)) = (&mut res.maps.first, first_map::<F, S>(&layout)) {
@@ -202,27 +202,27 @@ impl<BE: Backend> BlasEncodingReference<BE> for Module<BE> {
 
     fn blas_matvec_operand_encode_tmp_bytes_reference<F, A>(&self, infos: &A) -> usize
     where
-        Self: CKKSEncodingOps<BE, F>,
+        Self: CKKSEncodingOps<BE, F, Rg>,
         F: CKKSEncodingScalar,
         A: BlasMatVecOperandInfos,
     {
         let layout = infos.blas_matvec_operand_layout();
         matvec_operand::assert_fits(&layout);
-        ckks_linear_transformation_encode_tmp_bytes::<BE, Self, F>(self, layout.map_period())
+        ckks_linear_transformation_encode_tmp_bytes::<BE, Self, F, Rg>(self, layout.map_period())
     }
 
     fn blas_matvec_operand_encode_reference<F>(
         &self,
-        res: &mut BlasMatVecOperand<BE>,
+        res: &mut BlasMatVecOperand<BE, Rg>,
         entry: impl Fn(usize, usize) -> F,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: CKKSEncodingOps<BE, F>,
+        Self: CKKSEncodingOps<BE, F, Rg>,
         F: DiagonalArithmetic + CKKSEncodingScalar,
     {
         let layout = res.blas_matvec_operand_layout();
-        matvec_operand::assert_module_slots(self, &layout);
+        matvec_operand::assert_module_slots::<Rg>(self, &layout);
         let bytes = self.blas_matvec_operand_encode_tmp_bytes_reference::<F, _>(&layout);
         assert_scratch("blas_matvec_operand_encode", bytes, scratch);
         let inputs = layout.input.count();
@@ -239,21 +239,21 @@ impl<BE: Backend> BlasEncodingReference<BE> for Module<BE> {
 
     fn blas_context_encode_tmp_bytes_reference<F, A>(&self, infos: &A) -> usize
     where
-        Self: CKKSEncodingOps<BE, F>,
+        Self: CKKSEncodingOps<BE, F, Rg>,
         F: CKKSEncodingScalar,
         A: BlasContextInfos,
     {
         let slots = 1usize.checked_shl(2 * infos.log_d() as u32).expect("d^2 overflows usize");
-        ckks_linear_transformation_encode_tmp_bytes::<BE, Self, F>(self, slots)
+        ckks_linear_transformation_encode_tmp_bytes::<BE, Self, F, Rg>(self, slots)
     }
 
-    fn blas_context_encode_reference<F>(&self, res: &mut BlasContext<BE>, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn blas_context_encode_reference<F>(&self, res: &mut BlasContext<BE, Rg>, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Self: CKKSEncodingOps<BE, F>,
+        Self: CKKSEncodingOps<BE, F, Rg>,
         F: DiagonalArithmetic + CKKSEncodingScalar,
     {
         let layout = res.blas_context_layout();
-        assert_fits_module(self, &layout);
+        assert_fits_module::<Rg>(self, &layout);
         assert_scratch(
             "blas_context_encode",
             self.blas_context_encode_tmp_bytes_reference::<F, _>(&layout),
@@ -267,17 +267,17 @@ impl<BE: Backend> BlasEncodingReference<BE> for Module<BE> {
 
     fn blas_pt_operand_prepare_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
-        Self: CKKSLinearTransformationOps<BE> + CKKSMulOps<BE> + CKKSRightOperandPreparedFactory<BE>,
+        Self: CKKSLinearTransformationOps<BE, Rg> + CKKSMulOps<BE, Rg> + CKKSRightOperandPreparedFactory<BE, Rg>,
         A: BlasPtOperandInfos,
     {
         let layout = infos.blas_pt_operand_layout();
-        let (shapes, terms) = prepared_shapes(self, &layout);
+        let (shapes, terms) = prepared_shapes::<_, Rg>(self, &layout);
         let terms = terms
             .first()
-            .map(|term| self.ckks_right_operand_prepare_tmp_bytes(&term.plaintext::<BE, Self>(self, layout.base2k)));
+            .map(|term| self.ckks_right_operand_prepare_tmp_bytes(&term.plaintext::<BE, Self, Rg>(self, layout.base2k)));
         shapes
             .iter()
-            .map(|map| map.prepare_tmp_bytes::<BE, Self>(self, layout.base2k))
+            .map(|map| map.prepare_tmp_bytes::<BE, Self, Rg>(self, layout.base2k))
             .chain(terms)
             .max()
             .unwrap_or(0)
@@ -285,11 +285,11 @@ impl<BE: Backend> BlasEncodingReference<BE> for Module<BE> {
 
     fn blas_pt_operand_prepare_reference<S>(
         &self,
-        res: &mut BlasPtOperandPrepared<BE, S>,
-        other: &BlasPtOperand<BE, S>,
+        res: &mut BlasPtOperandPrepared<BE, S, Rg>,
+        other: &BlasPtOperand<BE, S, Rg>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        Self: CKKSLinearTransformationOps<BE> + CKKSMulOps<BE> + CKKSRightOperandPreparedFactory<BE>,
+        Self: CKKSLinearTransformationOps<BE, Rg> + CKKSMulOps<BE, Rg> + CKKSRightOperandPreparedFactory<BE, Rg>,
         S: BlasPtSide,
     {
         const OP: &str = "blas_pt_operand_prepare";
@@ -322,21 +322,21 @@ impl<BE: Backend> BlasEncodingReference<BE> for Module<BE> {
 
     fn blas_matvec_operand_prepare_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
-        Self: CKKSLinearTransformationOps<BE>,
+        Self: CKKSLinearTransformationOps<BE, Rg>,
         A: BlasMatVecOperandInfos,
     {
         let layout = infos.blas_matvec_operand_layout();
-        matvec_operand::assert_module_slots(self, &layout);
-        matvec_operand::map_layout(&layout).prepare_tmp_bytes::<BE, Self>(self, layout.base2k)
+        matvec_operand::assert_module_slots::<Rg>(self, &layout);
+        matvec_operand::map_layout(&layout).prepare_tmp_bytes::<BE, Self, Rg>(self, layout.base2k)
     }
 
     fn blas_matvec_operand_prepare_reference(
         &self,
-        res: &mut BlasMatVecOperandPrepared<BE>,
-        other: &BlasMatVecOperand<BE>,
+        res: &mut BlasMatVecOperandPrepared<BE, Rg>,
+        other: &BlasMatVecOperand<BE, Rg>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        Self: CKKSLinearTransformationOps<BE>,
+        Self: CKKSLinearTransformationOps<BE, Rg>,
     {
         assert!(
             res.blas_matvec_operand_layout() == other.blas_matvec_operand_layout(),
@@ -354,7 +354,7 @@ impl<BE: Backend> BlasEncodingReference<BE> for Module<BE> {
 
     fn blas_diagonal_ciphertext_prepare_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
-        Self: CKKSLinearTransformationOps<BE>,
+        Self: CKKSLinearTransformationOps<BE, Rg>,
         A: BlasDiagonalCiphertextInfos,
     {
         self.ckks_linear_transformation_rhs_prepare_tmp_bytes(&infos.blas_diagonal_ciphertext_layout().ct)
@@ -362,11 +362,11 @@ impl<BE: Backend> BlasEncodingReference<BE> for Module<BE> {
 
     fn blas_diagonal_ciphertext_prepare_reference(
         &self,
-        res: &mut BlasDiagonalCiphertextPrepared<BE>,
-        other: &BlasDiagonalCiphertext<BE>,
+        res: &mut BlasDiagonalCiphertextPrepared<BE, Rg>,
+        other: &BlasDiagonalCiphertext<BE, Rg>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        Self: CKKSLinearTransformationOps<BE>,
+        Self: CKKSLinearTransformationOps<BE, Rg>,
     {
         let op = "blas_diagonal_ciphertext_prepare";
         let layout = other.blas_diagonal_ciphertext_layout();
@@ -386,16 +386,16 @@ impl<BE: Backend> BlasEncodingReference<BE> for Module<BE> {
 
     fn blas_context_prepare_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
-        Self: CKKSLinearTransformationOps<BE>,
+        Self: CKKSLinearTransformationOps<BE, Rg>,
         A: BlasContextInfos,
     {
         let layout = infos.blas_context_layout();
-        assert_fits_module(self, &layout);
+        assert_fits_module::<Rg>(self, &layout);
         MapId::all(layout.plan)
             .map(|id| {
                 context_map::<f64>(&layout, id)
                     .layout()
-                    .prepare_tmp_bytes::<BE, Self>(self, layout.base2k)
+                    .prepare_tmp_bytes::<BE, Self, Rg>(self, layout.base2k)
             })
             .max()
             .unwrap_or(0)
@@ -403,11 +403,11 @@ impl<BE: Backend> BlasEncodingReference<BE> for Module<BE> {
 
     fn blas_context_prepare_reference(
         &self,
-        res: &mut BlasContextPrepared<BE>,
-        other: &BlasContext<BE>,
+        res: &mut BlasContextPrepared<BE, Rg>,
+        other: &BlasContext<BE, Rg>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        Self: CKKSLinearTransformationOps<BE>,
+        Self: CKKSLinearTransformationOps<BE, Rg>,
     {
         assert!(
             res.blas_context_layout() == other.blas_context_layout(),

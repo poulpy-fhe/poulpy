@@ -1,7 +1,7 @@
 //! Same-layer compositions that preserve core backend dispatch.
 
 mod ggsw {
-    use poulpy_hal::layouts::{Backend, ScratchArena};
+    use poulpy_hal::layouts::{Backend, Ring, ScratchArena};
 
     use crate::{
         api::{GGSWExpandRows, GLWEAutomorphism},
@@ -11,7 +11,7 @@ mod ggsw {
         },
     };
 
-    pub(crate) fn ggsw_automorphism_tmp_bytes_derived<BE, M, R, A, K, T>(
+    pub(crate) fn ggsw_automorphism_tmp_bytes_derived<BE, M, R, A, K, T, Rg: Ring>(
         module: &M,
         res_infos: &R,
         a_infos: &A,
@@ -20,7 +20,7 @@ mod ggsw {
     ) -> usize
     where
         BE: Backend,
-        M: GLWEAutomorphism<BE> + GGSWExpandRows<BE>,
+        M: GLWEAutomorphism<BE, Rg> + GGSWExpandRows<BE, Rg>,
         R: GGSWInfos,
         A: GGSWInfos,
         K: GGLWEInfos,
@@ -32,18 +32,18 @@ mod ggsw {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn ggsw_automorphism_derived<BE, M, R, A>(
+    pub(crate) fn ggsw_automorphism_derived<BE, M, R, A, Rg: Ring>(
         module: &M,
         res: &mut R,
         a: &A,
-        key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
-        tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, BE>,
+        key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE, Rg>,
+        tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, BE, Rg>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         BE: Backend,
-        M: GLWEAutomorphism<BE> + GGSWExpandRows<BE>,
-        R: GGSWToBackendMut<BE> + GGSWInfos,
-        A: GGSWToBackendRef<BE> + GGSWInfos,
+        M: GLWEAutomorphism<BE, Rg> + GGSWExpandRows<BE, Rg>,
+        R: GGSWToBackendMut<BE, Rg> + GGSWInfos,
+        A: GGSWToBackendRef<BE, Rg> + GGSWInfos,
     {
         {
             let a_backend = a.to_backend_ref();
@@ -58,16 +58,16 @@ mod ggsw {
         module.ggsw_expand_rows_assign(&mut res.to_backend_mut(), tsk, scratch);
     }
 
-    pub(crate) fn ggsw_automorphism_assign_derived<BE, M, R>(
+    pub(crate) fn ggsw_automorphism_assign_derived<BE, M, R, Rg: Ring>(
         module: &M,
         res: &mut R,
-        key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
-        tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, BE>,
+        key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE, Rg>,
+        tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, BE, Rg>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         BE: Backend,
-        M: GLWEAutomorphism<BE> + GGSWExpandRows<BE>,
-        R: GGSWToBackendMut<BE> + GGSWInfos,
+        M: GLWEAutomorphism<BE, Rg> + GGSWExpandRows<BE, Rg>,
+        R: GGSWToBackendMut<BE, Rg> + GGSWInfos,
     {
         {
             let rows = res.dnum().as_usize();

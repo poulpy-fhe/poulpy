@@ -133,16 +133,16 @@ where
     }
 }
 
-fn assert_degree<F: DFTFamily, R: OracleRing>(module: &Module<Oracle<F, R>>, n: usize) {
+fn assert_degree<F: DFTFamily>(module: &Module<Oracle<F>>, n: usize) {
     assert!(n.is_power_of_two() && n <= module.n(), "noise degree outside module");
 }
 
 macro_rules! impl_independent_sampling {
     ($($family:ty),+) => {$(
-        unsafe impl<R: OracleRing> SamplingImpl for Oracle<$family, R> {
+        unsafe impl<Rg: OracleRing> SamplingImpl<Rg> for Oracle<$family> {
             fn scalar_znx_fill_distribution(
                 _module: &Module<Self>,
-                res: &mut ScalarZnxBackendMut<'_, Self>,
+                res: &mut ScalarZnxBackendMut<'_, Self, Rg>,
                 res_col: usize,
                 dist: Distribution,
                 seed: [u8; 32],
@@ -165,7 +165,7 @@ macro_rules! impl_independent_sampling {
                 module: &Module<Self>,
                 base2k: usize,
                 k: usize,
-                res: &mut VecZnxBackendMut<'_, Self>,
+                res: &mut VecZnxBackendMut<'_, Self, Rg>,
                 res_col: usize,
                 noise: Noise,
                 seed: [u8; 32],
@@ -178,7 +178,7 @@ macro_rules! impl_independent_sampling {
                 module: &Module<Self>,
                 base2k: usize,
                 k: usize,
-                res: &mut VecZnxBigBackendMut<'_, Self>,
+                res: &mut VecZnxBigBackendMut<'_, Self, Rg>,
                 res_col: usize,
                 noise: Noise,
                 seed: [u8; 32],
@@ -194,10 +194,10 @@ impl_independent_sampling!(Fft64, Ntt4x30);
 
 // Safety: copies distribution-correct draws of the backend under test and
 // mutates only the selected column and precision, after the same checks.
-unsafe impl<F: DFTFamily, R: OracleRing> SamplingImpl for Oracle<ControlledSampling<F>, R> {
+unsafe impl<F: DFTFamily, Rg: OracleRing> SamplingImpl<Rg> for Oracle<ControlledSampling<F>> {
     fn scalar_znx_fill_distribution(
         _module: &Module<Self>,
-        res: &mut ScalarZnxBackendMut<'_, Self>,
+        res: &mut ScalarZnxBackendMut<'_, Self, Rg>,
         res_col: usize,
         dist: Distribution,
         seed: [u8; 32],
@@ -210,7 +210,7 @@ unsafe impl<F: DFTFamily, R: OracleRing> SamplingImpl for Oracle<ControlledSampl
         module: &Module<Self>,
         base2k: usize,
         k: usize,
-        res: &mut VecZnxBackendMut<'_, Self>,
+        res: &mut VecZnxBackendMut<'_, Self, Rg>,
         res_col: usize,
         noise: Noise,
         seed: [u8; 32],
@@ -225,7 +225,7 @@ unsafe impl<F: DFTFamily, R: OracleRing> SamplingImpl for Oracle<ControlledSampl
         module: &Module<Self>,
         base2k: usize,
         k: usize,
-        res: &mut VecZnxBigBackendMut<'_, Self>,
+        res: &mut VecZnxBigBackendMut<'_, Self, Rg>,
         res_col: usize,
         noise: Noise,
         seed: [u8; 32],
@@ -241,6 +241,7 @@ unsafe impl<F: DFTFamily, R: OracleRing> SamplingImpl for Oracle<ControlledSampl
 mod tests {
     use super::*;
     use crate::{FFT64Oracle, NTT4x30Oracle};
+    use poulpy_hal::layouts::Standard;
 
     #[test]
     fn independent_gaussian_matches_discrete_pmf() {
@@ -268,11 +269,11 @@ mod tests {
 
     #[test]
     fn fft_full_width_noise_reaches_unit_grid() {
-        poulpy_core::test_suite::sampling::test_full_width_noise(&Module::<FFT64Oracle>::new(256));
+        poulpy_core::test_suite::sampling::test_full_width_noise::<_, Standard>(&Module::<FFT64Oracle>::new(256));
     }
 
     #[test]
     fn ntt_full_width_noise_reaches_unit_grid() {
-        poulpy_core::test_suite::sampling::test_full_width_noise(&Module::<NTT4x30Oracle>::new(256));
+        poulpy_core::test_suite::sampling::test_full_width_noise::<_, Standard>(&Module::<NTT4x30Oracle>::new(256));
     }
 }

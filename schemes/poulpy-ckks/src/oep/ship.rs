@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::{Base2K, GGLWEInfos, GLWEToBackendRef, LWEInfos};
 use poulpy_hal::{
-    layouts::{Backend, CnvPVecL, Module, ScratchArena, Standard},
+    layouts::{Backend, CnvPVecL, Module, ScratchArena},
     oep::HalVecZnxDftImpl,
 };
 
@@ -31,7 +31,7 @@ use crate::{
 /// [`ckks_ship_coeff_encodings_host`](crate::reference::encoding::ckks_ship_coeff_encodings_host) on every backend and
 /// platform, report for the `_tmp_bytes` query a bound that covers the body, and refuse as documented. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait CKKSShipCoeffEncodingImpl: Backend<Ring = Standard> {
+pub unsafe trait CKKSShipCoeffEncodingImpl: Backend {
     /// Scratch bound of [`Self::ckks_ship_coeff_encodings`], in backend-native arena bytes. That method refuses a
     /// smaller arena with `CKKSError::Internal` before any work.
     fn ckks_ship_coeff_encodings_tmp_bytes<F>(
@@ -71,7 +71,7 @@ pub unsafe trait CKKSShipCoeffEncodingImpl: Backend<Ring = Standard> {
 /// Implementations reproduce the bodies their methods document bit for bit, report for each
 /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait CKKSShipImpl: Backend<Ring = Standard> {
+pub unsafe trait CKKSShipImpl: Backend {
     /// Returns
     /// [`ckks_ship_bootstrap_tmp_bytes_reference`](crate::reference::ship::CKKSShipReference::ckks_ship_bootstrap_tmp_bytes_reference)
     /// or a smaller bound covering the body, refusing as it does. Scratch bound of [`Self::ckks_ship_bootstrap_into`]
@@ -161,7 +161,7 @@ pub unsafe trait CKKSShipImpl: Backend<Ring = Standard> {
         Self: HalVecZnxDftImpl;
 }
 
-/// Selects the reference implementation of `CKKSShipImpl` for the standard backend `$be`.
+/// Selects the reference implementation of `CKKSShipImpl` for `$be`, on the standard ring.
 #[macro_export]
 macro_rules! impl_ckks_ship_reference_full {
     ($be:ty) => {

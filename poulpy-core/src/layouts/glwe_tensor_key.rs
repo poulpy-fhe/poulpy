@@ -1,5 +1,5 @@
 use poulpy_hal::AlignedBuf;
-use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, ReaderFrom, WriterTo};
+use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, ReaderFrom, Ring, Standard, WriterTo};
 
 use crate::layouts::{
     Base2K, Degree, Dnum, GGLWE, GGLWEAtBackendMut, GGLWEAtBackendRef, GGLWEAtViewMut, GGLWEAtViewRef, GGLWEBackendMut,
@@ -53,9 +53,9 @@ impl From<GGLWELayout> for GLWETensorKeyLayout {
 /// `D: Data` is the backing storage type (e.g. `AlignedBuf`, `&[u8]`,
 /// `&mut [u8]`).
 #[derive(PartialEq, Eq, Clone)]
-pub struct GLWETensorKey<D: Data, W: ZnxWord>(pub(crate) GGLWE<D, W>);
+pub struct GLWETensorKey<D: Data, W: ZnxWord, Rg: Ring = Standard>(pub(crate) GGLWE<D, W, Rg>);
 
-impl<D: Data, W: ZnxWord> LWEInfos for GLWETensorKey<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> LWEInfos for GLWETensorKey<D, W, Rg> {
     fn noise(&self) -> Option<crate::ComponentNoise> {
         self.0.noise()
     }
@@ -77,13 +77,13 @@ impl<D: Data, W: ZnxWord> LWEInfos for GLWETensorKey<D, W> {
     }
 }
 
-impl<D: Data, W: ZnxWord> GLWEInfos for GLWETensorKey<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> GLWEInfos for GLWETensorKey<D, W, Rg> {
     fn rank(&self) -> Rank {
         self.0.rank_out()
     }
 }
 
-impl<D: Data, W: ZnxWord> GGLWEInfos for GLWETensorKey<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> GGLWEInfos for GLWETensorKey<D, W, Rg> {
     fn k_aux(&self) -> TorusPrecision {
         self.0.k_aux()
     }
@@ -162,25 +162,25 @@ impl GGLWEInfos for GLWETensorKeyLayout {
     }
 }
 
-impl<BE: Backend> GGLWEAtBackendRef<BE> for GLWETensorKey<BE::OwnedBuf, BE::ZnxWord> {
-    fn at_backend(&self, row: usize, col: usize) -> GLWE<BE::BufRef<'_>, BE::ZnxWord> {
-        <GGLWE<BE::OwnedBuf, BE::ZnxWord> as GGLWEAtBackendRef<BE>>::at_backend(&self.0, row, col)
+impl<BE: Backend, Rg: Ring> GGLWEAtBackendRef<BE, Rg> for GLWETensorKey<BE::OwnedBuf, BE::ZnxWord, Rg> {
+    fn at_backend(&self, row: usize, col: usize) -> GLWE<BE::BufRef<'_>, BE::ZnxWord, Rg> {
+        <GGLWE<BE::OwnedBuf, BE::ZnxWord, Rg> as GGLWEAtBackendRef<BE, Rg>>::at_backend(&self.0, row, col)
     }
 }
 
-impl<BE: Backend> GGLWEAtBackendMut<BE> for GLWETensorKey<BE::OwnedBuf, BE::ZnxWord> {
-    fn at_backend_mut(&mut self, row: usize, col: usize) -> GLWE<BE::BufMut<'_>, BE::ZnxWord> {
-        <GGLWE<BE::OwnedBuf, BE::ZnxWord> as GGLWEAtBackendMut<BE>>::at_backend_mut(&mut self.0, row, col)
+impl<BE: Backend, Rg: Ring> GGLWEAtBackendMut<BE, Rg> for GLWETensorKey<BE::OwnedBuf, BE::ZnxWord, Rg> {
+    fn at_backend_mut(&mut self, row: usize, col: usize) -> GLWE<BE::BufMut<'_>, BE::ZnxWord, Rg> {
+        <GGLWE<BE::OwnedBuf, BE::ZnxWord, Rg> as GGLWEAtBackendMut<BE, Rg>>::at_backend_mut(&mut self.0, row, col)
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> fmt::Debug for GLWETensorKey<D, W> {
+impl<D: HostDataRef, W: ZnxWord, Rg: Ring> fmt::Debug for GLWETensorKey<D, W, Rg> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{self}")
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> fmt::Display for GLWETensorKey<D, W> {
+impl<D: HostDataRef, W: ZnxWord, Rg: Ring> fmt::Display for GLWETensorKey<D, W, Rg> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "(GLWETensorKey)",)?;
         write!(f, "{}", self.0)?;
@@ -192,7 +192,7 @@ impl<D: HostDataRef, W: ZnxWord> fmt::Display for GLWETensorKey<D, W> {
     dead_code,
     reason = "host-owned constructors are kept for serialization and host-only staging"
 )]
-impl<W: ZnxWord> GLWETensorKey<AlignedBuf, W> {
+impl<W: ZnxWord, Rg: Ring> GLWETensorKey<AlignedBuf, W, Rg> {
     /// Allocates a new [`GLWETensorKey`] with the given parameters.
     pub(crate) fn alloc_from_infos<A>(infos: &A) -> Self
     where
@@ -239,24 +239,24 @@ impl<W: ZnxWord> GLWETensorKey<AlignedBuf, W> {
     /// Returns the byte count required for a [`GLWETensorKey`] with the given parameters.
     pub fn bytes_of(n: Degree, base2k: Base2K, dnum: Dnum, k_digit: TorusPrecision, k_aux: TorusPrecision, rank: Rank) -> usize {
         let pairs: u32 = (((rank.0 + 1) * rank.0) >> 1).max(1);
-        GGLWE::<AlignedBuf, W>::bytes_of(n, base2k, dnum, k_digit, k_aux, Rank(pairs), rank)
+        GGLWE::<AlignedBuf, W, Rg>::bytes_of(n, base2k, dnum, k_digit, k_aux, Rank(pairs), rank)
     }
 }
 
-impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GLWETensorKey<D, W> {
+impl<D: HostDataMut, W: ZnxWord, Rg: Ring> ReaderFrom for GLWETensorKey<D, W, Rg> {
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
         self.0.read_from(reader)?;
         Ok(())
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> WriterTo for GLWETensorKey<D, W> {
+impl<D: HostDataRef, W: ZnxWord, Rg: Ring> WriterTo for GLWETensorKey<D, W, Rg> {
     fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
         self.0.write_to(writer)?;
         Ok(())
     }
 }
 
-impl_gglwe_to_backend_for_field!(GLWETensorKey<D, BE::ZnxWord>, 0, GGLWE<D, BE::ZnxWord>);
+impl_gglwe_to_backend_for_field!(GLWETensorKey<D, BE::ZnxWord, Rg>, 0, GGLWE<D, BE::ZnxWord, Rg>);
 
-impl_gglwe_at_view_for_field!(GLWETensorKey<BE::OwnedBuf, BE::ZnxWord>; 0);
+impl_gglwe_at_view_for_field!(GLWETensorKey<BE::OwnedBuf, BE::ZnxWord, Rg>; 0);

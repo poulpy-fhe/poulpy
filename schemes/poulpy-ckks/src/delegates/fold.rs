@@ -1,11 +1,11 @@
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::{Degree, GGLWEInfos, GLWELayout, GetAutomorphismKey, prepared::GGLWEPreparedToBackendRef};
-use poulpy_hal::layouts::{Backend, Module, Ring, ScratchArena};
+use poulpy_hal::layouts::{Backend, Module, Ring, ScratchArena, Standard};
 
 use crate::{
     CKKSCtBounds,
     api::{CKKSFoldLayoutOps, CKKSFoldOps},
-    layouts::{CKKSCiphertextOwned, CKKSFoldKeysLayout, CKKSRingCiphertext},
+    layouts::{CKKSCiphertextOwned, CKKSFoldKeysLayout},
     oep::{CKKSFoldImpl, CKKSFoldLayoutImpl},
 };
 
@@ -27,7 +27,7 @@ impl<BE: Backend + CKKSFoldLayoutImpl> CKKSFoldLayoutOps<BE> for Module<BE> {
 }
 
 impl<BE: Backend + CKKSFoldImpl<R>, R: Ring> CKKSFoldOps<BE, R> for Module<BE> {
-    fn ckks_fold_count(&self, degree: Degree, ins: &[CKKSRingCiphertext<BE, R>]) -> usize {
+    fn ckks_fold_count(&self, degree: Degree, ins: &[CKKSCiphertextOwned<BE, R>]) -> usize {
         BE::ckks_fold_count(self, degree, ins)
     }
 
@@ -40,28 +40,28 @@ impl<BE: Backend + CKKSFoldImpl<R>, R: Ring> CKKSFoldOps<BE, R> for Module<BE> {
 
     fn ckks_fold<S>(
         &self,
-        folded: &mut [CKKSCiphertextOwned<BE>],
-        ins: &[CKKSRingCiphertext<BE, R>],
+        folded: &mut [CKKSCiphertextOwned<BE, Standard>],
+        ins: &[CKKSCiphertextOwned<BE, R>],
         inbound: Option<&S>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        S: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
+        S: GGLWEPreparedToBackendRef<BE, Standard> + GGLWEInfos,
     {
         BE::ckks_fold(self, folded, ins, inbound, scratch)
     }
 
     fn ckks_unfold<S, H>(
         &self,
-        outs: &mut [CKKSRingCiphertext<BE, R>],
-        folded: &mut [CKKSCiphertextOwned<BE>],
+        outs: &mut [CKKSCiphertextOwned<BE, R>],
+        folded: &mut [CKKSCiphertextOwned<BE, Standard>],
         automorphisms: Option<&H>,
         outbound: Option<&S>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        S: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-        H: GetAutomorphismKey<BE>,
+        S: GGLWEPreparedToBackendRef<BE, Standard> + GGLWEInfos,
+        H: GetAutomorphismKey<BE, Standard>,
     {
         BE::ckks_unfold(self, outs, folded, automorphisms, outbound, scratch)
     }

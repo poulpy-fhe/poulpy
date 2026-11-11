@@ -1,7 +1,9 @@
 use std::marker::PhantomData;
 
 use crate::AlignedBuf;
-use crate::layouts::{Backend, Data, DataView, DataViewMut, DftWord, HostDataRef, PrepareHint, VecZnxInfos, ZnxInfos, ZnxView};
+use crate::layouts::{
+    Backend, Data, DataView, DataViewMut, DftWord, HostDataRef, PrepareHint, Ring, Standard, VecZnxInfos, ZnxInfos, ZnxView,
+};
 
 #[repr(C)]
 #[derive(PartialEq, Eq, Clone, Copy, Hash, Debug, Default)]
@@ -44,29 +46,29 @@ impl CnvPVecShape {
 /// A prepared value in the [layouts value model](crate::layouts#value-model),
 /// opaque in the representation the [`PrepareHint`] chosen at allocation
 /// selected (see [`CnvPVecShape::hint`]).
-pub struct CnvPVecR<D: Data, W: DftWord, B: Backend<DftWord = W>> {
+pub struct CnvPVecR<D: Data, W: DftWord, B: Backend<DftWord = W>, Rg: Ring = Standard> {
     data: D,
     shape: CnvPVecShape,
-    _phantom: PhantomData<(W, B)>,
+    _phantom: PhantomData<(W, B, Rg)>,
 }
 
 // Same shape, same buffer bytes, as for `VmpPMat`.
-impl<D: Data, W: DftWord, B: Backend<DftWord = W>> PartialEq for CnvPVecR<D, W, B> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>, Rg: Ring> PartialEq for CnvPVecR<D, W, B, Rg> {
     fn eq(&self, other: &Self) -> bool {
         self.shape == other.shape && self.data == other.data
     }
 }
 
-impl<D: Data, W: DftWord, B: Backend<DftWord = W>> Eq for CnvPVecR<D, W, B> {}
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>, Rg: Ring> Eq for CnvPVecR<D, W, B, Rg> {}
 
 /// The shape only: the representation is opaque.
-impl<D: Data, W: DftWord, B: Backend<DftWord = W>> std::fmt::Debug for CnvPVecR<D, W, B> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>, Rg: Ring> std::fmt::Debug for CnvPVecR<D, W, B, Rg> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("CnvPVecR").field("shape", &self.shape).finish()
     }
 }
 
-impl<D: Data, W: DftWord, B: Backend<DftWord = W>> ZnxInfos for CnvPVecR<D, W, B> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>, Rg: Ring> ZnxInfos for CnvPVecR<D, W, B, Rg> {
     fn n(&self) -> usize {
         self.shape.n()
     }
@@ -80,30 +82,30 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> ZnxInfos for CnvPVecR<D, W, B
     }
 }
 
-impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VecZnxInfos for CnvPVecR<D, W, B> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>, Rg: Ring> VecZnxInfos for CnvPVecR<D, W, B, Rg> {
     fn cols(&self) -> usize {
         self.shape.cols()
     }
 }
 
-impl<D: Data, W: DftWord, B: Backend<DftWord = W>> DataView for CnvPVecR<D, W, B> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>, Rg: Ring> DataView for CnvPVecR<D, W, B, Rg> {
     type D = D;
     fn data(&self) -> &Self::D {
         &self.data
     }
 }
 
-impl<D: Data, W: DftWord, B: Backend<DftWord = W>> DataViewMut for CnvPVecR<D, W, B> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>, Rg: Ring> DataViewMut for CnvPVecR<D, W, B, Rg> {
     fn data_mut(&mut self) -> &mut Self::D {
         &mut self.data
     }
 }
 
-impl<D: HostDataRef, W: DftWord, B: Backend<DftWord = W>> ZnxView for CnvPVecR<D, W, B> {
+impl<D: HostDataRef, W: DftWord, B: Backend<DftWord = W>, Rg: Ring> ZnxView for CnvPVecR<D, W, B, Rg> {
     type Scalar = W;
 }
 
-impl<D: Data, W: DftWord, B: Backend<DftWord = W>> CnvPVecR<D, W, B> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>, Rg: Ring> CnvPVecR<D, W, B, Rg> {
     pub fn shape(&self) -> CnvPVecShape {
         self.shape
     }
@@ -125,9 +127,9 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> CnvPVecR<D, W, B> {
     }
 }
 
-impl<D: Data, W: DftWord, B: Backend<DftWord = W>> CnvPVecR<D, W, B> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>, Rg: Ring> CnvPVecR<D, W, B, Rg> {
     /// Allocates a zero-initialized backend-owned `CnvPVecR`.
-    pub fn alloc(n: usize, cols: usize, size: usize, hint: PrepareHint) -> CnvPVecR<B::OwnedBuf, W, B>
+    pub fn alloc(n: usize, cols: usize, size: usize, hint: PrepareHint) -> CnvPVecR<B::OwnedBuf, W, B, Rg>
     where
         B: Backend<OwnedBuf = D>,
     {
@@ -152,7 +154,7 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> CnvPVecR<D, W, B> {
         size: usize,
         hint: PrepareHint,
         bytes: impl Into<AlignedBuf>,
-    ) -> CnvPVecR<B::OwnedBuf, W, B>
+    ) -> CnvPVecR<B::OwnedBuf, W, B, Rg>
     where
         B: Backend<OwnedBuf = D>,
     {
@@ -167,7 +169,7 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> CnvPVecR<D, W, B> {
     }
 }
 
-impl<D: Data, W: DftWord, B: Backend<DftWord = W>> CnvPVecR<D, W, B> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>, Rg: Ring> CnvPVecR<D, W, B, Rg> {
     pub fn from_data(data: D, n: usize, cols: usize, size: usize, hint: PrepareHint) -> Self {
         Self {
             data,
@@ -187,29 +189,29 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> CnvPVecR<D, W, B> {
 /// A prepared value in the [layouts value model](crate::layouts#value-model),
 /// opaque in the representation the [`PrepareHint`] chosen at allocation
 /// selected (see [`CnvPVecShape::hint`]).
-pub struct CnvPVecL<D: Data, W: DftWord, B: Backend<DftWord = W>> {
+pub struct CnvPVecL<D: Data, W: DftWord, B: Backend<DftWord = W>, Rg: Ring = Standard> {
     data: D,
     shape: CnvPVecShape,
-    _phantom: PhantomData<(W, B)>,
+    _phantom: PhantomData<(W, B, Rg)>,
 }
 
 // Same shape, same buffer bytes, as for `VmpPMat`.
-impl<D: Data, W: DftWord, B: Backend<DftWord = W>> PartialEq for CnvPVecL<D, W, B> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>, Rg: Ring> PartialEq for CnvPVecL<D, W, B, Rg> {
     fn eq(&self, other: &Self) -> bool {
         self.shape == other.shape && self.data == other.data
     }
 }
 
-impl<D: Data, W: DftWord, B: Backend<DftWord = W>> Eq for CnvPVecL<D, W, B> {}
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>, Rg: Ring> Eq for CnvPVecL<D, W, B, Rg> {}
 
 /// The shape only: the representation is opaque.
-impl<D: Data, W: DftWord, B: Backend<DftWord = W>> std::fmt::Debug for CnvPVecL<D, W, B> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>, Rg: Ring> std::fmt::Debug for CnvPVecL<D, W, B, Rg> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("CnvPVecL").field("shape", &self.shape).finish()
     }
 }
 
-impl<D: Data, W: DftWord, B: Backend<DftWord = W>> ZnxInfos for CnvPVecL<D, W, B> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>, Rg: Ring> ZnxInfos for CnvPVecL<D, W, B, Rg> {
     fn n(&self) -> usize {
         self.shape.n()
     }
@@ -223,30 +225,30 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> ZnxInfos for CnvPVecL<D, W, B
     }
 }
 
-impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VecZnxInfos for CnvPVecL<D, W, B> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>, Rg: Ring> VecZnxInfos for CnvPVecL<D, W, B, Rg> {
     fn cols(&self) -> usize {
         self.shape.cols()
     }
 }
 
-impl<D: Data, W: DftWord, B: Backend<DftWord = W>> DataView for CnvPVecL<D, W, B> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>, Rg: Ring> DataView for CnvPVecL<D, W, B, Rg> {
     type D = D;
     fn data(&self) -> &Self::D {
         &self.data
     }
 }
 
-impl<D: Data, W: DftWord, B: Backend<DftWord = W>> DataViewMut for CnvPVecL<D, W, B> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>, Rg: Ring> DataViewMut for CnvPVecL<D, W, B, Rg> {
     fn data_mut(&mut self) -> &mut Self::D {
         &mut self.data
     }
 }
 
-impl<D: HostDataRef, W: DftWord, B: Backend<DftWord = W>> ZnxView for CnvPVecL<D, W, B> {
+impl<D: HostDataRef, W: DftWord, B: Backend<DftWord = W>, Rg: Ring> ZnxView for CnvPVecL<D, W, B, Rg> {
     type Scalar = W;
 }
 
-impl<D: Data, W: DftWord, B: Backend<DftWord = W>> CnvPVecL<D, W, B> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>, Rg: Ring> CnvPVecL<D, W, B, Rg> {
     pub fn shape(&self) -> CnvPVecShape {
         self.shape
     }
@@ -268,9 +270,9 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> CnvPVecL<D, W, B> {
     }
 }
 
-impl<D: Data, W: DftWord, B: Backend<DftWord = W>> CnvPVecL<D, W, B> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>, Rg: Ring> CnvPVecL<D, W, B, Rg> {
     /// Allocates a zero-initialized backend-owned `CnvPVecL`.
-    pub fn alloc(n: usize, cols: usize, size: usize, hint: PrepareHint) -> CnvPVecL<B::OwnedBuf, W, B>
+    pub fn alloc(n: usize, cols: usize, size: usize, hint: PrepareHint) -> CnvPVecL<B::OwnedBuf, W, B, Rg>
     where
         B: Backend<OwnedBuf = D>,
     {
@@ -295,7 +297,7 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> CnvPVecL<D, W, B> {
         size: usize,
         hint: PrepareHint,
         bytes: impl Into<AlignedBuf>,
-    ) -> CnvPVecL<B::OwnedBuf, W, B>
+    ) -> CnvPVecL<B::OwnedBuf, W, B, Rg>
     where
         B: Backend<OwnedBuf = D>,
     {
@@ -310,7 +312,7 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> CnvPVecL<D, W, B> {
     }
 }
 
-impl<D: Data, W: DftWord, B: Backend<DftWord = W>> CnvPVecL<D, W, B> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>, Rg: Ring> CnvPVecL<D, W, B, Rg> {
     pub fn from_data(data: D, n: usize, cols: usize, size: usize, hint: PrepareHint) -> Self {
         Self {
             data,
@@ -325,13 +327,13 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> CnvPVecL<D, W, B> {
 /// Consumed by [`CnvOps::cnv_apply_dft_sum`](crate::api::CnvOps::cnv_apply_dft_sum),
 /// which overwrites the destination column with the sum of the bivariate
 /// convolutions of all terms.
-pub struct CnvDftAccTerm<'a, BE: Backend + 'a> {
+pub struct CnvDftAccTerm<'a, BE: Backend + 'a, Rg: Ring = Standard> {
     /// Prepared left operand.
-    pub a: CnvPVecLBackendRef<'a, BE>,
+    pub a: CnvPVecLBackendRef<'a, BE, Rg>,
     /// Column of `a` to convolve.
     pub a_col: usize,
     /// Prepared right operand.
-    pub b: CnvPVecRBackendRef<'a, BE>,
+    pub b: CnvPVecRBackendRef<'a, BE, Rg>,
     /// Column of `b` to convolve.
     pub b_col: usize,
     /// Galois element applied to `b`, odd; 1 for `b` itself.
@@ -347,11 +349,11 @@ pub fn check_galois(b_galois: i64) {
 /// Asserts that one product is in the domain of `cnv_apply_dft` for a destination of degree `n`: `a` of degree `n`,
 /// both columns in range, `b` of degree `n` or of a power-of-two degree dividing it and at least `BE::MIN_DEGREE`,
 /// and an odd `b_galois`.
-pub fn check_cnv_dft_term<BE: Backend>(
+pub fn check_cnv_dft_term<BE: Backend, Rg: Ring>(
     n: usize,
-    a: &CnvPVecLBackendRef<'_, BE>,
+    a: &CnvPVecLBackendRef<'_, BE, Rg>,
     a_col: usize,
-    b: &CnvPVecRBackendRef<'_, BE>,
+    b: &CnvPVecRBackendRef<'_, BE, Rg>,
     b_col: usize,
     b_galois: i64,
 ) {
@@ -367,29 +369,29 @@ pub fn check_cnv_dft_term<BE: Backend>(
 }
 
 /// Asserts [`check_cnv_dft_term`] on every term, so that a sum refuses before its first write.
-pub fn check_cnv_dft_terms<BE: Backend>(n: usize, terms: &[CnvDftAccTerm<'_, BE>]) {
+pub fn check_cnv_dft_terms<BE: Backend, Rg: Ring>(n: usize, terms: &[CnvDftAccTerm<'_, BE, Rg>]) {
     for term in terms {
-        check_cnv_dft_term::<BE>(n, &term.a, term.a_col, &term.b, term.b_col, term.b_galois);
+        check_cnv_dft_term::<BE, Rg>(n, &term.a, term.a_col, &term.b, term.b_col, term.b_galois);
     }
 }
 
 /// Borrow a `CnvPVecR` as a shared reference view.
 /// Owned `CnvPVecR` backed by a backend-owned buffer.
-pub type CnvPVecROwned<B> = CnvPVecR<<B as Backend>::OwnedBuf, <B as Backend>::DftWord, B>;
+pub type CnvPVecROwned<B, Rg = Standard> = CnvPVecR<<B as Backend>::OwnedBuf, <B as Backend>::DftWord, B, Rg>;
 /// Owned `CnvPVecL` backed by a backend-owned buffer.
-pub type CnvPVecLOwned<B> = CnvPVecL<<B as Backend>::OwnedBuf, <B as Backend>::DftWord, B>;
-pub type CnvPVecRBackendRef<'a, B> = CnvPVecR<<B as Backend>::BufRef<'a>, <B as Backend>::DftWord, B>;
-pub type CnvPVecRBackendMut<'a, B> = CnvPVecR<<B as Backend>::BufMut<'a>, <B as Backend>::DftWord, B>;
-pub type CnvPVecLBackendRef<'a, B> = CnvPVecL<<B as Backend>::BufRef<'a>, <B as Backend>::DftWord, B>;
-pub type CnvPVecLBackendMut<'a, B> = CnvPVecL<<B as Backend>::BufMut<'a>, <B as Backend>::DftWord, B>;
+pub type CnvPVecLOwned<B, Rg = Standard> = CnvPVecL<<B as Backend>::OwnedBuf, <B as Backend>::DftWord, B, Rg>;
+pub type CnvPVecRBackendRef<'a, B, Rg = Standard> = CnvPVecR<<B as Backend>::BufRef<'a>, <B as Backend>::DftWord, B, Rg>;
+pub type CnvPVecRBackendMut<'a, B, Rg = Standard> = CnvPVecR<<B as Backend>::BufMut<'a>, <B as Backend>::DftWord, B, Rg>;
+pub type CnvPVecLBackendRef<'a, B, Rg = Standard> = CnvPVecL<<B as Backend>::BufRef<'a>, <B as Backend>::DftWord, B, Rg>;
+pub type CnvPVecLBackendMut<'a, B, Rg = Standard> = CnvPVecL<<B as Backend>::BufMut<'a>, <B as Backend>::DftWord, B, Rg>;
 
 /// Borrow a backend-owned `CnvPVecR` using the backend's native view type.
-pub trait CnvPVecRToBackendRef<BE: Backend> {
-    fn to_backend_ref(&self) -> CnvPVecRBackendRef<'_, BE>;
+pub trait CnvPVecRToBackendRef<BE: Backend, Rg: Ring = Standard> {
+    fn to_backend_ref(&self) -> CnvPVecRBackendRef<'_, BE, Rg>;
 }
 
-impl<BE: Backend> CnvPVecRToBackendRef<BE> for CnvPVecR<BE::OwnedBuf, BE::DftWord, BE> {
-    fn to_backend_ref(&self) -> CnvPVecRBackendRef<'_, BE> {
+impl<BE: Backend, Rg: Ring> CnvPVecRToBackendRef<BE, Rg> for CnvPVecR<BE::OwnedBuf, BE::DftWord, BE, Rg> {
+    fn to_backend_ref(&self) -> CnvPVecRBackendRef<'_, BE, Rg> {
         CnvPVecR {
             data: BE::view(&self.data),
             shape: self.shape,
@@ -399,12 +401,12 @@ impl<BE: Backend> CnvPVecRToBackendRef<BE> for CnvPVecR<BE::OwnedBuf, BE::DftWor
 }
 
 /// Reborrow an already backend-borrowed `CnvPVecR` as a shared backend-native view.
-pub trait CnvPVecRReborrowBackendRef<BE: Backend> {
-    fn reborrow_backend_ref(&self) -> CnvPVecRBackendRef<'_, BE>;
+pub trait CnvPVecRReborrowBackendRef<BE: Backend, Rg: Ring = Standard> {
+    fn reborrow_backend_ref(&self) -> CnvPVecRBackendRef<'_, BE, Rg>;
 }
 
-impl<BE: Backend> CnvPVecRReborrowBackendRef<BE> for CnvPVecR<BE::BufMut<'_>, BE::DftWord, BE> {
-    fn reborrow_backend_ref(&self) -> CnvPVecRBackendRef<'_, BE> {
+impl<BE: Backend, Rg: Ring> CnvPVecRReborrowBackendRef<BE, Rg> for CnvPVecR<BE::BufMut<'_>, BE::DftWord, BE, Rg> {
+    fn reborrow_backend_ref(&self) -> CnvPVecRBackendRef<'_, BE, Rg> {
         CnvPVecR {
             data: BE::view_ref_mut(&self.data),
             shape: self.shape,
@@ -414,12 +416,12 @@ impl<BE: Backend> CnvPVecRReborrowBackendRef<BE> for CnvPVecR<BE::BufMut<'_>, BE
 }
 
 /// Mutably borrow a backend-owned `CnvPVecR` using the backend's native view type.
-pub trait CnvPVecRToBackendMut<BE: Backend> {
-    fn to_backend_mut(&mut self) -> CnvPVecRBackendMut<'_, BE>;
+pub trait CnvPVecRToBackendMut<BE: Backend, Rg: Ring = Standard> {
+    fn to_backend_mut(&mut self) -> CnvPVecRBackendMut<'_, BE, Rg>;
 }
 
-impl<BE: Backend> CnvPVecRToBackendMut<BE> for CnvPVecR<BE::OwnedBuf, BE::DftWord, BE> {
-    fn to_backend_mut(&mut self) -> CnvPVecRBackendMut<'_, BE> {
+impl<BE: Backend, Rg: Ring> CnvPVecRToBackendMut<BE, Rg> for CnvPVecR<BE::OwnedBuf, BE::DftWord, BE, Rg> {
+    fn to_backend_mut(&mut self) -> CnvPVecRBackendMut<'_, BE, Rg> {
         CnvPVecR {
             data: BE::view_mut(&mut self.data),
             shape: self.shape,
@@ -429,12 +431,12 @@ impl<BE: Backend> CnvPVecRToBackendMut<BE> for CnvPVecR<BE::OwnedBuf, BE::DftWor
 }
 
 /// Reborrow an already backend-borrowed `CnvPVecR` as a mutable backend-native view.
-pub trait CnvPVecRReborrowBackendMut<BE: Backend> {
-    fn reborrow_backend_mut(&mut self) -> CnvPVecRBackendMut<'_, BE>;
+pub trait CnvPVecRReborrowBackendMut<BE: Backend, Rg: Ring = Standard> {
+    fn reborrow_backend_mut(&mut self) -> CnvPVecRBackendMut<'_, BE, Rg>;
 }
 
-impl<BE: Backend> CnvPVecRReborrowBackendMut<BE> for CnvPVecR<BE::BufMut<'_>, BE::DftWord, BE> {
-    fn reborrow_backend_mut(&mut self) -> CnvPVecRBackendMut<'_, BE> {
+impl<BE: Backend, Rg: Ring> CnvPVecRReborrowBackendMut<BE, Rg> for CnvPVecR<BE::BufMut<'_>, BE::DftWord, BE, Rg> {
+    fn reborrow_backend_mut(&mut self) -> CnvPVecRBackendMut<'_, BE, Rg> {
         CnvPVecR {
             data: BE::view_mut_ref(&mut self.data),
             shape: self.shape,
@@ -444,12 +446,12 @@ impl<BE: Backend> CnvPVecRReborrowBackendMut<BE> for CnvPVecR<BE::BufMut<'_>, BE
 }
 
 /// Borrow a `CnvPVecL` as a shared reference view.
-pub trait CnvPVecLToBackendRef<BE: Backend> {
-    fn to_backend_ref(&self) -> CnvPVecLBackendRef<'_, BE>;
+pub trait CnvPVecLToBackendRef<BE: Backend, Rg: Ring = Standard> {
+    fn to_backend_ref(&self) -> CnvPVecLBackendRef<'_, BE, Rg>;
 }
 
-impl<BE: Backend> CnvPVecLToBackendRef<BE> for CnvPVecL<BE::OwnedBuf, BE::DftWord, BE> {
-    fn to_backend_ref(&self) -> CnvPVecLBackendRef<'_, BE> {
+impl<BE: Backend, Rg: Ring> CnvPVecLToBackendRef<BE, Rg> for CnvPVecL<BE::OwnedBuf, BE::DftWord, BE, Rg> {
+    fn to_backend_ref(&self) -> CnvPVecLBackendRef<'_, BE, Rg> {
         CnvPVecL {
             data: BE::view(&self.data),
             shape: self.shape,
@@ -459,12 +461,12 @@ impl<BE: Backend> CnvPVecLToBackendRef<BE> for CnvPVecL<BE::OwnedBuf, BE::DftWor
 }
 
 /// Reborrow an already backend-borrowed `CnvPVecL` as a shared backend-native view.
-pub trait CnvPVecLReborrowBackendRef<BE: Backend> {
-    fn reborrow_backend_ref(&self) -> CnvPVecLBackendRef<'_, BE>;
+pub trait CnvPVecLReborrowBackendRef<BE: Backend, Rg: Ring = Standard> {
+    fn reborrow_backend_ref(&self) -> CnvPVecLBackendRef<'_, BE, Rg>;
 }
 
-impl<BE: Backend> CnvPVecLReborrowBackendRef<BE> for CnvPVecL<BE::BufMut<'_>, BE::DftWord, BE> {
-    fn reborrow_backend_ref(&self) -> CnvPVecLBackendRef<'_, BE> {
+impl<BE: Backend, Rg: Ring> CnvPVecLReborrowBackendRef<BE, Rg> for CnvPVecL<BE::BufMut<'_>, BE::DftWord, BE, Rg> {
+    fn reborrow_backend_ref(&self) -> CnvPVecLBackendRef<'_, BE, Rg> {
         CnvPVecL {
             data: BE::view_ref_mut(&self.data),
             shape: self.shape,
@@ -474,12 +476,12 @@ impl<BE: Backend> CnvPVecLReborrowBackendRef<BE> for CnvPVecL<BE::BufMut<'_>, BE
 }
 
 /// Mutably borrow a backend-owned `CnvPVecL` using the backend's native view type.
-pub trait CnvPVecLToBackendMut<BE: Backend> {
-    fn to_backend_mut(&mut self) -> CnvPVecLBackendMut<'_, BE>;
+pub trait CnvPVecLToBackendMut<BE: Backend, Rg: Ring = Standard> {
+    fn to_backend_mut(&mut self) -> CnvPVecLBackendMut<'_, BE, Rg>;
 }
 
-impl<BE: Backend> CnvPVecLToBackendMut<BE> for CnvPVecL<BE::OwnedBuf, BE::DftWord, BE> {
-    fn to_backend_mut(&mut self) -> CnvPVecLBackendMut<'_, BE> {
+impl<BE: Backend, Rg: Ring> CnvPVecLToBackendMut<BE, Rg> for CnvPVecL<BE::OwnedBuf, BE::DftWord, BE, Rg> {
+    fn to_backend_mut(&mut self) -> CnvPVecLBackendMut<'_, BE, Rg> {
         CnvPVecL {
             data: BE::view_mut(&mut self.data),
             shape: self.shape,
@@ -489,12 +491,12 @@ impl<BE: Backend> CnvPVecLToBackendMut<BE> for CnvPVecL<BE::OwnedBuf, BE::DftWor
 }
 
 /// Reborrow an already backend-borrowed `CnvPVecL` as a mutable backend-native view.
-pub trait CnvPVecLReborrowBackendMut<BE: Backend> {
-    fn reborrow_backend_mut(&mut self) -> CnvPVecLBackendMut<'_, BE>;
+pub trait CnvPVecLReborrowBackendMut<BE: Backend, Rg: Ring = Standard> {
+    fn reborrow_backend_mut(&mut self) -> CnvPVecLBackendMut<'_, BE, Rg>;
 }
 
-impl<BE: Backend> CnvPVecLReborrowBackendMut<BE> for CnvPVecL<BE::BufMut<'_>, BE::DftWord, BE> {
-    fn reborrow_backend_mut(&mut self) -> CnvPVecLBackendMut<'_, BE> {
+impl<BE: Backend, Rg: Ring> CnvPVecLReborrowBackendMut<BE, Rg> for CnvPVecL<BE::BufMut<'_>, BE::DftWord, BE, Rg> {
+    fn reborrow_backend_mut(&mut self) -> CnvPVecLBackendMut<'_, BE, Rg> {
         CnvPVecL {
             data: BE::view_mut_ref(&mut self.data),
             shape: self.shape,
@@ -503,14 +505,14 @@ impl<BE: Backend> CnvPVecLReborrowBackendMut<BE> for CnvPVecL<BE::BufMut<'_>, BE
     }
 }
 
-impl<D: Data, W: DftWord, B: Backend<DftWord = W>> CnvPVecL<D, W, B> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>, Rg: Ring> CnvPVecL<D, W, B, Rg> {
     /// Zero-copy re-tag of this container to a layout-compatible backend `B2`.
     ///
     /// The buffer moves as-is; only the type tag changes. Requires the
     /// [`CnvPVecLayoutCompatible`](crate::layouts::CnvPVecLayoutCompatible) marker declared by the backend
     /// pair. `D` is kept, so for further backend-native use `B2`'s buffer
     /// types must match `D` (true for every backend in the workspace).
-    pub fn into_backend<B2>(self) -> CnvPVecL<D, W, B2>
+    pub fn into_backend<B2>(self) -> CnvPVecL<D, W, B2, Rg>
     where
         B2: Backend<DftWord = W>,
         B: crate::layouts::CnvPVecLayoutCompatible<B2>,
@@ -529,14 +531,14 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> CnvPVecL<D, W, B> {
     }
 }
 
-impl<D: Data, W: DftWord, B: Backend<DftWord = W>> CnvPVecR<D, W, B> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>, Rg: Ring> CnvPVecR<D, W, B, Rg> {
     /// Zero-copy re-tag of this container to a layout-compatible backend `B2`.
     ///
     /// The buffer moves as-is; only the type tag changes. Requires the
     /// [`CnvPVecLayoutCompatible`](crate::layouts::CnvPVecLayoutCompatible) marker declared by the backend
     /// pair. `D` is kept, so for further backend-native use `B2`'s buffer
     /// types must match `D` (true for every backend in the workspace).
-    pub fn into_backend<B2>(self) -> CnvPVecR<D, W, B2>
+    pub fn into_backend<B2>(self) -> CnvPVecR<D, W, B2, Rg>
     where
         B2: Backend<DftWord = W>,
         B: crate::layouts::CnvPVecLayoutCompatible<B2>,

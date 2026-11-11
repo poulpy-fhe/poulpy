@@ -12,7 +12,7 @@ use poulpy_hal::{
         VmpApplyDftToDftAddTmpBytes, VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPMatPrepare, VmpPMatPrepareTmpBytes,
     },
     layouts::{
-        MatZnx, MatZnxAtBackendMut, MatZnxToBackendRef, Module, PrepareHint, VecZnx, VecZnxDftToBackendMut,
+        MatZnx, MatZnxAtBackendMut, MatZnxToBackendRef, Module, PrepareHint, Ring, Standard, VecZnx, VecZnxDftToBackendMut,
         VecZnxDftToBackendRef, VecZnxToBackendMut, VecZnxToBackendRef, VmpPMatToBackendMut, VmpPMatToBackendRef, ZnxViewMut,
     },
     source::Source,
@@ -21,56 +21,56 @@ use poulpy_hal::{
 
 /// HAL operations needed to construct and canonically observe a digit product.
 /// This keeps the test independent of host pointers or transform representations.
-pub trait DigitParityModule<BE: ParityBackend>:
+pub trait DigitParityModule<BE: ParityBackend<Rg>, Rg: Ring = Standard>:
     VecZnxAlloc<BE>
     + VecZnxDftAlloc<BE>
-    + VecZnxDftApply<BE>
+    + VecZnxDftApply<BE, Rg>
     + VecZnxDftBytesOf
-    + VecZnxDftCopy<BE>
-    + VecZnxDftZero<BE>
-    + VecZnxIdftNormalize<BE>
+    + VecZnxDftCopy<BE, Rg>
+    + VecZnxDftZero<BE, Rg>
+    + VecZnxIdftNormalize<BE, Rg>
     + VecZnxIdftNormalizeTmpBytes
     + VmpPMatAlloc<BE>
-    + VmpPMatPrepare<BE>
+    + VmpPMatPrepare<BE, Rg>
     + VmpPMatPrepareTmpBytes
-    + VmpApplyDftToDft<BE>
-    + VmpApplyDftToDftAdd<BE>
+    + VmpApplyDftToDft<BE, Rg>
+    + VmpApplyDftToDftAdd<BE, Rg>
     + VmpApplyDftToDftTmpBytes
     + VmpApplyDftToDftAddTmpBytes
 {
 }
-impl<BE: ParityBackend, M> DigitParityModule<BE> for M where
+impl<BE: ParityBackend<Rg>, M, Rg: Ring> DigitParityModule<BE, Rg> for M where
     M: VecZnxAlloc<BE>
         + VecZnxDftAlloc<BE>
-        + VecZnxDftApply<BE>
+        + VecZnxDftApply<BE, Rg>
         + VecZnxDftBytesOf
-        + VecZnxDftCopy<BE>
-        + VecZnxDftZero<BE>
-        + VecZnxIdftNormalize<BE>
+        + VecZnxDftCopy<BE, Rg>
+        + VecZnxDftZero<BE, Rg>
+        + VecZnxIdftNormalize<BE, Rg>
         + VecZnxIdftNormalizeTmpBytes
         + VmpPMatAlloc<BE>
-        + VmpPMatPrepare<BE>
+        + VmpPMatPrepare<BE, Rg>
         + VmpPMatPrepareTmpBytes
-        + VmpApplyDftToDft<BE>
-        + VmpApplyDftToDftAdd<BE>
+        + VmpApplyDftToDft<BE, Rg>
+        + VmpApplyDftToDftAdd<BE, Rg>
         + VmpApplyDftToDftTmpBytes
         + VmpApplyDftToDftAddTmpBytes
 {
 }
 
-fn product<BE>(
+fn product<BE, Rg: Ring>(
     module: &Module<BE>,
-    a: &VecZnx<AlignedBuf, i64>,
-    mat: &MatZnx<AlignedBuf, i64>,
+    a: &VecZnx<AlignedBuf, i64, Rg>,
+    mat: &MatZnx<AlignedBuf, i64, Rg>,
     base2k: usize,
     dsize: usize,
-) -> VecZnx<AlignedBuf, i64>
+) -> VecZnx<AlignedBuf, i64, Rg>
 where
-    BE: ParityBackend + GGLWEProductDigitsStridedImpl,
-    Module<BE>: DigitParityModule<BE>,
+    BE: ParityBackend<Rg> + GGLWEProductDigitsStridedImpl<Rg>,
+    Module<BE>: DigitParityModule<BE, Rg>,
 {
     let (cols_in, cols_out, rows, size) = (mat.cols_in(), mat.cols_out(), mat.rows(), mat.size());
-    let input = upload_vec_znx::<BE>(a);
+    let input = upload_vec_znx::<BE, Rg>(a);
     let mut input_dft = module.vec_znx_dft_alloc(a.n(), cols_in, a.size());
     for col in 0..cols_in {
         module.vec_znx_dft_apply(
@@ -78,15 +78,15 @@ where
             0,
             &mut input_dft.to_backend_mut(),
             col,
-            &<VecZnx<BE::OwnedBuf, i64> as VecZnxToBackendRef<BE>>::to_backend_ref(&input),
+            &<VecZnx<BE::OwnedBuf, i64, Rg> as VecZnxToBackendRef<BE, Rg>>::to_backend_ref(&input),
             col,
         );
     }
-    let mat = upload_mat_znx::<BE>(mat);
+    let mat = upload_mat_znx::<BE, Rg>(mat);
     let mut key = module.vmp_pmat_alloc(a.n(), rows, cols_in, cols_out, size, PrepareHint::Reuse);
     module.vmp_pmat_prepare(
         &mut key.to_backend_mut(),
-        &<MatZnx<BE::OwnedBuf, i64> as MatZnxToBackendRef<BE>>::to_backend_ref(&mat),
+        &<MatZnx<BE::OwnedBuf, i64, Rg> as MatZnxToBackendRef<BE, Rg>>::to_backend_ref(&mat),
         &mut poisoned_scratch::<BE>(module.vmp_pmat_prepare_tmp_bytes(rows, cols_in, cols_out, size)).arena(),
     );
     let mut result = module.vec_znx_dft_alloc(a.n(), cols_out, size);
@@ -107,7 +107,7 @@ where
     let mut output = module.vec_znx_alloc(a.n(), cols_out, size);
     for col in 0..cols_out {
         module.vec_znx_idft_normalize(
-            &mut <VecZnx<BE::OwnedBuf, i64> as VecZnxToBackendMut<BE>>::to_backend_mut(&mut output),
+            &mut <VecZnx<BE::OwnedBuf, i64, Rg> as VecZnxToBackendMut<BE, Rg>>::to_backend_mut(&mut output),
             base2k,
             size * base2k,
             0,
@@ -119,21 +119,21 @@ where
             &mut poisoned_scratch::<BE>(module.vec_znx_idft_normalize_tmp_bytes(size, size)).arena(),
         );
     }
-    download_vec_znx::<BE>(&output)
+    download_vec_znx::<BE, Rg>(&output)
 }
 
 /// Each side prepares the coefficient input and matrix independently; comparison
 /// happens only after inverse transformation and canonical normalization.
-pub fn test_gglwe_product_digits_strided_parity<BR, BT>(
+pub fn test_gglwe_product_digits_strided_parity<BR, BT, Rg: Ring>(
     params: &TestParams,
     _shapes: &ParityShapes,
     r: &Module<BR>,
     t: &Module<BT>,
 ) where
-    BR: ParityBackend + GGLWEProductDigitsStridedImpl,
-    BT: ParityBackend + GGLWEProductDigitsStridedImpl,
-    Module<BR>: DigitParityModule<BR>,
-    Module<BT>: DigitParityModule<BT>,
+    BR: ParityBackend<Rg> + GGLWEProductDigitsStridedImpl<Rg>,
+    BT: ParityBackend<Rg> + GGLWEProductDigitsStridedImpl<Rg>,
+    Module<BR>: DigitParityModule<BR, Rg>,
+    Module<BT>: DigitParityModule<BT, Rg>,
 {
     let base2k = params.base2k;
     let mut source = Source::new([127; 32]);
@@ -141,7 +141,7 @@ pub fn test_gglwe_product_digits_strided_parity<BR, BT>(
         for sparse in [false, true] {
             let mut a = r.vec_znx_alloc(params.n, cols_in, size);
             r.vec_znx_fill_uniform_source_all(base2k, size * base2k, &mut a, &mut source);
-            let mut a = download_vec_znx::<BR>(&a);
+            let mut a = download_vec_znx::<BR, Rg>(&a);
             if sparse {
                 for col in 0..cols_in {
                     for limb in 0..size - 1 {
@@ -152,13 +152,13 @@ pub fn test_gglwe_product_digits_strided_parity<BR, BT>(
             let mut matrix = r.mat_znx_alloc(params.n, size.div_ceil(dsize), cols_in, cols_out, size);
             for row in 0..size.div_ceil(dsize) {
                 for col in 0..cols_in {
-                    let mut view = MatZnxAtBackendMut::<BR>::at_backend_mut(&mut matrix, row, col);
+                    let mut view = MatZnxAtBackendMut::<BR, Rg>::at_backend_mut(&mut matrix, row, col);
                     for out in 0..cols_out {
                         r.vec_znx_fill_uniform_source(base2k, size * base2k, &mut view, out, &mut source);
                     }
                 }
             }
-            let matrix = download_mat_znx::<BR>(&matrix);
+            let matrix = download_mat_znx::<BR, Rg>(&matrix);
             let want = product(r, &a, &matrix, params.base2k, dsize);
             let have = product(t, &a, &matrix, params.base2k, dsize);
             assert_eq!(

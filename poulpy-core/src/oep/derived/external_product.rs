@@ -3,7 +3,7 @@
 mod gglwe {
     use crate::api::GLWEZero;
 
-    use poulpy_hal::layouts::{Backend, ScratchArena};
+    use poulpy_hal::layouts::{Backend, Ring, ScratchArena};
 
     use crate::{
         api::GLWEExternalProduct,
@@ -12,7 +12,7 @@ mod gglwe {
         },
     };
 
-    pub(crate) fn gglwe_external_product_tmp_bytes_derived<BE, M, R, A, B>(
+    pub(crate) fn gglwe_external_product_tmp_bytes_derived<BE, M, R, A, B, Rg: Ring>(
         module: &M,
         res_infos: &R,
         a_infos: &A,
@@ -20,7 +20,7 @@ mod gglwe {
     ) -> usize
     where
         BE: Backend,
-        M: GLWEExternalProduct<BE>,
+        M: GLWEExternalProduct<BE, Rg>,
         R: GGLWEInfos,
         A: GGLWEInfos,
         B: GGSWInfos,
@@ -28,17 +28,17 @@ mod gglwe {
         module.glwe_external_product_tmp_bytes(res_infos, a_infos, b_infos)
     }
 
-    pub(crate) fn gglwe_external_product_derived<BE, M, R, A>(
+    pub(crate) fn gglwe_external_product_derived<BE, M, R, A, Rg: Ring>(
         module: &M,
         res: &mut R,
         a: &A,
-        b: &GGSWPreparedBackendRef<'_, BE>,
+        b: &GGSWPreparedBackendRef<'_, BE, Rg>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         BE: Backend,
-        M: GLWEExternalProduct<BE> + GLWEZero<BE>,
-        R: GGLWEToBackendMut<BE> + GGLWEInfos,
-        A: GGLWEToBackendRef<BE> + GGLWEInfos,
+        M: GLWEExternalProduct<BE, Rg> + GLWEZero<BE, Rg>,
+        R: GGLWEToBackendMut<BE, Rg> + GGLWEInfos,
+        A: GGLWEToBackendRef<BE, Rg> + GGLWEInfos,
     {
         assert_eq!(
             res.rank_in(),
@@ -70,10 +70,10 @@ mod gglwe {
         );
         assert_eq!(res.base2k(), a.base2k());
         assert!(
-            scratch.available() >= gglwe_external_product_tmp_bytes_derived::<BE, _, _, _, _>(module, res, a, b),
+            scratch.available() >= gglwe_external_product_tmp_bytes_derived::<BE, _, _, _, _, Rg>(module, res, a, b),
             "scratch.available(): {} < GGLWEExternalProduct::gglwe_external_product_tmp_bytes: {}",
             scratch.available(),
-            gglwe_external_product_tmp_bytes_derived::<BE, _, _, _, _>(module, res, a, b)
+            gglwe_external_product_tmp_bytes_derived::<BE, _, _, _, _, Rg>(module, res, a, b)
         );
 
         let min_dnum: usize = res.dnum().min(a.dnum()).into();
@@ -95,22 +95,22 @@ mod gglwe {
             let mut res = res.to_backend_mut();
             for row in min_dnum..res_dnum {
                 for col in 0..res_rank_in {
-                    let mut ct: GLWEViewMut<'_, BE> = res.at_view_mut(row, col);
+                    let mut ct: GLWEViewMut<'_, BE, Rg> = res.at_view_mut(row, col);
                     module.glwe_zero(&mut ct);
                 }
             }
         }
     }
 
-    pub(crate) fn gglwe_external_product_assign_derived<BE, M, R>(
+    pub(crate) fn gglwe_external_product_assign_derived<BE, M, R, Rg: Ring>(
         module: &M,
         res: &mut R,
-        a: &GGSWPreparedBackendRef<'_, BE>,
+        a: &GGSWPreparedBackendRef<'_, BE, Rg>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         BE: Backend,
-        M: GLWEExternalProduct<BE>,
-        R: GGLWEToBackendMut<BE> + GGLWEInfos,
+        M: GLWEExternalProduct<BE, Rg>,
+        R: GGLWEToBackendMut<BE, Rg> + GGLWEInfos,
     {
         assert_eq!(
             res.rank_out(),
@@ -120,10 +120,10 @@ mod gglwe {
             a.rank()
         );
         assert!(
-            scratch.available() >= gglwe_external_product_tmp_bytes_derived::<BE, _, _, _, _>(module, res, res, a),
+            scratch.available() >= gglwe_external_product_tmp_bytes_derived::<BE, _, _, _, _, Rg>(module, res, res, a),
             "scratch.available(): {} < GGLWEExternalProduct::gglwe_external_product_tmp_bytes: {}",
             scratch.available(),
-            gglwe_external_product_tmp_bytes_derived::<BE, _, _, _, _>(module, res, res, a)
+            gglwe_external_product_tmp_bytes_derived::<BE, _, _, _, _, Rg>(module, res, res, a)
         );
 
         let res_dnum: usize = res.dnum().into();
@@ -145,7 +145,7 @@ mod ggsw {
 
     use poulpy_hal::{
         api::ModuleN,
-        layouts::{Backend, ScratchArena},
+        layouts::{Backend, Ring, ScratchArena},
     };
 
     use crate::{
@@ -156,7 +156,7 @@ mod ggsw {
         },
     };
 
-    pub(crate) fn ggsw_external_product_tmp_bytes_derived<BE, M, R, A, B>(
+    pub(crate) fn ggsw_external_product_tmp_bytes_derived<BE, M, R, A, B, Rg: Ring>(
         module: &M,
         res_infos: &R,
         a_infos: &A,
@@ -164,7 +164,7 @@ mod ggsw {
     ) -> usize
     where
         BE: Backend,
-        M: GLWEExternalProduct<BE>,
+        M: GLWEExternalProduct<BE, Rg>,
         R: GGSWInfos,
         A: GGSWInfos,
         B: GGSWInfos,
@@ -172,26 +172,26 @@ mod ggsw {
         module.glwe_external_product_tmp_bytes(res_infos, a_infos, b_infos)
     }
 
-    pub(crate) fn ggsw_external_product_derived<BE, M, R, A>(
+    pub(crate) fn ggsw_external_product_derived<BE, M, R, A, Rg: Ring>(
         module: &M,
         res: &mut R,
         a: &A,
-        b: &GGSWPreparedBackendRef<'_, BE>,
+        b: &GGSWPreparedBackendRef<'_, BE, Rg>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         BE: Backend,
-        M: GLWEExternalProduct<BE> + GLWEZero<BE>,
-        R: GGSWToBackendMut<BE> + GGSWAtViewMut<BE> + GGSWInfos,
-        A: GGSWToBackendRef<BE> + GGSWAtViewRef<BE> + GGSWInfos,
+        M: GLWEExternalProduct<BE, Rg> + GLWEZero<BE, Rg>,
+        R: GGSWToBackendMut<BE, Rg> + GGSWAtViewMut<BE, Rg> + GGSWInfos,
+        A: GGSWToBackendRef<BE, Rg> + GGSWAtViewRef<BE, Rg> + GGSWInfos,
     {
         assert_eq!(res.rank(), a.rank(), "res rank: {} != a rank: {}", res.rank(), a.rank());
         assert_eq!(res.rank(), b.rank(), "res rank: {} != b rank: {}", res.rank(), b.rank());
         assert_eq!(res.base2k(), a.base2k());
         assert!(
-            scratch.available() >= ggsw_external_product_tmp_bytes_derived::<BE, _, _, _, _>(module, res, a, b),
+            scratch.available() >= ggsw_external_product_tmp_bytes_derived::<BE, _, _, _, _, Rg>(module, res, a, b),
             "scratch.available(): {} < GGSWExternalProduct::ggsw_external_product_tmp_bytes: {}",
             scratch.available(),
-            ggsw_external_product_tmp_bytes_derived::<BE, _, _, _, _>(module, res, a, b)
+            ggsw_external_product_tmp_bytes_derived::<BE, _, _, _, _, Rg>(module, res, a, b)
         );
 
         let min_dnum: usize = res.dnum().min(a.dnum()).into();
@@ -214,23 +214,23 @@ mod ggsw {
         }
     }
 
-    pub(crate) fn ggsw_external_product_assign_derived<BE, M, R>(
+    pub(crate) fn ggsw_external_product_assign_derived<BE, M, R, Rg: Ring>(
         module: &M,
         res: &mut R,
-        a: &GGSWPreparedBackendRef<'_, BE>,
+        a: &GGSWPreparedBackendRef<'_, BE, Rg>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         BE: Backend,
-        M: GLWEExternalProduct<BE> + ModuleN,
-        R: GGSWToBackendMut<BE> + GGSWAtViewMut<BE> + GGSWInfos,
+        M: GLWEExternalProduct<BE, Rg> + ModuleN,
+        R: GGSWToBackendMut<BE, Rg> + GGSWAtViewMut<BE, Rg> + GGSWInfos,
     {
         operand_degree(module.n(), &[res.n(), a.n()]);
         assert_eq!(res.rank(), a.rank(), "res rank: {} != a rank: {}", res.rank(), a.rank());
         assert!(
-            scratch.available() >= ggsw_external_product_tmp_bytes_derived::<BE, _, _, _, _>(module, res, res, a),
+            scratch.available() >= ggsw_external_product_tmp_bytes_derived::<BE, _, _, _, _, Rg>(module, res, res, a),
             "scratch.available(): {} < GGSWExternalProduct::ggsw_external_product_tmp_bytes: {}",
             scratch.available(),
-            ggsw_external_product_tmp_bytes_derived::<BE, _, _, _, _>(module, res, res, a)
+            ggsw_external_product_tmp_bytes_derived::<BE, _, _, _, _, Rg>(module, res, res, a)
         );
 
         let res_dnum: usize = res.dnum().into();

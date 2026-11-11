@@ -8,7 +8,7 @@ use std::marker::PhantomData;
 
 use anyhow::{Result, ensure};
 use bytemuck::Pod;
-use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, Module};
+use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, Module, Ring};
 
 use crate::api::CKKSModuleInfos;
 
@@ -96,8 +96,8 @@ impl<D: Data, F: Pod> CKKSEncodingBuffer<D, F> {
 }
 
 /// Coefficients a transformed `len`-scalar slot buffer holds: `len` on the standard ring, `len / 2` on the invariant ring.
-pub(crate) fn slot_coeff_count<BE: Backend>(module: &Module<BE>, len: usize) -> usize {
-    len / 2 * (module.n() / module.ckks_max_slots())
+pub(crate) fn slot_coeff_count<BE: Backend, Rg: Ring>(module: &Module<BE>, len: usize) -> usize {
+    len / 2 * (module.n() / module.ckks_max_slots::<Rg>())
 }
 
 pub type CKKSEncodingBufferBackendRef<'a, BE, F> = CKKSEncodingBuffer<<BE as Backend>::BufRef<'a>, F>;

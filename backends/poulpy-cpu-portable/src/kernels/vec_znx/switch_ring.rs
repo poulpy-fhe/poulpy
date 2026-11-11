@@ -3,16 +3,16 @@ use crate::{
         vec_znx::vec_znx_copy_portable,
         znx::{ZnxCopy, ZnxSwitchRing, ZnxZero},
     },
-    layouts::{Backend, HostDataMut, HostDataRef, VecZnxBackendMut, VecZnxBackendRef, ZnxView, ZnxViewMut},
+    layouts::{Backend, HostDataMut, HostDataRef, Ring, VecZnxBackendMut, VecZnxBackendRef, ZnxView, ZnxViewMut},
 };
 
 /// Maps between negacyclic rings by changing the polynomial degree.
 /// Up:  Z\[X\]/(X^N+1) -> Z\[X\]/(X^{2^d N}+1) via X -> X^{2^d}
 /// Down: Z\[X\]/(X^N+1) -> Z\[X\]/(X^{N/2^d}+1) by folding indices.
-pub fn vec_znx_switch_ring_portable<'r, 'a, BE>(
-    res: &mut VecZnxBackendMut<'r, BE>,
+pub fn vec_znx_switch_ring_portable<'r, 'a, BE, Rg: Ring>(
+    res: &mut VecZnxBackendMut<'r, BE, Rg>,
     res_col: usize,
-    a: &VecZnxBackendRef<'a, BE>,
+    a: &VecZnxBackendRef<'a, BE, Rg>,
     a_col: usize,
 ) where
     BE: Backend<ZnxWord = i64> + ZnxCopy + ZnxSwitchRing + ZnxZero,
@@ -24,7 +24,7 @@ pub fn vec_znx_switch_ring_portable<'r, 'a, BE>(
     let (n_in, n_out) = (a.n(), res.n());
 
     if n_in == n_out {
-        vec_znx_copy_portable::<BE>(res, res_col, a, a_col);
+        vec_znx_copy_portable::<BE, Rg>(res, res_col, a, a_col);
         return;
     }
 

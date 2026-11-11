@@ -17,7 +17,7 @@ use poulpy_hal::{layouts::*, source::Source};
 /// Implementations reproduce the bodies their methods document bit for bit, report for each
 /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait BlindRotationExecuteImpl<BRA: BlindRotationAlgo>: Backend<Ring = Standard> {
+pub unsafe trait BlindRotationExecuteImpl<BRA: BlindRotationAlgo>: Backend {
     /// Scratch bound of [`Self::blind_rotation_execute`]; may report less than the reference, never less than the body
     /// takes. A block key reserves the products of a whole block, each with its own worker scratch, exactly when
     /// `TaskExecutor::IS_PARALLEL`.

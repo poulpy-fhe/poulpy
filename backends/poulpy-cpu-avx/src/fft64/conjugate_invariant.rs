@@ -8,7 +8,7 @@ use poulpy_hal::layouts::ConjugateInvariant;
 
 use super::FFT64Avx;
 
-impl ZnxAutomorphism for FFT64Avx<ConjugateInvariant> {
+impl ZnxAutomorphism<ConjugateInvariant> for FFT64Avx {
     #[inline(always)]
     fn znx_automorphism(p: i64, res: &mut [i64], a: &[i64]) {
         znx_automorphism_portable(p, res, a)
@@ -20,6 +20,6 @@ impl ZnxAutomorphism for FFT64Avx<ConjugateInvariant> {
     }
 }
 
-impl Fft64RingArith for FFT64Avx<ConjugateInvariant> {
+impl Fft64RingArith<ConjugateInvariant> for FFT64Avx {
     poulpy_cpu_portable::fft64_ring_arith_ci!();
 }

@@ -7,10 +7,11 @@
 //! backend-specific entry point, but uses unchecked scalar loads/stores.
 
 use poulpy_cpu_portable::kernels::fft64::vec_znx_dft::Fft64AutomorphismPlan;
+use poulpy_hal::layouts::Standard;
 
 /// One limb of [`Fft64AutomorphismPlan`]: `res = tau_p(a)`.
 #[inline(always)]
-pub(crate) fn reim_automorphism_avx(plan: &Fft64AutomorphismPlan, res: &mut [f64], a: &[f64]) {
+pub(crate) fn reim_automorphism_avx(plan: &Fft64AutomorphismPlan<Standard>, res: &mut [f64], a: &[f64]) {
     let m: usize = res.len() >> 1;
     assert_eq!(a.len(), res.len());
     assert_eq!(plan.perm.len(), m);

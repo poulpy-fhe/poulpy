@@ -6,13 +6,14 @@
 //! `<op>_derived` function, and its `_tmp_bytes` default calls
 //! `<op>_tmp_bytes_derived`.
 //!
-//! Free functions in this module are generic over the backend `BE` alone,
-//! bounded by the OEP trait of the op being decomposed (e.g.
-//! `BE: HalVmpImpl`); the supertrait chain supplies whichever other families
-//! the decomposition needs (e.g. `HalVecZnxDftImpl`), so every OEP call
-//! inside is `BE::method(module, ...)`. A trait default body passes `Self`,
-//! and a test that runs the decomposition directly on a concrete backend
-//! passes that backend.
+//! Free functions in this module are generic over the backend `BE` and the
+//! operand ring `Rg` (no ring for a standard-only or cross-ring op), bounded
+//! by the OEP trait of the op being decomposed at that ring (e.g.
+//! `BE: HalVmpImpl<Rg>`); the supertrait chain supplies whichever other families
+//! the decomposition needs (e.g. `HalVecZnxDftImpl<Rg>`), so every OEP call
+//! inside is `BE::method(module, ...)`. A trait default body passes `Self` and
+//! its ring, and a test that runs the decomposition directly on a concrete
+//! backend passes that backend and ring.
 //!
 //! Rules every function in this module obeys:
 //!
@@ -35,16 +36,17 @@
 use crate::{
     api::{ScratchArenaTakeVecZnx, ScratchArenaTakeVecZnxBig, ScratchArenaTakeVecZnxDft},
     layouts::{
-        CnvDftAccTerm, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, MatZnxBackendMut,
-        MatZnxBackendRef, MatZnxInfos, Module, ScalarZnxBackendMut, ScalarZnxBackendRef, ScratchArena, SvpPPolBackendRef,
-        VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxBigBackendRef, VecZnxBigToBackendRef, VecZnxDftBackendMut,
-        VecZnxDftBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxInfos, VecZnxToBackendMut, VecZnxToBackendRef,
-        VmpPMatBackendRef, ZnxInfos, check_cnv_dft_term, check_cnv_dft_terms, mat_znx_at_backend_mut_from_mut,
-        mat_znx_at_backend_ref_from_ref, scalar_znx_as_vec_znx_backend_mut_from_mut, scalar_znx_as_vec_znx_backend_ref_from_ref,
-        vec_znx_backend_ref_from_mut, vec_znx_dft_backend_ref_from_mut, vec_znx_reborrow_backend_mut,
+        CnvDftAccTerm, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, ConjugateInvariant,
+        MatZnxBackendMut, MatZnxBackendRef, MatZnxInfos, Module, Ring, ScalarZnxBackendMut, ScalarZnxBackendRef, ScratchArena,
+        Standard, SvpPPolBackendRef, VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxBigBackendRef,
+        VecZnxBigToBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef,
+        VecZnxInfos, VecZnxToBackendMut, VecZnxToBackendRef, VmpPMatBackendRef, ZnxInfos, check_cnv_dft_term,
+        check_cnv_dft_terms, mat_znx_at_backend_mut_from_mut, mat_znx_at_backend_ref_from_ref,
+        scalar_znx_as_vec_znx_backend_mut_from_mut, scalar_znx_as_vec_znx_backend_ref_from_ref, vec_znx_backend_ref_from_mut,
+        vec_znx_dft_backend_ref_from_mut, vec_znx_reborrow_backend_mut,
     },
     oep::{
-        HalCnvImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxCIImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVecZnxMonomialImpl,
+        HalCnvImpl, HalScalarZnxCIImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVecZnxMonomialImpl,
         HalVmpImpl,
     },
     source::Source,
@@ -53,7 +55,7 @@ use crate::{
 /// Scratch for [`vmp_apply_dft_derived`]: one `VecZnxDft` for the transformed
 /// input plus whatever `vmp_apply_dft_to_dft` needs.
 #[doc(hidden)]
-pub fn vmp_apply_dft_tmp_bytes_derived<BE>(
+pub fn vmp_apply_dft_tmp_bytes_derived<BE, Rg: Ring>(
     module: &Module<BE>,
     res_size: usize,
     a_size: usize,
@@ -63,7 +65,7 @@ pub fn vmp_apply_dft_tmp_bytes_derived<BE>(
     b_size: usize,
 ) -> usize
 where
-    BE: HalVmpImpl,
+    BE: HalVmpImpl<Rg>,
 {
     let a_dft_size = a_size.min(b_rows);
     BE::scratch_aligned(BE::vec_znx_dft_bytes_of(module.n(), b_cols_in, a_dft_size))
@@ -74,15 +76,15 @@ where
 /// matrix consumes into scratch, aligning `a`'s trailing columns with
 /// `pmat.cols_in()` and zeroing the leading ones, then apply in the DFT domain.
 #[doc(hidden)]
-pub fn vmp_apply_dft_derived<BE, R>(
+pub fn vmp_apply_dft_derived<BE, R, Rg: Ring>(
     module: &Module<BE>,
     res: &mut R,
-    a: &VecZnxBackendRef<'_, BE>,
-    b: &VmpPMatBackendRef<'_, BE>,
+    a: &VecZnxBackendRef<'_, BE, Rg>,
+    b: &VmpPMatBackendRef<'_, BE, Rg>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: HalVmpImpl,
-    R: VecZnxDftToBackendMut<BE>,
+    BE: HalVmpImpl<Rg>,
+    R: VecZnxDftToBackendMut<BE, Rg>,
 {
     let a_cols: usize = VecZnxInfos::cols(a);
     let a_size: usize = ZnxInfos::size(a);
@@ -114,7 +116,7 @@ pub fn vmp_apply_dft_derived<BE, R>(
 /// Scratch for [`vmp_apply_dft_to_dft_add_derived`]: a full-width staging
 /// accumulator plus the product's own scratch.
 #[doc(hidden)]
-pub fn vmp_apply_dft_to_dft_add_tmp_bytes_derived<BE>(
+pub fn vmp_apply_dft_to_dft_add_tmp_bytes_derived<BE, Rg: Ring>(
     module: &Module<BE>,
     res_size: usize,
     a_size: usize,
@@ -124,7 +126,7 @@ pub fn vmp_apply_dft_to_dft_add_tmp_bytes_derived<BE>(
     b_size: usize,
 ) -> usize
 where
-    BE: HalVmpImpl,
+    BE: HalVmpImpl<Rg>,
 {
     BE::scratch_aligned(BE::vec_znx_dft_bytes_of(module.n(), b_cols_out, res_size))
         + BE::vmp_apply_dft_to_dft_tmp_bytes(module, res_size, a_size, b_rows, b_cols_in, b_cols_out, b_size)
@@ -141,15 +143,15 @@ where
 /// the loop keeps the sum correct on a kernel that only writes the limbs the
 /// product reaches.
 #[doc(hidden)]
-pub fn vmp_apply_dft_to_dft_add_derived<BE>(
+pub fn vmp_apply_dft_to_dft_add_derived<BE, Rg: Ring>(
     module: &Module<BE>,
-    res: &mut VecZnxDftBackendMut<'_, BE>,
-    a: &VecZnxDftBackendRef<'_, BE>,
-    b: &VmpPMatBackendRef<'_, BE>,
+    res: &mut VecZnxDftBackendMut<'_, BE, Rg>,
+    a: &VecZnxDftBackendRef<'_, BE, Rg>,
+    b: &VmpPMatBackendRef<'_, BE, Rg>,
     limb_offset: usize,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: HalVmpImpl,
+    BE: HalVmpImpl<Rg>,
 {
     let cols_out: usize = VecZnxInfos::cols(res);
     let res_size: usize = ZnxInfos::size(res);
@@ -189,26 +191,26 @@ const RSH_DIGIT_BITS: usize = 64;
 /// normalization carry the shift itself is; the plain `vec_znx_lsh` default
 /// needs only the carry, so this over-reports for it, never under-reports.
 #[doc(hidden)]
-pub fn vec_znx_lsh_tmp_bytes_derived<BE>(module: &Module<BE>, res_size: usize) -> usize
+pub fn vec_znx_lsh_tmp_bytes_derived<BE, Rg: Ring>(module: &Module<BE>, res_size: usize) -> usize
 where
-    BE: HalVecZnxImpl,
+    BE: HalVecZnxImpl<Rg>,
 {
     BE::scratch_aligned(BE::vec_znx_bytes_of(module.n(), 1, res_size)) + BE::vec_znx_normalize_tmp_bytes(module)
 }
 
 /// `res = a * 2^k` at the same radix: a normalization with `offset = +k`.
 #[doc(hidden)]
-pub fn vec_znx_lsh_derived<BE>(
+pub fn vec_znx_lsh_derived<BE, Rg: Ring>(
     module: &Module<BE>,
     base2k: usize,
     k: usize,
-    res: &mut VecZnxBackendMut<'_, BE>,
+    res: &mut VecZnxBackendMut<'_, BE, Rg>,
     res_col: usize,
-    a: &VecZnxBackendRef<'_, BE>,
+    a: &VecZnxBackendRef<'_, BE, Rg>,
     a_col: usize,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: HalVecZnxImpl,
+    BE: HalVecZnxImpl<Rg>,
 {
     let res_k: usize = ZnxInfos::size(res) * base2k;
     let offset: i64 = shift_offset(k, ZnxInfos::size(a) * base2k);
@@ -218,26 +220,26 @@ pub fn vec_znx_lsh_derived<BE>(
 /// Scratch for the whole right-shift family (ruling R1): `vec_znx_rsh`,
 /// `vec_znx_rsh_add`, `vec_znx_rsh_sub` and `vec_znx_rsh_assign`.
 #[doc(hidden)]
-pub fn vec_znx_rsh_tmp_bytes_derived<BE>(module: &Module<BE>, res_size: usize) -> usize
+pub fn vec_znx_rsh_tmp_bytes_derived<BE, Rg: Ring>(module: &Module<BE>, res_size: usize) -> usize
 where
-    BE: HalVecZnxImpl,
+    BE: HalVecZnxImpl<Rg>,
 {
     BE::scratch_aligned(BE::vec_znx_bytes_of(module.n(), 1, res_size)) + BE::vec_znx_normalize_tmp_bytes(module)
 }
 
 /// `res = a / 2^k` at the same radix: a normalization with `offset = -k`.
 #[doc(hidden)]
-pub fn vec_znx_rsh_derived<BE>(
+pub fn vec_znx_rsh_derived<BE, Rg: Ring>(
     module: &Module<BE>,
     base2k: usize,
     k: usize,
-    res: &mut VecZnxBackendMut<'_, BE>,
+    res: &mut VecZnxBackendMut<'_, BE, Rg>,
     res_col: usize,
-    a: &VecZnxBackendRef<'_, BE>,
+    a: &VecZnxBackendRef<'_, BE, Rg>,
     a_col: usize,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: HalVecZnxImpl,
+    BE: HalVecZnxImpl<Rg>,
 {
     let res_k: usize = ZnxInfos::size(res) * base2k;
     let offset: i64 = -shift_offset(k, res_k + RSH_DIGIT_BITS);
@@ -246,17 +248,17 @@ pub fn vec_znx_rsh_derived<BE>(
 
 /// `res += a * 2^k`. Sized by [`vec_znx_lsh_tmp_bytes_derived`].
 #[doc(hidden)]
-pub fn vec_znx_lsh_add_derived<BE>(
+pub fn vec_znx_lsh_add_derived<BE, Rg: Ring>(
     module: &Module<BE>,
     base2k: usize,
     k: usize,
-    res: &mut VecZnxBackendMut<'_, BE>,
+    res: &mut VecZnxBackendMut<'_, BE, Rg>,
     res_col: usize,
-    a: &VecZnxBackendRef<'_, BE>,
+    a: &VecZnxBackendRef<'_, BE, Rg>,
     a_col: usize,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: HalVecZnxImpl,
+    BE: HalVecZnxImpl<Rg>,
 {
     let res_size: usize = ZnxInfos::size(res);
     // The temporary takes a's degree: for a window it is the destination's
@@ -269,17 +271,17 @@ pub fn vec_znx_lsh_add_derived<BE>(
 
 /// `res -= a * 2^k`. Sized by [`vec_znx_lsh_tmp_bytes_derived`].
 #[doc(hidden)]
-pub fn vec_znx_lsh_sub_derived<BE>(
+pub fn vec_znx_lsh_sub_derived<BE, Rg: Ring>(
     module: &Module<BE>,
     base2k: usize,
     k: usize,
-    res: &mut VecZnxBackendMut<'_, BE>,
+    res: &mut VecZnxBackendMut<'_, BE, Rg>,
     res_col: usize,
-    a: &VecZnxBackendRef<'_, BE>,
+    a: &VecZnxBackendRef<'_, BE, Rg>,
     a_col: usize,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: HalVecZnxImpl,
+    BE: HalVecZnxImpl<Rg>,
 {
     let res_size: usize = ZnxInfos::size(res);
     // The temporary takes a's degree: for a window it is the destination's
@@ -292,17 +294,17 @@ pub fn vec_znx_lsh_sub_derived<BE>(
 
 /// `res += a / 2^k`. Sized by [`vec_znx_rsh_tmp_bytes_derived`].
 #[doc(hidden)]
-pub fn vec_znx_rsh_add_derived<BE>(
+pub fn vec_znx_rsh_add_derived<BE, Rg: Ring>(
     module: &Module<BE>,
     base2k: usize,
     k: usize,
-    res: &mut VecZnxBackendMut<'_, BE>,
+    res: &mut VecZnxBackendMut<'_, BE, Rg>,
     res_col: usize,
-    a: &VecZnxBackendRef<'_, BE>,
+    a: &VecZnxBackendRef<'_, BE, Rg>,
     a_col: usize,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: HalVecZnxImpl,
+    BE: HalVecZnxImpl<Rg>,
 {
     let res_size: usize = ZnxInfos::size(res);
     // The temporary takes a's degree: for a window it is the destination's
@@ -315,17 +317,17 @@ pub fn vec_znx_rsh_add_derived<BE>(
 
 /// `res -= a / 2^k`. Sized by [`vec_znx_rsh_tmp_bytes_derived`].
 #[doc(hidden)]
-pub fn vec_znx_rsh_sub_derived<BE>(
+pub fn vec_znx_rsh_sub_derived<BE, Rg: Ring>(
     module: &Module<BE>,
     base2k: usize,
     k: usize,
-    res: &mut VecZnxBackendMut<'_, BE>,
+    res: &mut VecZnxBackendMut<'_, BE, Rg>,
     res_col: usize,
-    a: &VecZnxBackendRef<'_, BE>,
+    a: &VecZnxBackendRef<'_, BE, Rg>,
     a_col: usize,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: HalVecZnxImpl,
+    BE: HalVecZnxImpl<Rg>,
 {
     let res_size: usize = ZnxInfos::size(res);
     // The temporary takes a's degree: for a window it is the destination's
@@ -338,15 +340,15 @@ pub fn vec_znx_rsh_sub_derived<BE>(
 
 /// `a *= 2^k`. Sized by [`vec_znx_lsh_tmp_bytes_derived`].
 #[doc(hidden)]
-pub fn vec_znx_lsh_assign_derived<BE>(
+pub fn vec_znx_lsh_assign_derived<BE, Rg: Ring>(
     module: &Module<BE>,
     base2k: usize,
     k: usize,
-    a: &mut VecZnxBackendMut<'_, BE>,
+    a: &mut VecZnxBackendMut<'_, BE, Rg>,
     a_col: usize,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: HalVecZnxImpl,
+    BE: HalVecZnxImpl<Rg>,
 {
     let size: usize = ZnxInfos::size(a);
     let (mut tmp, mut scratch) = ScratchArenaTakeVecZnx::take_vec_znx_scratch(scratch.borrow(), ZnxInfos::n(a), 1, size);
@@ -356,7 +358,7 @@ pub fn vec_znx_lsh_assign_derived<BE>(
         k,
         &mut tmp,
         0,
-        &vec_znx_backend_ref_from_mut::<BE>(a),
+        &vec_znx_backend_ref_from_mut::<BE, Rg>(a),
         a_col,
         &mut scratch,
     );
@@ -365,15 +367,15 @@ pub fn vec_znx_lsh_assign_derived<BE>(
 
 /// `a /= 2^k`. Sized by [`vec_znx_rsh_tmp_bytes_derived`].
 #[doc(hidden)]
-pub fn vec_znx_rsh_assign_derived<BE>(
+pub fn vec_znx_rsh_assign_derived<BE, Rg: Ring>(
     module: &Module<BE>,
     base2k: usize,
     k: usize,
-    a: &mut VecZnxBackendMut<'_, BE>,
+    a: &mut VecZnxBackendMut<'_, BE, Rg>,
     a_col: usize,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: HalVecZnxImpl,
+    BE: HalVecZnxImpl<Rg>,
 {
     let res_k: usize = ZnxInfos::size(a) * base2k;
     let offset: i64 = -shift_offset(k, res_k + RSH_DIGIT_BITS);
@@ -423,7 +425,14 @@ pub fn vec_znx_mul_xp_minus_one_assign_derived<BE>(
 {
     let size: usize = ZnxInfos::size(res);
     let (mut tmp, _) = ScratchArenaTakeVecZnx::take_vec_znx_scratch(scratch.borrow(), ZnxInfos::n(res), 1, size);
-    vec_znx_mul_xp_minus_one_derived::<BE>(module, p, &mut tmp, 0, &vec_znx_backend_ref_from_mut::<BE>(res), res_col);
+    vec_znx_mul_xp_minus_one_derived::<BE>(
+        module,
+        p,
+        &mut tmp,
+        0,
+        &vec_znx_backend_ref_from_mut::<BE, Standard>(res),
+        res_col,
+    );
     BE::vec_znx_copy(module, res, res_col, &tmp.to_backend_ref(), 0);
 }
 
@@ -431,15 +440,15 @@ pub fn vec_znx_mul_xp_minus_one_assign_derived<BE>(
 /// on `source`: the draws of the per-column api op, column
 /// by column.
 #[doc(hidden)]
-pub fn vec_znx_fill_uniform_source_all_derived<BE, R>(
+pub fn vec_znx_fill_uniform_source_all_derived<BE, R, Rg: Ring>(
     module: &Module<BE>,
     base2k: usize,
     k: usize,
     res: &mut R,
     source: &mut Source,
 ) where
-    BE: HalVecZnxImpl,
-    R: VecZnxToBackendMut<BE>,
+    BE: HalVecZnxImpl<Rg>,
+    R: VecZnxToBackendMut<BE, Rg>,
 {
     let mut res = res.to_backend_mut();
     for col in 0..res.cols() {
@@ -450,22 +459,22 @@ pub fn vec_znx_fill_uniform_source_all_derived<BE, R>(
 /// `res[res_col][res_limb] += a[a_col]`: an `add_assign` on the one-limb
 /// window of `res`, with the scalar seen as a one-limb `VecZnx`.
 #[doc(hidden)]
-pub fn vec_znx_add_scalar_assign_derived<BE>(
+pub fn vec_znx_add_scalar_assign_derived<BE, Rg: Ring>(
     module: &Module<BE>,
-    res: &mut VecZnxBackendMut<'_, BE>,
+    res: &mut VecZnxBackendMut<'_, BE, Rg>,
     res_col: usize,
     res_limb: usize,
-    a: &ScalarZnxBackendRef<'_, BE>,
+    a: &ScalarZnxBackendRef<'_, BE, Rg>,
     a_col: usize,
 ) where
-    BE: HalVecZnxImpl,
+    BE: HalVecZnxImpl<Rg>,
 {
-    let mut window = vec_znx_reborrow_backend_mut::<BE>(res).window_limbs(res_limb, 1, 1);
+    let mut window = vec_znx_reborrow_backend_mut::<BE, Rg>(res).window_limbs(res_limb, 1, 1);
     BE::vec_znx_add_assign(
         module,
         &mut window,
         res_col,
-        &scalar_znx_as_vec_znx_backend_ref_from_ref::<BE>(a),
+        &scalar_znx_as_vec_znx_backend_ref_from_ref::<BE, Rg>(a),
         a_col,
     );
 }
@@ -473,22 +482,22 @@ pub fn vec_znx_add_scalar_assign_derived<BE>(
 /// `res[res_col] = a[a_col](X^k)`: `vec_znx_automorphism` with `res` and `a` read
 /// as one-limb `VecZnx`.
 #[doc(hidden)]
-pub fn scalar_znx_automorphism_derived<BE>(
+pub fn scalar_znx_automorphism_derived<BE, Rg: Ring>(
     module: &Module<BE>,
     k: i64,
-    res: &mut ScalarZnxBackendMut<'_, BE>,
+    res: &mut ScalarZnxBackendMut<'_, BE, Rg>,
     res_col: usize,
-    a: &ScalarZnxBackendRef<'_, BE>,
+    a: &ScalarZnxBackendRef<'_, BE, Rg>,
     a_col: usize,
 ) where
-    BE: HalVecZnxImpl,
+    BE: HalVecZnxImpl<Rg>,
 {
     BE::vec_znx_automorphism(
         module,
         k,
-        &mut scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(res),
+        &mut scalar_znx_as_vec_znx_backend_mut_from_mut::<BE, Rg>(res),
         res_col,
-        &scalar_znx_as_vec_znx_backend_ref_from_ref::<BE>(a),
+        &scalar_znx_as_vec_znx_backend_ref_from_ref::<BE, Rg>(a),
         a_col,
     );
 }
@@ -501,25 +510,28 @@ pub fn scalar_znx_ci_embed_derived<BE>(
     module: &Module<BE>,
     res: &mut ScalarZnxBackendMut<'_, BE>,
     res_col: usize,
-    a: &ScalarZnxBackendRef<'_, BE>,
+    a: &ScalarZnxBackendRef<'_, BE, ConjugateInvariant>,
     a_col: usize,
 ) where
-    BE: HalVecZnxCIImpl,
+    BE: HalScalarZnxCIImpl,
 {
     BE::vec_znx_ci_embed(
         module,
-        &mut scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(res),
+        &mut scalar_znx_as_vec_znx_backend_mut_from_mut::<BE, Standard>(res),
         res_col,
-        &scalar_znx_as_vec_znx_backend_ref_from_ref::<BE>(a),
+        &scalar_znx_as_vec_znx_backend_ref_from_ref::<BE, ConjugateInvariant>(a),
         a_col,
     );
 }
 
 /// `res += a` entry by entry: `vec_znx_add_assign` on every output column of every (row, input column) entry.
 #[doc(hidden)]
-pub fn mat_znx_add_assign_derived<BE>(module: &Module<BE>, res: &mut MatZnxBackendMut<'_, BE>, a: &MatZnxBackendRef<'_, BE>)
-where
-    BE: HalVecZnxImpl,
+pub fn mat_znx_add_assign_derived<BE, Rg: Ring>(
+    module: &Module<BE>,
+    res: &mut MatZnxBackendMut<'_, BE, Rg>,
+    a: &MatZnxBackendRef<'_, BE, Rg>,
+) where
+    BE: HalVecZnxImpl<Rg>,
 {
     assert!(
         (res.n(), res.rows(), res.cols_in(), res.cols_out(), res.size())
@@ -528,8 +540,8 @@ where
     );
     for row in 0..res.rows() {
         for col_in in 0..res.cols_in() {
-            let mut res_entry = mat_znx_at_backend_mut_from_mut::<BE>(res, row, col_in);
-            let a_entry = mat_znx_at_backend_ref_from_ref::<BE>(a, row, col_in);
+            let mut res_entry = mat_znx_at_backend_mut_from_mut::<BE, Rg>(res, row, col_in);
+            let a_entry = mat_znx_at_backend_ref_from_ref::<BE, Rg>(a, row, col_in);
             for col_out in 0..a_entry.cols() {
                 BE::vec_znx_add_assign(module, &mut res_entry, col_out, &a_entry, col_out);
             }
@@ -540,14 +552,14 @@ where
 /// `res[i,c][res_col] = a[i,c][a_col]`: `vec_znx_copy` on every (row, input column) entry the two share, `vec_znx_zero`
 /// on the rows of `res` past `a`'s.
 #[doc(hidden)]
-pub fn mat_znx_copy_derived<BE>(
+pub fn mat_znx_copy_derived<BE, Rg: Ring>(
     module: &Module<BE>,
-    res: &mut MatZnxBackendMut<'_, BE>,
+    res: &mut MatZnxBackendMut<'_, BE, Rg>,
     res_col: usize,
-    a: &MatZnxBackendRef<'_, BE>,
+    a: &MatZnxBackendRef<'_, BE, Rg>,
     a_col: usize,
 ) where
-    BE: HalVecZnxImpl,
+    BE: HalVecZnxImpl<Rg>,
 {
     assert!(
         (res.n(), res.cols_in()) == (a.n(), a.cols_in()),
@@ -555,9 +567,9 @@ pub fn mat_znx_copy_derived<BE>(
     );
     for row in 0..res.rows() {
         for col_in in 0..res.cols_in() {
-            let mut res_entry = mat_znx_at_backend_mut_from_mut::<BE>(res, row, col_in);
+            let mut res_entry = mat_znx_at_backend_mut_from_mut::<BE, Rg>(res, row, col_in);
             if row < a.rows() {
-                let a_entry = mat_znx_at_backend_ref_from_ref::<BE>(a, row, col_in);
+                let a_entry = mat_znx_at_backend_ref_from_ref::<BE, Rg>(a, row, col_in);
                 BE::vec_znx_copy(module, &mut res_entry, res_col, &a_entry, a_col);
             } else {
                 BE::vec_znx_zero(module, &mut res_entry, res_col);
@@ -568,7 +580,7 @@ pub fn mat_znx_copy_derived<BE>(
 
 /// The scratch of `mat_znx_normalize` and `mat_znx_normalize_assign`: one `vec_znx_normalize` at a time.
 #[doc(hidden)]
-pub fn mat_znx_normalize_tmp_bytes_derived<BE: HalVecZnxImpl>(module: &Module<BE>) -> usize {
+pub fn mat_znx_normalize_tmp_bytes_derived<BE: HalVecZnxImpl<Rg>, Rg: Ring>(module: &Module<BE>) -> usize {
     BE::vec_znx_normalize_tmp_bytes(module)
 }
 
@@ -576,19 +588,19 @@ pub fn mat_znx_normalize_tmp_bytes_derived<BE: HalVecZnxImpl>(module: &Module<BE
 /// share, `vec_znx_zero` on the rows of `res` past `a`'s.
 #[allow(clippy::too_many_arguments)]
 #[doc(hidden)]
-pub fn mat_znx_normalize_derived<BE>(
+pub fn mat_znx_normalize_derived<BE, Rg: Ring>(
     module: &Module<BE>,
-    res: &mut MatZnxBackendMut<'_, BE>,
+    res: &mut MatZnxBackendMut<'_, BE, Rg>,
     res_base2k: usize,
     res_k: usize,
     res_offset: i64,
     res_col: usize,
-    a: &MatZnxBackendRef<'_, BE>,
+    a: &MatZnxBackendRef<'_, BE, Rg>,
     a_base2k: usize,
     a_col: usize,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: HalVecZnxImpl,
+    BE: HalVecZnxImpl<Rg>,
 {
     assert!(
         (res.n(), res.cols_in()) == (a.n(), a.cols_in()),
@@ -596,9 +608,9 @@ pub fn mat_znx_normalize_derived<BE>(
     );
     for row in 0..res.rows() {
         for col_in in 0..res.cols_in() {
-            let mut res_entry = mat_znx_at_backend_mut_from_mut::<BE>(res, row, col_in);
+            let mut res_entry = mat_znx_at_backend_mut_from_mut::<BE, Rg>(res, row, col_in);
             if row < a.rows() {
-                let a_entry = mat_znx_at_backend_ref_from_ref::<BE>(a, row, col_in);
+                let a_entry = mat_znx_at_backend_ref_from_ref::<BE, Rg>(a, row, col_in);
                 BE::vec_znx_normalize(
                     module,
                     &mut res_entry,
@@ -620,20 +632,20 @@ pub fn mat_znx_normalize_derived<BE>(
 
 /// `a[i,c][a_col] = normalize(a[i,c][a_col])`: `vec_znx_normalize_assign` on every (row, input column) entry.
 #[doc(hidden)]
-pub fn mat_znx_normalize_assign_derived<BE>(
+pub fn mat_znx_normalize_assign_derived<BE, Rg: Ring>(
     module: &Module<BE>,
     base2k: usize,
     k: usize,
     a_offset: i64,
-    a: &mut MatZnxBackendMut<'_, BE>,
+    a: &mut MatZnxBackendMut<'_, BE, Rg>,
     a_col: usize,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: HalVecZnxImpl,
+    BE: HalVecZnxImpl<Rg>,
 {
     for row in 0..a.rows() {
         for col_in in 0..a.cols_in() {
-            let mut a_entry = mat_znx_at_backend_mut_from_mut::<BE>(a, row, col_in);
+            let mut a_entry = mat_znx_at_backend_mut_from_mut::<BE, Rg>(a, row, col_in);
             BE::vec_znx_normalize_assign(module, base2k, k, a_offset, &mut a_entry, a_col, scratch);
         }
     }
@@ -652,16 +664,16 @@ pub fn mat_znx_normalize_assign_derived<BE>(
 /// mutable one). This is new relative to the fused kernels that preceded the derived bodies, which
 /// read both operands per limb before writing and so tolerated aliasing.
 #[doc(hidden)]
-pub fn vec_znx_big_add_small_derived<BE>(
+pub fn vec_znx_big_add_small_derived<BE, Rg: Ring>(
     module: &Module<BE>,
-    res: &mut VecZnxBigBackendMut<'_, BE>,
+    res: &mut VecZnxBigBackendMut<'_, BE, Rg>,
     res_col: usize,
-    a: &VecZnxBigBackendRef<'_, BE>,
+    a: &VecZnxBigBackendRef<'_, BE, Rg>,
     a_col: usize,
-    b: &VecZnxBackendRef<'_, BE>,
+    b: &VecZnxBackendRef<'_, BE, Rg>,
     b_col: usize,
 ) where
-    BE: HalVecZnxBigImpl,
+    BE: HalVecZnxBigImpl<Rg>,
 {
     BE::vec_znx_big_from_small(res, res_col, b, b_col);
     BE::vec_znx_big_add_assign(module, res, res_col, a, a_col);
@@ -680,16 +692,16 @@ pub fn vec_znx_big_add_small_derived<BE>(
 /// mutable one). This is new relative to the fused kernels that preceded the derived bodies, which
 /// read both operands per limb before writing and so tolerated aliasing.
 #[doc(hidden)]
-pub fn vec_znx_big_sub_small_a_derived<BE>(
+pub fn vec_znx_big_sub_small_a_derived<BE, Rg: Ring>(
     module: &Module<BE>,
-    res: &mut VecZnxBigBackendMut<'_, BE>,
+    res: &mut VecZnxBigBackendMut<'_, BE, Rg>,
     res_col: usize,
-    a: &VecZnxBackendRef<'_, BE>,
+    a: &VecZnxBackendRef<'_, BE, Rg>,
     a_col: usize,
-    b: &VecZnxBigBackendRef<'_, BE>,
+    b: &VecZnxBigBackendRef<'_, BE, Rg>,
     b_col: usize,
 ) where
-    BE: HalVecZnxBigImpl,
+    BE: HalVecZnxBigImpl<Rg>,
 {
     BE::vec_znx_big_from_small(res, res_col, a, a_col);
     BE::vec_znx_big_sub_assign(module, res, res_col, b, b_col);
@@ -708,16 +720,16 @@ pub fn vec_znx_big_sub_small_a_derived<BE>(
 /// mutable one). This is new relative to the fused kernels that preceded the derived bodies, which
 /// read both operands per limb before writing and so tolerated aliasing.
 #[doc(hidden)]
-pub fn vec_znx_big_sub_small_b_derived<BE>(
+pub fn vec_znx_big_sub_small_b_derived<BE, Rg: Ring>(
     module: &Module<BE>,
-    res: &mut VecZnxBigBackendMut<'_, BE>,
+    res: &mut VecZnxBigBackendMut<'_, BE, Rg>,
     res_col: usize,
-    a: &VecZnxBigBackendRef<'_, BE>,
+    a: &VecZnxBigBackendRef<'_, BE, Rg>,
     a_col: usize,
-    b: &VecZnxBackendRef<'_, BE>,
+    b: &VecZnxBackendRef<'_, BE, Rg>,
     b_col: usize,
 ) where
-    BE: HalVecZnxBigImpl,
+    BE: HalVecZnxBigImpl<Rg>,
 {
     BE::vec_znx_big_from_small(res, res_col, b, b_col);
     BE::vec_znx_big_sub_negate_assign(module, res, res_col, a, a_col);
@@ -727,9 +739,9 @@ pub fn vec_znx_big_sub_small_b_derived<BE>(
 /// inverse transform lands in, plus the larger of the inverse transform's and
 /// the big normalization's own scratch.
 #[doc(hidden)]
-pub fn vec_znx_idft_normalize_tmp_bytes_derived<BE>(module: &Module<BE>, _res_size: usize, a_size: usize) -> usize
+pub fn vec_znx_idft_normalize_tmp_bytes_derived<BE, Rg: Ring>(module: &Module<BE>, _res_size: usize, a_size: usize) -> usize
 where
-    BE: HalVecZnxDftImpl,
+    BE: HalVecZnxDftImpl<Rg>,
 {
     BE::scratch_aligned(BE::vec_znx_big_bytes_of(module.n(), 1, a_size))
         + BE::vec_znx_idft_apply_tmp_bytes(module).max(BE::vec_znx_big_normalize_tmp_bytes(module))
@@ -737,20 +749,20 @@ where
 
 /// `res = normalize(idft(a) + addend)`, clobbering `a`.
 #[doc(hidden)]
-pub fn vec_znx_idft_normalize_derived<BE>(
+pub fn vec_znx_idft_normalize_derived<BE, Rg: Ring>(
     module: &Module<BE>,
-    res: &mut VecZnxBackendMut<'_, BE>,
+    res: &mut VecZnxBackendMut<'_, BE, Rg>,
     res_base2k: usize,
     res_k: usize,
     res_offset: i64,
     res_col: usize,
-    a: &mut VecZnxDftBackendMut<'_, BE>,
+    a: &mut VecZnxDftBackendMut<'_, BE, Rg>,
     a_col: usize,
     a_base2k: usize,
-    addend: Option<(&VecZnxBackendRef<'_, BE>, usize)>,
+    addend: Option<(&VecZnxBackendRef<'_, BE, Rg>, usize)>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: HalVecZnxDftImpl,
+    BE: HalVecZnxDftImpl<Rg>,
 {
     let a_size: usize = ZnxInfos::size(a);
     let (mut big, mut scratch) = ScratchArenaTakeVecZnxBig::take_vec_znx_big_scratch(scratch.borrow(), ZnxInfos::n(a), 1, a_size);
@@ -774,15 +786,15 @@ pub fn vec_znx_idft_normalize_derived<BE>(
 
 /// `res = tau_p(a)`: build the plan for `p`, apply it, drop it.
 #[doc(hidden)]
-pub fn vec_znx_dft_automorphism_derived<BE>(
+pub fn vec_znx_dft_automorphism_derived<BE, Rg: Ring>(
     module: &Module<BE>,
     p: i64,
-    res: &mut VecZnxDftBackendMut<'_, BE>,
+    res: &mut VecZnxDftBackendMut<'_, BE, Rg>,
     res_col: usize,
-    a: &VecZnxDftBackendRef<'_, BE>,
+    a: &VecZnxDftBackendRef<'_, BE, Rg>,
     a_col: usize,
 ) where
-    BE: HalVecZnxDftImpl,
+    BE: HalVecZnxDftImpl<Rg>,
 {
     let plan = BE::vec_znx_dft_automorphism_plan(module, res.n(), p);
     BE::vec_znx_dft_automorphism_with_plan(module, &plan, res, res_col, a, a_col);
@@ -791,25 +803,29 @@ pub fn vec_znx_dft_automorphism_derived<BE>(
 /// Scratch for [`vec_znx_dft_automorphism_add_with_plan_derived`]: the limbs
 /// the accumulation touches, as one `VecZnxDft`.
 #[doc(hidden)]
-pub fn vec_znx_dft_automorphism_add_with_plan_tmp_bytes_derived<BE>(module: &Module<BE>, res_size: usize, a_size: usize) -> usize
+pub fn vec_znx_dft_automorphism_add_with_plan_tmp_bytes_derived<BE, Rg: Ring>(
+    module: &Module<BE>,
+    res_size: usize,
+    a_size: usize,
+) -> usize
 where
-    BE: HalVecZnxDftImpl,
+    BE: HalVecZnxDftImpl<Rg>,
 {
     BE::vec_znx_dft_bytes_of(module.n(), 1, res_size.min(a_size))
 }
 
 /// `res += automorphism(a)` over `min(res.size(), a.size())` limbs.
 #[doc(hidden)]
-pub fn vec_znx_dft_automorphism_add_with_plan_derived<BE>(
+pub fn vec_znx_dft_automorphism_add_with_plan_derived<BE, Rg: Ring>(
     module: &Module<BE>,
     plan: &BE::AutomorphismPlan,
-    res: &mut VecZnxDftBackendMut<'_, BE>,
+    res: &mut VecZnxDftBackendMut<'_, BE, Rg>,
     res_col: usize,
-    a: &VecZnxDftBackendRef<'_, BE>,
+    a: &VecZnxDftBackendRef<'_, BE, Rg>,
     a_col: usize,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: HalVecZnxDftImpl,
+    BE: HalVecZnxDftImpl<Rg>,
 {
     let size: usize = ZnxInfos::size(res).min(ZnxInfos::size(a));
     let (mut tmp, _) = ScratchArenaTakeVecZnxDft::take_vec_znx_dft_scratch(scratch.borrow(), ZnxInfos::n(res), 1, size);
@@ -819,26 +835,26 @@ pub fn vec_znx_dft_automorphism_add_with_plan_derived<BE>(
 
 /// Scratch for [`svp_apply_dft_derived`]: the transformed right operand.
 #[doc(hidden)]
-pub fn svp_apply_dft_tmp_bytes_derived<BE>(module: &Module<BE>, b_size: usize) -> usize
+pub fn svp_apply_dft_tmp_bytes_derived<BE, Rg: Ring>(module: &Module<BE>, b_size: usize) -> usize
 where
-    BE: HalSvpImpl,
+    BE: HalSvpImpl<Rg>,
 {
     BE::vec_znx_dft_bytes_of(module.n(), 1, b_size)
 }
 
 /// `res = ppol * dft(b)`: transform `b`, then apply in the DFT domain.
 #[doc(hidden)]
-pub fn svp_apply_dft_derived<BE>(
+pub fn svp_apply_dft_derived<BE, Rg: Ring>(
     module: &Module<BE>,
-    res: &mut VecZnxDftBackendMut<'_, BE>,
+    res: &mut VecZnxDftBackendMut<'_, BE, Rg>,
     res_col: usize,
-    a: &SvpPPolBackendRef<'_, BE>,
+    a: &SvpPPolBackendRef<'_, BE, Rg>,
     a_col: usize,
-    b: &VecZnxBackendRef<'_, BE>,
+    b: &VecZnxBackendRef<'_, BE, Rg>,
     b_col: usize,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: HalSvpImpl,
+    BE: HalSvpImpl<Rg>,
 {
     let b_size: usize = ZnxInfos::size(b);
     let (mut b_dft, _) = ScratchArenaTakeVecZnxDft::take_vec_znx_dft_scratch(scratch.borrow(), ZnxInfos::n(res), 1, b_size);
@@ -848,9 +864,9 @@ pub fn svp_apply_dft_derived<BE>(
 
 /// Scratch for [`cnv_pvec_self_prepare_derived`]: the larger of the two prepares.
 #[doc(hidden)]
-pub fn cnv_pvec_self_prepare_tmp_bytes_derived<BE>(module: &Module<BE>, res_size: usize, a_size: usize) -> usize
+pub fn cnv_pvec_self_prepare_tmp_bytes_derived<BE, Rg: Ring>(module: &Module<BE>, res_size: usize, a_size: usize) -> usize
 where
-    BE: HalCnvImpl,
+    BE: HalCnvImpl<Rg>,
 {
     BE::cnv_pvec_left_prepare_tmp_bytes(module, res_size, a_size)
         .max(BE::cnv_pvec_right_prepare_tmp_bytes(module, res_size, a_size))
@@ -858,14 +874,14 @@ where
 
 /// Prepares one operand as both a left and a right convolution factor.
 #[doc(hidden)]
-pub fn cnv_pvec_self_prepare_derived<BE>(
+pub fn cnv_pvec_self_prepare_derived<BE, Rg: Ring>(
     module: &Module<BE>,
-    left: &mut CnvPVecLBackendMut<'_, BE>,
-    right: &mut CnvPVecRBackendMut<'_, BE>,
-    a: &VecZnxBackendRef<'_, BE>,
+    left: &mut CnvPVecLBackendMut<'_, BE, Rg>,
+    right: &mut CnvPVecRBackendMut<'_, BE, Rg>,
+    a: &VecZnxBackendRef<'_, BE, Rg>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: HalCnvImpl,
+    BE: HalCnvImpl<Rg>,
 {
     assert_eq!(right.size(), left.size());
     BE::cnv_pvec_left_prepare(module, left, a, scratch);
@@ -875,7 +891,7 @@ pub fn cnv_pvec_self_prepare_derived<BE>(
 /// Scratch for [`cnv_apply_dft_add_derived`]: one `res_size`-limb `VecZnxDft`
 /// plus the convolution's own scratch.
 #[doc(hidden)]
-pub fn cnv_apply_dft_add_tmp_bytes_derived<BE>(
+pub fn cnv_apply_dft_add_tmp_bytes_derived<BE, Rg: Ring>(
     module: &Module<BE>,
     cnv_offset: usize,
     res_size: usize,
@@ -883,7 +899,7 @@ pub fn cnv_apply_dft_add_tmp_bytes_derived<BE>(
     b_size: usize,
 ) -> usize
 where
-    BE: HalCnvImpl,
+    BE: HalCnvImpl<Rg>,
 {
     BE::scratch_aligned(BE::vec_znx_dft_bytes_of(module.n(), 1, res_size))
         + BE::cnv_apply_dft_tmp_bytes(module, cnv_offset, res_size, a_size, b_size)
@@ -894,19 +910,19 @@ where
 /// limbs of `res` receive zero and keep their previous value, as the contract
 /// requires.
 #[doc(hidden)]
-pub fn cnv_apply_dft_add_derived<BE>(
+pub fn cnv_apply_dft_add_derived<BE, Rg: Ring>(
     module: &Module<BE>,
     cnv_offset: usize,
-    res: &mut VecZnxDftBackendMut<'_, BE>,
+    res: &mut VecZnxDftBackendMut<'_, BE, Rg>,
     res_col: usize,
-    a: &CnvPVecLBackendRef<'_, BE>,
+    a: &CnvPVecLBackendRef<'_, BE, Rg>,
     a_col: usize,
-    b: &CnvPVecRBackendRef<'_, BE>,
+    b: &CnvPVecRBackendRef<'_, BE, Rg>,
     b_col: usize,
     b_galois: i64,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: HalCnvImpl,
+    BE: HalCnvImpl<Rg>,
 {
     let res_size: usize = ZnxInfos::size(res);
     let (mut tmp, mut scratch) =
@@ -918,7 +934,7 @@ pub fn cnv_apply_dft_add_derived<BE>(
 /// Scratch for [`cnv_apply_dft_sum_derived`]: the larger of the one
 /// overwriting and the accumulating product the per-term fallback chains.
 #[doc(hidden)]
-pub fn cnv_apply_dft_sum_tmp_bytes_derived<BE>(
+pub fn cnv_apply_dft_sum_tmp_bytes_derived<BE, Rg: Ring>(
     module: &Module<BE>,
     cnv_offset: usize,
     res_size: usize,
@@ -926,7 +942,7 @@ pub fn cnv_apply_dft_sum_tmp_bytes_derived<BE>(
     b_size: usize,
 ) -> usize
 where
-    BE: HalCnvImpl,
+    BE: HalCnvImpl<Rg>,
 {
     BE::cnv_apply_dft_tmp_bytes(module, cnv_offset, res_size, a_size, b_size)
         .max(BE::cnv_apply_dft_add_tmp_bytes(module, cnv_offset, res_size, a_size, b_size))
@@ -937,21 +953,21 @@ where
 /// bound, and the remaining terms fold in with `cnv_apply_dft_add`. An empty
 /// `terms` slice zeroes the destination column.
 #[doc(hidden)]
-pub fn cnv_apply_dft_sum_derived<BE>(
+pub fn cnv_apply_dft_sum_derived<BE, Rg: Ring>(
     module: &Module<BE>,
     cnv_offset: usize,
-    res: &mut VecZnxDftBackendMut<'_, BE>,
+    res: &mut VecZnxDftBackendMut<'_, BE, Rg>,
     res_col: usize,
-    terms: &[CnvDftAccTerm<'_, BE>],
+    terms: &[CnvDftAccTerm<'_, BE, Rg>],
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: HalCnvImpl,
+    BE: HalCnvImpl<Rg>,
 {
     if terms.is_empty() {
         BE::vec_znx_dft_zero(module, res, res_col);
         return;
     }
-    check_cnv_dft_terms::<BE>(ZnxInfos::n(res), terms);
+    check_cnv_dft_terms::<BE, Rg>(ZnxInfos::n(res), terms);
     for (idx, term) in terms.iter().enumerate() {
         if idx == 0 {
             BE::cnv_apply_dft(
@@ -986,7 +1002,7 @@ pub fn cnv_apply_dft_sum_derived<BE>(
 /// Scratch for [`cnv_by_const_apply_add_derived`]: one `res_size`-limb
 /// `VecZnxBig` plus the product's own scratch.
 #[doc(hidden)]
-pub fn cnv_by_const_apply_add_tmp_bytes_derived<BE>(
+pub fn cnv_by_const_apply_add_tmp_bytes_derived<BE, Rg: Ring>(
     module: &Module<BE>,
     cnv_offset: usize,
     res_size: usize,
@@ -994,7 +1010,7 @@ pub fn cnv_by_const_apply_add_tmp_bytes_derived<BE>(
     b_size: usize,
 ) -> usize
 where
-    BE: HalCnvImpl,
+    BE: HalCnvImpl<Rg>,
 {
     BE::scratch_aligned(BE::vec_znx_big_bytes_of(module.n(), 1, res_size))
         + BE::cnv_by_const_apply_tmp_bytes(module, cnv_offset, res_size, a_size, b_size)
@@ -1003,19 +1019,19 @@ where
 /// `res += a (x) b[b_coeff]`, with the same untouched-limb contract as
 /// [`cnv_apply_dft_add_derived`].
 #[doc(hidden)]
-pub fn cnv_by_const_apply_add_derived<BE>(
+pub fn cnv_by_const_apply_add_derived<BE, Rg: Ring>(
     module: &Module<BE>,
     cnv_offset: usize,
-    res: &mut VecZnxBigBackendMut<'_, BE>,
+    res: &mut VecZnxBigBackendMut<'_, BE, Rg>,
     res_col: usize,
-    a: &VecZnxBackendRef<'_, BE>,
+    a: &VecZnxBackendRef<'_, BE, Rg>,
     a_col: usize,
-    b: &VecZnxBackendRef<'_, BE>,
+    b: &VecZnxBackendRef<'_, BE, Rg>,
     b_col: usize,
     b_coeff: usize,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: HalCnvImpl,
+    BE: HalCnvImpl<Rg>,
 {
     let res_size: usize = ZnxInfos::size(res);
     let (mut tmp, mut scratch) =
@@ -1027,7 +1043,7 @@ pub fn cnv_by_const_apply_add_derived<BE>(
 /// Scratch for [`cnv_pairwise_apply_dft_derived`]: the larger of the one
 /// overwriting and the three accumulating products it chains.
 #[doc(hidden)]
-pub fn cnv_pairwise_apply_dft_tmp_bytes_derived<BE>(
+pub fn cnv_pairwise_apply_dft_tmp_bytes_derived<BE, Rg: Ring>(
     module: &Module<BE>,
     cnv_offset: usize,
     res_size: usize,
@@ -1035,7 +1051,7 @@ pub fn cnv_pairwise_apply_dft_tmp_bytes_derived<BE>(
     b_size: usize,
 ) -> usize
 where
-    BE: HalCnvImpl,
+    BE: HalCnvImpl<Rg>,
 {
     BE::cnv_apply_dft_tmp_bytes(module, cnv_offset, res_size, a_size, b_size)
         .max(BE::cnv_apply_dft_add_tmp_bytes(module, cnv_offset, res_size, a_size, b_size))
@@ -1044,22 +1060,22 @@ where
 /// `res = (a[i] + a[j]) (x) (b[i] + b[j])`, expanded in the DFT domain where
 /// the prepared operands are linear; `i == j` degenerates to one product.
 #[doc(hidden)]
-pub fn cnv_pairwise_apply_dft_derived<BE>(
+pub fn cnv_pairwise_apply_dft_derived<BE, Rg: Ring>(
     module: &Module<BE>,
     cnv_offset: usize,
-    res: &mut VecZnxDftBackendMut<'_, BE>,
+    res: &mut VecZnxDftBackendMut<'_, BE, Rg>,
     res_col: usize,
-    a: &CnvPVecLBackendRef<'_, BE>,
-    b: &CnvPVecRBackendRef<'_, BE>,
+    a: &CnvPVecLBackendRef<'_, BE, Rg>,
+    b: &CnvPVecRBackendRef<'_, BE, Rg>,
     i: usize,
     j: usize,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: HalCnvImpl,
+    BE: HalCnvImpl<Rg>,
 {
     let n: usize = ZnxInfos::n(res);
-    check_cnv_dft_term::<BE>(n, a, i, b, i, 1);
-    check_cnv_dft_term::<BE>(n, a, j, b, j, 1);
+    check_cnv_dft_term::<BE, Rg>(n, a, i, b, i, 1);
+    check_cnv_dft_term::<BE, Rg>(n, a, j, b, j, 1);
     BE::cnv_apply_dft(module, cnv_offset, res, res_col, a, i, b, i, 1, scratch);
     if i == j {
         return;

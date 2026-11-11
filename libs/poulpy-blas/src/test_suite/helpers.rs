@@ -31,7 +31,8 @@ use poulpy_core::layouts::{
 use poulpy_hal::{
     api::{ReimFFT, ReimIFFT},
     layouts::{
-        Backend, Data, HostBytesBackend, HostDataMut, HostDataRef, Module, PrepareHint, Ring, ScratchArena, ScratchOwned, ZnxWord,
+        Backend, Data, HostBytesBackend, HostDataMut, HostDataRef, Module, PrepareHint, Ring, ScratchArena, ScratchOwned,
+        Standard, ZnxWord,
     },
 };
 
@@ -54,14 +55,14 @@ pub const HINTS: [PrepareHint; 2] = [PrepareHint::OneShot, PrepareHint::Reuse];
 
 /// [`BlasMatMulLeftOperandPreparedFactory::blas_matmul_left_operand_prepare`] of `a` under `hint`, into an operand
 /// allocated from the infos [`blas_matmul_left_operand_layout`] gives.
-pub fn matmul_left_operand<BE: BlasMatMulImpl>(
+pub fn matmul_left_operand<BE: BlasMatMulImpl<Rg>, Rg: Ring>(
     module: &Module<BE>,
-    a: &impl BlasGrid<BE>,
-    ctx: &BlasContextPrepared<BE>,
-    keys: &(impl GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync),
+    a: &impl BlasGrid<BE, Rg>,
+    ctx: &BlasContextPrepared<BE, Rg>,
+    keys: &(impl GetAutomorphismKey<BE, Rg> + GetTensorKey<BE, Rg> + Sync),
     hint: PrepareHint,
     scratch: &mut ScratchArena<'_, BE>,
-) -> CKKSResult<BlasMatMulLeftOperandPrepared<BE>> {
+) -> CKKSResult<BlasMatMulLeftOperandPrepared<BE, Rg>> {
     let mut res = module.blas_matmul_left_operand_prepared_alloc_from_infos(&blas_matmul_left_operand_layout(a, ctx, hint));
     module.blas_matmul_left_operand_prepare(&mut res, a, ctx, keys, scratch)?;
     Ok(res)
@@ -69,14 +70,14 @@ pub fn matmul_left_operand<BE: BlasMatMulImpl>(
 
 /// [`BlasMatMulRightOperandPreparedFactory::blas_matmul_right_operand_prepare`] of `b` under `hint`, into an operand
 /// allocated from the infos [`blas_matmul_right_operand_layout`] gives.
-pub fn matmul_right_operand<BE: BlasMatMulImpl>(
+pub fn matmul_right_operand<BE: BlasMatMulImpl<Rg>, Rg: Ring>(
     module: &Module<BE>,
-    b: &impl BlasGrid<BE>,
-    ctx: &BlasContextPrepared<BE>,
-    keys: &(impl GetAutomorphismKey<BE> + GetTensorKey<BE> + Sync),
+    b: &impl BlasGrid<BE, Rg>,
+    ctx: &BlasContextPrepared<BE, Rg>,
+    keys: &(impl GetAutomorphismKey<BE, Rg> + GetTensorKey<BE, Rg> + Sync),
     hint: PrepareHint,
     scratch: &mut ScratchArena<'_, BE>,
-) -> CKKSResult<BlasMatMulRightOperandPrepared<BE>> {
+) -> CKKSResult<BlasMatMulRightOperandPrepared<BE, Rg>> {
     let mut res = module.blas_matmul_right_operand_prepared_alloc_from_infos(&blas_matmul_right_operand_layout(b, ctx, hint));
     module.blas_matmul_right_operand_prepare(&mut res, b, ctx, keys, scratch)?;
     Ok(res)
@@ -259,7 +260,7 @@ pub(crate) fn to_f<F: TestScalar>(v: &[f64]) -> Vec<F> {
 pub fn encrypt_grid<BE, F, E>(
     params: &CKKSTestParams,
     module: &Module<BE>,
-    host_module: &Module<HostBytesBackend<BE::Ring>>,
+    host_module: &Module<HostBytesBackend>,
     encoder: &ReferenceEncoder<E>,
     sk: &GLWESecretPrepared<BE::OwnedBuf, BE>,
     k: usize,
@@ -297,14 +298,14 @@ where
 
 /// A grid of `rows x cols` blocks of dimension `2^log_d` at torus width `k`, at the radix and rank of `params`, recording
 /// the dense batch.
-pub fn alloc_grid<BE: Backend>(
+pub fn alloc_grid<BE: Backend, Rg: Ring>(
     params: &CKKSTestParams,
     module: &Module<BE>,
     log_d: usize,
     rows: usize,
     cols: usize,
     k: usize,
-) -> BlasCiphertextOwned<BE> {
+) -> BlasCiphertextOwned<BE, Rg> {
     let block = CKKSLayout {
         glwe_layout: GLWELayout {
             k: k.into(),
@@ -343,7 +344,7 @@ pub fn mapped_layout(a: &impl BlasGridInfos, rows: usize, cols: usize, res_k: us
 /// and `b.k - 2p` otherwise, so: poulpy-ckks's ct x ct rule on those widths,
 /// `min(res_k, min(wa - da, wb - db) - max(da, db) + min(da, db))` for scales `da` and `db`, at the smaller scale and
 /// label, and the slots of both joined with the maps' `Real`.
-pub fn product_layout<R: Ring>(
+pub fn product_layout<Rg: Ring>(
     a: &impl BlasGridInfos,
     b: &impl BlasGridInfos,
     rows: usize,
@@ -353,7 +354,7 @@ pub fn product_layout<R: Ring>(
 ) -> BlasLayout {
     let (la, lb) = (a.block_layout(), b.block_layout());
     let (da, db) = (la.log_delta(), lb.log_delta());
-    let right = if crate::layouts::replicated::<R>(b) { p } else { 2 * p };
+    let right = if crate::layouts::replicated::<Rg>(b) { p } else { 2 * p };
     let (wa, wb) = (la.k().as_usize() - 2 * p, lb.k().as_usize() - right);
     let budget = (wa - da).min(wb - db) - da.max(db);
     let slots = la.slots().join(lb.slots()).join(SlotsKind::Real);
@@ -400,7 +401,7 @@ pub fn assert_grid_decrypt<BE, F, E>(
     assert_eq!(ct.mat_slots(), Some(batch), "{label}: batch record");
     let log_prec = want_block.log_delta().min(params.prec().log_delta());
     for (b, (block, (re, im))) in ct.blocks().iter().zip(want.blocks(params.n / 2)).enumerate() {
-        assert_decrypt_precision_at_log_delta::<BE, F, E>(
+        assert_decrypt_precision_at_log_delta::<BE, F, E, Standard>(
             &format!("{label} block {b}"),
             params,
             module,
@@ -416,9 +417,9 @@ pub fn assert_grid_decrypt<BE, F, E>(
 }
 
 /// The top-left `rows x cols` blocks of `grid`, with its batch record.
-pub fn corner<BE: Backend>(grid: &BlasCiphertextOwned<BE>, rows: usize, cols: usize) -> BlasCiphertextOwned<BE>
+pub fn corner<BE: Backend, Rg: Ring>(grid: &BlasCiphertextOwned<BE, Rg>, rows: usize, cols: usize) -> BlasCiphertextOwned<BE, Rg>
 where
-    BlasCiphertextOwned<BE>: BlasGridMut<BE> + Clone,
+    BlasCiphertextOwned<BE, Rg>: BlasGridMut<BE, Rg> + Clone,
 {
     let width = grid.cols();
     let blocks = grid
@@ -437,12 +438,12 @@ where
 }
 
 /// A copy of `grid` with the metadata of every block changed by `edit`, its torus width unchanged.
-pub fn relabel<DG: Data, W: ZnxWord, R: Ring>(
-    grid: &BlasCiphertext<DG, W, R>,
+pub fn relabel<DG: Data, W: ZnxWord, Rg: Ring>(
+    grid: &BlasCiphertext<DG, W, Rg>,
     edit: impl Fn(&mut GLWEPlaintextMeta),
-) -> BlasCiphertext<DG, W, R>
+) -> BlasCiphertext<DG, W, Rg>
 where
-    CKKSCiphertext<DG, W, R>: Clone,
+    CKKSCiphertext<DG, W, Rg>: Clone,
 {
     let mut grid = grid.clone();
     for block in grid.blocks_mut() {
@@ -457,10 +458,13 @@ where
 /// limb narrower than the others, labelled one slot so that it records no matrix, recording half the dense batch at
 /// the dense label, as after adding a dense plaintext to a sparse batch, and a scale wider than its blocks. `grid` has
 /// at least two blocks.
-pub fn rejected_grids<BE>(module: &Module<BE>, grid: &BlasCiphertextOwned<BE>) -> [(&'static str, BlasCiphertextOwned<BE>); 5]
+pub fn rejected_grids<BE, Rg: Ring>(
+    module: &Module<BE>,
+    grid: &BlasCiphertextOwned<BE, Rg>,
+) -> [(&'static str, BlasCiphertextOwned<BE, Rg>); 5]
 where
     BE: TestContextBackend,
-    Module<BE>: TestContextSharedModule<BE>,
+    Module<BE>: TestContextSharedModule<BE, Rg>,
 {
     let (log_d, rows, cols, layout) = (grid.log_d(), grid.rows(), grid.cols(), grid.block_layout());
     assert!(rows * cols > 1, "one block cannot be uneven");
@@ -478,7 +482,7 @@ where
             BlasCiphertext::from_blocks(grid.clone().into_blocks(), log_d + 1, rows, cols).unwrap(),
         ),
         ("uneven", BlasCiphertext::from_blocks(uneven, log_d, rows, cols).unwrap()),
-        ("one slot", labelled(module.ckks_max_slots().ilog2() as usize)),
+        ("one slot", labelled(module.ckks_max_slots::<Rg>().ilog2() as usize)),
         ("batch", relabel(&labelled(1), |meta| meta.log_sparsity = 0)),
         (
             "scale",
@@ -489,7 +493,10 @@ where
 
 /// Fresh grids of the dimensions and block layout of `grid`, by label, that an operation rejects beside it: at twice its
 /// degree, one radix lower and one rank higher. Each records the dense batch of its own degree.
-pub fn foreign_layouts<BE>(module: &Module<BE>, grid: &impl BlasGridInfos) -> [(&'static str, BlasCiphertextOwned<BE>); 3]
+pub fn foreign_layouts<BE, Rg: Ring>(
+    module: &Module<BE>,
+    grid: &impl BlasGridInfos,
+) -> [(&'static str, BlasCiphertextOwned<BE, Rg>); 3]
 where
     BE: Backend,
 {
@@ -535,7 +542,7 @@ impl<G: BlasGridInfos> BlasGridInfos for Misshapen<G> {
     }
 }
 
-impl<BE: Backend, G: BlasGrid<BE>> BlasGrid<BE> for Misshapen<G> {
+impl<BE: Backend, G: BlasGrid<BE, Rg>, Rg: Ring> BlasGrid<BE, Rg> for Misshapen<G> {
     type Block = G::Block;
 
     fn blocks(&self) -> &[Self::Block] {
@@ -543,7 +550,7 @@ impl<BE: Backend, G: BlasGrid<BE>> BlasGrid<BE> for Misshapen<G> {
     }
 }
 
-impl<BE: Backend, G: BlasGridMut<BE>> BlasGridMut<BE> for Misshapen<G> {
+impl<BE: Backend, G: BlasGridMut<BE, Rg>, Rg: Ring> BlasGridMut<BE, Rg> for Misshapen<G> {
     fn blocks_mut(&mut self) -> &mut [Self::Block] {
         self.grid.blocks_mut()
     }
@@ -554,13 +561,13 @@ impl<BE: Backend, G: BlasGridMut<BE>> BlasGridMut<BE> for Misshapen<G> {
 }
 
 /// Snapshots of every block, compared before and after a rejected call.
-pub fn grid_snapshot<BE, DG>(grid: &BlasCiphertext<DG, BE::ZnxWord, BE::Ring>) -> Vec<Snapshot>
+pub fn grid_snapshot<BE, DG, Rg: Ring>(grid: &BlasCiphertext<DG, BE::ZnxWord, Rg>) -> Vec<Snapshot>
 where
     BE: Backend<ZnxWord = i64>,
     DG: Data,
-    CKKSCiphertext<DG, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE>,
+    CKKSCiphertext<DG, BE::ZnxWord, Rg>: GLWEToBackendRef<BE, Rg>,
 {
-    grid.blocks().iter().map(snapshot::<BE, _>).collect()
+    grid.blocks().iter().map(snapshot::<BE, _, Rg>).collect()
 }
 
 /// The rejection a guard test expects.
@@ -579,34 +586,34 @@ pub enum Rejection {
 
 /// Runs `call` on `target` and asserts it fails with `rejection` raised by `op` and leaves `target` unchanged, its batch
 /// record included. A budget error names the poulpy-ckks operation that raised it.
-pub fn assert_guard<BE, DG>(
+pub fn assert_guard<BE, DG, Rg: Ring>(
     label: &str,
     op: &str,
     rejection: Rejection,
-    target: &mut BlasCiphertext<DG, BE::ZnxWord, BE::Ring>,
-    call: impl FnOnce(&mut BlasCiphertext<DG, BE::ZnxWord, BE::Ring>) -> CKKSResult<()>,
+    target: &mut BlasCiphertext<DG, BE::ZnxWord, Rg>,
+    call: impl FnOnce(&mut BlasCiphertext<DG, BE::ZnxWord, Rg>) -> CKKSResult<()>,
 ) where
     BE: Backend<ZnxWord = i64>,
     DG: Data,
-    CKKSCiphertext<DG, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE>,
+    CKKSCiphertext<DG, BE::ZnxWord, Rg>: GLWEToBackendRef<BE, Rg>,
 {
-    assert_guard_on::<BE, _, _>(label, op, rejection, target, |grid| grid, call);
+    assert_guard_on::<BE, _, _, Rg>(label, op, rejection, target, |grid| grid, call);
 }
 
 /// [`assert_guard`] on a value holding a grid, read through `grid`.
-pub fn assert_guard_on<BE, X, DG>(
+pub fn assert_guard_on<BE, X, DG, Rg: Ring>(
     label: &str,
     op: &str,
     rejection: Rejection,
     target: &mut X,
-    grid: impl Fn(&X) -> &BlasCiphertext<DG, BE::ZnxWord, BE::Ring>,
+    grid: impl Fn(&X) -> &BlasCiphertext<DG, BE::ZnxWord, Rg>,
     call: impl FnOnce(&mut X) -> CKKSResult<()>,
 ) where
     BE: Backend<ZnxWord = i64>,
     DG: Data,
-    CKKSCiphertext<DG, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE>,
+    CKKSCiphertext<DG, BE::ZnxWord, Rg>: GLWEToBackendRef<BE, Rg>,
 {
-    let state = |target: &X| (grid(target).mat_slots(), grid_snapshot::<BE, _>(grid(target)));
+    let state = |target: &X| (grid(target).mat_slots(), grid_snapshot::<BE, _, Rg>(grid(target)));
     let before = state(target);
     assert_rejected(label, op, rejection, call(target));
     assert!(state(target) == before, "{label}: {op} changed its output");
@@ -633,20 +640,20 @@ pub fn assert_rejected<T>(label: &str, op: &str, rejection: Rejection, result: C
 
 /// Runs `call` on `target` with a scratch one byte short of `bytes`, its query, and asserts it panics before `target`
 /// changes.
-pub fn assert_short_scratch<BE, DG>(
+pub fn assert_short_scratch<BE, DG, Rg: Ring>(
     op: &str,
-    target: &mut BlasCiphertext<DG, BE::ZnxWord, BE::Ring>,
+    target: &mut BlasCiphertext<DG, BE::ZnxWord, Rg>,
     bytes: usize,
-    call: impl FnOnce(&mut BlasCiphertext<DG, BE::ZnxWord, BE::Ring>, &mut ScratchArena<'_, BE>) -> CKKSResult<()>,
+    call: impl FnOnce(&mut BlasCiphertext<DG, BE::ZnxWord, Rg>, &mut ScratchArena<'_, BE>) -> CKKSResult<()>,
 ) where
     BE: Backend<ZnxWord = i64>,
     DG: Data,
-    CKKSCiphertext<DG, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE>,
+    CKKSCiphertext<DG, BE::ZnxWord, Rg>: GLWEToBackendRef<BE, Rg>,
 {
-    let before = grid_snapshot::<BE, _>(target);
+    let before = grid_snapshot::<BE, _, Rg>(target);
     assert_short_scratch_panics::<BE, _>(op, bytes, |s| call(target, s));
     assert!(
-        grid_snapshot::<BE, _>(target) == before,
+        grid_snapshot::<BE, _, Rg>(target) == before,
         "{op} changed its output before panicking"
     );
 }
@@ -664,7 +671,7 @@ pub fn assert_short_scratch_panics<BE: Backend, T>(op: &str, bytes: usize, call:
 
 /// The public operand of `plan` on side `S`, `rows x cols` blocks of `count` matrices read through `entry`, at
 /// `coeffs_meta`, allocated, encoded and prepared on `module`, each call on exactly its query's bytes.
-pub fn pt_operand<BE, F, S>(
+pub fn pt_operand<BE, F, S, Rg: Ring>(
     module: &Module<BE>,
     plan: BlasPlan,
     rows: usize,
@@ -673,18 +680,18 @@ pub fn pt_operand<BE, F, S>(
     entry: impl Fn(usize, usize, usize) -> F,
     base2k: Base2K,
     coeffs_meta: CoeffsMeta,
-) -> BlasPtOperandPrepared<BE, S>
+) -> BlasPtOperandPrepared<BE, S, Rg>
 where
-    BE: Backend + BlasEncodingImpl,
-    Module<BE>: CKKSRightOperandPreparedFactory<BE>
-        + CKKSEncodingOps<BE, F>
-        + BlasEncodingOps<BE, F>
-        + CKKSLinearTransformationOps<BE>
-        + CKKSMulOps<BE>,
+    BE: Backend + BlasEncodingImpl<Rg>,
+    Module<BE>: CKKSRightOperandPreparedFactory<BE, Rg>
+        + CKKSEncodingOps<BE, F, Rg>
+        + BlasEncodingOps<BE, F, Rg>
+        + CKKSLinearTransformationOps<BE, Rg>
+        + CKKSMulOps<BE, Rg>,
     F: DiagonalArithmetic + CKKSEncodingScalar,
     S: BlasPtSide,
 {
-    let mut op = module.blas_pt_operand_alloc::<S>(plan, rows, cols, count, base2k, coeffs_meta);
+    let mut op = module.blas_pt_operand_alloc::<S, Rg>(plan, rows, cols, count, base2k, coeffs_meta);
     with_scratch::<BE, _>(module.blas_pt_operand_encode_tmp_bytes(&op), |s| {
         module.blas_pt_operand_encode(&mut op, entry, s).unwrap()
     });
@@ -787,29 +794,29 @@ impl<G: BlasGridInfos> BlasMatMulOperandInfos for OperandInfos<'_, G> {
 }
 
 /// Prepared rotation keys by Galois element plus an optional tensor key.
-pub struct TestKeys<BE: Backend> {
-    pub atks: HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>>,
-    pub tsk: Option<GLWETensorKeyPrepared<BE::OwnedBuf, BE>>,
+pub struct TestKeys<BE: Backend, Rg: Ring = Standard> {
+    pub atks: HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE, Rg>>,
+    pub tsk: Option<GLWETensorKeyPrepared<BE::OwnedBuf, BE, Rg>>,
 }
 
-impl<BE: Backend> GetAutomorphismKey<BE> for TestKeys<BE>
+impl<BE: Backend, Rg: Ring> GetAutomorphismKey<BE, Rg> for TestKeys<BE, Rg>
 where
-    GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>: GLWEAutomorphismKeyPreparedToBackendRef<BE>,
+    GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE, Rg>: GLWEAutomorphismKeyPreparedToBackendRef<BE, Rg>,
 {
     fn lookup_automorphism_key(
         &self,
         p: i64,
         k: TorusPrecision,
-    ) -> poulpy_core::Result<GLWEAutomorphismKeyPreparedBackendRef<'_, BE>> {
+    ) -> poulpy_core::Result<GLWEAutomorphismKeyPreparedBackendRef<'_, BE, Rg>> {
         self.atks.lookup_automorphism_key(p, k)
     }
 }
 
-impl<BE: Backend> GetTensorKey<BE> for TestKeys<BE>
+impl<BE: Backend, Rg: Ring> GetTensorKey<BE, Rg> for TestKeys<BE, Rg>
 where
-    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE>,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE, Rg>: GLWETensorKeyPreparedToBackendRef<BE, Rg>,
 {
-    fn lookup_tensor_key(&self, k: TorusPrecision) -> poulpy_core::Result<GLWETensorKeyPreparedBackendRef<'_, BE>> {
+    fn lookup_tensor_key(&self, k: TorusPrecision) -> poulpy_core::Result<GLWETensorKeyPreparedBackendRef<'_, BE, Rg>> {
         self.tsk
             .as_ref()
             .ok_or_else(|| poulpy_core::CoreError::GGLWEKeyUse {
@@ -820,14 +827,14 @@ where
     }
 }
 
-impl<BE: Backend> TestKeys<BE> {
+impl<BE: Backend, Rg: Ring> TestKeys<BE, Rg> {
     /// These keys, answering only at the listed widths: a rotation key at `(Galois element, width)` in `atks`, the
     /// tensor key at the widths in `tsks`.
     pub fn at_widths(
         &self,
         atks: impl IntoIterator<Item = (i64, usize)>,
         tsks: impl IntoIterator<Item = usize>,
-    ) -> StrictKeys<'_, BE> {
+    ) -> StrictKeys<'_, BE, Rg> {
         StrictKeys {
             keys: self,
             atks: atks.into_iter().collect(),
@@ -837,8 +844,8 @@ impl<BE: Backend> TestKeys<BE> {
 }
 
 /// [`TestKeys`] answering only at the widths [`TestKeys::at_widths`] lists.
-pub struct StrictKeys<'a, BE: Backend> {
-    keys: &'a TestKeys<BE>,
+pub struct StrictKeys<'a, BE: Backend, Rg: Ring = Standard> {
+    keys: &'a TestKeys<BE, Rg>,
     atks: HashSet<(i64, usize)>,
     tsks: HashSet<usize>,
 }
@@ -847,15 +854,15 @@ fn not_at_width(op: &'static str, detail: String) -> poulpy_core::CoreError {
     poulpy_core::CoreError::GGLWEKeyUse { op, detail }
 }
 
-impl<BE: Backend> GetAutomorphismKey<BE> for StrictKeys<'_, BE>
+impl<BE: Backend, Rg: Ring> GetAutomorphismKey<BE, Rg> for StrictKeys<'_, BE, Rg>
 where
-    GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>: GLWEAutomorphismKeyPreparedToBackendRef<BE>,
+    GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE, Rg>: GLWEAutomorphismKeyPreparedToBackendRef<BE, Rg>,
 {
     fn lookup_automorphism_key(
         &self,
         p: i64,
         k: TorusPrecision,
-    ) -> poulpy_core::Result<GLWEAutomorphismKeyPreparedBackendRef<'_, BE>> {
+    ) -> poulpy_core::Result<GLWEAutomorphismKeyPreparedBackendRef<'_, BE, Rg>> {
         if !self.atks.contains(&(p, k.as_usize())) {
             return Err(not_at_width(
                 "get_automorphism_key",
@@ -866,11 +873,11 @@ where
     }
 }
 
-impl<BE: Backend> GetTensorKey<BE> for StrictKeys<'_, BE>
+impl<BE: Backend, Rg: Ring> GetTensorKey<BE, Rg> for StrictKeys<'_, BE, Rg>
 where
-    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE>,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE, Rg>: GLWETensorKeyPreparedToBackendRef<BE, Rg>,
 {
-    fn lookup_tensor_key(&self, k: TorusPrecision) -> poulpy_core::Result<GLWETensorKeyPreparedBackendRef<'_, BE>> {
+    fn lookup_tensor_key(&self, k: TorusPrecision) -> poulpy_core::Result<GLWETensorKeyPreparedBackendRef<'_, BE, Rg>> {
         if !self.tsks.contains(&k.as_usize()) {
             return Err(not_at_width("get_tensor_key", format!("no tensor key at k={}", k.as_usize())));
         }
@@ -880,9 +887,9 @@ where
 
 /// The rotation keys evaluating `lt` from a ciphertext of width `src_k` into a result of width `res_k` looks up, as
 /// `(Galois element, width)`: the baby steps at `src_k`, the non-empty giant steps at `res_k`.
-pub fn lt_key_uses<BE: Backend>(
+pub fn lt_key_uses<BE: Backend, Rg: Ring>(
     module: &Module<BE>,
-    lt: &LinearTransformationPrepared<BE>,
+    lt: &LinearTransformationPrepared<BE, Rg>,
     src_k: usize,
     res_k: usize,
 ) -> Vec<(i64, usize)>
@@ -897,7 +904,7 @@ where
         .map(|gs| (gs.rot, res_k));
     babies
         .chain(giants)
-        .map(|(rotation, k)| (module.ckks_galois_element(rotation), k))
+        .map(|(rotation, k)| (module.ckks_galois_element::<Rg>(rotation), k))
         .collect()
 }
 
@@ -923,15 +930,15 @@ pub fn other_scales(params: &CKKSTestParams) -> [usize; 2] {
 
 /// The context of `plan` at `coeffs_meta` on `module`, allocated, encoded and prepared, each call on exactly its
 /// query's bytes.
-pub fn encoded_context<BE, F>(
+pub fn encoded_context<BE, F, Rg: Ring>(
     module: &Module<BE>,
     plan: BlasPlan,
     base2k: Base2K,
     coeffs_meta: CoeffsMeta,
-) -> BlasContextPrepared<BE>
+) -> BlasContextPrepared<BE, Rg>
 where
-    BE: Backend + BlasEncodingImpl,
-    Module<BE>: CKKSEncodingOps<BE, F> + BlasEncodingOps<BE, F> + CKKSLinearTransformationOps<BE>,
+    BE: Backend + BlasEncodingImpl<Rg>,
+    Module<BE>: CKKSEncodingOps<BE, F, Rg> + BlasEncodingOps<BE, F, Rg> + CKKSLinearTransformationOps<BE, Rg>,
     F: DiagonalArithmetic + CKKSEncodingScalar,
 {
     let mut ctx = module.blas_context_alloc(plan, base2k, coeffs_meta);
@@ -946,30 +953,34 @@ where
 }
 
 /// The context of `2^log_d x 2^log_d` blocks at `params.prec()`, each call on exactly its query's bytes.
-pub fn blas_context<BE, F>(params: &CKKSTestParams, module: &Module<BE>, log_d: usize) -> crate::layouts::BlasContextPrepared<BE>
+pub fn blas_context<BE, F, Rg: Ring>(
+    params: &CKKSTestParams,
+    module: &Module<BE>,
+    log_d: usize,
+) -> crate::layouts::BlasContextPrepared<BE, Rg>
 where
-    BE: TestContextBackend + BlasEncodingImpl,
-    Module<BE>: TestContextSharedModule<BE>
-        + poulpy_ckks::api::CKKSEncodingOps<BE, F>
-        + BlasEncodingOps<BE, F>
-        + poulpy_ckks::api::CKKSLinearTransformationOps<BE>
+    BE: TestContextBackend + BlasEncodingImpl<Rg>,
+    Module<BE>: TestContextSharedModule<BE, Rg>
+        + poulpy_ckks::api::CKKSEncodingOps<BE, F, Rg>
+        + BlasEncodingOps<BE, F, Rg>
+        + poulpy_ckks::api::CKKSLinearTransformationOps<BE, Rg>
         + poulpy_hal::api::CnvPVecAlloc<BE>,
     F: TestScalar + poulpy_core::layouts::DiagonalArithmetic,
 {
-    encoded_context::<BE, F>(module, BlasPlan::new(log_d), params.base2k.into(), params.prec().into())
+    encoded_context::<BE, F, Rg>(module, BlasPlan::new(log_d), params.base2k.into(), params.prec().into())
 }
 
 /// A rotation key for each of `elements`, and no other.
-pub fn rotation_keys<BE>(
+pub fn rotation_keys<BE, Rg: Ring>(
     params: &CKKSTestParams,
     module: &Module<BE>,
-    sk_raw: &poulpy_core::layouts::BackendGLWESecret<BE>,
+    sk_raw: &poulpy_core::layouts::BackendGLWESecret<BE, Rg>,
     elements: impl IntoIterator<Item = i64>,
     scratch: &mut ScratchArena<'_, BE>,
-) -> HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>>
+) -> HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE, Rg>>
 where
     BE: TestContextBackend,
-    Module<BE>: TestContextSharedModule<BE>,
+    Module<BE>: TestContextSharedModule<BE, Rg>,
 {
     elements
         .into_iter()
@@ -984,40 +995,40 @@ where
 
 /// [`blas_context`] plus a rotation key for each Galois element of its plan.
 #[allow(clippy::type_complexity)]
-pub fn context_and_keys<BE, F>(
+pub fn context_and_keys<BE, F, Rg: Ring>(
     params: &CKKSTestParams,
     module: &Module<BE>,
     log_d: usize,
-    sk_raw: &poulpy_core::layouts::BackendGLWESecret<BE>,
+    sk_raw: &poulpy_core::layouts::BackendGLWESecret<BE, Rg>,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> (
-    crate::layouts::BlasContextPrepared<BE>,
-    HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>>,
+    crate::layouts::BlasContextPrepared<BE, Rg>,
+    HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE, Rg>>,
 )
 where
-    BE: TestContextBackend + BlasEncodingImpl,
-    Module<BE>: TestContextSharedModule<BE>
-        + poulpy_ckks::api::CKKSEncodingOps<BE, F>
-        + BlasEncodingOps<BE, F>
-        + poulpy_ckks::api::CKKSLinearTransformationOps<BE>
+    BE: TestContextBackend + BlasEncodingImpl<Rg>,
+    Module<BE>: TestContextSharedModule<BE, Rg>
+        + poulpy_ckks::api::CKKSEncodingOps<BE, F, Rg>
+        + BlasEncodingOps<BE, F, Rg>
+        + poulpy_ckks::api::CKKSLinearTransformationOps<BE, Rg>
         + poulpy_hal::api::CnvPVecAlloc<BE>,
     F: TestScalar + poulpy_core::layouts::DiagonalArithmetic,
 {
     use poulpy_hal::layouts::CyclotomicOrder;
-    let ctx = blas_context::<BE, F>(params, module, log_d);
+    let ctx = blas_context::<BE, F, Rg>(params, module, log_d);
     let atks = rotation_keys(
         params,
         module,
         sk_raw,
-        ctx.plan().galois_elements(module.cyclotomic_order()),
+        ctx.plan().galois_elements(module.cyclotomic_order::<Rg>()),
         scratch,
     );
     (ctx, atks)
 }
 
 /// The Galois elements the encoded `maps` rotate by on a ring of cyclotomic order `order`, sorted and deduplicated.
-pub fn map_galois_elements<'a, BE: Backend + 'a>(
-    maps: impl IntoIterator<Item = &'a LinearTransformationPrepared<BE>>,
+pub fn map_galois_elements<'a, BE: Backend + 'a, Rg: Ring>(
+    maps: impl IntoIterator<Item = &'a LinearTransformationPrepared<BE, Rg>>,
     order: i64,
 ) -> Vec<i64> {
     let mut elements: Vec<i64> = maps.into_iter().flat_map(|lt| lt.galois_elements(order)).collect();
@@ -1029,33 +1040,34 @@ pub fn map_galois_elements<'a, BE: Backend + 'a>(
 /// Contexts of `plan` an operation on `module` rejects, by label: one encoded on a module of twice the degree, one at a
 /// radix one below `params.base2k`. `atks` gains a key for every rotation they take on `module`, so no missing key stops
 /// an operation from evaluating them.
-pub fn foreign_contexts<BE, F>(
+pub fn foreign_contexts<BE, F, Rg: Ring>(
     params: &CKKSTestParams,
     module: &Module<BE>,
     plan: BlasPlan,
-    sk_raw: &poulpy_core::layouts::BackendGLWESecret<BE>,
-    atks: &mut HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>>,
+    sk_raw: &poulpy_core::layouts::BackendGLWESecret<BE, Rg>,
+    atks: &mut HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE, Rg>>,
     scratch: &mut ScratchArena<'_, BE>,
-) -> [(&'static str, crate::layouts::BlasContextPrepared<BE>); 2]
+) -> [(&'static str, crate::layouts::BlasContextPrepared<BE, Rg>); 2]
 where
-    BE: TestContextBackend + BlasEncodingImpl,
-    Module<BE>: TestContextSharedModule<BE>
-        + poulpy_ckks::api::CKKSEncodingOps<BE, F>
-        + BlasEncodingOps<BE, F>
-        + poulpy_ckks::api::CKKSLinearTransformationOps<BE>
+    BE: TestContextBackend + BlasEncodingImpl<Rg>,
+    Module<BE>: TestContextSharedModule<BE, Rg>
+        + poulpy_ckks::api::CKKSEncodingOps<BE, F, Rg>
+        + BlasEncodingOps<BE, F, Rg>
+        + poulpy_ckks::api::CKKSLinearTransformationOps<BE, Rg>
         + poulpy_hal::api::CnvPVecAlloc<BE>,
     F: TestScalar + poulpy_core::layouts::DiagonalArithmetic,
 {
     use poulpy_hal::layouts::CyclotomicOrder;
     let double = Module::<BE>::new(2 * params.n as u64);
-    let encode = |module: &Module<BE>, base2k: usize| encoded_context::<BE, F>(module, plan, base2k.into(), params.prec().into());
+    let encode =
+        |module: &Module<BE>, base2k: usize| encoded_context::<BE, F, Rg>(module, plan, base2k.into(), params.prec().into());
     let contexts = [
         ("degree", encode(&double, params.base2k)),
         ("base2k", encode(module, params.base2k - 1)),
     ];
     for p in contexts
         .iter()
-        .flat_map(|(_, ctx)| map_galois_elements(ctx.maps(), module.cyclotomic_order()))
+        .flat_map(|(_, ctx)| map_galois_elements(ctx.maps(), module.cyclotomic_order::<Rg>()))
     {
         atks.entry(p)
             .or_insert_with(|| poulpy_ckks::test_suite::helpers::gen_atk(params, module, p, sk_raw, scratch));

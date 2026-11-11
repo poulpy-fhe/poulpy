@@ -8,14 +8,14 @@ use poulpy_hal::layouts::{Backend, ConjugateInvariant, Data, ScratchArena};
 use crate::{CKKSCtBounds, SetCKKSInfos, layouts::CKKSCiphertext};
 
 /// The embedding of conjugate-invariant ciphertexts of degree `N` into standard
-/// ciphertexts of degree `2N` and the relative trace back, on a standard module
-/// of degree at least `2N`.
+/// ciphertexts of degree `2N` and the relative trace back, on a module of degree
+/// at least `2N`.
 ///
 /// Each map switches between the conjugate-invariant secret and a standard secret
 /// with its key, [`GLWECIEmbedKey`](poulpy_core::layouts::GLWECIEmbedKey) or
 /// [`GLWECITraceKey`](poulpy_core::layouts::GLWECITraceKey), encrypted by
-/// [`GLWECIKeyEncryptSk`](poulpy_core::GLWECIKeyEncryptSk). Not implemented on
-/// conjugate-invariant backends.
+/// [`GLWECIKeyEncryptSk`](poulpy_core::GLWECIKeyEncryptSk). The standard operand
+/// has twice the degree of the conjugate-invariant one.
 ///
 /// # Metadata
 ///
@@ -55,7 +55,7 @@ pub trait CKKSCIRingMapOps<BE: Backend> {
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         D: Data,
-        GLWE<D, BE::ZnxWord>: GLWEToBackendRef<BE>,
+        GLWE<D, BE::ZnxWord, ConjugateInvariant>: GLWEToBackendRef<BE, ConjugateInvariant>,
         K: Data,
         GLWECIEmbedKeyPrepared<K, BE>: GGLWEPreparedToBackendRef<BE>;
 
@@ -75,7 +75,7 @@ pub trait CKKSCIRingMapOps<BE: Backend> {
     ) -> Result<()>
     where
         D: Data,
-        GLWE<D, BE::ZnxWord>: GLWEToBackendMut<BE>,
+        GLWE<D, BE::ZnxWord, ConjugateInvariant>: GLWEToBackendMut<BE, ConjugateInvariant>,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: Data,
         GLWECITraceKeyPrepared<K, BE>: GGLWEPreparedToBackendRef<BE>;

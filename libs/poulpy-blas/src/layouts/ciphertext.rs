@@ -10,7 +10,9 @@ use poulpy_core::{
     GLWEBytesOf,
     layouts::{Base2K, GLWE, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, TorusPrecision},
 };
-use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, Module, PrepareHint, ReaderFrom, Ring, WriterTo, ZnxWord};
+use poulpy_hal::layouts::{
+    Backend, Data, HostDataMut, HostDataRef, Module, PrepareHint, ReaderFrom, Ring, Standard, WriterTo, ZnxWord,
+};
 
 /// An `rows x cols` grid of `2^log_d x 2^log_d` blocks: block `(i, j)` is one CKKS ciphertext whose matrix slot `s`
 /// holds block `(i, j)` of the `s`-th matrix of the batch.
@@ -19,8 +21,8 @@ use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, Module, Prepa
 /// their slots. [`Self::from_blocks`] records the batch the blocks' label proves, and every operation records one on
 /// its result. Every operation also rejects a grid whose label does not allow its record: with `S` slots, degree `n`
 /// and label `s`, the record is a power of two, `s <= log2 n`, and `(S >> s) / d^2 <= mat_slots <= S / d^2`.
-pub struct BlasCiphertext<D: Data, W: ZnxWord, R: Ring> {
-    blocks: Vec<CKKSCiphertext<D, W, R>>,
+pub struct BlasCiphertext<D: Data, W: ZnxWord, Rg: Ring = Standard> {
+    blocks: Vec<CKKSCiphertext<D, W, Rg>>,
     log_d: usize,
     rows: usize,
     cols: usize,
@@ -29,7 +31,7 @@ pub struct BlasCiphertext<D: Data, W: ZnxWord, R: Ring> {
 }
 
 /// Backend-owned grid.
-pub type BlasCiphertextOwned<BE> = BlasCiphertext<<BE as Backend>::OwnedBuf, <BE as Backend>::ZnxWord, <BE as Backend>::Ring>;
+pub type BlasCiphertextOwned<BE, Rg = Standard> = BlasCiphertext<<BE as Backend>::OwnedBuf, <BE as Backend>::ZnxWord, Rg>;
 
 /// Dimensions of a grid and the layout every one of its blocks shares.
 pub trait BlasGridInfos {
@@ -102,9 +104,9 @@ impl<T: BlasGridInfos + ?Sized> BlasGridInfos for &mut T {
 }
 
 /// A grid the operations read: its blocks, row-major, shareable across the tasks of a parallel implementation.
-pub trait BlasGrid<BE: Backend>: BlasGridInfos {
+pub trait BlasGrid<BE: Backend, Rg: Ring = Standard>: BlasGridInfos {
     /// One block ciphertext.
-    type Block: GLWEToBackendRef<BE> + CKKSCtBounds + Sync;
+    type Block: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + Sync;
 
     /// Every block, row-major: block `(i, j)` at `i * cols + j`, so exactly `rows * cols` of them, at least one. Every
     /// operation rejects a grid that breaks this.
@@ -112,7 +114,9 @@ pub trait BlasGrid<BE: Backend>: BlasGridInfos {
 }
 
 /// A grid the operations write: each block can move into its own task.
-pub trait BlasGridMut<BE: Backend>: BlasGrid<BE, Block: GLWEToBackendMut<BE> + SetCKKSInfos + Send> {
+pub trait BlasGridMut<BE: Backend, Rg: Ring = Standard>:
+    BlasGrid<BE, Rg, Block: GLWEToBackendMut<BE, Rg> + SetCKKSInfos + Send>
+{
     /// Every block, row-major, mutably.
     fn blocks_mut(&mut self) -> &mut [Self::Block];
 
@@ -234,16 +238,16 @@ pub(crate) fn mat_slots_in(slots: usize, log_d: usize, log_sparsity: usize) -> u
         .unwrap_or(0)
 }
 
-/// Slots of a block of degree `n` on ring `R`.
-pub(crate) fn slots_of<R: Ring>(n: usize) -> usize {
-    n * R::CYCLOTOMIC_ORDER_FACTOR as usize / 4
+/// Slots of a block of degree `n` on ring `Rg`.
+pub(crate) fn slots_of<Rg: Ring>(n: usize) -> usize {
+    n * Rg::CYCLOTOMIC_ORDER_FACTOR as usize / 4
 }
 
-/// The batch of `g`, the number of matrices its blocks hold, on ring `R` (`BE::Ring`): its record
+/// The batch of `g`, the number of matrices its blocks hold, on ring `Rg`: its record
 /// ([`BlasGridInfos::mat_slots`]), or for a grid without one the batch its blocks' label proves. Every operation reads an
 /// input's batch so, and a preparation records it on its operand.
-pub fn grid_batch<R: Ring>(g: &impl BlasGridInfos) -> usize {
-    grid_batch_at(slots_of::<R>(g.block_layout().n().as_usize()), g)
+pub fn grid_batch<Rg: Ring>(g: &impl BlasGridInfos) -> usize {
+    grid_batch_at(slots_of::<Rg>(g.block_layout().n().as_usize()), g)
 }
 
 /// [`grid_batch`] at `slots` slots, which the caller supplies.
@@ -252,11 +256,11 @@ pub(crate) fn grid_batch_at(slots: usize, g: &impl BlasGridInfos) -> usize {
         .unwrap_or_else(|| mat_slots_in(slots, g.log_d(), g.block_layout().log_sparsity()))
 }
 
-/// Whether every matrix slot of `g`, on ring `R`, holds the same matrix, as its label proves: the slots repeat with a
+/// Whether every matrix slot of `g`, on ring `Rg`, holds the same matrix, as its label proves: the slots repeat with a
 /// period of at most `d^2`, so a rotation by a multiple of `d` wraps inside a block. It is meaningful once `g` passes
 /// the batch check every operation runs first: a label proving no matrix makes it vacuously true.
-pub fn replicated<R: Ring>(g: &impl BlasGridInfos) -> bool {
-    replicated_at(slots_of::<R>(g.block_layout().n().as_usize()), g)
+pub fn replicated<Rg: Ring>(g: &impl BlasGridInfos) -> bool {
+    replicated_at(slots_of::<Rg>(g.block_layout().n().as_usize()), g)
 }
 
 /// [`replicated`] at `slots` slots, which the caller supplies: the context's or the operand's slot count. The validators
@@ -265,20 +269,20 @@ pub(crate) fn replicated_at(slots: usize, g: &impl BlasGridInfos) -> bool {
     mat_slots_in(slots, g.log_d(), g.block_layout().log_sparsity()) <= 1
 }
 
-/// Whether the label of the blocks of `g`, on ring `R`, allows its batch ([`grid_batch`]): with `S` slots, label `s` and
+/// Whether the label of the blocks of `g`, on ring `Rg`, allows its batch ([`grid_batch`]): with `S` slots, label `s` and
 /// degree `n`, a power of two with `s <= log2 n` and `(S >> s) / d^2 <= mat_slots <= S / d^2`. The lower bound covers
 /// whole periods of the slots, so rotations modulo the batch and sums over it keep their meaning.
-pub(crate) fn batch_fits<R: Ring>(g: &impl BlasGridInfos) -> bool {
+pub(crate) fn batch_fits<Rg: Ring>(g: &impl BlasGridInfos) -> bool {
     let block = g.block_layout();
     let (n, s) = (block.n().as_usize(), block.log_sparsity());
-    let (slots, mat_slots) = (slots_of::<R>(n), grid_batch::<R>(g));
+    let (slots, mat_slots) = (slots_of::<Rg>(n), grid_batch::<Rg>(g));
     mat_slots.is_power_of_two()
         && s <= n.ilog2() as usize
         && mat_slots_in(slots, g.log_d(), s) <= mat_slots
         && mat_slots <= mat_slots_in(slots, g.log_d(), 0)
 }
 
-impl<D: Data, W: ZnxWord, R: Ring> BlasCiphertext<D, W, R> {
+impl<D: Data, W: ZnxWord, Rg: Ring> BlasCiphertext<D, W, Rg> {
     /// Reads `blocks`, row-major, as a `rows x cols` grid of `2^log_d x 2^log_d` blocks, recording the batch the label
     /// of block `(0, 0)` proves: with `S` slots and label `s`, `(S >> s) / d^2` matrices, `0` when one block does not
     /// fit (every operation then rejects the grid).
@@ -295,7 +299,7 @@ impl<D: Data, W: ZnxWord, R: Ring> BlasCiphertext<D, W, R> {
     ///
     /// Plaintext operations keep the smaller of the ciphertext's label and the plaintext's: adding a degree-`N` plaintext
     /// to the blocks of a sparse batch drops their label to 0, so the next operation rejects the grid.
-    pub fn from_blocks(blocks: Vec<CKKSCiphertext<D, W, R>>, log_d: usize, rows: usize, cols: usize) -> Result<Self> {
+    pub fn from_blocks(blocks: Vec<CKKSCiphertext<D, W, Rg>>, log_d: usize, rows: usize, cols: usize) -> Result<Self> {
         ensure!(rows > 0 && cols > 0, "a grid has at least one block");
         ensure!(
             rows.checked_mul(cols) == Some(blocks.len()),
@@ -303,7 +307,7 @@ impl<D: Data, W: ZnxWord, R: Ring> BlasCiphertext<D, W, R> {
             blocks.len()
         );
         let block = &blocks[0];
-        let mat_slots = mat_slots_in(slots_of::<R>(block.n().as_usize()), log_d, block.log_sparsity());
+        let mat_slots = mat_slots_in(slots_of::<Rg>(block.n().as_usize()), log_d, block.log_sparsity());
         Ok(Self {
             blocks,
             log_d,
@@ -324,35 +328,35 @@ impl<D: Data, W: ZnxWord, R: Ring> BlasCiphertext<D, W, R> {
     }
 
     /// Block `(i, j)`.
-    pub fn block(&self, i: usize, j: usize) -> &CKKSCiphertext<D, W, R> {
+    pub fn block(&self, i: usize, j: usize) -> &CKKSCiphertext<D, W, Rg> {
         &self.blocks[self.index(i, j)]
     }
 
     /// Block `(i, j)`, mutably.
-    pub fn block_mut(&mut self, i: usize, j: usize) -> &mut CKKSCiphertext<D, W, R> {
+    pub fn block_mut(&mut self, i: usize, j: usize) -> &mut CKKSCiphertext<D, W, Rg> {
         let t = self.index(i, j);
         &mut self.blocks[t]
     }
 
     /// Every block, row-major.
-    pub fn blocks(&self) -> &[CKKSCiphertext<D, W, R>] {
+    pub fn blocks(&self) -> &[CKKSCiphertext<D, W, Rg>] {
         &self.blocks
     }
 
     /// Every block, row-major, mutably.
-    pub fn blocks_mut(&mut self) -> &mut [CKKSCiphertext<D, W, R>] {
+    pub fn blocks_mut(&mut self) -> &mut [CKKSCiphertext<D, W, Rg>] {
         &mut self.blocks
     }
 
     /// Returns the blocks, row-major.
-    pub fn into_blocks(self) -> Vec<CKKSCiphertext<D, W, R>> {
+    pub fn into_blocks(self) -> Vec<CKKSCiphertext<D, W, Rg>> {
         self.blocks
     }
 }
 
-impl<D: Data, W: ZnxWord, R: Ring> Clone for BlasCiphertext<D, W, R>
+impl<D: Data, W: ZnxWord, Rg: Ring> Clone for BlasCiphertext<D, W, Rg>
 where
-    CKKSCiphertext<D, W, R>: Clone,
+    CKKSCiphertext<D, W, Rg>: Clone,
 {
     fn clone(&self) -> Self {
         Self {
@@ -365,7 +369,7 @@ where
     }
 }
 
-impl<D: Data, W: ZnxWord, R: Ring> BlasGridInfos for BlasCiphertext<D, W, R> {
+impl<D: Data, W: ZnxWord, Rg: Ring> BlasGridInfos for BlasCiphertext<D, W, Rg> {
     fn log_d(&self) -> usize {
         self.log_d
     }
@@ -387,7 +391,7 @@ impl<D: Data, W: ZnxWord, R: Ring> BlasGridInfos for BlasCiphertext<D, W, R> {
     }
 }
 
-impl<D: Data, W: ZnxWord, R: Ring> BlasCiphertext<D, W, R> {
+impl<D: Data, W: ZnxWord, Rg: Ring> BlasCiphertext<D, W, Rg> {
     /// The grid's header: `log_d` (u8), its rows and columns (u64), then the blocks' `n` (u64), `base2k`, `k` (u32) and
     /// rank (u64). Blocks that differ in `n`, `base2k`, `k` or rank, which it cannot describe, are
     /// [`std::io::ErrorKind::InvalidInput`].
@@ -413,7 +417,7 @@ impl<D: Data, W: ZnxWord, R: Ring> BlasCiphertext<D, W, R> {
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord, R: Ring> WriterTo for BlasCiphertext<D, W, R> {
+impl<D: HostDataRef, W: ZnxWord, Rg: Ring> WriterTo for BlasCiphertext<D, W, Rg> {
     /// Serialises the grid in little-endian binary format: its header, its batch record (u64), then every block,
     /// row-major, as a [`CKKSCiphertext`] of its first `ceil(k / base2k)` limbs, so the stream follows the header's `k`,
     /// not the allocation. Blocks that differ in `n`, `base2k`, `k` or rank, which the header cannot describe, and a
@@ -432,12 +436,13 @@ impl<D: HostDataRef, W: ZnxWord, R: Ring> WriterTo for BlasCiphertext<D, W, R> {
     }
 }
 
-impl<D: HostDataMut, W: ZnxWord, R: Ring> ReaderFrom for BlasCiphertext<D, W, R> {
+impl<D: HostDataMut, W: ZnxWord, Rg: Ring> ReaderFrom for BlasCiphertext<D, W, Rg> {
     /// Deserialises into a grid allocated from the writer's layout, or one of more limbs per block, which then holds the
     /// written limbs: a receiver whose blocks differ in layout fails with [`std::io::ErrorKind::InvalidInput`], another
     /// `log_d`, row or column count, or block `n`, `base2k`, `k` or rank with [`std::io::ErrorKind::InvalidData`], before
-    /// any block is read, and a block of another `n`, `base2k` or limb count than the header's with
-    /// [`std::io::ErrorKind::InvalidData`] before its limbs are read. The grid then records the written batch.
+    /// any block is read, and a block of another ring than the receiver's, or of another `n`, `base2k` or limb count than
+    /// the header's, with [`std::io::ErrorKind::InvalidData`] before its limbs are read. The grid then records the written
+    /// batch.
     fn read_from<Rd: std::io::Read>(&mut self, reader: &mut Rd) -> std::io::Result<()> {
         let header = self.header()?;
         let mut read = vec![0u8; header.len()];
@@ -456,20 +461,20 @@ impl<D: HostDataMut, W: ZnxWord, R: Ring> ReaderFrom for BlasCiphertext<D, W, R>
     }
 }
 
-impl<BE: Backend, D: Data + Sync> BlasGrid<BE> for BlasCiphertext<D, BE::ZnxWord, BE::Ring>
+impl<BE: Backend, D: Data + Sync, Rg: Ring> BlasGrid<BE, Rg> for BlasCiphertext<D, BE::ZnxWord, Rg>
 where
-    CKKSCiphertext<D, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE>,
+    CKKSCiphertext<D, BE::ZnxWord, Rg>: GLWEToBackendRef<BE, Rg>,
 {
-    type Block = CKKSCiphertext<D, BE::ZnxWord, BE::Ring>;
+    type Block = CKKSCiphertext<D, BE::ZnxWord, Rg>;
 
     fn blocks(&self) -> &[Self::Block] {
         &self.blocks
     }
 }
 
-impl<BE: Backend, D: Data + Send + Sync> BlasGridMut<BE> for BlasCiphertext<D, BE::ZnxWord, BE::Ring>
+impl<BE: Backend, D: Data + Send + Sync, Rg: Ring> BlasGridMut<BE, Rg> for BlasCiphertext<D, BE::ZnxWord, Rg>
 where
-    CKKSCiphertext<D, BE::ZnxWord, BE::Ring>: GLWEToBackendMut<BE>,
+    CKKSCiphertext<D, BE::ZnxWord, Rg>: GLWEToBackendMut<BE, Rg>,
 {
     fn blocks_mut(&mut self) -> &mut [Self::Block] {
         &mut self.blocks
@@ -487,14 +492,14 @@ pub trait BlasCiphertextAlloc<BE: Backend>: CKKSCiphertextAlloc<BE> {
     /// # Panics
     ///
     /// Panics if `rows` or `cols` is zero, or if `rows * cols` overflows `usize`.
-    fn blas_ciphertext_alloc(
+    fn blas_ciphertext_alloc<Rg: Ring>(
         &self,
         log_d: usize,
         rows: usize,
         cols: usize,
         base2k: Base2K,
         k: TorusPrecision,
-    ) -> BlasCiphertextOwned<BE> {
+    ) -> BlasCiphertextOwned<BE, Rg> {
         let blocks = (0..rows.checked_mul(cols).expect("rows * cols overflows usize"))
             .map(|_| self.ckks_ciphertext_alloc(base2k, k))
             .collect();
@@ -507,7 +512,7 @@ pub trait BlasCiphertextAlloc<BE: Backend>: CKKSCiphertextAlloc<BE> {
     /// # Panics
     ///
     /// Panics if the `rows` or `cols` of `infos` is zero, or if their product overflows `usize`.
-    fn blas_ciphertext_alloc_from_infos<G: BlasGridInfos>(&self, infos: &G) -> BlasCiphertextOwned<BE> {
+    fn blas_ciphertext_alloc_from_infos<G: BlasGridInfos, Rg: Ring>(&self, infos: &G) -> BlasCiphertextOwned<BE, Rg> {
         let layout = infos.block_layout();
         let blocks = (0..infos.rows().checked_mul(infos.cols()).expect("rows * cols overflows usize"))
             .map(|_| self.ckks_ciphertext_alloc_from_infos(&layout))
@@ -547,50 +552,50 @@ mod tests {
     use super::*;
     use crate::layouts::{
         BlasContextPrepared, BlasDiagonalCiphertext, BlasDiagonalCiphertextPrepared, BlasMatMulOperandPrepared,
-        BlasMatVecOperand, BlasMatVecOperandPrepared, BlasPtOperandPrepared, BlasVectorMut, BlasVectorOwned,
+        BlasMatVecOperand, BlasMatVecOperandPrepared, BlasPtOperandPrepared, BlasVectorMut, BlasVectorOwned, Right,
     };
     use poulpy_ckks::{
         CKKSError, SetGLWEPlaintextInfos,
         layouts::{CKKSLeftOperandPrepared, CKKSRightOperandPrepared},
     };
     use poulpy_core::layouts::{SetK, prepared::GLWETensorKeyPrepared};
-    use poulpy_hal::layouts::{HostBytesBackend, Standard};
+    use poulpy_hal::layouts::{ConjugateInvariant, HostBytesBackend, Standard};
     use poulpy_hal::layouts::{ReaderFrom, WriterTo, ZnxView, ZnxViewMut};
 
-    type Grid = BlasCiphertextOwned<HostBytesBackend>;
+    type Grid<Rg> = BlasCiphertextOwned<HostBytesBackend, Rg>;
 
     /// Grids and vectors over owned storage are inputs and outputs of every operation on every backend, with no unsafe
     /// impl, and contexts, public operands of either kind, the reference's prepared operands and the prepared terms the
     /// JKLS kernel shares across one block's tasks, poulpy-core's prepared tensor key and errors cross threads: they meet
     /// the traits' `Send` and `Sync` bounds as they are. Borrowed views are not grids, their blocks not being `GLWEToBackendRef`; they are as
     /// thread-safe as their buffers: `BufRef` views `Sync`, `BufMut` views only `Send`.
-    fn assert_thread_safe<'a, BE: Backend + 'a>() {
-        fn output<BE: Backend, G: BlasGridMut<BE> + Send + Sync>() {}
-        fn vector<BE: Backend, V: BlasVectorMut<BE> + Send + Sync>() {}
+    fn assert_thread_safe<'a, BE: Backend + 'a, Rg: Ring>() {
+        fn output<BE: Backend, G: BlasGridMut<BE, Rg> + Send + Sync, Rg: Ring>() {}
+        fn vector<BE: Backend, V: BlasVectorMut<BE, Rg> + Send + Sync, Rg: Ring>() {}
         fn sync<T: Sync>() {}
         fn send<T: Send>() {}
         fn operand<T: Send + Sync>() {}
-        output::<BE, BlasCiphertextOwned<BE>>();
-        vector::<BE, BlasVectorOwned<BE>>();
-        sync::<BlasMatVecOperandPrepared<BE>>();
-        sync::<BlasMatVecOperand<BE>>();
-        operand::<BlasDiagonalCiphertext<BE>>();
-        operand::<BlasDiagonalCiphertextPrepared<BE>>();
-        sync::<BlasContextPrepared<BE>>();
-        sync::<BlasPtOperandPrepared<BE>>();
-        operand::<BlasMatMulOperandPrepared<BE, CKKSLeftOperandPrepared<BE>>>();
-        operand::<BlasMatMulOperandPrepared<BE, CKKSRightOperandPrepared<BE>>>();
-        sync::<CKKSLeftOperandPrepared<BE>>();
-        sync::<CKKSRightOperandPrepared<BE>>();
-        sync::<GLWETensorKeyPrepared<BE::OwnedBuf, BE>>();
+        output::<BE, BlasCiphertextOwned<BE, Rg>, Rg>();
+        vector::<BE, BlasVectorOwned<BE, Rg>, Rg>();
+        sync::<BlasMatVecOperandPrepared<BE, Rg>>();
+        sync::<BlasMatVecOperand<BE, Rg>>();
+        operand::<BlasDiagonalCiphertext<BE, Rg>>();
+        operand::<BlasDiagonalCiphertextPrepared<BE, Rg>>();
+        sync::<BlasContextPrepared<BE, Rg>>();
+        sync::<BlasPtOperandPrepared<BE, Right, Rg>>();
+        operand::<BlasMatMulOperandPrepared<BE, CKKSLeftOperandPrepared<BE, Rg>, Rg>>();
+        operand::<BlasMatMulOperandPrepared<BE, CKKSRightOperandPrepared<BE, Rg>, Rg>>();
+        sync::<CKKSLeftOperandPrepared<BE, Rg>>();
+        sync::<CKKSRightOperandPrepared<BE, Rg>>();
+        sync::<GLWETensorKeyPrepared<BE::OwnedBuf, BE, Rg>>();
         send::<CKKSError>();
-        sync::<BlasCiphertext<BE::BufRef<'a>, BE::ZnxWord, BE::Ring>>();
-        send::<BlasCiphertext<BE::BufMut<'a>, BE::ZnxWord, BE::Ring>>();
+        sync::<BlasCiphertext<BE::BufRef<'a>, BE::ZnxWord, Rg>>();
+        send::<BlasCiphertext<BE::BufMut<'a>, BE::ZnxWord, Rg>>();
     }
 
     #[test]
     fn grids_are_send_and_sync() {
-        assert_thread_safe::<HostBytesBackend>();
+        assert_thread_safe::<HostBytesBackend, Standard>();
     }
 
     fn module() -> Module<HostBytesBackend> {
@@ -598,7 +603,7 @@ mod tests {
     }
 
     /// `grid`'s blocks labelled `log_sparsity`, read again at `log_d`.
-    fn relabelled(grid: Grid, log_d: usize, log_sparsity: usize) -> Grid {
+    fn relabelled(grid: Grid<Standard>, log_d: usize, log_sparsity: usize) -> Grid<Standard> {
         let (rows, cols) = (grid.rows(), grid.cols());
         let mut blocks = grid.into_blocks();
         blocks.iter_mut().for_each(|block| block.set_log_sparsity(log_sparsity));
@@ -615,7 +620,7 @@ mod tests {
             let ct = relabelled(ct.clone(), 2, log_sparsity);
             assert_eq!(ct.mat_slots(), Some(mat_slots), "log_sparsity={log_sparsity}");
         }
-        let too_big = module.blas_ciphertext_alloc(4, 1, 1, 19usize.into(), 60usize.into());
+        let too_big = module.blas_ciphertext_alloc::<Standard>(4, 1, 1, 19usize.into(), 60usize.into());
         assert_eq!(too_big.mat_slots(), Some(0));
         // A shift past the word width reads as no matrix, not an overflow.
         let wide = BlasCiphertext::from_blocks(too_big.into_blocks(), 40, 1, 1).unwrap();
@@ -658,7 +663,7 @@ mod tests {
     #[test]
     fn grids_check_their_shape() {
         let module = module();
-        let blocks = || (0..6usize).map(|t| module.ckks_ciphertext_alloc(19usize.into(), (40 + t).into()));
+        let blocks = || (0..6usize).map(|t| module.ckks_ciphertext_alloc::<Standard>(19usize.into(), (40 + t).into()));
         assert!(BlasCiphertext::from_blocks(blocks().take(5).collect(), 2, 2, 3).is_err());
         assert!(BlasCiphertext::from_blocks(blocks().take(0).collect(), 2, 0, 3).is_err());
         let mut grid = BlasCiphertext::from_blocks(blocks().collect(), 2, 2, 3).unwrap();
@@ -671,9 +676,9 @@ mod tests {
     #[test]
     fn grids_allocate_from_infos() {
         let module = module();
-        let mut a = module.blas_ciphertext_alloc(2, 2, 3, 19usize.into(), 60usize.into());
+        let mut a = module.blas_ciphertext_alloc::<Standard>(2, 2, 3, 19usize.into(), 60usize.into());
         let layout = BlasLayout::new(a.block_layout(), 2, 3, 2);
-        let t = module.blas_ciphertext_alloc_from_infos(&layout);
+        let t = module.blas_ciphertext_alloc_from_infos::<_, Standard>(&layout);
         assert_eq!(
             (t.log_d(), t.rows(), t.cols(), t.block_layout(), t.mat_slots()),
             (2, 3, 2, a.block_layout(), Some(8))
@@ -681,15 +686,21 @@ mod tests {
         // A layout reads its batch from its label, a grid copies its record.
         let mut sparse = layout;
         sparse.block.meta.log_sparsity = 1;
-        assert_eq!(module.blas_ciphertext_alloc_from_infos(&sparse).mat_slots(), Some(4));
+        assert_eq!(
+            module.blas_ciphertext_alloc_from_infos::<_, Standard>(&sparse).mat_slots(),
+            Some(4)
+        );
         a.mat_slots = 2;
-        assert_eq!(module.blas_ciphertext_alloc_from_infos(&a).mat_slots(), Some(2));
+        assert_eq!(
+            module.blas_ciphertext_alloc_from_infos::<_, Standard>(&a).mat_slots(),
+            Some(2)
+        );
     }
 
     #[test]
     fn grid_bytes_match_their_allocation() {
         let module = module();
-        let grid = module.blas_ciphertext_alloc(2, 2, 3, 19usize.into(), 60usize.into());
+        let grid = module.blas_ciphertext_alloc::<Standard>(2, 2, 3, 19usize.into(), 60usize.into());
         let held: usize = grid
             .blocks()
             .iter()
@@ -710,7 +721,7 @@ mod tests {
         }
         let mut bytes = Vec::new();
         grid.write_to(&mut bytes).unwrap();
-        let mut back = module.blas_ciphertext_alloc(2, 2, 3, 19usize.into(), 60usize.into());
+        let mut back = module.blas_ciphertext_alloc::<Standard>(2, 2, 3, 19usize.into(), 60usize.into());
         back.read_from(&mut bytes.as_slice()).unwrap();
         let mut again = Vec::new();
         back.write_to(&mut again).unwrap();
@@ -727,7 +738,7 @@ mod tests {
         assert_eq!((back.mat_slots(), back.block_layout().log_sparsity()), (Some(8), 1));
 
         // Another shape is rejected before any block is read, the receiver left bit-equal.
-        let mut other = module.blas_ciphertext_alloc(2, 3, 2, 19usize.into(), 60usize.into());
+        let mut other = module.blas_ciphertext_alloc::<Standard>(2, 3, 2, 19usize.into(), 60usize.into());
         other.blocks_mut()[0].data_mut().raw_mut()[0] = 7;
         let mut before = Vec::new();
         other.write_to(&mut before).unwrap();
@@ -739,7 +750,7 @@ mod tests {
 
         // Another radix at the same limb count, and another precision, are rejected the same way.
         for (base2k, k) in [(20usize, 60usize), (19, 57)] {
-            let mut other = module.blas_ciphertext_alloc(2, 2, 3, base2k.into(), k.into());
+            let mut other = module.blas_ciphertext_alloc::<Standard>(2, 2, 3, base2k.into(), k.into());
             other.blocks_mut()[0].data_mut().raw_mut()[0] = 7;
             let mut before = Vec::new();
             other.write_to(&mut before).unwrap();
@@ -756,7 +767,7 @@ mod tests {
         let module = module();
         // Four limbs allocated, three live after `k` drops to 50, as an operation writing a narrower result leaves them.
         let narrowed = |fill: bool| {
-            let mut grid = module.blas_ciphertext_alloc(2, 2, 1, 19usize.into(), 76usize.into());
+            let mut grid = module.blas_ciphertext_alloc::<Standard>(2, 2, 1, 19usize.into(), 76usize.into());
             for (t, block) in grid.blocks_mut().iter_mut().enumerate() {
                 if fill {
                     for limb in 0..3 {
@@ -793,7 +804,8 @@ mod tests {
     fn grids_refuse_blocks_unlike_their_header() {
         let stream = |n: u64| {
             let mut bytes = Vec::new();
-            let grid = Module::<HostBytesBackend>::new(n).blas_ciphertext_alloc(2, 2, 1, 19usize.into(), 57usize.into());
+            let grid =
+                Module::<HostBytesBackend>::new(n).blas_ciphertext_alloc::<Standard>(2, 2, 1, 19usize.into(), 57usize.into());
             grid.write_to(&mut bytes).unwrap();
             // The header, then the batch record.
             (grid.header().unwrap().len() + 8, bytes)
@@ -801,24 +813,32 @@ mod tests {
         // The header of a grid of degree 64 over the blocks of one of degree 32.
         let ((len, wide), (_, narrow)) = (stream(64), stream(32));
         let forged = [&wide[..len], &narrow[len..]].concat();
-        let mut receiver = Module::<HostBytesBackend>::new(64).blas_ciphertext_alloc(2, 2, 1, 19usize.into(), 57usize.into());
+        let mut receiver =
+            Module::<HostBytesBackend>::new(64).blas_ciphertext_alloc::<Standard>(2, 2, 1, 19usize.into(), 57usize.into());
         receiver.blocks_mut()[0].data_mut().raw_mut()[0] = 7;
         let mut before = Vec::new();
         receiver.write_to(&mut before).unwrap();
-        let err = receiver.read_from(&mut forged.as_slice()).unwrap_err();
-        assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
-        let mut after = Vec::new();
-        receiver.write_to(&mut after).unwrap();
-        assert!(after == before, "a refused read changed the grid");
+        let mut other_ring = Vec::new();
+        Module::<HostBytesBackend>::new(64)
+            .blas_ciphertext_alloc::<ConjugateInvariant>(2, 2, 1, 19usize.into(), 57usize.into())
+            .write_to(&mut other_ring)
+            .unwrap();
+        for stream in [forged, other_ring] {
+            let err = receiver.read_from(&mut stream.as_slice()).unwrap_err();
+            assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+            let mut after = Vec::new();
+            receiver.write_to(&mut after).unwrap();
+            assert!(after == before, "a refused read changed the grid");
+        }
     }
 
     #[test]
     fn grids_of_no_width_round_trip() {
         let module = module();
-        let grid = module.blas_ciphertext_alloc(2, 2, 1, 19usize.into(), 0usize.into());
+        let grid = module.blas_ciphertext_alloc::<Standard>(2, 2, 1, 19usize.into(), 0usize.into());
         let mut bytes = Vec::new();
         grid.write_to(&mut bytes).unwrap();
-        let mut back = module.blas_ciphertext_alloc_from_infos(&grid);
+        let mut back = module.blas_ciphertext_alloc_from_infos::<_, Standard>(&grid);
         back.read_from(&mut bytes.as_slice()).unwrap();
         let mut again = Vec::new();
         back.write_to(&mut again).unwrap();
@@ -827,7 +847,7 @@ mod tests {
 
     #[test]
     fn grid_write_rejects_a_flag_clear_block_writing_nothing() {
-        let mut grid = module().blas_ciphertext_alloc(2, 1, 2, 19usize.into(), 60usize.into());
+        let mut grid = module().blas_ciphertext_alloc::<Standard>(2, 1, 2, 19usize.into(), 60usize.into());
         GLWE::set_canonical(grid.block_mut(0, 1), false);
         let mut bytes = Vec::new();
         assert_eq!(
@@ -841,7 +861,7 @@ mod tests {
     fn grids_of_blocks_of_different_layouts_neither_write_nor_read() {
         let module = module();
         let blocks = (0..2usize)
-            .map(|t| module.ckks_ciphertext_alloc(19usize.into(), (40 + 19 * t).into()))
+            .map(|t| module.ckks_ciphertext_alloc::<Standard>(19usize.into(), (40 + 19 * t).into()))
             .collect();
         let mut grid = BlasCiphertext::from_blocks(blocks, 2, 1, 2).unwrap();
         let mut bytes = Vec::new();
@@ -852,7 +872,7 @@ mod tests {
         assert!(bytes.is_empty());
 
         // A stream whose header matches the first block is rejected before any block is read.
-        let mut uniform = module.blas_ciphertext_alloc(2, 1, 2, 19usize.into(), 40usize.into());
+        let mut uniform = module.blas_ciphertext_alloc::<Standard>(2, 1, 2, 19usize.into(), 40usize.into());
         uniform.blocks_mut()[1].data_mut().raw_mut()[0] = 7;
         uniform.write_to(&mut bytes).unwrap();
         assert_eq!(

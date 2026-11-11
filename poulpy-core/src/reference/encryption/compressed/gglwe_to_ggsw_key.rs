@@ -1,7 +1,8 @@
 use poulpy_hal::{
     api::{ModuleN, ScratchArenaTakeScalarZnx, VecZnxCopy},
     layouts::{
-        Backend, Module, ScratchArena, scalar_znx_as_vec_znx_backend_mut_from_mut, scalar_znx_as_vec_znx_backend_ref_from_mut,
+        Backend, Module, Ring, ScratchArena, Standard, scalar_znx_as_vec_znx_backend_mut_from_mut,
+        scalar_znx_as_vec_znx_backend_ref_from_mut,
     },
     source::Source,
 };
@@ -11,13 +12,16 @@ use crate::layouts::operand_degree;
 use crate::{
     GGLWECompressedEncryptSk, GetDistribution, ScratchArenaTakeGLWESecretPrepared, ScratchArenaTakeGLWESecretTensor,
     api::{GLWESecretPreparedFactory, GLWESecretTensorFromGLWESecret},
-    layouts::{GGLWEInfos, GGLWEToGGSWKeyCompressedToBackendMut, GLWEInfos, GLWESecretToBackendRef},
+    layouts::{
+        GGLWECompressedSeedMut, GGLWEInfos, GGLWEToGGSWKeyCompressedSeedMut, GGLWEToGGSWKeyCompressedToBackendMut, GLWEInfos,
+        GLWESecretToBackendRef,
+    },
 };
 
 /// Portable implementation using HAL operations.
 ///
 /// Backend implementations may call this helper without changing their override selection.
-pub trait GGLWEToGGSWKeyCompressedEncryptSkReference<BE: Backend> {
+pub trait GGLWEToGGSWKeyCompressedEncryptSkReference<BE: Backend, Rg: Ring = Standard> {
     fn gglwe_to_ggsw_key_compressed_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos;
@@ -30,17 +34,17 @@ pub trait GGLWEToGGSWKeyCompressedEncryptSkReference<BE: Backend> {
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GGLWEToGGSWKeyCompressedToBackendMut<BE> + GGLWEInfos,
-        S: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos;
+        R: GGLWEToGGSWKeyCompressedToBackendMut<BE, Rg> + GGLWEToGGSWKeyCompressedSeedMut + GGLWEInfos,
+        S: GLWESecretToBackendRef<BE, Rg> + GetDistribution + GLWEInfos;
 }
 
-impl<BE: Backend> GGLWEToGGSWKeyCompressedEncryptSkReference<BE> for Module<BE>
+impl<BE: Backend, Rg: Ring> GGLWEToGGSWKeyCompressedEncryptSkReference<BE, Rg> for Module<BE>
 where
     Self: ModuleN
-        + GGLWECompressedEncryptSk<BE>
-        + GLWESecretTensorFromGLWESecret<BE>
-        + GLWESecretPreparedFactory<BE>
-        + VecZnxCopy<BE>,
+        + GGLWECompressedEncryptSk<BE, Rg>
+        + GLWESecretTensorFromGLWESecret<BE, Rg>
+        + GLWESecretPreparedFactory<BE, Rg>
+        + VecZnxCopy<BE, Rg>,
 {
     fn gglwe_to_ggsw_key_compressed_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
@@ -68,8 +72,8 @@ where
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GGLWEToGGSWKeyCompressedToBackendMut<BE> + GGLWEInfos,
-        S: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
+        R: GGLWEToGGSWKeyCompressedToBackendMut<BE, Rg> + GGLWEToGGSWKeyCompressedSeedMut + GGLWEInfos,
+        S: GLWESecretToBackendRef<BE, Rg> + GetDistribution + GLWEInfos,
     {
         let metadata = crate::component_noise::fresh_sk_noise(sk.to_backend_ref().dist, &res.to_backend_ref());
         {
@@ -84,6 +88,7 @@ where
                 scratch.available() >= tmp_bytes,
                 "insufficient scratch for compressed GGLWE-to-GGSW key encryption"
             );
+            let mut seeds: Vec<Vec<[u8; 32]>> = Vec::with_capacity(res.rank_out().as_usize());
             {
                 let mut res = res.to_backend_mut();
                 let rank: usize = res.rank_out().as_usize();
@@ -95,13 +100,13 @@ where
                 self.glwe_secret_prepare(&mut sk_prepared, sk);
                 self.glwe_secret_tensor_from_glwe_secret(&mut sk_tensor, sk, &mut scratch_3.borrow());
 
-                let sk_tensor_backend = scalar_znx_as_vec_znx_backend_ref_from_mut::<BE>(sk_tensor.data());
+                let sk_tensor_backend = scalar_znx_as_vec_znx_backend_ref_from_mut::<BE, Rg>(sk_tensor.data());
 
                 let mut source_xa = Source::new(seed_xa);
 
                 for i in 0..rank {
                     {
-                        let mut sk_ij_backend = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(&mut sk_ij);
+                        let mut sk_ij_backend = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE, Rg>(&mut sk_ij);
                         for j in 0..rank {
                             let (lo, hi) = if i <= j { (i, j) } else { (j, i) };
                             let idx: usize = lo * rank + hi - (lo * (lo + 1) / 2);
@@ -114,7 +119,12 @@ where
                     let mut ct = res.at_view_mut(i);
 
                     self.gglwe_compressed_encrypt_sk(&mut ct, &sk_ij, &sk_prepared, seed_xa_tmp, source_xe, &mut scratch_3);
+                    seeds.push(std::mem::take(ct.seed_mut()));
                 }
+            }
+            // The entry views carry copies of the seeds: the owner keeps them.
+            for (i, seed) in seeds.into_iter().enumerate() {
+                *res.seed_mut_at(i) = seed;
             }
             scratch.wipe(tmp_bytes);
         }

@@ -1,6 +1,6 @@
 use poulpy_ckks::CKKSResult as Result;
 use poulpy_core::layouts::{GGLWEInfos, GetAutomorphismKey};
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Module, Ring, ScratchArena, Standard};
 
 use crate::layouts::{BlasGrid, BlasGridInfos, BlasGridMut};
 
@@ -18,7 +18,7 @@ use crate::layouts::{BlasGrid, BlasGridInfos, BlasGridMut};
 /// device failure), and `res` is then unspecified.
 ///
 /// The memory, layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait BlasMatInterImpl: Backend {
+pub unsafe trait BlasMatInterImpl<Rg: Ring = Standard>: Backend {
     /// Scratch bound of [`Self::blas_rotate`]; may report less than the reference, never less than the body takes.
     fn blas_rotate_tmp_bytes<R, A, K>(module: &Module<Self>, res: &R, a: &A, keys: &K) -> usize
     where
@@ -44,9 +44,9 @@ pub unsafe trait BlasMatInterImpl: Backend {
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        R: BlasGridMut<Self>,
-        A: BlasGrid<Self>,
-        K: GetAutomorphismKey<Self> + Sync;
+        R: BlasGridMut<Self, Rg>,
+        A: BlasGrid<Self, Rg>,
+        K: GetAutomorphismKey<Self, Rg> + Sync;
 
     /// Scratch bound of [`Self::blas_sum`]; may report less than the reference, never less than the body takes.
     fn blas_sum_tmp_bytes<R, A, K>(module: &Module<Self>, res: &R, a: &A, keys: &K) -> usize
@@ -66,23 +66,28 @@ pub unsafe trait BlasMatInterImpl: Backend {
     /// **Free:** the order of the blocks.
     fn blas_sum<R, A, K>(module: &Module<Self>, res: &mut R, a: &A, keys: &K, scratch: &mut ScratchArena<'_, Self>) -> Result<()>
     where
-        R: BlasGridMut<Self>,
-        A: BlasGrid<Self>,
-        K: GetAutomorphismKey<Self> + Sync;
+        R: BlasGridMut<Self, Rg>,
+        A: BlasGrid<Self, Rg>,
+        K: GetAutomorphismKey<Self, Rg> + Sync;
 }
 
-/// Selects [`BlasMatInterReference`](crate::reference::BlasMatInterReference) for `$be`.
+/// Selects [`BlasMatInterReference`](crate::reference::BlasMatInterReference) for `$be` on both rings, or on `$ring`
+/// alone through `($be, $ring)`.
 #[macro_export]
 macro_rules! impl_blas_mat_inter_reference_full {
     ($be:ty) => {
-        unsafe impl $crate::oep::BlasMatInterImpl for $be {
+        $crate::impl_blas_mat_inter_reference_full!($be, ::poulpy_hal::layouts::Standard);
+        $crate::impl_blas_mat_inter_reference_full!($be, ::poulpy_hal::layouts::ConjugateInvariant);
+    };
+    ($be:ty, $ring:ty) => {
+        unsafe impl $crate::oep::BlasMatInterImpl<$ring> for $be {
             fn blas_rotate_tmp_bytes<R, A, K>(module: &::poulpy_hal::layouts::Module<Self>, res: &R, a: &A, keys: &K) -> usize
             where
                 R: $crate::layouts::BlasGridInfos,
                 A: $crate::layouts::BlasGridInfos,
                 K: ::poulpy_core::layouts::GGLWEInfos,
             {
-                $crate::reference::BlasMatInterReference::blas_rotate_tmp_bytes_reference(module, res, a, keys)
+                $crate::reference::BlasMatInterReference::<Self, $ring>::blas_rotate_tmp_bytes_reference(module, res, a, keys)
             }
 
             fn blas_rotate<R, A, K>(
@@ -94,11 +99,11 @@ macro_rules! impl_blas_mat_inter_reference_full {
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> ::poulpy_ckks::CKKSResult<()>
             where
-                R: $crate::layouts::BlasGridMut<Self>,
-                A: $crate::layouts::BlasGrid<Self>,
-                K: ::poulpy_core::layouts::GetAutomorphismKey<Self> + Sync,
+                R: $crate::layouts::BlasGridMut<Self, $ring>,
+                A: $crate::layouts::BlasGrid<Self, $ring>,
+                K: ::poulpy_core::layouts::GetAutomorphismKey<Self, $ring> + Sync,
             {
-                $crate::reference::BlasMatInterReference::blas_rotate_reference(module, r, res, a, keys, scratch)
+                $crate::reference::BlasMatInterReference::<Self, $ring>::blas_rotate_reference(module, r, res, a, keys, scratch)
             }
 
             fn blas_sum_tmp_bytes<R, A, K>(module: &::poulpy_hal::layouts::Module<Self>, res: &R, a: &A, keys: &K) -> usize
@@ -107,7 +112,7 @@ macro_rules! impl_blas_mat_inter_reference_full {
                 A: $crate::layouts::BlasGridInfos,
                 K: ::poulpy_core::layouts::GGLWEInfos,
             {
-                $crate::reference::BlasMatInterReference::blas_sum_tmp_bytes_reference(module, res, a, keys)
+                $crate::reference::BlasMatInterReference::<Self, $ring>::blas_sum_tmp_bytes_reference(module, res, a, keys)
             }
 
             fn blas_sum<R, A, K>(
@@ -118,11 +123,11 @@ macro_rules! impl_blas_mat_inter_reference_full {
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> ::poulpy_ckks::CKKSResult<()>
             where
-                R: $crate::layouts::BlasGridMut<Self>,
-                A: $crate::layouts::BlasGrid<Self>,
-                K: ::poulpy_core::layouts::GetAutomorphismKey<Self> + Sync,
+                R: $crate::layouts::BlasGridMut<Self, $ring>,
+                A: $crate::layouts::BlasGrid<Self, $ring>,
+                K: ::poulpy_core::layouts::GetAutomorphismKey<Self, $ring> + Sync,
             {
-                $crate::reference::BlasMatInterReference::blas_sum_reference(module, res, a, keys, scratch)
+                $crate::reference::BlasMatInterReference::<Self, $ring>::blas_sum_reference(module, res, a, keys, scratch)
             }
         }
     };

@@ -46,7 +46,6 @@ use super::arithmetic_avx::{
 };
 
 use super::mat_vec_avx::{vec_mat1col_product_bbc_avx2, vec_mat1col_product_x2_bbc_avx2, vec_mat2cols_product_x2_bbc_avx2};
-use poulpy_hal::layouts::Ring;
 
 use super::NTT4x30Avx;
 
@@ -208,7 +207,7 @@ unsafe fn ntt_negate_assign_avx2(n: usize, res: &mut [u64]) {
 // Domain conversion
 // ──────────────────────────────────────────────────────────────────────────────
 
-impl<R: Ring> NttFromZnx64 for NTT4x30Avx<R> {
+impl NttFromZnx64 for NTT4x30Avx {
     #[inline(always)]
     fn ntt_from_znx64(res: &mut [u64], a: &[i64]) {
         // SAFETY: NTT4x30Avx::new() verifies AVX2 availability at construction time.
@@ -216,7 +215,7 @@ impl<R: Ring> NttFromZnx64 for NTT4x30Avx<R> {
     }
 }
 
-impl<R: Ring> NttToZnx128 for NTT4x30Avx<R> {
+impl NttToZnx128 for NTT4x30Avx {
     #[inline(always)]
     fn ntt_to_znx128(res: &mut [i128], divisor_is_n: usize, a: &[u64]) {
         // SAFETY: NTT4x30Avx::new() verifies AVX2 availability at construction time.
@@ -228,7 +227,7 @@ impl<R: Ring> NttToZnx128 for NTT4x30Avx<R> {
 // Addition / subtraction / negation / copy / zero — AVX2 lazy arithmetic
 // ──────────────────────────────────────────────────────────────────────────────
 
-impl<R: Ring> NttAdd for NTT4x30Avx<R> {
+impl NttAdd for NTT4x30Avx {
     #[inline(always)]
     fn ntt_add(res: &mut [u64], a: &[u64], b: &[u64]) {
         // SAFETY: NTT4x30Avx::new() verifies AVX2 availability at construction time.
@@ -236,7 +235,7 @@ impl<R: Ring> NttAdd for NTT4x30Avx<R> {
     }
 }
 
-impl<R: Ring> NttAddAssign for NTT4x30Avx<R> {
+impl NttAddAssign for NTT4x30Avx {
     #[inline(always)]
     fn ntt_add_assign(res: &mut [u64], a: &[u64]) {
         // SAFETY: NTT4x30Avx::new() verifies AVX2 availability at construction time.
@@ -244,7 +243,7 @@ impl<R: Ring> NttAddAssign for NTT4x30Avx<R> {
     }
 }
 
-impl<R: Ring> NttSub for NTT4x30Avx<R> {
+impl NttSub for NTT4x30Avx {
     #[inline(always)]
     fn ntt_sub(res: &mut [u64], a: &[u64], b: &[u64]) {
         // SAFETY: NTT4x30Avx::new() verifies AVX2 availability at construction time.
@@ -252,7 +251,7 @@ impl<R: Ring> NttSub for NTT4x30Avx<R> {
     }
 }
 
-impl<R: Ring> NttSubAssign for NTT4x30Avx<R> {
+impl NttSubAssign for NTT4x30Avx {
     #[inline(always)]
     fn ntt_sub_assign(res: &mut [u64], a: &[u64]) {
         // SAFETY: NTT4x30Avx::new() verifies AVX2 availability at construction time.
@@ -260,7 +259,7 @@ impl<R: Ring> NttSubAssign for NTT4x30Avx<R> {
     }
 }
 
-impl<R: Ring> NttSubNegateAssign for NTT4x30Avx<R> {
+impl NttSubNegateAssign for NTT4x30Avx {
     #[inline(always)]
     fn ntt_sub_negate_assign(res: &mut [u64], a: &[u64]) {
         // SAFETY: NTT4x30Avx::new() verifies AVX2 availability at construction time.
@@ -268,7 +267,7 @@ impl<R: Ring> NttSubNegateAssign for NTT4x30Avx<R> {
     }
 }
 
-impl<R: Ring> NttNegate for NTT4x30Avx<R> {
+impl NttNegate for NTT4x30Avx {
     #[inline(always)]
     fn ntt_negate(res: &mut [u64], a: &[u64]) {
         // SAFETY: NTT4x30Avx::new() verifies AVX2 availability at construction time.
@@ -276,7 +275,7 @@ impl<R: Ring> NttNegate for NTT4x30Avx<R> {
     }
 }
 
-impl<R: Ring> NttNegateAssign for NTT4x30Avx<R> {
+impl NttNegateAssign for NTT4x30Avx {
     #[inline(always)]
     fn ntt_negate_assign(res: &mut [u64]) {
         // SAFETY: NTT4x30Avx::new() verifies AVX2 availability at construction time.
@@ -284,14 +283,14 @@ impl<R: Ring> NttNegateAssign for NTT4x30Avx<R> {
     }
 }
 
-impl<R: Ring> NttZero for NTT4x30Avx<R> {
+impl NttZero for NTT4x30Avx {
     #[inline(always)]
     fn ntt_zero(res: &mut [u64]) {
         res.fill(0);
     }
 }
 
-impl<R: Ring> NttCopy for NTT4x30Avx<R> {
+impl NttCopy for NTT4x30Avx {
     #[inline(always)]
     fn ntt_copy(res: &mut [u64], a: &[u64]) {
         res.copy_from_slice(a);
@@ -302,7 +301,7 @@ impl<R: Ring> NttCopy for NTT4x30Avx<R> {
 // Multiply-accumulate
 // ──────────────────────────────────────────────────────────────────────────────
 
-impl<R: Ring> NttMulBbb for NTT4x30Avx<R> {
+impl NttMulBbb for NTT4x30Avx {
     #[inline(always)]
     fn ntt_mul_bbb(meta: &BbbMeta<Primes30>, ell: usize, res: &mut [u64], a: &[u64], b: &[u64]) {
         // SAFETY: NTT4x30Avx::new() verifies AVX2 availability at construction time.
@@ -310,7 +309,7 @@ impl<R: Ring> NttMulBbb for NTT4x30Avx<R> {
     }
 }
 
-impl<R: Ring> NttMulBbc for NTT4x30Avx<R> {
+impl NttMulBbc for NTT4x30Avx {
     #[inline(always)]
     fn ntt_mul_bbc(meta: &BbcMeta<Primes30>, ell: usize, res: &mut [u64], ntt_coeff: &[u32], prepared: &[u32]) {
         // SAFETY: NTT4x30Avx::new() verifies AVX2 availability at construction time.
@@ -322,7 +321,7 @@ impl<R: Ring> NttMulBbc for NTT4x30Avx<R> {
 // q120b → q120c conversion
 // ──────────────────────────────────────────────────────────────────────────────
 
-impl<R: Ring> NttCFromB for NTT4x30Avx<R> {
+impl NttCFromB for NTT4x30Avx {
     #[inline(always)]
     fn ntt_c_from_b(n: usize, res: &mut [u32], a: &[u64]) {
         // SAFETY: NTT4x30Avx::new() verifies AVX2 availability at construction time.
@@ -334,7 +333,7 @@ impl<R: Ring> NttCFromB for NTT4x30Avx<R> {
 // VMP x2-block kernels
 // ──────────────────────────────────────────────────────────────────────────────
 
-impl<R: Ring> NttMulBbc1ColX2 for NTT4x30Avx<R> {
+impl NttMulBbc1ColX2 for NTT4x30Avx {
     #[inline(always)]
     fn ntt_mul_bbc_1col_x2(meta: &BbcMeta<Primes30>, ell: usize, res: &mut [u64], a: &[u32], b: &[u32]) {
         // SAFETY: NTT4x30Avx::new() verifies AVX2 availability at construction time.
@@ -351,7 +350,7 @@ impl<R: Ring> NttMulBbc1ColX2 for NTT4x30Avx<R> {
     }
 }
 
-impl<R: Ring> NttMulBbc2ColsX2 for NTT4x30Avx<R> {
+impl NttMulBbc2ColsX2 for NTT4x30Avx {
     #[inline(always)]
     fn ntt_mul_bbc_2cols_x2(meta: &BbcMeta<Primes30>, ell: usize, res: &mut [u64], a: &[u32], b: &[u32]) {
         // SAFETY: NTT4x30Avx::new() verifies AVX2 availability at construction time.
@@ -359,7 +358,7 @@ impl<R: Ring> NttMulBbc2ColsX2 for NTT4x30Avx<R> {
     }
 }
 
-impl<R: Ring> NttExtract1BlkContiguous for NTT4x30Avx<R> {
+impl NttExtract1BlkContiguous for NTT4x30Avx {
     #[inline(always)]
     fn ntt_extract_1blk_contiguous(n: usize, row_max: usize, blk: usize, dst: &mut [u64], src: &[u64]) {
         // SAFETY: NTT4x30Avx::new() verifies AVX2 availability at construction time.
@@ -367,7 +366,7 @@ impl<R: Ring> NttExtract1BlkContiguous for NTT4x30Avx<R> {
     }
 }
 
-impl<R: Ring> NttPackLeft1BlkX2 for NTT4x30Avx<R> {
+impl NttPackLeft1BlkX2 for NTT4x30Avx {
     #[inline(always)]
     fn ntt_pack_left_1blk_x2(dst: &mut [u32], a: &[u64], row_count: usize, row_stride: usize, blk: usize) {
         // SAFETY: NTT4x30Avx::new() verifies AVX2 availability at construction time.
@@ -375,7 +374,7 @@ impl<R: Ring> NttPackLeft1BlkX2 for NTT4x30Avx<R> {
     }
 }
 
-impl<R: Ring> NttPackRight1BlkX2 for NTT4x30Avx<R> {
+impl NttPackRight1BlkX2 for NTT4x30Avx {
     #[inline(always)]
     fn ntt_pack_right_1blk_x2(dst: &mut [u32], a: &[u32], row_count: usize, row_stride: usize, blk: usize) {
         // SAFETY: NTT4x30Avx::new() verifies AVX2 availability at construction time.
@@ -383,7 +382,7 @@ impl<R: Ring> NttPackRight1BlkX2 for NTT4x30Avx<R> {
     }
 }
 
-impl<R: Ring> NttPairwisePackLeft1BlkX2 for NTT4x30Avx<R> {
+impl NttPairwisePackLeft1BlkX2 for NTT4x30Avx {
     #[inline(always)]
     fn ntt_pairwise_pack_left_1blk_x2(dst: &mut [u32], a: &[u64], b: &[u64], row_count: usize, row_stride: usize, blk: usize) {
         // SAFETY: NTT4x30Avx::new() verifies AVX2 availability at construction time.
@@ -391,7 +390,7 @@ impl<R: Ring> NttPairwisePackLeft1BlkX2 for NTT4x30Avx<R> {
     }
 }
 
-impl<R: Ring> NttPairwisePackRight1BlkX2 for NTT4x30Avx<R> {
+impl NttPairwisePackRight1BlkX2 for NTT4x30Avx {
     #[inline(always)]
     fn ntt_pairwise_pack_right_1blk_x2(dst: &mut [u32], a: &[u32], b: &[u32], row_count: usize, row_stride: usize, blk: usize) {
         // SAFETY: NTT4x30Avx::new() verifies AVX2 availability at construction time.

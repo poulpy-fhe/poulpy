@@ -21,19 +21,23 @@ use crate::{
 };
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{DataView, HostDataMut, Module, ScratchOwned},
+    layouts::{DataView, HostDataMut, Module, Ring, ScratchOwned},
     source::Source,
     test_suite::TestParams,
 };
 
 /// Compare GGLWE and GGSW external products, including assign forms.
-pub fn test_gadget_external_product_parity<BR, BT>(params: &TestParams, shapes: &ParityShapes, r: &Module<BR>, t: &Module<BT>)
-where
-    BR: ParityBackend,
-    BT: ParityBackend,
+pub fn test_gadget_external_product_parity<BR, BT, Rg: Ring>(
+    params: &TestParams,
+    shapes: &ParityShapes,
+    r: &Module<BR>,
+    t: &Module<BT>,
+) where
+    BR: ParityBackend<Rg>,
+    BT: ParityBackend<Rg>,
     BR::OwnedBuf: HostDataMut,
-    Module<BR>: GGLWEExternalProduct<BR> + GGSWExternalProduct<BR> + GGSWPreparedFactory<BR>,
-    Module<BT>: GGLWEExternalProduct<BT> + GGSWExternalProduct<BT> + GGSWPreparedFactory<BT>,
+    Module<BR>: GGLWEExternalProduct<BR, Rg> + GGSWExternalProduct<BR, Rg> + GGSWPreparedFactory<BR, Rg>,
+    Module<BT>: GGLWEExternalProduct<BT, Rg> + GGSWExternalProduct<BT, Rg> + GGSWPreparedFactory<BT, Rg>,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
 {
@@ -182,27 +186,27 @@ where
 /// Compare gadget automorphism, GGSW keyswitching, row conversion and expansion.
 /// The input/key polynomials are arbitrary canonical integer data: no matching
 /// random streams or encryption assumptions enter the oracle.
-pub fn test_gadget_conversion_parity<BR, BT>(params: &TestParams, shapes: &ParityShapes, r: &Module<BR>, t: &Module<BT>)
+pub fn test_gadget_conversion_parity<BR, BT, Rg: Ring>(params: &TestParams, shapes: &ParityShapes, r: &Module<BR>, t: &Module<BT>)
 where
-    BR: ParityBackend,
-    BT: ParityBackend,
+    BR: ParityBackend<Rg>,
+    BT: ParityBackend<Rg>,
     BR::OwnedBuf: HostDataMut,
-    Module<BR>: GGSWAutomorphism<BR>
-        + GGSWKeyswitch<BR>
-        + GLWEAutomorphismKeyAutomorphism<BR>
-        + GGSWFromGGLWE<BR>
-        + GGSWExpandRows<BR>
-        + GGLWEPreparedFactory<BR>
-        + GLWEAutomorphismKeyPreparedFactory<BR>
-        + GGLWEToGGSWKeyPreparedFactory<BR>,
-    Module<BT>: GGSWAutomorphism<BT>
-        + GGSWKeyswitch<BT>
-        + GLWEAutomorphismKeyAutomorphism<BT>
-        + GGSWFromGGLWE<BT>
-        + GGSWExpandRows<BT>
-        + GGLWEPreparedFactory<BT>
-        + GLWEAutomorphismKeyPreparedFactory<BT>
-        + GGLWEToGGSWKeyPreparedFactory<BT>,
+    Module<BR>: GGSWAutomorphism<BR, Rg>
+        + GGSWKeyswitch<BR, Rg>
+        + GLWEAutomorphismKeyAutomorphism<BR, Rg>
+        + GGSWFromGGLWE<BR, Rg>
+        + GGSWExpandRows<BR, Rg>
+        + GGLWEPreparedFactory<BR, Rg>
+        + GLWEAutomorphismKeyPreparedFactory<BR, Rg>
+        + GGLWEToGGSWKeyPreparedFactory<BR, Rg>,
+    Module<BT>: GGSWAutomorphism<BT, Rg>
+        + GGSWKeyswitch<BT, Rg>
+        + GLWEAutomorphismKeyAutomorphism<BT, Rg>
+        + GGSWFromGGLWE<BT, Rg>
+        + GGSWExpandRows<BT, Rg>
+        + GGLWEPreparedFactory<BT, Rg>
+        + GLWEAutomorphismKeyPreparedFactory<BT, Rg>
+        + GGLWEToGGSWKeyPreparedFactory<BT, Rg>,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
 {

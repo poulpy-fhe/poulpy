@@ -2,19 +2,19 @@ use crate::kernels::fft64::ring_arith::Fft64RingArith;
 use crate::{
     kernels::fft64::{module::FFT64Plan, reim::ReimArith},
     layouts::{
-        Backend, HostDataMut, HostDataRef, ScalarZnxBackendRef, SvpPPolBackendMut, SvpPPolBackendRef, VecZnxDftBackendMut,
+        Backend, HostDataMut, HostDataRef, Ring, ScalarZnxBackendRef, SvpPPolBackendMut, SvpPPolBackendRef, VecZnxDftBackendMut,
         VecZnxDftBackendRef, ZnxView, ZnxViewMut,
     },
 };
 
-pub fn svp_ppol_prepare_portable<'r, 'a, BE>(
-    plan: &FFT64Plan<f64, BE::Ring>,
-    res: &mut SvpPPolBackendMut<'r, BE>,
+pub fn svp_ppol_prepare_portable<'r, 'a, BE, Rg: Ring>(
+    plan: &FFT64Plan<f64, Rg>,
+    res: &mut SvpPPolBackendMut<'r, BE, Rg>,
     res_col: usize,
-    a: &ScalarZnxBackendRef<'a, BE>,
+    a: &ScalarZnxBackendRef<'a, BE, Rg>,
     a_col: usize,
 ) where
-    BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Fft64RingArith,
+    BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Fft64RingArith<Rg>,
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,
 {
@@ -22,15 +22,15 @@ pub fn svp_ppol_prepare_portable<'r, 'a, BE>(
     BE::fft64_forward(plan, res.at_mut(res_col, 0));
 }
 
-pub fn svp_apply_dft_to_dft_portable<'r, 'a, BE>(
-    res: &mut VecZnxDftBackendMut<'r, BE>,
+pub fn svp_apply_dft_to_dft_portable<'r, 'a, BE, Rg: Ring>(
+    res: &mut VecZnxDftBackendMut<'r, BE, Rg>,
     res_col: usize,
-    a: &SvpPPolBackendRef<'a, BE>,
+    a: &SvpPPolBackendRef<'a, BE, Rg>,
     a_col: usize,
-    b: &VecZnxDftBackendRef<'a, BE>,
+    b: &VecZnxDftBackendRef<'a, BE, Rg>,
     b_col: usize,
 ) where
-    BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Fft64RingArith,
+    BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Fft64RingArith<Rg>,
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,
 {
@@ -48,13 +48,13 @@ pub fn svp_apply_dft_to_dft_portable<'r, 'a, BE>(
     }
 }
 
-pub fn svp_apply_dft_to_dft_assign_portable<'r, 'a, BE>(
-    res: &mut VecZnxDftBackendMut<'r, BE>,
+pub fn svp_apply_dft_to_dft_assign_portable<'r, 'a, BE, Rg: Ring>(
+    res: &mut VecZnxDftBackendMut<'r, BE, Rg>,
     res_col: usize,
-    a: &SvpPPolBackendRef<'a, BE>,
+    a: &SvpPPolBackendRef<'a, BE, Rg>,
     a_col: usize,
 ) where
-    BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Fft64RingArith,
+    BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Fft64RingArith<Rg>,
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,
 {

@@ -11,12 +11,17 @@ use crate::{
 };
 use poulpy_hal::{
     api::ModuleN,
-    layouts::{Backend, ScratchArena},
+    layouts::{Backend, Ring, ScratchArena, Standard},
 };
-pub(crate) fn ggsw_from_gglwe_tmp_bytes_derived<BE, M, R, A, T>(module: &M, res_infos: &R, a_infos: &A, tsk_infos: &T) -> usize
+pub(crate) fn ggsw_from_gglwe_tmp_bytes_derived<BE, M, R, A, T, Rg: Ring>(
+    module: &M,
+    res_infos: &R,
+    a_infos: &A,
+    tsk_infos: &T,
+) -> usize
 where
     BE: Backend,
-    M: GGSWExpandRows<BE> + GLWECopy<BE>,
+    M: GGSWExpandRows<BE, Rg> + GLWECopy<BE, Rg>,
     R: GGSWInfos,
     A: GGLWEInfos,
     T: GGLWEInfos,
@@ -26,17 +31,17 @@ where
         .max(module.glwe_copy_tmp_bytes(res_infos, a_infos))
 }
 
-pub(crate) fn ggsw_from_gglwe_derived<BE, M, R, A>(
+pub(crate) fn ggsw_from_gglwe_derived<BE, M, R, A, Rg: Ring>(
     module: &M,
     res: &mut R,
     a: &A,
-    tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, BE>,
+    tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, BE, Rg>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
-    M: GGSWExpandRows<BE> + ModuleN + GLWECopy<BE>,
-    R: GGSWToBackendMut<BE> + GGSWInfos,
-    A: GGLWEToBackendRef<BE> + GGLWEInfos,
+    M: GGSWExpandRows<BE, Rg> + ModuleN + GLWECopy<BE, Rg>,
+    R: GGSWToBackendMut<BE, Rg> + GGSWInfos,
+    A: GGLWEToBackendRef<BE, Rg> + GGLWEInfos,
 {
     let mut res_backend = res.to_backend_mut();
     let a_backend = a.to_backend_ref();
@@ -46,10 +51,10 @@ pub(crate) fn ggsw_from_gglwe_derived<BE, M, R, A>(
     operand_degree(module.n(), &[res_backend.n(), a_backend.n(), tsk.n()]);
     assert_eq!(res_backend.base2k(), a_backend.base2k());
     assert!(
-        scratch.available() >= ggsw_from_gglwe_tmp_bytes_derived::<BE, _, _, _, _>(module, &res_backend, &a_backend, tsk),
+        scratch.available() >= ggsw_from_gglwe_tmp_bytes_derived::<BE, _, _, _, _, Rg>(module, &res_backend, &a_backend, tsk),
         "scratch.available(): {} < GGSWFromGGLWE::ggsw_from_gglwe_tmp_bytes: {}",
         scratch.available(),
-        ggsw_from_gglwe_tmp_bytes_derived::<BE, _, _, _, _>(module, &res_backend, &a_backend, tsk)
+        ggsw_from_gglwe_tmp_bytes_derived::<BE, _, _, _, _, Rg>(module, &res_backend, &a_backend, tsk)
     );
 
     for row in 0..res_backend.dnum().into() {
@@ -126,6 +131,6 @@ pub(crate) fn lwe_from_glwe_derived<BE, M, R, A>(
         module.glwe_rotate_assign(-(a_idx as i64), &mut tmp_glwe_rank_1, &mut scratch_1);
     }
 
-    let tmp_glwe_rank_1_ref = glwe_backend_ref_from_mut::<BE>(&tmp_glwe_rank_1);
+    let tmp_glwe_rank_1_ref = glwe_backend_ref_from_mut::<BE, Standard>(&tmp_glwe_rank_1);
     module.lwe_sample_extract(res, &&tmp_glwe_rank_1_ref);
 }

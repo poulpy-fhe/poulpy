@@ -160,12 +160,20 @@ pub trait ReimArith {
     }
 
     /// Complex-slot permutation of one limb: `res = tau_p(a)`.
-    fn reim_automorphism(plan: &crate::kernels::fft64::vec_znx_dft::Fft64AutomorphismPlan, res: &mut [f64], a: &[f64]) {
+    fn reim_automorphism(
+        plan: &crate::kernels::fft64::vec_znx_dft::Fft64AutomorphismPlan<crate::layouts::Standard>,
+        res: &mut [f64],
+        a: &[f64],
+    ) {
         crate::kernels::fft64::standard::fft64_automorphism_portable(plan, res, a)
     }
 
     /// Complex-slot permutation of one limb: `res += tau_p(a)`.
-    fn reim_automorphism_add(plan: &crate::kernels::fft64::vec_znx_dft::Fft64AutomorphismPlan, res: &mut [f64], a: &[f64]) {
+    fn reim_automorphism_add(
+        plan: &crate::kernels::fft64::vec_znx_dft::Fft64AutomorphismPlan<crate::layouts::Standard>,
+        res: &mut [f64],
+        a: &[f64],
+    ) {
         crate::kernels::fft64::standard::fft64_automorphism_add_portable(plan, res, a)
     }
 }

@@ -2,7 +2,7 @@ use poulpy_hal::AlignedBuf;
 use poulpy_hal::layouts::ZnxWord;
 use std::fmt;
 
-use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, ReaderFrom, WriterTo};
+use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, ReaderFrom, Standard, WriterTo};
 
 use crate::layouts::{
     Base2K, Degree, Dnum, GGLWEAtViewMut, GGLWEAtViewRef, GGLWEBackendMut, GGLWEBackendRef, GGLWEInfos, GGLWEToBackendMut,
@@ -201,7 +201,7 @@ impl<D: HostDataRef, W: ZnxWord> WriterTo for LWESwitchingKey<D, W> {
 
 impl_gglwe_to_backend_for_field!(LWESwitchingKey<D, BE::ZnxWord>, 0, GLWESwitchingKey<D, BE::ZnxWord>);
 
-impl_gglwe_at_view_for_field!(LWESwitchingKey<BE::OwnedBuf, BE::ZnxWord>; 0.key);
+impl_gglwe_at_view_for_field!(LWESwitchingKey<BE::OwnedBuf, BE::ZnxWord>; ring = Standard; 0.key);
 
 impl<D: Data, W: ZnxWord> GLWESwitchingKeyDegreesMut for LWESwitchingKey<D, W> {
     fn input_degree(&mut self) -> &mut Degree {

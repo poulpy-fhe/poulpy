@@ -13,7 +13,7 @@
 //! and is marked `#[inline(always)]` to eliminate call overhead.
 
 use super::FFT64Portable;
-use poulpy_hal::layouts::{ConjugateInvariant, Ring, Standard};
+use poulpy_hal::layouts::{ConjugateInvariant, Standard};
 
 use crate::kernels::znx::{
     ZnxAdd, ZnxAddAssign, ZnxAutomorphism, ZnxAutomorphismRotate, ZnxCopy, ZnxMulAddPowerOfTwo, ZnxMulPowerOfTwo,
@@ -24,63 +24,63 @@ use crate::kernels::znx::{
     znx_sub_negate_assign_portable, znx_sub_portable, znx_switch_ring_portable, znx_zero_portable,
 };
 
-impl<R: Ring> ZnxAdd for FFT64Portable<R> {
+impl ZnxAdd for FFT64Portable {
     #[inline(always)]
     fn znx_add(res: &mut [i64], a: &[i64], b: &[i64]) {
         znx_add_portable(res, a, b);
     }
 }
 
-impl<R: Ring> ZnxAddAssign for FFT64Portable<R> {
+impl ZnxAddAssign for FFT64Portable {
     #[inline(always)]
     fn znx_add_assign(res: &mut [i64], a: &[i64]) {
         znx_add_assign_portable(res, a);
     }
 }
 
-impl<R: Ring> ZnxSub for FFT64Portable<R> {
+impl ZnxSub for FFT64Portable {
     #[inline(always)]
     fn znx_sub(res: &mut [i64], a: &[i64], b: &[i64]) {
         znx_sub_portable(res, a, b);
     }
 }
 
-impl<R: Ring> ZnxSubAssign for FFT64Portable<R> {
+impl ZnxSubAssign for FFT64Portable {
     #[inline(always)]
     fn znx_sub_assign(res: &mut [i64], a: &[i64]) {
         znx_sub_assign_portable(res, a);
     }
 }
 
-impl<R: Ring> ZnxSubNegateAssign for FFT64Portable<R> {
+impl ZnxSubNegateAssign for FFT64Portable {
     #[inline(always)]
     fn znx_sub_negate_assign(res: &mut [i64], a: &[i64]) {
         znx_sub_negate_assign_portable(res, a);
     }
 }
 
-impl<R: Ring> ZnxMulAddPowerOfTwo for FFT64Portable<R> {
+impl ZnxMulAddPowerOfTwo for FFT64Portable {
     #[inline(always)]
     fn znx_muladd_power_of_two(k: i64, res: &mut [i64], a: &[i64]) {
         znx_mul_add_power_of_two_portable(k, res, a);
     }
 }
 
-impl<R: Ring> ZnxMulPowerOfTwo for FFT64Portable<R> {
+impl ZnxMulPowerOfTwo for FFT64Portable {
     #[inline(always)]
     fn znx_mul_power_of_two(k: i64, res: &mut [i64], a: &[i64]) {
         znx_mul_power_of_two_portable(k, res, a);
     }
 }
 
-impl<R: Ring> ZnxMulPowerOfTwoAssign for FFT64Portable<R> {
+impl ZnxMulPowerOfTwoAssign for FFT64Portable {
     #[inline(always)]
     fn znx_mul_power_of_two_assign(k: i64, res: &mut [i64]) {
         znx_mul_power_of_two_assign_portable(k, res);
     }
 }
 
-impl ZnxAutomorphism for FFT64Portable<Standard> {
+impl ZnxAutomorphism<Standard> for FFT64Portable {
     #[inline(always)]
     fn znx_automorphism(p: i64, res: &mut [i64], a: &[i64]) {
         standard::znx_automorphism_portable(p, res, a);
@@ -92,7 +92,7 @@ impl ZnxAutomorphism for FFT64Portable<Standard> {
     }
 }
 
-impl ZnxAutomorphism for FFT64Portable<ConjugateInvariant> {
+impl ZnxAutomorphism<ConjugateInvariant> for FFT64Portable {
     #[inline(always)]
     fn znx_automorphism(p: i64, res: &mut [i64], a: &[i64]) {
         conjugate_invariant::znx_automorphism_portable(p, res, a);
@@ -104,56 +104,56 @@ impl ZnxAutomorphism for FFT64Portable<ConjugateInvariant> {
     }
 }
 
-impl ZnxAutomorphismRotate for FFT64Portable<Standard> {
+impl ZnxAutomorphismRotate<Standard> for FFT64Portable {
     #[inline(always)]
     fn znx_automorphism_rotate(p: i64, k: i64, res: &mut [i64], a: &[i64]) {
         znx_automorphism_rotate_portable(p, k, res, a);
     }
 }
 
-impl<R: Ring> ZnxCopy for FFT64Portable<R> {
+impl ZnxCopy for FFT64Portable {
     #[inline(always)]
     fn znx_copy(res: &mut [i64], a: &[i64]) {
         znx_copy_portable(res, a);
     }
 }
 
-impl<R: Ring> ZnxNegate for FFT64Portable<R> {
+impl ZnxNegate for FFT64Portable {
     #[inline(always)]
     fn znx_negate(res: &mut [i64], src: &[i64]) {
         znx_negate_portable(res, src);
     }
 }
 
-impl<R: Ring> ZnxNegateAssign for FFT64Portable<R> {
+impl ZnxNegateAssign for FFT64Portable {
     #[inline(always)]
     fn znx_negate_assign(res: &mut [i64]) {
         znx_negate_assign_portable(res);
     }
 }
 
-impl<R: Ring> ZnxRotate for FFT64Portable<R> {
+impl ZnxRotate for FFT64Portable {
     #[inline(always)]
     fn znx_rotate(p: i64, res: &mut [i64], src: &[i64]) {
         znx_rotate_portable::<Self>(p, res, src);
     }
 }
 
-impl<R: Ring> ZnxZero for FFT64Portable<R> {
+impl ZnxZero for FFT64Portable {
     #[inline(always)]
     fn znx_zero(res: &mut [i64]) {
         znx_zero_portable(res);
     }
 }
 
-impl<R: Ring> ZnxSwitchRing for FFT64Portable<R> {
+impl ZnxSwitchRing for FFT64Portable {
     #[inline(always)]
     fn znx_switch_ring(res: &mut [i64], a: &[i64]) {
         znx_switch_ring_portable(res, a);
     }
 }
 
-impl<R: Ring> crate::kernels::znx_normalize::ZnxNormalize for FFT64Portable<R> {}
+impl crate::kernels::znx_normalize::ZnxNormalize for FFT64Portable {}
 
 #[cfg(test)]
 mod normalization_tests {

@@ -1,11 +1,11 @@
 #[cfg(feature = "enable-ifma")]
-use super::{NTT3x42CIIfma, NTT3x42Ifma};
+use super::NTT3x42Ifma;
 #[cfg(all(feature = "enable-rayon", feature = "enable-ifma"))]
-use super::{NTT3x42CIIfmaRayon, NTT3x42IfmaRayon};
+use super::NTT3x42IfmaRayon;
 
-use super::{FFT64Avx512, FFT64CIAvx512, NTT4x30Avx512, NTT4x30CIAvx512};
+use super::{FFT64Avx512, NTT4x30Avx512};
 #[cfg(feature = "enable-rayon")]
-use super::{FFT64Avx512Rayon, FFT64CIAvx512Rayon, NTT4x30Avx512Rayon, NTT4x30CIAvx512Rayon};
+use super::{FFT64Avx512Rayon, NTT4x30Avx512Rayon};
 #[cfg(feature = "enable-ifma")]
 use crate::ntt3x42_ifma::{
     primes::Primes42,
@@ -42,26 +42,20 @@ use poulpy_hal::{
         VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxSubAssign,
     },
     layouts::{
-        Backend, CnvPVecLBackendRef, CnvPVecLToBackendRef, CnvPVecRBackendRef, CnvPVecRToBackendRef, Module, PrepareHint, Ring,
-        ScratchArena, VecZnxBackendMut, VecZnxBigToBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftToBackendMut,
-        VecZnxDftToBackendRef, VmpPMatBackendRef, vec_znx_dft_backend_ref_from_mut,
+        Backend, CnvPVecLBackendRef, CnvPVecLToBackendRef, CnvPVecRBackendRef, CnvPVecRToBackendRef, ConjugateInvariant, Module,
+        PrepareHint, Ring, ScratchArena, Standard, VecZnxBackendMut, VecZnxBigToBackendRef, VecZnxDftBackendMut,
+        VecZnxDftBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VmpPMatBackendRef, vec_znx_dft_backend_ref_from_mut,
     },
 };
 
 impl_glwe_tensoring_reference_full!(FFT64Avx512);
-impl_glwe_tensoring_reference_full!(FFT64CIAvx512);
 #[cfg(feature = "enable-rayon")]
 impl_glwe_tensoring_reference_full!(FFT64Avx512Rayon);
-#[cfg(feature = "enable-rayon")]
-impl_glwe_tensoring_reference_full!(FFT64CIAvx512Rayon);
 impl_gglwe_product_digits_strided_reference_full!(FFT64Avx512);
-impl_gglwe_product_digits_strided_reference_full!(FFT64CIAvx512);
 #[cfg(feature = "enable-rayon")]
 impl_gglwe_product_digits_strided_reference_full!(FFT64Avx512Rayon);
-#[cfg(feature = "enable-rayon")]
-impl_gglwe_product_digits_strided_reference_full!(FFT64CIAvx512Rayon);
 
-trait RankOneTensorDft: Backend {
+trait RankOneTensorDft<Rg: Ring>: Backend {
     fn tensor_finish_tmp_bytes(module: &Module<Self>, n: usize, size: usize) -> usize
     where
         Module<Self>: VecZnxBigBytesOf + VecZnxBigNormalizeTmpBytes + VecZnxIdftApplyTmpBytes,
@@ -75,17 +69,17 @@ trait RankOneTensorDft: Backend {
     #[allow(clippy::too_many_arguments)]
     fn tensor_finish(
         module: &Module<Self>,
-        res: &mut VecZnxBackendMut<'_, Self>,
+        res: &mut VecZnxBackendMut<'_, Self, Rg>,
         res_base2k: usize,
         res_k: usize,
         offset: i64,
         res_col: usize,
-        a: &mut VecZnxDftBackendMut<'_, Self>,
+        a: &mut VecZnxDftBackendMut<'_, Self, Rg>,
         a_col: usize,
         a_base2k: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
-        Module<Self>: VecZnxIdftApply<Self> + VecZnxIdftApplyTmpBytes + VecZnxBigNormalize<Self>,
+        Module<Self>: VecZnxIdftApply<Self, Rg> + VecZnxIdftApplyTmpBytes + VecZnxBigNormalize<Self, Rg>,
     {
         let (mut big, mut scratch) = scratch.borrow().take_vec_znx_big_scratch(a.n(), 1, a.size());
         module.vec_znx_idft_apply(&mut big, 0, &vec_znx_dft_backend_ref_from_mut(a), a_col, &mut scratch);
@@ -106,10 +100,10 @@ trait RankOneTensorDft: Backend {
 
     fn rank_one_tensor_dft(
         module: &Module<Self>,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, Rg>,
         cnv_offset: usize,
-        a: &CnvPVecLBackendRef<'_, Self>,
-        b: &CnvPVecRBackendRef<'_, Self>,
+        a: &CnvPVecLBackendRef<'_, Self, Rg>,
+        b: &CnvPVecRBackendRef<'_, Self, Rg>,
         scratch: &mut ScratchArena<'_, Self>,
     );
 
@@ -117,30 +111,30 @@ trait RankOneTensorDft: Backend {
     /// `d1` into column 0 of `cross`, within `rank_one_tensor_dft_tmp_bytes` of scratch.
     fn rank_one_cross_dft(
         module: &Module<Self>,
-        diag: &mut VecZnxDftBackendMut<'_, Self>,
-        cross: &mut VecZnxDftBackendMut<'_, Self>,
+        diag: &mut VecZnxDftBackendMut<'_, Self, Rg>,
+        cross: &mut VecZnxDftBackendMut<'_, Self, Rg>,
         cnv_offset: usize,
-        a: &CnvPVecLBackendRef<'_, Self>,
-        b: &CnvPVecRBackendRef<'_, Self>,
+        a: &CnvPVecLBackendRef<'_, Self, Rg>,
+        b: &CnvPVecRBackendRef<'_, Self, Rg>,
         scratch: &mut ScratchArena<'_, Self>,
     );
 }
 
 #[cfg(feature = "enable-ifma")]
 macro_rules! ifma_tensor_finish {
-    ($executor:ty, $cap:expr) => {
+    ($executor:ty, $cap:expr, $ring:ty) => {
         fn tensor_finish_tmp_bytes(module: &Module<Self>, _n: usize, _size: usize) -> usize {
             module.vec_znx_idft_normalize_tmp_bytes(0, 0)
         }
 
         fn tensor_finish(
             module: &Module<Self>,
-            res: &mut VecZnxBackendMut<'_, Self>,
+            res: &mut VecZnxBackendMut<'_, Self, $ring>,
             res_base2k: usize,
             res_k: usize,
             offset: i64,
             res_col: usize,
-            a: &mut VecZnxDftBackendMut<'_, Self>,
+            a: &mut VecZnxDftBackendMut<'_, Self, $ring>,
             a_col: usize,
             a_base2k: usize,
             scratch: &mut ScratchArena<'_, Self>,
@@ -154,7 +148,7 @@ macro_rules! ifma_tensor_finish {
             let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), workers * 3 * n);
             let shape = a.shape();
             let mut a = VecZnxDft::from_shape(&mut **a.data_mut(), shape);
-            crate::ntt3x42_ifma::vec_znx_dft::idft_normalize_ifma::<R, $executor>(
+            crate::ntt3x42_ifma::vec_znx_dft::idft_normalize_ifma::<$ring, $executor>(
                 module.reinterpret(),
                 res,
                 res_base2k,
@@ -171,20 +165,20 @@ macro_rules! ifma_tensor_finish {
     };
 }
 
-impl<R: Ring> RankOneTensorDft for NTT4x30Avx512<R> {
+impl<Rg: Ring> RankOneTensorDft<Rg> for NTT4x30Avx512 {
     fn rank_one_tensor_dft_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize {
         super::ntt4x30_avx512::convolution::cnv_tensor_rank1_dft_avx512_tmp_bytes(res_size, a_size, b_size)
     }
 
     fn rank_one_tensor_dft(
         module: &Module<Self>,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, Rg>,
         cnv_offset: usize,
-        a: &CnvPVecLBackendRef<'_, Self>,
-        b: &CnvPVecRBackendRef<'_, Self>,
+        a: &CnvPVecLBackendRef<'_, Self, Rg>,
+        b: &CnvPVecRBackendRef<'_, Self, Rg>,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let bytes = Self::rank_one_tensor_dft_tmp_bytes(res.size(), a.size(), b.size());
+        let bytes = <Self as RankOneTensorDft<Rg>>::rank_one_tensor_dft_tmp_bytes(res.size(), a.size(), b.size());
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u8>(scratch.borrow(), bytes);
         unsafe {
             super::ntt4x30_avx512::convolution::cnv_tensor_rank1_dft_avx512::<_, poulpy_hal::execution::SerialTaskExecutor>(
@@ -195,11 +189,11 @@ impl<R: Ring> RankOneTensorDft for NTT4x30Avx512<R> {
 
     fn rank_one_cross_dft(
         module: &Module<Self>,
-        diag: &mut VecZnxDftBackendMut<'_, Self>,
-        cross: &mut VecZnxDftBackendMut<'_, Self>,
+        diag: &mut VecZnxDftBackendMut<'_, Self, Rg>,
+        cross: &mut VecZnxDftBackendMut<'_, Self, Rg>,
         cnv_offset: usize,
-        a: &CnvPVecLBackendRef<'_, Self>,
-        b: &CnvPVecRBackendRef<'_, Self>,
+        a: &CnvPVecLBackendRef<'_, Self, Rg>,
+        b: &CnvPVecRBackendRef<'_, Self, Rg>,
         _scratch: &mut ScratchArena<'_, Self>,
     ) {
         unsafe {
@@ -214,20 +208,20 @@ impl<R: Ring> RankOneTensorDft for NTT4x30Avx512<R> {
 #[cfg(feature = "enable-rayon")]
 macro_rules! impl_rank_one_tensor_dft_rayon {
     ($ring:ty) => {
-        impl RankOneTensorDft for NTT4x30Avx512Rayon<$ring> {
+        impl RankOneTensorDft<$ring> for NTT4x30Avx512Rayon {
             fn rank_one_tensor_dft_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize {
                 super::ntt4x30_avx512::convolution::cnv_tensor_rank1_dft_avx512_tmp_bytes(res_size, a_size, b_size)
             }
 
             fn rank_one_tensor_dft(
                 module: &Module<Self>,
-                res: &mut VecZnxDftBackendMut<'_, Self>,
+                res: &mut VecZnxDftBackendMut<'_, Self, $ring>,
                 cnv_offset: usize,
-                a: &CnvPVecLBackendRef<'_, Self>,
-                b: &CnvPVecRBackendRef<'_, Self>,
+                a: &CnvPVecLBackendRef<'_, Self, $ring>,
+                b: &CnvPVecRBackendRef<'_, Self, $ring>,
                 scratch: &mut ScratchArena<'_, Self>,
             ) {
-                let bytes = Self::rank_one_tensor_dft_tmp_bytes(res.size(), a.size(), b.size());
+                let bytes = <Self as RankOneTensorDft<$ring>>::rank_one_tensor_dft_tmp_bytes(res.size(), a.size(), b.size());
                 let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u8>(scratch.borrow(), bytes);
                 let res_shape = res.shape();
                 unsafe {
@@ -244,11 +238,11 @@ macro_rules! impl_rank_one_tensor_dft_rayon {
 
             fn rank_one_cross_dft(
                 module: &Module<Self>,
-                diag: &mut VecZnxDftBackendMut<'_, Self>,
-                cross: &mut VecZnxDftBackendMut<'_, Self>,
+                diag: &mut VecZnxDftBackendMut<'_, Self, $ring>,
+                cross: &mut VecZnxDftBackendMut<'_, Self, $ring>,
                 cnv_offset: usize,
-                a: &CnvPVecLBackendRef<'_, Self>,
-                b: &CnvPVecRBackendRef<'_, Self>,
+                a: &CnvPVecLBackendRef<'_, Self, $ring>,
+                b: &CnvPVecRBackendRef<'_, Self, $ring>,
                 _scratch: &mut ScratchArena<'_, Self>,
             ) {
                 let (diag_shape, cross_shape) = (diag.shape(), cross.shape());
@@ -268,30 +262,30 @@ macro_rules! impl_rank_one_tensor_dft_rayon {
 }
 
 #[cfg(feature = "enable-rayon")]
-impl_rank_one_tensor_dft_rayon!(poulpy_hal::layouts::Standard);
+impl_rank_one_tensor_dft_rayon!(Standard);
 #[cfg(feature = "enable-rayon")]
-impl_rank_one_tensor_dft_rayon!(poulpy_hal::layouts::ConjugateInvariant);
+impl_rank_one_tensor_dft_rayon!(ConjugateInvariant);
 
 #[cfg(feature = "enable-ifma")]
-impl<R: Ring> RankOneTensorDft for NTT3x42Ifma<R>
+impl<Rg: Ring> RankOneTensorDft<Rg> for NTT3x42Ifma
 where
-    Self: Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, R>> + Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, R>>,
+    Self: Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, Rg>> + Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, Rg>>,
     Module<Self>: VecZnxIdftNormalizeTmpBytes,
 {
-    ifma_tensor_finish!(poulpy_hal::execution::SerialTaskExecutor, 1);
+    ifma_tensor_finish!(poulpy_hal::execution::SerialTaskExecutor, 1, Rg);
     fn rank_one_tensor_dft_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize {
         super::ntt3x42_ifma::convolution::cnv_tensor_rank1_dft_ifma_tmp_bytes(res_size, a_size, b_size)
     }
 
     fn rank_one_tensor_dft(
         _module: &Module<Self>,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, Rg>,
         cnv_offset: usize,
-        a: &CnvPVecLBackendRef<'_, Self>,
-        b: &CnvPVecRBackendRef<'_, Self>,
+        a: &CnvPVecLBackendRef<'_, Self, Rg>,
+        b: &CnvPVecRBackendRef<'_, Self, Rg>,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let bytes = Self::rank_one_tensor_dft_tmp_bytes(res.size(), a.size(), b.size());
+        let bytes = <Self as RankOneTensorDft<Rg>>::rank_one_tensor_dft_tmp_bytes(res.size(), a.size(), b.size());
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u8>(scratch.borrow(), bytes);
         unsafe {
             super::ntt3x42_ifma::convolution::cnv_tensor_rank1_dft_ifma::<_, poulpy_hal::execution::SerialTaskExecutor>(
@@ -302,14 +296,14 @@ where
 
     fn rank_one_cross_dft(
         _module: &Module<Self>,
-        diag: &mut VecZnxDftBackendMut<'_, Self>,
-        cross: &mut VecZnxDftBackendMut<'_, Self>,
+        diag: &mut VecZnxDftBackendMut<'_, Self, Rg>,
+        cross: &mut VecZnxDftBackendMut<'_, Self, Rg>,
         cnv_offset: usize,
-        a: &CnvPVecLBackendRef<'_, Self>,
-        b: &CnvPVecRBackendRef<'_, Self>,
+        a: &CnvPVecLBackendRef<'_, Self, Rg>,
+        b: &CnvPVecRBackendRef<'_, Self, Rg>,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let bytes = Self::rank_one_tensor_dft_tmp_bytes(diag.size(), a.size(), b.size());
+        let bytes = <Self as RankOneTensorDft<Rg>>::rank_one_tensor_dft_tmp_bytes(diag.size(), a.size(), b.size());
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u8>(scratch.borrow(), bytes);
         unsafe {
             super::ntt3x42_ifma::convolution::cnv_tensor_rank1_cross_dft_ifma::<_, poulpy_hal::execution::SerialTaskExecutor>(
@@ -320,15 +314,15 @@ where
 }
 
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
-impl<R: Ring> RankOneTensorDft for NTT3x42IfmaRayon<R>
+impl<Rg: Ring> RankOneTensorDft<Rg> for NTT3x42IfmaRayon
 where
-    NTT3x42Ifma<R>:
-        Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, R>> + Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, R>>,
+    NTT3x42Ifma: Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, Rg>> + Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, Rg>>,
     Module<Self>: VecZnxIdftNormalizeTmpBytes,
 {
     ifma_tensor_finish!(
-        super::ntt3x42_ifma::NTT3x42IfmaRayonExecutor,
-        <Self as poulpy_hal::execution::ScratchWorkers>::IDFT
+        crate::NTT3x42IfmaRayonExecutor,
+        <Self as poulpy_hal::execution::ScratchWorkers>::IDFT,
+        Rg
     );
     fn rank_one_tensor_dft_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize {
         poulpy_cpu_rayon::workers(<Self as poulpy_hal::execution::ScratchWorkers>::APPLY)
@@ -337,10 +331,10 @@ where
 
     fn rank_one_tensor_dft(
         _module: &Module<Self>,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, Rg>,
         cnv_offset: usize,
-        a: &CnvPVecLBackendRef<'_, Self>,
-        b: &CnvPVecRBackendRef<'_, Self>,
+        a: &CnvPVecLBackendRef<'_, Self, Rg>,
+        b: &CnvPVecRBackendRef<'_, Self, Rg>,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let per_worker = super::ntt3x42_ifma::convolution::cnv_tensor_rank1_dft_ifma_tmp_bytes(res.size(), a.size(), b.size());
@@ -351,11 +345,11 @@ where
         ) * per_worker;
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u8>(scratch.borrow(), bytes);
         unsafe {
-            super::ntt3x42_ifma::convolution::cnv_tensor_rank1_dft_ifma::<_, super::ntt3x42_ifma::NTT3x42IfmaRayonExecutor>(
-                &mut super::ntt3x42_ifma::rayon::base_dft_mut::<R>(res),
+            super::ntt3x42_ifma::convolution::cnv_tensor_rank1_dft_ifma::<_, crate::NTT3x42IfmaRayonExecutor>(
+                &mut super::ntt3x42_ifma::rayon::base_dft_mut::<Rg>(res),
                 cnv_offset,
-                &super::ntt3x42_ifma::rayon::base_cnv_l_ref::<R>(a),
-                &super::ntt3x42_ifma::rayon::base_cnv_r_ref::<R>(b),
+                &super::ntt3x42_ifma::rayon::base_cnv_l_ref::<Rg>(a),
+                &super::ntt3x42_ifma::rayon::base_cnv_r_ref::<Rg>(b),
                 tmp,
             )
         };
@@ -363,11 +357,11 @@ where
 
     fn rank_one_cross_dft(
         _module: &Module<Self>,
-        diag: &mut VecZnxDftBackendMut<'_, Self>,
-        cross: &mut VecZnxDftBackendMut<'_, Self>,
+        diag: &mut VecZnxDftBackendMut<'_, Self, Rg>,
+        cross: &mut VecZnxDftBackendMut<'_, Self, Rg>,
         cnv_offset: usize,
-        a: &CnvPVecLBackendRef<'_, Self>,
-        b: &CnvPVecRBackendRef<'_, Self>,
+        a: &CnvPVecLBackendRef<'_, Self, Rg>,
+        b: &CnvPVecRBackendRef<'_, Self, Rg>,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let per_worker = super::ntt3x42_ifma::convolution::cnv_tensor_rank1_dft_ifma_tmp_bytes(diag.size(), a.size(), b.size());
@@ -378,12 +372,12 @@ where
         ) * per_worker;
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u8>(scratch.borrow(), bytes);
         unsafe {
-            super::ntt3x42_ifma::convolution::cnv_tensor_rank1_cross_dft_ifma::<_, super::ntt3x42_ifma::NTT3x42IfmaRayonExecutor>(
-                &mut super::ntt3x42_ifma::rayon::base_dft_mut::<R>(diag),
-                &mut super::ntt3x42_ifma::rayon::base_dft_mut::<R>(cross),
+            super::ntt3x42_ifma::convolution::cnv_tensor_rank1_cross_dft_ifma::<_, crate::NTT3x42IfmaRayonExecutor>(
+                &mut super::ntt3x42_ifma::rayon::base_dft_mut::<Rg>(diag),
+                &mut super::ntt3x42_ifma::rayon::base_dft_mut::<Rg>(cross),
                 cnv_offset,
-                &super::ntt3x42_ifma::rayon::base_cnv_l_ref::<R>(a),
-                &super::ntt3x42_ifma::rayon::base_cnv_r_ref::<R>(b),
+                &super::ntt3x42_ifma::rayon::base_cnv_l_ref::<Rg>(a),
+                &super::ntt3x42_ifma::rayon::base_cnv_r_ref::<Rg>(b),
                 tmp,
             )
         };
@@ -412,7 +406,7 @@ fn rank_one_tensor_supported<R: GLWEInfos>(res: &R) -> bool {
     res.rank().as_usize() == 1 && res.n().as_usize() >= RANK_ONE_TENSOR_MIN_DEGREE
 }
 
-fn rank_one_tensor_work_bytes<BE: RankOneTensorDft>(
+fn rank_one_tensor_work_bytes<BE: RankOneTensorDft<Rg>, Rg: Ring>(
     module: &Module<BE>,
     n: usize,
     res_size: usize,
@@ -430,18 +424,18 @@ where
     BE::vec_znx_bytes_of(n, 2, res_size) + module.vec_znx_dft_bytes_of(n, 3, dft_size) + kernel.max(normalize)
 }
 
-fn rank_one_tensor_apply_tmp_bytes<BE, R, A, B>(module: &Module<BE>, res: &R, a: &A, b: &B) -> usize
+fn rank_one_tensor_apply_tmp_bytes<BE, R, A, B, Rg: Ring>(module: &Module<BE>, res: &R, a: &A, b: &B) -> usize
 where
-    BE: RankOneTensorDft,
+    BE: RankOneTensorDft<Rg>,
     Module<BE>: ModuleN
         + CnvPVecBytesOf
-        + CnvOps<BE>
+        + CnvOps<BE, Rg>
         + VecZnxDftBytesOf
         + VecZnxBigBytesOf
         + VecZnxBigNormalizeTmpBytes
         + VecZnxIdftApplyTmpBytes
         + VecZnxNormalizeTmpBytes
-        + GLWENormalize<BE>,
+        + GLWENormalize<BE, Rg>,
     R: GLWEInfos,
     A: GLWEInfos,
     B: GLWEInfos,
@@ -458,12 +452,15 @@ where
         .max(module.cnv_pvec_right_prepare_tmp_bytes(b_size, b_size));
     BE::scratch_aligned(module.glwe_bytes_of_from_infos(a))
         + BE::scratch_aligned(module.glwe_bytes_of_from_infos(b))
-        + (prepared + prepare.max(rank_one_tensor_prepared_tmp_bytes(module, res, a_size, b_size, base2k)))
-            .max(module.glwe_normalize_tmp_bytes())
+        + (prepared
+            + prepare.max(rank_one_tensor_prepared_tmp_bytes::<BE, R, Rg>(
+                module, res, a_size, b_size, base2k,
+            )))
+        .max(module.glwe_normalize_tmp_bytes())
 }
 
 /// Scratch of [`rank_one_tensor_apply_prepared`].
-fn rank_one_tensor_prepared_tmp_bytes<BE, R>(
+fn rank_one_tensor_prepared_tmp_bytes<BE, R, Rg: Ring>(
     module: &Module<BE>,
     res: &R,
     a_size: usize,
@@ -471,17 +468,17 @@ fn rank_one_tensor_prepared_tmp_bytes<BE, R>(
     in_base2k: usize,
 ) -> usize
 where
-    BE: RankOneTensorDft,
+    BE: RankOneTensorDft<Rg>,
     Module<BE>:
         VecZnxDftBytesOf + VecZnxBigBytesOf + VecZnxBigNormalizeTmpBytes + VecZnxIdftApplyTmpBytes + VecZnxNormalizeTmpBytes,
     R: GLWEInfos,
 {
     let dft_size = (a_size + b_size).min((res.size() * res.base2k().as_usize() + in_base2k - 1).div_ceil(in_base2k));
-    rank_one_tensor_work_bytes(module, res.n().as_usize(), res.size(), dft_size, a_size, b_size)
+    rank_one_tensor_work_bytes::<BE, Rg>(module, res.n().as_usize(), res.size(), dft_size, a_size, b_size)
 }
 
 /// Scratch the rank-one kernel of `glwe_mul_columns` adds to the reference one-pass products.
-fn rank_one_columns_tmp_bytes<BE: RankOneTensorDft, R: GLWEInfos>(res: &R, a_size: usize, b_size: usize) -> usize {
+fn rank_one_columns_tmp_bytes<BE: RankOneTensorDft<Rg>, R: GLWEInfos, Rg: Ring>(res: &R, a_size: usize, b_size: usize) -> usize {
     if rank_one_tensor_supported(res) {
         BE::rank_one_tensor_dft_tmp_bytes(a_size + b_size, a_size, b_size)
     } else {
@@ -489,18 +486,18 @@ fn rank_one_columns_tmp_bytes<BE: RankOneTensorDft, R: GLWEInfos>(res: &R, a_siz
     }
 }
 
-fn rank_one_tensor_square_tmp_bytes<BE, R, A>(module: &Module<BE>, res: &R, a: &A) -> usize
+fn rank_one_tensor_square_tmp_bytes<BE, R, A, Rg: Ring>(module: &Module<BE>, res: &R, a: &A) -> usize
 where
-    BE: RankOneTensorDft,
+    BE: RankOneTensorDft<Rg>,
     Module<BE>: ModuleN
         + CnvPVecBytesOf
-        + CnvOps<BE>
+        + CnvOps<BE, Rg>
         + VecZnxDftBytesOf
         + VecZnxBigBytesOf
         + VecZnxBigNormalizeTmpBytes
         + VecZnxIdftApplyTmpBytes
         + VecZnxNormalizeTmpBytes
-        + GLWENormalize<BE>,
+        + GLWENormalize<BE, Rg>,
     R: GLWEInfos,
     A: GLWEInfos,
 {
@@ -512,12 +509,20 @@ where
         + module.cnv_pvec_right_bytes_of(n, 2, a_size, PrepareHint::Reuse);
     let prepare = module.cnv_pvec_self_prepare_tmp_bytes(a_size, a_size);
     BE::scratch_aligned(module.glwe_bytes_of_from_infos(a))
-        + (prepared + prepare.max(rank_one_tensor_work_bytes(module, n, res.size(), dft_size, a_size, a_size)))
-            .max(module.glwe_normalize_tmp_bytes())
+        + (prepared
+            + prepare.max(rank_one_tensor_work_bytes::<BE, Rg>(
+                module,
+                n,
+                res.size(),
+                dft_size,
+                a_size,
+                a_size,
+            )))
+        .max(module.glwe_normalize_tmp_bytes())
 }
 
 #[allow(clippy::too_many_arguments)]
-fn rank_one_tensor_finish<BE, R, AP, BP>(
+fn rank_one_tensor_finish<BE, R, AP, BP, Rg: Ring>(
     module: &Module<BE>,
     cnv_offset: usize,
     res: &mut R,
@@ -528,21 +533,21 @@ fn rank_one_tensor_finish<BE, R, AP, BP>(
     in_base2k: usize,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: RankOneTensorDft,
+    BE: RankOneTensorDft<Rg>,
     Module<BE>: ModuleN
         + VecZnxDftBytesOf
         + VecZnxBigBytesOf
-        + VecZnxIdftApply<BE>
+        + VecZnxIdftApply<BE, Rg>
         + VecZnxIdftApplyTmpBytes
-        + VecZnxBigNormalize<BE>
+        + VecZnxBigNormalize<BE, Rg>
         + VecZnxBigNormalizeTmpBytes
-        + VecZnxCopy<BE>
-        + VecZnxSubAssign<BE>
-        + VecZnxNormalizeAssign<BE>
+        + VecZnxCopy<BE, Rg>
+        + VecZnxSubAssign<BE, Rg>
+        + VecZnxNormalizeAssign<BE, Rg>
         + VecZnxNormalizeTmpBytes,
-    R: GLWEToBackendMut<BE> + GLWEInfos,
-    AP: CnvPVecLToBackendRef<BE>,
-    BP: CnvPVecRToBackendRef<BE>,
+    R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+    AP: CnvPVecLToBackendRef<BE, Rg>,
+    BP: CnvPVecRToBackendRef<BE, Rg>,
 {
     let res_base2k = res.base2k().as_usize();
     let full_k = res.size() * res_base2k;
@@ -600,15 +605,15 @@ fn rank_one_tensor_finish<BE, R, AP, BP>(
 /// Writes column 1 as the pairwise product minus both diagonals, then rounds
 /// the tensor to `res.k()`. The diagonals arrive finished at full precision,
 /// so they are rounded again only when `res.k()` drops limbs.
-fn rank_one_tensor_combine<BE, R>(
+fn rank_one_tensor_combine<BE, R, Rg: Ring>(
     module: &Module<BE>,
     res: &mut R,
-    pairwise: &mut VecZnxBackendMut<'_, BE>,
+    pairwise: &mut VecZnxBackendMut<'_, BE, Rg>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
-    Module<BE>: VecZnxCopy<BE> + VecZnxSubAssign<BE> + VecZnxNormalizeAssign<BE>,
-    R: GLWEToBackendMut<BE> + GLWEInfos,
+    Module<BE>: VecZnxCopy<BE, Rg> + VecZnxSubAssign<BE, Rg> + VecZnxNormalizeAssign<BE, Rg>,
+    R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
 {
     let base2k = res.base2k().as_usize();
     let k = res.k().as_usize();
@@ -621,7 +626,7 @@ fn rank_one_tensor_combine<BE, R>(
     module.vec_znx_copy(
         res.to_backend_mut().data_mut(),
         1,
-        &poulpy_hal::layouts::vec_znx_backend_ref_from_mut::<BE>(pairwise),
+        &poulpy_hal::layouts::vec_znx_backend_ref_from_mut::<BE, Rg>(pairwise),
         0,
     );
     if k < res.size() * base2k {
@@ -631,7 +636,7 @@ fn rank_one_tensor_combine<BE, R>(
     }
 }
 
-fn rank_one_tensor_apply<BE, R, A, B>(
+fn rank_one_tensor_apply<BE, R, A, B, Rg: Ring>(
     module: &Module<BE>,
     cnv_offset: usize,
     res: &mut R,
@@ -639,24 +644,24 @@ fn rank_one_tensor_apply<BE, R, A, B>(
     b: &B,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: RankOneTensorDft,
+    BE: RankOneTensorDft<Rg>,
     Module<BE>: ModuleN
         + CnvPVecBytesOf
-        + CnvOps<BE>
+        + CnvOps<BE, Rg>
         + VecZnxDftBytesOf
         + VecZnxBigBytesOf
-        + VecZnxIdftApply<BE>
+        + VecZnxIdftApply<BE, Rg>
         + VecZnxIdftApplyTmpBytes
-        + VecZnxBigNormalize<BE>
+        + VecZnxBigNormalize<BE, Rg>
         + VecZnxBigNormalizeTmpBytes
-        + VecZnxCopy<BE>
-        + VecZnxSubAssign<BE>
-        + VecZnxNormalizeAssign<BE>
+        + VecZnxCopy<BE, Rg>
+        + VecZnxSubAssign<BE, Rg>
+        + VecZnxNormalizeAssign<BE, Rg>
         + VecZnxNormalizeTmpBytes
-        + GLWENormalize<BE>,
-    R: GLWEToBackendMut<BE> + GLWEInfos,
-    A: GLWEToBackendRef<BE> + GLWEInfos,
-    B: GLWEToBackendRef<BE> + GLWEInfos,
+        + GLWENormalize<BE, Rg>,
+    R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+    A: GLWEToBackendRef<BE, Rg> + GLWEInfos,
+    B: GLWEToBackendRef<BE, Rg> + GLWEInfos,
 {
     let n = assert_degrees(module, [res.n(), a.n(), b.n()]);
     assert!(scratch.available() >= rank_one_tensor_apply_tmp_bytes(module, res, a, b));
@@ -702,7 +707,7 @@ fn rank_one_tensor_apply<BE, R, A, B>(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn rank_one_tensor_apply_prepared<BE, R, AP, BP>(
+fn rank_one_tensor_apply_prepared<BE, R, AP, BP, Rg: Ring>(
     module: &Module<BE>,
     cnv_offset: usize,
     res: &mut R,
@@ -713,21 +718,21 @@ fn rank_one_tensor_apply_prepared<BE, R, AP, BP>(
     in_base2k: usize,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: RankOneTensorDft,
+    BE: RankOneTensorDft<Rg>,
     Module<BE>: ModuleN
         + VecZnxDftBytesOf
         + VecZnxBigBytesOf
-        + VecZnxIdftApply<BE>
+        + VecZnxIdftApply<BE, Rg>
         + VecZnxIdftApplyTmpBytes
-        + VecZnxBigNormalize<BE>
+        + VecZnxBigNormalize<BE, Rg>
         + VecZnxBigNormalizeTmpBytes
-        + VecZnxCopy<BE>
-        + VecZnxSubAssign<BE>
-        + VecZnxNormalizeAssign<BE>
+        + VecZnxCopy<BE, Rg>
+        + VecZnxSubAssign<BE, Rg>
+        + VecZnxNormalizeAssign<BE, Rg>
         + VecZnxNormalizeTmpBytes,
-    R: GLWEToBackendMut<BE> + GLWEInfos,
-    AP: CnvPVecLToBackendRef<BE>,
-    BP: CnvPVecRToBackendRef<BE>,
+    R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+    AP: CnvPVecLToBackendRef<BE, Rg>,
+    BP: CnvPVecRToBackendRef<BE, Rg>,
 {
     {
         let n = res.n().as_usize();
@@ -737,36 +742,36 @@ fn rank_one_tensor_apply_prepared<BE, R, AP, BP>(
             "prepared operands do not match res's degree and rank and the given sizes"
         );
     }
-    assert!(scratch.available() >= rank_one_tensor_prepared_tmp_bytes(module, res, a_size, b_size, in_base2k));
+    assert!(scratch.available() >= rank_one_tensor_prepared_tmp_bytes::<BE, R, Rg>(module, res, a_size, b_size, in_base2k));
     // As the reference: the kernel writes every limb normalized.
     res.set_canonical(true);
     rank_one_tensor_finish(module, cnv_offset, res, a, b, a_size, b_size, in_base2k, scratch);
 }
 
-fn rank_one_tensor_square<BE, R, A>(
+fn rank_one_tensor_square<BE, R, A, Rg: Ring>(
     module: &Module<BE>,
     cnv_offset: usize,
     res: &mut R,
     a: &A,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: RankOneTensorDft,
+    BE: RankOneTensorDft<Rg>,
     Module<BE>: ModuleN
         + CnvPVecBytesOf
-        + CnvOps<BE>
+        + CnvOps<BE, Rg>
         + VecZnxDftBytesOf
         + VecZnxBigBytesOf
-        + VecZnxIdftApply<BE>
+        + VecZnxIdftApply<BE, Rg>
         + VecZnxIdftApplyTmpBytes
-        + VecZnxBigNormalize<BE>
+        + VecZnxBigNormalize<BE, Rg>
         + VecZnxBigNormalizeTmpBytes
-        + VecZnxCopy<BE>
-        + VecZnxSubAssign<BE>
-        + VecZnxNormalizeAssign<BE>
+        + VecZnxCopy<BE, Rg>
+        + VecZnxSubAssign<BE, Rg>
+        + VecZnxNormalizeAssign<BE, Rg>
         + VecZnxNormalizeTmpBytes
-        + GLWENormalize<BE>,
-    R: GLWEToBackendMut<BE> + GLWEInfos,
-    A: GLWEToBackendRef<BE> + GLWEInfos,
+        + GLWENormalize<BE, Rg>,
+    R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+    A: GLWEToBackendRef<BE, Rg> + GLWEInfos,
 {
     let n = assert_degrees(module, [res.n(), a.n(), a.n()]);
     assert!(scratch.available() >= rank_one_tensor_square_tmp_bytes(module, res, a));
@@ -801,8 +806,8 @@ fn rank_one_tensor_square<BE, R, A>(
 }
 
 macro_rules! impl_rank_one_tensoring {
-    ($be:ty, $consume:literal, $prepared:path) => {
-        unsafe impl GLWETensoringImpl for $be {
+    ($be:ty, $ring:ty, $consume:literal, $prepared:path) => {
+        unsafe impl GLWETensoringImpl<$ring> for $be {
             fn glwe_tensor_apply_prepared_right_tmp_bytes<R, A>(
                 module: &Module<$be>,
                 res: &R,
@@ -814,7 +819,9 @@ macro_rules! impl_rank_one_tensoring {
                 R: GLWEInfos,
                 A: GLWEInfos,
             {
-                module.glwe_tensor_apply_prepared_right_tmp_bytes_reference(res, a, a_size, b_size)
+                GLWETensoringReference::<$be, $ring>::glwe_tensor_apply_prepared_right_tmp_bytes_reference(
+                    module, res, a, a_size, b_size,
+                )
             }
 
             fn glwe_tensor_apply_prepared_right<R, A, BP>(
@@ -826,9 +833,9 @@ macro_rules! impl_rank_one_tensoring {
                 b_size: usize,
                 scratch: &mut ScratchArena<'_, $be>,
             ) where
-                R: GLWEToBackendMut<$be> + GLWEInfos,
-                A: GLWEToBackendRef<$be> + GLWEInfos,
-                BP: CnvPVecRToBackendRef<$be>,
+                R: GLWEToBackendMut<$be, $ring> + GLWEInfos,
+                A: GLWEToBackendRef<$be, $ring> + GLWEInfos,
+                BP: CnvPVecRToBackendRef<$be, $ring>,
             {
                 $prepared(module, offset, res, a, b, b_size, scratch)
             }
@@ -840,9 +847,9 @@ macro_rules! impl_rank_one_tensoring {
                 B: GLWEInfos,
             {
                 if rank_one_tensor_supported(res) {
-                    rank_one_tensor_apply_tmp_bytes(module, res, a, b)
+                    rank_one_tensor_apply_tmp_bytes::<_, _, _, _, $ring>(module, res, a, b)
                 } else {
-                    module.glwe_tensor_apply_tmp_bytes_reference(res, a, b)
+                    GLWETensoringReference::<$be, $ring>::glwe_tensor_apply_tmp_bytes_reference(module, res, a, b)
                 }
             }
 
@@ -852,9 +859,9 @@ macro_rules! impl_rank_one_tensoring {
                 A: GLWEInfos,
             {
                 if rank_one_tensor_supported(res) {
-                    rank_one_tensor_square_tmp_bytes(module, res, a)
+                    rank_one_tensor_square_tmp_bytes::<_, _, _, $ring>(module, res, a)
                 } else {
-                    module.glwe_tensor_square_apply_tmp_bytes_reference(res, a)
+                    GLWETensoringReference::<$be, $ring>::glwe_tensor_square_apply_tmp_bytes_reference(module, res, a)
                 }
             }
 
@@ -866,14 +873,14 @@ macro_rules! impl_rank_one_tensoring {
                 b: &B,
                 scratch: &mut ScratchArena<'_, $be>,
             ) where
-                R: GLWEToBackendMut<$be> + GLWEInfos,
-                A: GLWEToBackendRef<$be> + GLWEInfos,
-                B: GLWEToBackendRef<$be> + GLWEInfos,
+                R: GLWEToBackendMut<$be, $ring> + GLWEInfos,
+                A: GLWEToBackendRef<$be, $ring> + GLWEInfos,
+                B: GLWEToBackendRef<$be, $ring> + GLWEInfos,
             {
                 if rank_one_tensor_supported(res) {
                     rank_one_tensor_apply(module, cnv_offset, res, a, b, scratch)
                 } else {
-                    module.glwe_tensor_apply_reference(cnv_offset, res, a, b, scratch)
+                    GLWETensoringReference::<$be, $ring>::glwe_tensor_apply_reference(module, cnv_offset, res, a, b, scratch)
                 }
             }
 
@@ -884,13 +891,13 @@ macro_rules! impl_rank_one_tensoring {
                 a: &A,
                 scratch: &mut ScratchArena<'_, $be>,
             ) where
-                R: GLWEToBackendMut<$be> + GLWEInfos,
-                A: GLWEToBackendRef<$be> + GLWEInfos,
+                R: GLWEToBackendMut<$be, $ring> + GLWEInfos,
+                A: GLWEToBackendRef<$be, $ring> + GLWEInfos,
             {
                 if rank_one_tensor_supported(res) {
                     rank_one_tensor_square(module, cnv_offset, res, a, scratch)
                 } else {
-                    module.glwe_tensor_square_apply_reference(cnv_offset, res, a, scratch)
+                    GLWETensoringReference::<$be, $ring>::glwe_tensor_square_apply_reference(module, cnv_offset, res, a, scratch)
                 }
             }
 
@@ -901,16 +908,16 @@ macro_rules! impl_rank_one_tensoring {
                 tsk: &T,
                 scratch: &mut ScratchArena<'_, $be>,
             ) where
-                R: GLWEToBackendMut<$be> + GLWEInfos,
-                A: GLWEToBackendRef<$be> + GLWEInfos,
-                T: poulpy_core::layouts::GetTensorKey<$be>,
+                R: GLWEToBackendMut<$be, $ring> + GLWEInfos,
+                A: GLWEToBackendRef<$be, $ring> + GLWEInfos,
+                T: poulpy_core::layouts::GetTensorKey<$be, $ring>,
             {
                 if !$consume {
-                    return module.glwe_tensor_relinearize_reference(res, a, tsk, scratch);
+                    return GLWETensoringReference::<$be, $ring>::glwe_tensor_relinearize_reference(module, res, a, tsk, scratch);
                 }
                 let key = tsk.get_tensor_key(a.k()).unwrap_or_else(|e| panic!("{e}"));
                 if a.base2k() != key.base2k() {
-                    return module.glwe_tensor_relinearize_reference(res, a, tsk, scratch);
+                    return GLWETensoringReference::<$be, $ring>::glwe_tensor_relinearize_reference(module, res, a, tsk, scratch);
                 }
                 poulpy_core::layouts::assert_no_row_offset("glwe_tensor_relinearize", &key);
                 let n = assert_degrees(module, [res.n(), a.n(), key.n()]);
@@ -942,10 +949,11 @@ macro_rules! impl_rank_one_tensoring {
                     );
                 }
                 let (mut output, mut scratch) = scratch.take_vec_znx_dft_scratch(n, cols, output_size);
-                module.gglwe_product_dft_reference(
+                GGLWEProductReference::<$be, $ring>::gglwe_product_dft_reference(
+                    module,
                     &mut output,
                     &input.to_backend_ref(),
-                    &GGLWEPreparedToBackendRef::<$be>::to_backend_ref(&&key),
+                    &GGLWEPreparedToBackendRef::<$be, $ring>::to_backend_ref(&&key),
                     1,
                     &mut scratch,
                 );
@@ -974,7 +982,9 @@ macro_rules! impl_rank_one_tensoring {
                 B: GGLWEInfos,
             {
                 if !$consume || a.base2k() != tsk.base2k() {
-                    return module.glwe_tensor_relinearize_tmp_bytes_reference(res, a, tsk);
+                    return GLWETensoringReference::<$be, $ring>::glwe_tensor_relinearize_tmp_bytes_reference(
+                        module, res, a, tsk,
+                    );
                 }
                 let n = assert_degrees(module, [res.n(), a.n(), tsk.n()]);
                 let a_size = a.k().div_ceil(tsk.base2k()) as usize;
@@ -985,9 +995,13 @@ macro_rules! impl_rank_one_tensoring {
                 // the fused inverse transform after.
                 let layout = gglwe_gadget_dft_apply_tmp_bytes::<$be, _>(module, base2k, k_digit, dnum, a.k(), a_size);
                 let product = module.vec_znx_dft_bytes_of(n, tsk.rank_out().as_usize() + 1, output_size)
-                    + module
-                        .gglwe_product_dft_tmp_bytes_reference(output_size, operand_size, tsk)
-                        .max(module.vec_znx_idft_normalize_tmp_bytes(res.size(), output_size));
+                    + GGLWEProductReference::<$be, $ring>::gglwe_product_dft_tmp_bytes_reference(
+                        module,
+                        output_size,
+                        operand_size,
+                        tsk,
+                    )
+                    .max(module.vec_znx_idft_normalize_tmp_bytes(res.size(), output_size));
                 module.vec_znx_dft_bytes_of(n, tsk.rank_in().as_usize(), operand_size) + layout.max(product)
             }
 
@@ -1004,8 +1018,9 @@ macro_rules! impl_rank_one_tensoring {
                 B: GGLWEInfos,
             {
                 // The kernel runs where the reference runs its convolutions: its scratch is added whole.
-                module.glwe_mul_relinearize_tmp_bytes_reference(res, a_size, b_size, tensor_k, tsk)
-                    + rank_one_columns_tmp_bytes::<$be, _>(res, a_size, b_size)
+                GLWETensoringReference::<$be, $ring>::glwe_mul_relinearize_tmp_bytes_reference(
+                    module, res, a_size, b_size, tensor_k, tsk,
+                ) + rank_one_columns_tmp_bytes::<$be, _, $ring>(res, a_size, b_size)
             }
 
             #[allow(clippy::too_many_arguments)]
@@ -1019,12 +1034,14 @@ macro_rules! impl_rank_one_tensoring {
                 tsk: &H,
                 scratch: &mut ScratchArena<'_, $be>,
             ) where
-                R: poulpy_core::layouts::GLWEToBackendMut<$be> + poulpy_core::layouts::GLWEInfos,
-                A: poulpy_core::layouts::GLWEToBackendRef<$be> + poulpy_core::layouts::GLWEInfos,
-                B: poulpy_core::layouts::GLWEToBackendRef<$be> + poulpy_core::layouts::GLWEInfos,
-                H: poulpy_core::layouts::GetTensorKey<$be>,
+                R: poulpy_core::layouts::GLWEToBackendMut<$be, $ring> + poulpy_core::layouts::GLWEInfos,
+                A: poulpy_core::layouts::GLWEToBackendRef<$be, $ring> + poulpy_core::layouts::GLWEInfos,
+                B: poulpy_core::layouts::GLWEToBackendRef<$be, $ring> + poulpy_core::layouts::GLWEInfos,
+                H: poulpy_core::layouts::GetTensorKey<$be, $ring>,
             {
-                module.glwe_mul_relinearize_reference(cnv_offset, res, res_k, a, b, tsk, scratch)
+                GLWETensoringReference::<$be, $ring>::glwe_mul_relinearize_reference(
+                    module, cnv_offset, res, res_k, a, b, tsk, scratch,
+                )
             }
 
             fn glwe_mul_relinearize_assign<R, A, H>(
@@ -1036,11 +1053,13 @@ macro_rules! impl_rank_one_tensoring {
                 tsk: &H,
                 scratch: &mut ScratchArena<'_, $be>,
             ) where
-                R: poulpy_core::layouts::GLWEToBackendMut<$be> + poulpy_core::layouts::GLWEInfos,
-                A: poulpy_core::layouts::GLWEToBackendRef<$be> + poulpy_core::layouts::GLWEInfos,
-                H: poulpy_core::layouts::GetTensorKey<$be>,
+                R: poulpy_core::layouts::GLWEToBackendMut<$be, $ring> + poulpy_core::layouts::GLWEInfos,
+                A: poulpy_core::layouts::GLWEToBackendRef<$be, $ring> + poulpy_core::layouts::GLWEInfos,
+                H: poulpy_core::layouts::GetTensorKey<$be, $ring>,
             {
-                module.glwe_mul_relinearize_assign_reference(cnv_offset, res, res_k, a, tsk, scratch)
+                GLWETensoringReference::<$be, $ring>::glwe_mul_relinearize_assign_reference(
+                    module, cnv_offset, res, res_k, a, tsk, scratch,
+                )
             }
 
             fn glwe_square_relinearize<R, A, H>(
@@ -1052,11 +1071,13 @@ macro_rules! impl_rank_one_tensoring {
                 tsk: &H,
                 scratch: &mut ScratchArena<'_, $be>,
             ) where
-                R: poulpy_core::layouts::GLWEToBackendMut<$be> + poulpy_core::layouts::GLWEInfos,
-                A: poulpy_core::layouts::GLWEToBackendRef<$be> + poulpy_core::layouts::GLWEInfos,
-                H: poulpy_core::layouts::GetTensorKey<$be>,
+                R: poulpy_core::layouts::GLWEToBackendMut<$be, $ring> + poulpy_core::layouts::GLWEInfos,
+                A: poulpy_core::layouts::GLWEToBackendRef<$be, $ring> + poulpy_core::layouts::GLWEInfos,
+                H: poulpy_core::layouts::GetTensorKey<$be, $ring>,
             {
-                module.glwe_square_relinearize_reference(cnv_offset, res, res_k, a, tsk, scratch)
+                GLWETensoringReference::<$be, $ring>::glwe_square_relinearize_reference(
+                    module, cnv_offset, res, res_k, a, tsk, scratch,
+                )
             }
 
             fn glwe_square_relinearize_assign<R, H>(
@@ -1067,10 +1088,12 @@ macro_rules! impl_rank_one_tensoring {
                 tsk: &H,
                 scratch: &mut ScratchArena<'_, $be>,
             ) where
-                R: poulpy_core::layouts::GLWEToBackendMut<$be> + poulpy_core::layouts::GLWEInfos,
-                H: poulpy_core::layouts::GetTensorKey<$be>,
+                R: poulpy_core::layouts::GLWEToBackendMut<$be, $ring> + poulpy_core::layouts::GLWEInfos,
+                H: poulpy_core::layouts::GetTensorKey<$be, $ring>,
             {
-                module.glwe_square_relinearize_assign_reference(cnv_offset, res, res_k, tsk, scratch)
+                GLWETensoringReference::<$be, $ring>::glwe_square_relinearize_assign_reference(
+                    module, cnv_offset, res, res_k, tsk, scratch,
+                )
             }
 
             #[allow(clippy::too_many_arguments)]
@@ -1086,12 +1109,14 @@ macro_rules! impl_rank_one_tensoring {
                 tsk: &H,
                 scratch: &mut ScratchArena<'_, $be>,
             ) where
-                R: poulpy_core::layouts::GLWEToBackendMut<$be> + poulpy_core::layouts::GLWEInfos,
-                A: poulpy_core::layouts::GLWEToBackendRef<$be> + poulpy_core::layouts::GLWEInfos,
-                BP: CnvPVecRToBackendRef<$be>,
-                H: poulpy_core::layouts::GetTensorKey<$be>,
+                R: poulpy_core::layouts::GLWEToBackendMut<$be, $ring> + poulpy_core::layouts::GLWEInfos,
+                A: poulpy_core::layouts::GLWEToBackendRef<$be, $ring> + poulpy_core::layouts::GLWEInfos,
+                BP: CnvPVecRToBackendRef<$be, $ring>,
+                H: poulpy_core::layouts::GetTensorKey<$be, $ring>,
             {
-                module.glwe_mul_prepared_relinearize_reference(cnv_offset, res, res_k, a, b, b_size, b_k, tsk, scratch)
+                GLWETensoringReference::<$be, $ring>::glwe_mul_prepared_relinearize_reference(
+                    module, cnv_offset, res, res_k, a, b, b_size, b_k, tsk, scratch,
+                )
             }
 
             #[allow(clippy::too_many_arguments)]
@@ -1106,40 +1131,48 @@ macro_rules! impl_rank_one_tensoring {
                 tsk: &H,
                 scratch: &mut ScratchArena<'_, $be>,
             ) where
-                R: poulpy_core::layouts::GLWEToBackendMut<$be> + poulpy_core::layouts::GLWEInfos,
-                AP: CnvPVecRToBackendRef<$be>,
-                H: poulpy_core::layouts::GetTensorKey<$be>,
+                R: poulpy_core::layouts::GLWEToBackendMut<$be, $ring> + poulpy_core::layouts::GLWEInfos,
+                AP: CnvPVecRToBackendRef<$be, $ring>,
+                H: poulpy_core::layouts::GetTensorKey<$be, $ring>,
             {
-                module.glwe_mul_prepared_relinearize_assign_reference(cnv_offset, res, res_k, a, a_size, a_k, tsk, scratch)
+                GLWETensoringReference::<$be, $ring>::glwe_mul_prepared_relinearize_assign_reference(
+                    module, cnv_offset, res, res_k, a, a_size, a_k, tsk, scratch,
+                )
             }
 
             fn glwe_mul_columns(
                 module: &Module<$be>,
                 cnv_offset_hi: usize,
-                diag: &mut VecZnxDftBackendMut<'_, $be>,
-                cross: &mut VecZnxDftBackendMut<'_, $be>,
-                a: &CnvPVecLBackendRef<'_, $be>,
-                b: &CnvPVecRBackendRef<'_, $be>,
+                diag: &mut VecZnxDftBackendMut<'_, $be, $ring>,
+                cross: &mut VecZnxDftBackendMut<'_, $be, $ring>,
+                a: &CnvPVecLBackendRef<'_, $be, $ring>,
+                b: &CnvPVecRBackendRef<'_, $be, $ring>,
                 scratch: &mut ScratchArena<'_, $be>,
             ) {
                 // The kernel reads two dense columns of the degree of the product.
                 if diag.n() >= RANK_ONE_TENSOR_MIN_DEGREE && b.n() == diag.n() && b.cols() >= 2 {
-                    <$be as RankOneTensorDft>::rank_one_cross_dft(module, diag, cross, cnv_offset_hi, a, b, scratch)
+                    <$be as RankOneTensorDft<$ring>>::rank_one_cross_dft(module, diag, cross, cnv_offset_hi, a, b, scratch)
                 } else {
-                    module.glwe_mul_columns_reference(cnv_offset_hi, diag, cross, a, b, scratch)
+                    GLWETensoringReference::<$be, $ring>::glwe_mul_columns_reference(
+                        module,
+                        cnv_offset_hi,
+                        diag,
+                        cross,
+                        a,
+                        b,
+                        scratch,
+                    )
                 }
             }
 
             fn glwe_square_operand_prepare(
                 module: &::poulpy_hal::layouts::Module<$be>,
-                left: &mut ::poulpy_hal::layouts::CnvPVecLBackendMut<'_, $be>,
-                right: &mut ::poulpy_hal::layouts::CnvPVecRBackendMut<'_, $be>,
-                a: &::poulpy_hal::layouts::VecZnxBackendRef<'_, $be>,
+                left: &mut ::poulpy_hal::layouts::CnvPVecLBackendMut<'_, $be, $ring>,
+                right: &mut ::poulpy_hal::layouts::CnvPVecRBackendMut<'_, $be, $ring>,
+                a: &::poulpy_hal::layouts::VecZnxBackendRef<'_, $be, $ring>,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) {
-                <::poulpy_hal::layouts::Module<$be> as poulpy_core::reference::operations::GLWETensoringReference<$be>>::glwe_square_operand_prepare_reference(
-                    module, left, right, a, scratch,
-                )
+                GLWETensoringReference::<$be, $ring>::glwe_square_operand_prepare_reference(module, left, right, a, scratch)
             }
 
             fn glwe_mul_relinearize_sum_tmp_bytes<R, B>(
@@ -1154,8 +1187,9 @@ macro_rules! impl_rank_one_tensoring {
                 R: GLWEInfos,
                 B: GGLWEInfos,
             {
-                module.glwe_mul_relinearize_sum_tmp_bytes_reference(res, a_size, b_size, tensor_k, tsk)
-                    + rank_one_columns_tmp_bytes::<$be, _>(res, a_size, b_size)
+                GLWETensoringReference::<$be, $ring>::glwe_mul_relinearize_sum_tmp_bytes_reference(
+                    module, res, a_size, b_size, tensor_k, tsk,
+                ) + rank_one_columns_tmp_bytes::<$be, _, $ring>(res, a_size, b_size)
             }
 
             fn glwe_mul_relinearize_sum<R, A, B, H>(
@@ -1168,12 +1202,14 @@ macro_rules! impl_rank_one_tensoring {
                 tsk: &H,
                 scratch: &mut ScratchArena<'_, $be>,
             ) where
-                R: GLWEToBackendMut<$be> + GLWEInfos,
-                A: GLWEToBackendRef<$be> + GLWEInfos,
-                B: GLWEToBackendRef<$be> + GLWEInfos,
-                H: poulpy_core::layouts::GetTensorKey<$be>,
+                R: GLWEToBackendMut<$be, $ring> + GLWEInfos,
+                A: GLWEToBackendRef<$be, $ring> + GLWEInfos,
+                B: GLWEToBackendRef<$be, $ring> + GLWEInfos,
+                H: poulpy_core::layouts::GetTensorKey<$be, $ring>,
             {
-                module.glwe_mul_relinearize_sum_reference(cnv_offset, res, res_k, a, b, tsk, scratch)
+                GLWETensoringReference::<$be, $ring>::glwe_mul_relinearize_sum_reference(
+                    module, cnv_offset, res, res_k, a, b, tsk, scratch,
+                )
             }
 
             fn glwe_mul_prepared_relinearize_sum_tmp_bytes<R, B>(
@@ -1188,8 +1224,9 @@ macro_rules! impl_rank_one_tensoring {
                 R: GLWEInfos,
                 B: GGLWEInfos,
             {
-                module.glwe_mul_prepared_relinearize_sum_tmp_bytes_reference(res, a_size, b_size, tensor_k, tsk)
-                    + rank_one_columns_tmp_bytes::<$be, _>(res, a_size, b_size)
+                GLWETensoringReference::<$be, $ring>::glwe_mul_prepared_relinearize_sum_tmp_bytes_reference(
+                    module, res, a_size, b_size, tensor_k, tsk,
+                ) + rank_one_columns_tmp_bytes::<$be, _, $ring>(res, a_size, b_size)
             }
 
             #[allow(clippy::too_many_arguments)]
@@ -1207,38 +1244,54 @@ macro_rules! impl_rank_one_tensoring {
                 tsk: &H,
                 scratch: &mut ScratchArena<'_, $be>,
             ) where
-                R: GLWEToBackendMut<$be> + GLWEInfos,
-                AP: CnvPVecLToBackendRef<$be> + 'a,
-                BP: CnvPVecRToBackendRef<$be> + 'a,
-                H: poulpy_core::layouts::GetTensorKey<$be>,
+                R: GLWEToBackendMut<$be, $ring> + GLWEInfos,
+                AP: CnvPVecLToBackendRef<$be, $ring> + 'a,
+                BP: CnvPVecRToBackendRef<$be, $ring> + 'a,
+                H: poulpy_core::layouts::GetTensorKey<$be, $ring>,
             {
-                module.glwe_mul_prepared_relinearize_sum_reference(
-                    cnv_offset, res, res_k, a, a_size, a_k, b, b_size, b_k, tsk, scratch,
+                GLWETensoringReference::<$be, $ring>::glwe_mul_prepared_relinearize_sum_reference(
+                    module, cnv_offset, res, res_k, a, a_size, a_k, b, b_size, b_k, tsk, scratch,
                 )
             }
 
-            fn glwe_tensor_apply_prepared_sum_dft_tmp_bytes<R>(module: &Module<$be>, res: &R, a_size: usize, b_size: usize) -> usize
+            fn glwe_tensor_apply_prepared_sum_dft_tmp_bytes<R>(
+                module: &Module<$be>,
+                res: &R,
+                a_size: usize,
+                b_size: usize,
+            ) -> usize
             where
                 R: GLWEInfos,
             {
-                module.glwe_tensor_apply_prepared_sum_dft_tmp_bytes_reference(res, a_size, b_size)
+                GLWETensoringReference::<$be, $ring>::glwe_tensor_apply_prepared_sum_dft_tmp_bytes_reference(
+                    module, res, a_size, b_size,
+                )
             }
 
             #[allow(clippy::too_many_arguments)]
             fn glwe_tensor_apply_prepared_sum_dft<'a, AP>(
                 module: &Module<$be>,
                 cnv_offset_hi: usize,
-                diag: &mut VecZnxDftBackendMut<'_, $be>,
-                cross: &mut VecZnxDftBackendMut<'_, $be>,
-                pairs: impl IntoIterator<Item = (&'a AP, poulpy_core::layouts::DiagonalOperand<'a, $be>)>,
+                diag: &mut VecZnxDftBackendMut<'_, $be, $ring>,
+                cross: &mut VecZnxDftBackendMut<'_, $be, $ring>,
+                pairs: impl IntoIterator<Item = (&'a AP, poulpy_core::layouts::DiagonalOperand<'a, $be, $ring>)>,
                 b_size: usize,
                 b_k: poulpy_core::layouts::TorusPrecision,
                 scratch: &mut ScratchArena<'_, $be>,
             ) where
                 $be: 'a,
-                AP: CnvPVecLToBackendRef<$be> + 'a,
+                AP: CnvPVecLToBackendRef<$be, $ring> + 'a,
             {
-                module.glwe_tensor_apply_prepared_sum_dft_reference(cnv_offset_hi, diag, cross, pairs, b_size, b_k, scratch)
+                GLWETensoringReference::<$be, $ring>::glwe_tensor_apply_prepared_sum_dft_reference(
+                    module,
+                    cnv_offset_hi,
+                    diag,
+                    cross,
+                    pairs,
+                    b_size,
+                    b_k,
+                    scratch,
+                )
             }
 
             fn glwe_tensor_apply_prepared_tmp_bytes<R>(
@@ -1252,9 +1305,11 @@ macro_rules! impl_rank_one_tensoring {
                 R: GLWEInfos,
             {
                 if rank_one_tensor_supported(res) {
-                    rank_one_tensor_prepared_tmp_bytes(module, res, a_size, b_size, base2k.as_usize())
+                    rank_one_tensor_prepared_tmp_bytes::<_, _, $ring>(module, res, a_size, b_size, base2k.as_usize())
                 } else {
-                    module.glwe_tensor_apply_prepared_tmp_bytes_reference(res, a_size, b_size, base2k)
+                    GLWETensoringReference::<$be, $ring>::glwe_tensor_apply_prepared_tmp_bytes_reference(
+                        module, res, a_size, b_size, base2k,
+                    )
                 }
             }
 
@@ -1270,9 +1325,9 @@ macro_rules! impl_rank_one_tensoring {
                 base2k: poulpy_core::layouts::Base2K,
                 scratch: &mut ScratchArena<'_, $be>,
             ) where
-                R: GLWEToBackendMut<$be> + GLWEInfos,
-                AP: CnvPVecLToBackendRef<$be>,
-                BP: CnvPVecRToBackendRef<$be>,
+                R: GLWEToBackendMut<$be, $ring> + GLWEInfos,
+                AP: CnvPVecLToBackendRef<$be, $ring>,
+                BP: CnvPVecRToBackendRef<$be, $ring>,
             {
                 if rank_one_tensor_supported(res) {
                     rank_one_tensor_apply_prepared(
@@ -1287,7 +1342,9 @@ macro_rules! impl_rank_one_tensoring {
                         scratch,
                     )
                 } else {
-                    module.glwe_tensor_apply_prepared_reference(cnv_offset, res, a, a_size, b, b_size, base2k, scratch)
+                    GLWETensoringReference::<$be, $ring>::glwe_tensor_apply_prepared_reference(
+                        module, cnv_offset, res, a, a_size, b, b_size, base2k, scratch,
+                    )
                 }
             }
         }
@@ -1296,50 +1353,57 @@ macro_rules! impl_rank_one_tensoring {
 
 impl_rank_one_tensoring!(
     NTT4x30Avx512,
+    Standard,
     false,
     GLWETensoringReference::glwe_tensor_apply_prepared_right_reference
 );
 impl_rank_one_tensoring!(
-    NTT4x30CIAvx512,
+    NTT4x30Avx512,
+    ConjugateInvariant,
     false,
     GLWETensoringReference::glwe_tensor_apply_prepared_right_reference
 );
 #[cfg(feature = "enable-rayon")]
 impl_rank_one_tensoring!(
     NTT4x30Avx512Rayon,
+    Standard,
     false,
     GLWETensoringReference::glwe_tensor_apply_prepared_right_reference
 );
 #[cfg(feature = "enable-rayon")]
 impl_rank_one_tensoring!(
-    NTT4x30CIAvx512Rayon,
+    NTT4x30Avx512Rayon,
+    ConjugateInvariant,
     false,
     GLWETensoringReference::glwe_tensor_apply_prepared_right_reference
 );
 #[cfg(feature = "enable-ifma")]
 impl_rank_one_tensoring!(
     NTT3x42Ifma,
+    Standard,
     true,
     GLWETensoringReference::glwe_tensor_apply_prepared_right_reference
 );
 #[cfg(feature = "enable-ifma")]
 impl_rank_one_tensoring!(
-    NTT3x42CIIfma,
+    NTT3x42Ifma,
+    ConjugateInvariant,
     true,
     GLWETensoringReference::glwe_tensor_apply_prepared_right_reference
 );
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
-impl_rank_one_tensoring!(NTT3x42IfmaRayon, true, ifma_prepared_tensor);
+impl_rank_one_tensoring!(NTT3x42IfmaRayon, Standard, true, ifma_prepared_tensor);
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
 impl_rank_one_tensoring!(
-    NTT3x42CIIfmaRayon,
+    NTT3x42IfmaRayon,
+    ConjugateInvariant,
     true,
     GLWETensoringReference::glwe_tensor_apply_prepared_right_reference
 );
 
-unsafe impl<R: Ring> poulpy_core::oep::GGLWEProductDigitsStridedImpl for NTT4x30Avx512<R>
+unsafe impl<R: Ring> poulpy_core::oep::GGLWEProductDigitsStridedImpl<R> for NTT4x30Avx512
 where
-    Self: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>> + ZnxAutomorphism,
+    Self: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>> + ZnxAutomorphism<R>,
 {
     fn gglwe_product_digits_strided_tmp_bytes(
         _module: &Module<Self>,
@@ -1357,11 +1421,11 @@ where
 
     fn gglwe_product_digits_strided(
         module: &Module<Self>,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
-        a: &VecZnxDftBackendRef<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, R>,
+        a: &VecZnxDftBackendRef<'_, Self, R>,
         dsize: usize,
         product_limbs: usize,
-        pmat: &VmpPMatBackendRef<'_, Self>,
+        pmat: &VmpPMatBackendRef<'_, Self, R>,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let bytes = Self::gglwe_product_digits_strided_tmp_bytes(
@@ -1387,15 +1451,15 @@ where
         );
     }
 
-    ::poulpy_core::impl_gglwe_product_digits_strided_reference!();
+    ::poulpy_core::impl_gglwe_product_digits_strided_reference!(R);
 }
 
 #[cfg(feature = "enable-ifma")]
-unsafe impl<R: Ring> poulpy_core::oep::GGLWEProductDigitsStridedImpl for NTT3x42Ifma<R>
+unsafe impl<R: Ring> poulpy_core::oep::GGLWEProductDigitsStridedImpl<R> for NTT3x42Ifma
 where
     Self: Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, R>>
         + Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, R>>
-        + ZnxAutomorphism,
+        + ZnxAutomorphism<R>,
 {
     fn gglwe_product_digits_strided_tmp_bytes(
         _module: &Module<Self>,
@@ -1413,11 +1477,11 @@ where
 
     fn gglwe_product_digits_strided(
         module: &Module<Self>,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
-        a: &VecZnxDftBackendRef<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self, R>,
+        a: &VecZnxDftBackendRef<'_, Self, R>,
         dsize: usize,
         product_limbs: usize,
-        pmat: &VmpPMatBackendRef<'_, Self>,
+        pmat: &VmpPMatBackendRef<'_, Self, R>,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let bytes = Self::gglwe_product_digits_strided_tmp_bytes(
@@ -1443,11 +1507,15 @@ where
         );
     }
 
-    ::poulpy_core::impl_gglwe_product_digits_strided_reference!();
+    ::poulpy_core::impl_gglwe_product_digits_strided_reference!(R);
 }
 
 poulpy_cpu_portable::impl_cpu_core_defaults!(super::FFT64Avx512, fft64);
 ::poulpy_core::impl_conversion_reference_full!(super::FFT64Avx512);
+::poulpy_core::impl_lwe_keyswitch_reference_full!(super::FFT64Avx512);
+::poulpy_core::impl_lwe_key_encryption_reference_full!(super::FFT64Avx512);
+::poulpy_core::impl_lwe_key_preparation_derived_full!(super::FFT64Avx512);
+::poulpy_core::impl_lwe_key_decompression_derived_full!(super::FFT64Avx512);
 ::poulpy_core::impl_glwe_pack_derived_full!(super::FFT64Avx512);
 ::poulpy_core::impl_glwe_rotate_reference_full!(super::FFT64Avx512);
 ::poulpy_core::impl_ggsw_rotate_derived_full!(super::FFT64Avx512);
@@ -1455,6 +1523,10 @@ poulpy_cpu_portable::impl_cpu_core_defaults!(super::FFT64Avx512, fft64);
 ::poulpy_core::impl_glwe_ci_conversion_reference_full!(super::FFT64Avx512);
 poulpy_cpu_portable::impl_cpu_core_defaults!(super::NTT4x30Avx512, ntt4x30);
 ::poulpy_core::impl_conversion_reference_full!(super::NTT4x30Avx512);
+::poulpy_core::impl_lwe_keyswitch_reference_full!(super::NTT4x30Avx512);
+::poulpy_core::impl_lwe_key_encryption_reference_full!(super::NTT4x30Avx512);
+::poulpy_core::impl_lwe_key_preparation_derived_full!(super::NTT4x30Avx512);
+::poulpy_core::impl_lwe_key_decompression_derived_full!(super::NTT4x30Avx512);
 ::poulpy_core::impl_glwe_pack_derived_full!(super::NTT4x30Avx512);
 ::poulpy_core::impl_glwe_rotate_reference_full!(super::NTT4x30Avx512);
 ::poulpy_core::impl_ggsw_rotate_derived_full!(super::NTT4x30Avx512);
@@ -1464,6 +1536,14 @@ poulpy_cpu_portable::impl_cpu_core_defaults!(super::NTT4x30Avx512, ntt4x30);
 poulpy_cpu_portable::impl_cpu_core_defaults!(super::NTT3x42Ifma, ntt4x30);
 #[cfg(feature = "enable-ifma")]
 ::poulpy_core::impl_conversion_reference_full!(super::NTT3x42Ifma);
+#[cfg(feature = "enable-ifma")]
+::poulpy_core::impl_lwe_keyswitch_reference_full!(super::NTT3x42Ifma);
+#[cfg(feature = "enable-ifma")]
+::poulpy_core::impl_lwe_key_encryption_reference_full!(super::NTT3x42Ifma);
+#[cfg(feature = "enable-ifma")]
+::poulpy_core::impl_lwe_key_preparation_derived_full!(super::NTT3x42Ifma);
+#[cfg(feature = "enable-ifma")]
+::poulpy_core::impl_lwe_key_decompression_derived_full!(super::NTT3x42Ifma);
 #[cfg(feature = "enable-ifma")]
 ::poulpy_core::impl_glwe_pack_derived_full!(super::NTT3x42Ifma);
 #[cfg(feature = "enable-ifma")]
@@ -1479,6 +1559,14 @@ poulpy_cpu_portable::impl_cpu_core_defaults!(super::FFT64Avx512Rayon, fft64);
 #[cfg(feature = "enable-rayon")]
 ::poulpy_core::impl_conversion_reference_full!(super::FFT64Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
+::poulpy_core::impl_lwe_keyswitch_reference_full!(super::FFT64Avx512Rayon);
+#[cfg(feature = "enable-rayon")]
+::poulpy_core::impl_lwe_key_encryption_reference_full!(super::FFT64Avx512Rayon);
+#[cfg(feature = "enable-rayon")]
+::poulpy_core::impl_lwe_key_preparation_derived_full!(super::FFT64Avx512Rayon);
+#[cfg(feature = "enable-rayon")]
+::poulpy_core::impl_lwe_key_decompression_derived_full!(super::FFT64Avx512Rayon);
+#[cfg(feature = "enable-rayon")]
 ::poulpy_core::impl_glwe_pack_derived_full!(super::FFT64Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
 ::poulpy_core::impl_glwe_rotate_reference_full!(super::FFT64Avx512Rayon);
@@ -1493,6 +1581,14 @@ poulpy_cpu_portable::impl_cpu_core_defaults!(super::NTT4x30Avx512Rayon, ntt4x30)
 #[cfg(feature = "enable-rayon")]
 ::poulpy_core::impl_conversion_reference_full!(super::NTT4x30Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
+::poulpy_core::impl_lwe_keyswitch_reference_full!(super::NTT4x30Avx512Rayon);
+#[cfg(feature = "enable-rayon")]
+::poulpy_core::impl_lwe_key_encryption_reference_full!(super::NTT4x30Avx512Rayon);
+#[cfg(feature = "enable-rayon")]
+::poulpy_core::impl_lwe_key_preparation_derived_full!(super::NTT4x30Avx512Rayon);
+#[cfg(feature = "enable-rayon")]
+::poulpy_core::impl_lwe_key_decompression_derived_full!(super::NTT4x30Avx512Rayon);
+#[cfg(feature = "enable-rayon")]
 ::poulpy_core::impl_glwe_pack_derived_full!(super::NTT4x30Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
 ::poulpy_core::impl_glwe_rotate_reference_full!(super::NTT4x30Avx512Rayon);
@@ -1505,28 +1601,36 @@ poulpy_cpu_portable::impl_cpu_core_defaults!(super::NTT4x30Avx512Rayon, ntt4x30)
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
 mod ifma_rayon_defaults {
     use super::super::NTT3x42IfmaRayon;
+    use poulpy_hal::layouts::Standard;
 
-    ::poulpy_core::impl_automorphism_reference_full!(NTT3x42IfmaRayon);
-    ::poulpy_core::impl_decompression_reference_full!(NTT3x42IfmaRayon);
-    ::poulpy_core::impl_decryption_reference_full!(NTT3x42IfmaRayon);
-    ::poulpy_core::impl_ggsw_conversion_reference_full!(NTT3x42IfmaRayon);
-    ::poulpy_core::impl_glwe_keyswitch_reference_full!(NTT3x42IfmaRayon);
-    ::poulpy_core::impl_gglwe_keyswitch_derived_full!(NTT3x42IfmaRayon);
-    ::poulpy_core::impl_ggsw_keyswitch_derived_full!(NTT3x42IfmaRayon);
-    ::poulpy_core::impl_lwe_keyswitch_reference_full!(NTT3x42IfmaRayon);
-    ::poulpy_core::impl_encryption_reference_full!(NTT3x42IfmaRayon);
-    ::poulpy_core::impl_glwe_external_product_reference_full!(NTT3x42IfmaRayon);
-    ::poulpy_core::impl_gglwe_external_product_derived_full!(NTT3x42IfmaRayon);
-    ::poulpy_core::impl_ggsw_external_product_derived_full!(NTT3x42IfmaRayon);
-    ::poulpy_core::impl_operations_reference_full!(NTT3x42IfmaRayon);
-    ::poulpy_core::impl_glwe_polynomial_evaluation_derived_full!(NTT3x42IfmaRayon);
-    ::poulpy_core::impl_preparation_reference_full!(NTT3x42IfmaRayon);
-    ::poulpy_core::impl_secret_reference_full!(NTT3x42IfmaRayon);
-    ::poulpy_core::impl_glwe_trace_derived_full!(NTT3x42IfmaRayon);
-    poulpy_cpu_portable::impl_sampling_host!(NTT3x42IfmaRayon, ntt4x30);
+    ::poulpy_core::impl_automorphism_reference_full!(NTT3x42IfmaRayon, Standard);
+    ::poulpy_core::impl_decompression_reference_full!(NTT3x42IfmaRayon, Standard);
+    ::poulpy_core::impl_decryption_reference_full!(NTT3x42IfmaRayon, Standard);
+    ::poulpy_core::impl_ggsw_conversion_reference_full!(NTT3x42IfmaRayon, Standard);
+    ::poulpy_core::impl_glwe_keyswitch_reference_full!(NTT3x42IfmaRayon, Standard);
+    ::poulpy_core::impl_gglwe_keyswitch_derived_full!(NTT3x42IfmaRayon, Standard);
+    ::poulpy_core::impl_ggsw_keyswitch_derived_full!(NTT3x42IfmaRayon, Standard);
+    ::poulpy_core::impl_encryption_reference_full!(NTT3x42IfmaRayon, Standard);
+    ::poulpy_core::impl_glwe_external_product_reference_full!(NTT3x42IfmaRayon, Standard);
+    ::poulpy_core::impl_gglwe_external_product_derived_full!(NTT3x42IfmaRayon, Standard);
+    ::poulpy_core::impl_ggsw_external_product_derived_full!(NTT3x42IfmaRayon, Standard);
+    ::poulpy_core::impl_operations_reference_full!(NTT3x42IfmaRayon, Standard);
+    ::poulpy_core::impl_glwe_polynomial_evaluation_derived_full!(NTT3x42IfmaRayon, Standard);
+    ::poulpy_core::impl_preparation_reference_full!(NTT3x42IfmaRayon, Standard);
+    ::poulpy_core::impl_secret_reference_full!(NTT3x42IfmaRayon, Standard);
+    ::poulpy_core::impl_glwe_trace_derived_full!(NTT3x42IfmaRayon, Standard);
+    poulpy_cpu_portable::impl_sampling_host!(NTT3x42IfmaRayon, Standard, ntt4x30);
 }
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
 ::poulpy_core::impl_conversion_reference_full!(super::NTT3x42IfmaRayon);
+#[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
+::poulpy_core::impl_lwe_keyswitch_reference_full!(super::NTT3x42IfmaRayon);
+#[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
+::poulpy_core::impl_lwe_key_encryption_reference_full!(super::NTT3x42IfmaRayon);
+#[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
+::poulpy_core::impl_lwe_key_preparation_derived_full!(super::NTT3x42IfmaRayon);
+#[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
+::poulpy_core::impl_lwe_key_decompression_derived_full!(super::NTT3x42IfmaRayon);
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
 ::poulpy_core::impl_glwe_pack_derived_full!(super::NTT3x42IfmaRayon);
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
@@ -1537,16 +1641,8 @@ mod ifma_rayon_defaults {
 ::poulpy_core::impl_glwe_mul_xp_minus_one_reference_full!(super::NTT3x42IfmaRayon);
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
 ::poulpy_core::impl_glwe_ci_conversion_reference_full!(super::NTT3x42IfmaRayon);
-poulpy_cpu_portable::impl_cpu_core_defaults!(super::FFT64CIAvx512, fft64);
-poulpy_cpu_portable::impl_cpu_core_defaults!(super::NTT4x30CIAvx512, ntt4x30);
-#[cfg(feature = "enable-ifma")]
-poulpy_cpu_portable::impl_cpu_core_defaults!(super::NTT3x42CIIfma, ntt4x30);
-#[cfg(feature = "enable-rayon")]
-poulpy_cpu_portable::impl_cpu_core_defaults!(super::FFT64CIAvx512Rayon, fft64);
-#[cfg(feature = "enable-rayon")]
-poulpy_cpu_portable::impl_cpu_core_defaults!(super::NTT4x30CIAvx512Rayon, ntt4x30);
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
-poulpy_cpu_portable::impl_cpu_core_defaults!(super::NTT3x42CIIfmaRayon, ntt4x30);
+poulpy_cpu_portable::impl_cpu_core_defaults!(super::NTT3x42IfmaRayon, ConjugateInvariant, ntt4x30);
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
 #[allow(clippy::too_many_arguments)]
 fn ifma_prepared_tensor<R, A, BP>(
@@ -1558,9 +1654,9 @@ fn ifma_prepared_tensor<R, A, BP>(
     b_size: usize,
     scratch: &mut ScratchArena<'_, NTT3x42IfmaRayon>,
 ) where
-    R: GLWEToBackendMut<NTT3x42IfmaRayon> + GLWEInfos,
-    A: GLWEToBackendRef<NTT3x42IfmaRayon> + GLWEInfos,
-    BP: CnvPVecRToBackendRef<NTT3x42IfmaRayon>,
+    R: GLWEToBackendMut<NTT3x42IfmaRayon, Standard> + GLWEInfos,
+    A: GLWEToBackendRef<NTT3x42IfmaRayon, Standard> + GLWEInfos,
+    BP: CnvPVecRToBackendRef<NTT3x42IfmaRayon, Standard>,
 {
     if !rank_one_tensor_supported(res) || a.rank().as_usize() != 1 || res.base2k() != a.base2k() {
         module.glwe_tensor_apply_prepared_right_reference(offset, res, a, b, b_size, scratch);
@@ -1574,7 +1670,12 @@ fn ifma_prepared_tensor<R, A, BP>(
     // The prepared right operand may be embedded: its degree a power of two dividing the ring degree.
     poulpy_hal::layouts::check_degree::<BE>(n, b.to_backend_ref().n());
     assert!(a_size <= a.size(), "effective input exceeds its allocation");
-    assert!(scratch.available() >= module.glwe_tensor_apply_prepared_right_tmp_bytes_reference(res, a, a_size, b_size));
+    assert!(
+        scratch.available()
+            >= <Module<BE> as GLWETensoringReference<BE, Standard>>::glwe_tensor_apply_prepared_right_tmp_bytes_reference(
+                module, res, a, a_size, b_size
+            )
+    );
     let result_base = res.base2k().as_usize();
     // Preserve the prepared product's rounding before the pairwise subtraction.
     let full_k = res.size() * result_base;
@@ -1700,7 +1801,12 @@ mod relinearize_tests {
                             }
                         }
                         let mut prepared = module.glwe_tensor_key_prepared_alloc_from_infos(&key_layout);
-                        let mut prep_scratch = ScratchOwned::<$be>::alloc(module.glwe_tensor_key_prepare_tmp_bytes(&key_layout));
+                        let mut prep_scratch = ScratchOwned::<$be>::alloc(<Module<$be> as GLWETensorKeyPreparedFactory<
+                            $be,
+                            Standard,
+                        >>::glwe_tensor_key_prepare_tmp_bytes(
+                            &module, &key_layout
+                        ));
                         module.glwe_tensor_key_prepare(&mut prepared, &key, &mut prep_scratch.borrow());
                         for (res_base2k, res_k) in [(52usize, 311usize), (26, 415)] {
                             let output_layout = GLWELayout {
@@ -1710,11 +1816,17 @@ mod relinearize_tests {
                             };
                             let mut got = module.glwe_alloc_from_infos(&output_layout);
                             let mut expected = module.glwe_alloc_from_infos(&output_layout);
-                            let mut scratch =
-                                ScratchOwned::<$be>::alloc(module.glwe_tensor_relinearize_tmp_bytes(&got, &input, &prepared));
-                            let mut reference_scratch = ScratchOwned::<$be>::alloc(
-                                module.glwe_tensor_relinearize_tmp_bytes_reference(&expected, &input, &prepared),
+                            let mut scratch = ScratchOwned::<$be>::alloc(
+                                <Module<$be> as GLWETensoring<$be, Standard>>::glwe_tensor_relinearize_tmp_bytes(
+                                    &module, &got, &input, &prepared,
+                                ),
                             );
+                            let mut reference_scratch = ScratchOwned::<$be>::alloc(<Module<$be> as GLWETensoringReference<
+                                $be,
+                                Standard,
+                            >>::glwe_tensor_relinearize_tmp_bytes_reference(
+                                &module, &expected, &input, &prepared
+                            ));
                             module.glwe_tensor_relinearize(&mut got, &input, &prepared, &mut scratch.borrow());
                             module.glwe_tensor_relinearize_reference(
                                 &mut expected,
@@ -1777,10 +1889,9 @@ mod prepared_tensor_tests {
             a.set_canonical(true);
             b.set_canonical(true);
             let mut right = module.cnv_pvec_right_alloc(n, rank + 1, b_size, PrepareHint::Reuse);
-            let prep_bytes = module.glwe_bytes_of_from_infos(&b)
-                + module
-                    .cnv_pvec_right_prepare_tmp_bytes(b_size, b_size)
-                    .max(module.glwe_normalize_tmp_bytes());
+            let prepare = CnvOps::<BE, Standard>::cnv_pvec_right_prepare_tmp_bytes(&module, b_size, b_size);
+            let normalize = GLWENormalize::<BE, Standard>::glwe_normalize_tmp_bytes(&module);
+            let prep_bytes = module.glwe_bytes_of_from_infos(&b) + prepare.max(normalize);
             let mut prep_scratch = ScratchOwned::<BE>::alloc(prep_bytes);
             glwe_right_operand_prepare(&module, &mut right, &b, b.k().as_usize(), &mut prep_scratch.borrow());
             for lazy in [false, true] {
@@ -1811,7 +1922,13 @@ mod prepared_tensor_tests {
                     let mut got = module.glwe_tensor_alloc_from_infos(&output);
                     let mut expected = module.glwe_tensor_alloc_from_infos(&output);
                     module.vec_znx_fill_uniform_source_all(base, k, got.data_mut(), &mut source);
-                    let bytes = module.glwe_tensor_apply_prepared_right_tmp_bytes(&got, &a, a.size(), b_size);
+                    let bytes = GLWETensoring::<BE, Standard>::glwe_tensor_apply_prepared_right_tmp_bytes(
+                        &module,
+                        &got,
+                        &a,
+                        a.size(),
+                        b_size,
+                    );
                     let mut scratch = ScratchOwned::<BE>::alloc(bytes);
                     scratch.data.fill(0xa5);
                     if n == 65536 && k == 16 * base && !lazy {
@@ -1842,7 +1959,7 @@ mod prepared_tensor_tests {
                         got, expected,
                         "n={n}, rank={rank}, base={base}, lazy={lazy}, k={k}, offset={offset}"
                     );
-                    let bytes = module.glwe_tensor_apply_tmp_bytes(&got, &a, &b);
+                    let bytes = GLWETensoring::<BE, Standard>::glwe_tensor_apply_tmp_bytes(&module, &got, &a, &b);
                     let mut scratch = ScratchOwned::<BE>::alloc(bytes);
                     // Fresh garbage, so every limb the ordinary path fails to write differs from `expected`.
                     module.vec_znx_fill_uniform_source_all(base, k, got.data_mut(), &mut source);

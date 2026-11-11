@@ -20,20 +20,20 @@ use super::{
     vec_znx_dft::{dft_limb, dft_limb_scaled, packed_limb, packed_limb_mut},
 };
 
-pub(crate) fn svp_ppol_prepare<R: Ring>(
-    module: &Module<NTT4x30Portable<R>>,
-    res: &mut SvpPPolBackendMut<'_, NTT4x30Portable<R>>,
+pub(crate) fn svp_ppol_prepare<Rg: Ring>(
+    module: &Module<NTT4x30Portable>,
+    res: &mut SvpPPolBackendMut<'_, NTT4x30Portable, Rg>,
     res_col: usize,
-    a: &ScalarZnxBackendRef<'_, NTT4x30Portable<R>>,
+    a: &ScalarZnxBackendRef<'_, NTT4x30Portable, Rg>,
     a_col: usize,
 ) where
-    NTT4x30Portable<R>: NttDFTExecute<NttTable<Primes30, R>> + NttDFTExecute<NttTableInv<Primes30, R>>,
+    NTT4x30Portable: NttDFTExecute<NttTable<Primes30, Rg>> + NttDFTExecute<NttTableInv<Primes30, Rg>>,
 {
     let n = res.n();
-    check_degree::<NTT4x30Portable<R>>(module.n(), n);
+    check_degree::<NTT4x30Portable>(module.n(), n);
     assert!(a.n() == n, "svp_ppol_prepare: a.n() != res.n()");
     let data: &mut [u32] = cast_slice_mut(res.data_mut());
-    dft_limb_scaled::<_, poulpy_hal::execution::SerialTaskExecutor>(
+    dft_limb_scaled::<Rg, poulpy_hal::execution::SerialTaskExecutor>(
         module,
         n,
         &mut data[4 * n * res_col..][..4 * n],
@@ -42,10 +42,10 @@ pub(crate) fn svp_ppol_prepare<R: Ring>(
     );
 }
 
-pub(crate) fn svp_ppol_copy<R: Ring>(
-    res: &mut SvpPPolBackendMut<'_, NTT4x30Portable<R>>,
+pub(crate) fn svp_ppol_copy<Rg: Ring>(
+    res: &mut SvpPPolBackendMut<'_, NTT4x30Portable, Rg>,
     res_col: usize,
-    a: &SvpPPolBackendRef<'_, NTT4x30Portable<R>>,
+    a: &SvpPPolBackendRef<'_, NTT4x30Portable, Rg>,
     a_col: usize,
 ) {
     assert_eq!(res.n(), a.n(), "svp_ppol_copy: res.n() {} != a.n() {}", res.n(), a.n());
@@ -63,18 +63,18 @@ pub(crate) fn svp_ppol_copy<R: Ring>(
 }
 
 /// `res = a * dft(b)`: each limb of `b` is transformed into its destination, then multiplied there.
-pub(crate) fn svp_apply_dft<R: Ring>(
-    module: &Module<NTT4x30Portable<R>>,
-    res: &mut VecZnxDftBackendMut<'_, NTT4x30Portable<R>>,
+pub(crate) fn svp_apply_dft<Rg: Ring>(
+    module: &Module<NTT4x30Portable>,
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Portable, Rg>,
     res_col: usize,
-    a: &SvpPPolBackendRef<'_, NTT4x30Portable<R>>,
+    a: &SvpPPolBackendRef<'_, NTT4x30Portable, Rg>,
     a_col: usize,
-    b: &VecZnxBackendRef<'_, NTT4x30Portable<R>>,
+    b: &VecZnxBackendRef<'_, NTT4x30Portable, Rg>,
     b_col: usize,
 ) {
     poulpy_hal::layouts::assert_dense(b, "svp_apply_dft");
     let n = res.n();
-    check_degree::<NTT4x30Portable<R>>(module.n(), n);
+    check_degree::<NTT4x30Portable>(module.n(), n);
     assert_eq!(a.n(), n, "svp_apply_dft: a.n():{} != res.n():{n}", a.n());
     assert_eq!(b.n(), n, "svp_apply_dft: b.n():{} != res.n():{n}", b.n());
     let (res_cols, res_size, b_size) = (res.cols(), res.size(), b.size());
@@ -83,7 +83,7 @@ pub(crate) fn svp_apply_dft<R: Ring>(
     let res_data: &mut [u32] = cast_slice_mut(res.data_mut());
     for limb in 0..res_size {
         let dst = packed_limb_mut(res_data, n, res_cols, res_col, limb);
-        dft_limb::<_, poulpy_hal::execution::SerialTaskExecutor>(module, n, dst, (limb < b_size).then(|| b.at(b_col, limb)));
+        dft_limb::<Rg, poulpy_hal::execution::SerialTaskExecutor>(module, n, dst, (limb < b_size).then(|| b.at(b_col, limb)));
         if limb < b_size {
             limb_mont_mul_assign(n, dst, factor);
         }
@@ -91,13 +91,13 @@ pub(crate) fn svp_apply_dft<R: Ring>(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn svp_apply_dft_to_dft<R: Ring>(
-    _module: &Module<NTT4x30Portable<R>>,
-    res: &mut VecZnxDftBackendMut<'_, NTT4x30Portable<R>>,
+pub(crate) fn svp_apply_dft_to_dft<Rg: Ring>(
+    _module: &Module<NTT4x30Portable>,
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Portable, Rg>,
     res_col: usize,
-    a: &SvpPPolBackendRef<'_, NTT4x30Portable<R>>,
+    a: &SvpPPolBackendRef<'_, NTT4x30Portable, Rg>,
     a_col: usize,
-    b: &VecZnxDftBackendRef<'_, NTT4x30Portable<R>>,
+    b: &VecZnxDftBackendRef<'_, NTT4x30Portable, Rg>,
     b_col: usize,
 ) {
     let n = res.n();
@@ -120,11 +120,11 @@ pub(crate) fn svp_apply_dft_to_dft<R: Ring>(
     }
 }
 
-pub(crate) fn svp_apply_dft_to_dft_assign<R: Ring>(
-    _module: &Module<NTT4x30Portable<R>>,
-    res: &mut VecZnxDftBackendMut<'_, NTT4x30Portable<R>>,
+pub(crate) fn svp_apply_dft_to_dft_assign<Rg: Ring>(
+    _module: &Module<NTT4x30Portable>,
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Portable, Rg>,
     res_col: usize,
-    a: &SvpPPolBackendRef<'_, NTT4x30Portable<R>>,
+    a: &SvpPPolBackendRef<'_, NTT4x30Portable, Rg>,
     a_col: usize,
 ) {
     let n = res.n();

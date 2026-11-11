@@ -2,7 +2,7 @@ use crate::CKKSResult as Result;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{GLWEInfos, GLWESecretPreparedToBackendRef, GLWEToBackendMut, GLWEToBackendRef};
 use poulpy_hal::{
-    layouts::{Backend, Module, ScratchArena},
+    layouts::{Backend, Module, Ring, ScratchArena},
     source::Source,
 };
 
@@ -12,7 +12,7 @@ use crate::{
     oep::CKKSEncryptionImpl,
 };
 
-impl<BE: Backend + CKKSEncryptionImpl> CKKSEncryptOps<BE> for Module<BE> {
+impl<BE: Backend + CKKSEncryptionImpl<Rg>, Rg: Ring> CKKSEncryptOps<BE, Rg> for Module<BE> {
     fn ckks_encrypt_sk_tmp_bytes<A>(&self, ct_infos: &A) -> usize
     where
         A: CKKSCtBounds,
@@ -31,15 +31,15 @@ impl<BE: Backend + CKKSEncryptionImpl> CKKSEncryptOps<BE> for Module<BE> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        S: GLWESecretPreparedToBackendRef<BE>,
-        Dct: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        Dpt: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
+        S: GLWESecretPreparedToBackendRef<BE, Rg>,
+        Dct: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        Dpt: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos,
     {
         BE::ckks_encrypt_sk(self, ct, pt, sk, source_xe, source_xa, scratch)
     }
 }
 
-impl<BE: Backend + CKKSEncryptionImpl> CKKSDecryptOps<BE> for Module<BE> {
+impl<BE: Backend + CKKSEncryptionImpl<Rg>, Rg: Ring> CKKSDecryptOps<BE, Rg> for Module<BE> {
     fn ckks_decrypt_tmp_bytes<Pt, Ct>(&self, pt_infos: &Pt, ct_infos: &Ct) -> usize
     where
         Pt: CKKSInfos,
@@ -50,9 +50,9 @@ impl<BE: Backend + CKKSEncryptionImpl> CKKSDecryptOps<BE> for Module<BE> {
 
     fn ckks_decrypt<Dpt, Dct, S>(&self, pt: &mut Dpt, ct: &Dct, sk: &S, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
-        Dpt: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + IntPolyInfos,
-        Dct: GLWEToBackendRef<BE> + CKKSCtBounds,
+        S: GLWESecretPreparedToBackendRef<BE, Rg> + GLWEInfos,
+        Dpt: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos + IntPolyInfos,
+        Dct: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
     {
         BE::ckks_decrypt(self, pt, ct, sk, scratch)
     }

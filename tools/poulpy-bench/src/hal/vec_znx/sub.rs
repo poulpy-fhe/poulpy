@@ -5,7 +5,7 @@ use criterion::{Bencher, measurement::Measurement};
 
 use poulpy_hal::{
     api::{ModuleNew, VecZnxSub, VecZnxSubAssign, VecZnxSubNegateAssign},
-    layouts::{Backend, Module},
+    layouts::{Backend, Module, Standard},
     source::Source,
 };
 
@@ -28,9 +28,9 @@ where
     let mut c = upload_host_vec_znx::<B>(&c);
 
     bencher.iter(|| {
-        let a = vec_znx_backend_ref::<B>(&a);
-        let b = vec_znx_backend_ref::<B>(&b);
-        let mut c = vec_znx_backend_mut::<B>(&mut c);
+        let a = vec_znx_backend_ref::<B, Standard>(&a);
+        let b = vec_znx_backend_ref::<B, Standard>(&b);
+        let mut c = vec_znx_backend_mut::<B, Standard>(&mut c);
         for i in 0..sweep.cols {
             module.vec_znx_sub(&mut c, i, &a, i, &b, i);
         }
@@ -53,8 +53,8 @@ where
     let mut b = upload_host_vec_znx::<B>(&b);
 
     bencher.iter(|| {
-        let a = vec_znx_backend_ref::<B>(&a);
-        let mut b = vec_znx_backend_mut::<B>(&mut b);
+        let a = vec_znx_backend_ref::<B, Standard>(&a);
+        let mut b = vec_znx_backend_mut::<B, Standard>(&mut b);
         for i in 0..sweep.cols {
             module.vec_znx_sub_assign(&mut b, i, &a, i);
         }
@@ -79,8 +79,8 @@ pub fn runner_vec_znx_sub_negate_assign<B: Backend<ZnxWord = i64>, M: Measuremen
     let mut b = upload_host_vec_znx::<B>(&b);
 
     bencher.iter(|| {
-        let a = vec_znx_backend_ref::<B>(&a);
-        let mut b = vec_znx_backend_mut::<B>(&mut b);
+        let a = vec_znx_backend_ref::<B, Standard>(&a);
+        let mut b = vec_znx_backend_mut::<B, Standard>(&mut b);
         for i in 0..sweep.cols {
             module.vec_znx_sub_negate_assign(&mut b, i, &a, i);
         }

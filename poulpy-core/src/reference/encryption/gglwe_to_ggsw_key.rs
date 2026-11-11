@@ -1,7 +1,8 @@
 use poulpy_hal::{
     api::{ModuleN, ScratchArenaTakeScalarZnx, VecZnxCopy},
     layouts::{
-        Backend, Module, ScratchArena, scalar_znx_as_vec_znx_backend_mut_from_mut, scalar_znx_as_vec_znx_backend_ref_from_mut,
+        Backend, Module, Ring, ScratchArena, Standard, scalar_znx_as_vec_znx_backend_mut_from_mut,
+        scalar_znx_as_vec_znx_backend_ref_from_mut,
     },
     source::Source,
 };
@@ -17,7 +18,7 @@ use crate::{
 /// Portable implementation using HAL operations.
 ///
 /// Backend implementations may call this helper without changing their override selection.
-pub trait GGLWEToGGSWKeyEncryptSkReference<BE: Backend> {
+pub trait GGLWEToGGSWKeyEncryptSkReference<BE: Backend, Rg: Ring = Standard> {
     fn gglwe_to_ggsw_key_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos;
@@ -30,13 +31,17 @@ pub trait GGLWEToGGSWKeyEncryptSkReference<BE: Backend> {
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GGLWEToGGSWKeyToBackendMut<BE>,
-        S: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos;
+        R: GGLWEToGGSWKeyToBackendMut<BE, Rg>,
+        S: GLWESecretToBackendRef<BE, Rg> + GetDistribution + GLWEInfos;
 }
 
-impl<BE: Backend> GGLWEToGGSWKeyEncryptSkReference<BE> for Module<BE>
+impl<BE: Backend, Rg: Ring> GGLWEToGGSWKeyEncryptSkReference<BE, Rg> for Module<BE>
 where
-    Self: ModuleN + GGLWEEncryptSk<BE> + GLWESecretTensorFromGLWESecret<BE> + GLWESecretPreparedFactory<BE> + VecZnxCopy<BE>,
+    Self: ModuleN
+        + GGLWEEncryptSk<BE, Rg>
+        + GLWESecretTensorFromGLWESecret<BE, Rg>
+        + GLWESecretPreparedFactory<BE, Rg>
+        + VecZnxCopy<BE, Rg>,
 {
     fn gglwe_to_ggsw_key_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
@@ -65,8 +70,8 @@ where
 
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GGLWEToGGSWKeyToBackendMut<BE>,
-        S: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
+        R: GGLWEToGGSWKeyToBackendMut<BE, Rg>,
+        S: GLWESecretToBackendRef<BE, Rg> + GetDistribution + GLWEInfos,
     {
         let metadata = crate::component_noise::fresh_sk_noise(sk.to_backend_ref().dist, &res.to_backend_ref());
         {
@@ -87,11 +92,11 @@ where
                 self.glwe_secret_prepare(&mut sk_prepared, sk);
                 self.glwe_secret_tensor_from_glwe_secret(&mut sk_tensor, sk, &mut scratch_3.borrow());
 
-                let sk_tensor_backend = scalar_znx_as_vec_znx_backend_ref_from_mut::<BE>(sk_tensor.data());
+                let sk_tensor_backend = scalar_znx_as_vec_znx_backend_ref_from_mut::<BE, Rg>(sk_tensor.data());
 
                 for i in 0..rank {
                     {
-                        let mut sk_ij_backend = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(&mut sk_ij);
+                        let mut sk_ij_backend = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE, Rg>(&mut sk_ij);
                         for j in 0..rank {
                             let (lo, hi) = if i <= j { (i, j) } else { (j, i) };
                             let idx: usize = lo * rank + hi - (lo * (lo + 1) / 2);

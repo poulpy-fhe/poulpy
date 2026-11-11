@@ -13,7 +13,7 @@ use crate::{
         VecZnxDftSubNegateAssign, VecZnxDftZero, VecZnxFillUniformSourceAll, VecZnxIdftApply, VecZnxIdftApplyTmpBytes,
         VecZnxIdftNormalize, VecZnxIdftNormalizeTmpBytes,
     },
-    layouts::{Module, VecZnx, VecZnxOwned, VecZnxToBackendMut, VecZnxToBackendRef, ZnxView, ZnxViewMut},
+    layouts::{Module, Ring, VecZnx, VecZnxOwned, VecZnxToBackendMut, VecZnxToBackendRef, ZnxView, ZnxViewMut},
     source::Source,
 };
 
@@ -24,17 +24,19 @@ use crate::layouts::VecZnxDftOwned;
 ///
 /// Extra backing limbs keep the regression cases in bounds even if a kernel
 /// accidentally uses the invalid column or the result degree for a source.
-pub fn test_vec_znx_dft_rejects_invalid_operands<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
-where
-    Module<BE>: VecZnxDftApply<BE>
-        + VecZnxDftAdd<BE>
-        + VecZnxDftAddAssign<BE>
-        + VecZnxDftSub<BE>
-        + VecZnxDftSubAssign<BE>
-        + VecZnxDftSubNegateAssign<BE>
-        + VecZnxDftCopy<BE>
-        + VecZnxDftZero<BE>
-        + VecZnxDftAutomorphism<BE>
+pub fn test_vec_znx_dft_rejects_invalid_operands<BE: crate::test_suite::TestBackend<Rg>, Rg: Ring>(
+    params: &TestParams,
+    module: &Module<BE>,
+) where
+    Module<BE>: VecZnxDftApply<BE, Rg>
+        + VecZnxDftAdd<BE, Rg>
+        + VecZnxDftAddAssign<BE, Rg>
+        + VecZnxDftSub<BE, Rg>
+        + VecZnxDftSubAssign<BE, Rg>
+        + VecZnxDftSubNegateAssign<BE, Rg>
+        + VecZnxDftCopy<BE, Rg>
+        + VecZnxDftZero<BE, Rg>
+        + VecZnxDftAutomorphism<BE, Rg>
         + VecZnxDftAutomorphismAddWithPlanTmpBytes,
 {
     use crate::layouts::VecZnxShape;
@@ -134,11 +136,11 @@ where
 
 /// Forward and inverse transforms reject invalid shapes before touching either
 /// their result or an in-place input, including empty vectors.
-pub fn test_vec_znx_dft_transforms_reject_invalid_operands<BE: crate::test_suite::TestBackend>(
+pub fn test_vec_znx_dft_transforms_reject_invalid_operands<BE: crate::test_suite::TestBackend<Rg>, Rg: Ring>(
     params: &TestParams,
     module: &Module<BE>,
 ) where
-    Module<BE>: VecZnxDftApply<BE> + VecZnxIdftApply<BE> + VecZnxIdftApplyTmpBytes,
+    Module<BE>: VecZnxDftApply<BE, Rg> + VecZnxIdftApply<BE, Rg> + VecZnxIdftApplyTmpBytes,
 {
     use crate::layouts::VecZnxShape;
     use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -178,7 +180,7 @@ pub fn test_vec_znx_dft_transforms_reject_invalid_operands<BE: crate::test_suite
                     0,
                     &mut res.to_backend_mut(),
                     res_col,
-                    &vec_znx_backend_ref::<BE>(&input),
+                    &vec_znx_backend_ref::<BE, Rg>(&input),
                     a_col
                 )
             );
@@ -189,7 +191,7 @@ pub fn test_vec_znx_dft_transforms_reject_invalid_operands<BE: crate::test_suite
                     size,
                     &mut res.to_backend_mut(),
                     res_col,
-                    &vec_znx_backend_ref::<BE>(&input),
+                    &vec_znx_backend_ref::<BE, Rg>(&input),
                     a_col
                 )
             );
@@ -212,10 +214,10 @@ pub fn test_vec_znx_dft_transforms_reject_invalid_operands<BE: crate::test_suite
     }
 }
 
-pub(crate) fn idft_into_alloc<BE>(module: &Module<BE>, a: &VecZnxDftOwned<BE>) -> VecZnxBigOwned<BE>
+pub(crate) fn idft_into_alloc<BE, Rg: Ring>(module: &Module<BE>, a: &VecZnxDftOwned<BE, Rg>) -> VecZnxBigOwned<BE, Rg>
 where
-    BE: crate::test_suite::TestBackend,
-    Module<BE>: VecZnxBigAlloc<BE> + VecZnxIdftApply<BE> + VecZnxIdftApplyTmpBytes,
+    BE: crate::test_suite::TestBackend<Rg>,
+    Module<BE>: VecZnxBigAlloc<BE> + VecZnxIdftApply<BE, Rg> + VecZnxIdftApplyTmpBytes,
 {
     let mut res = module.vec_znx_big_alloc(a.n(), a.cols(), a.size());
     let mut scratch = poisoned_arena(module.vec_znx_idft_apply_tmp_bytes());
@@ -225,15 +227,15 @@ where
     res
 }
 
-pub(crate) fn dft_of_uploaded_vec_znx<BE>(
+pub(crate) fn dft_of_uploaded_vec_znx<BE, Rg: Ring>(
     module: &Module<BE>,
-    a: &VecZnx<BE::OwnedBuf, i64>,
+    a: &VecZnx<BE::OwnedBuf, i64, Rg>,
     steps: usize,
     offset: usize,
-) -> VecZnxDftOwned<BE>
+) -> VecZnxDftOwned<BE, Rg>
 where
-    BE: crate::test_suite::TestBackend,
-    Module<BE>: VecZnxDftAlloc<BE> + VecZnxDftApply<BE>,
+    BE: crate::test_suite::TestBackend<Rg>,
+    Module<BE>: VecZnxDftAlloc<BE> + VecZnxDftApply<BE, Rg>,
 {
     let mut out = module.vec_znx_dft_alloc(a.n(), a.cols(), a.size());
     for j in 0..a.cols() {
@@ -242,27 +244,27 @@ where
             offset,
             &mut out.to_backend_mut(),
             j,
-            &<VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendRef<BE>>::to_backend_ref(a),
+            &<VecZnx<BE::OwnedBuf, BE::ZnxWord, Rg> as VecZnxToBackendRef<BE, Rg>>::to_backend_ref(a),
             j,
         );
     }
     out
 }
 
-fn normalize_big_to_host<BE>(
+fn normalize_big_to_host<BE, Rg: Ring>(
     module: &Module<BE>,
     base2k: usize,
-    big: &VecZnxBigOwned<BE>,
+    big: &VecZnxBigOwned<BE, Rg>,
     scratch: &mut PoisonedArena<BE>,
-) -> VecZnxOwned<BE::ZnxWord>
+) -> VecZnxOwned<BE::ZnxWord, Rg>
 where
-    BE: crate::test_suite::TestBackend,
-    Module<BE>: VecZnxBigNormalize<BE>,
+    BE: crate::test_suite::TestBackend<Rg>,
+    Module<BE>: VecZnxBigNormalize<BE, Rg>,
 {
     let mut backend = module.vec_znx_alloc(big.n(), big.cols(), big.size());
     for j in 0..big.cols() {
         module.vec_znx_big_normalize(
-            &mut <VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendMut<BE>>::to_backend_mut(&mut backend),
+            &mut <VecZnx<BE::OwnedBuf, BE::ZnxWord, Rg> as VecZnxToBackendMut<BE, Rg>>::to_backend_mut(&mut backend),
             base2k,
             big.size() * base2k,
             0,
@@ -273,33 +275,33 @@ where
             &mut scratch.arena(),
         );
     }
-    download_vec_znx::<BE>(&backend)
+    download_vec_znx::<BE, Rg>(&backend)
 }
 
-fn idft_to_host<BE>(
+fn idft_to_host<BE, Rg: Ring>(
     module: &Module<BE>,
     base2k: usize,
-    dft: &VecZnxDftOwned<BE>,
+    dft: &VecZnxDftOwned<BE, Rg>,
     scratch: &mut PoisonedArena<BE>,
-) -> VecZnxOwned<BE::ZnxWord>
+) -> VecZnxOwned<BE::ZnxWord, Rg>
 where
-    BE: crate::test_suite::TestBackend,
-    Module<BE>: VecZnxBigAlloc<BE> + VecZnxIdftApply<BE> + VecZnxIdftApplyTmpBytes + VecZnxBigNormalize<BE>,
+    BE: crate::test_suite::TestBackend<Rg>,
+    Module<BE>: VecZnxBigAlloc<BE> + VecZnxIdftApply<BE, Rg> + VecZnxIdftApplyTmpBytes + VecZnxBigNormalize<BE, Rg>,
 {
     let big = idft_into_alloc(module, dft);
     normalize_big_to_host(module, base2k, &big, scratch)
 }
 
-pub(crate) fn idft_apply_to_host<BE>(
+pub(crate) fn idft_apply_to_host<BE, Rg: Ring>(
     module: &Module<BE>,
     base2k: usize,
-    dft: &VecZnxDftOwned<BE>,
+    dft: &VecZnxDftOwned<BE, Rg>,
     res_size: usize,
     scratch: &mut PoisonedArena<BE>,
-) -> VecZnxOwned<BE::ZnxWord>
+) -> VecZnxOwned<BE::ZnxWord, Rg>
 where
-    BE: crate::test_suite::TestBackend,
-    Module<BE>: VecZnxBigAlloc<BE> + VecZnxIdftApply<BE> + VecZnxIdftApplyTmpBytes + VecZnxBigNormalize<BE>,
+    BE: crate::test_suite::TestBackend<Rg>,
+    Module<BE>: VecZnxBigAlloc<BE> + VecZnxIdftApply<BE, Rg> + VecZnxIdftApplyTmpBytes + VecZnxBigNormalize<BE, Rg>,
 {
     let mut big = module.vec_znx_big_alloc(dft.n(), dft.cols(), res_size);
     let mut scratch_idft = poisoned_arena(module.vec_znx_idft_apply_tmp_bytes());
@@ -315,26 +317,26 @@ where
     normalize_big_to_host(module, base2k, &big, scratch)
 }
 
-pub fn test_vec_znx_dft_add<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
+pub fn test_vec_znx_dft_add<BR: crate::test_suite::TestBackend<Rg>, BT: crate::test_suite::TestBackend<Rg>, Rg: Ring>(
     params: &TestParams,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
-    Module<BR>: VecZnxDftAdd<BR>
+    Module<BR>: VecZnxDftAdd<BR, Rg>
         + VecZnxDftAlloc<BR>
-        + VecZnxDftApply<BR>
+        + VecZnxDftApply<BR, Rg>
         + VecZnxBigAlloc<BR>
-        + VecZnxIdftApply<BR>
+        + VecZnxIdftApply<BR, Rg>
         + VecZnxIdftApplyTmpBytes
-        + VecZnxBigNormalize<BR>
+        + VecZnxBigNormalize<BR, Rg>
         + VecZnxBigNormalizeTmpBytes,
-    Module<BT>: VecZnxDftAdd<BT>
+    Module<BT>: VecZnxDftAdd<BT, Rg>
         + VecZnxDftAlloc<BT>
-        + VecZnxDftApply<BT>
+        + VecZnxDftApply<BT, Rg>
         + VecZnxBigAlloc<BT>
-        + VecZnxIdftApply<BT>
+        + VecZnxIdftApply<BT, Rg>
         + VecZnxIdftApplyTmpBytes
-        + VecZnxBigNormalize<BT>
+        + VecZnxBigNormalize<BT, Rg>
         + VecZnxBigNormalizeTmpBytes,
 {
     let base2k = params.base2k;
@@ -349,18 +351,19 @@ pub fn test_vec_znx_dft_add<BR: crate::test_suite::TestBackend, BT: crate::test_
         let mut a = module_ref.vec_znx_alloc(params.n, cols, a_size);
         module_ref.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a, &mut source);
         let a_dft_ref = dft_of_uploaded_vec_znx(module_ref, &a, 1, 0);
-        let a_dft_test = dft_of_uploaded_vec_znx(module_test, &upload_vec_znx::<BT>(&download_vec_znx::<BR>(&a)), 1, 0);
+        let a_dft_test = dft_of_uploaded_vec_znx(module_test, &upload_vec_znx::<BT, Rg>(&download_vec_znx::<BR, Rg>(&a)), 1, 0);
 
         for b_size in [1, 2, 3, 4] {
             let mut b = module_ref.vec_znx_alloc(params.n, cols, b_size);
             module_ref.vec_znx_fill_uniform_source_all(base2k, b_size * base2k, &mut b, &mut source);
             let b_dft_ref = dft_of_uploaded_vec_znx(module_ref, &b, 1, 0);
-            let b_dft_test = dft_of_uploaded_vec_znx(module_test, &upload_vec_znx::<BT>(&download_vec_znx::<BR>(&b)), 1, 0);
+            let b_dft_test =
+                dft_of_uploaded_vec_znx(module_test, &upload_vec_znx::<BT, Rg>(&download_vec_znx::<BR, Rg>(&b)), 1, 0);
 
             for res_size in [1, 2, 3, 4] {
-                let res_init = VecZnxOwned::<i64>::alloc(params.n, cols, res_size);
-                let mut res_dft_ref = dft_of_uploaded_vec_znx(module_ref, &upload_vec_znx::<BR>(&res_init), 1, 0);
-                let mut res_dft_test = dft_of_uploaded_vec_znx(module_test, &upload_vec_znx::<BT>(&res_init), 1, 0);
+                let res_init = VecZnxOwned::<i64, Rg>::alloc(params.n, cols, res_size);
+                let mut res_dft_ref = dft_of_uploaded_vec_znx(module_ref, &upload_vec_znx::<BR, Rg>(&res_init), 1, 0);
+                let mut res_dft_test = dft_of_uploaded_vec_znx(module_test, &upload_vec_znx::<BT, Rg>(&res_init), 1, 0);
 
                 for i in 0..cols {
                     module_ref.vec_znx_dft_add(
@@ -389,26 +392,26 @@ pub fn test_vec_znx_dft_add<BR: crate::test_suite::TestBackend, BT: crate::test_
     }
 }
 
-pub fn test_vec_znx_dft_add_assign<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
+pub fn test_vec_znx_dft_add_assign<BR: crate::test_suite::TestBackend<Rg>, BT: crate::test_suite::TestBackend<Rg>, Rg: Ring>(
     params: &TestParams,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
-    Module<BR>: VecZnxDftAddAssign<BR>
+    Module<BR>: VecZnxDftAddAssign<BR, Rg>
         + VecZnxDftAlloc<BR>
-        + VecZnxDftApply<BR>
+        + VecZnxDftApply<BR, Rg>
         + VecZnxBigAlloc<BR>
-        + VecZnxIdftApply<BR>
+        + VecZnxIdftApply<BR, Rg>
         + VecZnxIdftApplyTmpBytes
-        + VecZnxBigNormalize<BR>
+        + VecZnxBigNormalize<BR, Rg>
         + VecZnxBigNormalizeTmpBytes,
-    Module<BT>: VecZnxDftAddAssign<BT>
+    Module<BT>: VecZnxDftAddAssign<BT, Rg>
         + VecZnxDftAlloc<BT>
-        + VecZnxDftApply<BT>
+        + VecZnxDftApply<BT, Rg>
         + VecZnxBigAlloc<BT>
-        + VecZnxIdftApply<BT>
+        + VecZnxIdftApply<BT, Rg>
         + VecZnxIdftApplyTmpBytes
-        + VecZnxBigNormalize<BT>
+        + VecZnxBigNormalize<BT, Rg>
         + VecZnxBigNormalizeTmpBytes,
 {
     let base2k = params.base2k;
@@ -423,14 +426,18 @@ pub fn test_vec_znx_dft_add_assign<BR: crate::test_suite::TestBackend, BT: crate
         let mut a = module_ref.vec_znx_alloc(params.n, cols, a_size);
         module_ref.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a, &mut source);
         let a_dft_ref = dft_of_uploaded_vec_znx(module_ref, &a, 1, 0);
-        let a_dft_test = dft_of_uploaded_vec_znx(module_test, &upload_vec_znx::<BT>(&download_vec_znx::<BR>(&a)), 1, 0);
+        let a_dft_test = dft_of_uploaded_vec_znx(module_test, &upload_vec_znx::<BT, Rg>(&download_vec_znx::<BR, Rg>(&a)), 1, 0);
 
         for _res_size in [1, 2, 3, 4] {
             let mut res = module_ref.vec_znx_alloc(params.n, cols, a_size);
             module_ref.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut res, &mut source);
             let mut res_dft_ref = dft_of_uploaded_vec_znx(module_ref, &res, 1, 0);
-            let mut res_dft_test =
-                dft_of_uploaded_vec_znx(module_test, &upload_vec_znx::<BT>(&download_vec_znx::<BR>(&res)), 1, 0);
+            let mut res_dft_test = dft_of_uploaded_vec_znx(
+                module_test,
+                &upload_vec_znx::<BT, Rg>(&download_vec_znx::<BR, Rg>(&res)),
+                1,
+                0,
+            );
 
             for i in 0..cols {
                 module_ref.vec_znx_dft_add_assign(&mut res_dft_ref.to_backend_mut(), i, &a_dft_ref.to_backend_ref(), i);
@@ -447,9 +454,11 @@ pub fn test_vec_znx_dft_add_assign<BR: crate::test_suite::TestBackend, BT: crate
 /// `step == 0` is outside the contract of `vec_znx_dft_apply` and
 /// `vec_znx_dft_copy`. Every kernel must reject it, writing nothing, rather
 /// than read the same source limb into every output limb.
-pub fn test_vec_znx_dft_rejects_zero_step<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
-where
-    Module<BE>: VecZnxDftAlloc<BE> + VecZnxDftApply<BE> + VecZnxDftCopy<BE>,
+pub fn test_vec_znx_dft_rejects_zero_step<BE: crate::test_suite::TestBackend<Rg>, Rg: Ring>(
+    params: &TestParams,
+    module: &Module<BE>,
+) where
+    Module<BE>: VecZnxDftAlloc<BE> + VecZnxDftApply<BE, Rg> + VecZnxDftCopy<BE, Rg>,
 {
     let (cols, size) = (1usize, 2usize);
     let mut source = Source::new([7u8; 32]);
@@ -474,7 +483,7 @@ where
     rejects!(
         "vec_znx_dft_apply",
         dft,
-        module.vec_znx_dft_apply(0, 0, &mut dft.to_backend_mut(), 0, &vec_znx_backend_ref::<BE>(&a_be), 0)
+        module.vec_znx_dft_apply(0, 0, &mut dft.to_backend_mut(), 0, &vec_znx_backend_ref::<BE, Rg>(&a_be), 0)
     );
 
     let src = dft_of_uploaded_vec_znx(module, &seed, 1, 0);
@@ -486,26 +495,26 @@ where
     );
 }
 
-pub fn test_vec_znx_dft_copy<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
+pub fn test_vec_znx_dft_copy<BR: crate::test_suite::TestBackend<Rg>, BT: crate::test_suite::TestBackend<Rg>, Rg: Ring>(
     params: &TestParams,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
-    Module<BR>: VecZnxDftCopy<BR>
+    Module<BR>: VecZnxDftCopy<BR, Rg>
         + VecZnxDftAlloc<BR>
-        + VecZnxDftApply<BR>
+        + VecZnxDftApply<BR, Rg>
         + VecZnxBigAlloc<BR>
-        + VecZnxIdftApply<BR>
+        + VecZnxIdftApply<BR, Rg>
         + VecZnxIdftApplyTmpBytes
-        + VecZnxBigNormalize<BR>
+        + VecZnxBigNormalize<BR, Rg>
         + VecZnxBigNormalizeTmpBytes,
-    Module<BT>: VecZnxDftCopy<BT>
+    Module<BT>: VecZnxDftCopy<BT, Rg>
         + VecZnxDftAlloc<BT>
-        + VecZnxDftApply<BT>
+        + VecZnxDftApply<BT, Rg>
         + VecZnxBigAlloc<BT>
-        + VecZnxIdftApply<BT>
+        + VecZnxIdftApply<BT, Rg>
         + VecZnxIdftApplyTmpBytes
-        + VecZnxBigNormalize<BT>
+        + VecZnxBigNormalize<BT, Rg>
         + VecZnxBigNormalizeTmpBytes,
 {
     let base2k = params.base2k;
@@ -518,17 +527,17 @@ pub fn test_vec_znx_dft_copy<BR: crate::test_suite::TestBackend, BT: crate::test
     for a_size in [1, 2, 6, 11] {
         let mut a = module_ref.vec_znx_alloc(params.n, cols, a_size);
         module_ref.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a, &mut source);
-        let a_host = download_vec_znx::<BR>(&a);
+        let a_host = download_vec_znx::<BR, Rg>(&a);
         let a_dft_ref = dft_of_uploaded_vec_znx(module_ref, &a, 1, 0);
-        let a_dft_test = dft_of_uploaded_vec_znx(module_test, &upload_vec_znx::<BT>(&a_host), 1, 0);
+        let a_dft_test = dft_of_uploaded_vec_znx(module_test, &upload_vec_znx::<BT, Rg>(&a_host), 1, 0);
 
         for res_size in [1, 2, 6, 11] {
             for step_offset in [[1, 0], [1, 1], [1, 2], [2, 2]] {
                 let steps = step_offset[0];
                 let offset = step_offset[1];
                 let mut res_init = poisoned_host(params.n, cols, res_size);
-                let mut res_dft_ref = dft_of_uploaded_vec_znx(module_ref, &upload_vec_znx::<BR>(&res_init), 1, 0);
-                let mut res_dft_test = dft_of_uploaded_vec_znx(module_test, &upload_vec_znx::<BT>(&res_init), 1, 0);
+                let mut res_dft_ref = dft_of_uploaded_vec_znx(module_ref, &upload_vec_znx::<BR, Rg>(&res_init), 1, 0);
+                let mut res_dft_test = dft_of_uploaded_vec_znx(module_test, &upload_vec_znx::<BT, Rg>(&res_init), 1, 0);
 
                 for i in 0..cols {
                     module_ref.vec_znx_dft_copy(
@@ -565,21 +574,21 @@ pub fn test_vec_znx_dft_copy<BR: crate::test_suite::TestBackend, BT: crate::test
 // transfers. Three 62-bit limbs retain the entire supported big-word range:
 // shifting a single input limb by -124 gives a / 2^186. This prevents carries
 // between input limbs or reduction modulo the sampling base from hiding errors.
-fn assert_idft_integer_limbs<BE>(
+fn assert_idft_integer_limbs<BE, Rg: Ring>(
     module: &Module<BE>,
-    big: &VecZnxBigOwned<BE>,
-    expected: &VecZnxOwned<i64>,
+    big: &VecZnxBigOwned<BE, Rg>,
+    expected: &VecZnxOwned<i64, Rg>,
     scratch: &mut PoisonedArena<BE>,
 ) where
-    BE: crate::test_suite::TestBackend,
-    Module<BE>: VecZnxBigNormalize<BE>,
+    BE: crate::test_suite::TestBackend<Rg>,
+    Module<BE>: VecZnxBigNormalize<BE, Rg>,
 {
     assert_eq!(big.shape(), expected.shape());
     let mut observed = module.vec_znx_alloc(big.n(), 1, 3);
     for col in 0..big.cols() {
         for limb in 0..big.size() {
             module.vec_znx_big_normalize(
-                &mut vec_znx_backend_mut::<BE>(&mut observed),
+                &mut vec_znx_backend_mut::<BE, Rg>(&mut observed),
                 62,
                 186,
                 -124,
@@ -589,7 +598,7 @@ fn assert_idft_integer_limbs<BE>(
                 col,
                 &mut scratch.arena(),
             );
-            let observed = download_vec_znx::<BE>(&observed);
+            let observed = download_vec_znx::<BE, Rg>(&observed);
             assert!(observed.at(0, 0).iter().all(|&x| x == 0), "col {col}, limb {limb}: high bits");
             assert!(observed.at(0, 1).iter().all(|&x| x == 0), "col {col}, limb {limb}: high bits");
             assert_eq!(observed.at(0, 2), expected.at(col, limb), "col {col}, limb {limb}");
@@ -597,8 +606,8 @@ fn assert_idft_integer_limbs<BE>(
     }
 }
 
-fn poisoned_host(n: usize, cols: usize, size: usize) -> VecZnxOwned<i64> {
-    let mut host = VecZnxOwned::<i64>::alloc(n, cols, size);
+fn poisoned_host<Rg: Ring>(n: usize, cols: usize, size: usize) -> VecZnxOwned<i64, Rg> {
+    let mut host = VecZnxOwned::<i64, Rg>::alloc(n, cols, size);
     for col in 0..cols {
         for limb in 0..size {
             host.at_mut(col, limb).fill(17 + col as i64);
@@ -607,20 +616,26 @@ fn poisoned_host(n: usize, cols: usize, size: usize) -> VecZnxOwned<i64> {
     host
 }
 
-fn poison_idft_destination<BE>(module: &Module<BE>, host: &VecZnxOwned<i64>) -> VecZnxBigOwned<BE>
+fn poison_idft_destination<BE, Rg: Ring>(module: &Module<BE>, host: &VecZnxOwned<i64, Rg>) -> VecZnxBigOwned<BE, Rg>
 where
-    BE: crate::test_suite::TestBackend,
-    Module<BE>: VecZnxBigAlloc<BE> + VecZnxBigFromSmall<BE>,
+    BE: crate::test_suite::TestBackend<Rg>,
+    Module<BE>: VecZnxBigAlloc<BE> + VecZnxBigFromSmall<BE, Rg>,
 {
-    let uploaded = upload_vec_znx::<BE>(host);
+    let uploaded = upload_vec_znx::<BE, Rg>(host);
     let mut big = module.vec_znx_big_alloc(host.n(), host.cols(), host.size());
     for col in 0..host.cols() {
-        module.vec_znx_big_from_small(&mut big.to_backend_mut(), col, &vec_znx_backend_ref::<BE>(&uploaded), col);
+        module.vec_znx_big_from_small(&mut big.to_backend_mut(), col, &vec_znx_backend_ref::<BE, Rg>(&uploaded), col);
     }
     big
 }
 
-fn set_expected_idft_column(expected: &mut VecZnxOwned<i64>, col: usize, a: &VecZnxOwned<i64>, step: usize, offset: usize) {
+fn set_expected_idft_column<Rg: Ring>(
+    expected: &mut VecZnxOwned<i64, Rg>,
+    col: usize,
+    a: &VecZnxOwned<i64, Rg>,
+    step: usize,
+    offset: usize,
+) {
     for limb in 0..expected.size() {
         let source_limb = offset + limb * step;
         if source_limb < a.size() {
@@ -631,26 +646,26 @@ fn set_expected_idft_column(expected: &mut VecZnxOwned<i64>, col: usize, a: &Vec
     }
 }
 
-pub fn test_vec_znx_idft_apply<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
+pub fn test_vec_znx_idft_apply<BR: crate::test_suite::TestBackend<Rg>, BT: crate::test_suite::TestBackend<Rg>, Rg: Ring>(
     params: &TestParams,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
-    Module<BR>: VecZnxDftApply<BR>
+    Module<BR>: VecZnxDftApply<BR, Rg>
         + VecZnxDftAlloc<BR>
         + VecZnxBigAlloc<BR>
-        + VecZnxBigFromSmall<BR>
-        + VecZnxBigNormalize<BR>
+        + VecZnxBigFromSmall<BR, Rg>
+        + VecZnxBigNormalize<BR, Rg>
         + VecZnxBigNormalizeTmpBytes
-        + VecZnxIdftApply<BR>
+        + VecZnxIdftApply<BR, Rg>
         + VecZnxIdftApplyTmpBytes,
-    Module<BT>: VecZnxDftApply<BT>
+    Module<BT>: VecZnxDftApply<BT, Rg>
         + VecZnxDftAlloc<BT>
         + VecZnxBigAlloc<BT>
-        + VecZnxBigFromSmall<BT>
-        + VecZnxBigNormalize<BT>
+        + VecZnxBigFromSmall<BT, Rg>
+        + VecZnxBigNormalize<BT, Rg>
         + VecZnxBigNormalizeTmpBytes
-        + VecZnxIdftApply<BT>
+        + VecZnxIdftApply<BT, Rg>
         + VecZnxIdftApplyTmpBytes,
 {
     assert_eq!(module_ref.n(), module_test.n());
@@ -664,12 +679,12 @@ pub fn test_vec_znx_idft_apply<BR: crate::test_suite::TestBackend, BT: crate::te
     for a_size in [1, 2, 3, 4] {
         let mut a = module_ref.vec_znx_alloc(params.n, cols, a_size);
         module_ref.vec_znx_fill_uniform_source_all(params.base2k, a_size * params.base2k, &mut a, &mut source);
-        let a_host = download_vec_znx::<BR>(&a);
+        let a_host = download_vec_znx::<BR, Rg>(&a);
 
         for res_size in [1, 2, 3, 4] {
             for [step, offset] in [[1, 0], [1, 1], [1, 2], [2, 2]] {
                 let dft_ref = dft_of_uploaded_vec_znx(module_ref, &a, step, offset);
-                let dft_test = dft_of_uploaded_vec_znx(module_test, &upload_vec_znx::<BT>(&a_host), step, offset);
+                let dft_test = dft_of_uploaded_vec_znx(module_test, &upload_vec_znx::<BT, Rg>(&a_host), step, offset);
                 let mut expected = poisoned_host(params.n, cols, res_size);
                 let mut big_ref = poison_idft_destination(module_ref, &expected);
                 let mut big_test = poison_idft_destination(module_test, &expected);
@@ -700,26 +715,26 @@ pub fn test_vec_znx_idft_apply<BR: crate::test_suite::TestBackend, BT: crate::te
     }
 }
 
-pub fn test_vec_znx_dft_sub<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
+pub fn test_vec_znx_dft_sub<BR: crate::test_suite::TestBackend<Rg>, BT: crate::test_suite::TestBackend<Rg>, Rg: Ring>(
     params: &TestParams,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
-    Module<BR>: VecZnxDftSub<BR>
+    Module<BR>: VecZnxDftSub<BR, Rg>
         + VecZnxDftAlloc<BR>
-        + VecZnxDftApply<BR>
+        + VecZnxDftApply<BR, Rg>
         + VecZnxBigAlloc<BR>
-        + VecZnxIdftApply<BR>
+        + VecZnxIdftApply<BR, Rg>
         + VecZnxIdftApplyTmpBytes
-        + VecZnxBigNormalize<BR>
+        + VecZnxBigNormalize<BR, Rg>
         + VecZnxBigNormalizeTmpBytes,
-    Module<BT>: VecZnxDftSub<BT>
+    Module<BT>: VecZnxDftSub<BT, Rg>
         + VecZnxDftAlloc<BT>
-        + VecZnxDftApply<BT>
+        + VecZnxDftApply<BT, Rg>
         + VecZnxBigAlloc<BT>
-        + VecZnxIdftApply<BT>
+        + VecZnxIdftApply<BT, Rg>
         + VecZnxIdftApplyTmpBytes
-        + VecZnxBigNormalize<BT>
+        + VecZnxBigNormalize<BT, Rg>
         + VecZnxBigNormalizeTmpBytes,
 {
     let base2k = params.base2k;
@@ -734,18 +749,19 @@ pub fn test_vec_znx_dft_sub<BR: crate::test_suite::TestBackend, BT: crate::test_
         let mut a = module_ref.vec_znx_alloc(params.n, cols, a_size);
         module_ref.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a, &mut source);
         let a_dft_ref = dft_of_uploaded_vec_znx(module_ref, &a, 1, 0);
-        let a_dft_test = dft_of_uploaded_vec_znx(module_test, &upload_vec_znx::<BT>(&download_vec_znx::<BR>(&a)), 1, 0);
+        let a_dft_test = dft_of_uploaded_vec_znx(module_test, &upload_vec_znx::<BT, Rg>(&download_vec_znx::<BR, Rg>(&a)), 1, 0);
 
         for b_size in [1, 2, 3, 4] {
             let mut b = module_ref.vec_znx_alloc(params.n, cols, b_size);
             module_ref.vec_znx_fill_uniform_source_all(base2k, b_size * base2k, &mut b, &mut source);
             let b_dft_ref = dft_of_uploaded_vec_znx(module_ref, &b, 1, 0);
-            let b_dft_test = dft_of_uploaded_vec_znx(module_test, &upload_vec_znx::<BT>(&download_vec_znx::<BR>(&b)), 1, 0);
+            let b_dft_test =
+                dft_of_uploaded_vec_znx(module_test, &upload_vec_znx::<BT, Rg>(&download_vec_znx::<BR, Rg>(&b)), 1, 0);
 
             for res_size in [1, 2, 3, 4] {
-                let res_init = VecZnxOwned::<i64>::alloc(params.n, cols, res_size);
-                let mut res_dft_ref = dft_of_uploaded_vec_znx(module_ref, &upload_vec_znx::<BR>(&res_init), 1, 0);
-                let mut res_dft_test = dft_of_uploaded_vec_znx(module_test, &upload_vec_znx::<BT>(&res_init), 1, 0);
+                let res_init = VecZnxOwned::<i64, Rg>::alloc(params.n, cols, res_size);
+                let mut res_dft_ref = dft_of_uploaded_vec_znx(module_ref, &upload_vec_znx::<BR, Rg>(&res_init), 1, 0);
+                let mut res_dft_test = dft_of_uploaded_vec_znx(module_test, &upload_vec_znx::<BT, Rg>(&res_init), 1, 0);
 
                 for i in 0..cols {
                     module_ref.vec_znx_dft_sub(
@@ -774,26 +790,26 @@ pub fn test_vec_znx_dft_sub<BR: crate::test_suite::TestBackend, BT: crate::test_
     }
 }
 
-pub fn test_vec_znx_dft_sub_assign<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
+pub fn test_vec_znx_dft_sub_assign<BR: crate::test_suite::TestBackend<Rg>, BT: crate::test_suite::TestBackend<Rg>, Rg: Ring>(
     params: &TestParams,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
-    Module<BR>: VecZnxDftSubAssign<BR>
+    Module<BR>: VecZnxDftSubAssign<BR, Rg>
         + VecZnxDftAlloc<BR>
-        + VecZnxDftApply<BR>
+        + VecZnxDftApply<BR, Rg>
         + VecZnxBigAlloc<BR>
-        + VecZnxIdftApply<BR>
+        + VecZnxIdftApply<BR, Rg>
         + VecZnxIdftApplyTmpBytes
-        + VecZnxBigNormalize<BR>
+        + VecZnxBigNormalize<BR, Rg>
         + VecZnxBigNormalizeTmpBytes,
-    Module<BT>: VecZnxDftSubAssign<BT>
+    Module<BT>: VecZnxDftSubAssign<BT, Rg>
         + VecZnxDftAlloc<BT>
-        + VecZnxDftApply<BT>
+        + VecZnxDftApply<BT, Rg>
         + VecZnxBigAlloc<BT>
-        + VecZnxIdftApply<BT>
+        + VecZnxIdftApply<BT, Rg>
         + VecZnxIdftApplyTmpBytes
-        + VecZnxBigNormalize<BT>
+        + VecZnxBigNormalize<BT, Rg>
         + VecZnxBigNormalizeTmpBytes,
 {
     let base2k = params.base2k;
@@ -808,14 +824,18 @@ pub fn test_vec_znx_dft_sub_assign<BR: crate::test_suite::TestBackend, BT: crate
         let mut a = module_ref.vec_znx_alloc(params.n, cols, a_size);
         module_ref.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a, &mut source);
         let a_dft_ref = dft_of_uploaded_vec_znx(module_ref, &a, 1, 0);
-        let a_dft_test = dft_of_uploaded_vec_znx(module_test, &upload_vec_znx::<BT>(&download_vec_znx::<BR>(&a)), 1, 0);
+        let a_dft_test = dft_of_uploaded_vec_znx(module_test, &upload_vec_znx::<BT, Rg>(&download_vec_znx::<BR, Rg>(&a)), 1, 0);
 
         for _res_size in [1, 2, 3, 4] {
             let mut res = module_ref.vec_znx_alloc(params.n, cols, a_size);
             module_ref.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut res, &mut source);
             let mut res_dft_ref = dft_of_uploaded_vec_znx(module_ref, &res, 1, 0);
-            let mut res_dft_test =
-                dft_of_uploaded_vec_znx(module_test, &upload_vec_znx::<BT>(&download_vec_znx::<BR>(&res)), 1, 0);
+            let mut res_dft_test = dft_of_uploaded_vec_znx(
+                module_test,
+                &upload_vec_znx::<BT, Rg>(&download_vec_znx::<BR, Rg>(&res)),
+                1,
+                0,
+            );
 
             for i in 0..cols {
                 module_ref.vec_znx_dft_sub_assign(&mut res_dft_ref.to_backend_mut(), i, &a_dft_ref.to_backend_ref(), i);
@@ -829,26 +849,30 @@ pub fn test_vec_znx_dft_sub_assign<BR: crate::test_suite::TestBackend, BT: crate
     }
 }
 
-pub fn test_vec_znx_dft_sub_negate_assign<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
+pub fn test_vec_znx_dft_sub_negate_assign<
+    BR: crate::test_suite::TestBackend<Rg>,
+    BT: crate::test_suite::TestBackend<Rg>,
+    Rg: Ring,
+>(
     params: &TestParams,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
-    Module<BR>: VecZnxDftSubNegateAssign<BR>
+    Module<BR>: VecZnxDftSubNegateAssign<BR, Rg>
         + VecZnxDftAlloc<BR>
-        + VecZnxDftApply<BR>
+        + VecZnxDftApply<BR, Rg>
         + VecZnxBigAlloc<BR>
-        + VecZnxIdftApply<BR>
+        + VecZnxIdftApply<BR, Rg>
         + VecZnxIdftApplyTmpBytes
-        + VecZnxBigNormalize<BR>
+        + VecZnxBigNormalize<BR, Rg>
         + VecZnxBigNormalizeTmpBytes,
-    Module<BT>: VecZnxDftSubNegateAssign<BT>
+    Module<BT>: VecZnxDftSubNegateAssign<BT, Rg>
         + VecZnxDftAlloc<BT>
-        + VecZnxDftApply<BT>
+        + VecZnxDftApply<BT, Rg>
         + VecZnxBigAlloc<BT>
-        + VecZnxIdftApply<BT>
+        + VecZnxIdftApply<BT, Rg>
         + VecZnxIdftApplyTmpBytes
-        + VecZnxBigNormalize<BT>
+        + VecZnxBigNormalize<BT, Rg>
         + VecZnxBigNormalizeTmpBytes,
 {
     let base2k = params.base2k;
@@ -863,14 +887,18 @@ pub fn test_vec_znx_dft_sub_negate_assign<BR: crate::test_suite::TestBackend, BT
         let mut a = module_ref.vec_znx_alloc(params.n, cols, a_size);
         module_ref.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a, &mut source);
         let a_dft_ref = dft_of_uploaded_vec_znx(module_ref, &a, 1, 0);
-        let a_dft_test = dft_of_uploaded_vec_znx(module_test, &upload_vec_znx::<BT>(&download_vec_znx::<BR>(&a)), 1, 0);
+        let a_dft_test = dft_of_uploaded_vec_znx(module_test, &upload_vec_znx::<BT, Rg>(&download_vec_znx::<BR, Rg>(&a)), 1, 0);
 
         for _res_size in [1, 2, 3, 4] {
             let mut res = module_ref.vec_znx_alloc(params.n, cols, a_size);
             module_ref.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut res, &mut source);
             let mut res_dft_ref = dft_of_uploaded_vec_znx(module_ref, &res, 1, 0);
-            let mut res_dft_test =
-                dft_of_uploaded_vec_znx(module_test, &upload_vec_znx::<BT>(&download_vec_znx::<BR>(&res)), 1, 0);
+            let mut res_dft_test = dft_of_uploaded_vec_znx(
+                module_test,
+                &upload_vec_znx::<BT, Rg>(&download_vec_znx::<BR, Rg>(&res)),
+                1,
+                0,
+            );
 
             for i in 0..cols {
                 module_ref.vec_znx_dft_sub_negate_assign(&mut res_dft_ref.to_backend_mut(), i, &a_dft_ref.to_backend_ref(), i);
@@ -887,7 +915,7 @@ pub fn test_vec_znx_dft_sub_negate_assign<BR: crate::test_suite::TestBackend, BT
 /// Runs the contract check `IDFT(DFT_aut(DFT(a))) == coeff_aut(a)` on a
 /// single backend, for a list of automorphism exponents. Used by
 /// [`test_vec_znx_dft_automorphism`] which exercises both backends.
-fn contract_check_one_backend<BE>(
+fn contract_check_one_backend<BE, Rg: Ring>(
     base2k: usize,
     n: usize,
     module: &Module<BE>,
@@ -895,16 +923,16 @@ fn contract_check_one_backend<BE>(
     cols: usize,
     p_values: &[i64],
 ) where
-    BE: crate::test_suite::TestBackend,
+    BE: crate::test_suite::TestBackend<Rg>,
     Module<BE>: VecZnxDftAlloc<BE>
-        + VecZnxDftApply<BE>
-        + VecZnxDftAutomorphism<BE>
+        + VecZnxDftApply<BE, Rg>
+        + VecZnxDftAutomorphism<BE, Rg>
         + VecZnxBigAlloc<BE>
-        + VecZnxIdftApply<BE>
+        + VecZnxIdftApply<BE, Rg>
         + VecZnxIdftApplyTmpBytes
-        + VecZnxBigNormalize<BE>
+        + VecZnxBigNormalize<BE, Rg>
         + VecZnxBigNormalizeTmpBytes
-        + VecZnxAutomorphism<BE>,
+        + VecZnxAutomorphism<BE, Rg>,
 {
     let mut source = Source::new([0u8; 32]);
 
@@ -925,18 +953,18 @@ fn contract_check_one_backend<BE>(
             let _ = idft_to_host(module, base2k, &a_dft, scratch);
 
             // Pipeline B: coefficient-domain automorphism on the same backend.
-            let res_coeff_backend_host = VecZnxOwned::<i64>::alloc(n, cols, size);
-            let mut res_coeff_backend = upload_vec_znx::<BE>(&res_coeff_backend_host);
+            let res_coeff_backend_host = VecZnxOwned::<i64, Rg>::alloc(n, cols, size);
+            let mut res_coeff_backend = upload_vec_znx::<BE, Rg>(&res_coeff_backend_host);
             for j in 0..cols {
                 module.vec_znx_automorphism(
                     p,
-                    &mut vec_znx_backend_mut::<BE>(&mut res_coeff_backend),
+                    &mut vec_znx_backend_mut::<BE, Rg>(&mut res_coeff_backend),
                     j,
-                    &vec_znx_backend_ref::<BE>(&a),
+                    &vec_znx_backend_ref::<BE, Rg>(&a),
                     j,
                 );
             }
-            let res_coeff = download_vec_znx::<BE>(&res_coeff_backend);
+            let res_coeff = download_vec_znx::<BE, Rg>(&res_coeff_backend);
 
             assert_eq!(
                 res_dft_normalized, res_coeff,
@@ -949,29 +977,29 @@ fn contract_check_one_backend<BE>(
 /// Verifies that for every odd `p`, `IDFT(VecZnxDftAutomorphism(p, DFT(a)))`
 /// matches `VecZnxAutomorphism(p, a)` after normalization. Runs the contract
 /// on both `module_ref` and `module_test`.
-pub fn test_vec_znx_dft_automorphism<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
+pub fn test_vec_znx_dft_automorphism<BR: crate::test_suite::TestBackend<Rg>, BT: crate::test_suite::TestBackend<Rg>, Rg: Ring>(
     params: &TestParams,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
     Module<BR>: VecZnxDftAlloc<BR>
-        + VecZnxDftApply<BR>
-        + VecZnxDftAutomorphism<BR>
+        + VecZnxDftApply<BR, Rg>
+        + VecZnxDftAutomorphism<BR, Rg>
         + VecZnxBigAlloc<BR>
-        + VecZnxIdftApply<BR>
+        + VecZnxIdftApply<BR, Rg>
         + VecZnxIdftApplyTmpBytes
-        + VecZnxBigNormalize<BR>
+        + VecZnxBigNormalize<BR, Rg>
         + VecZnxBigNormalizeTmpBytes
-        + VecZnxAutomorphism<BR>,
+        + VecZnxAutomorphism<BR, Rg>,
     Module<BT>: VecZnxDftAlloc<BT>
-        + VecZnxDftApply<BT>
-        + VecZnxDftAutomorphism<BT>
+        + VecZnxDftApply<BT, Rg>
+        + VecZnxDftAutomorphism<BT, Rg>
         + VecZnxBigAlloc<BT>
-        + VecZnxIdftApply<BT>
+        + VecZnxIdftApply<BT, Rg>
         + VecZnxIdftApplyTmpBytes
-        + VecZnxBigNormalize<BT>
+        + VecZnxBigNormalize<BT, Rg>
         + VecZnxBigNormalizeTmpBytes
-        + VecZnxAutomorphism<BT>,
+        + VecZnxAutomorphism<BT, Rg>,
 {
     let base2k = params.base2k;
     assert_eq!(module_ref.n(), module_test.n());
@@ -983,14 +1011,14 @@ pub fn test_vec_znx_dft_automorphism<BR: crate::test_suite::TestBackend, BT: cra
     // of the floating-point FFT plan and a range of orbits under odd-p multiplication.
     let p_values: &[i64] = &[1, 5, 9, 13, 3, 7, 11, 15, -1, -5];
 
-    contract_check_one_backend::<BR>(base2k, params.n, module_ref, &mut scratch_ref, cols, p_values);
-    contract_check_one_backend::<BT>(base2k, params.n, module_test, &mut scratch_test, cols, p_values);
+    contract_check_one_backend::<BR, Rg>(base2k, params.n, module_ref, &mut scratch_ref, cols, p_values);
+    contract_check_one_backend::<BT, Rg>(base2k, params.n, module_test, &mut scratch_test, cols, p_values);
 }
 
 /// Runs the fused-accumulation check `automorphism_add(res, a) ==
 /// add_assign(res, automorphism(a))` on a single backend, including a `res`
 /// wider than `a` (limbs beyond `a.size()` must stay untouched).
-fn automorphism_add_check_one_backend<BE>(
+fn automorphism_add_check_one_backend<BE, Rg: Ring>(
     base2k: usize,
     n: usize,
     module: &Module<BE>,
@@ -998,16 +1026,16 @@ fn automorphism_add_check_one_backend<BE>(
     cols: usize,
     p_values: &[i64],
 ) where
-    BE: crate::test_suite::TestBackend,
+    BE: crate::test_suite::TestBackend<Rg>,
     Module<BE>: VecZnxDftAlloc<BE>
-        + VecZnxDftApply<BE>
-        + VecZnxDftAutomorphism<BE>
+        + VecZnxDftApply<BE, Rg>
+        + VecZnxDftAutomorphism<BE, Rg>
         + VecZnxDftAutomorphismAddWithPlanTmpBytes
-        + VecZnxDftAddAssign<BE>
+        + VecZnxDftAddAssign<BE, Rg>
         + VecZnxBigAlloc<BE>
-        + VecZnxIdftApply<BE>
+        + VecZnxIdftApply<BE, Rg>
         + VecZnxIdftApplyTmpBytes
-        + VecZnxBigNormalize<BE>
+        + VecZnxBigNormalize<BE, Rg>
         + VecZnxBigNormalizeTmpBytes,
 {
     let mut source = Source::new([1u8; 32]);
@@ -1061,30 +1089,34 @@ fn automorphism_add_check_one_backend<BE>(
 /// Verifies `vec_znx_dft_automorphism_add_with_plan` against the composition
 /// of `vec_znx_dft_automorphism_with_plan` and `vec_znx_dft_add_assign`, on
 /// both `module_ref` and `module_test`.
-pub fn test_vec_znx_dft_automorphism_add<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
+pub fn test_vec_znx_dft_automorphism_add<
+    BR: crate::test_suite::TestBackend<Rg>,
+    BT: crate::test_suite::TestBackend<Rg>,
+    Rg: Ring,
+>(
     params: &TestParams,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
     Module<BR>: VecZnxDftAlloc<BR>
-        + VecZnxDftApply<BR>
-        + VecZnxDftAutomorphism<BR>
+        + VecZnxDftApply<BR, Rg>
+        + VecZnxDftAutomorphism<BR, Rg>
         + VecZnxDftAutomorphismAddWithPlanTmpBytes
-        + VecZnxDftAddAssign<BR>
+        + VecZnxDftAddAssign<BR, Rg>
         + VecZnxBigAlloc<BR>
-        + VecZnxIdftApply<BR>
+        + VecZnxIdftApply<BR, Rg>
         + VecZnxIdftApplyTmpBytes
-        + VecZnxBigNormalize<BR>
+        + VecZnxBigNormalize<BR, Rg>
         + VecZnxBigNormalizeTmpBytes,
     Module<BT>: VecZnxDftAlloc<BT>
-        + VecZnxDftApply<BT>
-        + VecZnxDftAutomorphism<BT>
+        + VecZnxDftApply<BT, Rg>
+        + VecZnxDftAutomorphism<BT, Rg>
         + VecZnxDftAutomorphismAddWithPlanTmpBytes
-        + VecZnxDftAddAssign<BT>
+        + VecZnxDftAddAssign<BT, Rg>
         + VecZnxBigAlloc<BT>
-        + VecZnxIdftApply<BT>
+        + VecZnxIdftApply<BT, Rg>
         + VecZnxIdftApplyTmpBytes
-        + VecZnxBigNormalize<BT>
+        + VecZnxBigNormalize<BT, Rg>
         + VecZnxBigNormalizeTmpBytes,
 {
     let base2k = params.base2k;
@@ -1095,25 +1127,25 @@ pub fn test_vec_znx_dft_automorphism_add<BR: crate::test_suite::TestBackend, BT:
 
     let p_values: &[i64] = &[1, 5, 3, 7, -1, -5];
 
-    automorphism_add_check_one_backend::<BR>(base2k, params.n, module_ref, &mut scratch_ref, cols, p_values);
-    automorphism_add_check_one_backend::<BT>(base2k, params.n, module_test, &mut scratch_test, cols, p_values);
+    automorphism_add_check_one_backend::<BR, Rg>(base2k, params.n, module_ref, &mut scratch_ref, cols, p_values);
+    automorphism_add_check_one_backend::<BT, Rg>(base2k, params.n, module_test, &mut scratch_test, cols, p_values);
 }
 
 /// Runs the fused check `idft_normalize(res, a, addend) ==
 /// normalize(idft(a) + addend)` on a single backend, over size and base2k
 /// combinations and both addend arms.
-fn idft_normalize_check_one_backend<BE>(base2k: usize, n: usize, module: &Module<BE>, cols: usize)
+fn idft_normalize_check_one_backend<BE, Rg: Ring>(base2k: usize, n: usize, module: &Module<BE>, cols: usize)
 where
-    BE: crate::test_suite::TestBackend,
+    BE: crate::test_suite::TestBackend<Rg>,
     Module<BE>: VecZnxDftAlloc<BE>
-        + VecZnxDftApply<BE>
-        + VecZnxIdftApply<BE>
+        + VecZnxDftApply<BE, Rg>
+        + VecZnxIdftApply<BE, Rg>
         + VecZnxIdftApplyTmpBytes
-        + crate::api::VecZnxIdftNormalize<BE>
+        + crate::api::VecZnxIdftNormalize<BE, Rg>
         + crate::api::VecZnxIdftNormalizeTmpBytes
-        + crate::api::VecZnxBigAddSmallAssign<BE>
+        + crate::api::VecZnxBigAddSmallAssign<BE, Rg>
         + VecZnxBigAlloc<BE>
-        + VecZnxBigNormalize<BE>
+        + VecZnxBigNormalize<BE, Rg>
         + VecZnxBigNormalizeTmpBytes,
 {
     let mut source = Source::new([2u8; 32]);
@@ -1125,7 +1157,7 @@ where
                 module.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a, &mut source);
                 let mut addend_backend = module.vec_znx_alloc(n, 1, a_size);
                 module.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut addend_backend, &mut source);
-                let addend_ref = vec_znx_backend_ref::<BE>(&addend_backend);
+                let addend_ref = vec_znx_backend_ref::<BE, Rg>(&addend_backend);
 
                 let mut scratch_fused: PoisonedArena<BE> =
                     poisoned_arena(module.vec_znx_idft_normalize_tmp_bytes(res_size, a_size));
@@ -1138,9 +1170,9 @@ where
                     // Fused: res = normalize(idft(a) + addend), clobbering a.
                     let mut a_dft = dft_of_uploaded_vec_znx(module, &a, 1, 0);
                     let res_host_template = VecZnx::alloc(n, 1, res_size);
-                    let mut res_have_backend = upload_vec_znx::<BE>(&res_host_template);
+                    let mut res_have_backend = upload_vec_znx::<BE, Rg>(&res_host_template);
                     module.vec_znx_idft_normalize(
-                        &mut vec_znx_backend_mut::<BE>(&mut res_have_backend),
+                        &mut vec_znx_backend_mut::<BE, Rg>(&mut res_have_backend),
                         res_base2k,
                         res_size * res_base2k,
                         res_offset,
@@ -1151,7 +1183,7 @@ where
                         with_addend.then_some((&addend_ref, 0)),
                         &mut scratch_fused.arena(),
                     );
-                    let res_have = download_vec_znx::<BE>(&res_have_backend);
+                    let res_have = download_vec_znx::<BE, Rg>(&res_have_backend);
 
                     // Composition: idft into BIG, small add, normalize.
                     let a_dft = dft_of_uploaded_vec_znx(module, &a, 1, 0);
@@ -1166,9 +1198,9 @@ where
                     if with_addend {
                         module.vec_znx_big_add_small_assign(&mut big.to_backend_mut(), 0, &addend_ref, 0);
                     }
-                    let mut res_want_backend = upload_vec_znx::<BE>(&res_host_template);
+                    let mut res_want_backend = upload_vec_znx::<BE, Rg>(&res_host_template);
                     module.vec_znx_big_normalize(
-                        &mut vec_znx_backend_mut::<BE>(&mut res_want_backend),
+                        &mut vec_znx_backend_mut::<BE, Rg>(&mut res_want_backend),
                         res_base2k,
                         res_size * res_base2k,
                         res_offset,
@@ -1178,7 +1210,7 @@ where
                         0,
                         &mut scratch_normalize.arena(),
                     );
-                    let res_want = download_vec_znx::<BE>(&res_want_backend);
+                    let res_want = download_vec_znx::<BE, Rg>(&res_want_backend);
 
                     assert_eq!(
                         res_want, res_have,
@@ -1194,61 +1226,61 @@ where
 /// Verifies `vec_znx_idft_normalize` against the composition of
 /// `vec_znx_idft_apply`, `vec_znx_big_add_small_assign` and
 /// `vec_znx_big_normalize`, on both `module_ref` and `module_test`.
-pub fn test_vec_znx_idft_normalize<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
+pub fn test_vec_znx_idft_normalize<BR: crate::test_suite::TestBackend<Rg>, BT: crate::test_suite::TestBackend<Rg>, Rg: Ring>(
     params: &TestParams,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
     Module<BR>: VecZnxDftAlloc<BR>
-        + VecZnxDftApply<BR>
-        + VecZnxIdftApply<BR>
+        + VecZnxDftApply<BR, Rg>
+        + VecZnxIdftApply<BR, Rg>
         + VecZnxIdftApplyTmpBytes
-        + crate::api::VecZnxIdftNormalize<BR>
+        + crate::api::VecZnxIdftNormalize<BR, Rg>
         + crate::api::VecZnxIdftNormalizeTmpBytes
-        + crate::api::VecZnxBigAddSmallAssign<BR>
+        + crate::api::VecZnxBigAddSmallAssign<BR, Rg>
         + VecZnxBigAlloc<BR>
-        + VecZnxBigNormalize<BR>
+        + VecZnxBigNormalize<BR, Rg>
         + VecZnxBigNormalizeTmpBytes,
     Module<BT>: VecZnxDftAlloc<BT>
-        + VecZnxDftApply<BT>
-        + VecZnxIdftApply<BT>
+        + VecZnxDftApply<BT, Rg>
+        + VecZnxIdftApply<BT, Rg>
         + VecZnxIdftApplyTmpBytes
-        + crate::api::VecZnxIdftNormalize<BT>
+        + crate::api::VecZnxIdftNormalize<BT, Rg>
         + crate::api::VecZnxIdftNormalizeTmpBytes
-        + crate::api::VecZnxBigAddSmallAssign<BT>
+        + crate::api::VecZnxBigAddSmallAssign<BT, Rg>
         + VecZnxBigAlloc<BT>
-        + VecZnxBigNormalize<BT>
+        + VecZnxBigNormalize<BT, Rg>
         + VecZnxBigNormalizeTmpBytes,
 {
     let base2k = params.base2k;
     assert_eq!(module_ref.n(), module_test.n());
     let cols = 2;
 
-    idft_normalize_check_one_backend::<BR>(base2k, params.n, module_ref, cols);
-    idft_normalize_check_one_backend::<BT>(base2k, params.n, module_test, cols);
+    idft_normalize_check_one_backend::<BR, Rg>(base2k, params.n, module_ref, cols);
+    idft_normalize_check_one_backend::<BT, Rg>(base2k, params.n, module_test, cols);
 }
 
 /// Pins the limb selection of `vec_znx_dft_apply`: limb `j` of the result is
 /// limb `offset + j * step` of the input, and every limb whose source falls
 /// past the input is zero. Checked against a host oracle and across backends.
-pub fn test_vec_znx_dft_apply<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
+pub fn test_vec_znx_dft_apply<BR: crate::test_suite::TestBackend<Rg>, BT: crate::test_suite::TestBackend<Rg>, Rg: Ring>(
     params: &TestParams,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
     Module<BR>: VecZnxDftAlloc<BR>
-        + VecZnxDftApply<BR>
+        + VecZnxDftApply<BR, Rg>
         + VecZnxBigAlloc<BR>
-        + VecZnxIdftApply<BR>
+        + VecZnxIdftApply<BR, Rg>
         + VecZnxIdftApplyTmpBytes
-        + VecZnxBigNormalize<BR>
+        + VecZnxBigNormalize<BR, Rg>
         + VecZnxBigNormalizeTmpBytes,
     Module<BT>: VecZnxDftAlloc<BT>
-        + VecZnxDftApply<BT>
+        + VecZnxDftApply<BT, Rg>
         + VecZnxBigAlloc<BT>
-        + VecZnxIdftApply<BT>
+        + VecZnxIdftApply<BT, Rg>
         + VecZnxIdftApplyTmpBytes
-        + VecZnxBigNormalize<BT>
+        + VecZnxBigNormalize<BT, Rg>
         + VecZnxBigNormalizeTmpBytes,
 {
     let base2k: usize = params.base2k;
@@ -1262,8 +1294,8 @@ pub fn test_vec_znx_dft_apply<BR: crate::test_suite::TestBackend, BT: crate::tes
     for a_size in [1, 2, 5, 8] {
         let mut a_ref = module_ref.vec_znx_alloc(params.n, cols, a_size);
         module_ref.vec_znx_fill_uniform_source_all(base2k, a_size * base2k, &mut a_ref, &mut source);
-        let a = download_vec_znx::<BR>(&a_ref);
-        let a_test = upload_vec_znx::<BT>(&a);
+        let a = download_vec_znx::<BR, Rg>(&a_ref);
+        let a_test = upload_vec_znx::<BT, Rg>(&a);
 
         for res_size in [1, 2, 5, 8] {
             for [step, offset] in [[1, 0], [1, 1], [1, 3], [2, 0], [2, 1], [3, 2]] {
@@ -1276,7 +1308,7 @@ pub fn test_vec_znx_dft_apply<BR: crate::test_suite::TestBackend, BT: crate::tes
                         offset,
                         &mut res_ref.to_backend_mut(),
                         j,
-                        &vec_znx_backend_ref::<BR>(&a_ref),
+                        &vec_znx_backend_ref::<BR, Rg>(&a_ref),
                         j,
                     );
                     module_test.vec_znx_dft_apply(
@@ -1284,7 +1316,7 @@ pub fn test_vec_znx_dft_apply<BR: crate::test_suite::TestBackend, BT: crate::tes
                         offset,
                         &mut res_test.to_backend_mut(),
                         j,
-                        &vec_znx_backend_ref::<BT>(&a_test),
+                        &vec_znx_backend_ref::<BT, Rg>(&a_test),
                         j,
                     );
                 }
@@ -1293,7 +1325,7 @@ pub fn test_vec_znx_dft_apply<BR: crate::test_suite::TestBackend, BT: crate::tes
                 let got_test = idft_to_host(module_test, base2k, &res_test, &mut scratch_test);
                 assert_eq!(got_ref, got_test, "step {step} offset {offset}");
 
-                let mut want = VecZnxOwned::<i64>::alloc(params.n, cols, res_size);
+                let mut want = VecZnxOwned::<i64, Rg>::alloc(params.n, cols, res_size);
                 for col in 0..cols {
                     set_expected_idft_column(&mut want, col, &a, step, offset);
                 }
@@ -1305,26 +1337,26 @@ pub fn test_vec_znx_dft_apply<BR: crate::test_suite::TestBackend, BT: crate::tes
 
 /// Pins `vec_znx_dft_zero`: the column reads back as zero through the inverse
 /// transform, and the other columns are untouched.
-pub fn test_vec_znx_dft_zero<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
+pub fn test_vec_znx_dft_zero<BR: crate::test_suite::TestBackend<Rg>, BT: crate::test_suite::TestBackend<Rg>, Rg: Ring>(
     params: &TestParams,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
     Module<BR>: VecZnxDftAlloc<BR>
-        + VecZnxDftApply<BR>
-        + VecZnxDftZero<BR>
+        + VecZnxDftApply<BR, Rg>
+        + VecZnxDftZero<BR, Rg>
         + VecZnxBigAlloc<BR>
-        + VecZnxIdftApply<BR>
+        + VecZnxIdftApply<BR, Rg>
         + VecZnxIdftApplyTmpBytes
-        + VecZnxBigNormalize<BR>
+        + VecZnxBigNormalize<BR, Rg>
         + VecZnxBigNormalizeTmpBytes,
     Module<BT>: VecZnxDftAlloc<BT>
-        + VecZnxDftApply<BT>
-        + VecZnxDftZero<BT>
+        + VecZnxDftApply<BT, Rg>
+        + VecZnxDftZero<BT, Rg>
         + VecZnxBigAlloc<BT>
-        + VecZnxIdftApply<BT>
+        + VecZnxIdftApply<BT, Rg>
         + VecZnxIdftApplyTmpBytes
-        + VecZnxBigNormalize<BT>
+        + VecZnxBigNormalize<BT, Rg>
         + VecZnxBigNormalizeTmpBytes,
 {
     let base2k: usize = params.base2k;
@@ -1338,10 +1370,10 @@ pub fn test_vec_znx_dft_zero<BR: crate::test_suite::TestBackend, BT: crate::test
     for size in [1, 2, 5] {
         let mut a = module_ref.vec_znx_alloc(params.n, cols, size);
         module_ref.vec_znx_fill_uniform_source_all(base2k, size * base2k, &mut a, &mut source);
-        let a_host = download_vec_znx::<BR>(&a);
+        let a_host = download_vec_znx::<BR, Rg>(&a);
 
         let mut dft_ref = dft_of_uploaded_vec_znx(module_ref, &a, 1, 0);
-        let mut dft_test = dft_of_uploaded_vec_znx(module_test, &upload_vec_znx::<BT>(&a_host), 1, 0);
+        let mut dft_test = dft_of_uploaded_vec_znx(module_test, &upload_vec_znx::<BT, Rg>(&a_host), 1, 0);
 
         module_ref.vec_znx_dft_zero(&mut dft_ref.to_backend_mut(), 0);
         module_test.vec_znx_dft_zero(&mut dft_test.to_backend_mut(), 0);
@@ -1350,7 +1382,7 @@ pub fn test_vec_znx_dft_zero<BR: crate::test_suite::TestBackend, BT: crate::test
         let got_test = idft_to_host(module_test, base2k, &dft_test, &mut scratch_test);
         assert_eq!(got_ref, got_test);
 
-        let mut want = VecZnxOwned::<i64>::alloc(params.n, cols, size);
+        let mut want = VecZnxOwned::<i64, Rg>::alloc(params.n, cols, size);
         for limb in 0..size {
             want.at_mut(0, limb).fill(0);
             for j in 1..cols {

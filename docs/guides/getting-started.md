@@ -40,8 +40,9 @@ In the coefficient domain, `VecZnx` is the central type, a base-`2^K` vector of 
 `MatZnx` is the matrix form behind GGLWE and GGSW.
 In the transform domain, `VecZnxDft` holds polynomials after the backend's DFT or NTT, where multiplication becomes pointwise, and the prepared operands `SvpPPol` (a scalar polynomial) and `VmpPMat` (a polynomial matrix) live here too.
 The large-coefficient `VecZnxBig` is the wide accumulator that holds products before they are normalized back into base-`2^K` limbs.
+Every layout takes its ring as a type parameter, `Standard` for `Z[X]/(X^N + 1)` by default or `ConjugateInvariant`, and the operations read it from their operands.
 
-A `Module<B>` pairs a ring degree `N` with a backend handle that carries any precomputed state such as DFT twiddle tables, and it is the entry point for every operation.
+A `Module<B>` pairs a ring degree `N` with a backend handle that carries any precomputed state such as DFT twiddle tables, for both rings, and it is the entry point for every operation.
 The operation traits are grouped by the type they act on: `vec_znx` for coefficient-domain arithmetic, `vec_znx_dft` for transform-domain arithmetic, `vec_znx_big` for the accumulator, `svp` for scalar-vector products, `vmp` for vector-matrix products, plus convolution and scratch management.
 
 ### The backends
@@ -81,7 +82,7 @@ Plaintexts are `LWEPlaintext` and `GLWEPlaintext`, and secret keys are `LWESecre
 On top of these sits a family of evaluation keys, each a thin wrapper over a `GGLWE`: `GLWESwitchingKey` for key-switching, `GLWEAutomorphismKey` for Galois automorphisms, `GLWETensorKey` for relinearization after a tensor product, `GGLWEToGGSWKey` for promoting a GGLWE to a GGSW, and the bridges `GLWEToLWEKey` and `LWEToGLWEKey`.
 
 Two cross-cutting variants exist for most of these types.
-A *prepared* variant such as `GLWEPrepared` or `GGSWPrepared` stores the data in the backend's transform domain so repeated products are cheap, and is produced from the standard form by a `prepare` step.
+A *prepared* variant such as `GLWEPrepared` or `GGSWPrepared` stores the data in the backend's transform domain so repeated products are cheap, and is produced from the unprepared form by a `prepare` step.
 A *compressed* variant stores only a 32-byte seed for the uniform mask, which it regenerates on decompression, to cut serialized size.
 
 The operations under `api/` cover secret-key and public-key encryption, decryption, the external product, key-switching, Galois automorphisms, the trace (a sum of automorphisms), GLWE arithmetic (add, subtract, normalize, multiply by a plaintext or a constant, rotate), the tensoring and relinearization used by ciphertext-ciphertext products, the baby-step/giant-step engines for polynomial evaluation and linear transformations (matrix-vector products), noise measurement, and conversions such as LWE sample extraction from a GLWE.

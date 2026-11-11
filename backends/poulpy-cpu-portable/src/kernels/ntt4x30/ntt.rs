@@ -140,6 +140,19 @@ pub struct NttTableInv<P: PrimeSetCrt4, R: Ring = Standard> {
     _phantom: PhantomData<(P, R)>,
 }
 
+/// The ring an NTT table transforms over, which types the automorphism plans of its transform.
+pub trait NttRingTable {
+    type Ring: Ring;
+}
+
+impl<P: PrimeSetCrt4, R: Ring> NttRingTable for NttTable<P, R> {
+    type Ring = R;
+}
+
+impl<P: PrimeSetCrt4, R: Ring> NttRingTable for NttTableInv<P, R> {
+    type Ring = R;
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Precomputation
 // ──────────────────────────────────────────────────────────────────────────────

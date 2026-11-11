@@ -5,26 +5,41 @@
 /// methods and portable noise kernels, all applied straight to the backend
 /// buffer.
 ///
-/// The second argument selects the `VecZnxBig` word family: `fft64` for
-/// `BigWord = i64`, `ntt4x30` for `BigWord = i128`.
+/// The last argument selects the `VecZnxBig` word family: `fft64` for
+/// `BigWord = i64`, `ntt4x30` for `BigWord = i128`. Without a ring argument the
+/// macro implements both rings; `impl_sampling_host!(Backend, Ring, family)`
+/// implements `Ring` only.
 ///
 /// ```ignore
 /// poulpy_cpu_portable::impl_sampling_host!(FFT64Avx, fft64);
 /// poulpy_cpu_portable::impl_sampling_host!(NTT4x30Avx, ntt4x30);
+/// poulpy_cpu_portable::impl_sampling_host!(NTT3x42IfmaRayon, ::poulpy_hal::layouts::Standard, ntt4x30);
 /// ```
 #[macro_export]
 macro_rules! impl_sampling_host {
-    ($be:ty, fft64) => {
-        $crate::impl_sampling_host!(@impl $be, $crate::kernels::fft64::vec_znx_big::vec_znx_big_add_noise_portable::<_, $be>);
+    ($be:ty, $family:ident) => {
+        $crate::impl_sampling_host!($be, ::poulpy_hal::layouts::Standard, $family);
+        $crate::impl_sampling_host!($be, ::poulpy_hal::layouts::ConjugateInvariant, $family);
     };
-    ($be:ty, ntt4x30) => {
-        $crate::impl_sampling_host!(@impl $be, $crate::kernels::ntt4x30::vec_znx_big::ntt4x30_vec_znx_big_add_noise_portable::<_, $be>);
+    ($be:ty, $ring:ty, fft64) => {
+        $crate::impl_sampling_host!(
+            @impl $be,
+            $ring,
+            $crate::kernels::fft64::vec_znx_big::vec_znx_big_add_noise_portable::<_, $be, $ring>
+        );
     };
-    (@impl $be:ty, $big_kernel:expr) => {
-        unsafe impl ::poulpy_core::oep::SamplingImpl for $be {
+    ($be:ty, $ring:ty, ntt4x30) => {
+        $crate::impl_sampling_host!(
+            @impl $be,
+            $ring,
+            $crate::kernels::ntt4x30::vec_znx_big::ntt4x30_vec_znx_big_add_noise_portable::<_, $be, $ring>
+        );
+    };
+    (@impl $be:ty, $ring:ty, $big_kernel:expr) => {
+        unsafe impl ::poulpy_core::oep::SamplingImpl<$ring> for $be {
             fn scalar_znx_fill_distribution(
                 _module: &::poulpy_hal::layouts::Module<$be>,
-                res: &mut ::poulpy_hal::layouts::ScalarZnxBackendMut<'_, $be>,
+                res: &mut ::poulpy_hal::layouts::ScalarZnxBackendMut<'_, $be, $ring>,
                 res_col: usize,
                 dist: ::poulpy_core::Distribution,
                 seed: [u8; 32],
@@ -56,14 +71,14 @@ macro_rules! impl_sampling_host {
                 module: &::poulpy_hal::layouts::Module<$be>,
                 base2k: usize,
                 k: usize,
-                res: &mut ::poulpy_hal::layouts::VecZnxBackendMut<'_, $be>,
+                res: &mut ::poulpy_hal::layouts::VecZnxBackendMut<'_, $be, $ring>,
                 res_col: usize,
                 noise: ::poulpy_core::Noise,
                 seed: [u8; 32],
             ) {
                 assert!(res.n().is_power_of_two() && res.n() <= module.n(), "noise degree outside module");
                 let mut source = ::poulpy_hal::source::Source::new(seed);
-                $crate::kernels::vec_znx::vec_znx_add_noise_portable::<$be>(
+                $crate::kernels::vec_znx::vec_znx_add_noise_portable::<$be, $ring>(
                     base2k,
                     k,
                     res,
@@ -77,7 +92,7 @@ macro_rules! impl_sampling_host {
                 module: &::poulpy_hal::layouts::Module<$be>,
                 base2k: usize,
                 k: usize,
-                mut res: &mut ::poulpy_hal::layouts::VecZnxBigBackendMut<'_, $be>,
+                mut res: &mut ::poulpy_hal::layouts::VecZnxBigBackendMut<'_, $be, $ring>,
                 res_col: usize,
                 noise: ::poulpy_core::Noise,
                 seed: [u8; 32],

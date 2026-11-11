@@ -1,6 +1,6 @@
 use poulpy_hal::layouts::SvpPPolToBackendMut;
 use poulpy_hal::layouts::SvpPPolToBackendRef;
-use poulpy_hal::layouts::{Backend, Data, SvpPPol, ZnxInfos};
+use poulpy_hal::layouts::{Backend, Data, Ring, Standard, SvpPPol, ZnxInfos};
 
 use crate::{
     GetDistribution, GetDistributionMut,
@@ -13,30 +13,30 @@ use crate::{
 /// Stores the GLWE secret key with polynomials in the frequency domain
 /// for fast multiplication during encryption and decryption. Tied to a
 /// specific backend via `B: Backend`.
-pub struct GLWESecretPrepared<D: Data, B: Backend> {
-    pub(crate) data: SvpPPol<D, B::DftWord, B>,
+pub struct GLWESecretPrepared<D: Data, B: Backend, Rg: Ring = Standard> {
+    pub(crate) data: SvpPPol<D, B::DftWord, B, Rg>,
     /// Distribution the base secret was sampled from, carried over from the
     /// coefficient-domain secret. Preparation is a change of representation,
     /// so the tag applies unchanged. See [`Distribution`].
     pub(crate) dist: Distribution,
 }
 
-pub type GLWESecretPreparedBackendRef<'a, B> = GLWESecretPrepared<<B as Backend>::BufRef<'a>, B>;
-pub type GLWESecretPreparedBackendMut<'a, B> = GLWESecretPrepared<<B as Backend>::BufMut<'a>, B>;
+pub type GLWESecretPreparedBackendRef<'a, B, Rg = Standard> = GLWESecretPrepared<<B as Backend>::BufRef<'a>, B, Rg>;
+pub type GLWESecretPreparedBackendMut<'a, B, Rg = Standard> = GLWESecretPrepared<<B as Backend>::BufMut<'a>, B, Rg>;
 
-impl<D: Data, BE: Backend> GetDistribution for GLWESecretPrepared<D, BE> {
+impl<D: Data, BE: Backend, Rg: Ring> GetDistribution for GLWESecretPrepared<D, BE, Rg> {
     fn dist(&self) -> &Distribution {
         &self.dist
     }
 }
 
-impl<D: Data, BE: Backend> GetDistributionMut for GLWESecretPrepared<D, BE> {
+impl<D: Data, BE: Backend, Rg: Ring> GetDistributionMut for GLWESecretPrepared<D, BE, Rg> {
     fn dist_mut(&mut self) -> &mut Distribution {
         &mut self.dist
     }
 }
 
-impl<D: Data, B: Backend> LWEInfos for GLWESecretPrepared<D, B> {
+impl<D: Data, B: Backend, Rg: Ring> LWEInfos for GLWESecretPrepared<D, B, Rg> {
     fn base2k(&self) -> Base2K {
         Base2K(0)
     }
@@ -53,13 +53,13 @@ impl<D: Data, B: Backend> LWEInfos for GLWESecretPrepared<D, B> {
     }
 }
 
-impl<D: Data, B: Backend> GLWEInfos for GLWESecretPrepared<D, B> {
+impl<D: Data, B: Backend, Rg: Ring> GLWEInfos for GLWESecretPrepared<D, B, Rg> {
     fn rank(&self) -> Rank {
         Rank(self.data.cols() as u32)
     }
 }
 
-impl<D: Data, B: Backend> GLWESecretPrepared<D, B> {
+impl<D: Data, B: Backend, Rg: Ring> GLWESecretPrepared<D, B, Rg> {
     pub fn n(&self) -> Degree {
         Degree(self.data.n() as u32)
     }
@@ -69,12 +69,12 @@ impl<D: Data, B: Backend> GLWESecretPrepared<D, B> {
     }
 }
 
-pub trait GLWESecretPreparedToBackendRef<B: Backend> {
-    fn to_backend_ref(&self) -> GLWESecretPreparedBackendRef<'_, B>;
+pub trait GLWESecretPreparedToBackendRef<B: Backend, Rg: Ring = Standard> {
+    fn to_backend_ref(&self) -> GLWESecretPreparedBackendRef<'_, B, Rg>;
 }
 
-impl<B: Backend> GLWESecretPreparedToBackendRef<B> for GLWESecretPrepared<B::OwnedBuf, B> {
-    fn to_backend_ref(&self) -> GLWESecretPreparedBackendRef<'_, B> {
+impl<B: Backend, Rg: Ring> GLWESecretPreparedToBackendRef<B, Rg> for GLWESecretPrepared<B::OwnedBuf, B, Rg> {
+    fn to_backend_ref(&self) -> GLWESecretPreparedBackendRef<'_, B, Rg> {
         GLWESecretPrepared {
             dist: self.dist,
             data: self.data.to_backend_ref(),
@@ -82,12 +82,12 @@ impl<B: Backend> GLWESecretPreparedToBackendRef<B> for GLWESecretPrepared<B::Own
     }
 }
 
-pub trait GLWESecretPreparedToBackendMut<B: Backend> {
-    fn to_backend_mut(&mut self) -> GLWESecretPreparedBackendMut<'_, B>;
+pub trait GLWESecretPreparedToBackendMut<B: Backend, Rg: Ring = Standard> {
+    fn to_backend_mut(&mut self) -> GLWESecretPreparedBackendMut<'_, B, Rg>;
 }
 
-impl<B: Backend> GLWESecretPreparedToBackendMut<B> for GLWESecretPrepared<B::OwnedBuf, B> {
-    fn to_backend_mut(&mut self) -> GLWESecretPreparedBackendMut<'_, B> {
+impl<B: Backend, Rg: Ring> GLWESecretPreparedToBackendMut<B, Rg> for GLWESecretPrepared<B::OwnedBuf, B, Rg> {
+    fn to_backend_mut(&mut self) -> GLWESecretPreparedBackendMut<'_, B, Rg> {
         GLWESecretPrepared {
             dist: self.dist,
             data: self.data.to_backend_mut(),

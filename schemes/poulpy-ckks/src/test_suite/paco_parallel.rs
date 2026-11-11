@@ -25,7 +25,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::{CnvPVecAlloc, ReimNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{HostBytesBackend, Module, ScratchOwned, Standard, ZnxView},
+    layouts::{HostBytesBackend, Module, ScratchOwned, ZnxView},
     source::Source,
 };
 
@@ -57,7 +57,7 @@ fn assert_ciphertext_unchanged<BE>(
     before: &crate::layouts::CKKSCiphertextOwned<HostBytesBackend>,
     after: &crate::layouts::CKKSCiphertextOwned<BE>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
 {
     let after = after.to_host_owned::<BE>();
     assert_eq!(before.meta(), after.meta(), "a rejected call changed CKKS metadata");
@@ -85,7 +85,7 @@ fn decrypt_coeffs_host<BE>(
     scratch: &mut poulpy_hal::layouts::ScratchArena<'_, BE>,
 ) -> Vec<f64>
 where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     Module<BE>: TestContextModule<BE>,
 {
     use crate::test_suite::helpers::ckks_decrypt_with_prec;
@@ -125,7 +125,7 @@ pub fn test_paco_parallel_bootstrap<BE, F, E>(
     _module: &Module<BE>,
     _host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSLinearTransformationOps<BE>
@@ -359,9 +359,9 @@ pub fn test_paco_parallel_bootstrap<BE, F, E>(
         CKKSCompositionError::InvalidOperand {
             op: "ckks_paco_bootstrap_parallel_direct_into",
             reason: format!(
-                "PaCo worker 1 module degree {} does not match plan degree {}",
-                params.n / 2,
-                params.n
+                "PaCo plan degree {} exceeds the module degree {} of worker 1",
+                params.n,
+                params.n / 2
             ),
         },
     );
@@ -441,7 +441,7 @@ pub fn test_paco_encapsulated_bootstrap<BE, F, E>(
     _module: &Module<BE>,
     _host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSLinearTransformationOps<BE>
@@ -629,7 +629,7 @@ pub fn test_paco_bootstrap_into_rejects_narrow_encapsulation_key<BE, F, E>(
     _module: &Module<BE>,
     _host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSLinearTransformationOps<BE>

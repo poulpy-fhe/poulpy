@@ -1,5 +1,7 @@
 //! Conjugate-invariant NTT4x30 arithmetic: the negacyclic NTT behind a basis change.
 
+use std::marker::PhantomData;
+
 use poulpy_hal::layouts::ConjugateInvariant;
 
 use crate::kernels::ntt4x30::{
@@ -165,9 +167,12 @@ pub fn intt_portable<P: PrimeSetCrt4>(table: &NttTableInv<P, ConjugateInvariant>
 
 /// Builds the [`NttAutomorphismPlan`]: the first half of the standard
 /// degree-`2n` plan for the sign of `p` that is `1 mod 4`, which maps that half onto itself.
-pub fn build_ntt4x30_automorphism_plan_portable(n: usize, p: i64) -> NttAutomorphismPlan {
-    let mut plan = standard::build_ntt4x30_automorphism_plan_portable(2 * n, if p & 3 == 1 { p } else { -p });
-    plan.perm.truncate(n);
-    plan.p = p;
-    plan
+pub fn build_ntt4x30_automorphism_plan_portable(n: usize, p: i64) -> NttAutomorphismPlan<ConjugateInvariant> {
+    let mut perm = standard::build_ntt4x30_automorphism_plan_portable(2 * n, if p & 3 == 1 { p } else { -p }).perm;
+    perm.truncate(n);
+    NttAutomorphismPlan {
+        p,
+        perm,
+        ring: PhantomData,
+    }
 }

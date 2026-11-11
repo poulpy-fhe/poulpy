@@ -2,7 +2,7 @@
 
 use poulpy_hal::{
     api::{ModuleN, VecZnxCopy, VecZnxDftBytesOf, VecZnxNormalizeTmpBytes},
-    layouts::{Backend, Module, ScalarZnxToBackendRef, ScratchArena},
+    layouts::{Backend, Module, Ring, ScalarZnxToBackendRef, ScratchArena, Standard},
     oep::HalVecZnxImpl,
     source::Source,
 };
@@ -21,7 +21,7 @@ use crate::{
 /// Portable implementation using HAL operations.
 ///
 /// Backend implementations may call this helper without changing their override selection.
-pub trait GGLWECompressedEncryptSkReference<BE: Backend> {
+pub trait GGLWECompressedEncryptSkReference<BE: Backend, Rg: Ring = Standard> {
     fn gglwe_compressed_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos;
@@ -35,18 +35,18 @@ pub trait GGLWECompressedEncryptSkReference<BE: Backend> {
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GGLWECompressedToBackendMut<BE> + GGLWECompressedSeedMut,
-        P: ScalarZnxToBackendRef<BE>,
-        S: GLWESecretPreparedToBackendRef<BE>;
+        R: GGLWECompressedToBackendMut<BE, Rg> + GGLWECompressedSeedMut,
+        P: ScalarZnxToBackendRef<BE, Rg>,
+        S: GLWESecretPreparedToBackendRef<BE, Rg>;
 }
 
-impl<BE: Backend + HalVecZnxImpl> GGLWECompressedEncryptSkReference<BE> for Module<BE>
+impl<BE: Backend + HalVecZnxImpl<Rg>, Rg: Ring> GGLWECompressedEncryptSkReference<BE, Rg> for Module<BE>
 where
     Self: ModuleN
-        + GLWEEncryptSkInternal<BE>
-        + GLWEEncryptSk<BE>
-        + GLWEFill<BE>
-        + VecZnxCopy<BE>
+        + GLWEEncryptSkInternal<BE, Rg>
+        + GLWEEncryptSk<BE, Rg>
+        + GLWEFill<BE, Rg>
+        + VecZnxCopy<BE, Rg>
         + VecZnxDftBytesOf
         + VecZnxNormalizeTmpBytes,
 {
@@ -73,9 +73,9 @@ where
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GGLWECompressedToBackendMut<BE> + GGLWECompressedSeedMut,
-        P: ScalarZnxToBackendRef<BE>,
-        S: GLWESecretPreparedToBackendRef<BE>,
+        R: GGLWECompressedToBackendMut<BE, Rg> + GGLWECompressedSeedMut,
+        P: ScalarZnxToBackendRef<BE, Rg>,
+        S: GLWESecretPreparedToBackendRef<BE, Rg>,
     {
         let metadata = crate::component_noise::fresh_sk_noise(sk.to_backend_ref().dist, &res.to_backend_ref());
         {
@@ -98,9 +98,7 @@ where
                 crate::layouts::assert_secret_set(&sk_ref.dist);
                 assert!(
                     scratch.available() >= self.gglwe_compressed_encrypt_sk_tmp_bytes_reference(&res),
-                    "scratch.available(): {} < GGLWECompressedEncryptSk::gglwe_compressed_encrypt_sk_tmp_bytes: {}",
-                    scratch.available(),
-                    self.gglwe_compressed_encrypt_sk_tmp_bytes_reference(&res)
+                    "scratch.available() < GGLWECompressedEncryptSk::gglwe_compressed_encrypt_sk_tmp_bytes"
                 );
                 assert!(
                     res.k_offset().0 + res.dnum().0 * res.k_digit().0 <= res.k().0,

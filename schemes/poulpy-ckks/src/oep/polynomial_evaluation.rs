@@ -3,7 +3,7 @@ use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{BSGSMeta, GetTensorKey};
 use poulpy_core::layouts::{GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, SetBSGSMeta};
 
-use poulpy_hal::layouts::{Backend, Module, ScratchArena, Standard};
+use poulpy_hal::layouts::{Backend, Module, Ring, ScratchArena, Standard};
 
 use crate::{
     CKKSCtBounds, SetCKKSInfos,
@@ -18,13 +18,13 @@ use crate::{
 /// Implementations reproduce the bodies their methods document bit for bit, report for each
 /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait CKKSPolynomialEvaluationImpl:
+pub unsafe trait CKKSPolynomialEvaluationImpl<Rg: Ring = Standard>:
     Backend
-    + super::CKKSCopyImpl
-    + super::CKKSMulImpl
-    + super::CKKSPow2Impl
-    + super::CKKSSubImpl
-    + poulpy_core::oep::GLWENormalizeImpl
+    + super::CKKSCopyImpl<Rg>
+    + super::CKKSMulImpl<Rg>
+    + super::CKKSPow2Impl<Rg>
+    + super::CKKSSubImpl<Rg>
+    + poulpy_core::oep::GLWENormalizeImpl<Rg>
 {
     /// Reproduces
     /// [`ckks_eval_poly_real_const_coeffs_from_power_basis_reference`](crate::reference::polynomial_evaluation::CKKSPolynomialEvaluationReference::ckks_eval_poly_real_const_coeffs_from_power_basis_reference)
@@ -38,12 +38,12 @@ pub unsafe trait CKKSPolynomialEvaluationImpl:
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
-        B: BSGSPolynomialInfos<Self>,
+        R: GLWEToBackendMut<Self, Rg> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        B: BSGSPolynomialInfos<Self, Rg>,
         B::Coeffs: CKKSCtBounds,
-        A: GLWEToBackendRef<Self> + CKKSCtBounds + poulpy_core::layouts::BSGSMeta,
-        G: PowerBasisHelper<Self, A>,
-        H: GetTensorKey<Self>;
+        A: GLWEToBackendRef<Self, Rg> + CKKSCtBounds + poulpy_core::layouts::BSGSMeta,
+        G: PowerBasisHelper<Self, A, Rg>,
+        H: GetTensorKey<Self, Rg>;
 
     /// Default body: `ckks_eval_poly_real_const_coeffs_derived`, the folded input of the polynomial's input transform
     /// (an allocated copy through `ckks_copy` for the identity, `ckks_square_into` for the square forms,
@@ -60,12 +60,12 @@ pub unsafe trait CKKSPolynomialEvaluationImpl:
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
-        S: GLWEToBackendRef<Self> + CKKSCtBounds,
-        B: BSGSPolynomialInfos<Self>,
+        R: GLWEToBackendMut<Self, Rg> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        S: GLWEToBackendRef<Self, Rg> + CKKSCtBounds,
+        B: BSGSPolynomialInfos<Self, Rg>,
         B::Coeffs: CKKSCtBounds,
-        H: GetTensorKey<Self>,
-        CKKSCiphertextOwned<Self>: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
+        H: GetTensorKey<Self, Rg>,
+        CKKSCiphertextOwned<Self, Rg>: GLWEToBackendMut<Self, Rg> + GLWEToBackendRef<Self, Rg> + CKKSCtBounds + SetCKKSInfos,
     {
         crate::oep::derived::polynomial_evaluation::ckks_eval_poly_real_const_coeffs_derived(module, dst, src, bsgs, tsk, scratch)
     }
@@ -78,9 +78,9 @@ pub unsafe trait CKKSPolynomialEvaluationImpl:
 /// Implementations reproduce the bodies their methods document bit for bit, report for each
 /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait CKKSComplexPolynomialEvaluationImpl: Backend<Ring = Standard> + CKKSPolynomialEvaluationImpl {
+pub unsafe trait CKKSComplexPolynomialEvaluationImpl: Backend + CKKSPolynomialEvaluationImpl {
     /// Reproduces
-    /// [`ckks_eval_poly_complex_const_coeffs_from_power_basis_reference`](crate::reference::polynomial_evaluation::CKKSPolynomialEvaluationReference::ckks_eval_poly_complex_const_coeffs_from_power_basis_reference)
+    /// [`ckks_eval_poly_complex_const_coeffs_from_power_basis_reference`](crate::reference::polynomial_evaluation::CKKSComplexPolynomialEvaluationReference::ckks_eval_poly_complex_const_coeffs_from_power_basis_reference)
     /// bit for bit; free in kernels and scratch use. Its scratch is bounded by [`CKKSAllOpsTmpBytes::ckks_all_ops_tmp_bytes`](crate::api::CKKSAllOpsTmpBytes::ckks_all_ops_tmp_bytes).
     fn ckks_eval_poly_complex_const_coeffs_from_power_basis<R, C, A, G, H>(
         module: &Module<Self>,
@@ -129,7 +129,11 @@ pub unsafe trait CKKSComplexPolynomialEvaluationImpl: Backend<Ring = Standard> +
 #[macro_export]
 macro_rules! impl_ckks_polynomial_evaluation_reference_full {
     ($be:ty) => {
-        unsafe impl $crate::oep::CKKSPolynomialEvaluationImpl for $be {
+        $crate::impl_ckks_polynomial_evaluation_reference_full!($be, ::poulpy_hal::layouts::Standard);
+        $crate::impl_ckks_polynomial_evaluation_reference_full!($be, ::poulpy_hal::layouts::ConjugateInvariant);
+    };
+    ($be:ty, $ring:ty) => {
+        unsafe impl $crate::oep::CKKSPolynomialEvaluationImpl<$ring> for $be {
             fn ckks_eval_poly_real_const_coeffs_from_power_basis<R, B, A, G, H>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 res: &mut R,
@@ -139,19 +143,19 @@ macro_rules! impl_ckks_polynomial_evaluation_reference_full {
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
             ) -> $crate::CKKSResult<()>
             where
-                R: ::poulpy_core::layouts::GLWEToBackendMut<Self>
+                R: ::poulpy_core::layouts::GLWEToBackendMut<Self, $ring>
                     + $crate::CKKSCtBounds
                     + $crate::SetCKKSInfos
                     + ::poulpy_core::layouts::SetBSGSMeta,
-                B: $crate::api::BSGSPolynomialInfos<Self>,
+                B: $crate::api::BSGSPolynomialInfos<Self, $ring>,
                 B::Coeffs: $crate::CKKSCtBounds,
-                A: ::poulpy_core::layouts::GLWEToBackendRef<Self>
+                A: ::poulpy_core::layouts::GLWEToBackendRef<Self, $ring>
                     + $crate::CKKSCtBounds
                     + ::poulpy_core::layouts::BSGSMeta,
-                G: $crate::api::PowerBasisHelper<Self, A>,
-                H: ::poulpy_core::layouts::GetTensorKey<Self>,
+                G: $crate::api::PowerBasisHelper<Self, A, $ring>,
+                H: ::poulpy_core::layouts::GetTensorKey<Self, $ring>,
             {
-                $crate::reference::polynomial_evaluation::CKKSPolynomialEvaluationReference::ckks_eval_poly_real_const_coeffs_from_power_basis_reference::<R, B, A, G, H>(
+                $crate::reference::polynomial_evaluation::CKKSPolynomialEvaluationReference::<Self, $ring>::ckks_eval_poly_real_const_coeffs_from_power_basis_reference::<R, B, A, G, H>(
                     module, res, power_basis, poly, tsk, scratch,
                 )
             }
@@ -188,7 +192,7 @@ macro_rules! impl_ckks_complex_polynomial_evaluation_reference_full {
                 G: $crate::api::PowerBasisHelper<Self, A>,
                 H: ::poulpy_core::layouts::GetTensorKey<Self>,
             {
-                $crate::reference::polynomial_evaluation::CKKSPolynomialEvaluationReference::ckks_eval_poly_complex_const_coeffs_from_power_basis_reference::<R, C, A, G, H>(
+                $crate::reference::polynomial_evaluation::CKKSComplexPolynomialEvaluationReference::ckks_eval_poly_complex_const_coeffs_from_power_basis_reference::<R, C, A, G, H>(
                     module, res, power_basis, poly, tsk, scratch,
                 )
             }

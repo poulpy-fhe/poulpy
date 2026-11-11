@@ -13,7 +13,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     execution::{TaskExecutor, worker_scratch_bytes},
-    layouts::{Backend, ConjugateInvariant, Module, ScratchArena, Standard},
+    layouts::{Backend, ConjugateInvariant, Module, Ring, ScratchArena},
 };
 
 use crate::{
@@ -186,7 +186,7 @@ where
 /// with a row offset (sparse-to-dense, first factor) are laid out for one raise:
 /// they are checked against the raise this bootstrap runs. `op` names the
 /// bootstrap in the errors.
-fn check_key_widths<BE, M, F, K, T, C1, C2>(
+fn check_key_widths<BE, F, K, T, C1, C2, Rg: Ring>(
     op: &'static str,
     ct_out: &C1,
     ct_in: &C2,
@@ -196,9 +196,8 @@ fn check_key_widths<BE, M, F, K, T, C1, C2>(
 ) -> Result<()>
 where
     BE: Backend,
-    M: Backend,
     K: BootstrappingLinearKeys<BE>,
-    T: GetTensorKey<M>,
+    T: GetTensorKey<BE, Rg>,
     C1: CKKSCtBounds,
     C2: CKKSCtBounds,
 {
@@ -610,6 +609,11 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl> CKKSBoo
             ct_in.rank().as_usize(),
             ct_out.rank().as_usize()
         );
+        ckks_ensure_operand!(
+            OP,
+            ct_in.n().as_usize() == self.n() && ct_out.n().as_usize() == self.n(),
+            "takes ciphertexts of the module degree, at which its context is compiled"
+        );
 
         let encapsulation_keys = keys.encapsulation_keys();
         ckks_ensure_operand!(
@@ -818,6 +822,11 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl> CKKSBoo
         );
         ckks_ensure_operand!(
             OP,
+            ct_in.n().as_usize() == self.n() && out_n.as_usize() == self.n(),
+            "takes ciphertexts of the module degree, at which its context is compiled"
+        );
+        ckks_ensure_operand!(
+            OP,
             keys.encapsulation_keys().is_some() == ctx.sparse_secret_hamming_weight().is_some(),
             "bootstrapping key encapsulation does not match the compiled recipe"
         );
@@ -937,6 +946,7 @@ where
     // to the destination's requested modulus, so the widening width is `dst.k()`.
     // `dst.k()` is meta-derived and is `0` on a fresh ciphertext, which would
     // spuriously fail the "must widen" check below.
+    crate::ensure_operand_degrees(op, module, [dst.n(), src.n()])?;
     let k_large: usize = dst.k().as_usize();
     let k_small: usize = src.k().as_usize();
 
@@ -988,6 +998,7 @@ where
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
 {
+    crate::ensure_operand_degrees("ckks_bootstrap_mod_up", module, [dst.n(), src.n()])?;
     // The pipeline carves rank-1 intermediates, so reject higher-rank inputs
     // rather than silently copying into a rank-1 scratch ciphertext.
     ckks_ensure_operand!(
@@ -1457,20 +1468,18 @@ where
     bytes
 }
 
-/// Scratch of [`ckks_bootstrap_ci_reference`], `(scratch, scratch_ci)`: the raised
-/// ciphertext beside the linear stages, then beside the degree-`2N` ciphertext
-/// and the conversions; the traced and the reduced ciphertext beside EvalMod.
-pub fn ckks_bootstrap_ci_tmp_bytes_reference<BE, BCI, C1, C2, F>(
+/// Scratch of [`ckks_bootstrap_ci_reference`]: the raised ciphertext beside the linear
+/// stages, then beside the degree-`2N` ciphertext, the traced and the reduced ciphertext,
+/// the conversions and EvalMod, in one arena that serves both rings.
+pub fn ckks_bootstrap_ci_tmp_bytes_reference<BE, C1, C2, F>(
     module: &Module<BE>,
-    ci: &Module<BCI>,
     ct_out: &C1,
     ct_in: &C2,
     ctx: &BootstrappingContextPrepared<BE, F>,
     keys_layout: &BootstrappingKeysLayout,
-) -> (usize, usize)
+) -> usize
 where
     BE: Backend + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl,
-    BCI: Backend,
     Module<BE>: GLWEBytesOf<BE>
         + GLWELinearTransformationBabyStepsBytesOf<BE>
         + CKKSDFTOps<BE>
@@ -1480,15 +1489,18 @@ where
         + GLWECITrace<BE>
         + CKKSMulOps<BE>
         + CKKSAddOps<BE>
+        + CKKSCopyOps<BE>
         + CKKSLinearTransformationOps<BE>
-        + GLWERotate<BE>,
-    Module<BCI>: GLWEBytesOf<BCI> + CKKSEvalModOps<BCI>,
+        + GLWERotate<BE>
+        + CKKSEvalModOps<BE, ConjugateInvariant>
+        + CKKSPow2Ops<BE, ConjugateInvariant>
+        + CKKSSubOps<BE, ConjugateInvariant>,
     C1: CKKSCtBounds,
     C2: CKKSCtBounds,
 {
     // A context or a layout without conversions fails at the bootstrap.
     let (Some(eval_mod_ci), Some((trace_key, embed_key))) = (ctx.eval_mod_ci(), &keys_layout.conversion_keys) else {
-        return (0, 0);
+        return 0;
     };
     let (boot_layout, _) = bootstrap_layouts(ct_out, ct_in);
     let embedded = CKKSLayout {
@@ -1524,10 +1536,36 @@ where
                 + factors.max(embedded_bytes + module.glwe_rotate_tmp_bytes().max(module.ckks_add_tmp_bytes(embedded.size())))
         }
     };
-    let conversions = pre
-        .max(module.ckks_mul_pt_vec_tmp_bytes(&embedded, &embedded, &eval_mod_ci.post))
-        .max(module.glwe_keyswitch_tmp_bytes(&embedded, &embedded, embed_key))
-        .max(trace);
+    let ci_bytes = BE::scratch_aligned(module.glwe_bytes_of_from_infos(&boot_layout));
+    let on_ci = <Module<BE> as CKKSEvalModOps<BE, ConjugateInvariant>>::ckks_eval_mod_tmp_bytes(
+        module,
+        &boot_layout,
+        &boot_layout,
+        &eval_mod_ci.eval_mod,
+        &keys_layout.tensor_key,
+    )
+    .max(<Module<BE> as CKKSPow2Ops<BE, ConjugateInvariant>>::ckks_mul_pow2_tmp_bytes(
+        module,
+        boot_layout.size(),
+    ))
+    .max(<Module<BE> as CKKSSubOps<BE, ConjugateInvariant>>::ckks_sub_tmp_bytes(
+        module,
+        boot_layout.size(),
+    ));
+    // EvalRound+ adds the bypass back last, beside every carve.
+    let bypass_tail = match ctx.coeffs_to_slots_bypass() {
+        Some(_) => <Module<BE> as CKKSPow2Ops<BE>>::ckks_mul_pow2_tmp_bytes(module, boot_layout.size())
+            .max(module.ckks_add_tmp_bytes(boot_layout.size()))
+            .max(module.ckks_copy_tmp_bytes(ct_out, &boot_layout)),
+        None => 0,
+    };
+    // The traced and the reduced ciphertexts on the conjugate-invariant ring stay carved from the trace on.
+    let past_trace = 2 * ci_bytes
+        + trace
+            .max(on_ci)
+            .max(module.ckks_mul_pt_vec_tmp_bytes(&embedded, &embedded, &eval_mod_ci.post))
+            .max(module.glwe_keyswitch_tmp_bytes(&embedded, &embedded, embed_key))
+            .max(bypass_tail);
     let mut linear = s2c_first_linear_tmp_bytes(module, &boot_layout, ct_in, ctx, keys_layout);
     let ct_bytes = BE::scratch_aligned(module.glwe_bytes_of_from_infos(&boot_layout));
     // EvalRound+ holds the high-precision CoeffsToSlots beside the rest of the bootstrap.
@@ -1540,11 +1578,7 @@ where
         }
         None => 0,
     };
-    let ci_bytes = BCI::scratch_aligned(ci.glwe_bytes_of_from_infos(&boot_layout));
-    (
-        ct_bytes + bypass + linear.max(embedded_bytes + conversions),
-        2 * ci_bytes + ci.ckks_eval_mod_tmp_bytes(&boot_layout, &boot_layout, &eval_mod_ci.eval_mod, &keys_layout.tensor_key),
-    )
+    ct_bytes + bypass + linear.max(embedded_bytes + pre.max(past_trace))
 }
 
 /// `u·z(X²)` into `embedded`, of degree `2N`, from the input `w` of the last
@@ -1586,28 +1620,19 @@ where
 }
 
 /// The S2C-first bootstrap with EvalMod once on the conjugate-invariant ring
-/// ([`CKKSBootstrappingCIOps::ckks_bootstrap_ci_into`](crate::api::CKKSBootstrappingCIOps::ckks_bootstrap_ci_into)):
-/// SlotsToCoeffs, the raise and CoeffsToSlots without the split on `module`, of
-/// degree `N`, and the conversions at degree `2N`, on `module`; EvalMod on `ci`.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "the bootstrap takes a module and a scratch arena per ring"
-)]
-pub fn ckks_bootstrap_ci_reference<BE, BCI, Dst, Src, F, K>(
+/// ([`CKKSBootstrappingCIOps::ckks_bootstrap_ci_into`](crate::api::CKKSBootstrappingCIOps::ckks_bootstrap_ci_into)),
+/// on `module`, of degree `2N`: SlotsToCoeffs, the raise and CoeffsToSlots without the split at
+/// degree `N`, the conversions at degree `2N`, and EvalMod on the conjugate-invariant ring of degree `N`.
+pub fn ckks_bootstrap_ci_reference<BE, Dst, Src, F, K>(
     module: &Module<BE>,
-    ci: &Module<BCI>,
     ct_out: &mut Dst,
     ct_in: &Src,
     ctx: &BootstrappingContextPrepared<BE, F>,
     keys: &K,
     scratch: &mut ScratchArena<'_, BE>,
-    scratch_ci: &mut ScratchArena<'_, BCI>,
 ) -> Result<()>
 where
-    BE: Backend<Ring = Standard> + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl,
-    BCI: Backend<Ring = ConjugateInvariant, OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
-        + for<'a> Backend<BufRef<'a> = BE::BufRef<'a>, BufMut<'a> = BE::BufMut<'a>>
-        + 'static,
+    BE: Backend + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl,
     Module<BE>: GLWECopy<BE>
         + GLWEShift<BE>
         + GLWEKeyswitch<BE>
@@ -1621,9 +1646,11 @@ where
         + CKKSMulOps<BE>
         + CKKSAddOps<BE>
         + CKKSDFTOps<BE>
-        + GLWESwitchDegree<BE>,
-    Module<BCI>: CKKSEvalModOps<BCI>,
-    K: BootstrappingCIKeys<BE, BCI>,
+        + GLWESwitchDegree<BE>
+        + CKKSEvalModOps<BE, ConjugateInvariant>
+        + CKKSPow2Ops<BE, ConjugateInvariant>
+        + CKKSSubOps<BE, ConjugateInvariant>,
+    K: BootstrappingCIKeys<BE>,
     Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + BSGSMeta,
@@ -1641,15 +1668,12 @@ where
             "takes a context compiled by compile_ci and keys prepared by prepare_ci",
         ));
     };
-    if !(module.n() >= 2 * ct_in.n().as_usize()
-        && ci.n() == ct_in.n().as_usize()
+    if !(module.n() == 2 * ct_in.n().as_usize()
         && ct_out.n() == ct_in.n()
         && ct_in.rank().as_usize() == 1
         && ct_out.rank().as_usize() == 1)
     {
-        return Err(refuse(
-            "takes a module of degree at least 2N, a CI module of degree N and rank-1 ciphertexts of degree N",
-        ));
+        return Err(refuse("takes a module of degree 2N and rank-1 ciphertexts of degree N"));
     }
     if keys.encapsulation_keys().is_some() != ctx.sparse_secret_hamming_weight().is_some() {
         return Err(refuse(
@@ -1679,12 +1703,11 @@ where
         }
     }
     if let Some(keys_layout) = keys.keys_layout() {
-        let (bytes, bytes_ci) = ckks_bootstrap_ci_tmp_bytes_reference(module, ci, ct_out, ct_in, ctx, &keys_layout);
+        let bytes = ckks_bootstrap_ci_tmp_bytes_reference(module, ct_out, ct_in, ctx, &keys_layout);
         ckks_ensure!(
-            scratch.available() >= bytes && scratch_ci.available() >= bytes_ci,
-            "{op} needs scratch arenas of {bytes} and {bytes_ci} bytes, got {} and {}",
-            scratch.available(),
-            scratch_ci.available()
+            scratch.available() >= bytes,
+            "{op} needs a scratch arena of {bytes} bytes, got {}",
+            scratch.available()
         );
     }
 
@@ -1717,8 +1740,7 @@ where
         let (mut embedded, mut scratch) = scratch.borrow().take_ckks_ciphertext_scratch(&wide_layout, z.meta());
 
         // `z(X²)` times `u`, traced onto the CI ring without halving: `2·Re(u·z)`, the
-        // split EvalMod input. The CI ciphertexts are carved from `scratch_ci`; the
-        // two backends share their buffers, so `module` writes and reads them.
+        // split EvalMod input.
         match &eval_mod_ci.pre.0 {
             crate::layouts::bootstrapping::CIPreForm::Product(u) => {
                 embedded.set_k(z.k());
@@ -1733,10 +1755,8 @@ where
             slots: SlotsKind::Real,
             ..embedded.meta()
         };
-        let scratch_ci = scratch_ci.borrow();
-        let (traced, scratch_ci) = scratch_ci.take_ckks_ciphertext_scratch(&boot_layout, meta);
-        let (mut reduced, mut scratch_ci) = scratch_ci.take_ckks_ciphertext_scratch(&boot_layout, meta);
-        let mut traced = traced.rebind::<BE>();
+        let (mut traced, scratch) = scratch.take_ckks_ciphertext_scratch::<_, ConjugateInvariant>(&boot_layout, meta);
+        let (mut reduced, mut scratch) = scratch.take_ckks_ciphertext_scratch::<_, ConjugateInvariant>(&boot_layout, meta);
         traced.set_k(embedded.k());
         {
             let (mut switched, mut scratch) = scratch.borrow().take_ckks_ciphertext_scratch(&embedded, embedded.meta());
@@ -1745,16 +1765,8 @@ where
         }
 
         // One EvalMod for all `N` coefficients.
-        let traced = traced.rebind::<BCI>();
         reduced.set_k(traced.k());
-        ci.ckks_eval_mod(
-            &mut reduced,
-            &traced,
-            &eval_mod_ci.eval_mod,
-            keys.tensor_key(),
-            &mut scratch_ci,
-        )?;
-        let mut reduced = reduced.rebind::<BE>();
+        module.ckks_eval_mod(&mut reduced, &traced, &eval_mod_ci.eval_mod, keys.tensor_key(), &mut scratch)?;
         // EvalRound+: `EvalMod(x) − K·x` on the very input `x` of EvalMod, so that the
         // error of the low-precision CoeffsToSlots cancels; the bypass is added back
         // at the end. Both are coefficient-wise, the same on either ring.
@@ -1765,7 +1777,6 @@ where
                 "EvalRound+ requires a power-of-two f_mod_interval, got {}",
                 ctx.eval_mod_plan().f_mod_interval
             );
-            let mut traced = traced.rebind::<BE>();
             let log2_k = ctx.eval_mod_plan().f_mod_interval.trailing_zeros() as usize;
             module.ckks_mul_pow2_assign(log2_k, &mut traced, &mut scratch)?;
             module.ckks_sub_assign(&mut reduced, &traced, &mut scratch)?;
@@ -1823,6 +1834,7 @@ where
     Src: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
 {
     const OP: &str = "ckks_bootstrap_mod_up";
+    crate::ensure_operand_degrees(OP, module, [dst.n(), src.n()])?;
     ensure_encapsulation_covers(dst, src, dense_to_sparse, sparse_to_dense)?;
     // The switch keeps the width of `src`: the raise's checks run before it.
     let (k_large, k_small) = (dst.k().as_usize(), src.k().as_usize());
@@ -1998,16 +2010,14 @@ where
 /// Reference bodies of the required [`CKKSBootstrappingCIImpl`](crate::oep::CKKSBootstrappingCIImpl) methods, which
 /// [`impl_ckks_bootstrapping_ci_reference_full!`](crate::impl_ckks_bootstrapping_ci_reference_full) forwards to.
 pub trait CKKSBootstrappingCIReference<BE: Backend> {
-    fn ckks_bootstrap_ci_tmp_bytes_reference<BCI, C1, C2, F>(
+    fn ckks_bootstrap_ci_tmp_bytes_reference<C1, C2, F>(
         &self,
-        ci: &Module<BCI>,
         ct_out: &C1,
         ct_in: &C2,
         ctx: &BootstrappingContextPrepared<BE, F>,
         keys_layout: &BootstrappingKeysLayout,
-    ) -> (usize, usize)
+    ) -> usize
     where
-        BCI: Backend,
         Module<BE>: GLWEBytesOf<BE>
             + GLWELinearTransformationBabyStepsBytesOf<BE>
             + CKKSDFTOps<BE>
@@ -2017,30 +2027,24 @@ pub trait CKKSBootstrappingCIReference<BE: Backend> {
             + GLWECITrace<BE>
             + CKKSMulOps<BE>
             + CKKSAddOps<BE>
+            + CKKSCopyOps<BE>
             + CKKSLinearTransformationOps<BE>
-            + GLWERotate<BE>,
-        Module<BCI>: GLWEBytesOf<BCI> + CKKSEvalModOps<BCI>,
+            + GLWERotate<BE>
+            + CKKSEvalModOps<BE, ConjugateInvariant>
+            + CKKSPow2Ops<BE, ConjugateInvariant>
+            + CKKSSubOps<BE, ConjugateInvariant>,
         C1: CKKSCtBounds,
         C2: CKKSCtBounds;
 
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "the bootstrap takes a module and a scratch arena per ring"
-    )]
-    fn ckks_bootstrap_ci_reference<BCI, Dst, Src, F, K>(
+    fn ckks_bootstrap_ci_reference<Dst, Src, F, K>(
         &self,
-        ci: &Module<BCI>,
         ct_out: &mut Dst,
         ct_in: &Src,
         ctx: &BootstrappingContextPrepared<BE, F>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
-        scratch_ci: &mut ScratchArena<'_, BCI>,
     ) -> Result<()>
     where
-        BCI: Backend<Ring = ConjugateInvariant, OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
-            + for<'a> Backend<BufRef<'a> = BE::BufRef<'a>, BufMut<'a> = BE::BufMut<'a>>
-            + 'static,
         Module<BE>: GLWECopy<BE>
             + GLWEShift<BE>
             + GLWEKeyswitch<BE>
@@ -2054,9 +2058,11 @@ pub trait CKKSBootstrappingCIReference<BE: Backend> {
             + CKKSMulOps<BE>
             + CKKSAddOps<BE>
             + CKKSDFTOps<BE>
-            + GLWESwitchDegree<BE>,
-        Module<BCI>: CKKSEvalModOps<BCI>,
-        K: BootstrappingCIKeys<BE, BCI>,
+            + GLWESwitchDegree<BE>
+            + CKKSEvalModOps<BE, ConjugateInvariant>
+            + CKKSPow2Ops<BE, ConjugateInvariant>
+            + CKKSSubOps<BE, ConjugateInvariant>,
+        K: BootstrappingCIKeys<BE>,
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         CKKSCiphertextOwned<BE>:
@@ -2064,16 +2070,14 @@ pub trait CKKSBootstrappingCIReference<BE: Backend> {
 }
 
 impl<BE: Backend + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl> CKKSBootstrappingCIReference<BE> for Module<BE> {
-    fn ckks_bootstrap_ci_tmp_bytes_reference<BCI, C1, C2, F>(
+    fn ckks_bootstrap_ci_tmp_bytes_reference<C1, C2, F>(
         &self,
-        ci: &Module<BCI>,
         ct_out: &C1,
         ct_in: &C2,
         ctx: &BootstrappingContextPrepared<BE, F>,
         keys_layout: &BootstrappingKeysLayout,
-    ) -> (usize, usize)
+    ) -> usize
     where
-        BCI: Backend,
         Module<BE>: GLWEBytesOf<BE>
             + GLWELinearTransformationBabyStepsBytesOf<BE>
             + CKKSDFTOps<BE>
@@ -2083,29 +2087,27 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl> CKKSBoo
             + GLWECITrace<BE>
             + CKKSMulOps<BE>
             + CKKSAddOps<BE>
+            + CKKSCopyOps<BE>
             + CKKSLinearTransformationOps<BE>
-            + GLWERotate<BE>,
-        Module<BCI>: GLWEBytesOf<BCI> + CKKSEvalModOps<BCI>,
+            + GLWERotate<BE>
+            + CKKSEvalModOps<BE, ConjugateInvariant>
+            + CKKSPow2Ops<BE, ConjugateInvariant>
+            + CKKSSubOps<BE, ConjugateInvariant>,
         C1: CKKSCtBounds,
         C2: CKKSCtBounds,
     {
-        ckks_bootstrap_ci_tmp_bytes_reference(self, ci, ct_out, ct_in, ctx, keys_layout)
+        ckks_bootstrap_ci_tmp_bytes_reference(self, ct_out, ct_in, ctx, keys_layout)
     }
 
-    fn ckks_bootstrap_ci_reference<BCI, Dst, Src, F, K>(
+    fn ckks_bootstrap_ci_reference<Dst, Src, F, K>(
         &self,
-        ci: &Module<BCI>,
         ct_out: &mut Dst,
         ct_in: &Src,
         ctx: &BootstrappingContextPrepared<BE, F>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
-        scratch_ci: &mut ScratchArena<'_, BCI>,
     ) -> Result<()>
     where
-        BCI: Backend<Ring = ConjugateInvariant, OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
-            + for<'a> Backend<BufRef<'a> = BE::BufRef<'a>, BufMut<'a> = BE::BufMut<'a>>
-            + 'static,
         Module<BE>: GLWECopy<BE>
             + GLWEShift<BE>
             + GLWEKeyswitch<BE>
@@ -2119,15 +2121,17 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl> CKKSBoo
             + CKKSMulOps<BE>
             + CKKSAddOps<BE>
             + CKKSDFTOps<BE>
-            + GLWESwitchDegree<BE>,
-        Module<BCI>: CKKSEvalModOps<BCI>,
-        K: BootstrappingCIKeys<BE, BCI>,
+            + GLWESwitchDegree<BE>
+            + CKKSEvalModOps<BE, ConjugateInvariant>
+            + CKKSPow2Ops<BE, ConjugateInvariant>
+            + CKKSSubOps<BE, ConjugateInvariant>,
+        K: BootstrappingCIKeys<BE>,
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         CKKSCiphertextOwned<BE>:
             GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + BSGSMeta,
     {
-        ckks_bootstrap_ci_reference(self, ci, ct_out, ct_in, ctx, keys, scratch, scratch_ci)
+        ckks_bootstrap_ci_reference(self, ct_out, ct_in, ctx, keys, scratch)
     }
 }
 

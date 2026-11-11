@@ -3,7 +3,7 @@ use crate::CKKSResult as Result;
 use poulpy_core::layouts::{
     BSGSMeta, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetTensorKey, IntPolyInfos, LWEInfos, SetBSGSMeta,
 };
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Module, Ring, ScratchArena, Standard};
 
 use crate::{
     CKKSCtBounds, CKKSInfos, SetCKKSInfos,
@@ -28,8 +28,8 @@ use crate::{
 /// Implementations reproduce the bodies their methods document bit for bit, report for each
 /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait CKKSApproximationImpl:
-    Backend + CKKSAddImpl + CKKSAffineImpl + CKKSCopyImpl + CKKSPow2Impl + CKKSPolynomialEvaluationImpl
+pub unsafe trait CKKSApproximationImpl<Rg: Ring = Standard>:
+    Backend + CKKSAddImpl<Rg> + CKKSAffineImpl<Rg> + CKKSCopyImpl<Rg> + CKKSPow2Impl<Rg> + CKKSPolynomialEvaluationImpl<Rg>
 {
     /// Default body: `ckks_polynomial_approximation_eval_tmp_bytes_derived`, the larger of the selected `ckks_all_ops_tmp_bytes` at
     /// `res` and at `input`, both against the first baby-step coefficient layout and `tsk`. An approximation with an
@@ -70,10 +70,10 @@ pub unsafe trait CKKSApproximationImpl:
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
-        I: GLWEToBackendRef<Self> + CKKSCtBounds,
-        P: GLWEToBackendRef<Self> + CKKSCtBounds + BSGSMeta + IntPolyInfos,
-        H: GetTensorKey<Self>,
+        R: GLWEToBackendMut<Self, Rg> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        I: GLWEToBackendRef<Self, Rg> + CKKSCtBounds,
+        P: GLWEToBackendRef<Self, Rg> + CKKSCtBounds + BSGSMeta + IntPolyInfos,
+        H: GetTensorKey<Self, Rg>,
     {
         ckks_polynomial_approximation_eval_derived(module, res, input, approximation, tsk, scratch)
     }
@@ -83,7 +83,11 @@ pub unsafe trait CKKSApproximationImpl:
 #[macro_export]
 macro_rules! impl_ckks_approximation_derived_full {
     ($be:ty) => {
-        unsafe impl $crate::oep::CKKSApproximationImpl for $be {}
+        $crate::impl_ckks_approximation_derived_full!($be, ::poulpy_hal::layouts::Standard);
+        $crate::impl_ckks_approximation_derived_full!($be, ::poulpy_hal::layouts::ConjugateInvariant);
+    };
+    ($be:ty, $ring:ty) => {
+        unsafe impl $crate::oep::CKKSApproximationImpl<$ring> for $be {}
     };
 }
 

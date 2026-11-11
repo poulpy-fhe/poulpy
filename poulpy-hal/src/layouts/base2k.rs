@@ -6,6 +6,9 @@ use super::{Backend, ConjugateInvariant, Ring, ZnxWord};
 pub trait MaxBase2k: Backend {
     /// Estimates the largest radix for `products` accumulated degree-`n` products
     /// with a whole-polynomial failure target of `2^(-failure_bits)`.
+    /// `Rg` is the ring of the operands, whose product map sets how many terms
+    /// a product coefficient sums (more on the conjugate-invariant ring than on
+    /// the standard ring of the same degree), so the two rings may get different radices.
     /// Set `squaring` if any term is a square; `products` still counts actual
     /// terms (one for a single square). Otherwise all operands are independent.
     /// Caps the radix at `Self::ZnxWord::BITS - 2` for coefficient headroom.
@@ -18,7 +21,7 @@ pub trait MaxBase2k: Backend {
     /// Their Gaussian failure estimates are not guarantees; other correlations,
     /// including operand reuse across terms, require a separate model, such as
     /// [`Self::max_base2k_squares`] for a vector's convolution with itself.
-    fn max_base2k(n: usize, products: usize, failure_bits: usize, squaring: bool) -> usize;
+    fn max_base2k<Rg: Ring>(n: usize, products: usize, failure_bits: usize, squaring: bool) -> usize;
 
     /// As [`Self::max_base2k`], for `products` terms of which only `squares`
     /// are squares. By default every term is a square when any is, as
@@ -33,8 +36,8 @@ pub trait MaxBase2k: Backend {
     /// at most `2v`; and the terms are uncorrelated, each covariance having an
     /// independent centered factor. So the variance stays within the model's, at
     /// equality, and only the diagonal terms carry a square's mean.
-    fn max_base2k_squares(n: usize, products: usize, squares: usize, failure_bits: usize) -> usize {
-        Self::max_base2k(n, products, failure_bits, squares > 0)
+    fn max_base2k_squares<Rg: Ring>(n: usize, products: usize, squares: usize, failure_bits: usize) -> usize {
+        Self::max_base2k::<Rg>(n, products, failure_bits, squares > 0)
     }
 }
 
@@ -51,8 +54,14 @@ pub trait MaxBase2k: Backend {
 /// # Panics
 /// Panics unless `log2_modulus` is finite and positive, `n` is a power of two
 /// at least 2, and `products` and `failure_bits` are positive.
-pub fn max_base2k_ntt<B: Backend>(log2_modulus: f64, n: usize, products: usize, failure_bits: usize, squaring: bool) -> usize {
-    max_base2k_ntt_squares::<B>(log2_modulus, n, products, if squaring { products } else { 0 }, failure_bits)
+pub fn max_base2k_ntt<B: Backend, Rg: Ring>(
+    log2_modulus: f64,
+    n: usize,
+    products: usize,
+    failure_bits: usize,
+    squaring: bool,
+) -> usize {
+    max_base2k_ntt_squares::<B, Rg>(log2_modulus, n, products, if squaring { products } else { 0 }, failure_bits)
 }
 
 /// [`max_base2k_ntt`] for `products` terms of which `squares` are squares: the
@@ -63,7 +72,7 @@ pub fn max_base2k_ntt<B: Backend>(log2_modulus: f64, n: usize, products: usize, 
 ///
 /// # Panics
 /// As [`max_base2k_ntt`], and unless `squares <= products`.
-pub fn max_base2k_ntt_squares<B: Backend>(
+pub fn max_base2k_ntt_squares<B: Backend, Rg: Ring>(
     log2_modulus: f64,
     n: usize,
     products: usize,
@@ -82,7 +91,7 @@ pub fn max_base2k_ntt_squares<B: Backend>(
 
     let log2_n = n.ilog2() as f64;
     let d = products as f64;
-    let (weight, square_mean) = if conjugate_invariant::<B>() {
+    let (weight, square_mean) = if conjugate_invariant::<Rg>() {
         (4.0 * n as f64 - 3.0, 2.0 * n as f64 - 1.0)
     } else {
         (n as f64, 0.0)
@@ -118,7 +127,7 @@ pub fn max_base2k_ntt_squares<B: Backend>(
 /// # Panics
 /// Panics unless `n` is a power of two at least 2, and `products` and
 /// `failure_bits` are positive.
-pub fn max_base2k_fft64<B: Backend>(n: usize, products: usize, failure_bits: usize, squaring: bool) -> usize {
+pub fn max_base2k_fft64<B: Backend, Rg: Ring>(n: usize, products: usize, failure_bits: usize, squaring: bool) -> usize {
     assert!(n >= 2 && n.is_power_of_two(), "FFT degree must be a power of two >= 2");
     assert!(products > 0, "the number of accumulated products must be positive");
     assert!(failure_bits > 0, "the failure target must be positive");
@@ -126,7 +135,7 @@ pub fn max_base2k_fft64<B: Backend>(n: usize, products: usize, failure_bits: usi
     let log2_n = n.ilog2() as f64;
     // Floating-point count arithmetic avoids usize overflow for large counts.
     let d = products as f64;
-    let log2_variance = if conjugate_invariant::<B>() {
+    let log2_variance = if conjugate_invariant::<Rg>() {
         // A DCT is its cyclic FFT's `log2(n) - 1` stages and three more.
         let transform = 5.0 / 3.0 * (log2_n + 2.0);
         // Slot terms in units of the squared slot variance `(2n - 1) * sigma^2`.
@@ -151,8 +160,8 @@ pub fn max_base2k_fft64<B: Backend>(n: usize, products: usize, failure_bits: usi
     max_base2k_from_log2_x::<B>(log2_x, 0.0, failure_bits as f64 + log2_n)
 }
 
-fn conjugate_invariant<B: Backend>() -> bool {
-    B::Ring::CYCLOTOMIC_ORDER_FACTOR == ConjugateInvariant::CYCLOTOMIC_ORDER_FACTOR
+fn conjugate_invariant<Rg: Ring>() -> bool {
+    Rg::CYCLOTOMIC_ORDER_FACTOR == ConjugateInvariant::CYCLOTOMIC_ORDER_FACTOR
 }
 
 // `log2_x` is log2(T / (sqrt(2) * sigma)) at K = 0; sigma grows as 2^(2*K), and so
@@ -177,7 +186,7 @@ fn max_base2k_from_log2_x<B: Backend>(log2_x: f64, shift: f64, failure_bits: f64
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::layouts::HostBytesBackend;
+    use crate::layouts::{HostBytesBackend, Standard};
 
     #[test]
     fn mills_bound_admits_larger_radices_at_the_requested_target() {
@@ -185,55 +194,86 @@ mod tests {
         // Both have a whole-polynomial bound of 2^-130.074... at K = 54.
         for (squaring, products) in [(false, 40), (true, 20)] {
             assert_eq!(
-                max_base2k_ntt::<HostBytesBackend>(119.886_155_257_481_1, 1 << 16, products, 130, squaring),
+                max_base2k_ntt::<HostBytesBackend, Standard>(119.886_155_257_481_1, 1 << 16, products, 130, squaring),
                 54
             );
             assert_eq!(
-                max_base2k_ntt::<HostBytesBackend>(119.886_155_257_481_1, 1 << 16, products, 131, squaring),
+                max_base2k_ntt::<HostBytesBackend, Standard>(119.886_155_257_481_1, 1 << 16, products, 131, squaring),
                 53
             );
         }
         // FFT bounds are 2^-128.125... for products and 2^-96.743... for squares.
-        assert_eq!(max_base2k_fft64::<HostBytesBackend>(1 << 16, 35, 128, false), 19);
-        assert_eq!(max_base2k_fft64::<HostBytesBackend>(1 << 16, 35, 129, false), 18);
-        assert_eq!(max_base2k_fft64::<HostBytesBackend>(8, 1, 96, true), 24);
-        assert_eq!(max_base2k_fft64::<HostBytesBackend>(8, 1, 97, true), 23);
+        assert_eq!(max_base2k_fft64::<HostBytesBackend, Standard>(1 << 16, 35, 128, false), 19);
+        assert_eq!(max_base2k_fft64::<HostBytesBackend, Standard>(1 << 16, 35, 129, false), 18);
+        assert_eq!(max_base2k_fft64::<HostBytesBackend, Standard>(8, 1, 96, true), 24);
+        assert_eq!(max_base2k_fft64::<HostBytesBackend, Standard>(8, 1, 97, true), 23);
     }
 
     #[test]
     fn conjugate_invariant_bounds_the_constant_coefficient() {
-        type Ci = HostBytesBackend<ConjugateInvariant>;
         let log2_q = 119.886_155_257_481_1;
         // NTT bound for 32 products: 2^-698.975... at K = 53.
-        assert_eq!(max_base2k_ntt::<Ci>(log2_q, 1 << 16, 32, 698, false), 53);
-        assert_eq!(max_base2k_ntt::<Ci>(log2_q, 1 << 16, 32, 699, false), 52);
+        assert_eq!(
+            max_base2k_ntt::<HostBytesBackend, ConjugateInvariant>(log2_q, 1 << 16, 32, 698, false),
+            53
+        );
+        assert_eq!(
+            max_base2k_ntt::<HostBytesBackend, ConjugateInvariant>(log2_q, 1 << 16, 32, 699, false),
+            52
+        );
         // A square's mean alone exceeds Q/2 at K = 53; the bound is 2^-74244.972... at K = 52.
-        assert_eq!(max_base2k_ntt::<Ci>(log2_q, 1 << 16, 1, 1, true), 52);
-        assert_eq!(max_base2k_ntt::<Ci>(log2_q, 1 << 16, 1, 74_244, true), 52);
-        assert_eq!(max_base2k_ntt::<Ci>(log2_q, 1 << 16, 1, 74_245, true), 51);
+        assert_eq!(
+            max_base2k_ntt::<HostBytesBackend, ConjugateInvariant>(log2_q, 1 << 16, 1, 1, true),
+            52
+        );
+        assert_eq!(
+            max_base2k_ntt::<HostBytesBackend, ConjugateInvariant>(log2_q, 1 << 16, 1, 74_244, true),
+            52
+        );
+        assert_eq!(
+            max_base2k_ntt::<HostBytesBackend, ConjugateInvariant>(log2_q, 1 << 16, 1, 74_245, true),
+            51
+        );
         // FFT bounds are 2^-544.148... for 32 products and 2^-143.852... for 32 squares.
-        assert_eq!(max_base2k_fft64::<Ci>(1 << 16, 32, 544, false), 18);
-        assert_eq!(max_base2k_fft64::<Ci>(1 << 16, 32, 545, false), 17);
-        assert_eq!(max_base2k_fft64::<Ci>(1 << 16, 32, 143, true), 15);
-        assert_eq!(max_base2k_fft64::<Ci>(1 << 16, 32, 144, true), 14);
+        assert_eq!(
+            max_base2k_fft64::<HostBytesBackend, ConjugateInvariant>(1 << 16, 32, 544, false),
+            18
+        );
+        assert_eq!(
+            max_base2k_fft64::<HostBytesBackend, ConjugateInvariant>(1 << 16, 32, 545, false),
+            17
+        );
+        assert_eq!(
+            max_base2k_fft64::<HostBytesBackend, ConjugateInvariant>(1 << 16, 32, 143, true),
+            15
+        );
+        assert_eq!(
+            max_base2k_fft64::<HostBytesBackend, ConjugateInvariant>(1 << 16, 32, 144, true),
+            14
+        );
     }
 
     #[test]
     fn squares_take_their_mean_once_each() {
-        type Ci = HostBytesBackend<ConjugateInvariant>;
         let log2_q = 119.886_155_257_481_1;
         // Every term a square, or none, is the boolean form.
         for products in [1, 27, 32] {
             for (squares, squaring) in [(products, true), (0, false)] {
                 assert_eq!(
-                    max_base2k_ntt_squares::<Ci>(log2_q, 1 << 16, products, squares, 128),
-                    max_base2k_ntt::<Ci>(log2_q, 1 << 16, products, 128, squaring)
+                    max_base2k_ntt_squares::<HostBytesBackend, ConjugateInvariant>(log2_q, 1 << 16, products, squares, 128),
+                    max_base2k_ntt::<HostBytesBackend, ConjugateInvariant>(log2_q, 1 << 16, products, 128, squaring)
                 );
             }
         }
         // 27 terms of which one is a square, as an output limb of a ciphertext's
         // square: the mean of one square, not of 27.
-        assert_eq!(max_base2k_ntt::<Ci>(log2_q, 1 << 16, 27, 128, true), 50);
-        assert_eq!(max_base2k_ntt_squares::<Ci>(log2_q, 1 << 16, 27, 1, 128), 52);
+        assert_eq!(
+            max_base2k_ntt::<HostBytesBackend, ConjugateInvariant>(log2_q, 1 << 16, 27, 128, true),
+            50
+        );
+        assert_eq!(
+            max_base2k_ntt_squares::<HostBytesBackend, ConjugateInvariant>(log2_q, 1 << 16, 27, 1, 128),
+            52
+        );
     }
 }

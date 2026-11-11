@@ -238,7 +238,7 @@ impl<D: Data, W: ZnxWord> PaCoKeySet<D, W> {
     /// revalidated against `plan` immediately before backend preprocessing,
     /// and insufficient scratch is reported as an error rather than reaching
     /// the lower-level preparation assertions.
-    pub fn prepare<BE: Backend<OwnedBuf = D, ZnxWord = W, Ring = Standard>>(
+    pub fn prepare<BE: Backend<OwnedBuf = D, ZnxWord = W>>(
         &self,
         plan: &PaCoPlan,
         module: &Module<BE>,
@@ -262,10 +262,10 @@ impl<D: Data, W: ZnxWord> PaCoKeySet<D, W> {
             PaCoKeyParameters::from_plan(plan),
         );
         ensure!(
-            module.n() == plan.n(),
-            "PaCo key-preparation module degree {} does not match plan degree {}",
-            module.n(),
+            plan.n() <= module.n(),
+            "PaCo plan degree {} exceeds the key-preparation module degree {}",
             plan.n(),
+            module.n(),
         );
         validate_material(
             plan,
@@ -299,7 +299,7 @@ impl<D: Data, W: ZnxWord> PaCoKeySet<D, W> {
     /// This is the preferred eager-preparation path when the unprepared set is
     /// no longer needed. It applies the same full validation and scratch
     /// preflight as [`Self::prepare`].
-    pub fn into_prepare<BE: Backend<OwnedBuf = D, ZnxWord = W, Ring = Standard>>(
+    pub fn into_prepare<BE: Backend<OwnedBuf = D, ZnxWord = W>>(
         self,
         plan: &PaCoPlan,
         module: &Module<BE>,
@@ -328,10 +328,10 @@ impl<D: Data, W: ZnxWord> PaCoKeySet<D, W> {
             PaCoKeyParameters::from_plan(plan),
         );
         ensure!(
-            module.n() == plan.n(),
-            "PaCo key-preparation module degree {} does not match plan degree {}",
-            module.n(),
+            plan.n() <= module.n(),
+            "PaCo plan degree {} exceeds the key-preparation module degree {}",
             plan.n(),
+            module.n(),
         );
         validate_material(
             plan,
@@ -728,7 +728,7 @@ mod tests {
     fn backend_view_must_match_reported_layout() {
         let module = Module::<HostBytesBackend>::new(256);
         let key = MisreportedCiphertext(module.ckks_ciphertext_alloc(Base2K(19), TorusPrecision(38)));
-        let error = validate_backend_storage_capacity::<HostBytesBackend, _>("custom PaCo key", &key)
+        let error = validate_backend_storage_capacity::<HostBytesBackend, _, Standard>("custom PaCo key", &key)
             .expect_err("a custom key must not misreport its backend layout");
         assert!(
             error.to_string().contains("backend-native view"),

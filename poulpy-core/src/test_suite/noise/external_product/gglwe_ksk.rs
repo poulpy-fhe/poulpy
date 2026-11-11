@@ -1,6 +1,6 @@
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxRotateAssign},
-    layouts::{Module, ScalarZnx, ScratchOwned, ZnxViewMut},
+    layouts::{Module, ScalarZnx, ScratchOwned, Standard, ZnxViewMut},
     source::Source,
     test_suite::TestParams,
 };
@@ -154,7 +154,8 @@ pub fn test_gglwe_switching_key_external_product<BE: crate::test_suite::noise::T
                 );
 
                 {
-                    let mut sk_in_as_vec = crate::test_suite::noise::scalar_znx_as_vec_znx_backend_mut::<BE>(&mut sk_in.data);
+                    let mut sk_in_as_vec =
+                        crate::test_suite::noise::scalar_znx_as_vec_znx_backend_mut::<BE, Standard>(&mut sk_in.data);
                     (0..rank_in).for_each(|i| {
                         module.vec_znx_rotate_assign(r as i64, &mut sk_in_as_vec, i, &mut scratch.borrow()); // * X^{r}
                     });
@@ -320,7 +321,8 @@ pub fn test_gglwe_switching_key_external_product_assign<BE: crate::test_suite::n
                 );
 
                 {
-                    let mut sk_in_as_vec = crate::test_suite::noise::scalar_znx_as_vec_znx_backend_mut::<BE>(&mut sk_in.data);
+                    let mut sk_in_as_vec =
+                        crate::test_suite::noise::scalar_znx_as_vec_znx_backend_mut::<BE, Standard>(&mut sk_in.data);
                     (0..rank_in).for_each(|i| {
                         module.vec_znx_rotate_assign(r as i64, &mut sk_in_as_vec, i, &mut scratch.borrow()); // * X^{r}
                     });

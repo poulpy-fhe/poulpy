@@ -1,7 +1,10 @@
 use poulpy_core::test_suite::parity::{
     ONE_PASS_PRODUCT_ROLES, ONE_PASS_SUM_ROLES, ParityShapes, test_tensor_relinearize_decrypt_parity_roles,
 };
-use poulpy_hal::{layouts::Module, test_suite::TestParams};
+use poulpy_hal::{
+    layouts::{ConjugateInvariant, Module, Standard},
+    test_suite::TestParams,
+};
 
 macro_rules! one_pass_case {
     ($name:ident, $tested:ty, $oracle:ty, $n:expr, $module_n:expr) => {
@@ -9,16 +12,17 @@ macro_rules! one_pass_case {
             $name,
             $tested,
             $oracle,
+            Standard,
             $n,
             $module_n,
             52,
             &[&ONE_PASS_PRODUCT_ROLES[..], &ONE_PASS_SUM_ROLES[..]].concat()
         );
     };
-    ($name:ident, $tested:ty, $oracle:ty, $n:expr, $module_n:expr, $base2k:expr, $roles:expr) => {
+    ($name:ident, $tested:ty, $oracle:ty, $ring:ty, $n:expr, $module_n:expr, $base2k:expr, $roles:expr) => {
         #[test]
         fn $name() {
-            test_tensor_relinearize_decrypt_parity_roles(
+            test_tensor_relinearize_decrypt_parity_roles::<_, _, $ring>(
                 &TestParams {
                     n: $n,
                     size: $module_n,
@@ -71,8 +75,9 @@ one_pass_case!(ifma_fallback, crate::NTT3x42Ifma, poulpy_cpu_oracle::NTT4x30Orac
 one_pass_case!(ifma_n16, crate::NTT3x42Ifma, poulpy_cpu_oracle::NTT4x30Oracle, 65536, 65536);
 one_pass_case!(
     ifma_ci_n16,
-    crate::NTT3x42CIIfma,
-    poulpy_cpu_oracle::NTT4x30CIOracle,
+    crate::NTT3x42Ifma,
+    poulpy_cpu_oracle::NTT4x30Oracle,
+    ConjugateInvariant,
     65536,
     65536,
     52,
@@ -81,8 +86,9 @@ one_pass_case!(
 // No radix model on this ring: at base2k 52 the sum of three pairs, one a square, exceeds the oracle's 120-bit NTT.
 one_pass_case!(
     ifma_ci_n16_sums,
-    crate::NTT3x42CIIfma,
-    poulpy_cpu_oracle::NTT4x30CIOracle,
+    crate::NTT3x42Ifma,
+    poulpy_cpu_oracle::NTT4x30Oracle,
+    ConjugateInvariant,
     65536,
     65536,
     50,
@@ -107,8 +113,9 @@ one_pass_case!(
 #[cfg(feature = "enable-rayon")]
 one_pass_case!(
     ifma_ci_rayon_n16,
-    crate::NTT3x42CIIfmaRayon,
-    poulpy_cpu_oracle::NTT4x30CIOracle,
+    crate::NTT3x42IfmaRayon,
+    poulpy_cpu_oracle::NTT4x30Oracle,
+    ConjugateInvariant,
     65536,
     65536,
     52,
@@ -117,8 +124,9 @@ one_pass_case!(
 #[cfg(feature = "enable-rayon")]
 one_pass_case!(
     ifma_ci_rayon_n16_sums,
-    crate::NTT3x42CIIfmaRayon,
-    poulpy_cpu_oracle::NTT4x30CIOracle,
+    crate::NTT3x42IfmaRayon,
+    poulpy_cpu_oracle::NTT4x30Oracle,
+    ConjugateInvariant,
     65536,
     65536,
     50,

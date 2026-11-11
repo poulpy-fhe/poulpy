@@ -418,7 +418,7 @@ pub trait CKKSAtan2Ops<BE: Backend> {
         K: GetAutomorphismKey<BE>;
 }
 
-impl<BE: Backend<Ring = Standard>> CKKSAtan2Ops<BE> for Module<BE>
+impl<BE: Backend> CKKSAtan2Ops<BE> for Module<BE>
 where
     Module<BE>: CKKSAddOps<BE>
         + CKKSAllOpsTmpBytes<BE>

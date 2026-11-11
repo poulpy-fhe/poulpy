@@ -33,20 +33,21 @@ use crate::{
         VmpPMatAlloc, VmpPMatPrepare, VmpPMatPrepareTmpBytes,
     },
     layouts::{
-        Backend, DataView, MatZnx, MatZnxAtBackendMut, MatZnxToBackendRef, Module, PrepareHint, ScalarZnxAsVecZnxBackendMut,
-        SvpPPolLayoutCompatible, SvpPPolOwned, VecZnxDftLayoutCompatible, VecZnxDftOwned, VmpPMatLayoutCompatible, VmpPMatOwned,
+        Backend, DataView, MatZnx, MatZnxAtBackendMut, MatZnxToBackendRef, Module, PrepareHint, Ring,
+        ScalarZnxAsVecZnxBackendMut, SvpPPolLayoutCompatible, SvpPPolOwned, VecZnxDftLayoutCompatible, VecZnxDftOwned,
+        VmpPMatLayoutCompatible, VmpPMatOwned,
     },
     source::Source,
 };
 
 /// Same input, DFT on each backend: the resulting `VecZnxDft` buffers must be
 /// byte-identical. Exact-arithmetic (NTT/CRT) words only.
-pub fn test_word_compat_dft_bytes<BA, BB>(params: &TestParams, module_a: &Module<BA>, module_b: &Module<BB>)
+pub fn test_word_compat_dft_bytes<BA, BB, Rg: Ring>(params: &TestParams, module_a: &Module<BA>, module_b: &Module<BB>)
 where
-    BA: crate::test_suite::TestBackend + VecZnxDftLayoutCompatible<BB>,
-    BB: crate::test_suite::TestBackend,
-    Module<BA>: VecZnxDftAlloc<BA> + VecZnxDftApply<BA>,
-    Module<BB>: VecZnxDftAlloc<BB> + VecZnxDftApply<BB>,
+    BA: crate::test_suite::TestBackend<Rg> + VecZnxDftLayoutCompatible<BB>,
+    BB: crate::test_suite::TestBackend<Rg>,
+    Module<BA>: VecZnxDftAlloc<BA> + VecZnxDftApply<BA, Rg>,
+    Module<BB>: VecZnxDftAlloc<BB> + VecZnxDftApply<BB, Rg>,
 {
     let base2k = params.base2k;
     assert_eq!(module_a.n(), module_b.n());
@@ -57,7 +58,7 @@ where
         let mut a = module_a.vec_znx_alloc(params.n, cols, size);
         module_a.vec_znx_fill_uniform_source_all(base2k, size * base2k, &mut a, &mut source);
         let dft_a = dft_of_uploaded_vec_znx(module_a, &a, 1, 0);
-        let dft_b = dft_of_uploaded_vec_znx(module_b, &upload_vec_znx::<BB>(&download_vec_znx::<BA>(&a)), 1, 0);
+        let dft_b = dft_of_uploaded_vec_znx(module_b, &upload_vec_znx::<BB, Rg>(&download_vec_znx::<BA, Rg>(&a)), 1, 0);
         assert!(
             BA::to_host_bytes(&dft_a.data) == BB::to_host_bytes(&dft_b.data),
             "shared DftWord but different DFT buffer bytes (size={size}): one backend violates the word contract"
@@ -67,12 +68,15 @@ where
 
 /// Same input, `svp_ppol_prepare` on each backend: the resulting `SvpPPol` buffers
 /// must be byte-identical. Exact-arithmetic (NTT/CRT) words only.
-pub fn test_word_compat_svp_ppol_prepare_bytes<BA, BB>(params: &TestParams, module_a: &Module<BA>, module_b: &Module<BB>)
-where
-    BA: crate::test_suite::TestBackend + SvpPPolLayoutCompatible<BB>,
-    BB: crate::test_suite::TestBackend,
-    Module<BA>: SvpPPolAlloc<BA> + SvpPPolPrepare<BA>,
-    Module<BB>: SvpPPolAlloc<BB> + SvpPPolPrepare<BB>,
+pub fn test_word_compat_svp_ppol_prepare_bytes<BA, BB, Rg: Ring>(
+    params: &TestParams,
+    module_a: &Module<BA>,
+    module_b: &Module<BB>,
+) where
+    BA: crate::test_suite::TestBackend<Rg> + SvpPPolLayoutCompatible<BB>,
+    BB: crate::test_suite::TestBackend<Rg>,
+    Module<BA>: SvpPPolAlloc<BA> + SvpPPolPrepare<BA, Rg>,
+    Module<BB>: SvpPPolAlloc<BB> + SvpPPolPrepare<BB, Rg>,
 {
     let base2k = params.base2k;
     assert_eq!(module_a.n(), module_b.n());
@@ -84,19 +88,29 @@ where
         module_a.vec_znx_fill_uniform_source(
             base2k,
             base2k,
-            &mut ScalarZnxAsVecZnxBackendMut::<BA>::as_vec_znx_backend_mut(&mut scalar_a),
+            &mut ScalarZnxAsVecZnxBackendMut::<BA, Rg>::as_vec_znx_backend_mut(&mut scalar_a),
             col,
             &mut source,
         );
     }
-    let scalar = download_scalar_znx::<BA>(&scalar_a);
-    let scalar_b = upload_scalar_znx::<BB>(&scalar);
+    let scalar = download_scalar_znx::<BA, Rg>(&scalar_a);
+    let scalar_b = upload_scalar_znx::<BB, Rg>(&scalar);
 
-    let mut svp_a: SvpPPolOwned<BA> = module_a.svp_ppol_alloc(params.n, cols, PrepareHint::Reuse);
-    let mut svp_b: SvpPPolOwned<BB> = module_b.svp_ppol_alloc(params.n, cols, PrepareHint::Reuse);
+    let mut svp_a: SvpPPolOwned<BA, Rg> = module_a.svp_ppol_alloc(params.n, cols, PrepareHint::Reuse);
+    let mut svp_b: SvpPPolOwned<BB, Rg> = module_b.svp_ppol_alloc(params.n, cols, PrepareHint::Reuse);
     for j in 0..cols {
-        module_a.svp_ppol_prepare(&mut svp_a.to_backend_mut(), j, &scalar_znx_backend_ref::<BA>(&scalar_a), j);
-        module_b.svp_ppol_prepare(&mut svp_b.to_backend_mut(), j, &scalar_znx_backend_ref::<BB>(&scalar_b), j);
+        module_a.svp_ppol_prepare(
+            &mut svp_a.to_backend_mut(),
+            j,
+            &scalar_znx_backend_ref::<BA, Rg>(&scalar_a),
+            j,
+        );
+        module_b.svp_ppol_prepare(
+            &mut svp_b.to_backend_mut(),
+            j,
+            &scalar_znx_backend_ref::<BB, Rg>(&scalar_b),
+            j,
+        );
     }
     assert!(
         BA::to_host_bytes(&svp_a.data) == BB::to_host_bytes(&svp_b.data),
@@ -113,12 +127,15 @@ where
 /// block-interleaved layout on the other: their divergence under a shared
 /// DFT word is now prevented by construction, the backends being distinct
 /// container types with no `VmpPMat` marker.
-pub fn test_word_compat_vmp_pmat_prepare_bytes<BA, BB>(params: &TestParams, module_a: &Module<BA>, module_b: &Module<BB>)
-where
-    BA: crate::test_suite::TestBackend + VmpPMatLayoutCompatible<BB>,
-    BB: crate::test_suite::TestBackend,
-    Module<BA>: VmpPMatAlloc<BA> + VmpPMatPrepare<BA> + VmpPMatPrepareTmpBytes,
-    Module<BB>: VmpPMatAlloc<BB> + VmpPMatPrepare<BB> + VmpPMatPrepareTmpBytes,
+pub fn test_word_compat_vmp_pmat_prepare_bytes<BA, BB, Rg: Ring>(
+    params: &TestParams,
+    module_a: &Module<BA>,
+    module_b: &Module<BB>,
+) where
+    BA: crate::test_suite::TestBackend<Rg> + VmpPMatLayoutCompatible<BB>,
+    BB: crate::test_suite::TestBackend<Rg>,
+    Module<BA>: VmpPMatAlloc<BA> + VmpPMatPrepare<BA, Rg> + VmpPMatPrepareTmpBytes,
+    Module<BB>: VmpPMatAlloc<BB> + VmpPMatPrepare<BB, Rg> + VmpPMatPrepareTmpBytes,
 {
     let base2k = params.base2k;
     assert_eq!(module_a.n(), module_b.n());
@@ -135,26 +152,26 @@ where
                 module_a.vec_znx_fill_uniform_source(
                     base2k,
                     size * base2k,
-                    &mut MatZnxAtBackendMut::<BA>::at_backend_mut(&mut mat_a, row, col_in),
+                    &mut MatZnxAtBackendMut::<BA, Rg>::at_backend_mut(&mut mat_a, row, col_in),
                     col,
                     &mut source,
                 );
             }
         }
     }
-    let mat = download_mat_znx::<BA>(&mat_a);
-    let mat_b = upload_mat_znx::<BB>(&mat);
+    let mat = download_mat_znx::<BA, Rg>(&mat_a);
+    let mat_b = upload_mat_znx::<BB, Rg>(&mat);
 
-    let mut pmat_a: VmpPMatOwned<BA> = module_a.vmp_pmat_alloc(params.n, rows, cols_in, cols_out, size, PrepareHint::Reuse);
-    let mut pmat_b: VmpPMatOwned<BB> = module_b.vmp_pmat_alloc(params.n, rows, cols_in, cols_out, size, PrepareHint::Reuse);
+    let mut pmat_a: VmpPMatOwned<BA, Rg> = module_a.vmp_pmat_alloc(params.n, rows, cols_in, cols_out, size, PrepareHint::Reuse);
+    let mut pmat_b: VmpPMatOwned<BB, Rg> = module_b.vmp_pmat_alloc(params.n, rows, cols_in, cols_out, size, PrepareHint::Reuse);
     module_a.vmp_pmat_prepare(
         &mut pmat_a.to_backend_mut(),
-        &<MatZnx<BA::OwnedBuf, BA::ZnxWord> as MatZnxToBackendRef<BA>>::to_backend_ref(&mat_a),
+        &<MatZnx<BA::OwnedBuf, BA::ZnxWord, Rg> as MatZnxToBackendRef<BA, Rg>>::to_backend_ref(&mat_a),
         &mut scratch_a.arena(),
     );
     module_b.vmp_pmat_prepare(
         &mut pmat_b.to_backend_mut(),
-        &<MatZnx<BB::OwnedBuf, BB::ZnxWord> as MatZnxToBackendRef<BB>>::to_backend_ref(&mat_b),
+        &<MatZnx<BB::OwnedBuf, BB::ZnxWord, Rg> as MatZnxToBackendRef<BB, Rg>>::to_backend_ref(&mat_b),
         &mut scratch_b.arena(),
     );
     assert!(
@@ -167,24 +184,24 @@ where
 /// (IDFT + normalize) by the other, in both directions, and must yield the
 /// same coefficient-domain result as native consumption. Valid for every
 /// shared-word pair, including `f64` FFT backends.
-pub fn test_word_compat_dft_cross_idft<BA, BB>(params: &TestParams, module_a: &Module<BA>, module_b: &Module<BB>)
+pub fn test_word_compat_dft_cross_idft<BA, BB, Rg: Ring>(params: &TestParams, module_a: &Module<BA>, module_b: &Module<BB>)
 where
-    BA: crate::test_suite::TestBackend + VecZnxDftLayoutCompatible<BB>,
-    BB: crate::test_suite::TestBackend<OwnedBuf = BA::OwnedBuf, DftWord = BA::DftWord, ZnxWord = BA::ZnxWord>
+    BA: crate::test_suite::TestBackend<Rg> + VecZnxDftLayoutCompatible<BB>,
+    BB: crate::test_suite::TestBackend<Rg, OwnedBuf = BA::OwnedBuf, DftWord = BA::DftWord, ZnxWord = BA::ZnxWord>
         + VecZnxDftLayoutCompatible<BA>,
     Module<BA>: VecZnxDftAlloc<BA>
-        + VecZnxDftApply<BA>
+        + VecZnxDftApply<BA, Rg>
         + VecZnxBigAlloc<BA>
-        + VecZnxIdftApply<BA>
+        + VecZnxIdftApply<BA, Rg>
         + VecZnxIdftApplyTmpBytes
-        + VecZnxBigNormalize<BA>
+        + VecZnxBigNormalize<BA, Rg>
         + VecZnxBigNormalizeTmpBytes,
     Module<BB>: VecZnxDftAlloc<BB>
-        + VecZnxDftApply<BB>
+        + VecZnxDftApply<BB, Rg>
         + VecZnxBigAlloc<BB>
-        + VecZnxIdftApply<BB>
+        + VecZnxIdftApply<BB, Rg>
         + VecZnxIdftApplyTmpBytes
-        + VecZnxBigNormalize<BB>
+        + VecZnxBigNormalize<BB, Rg>
         + VecZnxBigNormalizeTmpBytes,
 {
     let base2k = params.base2k;
@@ -199,7 +216,7 @@ where
         module_a.vec_znx_fill_uniform_source_all(base2k, size * base2k, &mut a, &mut source);
 
         let dft_a = dft_of_uploaded_vec_znx(module_a, &a, 1, 0);
-        let dft_b = dft_of_uploaded_vec_znx(module_b, &upload_vec_znx::<BB>(&download_vec_znx::<BA>(&a)), 1, 0);
+        let dft_b = dft_of_uploaded_vec_znx(module_b, &upload_vec_znx::<BB, Rg>(&download_vec_znx::<BA, Rg>(&a)), 1, 0);
 
         // Native consumption on each backend first (the re-tag consumes the
         // buffer), then each backend consuming the other's buffer via the
@@ -207,8 +224,8 @@ where
         // coefficient domain.
         let res_aa = idft_apply_to_host(module_a, base2k, &dft_a, size, &mut scratch_a);
         let res_bb = idft_apply_to_host(module_b, base2k, &dft_b, size, &mut scratch_b);
-        let dft_ab: VecZnxDftOwned<BB> = dft_a.into_backend::<BB>();
-        let dft_ba: VecZnxDftOwned<BA> = dft_b.into_backend::<BA>();
+        let dft_ab: VecZnxDftOwned<BB, Rg> = dft_a.into_backend::<BB>();
+        let dft_ba: VecZnxDftOwned<BA, Rg> = dft_b.into_backend::<BA>();
         let res_ab = idft_apply_to_host(module_b, base2k, &dft_ab, size, &mut scratch_b);
         let res_ba = idft_apply_to_host(module_a, base2k, &dft_ba, size, &mut scratch_a);
 
@@ -219,12 +236,12 @@ where
 
 /// Every backend in the workspace has one prepared representation, so both hints size identically
 /// and the hint round-trips through allocation.
-pub fn test_word_compat_prepare_hint_sizes<BA: Backend, BB: Backend>(
+pub fn test_word_compat_prepare_hint_sizes<BA: Backend, BB: Backend, Rg: Ring>(
     params: &TestParams,
     _module_a: &Module<BA>,
     _module_b: &Module<BB>,
 ) {
-    fn check<BE: Backend>(n: usize) {
+    fn check<BE: Backend, Rg: Ring>(n: usize) {
         for hint in [PrepareHint::Reuse, PrepareHint::OneShot] {
             assert_eq!(
                 BE::svp_ppol_bytes_of(n, 2, hint),
@@ -242,13 +259,13 @@ pub fn test_word_compat_prepare_hint_sizes<BA: Backend, BB: Backend>(
                 BE::cnv_pvec_right_bytes_of(n, 2, 3, hint),
                 BE::cnv_pvec_right_bytes_of(n, 2, 3, PrepareHint::Reuse)
             );
-            let pmat = VmpPMatOwned::<BE>::alloc(n, 3, 2, 2, 4, hint);
+            let pmat = VmpPMatOwned::<BE, Rg>::alloc(n, 3, 2, 2, 4, hint);
             assert_eq!(pmat.hint(), hint);
             assert_eq!(pmat.shape().hint(), hint);
-            let ppol = SvpPPolOwned::<BE>::alloc(n, 2, hint);
+            let ppol = SvpPPolOwned::<BE, Rg>::alloc(n, 2, hint);
             assert_eq!(ppol.hint(), hint);
         }
     }
-    check::<BA>(params.size);
-    check::<BB>(params.size);
+    check::<BA, Rg>(params.size);
+    check::<BB, Rg>(params.size);
 }

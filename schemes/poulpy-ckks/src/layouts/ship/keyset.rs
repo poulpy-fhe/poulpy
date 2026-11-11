@@ -8,7 +8,6 @@
 //! the backend-ready [`ShipKeysPrepared`] with the masks preprocessed as left
 //! convolution operands.
 
-use crate::CKKSModuleInfos;
 use anyhow::{Result, ensure};
 use poulpy_core::{Distribution, GetDistribution, GetDistributionMut};
 use poulpy_core::{
@@ -19,7 +18,7 @@ use poulpy_core::{
     },
     layouts::{
         Base2K, GGLWEInfos, GGLWEToBackendRef, GLWEAutomorphismKey, GLWEAutomorphismKeyAlloc, GLWEAutomorphismKeyLayout,
-        GLWEAutomorphismKeyPrepared, GLWEInfos, GLWESecret, GLWESecretAlloc, GLWESecretLayout, GLWESwitchingKey,
+        GLWEAutomorphismKeyPrepared, GLWEInfos, GLWELayout, GLWESecret, GLWESecretAlloc, GLWESecretLayout, GLWESwitchingKey,
         GLWESwitchingKeyAlloc, GLWESwitchingKeyLayout, GLWESwitchingKeyPrepared, GLWETensorKey, GLWETensorKeyAlloc,
         GLWETensorKeyLayout, GLWETensorKeyPrepared, GLWEToBackendRef, GetGaloisElement, LWEInfos, ModuleCoreAlloc, Rank,
     },
@@ -29,8 +28,8 @@ use poulpy_hal::layouts::{HostStaged, Standard};
 use poulpy_hal::{
     api::{CnvOps, CnvPVecAlloc, CnvPVecBytesOf},
     layouts::{
-        Backend, CnvPVecL, CnvPVecLToBackendMut, Data, DataViewMut, GaloisElement, HostBytesBackend, HostDataMut, HostDataRef,
-        Module, PrepareHint, ScratchArena, ZnxView, ZnxViewMut, ZnxWord, ZnxZero,
+        Backend, CnvPVecL, CnvPVecLToBackendMut, Data, DataViewMut, HostBytesBackend, HostDataMut, HostDataRef, Module,
+        PrepareHint, ScratchArena, ZnxView, ZnxViewMut, ZnxWord, ZnxZero, galois_element,
     },
     source::Source,
 };
@@ -228,7 +227,7 @@ impl<D: Data, W: ZnxWord> ShipKeySet<D, W> {
     /// Prepares every key for `module`: gadget keys are preprocessed and the
     /// selector masks become left convolution operands. `scratch` must hold
     /// the per-key prepare scratch, which is validated up front.
-    pub fn prepare<BE: Backend<OwnedBuf = D, ZnxWord = W, Ring = Standard>>(
+    pub fn prepare<BE: Backend<OwnedBuf = D, ZnxWord = W>>(
         &self,
         module: &Module<BE>,
         scratch: &mut ScratchArena<'_, BE>,
@@ -274,7 +273,7 @@ impl<D: Data, W: ZnxWord> ShipKeySet<D, W> {
                 masks
                     .iter()
                     .map(|ct| {
-                        let mut prep = module.cnv_pvec_left_alloc(module.n(), 2, mask_size, PrepareHint::Reuse);
+                        let mut prep = module.cnv_pvec_left_alloc(ct.n().as_usize(), 2, mask_size, PrepareHint::Reuse);
                         module.cnv_pvec_left_prepare(
                             &mut prep.to_backend_mut(),
                             GLWEToBackendRef::<BE>::to_backend_ref(ct).data(),
@@ -367,13 +366,13 @@ pub(crate) fn hmux_rot_key_encrypt_sk<BE>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<HMuxRotKey<BE::OwnedBuf, BE::ZnxWord>>
 where
-    BE: HostStaged + Backend<Ring = Standard>,
+    BE: HostStaged + Backend,
     BE::OwnedBuf: HostDataRef + HostDataMut,
-    Module<BE>: GLWESwitchingKeyEncryptSk<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord> + GaloisElement,
+    Module<BE>: GLWESwitchingKeyEncryptSk<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>,
 {
     let n = sk_dense_host.n();
     let m = n.as_usize() / 2;
-    let gal_el = module.galois_element(((m - (rot % m)) % m) as i64);
+    let gal_el = galois_element(((m - (rot % m)) % m) as i64, 2 * n.as_usize() as i64);
 
     // `(beta * s, beta)`: the second column is the constant 1, not a secret.
     let mut sk_in_host = host_module.glwe_secret_alloc_from_infos(&GLWESecretLayout { n, rank: Rank(2) });
@@ -393,7 +392,7 @@ where
     let mut sk_out_host = host_module.glwe_secret_alloc_from_infos(&GLWESecretLayout { n, rank: Rank(1) });
     sk_out_host.data_mut().zero();
     znx_automorphism_apply(
-        module.galois_element_inv(gal_el),
+        galois_element((rot % m) as i64, 2 * n.as_usize() as i64),
         sk_dense_host.data().at(0, 0),
         sk_out_host.data_mut().at_mut(0, 0),
     );
@@ -462,7 +461,7 @@ impl<D: Data> ShipKeySet<D, i64> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<Self>
     where
-        BE: HostStaged + Backend<OwnedBuf = D, Ring = Standard>,
+        BE: HostStaged + Backend<OwnedBuf = D>,
         D: HostDataRef + HostDataMut,
         F: CKKSShipScalar,
         Module<BE>: GLWESwitchingKeyEncryptSk<BE>
@@ -473,8 +472,7 @@ impl<D: Data> ShipKeySet<D, i64> {
             + CKKSCiphertextAlloc<BE>
             + CKKSPlaintextAlloc<BE>
             + CKKSEncryptOps<BE>
-            + CKKSEncodingOps<BE, F>
-            + GaloisElement,
+            + CKKSEncodingOps<BE, F>,
         CKKSCiphertextOwned<BE>: GLWEToBackendRef<BE>,
         CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE>,
     {
@@ -523,10 +521,15 @@ impl<D: Data> ShipKeySet<D, i64> {
                         .into_iter()
                         .map(|re| {
                             let im = vec![F::zero(); m];
-                            let mut pt = module.ckks_plaintext_alloc_from_slots(module.ckks_max_slots(), base2k, kk.into());
+                            let mut pt = module.ckks_plaintext_alloc_from_slots::<Standard>(m, base2k, kk.into());
                             pt.set_meta_checked(mask_meta)?;
                             module.ckks_encode_slots_host_into(&mut pt, &re, &im, scratch)?;
-                            let mut ct = module.ckks_ciphertext_alloc(base2k, kk.into());
+                            let mut ct = module.ckks_ciphertext_alloc_from_glwe_infos(&GLWELayout {
+                                n,
+                                base2k,
+                                k: kk.into(),
+                                rank: Rank(1),
+                            });
                             module.ckks_encrypt_sk(&mut ct, &pt, &sk_dense_prepared, source_xe, source_xa, scratch)?;
                             Ok(ct)
                         })

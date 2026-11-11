@@ -1,5 +1,5 @@
 use poulpy_hal::AlignedBuf;
-use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, ReaderFrom, WriterTo};
+use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, ReaderFrom, Ring, Standard, WriterTo};
 
 use crate::layouts::{
     Base2K, Degree, Dnum, GGLWECompressed, GGLWECompressedSeedMut, GGLWEInfos, GLWEInfos, GetGaloisElement, LWEInfos, Rank,
@@ -17,18 +17,18 @@ use std::fmt;
 /// Wraps a [`GGLWECompressed`] with a Galois element `p` for applying
 /// automorphisms `X → X^p` on GLWE ciphertexts.
 #[derive(PartialEq, Eq, Clone)]
-pub struct GLWEAutomorphismKeyCompressed<D: Data, W: ZnxWord> {
-    pub(crate) key: GGLWECompressed<D, W>,
+pub struct GLWEAutomorphismKeyCompressed<D: Data, W: ZnxWord, Rg: Ring = Standard> {
+    pub(crate) key: GGLWECompressed<D, W, Rg>,
     pub(crate) p: i64,
 }
 
-impl<D: Data, W: ZnxWord> GetGaloisElement for GLWEAutomorphismKeyCompressed<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> GetGaloisElement for GLWEAutomorphismKeyCompressed<D, W, Rg> {
     fn p(&self) -> i64 {
         self.p
     }
 }
 
-impl<D: Data, W: ZnxWord> LWEInfos for GLWEAutomorphismKeyCompressed<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> LWEInfos for GLWEAutomorphismKeyCompressed<D, W, Rg> {
     fn noise(&self) -> Option<crate::ComponentNoise> {
         self.key.noise()
     }
@@ -49,13 +49,13 @@ impl<D: Data, W: ZnxWord> LWEInfos for GLWEAutomorphismKeyCompressed<D, W> {
     }
 }
 
-impl<D: Data, W: ZnxWord> GLWEInfos for GLWEAutomorphismKeyCompressed<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> GLWEInfos for GLWEAutomorphismKeyCompressed<D, W, Rg> {
     fn rank(&self) -> Rank {
         self.rank_out()
     }
 }
 
-impl<D: Data, W: ZnxWord> GGLWEInfos for GLWEAutomorphismKeyCompressed<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> GGLWEInfos for GLWEAutomorphismKeyCompressed<D, W, Rg> {
     fn k_aux(&self) -> TorusPrecision {
         self.key.k_aux()
     }
@@ -81,19 +81,19 @@ impl<D: Data, W: ZnxWord> GGLWEInfos for GLWEAutomorphismKeyCompressed<D, W> {
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> fmt::Debug for GLWEAutomorphismKeyCompressed<D, W> {
+impl<D: HostDataRef, W: ZnxWord, Rg: Ring> fmt::Debug for GLWEAutomorphismKeyCompressed<D, W, Rg> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{self}")
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> fmt::Display for GLWEAutomorphismKeyCompressed<D, W> {
+impl<D: HostDataRef, W: ZnxWord, Rg: Ring> fmt::Display for GLWEAutomorphismKeyCompressed<D, W, Rg> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "(AutomorphismKeyCompressed: p={}) {}", self.p, self.key)
     }
 }
 
-impl<D: Data, W: ZnxWord> GLWEAutomorphismKeyCompressed<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> GLWEAutomorphismKeyCompressed<D, W, Rg> {
     pub(crate) fn alloc_from_infos<B: Backend<OwnedBuf = D, ZnxWord = W>, A>(infos: &A) -> Self
     where
         A: GGLWEInfos,
@@ -122,54 +122,63 @@ impl<D: Data, W: ZnxWord> GLWEAutomorphismKeyCompressed<D, W> {
     where
         A: GGLWEInfos,
     {
-        GGLWECompressed::<AlignedBuf, W>::bytes_of_from_infos(infos)
+        GGLWECompressed::<AlignedBuf, W, Rg>::bytes_of_from_infos(infos)
     }
 
     pub fn bytes_of(n: Degree, base2k: Base2K, dnum: Dnum, k_digit: TorusPrecision, k_aux: TorusPrecision, rank: Rank) -> usize {
-        GGLWECompressed::<AlignedBuf, W>::bytes_of(n, base2k, dnum, k_digit, k_aux, rank)
+        GGLWECompressed::<AlignedBuf, W, Rg>::bytes_of(n, base2k, dnum, k_digit, k_aux, rank)
     }
 }
 
-impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GLWEAutomorphismKeyCompressed<D, W> {
+impl<D: HostDataMut, W: ZnxWord, Rg: Ring> ReaderFrom for GLWEAutomorphismKeyCompressed<D, W, Rg> {
+    /// Reads the format of [`WriterTo::write_to`], refusing as
+    /// [`GLWEAutomorphismKey`](crate::layouts::GLWEAutomorphismKey)'s reader does.
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
         self.key.noise = None;
-        let p = reader.read_u64::<LittleEndian>()? as i64;
+        let p = reader.read_i64::<LittleEndian>()?;
         self.key.read_from(reader)?;
+        if let Err(err) = crate::layouts::validate_galois_element::<Rg>(p, self.key.n(), std::io::ErrorKind::InvalidData) {
+            self.key.noise = None;
+            return Err(err);
+        }
         self.p = p;
         Ok(())
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> WriterTo for GLWEAutomorphismKeyCompressed<D, W> {
+impl<D: HostDataRef, W: ZnxWord, Rg: Ring> WriterTo for GLWEAutomorphismKeyCompressed<D, W, Rg> {
+    /// The Galois element `p` (`i64`), then the compressed key, refusing `p` as
+    /// [`GLWEAutomorphismKey`](crate::layouts::GLWEAutomorphismKey)'s writer does.
     fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
         if let Some(noise) = &self.key.noise {
             noise.validate_wire()?;
             noise.validate_components(self.key.rank_out.as_usize() + 1)?;
         }
-        writer.write_u64::<LittleEndian>(self.p as u64)?;
+        crate::layouts::validate_galois_element::<Rg>(self.p, self.key.n(), std::io::ErrorKind::InvalidInput)?;
+        writer.write_i64::<LittleEndian>(self.p)?;
         self.key.write_to(writer)
     }
 }
 
 impl_gglwe_compressed_to_backend_for_field!(
-    GLWEAutomorphismKeyCompressed<BE::OwnedBuf, BE::ZnxWord>,
+    GLWEAutomorphismKeyCompressed<BE::OwnedBuf, BE::ZnxWord, Rg>,
     key,
-    GGLWECompressed<BE::OwnedBuf, BE::ZnxWord>
+    GGLWECompressed<BE::OwnedBuf, BE::ZnxWord, Rg>
 );
 
-impl<D: Data, W: ZnxWord> GGLWECompressedSeedMut for GLWEAutomorphismKeyCompressed<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> GGLWECompressedSeedMut for GLWEAutomorphismKeyCompressed<D, W, Rg> {
     fn seed_mut(&mut self) -> &mut Vec<[u8; 32]> {
         &mut self.key.seed
     }
 }
 
-impl<D: Data, W: ZnxWord> crate::layouts::GGLWECompressedSeed for GLWEAutomorphismKeyCompressed<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> crate::layouts::GGLWECompressedSeed for GLWEAutomorphismKeyCompressed<D, W, Rg> {
     fn seed(&self) -> &Vec<[u8; 32]> {
         &self.key.seed
     }
 }
 
-impl<D: Data, W: ZnxWord> SetGaloisElement for GLWEAutomorphismKeyCompressed<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> SetGaloisElement for GLWEAutomorphismKeyCompressed<D, W, Rg> {
     fn set_p(&mut self, p: i64) {
         self.p = p
     }

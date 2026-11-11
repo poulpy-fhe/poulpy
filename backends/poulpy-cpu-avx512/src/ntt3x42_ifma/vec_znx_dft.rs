@@ -249,8 +249,7 @@ unsafe fn intt_then_compact_ifma<R: Ring>(
     dst_ptr: *mut i128,
     table: &Ntt3x42IfmaTableInv<Primes42, R>,
 ) where
-    NTT3x42Ifma<R>:
-        Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, R>> + Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, R>>,
+    NTT3x42Ifma: Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, R>> + Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, R>>,
 {
     unsafe {
         for k in 0..n_blocks {
@@ -260,7 +259,7 @@ unsafe fn intt_then_compact_ifma<R: Ring>(
             // Step 1: inverse NTT in-place on `src`.
             {
                 let blk = std::slice::from_raw_parts_mut(src_ptr.add(src_off_u64), 3 * n);
-                <NTT3x42Ifma<R> as Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, R>>>::ntt3x42_ifma_dft_execute(table, blk);
+                <NTT3x42Ifma as Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, R>>>::ntt3x42_ifma_dft_execute(table, blk);
             }
 
             // Step 2: Garner CRT-compact 3n u64s → n i128s, writing to `dst`.
@@ -538,21 +537,20 @@ unsafe fn packed_negate_assign(n: usize, dst: &mut [u64]) {
 /// In-place iNTT of `a[a_col]`'s limbs: each packed limb is replaced by its
 /// `i128` compaction, leaving that column of the buffer in `VecZnxBig` layout.
 pub(crate) fn idft_compact_in_place_ifma<R: Ring, E: poulpy_hal::execution::TaskExecutor>(
-    module: &Module<NTT3x42Ifma<R>>,
-    a: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma<R>>,
+    module: &Module<NTT3x42Ifma>,
+    a: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma, R>,
     a_col: usize,
-    addend: Option<(&VecZnxBackendRef<'_, NTT3x42Ifma<R>>, usize)>,
+    addend: Option<(&VecZnxBackendRef<'_, NTT3x42Ifma, R>, usize)>,
     tmp: &mut [u64],
 ) where
-    NTT3x42Ifma<R>:
-        Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, R>> + Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, R>>,
+    NTT3x42Ifma: Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, R>> + Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, R>>,
 {
     let n = a.n();
     check_operand(n, a, a_col);
     if let Some((add, col)) = addend {
         check_operand(n, add, col);
     }
-    check_degree::<NTT3x42Ifma<R>>(module.n(), n);
+    check_degree::<NTT3x42Ifma>(module.n(), n);
     let table = handle(module).table_intt_for(n);
     let a_cols = a.cols();
     let a_size = a.size();
@@ -563,7 +561,7 @@ pub(crate) fn idft_compact_in_place_ifma<R: Ring, E: poulpy_hal::execution::Task
         unsafe {
             unpack_limb_3x42(n, scratch, slot);
             if let Some((add, col)) = addend.filter(|(add, _)| j < add.size()) {
-                <NTT3x42Ifma<R> as Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, R>>>::ntt3x42_ifma_dft_execute(
+                <NTT3x42Ifma as Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, R>>>::ntt3x42_ifma_dft_execute(
                     table, scratch,
                 );
                 crt_compact_ifma::<true>(n, cast_slice_mut(slot), scratch, add.at(col, j));
@@ -576,20 +574,19 @@ pub(crate) fn idft_compact_in_place_ifma<R: Ring, E: poulpy_hal::execution::Task
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn idft_normalize_ifma<R: Ring, E: poulpy_hal::execution::TaskExecutor>(
-    module: &Module<NTT3x42Ifma<R>>,
-    res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, NTT3x42Ifma<R>>,
+    module: &Module<NTT3x42Ifma>,
+    res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, NTT3x42Ifma, R>,
     res_base2k: usize,
     res_k: usize,
     res_offset: i64,
     res_col: usize,
-    a: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma<R>>,
+    a: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma, R>,
     a_col: usize,
     a_base2k: usize,
-    addend: Option<(&VecZnxBackendRef<'_, NTT3x42Ifma<R>>, usize)>,
+    addend: Option<(&VecZnxBackendRef<'_, NTT3x42Ifma, R>, usize)>,
     tmp: &mut [u64],
 ) where
-    NTT3x42Ifma<R>:
-        Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, R>> + Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, R>>,
+    NTT3x42Ifma: Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, R>> + Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, R>>,
 {
     #[cfg(feature = "enable-rayon")]
     if E::is_parallel() && poulpy_cpu_rayon::RayonTaskExecutor::should_serialize_inner() {
@@ -602,38 +599,37 @@ pub(crate) fn idft_normalize_ifma<R: Ring, E: poulpy_hal::execution::TaskExecuto
     idft_compact_in_place_ifma::<R, E>(module, a, a_col, addend.filter(|(add, _)| add.n() == n), tmp);
     let shape = a.shape();
     if let Some((add, add_col)) = addend.filter(|(add, _)| add.n() != n) {
-        let mut big: VecZnxBigBackendMut<'_, NTT3x42Ifma<R>> =
+        let mut big: VecZnxBigBackendMut<'_, NTT3x42Ifma, R> =
             poulpy_hal::layouts::VecZnxBig::from_shape(&mut **a.data_mut(), shape);
-        poulpy_cpu_portable::kernels::ntt4x30::vec_znx_big::ntt4x30_vec_znx_big_add_small_assign_portable::<_, _, NTT3x42Ifma<R>>(
+        poulpy_cpu_portable::kernels::ntt4x30::vec_znx_big::ntt4x30_vec_znx_big_add_small_assign_portable::<_, _, NTT3x42Ifma, R>(
             &mut &mut big,
             a_col,
             &add,
             add_col,
         );
     }
-    let big: poulpy_hal::layouts::VecZnxBigBackendRef<'_, NTT3x42Ifma<R>> =
+    let big: poulpy_hal::layouts::VecZnxBigBackendRef<'_, NTT3x42Ifma, R> =
         poulpy_hal::layouts::VecZnxBig::from_shape(&**a.data(), shape);
     #[cfg(feature = "enable-rayon")]
     if E::is_parallel() {
-        return poulpy_cpu_rayon::normalize::vec_znx_big_normalize_par::<NTT3x42Ifma<R>, crate::NTT3x42IfmaRayon<R>>(
+        return poulpy_cpu_rayon::normalize::vec_znx_big_normalize_par::<NTT3x42Ifma, crate::NTT3x42IfmaRayon, R>(
             res, res_base2k, res_k, res_offset, res_col, &big, a_base2k, a_col,
         );
     }
-    poulpy_cpu_portable::kernels::vec_znx_big_normalize::vec_znx_big_normalize_portable::<NTT3x42Ifma<R>>(
+    poulpy_cpu_portable::kernels::vec_znx_big_normalize::vec_znx_big_normalize_portable::<NTT3x42Ifma, R>(
         res, res_base2k, res_k, res_offset, res_col, &big, a_base2k, a_col,
     );
 }
 
 #[inline(always)]
 pub(crate) fn vec_znx_dft_apply_limb<R: Ring>(
-    module: &Module<NTT3x42Ifma<R>>,
+    module: &Module<NTT3x42Ifma>,
     n: usize,
     dst: &mut [u64],
     src: Option<&[i64]>,
     scratch: &mut [u64],
 ) where
-    NTT3x42Ifma<R>:
-        Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, R>> + Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, R>>,
+    NTT3x42Ifma: Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, R>> + Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, R>>,
 {
     assert_eq!(dst.len(), 2 * n);
     assert!(scratch.len() >= 3 * n);
@@ -642,8 +638,8 @@ pub(crate) fn vec_znx_dft_apply_limb<R: Ring>(
         return;
     };
     assert_eq!(src.len(), n);
-    NTT3x42Ifma::<R>::ntt3x42_ifma_from_znx64(scratch, src);
-    <NTT3x42Ifma<R> as Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, R>>>::ntt3x42_ifma_dft_execute_lazy(
+    NTT3x42Ifma::ntt3x42_ifma_from_znx64(scratch, src);
+    <NTT3x42Ifma as Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, R>>>::ntt3x42_ifma_dft_execute_lazy(
         handle(module).table_ntt_for(n),
         scratch,
     );
@@ -652,16 +648,15 @@ pub(crate) fn vec_znx_dft_apply_limb<R: Ring>(
 
 /// Forward NTT into the packed layout.
 pub(crate) fn vec_znx_dft_apply<R: Ring>(
-    module: &Module<NTT3x42Ifma<R>>,
+    module: &Module<NTT3x42Ifma>,
     step: usize,
     offset: usize,
-    res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma<R>>,
+    res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma, R>,
     res_col: usize,
-    a: &VecZnxBackendRef<'_, NTT3x42Ifma<R>>,
+    a: &VecZnxBackendRef<'_, NTT3x42Ifma, R>,
     a_col: usize,
 ) where
-    NTT3x42Ifma<R>:
-        Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, R>> + Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, R>>,
+    NTT3x42Ifma: Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, R>> + Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, R>>,
 {
     poulpy_hal::layouts::assert_dense(a, "vec_znx_dft_apply");
     assert!(step >= 1, "vec_znx_dft_apply: step must be >= 1");
@@ -670,7 +665,7 @@ pub(crate) fn vec_znx_dft_apply<R: Ring>(
     let n = res.n();
     check_operand(n, res, res_col);
     check_operand(n, a, a_col);
-    check_degree::<NTT3x42Ifma<R>>(module.n(), n);
+    check_degree::<NTT3x42Ifma>(module.n(), n);
     let cols = res.cols();
     let steps = a_size.div_ceil(step);
     let min_steps = res_size.min(steps);
@@ -699,14 +694,13 @@ pub(crate) fn vec_znx_idft_apply_tmp_bytes(n: usize) -> usize {
 #[inline(always)]
 #[cfg(feature = "enable-rayon")]
 pub(crate) fn vec_znx_idft_apply_limb<R: Ring>(
-    module: &Module<NTT3x42Ifma<R>>,
+    module: &Module<NTT3x42Ifma>,
     n: usize,
     dst: &mut [i128],
     src: Option<&[u64]>,
     scratch: &mut [u64],
 ) where
-    NTT3x42Ifma<R>:
-        Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, R>> + Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, R>>,
+    NTT3x42Ifma: Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, R>> + Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, R>>,
 {
     assert_eq!(dst.len(), n);
     assert!(scratch.len() >= 3 * n);
@@ -716,28 +710,27 @@ pub(crate) fn vec_znx_idft_apply_limb<R: Ring>(
     };
     assert_eq!(src.len(), 2 * n);
     unsafe { unpack_limb_3x42(n, scratch, src) };
-    <NTT3x42Ifma<R> as Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, R>>>::ntt3x42_ifma_dft_execute(
+    <NTT3x42Ifma as Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, R>>>::ntt3x42_ifma_dft_execute(
         handle(module).table_intt_for(n),
         scratch,
     );
-    NTT3x42Ifma::<R>::ntt3x42_ifma_to_znx128(dst, n, scratch);
+    NTT3x42Ifma::ntt3x42_ifma_to_znx128(dst, n, scratch);
 }
 
 pub(crate) fn vec_znx_idft_apply<R: Ring>(
-    module: &Module<NTT3x42Ifma<R>>,
-    res: &mut VecZnxBigBackendMut<'_, NTT3x42Ifma<R>>,
+    module: &Module<NTT3x42Ifma>,
+    res: &mut VecZnxBigBackendMut<'_, NTT3x42Ifma, R>,
     res_col: usize,
-    a: &VecZnxDftBackendRef<'_, NTT3x42Ifma<R>>,
+    a: &VecZnxDftBackendRef<'_, NTT3x42Ifma, R>,
     a_col: usize,
     tmp: &mut [u64],
 ) where
-    NTT3x42Ifma<R>:
-        Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, R>> + Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, R>>,
+    NTT3x42Ifma: Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42, R>> + Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, R>>,
 {
     let n = res.n();
     check_operand(n, res, res_col);
     check_operand(n, a, a_col);
-    check_degree::<NTT3x42Ifma<R>>(module.n(), n);
+    check_degree::<NTT3x42Ifma>(module.n(), n);
     let res_cols = res.cols();
     let res_size = res.size();
     let min_size = res_size.min(a.size());
@@ -754,8 +747,8 @@ pub(crate) fn vec_znx_idft_apply<R: Ring>(
         if j < min_size {
             let a_slice: &[u64] = &a_u64[2 * n * (j * a_cols + a_col)..][..2 * n];
             unsafe { unpack_limb_3x42(n, tmp, a_slice) };
-            <NTT3x42Ifma<R> as Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, R>>>::ntt3x42_ifma_dft_execute(table, tmp);
-            NTT3x42Ifma::<R>::ntt3x42_ifma_to_znx128(dst, n, tmp);
+            <NTT3x42Ifma as Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42, R>>>::ntt3x42_ifma_dft_execute(table, tmp);
+            NTT3x42Ifma::ntt3x42_ifma_to_znx128(dst, n, tmp);
         } else {
             dst.fill(0i128);
         }
@@ -768,11 +761,11 @@ pub(crate) fn vec_znx_idft_apply<R: Ring>(
 
 /// DFT-domain add: `res[res_col] = a[a_col] + b[b_col]`.
 pub(crate) fn vec_znx_dft_add<R: Ring, E: poulpy_hal::execution::TaskExecutor>(
-    res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma<R>>,
+    res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma, R>,
     res_col: usize,
-    a: &VecZnxDftBackendRef<'_, NTT3x42Ifma<R>>,
+    a: &VecZnxDftBackendRef<'_, NTT3x42Ifma, R>,
     a_col: usize,
-    b: &VecZnxDftBackendRef<'_, NTT3x42Ifma<R>>,
+    b: &VecZnxDftBackendRef<'_, NTT3x42Ifma, R>,
     b_col: usize,
 ) {
     let n = res.n();
@@ -811,9 +804,9 @@ pub(crate) fn vec_znx_dft_add<R: Ring, E: poulpy_hal::execution::TaskExecutor>(
 
 /// DFT-domain in-place add: `res[res_col] += a[a_col]`.
 pub(crate) fn vec_znx_dft_add_assign<R: Ring, E: poulpy_hal::execution::TaskExecutor>(
-    res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma<R>>,
+    res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma, R>,
     res_col: usize,
-    a: &VecZnxDftBackendRef<'_, NTT3x42Ifma<R>>,
+    a: &VecZnxDftBackendRef<'_, NTT3x42Ifma, R>,
     a_col: usize,
 ) {
     let n = res.n();
@@ -833,11 +826,11 @@ pub(crate) fn vec_znx_dft_add_assign<R: Ring, E: poulpy_hal::execution::TaskExec
 
 /// DFT-domain sub: `res[res_col] = a[a_col] - b[b_col]`.
 pub(crate) fn vec_znx_dft_sub<R: Ring, E: poulpy_hal::execution::TaskExecutor>(
-    res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma<R>>,
+    res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma, R>,
     res_col: usize,
-    a: &VecZnxDftBackendRef<'_, NTT3x42Ifma<R>>,
+    a: &VecZnxDftBackendRef<'_, NTT3x42Ifma, R>,
     a_col: usize,
-    b: &VecZnxDftBackendRef<'_, NTT3x42Ifma<R>>,
+    b: &VecZnxDftBackendRef<'_, NTT3x42Ifma, R>,
     b_col: usize,
 ) {
     let n = res.n();
@@ -877,9 +870,9 @@ pub(crate) fn vec_znx_dft_sub<R: Ring, E: poulpy_hal::execution::TaskExecutor>(
 
 /// DFT-domain in-place sub: `res[res_col] -= a[a_col]`.
 pub(crate) fn vec_znx_dft_sub_assign<R: Ring, E: poulpy_hal::execution::TaskExecutor>(
-    res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma<R>>,
+    res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma, R>,
     res_col: usize,
-    a: &VecZnxDftBackendRef<'_, NTT3x42Ifma<R>>,
+    a: &VecZnxDftBackendRef<'_, NTT3x42Ifma, R>,
     a_col: usize,
 ) {
     let n = res.n();
@@ -899,9 +892,9 @@ pub(crate) fn vec_znx_dft_sub_assign<R: Ring, E: poulpy_hal::execution::TaskExec
 
 /// DFT-domain in-place swap-sub: `res[res_col] = a[a_col] - res[res_col]`.
 pub(crate) fn vec_znx_dft_sub_negate_assign<R: Ring, E: poulpy_hal::execution::TaskExecutor>(
-    res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma<R>>,
+    res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma, R>,
     res_col: usize,
-    a: &VecZnxDftBackendRef<'_, NTT3x42Ifma<R>>,
+    a: &VecZnxDftBackendRef<'_, NTT3x42Ifma, R>,
     a_col: usize,
 ) {
     let n = res.n();
@@ -928,9 +921,9 @@ pub(crate) fn vec_znx_dft_sub_negate_assign<R: Ring, E: poulpy_hal::execution::T
 pub(crate) fn vec_znx_dft_copy<R: Ring, E: poulpy_hal::execution::TaskExecutor>(
     step: usize,
     offset: usize,
-    res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma<R>>,
+    res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma, R>,
     res_col: usize,
-    a: &VecZnxDftBackendRef<'_, NTT3x42Ifma<R>>,
+    a: &VecZnxDftBackendRef<'_, NTT3x42Ifma, R>,
     a_col: usize,
 ) {
     assert!(step >= 1, "vec_znx_dft_copy: step must be >= 1");
@@ -960,7 +953,7 @@ pub(crate) fn vec_znx_dft_copy<R: Ring, E: poulpy_hal::execution::TaskExecutor>(
 
 /// Zero all limbs of `res[res_col]`.
 pub(crate) fn vec_znx_dft_zero<R: Ring, E: poulpy_hal::execution::TaskExecutor>(
-    res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma<R>>,
+    res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma, R>,
     res_col: usize,
 ) {
     let n = res.n();
@@ -977,10 +970,10 @@ pub(crate) fn vec_znx_dft_zero<R: Ring, E: poulpy_hal::execution::TaskExecutor>(
 
 /// Packed-layout NTT3x42 automorphism fused with accumulation: `res += automorphism(a)`.
 pub(crate) fn vec_znx_dft_automorphism_add<R: Ring, E: poulpy_hal::execution::TaskExecutor>(
-    plan: &poulpy_cpu_portable::kernels::ntt4x30::vec_znx_dft::NttAutomorphismPlan,
-    res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma<R>>,
+    plan: &poulpy_cpu_portable::kernels::ntt4x30::vec_znx_dft::NttAutomorphismPlan<R>,
+    res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma, R>,
     res_col: usize,
-    a: &VecZnxDftBackendRef<'_, NTT3x42Ifma<R>>,
+    a: &VecZnxDftBackendRef<'_, NTT3x42Ifma, R>,
     a_col: usize,
 ) {
     assert_eq!(plan.perm.len(), res.n());
@@ -1032,10 +1025,10 @@ unsafe fn automorphism_add_limb(n: usize, perm: &[u32], dst: &mut [u64], a: &[u6
 
 /// Packed-layout NTT3x42 automorphism.
 pub(crate) fn vec_znx_dft_automorphism<R: Ring, E: poulpy_hal::execution::TaskExecutor>(
-    plan: &poulpy_cpu_portable::kernels::ntt4x30::vec_znx_dft::NttAutomorphismPlan,
-    res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma<R>>,
+    plan: &poulpy_cpu_portable::kernels::ntt4x30::vec_znx_dft::NttAutomorphismPlan<R>,
+    res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma, R>,
     res_col: usize,
-    a: &VecZnxDftBackendRef<'_, NTT3x42Ifma<R>>,
+    a: &VecZnxDftBackendRef<'_, NTT3x42Ifma, R>,
     a_col: usize,
 ) {
     assert_eq!(plan.perm.len(), res.n());
@@ -1075,7 +1068,7 @@ mod finish_tests {
     use poulpy_hal::{
         api::{ScratchOwnedAlloc, VecZnxBigAlloc, VecZnxDftAlloc},
         layouts::{
-            HostBytesBackend, ScratchOwned, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftToBackendMut,
+            HostBytesBackend, ScratchOwned, Standard, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftToBackendMut,
             VecZnxToBackendMut, VecZnxToBackendRef,
         },
         oep::HalVecZnxDftImpl,
@@ -1126,9 +1119,9 @@ mod finish_tests {
                 if n == 65536 && base2k != 52 {
                     continue;
                 }
-                let mut source = module.vec_znx_dft_alloc(n, 2, 5);
+                let mut source = module.vec_znx_dft_alloc::<Standard>(n, 2, 5);
                 source.data_mut().fill(0xa5);
-                let mut big = module.vec_znx_big_alloc(n, 2, 5);
+                let mut big = module.vec_znx_big_alloc::<Standard>(n, 2, 5);
                 let mut residues = vec![0u64; 3 * n];
                 let edge = [
                     0,
@@ -1151,7 +1144,7 @@ mod finish_tests {
                         }
                     }
                     unsafe {
-                        ntt_avx512::<Primes42>(handle(&module).table_ntt_for(n), &mut residues, true);
+                        ntt_avx512::<Primes42>(handle(&module).table_ntt_for::<Standard>(n), &mut residues, true);
                         pack_limb_3x42_lazy(n, packed_limb_mut(cast_slice_mut(source.data_mut()), n, 2, 1, j), &residues);
                     }
                 }
@@ -1170,15 +1163,17 @@ mod finish_tests {
                             _,
                             _,
                             NTT3x42Ifma,
+                            Standard,
                         >(&mut &mut expected_big.to_backend_mut(), 1, &add_ref, 0);
                     }
                     for k in [0, 1, base2k, base2k + 1, 3 * base2k - 1, 5 * base2k, 6 * base2k] {
                         let mut got = host.vec_znx_alloc(n, 2, 6);
                         got.at_mut(0, 0).fill(123);
                         let mut expected = got.clone();
-                        let mut scratch =
-                            ScratchOwned::<NTT3x42Ifma>::alloc(NTT3x42Ifma::vec_znx_idft_normalize_tmp_bytes(&module, 6, 5));
-                        let mut input = module.vec_znx_dft_alloc(n, 2, 5);
+                        let mut scratch = ScratchOwned::<NTT3x42Ifma>::alloc(
+                            <NTT3x42Ifma as HalVecZnxDftImpl<Standard>>::vec_znx_idft_normalize_tmp_bytes(&module, 6, 5),
+                        );
+                        let mut input = module.vec_znx_dft_alloc::<Standard>(n, 2, 5);
                         input.data_mut().copy_from_slice(source.data());
                         NTT3x42Ifma::vec_znx_idft_normalize(
                             &module,
@@ -1193,7 +1188,10 @@ mod finish_tests {
                             (add_size != 0).then_some((&add_ref, 0)),
                             &mut scratch.arena(),
                         );
-                        poulpy_cpu_portable::kernels::vec_znx_big_normalize::vec_znx_big_normalize_portable::<NTT3x42Ifma>(
+                        poulpy_cpu_portable::kernels::vec_znx_big_normalize::vec_znx_big_normalize_portable::<
+                            NTT3x42Ifma,
+                            Standard,
+                        >(
                             &mut VecZnxToBackendMut::<NTT3x42Ifma>::to_backend_mut(&mut expected),
                             base2k,
                             k,
@@ -1246,9 +1244,9 @@ mod finish_tests {
                         if n >= 65536 && base2k != 52 {
                             continue;
                         }
-                        let mut source = module.vec_znx_dft_alloc(n, 2, 5);
+                        let mut source = module.vec_znx_dft_alloc::<Standard>(n, 2, 5);
                         source.data_mut().fill(0xa5);
-                        let mut big = module.vec_znx_big_alloc(n, 2, 5);
+                        let mut big = module.vec_znx_big_alloc::<Standard>(n, 2, 5);
                         let mut residues = vec![0u64; 3 * n];
                         let edge = [
                             0,
@@ -1271,7 +1269,7 @@ mod finish_tests {
                                 }
                             }
                             unsafe {
-                                ntt_avx512::<Primes42>(handle(&module).table_ntt_for(n), &mut residues, true);
+                                ntt_avx512::<Primes42>(handle(&module).table_ntt_for::<Standard>(n), &mut residues, true);
                                 pack_limb_3x42_lazy(n, packed_limb_mut(cast_slice_mut(source.data_mut()), n, 2, 1, j), &residues);
                             }
                         }
@@ -1289,8 +1287,7 @@ mod finish_tests {
                                 poulpy_cpu_portable::kernels::ntt4x30::vec_znx_big::ntt4x30_vec_znx_big_add_small_assign_portable::<
                                     _,
                                     _,
-                                    NTT3x42Ifma,
-                                >(&mut &mut expected_big.to_backend_mut(), 1, &add_ref, 0);
+                                    NTT3x42Ifma, Standard>(&mut &mut expected_big.to_backend_mut(), 1, &add_ref, 0);
                             }
                             for offset in [
                                 -(2 * base2k as i64) - 1,
@@ -1308,7 +1305,7 @@ mod finish_tests {
                                         got.at_mut(1, j).fill(456);
                                     }
                                     let mut expected = got.clone();
-                                    let mut input = module.vec_znx_dft_alloc(n, 2, 5);
+                                    let mut input = module.vec_znx_dft_alloc::<Standard>(n, 2, 5);
                                     input.data_mut().copy_from_slice(source.data());
                                     idft_normalize_ifma::<_, CheckedExecutor>(
                                         &module,
@@ -1324,8 +1321,7 @@ mod finish_tests {
                                         &mut vec![0; 3 * n * 5],
                                     );
                                     poulpy_cpu_portable::kernels::vec_znx_big_normalize::vec_znx_big_normalize_portable::<
-                                        NTT3x42Ifma,
-                                    >(
+                                        NTT3x42Ifma, Standard>(
                                         &mut VecZnxToBackendMut::<NTT3x42Ifma>::to_backend_mut(&mut expected),
                                         base2k,
                                         k,

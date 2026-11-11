@@ -2,7 +2,7 @@ use crate::CKKSResult as Result;
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef};
-use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena, VecZnxDftBackendMut};
+use poulpy_hal::layouts::{Backend, Data, Module, Ring, ScratchArena, VecZnxDftBackendMut};
 
 use crate::{
     CKKSCtBounds, CKKSInfos, SetCKKSInfos,
@@ -11,7 +11,7 @@ use crate::{
     oep::{CKKSAddManyImpl, CKKSAffineImpl, CKKSDotProductImpl, CKKSMulAddImpl, CKKSMulSubImpl},
 };
 
-impl<BE: Backend + CKKSAddManyImpl> CKKSAddManyOps<BE> for Module<BE> {
+impl<BE: Backend + CKKSAddManyImpl<Rg>, Rg: Ring> CKKSAddManyOps<BE, Rg> for Module<BE> {
     fn ckks_add_many_tmp_bytes<R, A>(&self, res: &R, a: &A) -> usize
     where
         R: CKKSCtBounds,
@@ -22,14 +22,14 @@ impl<BE: Backend + CKKSAddManyImpl> CKKSAddManyOps<BE> for Module<BE> {
 
     fn ckks_add_many<R, A>(&self, normalize_after: usize, res: &mut R, a: &[&A], scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<BE> + CKKSCtBounds,
+        R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
     {
         BE::ckks_add_many(self, normalize_after, res, a, scratch)
     }
 }
 
-impl<BE: Backend + CKKSMulAddImpl> CKKSMulAddOps<BE> for Module<BE> {
+impl<BE: Backend + CKKSMulAddImpl<Rg>, Rg: Ring> CKKSMulAddOps<BE, Rg> for Module<BE> {
     fn ckks_mul_add_ct_tmp_bytes<R, A, B, T>(&self, res: &R, a: &A, b: &B, tsk: &T) -> usize
     where
         R: CKKSCtBounds,
@@ -67,19 +67,19 @@ impl<BE: Backend + CKKSMulAddImpl> CKKSMulAddOps<BE> for Module<BE> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        B: GLWEToBackendRef<BE> + CKKSCtBounds,
-        H: GetTensorKey<BE>,
+        Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        B: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        H: GetTensorKey<BE, Rg>,
     {
         BE::ckks_mul_add_ct_into(self, dst, a, b, tsk, scratch)
     }
 
     fn ckks_mul_add_pt_vec_into<Dst, A, P>(&self, dst: &mut Dst, a: &A, pt: &P, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds,
+        Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE, Rg> + IntPolyInfos + CKKSCtBounds,
     {
         BE::ckks_mul_add_pt_vec_into(self, dst, a, pt, scratch)
     }
@@ -93,15 +93,15 @@ impl<BE: Backend + CKKSMulAddImpl> CKKSMulAddOps<BE> for Module<BE> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds,
+        Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE, Rg> + IntPolyInfos + CKKSCtBounds,
     {
         BE::ckks_mul_add_pt_const_into(self, dst, a, pt, pt_coeff, scratch)
     }
 }
 
-impl<BE: Backend + CKKSAffineImpl> CKKSAffineOps<BE> for Module<BE> {
+impl<BE: Backend + CKKSAffineImpl<Rg>, Rg: Ring> CKKSAffineOps<BE, Rg> for Module<BE> {
     fn ckks_affine_pt_const_tmp_bytes<R, A, P>(&self, res: &R, a: &A, affine_const: &P) -> usize
     where
         R: CKKSCtBounds,
@@ -121,9 +121,9 @@ impl<BE: Backend + CKKSAffineImpl> CKKSAffineOps<BE> for Module<BE> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds,
+        Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE, Rg> + IntPolyInfos + CKKSCtBounds,
     {
         BE::ckks_affine_pt_const_into(self, dst, a, affine_const, offset_coeff, scale_coeff, scratch)
     }
@@ -137,8 +137,8 @@ impl<BE: Backend + CKKSAffineImpl> CKKSAffineOps<BE> for Module<BE> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds,
+        Dst: GLWEToBackendMut<BE, Rg> + GLWEToBackendRef<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        P: GLWEToBackendRef<BE, Rg> + IntPolyInfos + CKKSCtBounds,
     {
         BE::ckks_affine_pt_const_assign(self, dst, affine_const, offset_coeff, scale_coeff, scratch)
     }
@@ -161,10 +161,10 @@ impl<BE: Backend + CKKSAffineImpl> CKKSAffineOps<BE> for Module<BE> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        S: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
-        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds,
+        Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        S: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos,
+        P: GLWEToBackendRef<BE, Rg> + IntPolyInfos + CKKSCtBounds,
     {
         BE::ckks_affine_pt_vec_into(self, dst, a, scale, offset, scratch)
     }
@@ -177,15 +177,15 @@ impl<BE: Backend + CKKSAffineImpl> CKKSAffineOps<BE> for Module<BE> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        S: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
-        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds,
+        Dst: GLWEToBackendMut<BE, Rg> + GLWEToBackendRef<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        S: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos,
+        P: GLWEToBackendRef<BE, Rg> + IntPolyInfos + CKKSCtBounds,
     {
         BE::ckks_affine_pt_vec_assign(self, dst, scale, offset, scratch)
     }
 }
 
-impl<BE: Backend + CKKSMulSubImpl> CKKSMulSubOps<BE> for Module<BE> {
+impl<BE: Backend + CKKSMulSubImpl<Rg>, Rg: Ring> CKKSMulSubOps<BE, Rg> for Module<BE> {
     fn ckks_mul_sub_ct_tmp_bytes<R, A, B, T>(&self, res: &R, a: &A, b: &B, tsk: &T) -> usize
     where
         R: CKKSCtBounds,
@@ -223,19 +223,19 @@ impl<BE: Backend + CKKSMulSubImpl> CKKSMulSubOps<BE> for Module<BE> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        B: GLWEToBackendRef<BE> + CKKSCtBounds,
-        H: GetTensorKey<BE>,
+        Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        B: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        H: GetTensorKey<BE, Rg>,
     {
         BE::ckks_mul_sub_ct_into(self, dst, a, b, tsk, scratch)
     }
 
     fn ckks_mul_sub_pt_vec_into<Dst, A, P>(&self, dst: &mut Dst, a: &A, pt: &P, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds,
+        Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE, Rg> + IntPolyInfos + CKKSCtBounds,
     {
         BE::ckks_mul_sub_pt_vec_into(self, dst, a, pt, scratch)
     }
@@ -249,15 +249,15 @@ impl<BE: Backend + CKKSMulSubImpl> CKKSMulSubOps<BE> for Module<BE> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds,
+        Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE, Rg> + IntPolyInfos + CKKSCtBounds,
     {
         BE::ckks_mul_sub_pt_const_into(self, dst, a, pt, pt_coeff, scratch)
     }
 }
 
-impl<BE: Backend + CKKSDotProductImpl> CKKSDotProductOps<BE> for Module<BE> {
+impl<BE: Backend + CKKSDotProductImpl<Rg>, Rg: Ring> CKKSDotProductOps<BE, Rg> for Module<BE> {
     fn ckks_dot_product_ct_tmp_bytes<R, A, B, T>(&self, n: usize, res: &R, a: &A, b: &B, tsk: &T) -> usize
     where
         R: CKKSCtBounds,
@@ -295,10 +295,10 @@ impl<BE: Backend + CKKSDotProductImpl> CKKSDotProductOps<BE> for Module<BE> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        B: GLWEToBackendRef<BE> + CKKSCtBounds,
-        H: GetTensorKey<BE>,
+        Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        B: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        H: GetTensorKey<BE, Rg>,
     {
         BE::ckks_dot_product_ct(self, dst, a, b, tsk, scratch)
     }
@@ -316,14 +316,14 @@ impl<BE: Backend + CKKSDotProductImpl> CKKSDotProductOps<BE> for Module<BE> {
     fn ckks_dot_product_prepared<Dst, H>(
         &self,
         dst: &mut Dst,
-        a: &[&CKKSLeftOperandPrepared<BE>],
-        b: &[&CKKSRightOperandPrepared<BE>],
+        a: &[&CKKSLeftOperandPrepared<BE, Rg>],
+        b: &[&CKKSRightOperandPrepared<BE, Rg>],
         tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        H: GetTensorKey<BE>,
+        Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        H: GetTensorKey<BE, Rg>,
     {
         BE::ckks_dot_product_prepared(self, dst, a, b, tsk, scratch)
     }
@@ -340,13 +340,13 @@ impl<BE: Backend + CKKSDotProductImpl> CKKSDotProductOps<BE> for Module<BE> {
     fn ckks_dot_product_prepared_pt_vec<Dst>(
         &self,
         dst: &mut Dst,
-        a: &[&CKKSLeftOperandPrepared<BE>],
-        b: &[&CKKSRightOperandPrepared<BE>],
+        a: &[&CKKSLeftOperandPrepared<BE, Rg>],
+        b: &[&CKKSRightOperandPrepared<BE, Rg>],
         galois: &[i64],
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
     {
         BE::ckks_dot_product_prepared_pt_vec(self, dst, a, b, galois, scratch)
     }
@@ -363,13 +363,13 @@ impl<BE: Backend + CKKSDotProductImpl> CKKSDotProductOps<BE> for Module<BE> {
     fn ckks_dot_product_prepared_pt_vec_add<R>(
         &self,
         res: &mut R,
-        a: &[&CKKSLeftOperandPrepared<BE>],
-        b: &[&CKKSRightOperandPrepared<BE>],
+        a: &[&CKKSLeftOperandPrepared<BE, Rg>],
+        b: &[&CKKSRightOperandPrepared<BE, Rg>],
         galois: &[i64],
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
     {
         BE::ckks_dot_product_prepared_pt_vec_add(self, res, a, b, galois, scratch)
     }
@@ -385,10 +385,10 @@ impl<BE: Backend + CKKSDotProductImpl> CKKSDotProductOps<BE> for Module<BE> {
 
     fn ckks_dot_product_prepared_pt_vec_dft<R>(
         &self,
-        acc: &mut VecZnxDftBackendMut<'_, BE>,
+        acc: &mut VecZnxDftBackendMut<'_, BE, Rg>,
         res: &R,
-        a: &[&CKKSLeftOperandPrepared<BE>],
-        b: &[&CKKSRightOperandPrepared<BE>],
+        a: &[&CKKSLeftOperandPrepared<BE, Rg>],
+        b: &[&CKKSRightOperandPrepared<BE, Rg>],
         galois: &[i64],
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -409,10 +409,10 @@ impl<BE: Backend + CKKSDotProductImpl> CKKSDotProductOps<BE> for Module<BE> {
 
     fn ckks_dot_product_prepared_pt_vec_dft_add<R>(
         &self,
-        acc: &mut VecZnxDftBackendMut<'_, BE>,
+        acc: &mut VecZnxDftBackendMut<'_, BE, Rg>,
         res: &R,
-        a: &[&CKKSLeftOperandPrepared<BE>],
-        b: &[&CKKSRightOperandPrepared<BE>],
+        a: &[&CKKSLeftOperandPrepared<BE, Rg>],
+        b: &[&CKKSRightOperandPrepared<BE, Rg>],
         galois: &[i64],
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -434,44 +434,44 @@ impl<BE: Backend + CKKSDotProductImpl> CKKSDotProductOps<BE> for Module<BE> {
     fn ckks_dot_product_prepared_pt_vec_from_dft<Dst>(
         &self,
         res: &mut Dst,
-        acc: &mut VecZnxDftBackendMut<'_, BE>,
-        a: &CKKSLeftOperandPrepared<BE>,
-        b: &CKKSRightOperandPrepared<BE>,
+        acc: &mut VecZnxDftBackendMut<'_, BE, Rg>,
+        a: &CKKSLeftOperandPrepared<BE, Rg>,
+        b: &CKKSRightOperandPrepared<BE, Rg>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
     {
         BE::ckks_dot_product_prepared_pt_vec_from_dft(self, res, acc, a, b, scratch)
     }
 
     fn ckks_dot_product_pt_vec<Dst: Data, D: Data, E>(
         &self,
-        dst: &mut CKKSCiphertext<Dst, BE::ZnxWord, BE::Ring>,
-        a: &[&CKKSCiphertext<D, BE::ZnxWord, BE::Ring>],
+        dst: &mut CKKSCiphertext<Dst, BE::ZnxWord, Rg>,
+        a: &[&CKKSCiphertext<D, BE::ZnxWord, Rg>],
         b: &[&E],
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        CKKSCiphertext<Dst, BE::ZnxWord, BE::Ring>: GLWEToBackendMut<BE>,
-        CKKSCiphertext<D, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE> + GLWEInfos,
-        E: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
+        CKKSCiphertext<Dst, BE::ZnxWord, Rg>: GLWEToBackendMut<BE, Rg>,
+        CKKSCiphertext<D, BE::ZnxWord, Rg>: GLWEToBackendRef<BE, Rg> + GLWEInfos,
+        E: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos,
     {
         BE::ckks_dot_product_pt_vec(self, dst, a, b, scratch)
     }
 
     fn ckks_dot_product_pt_const<Dst: Data, D: Data, E>(
         &self,
-        dst: &mut CKKSCiphertext<Dst, BE::ZnxWord, BE::Ring>,
-        a: &[&CKKSCiphertext<D, BE::ZnxWord, BE::Ring>],
+        dst: &mut CKKSCiphertext<Dst, BE::ZnxWord, Rg>,
+        a: &[&CKKSCiphertext<D, BE::ZnxWord, Rg>],
         b: &[&E],
         pt_coeffs: &[usize],
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        CKKSCiphertext<Dst, BE::ZnxWord, BE::Ring>: GLWEToBackendMut<BE>,
-        CKKSCiphertext<D, BE::ZnxWord, BE::Ring>: GLWEToBackendRef<BE> + GLWEInfos,
-        E: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
+        CKKSCiphertext<Dst, BE::ZnxWord, Rg>: GLWEToBackendMut<BE, Rg>,
+        CKKSCiphertext<D, BE::ZnxWord, Rg>: GLWEToBackendRef<BE, Rg> + GLWEInfos,
+        E: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos,
     {
         BE::ckks_dot_product_pt_const(self, dst, a, b, pt_coeffs, scratch)
     }

@@ -151,7 +151,7 @@ pub fn glwe_cswap_assign_reference<BE, A, B>(
             let (tmp_res_big, mut scratch_6) = scratch_5.take_vec_znx_big_scratch(module.n(), cols, output_size);
             let mut tmp_res_big = tmp_res_big;
             module.glwe_external_product_dft(&mut res_dft, &tmp_c, s, &mut scratch_6.borrow());
-            let res_dft_ref = vec_znx_dft_backend_ref_from_mut::<BE>(&res_dft);
+            let res_dft_ref = vec_znx_dft_backend_ref_from_mut::<BE, Standard>(&res_dft);
             for col in 0..cols {
                 module.vec_znx_idft_apply(&mut tmp_res_big, col, &res_dft_ref, col, &mut scratch_6.borrow());
             }
@@ -159,7 +159,7 @@ pub fn glwe_cswap_assign_reference<BE, A, B>(
         }
 
         let mut res_big_tmp = res_big_tmp;
-        let res_big_ref = vec_znx_big_backend_ref_from_mut::<BE>(&res_big);
+        let res_big_ref = vec_znx_big_backend_ref_from_mut::<BE, Standard>(&res_big);
         res_a.set_canonical(true);
         res_b.set_canonical(true);
         let mut res_a_backend = res_a.to_backend_mut();
@@ -170,10 +170,10 @@ pub fn glwe_cswap_assign_reference<BE, A, B>(
                 0,
                 &res_big_ref,
                 j,
-                &vec_znx_backend_ref_from_mut::<BE>(a_prev.data()),
+                &vec_znx_backend_ref_from_mut::<BE, Standard>(a_prev.data()),
                 j,
             );
-            let res_big_tmp_ref = vec_znx_big_backend_ref_from_mut::<BE>(&res_big_tmp);
+            let res_big_tmp_ref = vec_znx_big_backend_ref_from_mut::<BE, Standard>(&res_big_tmp);
             module.vec_znx_big_normalize(
                 res_a_backend.data_mut(),
                 res_base2k,
@@ -192,12 +192,12 @@ pub fn glwe_cswap_assign_reference<BE, A, B>(
             module.vec_znx_big_sub_small_a(
                 &mut res_big_tmp,
                 0,
-                &vec_znx_backend_ref_from_mut::<BE>(b_prev.data()),
+                &vec_znx_backend_ref_from_mut::<BE, Standard>(b_prev.data()),
                 j,
                 &res_big_ref,
                 j,
             );
-            let res_big_tmp_ref = vec_znx_big_backend_ref_from_mut::<BE>(&res_big_tmp);
+            let res_big_tmp_ref = vec_znx_big_backend_ref_from_mut::<BE, Standard>(&res_big_tmp);
             module.vec_znx_big_normalize(
                 res_b_backend.data_mut(),
                 res_base2k,
@@ -239,7 +239,7 @@ pub fn glwe_cswap_assign_reference<BE, A, B>(
             let (tmp_res_big, mut scratch_6) = scratch_5.take_vec_znx_big_scratch(module.n(), cols, output_size);
             let mut tmp_res_big = tmp_res_big;
             module.glwe_external_product_dft(&mut res_dft, &tmp_c, s, &mut scratch_6.borrow());
-            let res_dft_ref = vec_znx_dft_backend_ref_from_mut::<BE>(&res_dft);
+            let res_dft_ref = vec_znx_dft_backend_ref_from_mut::<BE, Standard>(&res_dft);
             for col in 0..cols {
                 module.vec_znx_idft_apply(&mut tmp_res_big, col, &res_dft_ref, col, &mut scratch_6.borrow());
             }
@@ -247,7 +247,7 @@ pub fn glwe_cswap_assign_reference<BE, A, B>(
         }
 
         let mut res_big_tmp = res_big_tmp;
-        let res_big_ref = vec_znx_big_backend_ref_from_mut::<BE>(&res_big);
+        let res_big_ref = vec_znx_big_backend_ref_from_mut::<BE, Standard>(&res_big);
         res_a.set_canonical(true);
         res_b.set_canonical(true);
         let mut res_a_backend = res_a.to_backend_mut();
@@ -258,10 +258,10 @@ pub fn glwe_cswap_assign_reference<BE, A, B>(
                 0,
                 &res_big_ref,
                 j,
-                &vec_znx_backend_ref_from_mut::<BE>(tmp_a.data()),
+                &vec_znx_backend_ref_from_mut::<BE, Standard>(tmp_a.data()),
                 j,
             );
-            let res_big_tmp_ref = vec_znx_big_backend_ref_from_mut::<BE>(&res_big_tmp);
+            let res_big_tmp_ref = vec_znx_big_backend_ref_from_mut::<BE, Standard>(&res_big_tmp);
             module.vec_znx_big_normalize(
                 res_a_backend.data_mut(),
                 res_base2k,
@@ -280,12 +280,12 @@ pub fn glwe_cswap_assign_reference<BE, A, B>(
             module.vec_znx_big_sub_small_a(
                 &mut res_big_tmp,
                 0,
-                &vec_znx_backend_ref_from_mut::<BE>(tmp_b.data()),
+                &vec_znx_backend_ref_from_mut::<BE, Standard>(tmp_b.data()),
                 j,
                 &res_big_ref,
                 j,
             );
-            let res_big_tmp_ref = vec_znx_big_backend_ref_from_mut::<BE>(&res_big_tmp);
+            let res_big_tmp_ref = vec_znx_big_backend_ref_from_mut::<BE, Standard>(&res_big_tmp);
             module.vec_znx_big_normalize(
                 res_b_backend.data_mut(),
                 res_base2k,

@@ -1,5 +1,5 @@
 use poulpy_hal::AlignedBuf;
-use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, ReaderFrom, WriterTo};
+use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, ReaderFrom, Ring, Standard, WriterTo};
 
 use crate::layouts::{
     Base2K, Degree, Dnum, GGLWE, GGLWEAtBackendMut, GGLWEAtBackendRef, GGLWEAtViewMut, GGLWEAtViewRef, GGLWEBackendMut,
@@ -56,8 +56,8 @@ impl From<GGLWELayout> for GLWEAutomorphismKeyLayout {
 /// `D: Data` is the backing storage type (e.g. `AlignedBuf`, `&[u8]`,
 /// `&mut [u8]`).
 #[derive(PartialEq, Eq, Clone)]
-pub struct GLWEAutomorphismKey<D: Data, W: ZnxWord> {
-    pub(crate) key: GGLWE<D, W>,
+pub struct GLWEAutomorphismKey<D: Data, W: ZnxWord, Rg: Ring = Standard> {
+    pub(crate) key: GGLWE<D, W, Rg>,
     pub(crate) p: i64,
 }
 
@@ -85,26 +85,26 @@ pub trait SetGaloisElement {
     fn set_p(&mut self, p: i64);
 }
 
-impl<D: Data, W: ZnxWord> SetGaloisElement for GLWEAutomorphismKey<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> SetGaloisElement for GLWEAutomorphismKey<D, W, Rg> {
     fn set_p(&mut self, p: i64) {
         self.p = p
     }
 }
 
-impl<D: Data, W: ZnxWord> GetGaloisElement for GLWEAutomorphismKey<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> GetGaloisElement for GLWEAutomorphismKey<D, W, Rg> {
     fn p(&self) -> i64 {
         self.p
     }
 }
 
-impl<D: Data, W: ZnxWord> GLWEAutomorphismKey<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> GLWEAutomorphismKey<D, W, Rg> {
     /// Returns the Galois element index `p`.
     pub fn p(&self) -> i64 {
         self.p
     }
 }
 
-impl<D: Data, W: ZnxWord> LWEInfos for GLWEAutomorphismKey<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> LWEInfos for GLWEAutomorphismKey<D, W, Rg> {
     fn noise(&self) -> Option<crate::ComponentNoise> {
         self.key.noise()
     }
@@ -126,13 +126,13 @@ impl<D: Data, W: ZnxWord> LWEInfos for GLWEAutomorphismKey<D, W> {
     }
 }
 
-impl<D: Data, W: ZnxWord> GLWEInfos for GLWEAutomorphismKey<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> GLWEInfos for GLWEAutomorphismKey<D, W, Rg> {
     fn rank(&self) -> Rank {
         self.rank_out()
     }
 }
 
-impl<D: Data, W: ZnxWord> GGLWEInfos for GLWEAutomorphismKey<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> GGLWEInfos for GLWEAutomorphismKey<D, W, Rg> {
     fn k_aux(&self) -> TorusPrecision {
         self.key.k_aux()
     }
@@ -206,25 +206,25 @@ impl GGLWEInfos for GLWEAutomorphismKeyLayout {
     }
 }
 
-impl<BE: Backend> GGLWEAtBackendRef<BE> for GLWEAutomorphismKey<BE::OwnedBuf, BE::ZnxWord> {
-    fn at_backend(&self, row: usize, col: usize) -> GLWE<BE::BufRef<'_>, BE::ZnxWord> {
-        <GGLWE<BE::OwnedBuf, BE::ZnxWord> as GGLWEAtBackendRef<BE>>::at_backend(&self.key, row, col)
+impl<BE: Backend, Rg: Ring> GGLWEAtBackendRef<BE, Rg> for GLWEAutomorphismKey<BE::OwnedBuf, BE::ZnxWord, Rg> {
+    fn at_backend(&self, row: usize, col: usize) -> GLWE<BE::BufRef<'_>, BE::ZnxWord, Rg> {
+        <GGLWE<BE::OwnedBuf, BE::ZnxWord, Rg> as GGLWEAtBackendRef<BE, Rg>>::at_backend(&self.key, row, col)
     }
 }
 
-impl<BE: Backend> GGLWEAtBackendMut<BE> for GLWEAutomorphismKey<BE::OwnedBuf, BE::ZnxWord> {
-    fn at_backend_mut(&mut self, row: usize, col: usize) -> GLWE<BE::BufMut<'_>, BE::ZnxWord> {
-        <GGLWE<BE::OwnedBuf, BE::ZnxWord> as GGLWEAtBackendMut<BE>>::at_backend_mut(&mut self.key, row, col)
+impl<BE: Backend, Rg: Ring> GGLWEAtBackendMut<BE, Rg> for GLWEAutomorphismKey<BE::OwnedBuf, BE::ZnxWord, Rg> {
+    fn at_backend_mut(&mut self, row: usize, col: usize) -> GLWE<BE::BufMut<'_>, BE::ZnxWord, Rg> {
+        <GGLWE<BE::OwnedBuf, BE::ZnxWord, Rg> as GGLWEAtBackendMut<BE, Rg>>::at_backend_mut(&mut self.key, row, col)
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> fmt::Debug for GLWEAutomorphismKey<D, W> {
+impl<D: HostDataRef, W: ZnxWord, Rg: Ring> fmt::Debug for GLWEAutomorphismKey<D, W, Rg> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{self}")
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> fmt::Display for GLWEAutomorphismKey<D, W> {
+impl<D: HostDataRef, W: ZnxWord, Rg: Ring> fmt::Display for GLWEAutomorphismKey<D, W, Rg> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "(AutomorphismKey: p={}) {}", self.p, self.key)
     }
@@ -234,7 +234,7 @@ impl<D: HostDataRef, W: ZnxWord> fmt::Display for GLWEAutomorphismKey<D, W> {
     dead_code,
     reason = "host-owned constructors are kept for serialization and host-only staging"
 )]
-impl<W: ZnxWord> GLWEAutomorphismKey<AlignedBuf, W> {
+impl<W: ZnxWord, Rg: Ring> GLWEAutomorphismKey<AlignedBuf, W, Rg> {
     /// Allocates a new [`GLWEAutomorphismKey`] with the given parameters.
     pub(crate) fn alloc_from_infos<A>(infos: &A) -> Self
     where
@@ -287,41 +287,49 @@ impl<W: ZnxWord> GLWEAutomorphismKey<AlignedBuf, W> {
 
     /// Returns the byte count required for a [`GLWEAutomorphismKey`] with the given parameters.
     pub fn bytes_of(n: Degree, base2k: Base2K, dnum: Dnum, k_digit: TorusPrecision, k_aux: TorusPrecision, rank: Rank) -> usize {
-        GGLWE::<AlignedBuf, W>::bytes_of(n, base2k, dnum, k_digit, k_aux, rank, rank)
+        GGLWE::<AlignedBuf, W, Rg>::bytes_of(n, base2k, dnum, k_digit, k_aux, rank, rank)
     }
 }
 
-impl_gglwe_to_backend_for_field!(GLWEAutomorphismKey<D, BE::ZnxWord>, key, GGLWE<D, BE::ZnxWord>);
+impl_gglwe_to_backend_for_field!(GLWEAutomorphismKey<D, BE::ZnxWord, Rg>, key, GGLWE<D, BE::ZnxWord, Rg>);
 
-impl_gglwe_at_view_for_field!(GLWEAutomorphismKey<BE::OwnedBuf, BE::ZnxWord>; key);
+impl_gglwe_at_view_for_field!(GLWEAutomorphismKey<BE::OwnedBuf, BE::ZnxWord, Rg>; key);
 
-impl<D: Data, W: ZnxWord> SetGaloisElement for &mut GLWEAutomorphismKey<D, W> {
+impl<D: Data, W: ZnxWord, Rg: Ring> SetGaloisElement for &mut GLWEAutomorphismKey<D, W, Rg> {
     fn set_p(&mut self, p: i64) {
         self.p = p;
     }
 }
 
-impl_glwe_host_at_for_field!(GLWEAutomorphismKey<D, W>; key);
+impl_glwe_host_at_for_field!(GLWEAutomorphismKey<D, W, Rg>; key);
 
-impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GLWEAutomorphismKey<D, W> {
-    /// Deserialises from little-endian binary format.
+impl<D: HostDataMut, W: ZnxWord, Rg: Ring> ReaderFrom for GLWEAutomorphismKey<D, W, Rg> {
+    /// Deserialises from little-endian binary format. A stream of another ring, or whose Galois element is even or not
+    /// below the cyclotomic order of the ring at the stream's degree, is [`std::io::ErrorKind::InvalidData`], the
+    /// Galois element and noise metadata left unset.
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
         self.key.noise = None;
-        let p = reader.read_u64::<LittleEndian>()? as i64;
+        let p = reader.read_i64::<LittleEndian>()?;
         self.key.read_from(reader)?;
+        if let Err(err) = crate::layouts::validate_galois_element::<Rg>(p, self.key.n(), std::io::ErrorKind::InvalidData) {
+            self.key.noise = None;
+            return Err(err);
+        }
         self.p = p;
         Ok(())
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> WriterTo for GLWEAutomorphismKey<D, W> {
-    /// Serialises in little-endian binary format.
+impl<D: HostDataRef, W: ZnxWord, Rg: Ring> WriterTo for GLWEAutomorphismKey<D, W, Rg> {
+    /// Serialises in little-endian binary format: the Galois element `p` (`i64`), then the key. A `p` even or not below
+    /// the ring's cyclotomic order is [`std::io::ErrorKind::InvalidInput`], writing nothing.
     fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
         if let Some(noise) = &self.key.noise {
             noise.validate_wire()?;
             noise.validate_components(self.key.data.cols_out())?;
         }
-        writer.write_u64::<LittleEndian>(self.p as u64)?;
+        crate::layouts::validate_galois_element::<Rg>(self.p, self.key.n(), std::io::ErrorKind::InvalidInput)?;
+        writer.write_i64::<LittleEndian>(self.p)?;
         self.key.write_to(writer)
     }
 }

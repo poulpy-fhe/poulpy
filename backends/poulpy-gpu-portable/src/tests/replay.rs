@@ -4,14 +4,14 @@ use std::cell::RefCell;
 
 use poulpy_hal::{
     api::{VecZnxAddAssign, VecZnxDftAlloc, VecZnxDftApply},
-    layouts::{Backend, Module, VecZnx, VecZnxDftToBackendMut},
+    layouts::{Backend, Module, Standard, VecZnx, VecZnxDftToBackendMut},
     test_suite::{vec_znx_backend_mut, vec_znx_backend_ref},
 };
 
 use super::Runtime;
 use crate::Replay;
 
-type Gpu = crate::NTT4x30Gpu<Runtime, poulpy_hal::layouts::Standard>;
+type Gpu = crate::NTT4x30Gpu<Runtime>;
 type Vector = VecZnx<<Gpu as Backend>::OwnedBuf, i64>;
 
 const N: usize = 64;
@@ -27,14 +27,26 @@ fn read(vector: &Vector) -> Vec<i64> {
 }
 
 fn add_assign(module: &Module<Gpu>, res: &mut Vector, a: &Vector) {
-    module.vec_znx_add_assign(&mut vec_znx_backend_mut::<Gpu>(res), 0, &vec_znx_backend_ref::<Gpu>(a), 0);
+    module.vec_znx_add_assign(
+        &mut vec_znx_backend_mut::<Gpu, Standard>(res),
+        0,
+        &vec_znx_backend_ref::<Gpu, Standard>(a),
+        0,
+    );
 }
 
 /// A body of two launches on `res`, one of them through a temporary it allocates.
 fn body(module: &Module<Gpu>, res: &mut Vector, a: &Vector) {
     add_assign(module, res, a);
     let mut dft = module.vec_znx_dft_alloc(N, 1, res.size());
-    module.vec_znx_dft_apply(1, 0, &mut dft.to_backend_mut(), 0, &vec_znx_backend_ref::<Gpu>(res), 0);
+    module.vec_znx_dft_apply(
+        1,
+        0,
+        &mut dft.to_backend_mut(),
+        0,
+        &vec_znx_backend_ref::<Gpu, Standard>(res),
+        0,
+    );
 }
 
 #[test]

@@ -2,17 +2,17 @@
 
 use crate::{
     kernels::znx_normalize::{Limbs, LimbsMut, ZnxNormalize},
-    layouts::{HostDataMut, HostDataRef, VecZnxBackendMut, VecZnxBigBackendRef, VecZnxShape, ZnxView, ZnxViewMut},
+    layouts::{HostDataMut, HostDataRef, Ring, VecZnxBackendMut, VecZnxBigBackendRef, VecZnxShape, ZnxView, ZnxViewMut},
 };
 
 #[allow(clippy::too_many_arguments)]
-pub fn vec_znx_big_normalize_portable<'r, 'a, BE>(
-    res: &mut VecZnxBackendMut<'r, BE>,
+pub fn vec_znx_big_normalize_portable<'r, 'a, BE, Rg: Ring>(
+    res: &mut VecZnxBackendMut<'r, BE, Rg>,
     res_base2k: usize,
     res_k: usize,
     res_offset: i64,
     res_col: usize,
-    a: &VecZnxBigBackendRef<'a, BE>,
+    a: &VecZnxBigBackendRef<'a, BE, Rg>,
     a_base2k: usize,
     a_col: usize,
 ) where
@@ -28,7 +28,7 @@ pub fn vec_znx_big_normalize_portable<'r, 'a, BE>(
     let ptr = res.base_mut_ptr();
     // SAFETY: `ptr` and `shape` come from `res`, bounds-checked above, and `&mut res` is exclusive.
     unsafe {
-        vec_znx_big_normalize_range_raw_portable::<BE>(
+        vec_znx_big_normalize_range_raw_portable::<BE, Rg>(
             ptr, shape, res_base2k, res_k, res_offset, res_col, a, a_base2k, a_col, 0, n,
         )
     }
@@ -41,14 +41,14 @@ pub fn vec_znx_big_normalize_portable<'r, 'a, BE>(
 /// As [`crate::kernels::vec_znx::vec_znx_normalize_range_raw_portable`].
 #[allow(clippy::too_many_arguments)]
 #[doc(hidden)]
-pub unsafe fn vec_znx_big_normalize_range_raw_portable<'a, BE>(
+pub unsafe fn vec_znx_big_normalize_range_raw_portable<'a, BE, Rg: Ring>(
     res_ptr: *mut i64,
     res_shape: VecZnxShape,
     res_base2k: usize,
     res_k: usize,
     res_offset: i64,
     res_col: usize,
-    a: &VecZnxBigBackendRef<'a, BE>,
+    a: &VecZnxBigBackendRef<'a, BE, Rg>,
     a_base2k: usize,
     a_col: usize,
     coeff_start: usize,

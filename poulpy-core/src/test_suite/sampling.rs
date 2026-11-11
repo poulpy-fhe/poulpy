@@ -15,8 +15,8 @@ use poulpy_hal::{
         VecZnxBigNormalizeTmpBytes, VecZnxBigSubSmallAssign,
     },
     layouts::{
-        Backend, Module, ScalarZnx, ScratchOwned, VecZnxBigOwned, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxOwned,
-        ZnxView, ZnxViewMut, ZnxWord,
+        Backend, Module, Ring, ScalarZnx, ScratchOwned, VecZnxBigOwned, VecZnxBigToBackendMut, VecZnxBigToBackendRef,
+        VecZnxOwned, ZnxView, ZnxViewMut, ZnxWord,
     },
     source::Source,
     test_suite::{
@@ -34,31 +34,31 @@ const SENTINEL: i64 = 7;
 
 /// Uploads a two-column `ScalarZnx` holding the sentinel everywhere, fills
 /// column 1 through the seam, downloads, and returns `(column 0, column 1)`.
-fn fill_and_download<BE: TestBackend>(
+fn fill_and_download<BE: TestBackend<Rg>, Rg: Ring>(
     module: &Module<BE>,
     dist: Distribution,
     source: &mut Source,
 ) -> (Vec<BE::ZnxWord>, Vec<BE::ZnxWord>)
 where
-    Module<BE>: ScalarZnxFillDistribution<BE>,
+    Module<BE>: ScalarZnxFillDistribution<BE, Rg>,
 {
-    let mut host: ScalarZnx<AlignedBuf, BE::ZnxWord> = ScalarZnx::from_data(
-        alloc_aligned::<u8>(ScalarZnx::<AlignedBuf, BE::ZnxWord>::bytes_of(module.n(), COLS)),
+    let mut host: ScalarZnx<AlignedBuf, BE::ZnxWord, Rg> = ScalarZnx::from_data(
+        alloc_aligned::<u8>(ScalarZnx::<AlignedBuf, BE::ZnxWord, Rg>::bytes_of(module.n(), COLS)),
         module.n(),
         COLS,
     );
     for col in 0..COLS {
         host.at_mut(col, 0).fill(<BE::ZnxWord as ZnxWord>::from_i64(SENTINEL));
     }
-    let mut backend = upload_scalar_znx::<BE>(&host);
-    module.scalar_znx_fill_distribution(&mut scalar_znx_backend_mut::<BE>(&mut backend), 1, dist, source);
-    let out = download_scalar_znx::<BE>(&backend);
+    let mut backend = upload_scalar_znx::<BE, Rg>(&host);
+    module.scalar_znx_fill_distribution(&mut scalar_znx_backend_mut::<BE, Rg>(&mut backend), 1, dist, source);
+    let out = download_scalar_znx::<BE, Rg>(&backend);
     (out.at(0, 0).to_vec(), out.at(1, 0).to_vec())
 }
 
-pub fn test_scalar_znx_fill_distribution<BE: TestBackend>(_params: &TestParams, module: &Module<BE>)
+pub fn test_scalar_znx_fill_distribution<BE: TestBackend<Rg>, Rg: Ring>(_params: &TestParams, module: &Module<BE>)
 where
-    Module<BE>: ScalarZnxFillDistribution<BE>,
+    Module<BE>: ScalarZnxFillDistribution<BE, Rg>,
 {
     let n: usize = module.n();
     let word = |v: i64| <<BE as Backend>::ZnxWord as ZnxWord>::from_i64(v);
@@ -142,7 +142,7 @@ fn std_tolerance(n: usize, expected: f64) -> f64 {
 }
 
 /// Asserts the shape of `a` after two additions into `col_i`.
-fn assert_two_additions(a: &VecZnxOwned<i64>, col_i: usize, k: usize) {
+fn assert_two_additions<Rg: Ring>(a: &VecZnxOwned<i64, Rg>, col_i: usize, k: usize) {
     let zero: Vec<i64> = vec![0; a.n()];
     let k_f64: f64 = (1u64 << k as u64) as f64;
     for col_j in 0..COLS {
@@ -164,27 +164,44 @@ fn assert_two_additions(a: &VecZnxOwned<i64>, col_i: usize, k: usize) {
     }
 }
 
-pub fn test_vec_znx_add_noise<BE: TestBackend>(_params: &TestParams, module: &Module<BE>)
+pub fn test_vec_znx_add_noise<BE: TestBackend<Rg>, Rg: Ring>(_params: &TestParams, module: &Module<BE>)
 where
-    Module<BE>: VecZnxAddNoise<BE>,
+    Module<BE>: VecZnxAddNoise<BE, Rg>,
 {
     let noise = noise_infos();
     let mut source: Source = Source::new([0u8; 32]);
 
     for k in [2 * BASE2K - 3, 2 * BASE2K + 1] {
         for col_i in 0..COLS {
-            let mut a = upload_vec_znx::<BE>(&alloc_host_vec_znx::<BE>(module.n(), COLS, SIZE));
-            module.vec_znx_add_noise(BASE2K, k, &mut vec_znx_backend_mut::<BE>(&mut a), col_i, noise, &mut source);
-            module.vec_znx_add_noise(BASE2K, k, &mut vec_znx_backend_mut::<BE>(&mut a), col_i, noise, &mut source);
-            assert_two_additions(&download_vec_znx::<BE>(&a), col_i, k);
+            let mut a = upload_vec_znx::<BE, Rg>(&alloc_host_vec_znx::<BE, Rg>(module.n(), COLS, SIZE));
+            module.vec_znx_add_noise(
+                BASE2K,
+                k,
+                &mut vec_znx_backend_mut::<BE, Rg>(&mut a),
+                col_i,
+                noise,
+                &mut source,
+            );
+            module.vec_znx_add_noise(
+                BASE2K,
+                k,
+                &mut vec_znx_backend_mut::<BE, Rg>(&mut a),
+                col_i,
+                noise,
+                &mut source,
+            );
+            assert_two_additions(&download_vec_znx::<BE, Rg>(&a), col_i, k);
         }
     }
 }
 
-pub fn test_vec_znx_big_add_noise<BE: TestBackend>(_params: &TestParams, module: &Module<BE>)
+pub fn test_vec_znx_big_add_noise<BE: TestBackend<Rg>, Rg: Ring>(_params: &TestParams, module: &Module<BE>)
 where
-    Module<BE>:
-        VecZnxBigAddNoise<BE> + VecZnxAlloc<BE> + VecZnxBigAlloc<BE> + VecZnxBigNormalize<BE> + VecZnxBigNormalizeTmpBytes,
+    Module<BE>: VecZnxBigAddNoise<BE, Rg>
+        + VecZnxAlloc<BE>
+        + VecZnxBigAlloc<BE>
+        + VecZnxBigNormalize<BE, Rg>
+        + VecZnxBigNormalizeTmpBytes,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
     let noise = noise_infos();
@@ -193,7 +210,7 @@ where
 
     for k in [2 * BASE2K - 3, 2 * BASE2K + 1] {
         for col_i in 0..COLS {
-            let mut a: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(module.n(), COLS, SIZE);
+            let mut a: VecZnxBigOwned<BE, Rg> = module.vec_znx_big_alloc(module.n(), COLS, SIZE);
             module.vec_znx_big_add_noise(BASE2K, k, &mut a.to_backend_mut(), col_i, noise, &mut source);
             module.vec_znx_big_add_noise(BASE2K, k, &mut a.to_backend_mut(), col_i, noise, &mut source);
 
@@ -201,7 +218,7 @@ where
             let mut res = module.vec_znx_alloc(module.n(), COLS, SIZE);
             for col_j in 0..COLS {
                 module.vec_znx_big_normalize(
-                    &mut vec_znx_backend_mut::<BE>(&mut res),
+                    &mut vec_znx_backend_mut::<BE, Rg>(&mut res),
                     BASE2K,
                     SIZE * BASE2K,
                     0,
@@ -212,20 +229,20 @@ where
                     &mut scratch.borrow(),
                 );
             }
-            assert_two_additions(&download_vec_znx::<BE>(&res), col_i, k);
+            assert_two_additions(&download_vec_znx::<BE, Rg>(&res), col_i, k);
         }
     }
 }
 
 /// Same-backend Gaussian reproducibility, source advancement and preservation.
 /// Random streams deliberately are not compared between distinct backends.
-fn gaussian_reproducibility<BE: TestBackend>(module: &Module<BE>)
+fn gaussian_reproducibility<BE: TestBackend<Rg>, Rg: Ring>(module: &Module<BE>)
 where
-    Module<BE>: VecZnxAddNoise<BE>
-        + VecZnxBigAddNoise<BE>
+    Module<BE>: VecZnxAddNoise<BE, Rg>
+        + VecZnxBigAddNoise<BE, Rg>
         + VecZnxAlloc<BE>
         + VecZnxBigAlloc<BE>
-        + VecZnxBigNormalize<BE>
+        + VecZnxBigNormalize<BE, Rg>
         + VecZnxBigNormalizeTmpBytes,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
@@ -239,7 +256,7 @@ where
                 let mut scratch = ScratchOwned::<BE>::alloc(module.vec_znx_big_normalize_tmp_bytes());
                 for col in 0..COLS {
                     module.vec_znx_big_normalize(
-                        &mut vec_znx_backend_mut::<BE>(&mut result),
+                        &mut vec_znx_backend_mut::<BE, Rg>(&mut result),
                         BASE2K,
                         SIZE * BASE2K,
                         0,
@@ -251,9 +268,16 @@ where
                     );
                 }
             } else {
-                module.vec_znx_add_noise(BASE2K, NOISE_K, &mut vec_znx_backend_mut::<BE>(&mut result), 1, noise, source);
+                module.vec_znx_add_noise(
+                    BASE2K,
+                    NOISE_K,
+                    &mut vec_znx_backend_mut::<BE, Rg>(&mut result),
+                    1,
+                    noise,
+                    source,
+                );
             }
-            download_vec_znx::<BE>(&result)
+            download_vec_znx::<BE, Rg>(&result)
         };
         let mut first = Source::new([91; 32]);
         let mut repeat = Source::new([91; 32]);
@@ -269,9 +293,9 @@ where
 }
 
 /// Checks the moments used by fresh-noise planning with at least 2^14 draws.
-fn secret_moments<BE: TestBackend>(module: &Module<BE>)
+fn secret_moments<BE: TestBackend<Rg>, Rg: Ring>(module: &Module<BE>)
 where
-    Module<BE>: ScalarZnxFillDistribution<BE>,
+    Module<BE>: ScalarZnxFillDistribution<BE, Rg>,
 {
     for dist in [
         Distribution::TernaryProb(0.25),
@@ -287,8 +311,8 @@ where
         } else {
             module.n()
         };
-        let host = ScalarZnx::from_data(alloc_aligned::<u8>(ScalarZnx::<AlignedBuf, i64>::bytes_of(n, 1)), n, 1);
-        let mut out = upload_scalar_znx::<BE>(&host);
+        let host = ScalarZnx::from_data(alloc_aligned::<u8>(ScalarZnx::<AlignedBuf, i64, Rg>::bytes_of(n, 1)), n, 1);
+        let mut out = upload_scalar_znx::<BE, Rg>(&host);
         let mut source = Source::new([81; 32]);
         let mut sum = 0i64;
         let mut squares = 0usize;
@@ -296,8 +320,8 @@ where
         let mut blocks = 0usize;
         let draws = (1usize << 14).div_ceil(n);
         for _ in 0..draws {
-            module.scalar_znx_fill_distribution(&mut scalar_znx_backend_mut::<BE>(&mut out), 0, dist, &mut source);
-            let host = download_scalar_znx::<BE>(&out);
+            module.scalar_znx_fill_distribution(&mut scalar_znx_backend_mut::<BE, Rg>(&mut out), 0, dist, &mut source);
+            let host = download_scalar_znx::<BE, Rg>(&out);
             for &value in host.at(0, 0) {
                 assert!((-1..=1).contains(&value));
                 sum += value;
@@ -329,7 +353,7 @@ where
     }
 }
 
-fn reconstruct(a: &VecZnxOwned<i64>, col: usize, i: usize, base: usize, k: usize) -> IBig {
+fn reconstruct<Rg: Ring>(a: &VecZnxOwned<i64, Rg>, col: usize, i: usize, base: usize, k: usize) -> IBig {
     let active = k.div_ceil(base);
     let padding = active * base - k;
     let raw = (0..active).fold(IBig::ZERO, |raw, limb| (raw << base) + a.at(col, limb)[i]);
@@ -339,9 +363,9 @@ fn reconstruct(a: &VecZnxOwned<i64>, col: usize, i: usize, base: usize, k: usize
 
 /// Full-width distribution checks run on the supplied module, without relying
 /// on its particular mapping from seeds to integer samples.
-pub fn test_full_width_noise<BE: TestBackend>(module: &Module<BE>)
+pub fn test_full_width_noise<BE: TestBackend<Rg>, Rg: Ring>(module: &Module<BE>)
 where
-    Module<BE>: VecZnxAddNoise<BE>,
+    Module<BE>: VecZnxAddNoise<BE, Rg>,
 {
     for k in [173usize, 170] {
         let active = k.div_ceil(BASE2K);
@@ -381,14 +405,14 @@ where
             let mut low_bits = [0usize; 8];
             let mut source = Source::new([64; 32]);
             for _ in 0..rounds {
-                let mut host = alloc_host_vec_znx::<BE>(module.n(), 2, active + 1);
+                let mut host = alloc_host_vec_znx::<BE, Rg>(module.n(), 2, active + 1);
                 for limb in 0..=active {
                     host.at_mut(0, limb).fill(91);
                 }
                 host.at_mut(1, active).fill(37);
-                let mut out = upload_vec_znx::<BE>(&host);
-                module.vec_znx_add_noise(BASE2K, k, &mut vec_znx_backend_mut::<BE>(&mut out), 1, noise, &mut source);
-                let got = download_vec_znx::<BE>(&out);
+                let mut out = upload_vec_znx::<BE, Rg>(&host);
+                module.vec_znx_add_noise(BASE2K, k, &mut vec_znx_backend_mut::<BE, Rg>(&mut out), 1, noise, &mut source);
+                let got = download_vec_znx::<BE, Rg>(&out);
                 for i in 0..got.n() {
                     let sample = reconstruct(&got, 1, i, BASE2K, k);
                     if matches!(noise, Noise::Uniform { .. }) {
@@ -437,37 +461,37 @@ where
     }
 }
 
-fn stream_independence<BE: TestBackend>(module: &Module<BE>)
+fn stream_independence<BE: TestBackend<Rg>, Rg: Ring>(module: &Module<BE>)
 where
-    Module<BE>: ScalarZnxFillDistribution<BE>
-        + VecZnxAddNoise<BE>
-        + VecZnxBigAddNoise<BE>
+    Module<BE>: ScalarZnxFillDistribution<BE, Rg>
+        + VecZnxAddNoise<BE, Rg>
+        + VecZnxBigAddNoise<BE, Rg>
         + VecZnxBigAlloc<BE>
         + VecZnxAlloc<BE>
-        + VecZnxBigFromSmall<BE>
-        + VecZnxBigSubSmallAssign<BE>
-        + VecZnxBigNormalize<BE>
+        + VecZnxBigFromSmall<BE, Rg>
+        + VecZnxBigSubSmallAssign<BE, Rg>
+        + VecZnxBigNormalize<BE, Rg>
         + VecZnxBigNormalizeTmpBytes,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
     for dist in [Distribution::TernaryProb(0.25), Distribution::BinaryBlock(8)] {
         let draw = |cols, col| {
             let mut host = ScalarZnx::from_data(
-                alloc_aligned::<u8>(ScalarZnx::<AlignedBuf, i64>::bytes_of(module.n(), cols)),
+                alloc_aligned::<u8>(ScalarZnx::<AlignedBuf, i64, Rg>::bytes_of(module.n(), cols)),
                 module.n(),
                 cols,
             );
             for i in 0..cols {
                 host.at_mut(i, 0).fill(9);
             }
-            let mut out = upload_scalar_znx::<BE>(&host);
+            let mut out = upload_scalar_znx::<BE, Rg>(&host);
             module.scalar_znx_fill_distribution(
-                &mut scalar_znx_backend_mut::<BE>(&mut out),
+                &mut scalar_znx_backend_mut::<BE, Rg>(&mut out),
                 col,
                 dist,
                 &mut Source::new([28; 32]),
             );
-            download_scalar_znx::<BE>(&out).at(col, 0).to_vec()
+            download_scalar_znx::<BE, Rg>(&out).at(col, 0).to_vec()
         };
         assert_eq!(draw(1, 0), draw(3, 2));
     }
@@ -481,28 +505,28 @@ where
                 let active = k.div_ceil(BASE2K);
                 let draw = |cols, size, col| {
                     let initial = if cols > 1 { 11 } else { 0 };
-                    let mut host = alloc_host_vec_znx::<BE>(module.n(), cols, size);
+                    let mut host = alloc_host_vec_znx::<BE, Rg>(module.n(), cols, size);
                     for limb in 0..active {
                         host.at_mut(col, limb).fill(initial);
                     }
-                    let mut out = upload_vec_znx::<BE>(&host);
+                    let mut out = upload_vec_znx::<BE, Rg>(&host);
                     let mut source = Source::new([29; 32]);
                     let mut residual = initial;
                     if big {
                         // Preload the same digits and remove them after sampling: the sampler only adds.
                         let mut wide = module.vec_znx_big_alloc(module.n(), cols, size);
-                        module.vec_znx_big_from_small(&mut wide.to_backend_mut(), col, &vec_znx_backend_ref::<BE>(&out), col);
+                        module.vec_znx_big_from_small(&mut wide.to_backend_mut(), col, &vec_znx_backend_ref::<BE, Rg>(&out), col);
                         module.vec_znx_big_add_noise(BASE2K, k, &mut wide.to_backend_mut(), col, noise, &mut source);
                         module.vec_znx_big_sub_small_assign(
                             &mut wide.to_backend_mut(),
                             col,
-                            &vec_znx_backend_ref::<BE>(&out),
+                            &vec_znx_backend_ref::<BE, Rg>(&out),
                             col,
                         );
                         residual = 0;
                         let mut scratch = ScratchOwned::<BE>::alloc(module.vec_znx_big_normalize_tmp_bytes());
                         module.vec_znx_big_normalize(
-                            &mut vec_znx_backend_mut::<BE>(&mut out),
+                            &mut vec_znx_backend_mut::<BE, Rg>(&mut out),
                             BASE2K,
                             size * BASE2K,
                             0,
@@ -513,9 +537,16 @@ where
                             &mut scratch.borrow(),
                         );
                     } else {
-                        module.vec_znx_add_noise(BASE2K, k, &mut vec_znx_backend_mut::<BE>(&mut out), col, noise, &mut source);
+                        module.vec_znx_add_noise(
+                            BASE2K,
+                            k,
+                            &mut vec_znx_backend_mut::<BE, Rg>(&mut out),
+                            col,
+                            noise,
+                            &mut source,
+                        );
                     }
-                    let host = download_vec_znx::<BE>(&out);
+                    let host = download_vec_znx::<BE, Rg>(&out);
                     (0..active)
                         .flat_map(|limb| host.at(col, limb).iter().map(|&digit| digit - residual))
                         .collect::<Vec<_>>()
@@ -529,29 +560,29 @@ where
 /// Runs the distribution and seeded-stream contracts independently on each
 /// backend, on the modules the suite supplies. The noise bounds follow their
 /// degree, see the module documentation.
-pub fn test_sampling_contract<BR: TestBackend, BT: TestBackend>(
+pub fn test_sampling_contract<BR: TestBackend<Rg>, BT: TestBackend<Rg>, Rg: Ring>(
     params: &TestParams,
     _: &crate::test_suite::parity::ParityShapes,
     r: &Module<BR>,
     t: &Module<BT>,
 ) where
-    Module<BR>: ScalarZnxFillDistribution<BR>
-        + VecZnxAddNoise<BR>
-        + VecZnxBigAddNoise<BR>
+    Module<BR>: ScalarZnxFillDistribution<BR, Rg>
+        + VecZnxAddNoise<BR, Rg>
+        + VecZnxBigAddNoise<BR, Rg>
         + VecZnxAlloc<BR>
         + VecZnxBigAlloc<BR>
-        + VecZnxBigFromSmall<BR>
-        + VecZnxBigSubSmallAssign<BR>
-        + VecZnxBigNormalize<BR>
+        + VecZnxBigFromSmall<BR, Rg>
+        + VecZnxBigSubSmallAssign<BR, Rg>
+        + VecZnxBigNormalize<BR, Rg>
         + VecZnxBigNormalizeTmpBytes,
-    Module<BT>: ScalarZnxFillDistribution<BT>
-        + VecZnxAddNoise<BT>
-        + VecZnxBigAddNoise<BT>
+    Module<BT>: ScalarZnxFillDistribution<BT, Rg>
+        + VecZnxAddNoise<BT, Rg>
+        + VecZnxBigAddNoise<BT, Rg>
         + VecZnxAlloc<BT>
         + VecZnxBigAlloc<BT>
-        + VecZnxBigFromSmall<BT>
-        + VecZnxBigSubSmallAssign<BT>
-        + VecZnxBigNormalize<BT>
+        + VecZnxBigFromSmall<BT, Rg>
+        + VecZnxBigSubSmallAssign<BT, Rg>
+        + VecZnxBigNormalize<BT, Rg>
         + VecZnxBigNormalizeTmpBytes,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT>,

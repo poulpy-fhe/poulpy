@@ -1,7 +1,7 @@
 # Multiparty operation contracts
 
 Public `api` traits follow the [layering contract](../../docs/guides/layering-contract.md). The references compose
-`poulpy-core` and `poulpy-hal` operations.
+`poulpy-core` and `poulpy-hal` operations. Every protocol and PAT operation acts on standard-ring operands.
 
 ## Public API organization
 
@@ -55,9 +55,8 @@ and number of independently summed parties. Each `FreshNoiseEstimate` records a
 effective second-moment estimate and its precision: an estimate `V` at precision `k`
 has torus variance `V * 2^(-2k)`. Rescaling the estimate does not change the stored
 secret count. The estimate is not an assertion that the resulting distribution
-is Gaussian. For the standard negacyclic ring, `phase_noise(n)` computes
-`V_body + n * E[S²] * sum(V_masks)`. Conjugate-invariant public-key encryption
-uses `weighted_phase_noise(n, 2*n)`, the average over coefficients.
+is Gaussian. On the standard negacyclic ring, `phase_noise(n)` computes
+`V_body + n * E[S²] * sum(V_masks)`.
 Rank-zero shares have one body component even when their secret provenance names
 a nonzero secret distribution.
 

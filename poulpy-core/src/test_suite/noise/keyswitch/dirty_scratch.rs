@@ -14,7 +14,7 @@ use crate::layouts::prepared::GGLWEPreparedToBackendRef;
 use crate::test_suite::poisoned_scratch;
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxFillUniformSource},
-    layouts::{DigestU64, Module, ScalarZnx, ScratchOwned, ZnxViewMut},
+    layouts::{DigestU64, Module, Ring, ScalarZnx, ScratchOwned, ZnxViewMut},
     source::Source,
     test_suite::{TestParams, vec_znx_backend_mut},
 };
@@ -39,19 +39,19 @@ use crate::{
 /// zeroing the buffer first — an obligation that was invisible at the call site
 /// and that the automorphism path did not meet. Running the same keyswitch over a
 /// zeroed and a poisoned arena pins the buffer as self-initializing.
-pub fn test_glwe_keyswitch_ignores_dirty_scratch<BE: crate::test_suite::noise::TestBackend>(
+pub fn test_glwe_keyswitch_ignores_dirty_scratch<BE: crate::test_suite::noise::TestBackend<Rg>, Rg: Ring>(
     params: &TestParams,
     module: &Module<BE>,
 ) where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: VecZnxFillUniformSource<BE>
-        + GLWESwitchingKeyEncryptSk<BE>
-        + GLWEEncryptSk<BE>
-        + GLWEKeyswitch<BE>
-        + GLWESecretPreparedFactory<BE>
-        + GLWESwitchingKeyPreparedFactory<BE>,
+    Module<BE>: VecZnxFillUniformSource<BE, Rg>
+        + GLWESwitchingKeyEncryptSk<BE, Rg>
+        + GLWEEncryptSk<BE, Rg>
+        + GLWEKeyswitch<BE, Rg>
+        + GLWESecretPreparedFactory<BE, Rg>
+        + GLWESwitchingKeyPreparedFactory<BE, Rg>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
@@ -91,11 +91,11 @@ pub fn test_glwe_keyswitch_ignores_dirty_scratch<BE: crate::test_suite::noise::T
             rank_out: rank.into(),
         };
 
-        let mut ksk: GLWESwitchingKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_switching_key_alloc_from_infos(&ksk_infos);
-        let mut glwe_in: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_in_infos);
-        let mut over_zeroed: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_out_infos);
-        let mut over_poisoned: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_out_infos);
-        let mut pt_in: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_in_infos);
+        let mut ksk: GLWESwitchingKey<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_switching_key_alloc_from_infos(&ksk_infos);
+        let mut glwe_in: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&glwe_in_infos);
+        let mut over_zeroed: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&glwe_out_infos);
+        let mut over_poisoned: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&glwe_out_infos);
+        let mut pt_in: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_plaintext_alloc_from_infos(&glwe_in_infos);
 
         let mut source_xs: Source = Source::new([0u8; 32]);
         let mut source_xe: Source = Source::new([0u8; 32]);
@@ -104,7 +104,7 @@ pub fn test_glwe_keyswitch_ignores_dirty_scratch<BE: crate::test_suite::noise::T
         module.vec_znx_fill_uniform_source(
             pt_in.base2k().into(),
             pt_in.k().as_usize(),
-            &mut vec_znx_backend_mut::<BE>(&mut pt_in.data),
+            &mut vec_znx_backend_mut::<BE, Rg>(&mut pt_in.data),
             0,
             &mut source_xa,
         );
@@ -115,9 +115,9 @@ pub fn test_glwe_keyswitch_ignores_dirty_scratch<BE: crate::test_suite::noise::T
                 | module.glwe_switching_key_prepare_tmp_bytes(&ksk_infos),
         );
 
-        let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(rank.into());
+        let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_secret_alloc(rank.into());
         module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut source_xs);
-        let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc(rank.into());
+        let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE, Rg> = module.glwe_secret_prepared_alloc(rank.into());
         module.glwe_secret_prepare(&mut sk_prepared, &sk);
 
         module.glwe_switching_key_encrypt_sk(&mut ksk, &sk, &sk, &mut source_xe, &mut source_xa, &mut scratch.arena());
@@ -131,7 +131,7 @@ pub fn test_glwe_keyswitch_ignores_dirty_scratch<BE: crate::test_suite::noise::T
             &mut scratch.borrow(),
         );
 
-        let mut ksk_prepared: GLWESwitchingKeyPrepared<BE::OwnedBuf, BE> =
+        let mut ksk_prepared: GLWESwitchingKeyPrepared<BE::OwnedBuf, BE, Rg> =
             module.glwe_switching_key_prepared_alloc_from_infos(&ksk);
         module.glwe_switching_key_prepare(&mut ksk_prepared, &ksk, &mut scratch.borrow());
 
@@ -170,19 +170,19 @@ pub fn test_glwe_keyswitch_ignores_dirty_scratch<BE: crate::test_suite::noise::T
 /// stale scratch. Callers compensated by pre-zeroing `res_dft`, an obligation
 /// invisible at the call site. Sibling of
 /// `test_glwe_keyswitch_ignores_dirty_scratch`.
-pub fn test_glwe_external_product_ignores_dirty_scratch<BE: crate::test_suite::noise::TestBackend>(
+pub fn test_glwe_external_product_ignores_dirty_scratch<BE: crate::test_suite::noise::TestBackend<Rg>, Rg: Ring>(
     params: &TestParams,
     module: &Module<BE>,
 ) where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: GGSWEncryptSk<BE>
-        + GGSWPreparedFactory<BE>
-        + VecZnxFillUniformSource<BE>
-        + GLWEExternalProduct<BE>
-        + GLWEEncryptSk<BE>
-        + GLWESecretPreparedFactory<BE>,
+    Module<BE>: GGSWEncryptSk<BE, Rg>
+        + GGSWPreparedFactory<BE, Rg>
+        + VecZnxFillUniformSource<BE, Rg>
+        + GLWEExternalProduct<BE, Rg>
+        + GLWEEncryptSk<BE, Rg>
+        + GLWESecretPreparedFactory<BE, Rg>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
@@ -220,12 +220,12 @@ pub fn test_glwe_external_product_ignores_dirty_scratch<BE: crate::test_suite::n
             rank: rank.into(),
         };
 
-        let mut ggsw: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&ggsw_infos);
-        let mut glwe_in: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_in_infos);
-        let mut over_zeroed: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_out_infos);
-        let mut over_poisoned: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_out_infos);
-        let mut pt_ggsw: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = module.scalar_znx_alloc(module.n(), 1);
-        let mut pt_in: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_in_infos);
+        let mut ggsw: GGSW<BE::OwnedBuf, BE::ZnxWord, Rg> = module.ggsw_alloc_from_infos(&ggsw_infos);
+        let mut glwe_in: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&glwe_in_infos);
+        let mut over_zeroed: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&glwe_out_infos);
+        let mut over_poisoned: GLWE<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_alloc_from_infos(&glwe_out_infos);
+        let mut pt_ggsw: ScalarZnx<BE::OwnedBuf, BE::ZnxWord, Rg> = module.scalar_znx_alloc(module.n(), 1);
+        let mut pt_in: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_plaintext_alloc_from_infos(&glwe_in_infos);
 
         let mut source_xs: Source = Source::new([0u8; 32]);
         let mut source_xe: Source = Source::new([0u8; 32]);
@@ -234,7 +234,7 @@ pub fn test_glwe_external_product_ignores_dirty_scratch<BE: crate::test_suite::n
         module.vec_znx_fill_uniform_source(
             base2k,
             pt_in.k().as_usize(),
-            &mut vec_znx_backend_mut::<BE>(&mut pt_in.data),
+            &mut vec_znx_backend_mut::<BE, Rg>(&mut pt_in.data),
             0,
             &mut source_xa,
         );
@@ -246,9 +246,9 @@ pub fn test_glwe_external_product_ignores_dirty_scratch<BE: crate::test_suite::n
                 | module.ggsw_prepare_tmp_bytes(&ggsw_infos),
         );
 
-        let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(rank.into());
+        let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord, Rg> = module.glwe_secret_alloc(rank.into());
         module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut source_xs);
-        let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc(rank.into());
+        let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE, Rg> = module.glwe_secret_prepared_alloc(rank.into());
         module.glwe_secret_prepare(&mut sk_prepared, &sk);
 
         module.ggsw_encrypt_sk(
@@ -269,7 +269,7 @@ pub fn test_glwe_external_product_ignores_dirty_scratch<BE: crate::test_suite::n
             &mut scratch.borrow(),
         );
 
-        let mut ggsw_prepared: GGSWPrepared<BE::OwnedBuf, BE> = module.ggsw_prepared_alloc_from_infos(&ggsw);
+        let mut ggsw_prepared: GGSWPrepared<BE::OwnedBuf, BE, Rg> = module.ggsw_prepared_alloc_from_infos(&ggsw);
         module.ggsw_prepare(&mut ggsw_prepared, &ggsw, &mut scratch.borrow());
 
         // 0x00 then 0xFF: as `f64` the poison is NaN and as `i64` it is -1, so any

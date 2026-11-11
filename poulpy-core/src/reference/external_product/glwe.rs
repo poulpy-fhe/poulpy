@@ -12,7 +12,8 @@ use poulpy_hal::{
         VmpApplyDftToDft, VmpApplyDftToDftAdd, VmpApplyDftToDftTmpBytes,
     },
     layouts::{
-        Backend, Module, ScratchArena, VecZnxBackendRef, VecZnxBigToBackendRef, VecZnxDftToBackendRef, VecZnxToBackendRef,
+        Backend, Module, Ring, ScratchArena, Standard, VecZnxBackendRef, VecZnxBigToBackendRef, VecZnxDftToBackendRef,
+        VecZnxToBackendRef,
     },
 };
 
@@ -56,12 +57,12 @@ pub use crate::layouts::glwe_external_product_output_size;
 /// The digit loop over the first `a_size` limbs of every column of `a`: the
 /// limbs the precision of the operand covers, as the scratch query counts
 /// them, and not the allocated width of its buffer.
-fn glwe_external_product_dft_fill<BE, M>(
+fn glwe_external_product_dft_fill<BE, M, Rg: Ring>(
     module: &M,
-    res_dft: &mut VecZnxDftBackendMut<'_, BE>,
-    a: &VecZnxBackendRef<'_, BE>,
+    res_dft: &mut VecZnxDftBackendMut<'_, BE, Rg>,
+    a: &VecZnxBackendRef<'_, BE, Rg>,
     a_size: usize,
-    ggsw: &GGSWPreparedBackendRef<'_, BE>,
+    ggsw: &GGSWPreparedBackendRef<'_, BE, Rg>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
@@ -70,10 +71,10 @@ fn glwe_external_product_dft_fill<BE, M>(
         + VecZnxDftBytesOf
         + VmpApplyDftToDftTmpBytes
         + VecZnxNormalizeTmpBytes
-        + VecZnxDftApply<BE>
-        + VmpApplyDftToDft<BE>
-        + VmpApplyDftToDftAdd<BE>
-        + VecZnxIdftApply<BE>
+        + VecZnxDftApply<BE, Rg>
+        + VmpApplyDftToDft<BE, Rg>
+        + VmpApplyDftToDftAdd<BE, Rg>
+        + VecZnxIdftApply<BE, Rg>
         + VecZnxIdftApplyTmpBytes,
 {
     const {
@@ -129,7 +130,7 @@ fn glwe_external_product_dft_fill<BE, M>(
 }
 
 /// Callable contiguous-limb DFT external-product algorithm and its workspace query.
-pub trait GLWEExternalProductDftReference<BE: Backend> {
+pub trait GLWEExternalProductDftReference<BE: Backend, Rg: Ring = Standard> {
     /// Workspace for the contiguous-limb algorithm, including input normalization.
     fn glwe_external_product_dft_tmp_bytes_reference<R, A, B>(&self, res_infos: &R, a_infos: &A, b_infos: &B) -> usize
     where
@@ -140,31 +141,31 @@ pub trait GLWEExternalProductDftReference<BE: Backend> {
     /// Fills the DFT output using the portable contiguous-limb digit loop.
     fn glwe_external_product_dft_reference<'r, A>(
         &self,
-        res_dft: &mut poulpy_hal::layouts::VecZnxDftBackendMut<'r, BE>,
+        res_dft: &mut poulpy_hal::layouts::VecZnxDftBackendMut<'r, BE, Rg>,
         a: &A,
-        ggsw: &GGSWPreparedBackendRef<'_, BE>,
+        ggsw: &GGSWPreparedBackendRef<'_, BE, Rg>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        A: GLWEToBackendRef<BE>;
+        A: GLWEToBackendRef<BE, Rg>;
 }
 
-impl<BE: Backend> GLWEExternalProductDftReference<BE> for Module<BE>
+impl<BE: Backend, Rg: Ring> GLWEExternalProductDftReference<BE, Rg> for Module<BE>
 where
     Self: ModuleN
-        + VecZnxGadgetDecompose<BE>
+        + VecZnxGadgetDecompose<BE, Rg>
         + VecZnxGadgetDecomposeTmpBytes
         + VecZnxDftBytesOf
         + VmpApplyDftToDftTmpBytes
         + VecZnxNormalizeTmpBytes
-        + VecZnxDftApply<BE>
-        + VmpApplyDftToDft<BE>
-        + VmpApplyDftToDftAdd<BE>
+        + VecZnxDftApply<BE, Rg>
+        + VmpApplyDftToDft<BE, Rg>
+        + VmpApplyDftToDftAdd<BE, Rg>
         + VecZnxBigBytesOf
-        + VecZnxIdftApply<BE>
+        + VecZnxIdftApply<BE, Rg>
         + VecZnxIdftApplyTmpBytes
-        + VecZnxBigNormalize<BE>
-        + VecZnxNormalize<BE>
-        + GLWENormalize<BE>,
+        + VecZnxBigNormalize<BE, Rg>
+        + VecZnxNormalize<BE, Rg>
+        + GLWENormalize<BE, Rg>,
 {
     fn glwe_external_product_dft_tmp_bytes_reference<R, A, B>(&self, res_infos: &R, a_infos: &A, b_infos: &B) -> usize
     where
@@ -194,12 +195,12 @@ where
 
     fn glwe_external_product_dft_reference<'r, A>(
         &self,
-        res_dft: &mut VecZnxDftBackendMut<'r, BE>,
+        res_dft: &mut VecZnxDftBackendMut<'r, BE, Rg>,
         a: &A,
-        ggsw: &GGSWPreparedBackendRef<'_, BE>,
+        ggsw: &GGSWPreparedBackendRef<'_, BE, Rg>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        A: GLWEToBackendRef<BE>,
+        A: GLWEToBackendRef<BE, Rg>,
     {
         let (mut a_tmp, mut scratch) = scratch.borrow().take_glwe_scratch(&a.to_backend_ref());
         let a = if a.is_canonical() {
@@ -219,7 +220,7 @@ where
         let size: usize = gglwe_gadget_input_size(base2k, k_digit, ggsw.dnum(), a.k(), a.size());
         let (mut digits, mut scratch_1) = scratch.borrow().take_vec_znx_scratch(a.n().as_usize(), cols, size);
         // An input of precision 0 has no digit: the loop below reads no limb.
-        if let Some(a_live) = precision_limbs::<BE>(&a.data, base2k, a.k()).filter(|_| size > 0) {
+        if let Some(a_live) = precision_limbs::<BE, Rg>(&a.data, base2k, a.k()).filter(|_| size > 0) {
             for j in 0..cols {
                 self.vec_znx_gadget_decompose(
                     &mut digits,
@@ -260,13 +261,18 @@ where
     lvl_0.next_multiple_of(align) + lvl_1.next_multiple_of(align) + lvl_2
 }
 
-pub fn glwe_external_product_tmp_bytes_reference<BE, M, R, A, G>(module: &M, res_infos: &R, a_infos: &A, ggsw_infos: &G) -> usize
+pub fn glwe_external_product_tmp_bytes_reference<BE, M, R, A, G, Rg: Ring>(
+    module: &M,
+    res_infos: &R,
+    a_infos: &A,
+    ggsw_infos: &G,
+) -> usize
 where
     BE: Backend,
     M: GLWEBytesOf<BE>
-        + GLWEExternalProductReference<BE>
-        + GLWEExternalProductDft<BE>
-        + GLWENormalize<BE>
+        + GLWEExternalProductReference<BE, Rg>
+        + GLWEExternalProductDft<BE, Rg>
+        + GLWENormalize<BE, Rg>
         + ModuleN
         + VecZnxDftBytesOf
         + VecZnxBigBytesOf
@@ -305,31 +311,31 @@ where
     lvl_0.next_multiple_of(align) + lvl_1.max(lvl_2)
 }
 
-pub fn glwe_external_product_reference<BE, M, R, A>(
+pub fn glwe_external_product_reference<BE, M, R, A, Rg: Ring>(
     module: &M,
     res: &mut R,
     a: &A,
-    ggsw: &GGSWPreparedBackendRef<'_, BE>,
+    ggsw: &GGSWPreparedBackendRef<'_, BE, Rg>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
     M: GLWEBytesOf<BE>
-        + GLWEExternalProductReference<BE>
-        + GLWEExternalProductDft<BE>
-        + GLWENormalize<BE>
+        + GLWEExternalProductReference<BE, Rg>
+        + GLWEExternalProductDft<BE, Rg>
+        + GLWENormalize<BE, Rg>
         + ModuleN
         + VecZnxBigBytesOf
-        + VecZnxBigNormalize<BE>
+        + VecZnxBigNormalize<BE, Rg>
         + VecZnxDftBytesOf
-        + VecZnxIdftApply<BE>
+        + VecZnxIdftApply<BE, Rg>
         + VmpApplyDftToDftTmpBytes
         + VecZnxNormalizeTmpBytes
-        + VecZnxDftApply<BE>
-        + VmpApplyDftToDft<BE>
-        + VmpApplyDftToDftAdd<BE>
+        + VecZnxDftApply<BE, Rg>
+        + VmpApplyDftToDft<BE, Rg>
+        + VmpApplyDftToDftAdd<BE, Rg>
         + VecZnxIdftApplyTmpBytes,
-    R: GLWEToBackendMut<BE> + GLWEInfos,
-    A: GLWEToBackendRef<BE> + GLWEInfos,
+    R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+    A: GLWEToBackendRef<BE, Rg> + GLWEInfos,
 {
     assert_eq!(ggsw.rank(), a.rank());
     assert_eq!(ggsw.rank(), res.rank());
@@ -395,29 +401,29 @@ pub fn glwe_external_product_reference<BE, M, R, A>(
     }
 }
 
-pub fn glwe_external_product_assign_reference<BE, M, R>(
+pub fn glwe_external_product_assign_reference<BE, M, R, Rg: Ring>(
     module: &M,
     res: &mut R,
-    ggsw: &GGSWPreparedBackendRef<'_, BE>,
+    ggsw: &GGSWPreparedBackendRef<'_, BE, Rg>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
     M: GLWEBytesOf<BE>
-        + GLWEExternalProductReference<BE>
-        + GLWEExternalProductDft<BE>
-        + GLWENormalize<BE>
+        + GLWEExternalProductReference<BE, Rg>
+        + GLWEExternalProductDft<BE, Rg>
+        + GLWENormalize<BE, Rg>
         + ModuleN
         + VecZnxBigBytesOf
-        + VecZnxBigNormalize<BE>
+        + VecZnxBigNormalize<BE, Rg>
         + VecZnxDftBytesOf
-        + VecZnxIdftApply<BE>
+        + VecZnxIdftApply<BE, Rg>
         + VmpApplyDftToDftTmpBytes
         + VecZnxNormalizeTmpBytes
-        + VecZnxDftApply<BE>
-        + VmpApplyDftToDft<BE>
-        + VmpApplyDftToDftAdd<BE>
+        + VecZnxDftApply<BE, Rg>
+        + VmpApplyDftToDft<BE, Rg>
+        + VmpApplyDftToDftAdd<BE, Rg>
         + VecZnxIdftApplyTmpBytes,
-    R: GLWEToBackendMut<BE> + GLWEInfos,
+    R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
 {
     assert_eq!(ggsw.rank(), res.rank());
     assert_eq!(ggsw.n(), res.n());

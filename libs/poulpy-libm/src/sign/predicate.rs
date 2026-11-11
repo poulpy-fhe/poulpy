@@ -10,7 +10,7 @@ use poulpy_core::{
         BSGSMeta, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, IntPolyInfos, LWEInfos,
     },
 };
-use poulpy_hal::layouts::{Backend, Module, ScratchArena, Standard};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use poulpy_ckks::{
     CKKSCtBounds, CKKSInfos, SetCKKSInfos,
@@ -349,7 +349,7 @@ pub trait CKKSPredicateOps<BE: Backend> {
         H: GetTensorKey<BE>;
 }
 
-impl<BE: Backend<Ring = Standard>> CKKSPredicateOps<BE> for Module<BE>
+impl<BE: Backend> CKKSPredicateOps<BE> for Module<BE>
 where
     Module<BE>: CKKSAllOpsTmpBytes<BE>
         + CKKSSubOps<BE>
@@ -711,7 +711,7 @@ fn step_of_diff<BE, R, A, B, F, P, H, K>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    BE: Backend<Ring = Standard>,
+    BE: Backend,
     Module<BE>: CKKSSubOps<BE> + CKKSAddOps<BE> + CKKSCopyOps<BE> + CKKSConjugateOps<BE> + CKKSPow2Ops<BE>,
     Module<BE>: CKKSPolynomialEvaluationOps<BE>,
     R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,

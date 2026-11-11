@@ -1,6 +1,6 @@
 use poulpy_hal::{
     DEFAULTALIGN, is_aligned,
-    layouts::{Backend, Module},
+    layouts::{Backend, Module, Standard},
     test_suite::convolution::{
         test_convolution, test_convolution_add, test_convolution_by_const, test_convolution_by_const_add,
         test_convolution_pairwise, test_convolution_sum,
@@ -40,17 +40,19 @@ mod ntt3x42_ifma_tests {
             test_vec_znx_lsh_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_lsh_assign,
             test_vec_znx_negate => poulpy_hal::test_suite::vec_znx::test_vec_znx_negate,
             test_vec_znx_negate_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_negate_assign,
-            test_vec_znx_rotate => poulpy_hal::test_suite::vec_znx::test_vec_znx_rotate,
-            test_vec_znx_rotate_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_rotate_assign,
             test_vec_znx_automorphism => poulpy_hal::test_suite::vec_znx::test_vec_znx_automorphism,
             test_vec_znx_automorphism_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_automorphism_assign,
-            test_vec_znx_mul_xp_minus_one => poulpy_hal::test_suite::vec_znx::test_vec_znx_mul_xp_minus_one,
-            test_vec_znx_mul_xp_minus_one_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_mul_xp_minus_one_assign,
             test_vec_znx_normalize => poulpy_hal::test_suite::vec_znx::test_vec_znx_normalize,
             test_vec_znx_gadget_decompose => poulpy_hal::test_suite::vec_znx::test_vec_znx_gadget_decompose,
             test_vec_znx_normalize_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_normalize_assign,
             test_vec_znx_switch_ring => poulpy_hal::test_suite::vec_znx::test_vec_znx_switch_ring,
             test_vec_znx_copy => poulpy_hal::test_suite::vec_znx::test_vec_znx_copy,
+        },
+        ring_free_tests = {
+            test_vec_znx_rotate => poulpy_hal::test_suite::vec_znx::test_vec_znx_rotate,
+            test_vec_znx_rotate_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_rotate_assign,
+            test_vec_znx_mul_xp_minus_one => poulpy_hal::test_suite::vec_znx::test_vec_znx_mul_xp_minus_one,
+            test_vec_znx_mul_xp_minus_one_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_mul_xp_minus_one_assign,
         }
     }
 
@@ -170,12 +172,9 @@ mod ntt3x42_ifma_tests {
             test_vec_znx_rsh_sub_derived => poulpy_hal::test_suite::derived::test_vec_znx_rsh_sub_derived,
             test_vec_znx_lsh_assign_derived => poulpy_hal::test_suite::derived::test_vec_znx_lsh_assign_derived,
             test_vec_znx_rsh_assign_derived => poulpy_hal::test_suite::derived::test_vec_znx_rsh_assign_derived,
-            test_vec_znx_mul_xp_minus_one_derived => poulpy_hal::test_suite::derived::test_vec_znx_mul_xp_minus_one_derived,
-            test_vec_znx_mul_xp_minus_one_assign_derived => poulpy_hal::test_suite::derived::test_vec_znx_mul_xp_minus_one_assign_derived,
             test_vec_znx_fill_uniform_source_all_derived => poulpy_hal::test_suite::derived::test_vec_znx_fill_uniform_source_all_derived,
             test_vec_znx_add_scalar_assign_derived => poulpy_hal::test_suite::derived::test_vec_znx_add_scalar_assign_derived,
             test_scalar_znx_automorphism_derived => poulpy_hal::test_suite::derived::test_scalar_znx_automorphism_derived,
-            test_scalar_znx_ci_embed_derived => poulpy_hal::test_suite::derived::test_scalar_znx_ci_embed_derived,
             test_vec_znx_big_add_small_derived => poulpy_hal::test_suite::derived::test_vec_znx_big_add_small_derived,
             test_vec_znx_big_sub_small_a_derived => poulpy_hal::test_suite::derived::test_vec_znx_big_sub_small_a_derived,
             test_vec_znx_big_sub_small_b_derived => poulpy_hal::test_suite::derived::test_vec_znx_big_sub_small_b_derived,
@@ -188,6 +187,11 @@ mod ntt3x42_ifma_tests {
             test_cnv_apply_dft_sum_derived => poulpy_hal::test_suite::derived::test_cnv_apply_dft_sum_derived,
             test_cnv_pairwise_apply_dft_derived => poulpy_hal::test_suite::derived::test_cnv_pairwise_apply_dft_derived,
             test_cnv_by_const_apply_add_derived => poulpy_hal::test_suite::derived::test_cnv_by_const_apply_add_derived,
+        },
+        ring_free_tests = {
+            test_vec_znx_mul_xp_minus_one_derived => poulpy_hal::test_suite::derived::test_vec_znx_mul_xp_minus_one_derived,
+            test_vec_znx_mul_xp_minus_one_assign_derived => poulpy_hal::test_suite::derived::test_vec_znx_mul_xp_minus_one_assign_derived,
+            test_scalar_znx_ci_embed_derived => poulpy_hal::test_suite::derived::test_scalar_znx_ci_embed_derived,
             test_transfer_padded_lengths => poulpy_hal::test_suite::transfer::test_transfer_padded_lengths,
         }
     }
@@ -212,7 +216,6 @@ mod ntt3x42_ifma_tests {
             test_vec_znx_big_window_ops => poulpy_hal::test_suite::window::test_vec_znx_big_window_ops,
             test_vec_znx_window_normalize_ops => poulpy_hal::test_suite::window::test_vec_znx_window_normalize_ops,
             test_vec_znx_big_window_normalize => poulpy_hal::test_suite::window::test_vec_znx_big_window_normalize,
-            test_vec_znx_window_rejected_by_ring_ops => poulpy_hal::test_suite::window::test_vec_znx_window_rejected_by_ring_ops,
             test_vec_znx_dft_rejects_zero_step => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_rejects_zero_step,
             test_cnv_prepare_rejects_mismatched_shape => poulpy_hal::test_suite::convolution::test_cnv_prepare_rejects_mismatched_shape,
             test_vmp_apply_dft_to_dft_rejects_column_mismatch => poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft_rejects_column_mismatch,
@@ -221,6 +224,9 @@ mod ntt3x42_ifma_tests {
             test_convolution_embed => poulpy_hal::test_suite::convolution::test_convolution_embed,
             test_convolution_galois => poulpy_hal::test_suite::convolution::test_convolution_galois,
             test_cnv_by_const_rejects_degree_mismatch => poulpy_hal::test_suite::convolution::test_cnv_by_const_rejects_degree_mismatch,
+        },
+        ring_free_tests = {
+            test_vec_znx_window_rejected_by_ring_ops => poulpy_hal::test_suite::window::test_vec_znx_window_rejected_by_ring_ops,
         }
     }
 
@@ -234,7 +240,6 @@ mod ntt3x42_ifma_tests {
             test_vec_znx_big_window_ops => poulpy_hal::test_suite::window::test_vec_znx_big_window_ops,
             test_vec_znx_window_normalize_ops => poulpy_hal::test_suite::window::test_vec_znx_window_normalize_ops,
             test_vec_znx_big_window_normalize => poulpy_hal::test_suite::window::test_vec_znx_big_window_normalize,
-            test_vec_znx_window_rejected_by_ring_ops => poulpy_hal::test_suite::window::test_vec_znx_window_rejected_by_ring_ops,
             test_vec_znx_dft_rejects_zero_step => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_rejects_zero_step,
             test_cnv_prepare_rejects_mismatched_shape => poulpy_hal::test_suite::convolution::test_cnv_prepare_rejects_mismatched_shape,
             test_vmp_apply_dft_to_dft_rejects_column_mismatch => poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft_rejects_column_mismatch,
@@ -243,6 +248,9 @@ mod ntt3x42_ifma_tests {
             test_convolution_embed => poulpy_hal::test_suite::convolution::test_convolution_embed,
             test_convolution_galois => poulpy_hal::test_suite::convolution::test_convolution_galois,
             test_cnv_by_const_rejects_degree_mismatch => poulpy_hal::test_suite::convolution::test_cnv_by_const_rejects_degree_mismatch,
+        },
+        ring_free_tests = {
+            test_vec_znx_window_rejected_by_ring_ops => poulpy_hal::test_suite::window::test_vec_znx_window_rejected_by_ring_ops,
         }
     }
 
@@ -404,53 +412,56 @@ mod ntt3x42_ifma_tests {
 #[test]
 fn test_convolution_by_const_ntt3x42_ifma() {
     let module: Module<NTT3x42Ifma> = Module::<NTT3x42Ifma>::new(16);
-    test_convolution_by_const(&module, module.n(), 12);
-    test_convolution_by_const_add(&module, module.n(), 12);
+    test_convolution_by_const::<_, _, Standard>(&module, module.n(), 12);
+    test_convolution_by_const_add::<_, _, Standard>(&module, module.n(), 12);
 }
 
 #[cfg(feature = "enable-rayon")]
 #[test]
 fn test_convolution_by_const_ntt3x42_ifma_rayon() {
     let module = Module::<crate::NTT3x42IfmaRayon>::new(16);
-    test_convolution_by_const(&module, module.n(), 12);
-    test_convolution_by_const_add(&module, module.n(), 12);
+    test_convolution_by_const::<_, _, Standard>(&module, module.n(), 12);
+    test_convolution_by_const_add::<_, _, Standard>(&module, module.n(), 12);
 }
 
 #[test]
 fn test_convolution_ntt3x42_ifma() {
     let module: Module<NTT3x42Ifma> = Module::<NTT3x42Ifma>::new(16);
-    test_convolution(&module, module.n(), 12);
+    test_convolution::<_, _, Standard>(&module, module.n(), 12);
 }
 
 #[test]
 fn test_convolution_pairwise_ntt3x42_ifma() {
     let module: Module<NTT3x42Ifma> = Module::<NTT3x42Ifma>::new(16);
-    test_convolution_pairwise(&module, module.n(), 12);
+    test_convolution_pairwise::<_, _, Standard>(&module, module.n(), 12);
 }
 
 #[test]
 fn test_gglwe_product_digits_strided_bit_identical() {
-    poulpy_core::test_suite::parity::test_gglwe_product_digits_strided(&Module::<NTT3x42Ifma>::new(64), 50);
+    poulpy_core::test_suite::parity::test_gglwe_product_digits_strided::<_, Standard>(&Module::<NTT3x42Ifma>::new(64), 50);
 }
 
 #[cfg(feature = "enable-rayon")]
 #[test]
 fn test_gglwe_product_digits_strided_bit_identical_rayon() {
-    poulpy_core::test_suite::parity::test_gglwe_product_digits_strided(&Module::<crate::NTT3x42IfmaRayon>::new(64), 50);
+    poulpy_core::test_suite::parity::test_gglwe_product_digits_strided::<_, Standard>(
+        &Module::<crate::NTT3x42IfmaRayon>::new(64),
+        50,
+    );
 }
 
 #[cfg(feature = "enable-rayon")]
 #[test]
 fn test_gglwe_product_digits_strided_rayon_scratch_workers() {
-    use poulpy_core::oep::GGLWEProductDigitsStridedImpl;
-
     type BE = crate::NTT3x42IfmaRayon;
     let module = Module::<BE>::new(64);
     let dsize = 4;
     let metadata = 4 * dsize * std::mem::size_of::<u64>();
     let one_worker = crate::ntt3x42_ifma::vmp::vmp_apply_digits_strided_tmp_bytes_ifma(1, 28, dsize, 7, 1, 1);
     let workers = poulpy_cpu_rayon::workers(<BE as poulpy_hal::execution::ScratchWorkers>::VMP);
-    let actual = BE::gglwe_product_digits_strided_tmp_bytes(&module, 28, 1, 28, dsize, 7, 1, 2, 28);
+    let actual = <BE as poulpy_core::oep::GGLWEProductDigitsStridedImpl<Standard>>::gglwe_product_digits_strided_tmp_bytes(
+        &module, 28, 1, 28, dsize, 7, 1, 2, 28,
+    );
     assert_eq!(actual, metadata + workers * (one_worker - metadata));
 }
 
@@ -461,26 +472,29 @@ fn test_glwe_keyswitch_noise_ntt3x42_ifma() {
         base2k: 50,
         n: 1 << 8,
     };
-    poulpy_core::test_suite::noise::keyswitch::test_glwe_keyswitch(&params, &Module::<NTT3x42Ifma>::new(params.size as u64));
+    poulpy_core::test_suite::noise::keyswitch::test_glwe_keyswitch::<_, Standard>(
+        &params,
+        &Module::<NTT3x42Ifma>::new(params.size as u64),
+    );
 }
 
 #[test]
 fn test_convolution_add_ntt3x42_ifma() {
     let module: Module<NTT3x42Ifma> = Module::<NTT3x42Ifma>::new(16);
-    test_convolution_add(&module, module.n(), 12);
+    test_convolution_add::<_, _, Standard>(&module, module.n(), 12);
 }
 
 #[test]
 fn test_convolution_sum_ntt3x42_ifma() {
     let module = Module::<NTT3x42Ifma>::new(1 << 8);
-    test_convolution_sum(&module, <NTT3x42Ifma as poulpy_hal::layouts::Backend>::MIN_DEGREE, 12);
-    test_convolution_sum(&module, module.n(), 12);
+    test_convolution_sum::<_, _, Standard>(&module, <NTT3x42Ifma as poulpy_hal::layouts::Backend>::MIN_DEGREE, 12);
+    test_convolution_sum::<_, _, Standard>(&module, module.n(), 12);
 }
 
 #[test]
 fn test_convolution_sum_ntt3x42_ifma_streaming() {
     let module = Module::<NTT3x42Ifma>::new(1 << 16);
-    test_convolution_sum(&module, module.n(), 52);
+    test_convolution_sum::<_, _, Standard>(&module, module.n(), 52);
 }
 
 #[cfg(feature = "enable-rayon")]
@@ -488,19 +502,19 @@ fn test_convolution_sum_ntt3x42_ifma_streaming() {
 fn test_convolution_sum_ntt3x42_ifma_rayon_streaming() {
     let module = Module::<crate::NTT3x42IfmaRayon>::new(1 << 16);
     let pool = ::rayon::ThreadPoolBuilder::new().num_threads(16).build().unwrap();
-    pool.install(|| test_convolution_sum(&module, module.n(), 52));
+    pool.install(|| test_convolution_sum::<_, _, Standard>(&module, module.n(), 52));
 }
 
 #[cfg(feature = "enable-rayon")]
 #[test]
 fn test_convolution_sum_ntt3x42_ifma_rayon() {
     let module = Module::<crate::NTT3x42IfmaRayon>::new(1 << 8);
-    test_convolution_sum(
+    test_convolution_sum::<_, _, Standard>(
         &module,
         <crate::NTT3x42IfmaRayon as poulpy_hal::layouts::Backend>::MIN_DEGREE,
         12,
     );
-    test_convolution_sum(&module, module.n(), 12);
+    test_convolution_sum::<_, _, Standard>(&module, module.n(), 12);
 }
 
 #[test]

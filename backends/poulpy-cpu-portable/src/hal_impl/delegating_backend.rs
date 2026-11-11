@@ -1,5 +1,5 @@
 use poulpy_hal::{
-    layouts::{Module, VecZnxBackendMut, VecZnxBackendRef},
+    layouts::{ConjugateInvariant, Module, Ring, Standard, VecZnxBackendMut, VecZnxBackendRef},
     oep::{
         HalCnvImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVecZnxMonomialImpl,
         HalVmpImpl,
@@ -7,7 +7,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    FFT64CIPortable, FFT64Portable,
+    FFT64Portable,
     hal_defaults::{
         BigWordHadamardProduct, FFT64ConvolutionDefault, FFT64ModuleDefault, FFT64SvpDefault, FFT64VecZnxBigDefault,
         FFT64VecZnxDftDefault, FFT64VmpDefault, HalVecZnxDefault,
@@ -39,12 +39,12 @@ macro_rules! impl_fft64_delegating_backend {
         poulpy_hal::impl_backend_from!($be, $from);
 
         impl poulpy_hal::layouts::MaxBase2k for $be {
-            fn max_base2k(n: usize, products: usize, failure_bits: usize, squaring: bool) -> usize {
-                <$from as poulpy_hal::layouts::MaxBase2k>::max_base2k(n, products, failure_bits, squaring)
+            fn max_base2k<Rg: Ring>(n: usize, products: usize, failure_bits: usize, squaring: bool) -> usize {
+                <$from as poulpy_hal::layouts::MaxBase2k>::max_base2k::<Rg>(n, products, failure_bits, squaring)
             }
 
-            fn max_base2k_squares(n: usize, products: usize, squares: usize, failure_bits: usize) -> usize {
-                <$from as poulpy_hal::layouts::MaxBase2k>::max_base2k_squares(n, products, squares, failure_bits)
+            fn max_base2k_squares<Rg: Ring>(n: usize, products: usize, squares: usize, failure_bits: usize) -> usize {
+                <$from as poulpy_hal::layouts::MaxBase2k>::max_base2k_squares::<Rg>(n, products, squares, failure_bits)
             }
         }
 
@@ -96,15 +96,18 @@ macro_rules! impl_fft64_delegating_backend {
                 <$from as ZnxMulPowerOfTwoAssign>::znx_mul_power_of_two_assign(k, res)
             }
         }
-        impl ZnxAutomorphism for $be {
+        impl<Rg: Ring> ZnxAutomorphism<Rg> for $be
+        where
+            $from: ZnxAutomorphism<Rg>,
+        {
             #[inline(always)]
             fn znx_automorphism(p: i64, res: &mut [i64], a: &[i64]) {
-                <$from as ZnxAutomorphism>::znx_automorphism(p, res, a)
+                <$from as ZnxAutomorphism<Rg>>::znx_automorphism(p, res, a)
             }
 
             #[inline(always)]
             fn znx_automorphism_i128(p: i64, res: &mut [i128], a: &[i128]) {
-                <$from as ZnxAutomorphism>::znx_automorphism_i128(p, res, a)
+                <$from as ZnxAutomorphism<Rg>>::znx_automorphism_i128(p, res, a)
             }
         }
         impl ZnxCopy for $be {
@@ -171,40 +174,66 @@ macro_rules! impl_fft64_delegating_backend {
             }
         }
 
-        unsafe impl poulpy_hal::oep::HalScalarZnxImpl for $be {}
-        unsafe impl poulpy_hal::oep::HalMatZnxImpl for $be {}
+        impl crate::kernels::fft64::ring_arith::Fft64RingArith<Standard> for $be {
+            crate::fft64_ring_arith_standard!();
+        }
 
-        unsafe impl HalVecZnxImpl for $be {
-            crate::hal_impl_vec_znx!();
+        impl crate::kernels::fft64::ring_arith::Fft64RingArith<ConjugateInvariant> for $be {
+            crate::fft64_ring_arith_ci!();
+        }
+
+        unsafe impl<Rg: Ring> poulpy_hal::oep::HalScalarZnxImpl<Rg> for $be where Self: HalVecZnxImpl<Rg> {}
+        unsafe impl<Rg: Ring> poulpy_hal::oep::HalMatZnxImpl<Rg> for $be where Self: HalVecZnxImpl<Rg> {}
+
+        unsafe impl<Rg: Ring> HalVecZnxImpl<Rg> for $be
+        where
+            Self: crate::kernels::znx::ZnxAutomorphism<Rg>,
+        {
+            crate::hal_impl_vec_znx!(Rg);
         }
 
         unsafe impl HalModuleImpl for $be {
             crate::hal_impl_module!(FFT64ModuleDefault);
         }
 
-        unsafe impl HalVmpImpl for $be {
-            crate::hal_impl_vmp!(FFT64VmpDefault);
+        unsafe impl<Rg: Ring> HalVmpImpl<Rg> for $be
+        where
+            Self: crate::kernels::fft64::ring_arith::Fft64RingArith<Rg> + crate::kernels::znx::ZnxAutomorphism<Rg>,
+        {
+            crate::hal_impl_vmp!(FFT64VmpDefault, Rg);
         }
 
-        unsafe impl HalCnvImpl for $be {
-            crate::hal_impl_cnv!(FFT64ConvolutionDefault);
+        unsafe impl<Rg: Ring> HalCnvImpl<Rg> for $be
+        where
+            Self: crate::kernels::fft64::ring_arith::Fft64RingArith<Rg> + crate::kernels::znx::ZnxAutomorphism<Rg>,
+        {
+            crate::hal_impl_cnv!(FFT64ConvolutionDefault, Rg);
         }
 
-        unsafe impl HalVecZnxBigImpl for $be {
-            crate::hal_impl_vec_znx_big!(FFT64VecZnxBigDefault);
+        unsafe impl<Rg: Ring> HalVecZnxBigImpl<Rg> for $be
+        where
+            Self: crate::kernels::znx::ZnxAutomorphism<Rg>,
+        {
+            crate::hal_impl_vec_znx_big!(FFT64VecZnxBigDefault, Rg);
         }
 
-        unsafe impl HalSvpImpl for $be {
-            crate::hal_impl_svp!(FFT64SvpDefault);
+        unsafe impl<Rg: Ring> HalSvpImpl<Rg> for $be
+        where
+            Self: crate::kernels::fft64::ring_arith::Fft64RingArith<Rg> + crate::kernels::znx::ZnxAutomorphism<Rg>,
+        {
+            crate::hal_impl_svp!(FFT64SvpDefault, Rg);
         }
 
-        unsafe impl HalVecZnxDftImpl for $be {
-            crate::hal_impl_vec_znx_dft!(FFT64VecZnxDftDefault);
+        unsafe impl<Rg: Ring> HalVecZnxDftImpl<Rg> for $be
+        where
+            Self: crate::kernels::fft64::ring_arith::Fft64RingArith<Rg> + crate::kernels::znx::ZnxAutomorphism<Rg>,
+        {
+            crate::hal_impl_vec_znx_dft!(FFT64VecZnxDftDefault, Rg);
         }
     };
 }
 
-// The standard ring's rotation kernel, composed at each standard backend's invocation site.
+// The standard ring's rotation kernel, composed at each backend's invocation site.
 macro_rules! impl_fft64_delegating_rotate {
     ($be:ident) => {
         impl ZnxAutomorphismRotate for $be {
@@ -224,24 +253,11 @@ impl_fft64_delegating_rotate!(DelegatingFFT64Portable);
 unsafe impl HalVecZnxMonomialImpl for DelegatingFFT64Portable {
     crate::hal_impl_vec_znx_monomial!();
 }
-#[cfg(test)]
-impl crate::kernels::fft64::ring_arith::Fft64RingArith for DelegatingFFT64Portable {
-    crate::fft64_ring_arith_standard!();
-}
 impl_fft64_delegating_backend!(ControlledSamplingFFT64Portable, FFT64Portable);
 impl_fft64_delegating_rotate!(ControlledSamplingFFT64Portable);
 unsafe impl HalVecZnxMonomialImpl for ControlledSamplingFFT64Portable {
     crate::hal_impl_vec_znx_monomial!();
 }
-impl crate::kernels::fft64::ring_arith::Fft64RingArith for ControlledSamplingFFT64Portable {
-    crate::fft64_ring_arith_standard!();
-}
-
-impl_fft64_delegating_backend!(ControlledSamplingFFT64CIPortable, FFT64CIPortable);
-impl crate::kernels::fft64::ring_arith::Fft64RingArith for ControlledSamplingFFT64CIPortable {
-    crate::fft64_ring_arith_ci!();
-}
-poulpy_core::impl_core_reference_full!(ControlledSamplingFFT64CIPortable);
 
 #[test]
 fn test_znx_normalize_delegating_fft64_portable() {
@@ -250,6 +266,10 @@ fn test_znx_normalize_delegating_fft64_portable() {
 
 poulpy_core::impl_core_reference_full!(ControlledSamplingFFT64Portable);
 poulpy_core::impl_conversion_reference_full!(ControlledSamplingFFT64Portable);
+poulpy_core::impl_lwe_keyswitch_reference_full!(ControlledSamplingFFT64Portable);
+poulpy_core::impl_lwe_key_encryption_reference_full!(ControlledSamplingFFT64Portable);
+poulpy_core::impl_lwe_key_preparation_derived_full!(ControlledSamplingFFT64Portable);
+poulpy_core::impl_lwe_key_decompression_derived_full!(ControlledSamplingFFT64Portable);
 poulpy_core::impl_glwe_pack_derived_full!(ControlledSamplingFFT64Portable);
 poulpy_core::impl_glwe_rotate_reference_full!(ControlledSamplingFFT64Portable);
 poulpy_core::impl_ggsw_rotate_derived_full!(ControlledSamplingFFT64Portable);
@@ -257,17 +277,9 @@ poulpy_core::impl_glwe_mul_xp_minus_one_reference_full!(ControlledSamplingFFT64P
 
 #[cfg(test)]
 impl_fft64_delegating_backend!(BatchedGiantStepsFFT64Portable, FFT64Portable);
-#[cfg(test)]
-impl crate::kernels::fft64::ring_arith::Fft64RingArith for BatchedGiantStepsFFT64Portable {
-    crate::fft64_ring_arith_standard!();
-}
 
 #[cfg(test)]
 impl_fft64_delegating_backend!(ProductStepsFFT64Portable, FFT64Portable);
-#[cfg(test)]
-impl crate::kernels::fft64::ring_arith::Fft64RingArith for ProductStepsFFT64Portable {
-    crate::fft64_ring_arith_standard!();
-}
 
 #[cfg(test)]
 impl_fft64_delegating_backend!(DifferentSamplingFFT64Portable, FFT64Portable);
@@ -278,14 +290,17 @@ unsafe impl HalVecZnxMonomialImpl for DifferentSamplingFFT64Portable {
     crate::hal_impl_vec_znx_monomial!();
 }
 #[cfg(test)]
-impl crate::kernels::fft64::ring_arith::Fft64RingArith for DifferentSamplingFFT64Portable {
-    crate::fft64_ring_arith_standard!();
-}
-#[cfg(test)]
 poulpy_core::impl_core_reference_full!(DifferentSamplingFFT64Portable);
 #[cfg(test)]
-#[cfg(test)]
 poulpy_core::impl_conversion_reference_full!(DifferentSamplingFFT64Portable);
+#[cfg(test)]
+poulpy_core::impl_lwe_keyswitch_reference_full!(DifferentSamplingFFT64Portable);
+#[cfg(test)]
+poulpy_core::impl_lwe_key_encryption_reference_full!(DifferentSamplingFFT64Portable);
+#[cfg(test)]
+poulpy_core::impl_lwe_key_preparation_derived_full!(DifferentSamplingFFT64Portable);
+#[cfg(test)]
+poulpy_core::impl_lwe_key_decompression_derived_full!(DifferentSamplingFFT64Portable);
 #[cfg(test)]
 poulpy_core::impl_glwe_pack_derived_full!(DifferentSamplingFFT64Portable);
 #[cfg(test)]
@@ -302,8 +317,4 @@ impl_fft64_delegating_rotate!(BinFheOverrideFFT64);
 #[cfg(all(test, feature = "enable-bin-fhe"))]
 unsafe impl HalVecZnxMonomialImpl for BinFheOverrideFFT64 {
     crate::hal_impl_vec_znx_monomial!();
-}
-#[cfg(all(test, feature = "enable-bin-fhe"))]
-impl crate::kernels::fft64::ring_arith::Fft64RingArith for BinFheOverrideFFT64 {
-    crate::fft64_ring_arith_standard!();
 }

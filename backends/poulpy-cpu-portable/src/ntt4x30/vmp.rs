@@ -28,14 +28,14 @@ pub(crate) fn vmp_pmat_prepare_tmp_bytes(n: usize) -> usize {
 }
 
 /// VMP prepare into the block-major prepared layout.
-pub(crate) fn vmp_pmat_prepare<R: Ring>(
-    module: &Module<NTT4x30Portable<R>>,
-    res: &mut VmpPMatBackendMut<'_, NTT4x30Portable<R>>,
-    a: &MatZnxBackendRef<'_, NTT4x30Portable<R>>,
+pub(crate) fn vmp_pmat_prepare<Rg: Ring>(
+    module: &Module<NTT4x30Portable>,
+    res: &mut VmpPMatBackendMut<'_, NTT4x30Portable, Rg>,
+    a: &MatZnxBackendRef<'_, NTT4x30Portable, Rg>,
     tmp: &mut [u64],
 ) {
     let n = res.n();
-    check_degree::<NTT4x30Portable<R>>(module.n(), n);
+    check_degree::<NTT4x30Portable>(module.n(), n);
 
     assert_eq!(a.n(), n);
     assert_eq!(res.cols_in(), a.cols_in());
@@ -55,7 +55,7 @@ pub(crate) fn vmp_pmat_prepare<R: Ring>(
     for row_i in 0..nrows {
         for col_i in 0..ncols {
             let pos = n * (row_i * ncols + col_i);
-            dft_limb_scaled::<_, poulpy_hal::execution::SerialTaskExecutor>(module, n, tmp_packed, &mat_i64[pos..pos + n], true);
+            dft_limb_scaled::<Rg, poulpy_hal::execution::SerialTaskExecutor>(module, n, tmp_packed, &mat_i64[pos..pos + n], true);
             // SAFETY: every row lies within `pmat`, checked above.
             unsafe {
                 scatter_centered_limb(n, pmat.as_mut_ptr(), tmp_packed, |blk| {
@@ -67,9 +67,9 @@ pub(crate) fn vmp_pmat_prepare<R: Ring>(
 }
 
 /// Copies rows `first_row + i * row_step` of `a`, truncated to `res.size()` limbs, into rows `i` of `res`.
-pub(crate) fn vmp_extract_selected_rows<R: Ring>(
-    res: &mut VmpPMatBackendMut<'_, NTT4x30Portable<R>>,
-    a: &VmpPMatBackendRef<'_, NTT4x30Portable<R>>,
+pub(crate) fn vmp_extract_selected_rows<Rg: Ring>(
+    res: &mut VmpPMatBackendMut<'_, NTT4x30Portable, Rg>,
+    a: &VmpPMatBackendRef<'_, NTT4x30Portable, Rg>,
     first_row: usize,
     row_step: usize,
 ) {
@@ -185,10 +185,10 @@ fn vmp_apply_core<const OVERWRITE: bool, E: TaskExecutor>(
     }
 }
 
-fn vmp_apply<const OVERWRITE: bool, R: Ring, E: TaskExecutor>(
-    res: &mut VecZnxDftBackendMut<'_, NTT4x30Portable<R>>,
-    a: &VecZnxDftBackendRef<'_, NTT4x30Portable<R>>,
-    pmat: &VmpPMatBackendRef<'_, NTT4x30Portable<R>>,
+fn vmp_apply<const OVERWRITE: bool, Rg: Ring, E: TaskExecutor>(
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Portable, Rg>,
+    a: &VecZnxDftBackendRef<'_, NTT4x30Portable, Rg>,
+    pmat: &VmpPMatBackendRef<'_, NTT4x30Portable, Rg>,
     limb_offset: usize,
     tmp: &mut [u64],
 ) {
@@ -211,22 +211,22 @@ fn vmp_apply<const OVERWRITE: bool, R: Ring, E: TaskExecutor>(
     );
 }
 
-pub fn vmp_apply_dft_to_dft<R: Ring, E: TaskExecutor>(
-    res: &mut VecZnxDftBackendMut<'_, NTT4x30Portable<R>>,
-    a: &VecZnxDftBackendRef<'_, NTT4x30Portable<R>>,
-    pmat: &VmpPMatBackendRef<'_, NTT4x30Portable<R>>,
+pub fn vmp_apply_dft_to_dft<Rg: Ring, E: TaskExecutor>(
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Portable, Rg>,
+    a: &VecZnxDftBackendRef<'_, NTT4x30Portable, Rg>,
+    pmat: &VmpPMatBackendRef<'_, NTT4x30Portable, Rg>,
     limb_offset: usize,
     tmp: &mut [u64],
 ) {
-    vmp_apply::<true, R, E>(res, a, pmat, limb_offset, tmp);
+    vmp_apply::<true, Rg, E>(res, a, pmat, limb_offset, tmp);
 }
 
-pub fn vmp_apply_dft_to_dft_add<R: Ring, E: TaskExecutor>(
-    res: &mut VecZnxDftBackendMut<'_, NTT4x30Portable<R>>,
-    a: &VecZnxDftBackendRef<'_, NTT4x30Portable<R>>,
-    pmat: &VmpPMatBackendRef<'_, NTT4x30Portable<R>>,
+pub fn vmp_apply_dft_to_dft_add<Rg: Ring, E: TaskExecutor>(
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Portable, Rg>,
+    a: &VecZnxDftBackendRef<'_, NTT4x30Portable, Rg>,
+    pmat: &VmpPMatBackendRef<'_, NTT4x30Portable, Rg>,
     limb_offset: usize,
     tmp: &mut [u64],
 ) {
-    vmp_apply::<false, R, E>(res, a, pmat, limb_offset, tmp);
+    vmp_apply::<false, Rg, E>(res, a, pmat, limb_offset, tmp);
 }

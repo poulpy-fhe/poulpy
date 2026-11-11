@@ -7,7 +7,7 @@ use poulpy_hal::layouts::*;
 /// Implementations reproduce the bodies their methods document bit for bit, report for each
 /// `_tmp_bytes` query a bound that covers the body, and refuse as the reference does. The memory,
 /// layout, synchrony and aliasing rules of `poulpy-hal/docs/backend_safety_contract.md` apply.
-pub unsafe trait FheUintPrepareImpl<BRA: BlindRotationAlgo>: Backend<Ring = Standard> {
+pub unsafe trait FheUintPrepareImpl<BRA: BlindRotationAlgo>: Backend {
     /// Scratch bound of one worker of [`Self::fhe_uint_prepare_custom_multi_thread`] and of the serial forms, rounded for
     /// the worker alignment; may report less than the reference, never less than the body takes.
     #[allow(clippy::too_many_arguments)]

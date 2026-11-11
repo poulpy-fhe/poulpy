@@ -20,7 +20,7 @@ use poulpy_hal::{
         VecZnxIdftApplyTmpBytes, VecZnxIdftNormalize, VecZnxIdftNormalizeTmpBytes, VecZnxNormalizeAssign,
         VecZnxNormalizeTmpBytes,
     },
-    layouts::{Backend, GaloisElement, PrepareHint, ScratchArena},
+    layouts::{Backend, GaloisElement, PrepareHint, Ring, ScratchArena},
 };
 
 use crate::{
@@ -49,7 +49,7 @@ use crate::api::GLWEBytesOf;
 
 /// HAL/op bounds required by the eval reference path. Repeated on each free
 /// function so backends only pull in what a method actually needs.
-pub fn glwe_linear_transformation_eval_tmp_bytes_reference<BE, R, A, B, K, T>(
+pub fn glwe_linear_transformation_eval_tmp_bytes_reference<BE, R, A, B, K, T, Rg: Ring>(
     module: &Module<BE>,
     res: &R,
     a: &A,
@@ -60,25 +60,25 @@ pub fn glwe_linear_transformation_eval_tmp_bytes_reference<BE, R, A, B, K, T>(
 ) -> usize
 where
     BE: Backend
-        + crate::oep::GGLWEProductDigitsStridedImpl
-        + crate::oep::GLWELinearTransformationImpl
-        + crate::oep::GLWETensoringImpl,
+        + crate::oep::GGLWEProductDigitsStridedImpl<Rg>
+        + crate::oep::GLWELinearTransformationImpl<Rg>
+        + crate::oep::GLWETensoringImpl<Rg>,
     Module<BE>: GLWEBytesOf<BE>
-        + crate::GLWEPreparedTensoring<BE>
+        + crate::GLWEPreparedTensoring<BE, Rg>
         + CnvPVecBytesOf
-        + crate::api::GLWENormalize<BE>
+        + crate::api::GLWENormalize<BE, Rg>
         + poulpy_hal::api::ModuleN
-        + GLWEAutomorphism<BE>
-        + GLWEMulPlain<BE>
-        + CnvOps<BE>
-        + GGLWEProductReference<BE>
-        + poulpy_hal::api::VecZnxAutomorphism<BE>
-        + crate::reference::keyswitching::GLWEKeyswitchInternal<BE>
-        + VecZnxAutomorphismAssign<BE>
+        + GLWEAutomorphism<BE, Rg>
+        + GLWEMulPlain<BE, Rg>
+        + CnvOps<BE, Rg>
+        + GGLWEProductReference<BE, Rg>
+        + poulpy_hal::api::VecZnxAutomorphism<BE, Rg>
+        + crate::reference::keyswitching::GLWEKeyswitchInternal<BE, Rg>
+        + VecZnxAutomorphismAssign<BE, Rg>
         + VecZnxBigAutomorphismAssignTmpBytes
         + VecZnxBigBytesOf
         + VecZnxBigNormalizeTmpBytes
-        + VecZnxDftApply<BE>
+        + VecZnxDftApply<BE, Rg>
         + VecZnxDftAutomorphismAddWithPlanTmpBytes
         + VecZnxDftBytesOf
         + VecZnxIdftApplyTmpBytes
@@ -111,7 +111,7 @@ where
             tsk,
         );
         let prod_size = tsk.size().max(res.max_size());
-        return (glwe_linear_transformation_baby_steps_prepare_tmp_bytes::<BE, _, _>(module, a, key)
+        return (glwe_linear_transformation_baby_steps_prepare_tmp_bytes::<BE, _, _, Rg>(module, a, key)
             + glwe_prepare_baby_doubling_tmp_bytes::<BE, _, _, _>(module, a, plan, key))
         .max(giant_routes_tmp_bytes(module, cols, prod_size, products_bytes, 1, res, key))
         .max(giant_tree_tmp_bytes(module, res, prod_size, products_bytes, plan, key));
@@ -125,7 +125,7 @@ where
     // widest product, so reserve that working set for every supported offset.
     let min_cnv_offset = 0;
     let prod_size = a_size + pt_size;
-    let inner_dft = glwe_accumulate_prepared_baby_steps_dft_tmp_bytes::<BE, _>(module, min_cnv_offset, a_size, pt_size);
+    let inner_dft = glwe_accumulate_prepared_baby_steps_dft_tmp_bytes::<BE, _, Rg>(module, min_cnv_offset, a_size, pt_size);
     let prepare_right = module.cnv_pvec_right_prepare_tmp_bytes(pt_size, pt_size);
     let tree_products = PlainProductsShape {
         cnv_offset_hi: min_cnv_offset,
@@ -136,17 +136,17 @@ where
         batch: BE::glwe_giant_step_batch(module).min(plan.giant_steps.len()),
     };
     let tree_products_bytes =
-        plain_products_tmp_bytes::<BE, _>(module, res.n().as_usize(), res.rank().as_usize() + 1, &tree_products);
+        plain_products_tmp_bytes::<BE, _, Rg>(module, res.n().as_usize(), res.rank().as_usize() + 1, &tree_products);
 
     module
         .glwe_automorphism_tmp_bytes(res, a, key)
         .max(module.glwe_mul_plain_tmp_bytes(res, a, pt))
         .max(prepare_right)
         .max(
-            glwe_linear_transformation_baby_steps_prepare_tmp_bytes::<BE, _, _>(module, a, key)
+            glwe_linear_transformation_baby_steps_prepare_tmp_bytes::<BE, _, _, Rg>(module, a, key)
                 + glwe_prepare_baby_doubling_tmp_bytes::<BE, _, _, _>(module, a, plan, key),
         )
-        .max(glwe_lazy_giant_automorphism_tmp_bytes::<BE, _, _, _>(module, res, key))
+        .max(glwe_lazy_giant_automorphism_tmp_bytes::<BE, _, _, _, Rg>(module, res, key))
         .max(giant_routes_tmp_bytes(
             module,
             cols,
@@ -170,7 +170,7 @@ where
 /// `batch` held at once, taking `products_bytes` beside them, into `res` with giant keys no wider than `key`: the lazy
 /// route holds the products of a batch and the accumulator, the fallback first normalizes each product into the
 /// destination layout, then rotates that accumulator in place (both operands therefore use `res`).
-fn giant_routes_tmp_bytes<BE, R, K>(
+fn giant_routes_tmp_bytes<BE, R, K, Rg: Ring>(
     module: &Module<BE>,
     cols: usize,
     prod_size: usize,
@@ -180,10 +180,10 @@ fn giant_routes_tmp_bytes<BE, R, K>(
     key: &K,
 ) -> usize
 where
-    BE: Backend + crate::oep::GGLWEProductDigitsStridedImpl,
+    BE: Backend + crate::oep::GGLWEProductDigitsStridedImpl<Rg>,
     Module<BE>: poulpy_hal::api::ModuleN
-        + GLWEAutomorphism<BE>
-        + GGLWEProductReference<BE>
+        + GLWEAutomorphism<BE, Rg>
+        + GGLWEProductReference<BE, Rg>
         + VecZnxBigBytesOf
         + VecZnxBigNormalizeTmpBytes
         + VecZnxDftBytesOf
@@ -195,11 +195,12 @@ where
     R: GLWEInfos,
     K: GGLWEInfos,
 {
-    let prod_col_big = module.vec_znx_big_bytes_of(module.n(), 1, prod_size);
-    let prod_dft = module.vec_znx_dft_bytes_of(module.n(), cols, prod_size);
+    let n = res.n().as_usize();
+    let prod_col_big = module.vec_znx_big_bytes_of(n, 1, prod_size);
+    let prod_dft = module.vec_znx_dft_bytes_of(n, cols, prod_size);
     let lazy_size = key.size().max(prod_size);
-    let lazy_acc_dft = module.vec_znx_dft_bytes_of(module.n(), cols, lazy_size);
-    let lazy_acc_big = module.vec_znx_big_bytes_of(module.n(), cols, lazy_size);
+    let lazy_acc_dft = module.vec_znx_dft_bytes_of(n, cols, lazy_size);
+    let lazy_acc_big = module.vec_znx_big_bytes_of(n, cols, lazy_size);
     let lazy_dft = crate::reference::keyswitching::glwe::gglwe_product_from_dft_tmp_bytes(module, cols - 1, prod_size, key);
     let fallback_work = products_bytes
         .max(module.glwe_automorphism_tmp_bytes(res, res, key))
@@ -225,32 +226,32 @@ where
 ///
 /// Sizes both the hoisted baby route (DFT the mask once, VMP per key) and the
 /// plain per-baby `glwe_automorphism` fallback, and takes the larger.
-pub fn glwe_linear_transformation_baby_steps_prepare_tmp_bytes_reference<BE, A, K>(
+pub fn glwe_linear_transformation_baby_steps_prepare_tmp_bytes_reference<BE, A, K, Rg: Ring>(
     module: &Module<BE>,
     a: &A,
     plan: &LinearTransformationPlan,
     key: &K,
 ) -> usize
 where
-    BE: Backend + crate::oep::GGLWEProductDigitsStridedImpl + crate::oep::GLWELinearTransformationImpl,
+    BE: Backend + crate::oep::GGLWEProductDigitsStridedImpl<Rg> + crate::oep::GLWELinearTransformationImpl<Rg>,
     Module<BE>: GLWEBytesOf<BE>
         + poulpy_hal::api::ModuleN
-        + CnvOps<BE>
-        + GLWEAutomorphism<BE>
-        + GGLWEProductReference<BE>
-        + poulpy_hal::api::VecZnxAutomorphism<BE>
-        + VecZnxAutomorphismAssign<BE>
+        + CnvOps<BE, Rg>
+        + GLWEAutomorphism<BE, Rg>
+        + GGLWEProductReference<BE, Rg>
+        + poulpy_hal::api::VecZnxAutomorphism<BE, Rg>
+        + VecZnxAutomorphismAssign<BE, Rg>
         + VecZnxBigBytesOf
-        + VecZnxDftApply<BE>
+        + VecZnxDftApply<BE, Rg>
         + VecZnxDftBytesOf
         + VecZnxIdftApplyTmpBytes
         + VecZnxIdftNormalizeTmpBytes
         + poulpy_hal::api::VecZnxGadgetDecomposeTmpBytes
-        + crate::api::GLWENormalize<BE>,
+        + crate::api::GLWENormalize<BE, Rg>,
     A: GLWEInfos,
     K: GGLWEInfos,
 {
-    glwe_linear_transformation_baby_steps_prepare_tmp_bytes::<BE, _, _>(module, a, key)
+    glwe_linear_transformation_baby_steps_prepare_tmp_bytes::<BE, _, _, Rg>(module, a, key)
         + glwe_prepare_baby_doubling_tmp_bytes::<BE, _, _, _>(module, a, plan, key)
 }
 
@@ -262,40 +263,40 @@ where
 /// diagonals, so the same prepared cache is reused across every giant step and
 /// across transforms that share the input. Forwards to the internal
 /// `glwe_linear_transformation_baby_steps_prepare`.
-pub fn glwe_linear_transformation_baby_steps_prepare_reference<BE, A, H, L: BabyStepOperand<BE>>(
+pub fn glwe_linear_transformation_baby_steps_prepare_reference<BE, A, H, L: BabyStepOperand<BE, Rg>, Rg: Ring>(
     module: &Module<BE>,
-    cache: &mut LinearTransformationBabySteps<BE, L>,
+    cache: &mut LinearTransformationBabySteps<BE, Rg, L>,
     a: &A,
     keys: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: Backend + crate::oep::GGLWEProductDigitsStridedImpl + crate::oep::GLWELinearTransformationImpl,
+    BE: Backend + crate::oep::GGLWEProductDigitsStridedImpl<Rg> + crate::oep::GLWELinearTransformationImpl<Rg>,
     Module<BE>: GLWEBytesOf<BE>
         + CnvPVecAlloc<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
-        + CnvOps<BE>
-        + GLWEAutomorphism<BE>
-        + GGLWEProductReference<BE>
-        + poulpy_hal::api::VecZnxAutomorphism<BE>
+        + CnvOps<BE, Rg>
+        + GLWEAutomorphism<BE, Rg>
+        + GGLWEProductReference<BE, Rg>
+        + poulpy_hal::api::VecZnxAutomorphism<BE, Rg>
         + poulpy_hal::api::ModuleN
-        + VecZnxAutomorphismAssign<BE>
+        + VecZnxAutomorphismAssign<BE, Rg>
         + VecZnxBigBytesOf
-        + VecZnxBigNormalize<BE>
-        + VecZnxDftApply<BE>
+        + VecZnxBigNormalize<BE, Rg>
+        + VecZnxDftApply<BE, Rg>
         + VecZnxDftBytesOf
-        + VecZnxDftZero<BE>
-        + VecZnxIdftApply<BE>
-        + VecZnxIdftNormalize<BE>
+        + VecZnxDftZero<BE, Rg>
+        + VecZnxIdftApply<BE, Rg>
+        + VecZnxIdftNormalize<BE, Rg>
         + VecZnxIdftNormalizeTmpBytes
         + poulpy_hal::api::VecZnxGadgetDecomposeTmpBytes
-        + poulpy_hal::api::VecZnxGadgetDecompose<BE>
+        + poulpy_hal::api::VecZnxGadgetDecompose<BE, Rg>
         + poulpy_hal::api::VecZnxGadgetDecomposeTmpBytes
         + GaloisElement
-        + crate::api::GLWENormalize<BE>
+        + crate::api::GLWENormalize<BE, Rg>
         + Sync
-        + poulpy_hal::api::VecZnxAutomorphism<BE>,
-    A: GLWEToBackendRef<BE> + GLWEInfos,
-    H: GetAutomorphismKey<BE>,
+        + poulpy_hal::api::VecZnxAutomorphism<BE, Rg>,
+    A: GLWEToBackendRef<BE, Rg> + GLWEInfos,
+    H: GetAutomorphismKey<BE, Rg>,
 {
     glwe_linear_transformation_baby_steps_prepare(module, cache, a, keys, scratch);
     cache.set_k(a.k());
@@ -314,63 +315,63 @@ pub fn glwe_linear_transformation_baby_steps_prepare_reference<BE, A, H, L: Baby
 ///
 /// Runs [`assert_linear_transformation_into`] (a fully-pruned transform is a
 /// caller bug), then the shared `glwe_eval_giant_steps` loop.
-pub fn glwe_linear_transformation_eval_into_reference<BE, R, P, H, L: BabyStepOperand<BE>>(
+pub fn glwe_linear_transformation_eval_into_reference<BE, R, P, H, L: BabyStepOperand<BE, Rg>, Rg: Ring>(
     module: &Module<BE>,
     cnv_offset: usize,
     res: &mut R,
-    lhs: &LinearTransformationBabySteps<BE, L>,
+    lhs: &LinearTransformationBabySteps<BE, Rg, L>,
     rhs: &LinearTransformation<P>,
     keys: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend
-        + crate::oep::GGLWEProductDigitsStridedImpl
-        + crate::oep::GLWELinearTransformationImpl
-        + crate::oep::GLWETensoringImpl,
+        + crate::oep::GGLWEProductDigitsStridedImpl<Rg>
+        + crate::oep::GLWELinearTransformationImpl<Rg>
+        + crate::oep::GLWETensoringImpl<Rg>,
     Module<BE>: GLWEBytesOf<BE>
-        + crate::GLWEPreparedTensoring<BE>
-        + crate::reference::operations::GLWETensoringReference<BE>
-        + crate::api::GLWENormalize<BE>
-        + poulpy_hal::api::VecZnxGadgetDecompose<BE>
-        + GLWEAutomorphism<BE>
-        + GLWEAdd<BE>
-        + GLWECopy<BE>
+        + crate::GLWEPreparedTensoring<BE, Rg>
+        + crate::reference::operations::GLWETensoringReference<BE, Rg>
+        + crate::api::GLWENormalize<BE, Rg>
+        + poulpy_hal::api::VecZnxGadgetDecompose<BE, Rg>
+        + GLWEAutomorphism<BE, Rg>
+        + GLWEAdd<BE, Rg>
+        + GLWECopy<BE, Rg>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
         + CnvPVecBytesOf
-        + CnvOps<BE>
+        + CnvOps<BE, Rg>
         + poulpy_hal::api::ModuleN
-        + GGLWEProductReference<BE>
-        + poulpy_hal::api::VecZnxAutomorphism<BE>
-        + GLWEKeyswitchInternal<BE>
-        + VecZnxBigAddAssign<BE>
+        + GGLWEProductReference<BE, Rg>
+        + poulpy_hal::api::VecZnxAutomorphism<BE, Rg>
+        + GLWEKeyswitchInternal<BE, Rg>
+        + VecZnxBigAddAssign<BE, Rg>
         + VecZnxBigAlloc<BE>
-        + VecZnxBigAutomorphismAssign<BE>
+        + VecZnxBigAutomorphismAssign<BE, Rg>
         + VecZnxBigAutomorphismAssignTmpBytes
         + VecZnxBigBytesOf
-        + VecZnxBigFromSmall<BE>
-        + VecZnxBigNormalize<BE>
-        + VecZnxCopy<BE>
-        + VecZnxDftAddAssign<BE>
-        + VecZnxDftApply<BE>
-        + VecZnxDftAutomorphism<BE>
+        + VecZnxBigFromSmall<BE, Rg>
+        + VecZnxBigNormalize<BE, Rg>
+        + VecZnxCopy<BE, Rg>
+        + VecZnxDftAddAssign<BE, Rg>
+        + VecZnxDftApply<BE, Rg>
+        + VecZnxDftAutomorphism<BE, Rg>
         + VecZnxDftBytesOf
         + poulpy_hal::api::VecZnxDftAlloc<BE>
         + VecZnxBigNormalizeTmpBytes
         + poulpy_hal::api::VecZnxGadgetDecomposeTmpBytes
-        + VecZnxDftCopy<BE>
-        + VecZnxDftZero<BE>
-        + VecZnxIdftApply<BE>
-        + poulpy_hal::api::VecZnxIdftNormalize<BE>
+        + VecZnxDftCopy<BE, Rg>
+        + VecZnxDftZero<BE, Rg>
+        + VecZnxIdftApply<BE, Rg>
+        + poulpy_hal::api::VecZnxIdftNormalize<BE, Rg>
         + VecZnxIdftApplyTmpBytes
-        + VecZnxNormalizeAssign<BE>
+        + VecZnxNormalizeAssign<BE, Rg>
         + VecZnxNormalizeTmpBytes
-        + GLWEMulPlain<BE>
+        + GLWEMulPlain<BE, Rg>
         + GaloisElement
         + poulpy_hal::api::VecZnxIdftNormalizeTmpBytes
         + poulpy_hal::api::VecZnxDftAutomorphismAddWithPlanTmpBytes,
-    R: GLWEToBackendMut<BE> + GLWEInfos,
-    P: GLWEDiagonalProd<BE>,
-    H: GetAutomorphismKey<BE> + crate::layouts::GetTensorKey<BE>,
+    R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+    P: GLWEDiagonalProd<BE, Rg>,
+    H: GetAutomorphismKey<BE, Rg> + crate::layouts::GetTensorKey<BE, Rg>,
 {
     assert_linear_transformation_into(lhs, rhs);
     glwe_eval_giant_steps(module, cnv_offset, res, &[lhs], &[rhs], keys, scratch);
@@ -379,7 +380,7 @@ pub fn glwe_linear_transformation_eval_into_reference<BE, R, P, H, L: BabyStepOp
 
 /// Reference impl: scratch bytes for [`glwe_linear_transformation_eval_sum_into_reference`],
 /// the single-transform budget plus the PROD bucket every term after the first is computed into.
-pub fn glwe_linear_transformation_eval_sum_tmp_bytes_reference<BE, R, A, B, K, T>(
+pub fn glwe_linear_transformation_eval_sum_tmp_bytes_reference<BE, R, A, B, K, T, Rg: Ring>(
     module: &Module<BE>,
     res: &R,
     a: &A,
@@ -390,25 +391,25 @@ pub fn glwe_linear_transformation_eval_sum_tmp_bytes_reference<BE, R, A, B, K, T
 ) -> usize
 where
     BE: Backend
-        + crate::oep::GGLWEProductDigitsStridedImpl
-        + crate::oep::GLWELinearTransformationImpl
-        + crate::oep::GLWETensoringImpl,
+        + crate::oep::GGLWEProductDigitsStridedImpl<Rg>
+        + crate::oep::GLWELinearTransformationImpl<Rg>
+        + crate::oep::GLWETensoringImpl<Rg>,
     Module<BE>: GLWEBytesOf<BE>
-        + crate::GLWEPreparedTensoring<BE>
+        + crate::GLWEPreparedTensoring<BE, Rg>
         + CnvPVecBytesOf
-        + crate::api::GLWENormalize<BE>
+        + crate::api::GLWENormalize<BE, Rg>
         + poulpy_hal::api::ModuleN
-        + GLWEAutomorphism<BE>
-        + GLWEMulPlain<BE>
-        + CnvOps<BE>
-        + GGLWEProductReference<BE>
-        + poulpy_hal::api::VecZnxAutomorphism<BE>
-        + crate::reference::keyswitching::GLWEKeyswitchInternal<BE>
-        + VecZnxAutomorphismAssign<BE>
+        + GLWEAutomorphism<BE, Rg>
+        + GLWEMulPlain<BE, Rg>
+        + CnvOps<BE, Rg>
+        + GGLWEProductReference<BE, Rg>
+        + poulpy_hal::api::VecZnxAutomorphism<BE, Rg>
+        + crate::reference::keyswitching::GLWEKeyswitchInternal<BE, Rg>
+        + VecZnxAutomorphismAssign<BE, Rg>
         + VecZnxBigAutomorphismAssignTmpBytes
         + VecZnxBigBytesOf
         + VecZnxBigNormalizeTmpBytes
-        + VecZnxDftApply<BE>
+        + VecZnxDftApply<BE, Rg>
         + VecZnxDftAutomorphismAddWithPlanTmpBytes
         + VecZnxDftBytesOf
         + VecZnxIdftApplyTmpBytes
@@ -422,14 +423,18 @@ where
 {
     // A batch of buckets, each sized like the single budget's PROD buffer.
     let bucket = BE::glwe_giant_step_batch(module)
-        * BE::scratch_aligned(module.vec_znx_dft_bytes_of(module.n(), a.rank().as_usize() + 1, a.max_size() + pt.max_size()));
-    glwe_linear_transformation_eval_tmp_bytes_reference::<BE, _, _, _, _, _>(module, res, a, pt, plan, tsk, key) + bucket
+        * BE::scratch_aligned(module.vec_znx_dft_bytes_of(
+            res.n().as_usize(),
+            a.rank().as_usize() + 1,
+            a.max_size() + pt.max_size(),
+        ));
+    glwe_linear_transformation_eval_tmp_bytes_reference::<BE, _, _, _, _, _, Rg>(module, res, a, pt, plan, tsk, key) + bucket
 }
 
 /// Reference impl: scratch bytes for [`glwe_linear_transformation_eval_sum_into_reference`] over streamed transforms:
 /// the sum's budget plus the resident `CnvPVecR` diagonal slot and the `cnv_pvec_right_prepare` scratch of the streamed
-/// inner product, sized at the module degree.
-pub fn glwe_linear_transformation_eval_sum_unprepared_rhs_tmp_bytes_reference<BE, R, A, B, K, T>(
+/// inner product, sized at the diagonals' degree.
+pub fn glwe_linear_transformation_eval_sum_unprepared_rhs_tmp_bytes_reference<BE, R, A, B, K, T, Rg: Ring>(
     module: &Module<BE>,
     res: &R,
     a: &A,
@@ -440,25 +445,25 @@ pub fn glwe_linear_transformation_eval_sum_unprepared_rhs_tmp_bytes_reference<BE
 ) -> usize
 where
     BE: Backend
-        + crate::oep::GGLWEProductDigitsStridedImpl
-        + crate::oep::GLWELinearTransformationImpl
-        + crate::oep::GLWETensoringImpl,
+        + crate::oep::GGLWEProductDigitsStridedImpl<Rg>
+        + crate::oep::GLWELinearTransformationImpl<Rg>
+        + crate::oep::GLWETensoringImpl<Rg>,
     Module<BE>: GLWEBytesOf<BE>
-        + crate::GLWEPreparedTensoring<BE>
+        + crate::GLWEPreparedTensoring<BE, Rg>
         + CnvPVecBytesOf
-        + crate::api::GLWENormalize<BE>
+        + crate::api::GLWENormalize<BE, Rg>
         + poulpy_hal::api::ModuleN
-        + GLWEAutomorphism<BE>
-        + GLWEMulPlain<BE>
-        + CnvOps<BE>
-        + GGLWEProductReference<BE>
-        + poulpy_hal::api::VecZnxAutomorphism<BE>
-        + crate::reference::keyswitching::GLWEKeyswitchInternal<BE>
-        + VecZnxAutomorphismAssign<BE>
+        + GLWEAutomorphism<BE, Rg>
+        + GLWEMulPlain<BE, Rg>
+        + CnvOps<BE, Rg>
+        + GGLWEProductReference<BE, Rg>
+        + poulpy_hal::api::VecZnxAutomorphism<BE, Rg>
+        + crate::reference::keyswitching::GLWEKeyswitchInternal<BE, Rg>
+        + VecZnxAutomorphismAssign<BE, Rg>
         + VecZnxBigAutomorphismAssignTmpBytes
         + VecZnxBigBytesOf
         + VecZnxBigNormalizeTmpBytes
-        + VecZnxDftApply<BE>
+        + VecZnxDftApply<BE, Rg>
         + VecZnxDftAutomorphismAddWithPlanTmpBytes
         + VecZnxDftBytesOf
         + VecZnxIdftApplyTmpBytes
@@ -471,8 +476,8 @@ where
     K: GGLWEInfos,
     T: GGLWEInfos,
 {
-    glwe_linear_transformation_eval_sum_tmp_bytes_reference::<BE, _, _, _, _, _>(module, res, a, pt, plan, tsk, key)
-        + module.cnv_pvec_right_bytes_of(module.n(), 1, pt.size(), PrepareHint::OneShot)
+    glwe_linear_transformation_eval_sum_tmp_bytes_reference::<BE, _, _, _, _, _, Rg>(module, res, a, pt, plan, tsk, key)
+        + module.cnv_pvec_right_bytes_of(pt.n().as_usize(), 1, pt.size(), PrepareHint::OneShot)
         + module.cnv_pvec_right_prepare_tmp_bytes(pt.size(), pt.size())
 }
 
@@ -485,63 +490,63 @@ where
 /// Runs [`assert_linear_transformation_sum`] first: every term shares the first
 /// one's giant schedule, first diagonal's layout, width and scale, and source
 /// layout, so one schedule, PROD bucket and `cnv_offset` serve them all.
-pub fn glwe_linear_transformation_eval_sum_into_reference<BE, R, P, H, L: BabyStepOperand<BE>>(
+pub fn glwe_linear_transformation_eval_sum_into_reference<BE, R, P, H, L: BabyStepOperand<BE, Rg>, Rg: Ring>(
     module: &Module<BE>,
     cnv_offset: usize,
     res: &mut R,
-    babies: &[&LinearTransformationBabySteps<BE, L>],
+    babies: &[&LinearTransformationBabySteps<BE, Rg, L>],
     lts: &[&LinearTransformation<P>],
     keys: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend
-        + crate::oep::GGLWEProductDigitsStridedImpl
-        + crate::oep::GLWELinearTransformationImpl
-        + crate::oep::GLWETensoringImpl,
+        + crate::oep::GGLWEProductDigitsStridedImpl<Rg>
+        + crate::oep::GLWELinearTransformationImpl<Rg>
+        + crate::oep::GLWETensoringImpl<Rg>,
     Module<BE>: GLWEBytesOf<BE>
-        + crate::GLWEPreparedTensoring<BE>
-        + crate::reference::operations::GLWETensoringReference<BE>
-        + crate::api::GLWENormalize<BE>
-        + poulpy_hal::api::VecZnxGadgetDecompose<BE>
-        + GLWEAutomorphism<BE>
-        + GLWEAdd<BE>
-        + GLWECopy<BE>
+        + crate::GLWEPreparedTensoring<BE, Rg>
+        + crate::reference::operations::GLWETensoringReference<BE, Rg>
+        + crate::api::GLWENormalize<BE, Rg>
+        + poulpy_hal::api::VecZnxGadgetDecompose<BE, Rg>
+        + GLWEAutomorphism<BE, Rg>
+        + GLWEAdd<BE, Rg>
+        + GLWECopy<BE, Rg>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
         + CnvPVecBytesOf
-        + CnvOps<BE>
+        + CnvOps<BE, Rg>
         + poulpy_hal::api::ModuleN
-        + GGLWEProductReference<BE>
-        + poulpy_hal::api::VecZnxAutomorphism<BE>
-        + GLWEKeyswitchInternal<BE>
-        + VecZnxBigAddAssign<BE>
+        + GGLWEProductReference<BE, Rg>
+        + poulpy_hal::api::VecZnxAutomorphism<BE, Rg>
+        + GLWEKeyswitchInternal<BE, Rg>
+        + VecZnxBigAddAssign<BE, Rg>
         + VecZnxBigAlloc<BE>
-        + VecZnxBigAutomorphismAssign<BE>
+        + VecZnxBigAutomorphismAssign<BE, Rg>
         + VecZnxBigAutomorphismAssignTmpBytes
         + VecZnxBigBytesOf
-        + VecZnxBigFromSmall<BE>
-        + VecZnxBigNormalize<BE>
-        + VecZnxCopy<BE>
-        + VecZnxDftAddAssign<BE>
-        + VecZnxDftApply<BE>
-        + VecZnxDftAutomorphism<BE>
+        + VecZnxBigFromSmall<BE, Rg>
+        + VecZnxBigNormalize<BE, Rg>
+        + VecZnxCopy<BE, Rg>
+        + VecZnxDftAddAssign<BE, Rg>
+        + VecZnxDftApply<BE, Rg>
+        + VecZnxDftAutomorphism<BE, Rg>
         + VecZnxDftBytesOf
         + poulpy_hal::api::VecZnxDftAlloc<BE>
         + VecZnxBigNormalizeTmpBytes
         + poulpy_hal::api::VecZnxGadgetDecomposeTmpBytes
-        + VecZnxDftCopy<BE>
-        + VecZnxDftZero<BE>
-        + VecZnxIdftApply<BE>
-        + poulpy_hal::api::VecZnxIdftNormalize<BE>
+        + VecZnxDftCopy<BE, Rg>
+        + VecZnxDftZero<BE, Rg>
+        + VecZnxIdftApply<BE, Rg>
+        + poulpy_hal::api::VecZnxIdftNormalize<BE, Rg>
         + VecZnxIdftApplyTmpBytes
-        + VecZnxNormalizeAssign<BE>
+        + VecZnxNormalizeAssign<BE, Rg>
         + VecZnxNormalizeTmpBytes
-        + GLWEMulPlain<BE>
+        + GLWEMulPlain<BE, Rg>
         + GaloisElement
         + poulpy_hal::api::VecZnxIdftNormalizeTmpBytes
         + poulpy_hal::api::VecZnxDftAutomorphismAddWithPlanTmpBytes,
-    R: GLWEToBackendMut<BE> + GLWEInfos,
-    P: GLWEDiagonalProd<BE>,
-    H: GetAutomorphismKey<BE> + crate::layouts::GetTensorKey<BE>,
+    R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
+    P: GLWEDiagonalProd<BE, Rg>,
+    H: GetAutomorphismKey<BE, Rg> + crate::layouts::GetTensorKey<BE, Rg>,
 {
     assert_linear_transformation_sum(babies, lts);
     glwe_eval_giant_steps(module, cnv_offset, res, babies, lts, keys, scratch);
@@ -554,7 +559,7 @@ pub fn glwe_linear_transformation_eval_sum_into_reference<BE, R, P, H, L: BabySt
 /// diagonal slot and a `cnv_pvec_right_prepare` scratch on top of the prepared
 /// evaluation budget, both sized at the module degree, an upper bound for a
 /// diagonal of any degree.
-pub fn glwe_linear_transformation_eval_unprepared_rhs_tmp_bytes_reference<BE, R, A, B, K, T>(
+pub fn glwe_linear_transformation_eval_unprepared_rhs_tmp_bytes_reference<BE, R, A, B, K, T, Rg: Ring>(
     module: &Module<BE>,
     res: &R,
     a: &A,
@@ -565,25 +570,25 @@ pub fn glwe_linear_transformation_eval_unprepared_rhs_tmp_bytes_reference<BE, R,
 ) -> usize
 where
     BE: Backend
-        + crate::oep::GGLWEProductDigitsStridedImpl
-        + crate::oep::GLWELinearTransformationImpl
-        + crate::oep::GLWETensoringImpl,
+        + crate::oep::GGLWEProductDigitsStridedImpl<Rg>
+        + crate::oep::GLWELinearTransformationImpl<Rg>
+        + crate::oep::GLWETensoringImpl<Rg>,
     Module<BE>: GLWEBytesOf<BE>
-        + crate::GLWEPreparedTensoring<BE>
-        + crate::api::GLWENormalize<BE>
+        + crate::GLWEPreparedTensoring<BE, Rg>
+        + crate::api::GLWENormalize<BE, Rg>
         + poulpy_hal::api::ModuleN
-        + GLWEAutomorphism<BE>
-        + GLWEMulPlain<BE>
+        + GLWEAutomorphism<BE, Rg>
+        + GLWEMulPlain<BE, Rg>
         + CnvPVecBytesOf
-        + CnvOps<BE>
-        + GGLWEProductReference<BE>
-        + poulpy_hal::api::VecZnxAutomorphism<BE>
-        + crate::reference::keyswitching::GLWEKeyswitchInternal<BE>
-        + VecZnxAutomorphismAssign<BE>
+        + CnvOps<BE, Rg>
+        + GGLWEProductReference<BE, Rg>
+        + poulpy_hal::api::VecZnxAutomorphism<BE, Rg>
+        + crate::reference::keyswitching::GLWEKeyswitchInternal<BE, Rg>
+        + VecZnxAutomorphismAssign<BE, Rg>
         + VecZnxBigAutomorphismAssignTmpBytes
         + VecZnxBigBytesOf
         + VecZnxBigNormalizeTmpBytes
-        + VecZnxDftApply<BE>
+        + VecZnxDftApply<BE, Rg>
         + VecZnxDftAutomorphismAddWithPlanTmpBytes
         + VecZnxDftBytesOf
         + VecZnxIdftApplyTmpBytes
@@ -596,7 +601,7 @@ where
     K: GGLWEInfos,
     T: GGLWEInfos,
 {
-    glwe_linear_transformation_eval_tmp_bytes_reference::<BE, _, _, _, _, _>(module, res, a, pt, plan, tsk, key)
-        + module.cnv_pvec_right_bytes_of(module.n(), 1, pt.size(), PrepareHint::OneShot)
+    glwe_linear_transformation_eval_tmp_bytes_reference::<BE, _, _, _, _, _, Rg>(module, res, a, pt, plan, tsk, key)
+        + module.cnv_pvec_right_bytes_of(pt.n().as_usize(), 1, pt.size(), PrepareHint::OneShot)
         + module.cnv_pvec_right_prepare_tmp_bytes(pt.size(), pt.size())
 }

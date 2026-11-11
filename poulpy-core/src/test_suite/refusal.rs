@@ -1,6 +1,6 @@
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
-use poulpy_hal::layouts::{Backend, CnvPVecL, DataView};
+use poulpy_hal::layouts::{Backend, CnvPVecL, DataView, Ring};
 
 use crate::{
     ComponentNoise,
@@ -31,7 +31,7 @@ pub(crate) type GLWEState = (
     Option<GLWEPlaintextMeta>,
 );
 
-pub(crate) fn glwe_state<BE: Backend>(glwe: &GLWE<BE::OwnedBuf, BE::ZnxWord>) -> GLWEState {
+pub(crate) fn glwe_state<BE: Backend, Rg: Ring>(glwe: &GLWE<BE::OwnedBuf, BE::ZnxWord, Rg>) -> GLWEState {
     (
         BE::to_host_bytes(glwe.data.data()),
         glwe.noise.clone(),
@@ -42,12 +42,14 @@ pub(crate) fn glwe_state<BE: Backend>(glwe: &GLWE<BE::OwnedBuf, BE::ZnxWord>) ->
     )
 }
 
-pub(crate) fn glwe_tensor_state<BE: Backend>(
-    tensor: &GLWETensor<BE::OwnedBuf, BE::ZnxWord>,
+pub(crate) fn glwe_tensor_state<BE: Backend, Rg: Ring>(
+    tensor: &GLWETensor<BE::OwnedBuf, BE::ZnxWord, Rg>,
 ) -> (Vec<u8>, Base2K, TorusPrecision) {
     (BE::to_host_bytes(tensor.data.data()), tensor.base2k, tensor.k)
 }
 
-pub(crate) fn cnv_pvec_left_state<BE: Backend>(pvec: &CnvPVecL<BE::OwnedBuf, BE::DftWord, BE>) -> (Vec<u8>, usize, usize, usize) {
+pub(crate) fn cnv_pvec_left_state<BE: Backend, Rg: Ring>(
+    pvec: &CnvPVecL<BE::OwnedBuf, BE::DftWord, BE, Rg>,
+) -> (Vec<u8>, usize, usize, usize) {
     (BE::to_host_bytes(pvec.data()), pvec.n(), pvec.cols(), pvec.size())
 }

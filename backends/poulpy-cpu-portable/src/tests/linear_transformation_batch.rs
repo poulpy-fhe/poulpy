@@ -9,7 +9,7 @@ use poulpy_core::{
     test_suite::parity::{ParityShapes, test_linear_transformation_parity, test_linear_transformation_powers_of_two_parity},
 };
 use poulpy_hal::{
-    layouts::{Backend, Module, ScratchArena, VecZnxDftBackendMut},
+    layouts::{Backend, Module, ScratchArena, Standard, VecZnxDftBackendMut},
     test_suite::TestParams,
 };
 use std::cell::Cell;
@@ -25,26 +25,26 @@ thread_local! {
 }
 
 crate::impl_sampling_host!(Batched, fft64);
-poulpy_core::impl_ggsw_conversion_reference_full!(Batched);
-poulpy_core::impl_decryption_reference_full!(Batched);
-poulpy_core::impl_encryption_reference_full!(Batched);
-poulpy_core::impl_operations_reference_full!(Batched);
-poulpy_core::impl_glwe_polynomial_evaluation_derived_full!(Batched);
-poulpy_core::impl_preparation_reference_full!(Batched);
-poulpy_core::impl_secret_reference_full!(Batched);
-poulpy_core::impl_gglwe_external_product_derived_full!(Batched);
-poulpy_core::impl_gglwe_keyswitch_derived_full!(Batched);
-poulpy_core::impl_ggsw_external_product_derived_full!(Batched);
-poulpy_core::impl_ggsw_keyswitch_derived_full!(Batched);
-poulpy_core::impl_automorphism_reference_full!(Batched);
-poulpy_core::impl_glwe_external_product_reference_full!(Batched);
-poulpy_core::impl_glwe_keyswitch_reference_full!(Batched);
+poulpy_core::impl_ggsw_conversion_reference_full!(Batched, Standard);
+poulpy_core::impl_decryption_reference_full!(Batched, Standard);
+poulpy_core::impl_encryption_reference_full!(Batched, Standard);
+poulpy_core::impl_operations_reference_full!(Batched, Standard);
+poulpy_core::impl_glwe_polynomial_evaluation_derived_full!(Batched, Standard);
+poulpy_core::impl_preparation_reference_full!(Batched, Standard);
+poulpy_core::impl_secret_reference_full!(Batched, Standard);
+poulpy_core::impl_gglwe_external_product_derived_full!(Batched, Standard);
+poulpy_core::impl_gglwe_keyswitch_derived_full!(Batched, Standard);
+poulpy_core::impl_ggsw_external_product_derived_full!(Batched, Standard);
+poulpy_core::impl_ggsw_keyswitch_derived_full!(Batched, Standard);
+poulpy_core::impl_automorphism_reference_full!(Batched, Standard);
+poulpy_core::impl_glwe_external_product_reference_full!(Batched, Standard);
+poulpy_core::impl_glwe_keyswitch_reference_full!(Batched, Standard);
 poulpy_core::impl_lwe_keyswitch_reference_full!(Batched);
-poulpy_core::impl_glwe_tensoring_reference_full!(Batched);
-poulpy_core::impl_gglwe_product_digits_strided_reference_full!(Batched);
-poulpy_core::impl_glwe_trace_derived_full!(Batched);
+poulpy_core::impl_glwe_tensoring_reference_full!(Batched, Standard);
+poulpy_core::impl_gglwe_product_digits_strided_reference_full!(Batched, Standard);
+poulpy_core::impl_glwe_trace_derived_full!(Batched, Standard);
 
-unsafe impl poulpy_core::oep::GLWELinearTransformationImpl for Batched {
+unsafe impl poulpy_core::oep::GLWELinearTransformationImpl<Standard> for Batched {
     fn glwe_linear_transformation_eval_tmp_bytes<R, A, B, K, T>(
         module: &::poulpy_hal::layouts::Module<Batched>,
         res: &R,
@@ -61,7 +61,9 @@ unsafe impl poulpy_core::oep::GLWELinearTransformationImpl for Batched {
         K: poulpy_core::layouts::GGLWEInfos,
         T: poulpy_core::layouts::GGLWEInfos,
     {
-        module.glwe_linear_transformation_eval_tmp_bytes_reference(res, a, pt, plan, tsk, key)
+        GLWELinearTransformationReference::<_, Standard>::glwe_linear_transformation_eval_tmp_bytes_reference(
+            module, res, a, pt, plan, tsk, key,
+        )
     }
 
     fn glwe_linear_transformation_eval_unprepared_rhs_tmp_bytes<R, A, B, K, T>(
@@ -80,7 +82,9 @@ unsafe impl poulpy_core::oep::GLWELinearTransformationImpl for Batched {
         K: poulpy_core::layouts::GGLWEInfos,
         T: poulpy_core::layouts::GGLWEInfos,
     {
-        module.glwe_linear_transformation_eval_unprepared_rhs_tmp_bytes_reference(res, a, pt, plan, tsk, key)
+        GLWELinearTransformationReference::<_, Standard>::glwe_linear_transformation_eval_unprepared_rhs_tmp_bytes_reference(
+            module, res, a, pt, plan, tsk, key,
+        )
     }
 
     fn glwe_linear_transformation_eval_sum_tmp_bytes<R, A, B, K, T>(
@@ -99,7 +103,9 @@ unsafe impl poulpy_core::oep::GLWELinearTransformationImpl for Batched {
         K: poulpy_core::layouts::GGLWEInfos,
         T: poulpy_core::layouts::GGLWEInfos,
     {
-        module.glwe_linear_transformation_eval_sum_tmp_bytes_reference(res, a, pt, plan, tsk, key)
+        GLWELinearTransformationReference::<_, Standard>::glwe_linear_transformation_eval_sum_tmp_bytes_reference(
+            module, res, a, pt, plan, tsk, key,
+        )
     }
 
     fn glwe_linear_transformation_eval_sum_unprepared_rhs_tmp_bytes<R, A, B, K, T>(
@@ -118,7 +124,9 @@ unsafe impl poulpy_core::oep::GLWELinearTransformationImpl for Batched {
         K: poulpy_core::layouts::GGLWEInfos,
         T: poulpy_core::layouts::GGLWEInfos,
     {
-        module.glwe_linear_transformation_eval_sum_unprepared_rhs_tmp_bytes_reference(res, a, pt, plan, tsk, key)
+        GLWELinearTransformationReference::<_, Standard>::glwe_linear_transformation_eval_sum_unprepared_rhs_tmp_bytes_reference(
+            module, res, a, pt, plan, tsk, key,
+        )
     }
 
     fn glwe_linear_transformation_baby_steps_prepare_tmp_bytes<A, K>(
@@ -131,70 +139,78 @@ unsafe impl poulpy_core::oep::GLWELinearTransformationImpl for Batched {
         A: poulpy_core::layouts::GLWEInfos,
         K: poulpy_core::layouts::GGLWEInfos,
     {
-        module.glwe_linear_transformation_baby_steps_prepare_tmp_bytes_reference(a, plan, key)
+        GLWELinearTransformationReference::<_, Standard>::glwe_linear_transformation_baby_steps_prepare_tmp_bytes_reference(
+            module, a, plan, key,
+        )
     }
 
     fn glwe_linear_transformation_rhs_prepare_tmp_bytes<P>(module: &::poulpy_hal::layouts::Module<Batched>, pt_infos: &P) -> usize
     where
         P: poulpy_core::layouts::GLWEInfos,
     {
-        module.glwe_linear_transformation_rhs_prepare_tmp_bytes_reference(pt_infos)
+        GLWELinearTransformationReference::<_, Standard>::glwe_linear_transformation_rhs_prepare_tmp_bytes_reference(
+            module, pt_infos,
+        )
     }
 
     fn glwe_linear_transformation_rhs_prepare<P>(
         module: &::poulpy_hal::layouts::Module<Batched>,
         prepared: &mut poulpy_core::layouts::LinearTransformation<
-            poulpy_core::layouts::prepared::PreparedDiagonal<<Batched as ::poulpy_hal::layouts::Backend>::OwnedBuf, Batched>,
+            poulpy_core::layouts::prepared::PreparedDiagonal<
+                <Batched as ::poulpy_hal::layouts::Backend>::OwnedBuf,
+                Batched,
+                Standard,
+            >,
         >,
         lt: &poulpy_core::layouts::LinearTransformation<P>,
         scratch: &mut ::poulpy_hal::layouts::ScratchArena<Batched>,
     ) where
-        P: poulpy_core::layouts::GLWEToBackendRef<Batched> + poulpy_core::layouts::GLWEInfos,
+        P: poulpy_core::layouts::GLWEToBackendRef<Batched, Standard> + poulpy_core::layouts::GLWEInfos,
     {
         module.glwe_linear_transformation_rhs_prepare_reference(prepared, lt, scratch)
     }
 
-    fn glwe_linear_transformation_baby_steps_prepare<A, H, L: poulpy_core::layouts::BabyStepOperand<Batched>>(
+    fn glwe_linear_transformation_baby_steps_prepare<A, H, L: poulpy_core::layouts::BabyStepOperand<Batched, Standard>>(
         module: &::poulpy_hal::layouts::Module<Batched>,
-        cache: &mut poulpy_core::layouts::prepared::LinearTransformationBabySteps<Batched, L>,
+        cache: &mut poulpy_core::layouts::prepared::LinearTransformationBabySteps<Batched, Standard, L>,
         a: &A,
         keys: &H,
         scratch: &mut ::poulpy_hal::layouts::ScratchArena<Batched>,
     ) where
-        A: poulpy_core::layouts::GLWEToBackendRef<Batched> + poulpy_core::layouts::GLWEInfos,
-        H: poulpy_core::layouts::GetAutomorphismKey<Batched>,
+        A: poulpy_core::layouts::GLWEToBackendRef<Batched, Standard> + poulpy_core::layouts::GLWEInfos,
+        H: poulpy_core::layouts::GetAutomorphismKey<Batched, Standard>,
     {
         module.glwe_linear_transformation_baby_steps_prepare_reference(cache, a, keys, scratch)
     }
 
-    fn glwe_linear_transformation_eval_into<R, P, H, L: poulpy_core::layouts::BabyStepOperand<Batched>>(
+    fn glwe_linear_transformation_eval_into<R, P, H, L: poulpy_core::layouts::BabyStepOperand<Batched, Standard>>(
         module: &::poulpy_hal::layouts::Module<Batched>,
         cnv_offset: usize,
         res: &mut R,
-        lhs: &poulpy_core::layouts::prepared::LinearTransformationBabySteps<Batched, L>,
+        lhs: &poulpy_core::layouts::prepared::LinearTransformationBabySteps<Batched, Standard, L>,
         rhs: &poulpy_core::layouts::LinearTransformation<P>,
         keys: &H,
         scratch: &mut ::poulpy_hal::layouts::ScratchArena<Batched>,
     ) where
-        R: poulpy_core::layouts::GLWEToBackendMut<Batched> + poulpy_core::layouts::GLWEInfos,
-        P: poulpy_core::layouts::GLWEDiagonalProd<Batched>,
-        H: poulpy_core::layouts::GetAutomorphismKey<Batched> + poulpy_core::layouts::GetTensorKey<Batched>,
+        R: poulpy_core::layouts::GLWEToBackendMut<Batched, Standard> + poulpy_core::layouts::GLWEInfos,
+        P: poulpy_core::layouts::GLWEDiagonalProd<Batched, Standard>,
+        H: poulpy_core::layouts::GetAutomorphismKey<Batched, Standard> + poulpy_core::layouts::GetTensorKey<Batched, Standard>,
     {
         module.glwe_linear_transformation_eval_into_reference(cnv_offset, res, lhs, rhs, keys, scratch)
     }
 
-    fn glwe_linear_transformation_eval_sum_into<R, P, H, L: poulpy_core::layouts::BabyStepOperand<Batched>>(
+    fn glwe_linear_transformation_eval_sum_into<R, P, H, L: poulpy_core::layouts::BabyStepOperand<Batched, Standard>>(
         module: &::poulpy_hal::layouts::Module<Batched>,
         cnv_offset: usize,
         res: &mut R,
-        babies: &[&poulpy_core::layouts::prepared::LinearTransformationBabySteps<Batched, L>],
+        babies: &[&poulpy_core::layouts::prepared::LinearTransformationBabySteps<Batched, Standard, L>],
         lts: &[&poulpy_core::layouts::LinearTransformation<P>],
         keys: &H,
         scratch: &mut ::poulpy_hal::layouts::ScratchArena<Batched>,
     ) where
-        R: poulpy_core::layouts::GLWEToBackendMut<Batched> + poulpy_core::layouts::GLWEInfos,
-        P: poulpy_core::GLWEDiagonalProd<Batched>,
-        H: poulpy_core::layouts::GetAutomorphismKey<Batched> + poulpy_core::layouts::GetTensorKey<Batched>,
+        R: poulpy_core::layouts::GLWEToBackendMut<Batched, Standard> + poulpy_core::layouts::GLWEInfos,
+        P: poulpy_core::GLWEDiagonalProd<Batched, Standard>,
+        H: poulpy_core::layouts::GetAutomorphismKey<Batched, Standard> + poulpy_core::layouts::GetTensorKey<Batched, Standard>,
     {
         module.glwe_linear_transformation_eval_sum_into_reference(cnv_offset, res, babies, lts, keys, scratch)
     }
@@ -203,13 +219,13 @@ unsafe impl poulpy_core::oep::GLWELinearTransformationImpl for Batched {
         BATCH
     }
 
-    fn glwe_accumulate_giant_steps<L: poulpy_core::layouts::BabyStepOperand<Self>>(
+    fn glwe_accumulate_giant_steps<L: poulpy_core::layouts::BabyStepOperand<Self, Standard>>(
         module: &Module<Self>,
         cnv_offset_hi: usize,
-        prods: &mut [VecZnxDftBackendMut<'_, Self>],
-        lhs: &poulpy_core::layouts::prepared::LinearTransformationBabySteps<Self, L>,
+        prods: &mut [VecZnxDftBackendMut<'_, Self, Standard>],
+        lhs: &poulpy_core::layouts::prepared::LinearTransformationBabySteps<Self, Standard, L>,
         steps: &[poulpy_core::layouts::LinearTransformationGiantStep<
-            poulpy_core::layouts::prepared::PreparedDiagonal<<Self as Backend>::OwnedBuf, Self>,
+            poulpy_core::layouts::prepared::PreparedDiagonal<<Self as Backend>::OwnedBuf, Self, Standard>,
         >],
         scratch: &mut ScratchArena<'_, Self>,
     ) {
@@ -239,10 +255,10 @@ fn run(test: fn(&TestParams, &ParityShapes, &Module<FFT64Portable>, &Module<Batc
 
 #[test]
 fn batched_linear_transformation_parity() {
-    run(test_linear_transformation_parity::<FFT64Portable, Batched>);
+    run(test_linear_transformation_parity::<FFT64Portable, Batched, Standard>);
 }
 
 #[test]
 fn batched_linear_transformation_powers_of_two_parity() {
-    run(test_linear_transformation_powers_of_two_parity::<FFT64Portable, Batched>);
+    run(test_linear_transformation_powers_of_two_parity::<FFT64Portable, Batched, Standard>);
 }

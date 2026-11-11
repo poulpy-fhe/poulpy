@@ -6,7 +6,7 @@ use poulpy_core::{
         SetGLWEPlaintextInfos,
     },
 };
-use poulpy_hal::layouts::{Module, ScratchArena};
+use poulpy_hal::layouts::{Module, Ring, ScratchArena};
 
 use crate::{
     CKKSCtBounds, CKKSInfos, CKKSResult as Result, SetCKKSInfos, SlotsKind,
@@ -16,7 +16,7 @@ use crate::{
     oep::CKKSApproximationImpl,
 };
 
-pub(crate) fn ckks_polynomial_approximation_eval_tmp_bytes_derived<BE, R, I, T, P>(
+pub(crate) fn ckks_polynomial_approximation_eval_tmp_bytes_derived<BE, R, I, T, P, Rg: Ring>(
     module: &Module<BE>,
     res: &R,
     input: &I,
@@ -24,7 +24,7 @@ pub(crate) fn ckks_polynomial_approximation_eval_tmp_bytes_derived<BE, R, I, T, 
     tsk: &T,
 ) -> usize
 where
-    BE: CKKSApproximationImpl,
+    BE: CKKSApproximationImpl<Rg>,
     Module<BE>: CKKSAllOpsTmpBytes<BE>,
     R: CKKSCtBounds,
     I: CKKSCtBounds,
@@ -51,9 +51,14 @@ where
 
 /// The input-shaped temporary of an affine map plus the larger of its map step's selected queries, sized without a
 /// tensor key: the polynomial evaluation that follows checks its constituents' queries itself.
-fn map_tmp_bytes<BE, I, P>(module: &Module<BE>, input: &I, approximation: &PolynomialApproximation<P>, affine: &P) -> usize
+fn map_tmp_bytes<BE, I, P, Rg: Ring>(
+    module: &Module<BE>,
+    input: &I,
+    approximation: &PolynomialApproximation<P>,
+    affine: &P,
+) -> usize
 where
-    BE: CKKSApproximationImpl,
+    BE: CKKSApproximationImpl<Rg>,
     I: CKKSCtBounds,
     P: CKKSCtBounds,
 {
@@ -68,7 +73,7 @@ where
     BE::scratch_aligned(module.glwe_bytes_of_from_infos(input)) + map
 }
 
-pub(crate) fn ckks_polynomial_approximation_eval_derived<BE, R, I, P, H>(
+pub(crate) fn ckks_polynomial_approximation_eval_derived<BE, R, I, P, H, Rg: Ring>(
     module: &Module<BE>,
     res: &mut R,
     input: &I,
@@ -77,13 +82,14 @@ pub(crate) fn ckks_polynomial_approximation_eval_derived<BE, R, I, P, H>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    BE: CKKSApproximationImpl,
-    R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
-    I: GLWEToBackendRef<BE> + CKKSCtBounds,
-    P: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta + IntPolyInfos,
-    H: GetTensorKey<BE>,
+    BE: CKKSApproximationImpl<Rg>,
+    R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+    I: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+    P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + BSGSMeta + IntPolyInfos,
+    H: GetTensorKey<BE, Rg>,
 {
     const OP: &str = "ckks_polynomial_approximation_eval";
+    crate::ensure_operand_degrees(OP, module, [res.n(), input.n()])?;
     checked_log_budget_sub(OP, input.log_budget(), approximation.consumed_bits(input.log_delta()))?;
     if let Some(affine) = &approximation.affine {
         ckks_ensure!(

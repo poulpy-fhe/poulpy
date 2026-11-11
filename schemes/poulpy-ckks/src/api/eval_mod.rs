@@ -1,7 +1,7 @@
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::IntPolyInfos;
-use poulpy_hal::layouts::{Backend, ScratchArena};
+use poulpy_hal::layouts::{Backend, Ring, ScratchArena, Standard};
 
 use poulpy_core::layouts::{BSGSMeta, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, SetBSGSMeta};
 
@@ -14,7 +14,7 @@ use crate::{CKKSCtBounds, SetCKKSInfos, layouts::eval_mod::EvalMod};
 /// [`EvalModPlan`](crate::layouts::eval_mod::EvalModPlan)
 /// and uploaded to this backend); see the [`eval_mod`](crate::reference::eval_mod)
 /// module for the base-polynomial / range-extension / inverse pipeline.
-pub trait CKKSEvalModOps<BE: Backend> {
+pub trait CKKSEvalModOps<BE: Backend, Rg: Ring = Standard> {
     /// Scratch space, in bytes, required by [`Self::ckks_eval_mod`] for an output
     /// shaped like `res` for input `ct` with relinearization key `tsk`.
     /// Pass the same `res`/`ct`/`params`/`tsk` you will evaluate with, since
@@ -41,8 +41,8 @@ pub trait CKKSEvalModOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
-        C: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + BSGSMeta,
-        H: GetTensorKey<BE>;
+        R: GLWEToBackendMut<BE, Rg> + GLWEToBackendRef<BE, Rg> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        C: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE, Rg> + IntPolyInfos + CKKSCtBounds + BSGSMeta,
+        H: GetTensorKey<BE, Rg>;
 }

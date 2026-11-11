@@ -1,8 +1,8 @@
 use poulpy_hal::{
     api::{ModuleN, VecZnxAutomorphism, VecZnxCopy, VecZnxZero},
     layouts::{
-        Backend, Module, ScratchArena, scalar_znx_as_vec_znx_backend_mut_from_mut, scalar_znx_as_vec_znx_backend_ref_from_mut,
-        scalar_znx_as_vec_znx_backend_ref_from_ref, vec_znx_backend_mut_from_mut,
+        Backend, Module, ScratchArena, Standard, scalar_znx_as_vec_znx_backend_mut_from_mut,
+        scalar_znx_as_vec_znx_backend_ref_from_mut, scalar_znx_as_vec_znx_backend_ref_from_ref, vec_znx_backend_mut_from_mut,
     },
     source::Source,
 };
@@ -96,38 +96,40 @@ where
             sk_glwe_out.dist = sk_lwe_out.dist;
             sk_glwe_src.dist = sk_lwe_out.dist;
             {
-                let mut sk_glwe_src_backend = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(sk_glwe_src.data_mut());
-                let sk_lwe_out_backend = scalar_znx_as_vec_znx_backend_ref_from_ref::<BE>(sk_lwe_out.data());
+                let mut sk_glwe_src_backend = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE, Standard>(sk_glwe_src.data_mut());
+                let sk_lwe_out_backend = scalar_znx_as_vec_znx_backend_ref_from_ref::<BE, Standard>(sk_lwe_out.data());
                 self.vec_znx_zero(&mut sk_glwe_src_backend, 0);
                 self.vec_znx_copy(
-                    &mut vec_znx_backend_mut_from_mut::<BE>(&mut sk_glwe_src_backend).window_coeffs(0, sk_lwe_out.n().into()),
+                    &mut vec_znx_backend_mut_from_mut::<BE, Standard>(&mut sk_glwe_src_backend)
+                        .window_coeffs(0, sk_lwe_out.n().into()),
                     0,
                     &sk_lwe_out_backend,
                     0,
                 );
             }
             {
-                let sk_glwe_src_backend = scalar_znx_as_vec_znx_backend_ref_from_mut::<BE>(sk_glwe_src.data());
-                let mut sk_glwe_out_backend = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(sk_glwe_out.data_mut());
+                let sk_glwe_src_backend = scalar_znx_as_vec_znx_backend_ref_from_mut::<BE, Standard>(sk_glwe_src.data());
+                let mut sk_glwe_out_backend = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE, Standard>(sk_glwe_out.data_mut());
                 self.vec_znx_automorphism(-1, &mut sk_glwe_out_backend, 0, &sk_glwe_src_backend, 0);
             }
 
             sk_glwe_src.dist = sk_lwe_in.dist;
             sk_glwe_in.dist = sk_lwe_in.dist;
             {
-                let mut sk_glwe_src_backend = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(sk_glwe_src.data_mut());
-                let sk_lwe_in_backend = scalar_znx_as_vec_znx_backend_ref_from_ref::<BE>(sk_lwe_in.data());
+                let mut sk_glwe_src_backend = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE, Standard>(sk_glwe_src.data_mut());
+                let sk_lwe_in_backend = scalar_znx_as_vec_znx_backend_ref_from_ref::<BE, Standard>(sk_lwe_in.data());
                 self.vec_znx_zero(&mut sk_glwe_src_backend, 0);
                 self.vec_znx_copy(
-                    &mut vec_znx_backend_mut_from_mut::<BE>(&mut sk_glwe_src_backend).window_coeffs(0, sk_lwe_in.n().into()),
+                    &mut vec_znx_backend_mut_from_mut::<BE, Standard>(&mut sk_glwe_src_backend)
+                        .window_coeffs(0, sk_lwe_in.n().into()),
                     0,
                     &sk_lwe_in_backend,
                     0,
                 );
             }
             {
-                let sk_glwe_src_backend = scalar_znx_as_vec_znx_backend_ref_from_mut::<BE>(sk_glwe_src.data());
-                let mut sk_glwe_in_backend = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(sk_glwe_in.data_mut());
+                let sk_glwe_src_backend = scalar_znx_as_vec_znx_backend_ref_from_mut::<BE, Standard>(sk_glwe_src.data());
+                let mut sk_glwe_in_backend = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE, Standard>(sk_glwe_in.data_mut());
                 self.vec_znx_automorphism(-1, &mut sk_glwe_in_backend, 0, &sk_glwe_src_backend, 0);
             }
 

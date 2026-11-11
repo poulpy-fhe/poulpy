@@ -77,10 +77,10 @@ use poulpy_core::layouts::{
     Base2K, Degree, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, IntPolyInfos, LWEInfos, Rank, SetK, TorusPrecision,
 };
 pub use poulpy_core::layouts::{GLWEPlaintextInfos, GLWEPlaintextMeta, Scale, SetGLWEPlaintextInfos, SlotsKind};
-use poulpy_hal::layouts::Backend;
 use poulpy_hal::layouts::CyclotomicOrder;
 use poulpy_hal::layouts::Module;
 use poulpy_hal::layouts::galois_element;
+use poulpy_hal::layouts::{Backend, Ring, Standard};
 
 pub mod api;
 pub mod approximation;
@@ -125,8 +125,8 @@ pub mod test_suite;
 pub use error::{CKKSCompositionError, CKKSError, CKKSResult};
 pub(crate) use error::{
     checked_log_budget_sub, checked_mul_ct_log_budget, checked_mul_pt_log_budget, ckks_bail, ckks_ensure, ckks_ensure_operand,
-    ensure_base2k_match, ensure_plaintext_alignment, ensure_plaintext_coeff_in_range, ensure_plaintext_const_operand,
-    ensure_plaintext_degree_embeds, ensure_plaintext_vec_operand, invalid_operand,
+    ensure_base2k_match, ensure_operand_degrees, ensure_plaintext_alignment, ensure_plaintext_coeff_in_range,
+    ensure_plaintext_const_operand, ensure_plaintext_degree_embeds, ensure_plaintext_vec_operand, invalid_operand,
 };
 /// Quad-precision (IEEE 754 binary128) CKKS scalar.
 ///
@@ -139,16 +139,22 @@ pub(crate) use error::{
 pub use scalar::Quad;
 
 /// Backend-compatible shared CKKS plaintext storage.
-pub trait CKKSPlaintextToBackendRef<BE: Backend>: GLWEToBackendRef<BE> + GLWEInfos + CKKSInfos {}
+pub trait CKKSPlaintextToBackendRef<BE: Backend, Rg: Ring = Standard>: GLWEToBackendRef<BE, Rg> + GLWEInfos + CKKSInfos {}
 
-impl<BE: Backend, T> CKKSPlaintextToBackendRef<BE> for T where T: GLWEToBackendRef<BE> + GLWEInfos + CKKSInfos {}
+impl<BE: Backend, Rg: Ring, T: GLWEToBackendRef<BE, Rg> + GLWEInfos + CKKSInfos> CKKSPlaintextToBackendRef<BE, Rg> for T {}
 
 /// Backend-compatible mutable CKKS plaintext storage.
 ///
 /// Implemented by owned plaintexts and scratch-backed plaintext views alike.
-pub trait CKKSPlaintextToBackendMut<BE: Backend>: CKKSPlaintextToBackendRef<BE> + GLWEToBackendMut<BE> {}
+pub trait CKKSPlaintextToBackendMut<BE: Backend, Rg: Ring = Standard>:
+    CKKSPlaintextToBackendRef<BE, Rg> + GLWEToBackendMut<BE, Rg>
+{
+}
 
-impl<BE: Backend, T> CKKSPlaintextToBackendMut<BE> for T where T: CKKSPlaintextToBackendRef<BE> + GLWEToBackendMut<BE> {}
+impl<BE: Backend, T, Rg: Ring> CKKSPlaintextToBackendMut<BE, Rg> for T where
+    T: CKKSPlaintextToBackendRef<BE, Rg> + GLWEToBackendMut<BE, Rg>
+{
+}
 
 /// Marker bound for CKKS ciphertext type parameters.
 ///
@@ -162,41 +168,55 @@ impl<T: GLWEInfos + CKKSInfos> CKKSCtBounds for T {}
 /// Ring-dependent CKKS slot geometry and automorphism identifiers.
 pub trait CKKSModuleInfos {
     /// Maximum number of slots: `N` real slots or `N/2` complex slots.
-    fn ckks_max_slots(&self) -> usize;
+    fn ckks_max_slots<Rg: Ring>(&self) -> usize;
 
     /// Slots a plaintext of degree `n` holds: `n / 2` complex slots, or `n` real slots on the invariant ring.
-    fn ckks_slots_of_degree(&self, n: usize) -> usize;
+    fn ckks_slots_of_degree<Rg: Ring>(&self, n: usize) -> usize;
 
-    /// Automorphism identifier used by CKKS rotations and their evaluation keys.
-    /// `rotation` is reduced modulo [`Self::ckks_max_slots`], so a negative shift rotates backwards.
-    fn ckks_galois_element(&self, rotation: i64) -> i64;
+    /// Automorphism identifier used by CKKS rotations of operands of the module's degree and their evaluation keys.
+    /// `rotation` is reduced modulo [`Self::ckks_max_slots`], so a negative shift rotates backwards. An operand of
+    /// degree `n` rotates by the element of the same rotation at the order `Rg::CYCLOTOMIC_ORDER_FACTOR * n`.
+    fn ckks_galois_element<Rg: Ring>(&self, rotation: i64) -> i64;
 }
 
 /// The cyclotomic order of the operands of degree `n` that `module` serves, at most its own
 /// degree.
-pub(crate) fn operand_cyclotomic_order<M: CyclotomicOrder + ?Sized>(op: &'static str, module: &M, n: usize) -> CKKSResult<i64> {
-    if n > module.n() {
-        return Err(CKKSCompositionError::InvalidOperand {
-            op,
-            reason: "operand degree exceeds the module degree".into(),
-        }
-        .into());
-    }
-    Ok(module.cyclotomic_order() / module.n() as i64 * n as i64)
+pub(crate) fn operand_cyclotomic_order<M: CyclotomicOrder + ?Sized, Rg: Ring>(
+    op: &'static str,
+    module: &M,
+    n: usize,
+) -> CKKSResult<i64> {
+    ensure_operand_degrees(op, module, [n.into()])?;
+    Ok(module.cyclotomic_order::<Rg>() / module.n() as i64 * n as i64)
+}
+
+/// The Galois element of a slot rotation by `rotation` on the operands of degree `n` that `module` serves, `rotation`
+/// reduced modulo their slot count.
+pub(crate) fn operand_rotation_galois_element<M: CyclotomicOrder + ?Sized, Rg: Ring>(
+    op: &'static str,
+    module: &M,
+    n: usize,
+    rotation: i64,
+) -> CKKSResult<i64> {
+    let order = operand_cyclotomic_order::<M, Rg>(op, module, n)?;
+    Ok(galois_element(rotation.rem_euclid(order / 4), order))
 }
 
 impl<BE: Backend> CKKSModuleInfos for Module<BE> {
-    fn ckks_max_slots(&self) -> usize {
-        (self.cyclotomic_order() / 4) as usize
+    fn ckks_max_slots<Rg: Ring>(&self) -> usize {
+        (self.cyclotomic_order::<Rg>() / 4) as usize
     }
 
-    fn ckks_slots_of_degree(&self, n: usize) -> usize {
-        n * self.ckks_max_slots() / self.n()
+    fn ckks_slots_of_degree<Rg: Ring>(&self, n: usize) -> usize {
+        n * self.ckks_max_slots::<Rg>() / self.n()
     }
 
-    fn ckks_galois_element(&self, rotation: i64) -> i64 {
+    fn ckks_galois_element<Rg: Ring>(&self, rotation: i64) -> i64 {
         // 5 has order `max_slots` in the Galois group on both rings.
-        galois_element(rotation.rem_euclid(self.ckks_max_slots() as i64), self.cyclotomic_order())
+        galois_element(
+            rotation.rem_euclid(self.ckks_max_slots::<Rg>() as i64),
+            self.cyclotomic_order::<Rg>(),
+        )
     }
 }
 
@@ -518,21 +538,21 @@ where
 
 /// Whether a limb-wise op can read `a` into `res` without normalizing: `res`
 /// holds every limb of a non-canonical `a` (its carries may sit beyond `a.k()`).
-pub(crate) fn ckks_holds_limbs<BE, R, A>(res: &R, a: &A) -> bool
+pub(crate) fn ckks_holds_limbs<BE, R, A, Rg: Ring>(res: &R, a: &A) -> bool
 where
     BE: Backend,
-    R: GLWEToBackendRef<BE>,
-    A: GLWEToBackendRef<BE>,
+    R: GLWEToBackendRef<BE, Rg>,
+    A: GLWEToBackendRef<BE, Rg>,
 {
     a.is_canonical() || res.to_backend_ref().max_size() >= a.to_backend_ref().max_size()
 }
 
 /// Whether a limb-wise unary op can write `src` into `dst` without normalizing.
-pub(crate) fn ckks_unary_exact<BE, R, A>(res: &R, a: &A) -> bool
+pub(crate) fn ckks_unary_exact<BE, R, A, Rg: Ring>(res: &R, a: &A) -> bool
 where
     BE: Backend,
-    R: GLWEToBackendRef<BE> + CKKSInfos,
-    A: GLWEToBackendRef<BE> + CKKSInfos,
+    R: GLWEToBackendRef<BE, Rg> + CKKSInfos,
+    A: GLWEToBackendRef<BE, Rg> + CKKSInfos,
 {
     ckks_offset_unary(res, a) == 0 && ckks_holds_limbs(res, a)
 }
@@ -547,7 +567,7 @@ where
 /// copy/pow2/add-pt/sub-pt into-ops previously hand-rolled (H1 in the 2026-07
 /// review was a drift bug in exactly this preamble).
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn ckks_shift_stamp_unary<BE, M, Dst, Src>(
+pub(crate) fn ckks_shift_stamp_unary<BE, M, Dst, Src, Rg: Ring>(
     module: &M,
     op: &'static str,
     dst: &mut Dst,
@@ -559,9 +579,9 @@ pub(crate) fn ckks_shift_stamp_unary<BE, M, Dst, Src>(
 ) -> CKKSResult<()>
 where
     BE: Backend,
-    M: poulpy_core::GLWEShift<BE> + ?Sized,
-    Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
-    Src: GLWEToBackendRef<BE> + CKKSInfos,
+    M: poulpy_core::GLWEShift<BE, Rg> + ?Sized,
+    Dst: GLWEToBackendMut<BE, Rg> + CKKSInfos + SetCKKSInfos,
+    Src: GLWEToBackendRef<BE, Rg> + CKKSInfos,
 {
     let offset = ckks_offset_unary(dst, src);
     let log_budget = checked_log_budget_sub(op, src.log_budget(), offset + extra_charge)?;
@@ -583,7 +603,7 @@ where
 /// Copies `src` into `dst` with `src`'s metadata: verbatim when `dst` is wide
 /// enough, otherwise through [`ckks_shift_stamp_unary`], which charges the
 /// offset to the budget and normalizes. Validates before mutating.
-pub(crate) fn ckks_copy_stamp_unary<BE, M, Dst, Src>(
+pub(crate) fn ckks_copy_stamp_unary<BE, M, Dst, Src, Rg: Ring>(
     module: &M,
     op: &'static str,
     dst: &mut Dst,
@@ -592,9 +612,9 @@ pub(crate) fn ckks_copy_stamp_unary<BE, M, Dst, Src>(
 ) -> CKKSResult<()>
 where
     BE: Backend,
-    M: poulpy_core::GLWECopy<BE> + poulpy_core::GLWEShift<BE> + ?Sized,
-    Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
-    Src: GLWEToBackendRef<BE> + CKKSInfos,
+    M: poulpy_core::GLWECopy<BE, Rg> + poulpy_core::GLWEShift<BE, Rg> + ?Sized,
+    Dst: GLWEToBackendMut<BE, Rg> + CKKSInfos + SetCKKSInfos,
+    Src: GLWEToBackendRef<BE, Rg> + CKKSInfos,
 {
     if !ckks_unary_exact(dst, src) {
         return ckks_shift_stamp_unary(module, op, dst, src, 0, 0, 0, scratch);

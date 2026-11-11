@@ -8,7 +8,7 @@
 //! the unprepared transform and BSGS schedule types live in
 //! [`crate::layouts::linear_transformation`](crate::layouts).
 
-use poulpy_hal::layouts::{CnvPVecLBackendMut, CnvPVecLOwned, CnvPVecLToBackendMut, VecZnxInfos};
+use poulpy_hal::layouts::{CnvPVecLBackendMut, CnvPVecLOwned, CnvPVecLToBackendMut, Ring, Standard, VecZnxInfos};
 use std::collections::BTreeMap;
 
 use poulpy_hal::{
@@ -36,7 +36,8 @@ use crate::{
 /// representation `P`. Allocated up-front via
 /// [`LinearTransformation::alloc_prepared`](LinearTransformation::alloc_prepared)
 /// and populated by `glwe_linear_transformation_rhs_prepare`.
-pub type LinearTransformationPrepared<BE> = LinearTransformation<PreparedDiagonal<<BE as Backend>::OwnedBuf, BE>>;
+pub type LinearTransformationPrepared<BE, Rg = Standard> =
+    LinearTransformation<PreparedDiagonal<<BE as Backend>::OwnedBuf, BE, Rg>>;
 
 /// One prepared (convolution-domain) matrix diagonal: the right operand of the
 /// BSGS convolution, paired with the plaintext layout it was encoded from.
@@ -52,9 +53,9 @@ pub type LinearTransformationPrepared<BE> = LinearTransformation<PreparedDiagona
 ///
 /// `D` is the buffer backing the convolution operand: usually `BE::OwnedBuf`
 /// (resident cache), but it may also be scratch-borrowed.
-pub struct PreparedDiagonal<D: Data, BE: Backend> {
+pub struct PreparedDiagonal<D: Data, BE: Backend, Rg: Ring = Standard> {
     /// Prepared convolution-domain diagonal (the BSGS right operand).
-    pub(crate) cnv: CnvPVecR<D, BE::DftWord, BE>,
+    pub(crate) cnv: CnvPVecR<D, BE::DftWord, BE, Rg>,
     /// Limb base of the diagonal it was encoded from.
     pub(crate) base2k: Base2K,
     /// Storage precision of the diagonal it was encoded from.
@@ -64,14 +65,14 @@ pub struct PreparedDiagonal<D: Data, BE: Backend> {
     pub(crate) plaintext_meta: crate::layouts::GLWEPlaintextMeta,
 }
 
-impl<D: Data, BE: Backend> PreparedDiagonal<D, BE> {
+impl<D: Data, BE: Backend, Rg: Ring> PreparedDiagonal<D, BE, Rg> {
     /// The prepared convolution-domain operand.
-    pub fn cnv(&self) -> &CnvPVecR<D, BE::DftWord, BE> {
+    pub fn cnv(&self) -> &CnvPVecR<D, BE::DftWord, BE, Rg> {
         &self.cnv
     }
 
     /// Mutable access to the prepared convolution-domain operand (populate step).
-    pub fn cnv_mut(&mut self) -> &mut CnvPVecR<D, BE::DftWord, BE> {
+    pub fn cnv_mut(&mut self) -> &mut CnvPVecR<D, BE::DftWord, BE, Rg> {
         &mut self.cnv
     }
 
@@ -86,7 +87,7 @@ impl<D: Data, BE: Backend> PreparedDiagonal<D, BE> {
     }
 }
 
-impl<D: Data, BE: Backend> crate::layouts::IntPolyInfos for PreparedDiagonal<D, BE> {
+impl<D: Data, BE: Backend, Rg: Ring> crate::layouts::IntPolyInfos for PreparedDiagonal<D, BE, Rg> {
     /// Prepared diagonals are integer polynomials prepared across their whole
     /// stored width.
     fn encoded_k(&self) -> crate::layouts::TorusPrecision {
@@ -94,7 +95,7 @@ impl<D: Data, BE: Backend> crate::layouts::IntPolyInfos for PreparedDiagonal<D, 
     }
 }
 
-impl<D: Data, BE: Backend> LWEInfos for PreparedDiagonal<D, BE> {
+impl<D: Data, BE: Backend, Rg: Ring> LWEInfos for PreparedDiagonal<D, BE, Rg> {
     fn n(&self) -> Degree {
         Degree(self.cnv.n() as u32)
     }
@@ -112,7 +113,7 @@ impl<D: Data, BE: Backend> LWEInfos for PreparedDiagonal<D, BE> {
     }
 }
 
-impl<D: Data, BE: Backend> GLWEInfos for PreparedDiagonal<D, BE> {
+impl<D: Data, BE: Backend, Rg: Ring> GLWEInfos for PreparedDiagonal<D, BE, Rg> {
     fn rank(&self) -> Rank {
         Rank(self.cnv.cols() as u32 - 1)
     }
@@ -121,9 +122,15 @@ impl<D: Data, BE: Backend> GLWEInfos for PreparedDiagonal<D, BE> {
 /// A prepared baby rotation of a [`LinearTransformationBabySteps`] cache: owned
 /// ([`CnvPVecLOwned`]) or carved from a scratch arena ([`CnvPVecLViewMut`](poulpy_hal::layouts::CnvPVecLViewMut)).
 /// Blanket-implemented.
-pub trait BabyStepOperand<BE: Backend>: CnvPVecLToBackendRef<BE> + CnvPVecLToBackendMut<BE> + VecZnxInfos + Send {}
+pub trait BabyStepOperand<BE: Backend, Rg: Ring = Standard>:
+    CnvPVecLToBackendRef<BE, Rg> + CnvPVecLToBackendMut<BE, Rg> + VecZnxInfos + Send
+{
+}
 
-impl<BE: Backend, T> BabyStepOperand<BE> for T where T: CnvPVecLToBackendRef<BE> + CnvPVecLToBackendMut<BE> + VecZnxInfos + Send {}
+impl<BE: Backend, T, Rg: Ring> BabyStepOperand<BE, Rg> for T where
+    T: CnvPVecLToBackendRef<BE, Rg> + CnvPVecLToBackendMut<BE, Rg> + VecZnxInfos + Send
+{
+}
 
 /// Prepared left operands for the baby rotations of one input ciphertext.
 ///
@@ -134,16 +141,16 @@ impl<BE: Backend, T> BabyStepOperand<BE> for T where T: CnvPVecLToBackendRef<BE>
 /// its operands of type `L` either way.
 // Generic over the operand rather than its storage `D`: hal gives backend views of a `CnvPVecL` of owned storage
 // and of its scratch wrapper, and a pair of impls over `BE::OwnedBuf` and `BE::BufMut<'_>` would overlap.
-pub struct LinearTransformationBabySteps<BE: Backend, L = CnvPVecLOwned<BE>> {
+pub struct LinearTransformationBabySteps<BE: Backend, Rg: Ring = Standard, L = CnvPVecLOwned<BE, Rg>> {
     pub(crate) values: BTreeMap<i64, L>,
     /// How the preparation reaches the rotations.
     pub(crate) rotations: crate::layouts::BsgsRotations,
     /// Width of the source the rotations were prepared from.
     pub(crate) k: TorusPrecision,
-    pub(crate) _backend: std::marker::PhantomData<fn() -> BE>,
+    pub(crate) _backend: std::marker::PhantomData<fn() -> (BE, Rg)>,
 }
 
-impl<BE: Backend, L: BabyStepOperand<BE>> LinearTransformationBabySteps<BE, L> {
+impl<BE: Backend, L: BabyStepOperand<BE, Rg>, Rg: Ring> LinearTransformationBabySteps<BE, Rg, L> {
     /// How the preparation reaches the rotations.
     pub fn rotations(&self) -> crate::layouts::BsgsRotations {
         self.rotations
@@ -197,7 +204,7 @@ impl<BE: Backend, L: BabyStepOperand<BE>> LinearTransformationBabySteps<BE, L> {
     }
 
     /// Borrows an allocated operand for preparation, as a view that cannot change its shape.
-    pub fn baby_step_mut(&mut self, rot: i64) -> CnvPVecLBackendMut<'_, BE> {
+    pub fn baby_step_mut(&mut self, rot: i64) -> CnvPVecLBackendMut<'_, BE, Rg> {
         self.values
             .get_mut(&rot)
             .unwrap_or_else(|| panic!("missing prepared baby-step rotation {rot}"))
@@ -206,7 +213,7 @@ impl<BE: Backend, L: BabyStepOperand<BE>> LinearTransformationBabySteps<BE, L> {
 
     /// Borrows all allocated operands in rotation order, as views that can change
     /// neither the cache keys nor the operand shapes.
-    pub fn baby_steps_mut(&mut self) -> impl ExactSizeIterator<Item = (i64, CnvPVecLBackendMut<'_, BE>)> + '_ {
+    pub fn baby_steps_mut(&mut self) -> impl ExactSizeIterator<Item = (i64, CnvPVecLBackendMut<'_, BE, Rg>)> + '_ {
         self.values.iter_mut().map(|(&rot, operand)| (rot, operand.to_backend_mut()))
     }
 }
@@ -230,9 +237,9 @@ impl<BE: Backend, L: BabyStepOperand<BE>> LinearTransformationBabySteps<BE, L> {
 /// impls coherent: the backend type parameter prevents the compiler from
 /// ruling out a downstream `GLWEToBackendRef` impl for [`PreparedDiagonal`], so
 /// a blanket would clash with the resident impl.
-pub trait GLWEDiagonalProd<BE: Backend>: GLWEInfos + Sized {
+pub trait GLWEDiagonalProd<BE: Backend, Rg: Ring = Standard>: GLWEInfos + Sized {
     /// The diagonal as the right operand of its products: prepared, or a GLWE view the product prepares.
-    fn operand(&self) -> DiagonalOperand<'_, BE>;
+    fn operand(&self) -> DiagonalOperand<'_, BE, Rg>;
 
     /// The scale the scheme records on the diagonal, which the terms of a sum share; 0 where it records none.
     fn log_scale(&self) -> usize {
@@ -241,15 +248,15 @@ pub trait GLWEDiagonalProd<BE: Backend>: GLWEInfos + Sized {
 
     /// Runs the PROD inner product of one giant step of plaintext diagonals into `prod_dft`, in the form of its first
     /// diagonal, which every diagonal of a transform shares.
-    fn accumulate_giant_prod<M, L: BabyStepOperand<BE>>(
+    fn accumulate_giant_prod<M, L: BabyStepOperand<BE, Rg>>(
         module: &M,
         cnv_offset_hi: usize,
-        prod_dft: &mut VecZnxDftBackendMut<'_, BE>,
-        lhs: &LinearTransformationBabySteps<BE, L>,
+        prod_dft: &mut VecZnxDftBackendMut<'_, BE, Rg>,
+        lhs: &LinearTransformationBabySteps<BE, Rg, L>,
         gs: &LinearTransformationGiantStep<Self>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        M: CnvPVecBytesOf + CnvOps<BE> + ModuleN,
+        M: CnvPVecBytesOf + CnvOps<BE, Rg> + ModuleN,
     {
         let first = gs
             .diagonals
@@ -268,22 +275,22 @@ pub trait GLWEDiagonalProd<BE: Backend>: GLWEInfos + Sized {
     /// Most giant steps [`Self::accumulate_giant_prods`] takes per call, at least 1.
     fn giant_step_batch(_module: &Module<BE>) -> usize
     where
-        BE: crate::oep::GLWELinearTransformationImpl,
+        BE: crate::oep::GLWELinearTransformationImpl<Rg>,
     {
         1
     }
 
     /// Runs the PROD inner products of several giant steps, `prods[g]` receiving step `steps[g]`.
-    fn accumulate_giant_prods<L: BabyStepOperand<BE>>(
+    fn accumulate_giant_prods<L: BabyStepOperand<BE, Rg>>(
         module: &Module<BE>,
         cnv_offset_hi: usize,
-        prods: &mut [VecZnxDftBackendMut<'_, BE>],
-        lhs: &LinearTransformationBabySteps<BE, L>,
+        prods: &mut [VecZnxDftBackendMut<'_, BE, Rg>],
+        lhs: &LinearTransformationBabySteps<BE, Rg, L>,
         steps: &[LinearTransformationGiantStep<Self>],
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        BE: crate::oep::GLWELinearTransformationImpl,
-        Module<BE>: CnvPVecBytesOf + CnvOps<BE> + ModuleN,
+        BE: crate::oep::GLWELinearTransformationImpl<Rg>,
+        Module<BE>: CnvPVecBytesOf + CnvOps<BE, Rg> + ModuleN,
     {
         assert_eq!(prods.len(), steps.len());
         for (prod, step) in prods.iter_mut().zip(steps) {
@@ -293,7 +300,7 @@ pub trait GLWEDiagonalProd<BE: Backend>: GLWEInfos + Sized {
 }
 
 /// The prepared operand of a diagonal of a giant step whose first diagonal is prepared.
-fn prepared<BE: Backend, P>(operand: DiagonalOperand<'_, BE, P>) -> &P {
+fn prepared<BE: Backend, P, Rg: Ring>(operand: DiagonalOperand<'_, BE, Rg, P>) -> &P {
     match operand {
         DiagonalOperand::Prepared(prep) => prep,
         DiagonalOperand::Unprepared(_) => panic!("a giant step mixes prepared and unprepared diagonals"),
@@ -301,7 +308,7 @@ fn prepared<BE: Backend, P>(operand: DiagonalOperand<'_, BE, P>) -> &P {
 }
 
 /// The view of a diagonal of a giant step whose first diagonal is unprepared.
-fn unprepared<BE: Backend>(operand: DiagonalOperand<'_, BE>) -> GLWEBackendRef<'_, BE> {
+fn unprepared<BE: Backend, Rg: Ring>(operand: DiagonalOperand<'_, BE, Rg>) -> GLWEBackendRef<'_, BE, Rg> {
     match operand {
         DiagonalOperand::Unprepared(view) => view,
         DiagonalOperand::Prepared(_) => panic!("a giant step mixes prepared and unprepared diagonals"),
@@ -315,17 +322,17 @@ fn unprepared<BE: Backend>(operand: DiagonalOperand<'_, BE>) -> GLWEBackendRef<'
 /// handed to the backend as a single fused accumulation per output column: it
 /// sums all `baby ⊛ diagonal` terms with one reduction per output limb and
 /// writes `prod_dft` once. Leaves the `(r+1)` output columns in `prod_dft`.
-pub(crate) fn glwe_accumulate_prepared_baby_steps_dft<BE, M, P, L: BabyStepOperand<BE>>(
+pub(crate) fn glwe_accumulate_prepared_baby_steps_dft<BE, M, P, L: BabyStepOperand<BE, Rg>, Rg: Ring>(
     module: &M,
     cnv_offset_hi: usize,
-    prod_dft: &mut VecZnxDftBackendMut<'_, BE>,
-    lhs: &LinearTransformationBabySteps<BE, L>,
+    prod_dft: &mut VecZnxDftBackendMut<'_, BE, Rg>,
+    lhs: &LinearTransformationBabySteps<BE, Rg, L>,
     gs: &LinearTransformationGiantStep<P>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
-    M: CnvOps<BE>,
-    P: GLWEDiagonalProd<BE>,
+    M: CnvOps<BE, Rg>,
+    P: GLWEDiagonalProd<BE, Rg>,
 {
     let cols = lhs.cols();
     let first = gs
@@ -338,7 +345,7 @@ pub(crate) fn glwe_accumulate_prepared_baby_steps_dft<BE, M, P, L: BabyStepOpera
     assert_eq!(prod_dft.size(), res_dft_size);
 
     for col in 0..cols {
-        let terms: Vec<CnvDftAccTerm<'_, BE>> = gs
+        let terms: Vec<CnvDftAccTerm<'_, BE, Rg>> = gs
             .diagonals
             .iter()
             .map(|d| {
@@ -365,17 +372,17 @@ pub(crate) fn glwe_accumulate_prepared_baby_steps_dft<BE, M, P, L: BabyStepOpera
 /// discarded immediately, so the full prepared RHS is never materialized. Trades
 /// per-eval recompute for memory when memory bandwidth is the limiting factor. The
 /// baby loop is the outer one so each diagonal is prepared exactly once per eval.
-fn glwe_accumulate_unprepared_baby_steps_dft<BE, M, P, L: BabyStepOperand<BE>>(
+fn glwe_accumulate_unprepared_baby_steps_dft<BE, M, P, L: BabyStepOperand<BE, Rg>, Rg: Ring>(
     module: &M,
     cnv_offset_hi: usize,
-    prod_dft: &mut VecZnxDftBackendMut<'_, BE>,
-    lhs: &LinearTransformationBabySteps<BE, L>,
+    prod_dft: &mut VecZnxDftBackendMut<'_, BE, Rg>,
+    lhs: &LinearTransformationBabySteps<BE, Rg, L>,
     gs: &LinearTransformationGiantStep<P>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
-    M: CnvPVecBytesOf + CnvOps<BE> + ModuleN,
-    P: GLWEDiagonalProd<BE>,
+    M: CnvPVecBytesOf + CnvOps<BE, Rg> + ModuleN,
+    P: GLWEDiagonalProd<BE, Rg>,
 {
     let cols = lhs.cols();
     let first = gs

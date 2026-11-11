@@ -4,7 +4,9 @@ use poulpy_hal::{
         VecZnxBigNormalizeTmpBytes, VecZnxDftApply, VecZnxDftBytesOf, VecZnxIdftApply, VecZnxIdftApplyTmpBytes,
         VecZnxNormalizeTmpBytes, VecZnxSubAssign,
     },
-    layouts::{Backend, HostBackend, HostDataMut, HostDataRef, Module, ScalarZnx, ScalarZnxToBackendRef, ScratchArena, Stats},
+    layouts::{
+        Backend, HostBackend, HostDataMut, HostDataRef, Module, Ring, ScalarZnx, ScalarZnxToBackendRef, ScratchArena, Stats,
+    },
     oep::HalVecZnxImpl,
 };
 
@@ -22,20 +24,20 @@ use crate::{
 };
 
 // Coefficient-word fence: noise measurement ends in `VecZnx::stats`, which is i64-only.
-impl<D: HostDataRef> GGLWE<D, i64> {
+impl<D: HostDataRef, Rg: Ring> GGLWE<D, i64, Rg> {
     pub fn noise_stats<M, S, BE>(
         &self,
         module: &M,
         row: usize,
         col: usize,
-        pt_want: &ScalarZnx<&[u8], i64>,
+        pt_want: &ScalarZnx<&[u8], i64, Rg>,
         sk_prepared: &S,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Stats
     where
-        GGLWE<D, BE::ZnxWord>: GGLWEToBackendRef<BE>,
-        S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
-        M: GGLWENoise<BE>,
+        GGLWE<D, BE::ZnxWord, Rg>: GGLWEToBackendRef<BE, Rg>,
+        S: GLWESecretPreparedToBackendRef<BE, Rg> + GLWEInfos,
+        M: GGLWENoise<BE, Rg>,
         BE: HostBackend<ZnxWord = i64>,
         for<'a> BE::BufRef<'a>: HostDataRef,
         for<'a> BE::BufMut<'a>: HostDataMut,
@@ -44,19 +46,20 @@ impl<D: HostDataRef> GGLWE<D, i64> {
     }
 }
 
-impl<BE: Backend + HostBackend + HalVecZnxImpl> GGLWENoise<BE> for Module<BE>
+impl<BE: Backend + HostBackend + HalVecZnxImpl<Rg>, Rg: Ring> GGLWENoise<BE, Rg> for Module<BE>
 where
-    Module<BE>: VecZnxNormalizeTmpBytes + VecZnxSubAssign<BE> + GLWENoise<BE> + GLWEDecrypt<BE> + GLWENormalize<BE>,
+    Module<BE>:
+        VecZnxNormalizeTmpBytes + VecZnxSubAssign<BE, Rg> + GLWENoise<BE, Rg> + GLWEDecrypt<BE, Rg> + GLWENormalize<BE, Rg>,
     Module<BE>: ModuleN
         + VecZnxDftBytesOf
         + VecZnxBigBytesOf
-        + VecZnxBigFromSmall<BE>
-        + VecZnxDftApply<BE>
-        + SvpApplyDftToDftAssign<BE>
-        + VecZnxIdftApply<BE>
+        + VecZnxBigFromSmall<BE, Rg>
+        + VecZnxDftApply<BE, Rg>
+        + SvpApplyDftToDftAssign<BE, Rg>
+        + VecZnxIdftApply<BE, Rg>
         + VecZnxIdftApplyTmpBytes
-        + VecZnxBigAddAssign<BE>
-        + VecZnxBigNormalize<BE>
+        + VecZnxBigAddAssign<BE, Rg>
+        + VecZnxBigNormalize<BE, Rg>
         + VecZnxBigNormalizeTmpBytes,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
@@ -76,22 +79,20 @@ where
         res: &R,
         res_row: usize,
         res_col: usize,
-        pt_want: &ScalarZnx<&[u8], i64>,
+        pt_want: &ScalarZnx<&[u8], i64, Rg>,
         sk_prepared: &S,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Stats
     where
-        R: GGLWEToBackendRef<BE> + GGLWEInfos,
-        S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
+        R: GGLWEToBackendRef<BE, Rg> + GGLWEInfos,
+        S: GLWESecretPreparedToBackendRef<BE, Rg> + GLWEInfos,
         BE: HostBackend<ZnxWord = i64>,
         for<'a> BE::BufRef<'a>: HostDataRef,
         for<'a> BE::BufMut<'a>: HostDataMut,
     {
         assert!(
             scratch.available() >= self.gglwe_noise_tmp_bytes(res),
-            "scratch.available(): {} < GGLWENoise::gglwe_noise_tmp_bytes: {}",
-            scratch.available(),
-            self.gglwe_noise_tmp_bytes(res)
+            "scratch.available() < GGLWENoise::gglwe_noise_tmp_bytes"
         );
 
         let res_backend = res.to_backend_ref();
@@ -100,7 +101,7 @@ where
         let k_digit: usize = res_backend.k_digit().as_usize();
         let (mut pt, mut scratch_1) = scratch.borrow().take_glwe_plaintext_scratch(&res_backend);
         let pt_k: usize = pt.k().as_usize();
-        let pt_want_backend: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> =
+        let pt_want_backend: ScalarZnx<BE::OwnedBuf, BE::ZnxWord, Rg> =
             ScalarZnx::from_data(BE::from_host_bytes(pt_want.data), pt_want.n(), pt_want.cols());
         {
             let mut pt_backend = pt.to_backend_mut();
@@ -113,12 +114,12 @@ where
                 res_row,
                 k_digit,
                 res_backend.k_offset().as_usize(),
-                &<ScalarZnx<BE::OwnedBuf, BE::ZnxWord> as ScalarZnxToBackendRef<BE>>::to_backend_ref(&pt_want_backend),
+                &<ScalarZnx<BE::OwnedBuf, BE::ZnxWord, Rg> as ScalarZnxToBackendRef<BE, Rg>>::to_backend_ref(&pt_want_backend),
                 res_col,
                 &mut scratch_1.borrow(),
             );
         }
-        let res_at_backend: GLWEViewRef<'_, BE> = res_backend.at_view(res_row, res_col);
+        let res_at_backend: GLWEViewRef<'_, BE, Rg> = res_backend.at_view(res_row, res_col);
         let pt_backend = pt.to_backend_ref();
         glwe_noise_backend_inner(self, &res_at_backend, &pt_backend, &sk_backend, &mut scratch_1)
     }

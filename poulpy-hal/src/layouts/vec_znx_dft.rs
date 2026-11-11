@@ -6,8 +6,8 @@ use std::{
 
 use crate::AlignedBuf;
 use crate::layouts::{
-    Backend, Data, DataView, DataViewMut, DftWord, DigestU64, HostDataMut, HostDataRef, VecZnxBig, VecZnxInfos, VecZnxShape,
-    ZnxInfos, ZnxView, ZnxViewMut, ZnxZero,
+    Backend, Data, DataView, DataViewMut, DftWord, DigestU64, HostDataMut, HostDataRef, Ring, Standard, VecZnxBig, VecZnxInfos,
+    VecZnxShape, ZnxInfos, ZnxView, ZnxViewMut, ZnxZero,
 };
 
 /// Polynomial vector in DFT (evaluation) domain.
@@ -33,17 +33,17 @@ use crate::layouts::{
 /// value model; its contracts are stated through `idft` (see the
 /// [`api`](crate::api#exactness) module doc).
 #[repr(C)]
-pub struct VecZnxDft<D: Data, W: DftWord, B: Backend<DftWord = W>> {
+pub struct VecZnxDft<D: Data, W: DftWord, B: Backend<DftWord = W>, Rg: Ring = Standard> {
     pub data: D,
     shape: VecZnxShape,
-    pub _phantom: PhantomData<(W, B)>,
+    pub _phantom: PhantomData<(W, B, Rg)>,
 }
 
 // Equality (and hashing, where provided) is defined directly on the
 // representation: same shape, same buffer bytes. No `W`/`B` value is ever
 // compared, so no bound on them is needed — in particular `Eq` holds even
 // for non-`Eq` words like `f64` (byte equality is a total equivalence).
-impl<D: Data, W: DftWord, B: Backend<DftWord = W>> PartialEq for VecZnxDft<D, W, B> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>, Rg: Ring> PartialEq for VecZnxDft<D, W, B, Rg> {
     fn eq(&self, other: &Self) -> bool {
         crate::layouts::assert_dense(self, "VecZnxDft::eq");
         crate::layouts::assert_dense(other, "VecZnxDft::eq");
@@ -51,16 +51,16 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> PartialEq for VecZnxDft<D, W,
     }
 }
 
-impl<D: Data, W: DftWord, B: Backend<DftWord = W>> Eq for VecZnxDft<D, W, B> {}
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>, Rg: Ring> Eq for VecZnxDft<D, W, B, Rg> {}
 
 /// The shape only: the representation is opaque.
-impl<D: Data, W: DftWord, B: Backend<DftWord = W>> std::fmt::Debug for VecZnxDft<D, W, B> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>, Rg: Ring> std::fmt::Debug for VecZnxDft<D, W, B, Rg> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("VecZnxDft").field("shape", &self.shape).finish()
     }
 }
 
-impl<D: HostDataRef, W: DftWord, B: Backend<DftWord = W>> DigestU64 for VecZnxDft<D, W, B> {
+impl<D: HostDataRef, W: DftWord, B: Backend<DftWord = W>, Rg: Ring> DigestU64 for VecZnxDft<D, W, B, Rg> {
     fn digest_u64(&self) -> u64 {
         crate::layouts::assert_dense(self, "VecZnxDft::digest_u64");
         let mut h: DefaultHasher = DefaultHasher::new();
@@ -72,11 +72,11 @@ impl<D: HostDataRef, W: DftWord, B: Backend<DftWord = W>> DigestU64 for VecZnxDf
     }
 }
 
-impl<D: HostDataRef, W: DftWord, B: Backend<DftWord = W>> ZnxView for VecZnxDft<D, W, B> {
+impl<D: HostDataRef, W: DftWord, B: Backend<DftWord = W>, Rg: Ring> ZnxView for VecZnxDft<D, W, B, Rg> {
     type Scalar = W;
 }
 
-impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VecZnxDft<D, W, B> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>, Rg: Ring> VecZnxDft<D, W, B, Rg> {
     pub fn n(&self) -> usize {
         self.shape.n()
     }
@@ -95,7 +95,7 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VecZnxDft<D, W, B> {
     /// underlying data buffer is moved as-is. The backend `B` declares both
     /// words, which guarantees the buffer is large enough for the big-domain
     /// interpretation.
-    pub fn into_big(self) -> VecZnxBig<D, B::BigWord, B> {
+    pub fn into_big(self) -> VecZnxBig<D, B::BigWord, B, Rg> {
         crate::layouts::assert_dense(&self, "VecZnxDft::into_big");
         let shape = self.shape;
         assert!(
@@ -103,11 +103,11 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VecZnxDft<D, W, B> {
                 <= B::vec_znx_dft_bytes_of(shape.n(), shape.cols(), shape.size()),
             "into_big: big-domain buffer would exceed the DFT-domain allocation"
         );
-        VecZnxBig::<D, B::BigWord, B>::from_shape(self.data, shape)
+        VecZnxBig::<D, B::BigWord, B, Rg>::from_shape(self.data, shape)
     }
 }
 
-impl<D: Data, W: DftWord, B: Backend<DftWord = W>> ZnxInfos for VecZnxDft<D, W, B> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>, Rg: Ring> ZnxInfos for VecZnxDft<D, W, B, Rg> {
     fn n(&self) -> usize {
         self.shape.n()
     }
@@ -121,7 +121,7 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> ZnxInfos for VecZnxDft<D, W, 
     }
 }
 
-impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VecZnxInfos for VecZnxDft<D, W, B> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>, Rg: Ring> VecZnxInfos for VecZnxDft<D, W, B, Rg> {
     fn cols(&self) -> usize {
         self.shape.cols()
     }
@@ -139,20 +139,20 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VecZnxInfos for VecZnxDft<D, 
     }
 }
 
-impl<D: Data, W: DftWord, B: Backend<DftWord = W>> DataView for VecZnxDft<D, W, B> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>, Rg: Ring> DataView for VecZnxDft<D, W, B, Rg> {
     type D = D;
     fn data(&self) -> &Self::D {
         &self.data
     }
 }
 
-impl<D: Data, W: DftWord, B: Backend<DftWord = W>> DataViewMut for VecZnxDft<D, W, B> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>, Rg: Ring> DataViewMut for VecZnxDft<D, W, B, Rg> {
     fn data_mut(&mut self) -> &mut Self::D {
         &mut self.data
     }
 }
 
-impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VecZnxDft<D, W, B> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>, Rg: Ring> VecZnxDft<D, W, B, Rg> {
     pub fn shape(&self) -> VecZnxShape {
         self.shape
     }
@@ -167,7 +167,7 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VecZnxDft<D, W, B> {
     }
 }
 
-impl<B: Backend> VecZnxDftBackendMut<'_, B> {
+impl<B: Backend, Rg: Ring> VecZnxDftBackendMut<'_, B, Rg> {
     /// Reborrows this buffer as a mutable view with a temporary compute size.
     ///
     /// The returned view addresses the same allocation, but HAL
@@ -179,7 +179,7 @@ impl<B: Backend> VecZnxDftBackendMut<'_, B> {
     ///
     /// Panics if `size > self.size()`, or if narrowing a layout that does not
     /// declare contiguous DFT limbs.
-    pub fn with_size_mut(&mut self, size: usize) -> VecZnxDftBackendMut<'_, B> {
+    pub fn with_size_mut(&mut self, size: usize) -> VecZnxDftBackendMut<'_, B, Rg> {
         self.with_limb_range_mut(0, size)
     }
 
@@ -195,7 +195,7 @@ impl<B: Backend> VecZnxDftBackendMut<'_, B> {
     ///
     /// Panics unless `start <= end <= self.size()`, or if a partial range is
     /// requested from a layout that does not declare contiguous DFT limbs.
-    pub fn with_limb_range_mut(&mut self, start: usize, end: usize) -> VecZnxDftBackendMut<'_, B> {
+    pub fn with_limb_range_mut(&mut self, start: usize, end: usize) -> VecZnxDftBackendMut<'_, B, Rg> {
         crate::layouts::assert_dense(self, "VecZnxDft::with_limb_range_mut");
         assert!(start <= end, "DFT limb range start ({start}) exceeds end ({end})");
         assert!(
@@ -223,7 +223,7 @@ impl<B: Backend> VecZnxDftBackendMut<'_, B> {
     }
 }
 
-impl<D: HostDataMut, W: DftWord, B: Backend<DftWord = W>> ZnxZero for VecZnxDft<D, W, B> {
+impl<D: HostDataMut, W: DftWord, B: Backend<DftWord = W>, Rg: Ring> ZnxZero for VecZnxDft<D, W, B, Rg> {
     fn zero(&mut self) {
         if self.has_element_view() {
             self.raw_mut().fill(W::zero());
@@ -281,9 +281,9 @@ impl<D: HostDataMut, W: DftWord, B: Backend<DftWord = W>> ZnxZero for VecZnxDft<
     }
 }
 
-impl<B: Backend> VecZnxDft<B::OwnedBuf, B::DftWord, B> {
+impl<B: Backend, Rg: Ring> VecZnxDft<B::OwnedBuf, B::DftWord, B, Rg> {
     /// Allocates a zero-initialized backend-owned `VecZnxDft`.
-    pub fn alloc(n: usize, cols: usize, size: usize) -> VecZnxDftOwned<B> {
+    pub fn alloc(n: usize, cols: usize, size: usize) -> VecZnxDftOwned<B, Rg> {
         let data: <B as Backend>::OwnedBuf = B::alloc_zeroed_bytes(B::vec_znx_dft_bytes_of(n, cols, size));
         VecZnxDft {
             data,
@@ -299,7 +299,7 @@ impl<B: Backend> VecZnxDft<B::OwnedBuf, B::DftWord, B> {
     /// Panics if the buffer length does not equal `B::vec_znx_dft_bytes_of(n, cols, size)`;
     /// a `Vec<u8>` argument is first copied into storage padded to a 64-byte multiple, so
     /// its padded length is what is compared.
-    pub fn from_bytes(n: usize, cols: usize, size: usize, bytes: impl Into<AlignedBuf>) -> VecZnxDftOwned<B> {
+    pub fn from_bytes(n: usize, cols: usize, size: usize, bytes: impl Into<AlignedBuf>) -> VecZnxDftOwned<B, Rg> {
         let data: AlignedBuf = bytes.into();
         assert!(data.len() == crate::layouts::padded_bytes(B::vec_znx_dft_bytes_of(n, cols, size)));
         let data: <B as Backend>::OwnedBuf = B::from_host_bytes(&data);
@@ -312,16 +312,16 @@ impl<B: Backend> VecZnxDft<B::OwnedBuf, B::DftWord, B> {
 }
 
 /// Owned `VecZnxDft` backed by a backend-owned buffer.
-pub type VecZnxDftOwned<B> = VecZnxDft<<B as Backend>::OwnedBuf, <B as Backend>::DftWord, B>;
+pub type VecZnxDftOwned<B, Rg = Standard> = VecZnxDft<<B as Backend>::OwnedBuf, <B as Backend>::DftWord, B, Rg>;
 /// Shared backend-native borrow of a `VecZnxDft`.
-pub type VecZnxDftBackendRef<'a, B> = VecZnxDft<<B as Backend>::BufRef<'a>, <B as Backend>::DftWord, B>;
+pub type VecZnxDftBackendRef<'a, B, Rg = Standard> = VecZnxDft<<B as Backend>::BufRef<'a>, <B as Backend>::DftWord, B, Rg>;
 /// Mutable backend-native borrow of a `VecZnxDft`.
-pub type VecZnxDftBackendMut<'a, B> = VecZnxDft<<B as Backend>::BufMut<'a>, <B as Backend>::DftWord, B>;
+pub type VecZnxDftBackendMut<'a, B, Rg = Standard> = VecZnxDft<<B as Backend>::BufMut<'a>, <B as Backend>::DftWord, B, Rg>;
 
 /// Reborrow a mutable backend-native `VecZnxDft` view as a shared backend-native view.
-pub fn vec_znx_dft_backend_ref_from_mut<'a, 'b, B: Backend + 'b>(
-    vec: &'a VecZnxDftBackendMut<'b, B>,
-) -> VecZnxDftBackendRef<'a, B> {
+pub fn vec_znx_dft_backend_ref_from_mut<'a, 'b, B: Backend + 'b, Rg: Ring>(
+    vec: &'a VecZnxDftBackendMut<'b, B, Rg>,
+) -> VecZnxDftBackendRef<'a, B, Rg> {
     VecZnxDft {
         data: B::view_ref_mut(&vec.data),
         shape: vec.shape,
@@ -329,9 +329,9 @@ pub fn vec_znx_dft_backend_ref_from_mut<'a, 'b, B: Backend + 'b>(
     }
 }
 
-pub fn vec_znx_dft_backend_mut_from_mut<'a, 'b, B: Backend + 'b>(
-    vec: &'a mut VecZnxDftBackendMut<'b, B>,
-) -> VecZnxDftBackendMut<'a, B> {
+pub fn vec_znx_dft_backend_mut_from_mut<'a, 'b, B: Backend + 'b, Rg: Ring>(
+    vec: &'a mut VecZnxDftBackendMut<'b, B, Rg>,
+) -> VecZnxDftBackendMut<'a, B, Rg> {
     VecZnxDft {
         data: B::view_mut_ref(&mut vec.data),
         shape: vec.shape,
@@ -339,7 +339,7 @@ pub fn vec_znx_dft_backend_mut_from_mut<'a, 'b, B: Backend + 'b>(
     }
 }
 
-impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VecZnxDft<D, W, B> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>, Rg: Ring> VecZnxDft<D, W, B, Rg> {
     /// Constructs a `VecZnxDft` from raw parts without validation.
     pub fn from_data(data: D, n: usize, cols: usize, size: usize) -> Self {
         Self {
@@ -350,7 +350,7 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VecZnxDft<D, W, B> {
     }
 }
 
-impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VecZnxDft<D, W, B> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>, Rg: Ring> VecZnxDft<D, W, B, Rg> {
     /// Wraps `data` with an explicit dense shape. Element access is
     /// bounds-checked against the buffer.
     ///
@@ -386,12 +386,12 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VecZnxDft<D, W, B> {
 }
 
 /// Borrow a backend-owned `VecZnxDft` using the backend's native view type.
-pub trait VecZnxDftToBackendRef<B: Backend> {
-    fn to_backend_ref(&self) -> VecZnxDftBackendRef<'_, B>;
+pub trait VecZnxDftToBackendRef<B: Backend, Rg: Ring = Standard> {
+    fn to_backend_ref(&self) -> VecZnxDftBackendRef<'_, B, Rg>;
 }
 
-impl<B: Backend> VecZnxDftToBackendRef<B> for VecZnxDft<B::OwnedBuf, B::DftWord, B> {
-    fn to_backend_ref(&self) -> VecZnxDftBackendRef<'_, B> {
+impl<B: Backend, Rg: Ring> VecZnxDftToBackendRef<B, Rg> for VecZnxDft<B::OwnedBuf, B::DftWord, B, Rg> {
+    fn to_backend_ref(&self) -> VecZnxDftBackendRef<'_, B, Rg> {
         VecZnxDft {
             data: B::view(&self.data),
             shape: self.shape,
@@ -400,8 +400,8 @@ impl<B: Backend> VecZnxDftToBackendRef<B> for VecZnxDft<B::OwnedBuf, B::DftWord,
     }
 }
 
-impl<B: Backend> VecZnxDftToBackendRef<B> for &VecZnxDft<B::BufRef<'_>, B::DftWord, B> {
-    fn to_backend_ref(&self) -> VecZnxDftBackendRef<'_, B> {
+impl<B: Backend, Rg: Ring> VecZnxDftToBackendRef<B, Rg> for &VecZnxDft<B::BufRef<'_>, B::DftWord, B, Rg> {
+    fn to_backend_ref(&self) -> VecZnxDftBackendRef<'_, B, Rg> {
         VecZnxDft {
             data: B::view_ref(&self.data),
             shape: self.shape,
@@ -411,23 +411,23 @@ impl<B: Backend> VecZnxDftToBackendRef<B> for &VecZnxDft<B::BufRef<'_>, B::DftWo
 }
 
 /// Reborrow an already backend-borrowed `VecZnxDft` as a shared backend-native view.
-pub trait VecZnxDftReborrowBackendRef<B: Backend> {
-    fn reborrow_backend_ref(&self) -> VecZnxDftBackendRef<'_, B>;
+pub trait VecZnxDftReborrowBackendRef<B: Backend, Rg: Ring = Standard> {
+    fn reborrow_backend_ref(&self) -> VecZnxDftBackendRef<'_, B, Rg>;
 }
 
-impl<B: Backend> VecZnxDftReborrowBackendRef<B> for VecZnxDft<B::BufMut<'_>, B::DftWord, B> {
-    fn reborrow_backend_ref(&self) -> VecZnxDftBackendRef<'_, B> {
-        vec_znx_dft_backend_ref_from_mut::<B>(self)
+impl<B: Backend, Rg: Ring> VecZnxDftReborrowBackendRef<B, Rg> for VecZnxDft<B::BufMut<'_>, B::DftWord, B, Rg> {
+    fn reborrow_backend_ref(&self) -> VecZnxDftBackendRef<'_, B, Rg> {
+        vec_znx_dft_backend_ref_from_mut::<B, Rg>(self)
     }
 }
 
 /// Mutably borrow a backend-owned `VecZnxDft` using the backend's native view type.
-pub trait VecZnxDftToBackendMut<B: Backend> {
-    fn to_backend_mut(&mut self) -> VecZnxDftBackendMut<'_, B>;
+pub trait VecZnxDftToBackendMut<B: Backend, Rg: Ring = Standard> {
+    fn to_backend_mut(&mut self) -> VecZnxDftBackendMut<'_, B, Rg>;
 }
 
-impl<B: Backend> VecZnxDftToBackendMut<B> for VecZnxDft<B::OwnedBuf, B::DftWord, B> {
-    fn to_backend_mut(&mut self) -> VecZnxDftBackendMut<'_, B> {
+impl<B: Backend, Rg: Ring> VecZnxDftToBackendMut<B, Rg> for VecZnxDft<B::OwnedBuf, B::DftWord, B, Rg> {
+    fn to_backend_mut(&mut self) -> VecZnxDftBackendMut<'_, B, Rg> {
         VecZnxDft {
             data: B::view_mut(&mut self.data),
             shape: self.shape,
@@ -436,24 +436,24 @@ impl<B: Backend> VecZnxDftToBackendMut<B> for VecZnxDft<B::OwnedBuf, B::DftWord,
     }
 }
 
-impl<B: Backend> VecZnxDftToBackendMut<B> for &mut VecZnxDft<B::BufMut<'_>, B::DftWord, B> {
-    fn to_backend_mut(&mut self) -> VecZnxDftBackendMut<'_, B> {
-        vec_znx_dft_backend_mut_from_mut::<B>(self)
+impl<B: Backend, Rg: Ring> VecZnxDftToBackendMut<B, Rg> for &mut VecZnxDft<B::BufMut<'_>, B::DftWord, B, Rg> {
+    fn to_backend_mut(&mut self) -> VecZnxDftBackendMut<'_, B, Rg> {
+        vec_znx_dft_backend_mut_from_mut::<B, Rg>(self)
     }
 }
 
 /// Reborrow an already backend-borrowed `VecZnxDft` as a mutable backend-native view.
-pub trait VecZnxDftReborrowBackendMut<B: Backend> {
-    fn reborrow_backend_mut(&mut self) -> VecZnxDftBackendMut<'_, B>;
+pub trait VecZnxDftReborrowBackendMut<B: Backend, Rg: Ring = Standard> {
+    fn reborrow_backend_mut(&mut self) -> VecZnxDftBackendMut<'_, B, Rg>;
 }
 
-impl<B: Backend> VecZnxDftReborrowBackendMut<B> for VecZnxDft<B::BufMut<'_>, B::DftWord, B> {
-    fn reborrow_backend_mut(&mut self) -> VecZnxDftBackendMut<'_, B> {
-        vec_znx_dft_backend_mut_from_mut::<B>(self)
+impl<B: Backend, Rg: Ring> VecZnxDftReborrowBackendMut<B, Rg> for VecZnxDft<B::BufMut<'_>, B::DftWord, B, Rg> {
+    fn reborrow_backend_mut(&mut self) -> VecZnxDftBackendMut<'_, B, Rg> {
+        vec_znx_dft_backend_mut_from_mut::<B, Rg>(self)
     }
 }
 
-impl<D: HostDataRef, W: DftWord, B: Backend<DftWord = W>> fmt::Display for VecZnxDft<D, W, B> {
+impl<D: HostDataRef, W: DftWord, B: Backend<DftWord = W>, Rg: Ring> fmt::Display for VecZnxDft<D, W, B, Rg> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "VecZnxDft(n={}, cols={}, size={})", self.n(), self.cols(), self.size())?;
 
@@ -492,14 +492,14 @@ impl<D: HostDataRef, W: DftWord, B: Backend<DftWord = W>> fmt::Display for VecZn
     }
 }
 
-impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VecZnxDft<D, W, B> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>, Rg: Ring> VecZnxDft<D, W, B, Rg> {
     /// Zero-copy re-tag of this container to a layout-compatible backend `B2`.
     ///
     /// The buffer moves as-is; only the type tag changes. Requires the
     /// [`VecZnxDftLayoutCompatible`](crate::layouts::VecZnxDftLayoutCompatible) marker declared by the backend
     /// pair. `D` is kept, so for further backend-native use `B2`'s buffer
     /// types must match `D` (true for every backend in the workspace).
-    pub fn into_backend<B2>(self) -> VecZnxDft<D, W, B2>
+    pub fn into_backend<B2>(self) -> VecZnxDft<D, W, B2, Rg>
     where
         B2: Backend<DftWord = W>,
         B: crate::layouts::VecZnxDftLayoutCompatible<B2>,
@@ -534,7 +534,6 @@ mod limb_range_tests {
         type ZnxWord = i64;
         type BigWord = i128;
         type DftWord = i64;
-        type Ring = crate::layouts::Standard;
         crate::layouts::impl_host_byte_storage!();
 
         fn vec_znx_dft_bytes_of(n: usize, cols: usize, size: usize) -> usize {

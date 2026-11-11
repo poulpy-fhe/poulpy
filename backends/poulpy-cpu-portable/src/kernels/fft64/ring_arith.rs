@@ -3,23 +3,23 @@
 use crate::{
     kernels::RightRead,
     kernels::fft64::{module::FFT64Plan, vec_znx_dft::Fft64AutomorphismPlan},
-    layouts::Backend,
+    layouts::{Backend, Ring, Standard},
 };
 
-/// DFT-domain FFT64 arithmetic, implemented once per backend ring with
+/// DFT-domain FFT64 arithmetic, implemented once per ring with
 /// [`fft64_ring_arith_standard!`](crate::fft64_ring_arith_standard) or
 /// [`fft64_ring_arith_ci!`](crate::fft64_ring_arith_ci).
 ///
 /// Standard slots are complex evaluations; conjugate-invariant slots are real.
 #[allow(clippy::too_many_arguments)]
-pub trait Fft64RingArith {
-    fn fft64_forward(plan: &FFT64Plan<f64, <Self as Backend>::Ring>, data: &mut [f64])
+pub trait Fft64RingArith<Rg: Ring = Standard> {
+    fn fft64_forward(plan: &FFT64Plan<f64, Rg>, data: &mut [f64])
     where
         Self: Backend;
-    fn fft64_inverse(plan: &FFT64Plan<f64, <Self as Backend>::Ring>, data: &mut [f64])
+    fn fft64_inverse(plan: &FFT64Plan<f64, Rg>, data: &mut [f64])
     where
         Self: Backend;
-    fn fft64_divisor(plan: &FFT64Plan<f64, <Self as Backend>::Ring>) -> f64
+    fn fft64_divisor(plan: &FFT64Plan<f64, Rg>) -> f64
     where
         Self: Backend;
     fn fft64_mul(res: &mut [f64], a: &[f64], b: &[f64]);
@@ -68,9 +68,9 @@ pub trait Fft64RingArith {
         b_read: RightRead,
         tmp: &mut [f64],
     );
-    fn fft64_automorphism_plan(n: usize, p: i64) -> Fft64AutomorphismPlan;
+    fn fft64_automorphism_plan(n: usize, p: i64) -> Fft64AutomorphismPlan<Rg>;
     /// One limb: `res = tau_p(a)`.
-    fn fft64_automorphism(plan: &Fft64AutomorphismPlan, res: &mut [f64], a: &[f64]);
+    fn fft64_automorphism(plan: &Fft64AutomorphismPlan<Rg>, res: &mut [f64], a: &[f64]);
     /// One limb: `res += tau_p(a)`.
-    fn fft64_automorphism_add(plan: &Fft64AutomorphismPlan, res: &mut [f64], a: &[f64]);
+    fn fft64_automorphism_add(plan: &Fft64AutomorphismPlan<Rg>, res: &mut [f64], a: &[f64]);
 }

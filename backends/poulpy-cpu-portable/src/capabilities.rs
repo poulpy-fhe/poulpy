@@ -24,7 +24,7 @@ pub struct BackendCapability {
 
 /// The portable backends, available everywhere.
 pub fn portable_backends() -> Vec<BackendCapability> {
-    ["FFT64Portable", "FFT64CIPortable", "NTT4x30Portable", "NTT4x30CIPortable"]
+    ["FFT64Portable", "NTT4x30Portable"]
         .into_iter()
         .map(|backend| BackendCapability {
             backend,

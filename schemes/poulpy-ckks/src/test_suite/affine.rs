@@ -12,7 +12,7 @@
 
 use poulpy_hal::{
     api::{ReimNew, ScratchOwnedBorrow},
-    layouts::{HostBytesBackend, Module, Standard},
+    layouts::{HostBytesBackend, Module, Ring, Standard},
 };
 
 use crate::layouts::CKKSPlaintextOwned;
@@ -35,13 +35,13 @@ fn scaled<F: TestScalar>(v: &[F], scale: F) -> Vec<F> {
     v.iter().copied().map(|x| x * scale).collect()
 }
 
-fn encode_affine_const<F: TestScalar>(
+fn encode_affine_const<F: TestScalar, Rg: Ring>(
     host_module: &Module<HostBytesBackend>,
     base2k: poulpy_core::layouts::Base2K,
     offset: F,
     scale: F,
     prec: CKKSLayout,
-) -> CKKSPlaintextOwned<HostBytesBackend> {
+) -> CKKSPlaintextOwned<HostBytesBackend, Rg> {
     let mut pt = host_module.ckks_plaintext_alloc(2usize.into(), base2k, prec.k());
     pt.set_meta(prec.meta());
     pt.encode_host_floats(&[offset, scale]).unwrap();
@@ -53,7 +53,7 @@ pub fn test_affine_pt_const_into_aligned<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -88,7 +88,7 @@ pub fn test_affine_pt_const_into_aligned<BE, F, E>(
         &a_im,
         &mut scratch.borrow(),
     );
-    let affine_const = encode_affine_const::<F>(host_module, params.base2k.into(), offset, scale, PT_PREC);
+    let affine_const = encode_affine_const::<F, Standard>(host_module, params.base2k.into(), offset, scale, PT_PREC);
     let mut dst = alloc_ct(&params, module, params.k);
 
     with_scratch::<BE, _>(module.ckks_affine_pt_const_tmp_bytes(&dst, &a, &affine_const), |s| {
@@ -113,7 +113,7 @@ pub fn test_affine_pt_const_zero_bias_matches_mul<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -146,7 +146,7 @@ pub fn test_affine_pt_const_zero_bias_matches_mul<BE, F, E>(
         &a_im,
         &mut scratch.borrow(),
     );
-    let affine_const = encode_affine_const::<F>(host_module, params.base2k.into(), F::zero(), scale, PT_PREC);
+    let affine_const = encode_affine_const::<F, Standard>(host_module, params.base2k.into(), F::zero(), scale, PT_PREC);
     let mut dst = alloc_ct(&params, module, params.k);
 
     with_scratch::<BE, _>(module.ckks_affine_pt_const_tmp_bytes(&dst, &a, &affine_const), |s| {
@@ -178,7 +178,7 @@ pub fn test_affine_pt_const_assign_aligned<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -213,7 +213,7 @@ pub fn test_affine_pt_const_assign_aligned<BE, F, E>(
         &a_im,
         &mut scratch.borrow(),
     );
-    let affine_const = encode_affine_const::<F>(host_module, params.base2k.into(), offset, scale, PT_PREC);
+    let affine_const = encode_affine_const::<F, Standard>(host_module, params.base2k.into(), offset, scale, PT_PREC);
 
     with_scratch::<BE, _>(module.ckks_affine_pt_const_tmp_bytes(&ct, &ct, &affine_const), |s| {
         module.ckks_affine_pt_const_assign(&mut ct, &affine_const, 0, 1, s)
@@ -237,7 +237,7 @@ pub fn test_affine_pt_vec_into_aligned<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -272,8 +272,10 @@ pub fn test_affine_pt_vec_into_aligned<BE, F, E>(
         &a_im,
         &mut scratch.borrow(),
     );
-    let scale_pt = ckks_pt_cst_full::<BE, F>(host_module, module, params.base2k.into(), PT_PREC, m, Some(scale_f64), None);
-    let offset_pt = ckks_pt_cst_full::<BE, F>(host_module, module, params.base2k.into(), PT_PREC, m, Some(offset_f64), None);
+    let scale_pt =
+        ckks_pt_cst_full::<BE, F, Standard>(host_module, module, params.base2k.into(), PT_PREC, m, Some(scale_f64), None);
+    let offset_pt =
+        ckks_pt_cst_full::<BE, F, Standard>(host_module, module, params.base2k.into(), PT_PREC, m, Some(offset_f64), None);
     let mut dst = alloc_ct(&params, module, params.k);
 
     with_scratch::<BE, _>(module.ckks_affine_pt_vec_tmp_bytes(&dst, &a, &scale_pt), |s| {
@@ -298,7 +300,7 @@ pub fn test_affine_pt_vec_assign_aligned<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend<Ring = Standard>,
+    BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
@@ -333,8 +335,10 @@ pub fn test_affine_pt_vec_assign_aligned<BE, F, E>(
         &a_im,
         &mut scratch.borrow(),
     );
-    let scale_pt = ckks_pt_cst_full::<BE, F>(host_module, module, params.base2k.into(), PT_PREC, m, Some(scale_f64), None);
-    let offset_pt = ckks_pt_cst_full::<BE, F>(host_module, module, params.base2k.into(), PT_PREC, m, Some(offset_f64), None);
+    let scale_pt =
+        ckks_pt_cst_full::<BE, F, Standard>(host_module, module, params.base2k.into(), PT_PREC, m, Some(scale_f64), None);
+    let offset_pt =
+        ckks_pt_cst_full::<BE, F, Standard>(host_module, module, params.base2k.into(), PT_PREC, m, Some(offset_f64), None);
 
     with_scratch::<BE, _>(module.ckks_affine_pt_vec_tmp_bytes(&ct, &ct, &scale_pt), |s| {
         module.ckks_affine_pt_vec_assign(&mut ct, &scale_pt, &offset_pt, s)
@@ -360,7 +364,7 @@ pub fn test_affine_pt_const_into_rejects_offset_coeff_out_of_range<BE, F, E>(
     module: &poulpy_hal::layouts::Module<BE>,
     _host_module: &poulpy_hal::layouts::Module<poulpy_hal::layouts::HostBytesBackend>,
 ) where
-    BE: crate::test_suite::helpers::TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
+    BE: crate::test_suite::helpers::TestContextBackend,
     poulpy_hal::layouts::Module<BE>: crate::test_suite::helpers::TestContextModule<BE>,
     F: crate::test_suite::helpers::TestScalar,
     E: ReimNew<F>,
@@ -384,7 +388,7 @@ pub fn test_affine_pt_const_into_rejects_offset_coeff_out_of_range<BE, F, E>(
     let mut res = fixture_ciphertext(module, &ct_layout, 31);
     let query = module.ckks_affine_pt_const_tmp_bytes(&res, &a, &cst);
     for bytes in [0, query] {
-        let before = snapshot::<BE, _>(&res);
+        let before = snapshot::<BE, _, Standard>(&res);
         let err = with_scratch::<BE, _>(bytes, |s| module.ckks_affine_pt_const_into(&mut res, &a, &cst, n, 0, s)).unwrap_err();
         let want = |op| CKKSCompositionError::PlaintextCoefficientOutOfRange {
             op,
@@ -397,14 +401,14 @@ pub fn test_affine_pt_const_into_rejects_offset_coeff_out_of_range<BE, F, E>(
             &err,
             want("ckks_affine_pt_const_into"),
         );
-        assert_eq!(snapshot::<BE, _>(&res), before, "a refused affine form wrote dst");
+        assert_eq!(snapshot::<BE, _, Standard>(&res), before, "a refused affine form wrote dst");
         let err = with_scratch::<BE, _>(bytes, |s| module.ckks_affine_pt_const_assign(&mut res, &cst, n, 0, s)).unwrap_err();
         assert_ckks_error(
             "affine_pt_const_assign: offset past the constant",
             &err,
             want("ckks_affine_pt_const_assign"),
         );
-        assert_eq!(snapshot::<BE, _>(&res), before, "a refused affine form wrote dst");
+        assert_eq!(snapshot::<BE, _, Standard>(&res), before, "a refused affine form wrote dst");
     }
 }
 
@@ -415,7 +419,7 @@ pub fn test_affine_pt_vec_into_rejects_offset_base2k_mismatch<BE, F, E>(
     module: &poulpy_hal::layouts::Module<BE>,
     _host_module: &poulpy_hal::layouts::Module<poulpy_hal::layouts::HostBytesBackend>,
 ) where
-    BE: crate::test_suite::helpers::TestContextBackend<Ring = poulpy_hal::layouts::Standard>,
+    BE: crate::test_suite::helpers::TestContextBackend,
     poulpy_hal::layouts::Module<BE>: crate::test_suite::helpers::TestContextModule<BE>,
     F: crate::test_suite::helpers::TestScalar,
     E: ReimNew<F>,
@@ -450,20 +454,20 @@ pub fn test_affine_pt_vec_into_rejects_offset_base2k_mismatch<BE, F, E>(
         pt_base2k: b - 1,
     };
     for bytes in [0, query] {
-        let before = snapshot::<BE, _>(&res);
+        let before = snapshot::<BE, _, Standard>(&res);
         let err = with_scratch::<BE, _>(bytes, |s| module.ckks_affine_pt_vec_into(&mut res, &a, &scale, &offset, s)).unwrap_err();
         assert_ckks_error(
             "affine_pt_vec_into: offset of another radix",
             &err,
             want("ckks_affine_pt_vec_into"),
         );
-        assert_eq!(snapshot::<BE, _>(&res), before, "a refused affine form wrote dst");
+        assert_eq!(snapshot::<BE, _, Standard>(&res), before, "a refused affine form wrote dst");
         let err = with_scratch::<BE, _>(bytes, |s| module.ckks_affine_pt_vec_assign(&mut res, &scale, &offset, s)).unwrap_err();
         assert_ckks_error(
             "affine_pt_vec_assign: offset of another radix",
             &err,
             want("ckks_affine_pt_vec_assign"),
         );
-        assert_eq!(snapshot::<BE, _>(&res), before, "a refused affine form wrote dst");
+        assert_eq!(snapshot::<BE, _, Standard>(&res), before, "a refused affine form wrote dst");
     }
 }

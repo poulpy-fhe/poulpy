@@ -15,7 +15,7 @@ use poulpy_hal::layouts::ConjugateInvariant;
 use super::NTT4x30Neon;
 use poulpy_cpu_portable::kernels::ntt4x30::conjugate_invariant::{intt_portable, ntt_portable};
 
-impl ZnxAutomorphism for NTT4x30Neon<ConjugateInvariant> {
+impl ZnxAutomorphism<ConjugateInvariant> for NTT4x30Neon {
     #[inline(always)]
     fn znx_automorphism(p: i64, res: &mut [i64], a: &[i64]) {
         znx_automorphism_portable(p, res, a)
@@ -27,24 +27,24 @@ impl ZnxAutomorphism for NTT4x30Neon<ConjugateInvariant> {
     }
 }
 
-impl NttDFTExecute<NttTable<Primes30, ConjugateInvariant>> for NTT4x30Neon<ConjugateInvariant> {
+impl NttDFTExecute<NttTable<Primes30, ConjugateInvariant>> for NTT4x30Neon {
     #[inline(always)]
     fn ntt_dft_execute(table: &NttTable<Primes30, ConjugateInvariant>, data: &mut [u64]) {
         ntt_portable::<Primes30>(table, data);
     }
 
-    fn ntt_automorphism_plan(n: usize, p: i64) -> NttAutomorphismPlan {
+    fn ntt_automorphism_plan(n: usize, p: i64) -> NttAutomorphismPlan<ConjugateInvariant> {
         build_ntt4x30_automorphism_plan_portable(n, p)
     }
 }
 
-impl NttDFTExecute<NttTableInv<Primes30, ConjugateInvariant>> for NTT4x30Neon<ConjugateInvariant> {
+impl NttDFTExecute<NttTableInv<Primes30, ConjugateInvariant>> for NTT4x30Neon {
     #[inline(always)]
     fn ntt_dft_execute(table: &NttTableInv<Primes30, ConjugateInvariant>, data: &mut [u64]) {
         intt_portable::<Primes30>(table, data);
     }
 
-    fn ntt_automorphism_plan(n: usize, p: i64) -> NttAutomorphismPlan {
+    fn ntt_automorphism_plan(n: usize, p: i64) -> NttAutomorphismPlan<ConjugateInvariant> {
         build_ntt4x30_automorphism_plan_portable(n, p)
     }
 }
