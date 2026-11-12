@@ -448,7 +448,8 @@ where
             &err,
             CKKSCompositionError::InvalidOperand {
                 op: "ckks_bootstrap",
-                reason: "takes ciphertexts of the degree its context is compiled at".into(),
+                reason: "the transforms of the context must fill the slots of the input's degree, or of the subring of its gap"
+                    .into(),
             },
         );
         assert_eq!(
@@ -545,7 +546,7 @@ pub(crate) fn assert_eval_mod_refuses<BE, Rg: Ring>(
 
 /// `run`, a call of [`CKKSBootstrappingOps::ckks_mod_raise`], refuses for `reason` on a zero-byte arena, which puts the
 /// check before the scratch check, and leaves `res` and `a` as they were.
-fn assert_mod_raise_refuses<BE, Rg: Ring>(
+pub(crate) fn assert_mod_raise_refuses<BE, Rg: Ring>(
     res: &mut CKKSCiphertextOwned<BE, Rg>,
     a: &mut CKKSCiphertextOwned<BE, Rg>,
     reason: &str,

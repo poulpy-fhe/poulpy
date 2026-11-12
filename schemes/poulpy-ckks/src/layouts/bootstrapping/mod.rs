@@ -11,6 +11,7 @@ use crate::{CKKSCtBounds, CKKSLayout, GLWEPlaintextMeta};
 mod context;
 mod eval_mod_ci;
 mod key_widths;
+mod masks;
 mod plan;
 mod run;
 
@@ -20,6 +21,7 @@ pub use context::{BootstrappingContext, BootstrappingContextPrepared};
 pub(crate) use eval_mod_ci::CIPreForm;
 pub use eval_mod_ci::{CIConversion, CIPrePrepared, EvalModCIPrepared, EvalModRing};
 pub use key_widths::BootstrappingKeyWidths;
+pub use masks::{CoeffsMaskPrepared, MaskedFactors, MergedS2CFactorPrepared};
 pub use plan::{BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques, EvalRoundPlus, SparseSecretEncapsulation};
 pub use run::BootstrappingRun;
 

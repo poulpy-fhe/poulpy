@@ -331,25 +331,27 @@ where
     Ok(())
 }
 
-/// `InvalidOperand` for `op` unless `a` has the degree `ctx` is compiled at.
-fn ensure_compile_degree<BE: Backend, F, A: GLWEInfos>(
+/// `InvalidOperand` for an input of another degree than the transforms of `ctx` fill: a plan on fewer slots than the
+/// ring takes the gap that keeps the overflow of the raise in the subring they read.
+fn ensure_bootstrap_degree<BE: Backend, F>(
     op: &'static str,
     ctx: &BootstrappingContextPrepared<BE, F>,
-    a: &A,
+    a: &CKKSCiphertextOwned<BE>,
 ) -> CKKSResult<()> {
     ckks_ensure_operand!(
         op,
-        a.n().as_usize() == 1 << ctx.log_n(),
-        "takes ciphertexts of the degree its context is compiled at"
+        ctx.bootstrap_degree() == a.n().as_usize(),
+        "the transforms of the context must fill the slots of the input's degree, or of the subring of its gap"
     );
     Ok(())
 }
 
 /// What `ckks_bootstrap_derived` refuses before its first step, so that no later step refuses with `res` half written:
-/// the context kind, ranks, degrees and radices, ciphertexts of another degree than the one the context is compiled at,
-/// or a module of another degree than `2N` with EvalMod on the conjugate-invariant ring, an input the lifts of a
-/// C2S-first raise do not fit, a working width without the budget of the stages, the keys of the plan's ring and their
-/// coverage of the run's widths, and, when the keys report their layout, the arena against the query.
+/// the context kind, ranks, degrees and radices, ciphertexts of another degree than the one the context bootstraps, a
+/// sparse plan without its gap among them, or a module of another degree than `2N` with EvalMod on the
+/// conjugate-invariant ring, an input the lifts of a C2S-first raise do not fit, a working width without the budget of
+/// the stages, the keys of the plan's ring and their coverage of the run's widths, and, when the keys report their
+/// layout, the arena against the query.
 pub(crate) fn check_bootstrap_entry<BE, F, K>(
     module: &Module<BE>,
     res: &CKKSCiphertextOwned<BE>,
@@ -372,7 +374,7 @@ where
     );
     ensure_rank_one(OP, a, res)?;
     ensure_one_degree(OP, module.n(), a, res)?;
-    ensure_compile_degree(OP, ctx, a)?;
+    ensure_bootstrap_degree(OP, ctx, a)?;
     ensure_one_base2k(OP, a, res)?;
     ensure_encapsulation(OP, keys, ctx.sparse_secret_hamming_weight())?;
     // A C2S-first raise lifts `a` itself.
@@ -443,7 +445,7 @@ where
         "the functional bootstrap does not run the EvalRound+ bypass"
     );
     ensure_lut_batch(OP, module.n(), a, res, luts, &ctx.run(a.meta()))?;
-    ensure_compile_degree(OP, ctx, a)?;
+    ensure_bootstrap_degree(OP, ctx, a)?;
     let log_msg_ratio = luts[0].log_msg_ratio();
     ensure_encapsulation(OP, keys, ctx.sparse_secret_hamming_weight())?;
     let tensor_key = required_tensor_key(OP, keys.tensor_key())?;

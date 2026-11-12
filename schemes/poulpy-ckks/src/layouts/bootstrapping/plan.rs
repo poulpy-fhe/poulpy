@@ -53,6 +53,14 @@ pub struct BootstrappingTechniques {
     pub eval_round_plus: Option<EvalRoundPlus>,
 }
 
+fn invalid_plan(reason: &str) -> anyhow::Error {
+    crate::CKKSCompositionError::InvalidPlan {
+        plan: "BootstrappingPlan",
+        reason: reason.to_string(),
+    }
+    .into()
+}
+
 /// End-to-end parameterization of CKKS bootstrapping. Every choice of how a bootstrap runs is a parameter of this plan,
 /// and the steps of [`CKKSBootstrappingOps`](crate::api::CKKSBootstrappingOps) follow it.
 ///
@@ -74,6 +82,9 @@ pub struct BootstrappingTechniques {
 ///   around EvalMod. A first CoeffsToSlots factor on the raise excludes EvalRound+.
 /// - `functional_message_modulus` ([`Self::with_functional_bootstrap`], S2C-first): turns the bootstrap into a LUT
 ///   evaluation on integer messages, on the standard ring, without EvalRound+.
+/// - `log_gap` ([`Self::with_log_gap`], S2C-first): plaintexts in a subring, whose transforms fill fewer slots and whose
+///   raise projects on the subring, on the standard ring, with the first CoeffsToSlots factor on the raise and a sparse
+///   secret.
 ///
 /// The raise follows [`Self::mod_raise`].
 ///
@@ -121,6 +132,7 @@ pub struct BootstrappingTechniques {
 pub struct BootstrappingPlan {
     pipeline: BootstrappingPipeline,
     c2s_guard_bits: usize,
+    log_gap: usize,
     pub(super) functional_message_modulus: Option<usize>,
     eval_mod_ring: EvalModRing,
 
@@ -231,6 +243,7 @@ impl BootstrappingPlan {
         Ok(Self {
             pipeline,
             c2s_guard_bits: 0,
+            log_gap: 0,
             functional_message_modulus: None,
             eval_mod_ring: EvalModRing::Standard,
             techniques,
@@ -246,7 +259,7 @@ impl BootstrappingPlan {
     /// # Errors
     ///
     /// [`InvalidPlan`](crate::CKKSCompositionError::InvalidPlan) on a plan with [`EvalRoundPlus`], whose bypass the
-    /// LUT step does not run.
+    /// LUT step does not run, or with a gap.
     pub fn with_functional_bootstrap<P>(mut self, lut: &EncodedLut<P>) -> Result<Self> {
         ensure!(
             self.pipeline == BootstrappingPipeline::S2CFirst,
@@ -257,11 +270,10 @@ impl BootstrappingPlan {
             "functional bootstrapping runs EvalMod on the standard ring"
         );
         if self.techniques.eval_round_plus.is_some() {
-            return Err(CKKSCompositionError::InvalidPlan {
-                plan: "BootstrappingPlan",
-                reason: "the functional bootstrap does not run the EvalRound+ bypass".into(),
-            }
-            .into());
+            return Err(invalid_plan("the functional bootstrap does not run the EvalRound+ bypass"));
+        }
+        if self.log_gap > 0 {
+            return Err(invalid_plan("functional bootstrapping takes a plan without a gap"));
         }
         let q = (1usize << lut.log_msg_ratio()) as f64;
         self.slots_to_coeffs = self.slots_to_coeffs.with_scaling(q / (2.0 * lut.message_modulus() as f64))?;
@@ -272,6 +284,62 @@ impl BootstrappingPlan {
     /// The selected ModUp/EvalMod bootstrapping pipeline.
     pub fn pipeline(&self) -> BootstrappingPipeline {
         self.pipeline
+    }
+
+    /// Plaintexts in `Z[X^(2^log_gap)]`: both transforms act on `N / 2^(log_gap + 1)` slots, and the sparse secret lies in
+    /// that subring, so the raise projects the ciphertext on the subring in place of a trace. A plan on fewer slots than
+    /// the ring needs its gap: nothing else keeps the overflow of the raise in the subring. Generating the keys checks the
+    /// transforms against `N`, and a bootstrap its input's degree. Compiling the context checks only that they fit the
+    /// degree of the module, which may exceed `N`.
+    ///
+    /// # Errors
+    ///
+    /// [`InvalidPlan`](crate::CKKSCompositionError::InvalidPlan) for a nonzero gap on a plan that is not S2C-first with
+    /// EvalMod on the standard ring, the first CoeffsToSlots factor on the raise and a sparse secret, or a functional plan.
+    pub fn with_log_gap(mut self, log_gap: usize) -> Result<Self> {
+        if log_gap > 0 && self.functional_message_modulus.is_some() {
+            return Err(invalid_plan("a gap takes a plan without a LUT"));
+        }
+        if log_gap > 0
+            && !(self.pipeline == BootstrappingPipeline::S2CFirst
+                && self.eval_mod_ring == EvalModRing::Standard
+                && self.coeffs_to_slots.first_factor_on_raise()
+                && self.sparse_secret_hamming_weight().is_some())
+        {
+            return Err(invalid_plan(
+                "a gap takes an S2C-first plan with EvalMod on the standard ring, the first factor on the raise and a sparse secret",
+            ));
+        }
+        self.log_gap = log_gap;
+        Ok(self)
+    }
+
+    /// `log2` of the degree whose subring of the plan's gap the slots of `dft` fill.
+    fn filled_log_n(&self, dft: &DFTPlan) -> Option<usize> {
+        dft.log_slots().checked_add(1).and_then(|s| s.checked_add(self.log_gap))
+    }
+
+    /// Refuses transforms that do not fill `N / 2^(log_gap + 1)` slots at the degree `N = 2^log_n` of the keys.
+    pub(crate) fn check_log_gap(&self, log_n: usize) -> Result<()> {
+        let fills = |dft: &DFTPlan| self.filled_log_n(dft) == Some(log_n);
+        if !(fills(&self.coeffs_to_slots) && fills(&self.slots_to_coeffs)) {
+            return Err(invalid_plan("the transforms must fill the slots of the subring of the gap"));
+        }
+        Ok(())
+    }
+
+    /// Refuses transforms past `2^(log_n - log_gap - 1)` slots on a module of degree `2^log_n`, which may exceed `N`.
+    pub(crate) fn check_log_gap_fits(&self, log_n: usize) -> Result<()> {
+        let fits = |dft: &DFTPlan| self.filled_log_n(dft).is_some_and(|filled| filled <= log_n);
+        if !(fits(&self.coeffs_to_slots) && fits(&self.slots_to_coeffs)) {
+            return Err(invalid_plan("the slots of the subring of the gap do not fit the module"));
+        }
+        Ok(())
+    }
+
+    /// `log2` of the gap of the plaintexts, see [`Self::with_log_gap`].
+    pub fn log_gap(&self) -> usize {
+        self.log_gap
     }
 
     /// Adds scale bits at ModUp to reduce CoeffsToSlots rounding error.
@@ -303,6 +371,7 @@ impl BootstrappingPlan {
             c2s_guard_bits: self.c2s_guard_bits,
             sparse_secret_hamming_weight: self.sparse_secret_hamming_weight(),
             first_factor_on_raise: self.coeffs_to_slots.first_factor_on_raise(),
+            log_gap: self.log_gap,
         }
     }
 
@@ -310,6 +379,9 @@ impl BootstrappingPlan {
     /// S2C-first plan with a real EvalMod, without a LUT; `u` folds
     /// into a CoeffsToSlots factor the matrix evaluates, `v` does not fold.
     pub fn with_eval_mod_ring(mut self, ring: EvalModRing) -> Result<Self> {
+        if self.log_gap > 0 && ring != EvalModRing::Standard {
+            return Err(invalid_plan("a gap takes EvalMod on the standard ring"));
+        }
         ensure!(
             ring == EvalModRing::Standard
                 || (self.pipeline == BootstrappingPipeline::S2CFirst
@@ -518,6 +590,98 @@ mod tests {
             CoeffsMeta::from_delta_budget(8, 2),
         )
         .unwrap()
+    }
+
+    #[test]
+    fn a_gap_takes_a_plan_of_its_subring() {
+        let refusal = |err: anyhow::Error| match err.downcast_ref::<crate::CKKSCompositionError>() {
+            Some(crate::CKKSCompositionError::InvalidPlan { plan, reason }) => {
+                assert_eq!(*plan, "BootstrappingPlan");
+                reason.clone()
+            }
+            _ => panic!("unexpected error: {err}"),
+        };
+        let eval_mod = EvalModPlan {
+            eval_mod_type: EvalModType::CosHK,
+            log_msg_ratio: 4,
+            f_mod_degree: 8,
+            f_mod_interval: 4,
+            f_mod_log_interval_reduction: 1,
+            f_mod_inv_degree: None,
+            scaling: None,
+            split_strategy: SplitStrategy::MinDepth,
+            coeffs_meta: CoeffsMeta::from_delta_budget(16, 2),
+            f_mod_log_delta: 24,
+        };
+        let new = |sparse: bool, on_raise: bool| {
+            let encode = dft(DFTType::Encode);
+            BootstrappingPlan::new(
+                BootstrappingPipeline::S2CFirst,
+                BootstrappingTechniques {
+                    sparse_secret_encapsulation: sparse.then_some(SparseSecretEncapsulation { hamming_weight: 8 }),
+                    eval_round_plus: None,
+                },
+                if on_raise {
+                    encode.with_first_factor_on_raise()
+                } else {
+                    encode
+                },
+                eval_mod,
+                dft(DFTType::Decode),
+            )
+            .unwrap()
+        };
+
+        assert!(refusal(new(false, true).with_log_gap(1).unwrap_err()).contains("a gap takes an S2C-first plan"));
+        assert!(refusal(new(true, false).with_log_gap(1).unwrap_err()).contains("a gap takes an S2C-first plan"));
+        let c2s_first = BootstrappingPlan::new(
+            BootstrappingPipeline::C2SFirst,
+            BootstrappingTechniques {
+                sparse_secret_encapsulation: Some(SparseSecretEncapsulation { hamming_weight: 8 }),
+                eval_round_plus: None,
+            },
+            dft(DFTType::Encode).with_first_factor_on_raise(),
+            eval_mod,
+            dft(DFTType::Decode),
+        )
+        .unwrap();
+        assert!(refusal(c2s_first.with_log_gap(1).unwrap_err()).contains("a gap takes an S2C-first plan"));
+        let plan = new(true, true).with_log_gap(1).unwrap();
+        let ci = EvalModRing::ConjugateInvariant {
+            pre: CIConversion::Folded,
+            post: CIConversion::Product { log_delta: 8 },
+        };
+        assert!(refusal(plan.clone().with_eval_mod_ring(ci).unwrap_err()).contains("a gap takes EvalMod"));
+        let on_ci = EvalModRing::ConjugateInvariant {
+            pre: CIConversion::Product { log_delta: 8 },
+            post: CIConversion::Product { log_delta: 8 },
+        };
+        let on_ci = new(true, true).with_eval_mod_ring(on_ci).unwrap();
+        assert!(refusal(on_ci.with_log_gap(1).unwrap_err()).contains("a gap takes an S2C-first plan"));
+        assert_eq!(plan.mod_raise().log_gap, 1);
+        // One slot layer: the gap of 2 fills degree 8 and no other, and fits a module of that degree or above.
+        plan.check_log_gap(3).unwrap();
+        for log_n in [2, 4, 16] {
+            assert!(refusal(plan.check_log_gap(log_n).unwrap_err()).contains("must fill the slots of the subring"));
+        }
+        for log_n in [3, 4, 16] {
+            plan.check_log_gap_fits(log_n).unwrap();
+        }
+        assert!(refusal(plan.check_log_gap_fits(2).unwrap_err()).contains("do not fit the module"));
+        let module = Module::<poulpy_hal::layouts::HostBytesBackend>::new(16);
+        let lut = EncodedLut::general(
+            &module,
+            &[1.0f64; 5],
+            32usize.into(),
+            CoeffsMeta::from_delta_budget(55, 32),
+            SplitStrategy::MinDepth,
+        )
+        .unwrap();
+        assert!(refusal(plan.clone().with_functional_bootstrap(&lut).unwrap_err()).contains("without a gap"));
+        let functional = new(true, true).with_functional_bootstrap(&lut).unwrap();
+        assert!(refusal(functional.with_log_gap(1).unwrap_err()).contains("a gap takes a plan without a LUT"));
+        // A plan on fewer slots than the ring needs its gap.
+        assert!(refusal(new(true, true).check_log_gap(3).unwrap_err()).contains("must fill the slots of the subring"));
     }
 
     #[test]

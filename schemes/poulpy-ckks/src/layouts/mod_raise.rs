@@ -15,14 +15,16 @@ use crate::{
 /// base-`2^base2k` torus, not an RNS basis extension: it leaves `I(X)·q + Δ·m` in `res`, which keeps its `k`, so
 /// `log_budget_out = res.k() - log_delta_out`, and takes the slot kind and sparsity of `a`.
 ///
-/// The order is the first lift, the dense-to-sparse switch, ModUp with the second lift or the guard bits in its shift,
-/// the first CoeffsToSlots factor, then the sparse-to-dense switch. Without a lift or encapsulation, `a` is only read.
+/// The order is the first lift, the dense-to-sparse switch, the projection on the subring of the gap, ModUp with the
+/// second lift or the guard bits in its shift, the first CoeffsToSlots factor, then the sparse-to-dense switch. Without
+/// a lift or encapsulation, `a` is only read.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ModRaisePlan {
     pub(crate) lift: Option<EvalModPlan>,
     pub(crate) c2s_guard_bits: usize,
     pub(crate) sparse_secret_hamming_weight: Option<usize>,
     pub(crate) first_factor_on_raise: bool,
+    pub(crate) log_gap: usize,
 }
 
 impl ModRaisePlan {
@@ -49,6 +51,12 @@ impl ModRaisePlan {
     /// [`ModRaisePrepared`]. It consumes no modulus, and its switches replace the sparse-to-dense one.
     pub fn first_factor_on_raise(&self) -> bool {
         self.first_factor_on_raise
+    }
+
+    /// `log2` of the gap of the plaintexts, see
+    /// [`BootstrappingPlan::with_log_gap`](crate::layouts::BootstrappingPlan::with_log_gap).
+    pub fn log_gap(&self) -> usize {
+        self.log_gap
     }
 
     /// The bits the raise of an input of `k` bits at scale `log_delta` lifts it by in place, and the bits fused into
@@ -79,6 +87,12 @@ pub trait CKKSModRaiseInfos<BE: Backend> {
     /// The prepared first CoeffsToSlots factor the raise applies, `None` when the plan leaves it to CoeffsToSlots. A
     /// plan with [`ModRaisePlan::first_factor_on_raise`] takes one.
     fn first_factor(&self) -> Option<&LinearTransformation<CKKSRightOperandPrepared<BE>>>;
+
+    /// `log2` of the gap of the plaintexts, see
+    /// [`BootstrappingPlan::with_log_gap`](crate::layouts::BootstrappingPlan::with_log_gap).
+    fn log_gap(&self) -> usize {
+        self.mod_raise_plan().log_gap()
+    }
 }
 
 impl<BE: Backend> CKKSModRaiseInfos<BE> for ModRaisePlan {

@@ -36,7 +36,7 @@ pub struct BootstrappingContextPrepared<BE: Backend, F> {
     /// The plan the context was compiled from, at the degree it was compiled for: the recipe
     /// of its keys.
     pub(crate) plan: BootstrappingPlan,
-    /// `log2` of the degree the context is compiled at, of the ciphertexts it bootstraps.
+    /// `log2` of the degree of the ciphertexts the context bootstraps, see [`Self::bootstrap_degree`].
     log_n: usize,
     /// Prepared CoeffsToSlots matrix (homomorphic encoding).
     ///
@@ -93,9 +93,11 @@ impl<BE: Backend, F> BootstrappingContextPrepared<BE, F> {
         &self.rotation_key_offsets
     }
 
-    /// `log2` of the degree the context is compiled at.
-    pub(crate) fn log_n(&self) -> usize {
-        self.log_n
+    pub(super) fn takes_a_mask(&self) -> bool {
+        self.plan.pipeline() == BootstrappingPipeline::S2CFirst
+            && self.plan.eval_mod_ring() == EvalModRing::Standard
+            && self.coeffs_to_slots_bypass.is_none()
+            && self.plan.functional_message_modulus.is_none()
     }
 
     /// The stages that set the widths at which a bootstrap uses its keys.
@@ -118,6 +120,16 @@ impl<BE: Backend, F> BootstrappingContextPrepared<BE, F> {
     /// Extra scale bits used during CoeffsToSlots.
     pub fn c2s_guard_bits(&self) -> usize {
         self.plan.c2s_guard_bits()
+    }
+
+    /// `log2` of the gap of the plaintexts, see [`BootstrappingPlan::with_log_gap`].
+    pub fn log_gap(&self) -> usize {
+        self.plan.log_gap()
+    }
+
+    /// The degree `N` of the bootstrap: `2·g` times the slots of the transforms, `g` the gap of the plaintexts.
+    pub(crate) fn bootstrap_degree(&self) -> usize {
+        1 << self.log_n
     }
 
     /// Selected ModUp/EvalMod pipeline.
@@ -390,14 +402,14 @@ where
         Module<BE>: CKKSEncodingOps<BE, F, ConjugateInvariant>,
     {
         let EvalModRing::ConjugateInvariant { pre, post } = plan.eval_mod_ring() else {
-            return Self::compile_stages(module, base2k, plan, module.log_n(), scratch);
+            return Self::compile_stages(module, base2k, plan, scratch);
         };
         // `compile_stages` resolves the DFT formats at the degree of `module`, `2N`, where
         // every slot of degree `N` would be a sparse plan's: resolve them at the bootstrap's
         // degree first.
         let log_n = module.log_n() - 1;
         let plan = plan.with_dft_formats_resolved_at(log_n);
-        let mut context = Self::compile_stages(module, base2k, &plan, log_n, scratch)?;
+        let mut context = Self::compile_stages(module, base2k, &plan, scratch)?;
         context.eval_mod_ci = Some(EvalModCI::compile(
             module,
             base2k,
@@ -409,17 +421,17 @@ where
         Ok(context)
     }
 
-    /// The stages on `module`, for a bootstrap of degree `2^log_n`: the DFT matrices, and EvalMod on the standard ring.
+    /// The stages on `module`: the DFT matrices, and EvalMod on the standard ring.
     fn compile_stages(
         module: &Module<BE>,
         base2k: Base2K,
         plan: &BootstrappingPlan,
-        log_n: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<BootstrappingContext<BE, F>>
     where
         Module<BE>: CKKSDFTMatrixOps<BE, F> + CKKSEncodingOps<BE, F>,
     {
+        plan.check_log_gap_fits(module.log_n())?;
         let coeffs_to_slots = module.ckks_dft_matrix_new::<Encode, Split>(base2k, &plan.coeffs_to_slots, scratch)?;
         // A first factor left to the modulus raise is evaluated from its plaintexts, and a last one `u` folds into by
         // the conversions of the conjugate-invariant ring: neither by the matrix.
@@ -449,7 +461,7 @@ where
 
         Ok(BootstrappingContext {
             plan: plan.clone(),
-            log_n,
+            log_n: plan.slots_to_coeffs.log_slots() + 1 + plan.log_gap(),
             coeffs_to_slots,
             coeffs_to_slots_first_factor,
             coeffs_to_slots_bypass,
