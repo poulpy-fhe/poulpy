@@ -99,7 +99,8 @@ storage depend on their relationship. Likewise, `ckks_decrypt_tmp_bytes(pt, ct)`
 includes the plaintext allocation width even when its effective precision is
 lower. Add/subtract-one calls use `ckks_add_one_tmp_bytes` and
 `ckks_sub_one_tmp_bytes`; their derived queries follow the selected
-plaintext-constant add/subtract implementation. An override may report a
+plaintext-constant and plaintext-vector add/subtract implementations and reserve
+the unit plaintext in the arena. An override may report a
 different size from the reference. EvalMod's query dispatches through
 `CKKSEvalModImpl::ckks_eval_mod_tmp_bytes`, so replacing its evaluation and
 workspace policy does not pin execution to the reference budget.

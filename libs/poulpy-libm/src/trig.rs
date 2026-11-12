@@ -155,8 +155,8 @@ pub trait CKKSTrigOps<BE: Backend> {
         S: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         C: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         I: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta,
-        Q: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta + poulpy_ckks::layouts::CKKSMaskedConstants<BE>,
+        Q: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta + poulpy_ckks::layouts::CKKSMaskedConstants<BE>,
         H: GetTensorKey<BE>;
 
     declare_unary_op!(ckks_tan_tmp_bytes, ckks_tan, TanPlan, "tan");
@@ -208,8 +208,8 @@ where
         S: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         C: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         I: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta,
-        Q: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta + poulpy_ckks::layouts::CKKSMaskedConstants<BE>,
+        Q: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta + poulpy_ckks::layouts::CKKSMaskedConstants<BE>,
         H: GetTensorKey<BE>,
     {
         scratch.scope(|scratch_local| {

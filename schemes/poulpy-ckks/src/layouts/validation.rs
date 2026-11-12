@@ -250,6 +250,20 @@ pub(crate) fn ensure_full_layout(op: &'static str, slot_layout: SlotLayout) -> c
     Ok(())
 }
 
+/// Rejects a rotation by `k` slots that moves guard slots onto data slots.
+pub(crate) fn ensure_admissible_rotation(op: &'static str, slot_layout: SlotLayout, k: i64) -> crate::CKKSResult<()> {
+    if let SlotLayout::Replicated(layout) = slot_layout
+        && k.rem_euclid(1 << layout.log_r()) != 0
+    {
+        return Err(CKKSCompositionError::InvalidOperand {
+            op,
+            reason: format!("a rotation by {k} slots is not a multiple of the period 2^{}", layout.log_r()),
+        }
+        .into());
+    }
+    Ok(())
+}
+
 /// Rejects a sum of a replicated layout at two scales, which would drop the
 /// finer operand's extra bits with plain rounding.
 pub(crate) fn reject_replicated_scales(

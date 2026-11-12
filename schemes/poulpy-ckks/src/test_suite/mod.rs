@@ -334,6 +334,14 @@ macro_rules! ckks_backend_rank2_test_suite {
                 $crate::test_suite::replicated::test_replicated_encoding_rejects_batch_size
             );
             run_ring_test_result!(
+                replicated_products_are_shaped,
+                $crate::test_suite::replicated::test_replicated_products_are_shaped
+            );
+            run_ring_test_result!(
+                replicated_units_shape_products,
+                $crate::test_suite::replicated::test_replicated_units_shape_products
+            );
+            run_ring_test_result!(
                 replicated_encryption_refuses_before_drawing,
                 $crate::test_suite::replicated::test_replicated_encryption_refuses_before_drawing
             );
@@ -350,8 +358,16 @@ macro_rules! ckks_backend_rank2_test_suite {
                 $crate::test_suite::replicated::test_replicated_plain_rounding_is_rejected
             );
             run_test_result!(
-                replicated_conjugation_is_rejected,
-                $crate::test_suite::replicated::test_replicated_conjugation_is_rejected
+                replicated_automorphisms_are_shaped,
+                $crate::test_suite::replicated::test_replicated_automorphisms_are_shaped
+            );
+            run_ring_test_result!(
+                replicated_rotations_are_admissible,
+                $crate::test_suite::replicated::test_replicated_rotations_are_admissible
+            );
+            run_ring_test_result!(
+                replicated_masked_constants,
+                $crate::test_suite::replicated::test_replicated_masked_constants
             );
             run_test!(mul_ct_aligned, $crate::test_suite::mul::test_mul_ct_aligned);
             run_test!(
@@ -707,6 +723,14 @@ macro_rules! ckks_backend_test_suite {
                 $crate::test_suite::replicated::test_replicated_encoding_rejects_batch_size
             );
             run_ring_test_result!(
+                replicated_products_are_shaped,
+                $crate::test_suite::replicated::test_replicated_products_are_shaped
+            );
+            run_ring_test_result!(
+                replicated_units_shape_products,
+                $crate::test_suite::replicated::test_replicated_units_shape_products
+            );
+            run_ring_test_result!(
                 replicated_encryption_refuses_before_drawing,
                 $crate::test_suite::replicated::test_replicated_encryption_refuses_before_drawing
             );
@@ -722,9 +746,29 @@ macro_rules! ckks_backend_test_suite {
                 replicated_plain_rounding_is_rejected,
                 $crate::test_suite::replicated::test_replicated_plain_rounding_is_rejected
             );
+            run_ring_test_result!(
+                replicated_polynomials_are_shaped,
+                $crate::test_suite::replicated::test_replicated_polynomials_are_shaped
+            );
             run_test_result!(
-                replicated_conjugation_is_rejected,
-                $crate::test_suite::replicated::test_replicated_conjugation_is_rejected
+                replicated_complex_polynomials_are_shaped,
+                $crate::test_suite::replicated::test_replicated_complex_polynomials_are_shaped
+            );
+            run_ring_test_result!(
+                replicated_eval_mod_is_shaped,
+                $crate::test_suite::replicated::test_replicated_eval_mod_is_shaped
+            );
+            run_test_result!(
+                replicated_automorphisms_are_shaped,
+                $crate::test_suite::replicated::test_replicated_automorphisms_are_shaped
+            );
+            run_ring_test_result!(
+                replicated_rotations_are_admissible,
+                $crate::test_suite::replicated::test_replicated_rotations_are_admissible
+            );
+            run_ring_test_result!(
+                replicated_masked_constants,
+                $crate::test_suite::replicated::test_replicated_masked_constants
             );
             run_test!(conjugate_aligned, $crate::test_suite::conjugate::test_conjugate_aligned);
             run_test!(

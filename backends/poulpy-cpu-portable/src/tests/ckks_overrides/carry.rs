@@ -283,13 +283,28 @@ fn unit_shifts_use_selected_plaintext_scratch() {
             <Module<OverrideBackend> as CKKSSubOps<OverrideBackend, Standard>>::ckks_sub_pt_const_tmp_bytes(&module_test, size),
             SUB_CONST_EXTRA + <_ as CKKSSubReference<_, Standard>>::ckks_sub_pt_const_tmp_bytes_reference(&module_test, size)
         );
-        assert_eq!(
-            <Module<OverrideBackend> as CKKSAddOps<OverrideBackend, Standard>>::ckks_add_one_tmp_bytes(&module_test, size),
-            <Module<OverrideBackend> as CKKSAddOps<OverrideBackend, Standard>>::ckks_add_pt_const_tmp_bytes(&module_test, size)
+        assert!(
+            <Module<OverrideBackend> as CKKSAddOps<OverrideBackend, Standard>>::ckks_add_one_tmp_bytes(&module_test, size)
+                > <Module<OverrideBackend> as CKKSAddOps<OverrideBackend, Standard>>::ckks_add_tmp_bytes(&module_test, size)
         );
-        assert_eq!(
-            <Module<OverrideBackend> as CKKSSubOps<OverrideBackend, Standard>>::ckks_sub_one_tmp_bytes(&module_test, size),
-            <Module<OverrideBackend> as CKKSSubOps<OverrideBackend, Standard>>::ckks_sub_pt_const_tmp_bytes(&module_test, size)
+        assert!(
+            <Module<OverrideBackend> as CKKSSubOps<OverrideBackend, Standard>>::ckks_sub_one_tmp_bytes(&module_test, size)
+                > <Module<OverrideBackend> as CKKSSubOps<OverrideBackend, Standard>>::ckks_sub_tmp_bytes(&module_test, size)
+        );
+        // The unit constant is carved from the same arena as the selected plaintext workspace.
+        assert!(
+            <Module<OverrideBackend> as CKKSAddOps<OverrideBackend, Standard>>::ckks_add_one_tmp_bytes(&module_test, size)
+                > <Module<OverrideBackend> as CKKSAddOps<OverrideBackend, Standard>>::ckks_add_pt_const_tmp_bytes(
+                    &module_test,
+                    size
+                )
+        );
+        assert!(
+            <Module<OverrideBackend> as CKKSSubOps<OverrideBackend, Standard>>::ckks_sub_one_tmp_bytes(&module_test, size)
+                > <Module<OverrideBackend> as CKKSSubOps<OverrideBackend, Standard>>::ckks_sub_pt_const_tmp_bytes(
+                    &module_test,
+                    size
+                )
         );
     }
     let params = CKKSTestParams {

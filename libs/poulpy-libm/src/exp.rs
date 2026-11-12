@@ -406,7 +406,7 @@ pub trait CKKSExpOps<BE: Backend> {
     where
         R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         I: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta + poulpy_ckks::layouts::CKKSMaskedConstants<BE>,
         H: GetTensorKey<BE>;
 
     /// Scratch bytes for [`Self::ckks_exp2`].
@@ -443,7 +443,7 @@ pub trait CKKSExpOps<BE: Backend> {
     where
         R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         I: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta + poulpy_ckks::layouts::CKKSMaskedConstants<BE>,
         H: GetTensorKey<BE>;
 
     /// Scratch bytes for [`Self::ckks_exp10`].
@@ -480,7 +480,7 @@ pub trait CKKSExpOps<BE: Backend> {
     where
         R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         I: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta + poulpy_ckks::layouts::CKKSMaskedConstants<BE>,
         H: GetTensorKey<BE>;
 
     /// Scratch bytes for [`Self::ckks_expm1`].
@@ -517,7 +517,7 @@ pub trait CKKSExpOps<BE: Backend> {
     where
         R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         I: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta + poulpy_ckks::layouts::CKKSMaskedConstants<BE>,
         H: GetTensorKey<BE>;
 }
 
@@ -546,7 +546,7 @@ where
     where
         R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         I: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta + poulpy_ckks::layouts::CKKSMaskedConstants<BE>,
         H: GetTensorKey<BE>,
     {
         eval_reduced(
@@ -583,7 +583,7 @@ where
     where
         R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         I: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta + poulpy_ckks::layouts::CKKSMaskedConstants<BE>,
         H: GetTensorKey<BE>,
     {
         eval_reduced(
@@ -620,7 +620,7 @@ where
     where
         R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         I: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta + poulpy_ckks::layouts::CKKSMaskedConstants<BE>,
         H: GetTensorKey<BE>,
     {
         eval_reduced(
@@ -657,7 +657,7 @@ where
     where
         R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         I: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta + poulpy_ckks::layouts::CKKSMaskedConstants<BE>,
         H: GetTensorKey<BE>,
     {
         eval_reduced(
@@ -725,7 +725,7 @@ where
     Module<BE>: CKKSAddOps<BE> + CKKSApproximationOps<BE> + CKKSCopyOps<BE> + CKKSMulOps<BE>,
     R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     I: GLWEToBackendRef<BE> + CKKSCtBounds,
-    P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta,
+    P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta + poulpy_ckks::layouts::CKKSMaskedConstants<BE>,
     H: GetTensorKey<BE>,
 {
     let log_delta = input.log_delta();

@@ -86,7 +86,7 @@ where
     R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
     S: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
     B: BSGSPolynomialInfos<BE, Rg>,
-    B::Coeffs: CKKSCtBounds,
+    B::Coeffs: CKKSCtBounds + crate::layouts::CKKSMaskedConstants<BE, Rg>,
     H: GetTensorKey<BE, Rg>,
     CKKSCiphertextOwned<BE, Rg>: GLWEToBackendMut<BE, Rg> + GLWEToBackendRef<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
 {
@@ -123,7 +123,12 @@ where
         + GLWENormalize<BE>,
     R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
     S: GLWEToBackendRef<BE> + CKKSCtBounds,
-    C: GLWEToBackendRef<BE> + GLWEInfos + poulpy_core::layouts::BSGSMeta + CKKSCtBounds + IntPolyInfos,
+    C: GLWEToBackendRef<BE>
+        + GLWEInfos
+        + poulpy_core::layouts::BSGSMeta
+        + CKKSCtBounds
+        + IntPolyInfos
+        + crate::layouts::CKKSMaskedConstants<BE>,
     H: GetTensorKey<BE>,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
 {

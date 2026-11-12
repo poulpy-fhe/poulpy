@@ -29,15 +29,14 @@ where
     Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
 {
-    crate::layouts::validation::ensure_full_layout("ckks_rotate_into", crate::GLWEPlaintextInfos::slot_layout(src))?;
+    crate::layouts::validation::ensure_admissible_rotation("ckks_rotate_into", crate::GLWEPlaintextInfos::slot_layout(src), k)?;
     let p = operand_rotation_galois_element::<_, Rg>("ckks_rotate_into", module, src.n().as_usize(), k)?;
     if p == 1 {
         module.ckks_copy(dst, src, scratch)?;
         dst.set_noise(None);
         return Ok(());
     }
-    // The switch reads `src` at `dst.k()` when `dst` is narrower.
-    let switch_k = src.k().min(dst.k());
+    let switch_k = crate::shaping::automorphism_input_k(dst, src);
     let key = keys
         .get_automorphism_key(p, switch_k)
         .map_err(|source| CKKSCompositionError::MissingAutomorphismKey {
@@ -61,7 +60,11 @@ where
     H: GetAutomorphismKey<BE, Rg>,
     Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
 {
-    crate::layouts::validation::ensure_full_layout("ckks_rotate_assign", crate::GLWEPlaintextInfos::slot_layout(&*dst))?;
+    crate::layouts::validation::ensure_admissible_rotation(
+        "ckks_rotate_assign",
+        crate::GLWEPlaintextInfos::slot_layout(&*dst),
+        k,
+    )?;
     let p = operand_rotation_galois_element::<_, Rg>("ckks_rotate_assign", module, dst.n().as_usize(), k)?;
     if p == 1 {
         dst.set_noise(None);

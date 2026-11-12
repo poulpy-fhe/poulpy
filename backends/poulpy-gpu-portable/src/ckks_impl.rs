@@ -7,12 +7,13 @@
 
 use poulpy_ckks::{
     CKKSCtBounds, CKKSError, CKKSInfos, CKKSPlaintextToBackendMut, CKKSPlaintextToBackendRef, CKKSResult, GLWEPlaintextInfos,
-    GLWEPlaintextMeta, SetCKKSInfos, SetGLWEPlaintextInfos,
-    api::{CKKSEncodingOps, CKKSEncodingScalar, CKKSPaCoScalar, CKKSShipScalar},
+    GLWEPlaintextMeta, Scale, SetCKKSInfos, SetGLWEPlaintextInfos, SlotLayout, SlotsKind,
+    api::{CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar, CKKSPaCoScalar, CKKSShipScalar},
     encoding::{ckks_paco_coeff_encodings_host, ckks_ship_coeff_encodings_host},
     layouts::{
         CKKSCiphertextAlloc, CKKSEncodingBuffer, CKKSEncodingBufferBackendMut, CKKSEncodingBufferBackendRef,
-        CKKSEncodingBufferInfos, CKKSPlaintextOwned, PaCoContext, PaCoPlan, ShipCoeffEncodings, ShipPlan, ckks_plaintext_one,
+        CKKSEncodingBufferInfos, CKKSPlaintextAlloc, CKKSPlaintextOwned, PaCoContext, PaCoPlan, ShipCoeffEncodings, ShipPlan,
+        ckks_plaintext_one,
     },
     oep::CKKSEncodingImpl,
     reference::encoding::{CKKSSlotEmbedding, ckks_dequantize_coeffs_into_reference, ckks_quantize_coeffs_into_reference},
@@ -32,8 +33,8 @@ use std::{
 
 use poulpy_hal::{
     AlignedBuf,
-    api::ModuleN,
-    layouts::{HostBytesBackend, Module, ModulePlanCache, Ring, ScratchArena},
+    api::{ModuleN, ScratchOwnedAlloc},
+    layouts::{HostBytesBackend, Module, ModulePlanCache, Ring, ScratchArena, ScratchOwned},
 };
 
 use crate::{
@@ -43,19 +44,22 @@ use crate::{
     runtime::{GpuMut, GpuRef, GpuRuntime, access},
 };
 
-/// The constant plaintexts `1` of a module on the ring `Rg`, one per radix.
-struct OnePlaintexts<BE: poulpy_hal::layouts::Backend, Rg: Ring>(Mutex<HashMap<usize, Arc<CKKSPlaintextOwned<BE, Rg>>>>);
+type OneKey = (usize, SlotLayout, usize);
 
-/// The device plaintext of the constant `1.0` of the add-one and sub-one
-/// operations, [`ckks_plaintext_one`], kept by the module: only the first request
-/// for a radix uploads it.
+/// Unit plaintexts of a module on the ring `Rg`, keyed by radix, slot layout and scale.
+struct OnePlaintexts<BE: poulpy_hal::layouts::Backend, Rg: Ring>(Mutex<HashMap<OneKey, Arc<CKKSPlaintextOwned<BE, Rg>>>>);
+
+/// The unit plaintext of add-one and sub-one on the ring `R`, [`ckks_plaintext_one`] or the masked one of a
+/// replicated layout, kept by the module: only the first request for a radix, slot layout and scale uploads it.
 pub(crate) fn one_plaintext<RT, R>(
     module: &Module<NTT4x30Gpu<RT>>,
     base2k: Base2K,
+    slot_layout: SlotLayout,
+    log_delta: usize,
 ) -> CKKSResult<Arc<CKKSPlaintextOwned<NTT4x30Gpu<RT>, R>>>
 where
     RT: GpuRuntime,
-    R: Ring,
+    R: Ring + CKKSSlotEmbedding,
 {
     // Building the constant uses the device. The access is taken before the
     // cache is locked, as everywhere else: a thread that records holds the
@@ -67,15 +71,57 @@ where
             || Ok(OnePlaintexts(Mutex::new(HashMap::new()))),
             |cache: &OnePlaintexts<NTT4x30Gpu<RT>, R>| {
                 let mut cache = cache.0.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-                if let Some(one) = cache.get(&base2k.as_usize()) {
+                let key = (
+                    base2k.as_usize(),
+                    slot_layout,
+                    if slot_layout == SlotLayout::Full { 0 } else { log_delta },
+                );
+                if let Some(one) = cache.get(&key) {
                     return Ok(one.clone());
                 }
-                let one = Arc::new(ckks_plaintext_one::<_, _, R>(module, base2k)?);
-                cache.insert(base2k.as_usize(), one.clone());
+                let one = Arc::new(match slot_layout {
+                    SlotLayout::Full => ckks_plaintext_one::<_, _, R>(module, base2k)?,
+                    SlotLayout::Replicated(layout) => masked_one::<RT, R, poulpy_ckks::Quad>(module, base2k, layout, log_delta)?,
+                });
+                cache.insert(key, one.clone());
                 Ok(one)
             },
         )
         .map_err(CKKSError::from)?
+}
+
+fn masked_one<RT, R, F>(
+    module: &Module<NTT4x30Gpu<RT>>,
+    base2k: Base2K,
+    layout: poulpy_ckks::ReplicatedLayout,
+    log_delta: usize,
+) -> CKKSResult<CKKSPlaintextOwned<NTT4x30Gpu<RT>, R>>
+where
+    RT: GpuRuntime,
+    R: Ring + CKKSSlotEmbedding,
+    F: CKKSEncodingScalar,
+{
+    use poulpy_hal::layouts::Backend;
+    let degree = poulpy_ckks::shaping::ShapingProfile::<R>::try_new(&layout)?
+        .period()
+        .max(NTT4x30Gpu::<RT>::MIN_DEGREE);
+    let mut one = module.ckks_plaintext_alloc::<R>(degree.into(), base2k, (log_delta + 1).into());
+    one.set_meta(GLWEPlaintextMeta {
+        scale: Scale::Log(log_delta),
+        slots: SlotsKind::Real,
+        slot_layout: SlotLayout::Replicated(layout),
+        ..Default::default()
+    });
+    let bytes = CKKSEncodingBuffer::<<NTT4x30Gpu<RT> as Backend>::OwnedBuf, F>::bytes_of(degree);
+    let mut scratch = ScratchOwned::<NTT4x30Gpu<RT>>::alloc(bytes);
+    CKKSEncodingHostOps::<NTT4x30Gpu<RT>, F, R>::ckks_encode_masked_constant_host_into(
+        module,
+        &mut one,
+        F::one(),
+        F::zero(),
+        &mut scratch.arena(),
+    )?;
+    Ok(one)
 }
 
 /// The host backend the staged work is typed with: host bytes, `i64` limbs.

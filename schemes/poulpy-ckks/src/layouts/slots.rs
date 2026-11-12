@@ -1,6 +1,5 @@
 //! Slot and Galois helpers shared by the derived drivers, the layouts and the reference bodies: the
-//! fold rotation schedule, the tiled bit-reversal, the conjugate-rotate Galois element and the
-//! constant-one plaintext.
+//! fold rotation schedule, the tiled bit-reversal and the conjugate-rotate Galois element.
 //!
 //! Conjugation-with-rotation (seqPaCo line 8, Galois element `−5^k`) needs no
 //! new operation at all: the automorphism appliers use whatever key they are
@@ -12,11 +11,15 @@
 use crate::CKKSResult as Result;
 use crate::SlotsKind;
 use crate::layouts::CKKSPlaintextOwned;
+use crate::layouts::{CKKSPlaintextViewMut, ScratchArenaTakeCKKSPlaintext};
+use crate::shaping::MAX_COEFFS;
 use crate::{GLWEPlaintextMeta, Scale, SetCKKSInfos, ckks_log_delta, layouts::CKKSPlaintextAlloc};
-use poulpy_core::layouts::Base2K;
+use crate::{SlotLayout, numerics::CKKSFloat, scalar::Quad, shaping::conjugate_invariant};
+use num_traits::{Float, FromPrimitive};
+use poulpy_core::layouts::{Base2K, GLWEPlaintextLayout, GLWEToBackendMut, IntPolyInfos, TorusPrecision};
 use poulpy_hal::{
     AlignedBuf, alloc_aligned,
-    layouts::{Backend, Ring, VecZnx, galois_element},
+    layouts::{Backend, Ring, ScratchArena, VecZnx, encode_i128_by_limb, galois_element},
 };
 
 /// Builds the backend-resident constant-`1.0` plaintext used by the
@@ -97,6 +100,108 @@ pub(crate) fn ext_bitrev_low(x: usize, log_p: usize) -> usize {
 /// `conj(rotate(·, k))` in a single keyswitch, the ψ-pairing's fast tail.
 pub(crate) fn conj_rotate_galois_element(k: i64, cyclotomic_order: i64) -> i64 {
     -galois_element(k, cyclotomic_order)
+}
+
+/// Scratch bytes of [`take_one_pt`] for a destination of `res_size` limbs.
+pub(crate) fn one_pt_tmp_bytes<BE: Backend>(res_size: usize) -> usize {
+    BE::scratch_aligned(BE::vec_znx_bytes_of(MAX_COEFFS, 1, res_size + 1))
+}
+
+/// The one of `slot_layout`, carved from `scratch`. On a full layout it is the
+/// monomial `2` at scale `2`, added as a constant. On a replicated layout it is
+/// the masked one `π_S` at scale `2^log_delta`: one on the data slots and zero
+/// on the guards, a plaintext of degree `2R` in `Y = X^(N/(2R))` with
+/// coefficients `cos(π·j/(2R))/R`, quantized with shaped rounding. It is
+/// invariant, and the conjugate-invariant ring holds it as a plaintext of
+/// degree `R`, its first `R` coefficients. Refusals carry the caller's `op`.
+pub(crate) fn take_one_pt<'a, BE: Backend + 'a, Rg: Ring>(
+    op: &'static str,
+    base2k: Base2K,
+    slot_layout: SlotLayout,
+    log_delta: usize,
+    scratch: ScratchArena<'a, BE>,
+) -> Result<(CKKSPlaintextViewMut<'a, BE, Rg>, ScratchArena<'a, BE>)> {
+    let mut data = [0i128; MAX_COEFFS];
+    let (n, k, meta) = match slot_layout {
+        SlotLayout::Full => {
+            data[0] = 2;
+            let meta = GLWEPlaintextMeta {
+                scale: Scale::Log(1),
+                slots: SlotsKind::Real,
+                log_sparsity: 0,
+                slot_layout,
+            };
+            (1, 1, meta)
+        }
+        SlotLayout::Replicated(layout) => {
+            let r = 1usize << layout.log_r();
+            let m = if conjugate_invariant::<Rg>() { r } else { 2 * r };
+            let r_inv = Quad::from_usize(r).expect("the period is a small integer").recip();
+            let mut coeffs = [Quad::from_usize(0).expect("zero"); MAX_COEFFS];
+            for (j, c) in coeffs[..m].iter_mut().enumerate() {
+                *c = Quad::ckks_root_of_unity(j as u64, layout.log_r() as u32 + 2).0 * r_inv;
+            }
+            let (mut low, mut h, mut gh) = ([0i64; MAX_COEFFS], [0i64; MAX_COEFFS], [0i64; MAX_COEFFS]);
+            crate::shaping::shaped_quantize_into::<_, Rg>(
+                &coeffs[..m],
+                &layout,
+                log_delta,
+                1,
+                &mut data[..m],
+                &mut low[..m],
+                &mut h[..m],
+                &mut gh[..m],
+            )?;
+            // Embedded at the backend's smallest plaintext degree when `m` is below it.
+            let n = m.max(BE::MIN_DEGREE);
+            if n > MAX_COEFFS {
+                return Err(crate::CKKSCompositionError::InvalidOperand {
+                    op,
+                    reason: format!("the masked one needs a plaintext of degree {n} > {MAX_COEFFS}"),
+                }
+                .into());
+            }
+            let stride = n / m;
+            if stride > 1 {
+                for j in (1..m).rev() {
+                    data[j * stride] = data[j];
+                    data[j] = 0;
+                }
+            }
+            let meta = GLWEPlaintextMeta {
+                scale: Scale::Log(log_delta),
+                slots: SlotsKind::Real,
+                log_sparsity: 0,
+                slot_layout,
+            };
+            (n, log_delta + 1, meta)
+        }
+    };
+    let layout = GLWEPlaintextLayout {
+        n: n.into(),
+        base2k,
+        k: TorusPrecision(k as u32),
+    };
+    let (mut pt, scratch) = scratch.take_ckks_plaintext_scratch::<_, Rg>(&layout, meta);
+    let encoded_k = pt.encoded_k().as_usize();
+    let (mut carry, mut limb) = ([0i64; MAX_COEFFS], [0i64; MAX_COEFFS]);
+    {
+        let mut backend = pt.to_backend_mut();
+        let shape = backend.data().shape();
+        encode_i128_by_limb(
+            base2k.as_usize(),
+            encoded_k,
+            &mut data[..n],
+            &mut carry[..n],
+            &mut limb[..n],
+            |j, digits| {
+                let offset = shape.scalar_offset(0, j) * size_of::<i64>();
+                let mut region = BE::region_mut_ref(backend.data_mut().data_mut(), offset, size_of_val(digits));
+                BE::copy_host_to_view(&mut region, bytemuck::cast_slice(digits));
+            },
+        );
+    }
+    Ok((pt, scratch))
 }
 
 #[cfg(test)]

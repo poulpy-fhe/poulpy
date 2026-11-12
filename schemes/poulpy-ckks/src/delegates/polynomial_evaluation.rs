@@ -27,7 +27,7 @@ where
     where
         R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         B: BSGSPolynomialInfos<BE, Rg>,
-        B::Coeffs: CKKSCtBounds,
+        B::Coeffs: CKKSCtBounds + crate::layouts::CKKSMaskedConstants<BE, Rg>,
         A: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + BSGSMeta,
         G: PowerBasisHelper<BE, A, Rg>,
         H: GetTensorKey<BE, Rg>,
@@ -47,7 +47,7 @@ where
         R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         S: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
         B: BSGSPolynomialInfos<BE, Rg>,
-        B::Coeffs: CKKSCtBounds,
+        B::Coeffs: CKKSCtBounds + crate::layouts::CKKSMaskedConstants<BE, Rg>,
         H: GetTensorKey<BE, Rg>,
         CKKSCiphertextOwned<BE, Rg>: GLWEToBackendMut<BE, Rg> + GLWEToBackendRef<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
     {
@@ -69,7 +69,7 @@ where
     ) -> Result<()>
     where
         R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
-        C: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta + CKKSCtBounds + IntPolyInfos,
+        C: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta + CKKSCtBounds + IntPolyInfos + crate::layouts::CKKSMaskedConstants<BE>,
         A: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta,
         G: PowerBasisHelper<BE, A>,
         H: GetTensorKey<BE>,
@@ -88,7 +88,7 @@ where
     where
         R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         S: GLWEToBackendRef<BE> + CKKSCtBounds,
-        C: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta + CKKSCtBounds + IntPolyInfos,
+        C: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta + CKKSCtBounds + IntPolyInfos + crate::layouts::CKKSMaskedConstants<BE>,
         H: GetTensorKey<BE>,
         CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     {

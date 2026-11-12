@@ -231,7 +231,7 @@ pub trait CKKSSoftmaxOps<BE: Backend> {
     where
         R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         I: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta + poulpy_ckks::layouts::CKKSMaskedConstants<BE>,
         H: GetTensorKey<BE>,
         A: GetAutomorphismKey<BE>;
 }
@@ -281,7 +281,7 @@ where
     where
         R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         I: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta + poulpy_ckks::layouts::CKKSMaskedConstants<BE>,
         H: GetTensorKey<BE>,
         A: GetAutomorphismKey<BE>,
     {

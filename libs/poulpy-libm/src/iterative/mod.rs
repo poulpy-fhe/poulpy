@@ -217,7 +217,7 @@ pub trait CKKSInverseDomainOps<BE: Backend> {
     ) -> Result<()>
     where
         C: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta + poulpy_ckks::layouts::CKKSMaskedConstants<BE>,
         H: GetTensorKey<BE>,
         K: GetAutomorphismKey<BE>;
 }
@@ -493,7 +493,7 @@ where
     ) -> Result<()>
     where
         C: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta + poulpy_ckks::layouts::CKKSMaskedConstants<BE>,
         H: GetTensorKey<BE>,
         K: GetAutomorphismKey<BE>,
     {

@@ -689,10 +689,17 @@ macro_rules! conjugate_invariant_ckks_test_suite {
             run_replicated!(test_replicated_unit_shaping_encodes_plainly);
             run_replicated!(test_replicated_encryption_is_shaped);
             run_replicated!(test_replicated_encoding_rejects_batch_size);
+            run_replicated!(test_replicated_products_are_shaped);
+            run_replicated!(test_replicated_units_shape_products);
             run_replicated!(test_replicated_encryption_refuses_before_drawing);
             run_replicated!(test_replicated_round_then_add);
             run_replicated!(test_replicated_layouts_do_not_mix);
             run_replicated!(test_replicated_plain_rounding_is_rejected);
+            run_replicated!(test_replicated_rotations_are_shaped);
+            run_replicated!(test_replicated_rotations_are_admissible);
+            run_replicated!(test_replicated_masked_constants);
+            run_replicated!(test_replicated_polynomials_are_shaped);
+            run_replicated!(test_replicated_eval_mod_is_shaped);
             #[test]
             fn ckks_ci_round_error_is_shaped() {
                 let params = $params;

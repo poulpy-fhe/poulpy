@@ -18,9 +18,10 @@ use crate::{CKKSCtBounds, SetCKKSInfos};
 /// Shaped rounding is how a replicated layout leaves its extra bits. Replicated
 /// encryption rounds through it after encrypting `λ` bits wider. A caller rounds
 /// the finer of two replicated operands to the other's scale before a sum, which
-/// refuses replicated operands at two scales rather than round one plainly. The
-/// products, rotations and key switches refuse a replicated operand, so there is
-/// no shaped rescale or key switch yet.
+/// refuses replicated operands at two scales rather than round one plainly.
+/// Shaped products and automorphisms compute their result
+/// [`ShapingProfile::shaping_depth`](crate::shaping::ShapingProfile::shaping_depth)
+/// bits under the scale and round it through `ckks_round`.
 ///
 /// # Metadata
 ///

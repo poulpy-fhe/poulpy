@@ -20,7 +20,7 @@ pub unsafe trait CKKSMulImpl<Rg: Ring = Standard>: Backend {
     /// Scratch bound of [`Self::ckks_mul_into`], [`Self::ckks_mul_assign`] and [`Self::ckks_mul_prepared_assign`]; may
     /// report less than the reference, never less than the body takes. The operands are passed, a prepared right
     /// operand through its infos.
-    fn ckks_mul_tmp_bytes<R: GLWEInfos, A: GLWEInfos, B: GLWEInfos, T: GGLWEInfos>(
+    fn ckks_mul_tmp_bytes<R: CKKSCtBounds, A: CKKSCtBounds, B: CKKSCtBounds, T: GGLWEInfos>(
         module: &Module<Self>,
         res: &R,
         a: &A,
@@ -30,7 +30,12 @@ pub unsafe trait CKKSMulImpl<Rg: Ring = Standard>: Backend {
 
     /// Scratch bound of [`Self::ckks_square_into`] and [`Self::ckks_square_assign`]; may report less than the
     /// reference, never less than the body takes.
-    fn ckks_square_tmp_bytes<R: GLWEInfos, A: GLWEInfos, T: GGLWEInfos>(module: &Module<Self>, res: &R, a: &A, tsk: &T) -> usize;
+    fn ckks_square_tmp_bytes<R: CKKSCtBounds, A: CKKSCtBounds, T: GGLWEInfos>(
+        module: &Module<Self>,
+        res: &R,
+        a: &A,
+        tsk: &T,
+    ) -> usize;
 
     /// Scratch bound of [`Self::ckks_mul_pt_vec_into`] and [`Self::ckks_mul_pt_vec_assign`]; may report less than the
     /// reference, never less than the body takes.
@@ -256,9 +261,9 @@ macro_rules! impl_ckks_mul_reference_full {
     ($be:ty, $ring:ty) => {
         unsafe impl $crate::oep::CKKSMulImpl<$ring> for $be {
             fn ckks_mul_tmp_bytes<
-                R: ::poulpy_core::layouts::GLWEInfos,
-                A: ::poulpy_core::layouts::GLWEInfos,
-                B: ::poulpy_core::layouts::GLWEInfos,
+                R: $crate::CKKSCtBounds,
+                A: $crate::CKKSCtBounds,
+                B: $crate::CKKSCtBounds,
                 T: ::poulpy_core::layouts::GGLWEInfos,
             >(
                 module: &::poulpy_hal::layouts::Module<Self>,
@@ -270,11 +275,7 @@ macro_rules! impl_ckks_mul_reference_full {
                 $crate::reference::mul::CKKSMulReference::<Self, $ring>::ckks_mul_tmp_bytes_reference(module, res, a, b, tsk)
             }
 
-            fn ckks_square_tmp_bytes<
-                R: ::poulpy_core::layouts::GLWEInfos,
-                A: ::poulpy_core::layouts::GLWEInfos,
-                T: ::poulpy_core::layouts::GGLWEInfos,
-            >(
+            fn ckks_square_tmp_bytes<R: $crate::CKKSCtBounds, A: $crate::CKKSCtBounds, T: ::poulpy_core::layouts::GGLWEInfos>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 res: &R,
                 a: &A,

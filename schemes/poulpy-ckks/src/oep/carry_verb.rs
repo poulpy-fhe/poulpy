@@ -44,9 +44,11 @@ macro_rules! ckks_carry_verb_oep {
                 where
                     Dst: GLWEToBackendMut<Self, Rg> + CKKSInfos + SetCKKSInfos,
                     A: GLWEToBackendRef<Self, Rg> + CKKSInfos;
-                #[doc = concat!("Default body: [`Self::ckks_", stringify!($verb), "_pt_const_tmp_bytes`] at `res_size`. Scratch bound of [`Self::ckks_", stringify!($verb), "_one_assign`]; may report less than the reference, never less than the body takes.")]
+                /// Scratch bytes for the independently overridable unit shift.
                 fn [<ckks_ $verb _one_tmp_bytes>](module: &Module<Self>, res_size: usize) -> usize {
-                    Self::[<ckks_ $verb _pt_const_tmp_bytes>](module, res_size)
+                    crate::layouts::slots::one_pt_tmp_bytes::<Self>(res_size)
+                        + Self::[<ckks_ $verb _pt_const_tmp_bytes>](module, res_size)
+                            .max(Self::[<ckks_ $verb _pt_vec_tmp_bytes>](module, res_size))
                 }
                 #[doc = concat!("Default body: `ckks_", stringify!($verb), "_one_assign_derived`, the selected `ckks_", stringify!($verb), "_pt_const_assign` of the unit constant of `dst.base2k()` at coefficient 0 of both operands.")]
                 fn [<ckks_ $verb _one_assign>]<Dst>(

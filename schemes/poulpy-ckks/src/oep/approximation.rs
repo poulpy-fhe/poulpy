@@ -72,7 +72,7 @@ pub unsafe trait CKKSApproximationImpl<Rg: Ring = Standard>:
     where
         R: GLWEToBackendMut<Self, Rg> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         I: GLWEToBackendRef<Self, Rg> + CKKSCtBounds,
-        P: GLWEToBackendRef<Self, Rg> + CKKSCtBounds + BSGSMeta + IntPolyInfos,
+        P: GLWEToBackendRef<Self, Rg> + CKKSCtBounds + BSGSMeta + IntPolyInfos + crate::layouts::CKKSMaskedConstants<Self, Rg>,
         H: GetTensorKey<Self, Rg>,
     {
         ckks_polynomial_approximation_eval_derived(module, res, input, approximation, tsk, scratch)

@@ -14,7 +14,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    CKKSCompositionError, CKKSCtBounds, CKKSInfos, CKKSResult as Result, GLWEPlaintextInfos, SetCKKSInfos, SlotsKind,
+    CKKSCompositionError, CKKSCtBounds, CKKSInfos, CKKSResult as Result, GLWEPlaintextInfos, SetCKKSInfos, SlotLayout, SlotsKind,
     api::{CKKSAddOps, CKKSMulOps},
     ckks_ensure, ckks_ensure_operand, ensure_plaintext_degree_embeds, get_mul_ct_params,
     layouts::{CKKSLeftOperandPrepared, CKKSRightOperandPrepared},
@@ -95,15 +95,15 @@ pub trait CKKSDotProductReference<BE: Backend, Rg: Ring = Standard>: Sized + Mod
         B: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
         H: GetTensorKey<BE, Rg>,
     {
-        ensure_full_terms("ckks_dot_product_ct", a)?;
-        ensure_full_terms("ckks_dot_product_ct", b)?;
         check_lengths("ckks_dot_product_ct", a.len(), b.len())?;
         let terms = a.iter().map(|t| t.n()).chain(b.iter().map(|t| t.n()));
         crate::ensure_operand_degrees("ckks_dot_product_ct", self, std::iter::once(dst.n()).chain(terms))?;
         let n: usize = a.len();
         // Past base2k 62, two canonical tensor digits can overflow an `i64`, and no backend models a
         // product there (`Module::max_base2k`): such pairs keep the eager path.
-        if n > 1 && dst.base2k().as_usize() <= 62 && share_layout(a) && share_layout(b) {
+        // A replicated layout rounds each product with shaping before the sum.
+        let full = a.iter().all(|ct| ct.slot_layout() == SlotLayout::Full);
+        if full && n > 1 && dst.base2k().as_usize() <= 62 && share_layout(a) && share_layout(b) {
             return dot_product_lazy(
                 self,
                 "ckks_dot_product_ct",
@@ -133,8 +133,6 @@ pub trait CKKSDotProductReference<BE: Backend, Rg: Ring = Standard>: Sized + Mod
         Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
         H: GetTensorKey<BE, Rg>,
     {
-        ensure_full_terms("ckks_dot_product_prepared", a)?;
-        ensure_full_terms("ckks_dot_product_prepared", b)?;
         const OP: &str = "ckks_dot_product_prepared";
         crate::ensure_operand_degrees(OP, self, [dst.n()])?;
         check_lengths(OP, a.len(), b.len())?;
@@ -147,6 +145,9 @@ pub trait CKKSDotProductReference<BE: Backend, Rg: Ring = Standard>: Sized + Mod
         let invalid = |reason: String| -> Result<()> { Err(CKKSCompositionError::InvalidOperand { op: OP, reason }.into()) };
         if !share_layout(a) || !share_layout(b) {
             return invalid("every a[i] must share one layout and scale, and every b[i] one".into());
+        }
+        if a.iter().any(|ct| ct.slot_layout() != SlotLayout::Full) {
+            return invalid("prepared dot products round plainly, which a replicated slot layout forbids".into());
         }
         check_lazy_base2k(OP, dst)?;
         dot_product_lazy(
@@ -204,8 +205,6 @@ pub trait CKKSDotProductReference<BE: Backend, Rg: Ring = Standard>: Sized + Mod
         Self: GLWEMulPreparedPlainSum<BE, Rg>,
         Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
     {
-        ensure_full_terms("ckks_dot_product_prepared_pt_vec", a)?;
-        ensure_full_terms("ckks_dot_product_prepared_pt_vec", b)?;
         let (log_budget, log_delta, cnv_offset) =
             prepared_pt_rule(self, "ckks_dot_product_prepared_pt_vec", &*dst, a, b, galois)?;
         let (a0, b0, base2k) = (a[0], b[0], dst.base2k());
@@ -223,7 +222,7 @@ pub trait CKKSDotProductReference<BE: Backend, Rg: Ring = Standard>: Sized + Mod
         dst.set_log_delta(log_delta);
         dst.set_log_sparsity(log_sparsity);
         dst.set_slots(slots);
-        dst.set_slot_layout(crate::SlotLayout::Full);
+        dst.set_slot_layout(SlotLayout::Full);
         self.glwe_mul_prepared_plain_sum(cnv_offset, dst, a, a0.size(), b, b0.size(), galois, base2k, scratch);
         Ok(())
     }
@@ -254,8 +253,6 @@ pub trait CKKSDotProductReference<BE: Backend, Rg: Ring = Standard>: Sized + Mod
         Self: GLWEMulPreparedPlainSum<BE, Rg>,
         R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
     {
-        ensure_full_terms("ckks_dot_product_prepared_pt_vec_add", a)?;
-        ensure_full_terms("ckks_dot_product_prepared_pt_vec_add", b)?;
         const OP: &str = "ckks_dot_product_prepared_pt_vec_add";
         crate::layouts::validation::ensure_full_layout(OP, crate::GLWEPlaintextInfos::slot_layout(&*res))?;
         let (log_budget, log_delta, cnv_offset) = prepared_pt_rule(self, OP, &*res, a, b, galois)?;
@@ -311,8 +308,6 @@ pub trait CKKSDotProductReference<BE: Backend, Rg: Ring = Standard>: Sized + Mod
         Self: GLWEMulPreparedPlainSum<BE, Rg>,
         R: CKKSCtBounds,
     {
-        ensure_full_terms("ckks_dot_product_prepared_pt_vec_dft", a)?;
-        ensure_full_terms("ckks_dot_product_prepared_pt_vec_dft", b)?;
         const OP: &str = "ckks_dot_product_prepared_pt_vec_dft";
         let (_, _, cnv_offset) = prepared_pt_rule(self, OP, res, a, b, galois)?;
         let (a_size, b_size) = (a[0].size(), b[0].size());
@@ -347,8 +342,6 @@ pub trait CKKSDotProductReference<BE: Backend, Rg: Ring = Standard>: Sized + Mod
         Self: GLWEMulPreparedPlainSum<BE, Rg>,
         R: CKKSCtBounds,
     {
-        ensure_full_terms("ckks_dot_product_prepared_pt_vec_dft_add", a)?;
-        ensure_full_terms("ckks_dot_product_prepared_pt_vec_dft_add", b)?;
         const OP: &str = "ckks_dot_product_prepared_pt_vec_dft_add";
         let (_, _, cnv_offset) = prepared_pt_rule(self, OP, res, a, b, galois)?;
         let (a_size, b_size) = (a[0].size(), b[0].size());
@@ -382,8 +375,6 @@ pub trait CKKSDotProductReference<BE: Backend, Rg: Ring = Standard>: Sized + Mod
         Self: VecZnxIdftNormalize<BE, Rg>,
         Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
     {
-        ensure_full_terms("ckks_dot_product_prepared_pt_vec_from_dft", &[a])?;
-        ensure_full_terms("ckks_dot_product_prepared_pt_vec_from_dft", &[b])?;
         const OP: &str = "ckks_dot_product_prepared_pt_vec_from_dft";
         let (log_budget, log_delta, cnv_offset) = prepared_pt_rule(self, OP, &*res, &[a], &[b], &[1])?;
         check_accumulator(OP, acc, &*res, a.size() + b.size())?;
@@ -391,7 +382,7 @@ pub trait CKKSDotProductReference<BE: Backend, Rg: Ring = Standard>: Sized + Mod
         res.set_log_delta(log_delta);
         res.set_log_sparsity(a.log_sparsity().min(a.log_n() - b.log_n()));
         res.set_slots(a.slots().join(b.slots()));
-        res.set_slot_layout(crate::SlotLayout::Full);
+        res.set_slot_layout(SlotLayout::Full);
         let (base2k, res_k, cols) = (res.base2k().as_usize(), res.k().as_usize(), res.rank().as_usize() + 1);
         let (_, cnv_offset_lo) = cnv_offset_to_limb_offset(cnv_offset, base2k);
         {
@@ -443,6 +434,9 @@ fn prepared_pt_rule<BE: Backend, R: CKKSCtBounds, Rg: Ring>(
     }
     if galois.iter().any(|&g| g & 1 == 0) {
         return invalid("a Galois element is even");
+    }
+    if a.iter().any(|ct| ct.slot_layout() != SlotLayout::Full) || b.iter().any(|pt| pt.slot_layout() != SlotLayout::Full) {
+        return invalid("prepared dot products round plainly, which a replicated slot layout forbids");
     }
     if b.iter().any(|pt| pt.rank().as_usize() != 0 || pt.base2k() != res.base2k()) {
         return invalid("every b[t] must be a plaintext at the base2k of dst");
@@ -540,11 +534,20 @@ where
     let (log_budget, log_delta, cnv_offset) = get_mul_ct_params(op, dst, a[0], b[0])?;
     // The eager sum's label and slot kind: the smallest label and the join over every operand.
     let metas = || a.iter().map(|ct| ct.meta()).chain(b.iter().map(|ct| ct.meta()));
+    let slot_layout = a[0].slot_layout();
+    if metas().any(|meta| meta.slot_layout != slot_layout) {
+        return Err(CKKSCompositionError::InvalidOperand {
+            op,
+            reason: "the operands' slot layouts differ".into(),
+        }
+        .into());
+    }
     let stamp = MulStamp {
         log_budget,
         log_delta,
         log_sparsity: metas().map(|meta| meta.log_sparsity).min(),
         slots: metas().map(|meta| meta.slots).reduce(SlotsKind::join),
+        slot_layout: Some(slot_layout),
     };
     let one_pass = mul_one_pass(dst, &[a[0].base2k(), b[0].base2k()], tensor_layout.k, cnv_offset, tsk)
         .then_some(|dst: &mut Dst, res_k, s: &mut ScratchArena<'_, BE>| one_pass(dst, cnv_offset, res_k, s));
@@ -570,12 +573,4 @@ where
             }
         },
     )
-}
-
-/// Rejects replicated terms: a dot product rounds its sum plainly.
-fn ensure_full_terms<T: GLWEPlaintextInfos>(op: &'static str, terms: &[&T]) -> Result<()> {
-    for term in terms {
-        crate::layouts::validation::ensure_full_layout(op, term.slot_layout())?;
-    }
-    Ok(())
 }

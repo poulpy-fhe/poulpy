@@ -14,8 +14,8 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::{
-        CnvOps, CnvPVecBytesOf, ModuleN, VecZnxBigNormalizeTmpBytes, VecZnxLsh, VecZnxLshTmpBytes, VecZnxRsh, VecZnxRshAdd,
-        VecZnxRshSub, VecZnxRshTmpBytes,
+        CnvOps, CnvPVecBytesOf, ModuleN, VecZnxBigNormalizeTmpBytes, VecZnxIdftApplyTmpBytes, VecZnxLsh, VecZnxLshTmpBytes,
+        VecZnxRsh, VecZnxRshAdd, VecZnxRshSub, VecZnxRshTmpBytes,
     },
     layouts::{Backend, ConjugateInvariant, Module, Ring, Standard},
 };
@@ -87,6 +87,8 @@ pub trait CKKSAllOpsTmpBytesAt<BE: Backend, Rg: Ring>:
     + VecZnxRshTmpBytes
     + CnvOps<BE, Rg>
     + VecZnxBigNormalizeTmpBytes
+    + VecZnxIdftApplyTmpBytes
+    + crate::api::CKKSRoundOps<BE, Rg>
 {
 }
 
@@ -123,6 +125,8 @@ impl<BE: Backend, Rg: Ring, M> CKKSAllOpsTmpBytesAt<BE, Rg> for M where
         + VecZnxRshTmpBytes
         + CnvOps<BE, Rg>
         + VecZnxBigNormalizeTmpBytes
+        + VecZnxIdftApplyTmpBytes
+        + crate::api::CKKSRoundOps<BE, Rg>
 {
 }
 
@@ -168,6 +172,15 @@ where
                 pt_prec.k().as_usize().div_ceil(ct_infos.base2k().as_usize()).max(1),
             ),
         )
+        .max(if matches!(ct_infos.slot_layout(), crate::SlotLayout::Replicated(_)) {
+            crate::reference::polynomial_evaluation::eval_shaped_baby_linear_combination_tmp_bytes::<BE, _, _, Rg>(
+                module,
+                ct_infos,
+                pt_prec.k().as_usize().div_ceil(ct_infos.base2k().as_usize()).max(1),
+            )
+        } else {
+            0
+        })
         .max(module.ckks_mul_pt_vec_tmp_bytes(ct_infos, ct_infos, pt_prec))
         .max(module.ckks_mul_pt_const_tmp_bytes(ct_infos, ct_infos, pt_prec))
         .max(module.glwe_tensor_key_prepare_tmp_bytes(tsk_infos))

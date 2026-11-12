@@ -28,7 +28,7 @@ impl<BE: Backend + CKKSEvalModImpl<Rg>, Rg: Ring> CKKSEvalModOps<BE, Rg> for Mod
     where
         R: GLWEToBackendMut<BE, Rg> + GLWEToBackendRef<BE, Rg> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         C: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE, Rg> + IntPolyInfos + CKKSCtBounds + BSGSMeta,
+        P: GLWEToBackendRef<BE, Rg> + IntPolyInfos + CKKSCtBounds + BSGSMeta + crate::layouts::CKKSMaskedConstants<BE, Rg>,
         H: GetTensorKey<BE, Rg>,
     {
         BE::ckks_eval_mod::<R, C, P, F, H>(self, res, ct, params, tsk, scratch)
