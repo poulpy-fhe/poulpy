@@ -16,7 +16,9 @@ use crate::{
 
 /// Tables `inverse[..period] ++ U[..period]` keyed by the ring's wire tag and the shaping
 /// coefficients: `period` is `2R` on the standard ring and `R` on the conjugate-invariant ring,
-/// so a unit without a conjugate-invariant shift has one table per ring.
+/// so a unit without a conjugate-invariant shift has one table per ring. A table depends on the
+/// layout, so unlike the transform tables of `Module::new` it is uploaded on the first correction
+/// that uses it: a `Replay` closure is called once before it is recorded.
 type ShapingKey = (u8, Vec<i16>);
 struct ShapingTables<RT: GpuRuntime>(Mutex<HashMap<ShapingKey, Arc<GpuBuf<RT>>>>);
 

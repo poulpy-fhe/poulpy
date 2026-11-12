@@ -16,7 +16,7 @@ use std::ptr::NonNull;
 use poulpy_cpu_portable::kernels::ntt4x30::{
     mat_vec::{BbbMeta, BbcMeta},
     primes::Primes30,
-    vec_znx_dft::{NttHandleFactory, NttHandleProvider, NttMetaProvider, NttPlan, NttPlanSet},
+    vec_znx_dft::{NttHandleFactory, NttHandleProvider, NttMetaProvider, NttPlan, NttPlanNew},
 };
 use poulpy_cpu_portable::kernels::{NttPlans, PerRing};
 use poulpy_hal::{
@@ -29,9 +29,9 @@ use super::NTT4x30Avx512;
 /// Opaque handle for the [`NTT4x30Avx512`](super::NTT4x30Avx512) backend.
 ///
 /// Holds the twiddle-factor tables of the forward and inverse NTT of every
-/// degree the module serves on both rings, the conjugate-invariant ones built on
-/// first use, and the lazy-accumulation metadata for `q120b × q120c` and
-/// `q120b × q120b` products.
+/// degree the module serves on both rings, all built with the module, the
+/// conjugate-invariant plan of a degree sharing the twiddles of the standard one,
+/// and the lazy-accumulation metadata for `q120b × q120c` and `q120b × q120b` products.
 ///
 /// This struct is heap-allocated during module creation and freed when the
 /// `Module<NTT4x30Avx512>` is dropped (via [`Backend::destroy`]).
@@ -186,7 +186,9 @@ unsafe impl NttHandleFactory for NTT4x30Avx512Handle {
     fn create_ntt_handle(n: usize) -> Self {
         NTT4x30Avx512Handle {
             table_cache: Default::default(),
-            ring_plans: PerRing::new(NttPlanSet::new(n), n, NttPlanSet::new),
+            ring_plans: PerRing::new(NTT4x30Avx512::MIN_DEGREE, n, NttPlan::new, |standard, _| {
+                NttPlan::from_standard(standard)
+            }),
             meta_bbc: BbcMeta::new(),
             meta_bbb: BbbMeta::new(),
         }
@@ -201,11 +203,11 @@ unsafe impl NttHandleFactory for NTT4x30Avx512Handle {
 
 /// # Safety
 ///
-/// The returned references are valid for the lifetime of `&self`: the standard plans are built in
-/// [`NttHandleFactory::create_ntt_handle`], the conjugate-invariant ones once on first use by `PerRing`.
+/// The returned references are valid for the lifetime of `&self`: the plans of both rings are built in
+/// [`NttHandleFactory::create_ntt_handle`] and never change.
 unsafe impl<Rg: Ring> NttHandleProvider<Rg> for NTT4x30Avx512Handle {
     fn get_ntt_plan(&self, n: usize) -> &NttPlan<Primes30, Rg> {
-        self.ring_plans.on_ring::<Rg>().for_ring(n)
+        self.ring_plans.on_ring::<Rg>(n)
     }
 }
 

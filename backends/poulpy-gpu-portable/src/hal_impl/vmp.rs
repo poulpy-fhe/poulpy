@@ -210,8 +210,8 @@ pub(crate) fn gglwe_products_digits_strided_inverse<RT: GpuRuntime, R: Ring>(
     {
         return false;
     }
-    let table = handle(module).tables::<R>().of(res_columns[0].n);
-    digit_products_inverse::<RT>(table, &res_columns, &a_columns, &pmat, dsize, product_limbs, mt);
+    let twiddles = handle(module).tables::<R>().of(res_columns[0].n).twiddles;
+    digit_products_inverse::<RT>(twiddles, &res_columns, &a_columns, &pmat, dsize, product_limbs, mt);
     true
 }
 
@@ -249,9 +249,9 @@ pub(crate) fn gglwe_product_digits_strided_inverse<RT: GpuRuntime, R: Ring>(
             dft_column_ref(addend, col).expect("fused product: an addend holds no storage")
         })
     });
-    let table = handle(module).tables::<R>().of(res.n);
+    let twiddles = handle(module).tables::<R>().of(res.n).twiddles;
     digit_product_inverse::<RT>(
-        table,
+        twiddles,
         &res,
         &a,
         &pmat,

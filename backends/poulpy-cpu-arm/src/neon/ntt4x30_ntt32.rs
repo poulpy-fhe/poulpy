@@ -11,20 +11,22 @@
 //! Its last level folds in `1/n` and the CRT constant, so its output feeds the reconstruction directly.
 
 use core::arch::aarch64::{
-    int32x4_t, uint64x2_t, vaddq_s32, vaddq_u32, vandq_s32, vcltzq_s32, vdupq_n_s32, vdupq_n_u32, vdupq_n_u64, vextq_s32,
-    vget_low_u32, vld1q_dup_s32, vld1q_s32, vld1q_s64, vld1q_u32, vminq_u32, vmlal_high_u32, vmlal_u32, vmlsq_s32, vmulq_s32,
-    vqrdmulhq_s32, vreinterpretq_s32_s64, vreinterpretq_s32_u32, vreinterpretq_s32_u64, vreinterpretq_u32_s32,
-    vreinterpretq_u64_s32, vrev64q_s32, vrshrq_n_s32, vst1q_s32, vst1q_u64, vsubq_s32, vsubq_u32, vtrn1q_s32, vtrn2q_s32,
-    vuzp1q_s32, vuzp1q_u64, vuzp2q_s32, vuzp2q_u64, vzip1q_s32, vzip1q_u64, vzip2q_s32, vzip2q_u64,
+    int32x4_t, uint32x4_t, uint64x2_t, vaddq_s32, vaddq_u32, vandq_s32, vandq_u32, vcltzq_s32, vdupq_n_s32, vdupq_n_u32,
+    vdupq_n_u64, vextq_u32, vget_low_u32, vhaddq_u32, vld1q_dup_s32, vld1q_s32, vld1q_s64, vld1q_u32, vminq_u32, vmlal_high_u32,
+    vmlal_u32, vmlsq_s32, vmulq_s32, vqrdmulhq_s32, vreinterpretq_s32_s64, vreinterpretq_s32_u32, vreinterpretq_s32_u64,
+    vreinterpretq_u32_s32, vreinterpretq_u64_s32, vrev64q_u32, vrshrq_n_s32, vst1q_s32, vst1q_u32, vst1q_u64, vsubq_s32,
+    vsubq_u32, vtrn1q_s32, vtrn2q_s32, vtstq_u32, vuzp1q_s32, vuzp1q_u64, vuzp2q_s32, vuzp2q_u64, vzip1q_s32, vzip1q_u64,
+    vzip2q_s32, vzip2q_u64,
 };
 
+use std::sync::Arc;
+
 use poulpy_cpu_portable::kernels::ntt4x30::{
-    conjugate_invariant::BasisChange,
     ntt::modq_pow_portable,
     primes::{PrimeSet, PrimeSetCrt4, Primes30},
 };
 
-use super::ntt4x30_packed::{Q, R1, add_mod, mont_mul, plane};
+use super::ntt4x30_packed::{Q, R1, mont_mul, plane, sub_mod};
 
 /// Smallest degree the kernels accept: the two last levels work on pairs of registers.
 pub(crate) const MIN_N: usize = 8;
@@ -101,20 +103,23 @@ struct FinalConst {
 }
 
 /// Tables of the packed NTT of one degree.
+///
+/// The conjugate-invariant table of a degree shares the twiddles of the standard table of that degree and adds its
+/// basis changes.
 pub(crate) struct Ntt32Table {
     n: usize,
-    fwd: [PlaneTable; 4],
-    inv: [PlaneTable; 4],
+    fwd: Arc<[PlaneTable; 4]>,
+    inv: Arc<[PlaneTable; 4]>,
     /// Indexed by `prepared`, then by prime.
     conv: [[ConvConst; 4]; 2],
     fin: [FinalConst; 4],
     /// Basis changes of the conjugate-invariant ring: into the negacyclic basis, and back.
-    ci: Option<[[CiPlane; 4]; 2]>,
+    ci: Option<CiBasis>,
 }
 
 impl Ntt32Table {
-    /// Tables of degree `n`, with the basis changes of the conjugate-invariant ring when `conjugate_invariant` is set.
-    pub(crate) fn new(n: usize, conjugate_invariant: bool) -> Self {
+    /// Tables of degree `n` of the standard ring.
+    pub(crate) fn new(n: usize) -> Self {
         assert!(n.is_power_of_two() && (MIN_N..=1 << Primes30::MAX_LOG_N).contains(&n));
         let psi: [u32; 4] =
             std::array::from_fn(|p| modq_pow_portable(Primes30::OMEGA[p], (1i64 << Primes30::MAX_LOG_N) / n as i64, Q[p]));
@@ -145,96 +150,148 @@ impl Ntt32Table {
                 cwp: quotient(cw, q),
             }
         });
-        let ci =
-            conjugate_invariant.then(|| std::array::from_fn(|inverse| std::array::from_fn(|p| CiPlane::new(n, p, inverse == 1))));
         Self {
             n,
-            fwd,
-            inv,
+            fwd: Arc::new(fwd),
+            inv: Arc::new(inv),
             conv,
             fin,
-            ci,
+            ci: None,
         }
     }
-}
 
-/// Basis change of the conjugate-invariant ring for one prime and one direction.
-///
-/// Coefficient `j` becomes `d[j] * a[j] + c[j] * a[n - j]`, and coefficient `0` is kept.
-/// The factors are stored multiplied by `2^32`, and a second time in mirrored order for the coefficients `n - j`.
-struct CiPlane {
-    d: Vec<u32>,
-    c: Vec<u32>,
-    /// `d[n - j]` and `c[n - j]` at index `j`.
-    dm: Vec<u32>,
-    cm: Vec<u32>,
-    q: u32,
-    /// `2^-32 mod q`.
-    r_inv: u32,
-}
-
-impl CiPlane {
-    fn new(n: usize, p: usize, inverse: bool) -> Self {
-        let q = Q[p];
-        let basis = BasisChange::new(n, q as u64, Primes30::OMEGA[p] as u64, Primes30::MAX_LOG_N, inverse);
-        let prepared = |x: u64| mul_mod(x as u32, R1[p], q);
-        let d: Vec<u32> = basis.factors().iter().map(|f| prepared(f[0])).collect();
-        let c: Vec<u32> = basis.factors().iter().map(|f| prepared(f[1])).collect();
-        let mirror = |v: &[u32]| (0..n).map(|j| v[(n - j) % n]).collect();
+    /// Tables of the conjugate-invariant ring of the degree of `standard`, sharing its twiddles: only the basis
+    /// changes are computed.
+    pub(crate) fn from_standard(standard: &Self) -> Self {
+        let n = standard.n;
         Self {
-            dm: mirror(&d),
-            cm: mirror(&c),
-            d,
-            c,
-            q,
-            r_inv: modq_pow_portable(R1[p], -1, q),
+            n,
+            fwd: Arc::clone(&standard.fwd),
+            inv: Arc::clone(&standard.inv),
+            conv: standard.conv,
+            fin: standard.fin,
+            ci: Some(CiBasis::new(n)),
         }
     }
+}
 
-    /// One coefficient: `d * a + c * b`, canonical, for prepared factors and any signed `a`, `b`.
-    fn scalar(&self, d: u32, c: u32, a: i32, b: i32) -> i32 {
-        let q = self.q as i64;
-        let term = |x: i32, w: u32| (x as i64).rem_euclid(q) * w as i64 % q * self.r_inv as i64 % q;
-        ((term(a, d) + term(b, c)) % q) as i32
+/// Basis changes of the conjugate-invariant ring of degree `n`, for the four primes.
+///
+/// With `alpha` a primitive `4 n`-th root of unity and the fourth root of unity `i = alpha^n`, plane `p` holds
+/// `f[k] = alpha^-k * 2^32 mod Q[p]` for every `k < n`.
+///
+/// Reproduces the portable packed `CiBasis` of `poulpy_cpu_portable::ntt4x30::ntt32`, and
+/// `matches_portable_conjugate_invariant` compares the transforms with the portable q120 ones.
+struct CiBasis {
+    f: [Vec<u32>; 4],
+    /// `i * 2^32 mod Q[p]`.
+    i: [u32; 4],
+}
+
+impl CiBasis {
+    fn new(n: usize) -> Self {
+        assert!(n <= 1 << (Primes30::MAX_LOG_N - 1), "no root of unity of order 4 n");
+        // `alpha` is this power of the primitive `2^(MAX_LOG_N + 1)`-th root `OMEGA`.
+        let e = (1i64 << (Primes30::MAX_LOG_N - 1)) / n as i64;
+        let f = std::array::from_fn(|p| {
+            let alpha_inv = modq_pow_portable(Primes30::OMEGA[p], -e, Q[p]);
+            let mut f = vec![R1[p]; n];
+            for k in 1..n {
+                f[k] = mul_mod(f[k - 1], alpha_inv, Q[p]);
+            }
+            f
+        });
+        let i = std::array::from_fn(|p| mul_mod(modq_pow_portable(Primes30::OMEGA[p], e * n as i64, Q[p]), R1[p], Q[p]));
+        Self { f, i }
     }
 
-    /// Applies the basis change to one plane, in place.
+    /// Into the negacyclic basis, in place: coefficient `j` becomes `f[j] * (a[j] - i * a[n - j])`.
     ///
     /// Inputs are signed residues of magnitude below `2 * q`, outputs are canonical, coefficient `0` excepted, which is kept.
-    unsafe fn apply(&self, a: *mut i32, n: usize) {
+    ///
+    /// # Safety
+    /// `a` addresses the `n` residues of plane `p`, `n` the degree of the table.
+    unsafe fn forward(&self, p: usize, a: *mut i32, n: usize) {
+        // SAFETY: the caller passes the plane of the degree of the table; the intrinsics are part of the baseline.
         unsafe {
-            let c = plane(Q.iter().position(|&q| q == self.q).unwrap());
-            let mul = |x: int32x4_t, w: *const u32| vreinterpretq_s32_u32(mont_mul(vreinterpretq_u32_s32(x), vld1q_u32(w), &c));
-            let reverse = |x: int32x4_t| {
-                let x = vrev64q_s32(x);
-                vextq_s32::<2>(x, x)
-            };
-            let half = n / 2;
-            // Coefficients `j..j + 4` against their mirrors `n - j - 3..=n - j`, read before either is written.
-            let mut j = 1;
-            while j + 4 <= half {
-                let lo = a.add(j);
-                let hi = a.add(n - j - 3);
-                let x = vld1q_s32(lo);
-                let y = reverse(vld1q_s32(hi));
-                let q = vreinterpretq_u32_s32(vdupq_n_s32(self.q as i32));
-                let sum = |u: int32x4_t, v: int32x4_t| {
-                    vreinterpretq_s32_u32(add_mod(vreinterpretq_u32_s32(u), vreinterpretq_u32_s32(v), q))
-                };
-                let new_x = sum(mul(x, self.d.as_ptr().add(j)), mul(y, self.c.as_ptr().add(j)));
-                let new_y = sum(mul(y, self.dm.as_ptr().add(j)), mul(x, self.cm.as_ptr().add(j)));
-                vst1q_s32(lo, new_x);
-                vst1q_s32(hi, reverse(new_y));
-                j += 4;
-            }
-            while j <= half {
-                let (x, y) = (*a.add(j), *a.add(n - j));
-                *a.add(j) = self.scalar(self.d[j], self.c[j], x, y);
-                *a.add(n - j) = self.scalar(self.dm[j], self.cm[j], y, x);
-                j += 1;
-            }
+            let (c, q, i) = (plane(p), vdupq_n_s32(Q[p] as i32), vdupq_n_u32(self.i[p]));
+            self.apply(p, a, n, move |x, y, fx, fy| {
+                let (ix, iy) = (mont_mul(x, i, &c), mont_mul(y, i, &c));
+                // `x - i * y` overflows a word for `x` near `-2 q`: `x` first comes within `0.56 q`.
+                let tx = vsubq_u32(vreinterpretq_u32_s32(reduce(vreinterpretq_s32_u32(x), q)), iy);
+                let ty = vsubq_u32(vreinterpretq_u32_s32(reduce(vreinterpretq_s32_u32(y), q)), ix);
+                (mont_mul(tx, fx, &c), mont_mul(ty, fy, &c))
+            });
         }
     }
+
+    /// Back to invariant coefficients, in place: coefficient `j` becomes `(i * f[n - j] * a[j] - f[j] * a[n - j]) / 2`.
+    ///
+    /// Inputs are signed residues of magnitude below `2 * q`, outputs are canonical, coefficient `0` excepted, which is kept.
+    ///
+    /// # Safety
+    /// `a` addresses the `n` residues of plane `p`, `n` the degree of the table.
+    unsafe fn inverse(&self, p: usize, a: *mut i32, n: usize) {
+        // SAFETY: the caller passes the plane of the degree of the table; the intrinsics are part of the baseline.
+        unsafe {
+            let (c, i) = (plane(p), vdupq_n_u32(self.i[p]));
+            self.apply(p, a, n, move |x, y, fx, fy| {
+                let (u, v) = (mont_mul(x, fy, &c), mont_mul(y, fx, &c));
+                let (iu, iv) = (mont_mul(u, i, &c), mont_mul(v, i, &c));
+                (halve(sub_mod(iu, v, c.q), c.q), halve(sub_mod(iv, u, c.q), c.q))
+            });
+        }
+    }
+
+    /// Runs `pair(x, y, fx, fy)` on the coefficients `x = a[j..j + 4]`, their mirrors `y = a[n - j]` down to
+    /// `a[n - j - 3]`, and the factors `fx = f[j..j + 4]` and `fy = f[n - j]` down to `f[n - j - 3]`, for `j` in
+    /// `1..n / 2` by steps of four.
+    ///
+    /// The coefficients of a group are read before any is written. The last group ends at the middle coefficient, its
+    /// own mirror, which both of its stores write with the same value.
+    ///
+    /// # Safety
+    /// `a` addresses the `n` residues of plane `p`, `n` the degree of the table.
+    #[inline(always)]
+    unsafe fn apply(
+        &self,
+        p: usize,
+        a: *mut i32,
+        n: usize,
+        pair: impl Fn(uint32x4_t, uint32x4_t, uint32x4_t, uint32x4_t) -> (uint32x4_t, uint32x4_t),
+    ) {
+        let (a, f) = (a as *mut u32, self.f[p].as_ptr());
+        let mut j = 1;
+        while j < n / 2 {
+            // SAFETY: as `1 <= j` and `j + 3 <= n / 2`, the group touches `a[j..=n - j]` and `f[j..=n - j]` only, of
+            // the `n` residues of the plane and the `n` factors of the degree of the table.
+            unsafe {
+                let (lo, hi) = (a.add(j), a.add(n - j - 3));
+                let (fx, fy) = (vld1q_u32(f.add(j)), reverse(vld1q_u32(f.add(n - j - 3))));
+                let (x, y) = pair(vld1q_u32(lo), reverse(vld1q_u32(hi)), fx, fy);
+                vst1q_u32(lo, x);
+                vst1q_u32(hi, reverse(y));
+            }
+            j += 4;
+        }
+    }
+}
+
+/// The lanes in reverse order.
+#[inline(always)]
+unsafe fn reverse(x: uint32x4_t) -> uint32x4_t {
+    // SAFETY: register intrinsics of the AArch64 baseline.
+    unsafe {
+        let x = vrev64q_u32(x);
+        vextq_u32::<2>(x, x)
+    }
+}
+
+/// `x / 2 mod q` for a canonical `x`, canonical: `x + q` when `x` is odd, halved.
+#[inline(always)]
+unsafe fn halve(x: uint32x4_t, q: uint32x4_t) -> uint32x4_t {
+    // SAFETY: register intrinsics of the AArch64 baseline.
+    unsafe { vhaddq_u32(x, vandq_u32(vtstq_u32(x, vdupq_n_u32(1)), q)) }
 }
 
 /// `y * w mod q` in `[-q, q]`, for any `y`.
@@ -500,7 +557,7 @@ pub(crate) fn ntt32(table: &Ntt32Table, dst: &mut [u32], src: &[i64], prepared: 
         from_i64(d, src.as_ptr(), n, &table.conv[prepared as usize]);
         for (p, &q) in Q.iter().enumerate() {
             if let Some(ci) = &table.ci {
-                ci[0][p].apply(d.add(p * n), n);
+                ci.forward(p, d.add(p * n), n);
             }
             fwd_plane(d.add(p * n), n, &table.fwd[p], q as i32);
         }
@@ -525,7 +582,7 @@ pub(crate) fn ntt32_plane(table: &Ntt32Table, p: usize, dst: &mut [u32], src: &[
             i += 4;
         }
         if let Some(ci) = &table.ci {
-            ci[0][p].apply(d, n);
+            ci.forward(p, d, n);
         }
         fwd_plane(d, n, &table.fwd[p], Q[p] as i32);
     }
@@ -634,7 +691,7 @@ pub(crate) unsafe fn intt32_plane(table: &Ntt32Table, p: usize, src: *const u32,
             Q[p] as i32,
         );
         if let Some(ci) = &table.ci {
-            ci[1][p].apply(w, n);
+            ci.inverse(p, w, n);
         }
     }
 }
@@ -672,7 +729,12 @@ mod tests {
         for &log_n in log_ns {
             let n = 1 << log_n;
             let (fwd, inv) = new_table(n);
-            let table = Ntt32Table::new(n, R::CYCLOTOMIC_ORDER_FACTOR == 4);
+            let standard = Ntt32Table::new(n);
+            let table = if R::CYCLOTOMIC_ORDER_FACTOR == 4 {
+                Ntt32Table::from_standard(&standard)
+            } else {
+                standard
+            };
             for round in 0..3 {
                 let src: Vec<i64> = (0..n)
                     .map(|i| match (round, i % 7) {

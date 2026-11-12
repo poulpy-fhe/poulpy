@@ -2,10 +2,7 @@
 
 use std::{
     ptr::NonNull,
-    sync::{
-        OnceLock,
-        atomic::{AtomicUsize, Ordering},
-    },
+    sync::atomic::{AtomicUsize, Ordering},
 };
 
 use poulpy_hal::{
@@ -15,17 +12,15 @@ use poulpy_hal::{
 
 use crate::{
     NTT4x30Gpu,
-    ntt4x30::Tables,
-    runtime::{GpuBuf, GpuRuntime, access},
+    ntt4x30::{RingTables, Tables},
+    runtime::{GpuBuf, GpuRuntime},
 };
 
 /// State a module keeps on the device.
 pub struct GpuHandle<RT: GpuRuntime> {
     n: usize,
-    /// Transform tables of every degree the module serves, on the standard ring.
+    /// Transform tables of every degree the module serves, on both rings.
     tables: Tables<RT>,
-    /// The same on the conjugate-invariant ring, built on first use.
-    tables_ci: OnceLock<Tables<RT>>,
     /// Plans the layers above memoize per module, such as the encoding tables.
     #[cfg_attr(not(feature = "enable-ckks"), allow(dead_code))]
     plans: ModulePlanCache,
@@ -70,16 +65,8 @@ impl<RT: GpuRuntime> GpuHandle<RT> {
     }
 
     /// The transform tables of ring `R`.
-    pub(crate) fn tables<R: Ring>(&self) -> &Tables<RT> {
-        if R::CYCLOTOMIC_ORDER_FACTOR == 4 {
-            self.tables_ci.get().unwrap_or_else(|| {
-                // The access is taken before the cell is locked, as everywhere else: a thread that records holds the device.
-                let _access = access::shared();
-                self.tables_ci.get_or_init(|| Tables::new(self.n, true))
-            })
-        } else {
-            &self.tables
-        }
+    pub(crate) fn tables<R: Ring>(&self) -> RingTables<'_, RT> {
+        self.tables.ring::<R>()
     }
 
     /// Runs `f` on an uninitialized device temporary of `len` bytes, the one of
@@ -136,8 +123,7 @@ unsafe impl<RT: GpuRuntime> HalModuleImpl for NTT4x30Gpu<RT> {
         RT::client();
         let handle = Box::new(GpuHandle::<RT> {
             n: n as usize,
-            tables: Tables::new(n as usize, false),
-            tables_ci: OnceLock::new(),
+            tables: Tables::new(n as usize),
             plans: ModulePlanCache::default(),
             capacity_step: AtomicUsize::new(crate::ntt4x30::CAPACITY_STEP),
         });

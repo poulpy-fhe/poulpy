@@ -5,7 +5,6 @@ use std::marker::PhantomData;
 use poulpy_hal::layouts::Standard;
 
 use crate::kernels::ntt4x30::{
-    conjugate_invariant::BasisChange,
     ntt::{NttTable, NttTableInv, intt_core, ntt_core},
     primes::PrimeSetCrt4,
     vec_znx_dft::{NttAutomorphismPlan, NttPlan, NttPlanNew},
@@ -13,13 +12,13 @@ use crate::kernels::ntt4x30::{
 
 impl<P: PrimeSetCrt4> NttTable<P, Standard> {
     pub fn new(n: usize) -> Self {
-        Self::build(n, [BasisChange::EMPTY; 4])
+        Self::build(n)
     }
 }
 
 impl<P: PrimeSetCrt4> NttTableInv<P, Standard> {
     pub fn new(n: usize) -> Self {
-        Self::build(n, [BasisChange::EMPTY; 4])
+        Self::build(n)
     }
 }
 

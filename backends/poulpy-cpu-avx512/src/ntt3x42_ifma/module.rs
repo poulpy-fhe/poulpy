@@ -18,14 +18,15 @@ use crate::ntt3x42_ifma::{
 use poulpy_cpu_portable::kernels::{PerRing, RingFamily, ntt4x30::vec_znx_dft::NttHandleFactory};
 use poulpy_hal::{
     AlignedBuf, alloc_aligned,
-    layouts::{Backend, Module, PrepareHint, Ring},
+    layouts::{Backend, MAX_RING_DEGREE, Module, PrepareHint, Ring},
 };
 
 /// Opaque handle for the [`NTT3x42Ifma`](super::NTT3x42Ifma) backend.
 ///
 /// Holds precomputed twiddle-factor tables for the forward NTT and inverse NTT
-/// of every degree the module serves, and the lazy-accumulation metadata for
-/// IFMA prep-format products.
+/// of both rings and every degree the module serves, all built with the handle,
+/// and the lazy-accumulation metadata for IFMA prep-format products. A
+/// conjugate-invariant table shares the twiddles of the standard table of its degree.
 ///
 /// This struct is heap-allocated during module creation and freed when the
 /// `Module<NTT3x42Ifma>` is dropped (via [`Backend::destroy`]).
@@ -36,54 +37,42 @@ pub struct NTT3x42IfmaHandle {
     table_cache: ::poulpy_cpu_portable::table_cache::ModuleTableCache,
 }
 
-const LOG_MIN_DEGREE: usize = <NTT3x42Ifma as Backend>::MIN_DEGREE.ilog2() as usize;
-
-/// The forward and inverse tables of one ring, one per degree from [`Backend::MIN_DEGREE`].
-pub(crate) struct RingTables<R: Ring> {
-    ntt: Vec<Ntt3x42IfmaTable<Primes42, R>>,
-    intt: Vec<Ntt3x42IfmaTableInv<Primes42, R>>,
-}
-
-impl<R: Ring> RingTables<R> {
-    /// The tables of every degree up to `n`.
-    pub(super) fn build(
-        n: usize,
-        ntt: fn(usize) -> Ntt3x42IfmaTable<Primes42, R>,
-        intt: fn(usize) -> Ntt3x42IfmaTableInv<Primes42, R>,
-    ) -> Self {
-        let degrees = || (LOG_MIN_DEGREE..=n.ilog2() as usize).map(|log_degree| 1usize << log_degree);
-        RingTables {
-            ntt: degrees().map(ntt).collect(),
-            intt: degrees().map(intt).collect(),
-        }
-    }
+/// The forward and inverse tables of one ring and one degree.
+pub(super) struct DegreeTables<R: Ring> {
+    pub(super) ntt: Ntt3x42IfmaTable<Primes42, R>,
+    pub(super) intt: Ntt3x42IfmaTableInv<Primes42, R>,
 }
 
 struct IfmaTables;
 
 impl RingFamily for IfmaTables {
-    type Of<R: Ring> = RingTables<R>;
+    type Of<R: Ring> = DegreeTables<R>;
 }
 
 impl NTT3x42IfmaHandle {
     pub(crate) fn table_ntt_for<R: Ring>(&self, n: usize) -> &Ntt3x42IfmaTable<Primes42, R> {
-        &self.tables.on_ring::<R>().ntt[n.ilog2() as usize - LOG_MIN_DEGREE]
+        &self.tables.on_ring::<R>(n).ntt
     }
 
     pub(crate) fn table_intt_for<R: Ring>(&self, n: usize) -> &Ntt3x42IfmaTableInv<Primes42, R> {
-        &self.tables.on_ring::<R>().intt[n.ilog2() as usize - LOG_MIN_DEGREE]
+        &self.tables.on_ring::<R>(n).intt
     }
 }
 
 /// # Safety
 ///
-/// The returned handle holds the standard tables of every degree up to `n`, and builds the
-/// conjugate-invariant ones on first use.
+/// The returned handle is fully built: it holds the tables of both rings for every degree from
+/// [`Backend::MIN_DEGREE`] to `n`.
 unsafe impl NttHandleFactory for NTT3x42IfmaHandle {
     fn create_ntt_handle(n: usize) -> Self {
         NTT3x42IfmaHandle {
             table_cache: Default::default(),
-            tables: PerRing::new(super::standard::tables(n), n, super::conjugate_invariant::tables),
+            tables: PerRing::new(
+                <NTT3x42Ifma as Backend>::MIN_DEGREE,
+                n,
+                super::standard::tables,
+                |standard, _| super::conjugate_invariant::tables(standard),
+            ),
             meta_bbc: Bbc126IfmaMeta::new(),
         }
     }
@@ -301,14 +290,19 @@ fn assert_runtime_support() {
 /// Allocate a fully-initialised `Module<NTT3x42Ifma>` of ring dimension `n`.
 ///
 /// Verifies AVX-512-IFMA availability at runtime, then heap-allocates a
-/// [`NTT3x42IfmaHandle`] containing the forward / inverse NTT tables of every
-/// degree from [`Backend::MIN_DEGREE`] to `n`, and the BBC metadata.
+/// [`NTT3x42IfmaHandle`] containing the forward / inverse NTT tables of both
+/// rings for every degree from [`Backend::MIN_DEGREE`] to `n`, and the BBC metadata.
 pub(crate) fn module_new(n: u64) -> Module<NTT3x42Ifma> {
     assert_runtime_support();
     assert!(
         n as usize >= <NTT3x42Ifma>::MIN_DEGREE,
         "NTT3x42Ifma requires n >= {}, got {n}",
         <NTT3x42Ifma>::MIN_DEGREE
+    );
+    // Checked before the build: the prime set has no conjugate-invariant tables above this degree.
+    assert!(
+        n <= MAX_RING_DEGREE,
+        "ring degree {n} exceeds the supported maximum {MAX_RING_DEGREE}"
     );
     let handle = NTT3x42IfmaHandle::create_ntt_handle(n as usize);
     let ptr: NonNull<NTT3x42IfmaHandle> = NonNull::from(Box::leak(Box::new(handle)));

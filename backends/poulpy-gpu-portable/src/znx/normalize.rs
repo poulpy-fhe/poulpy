@@ -2,8 +2,10 @@
 //!
 //! The source limbs are `i64` or `i128`, or the output of an inverse transform:
 //! four residues per coefficient, reconstructed in registers and summed with
-//! an optional `i64` addend. Each thread owns one coefficient and follows the
-//! exact definition: the limbs of `a` are read from the least significant one
+//! an optional `i64` addend. Each thread owns one coefficient, or, reading
+//! residues over the conjugate-invariant ring, a coefficient and its
+//! reflection, whose basis change shares its products, and follows for each
+//! the exact definition: the limbs of `a` are read from the least significant one
 //! as a stream of bits (carrying across unnormalized limbs), the bits below
 //! the output precision are dropped with one rounding bit and a sticky bit,
 //! rounding ties to even, and the output digits are emitted from the least
@@ -13,9 +15,92 @@ use cubecl::prelude::*;
 
 use super::{Column, products::const_product};
 use crate::{
-    ntt4x30::{Consts, DftColumn, Tables, crt_at},
+    ntt4x30::{Consts, DftColumn, RingTables, crt_at, crt_pair_at},
     runtime::{GpuRuntime, Label, launch, read_at, wipe_host, write_at},
 };
+
+/// `(lo, hi) >> a_base2k` for the 128-bit two's complement value `(lo, hi)`,
+/// with `ab = a_base2k` and `ab_up = 64 - a_base2k`.
+#[cube]
+fn shift_right(lo: u64, hi: u64, ab: u64, ab_up: u64) -> (u64, u64) {
+    let sign = 0u64 - (hi >> 63u64);
+    ((lo >> ab) | (hi << ab_up), (hi >> ab) | (sign << ab_up))
+}
+
+/// `(lo, hi) + y` for the `i64` `y`.
+#[cube]
+fn add_word(lo: u64, hi: u64, y: u64) -> (u64, u64) {
+    let sum = lo + y;
+    let mut high = hi + (0u64 - (y >> 63u64));
+    if sum < lo {
+        high += 1u64;
+    }
+    (sum, high)
+}
+
+/// The carry and the pending bits of a stream once limb `x` joins it:
+/// `low = (x mod 2^a_base2k) + (carry mod 2^a_base2k)`, the carry becoming
+/// `(x >> a_base2k) + shifted + (low >> a_base2k)`, `shifted = carry >> a_base2k`,
+/// and the pending bits `low mod 2^a_base2k`.
+#[cube]
+#[allow(clippy::too_many_arguments)]
+fn absorb(
+    x_lo: u64,
+    x_hi: u64,
+    carry_lo: u64,
+    shifted_lo: u64,
+    shifted_hi: u64,
+    ab: u64,
+    ab_up: u64,
+    mask: u64,
+) -> (u64, u64, u64) {
+    let low = (x_lo & mask) + (carry_lo & mask);
+    let (xs_lo, xs_hi) = shift_right(x_lo, x_hi, ab, ab_up);
+    let sum_lo = xs_lo + shifted_lo;
+    let mut sum_hi = xs_hi + shifted_hi;
+    if sum_lo < xs_lo {
+        sum_hi += 1u64;
+    }
+    let next_lo = sum_lo + (low >> ab);
+    let mut next_hi = sum_hi;
+    if next_lo < sum_lo {
+        next_hi += 1u64;
+    }
+    (next_lo, next_hi, low & mask)
+}
+
+/// Whether the 128-bit two's complement value `(lo, hi)` is 0 or -1.
+#[cube]
+fn sign_only(lo: u64, hi: u64) -> bool {
+    let ones = 0xFFFF_FFFF_FFFF_FFFFu64;
+    (lo == 0u64 && hi == 0u64) || (lo == ones && hi == ones)
+}
+
+/// The digit of field `field >= 2` and the carry into the next: its bits
+/// `result` above `zeroes` zero bits plus `rounding`, the carry of the previous
+/// field or, into the first digit, the rounding bit, rounding ties to even.
+#[cube]
+fn emit(result: u64, rounding: u64, sticky: u64, field: u32, width: u32, zeroes: u32, precision_padding: u32) -> (u64, u64) {
+    let w = width as u64;
+    let mut value = result << (zeroes as u64);
+    if field == 2u32 {
+        // Ties to even: up past a half, and at a half onto an odd digit.
+        let odd = value & 1u64;
+        let mut up = 0u64;
+        if sticky != 0u64 || odd != 0u64 {
+            up = rounding;
+        }
+        value += up;
+    } else {
+        value += rounding;
+    }
+    let carry = (value + (1u64 << (w - 1u64))) >> w;
+    let mut digit = value - (carry << w);
+    if field == 2u32 && precision_padding != 0u32 {
+        digit <<= precision_padding as u64;
+    }
+    (digit, carry)
+}
 
 #[cube(launch_unchecked)]
 #[allow(clippy::too_many_arguments, unused_assignments)]
@@ -24,7 +109,7 @@ fn normalize_kernel(
     // The source limbs, or the addend of a source held in `dft`.
     a: &[u64],
     dft: &[u32],
-    tw: &[u32],
+    basis: &[u32],
     // The operands of a source that is a sum of constant products.
     ta0: &[u64],
     ta1: &[u64],
@@ -35,6 +120,8 @@ fn normalize_kernel(
     tb2: &[u64],
     tb3: &[u64],
     n: u32,
+    // `n`, or `n / 2 + 1` reading residues over the conjugate-invariant ring.
+    units: u32,
     res_base: u32,
     res_stride: u32,
     res_size: u32,
@@ -91,8 +178,11 @@ fn normalize_kernel(
     // The source limbs are sums of this many constant products, `a_size` of them.
     #[comptime] products: u32,
 ) {
+    // A unit then also streams the reflection `j = n - i` (the `_j` values) in lockstep with `i`.
+    let pair = comptime!(residues && invariant);
     let i = ABSOLUTE_POS as u32;
-    if i < n {
+    if i < units {
+        let j = (n - i) & (n - 1u32);
         // Every value is two's complement in unsigned registers, with the
         // arithmetic shifts and sign extensions written out: the runtimes do
         // not agree on signed 64-bit shifts.
@@ -110,11 +200,16 @@ fn normalize_kernel(
         let mut carry_lo = 0u64;
         let mut carry_hi = 0u64;
         let mut pending = 0u64;
+        let mut carry_lo_j = 0u64;
+        let mut carry_hi_j = 0u64;
+        let mut pending_j = 0u64;
         let mut available = 0u32;
 
         let mut rounding = 0u64;
+        let mut rounding_j = 0u64;
         // Any one among the bits below the rounding bit.
         let mut sticky = 0u64;
+        let mut sticky_j = 0u64;
         let mut padding = insert;
 
         // Field 0 discards `drop - 1` bits, field 1 reads the rounding bit, and
@@ -146,17 +241,19 @@ fn normalize_kernel(
             }
 
             let mut result = 0u64;
+            let mut result_j = 0u64;
             let mut written = 0u32;
             while count != 0u32 {
                 if available == 0u32 {
                     // `carry >> a_base2k`, shared by both refills.
-                    let carry_sign = 0u64 - (carry_hi >> 63u64);
-                    let shifted_lo = (carry_lo >> ab) | (carry_hi << ab_up);
-                    let shifted_hi = (carry_hi >> ab) | (carry_sign << ab_up);
+                    let shifted = shift_right(carry_lo, carry_hi, ab, ab_up);
+                    let shifted_j = shift_right(carry_lo_j, carry_hi_j, ab, ab_up);
                     if left != 0u32 {
                         left -= 1u32;
                         let mut x_lo = 0u64;
                         let mut x_hi = 0u64;
+                        let mut y_lo = 0u64;
+                        let mut y_hi = 0u64;
                         if comptime!(products > 0) {
                             #[unroll]
                             for term in 0..products {
@@ -231,17 +328,28 @@ fn normalize_kernel(
                                 x_lo = sum;
                             }
                         } else if residues {
-                            let value = crt_at(dft, tw, dft_base + left * dft_stride, i, n, c, invariant);
-                            x_lo = value.0;
-                            x_hi = value.1;
+                            let block = dft_base + left * dft_stride;
+                            if pair {
+                                let (value, value_j) = crt_pair_at(dft, basis, block, i, n, c);
+                                x_lo = value.0;
+                                x_hi = value.1;
+                                y_lo = value_j.0;
+                                y_hi = value_j.1;
+                            } else {
+                                let value = crt_at(dft, block, i, n, c);
+                                x_lo = value.0;
+                                x_hi = value.1;
+                            }
                             if left < a_size {
-                                let y = a[(a_base + left * a_stride + i) as usize];
-                                let sum = x_lo + y;
-                                x_hi += 0u64 - (y >> 63u64);
-                                if sum < x_lo {
-                                    x_hi += 1u64;
+                                let row = a_base + left * a_stride;
+                                let sum = add_word(x_lo, x_hi, a[(row + i) as usize]);
+                                x_lo = sum.0;
+                                x_hi = sum.1;
+                                if pair {
+                                    let sum_j = add_word(y_lo, y_hi, a[(row + j) as usize]);
+                                    y_lo = sum_j.0;
+                                    y_hi = sum_j.1;
                                 }
-                                x_lo = sum;
                             }
                         } else {
                             let index = a_base + left * a_stride + i * a_words;
@@ -252,34 +360,42 @@ fn normalize_kernel(
                                 x_hi = 0u64 - (x_lo >> 63u64);
                             }
                         }
-                        let low = (x_lo & mask) + (carry_lo & mask);
-                        // carry = (x >> a_base2k) + (carry >> a_base2k) + (low >> a_base2k)
-                        let x_sign = 0u64 - (x_hi >> 63u64);
-                        let xs_lo = (x_lo >> ab) | (x_hi << ab_up);
-                        let xs_hi = (x_hi >> ab) | (x_sign << ab_up);
-                        let sum_lo = xs_lo + shifted_lo;
-                        let mut sum_hi = xs_hi + shifted_hi;
-                        if sum_lo < xs_lo {
-                            sum_hi += 1u64;
+                        let next = absorb(x_lo, x_hi, carry_lo, shifted.0, shifted.1, ab, ab_up, mask);
+                        carry_lo = next.0;
+                        carry_hi = next.1;
+                        pending = next.2;
+                        if pair {
+                            let next_j = absorb(y_lo, y_hi, carry_lo_j, shifted_j.0, shifted_j.1, ab, ab_up, mask);
+                            carry_lo_j = next_j.0;
+                            carry_hi_j = next_j.1;
+                            pending_j = next_j.2;
                         }
-                        carry_lo = sum_lo + (low >> ab);
-                        carry_hi = sum_hi;
-                        if carry_lo < sum_lo {
-                            carry_hi += 1u64;
-                        }
-                        pending = low & mask;
                         available = a_base2k;
-                    } else if discard && ((carry_lo == 0u64 && carry_hi == 0u64) || (carry_lo == ones && carry_hi == ones)) {
-                        // Only the sign extension is left to discard: ones below a negative value.
-                        if carry_lo == ones {
-                            sticky = 1u64;
-                        }
-                        count = 0u32;
                     } else {
-                        pending = carry_lo & mask;
-                        carry_lo = shifted_lo;
-                        carry_hi = shifted_hi;
-                        available = a_base2k;
+                        let mut settled = discard && sign_only(carry_lo, carry_hi);
+                        if pair {
+                            settled = settled && sign_only(carry_lo_j, carry_hi_j);
+                        }
+                        if settled {
+                            // Only the sign extension is left to discard: ones below a negative value.
+                            if carry_lo == ones {
+                                sticky = 1u64;
+                            }
+                            if pair {
+                                sticky_j = select(carry_lo_j == ones, 1u64, sticky_j);
+                            }
+                            count = 0u32;
+                        } else {
+                            pending = carry_lo & mask;
+                            carry_lo = shifted.0;
+                            carry_hi = shifted.1;
+                            if pair {
+                                pending_j = carry_lo_j & mask;
+                                carry_lo_j = shifted_j.0;
+                                carry_hi_j = shifted_j.1;
+                            }
+                            available = a_base2k;
+                        }
                     }
                 }
                 if count != 0u32 {
@@ -287,14 +403,23 @@ fn normalize_kernel(
                     if available < take {
                         take = available;
                     }
-                    let bits = pending & ((1u64 << (take as u64)) - 1u64);
+                    let keep = (1u64 << (take as u64)) - 1u64;
                     if discard {
-                        sticky |= bits;
+                        sticky |= pending & keep;
+                        if pair {
+                            sticky_j |= pending_j & keep;
+                        }
                     } else {
-                        result |= bits << (written as u64);
+                        result |= (pending & keep) << (written as u64);
+                        if pair {
+                            result_j |= (pending_j & keep) << (written as u64);
+                        }
                         written += take;
                     }
                     pending >>= take as u64;
+                    if pair {
+                        pending_j >>= take as u64;
+                    }
                     available -= take;
                     count -= take;
                 }
@@ -302,32 +427,28 @@ fn normalize_kernel(
 
             if field == 1u32 {
                 rounding = result;
+                if pair {
+                    rounding_j = result_j;
+                }
             } else if field >= 2u32 {
-                let w = width as u64;
-                let mut value = result << (zeroes as u64);
-                if field == 2u32 {
-                    // Ties to even: up past a half, and at a half onto an odd digit.
-                    let odd = value & 1u64;
-                    let mut up = 0u64;
-                    if sticky != 0u64 || odd != 0u64 {
-                        up = rounding;
-                    }
-                    value += up;
-                } else {
-                    value += rounding;
+                let row = res_base + (active_size + 1u32 - field) * res_stride;
+                let (digit, carry) = emit(result, rounding, sticky, field, width, zeroes, precision_padding);
+                rounding = carry;
+                res[(row + i) as usize] = digit;
+                if pair {
+                    let (digit_j, carry_j) = emit(result_j, rounding_j, sticky_j, field, width, zeroes, precision_padding);
+                    rounding_j = carry_j;
+                    res[(row + j) as usize] = digit_j;
                 }
-                rounding = (value + (1u64 << (w - 1u64))) >> w;
-                let mut digit = value - (rounding << w);
-                if field == 2u32 && precision_padding != 0u32 {
-                    digit <<= precision_padding as u64;
-                }
-                let limb = active_size + 1u32 - field;
-                res[(res_base + limb * res_stride + i) as usize] = digit;
             }
         }
 
         for limb in active_size..res_size {
-            res[(res_base + limb * res_stride + i) as usize] = 0u64;
+            let row = res_base + limb * res_stride;
+            res[(row + i) as usize] = 0u64;
+            if pair {
+                res[(row + j) as usize] = 0u64;
+            }
         }
     }
 }
@@ -340,7 +461,7 @@ enum Source<'a, RT: GpuRuntime> {
     Residues {
         dft: &'a DftColumn,
         addend: Option<&'a Column>,
-        tables: &'a Tables<RT>,
+        tables: RingTables<'a, RT>,
     },
     /// The sum of constant products `(a, b, coefficient of b, offset)`, over `size` limbs.
     Products {
@@ -441,7 +562,7 @@ pub(crate) fn normalize_products<RT: GpuRuntime>(
 /// `dft.size` limbs.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn normalize_residues<RT: GpuRuntime>(
-    tables: &Tables<RT>,
+    tables: RingTables<'_, RT>,
     res: &Column,
     res_base2k: usize,
     res_k: usize,
@@ -488,14 +609,19 @@ fn launch<RT: GpuRuntime>(res: &Column, res_base2k: usize, res_k: usize, offset:
         Source::Products { terms, .. } => terms,
         _ => &[],
     };
-    let (a, a_size, dft, table, invariant, source_size) = match source {
+    let (a, a_size, dft, basis, invariant, source_size) = match source {
         Source::Limbs(a) => (a, a.size, None, a.binding.clone(), false, a.size),
         Source::Products { size, .. } => (res, size, None, res.binding.clone(), false, size),
         Source::Residues { dft, addend, tables } => (
             addend.unwrap_or(res),
             addend.map_or(0, |addend| addend.size.min(dft.size)),
             Some(dft),
-            tables.of(res.n).view().binding().expect("transform tables hold storage"),
+            tables
+                .of(res.n)
+                .basis
+                .view()
+                .binding()
+                .expect("transform tables hold storage"),
             tables.invariant(),
             dft.size,
         ),
@@ -530,13 +656,15 @@ fn launch<RT: GpuRuntime>(res: &Column, res_base2k: usize, res_k: usize, offset:
         Some(dft) => dft.size * 16 + a_size * 8,
         None => a_size * 8 * a.words as usize,
     };
+    // `invariant` holds for residues only, where the kernel pairs each coefficient with its reflection.
+    let units = if invariant { res.n / 2 + 1 } else { res.n };
     launch!(
-        RT, label, res.n * (res.size * 8 + source_bytes), normalize_kernel, (res.n, RT::GROUP, RT::GROUP);
+        RT, label, res.n * (res.size * 8 + source_bytes), normalize_kernel, (units, RT::GROUP, RT::GROUP);
         [
             res.binding => u64,
             a.binding => u64,
             *dft.map_or(&a.binding, |dft| &dft.binding) => u32,
-            table => u32,
+            basis => u32,
             *term(0).map_or(&a.binding, |term| &term.0.binding) => u64,
             *term(1).map_or(&a.binding, |term| &term.0.binding) => u64,
             *term(2).map_or(&a.binding, |term| &term.0.binding) => u64,
@@ -548,6 +676,7 @@ fn launch<RT: GpuRuntime>(res: &Column, res_base2k: usize, res_k: usize, offset:
         ];
         [
             res.n as u32,
+            units as u32,
             res.base,
             res.stride,
             res.size as u32,

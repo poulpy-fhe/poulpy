@@ -27,7 +27,9 @@ Implementors must uphold all of the following for **every** call:
   layout-compatibility marker asserts byte-identical buffers on both rings,
   since `into_backend` keeps the ring. Each ring's impl of a ring-free query
   also covers that ring's call, and a plan type of a family serving both
-  rings is a distinct type per ring.
+  rings is a distinct type per ring. `HalModuleImpl::new` builds the
+  transform tables of every degree from `MIN_DEGREE` to `N` on both rings
+  before it returns, and no later call builds or changes them.
 
 * **Scratch lifetime**: Any region carved from a `ScratchArena` must remain
   valid for the duration of the call; it may be reused by the caller

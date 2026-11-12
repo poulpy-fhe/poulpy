@@ -1,5 +1,7 @@
 //! Coefficient-domain kernels, one thread per coefficient (one per limb for
-//! the sum over the coefficients of a limb). They serve both
+//! the sum over the coefficients of a limb, one per coefficient and its
+//! reflection for the normalization of a conjugate-invariant inverse
+//! transform). They serve both
 //! `i64` limbs and `i128` big values: every buffer is addressed in 64-bit
 //! words, a big value being its low word followed by its high word.
 

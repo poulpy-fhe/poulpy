@@ -9,28 +9,19 @@ use poulpy_hal::layouts::Standard;
 use super::{
     NTT3x42Ifma,
     kernels::{intt_avx512, ntt_avx512},
-    module::RingTables,
-    primes::{PrimeSetNtt3x42Ifma, Primes42},
+    module::DegreeTables,
+    primes::Primes42,
     tables::{Ntt3x42IfmaTable, Ntt3x42IfmaTableInv},
     traits::Ntt3x42IfmaDFTExecute,
 };
 use crate::znx_avx512::{znx_automorphism_avx512, znx_automorphism_rotate_avx512};
 
-impl<P: PrimeSetNtt3x42Ifma> Ntt3x42IfmaTable<P, Standard> {
-    pub fn new(n: usize) -> Self {
-        Self::build(n, Default::default())
+/// The standard-ring tables of degree `n`.
+pub(super) fn tables(n: usize) -> DegreeTables<Standard> {
+    DegreeTables {
+        ntt: Ntt3x42IfmaTable::<Primes42>::new(n),
+        intt: Ntt3x42IfmaTableInv::<Primes42>::new(n),
     }
-}
-
-impl<P: PrimeSetNtt3x42Ifma> Ntt3x42IfmaTableInv<P, Standard> {
-    pub fn new(n: usize) -> Self {
-        Self::build(n, Default::default())
-    }
-}
-
-/// The standard-ring tables of every degree up to `n`.
-pub(super) fn tables(n: usize) -> RingTables<Standard> {
-    RingTables::build(n, Ntt3x42IfmaTable::<Primes42>::new, Ntt3x42IfmaTableInv::<Primes42>::new)
 }
 
 impl ZnxAutomorphism<Standard> for NTT3x42Ifma {
