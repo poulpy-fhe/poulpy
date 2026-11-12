@@ -8,18 +8,19 @@
 //! [`docs/guides/bootstrapping.md`](https://github.com/poulpy-fhe/poulpy/blob/main/docs/guides/bootstrapping.md).
 
 use core::marker::PhantomData;
+use poulpy_core::layouts::Base2K;
 use std::collections::{BTreeMap, BTreeSet};
 
 use poulpy_core::{
-    LinearTransformationPrepared,
+    GLWEDiagonalProd, LinearTransformationPrepared,
     layouts::{
-        GLWEInfos, IntPolyInfos, LinearTransformation, LinearTransformationLayout, LinearTransformationStrategy,
-        optimal_bsgs_giant_step,
+        GLWEInfos, IntPolyInfos, LinearTransformation, LinearTransformationLayout, LinearTransformationPlan,
+        LinearTransformationStrategy, optimal_bsgs_giant_step,
     },
 };
-use poulpy_hal::layouts::{Backend, Module, galois_element};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena, galois_element};
 
-use crate::{CoeffsMeta, GLWEPlaintextMeta, layouts::CKKSPlaintextOwned, numerics::CKKSFloat};
+use crate::{CoeffsMeta, GLWEPlaintextMeta, SetCKKSInfos, api::LtDiagonalMeta, layouts::CKKSPlaintextOwned, numerics::CKKSFloat};
 use num_traits::FloatConst;
 
 /// Real scalar used for plaintext DFT-matrix generation, with platform-independent
@@ -761,13 +762,16 @@ pub struct DFTMatrixFactors<BE: Backend, R = LinearTransformation<CKKSPlaintextO
     pub plan: DFTPlan,
     /// Per-factor right operands, one per factor matrix, in evaluation order.
     pub(crate) factors: Vec<R>,
+    /// The schedule of each factor, read from `factors` once they are final, for every later evaluation and query.
+    plans: Vec<LinearTransformationPlan>,
     _backend: core::marker::PhantomData<BE>,
 }
 
-impl<BE: Backend, R> DFTMatrixFactors<BE, R> {
-    pub(crate) fn new(plan: DFTPlan, factors: Vec<R>) -> Self {
+impl<BE: Backend, P> DFTMatrixFactors<BE, LinearTransformation<P>> {
+    pub(crate) fn new(plan: DFTPlan, factors: Vec<LinearTransformation<P>>) -> Self {
         Self {
             plan,
+            plans: factors.iter().map(LinearTransformation::index).collect(),
             factors,
             _backend: core::marker::PhantomData,
         }
@@ -854,6 +858,55 @@ pub struct DFTMatrix<BE: Backend, Dir, Fmt, R = LinearTransformation<CKKSPlainte
     _marker: PhantomData<(Dir, Fmt)>,
 }
 
+/// The factors a homomorphic DFT evaluates, from a compiled matrix or a view of one.
+pub trait CKKSDFTFactors<BE: Backend, Dir, Fmt> {
+    /// The operand each factor multiplies by. The DFT evaluation takes no tensor key, so a factor of ciphertext diagonals
+    /// refuses with `MissingRelinearizationKey`.
+    type Diagonal: GLWEDiagonalProd<BE> + LtDiagonalMeta + GLWEInfos;
+
+    /// The resolved plan the factors were generated from.
+    fn dft_plan(&self) -> &DFTPlan;
+
+    /// The factors, in evaluation order.
+    fn factors<'a>(&'a self) -> impl Iterator<Item = &'a LinearTransformation<Self::Diagonal>>
+    where
+        BE: 'a,
+        Dir: 'a,
+        Fmt: 'a;
+
+    /// The BSGS schedule of each of [`Self::factors`], in the same order, kept so that an evaluation or a query builds
+    /// none. The evaluation refuses with `InvalidOperand`, and its query panics, on another number of schedules than of
+    /// factors.
+    fn factor_plans(&self) -> &[LinearTransformationPlan];
+
+    /// Labels the output of a SlotsToCoeffs that ends a bootstrap.
+    fn stamp_transform_output<C: SetCKKSInfos>(&self, _ct: &mut C) {}
+}
+
+impl<BE: Backend, Dir, Fmt, P> CKKSDFTFactors<BE, Dir, Fmt> for DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>
+where
+    P: GLWEDiagonalProd<BE> + LtDiagonalMeta + GLWEInfos,
+{
+    type Diagonal = P;
+
+    fn dft_plan(&self) -> &DFTPlan {
+        self.plan()
+    }
+
+    fn factors<'a>(&'a self) -> impl Iterator<Item = &'a LinearTransformation<P>>
+    where
+        BE: 'a,
+        Dir: 'a,
+        Fmt: 'a,
+    {
+        self.factor_operands().iter()
+    }
+
+    fn factor_plans(&self) -> &[LinearTransformationPlan] {
+        &self.inner.plans
+    }
+}
+
 /// Prepared (resident-RHS) [`DFTMatrix`]: each factor's diagonals are kept in the
 /// convolution domain ([`LinearTransformationPrepared`]) rather than materialized
 /// per factor, trading resident memory for faster repeated evaluation. Preserves
@@ -862,6 +915,28 @@ pub struct DFTMatrix<BE: Backend, Dir, Fmt, R = LinearTransformation<CKKSPlainte
 /// and filled from a [`DFTMatrix`] by
 /// [`CKKSDFTMatrixPreparedFactory::ckks_dft_matrix_prepare`](crate::api::CKKSDFTMatrixPreparedFactory::ckks_dft_matrix_prepare).
 pub type DFTMatrixPrepared<BE, Dir, Fmt> = DFTMatrix<BE, Dir, Fmt, LinearTransformationPrepared<BE>>;
+
+// On the reference, not the matrix: a matrix keeps one format, so the free `Fmt` of `ckks_dft_matrix_eval_assign` infers.
+impl<BE: Backend> CKKSDFTFactors<BE, Encode, Standard> for &DFTMatrixPrepared<BE, Encode, Split> {
+    type Diagonal = <DFTMatrixPrepared<BE, Encode, Split> as CKKSDFTFactors<BE, Encode, Split>>::Diagonal;
+
+    fn dft_plan(&self) -> &DFTPlan {
+        (**self).dft_plan()
+    }
+
+    fn factors<'a>(&'a self) -> impl Iterator<Item = &'a LinearTransformation<Self::Diagonal>>
+    where
+        BE: 'a,
+        Encode: 'a,
+        Standard: 'a,
+    {
+        (**self).factors()
+    }
+
+    fn factor_plans(&self) -> &[LinearTransformationPlan] {
+        (**self).factor_plans()
+    }
+}
 
 impl<BE: Backend, Dir, Fmt, R> DFTMatrix<BE, Dir, Fmt, R> {
     /// Wraps factor operands into the typed matrix. Internal: the caller asserts
@@ -913,6 +988,19 @@ impl<BE: Backend, Dir, Fmt, R> DFTMatrix<BE, Dir, Fmt, R> {
     /// factor_log_delta`. The input ciphertext must have at least this much.
     pub fn consumed_bits(&self) -> usize {
         self.plan().consumed_bits()
+    }
+}
+
+impl<BE: Backend, Dir, Fmt, P> DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>> {
+    /// The first factor when `first` asks for it, and the matrix of the factors left once it and, when `last` asks for
+    /// it, the last one are taken out: the factors a bootstrap evaluates outside the matrix.
+    pub(crate) fn split_off(self, first: bool, last: bool) -> (Option<LinearTransformation<P>>, Self) {
+        let DFTMatrixFactors { plan, mut factors, .. } = self.inner;
+        if last {
+            factors.pop();
+        }
+        let head = first.then(|| factors.remove(0));
+        (head, Self::from_factors(DFTMatrixFactors::new(plan, factors)))
     }
 }
 
@@ -1044,11 +1132,11 @@ impl<BE: Backend, Dir, Fmt: DftFormat, R> DFTMatrix<BE, Dir, Fmt, R> {
 /// [`DFTMatrix`] stores.
 pub(crate) fn ckks_scaled_last_factors<BE, F>(
     module: &Module<BE>,
-    base2k: poulpy_core::layouts::Base2K,
+    base2k: Base2K,
     plan: &DFTPlan,
     log_n: usize,
     scales: &[crate::layouts::ComplexDiagonals<F>],
-    scratch: &mut poulpy_hal::layouts::ScratchArena<'_, BE>,
+    scratch: &mut ScratchArena<'_, BE>,
 ) -> crate::CKKSResult<DFTMatrix<BE, crate::layouts::Encode, crate::layouts::Split>>
 where
     BE: Backend,

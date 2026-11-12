@@ -57,8 +57,8 @@ mod bootstrapping_presets {
             assert_eq!(preset.max_backend_base2k::<crate::NTT3x42Ifma>(BOOTSTRAP_FAILURE_BITS), 56);
             let adapted = preset_for_backend::<crate::NTT3x42Ifma>(&preset).unwrap();
             assert_eq!(adapted.base2k(), 56);
-            let keys = adapted.keys_layout().rotation_key_layouts();
-            assert!(keys.iter().all(|key| key.k().as_usize() <= adapted.max_dense_modulus()));
+            let mut keys = adapted.keys_layout().rotation_key_layouts();
+            assert!(keys.all(|key| key.k().as_usize() <= adapted.max_dense_modulus()));
             let small_key = &adapted.keys_layout().encapsulation.as_ref().unwrap().dense_to_sparse;
             assert!(small_key.k().as_usize() <= adapted.max_sparse_modulus());
         }

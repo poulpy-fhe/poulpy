@@ -6,8 +6,8 @@
 //! the canonical tables. No float kernel runs on the device.
 
 use poulpy_ckks::{
-    CKKSCtBounds, CKKSError, CKKSInfos, CKKSPlaintextToBackendMut, CKKSPlaintextToBackendRef, CKKSResult, GLWEPlaintextInfos,
-    GLWEPlaintextMeta, SetCKKSInfos, SetGLWEPlaintextInfos,
+    CKKSCtBounds, CKKSError, CKKSInfos, CKKSModuleInfos, CKKSPlaintextToBackendMut, CKKSPlaintextToBackendRef, CKKSResult,
+    GLWEPlaintextInfos, GLWEPlaintextMeta, SetCKKSInfos, SetGLWEPlaintextInfos,
     api::{CKKSEncodingOps, CKKSEncodingScalar, CKKSPaCoScalar, CKKSShipScalar},
     encoding::{ckks_paco_coeff_encodings_host, ckks_ship_coeff_encodings_host},
     layouts::{
@@ -25,6 +25,7 @@ use poulpy_core::{
     },
 };
 use poulpy_cpu_portable::ckks_encoding::{EncodingFFTTable, OwnedEncodingPlanSet};
+use poulpy_hal::layouts::{Backend, Data};
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
@@ -44,7 +45,7 @@ use crate::{
 };
 
 /// The constant plaintexts `1` of a module on the ring `Rg`, one per radix.
-struct OnePlaintexts<BE: poulpy_hal::layouts::Backend, Rg: Ring>(Mutex<HashMap<usize, Arc<CKKSPlaintextOwned<BE, Rg>>>>);
+struct OnePlaintexts<BE: Backend, Rg: Ring>(Mutex<HashMap<usize, Arc<CKKSPlaintextOwned<BE, Rg>>>>);
 
 /// The device plaintext of the constant `1.0` of the add-one and sub-one
 /// operations, [`ckks_plaintext_one`], kept by the module: only the first request
@@ -89,7 +90,7 @@ struct Staged<P, R: Ring> {
 }
 
 /// A zeroed host container with the shape of the device storage `data`.
-fn host_like<RT: GpuRuntime, R: Ring, D: poulpy_hal::layouts::Data>(
+fn host_like<RT: GpuRuntime, R: Ring, D: Data>(
     module: &Module<NTT4x30Gpu<RT>>,
     data: &GLWE<D, i64, R>,
 ) -> GLWE<AlignedBuf, i64, R> {
@@ -213,7 +214,7 @@ where
     }
 
     fn ckks_encoding_plans_create(module: &Module<Self>) -> CKKSResult<Self::Plans> {
-        OwnedEncodingPlanSet::new(2 * poulpy_ckks::CKKSModuleInfos::ckks_max_slots::<R>(module)).map_err(CKKSError::from)
+        OwnedEncodingPlanSet::new(2 * CKKSModuleInfos::ckks_max_slots::<R>(module)).map_err(CKKSError::from)
     }
 
     fn ckks_quantize_coeffs_into<P>(
@@ -318,7 +319,7 @@ fn paco_coeff_encodings<BE, F, Src>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> CKKSResult<[CKKSPlaintextOwned<BE>; 4]>
 where
-    BE: poulpy_hal::layouts::Backend<ZnxWord = i64> + CKKSEncodingImpl<F>,
+    BE: Backend<ZnxWord = i64> + CKKSEncodingImpl<F>,
     Module<BE>: ModuleN + CKKSCiphertextAlloc<BE> + CKKSEncodingOps<BE, F> + GLWECopy<BE>,
     F: CKKSPaCoScalar,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
@@ -337,7 +338,7 @@ fn ship_coeff_encodings<BE, F, Src>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> CKKSResult<ShipCoeffEncodings<BE::OwnedBuf, i64>>
 where
-    BE: poulpy_hal::layouts::Backend<ZnxWord = i64> + CKKSEncodingImpl<F>,
+    BE: Backend<ZnxWord = i64> + CKKSEncodingImpl<F>,
     Module<BE>: ModuleN + CKKSCiphertextAlloc<BE> + CKKSEncodingOps<BE, F> + GLWECopy<BE>,
     F: CKKSShipScalar,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
@@ -382,7 +383,6 @@ macro_rules! impl_ckks_standard {
         ::poulpy_ckks::impl_ckks_conjugate_reference_full!($be);
         ::poulpy_ckks::impl_ckks_imag_reference_full!($be);
         ::poulpy_ckks::impl_ckks_bootstrapping_reference_full!($be);
-        ::poulpy_ckks::impl_ckks_bootstrapping_ci_reference_full!($be);
         ::poulpy_ckks::impl_ckks_fold_layout_reference_full!($be);
         ::poulpy_ckks::impl_ckks_fold_reference_full!($be);
         ::poulpy_ckks::impl_ckks_complex_polynomial_evaluation_reference_full!($be);

@@ -15,7 +15,7 @@ use poulpy_core::layouts::{
     BSGSMeta, Base2K, Degree, GLWE, GLWEInfos, GLWEPlaintextInfos, GLWEPlaintextMeta, GLWEToBackendMut, GLWEToBackendRef,
     GLWEViewMut, GLWEViewRef, LWEInfos, Rank, SetBSGSMeta, SetGLWEPlaintextInfos, SetK, TorusPrecision,
 };
-use poulpy_core::{ScratchArenaTakeGLWE, ScratchArenaTakeGLWEPlaintext};
+use poulpy_core::{ComponentNoise, ScratchArenaTakeGLWE, ScratchArenaTakeGLWEPlaintext};
 use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, ReaderFrom, Ring, ScratchArena, Standard, WriterTo, ZnxWord};
 
 use crate::{CKKSInfos, SetCKKSInfos, ckks_log_delta, error::CKKSCompositionError};
@@ -123,7 +123,7 @@ impl<D: Data, W: ZnxWord, Rg: Ring> DerefMut for CKKSCiphertext<D, W, Rg> {
 }
 
 impl<D: Data, W: ZnxWord, Rg: Ring> LWEInfos for CKKSCiphertext<D, W, Rg> {
-    fn noise(&self) -> Option<poulpy_core::ComponentNoise> {
+    fn noise(&self) -> Option<ComponentNoise> {
         self.inner.noise()
     }
 
@@ -231,7 +231,7 @@ where
         self.inner.set_canonical(canonical)
     }
 
-    fn set_noise(&mut self, metadata: Option<poulpy_core::ComponentNoise>) {
+    fn set_noise(&mut self, metadata: Option<ComponentNoise>) {
         GLWEToBackendMut::<BE, Rg>::set_noise(&mut self.inner, metadata);
     }
 }
@@ -257,7 +257,7 @@ impl<'a, BE: Backend + 'a, Rg: Ring> Deref for CKKSCiphertextViewRef<'a, BE, Rg>
 }
 
 impl<BE: Backend, Rg: Ring> LWEInfos for CKKSCiphertextViewRef<'_, BE, Rg> {
-    fn noise(&self) -> Option<poulpy_core::ComponentNoise> {
+    fn noise(&self) -> Option<ComponentNoise> {
         self.inner.noise()
     }
 
@@ -314,6 +314,12 @@ impl<'a, BE: Backend + 'a, Rg: Ring> CKKSCiphertextViewMut<'a, BE, Rg> {
         ct
     }
 
+    /// A view of `ct`, in the backend's buffer type: a working ciphertext on the storage of `ct`.
+    pub(crate) fn of<C: GLWEToBackendMut<BE, Rg> + CKKSInfos>(ct: &'a mut C) -> Self {
+        let meta = ct.meta();
+        Self::from_inner(GLWEViewMut::from_inner(ct.to_backend_mut()), meta)
+    }
+
     /// As [`CKKSCiphertext::set_meta_checked`].
     pub(crate) fn set_meta_checked(&mut self, meta: GLWEPlaintextMeta) -> Result<()> {
         ensure_meta_fits(self, &meta)?;
@@ -360,7 +366,7 @@ impl<BE: Backend, Rg: Ring> GLWEToBackendMut<BE, Rg> for CKKSCiphertextViewMut<'
         GLWEToBackendMut::<BE, Rg>::set_canonical(&mut self.inner, canonical)
     }
 
-    fn set_noise(&mut self, metadata: Option<poulpy_core::ComponentNoise>) {
+    fn set_noise(&mut self, metadata: Option<ComponentNoise>) {
         GLWEToBackendMut::<BE, Rg>::set_noise(&mut self.inner, metadata);
     }
 }

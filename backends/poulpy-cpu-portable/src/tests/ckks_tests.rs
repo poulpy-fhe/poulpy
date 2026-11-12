@@ -71,6 +71,11 @@ mod bootstrapping_presets {
     }
 
     #[test]
+    fn ntt4x30_ckks_bootstrap_eval_mod() {
+        poulpy_ckks::test_suite::bootstrapping::test_ckks_bootstrap_eval_mod::<crate::NTT4x30Portable>();
+    }
+
+    #[test]
     fn ntt4x30_small_c2s_preset_meets_precision() {
         small_c2s_preset_meets_precision::<crate::NTT4x30Portable>();
     }

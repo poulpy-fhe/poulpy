@@ -1,5 +1,6 @@
 //! `poulpy-ckks` extension points of the portable Rayon backends.
 
+use poulpy_ckks::api::CKKSEncodingScalar;
 use poulpy_ckks::{impl_ckks_encapsulated_mod_up_reference_full, impl_ckks_mod_up_first_factor_reference_full};
 use poulpy_cpu_portable::ckks_encoding::{CKKSEncodingTransform, EncodingFFTTable};
 
@@ -13,14 +14,14 @@ impl_ckks_mod_up_first_factor_reference_full!(NTT4x30PortableRayon);
 // The portable backends encode every precision with the canonical table.
 impl<F> CKKSEncodingTransform<F> for FFT64PortableRayon
 where
-    F: poulpy_ckks::api::CKKSEncodingScalar,
+    F: CKKSEncodingScalar,
 {
     type Fft = EncodingFFTTable<F>;
 }
 
 impl<F> CKKSEncodingTransform<F> for NTT4x30PortableRayon
 where
-    F: poulpy_ckks::api::CKKSEncodingScalar,
+    F: CKKSEncodingScalar,
 {
     type Fft = EncodingFFTTable<F>;
 }
@@ -29,7 +30,6 @@ poulpy_cpu_portable::impl_cpu_ckks_defaults!(super::FFT64PortableRayon);
 ::poulpy_ckks::impl_ckks_conjugate_reference_full!(super::FFT64PortableRayon);
 ::poulpy_ckks::impl_ckks_imag_reference_full!(super::FFT64PortableRayon);
 ::poulpy_ckks::impl_ckks_bootstrapping_reference_full!(super::FFT64PortableRayon);
-::poulpy_ckks::impl_ckks_bootstrapping_ci_reference_full!(super::FFT64PortableRayon);
 ::poulpy_ckks::impl_ckks_fold_layout_reference_full!(super::FFT64PortableRayon);
 ::poulpy_ckks::impl_ckks_fold_reference_full!(super::FFT64PortableRayon);
 ::poulpy_ckks::impl_ckks_complex_polynomial_evaluation_reference_full!(super::FFT64PortableRayon);
@@ -44,7 +44,6 @@ poulpy_cpu_portable::impl_cpu_ckks_defaults!(super::NTT4x30PortableRayon);
 ::poulpy_ckks::impl_ckks_conjugate_reference_full!(super::NTT4x30PortableRayon);
 ::poulpy_ckks::impl_ckks_imag_reference_full!(super::NTT4x30PortableRayon);
 ::poulpy_ckks::impl_ckks_bootstrapping_reference_full!(super::NTT4x30PortableRayon);
-::poulpy_ckks::impl_ckks_bootstrapping_ci_reference_full!(super::NTT4x30PortableRayon);
 ::poulpy_ckks::impl_ckks_fold_layout_reference_full!(super::NTT4x30PortableRayon);
 ::poulpy_ckks::impl_ckks_fold_reference_full!(super::NTT4x30PortableRayon);
 ::poulpy_ckks::impl_ckks_complex_polynomial_evaluation_reference_full!(super::NTT4x30PortableRayon);

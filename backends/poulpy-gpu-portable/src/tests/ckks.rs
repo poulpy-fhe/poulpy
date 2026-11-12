@@ -1,5 +1,7 @@
 //! The upstream `poulpy-ckks` suites, with `NTT4x30Portable` as the comparison backend.
 
+use poulpy_cpu_portable::NTT4x30Portable;
+
 type Gpu = crate::NTT4x30Gpu<super::Runtime>;
 
 // The encoding fixtures every CKKS type reproduces byte for byte.
@@ -227,7 +229,21 @@ poulpy_ckks::ckks_encryption_parity_test_suite! {
 /// portable client, on both rings: small enough for a default test run.
 #[test]
 fn small_s2c_preset_meets_precision() {
-    poulpy_ckks::test_suite::presets::small_s2c_preset_meets_precision_with_client::<Gpu, poulpy_cpu_portable::NTT4x30Portable>();
+    poulpy_ckks::test_suite::presets::small_s2c_preset_meets_precision_with_client::<Gpu, NTT4x30Portable>();
+}
+
+/// The derived `ckks_bootstrap` of the small preset records as a graph and issues no host read, write or
+/// synchronization, so every step stays on the device.
+#[test]
+fn small_s2c_bootstrap_records_without_host_events() {
+    let mut run = poulpy_ckks::test_suite::presets::small_s2c_preset_run_with_client::<Gpu, NTT4x30Portable>();
+    // Compiles the kernels and fills the pools, so the recording is of a steady-state bootstrap.
+    run.bootstrap();
+    let run = std::cell::RefCell::new(run);
+    let replay = crate::Replay::<super::Runtime>::record(|| run.borrow_mut().bootstrap_queued());
+    assert!(replay.launches() > 0);
+    let host = replay.host_events();
+    assert_eq!((host.reads, host.writes, host.syncs), (0, 0, 0));
 }
 
 /// Serializes the full-size tests: each takes about 20 GB of device memory, and the
@@ -241,8 +257,7 @@ static FULL_SIZE: std::sync::Mutex<()> = std::sync::Mutex::new(());
 #[ignore = "full-size presets: minutes and about 20 GB of device memory; run in release"]
 fn bootstrapping_presets_meet_precision() {
     let _serial = FULL_SIZE.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    poulpy_ckks::test_suite::presets::bootstrapping_presets_meet_precision_with_client::<Gpu, poulpy_cpu_portable::NTT4x30Portable>(
-    );
+    poulpy_ckks::test_suite::presets::bootstrapping_presets_meet_precision_with_client::<Gpu, NTT4x30Portable>();
 }
 
 /// One preset at full size: its measured precision, then the kernel launches
@@ -254,7 +269,7 @@ fn bootstrapping_n16_d35_k733_p20_s2c_precision_and_launches() {
     use poulpy_ckks::test_suite::presets::{BootstrappingPresetRun, preset_for_backend};
     let preset = poulpy_ckks::presets::bootstrapping::n16_d35_k733_p20_s2c().unwrap();
     let preset = preset_for_backend::<Gpu>(&preset).unwrap();
-    let mut run = BootstrappingPresetRun::<Gpu, poulpy_cpu_portable::NTT4x30Portable>::setup(preset);
+    let mut run = BootstrappingPresetRun::<Gpu, NTT4x30Portable>::setup(preset);
     // What the device holds once the keys are prepared, and what the pools reserve for it.
     {
         use crate::runtime::RuntimeDevice;
@@ -329,9 +344,7 @@ fn bootstrapping_n16_d35_k733_p20_s2c_replay() {
     let preset = poulpy_ckks::presets::bootstrapping::n16_d35_k733_p20_s2c().unwrap();
     let preset = preset_for_backend::<Gpu>(&preset).unwrap();
     let advertised = preset.log2_precision() as f64;
-    let run = RefCell::new(BootstrappingPresetRun::<Gpu, poulpy_cpu_portable::NTT4x30Portable>::setup(
-        preset,
-    ));
+    let run = RefCell::new(BootstrappingPresetRun::<Gpu, NTT4x30Portable>::setup(preset));
     // Compiles the kernels, so that the counters below are those of a steady-state bootstrap.
     run.borrow_mut().bootstrap();
     let meets_precision = |what: &str| {
@@ -435,7 +448,7 @@ fn conjugate_invariant_encoding_matches_portable() {
 
     let n = 64;
     let device = Module::<crate::NTT4x30Gpu<super::Runtime>>::new(n);
-    let portable = Module::<poulpy_cpu_portable::NTT4x30Portable>::new(n);
+    let portable = Module::<NTT4x30Portable>::new(n);
     // A vector plaintext has the degree of its slots on this ring, at least the backend's minimum.
     let min_log_slots = <crate::NTT4x30Gpu<super::Runtime> as Backend>::MIN_DEGREE.ilog2();
     for log_slots in min_log_slots..=n.ilog2() {
