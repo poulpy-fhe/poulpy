@@ -31,7 +31,6 @@ enum KeyStage {
     Raised,
     SlotsToCoeffs,
     AfterCoeffsToSlots,
-    AfterBypass,
 }
 
 /// One use of the rotation key of Galois element `p`, `below` bits under the width its stage starts at.
@@ -47,7 +46,6 @@ pub(crate) struct StageStarts {
     raised: usize,
     slots_to_coeffs: usize,
     after_c2s: usize,
-    after_bypass: usize,
 }
 
 impl StageStarts {
@@ -57,7 +55,6 @@ impl StageStarts {
             KeyStage::Raised => self.raised,
             KeyStage::SlotsToCoeffs => self.slots_to_coeffs,
             KeyStage::AfterCoeffsToSlots => self.after_c2s,
-            KeyStage::AfterBypass => self.after_bypass,
         };
         start - key_use.below
     }
@@ -100,8 +97,9 @@ impl StageWidths<'_> {
     /// CoeffsToSlots and its EvalRound+ bypass, and for SlotsToCoeffs the input
     /// width `input_k` (S2C-first) or what EvalMod, and the bypass, leave
     /// (C2S-first). The folded factors of [`CIConversion::Folded`] run where the
-    /// last CoeffsToSlots factor would. The conjugation follows each split
-    /// CoeffsToSlots, which on the conjugate-invariant ring does not split.
+    /// last CoeffsToSlots factor would. The conjugation follows CoeffsToSlots,
+    /// in EvalMod's split or real part, which the conjugate-invariant ring does
+    /// not take; the bypass, evaluated unsplit, conjugates nothing.
     fn rotation_key_inputs(&self, log_n: usize, bootstrap_k: usize, input_k: usize) -> Option<BTreeMap<i64, usize>> {
         let starts = self.stage_starts(bootstrap_k, input_k)?;
         let mut inputs: BTreeMap<i64, usize> = BTreeMap::new();
@@ -114,26 +112,26 @@ impl StageWidths<'_> {
     }
 
     /// The widths the stages start at, or `None` when `bootstrap_k` or `input_k` is narrower than the bits they consume.
+    /// C2S-first runs SlotsToCoeffs on what EvalMod, and the bypass, leave at EvalMod's scale, so its budget above that
+    /// scale holds the bits SlotsToCoeffs consumes.
     pub(crate) fn stage_starts(&self, bootstrap_k: usize, input_k: usize) -> Option<StageStarts> {
         let after_c2s = bootstrap_k.checked_sub(self.coeffs_to_slots.consumed_bits())?;
-        let after_bypass = match self.coeffs_to_slots_bypass {
-            Some(bypass) => Some(bootstrap_k.checked_sub(bypass.consumed_bits())?),
-            None => None,
-        };
-        let slots_to_coeffs = match self.pipeline {
-            BootstrappingPipeline::S2CFirst => input_k,
+        let (slots_to_coeffs, scale) = match self.pipeline {
+            BootstrappingPipeline::S2CFirst => (input_k, 0),
             BootstrappingPipeline::C2SFirst => {
-                let after_eval_mod = after_c2s.checked_sub(self.eval_mod.consumed_bits())?;
-                after_bypass.map_or(after_eval_mod, |k| k.min(after_eval_mod))
+                let mut start = after_c2s.checked_sub(self.eval_mod.consumed_bits())?;
+                if let Some(bypass) = self.coeffs_to_slots_bypass {
+                    start = start.min(bootstrap_k.checked_sub(bypass.consumed_bits())?);
+                }
+                (start, self.eval_mod.f_mod_log_delta)
             }
         };
         // Every factor below then runs above the bits its transform consumes.
-        slots_to_coeffs.checked_sub(self.slots_to_coeffs.consumed_bits())?;
+        slots_to_coeffs.checked_sub(self.slots_to_coeffs.consumed_bits() + scale)?;
         Some(StageStarts {
             raised: bootstrap_k,
             slots_to_coeffs,
             after_c2s,
-            after_bypass: after_bypass.unwrap_or(0),
         })
     }
 
@@ -188,13 +186,6 @@ impl StageWidths<'_> {
                 stage: KeyStage::AfterCoeffsToSlots,
                 below: 0,
             });
-            if self.coeffs_to_slots_bypass.is_some() {
-                uses.push(RotationKeyUse {
-                    p: -1,
-                    stage: KeyStage::AfterBypass,
-                    below: 0,
-                });
-            }
         }
         uses.sort_by_key(|key_use| key_use.p);
         uses

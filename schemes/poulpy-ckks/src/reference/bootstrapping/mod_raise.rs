@@ -123,13 +123,7 @@ pub trait CKKSModRaiseReference<BE: Backend>: std::borrow::Borrow<Module<BE>> {
             "the plan moves the first CoeffsToSlots factor onto the raise, and no prepared factor comes with it"
         );
         // C2S-first derives both lifts from EvalMod, and the first one writes `a`: the checks run on what it will leave.
-        let (lift_bits, scale_up) = match &raise.lift {
-            Some(lift) => {
-                let lift_bits = lift.input_scale_up(a.k().as_usize(), a.log_delta())?;
-                (lift_bits, lift.raised_scale_up(a.log_delta() + lift_bits)?)
-            }
-            None => (0, raise.c2s_guard_bits),
-        };
+        let (lift_bits, scale_up) = raise.scale_ups(OP, a.k().as_usize(), a.log_delta())?;
         check_raise_widths(res, a, scale_up, plan.first_factor(), keys)?;
         if let Some(keys_layout) = keys.keys_layout() {
             let bytes = module.ckks_mod_raise_tmp_bytes_reference(res, a, plan, keys_layout);

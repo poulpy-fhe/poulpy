@@ -19,12 +19,9 @@ use crate::{
     layouts::{
         BootstrappingKeys, BootstrappingKeysLayout, CKKSEvalModInfos, EvalModCIPrepared, ScratchArenaTakeCKKSCiphertext,
         bootstrapping::{CIPreForm, bootstrap_layouts},
-        validation::check_conversion_key_widths,
     },
     reference::linear_transformation::PlaintextDiagonalKeys,
 };
-
-use super::eval_mod::EVAL_MOD_OP;
 
 /// Scratch of [`eval_mod_on_ci`] at the width of `boot_layout`, on a layout with conversion keys:
 /// the degree-`2N` ciphertext beside the conversions, the traced and the reduced ciphertext
@@ -200,8 +197,6 @@ where
             ci_folded_pre(module, &mut embedded, a, [even, odd], &plans[0], keys, &mut scratch)?
         }
     }
-    let widths = plan.eval_mod_plan().conversion_widths(embedded.k().as_usize());
-    check_conversion_key_widths(EVAL_MOD_OP, trace_key, embed_key, widths)?;
     let meta = GLWEPlaintextMeta {
         slots: SlotsKind::Real,
         ..embedded.meta()

@@ -32,10 +32,22 @@ pub trait CKKSEvalModOps<BE: Backend, Rg: Ring = Standard> {
     /// are unspecified on a successful return, and a caller that needs it again passes a copy. An allocation narrower
     /// than the `log_budget + f_mod_log_delta` bits EvalMod works at costs a copy in `scratch`, which the query counts.
     ///
-    /// Consumes `params.consumed_bits()` bits of `log_budget`; errors if
-    /// `ct` has insufficient remaining capacity. `tsk` is the tensor
-    /// (relinearization) key used by the squaring steps, and `scratch` must hold
-    /// at least [`Self::ckks_eval_mod_tmp_bytes`] bytes.
+    /// Consumes `params.consumed_bits()` bits of `log_budget`. `tsk` is the tensor (relinearization) key of the
+    /// products, and `scratch` must hold at least [`Self::ckks_eval_mod_tmp_bytes`] bytes.
+    ///
+    /// # Errors
+    ///
+    /// Before any write, so that a refusal leaves `ct` and `res` unchanged:
+    ///
+    /// - [`InvalidOperand`](crate::CKKSCompositionError::InvalidOperand): a replicated slot layout or a rank other
+    ///   than 1, and [`InvalidPlan`](crate::CKKSCompositionError::InvalidPlan): an `ExpCmplx` EvalMod on a ring of
+    ///   real slots.
+    /// - [`InsufficientHomomorphicCapacity`](crate::CKKSCompositionError::InsufficientHomomorphicCapacity): `ct` holds
+    ///   fewer than `params.consumed_bits()` bits of budget.
+    /// - [`MissingRelinearizationKey`](crate::CKKSCompositionError::MissingRelinearizationKey): an evaluation with a
+    ///   ciphertext product whose `tsk` does not cover its widest product, of `log_budget + f_mod_log_delta` bits.
+    /// - `CKKSError::Internal`: an evaluation with a ciphertext product given an arena below the query at the layout of
+    ///   the key `tsk` answers for that width.
     fn ckks_eval_mod<R, C, P, F, H>(
         &self,
         res: &mut R,

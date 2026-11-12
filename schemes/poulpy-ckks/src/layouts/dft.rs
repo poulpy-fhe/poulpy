@@ -9,10 +9,7 @@
 
 use core::marker::PhantomData;
 use poulpy_core::layouts::Base2K;
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    sync::OnceLock,
-};
+use std::collections::{BTreeMap, BTreeSet};
 
 use poulpy_core::{
     GLWEDiagonalProd, LinearTransformationPrepared,
@@ -765,17 +762,17 @@ pub struct DFTMatrixFactors<BE: Backend, R = LinearTransformation<CKKSPlaintextO
     pub plan: DFTPlan,
     /// Per-factor right operands, one per factor matrix, in evaluation order.
     pub(crate) factors: Vec<R>,
-    /// The schedule of each factor, read once from `factors` for every later evaluation and query.
-    plans: OnceLock<Vec<LinearTransformationPlan>>,
+    /// The schedule of each factor, read from `factors` once they are final, for every later evaluation and query.
+    plans: Vec<LinearTransformationPlan>,
     _backend: core::marker::PhantomData<BE>,
 }
 
-impl<BE: Backend, R> DFTMatrixFactors<BE, R> {
-    pub(crate) fn new(plan: DFTPlan, factors: Vec<R>) -> Self {
+impl<BE: Backend, P> DFTMatrixFactors<BE, LinearTransformation<P>> {
+    pub(crate) fn new(plan: DFTPlan, factors: Vec<LinearTransformation<P>>) -> Self {
         Self {
             plan,
+            plans: factors.iter().map(LinearTransformation::index).collect(),
             factors,
-            plans: OnceLock::new(),
             _backend: core::marker::PhantomData,
         }
     }
@@ -877,7 +874,9 @@ pub trait CKKSDFTFactors<BE: Backend, Dir, Fmt> {
         Dir: 'a,
         Fmt: 'a;
 
-    /// The BSGS schedule of each of [`Self::factors`], kept so that an evaluation or a query builds none.
+    /// The BSGS schedule of each of [`Self::factors`], in the same order, kept so that an evaluation or a query builds
+    /// none. The evaluation refuses with `InvalidOperand`, and its query panics, on another number of schedules than of
+    /// factors.
     fn factor_plans(&self) -> &[LinearTransformationPlan];
 
     /// Labels the output of a SlotsToCoeffs that ends a bootstrap.
@@ -904,9 +903,7 @@ where
     }
 
     fn factor_plans(&self) -> &[LinearTransformationPlan] {
-        self.inner
-            .plans
-            .get_or_init(|| self.inner.factors.iter().map(LinearTransformation::index).collect())
+        &self.inner.plans
     }
 }
 
@@ -991,6 +988,19 @@ impl<BE: Backend, Dir, Fmt, R> DFTMatrix<BE, Dir, Fmt, R> {
     /// factor_log_delta`. The input ciphertext must have at least this much.
     pub fn consumed_bits(&self) -> usize {
         self.plan().consumed_bits()
+    }
+}
+
+impl<BE: Backend, Dir, Fmt, P> DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>> {
+    /// The first factor when `first` asks for it, and the matrix of the factors left once it and, when `last` asks for
+    /// it, the last one are taken out: the factors a bootstrap evaluates outside the matrix.
+    pub(crate) fn split_off(self, first: bool, last: bool) -> (Option<LinearTransformation<P>>, Self) {
+        let DFTMatrixFactors { plan, mut factors, .. } = self.inner;
+        if last {
+            factors.pop();
+        }
+        let head = first.then(|| factors.remove(0));
+        (head, Self::from_factors(DFTMatrixFactors::new(plan, factors)))
     }
 }
 

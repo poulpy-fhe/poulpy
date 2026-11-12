@@ -971,6 +971,7 @@ poulpy_core::core_parity_test_suite! {
     params = TestParams { size: 1<<8, base2k: 12, n: 1<<8 },
     tests = {
         glwe_keyswitch => poulpy_core::test_suite::parity::test_glwe_keyswitch_parity,
+        glwe_keyswitch_dft_add => poulpy_core::test_suite::parity::test_glwe_keyswitch_dft_add_parity,
         glwe_keyswitch_assign => poulpy_core::test_suite::parity::test_glwe_keyswitch_assign_parity,
         gglwe_keyswitch => poulpy_core::test_suite::parity::test_gglwe_keyswitch_parity,
         glwe_automorphism => poulpy_core::test_suite::parity::test_glwe_automorphism_parity,
@@ -1012,6 +1013,7 @@ poulpy_core::core_parity_test_suite! {
     params = TestParams { size: 1<<8, base2k: 12, n: 1<<8 },
     tests = {
         glwe_keyswitch => poulpy_core::test_suite::parity::test_glwe_keyswitch_parity,
+        glwe_keyswitch_dft_add => poulpy_core::test_suite::parity::test_glwe_keyswitch_dft_add_parity,
         glwe_keyswitch_assign => poulpy_core::test_suite::parity::test_glwe_keyswitch_assign_parity,
         gglwe_keyswitch => poulpy_core::test_suite::parity::test_gglwe_keyswitch_parity,
         glwe_automorphism => poulpy_core::test_suite::parity::test_glwe_automorphism_parity,
@@ -1703,6 +1705,7 @@ poulpy_core::core_parity_test_suite! {
     test_size = 1<<8,
     tests = {
         glwe_keyswitch => poulpy_core::test_suite::parity::test_glwe_keyswitch_parity,
+        glwe_keyswitch_dft_add => poulpy_core::test_suite::parity::test_glwe_keyswitch_dft_add_parity,
         glwe_keyswitch_assign => poulpy_core::test_suite::parity::test_glwe_keyswitch_assign_parity,
         gglwe_keyswitch => poulpy_core::test_suite::parity::test_gglwe_keyswitch_parity,
         glwe_automorphism => poulpy_core::test_suite::parity::test_glwe_automorphism_parity,
@@ -1746,6 +1749,7 @@ poulpy_core::core_parity_test_suite! {
     test_size = 1<<8,
     tests = {
         glwe_keyswitch => poulpy_core::test_suite::parity::test_glwe_keyswitch_parity,
+        glwe_keyswitch_dft_add => poulpy_core::test_suite::parity::test_glwe_keyswitch_dft_add_parity,
         glwe_keyswitch_assign => poulpy_core::test_suite::parity::test_glwe_keyswitch_assign_parity,
         gglwe_keyswitch => poulpy_core::test_suite::parity::test_gglwe_keyswitch_parity,
         glwe_automorphism => poulpy_core::test_suite::parity::test_glwe_automorphism_parity,

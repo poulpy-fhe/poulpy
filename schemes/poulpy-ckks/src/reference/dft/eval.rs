@@ -20,7 +20,7 @@
 //! packing (imag packed into the right half) through `coeffs_to_slots_repack` /
 //! `slots_to_coeffs_repack`.
 
-use crate::{CKKSResult as Result, ckks_ensure};
+use crate::{CKKSResult as Result, ckks_ensure, ckks_ensure_operand};
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
     GLWEBytesOf, GLWEDiagonalProd, GLWELinearTransformationBabyStepsBytesOf, GLWELinearTransformationOps,
@@ -304,8 +304,14 @@ where
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     H: GetAutomorphismKey<BE>,
 {
-    crate::layouts::validation::ensure_full_layout("ckks_dft_matrix_eval_assign", crate::GLWEPlaintextInfos::slot_layout(ct))?;
-    crate::ensure_operand_degrees("ckks_dft_matrix_eval_assign", module, [ct.n()])?;
+    const OP: &str = "ckks_dft_matrix_eval_assign";
+    crate::layouts::validation::ensure_full_layout(OP, crate::GLWEPlaintextInfos::slot_layout(ct))?;
+    crate::ensure_operand_degrees(OP, module, [ct.n()])?;
+    ckks_ensure_operand!(
+        OP,
+        dft.factor_plans().len() == dft.factors().count(),
+        "takes one schedule per factor"
+    );
     // One factor at a time, in place on `ct`; compact `ct` after each so the next
     // factor's baby-step keyswitches operate on fewer limbs as the budget shrinks.
     for (factor, plan) in dft.factors().zip(dft.factor_plans()) {
@@ -367,6 +373,10 @@ where
 
 /// Workspace for the reference DFT chain and all format compositions.
 /// Covers both the prepared and the streamed evaluation of every factor.
+///
+/// # Panics
+///
+/// When `dft` holds another number of schedules than of factors, which the evaluation refuses.
 pub fn ckks_dft_tmp_bytes_reference<BE, Dir, Fmt, D, Dst, Src, K>(
     module: &Module<BE>,
     dst: &Dst,
@@ -399,6 +409,10 @@ where
         },
         meta: ct.meta(),
     };
+    assert!(
+        dft.factor_plans().len() == dft.factors().count(),
+        "ckks_dft_tmp_bytes: one schedule per factor"
+    );
     let layouts = [envelope(dst), envelope(src)];
     let mut bytes = module.ckks_copy_tmp_bytes(dst, src);
     for ct in &layouts {

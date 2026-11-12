@@ -25,14 +25,16 @@ use crate::{
 ///
 /// - [`InvalidOperand`](crate::CKKSCompositionError::InvalidOperand): a context, module, operand, key or LUT that does
 ///   not match the plan or each other, a ciphertext of another degree than the one the context is compiled at (the
-///   module's, or half of it with EvalMod on the conjugate-invariant ring), or a width too narrow for a stage.
+///   module's, or half of it with EvalMod on the conjugate-invariant ring), a width too narrow for a stage, an input
+///   holding fewer bits than its scale plus the plan's message ratio, or a plan whose EvalMod scale is below that
+///   input scale plus the message ratio (the lifts of a C2S-first raise), and a LUT on a plan with the EvalRound+
+///   bypass.
 /// - [`MissingAutomorphismKey`](crate::CKKSCompositionError::MissingAutomorphismKey) and
 ///   [`MissingRelinearizationKey`](crate::CKKSCompositionError::MissingRelinearizationKey): a key narrower than its
 ///   stage ([`key_widths`](crate::layouts::BootstrappingPlan::key_widths)), `source` being the key source's refusal.
 /// - [`InsufficientHomomorphicCapacity`](crate::CKKSCompositionError::InsufficientHomomorphicCapacity): an input
 ///   without the budget of EvalMod or a LUT.
-/// - `CKKSError::Internal`: an input without the bits of the plan's lifts, or an arena under the query of the call,
-///   when the keys report their layout.
+/// - `CKKSError::Internal`: an arena under the query of the call, when the keys report their layout.
 pub trait CKKSBootstrappingOps<BE: Backend> {
     /// Scratch upper bound for [`Self::ckks_bootstrap`], whose arguments it takes, `keys_layout` sizing the
     /// key-dependent stages. One arena serves both rings.

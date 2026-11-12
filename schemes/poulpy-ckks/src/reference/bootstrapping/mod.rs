@@ -7,7 +7,7 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
     CKKSCtBounds, CKKSResult as Result, SetCKKSInfos, SlotsKind,
-    api::{CKKSAddOps, CKKSConjugateOps, CKKSImagOps, CKKSSubOps},
+    api::{CKKSAddOps, CKKSConjugateOps, CKKSImagOps},
     layouts::BootstrappingLinearKeys,
 };
 
@@ -58,31 +58,5 @@ where
     module.ckks_conjugate_into(res, a, keys, scratch)?;
     module.ckks_add_assign(res, a, scratch)?;
     res.set_slots(SlotsKind::Real);
-    Ok(())
-}
-
-/// `re = a + conj(a)` and `im = (a - conj(a)) / i`, the two halves `re + i·im = 2·a`.
-fn ckks_split_of<BE, K, Re, Im, A>(
-    module: &Module<BE>,
-    re: &mut Re,
-    im: &mut Im,
-    a: &A,
-    keys: &K,
-    scratch: &mut ScratchArena<'_, BE>,
-) -> Result<()>
-where
-    BE: Backend,
-    Module<BE>: CKKSConjugateOps<BE> + CKKSAddOps<BE> + CKKSSubOps<BE> + CKKSImagOps<BE>,
-    K: BootstrappingLinearKeys<BE>,
-    Re: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-    Im: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    A: GLWEToBackendRef<BE> + CKKSCtBounds,
-{
-    module.ckks_conjugate_into(im, a, keys, scratch)?;
-    module.ckks_add_into(re, a, &*im, scratch)?;
-    module.ckks_sub_assign(im, a, scratch)?;
-    module.ckks_mul_i_assign(im, scratch)?;
-    re.set_slots(SlotsKind::Real);
-    im.set_slots(SlotsKind::Real);
     Ok(())
 }

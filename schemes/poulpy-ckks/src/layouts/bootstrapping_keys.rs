@@ -513,16 +513,16 @@ impl BootstrappingKeysLayout {
             bytes = bytes.max(moved(&layout) + module.glwe_switching_key_prepare_tmp_bytes(&layout));
         }
         match &self.conversion_keys {
-            Some((trace, embed)) => {
-                bytes
-                    .max(moved(trace) + module.glwe_ci_key_prepare_tmp_bytes(trace))
-                    .max(moved(embed) + module.glwe_ci_key_prepare_tmp_bytes(embed))
-                    + moved(&self.tensor_key)
-                    + <Module<BE> as GLWETensorKeyPreparedFactory<BE, ConjugateInvariant>>::glwe_tensor_key_prepare_tmp_bytes(
-                        module,
-                        &self.tensor_key,
-                    )
-            }
+            Some((trace, embed)) => bytes
+                .max(moved(trace) + module.glwe_ci_key_prepare_tmp_bytes(trace))
+                .max(moved(embed) + module.glwe_ci_key_prepare_tmp_bytes(embed))
+                .max(
+                    moved(&self.tensor_key)
+                        + <Module<BE> as GLWETensorKeyPreparedFactory<BE, ConjugateInvariant>>::glwe_tensor_key_prepare_tmp_bytes(
+                            module,
+                            &self.tensor_key,
+                        ),
+                ),
             None => bytes.max(
                 moved(&self.tensor_key)
                     + <Module<BE> as GLWETensorKeyPreparedFactory<BE>>::glwe_tensor_key_prepare_tmp_bytes(
@@ -587,10 +587,10 @@ impl<BE: Backend, F> BootstrappingContextPrepared<BE, F> {
     ///
     /// # Errors
     ///
-    /// [`InvalidOperand`](crate::CKKSCompositionError::InvalidOperand) with EvalMod on the
-    /// conjugate-invariant ring, for missing conversion key layouts, a dense secret not of
-    /// fixed-weight ternary law, or a module of another degree than twice the secret's,
-    /// before any draw.
+    /// [`InvalidOperand`](crate::CKKSCompositionError::InvalidOperand) before any draw: with
+    /// EvalMod on the standard ring, for conversion key layouts, and on the conjugate-invariant
+    /// ring, for missing conversion key layouts, a dense secret not of fixed-weight ternary
+    /// law, or a module of another degree than twice the secret's.
     #[expect(
         clippy::too_many_arguments,
         reason = "key generation takes the module, the secret, the layout, three sources and a scratch arena"
@@ -741,11 +741,6 @@ impl KeyRecipe {
             + GLWECIKeyEncryptSk<BE>,
         Module<BE>: GLWETensorKeyEncryptSk<BE, ConjugateInvariant> + GLWESecretSampling<BE, ConjugateInvariant>,
     {
-        if self.eval_mod_ring == EvalModRing::Standard {
-            let keys = self.generate_linear_keys(module, sk_dense, layout, source_xs, source_xe, source_xa, scratch)?;
-            scratch.wipe(layout.generate_tmp_bytes(module));
-            return Ok(keys);
-        }
         let refuse = |reason: &str| -> anyhow::Error {
             CKKSCompositionError::InvalidOperand {
                 op: "generate_keys",
@@ -753,6 +748,16 @@ impl KeyRecipe {
             }
             .into()
         };
+        if self.eval_mod_ring == EvalModRing::Standard {
+            if layout.conversion_keys.is_some() {
+                return Err(refuse(
+                    "conversion key layouts serve EvalMod on the conjugate-invariant ring only",
+                ));
+            }
+            let keys = self.generate_linear_keys(module, sk_dense, layout, source_xs, source_xe, source_xa, scratch)?;
+            scratch.wipe(layout.generate_tmp_bytes(module));
+            return Ok(keys);
+        }
         let (Some((trace_layout, embed_layout)), Distribution::TernaryFixed(hamming_weight)) =
             (layout.conversion_keys, *sk_dense.dist())
         else {

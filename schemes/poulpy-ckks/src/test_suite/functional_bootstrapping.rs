@@ -27,7 +27,7 @@ use crate::{
     layouts::{
         BootstrappingKeysLayout, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques, CKKSCiphertextAlloc,
         CKKSCiphertextOwned, CKKSEvalModInfos, CKKSPlaintextOwned, DFTOutputFormat, DFTPlan, DFTType, EncapsulationKeysLayout,
-        EncodedLut, SparseSecretEncapsulation, eval_mod::EvalModPlan,
+        EncodedLut, EvalRoundPlus, SparseSecretEncapsulation, eval_mod::EvalModPlan,
     },
     polynomial::SplitStrategy,
     test_suite::{
@@ -489,7 +489,7 @@ fn run_case<BE, F, E>(
         let mut raised = module.ckks_ciphertext_alloc(params.base2k.into(), k_boot.into());
         let mut stepped: Vec<_> = backend_luts
             .iter()
-            .map(|_| module.ckks_ciphertext_alloc(params.base2k.into(), k_boot.into()))
+            .map(|_| fixture_ciphertext(module, &output_spec, 43))
             .collect();
         with_scratch::<BE, _>(boot_tmp, |s| {
             module.ckks_double_into(&mut coeffs, &ct, s)?;
@@ -503,10 +503,10 @@ fn run_case<BE, F, E>(
             assert_eq!(snapshot::<BE, _, Standard>(got), snapshot::<BE, _, Standard>(want));
         }
 
-        // The step runs on exactly the scratch it advertises, and refuses one alignment unit less.
+        // The step runs on exactly the scratch it advertises, and refuses one byte less.
         let mut exact: Vec<_> = backend_luts
             .iter()
-            .map(|_| module.ckks_ciphertext_alloc(params.base2k.into(), k_boot.into()))
+            .map(|_| fixture_ciphertext(module, &output_spec, 47))
             .collect();
         let lut_tmp = module.ckks_eval_lut_tmp_bytes(&exact[0], &raised, &run, &backend_luts, &keys_layout);
         with_scratch::<BE, _>(lut_tmp, |s| {
@@ -518,9 +518,10 @@ fn run_case<BE, F, E>(
         }
         let mut short: Vec<_> = backend_luts
             .iter()
-            .map(|_| module.ckks_ciphertext_alloc(params.base2k.into(), k_boot.into()))
+            .map(|_| fixture_ciphertext(module, &output_spec, 53))
             .collect();
-        let error = with_scratch::<BE, _>(lut_tmp - BE::SCRATCH_ALIGN, |s| {
+        let before: Vec<_> = short.iter().map(snapshot::<BE, _, Standard>).collect();
+        let error = with_scratch::<BE, _>(lut_tmp - 1, |s| {
             module.ckks_eval_lut(&mut short, &raised, &run, &backend_luts, &keys, s)
         })
         .unwrap_err();
@@ -528,6 +529,8 @@ fn run_case<BE, F, E>(
             error.composition().is_none() && error.to_string().contains("needs a scratch arena"),
             "{error}"
         );
+        let after: Vec<_> = short.iter().map(snapshot::<BE, _, Standard>).collect();
+        assert_eq!(after, before, "a refused step wrote res");
 
         let mut refused: Vec<_> = backend_luts
             .iter()
@@ -607,7 +610,7 @@ fn run_case<BE, F, E>(
             "takes an input no wider than its output",
         );
         if slots_kind == SlotsKind::Complex {
-            let c2s_plan = fbt_plan_on(BootstrappingPipeline::C2SFirst, params.base2k, false);
+            let c2s_plan = fbt_plan_on(BootstrappingPipeline::C2SFirst, params.base2k, false, false);
             let c2s_ctx = compile_context::<BE, F>(module, params.base2k.into(), &c2s_plan);
             let c2s_run = c2s_ctx.run(ct.meta());
             let error = eval_lut_refusal(&mut refused, &raised, |res, a, s| {
@@ -804,6 +807,52 @@ fn run_case<BE, F, E>(
                 &error,
                 "ckks_functional_bootstrap",
                 "log_msg_ratio",
+            );
+
+            // The LUT step runs no EvalRound+ bypass: a plan with one refuses the functional bootstrap, and an identity
+            // context with one refuses the functional bootstrap and the LUT step.
+            let bypass = "the functional bootstrap does not run the EvalRound+ bypass";
+            let bypass_plan = fbt_plan_on(BootstrappingPipeline::S2CFirst, params.base2k, false, true);
+            let error = bypass_plan.clone().with_functional_bootstrap(&host_luts[0]).unwrap_err();
+            assert_eq!(
+                error.downcast_ref::<CKKSCompositionError>(),
+                Some(&CKKSCompositionError::InvalidPlan {
+                    plan: "BootstrappingPlan",
+                    reason: bypass.into(),
+                }),
+                "a functional plan with EvalRound+: {error}"
+            );
+            let bypass_ctx = compile_context::<BE, F>(module, params.base2k.into(), &bypass_plan);
+            let mut bypass_outputs: Vec<_> = backend_luts
+                .iter()
+                .map(|_| fixture_ciphertext(module, &output_spec, 59))
+                .collect();
+            let before: Vec<_> = bypass_outputs.iter().map(snapshot::<BE, _, Standard>).collect();
+            let error = with_scratch::<BE, _>(0, |s| {
+                module.ckks_functional_bootstrap(&mut bypass_outputs, &ct, &bypass_ctx, &backend_luts, &keys, s)
+            })
+            .unwrap_err();
+            assert_ckks_error(
+                "a functional bootstrap on an EvalRound+ context",
+                &error,
+                CKKSCompositionError::InvalidOperand {
+                    op: "ckks_functional_bootstrap",
+                    reason: bypass.into(),
+                },
+            );
+            let after: Vec<_> = bypass_outputs.iter().map(snapshot::<BE, _, Standard>).collect();
+            assert_eq!(after, before, "a refused functional bootstrap wrote its outputs");
+            let bypass_run = bypass_ctx.run(ct.meta());
+            let error = eval_lut_refusal(&mut refused, &raised, |res, a, s| {
+                module.ckks_eval_lut(res, a, &bypass_run, &backend_luts, &keys, s)
+            });
+            assert_ckks_error(
+                "a LUT step of an EvalRound+ run",
+                &error,
+                CKKSCompositionError::InvalidOperand {
+                    op: "ckks_eval_lut",
+                    reason: bypass.into(),
+                },
             );
 
             // Reusing a wider allocation at a narrower effective width must
@@ -1065,7 +1114,7 @@ impl<BE: Backend, F> CKKSEvalModInfos<BE, F> for OffCirclePlan<'_, BE, F> {
         None
     }
 
-    fn stamp_eval_mod_output<C: SetCKKSInfos>(&self, _res: &mut C) -> crate::CKKSResult<()> {
+    fn stamp_eval_mod_output<C: SetCKKSInfos>(&self, _op: &'static str, _res: &mut C) -> crate::CKKSResult<()> {
         Ok(())
     }
 
@@ -1080,12 +1129,17 @@ impl<BE: Backend, F> CKKSEvalModInfos<BE, F> for OffCirclePlan<'_, BE, F> {
 }
 
 fn fbt_plan(base2k: usize, guard_bits: usize, first_factor_on_raise: bool) -> BootstrappingPlan {
-    fbt_plan_on(BootstrappingPipeline::S2CFirst, base2k, first_factor_on_raise)
+    fbt_plan_on(BootstrappingPipeline::S2CFirst, base2k, first_factor_on_raise, false)
         .with_c2s_guard_bits(guard_bits)
         .unwrap()
 }
 
-fn fbt_plan_on(pipeline: BootstrappingPipeline, base2k: usize, first_factor_on_raise: bool) -> BootstrappingPlan {
+fn fbt_plan_on(
+    pipeline: BootstrappingPipeline,
+    base2k: usize,
+    first_factor_on_raise: bool,
+    eval_round_plus: bool,
+) -> BootstrappingPlan {
     let slots_to_coeffs = DFTPlan::new(
         DFTType::Decode,
         vec![(2, 4), (3, 4), (2, 4)],
@@ -1111,7 +1165,15 @@ fn fbt_plan_on(pipeline: BootstrappingPipeline, base2k: usize, first_factor_on_r
         pipeline,
         BootstrappingTechniques {
             sparse_secret_encapsulation: Some(SparseSecretEncapsulation { hamming_weight: 32 }),
-            eval_round_plus: None,
+            eval_round_plus: eval_round_plus.then(|| EvalRoundPlus {
+                coeffs_to_slots_bypass: DFTPlan::new(
+                    DFTType::Encode,
+                    vec![(2, 4), (3, 4), (2, 4)],
+                    DFTOutputFormat::SplitRealAndImag,
+                    CoeffsMeta::from_delta_budget(55, 2),
+                )
+                .unwrap(),
+            }),
         },
         coeffs_to_slots,
         EvalModPlan::complex_exponential(

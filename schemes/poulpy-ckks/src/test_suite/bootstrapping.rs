@@ -55,6 +55,7 @@ use crate::{
         CKKSAddOps, CKKSBootstrappingOps, CKKSCopyOps, CKKSDFTMatrixOps, CKKSDFTMatrixPreparedFactory, CKKSDFTOps,
         CKKSDecryptOps, CKKSEvalModOps, CKKSPow2Ops, CKKSSubOps,
     },
+    ckks_log_delta,
     layouts::{
         BootstrappingKeysLayout, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques, CKKSCiphertextAlloc,
         CKKSDFTFactors, CKKSEvalModInfos, CKKSPlaintextAlloc, DFTOutputFormat, DFTPlan, DFTType, EncapsulationKeysLayout,
@@ -369,8 +370,8 @@ where
                 // One bit of headroom gives C2S-first a lift, which the refusal of a key under that width precedes.
                 let lifted_k = k_small + 1;
                 let mut lifted = fixture_ciphertext(&module, &ckks_spec(n, base2k, log_delta, lifted_k - log_delta), 47);
-                if let Some(lift) = &plan.mod_raise().lift {
-                    assert_eq!(lift.input_scale_up(lifted_k, log_delta).unwrap(), 1);
+                if let Some(lift) = plan.mod_raise().lift() {
+                    assert_eq!(lift.input_scale_up("ckks_mod_raise", lifted_k, log_delta).unwrap(), 1);
                 }
                 let mut narrow_key = keys_layout.encapsulation.as_ref().unwrap().dense_to_sparse;
                 narrow_key.dnum = 1usize.into();
@@ -395,14 +396,19 @@ where
             );
         }
         {
-            let mut src = module.ckks_ciphertext_alloc(base2k.into(), k_small.into());
-            src.set_meta(small_spec.meta);
-            let mut dst = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
+            let mut src = fixture_ciphertext(&module, &small_spec, 49);
+            let mut dst = fixture_ciphertext(&module, &boot_spec, 51);
+            let before = (snapshot::<BE, _, Standard>(&dst), snapshot::<BE, _, Standard>(&src));
             let err =
                 with_scratch::<BE, _>(raise_tmp - 1, |s| module.ckks_mod_raise(&mut dst, &mut src, &ctx, &bsk, s)).unwrap_err();
             assert!(
                 err.composition().is_none() && err.to_string().contains("needs a scratch arena"),
                 "{err}"
+            );
+            assert_eq!(
+                (snapshot::<BE, _, Standard>(&dst), snapshot::<BE, _, Standard>(&src)),
+                before,
+                "a refused raise wrote an operand"
             );
         }
 
@@ -442,7 +448,7 @@ where
             &err,
             CKKSCompositionError::InvalidOperand {
                 op: "ckks_bootstrap",
-                reason: "takes ciphertexts of the module degree, at which its context is compiled".into(),
+                reason: "takes ciphertexts of the degree its context is compiled at".into(),
             },
         );
         assert_eq!(
@@ -616,7 +622,7 @@ where
             let mut layout = preset.input_layout();
             layout.meta.slots = slots;
             let input = fixture_ciphertext(&module, &layout, 5);
-            let mut whole = module.ckks_ciphertext_alloc_from_glwe_infos(&boot);
+            let mut whole = fixture_ciphertext(&module, &boot, 67);
             let bytes = module.ckks_bootstrap_tmp_bytes(&boot, &input, &context, keys_layout);
             with_scratch::<BE, _>(bytes, |s| module.ckks_bootstrap(&mut whole, &input, &context, &keys, s)).unwrap();
             digits.push(snapshot::<BE, _, Standard>(&whole).digits);
@@ -625,7 +631,7 @@ where
             let mut coeffs = module.ckks_ciphertext_alloc_from_infos(&input);
             let mut raised = module.ckks_ciphertext_alloc_from_glwe_infos(&boot);
             let mut z_hp = module.ckks_ciphertext_alloc_from_glwe_infos(&boot);
-            let mut stepped = module.ckks_ciphertext_alloc_from_glwe_infos(&boot);
+            let mut stepped = fixture_ciphertext(&module, &boot, 71);
             let s2c_first = context.pipeline() == BootstrappingPipeline::S2CFirst;
             with_scratch::<BE, _>(bytes, |s| {
                 if s2c_first {
@@ -645,7 +651,7 @@ where
                     module.ckks_mul_pow2_assign(1, &mut z_hp, s)?;
                     module.ckks_add_assign(&mut z_hp, &stepped, s)?;
                     module.ckks_copy(&mut stepped, &z_hp, s)?;
-                    run.stamp_eval_mod_output(&mut stepped)?;
+                    run.stamp_eval_mod_output("ckks_bootstrap", &mut stepped)?;
                 }
                 if !s2c_first {
                     module.ckks_slots_to_coeffs_assign(&mut stepped, &run, &keys, s)?;
@@ -660,7 +666,7 @@ where
                 context.pipeline()
             );
 
-            // The step runs on exactly the scratch it advertises, and refuses one alignment unit less.
+            // The step runs on exactly the scratch it advertises, and refuses one byte less.
             let mut exact = module.ckks_ciphertext_alloc_from_glwe_infos(&boot);
             let eval_mod_tmp = module.ckks_bootstrap_eval_mod_tmp_bytes(&exact, &raised, &run, keys_layout);
             assert!(eval_mod_tmp > 0);
@@ -668,9 +674,9 @@ where
                 module.ckks_bootstrap_eval_mod(&mut exact, &raised, &run, &keys, s)
             })
             .unwrap();
-            let mut short = module.ckks_ciphertext_alloc_from_glwe_infos(&boot);
+            let mut short = fixture_ciphertext(&module, &boot, 73);
             let before = snapshot::<BE, _, Standard>(&short);
-            let err = with_scratch::<BE, _>(eval_mod_tmp - BE::SCRATCH_ALIGN, |s| {
+            let err = with_scratch::<BE, _>(eval_mod_tmp - 1, |s| {
                 module.ckks_bootstrap_eval_mod(&mut short, &raised, &run, &keys, s)
             })
             .unwrap_err();
@@ -846,7 +852,7 @@ where
             |res, a, s| module.ckks_mod_raise(res, a, &context, &keys, s),
         );
         let other_encapsulation = ModRaisePlan {
-            sparse_secret_hamming_weight: match mod_raise.sparse_secret_hamming_weight {
+            sparse_secret_hamming_weight: match mod_raise.sparse_secret_hamming_weight() {
                 Some(_) => None,
                 None => Some(EPHEMERAL_SECRET_WEIGHT),
             },
@@ -867,17 +873,41 @@ where
             |res, a, s| module.ckks_mod_raise(res, a, &context, &keys, s),
         );
         // One bit of headroom gives a lift, which the refusal precedes.
-        if let Some(lift) = &mod_raise.lift {
+        if let Some(lift) = mod_raise.lift() {
             let mut wider = preset.input_layout();
             wider.glwe_layout.k = (a.k().as_usize() + 1).into();
             let mut lifted = fixture_ciphertext(&module, &wider, 23);
-            assert_eq!(lift.input_scale_up(lifted.k().as_usize(), lifted.log_delta()).unwrap(), 1);
+            assert_eq!(
+                lift.input_scale_up("ckks_mod_raise", lifted.k().as_usize(), lifted.log_delta())
+                    .unwrap(),
+                1
+            );
             assert_mod_raise_refuses(
                 &mut fixture_ciphertext(&module, &narrow, 17),
                 &mut lifted,
                 "ModUp must widen, not shrink, the modulus",
                 |res, a, s| module.ckks_mod_raise(res, a, &context, &keys, s),
             );
+            // An input one bit short of its scale plus the message ratio leaves no room for the first lift.
+            let mut short = preset.input_layout();
+            short.glwe_layout.k = (ckks_log_delta(&short.meta) + lift.log_msg_ratio - 1).into();
+            let reason = "the input holds fewer bits than its scale plus the plan's message ratio";
+            assert_mod_raise_refuses(&mut res, &mut fixture_ciphertext(&module, &short, 27), reason, |res, a, s| {
+                module.ckks_mod_raise(res, a, &context, &keys, s)
+            });
+            let short = fixture_ciphertext(&module, &short, 27);
+            let mut out = fixture_ciphertext(&module, &boot, 33);
+            let before = snapshot::<BE, _, Standard>(&out);
+            let err = with_scratch::<BE, _>(0, |s| module.ckks_bootstrap(&mut out, &short, &context, &keys, s)).unwrap_err();
+            assert_ckks_error(
+                "a bootstrap of an input short of its lift",
+                &err,
+                CKKSCompositionError::InvalidOperand {
+                    op: "ckks_bootstrap",
+                    reason: reason.into(),
+                },
+            );
+            assert_eq!(snapshot::<BE, _, Standard>(&out), before, "a refused bootstrap wrote res");
         }
 
         // The tensor key resolves before the scratch check, on the standard ring too.

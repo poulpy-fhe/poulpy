@@ -21,7 +21,7 @@ use poulpy_core::layouts::{
     GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, IntPolyInfos, LinearTransformation, LinearTransformationPrepared,
     SetBSGSMeta, SetGLWEPlaintextInfos, SetK, TorusPrecision,
 };
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, HostBytesBackend, Module, ScratchArena};
 
 fn plan(kind: DFTType, format: DFTOutputFormat) -> DFTPlan {
     DFTPlan::new(kind, vec![(1, 1), (2, 2)], format, CoeffsMeta::from_delta_budget(12, 2)).unwrap()
@@ -342,11 +342,16 @@ fn checked_dft_construction_preserves_exact_encoded_width() {
 use super::OverrideBackend;
 use super::carry::assert_query_takes_extra;
 use poulpy_ckks::reference::bootstrapping::{CKKSBootstrapEvalModReference, CKKSEvalLutReference, CKKSModRaiseReference};
+use poulpy_ckks::test_suite::parity::{run_bootstrap, run_refused_bootstraps};
 use poulpy_ckks::{CKKSCtBounds, CKKSResult as Result, SetCKKSInfos};
 use poulpy_core::GLWEDiagonalProd;
 use std::cell::{Cell, RefCell};
 const DFT_EXTRA_DEFAULT: usize = 1 << 25;
 const DFT_PREPARE_DEFAULT: usize = 512;
+const RAISE_EXTRA_DEFAULT: usize = 448;
+const BOOTSTRAP_EVAL_MOD_EXTRA_DEFAULT: usize = 576;
+const EVAL_LUT_EXTRA_DEFAULT: usize = 704;
+const PROBE_DFT_EXTRA: usize = 832;
 thread_local! {
     static DFT_EXTRA: Cell<usize> = const { Cell::new(DFT_EXTRA_DEFAULT) };
     static DFT_PREPARE_EXTRA: Cell<usize> = const { Cell::new(DFT_PREPARE_DEFAULT) };
@@ -359,6 +364,9 @@ thread_local! {
     static RAISE_CALLS: Cell<usize> = const { Cell::new(0) };
     static BOOTSTRAP_EVAL_MOD_CALLS: Cell<usize> = const { Cell::new(0) };
     static EVAL_LUT_CALLS: Cell<usize> = const { Cell::new(0) };
+    static RAISE_EXTRA: Cell<usize> = const { Cell::new(RAISE_EXTRA_DEFAULT) };
+    static BOOTSTRAP_EVAL_MOD_EXTRA: Cell<usize> = const { Cell::new(BOOTSTRAP_EVAL_MOD_EXTRA_DEFAULT) };
+    static EVAL_LUT_EXTRA: Cell<usize> = const { Cell::new(EVAL_LUT_EXTRA_DEFAULT) };
 }
 unsafe impl CKKSDFTImpl for OverrideBackend {
     fn ckks_dft_matrix_prepare_tmp_bytes<Dir, Fmt, P>(
@@ -412,7 +420,9 @@ unsafe impl CKKSDFTImpl for OverrideBackend {
     {
         if DFT_FORWARD.get() {
             DFT_CALLS.set(DFT_CALLS.get() + 1);
-            return CKKSDFTReference::ckks_dft_matrix_eval_assign_reference(module, ct, dft, keys, scratch);
+            return super::carry::with_marked_bytes(DFT_EXTRA.get(), scratch, |rest| {
+                CKKSDFTReference::ckks_dft_matrix_eval_assign_reference(module, ct, dft, keys, rest)
+            });
         }
         let extra = DFT_EXTRA.get();
         let (mut workspace, _) = scratch.borrow().take_region(extra);
@@ -500,7 +510,7 @@ unsafe impl CKKSBootstrappingImpl for OverrideBackend {
         A: CKKSCtBounds,
         P: CKKSModRaiseInfos<Self>,
     {
-        CKKSModRaiseReference::ckks_mod_raise_tmp_bytes_reference(module, res, a, plan, keys_layout)
+        RAISE_EXTRA.get() + CKKSModRaiseReference::ckks_mod_raise_tmp_bytes_reference(module, res, a, plan, keys_layout)
     }
 
     fn ckks_mod_raise<R, A, P, K>(
@@ -518,7 +528,9 @@ unsafe impl CKKSBootstrappingImpl for OverrideBackend {
         K: BootstrappingLinearKeys<Self>,
     {
         RAISE_CALLS.set(RAISE_CALLS.get() + 1);
-        CKKSModRaiseReference::ckks_mod_raise_reference(module, res, a, plan, keys, scratch)
+        super::carry::with_marked_bytes(RAISE_EXTRA.get(), scratch, |rest| {
+            CKKSModRaiseReference::ckks_mod_raise_reference(module, res, a, plan, keys, rest)
+        })
     }
 
     fn ckks_bootstrap_eval_mod_tmp_bytes<R, A, P, F>(
@@ -533,7 +545,8 @@ unsafe impl CKKSBootstrappingImpl for OverrideBackend {
         A: CKKSCtBounds,
         P: CKKSEvalModInfos<Self, F>,
     {
-        CKKSBootstrapEvalModReference::ckks_bootstrap_eval_mod_tmp_bytes_reference(module, res, a, plan, keys_layout)
+        BOOTSTRAP_EVAL_MOD_EXTRA.get()
+            + CKKSBootstrapEvalModReference::ckks_bootstrap_eval_mod_tmp_bytes_reference(module, res, a, plan, keys_layout)
     }
 
     fn ckks_bootstrap_eval_mod<R, A, P, F, K>(
@@ -553,7 +566,9 @@ unsafe impl CKKSBootstrappingImpl for OverrideBackend {
         K::TensorKey: Sync,
     {
         BOOTSTRAP_EVAL_MOD_CALLS.set(BOOTSTRAP_EVAL_MOD_CALLS.get() + 1);
-        CKKSBootstrapEvalModReference::ckks_bootstrap_eval_mod_reference(module, res, a, plan, keys, scratch)
+        super::carry::with_marked_bytes(BOOTSTRAP_EVAL_MOD_EXTRA.get(), scratch, |rest| {
+            CKKSBootstrapEvalModReference::ckks_bootstrap_eval_mod_reference(module, res, a, plan, keys, rest)
+        })
     }
 
     fn ckks_eval_lut_tmp_bytes<R, A, P, F>(
@@ -569,7 +584,7 @@ unsafe impl CKKSBootstrappingImpl for OverrideBackend {
         A: CKKSCtBounds,
         P: CKKSEvalModInfos<Self, F>,
     {
-        CKKSEvalLutReference::ckks_eval_lut_tmp_bytes_reference(module, res, a, plan, luts, keys_layout)
+        EVAL_LUT_EXTRA.get() + CKKSEvalLutReference::ckks_eval_lut_tmp_bytes_reference(module, res, a, plan, luts, keys_layout)
     }
 
     fn ckks_eval_lut<R, A, P, F, K>(
@@ -588,7 +603,9 @@ unsafe impl CKKSBootstrappingImpl for OverrideBackend {
         K: BootstrappingKeys<Self>,
     {
         EVAL_LUT_CALLS.set(EVAL_LUT_CALLS.get() + 1);
-        CKKSEvalLutReference::ckks_eval_lut_reference(module, res, a, plan, luts, keys, scratch)
+        super::carry::with_marked_bytes(EVAL_LUT_EXTRA.get(), scratch, |rest| {
+            CKKSEvalLutReference::ckks_eval_lut_reference(module, res, a, plan, luts, keys, rest)
+        })
     }
 }
 unsafe impl<F: CKKSEncodingScalar + DftScalar> CKKSDFTMatrixImpl<F> for OverrideBackend {
@@ -606,6 +623,7 @@ unsafe impl<F: CKKSEncodingScalar + DftScalar> CKKSDFTMatrixImpl<F> for Override
     }
 }
 
+/// The bootstrap queries take the selected DFT's workspace and each step hook's extra one for one.
 #[test]
 fn bootstrap_sizing_includes_selected_dft_workspace() {
     use poulpy_ckks::api::CKKSBootstrappingOps;
@@ -677,6 +695,20 @@ fn bootstrap_sizing_includes_selected_dft_workspace() {
         || module.ckks_bootstrap_tmp_bytes(&dst, &src, &context, &keys),
     );
     DFT_EXTRA.set(DFT_EXTRA_DEFAULT);
+    let assert_steps_take_extras = |context: &Context| {
+        for (extra, default) in [
+            (&RAISE_EXTRA, RAISE_EXTRA_DEFAULT),
+            (&BOOTSTRAP_EVAL_MOD_EXTRA, BOOTSTRAP_EVAL_MOD_EXTRA_DEFAULT),
+        ] {
+            assert_query_takes_extra(
+                "ckks_bootstrap_tmp_bytes",
+                |bytes| extra.set(bytes),
+                || module.ckks_bootstrap_tmp_bytes(&dst, &src, context, &keys),
+            );
+            extra.set(default);
+        }
+    };
+    assert_steps_take_extras(&context);
     DFT_QUERIES.set(0);
     DFT_QUERY_LAYOUTS.with_borrow_mut(Vec::clear);
     module.ckks_bootstrap_tmp_bytes(&dst, &src, &context, &keys);
@@ -699,6 +731,41 @@ fn bootstrap_sizing_includes_selected_dft_workspace() {
     // C2S-first: both transforms run on working-width ciphertexts.
     let layouts = DFT_QUERY_LAYOUTS.with_borrow(Vec::clone);
     assert_eq!(layouts, [(DFTType::Encode, 256, 256), (DFTType::Decode, 256, 256)]);
+    assert_steps_take_extras(&context);
+
+    let host = Module::<HostBytesBackend>::new(64);
+    let lut = EncodedLut::binary(
+        &host,
+        3.0f64,
+        1.0,
+        8,
+        4,
+        1,
+        16usize.into(),
+        CoeffsMeta::from_delta_budget(16, 16),
+        SplitStrategy::MinDepth,
+    )
+    .unwrap();
+    let functional = BootstrappingPlan::new(
+        BootstrappingPipeline::S2CFirst,
+        BootstrappingTechniques::default(),
+        self::plan(DFTType::Encode, DFTOutputFormat::SplitRealAndImag),
+        EvalModPlan::complex_exponential(1, 1, 0, SplitStrategy::MinDepth, meta, 16),
+        self::plan(DFTType::Decode, DFTOutputFormat::SplitRealAndImag),
+    )
+    .unwrap()
+    .with_functional_bootstrap(&lut)
+    .unwrap();
+    let context = compile(&functional);
+    let luts = [lut.transfer_to(&module)];
+    for (extra, default) in [(&RAISE_EXTRA, RAISE_EXTRA_DEFAULT), (&EVAL_LUT_EXTRA, EVAL_LUT_EXTRA_DEFAULT)] {
+        assert_query_takes_extra(
+            "ckks_functional_bootstrap_tmp_bytes",
+            |bytes| extra.set(bytes),
+            || module.ckks_functional_bootstrap_tmp_bytes(&dst, &src, &context, &luts, &keys),
+        );
+        extra.set(default);
+    }
 }
 
 #[test]
@@ -772,6 +839,8 @@ fn dft_preparation_uses_selected_scratch() {
     }
 }
 
+/// The derived `ckks_bootstrap` and `ckks_functional_bootstrap`, each on exactly its query poisoned, enter each step
+/// hook behind its marked region and give the base backend's outputs; a bootstrap the entry checks refuse enters none.
 #[test]
 fn bootstrap_enters_each_step_hook() {
     let params = CKKSTestParams {
@@ -781,17 +850,49 @@ fn bootstrap_enters_each_step_hook() {
         ..poulpy_ckks::test_suite::BASE19_PARAMS_F64
     };
     let module = Module::<OverrideBackend>::new(64);
-    for counter in [&RAISE_CALLS, &BOOTSTRAP_EVAL_MOD_CALLS, &EVAL_LUT_CALLS, &DFT_CALLS] {
-        counter.set(0);
-    }
+    let counters = [
+        &RAISE_CALLS,
+        &BOOTSTRAP_EVAL_MOD_CALLS,
+        &EVAL_LUT_CALLS,
+        &DFT_CALLS,
+        &super::EVAL_MOD_CALLS,
+    ];
+    let counts = || counters.map(|counter| counter.get());
+    counters.iter().for_each(|counter| counter.set(0));
     DFT_FORWARD.set(true);
+    DFT_EXTRA.set(PROBE_DFT_EXTRA);
     super::EVAL_MOD_FORWARD.set(true);
-    poulpy_ckks::test_suite::parity::run_bootstrap::<_, f64>(params, &module);
+    let got = run_bootstrap::<_, f64>(params, &module);
+    // Seven raises, five EvalMod steps and two LUT steps; two transforms each, a third under EvalRound+ (two cases);
+    // EvalMod per half, once on real slots without a bypass, and none under the binary LUT.
+    assert_eq!(counts(), [7, 5, 2, 16, 9]);
+    counters.iter().for_each(|counter| counter.set(0));
+    let refused = run_refused_bootstraps::<_, f64>(params, &module);
+    assert_eq!(counts(), [0; 5], "a refused bootstrap entered a hook");
     DFT_FORWARD.set(false);
+    DFT_EXTRA.set(DFT_EXTRA_DEFAULT);
     super::EVAL_MOD_FORWARD.set(false);
-    // Seven bootstraps raise: five reach EvalMod through the hook, real slots included, two the LUTs.
-    assert!(RAISE_CALLS.get() >= 7);
-    assert!(BOOTSTRAP_EVAL_MOD_CALLS.get() >= 5);
-    assert!(EVAL_LUT_CALLS.get() >= 2);
-    assert!(DFT_CALLS.get() >= 14);
+    for (error, op, reason) in [
+        (
+            &refused[0],
+            "ckks_bootstrap",
+            "supports rank-1 ciphertexts only, got rank 2 -> 1",
+        ),
+        (
+            &refused[1],
+            "ckks_functional_bootstrap",
+            "LUT outputs must share one rank-1 layout",
+        ),
+    ] {
+        assert_ckks_error(
+            op,
+            error,
+            CKKSCompositionError::InvalidOperand {
+                op,
+                reason: reason.into(),
+            },
+        );
+    }
+    let want = run_bootstrap::<FFT64Portable, f64>(params, &Module::<FFT64Portable>::new(64));
+    assert_eq!(got, want, "the probe's bootstraps differ from the base backend's");
 }

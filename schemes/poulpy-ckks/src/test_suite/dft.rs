@@ -43,8 +43,8 @@ use crate::{
     test_suite::{
         CKKSTestParams,
         helpers::{
-            TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, assert_ckks_internal, ckks_encrypt,
-            ckks_encrypt_coeffs, ckks_encrypt_pt, ckks_spec, gen_atk, gen_sk_with_raw, test_vector_1,
+            TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, assert_ckks_error, assert_ckks_internal,
+            ckks_encrypt, ckks_encrypt_coeffs, ckks_encrypt_pt, ckks_spec, gen_atk, gen_sk_with_raw, test_vector_1,
         },
         parity::helpers::{snapshot, with_scratch},
     },
@@ -109,14 +109,17 @@ fn sparse_params(params: &CKKSTestParams) -> CKKSTestParams {
     }
 }
 
-/// A borrowed matrix behind the infos trait alone.
-struct FactorsOf<'a, D>(&'a D);
+/// A borrowed matrix behind the infos trait alone, which reports the schedules of its first `plans` factors.
+struct FactorsOf<'a, D> {
+    matrix: &'a D,
+    plans: usize,
+}
 
 impl<BE: Backend, Dir, Fmt, D: CKKSDFTFactors<BE, Dir, Fmt>> CKKSDFTFactors<BE, Dir, Fmt> for FactorsOf<'_, D> {
     type Diagonal = D::Diagonal;
 
     fn dft_plan(&self) -> &DFTPlan {
-        self.0.dft_plan()
+        self.matrix.dft_plan()
     }
 
     fn factors<'a>(&'a self) -> impl Iterator<Item = &'a LinearTransformation<Self::Diagonal>>
@@ -125,11 +128,11 @@ impl<BE: Backend, Dir, Fmt, D: CKKSDFTFactors<BE, Dir, Fmt>> CKKSDFTFactors<BE, 
         Dir: 'a,
         Fmt: 'a,
     {
-        self.0.factors()
+        self.matrix.factors()
     }
 
     fn factor_plans(&self) -> &[LinearTransformationPlan] {
-        self.0.factor_plans()
+        &self.matrix.factor_plans()[..self.plans]
     }
 }
 
@@ -473,14 +476,42 @@ pub fn test_dft_coeffs_to_slots_split<BE, F, E>(
         module.ckks_dft_matrix_eval_assign(&mut direct, &enc_dft, &atks, s)
     })
     .unwrap();
+    let all = FactorsOf {
+        matrix: &enc_dft,
+        plans: enc_dft.num_factors(),
+    };
     with_scratch::<BE, _>(bytes, |s| {
         module.ckks_copy(&mut through_infos, &ct_in, s)?;
-        module.ckks_dft_matrix_eval_assign(&mut through_infos, &FactorsOf(&enc_dft), &atks, s)
+        module.ckks_dft_matrix_eval_assign(&mut through_infos, &all, &atks, s)
     })
     .unwrap();
     assert_eq!(
         snapshot::<BE, _, poulpy_hal::layouts::Standard>(&through_infos),
         snapshot::<BE, _, poulpy_hal::layouts::Standard>(&direct)
+    );
+
+    // A view short of one schedule refuses before its first factor.
+    let short = FactorsOf {
+        matrix: &enc_dft,
+        plans: enc_dft.num_factors() - 1,
+    };
+    let before = snapshot::<BE, _, poulpy_hal::layouts::Standard>(&through_infos);
+    let err = with_scratch::<BE, _>(bytes, |s| {
+        module.ckks_dft_matrix_eval_assign(&mut through_infos, &short, &atks, s)
+    })
+    .unwrap_err();
+    assert_ckks_error(
+        "one schedule short",
+        &err,
+        CKKSCompositionError::InvalidOperand {
+            op: "ckks_dft_matrix_eval_assign",
+            reason: "takes one schedule per factor".into(),
+        },
+    );
+    assert_eq!(
+        snapshot::<BE, _, poulpy_hal::layouts::Standard>(&through_infos),
+        before,
+        "a refused evaluation wrote its ciphertext"
     );
 
     // Reference: ct_real holds slots (re, 0), ct_imag holds slots (im, 0). Measure

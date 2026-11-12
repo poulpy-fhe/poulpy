@@ -67,10 +67,10 @@ scratch carve, with `EncryptionDegreeMismatch` for encryption and decryption and
 a plaintext polynomial embeds into its ciphertext's degree, and a constant
 plaintext, which only supplies coefficients, may be of any degree. Queries size a
 temporary at its operand's degree or the module's, never below. PaCo and SHIP run at the degree of their plan, at most
-the module's. A bootstrapping context is compiled at the degree of its module
-(`compile_ci`: at half of it, EvalMod running on the conjugate-invariant ring
-of that degree), and the bootstraps take ciphertexts of the degree their
-context is compiled at.
+the module's. A bootstrapping context is compiled at the degree of its module,
+or at half of it when the plan runs EvalMod on the conjugate-invariant ring of
+that degree, and the bootstraps take ciphertexts of the degree their context is
+compiled at.
 
 ## What an override must preserve
 

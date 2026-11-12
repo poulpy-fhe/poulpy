@@ -15,7 +15,8 @@ use crate::{
 use super::{BootstrappingContextPrepared, BootstrappingPipeline, EvalModCIPrepared};
 
 /// A compiled bootstrap bound to the labels of the message it runs on. The steps read those labels here, so a
-/// composition stamps nothing.
+/// composition stamps nothing, except under the EvalRound+ bypass, whose recipe ends with
+/// [`stamp_eval_mod_output`](CKKSEvalModInfos::stamp_eval_mod_output).
 pub struct BootstrappingRun<'a, BE: Backend, F> {
     context: &'a BootstrappingContextPrepared<BE, F>,
     message: GLWEPlaintextMeta,
@@ -23,8 +24,9 @@ pub struct BootstrappingRun<'a, BE: Backend, F> {
 
 impl<BE: Backend, F> BootstrappingRun<'_, BE, F> {
     /// The EvalRound+ bypass of the plan, `None` without one. A composer runs it on a copy of the raised ciphertext,
-    /// `ckks_coeffs_to_slots_assign(&mut copy, &bypass, ..)`, which leaves half a `Standard` encode, then doubles the
-    /// copy and adds the output of `ckks_bootstrap_eval_mod`.
+    /// `ckks_coeffs_to_slots_assign(&mut copy, &bypass, ..)`, which leaves half a `Standard` encode, doubles the copy,
+    /// adds the output of `ckks_bootstrap_eval_mod`, and last calls
+    /// [`stamp_eval_mod_output`](CKKSEvalModInfos::stamp_eval_mod_output) on the sum, which removes the guard bits.
     pub fn bypass(&self) -> Option<&DFTMatrixPrepared<BE, Encode, Split>> {
         self.context.coeffs_to_slots_bypass()
     }
@@ -119,8 +121,8 @@ impl<BE: Backend, F> CKKSEvalModInfos<BE, F> for BootstrappingRun<'_, BE, F> {
         Some(self.message.slots)
     }
 
-    fn stamp_eval_mod_output<C: SetCKKSInfos>(&self, res: &mut C) -> CKKSResult<()> {
-        let log_delta = remove_guard_bits("ckks_bootstrap_eval_mod", res.log_delta(), self.context.c2s_guard_bits())?;
+    fn stamp_eval_mod_output<C: SetCKKSInfos>(&self, op: &'static str, res: &mut C) -> CKKSResult<()> {
+        let log_delta = remove_guard_bits(op, res.log_delta(), self.context.c2s_guard_bits())?;
         res.set_log_delta(log_delta);
         // C2S-first ends in SlotsToCoeffs, which stamps the rest.
         if self.context.pipeline() == BootstrappingPipeline::S2CFirst {

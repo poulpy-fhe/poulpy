@@ -830,8 +830,9 @@ where
         ckks_eval_mod_compile::<BE, f64, ConjugateInvariant>(params.base2k.into(), complex, module, s)
     })
     .unwrap();
-    let before = res.to_host_owned::<BE>();
-    let err = with_scratch::<BE, _>(0, |s| module.ckks_eval_mod(&mut res, &mut ct.clone(), &complex, &tsk, s)).unwrap_err();
+    let mut input = ct.clone();
+    let (before, input_before) = (res.to_host_owned::<BE>(), input.to_host_owned::<BE>());
+    let err = with_scratch::<BE, _>(0, |s| module.ckks_eval_mod(&mut res, &mut input, &complex, &tsk, s)).unwrap_err();
     assert!(
         matches!(
             err.composition(),
@@ -839,10 +840,14 @@ where
         ),
         "ExpCmplx on the CI ring: {err}"
     );
-    let after = res.to_host_owned::<BE>();
+    let (after, input_after) = (res.to_host_owned::<BE>(), input.to_host_owned::<BE>());
     assert!(
         (after.meta(), after.k(), after.data()) == (before.meta(), before.k(), before.data()),
         "the refusal wrote the output"
+    );
+    assert!(
+        (input_after.meta(), input_after.k(), input_after.data()) == (input_before.meta(), input_before.k(), input_before.data()),
+        "the refusal wrote the input"
     );
 }
 

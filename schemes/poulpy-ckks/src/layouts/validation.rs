@@ -20,7 +20,8 @@ use crate::{
     checked_log_budget_sub, ckks_bail, ckks_ensure, ckks_ensure_operand, ckks_log_delta,
     layouts::{
         BootstrappingContextPrepared, BootstrappingKeys, BootstrappingLinearKeys, BootstrappingPipeline, CKKSCiphertextOwned,
-        CKKSEvalModInfos, CKKSPlaintextOwned, CKKSRightOperandPrepared, EncodedLut, EvalMod, EvalModPlan, EvalModType,
+        CKKSEvalModInfos, CKKSModRaiseInfos, CKKSPlaintextOwned, CKKSRightOperandPrepared, EncodedLut, EvalMod, EvalModPlan,
+        EvalModType,
     },
     presets::first_factor::{first_factor_small_bits, first_factor_work},
 };
@@ -330,10 +331,25 @@ where
     Ok(())
 }
 
+/// `InvalidOperand` for `op` unless `a` has the degree `ctx` is compiled at.
+fn ensure_compile_degree<BE: Backend, F, A: GLWEInfos>(
+    op: &'static str,
+    ctx: &BootstrappingContextPrepared<BE, F>,
+    a: &A,
+) -> CKKSResult<()> {
+    ckks_ensure_operand!(
+        op,
+        a.n().as_usize() == 1 << ctx.log_n(),
+        "takes ciphertexts of the degree its context is compiled at"
+    );
+    Ok(())
+}
+
 /// What `ckks_bootstrap_derived` refuses before its first step, so that no later step refuses with `res` half written:
-/// the context kind, ranks, degrees and radices, ciphertexts of another degree than the module's, at which the context
-/// is compiled, or a module of another degree than `2N` with EvalMod on the conjugate-invariant ring, a working width without the budget of the stages running on `res`, the keys of the plan's
-/// ring and their coverage of the run's widths, and, when the keys report their layout, the arena against the query.
+/// the context kind, ranks, degrees and radices, ciphertexts of another degree than the one the context is compiled at,
+/// or a module of another degree than `2N` with EvalMod on the conjugate-invariant ring, an input the lifts of a
+/// C2S-first raise do not fit, a working width without the budget of the stages, the keys of the plan's ring and their
+/// coverage of the run's widths, and, when the keys report their layout, the arena against the query.
 pub(crate) fn check_bootstrap_entry<BE, F, K>(
     module: &Module<BE>,
     res: &CKKSCiphertextOwned<BE>,
@@ -356,27 +372,22 @@ where
     );
     ensure_rank_one(OP, a, res)?;
     ensure_one_degree(OP, module.n(), a, res)?;
-    ckks_ensure_operand!(
-        OP,
-        ctx.eval_mod_ci().is_some() || a.n().as_usize() == module.n(),
-        "takes ciphertexts of the module degree, at which its context is compiled"
-    );
+    ensure_compile_degree(OP, ctx, a)?;
     ensure_one_base2k(OP, a, res)?;
     ensure_encapsulation(OP, keys, ctx.sparse_secret_hamming_weight())?;
-    // `key_widths` reads widths: SlotsToCoeffs on `res` also needs its budget above the scale EvalMod leaves there.
-    if ctx.pipeline() == BootstrappingPipeline::C2SFirst
-        && res.k().as_usize() < ctx.plan.post_mod_up_consumed_bits() + ctx.plan.eval_mod().f_mod_log_delta
-    {
-        return Err(narrower_than_stages(OP, res.k().as_usize(), a.k().as_usize()));
-    }
+    // A C2S-first raise lifts `a` itself.
+    ctx.mod_raise_plan().scale_ups(OP, a.k().as_usize(), a.log_delta())?;
+    let tensor_k = ctx
+        .stage_widths()
+        .eval_mod_relinearization_k(res.k().as_usize(), a.log_delta());
     match ctx.eval_mod_ci() {
         Some(_) => {
             let (tensor_key, trace_key, embed_key) = check_eval_mod_on_ci(OP, module, a, keys)?;
-            check_key_widths(OP, res, a, ctx, keys, tensor_key)?;
+            check_key_widths(OP, res, a, ctx, keys, tensor_key, tensor_k)?;
             let widths = ctx.stage_widths().conversions(res.k().as_usize()).unwrap_or_default();
             check_conversion_key_widths(OP, trace_key, embed_key, widths)?;
         }
-        None => check_key_widths(OP, res, a, ctx, keys, required_tensor_key(OP, keys.tensor_key())?)?,
+        None => check_key_widths(OP, res, a, ctx, keys, required_tensor_key(OP, keys.tensor_key())?, tensor_k)?,
     }
     ensure_eval_round_interval(&ctx.run(a.meta()))?;
     if let Some(keys_layout) = keys.keys_layout() {
@@ -403,7 +414,8 @@ pub(crate) fn reject_replicated_constant(op: &'static str, slot_layout: crate::S
 }
 
 /// What `ckks_functional_bootstrap_derived` refuses before its first step, as [`check_bootstrap_entry`], with the
-/// batch of LUTs and the message ratio.
+/// batch of LUTs, the message ratio, a plan with the EvalRound+ bypass, and the tensor key at the widths the LUTs
+/// relinearize at.
 pub(crate) fn check_functional_entry<BE, F, K>(
     module: &Module<BE>,
     res: &[CKKSCiphertextOwned<BE>],
@@ -425,12 +437,13 @@ where
         ctx.pipeline() == BootstrappingPipeline::S2CFirst,
         "functional bootstrapping requires an S2C-first context"
     );
-    ensure_lut_batch(OP, module.n(), a, res, luts, &ctx.run(a.meta()))?;
     ckks_ensure_operand!(
         OP,
-        a.n().as_usize() == module.n(),
-        "takes ciphertexts of the module degree, at which its context is compiled"
+        ctx.coeffs_to_slots_bypass().is_none(),
+        "the functional bootstrap does not run the EvalRound+ bypass"
     );
+    ensure_lut_batch(OP, module.n(), a, res, luts, &ctx.run(a.meta()))?;
+    ensure_compile_degree(OP, ctx, a)?;
     let log_msg_ratio = luts[0].log_msg_ratio();
     ensure_encapsulation(OP, keys, ctx.sparse_secret_hamming_weight())?;
     let tensor_key = required_tensor_key(OP, keys.tensor_key())?;
@@ -444,7 +457,17 @@ where
     for (ct_out, lut) in res.iter().zip(luts) {
         functional_output_contract(OP, a.meta(), ctx, lut, ct_out.k().as_usize())?;
     }
-    check_key_widths(OP, &res[0], a, ctx, keys, tensor_key)?;
+    // The LUT step runs on what CoeffsToSlots leaves of the raise, at the scale of the raised modulus, guard bits gone.
+    let stages = ctx.stage_widths();
+    let (log_delta, _) = stages.raise(a.k().as_usize());
+    let k = res[0].k().as_usize().saturating_sub(ctx.coeffs_to_slots().consumed_bits());
+    let log_budget = k.saturating_sub(log_delta + ctx.c2s_guard_bits());
+    let tensor_k = luts
+        .iter()
+        .map(|lut| lut_relinearization_k(ctx.eval_mod_plan(), lut, log_budget, log_delta))
+        .max()
+        .unwrap_or(0);
+    check_key_widths(OP, &res[0], a, ctx, keys, tensor_key, tensor_k)?;
     if let Some(keys_layout) = keys.keys_layout() {
         let bytes = module.ckks_functional_bootstrap_tmp_bytes(&res[0], a, ctx, luts, keys_layout);
         ckks_ensure!(
@@ -455,6 +478,21 @@ where
     Ok(())
 }
 
+/// Widest ciphertext the LUT step relinearizes for `lut`, on an input of `log_budget` bits of budget at scale
+/// `log_delta`, the guard bits gone: EvalMod's widest product when the LUT needs it, its own series' otherwise.
+pub(crate) fn lut_relinearization_k<P>(
+    eval_mod: &EvalModPlan,
+    lut: &EncodedLut<P>,
+    log_budget: usize,
+    log_delta: usize,
+) -> usize {
+    if lut.requires_eval_mod() {
+        eval_mod.relinearization_k(log_budget)
+    } else {
+        log_budget + log_delta
+    }
+}
+
 /// The refusal of a bootstrap at `bootstrap_k` bits of an input of `input_k` bits that its stages do not fit.
 fn narrower_than_stages(op: &'static str, bootstrap_k: usize, input_k: usize) -> CKKSError {
     let reason =
@@ -463,7 +501,7 @@ fn narrower_than_stages(op: &'static str, bootstrap_k: usize, input_k: usize) ->
 }
 
 /// Fails before any work unless every key covers the widest ciphertext the
-/// bootstrap switches with it, and with `InvalidOperand` when the working width
+/// bootstrap switches with it, the tensor key `tensor_k` bits, and with `InvalidOperand` when the working width
 /// or the input is narrower than the bits the stages running on it consume.
 ///
 /// The bootstrap runs at `ct_out.k()`, which need not be the width the keys
@@ -479,6 +517,7 @@ fn check_key_widths<BE, Rg, F, K, T, C1, C2>(
     ctx: &BootstrappingContextPrepared<BE, F>,
     keys: &K,
     tensor_key: &T,
+    tensor_k: usize,
 ) -> CKKSResult<()>
 where
     BE: Backend,
@@ -488,21 +527,11 @@ where
     C1: CKKSCtBounds,
     C2: CKKSCtBounds,
 {
-    let log_n = ct_out.n().as_usize().trailing_zeros() as usize;
     let (bootstrap_k, input_k) = (ct_out.k().as_usize(), ct_in.k().as_usize());
-    let stages = ctx.stage_widths();
-    let Some(starts) = stages.stage_starts(bootstrap_k, input_k) else {
+    let Some(starts) = ctx.stage_widths().stage_starts(bootstrap_k, input_k) else {
         return Err(narrower_than_stages(op, bootstrap_k, input_k));
     };
-    let other_degree;
-    let uses = match ctx.rotation_key_uses(log_n) {
-        Some(uses) => uses,
-        None => {
-            other_degree = stages.rotation_key_uses(log_n);
-            &other_degree
-        }
-    };
-    for key_uses in uses.chunk_by(|a, b| a.p == b.p) {
+    for key_uses in ctx.rotation_key_uses().chunk_by(|a, b| a.p == b.p) {
         let p = key_uses[0].p;
         let k = key_uses.iter().map(|key_use| starts.width(key_use)).max().unwrap_or(0);
         let k = TorusPrecision(k as u32);
@@ -514,7 +543,7 @@ where
                 source,
             })?;
     }
-    let k = TorusPrecision(stages.eval_mod_relinearization_k(bootstrap_k, ct_in.log_delta()) as u32);
+    let k = TorusPrecision(tensor_k as u32);
     tensor_key
         .get_tensor_key(k)
         .map_err(|source| CKKSCompositionError::MissingRelinearizationKey { op, k: k.into(), source })?;

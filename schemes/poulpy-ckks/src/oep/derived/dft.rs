@@ -104,31 +104,40 @@ where
     // ct_real := z = Encode(ct_in).
     module.ckks_copy(ct_real, ct_in, scratch)?;
     module.ckks_dft_matrix_eval_assign(ct_real, dft, keys, scratch)?;
-    ckks_split_real_imag(module, ct_real, ct_imag, keys, scratch)
+    // `z` stays in `ct_real`: one temporary for `z - conj(z)` instead of a copy of `z`.
+    module.ckks_conjugate_into(ct_imag, &*ct_real, keys, scratch)?;
+    scratch.scope(|scratch_local| -> Result<()> {
+        let (mut tmp, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(&*ct_real);
+        module.ckks_sub_into(&mut tmp, &*ct_real, &*ct_imag, &mut scratch_local.borrow())?;
+        module.ckks_add_assign(ct_real, &*ct_imag, &mut scratch_local.borrow())?;
+        module.ckks_div_i_into(ct_imag, &tmp, &mut scratch_local)
+    })?;
+    ct_real.set_slots(SlotsKind::Real);
+    ct_imag.set_slots(SlotsKind::Real);
+    Ok(())
 }
 
-/// `re = z + conj(z)` and `im = (z - conj(z)) / i`, from `z` in `re`.
-fn ckks_split_real_imag<BE, Re, Im, H>(
+/// `re = a + conj(a)` and `im = (a - conj(a)) / i`, the two halves `re + i·im = 2·a`, with no temporary.
+pub(crate) fn ckks_split_halves<BE, Re, Im, A, H>(
     module: &Module<BE>,
     re: &mut Re,
     im: &mut Im,
+    a: &A,
     keys: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
     BE: Backend,
     Module<BE>: CKKSConjugateOps<BE> + CKKSAddOps<BE> + CKKSSubOps<BE> + CKKSImagOps<BE>,
-    Re: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    Re: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     Im: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    A: GLWEToBackendRef<BE> + CKKSCtBounds,
     H: GetAutomorphismKey<BE>,
 {
-    module.ckks_conjugate_into(im, re, keys, scratch)?;
-    scratch.scope(|scratch_local| -> Result<()> {
-        let (mut tmp, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(&*re);
-        module.ckks_sub_into(&mut tmp, re, im, &mut scratch_local.borrow())?;
-        module.ckks_add_assign(re, im, &mut scratch_local.borrow())?;
-        module.ckks_div_i_into(im, &tmp, &mut scratch_local)
-    })?;
+    module.ckks_conjugate_into(im, a, keys, scratch)?;
+    module.ckks_add_into(re, a, &*im, scratch)?;
+    module.ckks_sub_assign(im, a, scratch)?;
+    module.ckks_mul_i_assign(im, scratch)?;
     // Both halves are the (real) coefficients of the input polynomial.
     re.set_slots(SlotsKind::Real);
     im.set_slots(SlotsKind::Real);

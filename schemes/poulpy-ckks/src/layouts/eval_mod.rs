@@ -47,7 +47,7 @@ use poulpy_core::layouts::{Base2K, GLWELayout, Rank, bsgs_consumed_bits, bsgs_ev
 use poulpy_hal::layouts::{Backend, Module, Ring, ScratchArena};
 
 use crate::{
-    CKKSCtBounds, CKKSResult, CoeffsMeta, GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotsKind,
+    CKKSCompositionError, CKKSCtBounds, CKKSResult, CoeffsMeta, GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotsKind,
     api::{Basis, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar, Parity},
     ckks_log_delta, cosine,
     polynomial::{BSGSPolynomial, ComplexBSGSPolynomial, ComplexPolynomial, Polynomial, SplitStrategy},
@@ -216,29 +216,34 @@ impl EvalModPlan {
         }
     }
 
-    /// Bits `Δ·m` must be lifted by, at the input modulus `2^k`, for a ciphertext
-    /// of scale `log_delta` to carry exactly this plan's message ratio. Errors if
-    /// the input cannot reach that ratio.
-    pub(crate) fn input_scale_up(&self, k: usize, log_delta: usize) -> Result<usize> {
-        let log_msg_ratio = self.log_msg_ratio;
-        ensure!(
-            k >= log_delta + log_msg_ratio,
-            "EvalModPlan: input k ({k}) < log_delta ({log_delta}) + log_msg_ratio ({log_msg_ratio})"
-        );
-        Ok(k - log_delta - log_msg_ratio)
+    /// Bits `Δ·m` must be lifted by, at the input modulus `2^k`, for a ciphertext of scale `log_delta` to carry exactly
+    /// this plan's message ratio. `InvalidOperand` for `op` when the input cannot reach that ratio.
+    pub(crate) fn input_scale_up(&self, op: &'static str, k: usize, log_delta: usize) -> CKKSResult<usize> {
+        k.checked_sub(log_delta)
+            .and_then(|bits| bits.checked_sub(self.log_msg_ratio))
+            .ok_or_else(|| {
+                CKKSCompositionError::InvalidOperand {
+                    op,
+                    reason: "the input holds fewer bits than its scale plus the plan's message ratio".into(),
+                }
+                .into()
+            })
     }
 
-    /// Bits the raised ciphertext must be lifted by, on top of a ModUp from a
-    /// modulus of scale `log_delta`, to reach this plan's own scale. Errors if the
-    /// plan's scale sits below the modulus it would have to lift from.
-    pub(crate) fn raised_scale_up(&self, log_delta: usize) -> Result<usize> {
-        let f_mod_log_delta = self.f_mod_log_delta;
-        let log_msg_ratio = self.log_msg_ratio;
-        ensure!(
-            f_mod_log_delta >= log_delta + log_msg_ratio,
-            "EvalModPlan: f_mod_log_delta ({f_mod_log_delta}) < log_delta ({log_delta}) + log_msg_ratio ({log_msg_ratio})"
-        );
-        Ok(f_mod_log_delta - log_delta - log_msg_ratio)
+    /// Bits the raised ciphertext must be lifted by, on top of a ModUp from a modulus of scale `log_delta`, to reach
+    /// this plan's own scale. `InvalidOperand` for `op` when the plan's scale sits below the modulus it would have to
+    /// lift from.
+    pub(crate) fn raised_scale_up(&self, op: &'static str, log_delta: usize) -> CKKSResult<usize> {
+        self.f_mod_log_delta
+            .checked_sub(log_delta)
+            .and_then(|bits| bits.checked_sub(self.log_msg_ratio))
+            .ok_or_else(|| {
+                CKKSCompositionError::InvalidOperand {
+                    op,
+                    reason: "the plan's EvalMod scale is below the input scale plus the plan's message ratio".into(),
+                }
+                .into()
+            })
     }
 
     /// Multiplicative levels the eval_mod pipeline consumes: BSGS depth of the
@@ -537,7 +542,7 @@ pub trait CKKSEvalModInfos<BE: Backend, F> {
 
     /// Whether real slots read the real part of the input alone: an S2C-first pipeline, whose raise leaves only integer
     /// multiples of the modulus in the imaginary part. A plain [`EvalMod`] has no pipeline and trusts the label of its
-    /// input. The LUT step reads this: it runs no bypass.
+    /// input. The LUT step reads this: it refuses a plan with a bypass.
     fn real_part_on_real_slots(&self) -> bool;
 
     /// Whether real slots take one EvalMod: [`Self::real_part_on_real_slots`] without a bypass, which needs both halves.
@@ -553,9 +558,9 @@ pub trait CKKSEvalModInfos<BE: Backend, F> {
 
     /// Removes the guard bits and labels an EvalMod output as the message. It runs once: in
     /// [`ckks_bootstrap_eval_mod`](crate::api::CKKSBootstrappingOps::ckks_bootstrap_eval_mod), and by the composer only
-    /// under a bypass, after adding it back. `InvalidOperand`, with `res` unchanged, when `res` holds fewer scale bits
-    /// than the guard bits.
-    fn stamp_eval_mod_output<C: SetCKKSInfos>(&self, res: &mut C) -> CKKSResult<()>;
+    /// under a bypass, as the last step after adding it back. `InvalidOperand` for `op`, with `res` unchanged, when `res`
+    /// holds fewer scale bits than the guard bits.
+    fn stamp_eval_mod_output<C: SetCKKSInfos>(&self, op: &'static str, res: &mut C) -> CKKSResult<()>;
 
     /// The metadata and the width of the output of `lut` from an input of `a_k` bits, past CoeffsToSlots, or a typed
     /// refusal of `op` when the plan or that input cannot give them. `None`: the output keeps what the evaluation leaves
@@ -597,7 +602,7 @@ impl<BE: Backend, F> CKKSEvalModInfos<BE, F> for EvalMod<F, CKKSPlaintextOwned<B
         None
     }
 
-    fn stamp_eval_mod_output<C: SetCKKSInfos>(&self, _res: &mut C) -> CKKSResult<()> {
+    fn stamp_eval_mod_output<C: SetCKKSInfos>(&self, _op: &'static str, _res: &mut C) -> CKKSResult<()> {
         Ok(())
     }
 

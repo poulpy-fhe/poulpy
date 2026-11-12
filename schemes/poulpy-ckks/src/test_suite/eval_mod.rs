@@ -245,15 +245,50 @@ fn run_eval_mod_case<BE, F, E>(
             },
         ),
     ] {
-        let before = snapshot::<BE, _, Standard>(&res);
+        let before = (snapshot::<BE, _, Standard>(&res), snapshot::<BE, _, Standard>(&input));
         let err = with_scratch::<BE, _>(0, |s| module.ckks_eval_mod(&mut res, &mut input, &params_be, &tsk, s)).unwrap_err();
         assert_ckks_error(&format!("{label}: {case}"), &err, want);
         assert_eq!(
-            snapshot::<BE, _, Standard>(&res),
+            (snapshot::<BE, _, Standard>(&res), snapshot::<BE, _, Standard>(&input)),
             before,
-            "{label}: {case}: a refused EvalMod wrote res"
+            "{label}: {case}: a refused EvalMod wrote an operand"
         );
     }
+    // A tensor key of one digit, narrower than the width EvalMod relinearizes at, is refused before `ct` or `res` is
+    // written.
+    let narrow_tsk = gen_tsk(
+        &CKKSTestParams {
+            k: test_params.dsize * test_params.base2k,
+            ..test_params
+        },
+        module,
+        &sk_raw,
+        &mut scratch.borrow(),
+    );
+    let mut input = fixture_ciphertext(
+        module,
+        &ckks_spec(
+            test_params.n,
+            test_params.base2k,
+            input_log_delta,
+            test_params.k - input_log_delta,
+        ),
+        73,
+    );
+    let before = (snapshot::<BE, _, Standard>(&res), snapshot::<BE, _, Standard>(&input));
+    let err = with_scratch::<BE, _>(0, |s| module.ckks_eval_mod(&mut res, &mut input, &params_be, &narrow_tsk, s)).unwrap_err();
+    assert!(
+        matches!(
+            err.composition(),
+            Some(CKKSCompositionError::MissingRelinearizationKey { op: "ckks_eval_mod", .. })
+        ),
+        "{label}: a narrow tensor key: {err}"
+    );
+    assert_eq!(
+        (snapshot::<BE, _, Standard>(&res), snapshot::<BE, _, Standard>(&input)),
+        before,
+        "{label}: a narrow tensor key: a refused EvalMod wrote an operand"
+    );
     with_scratch::<BE, _>(eval_bytes, |s| {
         module.ckks_eval_mod(&mut res, &mut ct_input.clone(), &params_be, &tsk, s)
     })
@@ -282,11 +317,19 @@ fn run_eval_mod_case<BE, F, E>(
             module.ckks_copy(&mut wide, &narrow, s)
         })
         .unwrap();
-        let mut copied = module.ckks_ciphertext_alloc(test_params.base2k.into(), res_k.into());
-        let mut in_place = module.ckks_ciphertext_alloc(test_params.base2k.into(), res_k.into());
-        let bytes = module.ckks_eval_mod_tmp_bytes(&copied, &narrow, &params_be, &tsk);
-        with_scratch::<BE, _>(bytes, |s| module.ckks_eval_mod(&mut copied, &mut narrow, &params_be, &tsk, s)).unwrap();
-        with_scratch::<BE, _>(bytes, |s| module.ckks_eval_mod(&mut in_place, &mut wide, &params_be, &tsk, s)).unwrap();
+        let res_layout = ckks_spec(test_params.n, test_params.base2k, input_log_delta, res_k - input_log_delta);
+        let mut copied = fixture_ciphertext(module, &res_layout, 74);
+        let mut in_place = fixture_ciphertext(module, &res_layout, 75);
+        let copy_bytes = module.ckks_eval_mod_tmp_bytes(&copied, &narrow, &params_be, &tsk);
+        let in_place_bytes = module.ckks_eval_mod_tmp_bytes(&in_place, &wide, &params_be, &tsk);
+        with_scratch::<BE, _>(copy_bytes, |s| {
+            module.ckks_eval_mod(&mut copied, &mut narrow, &params_be, &tsk, s)
+        })
+        .unwrap();
+        with_scratch::<BE, _>(in_place_bytes, |s| {
+            module.ckks_eval_mod(&mut in_place, &mut wide, &params_be, &tsk, s)
+        })
+        .unwrap();
         assert_eq!(
             snapshot::<BE, _, Standard>(&in_place),
             snapshot::<BE, _, Standard>(&copied),

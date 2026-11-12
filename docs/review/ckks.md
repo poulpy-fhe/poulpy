@@ -96,7 +96,7 @@
 
 - **One API per step.** A bootstrap flavor is a plan setting, never a method: no `_real` or `_ci` operation. The plan decides how a step runs.
 - **Steps defer to the plan.** A step's doc says what it does according to the plan and links it. Routes and what each parameter does live once, on the plan's types, and a new parameter documents how it behaves and interacts with the others there.
-- **A composition stamps nothing.** The labels of a bootstrap reach its steps through the run, and a step that needs one more label reads it there, never from the composer.
+- **A composition stamps nothing.** The labels of a bootstrap reach its steps through the run, and a step that needs one more label reads it there, never from the composer. The one exception is the EvalRound+ add-back, which the composer ends with the run's `stamp_eval_mod_output`.
 - **Bootstrap entry checks.** A bootstrap checks before any work what its steps would refuse, every key's coverage of the run's widths included, and each step checks its own operands and keys before it writes `res`.
 - **One key-width model.** Preset key layouts, entry checks and stage widths derive from one width model, which a change of a stage's working width updates.
 - **Presets state what was measured.** A public preset states its measured precision rounded down, a test pins its widths, consumed bits and key shapes, and an insecure preset stays out of the public list.

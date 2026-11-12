@@ -1,7 +1,5 @@
 //! The compiled form of a plan: the resident matrices and the encoded EvalMod, reused across bootstraps.
 
-use std::sync::OnceLock;
-
 use anyhow::Result;
 use poulpy_core::{
     GLWEDiagonalProd,
@@ -23,7 +21,7 @@ use crate::{
 };
 
 use super::{
-    BootstrappingPipeline, BootstrappingPlan, EvalModCIPrepared, EvalModRing,
+    BootstrappingPipeline, BootstrappingPlan, CIConversion, EvalModCIPrepared, EvalModRing,
     eval_mod_ci::{CIPre, EvalModCI},
     key_widths::{RotationKeyUse, StageWidths},
 };
@@ -38,8 +36,8 @@ pub struct BootstrappingContextPrepared<BE: Backend, F> {
     /// The plan the context was compiled from, at the degree it was compiled for: the recipe
     /// of its keys.
     pub(crate) plan: BootstrappingPlan,
-    c2s_guard_bits: usize,
-    functional_message_modulus: Option<usize>,
+    /// `log2` of the degree the context is compiled at, of the ciphertexts it bootstraps.
+    log_n: usize,
     /// Prepared CoeffsToSlots matrix (homomorphic encoding).
     ///
     /// The plan constructor scales this transform for its EvalMod variant.
@@ -57,23 +55,14 @@ pub struct BootstrappingContextPrepared<BE: Backend, F> {
     /// cancel the initial real/imaginary split and normalize functional messages.
     slots_to_coeffs: DFTMatrixPrepared<BE, Decode, Split>,
 
-    /// EvalMod (`x mod 1`): its plan, and its encoding when it runs on the
-    /// standard ring.
-    eval_mod_plan: EvalModPlan,
+    /// EvalMod's encoding when it runs on the standard ring.
     eval_mod: Option<EvalMod<F, CKKSPlaintextOwned<BE>>>,
 
-    /// The ring EvalMod runs on, and its plaintexts on the conjugate-invariant ring.
-    eval_mod_ring: EvalModRing,
+    /// EvalMod's plaintexts on the conjugate-invariant ring.
     eval_mod_ci: Option<EvalModCIPrepared<BE, F>>,
 
-    /// Selected ModUp/EvalMod pipeline.
-    pipeline: BootstrappingPipeline,
-
-    /// Ephemeral sparse-secret weight required by the recipe, if enabled.
-    sparse_secret_hamming_weight: Option<usize>,
-
-    /// The degree of the first bootstrap and the uses of the rotation keys there, read once for every later entry check.
-    rotation_key_uses: OnceLock<(usize, Vec<RotationKeyUse>)>,
+    /// The uses of the rotation keys at the compile degree, which every entry check reads.
+    rotation_key_uses: Vec<RotationKeyUse>,
 }
 
 // A context holds `Split` matrices, evaluated unsplit: see `ckks_coeffs_to_slots_assign` for the scale.
@@ -99,39 +88,41 @@ impl<BE: Backend, F> CKKSDFTFactors<BE, Encode, Standard> for BootstrappingConte
 }
 
 impl<BE: Backend, F> BootstrappingContextPrepared<BE, F> {
-    /// The uses of the rotation keys at degree `2^log_n`, `None` at another degree than the first asked for.
-    pub(crate) fn rotation_key_uses(&self, log_n: usize) -> Option<&[RotationKeyUse]> {
-        let (degree, uses) = self
-            .rotation_key_uses
-            .get_or_init(|| (log_n, self.stage_widths().rotation_key_uses(log_n)));
-        (*degree == log_n).then_some(uses.as_slice())
+    /// The uses of the rotation keys at the compile degree.
+    pub(crate) fn rotation_key_uses(&self) -> &[RotationKeyUse] {
+        &self.rotation_key_uses
+    }
+
+    /// `log2` of the degree the context is compiled at.
+    pub(crate) fn log_n(&self) -> usize {
+        self.log_n
     }
 
     /// The stages that set the widths at which a bootstrap uses its keys.
     pub(crate) fn stage_widths(&self) -> StageWidths<'_> {
         StageWidths {
-            pipeline: self.pipeline,
-            c2s_guard_bits: self.c2s_guard_bits,
-            eval_mod_ring: self.eval_mod_ring,
+            pipeline: self.plan.pipeline(),
+            c2s_guard_bits: self.plan.c2s_guard_bits(),
+            eval_mod_ring: self.plan.eval_mod_ring(),
             coeffs_to_slots: self.coeffs_to_slots.plan(),
             coeffs_to_slots_bypass: self.coeffs_to_slots_bypass.as_ref().map(|bypass| bypass.plan()),
             slots_to_coeffs: self.slots_to_coeffs.plan(),
-            eval_mod: &self.eval_mod_plan,
+            eval_mod: self.plan.eval_mod(),
         }
     }
 
     pub(crate) fn functional_message_modulus(&self) -> Option<usize> {
-        self.functional_message_modulus
+        self.plan.functional_message_modulus
     }
 
     /// Extra scale bits used during CoeffsToSlots.
     pub fn c2s_guard_bits(&self) -> usize {
-        self.c2s_guard_bits
+        self.plan.c2s_guard_bits()
     }
 
     /// Selected ModUp/EvalMod pipeline.
     pub fn pipeline(&self) -> BootstrappingPipeline {
-        self.pipeline
+        self.plan.pipeline()
     }
 
     /// Prepared CoeffsToSlots matrix.
@@ -169,12 +160,12 @@ impl<BE: Backend, F> BootstrappingContextPrepared<BE, F> {
 
     /// The EvalMod plan, on either ring.
     pub fn eval_mod_plan(&self) -> &EvalModPlan {
-        &self.eval_mod_plan
+        self.plan.eval_mod()
     }
 
     /// The ring EvalMod runs on.
     pub fn eval_mod_ring(&self) -> EvalModRing {
-        self.eval_mod_ring
+        self.plan.eval_mod_ring()
     }
 
     /// EvalMod on the conjugate-invariant ring and its conversions, for a plan on that ring.
@@ -184,7 +175,7 @@ impl<BE: Backend, F> BootstrappingContextPrepared<BE, F> {
 
     /// Ephemeral sparse-secret weight required by the compiled recipe.
     pub fn sparse_secret_hamming_weight(&self) -> Option<usize> {
-        self.sparse_secret_hamming_weight
+        self.plan.sparse_secret_hamming_weight()
     }
 }
 
@@ -197,18 +188,13 @@ impl<BE: Backend, F> BootstrappingContextPrepared<BE, F> {
 /// preparation budget.
 pub struct BootstrappingContext<BE: Backend, F> {
     plan: BootstrappingPlan,
-    c2s_guard_bits: usize,
-    functional_message_modulus: Option<usize>,
+    log_n: usize,
     coeffs_to_slots: DFTMatrix<BE, Encode, Split>,
     coeffs_to_slots_first_factor: Option<LinearTransformation<CKKSPlaintextOwned<BE>>>,
     coeffs_to_slots_bypass: Option<DFTMatrix<BE, Encode, Split>>,
     slots_to_coeffs: DFTMatrix<BE, Decode, Split>,
-    eval_mod_plan: EvalModPlan,
     eval_mod: Option<EvalMod<F, CKKSPlaintextOwned<BE>>>,
-    eval_mod_ring: EvalModRing,
     eval_mod_ci: Option<EvalModCI<BE, F>>,
-    pipeline: BootstrappingPipeline,
-    sparse_secret_hamming_weight: Option<usize>,
 }
 
 /// The former name of [`BootstrappingContext`].
@@ -255,18 +241,13 @@ impl<BE: Backend, F> BootstrappingContext<BE, F> {
     {
         let Self {
             plan,
-            c2s_guard_bits,
-            functional_message_modulus,
+            log_n,
             coeffs_to_slots,
             coeffs_to_slots_first_factor,
             coeffs_to_slots_bypass,
             slots_to_coeffs,
-            eval_mod_plan,
             eval_mod,
-            eval_mod_ring,
             eval_mod_ci,
-            pipeline,
-            sparse_secret_hamming_weight,
         } = self;
         let coeffs_to_slots = {
             let unprepared = coeffs_to_slots;
@@ -287,22 +268,19 @@ impl<BE: Backend, F> BootstrappingContext<BE, F> {
             plan: plan.mod_raise(),
             first_factor: coeffs_to_slots_first_factor,
         };
-        Ok(BootstrappingContextPrepared {
+        let mut context = BootstrappingContextPrepared {
             plan,
-            c2s_guard_bits,
-            functional_message_modulus,
+            log_n,
             coeffs_to_slots,
             mod_raise,
             coeffs_to_slots_bypass,
             slots_to_coeffs,
-            eval_mod_plan,
             eval_mod,
-            eval_mod_ring,
             eval_mod_ci,
-            pipeline,
-            sparse_secret_hamming_weight,
-            rotation_key_uses: OnceLock::new(),
-        })
+            rotation_key_uses: Vec::new(),
+        };
+        context.rotation_key_uses = context.stage_widths().rotation_key_uses(log_n);
+        Ok(context)
     }
 }
 
@@ -351,9 +329,10 @@ where
     /// the queries of the stages, which run one after the other on the same scratch,
     /// [`CKKSDFTMatrixOps::ckks_dft_matrix_new_tmp_bytes`] of each matrix and the slot encoding
     /// EvalMod stages its coefficients through. On the conjugate-invariant ring, of bootstrap
-    /// degree `N`, half the module degree, the larger of that query, with the DFT formats
-    /// resolved at degree `N`, and the encoding of `u` and `v`, of degree `2N`, plus the
-    /// encoding of the coefficients of a conjugate-invariant plaintext of degree `N`.
+    /// degree `N`, half the module degree, the largest of that query, with the DFT formats
+    /// resolved at degree `N`, the encoding of `u` and `v`, of degree `2N`, and the encoding of
+    /// the coefficients of a conjugate-invariant plaintext of degree `N`, which also run one
+    /// after the other.
     ///
     /// # Errors
     ///
@@ -370,7 +349,7 @@ where
         let plan = plan.with_dft_formats_resolved_at(module.log_n() - 1);
         let host = <Module<BE> as CKKSEncodingHostOps<BE, F>>::ckks_encoding_host_tmp_bytes(module, n);
         let host_ci = <Module<BE> as CKKSEncodingHostOps<BE, F, ConjugateInvariant>>::ckks_encoding_host_tmp_bytes(module, n / 2);
-        Ok(Self::stages_tmp_bytes(module, &plan)?.max(host) + host_ci)
+        Ok(Self::stages_tmp_bytes(module, &plan)?.max(host).max(host_ci))
     }
 
     /// [`Self::compile_unprepared_tmp_bytes`] of the stages on `module`.
@@ -411,41 +390,48 @@ where
         Module<BE>: CKKSEncodingOps<BE, F, ConjugateInvariant>,
     {
         let EvalModRing::ConjugateInvariant { pre, post } = plan.eval_mod_ring() else {
-            return Self::compile_stages(module, base2k, plan, scratch);
+            return Self::compile_stages(module, base2k, plan, module.log_n(), scratch);
         };
         // `compile_stages` resolves the DFT formats at the degree of `module`, `2N`, where
         // every slot of degree `N` would be a sparse plan's: resolve them at the bootstrap's
         // degree first.
-        let plan = plan.with_dft_formats_resolved_at(module.log_n() - 1);
-        let mut context = Self::compile_stages(module, base2k, &plan, scratch)?;
+        let log_n = module.log_n() - 1;
+        let plan = plan.with_dft_formats_resolved_at(log_n);
+        let mut context = Self::compile_stages(module, base2k, &plan, log_n, scratch)?;
         context.eval_mod_ci = Some(EvalModCI::compile(
             module,
             base2k,
             plan.eval_mod,
             [pre, post],
-            &mut context.coeffs_to_slots,
+            context.coeffs_to_slots.plan(),
             scratch,
         )?);
         Ok(context)
     }
 
-    /// The stages on `module`: the DFT matrices, and EvalMod on the standard ring.
+    /// The stages on `module`, for a bootstrap of degree `2^log_n`: the DFT matrices, and EvalMod on the standard ring.
     fn compile_stages(
         module: &Module<BE>,
         base2k: Base2K,
         plan: &BootstrappingPlan,
+        log_n: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<BootstrappingContext<BE, F>>
     where
         Module<BE>: CKKSDFTMatrixOps<BE, F> + CKKSEncodingOps<BE, F>,
     {
-        let mut coeffs_to_slots = module.ckks_dft_matrix_new::<Encode, Split>(base2k, &plan.coeffs_to_slots, scratch)?;
-        // A first factor left to the modulus raise is evaluated from its plaintexts,
-        // not by the matrix.
-        let coeffs_to_slots_first_factor = plan
-            .coeffs_to_slots
-            .first_factor_on_raise()
-            .then(|| coeffs_to_slots.inner.factors.remove(0));
+        let coeffs_to_slots = module.ckks_dft_matrix_new::<Encode, Split>(base2k, &plan.coeffs_to_slots, scratch)?;
+        // A first factor left to the modulus raise is evaluated from its plaintexts, and a last one `u` folds into by
+        // the conversions of the conjugate-invariant ring: neither by the matrix.
+        let folds_u = matches!(
+            plan.eval_mod_ring(),
+            EvalModRing::ConjugateInvariant {
+                pre: CIConversion::Folded,
+                ..
+            }
+        );
+        let (coeffs_to_slots_first_factor, coeffs_to_slots) =
+            coeffs_to_slots.split_off(plan.coeffs_to_slots.first_factor_on_raise(), folds_u);
         let slots_to_coeffs = module.ckks_dft_matrix_new::<Decode, Split>(base2k, &plan.slots_to_coeffs, scratch)?;
         let eval_mod = match plan.eval_mod_ring() {
             EvalModRing::Standard => Some(ckks_eval_mod_compile::<BE, F, poulpy_hal::layouts::Standard>(
@@ -463,18 +449,13 @@ where
 
         Ok(BootstrappingContext {
             plan: plan.clone(),
-            c2s_guard_bits: plan.c2s_guard_bits(),
-            functional_message_modulus: plan.functional_message_modulus,
+            log_n,
             coeffs_to_slots,
             coeffs_to_slots_first_factor,
             coeffs_to_slots_bypass,
             slots_to_coeffs,
-            eval_mod_plan: plan.eval_mod,
             eval_mod,
-            eval_mod_ring: plan.eval_mod_ring(),
             eval_mod_ci: None,
-            pipeline: plan.pipeline(),
-            sparse_secret_hamming_weight: plan.sparse_secret_hamming_weight(),
         })
     }
 }

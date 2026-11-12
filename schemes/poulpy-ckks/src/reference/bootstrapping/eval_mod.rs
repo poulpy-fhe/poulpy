@@ -22,21 +22,22 @@ use crate::{
         bootstrapping::bootstrap_layouts,
         eval_mod::EvalModPlan,
         validation::{
-            check_eval_mod_on_ci, ensure_eval_round_interval, ensure_one_base2k, ensure_one_degree, ensure_rank_one,
-            eval_mod_standard, remove_guard_bits, required_tensor_key,
+            check_conversion_key_widths, check_eval_mod_on_ci, ensure_eval_round_interval, ensure_one_base2k, ensure_one_degree,
+            ensure_rank_one, eval_mod_standard, remove_guard_bits, required_tensor_key,
         },
     },
+    oep::derived::dft::ckks_split_halves,
     reference::mul::tensor_key_at,
 };
 
 use super::{
-    ckks_bootstrap_real_part, ckks_split_of,
+    ckks_bootstrap_real_part,
     eval_mod_ci::{eval_mod_on_ci, eval_mod_on_ci_tmp_bytes},
     recombine_halves,
 };
 
 /// The name of [`ckks_bootstrap_eval_mod`](crate::api::CKKSBootstrappingOps::ckks_bootstrap_eval_mod) in its refusals.
-pub(super) const EVAL_MOD_OP: &str = "ckks_bootstrap_eval_mod";
+const EVAL_MOD_OP: &str = "ckks_bootstrap_eval_mod";
 
 /// The proxy for the plaintext ops: EvalMod's encoded polynomial coefficients, the
 /// widest plaintext the pipeline multiplies by.
@@ -192,6 +193,12 @@ pub trait CKKSBootstrapEvalModReference<BE: Backend>: std::borrow::Borrow<Module
             Some(eval_mod_ci) => {
                 let ci_keys = check_eval_mod_on_ci(OP, module, a, keys)?;
                 ckks_ensure_operand!(OP, a.k() <= res.k(), "takes an input no wider than its output");
+                let (tensor_key, trace_key, embed_key) = ci_keys;
+                // The conversion to the conjugate-invariant ring consumes its scale before EvalMod, at the scale of `a`.
+                let traced = a.k().as_usize().saturating_sub(eval_mod_ci.pre_consumed_bits());
+                check_conversion_key_widths(OP, trace_key, embed_key, plan.eval_mod_plan().conversion_widths(traced))?;
+                let widest = plan.eval_mod_plan().relinearization_k(traced.saturating_sub(a.log_delta()));
+                tensor_key_at::<BE, _, ConjugateInvariant>(OP, tensor_key, widest.into())?;
                 (None, Some((eval_mod_ci, ci_keys)))
             }
             None => {
@@ -223,7 +230,7 @@ pub trait CKKSBootstrapEvalModReference<BE: Backend>: std::borrow::Borrow<Module
             eval_mod_on_ci(module, res, a, plan, eval_mod_ci, ci_keys, keys, scratch)?;
         }
         if !plan.eval_round_plus() {
-            plan.stamp_eval_mod_output(res)?;
+            plan.stamp_eval_mod_output(OP, res)?;
         }
         Ok(())
     }
@@ -330,7 +337,7 @@ where
     let (mut imag, mut scratch) = scratch.take_ckks_ciphertext_scratch(res, res.meta());
     r0.set_k(a.k());
     i0.set_k(a.k());
-    ckks_split_of(module, &mut r0, &mut i0, a, keys, &mut scratch)?;
+    ckks_split_halves(module, &mut r0, &mut i0, a, keys, &mut scratch)?;
     ckks_bootstrap_eval_mod_halves(module, &mut r0, &mut i0, res, &mut imag, eval_mod, tensor_key, &mut scratch)?;
     recombine_halves(module, res, &mut imag, &mut scratch)?;
     if plan.eval_round_plus() {

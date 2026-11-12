@@ -42,7 +42,8 @@ thread_local! {
  static COMPLEX_CALLS: Cell<usize> = const { Cell::new(0) };
  static EVAL_MOD_CALLS: Cell<usize> = const { Cell::new(0) };
  static SHAPING_CALLS: Cell<usize> = const { Cell::new(0) };
- /// Whether the EvalMod hook runs the reference instead of failing, for probes that need a whole bootstrap.
+ /// Whether the EvalMod hook runs the reference behind its marked region instead of failing, for probes that need a
+ /// whole bootstrap.
  static EVAL_MOD_FORWARD: Cell<bool> = const { Cell::new(false) };
  static MAX_COPY_CAPACITY: Cell<usize> = const { Cell::new(0) };
 }
@@ -183,7 +184,8 @@ unsafe impl CKKSEvalModImpl<Standard> for OverrideBackend {
         T: GGLWEInfos,
     {
         if EVAL_MOD_FORWARD.get() {
-            return <_ as CKKSEvalModReference<_, Standard>>::ckks_eval_mod_tmp_bytes_reference(module, res, ct, params, tsk);
+            return OVERRIDE_SCRATCH
+                + <_ as CKKSEvalModReference<_, Standard>>::ckks_eval_mod_tmp_bytes_reference(module, res, ct, params, tsk);
         }
         OVERRIDE_SCRATCH
     }
@@ -203,7 +205,9 @@ unsafe impl CKKSEvalModImpl<Standard> for OverrideBackend {
     {
         EVAL_MOD_CALLS.with(|calls| calls.set(calls.get() + 1));
         if EVAL_MOD_FORWARD.get() {
-            return CKKSEvalModReference::ckks_eval_mod_reference(module, res, ct, params, tsk, scratch);
+            return carry::with_marked_region::<OVERRIDE_SCRATCH, _>(scratch, |rest| {
+                CKKSEvalModReference::ckks_eval_mod_reference(module, res, ct, params, tsk, rest)
+            });
         }
         let (mut region, _remaining) = scratch.borrow().take_region(OVERRIDE_SCRATCH);
         Self::copy_host_to_view(&mut region, &[0x5A; OVERRIDE_SCRATCH]);

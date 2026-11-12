@@ -220,7 +220,7 @@ where
     module.ckks_mul_pow2_assign(1, &mut z_hp, &mut scratch)?;
     module.ckks_add_assign(&mut z_hp, &*res, &mut scratch)?;
     module.ckks_copy(res, &z_hp, &mut scratch)?;
-    run.stamp_eval_mod_output(res)?;
+    run.stamp_eval_mod_output("ckks_bootstrap", res)?;
     Ok(())
 }
 

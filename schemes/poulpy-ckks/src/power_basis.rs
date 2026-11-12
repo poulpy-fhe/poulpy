@@ -126,7 +126,7 @@ impl<'a, BE: Backend + 'a, Rg: Ring> PowerStorage<'a, BE, Rg> for CKKSCiphertext
 }
 
 /// The layout of a rank-1 power, `k` bits wide, at the degree and radix of `a`.
-fn power_layout<A: GLWEInfos>(a: &A, k: usize) -> GLWELayout {
+pub(crate) fn power_layout<A: GLWEInfos>(a: &A, k: usize) -> GLWELayout {
     GLWELayout {
         n: a.n(),
         base2k: a.base2k(),

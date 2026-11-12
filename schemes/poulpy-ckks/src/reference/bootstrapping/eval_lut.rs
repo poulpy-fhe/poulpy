@@ -22,12 +22,13 @@ use crate::{
         CKKSPlaintextOwned, EncodedLut, EncodedLutKind, ScratchArenaTakeCKKSCiphertext,
         bootstrapping::bootstrap_layouts,
         eval_mod::EvalModPlan,
-        validation::{ensure_lut_batch, eval_mod_standard, remove_guard_bits, required_tensor_key},
+        validation::{ensure_lut_batch, eval_mod_standard, lut_relinearization_k, remove_guard_bits, required_tensor_key},
     },
+    oep::derived::dft::ckks_split_halves,
     reference::mul::tensor_key_at,
 };
 
-use super::{ckks_bootstrap_real_part, ckks_split_of, recombine_halves};
+use super::{ckks_bootstrap_real_part, recombine_halves};
 
 /// The name of [`ckks_eval_lut`](crate::api::CKKSBootstrappingOps::ckks_eval_lut) in its refusals.
 const EVAL_LUT_OP: &str = "ckks_eval_lut";
@@ -130,6 +131,11 @@ pub trait CKKSEvalLutReference<BE: Backend>: std::borrow::Borrow<Module<BE>> {
     {
         let module: &Module<BE> = self.borrow();
         const OP: &str = EVAL_LUT_OP;
+        ckks_ensure_operand!(
+            OP,
+            !plan.eval_round_plus(),
+            "the functional bootstrap does not run the EvalRound+ bypass"
+        );
         ensure_lut_batch(OP, module.n(), a, res, luts, plan)?;
         let log_delta = remove_guard_bits(OP, a.log_delta(), plan.c2s_guard_bits())?;
         let tensor_key = required_tensor_key(OP, keys.tensor_key())?;
@@ -173,7 +179,7 @@ pub trait CKKSEvalLutReference<BE: Backend>: std::borrow::Borrow<Module<BE>> {
             let (mut r0, scratch) = scratch.take_ckks_ciphertext_scratch(a, a.meta());
             let (mut i0, scratch) = scratch.take_ckks_ciphertext_scratch(a, a.meta());
             let (mut acc, mut scratch) = scratch.take_ckks_ciphertext_scratch(&boot_layout, a.meta());
-            ckks_split_of(module, &mut r0, &mut i0, a, keys, &mut scratch)?;
+            ckks_split_halves(module, &mut r0, &mut i0, a, keys, &mut scratch)?;
             r0.set_log_delta(log_delta);
             i0.set_log_delta(log_delta);
 
@@ -241,14 +247,12 @@ where
     BE: Backend,
     T: GetTensorKey<BE>,
 {
-    let (widest, left) = if lut.requires_eval_mod() {
-        (
-            eval_mod.relinearization_k(log_budget),
-            checked_log_budget_sub(op, log_budget, eval_mod.consumed_bits())?,
-        )
+    let left = if lut.requires_eval_mod() {
+        checked_log_budget_sub(op, log_budget, eval_mod.consumed_bits())?
     } else {
-        (log_budget + log_delta, log_budget)
+        log_budget
     };
+    let widest = lut_relinearization_k(eval_mod, lut, log_budget, log_delta);
     tensor_key_at::<BE, _, Standard>(op, tensor_key, widest.into())?;
     checked_log_budget_sub(op, left, lut.consumed_bits(log_delta))?;
     Ok(())

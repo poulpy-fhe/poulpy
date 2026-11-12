@@ -8,11 +8,14 @@ use poulpy_core::{
 use poulpy_hal::layouts::{Backend, ConjugateInvariant, Module, Ring, ScratchArena};
 
 use crate::{
-    CKKSCtBounds, GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotsKind,
-    api::{CKKSDFTMatrixOps, CKKSDFTMatrixPreparedFactory, CKKSDFTOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar},
+    CKKSCtBounds, CKKSInfos, GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotsKind,
+    api::{
+        CKKSDFTMatrixOps, CKKSDFTMatrixPreparedFactory, CKKSDFTOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar,
+        LtDiagonalMeta,
+    },
     layouts::{
-        CKKSPlaintext, CKKSPlaintextAlloc, CKKSPlaintextOwned, ComplexDiagonals, DFTMatrix, Encode, EvalMod, EvalModPlan, Split,
-        eval_mod::ckks_eval_mod_compile,
+        CKKSPlaintext, CKKSPlaintextAlloc, CKKSPlaintextOwned, ComplexDiagonals, DFTMatrix, DFTPlan, Encode, EvalMod,
+        EvalModPlan, Split, eval_mod::ckks_eval_mod_compile,
     },
 };
 
@@ -81,6 +84,14 @@ pub struct EvalModCIPrepared<BE: Backend, F> {
 }
 
 impl<BE: Backend, F> EvalModCIPrepared<BE, F> {
+    /// Bits the conversion before EvalMod consumes: the scale of `u`, or of the CoeffsToSlots factor it folds into.
+    pub(crate) fn pre_consumed_bits(&self) -> usize {
+        match &self.pre.0 {
+            CIPreForm::Product(u) => u.log_delta(),
+            CIPreForm::Folded { even, .. } => even.first_diagonal_plaintext().map_or(0, LtDiagonalMeta::lt_log_scale),
+        }
+    }
+
     /// EvalMod in plaintexts of the CI ring.
     pub fn eval_mod(&self) -> &EvalMod<F, CKKSPlaintext<BE::OwnedBuf, BE::ZnxWord, ConjugateInvariant>> {
         &self.eval_mod
@@ -174,14 +185,14 @@ impl<BE: Backend, F> EvalModCI<BE, F> {
 
 impl<BE: Backend, F: CKKSEncodingScalar> EvalModCI<BE, F> {
     /// Encodes EvalMod on the conjugate-invariant ring at degree `N`, half the degree of `module`, and `pre` and `post`
-    /// at degree `2N`. Folding `pre` takes the last factor
-    /// of `coeffs_to_slots`.
+    /// at degree `2N`. Folding `pre` takes the last factor of `coeffs_to_slots`, the resolved CoeffsToSlots plan,
+    /// which the context's matrix leaves out.
     pub(super) fn compile(
         module: &Module<BE>,
         base2k: Base2K,
         eval_mod: EvalModPlan,
         [pre, post]: [CIConversion; 2],
-        coeffs_to_slots: &mut DFTMatrix<BE, Encode, Split>,
+        coeffs_to_slots: &DFTPlan,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<Self>
     where
@@ -233,12 +244,10 @@ impl<BE: Backend, F: CKKSEncodingScalar> EvalModCI<BE, F> {
                     pow5 = pow5 * 5 % order;
                 }
                 let scales = [slot_scales(vec![one_half], vec![-one_half]), slot_scales(odd_re, odd_im)];
-                let dft = &mut coeffs_to_slots.inner;
-                dft.factors.pop();
                 CIPre::Folded(crate::layouts::dft::ckks_scaled_last_factors::<BE, F>(
                     module,
                     base2k,
-                    &dft.plan,
+                    coeffs_to_slots,
                     module.log_n() - 1,
                     &scales,
                     scratch,

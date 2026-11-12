@@ -1040,6 +1040,42 @@ where
             "a refused generation drew from its sources"
         );
     }
+    // A standard plan refuses a layout with conversion keys before any draw.
+    let mut with_conversion = standard.keys_layout().clone();
+    with_conversion.conversion_keys = preset.keys_layout().conversion_keys;
+    let (mut source_xs, mut source_xa, mut source_xe) = (Source::new([7; 32]), Source::new([1; 32]), Source::new([2; 32]));
+    let err = with_scratch::<BE, _>(0, |s| {
+        standard
+            .plan()
+            .generate_keys(
+                &Module::<BE>::new(n),
+                &sk_raw,
+                &with_conversion,
+                &mut source_xs,
+                &mut source_xe,
+                &mut source_xa,
+                s,
+            )
+            .map(|_| ())
+    })
+    .unwrap_err();
+    assert!(
+        matches!(
+            err.downcast_ref::<CKKSCompositionError>(),
+            Some(CKKSCompositionError::InvalidOperand { op: "generate_keys", reason })
+                if reason == "conversion key layouts serve EvalMod on the conjugate-invariant ring only"
+        ),
+        "a standard plan with conversion keys: {err}"
+    );
+    assert_eq!(
+        [source_xs.new_seed(), source_xa.new_seed(), source_xe.new_seed()],
+        [
+            Source::new([7; 32]).new_seed(),
+            Source::new([1; 32]).new_seed(),
+            Source::new([2; 32]).new_seed()
+        ],
+        "a refused generation drew from its sources"
+    );
     let keys_for = |layout: &BootstrappingKeysLayout| {
         prepare_keys_ci(&module, &generate_ci_keys(&module, &context, &sk_raw, layout), layout)
     };

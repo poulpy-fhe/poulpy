@@ -3,7 +3,7 @@
 use anyhow::{Result, ensure};
 
 use crate::{
-    CKKSInfos,
+    CKKSCompositionError, CKKSInfos,
     layouts::{DFTPlan, DFTType, EncodedLut, EvalModPlan, ModRaisePlan, eval_mod::EvalModType},
 };
 
@@ -30,7 +30,8 @@ pub struct SparseSecretEncapsulation {
 }
 
 /// EvalRound+ (<https://eprint.iacr.org/2024/1379>): a high-precision CoeffsToSlots bypasses EvalMod, and cancels the
-/// error of the low-precision transform that feeds it. Takes a power-of-two `f_mod_interval`.
+/// error of the low-precision transform that feeds it. Takes a power-of-two `f_mod_interval`, and excludes the functional
+/// bootstrap, whose LUT step runs no bypass.
 ///
 /// [`ckks_bootstrap_eval_mod`](crate::api::CKKSBootstrappingOps::ckks_bootstrap_eval_mod) then returns `EvalMod(x) -
 /// K·x`, on every route, with its working label and the guard bits still on, and the composer finishes the step: it
@@ -72,7 +73,7 @@ pub struct BootstrappingTechniques {
 /// - `techniques` ([`BootstrappingTechniques`]): [`SparseSecretEncapsulation`] around the raise and [`EvalRoundPlus`]
 ///   around EvalMod. A first CoeffsToSlots factor on the raise excludes EvalRound+.
 /// - `functional_message_modulus` ([`Self::with_functional_bootstrap`], S2C-first): turns the bootstrap into a LUT
-///   evaluation on integer messages, on the standard ring.
+///   evaluation on integer messages, on the standard ring, without EvalRound+.
 ///
 /// The raise follows [`Self::mod_raise`].
 ///
@@ -104,10 +105,10 @@ pub struct BootstrappingTechniques {
 ///
 /// # LUTs
 ///
-/// [`ckks_eval_lut`](crate::api::CKKSBootstrappingOps::ckks_eval_lut) runs no bypass and removes the guard bits itself,
-/// before the exponential. Real slots of an S2C-first plan take the real part of `a` and skip the imaginary half, with
-/// or without a bypass in the plan, and any other input is split, each half evaluated and the halves recombined. General
-/// LUTs of a batch share the power basis of each half.
+/// [`ckks_eval_lut`](crate::api::CKKSBootstrappingOps::ckks_eval_lut) runs no bypass, refuses a plan with one, and
+/// removes the guard bits itself, before the exponential. Real slots of an S2C-first plan take the real part of `a` and
+/// skip the imaginary half, and any other input is split, each half evaluated and the halves recombined. General LUTs
+/// of a batch share the power basis of each half.
 ///
 /// Each LUT spends `bits`, EvalMod's when it needs it and its own series', of the budget of `a`. A run gives an output
 /// `k_out = a.k() - c2s_guard_bits - bits`, `log_delta_out = log_delta + log_msg_ratio` from the `log_delta` of the
@@ -183,7 +184,7 @@ impl BootstrappingPlan {
         slots_to_coeffs: DFTPlan,
     ) -> Result<Self> {
         let invalid = |reason: String| -> anyhow::Error {
-            crate::CKKSCompositionError::InvalidPlan {
+            CKKSCompositionError::InvalidPlan {
                 plan: "BootstrappingPlan",
                 reason,
             }
@@ -241,6 +242,11 @@ impl BootstrappingPlan {
 
     /// Configures S2C-first functional bootstrapping of integer messages modulo the LUT length.
     /// The initial transform includes the normalization to the LUT's unit-circle phase.
+    ///
+    /// # Errors
+    ///
+    /// [`InvalidPlan`](crate::CKKSCompositionError::InvalidPlan) on a plan with [`EvalRoundPlus`], whose bypass the
+    /// LUT step does not run.
     pub fn with_functional_bootstrap<P>(mut self, lut: &EncodedLut<P>) -> Result<Self> {
         ensure!(
             self.pipeline == BootstrappingPipeline::S2CFirst,
@@ -250,6 +256,13 @@ impl BootstrappingPlan {
             self.eval_mod_ring == EvalModRing::Standard,
             "functional bootstrapping runs EvalMod on the standard ring"
         );
+        if self.techniques.eval_round_plus.is_some() {
+            return Err(CKKSCompositionError::InvalidPlan {
+                plan: "BootstrappingPlan",
+                reason: "the functional bootstrap does not run the EvalRound+ bypass".into(),
+            }
+            .into());
+        }
         let q = (1usize << lut.log_msg_ratio()) as f64;
         self.slots_to_coeffs = self.slots_to_coeffs.with_scaling(q / (2.0 * lut.message_modulus() as f64))?;
         self.functional_message_modulus = Some(lut.message_modulus());
