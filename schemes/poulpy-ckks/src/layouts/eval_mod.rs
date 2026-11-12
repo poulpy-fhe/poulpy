@@ -43,18 +43,19 @@
 
 use crate::{numerics::CKKSFloat, shaping::conjugate_invariant};
 use anyhow::{Result, anyhow, ensure};
-use poulpy_core::layouts::{Base2K, GetDegree, bsgs_consumed_bits, bsgs_eval_depth, bsgs_op_counts};
+use poulpy_core::layouts::{Base2K, GLWELayout, GetDegree, Rank, bsgs_consumed_bits, bsgs_eval_depth, bsgs_op_counts};
 use poulpy_hal::layouts::{Backend, Module, Ring, ScratchArena};
 
 use crate::{
-    CKKSModuleInfos, CoeffsMeta, ReplicatedLayout,
+    CKKSCompositionError, CKKSCtBounds, CKKSModuleInfos, CKKSResult, CoeffsMeta, GLWEPlaintextMeta, ReplicatedLayout, Scale,
+    SetCKKSInfos, SlotsKind,
     api::{Basis, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar, Parity},
     ckks_log_delta, cosine,
     polynomial::{BSGSPolynomial, ComplexBSGSPolynomial, ComplexPolynomial, Polynomial, SplitStrategy},
 };
 
 use super::{
-    CKKSPlaintextAlloc, CKKSPlaintextOwned, CKKSScalar, MaskedCoeffs,
+    CKKSPlaintextAlloc, CKKSPlaintextOwned, CKKSScalar, EncodedLut, EvalModCIPrepared, MaskedCoeffs,
     masked::{encode_masked_constants, encode_masked_constants_phased},
 };
 
@@ -137,6 +138,26 @@ pub enum EvalModType {
 
 /// User-facing recipe for an `x mod 1` evaluation. Compiled into the encoded
 /// [`EvalMod`] by [`ckks_eval_mod_compile`].
+///
+/// # Evaluation
+///
+/// The parameters act in this order, with `K = f_mod_interval` and `r = f_mod_log_interval_reduction`:
+///
+/// 1. **Input.** The transform feeding EvalMod carries [`Self::input_scaling`], `1/K`. The input is relabelled at
+///    `f_mod_log_delta`, keeping its budget, and every product runs at that scale.
+/// 2. **Base polynomial.** `eval_mod_type` picks `f` and how it is fitted over `[-K/2^r, K/2^r]`, at degree
+///    `f_mod_degree` with coefficients at `coeffs_meta`, and `split_strategy` trades depth against rotations.
+/// 3. **Range extension.** `r` squarings, each consuming `f_mod_log_delta` bits, extend the range back to `[-K, K]`: a
+///    larger `r` allows a lower `f_mod_degree` for more depth.
+/// 4. **Inverse.** `f_mod_inv_degree` composes `f⁻¹`, which makes the result linear in `m` across the interval.
+/// 5. **Output.** `scaling` sets the amplitude, `scaling/(2π)`, and the result is relabelled at the input's scale,
+///    which keeps its budget and lowers `k` by the difference.
+///
+/// [`Self::consumed_bits`] sums those stages. `log_msg_ratio` places `Δ·m` under `I(X)·q`, so on a C2S-first raise
+/// `f_mod_log_delta` is at least the lifted input's scale plus `log_msg_ratio`.
+///
+/// The choice of `eval_mod_type` restricts the rest: the discrete fits take `f_mod_degree >= 2·(K - 1)`,
+/// [`EvalModType::SinCheby`] takes no range extension and [`EvalModType::ExpCmplx`] no inverse.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct EvalModPlan {
     /// Which periodic-function approximation and output form to use.
@@ -199,29 +220,34 @@ impl EvalModPlan {
         }
     }
 
-    /// Bits `Δ·m` must be lifted by, at the input modulus `2^k`, for a ciphertext
-    /// of scale `log_delta` to carry exactly this plan's message ratio. Errors if
-    /// the input cannot reach that ratio.
-    pub(crate) fn input_scale_up(&self, k: usize, log_delta: usize) -> Result<usize> {
-        let log_msg_ratio = self.log_msg_ratio;
-        ensure!(
-            k >= log_delta + log_msg_ratio,
-            "EvalModPlan: input k ({k}) < log_delta ({log_delta}) + log_msg_ratio ({log_msg_ratio})"
-        );
-        Ok(k - log_delta - log_msg_ratio)
+    /// Bits `Δ·m` must be lifted by, at the input modulus `2^k`, for a ciphertext of scale `log_delta` to carry exactly
+    /// this plan's message ratio. `InvalidOperand` for `op` when the input cannot reach that ratio.
+    pub(crate) fn input_scale_up(&self, op: &'static str, k: usize, log_delta: usize) -> CKKSResult<usize> {
+        k.checked_sub(log_delta)
+            .and_then(|bits| bits.checked_sub(self.log_msg_ratio))
+            .ok_or_else(|| {
+                CKKSCompositionError::InvalidOperand {
+                    op,
+                    reason: "the input holds fewer bits than its scale plus the plan's message ratio".into(),
+                }
+                .into()
+            })
     }
 
-    /// Bits the raised ciphertext must be lifted by, on top of a ModUp from a
-    /// modulus of scale `log_delta`, to reach this plan's own scale. Errors if the
-    /// plan's scale sits below the modulus it would have to lift from.
-    pub(crate) fn raised_scale_up(&self, log_delta: usize) -> Result<usize> {
-        let f_mod_log_delta = self.f_mod_log_delta;
-        let log_msg_ratio = self.log_msg_ratio;
-        ensure!(
-            f_mod_log_delta >= log_delta + log_msg_ratio,
-            "EvalModPlan: f_mod_log_delta ({f_mod_log_delta}) < log_delta ({log_delta}) + log_msg_ratio ({log_msg_ratio})"
-        );
-        Ok(f_mod_log_delta - log_delta - log_msg_ratio)
+    /// Bits the raised ciphertext must be lifted by, on top of a ModUp from a modulus of scale `log_delta`, to reach
+    /// this plan's own scale. `InvalidOperand` for `op` when the plan's scale sits below the modulus it would have to
+    /// lift from.
+    pub(crate) fn raised_scale_up(&self, op: &'static str, log_delta: usize) -> CKKSResult<usize> {
+        self.f_mod_log_delta
+            .checked_sub(log_delta)
+            .and_then(|bits| bits.checked_sub(self.log_msg_ratio))
+            .ok_or_else(|| {
+                CKKSCompositionError::InvalidOperand {
+                    op,
+                    reason: "the plan's EvalMod scale is below the input scale plus the plan's message ratio".into(),
+                }
+                .into()
+            })
     }
 
     /// Multiplicative levels the eval_mod pipeline consumes: BSGS depth of the
@@ -286,6 +312,44 @@ impl EvalModPlan {
             "CosHKEven cannot beat CosHK's BSGS cost at this plan: adjust f_mod_degree, or use CosHK"
         );
         Ok(())
+    }
+
+    /// Layout and label EvalMod works at on an input like `ct`: its budget, at the plan's scale.
+    pub(crate) fn work_layout<C: CKKSCtBounds>(&self, ct: &C) -> (GLWELayout, GLWEPlaintextMeta) {
+        let layout = GLWELayout {
+            n: ct.n(),
+            base2k: ct.base2k(),
+            k: (ct.log_budget() + self.f_mod_log_delta).into(),
+            rank: Rank(1),
+        };
+        let meta = GLWEPlaintextMeta {
+            scale: Scale::Log(self.f_mod_log_delta),
+            slots: ct.slots(),
+            log_sparsity: ct.log_sparsity(),
+            slot_layout: ct.slot_layout(),
+        };
+        (layout, meta)
+    }
+
+    /// Layout of a carved input holding `ct` and the width EvalMod works at, so that EvalMod copies nothing.
+    pub(crate) fn input_layout<C: CKKSCtBounds>(&self, ct: &C) -> GLWELayout {
+        let (work, _) = self.work_layout(ct);
+        GLWELayout {
+            k: work.k.max(ct.k()),
+            ..work
+        }
+    }
+
+    /// Widest ciphertext this EvalMod relinearizes, in bits, on an input of `log_budget` bits of budget: it relabels
+    /// its input at its own scale and keeps that budget.
+    pub(crate) fn relinearization_k(&self, log_budget: usize) -> usize {
+        log_budget + self.f_mod_log_delta
+    }
+
+    /// Widths of the ciphertexts the conversions of the conjugate-invariant ring switch around
+    /// this EvalMod, from the `traced` bits of its input: to that ring, and back at what it leaves.
+    pub(crate) fn conversion_widths(&self, traced: usize) -> (usize, usize) {
+        (traced, traced.saturating_sub(self.consumed_bits()))
     }
 
     /// `log_budget` bits the eval_mod pipeline consumes on an input ciphertext of
@@ -464,6 +528,96 @@ pub struct EvalMod<F, P> {
     /// Host-side inverse `f⁻¹` post-composition polynomial that `f_mod_inv_bsgs`
     /// encodes, when present.
     pub f_mod_inv_poly: Option<Polynomial<F>>,
+}
+
+/// What the EvalMod step of a bootstrap reads of a compiled plan, on either ring.
+pub trait CKKSEvalModInfos<BE: Backend, F> {
+    /// The EvalMod recipe, on either ring.
+    fn eval_mod_plan(&self) -> &EvalModPlan;
+
+    /// EvalMod on the standard ring, when it runs there.
+    fn eval_mod_standard(&self) -> Option<&EvalMod<F, CKKSPlaintextOwned<BE>>>;
+
+    /// EvalMod on the conjugate-invariant ring and its conversions, when it runs there.
+    fn eval_mod_ci(&self) -> Option<&EvalModCIPrepared<BE, F>>;
+
+    /// Guard bits the input of the step carries above its message: 0 on a plain [`EvalMod`].
+    fn c2s_guard_bits(&self) -> usize;
+
+    /// Whether real slots read the real part of the input alone: an S2C-first pipeline, whose raise leaves only integer
+    /// multiples of the modulus in the imaginary part. A plain [`EvalMod`] has no pipeline and trusts the label of its
+    /// input. The LUT step reads this: it refuses a plan with a bypass.
+    fn real_part_on_real_slots(&self) -> bool;
+
+    /// Whether real slots take one EvalMod: [`Self::real_part_on_real_slots`] without a bypass, which needs both halves.
+    fn one_eval_mod_on_real_slots(&self) -> bool {
+        self.real_part_on_real_slots() && !self.eval_round_plus()
+    }
+
+    /// Whether the plan runs EvalRound+: the step leaves `EvalMod(x) - K·x` and the guard bits to the bypass.
+    fn eval_round_plus(&self) -> bool;
+
+    /// The slots of the message, which pick the route. `None`: the step reads the label of its input.
+    fn message_slots(&self) -> Option<SlotsKind>;
+
+    /// Removes the guard bits and labels an EvalMod output as the message. It runs once: in
+    /// [`ckks_bootstrap_eval_mod`](crate::api::CKKSBootstrappingOps::ckks_bootstrap_eval_mod), and by the composer only
+    /// under a bypass, as the last step after adding it back. `InvalidOperand` for `op`, with `res` unchanged, when `res`
+    /// holds fewer scale bits than the guard bits.
+    fn stamp_eval_mod_output<C: SetCKKSInfos>(&self, op: &'static str, res: &mut C) -> CKKSResult<()>;
+
+    /// The metadata and the width of the output of `lut` from an input of `a_k` bits, past CoeffsToSlots, or a typed
+    /// refusal of `op` when the plan or that input cannot give them. `None`: the output keeps what the evaluation leaves
+    /// it.
+    fn eval_lut_output(
+        &self,
+        op: &'static str,
+        lut: &EncodedLut<CKKSPlaintextOwned<BE>>,
+        a_k: usize,
+    ) -> CKKSResult<Option<(GLWEPlaintextMeta, usize)>>;
+}
+
+impl<BE: Backend, F> CKKSEvalModInfos<BE, F> for EvalMod<F, CKKSPlaintextOwned<BE>> {
+    fn eval_mod_plan(&self) -> &EvalModPlan {
+        &self.plan
+    }
+
+    fn eval_mod_standard(&self) -> Option<&EvalMod<F, CKKSPlaintextOwned<BE>>> {
+        Some(self)
+    }
+
+    fn eval_mod_ci(&self) -> Option<&EvalModCIPrepared<BE, F>> {
+        None
+    }
+
+    fn c2s_guard_bits(&self) -> usize {
+        0
+    }
+
+    fn real_part_on_real_slots(&self) -> bool {
+        true
+    }
+
+    fn eval_round_plus(&self) -> bool {
+        false
+    }
+
+    fn message_slots(&self) -> Option<SlotsKind> {
+        None
+    }
+
+    fn stamp_eval_mod_output<C: SetCKKSInfos>(&self, _op: &'static str, _res: &mut C) -> CKKSResult<()> {
+        Ok(())
+    }
+
+    fn eval_lut_output(
+        &self,
+        _op: &'static str,
+        _lut: &EncodedLut<CKKSPlaintextOwned<BE>>,
+        _a_k: usize,
+    ) -> CKKSResult<Option<(GLWEPlaintextMeta, usize)>> {
+        Ok(None)
+    }
 }
 
 /// Decomposes `polynomial` for BSGS, through the parity fold when `folded`,

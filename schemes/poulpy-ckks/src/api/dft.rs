@@ -6,11 +6,11 @@
 //! [`docs/guides/bootstrapping.md`](https://github.com/poulpy-fhe/poulpy/blob/main/docs/guides/bootstrapping.md).
 
 use crate::CKKSResult as Result;
-use poulpy_core::layouts::IntPolyInfos;
+use poulpy_core::layouts::{GGLWEInfos, IntPolyInfos};
 use poulpy_core::{
     GLWEDiagonalProd,
     layouts::{
-        Base2K, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LWEInfos, LinearTransformation,
+        Base2K, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, LinearTransformation,
         LinearTransformationPrepared,
     },
 };
@@ -23,7 +23,8 @@ use crate::{
     CKKSCtBounds, SetCKKSInfos,
     api::{CKKSEncodingScalar, LtDiagonalMeta},
     layouts::{
-        DFTMatrix, DFTMatrixFactors, DFTMatrixPrepared, DFTPlan, Decode, DftDirection, DftFormat, Encode, Repack, Split, Standard,
+        CKKSDFTFactors, DFTMatrix, DFTMatrixFactors, DFTMatrixPrepared, DFTPlan, Decode, DftDirection, DftFormat, Encode, Repack,
+        Split, Standard,
     },
 };
 
@@ -43,57 +44,55 @@ pub trait CKKSDFTOps<BE: Backend> {
     /// Selected workspace for raw DFT evaluation and its format wrappers.
     /// `dst` and `src` must bound all destination and source allocations; `key`
     /// must bound every rotation/conjugation key used by the transform.
-    fn ckks_dft_tmp_bytes<Dir, Fmt, P, Dst, Src, K>(
-        &self,
-        dst: &Dst,
-        src: &Src,
-        dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>,
-        key: &K,
-    ) -> usize
+    fn ckks_dft_tmp_bytes<Dir, Fmt, D, Dst, Src, K>(&self, dst: &Dst, src: &Src, dft: &D, key: &K) -> usize
     where
-        P: poulpy_core::layouts::GLWEInfos,
+        D: CKKSDFTFactors<BE, Dir, Fmt>,
         Dst: CKKSCtBounds,
         Src: CKKSCtBounds,
-        K: poulpy_core::layouts::GGLWEInfos;
+        K: GGLWEInfos;
 
     /// Evaluates the homomorphic (I)DFT in place (raw chain, no format wrapper).
-    fn ckks_dft_matrix_eval_assign<Dir, Fmt, P, Dst, H>(
+    fn ckks_dft_matrix_eval_assign<Dir, Fmt, D, Dst, H>(
         &self,
         ct: &mut Dst,
-        dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>,
+        dft: &D,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
+        D: CKKSDFTFactors<BE, Dir, Fmt>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        H: GetAutomorphismKey<BE> + GetTensorKey<BE>;
+        H: GetAutomorphismKey<BE>;
 
-    /// `CoeffsToSlots`, `Standard` format (in place).
-    fn ckks_coeffs_to_slots_assign<P, Dst, H>(
+    /// `CoeffsToSlots`, `Standard` format (in place). A [`BootstrappingRun`](crate::layouts::BootstrappingRun) or a
+    /// `&DFTMatrixPrepared<BE, Encode, Split>` evaluates its `Split` chain unsplit: the output is half a `Standard`
+    /// encode, and a later split or the composer doubles it.
+    fn ckks_coeffs_to_slots_assign<D, Dst, H>(
         &self,
         ct: &mut Dst,
-        dft: &DFTMatrix<BE, Encode, Standard, LinearTransformation<P>>,
+        dft: &D,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
+        D: CKKSDFTFactors<BE, Encode, Standard>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        H: GetAutomorphismKey<BE> + GetTensorKey<BE>;
+        H: GetAutomorphismKey<BE>;
 
-    /// `SlotsToCoeffs`, `Standard` format (in place).
-    fn ckks_slots_to_coeffs_assign<P, Dst, H>(
+    /// `SlotsToCoeffs`, `Standard` format (in place). `dft` labels the output through
+    /// [`CKKSDFTFactors::stamp_transform_output`], which a [`BootstrappingRun`](crate::layouts::BootstrappingRun) of a
+    /// C2S-first plan uses to end the bootstrap.
+    fn ckks_slots_to_coeffs_assign<D, Dst, H>(
         &self,
         ct: &mut Dst,
-        dft: &DFTMatrix<BE, Decode, Standard, LinearTransformation<P>>,
+        dft: &D,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
+        D: CKKSDFTFactors<BE, Decode, Standard>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        H: GetAutomorphismKey<BE> + GetTensorKey<BE>;
+        H: GetAutomorphismKey<BE>;
 
     /// `CoeffsToSlots`, `SplitRealAndImag` — real/imag in two ciphertexts.
     #[allow(clippy::too_many_arguments)]
@@ -110,7 +109,7 @@ pub trait CKKSDFTOps<BE: Backend> {
         P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        H: GetAutomorphismKey<BE> + GetTensorKey<BE>;
+        H: GetAutomorphismKey<BE>;
 
     /// `SlotsToCoeffs`, `SplitRealAndImag` — combine two ciphertexts then Decode.
     fn ckks_slots_to_coeffs_split<P, Dst, Src, H>(
@@ -126,7 +125,7 @@ pub trait CKKSDFTOps<BE: Backend> {
         P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        H: GetAutomorphismKey<BE> + GetTensorKey<BE>;
+        H: GetAutomorphismKey<BE>;
 
     /// `CoeffsToSlots`, sparse `RepackImagAsReal` — imag packed into the right half.
     #[allow(clippy::too_many_arguments)]
@@ -142,7 +141,7 @@ pub trait CKKSDFTOps<BE: Backend> {
         P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        H: GetAutomorphismKey<BE> + GetTensorKey<BE>;
+        H: GetAutomorphismKey<BE>;
 
     /// `SlotsToCoeffs`, sparse `RepackImagAsReal` — inverse of [`Self::ckks_coeffs_to_slots_repack`].
     fn ckks_slots_to_coeffs_repack<P, Dst, Src, H>(
@@ -157,7 +156,7 @@ pub trait CKKSDFTOps<BE: Backend> {
         P: GLWEDiagonalProd<BE> + LtDiagonalMeta,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        H: GetAutomorphismKey<BE> + GetTensorKey<BE>;
+        H: GetAutomorphismKey<BE>;
 }
 
 /// Allocates and prepares [`DFTMatrixPrepared`] matrices.

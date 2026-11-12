@@ -127,6 +127,7 @@ mod encoding_buffer;
 pub mod eval_mod;
 pub mod functional_bootstrapping;
 pub mod masked;
+pub mod mod_raise;
 pub mod mul;
 pub mod paco;
 pub mod plaintext;
@@ -140,13 +141,13 @@ pub use approximation::PolynomialApproximation;
 pub use bootstrapping::BootstrappingContextUnprepared;
 pub use bootstrapping::{
     BootstrappingContext, BootstrappingContextPrepared, BootstrappingKeyWidths, BootstrappingPipeline, BootstrappingPlan,
-    BootstrappingTechniques, CIConversion, CIPrePrepared, EvalModCIPrepared, EvalModRing, EvalRoundPlus,
+    BootstrappingRun, BootstrappingTechniques, CIConversion, CIPrePrepared, EvalModCIPrepared, EvalModRing, EvalRoundPlus,
     SparseSecretEncapsulation,
 };
 pub use bootstrapping_keys::{
-    BootstrappingCIKeys, BootstrappingKeySet, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingKeysPrepared,
-    BootstrappingLinearKeys, CKKSFoldKeysLayout, EncapsulationKeys, EncapsulationKeysLayout, RingSwitchKeySet, RingSwitchKeys,
-    RingSwitchKeysLayout, RingSwitchKeysPrepared,
+    BootstrappingKeySet, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingKeysPrepared, BootstrappingLinearKeys,
+    CKKSFoldKeysLayout, EncapsulationKeys, EncapsulationKeysLayout, RingSwitchKeySet, RingSwitchKeys, RingSwitchKeysLayout,
+    RingSwitchKeysPrepared,
 };
 #[allow(deprecated)]
 pub use ciphertext::CKKSRingCiphertext;
@@ -156,8 +157,8 @@ pub use ciphertext::{
 };
 pub use complex_diagonals::ComplexDiagonals;
 pub use dft::{
-    DFTMatrix, DFTMatrixFactors, DFTMatrixPrepared, DFTOutputFormat, DFTPlan, DFTType, Decode, DftDirection, DftFormat,
-    DftScalar, Encode, Repack, Split, Standard,
+    CKKSDFTFactors, DFTMatrix, DFTMatrixFactors, DFTMatrixPrepared, DFTOutputFormat, DFTPlan, DFTType, Decode, DftDirection,
+    DftFormat, DftScalar, Encode, Repack, Split, Standard,
 };
 pub use encoding_buffer::{
     CKKSEncodingBuffer, CKKSEncodingBufferBackendMut, CKKSEncodingBufferBackendRef, CKKSEncodingBufferInfos,
@@ -168,12 +169,13 @@ pub(crate) use encoding_buffer::{
     copy_reim_host_into_encoding_buffer, download_from_encoding_buffer, slot_coeff_count, upload_into_encoding_buffer,
 };
 pub use eval_mod::{
-    EvalMod, EvalModBsgs, EvalModPlan, EvalModPoly, EvalModType, ckks_eval_mod_compile, ckks_eval_mod_replicated_compile,
-    ckks_eval_mod_replicated_packed_compile,
+    CKKSEvalModInfos, EvalMod, EvalModBsgs, EvalModPlan, EvalModPoly, EvalModType, ckks_eval_mod_compile,
+    ckks_eval_mod_replicated_compile, ckks_eval_mod_replicated_packed_compile,
 };
 pub use functional_bootstrapping::EncodedLut;
 pub(crate) use functional_bootstrapping::EncodedLutKind;
 pub use masked::{CKKSMaskedConstants, MaskedCoeffs, encode_bsgs_replicated, encode_complex_bsgs_replicated};
+pub use mod_raise::{CKKSModRaiseInfos, ModRaisePlan, ModRaisePrepared};
 #[allow(deprecated)]
 pub use mul::CKKSPreparedRight;
 pub use mul::{CKKSLeftOperandPrepared, CKKSRightOperandPrepared};

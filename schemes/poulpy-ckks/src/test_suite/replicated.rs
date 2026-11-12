@@ -1560,14 +1560,14 @@ where
                 ckks_eval_mod_replicated_compile::<BE, F, Rg>(base2k, plan, layout, module, &mut compile.borrow())?
             };
             let mut eval = ScratchOwned::<BE>::alloc(module.ckks_eval_mod_tmp_bytes(&res, &ct, &eval_mod, &tsk_layout));
-            module.ckks_eval_mod(&mut res, &ct, &eval_mod, &tsk, &mut eval.borrow())?;
+            module.ckks_eval_mod(&mut res, &mut ct, &eval_mod, &tsk, &mut eval.borrow())?;
             let scale = eval_mod.range_extension_scale();
             (eval_mod.f_mod_poly, plan.f_mod_log_interval_reduction, scale)
         }
         SlotLayout::Full => {
             let eval_mod = ckks_eval_mod_compile::<BE, F, Rg>(base2k, plan, module, &mut compile.borrow())?;
             let mut eval = ScratchOwned::<BE>::alloc(module.ckks_eval_mod_tmp_bytes(&res, &ct, &eval_mod, &tsk_layout));
-            module.ckks_eval_mod(&mut res, &ct, &eval_mod, &tsk, &mut eval.borrow())?;
+            module.ckks_eval_mod(&mut res, &mut ct, &eval_mod, &tsk, &mut eval.borrow())?;
             let scale = eval_mod.range_extension_scale();
             (eval_mod.f_mod_poly, plan.f_mod_log_interval_reduction, scale)
         }

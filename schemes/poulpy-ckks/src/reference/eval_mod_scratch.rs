@@ -1,7 +1,8 @@
 use poulpy_core::layouts::{
     Base2K, Degree, GGLWEInfos, GLWEInfos, GLWEPlaintextInfos, GLWEPlaintextMeta, LWEInfos, Rank, Scale, TorusPrecision,
 };
-use poulpy_core::{GLWEBytesOf, GLWECopy};
+use poulpy_core::oep::GLWEMulConstImpl;
+use poulpy_core::{GLWEBytesOf, GLWECopy, GLWENormalize};
 use poulpy_hal::api::{CnvOps, CnvPVecBytesOf, VecZnxBigNormalizeTmpBytes, VecZnxIdftApplyTmpBytes, VecZnxRshTmpBytes};
 use poulpy_hal::layouts::{Backend, Module, Ring};
 
@@ -9,6 +10,7 @@ use crate::{
     CKKSCtBounds, CKKSInfos,
     api::{CKKSAddOps, CKKSCopyOps, CKKSMulAddOps, CKKSMulOps, CKKSPow2Ops, CKKSRoundOps, CKKSSubOps, PolynomialInputTransform},
     layouts::eval_mod::{EvalMod, EvalModBsgs},
+    power_basis::populated_powers,
 };
 use crate::{SlotLayout, SlotsKind};
 
@@ -54,7 +56,7 @@ impl GLWEPlaintextInfos for EvalModWorkCtInfos {
 
 impl CKKSInfos for EvalModWorkCtInfos {}
 
-pub fn ckks_eval_mod_tmp_bytes_reference<BE: Backend + poulpy_core::oep::GLWEMulConstImpl<Rg>, R, C, P, F, T, Rg: Ring>(
+pub fn ckks_eval_mod_tmp_bytes_reference<BE: Backend + GLWEMulConstImpl<Rg>, R, C, P, F, T, Rg: Ring>(
     module: &Module<BE>,
     res: &R,
     ct: &C,
@@ -66,7 +68,7 @@ where
         + CKKSSubOps<BE, Rg>
         + CKKSMulOps<BE, Rg>
         + crate::api::CKKSPow2Ops<BE, Rg>
-        + poulpy_core::GLWENormalize<BE, Rg>
+        + GLWENormalize<BE, Rg>
         + CKKSCopyOps<BE, Rg>
         + GLWECopy<BE, Rg>
         + CnvPVecBytesOf
@@ -111,17 +113,26 @@ where
         module.ckks_square_tmp_bytes(res, res, tsk)
             + BE::vec_znx_bytes_of(res.n().into(), (res.rank() + 1).into(), res.max_size()),
     );
-    // Identity base polynomials transfer an owned, relabelled input directly
-    // into the power basis. Scratch only needs a full working ciphertext for
-    // a transformed base or for the optional inverse composition.
-    let needs_work_copy = params.f_mod_inv_bsgs.is_some()
-        || match &params.f_mod_bsgs {
-            EvalModBsgs::Real(poly) => poly.input_transform() != PolynomialInputTransform::Identity,
-            EvalModBsgs::Complex(poly) => {
-                poly.re.input_transform() != PolynomialInputTransform::Identity
-                    || poly.im.input_transform() != PolynomialInputTransform::Identity
-            }
-        };
+    // Scratch holds the powers of the base polynomial, its transformed input, the input when its allocation is too
+    // narrow, and a working ciphertext for the optional inverse composition.
+    let powers = match &params.f_mod_bsgs {
+        EvalModBsgs::Real(poly) => {
+            populated_powers(poly.degree(), poly.log_split(), poly.parity(), poly.basis())
+                + usize::from(poly.input_transform() != PolynomialInputTransform::Identity)
+        }
+        EvalModBsgs::Complex(poly)
+            if poly.re.input_transform() == PolynomialInputTransform::Identity
+                && poly.im.input_transform() == PolynomialInputTransform::Identity =>
+        {
+            populated_powers(poly.re.degree(), poly.re.log_split(), poly.re.parity(), poly.re.basis())
+        }
+        _ => 0,
+    };
+    // A replicated input that drops bits to the plan scale is rounded into a carved copy.
+    let input_copy = ct.log_budget() + params.plan.f_mod_log_delta > ct.max_k().as_usize()
+        || matches!(ct.slot_layout(), SlotLayout::Replicated(_)) && params.plan.f_mod_log_delta < ct.log_delta();
+    let carved =
+        (powers + usize::from(input_copy) + usize::from(params.f_mod_inv_bsgs.is_some())) * BE::scratch_aligned(compact_work);
     // Working set of the fused baby-step linear combination.
     let pt_size_max = {
         let poly_max =
@@ -164,21 +175,20 @@ where
         SlotLayout::Full => 0,
     };
 
-    let steps = usize::from(needs_work_copy) * compact_work
-        + module
-            .ckks_copy_tmp_bytes(&work, &work)
-            // Polynomial evaluation finishes by copying into the caller's
-            // destination, whose allocated capacity can exceed the work layout.
-            .max(module.ckks_copy_tmp_bytes(res, &work))
-            .max(module.ckks_copy_tmp_bytes(&work, res))
-            .max(module.ckks_copy_tmp_bytes(&work, ct))
-            .max(module.glwe_copy_tmp_bytes(&work, ct))
-            .max(module.ckks_add_pt_const_tmp_bytes(work.max_size()))
-            .max(module.ckks_sub_pt_const_tmp_bytes(work.max_size()))
-            .max(module.ckks_sub_one_tmp_bytes(work.max_size()))
-            .max(bsgs_giant)
-            .max(square_scope)
-            .max(crate::power_basis::ckks_power_product_tmp_bytes(module, &work, tsk))
-            .max(fused_baby);
-    steps.max(replicated)
+    let steps = module
+        .ckks_copy_tmp_bytes(&work, &work)
+        // Polynomial evaluation finishes by copying into the caller's
+        // destination, whose allocated capacity can exceed the work layout.
+        .max(module.ckks_copy_tmp_bytes(res, &work))
+        .max(module.ckks_copy_tmp_bytes(&work, res))
+        .max(module.ckks_copy_tmp_bytes(&work, ct))
+        .max(module.glwe_copy_tmp_bytes(&work, ct))
+        .max(module.ckks_add_pt_const_tmp_bytes(work.max_size()))
+        .max(module.ckks_sub_pt_const_tmp_bytes(work.max_size()))
+        .max(module.ckks_sub_one_tmp_bytes(work.max_size()))
+        .max(bsgs_giant)
+        .max(square_scope)
+        .max(crate::power_basis::ckks_power_product_tmp_bytes(module, &work, tsk))
+        .max(fused_baby);
+    carved + steps.max(replicated)
 }

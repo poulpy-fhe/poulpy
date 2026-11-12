@@ -20,10 +20,9 @@
 use crate::CKKSModuleInfos;
 use crate::Scale;
 use crate::api::CKKSEncodingOps;
-use poulpy_core::layouts::{GLWEPlaintextInfos, SetGLWEPlaintextInfos};
+use poulpy_core::layouts::{Base2K, GLWEPlaintextInfos, LinearTransformation, LinearTransformationPlan, SetGLWEPlaintextInfos};
 use std::collections::HashMap;
 
-use poulpy_core::layouts::Base2K;
 use poulpy_hal::{
     api::{ReimNew, ScratchOwnedBorrow},
     layouts::{Backend, CyclotomicOrder, DataView, DataViewMut, HostBytesBackend, HostDataMut, HostDataRef, Module},
@@ -34,19 +33,20 @@ use poulpy_core::{GLWENoise, layouts::LWEInfos};
 use crate::SlotsKind;
 use crate::{
     CKKSCompositionError, CKKSInfos, CoeffsMeta, GLWEPlaintextMeta, SetCKKSInfos, SlotLayout,
-    api::{CKKSDFTMatrixOps, CKKSDFTMatrixPreparedFactory, CKKSDFTOps, CKKSEncodingScalar},
+    api::{CKKSCopyOps, CKKSDFTMatrixOps, CKKSDFTMatrixPreparedFactory, CKKSDFTOps, CKKSEncodingScalar},
     layouts::{
-        CKKSCiphertextOwned, CKKSPlaintextAlloc, CKKSPlaintextOwned, CKKSPlaintextVecHostCodec, DFTMatrix, DFTMatrixPrepared,
-        DFTOutputFormat, DFTPlan, DFTType, Decode, DftDirection, DftFormat, Encode, Repack, Split, Standard,
+        CKKSCiphertextAlloc, CKKSCiphertextOwned, CKKSDFTFactors, CKKSPlaintextAlloc, CKKSPlaintextOwned,
+        CKKSPlaintextVecHostCodec, DFTMatrix, DFTMatrixPrepared, DFTOutputFormat, DFTPlan, DFTType, Decode, DftDirection,
+        DftFormat, Encode, Repack, Split, Standard,
     },
     test_suite::reference_encoder::ReferenceEncoder,
     test_suite::{
         CKKSTestParams,
         helpers::{
-            TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, assert_ckks_internal, ckks_encrypt,
-            ckks_encrypt_coeffs, ckks_encrypt_pt, ckks_spec, gen_atk, gen_sk_with_raw, test_vector_1,
+            TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, assert_ckks_error, assert_ckks_internal,
+            ckks_encrypt, ckks_encrypt_coeffs, ckks_encrypt_pt, ckks_spec, gen_atk, gen_sk_with_raw, test_vector_1,
         },
-        parity::helpers::with_scratch,
+        parity::helpers::{snapshot, with_scratch},
     },
 };
 
@@ -106,6 +106,33 @@ fn sparse_params(params: &CKKSTestParams) -> CKKSTestParams {
         hw: params.hw.min(32),
         dsize: params.dsize,
         rank: 1,
+    }
+}
+
+/// A borrowed matrix behind the infos trait alone, which reports the schedules of its first `plans` factors.
+struct FactorsOf<'a, D> {
+    matrix: &'a D,
+    plans: usize,
+}
+
+impl<BE: Backend, Dir, Fmt, D: CKKSDFTFactors<BE, Dir, Fmt>> CKKSDFTFactors<BE, Dir, Fmt> for FactorsOf<'_, D> {
+    type Diagonal = D::Diagonal;
+
+    fn dft_plan(&self) -> &DFTPlan {
+        self.matrix.dft_plan()
+    }
+
+    fn factors<'a>(&'a self) -> impl Iterator<Item = &'a LinearTransformation<Self::Diagonal>>
+    where
+        BE: 'a,
+        Dir: 'a,
+        Fmt: 'a,
+    {
+        self.matrix.factors()
+    }
+
+    fn factor_plans(&self) -> &[LinearTransformationPlan] {
+        &self.matrix.factor_plans()[..self.plans]
     }
 }
 
@@ -382,6 +409,8 @@ pub fn test_dft_coeffs_to_slots_split<BE, F, E>(
         + TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSDFTOps<BE>
+        + CKKSCopyOps<BE>
+        + CKKSCiphertextAlloc<BE>
         + CKKSDFTMatrixOps<BE, F>
         + GLWENoise<BE>,
     F: TestScalar,
@@ -437,6 +466,53 @@ pub fn test_dft_coeffs_to_slots_split<BE, F, E>(
         module.ckks_coeffs_to_slots_split(&mut ct_real, &mut ct_imag, &ct_in, &enc_dft, &atks, s)
     })
     .unwrap();
+
+    // The context-free view of the matrix evaluates the same factors.
+    let bytes = dft_eval_bytes(&params, &module, &enc_dft);
+    let mut direct = module.ckks_ciphertext_alloc_from_infos(&ct_in);
+    let mut through_infos = module.ckks_ciphertext_alloc_from_infos(&ct_in);
+    with_scratch::<BE, _>(bytes, |s| {
+        module.ckks_copy(&mut direct, &ct_in, s)?;
+        module.ckks_dft_matrix_eval_assign(&mut direct, &enc_dft, &atks, s)
+    })
+    .unwrap();
+    let all = FactorsOf {
+        matrix: &enc_dft,
+        plans: enc_dft.num_factors(),
+    };
+    with_scratch::<BE, _>(bytes, |s| {
+        module.ckks_copy(&mut through_infos, &ct_in, s)?;
+        module.ckks_dft_matrix_eval_assign(&mut through_infos, &all, &atks, s)
+    })
+    .unwrap();
+    assert_eq!(
+        snapshot::<BE, _, poulpy_hal::layouts::Standard>(&through_infos),
+        snapshot::<BE, _, poulpy_hal::layouts::Standard>(&direct)
+    );
+
+    // A view short of one schedule refuses before its first factor.
+    let short = FactorsOf {
+        matrix: &enc_dft,
+        plans: enc_dft.num_factors() - 1,
+    };
+    let before = snapshot::<BE, _, poulpy_hal::layouts::Standard>(&through_infos);
+    let err = with_scratch::<BE, _>(bytes, |s| {
+        module.ckks_dft_matrix_eval_assign(&mut through_infos, &short, &atks, s)
+    })
+    .unwrap_err();
+    assert_ckks_error(
+        "one schedule short",
+        &err,
+        CKKSCompositionError::InvalidOperand {
+            op: "ckks_dft_matrix_eval_assign",
+            reason: "takes one schedule per factor".into(),
+        },
+    );
+    assert_eq!(
+        snapshot::<BE, _, poulpy_hal::layouts::Standard>(&through_infos),
+        before,
+        "a refused evaluation wrote its ciphertext"
+    );
 
     // Reference: ct_real holds slots (re, 0), ct_imag holds slots (im, 0). Measure
     // each via GLWE noise and bound the worst log2.

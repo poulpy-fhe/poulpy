@@ -60,6 +60,11 @@ fn ntt4x30_ci_bootstrap_refuses_invalid_inputs() {
 }
 
 #[test]
+fn ntt4x30_ckks_bootstrap_eval_mod() {
+    poulpy_ckks::test_suite::bootstrapping::test_ckks_bootstrap_eval_mod::<crate::NTT4x30Oracle>();
+}
+
+#[test]
 fn ntt4x30_small_c2s_preset_meets_precision() {
     poulpy_ckks::test_suite::presets::small_c2s_preset_meets_precision::<crate::NTT4x30Oracle>();
 }
