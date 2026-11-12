@@ -65,7 +65,7 @@ pub fn test_add_pt_vec_assign_rejects_alignment<BE, F, E>(
         "add_pt_vec_alignment",
         &err,
         CKKSCompositionError::PlaintextAlignmentImpossible {
-            op: "ckks_add_pt_vec",
+            op: "ckks_add_pt_vec_assign",
             ct_log_budget: 0,
             pt_log_delta: params.prec().log_delta(),
             // Alignment is checked against the plaintext's effective (meaningful)

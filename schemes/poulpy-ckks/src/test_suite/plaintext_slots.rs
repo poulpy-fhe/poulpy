@@ -113,7 +113,7 @@ pub fn test_plaintext_slots_add_sub_mul<BE, F, E>(
         "ckks_add_pt_vec_into of a plaintext of degree 3",
         &err,
         CKKSCompositionError::PlaintextDegreeMismatch {
-            op: "ckks_add_pt_vec",
+            op: "ckks_add_pt_vec_into",
             ct_n: ct.n().as_usize(),
             pt_n: 3,
         },
@@ -147,7 +147,7 @@ pub fn test_plaintext_slots_add_sub_mul<BE, F, E>(
         "ckks_add_pt_vec_into of a plaintext below the backend floor",
         &err,
         CKKSCompositionError::PlaintextDegreeMismatch {
-            op: "ckks_add_pt_vec",
+            op: "ckks_add_pt_vec_into",
             ct_n: ct.n().as_usize(),
             pt_n: BE::MIN_DEGREE / 2,
         },

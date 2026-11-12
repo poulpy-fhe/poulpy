@@ -1283,7 +1283,7 @@ pub fn test_add_pt_vec_assign_rejects_base2k_mismatch<BE, F, E>(
         "add_pt_vec_base2k_mismatch",
         &err,
         CKKSCompositionError::PlaintextBase2KMismatch {
-            op: "ckks_add_pt_vec",
+            op: "ckks_add_pt_vec_assign",
             ct_base2k: params.base2k,
             pt_base2k: mismatched_base2k.as_usize(),
         },
@@ -1338,7 +1338,7 @@ pub fn test_add_pt_vec_into_rejects_plaintext_before_copy<BE, F, E>(
         31,
     );
     let radix = CKKSCompositionError::PlaintextBase2KMismatch {
-        op: "ckks_add_pt_vec",
+        op: "ckks_add_pt_vec_into",
         ct_base2k: b,
         pt_base2k: b - 1,
     };
@@ -1360,7 +1360,7 @@ pub fn test_add_pt_vec_into_rejects_plaintext_before_copy<BE, F, E>(
             "add_pt_const_into: coefficient past the plaintext",
             &err,
             CKKSCompositionError::PlaintextCoefficientOutOfRange {
-                op: "ckks_add_pt_const",
+                op: "ckks_add_pt_const_into",
                 role: "plaintext",
                 coeff: n,
                 n,
