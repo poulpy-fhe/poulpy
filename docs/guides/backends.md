@@ -117,6 +117,7 @@ replay.replay();
 ```
 
 The closure must bind the same buffers and issue the same launches at every call, and must not read from the device, write host data to it or synchronize; `Replay` documents the contract, and `Replay::check` tests a closure against its recording.
+`Module::new` uploads the transform tables of both rings, but the shaped rounding of a replicated layout uploads the tables of its shaping polynomial on the first call that uses it, each ring and polynomial once per module: call the closure once before recording it, as the recording does on the runtimes with graphs, so that the replays hold no upload.
 A recording keeps the temporaries of the closure reserved on the device until it is dropped, and while a closure is recorded or a graph is queued, other threads wait for the device.
 
 CKKS bootstrapping on a GPU is usually faster with the keys of power-of-two rotations only (`BootstrappingPreset::with_power_of_two_keys`, see [Default presets](bootstrapping.md#default-presets)).

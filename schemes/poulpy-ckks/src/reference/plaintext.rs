@@ -35,6 +35,7 @@ fn plaintext_shift<P: CKKSInfos + IntPolyInfos>(ct_log_budget: usize, pt: &P) ->
 /// `ct += pt`, `pt` aligned to the budget of `ct`, without normalization.
 pub(crate) fn add_pt_vec_raw<BE, M, Dst, A, Rg: Ring>(
     module: &M,
+    op: &'static str,
     ct: &mut Dst,
     pt: &A,
     scratch: &mut ScratchArena<'_, BE>,
@@ -46,7 +47,7 @@ where
     A: GLWEToBackendRef<BE, Rg> + IntPolyInfos + CKKSInfos,
 {
     ensure_plaintext_vec_operand(
-        "ckks_add_pt_vec",
+        op,
         ct.base2k().as_usize(),
         ct.n().as_usize(),
         ct.log_budget(),
@@ -69,6 +70,7 @@ where
 /// normalization.
 pub(crate) fn add_pt_const_raw<BE, M, Dst, A, Rg: Ring>(
     module: &M,
+    op: &'static str,
     ct: &mut Dst,
     coeff_ct: usize,
     pt: &A,
@@ -82,7 +84,7 @@ where
     A: GLWEToBackendRef<BE, Rg> + IntPolyInfos + CKKSInfos,
 {
     ensure_plaintext_const_operand(
-        "ckks_add_pt_const",
+        op,
         ct.base2k().as_usize(),
         ct.n().as_usize(),
         coeff_ct,
@@ -109,6 +111,7 @@ where
 /// without normalization.
 pub(crate) fn sub_pt_const_raw<BE, M, Dst, A, Rg: Ring>(
     module: &M,
+    op: &'static str,
     ct: &mut Dst,
     coeff_ct: usize,
     pt: &A,
@@ -122,7 +125,7 @@ where
     A: GLWEToBackendRef<BE, Rg> + IntPolyInfos + CKKSInfos,
 {
     ensure_plaintext_const_operand(
-        "ckks_sub_pt_const",
+        op,
         ct.base2k().as_usize(),
         ct.n().as_usize(),
         coeff_ct,
@@ -148,6 +151,7 @@ where
 /// `ct -= pt`, `pt` aligned to the budget of `ct`, without normalization.
 pub(crate) fn sub_pt_vec_raw<BE, M, Dst, A, Rg: Ring>(
     module: &M,
+    op: &'static str,
     ct: &mut Dst,
     pt: &A,
     scratch: &mut ScratchArena<'_, BE>,
@@ -159,7 +163,7 @@ where
     A: GLWEToBackendRef<BE, Rg> + IntPolyInfos + CKKSInfos,
 {
     ensure_plaintext_vec_operand(
-        "ckks_sub_pt_vec",
+        op,
         ct.base2k().as_usize(),
         ct.n().as_usize(),
         ct.log_budget(),

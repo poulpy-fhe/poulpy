@@ -11,7 +11,8 @@ OEP trait in snake case without `Impl` (`CKKSAddImpl`: `impl_ckks_add_reference_
 `CKKSDFTImpl`: `impl_ckks_dft_reference_full!`, `CKKSAffineImpl`: `impl_ckks_affine_derived_full!`).
 `impl_ckks_reference_full!` selects every scalar-independent family that serves both
 rings, for each ring, the families `CKKSImpl` bundles minus the standard-only and
-cross-ring ones. The
+cross-ring ones, except rounding, which selects `impl_ckks_round_reference_full!` after
+implementing `CKKSShapedRoundingImpl` for each ring. The
 backend adds the opt-ins of the standard-only families, which act on standard-ring
 operands, `CKKSDFTMatrixImpl<F>` among them, of the conjugate-invariant ring maps, which
 take one conjugate-invariant and one standard operand, and of the fold, which registers
@@ -30,6 +31,7 @@ The table gives the reference of each family.
 | `CKKSRotateImpl`, `CKKSConjugateImpl` | [`reference/rotate.rs`](../src/reference/rotate.rs), [`reference/conjugate.rs`](../src/reference/conjugate.rs). |
 | `CKKSInnerSumImpl` | [`reference/inner_sum.rs`](../src/reference/inner_sum.rs) (`CKKSInnerSumReference`), registered by `impl_ckks_inner_sum_reference_full!`: `ckks_copy`, poulpy-core's summed trace over a window of levels, forward for the inner sum and reversed for the replicate, and, for a mean, `ckks_div_pow2_assign`; the Galois elements are poulpy-core's `glwe_trace_galois_elements` over those levels at the ciphertext's degree. |
 | `CKKSPlaintextVecImpl` | [`reference/plaintext.rs`](../src/reference/plaintext.rs). |
+| `CKKSRoundImpl`, `CKKSShapedRoundingImpl` | [`reference/round.rs`](../src/reference/round.rs): `ckks_round_reference` and its query compose backend normalization with the internal `ckks_shaped_round_correction` hook. The hook operates on resident buffers and defines the two correction limbs; it needs no host-accessible storage in the generic reference. |
 | `CKKSEncryptionImpl` | [`reference/encryption.rs`](../src/reference/encryption.rs), for encryption and decryption. |
 | `CKKSEncodingImpl<F, Rg>` | [`reference/encoding.rs`](../src/reference/encoding.rs) (`CKKSEncodingReference<BE, F, Rg>` for the coefficient codecs): slot ordering, transform normalization, and quantization behind the four required kernels `ckks_{quantize,dequantize}_coeffs_into` and `ckks_encoding_buffer_{slots_to_coeffs,coeffs_to_slots}_assign_with_plan`; backend-owned plans and cache. The six API operations are derived defaults that check the buffer and plaintext shapes and read the plans from the cache. |
 | `CKKSDFTMatrixImpl<F>`, `CKKSDFTImpl` | [`reference/dft`](../src/reference/dft/) (`CKKSDFTMatrixReference<BE, F>`, `CKKSDFTReference`): matrix generation, preparation, and evaluation; the six standard/split/repack direction wrappers are derived defaults. A prepared matrix is allocated by `CKKSDFTMatrixPreparedFactory::ckks_dft_matrix_prepared_alloc_from_infos` from the unprepared one and filled by `ckks_dft_matrix_prepare` with no allocation, which refuses a matrix of another layout with `InvalidOperand` before any write; the allocating `ckks_dft_matrix_prepare_alloc` is a derived default. |

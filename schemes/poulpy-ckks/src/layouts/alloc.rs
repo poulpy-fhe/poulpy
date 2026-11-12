@@ -168,7 +168,7 @@ mod tests {
     use poulpy_hal::layouts::{HostBytesBackend, Module, Standard};
 
     use super::*;
-    use crate::{CKKSLayout, Scale, SlotsKind, layouts::ComplexDiagonals};
+    use crate::{CKKSLayout, Scale, SlotLayout, SlotsKind, layouts::ComplexDiagonals};
 
     /// A transform allocated from a layout has the schedule `build_transform` encodes into, with a zero plaintext of
     /// the given infos at every diagonal, at the degree of the diagonals' period.
@@ -201,6 +201,7 @@ mod tests {
                 scale: Scale::Log(10),
                 slots: SlotsKind::Real,
                 log_sparsity: 0,
+                slot_layout: SlotLayout::Full,
             },
         };
         let built = cd.build_transform(strategy, |_, _| module.ckks_plaintext_alloc_from_infos::<_, Standard>(&infos));

@@ -14,7 +14,7 @@ use poulpy_core::layouts::{
 };
 
 use crate::SlotsKind;
-use crate::{CKKSLayout, GLWEPlaintextMeta};
+use crate::{CKKSLayout, GLWEPlaintextMeta, SlotLayout};
 
 /// Shared CKKS parameter set for test instantiation.
 #[derive(Clone, Copy)]
@@ -161,6 +161,7 @@ pub const BASE52_PARAMS_F64: CKKSTestParams = CKKSTestParams {
         scale: Scale::Log(40),
         slots: SlotsKind::Complex,
         log_sparsity: 0,
+        slot_layout: SlotLayout::Full,
     },
     prec_log_budget: 30,
     hw: 192,
@@ -177,6 +178,7 @@ pub const BASE19_PARAMS_F64: CKKSTestParams = CKKSTestParams {
         scale: Scale::Log(30),
         slots: SlotsKind::Complex,
         log_sparsity: 0,
+        slot_layout: SlotLayout::Full,
     },
     prec_log_budget: 10,
     hw: 192,
@@ -193,6 +195,7 @@ pub const BASE52_PARAMS_QUAD: CKKSTestParams = CKKSTestParams {
         scale: Scale::Log(80),
         slots: SlotsKind::Complex,
         log_sparsity: 0,
+        slot_layout: SlotLayout::Full,
     },
     prec_log_budget: 30,
     hw: 192,
@@ -267,6 +270,17 @@ macro_rules! ckks_backend_rank2_test_suite {
                 };
             }
 
+            // Tests shared with the conjugate-invariant suite, which take no encoder.
+            macro_rules! run_ring_test_result {
+                ($name:ident, $path:path) => {
+                    #[test]
+                    fn $name() -> Result<()> {
+                        use $path as __test_fn;
+                        __test_fn::<$backend, $scalar, ::poulpy_hal::layouts::Standard>($params, &*MODULE, &*HOST_MODULE)
+                    }
+                };
+            }
+
             run_test!(encrypt_decrypt, $crate::test_suite::encryption::test_encrypt_decrypt);
             run_test!(add_ct_aligned, $crate::test_suite::add::test_add_ct_aligned);
             run_test!(add_ct_delta_a_lt_b, $crate::test_suite::add::test_add_ct_delta_a_lt_b);
@@ -283,6 +297,62 @@ macro_rules! ckks_backend_rank2_test_suite {
             run_test_result!(neg, $crate::test_suite::neg::test_neg_aligned);
             run_test_result!(neg_wider_output, $crate::test_suite::neg::test_neg_wider_output);
             run_test_result!(neg_assign, $crate::test_suite::neg::test_neg_assign);
+            run_test_result!(
+                round_unit_shaping_is_plain,
+                $crate::test_suite::round::test_round_unit_shaping_is_plain
+            );
+            run_test_result!(
+                round_error_is_shaped,
+                $crate::test_suite::round::test_round_error_is_shaped
+            );
+            run_test_result!(
+                round_beyond_pass_rounds_plainly_first,
+                $crate::test_suite::round::test_round_beyond_pass_rounds_plainly_first
+            );
+            run_test_result!(
+                round_rejects_invalid_widths,
+                $crate::test_suite::round::test_round_rejects_invalid_widths
+            );
+            run_test_result!(
+                round_rejects_incompatible_layouts,
+                $crate::test_suite::round::test_round_rejects_incompatible_layouts
+            );
+            run_ring_test_result!(
+                replicated_encoding_is_shaped,
+                $crate::test_suite::replicated::test_replicated_encoding_is_shaped
+            );
+            run_ring_test_result!(
+                replicated_unit_shaping_encodes_plainly,
+                $crate::test_suite::replicated::test_replicated_unit_shaping_encodes_plainly
+            );
+            run_ring_test_result!(
+                replicated_encryption_is_shaped,
+                $crate::test_suite::replicated::test_replicated_encryption_is_shaped
+            );
+            run_ring_test_result!(
+                replicated_encoding_rejects_batch_size,
+                $crate::test_suite::replicated::test_replicated_encoding_rejects_batch_size
+            );
+            run_ring_test_result!(
+                replicated_encryption_refuses_before_drawing,
+                $crate::test_suite::replicated::test_replicated_encryption_refuses_before_drawing
+            );
+            run_ring_test_result!(
+                replicated_round_then_add,
+                $crate::test_suite::replicated::test_replicated_round_then_add
+            );
+            run_ring_test_result!(
+                replicated_layouts_do_not_mix,
+                $crate::test_suite::replicated::test_replicated_layouts_do_not_mix
+            );
+            run_ring_test_result!(
+                replicated_plain_rounding_is_rejected,
+                $crate::test_suite::replicated::test_replicated_plain_rounding_is_rejected
+            );
+            run_test_result!(
+                replicated_conjugation_is_rejected,
+                $crate::test_suite::replicated::test_replicated_conjugation_is_rejected
+            );
             run_test!(mul_ct_aligned, $crate::test_suite::mul::test_mul_ct_aligned);
             run_test!(
                 mul_ct_larger_budget_smaller_scale,
@@ -418,6 +488,17 @@ macro_rules! ckks_backend_test_suite {
                     fn $name() -> Result<()> {
                         use $path as __test_fn;
                         __test_fn::<$backend, $scalar, $encoder_ty>($params, &*MODULE, &*HOST_MODULE)
+                    }
+                };
+            }
+
+            // Tests shared with the conjugate-invariant suite, which take no encoder.
+            macro_rules! run_ring_test_result {
+                ($name:ident, $path:path) => {
+                    #[test]
+                    fn $name() -> Result<()> {
+                        use $path as __test_fn;
+                        __test_fn::<$backend, $scalar, ::poulpy_hal::layouts::Standard>($params, &*MODULE, &*HOST_MODULE)
                     }
                 };
             }
@@ -589,6 +670,62 @@ macro_rules! ckks_backend_test_suite {
             run_test_result!(neg_smaller_output, $crate::test_suite::neg::test_neg_smaller_output);
             run_test_result!(neg_wider_output, $crate::test_suite::neg::test_neg_wider_output);
             run_test_result!(neg_assign, $crate::test_suite::neg::test_neg_assign);
+            run_test_result!(
+                round_unit_shaping_is_plain,
+                $crate::test_suite::round::test_round_unit_shaping_is_plain
+            );
+            run_test_result!(
+                round_error_is_shaped,
+                $crate::test_suite::round::test_round_error_is_shaped
+            );
+            run_test_result!(
+                round_beyond_pass_rounds_plainly_first,
+                $crate::test_suite::round::test_round_beyond_pass_rounds_plainly_first
+            );
+            run_test_result!(
+                round_rejects_invalid_widths,
+                $crate::test_suite::round::test_round_rejects_invalid_widths
+            );
+            run_test_result!(
+                round_rejects_incompatible_layouts,
+                $crate::test_suite::round::test_round_rejects_incompatible_layouts
+            );
+            run_ring_test_result!(
+                replicated_encoding_is_shaped,
+                $crate::test_suite::replicated::test_replicated_encoding_is_shaped
+            );
+            run_ring_test_result!(
+                replicated_unit_shaping_encodes_plainly,
+                $crate::test_suite::replicated::test_replicated_unit_shaping_encodes_plainly
+            );
+            run_ring_test_result!(
+                replicated_encryption_is_shaped,
+                $crate::test_suite::replicated::test_replicated_encryption_is_shaped
+            );
+            run_ring_test_result!(
+                replicated_encoding_rejects_batch_size,
+                $crate::test_suite::replicated::test_replicated_encoding_rejects_batch_size
+            );
+            run_ring_test_result!(
+                replicated_encryption_refuses_before_drawing,
+                $crate::test_suite::replicated::test_replicated_encryption_refuses_before_drawing
+            );
+            run_ring_test_result!(
+                replicated_round_then_add,
+                $crate::test_suite::replicated::test_replicated_round_then_add
+            );
+            run_ring_test_result!(
+                replicated_layouts_do_not_mix,
+                $crate::test_suite::replicated::test_replicated_layouts_do_not_mix
+            );
+            run_ring_test_result!(
+                replicated_plain_rounding_is_rejected,
+                $crate::test_suite::replicated::test_replicated_plain_rounding_is_rejected
+            );
+            run_test_result!(
+                replicated_conjugation_is_rejected,
+                $crate::test_suite::replicated::test_replicated_conjugation_is_rejected
+            );
             run_test!(conjugate_aligned, $crate::test_suite::conjugate::test_conjugate_aligned);
             run_test!(
                 conjugate_smaller_output,
@@ -1286,7 +1423,9 @@ pub mod polynomial_evaluation;
 pub mod presets;
 #[doc(hidden)]
 pub mod reference_encoder;
+pub mod replicated;
 pub mod rotate;
+pub mod round;
 pub mod ship;
 pub mod slots_kind;
 pub mod sub;

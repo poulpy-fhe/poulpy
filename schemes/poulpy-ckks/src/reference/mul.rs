@@ -74,6 +74,8 @@ pub trait CKKSMulReference<BE: Backend, Rg: Ring = Standard>: ModuleN {
         B: GLWEToBackendRef<BE, Rg> + CKKSInfos + GLWEInfos,
         T: GetTensorKey<BE, Rg>,
     {
+        crate::layouts::validation::ensure_full_layout("ckks_mul_into", crate::GLWEPlaintextInfos::slot_layout(a))?;
+        crate::layouts::validation::ensure_full_layout("ckks_mul_into", crate::GLWEPlaintextInfos::slot_layout(b))?;
         crate::ensure_operand_degrees("ckks_mul_into", self, [dst.n(), a.n(), b.n()])?;
         let k = a.k().max(b.k());
         tsk.get_tensor_key(k)
@@ -120,6 +122,8 @@ pub trait CKKSMulReference<BE: Backend, Rg: Ring = Standard>: ModuleN {
         A: GLWEToBackendRef<BE, Rg> + CKKSInfos + GLWEInfos,
         T: GetTensorKey<BE, Rg>,
     {
+        crate::layouts::validation::ensure_full_layout("ckks_mul_assign", crate::GLWEPlaintextInfos::slot_layout(&*dst))?;
+        crate::layouts::validation::ensure_full_layout("ckks_mul_assign", crate::GLWEPlaintextInfos::slot_layout(a))?;
         crate::ensure_operand_degrees("ckks_mul_assign", self, [dst.n(), a.n()])?;
         let k = dst.k().max(a.k());
         tsk.get_tensor_key(k)
@@ -223,6 +227,14 @@ pub trait CKKSMulReference<BE: Backend, Rg: Ring = Standard>: ModuleN {
         Dst: GLWEToBackendMut<BE, Rg> + GLWEToBackendRef<BE, Rg> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         T: GetTensorKey<BE, Rg>,
     {
+        crate::layouts::validation::ensure_full_layout(
+            "ckks_mul_prepared_assign",
+            crate::GLWEPlaintextInfos::slot_layout(&*dst),
+        )?;
+        crate::layouts::validation::ensure_full_layout(
+            "ckks_mul_prepared_assign",
+            crate::GLWEPlaintextInfos::slot_layout(prepared),
+        )?;
         crate::ensure_operand_degrees("ckks_mul_prepared_assign", self, [dst.n(), prepared.n()])?;
         let k = dst.k().max(prepared.k());
         tsk.get_tensor_key(k)
@@ -315,6 +327,7 @@ pub trait CKKSMulReference<BE: Backend, Rg: Ring = Standard>: ModuleN {
         A: GLWEToBackendRef<BE, Rg> + CKKSInfos + GLWEInfos,
         T: GetTensorKey<BE, Rg>,
     {
+        crate::layouts::validation::ensure_full_layout("ckks_square_into", crate::GLWEPlaintextInfos::slot_layout(a))?;
         crate::ensure_operand_degrees("ckks_square_into", self, [dst.n(), a.n()])?;
         let k = a.k();
         tsk.get_tensor_key(k)
@@ -353,6 +366,7 @@ pub trait CKKSMulReference<BE: Backend, Rg: Ring = Standard>: ModuleN {
         Dst: GLWEToBackendMut<BE, Rg> + GLWEToBackendRef<BE, Rg> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         T: GetTensorKey<BE, Rg>,
     {
+        crate::layouts::validation::ensure_full_layout("ckks_square_assign", crate::GLWEPlaintextInfos::slot_layout(&*dst))?;
         crate::ensure_operand_degrees("ckks_square_assign", self, [dst.n()])?;
         let k = dst.k();
         tsk.get_tensor_key(k)
@@ -436,6 +450,8 @@ pub trait CKKSMulReference<BE: Backend, Rg: Ring = Standard>: ModuleN {
         Dst: GLWEToBackendMut<BE, Rg> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         A: GLWEToBackendRef<BE, Rg> + CKKSInfos + GLWEInfos,
     {
+        crate::layouts::validation::ensure_full_layout("ckks_mul_pt_vec_into", crate::GLWEPlaintextInfos::slot_layout(a))?;
+        crate::layouts::validation::ensure_full_layout("ckks_mul_pt_vec_into", crate::GLWEPlaintextInfos::slot_layout(pt))?;
         crate::ensure_operand_degrees("ckks_mul_pt_vec_into", self, [dst.n(), a.n()])?;
         let (res_log_budget, res_log_delta, cnv_offset) =
             ckks_mul_pt_vec_checks::<BE, _, _, _>("ckks_mul_pt_vec_into", dst, a, pt)?;
@@ -448,6 +464,7 @@ pub trait CKKSMulReference<BE: Backend, Rg: Ring = Standard>: ModuleN {
         // a plaintext is dense at its own degree.
         dst.set_log_sparsity(a.log_sparsity().min(a.log_n() - pt.log_n()));
         dst.set_slots(a.slots().join(pt.slots()));
+        dst.set_slot_layout(crate::SlotLayout::Full);
         self.glwe_mul_plain(cnv_offset, dst, a, pt, scratch);
         Ok(())
     }
@@ -461,6 +478,8 @@ pub trait CKKSMulReference<BE: Backend, Rg: Ring = Standard>: ModuleN {
             + VecZnxCopy<BE, Rg>,
         Dst: GLWEToBackendMut<BE, Rg> + CKKSInfos + SetCKKSInfos + GLWEInfos,
     {
+        crate::layouts::validation::ensure_full_layout("ckks_mul_pt_vec_assign", crate::GLWEPlaintextInfos::slot_layout(&*dst))?;
+        crate::layouts::validation::ensure_full_layout("ckks_mul_pt_vec_assign", crate::GLWEPlaintextInfos::slot_layout(pt))?;
         crate::ensure_operand_degrees("ckks_mul_pt_vec_assign", self, [dst.n()])?;
         let (res_log_budget, res_log_delta, cnv_offset) =
             ckks_mul_pt_vec_checks::<BE, _, _, _>("ckks_mul_pt_vec_assign", dst, dst, pt)?;
@@ -492,6 +511,7 @@ pub trait CKKSMulReference<BE: Backend, Rg: Ring = Standard>: ModuleN {
         Dst: GLWEToBackendMut<BE, Rg> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         A: GLWEToBackendRef<BE, Rg> + CKKSInfos + GLWEInfos,
     {
+        crate::layouts::validation::ensure_full_layout("ckks_mul_pt_const_into", crate::GLWEPlaintextInfos::slot_layout(a))?;
         crate::ensure_operand_degrees("ckks_mul_pt_const_into", self, [dst.n(), a.n()])?;
         let (res_log_budget, res_log_delta, cnv_offset) =
             ckks_mul_pt_const_checks("ckks_mul_pt_const_into", dst, a, pt, pt_coeff)?;
@@ -504,6 +524,7 @@ pub trait CKKSMulReference<BE: Backend, Rg: Ring = Standard>: ModuleN {
         dst.set_log_sparsity(a.log_sparsity());
         // A scalar-constant multiply is always real.
         dst.set_slots(a.slots());
+        dst.set_slot_layout(crate::SlotLayout::Full);
         self.glwe_mul_const(cnv_offset, dst, a, pt, pt_coeff, scratch);
 
         Ok(())
@@ -524,6 +545,10 @@ pub trait CKKSMulReference<BE: Backend, Rg: Ring = Standard>: ModuleN {
             + VecZnxCopy<BE, Rg>,
         Dst: GLWEToBackendMut<BE, Rg> + GLWEToBackendRef<BE, Rg> + CKKSInfos + SetCKKSInfos + GLWEInfos,
     {
+        crate::layouts::validation::ensure_full_layout(
+            "ckks_mul_pt_const_assign",
+            crate::GLWEPlaintextInfos::slot_layout(&*dst),
+        )?;
         crate::ensure_operand_degrees("ckks_mul_pt_const_assign", self, [dst.n()])?;
         let (res_log_budget, res_log_delta, cnv_offset) =
             ckks_mul_pt_const_checks("ckks_mul_pt_const_assign", dst, dst, cnst, cnst_coeff)?;
@@ -600,6 +625,8 @@ where
         if let Some(slots) = stamp.slots {
             dst.set_slots(slots);
         }
+        // Products refuse a replicated operand, so a reused destination leaves it too.
+        dst.set_slot_layout(crate::SlotLayout::Full);
     };
     if let Some(one_pass) = one_pass {
         one_pass(dst, TorusPrecision((stamp.log_budget + stamp.log_delta) as u32), scratch);

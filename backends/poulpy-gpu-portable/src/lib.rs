@@ -37,6 +37,8 @@ mod blas_impl;
 mod ckks_add_sub;
 #[cfg(feature = "enable-ckks")]
 mod ckks_impl;
+#[cfg(feature = "enable-ckks")]
+mod ckks_round;
 #[cfg(feature = "enable-core")]
 mod core_impl;
 #[cfg(feature = "enable-core")]

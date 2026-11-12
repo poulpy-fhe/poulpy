@@ -34,6 +34,7 @@ where
         scale: Scale::Log(1),
         slots: SlotsKind::Real,
         log_sparsity: 0,
+        slot_layout: crate::SlotLayout::Full,
     };
 
     // Monomial plaintext: total torus width is `log_delta` (budget 0).

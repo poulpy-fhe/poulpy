@@ -282,10 +282,14 @@ as NONE, retaining an unknown-law estimate without serializing a process-local t
 
 ## Plaintext metadata
 
-`Option<GLWEPlaintextMeta>` (scale, slot kind, sparsity) records what a `GLWE`,
+`Option<GLWEPlaintextMeta>` (scale, slot kind, sparsity, slot layout) records what a `GLWE`,
 `GLWEPlaintext` or `GLWECompressed` plaintext is, for the scheme that manages
 it; `None` claims nothing. Operations never read or write it. Views, clones,
 transfers, decompression and serialization carry it, and equality compares it.
+The slot layout says which slots carry data and whether rounding errors are
+shaped. The scheme sets it on every value it writes, so a reused destination
+does not keep the label of its previous value. Readers check a replicated
+layout against the slots of the ring the value lives in.
 
 ## Testing a replacement
 

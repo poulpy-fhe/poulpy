@@ -204,6 +204,19 @@ macro_rules! impl_oracle_ckks_coeff_encodings {
 macro_rules! impl_oracle_ckks {
     ($be:ty) => {
         impl_oracle_ckks_encoding!($be);
+        unsafe impl<Rg: ::poulpy_hal::layouts::Ring> ::poulpy_ckks::oep::CKKSShapedRoundingImpl<Rg> for $be {
+            fn ckks_shaped_round_correction(
+                _module: &::poulpy_hal::layouts::Module<Self>,
+                carry: &mut ::poulpy_hal::layouts::VecZnxBackendMut<'_, Self, Rg>,
+                h: &mut ::poulpy_hal::layouts::VecZnxBackendMut<'_, Self, Rg>,
+                low: &::poulpy_hal::layouts::VecZnxBackendRef<'_, Self, Rg>,
+                profile: &::poulpy_ckks::shaping::ShapingProfile<Rg>,
+                lambda: usize,
+            ) {
+                crate::ckks_round::shaped_round_correction::<Self, Rg>(carry, h, low, profile, lambda);
+            }
+        }
+        ::poulpy_ckks::impl_ckks_round_reference_full!($be);
         ::poulpy_ckks::impl_ckks_reference_full!($be);
     };
 }

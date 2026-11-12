@@ -30,7 +30,7 @@ use super::plan::{PaCoDFTPlan, PaCoPlan};
 use crate::SlotsKind;
 use crate::layouts::paco::factors::{PaCoPsiTail, paco_psi_c2s_factors, paco_stc_factors};
 use crate::{
-    GLWEPlaintextMeta, Scale,
+    GLWEPlaintextMeta, Scale, SlotLayout,
     api::{CKKSEncodingHostOps, CKKSEncodingOps, CKKSPaCoScalar, LinearTransformation},
     layouts::{CKKSPlaintextAlloc, CKKSScalar},
 };
@@ -199,6 +199,7 @@ impl<BE: Backend, F> PaCoContext<BE, F> {
                         scale: Scale::Log(dft.log_delta()),
                         slots: SlotsKind::Complex,
                         log_sparsity: 0,
+                        slot_layout: SlotLayout::Full,
                     },
                 },
                 diagonals,
@@ -277,6 +278,7 @@ impl<BE: Backend, F> PaCoContext<BE, F> {
                     scale: Scale::Log(dft.log_delta()),
                     slots: SlotsKind::Complex,
                     log_sparsity: 0,
+                    slot_layout: SlotLayout::Full,
                 })?;
                 module
                     .ckks_encode_slots_host_into(&mut pt, &re, &im, scratch)

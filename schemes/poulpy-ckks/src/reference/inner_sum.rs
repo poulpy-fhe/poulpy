@@ -229,7 +229,7 @@ impl Sum {
     }
 
     /// The checks before any write of a sum of `a` on a degree-`n` result at width `k`, in the documented order: the
-    /// degrees of `a` and the result, the window, the division of `a`'s slots, the key of every rotation, then the budget of the copy from `a.k` to `k`
+    /// slot layout, the degrees of `a` and the result, the window, the division of `a`'s slots, the key of every rotation, then the budget of the copy from `a.k` to `k`
     /// and of the division. Returns the largest scratch `bytes` gives for those keys' layouts, if any key is looked up.
     fn validate<BE: Backend, M, A, H, Rg: Ring>(
         self,
@@ -246,6 +246,8 @@ impl Sum {
         H: GetAutomorphismKey<BE, Rg>,
     {
         let op = self.op;
+        // The traces key-switch with plain rounding, which a replicated layout forbids.
+        crate::layouts::validation::ensure_full_layout(op, crate::GLWEPlaintextInfos::slot_layout(a))?;
         crate::ensure_operand_degrees(op, module, [n, a.n()])?;
         if !self.fits::<_, Rg>(module, n) {
             return Err(CKKSCompositionError::InvalidOperand {

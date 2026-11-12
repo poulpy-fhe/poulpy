@@ -155,6 +155,10 @@ pub trait CKKSShipReference<BE: Backend>: Borrow<Module<BE>> + Sized {
         F: CKKSShipScalar,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
+        crate::layouts::validation::ensure_full_layout(
+            "ckks_ship_bootstrap_into",
+            crate::GLWEPlaintextInfos::slot_layout(input),
+        )?;
         bootstrap::ckks_ship_bootstrap_into::<BE, F, Src>(self.borrow(), output, input, keys, scratch)
     }
 
@@ -186,6 +190,10 @@ pub trait CKKSShipReference<BE: Backend>: Borrow<Module<BE>> + Sized {
         F: CKKSShipScalar,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
+        crate::layouts::validation::ensure_full_layout(
+            "ckks_ship_bootstrap_complex_into",
+            crate::GLWEPlaintextInfos::slot_layout(input),
+        )?;
         bootstrap::ckks_ship_bootstrap_complex_into::<BE, F, Src>(self.borrow(), output, input, keys, scratch)
     }
 

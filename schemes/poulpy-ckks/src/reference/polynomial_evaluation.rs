@@ -80,6 +80,7 @@ where
         res.set_log_delta(seed.log_delta());
         res.set_log_budget(seed.log_budget());
         res.set_slots(seed.slots());
+        res.set_slot_layout(crate::SlotLayout::Full);
         module.glwe_zero(res);
         Ok(())
     }
@@ -140,6 +141,7 @@ where
         res.set_log_budget(budget);
         res.set_log_sparsity(sparsity);
         res.set_slots(slots);
+        res.set_slot_layout(crate::SlotLayout::Full);
         let pt_bk = coeffs.to_backend_ref();
         let pt_size = pt_bk.data().size();
         let res_size = res.to_backend_ref().data().size();
@@ -325,6 +327,7 @@ pub trait CKKSComplexPolynomialEvaluationReference<BE: Backend>: Borrow<Module<B
         let poly_im = &poly.im;
         ensure_complex_schedules::<BE, C>(OP, poly)?;
         ensure_power_basis(OP, BSGSPolynomialInfos::<BE>::basis(poly_re), power_basis.basis())?;
+        crate::layouts::validation::ensure_full_layout(OP, crate::GLWEPlaintextInfos::slot_layout(power_basis.get(1)?))?;
         let n_baby = BSGSPolynomialInfos::<BE>::baby_steps(poly_re);
 
         // Fold the trailing lone constant via the highest power when present.
@@ -436,6 +439,7 @@ where
         const OP: &str = "ckks_eval_poly_real_const_coeffs_from_power_basis";
         ensure_baby_steps(OP, poly)?;
         ensure_power_basis(OP, poly.basis(), power_basis.basis())?;
+        crate::layouts::validation::ensure_full_layout(OP, crate::GLWEPlaintextInfos::slot_layout(power_basis.get(1)?))?;
 
         let n_baby = poly.baby_steps();
         let last_coeffs = poly.baby_step(n_baby - 1);

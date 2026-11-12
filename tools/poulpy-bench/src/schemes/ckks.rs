@@ -7,7 +7,7 @@ use std::{collections::HashMap, hint::black_box};
 use crate::schemes::params::CkksBenchParams;
 use criterion::{Bencher, measurement::Measurement};
 use poulpy_ckks::{
-    GLWEPlaintextMeta, SetCKKSInfos,
+    GLWEPlaintextMeta, SetCKKSInfos, SlotLayout,
     api::{
         CKKSAddOps, CKKSConjugateOps, CKKSDotProductOps, CKKSEncodingOps, CKKSLeftOperandPreparedFactory,
         CKKSLinearTransformationOps, CKKSMulOps, CKKSNegOps, CKKSPow2Ops, CKKSRightOperandPreparedFactory, CKKSRotateOps,
@@ -51,6 +51,7 @@ fn ckks_ct_meta(cp: &CkksBenchParams) -> GLWEPlaintextMeta {
         scale: Scale::Log(cp.log_delta),
         slots: cp.slots,
         log_sparsity: 0,
+        slot_layout: SlotLayout::Full,
     }
 }
 

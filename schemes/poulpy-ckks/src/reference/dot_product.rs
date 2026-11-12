@@ -95,6 +95,8 @@ pub trait CKKSDotProductReference<BE: Backend, Rg: Ring = Standard>: Sized + Mod
         B: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
         H: GetTensorKey<BE, Rg>,
     {
+        ensure_full_terms("ckks_dot_product_ct", a)?;
+        ensure_full_terms("ckks_dot_product_ct", b)?;
         check_lengths("ckks_dot_product_ct", a.len(), b.len())?;
         let terms = a.iter().map(|t| t.n()).chain(b.iter().map(|t| t.n()));
         crate::ensure_operand_degrees("ckks_dot_product_ct", self, std::iter::once(dst.n()).chain(terms))?;
@@ -131,6 +133,8 @@ pub trait CKKSDotProductReference<BE: Backend, Rg: Ring = Standard>: Sized + Mod
         Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
         H: GetTensorKey<BE, Rg>,
     {
+        ensure_full_terms("ckks_dot_product_prepared", a)?;
+        ensure_full_terms("ckks_dot_product_prepared", b)?;
         const OP: &str = "ckks_dot_product_prepared";
         crate::ensure_operand_degrees(OP, self, [dst.n()])?;
         check_lengths(OP, a.len(), b.len())?;
@@ -200,6 +204,8 @@ pub trait CKKSDotProductReference<BE: Backend, Rg: Ring = Standard>: Sized + Mod
         Self: GLWEMulPreparedPlainSum<BE, Rg>,
         Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
     {
+        ensure_full_terms("ckks_dot_product_prepared_pt_vec", a)?;
+        ensure_full_terms("ckks_dot_product_prepared_pt_vec", b)?;
         let (log_budget, log_delta, cnv_offset) =
             prepared_pt_rule(self, "ckks_dot_product_prepared_pt_vec", &*dst, a, b, galois)?;
         let (a0, b0, base2k) = (a[0], b[0], dst.base2k());
@@ -217,6 +223,7 @@ pub trait CKKSDotProductReference<BE: Backend, Rg: Ring = Standard>: Sized + Mod
         dst.set_log_delta(log_delta);
         dst.set_log_sparsity(log_sparsity);
         dst.set_slots(slots);
+        dst.set_slot_layout(crate::SlotLayout::Full);
         self.glwe_mul_prepared_plain_sum(cnv_offset, dst, a, a0.size(), b, b0.size(), galois, base2k, scratch);
         Ok(())
     }
@@ -247,7 +254,10 @@ pub trait CKKSDotProductReference<BE: Backend, Rg: Ring = Standard>: Sized + Mod
         Self: GLWEMulPreparedPlainSum<BE, Rg>,
         R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
     {
+        ensure_full_terms("ckks_dot_product_prepared_pt_vec_add", a)?;
+        ensure_full_terms("ckks_dot_product_prepared_pt_vec_add", b)?;
         const OP: &str = "ckks_dot_product_prepared_pt_vec_add";
+        crate::layouts::validation::ensure_full_layout(OP, crate::GLWEPlaintextInfos::slot_layout(&*res))?;
         let (log_budget, log_delta, cnv_offset) = prepared_pt_rule(self, OP, &*res, a, b, galois)?;
         ckks_ensure_operand!(
             OP,
@@ -301,6 +311,8 @@ pub trait CKKSDotProductReference<BE: Backend, Rg: Ring = Standard>: Sized + Mod
         Self: GLWEMulPreparedPlainSum<BE, Rg>,
         R: CKKSCtBounds,
     {
+        ensure_full_terms("ckks_dot_product_prepared_pt_vec_dft", a)?;
+        ensure_full_terms("ckks_dot_product_prepared_pt_vec_dft", b)?;
         const OP: &str = "ckks_dot_product_prepared_pt_vec_dft";
         let (_, _, cnv_offset) = prepared_pt_rule(self, OP, res, a, b, galois)?;
         let (a_size, b_size) = (a[0].size(), b[0].size());
@@ -335,6 +347,8 @@ pub trait CKKSDotProductReference<BE: Backend, Rg: Ring = Standard>: Sized + Mod
         Self: GLWEMulPreparedPlainSum<BE, Rg>,
         R: CKKSCtBounds,
     {
+        ensure_full_terms("ckks_dot_product_prepared_pt_vec_dft_add", a)?;
+        ensure_full_terms("ckks_dot_product_prepared_pt_vec_dft_add", b)?;
         const OP: &str = "ckks_dot_product_prepared_pt_vec_dft_add";
         let (_, _, cnv_offset) = prepared_pt_rule(self, OP, res, a, b, galois)?;
         let (a_size, b_size) = (a[0].size(), b[0].size());
@@ -368,6 +382,8 @@ pub trait CKKSDotProductReference<BE: Backend, Rg: Ring = Standard>: Sized + Mod
         Self: VecZnxIdftNormalize<BE, Rg>,
         Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
     {
+        ensure_full_terms("ckks_dot_product_prepared_pt_vec_from_dft", &[a])?;
+        ensure_full_terms("ckks_dot_product_prepared_pt_vec_from_dft", &[b])?;
         const OP: &str = "ckks_dot_product_prepared_pt_vec_from_dft";
         let (log_budget, log_delta, cnv_offset) = prepared_pt_rule(self, OP, &*res, &[a], &[b], &[1])?;
         check_accumulator(OP, acc, &*res, a.size() + b.size())?;
@@ -375,6 +391,7 @@ pub trait CKKSDotProductReference<BE: Backend, Rg: Ring = Standard>: Sized + Mod
         res.set_log_delta(log_delta);
         res.set_log_sparsity(a.log_sparsity().min(a.log_n() - b.log_n()));
         res.set_slots(a.slots().join(b.slots()));
+        res.set_slot_layout(crate::SlotLayout::Full);
         let (base2k, res_k, cols) = (res.base2k().as_usize(), res.k().as_usize(), res.rank().as_usize() + 1);
         let (_, cnv_offset_lo) = cnv_offset_to_limb_offset(cnv_offset, base2k);
         {
@@ -553,4 +570,12 @@ where
             }
         },
     )
+}
+
+/// Rejects replicated terms: a dot product rounds its sum plainly.
+fn ensure_full_terms<T: GLWEPlaintextInfos>(op: &'static str, terms: &[&T]) -> Result<()> {
+    for term in terms {
+        crate::layouts::validation::ensure_full_layout(op, term.slot_layout())?;
+    }
+    Ok(())
 }

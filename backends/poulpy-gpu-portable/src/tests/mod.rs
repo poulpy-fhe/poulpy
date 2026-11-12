@@ -21,6 +21,8 @@ mod ckks;
 mod core;
 mod local;
 mod replay;
+#[cfg(feature = "enable-ckks")]
+mod shaping;
 
 /// The runtime the suites run on: the first enabled of CUDA, HIP and wgpu.
 #[cfg(feature = "enable-cuda")]

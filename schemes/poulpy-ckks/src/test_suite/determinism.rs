@@ -26,7 +26,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    CKKSModuleInfos, CoeffsMeta, GLWEPlaintextMeta, SetCKKSInfos, SlotsKind,
+    CKKSModuleInfos, CoeffsMeta, GLWEPlaintextMeta, SetCKKSInfos, SlotLayout, SlotsKind,
     api::{CKKSEncodingHostOps, CKKSEncodingOps},
     approximation::{Parity, minimax, sign_composite_coeffs},
     layouts::{
@@ -178,6 +178,7 @@ where
                 scale: Scale::Log(log_delta),
                 slots: SlotsKind::Complex,
                 log_sparsity: 0,
+                slot_layout: SlotLayout::Full,
             });
             let reim_bytes = module.ckks_encoding_host_tmp_bytes(slots);
             with_scratch::<BE, _>(reim_bytes, |s| module.ckks_encode_slots_host_into(&mut pt, &re, &im, s)).unwrap();

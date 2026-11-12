@@ -154,6 +154,7 @@ fn params_for(consumed_bits: usize) -> CKKSTestParams {
         base2k: BASE2K,
         k,
         prec_meta: GLWEPlaintextMeta {
+            slot_layout: poulpy_core::layouts::SlotLayout::Full,
             log_sparsity: 0,
             scale: Scale::Log(LOG_DELTA),
             slots: Default::default(),

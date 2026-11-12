@@ -78,6 +78,9 @@ pub trait CKKSAddManyReference<BE: Backend, Rg: Ring = Standard>: ModuleN {
             if term.rank() != res.rank() {
                 return invalid(&format!("term {i} has rank {} where res has {}", term.rank(), res.rank()));
             }
+            // The additions refuse mixed layouts and replicated terms at two scales, after `res` holds a partial sum.
+            let slot_layout = crate::layouts::validation::product_layout(OP, &[first.slot_layout(), term.slot_layout()])?;
+            crate::layouts::validation::reject_replicated_scales(OP, slot_layout, first.log_delta(), term.log_delta())?;
         }
         ckks_ensure!(
             scratch.available() >= self.ckks_add_many_tmp_bytes_reference(&*res, *first),

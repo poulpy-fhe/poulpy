@@ -22,7 +22,7 @@ use poulpy_hal::layouts::{Backend, HostDataRef, Module, Standard, VecZnx};
 
 use crate::api::{CKKSEncodingOps, CKKSPaCoScalar};
 use crate::{
-    GLWEPlaintextMeta, Scale,
+    GLWEPlaintextMeta, Scale, SlotLayout,
     layouts::{CKKSEncodingBuffer, CKKSPlaintextAlloc},
 };
 
@@ -260,6 +260,7 @@ where
             scale: Scale::Log(log_delta),
             slots: SlotsKind::Complex,
             log_sparsity: 0,
+            slot_layout: SlotLayout::Full,
         })?;
         encoding_values[..re.len()].copy_from_slice(&re);
         encoding_values[re.len()..].copy_from_slice(&im);

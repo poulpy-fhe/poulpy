@@ -155,6 +155,10 @@ pub trait CKKSPaCoReference<BE: Backend>: Borrow<Module<BE>> {
         K: PaCoKeys<BE>,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
+        crate::layouts::validation::ensure_full_layout(
+            "ckks_paco_bootstrap_direct_into",
+            crate::GLWEPlaintextInfos::slot_layout(input),
+        )?;
         parallel::ckks_paco_bootstrap_direct_into(self.borrow(), output, input, context, keys, scratch)
     }
 
@@ -186,6 +190,10 @@ pub trait CKKSPaCoReference<BE: Backend>: Borrow<Module<BE>> {
         K: PaCoKeys<BE>,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
+        crate::layouts::validation::ensure_full_layout(
+            "ckks_paco_bootstrap_into",
+            crate::GLWEPlaintextInfos::slot_layout(input),
+        )?;
         parallel::ckks_paco_bootstrap_into(self.borrow(), output, input, context, keys, scratch)
     }
 
@@ -225,6 +233,10 @@ pub trait CKKSPaCoReference<BE: Backend>: Borrow<Module<BE>> {
         ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds + Sync,
     {
+        crate::layouts::validation::ensure_full_layout(
+            "ckks_paco_bootstrap_parallel_direct_into",
+            crate::GLWEPlaintextInfos::slot_layout(input),
+        )?;
         parallel::ckks_paco_bootstrap_parallel_direct_into(self.borrow(), output, input, context, keys, workers, scratch)
     }
 
@@ -262,6 +274,10 @@ pub trait CKKSPaCoReference<BE: Backend>: Borrow<Module<BE>> {
         ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
+        crate::layouts::validation::ensure_full_layout(
+            "ckks_paco_bootstrap_parallel_into",
+            crate::GLWEPlaintextInfos::slot_layout(input),
+        )?;
         parallel::ckks_paco_bootstrap_parallel_into(self.borrow(), output, input, context, keys, workers, scratch)
     }
 

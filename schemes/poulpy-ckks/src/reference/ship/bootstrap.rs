@@ -11,7 +11,7 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use super::ship_mux_plans;
 use crate::{
-    CKKSCtBounds, CKKSInfos, GLWEPlaintextMeta, Scale, SlotsKind,
+    CKKSCtBounds, CKKSInfos, GLWEPlaintextMeta, Scale, SlotLayout, SlotsKind,
     api::{CKKSAddOps, CKKSConjugateOps, CKKSImagOps, CKKSMulOps, CKKSShipScalar, CKKSSubOps},
     layouts::{CKKSCiphertextAlloc, CKKSCiphertextOwned, ScratchArenaTakeCKKSCiphertext, ShipKeysPrepared, ShipPlan},
     oep::CKKSEncodingImpl,
@@ -166,6 +166,7 @@ where
             scale: Scale::Log(ld),
             slots: SlotsKind::Complex,
             log_sparsity: 0,
+            slot_layout: SlotLayout::Full,
         })?;
         module.ckks_add_pt_vec_assign(&mut leaf0, pt0, scratch)?;
         let mut half_leaves = Vec::with_capacity(plan.sparse_hamming_weight() + 1);

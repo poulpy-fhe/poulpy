@@ -393,7 +393,7 @@ impl<D: HostDataMut, W: ZnxWord, Rg: Ring> GLWE<D, W, Rg> {
         let (degree, size) = (expected.map(|(_, n, _)| n), expected.map(|(.., size)| size));
         crate::layouts::read_vec_znx_with_shape(&mut self.data, reader, degree, components, size)?;
         if let Some(meta) = plaintext_meta {
-            meta.validate_degree(self.data.n())?;
+            meta.validate_degree::<Rg>(self.data.n())?;
         }
         crate::layouts::validate_noise_components(noise.as_ref(), self.data.cols())?;
         self.set_base2k(base2k);
@@ -756,6 +756,7 @@ pub(in crate::layouts) mod tests {
     }
 
     pub(in crate::layouts) const SPARSE_META: GLWEPlaintextMeta = GLWEPlaintextMeta {
+        slot_layout: crate::layouts::SlotLayout::Full,
         scale: Scale::Log(8),
         slots: SlotsKind::Real,
         log_sparsity: 7,

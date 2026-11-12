@@ -56,6 +56,7 @@ mod polynomial_evaluation;
 mod pow2;
 mod ring_map;
 mod rotate;
+mod round;
 mod ship;
 mod sub;
 
@@ -103,6 +104,7 @@ pub use pow2::impl_ckks_pow2_reference_full;
 pub use ring_map::{CKKSCIRingMapImpl, impl_ckks_ci_ring_map_reference_full};
 pub use rotate::CKKSRotateImpl;
 pub use rotate::impl_ckks_rotate_reference_full;
+pub use round::{CKKSRoundImpl, CKKSShapedRoundingImpl, impl_ckks_round_reference_full};
 pub use ship::{CKKSShipCoeffEncodingImpl, CKKSShipImpl, impl_ckks_ship_reference_full};
 pub use sub::CKKSSubImpl;
 pub use sub::impl_ckks_sub_reference_full;

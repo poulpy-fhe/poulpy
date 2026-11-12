@@ -1,0 +1,183 @@
+use crate::CKKSResult as Result;
+use poulpy_core::{
+    GLWENormalize,
+    layouts::{GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos},
+};
+use poulpy_hal::{
+    api::{ModuleN, ScratchArenaTakeVecZnx, VecZnxAdd, VecZnxNormalize, VecZnxNormalizeTmpBytes},
+    layouts::{Backend, Module, Ring, ScratchArena, Standard, VecZnxToBackendMut, VecZnxToBackendRef},
+};
+
+use crate::oep::CKKSShapedRoundingImpl;
+use crate::{CKKSInfos, Scale, SetCKKSInfos, SlotLayout, error::CKKSCompositionError, shaping::ShapingProfile};
+
+/// Reference of the [`CKKSRoundImpl`](crate::oep::CKKSRoundImpl) family,
+/// selected by [`impl_ckks_round_reference_full!`](crate::impl_ckks_round_reference_full).
+pub trait CKKSRoundReference<BE: Backend, Rg: Ring = Standard>: ModuleN {
+    /// Scratch of [`Self::ckks_round_reference`].
+    fn ckks_round_tmp_bytes_reference<R, A>(&self, res: &R, a: &A) -> usize
+    where
+        Self: GLWENormalize<BE, Rg> + VecZnxNormalizeTmpBytes,
+        R: GLWEInfos,
+        A: GLWEInfos;
+
+    /// [`CKKSRoundOps::ckks_round`](crate::api::CKKSRoundOps::ckks_round): rounds through the backend
+    /// normalization and, for a replicated layout, the selected shaping correction
+    /// [`CKKSShapedRoundingImpl::ckks_shaped_round_correction`].
+    fn ckks_round_reference<R, A>(&self, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    where
+        BE: CKKSShapedRoundingImpl<Rg>,
+        Self: GLWENormalize<BE, Rg> + VecZnxNormalize<BE, Rg> + VecZnxNormalizeTmpBytes + VecZnxAdd<BE, Rg>,
+        R: GLWEToBackendMut<BE, Rg> + GLWEInfos + CKKSInfos + SetCKKSInfos,
+        A: GLWEToBackendRef<BE, Rg> + GLWEInfos + CKKSInfos;
+}
+
+impl<BE: Backend, Rg: Ring> CKKSRoundReference<BE, Rg> for Module<BE> {
+    fn ckks_round_tmp_bytes_reference<R, A>(&self, res: &R, a: &A) -> usize
+    where
+        Self: GLWENormalize<BE, Rg> + VecZnxNormalizeTmpBytes,
+        R: GLWEInfos,
+        A: GLWEInfos,
+    {
+        let n = a.n().as_usize();
+        let shaped = 2 * BE::scratch_aligned(BE::vec_znx_bytes_of(n, 1, 1))
+            + BE::scratch_aligned(BE::vec_znx_bytes_of(n, 1, 2))
+            + 2 * BE::scratch_aligned(BE::vec_znx_bytes_of(n, 1, a.size().max(res.size())))
+            + self.vec_znx_normalize_tmp_bytes();
+        shaped.max(self.glwe_normalize_tmp_bytes())
+    }
+
+    fn ckks_round_reference<R, A>(&self, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    where
+        BE: CKKSShapedRoundingImpl<Rg>,
+        Self: GLWENormalize<BE, Rg> + VecZnxNormalize<BE, Rg> + VecZnxNormalizeTmpBytes + VecZnxAdd<BE, Rg>,
+        R: GLWEToBackendMut<BE, Rg> + GLWEInfos + CKKSInfos + SetCKKSInfos,
+        A: GLWEToBackendRef<BE, Rg> + GLWEInfos + CKKSInfos,
+    {
+        let invalid = |reason: String| CKKSCompositionError::InvalidOperand {
+            op: "ckks_round",
+            reason,
+        };
+        if res.rank() != a.rank() {
+            return Err(invalid("source and destination ranks differ".into()).into());
+        }
+        if res.n() != a.n() {
+            return Err(invalid("source and destination degrees differ".into()).into());
+        }
+        crate::ensure_operand_degrees("ckks_round", self, [a.n()])?;
+        let (src_k, dst_k) = (a.k().as_usize(), res.k().as_usize());
+        if dst_k > src_k {
+            return Err(invalid(format!("res.k()={dst_k} exceeds a.k()={src_k}")).into());
+        }
+        let drop = src_k - dst_k;
+        if drop > a.log_delta() {
+            return Err(invalid(format!("dropping {drop} bits exceeds log_delta={}", a.log_delta())).into());
+        }
+        let shaping = match a.slot_layout() {
+            SlotLayout::Replicated(layout) if drop > 0 => Some(ShapingProfile::<Rg>::for_op("ckks_round", &layout)?),
+            _ => None,
+        };
+        if let Some(profile) = &shaping
+            && profile.period() > a.n().as_usize()
+        {
+            return Err(invalid(format!("period 2^{} exceeds the ring", profile.log_r())).into());
+        }
+
+        crate::ckks_ensure!(
+            scratch.available() >= CKKSRoundReference::<BE, Rg>::ckks_round_tmp_bytes_reference(self, res, a),
+            "ckks_round: insufficient scratch"
+        );
+        res.set_meta(a.meta());
+        res.set_scale(Scale::Log(a.log_delta() - drop));
+        res.set_k(dst_k.into());
+        match shaping {
+            None => self.glwe_normalize(res, a, scratch),
+            Some(profile) => shaped_round::<BE, Rg, _, _>(self, res, a, &profile, scratch),
+        }
+        res.set_noise(None);
+        Ok(())
+    }
+}
+
+/// Shaped rounding of every column of `src` to `dst.k()`, at depth `λ`:
+/// the `λ` bits under `dst.k()`, read modulo `2^λ` after rounding at
+/// `dst.k() + λ`, give `h = [U^(-1)·c]_(2^λ)` and the carry
+/// `κ = (c − g·h)/2^λ`; adding `κ·2^-k − c·2^-(k+λ)` leaves a value on the
+/// `2^-k` grid up to the bits under `k + λ`, which the final normalization drops.
+/// The correction is added to the column unnormalized, so the final normalization
+/// is the only one of `src`. `dst` is flagged canonical once written.
+fn shaped_round<BE, Rg, Dst, Src>(
+    module: &Module<BE>,
+    dst: &mut Dst,
+    src: &Src,
+    profile: &ShapingProfile<Rg>,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
+    BE: CKKSShapedRoundingImpl<Rg>,
+    Rg: Ring,
+    Module<BE>: VecZnxNormalize<BE, Rg> + VecZnxAdd<BE, Rg>,
+    Dst: GLWEToBackendMut<BE, Rg> + GLWEInfos + CKKSInfos,
+    Src: GLWEToBackendRef<BE, Rg> + GLWEInfos + CKKSInfos,
+{
+    let k = dst.k().as_usize();
+    let lambda = (src.k().as_usize() - k).min(profile.max_pass_bits());
+    let src_base2k = src.base2k().as_usize();
+    let dst_base2k = dst.base2k().as_usize();
+    let size = src.size().max(dst.size());
+    let mut dst_data = dst.to_backend_mut();
+    let src = src.to_backend_ref();
+    let n = src.n().as_usize();
+
+    let (mut low, scratch) = scratch.borrow().take_vec_znx_scratch::<Rg>(n, 1, 1);
+    let (mut h, scratch) = scratch.take_vec_znx_scratch::<Rg>(n, 1, 1);
+    let (mut carry, scratch) = scratch.take_vec_znx_scratch::<Rg>(n, 1, 2);
+    let (mut correction, scratch) = scratch.take_vec_znx_scratch::<Rg>(n, 1, size);
+    let (mut sum, mut scratch) = scratch.take_vec_znx_scratch::<Rg>(n, 1, size);
+    for col in 0..src.rank().as_usize() + 1 {
+        module.vec_znx_normalize(
+            &mut low.to_backend_mut(),
+            lambda,
+            lambda,
+            k as i64,
+            0,
+            src.data(),
+            src_base2k,
+            col,
+            &mut scratch.borrow(),
+        );
+        <BE as CKKSShapedRoundingImpl<Rg>>::ckks_shaped_round_correction(
+            module,
+            &mut carry.to_backend_mut(),
+            &mut h.to_backend_mut(),
+            &low.to_backend_ref(),
+            profile,
+            lambda,
+        );
+        // `κ·2^-λ − c·2^-2λ` at radix `λ`, scaled to `κ·2^-k − c·2^-(k+λ)`.
+        module.vec_znx_normalize(
+            &mut correction.to_backend_mut(),
+            src_base2k,
+            size * src_base2k,
+            lambda as i64 - k as i64,
+            0,
+            &carry.to_backend_ref(),
+            lambda,
+            0,
+            &mut scratch.borrow(),
+        );
+        module.vec_znx_add(&mut sum.to_backend_mut(), 0, src.data(), col, &correction.to_backend_ref(), 0);
+        module.vec_znx_normalize(
+            dst_data.data_mut(),
+            dst_base2k,
+            k,
+            0,
+            col,
+            &sum.to_backend_ref(),
+            src_base2k,
+            0,
+            &mut scratch.borrow(),
+        );
+    }
+    drop(dst_data);
+    dst.set_canonical(true);
+}

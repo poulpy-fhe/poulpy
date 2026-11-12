@@ -538,6 +538,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl> CKKSBoo
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSInfos,
     {
+        crate::layouts::validation::ensure_full_layout("ckks_mod_up_into", crate::GLWEPlaintextInfos::slot_layout(src))?;
         let scale_up = eval_mod.raised_scale_up(src.log_delta())?;
         ckks_mod_up_scaled_reference("ckks_mod_up_into", self, dst, src, scale_up, scratch)?;
         let mut meta = dst.meta();
@@ -561,6 +562,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl> CKKSBoo
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     {
+        crate::layouts::validation::ensure_full_layout("ckks_bootstrap_mod_up", crate::GLWEPlaintextInfos::slot_layout(src))?;
         bootstrap_mod_up(self, dst, src, eval_mod, None, keys, scratch)
     }
 
@@ -593,6 +595,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl> CKKSBoo
             GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + BSGSMeta,
         GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     {
+        crate::layouts::validation::ensure_full_layout("ckks_bootstrap", crate::GLWEPlaintextInfos::slot_layout(ct_in))?;
         const OP: &str = "ckks_bootstrap";
         ckks_ensure_operand!(
             OP,
@@ -787,6 +790,10 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl> CKKSBoo
             GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + BSGSMeta,
         GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     {
+        crate::layouts::validation::ensure_full_layout(
+            "ckks_functional_bootstrap",
+            crate::GLWEPlaintextInfos::slot_layout(ct_in),
+        )?;
         const OP: &str = "ckks_functional_bootstrap";
         ckks_ensure_operand!(OP, !luts.is_empty(), "functional bootstrap requires at least one LUT");
         ckks_ensure_operand!(
@@ -972,6 +979,7 @@ where
         scale: Scale::Log(src.log_delta() + scale_up),
         slots: src.slots(),
         log_sparsity: src.log_sparsity(),
+        slot_layout: src.slot_layout(),
     });
     dst.set_k(k_large.into());
 
@@ -1030,6 +1038,7 @@ where
         scale: Scale::Log(dst.log_delta() + eval_mod.log_msg_ratio),
         slots: src.slots(),
         log_sparsity: src.log_sparsity(),
+        slot_layout: src.slot_layout(),
     });
     Ok(())
 }
@@ -1315,6 +1324,7 @@ where
         scale: Scale::Log(ct_in.log_delta()),
         slots: ct_in.slots(),
         log_sparsity: ct_in.log_sparsity(),
+        slot_layout: ct_in.slot_layout(),
     });
     Ok(())
 }
@@ -1371,6 +1381,7 @@ where
             scale: Scale::Log(log_modulus_in + ctx.c2s_guard_bits()),
             slots: ct_in.slots(),
             log_sparsity: ct_in.log_sparsity(),
+            slot_layout: ct_in.slot_layout(),
         });
         Result::Ok(())
     })
@@ -1426,6 +1437,7 @@ where
             scale: Scale::Log(ct_in.log_delta()),
             slots: ct_in.slots(),
             log_sparsity: ct_in.log_sparsity(),
+            slot_layout: ct_in.slot_layout(),
         });
         Result::Ok(())
     })
@@ -1811,6 +1823,7 @@ where
         scale: Scale::Log(ct_in.log_delta()),
         slots: ct_in.slots(),
         log_sparsity: ct_in.log_sparsity(),
+        slot_layout: ct_in.slot_layout(),
     });
     Ok(())
 }
@@ -1945,6 +1958,7 @@ where
         scale: Scale::Log(src.log_delta() + scale_up),
         slots: src.slots(),
         log_sparsity: src.log_sparsity(),
+        slot_layout: src.slot_layout(),
     });
     Ok(())
 }
@@ -2256,6 +2270,7 @@ fn functional_output_contract<BE: Backend, F>(
             scale: Scale::Log(log_delta),
             slots: ct_in.slots(),
             log_sparsity: ct_in.log_sparsity(),
+            slot_layout: ct_in.slot_layout(),
         },
         output_k,
     ))

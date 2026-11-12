@@ -10,7 +10,7 @@ use poulpy_core::{
 };
 use poulpy_hal::layouts::{Backend, Ring};
 
-use crate::{CKKSCompositionError, SlotsKind};
+use crate::{CKKSCompositionError, SlotLayout, SlotsKind};
 
 /// `InvalidOperand` for `op` unless `prepared` was allocated for `lt`'s layout: the same schedule, every diagonal of
 /// both at one degree, radix, rank, width and prepared limb count (a ciphertext diagonal's live limbs, a plaintext's
@@ -221,5 +221,64 @@ where
         "{name} exposes {active} active limbs, but its torus width requires {}",
         key.size(),
     );
+    Ok(())
+}
+
+/// The common slot layout of a product's operands.
+pub(crate) fn product_layout(op: &'static str, layouts: &[SlotLayout]) -> crate::CKKSResult<SlotLayout> {
+    let first = layouts[0];
+    if layouts.iter().any(|&layout| layout != first) {
+        return Err(CKKSCompositionError::InvalidOperand {
+            op,
+            reason: "the operands' slot layouts differ".into(),
+        }
+        .into());
+    }
+    Ok(first)
+}
+
+/// Rejects a replicated slot layout in an operation that rounds plainly or
+/// writes the guard slots.
+pub(crate) fn ensure_full_layout(op: &'static str, slot_layout: SlotLayout) -> crate::CKKSResult<()> {
+    if let SlotLayout::Replicated(_) = slot_layout {
+        return Err(CKKSCompositionError::InvalidOperand {
+            op,
+            reason: "the operation does not support a replicated slot layout".into(),
+        }
+        .into());
+    }
+    Ok(())
+}
+
+/// Rejects a sum of a replicated layout at two scales, which would drop the
+/// finer operand's extra bits with plain rounding.
+pub(crate) fn reject_replicated_scales(
+    op: &'static str,
+    slot_layout: crate::SlotLayout,
+    log_delta_a: usize,
+    log_delta_b: usize,
+) -> crate::CKKSResult<()> {
+    if matches!(slot_layout, crate::SlotLayout::Replicated(_)) && log_delta_a != log_delta_b {
+        return Err(crate::CKKSCompositionError::InvalidOperand {
+            op,
+            reason: format!(
+                "a replicated layout adds at one scale, got 2^{log_delta_a} and 2^{log_delta_b}: round the finer operand with shaping first"
+            ),
+        }
+        .into());
+    }
+    Ok(())
+}
+
+/// A constant lands on every slot, guards included, so a replicated layout
+/// takes constants as replicated plaintexts.
+pub(crate) fn reject_replicated_constant(op: &'static str, slot_layout: crate::SlotLayout) -> crate::CKKSResult<()> {
+    if let crate::SlotLayout::Replicated(_) = slot_layout {
+        return Err(crate::CKKSCompositionError::InvalidOperand {
+            op,
+            reason: "a constant would reach the guard slots of a replicated layout".into(),
+        }
+        .into());
+    }
     Ok(())
 }

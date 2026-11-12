@@ -2,6 +2,7 @@
 //!
 //! Everything here inspects layouts, keys, and plans without mutating a ciphertext: conservative per-branch scratch bounds, the public tmp-bytes entry point, the branch-schedule arithmetic, and the encapsulation-key checks.
 //! The concurrency-bearing branch drivers live in [`parallel`](super::parallel); keeping them free of validation logic keeps that code independently reviewable.
+use crate::SlotLayout;
 
 use crate::layouts::CKKSCiphertextOwned;
 use crate::{CKKSResult as Result, ckks_ensure, ckks_ensure_operand, invalid_operand};
@@ -152,6 +153,7 @@ where
             scale: Scale::Log(plan.log_delta_bsk()),
             slots: SlotsKind::Complex,
             log_sparsity: 0,
+            slot_layout: SlotLayout::Full,
         },
     };
 
@@ -182,6 +184,7 @@ where
             scale: Scale::Log(plan.c2s().log_delta().max(plan.stc().log_delta())),
             slots: SlotsKind::Complex,
             log_sparsity: 0,
+            slot_layout: SlotLayout::Full,
         },
     };
 

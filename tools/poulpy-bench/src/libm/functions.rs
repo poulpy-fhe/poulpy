@@ -67,6 +67,7 @@ fn coeff_meta(bp: &LibmBenchParams) -> poulpy_ckks::CKKSLayout {
             rank: Rank(1),
         },
         meta: GLWEPlaintextMeta {
+            slot_layout: poulpy_core::layouts::SlotLayout::Full,
             scale: Scale::Log(bp.log_delta),
             slots: SlotsKind::Complex,
             log_sparsity: 0,

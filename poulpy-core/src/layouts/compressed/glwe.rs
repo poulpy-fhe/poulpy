@@ -310,7 +310,7 @@ impl<D: HostDataMut, W: ZnxWord, Rg: Ring> ReaderFrom for GLWECompressed<D, W, R
         let plaintext_meta = GLWEPlaintextMeta::read_from(reader)?;
         crate::layouts::read_vec_znx_with_shape(&mut self.data, reader, None, 1, None)?;
         if let Some(meta) = plaintext_meta {
-            meta.validate_degree(self.data.n())?;
+            meta.validate_degree::<Rg>(self.data.n())?;
         }
         crate::layouts::validate_noise_components(noise.as_ref(), self.rank.as_usize() + 1)?;
         self.base2k = base2k;

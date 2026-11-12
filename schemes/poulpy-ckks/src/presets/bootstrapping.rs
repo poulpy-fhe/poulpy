@@ -62,7 +62,7 @@ use poulpy_hal::layouts::{ConjugateInvariant, MaxBase2k, Module, Standard};
 
 use crate::numerics::CKKSFloat;
 use crate::{
-    CKKSLayout, CoeffsMeta, GLWEPlaintextMeta, Scale, SlotsKind,
+    CKKSLayout, CoeffsMeta, GLWEPlaintextMeta, Scale, SlotLayout, SlotsKind,
     layouts::{
         BootstrappingKeysLayout, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques, CIConversion,
         DFTOutputFormat, DFTPlan, DFTType, EncapsulationKeysLayout, EvalModPlan, EvalModRing, EvalModType, EvalRoundPlus,
@@ -501,6 +501,7 @@ impl BootstrappingPreset {
                 scale: Scale::Log(self.spec.log_delta),
                 slots: SlotsKind::Complex,
                 log_sparsity: 0,
+                slot_layout: SlotLayout::Full,
             },
         }
     }

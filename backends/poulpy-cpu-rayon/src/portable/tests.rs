@@ -299,6 +299,7 @@ mod ckks {
             encoding => poulpy_ckks::test_suite::parity::test_encoding_parity,
             slot_encoding => poulpy_ckks::test_suite::parity::test_slot_encoding_parity,
             real_polynomial => poulpy_ckks::test_suite::parity::test_real_polynomial_parity,
+            replicated => poulpy_ckks::test_suite::parity::test_replicated_parity,
         },
         ring_free_tests = {
             imag => poulpy_ckks::test_suite::parity::test_imag_parity,

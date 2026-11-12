@@ -20,5 +20,6 @@ mod polynomial_evaluation;
 mod pow2;
 mod ring_map;
 mod rotate;
+mod round;
 mod ship;
 mod sub;

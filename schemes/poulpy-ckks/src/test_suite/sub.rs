@@ -937,7 +937,7 @@ pub fn test_sub_pt_vec_into_rejects_plaintext_before_copy<BE, F, E>(
         31,
     );
     let radix = CKKSCompositionError::PlaintextBase2KMismatch {
-        op: "ckks_sub_pt_vec",
+        op: "ckks_sub_pt_vec_into",
         ct_base2k: b,
         pt_base2k: b - 1,
     };
@@ -959,7 +959,7 @@ pub fn test_sub_pt_vec_into_rejects_plaintext_before_copy<BE, F, E>(
             "sub_pt_const_into: coefficient past the plaintext",
             &err,
             CKKSCompositionError::PlaintextCoefficientOutOfRange {
-                op: "ckks_sub_pt_const",
+                op: "ckks_sub_pt_const_into",
                 role: "plaintext",
                 coeff: n,
                 n,

@@ -12,7 +12,7 @@ use poulpy_hal::layouts::{Backend, HostDataRef, Module, Standard};
 
 use crate::SlotsKind;
 use crate::{
-    GLWEPlaintextMeta, Scale,
+    GLWEPlaintextMeta, Scale, SlotLayout,
     api::{CKKSEncodingOps, CKKSShipScalar},
     encoding::paco::coeff_enc::glwe_column_residues,
     layouts::{CKKSEncodingBuffer, CKKSPlaintextAlloc, CKKSPlaintextOwned, ShipCoeffEncodings, ShipPlan},
@@ -55,6 +55,7 @@ where
         scale: Scale::Log(log_delta),
         slots: SlotsKind::Complex,
         log_sparsity: 0,
+        slot_layout: SlotLayout::Full,
     })?;
     module.ckks_encode_slots_into(&mut pt, &mut buffer)?;
     Ok(pt)

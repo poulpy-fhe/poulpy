@@ -338,7 +338,7 @@ mod tests {
     use super::*;
     use crate::CKKSModuleInfos;
     use crate::layouts::CKKSPlaintextAlloc;
-    use crate::{Scale, SlotsKind};
+    use crate::{Scale, SlotLayout, SlotsKind};
     use poulpy_hal::layouts::{Backend, HostBytesBackend, Module, Standard};
 
     #[test]
@@ -379,6 +379,7 @@ mod tests {
             scale: Scale::Log(40),
             slots: SlotsKind::Complex,
             log_sparsity: 0,
+            slot_layout: SlotLayout::Full,
         };
         let base2k: Base2K = 52usize.into();
 

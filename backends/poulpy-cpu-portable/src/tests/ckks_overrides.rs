@@ -15,7 +15,7 @@ use poulpy_ckks::test_suite::{
     helpers::{assert_ckks_error, assert_ckks_internal},
     parity::helpers::{fixture_ciphertext, snapshot, with_scratch},
 };
-use poulpy_ckks::{CKKSCompositionError, CoeffsMeta, GLWEPlaintextMeta, SetCKKSInfos};
+use poulpy_ckks::{CKKSCompositionError, CoeffsMeta, GLWEPlaintextMeta, SetCKKSInfos, SlotLayout};
 use poulpy_core::GLWEFill;
 use poulpy_core::layouts::{
     GLWEPlaintextInfos, GetTensorKey, LWEInfos, SetGLWEPlaintextInfos, SetK, TorusPrecision,
@@ -28,6 +28,7 @@ thread_local! {
  static REAL_CALLS: Cell<usize> = const { Cell::new(0) };
  static COMPLEX_CALLS: Cell<usize> = const { Cell::new(0) };
  static EVAL_MOD_CALLS: Cell<usize> = const { Cell::new(0) };
+ static SHAPING_CALLS: Cell<usize> = const { Cell::new(0) };
  static MAX_COPY_CAPACITY: Cell<usize> = const { Cell::new(0) };
 }
 const OVERRIDE_SCRATCH: usize = 256;
@@ -85,6 +86,20 @@ poulpy_ckks::impl_ckks_mul_add_derived_full!(OverrideBackend);
 poulpy_ckks::impl_ckks_affine_derived_full!(OverrideBackend);
 poulpy_ckks::impl_ckks_mul_sub_derived_full!(OverrideBackend);
 poulpy_ckks::impl_ckks_approximation_derived_full!(OverrideBackend);
+unsafe impl<Rg: poulpy_hal::layouts::Ring> poulpy_ckks::oep::CKKSShapedRoundingImpl<Rg> for OverrideBackend {
+    fn ckks_shaped_round_correction(
+        _module: &Module<Self>,
+        carry: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self, Rg>,
+        h: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self, Rg>,
+        low: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self, Rg>,
+        profile: &poulpy_ckks::shaping::ShapingProfile<Rg>,
+        lambda: usize,
+    ) {
+        SHAPING_CALLS.with(|calls| calls.set(calls.get() + 1));
+        crate::ckks_round::shaped_round_correction::<Self, Rg>(carry, h, low, profile, lambda);
+    }
+}
+::poulpy_ckks::impl_ckks_round_reference_full!(OverrideBackend);
 // The conjugate-invariant ring takes the reference of the families overridden on the standard ring, the addition aside.
 poulpy_ckks::impl_ckks_copy_reference_full!(OverrideBackend, ConjugateInvariant);
 poulpy_ckks::impl_ckks_sub_reference_full!(OverrideBackend, ConjugateInvariant);
@@ -634,6 +649,29 @@ impl poulpy_ckks::reference::rotate::CKKSRotateReference<OverrideBackend> for Co
 impl poulpy_ckks::reference::conjugate::CKKSConjugateReference<OverrideBackend> for CoreQueryOverrides<'_> {}
 impl poulpy_ckks::reference::imag::CKKSImagReference<OverrideBackend> for CoreQueryOverrides<'_> {}
 
+impl poulpy_ckks::api::CKKSRoundOps<OverrideBackend> for CoreQueryOverrides<'_> {
+    fn ckks_round_tmp_bytes<Dst: poulpy_ckks::CKKSCtBounds, Src: poulpy_ckks::CKKSCtBounds>(
+        &self,
+        dst: &Dst,
+        src: &Src,
+    ) -> usize {
+        poulpy_ckks::api::CKKSRoundOps::<OverrideBackend>::ckks_round_tmp_bytes(self.module, dst, src)
+    }
+
+    fn ckks_round<Dst, Src>(
+        &self,
+        dst: &mut Dst,
+        src: &Src,
+        scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, OverrideBackend>,
+    ) -> poulpy_ckks::CKKSResult<()>
+    where
+        Dst: poulpy_core::layouts::GLWEToBackendMut<OverrideBackend> + poulpy_ckks::CKKSCtBounds + poulpy_ckks::SetCKKSInfos,
+        Src: poulpy_core::layouts::GLWEToBackendRef<OverrideBackend> + poulpy_ckks::CKKSCtBounds,
+    {
+        self.module.ckks_round(dst, src, scratch)
+    }
+}
+
 impl poulpy_core::GLWECopy<OverrideBackend> for CoreQueryOverrides<'_> {
     fn glwe_copy_tmp_bytes<R: poulpy_core::layouts::GLWEInfos, A: poulpy_core::layouts::GLWEInfos>(
         &self,
@@ -950,6 +988,7 @@ fn division_by_i_uses_negative_monomials_and_selected_core_workspaces() {
         scale: Scale::Log(16),
         slots: SlotsKind::Real,
         log_sparsity: 1,
+        slot_layout: SlotLayout::Full,
     });
     // Exercise both choices of dominant constituent workspace. The proxy has
     // no CKKS multiplication-by-i or negation contract to compose through.
@@ -1027,5 +1066,54 @@ fn decrypt_query_uses_plaintext_allocation_width() {
     assert!(
         expected(wide.max_size()) > expected(narrow.max_size()),
         "the plaintext allocation width does not reach the query"
+    );
+}
+
+#[test]
+fn ckks_round_reference_dispatches_shaping_correction() {
+    use poulpy_ckks::test_suite::parity::helpers::{fixture_ciphertext, snapshot, with_scratch};
+    use poulpy_ckks::{CKKSLayout, api::CKKSRoundOps, shaping::ShapingUnit};
+    use poulpy_core::layouts::GLWELayout;
+    let module = Module::<OverrideBackend>::new(64);
+    let reference = Module::<crate::FFT64Portable>::new(64);
+    let layout = CKKSLayout {
+        glwe_layout: GLWELayout {
+            n: 64usize.into(),
+            base2k: 12usize.into(),
+            k: 72usize.into(),
+            rank: 1usize.into(),
+        },
+        meta: GLWEPlaintextMeta {
+            scale: Scale::Log(40),
+            slot_layout: SlotLayout::Replicated(ShapingUnit::U32_45.layout(0).unwrap()),
+            ..Default::default()
+        },
+    };
+    let src = fixture_ciphertext::<_, Standard>(&module, &layout, 91);
+    let src_ref = fixture_ciphertext::<_, Standard>(&reference, &layout, 91);
+    let dst_layout = CKKSLayout {
+        glwe_layout: GLWELayout {
+            k: 60usize.into(),
+            ..layout.glwe_layout
+        },
+        ..layout
+    };
+    let mut dst = fixture_ciphertext::<_, Standard>(&module, &dst_layout, 93);
+    let mut expected = fixture_ciphertext::<_, Standard>(&reference, &dst_layout, 93);
+    SHAPING_CALLS.with(|calls| calls.set(0));
+    with_scratch::<OverrideBackend, _>(
+        CKKSRoundOps::<OverrideBackend, Standard>::ckks_round_tmp_bytes(&module, &dst, &src),
+        |scratch| module.ckks_round(&mut dst, &src, scratch),
+    )
+    .unwrap();
+    assert_eq!(SHAPING_CALLS.with(Cell::get), 2);
+    with_scratch::<crate::FFT64Portable, _>(
+        CKKSRoundOps::<crate::FFT64Portable, Standard>::ckks_round_tmp_bytes(&reference, &expected, &src_ref),
+        |scratch| reference.ckks_round(&mut expected, &src_ref, scratch),
+    )
+    .unwrap();
+    assert_eq!(
+        snapshot::<OverrideBackend, _, _>(&dst),
+        snapshot::<crate::FFT64Portable, _, _>(&expected)
     );
 }
