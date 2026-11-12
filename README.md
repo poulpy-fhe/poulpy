@@ -37,6 +37,10 @@ The basis crates sit at the root of the repository, and the other crates are gro
 - **`poulpy-blas`**: backend-agnostic encrypted matrix arithmetic built on **`poulpy-ckks`**: grids of CKKS block ciphertexts, and the encoded maps and public matrices its operations read.
 - **`poulpy-libm`**: backend-agnostic CKKS math functions with `libm` names built on **`poulpy-ckks`**: exponentials, logarithms, powers and roots, trigonometric, hyperbolic and special functions, comparisons, and slot reductions, each from a reusable plan prepared for an input interval and a precision.
 
+### [`examples/`](examples): applications on the library
+
+- **`poulpy-resnet20`**: encrypted ResNet-20 inference on CIFAR-10 over the real-slot S2C-first bootstrap of **`poulpy-ckks`**, on the CPU or the GPU. It is an example and is not published to crates.io.
+
 ### [`backends/`](backends): concrete implementations of the layers
 
 - **`poulpy-cpu-portable`**: the portable CPU implementation of **`poulpy-hal`** in plain scalar Rust, which runs on any target and whose scalar kernels back the SIMD backends.
@@ -60,7 +64,8 @@ poulpy-hal                  ← hardware abstraction: layouts and operation trai
 └── poulpy-core              ← scheme-agnostic Module-LWE arithmetic (LWE, GLWE, GGLWE, GGSW)
     ├── poulpy-ckks           ← leveled CKKS evaluator
     │   ├── poulpy-blas        ← encrypted matrix arithmetic (JKLS)
-    │   └── poulpy-libm        ← CKKS math functions (libm-style)
+    │   ├── poulpy-libm        ← CKKS math functions (libm-style)
+    │   └── poulpy-resnet20    ← encrypted ResNet-20 on CIFAR-10 (example)
     ├── poulpy-bin-fhe        ← binary / gate-level FHE
     └── poulpy-mhe            ← multiparty HE
 

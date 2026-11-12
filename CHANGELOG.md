@@ -50,6 +50,9 @@
 - **Fix:** `glwe_automorphism_key_automorphism[_assign]` reduces the composed Galois element at the key's order, so a key below the module degree is found under its element.
 - **Breaking, behaviour:** the one-pass relinearization gate weighs ring products by `Rg::product_moments(n).weight`, about `2n` on the conjugate-invariant ring, unchanged on the standard ring, so a conjugate-invariant product may take the other path and its bits change.
 - **Behaviour:** linear-transformation and key-switch queries size their temporaries at the operand degree, reporting less below the module degree; scratch-shortfall panics on decryption, encryption and noise measurement read `"scratch.available() < <Trait>::<query>"`, with no byte counts.
+### `poulpy-resnet20`
+
+- Add `examples/resnet20` (unpublished): encrypted ResNet-20 on CIFAR-10 over the real-slot S2C-first bootstrap, composed from its public steps: `ckks_mod_raise`, `ckks_coeffs_to_slots_assign` on a `masked` view of the context, `ckks_bootstrap_eval_mod`. Every convolution, shortcut and the pooled linear head is folded into the last SlotsToCoeffs factor (`MergedConv`, on `merged_s2c_factor`), on coefficient layouts (`CoeffLayout`); the masked raise keeps the layer's samples and leaves them on the unit circle, for a ReLU of 4 levels, a trigonometric polynomial of degree 15. The network runs at degree `2^15`: stage 1 fills all 16,384 real slots, so its rows have no padding and a read past a row's end lands on the next row, 0.04% on the test set. The `encrypted_inference` binary runs the server on the CPU or, with the `enable-cuda` feature, the GPU, where `--replay` records the whole circuit once as a `Replay` graph. The weights and ten test images are built into the crate, and `$CIFAR10_TEST_BATCH` names the full test batch.
 
 ### `poulpy-ckks`
 
