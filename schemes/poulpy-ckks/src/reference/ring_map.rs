@@ -53,6 +53,8 @@ pub trait CKKSCIRingMapReference<BE: Backend> {
     {
         const OP: &str = "ckks_ci_embed";
         check_embed(OP, self, dst, src)?;
+        // The key switch rounds plainly.
+        crate::layouts::validation::ensure_full_layout(OP, crate::GLWEPlaintextInfos::slot_layout(src))?;
         check_key(OP, "embed", key, dst.n(), dst.rank(), src.k())?;
         crate::ckks_ensure!(
             scratch.available() >= self.ckks_ci_embed_tmp_bytes_reference(dst, key),
@@ -97,6 +99,8 @@ pub trait CKKSCIRingMapReference<BE: Backend> {
     {
         const OP: &str = "ckks_ci_trace";
         check_trace(OP, self, dst, src)?;
+        // The key switch rounds plainly.
+        crate::layouts::validation::ensure_full_layout(OP, crate::GLWEPlaintextInfos::slot_layout(src))?;
         check_key(OP, "trace", key, src.n(), src.rank(), src.k())?;
         let log_budget = trace_log_budget(OP, src)?;
         crate::ckks_ensure!(

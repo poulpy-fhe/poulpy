@@ -15,6 +15,13 @@ use crate::{CKKSCtBounds, SetCKKSInfos};
 /// and `λ = min(drop, max_pass_bits)` the shaping depth
 /// ([`ShapingProfile`](crate::shaping::ShapingProfile)).
 ///
+/// Shaped rounding is how a replicated layout leaves its extra bits. Replicated
+/// encryption rounds through it after encrypting `λ` bits wider. A caller rounds
+/// the finer of two replicated operands to the other's scale before a sum, which
+/// refuses replicated operands at two scales rather than round one plainly. The
+/// products, rotations and key switches refuse a replicated operand, so there is
+/// no shaped rescale or key switch yet.
+///
 /// # Metadata
 ///
 /// ```text
@@ -22,10 +29,12 @@ use crate::{CKKSCtBounds, SetCKKSInfos};
 /// log_budget_out = a.log_budget
 /// ```
 ///
-/// Other metadata is `a`'s. Component noise metadata is cleared. Fails when
-/// `res.k() > a.k()` or `drop > a.log_delta`, and for a replicated layout
-/// with `2R > N`. Source and destination must have equal degrees and ranks;
-/// their limb radices may differ.
+/// Other metadata is `a`'s. Component noise metadata is cleared. `res` comes
+/// out normalized at its width and flagged canonical, whatever the flag of `a`.
+/// Fails when `res.k() > a.k()` or `drop > a.log_delta`, and for a replicated
+/// layout with `2R > N` or, on the conjugate-invariant ring, a shaping
+/// polynomial without a conjugate-invariant shift. Source and destination must
+/// have equal degrees and ranks. Their limb radices may differ.
 pub trait CKKSRoundOps<BE: Backend, Rg: Ring = Standard> {
     fn ckks_round_tmp_bytes<R, A>(&self, res: &R, a: &A) -> usize
     where
@@ -37,7 +46,8 @@ pub trait CKKSRoundOps<BE: Backend, Rg: Ring = Standard> {
     /// # Errors
     /// Returns [`crate::CKKSCompositionError::InvalidOperand`] for mismatched
     /// degrees or ranks, a wider destination, a drop exceeding the source
-    /// scale, or a shaping period exceeding the degree. Refusal leaves both
+    /// scale, a shaping period exceeding the degree, or a shaping polynomial the
+    /// operand's ring cannot use. Refusal leaves both
     /// operands unchanged. Returns [`crate::CKKSError::Internal`] before writing
     /// when the arena is smaller than the queried budget.
     fn ckks_round<R, A>(&self, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>) -> Result<()>

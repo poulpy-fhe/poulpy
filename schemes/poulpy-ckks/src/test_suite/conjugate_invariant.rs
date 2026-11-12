@@ -689,6 +689,8 @@ macro_rules! conjugate_invariant_ckks_test_suite {
             run_replicated!(test_replicated_unit_shaping_encodes_plainly);
             run_replicated!(test_replicated_encryption_is_shaped);
             run_replicated!(test_replicated_encoding_rejects_batch_size);
+            run_replicated!(test_replicated_encryption_refuses_before_drawing);
+            run_replicated!(test_replicated_round_then_add);
             run_replicated!(test_replicated_layouts_do_not_mix);
             run_replicated!(test_replicated_plain_rounding_is_rejected);
             #[test]
@@ -1054,6 +1056,12 @@ where
     let wide = fixture_ciphertext(&ci, &ci_layout(past_key, base2k), 63);
     let err = embed_refused("past the key", &standard_layout(past_key, base2k), &wide, 0);
     invalid("past the key", &err, "ckks_ci_embed");
+    // The key switch rounds plainly, so a replicated source is refused.
+    let replicated = crate::SlotLayout::Replicated(crate::shaping::ShapingUnit::U16_20.layout(1).unwrap());
+    let mut replicated_ct = ct.clone();
+    crate::SetGLWEPlaintextInfos::set_slot_layout(&mut replicated_ct, replicated);
+    let err = embed_refused("replicated", &standard_layout(k, base2k), &replicated_ct, 0);
+    invalid("replicated", &err, "ckks_ci_embed");
     let bytes = standard.ckks_ci_embed_tmp_bytes(&extended, &embed_key);
     let err = embed_refused("short arena", &standard_layout(k, base2k), &ct, bytes - 1);
     assert_ckks_internal("short arena", &err, "ckks_ci_embed: scratch below its query");
@@ -1067,6 +1075,10 @@ where
     let wide = fixture_ciphertext(&standard, &standard_layout(past_key, base2k), 64);
     let err = trace_refused("past the key", &ci_layout(past_key, base2k), &wide, 0);
     invalid("past the key", &err, "ckks_ci_trace");
+    let mut replicated_extended = extended.clone();
+    crate::SetGLWEPlaintextInfos::set_slot_layout(&mut replicated_extended, replicated);
+    let err = trace_refused("replicated", &ci_layout(k - 1, base2k), &replicated_extended, 0);
+    invalid("replicated", &err, "ckks_ci_trace");
     let spent = fixture_ciphertext(&standard, &standard_layout(ct.log_delta(), base2k), 65);
     let err = trace_refused("no budget", &ci_layout(k - 1, base2k), &spent, 0);
     assert!(

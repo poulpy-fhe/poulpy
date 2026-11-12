@@ -299,7 +299,7 @@ where
 {
     const OP: &str = "ckks_affine_pt_vec_into";
     crate::ensure_operand_degrees(OP, module, [dst.n(), a.n()])?;
-    crate::layouts::validation::product_layout(
+    let slot_layout = crate::layouts::validation::product_layout(
         OP,
         &[
             crate::GLWEPlaintextInfos::slot_layout(a),
@@ -307,6 +307,7 @@ where
             crate::GLWEPlaintextInfos::slot_layout(offset),
         ],
     )?;
+    crate::layouts::validation::ensure_full_layout(OP, slot_layout)?;
     let (log_budget, _, _) = ckks_mul_pt_vec_checks::<BE, _, _, _>(OP, &*dst, a, scale)?;
     check_affine_offset_vec::<BE, _, _>(OP, &*dst, log_budget, offset)?;
     module.ckks_mul_pt_vec_into(dst, a, scale, scratch)?;
@@ -328,7 +329,7 @@ where
 {
     const OP: &str = "ckks_affine_pt_vec_assign";
     crate::ensure_operand_degrees(OP, module, [dst.n()])?;
-    crate::layouts::validation::product_layout(
+    let slot_layout = crate::layouts::validation::product_layout(
         OP,
         &[
             crate::GLWEPlaintextInfos::slot_layout(dst),
@@ -336,6 +337,7 @@ where
             crate::GLWEPlaintextInfos::slot_layout(offset),
         ],
     )?;
+    crate::layouts::validation::ensure_full_layout(OP, slot_layout)?;
     let (log_budget, _, _) = ckks_mul_pt_vec_checks::<BE, _, _, _>(OP, &*dst, &*dst, scale)?;
     check_affine_offset_vec::<BE, _, _>(OP, &*dst, log_budget, offset)?;
     module.ckks_mul_pt_vec_assign(dst, scale, scratch)?;

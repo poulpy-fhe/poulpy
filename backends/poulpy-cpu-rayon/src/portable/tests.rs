@@ -299,6 +299,7 @@ mod ckks {
             encoding => poulpy_ckks::test_suite::parity::test_encoding_parity,
             slot_encoding => poulpy_ckks::test_suite::parity::test_slot_encoding_parity,
             real_polynomial => poulpy_ckks::test_suite::parity::test_real_polynomial_parity,
+            replicated => poulpy_ckks::test_suite::parity::test_replicated_parity,
         },
         ring_free_tests = {
             imag => poulpy_ckks::test_suite::parity::test_imag_parity,
@@ -307,7 +308,6 @@ mod ckks {
             ship_encoding => poulpy_ckks::test_suite::parity::test_ship_encoding_parity,
             dft => poulpy_ckks::test_suite::parity::test_dft_parity,
             polynomial_eval_mod => poulpy_ckks::test_suite::parity::test_polynomial_eval_mod_parity,
-            replicated => poulpy_ckks::test_suite::parity::test_replicated_parity,
             encapsulated_mod_up => poulpy_ckks::test_suite::parity::test_encapsulated_mod_up_parity,
             bootstrapping => poulpy_ckks::test_suite::parity::test_bootstrapping_parity,
             fold => poulpy_ckks::test_suite::parity::test_fold_parity,

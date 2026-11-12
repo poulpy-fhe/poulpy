@@ -183,6 +183,13 @@ pub trait CKKSModuleInfos {
     fn ckks_galois_element<Rg: Ring>(&self, rotation: i64) -> i64;
 }
 
+/// Slots of a plaintext of degree `n` on the ring `Rg`, [`CKKSModuleInfos::ckks_slots_of_degree`]
+/// without a module: `n/2` complex slots on the standard ring and `n` real ones on the
+/// conjugate-invariant ring.
+pub(crate) fn slots_of_degree<Rg: Ring>(n: usize) -> usize {
+    n * Rg::CYCLOTOMIC_ORDER_FACTOR as usize / 4
+}
+
 /// The cyclotomic order of the operands of degree `n` that `module` serves, at most its own
 /// degree.
 pub(crate) fn operand_cyclotomic_order<M: CyclotomicOrder + ?Sized, Rg: Ring>(
@@ -212,7 +219,7 @@ impl<BE: Backend> CKKSModuleInfos for Module<BE> {
     }
 
     fn ckks_slots_of_degree<Rg: Ring>(&self, n: usize) -> usize {
-        n * self.ckks_max_slots::<Rg>() / self.n()
+        slots_of_degree::<Rg>(n)
     }
 
     fn ckks_galois_element<Rg: Ring>(&self, rotation: i64) -> i64 {

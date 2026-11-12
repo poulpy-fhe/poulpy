@@ -88,11 +88,11 @@ macro_rules! ckks_carry_verb_reference {
                     let offset = ckks_offset_binary(dst, a, b);
                     // Validate before mutating: on error `dst` must remain untouched.
                     let slot_layout = $crate::layouts::validation::product_layout(
-                        concat!("ckks_", stringify!($verb)),
+                        concat!("ckks_", stringify!($verb), "_into"),
                         &[a.slot_layout(), b.slot_layout()],
                     )?;
                     $crate::layouts::validation::reject_replicated_scales(
-                        concat!("ckks_", stringify!($verb)),
+                        concat!("ckks_", stringify!($verb), "_into"),
                         slot_layout,
                         a.log_delta(),
                         b.log_delta(),
@@ -191,7 +191,7 @@ macro_rules! ckks_carry_verb_reference {
                             pt.log_delta(),
                         )?;
                     }
-                    const OP: &str = concat!("ckks_", stringify!($verb), "_pt_vec");
+                    const OP: &str = concat!("ckks_", stringify!($verb), "_pt_vec_into");
                     $crate::ensure_operand_degrees(OP, self, [dst.n(), a.n()])?;
                     // The copy's budget check, then the plaintext's at the budget the copy leaves, before it writes.
                     let log_budget = checked_log_budget_sub(OP, a.log_budget(), $crate::ckks_offset_unary(dst, a))?;
@@ -211,7 +211,7 @@ macro_rules! ckks_carry_verb_reference {
                     Dst: GLWEToBackendMut<BE, Rg> + CKKSInfos + SetCKKSInfos,
                     P: GLWEToBackendRef<BE, Rg> + ::poulpy_core::layouts::IntPolyInfos + CKKSInfos,
                 {
-                    $crate::ensure_operand_degrees(concat!("ckks_", stringify!($verb), "_pt_vec"), self, [dst.n()])?;
+                    $crate::ensure_operand_degrees(concat!("ckks_", stringify!($verb), "_pt_vec_assign"), self, [dst.n()])?;
                     let slot_layout = $crate::layouts::validation::product_layout(
                         concat!("ckks_", stringify!($verb), "_pt_vec_assign"),
                         &[dst.slot_layout(), pt.slot_layout()],
@@ -224,7 +224,7 @@ macro_rules! ckks_carry_verb_reference {
                             pt.log_delta(),
                         )?;
                     }
-                    $crate::reference::plaintext::[<$verb _pt_vec_raw>](self, dst, pt, scratch)?;
+                    $crate::reference::plaintext::[<$verb _pt_vec_raw>](self, concat!("ckks_", stringify!($verb), "_pt_vec_assign"), dst, pt, scratch)?;
                     dst.set_log_sparsity(dst.log_sparsity().min(dst.log_n() - pt.log_n()));
                     dst.set_slots(dst.slots().join(pt.slots()));
                     Ok(())
@@ -246,10 +246,10 @@ macro_rules! ckks_carry_verb_reference {
                     P: GLWEToBackendRef<BE, Rg> + ::poulpy_core::layouts::IntPolyInfos + CKKSInfos,
                 {
                     $crate::layouts::validation::reject_replicated_constant(
-                        concat!("ckks_", stringify!($verb), "_pt_const"),
+                        concat!("ckks_", stringify!($verb), "_pt_const_into"),
                         a.slot_layout(),
                     )?;
-                    const OP: &str = concat!("ckks_", stringify!($verb), "_pt_const");
+                    const OP: &str = concat!("ckks_", stringify!($verb), "_pt_const_into");
                     $crate::ensure_operand_degrees(OP, self, [dst.n(), a.n()])?;
                     // The copy's budget check, then the plaintext's at the budget the copy leaves, before it writes.
                     let log_budget = checked_log_budget_sub(OP, a.log_budget(), $crate::ckks_offset_unary(dst, a))?;
@@ -279,12 +279,12 @@ macro_rules! ckks_carry_verb_reference {
                     Dst: GLWEToBackendMut<BE, Rg> + CKKSInfos + SetCKKSInfos,
                     P: GLWEToBackendRef<BE, Rg> + ::poulpy_core::layouts::IntPolyInfos + CKKSInfos,
                 {
-                    $crate::ensure_operand_degrees(concat!("ckks_", stringify!($verb), "_pt_const"), self, [dst.n()])?;
+                    $crate::ensure_operand_degrees(concat!("ckks_", stringify!($verb), "_pt_const_assign"), self, [dst.n()])?;
                     $crate::layouts::validation::reject_replicated_constant(
                         concat!("ckks_", stringify!($verb), "_pt_const_assign"),
                         dst.slot_layout(),
                     )?;
-                    $crate::reference::plaintext::[<$verb _pt_const_raw>](self, dst, dst_coeff, cst, const_coeff, scratch)?;
+                    $crate::reference::plaintext::[<$verb _pt_const_raw>](self, concat!("ckks_", stringify!($verb), "_pt_const_assign"), dst, dst_coeff, cst, const_coeff, scratch)?;
                     // cst is always tagged as real, it's where dst_coeff lands
                     // that selects if the added constant is real (X^{0}) or imaginary (X^{N/2}).
                     let added = if dst_coeff == 0 { $crate::SlotsKind::Real } else { $crate::SlotsKind::Complex };

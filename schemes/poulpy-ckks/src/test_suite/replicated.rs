@@ -6,9 +6,11 @@
 //! |----------|----------------|
 //! | [`test_replicated_encoding_is_shaped`] | shaped quantization keeps the data slots far above the scale's precision |
 //! | [`test_replicated_unit_shaping_encodes_plainly`] | `U = 1` encodes as a full layout holding the scattered batch |
-//! | [`test_replicated_encryption_is_shaped`] | a fresh encryption keeps the data slots far above CKKS at the same scale |
+//! | [`test_replicated_encryption_is_shaped`] | a fresh encryption keeps the data slots far above CKKS at the same scale, with a noise estimate |
+//! | [`test_replicated_encryption_refuses_before_drawing`] | a short arena, and on the conjugate-invariant ring a `U` without an invariant shift, refuse before any draw |
+//! | [`test_replicated_round_then_add`] | the finer of two scales, rounded with shaping to the other, adds |
 //! | [`test_replicated_encoding_rejects_batch_size`] | a batch of the wrong size |
-//! | [`test_replicated_layouts_do_not_mix`] | sums of different layouts, and constant sums |
+//! | [`test_replicated_layouts_do_not_mix`] | sums of different layouts, constant sums and `ckks_add_many`, and a product into a reused replicated destination |
 //! | [`test_replicated_conjugation_is_rejected`] | conjugation on the standard ring |
 //! | [`test_replicated_plain_rounding_is_rejected`] | operations that round plainly (products, automorphisms, dot products, affine maps, linear transformations, inner sums), and layouts or scales without a shaped encoding |
 
@@ -27,14 +29,16 @@ use poulpy_hal::{
 
 use super::helpers::{
     PT_PREC, TestContextBackend, TestContextSharedModule, TestScalar, alloc_ct, alloc_scratch, ckks_pt_cst_full, gen_atk, gen_sk,
-    gen_sk_with_raw, gen_tsk,
+    gen_sk_with_raw, gen_tsk, next_test_seed,
 };
+use super::parity::helpers::{snapshot, with_scratch};
 use crate::{
-    CKKSInfos, GLWEPlaintextInfos, GLWEPlaintextMeta, ReplicatedLayout, Scale, SetCKKSInfos, SlotLayout, SlotsKind,
+    CKKSInfos, GLWEPlaintextInfos, GLWEPlaintextMeta, ReplicatedLayout, Scale, SetCKKSInfos, SetGLWEPlaintextInfos, SlotLayout,
+    SlotsKind,
     api::{
-        CKKSAddOps, CKKSAffineOps, CKKSConjugateOps, CKKSDecryptOps, CKKSDotProductOps, CKKSEncodingHostOps, CKKSEncodingOps,
-        CKKSEncryptOps, CKKSInnerSumOps, CKKSLeftOperandPreparedFactory, CKKSLinearTransformationOps, CKKSModuleInfos,
-        CKKSMulOps, CKKSRightOperandPreparedFactory, CKKSRotateOps, CKKSSubOps,
+        CKKSAddManyOps, CKKSAddOps, CKKSAffineOps, CKKSConjugateOps, CKKSDecryptOps, CKKSDotProductOps, CKKSEncodingHostOps,
+        CKKSEncodingOps, CKKSEncryptOps, CKKSInnerSumOps, CKKSLeftOperandPreparedFactory, CKKSLinearTransformationOps,
+        CKKSModuleInfos, CKKSMulOps, CKKSRightOperandPreparedFactory, CKKSRotateOps, CKKSRoundOps, CKKSSubOps,
     },
     layouts::{CKKSCiphertextOwned, CKKSPlaintextAlloc, CKKSPlaintextOwned},
     shaping::{ShapingRing, ShapingUnit},
@@ -45,7 +49,7 @@ const LOG_DELTA: usize = 20;
 const LOG_K: u8 = 2;
 
 fn layout() -> ReplicatedLayout {
-    ShapingUnit::U32_45.layout(LOG_K, 24).unwrap()
+    ShapingUnit::U32_45.layout(LOG_K).unwrap()
 }
 
 /// Whether the ring `Rg` has real slots, where batches have no imaginary part.
@@ -142,6 +146,59 @@ where
     Ok(())
 }
 
+/// Asserts that `err` is `InvalidOperand` under `op`.
+fn assert_invalid(err: &crate::CKKSError, op: &str) {
+    assert!(
+        matches!(err.composition(), Some(crate::CKKSCompositionError::InvalidOperand { op: got, .. }) if *got == op),
+        "expected InvalidOperand from {op}, got {err}"
+    );
+}
+
+/// [`assert_invalid`] for an encoding error.
+fn assert_invalid_encoding(err: &anyhow::Error, op: &str) {
+    let ckks = err
+        .downcast_ref::<crate::CKKSError>()
+        .unwrap_or_else(|| panic!("expected a CKKS error from {op}, got {err}"));
+    assert_invalid(ckks, op);
+}
+
+/// Runs `$call`, which must refuse with `InvalidOperand` under `$op`, leaving `$operand`s as they were.
+macro_rules! refused {
+    ($rg:ty, $op:expr, $call:expr, [$($operand:expr),+ $(,)?]) => {{
+        let before = ($(snapshot::<BE, _, $rg>(&$operand),)+);
+        let err = $call.unwrap_err();
+        assert_invalid(&err, $op);
+        assert_eq!(($(snapshot::<BE, _, $rg>(&$operand),)+), before, "{} changed an operand", $op);
+    }};
+}
+
+/// Decrypts `ct` and decodes its first `len` values.
+fn decrypt_batch<BE, F, Rg: Ring>(
+    params: &CKKSTestParams,
+    module: &Module<BE>,
+    sk: &GLWESecretPrepared<BE::OwnedBuf, BE, Rg>,
+    ct: &CKKSCiphertextOwned<BE, Rg>,
+    len: usize,
+) -> (Vec<F>, Vec<F>)
+where
+    BE: TestContextBackend,
+    F: TestScalar,
+    Module<BE>: TestContextSharedModule<BE, Rg> + CKKSEncodingOps<BE, F, Rg>,
+{
+    // A few bits of budget hold the unit-scale message.
+    let budget = ct.log_budget().min(10);
+    let mut pt = module.ckks_plaintext_alloc_from_slots::<Rg>(
+        module.ckks_slots_of_degree::<Rg>((ct.n().as_usize() >> ct.log_sparsity()).max(BE::MIN_DEGREE)),
+        Base2K(params.base2k as u32),
+        TorusPrecision((ct.log_delta() + budget) as u32),
+    );
+    pt.set_meta(ct.meta());
+    pt.set_log_budget(budget);
+    let mut scratch = ScratchOwned::<BE>::alloc(module.ckks_decrypt_tmp_bytes(&pt, ct));
+    module.ckks_decrypt(&mut pt, ct, sk, &mut scratch.borrow()).unwrap();
+    decode::<BE, F, Rg>(module, &pt, len)
+}
+
 pub fn test_replicated_encoding_is_shaped<BE, F, Rg: Ring>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -183,7 +240,7 @@ where
     Module<BE>: TestContextSharedModule<BE, Rg> + CKKSEncodingOps<BE, F, Rg>,
     F: TestScalar,
 {
-    let unit = ReplicatedLayout::new(LOG_K + 2, 1, 0, &[1, 0, 0, 0])?;
+    let unit = ReplicatedLayout::new(LOG_K + 2, 1, &[1, 0, 0, 0])?;
     let (re, im) = batch::<Rg, F>(1 << unit.log_k());
     let mut shaped = plaintext(&params, module, SlotLayout::Replicated(unit), re.len());
     encoded(module, &mut shaped, &re, &im)?;
@@ -224,20 +281,21 @@ where
         let mut pt = plaintext(&params, module, slot_layout, re.len());
         encoded(module, &mut pt, &re, &im)?;
         let mut ct = alloc_ct(&params, module, LOG_DELTA + 30);
-        let mut scratch = ScratchOwned::<BE>::alloc(
-            module
-                .ckks_encrypt_sk_tmp_bytes(&ct)
-                .max(module.ckks_decrypt_tmp_bytes(&pt, &ct)),
-        );
-        let (mut xe, mut xa) = (Source::new([1; 32]), Source::new([2; 32]));
-        module.ckks_encrypt_sk(&mut ct, &pt, &sk, &mut xe, &mut xa, &mut scratch.borrow())?;
+        let (mut xe, mut xa) = (Source::new(next_test_seed(1)), Source::new(next_test_seed(2)));
+        with_scratch::<BE, _>(module.ckks_encrypt_sk_tmp_bytes(&ct), |scratch| {
+            module.ckks_encrypt_sk(&mut ct, &pt, &sk, &mut xe, &mut xa, scratch)
+        })?;
         assert_eq!(ct.slot_layout(), slot_layout);
         assert_eq!((ct.log_delta(), ct.k().as_usize()), (LOG_DELTA, LOG_DELTA + 30));
+        // The shaped rounding leaves an estimate at the ciphertext's width, its masks rounded too.
+        let noise = ct.noise().expect("a fresh encryption carries a noise estimate");
+        assert_eq!(noise.precision(), ct.k());
+        assert_eq!(
+            noise.masks().iter().any(|mask| mask.variance() > 0.0),
+            slot_layout != SlotLayout::Full
+        );
 
-        let mut decrypted = plaintext(&params, module, slot_layout, re.len());
-        decrypted.set_meta(ct.meta());
-        module.ckks_decrypt(&mut decrypted, &ct, &sk, &mut scratch.borrow())?;
-        let (got_re, got_im) = decode::<BE, F, Rg>(module, &decrypted, re.len());
+        let (got_re, got_im) = decrypt_batch::<BE, F, Rg>(&params, module, &sk, &ct, re.len());
         bits.push(precision((&got_re, &got_im), (&re, &im)));
     }
     assert!(
@@ -263,7 +321,117 @@ where
 {
     let (re, im) = batch::<Rg, F>(2 << LOG_K);
     let mut pt = plaintext(&params, module, SlotLayout::Replicated(layout()), 1 << LOG_K);
-    assert!(encoded(module, &mut pt, &re, &im).is_err());
+    let before = snapshot::<BE, _, Rg>(&pt);
+    assert_invalid_encoding(
+        &encoded(module, &mut pt, &re, &im).unwrap_err(),
+        "ckks_encode_slots_host_into",
+    );
+    assert_eq!(snapshot::<BE, _, Rg>(&pt), before);
+    Ok(())
+}
+
+/// A short arena, and on the conjugate-invariant ring a shaping polynomial
+/// without an invariant shift, refuse before the encryption draws from its
+/// sources or writes the ciphertext.
+pub fn test_replicated_encryption_refuses_before_drawing<BE, F, Rg: Ring>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) -> Result<()>
+where
+    BE: TestContextBackend,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextSharedModule<BE, Rg> + CKKSEncodingOps<BE, F, Rg>,
+    F: TestScalar,
+{
+    let sk = gen_sk(&params, module, host_module, [0u8; 32]);
+    let (re, im) = batch::<Rg, F>(1 << LOG_K);
+    let mut pt = plaintext(&params, module, SlotLayout::Replicated(layout()), re.len());
+    encoded(module, &mut pt, &re, &im)?;
+    let mut ct = alloc_ct(&params, module, LOG_DELTA + 30);
+    let bytes = module.ckks_encrypt_sk_tmp_bytes(&ct);
+    let seeds = (next_test_seed(5), next_test_seed(6));
+    let mut attempt = |pt: &CKKSPlaintextOwned<BE, Rg>, bytes: usize| -> crate::CKKSError {
+        let (mut xe, mut xa) = (Source::new(seeds.0), Source::new(seeds.1));
+        let before = snapshot::<BE, _, Rg>(&ct);
+        let err = with_scratch::<BE, _>(bytes, |scratch| {
+            module.ckks_encrypt_sk(&mut ct, pt, &sk, &mut xe, &mut xa, scratch)
+        })
+        .unwrap_err();
+        assert_eq!(snapshot::<BE, _, Rg>(&ct), before);
+        let fresh = (Source::new(seeds.0).next_i64(), Source::new(seeds.1).next_i64());
+        assert_eq!(
+            (xe.next_i64(), xa.next_i64()),
+            fresh,
+            "the refused encryption drew from its sources"
+        );
+        err
+    };
+    let err = attempt(&pt, bytes - 1);
+    assert!(matches!(&err, crate::CKKSError::Internal(_)), "{err}");
+    if real_slots::<Rg>() {
+        // `U = 3 + 2Y^2` has no conjugate-invariant shift.
+        pt.set_slot_layout(SlotLayout::Replicated(ReplicatedLayout::new(LOG_K, 1, &[3, 0, 2, 0])?));
+        assert_invalid(&attempt(&pt, bytes), "ckks_encrypt_sk");
+    }
+    Ok(())
+}
+
+/// Two replicated operands at two scales do not add. Rounding the finer one
+/// with shaping to the coarser scale makes them add, at the shaped precision.
+pub fn test_replicated_round_then_add<BE, F, Rg: Ring>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) -> Result<()>
+where
+    BE: TestContextBackend,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextSharedModule<BE, Rg> + CKKSEncodingOps<BE, F, Rg>,
+    F: TestScalar,
+{
+    let sk = gen_sk(&params, module, host_module, [0u8; 32]);
+    let len = 1 << LOG_K;
+    let (a, b) = (unit_batch::<Rg, F>(len, 0), unit_batch::<Rg, F>(len, 1));
+    let (k, finer) = (3 * LOG_DELTA, 4);
+    let slot_layout = SlotLayout::Replicated(layout());
+    let coarse = encrypt_batch(&params, module, &sk, slot_layout, (&a.0, &a.1), k, 1)?;
+    // `b` encrypted `finer` bits further under the scale.
+    let mut pt = plaintext(&params, module, slot_layout, len);
+    pt.set_scale(Scale::Log(LOG_DELTA + finer));
+    encoded(module, &mut pt, &b.0, &b.1)?;
+    let mut fine = alloc_ct(&params, module, k);
+    let (mut xe, mut xa) = (Source::new(next_test_seed(3)), Source::new(next_test_seed(4)));
+    with_scratch::<BE, _>(module.ckks_encrypt_sk_tmp_bytes(&fine), |scratch| {
+        module.ckks_encrypt_sk(&mut fine, &pt, &sk, &mut xe, &mut xa, scratch)
+    })?;
+    let mut out = alloc_ct(&params, module, k);
+    let mut scratch = alloc_scratch(&params, module);
+    refused!(
+        Rg,
+        "ckks_add_into",
+        module.ckks_add_into(&mut out, &coarse, &fine, &mut scratch.borrow()),
+        [out, coarse, fine]
+    );
+
+    let mut rounded = alloc_ct(&params, module, k - finer);
+    with_scratch::<BE, _>(module.ckks_round_tmp_bytes(&rounded, &fine), |s| {
+        module.ckks_round(&mut rounded, &fine, s)
+    })?;
+    assert_eq!((rounded.slot_layout(), rounded.log_delta()), (slot_layout, LOG_DELTA));
+    module.ckks_add_into(&mut out, &coarse, &rounded, &mut scratch.borrow())?;
+    assert_eq!((out.slot_layout(), out.log_delta()), (slot_layout, LOG_DELTA));
+
+    let want: (Vec<F>, Vec<F>) = (
+        a.0.iter().zip(&b.0).map(|(&x, &y)| x + y).collect(),
+        a.1.iter().zip(&b.1).map(|(&x, &y)| x + y).collect(),
+    );
+    let got = decrypt_batch::<BE, F, Rg>(&params, module, &sk, &out, len);
+    let bits = precision((&got.0, &got.1), (&want.0, &want.1));
+    // A full layout at `2^20` keeps about 18 bits.
+    assert!(bits >= 45.0, "shaped round then add at 2^{LOG_DELTA}: {bits:.2} bits");
     Ok(())
 }
 
@@ -288,9 +456,13 @@ where
     let mut pt = plaintext(params, module, slot_layout, values.0.len());
     encoded(module, &mut pt, values.0, values.1)?;
     let mut ct = alloc_ct(params, module, k);
-    let mut scratch = ScratchOwned::<BE>::alloc(module.ckks_encrypt_sk_tmp_bytes(&ct));
-    let (mut xe, mut xa) = (Source::new([seed; 32]), Source::new([seed.wrapping_add(128); 32]));
-    module.ckks_encrypt_sk(&mut ct, &pt, sk, &mut xe, &mut xa, &mut scratch.borrow())?;
+    let (mut xe, mut xa) = (
+        Source::new(next_test_seed(seed)),
+        Source::new(next_test_seed(seed.wrapping_add(128))),
+    );
+    with_scratch::<BE, _>(module.ckks_encrypt_sk_tmp_bytes(&ct), |scratch| {
+        module.ckks_encrypt_sk(&mut ct, &pt, sk, &mut xe, &mut xa, scratch)
+    })?;
     Ok(ct)
 }
 
@@ -337,10 +509,30 @@ where
     encoded(module, &mut pt, &values.0, &values.1)?;
     let mut out = alloc_ct(&params, module, k);
     let s = &mut scratch.borrow();
-    assert!(module.ckks_mul_into(&mut out, &shaped, &full, &tsk, s).is_err());
-    assert!(module.ckks_add_into(&mut out, &shaped, &full, s).is_err());
-    assert!(module.ckks_mul_pt_vec_into(&mut out, &shaped, &pt, s).is_err());
-    assert!(module.ckks_add_pt_vec_into(&mut out, &shaped, &pt, s).is_err());
+    refused!(
+        Rg,
+        "ckks_mul_into",
+        module.ckks_mul_into(&mut out, &shaped, &full, &tsk, s),
+        [out, shaped, full]
+    );
+    refused!(
+        Rg,
+        "ckks_add_into",
+        module.ckks_add_into(&mut out, &shaped, &full, s),
+        [out, shaped, full]
+    );
+    refused!(
+        Rg,
+        "ckks_mul_pt_vec_into",
+        module.ckks_mul_pt_vec_into(&mut out, &shaped, &pt, s),
+        [out, shaped, pt]
+    );
+    refused!(
+        Rg,
+        "ckks_add_pt_vec_into",
+        module.ckks_add_pt_vec_into(&mut out, &shaped, &pt, s),
+        [out, shaped, pt]
+    );
     let cst = ckks_pt_cst_full::<BE, F, Rg>(
         host_module,
         module,
@@ -350,7 +542,34 @@ where
         Some(CONSTANT),
         None,
     );
-    assert!(module.ckks_add_pt_const_into(&mut out, 0, &shaped, &cst, 0, s).is_err());
+    refused!(
+        Rg,
+        "ckks_add_pt_const_into",
+        module.ckks_add_pt_const_into(&mut out, 0, &shaped, &cst, 0, s),
+        [out, shaped]
+    );
+
+    // The sum of many terms checks every layout before the first addition writes `out`.
+    let shaped_too = encrypt_batch(
+        &params,
+        module,
+        &sk,
+        SlotLayout::Replicated(layout()),
+        (&values.0, &values.1),
+        k,
+        3,
+    )?;
+    refused!(
+        Rg,
+        "ckks_add_many",
+        module.ckks_add_many(1, &mut out, &[&shaped, &shaped_too, &full], s),
+        [out, shaped, shaped_too, full]
+    );
+
+    // A product leaves a reused replicated destination in the full layout.
+    let mut reused = shaped.clone();
+    module.ckks_mul_into(&mut reused, &full, &full, &tsk, s)?;
+    assert_eq!(reused.slot_layout(), SlotLayout::Full);
     Ok(())
 }
 
@@ -395,39 +614,36 @@ where
         Some(CONSTANT),
         None,
     );
-    assert!(
-        module
-            .ckks_affine_pt_const_into(&mut out, &shaped, &cst, 0, 0, &mut scratch.borrow())
-            .is_err()
+    refused!(
+        Rg,
+        "ckks_affine_pt_const_into",
+        module.ckks_affine_pt_const_into(&mut out, &shaped, &cst, 0, 0, &mut scratch.borrow()),
+        [out, shaped]
     );
 
     let mut pt = plaintext(&params, module, SlotLayout::Full, values.0.len());
     encoded(module, &mut pt, &values.0, &values.1)?;
     let left = module.ckks_left_operand_prepare_alloc(&shaped, PrepareHint::OneShot, &mut scratch.borrow())?;
     let right = module.ckks_right_operand_prepare_alloc(&pt, PrepareHint::OneShot, &mut scratch.borrow())?;
-    assert!(
-        module
-            .ckks_dot_product_prepared_pt_vec(&mut out, &[&left], &[&right], &[1], &mut scratch.borrow())
-            .is_err()
+    refused!(
+        Rg,
+        "ckks_dot_product_prepared_pt_vec",
+        module.ckks_dot_product_prepared_pt_vec(&mut out, &[&left], &[&right], &[1], &mut scratch.borrow()),
+        [out]
     );
 
     let gal = module.ckks_galois_element::<Rg>(1);
     let atks = HashMap::from([(gal, gen_atk(&params, module, gal, &sk_raw, &mut scratch.borrow()))]);
     let mut babies = LinearTransformationBabySteps::alloc(module, &[1], &shaped);
-    assert!(
-        module
-            .ckks_linear_transformation_baby_steps_prepare(&mut babies, &shaped, &atks, &mut scratch.borrow())
-            .is_err()
+    refused!(
+        Rg,
+        "ckks_linear_transformation_baby_steps_prepare",
+        module.ckks_linear_transformation_baby_steps_prepare(&mut babies, &shaped, &atks, &mut scratch.borrow()),
+        [shaped]
     );
 
     // Products, automorphisms and the sums built on them round plainly, so
     // they refuse a replicated layout, whatever keys they are given.
-    let refused = |result: crate::CKKSResult<()>| {
-        matches!(
-            result.unwrap_err().composition(),
-            Some(crate::CKKSCompositionError::InvalidOperand { .. })
-        )
-    };
     let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
     let mut replicated_pt = plaintext(&params, module, SlotLayout::Replicated(layout()), values.0.len());
     encoded(module, &mut replicated_pt, &values.0, &values.1)?;
@@ -442,16 +658,61 @@ where
     )?;
     let period = 1i64 << layout().log_r();
     let s = &mut scratch.borrow();
-    assert!(refused(module.ckks_mul_into(&mut out, &shaped, &acc, &tsk, s)));
-    assert!(refused(module.ckks_mul_assign(&mut acc, &shaped, &tsk, s)));
-    assert!(refused(module.ckks_square_into(&mut out, &shaped, &tsk, s)));
-    assert!(refused(module.ckks_mul_pt_vec_into(&mut out, &shaped, &replicated_pt, s)));
-    assert!(refused(module.ckks_mul_pt_const_into(&mut out, &shaped, &cst, 0, s)));
-    assert!(refused(module.ckks_dot_product_ct(&mut out, &[&shaped], &[&acc], &tsk, s)));
-    assert!(refused(module.ckks_add_one_assign(&mut acc, s)));
-    assert!(refused(module.ckks_rotate_into(period, &mut out, &shaped, &atks, s)));
-    assert!(refused(module.ckks_rotate_assign(period, &mut acc, &atks, s)));
-    assert!(refused(module.ckks_inner_sum(0, 1, false, &mut out, &shaped, &atks, s)));
+    refused!(
+        Rg,
+        "ckks_mul_into",
+        module.ckks_mul_into(&mut out, &shaped, &acc, &tsk, s),
+        [out, shaped, acc]
+    );
+    refused!(
+        Rg,
+        "ckks_mul_assign",
+        module.ckks_mul_assign(&mut acc, &shaped, &tsk, s),
+        [acc, shaped]
+    );
+    refused!(
+        Rg,
+        "ckks_square_into",
+        module.ckks_square_into(&mut out, &shaped, &tsk, s),
+        [out, shaped]
+    );
+    refused!(
+        Rg,
+        "ckks_mul_pt_vec_into",
+        module.ckks_mul_pt_vec_into(&mut out, &shaped, &replicated_pt, s),
+        [out, shaped, replicated_pt]
+    );
+    refused!(
+        Rg,
+        "ckks_mul_pt_const_into",
+        module.ckks_mul_pt_const_into(&mut out, &shaped, &cst, 0, s),
+        [out, shaped]
+    );
+    refused!(
+        Rg,
+        "ckks_dot_product_ct",
+        module.ckks_dot_product_ct(&mut out, &[&shaped], &[&acc], &tsk, s),
+        [out, shaped, acc]
+    );
+    refused!(Rg, "ckks_add_pt_const_assign", module.ckks_add_one_assign(&mut acc, s), [acc]);
+    refused!(
+        Rg,
+        "ckks_rotate_into",
+        module.ckks_rotate_into(period, &mut out, &shaped, &atks, s),
+        [out, shaped]
+    );
+    refused!(
+        Rg,
+        "ckks_rotate_assign",
+        module.ckks_rotate_assign(period, &mut acc, &atks, s),
+        [acc]
+    );
+    refused!(
+        Rg,
+        "ckks_inner_sum",
+        module.ckks_inner_sum(0, 1, false, &mut out, &shaped, &atks, s),
+        [out, shaped]
+    );
 
     // No shaping pass fits `i128` above 126 torus bits.
     let mut wide = module.ckks_plaintext_alloc_from_slots::<Rg>(
@@ -465,7 +726,12 @@ where
         log_sparsity: 0,
         slot_layout: SlotLayout::Replicated(layout()),
     });
-    assert!(encoded(module, &mut wide, &values.0, &values.1).is_err());
+    let wide_before = snapshot::<BE, _, Rg>(&wide);
+    assert_invalid_encoding(
+        &encoded(module, &mut wide, &values.0, &values.1).unwrap_err(),
+        "ckks_quantize_coeffs_into",
+    );
+    assert_eq!(snapshot::<BE, _, Rg>(&wide), wide_before);
 
     // A sum at two scales would drop the finer operand's bits plainly.
     let mut coarse = encrypt_batch(
@@ -478,10 +744,11 @@ where
         2,
     )?;
     coarse.set_log_delta(LOG_DELTA - 4);
-    assert!(
-        module
-            .ckks_add_into(&mut out, &shaped, &coarse, &mut scratch.borrow())
-            .is_err()
+    refused!(
+        Rg,
+        "ckks_add_into",
+        module.ckks_add_into(&mut out, &shaped, &coarse, &mut scratch.borrow()),
+        [out, shaped, coarse]
     );
     let mut fine = plaintext(&params, module, SlotLayout::Replicated(layout()), values.0.len());
     encoded(module, &mut fine, &values.0, &values.1)?;
@@ -495,10 +762,14 @@ where
         3,
     )?;
     acc.set_log_delta(LOG_DELTA - 4);
-    assert!(module.ckks_add_pt_vec_assign(&mut acc, &fine, &mut scratch.borrow()).is_err());
+    refused!(
+        Rg,
+        "ckks_add_pt_vec_assign",
+        module.ckks_add_pt_vec_assign(&mut acc, &fine, &mut scratch.borrow()),
+        [acc, fine]
+    );
 
     {
-        use crate::test_suite::parity::helpers::{snapshot, with_scratch};
         let before = snapshot::<BE, _, _>(&out);
         let source_before = snapshot::<BE, _, _>(&acc);
         let pt_before = snapshot::<BE, _, _>(&fine);
@@ -528,14 +799,19 @@ where
 
     // `N/2` values of period `R` exceed the slots of the ring.
     let log_n = params.n.ilog2() as u8;
-    let oversized = ReplicatedLayout::new(log_n - 1, layout().log_r() as u8, layout().w() as u8, layout().shaping())?;
+    let oversized = ReplicatedLayout::new(log_n - 1, layout().log_r() as u8, layout().shaping())?;
     let mut big = plaintext(&params, module, SlotLayout::Full, params.n / 2);
     big.set_meta(GLWEPlaintextMeta {
         slot_layout: SlotLayout::Replicated(oversized),
         ..big.meta()
     });
     let many = unit_batch::<Rg, F>(params.n / 2, 0);
-    assert!(encoded(module, &mut big, &many.0, &many.1).is_err());
+    let big_before = snapshot::<BE, _, Rg>(&big);
+    assert_invalid_encoding(
+        &encoded(module, &mut big, &many.0, &many.1).unwrap_err(),
+        "ckks_encode_slots_host_into",
+    );
+    assert_eq!(snapshot::<BE, _, Rg>(&big), big_before);
     Ok(())
 }
 

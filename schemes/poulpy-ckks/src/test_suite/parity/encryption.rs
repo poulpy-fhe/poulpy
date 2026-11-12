@@ -1,7 +1,7 @@
 //! Encryption parity given identical realized draws. The caller selects both
 //! backends and, when their streams differ, installs a controlled-sampling adapter.
 use super::{arithmetic::layout, helpers::*};
-use crate::{CKKSInfos, SlotsKind, oep::CKKSEncryptionImpl, test_suite::CKKSTestParams};
+use crate::{CKKSInfos, SlotLayout, SlotsKind, oep::CKKSEncryptionImpl, shaping::ShapingUnit, test_suite::CKKSTestParams};
 use poulpy_core::{Distribution, GLWEFill, GLWESecretPreparedFactory, GetDistributionMut, layouts::*};
 use poulpy_hal::{
     layouts::{Backend, Module, Ring},
@@ -81,6 +81,21 @@ where
                 assert_eq!(unchanged, snapshot::<BE, _, Rg>(&out), "failed decryption changed plaintext");
             }
         }
+        // A replicated plaintext encrypts `max_pass_bits` wider, then rounds with shaping.
+        let ct_layout = layout(params, rank, 4 * params.base2k + 3, params.base2k, 0, SlotsKind::Complex);
+        let mut pt_layout = layout(params, 0, params.base2k + 3, params.base2k, 0, SlotsKind::Complex);
+        pt_layout.meta.slot_layout = SlotLayout::Replicated(ShapingUnit::U16_20.layout(1).unwrap());
+        let pt = fixture_plaintext(module, &pt_layout, 66);
+        let mut ct = fixture_ciphertext(module, &ct_layout, 96);
+        let mut e = Source::new([73; 32]);
+        let mut a = Source::new([74; 32]);
+        with_scratch::<BE, _>(BE::ckks_encrypt_sk_tmp_bytes(module, &ct), |scratch| {
+            BE::ckks_encrypt_sk(module, &mut ct, &pt, &prepared, &mut e, &mut a, scratch)
+        })
+        .unwrap();
+        assert_eq!(ct.meta().slot_layout, pt_layout.meta.slot_layout);
+        results.push(snapshot::<BE, _, Rg>(&ct));
+        sources.extend([e.new_seed(), a.new_seed()]);
     }
     (results, sources)
 }

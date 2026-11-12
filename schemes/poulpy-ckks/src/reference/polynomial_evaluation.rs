@@ -80,6 +80,7 @@ where
         res.set_log_delta(seed.log_delta());
         res.set_log_budget(seed.log_budget());
         res.set_slots(seed.slots());
+        res.set_slot_layout(crate::SlotLayout::Full);
         module.glwe_zero(res);
         Ok(())
     }
@@ -140,6 +141,7 @@ where
         res.set_log_budget(budget);
         res.set_log_sparsity(sparsity);
         res.set_slots(slots);
+        res.set_slot_layout(crate::SlotLayout::Full);
         let pt_bk = coeffs.to_backend_ref();
         let pt_size = pt_bk.data().size();
         let res_size = res.to_backend_ref().data().size();

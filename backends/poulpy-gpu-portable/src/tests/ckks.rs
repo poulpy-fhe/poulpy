@@ -19,6 +19,7 @@ poulpy_ckks::ckks_parity_test_suite! {
         encoding => poulpy_ckks::test_suite::parity::test_encoding_parity,
         slot_encoding => poulpy_ckks::test_suite::parity::test_slot_encoding_parity,
         real_polynomial => poulpy_ckks::test_suite::parity::test_real_polynomial_parity,
+        replicated => poulpy_ckks::test_suite::parity::test_replicated_parity,
     },
     ring_free_tests = {
         imag => poulpy_ckks::test_suite::parity::test_imag_parity,
@@ -30,7 +31,6 @@ poulpy_ckks::ckks_parity_test_suite! {
         encapsulated_mod_up => poulpy_ckks::test_suite::parity::test_encapsulated_mod_up_parity,
         bootstrapping => poulpy_ckks::test_suite::parity::test_bootstrapping_parity,
         fold => poulpy_ckks::test_suite::parity::test_fold_parity,
-        replicated => poulpy_ckks::test_suite::parity::test_replicated_parity,
     }
 }
 
@@ -56,6 +56,7 @@ poulpy_ckks::ckks_parity_test_suite! {
         slot_encoding => poulpy_ckks::test_suite::parity::test_slot_encoding_parity,
         #[ignore = "full degree; run in release with --ignored"]
         real_polynomial => poulpy_ckks::test_suite::parity::test_real_polynomial_parity,
+        replicated => poulpy_ckks::test_suite::parity::test_replicated_parity,
     },
     ring_free_tests = {
         #[ignore = "full degree; run in release with --ignored"]
@@ -93,6 +94,7 @@ poulpy_ckks::ckks_parity_test_suite! {
         encoding => poulpy_ckks::test_suite::parity::test_encoding_parity,
         slot_encoding => poulpy_ckks::test_suite::parity::test_slot_encoding_parity,
         real_polynomial => poulpy_ckks::test_suite::parity::test_real_polynomial_parity,
+        replicated => poulpy_ckks::test_suite::parity::test_replicated_parity,
     },
     ring_free_tests = {
         imag => poulpy_ckks::test_suite::parity::test_imag_parity,
@@ -104,7 +106,6 @@ poulpy_ckks::ckks_parity_test_suite! {
         encapsulated_mod_up => poulpy_ckks::test_suite::parity::test_encapsulated_mod_up_parity,
         bootstrapping => poulpy_ckks::test_suite::parity::test_bootstrapping_parity,
         fold => poulpy_ckks::test_suite::parity::test_fold_parity,
-        replicated => poulpy_ckks::test_suite::parity::test_replicated_parity,
     }
 }
 
@@ -123,6 +124,7 @@ poulpy_ckks::ckks_parity_test_suite! {
         encoding => poulpy_ckks::test_suite::parity::test_encoding_parity,
         slot_encoding => poulpy_ckks::test_suite::parity::test_slot_encoding_parity,
         real_polynomial => poulpy_ckks::test_suite::parity::test_real_polynomial_parity,
+        replicated => poulpy_ckks::test_suite::parity::test_replicated_parity,
     },
     ring_free_tests = {
         imag => poulpy_ckks::test_suite::parity::test_imag_parity,
@@ -134,7 +136,6 @@ poulpy_ckks::ckks_parity_test_suite! {
         encapsulated_mod_up => poulpy_ckks::test_suite::parity::test_encapsulated_mod_up_parity,
         bootstrapping => poulpy_ckks::test_suite::parity::test_bootstrapping_parity,
         fold => poulpy_ckks::test_suite::parity::test_fold_parity,
-        replicated => poulpy_ckks::test_suite::parity::test_replicated_parity,
     }
 }
 
@@ -163,7 +164,7 @@ poulpy_ckks::ckks_parity_test_suite! {
     tests = {
         arithmetic => poulpy_ckks::test_suite::parity::test_arithmetic_parity,
         multiplication => poulpy_ckks::test_suite::parity::test_multiplication_parity,
-        replicated => poulpy_ckks::test_suite::parity::test_replicated_ring_parity,
+        replicated => poulpy_ckks::test_suite::parity::test_replicated_parity,
         rotate => poulpy_ckks::test_suite::parity::test_rotate_parity,
         plaintext => poulpy_ckks::test_suite::parity::test_plaintext_parity,
         encoding => poulpy_ckks::test_suite::parity::test_encoding_parity,
@@ -182,7 +183,7 @@ poulpy_ckks::ckks_parity_test_suite! {
     tests = {
         arithmetic => poulpy_ckks::test_suite::parity::test_arithmetic_parity,
         multiplication => poulpy_ckks::test_suite::parity::test_multiplication_parity,
-        replicated => poulpy_ckks::test_suite::parity::test_replicated_ring_parity,
+        replicated => poulpy_ckks::test_suite::parity::test_replicated_parity,
         rotate => poulpy_ckks::test_suite::parity::test_rotate_parity,
         plaintext => poulpy_ckks::test_suite::parity::test_plaintext_parity,
         encoding => poulpy_ckks::test_suite::parity::test_encoding_parity,
@@ -209,7 +210,7 @@ poulpy_ckks::ckks_parity_test_suite! {
     tests = {
         arithmetic => poulpy_ckks::test_suite::parity::test_arithmetic_parity,
         multiplication => poulpy_ckks::test_suite::parity::test_multiplication_parity,
-        replicated => poulpy_ckks::test_suite::parity::test_replicated_ring_parity,
+        replicated => poulpy_ckks::test_suite::parity::test_replicated_parity,
         rotate => poulpy_ckks::test_suite::parity::test_rotate_parity,
     }
 }

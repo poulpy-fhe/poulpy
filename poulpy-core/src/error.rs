@@ -1,6 +1,7 @@
 use std::{fmt, result};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum CoreError {
     PendingLinearTermsOverflow {
         op: &'static str,

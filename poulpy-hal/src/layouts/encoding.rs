@@ -324,7 +324,13 @@ pub fn encode_i128_by_limb(
     limb: &mut [i64],
     mut emit: impl FnMut(usize, &[i64]),
 ) {
-    assert!(carry.len() == data.len() && limb.len() == data.len());
+    assert!(
+        carry.len() == data.len() && limb.len() == data.len(),
+        "encode_i128_by_limb: carry and limb buffers must be as long as data, got {} and {} for {}",
+        carry.len(),
+        limb.len(),
+        data.len()
+    );
     let size: usize = k.div_ceil(base2k);
     let k_rem: usize = (base2k - (k % base2k)) % base2k;
     carry.fill(0);

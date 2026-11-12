@@ -1085,7 +1085,7 @@ fn ckks_round_reference_dispatches_shaping_correction() {
         },
         meta: GLWEPlaintextMeta {
             scale: Scale::Log(40),
-            slot_layout: SlotLayout::Replicated(ShapingUnit::U32_45.layout(0, 8).unwrap()),
+            slot_layout: SlotLayout::Replicated(ShapingUnit::U32_45.layout(0).unwrap()),
             ..Default::default()
         },
     };

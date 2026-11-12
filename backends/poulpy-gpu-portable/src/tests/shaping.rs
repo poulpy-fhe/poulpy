@@ -69,7 +69,7 @@ fn profiles<R: Ring>() {
             target_bits: 0,
             coeffs: &[1, 0, 0, 0],
         }]) {
-            let profile = ShapingProfile::for_ring::<R>(&unit.layout(1, 24).unwrap()).unwrap();
+            let profile = ShapingProfile::for_ring::<R>(&unit.layout(1).unwrap()).unwrap();
             for lambda in [1, 32.min(profile.max_pass_bits()), profile.max_pass_bits()] {
                 correction::<R>(&module, &profile, lambda, false);
             }
@@ -86,6 +86,26 @@ fn shaped_correction_matches_reference() {
 #[test]
 fn shaped_correction_replays_without_host_transfers() {
     let module = Module::<BE>::new(64);
-    let profile = ShapingProfile::for_ring::<ConjugateInvariant>(&ShapingUnit::U16_40.layout(1, 24).unwrap()).unwrap();
+    let profile = ShapingProfile::for_ring::<ConjugateInvariant>(&ShapingUnit::U16_40.layout(1).unwrap()).unwrap();
     correction::<ConjugateInvariant>(&module, &profile, 17, true);
+}
+
+/// One module serves both rings: a unit without a conjugate-invariant shift has the same
+/// coefficients on both, and each ring must still read its own table, whichever fills the
+/// cache first.
+#[test]
+fn shaped_correction_shares_one_module_across_rings() {
+    for invariant_first in [false, true] {
+        let module = Module::<BE>::new(64);
+        for unit in ShapingUnit::ALL {
+            let layout = unit.layout(1).unwrap();
+            let standard = ShapingProfile::for_ring::<Standard>(&layout).unwrap();
+            let invariant = ShapingProfile::for_ring::<ConjugateInvariant>(&layout).unwrap();
+            if invariant_first {
+                correction::<ConjugateInvariant>(&module, &invariant, invariant.max_pass_bits(), false);
+            }
+            correction::<Standard>(&module, &standard, standard.max_pass_bits(), false);
+            correction::<ConjugateInvariant>(&module, &invariant, invariant.max_pass_bits(), false);
+        }
+    }
 }

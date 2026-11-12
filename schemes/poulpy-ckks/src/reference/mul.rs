@@ -464,6 +464,7 @@ pub trait CKKSMulReference<BE: Backend, Rg: Ring = Standard>: ModuleN {
         // a plaintext is dense at its own degree.
         dst.set_log_sparsity(a.log_sparsity().min(a.log_n() - pt.log_n()));
         dst.set_slots(a.slots().join(pt.slots()));
+        dst.set_slot_layout(crate::SlotLayout::Full);
         self.glwe_mul_plain(cnv_offset, dst, a, pt, scratch);
         Ok(())
     }
@@ -523,6 +524,7 @@ pub trait CKKSMulReference<BE: Backend, Rg: Ring = Standard>: ModuleN {
         dst.set_log_sparsity(a.log_sparsity());
         // A scalar-constant multiply is always real.
         dst.set_slots(a.slots());
+        dst.set_slot_layout(crate::SlotLayout::Full);
         self.glwe_mul_const(cnv_offset, dst, a, pt, pt_coeff, scratch);
 
         Ok(())
@@ -623,6 +625,8 @@ where
         if let Some(slots) = stamp.slots {
             dst.set_slots(slots);
         }
+        // Products refuse a replicated operand, so a reused destination leaves it too.
+        dst.set_slot_layout(crate::SlotLayout::Full);
     };
     if let Some(one_pass) = one_pass {
         one_pass(dst, TorusPrecision((stamp.log_budget + stamp.log_delta) as u32), scratch);

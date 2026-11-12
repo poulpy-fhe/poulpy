@@ -117,7 +117,7 @@ pub trait CKKSEncodingHostOps<BE: Backend, F: CKKSEncodingScalar, Rg: Ring = Sta
                 re.len(),
                 im.len()
             );
-            let plaintext_slots = slots_of_degree::<Rg>(pt.n().as_usize());
+            let plaintext_slots = crate::slots_of_degree::<Rg>(pt.n().as_usize());
             ckks_ensure_operand!(
                 "ckks_encode_slots_host_into",
                 (1usize << layout.log_k()) << layout.log_r() <= plaintext_slots,
@@ -201,7 +201,7 @@ pub trait CKKSEncodingHostOps<BE: Backend, F: CKKSEncodingScalar, Rg: Ring = Sta
                 re.len(),
                 im.len()
             );
-            let plaintext_slots = slots_of_degree::<Rg>(pt.n().as_usize());
+            let plaintext_slots = crate::slots_of_degree::<Rg>(pt.n().as_usize());
             ckks_ensure_operand!(
                 "ckks_decode_slots_host_into",
                 (1usize << layout.log_k()) << layout.log_r() <= plaintext_slots,
@@ -319,10 +319,4 @@ where
     F: CKKSEncodingScalar,
     T: CKKSEncodingOps<BE, F, Rg>,
 {
-}
-
-/// Slots of a plaintext of degree `n` on the ring `Rg`: `n/2` complex
-/// slots on the standard ring and `n` real ones on the conjugate-invariant ring.
-fn slots_of_degree<Rg: Ring>(n: usize) -> usize {
-    n * Rg::CYCLOTOMIC_ORDER_FACTOR as usize / 4
 }

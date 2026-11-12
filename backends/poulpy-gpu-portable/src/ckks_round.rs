@@ -14,7 +14,11 @@ use crate::{
     runtime::{GpuBuf, GpuRuntime, Label, access, launch},
 };
 
-struct ShapingTables<RT: GpuRuntime>(Mutex<HashMap<Vec<i16>, Arc<GpuBuf<RT>>>>);
+/// Tables `inverse[..period] ++ U[..period]` keyed by ring and shaping coefficients: `period` is
+/// `2R` on the standard ring and `R` on the conjugate-invariant ring, so a unit without a
+/// conjugate-invariant shift has one table per ring.
+type ShapingKey = (ShapingRing, Vec<i16>);
+struct ShapingTables<RT: GpuRuntime>(Mutex<HashMap<ShapingKey, Arc<GpuBuf<RT>>>>);
 
 #[cube]
 #[allow(clippy::too_many_arguments)]
@@ -127,7 +131,7 @@ unsafe impl<RT: GpuRuntime, R: Ring> poulpy_ckks::oep::CKKSShapedRoundingImpl<R>
                 |tables: &ShapingTables<RT>| {
                     let mut tables = tables.0.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
                     tables
-                        .entry(profile.coefficients().to_vec())
+                        .entry((profile.ring(), profile.coefficients().to_vec()))
                         .or_insert_with(|| {
                             let mut words = profile.inverse()[..profile.period()].to_vec();
                             words.extend(profile.coefficients()[..profile.period()].iter().map(|&c| c as i64 as u64));

@@ -223,6 +223,7 @@ pub trait CKKSDotProductReference<BE: Backend, Rg: Ring = Standard>: Sized + Mod
         dst.set_log_delta(log_delta);
         dst.set_log_sparsity(log_sparsity);
         dst.set_slots(slots);
+        dst.set_slot_layout(crate::SlotLayout::Full);
         self.glwe_mul_prepared_plain_sum(cnv_offset, dst, a, a0.size(), b, b0.size(), galois, base2k, scratch);
         Ok(())
     }
@@ -256,6 +257,7 @@ pub trait CKKSDotProductReference<BE: Backend, Rg: Ring = Standard>: Sized + Mod
         ensure_full_terms("ckks_dot_product_prepared_pt_vec_add", a)?;
         ensure_full_terms("ckks_dot_product_prepared_pt_vec_add", b)?;
         const OP: &str = "ckks_dot_product_prepared_pt_vec_add";
+        crate::layouts::validation::ensure_full_layout(OP, crate::GLWEPlaintextInfos::slot_layout(&*res))?;
         let (log_budget, log_delta, cnv_offset) = prepared_pt_rule(self, OP, &*res, a, b, galois)?;
         ckks_ensure_operand!(
             OP,
@@ -389,6 +391,7 @@ pub trait CKKSDotProductReference<BE: Backend, Rg: Ring = Standard>: Sized + Mod
         res.set_log_delta(log_delta);
         res.set_log_sparsity(a.log_sparsity().min(a.log_n() - b.log_n()));
         res.set_slots(a.slots().join(b.slots()));
+        res.set_slot_layout(crate::SlotLayout::Full);
         let (base2k, res_k, cols) = (res.base2k().as_usize(), res.k().as_usize(), res.rank().as_usize() + 1);
         let (_, cnv_offset_lo) = cnv_offset_to_limb_offset(cnv_offset, base2k);
         {

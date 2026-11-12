@@ -334,6 +334,14 @@ macro_rules! ckks_backend_rank2_test_suite {
                 $crate::test_suite::replicated::test_replicated_encoding_rejects_batch_size
             );
             run_ring_test_result!(
+                replicated_encryption_refuses_before_drawing,
+                $crate::test_suite::replicated::test_replicated_encryption_refuses_before_drawing
+            );
+            run_ring_test_result!(
+                replicated_round_then_add,
+                $crate::test_suite::replicated::test_replicated_round_then_add
+            );
+            run_ring_test_result!(
                 replicated_layouts_do_not_mix,
                 $crate::test_suite::replicated::test_replicated_layouts_do_not_mix
             );
@@ -697,6 +705,14 @@ macro_rules! ckks_backend_test_suite {
             run_ring_test_result!(
                 replicated_encoding_rejects_batch_size,
                 $crate::test_suite::replicated::test_replicated_encoding_rejects_batch_size
+            );
+            run_ring_test_result!(
+                replicated_encryption_refuses_before_drawing,
+                $crate::test_suite::replicated::test_replicated_encryption_refuses_before_drawing
+            );
+            run_ring_test_result!(
+                replicated_round_then_add,
+                $crate::test_suite::replicated::test_replicated_round_then_add
             );
             run_ring_test_result!(
                 replicated_layouts_do_not_mix,

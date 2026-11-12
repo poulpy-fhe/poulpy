@@ -8,8 +8,8 @@
 //! | [`test_round_error_is_shaped`] | the rounding error is `−g·h·2^-(k+λ)` with `\|\|h\|\|_∞ <= 2^(λ−1)` |
 //! | [`test_round_error_is_shaped_conjugate_invariant`] | the same on the conjugate-invariant ring, for the invariant shift of `U` |
 //! | [`test_round_beyond_pass_rounds_plainly_first`] | a drop beyond the pass size rounds plainly to `k + λ`, then shaped |
-//! | [`test_round_rejects_incompatible_layouts`] | mismatched ranks and degrees, and insufficient scratch, leave operands unchanged |
-//! | [`test_round_rejects_invalid_widths`] | a wider destination and a drop beyond `log_delta` |
+//! | [`test_round_rejects_incompatible_layouts`] | mismatched ranks and degrees, and an arena one byte short, leave operands unchanged |
+//! | [`test_round_rejects_invalid_widths`] | a wider destination and a drop beyond `log_delta`, leaving operands unchanged |
 
 use anyhow::Result;
 use poulpy_core::layouts::{GLWEInfos, GLWEToBackendRef, LWEInfos};
@@ -73,8 +73,10 @@ where
     Module<BE>: TestContextSharedModule<BE, Rg>,
 {
     let mut dst = alloc_ct(params, module, k);
-    let mut scratch = ScratchOwned::<BE>::alloc(module.ckks_round_tmp_bytes(&dst, src));
-    module.ckks_round(&mut dst, src, &mut scratch.borrow())?;
+    // The exact queried budget, poisoned.
+    crate::test_suite::parity::helpers::with_scratch::<BE, _>(module.ckks_round_tmp_bytes(&dst, src), |scratch| {
+        module.ckks_round(&mut dst, src, scratch)
+    })?;
     Ok(dst)
 }
 
@@ -158,7 +160,7 @@ where
 {
     let src = encrypted::<BE, F, E>(&params, module, host_module);
     let dst_k = src.k().as_usize() - src.log_delta() / 2;
-    let unit = SlotLayout::Replicated(ReplicatedLayout::new(0, 1, 8, &[1, 0, 0, 0])?);
+    let unit = SlotLayout::Replicated(ReplicatedLayout::new(0, 1, &[1, 0, 0, 0])?);
     let plain = round(module, &src, &params, dst_k)?;
     let shaped = round(module, &with_layout::<BE>(&src, unit), &params, dst_k)?;
     assert_eq!(digits::<BE>(&plain), digits::<BE>(&shaped));
@@ -181,7 +183,7 @@ where
     F: TestScalar,
     E: ReimNew<F>,
 {
-    let layout = ShapingUnit::U32_45.layout(0, 8)?;
+    let layout = ShapingUnit::U32_45.layout(0)?;
     let src = with_layout::<BE>(
         &encrypted::<BE, F, E>(&params, module, host_module),
         SlotLayout::Replicated(layout),
@@ -254,7 +256,7 @@ where
         &pt.to_host_owned::<BE>(),
         &mut scratch.borrow(),
     );
-    let layout = ShapingUnit::U32_45.layout(0, 8)?;
+    let layout = ShapingUnit::U32_45.layout(0)?;
     src.set_slot_layout(SlotLayout::Replicated(layout));
     let lambda = 30.min(src.log_delta());
     let k = src.k().as_usize() - lambda;
@@ -312,7 +314,7 @@ where
     F: TestScalar,
     E: ReimNew<F>,
 {
-    let layout = SlotLayout::Replicated(ShapingUnit::U32_45.layout(0, 8)?);
+    let layout = SlotLayout::Replicated(ShapingUnit::U32_45.layout(0)?);
     let pass = 58;
     let mut src = encrypted::<BE, F, E>(&params, module, host_module);
     // Relabel the whole width as precision, so the drop may exceed the pass.
@@ -338,10 +340,31 @@ where
     F: TestScalar,
     E: ReimNew<F>,
 {
+    use crate::test_suite::parity::helpers::{snapshot, with_scratch};
     let src = encrypted::<BE, F, E>(&params, module, host_module);
+    let src_before = snapshot::<BE, _, _>(&src);
     let k = src.k().as_usize();
-    assert!(round(module, &src, &params, k + 1).is_err());
-    assert!(round(module, &src, &params, k - src.log_delta() - 1).is_err());
+    let drop = src.log_delta() + 1;
+    for (dst_k, reason) in [
+        (k + 1, format!("res.k()={} exceeds a.k()={k}", k + 1)),
+        (
+            k - drop,
+            format!("dropping {drop} bits exceeds log_delta={}", src.log_delta()),
+        ),
+    ] {
+        let mut dst = alloc_ct(&params, module, dst_k);
+        let before = snapshot::<BE, _, _>(&dst);
+        let err = with_scratch::<BE, _>(module.ckks_round_tmp_bytes(&dst, &src), |scratch| {
+            module.ckks_round(&mut dst, &src, scratch)
+        })
+        .unwrap_err();
+        assert!(
+            matches!(err.composition(), Some(crate::CKKSCompositionError::InvalidOperand { op: "ckks_round", reason: got }) if *got == reason),
+            "{err}"
+        );
+        assert_eq!(snapshot::<BE, _, _>(&dst), before);
+        assert_eq!(snapshot::<BE, _, _>(&src), src_before);
+    }
     Ok(())
 }
 
@@ -362,7 +385,7 @@ where
     use poulpy_core::layouts::GLWELayout;
     for slot_layout in [
         SlotLayout::Full,
-        SlotLayout::Replicated(ReplicatedLayout::new(0, 1, 8, &[1, 0, 0, 0])?),
+        SlotLayout::Replicated(ReplicatedLayout::new(0, 1, &[1, 0, 0, 0])?),
     ] {
         let src_layout = CKKSLayout {
             glwe_layout: GLWELayout {
@@ -423,7 +446,9 @@ where
             83,
         );
         let before = snapshot::<BE, _, _>(&dst);
-        let err = with_scratch::<BE, _>(0, |scratch| module.ckks_round(&mut dst, &src, scratch)).unwrap_err();
+        // One byte short of the query.
+        let short = module.ckks_round_tmp_bytes(&dst, &src) - 1;
+        let err = with_scratch::<BE, _>(short, |scratch| module.ckks_round(&mut dst, &src, scratch)).unwrap_err();
         assert!(matches!(&err, crate::CKKSError::Internal(_)));
         assert_eq!(err.to_string(), "ckks_round: insufficient scratch");
         assert_eq!(snapshot::<BE, _, _>(&dst), before);
