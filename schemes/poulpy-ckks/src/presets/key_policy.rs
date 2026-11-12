@@ -45,12 +45,14 @@ pub struct BootstrappingKeyPolicy {
 impl BootstrappingKeyPolicy {
     /// The layouts of the keys of `plan`, bootstrapping at `bootstrap_k` bits an input of `input_k` bits at scale
     /// `2^log_delta`. Each key covers the widest ciphertext it switches
-    /// ([`key_widths`](BootstrappingPlan::key_widths)), and a key only used on narrower ciphertexts takes the digit of
-    /// fewest rows those admit.
+    /// ([`key_widths`](BootstrappingPlan::key_widths)), the raise keys the input of the raise, and a key only used on
+    /// narrower ciphertexts takes the digit of fewest rows those admit. The encapsulation keys come with the plan's
+    /// sparse secret only.
     ///
     /// # Errors
     ///
-    /// When a key has no digit under [`Self::max_dsize`] that fits its modulus bound.
+    /// When a key has no digit under [`Self::max_dsize`] that fits its modulus bound, or `input_k` is narrower than
+    /// the bits consumed before the raise.
     pub fn keys_layout(
         &self,
         plan: &BootstrappingPlan,
@@ -58,16 +60,28 @@ impl BootstrappingKeyPolicy {
         input_k: usize,
         log_delta: usize,
     ) -> Result<BootstrappingKeysLayout> {
-        let log_modulus = log_delta + plan.eval_mod().log_msg_ratio;
+        let log_modulus = input_k
+            .checked_sub(plan.pre_mod_up_consumed_bits())
+            .context("the input is narrower than the bits consumed before the raise")?;
         let first_factor_on_raise = plan.coeffs_to_slots().first_factor_on_raise();
         let (dense, sparse) = (self.dense_log_modulus, self.sparse_log_modulus);
-        let dense_to_sparse = self.key_layout(
-            "dense-to-sparse",
-            log_modulus,
-            self.dense_to_sparse_dsize * self.base2k,
-            sparse,
-        )?;
-        let sparse_to_dense = self.sparse_to_dense_layout(plan.raised_window(log_modulus), bootstrap_k, dense)?;
+        let encapsulation = match plan.sparse_secret_hamming_weight() {
+            Some(_) => Some(EncapsulationKeysLayout {
+                dense_to_sparse: self
+                    .key_layout(
+                        "dense-to-sparse",
+                        log_modulus,
+                        self.dense_to_sparse_dsize * self.base2k,
+                        sparse,
+                    )?
+                    .into(),
+                sparse_to_dense: (!first_factor_on_raise)
+                    .then(|| self.sparse_to_dense_layout(plan.raised_window(log_modulus), bootstrap_k, dense))
+                    .transpose()?
+                    .map(Into::into),
+            }),
+            None => None,
+        };
 
         let widths = plan.key_widths(self.log_n, bootstrap_k, input_k, log_delta);
         let shape = |name, k| self.key_layout(name, k, self.fewest_rows_k_digit(k, dense), dense);
@@ -88,10 +102,7 @@ impl BootstrappingKeyPolicy {
         Ok(BootstrappingKeysLayout {
             rotation_keys,
             tensor_key: tensor_key.into(),
-            encapsulation: Some(EncapsulationKeysLayout {
-                dense_to_sparse: dense_to_sparse.into(),
-                sparse_to_dense: (!first_factor_on_raise).then(|| sparse_to_dense.into()),
-            }),
+            encapsulation,
             first_factor_key: first_factor_on_raise
                 .then(|| self.first_factor_key_layout(plan, log_modulus, bootstrap_k, dense))
                 .transpose()?,
