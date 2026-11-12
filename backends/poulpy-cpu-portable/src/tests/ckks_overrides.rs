@@ -92,7 +92,7 @@ unsafe impl<Rg: poulpy_hal::layouts::Ring> poulpy_ckks::oep::CKKSShapedRoundingI
         carry: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self, Rg>,
         h: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self, Rg>,
         low: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self, Rg>,
-        profile: &poulpy_ckks::shaping::ShapingProfile,
+        profile: &poulpy_ckks::shaping::ShapingProfile<Rg>,
         lambda: usize,
     ) {
         SHAPING_CALLS.with(|calls| calls.set(calls.get() + 1));

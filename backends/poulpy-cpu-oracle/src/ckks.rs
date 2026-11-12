@@ -210,7 +210,7 @@ macro_rules! impl_oracle_ckks {
                 carry: &mut ::poulpy_hal::layouts::VecZnxBackendMut<'_, Self, Rg>,
                 h: &mut ::poulpy_hal::layouts::VecZnxBackendMut<'_, Self, Rg>,
                 low: &::poulpy_hal::layouts::VecZnxBackendRef<'_, Self, Rg>,
-                profile: &::poulpy_ckks::shaping::ShapingProfile,
+                profile: &::poulpy_ckks::shaping::ShapingProfile<Rg>,
                 lambda: usize,
             ) {
                 crate::ckks_round::shaped_round_correction::<Self, Rg>(carry, h, low, profile, lambda);

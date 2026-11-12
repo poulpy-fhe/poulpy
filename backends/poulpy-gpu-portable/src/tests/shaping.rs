@@ -10,7 +10,7 @@ use super::Runtime;
 
 type BE = crate::NTT4x30Gpu<Runtime>;
 
-fn correction<R: Ring>(module: &Module<BE>, profile: &ShapingProfile, lambda: usize, replay: bool) {
+fn correction<R: Ring>(module: &Module<BE>, profile: &ShapingProfile<R>, lambda: usize, replay: bool) {
     let n = module.n();
     let values: Vec<i64> = (0..n)
         .map(|i| {
@@ -69,7 +69,7 @@ fn profiles<R: Ring>() {
             target_bits: 0,
             coeffs: &[1, 0, 0, 0],
         }]) {
-            let profile = ShapingProfile::for_ring::<R>(&unit.layout(1).unwrap()).unwrap();
+            let profile = ShapingProfile::<R>::try_new(&unit.layout(1).unwrap()).unwrap();
             for lambda in [1, 32.min(profile.max_pass_bits()), profile.max_pass_bits()] {
                 correction::<R>(&module, &profile, lambda, false);
             }
@@ -86,7 +86,7 @@ fn shaped_correction_matches_reference() {
 #[test]
 fn shaped_correction_replays_without_host_transfers() {
     let module = Module::<BE>::new(64);
-    let profile = ShapingProfile::for_ring::<ConjugateInvariant>(&ShapingUnit::U16_40.layout(1).unwrap()).unwrap();
+    let profile = ShapingProfile::<ConjugateInvariant>::try_new(&ShapingUnit::U16_40.layout(1).unwrap()).unwrap();
     correction::<ConjugateInvariant>(&module, &profile, 17, true);
 }
 
@@ -99,8 +99,8 @@ fn shaped_correction_shares_one_module_across_rings() {
         let module = Module::<BE>::new(64);
         for unit in ShapingUnit::ALL {
             let layout = unit.layout(1).unwrap();
-            let standard = ShapingProfile::for_ring::<Standard>(&layout).unwrap();
-            let invariant = ShapingProfile::for_ring::<ConjugateInvariant>(&layout).unwrap();
+            let standard = ShapingProfile::<Standard>::try_new(&layout).unwrap();
+            let invariant = ShapingProfile::<ConjugateInvariant>::try_new(&layout).unwrap();
             if invariant_first {
                 correction::<ConjugateInvariant>(&module, &invariant, invariant.max_pass_bits(), false);
             }

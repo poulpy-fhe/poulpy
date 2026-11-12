@@ -34,8 +34,8 @@ pub unsafe trait CKKSRoundImpl<Rg: Ring = Standard>: Backend {
 /// For `U = profile.coefficients()` and `g = U(Y)`, write
 /// `h = centered(U^-1 * low mod 2^lambda)` to `h`, `(low - g*h) / 2^lambda`
 /// to limb zero of `carry`, and `-low` to limb one. Products are in the ring
-/// of `profile.ring()`: negacyclic of degree `N` with `Y = X^(N/(2R))` on the
-/// standard ring, and on the conjugate-invariant ring `Rg` of degree `N` those of
+/// `Rg` of the profile's type: negacyclic of degree `N` with `Y = X^(N/(2R))` on the
+/// standard ring, and on the conjugate-invariant ring of degree `N` those of
 /// `Z[X]/(X^(2N)+1)` with `Y = X^(N/R)`, on the invariant coefficients.
 /// Inverse multiplication wraps modulo `2^64`. `low` and `h` have one column
 /// and one limb, `carry` one column and two limbs, all at the same degree, a
@@ -49,7 +49,7 @@ pub unsafe trait CKKSShapedRoundingImpl<Rg: Ring = Standard>: Backend {
         carry: &mut VecZnxBackendMut<'_, Self, Rg>,
         h: &mut VecZnxBackendMut<'_, Self, Rg>,
         low: &VecZnxBackendRef<'_, Self, Rg>,
-        profile: &crate::shaping::ShapingProfile,
+        profile: &crate::shaping::ShapingProfile<Rg>,
         lambda: usize,
     );
 }

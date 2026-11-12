@@ -74,11 +74,7 @@ impl<BE: Backend, Rg: Ring> CKKSRoundReference<BE, Rg> for Module<BE> {
             return Err(invalid(format!("dropping {drop} bits exceeds log_delta={}", a.log_delta())).into());
         }
         let shaping = match a.slot_layout() {
-            SlotLayout::Replicated(layout) if drop > 0 => Some(ShapingProfile::for_op(
-                "ckks_round",
-                &layout,
-                crate::shaping::ShapingRing::of::<Rg>(),
-            )?),
+            SlotLayout::Replicated(layout) if drop > 0 => Some(ShapingProfile::<Rg>::for_op("ckks_round", &layout)?),
             _ => None,
         };
         if let Some(profile) = &shaping
@@ -114,7 +110,7 @@ fn shaped_round<BE, Rg, Dst, Src>(
     module: &Module<BE>,
     dst: &mut Dst,
     src: &Src,
-    profile: &ShapingProfile,
+    profile: &ShapingProfile<Rg>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: CKKSShapedRoundingImpl<Rg>,

@@ -265,7 +265,7 @@ where
     assert_eq!(dst.log_budget(), src.log_budget());
     assert_eq!(dst.slot_layout(), SlotLayout::Replicated(layout));
 
-    let profile = ShapingProfile::for_ring::<ConjugateInvariant>(&layout)?;
+    let profile = ShapingProfile::<ConjugateInvariant>::try_new(&layout)?;
     assert_ne!(profile.shift(), 0);
     let g: Vec<i128> = profile.coefficients().iter().map(|&c| c as i128).collect();
     let inverse: Vec<i128> = profile.inverse().iter().map(|&c| c as i64 as i128).collect();

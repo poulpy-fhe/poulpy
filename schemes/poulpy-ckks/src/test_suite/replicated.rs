@@ -38,10 +38,11 @@ use crate::{
     api::{
         CKKSAddManyOps, CKKSAddOps, CKKSAffineOps, CKKSConjugateOps, CKKSDecryptOps, CKKSDotProductOps, CKKSEncodingHostOps,
         CKKSEncodingOps, CKKSEncryptOps, CKKSInnerSumOps, CKKSLeftOperandPreparedFactory, CKKSLinearTransformationOps,
-        CKKSModuleInfos, CKKSMulOps, CKKSRightOperandPreparedFactory, CKKSRotateOps, CKKSRoundOps, CKKSSubOps,
+        CKKSModuleInfos, CKKSMulAddOps, CKKSMulOps, CKKSMulSubOps, CKKSRightOperandPreparedFactory, CKKSRotateOps, CKKSRoundOps,
+        CKKSSubOps,
     },
     layouts::{CKKSCiphertextOwned, CKKSPlaintextAlloc, CKKSPlaintextOwned},
-    shaping::{ShapingRing, ShapingUnit},
+    shaping::{ShapingUnit, conjugate_invariant},
     test_suite::CKKSTestParams,
 };
 
@@ -54,7 +55,7 @@ fn layout() -> ReplicatedLayout {
 
 /// Whether the ring `Rg` has real slots, where batches have no imaginary part.
 fn real_slots<Rg: Ring>() -> bool {
-    ShapingRing::of::<Rg>() == ShapingRing::ConjugateInvariant
+    conjugate_invariant::<Rg>()
 }
 
 fn batch<Rg: Ring, F: TestScalar>(len: usize) -> (Vec<F>, Vec<F>) {
@@ -118,12 +119,12 @@ where
     Module<BE>: TestContextSharedModule<BE, Rg> + CKKSEncodingOps<BE, F, Rg>,
 {
     let slots = module.ckks_slots_of_degree::<Rg>(pt.n().as_usize());
-    let mut scratch = ScratchOwned::<BE>::alloc(module.ckks_encoding_host_tmp_bytes(slots));
     let read = if pt.slot_layout() == SlotLayout::Full { slots } else { len };
     let (mut re, mut im) = (vec![F::zero(); read], vec![F::zero(); read]);
-    module
-        .ckks_decode_slots_host_into(pt, &mut re, &mut im, &mut scratch.borrow())
-        .unwrap();
+    with_scratch::<BE, _>(module.ckks_encoding_host_tmp_bytes(slots), |scratch| {
+        module.ckks_decode_slots_host_into(pt, &mut re, &mut im, scratch)
+    })
+    .unwrap();
     re.truncate(len);
     im.truncate(len);
     (re, im)
@@ -136,13 +137,15 @@ where
     Module<BE>: TestContextSharedModule<BE, Rg> + CKKSEncodingOps<BE, F, Rg>,
 {
     let slots = module.ckks_slots_of_degree::<Rg>(pt.n().as_usize());
-    let mut scratch = ScratchOwned::<BE>::alloc(module.ckks_encoding_host_tmp_bytes(slots));
-    if pt.slot_layout() == SlotLayout::Full {
-        let tile = |values: &[F]| values.iter().copied().cycle().take(slots).collect::<Vec<_>>();
-        module.ckks_encode_slots_host_into(pt, &tile(re), &tile(im), &mut scratch.borrow())?;
+    let tile = |values: &[F]| values.iter().copied().cycle().take(slots).collect::<Vec<_>>();
+    let (re, im) = if pt.slot_layout() == SlotLayout::Full {
+        (tile(re), tile(im))
     } else {
-        module.ckks_encode_slots_host_into(pt, re, im, &mut scratch.borrow())?;
-    }
+        (re.to_vec(), im.to_vec())
+    };
+    with_scratch::<BE, _>(module.ckks_encoding_host_tmp_bytes(slots), |scratch| {
+        module.ckks_encode_slots_host_into(pt, &re, &im, scratch)
+    })?;
     Ok(())
 }
 
@@ -185,6 +188,7 @@ where
     F: TestScalar,
     Module<BE>: TestContextSharedModule<BE, Rg> + CKKSEncodingOps<BE, F, Rg>,
 {
+    super::helpers::assert_canonical_at_k::<BE, Rg>("decrypt", ct);
     // A few bits of budget hold the unit-scale message.
     let budget = ct.log_budget().min(10);
     let mut pt = module.ckks_plaintext_alloc_from_slots::<Rg>(
@@ -588,6 +592,8 @@ where
         + CKKSDotProductOps<BE, Rg>
         + CKKSLinearTransformationOps<BE, Rg>
         + CKKSInnerSumOps<BE, Rg>
+        + CKKSMulAddOps<BE, Rg>
+        + CKKSMulSubOps<BE, Rg>
         + GLWEMulPreparedPlainSum<BE, Rg>,
     F: TestScalar,
 {
@@ -706,6 +712,26 @@ where
         "ckks_rotate_assign",
         module.ckks_rotate_assign(period, &mut acc, &atks, s),
         [acc]
+    );
+    // A fused multiply-accumulate refuses a replicated operand or accumulator under its own name.
+    let full = encrypt_batch(&params, module, &sk, SlotLayout::Full, (&values.0, &values.1), k, 5)?;
+    refused!(
+        Rg,
+        "ckks_mul_add_ct_into",
+        module.ckks_mul_add_ct_into(&mut acc, &full, &full, &tsk, s),
+        [acc, full]
+    );
+    refused!(
+        Rg,
+        "ckks_mul_sub_pt_vec_into",
+        module.ckks_mul_sub_pt_vec_into(&mut out, &shaped, &replicated_pt, s),
+        [out, shaped, replicated_pt]
+    );
+    refused!(
+        Rg,
+        "ckks_mul_add_pt_const_into",
+        module.ckks_mul_add_pt_const_into(&mut acc, &full, &cst, 0, s),
+        [acc, full]
     );
     refused!(
         Rg,

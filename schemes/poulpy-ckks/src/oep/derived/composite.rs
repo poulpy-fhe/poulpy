@@ -76,6 +76,14 @@ fn check_affine_offset_vec<BE: Backend, R: CKKSCtBounds, P: CKKSInfos>(
     )
 }
 
+/// The product of a fused multiply-accumulate rounds plainly, so every operand,
+/// the accumulator included, takes the full layout: refused under `op` before the product.
+fn ensure_full_layouts<const K: usize>(op: &'static str, layouts: [crate::SlotLayout; K]) -> Result<()> {
+    layouts
+        .into_iter()
+        .try_for_each(|slot_layout| crate::layouts::validation::ensure_full_layout(op, slot_layout))
+}
+
 pub(crate) fn ckks_mul_add_ct_tmp_bytes_derived<BE, R, A, B, T, Rg: Ring>(
     module: &Module<BE>,
     res: &R,
@@ -139,6 +147,14 @@ where
 {
     const OP: &str = "ckks_mul_add_ct_into";
     crate::ensure_operand_degrees(OP, module, [dst.n(), a.n(), b.n()])?;
+    ensure_full_layouts(
+        OP,
+        [
+            crate::GLWEPlaintextInfos::slot_layout(&*dst),
+            crate::GLWEPlaintextInfos::slot_layout(a),
+            crate::GLWEPlaintextInfos::slot_layout(b),
+        ],
+    )?;
     let key = tensor_key_at(OP, tsk, a.k().max(b.k()))?;
     get_mul_ct_params(OP, &*dst, a, b)?;
     let bytes = ckks_mul_add_ct_tmp_bytes_derived(module, &*dst, a, b, &key);
@@ -167,6 +183,14 @@ where
 {
     const OP: &str = "ckks_mul_add_pt_vec_into";
     crate::ensure_operand_degrees(OP, module, [dst.n(), a.n()])?;
+    ensure_full_layouts(
+        OP,
+        [
+            crate::GLWEPlaintextInfos::slot_layout(&*dst),
+            crate::GLWEPlaintextInfos::slot_layout(a),
+            crate::GLWEPlaintextInfos::slot_layout(pt),
+        ],
+    )?;
     ckks_mul_pt_vec_checks::<BE, _, _, _>(OP, &*dst, a, pt)?;
     let bytes = ckks_mul_add_pt_vec_tmp_bytes_derived(module, &*dst, a, pt);
     mul_then_combine(
@@ -195,6 +219,13 @@ where
 {
     const OP: &str = "ckks_mul_add_pt_const_into";
     crate::ensure_operand_degrees(OP, module, [dst.n(), a.n()])?;
+    ensure_full_layouts(
+        OP,
+        [
+            crate::GLWEPlaintextInfos::slot_layout(&*dst),
+            crate::GLWEPlaintextInfos::slot_layout(a),
+        ],
+    )?;
     ckks_mul_pt_const_checks(OP, &*dst, a, pt, pt_coeff)?;
     let bytes = ckks_mul_add_pt_const_tmp_bytes_derived(module, &*dst, a, pt);
     mul_then_combine(
@@ -407,6 +438,14 @@ where
 {
     const OP: &str = "ckks_mul_sub_ct_into";
     crate::ensure_operand_degrees(OP, module, [dst.n(), a.n(), b.n()])?;
+    ensure_full_layouts(
+        OP,
+        [
+            crate::GLWEPlaintextInfos::slot_layout(&*dst),
+            crate::GLWEPlaintextInfos::slot_layout(a),
+            crate::GLWEPlaintextInfos::slot_layout(b),
+        ],
+    )?;
     let key = tensor_key_at(OP, tsk, a.k().max(b.k()))?;
     get_mul_ct_params(OP, &*dst, a, b)?;
     let bytes = ckks_mul_sub_ct_tmp_bytes_derived(module, &*dst, a, b, &key);
@@ -435,6 +474,14 @@ where
 {
     const OP: &str = "ckks_mul_sub_pt_vec_into";
     crate::ensure_operand_degrees(OP, module, [dst.n(), a.n()])?;
+    ensure_full_layouts(
+        OP,
+        [
+            crate::GLWEPlaintextInfos::slot_layout(&*dst),
+            crate::GLWEPlaintextInfos::slot_layout(a),
+            crate::GLWEPlaintextInfos::slot_layout(pt),
+        ],
+    )?;
     ckks_mul_pt_vec_checks::<BE, _, _, _>(OP, &*dst, a, pt)?;
     let bytes = ckks_mul_sub_pt_vec_tmp_bytes_derived(module, &*dst, a, pt);
     mul_then_combine(
@@ -463,6 +510,13 @@ where
 {
     const OP: &str = "ckks_mul_sub_pt_const_into";
     crate::ensure_operand_degrees(OP, module, [dst.n(), a.n()])?;
+    ensure_full_layouts(
+        OP,
+        [
+            crate::GLWEPlaintextInfos::slot_layout(&*dst),
+            crate::GLWEPlaintextInfos::slot_layout(a),
+        ],
+    )?;
     ckks_mul_pt_const_checks(OP, &*dst, a, pt, pt_coeff)?;
     let bytes = ckks_mul_sub_pt_const_tmp_bytes_derived(module, &*dst, a, pt);
     mul_then_combine(

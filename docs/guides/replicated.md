@@ -1,9 +1,10 @@
 # Replicated slot layout
 
-`poulpy-ckks` implements the small-batch scheme of *Fully Homomorphic Encryption for Small Batches of Complex Numbers* (Dumezy, [ePrint 2026/2513](https://eprint.iacr.org/2026/2513)) as a slot layout of CKKS.
+`poulpy-ckks` implements the slot layout of the small-batch scheme of *Fully Homomorphic Encryption for Small Batches of Complex Numbers* (Dumezy, [ePrint 2026/2513](https://eprint.iacr.org/2026/2513)) as a slot layout of CKKS.
 A batch of `k = 2^log_k` complex values is replicated across the ring, one slot class out of `R = 2^log_r` carrying data and the others serving as guards.
-In the scheme, every rounding, from encryption to rescaling and key switching, is shaped: its error is a multiple of a fixed polynomial `g` that is small on the data class and absorbs the error on the guards.
-Precision on the data slots then no longer depends on the scale, so the scheme works at small scales (`2^20` levels) and keeps the modulus, and the keys, small.
+A shaped rounding leaves an error that is a multiple of a fixed polynomial `g`, small on the data class, so the guards absorb it.
+Here encoding, encryption and `ckks_round` round with shaping, and sums and differences add exactly.
+Products, rescaling and key switching round plainly, so they refuse a replicated layout.
 
 ## Layout
 
@@ -39,7 +40,7 @@ Operations that would round plainly or write the guard slots return `InvalidOper
 The layout also runs on the conjugate-invariant ring of degree `N`, the subring of `Z[X]/(X^(2N)+1)` fixed by `X -> X^-1`, and its `N` real slots.
 A batch of `k` real values takes `kR` slots, slot `t` in class `t mod R` as on the standard ring, and the period repeats `N/(kR)` times.
 The shaping polynomial must be invariant too, `g = U(X^(N/R))` with `U` in `Z[Y + Y^-1]`.
-Every unit of `Z[Y]/(Y^(2R)+1)` is a power of `Y` times an invariant unit with the same class magnitudes and norm, so this ring shapes with `Y^s*U` for the shift `s` that `ShapingProfile::for_ring` finds (`ShapingProfile::shift`).
+Every unit of `Z[Y]/(Y^(2R)+1)` is a power of `Y` times an invariant unit with the same class magnitudes and norm, so this ring shapes with `Y^s*U` for the shift `s` that `ShapingProfile::<ConjugateInvariant>::try_new` finds (`ShapingProfile::shift`). The profile carries its ring in its type, so a profile of one ring cannot reach the shaped rounding of the other.
 Every `ShapingUnit` has one, and a `U` without one is refused.
 Rounding reads the invariant coefficients, which keeps `h` invariant and rounds each tie once.
 

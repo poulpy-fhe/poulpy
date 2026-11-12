@@ -1,11 +1,11 @@
-use poulpy_ckks::shaping::{ShapingProfile, ShapingRing};
+use poulpy_ckks::shaping::{ShapingProfile, conjugate_invariant};
 use poulpy_hal::layouts::{Backend, HostDataMut, HostDataRef, Ring, VecZnxBackendMut, VecZnxBackendRef, ZnxView, ZnxViewMut};
 
 pub(crate) fn shaped_round_correction<BE, Rg>(
     carry: &mut VecZnxBackendMut<'_, BE, Rg>,
     h: &mut VecZnxBackendMut<'_, BE, Rg>,
     low: &VecZnxBackendRef<'_, BE, Rg>,
-    profile: &ShapingProfile,
+    profile: &ShapingProfile<Rg>,
     lambda: usize,
 ) where
     BE: Backend<ZnxWord = i64>,
@@ -29,17 +29,15 @@ pub(crate) fn shaped_round_correction<BE, Rg>(
     // The conjugate-invariant ring computes in `Z[X]/(X^(2n)+1)` on the
     // unfolded coefficients, which the products keep invariant.
     let unfold = |x: &[i64]| -> Vec<i64> {
-        match profile.ring() {
-            ShapingRing::Standard => x.to_vec(),
-            ShapingRing::ConjugateInvariant => {
-                let mut ambient = vec![0; 2 * n];
-                ambient[..n].copy_from_slice(x);
-                for j in 1..n {
-                    ambient[2 * n - j] = -x[j];
-                }
-                ambient
-            }
+        if !conjugate_invariant::<Rg>() {
+            return x.to_vec();
         }
+        let mut ambient = vec![0; 2 * n];
+        ambient[..n].copy_from_slice(x);
+        for j in 1..n {
+            ambient[2 * n - j] = -x[j];
+        }
+        ambient
     };
     let ambient_c = unfold(c);
     let m = ambient_c.len();
@@ -77,7 +75,7 @@ pub(crate) fn shaped_round_correction<BE, Rg>(
 /// `Y^s*U` and its inverse modulo `2^64` in `Z[Y]/(Y^(2R)+1)`, from the layout's `U`: on the
 /// conjugate-invariant ring, the smallest `s` whose `Y^s*U` is invariant (`v_R = 0` and
 /// `v_(2R-j) = -v_j`), then the inverse by Gaussian elimination on its negacyclic matrix.
-fn shaping_and_inverse(profile: &ShapingProfile) -> (Vec<i64>, Vec<u64>) {
+fn shaping_and_inverse<Rg: Ring>(profile: &ShapingProfile<Rg>) -> (Vec<i64>, Vec<u64>) {
     let u: Vec<i64> = profile.unit().iter().map(|&c| c as i64).collect();
     let m = u.len();
     // `Y^s*U`: coefficient `j` of `U` moves to `j + s`, negated past `2R`.
@@ -94,12 +92,13 @@ fn shaping_and_inverse(profile: &ShapingProfile) -> (Vec<i64>, Vec<u64>) {
         v
     };
     let invariant = |v: &[i64]| v[m / 2] == 0 && (1..m).all(|j| v[m - j] == -v[j]);
-    let v = match profile.ring() {
-        ShapingRing::Standard => u.clone(),
-        ShapingRing::ConjugateInvariant => (0..m)
+    let v = if conjugate_invariant::<Rg>() {
+        (0..m)
             .map(shifted)
             .find(|v| invariant(v))
-            .expect("the profile admits a conjugate-invariant shift"),
+            .expect("the profile admits a conjugate-invariant shift")
+    } else {
+        u.clone()
     };
     (v.clone(), negacyclic_inverse(&v))
 }
@@ -172,15 +171,16 @@ mod tests {
     fn recomputed_shaping_matches_the_profile() {
         for unit in ShapingUnit::ALL {
             let layout = unit.layout(1).unwrap();
-            for profile in [
-                ShapingProfile::for_ring::<Standard>(&layout).unwrap(),
-                ShapingProfile::for_ring::<ConjugateInvariant>(&layout).unwrap(),
-            ] {
-                let (coefficients, inverse) = shaping_and_inverse(&profile);
-                let want: Vec<i64> = profile.coefficients().iter().map(|&c| c as i64).collect();
-                assert_eq!(coefficients, want, "{unit:?} on {:?}", profile.ring());
-                assert_eq!(inverse, profile.inverse(), "{unit:?} on {:?}", profile.ring());
-            }
+            matches_the_profile(&ShapingProfile::<Standard>::try_new(&layout).unwrap(), unit);
+            matches_the_profile(&ShapingProfile::<ConjugateInvariant>::try_new(&layout).unwrap(), unit);
         }
+    }
+
+    fn matches_the_profile<Rg: Ring>(profile: &ShapingProfile<Rg>, unit: ShapingUnit) {
+        let (coefficients, inverse) = shaping_and_inverse(profile);
+        let want: Vec<i64> = profile.coefficients().iter().map(|&c| c as i64).collect();
+        let invariant = conjugate_invariant::<Rg>();
+        assert_eq!(coefficients, want, "{unit:?}, invariant = {invariant}");
+        assert_eq!(inverse, profile.inverse(), "{unit:?}, invariant = {invariant}");
     }
 }

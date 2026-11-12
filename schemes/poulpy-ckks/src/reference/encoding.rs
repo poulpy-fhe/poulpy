@@ -18,7 +18,6 @@ use crate::{
     CKKSPlaintextToBackendMut, CKKSPlaintextToBackendRef, GLWEPlaintextInfos, SetCKKSInfos, SlotLayout, SlotsKind,
     api::CKKSEncodingScalar,
     layouts::{CKKSEncodingBufferBackendMut, CKKSEncodingBufferBackendRef},
-    shaping::ShapingRing,
 };
 
 pub use crate::encoding::{ckks_paco_coeff_encodings_host, ckks_ship_coeff_encodings_host};
@@ -276,22 +275,15 @@ where
             let raw = data.raw_mut();
             let (mut carry, mut limb) = ([0i64; crate::shaping::MAX_COEFFS], [0i64; crate::shaping::MAX_COEFFS]);
             // `encode_vec_i128` of the column, one class of `Y = X^stride` at a time.
-            crate::shaping::shaped_quantize_by_class(
-                coeffs,
-                &layout,
-                log_delta,
-                log_budget,
-                ShapingRing::of::<Rg>(),
-                |r, values| {
-                    let (m, stride) = (values.len(), n / values.len());
-                    encode_i128_by_limb(base2k, k, values, &mut carry[..m], &mut limb[..m], |j, digits| {
-                        let base = shape.scalar_offset(0, j) + r;
-                        for (t, &digit) in digits.iter().enumerate() {
-                            raw[base + stride * t] = digit;
-                        }
-                    });
-                },
-            )?;
+            crate::shaping::shaped_quantize_by_class::<_, Rg>(coeffs, &layout, log_delta, log_budget, |r, values| {
+                let (m, stride) = (values.len(), n / values.len());
+                encode_i128_by_limb(base2k, k, values, &mut carry[..m], &mut limb[..m], |j, digits| {
+                    let base = shape.scalar_offset(0, j) + r;
+                    for (t, &digit) in digits.iter().enumerate() {
+                        raw[base + stride * t] = digit;
+                    }
+                });
+            })?;
             for j in size..shape.size() {
                 let base = shape.scalar_offset(0, j);
                 raw[base..base + n].fill(0);

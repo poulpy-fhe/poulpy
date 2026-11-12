@@ -32,8 +32,9 @@ use crate::{CKKSCtBounds, SetCKKSInfos};
 /// Other metadata is `a`'s. Component noise metadata is cleared. `res` comes
 /// out normalized at its width and flagged canonical, whatever the flag of `a`.
 /// Fails when `res.k() > a.k()` or `drop > a.log_delta`, and for a replicated
-/// layout with `2R > N` or, on the conjugate-invariant ring, a shaping
-/// polynomial without a conjugate-invariant shift. Source and destination must
+/// layout whose period exceeds the degree, `2R > N` on the standard ring and
+/// `R > N` on the conjugate-invariant ring, or, on the conjugate-invariant ring,
+/// a shaping polynomial without a conjugate-invariant shift. Source and destination must
 /// have equal degrees and ranks. Their limb radices may differ.
 pub trait CKKSRoundOps<BE: Backend, Rg: Ring = Standard> {
     fn ckks_round_tmp_bytes<R, A>(&self, res: &R, a: &A) -> usize

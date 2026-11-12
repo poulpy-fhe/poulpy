@@ -19,7 +19,7 @@
 //! [`ShapingUnit`] lists units with the smallest guard amplification for a
 //! prescribed data suppression.
 
-use std::sync::OnceLock;
+use std::{marker::PhantomData, sync::OnceLock};
 
 use anyhow::Context;
 use poulpy_core::layouts::ReplicatedLayout;
@@ -35,32 +35,19 @@ pub const MAX_PASS_BITS: usize = 62;
 /// Largest number of coefficients of a shaping polynomial, `2R`.
 pub(crate) const MAX_COEFFS: usize = 2 << ReplicatedLayout::MAX_LOG_R;
 
-/// Ring a [`ShapingProfile`] multiplies in.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum ShapingRing {
-    /// `Z[X]/(X^N+1)`, where `Y = X^(N/(2R))`.
-    Standard,
-    /// The conjugate-invariant ring of degree `N`, where `Y = X^(N/R)` in
-    /// `Z[X]/(X^(2N)+1)` and polynomials hold their `N` invariant coefficients.
-    ConjugateInvariant,
+/// Whether `Rg` is the conjugate-invariant ring of degree `N`, where `Y = X^(N/R)` in
+/// `Z[X]/(X^(2N)+1)` and polynomials hold their `N` invariant coefficients, rather than
+/// `Z[X]/(X^N+1)`, where `Y = X^(N/(2R))`. A constant of the ring type.
+pub const fn conjugate_invariant<Rg: Ring>() -> bool {
+    Rg::CYCLOTOMIC_ORDER_FACTOR != Standard::CYCLOTOMIC_ORDER_FACTOR
 }
 
-impl ShapingRing {
-    /// The shaping ring of the ring `R`.
-    pub fn of<R: Ring>() -> Self {
-        if R::CYCLOTOMIC_ORDER_FACTOR == Standard::CYCLOTOMIC_ORDER_FACTOR {
-            Self::Standard
-        } else {
-            Self::ConjugateInvariant
-        }
-    }
-}
-
-/// Exact data of a shaping polynomial `U`, and its slot-class profile.
+/// Exact data of a shaping polynomial `U` on the ring `Rg`, and its slot-class
+/// profile. The ring is part of the type, so a profile of one ring cannot reach
+/// the shaped rounding of the other.
 #[derive(Debug, Clone, PartialEq)]
-pub struct ShapingProfile {
+pub struct ShapingProfile<Rg: Ring = Standard> {
     log_r: usize,
-    ring: ShapingRing,
     shift: usize,
     unit: [i16; MAX_COEFFS],
     coeffs: [i16; MAX_COEFFS],
@@ -68,53 +55,43 @@ pub struct ShapingProfile {
     inverse: OnceLock<[u64; MAX_COEFFS]>,
     log_magnitudes: OnceLock<Vec<f64>>,
     l1: u64,
+    _ring: PhantomData<Rg>,
 }
 
-impl ShapingProfile {
-    /// The profile of `layout` on the standard ring.
+impl ShapingProfile<Standard> {
+    /// The profile of `layout` on the standard ring, which shapes with `U` itself.
     pub fn new(layout: &ReplicatedLayout) -> Self {
-        Self::from_coeffs(layout.log_r(), ShapingRing::Standard, 0, layout.shaping(), layout.shaping())
+        Self::from_coeffs(layout.log_r(), 0, layout.shaping(), layout.shaping())
     }
+}
 
-    /// The profile of `layout` on the ring `R`. The conjugate-invariant
+impl<Rg: Ring> ShapingProfile<Rg> {
+    /// The profile of `layout` on the ring `Rg`. The conjugate-invariant
     /// ring shapes with `Y^s*U`, the smallest shift `s < 2R` that makes `U`
     /// invariant, and refuses a `U` that has none.
-    pub fn for_ring<R: Ring>(layout: &ReplicatedLayout) -> CKKSResult<Self> {
-        Self::for_op("ShapingProfile::for_ring", layout, ShapingRing::of::<R>())
+    pub fn try_new(layout: &ReplicatedLayout) -> CKKSResult<Self> {
+        Self::for_op("ShapingProfile::try_new", layout)
     }
 
-    /// [`Self::for_ring`] for the shaping ring `ring`.
-    pub fn with_ring(layout: &ReplicatedLayout, ring: ShapingRing) -> CKKSResult<Self> {
-        Self::for_op("ShapingProfile::with_ring", layout, ring)
-    }
-
-    /// [`Self::with_ring`], refusing under `op`, the public operation that asked for the profile.
-    pub(crate) fn for_op(op: &'static str, layout: &ReplicatedLayout, ring: ShapingRing) -> CKKSResult<Self> {
-        match ring {
-            ShapingRing::Standard => Ok(Self::new(layout)),
-            ShapingRing::ConjugateInvariant => {
-                let u = layout.shaping();
-                let m = u.len();
-                let shifted = (0..m).map(|s| (s, monomial_shift(u, s))).find(|(_, v)| is_invariant(&v[..m]));
-                let Some((shift, v)) = shifted else {
-                    return Err(CKKSCompositionError::InvalidOperand {
-                        op,
-                        reason: "no power of Y shifts the shaping polynomial onto a conjugate-invariant one".into(),
-                    }
-                    .into());
-                };
-                Ok(Self::from_coeffs(
-                    layout.log_r(),
-                    ShapingRing::ConjugateInvariant,
-                    shift,
-                    u,
-                    &v[..m],
-                ))
-            }
+    /// [`Self::try_new`], refusing under `op`, the public operation that asked for the profile.
+    pub(crate) fn for_op(op: &'static str, layout: &ReplicatedLayout) -> CKKSResult<Self> {
+        let u = layout.shaping();
+        if !conjugate_invariant::<Rg>() {
+            return Ok(Self::from_coeffs(layout.log_r(), 0, u, u));
         }
+        let m = u.len();
+        let shifted = (0..m).map(|s| (s, monomial_shift(u, s))).find(|(_, v)| is_invariant(&v[..m]));
+        let Some((shift, v)) = shifted else {
+            return Err(CKKSCompositionError::InvalidOperand {
+                op,
+                reason: "no power of Y shifts the shaping polynomial onto a conjugate-invariant one".into(),
+            }
+            .into());
+        };
+        Ok(Self::from_coeffs(layout.log_r(), shift, u, &v[..m]))
     }
 
-    fn from_coeffs(log_r: usize, ring: ShapingRing, shift: usize, unit: &[i16], coeffs: &[i16]) -> Self {
+    fn from_coeffs(log_r: usize, shift: usize, unit: &[i16], coeffs: &[i16]) -> Self {
         let (mut padded, mut shaping, mut unshifted) = ([0; MAX_COEFFS], [0; MAX_COEFFS], [0; MAX_COEFFS]);
         unshifted[..unit.len()].copy_from_slice(unit);
         for (i, &c) in coeffs.iter().enumerate() {
@@ -123,7 +100,6 @@ impl ShapingProfile {
         }
         Self {
             log_r,
-            ring,
             shift,
             unit: unshifted,
             coeffs: padded,
@@ -131,6 +107,7 @@ impl ShapingProfile {
             inverse: OnceLock::new(),
             log_magnitudes: OnceLock::new(),
             l1: coeffs.iter().map(|&c| c.unsigned_abs() as u64).sum(),
+            _ring: PhantomData,
         }
     }
 
@@ -141,11 +118,6 @@ impl ShapingProfile {
     /// Base-2 logarithm of the slot period `R`.
     pub fn log_r(&self) -> usize {
         self.log_r
-    }
-
-    /// The ring this profile multiplies in.
-    pub fn ring(&self) -> ShapingRing {
-        self.ring
     }
 
     /// The shift `s` of the shaping polynomial `Y^s*U`, zero on the standard ring.
@@ -163,9 +135,10 @@ impl ShapingProfile {
     /// `Y`: `2R` on the standard ring and `R` invariant ones on the
     /// conjugate-invariant ring. Degrees are multiples of it.
     pub fn period(&self) -> usize {
-        match self.ring {
-            ShapingRing::Standard => self.len(),
-            ShapingRing::ConjugateInvariant => self.len() / 2,
+        if conjugate_invariant::<Rg>() {
+            self.len() / 2
+        } else {
+            self.len()
         }
     }
 
@@ -244,9 +217,10 @@ impl ShapingProfile {
     /// on the conjugate-invariant ring.
     fn product(&self, p: &[u64], x: &[i64], out: &mut [i64]) {
         let stride = x.len() / self.period();
-        match self.ring {
-            ShapingRing::Standard => negacyclic_sparse(p, stride, x, out),
-            ShapingRing::ConjugateInvariant => invariant_sparse(&p[..self.len() / 2], stride, x, out),
+        if conjugate_invariant::<Rg>() {
+            invariant_sparse(&p[..self.len() / 2], stride, x, out)
+        } else {
+            negacyclic_sparse(p, stride, x, out)
         }
     }
 }
@@ -575,12 +549,11 @@ fn inverse_mod_2_64(u: &[u64]) -> [u64; MAX_COEFFS] {
 /// long as `coeffs`.
 #[cfg(test)]
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn shaped_quantize_into<F>(
+pub(crate) fn shaped_quantize_into<F, Rg: Ring>(
     coeffs: &[F],
     layout: &ReplicatedLayout,
     log_delta: usize,
     log_budget: usize,
-    ring: ShapingRing,
     out: &mut [i128],
     low: &mut [i64],
     h: &mut [i64],
@@ -589,7 +562,7 @@ pub(crate) fn shaped_quantize_into<F>(
 where
     F: crate::api::CKKSEncodingScalar,
 {
-    let (profile, lambda) = shaping_pass("ckks_quantize_coeffs_into", layout, ring, coeffs.len(), log_delta, log_budget)?;
+    let (profile, lambda) = shaping_pass::<Rg>("ckks_quantize_coeffs_into", layout, coeffs.len(), log_delta, log_budget)?;
     for ((q, l), &x) in out.iter_mut().zip(low.iter_mut()).zip(coeffs) {
         *q = x
             .ckks_quantize(log_delta + lambda)
@@ -605,16 +578,15 @@ where
 
 /// The shaping pass of [`shaped_quantize_into`] for `coeffs` and its shaping
 /// depth, checked before any quantization and refused under `op`.
-fn shaping_pass(
+fn shaping_pass<Rg: Ring>(
     op: &'static str,
     layout: &ReplicatedLayout,
-    ring: ShapingRing,
     n: usize,
     log_delta: usize,
     log_budget: usize,
-) -> CKKSResult<(ShapingProfile, usize)> {
+) -> CKKSResult<(ShapingProfile<Rg>, usize)> {
     let invalid = |reason: String| -> crate::CKKSError { CKKSCompositionError::InvalidOperand { op, reason }.into() };
-    let profile = ShapingProfile::for_op(op, layout, ring)?;
+    let profile = ShapingProfile::<Rg>::for_op(op, layout)?;
     let period = profile.period();
     if !n.is_multiple_of(period) {
         return Err(invalid(format!(
@@ -641,19 +613,18 @@ fn shaping_pass(
 /// whole-vector pass computes it. Every coefficient is quantized and checked
 /// before the first `emit(r, values)`, which receives the `period` results of
 /// class `r` in order of `t`. Bit for bit [`shaped_quantize_into`].
-pub(crate) fn shaped_quantize_by_class<F>(
+pub(crate) fn shaped_quantize_by_class<F, Rg: Ring>(
     coeffs: &[F],
     layout: &ReplicatedLayout,
     log_delta: usize,
     log_budget: usize,
-    ring: ShapingRing,
     mut emit: impl FnMut(usize, &mut [i128]),
 ) -> anyhow::Result<()>
 where
     F: crate::api::CKKSEncodingScalar,
 {
     let n = coeffs.len();
-    let (profile, lambda) = shaping_pass("ckks_quantize_coeffs_into", layout, ring, n, log_delta, log_budget)?;
+    let (profile, lambda) = shaping_pass::<Rg>("ckks_quantize_coeffs_into", layout, n, log_delta, log_budget)?;
     let quantize = |x: F| {
         x.ckks_quantize(log_delta + lambda)
             .context("CKKS coefficient is not representable as an i128 at the plaintext scale")
@@ -728,9 +699,8 @@ mod tests {
         {
             let layout = unit.layout(2).unwrap();
             let standard = ShapingProfile::new(&layout);
-            let profile = ShapingProfile::for_ring::<ConjugateInvariant>(&layout).unwrap();
-            assert_eq!(ShapingProfile::for_ring::<Standard>(&layout).unwrap(), standard);
-            assert_eq!(profile.ring(), ShapingRing::ConjugateInvariant);
+            let profile = ShapingProfile::<ConjugateInvariant>::try_new(&layout).unwrap();
+            assert_eq!(ShapingProfile::<Standard>::try_new(&layout).unwrap(), standard);
             assert_eq!(profile.shift(), shift, "{unit:?}");
             assert_eq!(profile.period(), 1 << unit.log_r);
             assert!(is_invariant(profile.coefficients()), "{unit:?}");
@@ -753,9 +723,9 @@ mod tests {
     #[test]
     fn conjugate_invariant_refuses_shapes_without_invariant_shift() {
         let refused = ReplicatedLayout::new(2, 1, &[3, 0, 2, 0]).unwrap();
-        assert!(ShapingProfile::for_ring::<ConjugateInvariant>(&refused).is_err());
+        assert!(ShapingProfile::<ConjugateInvariant>::try_new(&refused).is_err());
         let invariant = ReplicatedLayout::new(2, 1, &[3, 1, 0, -1]).unwrap();
-        assert_eq!(ShapingProfile::for_ring::<ConjugateInvariant>(&invariant).unwrap().shift(), 0);
+        assert_eq!(ShapingProfile::<ConjugateInvariant>::try_new(&invariant).unwrap().shift(), 0);
     }
 
     /// The invariant coefficients of `x` unfolded onto `Z[X]/(X^(2N)+1)`.
@@ -772,7 +742,7 @@ mod tests {
     #[test]
     fn invariant_product_matches_ambient() {
         for unit in [ShapingUnit::U16_40, ShapingUnit::U32_45] {
-            let profile = ShapingProfile::for_ring::<ConjugateInvariant>(&unit.layout(2).unwrap()).unwrap();
+            let profile = ShapingProfile::<ConjugateInvariant>::try_new(&unit.layout(2).unwrap()).unwrap();
             let r = profile.period();
             let shaping: Vec<u64> = profile.coefficients().iter().map(|&c| c as i64 as u64).collect();
             for p in [&shaping[..], profile.inverse()] {
@@ -792,35 +762,37 @@ mod tests {
     /// down to shaping passes of one and two bits, whose centered reductions tie.
     #[test]
     fn shaped_quantize_by_class_matches_whole_vector() {
+        by_class_matches_whole_vector::<Standard>();
+        by_class_matches_whole_vector::<ConjugateInvariant>();
+    }
+
+    fn by_class_matches_whole_vector<Rg: Ring>() {
         let layout = ShapingUnit::U32_45.layout(2).unwrap();
-        for ring in [ShapingRing::Standard, ShapingRing::ConjugateInvariant] {
-            let period = ShapingProfile::with_ring(&layout, ring).unwrap().period();
-            for n in [period, 8 * period] {
-                let coeffs: Vec<f64> = pseudo_random(n, n as u64 + 7)
-                    .iter()
-                    .map(|&x| (x >> 40) as f64 / (1u64 << 23) as f64)
-                    .collect();
-                // A full pass, then passes of two bits and one bit.
-                for (log_delta, log_budget) in [(40, 20), (60, 64), (60, 65)] {
-                    let mut want = vec![0i128; n];
-                    let (mut low, mut h, mut gh) = (vec![0i64; n], vec![0i64; n], vec![0i64; n]);
-                    shaped_quantize_into(
-                        &coeffs, &layout, log_delta, log_budget, ring, &mut want, &mut low, &mut h, &mut gh,
-                    )
+        let period = ShapingProfile::<Rg>::try_new(&layout).unwrap().period();
+        for n in [period, 8 * period] {
+            let coeffs: Vec<f64> = pseudo_random(n, n as u64 + 7)
+                .iter()
+                .map(|&x| (x >> 40) as f64 / (1u64 << 23) as f64)
+                .collect();
+            // A full pass, then passes of two bits and one bit.
+            for (log_delta, log_budget) in [(40, 20), (60, 64), (60, 65)] {
+                let mut want = vec![0i128; n];
+                let (mut low, mut h, mut gh) = (vec![0i64; n], vec![0i64; n], vec![0i64; n]);
+                shaped_quantize_into::<_, Rg>(&coeffs, &layout, log_delta, log_budget, &mut want, &mut low, &mut h, &mut gh)
                     .unwrap();
-                    let mut got = vec![0i128; n];
-                    let stride = n / period;
-                    shaped_quantize_by_class(&coeffs, &layout, log_delta, log_budget, ring, |r, values| {
-                        for (t, &v) in values.iter().enumerate() {
-                            got[r + stride * t] = v;
-                        }
-                    })
-                    .unwrap();
-                    assert!(
-                        got == want,
-                        "{ring:?}, n = {n}, log_delta = {log_delta}, log_budget = {log_budget}"
-                    );
-                }
+                let mut got = vec![0i128; n];
+                let stride = n / period;
+                shaped_quantize_by_class::<_, Rg>(&coeffs, &layout, log_delta, log_budget, |r, values| {
+                    for (t, &v) in values.iter().enumerate() {
+                        got[r + stride * t] = v;
+                    }
+                })
+                .unwrap();
+                assert!(
+                    got == want,
+                    "invariant = {}, n = {n}, log_delta = {log_delta}, log_budget = {log_budget}",
+                    conjugate_invariant::<Rg>()
+                );
             }
         }
     }
@@ -828,24 +800,24 @@ mod tests {
     #[test]
     fn shaped_multiple_is_divisible() {
         let layout = ShapingUnit::U32_45.layout(2).unwrap();
-        for profile in [
-            ShapingProfile::new(&layout),
-            ShapingProfile::for_ring::<ConjugateInvariant>(&layout).unwrap(),
-        ] {
-            let lambda = 40;
-            let n = 4 * profile.period();
-            let c = pseudo_random(n, 7);
-            let (mut h, mut gh) = (vec![0; n], vec![0; n]);
-            profile.shaped_multiple_host(lambda, &c, &mut h, &mut gh);
-            assert!(h.iter().all(|&x| x.unsigned_abs() <= 1 << (lambda - 1)));
-            assert!(
-                c.iter()
-                    .zip(&gh)
-                    .all(|(&c, &gh)| c.wrapping_sub(gh).trailing_zeros() as usize >= lambda),
-                "{:?}",
-                profile.ring()
-            );
-        }
+        divisible(&ShapingProfile::new(&layout));
+        divisible(&ShapingProfile::<ConjugateInvariant>::try_new(&layout).unwrap());
+    }
+
+    fn divisible<Rg: Ring>(profile: &ShapingProfile<Rg>) {
+        let lambda = 40;
+        let n = 4 * profile.period();
+        let c = pseudo_random(n, 7);
+        let (mut h, mut gh) = (vec![0; n], vec![0; n]);
+        profile.shaped_multiple_host(lambda, &c, &mut h, &mut gh);
+        assert!(h.iter().all(|&x| x.unsigned_abs() <= 1 << (lambda - 1)));
+        assert!(
+            c.iter()
+                .zip(&gh)
+                .all(|(&c, &gh)| c.wrapping_sub(gh).trailing_zeros() as usize >= lambda),
+            "invariant = {}",
+            conjugate_invariant::<Rg>()
+        );
     }
 
     #[test]

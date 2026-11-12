@@ -4,7 +4,7 @@ use std::{
 };
 
 use cubecl::prelude::*;
-use poulpy_ckks::shaping::{ShapingProfile, ShapingRing};
+use poulpy_ckks::shaping::{ShapingProfile, conjugate_invariant};
 use poulpy_hal::layouts::{Module, Ring, VecZnxBackendMut, VecZnxBackendRef};
 
 use crate::{
@@ -14,10 +14,10 @@ use crate::{
     runtime::{GpuBuf, GpuRuntime, Label, access, launch},
 };
 
-/// Tables `inverse[..period] ++ U[..period]` keyed by ring and shaping coefficients: `period` is
-/// `2R` on the standard ring and `R` on the conjugate-invariant ring, so a unit without a
-/// conjugate-invariant shift has one table per ring.
-type ShapingKey = (ShapingRing, Vec<i16>);
+/// Tables `inverse[..period] ++ U[..period]` keyed by the ring's wire tag and the shaping
+/// coefficients: `period` is `2R` on the standard ring and `R` on the conjugate-invariant ring,
+/// so a unit without a conjugate-invariant shift has one table per ring.
+type ShapingKey = (u8, Vec<i16>);
 struct ShapingTables<RT: GpuRuntime>(Mutex<HashMap<ShapingKey, Arc<GpuBuf<RT>>>>);
 
 #[cube]
@@ -111,7 +111,7 @@ unsafe impl<RT: GpuRuntime, R: Ring> poulpy_ckks::oep::CKKSShapedRoundingImpl<R>
         carry: &mut VecZnxBackendMut<'_, Self, R>,
         h: &mut VecZnxBackendMut<'_, Self, R>,
         low: &VecZnxBackendRef<'_, Self, R>,
-        profile: &ShapingProfile,
+        profile: &ShapingProfile<R>,
         lambda: usize,
     ) {
         assert!(low.n() == h.n() && low.n() == carry.n(), "shaping degrees differ");
@@ -131,7 +131,7 @@ unsafe impl<RT: GpuRuntime, R: Ring> poulpy_ckks::oep::CKKSShapedRoundingImpl<R>
                 |tables: &ShapingTables<RT>| {
                     let mut tables = tables.0.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
                     tables
-                        .entry((profile.ring(), profile.coefficients().to_vec()))
+                        .entry((R::WIRE_TAG, profile.coefficients().to_vec()))
                         .or_insert_with(|| {
                             let mut words = profile.inverse()[..profile.period()].to_vec();
                             words.extend(profile.coefficients()[..profile.period()].iter().map(|&c| c as i64 as u64));
@@ -145,7 +145,7 @@ unsafe impl<RT: GpuRuntime, R: Ring> poulpy_ckks::oep::CKKSShapedRoundingImpl<R>
         let low = column_ref(low, 0).expect("shaping input storage");
         let h = column_mut(h, 0).expect("shaping preimage storage");
         let carry = column_mut(carry, 0).expect("shaping correction storage");
-        let invariant = profile.ring() == ShapingRing::ConjugateInvariant;
+        let invariant = conjugate_invariant::<R>();
         let n = low.n;
         let terms = profile.period() as u32;
         launch!(

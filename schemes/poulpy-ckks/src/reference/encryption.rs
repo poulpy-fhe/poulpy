@@ -16,7 +16,7 @@ use crate::{
     checked_log_budget_sub, ckks_ensure, ensure_base2k_match, ensure_plaintext_alignment, ensure_plaintext_vec_operand,
     error::ensure_encryption_degrees,
     layouts::ScratchArenaTakeCKKSCiphertext,
-    shaping::{MAX_PASS_BITS, ShapingProfile, ShapingRing},
+    shaping::{MAX_PASS_BITS, ShapingProfile},
 };
 
 use super::CKKSPlaintextVecReference;
@@ -101,7 +101,7 @@ pub trait CKKSEncryptionReference<BE: Backend, Rg: Ring = Standard> {
             return Ok(());
         };
         // The checks of the shaped rounding, before the first draw.
-        let profile = ShapingProfile::for_op("ckks_encrypt_sk", &layout, ShapingRing::of::<Rg>())?;
+        let profile = ShapingProfile::<Rg>::for_op("ckks_encrypt_sk", &layout)?;
         if profile.period() > ct.n().as_usize() {
             return Err(CKKSCompositionError::InvalidOperand {
                 op: "ckks_encrypt_sk",

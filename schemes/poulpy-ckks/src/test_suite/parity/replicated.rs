@@ -10,7 +10,7 @@ use crate::{
     layouts::CKKSPlaintextAlloc,
     oep::{CKKSEncodingImpl, CKKSRoundImpl},
     reference::encoding::CKKSSlotEmbedding,
-    shaping::{ShapingProfile, ShapingRing, ShapingUnit},
+    shaping::{ShapingProfile, ShapingUnit, conjugate_invariant},
     test_suite::CKKSTestParams,
 };
 use poulpy_core::{GLWEAdd, GLWEFill};
@@ -82,9 +82,7 @@ where
     let SlotLayout::Replicated(unit) = replicated() else {
         unreachable!()
     };
-    let pass = ShapingProfile::with_ring(&unit, ShapingRing::of::<Rg>())
-        .unwrap()
-        .max_pass_bits();
+    let pass = ShapingProfile::<Rg>::try_new(&unit).unwrap().max_pass_bits();
     let wide = ct_layout(params, k, k - b, replicated());
     let a = fixture_ciphertext::<B, Rg>(module, &wide, 75);
     let past = ct_layout(params, k - pass - 6, k - b - pass - 6, replicated());
@@ -100,11 +98,7 @@ where
         ..Default::default()
     });
     let value = |x: f64| F::from_f64(x).unwrap();
-    let im = if ShapingRing::of::<Rg>() == ShapingRing::ConjugateInvariant {
-        0.0
-    } else {
-        -0.25
-    };
+    let im = if conjugate_invariant::<Rg>() { 0.0 } else { -0.25 };
     let (re, im) = ([value(0.625), value(-0.375)], [value(im), value(-im)]);
     with_scratch::<B, _>(module.ckks_encoding_host_tmp_bytes(slots), |s| {
         module.ckks_encode_slots_host_into(&mut pt, &re, &im, s)

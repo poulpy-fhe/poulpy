@@ -8,7 +8,7 @@ pub fn shaped_round_correction<BE, Rg>(
     carry: &mut VecZnxBackendMut<'_, BE, Rg>,
     h: &mut VecZnxBackendMut<'_, BE, Rg>,
     low: &VecZnxBackendRef<'_, BE, Rg>,
-    profile: &ShapingProfile,
+    profile: &ShapingProfile<Rg>,
     lambda: usize,
 ) where
     BE: Backend<ZnxWord = i64>,
@@ -53,7 +53,7 @@ macro_rules! impl_cpu_ckks_shaped_rounding {
                 carry: &mut ::poulpy_hal::layouts::VecZnxBackendMut<'_, Self, $ring>,
                 h: &mut ::poulpy_hal::layouts::VecZnxBackendMut<'_, Self, $ring>,
                 low: &::poulpy_hal::layouts::VecZnxBackendRef<'_, Self, $ring>,
-                profile: &::poulpy_ckks::shaping::ShapingProfile,
+                profile: &::poulpy_ckks::shaping::ShapingProfile<$ring>,
                 lambda: usize,
             ) {
                 $crate::ckks_round::shaped_round_correction::<Self, $ring>(carry, h, low, profile, lambda);
