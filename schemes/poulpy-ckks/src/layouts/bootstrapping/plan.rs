@@ -114,6 +114,9 @@ fn invalid_plan(reason: &str) -> anyhow::Error {
 ///
 /// The split route leaves the canonical flag clear: its recombination is a lazy sum.
 ///
+/// [`EvalModType::ExpCmplx`] leaves `exp(2πi·m/2^log_msg_ratio)`, so a run labels `res` complex whatever the message,
+/// and [`ckks_bootstrap`](crate::api::CKKSBootstrappingOps::ckks_bootstrap) refuses the plan, which refreshes nothing.
+///
 /// # LUTs
 ///
 /// [`ckks_eval_lut`](crate::api::CKKSBootstrappingOps::ckks_eval_lut) runs no bypass, refuses a plan with one, and

@@ -213,6 +213,10 @@ Its cosine polynomial is controlled by `degree`, `k_interval`, and `log_interval
 The map from the cosine to `[f0, f1]` is folded into the polynomial and the double-angle steps, so it consumes no scale.
 For now it still uses a `BootstrappingPlan` containing an EvalMod plan because EvalMod is not optional in the compiled context, although those tables are not evaluated by the binary path.
 
+### A trigonometric polynomial on the raise
+
+`BootstrappingPreset::with_eval_mod_exponential` replaces the Han–Ki fit by the complex exponential, fitted on the whole interval, so the message may fill the modulus: at a message ratio of 1 bit, `ckks_bootstrap_eval_mod` leaves `exp(iπ·m)` in complex slots, on the unit circle, for a trigonometric polynomial of the caller's, real once its conjugate is added. Such a context refreshes nothing, so `ckks_bootstrap` refuses it, and the caller stamps complex slots on the output. The exponential costs more products than the even Han–Ki base at the same levels; the scales it runs at may be lower, since its output is not amplified by the message ratio.
+
 ### EvalMod on the conjugate-invariant ring
 
 After an unsplit CoeffsToSlots, the `N` coefficients sit in `N/2` complex slots `z_j = c_j + i·c_{j+N/2}`, and EvalMod's real polynomial runs once per half. The conjugate-invariant (CI) ring of degree `N` has `N` real slots, so one EvalMod there reduces them all (`BootstrappingPlan::with_eval_mod_ring(EvalModRing::ConjugateInvariant { .. })`, S2C-first only).

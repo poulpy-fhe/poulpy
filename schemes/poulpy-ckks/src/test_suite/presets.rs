@@ -1585,6 +1585,41 @@ where
     .unwrap();
     let got = run.raise_to_eval_mod(&rotated, Some(&mask), message.meta());
     run.assert_decrypts("masked, one half up", &got, &masked, &zeros);
+
+    let toy = crate::presets::bootstrapping::insecure_n11_d35_k180_p20_s2c().unwrap();
+    let interval = toy.plan().eval_mod().f_mod_interval;
+    let scales = PresetScales {
+        log_msg_ratio: 1,
+        ..toy.scales()
+    };
+    let unit_circle = toy
+        .with_scales(scales)
+        .unwrap()
+        .with_eval_mod_exponential(interval, 31, 3)
+        .unwrap();
+    let run = StepsRun::<BE>::new(unit_circle);
+    let (module, boot) = (&run.module, run.preset.bootstrap_layout());
+    let message = run.encrypt(&want, &zeros, SlotsKind::Real);
+    let mut whole = module.ckks_ciphertext_alloc_from_glwe_infos(&boot);
+    let err = with_scratch::<BE, _>(0, |s| module.ckks_bootstrap(&mut whole, &message, &run.context, &run.keys, s)).unwrap_err();
+    assert!(
+        matches!(
+            err.composition(),
+            Some(CKKSCompositionError::InvalidOperand { op: "ckks_bootstrap", reason })
+                if reason.contains("requires an identity bootstrapping context")
+        ),
+        "an exponential context does not refresh a message: {err}"
+    );
+    let got = run.raise_to_eval_mod(&run.to_coeffs(&message), None, message.meta());
+    assert_eq!(got.k(), run.preset.output_layout().k());
+    assert_eq!(
+        got.meta().slots,
+        SlotsKind::Complex,
+        "a real message leaves the unit circle complex"
+    );
+    let cos: Vec<f64> = want.iter().map(|m| (std::f64::consts::PI * m).cos()).collect();
+    let sin: Vec<f64> = want.iter().map(|m| (std::f64::consts::PI * m).sin()).collect();
+    run.assert_decrypts("on the unit circle", &got, &cos, &sin);
 }
 
 /// The toy preset of [`insecure_n11_d35_k180_p20_s2c`](crate::presets::bootstrapping::insecure_n11_d35_k180_p20_s2c) on
