@@ -10,7 +10,8 @@ use crate::source::Source;
 ///
 /// # Safety
 /// Implementations must return a module handle that is valid for the backend,
-/// the ring degree and both rings, and uphold the
+/// the ring degree and both rings, with the transform tables of every degree
+/// from `MIN_DEGREE` to `n` on both rings built before it returns, and uphold the
 /// [backend safety contract](crate::doc::backend_safety).
 pub unsafe trait HalModuleImpl: Backend {
     #[allow(clippy::new_ret_no_self)]

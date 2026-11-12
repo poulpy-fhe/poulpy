@@ -7,7 +7,7 @@ use crate::layouts::{Backend, MatZnx, Ring, ScalarZnx, VecZnx};
 /// class      support
 /// mutation   none
 /// domain     n: a power of two, the ring degree N
-/// ensures    returns the backend's module for R_N and every R_n, n a power of two with MIN_DEGREE <= n <= N, on both rings, carrying the transform tables of each or building those of a ring on its first use
+/// ensures    returns the backend's module for R_N and every R_n, n a power of two with MIN_DEGREE <= n <= N, on both rings, carrying the transform tables of each, all built before it returns
 /// test       none
 /// ```
 pub trait ModuleNew<B: Backend> {

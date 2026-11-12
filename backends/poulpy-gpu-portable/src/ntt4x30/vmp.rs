@@ -31,7 +31,7 @@ use super::{
     ntt::gs,
     primes::{Consts, FOLD_TERMS, barrett60, fold64, sel4},
 };
-use crate::runtime::{Binding, GpuRuntime, Label, launch};
+use crate::runtime::{Binding, GpuBuf, GpuRuntime, Label, launch};
 
 /// A prepared matrix as a kernel addresses it.
 pub(crate) struct Pmat {
@@ -949,7 +949,7 @@ fn product_inverse_kernel(
 /// stage count of that launch ([`super::inverse_head`]).
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn digit_product_inverse<RT: GpuRuntime>(
-    table: &crate::runtime::GpuBuf<RT>,
+    twiddles: &GpuBuf<RT>,
     res: &DftColumn,
     a: &DftColumn,
     pmat: &Pmat,
@@ -990,7 +990,7 @@ pub(crate) fn digit_product_inverse<RT: GpuRuntime>(
     // An absent addend is bound to a buffer of the launch and never read.
     let [(add0, add0_size), (add1, add1_size)] =
         addends.map(|addend| addend.map_or((a, 0), |addend| (addend, addend.size.min(res.size))));
-    let table = table.view().binding().expect("transform tables hold storage");
+    let twiddles = twiddles.view().binding().expect("transform tables hold storage");
     let key_limbs = pmat.size.min(res.size + dsize - 1);
     let words = limbs * pmat.cols_in
         + pmat.cols_out * (terms.rows() as usize * pmat.cols_in * key_limbs + res.size)
@@ -1002,7 +1002,7 @@ pub(crate) fn digit_product_inverse<RT: GpuRuntime>(
             res.binding => u32,
             a.binding => u32,
             pmat.binding => u32,
-            table => u32,
+            twiddles => u32,
             add0.binding => u32,
             add1.binding => u32,
         ];
@@ -1224,7 +1224,7 @@ fn product_inverse_many_kernel(
 /// [`MANY_SOURCES`], into fresh results `res`: one launch that reads `pmat` once. The views of
 /// each role share an allocation, a layout and a size.
 pub(crate) fn digit_products_inverse<RT: GpuRuntime>(
-    table: &crate::runtime::GpuBuf<RT>,
+    twiddles: &GpuBuf<RT>,
     res: &[DftColumn],
     a: &[DftColumn],
     pmat: &Pmat,
@@ -1269,7 +1269,7 @@ pub(crate) fn digit_products_inverse<RT: GpuRuntime>(
         permute: false,
     };
     let base = |views: &[DftColumn], s: usize| views.get(s).map_or(views[0].base, |v| v.base);
-    let table = table.view().binding().expect("transform tables hold storage");
+    let twiddles = twiddles.view().binding().expect("transform tables hold storage");
     let key_limbs = pmat.size.min(res[0].size + dsize - 1);
     let words = pmat.cols_out * terms.rows() as usize * pmat.cols_in * key_limbs
         + m * (limbs * pmat.cols_in + pmat.cols_out * res[0].size);
@@ -1279,7 +1279,7 @@ pub(crate) fn digit_products_inverse<RT: GpuRuntime>(
             res[0].binding => u32,
             a[0].binding => u32,
             pmat.binding => u32,
-            table => u32,
+            twiddles => u32,
         ];
         [
             n.ilog2(),

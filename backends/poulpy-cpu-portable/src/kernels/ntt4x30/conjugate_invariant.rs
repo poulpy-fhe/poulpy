@@ -1,142 +1,190 @@
 //! Conjugate-invariant NTT4x30 arithmetic: the negacyclic NTT behind a basis change.
+//!
+//! With `alpha` a primitive `4n`-th root of unity, `i = alpha^n` and `f[k] = alpha^-k`, the transform of degree `n` changes
+//! `a` into `out[j] = f[j] (a[j] - i a[n - j])` before the negacyclic NTT, and back with
+//! `out[j] = (i f[n - j] a[j] - f[j] a[n - j]) / 2` after the inverse one, for `j` in `1..n`, keeping `out[0] = a[0]`.
+//! Every degree holds its own table `f`, and each pair `(j, n - j)` is changed jointly: two products per output.
 
-use std::marker::PhantomData;
+use std::{marker::PhantomData, sync::Arc};
 
-use poulpy_hal::layouts::ConjugateInvariant;
+use poulpy_hal::{
+    AlignedVec, alloc_aligned,
+    layouts::{ConjugateInvariant, Standard},
+};
 
 use crate::kernels::ntt4x30::{
-    ntt::{NttTable, NttTableInv, intt_core, ntt_core},
+    ntt::{NttTable, NttTableInv, intt_core, modq_pow_portable, ntt_core},
     primes::PrimeSetCrt4,
     standard,
     vec_znx_dft::{NttAutomorphismPlan, NttPlan, NttPlanNew},
 };
 
-/// Changes between invariant coefficients and a negacyclic NTT basis.
-pub struct BasisChange {
-    factors: Vec<[u64; 2]>,
-    /// Shoup quotients `floor(factor * 2^64 / q)` of `factors`.
-    quotients: Vec<[u64; 2]>,
-    q: u64,
-    n: usize,
+/// Shoup product `x * w mod q` in `[0, 2q)` for any `x`, `w < q < 2^63` and `w_quo = floor(w * 2^64 / q)`.
+#[inline(always)]
+fn shoup_mul(x: u64, w: u64, w_quo: u64, q: u64) -> u64 {
+    let hi = ((x as u128 * w_quo as u128) >> 64) as u64;
+    x.wrapping_mul(w).wrapping_sub(hi.wrapping_mul(q))
 }
 
-impl BasisChange {
-    /// Empty placeholder held by standard-ring tables.
-    pub(super) const EMPTY: Self = Self {
-        factors: Vec::new(),
-        quotients: Vec::new(),
-        q: 0,
-        n: 0,
-    };
+/// The basis change of degree `n` of the conjugate-invariant ring over the primes `P`: `f[k] = alpha^-k` for `k` in
+/// `[0, n)`, `alpha` a primitive `4n`-th root of unity, and `i = alpha^n`.
+pub struct BasisChangeTable<P: PrimeSetCrt4> {
+    /// `f[k]` modulo prime `p` at `4 * k + p`, canonical.
+    powers: AlignedVec<u64>,
+    /// Shoup quotients `floor(f * 2^64 / q)` of `powers`.
+    quotients: AlignedVec<u64>,
+    /// `i` modulo each prime, canonical.
+    i: [u64; 4],
+    /// Shoup quotients of `i`.
+    i_quotients: [u64; 4],
+    _phantom: PhantomData<P>,
+}
 
-    /// Direct and reflected coefficient multipliers, indexed by coefficient.
-    pub fn factors(&self) -> &[[u64; 2]] {
-        &self.factors
-    }
-
-    /// Uses a primitive `2^(max_log_n + 1)`-th root for the supplied prime.
-    pub fn new(n: usize, q: u64, omega: u64, max_log_n: u32, inverse: bool) -> Self {
-        assert!(n.is_power_of_two() && n <= (1usize << (max_log_n - 1)));
-        let mul = |a: u64, b: u64| ((a as u128 * b as u128) % q as u128) as u64;
-        let pow = |mut a: u64, mut e: u64| {
-            let mut r = 1;
-            while e != 0 {
-                if e & 1 != 0 {
-                    r = mul(r, a);
-                }
-                a = mul(a, a);
-                e >>= 1;
+impl<P: PrimeSetCrt4> BasisChangeTable<P> {
+    /// The table of degree `n`.
+    pub(crate) fn new(n: usize) -> Self {
+        assert!(
+            n.is_power_of_two() && n <= 1 << (P::MAX_LOG_N - 1),
+            "basis change degree must be a power of two within the conjugate-invariant ring"
+        );
+        // `alpha` is this power of the primitive `2^(MAX_LOG_N + 1)`-th root `OMEGA`.
+        let e = (1i64 << (P::MAX_LOG_N - 1)) / n as i64;
+        let mut powers = alloc_aligned::<u64>(4 * n);
+        let mut quotients = alloc_aligned::<u64>(4 * n);
+        powers.truncate(4 * n);
+        quotients.truncate(4 * n);
+        let mut i = [0; 4];
+        let mut i_quotients = [0; 4];
+        for (p, (&q, &omega)) in P::Q.iter().zip(&P::OMEGA).enumerate() {
+            let step = modq_pow_portable(omega, -e, q) as u64;
+            i[p] = modq_pow_portable(omega, e * n as i64, q) as u64;
+            let q = q as u64;
+            let (m, r) = (u64::MAX / q, u64::MAX % q + 1);
+            // floor(w 2^64 / q) = w floor(2^64 / q) + floor(w (2^64 mod q) / q), with no 128-bit division for w < q < 2^32.
+            let quotient = |w: u64| w * m + w * r / q;
+            let step_quotient = quotient(step);
+            let mut f = 1;
+            for k in 0..n {
+                powers[4 * k + p] = f;
+                quotients[4 * k + p] = quotient(f);
+                f = shoup_mul(f, step, step_quotient, q);
+                f -= if f >= q { q } else { 0 };
             }
-            r
-        };
-        let alpha = pow(omega, (1u64 << (max_log_n - 1)) / n as u64);
-        let alpha_inv = pow(alpha, q - 2);
-        // At x^n = i, the invariant basis becomes c[j] - i*c[n-j].
-        let i = pow(alpha, n as u64);
-        let half = q.div_ceil(2);
-        let mut forward = 1;
-        let mut backward = 1;
-        let mut factors = vec![[1, 0]; n];
-        for factors in factors.iter_mut().skip(1) {
-            forward = mul(forward, alpha);
-            backward = mul(backward, alpha_inv);
-            *factors = if inverse {
-                [mul(forward, half), q - mul(backward, half)]
-            } else {
-                [backward, q - mul(i, backward)]
-            };
+            i_quotients[p] = quotient(i[p]);
         }
-        let shoup = |w: u64| (((w as u128) << 64) / q as u128) as u64;
-        let quotients = factors.iter().map(|&[d, c]| [shoup(d), shoup(c)]).collect();
         Self {
-            factors,
+            powers,
             quotients,
-            q,
-            n,
+            i,
+            i_quotients,
+            _phantom: PhantomData,
         }
     }
 
-    /// Applies the basis change to one prime lane with the given coefficient stride.
-    pub fn apply(&self, data: &mut [u64], stride: usize) {
-        let q = self.q;
-        // Shoup product `x * w mod q` in `[0, 2q)` for any `x < 2^64`.
-        let mul = |x: u64, w: u64, w_quo: u64| {
-            let hi = ((x as u128 * w_quo as u128) >> 64) as u64;
-            x.wrapping_mul(w).wrapping_sub(hi.wrapping_mul(q))
-        };
-        let apply = |j: usize, a: u64, b: u64| {
-            let ([d, c], [d_quo, c_quo]) = (self.factors[j], self.quotients[j]);
-            let mut r = mul(a, d, d_quo) + mul(b, c, c_quo);
-            if r >= 2 * q {
-                r -= 2 * q;
+    /// The degree `n`.
+    pub fn degree(&self) -> usize {
+        self.powers.len() / 4
+    }
+
+    /// `f[k]` modulo prime `p` at `4 * k + p`, canonical.
+    pub fn powers(&self) -> &[u64] {
+        &self.powers
+    }
+
+    /// `i` modulo each prime, canonical.
+    pub fn i(&self) -> &[u64; 4] {
+        &self.i
+    }
+
+    /// Changes the q120b vector `data` of the degree of the table into the negacyclic basis, canonical.
+    fn forward_portable(&self, data: &mut [u64]) {
+        let n = self.degree();
+        for (x, &q) in data[..4].iter_mut().zip(&P::Q) {
+            *x %= q as u64;
+        }
+        for j in 1..=n / 2 {
+            for (p, &q) in P::Q.iter().enumerate() {
+                let q = q as u64;
+                let (i, i_quo) = (self.i[p], self.i_quotients[p]);
+                // `x - y mod q` below `2^64` for `y < 2q`.
+                let sub = |x: u64, y: u64| if x < y { x + 2 * q - y } else { x - y };
+                let change = |x: u64, y: u64, k: usize| {
+                    let t = sub(x, shoup_mul(y, i, i_quo, q));
+                    let r = shoup_mul(t, self.powers[k], self.quotients[k], q);
+                    r - if r >= q { q } else { 0 }
+                };
+                let (direct, reflected) = (4 * j + p, 4 * (n - j) + p);
+                let (a, b) = (data[direct], data[reflected]);
+                data[direct] = change(a, b, direct);
+                data[reflected] = change(b, a, reflected);
             }
-            if r >= q {
-                r -= q;
-            }
-            r
-        };
-        data[0] %= q;
-        for j in 1..=self.n / 2 {
-            let other = self.n - j;
-            let a = data[j * stride];
-            let b = data[other * stride];
-            data[j * stride] = apply(j, a, b);
-            data[other * stride] = apply(other, b, a);
         }
     }
-}
 
-fn basis_changes<P: PrimeSetCrt4>(n: usize, inverse: bool) -> [BasisChange; 4] {
-    std::array::from_fn(|k| BasisChange::new(n, P::Q[k] as u64, P::OMEGA[k] as u64, P::MAX_LOG_N, inverse))
+    /// Changes the q120b vector `data` of the degree of the table back to invariant coefficients, canonical.
+    fn inverse_portable(&self, data: &mut [u64]) {
+        let n = self.degree();
+        for (x, &q) in data[..4].iter_mut().zip(&P::Q) {
+            *x %= q as u64;
+        }
+        for j in 1..=n / 2 {
+            for (p, &q) in P::Q.iter().enumerate() {
+                let q = q as u64;
+                let (i, i_quo) = (self.i[p], self.i_quotients[p]);
+                // `(i x - y) / 2`, canonical, for `x, y < 2q`.
+                let change = |x: u64, y: u64| {
+                    let mut r = shoup_mul(x, i, i_quo, q) + 2 * q - y;
+                    r -= if r >= 2 * q { 2 * q } else { 0 };
+                    r -= if r >= q { q } else { 0 };
+                    (r + (r & 1) * q) >> 1
+                };
+                let (direct, reflected) = (4 * j + p, 4 * (n - j) + p);
+                let (a, b) = (data[direct], data[reflected]);
+                let u = shoup_mul(a, self.powers[reflected], self.quotients[reflected], q);
+                let v = shoup_mul(b, self.powers[direct], self.quotients[direct], q);
+                data[direct] = change(u, v);
+                data[reflected] = change(v, u);
+            }
+        }
+    }
 }
 
 impl<P: PrimeSetCrt4> NttTable<P, ConjugateInvariant> {
     pub fn new(n: usize) -> Self {
-        Self::build(n, basis_changes::<P>(n, false))
+        NttTable::<P, Standard>::new(n).with_basis(Arc::new(BasisChangeTable::new(n)))
     }
 
-    /// Basis change into the negacyclic basis, applied before the NTT.
-    pub fn basis_changes(&self) -> &[BasisChange; 4] {
-        &self.basis
+    /// The basis change of this degree, applied before the NTT.
+    pub fn basis_change(&self) -> &BasisChangeTable<P> {
+        self.basis.as_deref().expect("conjugate-invariant tables hold a basis change")
     }
 }
 
 impl<P: PrimeSetCrt4> NttTableInv<P, ConjugateInvariant> {
     pub fn new(n: usize) -> Self {
-        Self::build(n, basis_changes::<P>(n, true))
+        NttTableInv::<P, Standard>::new(n).with_basis(Arc::new(BasisChangeTable::new(n)))
     }
 
-    /// Basis change back to invariant coefficients, applied after the inverse NTT.
-    pub fn basis_changes(&self) -> &[BasisChange; 4] {
-        &self.basis
+    /// The basis change of this degree, applied after the inverse NTT.
+    pub fn basis_change(&self) -> &BasisChangeTable<P> {
+        self.basis.as_deref().expect("conjugate-invariant tables hold a basis change")
     }
 }
 
 impl<P: PrimeSetCrt4> NttPlanNew for NttPlan<P, ConjugateInvariant> {
     fn new(n: usize) -> Self {
+        Self::from_standard(&NttPlan::<P, Standard>::new(n))
+    }
+}
+
+impl<P: PrimeSetCrt4> NttPlan<P, ConjugateInvariant> {
+    /// The plan of the degree of `standard`, sharing its twiddles: only the basis change of the degree is computed, one
+    /// table for both directions.
+    pub fn from_standard(standard: &NttPlan<P, Standard>) -> Self {
+        let basis = Arc::new(BasisChangeTable::new(standard.ntt.n));
         Self {
-            ntt: NttTable::<P, ConjugateInvariant>::new(n),
-            intt: NttTableInv::<P, ConjugateInvariant>::new(n),
+            ntt: standard.ntt.with_basis(Arc::clone(&basis)),
+            intt: standard.intt.with_basis(basis),
         }
     }
 }
@@ -146,9 +194,7 @@ impl<P: PrimeSetCrt4> NttPlanNew for NttPlan<P, ConjugateInvariant> {
 pub fn ntt_portable<P: PrimeSetCrt4>(table: &NttTable<P, ConjugateInvariant>, data: &mut [u64]) {
     let n = table.n;
     if n > 1 {
-        for k in 0..4 {
-            table.basis_changes()[k].apply(&mut data[k..4 * n], 4);
-        }
+        table.basis_change().forward_portable(&mut data[..4 * n]);
     }
     ntt_core(table, data);
 }
@@ -159,9 +205,7 @@ pub fn intt_portable<P: PrimeSetCrt4>(table: &NttTableInv<P, ConjugateInvariant>
     intt_core(table, data);
     let n = table.n;
     if n > 1 {
-        for k in 0..4 {
-            table.basis_changes()[k].apply(&mut data[k..4 * n], 4);
-        }
+        table.basis_change().inverse_portable(&mut data[..4 * n]);
     }
 }
 
@@ -174,5 +218,47 @@ pub fn build_ntt4x30_automorphism_plan_portable(n: usize, p: i64) -> NttAutomorp
         p,
         perm,
         ring: PhantomData,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        kernels::ntt4x30::primes::{PrimeSet, Primes29, Primes30, Primes31},
+        test_suite::conjugate_invariant::test_conjugate_invariant_ntt_basis_change,
+    };
+
+    fn kernel<P: PrimeSetCrt4>(table: &BasisChangeTable<P>, inverse: bool, data: &mut [u64]) {
+        if inverse {
+            table.inverse_portable(data)
+        } else {
+            table.forward_portable(data)
+        }
+    }
+
+    #[test]
+    fn basis_change_matches_reference() {
+        test_conjugate_invariant_ntt_basis_change::<Primes29>(kernel);
+        test_conjugate_invariant_ntt_basis_change::<Primes30>(kernel);
+        test_conjugate_invariant_ntt_basis_change::<Primes31>(kernel);
+    }
+
+    #[test]
+    fn degree_above_the_conjugate_invariant_ring_rejected() {
+        let n = 1 << Primes30::MAX_LOG_N;
+        let message = |build: &dyn Fn()| {
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(build))
+                .unwrap_err()
+                .downcast_ref::<&str>()
+                .copied()
+        };
+        let expected = Some("basis change degree must be a power of two within the conjugate-invariant ring");
+        assert_eq!(message(&|| drop(NttTable::<Primes30, ConjugateInvariant>::new(n))), expected);
+        assert_eq!(
+            message(&|| drop(NttTableInv::<Primes30, ConjugateInvariant>::new(n))),
+            expected
+        );
+        assert_eq!(message(&|| drop(NttPlan::<Primes30, ConjugateInvariant>::new(n))), expected);
     }
 }

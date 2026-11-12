@@ -3,7 +3,7 @@
 //! This module defines:
 //!
 //! - [`FFT64PortableHandle`]: the opaque handle stored inside a `Module<FFT64Portable>`
-//!   holding precomputed FFT and IFFT twiddle-factor tables of both rings, the conjugate-invariant ones built on first use.
+//!   holding precomputed FFT and IFFT twiddle-factor tables of both rings.
 //! - The [`Backend`] trait implementation, which defines scalar types and the
 //!   handle destruction path.
 //! - The [`FFT64HandleFactory`] implementation, which builds the handle stored
@@ -19,7 +19,7 @@ use poulpy_hal::{
     layouts::{Backend, Host, Ring},
 };
 
-use crate::kernels::fft64::module::{FFT64HandleFactory, FFT64Plan, FFT64PlanSet, FFTHandleProvider};
+use crate::kernels::fft64::module::{FFT64HandleFactory, FFT64Plan, FFT64PlanNew, FFTHandleProvider};
 use crate::kernels::{FFT64Plans, PerRing};
 
 use super::FFT64Portable;
@@ -27,8 +27,8 @@ use super::FFT64Portable;
 /// Opaque handle of [`FFT64Portable`](super::FFT64Portable), holding the plans of both rings.
 ///
 /// Holds precomputed twiddle-factor tables for the forward FFT and inverse FFT
-/// of size `m = n / 2`, where `n` is the ring dimension passed to
-/// [`Module::new`](poulpy_hal::api::ModuleNew::new).
+/// of size `m = n / 2` of both rings for every degree `n` from [`Backend::MIN_DEGREE`] to the ring dimension
+/// passed to [`Module::new`](poulpy_hal::api::ModuleNew::new), all built with the module.
 ///
 /// This struct is heap-allocated during module creation and freed when the
 /// `Module` is dropped (via [`Backend::destroy`]).
@@ -164,14 +164,18 @@ unsafe impl FFT64HandleFactory for FFT64PortableHandle {
     fn create_fft64_handle(n: usize) -> Self {
         FFT64PortableHandle {
             table_cache: Default::default(),
-            ring_plans: PerRing::new(FFT64PlanSet::new(n), n, FFT64PlanSet::new),
+            ring_plans: PerRing::new(FFT64Portable::MIN_DEGREE, n, FFT64Plan::new, |_, n| FFT64Plan::new(n)),
         }
     }
 }
 
+/// # Safety
+///
+/// The returned references are valid for the lifetime of `&self`: the plans of both rings are built in
+/// [`FFT64HandleFactory::create_fft64_handle`] and never change.
 unsafe impl<Rg: Ring> FFTHandleProvider<f64, Rg> for FFT64PortableHandle {
     fn get_fft_plan(&self, n: usize) -> &FFT64Plan<f64, Rg> {
-        self.ring_plans.on_ring::<Rg>().for_ring(n)
+        self.ring_plans.on_ring::<Rg>(n)
     }
 }
 

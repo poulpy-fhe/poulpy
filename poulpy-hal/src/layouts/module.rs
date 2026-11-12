@@ -368,8 +368,8 @@ pub const MAX_RING_DEGREE: u64 = 1 << 17;
 /// [`api`](crate::api) trait methods are dispatched through this type.
 /// Every operation serves operands of either ring and of any power-of-two degree `n` with
 /// `B::MIN_DEGREE <= n <= N`, read from the operands; the handle holds the
-/// transform tables of every such degree, those of a ring built at construction or
-/// on its first use. Allocation takes the degree explicitly.
+/// transform tables of every such degree on both rings, all built at construction.
+/// Allocation takes the degree explicitly.
 ///
 /// The module **owns** its handle; dropping the `Module` calls
 /// [`Backend::destroy`].

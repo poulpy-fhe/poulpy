@@ -28,14 +28,14 @@ pub(crate) use automorphism::automorphism;
 pub(crate) use cnv::{CAPACITY_STEP, convolution, convolution_pairwise, convolution_sum, convolution_tensor};
 #[cfg_attr(not(feature = "enable-core"), allow(unused_imports))]
 pub(crate) use cnv::{MANY_LEFTS, MANY_PRODUCTS, MANY_TERMS, Schedule, scale_many};
-pub(crate) use crt::{crt_at, to_big, to_big_clearing};
+pub(crate) use crt::{crt_at, crt_pair_at, to_big, to_big_clearing};
 #[cfg_attr(not(feature = "enable-core"), allow(unused_imports))]
 pub(crate) use elementwise::gather;
 pub(crate) use elementwise::{DftTerm, combine};
 pub(crate) use ntt::{forward, inverse, inverse_head, inverse_tail};
 pub(crate) use primes::Consts;
 pub(crate) use svp::scale;
-pub(crate) use tables::Tables;
+pub(crate) use tables::{RingTables, Tables};
 pub(crate) use vmp::{
     MANY_SOURCES, Pmat, Tail, digit_product, digit_product_inverse, digit_products, digit_products_inverse, extract_rows,
 };

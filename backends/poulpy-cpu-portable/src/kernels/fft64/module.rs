@@ -54,51 +54,6 @@ pub(super) fn plan_half_degree(n: usize) -> usize {
     n >> 1
 }
 
-/// Complete geometric family of FFT plans up to a maximum ring degree.
-pub struct FFT64PlanSet<F, R: Ring = Standard>
-where
-    F: Float + FloatConst + Debug + Zeroable + Send + Sync,
-{
-    plans: Vec<FFT64Plan<F, R>>,
-    max_n: usize,
-}
-
-impl<F, R: Ring> FFT64PlanSet<F, R>
-where
-    F: Float + FloatConst + Debug + Zeroable + Send + Sync,
-{
-    pub fn new(max_n: usize) -> Self
-    where
-        FFT64Plan<F, R>: FFT64PlanNew,
-    {
-        assert!(
-            max_n >= 2 && max_n.is_power_of_two(),
-            "maximum ring degree must be a power of two >= 2, got {max_n}"
-        );
-        let plans = (1..=max_n.ilog2() as usize)
-            .map(|log_n| FFT64Plan::new(1usize << log_n))
-            .collect();
-        Self { plans, max_n }
-    }
-
-    pub fn max_n(&self) -> usize {
-        self.max_n
-    }
-
-    pub fn for_ring(&self, n: usize) -> &FFT64Plan<F, R> {
-        assert!(
-            n >= 2 && n.is_power_of_two() && n <= self.max_n,
-            "unsupported ring degree {n}; maximum is {}",
-            self.max_n
-        );
-        &self.plans[n.ilog2() as usize - 1]
-    }
-
-    pub fn for_slots(&self, slots: usize) -> &FFT64Plan<F, R> {
-        self.for_ring(slots.checked_mul(2).expect("slot count overflow"))
-    }
-}
-
 /// Access to the precomputed FFT/iFFT tables stored inside a `Module<B>` handle.
 ///
 /// Backend crates implement [`FFTHandleProvider`] for their concrete handle type.
@@ -123,9 +78,8 @@ where
 ///
 /// # Safety
 ///
-/// Implementors must return references that stay valid for the lifetime of `&self`, to plans
-/// built at construction or once on first use under internal synchronization, as
-/// [`PerRing`](crate::kernels::PerRing) builds the conjugate-invariant ones.
+/// Implementors must return references that stay valid for the lifetime of `&self`, to plans of both rings
+/// fully built before `Module::new()` returns.
 pub unsafe trait FFTHandleProvider<F, Rg: Ring = Standard>
 where
     F: Float + FloatConst + Debug + Zeroable + Send + Sync,

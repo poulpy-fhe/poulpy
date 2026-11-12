@@ -164,9 +164,10 @@ it as a method generic: `module.vec_znx_alloc::<ConjugateInvariant>(n, cols, siz
 backends serve both rings the same way.
 NTT modules support invariant degrees up to `2^17` with the current prime sets.
 
-The ring is selected by the operand type. A handle holds the tables of both rings:
-the standard ones are built with the module, the conjugate-invariant ones on first
-use. Ring-specific transforms, slot products and automorphisms have one
+The ring is selected by the operand type. A handle holds the tables of both rings
+for every degree it serves, all built with the module; on the NTT families the
+conjugate-invariant table of a degree shares the twiddles of the standard one and
+adds its basis change. Ring-specific transforms, slot products and automorphisms have one
 implementation per ring (`Fft64RingArith`, `NttDFTExecute`, `ZnxAutomorphism`),
 whose portable bodies live in the `standard` and `conjugate_invariant` submodules of
 `kernels::{fft64, ntt4x30, znx}` under the same names, and a backend implements each

@@ -2,7 +2,7 @@
 
 use std::ptr::NonNull;
 
-use poulpy_cpu_portable::kernels::fft64::module::{FFT64HandleFactory, FFT64Plan, FFT64PlanSet, FFTHandleProvider};
+use poulpy_cpu_portable::kernels::fft64::module::{FFT64HandleFactory, FFT64Plan, FFT64PlanNew, FFTHandleProvider};
 use poulpy_cpu_portable::kernels::{FFT64Plans, PerRing};
 use poulpy_hal::{
     AlignedBuf, alloc_aligned,
@@ -13,9 +13,8 @@ use super::FFT64Neon;
 
 /// Opaque handle for the [`FFT64Neon`](super::FFT64Neon) backend, holding the plans of both rings.
 /// Holds precomputed twiddle-factor tables for the forward FFT and inverse FFT
-/// of size `m = n / 2`, where `n` is the ring dimension passed to
-/// [`Module::new`](poulpy_hal::api::ModuleNew::new), the conjugate-invariant ones
-/// built on first use.
+/// of size `m = n / 2` of both rings for every degree `n` from [`Backend::MIN_DEGREE`] to the ring dimension
+/// passed to [`Module::new`](poulpy_hal::api::ModuleNew::new), all built with the module.
 #[repr(C)]
 pub struct FFT64NeonHandle {
     ring_plans: PerRing<FFT64Plans>,
@@ -147,14 +146,18 @@ unsafe impl FFT64HandleFactory for FFT64NeonHandle {
     fn create_fft64_handle(n: usize) -> Self {
         FFT64NeonHandle {
             table_cache: Default::default(),
-            ring_plans: PerRing::new(FFT64PlanSet::new(n), n, FFT64PlanSet::new),
+            ring_plans: PerRing::new(FFT64Neon::MIN_DEGREE, n, FFT64Plan::new, |_, n| FFT64Plan::new(n)),
         }
     }
 }
 
+/// # Safety
+///
+/// The returned references are valid for the lifetime of `&self`: the plans of both rings are built in
+/// [`FFT64HandleFactory::create_fft64_handle`] and never change.
 unsafe impl<Rg: Ring> FFTHandleProvider<f64, Rg> for FFT64NeonHandle {
     fn get_fft_plan(&self, n: usize) -> &FFT64Plan<f64, Rg> {
-        self.ring_plans.on_ring::<Rg>().for_ring(n)
+        self.ring_plans.on_ring::<Rg>(n)
     }
 }
 

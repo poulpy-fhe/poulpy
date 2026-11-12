@@ -37,8 +37,8 @@ pub fn ntt3x42_ifma_ref<P: PrimeSetNtt3x42Ifma>(table: &Ntt3x42IfmaTable<P>, dat
         for i in 0..n {
             for k in 0..3 {
                 let a = data[k * n + i];
-                let omega = table.powomega[omega_base + 4 * i + k];
-                let omega_quot = table.powomega[quot_base + 4 * i + k];
+                let omega = table.twiddles.powomega[omega_base + 4 * i + k];
+                let omega_quot = table.twiddles.powomega[quot_base + 4 * i + k];
                 data[k * n + i] = harvey_modmul(a, omega, omega_quot, P::Q[k]);
             }
         }
@@ -82,8 +82,8 @@ pub fn ntt3x42_ifma_ref<P: PrimeSetNtt3x42Ifma>(table: &Ntt3x42IfmaTable<P>, dat
                         let sum = a + b;
                         let diff = a + q4[k] - b;
                         data[p1] = cond_sub_2q(sum, q4[k]);
-                        let omega = table.powomega[omega_base + 4 * tw_idx + k];
-                        let omega_quot = table.powomega[quot_base + 4 * tw_idx + k];
+                        let omega = table.twiddles.powomega[omega_base + 4 * tw_idx + k];
+                        let omega_quot = table.twiddles.powomega[quot_base + 4 * tw_idx + k];
                         data[p2] = harvey_modmul(diff, omega, omega_quot, P::Q[k]);
                     }
                 }
@@ -170,8 +170,8 @@ pub fn intt3x42_ifma_ref<P: PrimeSetNtt3x42Ifma>(table: &Ntt3x42IfmaTableInv<P>,
                         let p2 = k * n + block_start + halfnn + i;
                         let a = data[p1];
                         let b_raw = data[p2];
-                        let omega = table.powomega[omega_base + 4 * tw_idx + k];
-                        let omega_quot = table.powomega[quot_base + 4 * tw_idx + k];
+                        let omega = table.twiddles.powomega[omega_base + 4 * tw_idx + k];
+                        let omega_quot = table.twiddles.powomega[quot_base + 4 * tw_idx + k];
                         let bo = harvey_modmul(b_raw, omega, omega_quot, P::Q[k]);
                         let sum = a + bo;
                         let diff = a + q4[k] - bo;
@@ -210,8 +210,8 @@ pub fn intt3x42_ifma_ref<P: PrimeSetNtt3x42Ifma>(table: &Ntt3x42IfmaTableInv<P>,
         for i in 0..n {
             for k in 0..3 {
                 let a = data[k * n + i];
-                let omega = table.powomega[omega_base + 4 * i + k];
-                let omega_quot = table.powomega[quot_base + 4 * i + k];
+                let omega = table.twiddles.powomega[omega_base + 4 * i + k];
+                let omega_quot = table.twiddles.powomega[quot_base + 4 * i + k];
                 data[k * n + i] = harvey_modmul(a, omega, omega_quot, P::Q[k]);
             }
         }

@@ -5,7 +5,7 @@ use poulpy_cpu_portable::kernels::{
     FFT64Plans, PerRing, RightRead,
     fft64::{
         convolution::I64Ops,
-        module::{FFT64HandleFactory, FFT64Plan, FFT64PlanSet, FFTHandleProvider},
+        module::{FFT64HandleFactory, FFT64Plan, FFT64PlanNew, FFTHandleProvider},
         reim::{ReimArith, ReimFFTExecute, ReimFFTTable, ReimIFFTTable, reim_copy_portable, reim_zero_portable},
         reim4::{Reim4BlkMatVec, Reim4Convolution},
     },
@@ -52,8 +52,8 @@ use crate::{
 ///
 /// This structure is allocated once during [`Module::new()`](poulpy_hal::layouts::Module::new)
 /// and persists for the lifetime of the module. It contains the precomputed complex roots of unity
-/// (twiddle factors) of the FFT and inverse FFT of every degree the module serves, those of the
-/// standard ring built at construction and those of the conjugate-invariant ring on first use.
+/// (twiddle factors) of the FFT and inverse FFT of both rings for every degree the module serves,
+/// all built at construction.
 ///
 /// # Memory layout
 ///
@@ -63,9 +63,8 @@ use crate::{
 ///
 /// # Thread safety
 ///
-/// Twiddle tables are never mutated once built, and the conjugate-invariant ones are built once
-/// through a `OnceLock`, making this type safe to share across threads via `&Module<FFT64Avx>`.
-/// The `Module` type enforces `Send + Sync` bounds.
+/// Twiddle tables are **immutable** after construction, making this type safe to share across threads
+/// via `&Module<FFT64Avx>`. The `Module` type enforces `Send + Sync` bounds.
 ///
 /// # Destruction
 ///
@@ -199,7 +198,7 @@ unsafe impl FFT64HandleFactory for FFT64AvxHandle {
     fn create_fft64_handle(n: usize) -> Self {
         FFT64AvxHandle {
             table_cache: Default::default(),
-            ring_plans: PerRing::new(FFT64PlanSet::new(n), n, FFT64PlanSet::new),
+            ring_plans: PerRing::new(FFT64Avx::MIN_DEGREE, n, FFT64Plan::new, |_, n| FFT64Plan::new(n)),
         }
     }
 
@@ -213,9 +212,13 @@ unsafe impl FFT64HandleFactory for FFT64AvxHandle {
     }
 }
 
+/// # Safety
+///
+/// The returned references are valid for the lifetime of `&self`: the plans of both rings are built in
+/// [`FFT64HandleFactory::create_fft64_handle`] and never change.
 unsafe impl<Rg: Ring> FFTHandleProvider<f64, Rg> for FFT64AvxHandle {
     fn get_fft_plan(&self, n: usize) -> &FFT64Plan<f64, Rg> {
-        self.ring_plans.on_ring::<Rg>().for_ring(n)
+        self.ring_plans.on_ring::<Rg>(n)
     }
 }
 

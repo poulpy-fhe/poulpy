@@ -48,9 +48,9 @@
 //! the same algorithm using SIMD intrinsics that match the spqlios source.
 use poulpy_hal::layouts::{Ring, Standard};
 
-use std::marker::PhantomData;
+use std::{marker::PhantomData, sync::Arc};
 
-use crate::kernels::ntt4x30::{conjugate_invariant::BasisChange, primes::PrimeSetCrt4};
+use crate::kernels::ntt4x30::{conjugate_invariant::BasisChangeTable, primes::PrimeSetCrt4};
 use poulpy_hal::{AlignedVec, alloc_aligned};
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -96,7 +96,8 @@ pub struct NttReducMeta {
 
 /// Precomputed twiddle-factor table for the forward Q120 NTT.
 ///
-/// Construct with [`NttTable::new`].
+/// Construct with [`NttTable::new`]. The conjugate-invariant table of a degree shares the twiddles of the
+/// standard table of that degree and adds its basis change.
 pub struct NttTable<P: PrimeSetCrt4, R: Ring = Standard> {
     /// NTT size (a power of two at most [`max_ntt_degree_portable`]).
     pub n: usize,
@@ -107,36 +108,37 @@ pub struct NttTable<P: PrimeSetCrt4, R: Ring = Standard> {
     /// Packing: each u64 stores `(t1 << 32) | t` where `t = ω^i mod Q[k]`
     /// and `t1 = (t << half_bs) mod Q[k]`.  The four consecutive u64
     /// values (one per prime) form one logical entry.
-    pub powomega: AlignedVec<u64>,
+    pub powomega: Arc<AlignedVec<u64>>,
     /// Reduction metadata (shared across all levels).
     pub reduc_metadata: NttReducMeta,
     /// Input bit-size (64 for q120b inputs).
     pub input_bit_size: u64,
     /// Output bit-size bound.
     pub output_bit_size: u64,
-    /// Conjugate-invariant basis change per prime, empty on the standard ring.
-    pub(super) basis: [BasisChange; 4],
+    /// Conjugate-invariant basis change of the degree, none on the standard ring.
+    pub(super) basis: Option<Arc<BasisChangeTable<P>>>,
     _phantom: PhantomData<(P, R)>,
 }
 
 /// Precomputed twiddle-factor table for the inverse Q120 NTT.
 ///
-/// Construct with [`NttTableInv::new`].
+/// Construct with [`NttTableInv::new`]. The conjugate-invariant table of a degree shares the twiddles of the
+/// standard table of that degree and adds its basis change.
 pub struct NttTableInv<P: PrimeSetCrt4, R: Ring = Standard> {
     /// NTT size (a power of two at most [`max_ntt_degree_portable`]).
     pub n: usize,
     /// Per-level metadata (length = log2(n) + 1).
     pub level_metadata: Vec<NttStepMeta>,
     /// Packed inverse twiddle factors (same packing as `NttTable::powomega`).
-    pub powomega: AlignedVec<u64>,
+    pub powomega: Arc<AlignedVec<u64>>,
     /// Reduction metadata.
     pub reduc_metadata: NttReducMeta,
     /// Input bit-size.
     pub input_bit_size: u64,
     /// Output bit-size bound.
     pub output_bit_size: u64,
-    /// Conjugate-invariant basis change per prime, empty on the standard ring.
-    pub(super) basis: [BasisChange; 4],
+    /// Conjugate-invariant basis change of the degree, none on the standard ring.
+    pub(super) basis: Option<Arc<BasisChangeTable<P>>>,
     _phantom: PhantomData<(P, R)>,
 }
 
@@ -233,15 +235,15 @@ fn pack_omega(t: u64, half_bs: u64, q: u64) -> u64 {
     (t1 << 32) | t
 }
 
-impl<P: PrimeSetCrt4, R: Ring> NttTable<P, R> {
+impl<P: PrimeSetCrt4> NttTable<P, Standard> {
     /// Builds the forward NTT precomputation table for size `n`.
     ///
-    /// `n` must be a power of two with `1 ≤ n ≤ max_ntt_degree::<P, R>()`.
-    pub(super) fn build(n: usize, basis: [BasisChange; 4]) -> Self {
+    /// `n` must be a power of two with `1 ≤ n ≤ max_ntt_degree::<P, Standard>()`.
+    pub(super) fn build(n: usize) -> Self {
         assert!(
-            n.is_power_of_two() && n <= max_ntt_degree_portable::<P, R>(),
+            n.is_power_of_two() && n <= max_ntt_degree_portable::<P, Standard>(),
             "NTT size must be a power of two ≤ {}, got {n}",
-            max_ntt_degree_portable::<P, R>()
+            max_ntt_degree_portable::<P, Standard>()
         );
 
         let omega_vec = fill_omegas::<P>(n);
@@ -261,11 +263,11 @@ impl<P: PrimeSetCrt4, R: Ring> NttTable<P, R> {
             return Self {
                 n,
                 level_metadata,
-                powomega,
+                powomega: Arc::new(powomega),
                 reduc_metadata,
                 input_bit_size,
                 output_bit_size: bs,
-                basis,
+                basis: None,
                 _phantom: PhantomData,
             };
         }
@@ -368,25 +370,39 @@ impl<P: PrimeSetCrt4, R: Ring> NttTable<P, R> {
         Self {
             n,
             level_metadata,
-            powomega,
+            powomega: Arc::new(powomega),
             reduc_metadata,
             input_bit_size,
             output_bit_size,
-            basis,
+            basis: None,
+            _phantom: PhantomData,
+        }
+    }
+
+    /// The table of ring `R` that wraps the transform of this one in `basis`, sharing its twiddles.
+    pub(super) fn with_basis<R: Ring>(&self, basis: Arc<BasisChangeTable<P>>) -> NttTable<P, R> {
+        NttTable {
+            n: self.n,
+            level_metadata: self.level_metadata.clone(),
+            powomega: Arc::clone(&self.powomega),
+            reduc_metadata: self.reduc_metadata.clone(),
+            input_bit_size: self.input_bit_size,
+            output_bit_size: self.output_bit_size,
+            basis: Some(basis),
             _phantom: PhantomData,
         }
     }
 }
 
-impl<P: PrimeSetCrt4, R: Ring> NttTableInv<P, R> {
+impl<P: PrimeSetCrt4> NttTableInv<P, Standard> {
     /// Builds the inverse NTT precomputation table for size `n`.
     ///
-    /// `n` must be a power of two with `1 ≤ n ≤ max_ntt_degree::<P, R>()`.
-    pub(super) fn build(n: usize, basis: [BasisChange; 4]) -> Self {
+    /// `n` must be a power of two with `1 ≤ n ≤ max_ntt_degree::<P, Standard>()`.
+    pub(super) fn build(n: usize) -> Self {
         assert!(
-            n.is_power_of_two() && n <= max_ntt_degree_portable::<P, R>(),
+            n.is_power_of_two() && n <= max_ntt_degree_portable::<P, Standard>(),
             "iNTT size must be a power of two ≤ {}, got {n}",
-            max_ntt_degree_portable::<P, R>()
+            max_ntt_degree_portable::<P, Standard>()
         );
 
         let omega_vec = fill_omegas::<P>(n);
@@ -405,11 +421,11 @@ impl<P: PrimeSetCrt4, R: Ring> NttTableInv<P, R> {
             return Self {
                 n,
                 level_metadata,
-                powomega,
+                powomega: Arc::new(powomega),
                 reduc_metadata,
                 input_bit_size,
                 output_bit_size: bs,
-                basis,
+                basis: None,
                 _phantom: PhantomData,
             };
         }
@@ -522,11 +538,25 @@ impl<P: PrimeSetCrt4, R: Ring> NttTableInv<P, R> {
         Self {
             n,
             level_metadata,
-            powomega,
+            powomega: Arc::new(powomega),
             reduc_metadata,
             input_bit_size,
             output_bit_size,
-            basis,
+            basis: None,
+            _phantom: PhantomData,
+        }
+    }
+
+    /// The table of ring `R` that wraps the transform of this one in `basis`, sharing its twiddles.
+    pub(super) fn with_basis<R: Ring>(&self, basis: Arc<BasisChangeTable<P>>) -> NttTableInv<P, R> {
+        NttTableInv {
+            n: self.n,
+            level_metadata: self.level_metadata.clone(),
+            powomega: Arc::clone(&self.powomega),
+            reduc_metadata: self.reduc_metadata.clone(),
+            input_bit_size: self.input_bit_size,
+            output_bit_size: self.output_bit_size,
+            basis: Some(basis),
             _phantom: PhantomData,
         }
     }
@@ -866,6 +896,7 @@ mod tests {
         arithmetic::{b_from_znx64_portable, b_to_znx128_portable},
         primes::{PrimeSet, Primes30},
         standard::{intt_portable, ntt_portable},
+        vec_znx_dft::{NttPlan, NttPlanNew},
     };
 
     /// Verify that NTT followed by iNTT is the identity on a polynomial
@@ -994,8 +1025,6 @@ mod tests {
 
     #[test]
     fn unsupported_ring_degrees_rejected() {
-        use crate::kernels::ntt4x30::vec_znx_dft::NttPlanSet;
-
         for n in [
             0,
             3,
@@ -1005,7 +1034,7 @@ mod tests {
         ] {
             assert!(std::panic::catch_unwind(|| NttTable::<Primes30>::new(n)).is_err());
             assert!(std::panic::catch_unwind(|| NttTableInv::<Primes30>::new(n)).is_err());
-            assert!(std::panic::catch_unwind(|| NttPlanSet::<Primes30>::new(n)).is_err());
+            assert!(std::panic::catch_unwind(|| NttPlan::<Primes30>::new(n)).is_err());
         }
     }
 }
