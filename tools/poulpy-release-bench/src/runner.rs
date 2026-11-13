@@ -130,7 +130,7 @@ pub fn replay<RT: GpuRuntime>(
 fn preset_for<BE: MaxBase2k>(name: &str, pow2: bool) -> Result<(BootstrappingPreset, usize)> {
     let preset = all()?
         .into_iter()
-        .find(|preset| preset.name() == name)
+        .find(|preset| preset.name() == Some(name))
         .with_context(|| format!("no bootstrapping preset named {name}"))?;
     let preset = if pow2 { preset.with_power_of_two_keys()? } else { preset };
     let nominal_base2k = preset.base2k();
@@ -230,7 +230,7 @@ where
     };
 
     let (re, im) = run.precision();
-    let advertised = run.preset().log2_precision() as f64;
+    let advertised = run.preset().log2_precision().map(|bits| bits as f64);
     Ok(json!({
         "preset": preset_info,
         "setup_ns": setup_ns,
@@ -241,7 +241,7 @@ where
             "re": precision_json(&re),
             "im": precision_json(&im),
             "advertised_bits": advertised,
-            "meets_advertised": re.min_log2_prec >= advertised && im.min_log2_prec >= advertised,
+            "meets_advertised": advertised.map(|bits| re.min_log2_prec >= bits && im.min_log2_prec >= bits),
         },
     }))
 }

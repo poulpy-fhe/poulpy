@@ -16,8 +16,8 @@
 //! sparse one, and these switches replace the sparse-to-dense one.
 
 use poulpy_core::{
-    GLWEBytesOf, GLWECopy, GLWEKeyswitch, GLWEMulPreparedPlainSum, GLWENormalize, GLWEShift, ScratchArenaTakeGLWE,
-    gglwe_product_accumulation_output_size, glwe_left_operand_prepare, glwe_left_operand_prepare_tmp_bytes,
+    GLWEBytesOf, GLWECopy, GLWEKeyswitch, GLWEMulPreparedPlainSum, GLWENormalize, GLWEShift, GLWESwitchDegree,
+    ScratchArenaTakeGLWE, gglwe_product_accumulation_output_size, glwe_left_operand_prepare, glwe_left_operand_prepare_tmp_bytes,
     layouts::{
         GGLWEInfos, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, IntPolyInfos, LWEInfos, LinearTransformation,
         Rank, prepared::GGLWEPreparedToBackendRef,
@@ -53,6 +53,16 @@ fn layout<A: GLWEInfos>(infos: &A, size: usize) -> GLWELayout {
     }
 }
 
+/// The layout of `infos` at the degree of the subring of gap `2^log_gap`.
+fn subring_layout<A: GLWEInfos>(infos: &A, log_gap: usize) -> GLWELayout {
+    GLWELayout {
+        n: (infos.n().as_usize() >> log_gap).into(),
+        base2k: infos.base2k(),
+        k: infos.k(),
+        rank: infos.rank(),
+    }
+}
+
 /// `res = phi_p(a)` column by column, with no key: `res` is under `phi_p` of
 /// the secret of `a`.
 fn glwe_automorphism_keyless<BE, R, A>(module: &Module<BE>, res: &mut R, p: i64, a: &A)
@@ -80,6 +90,7 @@ fn diagonal_limbs<P: IntPolyInfos>(diagonal: &P, base2k: usize) -> usize {
 pub trait CKKSModUpFirstFactorReference<BE: Backend> {
     fn ckks_mod_up_first_factor_tmp_bytes_reference<Dst, Src, D2S, K>(
         &self,
+        log_gap: usize,
         dst_infos: &Dst,
         src_infos: &Src,
         factor: &LinearTransformation<CKKSRightOperandPrepared<BE>>,
@@ -102,11 +113,16 @@ pub trait CKKSModUpFirstFactorReference<BE: Backend> {
         D2S: GGLWEInfos,
         K: GGLWEInfos;
 
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the raise takes its scale, the first factor and the gap beside its operands"
+    )]
     fn ckks_mod_up_first_factor_reference<Dst, Src, K>(
         &self,
+        scale_up: usize,
+        log_gap: usize,
         dst: &mut Dst,
         src: &mut Src,
-        scale_up: usize,
         factor: &LinearTransformation<CKKSRightOperandPrepared<BE>>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
@@ -115,6 +131,7 @@ pub trait CKKSModUpFirstFactorReference<BE: Backend> {
         Module<BE>: GLWECopy<BE>
             + GLWEShift<BE>
             + GLWEKeyswitch<BE>
+            + GLWESwitchDegree<BE>
             + VecZnxAutomorphism<BE>
             + VecZnxCopy<BE>
             + VecZnxAddAssign<BE>
@@ -133,6 +150,7 @@ pub trait CKKSModUpFirstFactorReference<BE: Backend> {
 impl<BE: Backend> CKKSModUpFirstFactorReference<BE> for Module<BE> {
     fn ckks_mod_up_first_factor_tmp_bytes_reference<Dst, Src, D2S, K>(
         &self,
+        log_gap: usize,
         dst_infos: &Dst,
         src_infos: &Src,
         factor: &LinearTransformation<CKKSRightOperandPrepared<BE>>,
@@ -155,14 +173,15 @@ impl<BE: Backend> CKKSModUpFirstFactorReference<BE> for Module<BE> {
         D2S: GGLWEInfos,
         K: GGLWEInfos,
     {
-        ckks_mod_up_first_factor_tmp_bytes_reference(self, dst_infos, src_infos, factor, d2s_infos, key_infos)
+        ckks_mod_up_first_factor_tmp_bytes_reference(self, log_gap, dst_infos, src_infos, factor, d2s_infos, key_infos)
     }
 
     fn ckks_mod_up_first_factor_reference<Dst, Src, K>(
         &self,
+        scale_up: usize,
+        log_gap: usize,
         dst: &mut Dst,
         src: &mut Src,
-        scale_up: usize,
         factor: &LinearTransformation<CKKSRightOperandPrepared<BE>>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
@@ -171,6 +190,7 @@ impl<BE: Backend> CKKSModUpFirstFactorReference<BE> for Module<BE> {
         Module<BE>: GLWECopy<BE>
             + GLWEShift<BE>
             + GLWEKeyswitch<BE>
+            + GLWESwitchDegree<BE>
             + VecZnxAutomorphism<BE>
             + VecZnxCopy<BE>
             + VecZnxAddAssign<BE>
@@ -185,7 +205,7 @@ impl<BE: Backend> CKKSModUpFirstFactorReference<BE> for Module<BE> {
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     {
-        ckks_mod_up_first_factor_reference(self, dst, src, scale_up, factor, keys, scratch)
+        ckks_mod_up_first_factor_reference(self, scale_up, log_gap, dst, src, factor, keys, scratch)
     }
 }
 
@@ -194,6 +214,7 @@ impl<BE: Backend> CKKSModUpFirstFactorReference<BE> for Module<BE> {
 /// first-factor keys.
 pub fn ckks_mod_up_first_factor_tmp_bytes_reference<BE, Dst, Src, D2S, K>(
     module: &Module<BE>,
+    log_gap: usize,
     dst_infos: &Dst,
     src_infos: &Src,
     factor: &LinearTransformation<CKKSRightOperandPrepared<BE>>,
@@ -222,7 +243,13 @@ where
     };
     let base2k = dst_infos.base2k().as_usize();
     let k_large = dst_infos.k().as_usize();
-    let d2s = d2s_infos.map_or(0, |key| module.glwe_keyswitch_tmp_bytes(src_infos, src_infos, key));
+    let d2s = d2s_infos
+        .map_or(0, |key| module.glwe_keyswitch_tmp_bytes(src_infos, src_infos, key))
+        .max(if log_gap == 0 {
+            0
+        } else {
+            BE::scratch_aligned(module.glwe_bytes_of_from_infos(&subring_layout(src_infos, log_gap)))
+        });
     // A key that does not fit the raise makes it fail before it takes more.
     let Ok(small) = small_limbs("ckks_mod_raise", base2k, k_large, key_infos) else {
         return d2s;
@@ -258,11 +285,17 @@ where
 /// `factor` holds one giant step per diagonal, the diagonal rotated back by
 /// its own index and no baby step. `keys` gives the dense-to-sparse key under
 /// encapsulation and one first-factor key per rotation, all of one layout.
+/// `log_gap` is that of the plan: the sparse secret lies in the subring and the raise reads that subring only.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the raise takes its scale, the first factor and the gap beside its operands"
+)]
 pub fn ckks_mod_up_first_factor_reference<BE, Dst, Src, K>(
     module: &Module<BE>,
+    scale_up: usize,
+    log_gap: usize,
     dst: &mut Dst,
     src: &mut Src,
-    scale_up: usize,
     factor: &LinearTransformation<CKKSRightOperandPrepared<BE>>,
     keys: &K,
     scratch: &mut ScratchArena<'_, BE>,
@@ -272,6 +305,7 @@ where
     Module<BE>: GLWECopy<BE>
         + GLWEShift<BE>
         + GLWEKeyswitch<BE>
+        + GLWESwitchDegree<BE>
         + VecZnxAutomorphism<BE>
         + VecZnxCopy<BE>
         + VecZnxAddAssign<BE>
@@ -294,6 +328,11 @@ where
         OP,
         dst.rank().as_usize() == 1 && src.rank().as_usize() == 1,
         "the first factor is applied on a raise of rank-1 ciphertexts only"
+    );
+    ckks_ensure_operand!(
+        OP,
+        log_gap == 0 || keys.encapsulation_keys().is_some(),
+        "a gap needs the sparse secret of the subring"
     );
     // The dense-to-sparse switch leaves `src.k()` as it is: every check runs
     // before any work.
@@ -321,6 +360,13 @@ where
     // The raise runs under the sparse secret when the keys encapsulate it.
     if let Some((dense_to_sparse, _)) = keys.encapsulation_keys() {
         module.glwe_keyswitch_assign(src, &dense_to_sparse.to_backend_ref(), scratch);
+    }
+    // A secret of `Z[X^g]` decrypts the multiples of `g` on their own: dropping the rest keeps the overflow in the subring.
+    if log_gap > 0 {
+        let scratch = scratch.borrow();
+        let (mut subring, _) = scratch.take_glwe_scratch(&subring_layout(&*src, log_gap));
+        module.glwe_switch_degree(&mut subring, &*src);
+        module.glwe_switch_degree(src, &subring);
     }
     let k_offset = key_layout.k_offset.as_usize();
     let (_, guard) = first_factor_work(base2k, k_large);

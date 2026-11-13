@@ -38,7 +38,7 @@ The table gives the reference of each family.
 | `CKKSPolynomialEvaluationImpl`, `CKKSComplexPolynomialEvaluationImpl` | [`reference/polynomial_evaluation.rs`](../src/reference/polynomial_evaluation.rs) for evaluation from a power basis; one-shot real/complex evaluation derives from CKKS input mapping and power-basis construction. The complex family is standard-only. |
 | `CKKSEvalModImpl` | [`reference/eval_mod.rs`](../src/reference/eval_mod.rs), including the selected scratch query. Serves both rings; the conjugate-invariant ring refuses `ExpCmplx`. |
 | `CKKSEncapsulatedModUpImpl` | [`reference/bootstrapping/mod_raise.rs`](../src/reference/bootstrapping/mod_raise.rs) (`CKKSEncapsulatedModUpReference`). |
-| `CKKSModUpFirstFactorImpl` | [`reference/first_factor.rs`](../src/reference/first_factor.rs) (`CKKSModUpFirstFactorReference`): the modulus raise applying the first `CoeffsToSlots` factor while the raised ciphertext is small, registered per type by `impl_ckks_mod_up_first_factor_reference_full!`. |
+| `CKKSModUpFirstFactorImpl` | [`reference/first_factor.rs`](../src/reference/first_factor.rs) (`CKKSModUpFirstFactorReference`): the modulus raise projecting on the subring of a gap and applying the prepared first `CoeffsToSlots` factor while the raised ciphertext is small, registered per type by `impl_ckks_mod_up_first_factor_reference_full!`. |
 | `CKKSBootstrappingImpl` | [`reference/bootstrapping/`](../src/reference/bootstrapping/) (`CKKSModRaiseReference`, `CKKSBootstrapEvalModReference`, `CKKSEvalLutReference`), registered by `impl_ckks_bootstrapping_reference_full!($be)`, whose EvalMod on the conjugate-invariant ring runs on the same module: the steps `ckks_mod_raise`, `ckks_bootstrap_eval_mod` and `ckks_eval_lut` and their queries. `ckks_bootstrap`, `ckks_functional_bootstrap` and their queries are derived defaults ([`oep/derived/bootstrapping.rs`](../src/oep/derived/bootstrapping.rs)) over the selected steps. |
 | `CKKSFoldLayoutImpl`, `CKKSFoldImpl<R>` | [`reference/fold.rs`](../src/reference/fold.rs): `CKKSFoldLayoutReference` and `CKKSFoldReference<BE, R>`, a crate-private per-ring step around ring packing; `impl_ckks_fold_layout_reference_full!` selects the layout and scratch query, and `impl_ckks_fold_reference_full!` registers every input ring the reference folds. |
 | `CKKSPaCoCoeffEncodingImpl`, `CKKSShipCoeffEncodingImpl` | Scheme embeddings exposed by [`reference::encoding`](../src/reference/encoding.rs), with explicitly named host reference helpers. |
@@ -67,10 +67,11 @@ scratch carve, with `EncryptionDegreeMismatch` for encryption and decryption and
 a plaintext polynomial embeds into its ciphertext's degree, and a constant
 plaintext, which only supplies coefficients, may be of any degree. Queries size a
 temporary at its operand's degree or the module's, never below. PaCo and SHIP run at the degree of their plan, at most
-the module's. A bootstrapping context is compiled at the degree of its module,
-or at half of it when the plan runs EvalMod on the conjugate-invariant ring of
-that degree, and the bootstraps take ciphertexts of the degree their context is
-compiled at.
+the module's. A bootstrapping context bootstraps ciphertexts of degree `2·g`
+times the slots of its transforms, `g` the gap of its plaintexts, on a module of
+that degree or wider, or of twice that degree when the plan runs EvalMod on the
+conjugate-invariant ring, and the bootstraps take ciphertexts of that degree,
+labelled in the subring of the gap.
 
 ## What an override must preserve
 

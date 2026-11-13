@@ -284,8 +284,8 @@ fn bootstrapping_n16_d35_k733_p20_s2c_precision_and_launches() {
     run.bootstrap();
     let (re, im) = run.precision();
     println!(
-        "PRECISION preset={} base2k={} re_min={:.2}b re_avg={:.2}b im_min={:.2}b im_avg={:.2}b (advertised {}b)",
-        run.preset().name(),
+        "PRECISION preset={} base2k={} re_min={:.2}b re_avg={:.2}b im_min={:.2}b im_avg={:.2}b (advertised {:?}b)",
+        run.preset().name().unwrap_or("derived"),
         run.preset().base2k(),
         re.min_log2_prec,
         re.avg_log2_prec,
@@ -300,7 +300,7 @@ fn bootstrapping_n16_d35_k733_p20_s2c_precision_and_launches() {
     let counters = crate::launch_counters();
     println!(
         "LAUNCHES preset={} launches={} bytes={} allocations={} elapsed={:.1}ms",
-        run.preset().name(),
+        run.preset().name().unwrap_or("derived"),
         counters.launches,
         counters.bytes,
         counters.allocations,
@@ -326,7 +326,7 @@ fn bootstrapping_n16_d35_k733_p20_s2c_precision_and_launches() {
     for (label, kernel) in seconds {
         println!("PROFILE {label:<24} {:>7.1}ms {:>5.1}%", kernel * 1e3, 100.0 * kernel / total);
     }
-    let advertised = run.preset().log2_precision() as f64;
+    let advertised = run.preset().log2_precision().unwrap() as f64;
     assert!(re.min_log2_prec >= advertised && im.min_log2_prec >= advertised);
 }
 
@@ -343,7 +343,7 @@ fn bootstrapping_n16_d35_k733_p20_s2c_replay() {
 
     let preset = poulpy_ckks::presets::bootstrapping::n16_d35_k733_p20_s2c().unwrap();
     let preset = preset_for_backend::<Gpu>(&preset).unwrap();
-    let advertised = preset.log2_precision() as f64;
+    let advertised = preset.log2_precision().unwrap() as f64;
     let run = RefCell::new(BootstrappingPresetRun::<Gpu, NTT4x30Portable>::setup(preset));
     // Compiles the kernels, so that the counters below are those of a steady-state bootstrap.
     run.borrow_mut().bootstrap();
