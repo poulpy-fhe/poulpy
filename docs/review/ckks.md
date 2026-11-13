@@ -90,7 +90,7 @@
 - **One DFT generator.** Every homomorphic DFT factor comes from one generator under the crate's conventions, scheme conventions being post-transforms of its factors, never a private factor stack or FFT.
 - **Replays share the generator's geometry.** A value-free replay shares the generator's geometry code.
 - **Schedules in evaluation order.** A DFT schedule lists factors in evaluation order in both directions, never reordered by kind.
-- **Direction and format are types.** Each evaluation entry takes factors of its exact direction and format, and only the raw chain and its query stay free in the format. Evaluating a `Split` chain unsplit enters at `Standard` only through a run or a reference, and leaves half a `Standard` encode, which a later split or the composer doubles.
+- **Direction and format are types.** Each evaluation entry takes factors of its exact direction and format, and only the raw chain and its query stay free in the format. Evaluating a `Split` chain unsplit enters at `Standard` only through a run, a reference, or a view of the chain that keeps its plan (a prefix of its factors, or its last factor replaced by one of the same schedule), and leaves half a `Standard` encode, which a later split or the composer doubles.
 
 ## 12. Bootstrapping, PaCo and SHIP
 

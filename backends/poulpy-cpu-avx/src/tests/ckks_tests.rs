@@ -44,6 +44,50 @@ mod bootstrapping_presets {
         ci_bootstrap_refuses_invalid_inputs::<crate::NTT4x30Avx>();
     }
 
+    #[test]
+    fn ntt4x30_ckks_coeffs_mask() {
+        poulpy_ckks::test_suite::presets::test_ckks_coeffs_mask::<crate::NTT4x30Avx>();
+    }
+
+    #[test]
+    fn ntt4x30_ckks_coeffs_mask_rejects_invalid_inputs() {
+        poulpy_ckks::test_suite::presets::test_ckks_coeffs_mask_rejects_invalid_inputs::<crate::NTT4x30Avx>();
+    }
+
+    #[test]
+    fn ntt4x30_ckks_coeffs_mask_subring() {
+        poulpy_ckks::test_suite::presets::test_ckks_coeffs_mask_subring::<crate::NTT4x30Avx>();
+    }
+
+    #[test]
+    fn ntt4x30_merged_s2c_factor() {
+        poulpy_ckks::test_suite::presets::test_merged_s2c_factor::<crate::NTT4x30Avx>();
+    }
+
+    #[cfg(feature = "enable-rayon")]
+    #[test]
+    fn ntt4x30_rayon_ckks_coeffs_mask() {
+        poulpy_ckks::test_suite::presets::test_ckks_coeffs_mask::<crate::NTT4x30AvxRayon>();
+    }
+
+    #[cfg(feature = "enable-rayon")]
+    #[test]
+    fn ntt4x30_rayon_ckks_coeffs_mask_rejects_invalid_inputs() {
+        poulpy_ckks::test_suite::presets::test_ckks_coeffs_mask_rejects_invalid_inputs::<crate::NTT4x30AvxRayon>();
+    }
+
+    #[cfg(feature = "enable-rayon")]
+    #[test]
+    fn ntt4x30_rayon_ckks_coeffs_mask_subring() {
+        poulpy_ckks::test_suite::presets::test_ckks_coeffs_mask_subring::<crate::NTT4x30AvxRayon>();
+    }
+
+    #[cfg(feature = "enable-rayon")]
+    #[test]
+    fn ntt4x30_rayon_merged_s2c_factor() {
+        poulpy_ckks::test_suite::presets::test_merged_s2c_factor::<crate::NTT4x30AvxRayon>();
+    }
+
     #[cfg(feature = "enable-rayon")]
     #[test]
     fn ntt4x30_rayon_ci_bootstrap_refuses_invalid_inputs() {

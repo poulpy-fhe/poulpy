@@ -64,9 +64,10 @@ pub trait CKKSDFTOps<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         H: GetAutomorphismKey<BE>;
 
-    /// `CoeffsToSlots`, `Standard` format (in place). A [`BootstrappingRun`](crate::layouts::BootstrappingRun) or a
-    /// `&DFTMatrixPrepared<BE, Encode, Split>` evaluates its `Split` chain unsplit: the output is half a `Standard`
-    /// encode, and a later split or the composer doubles it.
+    /// `CoeffsToSlots`, `Standard` format (in place). A [`BootstrappingRun`](crate::layouts::BootstrappingRun), a
+    /// `&DFTMatrixPrepared<BE, Encode, Split>`, or a view of one that keeps its plan
+    /// ([`MaskedFactors`](crate::layouts::MaskedFactors), [`HeadFactors`](crate::layouts::HeadFactors)) evaluates its
+    /// `Split` chain unsplit: the output is half a `Standard` encode, and a later split or the composer doubles it.
     fn ckks_coeffs_to_slots_assign<D, Dst, H>(
         &self,
         ct: &mut Dst,
@@ -81,7 +82,8 @@ pub trait CKKSDFTOps<BE: Backend> {
 
     /// `SlotsToCoeffs`, `Standard` format (in place). `dft` labels the output through
     /// [`CKKSDFTFactors::stamp_transform_output`], which a [`BootstrappingRun`](crate::layouts::BootstrappingRun) of a
-    /// C2S-first plan uses to end the bootstrap.
+    /// C2S-first plan uses to end the bootstrap. The [`HeadFactors`](crate::layouts::HeadFactors) of a `Split` matrix
+    /// evaluate its chain unsplit, short of the last factor, on the input the run takes.
     fn ckks_slots_to_coeffs_assign<D, Dst, H>(
         &self,
         ct: &mut Dst,

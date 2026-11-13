@@ -59,6 +59,7 @@ where
     if let (Some(factor), Some(key)) = (plan.first_factor(), &keys_layout.first_factor_key) {
         bytes = bytes.max(BE::ckks_mod_up_first_factor_tmp_bytes(
             module,
+            plan.mod_raise_plan().log_gap,
             boot_layout,
             in_layout,
             factor,
@@ -122,6 +123,12 @@ pub trait CKKSModRaiseReference<BE: Backend>: std::borrow::Borrow<Module<BE>> {
             !raise.first_factor_on_raise || plan.first_factor().is_some(),
             "the plan moves the first CoeffsToSlots factor onto the raise, and no prepared factor comes with it"
         );
+        ckks_ensure_operand!(
+            OP,
+            raise.log_gap == 0
+                || (raise.lift.is_none() && plan.first_factor().is_some() && raise.sparse_secret_hamming_weight.is_some()),
+            "a gap takes an S2C-first raise with the first factor on it and a sparse secret"
+        );
         // C2S-first derives both lifts from EvalMod, and the first one writes `a`: the checks run on what it will leave.
         let (lift_bits, scale_up) = raise.scale_ups(OP, a.k().as_usize(), a.log_delta())?;
         check_raise_widths(res, a, scale_up, plan.first_factor(), keys)?;
@@ -135,7 +142,17 @@ pub trait CKKSModRaiseReference<BE: Backend>: std::borrow::Borrow<Module<BE>> {
         }
         let (slots, log_sparsity) = (a.slots(), a.log_sparsity());
         let log_modulus_in = a.k().as_usize();
-        mod_raise_body(module, res, a, lift_bits, scale_up, plan.first_factor(), keys, scratch)?;
+        mod_raise_body(
+            module,
+            res,
+            a,
+            lift_bits,
+            scale_up,
+            plan.first_factor(),
+            raise.log_gap,
+            keys,
+            scratch,
+        )?;
         let scale = match &raise.lift {
             Some(lift) => res.log_delta() + lift.log_msg_ratio,
             None => log_modulus_in + raise.c2s_guard_bits,
@@ -238,7 +255,7 @@ where
 
 #[expect(
     clippy::too_many_arguments,
-    reason = "the raise takes its lift, its scale and the first factor as separate operands"
+    reason = "the raise takes its lift, its scale, the first factor and the gap as separate operands"
 )]
 fn mod_raise_body<BE, Dst, Src, K>(
     module: &Module<BE>,
@@ -247,6 +264,7 @@ fn mod_raise_body<BE, Dst, Src, K>(
     lift_bits: usize,
     scale_up: usize,
     first_factor: Option<&LinearTransformation<CKKSRightOperandPrepared<BE>>>,
+    log_gap: usize,
     keys: &K,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
@@ -270,7 +288,7 @@ where
     // A first CoeffsToSlots factor left to the raise is applied here, on the
     // raised ciphertext while it is small; its switches replace sparse-to-dense.
     if let Some(factor) = first_factor {
-        return BE::ckks_mod_up_first_factor(module, dst, src, scale_up, factor, keys, scratch);
+        return BE::ckks_mod_up_first_factor(module, scale_up, log_gap, dst, src, factor, keys, scratch);
     }
 
     match keys.encapsulation_keys() {
