@@ -23,7 +23,7 @@ use crate::{
 use super::{
     BootstrappingPipeline, BootstrappingPlan, CIConversion, EvalModCIPrepared, EvalModRing,
     eval_mod_ci::{CIPre, EvalModCI},
-    key_widths::{RotationKeyUse, StageWidths},
+    key_widths::{RotationKeyOffsets, StageWidths},
 };
 
 /// Compiled [`BootstrappingPlan`]: the resident DFT matrices and encoded EvalMod
@@ -61,8 +61,8 @@ pub struct BootstrappingContextPrepared<BE: Backend, F> {
     /// EvalMod's plaintexts on the conjugate-invariant ring.
     eval_mod_ci: Option<EvalModCIPrepared<BE, F>>,
 
-    /// The uses of the rotation keys at the compile degree, which every entry check reads.
-    rotation_key_uses: Vec<RotationKeyUse>,
+    /// The offsets of the rotation keys at the compile degree, which every entry check reads.
+    rotation_key_offsets: Vec<RotationKeyOffsets>,
 }
 
 // A context holds `Split` matrices, evaluated unsplit: see `ckks_coeffs_to_slots_assign` for the scale.
@@ -88,9 +88,9 @@ impl<BE: Backend, F> CKKSDFTFactors<BE, Encode, Standard> for BootstrappingConte
 }
 
 impl<BE: Backend, F> BootstrappingContextPrepared<BE, F> {
-    /// The uses of the rotation keys at the compile degree.
-    pub(crate) fn rotation_key_uses(&self) -> &[RotationKeyUse] {
-        &self.rotation_key_uses
+    /// The offsets of the rotation keys at the compile degree.
+    pub(crate) fn rotation_key_offsets(&self) -> &[RotationKeyOffsets] {
+        &self.rotation_key_offsets
     }
 
     /// `log2` of the degree the context is compiled at.
@@ -277,9 +277,9 @@ impl<BE: Backend, F> BootstrappingContext<BE, F> {
             slots_to_coeffs,
             eval_mod,
             eval_mod_ci,
-            rotation_key_uses: Vec::new(),
+            rotation_key_offsets: Vec::new(),
         };
-        context.rotation_key_uses = context.stage_widths().rotation_key_uses(log_n);
+        context.rotation_key_offsets = context.stage_widths().rotation_key_offsets(log_n);
         Ok(context)
     }
 }
