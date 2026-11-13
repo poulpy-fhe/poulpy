@@ -441,6 +441,16 @@ where
     )
 }
 
+/// Scale of a ct × ct product: the smaller operand scale.
+pub(crate) fn mul_ct_log_delta(a_log_delta: usize, b_log_delta: usize) -> usize {
+    a_log_delta.min(b_log_delta)
+}
+
+/// Scale of a ct × pt product: the ciphertext's, the plaintext's being spent as budget.
+pub(crate) fn mul_pt_log_delta(a_log_delta: usize) -> usize {
+    a_log_delta
+}
+
 /// Shared `(log_budget, log_delta, cnv_offset)` rule for ct × ct multiplication,
 /// expressed on raw values so the BSGS driver computes bit-identical parameters.
 #[allow(clippy::too_many_arguments)]
@@ -456,7 +466,7 @@ pub(crate) fn mul_ct_params_raw(
     let b_log_budget = b_k.saturating_sub(b_log_delta);
 
     let res_log_budget = checked_mul_ct_log_budget(op, a_log_budget, b_log_budget, a_log_delta, b_log_delta)?;
-    let res_log_delta = a_log_delta.min(b_log_delta);
+    let res_log_delta = mul_ct_log_delta(a_log_delta, b_log_delta);
 
     let res_offset = (res_log_budget + res_log_delta).saturating_sub(res_max_k);
     // An operand holds its message at `2^-log_budget` on the torus and the
@@ -504,7 +514,7 @@ pub(crate) fn mul_pt_params_raw(
     b_max_k: usize,
 ) -> CKKSResult<(usize, usize, usize)> {
     let res_log_budget = checked_mul_pt_log_budget(op, a_log_budget, b_log_budget, a_log_delta, b_log_delta)?;
-    let res_log_delta = a_log_delta;
+    let res_log_delta = mul_pt_log_delta(a_log_delta);
     let res_offset = (res_log_budget + res_log_delta).saturating_sub(res_max_k);
     let cnv_offset = b_max_k + res_offset;
 

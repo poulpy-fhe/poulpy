@@ -1,6 +1,7 @@
 //! Composite-minimax sign and smooth predicates.
 
 use anyhow::{Result, ensure};
+use poulpy_ckks::layouts::CKKSMaskedConstants;
 use poulpy_core::{
     GLWEBytesOf,
     layouts::{
@@ -41,7 +42,7 @@ where
     Module<BE>: CKKSPolynomialEvaluationOps<BE> + CKKSCopyOps<BE> + CKKSConjugateOps<BE> + CKKSAddOps<BE> + CKKSPow2Ops<BE>,
     R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     I: GLWEToBackendRef<BE> + CKKSCtBounds,
-    P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta + poulpy_ckks::layouts::CKKSMaskedConstants<BE>,
+    P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE>,
     H: GetTensorKey<BE>,
     K: GetAutomorphismKey<BE>,
 {
@@ -142,7 +143,7 @@ pub trait CKKSSignOps<BE: Backend> {
     where
         R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         I: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta + poulpy_ckks::layouts::CKKSMaskedConstants<BE>,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE>,
         H: GetTensorKey<BE>,
         K: GetAutomorphismKey<BE>;
 
@@ -167,7 +168,7 @@ pub trait CKKSSignOps<BE: Backend> {
     where
         R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         I: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta + poulpy_ckks::layouts::CKKSMaskedConstants<BE>,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE>,
         H: GetTensorKey<BE>,
         K: GetAutomorphismKey<BE>;
 }
@@ -205,7 +206,7 @@ where
     where
         R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         I: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta + poulpy_ckks::layouts::CKKSMaskedConstants<BE>,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE>,
         H: GetTensorKey<BE>,
         K: GetAutomorphismKey<BE>,
     {
@@ -224,7 +225,7 @@ where
     where
         R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         I: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta + poulpy_ckks::layouts::CKKSMaskedConstants<BE>,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE>,
         H: GetTensorKey<BE>,
         K: GetAutomorphismKey<BE>,
     {

@@ -4,6 +4,7 @@
 //! The generic helpers check the structural invariants (degree, rank, radix, decomposition shape, storage capacity, backend-view consistency) that any gadget key or runtime ciphertext operand must satisfy before entering the arithmetic primitives, whichever pipeline consumes them, and the uniformity of a linear transformation's diagonals.
 //! The bootstrap refusals sit here because `oep::derived` and `reference` both read them, and `oep` names no `reference`; a check only one `reference` module reads, as PaCo's plan-against-material checks, stays there.
 
+use crate::layouts::CKKSMaskedConstants;
 use anyhow::{Context, Result, ensure};
 use poulpy_core::{
     LinearTransformationPrepared,
@@ -275,7 +276,7 @@ pub(crate) fn ensure_masked_constants<'a, BE, Rg, P>(
 where
     BE: Backend,
     Rg: Ring,
-    P: crate::layouts::CKKSMaskedConstants<BE, Rg> + 'a,
+    P: CKKSMaskedConstants<BE, Rg> + 'a,
 {
     if matches!(slot_layout, SlotLayout::Replicated(_)) {
         for c in constants {

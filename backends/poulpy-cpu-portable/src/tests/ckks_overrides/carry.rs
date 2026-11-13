@@ -1,7 +1,6 @@
 //! Unit shifts inherit the selected constant-plaintext operation and its budget,
 //! and the ciphertext and plaintext-vector assignments count the compositions entering them.
 use super::OverrideBackend;
-use poulpy_ckks::Scale;
 use poulpy_ckks::{
     GLWEPlaintextMeta,
     api::{CKKSAddOps, CKKSSubOps},
@@ -12,6 +11,7 @@ use poulpy_ckks::{
         parity::helpers::{fixture_ciphertext, snapshot, with_scratch},
     },
 };
+use poulpy_ckks::{ReplicatedLayout, Scale};
 use poulpy_core::layouts::LWEInfos;
 use poulpy_cpu_oracle::FFT64Oracle;
 use poulpy_hal::layouts::{Backend, ConjugateInvariant, Module, Standard};
@@ -267,9 +267,10 @@ impl_carry_with_plaintext_workspace!(
     CI_ADD_PT_VEC_EXTRA
 );
 
-/// Each unit shift enters the selected constant-plaintext assignment once, its query is that assignment's, which adds
-/// the probe's extra to the reference query, and its output equals the oracle's; the arithmetic parity, each operation
-/// on its exact poisoned query, enters every counting assignment.
+/// Each unit shift enters the selected constant-plaintext assignment once, its query is the unit plaintext beside the
+/// larger of the selected constant and vector assignments' queries, which add the probe's extras to the reference
+/// queries, and its output equals the oracle's; the arithmetic parity, each operation on its exact poisoned query,
+/// enters every counting assignment.
 #[test]
 fn unit_shifts_use_selected_plaintext_scratch() {
     let module_ref = Module::<FFT64Oracle>::new(64);
@@ -283,28 +284,31 @@ fn unit_shifts_use_selected_plaintext_scratch() {
             <Module<OverrideBackend> as CKKSSubOps<OverrideBackend, Standard>>::ckks_sub_pt_const_tmp_bytes(&module_test, size),
             SUB_CONST_EXTRA + <_ as CKKSSubReference<_, Standard>>::ckks_sub_pt_const_tmp_bytes_reference(&module_test, size)
         );
-        assert!(
-            <Module<OverrideBackend> as CKKSAddOps<OverrideBackend, Standard>>::ckks_add_one_tmp_bytes(&module_test, size)
-                > <Module<OverrideBackend> as CKKSAddOps<OverrideBackend, Standard>>::ckks_add_tmp_bytes(&module_test, size)
+        // The unit plaintext, carved at the largest degree a masked one takes, beside the larger selected workspace.
+        let unit = OverrideBackend::scratch_aligned(OverrideBackend::vec_znx_bytes_of(
+            2 << ReplicatedLayout::MAX_LOG_R,
+            1,
+            size + 1,
+        ));
+        assert_eq!(
+            <Module<OverrideBackend> as CKKSAddOps<OverrideBackend, Standard>>::ckks_add_one_tmp_bytes(&module_test, size),
+            unit + <Module<OverrideBackend> as CKKSAddOps<OverrideBackend, Standard>>::ckks_add_pt_const_tmp_bytes(
+                &module_test,
+                size
+            )
+            .max(
+                <Module<OverrideBackend> as CKKSAddOps<OverrideBackend, Standard>>::ckks_add_pt_vec_tmp_bytes(&module_test, size)
+            )
         );
-        assert!(
-            <Module<OverrideBackend> as CKKSSubOps<OverrideBackend, Standard>>::ckks_sub_one_tmp_bytes(&module_test, size)
-                > <Module<OverrideBackend> as CKKSSubOps<OverrideBackend, Standard>>::ckks_sub_tmp_bytes(&module_test, size)
-        );
-        // The unit constant is carved from the same arena as the selected plaintext workspace.
-        assert!(
-            <Module<OverrideBackend> as CKKSAddOps<OverrideBackend, Standard>>::ckks_add_one_tmp_bytes(&module_test, size)
-                > <Module<OverrideBackend> as CKKSAddOps<OverrideBackend, Standard>>::ckks_add_pt_const_tmp_bytes(
-                    &module_test,
-                    size
-                )
-        );
-        assert!(
-            <Module<OverrideBackend> as CKKSSubOps<OverrideBackend, Standard>>::ckks_sub_one_tmp_bytes(&module_test, size)
-                > <Module<OverrideBackend> as CKKSSubOps<OverrideBackend, Standard>>::ckks_sub_pt_const_tmp_bytes(
-                    &module_test,
-                    size
-                )
+        assert_eq!(
+            <Module<OverrideBackend> as CKKSSubOps<OverrideBackend, Standard>>::ckks_sub_one_tmp_bytes(&module_test, size),
+            unit + <Module<OverrideBackend> as CKKSSubOps<OverrideBackend, Standard>>::ckks_sub_pt_const_tmp_bytes(
+                &module_test,
+                size
+            )
+            .max(
+                <Module<OverrideBackend> as CKKSSubOps<OverrideBackend, Standard>>::ckks_sub_pt_vec_tmp_bytes(&module_test, size)
+            )
         );
     }
     let params = CKKSTestParams {

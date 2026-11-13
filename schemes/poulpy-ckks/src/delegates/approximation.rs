@@ -1,3 +1,4 @@
+use crate::layouts::CKKSMaskedConstants;
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::{BSGSMeta, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, IntPolyInfos, LWEInfos, SetBSGSMeta};
 use poulpy_hal::layouts::{Backend, Module, Ring, ScratchArena};
@@ -40,7 +41,7 @@ where
     where
         R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         I: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + BSGSMeta + IntPolyInfos + crate::layouts::CKKSMaskedConstants<BE, Rg>,
+        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + BSGSMeta + IntPolyInfos + CKKSMaskedConstants<BE, Rg>,
         H: GetTensorKey<BE, Rg>,
     {
         BE::ckks_polynomial_approximation_eval(self, res, input, approximation, tsk, scratch)

@@ -301,7 +301,9 @@ where
         + VecZnxCopy<BE, Rg>
         + GLWENormalize<BE, Rg>
         + VecZnxRsh<BE, Rg>
-        + VecZnxRshTmpBytes,
+        + VecZnxRshTmpBytes
+        + VecZnxIdftNormalize<BE, Rg>
+        + VecZnxIdftNormalizeTmpBytes,
 {
     fn glwe_mul_plain_tmp_bytes_reference<R, A, B>(&self, res: &R, a: &A, b: &B) -> usize
     where
@@ -507,8 +509,15 @@ where
         }
     }
 
-    fn glwe_plain_combination_tmp_bytes_reference(&self, cols: usize, acc_size: usize, a_size: usize, b_size: usize) -> usize {
-        glwe_plain_combination_tmp_bytes_reference(self, cols, acc_size, a_size, b_size)
+    fn glwe_plain_combination_tmp_bytes_reference(
+        &self,
+        cols: usize,
+        res_size: usize,
+        acc_size: usize,
+        a_size: usize,
+        b_size: usize,
+    ) -> usize {
+        glwe_plain_combination_tmp_bytes_reference(self, cols, res_size, acc_size, a_size, b_size)
     }
 
     fn glwe_plain_combination_reference(
@@ -544,7 +553,14 @@ pub trait GLWEMulPlainReference<BE: Backend, Rg: Ring = Standard> {
         R: GLWEToBackendMut<BE, Rg> + GLWEInfos,
         A: GLWEToBackendRef<BE, Rg> + IntPolyInfos + GLWEInfos;
 
-    fn glwe_plain_combination_tmp_bytes_reference(&self, cols: usize, acc_size: usize, a_size: usize, b_size: usize) -> usize;
+    fn glwe_plain_combination_tmp_bytes_reference(
+        &self,
+        cols: usize,
+        res_size: usize,
+        acc_size: usize,
+        a_size: usize,
+        b_size: usize,
+    ) -> usize;
 
     fn glwe_plain_combination_reference(
         &self,
@@ -3983,11 +3999,12 @@ macro_rules! impl_glwe_mul_plain_reference_full {
             fn glwe_plain_combination_tmp_bytes(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 cols: usize,
+                res_size: usize,
                 acc_size: usize,
                 a_size: usize,
                 b_size: usize,
             ) -> usize {
-                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWEMulPlainReference<$be, $ring>>::glwe_plain_combination_tmp_bytes_reference(module, cols, acc_size, a_size, b_size)
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWEMulPlainReference<$be, $ring>>::glwe_plain_combination_tmp_bytes_reference(module, cols, res_size, acc_size, a_size, b_size)
             }
 
             fn glwe_plain_combination(
@@ -4366,18 +4383,19 @@ pub fn glwe_const_combination_reference<BE, M, Rg: Ring>(
 }
 
 /// Scratch of [`glwe_plain_combination_reference`]: the transform-domain accumulator beside one prepared, possibly
-/// shifted plaintext and the products, then one column of the accumulator out of the transform domain beside the
-/// normalization.
+/// shifted plaintext and the products, then the fused inverse transform and normalization of each column into a `res`
+/// of `res_size` limbs.
 pub fn glwe_plain_combination_tmp_bytes_reference<BE, M, Rg: Ring>(
     module: &M,
     cols: usize,
+    res_size: usize,
     acc_size: usize,
     a_size: usize,
     b_size: usize,
 ) -> usize
 where
     BE: Backend,
-    M: ModuleN + CnvOps<BE, Rg> + VecZnxRshTmpBytes + VecZnxIdftApplyTmpBytes + VecZnxBigNormalizeTmpBytes,
+    M: ModuleN + CnvOps<BE, Rg> + VecZnxRshTmpBytes + VecZnxIdftNormalizeTmpBytes,
 {
     let n = module.n();
     let g_size = b_size + 1;
@@ -4390,16 +4408,13 @@ where
             .max(module.cnv_pvec_right_prepare_tmp_bytes(g_size, g_size))
             .max(module.cnv_apply_dft_tmp_bytes(0, acc_size, a_size, g_size))
             .max(module.cnv_apply_dft_add_tmp_bytes(0, acc_size, a_size, g_size));
-    let normalize = BE::scratch_aligned(BE::vec_znx_big_bytes_of(n, 1, acc_size))
-        + module
-            .vec_znx_idft_apply_tmp_bytes()
-            .max(module.vec_znx_big_normalize_tmp_bytes());
-    BE::scratch_aligned(BE::vec_znx_dft_bytes_of(n, cols, acc_size)) + term.max(normalize)
+    BE::scratch_aligned(BE::vec_znx_dft_bytes_of(n, cols, acc_size))
+        + term.max(module.vec_znx_idft_normalize_tmp_bytes(res_size, acc_size))
 }
 
 /// Reference of [`GLWEMulPlainImpl::glwe_plain_combination`](crate::oep::GLWEMulPlainImpl::glwe_plain_combination),
 /// which `impl_glwe_mul_plain_reference_full!` forwards to: the terms in order, each plaintext shifted and prepared
-/// once and applied to every column in the transform domain, then per column one inverse transform and one
+/// once and applied to every column in the transform domain, then per column one fused inverse transform and
 /// normalization.
 pub fn glwe_plain_combination_reference<BE, M, Rg: Ring>(
     module: &M,
@@ -4415,10 +4430,8 @@ pub fn glwe_plain_combination_reference<BE, M, Rg: Ring>(
         + CnvOps<BE, Rg>
         + VecZnxRsh<BE, Rg>
         + VecZnxRshTmpBytes
-        + VecZnxIdftApply<BE, Rg>
-        + VecZnxIdftApplyTmpBytes
-        + VecZnxBigNormalize<BE, Rg>
-        + VecZnxBigNormalizeTmpBytes,
+        + VecZnxIdftNormalize<BE, Rg>
+        + VecZnxIdftNormalizeTmpBytes,
 {
     assert!(!terms.is_empty(), "glwe_plain_combination: no term");
     assert!(
@@ -4432,7 +4445,7 @@ pub fn glwe_plain_combination_reference<BE, M, Rg: Ring>(
     );
     let a_size = terms.iter().map(|term| term.a.size()).max().unwrap_or(0);
     let b_size = terms.iter().map(|term| term.b.size()).max().unwrap_or(0);
-    let bytes = glwe_plain_combination_tmp_bytes_reference(module, cols, acc_size, a_size, b_size);
+    let bytes = glwe_plain_combination_tmp_bytes_reference(module, cols, res.size(), acc_size, a_size, b_size);
     assert!(
         scratch.available() >= bytes,
         "scratch.available(): {} < GLWEMulPlain::glwe_plain_combination_tmp_bytes: {bytes}",
@@ -4469,26 +4482,9 @@ pub fn glwe_plain_combination_reference<BE, M, Rg: Ring>(
             }
         }
     }
-    let (mut big, mut scratch) = scratch.take_vec_znx_big_scratch(n, 1, acc_size);
+    let mut acc = acc.to_backend_mut();
     for col in 0..cols {
-        module.vec_znx_idft_apply(
-            &mut big.to_backend_mut(),
-            0,
-            &acc.to_backend_ref(),
-            col,
-            &mut scratch.borrow(),
-        );
-        module.vec_znx_big_normalize(
-            res,
-            base2k,
-            res_k,
-            0,
-            col,
-            &big.to_backend_ref(),
-            base2k,
-            0,
-            &mut scratch.borrow(),
-        );
+        module.vec_znx_idft_normalize(res, base2k, res_k, 0, col, &mut acc, col, base2k, None, &mut scratch.borrow());
     }
 }
 

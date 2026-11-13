@@ -4,6 +4,7 @@
 //! leaves them unchanged.
 
 use anyhow::{Result, ensure};
+use poulpy_ckks::layouts::CKKSMaskedConstants;
 use poulpy_core::{
     GLWEBytesOf,
     layouts::{
@@ -217,7 +218,7 @@ pub trait CKKSInverseDomainOps<BE: Backend> {
     ) -> Result<()>
     where
         C: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta + poulpy_ckks::layouts::CKKSMaskedConstants<BE>,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE>,
         H: GetTensorKey<BE>,
         K: GetAutomorphismKey<BE>;
 }
@@ -493,7 +494,7 @@ where
     ) -> Result<()>
     where
         C: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta + poulpy_ckks::layouts::CKKSMaskedConstants<BE>,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE>,
         H: GetTensorKey<BE>,
         K: GetAutomorphismKey<BE>,
     {

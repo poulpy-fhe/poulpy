@@ -1,5 +1,6 @@
 //! Root functions.
 
+use poulpy_ckks::layouts::CKKSMaskedConstants;
 use poulpy_hal::{AlignedBuf, layouts::Standard};
 use std::fmt::Debug;
 
@@ -203,7 +204,7 @@ pub trait CKKSRootOps<BE: Backend> {
         R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         X: GLWEToBackendRef<BE> + CKKSCtBounds,
         Y: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta + poulpy_ckks::layouts::CKKSMaskedConstants<BE>,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE>,
         H: GetTensorKey<BE>;
 }
 
@@ -243,7 +244,7 @@ where
         R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         X: GLWEToBackendRef<BE> + CKKSCtBounds,
         Y: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta + poulpy_ckks::layouts::CKKSMaskedConstants<BE>,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE>,
         H: GetTensorKey<BE>,
     {
         scratch.scope(|scratch_local| {
