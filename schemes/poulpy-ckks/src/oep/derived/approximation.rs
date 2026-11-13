@@ -85,7 +85,7 @@ where
     BE: CKKSApproximationImpl<Rg>,
     R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
     I: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
-    P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + BSGSMeta + IntPolyInfos,
+    P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + BSGSMeta + IntPolyInfos + crate::layouts::CKKSMaskedConstants<BE, Rg>,
     H: GetTensorKey<BE, Rg>,
 {
     const OP: &str = "ckks_polynomial_approximation_eval";

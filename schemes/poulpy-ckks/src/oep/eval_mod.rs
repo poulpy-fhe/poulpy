@@ -38,7 +38,7 @@ pub unsafe trait CKKSEvalModImpl<Rg: Ring = Standard>: Backend {
     where
         R: GLWEToBackendMut<Self, Rg> + GLWEToBackendRef<Self, Rg> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         C: GLWEToBackendMut<Self, Rg> + GLWEToBackendRef<Self, Rg> + CKKSCtBounds,
-        P: GLWEToBackendRef<Self, Rg> + IntPolyInfos + CKKSCtBounds + BSGSMeta,
+        P: GLWEToBackendRef<Self, Rg> + IntPolyInfos + CKKSCtBounds + BSGSMeta + crate::layouts::CKKSMaskedConstants<Self, Rg>,
         H: GetTensorKey<Self, Rg>;
 }
 
@@ -88,7 +88,8 @@ macro_rules! impl_ckks_eval_mod_reference_full {
                 P: ::poulpy_core::layouts::GLWEToBackendRef<Self, $ring>
                     + ::poulpy_core::layouts::IntPolyInfos
                     + $crate::CKKSCtBounds
-                    + ::poulpy_core::layouts::BSGSMeta,
+                    + ::poulpy_core::layouts::BSGSMeta
+                    + $crate::layouts::CKKSMaskedConstants<Self, $ring>,
                 H: ::poulpy_core::layouts::GetTensorKey<Self, $ring>,
             {
                 $crate::reference::eval_mod::CKKSEvalModReference::<Self, $ring>::ckks_eval_mod_reference(

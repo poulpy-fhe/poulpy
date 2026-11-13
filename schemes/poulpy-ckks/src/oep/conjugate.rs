@@ -68,7 +68,7 @@ pub unsafe trait CKKSConjugateImpl: Backend {
 
     /// Scratch bound of [`Self::ckks_conjugate_with_key_into`] and [`Self::ckks_conjugate_with_key_assign`]; may report
     /// less than the reference, never less than the body takes.
-    fn ckks_conjugate_with_key_tmp_bytes<C: GLWEInfos, K: GGLWEInfos>(
+    fn ckks_conjugate_with_key_tmp_bytes<C: CKKSCtBounds, K: GGLWEInfos>(
         module: &Module<Self>,
         ct_infos: &C,
         key_infos: &K,
@@ -114,7 +114,7 @@ pub unsafe trait CKKSConjugateImpl: Backend {
 macro_rules! impl_ckks_conjugate_reference_full {
     ($be:ty) => {
         unsafe impl $crate::oep::CKKSConjugateImpl for $be {
-            fn ckks_conjugate_with_key_tmp_bytes<C: ::poulpy_core::layouts::GLWEInfos, K: ::poulpy_core::layouts::GGLWEInfos>(
+            fn ckks_conjugate_with_key_tmp_bytes<C: $crate::CKKSCtBounds, K: ::poulpy_core::layouts::GGLWEInfos>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 ct_infos: &C,
                 key_infos: &K,

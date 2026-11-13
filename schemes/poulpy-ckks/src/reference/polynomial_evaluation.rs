@@ -1,23 +1,34 @@
 use crate::{CKKSResult as Result, ckks_ensure_operand};
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::IntPolyInfos;
-use poulpy_core::layouts::{BSGSMeta, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, SetBSGSMeta};
-use poulpy_core::oep::{ConstTerm, GLWEMulConstImpl};
-use poulpy_core::{GLWEBSGSOps, GLWEPolynomialEvaluation, GLWEZero};
-use poulpy_hal::{
-    api::{CnvOps, ModuleN, VecZnxBigNormalize, VecZnxRsh, VecZnxRshTmpBytes},
-    layouts::{Backend, Data, Module, PrepareHint, Ring, ScratchArena, Standard, ZnxWord, vec_znx_backend_ref_from_ref},
+use poulpy_core::layouts::{
+    BSGSMeta, GLWEInfos, GLWELayout, GLWEPlaintextInfos, GLWEPlaintextMeta, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank,
+    SetBSGSMeta,
 };
-use std::borrow::Borrow;
+use poulpy_core::oep::{ConstTerm, GLWEMulConstImpl, GLWEMulPlainImpl, PlainTerm};
+use poulpy_core::{GLWEBSGSOps, GLWENormalize, GLWEPolynomialEvaluation, GLWEZero, glwe_left_operand_prepare};
+use poulpy_hal::{
+    api::{CnvOps, CnvPVecAlloc, ModuleN, VecZnxBigNormalize, VecZnxIdftApply, VecZnxRsh, VecZnxRshTmpBytes},
+    layouts::{
+        Backend, CnvPVecLOwned, CnvPVecLToBackendRef, Data, Module, PrepareHint, Ring, ScratchArena, Standard, ZnxWord,
+        vec_znx_backend_ref_from_ref,
+    },
+};
+use std::cell::RefCell;
 
-use crate::CKKSCtBounds;
+use crate::{
+    CKKSCompositionError, CKKSCtBounds, CKKSInfos, Scale, SlotLayout, api::CKKSRoundOps,
+    layouts::validation::ensure_masked_constants,
+};
 use crate::{
     SetCKKSInfos,
     api::{
         BSGSPolynomialInfos, BabyStep as BabyStepInfos, Basis, CKKSAddOps, CKKSCopyOps, CKKSImagOps, CKKSMulAddOps, CKKSMulOps,
-        CKKSRightOperandPreparedFactory, PowerBasisHelper,
+        CKKSRightOperandPreparedFactory, CKKSSubOps, PowerBasisHelper,
     },
-    layouts::{CKKSCiphertext, CKKSCiphertextAlloc, CKKSRightOperandPrepared},
+    layouts::{
+        CKKSCiphertext, CKKSCiphertextAlloc, CKKSMaskedConstants, CKKSRightOperandPrepared, ScratchArenaTakeCKKSCiphertext,
+    },
     polynomial::ComplexBSGSPolynomial,
 };
 
@@ -47,24 +58,44 @@ where
     }
 }
 
-/// CKKS scale-aware operations for the scale-agnostic core BSGS engine.
+/// CKKS scale-aware operations for the scale-agnostic core BSGS engine, for one polynomial evaluation.
 ///
 /// Every method is a thin dispatch to the CKKS API ([`CKKSMulOps`], [`CKKSAddOps`],
-/// [`CKKSCopyOps`]); the only non-dispatch bit is the accumulator seed, which
-/// has no single existing API equivalent.
-struct CKKSBSGSOps;
+/// [`CKKSCopyOps`]); the non-dispatch bits are the accumulator seed, which
+/// has no single existing API equivalent, and the fused baby-step linear
+/// combinations.
+struct CKKSBSGSOps<BE: Backend, Rg: Ring> {
+    /// The public method the evaluation serves, which its refusals carry.
+    op: &'static str,
+    /// The left operand of each power the shaped baby-step combinations take, by degree, prepared at its first use and
+    /// reused by every baby step of the polynomial.
+    powers: RefCell<Vec<Option<CnvPVecLOwned<BE, Rg>>>>,
+}
 
-impl<BE: Backend, V, P, A, R, Rg: Ring> GLWEBSGSOps<BE, V, P, A, R, Rg> for CKKSBSGSOps
+impl<BE: Backend, Rg: Ring> CKKSBSGSOps<BE, Rg> {
+    fn new(op: &'static str) -> Self {
+        Self {
+            op,
+            powers: RefCell::new(Vec::new()),
+        }
+    }
+}
+
+impl<BE: Backend, V, P, A, R, Rg: Ring> GLWEBSGSOps<BE, V, P, A, R, Rg> for CKKSBSGSOps<BE, Rg>
 where
-    BE: GLWEMulConstImpl<Rg>,
+    BE: GLWEMulConstImpl<Rg> + GLWEMulPlainImpl<Rg>,
     Module<BE>: CKKSAddOps<BE, Rg>
+        + CKKSCiphertextAlloc<BE>
         + CKKSMulOps<BE, Rg>
         + CKKSRightOperandPreparedFactory<BE, Rg>
         + CKKSMulAddOps<BE, Rg>
         + CKKSCopyOps<BE, Rg>
-        + GLWEZero<BE, Rg>,
+        + GLWEZero<BE, Rg>
+        + CnvOps<BE, Rg>
+        + GLWENormalize<BE, Rg>
+        + CKKSRoundOps<BE, Rg>,
     V: GLWEToBackendMut<BE, Rg> + GLWEToBackendRef<BE, Rg> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
-    P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos,
+    P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + CKKSMaskedConstants<BE, Rg>,
     A: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + BSGSMeta,
     R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
 {
@@ -80,7 +111,8 @@ where
         res.set_log_delta(seed.log_delta());
         res.set_log_budget(seed.log_budget());
         res.set_slots(seed.slots());
-        res.set_slot_layout(crate::SlotLayout::Full);
+        // The seed's layout, so a reused destination does not keep another.
+        res.set_slot_layout(seed.slot_layout());
         module.glwe_zero(res);
         Ok(())
     }
@@ -98,6 +130,9 @@ where
         let Some(&(seed, _)) = terms.last() else {
             return Ok(false);
         };
+        if let SlotLayout::Replicated(_) = seed.slot_layout() {
+            return shaped_baby_linear_combination(self, module, res, terms, coeffs, scratch);
+        }
         let kb: usize = res.base2k().into();
         let delta = seed.log_delta();
         if kb == 0 {
@@ -111,7 +146,7 @@ where
                 return Ok(false);
             }
             let Ok((b_i, d_i, off_i)) = mul_pt_params_raw(
-                "ckks_eval_poly_real_const_coeffs",
+                self.op,
                 budget + delta,
                 t.log_delta(),
                 t.log_budget(),
@@ -191,6 +226,9 @@ where
         idx: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> anyhow::Result<()> {
+        if res_coeff == 0 {
+            return const_add_assign(self.op, module, res, coeffs, idx, scratch).map_err(::anyhow::Error::from);
+        }
         module
             .ckks_add_pt_const_assign(res, res_coeff, coeffs, idx, scratch)
             .map_err(::anyhow::Error::from)
@@ -205,9 +243,7 @@ where
         idx: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> anyhow::Result<()> {
-        module
-            .ckks_mul_pt_const_into(res, a, coeffs, idx, scratch)
-            .map_err(::anyhow::Error::from)
+        const_mul_into(self.op, module, res, a, coeffs, idx, scratch).map_err(::anyhow::Error::from)
     }
 
     fn mul_add_pt_const(
@@ -219,9 +255,7 @@ where
         idx: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> anyhow::Result<()> {
-        module
-            .ckks_mul_add_pt_const_into(res, a, coeffs, idx, scratch)
-            .map_err(::anyhow::Error::from)
+        const_mul_add_into(self.op, module, res, a, coeffs, idx, scratch).map_err(::anyhow::Error::from)
     }
 
     fn prepare_right(&self, module: &Module<BE>, a: &A, scratch: &mut ScratchArena<'_, BE>) -> anyhow::Result<Self::Prepared> {
@@ -257,6 +291,276 @@ where
     }
 }
 
+/// `res = Σ_t x_t·c_t·π_S` on a replicated layout: each product with its
+/// masked constant, at the offset of the scalar combination, is added in the
+/// transform domain at the shaping depth of a product under the common scale
+/// ([`GLWEMulPlainImpl::glwe_plain_combination`]), and the sum is rounded once
+/// with shaping. Each power is prepared as a left operand once for the
+/// polynomial, in `ops`. Returns `false` without writing `res` when a term has
+/// no masked constant, or does not share the radix and scales of the others.
+fn shaped_baby_linear_combination<BE, V, A, P, Rg: Ring>(
+    ops: &CKKSBSGSOps<BE, Rg>,
+    module: &Module<BE>,
+    res: &mut V,
+    terms: &[(&A, usize)],
+    coeffs: &P,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> anyhow::Result<bool>
+where
+    BE: GLWEMulPlainImpl<Rg>,
+    Module<BE>: CnvOps<BE, Rg> + GLWENormalize<BE, Rg> + CKKSRoundOps<BE, Rg>,
+    V: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+    A: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+    P: CKKSMaskedConstants<BE, Rg>,
+{
+    use crate::{layouts::validation::product_layout, mul_pt_params_raw, shaping::product_depth};
+
+    let op = ops.op;
+    let Some(&(seed, _)) = terms.last() else {
+        return Ok(false);
+    };
+    let kb = res.base2k().as_usize();
+    let delta = seed.log_delta();
+    let operand = |i: usize| coeffs.masked_constant(i);
+    let Some(first) = operand(terms[0].1) else {
+        return Ok(false);
+    };
+    let pt_log_delta = first.log_delta();
+    for &(t, i) in terms {
+        let Some(pt) = operand(i) else {
+            return Ok(false);
+        };
+        product_layout(op, &[seed.slot_layout(), t.slot_layout(), pt.slot_layout()])?;
+        if t.base2k().as_usize() != kb || t.log_delta() != delta || pt.base2k().as_usize() != kb || pt.log_delta() != pt_log_delta
+        {
+            return Ok(false);
+        }
+    }
+    let Some(lambda) = product_depth(seed.slot_layout(), pt_log_delta) else {
+        return Ok(false);
+    };
+
+    // Each term at the rule of the scalar combination: its product's budget
+    // and offset against the running smallest budget.
+    let running = || {
+        terms.iter().scan(seed.log_budget(), move |budget, &(t, i)| {
+            let pt = operand(i)?;
+            let (b, d, off) = mul_pt_params_raw(
+                op,
+                *budget + delta,
+                t.log_delta(),
+                t.log_budget(),
+                pt.log_delta(),
+                pt.log_budget(),
+                pt.encoded_k().as_usize(),
+            )
+            .ok()?;
+            *budget = (*budget).min(b);
+            Some((t, i, pt, b, d, off))
+        })
+    };
+    let mut budget = seed.log_budget();
+    let mut count = 0;
+    for (_, _, _, b, d, off) in running() {
+        if d != delta || off < kb {
+            return Ok(false);
+        }
+        budget = budget.min(b);
+        count += 1;
+    }
+    if count != terms.len() {
+        return Ok(false);
+    }
+    // The sub-limb part `r` of a term's offset shifts its constant, the rest
+    // offsets its convolution by `rho` limbs.
+    let split = |b: usize, off: usize| {
+        let total = off + b - budget;
+        let r = (kb - total % kb) % kb;
+        (r, (total + r) / kb - 1)
+    };
+
+    let wide_k = budget + delta + lambda;
+    let mut acc_size = wide_k.div_ceil(kb);
+    let mut slots = seed.slots();
+    let mut log_sparsity = res.log_sparsity();
+    let (mut widest, mut pt_size) = (seed, 0);
+    for (t, _, pt, b, _, off) in running() {
+        let (r, rho) = split(b, off);
+        let g_size = pt.to_backend_ref().data().size() + usize::from(r != 0);
+        acc_size = acc_size.max((t.k().as_usize().div_ceil(kb) + g_size - 1).saturating_sub(rho));
+        log_sparsity = log_sparsity.min(t.log_sparsity()).min(t.log_n() - pt.log_n());
+        slots = slots.join(t.slots()).join(pt.slots());
+        pt_size = pt_size.max(pt.to_backend_ref().data().size());
+        if t.k() > widest.k() {
+            widest = t;
+        }
+    }
+    let bytes = crate::oep::derived::polynomial_evaluation::eval_shaped_baby_linear_combination_tmp_bytes::<BE, _, Rg>(
+        module, widest, pt_size,
+    );
+    crate::layouts::validation::ensure_scratch(op, scratch, bytes)?;
+
+    let mut powers = ops.powers.borrow_mut();
+    for &(t, i) in terms {
+        if powers.len() <= i {
+            powers.resize_with(i + 1, || None);
+        }
+        if powers[i].is_none() {
+            let mut prep =
+                module.cnv_pvec_left_alloc(res.n().as_usize(), res.rank().as_usize() + 1, t.size(), PrepareHint::Reuse);
+            glwe_left_operand_prepare(module, &mut prep, t, t.k().as_usize(), scratch);
+            powers[i] = Some(prep);
+        }
+    }
+
+    let layout = GLWELayout {
+        n: res.n(),
+        base2k: res.base2k(),
+        k: wide_k.into(),
+        rank: Rank(res.rank().as_u32()),
+    };
+    let meta = GLWEPlaintextMeta {
+        scale: Scale::Log(delta + lambda),
+        slots,
+        log_sparsity,
+        slot_layout: seed.slot_layout(),
+    };
+    let (mut wide, mut scratch) = scratch.borrow().take_ckks_ciphertext_scratch(&layout, meta);
+    wide.set_log_budget(budget);
+    {
+        let pt_refs: Vec<_> = running().map(|(_, _, pt, ..)| pt.to_backend_ref()).collect();
+        let combination: Vec<PlainTerm<'_, BE, Rg>> = running()
+            .zip(pt_refs.iter())
+            .map(|((_, i, _, b, _, off), pt_bk)| {
+                let (shift, cnv_offset) = split(b, off);
+                PlainTerm {
+                    a: powers[i].as_ref().expect("prepared above").to_backend_ref(),
+                    b: vec_znx_backend_ref_from_ref::<BE, Rg>(pt_bk.data()),
+                    shift,
+                    cnv_offset,
+                }
+            })
+            .collect();
+        let mut wide_bk = wide.to_backend_mut();
+        BE::glwe_plain_combination(module, wide_bk.data_mut(), kb, wide_k, acc_size, &combination, &mut scratch);
+    }
+    // Every column is normalized at the wide width.
+    wide.set_canonical(true);
+    res.set_k((budget + delta).into());
+    module.ckks_round(res, &wide, &mut scratch)?;
+    Ok(true)
+}
+
+/// The masked plaintext of constant `idx` when `slot_layout` is replicated,
+/// whose constants are masked plaintexts.
+fn masked<'p, BE: Backend, P: CKKSMaskedConstants<BE, Rg>, Rg: Ring>(
+    op: &'static str,
+    slot_layout: SlotLayout,
+    coeffs: &'p P,
+    idx: usize,
+) -> Result<Option<&'p P::Masked>> {
+    match slot_layout {
+        SlotLayout::Full => Ok(None),
+        SlotLayout::Replicated(_) => coeffs.masked_constant(idx).map(Some).ok_or_else(|| {
+            CKKSCompositionError::InvalidOperand {
+                op,
+                reason: "a replicated layout takes its constants as masked plaintexts".into(),
+            }
+            .into()
+        }),
+    }
+}
+
+/// `res += c` for constant `c = coeffs[idx]`, as `c·π_S` on a replicated layout, refusing for the caller's `op`.
+pub(crate) fn const_add_assign<BE, R, P, Rg: Ring>(
+    op: &'static str,
+    module: &Module<BE>,
+    res: &mut R,
+    coeffs: &P,
+    idx: usize,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> Result<()>
+where
+    BE: Backend,
+    Module<BE>: CKKSAddOps<BE, Rg>,
+    R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+    P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + CKKSMaskedConstants<BE, Rg>,
+{
+    match masked(op, res.slot_layout(), coeffs, idx)? {
+        Some(pt) => module.ckks_add_pt_vec_assign(res, pt, scratch),
+        None => module.ckks_add_pt_const_assign(res, 0, coeffs, idx, scratch),
+    }
+}
+
+/// `res -= c` for constant `c = coeffs[idx]`, as `c·π_S` on a replicated layout.
+pub(crate) fn const_sub_assign<BE, R, P, Rg: Ring>(
+    op: &'static str,
+    module: &Module<BE>,
+    res: &mut R,
+    coeffs: &P,
+    idx: usize,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> Result<()>
+where
+    BE: Backend,
+    Module<BE>: CKKSSubOps<BE, Rg>,
+    R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+    P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + CKKSMaskedConstants<BE, Rg>,
+{
+    match masked(op, res.slot_layout(), coeffs, idx)? {
+        Some(pt) => module.ckks_sub_pt_vec_assign(res, pt, scratch),
+        None => module.ckks_sub_pt_const_assign(res, 0, coeffs, idx, scratch),
+    }
+}
+
+/// `res = a·c` for constant `c = coeffs[idx]`, as a shaped product by
+/// `c·π_S` on a replicated layout.
+pub(crate) fn const_mul_into<BE, R, A, P, Rg: Ring>(
+    op: &'static str,
+    module: &Module<BE>,
+    res: &mut R,
+    a: &A,
+    coeffs: &P,
+    idx: usize,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> Result<()>
+where
+    BE: Backend,
+    Module<BE>: CKKSMulOps<BE, Rg>,
+    R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+    A: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+    P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + CKKSMaskedConstants<BE, Rg>,
+{
+    match masked(op, a.slot_layout(), coeffs, idx)? {
+        Some(pt) => module.ckks_mul_pt_vec_into(res, a, pt, scratch),
+        None => module.ckks_mul_pt_const_into(res, a, coeffs, idx, scratch),
+    }
+}
+
+/// `res += a·c` for constant `c = coeffs[idx]`, as a shaped product by
+/// `c·π_S` on a replicated layout.
+pub(crate) fn const_mul_add_into<BE, R, A, P, Rg: Ring>(
+    op: &'static str,
+    module: &Module<BE>,
+    res: &mut R,
+    a: &A,
+    coeffs: &P,
+    idx: usize,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> Result<()>
+where
+    BE: Backend,
+    Module<BE>: CKKSMulAddOps<BE, Rg>,
+    R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+    A: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+    P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + CKKSMaskedConstants<BE, Rg>,
+{
+    match masked(op, a.slot_layout(), coeffs, idx)? {
+        Some(pt) => module.ckks_mul_add_pt_vec_into(res, a, pt, scratch),
+        None => module.ckks_mul_add_pt_const_into(res, a, coeffs, idx, scratch),
+    }
+}
+
 pub trait CKKSPolynomialEvaluationReference<BE: Backend, Rg: Ring = Standard>: ModuleN {
     fn ckks_eval_poly_real_const_coeffs_from_power_basis_reference<R, B, A, G, H>(
         &self,
@@ -278,10 +582,13 @@ pub trait CKKSPolynomialEvaluationReference<BE: Backend, Rg: Ring = Standard>: M
             + VecZnxBigNormalize<BE, Rg>
             + VecZnxRsh<BE, Rg>
             + VecZnxRshTmpBytes
+            + VecZnxIdftApply<BE, Rg>
+            + GLWENormalize<BE, Rg>
+            + CKKSRoundOps<BE, Rg>
             + Sized,
         R: GLWEToBackendMut<BE, Rg> + GLWEToBackendRef<BE, Rg> + GLWEInfos + SetBSGSMeta + SetCKKSInfos + CKKSCtBounds,
         B: BSGSPolynomialInfos<BE, Rg>,
-        B::Coeffs: CKKSCtBounds,
+        B::Coeffs: CKKSCtBounds + CKKSMaskedConstants<BE, Rg>,
         A: GLWEToBackendRef<BE, Rg> + GLWEInfos + BSGSMeta + CKKSCtBounds,
         G: PowerBasisHelper<BE, A, Rg>,
         H: GetTensorKey<BE, Rg>;
@@ -291,7 +598,7 @@ pub trait CKKSPolynomialEvaluationReference<BE: Backend, Rg: Ring = Standard>: M
 /// [`impl_ckks_complex_polynomial_evaluation_reference_full!`](crate::impl_ckks_complex_polynomial_evaluation_reference_full)
 /// forwards to: the complex-coefficient evaluation of [`CKKSPolynomialEvaluationReference`], on the standard ring, the
 /// imaginary unit having no conjugate-invariant image.
-pub trait CKKSComplexPolynomialEvaluationReference<BE: Backend>: Borrow<Module<BE>> {
+pub trait CKKSComplexPolynomialEvaluationReference<BE: Backend>: std::borrow::Borrow<Module<BE>> {
     fn ckks_eval_poly_complex_const_coeffs_from_power_basis_reference<R, C, A, G, H>(
         &self,
         res: &mut R,
@@ -301,7 +608,7 @@ pub trait CKKSComplexPolynomialEvaluationReference<BE: Backend>: Borrow<Module<B
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        BE: GLWEMulConstImpl,
+        BE: GLWEMulConstImpl + GLWEMulPlainImpl,
         Module<BE>: GLWEZero<BE>
             + GLWEPolynomialEvaluation<BE>
             + CKKSAddOps<BE>
@@ -314,20 +621,22 @@ pub trait CKKSComplexPolynomialEvaluationReference<BE: Backend>: Borrow<Module<B
             + CnvOps<BE>
             + VecZnxBigNormalize<BE>
             + VecZnxRsh<BE>
-            + VecZnxRshTmpBytes,
+            + VecZnxRshTmpBytes
+            + VecZnxIdftApply<BE>
+            + GLWENormalize<BE>
+            + CKKSRoundOps<BE>,
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos + SetBSGSMeta + SetCKKSInfos + CKKSCtBounds,
-        C: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta + CKKSCtBounds + IntPolyInfos,
+        C: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta + CKKSCtBounds + IntPolyInfos + CKKSMaskedConstants<BE>,
         A: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta + CKKSCtBounds,
         G: PowerBasisHelper<BE, A>,
         H: GetTensorKey<BE>,
     {
         const OP: &str = "ckks_eval_poly_complex_const_coeffs_from_power_basis";
-        let module: &Module<BE> = self.borrow();
+        let module: &Module<BE> = std::borrow::Borrow::borrow(self);
         let poly_re = &poly.re;
         let poly_im = &poly.im;
         ensure_complex_schedules::<BE, C>(OP, poly)?;
         ensure_power_basis(OP, BSGSPolynomialInfos::<BE>::basis(poly_re), power_basis.basis())?;
-        crate::layouts::validation::ensure_full_layout(OP, crate::GLWEPlaintextInfos::slot_layout(power_basis.get(1)?))?;
         let n_baby = BSGSPolynomialInfos::<BE>::baby_steps(poly_re);
 
         // Fold the trailing lone constant via the highest power when present.
@@ -342,7 +651,14 @@ pub trait CKKSComplexPolynomialEvaluationReference<BE: Backend>: Borrow<Module<B
         let parity = BSGSPolynomialInfos::<BE>::parity(poly_re);
         let x = power_basis.get(1)?;
         crate::ensure_operand_degrees(OP, module, [res.n(), x.n()])?;
-        let precision = CKKSBSGSOps;
+        let constants = (0..n_baby).flat_map(|i| {
+            [
+                BSGSPolynomialInfos::<BE>::baby_step(poly_re, i),
+                BSGSPolynomialInfos::<BE>::baby_step(poly_im, i),
+            ]
+        });
+        ensure_masked_constants::<BE, Standard, C>(OP, x.slot_layout(), constants)?;
+        let precision = CKKSBSGSOps::new(OP);
         let mut baby_steps = Vec::with_capacity(n_to_process);
         for i in 0..n_to_process {
             let re_coeffs = BSGSPolynomialInfos::<BE>::baby_step(poly_re, i);
@@ -389,9 +705,9 @@ pub trait CKKSComplexPolynomialEvaluationReference<BE: Backend>: Borrow<Module<B
             // res += a·x^fold + i·(b·x^fold), with a = last_re[0], b = last_im[0].
             let last_im = BSGSPolynomialInfos::<BE>::baby_step(poly_im, n_baby - 1);
             let xpow = power_basis.get(fold_power)?;
-            module.ckks_mul_add_pt_const_into(res, xpow, last_re, 0, scratch)?;
+            const_mul_add_into(OP, module, res, xpow, last_re, 0, scratch)?;
             let mut im_fold = module.ckks_ciphertext_alloc_from_infos(res);
-            module.ckks_mul_pt_const_into(&mut im_fold, xpow, last_im, 0, scratch)?;
+            const_mul_into(OP, module, &mut im_fold, xpow, last_im, 0, scratch)?;
             module.ckks_mul_i_assign(&mut im_fold, scratch)?;
             module.ckks_add_assign(res, &im_fold, scratch)?;
         }
@@ -404,7 +720,7 @@ impl<BE: Backend> CKKSComplexPolynomialEvaluationReference<BE> for Module<BE> {}
 
 impl<BE: Backend, Rg: Ring> CKKSPolynomialEvaluationReference<BE, Rg> for Module<BE>
 where
-    BE: GLWEMulConstImpl<Rg>,
+    BE: GLWEMulConstImpl<Rg> + GLWEMulPlainImpl<Rg>,
     Module<BE>: GLWEPolynomialEvaluation<BE, Rg>,
 {
     fn ckks_eval_poly_real_const_coeffs_from_power_basis_reference<R, B, A, G, H>(
@@ -428,10 +744,13 @@ where
             + VecZnxBigNormalize<BE, Rg>
             + VecZnxRsh<BE, Rg>
             + VecZnxRshTmpBytes
+            + VecZnxIdftApply<BE, Rg>
+            + GLWENormalize<BE, Rg>
+            + CKKSRoundOps<BE, Rg>
             + Sized,
         R: GLWEToBackendMut<BE, Rg> + GLWEToBackendRef<BE, Rg> + GLWEInfos + SetBSGSMeta + SetCKKSInfos + CKKSCtBounds,
         B: BSGSPolynomialInfos<BE, Rg>,
-        B::Coeffs: CKKSCtBounds,
+        B::Coeffs: CKKSCtBounds + CKKSMaskedConstants<BE, Rg>,
         A: GLWEToBackendRef<BE, Rg> + GLWEInfos + BSGSMeta + CKKSCtBounds,
         G: PowerBasisHelper<BE, A, Rg>,
         H: GetTensorKey<BE, Rg>,
@@ -439,7 +758,6 @@ where
         const OP: &str = "ckks_eval_poly_real_const_coeffs_from_power_basis";
         ensure_baby_steps(OP, poly)?;
         ensure_power_basis(OP, poly.basis(), power_basis.basis())?;
-        crate::layouts::validation::ensure_full_layout(OP, crate::GLWEPlaintextInfos::slot_layout(power_basis.get(1)?))?;
 
         let n_baby = poly.baby_steps();
         let last_coeffs = poly.baby_step(n_baby - 1);
@@ -457,7 +775,8 @@ where
         let parity = poly.parity();
         let x = power_basis.get(1)?;
         crate::ensure_operand_degrees(OP, self, [res.n(), x.n()])?;
-        let precision = CKKSBSGSOps;
+        ensure_masked_constants::<BE, Rg, B::Coeffs>(OP, x.slot_layout(), (0..n_baby).map(|i| poly.baby_step(i)))?;
+        let precision = CKKSBSGSOps::new(OP);
         for i in 0..n_to_process {
             let coeffs = poly.baby_step(i);
             let degree = coeffs.n().as_usize() - 1;
@@ -478,7 +797,15 @@ where
 
         if can_fold {
             let xpow = power_basis.get(fold_power)?;
-            self.ckks_mul_add_pt_const_into(res, xpow, last_coeffs, 0, scratch)?;
+            const_mul_add_into(
+                "ckks_eval_poly_real_const_coeffs_from_power_basis",
+                self,
+                res,
+                xpow,
+                last_coeffs,
+                0,
+                scratch,
+            )?;
         }
 
         Ok(())

@@ -413,7 +413,7 @@ pub trait CKKSAtan2Ops<BE: Backend> {
         R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Y: GLWEToBackendRef<BE> + CKKSCtBounds,
         X: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta + poulpy_ckks::layouts::CKKSMaskedConstants<BE>,
         H: GetTensorKey<BE>,
         K: GetAutomorphismKey<BE>;
 }
@@ -471,7 +471,7 @@ where
         R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Y: GLWEToBackendRef<BE> + CKKSCtBounds,
         X: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta + poulpy_ckks::layouts::CKKSMaskedConstants<BE>,
         H: GetTensorKey<BE>,
         K: GetAutomorphismKey<BE>,
     {

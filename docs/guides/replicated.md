@@ -3,8 +3,8 @@
 `poulpy-ckks` implements the slot layout of the small-batch scheme of *Fully Homomorphic Encryption for Small Batches of Complex Numbers* (Dumezy, [ePrint 2026/2513](https://eprint.iacr.org/2026/2513)) as a slot layout of CKKS.
 A batch of `k = 2^log_k` complex values is replicated across the ring, one slot class out of `R = 2^log_r` carrying data and the others serving as guards.
 A shaped rounding leaves an error that is a multiple of a fixed polynomial `g`, small on the data class, so the guards absorb it.
-Here encoding, encryption and `ckks_round` round with shaping, and sums and differences add exactly.
-Products, rescaling and key switching round plainly, so they refuse a replicated layout.
+Here encoding, encryption, products with their rescale, and the key switches of automorphisms round with shaping, and sums and differences add exactly.
+The operations that still round plainly refuse a replicated layout.
 
 ## Layout
 
@@ -26,14 +26,17 @@ At `R = 2` the one guard class grows as much as the data shrinks. Fewer guard cl
 
 `CKKSRoundOps::ckks_round` rounds a ciphertext to a smaller width at a fixed torus value.
 On a replicated layout, the `λ` dropped bits are divided out as `h = [U^(-1)·c]_(2^λ)` and the remainder `c − g·h` is carried, so the error is a multiple of `g` up to a remainder `2^-λ` smaller.
-Encoding and encryption build on it:
+The other operations build on it:
 
 - encoding quantizes at `log_delta + λ` bits and rounds with shaping;
 - `ckks_encrypt_sk` encrypts `ShapingProfile::max_pass_bits` wider and rounds to the ciphertext width, so the fresh error is shaped;
-- `ckks_encode_slots_host_into` and `ckks_decode_slots_host_into` take the `2^log_k` values of the batch, decoding every replica and averaging them.
+- `ckks_encode_slots_host_into` and `ckks_decode_slots_host_into` take the `2^log_k` values of the batch, decoding every replica and averaging them;
+- products (`ckks_mul_*`, `ckks_square_*`, `ckks_mul_pt_*`) and automorphisms (`ckks_rotate_*`, `ckks_conjugate_*`) are computed `ShapingProfile::shaping_depth(log_delta)` bits under the scale, `min(log_delta + 24, max_pass_bits)` (`SHAPED_WORKING_BITS`), and rounded with shaping; a ciphertext product that takes the tensor path needs a tensor key covering that wider intermediate;
+- constants are multiplied as masked plaintexts `c·π_S`, constant on the data slots and zero on the guards (`ckks_encode_masked_constant_host_into`, `MaskedCoeffs`); `ckks_{add,sub}_one_assign` add the masked one;
+- polynomial evaluation and EvalMod take `MaskedCoeffs` (`encode_bsgs_replicated`, `ckks_eval_mod_replicated_compile`), refusing constants without their masked plaintexts before any work, and evaluate each baby step as one shaped linear combination, each power prepared once per polynomial.
 
 Sums and differences of one slot layout and one scale add exactly.
-Operations that would round plainly or write the guard slots return `InvalidOperand` on a replicated layout: products, rotations and conjugations, constant additions and products, dot products, inner sums, polynomial evaluation and EvalMod, the full-layout linear transformations and DFT, ModUp, bootstrapping, PaCo and SHIP.
+Operations that would round plainly or write the guard slots return `InvalidOperand` on a replicated layout: constant additions, rotations by a slot count that is not a multiple of `R`, dot products of prepared operands, inner sums, the full-layout linear transformations and DFT, ModUp, bootstrapping, PaCo and SHIP.
 
 ## Conjugate-invariant ring
 
@@ -44,7 +47,9 @@ Every unit of `Z[Y]/(Y^(2R)+1)` is a power of `Y` times an invariant unit with t
 Every `ShapingUnit` has one, and a `U` without one is refused.
 Rounding reads the invariant coefficients, which keeps `h` invariant and rounds each tie once.
 
-Rounding, encoding and encryption take the same calls as on the standard ring.
+Leveled operations, polynomial evaluation and EvalMod take the same calls as on the standard ring.
+Masked constants and the masked one keep their real part, as the slot encoder does.
+The conjugation, complex polynomials and the packed EvalMod are standard-only.
 
 ## Construction outline
 
@@ -66,6 +71,6 @@ module.ckks_encrypt_sk(&mut ct, &pt, &sk, &mut source_xe, &mut source_xa, &mut s
 
 ## Validation
 
-The CKKS test suite checks shaped rounding, encoding and encryption against the full layout on the data slots (`test_round_*`, `test_replicated_*`), and that operations which would round plainly reject a replicated input.
-`test_replicated_parity` checks that shaped rounding and encoding give the same digits on every pair of backends, on both rings and at ranks 1 and 2, and the encryption parity suites check shaped encryption under the same draws.
+The CKKS test suite checks every shaped operation against the full layout on the data slots (`test_round_*`, `test_replicated_*`), every unit on a product chain, and that operations which would round plainly reject a replicated input.
+`test_replicated_parity` checks that the shaped operations give the same digits on every pair of backends, on both rings and at ranks 1 and 2, and the encryption parity suites check shaped encryption under the same draws.
 `conjugate_invariant_ckks_test_suite!` runs the tests that apply to the conjugate-invariant ring and the shaped rounding on the unfolded coefficients.

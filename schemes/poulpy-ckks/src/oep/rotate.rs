@@ -20,7 +20,11 @@ use crate::{
 pub unsafe trait CKKSRotateImpl<Rg: Ring = Standard>: Backend + super::CKKSCopyImpl<Rg> {
     /// Scratch bound of [`Self::ckks_rotate_with_key_into`] and [`Self::ckks_rotate_with_key_assign`]; may report less
     /// than the reference, never less than the body takes.
-    fn ckks_rotate_with_key_tmp_bytes<C: GLWEInfos, K: GGLWEInfos>(module: &Module<Self>, ct_infos: &C, key_infos: &K) -> usize;
+    fn ckks_rotate_with_key_tmp_bytes<C: CKKSCtBounds, K: GGLWEInfos>(
+        module: &Module<Self>,
+        ct_infos: &C,
+        key_infos: &K,
+    ) -> usize;
 
     /// Hook without an API twin. Reproduces
     /// [`ckks_rotate_with_key_into_reference`](crate::reference::rotate::CKKSRotateReference::ckks_rotate_with_key_into_reference)
@@ -104,7 +108,7 @@ macro_rules! impl_ckks_rotate_reference_full {
     };
     ($be:ty, $ring:ty) => {
         unsafe impl $crate::oep::CKKSRotateImpl<$ring> for $be {
-            fn ckks_rotate_with_key_tmp_bytes<C: ::poulpy_core::layouts::GLWEInfos, K: ::poulpy_core::layouts::GGLWEInfos>(
+            fn ckks_rotate_with_key_tmp_bytes<C: $crate::CKKSCtBounds, K: ::poulpy_core::layouts::GGLWEInfos>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 ct_infos: &C,
                 key_infos: &K,

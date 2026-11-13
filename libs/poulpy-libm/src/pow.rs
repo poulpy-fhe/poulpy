@@ -253,7 +253,7 @@ pub trait CKKSPowOps<BE: Backend> {
         R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         B: GLWEToBackendRef<BE> + CKKSCtBounds,
         E: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta + poulpy_ckks::layouts::CKKSMaskedConstants<BE>,
         H: GetTensorKey<BE>;
 }
 
@@ -343,7 +343,7 @@ where
         R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         B: GLWEToBackendRef<BE> + CKKSCtBounds,
         E: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta + poulpy_ckks::layouts::CKKSMaskedConstants<BE>,
         H: GetTensorKey<BE>,
     {
         scratch.scope(|scratch_local| {

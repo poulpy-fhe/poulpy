@@ -130,7 +130,7 @@ unsafe impl CKKSPolynomialEvaluationImpl<Standard> for OverrideBackend {
     where
         R: GLWEToBackendMut<Self, Standard> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         B: BSGSPolynomialInfos<Self, Standard>,
-        B::Coeffs: CKKSCtBounds,
+        B::Coeffs: CKKSCtBounds + poulpy_ckks::layouts::CKKSMaskedConstants<Self>,
         A: GLWEToBackendRef<Self, Standard> + CKKSCtBounds + BSGSMeta,
         G: PowerBasisHelper<Self, A, Standard>,
         H: GetTensorKey<Self, Standard>,
@@ -158,7 +158,12 @@ unsafe impl CKKSComplexPolynomialEvaluationImpl for OverrideBackend {
     ) -> CKKSResult<()>
     where
         R: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
-        C: GLWEToBackendRef<Self> + GLWEInfos + BSGSMeta + CKKSCtBounds + IntPolyInfos,
+        C: GLWEToBackendRef<Self>
+            + GLWEInfos
+            + BSGSMeta
+            + CKKSCtBounds
+            + IntPolyInfos
+            + poulpy_ckks::layouts::CKKSMaskedConstants<Self>,
         A: GLWEToBackendRef<Self> + CKKSCtBounds + BSGSMeta,
         G: PowerBasisHelper<Self, A>,
         H: GetTensorKey<Self>,
@@ -200,7 +205,11 @@ unsafe impl CKKSEvalModImpl<Standard> for OverrideBackend {
     where
         R: GLWEToBackendMut<Self, Standard> + GLWEToBackendRef<Self, Standard> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         C: GLWEToBackendMut<Self, Standard> + GLWEToBackendRef<Self, Standard> + CKKSCtBounds,
-        P: GLWEToBackendRef<Self, Standard> + IntPolyInfos + CKKSCtBounds + BSGSMeta,
+        P: GLWEToBackendRef<Self, Standard>
+            + IntPolyInfos
+            + CKKSCtBounds
+            + BSGSMeta
+            + poulpy_ckks::layouts::CKKSMaskedConstants<Self>,
         H: GetTensorKey<Self, Standard>,
     {
         EVAL_MOD_CALLS.with(|calls| calls.set(calls.get() + 1));

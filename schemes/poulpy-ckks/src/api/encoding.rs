@@ -6,6 +6,7 @@
 //! native FFT and plaintext codec without a device-to-host round-trip.
 
 use crate::{CKKSResult as Result, ckks_ensure, ckks_ensure_operand};
+use anyhow::Context;
 use bytemuck::Pod;
 use num_traits::FloatConst;
 use poulpy_core::layouts::IntPolyInfos;
@@ -19,6 +20,7 @@ use crate::{
         copy_host_into_encoding_buffer, copy_reim_host_into_encoding_buffer, download_from_encoding_buffer,
         upload_into_encoding_buffer,
     },
+    shaping::conjugate_invariant,
 };
 
 /// Scalar types accepted by CKKS encoding operations.
@@ -273,6 +275,72 @@ pub trait CKKSEncodingHostOps<BE: Backend, F: CKKSEncodingScalar, Rg: Ring = Sta
             let (mut values, _) = arena.take_ckks_encoding_buffer_scratch::<F>(len);
             self.ckks_decode_slots_into(pt, &mut values)?;
             copy_encoding_buffer_into_reim_host::<BE, F, _>(&values, re, im).map_err(Into::into)
+        })
+    }
+
+    /// Encodes the masked constant `(re + i·im)·π_S` of a
+    /// [`SlotLayout::Replicated`] plaintext: `re + i·im` on every data slot and
+    /// zero on the guards. `π_S`, one on the data class, lies in `R[Y]`,
+    /// `Y = X^(N/(2R))`, with coefficients `cos(π·j/(2R))/R`, and `i·π_S = Y^R·π_S`,
+    /// so the constant has `2R` coefficients, quantized with shaped rounding.
+    /// The mask is invariant, so the conjugate-invariant ring, where
+    /// `Y = X^(N/R)`, holds the real constant by its first `R` coefficients and
+    /// drops `im`, as its slot encoder does.
+    ///
+    /// Scratch: [`CKKSEncodingBuffer::bytes_of`] of the degree of `pt`.
+    ///
+    /// # Errors
+    ///
+    /// Before any write to `pt`: [`InvalidOperand`](crate::CKKSCompositionError::InvalidOperand) for a `pt` of another
+    /// slot layout than [`SlotLayout::Replicated`], or of a degree that is not a multiple of the period of `π_S`
+    /// (`2R`, `R` on the conjugate-invariant ring), and `CKKSError::Internal` for an arena below the scratch above.
+    /// Then those of [`CKKSEncodingOps::ckks_encode_coeffs_into`].
+    fn ckks_encode_masked_constant_host_into<P>(&self, pt: &mut P, re: F, im: F, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    where
+        P: CKKSPlaintextToBackendMut<BE, Rg> + IntPolyInfos + SetCKKSInfos,
+    {
+        const OP: &str = "ckks_encode_masked_constant_host_into";
+        let SlotLayout::Replicated(layout) = pt.slot_layout() else {
+            return Err(crate::CKKSCompositionError::InvalidOperand {
+                op: OP,
+                reason: "a masked constant needs a replicated slot layout".into(),
+            }
+            .into());
+        };
+        let r = 1usize << layout.log_r();
+        let order = layout.log_r() as u32 + 2;
+        let r_inv = F::from_usize(r)
+            .context("slot period is not representable by the encoding scalar")?
+            .recip();
+        let pi_s = |j: usize| F::ckks_root_of_unity(j as u64, order).0 * r_inv;
+        let n = pt.n().as_usize();
+        let period = if conjugate_invariant::<Rg>() { r } else { 2 * r };
+        ckks_ensure_operand!(
+            OP,
+            n.is_multiple_of(period),
+            "a masked constant of period {r} needs a degree multiple of {period}, got {n}"
+        );
+        let stride = n / period;
+        let required = CKKSEncodingBuffer::<BE::OwnedBuf, F>::bytes_of(n);
+        ckks_ensure!(
+            scratch.available() >= required,
+            "CKKS coefficient encoding needs {required} scratch bytes, but only {} are available",
+            scratch.available()
+        );
+        scratch.scope(|arena| -> Result<()> {
+            let (mut values, _) = arena.take_ckks_encoding_buffer_scratch::<F>(n);
+            upload_into_encoding_buffer::<BE, F, _>(&mut values, |t| {
+                if !t.is_multiple_of(stride) {
+                    return F::zero();
+                }
+                let j = t / stride;
+                if period == r {
+                    return re * pi_s(j);
+                }
+                let shifted = if j >= r { pi_s(j - r) } else { -pi_s(j + r) };
+                re * pi_s(j) + im * shifted
+            });
+            self.ckks_encode_coeffs_into(pt, &values)
         })
     }
 

@@ -1,20 +1,25 @@
 use crate::CKKSResult as Result;
 use crate::api::{CKKSComplexPolynomialEvaluationOps, CKKSPolynomialEvaluationOps};
 use poulpy_core::GLWENormalize;
+use poulpy_core::glwe_left_operand_prepare_tmp_bytes;
 use poulpy_core::layouts::{
     BSGSMeta, GLWEInfos, GLWEPlaintextMeta, GLWEToBackendMut, GLWEToBackendRef, GetTensorKey, IntPolyInfos, SetBSGSMeta,
 };
-use poulpy_core::oep::GLWEMulConstImpl;
+use poulpy_core::layouts::{GLWELayout, LWEInfos};
+use poulpy_core::oep::{GLWEMulConstImpl, GLWEMulPlainImpl};
+use poulpy_hal::api::CnvOps;
 
 use poulpy_hal::layouts::{Backend, Module, Ring, ScratchArena};
 
 use crate::{
-    CKKSCtBounds, SetCKKSInfos,
-    api::{BSGSPolynomialInfos, CKKSCopyOps, CKKSMulOps, CKKSPow2Ops, CKKSSubOps, PolynomialInputTransform},
+    CKKSCtBounds, CKKSLayout, SetCKKSInfos,
+    api::{BSGSPolynomialInfos, CKKSCopyOps, CKKSMulOps, CKKSPow2Ops, CKKSRoundOps, CKKSSubOps, PolynomialInputTransform},
+    layouts::validation::ensure_masked_constants,
     layouts::{CKKSCiphertextOwned, ScratchArenaTakeCKKSCiphertext},
     polynomial::ComplexBSGSPolynomial,
     power_basis::{CKKSPowerBasisGen, PowerBasis, PowerStorage, populate_in, power_layout, square_ct_k},
     reference::polynomial_evaluation::{ensure_baby_steps, ensure_complex_schedules},
+    shaping::MAX_PASS_BITS,
 };
 
 /// Scratch upper bound for [`GLWEBSGSOps::eval_baby_linear_combination`]: the constant combination
@@ -24,6 +29,32 @@ where
     BE: GLWEMulConstImpl<Rg>,
 {
     BE::glwe_const_combination_tmp_bytes(module, ct_size + pt_size, ct_size, pt_size)
+}
+
+/// Scratch upper bound for the shaped baby-step linear combination of a replicated layout, for terms of the layout of
+/// `ct` and masked constants of `pt_size` limbs: the larger of the preparation of a power as a left operand, held for
+/// the polynomial, and the wide sum [`GLWEMulPlainImpl::glwe_plain_combination`] writes up to `MAX_PASS_BITS` under
+/// the scale beside the combination or the shaped rounding into the result.
+pub(crate) fn eval_shaped_baby_linear_combination_tmp_bytes<BE, C, Rg: Ring>(module: &Module<BE>, ct: &C, pt_size: usize) -> usize
+where
+    BE: GLWEMulPlainImpl<Rg>,
+    Module<BE>: CnvOps<BE, Rg> + GLWENormalize<BE, Rg> + CKKSRoundOps<BE, Rg>,
+    C: CKKSCtBounds,
+{
+    let cols = ct.rank().as_usize() + 1;
+    let wide = CKKSLayout {
+        glwe_layout: GLWELayout {
+            k: (ct.k().as_usize() + MAX_PASS_BITS).into(),
+            ..ct.glwe_layout()
+        },
+        meta: ct.meta(),
+    };
+    let wide_size = wide.glwe_layout.size();
+    let acc_size = wide_size + pt_size + 1;
+    let combination = BE::glwe_plain_combination_tmp_bytes(module, cols, acc_size, ct.size(), pt_size);
+    let sum = BE::scratch_aligned(BE::vec_znx_bytes_of(module.n(), cols, wide_size))
+        + combination.max(module.ckks_round_tmp_bytes(ct, &wide));
+    glwe_left_operand_prepare_tmp_bytes(module, ct.size(), ct).max(sum)
 }
 
 /// The folded input (`x`, `x²`, or `T₂(x)`) of `src` for one-shot evaluation, in the storage of `A`, with what is left
@@ -89,7 +120,7 @@ where
         + GLWENormalize<BE, Rg>,
     R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
     B: BSGSPolynomialInfos<BE, Rg>,
-    B::Coeffs: CKKSCtBounds,
+    B::Coeffs: CKKSCtBounds + crate::layouts::CKKSMaskedConstants<BE, Rg>,
     H: GetTensorKey<BE, Rg>,
 {
     let mut power_basis = PowerBasis::new(bsgs.basis(), x1);
@@ -130,10 +161,11 @@ where
     R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
     S: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
     B: BSGSPolynomialInfos<BE, Rg>,
-    B::Coeffs: CKKSCtBounds,
+    B::Coeffs: CKKSCtBounds + crate::layouts::CKKSMaskedConstants<BE, Rg>,
     H: GetTensorKey<BE, Rg>,
 {
     ensure_baby_steps(op, bsgs)?;
+    ensure_masked_constants::<BE, Rg, B::Coeffs>(op, src.slot_layout(), (0..bsgs.baby_steps()).map(|i| bsgs.baby_step(i)))?;
     let transform = bsgs.input_transform();
     let (x1, scratch) = polynomial_input_in::<_, A, _, _, Rg>(module, src, transform, tsk, scratch)?;
     let mut scratch = eval_poly_real_on_power(module, dst, x1, bsgs, tsk, scratch)?;
@@ -164,7 +196,7 @@ where
     R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
     S: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
     B: BSGSPolynomialInfos<BE, Rg>,
-    B::Coeffs: CKKSCtBounds,
+    B::Coeffs: CKKSCtBounds + crate::layouts::CKKSMaskedConstants<BE, Rg>,
     H: GetTensorKey<BE, Rg>,
     CKKSCiphertextOwned<BE, Rg>: GLWEToBackendMut<BE, Rg> + GLWEToBackendRef<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
 {
@@ -190,7 +222,7 @@ where
         + GLWENormalize<BE>,
     R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
     S: GLWEToBackendRef<BE> + CKKSCtBounds,
-    C: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta + CKKSCtBounds + IntPolyInfos,
+    C: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta + CKKSCtBounds + IntPolyInfos + crate::layouts::CKKSMaskedConstants<BE>,
     H: GetTensorKey<BE>,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
 {
@@ -203,6 +235,8 @@ where
         transform == poly.im.input_transform(),
         "real and imaginary input transforms differ"
     );
+    let constants = (0..poly.re.baby_steps().len()).flat_map(|i| [poly.re.baby_step(i), poly.im.baby_step(i)]);
+    ensure_masked_constants::<BE, poulpy_hal::layouts::Standard, C>(OP, src.slot_layout(), constants)?;
     let (x1, _) = polynomial_input_in::<_, CKKSCiphertextOwned<BE>, _, _, _>(module, src, transform, tsk, scratch.borrow())?;
     let mut power_basis = PowerBasis::new(poly.re.basis(), x1);
     power_basis.populate(poly.re.degree(), poly.re.log_split(), poly.re.parity(), module, tsk, scratch)?;

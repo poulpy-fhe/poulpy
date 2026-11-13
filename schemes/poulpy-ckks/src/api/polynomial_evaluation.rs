@@ -16,8 +16,9 @@ pub trait CKKSPolynomialEvaluationOps<BE: Backend, Rg: Ring = Standard> {
     ///
     /// # Errors
     ///
-    /// `InvalidOperand` when `poly` has no baby step or a basis other than that of `power_basis`, before anything is
-    /// written. Then the errors of the evaluation: an untyped error for a power `power_basis` lacks, and those of its
+    /// `InvalidOperand` when `poly` has no baby step or a basis other than that of `power_basis`, or, on a
+    /// [replicated](crate::SlotLayout::Replicated) power basis, when its constants lack their masked plaintexts or hold
+    /// them in another layout, before anything is written. Then the errors of the evaluation: an untyped error for a power `power_basis` lacks, and those of its
     /// products and additions (`MissingRelinearizationKey`, `MultiplicationPrecisionUnderflow`,
     /// `InsufficientHomomorphicCapacity`), the last of which can come after `res` is written: `res` is untouched only
     /// on the `InvalidOperand` refusals.
@@ -32,7 +33,7 @@ pub trait CKKSPolynomialEvaluationOps<BE: Backend, Rg: Ring = Standard> {
     where
         R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         B: BSGSPolynomialInfos<BE, Rg>,
-        B::Coeffs: CKKSCtBounds,
+        B::Coeffs: CKKSCtBounds + crate::layouts::CKKSMaskedConstants<BE, Rg>,
         A: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + BSGSMeta,
         G: PowerBasisHelper<BE, A, Rg>,
         H: GetTensorKey<BE, Rg>;
@@ -44,7 +45,8 @@ pub trait CKKSPolynomialEvaluationOps<BE: Backend, Rg: Ring = Standard> {
     ///
     /// # Errors
     ///
-    /// `InvalidOperand` when `bsgs` has no baby step, before any work. Then the errors of the input transform and of
+    /// `InvalidOperand` when `bsgs` has no baby step, or, for a replicated `src`, when its constants lack their masked
+    /// plaintexts or hold them in another layout, before any work. Then the errors of the input transform and of
     /// the power basis' products, which write only temporaries, then those of
     /// [`Self::ckks_eval_poly_real_const_coeffs_from_power_basis`] and, for the transforms times the input, of the
     /// final product by `src`, which can come after `dst` is written: `dst` is untouched only on the errors before
@@ -61,7 +63,7 @@ pub trait CKKSPolynomialEvaluationOps<BE: Backend, Rg: Ring = Standard> {
         R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         S: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
         B: BSGSPolynomialInfos<BE, Rg>,
-        B::Coeffs: CKKSCtBounds,
+        B::Coeffs: CKKSCtBounds + crate::layouts::CKKSMaskedConstants<BE, Rg>,
         H: GetTensorKey<BE, Rg>,
         CKKSCiphertextOwned<BE, Rg>: GLWEToBackendMut<BE, Rg> + GLWEToBackendRef<BE, Rg> + CKKSCtBounds + SetCKKSInfos;
 }
@@ -76,8 +78,9 @@ pub trait CKKSComplexPolynomialEvaluationOps<BE: Backend> {
     /// # Errors
     ///
     /// `InvalidOperand` when `poly.re` has no baby step, when `poly.re` and `poly.im` differ in baby-step count, in the
-    /// length of a baby step, in degree, parity or basis, or when their basis is not that of `power_basis`, before
-    /// anything is written. Then the errors of the evaluation as
+    /// length of a baby step, in degree, parity or basis, when their basis is not that of `power_basis`, or, on a
+    /// replicated power basis, when their constants lack their masked plaintexts or hold them in another layout,
+    /// before anything is written. Then the errors of the evaluation as
     /// [`CKKSPolynomialEvaluationOps::ckks_eval_poly_real_const_coeffs_from_power_basis`], `res` being untouched only
     /// on the `InvalidOperand` refusals.
     fn ckks_eval_poly_complex_const_coeffs_from_power_basis<R, C, A, G, H>(
@@ -90,7 +93,7 @@ pub trait CKKSComplexPolynomialEvaluationOps<BE: Backend> {
     ) -> Result<()>
     where
         R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
-        C: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta + CKKSCtBounds + IntPolyInfos,
+        C: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta + CKKSCtBounds + IntPolyInfos + crate::layouts::CKKSMaskedConstants<BE>,
         A: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta,
         G: PowerBasisHelper<BE, A>,
         H: GetTensorKey<BE>;
@@ -104,7 +107,8 @@ pub trait CKKSComplexPolynomialEvaluationOps<BE: Backend> {
     ///
     /// `InvalidOperand` for the shapes of `poly` that
     /// [`Self::ckks_eval_poly_complex_const_coeffs_from_power_basis`] refuses, other than the basis of the power basis it
-    /// builds, and when `poly.re` and `poly.im` differ in input transform, before any work. Then the errors of the
+    /// builds, when `poly.re` and `poly.im` differ in input transform, and, for a replicated `src`, when their
+    /// constants lack their masked plaintexts or hold them in another layout, before any work. Then the errors of the
     /// evaluation as [`CKKSPolynomialEvaluationOps::ckks_eval_poly_real_const_coeffs`], `dst` being untouched only on
     /// the errors before the evaluation.
     fn ckks_eval_poly_complex_const_coeffs<R, S, C, H>(
@@ -118,7 +122,7 @@ pub trait CKKSComplexPolynomialEvaluationOps<BE: Backend> {
     where
         R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         S: GLWEToBackendRef<BE> + CKKSCtBounds,
-        C: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta + CKKSCtBounds + IntPolyInfos,
+        C: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta + CKKSCtBounds + IntPolyInfos + crate::layouts::CKKSMaskedConstants<BE>,
         H: GetTensorKey<BE>,
         CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos;
 }

@@ -2,12 +2,8 @@
 //! registers them (every method forwarding to its reference body) except for
 //! the add-one and sub-one forms.
 //!
-//! The upstream defaults of those two upload their constant plaintext at
-//! every call. On a device backend that is a host transfer inside every
-//! operation built on them (the modular reduction of a bootstrap, for one),
-//! which also keeps such an operation from being recorded as a graph. Here
-//! the constant is built once per radix and kept by the module
-//! (`ckks_impl::one_plaintext`).
+//! Unit plaintexts are cached by radix, slot layout and scale, so warmed
+//! operations issue no host transfer and can be recorded for replay.
 
 /// `impl_ckks_add_reference!` with a `ckks_add_one_assign` that issues no host transfer.
 macro_rules! impl_add_cached_one {
@@ -160,8 +156,21 @@ macro_rules! impl_add_cached_one {
                     + ::poulpy_ckks::CKKSCtBounds
                     + ::poulpy_ckks::SetCKKSInfos,
             {
-                let one = $crate::ckks_impl::one_plaintext::<_, $ring>(module, ::poulpy_core::layouts::LWEInfos::base2k(dst))?;
-                ::poulpy_ckks::api::CKKSAddOps::<$be, $ring>::ckks_add_pt_const_assign(module, dst, 0, &*one, 0, scratch)
+                let slot_layout = ::poulpy_ckks::GLWEPlaintextInfos::slot_layout(dst);
+                let one = $crate::ckks_impl::one_plaintext::<_, $ring>(
+                    module,
+                    ::poulpy_core::layouts::LWEInfos::base2k(dst),
+                    slot_layout,
+                    ::poulpy_ckks::CKKSInfos::log_delta(dst),
+                )?;
+                match slot_layout {
+                    ::poulpy_ckks::SlotLayout::Full => {
+                        ::poulpy_ckks::api::CKKSAddOps::<$be, $ring>::ckks_add_pt_const_assign(module, dst, 0, &*one, 0, scratch)
+                    }
+                    ::poulpy_ckks::SlotLayout::Replicated(_) => {
+                        ::poulpy_ckks::api::CKKSAddOps::<$be, $ring>::ckks_add_pt_vec_assign(module, dst, &*one, scratch)
+                    }
+                }
             }
         }
     };
@@ -322,8 +331,21 @@ macro_rules! impl_sub_cached_one {
                     + ::poulpy_ckks::CKKSCtBounds
                     + ::poulpy_ckks::SetCKKSInfos,
             {
-                let one = $crate::ckks_impl::one_plaintext::<_, $ring>(module, ::poulpy_core::layouts::LWEInfos::base2k(dst))?;
-                ::poulpy_ckks::api::CKKSSubOps::<$be, $ring>::ckks_sub_pt_const_assign(module, dst, 0, &*one, 0, scratch)
+                let slot_layout = ::poulpy_ckks::GLWEPlaintextInfos::slot_layout(dst);
+                let one = $crate::ckks_impl::one_plaintext::<_, $ring>(
+                    module,
+                    ::poulpy_core::layouts::LWEInfos::base2k(dst),
+                    slot_layout,
+                    ::poulpy_ckks::CKKSInfos::log_delta(dst),
+                )?;
+                match slot_layout {
+                    ::poulpy_ckks::SlotLayout::Full => {
+                        ::poulpy_ckks::api::CKKSSubOps::<$be, $ring>::ckks_sub_pt_const_assign(module, dst, 0, &*one, 0, scratch)
+                    }
+                    ::poulpy_ckks::SlotLayout::Replicated(_) => {
+                        ::poulpy_ckks::api::CKKSSubOps::<$be, $ring>::ckks_sub_pt_vec_assign(module, dst, &*one, scratch)
+                    }
+                }
             }
         }
     };

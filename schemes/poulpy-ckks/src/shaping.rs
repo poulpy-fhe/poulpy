@@ -22,15 +22,20 @@
 use std::{marker::PhantomData, sync::OnceLock};
 
 use anyhow::Context;
-use poulpy_core::layouts::ReplicatedLayout;
+use poulpy_core::layouts::{ReplicatedLayout, TorusPrecision};
 use poulpy_hal::layouts::{Ring, Standard};
 
 use num_traits::{FromPrimitive, ToPrimitive, Zero};
 
-use crate::{CKKSCompositionError, CKKSResult, Quad, numerics::CKKSFloat};
+use crate::{CKKSCompositionError, CKKSInfos, CKKSResult, Quad, SlotLayout, ckks_offset_unary, numerics::CKKSFloat};
 
 /// Largest [`ShapingProfile::max_pass_bits`], reached by `U = ±1`.
 pub const MAX_PASS_BITS: usize = 62;
+
+/// Bits a shaped product or automorphism computes under its scale beyond the scale itself,
+/// the working bits of ePrint 2026/2513: [`ShapingProfile::shaping_depth`] is
+/// `min(log_delta + SHAPED_WORKING_BITS, max_pass_bits)`.
+pub const SHAPED_WORKING_BITS: usize = 24;
 
 /// Largest number of coefficients of a shaping polynomial, `2R`.
 pub(crate) const MAX_COEFFS: usize = 2 << ReplicatedLayout::MAX_LOG_R;
@@ -185,6 +190,11 @@ impl<Rg: Ring> ShapingProfile<Rg> {
     /// word: `b <= 64 - ceil(log2(2 + ||U||_1))`.
     pub fn max_pass_bits(&self) -> usize {
         64 - (2 + self.l1).next_power_of_two().trailing_zeros() as usize
+    }
+
+    /// Shaping depth `min(log_delta + SHAPED_WORKING_BITS, max_pass_bits)` of a rescale by `2^log_delta`.
+    pub fn shaping_depth(&self, log_delta: usize) -> usize {
+        (log_delta + SHAPED_WORKING_BITS).min(self.max_pass_bits())
     }
 
     /// Writes `g*h` into `gh` for `h = [U^(-1)*c]_(2^lambda)`, centered, where
@@ -541,13 +551,32 @@ fn inverse_mod_2_64(u: &[u64]) -> [u64; MAX_COEFFS] {
     }
 }
 
+/// Shaping depth of a product dividing by `2^log_delta` in `slot_layout`, `None` when it rounds plainly.
+pub(crate) fn product_depth(slot_layout: SlotLayout, log_delta: usize) -> Option<usize> {
+    match slot_layout {
+        SlotLayout::Replicated(layout) => {
+            Some(ShapingProfile::new(&layout).shaping_depth(log_delta)).filter(|&lambda| lambda > 0)
+        }
+        SlotLayout::Full => None,
+    }
+}
+
+/// Input width consumed by the automorphism, including a shifted shaping temporary.
+pub(crate) fn automorphism_input_k<Dst: CKKSInfos, Src: CKKSInfos>(dst: &Dst, src: &Src) -> TorusPrecision {
+    if ckks_offset_unary(dst, src) != 0 {
+        let lambda = product_depth(src.slot_layout(), src.log_delta()).unwrap_or(0);
+        (dst.k().as_usize() + lambda).into()
+    } else {
+        src.k()
+    }
+}
+
 /// Quantizes `coeffs` at `log_delta + λ` bits into `out`, then divides by `2^λ` with
 /// shaped rounding, so that the quantization error is a multiple of the
 /// layout's shaping polynomial up to an unshaped `2^-λ` remainder. `λ` is the
 /// largest exact pass that keeps `log_delta + log_budget + λ` within `i128`;
 /// a plaintext that leaves none is rejected. `low`, `h` and `gh` are buffers as
 /// long as `coeffs`.
-#[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn shaped_quantize_into<F, Rg: Ring>(
     coeffs: &[F],
@@ -853,9 +882,11 @@ mod tests {
     }
 
     #[test]
-    fn pass_size() {
+    fn pass_size_and_shaping_depth() {
         let profile = ShapingProfile::new(&ShapingUnit::U32_45.layout(4).unwrap());
         assert_eq!(profile.max_pass_bits(), 58);
+        assert_eq!(profile.shaping_depth(20), 44);
+        assert_eq!(profile.shaping_depth(40), 58);
         assert_eq!(
             ShapingProfile::new(&ShapingUnit::U16_60.layout(4).unwrap()).max_pass_bits(),
             53

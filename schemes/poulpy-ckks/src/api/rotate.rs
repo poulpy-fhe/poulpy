@@ -32,6 +32,15 @@ use crate::{CKKSCtBounds, SetCKKSInfos};
 ///
 /// For `_assign` variants `offset = 0` and CKKS layout and scale metadata is unchanged.
 /// Component noise metadata is cleared.
+///
+/// # Slot layouts
+///
+/// A [`SlotLayout::Replicated`](crate::SlotLayout::Replicated) ciphertext
+/// rotates only by multiples of its period `R`, which move the batch by
+/// `k / R` values, and its key switch is rounded with shaping. A narrower
+/// destination requires key coverage of `dst.k() + λ`, where `λ` is the
+/// source layout's shaping depth at `src.log_delta()`. Otherwise the key
+/// covers `src.k()`; a full layout requires `min(src.k(), dst.k())`.
 pub trait CKKSRotateOps<BE: Backend, Rg: Ring = Standard> {
     fn ckks_rotate_tmp_bytes<C, K>(&self, ct_infos: &C, key_infos: &K) -> usize
     where
@@ -48,7 +57,7 @@ pub trait CKKSRotateOps<BE: Backend, Rg: Ring = Standard> {
     /// A shift of zero slots returns the errors of
     /// [`CKKSCopyOps::ckks_copy`](crate::api::CKKSCopyOps::ckks_copy), another
     /// `MissingAutomorphismKey` when `keys` has no key for the shift covering
-    /// `min(src.k(), dst.k())`, and `InsufficientHomomorphicCapacity` when `dst` is narrower
+    /// the consumed input width, including the shaping depth for a replicated layout, and `InsufficientHomomorphicCapacity` when `dst` is narrower
     /// than `src` by more than its budget. `dst` is untouched on `Err`.
     fn ckks_rotate_into<Dst, Src, H>(
         &self,
