@@ -733,8 +733,14 @@ where
 /// range-extension steps: the polynomial's constants are multiplied by `φ` on
 /// the second half and the constant of step `i` by `φ^(2^(i+1))`, so that the
 /// second half comes out multiplied by `φ^(2^r) = i`. The input offset carries
-/// no phase. The second half comes out on the imaginary parts, which the
-/// conjugate-invariant ring has not, so it refuses a packed EvalMod.
+/// no phase.
+///
+/// # Errors
+///
+/// [`InvalidOperand`](crate::CKKSCompositionError::InvalidOperand) on the conjugate-invariant ring, which has no
+/// imaginary parts for the second half, and for a `layout` of one batch, and
+/// [`InvalidPlan`](crate::CKKSCompositionError::InvalidPlan) for a plan other than a cosine EvalMod without inverse,
+/// before any encoding.
 pub fn ckks_eval_mod_replicated_packed_compile<BE, F, Rg: Ring>(
     base2k: Base2K,
     lit: EvalModPlan,
@@ -747,15 +753,27 @@ where
     Module<BE>: CKKSPlaintextAlloc<BE> + CKKSEncodingOps<BE, F, Rg> + GetDegree + CKKSModuleInfos,
     F: CKKSEncodingScalar,
 {
-    ensure!(
-        !conjugate_invariant::<Rg>(),
-        "a packed EvalMod needs the complex slots of the standard ring"
-    );
-    ensure!(layout.log_k() > 0, "a packed EvalMod needs two batches");
-    ensure!(
-        lit.f_mod_inv_degree.is_none() && matches!(lit.eval_mod_type, EvalModType::CosHK | EvalModType::CosHKEven),
-        "a packed EvalMod needs a cosine EvalMod without inverse"
-    );
+    const OP: &str = "ckks_eval_mod_replicated_packed_compile";
+    let refuse = |reason: &str| -> anyhow::Error {
+        crate::CKKSError::from(crate::CKKSCompositionError::InvalidOperand {
+            op: OP,
+            reason: reason.into(),
+        })
+        .into()
+    };
+    if conjugate_invariant::<Rg>() {
+        return Err(refuse("a packed EvalMod needs the complex slots of the standard ring"));
+    }
+    if layout.log_k() == 0 {
+        return Err(refuse("a packed EvalMod needs two batches"));
+    }
+    if lit.f_mod_inv_degree.is_some() || !matches!(lit.eval_mod_type, EvalModType::CosHK | EvalModType::CosHKEven) {
+        return Err(crate::CKKSError::from(crate::CKKSCompositionError::InvalidPlan {
+            plan: "EvalModPlan",
+            reason: "a packed EvalMod needs a cosine EvalMod without inverse".into(),
+        })
+        .into());
+    }
     let r = lit.f_mod_log_interval_reduction;
     let pi = F::PI();
     let phase = |m: u64| -> Result<(F, F)> {

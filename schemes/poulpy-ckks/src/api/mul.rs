@@ -97,6 +97,15 @@ use crate::{
 /// so its rounding error is shaped; `log_delta` is the product's scale for
 /// ciphertext operands and the plaintext's for plaintext operands.
 ///
+/// A ciphertext product looks its tensor key up, and refuses with
+/// [`MissingRelinearizationKey`](crate::CKKSCompositionError::MissingRelinearizationKey)
+/// before any write, at the width its relinearization decomposes: the
+/// operands' `max(a.k, b.k)` when it takes the one-pass product (rank 1, one
+/// radix across the operands, the destination and the key, and a convolution
+/// offset of at least the radix), and otherwise the width of its tensor
+/// intermediate, `max(a.k, b.k, res.k)`, which a replicated product computes
+/// `λ` bits under the result, `max(a.k, b.k, res.k + λ)`.
+///
 /// # Rescaling after multiplication
 ///
 /// After a ciphertext–ciphertext multiplication the result has a lower
@@ -112,6 +121,8 @@ pub trait CKKSMulOps<BE: Backend, Rg: Ring = Standard> {
     /// The operands must be passed: the internal tensor intermediate is carved
     /// at `max(a.k(), b.k())`; `res` supplies its physical result shape and
     /// capacity, but its pre-call precision does not widen the intermediate.
+    /// A replicated product carves it up to `MAX_PASS_BITS` wider, with the wide
+    /// result rounded into `res`, which the query covers.
     /// For `_assign` pass `dst` as both `res` and `a`; for
     /// `_prepared_assign` pass the [`CKKSRightOperandPrepared`], whose infos report
     /// the operand it was prepared from.

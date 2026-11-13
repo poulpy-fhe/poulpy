@@ -141,6 +141,50 @@ pub unsafe trait GLWEMulPlainImpl<Rg: Ring = Standard>: Backend {
     ) where
         R: GLWEToBackendMut<Self, Rg> + GLWEInfos,
         A: GLWEToBackendRef<Self, Rg> + IntPolyInfos + GLWEInfos;
+
+    /// Scratch bytes of [`Self::glwe_plain_combination`] for an accumulator of `cols` columns and `acc_size` limbs,
+    /// prepared terms of at most `a_size` limbs and plaintexts of at most `b_size` limbs.
+    fn glwe_plain_combination_tmp_bytes(
+        module: &Module<Self>,
+        cols: usize,
+        acc_size: usize,
+        a_size: usize,
+        b_size: usize,
+    ) -> usize;
+
+    /// A combination of prepared vectors by plaintexts, normalized once:
+    ///
+    /// `res[col] = normalize(sum_t terms[t].a[col] * (terms[t].b >> terms[t].shift))` for every column of `res`,
+    ///
+    /// each plaintext with a non-zero `shift < base2k` being shifted right by that many bits over one more limb than
+    /// `b` (`vec_znx_rsh`), each plaintext being prepared once as a right operand at its own degree, each product being
+    /// `cnv_apply_dft` at its `cnv_offset`, the sum being accumulated in the transform domain over `acc_size` limbs and
+    /// normalized to `res_k` bits in base `2^base2k`, which is also the base of the terms. `terms` is not empty, and
+    /// every `a` holds the columns of `res`.
+    ///
+    /// The plaintext-vector twin of [`GLWEMulConstImpl::glwe_const_combination`], an internal hook of the CKKS baby-step
+    /// combination on a replicated layout, which records the metadata of `res` and prepares each left operand once.
+    /// The reference, [`glwe_plain_combination_reference`](crate::reference::operations::GLWEMulPlainReference::glwe_plain_combination_reference),
+    /// accumulates the terms in order, then calls `vec_znx_idft_apply` and `vec_znx_big_normalize`, column by column.
+    /// Overrides must reproduce it bit for bit within [`Self::glwe_plain_combination_tmp_bytes`].
+    fn glwe_plain_combination(
+        module: &Module<Self>,
+        res: &mut VecZnxBackendMut<'_, Self, Rg>,
+        base2k: usize,
+        res_k: usize,
+        acc_size: usize,
+        terms: &[PlainTerm<'_, Self, Rg>],
+        scratch: &mut ScratchArena<'_, Self>,
+    );
+}
+
+/// One term of [`GLWEMulPlainImpl::glwe_plain_combination`]: every column of the prepared left operand `a` times the
+/// plaintext `b`, shifted right by `shift` bits, at convolution offset `cnv_offset`.
+pub struct PlainTerm<'a, BE: Backend + 'a, Rg: Ring = Standard> {
+    pub a: CnvPVecLBackendRef<'a, BE, Rg>,
+    pub b: VecZnxBackendRef<'a, BE, Rg>,
+    pub shift: usize,
+    pub cnv_offset: usize,
 }
 
 /// Backend-provided sums of products of prepared GLWE ciphertexts by prepared plaintexts read through Galois elements.

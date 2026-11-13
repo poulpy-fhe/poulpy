@@ -25,11 +25,26 @@ use super::{
 /// `Y = X^(N/(2R))` and quantized with shaped rounding at the same scale, so
 /// that its quantization error is suppressed on the data slots.
 pub struct MaskedCoeffs<P> {
-    pub scalars: P,
-    pub masked: Vec<P>,
+    scalars: P,
+    masked: Vec<P>,
 }
 
 impl<P> MaskedCoeffs<P> {
+    /// The constants of `scalars` with `masked[j]` the masked plaintext of constant `j`.
+    pub(crate) fn new(scalars: P, masked: Vec<P>) -> Self {
+        Self { scalars, masked }
+    }
+
+    /// The scalar constants, which carry the coefficient metadata.
+    pub fn scalars(&self) -> &P {
+        &self.scalars
+    }
+
+    /// The masked plaintext of each constant, in constant order.
+    pub fn masked(&self) -> &[P] {
+        &self.masked
+    }
+
     /// Rebuilds the constants by mapping every plaintext.
     pub fn map<Q>(&self, mut f: impl FnMut(&P) -> Q) -> MaskedCoeffs<Q> {
         MaskedCoeffs {
@@ -45,6 +60,9 @@ pub trait CKKSMaskedConstants<BE: Backend, Rg: Ring = Standard> {
 
     /// The masked plaintext `c_idx·π_S` of constant `idx`, when encoded.
     fn masked_constant(&self, idx: usize) -> Option<&Self::Masked>;
+
+    /// Whether every constant carries its masked plaintext, which a replicated layout reads.
+    fn carries_masked_constants(&self) -> bool;
 }
 
 impl<BE: Backend, D: Data, W: ZnxWord, Rg: Ring> CKKSMaskedConstants<BE, Rg> for CKKSPlaintext<D, W, Rg>
@@ -56,6 +74,10 @@ where
     fn masked_constant(&self, _idx: usize) -> Option<&Self> {
         None
     }
+
+    fn carries_masked_constants(&self) -> bool {
+        false
+    }
 }
 
 impl<BE: Backend, Rg: Ring, P> CKKSMaskedConstants<BE, Rg> for MaskedCoeffs<P>
@@ -66,6 +88,10 @@ where
 
     fn masked_constant(&self, idx: usize) -> Option<&P> {
         self.masked.get(idx)
+    }
+
+    fn carries_masked_constants(&self) -> bool {
+        true
     }
 }
 
@@ -152,7 +178,7 @@ where
             Ok(pt)
         })
         .collect::<Result<Vec<_>>>()?;
-    Ok(MaskedCoeffs { scalars, masked })
+    Ok(MaskedCoeffs::new(scalars, masked))
 }
 
 /// [`encode_masked_constants`] with the phase `phases[j]` on the second half

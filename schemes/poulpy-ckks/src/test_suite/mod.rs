@@ -338,6 +338,10 @@ macro_rules! ckks_backend_rank2_test_suite {
                 $crate::test_suite::replicated::test_replicated_products_are_shaped
             );
             run_ring_test_result!(
+                replicated_product_key_width,
+                $crate::test_suite::replicated::test_replicated_product_key_width
+            );
+            run_ring_test_result!(
                 replicated_units_shape_products,
                 $crate::test_suite::replicated::test_replicated_units_shape_products
             );
@@ -727,6 +731,10 @@ macro_rules! ckks_backend_test_suite {
                 $crate::test_suite::replicated::test_replicated_products_are_shaped
             );
             run_ring_test_result!(
+                replicated_product_key_width,
+                $crate::test_suite::replicated::test_replicated_product_key_width
+            );
+            run_ring_test_result!(
                 replicated_units_shape_products,
                 $crate::test_suite::replicated::test_replicated_units_shape_products
             );
@@ -750,6 +758,10 @@ macro_rules! ckks_backend_test_suite {
                 replicated_polynomials_are_shaped,
                 $crate::test_suite::replicated::test_replicated_polynomials_are_shaped
             );
+            run_ring_test_result!(
+                replicated_polynomial_fallback_is_shaped,
+                $crate::test_suite::replicated::test_replicated_polynomial_fallback_is_shaped
+            );
             run_test_result!(
                 replicated_complex_polynomials_are_shaped,
                 $crate::test_suite::replicated::test_replicated_complex_polynomials_are_shaped
@@ -757,6 +769,10 @@ macro_rules! ckks_backend_test_suite {
             run_ring_test_result!(
                 replicated_eval_mod_is_shaped,
                 $crate::test_suite::replicated::test_replicated_eval_mod_is_shaped
+            );
+            run_test_result!(
+                replicated_complex_eval_mod_is_shaped,
+                $crate::test_suite::replicated::test_replicated_complex_eval_mod_is_shaped
             );
             run_test_result!(
                 replicated_automorphisms_are_shaped,

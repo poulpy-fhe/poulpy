@@ -8,14 +8,14 @@
 //! the [`EvalMod`] structure. The public entry point is
 //! [`CKKSEvalModOps`](crate::api::CKKSEvalModOps).
 
-use crate::{CKKSResult as Result, checked_log_budget_sub, ckks_ensure, ckks_ensure_operand};
+use crate::{CKKSResult as Result, checked_log_budget_sub, ckks_ensure_operand};
 use poulpy_core::layouts::{GetTensorKey, IntPolyInfos};
-use poulpy_core::oep::GLWEMulConstImpl;
+use poulpy_core::oep::{GLWEMulConstImpl, GLWEMulPlainImpl};
 use poulpy_core::{
     GLWEBytesOf, GLWECopy, GLWENormalize, GLWETensoring,
     layouts::{
         BSGSMeta, GGLWEInfos, GLWELayout, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank, SetBSGSMeta,
-        SetK, prepared::GLWETensorKeyPreparedToBackendRef,
+        SetK, TorusPrecision, prepared::GLWETensorKeyPreparedToBackendRef,
     },
 };
 use poulpy_hal::{
@@ -24,7 +24,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    CKKSCtBounds, CKKSInfos, SetCKKSInfos, SlotLayout,
+    CKKSCtBounds, CKKSInfos, CKKSLayout, SetCKKSInfos, SlotLayout,
     api::{
         CKKSAddOps, CKKSComplexPolynomialEvaluationOps, CKKSCopyOps, CKKSMulAddOps, CKKSMulOps, CKKSPolynomialEvaluationOps,
         CKKSPow2Ops, CKKSRoundOps, CKKSSubOps, PolynomialInputTransform,
@@ -32,12 +32,13 @@ use crate::{
     layouts::{
         CKKSCiphertextOwned, CKKSCiphertextViewMut, CKKSMaskedConstants, ScratchArenaTakeCKKSCiphertext,
         eval_mod::{EvalMod, EvalModBsgs},
+        validation::{ensure_masked_constants, ensure_scratch},
     },
     oep::derived::polynomial_evaluation::{eval_poly_real_in, eval_poly_real_on_power},
     polynomial::{BSGSPolynomial, ComplexBSGSPolynomial},
     power_basis::{PowerBasis, populate_in},
     reference::{
-        mul::{square_wide_into, tensor_key_at},
+        mul::{product_key_k, square_wide_into, tensor_key_at},
         polynomial_evaluation::{const_add_assign, const_sub_assign, ensure_baby_steps},
     },
 };
@@ -76,7 +77,7 @@ pub trait CKKSEvalModReference<BE: Backend, Rg: Ring = Standard> {
             + CKKSRoundOps<BE, Rg>
             + CKKSMulAddOps<BE, Rg>
             + Sized,
-        BE: GLWEMulConstImpl<Rg>,
+        BE: GLWEMulConstImpl<Rg> + GLWEMulPlainImpl<Rg>,
         R: GLWEToBackendMut<BE, Rg> + GLWEToBackendRef<BE, Rg> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         C: GLWEToBackendMut<BE, Rg> + GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
         P: GLWEToBackendRef<BE, Rg> + IntPolyInfos + CKKSCtBounds + BSGSMeta + CKKSMaskedConstants<BE, Rg>,
@@ -86,7 +87,7 @@ pub trait CKKSEvalModReference<BE: Backend, Rg: Ring = Standard> {
     /// Scratch of [`Self::ckks_eval_mod_reference`].
     fn ckks_eval_mod_tmp_bytes_reference<R, C, P, F, T>(&self, res: &R, ct: &C, params: &EvalMod<F, P>, tsk: &T) -> usize
     where
-        BE: GLWEMulConstImpl<Rg>,
+        BE: GLWEMulConstImpl<Rg> + GLWEMulPlainImpl<Rg>,
         Self: CKKSAddOps<BE, Rg>
             + CKKSSubOps<BE, Rg>
             + CKKSMulOps<BE, Rg>
@@ -139,7 +140,7 @@ where
             + GLWEBytesOf<BE>
             + CKKSRoundOps<BE, Rg>
             + CKKSMulAddOps<BE, Rg>,
-        BE: GLWEMulConstImpl<Rg>,
+        BE: GLWEMulConstImpl<Rg> + GLWEMulPlainImpl<Rg>,
         R: GLWEToBackendMut<BE, Rg> + GLWEToBackendRef<BE, Rg> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         C: GLWEToBackendMut<BE, Rg> + GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
         P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + BSGSMeta + IntPolyInfos + CKKSMaskedConstants<BE, Rg>,
@@ -147,23 +148,26 @@ where
     {
         crate::ensure_operand_degrees(OP, self, [res.n(), ct.n()])?;
         check_eval_mod(self, ct, params)?;
-        // An evaluation without a product has no key to size its query with, and needs none.
         if relinearizes(params) {
-            let widest = params.plan.relinearization_k(ct.log_budget());
-            let key = tensor_key_at::<BE, _, Rg>(OP, tsk, widest.into())?;
-            let bytes = ckks_eval_mod_tmp_bytes_reference(self, res, ct, params, &key);
-            ckks_ensure!(
-                scratch.available() >= bytes,
-                "{OP} needs a scratch arena of {bytes} bytes, got {}",
-                scratch.available()
-            );
+            let key = tensor_key_at::<BE, _, Rg>(OP, tsk, eval_mod_key_k(ct, params, tsk))?;
+            ensure_scratch(OP, scratch, ckks_eval_mod_tmp_bytes_reference(self, res, ct, params, &key))?;
+        } else if shaped_input_round(ct, params) {
+            // An evaluation without a product has no key to size its query with, and needs none: the arena is checked
+            // for the shaped round of the input it carves first.
+            let (work_layout, work_meta) = params.plan.work_layout(ct);
+            let work = CKKSLayout {
+                glwe_layout: work_layout,
+                meta: work_meta,
+            };
+            let bytes = BE::scratch_aligned(self.glwe_bytes_of_from_infos(&work_layout)) + self.ckks_round_tmp_bytes(&work, ct);
+            ensure_scratch(OP, scratch, bytes)?;
         }
         eval_mod(self, res, ct, params, tsk, scratch)
     }
 
     fn ckks_eval_mod_tmp_bytes_reference<R, C, P, F, T>(&self, res: &R, ct: &C, params: &EvalMod<F, P>, tsk: &T) -> usize
     where
-        BE: GLWEMulConstImpl<Rg>,
+        BE: GLWEMulConstImpl<Rg> + GLWEMulPlainImpl<Rg>,
         Self: CKKSAddOps<BE, Rg>
             + CKKSSubOps<BE, Rg>
             + CKKSMulOps<BE, Rg>
@@ -190,12 +194,34 @@ where
 /// The name of [`ckks_eval_mod`](crate::api::CKKSEvalModOps::ckks_eval_mod) in its refusals.
 const OP: &str = "ckks_eval_mod";
 
+/// Width EvalMod's widest product decomposes, at which its key is looked up and pre-checked: the widest ciphertext
+/// it relinearizes ([`EvalModPlan::relinearization_k`](crate::layouts::eval_mod::EvalModPlan::relinearization_k)),
+/// and on a replicated input taking the tensor path, its tensor intermediate, carved `λ` bits under the result
+/// ([`product_key_k`]). A product that wide carries a `cnv_offset` of at least its width.
+fn eval_mod_key_k<BE, C, F, P, H, Rg: Ring>(ct: &C, params: &EvalMod<F, P>, tsk: &H) -> TorusPrecision
+where
+    BE: Backend,
+    C: CKKSCtBounds,
+    H: GetTensorKey<BE, Rg>,
+{
+    let widest = params.plan.relinearization_k(ct.log_budget());
+    let log_delta = params.plan.f_mod_log_delta;
+    let lambda = crate::shaping::product_depth(ct.slot_layout(), log_delta);
+    product_key_k::<BE, _, _, Rg>(ct, &[ct.base2k()], widest.into(), widest, widest - log_delta, lambda, tsk)
+}
+
+/// Whether EvalMod rounds a replicated input to the plan scale into a carved copy before anything else.
+fn shaped_input_round<F, P, C: CKKSCtBounds>(ct: &C, params: &EvalMod<F, P>) -> bool {
+    matches!(ct.slot_layout(), SlotLayout::Replicated(_)) && params.plan.work_layout(ct).0.k < ct.k()
+}
+
 /// Refuses what EvalMod cannot evaluate on an input like `ct`.
 fn check_eval_mod<BE, C, F, P, Rg: Ring>(module: &Module<BE>, ct: &C, params: &EvalMod<F, P>) -> Result<()>
 where
     BE: Backend,
     Module<BE>: CKKSEvalModComplexOps<BE, Rg>,
     C: CKKSCtBounds,
+    P: CKKSMaskedConstants<BE, Rg>,
 {
     if matches!(params.f_mod_bsgs, EvalModBsgs::Complex(_)) && !module.ckks_eval_mod_complex_supported() {
         return Err(complex_refused());
@@ -207,7 +233,13 @@ where
         ct.rank().as_usize()
     );
     checked_log_budget_sub(OP, ct.log_budget(), params.consumed_bits())?;
-    Ok(())
+    let mut constants: Vec<&P> = match &params.f_mod_bsgs {
+        EvalModBsgs::Real(bsgs) => bsgs.baby_steps().iter().collect(),
+        EvalModBsgs::Complex(bsgs) => bsgs.re.baby_steps().iter().chain(bsgs.im.baby_steps()).collect(),
+    };
+    constants.extend(params.range_extension_consts.iter().chain(&params.f_mod_input_offset));
+    constants.extend(params.f_mod_inv_bsgs.iter().flat_map(|inv| inv.baby_steps()));
+    ensure_masked_constants::<BE, Rg, P>(OP, ct.slot_layout(), constants)
 }
 
 /// Whether evaluating `params` takes a ciphertext product: a polynomial of degree two or more, or with an input
@@ -223,7 +255,9 @@ fn relinearizes<F, P>(params: &EvalMod<F, P>) -> bool {
 
 /// The evaluation [`EvalModPlan`](crate::layouts::eval_mod::EvalModPlan) describes, on `ct` when its allocation holds the
 /// working width, on a carved copy otherwise. A range-extension step is `res ← 2·res² − dac` on the real path, the
-/// `cos 2θ` identity, and `res ← res²` on the complex path.
+/// `cos 2θ` identity, and `res ← res²` on the complex path. A replicated input above the plan scale is rounded with
+/// shaping into the carved copy, takes its constants as masked plaintexts, and returns to the input scale with a
+/// shaped rounding, fused into the last squaring when no inverse follows it.
 fn eval_mod<R, C, P, F, BE, H, Rg: Ring>(
     module: &Module<BE>,
     res: &mut R,
@@ -258,7 +292,7 @@ where
     // scale when no inverse follows it.
     let fused = replicated && params.f_mod_inv_bsgs.is_none() && 2 * params.plan.f_mod_log_delta >= log_delta;
     let mut returned = false;
-    if replicated && work_layout.k < ct.k() {
+    if shaped_input_round(&*ct, params) {
         // A replicated layout drops bits to the plan scale with a shaped rounding.
         let (mut input, mut arena) = scratch.borrow().take_ckks_ciphertext_scratch(&work_layout, work_meta);
         module.ckks_round(&mut input, &*ct, &mut arena)?;

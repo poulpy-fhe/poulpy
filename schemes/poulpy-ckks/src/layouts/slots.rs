@@ -1,5 +1,6 @@
 //! Slot and Galois helpers shared by the derived drivers, the layouts and the reference bodies: the
-//! fold rotation schedule, the tiled bit-reversal and the conjugate-rotate Galois element.
+//! fold rotation schedule, the tiled bit-reversal, the conjugate-rotate Galois element and the unit
+//! plaintext of add-one and sub-one.
 //!
 //! Conjugation-with-rotation (seqPaCo line 8, Galois element `−5^k`) needs no
 //! new operation at all: the automorphism appliers use whatever key they are
@@ -13,56 +14,33 @@ use crate::SlotsKind;
 use crate::layouts::CKKSPlaintextOwned;
 use crate::layouts::{CKKSPlaintextViewMut, ScratchArenaTakeCKKSPlaintext};
 use crate::shaping::MAX_COEFFS;
-use crate::{GLWEPlaintextMeta, Scale, SetCKKSInfos, ckks_log_delta, layouts::CKKSPlaintextAlloc};
+use crate::{GLWEPlaintextMeta, Scale, SetCKKSInfos, layouts::CKKSPlaintextAlloc};
 use crate::{SlotLayout, numerics::CKKSFloat, scalar::Quad, shaping::conjugate_invariant};
 use num_traits::{Float, FromPrimitive};
 use poulpy_core::layouts::{Base2K, GLWEPlaintextLayout, GLWEToBackendMut, IntPolyInfos, TorusPrecision};
-use poulpy_hal::{
-    AlignedBuf, alloc_aligned,
-    layouts::{Backend, Ring, ScratchArena, VecZnx, encode_i128_by_limb, galois_element},
-};
+use poulpy_hal::layouts::{Backend, Ring, ScratchArena, encode_i128_by_limb, galois_element};
 
-/// Builds the backend-resident constant-`1.0` plaintext used by the
-/// add-one/sub-one facades.
-///
-/// Each call allocates and uploads a degree-1, single-limb monomial. The
-/// unit-operation scratch query covers the arithmetic workspace. A backend
-/// that keeps the constant builds it here, once per module, ring and radix.
-pub fn ckks_plaintext_one<BE, M, Rg: Ring>(module: &M, base2k: Base2K) -> Result<CKKSPlaintextOwned<BE, Rg>>
+/// The one of `slot_layout` that add-one and sub-one add, allocated: the plaintext their default bodies carve from
+/// scratch, for a backend that keeps it, once per module, ring, radix, slot layout and scale. On a full layout it is
+/// the monomial `2` at scale `2`, which `log_delta` does not change. On a replicated layout it is the masked one `π_S`
+/// at scale `2^log_delta`, one on the data slots and zero on the guards: a plaintext of degree `2R` in
+/// `Y = X^(N/(2R))` with coefficients `cos(π·j/(2R))/R`, quantized with shaped rounding, which the
+/// conjugate-invariant ring holds by its first `R` coefficients. Refusals carry `ckks_plaintext_one`.
+pub fn ckks_plaintext_one<BE, M, Rg: Ring>(
+    module: &M,
+    base2k: Base2K,
+    slot_layout: SlotLayout,
+    log_delta: usize,
+) -> Result<CKKSPlaintextOwned<BE, Rg>>
 where
     BE: Backend,
     M: CKKSPlaintextAlloc<BE> + ?Sized,
+    CKKSPlaintextOwned<BE, Rg>: GLWEToBackendMut<BE, Rg> + IntPolyInfos,
 {
-    let meta = GLWEPlaintextMeta {
-        scale: Scale::Log(1),
-        slots: SlotsKind::Real,
-        log_sparsity: 0,
-        slot_layout: crate::SlotLayout::Full,
-    };
-
-    // Monomial plaintext: total torus width is `log_delta` (budget 0).
-    let k_total: usize = ckks_log_delta(&meta);
-
-    // The constant is integer-exact: 1.0 at scale `2^log_delta` is the single
-    // coefficient `1 << log_delta`, so its limbs are built on the host with the
-    // integer codec and uploaded as raw bytes (no float codec, no transfer op).
-    let size = k_total.div_ceil(base2k.as_usize());
-    let mut limbs = VecZnx::<AlignedBuf, i64, Rg>::from_data(
-        alloc_aligned::<u8>(VecZnx::<AlignedBuf, i64, Rg>::bytes_of(1, 1, size)),
-        1,
-        1,
-        size,
-    );
-    limbs.encode_vec_i64(
-        base2k.as_usize(),
-        0,
-        size * base2k.as_usize(),
-        &[1i64 << ckks_log_delta(&meta)],
-    );
-
-    let mut pt = module.ckks_plaintext_alloc(1usize.into(), base2k, k_total.into());
+    let (n, k, meta, mut data) = one_coeffs::<BE, Rg>("ckks_plaintext_one", slot_layout, log_delta)?;
+    let mut pt = module.ckks_plaintext_alloc(n.into(), base2k, k.into());
     pt.set_meta(meta);
-    pt.copy_from_host_bytes::<BE>(limbs.data().as_slice());
+    write_one::<BE, _, Rg>(&mut pt, base2k, &mut data[..n]);
     Ok(pt)
 }
 
@@ -121,8 +99,26 @@ pub(crate) fn take_one_pt<'a, BE: Backend + 'a, Rg: Ring>(
     log_delta: usize,
     scratch: ScratchArena<'a, BE>,
 ) -> Result<(CKKSPlaintextViewMut<'a, BE, Rg>, ScratchArena<'a, BE>)> {
+    let (n, k, meta, mut data) = one_coeffs::<BE, Rg>(op, slot_layout, log_delta)?;
+    let layout = GLWEPlaintextLayout {
+        n: n.into(),
+        base2k,
+        k: TorusPrecision(k as u32),
+    };
+    let (mut pt, scratch) = scratch.take_ckks_plaintext_scratch::<_, Rg>(&layout, meta);
+    write_one::<BE, _, Rg>(&mut pt, base2k, &mut data[..n]);
+    Ok((pt, scratch))
+}
+
+/// The degree, width, metadata and integer coefficients of the one of `slot_layout` ([`take_one_pt`]).
+#[allow(clippy::type_complexity)]
+fn one_coeffs<BE: Backend, Rg: Ring>(
+    op: &'static str,
+    slot_layout: SlotLayout,
+    log_delta: usize,
+) -> Result<(usize, usize, GLWEPlaintextMeta, [i128; MAX_COEFFS])> {
     let mut data = [0i128; MAX_COEFFS];
-    let (n, k, meta) = match slot_layout {
+    match slot_layout {
         SlotLayout::Full => {
             data[0] = 2;
             let meta = GLWEPlaintextMeta {
@@ -131,7 +127,7 @@ pub(crate) fn take_one_pt<'a, BE: Backend + 'a, Rg: Ring>(
                 log_sparsity: 0,
                 slot_layout,
             };
-            (1, 1, meta)
+            Ok((1, 1, meta, data))
         }
         SlotLayout::Replicated(layout) => {
             let r = 1usize << layout.log_r();
@@ -174,34 +170,34 @@ pub(crate) fn take_one_pt<'a, BE: Backend + 'a, Rg: Ring>(
                 log_sparsity: 0,
                 slot_layout,
             };
-            (n, log_delta + 1, meta)
+            Ok((n, log_delta + 1, meta, data))
         }
-    };
-    let layout = GLWEPlaintextLayout {
-        n: n.into(),
-        base2k,
-        k: TorusPrecision(k as u32),
-    };
-    let (mut pt, scratch) = scratch.take_ckks_plaintext_scratch::<_, Rg>(&layout, meta);
+    }
+}
+
+/// Writes the integer coefficients `data` into the limbs of `pt`, at its encoded width in base `2^base2k`.
+fn write_one<BE, P, Rg: Ring>(pt: &mut P, base2k: Base2K, data: &mut [i128])
+where
+    BE: Backend,
+    P: GLWEToBackendMut<BE, Rg> + IntPolyInfos,
+{
+    let n = data.len();
     let encoded_k = pt.encoded_k().as_usize();
     let (mut carry, mut limb) = ([0i64; MAX_COEFFS], [0i64; MAX_COEFFS]);
-    {
-        let mut backend = pt.to_backend_mut();
-        let shape = backend.data().shape();
-        encode_i128_by_limb(
-            base2k.as_usize(),
-            encoded_k,
-            &mut data[..n],
-            &mut carry[..n],
-            &mut limb[..n],
-            |j, digits| {
-                let offset = shape.scalar_offset(0, j) * size_of::<i64>();
-                let mut region = BE::region_mut_ref(backend.data_mut().data_mut(), offset, size_of_val(digits));
-                BE::copy_host_to_view(&mut region, bytemuck::cast_slice(digits));
-            },
-        );
-    }
-    Ok((pt, scratch))
+    let mut backend = pt.to_backend_mut();
+    let shape = backend.data().shape();
+    encode_i128_by_limb(
+        base2k.as_usize(),
+        encoded_k,
+        data,
+        &mut carry[..n],
+        &mut limb[..n],
+        |j, digits| {
+            let offset = shape.scalar_offset(0, j) * size_of::<i64>();
+            let mut region = BE::region_mut_ref(backend.data_mut().data_mut(), offset, size_of_val(digits));
+            BE::copy_host_to_view(&mut region, bytemuck::cast_slice(digits));
+        },
+    );
 }
 
 #[cfg(test)]

@@ -1,7 +1,7 @@
 //! Unit shifts compose the selected constant-plaintext add/sub operations.
 use crate::api::{CKKSAddOps, CKKSSubOps};
 use crate::{CKKSCtBounds, CKKSResult, SetCKKSInfos};
-use poulpy_core::layouts::GLWEToBackendMut;
+use poulpy_core::layouts::{GLWEToBackendMut, LWEInfos};
 use poulpy_hal::layouts::{Backend, Module, Ring, ScratchArena};
 pub(crate) fn ckks_add_one_assign_derived<BE: Backend, Dst, Rg: Ring>(
     module: &Module<BE>,
@@ -12,14 +12,11 @@ where
     Module<BE>: CKKSAddOps<BE, Rg>,
     Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
 {
+    const OP: &str = "ckks_add_one_assign";
     let slot_layout = crate::GLWEPlaintextInfos::slot_layout(dst);
-    let (one, mut scratch) = crate::layouts::slots::take_one_pt(
-        "ckks_add_one_assign",
-        dst.base2k(),
-        slot_layout,
-        dst.log_delta(),
-        scratch.borrow(),
-    )?;
+    crate::layouts::validation::ensure_scratch(OP, scratch, module.ckks_add_one_tmp_bytes(dst.max_size()))?;
+    let (one, mut scratch) =
+        crate::layouts::slots::take_one_pt(OP, dst.base2k(), slot_layout, dst.log_delta(), scratch.borrow())?;
     match slot_layout {
         crate::SlotLayout::Full => module.ckks_add_pt_const_assign(dst, 0, &one, 0, &mut scratch),
         crate::SlotLayout::Replicated(_) => module.ckks_add_pt_vec_assign(dst, &one, &mut scratch),
@@ -34,14 +31,11 @@ where
     Module<BE>: CKKSSubOps<BE, Rg>,
     Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
 {
+    const OP: &str = "ckks_sub_one_assign";
     let slot_layout = crate::GLWEPlaintextInfos::slot_layout(dst);
-    let (one, mut scratch) = crate::layouts::slots::take_one_pt(
-        "ckks_sub_one_assign",
-        dst.base2k(),
-        slot_layout,
-        dst.log_delta(),
-        scratch.borrow(),
-    )?;
+    crate::layouts::validation::ensure_scratch(OP, scratch, module.ckks_sub_one_tmp_bytes(dst.max_size()))?;
+    let (one, mut scratch) =
+        crate::layouts::slots::take_one_pt(OP, dst.base2k(), slot_layout, dst.log_delta(), scratch.borrow())?;
     match slot_layout {
         crate::SlotLayout::Full => module.ckks_sub_pt_const_assign(dst, 0, &one, 0, &mut scratch),
         crate::SlotLayout::Replicated(_) => module.ckks_sub_pt_vec_assign(dst, &one, &mut scratch),

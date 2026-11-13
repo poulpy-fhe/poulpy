@@ -10,13 +10,16 @@
 //! | [`test_replicated_encryption_refuses_before_drawing`] | a short arena, and on the conjugate-invariant ring a `U` without an invariant shift, refuse before any draw |
 //! | [`test_replicated_round_then_add`] | the finer of two scales, rounded with shaping to the other, adds |
 //! | [`test_replicated_encoding_rejects_batch_size`] | a batch of the wrong size |
-//! | [`test_replicated_products_are_shaped`] | chains of every ct × ct and ct × pt product keep the data slots far above CKKS |
+//! | [`test_replicated_products_are_shaped`] | chains of every product, prepared product, dot product, multiply-accumulate and affine map keep the data slots far above CKKS, each call on exactly its query |
+//! | [`test_replicated_product_key_width`] | a shaped product looks its key up at the operands' width on the one-pass path and at its tensor's on the tensor path, and refuses another before any write |
 //! | [`test_replicated_layouts_do_not_mix`] | products and sums of different layouts, constant sums and `ckks_add_many`, and a product into a reused replicated destination |
 //! | [`test_replicated_plain_rounding_is_rejected`] | operations that round plainly (dot products of prepared operands, affine maps, linear transformations, inner sums), and layouts or scales without a shaped encoding |
-//! | [`test_replicated_eval_mod_is_shaped`] | EvalMod with masked constants and a shaped last squaring keeps the message far above CKKS |
-//! | [`test_replicated_polynomials_are_shaped`] | monomial and Chebyshev polynomials keep the data slots far above CKKS, on either ring |
+//! | [`test_replicated_eval_mod_is_shaped`] | EvalMod with masked constants keeps the message far above CKKS: an input above the plan scale rounded at entry with a fused last squaring, and one below it evaluated in place with an inverse and a shaped return; a packed EvalMod refused on real slots |
+//! | [`test_replicated_complex_eval_mod_is_shaped`] | the complex EvalMod with a fused last squaring keeps the message far above CKKS |
+//! | [`test_replicated_polynomials_are_shaped`] | monomial and Chebyshev polynomials keep the data slots far above CKKS, on either ring, and constants without masked plaintexts or of another layout are refused at entry |
+//! | [`test_replicated_polynomial_fallback_is_shaped`] | a baby step whose masked constants differ in scale takes the products term by term, which keep the shaping |
 //! | [`test_replicated_complex_polynomials_are_shaped`] | a complex polynomial keeps the data slots far above CKKS |
-//! | [`test_replicated_automorphisms_are_shaped`] | rotations and conjugation keep the data slots far above CKKS |
+//! | [`test_replicated_automorphisms_are_shaped`] | rotations and conjugations, into and in place, keep the data slots far above CKKS |
 //! | [`test_replicated_rotations_are_shaped`] | rotations keep the data slots far above CKKS, on either ring |
 //! | [`test_replicated_rotations_are_admissible`] | rotations by a non-multiple of the period |
 //! | [`test_replicated_masked_constants`] | a masked constant fills the data slots only, and adds to a ciphertext |
@@ -49,7 +52,7 @@ use crate::{
         CKKSPolynomialEvaluationOps, CKKSRightOperandPreparedFactory, CKKSRotateOps, CKKSRoundOps, CKKSSubOps,
     },
     layouts::{
-        CKKSCiphertextOwned, CKKSPlaintextAlloc, CKKSPlaintextOwned, EvalModPlan, EvalModPoly, EvalModType,
+        CKKSCiphertextOwned, CKKSEncodingBuffer, CKKSPlaintextAlloc, CKKSPlaintextOwned, EvalModPlan, EvalModPoly, EvalModType,
         ckks_eval_mod_compile, ckks_eval_mod_replicated_compile, ckks_eval_mod_replicated_packed_compile, encode_bsgs_replicated,
         encode_complex_bsgs_replicated,
     },
@@ -455,12 +458,48 @@ where
 enum Product {
     Mul,
     MulAssign,
+    MulPrepared,
     Square,
     SquareAssign,
     PtVec,
     PtVecAssign,
     PtConst,
     PtConstAssign,
+    /// `acc·b + b·acc`, two pairs summed once.
+    Dot,
+    /// `c ± acc·b` into a fresh accumulator `c`.
+    MulAddCt,
+    MulSubCt,
+    MulAddPtVec,
+    MulSubPtVec,
+    MulAddPtConst,
+    MulSubPtConst,
+    /// `acc·b + c` with plaintexts `b` and `c`.
+    AffinePtVec,
+    AffinePtVecAssign,
+}
+
+impl Product {
+    const ALL: [Self; 18] = [
+        Self::Mul,
+        Self::MulAssign,
+        Self::MulPrepared,
+        Self::Square,
+        Self::SquareAssign,
+        Self::PtVec,
+        Self::PtVecAssign,
+        Self::PtConst,
+        Self::PtConstAssign,
+        Self::Dot,
+        Self::MulAddCt,
+        Self::MulSubCt,
+        Self::MulAddPtVec,
+        Self::MulSubPtVec,
+        Self::MulAddPtConst,
+        Self::MulSubPtConst,
+        Self::AffinePtVec,
+        Self::AffinePtVecAssign,
+    ];
 }
 
 const STEPS: usize = 3;
@@ -546,51 +585,165 @@ where
         Some(CONSTANT),
         None,
     );
-    let zero = F::zero();
+    let c = F::from_f64(CONSTANT).unwrap();
+    let constant = (vec![c; len], vec![F::zero(); len]);
+    let add = |x: (Vec<F>, Vec<F>), y: &(Vec<F>, Vec<F>), sign: F| -> (Vec<F>, Vec<F>) {
+        (
+            x.0.iter().zip(&y.0).map(|(&u, &v)| u + sign * v).collect(),
+            x.1.iter().zip(&y.1).map(|(&u, &v)| u + sign * v).collect(),
+        )
+    };
+    let (one, minus) = (F::one(), -F::one());
     for step in 1..=STEPS {
         let operand = unit_batch::<Rg, F>(len, step);
+        let addend = unit_batch::<Rg, F>(len, step + STEPS);
         let fresh = encrypt_batch(params, module, &sk, slot_layout, (&operand.0, &operand.1), k, step as u8 + 1)?;
+        let mut accumulator = encrypt_batch(params, module, &sk, slot_layout, (&addend.0, &addend.1), k, step as u8 + 64)?;
         let mut pt = plaintext(params, module, slot_layout, len);
         encoded(module, &mut pt, &operand.0, &operand.1)?;
+        // The offset fits the budget the affine product leaves at the last step.
+        let mut offset = module.ckks_plaintext_alloc_from_slots::<Rg>(
+            slots_of::<BE, Rg>(module, slot_layout, len),
+            Base2K(params.base2k as u32),
+            TorusPrecision((LOG_DELTA + 10) as u32),
+        );
+        offset.set_meta(pt.meta());
+        encoded(module, &mut offset, &addend.0, &addend.1)?;
         let mut out = alloc_ct(params, module, k);
-        let s = &mut scratch.borrow();
+        let times_operand = complex_mul((&want.0, &want.1), (&operand.0, &operand.1));
+        let times_constant = complex_mul((&want.0, &want.1), (&constant.0, &constant.1));
+        // Each call runs on exactly its own query's bytes.
         want = match product {
             Product::Mul => {
-                module.ckks_mul_into(&mut out, &acc, &fresh, &tsk, s)?;
+                with_scratch::<BE, _>(module.ckks_mul_tmp_bytes(&out, &acc, &fresh, &tsk), |s| {
+                    module.ckks_mul_into(&mut out, &acc, &fresh, &tsk, s)
+                })?;
                 acc = out;
-                complex_mul((&want.0, &want.1), (&operand.0, &operand.1))
+                times_operand
             }
             Product::MulAssign => {
-                module.ckks_mul_assign(&mut acc, &fresh, &tsk, s)?;
-                complex_mul((&want.0, &want.1), (&operand.0, &operand.1))
+                with_scratch::<BE, _>(module.ckks_mul_tmp_bytes(&acc, &acc, &fresh, &tsk), |s| {
+                    module.ckks_mul_assign(&mut acc, &fresh, &tsk, s)
+                })?;
+                times_operand
+            }
+            Product::MulPrepared => {
+                let prepared = with_scratch::<BE, _>(module.ckks_right_operand_prepare_tmp_bytes(&fresh), |s| {
+                    module.ckks_right_operand_prepare_alloc(&fresh, PrepareHint::OneShot, s)
+                })?;
+                with_scratch::<BE, _>(module.ckks_mul_tmp_bytes(&acc, &acc, &prepared, &tsk), |s| {
+                    module.ckks_mul_prepared_assign(&mut acc, &prepared, &tsk, s)
+                })?;
+                times_operand
             }
             Product::Square => {
-                module.ckks_square_into(&mut out, &acc, &tsk, s)?;
+                with_scratch::<BE, _>(module.ckks_square_tmp_bytes(&out, &acc, &tsk), |s| {
+                    module.ckks_square_into(&mut out, &acc, &tsk, s)
+                })?;
                 acc = out;
                 complex_mul((&want.0, &want.1), (&want.0, &want.1))
             }
             Product::SquareAssign => {
-                module.ckks_square_assign(&mut acc, &tsk, s)?;
+                with_scratch::<BE, _>(module.ckks_square_tmp_bytes(&acc, &acc, &tsk), |s| {
+                    module.ckks_square_assign(&mut acc, &tsk, s)
+                })?;
                 complex_mul((&want.0, &want.1), (&want.0, &want.1))
             }
             Product::PtVec => {
-                module.ckks_mul_pt_vec_into(&mut out, &acc, &pt, s)?;
+                with_scratch::<BE, _>(module.ckks_mul_pt_vec_tmp_bytes(&out, &acc, &pt), |s| {
+                    module.ckks_mul_pt_vec_into(&mut out, &acc, &pt, s)
+                })?;
                 acc = out;
-                complex_mul((&want.0, &want.1), (&operand.0, &operand.1))
+                times_operand
             }
             Product::PtVecAssign => {
-                module.ckks_mul_pt_vec_assign(&mut acc, &pt, s)?;
-                complex_mul((&want.0, &want.1), (&operand.0, &operand.1))
+                with_scratch::<BE, _>(module.ckks_mul_pt_vec_tmp_bytes(&acc, &acc, &pt), |s| {
+                    module.ckks_mul_pt_vec_assign(&mut acc, &pt, s)
+                })?;
+                times_operand
             }
-            Product::PtConst | Product::PtConstAssign => {
-                if matches!(product, Product::PtConst) {
-                    module.ckks_mul_pt_const_into(&mut out, &acc, &cst, 0, s)?;
-                    acc = out;
-                } else {
-                    module.ckks_mul_pt_const_assign(&mut acc, &cst, 0, s)?;
-                }
-                let c = F::from_f64(CONSTANT).unwrap();
-                complex_mul((&want.0, &want.1), (&vec![c; len], &vec![zero; len]))
+            Product::PtConst => {
+                with_scratch::<BE, _>(module.ckks_mul_pt_const_tmp_bytes(&out, &acc, &cst), |s| {
+                    module.ckks_mul_pt_const_into(&mut out, &acc, &cst, 0, s)
+                })?;
+                acc = out;
+                times_constant
+            }
+            Product::PtConstAssign => {
+                with_scratch::<BE, _>(module.ckks_mul_pt_const_tmp_bytes(&acc, &acc, &cst), |s| {
+                    module.ckks_mul_pt_const_assign(&mut acc, &cst, 0, s)
+                })?;
+                times_constant
+            }
+            Product::Dot => {
+                with_scratch::<BE, _>(module.ckks_dot_product_ct_tmp_bytes(2, &out, &acc, &fresh, &tsk), |s| {
+                    module.ckks_dot_product_ct(&mut out, &[&acc, &fresh], &[&fresh, &acc], &tsk, s)
+                })?;
+                acc = out;
+                add(times_operand.clone(), &times_operand, one)
+            }
+            Product::MulAddCt | Product::MulSubCt => {
+                let bytes = module.ckks_mul_add_ct_tmp_bytes(&accumulator, &acc, &fresh, &tsk);
+                with_scratch::<BE, _>(bytes, |s| {
+                    if matches!(product, Product::MulAddCt) {
+                        module.ckks_mul_add_ct_into(&mut accumulator, &acc, &fresh, &tsk, s)
+                    } else {
+                        module.ckks_mul_sub_ct_into(&mut accumulator, &acc, &fresh, &tsk, s)
+                    }
+                })?;
+                acc = accumulator;
+                add(
+                    addend,
+                    &times_operand,
+                    if matches!(product, Product::MulAddCt) { one } else { minus },
+                )
+            }
+            Product::MulAddPtVec | Product::MulSubPtVec => {
+                with_scratch::<BE, _>(module.ckks_mul_add_pt_vec_tmp_bytes(&accumulator, &acc, &pt), |s| {
+                    if matches!(product, Product::MulAddPtVec) {
+                        module.ckks_mul_add_pt_vec_into(&mut accumulator, &acc, &pt, s)
+                    } else {
+                        module.ckks_mul_sub_pt_vec_into(&mut accumulator, &acc, &pt, s)
+                    }
+                })?;
+                acc = accumulator;
+                add(
+                    addend,
+                    &times_operand,
+                    if matches!(product, Product::MulAddPtVec) { one } else { minus },
+                )
+            }
+            Product::MulAddPtConst | Product::MulSubPtConst => {
+                with_scratch::<BE, _>(module.ckks_mul_add_pt_const_tmp_bytes(&accumulator, &acc, &cst), |s| {
+                    if matches!(product, Product::MulAddPtConst) {
+                        module.ckks_mul_add_pt_const_into(&mut accumulator, &acc, &cst, 0, s)
+                    } else {
+                        module.ckks_mul_sub_pt_const_into(&mut accumulator, &acc, &cst, 0, s)
+                    }
+                })?;
+                acc = accumulator;
+                add(
+                    addend,
+                    &times_constant,
+                    if matches!(product, Product::MulAddPtConst) {
+                        one
+                    } else {
+                        minus
+                    },
+                )
+            }
+            Product::AffinePtVec => {
+                with_scratch::<BE, _>(module.ckks_affine_pt_vec_tmp_bytes(&out, &acc, &pt), |s| {
+                    module.ckks_affine_pt_vec_into(&mut out, &acc, &pt, &offset, s)
+                })?;
+                acc = out;
+                add(times_operand, &addend, one)
+            }
+            Product::AffinePtVecAssign => {
+                with_scratch::<BE, _>(module.ckks_affine_pt_vec_tmp_bytes(&acc, &acc, &pt), |s| {
+                    module.ckks_affine_pt_vec_assign(&mut acc, &pt, &offset, s)
+                })?;
+                add(times_operand, &addend, one)
             }
         };
         assert_eq!(acc.slot_layout(), slot_layout, "{product:?}");
@@ -611,17 +764,7 @@ where
     Module<BE>: TestContextSharedModule<BE, Rg> + CKKSEncodingOps<BE, F, Rg>,
     F: TestScalar,
 {
-    use Product::*;
-    for product in [
-        Mul,
-        MulAssign,
-        Square,
-        SquareAssign,
-        PtVec,
-        PtVecAssign,
-        PtConst,
-        PtConstAssign,
-    ] {
+    for product in Product::ALL {
         let full = product_chain::<BE, F, Rg>(&params, module, host_module, SlotLayout::Full, product)?;
         let shaped = product_chain::<BE, F, Rg>(&params, module, host_module, SlotLayout::Replicated(layout()), product)?;
         assert!(
@@ -1187,16 +1330,166 @@ where
         &mut encoding.borrow(),
     )?;
     let mut out = alloc_ct(&params, module, k);
-    assert!(
-        module
-            .ckks_eval_poly_real_const_coeffs(&mut out, &x, &bsgs, &tsk, &mut scratch.borrow())
-            .is_err()
+    // Refused at entry, before any work or scratch check.
+    refused!(
+        Rg,
+        "ckks_eval_poly_real_const_coeffs",
+        with_scratch::<BE, _>(0, |s| module.ckks_eval_poly_real_const_coeffs(&mut out, &x, &bsgs, &tsk, s)),
+        [out, x]
+    );
+    // Plain constants, without their masked plaintexts.
+    let plain = identity
+        .encode_bsgs(
+            host_module,
+            params.base2k.into(),
+            CoeffsMeta::from_delta_budget(LOG_DELTA, 10),
+        )?
+        .map_baby_steps_ref(|pt| upload_pt(module, pt));
+    refused!(
+        Rg,
+        "ckks_eval_poly_real_const_coeffs",
+        with_scratch::<BE, _>(0, |s| module.ckks_eval_poly_real_const_coeffs(&mut out, &x, &plain, &tsk, s)),
+        [out, x]
     );
     Ok(())
 }
 
-/// Precision after a rotation into a new ciphertext, a rotation in place and a
-/// conjugation, against `conj(v[i + 2])`.
+/// A baby step whose masked constants differ in scale leaves the shaped linear
+/// combination for the products term by term, which keep the shaping.
+pub fn test_replicated_polynomial_fallback_is_shaped<BE, F, Rg: Ring>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) -> Result<()>
+where
+    BE: TestContextBackend,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextSharedModule<BE, Rg> + CKKSEncodingOps<BE, F, Rg> + CKKSPolynomialEvaluationOps<BE, Rg>,
+    F: TestScalar,
+{
+    let len = 1 << LOG_K;
+    let full = polynomial_precision::<BE, F, Rg>(&params, module, host_module, SlotLayout::Full, PolynomialCase::Monomial)?;
+    let mut setup = polynomial_setup::<BE, F, Rg>(&params, module, host_module, SlotLayout::Replicated(layout()))?;
+    let base2k: Base2K = params.base2k.into();
+    let poly = Polynomial::new(Basis::Monomial, coefficients::<F>(8, 0));
+    let mut coeff_meta = setup.coeff_meta;
+    coeff_meta.meta.slots = SlotsKind::Real;
+    // The constant of degree one of every baby step, one bit finer than the others.
+    // `polynomial_setup` encodes its constants at `2^LOG_DELTA` with 10 bits of budget.
+    let mut finer = CoeffsMeta::from_delta_budget(LOG_DELTA + 1, 10);
+    finer.meta.slots = SlotsKind::Real;
+    let degree = crate::encoding::linear_transformation::period_degree::<BE, _, Rg>(module, 1 << layout().log_r());
+    let encoding = &mut setup.encoding;
+    let bsgs = crate::layouts::eval_mod::encode_bsgs_with(&poly, SplitStrategy::MinDepth, false, &mut |values: &[F]| {
+        let scalars = crate::layouts::eval_mod::encode_scalar_constants::<BE, F, Rg>(
+            module,
+            base2k,
+            coeff_meta,
+            values,
+            &mut encoding.borrow(),
+        )?;
+        let masked = values
+            .iter()
+            .enumerate()
+            .map(|(j, &value)| {
+                let meta = if j == 1 { finer } else { coeff_meta };
+                let mut pt = module.ckks_plaintext_alloc::<Rg>(degree, base2k, meta.k);
+                pt.set_meta(GLWEPlaintextMeta {
+                    slots: SlotsKind::Real,
+                    slot_layout: SlotLayout::Replicated(layout()),
+                    ..meta.meta
+                });
+                module.ckks_encode_masked_constant_host_into(&mut pt, value, F::zero(), &mut encoding.borrow())?;
+                Ok(pt)
+            })
+            .collect::<Result<Vec<_>>>()?;
+        Ok(crate::layouts::MaskedCoeffs::new(scalars, masked))
+    })?;
+    // Polynomial evaluation has no query of its own: it runs on exactly the shared bound.
+    let coeff_prec = ckks_spec(params.n, params.base2k, LOG_DELTA, 10);
+    let bytes = module.ckks_all_ops_tmp_bytes(&setup.x, &coeff_prec, &params.tsk_layout());
+    with_scratch::<BE, _>(bytes, |s| {
+        module.ckks_eval_poly_real_const_coeffs(&mut setup.out, &setup.x, &bsgs, &setup.tsk, s)
+    })?;
+    let got = decrypt_batch::<BE, F, Rg>(&params, module, &setup.sk, &setup.out, len);
+    let want: Vec<F> = setup.xs.iter().map(|&x| poly.evaluate(x)).collect();
+    let shaped = precision((&got.0, &got.1), (&want, &vec![F::zero(); len]));
+    assert!(
+        shaped >= full + 15.0,
+        "polynomial term by term at 2^{LOG_DELTA}: {shaped:.2} bits against {full:.2} for a full layout"
+    );
+    Ok(())
+}
+
+/// A shaped product looks its tensor key up at the width its relinearization
+/// decomposes: the operands' on the one-pass path, and on the tensor path, which
+/// a key missing at the operands' width forces, its tensor intermediate,
+/// `λ` bits under the result.
+pub fn test_replicated_product_key_width<BE, F, Rg: Ring>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) -> Result<()>
+where
+    BE: TestContextBackend,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextSharedModule<BE, Rg> + CKKSEncodingOps<BE, F, Rg>,
+    F: TestScalar,
+{
+    use super::dot_product::TensorKeyAt;
+    let len = 1 << LOG_K;
+    let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(&params, module);
+    let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
+    let k = LOG_DELTA * (STEPS + 2);
+    let slot_layout = SlotLayout::Replicated(layout());
+    let (a_values, b_values) = (unit_batch::<Rg, F>(len, 0), unit_batch::<Rg, F>(len, 1));
+    let a = encrypt_batch(&params, module, &sk, slot_layout, (&a_values.0, &a_values.1), k, 1)?;
+    let b = encrypt_batch(&params, module, &sk, slot_layout, (&b_values.0, &b_values.1), k, 2)?;
+    // Equal operands into a destination as wide: the result keeps `a.log_budget()` bits.
+    let lambda = crate::shaping::ShapingProfile::<Rg>::try_new(&layout())?.shaping_depth(a.log_delta());
+    let tensor_k = TorusPrecision(a.k().as_usize().max(a.log_budget() + lambda) as u32);
+    assert!(tensor_k > a.k(), "the shaped tensor is wider than the operands");
+    let want = complex_mul((&a_values.0, &a_values.1), (&b_values.0, &b_values.1));
+
+    // Rank 1 takes the one-pass product with a key at the operands' width; a wider rank always takes the tensor path.
+    let accepted = if params.rank == 1 {
+        vec![a.k(), tensor_k]
+    } else {
+        vec![tensor_k]
+    };
+    for key_k in accepted {
+        let key = TensorKeyAt(&tsk, key_k);
+        let mut out = alloc_ct(&params, module, k);
+        with_scratch::<BE, _>(module.ckks_mul_tmp_bytes(&out, &a, &b, &tsk), |s| {
+            module.ckks_mul_into(&mut out, &a, &b, &key, s)
+        })?;
+        let got = decrypt_batch::<BE, F, Rg>(&params, module, &sk, &out, len);
+        let bits = precision((&got.0, &got.1), (&want.0, &want.1));
+        assert!(bits >= 35.0, "product with a key at {}: {bits:.2} bits", key_k.as_u32());
+    }
+
+    // A key at neither width is refused at the tensor's, before any write.
+    let mut out = alloc_ct(&params, module, k);
+    let before = snapshot::<BE, _, Rg>(&out);
+    let wrong = TensorKeyAt(&tsk, TorusPrecision(tensor_k.as_u32() + 1));
+    let err = with_scratch::<BE, _>(0, |s| module.ckks_mul_into(&mut out, &a, &b, &wrong, s)).unwrap_err();
+    assert!(
+        matches!(
+            err.composition(),
+            Some(crate::CKKSCompositionError::MissingRelinearizationKey { op: "ckks_mul_into", k, .. }) if *k == tensor_k.as_u32()
+        ),
+        "expected MissingRelinearizationKey at {} from ckks_mul_into, got {err}",
+        tensor_k.as_u32()
+    );
+    assert_eq!(snapshot::<BE, _, Rg>(&out), before, "a refused product wrote its destination");
+    Ok(())
+}
+
+/// Precision after a rotation into a new ciphertext, a rotation in place, a
+/// conjugation into a new ciphertext and two in place, against `conj(v[i + 2])`.
 fn automorphism_chain<BE, F>(
     params: &CKKSTestParams,
     module: &Module<BE>,
@@ -1226,11 +1519,16 @@ where
     let k = 3 * LOG_DELTA;
     let ct = encrypt_batch(params, module, &sk, slot_layout, (&values.0, &values.1), k, 1)?;
     let mut rotated = alloc_ct(params, module, k);
-    let s = &mut scratch.borrow();
-    module.ckks_rotate_into(step, &mut rotated, &ct, &atks, s)?;
-    module.ckks_rotate_assign(step, &mut rotated, &atks, s)?;
+    // Each call runs on exactly its own query's bytes.
+    // The queries take the source, whose layout the output gets.
+    let rotate_bytes = module.ckks_rotate_tmp_bytes(&ct, &atks[&gal]);
+    with_scratch::<BE, _>(rotate_bytes, |s| module.ckks_rotate_into(step, &mut rotated, &ct, &atks, s))?;
+    with_scratch::<BE, _>(rotate_bytes, |s| module.ckks_rotate_assign(step, &mut rotated, &atks, s))?;
     let mut out = alloc_ct(params, module, k);
-    module.ckks_conjugate_into(&mut out, &rotated, &conj, s)?;
+    let conjugate_bytes = module.ckks_conjugate_tmp_bytes(&rotated, &conj);
+    with_scratch::<BE, _>(conjugate_bytes, |s| module.ckks_conjugate_into(&mut out, &rotated, &conj, s))?;
+    with_scratch::<BE, _>(conjugate_bytes, |s| module.ckks_conjugate_assign(&mut out, &conj, s))?;
+    with_scratch::<BE, _>(conjugate_bytes, |s| module.ckks_conjugate_assign(&mut out, &conj, s))?;
     assert_eq!(out.slot_layout(), slot_layout);
 
     let want_re: Vec<F> = (0..len).map(|i| values.0[(i + 2) % len]).collect();
@@ -1290,9 +1588,11 @@ where
     let k = 3 * LOG_DELTA;
     let ct = encrypt_batch(params, module, &sk, slot_layout, (&values.0, &values.1), k, 1)?;
     let mut out = alloc_ct(params, module, k);
-    let s = &mut scratch.borrow();
-    module.ckks_rotate_into(step, &mut out, &ct, &atks, s)?;
-    module.ckks_rotate_assign(step, &mut out, &atks, s)?;
+    // Each call runs on exactly its own query's bytes.
+    // The query takes the source, whose layout the output gets.
+    let bytes = module.ckks_rotate_tmp_bytes(&ct, &atks[&gal]);
+    with_scratch::<BE, _>(bytes, |s| module.ckks_rotate_into(step, &mut out, &ct, &atks, s))?;
+    with_scratch::<BE, _>(bytes, |s| module.ckks_rotate_assign(step, &mut out, &atks, s))?;
     assert_eq!(out.slot_layout(), slot_layout);
 
     let want_re: Vec<F> = (0..len).map(|i| values.0[(i + 2) % len]).collect();
@@ -1353,10 +1653,22 @@ where
         1,
     )?;
     let mut out = alloc_ct(&params, module, 3 * LOG_DELTA);
-    let s = &mut scratch.borrow();
-    assert!(module.ckks_rotate_into(1, &mut out, &ct, &atks, s).is_err());
-    assert!(module.ckks_rotate_assign(-1, &mut ct, &atks, s).is_err());
-    module.ckks_rotate_into(1 << layout().log_r(), &mut out, &ct, &atks, s)?;
+    // The refusal comes before the scratch check.
+    refused!(
+        Rg,
+        "ckks_rotate_into",
+        with_scratch::<BE, _>(0, |s| module.ckks_rotate_into(1, &mut out, &ct, &atks, s)),
+        [out, ct]
+    );
+    refused!(
+        Rg,
+        "ckks_rotate_assign",
+        with_scratch::<BE, _>(0, |s| module.ckks_rotate_assign(-1, &mut ct, &atks, s)),
+        [ct]
+    );
+    let step = 1i64 << layout().log_r();
+    let bytes = module.ckks_rotate_tmp_bytes(&ct, &atks[&module.ckks_galois_element::<Rg>(step)]);
+    with_scratch::<BE, _>(bytes, |s| module.ckks_rotate_into(step, &mut out, &ct, &atks, s))?;
     Ok(())
 }
 
@@ -1376,12 +1688,17 @@ where
     let slots = len << layout().log_r();
     let c_im = if real_slots::<Rg>() { 0.0 } else { -0.2 };
     let (c_re, c_im) = (F::from_f64(0.3).unwrap(), F::from_f64(c_im).unwrap());
-    let mut scratch = ScratchOwned::<BE>::alloc(module.ckks_encoding_host_tmp_bytes(slots));
     let mut cst = plaintext(&params, module, SlotLayout::Replicated(layout()), len);
-    module.ckks_encode_masked_constant_host_into(&mut cst, c_re, c_im, &mut scratch.borrow())?;
+    // Each call runs on exactly its own query's bytes.
+    let encode_bytes = CKKSEncodingBuffer::<BE::OwnedBuf, F>::bytes_of(cst.n().as_usize());
+    with_scratch::<BE, _>(encode_bytes, |s| {
+        module.ckks_encode_masked_constant_host_into(&mut cst, c_re, c_im, s)
+    })?;
 
     let (mut re, mut im) = (vec![F::zero(); slots], vec![F::zero(); slots]);
-    module.ckks_decode_all_slots_host_into(&cst, &mut re, &mut im, &mut scratch.borrow())?;
+    with_scratch::<BE, _>(module.ckks_encoding_host_tmp_bytes(slots), |s| {
+        module.ckks_decode_all_slots_host_into(&cst, &mut re, &mut im, s)
+    })?;
     // Data slots hold the constant; guards hold only the shaped quantization
     // error, amplified by the guard classes of `g`.
     for t in 0..slots {
@@ -1403,8 +1720,9 @@ where
         3 * LOG_DELTA,
         1,
     )?;
-    let mut add_scratch = alloc_scratch(&params, module);
-    module.ckks_add_pt_vec_assign(&mut ct, &cst, &mut add_scratch.borrow())?;
+    with_scratch::<BE, _>(module.ckks_add_pt_vec_tmp_bytes(ct.max_size()), |s| {
+        module.ckks_add_pt_vec_assign(&mut ct, &cst, s)
+    })?;
     let got = decrypt_batch::<BE, F, Rg>(&params, module, &sk, &ct, len);
     let want_re: Vec<F> = values.0.iter().map(|&x| x + c_re).collect();
     let want_im: Vec<F> = values.1.iter().map(|&x| x + c_im).collect();
@@ -1412,10 +1730,13 @@ where
     assert!(bits >= 40.0, "masked constant sum: {bits:.2} bits");
 
     // The masked one, added twice and subtracted once.
-    let s = &mut add_scratch.borrow();
-    module.ckks_add_one_assign(&mut ct, s)?;
-    module.ckks_add_one_assign(&mut ct, s)?;
-    module.ckks_sub_one_assign(&mut ct, s)?;
+    let (add_one, sub_one) = (
+        module.ckks_add_one_tmp_bytes(ct.max_size()),
+        module.ckks_sub_one_tmp_bytes(ct.max_size()),
+    );
+    with_scratch::<BE, _>(add_one, |s| module.ckks_add_one_assign(&mut ct, s))?;
+    with_scratch::<BE, _>(add_one, |s| module.ckks_add_one_assign(&mut ct, s))?;
+    with_scratch::<BE, _>(sub_one, |s| module.ckks_sub_one_assign(&mut ct, s))?;
     let got = decrypt_batch::<BE, F, Rg>(&params, module, &sk, &ct, len);
     let want_re: Vec<F> = want_re.iter().map(|&x| x + F::one()).collect();
     let bits = precision((&got.0, &got.1), (&want_re, &want_im));
@@ -1433,7 +1754,9 @@ where
         3 * LOG_DELTA,
         5,
     )?;
-    module.ckks_add_one_assign(&mut ct, &mut add_scratch.borrow())?;
+    with_scratch::<BE, _>(module.ckks_add_one_tmp_bytes(ct.max_size()), |s| {
+        module.ckks_add_one_assign(&mut ct, s)
+    })?;
     let got = decrypt_batch::<BE, F, Rg>(&params, module, &sk, &ct, len);
     let want_re: Vec<F> = values.0.iter().map(|&x| x + F::one()).collect();
     let bits = precision((&got.0, &got.1), (&want_re, &values.1));
@@ -1443,10 +1766,6 @@ where
     assert!(bits >= LOG_DELTA as f64 - 5.0, "masked one of period 2: {bits:.2} bits");
     Ok(())
 }
-
-/// Input scale of the EvalMod test, above its plan scale so that the entry
-/// rounds and the output keeps the message precision under the ratio.
-const EVAL_MOD_LOG_DELTA_IN: usize = 36;
 
 fn eval_mod_plan() -> EvalModPlan {
     EvalModPlan {
@@ -1460,6 +1779,48 @@ fn eval_mod_plan() -> EvalModPlan {
         split_strategy: SplitStrategy::MinDepth,
         coeffs_meta: CoeffsMeta::from_delta_budget(26, 20),
         f_mod_log_delta: 28,
+    }
+}
+
+/// An EvalMod run: its plan and the scale of its input.
+#[derive(Clone, Copy)]
+struct EvalModCase {
+    plan: EvalModPlan,
+    log_delta_in: usize,
+}
+
+impl EvalModCase {
+    /// The input above the plan scale, so that the entry rounds it with shaping into a carved copy, and the last
+    /// squaring returns to the input scale.
+    fn rounded() -> Self {
+        Self {
+            plan: eval_mod_plan(),
+            log_delta_in: 36,
+        }
+    }
+
+    /// The input below the plan scale, in an allocation holding the working width, so that EvalMod runs on it in
+    /// place, and an inverse after the range extension, so that no squaring is fused and the output returns to the
+    /// input scale with a shaped rounding of its own.
+    fn inverse() -> Self {
+        Self {
+            plan: EvalModPlan {
+                f_mod_inv_degree: Some(3),
+                ..eval_mod_plan()
+            },
+            log_delta_in: 24,
+        }
+    }
+
+    /// The complex exponential, whose last complex squaring is fused.
+    fn complex() -> Self {
+        Self {
+            plan: EvalModPlan {
+                eval_mod_type: EvalModType::ExpCmplx,
+                ..eval_mod_plan()
+            },
+            log_delta_in: 36,
+        }
     }
 }
 
@@ -1478,6 +1839,7 @@ fn eval_mod_precision<BE, F, Rg: Ring>(
     params: &CKKSTestParams,
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
+    case: EvalModCase,
     mode: EvalModMode,
 ) -> Result<f64>
 where
@@ -1487,17 +1849,16 @@ where
     F: TestScalar,
     Module<BE>: TestContextSharedModule<BE, Rg> + CKKSEncodingOps<BE, F, Rg> + CKKSEvalModOps<BE, Rg>,
 {
-    let plan = eval_mod_plan();
+    let EvalModCase { plan, log_delta_in } = case;
     let ratio = (1u64 << plan.log_msg_ratio) as f64;
     let interval = plan.f_mod_interval as f64;
     let dsize = 2;
-    // The tensor key's gadget covers the working width at the plan scale.
+    // The tensor key's gadget covers the working width at the plan scale, which the allocation of the input holds.
     let test_params = CKKSTestParams {
-        k: (plan.consumed_bits() + EVAL_MOD_LOG_DELTA_IN + 2 * params.base2k).next_multiple_of(dsize * params.base2k)
-            + EVAL_MOD_LOG_DELTA_IN
+        k: (plan.consumed_bits() + log_delta_in + 2 * params.base2k).next_multiple_of(dsize * params.base2k) + log_delta_in
             - plan.f_mod_log_delta,
         prec_meta: GLWEPlaintextMeta {
-            scale: Scale::Log(EVAL_MOD_LOG_DELTA_IN),
+            scale: Scale::Log(log_delta_in),
             slots: SlotsKind::Complex,
             log_sparsity: 0,
             slot_layout: SlotLayout::Full,
@@ -1535,10 +1896,10 @@ where
     let mut pt = module.ckks_plaintext_alloc_from_slots(
         slots_of::<BE, Rg>(module, slot_layout, len),
         Base2K(params.base2k as u32),
-        TorusPrecision((EVAL_MOD_LOG_DELTA_IN + 10) as u32),
+        TorusPrecision((log_delta_in + 10) as u32),
     );
     pt.set_meta(GLWEPlaintextMeta {
-        scale: Scale::Log(EVAL_MOD_LOG_DELTA_IN),
+        scale: Scale::Log(log_delta_in),
         slots: SlotsKind::Complex,
         log_sparsity: 0,
         slot_layout,
@@ -1546,58 +1907,103 @@ where
     encoded(module, &mut pt, &re, &zero)?;
     let mut ct = alloc_ct(&test_params, module, k);
     let (mut xe, mut xa) = (Source::new([1; 32]), Source::new([2; 32]));
-    module.ckks_encrypt_sk(&mut ct, &pt, &sk, &mut xe, &mut xa, &mut scratch.borrow())?;
+    with_scratch::<BE, _>(module.ckks_encrypt_sk_tmp_bytes(&ct), |s| {
+        module.ckks_encrypt_sk(&mut ct, &pt, &sk, &mut xe, &mut xa, s)
+    })?;
 
     let mut compile = ScratchOwned::<BE>::alloc(module.ckks_encoding_host_tmp_bytes(params.n));
     let base2k = Base2K(params.base2k as u32);
     let mut res = alloc_ct(&test_params, module, k);
     let tsk_layout = test_params.tsk_layout();
-    let (f_mod_poly, steps, scale) = match slot_layout {
-        SlotLayout::Replicated(layout) => {
-            let eval_mod = if let EvalModMode::Packed = mode {
+    // The evaluation runs on exactly its query's bytes; the host polynomials and range-extension scale come back.
+    macro_rules! run {
+        ($eval_mod:expr) => {{
+            let eval_mod = $eval_mod;
+            with_scratch::<BE, _>(module.ckks_eval_mod_tmp_bytes(&res, &ct, &eval_mod, &tsk_layout), |s| {
+                module.ckks_eval_mod(&mut res, &mut ct, &eval_mod, &tsk, s)
+            })?;
+            let scale = eval_mod.range_extension_scale();
+            (eval_mod.f_mod_poly, eval_mod.f_mod_inv_poly, scale)
+        }};
+    }
+    let (f_mod_poly, f_mod_inv_poly, scale) =
+        match slot_layout {
+            SlotLayout::Replicated(layout) if matches!(mode, EvalModMode::Packed) => run!(
                 ckks_eval_mod_replicated_packed_compile::<BE, F, Rg>(base2k, plan, layout, module, &mut compile.borrow())?
-            } else {
-                ckks_eval_mod_replicated_compile::<BE, F, Rg>(base2k, plan, layout, module, &mut compile.borrow())?
-            };
-            let mut eval = ScratchOwned::<BE>::alloc(module.ckks_eval_mod_tmp_bytes(&res, &ct, &eval_mod, &tsk_layout));
-            module.ckks_eval_mod(&mut res, &mut ct, &eval_mod, &tsk, &mut eval.borrow())?;
-            let scale = eval_mod.range_extension_scale();
-            (eval_mod.f_mod_poly, plan.f_mod_log_interval_reduction, scale)
-        }
-        SlotLayout::Full => {
-            let eval_mod = ckks_eval_mod_compile::<BE, F, Rg>(base2k, plan, module, &mut compile.borrow())?;
-            let mut eval = ScratchOwned::<BE>::alloc(module.ckks_eval_mod_tmp_bytes(&res, &ct, &eval_mod, &tsk_layout));
-            module.ckks_eval_mod(&mut res, &mut ct, &eval_mod, &tsk, &mut eval.borrow())?;
-            let scale = eval_mod.range_extension_scale();
-            (eval_mod.f_mod_poly, plan.f_mod_log_interval_reduction, scale)
-        }
-    };
+            ),
+            SlotLayout::Replicated(layout) => run!(ckks_eval_mod_replicated_compile::<BE, F, Rg>(
+                base2k,
+                plan,
+                layout,
+                module,
+                &mut compile.borrow()
+            )?),
+            SlotLayout::Full => run!(ckks_eval_mod_compile::<BE, F, Rg>(
+                base2k,
+                plan,
+                module,
+                &mut compile.borrow()
+            )?),
+        };
     assert_eq!(res.slot_layout(), slot_layout);
-    assert_eq!(res.log_delta(), EVAL_MOD_LOG_DELTA_IN);
+    assert_eq!(res.log_delta(), log_delta_in);
 
-    let EvalModPoly::Real(poly) = f_mod_poly else {
-        unreachable!("CosHK is a real polynomial")
-    };
+    let steps = plan.f_mod_log_interval_reduction;
     let two = F::one() + F::one();
     let to_message = F::from_f64(ratio).unwrap();
-    let want: Vec<F> = re
-        .iter()
-        .map(|&t| {
-            let mut p = poly.evaluate(t);
-            for i in 0..steps {
-                p = two * p * p - F::from_f64(scale.powi(1 << (i + 1))).unwrap();
-            }
-            p * to_message
-        })
-        .collect();
+    let want: Vec<(F, F)> = match &f_mod_poly {
+        EvalModPoly::Real(poly) => re
+            .iter()
+            .map(|&t| {
+                let mut p = poly.evaluate(t);
+                for i in 0..steps {
+                    p = two * p * p - F::from_f64(scale.powi(1 << (i + 1))).unwrap();
+                }
+                if let Some(inverse) = &f_mod_inv_poly {
+                    p = inverse.evaluate(p);
+                }
+                (p * to_message, F::zero())
+            })
+            .collect(),
+        EvalModPoly::Complex(poly) => re
+            .iter()
+            .map(|&t| {
+                let (mut a, mut b) = poly.evaluate(t);
+                for _ in 0..steps {
+                    (a, b) = (a * a - b * b, two * a * b);
+                }
+                (a * to_message, b * to_message)
+            })
+            .collect(),
+    };
     // A packed second half comes out on the imaginary parts.
     let half = if let EvalModMode::Packed = mode { len / 2 } else { len };
-    let want_re: Vec<F> = (0..len).map(|j| if j < half { want[j] } else { F::zero() }).collect();
-    let want_im: Vec<F> = (0..len).map(|j| if j < half { F::zero() } else { want[j] }).collect();
+    let want_re: Vec<F> = (0..len).map(|j| if j < half { want[j].0 } else { F::zero() }).collect();
+    let want_im: Vec<F> = (0..len).map(|j| if j < half { want[j].1 } else { want[j].0 }).collect();
     let got = decrypt_batch::<BE, F, Rg>(&test_params, module, &sk, &res, len);
     let got_re: Vec<F> = got.0.iter().map(|&v| v * to_message).collect();
     let got_im: Vec<F> = got.1.iter().map(|&v| v * to_message).collect();
     Ok(precision((&got_re, &got_im), (&want_re, &want_im)))
+}
+
+/// Precisions of `case` on a full layout and on a replicated one.
+fn eval_mod_gain<BE, F, Rg: Ring>(
+    params: &CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+    case: EvalModCase,
+) -> Result<(f64, f64)>
+where
+    BE: TestContextBackend,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    F: TestScalar,
+    Module<BE>: TestContextSharedModule<BE, Rg> + CKKSEncodingOps<BE, F, Rg> + CKKSEvalModOps<BE, Rg>,
+{
+    Ok((
+        eval_mod_precision::<BE, F, Rg>(params, module, host_module, case, EvalModMode::Full)?,
+        eval_mod_precision::<BE, F, Rg>(params, module, host_module, case, EvalModMode::Replicated)?,
+    ))
 }
 
 pub fn test_replicated_eval_mod_is_shaped<BE, F, Rg: Ring>(
@@ -1612,21 +2018,60 @@ where
     Module<BE>: TestContextSharedModule<BE, Rg> + CKKSEncodingOps<BE, F, Rg> + CKKSEvalModOps<BE, Rg>,
     F: TestScalar,
 {
-    let full = eval_mod_precision::<BE, F, Rg>(&params, module, host_module, EvalModMode::Full)?;
-    let shaped = eval_mod_precision::<BE, F, Rg>(&params, module, host_module, EvalModMode::Replicated)?;
+    let (full, shaped) = eval_mod_gain::<BE, F, Rg>(&params, module, host_module, EvalModCase::rounded())?;
     assert!(
         shaped >= 30.0 && shaped >= full + 25.0,
         "EvalMod at 2^28: {shaped:.2} bits against {full:.2} for a full layout"
     );
+    let (full, shaped) = eval_mod_gain::<BE, F, Rg>(&params, module, host_module, EvalModCase::inverse())?;
+    // Measured on the portable and oracle backends, both rings: 35.4 to 37.1 bits against 3.6 to 4.5.
+    assert!(
+        shaped >= 30.0 && shaped >= full + 25.0,
+        "EvalMod with an inverse from 2^24: {shaped:.2} bits against {full:.2} for a full layout"
+    );
     // Real slots have no imaginary parts to pack a second batch on.
     if real_slots::<Rg>() {
-        assert!(eval_mod_precision::<BE, F, Rg>(&params, module, host_module, EvalModMode::Packed).is_err());
+        let mut compile = ScratchOwned::<BE>::alloc(module.ckks_encoding_host_tmp_bytes(params.n));
+        let err = ckks_eval_mod_replicated_packed_compile::<BE, F, Rg>(
+            Base2K(params.base2k as u32),
+            eval_mod_plan(),
+            ShapingUnit::U32_45.layout(LOG_K + 1)?,
+            module,
+            &mut compile.borrow(),
+        )
+        .err()
+        .expect("a packed EvalMod on real slots");
+        assert_invalid_encoding(&err, "ckks_eval_mod_replicated_packed_compile");
         return Ok(());
     }
-    let packed = eval_mod_precision::<BE, F, Rg>(&params, module, host_module, EvalModMode::Packed)?;
+    let full = eval_mod_precision::<BE, F, Rg>(&params, module, host_module, EvalModCase::rounded(), EvalModMode::Full)?;
+    let packed = eval_mod_precision::<BE, F, Rg>(&params, module, host_module, EvalModCase::rounded(), EvalModMode::Packed)?;
     assert!(
         packed >= 30.0 && packed >= full + 25.0,
         "packed EvalMod at 2^28: {packed:.2} bits against {full:.2} for a full layout"
+    );
+    Ok(())
+}
+
+/// The complex EvalMod, whose last complex squaring is fused, keeps the message far above CKKS.
+pub fn test_replicated_complex_eval_mod_is_shaped<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) -> Result<()>
+where
+    BE: TestContextBackend,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSEvalModOps<BE>,
+    F: TestScalar,
+    E: ReimNew<F>,
+{
+    let (full, shaped) = eval_mod_gain::<BE, F, Standard>(&params, module, host_module, EvalModCase::complex())?;
+    // Measured on the portable backends: 35.4 to 37.3 bits against 5.6 to 6.2.
+    assert!(
+        shaped >= 30.0 && shaped >= full + 25.0,
+        "complex EvalMod at 2^28: {shaped:.2} bits against {full:.2} for a full layout"
     );
     Ok(())
 }

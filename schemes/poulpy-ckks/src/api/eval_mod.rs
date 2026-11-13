@@ -31,6 +31,9 @@ pub trait CKKSEvalModOps<BE: Backend, Rg: Ring = Standard> {
     /// `ct` is working storage: it becomes the first power of the evaluation, with no copy, so its content and metadata
     /// are unspecified on a successful return, and a caller that needs it again passes a copy. An allocation narrower
     /// than the `log_budget + f_mod_log_delta` bits EvalMod works at costs a copy in `scratch`, which the query counts.
+    /// A [replicated](crate::SlotLayout::Replicated) `ct` at a scale above `f_mod_log_delta` is rounded with shaping
+    /// to the plan scale into such a copy, and takes the constants of an EvalMod encoded for its layout, each with its
+    /// masked plaintext.
     ///
     /// Consumes `params.consumed_bits()` bits of `log_budget`. `tsk` is the tensor (relinearization) key of the
     /// products, and `scratch` must hold at least [`Self::ckks_eval_mod_tmp_bytes`] bytes.
@@ -39,15 +42,19 @@ pub trait CKKSEvalModOps<BE: Backend, Rg: Ring = Standard> {
     ///
     /// Before any write, so that a refusal leaves `ct` and `res` unchanged:
     ///
-    /// - [`InvalidOperand`](crate::CKKSCompositionError::InvalidOperand): a replicated slot layout or a rank other
-    ///   than 1, and [`InvalidPlan`](crate::CKKSCompositionError::InvalidPlan): an `ExpCmplx` EvalMod on a ring of
-    ///   real slots.
+    /// - [`InvalidOperand`](crate::CKKSCompositionError::InvalidOperand): a rank other than 1, or a replicated `ct`
+    ///   with constants lacking their masked plaintexts, and [`InvalidPlan`](crate::CKKSCompositionError::InvalidPlan):
+    ///   an `ExpCmplx` EvalMod on a ring of real slots.
     /// - [`InsufficientHomomorphicCapacity`](crate::CKKSCompositionError::InsufficientHomomorphicCapacity): `ct` holds
     ///   fewer than `params.consumed_bits()` bits of budget.
     /// - [`MissingRelinearizationKey`](crate::CKKSCompositionError::MissingRelinearizationKey): an evaluation with a
-    ///   ciphertext product whose `tsk` does not cover its widest product, of `log_budget + f_mod_log_delta` bits.
+    ///   ciphertext product whose `tsk` does not cover the width its widest product decomposes: the
+    ///   `log_budget + f_mod_log_delta` bits of its operands, and for a replicated `ct` whose products take the tensor
+    ///   path, the tensor intermediate computed `λ` bits under its result
+    ///   ([`CKKSMulOps`](crate::api::CKKSMulOps#slot-layouts)).
     /// - `CKKSError::Internal`: an evaluation with a ciphertext product given an arena below the query at the layout of
-    ///   the key `tsk` answers for that width.
+    ///   the key `tsk` answers for that width, or one without given an arena below the shaped round of a replicated
+    ///   input.
     fn ckks_eval_mod<R, C, P, F, H>(
         &self,
         res: &mut R,

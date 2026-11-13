@@ -8,7 +8,6 @@ use poulpy_hal::layouts::{Backend, ScratchArena};
 use crate::{
     CKKSInfos, SetCKKSInfos,
     api::CKKSRoundOps,
-    checked_log_budget_sub, ckks_offset_unary,
     reference::rotate::{automorphism_assign, automorphism_into, automorphism_tmp_bytes},
 };
 
@@ -34,17 +33,7 @@ pub trait CKKSConjugateReference<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + GLWEInfos + CKKSInfos + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + GLWEInfos + CKKSInfos,
     {
-        let offset = ckks_offset_unary(dst, src);
-        // Validate before mutating: on error `dst` must remain untouched.
-        let log_budget = checked_log_budget_sub("ckks_conjugate_into", src.log_budget(), offset)?;
-
-        // Stamp before the key switch, as in `ckks_rotate_into`: the key switch
-        // normalizes at `dst.k()`, so a stale, wider `k` would leave the result
-        // carrying key-switch noise below the width it is then labelled with.
-        // `offset` is computed against the pre-stamp `dst`.
-        dst.set_meta(src.meta());
-        dst.set_log_budget(log_budget);
-        automorphism_into(self, dst, src, key, offset, scratch)
+        automorphism_into("ckks_conjugate_into", self, dst, src, key, scratch)
     }
 
     fn ckks_conjugate_with_key_assign_reference<Dst>(
@@ -54,10 +43,10 @@ pub trait CKKSConjugateReference<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: GLWEAutomorphism<BE> + CKKSRoundOps<BE>,
+        Self: GLWEAutomorphism<BE> + GLWEShift<BE> + CKKSRoundOps<BE>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos + CKKSInfos + SetCKKSInfos,
     {
-        automorphism_assign(self, dst, key, scratch)
+        automorphism_assign("ckks_conjugate_assign", self, dst, key, scratch)
     }
 }
 

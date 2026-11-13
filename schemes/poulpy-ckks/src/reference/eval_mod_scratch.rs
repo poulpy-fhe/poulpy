@@ -1,7 +1,7 @@
 use poulpy_core::layouts::{
     Base2K, Degree, GGLWEInfos, GLWEInfos, GLWEPlaintextInfos, GLWEPlaintextMeta, LWEInfos, Rank, Scale, TorusPrecision,
 };
-use poulpy_core::oep::GLWEMulConstImpl;
+use poulpy_core::oep::{GLWEMulConstImpl, GLWEMulPlainImpl};
 use poulpy_core::{GLWEBytesOf, GLWECopy, GLWENormalize};
 use poulpy_hal::api::{CnvOps, CnvPVecBytesOf, VecZnxBigNormalizeTmpBytes, VecZnxIdftApplyTmpBytes, VecZnxRshTmpBytes};
 use poulpy_hal::layouts::{Backend, Module, Ring};
@@ -56,7 +56,7 @@ impl GLWEPlaintextInfos for EvalModWorkCtInfos {
 
 impl CKKSInfos for EvalModWorkCtInfos {}
 
-pub fn ckks_eval_mod_tmp_bytes_reference<BE: Backend + GLWEMulConstImpl<Rg>, R, C, P, F, T, Rg: Ring>(
+pub fn ckks_eval_mod_tmp_bytes_reference<BE: Backend + GLWEMulConstImpl<Rg> + GLWEMulPlainImpl<Rg>, R, C, P, F, T, Rg: Ring>(
     module: &Module<BE>,
     res: &R,
     ct: &C,
@@ -165,7 +165,7 @@ where
                     .max(module.ckks_round_tmp_bytes(res, &work))
                     .max(module.ckks_round_tmp_bytes(&work, ct))
                     .max(
-                        crate::reference::polynomial_evaluation::eval_shaped_baby_linear_combination_tmp_bytes(
+                        crate::oep::derived::polynomial_evaluation::eval_shaped_baby_linear_combination_tmp_bytes::<BE, _, Rg>(
                             module,
                             &work,
                             pt_size_max,

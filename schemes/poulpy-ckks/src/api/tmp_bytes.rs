@@ -10,7 +10,7 @@ use poulpy_core::{
     GLWEShift, GLWETensorKeyEncryptSk, GLWETensoring,
     api::{GLWEAutomorphismKeyPreparedFactory, GLWETensorKeyPreparedFactory},
     layouts::{GGLWEInfos, LinearTransformationPlan},
-    oep::GLWEMulConstImpl,
+    oep::{GLWEMulConstImpl, GLWEMulPlainImpl},
 };
 use poulpy_hal::{
     api::{
@@ -132,7 +132,7 @@ impl<BE: Backend, Rg: Ring, M> CKKSAllOpsTmpBytesAt<BE, Rg> for M where
 
 fn all_ops_tmp_bytes_at<BE, C, T, P, Rg: Ring>(module: &Module<BE>, ct_infos: &C, pt_prec: &P, tsk_infos: &T) -> usize
 where
-    BE: GLWEMulConstImpl<Rg>,
+    BE: GLWEMulConstImpl<Rg> + GLWEMulPlainImpl<Rg>,
     Module<BE>: CKKSAllOpsTmpBytesAt<BE, Rg>,
     C: CKKSCtBounds,
     T: GGLWEInfos,
@@ -173,7 +173,7 @@ where
             ),
         )
         .max(if matches!(ct_infos.slot_layout(), crate::SlotLayout::Replicated(_)) {
-            crate::reference::polynomial_evaluation::eval_shaped_baby_linear_combination_tmp_bytes::<BE, _, _, Rg>(
+            crate::oep::derived::polynomial_evaluation::eval_shaped_baby_linear_combination_tmp_bytes::<BE, _, Rg>(
                 module,
                 ct_infos,
                 pt_prec.k().as_usize().div_ceil(ct_infos.base2k().as_usize()).max(1),
@@ -182,6 +182,7 @@ where
             0
         })
         .max(module.ckks_mul_pt_vec_tmp_bytes(ct_infos, ct_infos, pt_prec))
+        .max(module.ckks_mul_add_pt_vec_tmp_bytes(ct_infos, ct_infos, pt_prec))
         .max(module.ckks_mul_pt_const_tmp_bytes(ct_infos, ct_infos, pt_prec))
         .max(module.glwe_tensor_key_prepare_tmp_bytes(tsk_infos))
         .max(module.glwe_tensor_key_encrypt_sk_tmp_bytes(tsk_infos))
@@ -212,7 +213,10 @@ where
 
 impl<BE: Backend> CKKSAllOpsTmpBytes<BE> for Module<BE>
 where
-    BE: GLWEMulConstImpl<Standard> + GLWEMulConstImpl<ConjugateInvariant>,
+    BE: GLWEMulConstImpl<Standard>
+        + GLWEMulConstImpl<ConjugateInvariant>
+        + GLWEMulPlainImpl<Standard>
+        + GLWEMulPlainImpl<ConjugateInvariant>,
     Self: CKKSAllOpsTmpBytesAt<BE, Standard> + CKKSAllOpsTmpBytesAt<BE, ConjugateInvariant>,
 {
     fn ckks_all_ops_tmp_bytes<C, T, P>(&self, ct_infos: &C, pt_prec: &P, tsk_infos: &T) -> usize

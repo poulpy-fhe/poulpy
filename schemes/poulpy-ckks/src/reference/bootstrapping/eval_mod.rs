@@ -185,6 +185,7 @@ pub trait CKKSBootstrapEvalModReference<BE: Backend>: std::borrow::Borrow<Module
     {
         let module: &Module<BE> = self.borrow();
         const OP: &str = EVAL_MOD_OP;
+        crate::layouts::validation::ensure_full_layout(OP, crate::GLWEPlaintextInfos::slot_layout(a))?;
         ensure_rank_one(OP, a, res)?;
         ensure_one_degree(OP, module.n(), a, res)?;
         ensure_one_base2k(OP, a, res)?;

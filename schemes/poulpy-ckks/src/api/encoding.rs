@@ -286,12 +286,26 @@ pub trait CKKSEncodingHostOps<BE: Backend, F: CKKSEncodingScalar, Rg: Ring = Sta
     /// The mask is invariant, so the conjugate-invariant ring, where
     /// `Y = X^(N/R)`, holds the real constant by its first `R` coefficients and
     /// drops `im`, as its slot encoder does.
+    ///
+    /// Scratch: [`CKKSEncodingBuffer::bytes_of`] of the degree of `pt`.
+    ///
+    /// # Errors
+    ///
+    /// Before any write to `pt`: [`InvalidOperand`](crate::CKKSCompositionError::InvalidOperand) for a `pt` of another
+    /// slot layout than [`SlotLayout::Replicated`], or of a degree that is not a multiple of the period of `π_S`
+    /// (`2R`, `R` on the conjugate-invariant ring), and `CKKSError::Internal` for an arena below the scratch above.
+    /// Then those of [`CKKSEncodingOps::ckks_encode_coeffs_into`].
     fn ckks_encode_masked_constant_host_into<P>(&self, pt: &mut P, re: F, im: F, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         P: CKKSPlaintextToBackendMut<BE, Rg> + IntPolyInfos + SetCKKSInfos,
     {
+        const OP: &str = "ckks_encode_masked_constant_host_into";
         let SlotLayout::Replicated(layout) = pt.slot_layout() else {
-            return Err(anyhow::anyhow!("a masked constant needs a replicated slot layout").into());
+            return Err(crate::CKKSCompositionError::InvalidOperand {
+                op: OP,
+                reason: "a masked constant needs a replicated slot layout".into(),
+            }
+            .into());
         };
         let r = 1usize << layout.log_r();
         let order = layout.log_r() as u32 + 2;
@@ -301,7 +315,8 @@ pub trait CKKSEncodingHostOps<BE: Backend, F: CKKSEncodingScalar, Rg: Ring = Sta
         let pi_s = |j: usize| F::ckks_root_of_unity(j as u64, order).0 * r_inv;
         let n = pt.n().as_usize();
         let period = if conjugate_invariant::<Rg>() { r } else { 2 * r };
-        ckks_ensure!(
+        ckks_ensure_operand!(
+            OP,
             n.is_multiple_of(period),
             "a masked constant of period {r} needs a degree multiple of {period}, got {n}"
         );

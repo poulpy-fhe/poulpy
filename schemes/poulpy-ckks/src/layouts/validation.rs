@@ -264,6 +264,51 @@ pub(crate) fn ensure_full_layout(op: &'static str, slot_layout: SlotLayout) -> c
     Ok(())
 }
 
+/// `InvalidOperand` for `op` when an input of `slot_layout` is replicated and one of `constants` lacks the masked
+/// plaintexts of its constants, which a replicated layout reads in place of the scalars, or holds them in another
+/// layout.
+pub(crate) fn ensure_masked_constants<'a, BE, Rg, P>(
+    op: &'static str,
+    slot_layout: SlotLayout,
+    constants: impl IntoIterator<Item = &'a P>,
+) -> crate::CKKSResult<()>
+where
+    BE: Backend,
+    Rg: Ring,
+    P: crate::layouts::CKKSMaskedConstants<BE, Rg> + 'a,
+{
+    if matches!(slot_layout, SlotLayout::Replicated(_)) {
+        for c in constants {
+            ckks_ensure_operand!(
+                op,
+                c.carries_masked_constants(),
+                "a replicated layout takes constants encoded with their masked plaintexts"
+            );
+            ckks_ensure_operand!(
+                op,
+                c.masked_constant(0)
+                    .is_none_or(|m| crate::GLWEPlaintextInfos::slot_layout(m) == slot_layout),
+                "the masked constants are encoded for another slot layout than the input's"
+            );
+        }
+    }
+    Ok(())
+}
+
+/// `Internal` for `op` when `scratch` holds less than `bytes`, the body's query, checked before its first carve.
+pub(crate) fn ensure_scratch<BE: Backend>(
+    op: &'static str,
+    scratch: &poulpy_hal::layouts::ScratchArena<'_, BE>,
+    bytes: usize,
+) -> crate::CKKSResult<()> {
+    let available = scratch.available();
+    ckks_ensure!(
+        available >= bytes,
+        "{op} needs a scratch arena of {bytes} bytes, got {available}"
+    );
+    Ok(())
+}
+
 /// Rejects a rotation by `k` slots that moves guard slots onto data slots.
 pub(crate) fn ensure_admissible_rotation(op: &'static str, slot_layout: SlotLayout, k: i64) -> crate::CKKSResult<()> {
     if let SlotLayout::Replicated(layout) = slot_layout
