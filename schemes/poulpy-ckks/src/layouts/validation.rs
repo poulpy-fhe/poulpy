@@ -545,14 +545,12 @@ where
     let Some(starts) = ctx.stage_widths().stage_starts(bootstrap_k, input_k) else {
         return Err(narrower_than_stages(op, bootstrap_k, input_k));
     };
-    for key_uses in ctx.rotation_key_uses().chunk_by(|a, b| a.p == b.p) {
-        let p = key_uses[0].p;
-        let k = key_uses.iter().map(|key_use| starts.width(key_use)).max().unwrap_or(0);
-        let k = TorusPrecision(k as u32);
-        keys.get_automorphism_key(p, k)
+    for key in ctx.rotation_key_offsets() {
+        let k = TorusPrecision(starts.width(key) as u32);
+        keys.get_automorphism_key(key.p, k)
             .map_err(|source| CKKSCompositionError::MissingAutomorphismKey {
                 op,
-                rotation: p,
+                rotation: key.p,
                 k: k.into(),
                 source,
             })?;
