@@ -70,6 +70,7 @@ fn ntt4x30_neon_rayon_ckks_coeffs_mask() {
     poulpy_ckks::test_suite::presets::test_ckks_coeffs_mask::<crate::NTT4x30NeonRayon>();
 }
 
+#[cfg(feature = "enable-rayon")]
 #[test]
 fn ntt4x30_neon_rayon_ckks_bootstrap_eval_mod_exponential() {
     poulpy_ckks::test_suite::presets::test_ckks_bootstrap_eval_mod_exponential::<crate::NTT4x30NeonRayon>();

@@ -71,6 +71,7 @@ mod small_bootstrapping_presets {
         poulpy_ckks::test_suite::presets::test_ckks_coeffs_mask::<crate::NTT4x30Avx512Rayon>();
     }
 
+    #[cfg(feature = "enable-rayon")]
     #[test]
     fn ntt4x30_rayon_ckks_bootstrap_eval_mod_exponential() {
         poulpy_ckks::test_suite::presets::test_ckks_bootstrap_eval_mod_exponential::<crate::NTT4x30Avx512Rayon>();
