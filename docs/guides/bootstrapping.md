@@ -215,7 +215,7 @@ For now it still uses a `BootstrappingPlan` containing an EvalMod plan because E
 
 ### A trigonometric polynomial on the raise
 
-`BootstrappingPreset::with_eval_mod_exponential` replaces the Han–Ki fit by the complex exponential, fitted on the whole interval, so the message may fill the modulus: at a message ratio of 1 bit, `ckks_bootstrap_eval_mod` leaves `exp(iπ·m)` in complex slots, on the unit circle, for a trigonometric polynomial of the caller's, real once its conjugate is added. Such a context refreshes nothing, so `ckks_bootstrap` refuses it, and the caller stamps complex slots on the output. The exponential costs more products than the even Han–Ki base at the same levels; the scales it runs at may be lower, since its output is not amplified by the message ratio.
+`BootstrappingPreset::with_eval_mod_exponential` replaces the Han–Ki fit by the complex exponential, fitted on the whole interval, so the message may fill the modulus: at a message ratio of 1 bit, `ckks_bootstrap_eval_mod` leaves `exp(iπ·m)` in complex slots, on the unit circle, for a trigonometric polynomial of the caller's, real once its conjugate is added. Such a context refreshes nothing, so `ckks_bootstrap` refuses it, and a run labels the output complex. The exponential costs more products than the even Han–Ki base at the same levels; the scales it runs at may be lower, since its output is not amplified by the message ratio.
 
 ### EvalMod on the conjugate-invariant ring
 

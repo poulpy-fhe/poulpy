@@ -426,12 +426,17 @@ impl BootstrappingPreset {
     /// on `interval` integers on each side of zero, followed by `log_interval_reduction` squarings.
     ///
     /// The fit holds on the whole interval, so the message may fill the modulus, down to a message ratio of 1 bit; the
-    /// bound on `interval` is that of [`Self::with_eval_mod_polynomial`], on the whole raised coefficient. Such a preset
-    /// does not refresh a message: [`ckks_bootstrap_eval_mod`](crate::api::CKKSBootstrappingOps::ckks_bootstrap_eval_mod)
-    /// leaves `exp(2πi·m/2^log_msg_ratio)` in the slots, for a trigonometric polynomial of the caller's, and
-    /// [`ckks_bootstrap`](crate::api::CKKSBootstrappingOps::ckks_bootstrap) refuses it.
+    /// bound on `interval` is that of [`Self::with_eval_mod_polynomial`], on the whole raised coefficient. The plan
+    /// states what EvalMod then leaves and which bootstrap refuses it: see [`BootstrappingPlan`].
+    ///
+    /// Fails on a C2S-first preset, whose SlotsToCoeffs runs after EvalMod.
     pub fn with_eval_mod_exponential(&self, interval: usize, degree: usize, log_interval_reduction: usize) -> Result<Self> {
+        ensure!(
+            self.spec.pipeline == BootstrappingPipeline::S2CFirst,
+            "only an S2C-first bootstrap leaves the exponential in its slots"
+        );
         build(PresetSpec {
+            derived: true,
             eval_mod: EvalModSpec {
                 eval_mod_type: EvalModType::ExpCmplx,
                 interval,
@@ -493,14 +498,7 @@ impl BootstrappingPreset {
         c2s_schedule: &'static [(usize, usize)],
         s2c_schedule: &'static [(usize, usize)],
     ) -> Result<Self> {
-        let sparse_secret = match self.spec.log_n.saturating_sub(log_gap) {
-            16 => N16_SPARSE_SECRET,
-            15 => N15_SPARSE_SECRET,
-            // The placeholder bound of the insecure test presets, at every degree.
-            #[cfg(feature = "test-utils")]
-            _ if self.spec.dense_secret.max_log_modulus == TEST_SECRET.max_log_modulus => self.spec.sparse_secret,
-            degree => anyhow::bail!("no bound for a sparse secret at degree 2^{degree}"),
-        };
+        let (_, sparse_secret) = self.secret_bounds(self.spec.log_n.saturating_sub(log_gap))?;
         build(PresetSpec {
             log_gap,
             derived: true,
@@ -512,28 +510,21 @@ impl BootstrappingPreset {
         })
     }
 
-    /// Re-derives the preset at degree `2^log_n`, with the transforms `c2s_schedule` and `s2c_schedule` for its slots and
-    /// the secrets of that degree, to whose modulus bounds every key is re-fitted. Fails at a degree without bounds, or
-    /// when the preset's widths exceed them, so a preset this narrows must be narrow by then.
+    /// Re-derives the preset at degree `2^log_n`, with the transforms `c2s_schedule` and `s2c_schedule` for its slots, the
+    /// dense secret of that degree and the sparse secret of the subring of its gap, to whose modulus bounds every key is
+    /// re-fitted. Fails at a degree without bounds, or when the preset's widths exceed them, so a preset this narrows
+    /// must be narrow by then.
     pub fn with_log_n(
         &self,
         log_n: usize,
         c2s_schedule: &'static [(usize, usize)],
         s2c_schedule: &'static [(usize, usize)],
     ) -> Result<Self> {
-        let (dense_secret, sparse_secret) = match log_n {
-            16 => (N16_DENSE_SECRET, N16_SPARSE_SECRET),
-            15 => (N15_DENSE_SECRET, N15_SPARSE_SECRET),
-            _ => {
-                return Err(crate::CKKSCompositionError::InvalidPlan {
-                    plan: "BootstrappingPreset",
-                    reason: format!("no bound for the secrets at degree 2^{log_n}"),
-                }
-                .into());
-            }
-        };
+        let (dense_secret, _) = self.secret_bounds(log_n)?;
+        let (_, sparse_secret) = self.secret_bounds(log_n.saturating_sub(self.spec.log_gap))?;
         build(PresetSpec {
             log_n,
+            derived: true,
             dense_secret,
             sparse_secret,
             c2s_schedule,
@@ -608,6 +599,20 @@ impl BootstrappingPreset {
             .rev()
             .find_map(|base2k| self.with_base2k(base2k).ok())
             .with_context(|| format!("no radix up to {max} fits the modulus bounds of {}", self.spec.name))
+    }
+
+    /// The bounds of the dense and the sparse secret at degree `2^log_n`.
+    fn secret_bounds(&self, log_n: usize) -> Result<(SecretBound, SecretBound)> {
+        match log_n {
+            16 => Ok((N16_DENSE_SECRET, N16_SPARSE_SECRET)),
+            15 => Ok((N15_DENSE_SECRET, N15_SPARSE_SECRET)),
+            // The placeholder bounds of the insecure test presets, at every degree.
+            #[cfg(feature = "test-utils")]
+            _ if self.spec.dense_secret.max_log_modulus == TEST_SECRET.max_log_modulus => {
+                Ok((self.spec.dense_secret, self.spec.sparse_secret))
+            }
+            _ => anyhow::bail!("no bound for the secrets at degree 2^{log_n}"),
+        }
     }
 
     /// Worst count of degree-`N` products an output limb of a transform pass
@@ -1272,11 +1277,17 @@ mod tests {
             .unwrap()
             .with_eval_mod_ring(EvalModRing::Standard)
             .unwrap();
-        assert!(
-            wide.with_log_n(15, C2S, S2C).is_err(),
-            "the widths of a logN16 preset exceed the logN15 bound"
+        let Err(err) = wide.with_log_n(15, C2S, S2C) else {
+            panic!("the widths of a logN16 preset exceed the logN15 bound");
+        };
+        assert_eq!(
+            err.to_string(),
+            "rotation key: a digit of 52 bits on a 1155-bit input needs a modulus of 1248 bits, above 851"
         );
-        assert!(wide.with_log_n(14, C2S, S2C).is_err(), "no bound at that degree");
+        let Err(err) = wide.with_log_n(14, C2S, S2C) else {
+            panic!("no bound at degree 2^14");
+        };
+        assert_eq!(err.to_string(), "no bound for the secrets at degree 2^14");
 
         let scales = PresetScales {
             log_delta: 28,
@@ -1528,7 +1539,7 @@ mod tests {
         let Err(err) = n16_d35_k685_p19_s2c_ffr_ci().unwrap().with_log_gap(2, C2S, S2C) else {
             panic!("no bound at degree 2^14");
         };
-        assert_eq!(err.to_string(), "no bound for a sparse secret at degree 2^14");
+        assert_eq!(err.to_string(), "no bound for the secrets at degree 2^14");
     }
 
     #[test]

@@ -1585,7 +1585,22 @@ where
     .unwrap();
     let got = run.raise_to_eval_mod(&rotated, Some(&mask), message.meta());
     run.assert_decrypts("masked, one half up", &got, &masked, &zeros);
+}
 
+/// [`CKKSBootstrappingOps::ckks_bootstrap_eval_mod`] on a context whose EvalMod is the complex exponential, at a
+/// message ratio of 1 bit, leaves `exp(iπ·m)` of a real message in complex slots, and
+/// [`CKKSBootstrappingOps::ckks_bootstrap`] refuses that context before any write.
+pub fn test_ckks_bootstrap_eval_mod_exponential<BE>()
+where
+    BE: TestContextBackend,
+    Module<BE>: TestContextSharedModule<BE, ConjugateInvariant> + CKKSEncodingOps<BE, f64, ConjugateInvariant>,
+    Module<BE>: StepsRunModule<BE>,
+    for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
+    for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+{
     let toy = crate::presets::bootstrapping::insecure_n11_d35_k180_p20_s2c().unwrap();
     let interval = toy.plan().eval_mod().f_mod_interval;
     let scales = PresetScales {
@@ -1599,17 +1614,23 @@ where
         .unwrap();
     let run = StepsRun::<BE>::new(unit_circle);
     let (module, boot) = (&run.module, run.preset.bootstrap_layout());
+    let half = run.preset.n() / 2;
+    let (want, zeros) = (test_vector_1::<f64>(half).0, vec![0.0; half]);
     let message = run.encrypt(&want, &zeros, SlotsKind::Real);
-    let mut whole = module.ckks_ciphertext_alloc_from_glwe_infos(&boot);
+
+    let mut whole = fixture_ciphertext::<BE, Standard>(module, &boot, 67);
+    let before = snapshot::<BE, _, Standard>(&whole);
     let err = with_scratch::<BE, _>(0, |s| module.ckks_bootstrap(&mut whole, &message, &run.context, &run.keys, s)).unwrap_err();
-    assert!(
-        matches!(
-            err.composition(),
-            Some(CKKSCompositionError::InvalidOperand { op: "ckks_bootstrap", reason })
-                if reason.contains("requires an identity bootstrapping context")
-        ),
-        "an exponential context does not refresh a message: {err}"
+    assert_ckks_error(
+        "an exponential context does not refresh a message",
+        &err,
+        CKKSCompositionError::InvalidOperand {
+            op: "ckks_bootstrap",
+            reason: "requires an identity bootstrapping context".into(),
+        },
     );
+    assert_eq!(snapshot::<BE, _, Standard>(&whole), before, "a refused bootstrap wrote res");
+
     let got = run.raise_to_eval_mod(&run.to_coeffs(&message), None, message.meta());
     assert_eq!(got.k(), run.preset.output_layout().k());
     assert_eq!(

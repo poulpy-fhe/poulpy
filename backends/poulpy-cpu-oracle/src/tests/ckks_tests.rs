@@ -65,6 +65,11 @@ fn ntt4x30_ckks_coeffs_mask() {
 }
 
 #[test]
+fn ntt4x30_ckks_bootstrap_eval_mod_exponential() {
+    poulpy_ckks::test_suite::presets::test_ckks_bootstrap_eval_mod_exponential::<crate::NTT4x30Oracle>();
+}
+
+#[test]
 fn ntt4x30_ckks_coeffs_mask_rejects_invalid_inputs() {
     poulpy_ckks::test_suite::presets::test_ckks_coeffs_mask_rejects_invalid_inputs::<crate::NTT4x30Oracle>();
 }

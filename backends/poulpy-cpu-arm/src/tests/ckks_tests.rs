@@ -45,6 +45,11 @@ fn ntt4x30_neon_ckks_coeffs_mask() {
 }
 
 #[test]
+fn ntt4x30_neon_ckks_bootstrap_eval_mod_exponential() {
+    poulpy_ckks::test_suite::presets::test_ckks_bootstrap_eval_mod_exponential::<crate::NTT4x30Neon>();
+}
+
+#[test]
 fn ntt4x30_neon_ckks_coeffs_mask_rejects_invalid_inputs() {
     poulpy_ckks::test_suite::presets::test_ckks_coeffs_mask_rejects_invalid_inputs::<crate::NTT4x30Neon>();
 }
@@ -63,6 +68,11 @@ fn ntt4x30_neon_merged_s2c_factor() {
 #[test]
 fn ntt4x30_neon_rayon_ckks_coeffs_mask() {
     poulpy_ckks::test_suite::presets::test_ckks_coeffs_mask::<crate::NTT4x30NeonRayon>();
+}
+
+#[test]
+fn ntt4x30_neon_rayon_ckks_bootstrap_eval_mod_exponential() {
+    poulpy_ckks::test_suite::presets::test_ckks_bootstrap_eval_mod_exponential::<crate::NTT4x30NeonRayon>();
 }
 
 #[cfg(feature = "enable-rayon")]
