@@ -39,14 +39,14 @@
 - **The ring is a parameter.** CKKS containers carry their ring as their last type parameter, `Standard` by default, and ring-generic signatures name it.
 - **Operand degrees.** Every operation takes ciphertexts of any degree up to the module's, takes its temporaries, Galois elements and slot counts at the operand's degree, and refuses a larger one before any write; a bootstrapping context is compiled at one degree, and the bootstraps refuse ciphertexts of any other.
 - **Identity rotations are keyless.** A rotation by Galois element 1, baby and giant step 0 included, is a copy or direct fold that looks up no key, and key sets omit element 1.
-- **Keys at the decomposed width.** Keys are sized and pre-checked at the width the switch decomposes, the same one they are looked up at.
+- **Keys at the decomposed width.** Keys are sized and pre-checked at the width the switch decomposes, the same one they are looked up at, a body switching an intermediate wider than its operands or its destination (a shaped working width) checking that width.
 - **Key sets from the schedule.** A key-consuming pipeline derives its Galois elements from the schedule it evaluates, never a hand-kept list.
 - **Keys checked on both views.** A pipeline validates keys before any work on both the reported infos and the backend view.
 
 ## 6. Metadata and stamping
 
 - **Every operation stamps everything.** Every operation, overrides included, stamps `k`, base2k, rank, scale, slot kind and sparsity, and `log_budget` is always derived as `k - log_delta`, never stored.
-- **No rescale operation.** None exists or is added: products rescale through `cnv_offset`, chained transforms carry none between factors, results land at `res.k()` and not at the limb-aligned allocation, and only a division by a power of two moves budget bits under `log_delta`.
+- **No rescale operation.** None exists or is added: products rescale through `cnv_offset`, chained transforms carry none between factors, results land at `res.k()` and not at the limb-aligned allocation, only a division by a power of two moves budget bits under `log_delta`, and `ckks_round` is the one precision reduction, lowering `log_delta` at a fixed budget, with shaping on a replicated layout.
 - **Stamp before the rounding write.** Offsets are computed against the pre-stamp `res`, and the final metadata is stamped before any step rounds into `res`, an in-place product reading `res` stamping once it has read it.
 - **One formula per accounting rule.** Offsets, budgets and `cnv_offset` each come from one shared helper, fused paths included, never re-derived at a call site.
 - **A lift spends budget.** A lift at a fixed modulus changes the scale in the metadata, never through a setter that preserves the budget, which grows `k` and cancels the shift.
@@ -69,7 +69,7 @@
 ## 9. Plaintexts and encoding
 
 - **Plaintext operand checks.** A plaintext operand is checked for radix, degree embedding or coefficient range, and alignment before any write.
-- **One value per coefficient.** Encoders and decoders take exactly one value per coefficient or slot, refuse any other count, and never spread values at a gap.
+- **One value per coefficient.** Encoders and decoders take exactly one value per coefficient or slot, refuse any other count, and never spread values at a gap, except on a replicated layout, whose host encoder spreads a batch over its replicas, whose decoder averages them and whose masked constants repeat at the stride of the shaping variable.
 - **Quantization rejects before writing.** Every encoding path, overrides included, quantizes through the shared codec, never a cast, rejects a non-finite or out-of-range value before any write, and keeps the preset metadata, narrowing only the slot kind.
 - **Resident encoding signatures.** Encoding API and OEP signatures take only backend-resident buffers, host slices entering only through host-named adapters.
 

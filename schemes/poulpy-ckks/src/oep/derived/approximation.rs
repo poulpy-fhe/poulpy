@@ -1,4 +1,5 @@
 //! Approximations compose the interval map with the selected polynomial evaluation.
+use crate::layouts::CKKSMaskedConstants;
 use poulpy_core::{
     GLWEBytesOf,
     layouts::{
@@ -85,7 +86,7 @@ where
     BE: CKKSApproximationImpl<Rg>,
     R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
     I: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
-    P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + BSGSMeta + IntPolyInfos + crate::layouts::CKKSMaskedConstants<BE, Rg>,
+    P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + BSGSMeta + IntPolyInfos + CKKSMaskedConstants<BE, Rg>,
     H: GetTensorKey<BE, Rg>,
 {
     const OP: &str = "ckks_polynomial_approximation_eval";

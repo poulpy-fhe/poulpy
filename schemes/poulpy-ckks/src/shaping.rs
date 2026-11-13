@@ -579,6 +579,7 @@ pub(crate) fn automorphism_input_k<Dst: CKKSInfos, Src: CKKSInfos>(dst: &Dst, sr
 /// long as `coeffs`.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn shaped_quantize_into<F, Rg: Ring>(
+    op: &'static str,
     coeffs: &[F],
     layout: &ReplicatedLayout,
     log_delta: usize,
@@ -591,7 +592,7 @@ pub(crate) fn shaped_quantize_into<F, Rg: Ring>(
 where
     F: crate::api::CKKSEncodingScalar,
 {
-    let (profile, lambda) = shaping_pass::<Rg>("ckks_quantize_coeffs_into", layout, coeffs.len(), log_delta, log_budget)?;
+    let (profile, lambda) = shaping_pass::<Rg>(op, layout, coeffs.len(), log_delta, log_budget)?;
     for ((q, l), &x) in out.iter_mut().zip(low.iter_mut()).zip(coeffs) {
         *q = x
             .ckks_quantize(log_delta + lambda)
@@ -807,8 +808,10 @@ mod tests {
             for (log_delta, log_budget) in [(40, 20), (60, 64), (60, 65)] {
                 let mut want = vec![0i128; n];
                 let (mut low, mut h, mut gh) = (vec![0i64; n], vec![0i64; n], vec![0i64; n]);
-                shaped_quantize_into::<_, Rg>(&coeffs, &layout, log_delta, log_budget, &mut want, &mut low, &mut h, &mut gh)
-                    .unwrap();
+                shaped_quantize_into::<_, Rg>(
+                    "test", &coeffs, &layout, log_delta, log_budget, &mut want, &mut low, &mut h, &mut gh,
+                )
+                .unwrap();
                 let mut got = vec![0i128; n];
                 let stride = n / period;
                 shaped_quantize_by_class::<_, Rg>(&coeffs, &layout, log_delta, log_budget, |r, values| {

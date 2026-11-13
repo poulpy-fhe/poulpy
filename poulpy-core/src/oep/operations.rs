@@ -142,11 +142,12 @@ pub unsafe trait GLWEMulPlainImpl<Rg: Ring = Standard>: Backend {
         R: GLWEToBackendMut<Self, Rg> + GLWEInfos,
         A: GLWEToBackendRef<Self, Rg> + IntPolyInfos + GLWEInfos;
 
-    /// Scratch bytes of [`Self::glwe_plain_combination`] for an accumulator of `cols` columns and `acc_size` limbs,
-    /// prepared terms of at most `a_size` limbs and plaintexts of at most `b_size` limbs.
+    /// Scratch bytes of [`Self::glwe_plain_combination`] for a `res` of `cols` columns and `res_size` limbs, an
+    /// accumulator of `acc_size` limbs, prepared terms of at most `a_size` limbs and plaintexts of at most `b_size` limbs.
     fn glwe_plain_combination_tmp_bytes(
         module: &Module<Self>,
         cols: usize,
+        res_size: usize,
         acc_size: usize,
         a_size: usize,
         b_size: usize,
@@ -165,7 +166,7 @@ pub unsafe trait GLWEMulPlainImpl<Rg: Ring = Standard>: Backend {
     /// The plaintext-vector twin of [`GLWEMulConstImpl::glwe_const_combination`], an internal hook of the CKKS baby-step
     /// combination on a replicated layout, which records the metadata of `res` and prepares each left operand once.
     /// The reference, [`glwe_plain_combination_reference`](crate::reference::operations::GLWEMulPlainReference::glwe_plain_combination_reference),
-    /// accumulates the terms in order, then calls `vec_znx_idft_apply` and `vec_znx_big_normalize`, column by column.
+    /// accumulates the terms in order, then calls `vec_znx_idft_normalize`, column by column.
     /// Overrides must reproduce it bit for bit within [`Self::glwe_plain_combination_tmp_bytes`].
     fn glwe_plain_combination(
         module: &Module<Self>,

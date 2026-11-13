@@ -5,6 +5,7 @@ use poulpy_ckks::api::{
     BSGSPolynomialInfos, CKKSAllOpsTmpBytes, CKKSComplexPolynomialEvaluationOps, CKKSCopyOps, CKKSEvalModOps,
     CKKSPolynomialEvaluationOps, PowerBasisHelper,
 };
+use poulpy_ckks::layouts::CKKSMaskedConstants;
 use poulpy_ckks::layouts::eval_mod::EvalMod;
 use poulpy_ckks::layouts::{CKKSCiphertextAlloc, CKKSPlaintextAlloc, CKKSPlaintextOwned};
 use poulpy_ckks::oep::{CKKSComplexPolynomialEvaluationImpl, CKKSCopyImpl, CKKSEvalModImpl, CKKSPolynomialEvaluationImpl};
@@ -130,7 +131,7 @@ unsafe impl CKKSPolynomialEvaluationImpl<Standard> for OverrideBackend {
     where
         R: GLWEToBackendMut<Self, Standard> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         B: BSGSPolynomialInfos<Self, Standard>,
-        B::Coeffs: CKKSCtBounds + poulpy_ckks::layouts::CKKSMaskedConstants<Self>,
+        B::Coeffs: CKKSCtBounds + CKKSMaskedConstants<Self>,
         A: GLWEToBackendRef<Self, Standard> + CKKSCtBounds + BSGSMeta,
         G: PowerBasisHelper<Self, A, Standard>,
         H: GetTensorKey<Self, Standard>,
@@ -158,12 +159,7 @@ unsafe impl CKKSComplexPolynomialEvaluationImpl for OverrideBackend {
     ) -> CKKSResult<()>
     where
         R: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
-        C: GLWEToBackendRef<Self>
-            + GLWEInfos
-            + BSGSMeta
-            + CKKSCtBounds
-            + IntPolyInfos
-            + poulpy_ckks::layouts::CKKSMaskedConstants<Self>,
+        C: GLWEToBackendRef<Self> + GLWEInfos + BSGSMeta + CKKSCtBounds + IntPolyInfos + CKKSMaskedConstants<Self>,
         A: GLWEToBackendRef<Self> + CKKSCtBounds + BSGSMeta,
         G: PowerBasisHelper<Self, A>,
         H: GetTensorKey<Self>,
@@ -205,11 +201,7 @@ unsafe impl CKKSEvalModImpl<Standard> for OverrideBackend {
     where
         R: GLWEToBackendMut<Self, Standard> + GLWEToBackendRef<Self, Standard> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         C: GLWEToBackendMut<Self, Standard> + GLWEToBackendRef<Self, Standard> + CKKSCtBounds,
-        P: GLWEToBackendRef<Self, Standard>
-            + IntPolyInfos
-            + CKKSCtBounds
-            + BSGSMeta
-            + poulpy_ckks::layouts::CKKSMaskedConstants<Self>,
+        P: GLWEToBackendRef<Self, Standard> + IntPolyInfos + CKKSCtBounds + BSGSMeta + CKKSMaskedConstants<Self>,
         H: GetTensorKey<Self, Standard>,
     {
         EVAL_MOD_CALLS.with(|calls| calls.set(calls.get() + 1));

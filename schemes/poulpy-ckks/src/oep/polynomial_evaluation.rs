@@ -1,4 +1,5 @@
 use crate::CKKSResult as Result;
+use crate::layouts::CKKSMaskedConstants;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{BSGSMeta, GetTensorKey};
 use poulpy_core::layouts::{GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, SetBSGSMeta};
@@ -40,7 +41,7 @@ pub unsafe trait CKKSPolynomialEvaluationImpl<Rg: Ring = Standard>:
     where
         R: GLWEToBackendMut<Self, Rg> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         B: BSGSPolynomialInfos<Self, Rg>,
-        B::Coeffs: CKKSCtBounds + crate::layouts::CKKSMaskedConstants<Self, Rg>,
+        B::Coeffs: CKKSCtBounds + CKKSMaskedConstants<Self, Rg>,
         A: GLWEToBackendRef<Self, Rg> + CKKSCtBounds + poulpy_core::layouts::BSGSMeta,
         G: PowerBasisHelper<Self, A, Rg>,
         H: GetTensorKey<Self, Rg>;
@@ -63,7 +64,7 @@ pub unsafe trait CKKSPolynomialEvaluationImpl<Rg: Ring = Standard>:
         R: GLWEToBackendMut<Self, Rg> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         S: GLWEToBackendRef<Self, Rg> + CKKSCtBounds,
         B: BSGSPolynomialInfos<Self, Rg>,
-        B::Coeffs: CKKSCtBounds + crate::layouts::CKKSMaskedConstants<Self, Rg>,
+        B::Coeffs: CKKSCtBounds + CKKSMaskedConstants<Self, Rg>,
         H: GetTensorKey<Self, Rg>,
         CKKSCiphertextOwned<Self, Rg>: GLWEToBackendMut<Self, Rg> + GLWEToBackendRef<Self, Rg> + CKKSCtBounds + SetCKKSInfos,
     {
@@ -92,12 +93,7 @@ pub unsafe trait CKKSComplexPolynomialEvaluationImpl: Backend + CKKSPolynomialEv
     ) -> Result<()>
     where
         R: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
-        C: GLWEToBackendRef<Self>
-            + GLWEInfos
-            + BSGSMeta
-            + CKKSCtBounds
-            + IntPolyInfos
-            + crate::layouts::CKKSMaskedConstants<Self>,
+        C: GLWEToBackendRef<Self> + GLWEInfos + BSGSMeta + CKKSCtBounds + IntPolyInfos + CKKSMaskedConstants<Self>,
         A: GLWEToBackendRef<Self> + CKKSCtBounds + BSGSMeta,
         G: PowerBasisHelper<Self, A>,
         H: GetTensorKey<Self>;
@@ -125,7 +121,7 @@ pub unsafe trait CKKSComplexPolynomialEvaluationImpl: Backend + CKKSPolynomialEv
             + poulpy_core::layouts::BSGSMeta
             + CKKSCtBounds
             + IntPolyInfos
-            + crate::layouts::CKKSMaskedConstants<Self>,
+            + CKKSMaskedConstants<Self>,
         H: GetTensorKey<Self>,
         CKKSCiphertextOwned<Self>: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
     {

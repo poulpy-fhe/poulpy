@@ -11,6 +11,7 @@ use crate::{
     ckks_ensure, ckks_mul_pt_const_checks, ckks_mul_pt_vec_checks, ensure_plaintext_const_operand, ensure_plaintext_vec_operand,
     get_mul_ct_params,
     layouts::{CKKSCiphertextViewMut, ScratchArenaTakeCKKSCiphertext},
+    mul_ct_log_delta, mul_pt_log_delta,
     oep::{CKKSAffineImpl, CKKSMulAddImpl, CKKSMulSubImpl},
     reference::mul::{product_key_k, tensor_key_at},
 };
@@ -162,7 +163,7 @@ where
             crate::GLWEPlaintextInfos::slot_layout(b),
         ],
         dst.log_delta(),
-        a.log_delta().min(b.log_delta()),
+        mul_ct_log_delta(a.log_delta(), b.log_delta()),
     )?;
     let (log_budget, log_delta, cnv_offset) = get_mul_ct_params(OP, &*dst, a, b)?;
     let key_k = product_key_k(
@@ -209,7 +210,7 @@ where
             crate::GLWEPlaintextInfos::slot_layout(pt),
         ],
         dst.log_delta(),
-        a.log_delta(),
+        mul_pt_log_delta(a.log_delta()),
     )?;
     ckks_mul_pt_vec_checks::<BE, _, _, _>(OP, &*dst, a, pt)?;
     let bytes = ckks_mul_add_pt_vec_tmp_bytes_derived(module, &*dst, a, pt);
@@ -246,7 +247,7 @@ where
             crate::GLWEPlaintextInfos::slot_layout(a),
         ],
         dst.log_delta(),
-        a.log_delta(),
+        mul_pt_log_delta(a.log_delta()),
     )?;
     ckks_mul_pt_const_checks(OP, &*dst, a, pt, pt_coeff)?;
     let bytes = ckks_mul_add_pt_const_tmp_bytes_derived(module, &*dst, a, pt);
@@ -466,7 +467,7 @@ where
             crate::GLWEPlaintextInfos::slot_layout(b),
         ],
         dst.log_delta(),
-        a.log_delta().min(b.log_delta()),
+        mul_ct_log_delta(a.log_delta(), b.log_delta()),
     )?;
     let (log_budget, log_delta, cnv_offset) = get_mul_ct_params(OP, &*dst, a, b)?;
     let key_k = product_key_k(
@@ -513,7 +514,7 @@ where
             crate::GLWEPlaintextInfos::slot_layout(pt),
         ],
         dst.log_delta(),
-        a.log_delta(),
+        mul_pt_log_delta(a.log_delta()),
     )?;
     ckks_mul_pt_vec_checks::<BE, _, _, _>(OP, &*dst, a, pt)?;
     let bytes = ckks_mul_sub_pt_vec_tmp_bytes_derived(module, &*dst, a, pt);
@@ -550,7 +551,7 @@ where
             crate::GLWEPlaintextInfos::slot_layout(a),
         ],
         dst.log_delta(),
-        a.log_delta(),
+        mul_pt_log_delta(a.log_delta()),
     )?;
     ckks_mul_pt_const_checks(OP, &*dst, a, pt, pt_coeff)?;
     let bytes = ckks_mul_sub_pt_const_tmp_bytes_derived(module, &*dst, a, pt);

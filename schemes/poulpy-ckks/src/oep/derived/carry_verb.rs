@@ -14,9 +14,9 @@ where
 {
     const OP: &str = "ckks_add_one_assign";
     let slot_layout = crate::GLWEPlaintextInfos::slot_layout(dst);
+    let one = crate::layouts::slots::one_coeffs::<BE, Rg>(OP, slot_layout, dst.log_delta())?;
     crate::layouts::validation::ensure_scratch(OP, scratch, module.ckks_add_one_tmp_bytes(dst.max_size()))?;
-    let (one, mut scratch) =
-        crate::layouts::slots::take_one_pt(OP, dst.base2k(), slot_layout, dst.log_delta(), scratch.borrow())?;
+    let (one, mut scratch) = crate::layouts::slots::take_one_pt(dst.base2k(), one, scratch.borrow());
     match slot_layout {
         crate::SlotLayout::Full => module.ckks_add_pt_const_assign(dst, 0, &one, 0, &mut scratch),
         crate::SlotLayout::Replicated(_) => module.ckks_add_pt_vec_assign(dst, &one, &mut scratch),
@@ -33,9 +33,9 @@ where
 {
     const OP: &str = "ckks_sub_one_assign";
     let slot_layout = crate::GLWEPlaintextInfos::slot_layout(dst);
+    let one = crate::layouts::slots::one_coeffs::<BE, Rg>(OP, slot_layout, dst.log_delta())?;
     crate::layouts::validation::ensure_scratch(OP, scratch, module.ckks_sub_one_tmp_bytes(dst.max_size()))?;
-    let (one, mut scratch) =
-        crate::layouts::slots::take_one_pt(OP, dst.base2k(), slot_layout, dst.log_delta(), scratch.borrow())?;
+    let (one, mut scratch) = crate::layouts::slots::take_one_pt(dst.base2k(), one, scratch.borrow());
     match slot_layout {
         crate::SlotLayout::Full => module.ckks_sub_pt_const_assign(dst, 0, &one, 0, &mut scratch),
         crate::SlotLayout::Replicated(_) => module.ckks_sub_pt_vec_assign(dst, &one, &mut scratch),

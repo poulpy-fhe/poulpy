@@ -1,5 +1,6 @@
 //! Polynomial approximations: a derived family over the interval map and the selected polynomial evaluation.
 use crate::CKKSResult as Result;
+use crate::layouts::CKKSMaskedConstants;
 use poulpy_core::layouts::{
     BSGSMeta, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetTensorKey, IntPolyInfos, LWEInfos, SetBSGSMeta,
 };
@@ -72,7 +73,7 @@ pub unsafe trait CKKSApproximationImpl<Rg: Ring = Standard>:
     where
         R: GLWEToBackendMut<Self, Rg> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         I: GLWEToBackendRef<Self, Rg> + CKKSCtBounds,
-        P: GLWEToBackendRef<Self, Rg> + CKKSCtBounds + BSGSMeta + IntPolyInfos + crate::layouts::CKKSMaskedConstants<Self, Rg>,
+        P: GLWEToBackendRef<Self, Rg> + CKKSCtBounds + BSGSMeta + IntPolyInfos + CKKSMaskedConstants<Self, Rg>,
         H: GetTensorKey<Self, Rg>,
     {
         ckks_polynomial_approximation_eval_derived(module, res, input, approximation, tsk, scratch)

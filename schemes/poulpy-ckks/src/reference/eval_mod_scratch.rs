@@ -3,7 +3,7 @@ use poulpy_core::layouts::{
 };
 use poulpy_core::oep::{GLWEMulConstImpl, GLWEMulPlainImpl};
 use poulpy_core::{GLWEBytesOf, GLWECopy, GLWENormalize};
-use poulpy_hal::api::{CnvOps, CnvPVecBytesOf, VecZnxBigNormalizeTmpBytes, VecZnxIdftApplyTmpBytes, VecZnxRshTmpBytes};
+use poulpy_hal::api::{CnvOps, VecZnxBigNormalizeTmpBytes, VecZnxIdftApplyTmpBytes, VecZnxRshTmpBytes};
 use poulpy_hal::layouts::{Backend, Module, Ring};
 
 use crate::{
@@ -71,7 +71,6 @@ where
         + GLWENormalize<BE, Rg>
         + CKKSCopyOps<BE, Rg>
         + GLWECopy<BE, Rg>
-        + CnvPVecBytesOf
         + CnvOps<BE, Rg>
         + VecZnxRshTmpBytes
         + VecZnxBigNormalizeTmpBytes
@@ -101,7 +100,7 @@ where
     };
 
     let cols: usize = (work.rank() + 1).into();
-    let compact_work = BE::vec_znx_bytes_of(work.n().into(), cols, work.max_size());
+    let compact_work = BE::scratch_aligned(BE::vec_znx_bytes_of(work.n().into(), cols, work.max_size()));
     let bsgs_giant = module
         .ckks_mul_tmp_bytes(&work, &work, &work, tsk)
         .max(module.ckks_add_tmp_bytes(work.max_size()))
@@ -111,7 +110,7 @@ where
         // copy off `res`'s allocated capacity, the upper bound on the limbs
         // any runtime re-expansion can expose.
         module.ckks_square_tmp_bytes(res, res, tsk)
-            + BE::vec_znx_bytes_of(res.n().into(), (res.rank() + 1).into(), res.max_size()),
+            + BE::scratch_aligned(BE::vec_znx_bytes_of(res.n().into(), (res.rank() + 1).into(), res.max_size())),
     );
     // Scratch holds the powers of the base polynomial, its transformed input, the input when its allocation is too
     // narrow, and a working ciphertext for the optional inverse composition.
@@ -131,8 +130,7 @@ where
     // A replicated input that drops bits to the plan scale is rounded into a carved copy.
     let input_copy = ct.log_budget() + params.plan.f_mod_log_delta > ct.max_k().as_usize()
         || matches!(ct.slot_layout(), SlotLayout::Replicated(_)) && params.plan.f_mod_log_delta < ct.log_delta();
-    let carved =
-        (powers + usize::from(input_copy) + usize::from(params.f_mod_inv_bsgs.is_some())) * BE::scratch_aligned(compact_work);
+    let carved = (powers + usize::from(input_copy) + usize::from(params.f_mod_inv_bsgs.is_some())) * compact_work;
     // Working set of the fused baby-step linear combination.
     let pt_size_max = {
         let poly_max =

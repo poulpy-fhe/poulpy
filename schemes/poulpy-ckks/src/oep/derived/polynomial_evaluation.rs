@@ -1,5 +1,6 @@
 use crate::CKKSResult as Result;
 use crate::api::{CKKSComplexPolynomialEvaluationOps, CKKSPolynomialEvaluationOps};
+use crate::layouts::CKKSMaskedConstants;
 use poulpy_core::GLWENormalize;
 use poulpy_core::glwe_left_operand_prepare_tmp_bytes;
 use poulpy_core::layouts::{
@@ -51,7 +52,7 @@ where
     };
     let wide_size = wide.glwe_layout.size();
     let acc_size = wide_size + pt_size + 1;
-    let combination = BE::glwe_plain_combination_tmp_bytes(module, cols, acc_size, ct.size(), pt_size);
+    let combination = BE::glwe_plain_combination_tmp_bytes(module, cols, wide_size, acc_size, ct.size(), pt_size);
     let sum = BE::scratch_aligned(BE::vec_znx_bytes_of(module.n(), cols, wide_size))
         + combination.max(module.ckks_round_tmp_bytes(ct, &wide));
     glwe_left_operand_prepare_tmp_bytes(module, ct.size(), ct).max(sum)
@@ -120,7 +121,7 @@ where
         + GLWENormalize<BE, Rg>,
     R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
     B: BSGSPolynomialInfos<BE, Rg>,
-    B::Coeffs: CKKSCtBounds + crate::layouts::CKKSMaskedConstants<BE, Rg>,
+    B::Coeffs: CKKSCtBounds + CKKSMaskedConstants<BE, Rg>,
     H: GetTensorKey<BE, Rg>,
 {
     let mut power_basis = PowerBasis::new(bsgs.basis(), x1);
@@ -161,7 +162,7 @@ where
     R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
     S: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
     B: BSGSPolynomialInfos<BE, Rg>,
-    B::Coeffs: CKKSCtBounds + crate::layouts::CKKSMaskedConstants<BE, Rg>,
+    B::Coeffs: CKKSCtBounds + CKKSMaskedConstants<BE, Rg>,
     H: GetTensorKey<BE, Rg>,
 {
     ensure_baby_steps(op, bsgs)?;
@@ -196,7 +197,7 @@ where
     R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
     S: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
     B: BSGSPolynomialInfos<BE, Rg>,
-    B::Coeffs: CKKSCtBounds + crate::layouts::CKKSMaskedConstants<BE, Rg>,
+    B::Coeffs: CKKSCtBounds + CKKSMaskedConstants<BE, Rg>,
     H: GetTensorKey<BE, Rg>,
     CKKSCiphertextOwned<BE, Rg>: GLWEToBackendMut<BE, Rg> + GLWEToBackendRef<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
 {
@@ -222,7 +223,7 @@ where
         + GLWENormalize<BE>,
     R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
     S: GLWEToBackendRef<BE> + CKKSCtBounds,
-    C: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta + CKKSCtBounds + IntPolyInfos + crate::layouts::CKKSMaskedConstants<BE>,
+    C: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta + CKKSCtBounds + IntPolyInfos + CKKSMaskedConstants<BE>,
     H: GetTensorKey<BE>,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
 {

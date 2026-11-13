@@ -8,7 +8,7 @@ use poulpy_core::layouts::{
 use poulpy_core::oep::{ConstTerm, GLWEMulConstImpl, GLWEMulPlainImpl, PlainTerm};
 use poulpy_core::{GLWEBSGSOps, GLWENormalize, GLWEPolynomialEvaluation, GLWEZero, glwe_left_operand_prepare};
 use poulpy_hal::{
-    api::{CnvOps, CnvPVecAlloc, ModuleN, VecZnxBigNormalize, VecZnxIdftApply, VecZnxRsh, VecZnxRshTmpBytes},
+    api::{CnvOps, CnvPVecAlloc, ModuleN, VecZnxBigNormalize, VecZnxRsh, VecZnxRshTmpBytes},
     layouts::{
         Backend, CnvPVecLOwned, CnvPVecLToBackendRef, Data, Module, PrepareHint, Ring, ScratchArena, Standard, ZnxWord,
         vec_znx_backend_ref_from_ref,
@@ -582,7 +582,6 @@ pub trait CKKSPolynomialEvaluationReference<BE: Backend, Rg: Ring = Standard>: M
             + VecZnxBigNormalize<BE, Rg>
             + VecZnxRsh<BE, Rg>
             + VecZnxRshTmpBytes
-            + VecZnxIdftApply<BE, Rg>
             + GLWENormalize<BE, Rg>
             + CKKSRoundOps<BE, Rg>
             + Sized,
@@ -622,7 +621,6 @@ pub trait CKKSComplexPolynomialEvaluationReference<BE: Backend>: std::borrow::Bo
             + VecZnxBigNormalize<BE>
             + VecZnxRsh<BE>
             + VecZnxRshTmpBytes
-            + VecZnxIdftApply<BE>
             + GLWENormalize<BE>
             + CKKSRoundOps<BE>,
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos + SetBSGSMeta + SetCKKSInfos + CKKSCtBounds,
@@ -744,7 +742,6 @@ where
             + VecZnxBigNormalize<BE, Rg>
             + VecZnxRsh<BE, Rg>
             + VecZnxRshTmpBytes
-            + VecZnxIdftApply<BE, Rg>
             + GLWENormalize<BE, Rg>
             + CKKSRoundOps<BE, Rg>
             + Sized,
