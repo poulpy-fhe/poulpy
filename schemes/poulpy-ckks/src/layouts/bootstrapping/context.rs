@@ -318,7 +318,8 @@ where
     ///
     /// # Errors
     ///
-    /// As [`CKKSDFTMatrixOps::ckks_dft_matrix_new`], and EvalMod's compilation.
+    /// [`InvalidPlan`](crate::CKKSCompositionError::InvalidPlan) for transforms whose slots, times the gap of the
+    /// plaintexts, do not fit the module, as [`CKKSDFTMatrixOps::ckks_dft_matrix_new`], and EvalMod's compilation.
     pub fn compile(
         module: &Module<BE>,
         base2k: Base2K,

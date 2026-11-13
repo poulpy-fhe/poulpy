@@ -232,12 +232,12 @@ where
         1 << plan.schedule.steps.last().expect("a DFT plan has at least one factor").depth
     }
 
-    /// Scratch of [`Self::merged_s2c_factor`], for a factor of at most `k` bits.
+    /// Scratch of [`Self::merged_s2c_factor`] at scale `2^log_delta`, at the widest factor it encodes.
     ///
     /// # Errors
     ///
     /// A plan the ring does not support.
-    pub fn merged_s2c_factor_tmp_bytes(&self, module: &Module<BE>, k: usize) -> Result<usize>
+    pub fn merged_s2c_factor_tmp_bytes(&self, module: &Module<BE>, log_delta: usize) -> Result<usize>
     where
         Module<BE>: CKKSDFTMatrixOps<BE, F> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE>,
     {
@@ -247,7 +247,7 @@ where
         let dense = GLWELayout {
             n: n.into(),
             base2k,
-            k: k.into(),
+            k: (log_delta + crate::layouts::dft::BLOCK_SCALED_MAX_BUDGET).into(),
             rank: Rank(0),
         };
         Ok(module
@@ -262,14 +262,14 @@ where
     /// coefficients of index `g·k` for `k = r` modulo [`Self::merged_s2c_cosets`], `g` the gap of the plaintexts: on the
     /// state SlotsToCoeffs leaves before that factor, from [`DFTMatrix::head`](crate::layouts::DFTMatrix::head), it gives `sum_r c_r·kernels[r]`, with `c_r`
     /// the input's coefficients of coset `r`, at their own indexes. `scratch` covers
-    /// [`Self::merged_s2c_factor_tmp_bytes`] at the width of the factor; an arena below it at width `log_delta` is refused
-    /// on entry, and one below it at the width of the factor at its preparation.
+    /// [`Self::merged_s2c_factor_tmp_bytes`] at `log_delta`.
     ///
     /// # Errors
     ///
     /// [`InvalidOperand`](crate::CKKSCompositionError::InvalidOperand), for a context that is not S2C-first, a kernel count
-    /// that does not divide the cosets, a kernel of another length than the degree of the bootstrap, or a kernel off the
-    /// subring of the plaintexts, all before the arena check.
+    /// that does not divide the cosets, a kernel of another length than the degree of the bootstrap, a kernel value that
+    /// is not finite, or a kernel off the subring of the plaintexts, all before the arena check, and for a factor entry
+    /// above `2^63`, before the encoding.
     pub fn merged_s2c_factor(
         &self,
         module: &Module<BE>,
@@ -295,6 +295,9 @@ where
         let n = self.bootstrap_degree();
         if kernels.iter().any(|kernel| kernel.len() != n) {
             return refuse("takes kernels of the degree of the bootstrap");
+        }
+        if kernels.iter().flatten().any(|c| !c.is_finite()) {
+            return refuse("takes finite kernels");
         }
         let gap = 1usize << self.log_gap();
         if kernels
@@ -339,6 +342,7 @@ where
             .map(|b| kernel_values[bitrev(b) % kernels.len()].clone())
             .collect();
         let merged = crate::layouts::dft::ckks_block_scaled_last_factor::<BE, F>(
+            OP,
             module,
             base2k,
             dft.plan(),

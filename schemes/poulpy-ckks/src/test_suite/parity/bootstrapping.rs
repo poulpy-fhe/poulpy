@@ -915,7 +915,7 @@ where
                 kernel
             })
             .collect();
-        let factor_bytes = ctx.merged_s2c_factor_tmp_bytes(module, 14 + b).unwrap();
+        let factor_bytes = ctx.merged_s2c_factor_tmp_bytes(module, 14).unwrap();
         let merged = with_scratch::<BE, _>(factor_bytes, |scratch| ctx.merged_s2c_factor(module, &kernels, 14, scratch)).unwrap();
         let factor = merged.factor();
         let schedule = factor.index();

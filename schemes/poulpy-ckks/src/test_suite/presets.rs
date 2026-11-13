@@ -205,32 +205,9 @@ where
         let degree = if on_ci { 2 * n } else { n };
         let (module, client) = (Module::<BE>::new(degree), Module::<BC>::new(degree));
         let (sk_raw, sk) = dense_secret(&client, &preset);
+        let (context, keys) = Self::compile_with_keys(&module, &client, &preset, &sk_raw, roundtrip_keys);
 
-        // Every step runs on an arena of exactly its own query.
-        let (plan, keys_layout, base2k) = (preset.plan(), preset.keys_layout(), preset.base2k());
-        let bytes = keys_layout.generate_tmp_bytes(&client);
-        let (mut source_xs, mut source_xa, mut source_xe) = (Source::new([7; 32]), Source::new([1; 32]), Source::new([2; 32]));
-        let keys = plan
-            .generate_keys(
-                &client,
-                &sk_raw,
-                keys_layout,
-                &mut source_xs,
-                &mut source_xe,
-                &mut source_xa,
-                &mut ScratchOwned::<BC>::alloc(bytes).borrow(),
-            )
-            .unwrap();
-        if roundtrip_keys {
-            Self::roundtrip_keys(&client, &keys);
-        }
-
-        let context = compile_context::<BE, f64>(&module, base2k.into(), plan);
-        let bytes = keys_layout.prepare_tmp_bytes(&module);
-        let keys = keys
-            .transfer_and_prepare(&module, &mut ScratchOwned::<BE>::alloc(bytes).borrow())
-            .unwrap();
-
+        let (plan, keys_layout) = (preset.plan(), preset.keys_layout());
         let (layout, input_layout) = (preset.bootstrap_layout(), preset.input_layout());
         let client_scratch = ScratchOwned::<BC>::alloc(bootstrap_setup_tmp_bytes(&client, &layout, plan, keys_layout));
         let (plan, log_n, label) = (plan.clone(), preset.log_n(), preset_label(&preset));
@@ -251,6 +228,50 @@ where
             sk,
             bootstrap,
         )
+    }
+
+    /// The context of `preset` compiled on `module`, and its keys generated on `client` under `sk_raw`, round-tripped
+    /// through their serialization when `roundtrip_keys`, and prepared on `module`, each step on an arena of exactly its
+    /// own query.
+    fn compile_with_keys(
+        module: &Module<BE>,
+        client: &Module<BC>,
+        preset: &BootstrappingPreset,
+        sk_raw: &BackendGLWESecret<BC>,
+        roundtrip_keys: bool,
+    ) -> (
+        BootstrappingContextPrepared<BE, f64>,
+        BootstrappingKeysPrepared<BE::OwnedBuf, BE>,
+    )
+    where
+        Module<BE>: GLWECIKeyPreparedFactory<BE>
+            + CKKSEncodingOps<BE, f64, ConjugateInvariant>
+            + GLWETensorKeyPreparedFactory<BE, ConjugateInvariant>,
+        Module<BC>: GLWECIKeyEncryptSk<BC> + TestContextSharedModule<BC, ConjugateInvariant>,
+    {
+        let (plan, keys_layout) = (preset.plan(), preset.keys_layout());
+        let bytes = keys_layout.generate_tmp_bytes(client);
+        let (mut source_xs, mut source_xa, mut source_xe) = (Source::new([7; 32]), Source::new([1; 32]), Source::new([2; 32]));
+        let keys = plan
+            .generate_keys(
+                client,
+                sk_raw,
+                keys_layout,
+                &mut source_xs,
+                &mut source_xe,
+                &mut source_xa,
+                &mut ScratchOwned::<BC>::alloc(bytes).borrow(),
+            )
+            .unwrap();
+        if roundtrip_keys {
+            Self::roundtrip_keys(client, &keys);
+        }
+        let context = compile_context::<BE, f64>(module, preset.base2k().into(), plan);
+        let bytes = keys_layout.prepare_tmp_bytes(module);
+        let keys = keys
+            .transfer_and_prepare(module, &mut ScratchOwned::<BE>::alloc(bytes).borrow())
+            .unwrap();
+        (context, keys)
     }
 
     /// Writes every key of `keys` and reads it back into a fresh key of its layout, which must
@@ -463,7 +484,7 @@ where
         let (re, im) = self.precision();
         let preset = &self.preset;
         println!(
-            "PRECISION backend={backend} preset={} base2k={} re_min={:.2}b re_avg={:.2}b im_min={:.2}b im_avg={:.2}b (advertised {}b)",
+            "PRECISION backend={backend} preset={} base2k={} re_min={:.2}b re_avg={:.2}b im_min={:.2}b im_avg={:.2}b (advertised {:?}b)",
             preset_label(preset),
             preset.base2k(),
             re.min_log2_prec,
@@ -472,7 +493,9 @@ where
             im.avg_log2_prec,
             preset.log2_precision(),
         );
-        let advertised = preset.log2_precision() as f64;
+        let Some(advertised) = preset.log2_precision().map(|bits| bits as f64) else {
+            return;
+        };
         assert!(
             re.min_log2_prec >= advertised && im.min_log2_prec >= advertised,
             "preset {} advertises {advertised} bits but measured re_min={:.2} im_min={:.2}",
@@ -557,7 +580,7 @@ where
 /// `u` folded into CoeffsToSlots ([`CIConversion::Folded`]), `+pow2` with the
 /// keys of power-of-two rotations only ([`BootstrappingPreset::with_power_of_two_keys`]).
 pub fn preset_label(preset: &BootstrappingPreset) -> String {
-    let mut label = preset.name().to_string();
+    let mut label = preset.name().unwrap_or("derived").to_string();
     if preset.plan().coeffs_to_slots_bypass().is_some() {
         label.push_str("+erp");
     }
@@ -618,6 +641,12 @@ where
 
     let backend = std::any::type_name::<BE>().rsplit("::").next().unwrap();
     BootstrappingPresetRun::<BE>::setup(preset.clone()).check(backend);
+    // Narrower CoeffsToSlots factors, a re-derivation without a name or an advertised precision.
+    let scales = PresetScales {
+        c2s_log_delta: preset.scales().c2s_log_delta - 2,
+        ..preset.scales()
+    };
+    BootstrappingPresetRun::<BE>::setup(preset.with_scales(scales).unwrap()).check(backend);
     // Real slots take the S2C-first path of one EvalMod.
     BootstrappingPresetRun::<BE>::setup(preset.clone())
         .with_real_slots()
@@ -1297,7 +1326,8 @@ where
 
 /// `Module<BE>` capabilities of the hand compositions of the bootstrap steps.
 pub trait StepsRunModule<BE: TestContextBackend>:
-    CKKSDFTMatrixPreparedFactory<BE>
+    PresetRunModule<BE>
+    + CKKSDFTMatrixPreparedFactory<BE>
     + GLWECIKeyEncryptSk<BE>
     + GLWECIKeyPreparedFactory<BE>
     + TestContextModule<BE>
@@ -1314,7 +1344,8 @@ pub trait StepsRunModule<BE: TestContextBackend>:
 }
 
 impl<BE: TestContextBackend, M> StepsRunModule<BE> for M where
-    M: CKKSDFTMatrixPreparedFactory<BE>
+    M: PresetRunModule<BE>
+        + CKKSDFTMatrixPreparedFactory<BE>
         + GLWECIKeyEncryptSk<BE>
         + GLWECIKeyPreparedFactory<BE>
         + TestContextModule<BE>
@@ -1360,21 +1391,9 @@ where
 {
     fn new(preset: BootstrappingPreset) -> Self {
         let module = Module::<BE>::new(preset.n() as u64);
-        let keys_layout = preset.keys_layout();
         let (sk_raw, sk) = dense_secret(&module, &preset);
-        let context = compile_context::<BE, f64>(&module, preset.base2k().into(), preset.plan());
-        let (mut xs, mut xe, mut xa) = (Source::new([7; 32]), Source::new([1; 32]), Source::new([2; 32]));
-        let key_set = with_scratch::<BE, _>(keys_layout.generate_tmp_bytes(&module), |s| {
-            preset
-                .plan()
-                .generate_keys(&module, &sk_raw, keys_layout, &mut xs, &mut xe, &mut xa, s)
-        })
-        .unwrap();
-        let keys = with_scratch::<BE, _>(keys_layout.prepare_tmp_bytes(&module), |s| {
-            key_set.transfer_and_prepare(&module, s)
-        })
-        .unwrap();
-        let client_bytes = bootstrap_setup_tmp_bytes(&module, &preset.bootstrap_layout(), preset.plan(), keys_layout);
+        let (context, keys) = BootstrappingPresetRun::<BE>::compile_with_keys(&module, &module, &preset, &sk_raw, false);
+        let client_bytes = bootstrap_setup_tmp_bytes(&module, &preset.bootstrap_layout(), preset.plan(), preset.keys_layout());
         Self {
             preset,
             module,
@@ -1386,14 +1405,16 @@ where
         }
     }
 
-    /// An encryption at the input layout of the preset of the slots `re + i·im`, labelled `slots`.
+    /// An encryption at the input layout of the preset of the slots `re + i·im`, labelled `slots`, from a plaintext of
+    /// the subring of the gap: the slots repeat every `N/(2g)`.
     fn encrypt(&self, re: &[f64], im: &[f64], slots: SlotsKind) -> CKKSCiphertextOwned<BE> {
         let (module, input) = (&self.module, self.preset.input_layout());
-        let mut pt = module.ckks_plaintext_alloc_from_slots(self.preset.n() / 2, input.base2k(), input.k());
+        let distinct = (self.preset.n() / 2) >> self.preset.plan().log_gap();
+        let mut pt = module.ckks_plaintext_alloc_from_slots(distinct, input.base2k(), input.k());
         pt.set_meta(GLWEPlaintextMeta { slots, ..input.meta() });
         let mut message = fixture_ciphertext(module, &input, 5);
         with_scratch::<BE, _>(self.client_bytes, |s| {
-            module.ckks_encode_slots_host_into(&mut pt, re, im, s)?;
+            module.ckks_encode_slots_host_into(&mut pt, &re[..distinct], &im[..distinct], s)?;
             let (mut xa, mut xe) = (Source::new([3; 32]), Source::new([4; 32]));
             module.ckks_encrypt_sk(&mut message, &pt, &self.sk, &mut xe, &mut xa, s)
         })
@@ -1638,8 +1659,7 @@ where
     }
 
     let log_delta_w = run.preset.plan().slots_to_coeffs.coeffs_meta.log_delta();
-    let width = log_delta_w + run.preset.base2k();
-    let bytes = context.merged_s2c_factor_tmp_bytes(module, width).unwrap();
+    let bytes = context.merged_s2c_factor_tmp_bytes(module, log_delta_w).unwrap();
     let merged = with_scratch::<BE, _>(bytes, |s| context.merged_s2c_factor(module, &kernels, log_delta_w, s)).unwrap();
 
     // SlotsToCoeffs up to its last factor, `2·x` through the split decoding matrix, then the merged factor.
@@ -1764,8 +1784,17 @@ where
         let message = run.encrypt(&want, want_im, kind);
         let mut whole = module.ckks_ciphertext_alloc_from_glwe_infos(&boot);
         let bytes = module.ckks_bootstrap_tmp_bytes(&boot, &message, context, keys_layout);
-        with_scratch::<BE, _>(bytes, |s| module.ckks_bootstrap(&mut whole, &message, context, keys, s)).unwrap();
-        run.assert_decrypts(&format!("bootstrap in a subring, {kind:?} slots"), &whole, &want, want_im);
+        let label = format!("bootstrap in a subring, {kind:?} slots");
+        let widths = run.preset.plan().key_widths(
+            run.preset.log_n(),
+            whole.k().as_usize(),
+            message.k().as_usize(),
+            message.log_delta(),
+        );
+        let logged = LoggedBootstrappingKeys::new::<BE>(keys);
+        with_scratch::<BE, _>(bytes, |s| module.ckks_bootstrap(&mut whole, &message, context, &logged, s)).unwrap();
+        logged.assert_lookups_at(&widths, &label);
+        run.assert_decrypts(&label, &whole, &want, want_im);
     }
 }
 
@@ -1945,9 +1974,7 @@ where
     assert!(err.to_string().contains("needs a scratch arena"), "{err}");
 
     // A kernel per coset, on the degree of the bootstrap of a module of `2N`, keeps the rotations of the factor.
-    let bytes = ci_context
-        .merged_s2c_factor_tmp_bytes(&module_2n, 20 + preset.base2k())
-        .unwrap();
+    let bytes = ci_context.merged_s2c_factor_tmp_bytes(&module_2n, 20).unwrap();
     let merged = with_scratch::<BE, _>(bytes, |s| ci_context.merged_s2c_factor(&module_2n, &kernels, 20, s)).unwrap();
     let last = ci_context.slots_to_coeffs().factor_operands().last().unwrap();
     assert!(merged.factor().index() == last.index(), "a merged factor keeps its schedule");
@@ -2102,11 +2129,9 @@ where
         module.ckks_mod_raise(res, a, &plain, keys, s)
     });
     let factor = context.coeffs_to_slots_first_factor().unwrap();
-    let err = with_scratch::<BE, _>(0, |s| {
-        BE::ckks_mod_up_first_factor(module, &mut res, &mut a, 0, factor, 1, keys, s)
-    })
-    .unwrap_err();
-    assert_invalid_operand("the hook", &err, "ckks_mod_raise", "a gap needs the sparse secret");
+    assert_mod_raise_refuses(&mut res, &mut a, "a gap needs the sparse secret", |res, a, s| {
+        BE::ckks_mod_up_first_factor(module, 0, 1, res, a, factor, keys, s)
+    });
 }
 
 /// [`BootstrappingContextPrepared::compile`] of `plan`, each stage on an arena of exactly its query.

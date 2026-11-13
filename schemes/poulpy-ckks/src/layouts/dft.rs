@@ -1288,17 +1288,35 @@ where
     Ok(DFTMatrix::from_factors(DFTMatrixFactors::new(plan.clone(), factors)))
 }
 
-/// The bits above the binary point of a modulus at most `max`.
+/// The bits above the binary point of a modulus at most `max`: `ceil(log2(max))`, read from the exponent and the
+/// mantissa so that no logarithm rounds and no cast overflows.
 pub(crate) fn integer_bits<F: DftScalar>(max: F) -> usize {
-    max.to_f64()
-        .map_or(0, |max| (max.ceil() as u64).next_power_of_two().trailing_zeros() as usize)
+    max.to_f64().filter(|&max| max > 1.0).map_or(0, |max| {
+        let bits = max.to_bits();
+        let floor = ((bits >> 52) & 0x7ff) as usize - 1023;
+        floor + usize::from(bits & ((1 << 52) - 1) != 0)
+    })
 }
+
+/// The integer bits of the largest entry [`ckks_block_scaled_last_factor`] encodes, and so the widest factor its
+/// scratch query covers.
+pub(crate) const BLOCK_SCALED_INTEGER_BITS: usize = 63;
+
+/// The budget of a factor of entries of at most [`BLOCK_SCALED_INTEGER_BITS`] integer bits: a sign bit, those bits,
+/// and one bit for what the rounding of the largest entry carries.
+pub(crate) const BLOCK_SCALED_MAX_BUDGET: usize = 2 + BLOCK_SCALED_INTEGER_BITS;
 
 /// The last factor of the transform `plan` describes at degree `2^log_n`, with the columns of block `B` scaled on the
 /// left by the slots `values[B]` as [`block_scaled`] does, encoded at scale `2^log_delta`, in a matrix of `plan` to
 /// prepare as the others. The factor keeps the rotations of the plan. `plan` is a resolved plan, such as the one a
-/// [`DFTMatrix`] stores.
+/// [`DFTMatrix`] stores. `InvalidOperand` for `op` when an entry has more than [`BLOCK_SCALED_INTEGER_BITS`] integer
+/// bits, before the encoding.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the factor takes its op, its plan, its degree, its values and its scale beside the module and the arena"
+)]
 pub(crate) fn ckks_block_scaled_last_factor<BE, F>(
+    op: &'static str,
     module: &Module<BE>,
     base2k: poulpy_core::layouts::Base2K,
     plan: &DFTPlan,
@@ -1324,8 +1342,14 @@ where
         .flatten()
         .flatten()
         .fold(F::one(), |m, v| m.max(v.abs()));
+    let integer = integer_bits(max);
+    crate::ckks_ensure_operand!(
+        op,
+        integer <= BLOCK_SCALED_INTEGER_BITS,
+        "an entry of the factor exceeds 2^63"
+    );
     // A sign bit, the integer bits of the largest entry, and one bit for what its rounding carries.
-    let budget = 2 + integer_bits(max);
+    let budget = 2 + integer;
     let coeffs_meta = crate::CoeffsMeta::from_delta_budget(log_delta, budget);
     let factor = crate::encoding::ckks_linear_transformation_encode_from_diagonals::<BE, F, poulpy_hal::layouts::Standard>(
         module,
@@ -1345,7 +1369,7 @@ where
 /// The diagonals of `last`, a factor of `slots` slots, with the columns of block `B` scaled on the left by the slots
 /// `values[B]`: `M[j][c]` becomes `values[c / m][j]·M[j][c]` for blocks of `m` columns. The diagonals keep their
 /// indexes, so the factor keeps its keys.
-pub(crate) fn block_scaled<F: DftScalar>(
+fn block_scaled<F: DftScalar>(
     last: &crate::layouts::ComplexDiagonals<F>,
     values: &[(Vec<F>, Vec<F>)],
 ) -> crate::layouts::ComplexDiagonals<F> {

@@ -90,10 +90,10 @@ fn diagonal_limbs<P: IntPolyInfos>(diagonal: &P, base2k: usize) -> usize {
 pub trait CKKSModUpFirstFactorReference<BE: Backend> {
     fn ckks_mod_up_first_factor_tmp_bytes_reference<Dst, Src, D2S, K>(
         &self,
+        log_gap: usize,
         dst_infos: &Dst,
         src_infos: &Src,
         factor: &LinearTransformation<CKKSRightOperandPrepared<BE>>,
-        log_gap: usize,
         d2s_infos: Option<&D2S>,
         key_infos: &K,
     ) -> usize
@@ -119,11 +119,11 @@ pub trait CKKSModUpFirstFactorReference<BE: Backend> {
     )]
     fn ckks_mod_up_first_factor_reference<Dst, Src, K>(
         &self,
+        scale_up: usize,
+        log_gap: usize,
         dst: &mut Dst,
         src: &mut Src,
-        scale_up: usize,
         factor: &LinearTransformation<CKKSRightOperandPrepared<BE>>,
-        log_gap: usize,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -150,10 +150,10 @@ pub trait CKKSModUpFirstFactorReference<BE: Backend> {
 impl<BE: Backend> CKKSModUpFirstFactorReference<BE> for Module<BE> {
     fn ckks_mod_up_first_factor_tmp_bytes_reference<Dst, Src, D2S, K>(
         &self,
+        log_gap: usize,
         dst_infos: &Dst,
         src_infos: &Src,
         factor: &LinearTransformation<CKKSRightOperandPrepared<BE>>,
-        log_gap: usize,
         d2s_infos: Option<&D2S>,
         key_infos: &K,
     ) -> usize
@@ -173,16 +173,16 @@ impl<BE: Backend> CKKSModUpFirstFactorReference<BE> for Module<BE> {
         D2S: GGLWEInfos,
         K: GGLWEInfos,
     {
-        ckks_mod_up_first_factor_tmp_bytes_reference(self, dst_infos, src_infos, factor, log_gap, d2s_infos, key_infos)
+        ckks_mod_up_first_factor_tmp_bytes_reference(self, log_gap, dst_infos, src_infos, factor, d2s_infos, key_infos)
     }
 
     fn ckks_mod_up_first_factor_reference<Dst, Src, K>(
         &self,
+        scale_up: usize,
+        log_gap: usize,
         dst: &mut Dst,
         src: &mut Src,
-        scale_up: usize,
         factor: &LinearTransformation<CKKSRightOperandPrepared<BE>>,
-        log_gap: usize,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -205,7 +205,7 @@ impl<BE: Backend> CKKSModUpFirstFactorReference<BE> for Module<BE> {
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     {
-        ckks_mod_up_first_factor_reference(self, dst, src, scale_up, factor, log_gap, keys, scratch)
+        ckks_mod_up_first_factor_reference(self, scale_up, log_gap, dst, src, factor, keys, scratch)
     }
 }
 
@@ -214,10 +214,10 @@ impl<BE: Backend> CKKSModUpFirstFactorReference<BE> for Module<BE> {
 /// first-factor keys.
 pub fn ckks_mod_up_first_factor_tmp_bytes_reference<BE, Dst, Src, D2S, K>(
     module: &Module<BE>,
+    log_gap: usize,
     dst_infos: &Dst,
     src_infos: &Src,
     factor: &LinearTransformation<CKKSRightOperandPrepared<BE>>,
-    log_gap: usize,
     d2s_infos: Option<&D2S>,
     key_infos: &K,
 ) -> usize
@@ -292,11 +292,11 @@ where
 )]
 pub fn ckks_mod_up_first_factor_reference<BE, Dst, Src, K>(
     module: &Module<BE>,
+    scale_up: usize,
+    log_gap: usize,
     dst: &mut Dst,
     src: &mut Src,
-    scale_up: usize,
     factor: &LinearTransformation<CKKSRightOperandPrepared<BE>>,
-    log_gap: usize,
     keys: &K,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>

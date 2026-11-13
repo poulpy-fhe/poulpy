@@ -661,8 +661,8 @@ impl BootstrappingPlan {
             .generate_keys(module, sk_dense, layout, source_xs, source_xe, source_xa, scratch)
     }
 
-    /// The keys' recipe, on a ring of degree `n`, whose slots must hold both transforms, as
-    /// compiling the context checks.
+    /// The keys' recipe, on a ring of degree `n`, whose slots, or those of the subring of the gap, both transforms must
+    /// fill, as compiling the context checks.
     pub(crate) fn key_recipe(&self, n: usize, cyclotomic_order: i64) -> Result<KeyRecipe> {
         let log_n = n.ilog2() as usize;
         for dft in [self.coeffs_to_slots(), self.slots_to_coeffs()] {
@@ -920,7 +920,6 @@ impl KeyRecipe {
                                 module.vec_znx_switch_ring(&mut res, col, &sk, col);
                             }
                         }
-                        scratch.wipe(BE::scalar_znx_bytes_of(subring.as_usize(), rank.as_usize()));
                     }
                     *sk_sparse.dist_mut() = Distribution::ENCAPSULATED("sparse-encapsulation");
 

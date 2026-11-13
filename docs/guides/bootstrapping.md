@@ -141,7 +141,7 @@ A view stands in for a matrix wherever a step takes one, since the transforms re
 let run = ctx.run(GLWEPlaintextMeta { slots: SlotsKind::Real, ..input.meta() });
 module.ckks_mod_raise(&mut z, &mut coeffs, &run, &keys, s)?;
 module.ckks_coeffs_to_slots_assign(&mut z, &ctx.masked(&mask)?, &keys, s)?;
-module.ckks_bootstrap_eval_mod(&mut res, &mut z, &run, None, &keys, s)?;
+module.ckks_bootstrap_eval_mod(&mut res, &z, &run, &keys, s)?;
 ```
 
 Coefficients `p` and `N/2 + p` share a real slot, in its real and imaginary parts: the selection keeps one of them, the second through a factor `-i`, and the slot gives it back as coefficient `p` of the next SlotsToCoeffs.

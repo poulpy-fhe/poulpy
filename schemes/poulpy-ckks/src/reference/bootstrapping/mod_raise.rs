@@ -59,10 +59,10 @@ where
     if let (Some(factor), Some(key)) = (plan.first_factor(), &keys_layout.first_factor_key) {
         bytes = bytes.max(BE::ckks_mod_up_first_factor_tmp_bytes(
             module,
+            plan.mod_raise_plan().log_gap,
             boot_layout,
             in_layout,
             factor,
-            plan.log_gap(),
             keys_layout.encapsulation.as_ref().map(|encaps| &encaps.dense_to_sparse),
             key,
         ));
@@ -125,7 +125,7 @@ pub trait CKKSModRaiseReference<BE: Backend>: std::borrow::Borrow<Module<BE>> {
         );
         ckks_ensure_operand!(
             OP,
-            plan.log_gap() == 0
+            raise.log_gap == 0
                 || (raise.lift.is_none() && plan.first_factor().is_some() && raise.sparse_secret_hamming_weight.is_some()),
             "a gap takes an S2C-first raise with the first factor on it and a sparse secret"
         );
@@ -149,7 +149,7 @@ pub trait CKKSModRaiseReference<BE: Backend>: std::borrow::Borrow<Module<BE>> {
             lift_bits,
             scale_up,
             plan.first_factor(),
-            plan.log_gap(),
+            raise.log_gap,
             keys,
             scratch,
         )?;
@@ -288,7 +288,7 @@ where
     // A first CoeffsToSlots factor left to the raise is applied here, on the
     // raised ciphertext while it is small; its switches replace sparse-to-dense.
     if let Some(factor) = first_factor {
-        return BE::ckks_mod_up_first_factor(module, dst, src, scale_up, factor, log_gap, keys, scratch);
+        return BE::ckks_mod_up_first_factor(module, scale_up, log_gap, dst, src, factor, keys, scratch);
     }
 
     match keys.encapsulation_keys() {

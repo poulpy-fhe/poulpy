@@ -101,7 +101,7 @@ fn runner_ckks_bootstrapping<BE, BC>(
 /// Prints the measured precision of a preset and panics below the precision it advertises.
 fn check_precision(backend: &str, id: &str, preset: &BootstrappingPreset, (re, im): (PrecisionStats, PrecisionStats)) {
     println!(
-        "PRECISION backend={backend} preset={id} re_avg={:.2}b re_min={:.2}b re_worst_idx={} re_worst_err={:.3e} im_avg={:.2}b im_min={:.2}b im_worst_idx={} im_worst_err={:.3e} advertised={}b",
+        "PRECISION backend={backend} preset={id} re_avg={:.2}b re_min={:.2}b re_worst_idx={} re_worst_err={:.3e} im_avg={:.2}b im_min={:.2}b im_worst_idx={} im_worst_err={:.3e} advertised={:?}b",
         re.avg_log2_prec,
         re.min_log2_prec,
         re.worst_idx,
@@ -112,7 +112,9 @@ fn check_precision(backend: &str, id: &str, preset: &BootstrappingPreset, (re, i
         im.worst_err,
         preset.log2_precision(),
     );
-    let advertised = preset.log2_precision() as f64;
+    let Some(advertised) = preset.log2_precision().map(|bits| bits as f64) else {
+        return;
+    };
     assert!(
         re.min_log2_prec >= advertised && im.min_log2_prec >= advertised,
         "preset {id} advertises {advertised} bits of precision"

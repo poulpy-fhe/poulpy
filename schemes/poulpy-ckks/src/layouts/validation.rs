@@ -331,8 +331,9 @@ where
     Ok(())
 }
 
-/// `InvalidOperand` for an input of another degree than the transforms of `ctx` fill: a plan on fewer slots than the
-/// ring takes the gap that keeps the overflow of the raise in the subring they read.
+/// `InvalidOperand` for an input of another degree than the transforms of `ctx` fill, a plan on fewer slots than the
+/// ring taking the gap that keeps the overflow of the raise in the subring they read, or for an input not labelled in
+/// that subring, whose other coefficients the raise drops.
 fn ensure_bootstrap_degree<BE: Backend, F>(
     op: &'static str,
     ctx: &BootstrappingContextPrepared<BE, F>,
@@ -343,12 +344,18 @@ fn ensure_bootstrap_degree<BE: Backend, F>(
         ctx.bootstrap_degree() == a.n().as_usize(),
         "the transforms of the context must fill the slots of the input's degree, or of the subring of its gap"
     );
+    ckks_ensure_operand!(
+        op,
+        crate::GLWEPlaintextInfos::log_sparsity(a) >= ctx.log_gap(),
+        "the input must lie in the subring of the gap of the context"
+    );
     Ok(())
 }
 
 /// What `ckks_bootstrap_derived` refuses before its first step, so that no later step refuses with `res` half written:
 /// the context kind, ranks, degrees and radices, ciphertexts of another degree than the one the context bootstraps, a
-/// sparse plan without its gap among them, or a module of another degree than `2N` with EvalMod on the
+/// sparse plan without its gap among them, an input off the subring of the gap, or a module of another degree than
+/// `2N` with EvalMod on the
 /// conjugate-invariant ring, an input the lifts of a C2S-first raise do not fit, a working width without the budget of
 /// the stages, the keys of the plan's ring and their coverage of the run's widths, and, when the keys report their
 /// layout, the arena against the query.

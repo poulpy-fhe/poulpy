@@ -87,12 +87,6 @@ pub trait CKKSModRaiseInfos<BE: Backend> {
     /// The prepared first CoeffsToSlots factor the raise applies, `None` when the plan leaves it to CoeffsToSlots. A
     /// plan with [`ModRaisePlan::first_factor_on_raise`] takes one.
     fn first_factor(&self) -> Option<&LinearTransformation<CKKSRightOperandPrepared<BE>>>;
-
-    /// `log2` of the gap of the plaintexts, see
-    /// [`BootstrappingPlan::with_log_gap`](crate::layouts::BootstrappingPlan::with_log_gap).
-    fn log_gap(&self) -> usize {
-        self.mod_raise_plan().log_gap()
-    }
 }
 
 impl<BE: Backend> CKKSModRaiseInfos<BE> for ModRaisePlan {
