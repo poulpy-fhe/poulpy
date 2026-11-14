@@ -75,6 +75,7 @@
 //! | glwe\_trace | Normalized GLWE trace (average of automorphisms) |
 //! | noise | Noise-variance estimation for parameter selection |
 //! | dist | Secret-key distribution descriptors |
+//! | [`security`] | Opt-in security levels from the rlwe-params tables |
 //! | scratch | Arena-style scratch allocation for ciphertext temporaries |
 
 pub mod api;
@@ -88,6 +89,7 @@ mod noise_distribution;
 pub mod oep;
 pub mod reference;
 mod scratch;
+pub mod security;
 mod utils;
 
 pub mod layouts;
