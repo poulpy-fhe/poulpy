@@ -9,10 +9,11 @@ use crate::{
     CKKSCtBounds, SetCKKSInfos,
     layouts::{
         BootstrappingKeys, BootstrappingKeysLayout, ReplicatedBootstrapWorkspace, ReplicatedBootstrapping, ReplicatedConversion,
-        ReplicatedLut, ReplicatedTransformWorkspace,
+        ReplicatedLut, ReplicatedTransform, ReplicatedTransformWorkspace,
     },
     oep::derived::replicated::{
-        ckks_from_replicated_derived, ckks_replicated_conversion_tmp_bytes_derived, ckks_to_replicated_derived,
+        ckks_from_replicated_derived, ckks_replicated_conversion_tmp_bytes_derived, ckks_replicated_transform_derived,
+        ckks_replicated_transform_tmp_bytes_derived, ckks_to_replicated_derived,
     },
 };
 
@@ -82,6 +83,39 @@ pub unsafe trait CKKSReplicatedImpl<Rg: Ring = Standard>:
         H: GetAutomorphismKey<Self, Rg> + GetTensorKey<Self, Rg>,
     {
         ckks_from_replicated_derived(module, dst, src, conv, workspace, keys, scratch)
+    }
+
+    /// Scratch bound of [`Self::ckks_replicated_transform`]; may report less than the derived body, never less than
+    /// the body takes.
+    fn ckks_replicated_transform_tmp_bytes<C, K>(
+        module: &Module<Self>,
+        ct_infos: &C,
+        key_infos: &K,
+        transform: &ReplicatedTransform<Self, Rg>,
+    ) -> usize
+    where
+        C: CKKSCtBounds,
+        K: GGLWEInfos,
+    {
+        ckks_replicated_transform_tmp_bytes_derived(module, ct_infos, key_infos, transform)
+    }
+
+    /// Reproduces the derived replicated transform bit for bit.
+    fn ckks_replicated_transform<Dst, Src, H>(
+        module: &Module<Self>,
+        dst: &mut Dst,
+        src: &Src,
+        transform: &ReplicatedTransform<Self, Rg>,
+        workspace: &mut ReplicatedTransformWorkspace<Self, Rg>,
+        keys: &H,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<Self, Rg> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<Self, Rg> + CKKSCtBounds,
+        H: GetAutomorphismKey<Self, Rg> + GetTensorKey<Self, Rg>,
+    {
+        ckks_replicated_transform_derived(module, dst, src, transform, workspace, keys, scratch)
     }
 }
 

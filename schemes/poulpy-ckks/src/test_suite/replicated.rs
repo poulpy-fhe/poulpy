@@ -1018,7 +1018,7 @@ where
         [shaped]
     );
 
-    // The inner sum's traces key-switch with plain rounding.
+    // A replicated inner sum rotates by multiples of `R`: a batch of one slot is refused.
     refused!(
         Rg,
         "ckks_inner_sum",
@@ -1647,6 +1647,214 @@ where
     assert!(
         shaped >= full + 15.0,
         "rotations at 2^{LOG_DELTA}: {shaped:.2} bits against {full:.2} for a full layout"
+    );
+    Ok(())
+}
+
+/// The inner sum of the `2^LOG_K` values, its mean, in place, and the replicate, against their sum and mean.
+fn inner_sum_chain<BE, F, Rg: Ring>(
+    params: &CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+    slot_layout: SlotLayout,
+) -> Result<f64>
+where
+    BE: TestContextBackend,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    F: TestScalar,
+    Module<BE>: TestContextSharedModule<BE, Rg> + CKKSEncodingOps<BE, F, Rg>,
+{
+    let len = 1usize << LOG_K;
+    // The values sit every `R` slots of a replicated layout, so its batches are `R` slots.
+    let log_batch = match slot_layout {
+        SlotLayout::Replicated(layout) => layout.log_r(),
+        SlotLayout::Full => 0,
+    };
+    let log_count = LOG_K as usize;
+    let (sk_raw, sk) = gen_sk_with_raw(params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(params, module);
+    let n = params.n.into();
+    let mut atks = HashMap::new();
+    for gal in module
+        .ckks_inner_sum_galois_elements(n, log_batch, log_count)
+        .into_iter()
+        .chain(module.ckks_replicate_galois_elements(n, log_batch, log_count))
+    {
+        atks.entry(gal)
+            .or_insert_with(|| gen_atk(params, module, gal, &sk_raw, &mut scratch.borrow()));
+    }
+
+    let values = unit_batch::<Rg, F>(len, 0);
+    let total = |v: &[F]| v.iter().fold(F::zero(), |acc, &x| acc + x);
+    let sum = (vec![total(&values.0); len], vec![total(&values.1); len]);
+    let count = F::from_usize(len).unwrap();
+    let mean = (
+        sum.0.iter().map(|&x| x / count).collect::<Vec<F>>(),
+        sum.1.iter().map(|&x| x / count).collect::<Vec<F>>(),
+    );
+    let k = 3 * LOG_DELTA;
+    let ct = encrypt_batch(params, module, &sk, slot_layout, (&values.0, &values.1), k, 1)?;
+    let mut out = alloc_ct(params, module, k);
+    let bytes = module.ckks_inner_sum_tmp_bytes(&out, &ct, &params.atk_layout());
+    let mut worst = f64::INFINITY;
+    let mut check = |out: &CKKSCiphertextOwned<BE, Rg>, want: &(Vec<F>, Vec<F>)| {
+        assert_eq!(out.slot_layout(), slot_layout);
+        let got = decrypt_batch::<BE, F, Rg>(params, module, &sk, out, len);
+        worst = worst.min(precision((&got.0, &got.1), (&want.0, &want.1)));
+    };
+    with_scratch::<BE, _>(bytes, |s| {
+        module.ckks_inner_sum(log_batch, log_count, false, &mut out, &ct, &atks, s)
+    })?;
+    check(&out, &sum);
+    with_scratch::<BE, _>(bytes, |s| {
+        module.ckks_inner_sum(log_batch, log_count, true, &mut out, &ct, &atks, s)
+    })?;
+    check(&out, &mean);
+    let mut acc = ct.clone();
+    with_scratch::<BE, _>(bytes, |s| {
+        module.ckks_inner_sum_assign(log_batch, log_count, false, &mut acc, &atks, s)
+    })?;
+    check(&acc, &sum);
+    with_scratch::<BE, _>(bytes, |s| {
+        module.ckks_replicate(log_batch, log_count, &mut out, &ct, &atks, s)
+    })?;
+    check(&out, &sum);
+    Ok(worst)
+}
+
+/// The inner sum, its mean and the replicate on a replicated layout rotate by multiples of `R`, `λ` bits under the
+/// scale, and round once with shaping; a batch of fewer than `R` slots is refused.
+pub fn test_replicated_inner_sums_are_shaped<BE, F, Rg: Ring>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) -> Result<()>
+where
+    BE: TestContextBackend,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextSharedModule<BE, Rg> + CKKSEncodingOps<BE, F, Rg>,
+    F: TestScalar,
+{
+    let full = inner_sum_chain::<BE, F, Rg>(&params, module, host_module, SlotLayout::Full)?;
+    let shaped = inner_sum_chain::<BE, F, Rg>(&params, module, host_module, SlotLayout::Replicated(layout()))?;
+    assert!(
+        shaped >= full + 15.0,
+        "inner sums at 2^{LOG_DELTA}: {shaped:.2} bits against {full:.2} for a full layout"
+    );
+    Ok(())
+}
+
+/// A map of the `k` values of a replicated layout onto its data slots, [`ReplicatedTransform::from_input_period`] on
+/// the period `kR` with shaped diagonals, by `ckks_replicated_transform`, against the matrix; and the refusal of a map
+/// rotating by slot counts that are not multiples of `R`.
+pub fn test_replicated_transform_maps_values<BE, F, Rg: Ring>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) -> Result<()>
+where
+    BE: TestContextBackend,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextSharedModule<BE, Rg>
+        + CKKSEncodingOps<BE, F, Rg>
+        + CKKSReplicatedOps<BE, Rg>
+        + CKKSLinearTransformationOps<BE, Rg>
+        + CnvPVecAlloc<BE>,
+    F: TestScalar,
+{
+    let log_k = 3u8;
+    let (len, base2k) = (1usize << log_k, Base2K(params.base2k as u32));
+    let layout = ShapingUnit::U16_40.layout(log_k)?;
+    let r = 1usize << layout.log_r();
+    let log_delta_diag = 30;
+    let mut setup = ScratchOwned::<BE>::alloc(ReplicatedTransform::<BE, Rg>::encode_tmp_bytes::<F>(
+        module,
+        &layout,
+        base2k,
+        log_delta_diag,
+    )?);
+    let transform = ReplicatedTransform::<BE, Rg>::from_input_period(
+        module,
+        layout,
+        len * r,
+        base2k,
+        log_delta_diag,
+        true,
+        |s, c| {
+            if s % r == 0 && c % r == 0 {
+                matrix::<Rg, F>((s / r) % len, c / r)
+            } else {
+                (F::zero(), F::zero())
+            }
+        },
+        &mut setup.borrow(),
+    )?;
+    let k = 3 * LOG_DELTA + log_delta_diag;
+    // Keys covering the working width, `λ` bits under the scale.
+    let params = CKKSTestParams {
+        k: params.k.max(k + 64),
+        ..params
+    };
+    let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch::<BE, Rg>(&params, module);
+    let mut atks = HashMap::new();
+    for rotation in transform.rotations() {
+        let gal = module.ckks_galois_element::<Rg>(rotation);
+        atks.insert(gal, gen_atk(&params, module, gal, &sk_raw, &mut scratch.borrow()));
+    }
+    let values = unit_batch::<Rg, F>(len, 0);
+    let want = apply_matrix::<Rg, F>((&values.0, &values.1));
+    let ct = encrypt_batch(
+        &params,
+        module,
+        &sk,
+        SlotLayout::Replicated(layout),
+        (&values.0, &values.1),
+        k,
+        1,
+    )?;
+    let mut out = alloc_ct(&params, module, k);
+    let mut workspace = transform.alloc_replicated_workspace(module, &ct);
+    let bytes = module.ckks_replicated_transform_tmp_bytes(&ct, &params.atk_layout(), &transform);
+    with_scratch::<BE, _>(bytes, |s| {
+        module.ckks_replicated_transform(&mut out, &ct, &transform, &mut workspace, &atks, s)
+    })?;
+    assert_eq!(out.slot_layout(), SlotLayout::Replicated(layout));
+    assert_eq!(
+        (out.log_delta(), out.log_budget()),
+        (ct.log_delta(), ct.log_budget() - transform.consumed_bits())
+    );
+    let got = decrypt_batch::<BE, F, Rg>(&params, module, &sk, &out, len);
+    let bits = precision((&got.0, &got.1), (&want.0, &want.1));
+    // Measured on the portable backends, both rings: 50.0 to 53.5 bits.
+    assert!(bits >= 45.0, "replicated transform: {bits:.2} bits");
+
+    // A map of period-`k` slots rotates by single slots.
+    let unaligned = ReplicatedTransform::<BE, Rg>::from_period(
+        module,
+        layout,
+        base2k,
+        log_delta_diag,
+        true,
+        |_, _| (F::one(), F::zero()),
+        &mut setup.borrow(),
+    )?;
+    let mut unaligned_workspace = unaligned.alloc_replicated_workspace(module, &ct);
+    refused!(
+        Rg,
+        "ckks_replicated_transform",
+        module.ckks_replicated_transform(
+            &mut out,
+            &ct,
+            &unaligned,
+            &mut unaligned_workspace,
+            &atks,
+            &mut scratch.borrow()
+        ),
+        [out, ct]
     );
     Ok(())
 }

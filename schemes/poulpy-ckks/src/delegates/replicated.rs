@@ -10,7 +10,7 @@ use crate::{
     api::{CKKSReplicatedBootstrapOps, CKKSReplicatedCIBootstrapOps, CKKSReplicatedOps},
     layouts::{
         BootstrappingKeys, BootstrappingKeysLayout, ReplicatedBootstrapWorkspace, ReplicatedBootstrapping, ReplicatedConversion,
-        ReplicatedLut, ReplicatedTransformWorkspace,
+        ReplicatedLut, ReplicatedTransform, ReplicatedTransformWorkspace,
     },
     oep::{CKKSReplicatedBootstrapImpl, CKKSReplicatedCIBootstrapImpl, CKKSReplicatedImpl},
 };
@@ -61,6 +61,36 @@ impl<BE: Backend + CKKSReplicatedImpl<Rg>, Rg: Ring> CKKSReplicatedOps<BE, Rg> f
         H: GetAutomorphismKey<BE, Rg> + GetTensorKey<BE, Rg>,
     {
         <BE as CKKSReplicatedImpl<Rg>>::ckks_from_replicated(self, dst, src, conv, workspace, keys, scratch)
+    }
+
+    fn ckks_replicated_transform_tmp_bytes<C, K>(
+        &self,
+        ct_infos: &C,
+        key_infos: &K,
+        transform: &ReplicatedTransform<BE, Rg>,
+    ) -> usize
+    where
+        C: CKKSCtBounds,
+        K: GGLWEInfos,
+    {
+        <BE as CKKSReplicatedImpl<Rg>>::ckks_replicated_transform_tmp_bytes(self, ct_infos, key_infos, transform)
+    }
+
+    fn ckks_replicated_transform<Dst, Src, H>(
+        &self,
+        dst: &mut Dst,
+        src: &Src,
+        transform: &ReplicatedTransform<BE, Rg>,
+        workspace: &mut ReplicatedTransformWorkspace<BE, Rg>,
+        keys: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        H: GetAutomorphismKey<BE, Rg> + GetTensorKey<BE, Rg>,
+    {
+        <BE as CKKSReplicatedImpl<Rg>>::ckks_replicated_transform(self, dst, src, transform, workspace, keys, scratch)
     }
 }
 

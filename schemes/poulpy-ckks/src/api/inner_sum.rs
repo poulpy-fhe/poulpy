@@ -22,6 +22,10 @@ use crate::{CKKSCtBounds, SetCKKSInfos};
 /// forms are the same on `res` in place. The keys are those of [`Self::ckks_inner_sum_galois_elements`] and
 /// [`Self::ckks_replicate_galois_elements`].
 ///
+/// On a replicated slot layout of period `R`, the batches are multiples of `R` slots, so that every rotation keeps the
+/// guard classes off the data: the copy is taken `ShapingProfile::shaping_depth` bits under `a`'s scale, the trace
+/// and the division run there, and one shaped rounding returns to `res`'s width, the keys covering that wider copy.
+///
 /// # Metadata
 ///
 /// ```text
@@ -37,10 +41,10 @@ use crate::{CKKSCtBounds, SetCKKSInfos};
 ///
 /// # Errors
 ///
-/// In this order, before any write: `InvalidOperand` for a replicated slot layout, whose traces would round
-/// plainly, when `2^log_count` batches of `2^log_batch` slots exceed the
+/// In this order, before any write: `InvalidOperand` for a replicated slot layout of period `R` and batches of fewer
+/// than `R` slots, when `2^log_count` batches of `2^log_batch` slots exceed the
 /// slots of `res`'s degree, or when `normalize` divides `Integer` slots; `MissingAutomorphismKey` for the first key `keys` lacks at
-/// the width the sum switches at, `k_out`; `InsufficientHomomorphicCapacity` when the copy into `res` needs more than
+/// the width the sum switches at, `k_out`, or on a replicated layout `k_out` and the shaping depth; `InsufficientHomomorphicCapacity` when the copy into `res` needs more than
 /// `a.log_budget`, or the division more than the budget the copy leaves; `CKKSError::Internal` with less scratch than
 /// [`Self::ckks_inner_sum_tmp_bytes`] reports for the keys the sum looks up.
 pub trait CKKSInnerSumOps<BE: Backend, Rg: Ring = Standard> {

@@ -38,7 +38,9 @@ The other operations build on it:
 
 Sums and differences of one slot layout and one scale add exactly.
 Dot products of ciphertexts and of prepared operands sum their products `λ` bits under the scale, relinearize the sum once and round it once with shaping, as one product: a chain of two-pair sums keeps 47 to 56 bits against 12 to 14 on a full layout.
-Operations that would round plainly or write the guard slots return `InvalidOperand` on a replicated layout: constant additions, rotations by a slot count that is not a multiple of `R`, dot products of prepared ciphertexts by prepared plaintexts, inner sums, the full-layout linear transformations and DFT, ModUp, bootstrapping, PaCo and SHIP.
+The inner sum, its mean and the replicate take batches of a multiple of `R` slots, so that every rotation keeps the guard classes off the data: the trace runs `λ` bits under the scale and the result is rounded once with shaping, 51 to 57 bits against 14 to 15 on a full layout.
+`CKKSReplicatedOps::ckks_replicated_transform` applies a `ReplicatedTransform` to a replicated ciphertext the same way, its rotations multiples of `R`: a map of the `k` values is `ReplicatedTransform::from_input_period` on the period `kR`, its weights on the data slots and its last factor shaped, which drops the offsets whose weights are all zero; its workspace comes from `ReplicatedTransform::alloc_replicated_workspace`. A map of 8 values keeps 50 to 54 bits.
+Operations that would round plainly or write the guard slots return `InvalidOperand` on a replicated layout: constant additions, rotations by a slot count that is not a multiple of `R`, dot products of prepared ciphertexts by prepared plaintexts, inner sums of batches under `R` slots, the full-layout linear transformations, whose diagonals and baby steps are prepared at the source's width, and the DFT, ModUp, bootstrapping, PaCo and SHIP.
 
 ## Conversions
 

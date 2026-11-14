@@ -9,7 +9,7 @@ use crate::{
     CKKSCtBounds, SetCKKSInfos,
     layouts::{
         BootstrappingKeys, BootstrappingKeysLayout, ReplicatedBootstrapWorkspace, ReplicatedBootstrapping, ReplicatedConversion,
-        ReplicatedLut, ReplicatedTransformWorkspace,
+        ReplicatedLut, ReplicatedTransform, ReplicatedTransformWorkspace,
     },
 };
 
@@ -79,6 +79,51 @@ pub trait CKKSReplicatedOps<BE: Backend, Rg: Ring = Standard> {
         dst: &mut Dst,
         src: &Src,
         conv: &ReplicatedConversion<BE, Rg>,
+        workspace: &mut ReplicatedTransformWorkspace<BE, Rg>,
+        keys: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        H: GetAutomorphismKey<BE, Rg> + GetTensorKey<BE, Rg>;
+
+    /// Scratch of [`Self::ckks_replicated_transform`] from a ciphertext like `ct_infos` with keys of `key_infos`.
+    fn ckks_replicated_transform_tmp_bytes<C, K>(
+        &self,
+        ct_infos: &C,
+        key_infos: &K,
+        transform: &ReplicatedTransform<BE, Rg>,
+    ) -> usize
+    where
+        C: CKKSCtBounds,
+        K: GGLWEInfos;
+
+    /// `dst = M(src)` for a ciphertext in a replicated layout and a
+    /// [`ReplicatedTransform`] `M` whose rotations are multiples of the period
+    /// `R`, such as one of [`ReplicatedTransform::from_input_period`] on the
+    /// period `kR` of the layout, its last factor quantized with shaping: the
+    /// chain runs `ShapingProfile::shaping_depth` bits under `src`'s scale,
+    /// its key switches and rescales rounding plainly there, and one shaped
+    /// rounding returns to that scale. Allocate the workspace with
+    /// [`ReplicatedTransform::alloc_replicated_workspace`] for `src`, and keys
+    /// of [`ReplicatedTransform::rotations`] covering the working width.
+    ///
+    /// ```text
+    /// log_budget_out = src.log_budget - transform.consumed_bits()
+    /// log_delta_out  = src.log_delta
+    /// ```
+    ///
+    /// # Errors
+    /// [`crate::CKKSCompositionError::InvalidOperand`] before writing `dst` for
+    /// incompatible source and destination degrees or ranks, a source of the
+    /// full layout, a rotation that is not a multiple of `R`, or a workspace
+    /// for another input layout or other rotations.
+    fn ckks_replicated_transform<Dst, Src, H>(
+        &self,
+        dst: &mut Dst,
+        src: &Src,
+        transform: &ReplicatedTransform<BE, Rg>,
         workspace: &mut ReplicatedTransformWorkspace<BE, Rg>,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,

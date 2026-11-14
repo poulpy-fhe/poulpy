@@ -320,6 +320,21 @@ impl<BE: Backend, Rg: Ring> ReplicatedTransform<BE, Rg> {
         }
     }
 
+    /// Allocates baby steps for
+    /// [`CKKSReplicatedOps::ckks_replicated_transform`](crate::api::CKKSReplicatedOps::ckks_replicated_transform)
+    /// of sources like `src`: at its working width, `ShapingProfile::shaping_depth` bits under its scale.
+    pub fn alloc_replicated_workspace<C: GLWEInfos + crate::CKKSInfos>(
+        &self,
+        module: &Module<BE>,
+        src: &C,
+    ) -> ReplicatedTransformWorkspace<BE, Rg>
+    where
+        Module<BE>: CnvPVecAlloc<BE>,
+    {
+        let extra_bits = crate::oep::derived::replicated::replicated_transform_extra_bits(src);
+        self.alloc_workspace(module, &crate::oep::derived::replicated::working_layout(src, extra_bits, 0))
+    }
+
     /// The input layout of each factor for an input of layout `input`, each
     /// factor consuming its diagonals' bits.
     pub(crate) fn factor_inputs(&self, input: &GLWELayout) -> Vec<GLWELayout> {
@@ -373,7 +388,10 @@ impl<BE: Backend, Rg: Ring> ReplicatedTransform<BE, Rg> {
         )
     }
 
-    /// [`Self::from_period`] from slots of period `m`, a divisor of `n`.
+    /// [`Self::from_period`] from slots of period `m`, a divisor of `n`. An
+    /// offset whose weights are all zero takes no diagonal, so that a map on
+    /// the period `kR` of the layout reading and writing its data slots only
+    /// rotates by multiples of `R`.
     #[expect(clippy::too_many_arguments, reason = "the map, its layout, period, scale and arena")]
     pub fn from_input_period<F, A>(
         module: &Module<BE>,
@@ -392,7 +410,10 @@ impl<BE: Backend, Rg: Ring> ReplicatedTransform<BE, Rg> {
     {
         let (_, n) = check_period::<BE, Rg>(module, &layout)?;
         ensure!(n.is_multiple_of(m), "the input period {m} must divide the {n} slots");
-        let weights = (0..m).map(|o| (o, (0..n).map(|s| a(s, (s + o) % m)).collect())).collect();
+        let weights = (0..m)
+            .map(|o| (o, (0..n).map(|s| a(s, (s + o) % m)).collect::<Vec<_>>()))
+            .filter(|(_, w)| w.iter().any(|&(re, im)| re != F::zero() || im != F::zero()))
+            .collect();
         Self::from_factors(
             module,
             layout,

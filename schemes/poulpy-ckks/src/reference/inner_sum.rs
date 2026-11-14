@@ -5,7 +5,7 @@ use std::ops::Range;
 use poulpy_core::{
     GLWETrace,
     layouts::{
-        Degree, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, TorusPrecision,
+        Degree, GGLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, TorusPrecision,
         prepared::GLWEAutomorphismKeyPreparedBackendRef,
     },
 };
@@ -15,10 +15,13 @@ use poulpy_hal::{
 };
 
 use crate::{
-    CKKSCompositionError, CKKSCtBounds, CKKSResult as Result, SetCKKSInfos, SlotsKind,
-    api::{CKKSCopyOps, CKKSModuleInfos, CKKSPow2Ops},
+    CKKSCompositionError, CKKSCtBounds, CKKSInfos, CKKSLayout, CKKSResult as Result, SetCKKSInfos, SetGLWEPlaintextInfos,
+    SlotLayout, SlotsKind,
+    api::{CKKSCopyOps, CKKSModuleInfos, CKKSPow2Ops, CKKSRoundOps},
     ckks_ensure,
     error::checked_log_budget_sub,
+    layouts::{CKKSCiphertextViewMut, ScratchArenaTakeCKKSCiphertext},
+    oep::derived::replicated::ct_bytes,
 };
 
 /// Reference bodies of [`CKKSInnerSumImpl`](crate::oep::CKKSInnerSumImpl), forwarded by
@@ -62,7 +65,7 @@ pub trait CKKSInnerSumReference<BE: Backend, Rg: Ring = Standard>: ModuleN {
     /// `glwe_trace_assign_tmp_bytes` of `res` under `key`.
     fn ckks_inner_sum_tmp_bytes_reference<R, A, K>(&self, res: &R, a: &A, key: &K) -> usize
     where
-        Self: CKKSCopyOps<BE, Rg> + GLWETrace<BE, Rg>,
+        Self: CKKSCopyOps<BE, Rg> + CKKSRoundOps<BE, Rg> + GLWETrace<BE, Rg>,
         R: CKKSCtBounds,
         A: CKKSCtBounds,
         K: GGLWEInfos,
@@ -91,7 +94,7 @@ pub trait CKKSInnerSumReference<BE: Backend, Rg: Ring = Standard>: ModuleN {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: CKKSModuleInfos + CKKSCopyOps<BE, Rg> + CKKSPow2Ops<BE, Rg> + GLWETrace<BE, Rg>,
+        Self: CKKSModuleInfos + CKKSCopyOps<BE, Rg> + CKKSPow2Ops<BE, Rg> + CKKSRoundOps<BE, Rg> + GLWETrace<BE, Rg>,
         R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
         A: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
         H: GetAutomorphismKey<BE, Rg>,
@@ -110,7 +113,7 @@ pub trait CKKSInnerSumReference<BE: Backend, Rg: Ring = Standard>: ModuleN {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: CKKSModuleInfos + CKKSCopyOps<BE, Rg> + CKKSPow2Ops<BE, Rg> + GLWETrace<BE, Rg>,
+        Self: CKKSModuleInfos + CKKSCopyOps<BE, Rg> + CKKSPow2Ops<BE, Rg> + CKKSRoundOps<BE, Rg> + GLWETrace<BE, Rg>,
         R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
         H: GetAutomorphismKey<BE, Rg>,
     {
@@ -129,7 +132,7 @@ pub trait CKKSInnerSumReference<BE: Backend, Rg: Ring = Standard>: ModuleN {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: CKKSModuleInfos + CKKSCopyOps<BE, Rg> + CKKSPow2Ops<BE, Rg> + GLWETrace<BE, Rg>,
+        Self: CKKSModuleInfos + CKKSCopyOps<BE, Rg> + CKKSPow2Ops<BE, Rg> + CKKSRoundOps<BE, Rg> + GLWETrace<BE, Rg>,
         R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
         A: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
         H: GetAutomorphismKey<BE, Rg>,
@@ -147,7 +150,7 @@ pub trait CKKSInnerSumReference<BE: Backend, Rg: Ring = Standard>: ModuleN {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: CKKSModuleInfos + CKKSCopyOps<BE, Rg> + CKKSPow2Ops<BE, Rg> + GLWETrace<BE, Rg>,
+        Self: CKKSModuleInfos + CKKSCopyOps<BE, Rg> + CKKSPow2Ops<BE, Rg> + CKKSRoundOps<BE, Rg> + GLWETrace<BE, Rg>,
         R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
         H: GetAutomorphismKey<BE, Rg>,
     {
@@ -159,14 +162,35 @@ impl<BE: Backend, Rg: Ring> CKKSInnerSumReference<BE, Rg> for Module<BE> {}
 
 fn sum_tmp_bytes<BE: Backend, M, R, A, K, Rg: Ring>(module: &M, res: &R, a: &A, key: &K) -> usize
 where
-    M: CKKSCopyOps<BE, Rg> + GLWETrace<BE, Rg> + ?Sized,
+    M: CKKSCopyOps<BE, Rg> + CKKSRoundOps<BE, Rg> + GLWETrace<BE, Rg> + ?Sized,
     R: CKKSCtBounds,
     A: CKKSCtBounds,
     K: GGLWEInfos,
 {
-    module
+    let plain = module
         .ckks_copy_tmp_bytes(res, a)
-        .max(module.glwe_trace_assign_tmp_bytes(res, key))
+        .max(module.glwe_trace_assign_tmp_bytes(res, key));
+    let Some(lambda) = crate::shaping::product_depth(a.slot_layout(), a.log_delta()) else {
+        return plain;
+    };
+    // The wide sum of a replicated layout beside its copy, trace and rounding.
+    let wide = CKKSLayout {
+        glwe_layout: wide_layout(res, a, lambda),
+        meta: a.meta(),
+    };
+    let ops = module
+        .ckks_copy_tmp_bytes(&wide, a)
+        .max(module.glwe_trace_assign_tmp_bytes(&wide, key))
+        .max(module.ckks_round_tmp_bytes(res, &wide));
+    plain.max(ct_bytes::<BE>(&wide.glwe_layout) + ops)
+}
+
+/// The layout of the wide sum of `a` into `res` on a replicated layout: the width of the copy, `lambda` bits wider.
+fn wide_layout<R: CKKSCtBounds, A: CKKSCtBounds>(res: &R, a: &A, lambda: usize) -> GLWELayout {
+    GLWELayout {
+        k: (a.k().min(res.k()).as_usize() + lambda).into(),
+        ..res.glwe_layout()
+    }
 }
 
 /// An inner sum (`reverse` clear) or a replicate of `2^log_count` batches of `2^log_batch` slots.
@@ -228,15 +252,18 @@ impl Sum {
         })
     }
 
-    /// The checks before any write of a sum of `a` on a degree-`n` result at width `k`, in the documented order: the
-    /// slot layout, the degrees of `a` and the result, the window, the division of `a`'s slots, the key of every rotation, then the budget of the copy from `a.k` to `k`
-    /// and of the division. Returns the largest scratch `bytes` gives for those keys' layouts, if any key is looked up.
+    /// The checks before any write of a sum of `a` on a degree-`n` result at width `k`, its keys at `key_k`, in the
+    /// documented order: the slot layout, the degrees of `a` and the result, the window, the division of `a`'s slots,
+    /// the key of every rotation, then the budget of the copy from `a.k` to `k` and of the division. Returns the
+    /// largest scratch `bytes` gives for those keys' layouts, if any key is looked up.
+    #[expect(clippy::too_many_arguments, reason = "the sum's operand, widths, keys and query")]
     fn validate<BE: Backend, M, A, H, Rg: Ring>(
         self,
         module: &M,
         a: &A,
         n: Degree,
         k: TorusPrecision,
+        key_k: TorusPrecision,
         keys: &H,
         bytes: impl Fn(&GLWEAutomorphismKeyPreparedBackendRef<'_, BE, Rg>) -> usize,
     ) -> Result<Option<usize>>
@@ -246,8 +273,21 @@ impl Sum {
         H: GetAutomorphismKey<BE, Rg>,
     {
         let op = self.op;
-        // The traces key-switch with plain rounding, which a replicated layout forbids.
-        crate::layouts::validation::ensure_full_layout(op, crate::GLWEPlaintextInfos::slot_layout(a))?;
+        // On a replicated layout the traces rotate by multiples of the period `R`, which keep the guard classes off
+        // the data.
+        if let SlotLayout::Replicated(layout) = crate::GLWEPlaintextInfos::slot_layout(a)
+            && self.log_count > 0
+            && self.log_batch < layout.log_r()
+        {
+            return Err(CKKSCompositionError::InvalidOperand {
+                op,
+                reason: format!(
+                    "a replicated layout sums batches of a multiple of its period R = 2^{}",
+                    layout.log_r()
+                ),
+            }
+            .into());
+        }
         crate::ensure_operand_degrees(op, module, [n, a.n()])?;
         if !self.fits::<_, Rg>(module, n) {
             return Err(CKKSCompositionError::InvalidOperand {
@@ -274,14 +314,14 @@ impl Sum {
         }
         let mut most = None;
         for (rotation, element) in self.rotations().zip(self.galois_elements(module, n)) {
-            let key = keys
-                .get_automorphism_key(element, k)
-                .map_err(|source| CKKSCompositionError::MissingAutomorphismKey {
-                    op,
-                    rotation,
-                    k: k.into(),
-                    source,
-                })?;
+            let key =
+                keys.get_automorphism_key(element, key_k)
+                    .map_err(|source| CKKSCompositionError::MissingAutomorphismKey {
+                        op,
+                        rotation,
+                        k: key_k.into(),
+                        source,
+                    })?;
             most = most.max(Some(bytes(&key)));
         }
         let log_budget = checked_log_budget_sub(op, a.log_budget(), a.k().as_usize() - k.as_usize())?;
@@ -301,14 +341,17 @@ fn sum_into<BE: Backend, M, R, A, H, Rg: Ring>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    M: CKKSModuleInfos + CKKSCopyOps<BE, Rg> + CKKSPow2Ops<BE, Rg> + GLWETrace<BE, Rg> + ModuleN + ?Sized,
+    M: CKKSModuleInfos + CKKSCopyOps<BE, Rg> + CKKSPow2Ops<BE, Rg> + CKKSRoundOps<BE, Rg> + GLWETrace<BE, Rg> + ModuleN + ?Sized,
     R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
     A: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
     H: GetAutomorphismKey<BE, Rg>,
 {
-    // The copy narrows the sum to `res`'s width, at which every rotation then switches.
+    // The copy narrows the sum to `res`'s width, at which every rotation then switches, `lambda` bits wider on a
+    // replicated layout.
+    let lambda = crate::shaping::product_depth(a.slot_layout(), a.log_delta());
     let k = a.k().min(res.k());
-    let bytes = sum.validate(module, a, res.n(), k, keys, |key| sum_tmp_bytes(module, &*res, a, key))?;
+    let key_k = (k.as_usize() + lambda.unwrap_or(0)).into();
+    let bytes = sum.validate(module, a, res.n(), k, key_k, keys, |key| sum_tmp_bytes(module, &*res, a, key))?;
     // A sum that looks up no key has no key layout to size its query with; its constituents check their own.
     if let Some(bytes) = bytes {
         ckks_ensure!(
@@ -317,8 +360,40 @@ where
             sum.op
         );
     }
-    module.ckks_copy(res, a, scratch)?;
-    trace(module, res, sum, keys, scratch)
+    let Some(lambda) = lambda else {
+        module.ckks_copy(res, a, scratch)?;
+        return trace(module, res, sum, keys, scratch);
+    };
+    let (mut wide, mut scratch) = scratch
+        .borrow()
+        .take_ckks_ciphertext_scratch::<_, Rg>(&wide_layout(&*res, a, lambda), a.meta());
+    module.ckks_copy(&mut wide, a, &mut scratch)?;
+    wide_trace(module, res, &mut wide, sum, lambda, keys, &mut scratch)
+}
+
+/// The sum on a replicated layout: `wide`, holding the input, relabelled `lambda` bits finer as a full layout, its
+/// trace and division, then one shaped rounding into `res` at the scale they leave.
+fn wide_trace<BE: Backend, M, R, H, Rg: Ring>(
+    module: &M,
+    res: &mut R,
+    wide: &mut CKKSCiphertextViewMut<'_, BE, Rg>,
+    sum: Sum,
+    lambda: usize,
+    keys: &H,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> Result<()>
+where
+    M: CKKSModuleInfos + CKKSCopyOps<BE, Rg> + CKKSPow2Ops<BE, Rg> + CKKSRoundOps<BE, Rg> + GLWETrace<BE, Rg> + ?Sized,
+    R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+    H: GetAutomorphismKey<BE, Rg>,
+{
+    let slot_layout = crate::GLWEPlaintextInfos::slot_layout(&*wide);
+    wide.set_log_delta(wide.log_delta() + lambda);
+    wide.set_slot_layout(SlotLayout::Full);
+    trace(module, wide, sum, keys, scratch)?;
+    wide.set_slot_layout(slot_layout);
+    res.set_k((wide.log_budget() + wide.log_delta() - lambda).into());
+    module.ckks_round(res, &*wide, scratch)
 }
 
 fn sum_assign<BE: Backend, M, R, H, Rg: Ring>(
@@ -329,11 +404,13 @@ fn sum_assign<BE: Backend, M, R, H, Rg: Ring>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    M: CKKSModuleInfos + CKKSCopyOps<BE, Rg> + CKKSPow2Ops<BE, Rg> + GLWETrace<BE, Rg> + ModuleN + ?Sized,
+    M: CKKSModuleInfos + CKKSCopyOps<BE, Rg> + CKKSPow2Ops<BE, Rg> + CKKSRoundOps<BE, Rg> + GLWETrace<BE, Rg> + ModuleN + ?Sized,
     R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
     H: GetAutomorphismKey<BE, Rg>,
 {
-    let bytes = sum.validate(module, &*res, res.n(), res.k(), keys, |key| {
+    let lambda = crate::shaping::product_depth(res.slot_layout(), res.log_delta());
+    let key_k = (res.k().as_usize() + lambda.unwrap_or(0)).into();
+    let bytes = sum.validate(module, &*res, res.n(), res.k(), key_k, keys, |key| {
         sum_tmp_bytes(module, &*res, &*res, key)
     })?;
     if let Some(bytes) = bytes {
@@ -343,7 +420,14 @@ where
             sum.op
         );
     }
-    trace(module, res, sum, keys, scratch)
+    let Some(lambda) = lambda else {
+        return trace(module, res, sum, keys, scratch);
+    };
+    let (mut wide, mut scratch) = scratch
+        .borrow()
+        .take_ckks_ciphertext_scratch::<_, Rg>(&wide_layout(&*res, &*res, lambda), res.meta());
+    module.ckks_copy(&mut wide, &*res, &mut scratch)?;
+    wide_trace(module, res, &mut wide, sum, lambda, keys, &mut scratch)
 }
 
 /// The summed trace of a validated sum on `res`, then the inner sum's division.
