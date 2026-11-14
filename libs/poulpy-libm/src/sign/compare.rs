@@ -8,7 +8,7 @@ use poulpy_core::{
         BSGSMeta, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, IntPolyInfos, LWEInfos,
     },
 };
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena, Standard};
 
 use poulpy_ckks::{
     CKKSCtBounds, CKKSInfos, SetCKKSInfos,
@@ -423,7 +423,7 @@ where
         + module
             .ckks_sub_tmp_bytes(x.size())
             .max(module.ckks_sub_pt_const_tmp_bytes(x.size()))
-            .max(ckks_sign_tmp_bytes(module, x, x, coeff_prec, tsk, keys))
+            .max(ckks_sign_tmp_bytes::<Standard, _>(module, x, x, coeff_prec, tsk, keys))
             .max(module.ckks_add_one_tmp_bytes(x.size()))
             .max(module.ckks_mul_tmp_bytes(x, x, x, tsk))
             .max(module.ckks_div_pow2_tmp_bytes(x.size()))

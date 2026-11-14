@@ -11,7 +11,7 @@ use poulpy_core::{
         BSGSMeta, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, IntPolyInfos, LWEInfos,
     },
 };
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena, Standard};
 
 use poulpy_ckks::{
     CKKSCtBounds, CKKSInfos, SetCKKSInfos,
@@ -441,7 +441,7 @@ where
         2 * BE::scratch_aligned(self.glwe_bytes_of_from_infos(ct))
             + self
                 .ckks_goldschmidt_division_assign_tmp_bytes(ct, tsk)
-                .max(ckks_sign_tmp_bytes(self, ct, ct, coeff_prec, tsk, keys))
+                .max(ckks_sign_tmp_bytes::<Standard, _>(self, ct, ct, coeff_prec, tsk, keys))
                 .max(self.ckks_mul_tmp_bytes(ct, ct, ct, tsk))
                 .max(self.ckks_copy_tmp_bytes(ct, ct))
     }

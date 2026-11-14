@@ -39,7 +39,7 @@ pub mod prelude {
     pub use crate::arithmetic::CKKSArithmeticOps;
     pub use crate::comparison::{
         CKKSComparisonOps, CKKSPredicateOps, CKKSSignOps, COEFFS_SIGN_X2_CHEBYSHEV, COEFFS_SIGN_X4_CHEBYSHEV,
-        DEFAULT_SIGN_COMPOSITE_CHEBYSHEV, SignComposite,
+        DEFAULT_SIGN_COMPOSITE_CHEBYSHEV, SignComposite, SignRing, SignRingOps,
     };
     pub use crate::erf::{CKKSErfOps, ErfOptions, ErfPlan, ErfcPlan};
     pub use crate::exp::{CKKSExpOps, Exp2Plan, Exp10Plan, ExpOptions, ExpPlan, Expm1Plan};

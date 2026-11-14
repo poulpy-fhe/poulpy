@@ -445,8 +445,8 @@ where
         // Both signs, the ratio, the correction and the angle. All but the sign of `y` have the layout of `x`.
         let ct = BE::scratch_aligned(self.glwe_bytes_of_from_infos(x)).max(BE::scratch_aligned(self.glwe_bytes_of_from_infos(y)));
         5 * ct
-            + ckks_sign_tmp_bytes(self, x, x, &plan.constants, tsk, keys)
-                .max(ckks_sign_tmp_bytes(self, y, y, &plan.constants, tsk, keys))
+            + ckks_sign_tmp_bytes::<Standard, _>(self, x, x, &plan.constants, tsk, keys)
+                .max(ckks_sign_tmp_bytes::<Standard, _>(self, y, y, &plan.constants, tsk, keys))
                 .max(self.ckks_copy_tmp_bytes(x, x))
                 .max(self.ckks_copy_tmp_bytes(x, y))
                 .max(self.ckks_mul_pt_const_tmp_bytes(x, x, &plan.constants))
