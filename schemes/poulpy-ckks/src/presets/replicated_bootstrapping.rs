@@ -202,7 +202,8 @@ pub fn n15_d20_k389_p20_s2c() -> Result<ReplicatedBootstrappingPreset> {
 /// `N = 2^16`: 30 levels at `2^20`, outputs of 763 bits, at least 19 bits of
 /// precision. Each map is factored into two DFT factors and two placement
 /// factors, the `SlotsToCoeffs` diagonals at `2^30` and the inner
-/// `CoeffsToSlots` ones at `2^54`, for batches of 4 to `2^10` values with
+/// `CoeffsToSlots` ones at `2^49`, one limb each at radix 52 (at `2^44` the
+/// precision falls to 17 bits), for batches of 4 to `2^10` values with
 /// `R = 16`. The first `CoeffsToSlots` factor runs on the modulus raise, with
 /// first-factor keys in place of the sparse-to-dense key.
 pub fn n16_d20_k763_p19_s2c_factored() -> Result<ReplicatedBootstrappingPreset> {
@@ -220,7 +221,7 @@ pub fn n16_d20_k763_p19_s2c_factored() -> Result<ReplicatedBootstrappingPreset> 
             s2c_factors: 2,
             c2s_factors: 2,
             placement_factors: 2,
-            c2s_inner_log_delta_diag: 54,
+            c2s_inner_log_delta_diag: 49,
             c2s_first_factor_on_raise: true,
         },
         s2c_log_delta_diag: 30,
@@ -420,7 +421,7 @@ mod tests {
         for (preset, widths, u8_40_raised) in [
             (n14_d20_k109_p21_s2c().unwrap(), (69, 109, 383), 399),
             (n15_d20_k389_p20_s2c().unwrap(), (69, 389, 663), 679),
-            (n16_d20_k763_p19_s2c_factored().unwrap(), (163, 763, 1145), 1161),
+            (n16_d20_k763_p19_s2c_factored().unwrap(), (163, 763, 1135), 1151),
         ] {
             let plan = preset.plan(layout(ShapingUnit::U32_45)).unwrap();
             assert_eq!(
