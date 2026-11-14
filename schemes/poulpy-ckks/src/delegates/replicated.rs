@@ -9,7 +9,7 @@ use crate::{
     CKKSCtBounds, SetCKKSInfos,
     api::{CKKSReplicatedBootstrapOps, CKKSReplicatedCIBootstrapOps, CKKSReplicatedOps},
     layouts::{
-        BootstrappingKeys, ReplicatedBootstrapWorkspace, ReplicatedBootstrapping, ReplicatedConversion,
+        BootstrappingKeys, BootstrappingKeysLayout, ReplicatedBootstrapWorkspace, ReplicatedBootstrapping, ReplicatedConversion,
         ReplicatedTransformWorkspace,
     },
     oep::{CKKSReplicatedBootstrapImpl, CKKSReplicatedCIBootstrapImpl, CKKSReplicatedImpl},
@@ -65,23 +65,18 @@ impl<BE: Backend + CKKSReplicatedImpl<Rg>, Rg: Ring> CKKSReplicatedOps<BE, Rg> f
 }
 
 impl<BE: Backend + CKKSReplicatedBootstrapImpl> CKKSReplicatedBootstrapOps<BE> for Module<BE> {
-    fn ckks_replicated_bootstrap_tmp_bytes<C, I, F, A, T, S>(
+    fn ckks_replicated_bootstrap_tmp_bytes<C, I, F>(
         &self,
         ct_out: &C,
         ct_in: &I,
         ctx: &ReplicatedBootstrapping<BE, F>,
-        atk_infos: &A,
-        tsk_infos: &T,
-        encapsulation_infos: Option<(&S, &S)>,
+        keys_layout: &BootstrappingKeysLayout,
     ) -> usize
     where
         C: CKKSCtBounds,
         I: CKKSCtBounds,
-        A: GGLWEInfos,
-        T: GGLWEInfos,
-        S: GGLWEInfos,
     {
-        BE::ckks_replicated_bootstrap_tmp_bytes(self, ct_out, ct_in, ctx, atk_infos, tsk_infos, encapsulation_infos)
+        BE::ckks_replicated_bootstrap_tmp_bytes(self, ct_out, ct_in, ctx, keys_layout)
     }
 
     fn ckks_replicated_bootstrap<Dst, Src, F, K>(
@@ -103,34 +98,20 @@ impl<BE: Backend + CKKSReplicatedBootstrapImpl> CKKSReplicatedBootstrapOps<BE> f
 }
 
 impl<BE: Backend + CKKSReplicatedCIBootstrapImpl> CKKSReplicatedCIBootstrapOps<BE> for Module<BE> {
-    fn ckks_replicated_ci_bootstrap_tmp_bytes<C, I, F, A, T, S, K>(
+    fn ckks_replicated_ci_bootstrap_tmp_bytes<C, I, F, K>(
         &self,
         ct_out: &C,
         ct_in: &I,
         ctx: &ReplicatedBootstrapping<BE, F>,
-        atk_infos: &A,
-        tsk_infos: &T,
-        encapsulation_infos: Option<(&S, &S)>,
+        keys_layout: &BootstrappingKeysLayout,
         conversion_infos: &K,
     ) -> usize
     where
         C: CKKSCtBounds,
         I: CKKSCtBounds,
-        A: GGLWEInfos,
-        T: GGLWEInfos,
-        S: GGLWEInfos,
         K: GGLWEInfos,
     {
-        BE::ckks_replicated_ci_bootstrap_tmp_bytes(
-            self,
-            ct_out,
-            ct_in,
-            ctx,
-            atk_infos,
-            tsk_infos,
-            encapsulation_infos,
-            conversion_infos,
-        )
+        BE::ckks_replicated_ci_bootstrap_tmp_bytes(self, ct_out, ct_in, ctx, keys_layout, conversion_infos)
     }
 
     fn ckks_replicated_ci_bootstrap<Dst, Src, F, K, E, T>(

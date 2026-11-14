@@ -45,8 +45,9 @@ use poulpy_hal::{
 };
 
 use super::helpers::{
-    PT_PREC, TestContextBackend, TestContextModule, TestContextSharedModule, TestScalar, alloc_ct, alloc_scratch,
-    ckks_pt_cst_full, ckks_spec, gen_atk, gen_ci_keys, gen_sk, gen_sk_with_raw, gen_tsk, next_test_seed, upload_pt,
+    LoggedBootstrappingKeys, PT_PREC, TestContextBackend, TestContextModule, TestContextSharedModule, TestScalar, alloc_ct,
+    alloc_scratch, ckks_pt_cst_full, ckks_spec, gen_atk, gen_ci_keys, gen_sk, gen_sk_with_raw, gen_tsk, next_test_seed,
+    upload_pt,
 };
 use super::parity::helpers::{snapshot, with_scratch};
 use crate::{
@@ -2717,21 +2718,13 @@ where
                 &mut keygen.borrow(),
             )
             .prepare(module, &mut keygen.borrow())?;
-        let encapsulation = key_layouts.encapsulation.as_ref().unwrap();
         let mut out = alloc_ct::<_, Standard>(&params, module, k_out);
-        let mut boot_scratch = ScratchOwned::<BE>::alloc(module.ckks_replicated_bootstrap_tmp_bytes(
-            &out,
-            &input,
-            &ctx,
-            key_layouts.rotation_keys.values().next().expect("the bootstrapping rotates"),
-            &key_layouts.tensor_key,
-            Some((
-                &encapsulation.dense_to_sparse,
-                encapsulation.sparse_to_dense.as_ref().unwrap(),
-            )),
-        ));
+        let mut boot_scratch =
+            ScratchOwned::<BE>::alloc(module.ckks_replicated_bootstrap_tmp_bytes(&out, &input, &ctx, key_layouts));
         let mut workspace = ctx.alloc_workspace(module, &out);
-        module.ckks_replicated_bootstrap(&mut out, &input, &ctx, &mut workspace, &keys, &mut boot_scratch.borrow())?;
+        let logged = LoggedBootstrappingKeys::new::<BE>(&keys);
+        module.ckks_replicated_bootstrap(&mut out, &input, &ctx, &mut workspace, &logged, &mut boot_scratch.borrow())?;
+        logged.assert_lookups_at(&ctx.key_widths(module, k_out), "replicated bootstrapping");
         assert_eq!(out.slot_layout(), SlotLayout::Replicated(layout));
         assert_eq!((out.log_delta(), out.k().as_usize()), (plan.level_log_delta, k_out));
         let got = decrypt_batch::<BE, F, Standard>(&params, module, &sk, &out, len);
@@ -2832,20 +2825,9 @@ where
         )
         .prepare(module, &mut keygen.borrow())?;
 
-    let encapsulation = key_layouts.encapsulation.as_ref().unwrap();
     let mut out = alloc_ct::<_, ConjugateInvariant>(&params, module, k_out);
-    let bytes = module.ckks_replicated_ci_bootstrap_tmp_bytes(
-        &out,
-        &input,
-        &ctx,
-        key_layouts.rotation_keys.values().next().expect("the bootstrapping rotates"),
-        &key_layouts.tensor_key,
-        Some((
-            &encapsulation.dense_to_sparse,
-            encapsulation.sparse_to_dense.as_ref().unwrap(),
-        )),
-        &standard_params.ksk_layout(width),
-    );
+    let bytes =
+        module.ckks_replicated_ci_bootstrap_tmp_bytes(&out, &input, &ctx, &key_layouts, &standard_params.ksk_layout(width));
     let mut boot_scratch = ScratchOwned::<BE>::alloc(bytes);
     let mut workspace = ctx.alloc_workspace(
         module,

@@ -8,7 +8,7 @@ use poulpy_hal::layouts::{Backend, ConjugateInvariant, Data, Ring, ScratchArena,
 use crate::{
     CKKSCtBounds, SetCKKSInfos,
     layouts::{
-        BootstrappingKeys, ReplicatedBootstrapWorkspace, ReplicatedBootstrapping, ReplicatedConversion,
+        BootstrappingKeys, BootstrappingKeysLayout, ReplicatedBootstrapWorkspace, ReplicatedBootstrapping, ReplicatedConversion,
         ReplicatedTransformWorkspace,
     },
 };
@@ -112,28 +112,30 @@ pub trait CKKSReplicatedOps<BE: Backend, Rg: Ring = Standard> {
 /// `dst.k()` is the output width; ModUp raises to
 /// [`ReplicatedBootstrapPlan::k_boot`](crate::layouts::ReplicatedBootstrapPlan::k_boot)
 /// of it. Allocate its reusable workspace with
-/// [`ReplicatedBootstrapping::alloc_workspace`]. The keys cover [`ReplicatedBootstrapping::galois_elements`].
+/// [`ReplicatedBootstrapping::alloc_workspace`]. The keys cover the widths of
+/// [`ReplicatedBootstrapping::key_widths`] for `dst.k()`, which the bootstrapping
+/// looks up before any work.
 pub trait CKKSReplicatedBootstrapOps<BE: Backend> {
-    fn ckks_replicated_bootstrap_tmp_bytes<C, I, F, A, T, S>(
+    /// Scratch of [`Self::ckks_replicated_bootstrap`] with keys of `keys_layout`: each stage with each of its rotation
+    /// keys, which differ in width and gadget.
+    fn ckks_replicated_bootstrap_tmp_bytes<C, I, F>(
         &self,
         ct_out: &C,
         ct_in: &I,
         ctx: &ReplicatedBootstrapping<BE, F>,
-        atk_infos: &A,
-        tsk_infos: &T,
-        encapsulation_infos: Option<(&S, &S)>,
+        keys_layout: &BootstrappingKeysLayout,
     ) -> usize
     where
         C: CKKSCtBounds,
-        I: CKKSCtBounds,
-        A: GGLWEInfos,
-        T: GGLWEInfos,
-        S: GGLWEInfos;
+        I: CKKSCtBounds;
 
     /// # Errors
     /// Incompatible source and destination degrees or ranks, or a workspace
     /// with incompatible input dimensions or rotations, return
-    /// [`crate::CKKSCompositionError::InvalidOperand`] before writing `dst`.
+    /// [`crate::CKKSCompositionError::InvalidOperand`] before writing `dst`, and
+    /// a key missing or narrower than its width
+    /// [`MissingAutomorphismKey`](crate::CKKSCompositionError::MissingAutomorphismKey) or
+    /// [`MissingRelinearizationKey`](crate::CKKSCompositionError::MissingRelinearizationKey), also before writing `dst`.
     fn ckks_replicated_bootstrap<Dst, Src, F, K>(
         &self,
         dst: &mut Dst,
@@ -169,26 +171,17 @@ pub trait CKKSReplicatedBootstrapOps<BE: Backend> {
 /// ```
 pub trait CKKSReplicatedCIBootstrapOps<BE: Backend> {
     /// Scratch of [`Self::ckks_replicated_ci_bootstrap`].
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "the scratch covers the bootstrapping keys and the conversion keys"
-    )]
-    fn ckks_replicated_ci_bootstrap_tmp_bytes<C, I, F, A, T, S, K>(
+    fn ckks_replicated_ci_bootstrap_tmp_bytes<C, I, F, K>(
         &self,
         ct_out: &C,
         ct_in: &I,
         ctx: &ReplicatedBootstrapping<BE, F>,
-        atk_infos: &A,
-        tsk_infos: &T,
-        encapsulation_infos: Option<(&S, &S)>,
+        keys_layout: &BootstrappingKeysLayout,
         conversion_infos: &K,
     ) -> usize
     where
         C: CKKSCtBounds,
         I: CKKSCtBounds,
-        A: GGLWEInfos,
-        T: GGLWEInfos,
-        S: GGLWEInfos,
         K: GGLWEInfos;
 
     /// # Errors

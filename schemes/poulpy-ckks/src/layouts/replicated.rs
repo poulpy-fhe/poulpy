@@ -4,7 +4,7 @@
 use poulpy_core::GLWESecretSampling;
 use poulpy_core::layouts::{GLWEAutomorphismKeyAlloc, GLWESecretAlloc, GLWESwitchingKeyAlloc, GLWETensorKeyAlloc};
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use anyhow::{Context, Result, ensure};
 use poulpy_core::{
@@ -29,8 +29,8 @@ use crate::{
     api::{CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar, CKKSLinearTransformationOps},
     encoding::linear_transformation::period_degree,
     layouts::{
-        BootstrappingKeySet, BootstrappingKeysLayout, CKKSCiphertextAlloc, CKKSLinearTransformationAlloc, CKKSPlaintextAlloc,
-        CKKSPlaintextOwned, ComplexDiagonals, EncapsulationKeysLayout, MaskedCoeffs,
+        BootstrappingKeySet, BootstrappingKeyWidths, BootstrappingKeysLayout, CKKSCiphertextAlloc, CKKSLinearTransformationAlloc,
+        CKKSPlaintextAlloc, CKKSPlaintextOwned, ComplexDiagonals, EncapsulationKeysLayout, MaskedCoeffs,
         eval_mod::{
             EvalMod, EvalModPlan, EvalModType, ckks_eval_mod_replicated_compile, ckks_eval_mod_replicated_packed_compile,
         },
@@ -479,6 +479,27 @@ impl<BE: Backend, Rg: Ring> ReplicatedTransform<BE, Rg> {
             .max(module.ckks_linear_transformation_rhs_prepare_tmp_bytes(&diagonal)))
     }
 
+    /// The Galois elements the chain switches with, each with the width of the
+    /// ciphertext it switches, for an input of `input_k` bits: a factor's baby
+    /// rotations switch its input and its giant rotations its product, the
+    /// factor's bits narrower.
+    pub(crate) fn key_uses(&self, input_k: usize, cyclotomic_order: i64) -> Vec<(i64, usize)> {
+        let mut uses = Vec::new();
+        let mut k = input_k;
+        for (lt, consumed) in &self.factors {
+            let babies = lt
+                .rotations
+                .galois_elements(lt.baby_steps().iter().copied(), [], cyclotomic_order);
+            uses.extend(babies.into_iter().map(|p| (p, k)));
+            k -= consumed;
+            let giants = lt.giant_steps.iter().filter(|gs| !gs.diagonals.is_empty()).map(|gs| gs.rot);
+            let giants = lt.rotations.galois_elements([], giants, cyclotomic_order);
+            uses.extend(giants.into_iter().map(|p| (p, k)));
+        }
+        uses.retain(|&(p, _)| p != 1);
+        uses
+    }
+
     /// Slot rotations of the transform, for their automorphism keys.
     pub fn rotations(&self) -> Vec<i64> {
         let lts = || self.factors.iter().map(|(lt, _)| lt);
@@ -816,6 +837,15 @@ impl ReplicatedBootstrapPlan {
         self.k_boot(k_out) + self.extra_bits
     }
 
+    /// Width of the widest product EvalMod relinearizes for an output of width
+    /// `k_out`: EvalMod reads what `CoeffsToSlots` leaves of the raised width,
+    /// at the raised scale, the message ratio and the ModUp bits.
+    pub fn tensor_key_k(&self, k_out: usize) -> usize {
+        let after_c2s = self.k_boot(k_out) - self.c2s_consumed_bits();
+        let raised_log_delta = self.log_delta + self.eval_mod.log_msg_ratio + self.mod_up_extra_bits;
+        self.eval_mod.relinearization_k(after_c2s - raised_log_delta)
+    }
+
     /// Key layouts for outputs of width `k_out`: the automorphism keys of
     /// `galois_elements` ([`ReplicatedBootstrapping::galois_elements`]) and the
     /// tensor key share one gadget, covering [`Self::key_k`] in digits of
@@ -880,51 +910,6 @@ impl ReplicatedBootstrapPlan {
                 }
             }),
         }
-    }
-
-    /// [`Self::key_layouts`] with the fewest gadget digits within the modulus
-    /// bounds: every key under the secret within `max_dense_modulus` bits and
-    /// the key to the ephemeral secret within `max_sparse_modulus`, each with
-    /// an auxiliary modulus of one digit,
-    /// `log2(QP) = k_offset + (dnum + 1)·k_digit`.
-    pub fn secure_key_layouts(
-        &self,
-        galois_elements: &[i64],
-        n: Degree,
-        base2k: Base2K,
-        k_out: usize,
-        max_dense_modulus: usize,
-        max_sparse_modulus: usize,
-    ) -> Result<BootstrappingKeysLayout> {
-        let k_key = self.key_k(k_out);
-        let k_q_b = self.log_delta + self.eval_mod.log_msg_ratio;
-        let digit = |k: usize, max: usize| {
-            (1..=k)
-                .map(|dnum| k.div_ceil(dnum))
-                .find(|&digit| k.div_ceil(digit) * digit + digit <= max)
-                .with_context(|| format!("no gadget covers {k} bits within a modulus of {max} bits"))
-        };
-        let k_digit = digit(k_key, max_dense_modulus)?;
-        let sparse_digit = digit(k_q_b, max_sparse_modulus)?;
-        let raised = self.k_boot(k_out);
-        let window = k_q_b + self.mod_up_extra_bits;
-        let return_digit = (1..=window)
-            .map(|dnum| window.div_ceil(dnum))
-            .find(|&digit| (window.div_ceil(digit) * digit).max(raised) + digit <= max_dense_modulus)
-            .context("no sparse-to-dense gadget fits the raised modulus and its auxiliary digit")?;
-        let mut layouts = self.key_layouts(galois_elements, n, base2k, k_out, k_digit, k_digit, true);
-        if let Some(encapsulation) = layouts.encapsulation.as_mut() {
-            let sparse = TorusPrecision(sparse_digit as u32);
-            encapsulation.dense_to_sparse.k_digit = sparse;
-            encapsulation.dense_to_sparse.k_aux = sparse;
-            encapsulation.dense_to_sparse.dnum = GGLWELayout::dnum_for_input(TorusPrecision(k_q_b as u32), sparse);
-            let sparse_to_dense = encapsulation.sparse_to_dense.as_mut().unwrap();
-            sparse_to_dense.k_digit = return_digit.into();
-            sparse_to_dense.k_aux = return_digit.into();
-            sparse_to_dense.dnum = GGLWELayout::dnum_for_input(window.into(), return_digit.into());
-            sparse_to_dense.k_offset = raised.saturating_sub(sparse_to_dense.dnum.0 as usize * return_digit).into();
-        }
-        Ok(layouts)
     }
 }
 
@@ -1153,6 +1138,65 @@ impl<BE: Backend, F> ReplicatedBootstrapping<BE, F> {
         elements.sort_unstable();
         elements.dedup();
         elements
+    }
+
+    /// The widths at which a bootstrapping into `k_out` bits uses its keys
+    /// (a key covers its width when its `max_input_k` is at least that width):
+    ///
+    /// - the bottom trace and `SlotsToCoeffs` at the input width plus the
+    ///   working bits, each `SlotsToCoeffs` factor's giant rotations its bits
+    ///   narrower;
+    /// - the top trace and `CoeffsToSlots` at the raised width plus the
+    ///   working bits, likewise;
+    /// - the conjugation on what `CoeffsToSlots` leaves, and with the packed
+    ///   EvalMod the rotation that adds the second batch on what EvalMod
+    ///   leaves;
+    /// - the tensor key at the widest product EvalMod relinearizes.
+    ///
+    /// Every Galois element of [`Self::galois_elements`] gets the width of its
+    /// widest use. A bootstrapping looks each key up at its width before any
+    /// work.
+    pub fn key_widths(&self, module: &Module<BE>, k_out: usize) -> BootstrappingKeyWidths
+    where
+        Module<BE>: CKKSModuleInfos + GLWETrace<BE>,
+    {
+        let plan = &self.plan;
+        let order = 2 * module.n() as i64;
+        let log_n = module.log_n();
+        let k_boot = plan.k_boot(k_out);
+        let low = plan.k_in() + plan.extra_bits;
+        let high = k_boot + plan.extra_bits;
+        let trace = |skip: usize, k: usize| {
+            module
+                .glwe_trace_galois_elements(module.n().into(), skip..log_n, false)
+                .into_iter()
+                .map(move |p| (p, k))
+        };
+        let after_c2s = k_boot - plan.c2s_consumed_bits();
+        let after_eval_mod = after_c2s - plan.eval_mod.consumed_bits();
+        let packed_rotation = self.packed.map(|double| {
+            let k = 1i64 << double.log_k();
+            (
+                module.ckks_galois_element::<Standard>((k / 2) << double.log_r()),
+                after_eval_mod,
+            )
+        });
+        let mut rotation_keys: BTreeMap<i64, usize> = BTreeMap::new();
+        for (p, k) in trace(self.bottom_skip, low)
+            .chain(self.s2c.key_uses(low, order))
+            .chain(trace(self.top_skip, high))
+            .chain(self.c2s.key_uses(high, order))
+            .chain([(-1, after_c2s + plan.extra_bits)])
+            .chain(packed_rotation)
+        {
+            let width = rotation_keys.entry(p).or_default();
+            *width = k.max(*width);
+        }
+        BootstrappingKeyWidths {
+            rotation_keys,
+            tensor_key: plan.tensor_key_k(k_out),
+            conversion_keys: None,
+        }
     }
 
     /// Scratch of [`Self::generate_keys`] for `layout`: the encryption of each key.

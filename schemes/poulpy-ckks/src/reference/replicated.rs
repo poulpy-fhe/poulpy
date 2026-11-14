@@ -2,8 +2,9 @@ use crate::CKKSResult as Result;
 use poulpy_core::{
     GLWECIEmbed, GLWECITrace, GLWECopy, GLWEKeyswitch, GLWEShift, GLWETrace,
     layouts::{
-        GGLWEInfos, GGLWEPreparedToBackendRef, GLWECIEmbedKeyPrepared, GLWECITraceKeyPrepared, GLWEInfos, GLWELayout,
-        GLWEPlaintextMeta, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LWEInfos, Scale, SetK,
+        GGLWEInfos, GGLWEPreparedToBackendRef, GLWEAutomorphismKeyLayout, GLWECIEmbedKeyPrepared, GLWECITraceKeyPrepared,
+        GLWEInfos, GLWELayout, GLWEPlaintextMeta, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LWEInfos,
+        Scale, SetK, TorusPrecision,
     },
 };
 use poulpy_hal::layouts::{Backend, ConjugateInvariant, Data, Module, ScratchArena, Standard};
@@ -13,15 +14,15 @@ use crate::oep::derived::replicated::{
     working_layout,
 };
 use crate::{
-    CKKSCtBounds, CKKSInfos, CKKSLayout, GLWEPlaintextInfos, ReplicatedLayout, SetCKKSInfos, SetGLWEPlaintextInfos, SlotLayout,
-    SlotsKind,
+    CKKSCompositionError, CKKSCtBounds, CKKSInfos, CKKSLayout, GLWEPlaintextInfos, ReplicatedLayout, SetCKKSInfos,
+    SetGLWEPlaintextInfos, SlotLayout, SlotsKind,
     api::{
         CKKSAddOps, CKKSCIRingMapOps, CKKSConjugateOps, CKKSCopyOps, CKKSEvalModOps, CKKSImagOps, CKKSLinearTransformationOps,
         CKKSPow2Ops, CKKSReplicatedBootstrapOps, CKKSRotateOps, CKKSRoundOps, CKKSSubOps,
     },
     layouts::{
-        BootstrappingKeys, CKKSCiphertextViewMut, ReplicatedBootstrapWorkspace, ReplicatedBootstrapping, ReplicatedTransform,
-        ReplicatedTransformWorkspace, ScratchArenaTakeCKKSCiphertext,
+        BootstrappingKeys, BootstrappingKeysLayout, CKKSCiphertextViewMut, ReplicatedBootstrapWorkspace, ReplicatedBootstrapping,
+        ReplicatedTransform, ReplicatedTransformWorkspace, ScratchArenaTakeCKKSCiphertext,
     },
     oep::{CKKSEncapsulatedModUpImpl, CKKSModUpFirstFactorImpl},
     reference::bootstrapping::mod_raise_body,
@@ -143,14 +144,12 @@ fn ci_bootstrap_depths(layout: &ReplicatedLayout, log_delta_in: usize, level_log
 /// [`CKKSReplicatedCIBootstrapOps`](crate::api::CKKSReplicatedCIBootstrapOps).
 pub trait CKKSReplicatedBootstrapReference<BE: Backend> {
     /// Scratch of [`Self::ckks_replicated_bootstrap_reference`].
-    fn ckks_replicated_bootstrap_tmp_bytes_reference<C, I, F, A, T, S>(
+    fn ckks_replicated_bootstrap_tmp_bytes_reference<C, I, F>(
         &self,
         ct_out: &C,
         ct_in: &I,
         ctx: &ReplicatedBootstrapping<BE, F>,
-        atk_infos: &A,
-        tsk_infos: &T,
-        encapsulation_infos: Option<(&S, &S)>,
+        keys_layout: &BootstrappingKeysLayout,
     ) -> usize
     where
         BE: CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl,
@@ -169,10 +168,7 @@ pub trait CKKSReplicatedBootstrapReference<BE: Backend> {
             + GLWEKeyswitch<BE>
             + GLWETrace<BE>,
         C: CKKSCtBounds,
-        I: CKKSCtBounds,
-        A: GGLWEInfos,
-        T: GGLWEInfos,
-        S: GGLWEInfos;
+        I: CKKSCtBounds;
 
     /// [`CKKSReplicatedBootstrapOps::ckks_replicated_bootstrap`].
     fn ckks_replicated_bootstrap_reference<Dst, Src, F, K>(
@@ -206,14 +202,12 @@ pub trait CKKSReplicatedBootstrapReference<BE: Backend> {
 }
 
 impl<BE: Backend> CKKSReplicatedBootstrapReference<BE> for Module<BE> {
-    fn ckks_replicated_bootstrap_tmp_bytes_reference<C, I, F, A, T, S>(
+    fn ckks_replicated_bootstrap_tmp_bytes_reference<C, I, F>(
         &self,
         ct_out: &C,
         ct_in: &I,
         ctx: &ReplicatedBootstrapping<BE, F>,
-        atk_infos: &A,
-        tsk_infos: &T,
-        encapsulation_infos: Option<(&S, &S)>,
+        keys_layout: &BootstrappingKeysLayout,
     ) -> usize
     where
         BE: CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl,
@@ -233,9 +227,6 @@ impl<BE: Backend> CKKSReplicatedBootstrapReference<BE> for Module<BE> {
             + GLWETrace<BE>,
         C: CKKSCtBounds,
         I: CKKSCtBounds,
-        A: GGLWEInfos,
-        T: GGLWEInfos,
-        S: GGLWEInfos,
     {
         let module = self;
         let plan = ctx.plan;
@@ -257,26 +248,30 @@ impl<BE: Backend> CKKSReplicatedBootstrapReference<BE> for Module<BE> {
         let raised = at(k_boot);
         let high = working_layout(&raised, plan.extra_bits, 0);
         let boot = ckks(at(k_boot), replicated);
-        let wide = |layout: GLWELayout, transform: &ReplicatedTransform<BE>| {
+        let wide = |layout: GLWELayout, transform: &ReplicatedTransform<BE>, atk: &GLWEAutomorphismKeyLayout| {
             [replicated, SlotLayout::Full]
                 .into_iter()
                 .map(|slot_layout| {
                     let wide = ckks(layout, slot_layout);
-                    transform_tmp_bytes(module, &wide, atk_infos, transform)
-                        .max(module.ckks_rotate_tmp_bytes(&wide, atk_infos))
-                        .max(module.ckks_conjugate_tmp_bytes(&wide, atk_infos))
+                    transform_tmp_bytes(module, &wide, atk, transform)
+                        .max(module.ckks_rotate_tmp_bytes(&wide, atk))
+                        .max(module.ckks_conjugate_tmp_bytes(&wide, atk))
                         .max(module.ckks_copy_tmp_bytes(&wide, &wide))
                         .max(module.ckks_round_tmp_bytes(&boot, &wide))
                         .max(module.ckks_add_tmp_bytes(layout.size()))
                         .max(module.ckks_sub_tmp_bytes(layout.size()))
                         .max(module.ckks_mul_i_tmp_bytes(layout.size()))
-                        .max(module.glwe_trace_assign_tmp_bytes(&layout, atk_infos))
+                        .max(module.glwe_trace_assign_tmp_bytes(&layout, atk))
                 })
                 .max()
                 .unwrap_or(0)
         };
         let input_ckks = ckks(input, replicated);
-        let mod_up = match encapsulation_infos {
+        let encapsulation = keys_layout
+            .encapsulation
+            .as_ref()
+            .and_then(|keys| keys.sparse_to_dense.as_ref().map(|back| (&keys.dense_to_sparse, back)));
+        let mod_up = match encapsulation {
             Some((dense_to_sparse, sparse_to_dense)) => {
                 BE::ckks_encapsulated_mod_up_tmp_bytes(module, &boot, &input_ckks, dense_to_sparse, sparse_to_dense)
             }
@@ -284,17 +279,27 @@ impl<BE: Backend> CKKSReplicatedBootstrapReference<BE> for Module<BE> {
         }
         .max(module.ckks_mul_pow2_tmp_bytes(input.size()));
         let eval_mod = module
-            .ckks_eval_mod_tmp_bytes(&boot, &boot, &ctx.eval_mod, tsk_infos)
-            .max(module.ckks_rotate_tmp_bytes(&boot, atk_infos))
+            .ckks_eval_mod_tmp_bytes(&boot, &boot, &ctx.eval_mod, &keys_layout.tensor_key)
             .max(module.ckks_mul_i_tmp_bytes(raised.size()))
             .max(module.ckks_add_tmp_bytes(raised.size()))
             .max(module.ckks_round_tmp_bytes(&ckks(ct_out.glwe_layout(), replicated), &boot));
         let lift = plan.log_delta.saturating_sub(ct_in.log_delta());
         let narrow = at(ct_in.k().as_usize() + lift);
-        let front = ct_bytes::<BE>(&input) + ct_bytes::<BE>(&narrow) + 3 * ct_bytes::<BE>(&low) + wide(low, &ctx.s2c).max(mod_up);
-        let front = front.max(ct_bytes::<BE>(&input) + ct_bytes::<BE>(&low) + wide(low, &ctx.s2c));
-        let back = 3 * ct_bytes::<BE>(&raised) + (4 * ct_bytes::<BE>(&high) + wide(high, &ctx.c2s)).max(eval_mod);
-        ct_bytes::<BE>(&raised) + front.max(back)
+        // Each stage with each rotation key: the keys differ in width and gadget.
+        keys_layout
+            .rotation_key_layouts()
+            .map(|atk| {
+                let front = ct_bytes::<BE>(&input)
+                    + ct_bytes::<BE>(&narrow)
+                    + 3 * ct_bytes::<BE>(&low)
+                    + wide(low, &ctx.s2c, atk).max(mod_up);
+                let front = front.max(ct_bytes::<BE>(&input) + ct_bytes::<BE>(&low) + wide(low, &ctx.s2c, atk));
+                let eval_mod = eval_mod.max(module.ckks_rotate_tmp_bytes(&boot, atk));
+                let back = 3 * ct_bytes::<BE>(&raised) + (4 * ct_bytes::<BE>(&high) + wide(high, &ctx.c2s, atk)).max(eval_mod);
+                ct_bytes::<BE>(&raised) + front.max(back)
+            })
+            .max()
+            .unwrap_or(0)
     }
 
     fn ckks_replicated_bootstrap_reference<Dst, Src, F, K>(
@@ -356,6 +361,26 @@ impl<BE: Backend> CKKSReplicatedBootstrapReference<BE> for Module<BE> {
         let k_boot = plan.k_boot(dst.k().as_usize());
         check_workspace(OP, &workspace.s2c, &at(k_in + plan.extra_bits), &ctx.s2c)?;
         check_workspace(OP, &workspace.c2s, &at(k_boot + plan.extra_bits), &ctx.c2s)?;
+        // Every key at the width of its widest use, before any work.
+        let widths = ctx.key_widths(module, dst.k().as_usize());
+        for (&p, &k) in &widths.rotation_keys {
+            let k = TorusPrecision(k as u32);
+            rotation_keys
+                .get_automorphism_key(p, k)
+                .map_err(|source| CKKSCompositionError::MissingAutomorphismKey {
+                    op: OP,
+                    rotation: p,
+                    k: k.into(),
+                    source,
+                })?;
+        }
+        let tensor_k = TorusPrecision(widths.tensor_key as u32);
+        tsk.get_tensor_key(tensor_k)
+            .map_err(|source| CKKSCompositionError::MissingRelinearizationKey {
+                op: OP,
+                k: tensor_k.into(),
+                source,
+            })?;
         let mut raised_meta = src.meta();
         raised_meta.slot_layout = SlotLayout::Full;
         let (mut raised, mut scratch) = scratch.borrow().take_ckks_ciphertext_scratch(&at(k_boot), raised_meta);
@@ -491,14 +516,12 @@ pub trait CKKSReplicatedCIBootstrapReference<BE: Backend> {
     /// Scratch of [`Self::ckks_replicated_ci_bootstrap_reference`]: the working ciphertexts of both rings
     /// beside the largest operation.
     #[allow(clippy::too_many_arguments)]
-    fn ckks_replicated_ci_bootstrap_tmp_bytes_reference<C, I, F, A, T, S, K>(
+    fn ckks_replicated_ci_bootstrap_tmp_bytes_reference<C, I, F, K>(
         &self,
         ct_out: &C,
         ct_in: &I,
         ctx: &ReplicatedBootstrapping<BE, F>,
-        atk_infos: &A,
-        tsk_infos: &T,
-        encapsulation_infos: Option<(&S, &S)>,
+        keys_layout: &BootstrappingKeysLayout,
         conversion_infos: &K,
     ) -> usize
     where
@@ -510,9 +533,6 @@ pub trait CKKSReplicatedCIBootstrapReference<BE: Backend> {
             + CKKSRoundOps<BE, ConjugateInvariant>,
         C: CKKSCtBounds,
         I: CKKSCtBounds,
-        A: GGLWEInfos,
-        T: GGLWEInfos,
-        S: GGLWEInfos,
         K: GGLWEInfos;
 
     /// Bootstraps the conjugate-invariant replicated ciphertext `src` of degree
@@ -553,14 +573,12 @@ pub trait CKKSReplicatedCIBootstrapReference<BE: Backend> {
 }
 
 impl<BE: Backend> CKKSReplicatedCIBootstrapReference<BE> for Module<BE> {
-    fn ckks_replicated_ci_bootstrap_tmp_bytes_reference<C, I, F, A, T, S, K>(
+    fn ckks_replicated_ci_bootstrap_tmp_bytes_reference<C, I, F, K>(
         &self,
         ct_out: &C,
         ct_in: &I,
         ctx: &ReplicatedBootstrapping<BE, F>,
-        atk_infos: &A,
-        tsk_infos: &T,
-        encapsulation_infos: Option<(&S, &S)>,
+        keys_layout: &BootstrappingKeysLayout,
         conversion_infos: &K,
     ) -> usize
     where
@@ -572,9 +590,6 @@ impl<BE: Backend> CKKSReplicatedCIBootstrapReference<BE> for Module<BE> {
             + CKKSRoundOps<BE, ConjugateInvariant>,
         C: CKKSCtBounds,
         I: CKKSCtBounds,
-        A: GGLWEInfos,
-        T: GGLWEInfos,
-        S: GGLWEInfos,
         K: GGLWEInfos,
     {
         let module = self;
@@ -603,7 +618,7 @@ impl<BE: Backend> CKKSReplicatedCIBootstrapReference<BE> for Module<BE> {
         let ops = module
             .ckks_ci_embed_tmp_bytes(&embedded, conversion_infos)
             .max(CKKSRoundOps::<BE>::ckks_round_tmp_bytes(module, &input, &embedded))
-            .max(module.ckks_replicated_bootstrap_tmp_bytes(&output, &input, ctx, atk_infos, tsk_infos, encapsulation_infos))
+            .max(module.ckks_replicated_bootstrap_tmp_bytes(&output, &input, ctx, keys_layout))
             .max(CKKSCopyOps::<BE>::ckks_copy_tmp_bytes(module, &wide_output, &output))
             .max(module.ckks_ci_trace_tmp_bytes(&traced, &wide_output, conversion_infos))
             .max(CKKSCopyOps::<BE, ConjugateInvariant>::ckks_copy_tmp_bytes(

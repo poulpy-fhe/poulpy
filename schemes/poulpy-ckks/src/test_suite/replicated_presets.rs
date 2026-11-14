@@ -161,9 +161,10 @@ where
             |s| ReplicatedBootstrapping::<BC, f64>::new(&client, plan, base2k.into(), s),
         )
         .unwrap();
-        let galois_elements = ctx.galois_elements(&module);
-        assert_eq!(client_ctx.galois_elements(&client), galois_elements);
-        let keys_layout = adjust(preset.keys_layout(layout, &galois_elements).unwrap());
+        assert_eq!(client_ctx.galois_elements(&client), ctx.galois_elements(&module));
+        let widths = ctx.key_widths(&module, preset.output_k());
+        assert_eq!(client_ctx.key_widths(&client, preset.output_k()), widths);
+        let keys_layout = adjust(preset.keys_layout(layout, &widths).unwrap());
         let input_layout = CKKSLayout {
             glwe_layout: GLWELayout {
                 n: n.into(),
@@ -242,17 +243,9 @@ where
 
         let output = module.ckks_ciphertext_alloc_from_infos(&output_layout);
         let workspace = ctx.alloc_workspace(&module, &output);
-        let encapsulation = keys_layout.encapsulation.map(|e| (e.dense_to_sparse, e.sparse_to_dense));
         // The bootstrapping and the copy of an input.
         let run_bytes = module
-            .ckks_replicated_bootstrap_tmp_bytes(
-                &output,
-                &input,
-                &ctx,
-                keys_layout.rotation_keys.values().next().expect("the bootstrapping rotates"),
-                &keys_layout.tensor_key,
-                encapsulation.as_ref().map(|(d, s)| (d, s.as_ref().unwrap())),
-            )
+            .ckks_replicated_bootstrap_tmp_bytes(&output, &input, &ctx, &keys_layout)
             .max(module.ckks_copy_tmp_bytes(&input, &input));
         Self {
             preset,
@@ -286,17 +279,25 @@ where
     }
 
     /// The gadgets of the keys under the secret and of the key to the
-    /// ephemeral secret, as `dnum x k_digit + k_aux`.
+    /// ephemeral secret, as `dnum x k_digit + k_aux`, the rotation keys by
+    /// distinct gadget with their count.
     pub fn gadgets(&self) -> String {
         let gadget = |key: GGLWELayout| format!("{}x{}+{}", key.dnum.0, key.k_digit.0, key.k_aux.0);
-        let layout = self.preset.keys_layout(self.ctx.plan().layout, &[]).unwrap();
+        let widths = self.ctx.key_widths(&self.module, self.preset.output_k());
+        let layout = self.preset.keys_layout(self.ctx.plan().layout, &widths).unwrap();
+        let mut rotations = std::collections::BTreeMap::<String, usize>::new();
+        for key in layout.rotation_keys.values() {
+            *rotations.entry(gadget(key.gglwe_layout())).or_default() += 1;
+        }
+        let rotations: Vec<String> = rotations.iter().map(|(g, count)| format!("{count}x({g})")).collect();
         let ephemeral = layout.encapsulation.map(|e| gadget(e.dense_to_sparse.gglwe_layout()));
         let return_key = layout
             .encapsulation
             .and_then(|e| e.sparse_to_dense)
             .map(|key| format!("{}+{}", key.k_offset.0, gadget(key.gglwe_layout())));
         format!(
-            "keys={} ephemeral={} return={}",
+            "rotation=[{}] tensor={} ephemeral={} return={}",
+            rotations.join(" "),
             gadget(layout.tensor_key.gglwe_layout()),
             ephemeral.unwrap_or_default(),
             return_key.unwrap_or_default()

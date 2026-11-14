@@ -6,7 +6,7 @@ use anyhow::{Context, Result, ensure};
 use poulpy_core::layouts::{Base2K, Degree, GGLWELayout, GLWESwitchingKeyLayout, Rank, TorusPrecision};
 
 use crate::{
-    layouts::{BootstrappingKeysLayout, BootstrappingPlan, EncapsulationKeysLayout},
+    layouts::{BootstrappingKeyWidths, BootstrappingKeysLayout, BootstrappingPlan, EncapsulationKeysLayout},
     presets::first_factor::{first_factor_diagonal_growth, first_factor_small_bits, first_factor_work},
 };
 
@@ -64,26 +64,55 @@ impl BootstrappingKeyPolicy {
             .checked_sub(plan.pre_mod_up_consumed_bits())
             .context("the input is narrower than the bits consumed before the raise")?;
         let first_factor_on_raise = plan.coeffs_to_slots().first_factor_on_raise();
-        let (dense, sparse) = (self.dense_log_modulus, self.sparse_log_modulus);
-        let encapsulation = match plan.sparse_secret_hamming_weight() {
-            Some(_) => Some(EncapsulationKeysLayout {
-                dense_to_sparse: self
-                    .key_layout(
-                        "dense-to-sparse",
-                        log_modulus,
-                        self.dense_to_sparse_dsize * self.base2k,
-                        sparse,
-                    )?
-                    .into(),
-                sparse_to_dense: (!first_factor_on_raise)
-                    .then(|| self.sparse_to_dense_layout(plan.raised_window(log_modulus), bootstrap_k, dense))
-                    .transpose()?
-                    .map(Into::into),
-            }),
-            None => None,
-        };
+        let encapsulation = plan.sparse_secret_hamming_weight().map(|_| {
+            let sparse_to_dense = (!first_factor_on_raise).then(|| (plan.raised_window(log_modulus), bootstrap_k));
+            (log_modulus, sparse_to_dense)
+        });
+        let first_factor_key = first_factor_on_raise
+            .then(|| self.first_factor_key_layout(plan, log_modulus, bootstrap_k, self.dense_log_modulus))
+            .transpose()?;
+        self.keys_layout_at(
+            &plan.key_widths(self.log_n, bootstrap_k, input_k, log_delta),
+            encapsulation,
+            first_factor_key,
+        )
+    }
 
-        let widths = plan.key_widths(self.log_n, bootstrap_k, input_k, log_delta);
+    /// The layouts of keys used at `widths`: each rotation and the tensor key
+    /// covering its width with the digit of fewest rows, and the conversion keys,
+    /// of degree `2N`, likewise. `encapsulation`, for a sparse secret, holds the
+    /// width of the raise's input, which the dense-to-sparse key covers, and the
+    /// window and raised width of the sparse-to-dense key, unless a first factor
+    /// on the raise takes its place (`first_factor_key`).
+    ///
+    /// # Errors
+    ///
+    /// When a key has no digit under [`Self::max_dsize`] that fits its modulus bound.
+    pub(crate) fn keys_layout_at(
+        &self,
+        widths: &BootstrappingKeyWidths,
+        encapsulation: Option<(usize, Option<(usize, usize)>)>,
+        first_factor_key: Option<GLWESwitchingKeyLayout>,
+    ) -> Result<BootstrappingKeysLayout> {
+        let (dense, sparse) = (self.dense_log_modulus, self.sparse_log_modulus);
+        let encapsulation = encapsulation
+            .map(|(raise_input_k, sparse_to_dense)| -> Result<_> {
+                Ok(EncapsulationKeysLayout {
+                    dense_to_sparse: self
+                        .key_layout(
+                            "dense-to-sparse",
+                            raise_input_k,
+                            self.dense_to_sparse_k_digit(raise_input_k, sparse),
+                            sparse,
+                        )?
+                        .into(),
+                    sparse_to_dense: sparse_to_dense
+                        .map(|(window, bootstrap_k)| self.sparse_to_dense_layout(window, bootstrap_k, dense))
+                        .transpose()?
+                        .map(Into::into),
+                })
+            })
+            .transpose()?;
         let shape = |name, k| self.key_layout(name, k, self.fewest_rows_k_digit(k, dense), dense);
         let rotation_keys = widths
             .rotation_keys
@@ -103,9 +132,7 @@ impl BootstrappingKeyPolicy {
             rotation_keys,
             tensor_key: tensor_key.into(),
             encapsulation,
-            first_factor_key: first_factor_on_raise
-                .then(|| self.first_factor_key_layout(plan, log_modulus, bootstrap_k, dense))
-                .transpose()?,
+            first_factor_key,
             conversion_keys: match widths.conversion_keys {
                 Some((traced, embedded)) => Some((conversion_key(traced)?.into(), conversion_key(embedded)?.into())),
                 None => None,
@@ -131,6 +158,7 @@ impl BootstrappingKeyPolicy {
             .map(|limbs| limbs * self.base2k)
             .filter(|&k_digit| fits(k_digit))
             .min_by_key(|&k_digit| (window.div_ceil(k_digit), k_digit))
+            .or_else(|| self.unaligned_k_digit(window, fits))
             .unwrap_or(self.base2k);
         let (gadget, k_offset) = shape(k_digit).context("sparse-to-dense key: its digits overshoot the raised width")?;
         Ok(GGLWELayout {
@@ -195,11 +223,39 @@ impl BootstrappingKeyPolicy {
     /// products the digit layout of their input.
     fn fewest_rows_k_digit(&self, input_k: usize, limit: usize) -> usize {
         let input_k = input_k.max(1);
+        let fits = |k_digit| self.key_fits(input_k, k_digit, limit);
         (1..=self.max_limbs(input_k))
             .map(|limbs| limbs * self.base2k)
-            .filter(|&k_digit| self.key_fits(input_k, k_digit, limit))
+            .filter(|&k_digit| fits(k_digit))
             .min_by_key(|&k_digit| (input_k.div_ceil(k_digit), k_digit))
+            .or_else(|| self.unaligned_k_digit(input_k, fits))
             .unwrap_or(self.base2k)
+    }
+
+    /// Digit width, in bits, of the dense-to-sparse key switching an input of
+    /// `input_k` bits under a modulus bound of `limit` bits:
+    /// [`Self::dense_to_sparse_dsize`] limbs, or for a digit of one limb that
+    /// does not fit the bound (a sparse bound under two limbs), the digit of
+    /// fewest rows of any width ([`Self::unaligned_k_digit`]).
+    fn dense_to_sparse_k_digit(&self, input_k: usize, limit: usize) -> usize {
+        let whole = self.dense_to_sparse_dsize * self.base2k;
+        if self.dense_to_sparse_dsize == 1 && !self.key_fits(input_k, whole, limit) {
+            return self
+                .unaligned_k_digit(input_k, |k_digit| self.key_fits(input_k, k_digit, limit))
+                .unwrap_or(whole);
+        }
+        whole
+    }
+
+    /// The digit of fewest rows, and at that row count the narrowest, of any
+    /// width up to [`max_limbs`] limbs that `fits` an input of `input_k` bits:
+    /// the fallback of a key when no whole-limb digit fits its bound, as under
+    /// a modulus bound less than a limb above the input plus a digit. Such a
+    /// digit costs its products the digit layout of their input.
+    fn unaligned_k_digit(&self, input_k: usize, fits: impl Fn(usize) -> bool) -> Option<usize> {
+        (1..=self.max_limbs(input_k) * self.base2k)
+            .filter(|&k_digit| fits(k_digit))
+            .min_by_key(|&k_digit| (input_k.max(1).div_ceil(k_digit), k_digit))
     }
 
     /// Widest digit, in limbs, of a key switching an input of `input_k` bits: one

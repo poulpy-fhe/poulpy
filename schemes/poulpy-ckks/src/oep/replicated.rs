@@ -8,7 +8,7 @@ use poulpy_hal::layouts::{Backend, ConjugateInvariant, Data, Module, Ring, Scrat
 use crate::{
     CKKSCtBounds, SetCKKSInfos,
     layouts::{
-        BootstrappingKeys, ReplicatedBootstrapWorkspace, ReplicatedBootstrapping, ReplicatedConversion,
+        BootstrappingKeys, BootstrappingKeysLayout, ReplicatedBootstrapWorkspace, ReplicatedBootstrapping, ReplicatedConversion,
         ReplicatedTransformWorkspace,
     },
     oep::derived::replicated::{
@@ -112,21 +112,16 @@ pub use crate::impl_ckks_replicated_derived_full;
 pub unsafe trait CKKSReplicatedBootstrapImpl: Backend {
     /// Scratch bound of [`Self::ckks_replicated_bootstrap`]; may report less than the reference, never less than the
     /// body takes.
-    fn ckks_replicated_bootstrap_tmp_bytes<C, I, F, A, T, S>(
+    fn ckks_replicated_bootstrap_tmp_bytes<C, I, F>(
         module: &Module<Self>,
         ct_out: &C,
         ct_in: &I,
         ctx: &ReplicatedBootstrapping<Self, F>,
-        atk_infos: &A,
-        tsk_infos: &T,
-        encapsulation_infos: Option<(&S, &S)>,
+        keys_layout: &BootstrappingKeysLayout,
     ) -> usize
     where
         C: CKKSCtBounds,
-        I: CKKSCtBounds,
-        A: GGLWEInfos,
-        T: GGLWEInfos,
-        S: GGLWEInfos;
+        I: CKKSCtBounds;
 
     /// Reproduces
     /// [`ckks_replicated_bootstrap_reference`](crate::reference::replicated::CKKSReplicatedBootstrapReference::ckks_replicated_bootstrap_reference)
@@ -159,26 +154,17 @@ pub unsafe trait CKKSReplicatedBootstrapImpl: Backend {
 pub unsafe trait CKKSReplicatedCIBootstrapImpl: Backend {
     /// Scratch bound of [`Self::ckks_replicated_ci_bootstrap`]; may report less than the reference, never less than
     /// the body takes.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "the scratch covers the bootstrapping keys and the conversion keys"
-    )]
-    fn ckks_replicated_ci_bootstrap_tmp_bytes<C, I, F, A, T, S, K>(
+    fn ckks_replicated_ci_bootstrap_tmp_bytes<C, I, F, K>(
         module: &Module<Self>,
         ct_out: &C,
         ct_in: &I,
         ctx: &ReplicatedBootstrapping<Self, F>,
-        atk_infos: &A,
-        tsk_infos: &T,
-        encapsulation_infos: Option<(&S, &S)>,
+        keys_layout: &BootstrappingKeysLayout,
         conversion_infos: &K,
     ) -> usize
     where
         C: CKKSCtBounds,
         I: CKKSCtBounds,
-        A: GGLWEInfos,
-        T: GGLWEInfos,
-        S: GGLWEInfos,
         K: GGLWEInfos;
 
     /// Reproduces
@@ -214,30 +200,23 @@ pub unsafe trait CKKSReplicatedCIBootstrapImpl: Backend {
 macro_rules! impl_ckks_replicated_bootstrap_reference_full {
     ($be:ty) => {
         unsafe impl $crate::oep::CKKSReplicatedBootstrapImpl for $be {
-            fn ckks_replicated_bootstrap_tmp_bytes<C, I, F, A, T, S>(
+            fn ckks_replicated_bootstrap_tmp_bytes<C, I, F>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 ct_out: &C,
                 ct_in: &I,
                 ctx: &$crate::layouts::ReplicatedBootstrapping<Self, F>,
-                atk_infos: &A,
-                tsk_infos: &T,
-                encapsulation_infos: Option<(&S, &S)>,
+                keys_layout: &$crate::layouts::BootstrappingKeysLayout,
             ) -> usize
             where
                 C: $crate::CKKSCtBounds,
                 I: $crate::CKKSCtBounds,
-                A: ::poulpy_core::layouts::GGLWEInfos,
-                T: ::poulpy_core::layouts::GGLWEInfos,
-                S: ::poulpy_core::layouts::GGLWEInfos,
             {
                 $crate::reference::replicated::CKKSReplicatedBootstrapReference::ckks_replicated_bootstrap_tmp_bytes_reference(
                     module,
                     ct_out,
                     ct_in,
                     ctx,
-                    atk_infos,
-                    tsk_infos,
-                    encapsulation_infos,
+                    keys_layout,
                 )
             }
 
@@ -274,22 +253,17 @@ pub use crate::impl_ckks_replicated_bootstrap_reference_full;
 macro_rules! impl_ckks_replicated_ci_bootstrap_reference_full {
     ($be:ty) => {
         unsafe impl $crate::oep::CKKSReplicatedCIBootstrapImpl for $be {
-            fn ckks_replicated_ci_bootstrap_tmp_bytes<C, I, F, A, T, S, K>(
+            fn ckks_replicated_ci_bootstrap_tmp_bytes<C, I, F, K>(
                 module: &::poulpy_hal::layouts::Module<Self>,
                 ct_out: &C,
                 ct_in: &I,
                 ctx: &$crate::layouts::ReplicatedBootstrapping<Self, F>,
-                atk_infos: &A,
-                tsk_infos: &T,
-                encapsulation_infos: Option<(&S, &S)>,
+                keys_layout: &$crate::layouts::BootstrappingKeysLayout,
                 conversion_infos: &K,
             ) -> usize
             where
                 C: $crate::CKKSCtBounds,
                 I: $crate::CKKSCtBounds,
-                A: ::poulpy_core::layouts::GGLWEInfos,
-                T: ::poulpy_core::layouts::GGLWEInfos,
-                S: ::poulpy_core::layouts::GGLWEInfos,
                 K: ::poulpy_core::layouts::GGLWEInfos,
             {
                 $crate::reference::replicated::CKKSReplicatedCIBootstrapReference::ckks_replicated_ci_bootstrap_tmp_bytes_reference(
@@ -297,9 +271,7 @@ macro_rules! impl_ckks_replicated_ci_bootstrap_reference_full {
                     ct_out,
                     ct_in,
                     ctx,
-                    atk_infos,
-                    tsk_infos,
-                    encapsulation_infos,
+                    keys_layout,
                     conversion_infos,
                 )
             }
