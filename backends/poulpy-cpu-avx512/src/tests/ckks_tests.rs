@@ -46,6 +46,11 @@ mod small_bootstrapping_presets {
     }
 
     #[test]
+    fn ntt4x30_ckks_bootstrap_eval_mod_exponential() {
+        poulpy_ckks::test_suite::presets::test_ckks_bootstrap_eval_mod_exponential::<crate::NTT4x30Avx512>();
+    }
+
+    #[test]
     fn ntt4x30_ckks_coeffs_mask_rejects_invalid_inputs() {
         poulpy_ckks::test_suite::presets::test_ckks_coeffs_mask_rejects_invalid_inputs::<crate::NTT4x30Avx512>();
     }
@@ -64,6 +69,12 @@ mod small_bootstrapping_presets {
     #[test]
     fn ntt4x30_rayon_ckks_coeffs_mask() {
         poulpy_ckks::test_suite::presets::test_ckks_coeffs_mask::<crate::NTT4x30Avx512Rayon>();
+    }
+
+    #[cfg(feature = "enable-rayon")]
+    #[test]
+    fn ntt4x30_rayon_ckks_bootstrap_eval_mod_exponential() {
+        poulpy_ckks::test_suite::presets::test_ckks_bootstrap_eval_mod_exponential::<crate::NTT4x30Avx512Rayon>();
     }
 
     #[cfg(feature = "enable-rayon")]
