@@ -29,7 +29,8 @@ use crate::{
 ///   module of another degree than `2N` with EvalMod on the conjugate-invariant ring, a width too narrow for a stage,
 ///   an input holding fewer bits than its scale plus the plan's message ratio, or a plan whose EvalMod scale is below
 ///   that input scale plus the message ratio (the lifts of a C2S-first raise), a LUT on a plan with the EvalRound+
-///   bypass, and an input of a [replicated](crate::SlotLayout::Replicated) slot layout.
+///   bypass, a complex message under an [`ExpCmplx`](crate::layouts::eval_mod::EvalModType::ExpCmplx) EvalMod, and an
+///   input of a [replicated](crate::SlotLayout::Replicated) slot layout.
 /// - [`MissingAutomorphismKey`](crate::CKKSCompositionError::MissingAutomorphismKey) and
 ///   [`MissingRelinearizationKey`](crate::CKKSCompositionError::MissingRelinearizationKey): a key narrower than its
 ///   stage ([`key_widths`](crate::layouts::BootstrappingPlan::key_widths)), `source` being the key source's refusal.
