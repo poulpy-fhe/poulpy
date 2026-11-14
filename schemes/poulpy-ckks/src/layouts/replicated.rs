@@ -791,7 +791,9 @@ pub struct ReplicatedBootstrapPlan {
     /// EvalMod, whose message ratio `q_b/Δ_b` is the coefficient message's.
     pub eval_mod: EvalModPlan,
     /// Evaluate EvalMod once on the real and imaginary parts side by side, when
-    /// `2kR` slots fit in the ring.
+    /// `2kR` slots fit in the ring. Unpacked, `CoeffsToSlots` fills the `k`
+    /// data slots alone, and a source of real slots takes one EvalMod on the
+    /// real part.
     pub packed: bool,
     /// The evaluation of `SlotsToCoeffs` and `CoeffsToSlots`.
     pub transforms: ReplicatedTransforms,

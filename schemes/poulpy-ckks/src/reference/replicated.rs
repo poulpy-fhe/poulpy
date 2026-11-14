@@ -493,10 +493,13 @@ impl<BE: Backend> CKKSReplicatedBootstrapReference<BE> for Module<BE> {
         )?;
         raised.set_log_sparsity(ctx.top_sparsity);
         let packed = ctx.packed.unwrap_or(plan.layout);
+        // Real slots leave only multiples of the modulus on the imaginary coefficients, whose EvalMod is zero: the
+        // real part alone carries the message.
+        let real = GLWEPlaintextInfos::slots(src).is_real();
         coeffs_to_slots(
             module,
             &mut re,
-            ctx.packed.is_none().then_some(&mut im),
+            (ctx.packed.is_none() && !real).then_some(&mut im),
             &raised,
             &ctx.c2s,
             &mut workspace.c2s,
@@ -506,7 +509,7 @@ impl<BE: Backend> CKKSReplicatedBootstrapReference<BE> for Module<BE> {
             &mut scratch,
         )?;
 
-        // 6. EvalMod, and the parts recombined into `Re + i·Im`.
+        // 6. EvalMod, and the parts recombined into `Re + i·Im`, or of real slots the real part alone.
         // EvalMod takes its input as working storage: `re` and `im` are not read again.
         module.ckks_eval_mod(&mut out, &mut re, &ctx.eval_mod, tsk, &mut scratch)?;
         if let Some(double) = ctx.packed {
@@ -515,12 +518,12 @@ impl<BE: Backend> CKKSReplicatedBootstrapReference<BE> for Module<BE> {
             module.ckks_rotate_into((k / 2) << double.log_r(), &mut re, &out, rotation_keys, &mut scratch)?;
             module.ckks_add_assign(&mut out, &re, &mut scratch)?;
             out.set_log_sparsity(GLWEPlaintextInfos::log_sparsity(&out) + 1);
-        } else {
+        } else if !real {
             module.ckks_eval_mod(&mut re, &mut im, &ctx.eval_mod, tsk, &mut scratch)?;
             module.ckks_mul_i_assign(&mut re, &mut scratch)?;
             module.ckks_add_assign(&mut out, &re, &mut scratch)?;
         }
-        out.set_slots(SlotsKind::Complex);
+        out.set_slots(if real { SlotsKind::Real } else { SlotsKind::Complex });
         out.set_slot_layout(SlotLayout::Replicated(plan.layout));
 
         // 7. `Δ_b·m` at the raised scale is `m` at `Δ_b`, lifted by ModUp; one

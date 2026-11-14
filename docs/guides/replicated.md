@@ -59,6 +59,11 @@ The workspace owns the prepared baby rotations for that input layout; evaluation
 5. EvalMod (cosine with double angles), on both parts at once when packed;
 6. a shaped rounding back to the leveled scale.
 
+A batch of real slots (`SlotsKind::Real`), such as the conjugate-invariant bootstrapping feeds, leaves only multiples of the modulus on the imaginary coefficients, whose EvalMod is zero.
+Unpacked (`ReplicatedBootstrapPlan::packed` off), `CoeffsToSlots` fills the `k` data slots alone and the real part takes one EvalMod, and the output keeps the real slots.
+Packed, real slots take the packed route.
+On one `NTT4x30Neon` thread at `k = 2^10`, a real batch bootstraps in 5.17 s unpacked against 5.55 s packed on `n16_d20_k771_p20_s2c_factored`, and in 2.70 s against 3.10 s for a complex batch on `n15_d20_k393_p20_s2c`, whose two batches do not fit the ring side by side. At `k = 2^8` on the logN15 preset the two routes take the same time.
+
 `ReplicatedBootstrapPlan` holds the circuit (`ReplicatedBootstrapPlan::paper` is the configuration of the paper) and its widths (`k_in`, `k_boot`, `key_k`).
 EvalMod enters its scale with a shaped rounding, which leaves noise of about `2^(G + log2(sqrt(N)))` units on the guard slots for a unit whose guards grow by `G` bits.
 The cosine polynomial and the double angles square the guards, so they must stay well below one: at `2^28`, the guards of `U8_40` (`G = 14.58`) reach `2^7` after the polynomial and wrap the data after the double angles.

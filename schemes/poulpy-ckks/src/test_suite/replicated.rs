@@ -2575,6 +2575,7 @@ where
         ShapingUnit::U16_40,
         ReplicatedTransforms::Dense,
         19.0,
+        Slots::ComplexPacked,
     )
 }
 
@@ -2602,7 +2603,15 @@ where
 {
     // `U4_15` suppresses 15.26 bits, which caps its precision: the noise draws move it by a few tenths.
     for (unit, min_bits) in [(ShapingUnit::U8_40, 21.0), (ShapingUnit::U4_15, 14.5)] {
-        replicated_bootstrap_with::<BE, F>(params, module, host_module, unit, ReplicatedTransforms::Dense, min_bits)?;
+        replicated_bootstrap_with::<BE, F>(
+            params,
+            module,
+            host_module,
+            unit,
+            ReplicatedTransforms::Dense,
+            min_bits,
+            Slots::ComplexPacked,
+        )?;
     }
     Ok(())
 }
@@ -2638,12 +2647,70 @@ where
             c2s_inner_log_delta_diag: 44,
             c2s_first_factor_on_raise,
         };
-        replicated_bootstrap_with::<BE, F>(params, module, host_module, ShapingUnit::U16_40, transforms, 19.0)?;
+        replicated_bootstrap_with::<BE, F>(
+            params,
+            module,
+            host_module,
+            ShapingUnit::U16_40,
+            transforms,
+            19.0,
+            Slots::ComplexPacked,
+        )?;
     }
     Ok(())
 }
 
-/// One bootstrapping of `k = 8` values of `unit`, with full-width and
+/// [`test_replicated_bootstrap`] of real slots, dense and factored with the first
+/// factor on the raise: unpacked, the real part alone through one EvalMod, and
+/// packed, both batches; and complex slots unpacked, one EvalMod per part.
+pub fn test_replicated_bootstrap_real<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) -> Result<()>
+where
+    BE: TestContextBackend + CKKSEncapsulatedModUpImpl,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextModule<BE>
+        + CKKSEncodingOps<BE, F>
+        + CKKSReplicatedBootstrapOps<BE>
+        + CKKSLinearTransformationOps<BE>
+        + CnvPVecAlloc<BE>
+        + GLWETrace<BE>
+        + GLWECIKeyPreparedFactory<BE>
+        + poulpy_core::api::GLWETensorKeyPreparedFactory<BE, ConjugateInvariant>,
+    F: TestScalar,
+    E: ReimNew<F>,
+{
+    let factored = ReplicatedTransforms::Factored {
+        s2c_factors: 2,
+        c2s_factors: 2,
+        placement_factors: 2,
+        c2s_inner_log_delta_diag: 44,
+        c2s_first_factor_on_raise: true,
+    };
+    for (transforms, slots) in [
+        (ReplicatedTransforms::Dense, Slots::Real),
+        (ReplicatedTransforms::Dense, Slots::RealPacked),
+        (ReplicatedTransforms::Dense, Slots::Complex),
+        (factored, Slots::Real),
+    ] {
+        replicated_bootstrap_with::<BE, F>(params, module, host_module, ShapingUnit::U16_40, transforms, 19.0, slots)?;
+    }
+    Ok(())
+}
+
+/// The slots of a [`replicated_bootstrap_with`] batch and the packing of its plan.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Slots {
+    ComplexPacked,
+    Complex,
+    RealPacked,
+    Real,
+}
+
+/// One bootstrapping of `k = 8` values of `unit` in `slots`, with full-width and
 /// row-offset return keys, each at least `min_bits` precise.
 fn replicated_bootstrap_with<BE, F>(
     params: CKKSTestParams,
@@ -2652,6 +2719,7 @@ fn replicated_bootstrap_with<BE, F>(
     unit: ShapingUnit,
     transforms: ReplicatedTransforms,
     min_bits: f64,
+    slots: Slots,
 ) -> Result<()>
 where
     BE: TestContextBackend + CKKSEncapsulatedModUpImpl,
@@ -2668,14 +2736,17 @@ where
     F: TestScalar,
 {
     let layout = unit.layout(3)?;
+    let packed = matches!(slots, Slots::ComplexPacked | Slots::RealPacked);
+    let real = matches!(slots, Slots::Real | Slots::RealPacked);
     let plan = ReplicatedBootstrapPlan {
         transforms,
+        packed,
         ..ReplicatedBootstrapPlan::paper(layout)
     };
     let base2k = Base2K(params.base2k as u32);
     let mut compile = ScratchOwned::<BE>::alloc(ReplicatedBootstrapping::<BE, F>::new_tmp_bytes(module, &plan, base2k)?);
     let ctx = ReplicatedBootstrapping::<BE, F>::new(module, plan, base2k, &mut compile.borrow())?;
-    assert!(ctx.is_packed());
+    assert_eq!(ctx.is_packed(), packed);
     let k_out = plan.k_in() + plan.level_log_delta;
     let key_layouts = plan.key_layouts(
         &ctx.galois_elements(module),
@@ -2690,8 +2761,11 @@ where
     let (sk_raw, sk) = gen_sk_with_raw::<_, Standard>(&params, module, host_module, [0u8; 32]);
 
     let len = 1 << layout.log_k();
-    let values = unit_batch::<Standard, F>(len, 0);
-    let input = encrypt_batch(
+    let mut values = unit_batch::<Standard, F>(len, 0);
+    if real {
+        values.1 = vec![F::zero(); len];
+    }
+    let mut input = encrypt_batch(
         &params,
         module,
         &sk,
@@ -2700,6 +2774,9 @@ where
         plan.k_in() - (plan.log_delta - plan.level_log_delta),
         1,
     )?;
+    if real {
+        input.set_slots(SlotsKind::Real);
+    }
     // A full-width return key beside the offset one, unless first-factor keys take its place.
     let mut full_layouts = key_layouts.clone();
     let sets = match full_layouts.encapsulation.as_mut().unwrap().sparse_to_dense.as_mut() {
@@ -2737,10 +2814,14 @@ where
         module.ckks_replicated_bootstrap(&mut out, &input, &ctx, &mut workspace, &logged, &mut boot_scratch.borrow())?;
         logged.assert_lookups_at(&ctx.key_widths(module, k_out), "replicated bootstrapping");
         assert_eq!(out.slot_layout(), SlotLayout::Replicated(layout));
+        assert_eq!(GLWEPlaintextInfos::slots(&out).is_real(), real);
         assert_eq!((out.log_delta(), out.k().as_usize()), (plan.level_log_delta, k_out));
         let got = decrypt_batch::<BE, F, Standard>(&params, module, &sk, &out, len);
         let bits = precision((&got.0, &got.1), (&values.0, &values.1));
-        assert!(bits >= min_bits, "replicated bootstrapping of {unit:?}: {bits:.2} bits");
+        assert!(
+            bits >= min_bits,
+            "replicated bootstrapping of {unit:?} in {slots:?}: {bits:.2} bits"
+        );
         decoded.push(got);
     }
     if let [full, offset] = &decoded[..] {
@@ -2755,7 +2836,8 @@ where
 
 /// [`test_replicated_bootstrap`] on the conjugate-invariant ring of degree `N`
 /// on one `module` of degree `2N`, which encrypts, bootstraps and decrypts the
-/// conjugate-invariant operands and holds the standard ones of the bootstrapping.
+/// conjugate-invariant operands and holds the standard ones of the bootstrapping,
+/// with a packed plan and an unpacked one, which takes the real part alone.
 pub fn test_replicated_ci_bootstrap<BE>(params: CKKSTestParams, module: &Module<BE>) -> Result<()>
 where
     BE: TestContextBackend + CKKSEncapsulatedModUpImpl,
@@ -2780,90 +2862,100 @@ where
     };
     let host = Module::<HostBytesBackend>::new(standard_params.n as u64);
     let layout = ShapingUnit::U16_40.layout(3)?;
-    let plan = ReplicatedBootstrapPlan::paper(layout);
-    let base2k = Base2K(params.base2k as u32);
-    let mut compile = ScratchOwned::<BE>::alloc(ReplicatedBootstrapping::<BE, f64>::new_tmp_bytes(module, &plan, base2k)?);
-    let ctx = ReplicatedBootstrapping::<BE, f64>::new(module, plan, base2k, &mut compile.borrow())?;
+    // Packed, both batches through one EvalMod; unpacked, the real part alone.
+    for packed in [true, false] {
+        let plan = ReplicatedBootstrapPlan {
+            packed,
+            ..ReplicatedBootstrapPlan::paper(layout)
+        };
+        let base2k = Base2K(params.base2k as u32);
+        let mut compile = ScratchOwned::<BE>::alloc(ReplicatedBootstrapping::<BE, f64>::new_tmp_bytes(module, &plan, base2k)?);
+        let ctx = ReplicatedBootstrapping::<BE, f64>::new(module, plan, base2k, &mut compile.borrow())?;
 
-    // The standard bootstrapping runs one bit wider than the output.
-    let k_out = plan.k_in() + plan.level_log_delta;
-    let key_layouts = plan.key_layouts(
-        &ctx.galois_elements(module),
-        standard_params.n.into(),
-        base2k,
-        k_out + 1,
-        params.base2k,
-        params.base2k + 1,
-        true,
-    );
-    let (ci_sk_raw, ci_sk) = gen_sk_with_raw::<_, ConjugateInvariant>(&params, module, &host, [0u8; 32]);
-    let (sk_raw, _) = gen_sk_with_raw::<_, Standard>(&standard_params, module, &host, [1u8; 32]);
+        // The standard bootstrapping runs one bit wider than the output.
+        let k_out = plan.k_in() + plan.level_log_delta;
+        let key_layouts = plan.key_layouts(
+            &ctx.galois_elements(module),
+            standard_params.n.into(),
+            base2k,
+            k_out + 1,
+            params.base2k,
+            params.base2k + 1,
+            true,
+        );
+        let (ci_sk_raw, ci_sk) = gen_sk_with_raw::<_, ConjugateInvariant>(&params, module, &host, [0u8; 32]);
+        let (sk_raw, _) = gen_sk_with_raw::<_, Standard>(&standard_params, module, &host, [1u8; 32]);
 
-    let len = 1 << layout.log_k();
-    let values = unit_batch::<ConjugateInvariant, f64>(len, 0);
-    let k_in = plan.k_in() - (plan.log_delta - plan.level_log_delta);
-    let input = encrypt_batch(
-        &params,
-        module,
-        &ci_sk,
-        SlotLayout::Replicated(layout),
-        (&values.0, &values.1),
-        k_in,
-        1,
-    )?;
-
-    // The conversion keys cover the ring maps at the shaping depth.
-    let profile = crate::shaping::ShapingProfile::new(&layout);
-    let width = (k_in + profile.shaping_depth(input.log_delta())).max(k_out + 1 + profile.shaping_depth(plan.level_log_delta));
-    let conversion_layout = standard_params.ksk_layout(width);
-    let mut keygen = ScratchOwned::<BE>::alloc(
-        module
-            .glwe_ci_key_encrypt_sk_tmp_bytes(&conversion_layout)
-            .max(module.glwe_ci_key_prepare_tmp_bytes(&conversion_layout))
-            .max(ctx.generate_keys_tmp_bytes(module, &key_layouts))
-            .max(key_layouts.prepare_tmp_bytes(module)),
-    );
-    let (embed_key, trace_key) = gen_ci_keys(&standard_params, module, &ci_sk_raw, &sk_raw, width, &mut keygen.borrow());
-    let (mut xs, mut xe, mut xa) = (Source::new([3; 32]), Source::new([4; 32]), Source::new([5; 32]));
-    let keys = ctx
-        .generate_keys(
+        let len = 1 << layout.log_k();
+        let values = unit_batch::<ConjugateInvariant, f64>(len, 0);
+        let k_in = plan.k_in() - (plan.log_delta - plan.level_log_delta);
+        let input = encrypt_batch(
+            &params,
             module,
-            &sk_raw,
-            &key_layouts,
-            16,
-            &mut xs,
-            &mut xe,
-            &mut xa,
-            &mut keygen.borrow(),
-        )
-        .prepare(module, &mut keygen.borrow())?;
+            &ci_sk,
+            SlotLayout::Replicated(layout),
+            (&values.0, &values.1),
+            k_in,
+            1,
+        )?;
 
-    let mut out = alloc_ct::<_, ConjugateInvariant>(&params, module, k_out);
-    let bytes =
-        module.ckks_replicated_ci_bootstrap_tmp_bytes(&out, &input, &ctx, &key_layouts, &standard_params.ksk_layout(width));
-    let mut boot_scratch = ScratchOwned::<BE>::alloc(bytes);
-    let mut workspace = ctx.alloc_workspace(
-        module,
-        &GLWELayout {
-            n: standard_params.n.into(),
-            k: (k_out + 1).into(),
-            ..out.glwe_layout()
-        },
-    );
-    module.ckks_replicated_ci_bootstrap(
-        &mut out,
-        &input,
-        &ctx,
-        &mut workspace,
-        &keys,
-        (&embed_key, &trace_key),
-        &mut boot_scratch.borrow(),
-    )?;
-    assert_eq!(out.slot_layout(), SlotLayout::Replicated(layout));
-    assert_eq!(out.slots(), SlotsKind::Real);
-    assert_eq!((out.log_delta(), out.k().as_usize()), (plan.level_log_delta, k_out));
-    let got = decrypt_batch::<BE, f64, ConjugateInvariant>(&params, module, &ci_sk, &out, len);
-    let bits = precision((&got.0, &got.1), (&values.0, &values.1));
-    assert!(bits >= 19.0, "conjugate-invariant replicated bootstrapping: {bits:.2} bits");
+        // The conversion keys cover the ring maps at the shaping depth.
+        let profile = crate::shaping::ShapingProfile::new(&layout);
+        let width =
+            (k_in + profile.shaping_depth(input.log_delta())).max(k_out + 1 + profile.shaping_depth(plan.level_log_delta));
+        let conversion_layout = standard_params.ksk_layout(width);
+        let mut keygen = ScratchOwned::<BE>::alloc(
+            module
+                .glwe_ci_key_encrypt_sk_tmp_bytes(&conversion_layout)
+                .max(module.glwe_ci_key_prepare_tmp_bytes(&conversion_layout))
+                .max(ctx.generate_keys_tmp_bytes(module, &key_layouts))
+                .max(key_layouts.prepare_tmp_bytes(module)),
+        );
+        let (embed_key, trace_key) = gen_ci_keys(&standard_params, module, &ci_sk_raw, &sk_raw, width, &mut keygen.borrow());
+        let (mut xs, mut xe, mut xa) = (Source::new([3; 32]), Source::new([4; 32]), Source::new([5; 32]));
+        let keys = ctx
+            .generate_keys(
+                module,
+                &sk_raw,
+                &key_layouts,
+                16,
+                &mut xs,
+                &mut xe,
+                &mut xa,
+                &mut keygen.borrow(),
+            )
+            .prepare(module, &mut keygen.borrow())?;
+
+        let mut out = alloc_ct::<_, ConjugateInvariant>(&params, module, k_out);
+        let bytes =
+            module.ckks_replicated_ci_bootstrap_tmp_bytes(&out, &input, &ctx, &key_layouts, &standard_params.ksk_layout(width));
+        let mut boot_scratch = ScratchOwned::<BE>::alloc(bytes);
+        let mut workspace = ctx.alloc_workspace(
+            module,
+            &GLWELayout {
+                n: standard_params.n.into(),
+                k: (k_out + 1).into(),
+                ..out.glwe_layout()
+            },
+        );
+        module.ckks_replicated_ci_bootstrap(
+            &mut out,
+            &input,
+            &ctx,
+            &mut workspace,
+            &keys,
+            (&embed_key, &trace_key),
+            &mut boot_scratch.borrow(),
+        )?;
+        assert_eq!(out.slot_layout(), SlotLayout::Replicated(layout));
+        assert_eq!(out.slots(), SlotsKind::Real);
+        assert_eq!((out.log_delta(), out.k().as_usize()), (plan.level_log_delta, k_out));
+        let got = decrypt_batch::<BE, f64, ConjugateInvariant>(&params, module, &ci_sk, &out, len);
+        let bits = precision((&got.0, &got.1), (&values.0, &values.1));
+        assert!(
+            bits >= 19.0,
+            "conjugate-invariant replicated bootstrapping, packed {packed}: {bits:.2} bits"
+        );
+    }
     Ok(())
 }

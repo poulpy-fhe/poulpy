@@ -104,8 +104,11 @@ pub trait CKKSReplicatedOps<BE: Backend, Rg: Ring = Standard> {
 /// 5. The normalized top trace onto period `k` removes the lifted multiples
 ///    off the subring, and `CoeffsToSlots` writes the real and imaginary
 ///    parts of the coefficients onto the data slots, side by side when
-///    packed, each rounded with shaping.
-/// 6. EvalMod, then the parts are recombined.
+///    packed, each rounded with shaping. Unpacked, a source of real slots
+///    takes the real part alone: its imaginary part holds only multiples of
+///    the modulus.
+/// 6. EvalMod, once when packed or on real slots, else once per part, then
+///    the parts are recombined. The output takes the slot kind of the source.
 /// 7. The result is relabelled at `Δ_b` and rounded with shaping to the
 ///    leveled scale.
 ///
