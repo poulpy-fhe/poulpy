@@ -27,7 +27,8 @@ use crate::{
     layouts::{
         BootstrappingKeysLayout, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques, CKKSCiphertextAlloc,
         CKKSCiphertextOwned, CKKSEvalModInfos, CKKSPlaintextOwned, DFTOutputFormat, DFTPlan, DFTType, EncapsulationKeysLayout,
-        EncodedLut, EvalRoundPlus, SparseSecretEncapsulation, eval_mod::EvalModPlan,
+        EncodedLut, EvalRoundPlus, SparseSecretEncapsulation,
+        eval_mod::{EvalModPlan, EvalModType},
     },
     polynomial::SplitStrategy,
     test_suite::{
@@ -616,12 +617,13 @@ fn run_case<BE, F, E>(
             let error = eval_lut_refusal(&mut refused, &raised, |res, a, s| {
                 module.ckks_eval_lut(res, a, &c2s_run, &backend_luts, &keys, s)
             });
-            assert_invalid_operand(
-                "a C2S-first run",
-                &error,
-                "ckks_eval_lut",
-                "EvalLut requires an S2C-first run",
-            );
+            // A C2S-first plan takes no exponential, which a general LUT refuses first.
+            let reason = if backend_luts.iter().any(|lut| lut.requires_eval_mod()) {
+                "general LUT evaluation requires an ExpCmplx EvalMod plan"
+            } else {
+                "EvalLut requires an S2C-first run"
+            };
+            assert_invalid_operand("a C2S-first run", &error, "ckks_eval_lut", reason);
         }
         // The budget of a LUT refuses before the first write.
         let starved = fixture_ciphertext(module, &ckks_spec(params.n, params.base2k, raised.log_delta(), 1), 41);
@@ -1176,15 +1178,29 @@ fn fbt_plan_on(
             }),
         },
         coeffs_to_slots,
-        EvalModPlan::complex_exponential(
-            EXP_DEGREE,
-            K_INTERVAL,
-            LOG_INTERVAL_REDUCTION,
-            SplitStrategy::MinDepth,
-            CoeffsMeta::from_delta_budget(EVAL_LOG_DELTA, base2k),
-            EVAL_LOG_DELTA,
-        ),
+        exponential_or_cosine(pipeline == BootstrappingPipeline::S2CFirst && !eval_round_plus, base2k),
         slots_to_coeffs,
     )
     .unwrap()
+}
+
+/// The complex exponential, or, off the route of one EvalMod that the plan refuses it on, a cosine of its fit.
+fn exponential_or_cosine(one_eval_mod: bool, base2k: usize) -> EvalModPlan {
+    let exponential = EvalModPlan::complex_exponential(
+        EXP_DEGREE,
+        K_INTERVAL,
+        LOG_INTERVAL_REDUCTION,
+        SplitStrategy::MinDepth,
+        CoeffsMeta::from_delta_budget(EVAL_LOG_DELTA, base2k),
+        EVAL_LOG_DELTA,
+    );
+    if one_eval_mod {
+        exponential
+    } else {
+        EvalModPlan {
+            eval_mod_type: EvalModType::CosCheby,
+            scaling: None,
+            ..exponential
+        }
+    }
 }

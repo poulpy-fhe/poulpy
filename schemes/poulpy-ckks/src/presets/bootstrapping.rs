@@ -429,12 +429,8 @@ impl BootstrappingPreset {
     /// bound on `interval` is that of [`Self::with_eval_mod_polynomial`], on the whole raised coefficient. The plan
     /// states what EvalMod then leaves and which bootstrap refuses it: see [`BootstrappingPlan`].
     ///
-    /// Fails on a C2S-first preset, whose SlotsToCoeffs runs after EvalMod.
+    /// Fails on a C2S-first preset or one with EvalRound+.
     pub fn with_eval_mod_exponential(&self, interval: usize, degree: usize, log_interval_reduction: usize) -> Result<Self> {
-        ensure!(
-            self.spec.pipeline == BootstrappingPipeline::S2CFirst,
-            "only an S2C-first bootstrap leaves the exponential in its slots"
-        );
         build(PresetSpec {
             derived: true,
             eval_mod: EvalModSpec {

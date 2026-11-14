@@ -31,7 +31,7 @@ pub struct SparseSecretEncapsulation {
 
 /// EvalRound+ (<https://eprint.iacr.org/2024/1379>): a high-precision CoeffsToSlots bypasses EvalMod, and cancels the
 /// error of the low-precision transform that feeds it. Takes a power-of-two `f_mod_interval`, and excludes the functional
-/// bootstrap, whose LUT step runs no bypass.
+/// bootstrap, whose LUT step runs no bypass, and [`EvalModType::ExpCmplx`], which holds on one EvalMod.
 ///
 /// [`ckks_bootstrap_eval_mod`](crate::api::CKKSBootstrappingOps::ckks_bootstrap_eval_mod) then returns `EvalMod(x) -
 /// K·x`, on every route, with its working label and the guard bits still on, and the composer finishes the step: it
@@ -114,9 +114,10 @@ fn invalid_plan(reason: &str) -> anyhow::Error {
 ///
 /// The split route leaves the canonical flag clear: its recombination is a lazy sum.
 ///
-/// On an S2C-first plan, [`EvalModType::ExpCmplx`] leaves `exp(2πi·m/2^log_msg_ratio)`, so a run labels `res` complex
-/// whatever the message. [`ckks_bootstrap`](crate::api::CKKSBootstrappingOps::ckks_bootstrap) refuses the plan, which
-/// refreshes nothing.
+/// [`EvalModType::ExpCmplx`] holds on the real part alone: the split would add the exponentials of the two halves.
+/// [`Self::new`] refuses it on a C2S-first plan or with EvalRound+, and the step on a complex message. It leaves
+/// `exp(2πi·m/2^log_msg_ratio)`, which a run labels complex.
+/// [`ckks_bootstrap`](crate::api::CKKSBootstrappingOps::ckks_bootstrap) refuses the plan, which refreshes nothing.
 ///
 /// # LUTs
 ///
@@ -191,7 +192,8 @@ impl BootstrappingPlan {
     /// otherwise): a swapped direction would make [`Self::galois_elements`]
     /// derive rotation keys for a transform that
     /// [`compile`](crate::layouts::BootstrappingContextPrepared::compile) never builds. The constructor also
-    /// rejects recipe techniques that the selected pipeline cannot evaluate.
+    /// rejects recipe techniques that the selected pipeline cannot evaluate, and [`EvalModType::ExpCmplx`] off the
+    /// route of one EvalMod: see [EvalMod](Self#evalmod).
     pub fn new(
         pipeline: BootstrappingPipeline,
         techniques: BootstrappingTechniques,
@@ -220,6 +222,13 @@ impl BootstrappingPlan {
         if slots_to_coeffs.first_factor_on_raise() {
             return Err(invalid(
                 "only CoeffsToSlots follows the raise: slots_to_coeffs cannot leave its first factor to it".to_string(),
+            ));
+        }
+        if eval_mod.eval_mod_type == EvalModType::ExpCmplx
+            && (pipeline != BootstrappingPipeline::S2CFirst || techniques.eval_round_plus.is_some())
+        {
+            return Err(invalid(
+                "the complex exponential takes an S2C-first plan without EvalRound+".to_string(),
             ));
         }
         eval_mod.validate()?;
