@@ -5,7 +5,7 @@ use poulpy_core::{
     GLWEBytesOf,
     layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetTensorKey},
 };
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Module, Ring, ScratchArena, Standard};
 
 use poulpy_ckks::{
     CKKSCtBounds, SetCKKSInfos,
@@ -14,7 +14,7 @@ use poulpy_ckks::{
 };
 
 /// Homomorphic arithmetic matching simple `libm` operations.
-pub trait CKKSArithmeticOps<BE: Backend> {
+pub trait CKKSArithmeticOps<BE: Backend, Rg: Ring = Standard> {
     /// Scratch bytes for [`Self::ckks_fma`].
     fn ckks_fma_tmp_bytes<R, A, B, C, T>(&self, res: &R, a: &A, b: &B, c: &C, tsk: &T) -> usize
     where
@@ -44,11 +44,11 @@ pub trait CKKSArithmeticOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        B: GLWEToBackendRef<BE> + CKKSCtBounds,
-        C: GLWEToBackendRef<BE> + CKKSCtBounds,
-        H: GetTensorKey<BE>;
+        R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        B: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        C: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        H: GetTensorKey<BE, Rg>;
 
     /// Scratch bytes for [`Self::ckks_scalbn`].
     fn ckks_scalbn_tmp_bytes<R>(&self, res: &R) -> usize
@@ -66,8 +66,8 @@ pub trait CKKSArithmeticOps<BE: Backend> {
     /// The errors of that call, with `res` untouched.
     fn ckks_scalbn<R, I>(&self, exponent: i32, res: &mut R, input: &I, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        I: GLWEToBackendRef<BE> + CKKSCtBounds;
+        R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        I: GLWEToBackendRef<BE, Rg> + CKKSCtBounds;
 
     /// Scratch bytes for [`Self::ckks_ldexp`].
     fn ckks_ldexp_tmp_bytes<R>(&self, res: &R) -> usize
@@ -77,13 +77,13 @@ pub trait CKKSArithmeticOps<BE: Backend> {
     /// Alias of [`Self::ckks_scalbn`].
     fn ckks_ldexp<R, I>(&self, exponent: i32, res: &mut R, input: &I, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        I: GLWEToBackendRef<BE> + CKKSCtBounds;
+        R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        I: GLWEToBackendRef<BE, Rg> + CKKSCtBounds;
 }
 
-impl<BE: Backend> CKKSArithmeticOps<BE> for Module<BE>
+impl<BE: Backend, Rg: Ring> CKKSArithmeticOps<BE, Rg> for Module<BE>
 where
-    Module<BE>: CKKSCopyOps<BE> + CKKSMulAddOps<BE> + CKKSPow2Ops<BE> + GLWEBytesOf<BE>,
+    Module<BE>: CKKSCopyOps<BE, Rg> + CKKSMulAddOps<BE, Rg> + CKKSPow2Ops<BE, Rg> + GLWEBytesOf<BE>,
 {
     fn ckks_fma_tmp_bytes<R, A, B, C, T>(&self, res: &R, a: &A, b: &B, c: &C, tsk: &T) -> usize
     where
@@ -103,11 +103,11 @@ where
 
     fn ckks_fma<R, A, B, C, H>(&self, res: &mut R, a: &A, b: &B, c: &C, tsk: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        B: GLWEToBackendRef<BE> + CKKSCtBounds,
-        C: GLWEToBackendRef<BE> + CKKSCtBounds,
-        H: GetTensorKey<BE>,
+        R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        B: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        C: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        H: GetTensorKey<BE, Rg>,
     {
         scratch.scope(|scratch_local| {
             let (mut acc, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(&*res);
@@ -128,8 +128,8 @@ where
 
     fn ckks_scalbn<R, I>(&self, exponent: i32, res: &mut R, input: &I, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        I: GLWEToBackendRef<BE> + CKKSCtBounds,
+        R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        I: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
     {
         let bits = exponent.unsigned_abs() as usize;
         if exponent >= 0 {
@@ -149,8 +149,8 @@ where
 
     fn ckks_ldexp<R, I>(&self, exponent: i32, res: &mut R, input: &I, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        I: GLWEToBackendRef<BE> + CKKSCtBounds,
+        R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        I: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
     {
         self.ckks_scalbn(exponent, res, input, scratch)
     }

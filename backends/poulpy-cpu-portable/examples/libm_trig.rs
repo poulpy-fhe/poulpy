@@ -10,7 +10,7 @@ mod libm_common;
 
 use anyhow::Result;
 use poulpy_ckks::{CKKSInfos, polynomial::SplitStrategy, test_suite::helpers::upload_pt};
-use poulpy_hal::api::ScratchOwnedBorrow;
+use poulpy_hal::{api::ScratchOwnedBorrow, layouts::Standard};
 use poulpy_libm::trig::{CKKSTrigOps, CosPlan, SinPlan, TrigOptions};
 
 use libm_common::{BASE2K, LOG_DELTA, Setup, coeff_layout, dense_interval, verify};
@@ -34,7 +34,15 @@ fn run() -> Result<()> {
     let cos_plan = host_cos.map_plaintexts(|pt| upload_pt(&setup.module, pt));
     let max_consumed = sin_consumed.max(cos_consumed);
     let mut context = setup.prepare(max_consumed, |module, sizing, params| {
-        module.ckks_sincos_tmp_bytes(sizing, sizing, sizing, &sin_plan, &cos_plan, &params.tsk_layout())
+        CKKSTrigOps::<_, Standard>::ckks_sincos_tmp_bytes(
+            module,
+            sizing,
+            sizing,
+            sizing,
+            &sin_plan,
+            &cos_plan,
+            &params.tsk_layout(),
+        )
     });
 
     // 3. Pack and encrypt the input once because both functions use the same values.

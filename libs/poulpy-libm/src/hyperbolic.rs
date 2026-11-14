@@ -5,7 +5,7 @@ use std::fmt::Debug;
 
 use anyhow::{Result, ensure};
 use num_traits::{Float, FloatConst, FromPrimitive, ToPrimitive};
-use poulpy_hal::layouts::{Backend, HostBytesBackend, Module};
+use poulpy_hal::layouts::{Backend, HostBytesBackend, Module, Ring};
 
 use poulpy_ckks::{
     CKKSLayout,
@@ -29,7 +29,7 @@ define_unary_plan!(AtanhPlan, "atanh");
 
 macro_rules! impl_host_plan {
     ($plan:ident, $name:literal, $fun:ident, $parity:expr) => {
-        impl $plan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
+        impl<Rg: Ring> $plan<CKKSPlaintext<AlignedBuf, i64, Rg>> {
             #[doc = concat!("Fits and prepares `", $name, "` on `[a, b]`.")]
             pub fn from_precision<F>(
                 a: F,
@@ -41,7 +41,7 @@ macro_rules! impl_host_plan {
             ) -> Result<Self>
             where
                 F: CKKSScalar + Float + FloatConst + FromPrimitive + ToPrimitive + Debug,
-                CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
+                CKKSPlaintext<AlignedBuf, i64, Rg>: CKKSPlaintextVecHostCodec<F>,
             {
                 let parity = parity_for_interval(a, b, $parity);
                 let (approximation, approximation_bits) = prepare_function(
@@ -69,7 +69,7 @@ impl_host_plan!(CoshPlan, "cosh", cosh, Parity::Even);
 impl_host_plan!(TanhPlan, "tanh", tanh, Parity::Odd);
 impl_host_plan!(AsinhPlan, "asinh", asinh, Parity::Odd);
 
-impl AcoshPlan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
+impl<Rg: Ring> AcoshPlan<CKKSPlaintext<AlignedBuf, i64, Rg>> {
     /// Fits and prepares `acosh` on `[a, b]`, with `a >= 1`.
     pub fn from_precision<F>(
         a: F,
@@ -81,7 +81,7 @@ impl AcoshPlan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
     ) -> Result<Self>
     where
         F: CKKSScalar + Float + FloatConst + FromPrimitive + ToPrimitive + Debug,
-        CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
+        CKKSPlaintext<AlignedBuf, i64, Rg>: CKKSPlaintextVecHostCodec<F>,
     {
         ensure!(a >= F::one(), "acosh: interval must start at or above 1");
         let (approximation, approximation_bits) = prepare_function(
@@ -102,7 +102,7 @@ impl AcoshPlan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
     }
 }
 
-impl AtanhPlan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
+impl<Rg: Ring> AtanhPlan<CKKSPlaintext<AlignedBuf, i64, Rg>> {
     /// Fits and prepares `atanh` on `[a, b]`, strictly inside `(-1, 1)`.
     pub fn from_precision<F>(
         a: F,
@@ -114,7 +114,7 @@ impl AtanhPlan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
     ) -> Result<Self>
     where
         F: CKKSScalar + Float + FloatConst + FromPrimitive + ToPrimitive + Debug,
-        CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
+        CKKSPlaintext<AlignedBuf, i64, Rg>: CKKSPlaintextVecHostCodec<F>,
     {
         ensure!(
             a > -F::one() && b < F::one(),
@@ -131,7 +131,7 @@ impl AtanhPlan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
 }
 
 /// Homomorphic hyperbolic functions on fixed prepared domains.
-pub trait CKKSHyperbolicOps<BE: Backend> {
+pub trait CKKSHyperbolicOps<BE: Backend, Rg: Ring = Standard> {
     declare_unary_op!(ckks_sinh_tmp_bytes, ckks_sinh, SinhPlan, "sinh");
     declare_unary_op!(ckks_cosh_tmp_bytes, ckks_cosh, CoshPlan, "cosh");
     declare_unary_op!(ckks_tanh_tmp_bytes, ckks_tanh, TanhPlan, "tanh");
@@ -140,9 +140,9 @@ pub trait CKKSHyperbolicOps<BE: Backend> {
     declare_unary_op!(ckks_atanh_tmp_bytes, ckks_atanh, AtanhPlan, "atanh");
 }
 
-impl<BE: Backend> CKKSHyperbolicOps<BE> for Module<BE>
+impl<BE: Backend, Rg: Ring> CKKSHyperbolicOps<BE, Rg> for Module<BE>
 where
-    Module<BE>: CKKSApproximationOps<BE>,
+    Module<BE>: CKKSApproximationOps<BE, Rg>,
 {
     impl_unary_op!(ckks_sinh_tmp_bytes, ckks_sinh, SinhPlan);
     impl_unary_op!(ckks_cosh_tmp_bytes, ckks_cosh, CoshPlan);

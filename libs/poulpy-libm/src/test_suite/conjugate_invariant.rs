@@ -17,19 +17,85 @@ use poulpy_ckks::{
     polynomial::SplitStrategy,
     test_suite::{
         CKKSTestParams,
-        helpers::{TestContextBackend, TestContextSharedModule, ckks_encrypt_pt, ckks_spec, gen_sk_with_raw, gen_tsk, upload_pt},
+        helpers::{
+            TestContextBackend, TestContextSharedModule, ckks_encrypt_pt, ckks_spec, gen_atk, gen_sk_with_raw, gen_tsk, upload_pt,
+        },
     },
 };
 
 use crate::{
-    comparison::DEFAULT_SIGN_COMPOSITE_CHEBYSHEV,
+    comparison::{CKKSComparisonOps, DEFAULT_SIGN_COMPOSITE_CHEBYSHEV},
+    exp::{CKKSExpOps, ExpOptions, ExpPlan},
+    reduce::CKKSReductionOps,
     sign::{CKKSSignOps, SignComposite},
+    softmax::{CKKSSoftmaxOps, SoftmaxOptions, SoftmaxPlan},
 };
 
-use super::helpers::assert_precision_bits;
+use super::helpers::{assert_precision_bits, params_for};
 
 type CI = ConjugateInvariant;
-type HostComposite = SignComposite<f64, CKKSPlaintext<AlignedBuf, i64, CI>>;
+type HostPt = CKKSPlaintext<AlignedBuf, i64, CI>;
+type HostComposite = SignComposite<f64, HostPt>;
+type Keys<BE> = HashMap<i64, GLWEAutomorphismKeyPrepared<<BE as poulpy_hal::layouts::Backend>::OwnedBuf, BE, CI>>;
+
+/// `params_for` with real slots.
+fn ci_params(base: &CKKSTestParams, consumed: usize) -> CKKSTestParams {
+    let mut params = params_for(base, consumed);
+    params.prec_meta.slots = SlotsKind::Real;
+    params
+}
+
+/// The sign composite of the standard-ring comparison tests, fitted to `|x| >= 0.1` with degree-15 factors.
+fn ci_composite(base: &CKKSTestParams, host_module: &Module<HostBytesBackend>) -> HostComposite {
+    let coeff_meta = ckks_spec(base.n, base.base2k, base.prec().log_delta(), base.base2k);
+    HostComposite::from_minimax(
+        0.1,
+        20.0,
+        &[15],
+        12,
+        base.base2k.into(),
+        coeff_meta,
+        SplitStrategy::MinDepth,
+        host_module,
+    )
+    .expect("SignComposite::from_minimax")
+}
+
+/// Keys of the slot reductions on the conjugate-invariant ring, which differ from the standard ring's.
+fn ci_rotation_keys<BE>(
+    params: &CKKSTestParams,
+    module: &Module<BE>,
+    sk_raw: &poulpy_core::layouts::BackendGLWESecret<BE, CI>,
+    scratch: &mut ScratchOwned<BE>,
+) -> Keys<BE>
+where
+    BE: TestContextBackend,
+    Module<BE>: TestContextSharedModule<BE, CI> + CKKSReductionOps<BE, CI>,
+{
+    let elements = module.ckks_sum_slots_galois_elements(&params.prec());
+    assert_eq!(
+        elements.len(),
+        params.n.ilog2() as usize,
+        "one rotation per halving of the n real slots"
+    );
+    let order = 4 * params.n as i64;
+    for (i, &gal) in elements.iter().enumerate() {
+        assert_eq!(
+            gal,
+            poulpy_hal::layouts::galois_element(1 << i, order),
+            "rotation {i} at the order 4n"
+        );
+    }
+    elements
+        .into_iter()
+        .map(|gal| (gal, gen_atk(params, module, gal, sk_raw, &mut scratch.borrow())))
+        .collect()
+}
+
+fn sample(slots: usize, lo: f64, hi: f64, seed: u8) -> Vec<f64> {
+    let mut source = Source::new([seed; 32]);
+    (0..slots).map(|_| source.next_f64(lo, hi)).collect()
+}
 
 /// The `n` real slots of `x`, encoded with the module's encoder and encrypted at `params.k`.
 fn ci_encrypt<BE>(
@@ -214,4 +280,203 @@ where
     let got = ci_decrypt(&params, module, &res, &sk, &mut scratch.borrow());
     let replayed = ci_decrypt(&params, module, &cur, &sk, &mut scratch.borrow());
     assert!(got == replayed, "{label}: differs from its factors evaluated one at a time");
+}
+
+/// `exp` from a plan built for the conjugate-invariant ring.
+pub fn test_exp<BE>(base: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
+where
+    BE: TestContextBackend,
+    Module<BE>: TestContextSharedModule<BE, CI> + CKKSEncodingHostOps<BE, f64, CI> + CKKSExpOps<BE, CI>,
+{
+    let log_delta = base.prec().log_delta();
+    let coeff_meta = ckks_spec(base.n, base.base2k, log_delta, base.base2k);
+    let options = ExpOptions {
+        target_bits: 20.0,
+        ..ExpOptions::default()
+    };
+    let host_plan = ExpPlan::<HostPt>::from_precision(0.0, 3.0, base.base2k.into(), coeff_meta, options, host_module)
+        .expect("ExpPlan::from_precision");
+    let consumed = host_plan.consumed_bits(log_delta);
+    let plan = host_plan.map_plaintexts(|pt| upload_pt(module, pt));
+    let params = ci_params(&base, consumed);
+
+    let (sk_raw, sk) = gen_sk_with_raw::<BE, CI>(&params, module, host_module, [0x91u8; 32]);
+    let mut sizing = module.ckks_ciphertext_alloc::<CI>(params.base2k.into(), params.k.into());
+    sizing.set_meta(params.prec().meta);
+    let mut scratch = ScratchOwned::<BE>::alloc(module.ckks_exp_tmp_bytes(&sizing, &sizing, &plan, &params.tsk_layout()));
+    let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
+
+    let mut x = sample(params.n, 0.0, 3.0, 0x92);
+    x[..2].copy_from_slice(&[0.0, 3.0]);
+    let want: Vec<f64> = x.iter().map(|v| v.exp()).collect();
+    let input = ci_encrypt(&params, module, &sk, &x, &mut scratch.borrow());
+    let mut res = module.ckks_ciphertext_alloc::<CI>(params.base2k.into(), params.k.into());
+    module
+        .ckks_exp(&mut res, &input, &plan, &tsk, &mut scratch.borrow())
+        .expect("ckks_exp");
+    assert_eq!(input.log_budget() - res.log_budget(), consumed, "ci/exp: consumed bits");
+    let got = ci_decrypt(&params, module, &res, &sk, &mut scratch.borrow());
+    assert_precision_bits("ci/exp", &got, &want, options.target_bits, params.n);
+}
+
+/// `fmax` and `fmin` with no conjugation key.
+pub fn test_max_min<BE>(base: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
+where
+    BE: TestContextBackend,
+    Module<BE>: TestContextSharedModule<BE, CI> + CKKSEncodingHostOps<BE, f64, CI> + CKKSComparisonOps<BE, CI>,
+{
+    let log_delta = base.prec().log_delta();
+    let coeff_meta = ckks_spec(base.n, base.base2k, log_delta, base.base2k);
+    let host_composite = ci_composite(&base, host_module);
+    let consumed = host_composite.consumed_bits(log_delta);
+    let params = ci_params(&base, 2 * consumed + 2 * log_delta + 2);
+    let composite = ci_composite(&base, host_module).map_plaintexts(|pt| upload_pt(module, pt));
+
+    let mut a = sample(params.n, -0.4, 0.4, 0x33);
+    let mut b = sample(params.n, -0.4, 0.4, 0x34);
+    (a[0], b[0], a[1], b[1]) = (0.4, -0.4, -0.4, 0.4);
+    let (want_max, want_min): (Vec<f64>, Vec<f64>) = a
+        .iter()
+        .zip(&b)
+        .map(|(&av, &bv)| {
+            let s = (host_composite.evaluate(av - bv) + 1.0) * 0.5;
+            (av * s + bv * (1.0 - s), av * (1.0 - s) + bv * s)
+        })
+        .unzip();
+
+    let (sk_raw, sk) = gen_sk_with_raw::<BE, CI>(&params, module, host_module, [0x35u8; 32]);
+    let mut sizing = module.ckks_ciphertext_alloc::<CI>(params.base2k.into(), params.k.into());
+    sizing.set_meta(params.prec().meta);
+    let size = module.ckks_comparison_tmp_bytes(
+        &sizing,
+        &sizing,
+        &sizing,
+        &coeff_meta,
+        &params.tsk_layout(),
+        &params.atk_layout(),
+    );
+    let mut scratch = ScratchOwned::<BE>::alloc(size);
+    let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
+    let no_keys: Keys<BE> = HashMap::new();
+    let op0 = ci_encrypt(&params, module, &sk, &a, &mut scratch.borrow());
+    let op1 = ci_encrypt(&params, module, &sk, &b, &mut scratch.borrow());
+
+    for (max, want, label) in [(true, &want_max, "ci/fmax"), (false, &want_min, "ci/fmin")] {
+        let mut res = module.ckks_ciphertext_alloc::<CI>(params.base2k.into(), params.k.into());
+        if max {
+            module.ckks_fmax(&mut res, &op0, &op1, &composite, &tsk, &no_keys, &mut scratch.borrow())
+        } else {
+            module.ckks_fmin(&mut res, &op0, &op1, &composite, &tsk, &no_keys, &mut scratch.borrow())
+        }
+        .unwrap_or_else(|e| panic!("{label}: {e:#}"));
+        assert_eq!(
+            op0.log_budget() - res.log_budget(),
+            consumed + log_delta + 1,
+            "{label}: consumed bits"
+        );
+        let got = ci_decrypt(&params, module, &res, &sk, &mut scratch.borrow());
+        assert_precision_bits(label, &got, want, log_delta as f64 - 15.0, params.n);
+    }
+}
+
+/// `sum_slots`, `fmax_slots` and `fmin_slots` over the `n` real slots, with rotation keys at the order `4n` only.
+pub fn test_slot_reductions<BE>(base: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
+where
+    BE: TestContextBackend,
+    Module<BE>: TestContextSharedModule<BE, CI> + CKKSEncodingHostOps<BE, f64, CI> + CKKSReductionOps<BE, CI>,
+{
+    let log_delta = base.prec().log_delta();
+    let coeff_meta = ckks_spec(base.n, base.base2k, log_delta, base.base2k);
+    let host_composite = ci_composite(&base, host_module);
+    let sign_consumed = host_composite.consumed_bits(log_delta);
+    let stages = base.n.ilog2() as usize;
+    let params = ci_params(&base, stages * (sign_consumed + log_delta + 2));
+    let composite = host_composite.map_plaintexts(|pt| upload_pt(module, pt));
+
+    let (sk_raw, sk) = gen_sk_with_raw::<BE, CI>(&params, module, host_module, [0xe2u8; 32]);
+    let mut sizing = module.ckks_ciphertext_alloc::<CI>(params.base2k.into(), params.k.into());
+    sizing.set_meta(params.prec().meta);
+    let (tsk_layout, atk_layout) = (params.tsk_layout(), params.atk_layout());
+    let size = module
+        .ckks_sum_slots_tmp_bytes(&sizing, &sizing, &atk_layout)
+        .max(module.ckks_fmax_slots_tmp_bytes(&sizing, &sizing, &coeff_meta, &tsk_layout, &atk_layout))
+        .max(module.ckks_fmin_slots_tmp_bytes(&sizing, &sizing, &coeff_meta, &tsk_layout, &atk_layout));
+    let mut scratch = ScratchOwned::<BE>::alloc(size);
+    let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
+    let keys = ci_rotation_keys(&params, module, &sk_raw, &mut scratch);
+
+    let x = sample(params.n, -0.01, 0.01, 0xe1);
+    let want = vec![x.iter().sum::<f64>(); params.n];
+    let input = ci_encrypt(&params, module, &sk, &x, &mut scratch.borrow());
+    let mut res = module.ckks_ciphertext_alloc::<CI>(params.base2k.into(), params.k.into());
+    module
+        .ckks_sum_slots(&mut res, &input, &keys, &mut scratch.borrow())
+        .expect("ckks_sum_slots");
+    assert_eq!(
+        res.log_budget(),
+        input.log_budget(),
+        "ci/sum_slots: rotations consume no budget"
+    );
+    let got = ci_decrypt(&params, module, &res, &sk, &mut scratch.borrow());
+    assert_precision_bits("ci/sum_slots", &got, &want, log_delta as f64 - 15.0, params.n);
+
+    let mut x = sample(params.n, -0.15, 0.15, 0xe3);
+    (x[0], x[1]) = (-0.4, 0.4);
+    let input = ci_encrypt(&params, module, &sk, &x, &mut scratch.borrow());
+    for (max, label, value) in [(true, "ci/fmax_slots", 0.4), (false, "ci/fmin_slots", -0.4)] {
+        let mut res = module.ckks_ciphertext_alloc::<CI>(params.base2k.into(), params.k.into());
+        if max {
+            module.ckks_fmax_slots(&mut res, &input, &composite, &tsk, &keys, &mut scratch.borrow())
+        } else {
+            module.ckks_fmin_slots(&mut res, &input, &composite, &tsk, &keys, &mut scratch.borrow())
+        }
+        .unwrap_or_else(|e| panic!("{label}: {e:#}"));
+        assert_eq!(
+            input.log_budget() - res.log_budget(),
+            stages * (sign_consumed + log_delta + 1),
+            "{label}: consumed bits"
+        );
+        let got = ci_decrypt(&params, module, &res, &sk, &mut scratch.borrow());
+        assert_precision_bits(label, &got, &vec![value; params.n], 8.0, params.n);
+    }
+}
+
+/// `softmax` over the `n` real slots, from a plan that counts them.
+pub fn test_softmax<BE>(base: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
+where
+    BE: TestContextBackend,
+    Module<BE>:
+        TestContextSharedModule<BE, CI> + CKKSEncodingHostOps<BE, f64, CI> + CKKSReductionOps<BE, CI> + CKKSSoftmaxOps<BE, CI>,
+{
+    let log_delta = base.prec().log_delta();
+    let coeff_meta = ckks_spec(base.n, base.base2k, log_delta, base.base2k);
+    let options = SoftmaxOptions::default();
+    let host_plan = SoftmaxPlan::<HostPt>::from_precision(-1.0, 1.0, base.base2k.into(), coeff_meta, options, host_module)
+        .expect("SoftmaxPlan::from_precision");
+    assert_eq!(host_plan.slots(), base.n, "ci/softmax: the plan counts the n real slots");
+    let consumed = host_plan.consumed_bits(log_delta);
+    let plan = host_plan.map_plaintexts(|pt| upload_pt(module, pt));
+    let params = ci_params(&base, consumed);
+
+    let mut x = sample(params.n, -1.0, 1.0, 0xf1);
+    (x[0], x[1]) = (-1.0, 1.0);
+    let denominator: f64 = x.iter().map(|v| v.exp()).sum();
+    let want: Vec<f64> = x.iter().map(|v| v.exp() / denominator).collect();
+
+    let (sk_raw, sk) = gen_sk_with_raw::<BE, CI>(&params, module, host_module, [0xf2u8; 32]);
+    let mut sizing = module.ckks_ciphertext_alloc::<CI>(params.base2k.into(), params.k.into());
+    sizing.set_meta(params.prec().meta);
+    let size = module.ckks_softmax_tmp_bytes(&sizing, &sizing, &plan, &params.tsk_layout(), &params.atk_layout());
+    let mut scratch = ScratchOwned::<BE>::alloc(size);
+    let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
+    let keys = ci_rotation_keys(&params, module, &sk_raw, &mut scratch);
+    let input = ci_encrypt(&params, module, &sk, &x, &mut scratch.borrow());
+    let mut res = module.ckks_ciphertext_alloc::<CI>(params.base2k.into(), params.k.into());
+    module
+        .ckks_softmax(&mut res, &input, &plan, &tsk, &keys, &mut scratch.borrow())
+        .expect("ckks_softmax");
+    assert_eq!(input.log_budget() - res.log_budget(), consumed, "ci/softmax: consumed bits");
+    let got = ci_decrypt(&params, module, &res, &sk, &mut scratch.borrow());
+    assert_precision_bits("ci/softmax", &got, &want, options.target_bits, params.n);
+    assert_precision_bits("ci/softmax/sum", &[got.iter().sum::<f64>()], &[1.0], 15.0, params.n);
 }

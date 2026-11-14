@@ -10,7 +10,7 @@ use poulpy_core::{
     GLWEBytesOf,
     layouts::{BSGSMeta, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetTensorKey, IntPolyInfos, LWEInfos, SetBSGSMeta},
 };
-use poulpy_hal::layouts::{Backend, HostBytesBackend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, HostBytesBackend, Module, Ring, ScratchArena};
 
 use poulpy_ckks::{
     CKKSCtBounds, CKKSInfos, CKKSLayout, SetCKKSInfos,
@@ -38,7 +38,7 @@ pub struct HypotPlan<P> {
     pub(crate) y_interval: (f64, f64),
 }
 
-impl CbrtPlan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
+impl<Rg: Ring> CbrtPlan<CKKSPlaintext<AlignedBuf, i64, Rg>> {
     /// Fits and prepares `cbrt` on `[a, b]`.
     pub fn from_precision<F>(
         a: F,
@@ -50,7 +50,7 @@ impl CbrtPlan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
     ) -> Result<Self>
     where
         F: CKKSScalar + Float + FloatConst + FromPrimitive + ToPrimitive + Debug,
-        CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
+        CKKSPlaintext<AlignedBuf, i64, Rg>: CKKSPlaintextVecHostCodec<F>,
     {
         let parity = parity_for_interval(a, b, Parity::Odd);
         let (approximation, approximation_bits) =
@@ -73,7 +73,7 @@ fn square_range<F: Float>(a: F, b: F) -> (F, F) {
     (lo, aa.max(bb))
 }
 
-impl HypotPlan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
+impl<Rg: Ring> HypotPlan<CKKSPlaintext<AlignedBuf, i64, Rg>> {
     /// Prepares `sqrt(x^2 + y^2)` on the declared intervals.
     #[allow(clippy::too_many_arguments)]
     pub fn from_precision<F>(
@@ -88,7 +88,7 @@ impl HypotPlan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
     ) -> Result<Self>
     where
         F: CKKSScalar + Float + FloatConst + FromPrimitive + ToPrimitive + Debug,
-        CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
+        CKKSPlaintext<AlignedBuf, i64, Rg>: CKKSPlaintextVecHostCodec<F>,
     {
         ensure!(
             x_a.is_finite() && x_b.is_finite(),
@@ -170,7 +170,7 @@ impl<P> HypotPlan<P> {
 }
 
 /// Homomorphic root functions.
-pub trait CKKSRootOps<BE: Backend> {
+pub trait CKKSRootOps<BE: Backend, Rg: Ring = Standard> {
     declare_unary_op!(ckks_cbrt_tmp_bytes, ckks_cbrt, CbrtPlan, "cbrt");
 
     /// Scratch bytes for [`Self::ckks_hypot`].
@@ -201,16 +201,16 @@ pub trait CKKSRootOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
-        X: GLWEToBackendRef<BE> + CKKSCtBounds,
-        Y: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE>,
-        H: GetTensorKey<BE>;
+        R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        X: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        Y: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE, Rg>,
+        H: GetTensorKey<BE, Rg>;
 }
 
-impl<BE: Backend> CKKSRootOps<BE> for Module<BE>
+impl<BE: Backend, Rg: Ring> CKKSRootOps<BE, Rg> for Module<BE>
 where
-    Module<BE>: CKKSAddOps<BE> + CKKSApproximationOps<BE> + CKKSMulOps<BE> + GLWEBytesOf<BE>,
+    Module<BE>: CKKSAddOps<BE, Rg> + CKKSApproximationOps<BE, Rg> + CKKSMulOps<BE, Rg> + GLWEBytesOf<BE>,
 {
     impl_unary_op!(ckks_cbrt_tmp_bytes, ckks_cbrt, CbrtPlan);
 
@@ -241,11 +241,11 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
-        X: GLWEToBackendRef<BE> + CKKSCtBounds,
-        Y: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE>,
-        H: GetTensorKey<BE>,
+        R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        X: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        Y: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE, Rg>,
+        H: GetTensorKey<BE, Rg>,
     {
         scratch.scope(|scratch_local| {
             let (mut sum, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(x);
