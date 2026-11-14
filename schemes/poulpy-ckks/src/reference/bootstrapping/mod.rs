@@ -18,6 +18,7 @@ mod mod_raise;
 
 pub use eval_lut::CKKSEvalLutReference;
 pub use eval_mod::CKKSBootstrapEvalModReference;
+pub(crate) use mod_raise::mod_raise_body;
 pub use mod_raise::{
     CKKSEncapsulatedModUpReference, CKKSModRaiseReference, ckks_encapsulated_mod_up_reference,
     ckks_encapsulated_mod_up_tmp_bytes_reference,

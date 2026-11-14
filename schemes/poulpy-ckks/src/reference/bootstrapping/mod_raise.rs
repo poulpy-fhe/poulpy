@@ -257,7 +257,7 @@ where
     clippy::too_many_arguments,
     reason = "the raise takes its lift, its scale, the first factor and the gap as separate operands"
 )]
-fn mod_raise_body<BE, Dst, Src, K>(
+pub(crate) fn mod_raise_body<BE, Dst, Src, K>(
     module: &Module<BE>,
     dst: &mut Dst,
     src: &mut Src,

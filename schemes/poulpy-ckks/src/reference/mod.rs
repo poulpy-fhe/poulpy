@@ -32,6 +32,7 @@ pub mod paco;
 pub mod plaintext;
 pub mod polynomial_evaluation;
 pub mod pow2;
+pub mod replicated;
 pub mod ring_map;
 pub mod rotate;
 pub mod round;
