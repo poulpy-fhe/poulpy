@@ -11,13 +11,17 @@ use anyhow::{Result, anyhow, ensure};
 use num_traits::{Float, FloatConst};
 use poulpy_core::api::TransferInto;
 use poulpy_core::layouts::Base2K;
-use poulpy_core::layouts::{GLWEPlaintextAlloc, ModuleCoreAlloc};
-use poulpy_hal::layouts::{Backend, HostBytesBackend, HostStaged, Module};
+use poulpy_core::layouts::{GLWEPlaintextAlloc, GetDegree, ModuleCoreAlloc};
+use poulpy_hal::layouts::{Backend, Data, HostBytesBackend, HostStaged, Module, ScratchArena, ZnxWord};
 
 use crate::{
-    CKKSInfos, CoeffsMeta, SetCKKSInfos, SlotsKind,
+    CKKSInfos, CKKSModuleInfos, CoeffsMeta, ReplicatedLayout, SetCKKSInfos, SlotsKind,
+    api::{CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar},
     eval_lut::{cos_hermite_binary, trig_hermite_lut},
-    layouts::{CKKSPlaintext, CKKSPlaintextAlloc, CKKSPlaintextOwned, CKKSPlaintextVecHostCodec, CKKSScalar},
+    layouts::{
+        CKKSCiphertextAlloc, CKKSPlaintext, CKKSPlaintextAlloc, CKKSPlaintextOwned, CKKSPlaintextVecHostCodec, CKKSScalar,
+        MaskedCoeffs, encode_complex_bsgs_replicated,
+    },
     polynomial::{BSGSPolynomial, CKKSPolynomialEncode, ComplexBSGSPolynomial, Polynomial, SplitStrategy},
 };
 
@@ -161,6 +165,48 @@ impl EncodedLut<CKKSPlaintextOwned<HostBytesBackend>> {
             pt.inner.transfer_into(&mut inner);
             CKKSPlaintext::from_inner(inner, pt.meta())
         })
+    }
+}
+
+impl<D: Data, W: ZnxWord> EncodedLut<MaskedCoeffs<CKKSPlaintext<D, W>>> {
+    /// [`EncodedLut::general`] for ciphertexts in `layout`, encoded on `module`: each constant also carries its masked
+    /// plaintext, constant on the data slots and zero on the guards, quantized with shaping
+    /// ([`MaskedCoeffs`]), within the caller's scratch of [`Self::general_replicated_tmp_bytes`].
+    /// Configure the plan with
+    /// [`ReplicatedBootstrapPlan::with_functional_bootstrap`](super::ReplicatedBootstrapPlan::with_functional_bootstrap).
+    pub fn general_replicated<BE, F>(
+        module: &Module<BE>,
+        table: &[F],
+        base2k: Base2K,
+        coeffs_meta: CoeffsMeta,
+        strategy: SplitStrategy,
+        layout: ReplicatedLayout,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<Self>
+    where
+        BE: Backend<OwnedBuf = D, ZnxWord = W>,
+        Module<BE>: CKKSCiphertextAlloc<BE> + CKKSPlaintextAlloc<BE> + CKKSEncodingOps<BE, F> + GetDegree + CKKSModuleInfos,
+        F: CKKSEncodingScalar + Float + FloatConst,
+    {
+        ensure!(table.len() >= 2, "LUT length must be at least two");
+        let log_msg_ratio = table_log_msg_ratio(table.len())?;
+        let series = trig_hermite_lut(table)?;
+        let bsgs = encode_complex_bsgs_replicated(&series, module, base2k, coeffs_meta, strategy, layout, scratch)?;
+        Ok(Self {
+            kind: EncodedLutKind::General(bsgs),
+            log_msg_ratio,
+            message_modulus: table.len(),
+        })
+    }
+
+    /// Scratch of [`Self::general_replicated`] on `module`.
+    pub fn general_replicated_tmp_bytes<BE, F>(module: &Module<BE>) -> usize
+    where
+        BE: Backend<OwnedBuf = D, ZnxWord = W>,
+        Module<BE>: CKKSEncodingHostOps<BE, F> + GetDegree,
+        F: CKKSEncodingScalar,
+    {
+        module.ckks_encoding_host_tmp_bytes(module.n())
     }
 }
 

@@ -8,7 +8,9 @@ use anyhow::{Result, anyhow, ensure};
 use num_traits::{FloatConst, FromPrimitive};
 use poulpy_core::layouts::GetAutomorphismKey;
 use poulpy_core::layouts::GetTensorKey;
-use poulpy_core::layouts::{GLWELayout, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank, SetBSGSMeta, SetK};
+use poulpy_core::layouts::{
+    BSGSMeta, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, IntPolyInfos, LWEInfos, Rank, SetBSGSMeta, SetK,
+};
 use poulpy_core::{GLWECopy, GLWENormalize};
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
@@ -19,8 +21,8 @@ use crate::{
         CKKSNegOps, CKKSPolynomialEvaluationOps, CKKSPow2Ops, CKKSSubOps,
     },
     layouts::{
-        CKKSCiphertextAlloc, CKKSCiphertextOwned, CKKSPlaintextOwned, EncodedLut, ScratchArenaTakeCKKSCiphertext,
-        eval_mod::EvalMod, functional_bootstrapping::DoubleAngleChain,
+        CKKSCiphertextAlloc, CKKSCiphertextOwned, CKKSMaskedConstants, CKKSPlaintextOwned, EncodedLut,
+        ScratchArenaTakeCKKSCiphertext, eval_mod::EvalMod, functional_bootstrapping::DoubleAngleChain,
     },
     numerics::CKKSFloat,
     polynomial::{BSGSPolynomial, ComplexBSGSPolynomial, ComplexPolynomial, Polynomial},
@@ -76,13 +78,25 @@ where
     })
 }
 
+/// The constants of a LUT and of its exponential: scalar plaintexts, or for a
+/// replicated layout masked ones.
+pub(crate) trait LutConstants<BE: Backend>:
+    GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta + CKKSCtBounds + IntPolyInfos + CKKSMaskedConstants<BE>
+{
+}
+
+impl<BE: Backend, P> LutConstants<BE> for P where
+    P: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta + CKKSCtBounds + IntPolyInfos + CKKSMaskedConstants<BE>
+{
+}
+
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn ckks_eval_lut<BE, F, K, C, R, H>(
+pub(crate) fn ckks_eval_lut<BE, F, P, K, C, R, H>(
     module: &Module<BE>,
     res: &mut R,
     ct: &C,
-    eval_exp: &EvalMod<F, CKKSPlaintextOwned<BE>>,
-    lut: &ComplexBSGSPolynomial<CKKSPlaintextOwned<BE>>,
+    eval_exp: &EvalMod<F, P>,
+    lut: &ComplexBSGSPolynomial<P>,
     conj_key: &K,
     tsk: &H,
     scratch: &mut ScratchArena<'_, BE>,
@@ -91,6 +105,7 @@ where
     BE: Backend,
     Module<BE>:
         CKKSEvalModOps<BE> + CKKSComplexPolynomialEvaluationOps<BE> + CKKSConjugateOps<BE> + CKKSAddOps<BE> + GLWECopy<BE>,
+    P: LutConstants<BE>,
     K: GetAutomorphismKey<BE>,
     C: GLWEToBackendRef<BE> + CKKSCtBounds,
     R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
@@ -136,12 +151,12 @@ where
 /// LUTs with the same length share a message modulus, but their coefficient
 /// parity (and, for some split strategies, their BSGS split) can still differ,
 /// so the populated schedule must not depend on which LUT happens to be first.
-pub(crate) fn ckks_lut_power_basis<BE, F, C, H>(
+pub(crate) fn ckks_lut_power_basis<BE, F, P, C, H>(
     module: &Module<BE>,
     ct: &mut C,
     layout: &GLWELayout,
-    eval_exp: &EvalMod<F, CKKSPlaintextOwned<BE>>,
-    luts: &[EncodedLut<CKKSPlaintextOwned<BE>>],
+    eval_exp: &EvalMod<F, P>,
+    luts: &[EncodedLut<P>],
     tsk: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<PowerBasis<CKKSCiphertextOwned<BE>>>
@@ -156,6 +171,7 @@ where
         + CKKSSubOps<BE>
         + CKKSCiphertextAlloc<BE>
         + GLWENormalize<BE>,
+    P: LutConstants<BE>,
     C: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds,
     H: GetTensorKey<BE>,
 {
@@ -188,10 +204,10 @@ where
 }
 
 /// Evaluates one general LUT against a [`ckks_lut_power_basis`] result.
-pub(crate) fn ckks_eval_lut_from_basis<BE, K, R, H>(
+pub(crate) fn ckks_eval_lut_from_basis<BE, P, K, R, H>(
     module: &Module<BE>,
     res: &mut R,
-    lut: &EncodedLut<CKKSPlaintextOwned<BE>>,
+    lut: &EncodedLut<P>,
     power_basis: &PowerBasis<CKKSCiphertextOwned<BE>>,
     conj_key: &K,
     tsk: &H,
@@ -200,6 +216,7 @@ pub(crate) fn ckks_eval_lut_from_basis<BE, K, R, H>(
 where
     BE: Backend,
     Module<BE>: CKKSComplexPolynomialEvaluationOps<BE> + CKKSConjugateOps<BE> + CKKSAddOps<BE>,
+    P: LutConstants<BE>,
     K: GetAutomorphismKey<BE>,
     R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
     H: GetTensorKey<BE>,

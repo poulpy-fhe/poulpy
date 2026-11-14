@@ -61,10 +61,10 @@ use crate::{
         CKKSReplicatedOps, CKKSRightOperandPreparedFactory, CKKSRotateOps, CKKSRoundOps, CKKSSubOps,
     },
     layouts::{
-        CKKSCiphertextAlloc, CKKSCiphertextOwned, CKKSEncodingBuffer, CKKSPlaintextAlloc, CKKSPlaintextOwned, EvalModPlan,
-        EvalModPoly, EvalModType, ReplicatedBootstrapPlan, ReplicatedBootstrapping, ReplicatedConversion, ReplicatedTransform,
-        ReplicatedTransforms, ckks_eval_mod_compile, ckks_eval_mod_replicated_compile, ckks_eval_mod_replicated_packed_compile,
-        encode_bsgs_replicated, encode_complex_bsgs_replicated,
+        CKKSCiphertextAlloc, CKKSCiphertextOwned, CKKSEncodingBuffer, CKKSPlaintextAlloc, CKKSPlaintextOwned, EncodedLut,
+        EvalMod, EvalModPlan, EvalModPoly, EvalModType, ReplicatedBootstrapPlan, ReplicatedBootstrapping, ReplicatedConversion,
+        ReplicatedTransform, ReplicatedTransforms, ckks_eval_mod_compile, ckks_eval_mod_replicated_compile,
+        ckks_eval_mod_replicated_packed_compile, encode_bsgs_replicated, encode_complex_bsgs_replicated,
     },
     oep::CKKSEncapsulatedModUpImpl,
     oep::derived::replicated::{wide_gather_trace, wide_onto_replicated},
@@ -2542,6 +2542,173 @@ where
     assert!(
         shaped >= 30.0 && shaped >= full + 25.0,
         "complex EvalMod at 2^28: {shaped:.2} bits against {full:.2} for a full layout"
+    );
+    Ok(())
+}
+
+/// The LUT input of [`eval_lut_precision`]: its scale, and `(I, m)` per slot.
+const LUT_LOG_DELTA_IN: usize = 36;
+const LUT_INPUTS: [(i64, usize); 8] = [(15, 1), (-15, 4), (3, 0), (-7, 2), (12, 3), (-1, 1), (0, 4), (-11, 0)];
+
+fn lut_plan() -> EvalModPlan {
+    EvalModPlan::complex_exponential(30, 16, 3, SplitStrategy::MinDepth, CoeffsMeta::from_delta_budget(26, 20), 28)
+}
+
+/// A general LUT of `p = 5` entries on `x = I + m/p` at `t = x/K`, from `2^36`: the complex exponential of
+/// [`EvalModPlan::complex_exponential`] at `2^28`, the interpolation and its conjugate sum, against the table, in a
+/// full layout with scalar constants or in a replicated one with masked constants.
+fn eval_lut_precision<BE, F>(
+    params: &CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+    slot_layout: SlotLayout,
+) -> Result<f64>
+where
+    BE: TestContextBackend,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    F: TestScalar,
+    Module<BE>: TestContextModule<BE>
+        + CKKSEncodingOps<BE, F>
+        + CKKSEvalModOps<BE>
+        + CKKSComplexPolynomialEvaluationOps<BE>
+        + poulpy_core::GLWECopy<BE>,
+{
+    let table: Vec<F> = [1.0, -2.0, 0.5, 3.0, -1.5].iter().map(|&v| F::from_f64(v).unwrap()).collect();
+    let base2k = Base2K(params.base2k as u32);
+    let lut_meta = CoeffsMeta::from_delta_budget(LUT_LOG_DELTA_IN, 20);
+    let mut encoding = ScratchOwned::<BE>::alloc(module.ckks_encoding_host_tmp_bytes(params.n));
+    let encoding = &mut encoding.borrow();
+    match slot_layout {
+        SlotLayout::Replicated(layout) => run_lut(
+            params,
+            module,
+            host_module,
+            slot_layout,
+            &ckks_eval_mod_replicated_compile::<BE, F, Standard>(base2k, lut_plan(), layout, module, encoding)?,
+            &EncodedLut::general_replicated(module, &table, base2k, lut_meta, SplitStrategy::MinDepth, layout, encoding)?,
+            &table,
+        ),
+        SlotLayout::Full => run_lut(
+            params,
+            module,
+            host_module,
+            slot_layout,
+            &ckks_eval_mod_compile::<BE, F, Standard>(base2k, lut_plan(), module, encoding)?,
+            &EncodedLut::general(host_module, &table, base2k, lut_meta, SplitStrategy::MinDepth)?.transfer_to(module),
+            &table,
+        ),
+    }
+}
+
+/// [`eval_lut_precision`] with its exponential and LUT encoded.
+fn run_lut<BE, F, P>(
+    params: &CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+    slot_layout: SlotLayout,
+    eval_exp: &EvalMod<F, P>,
+    lut: &EncodedLut<P>,
+    table: &[F],
+) -> Result<f64>
+where
+    BE: TestContextBackend,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    F: TestScalar,
+    P: crate::eval_lut::LutConstants<BE> + CKKSInfos,
+    Module<BE>: TestContextModule<BE>
+        + CKKSEncodingOps<BE, F>
+        + CKKSEvalModOps<BE>
+        + CKKSComplexPolynomialEvaluationOps<BE>
+        + poulpy_core::GLWECopy<BE>,
+{
+    let plan = eval_exp.plan;
+    let dsize = 2;
+    let consumed = plan.consumed_bits() + lut.consumed_bits(LUT_LOG_DELTA_IN);
+    let test_params = CKKSTestParams {
+        k: (consumed + LUT_LOG_DELTA_IN + 2 * params.base2k).next_multiple_of(dsize * params.base2k) + LUT_LOG_DELTA_IN
+            - plan.f_mod_log_delta,
+        prec_meta: GLWEPlaintextMeta {
+            scale: Scale::Log(LUT_LOG_DELTA_IN),
+            slots: SlotsKind::Complex,
+            log_sparsity: 0,
+            slot_layout: SlotLayout::Full,
+        },
+        prec_log_budget: 10,
+        dsize,
+        ..*params
+    };
+    let k = test_params.k;
+    let len = 1 << LOG_K;
+    let p = table.len() as f64;
+    let interval = plan.f_mod_interval as f64;
+    let re: Vec<F> = LUT_INPUTS[..len]
+        .iter()
+        .map(|&(integer, m)| F::from_f64((integer as f64 + m as f64 / p) / interval).unwrap())
+        .collect();
+    let zero = vec![F::zero(); len];
+
+    let (sk_raw, sk) = gen_sk_with_raw(&test_params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(&test_params, module);
+    let tsk = gen_tsk(&test_params, module, &sk_raw, &mut scratch.borrow());
+    // The conjugation's key.
+    let atks = HashMap::from([(-1, gen_atk(&test_params, module, -1, &sk_raw, &mut scratch.borrow()))]);
+    let mut pt = module.ckks_plaintext_alloc_from_slots(
+        slots_of::<BE, Standard>(module, slot_layout, len),
+        Base2K(params.base2k as u32),
+        TorusPrecision((LUT_LOG_DELTA_IN + 10) as u32),
+    );
+    pt.set_meta(GLWEPlaintextMeta {
+        scale: Scale::Log(LUT_LOG_DELTA_IN),
+        slots: SlotsKind::Complex,
+        log_sparsity: 0,
+        slot_layout,
+    });
+    encoded(module, &mut pt, &re, &zero)?;
+    let mut ct = alloc_ct(&test_params, module, k);
+    let (mut xe, mut xa) = (Source::new([1; 32]), Source::new([2; 32]));
+    with_scratch::<BE, _>(module.ckks_encrypt_sk_tmp_bytes(&ct), |s| {
+        module.ckks_encrypt_sk(&mut ct, &pt, &sk, &mut xe, &mut xa, s)
+    })?;
+    let mut res = alloc_ct(&test_params, module, k);
+    let bytes = module.ckks_eval_mod_tmp_bytes(&res, &ct, eval_exp, &test_params.tsk_layout()) + scratch.borrow().available();
+    with_scratch::<BE, _>(bytes, |s| {
+        crate::eval_lut::ckks_eval_lut(module, &mut res, &ct, eval_exp, lut.general_series().unwrap(), &atks, &tsk, s)
+    })?;
+    assert_eq!(res.slot_layout(), slot_layout);
+    assert!(GLWEPlaintextInfos::slots(&res).is_real());
+
+    let want: Vec<F> = LUT_INPUTS[..len].iter().map(|&(_, m)| table[m]).collect();
+    let got = decrypt_batch::<BE, F, Standard>(&test_params, module, &sk, &res, len);
+    Ok(precision((&got.0, &got.1), (&want, &zero)))
+}
+
+/// A general LUT, its complex exponential and its interpolation, keeps more of the table on a replicated layout, its
+/// constants masked: the guards stay bounded through the exponential's squarings.
+pub fn test_replicated_lut_is_shaped<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) -> Result<()>
+where
+    BE: TestContextBackend,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextModule<BE>
+        + CKKSEncodingOps<BE, F>
+        + CKKSEvalModOps<BE>
+        + CKKSComplexPolynomialEvaluationOps<BE>
+        + poulpy_core::GLWECopy<BE>,
+    F: TestScalar,
+    E: ReimNew<F>,
+{
+    let full = eval_lut_precision::<BE, F>(&params, module, host_module, SlotLayout::Full)?;
+    let shaped = eval_lut_precision::<BE, F>(&params, module, host_module, SlotLayout::Replicated(layout()))?;
+    // Measured on the portable backends: 26.5 bits against 14.0 to 15.0.
+    assert!(
+        shaped >= 24.0 && shaped >= full + 10.0,
+        "LUT from 2^36: {shaped:.2} bits against {full:.2} for a full layout"
     );
     Ok(())
 }

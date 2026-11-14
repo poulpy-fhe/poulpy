@@ -787,6 +787,10 @@ macro_rules! ckks_backend_test_suite {
                 $crate::test_suite::replicated::test_replicated_complex_eval_mod_is_shaped
             );
             run_test_result!(
+                replicated_lut_is_shaped,
+                $crate::test_suite::replicated::test_replicated_lut_is_shaped
+            );
+            run_test_result!(
                 replicated_automorphisms_are_shaped,
                 $crate::test_suite::replicated::test_replicated_automorphisms_are_shaped
             );
