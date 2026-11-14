@@ -55,7 +55,7 @@ use poulpy_core::{
             GLWEAutomorphismKeyPreparedBackendRef, GLWEAutomorphismKeyPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef,
         },
     },
-    security::SecretSpec,
+    security::{SecretSpec, Security},
 };
 use poulpy_hal::{
     api::{VecZnxAutomorphism, VecZnxSwitchRing},
@@ -1294,4 +1294,39 @@ pub struct CKKSFoldKeysLayout {
     /// Layout of the automorphism keys of the input secret, which split real pairs
     /// and sparse inputs.
     pub automorphism: Option<GGLWELayout>,
+}
+
+impl CKKSFoldKeysLayout {
+    /// Checks the keys of a fold against `security`, each under the secret its samples are
+    /// encrypted with: the inbound ring-switch key under the bootstrap secret `bootstrap`, the
+    /// outbound one and the automorphism keys under the input secret `input`, each spec at the
+    /// degree of the ring its secret lives in (the inputs' degree, or the conjugate-invariant
+    /// degree for embedded conjugate-invariant inputs). These keys belong to no preset or plan:
+    /// they are certified only through this call, as the bootstrapping keys are through
+    /// [`BootstrappingPlan::check_key_security`].
+    ///
+    /// # Errors
+    ///
+    /// [`SecurityLevelNotMet`](crate::CKKSCompositionError::SecurityLevelNotMet) with `op`
+    /// `"check_security"`, in the chain, for the first key whose modulus exceeds the bound of its
+    /// secret or a secret without a bound at `security`.
+    pub fn check_security(&self, security: Security, input: SecretSpec, bootstrap: SecretSpec) -> Result<()> {
+        let mut keys = Vec::new();
+        if let Some(ring_switch) = &self.ring_switch {
+            keys.push(("inbound ring-switch key", bootstrap, ring_switch.inbound.k()));
+            keys.push(("outbound ring-switch key", input, ring_switch.outbound.k()));
+        }
+        if let Some(automorphism) = &self.automorphism {
+            keys.push(("automorphism key", input, automorphism.k()));
+        }
+        for (what, secret, k) in keys {
+            security.check_log_q(secret, what, k.as_usize()).map_err(|source| {
+                crate::CKKSCompositionError::SecurityLevelNotMet {
+                    op: "check_security",
+                    source,
+                }
+            })?;
+        }
+        Ok(())
+    }
 }

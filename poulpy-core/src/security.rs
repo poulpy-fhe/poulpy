@@ -119,11 +119,14 @@ impl Security {
         let log_n = secret.n.trailing_zeros();
         let cells = self.cells().iter().filter(|cell| cell.log_n == log_n);
         let bound = match secret.dist {
-            Distribution::TernaryFixed(h) if h <= secret.n => rounded_down(cells, h, |secret| match secret {
+            Distribution::TernaryFixed(h) | Distribution::BinaryFixed(h) if h > secret.n => {
+                return Err(unsupported("the weight exceeds the degree"));
+            }
+            Distribution::TernaryFixed(h) => rounded_down(cells, h, |secret| match secret {
                 TableSecret::SparseTernary(w) => Some(w),
                 _ => None,
             }),
-            Distribution::BinaryFixed(h) if h <= secret.n => rounded_down(cells, h.min(secret.n - h), |secret| match secret {
+            Distribution::BinaryFixed(h) => rounded_down(cells, h.min(secret.n - h), |secret| match secret {
                 TableSecret::SparseBinary(w) => Some(w),
                 _ => None,
             }),
@@ -229,6 +232,14 @@ mod tests {
         S.max_log_q(SecretSpec::new(1 << log_n, dist))
     }
 
+    /// The reason of a [`CoreError::SecurityUnsupported`], panicking on anything else.
+    fn reason(result: Result<usize>) -> &'static str {
+        match result {
+            Err(CoreError::SecurityUnsupported { security: S, reason, .. }) => reason,
+            other => panic!("expected an unsupported secret, got {other:?}"),
+        }
+    }
+
     #[test]
     fn the_tables_assume_the_encryption_noise() {
         assert_eq!(Noise::ENCRYPTION, Noise::Gaussian { sigma: 3.2 });
@@ -271,12 +282,21 @@ mod tests {
             bound(16, Distribution::TernaryFixed(40_000)),
             bound(16, Distribution::TernaryFixed(2048))
         );
-        assert!(bound(16, Distribution::TernaryFixed(31)).is_err());
+        assert_eq!(
+            reason(bound(16, Distribution::TernaryFixed(31))),
+            "the table has no bound for this secret at this degree"
+        );
         // The estimators failed on weight 32 at degree 2^12, so no weight below 64 has a bound there.
-        assert!(bound(12, Distribution::BinaryFixed(63)).is_err());
+        assert_eq!(
+            reason(bound(12, Distribution::BinaryFixed(63))),
+            "the table has no bound for this secret at this degree"
+        );
         assert_eq!(bound(12, Distribution::BinaryFixed(64)), Ok(53));
         // A weight above the degree is no secret of that ring.
-        assert!(bound(12, Distribution::TernaryFixed(4097)).is_err());
+        assert_eq!(
+            reason(bound(12, Distribution::TernaryFixed(4097))),
+            "the weight exceeds the degree"
+        );
     }
 
     #[test]
@@ -288,8 +308,14 @@ mod tests {
             bound(16, Distribution::BinaryFixed(32))
         );
         // The complement of weight 32 at degree 2^12 has no bound, and the all-ones secret none at all.
-        assert!(bound(12, Distribution::BinaryFixed(4096 - 32)).is_err());
-        assert!(bound(12, Distribution::BinaryFixed(4096)).is_err());
+        assert_eq!(
+            reason(bound(12, Distribution::BinaryFixed(4096 - 32))),
+            "the table has no bound for this secret at this degree"
+        );
+        assert_eq!(
+            reason(bound(12, Distribution::BinaryFixed(4096))),
+            "the table has no bound for this secret at this degree"
+        );
         // A ternary secret has no complement: its weight rounds down as it is.
         assert_eq!(
             bound(12, Distribution::TernaryFixed(4096 - 64)),
@@ -301,7 +327,10 @@ mod tests {
     fn uniform_secrets_take_their_own_cells() {
         assert_eq!(bound(12, Distribution::TernaryProb(2.0 / 3.0)), Ok(106));
         assert_eq!(bound(12, Distribution::BinaryProb(0.5)), Ok(105));
-        assert!(bound(12, Distribution::TernaryProb(0.5)).is_err());
+        assert_eq!(
+            reason(bound(12, Distribution::TernaryProb(0.5))),
+            "the table has no secret of this distribution"
+        );
     }
 
     #[test]
@@ -312,11 +341,20 @@ mod tests {
             Distribution::ZERO,
             Distribution::NONE,
         ] {
-            assert!(bound(16, dist).is_err());
+            assert_eq!(reason(bound(16, dist)), "the table has no secret of this distribution");
         }
-        assert!(bound(11, Distribution::TernaryFixed(1024)).is_err());
-        assert!(bound(18, Distribution::TernaryFixed(1024)).is_err());
-        assert!(S.max_log_q(SecretSpec::new(630, Distribution::BinaryProb(0.5))).is_err());
+        assert_eq!(
+            reason(bound(11, Distribution::TernaryFixed(1024))),
+            "the table has no bound for this secret at this degree"
+        );
+        assert_eq!(
+            reason(bound(18, Distribution::TernaryFixed(1024))),
+            "the table has no bound for this secret at this degree"
+        );
+        assert_eq!(
+            reason(S.max_log_q(SecretSpec::new(630, Distribution::BinaryProb(0.5)))),
+            "the degree is not a power of two"
+        );
     }
 
     #[test]
@@ -361,6 +399,15 @@ mod tests {
             k: TorusPrecision(106),
             rank: Rank(1),
         };
-        assert!(S.check(secret, "ciphertext", &ct).is_err());
+        assert_eq!(
+            S.check(secret, "ciphertext", &ct),
+            Err(CoreError::SecurityBoundExceeded {
+                security: S,
+                secret,
+                what: "ciphertext".into(),
+                log_q: 106,
+                max_log_q: 105,
+            })
+        );
     }
 }

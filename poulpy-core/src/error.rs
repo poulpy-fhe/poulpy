@@ -21,14 +21,17 @@ pub enum CoreError {
     /// A [`ReplicatedLayout`](crate::layouts::ReplicatedLayout) violates its invariants.
     InvalidReplicatedLayout { detail: &'static str },
     /// A [`Security`] level has no bound for a secret: the table lacks its
-    /// distribution, its degree, or a result for its cell.
+    /// distribution, its degree, or a result for its cell. The message names
+    /// neither the secret's distribution nor its degree, which stay in `secret`,
+    /// since key generation reads them from a secret operand.
     SecurityUnsupported {
         security: Security,
         secret: SecretSpec,
         reason: &'static str,
     },
     /// The modulus of an object, named by `what`, is above the bound of its secret
-    /// at a [`Security`] level.
+    /// at a [`Security`] level. The message names neither the secret nor its
+    /// bound, which depends on it: both stay in the fields.
     SecurityBoundExceeded {
         security: Security,
         secret: SecretSpec,
@@ -60,25 +63,14 @@ impl fmt::Display for CoreError {
             ),
             CoreError::GGLWEKeyUse { op, detail } => write!(f, "{op}: {detail}"),
             CoreError::InvalidReplicatedLayout { detail } => write!(f, "invalid replicated layout: {detail}"),
-            CoreError::SecurityUnsupported {
-                security,
-                secret,
-                reason,
-            } => write!(
-                f,
-                "{security} cannot be certified for a {:?} secret of degree {}: {reason}",
-                secret.dist, secret.n
-            ),
+            CoreError::SecurityUnsupported { security, reason, .. } => {
+                write!(f, "{security} cannot be certified for this secret: {reason}")
+            }
             CoreError::SecurityBoundExceeded {
-                security,
-                secret,
-                what,
-                log_q,
-                max_log_q,
+                security, what, log_q, ..
             } => write!(
                 f,
-                "{what}: a modulus of {log_q} bits exceeds the {max_log_q} bits of {security} for a {:?} secret of degree {}",
-                secret.dist, secret.n
+                "{what}: a modulus of {log_q} bits exceeds the bound of {security} for its secret"
             ),
         }
     }

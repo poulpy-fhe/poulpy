@@ -378,6 +378,9 @@ The keys are passed directly:
 - The ring-switch keys (`RingSwitchKeysLayout::generate`) switch between the input secret and the bootstrap secret: the fold takes the inbound one and the unfold the outbound one; inputs under the bootstrap secret at its degree pass `None`.
 - `automorphisms`, keys of the input secret for the elements of `ckks_unfold_galois_elements`, split real pairs and sparse inputs; for sparse inputs they cover `log_sparsity` bits beyond the refreshed width. Inputs under the bootstrap secret use its rotation keys.
 
+These keys belong to no preset, and a certified preset does not check them: the outbound ring-switch key and the automorphism keys sit under the input secret, at the inputs' degree, whose bound can be far below the bootstrap secret's.
+`CKKSFoldKeysLayout::check_security` certifies them, given the specs of the input and bootstrap secrets.
+
 The fold takes the bootstrap degree explicitly, as the degree of the folded ciphertexts: the module only bounds it. `CKKSFoldLayoutOps` gives the allocation-only `GLWELayout` of that degree and sizes the fold from layouts (`ckks_fold_count` gives the number of folded ciphertexts), and the context's slot count must match the folded ciphertexts: merged ones need full-slot transforms (`log_slots = log2(N) − 1`). The fold sets scale, sparsity and slot kind on each folded ciphertext; pairing or merging marks it complex, and merging clears sparsity.
 
 Conjugate-invariant inputs of degree `n` fold on the same module: each is embedded into the standard ring of degree `2n`, and the unfold takes the relative trace back, at one bit of budget. Their ring-switch keys and the automorphism keys that split sparse inputs are those of the embedded CI secret (`glwe_secret_ci_embed`); pairs split without keys, since that secret is invariant under conjugation.

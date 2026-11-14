@@ -379,15 +379,11 @@ impl BootstrappingPlan {
     ///
     /// # Errors
     ///
-    /// [`SecurityLevelNotMet`](CKKSCompositionError::SecurityLevelNotMet) with `op` `"check_key_security"`, for the
-    /// first key whose modulus exceeds the bound of its secret or a secret without a bound at `security`.
-    pub fn check_key_security(
-        &self,
-        security: Security,
-        dense: SecretSpec,
-        layout: &BootstrappingKeysLayout,
-    ) -> Result<(), CKKSCompositionError> {
-        self.check_key_security_for("check_key_security", security, dense, layout)
+    /// [`SecurityLevelNotMet`](CKKSCompositionError::SecurityLevelNotMet) with `op` `"check_key_security"`, in the
+    /// chain, for the first key whose modulus exceeds the bound of its secret or a secret without a bound at
+    /// `security`.
+    pub fn check_key_security(&self, security: Security, dense: SecretSpec, layout: &BootstrappingKeysLayout) -> Result<()> {
+        Ok(self.check_key_security_for("check_key_security", security, dense, layout)?)
     }
 
     /// [`Self::check_key_security`] refusing for the public entry point `op`.
