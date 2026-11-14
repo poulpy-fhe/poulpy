@@ -32,10 +32,10 @@ fn main() {
     )
     .unwrap();
     writeln!(out, "static CELLS_128: &[Cell] = &[").unwrap();
-    for (log_n, secret, max_log_q) in cells {
+    for (log_n, distribution, max_log_q) in cells {
         writeln!(
             out,
-            "    Cell {{ log_n: {log_n}, secret: TableSecret::{secret}, max_log_q: {max_log_q:?} }},"
+            "    Cell {{ log_n: {log_n}, secret: TableSecret::{distribution}, max_log_q: {max_log_q:?} }},"
         )
         .unwrap();
     }
@@ -44,9 +44,9 @@ fn main() {
     fs::write(&dest, out).unwrap_or_else(|err| panic!("{}: {err}", dest.display()));
 }
 
-/// The cells of a table for `target` bits: `(log_n, secret, max_log_q)`, the
-/// secret as a `TableSecret` expression. Cells of a secret the library does not
-/// sample are left out (see [`parse_secret`]).
+/// The cells of a table for `target` bits: `(log_n, distribution, max_log_q)`,
+/// the secret distribution as a `TableSecret` expression. Cells of a distribution
+/// the library does not sample are left out (see [`parse_distribution`]).
 fn parse_table(table: &Value, target: u64) -> Result<Vec<(u64, String, Option<u64>)>, String> {
     let field = |name: &str| table.get(name).ok_or(format!("missing `{name}`"));
     if field("format")?.as_u64() != Some(1) {
@@ -73,8 +73,8 @@ fn parse_table(table: &Value, target: u64) -> Result<Vec<(u64, String, Option<u6
             .get("log_n")
             .and_then(Value::as_u64)
             .ok_or(format!("cell {cell} has no `log_n`"))?;
-        let secret = cell.get("secret").ok_or(format!("cell {cell} has no `secret`"))?;
-        let Some(secret) = parse_secret(secret)? else {
+        let distribution = cell.get("secret").ok_or(format!("cell {cell} has no `secret`"))?;
+        let Some(distribution) = parse_distribution(distribution)? else {
             continue;
         };
         // `max_log_q` is a bound only where the search ended on it: at the last
@@ -88,25 +88,25 @@ fn parse_table(table: &Value, target: u64) -> Result<Vec<(u64, String, Option<u6
             ),
             _ => None,
         };
-        if cells.iter().any(|(n, s, _)| *n == log_n && *s == secret) {
-            return Err(format!("two cells for {secret} at log_n {log_n}"));
+        if cells.iter().any(|(n, d, _)| *n == log_n && *d == distribution) {
+            return Err(format!("two cells for {distribution} at log_n {log_n}"));
         }
-        cells.push((log_n, secret, max_log_q));
+        cells.push((log_n, distribution, max_log_q));
     }
     Ok(cells)
 }
 
-/// The `TableSecret` of a cell's secret, or `None` for a secret the library
-/// does not sample (a Gaussian secret, a kind or a range it does not know),
-/// which leaves that secret without a bound. An error for a malformed secret.
-fn parse_secret(secret: &Value) -> Result<Option<String>, String> {
+/// The `TableSecret` of a cell's secret distribution, or `None` for one the
+/// library does not sample (a Gaussian secret, a kind or a range it does not
+/// know), which leaves it without a bound. An error for a malformed one.
+fn parse_distribution(distribution: &Value) -> Result<Option<String>, String> {
     let int = |name: &str| {
-        secret
+        distribution
             .get(name)
             .and_then(Value::as_i64)
-            .ok_or(format!("secret {secret} has no `{name}`"))
+            .ok_or(format!("distribution {distribution} has no `{name}`"))
     };
-    let parsed = match secret.get("kind").and_then(Value::as_str) {
+    let parsed = match distribution.get("kind").and_then(Value::as_str) {
         Some("ternary") => ((int("min")?, int("max")?) == (-1, 1)).then(|| "Ternary".to_string()),
         Some("binary") => ((int("min")?, int("max")?) == (0, 1)).then(|| "Binary".to_string()),
         Some("sparse_ternary") => {
@@ -118,7 +118,7 @@ fn parse_secret(secret: &Value) -> Result<Option<String>, String> {
             (h > 0 && int("ones")? == h && int("minus_ones")? == 0).then(|| format!("SparseBinary({h})"))
         }
         Some(_) => None,
-        None => return Err(format!("secret {secret} has no `kind`")),
+        None => return Err(format!("distribution {distribution} has no `kind`")),
     };
     Ok(parsed)
 }
