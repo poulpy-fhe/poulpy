@@ -8,6 +8,7 @@ use crate::{
     layouts::{
         CKKSDFTFactors, CKKSEvalModInfos, CKKSModRaiseInfos, CKKSPlaintextOwned, CKKSRightOperandPrepared, DFTMatrixPrepared,
         DFTPlan, Decode, Encode, EncodedLut, EvalMod, EvalModPlan, ModRaisePlan, Split, Standard,
+        eval_mod::EvalModType,
         validation::{functional_output_contract, remove_guard_bits},
     },
 };
@@ -126,7 +127,13 @@ impl<BE: Backend, F> CKKSEvalModInfos<BE, F> for BootstrappingRun<'_, BE, F> {
         res.set_log_delta(log_delta);
         // C2S-first ends in SlotsToCoeffs, which stamps the rest.
         if self.context.pipeline() == BootstrappingPipeline::S2CFirst {
-            res.set_meta(self.message);
+            // A real message routes on one EvalMod, and the exponential leaves a point of the unit circle.
+            let slots = if self.context.eval_mod_plan().eval_mod_type == EvalModType::ExpCmplx {
+                SlotsKind::Complex
+            } else {
+                self.message.slots
+            };
+            res.set_meta(GLWEPlaintextMeta { slots, ..self.message });
         }
         Ok(())
     }
