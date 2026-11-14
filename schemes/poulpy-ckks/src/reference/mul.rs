@@ -706,7 +706,7 @@ pub(crate) struct MulStamp {
 
 impl MulStamp {
     /// The stamp of a result computed `lambda` bits under the scale.
-    fn widen(&self, lambda: usize) -> Self {
+    pub(crate) fn widen(&self, lambda: usize) -> Self {
         Self {
             log_delta: self.log_delta + lambda,
             ..*self

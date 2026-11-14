@@ -37,7 +37,8 @@ The other operations build on it:
 - a general LUT takes `MaskedCoeffs` (`EncodedLut::general_replicated`), with its constants at the scale of the complex exponential it reads: on `x = I + m/p` from `2^36`, the exponential at `2^28` and the interpolation keep 26.5 bits of a table of 5 entries, against 14 to 15 on a full layout; the exponential's squarings keep the guards bounded, `|E| = 1` on every slot.
 
 Sums and differences of one slot layout and one scale add exactly.
-Operations that would round plainly or write the guard slots return `InvalidOperand` on a replicated layout: constant additions, rotations by a slot count that is not a multiple of `R`, dot products of prepared operands, inner sums, the full-layout linear transformations and DFT, ModUp, bootstrapping, PaCo and SHIP.
+Dot products of ciphertexts and of prepared operands sum their products `λ` bits under the scale, relinearize the sum once and round it once with shaping, as one product: a chain of two-pair sums keeps 47 to 56 bits against 12 to 14 on a full layout.
+Operations that would round plainly or write the guard slots return `InvalidOperand` on a replicated layout: constant additions, rotations by a slot count that is not a multiple of `R`, dot products of prepared ciphertexts by prepared plaintexts, inner sums, the full-layout linear transformations and DFT, ModUp, bootstrapping, PaCo and SHIP.
 
 ## Conversions
 

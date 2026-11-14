@@ -398,10 +398,13 @@ pub trait CKKSDotProductOps<BE: Backend, Rg: Ring = Standard> {
     /// `ckks_mul_into` takes its one-pass product, the sum is core's
     /// `glwe_mul_relinearize_sum`, which adds every pair in the transform domain
     /// in slice order: `base2k` must hold `a.len()` times the products of one
-    /// pair (`Module::max_base2k`). This path returns its errors before writing
-    /// `dst` and leaves it canonical. Other inputs are `ckks_mul_into` then
-    /// `ckks_mul_add_ct_into` per pair, so a later pair can fail after `dst` was
-    /// written.
+    /// pair (`Module::max_base2k`). On a replicated layout the sum is taken as
+    /// `ckks_mul_into` takes a product, `ShapingProfile::shaping_depth` bits
+    /// under the scale with the tensor key covering that wider intermediate,
+    /// and rounded once with shaping. This path returns its errors before
+    /// writing `dst` and leaves it canonical. Other inputs are `ckks_mul_into`
+    /// then `ckks_mul_add_ct_into` per pair, so a later pair can fail after
+    /// `dst` was written.
     ///
     /// # Metadata
     ///

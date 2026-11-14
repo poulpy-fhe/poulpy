@@ -479,6 +479,8 @@ enum Product {
     PtConstAssign,
     /// `acc·b + b·acc`, two pairs summed once.
     Dot,
+    /// `acc·b + acc·b` over prepared operands, whose left and right operands each share one layout.
+    DotPrepared,
     /// `c ± acc·b` into a fresh accumulator `c`.
     MulAddCt,
     MulSubCt,
@@ -492,7 +494,7 @@ enum Product {
 }
 
 impl Product {
-    const ALL: [Self; 18] = [
+    const ALL: [Self; 19] = [
         Self::Mul,
         Self::MulAssign,
         Self::MulPrepared,
@@ -503,6 +505,7 @@ impl Product {
         Self::PtConst,
         Self::PtConstAssign,
         Self::Dot,
+        Self::DotPrepared,
         Self::MulAddCt,
         Self::MulSubCt,
         Self::MulAddPtVec,
@@ -690,6 +693,19 @@ where
             Product::Dot => {
                 with_scratch::<BE, _>(module.ckks_dot_product_ct_tmp_bytes(2, &out, &acc, &fresh, &tsk), |s| {
                     module.ckks_dot_product_ct(&mut out, &[&acc, &fresh], &[&fresh, &acc], &tsk, s)
+                })?;
+                acc = out;
+                add(times_operand.clone(), &times_operand, one)
+            }
+            Product::DotPrepared => {
+                let left = with_scratch::<BE, _>(module.ckks_left_operand_prepare_tmp_bytes(&acc), |s| {
+                    module.ckks_left_operand_prepare_alloc(&acc, PrepareHint::OneShot, s)
+                })?;
+                let right = with_scratch::<BE, _>(module.ckks_right_operand_prepare_tmp_bytes(&fresh), |s| {
+                    module.ckks_right_operand_prepare_alloc(&fresh, PrepareHint::OneShot, s)
+                })?;
+                with_scratch::<BE, _>(module.ckks_dot_product_prepared_tmp_bytes(2, &out, &acc, &fresh, &tsk), |s| {
+                    module.ckks_dot_product_prepared(&mut out, &[&left, &left], &[&right, &right], &tsk, s)
                 })?;
                 acc = out;
                 add(times_operand.clone(), &times_operand, one)

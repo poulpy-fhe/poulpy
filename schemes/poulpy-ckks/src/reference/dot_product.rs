@@ -15,12 +15,15 @@ use poulpy_hal::{
 
 use crate::{
     CKKSCompositionError, CKKSCtBounds, CKKSInfos, CKKSResult as Result, GLWEPlaintextInfos, SetCKKSInfos, SlotLayout, SlotsKind,
-    api::{CKKSAddOps, CKKSMulOps},
+    api::{CKKSAddOps, CKKSMulOps, CKKSRoundOps},
     ckks_ensure, ckks_ensure_operand, ensure_plaintext_degree_embeds, get_mul_ct_params,
     layouts::{CKKSLeftOperandPrepared, CKKSRightOperandPrepared},
     mul_pt_params_raw,
     oep::derived::dot_product::{accumulate, check_lengths},
-    reference::mul::{MulStamp, StampOrder, check_prepared_layout, mul_one_pass, tensor_mul_core},
+    reference::mul::{
+        MulStamp, StampOrder, check_prepared_layout, is_replicated, mul_one_pass, product_key_k, round_into, take_wide,
+        tensor_mul_core, with_shaped_bytes,
+    },
 };
 
 /// The reference algorithms of [`CKKSDotProductImpl`](crate::oep::CKKSDotProductImpl), which
@@ -30,6 +33,7 @@ pub trait CKKSDotProductReference<BE: Backend, Rg: Ring = Standard>: Sized + Mod
     where
         Self: CKKSMulOps<BE, Rg>
             + CKKSAddOps<BE, Rg>
+            + CKKSRoundOps<BE, Rg>
             + GLWEBytesOf<BE>
             + GLWETensorBytesOf<BE>
             + GLWETensoring<BE, Rg>
@@ -67,12 +71,18 @@ pub trait CKKSDotProductReference<BE: Backend, Rg: Ring = Standard>: Sized + Mod
         }
         let ct_bytes: usize = self.glwe_bytes_of_from_infos(res);
         let fallback: usize = ct_bytes + mul_scratch.max(self.ckks_add_tmp_bytes(res.size()));
-        let fast: usize = 2 * tensor_bytes + apply.max(self.glwe_normalize_tmp_bytes()).max(relinearize);
-        // Its one-pass form, whatever the number of pairs.
-        let one_pass: usize = self
-            .glwe_mul_relinearize_sum_tmp_bytes(res, size, size, tensor_layout.k, tsk)
-            .max(self.glwe_mul_prepared_relinearize_sum_tmp_bytes(res, size, size, tensor_layout.k, tsk));
-        fallback.max(fast).max(one_pass)
+        // The lazy sum into `res`, or on a replicated layout into a wider ciphertext rounded into `res`.
+        let lazy = |res: &GLWELayout, _: TorusPrecision| {
+            let relinearize: usize = self.glwe_tensor_relinearize_tmp_bytes(res, &tensor_layout, tsk);
+            let fast: usize = 2 * tensor_bytes + apply.max(self.glwe_normalize_tmp_bytes()).max(relinearize);
+            // Its one-pass form, whatever the number of pairs.
+            let one_pass: usize = self
+                .glwe_mul_relinearize_sum_tmp_bytes(res, size, size, tensor_layout.k, tsk)
+                .max(self.glwe_mul_prepared_relinearize_sum_tmp_bytes(res, size, size, tensor_layout.k, tsk));
+            fast.max(one_pass)
+        };
+        let replicated = is_replicated(a) || is_replicated(b);
+        fallback.max(with_shaped_bytes(self, res, tensor_layout.k, replicated, lazy))
     }
 
     fn ckks_dot_product_ct_reference<Dst, A, B, H>(
@@ -86,6 +96,7 @@ pub trait CKKSDotProductReference<BE: Backend, Rg: Ring = Standard>: Sized + Mod
     where
         Self: CKKSMulOps<BE, Rg>
             + CKKSAddOps<BE, Rg>
+            + CKKSRoundOps<BE, Rg>
             + GLWETensoring<BE, Rg>
             + GLWEMulRelinearizeSum<BE, Rg>
             + GLWEAdd<BE, Rg>
@@ -101,20 +112,32 @@ pub trait CKKSDotProductReference<BE: Backend, Rg: Ring = Standard>: Sized + Mod
         let n: usize = a.len();
         // Past base2k 62, two canonical tensor digits can overflow an `i64`, and no backend models a
         // product there (`Module::max_base2k`): such pairs keep the eager path.
-        // A replicated layout rounds each product with shaping before the sum.
-        let full = a.iter().all(|ct| ct.slot_layout() == SlotLayout::Full);
-        if full && n > 1 && dst.base2k().as_usize() <= 62 && share_layout(a) && share_layout(b) {
-            return dot_product_lazy(
-                self,
-                "ckks_dot_product_ct",
-                dst,
-                a,
-                b,
-                tsk,
-                scratch,
-                |dst, cnv_offset, res_k, s| self.glwe_mul_relinearize_sum(cnv_offset, dst, res_k, a, b, tsk, s),
-                |term, i, cnv_offset, s| self.glwe_tensor_apply(cnv_offset, term, a[i], b[i], s),
-            );
+        if n > 1 && dst.base2k().as_usize() <= 62 && share_layout(a) && share_layout(b) {
+            let rule = lazy_rule("ckks_dot_product_ct", dst, a, b, tsk)?;
+            macro_rules! sum_into {
+                ($out:expr, $stamp:expr, $scratch:expr) => {
+                    dot_product_lazy(
+                        self,
+                        $out,
+                        a,
+                        b,
+                        tsk,
+                        &rule,
+                        $stamp,
+                        $scratch,
+                        |out, cnv_offset, res_k, s| self.glwe_mul_relinearize_sum(cnv_offset, out, res_k, a, b, tsk, s),
+                        |term, i, cnv_offset, s| self.glwe_tensor_apply(cnv_offset, term, a[i], b[i], s),
+                    )
+                };
+            }
+            return match rule.lambda {
+                None => sum_into!(dst, rule.stamp, scratch),
+                Some(lambda) => {
+                    let (mut wide, mut scratch) = take_wide(scratch, &*dst, dst.k().as_usize() + lambda);
+                    sum_into!(&mut wide, rule.stamp.widen(lambda), &mut scratch)?;
+                    round_into(self, dst, &wide, &rule.stamp, &mut scratch)
+                }
+            };
         }
         self.ckks_mul_into(dst, a[0], b[0], tsk, scratch)?;
         accumulate(self, dst, n, scratch, |tmp, i, s| self.ckks_mul_into(tmp, a[i], b[i], tsk, s))
@@ -129,7 +152,11 @@ pub trait CKKSDotProductReference<BE: Backend, Rg: Ring = Standard>: Sized + Mod
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: GLWEPreparedTensoring<BE, Rg> + GLWETensoring<BE, Rg> + GLWEAdd<BE, Rg> + GLWENormalize<BE, Rg>,
+        Self: GLWEPreparedTensoring<BE, Rg>
+            + GLWETensoring<BE, Rg>
+            + GLWEAdd<BE, Rg>
+            + GLWENormalize<BE, Rg>
+            + CKKSRoundOps<BE, Rg>,
         Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
         H: GetTensorKey<BE, Rg>,
     {
@@ -146,38 +173,49 @@ pub trait CKKSDotProductReference<BE: Backend, Rg: Ring = Standard>: Sized + Mod
         if !share_layout(a) || !share_layout(b) {
             return invalid("every a[i] must share one layout and scale, and every b[i] one".into());
         }
-        if a.iter().any(|ct| ct.slot_layout() != SlotLayout::Full) {
-            return invalid("prepared dot products round plainly, which a replicated slot layout forbids".into());
-        }
         check_lazy_base2k(OP, dst)?;
-        dot_product_lazy(
-            self,
-            OP,
-            dst,
-            a,
-            b,
-            tsk,
-            scratch,
-            |dst, cnv_offset, res_k, s| {
-                self.glwe_mul_prepared_relinearize_sum(
-                    cnv_offset,
-                    dst,
-                    res_k,
-                    a.iter().map(|a| a.cnv()),
-                    a[0].size(),
-                    a[0].k(),
-                    b.iter().map(|b| b.cnv()),
-                    b[0].size(),
-                    b[0].k(),
+        let rule = lazy_rule(OP, dst, a, b, tsk)?;
+        macro_rules! sum_into {
+            ($out:expr, $stamp:expr, $scratch:expr) => {
+                dot_product_lazy(
+                    self,
+                    $out,
+                    a,
+                    b,
                     tsk,
-                    s,
+                    &rule,
+                    $stamp,
+                    $scratch,
+                    |out, cnv_offset, res_k, s| {
+                        self.glwe_mul_prepared_relinearize_sum(
+                            cnv_offset,
+                            out,
+                            res_k,
+                            a.iter().map(|a| a.cnv()),
+                            a[0].size(),
+                            a[0].k(),
+                            b.iter().map(|b| b.cnv()),
+                            b[0].size(),
+                            b[0].k(),
+                            tsk,
+                            s,
+                        )
+                    },
+                    |term, i, cnv_offset, s| {
+                        let (a, b) = (a[i], b[i]);
+                        self.glwe_tensor_apply_prepared(cnv_offset, term, a.cnv(), a.size(), b.cnv(), b.size(), a.base2k(), s)
+                    },
                 )
-            },
-            |term, i, cnv_offset, s| {
-                let (a, b) = (a[i], b[i]);
-                self.glwe_tensor_apply_prepared(cnv_offset, term, a.cnv(), a.size(), b.cnv(), b.size(), a.base2k(), s)
-            },
-        )
+            };
+        }
+        match rule.lambda {
+            None => sum_into!(dst, rule.stamp, scratch),
+            Some(lambda) => {
+                let (mut wide, mut scratch) = take_wide(scratch, &*dst, dst.k().as_usize() + lambda);
+                sum_into!(&mut wide, rule.stamp.widen(lambda), &mut scratch)?;
+                round_into(self, dst, &wide, &rule.stamp, &mut scratch)
+            }
+        }
     }
 
     /// Core's summed product's scratch, whatever the number of terms.
@@ -492,45 +530,28 @@ fn share_layout<C: CKKSCtBounds>(cts: &[&C]) -> bool {
         .all(|ct| (ct.glwe_layout(), ct.log_delta()) == (cts[0].glwe_layout(), cts[0].log_delta()))
 }
 
-/// `dst = Σ a[i] · b[i]` with one relinearization, for pairs that share one ct × ct rule: `ckks_mul_into`'s
-/// [`tensor_mul_core`], with `one_pass` and `tensor` forming the products of every pair.
-///
-/// Checks the tensor key and the rule before writing `dst`. Where `ckks_mul_into` takes its one-pass product, the
-/// sum is `one_pass(dst, cnv_offset, res_k)`, which adds the products in the transform domain. Otherwise
-/// `tensor(t, i, cnv_offset)` writes pair `i`'s tensor product into `t`, canonical at the tensor width, and the terms
-/// are added without normalizing, as other lazy additions: the sum is exact, and it is normalized once, right before
-/// the relinearization reads it through a DFT. One pair is no sum: one tensor, not normalized, as in `ckks_mul_into`.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "the two product forms of the pairs and the operation's operands"
-)]
-fn dot_product_lazy<BE, M, Dst, A, B, H, Rg: Ring>(
-    module: &M,
-    op: &'static str,
-    dst: &mut Dst,
-    a: &[&A],
-    b: &[&B],
-    tsk: &H,
-    scratch: &mut ScratchArena<'_, BE>,
-    one_pass: impl FnOnce(&mut Dst, usize, TorusPrecision, &mut ScratchArena<'_, BE>),
-    mut tensor: impl for<'t> FnMut(&mut GLWETensorViewMut<'t, BE, Rg>, usize, usize, &mut ScratchArena<'t, BE>),
-) -> Result<()>
+/// The rule of [`dot_product_lazy`] into `dst`: the eager sum's stamp, the tensor width, the offset of the products,
+/// and on a replicated layout the bits `lambda` under the scale at which the sum is taken, as `ckks_mul_into` takes a
+/// product, before one shaped rounding. Checks the tensor key at the tensor width, the rule, the slot layouts and on a
+/// replicated layout the key of the wider intermediate, in that order and before any write.
+struct LazyRule {
+    stamp: MulStamp,
+    tensor_k: TorusPrecision,
+    cnv_offset: usize,
+    lambda: Option<usize>,
+}
+
+fn lazy_rule<BE, Dst, A, B, H, Rg: Ring>(op: &'static str, dst: &Dst, a: &[&A], b: &[&B], tsk: &H) -> Result<LazyRule>
 where
     BE: Backend,
-    M: GLWETensoring<BE, Rg> + GLWEAdd<BE, Rg> + GLWENormalize<BE, Rg>,
-    Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+    Dst: CKKSCtBounds,
     A: CKKSCtBounds,
     B: CKKSCtBounds,
     H: GetTensorKey<BE, Rg>,
 {
     // `ckks_mul_into`'s tensor width, and so its key width, whatever `dst`'s width.
-    let tensor_layout = GLWELayout {
-        n: dst.n(),
-        base2k: dst.base2k(),
-        k: a[0].k().max(b[0].k()),
-        rank: dst.rank(),
-    };
-    crate::reference::mul::tensor_key_at(op, tsk, tensor_layout.k)?;
+    let tensor_k = a[0].k().max(b[0].k());
+    crate::reference::mul::tensor_key_at(op, tsk, tensor_k)?;
     let (log_budget, log_delta, cnv_offset) = get_mul_ct_params(op, dst, a[0], b[0])?;
     // The eager sum's label and slot kind: the smallest label and the join over every operand.
     let metas = || a.iter().map(|ct| ct.meta()).chain(b.iter().map(|ct| ct.meta()));
@@ -542,18 +563,79 @@ where
         }
         .into());
     }
-    let stamp = MulStamp {
-        log_budget,
-        log_delta,
-        log_sparsity: metas().map(|meta| meta.log_sparsity).min(),
-        slots: metas().map(|meta| meta.slots).reduce(SlotsKind::join),
-        slot_layout: Some(slot_layout),
+    // A replicated layout's wider intermediate, after the rule.
+    let lambda = crate::shaping::product_depth(slot_layout, log_delta);
+    let key_k = product_key_k(
+        dst,
+        &[a[0].base2k(), b[0].base2k()],
+        tensor_k,
+        cnv_offset,
+        log_budget + log_delta,
+        lambda,
+        tsk,
+    );
+    if lambda.is_some() {
+        crate::reference::mul::tensor_key_at(op, tsk, key_k)?;
+    }
+    Ok(LazyRule {
+        stamp: MulStamp {
+            log_budget,
+            log_delta,
+            log_sparsity: metas().map(|meta| meta.log_sparsity).min(),
+            slots: metas().map(|meta| meta.slots).reduce(SlotsKind::join),
+            slot_layout: Some(slot_layout),
+        },
+        tensor_k,
+        cnv_offset,
+        lambda,
+    })
+}
+
+/// `out = Σ a[i] · b[i]` with one relinearization at `stamp`, for pairs that share one ct × ct rule `rule`:
+/// `ckks_mul_into`'s [`tensor_mul_core`], with `one_pass` and `tensor` forming the products of every pair.
+///
+/// Where `ckks_mul_into` takes its one-pass product, the sum is `one_pass(out, cnv_offset, res_k)`, which adds the
+/// products in the transform domain. Otherwise `tensor(t, i, cnv_offset)` writes pair `i`'s tensor product into `t`,
+/// canonical at the tensor width, and the terms are added without normalizing, as other lazy additions: the sum is
+/// exact, and it is normalized once, right before the relinearization reads it through a DFT. One pair is no sum: one
+/// tensor, not normalized, as in `ckks_mul_into`. On a replicated layout, `out` is `rule.lambda` bits wider than the
+/// destination, `stamp` that many bits finer, and the caller rounds it with shaping.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the two product forms of the pairs, the operation's operands and its rule"
+)]
+fn dot_product_lazy<BE, M, Out, A, B, H, Rg: Ring>(
+    module: &M,
+    out: &mut Out,
+    a: &[&A],
+    b: &[&B],
+    tsk: &H,
+    rule: &LazyRule,
+    stamp: MulStamp,
+    scratch: &mut ScratchArena<'_, BE>,
+    one_pass: impl FnOnce(&mut Out, usize, TorusPrecision, &mut ScratchArena<'_, BE>),
+    mut tensor: impl for<'t> FnMut(&mut GLWETensorViewMut<'t, BE, Rg>, usize, usize, &mut ScratchArena<'t, BE>),
+) -> Result<()>
+where
+    BE: Backend,
+    M: GLWETensoring<BE, Rg> + GLWEAdd<BE, Rg> + GLWENormalize<BE, Rg>,
+    Out: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+    A: CKKSCtBounds,
+    B: CKKSCtBounds,
+    H: GetTensorKey<BE, Rg>,
+{
+    let cnv_offset = rule.cnv_offset;
+    let tensor_layout = GLWELayout {
+        n: out.n(),
+        base2k: out.base2k(),
+        k: rule.tensor_k,
+        rank: out.rank(),
     };
-    let one_pass = mul_one_pass(dst, &[a[0].base2k(), b[0].base2k()], tensor_layout.k, cnv_offset, tsk)
-        .then_some(|dst: &mut Dst, res_k, s: &mut ScratchArena<'_, BE>| one_pass(dst, cnv_offset, res_k, s));
+    let one_pass = mul_one_pass(out, &[a[0].base2k(), b[0].base2k()], tensor_layout.k, cnv_offset, tsk)
+        .then_some(|out: &mut Out, res_k, s: &mut ScratchArena<'_, BE>| one_pass(out, cnv_offset, res_k, s));
     tensor_mul_core(
         module,
-        dst,
+        out,
         tsk,
         tensor_layout.k,
         stamp,
