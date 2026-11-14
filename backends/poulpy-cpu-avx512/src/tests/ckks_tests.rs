@@ -122,6 +122,17 @@ mod bootstrapping_presets {
     }
 }
 
+#[cfg(feature = "enable-ifma")]
+mod replicated_bootstrapping_presets {
+    use poulpy_ckks::test_suite::replicated_presets::replicated_bootstrapping_presets_meet_precision;
+
+    #[test]
+    #[ignore = "full logN14 to logN16 replicated bootstrapping presets"]
+    fn ifma() {
+        replicated_bootstrapping_presets_meet_precision::<crate::NTT3x42Ifma>(52);
+    }
+}
+
 ckks_determinism_test_suite!(mod ckks_determinism_fft64avx512, backend = crate::FFT64Avx512, f32);
 
 ckks_determinism_test_suite!(mod ckks_determinism_ntt4x30avx512, backend = crate::NTT4x30Avx512, f32);

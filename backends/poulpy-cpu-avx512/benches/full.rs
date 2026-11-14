@@ -12,7 +12,7 @@ use poulpy_bench::blas::suites::bench_blas;
 use poulpy_bench::core::suites::{bench_core_binfhe, bench_core_ckks};
 use poulpy_bench::hal::suites::{bench_hal_binfhe, bench_hal_ckks};
 use poulpy_bench::libm::suites::bench_libm;
-use poulpy_bench::schemes::suites::{bench_binfhe, bench_ckks, bench_ckks_bootstrapping};
+use poulpy_bench::schemes::suites::{bench_binfhe, bench_ckks, bench_ckks_bootstrapping, bench_ckks_replicated_bootstrapping};
 use poulpy_bin_fhe::blind_rotation::CGGI;
 
 use poulpy_cpu_avx512::FFT64Avx512 as Fft;
@@ -23,6 +23,11 @@ use poulpy_cpu_avx512::NTT4x30Avx512 as Ntt;
 fn bench_ckks_bootstrapping_ifma(_c: &mut Criterion) {
     #[cfg(feature = "enable-ifma")]
     bench_ckks_bootstrapping::<Ifma>(_c);
+}
+
+fn bench_ckks_replicated_bootstrapping_ifma(_c: &mut Criterion) {
+    #[cfg(feature = "enable-ifma")]
+    bench_ckks_replicated_bootstrapping::<Ifma, 52>(_c);
 }
 
 fn bench_ckks_bootstrapping_ifma_rayon(_c: &mut Criterion) {
@@ -54,6 +59,8 @@ criterion_group! {
      bench_ckks_bootstrapping_ifma,
      bench_ckks_bootstrapping_ifma_rayon,
      bench_ckks_bootstrapping::<Fft>,
+     bench_ckks_replicated_bootstrapping::<Ntt, 52>,
+     bench_ckks_replicated_bootstrapping_ifma,
      bench_binfhe::<Fft, CGGI>
 }
 
