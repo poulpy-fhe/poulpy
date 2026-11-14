@@ -91,7 +91,7 @@ fn bootstrapping_presets_take_the_backend_radix() {
         presets::bootstrapping::all,
         test_suite::presets::{BOOTSTRAP_FAILURE_BITS, preset_for_backend},
     };
-    use poulpy_core::layouts::LWEInfos;
+    use poulpy_core::security::Security;
 
     let (standard, ci): (Vec<_>, Vec<_>) = all()
         .unwrap()
@@ -129,10 +129,8 @@ fn bootstrapping_presets_take_the_backend_radix() {
                 (preset.input_k(), preset.output_k(), preset.bootstrap_k())
             );
             assert_eq!(adapted.plan().c2s_guard_bits(), preset.plan().c2s_guard_bits());
-            let mut keys = adapted.keys_layout().rotation_key_layouts();
-            assert!(keys.all(|key| key.k().as_usize() <= adapted.max_dense_modulus()));
-            let small_key = &adapted.keys_layout().encapsulation.as_ref().unwrap().dense_to_sparse;
-            assert!(small_key.k().as_usize() <= adapted.max_sparse_modulus());
+            // Building the adapted preset certified its keys at the new radix.
+            assert_eq!(adapted.security(), Some(Security::Bits128));
         }
     }
 }

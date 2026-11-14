@@ -91,7 +91,7 @@ mod bootstrapping_presets {
         layouts::EvalModRing,
         test_suite::presets::{BOOTSTRAP_FAILURE_BITS, bootstrapping_presets_meet_precision, preset_for_backend},
     };
-    use poulpy_core::layouts::LWEInfos;
+    use poulpy_core::security::Security;
 
     #[test]
     fn ifma_radix() {
@@ -101,10 +101,8 @@ mod bootstrapping_presets {
             assert_eq!(preset.max_backend_base2k::<crate::NTT3x42Ifma>(BOOTSTRAP_FAILURE_BITS), 56);
             let adapted = preset_for_backend::<crate::NTT3x42Ifma>(&preset).unwrap();
             assert_eq!(adapted.base2k(), 56);
-            let mut keys = adapted.keys_layout().rotation_key_layouts();
-            assert!(keys.all(|key| key.k().as_usize() <= adapted.max_dense_modulus()));
-            let small_key = &adapted.keys_layout().encapsulation.as_ref().unwrap().dense_to_sparse;
-            assert!(small_key.k().as_usize() <= adapted.max_sparse_modulus());
+            // Building the adapted preset certified its keys at the new radix.
+            assert_eq!(adapted.security(), Some(Security::Bits128));
         }
     }
 

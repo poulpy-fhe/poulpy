@@ -2,9 +2,16 @@
 
 use anyhow::{Result, ensure};
 
+use poulpy_core::{
+    Distribution,
+    security::{SecretSpec, Security, SecurityError},
+};
+
 use crate::{
     CKKSCompositionError, CKKSInfos,
-    layouts::{DFTPlan, DFTType, EncodedLut, EvalModPlan, ModRaisePlan, eval_mod::EvalModType},
+    layouts::{
+        BootstrappingKeysLayout, DFTPlan, DFTType, EncodedLut, EvalModPlan, KeySecret, ModRaisePlan, eval_mod::EvalModType,
+    },
 };
 
 use super::{BootstrappingKeyWidths, CIConversion, EvalModRing, key_widths::StageWidths};
@@ -135,6 +142,8 @@ pub struct BootstrappingPlan {
     log_gap: usize,
     pub(super) functional_message_modulus: Option<usize>,
     eval_mod_ring: EvalModRing,
+    /// Level the keys must meet, checked when they are generated, `None` unchecked.
+    security: Option<Security>,
 
     techniques: BootstrappingTechniques,
 
@@ -246,6 +255,7 @@ impl BootstrappingPlan {
             log_gap: 0,
             functional_message_modulus: None,
             eval_mod_ring: EvalModRing::Standard,
+            security: None,
             techniques,
             coeffs_to_slots,
             eval_mod,
@@ -340,6 +350,49 @@ impl BootstrappingPlan {
     /// `log2` of the gap of the plaintexts, see [`Self::with_log_gap`].
     pub fn log_gap(&self) -> usize {
         self.log_gap
+    }
+
+    /// The plan with its keys required to meet `security`: generating them checks the dense secret and every key
+    /// against it before drawing anything (see [`Self::check_key_security`]).
+    pub fn with_security(mut self, security: Security) -> Self {
+        self.security = Some(security);
+        self
+    }
+
+    /// Level the keys must meet, see [`Self::with_security`].
+    pub fn security(&self) -> Option<Security> {
+        self.security
+    }
+
+    /// Checks every key of `layout` against `security`, each under the secret its samples are encrypted with: `dense`,
+    /// the ephemeral sparse secret of the plan's weight on the subring of its gap, or the conjugate-invariant secret of
+    /// EvalMod there, which is drawn at the dense secret's degree and weight and shares its bound (see
+    /// [`BootstrappingKeysLayout::keys_by_secret`]).
+    ///
+    /// # Errors
+    ///
+    /// The first key whose modulus exceeds the bound of its secret, or a secret without a bound at `security`.
+    pub fn check_key_security(
+        &self,
+        security: Security,
+        dense: SecretSpec,
+        layout: &BootstrappingKeysLayout,
+    ) -> Result<(), SecurityError> {
+        let sparse_n = dense.n >> self.log_gap;
+        let sparse = SecretSpec::new(
+            sparse_n,
+            self.sparse_secret_hamming_weight()
+                .map_or(Distribution::NONE, Distribution::TernaryFixed),
+        );
+        for (name, secret, log_q) in layout.keys_by_secret() {
+            let spec = match secret {
+                KeySecret::Dense | KeySecret::ConjugateInvariant => dense,
+                // Without a sparse secret in the plan, `NONE` has no bound and the key is refused.
+                KeySecret::Sparse => sparse,
+            };
+            security.check_log_q(spec, &format!("{name} key"), log_q)?;
+        }
+        Ok(())
     }
 
     /// Adds scale bits at ModUp to reduce CoeffsToSlots rounding error.
