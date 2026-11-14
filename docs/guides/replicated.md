@@ -63,13 +63,16 @@ The workspace owns the prepared baby rotations for that input layout; evaluation
 EvalMod enters its scale with a shaped rounding, which leaves noise of about `2^(G + log2(sqrt(N)))` units on the guard slots for a unit whose guards grow by `G` bits.
 The cosine polynomial and the double angles square the guards, so they must stay well below one: at `2^28`, the guards of `U8_40` (`G = 14.58`) reach `2^7` after the polynomial and wrap the data after the double angles.
 `ReplicatedBootstrapPlan::eval_mod_log_delta` keeps the paper's `2^28` for units whose guards grow by at most 13 bits, and runs EvalMod at `ceil(G) + 15` bits above that, `2^30` for `U8_40` and `2^31` for `U4_15`.
+The shaped quantization of the last `CoeffsToSlots` factor also leaves an error on the guard slots at the EvalMod input, of about `2^(G - c2s_log_delta_diag)` times the input, summed over the factor's diagonals.
+A guard above about 0.6 leaves the range of the cosine and wraps the whole ciphertext. With dense maps and `U8_40` at the paper's `2^34`, the worst guard reaches 0.26 at `k = 2^9` and 0.72 at `k = 2^10`, about 1.5 bits per doubling of `k`, each bit of `c2s_log_delta_diag` halving it.
+The plain quantization of the `SlotsToCoeffs` diagonals leaks the input's guard noise onto the data: with `U8_40` at `k = 2^10`, dense maps measure 17.4 bits at `2^26`, 19.3 at `2^28` and 21.2 at `2^30`.
 Its `transforms` select how `SlotsToCoeffs` and `CoeffsToSlots` are evaluated:
 
 - `ReplicatedTransforms::Dense`, the paper's: each map is one BSGS transform of `k` (`SlotsToCoeffs`) or `2k` (packed `CoeffsToSlots`) diagonals, consuming one diagonal scale;
 - `ReplicatedTransforms::Factored`: each map is the DFT on period `k` in `s2c_factors` or `c2s_factors` factors and the move between consecutive slots and the data slots in `placement_factors` factors of 0/1 masks, each factor a BSGS transform whose giant step is fitted to its offsets. Every `SlotsToCoeffs` factor consumes `s2c_log_delta_diag` bits; the last `CoeffsToSlots` factor is quantized with shaping at `c2s_log_delta_diag` bits and the others plainly at `c2s_inner_log_delta_diag` bits. Factored maps take at least `2^f` values for `f` factors, and a packed plan needs the two batches to fit the ring.
   With `c2s_first_factor_on_raise`, the first DFT factor of `CoeffsToSlots` runs on the modulus raise, as the standard bootstrapping's can: the raised ciphertext is small until its first key switch, so the factor consumes no modulus. Each term is rotated with no key and switched to the secret by its own first-factor key with a row offset, and these keys replace the sparse-to-dense key. The diagonals have period `k`, so the top trace onto period `k` commutes with the factor, and they are encoded at the widest scale of the fewest limbs holding `C2S_FIRST_FACTOR_MIN_LOG_DELTA` bits (`ReplicatedBootstrapPlan::c2s_first_factor_log_delta_diag`, 49 bits on one limb at radix 52), since every term of the raise carries a diagonal.
 
-Factoring trades levels and rotation keys for fewer diagonals: at `N = 2^16` and `k = 2^10`, the dense maps multiply by about 3000 diagonals with 69 rotation keys, the factored maps of `n16_d20_k763_p19_s2c_factored` by 381 diagonals with 83 keys, for a raised modulus 256 bits wider at the same levels.
+Factoring trades levels and rotation keys for fewer diagonals: at `N = 2^16` and `k = 2^10`, the dense maps multiply by about 3000 diagonals with 69 rotation keys, the factored maps of `n16_d20_k771_p20_s2c_factored` by 381 diagonals with 83 keys, for a raised modulus 256 bits wider at the same levels.
 At `k = 2^10`, the factored preset bootstraps in 6.3 s on one `NTT4x30Neon` thread and 0.36 s on Metal, against 8.1 s and 0.52 s for dense maps at the same levels, within 0.2 bits of their precision. At `k = 2^8` the dense maps are faster, the diagonals no longer dominating.
 The preset now leaves its first `CoeffsToSlots` factor to the raise, which narrows the raised modulus by the factor's scale and takes about 5% off a bootstrapping on both backends, the raise's 63 small switches costing most of the factor they replace, at 21.6 bits instead of 22.3.
 `ReplicatedBootstrapping` compiles it for a module: the transforms, the masked EvalMod constants, and the Galois elements its keys cover.
@@ -83,28 +86,30 @@ A preset shapes each key from its width with the shared `BootstrappingKeyPolicy`
 The batch size and the shaping unit are the caller's.
 The input and output widths do not depend on them, while the raised modulus and the keys follow the unit's EvalMod scale: `plan` and `keys_layout` take the layout, and `keys_layout` the widths of the compiled bootstrapping.
 A preset refuses a unit whose suppression is less than 8 bits above its precision, since the bootstrapping falls short of the suppression by up to 5 bits: the units of `R = 2` and those targeting 20 bits, which measure 16 to 19 bits on the logN14 preset.
-The logN16 preset factors its maps into two DFT factors and two placement factors each, with `SlotsToCoeffs` diagonals at `2^30` and inner `CoeffsToSlots` diagonals at `2^49`, one limb each at radix 52, for batches of 4 to `2^10` values at `R = 16`.
+The logN14 and logN15 presets take dense maps, with `SlotsToCoeffs` diagonals at `2^30` and the shaped `CoeffsToSlots` ones at `2^36` and `2^37`, which keep the guards of `U8_40` under 0.16 at `k = 2^10`.
+The logN16 preset factors its maps into two DFT factors and two placement factors each, with `SlotsToCoeffs` diagonals at `2^32` and inner `CoeffsToSlots` diagonals at `2^49`, one limb each at radix 52, for batches of 4 to `2^10` values at `R = 16`.
 At `2^49` instead of `2^54` a bootstrapping is about 5% faster on Metal and 2% on NEON for 0.05 bits; at `2^44` the precision falls to 17 bits.
-The sparse-to-dense key covers the 49-bit lifted ModUp input, with a row offset ending its gadget at the raised modulus. Its full modulus includes that offset, the gadget and the auxiliary bits.
+Its first `CoeffsToSlots` factor runs on the raise, with first-factor keys in place of the sparse-to-dense key; the dense presets' sparse-to-dense key covers the 49-bit lifted ModUp input, with a row offset ending its gadget at the raised modulus.
 
-| preset | ring | levels at `2^20` | keys (digits × width + aux) | ephemeral key | sparse-to-dense key (offset + gadget + aux) | min precision, k = 16 / 64 |
-|---|---|---|---|---|---|---|
-| `n14_d20_k109_p21_s2c` | `2^14` | 2 | 14 × 28 + 28 | 2 × 22 + 22 | 333 + 2 × 25 + 25 | 21.79 / 21.73 bits |
-| `n15_d20_k389_p20_s2c` | `2^15` | 16 | 4 × 168 + 168 | 1 × 43 + 43 | 614 + 1 × 49 + 49 | 21.16 / 20.84 bits |
-| `n16_d20_k763_p19_s2c_factored` | `2^16` | 30 | 3 × 403 + 403 | 1 × 43 + 43 | 1150 + 1 × 49 + 49 | 20.52 / 20.38 bits |
+Each preset advertises 20 bits of precision on the data slots.
+The tables give the gadgets as digits × digit width + auxiliary bits, and the least precision over two key and secret seeds at the largest batch, on `NTT4x30Neon`:
 
-The logN14 preset advertises 21 bits of precision on the data slots, the logN15 preset 20 bits and the logN16 preset 19 bits, which the precision test asserts.
-The logN16 preset measures 20.35 bits at `k = 2^8` and 20.00 bits at `k = 2^10` on `NTT4x30Neon`. The test covers offset and full-width return keys on matched ciphertexts, and `U8_40` at `k = 64`.
+| preset | ring | levels at `2^20` | raised modulus | widest rotation key | tensor key | raise key (offset + gadget) | min precision |
+|---|---|---|---|---|---|---|---|
+| `n14_d20_k113_p20_s2c` | `2^14` | 2 | 389 bits | 19 × 21 + 25 | 7 × 52 + 60 | 339 + 2 × 25 + 35 | 22.91 bits, `k = 2^9` |
+| `n15_d20_k393_p20_s2c` | `2^15` | 16 | 670 bits | 7 × 104 + 119 | 3 × 208 + 223 | 618 + 1 × 52 + 67 | 22.87 bits, `k = 2^10` |
+| `n16_d20_k771_p20_s2c_factored` | `2^16` | 30 | 1143 bits | 3 × 416 + 432 | 2 × 520 + 536 | first factor, 1 × 156 + 172 | 21.65 bits, `k = 2^10` |
 
 With `U8_40`, EvalMod at `2^30` raises the modulus by 16 bits:
 
-| preset | raised modulus | keys (digits × width + aux) | min precision, k = 64 |
-|---|---|---|---|
-| `n14_d20_k109_p21_s2c` | 399 bits | 34 × 12 + 12 | 21.28 bits |
-| `n15_d20_k389_p20_s2c` | 679 bits | 5 × 138 + 138 | 20.94 bits |
-| `n16_d20_k763_p19_s2c_factored` | 1215 bits | 3 × 408 + 408 | 20.61 bits |
+| preset | raised modulus | widest rotation key | tensor key | min precision, `k = 2^10` |
+|---|---|---|---|---|
+| `n14_d20_k113_p20_s2c` | 405 bits | 46 × 9 + 10 | 7 × 52 + 60 | 21.25 bits |
+| `n15_d20_k393_p20_s2c` | 686 bits | 7 × 104 + 119 | 7 × 104 + 119 | 21.19 bits |
+| `n16_d20_k771_p20_s2c_factored` | 1159 bits | 3 × 416 + 432 | 2 × 520 + 536 | 21.41 bits |
 
-The logN14 bound of 424 bits leaves only 12-bit digits, so its key switches take 34 digits instead of 14.
+The logN14 bound of 424 bits leaves no whole-limb digit to its rotation keys, so they take 19 digits of 21 bits, and 46 of 9 bits with `U8_40`.
+The precision test asserts the advertised bits with `U32_45` at `k = 16` and `k = 64`, and with `U8_40` at `k = 64`.
 
 ## Conjugate-invariant ring
 
@@ -135,11 +140,11 @@ The two keys switch between the conjugate-invariant secret and the standard secr
 use poulpy_ckks::{
     api::CKKSReplicatedBootstrapOps,
     layouts::ReplicatedBootstrapping,
-    presets::replicated_bootstrapping::n15_d20_k389_p20_s2c,
+    presets::replicated_bootstrapping::n15_d20_k393_p20_s2c,
     shaping::ShapingUnit,
 };
 
-let preset = n15_d20_k389_p20_s2c()?;
+let preset = n15_d20_k393_p20_s2c()?;
 let layout = ShapingUnit::U32_45.layout(log_k)?;
 let plan = preset.plan(layout)?;
 // `scratch` covers `ReplicatedBootstrapping::<MyBackend, f64>::new_tmp_bytes(&module, &plan, base2k)?`.

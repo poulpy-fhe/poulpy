@@ -46,6 +46,7 @@ struct PresetSpec {
     max_sparse_modulus: usize,
     transforms: ReplicatedTransforms,
     s2c_log_delta_diag: usize,
+    c2s_log_delta_diag: usize,
 }
 
 /// A bootstrapping parameter set for a replicated slot layout: the circuit, the
@@ -163,29 +164,32 @@ impl ReplicatedBootstrappingPreset {
     }
 }
 
-/// `N = 2^14`: 2 levels at `2^20`, outputs of 109 bits, at least 21 bits of
-/// precision.
-pub fn n14_d20_k109_p21_s2c() -> Result<ReplicatedBootstrappingPreset> {
+/// `N = 2^14`: 2 levels at `2^20`, outputs of 113 bits, at least 20 bits of
+/// precision. The `SlotsToCoeffs` diagonals are at `2^30` and the shaped
+/// `CoeffsToSlots` ones at `2^36`, for `U8_40` up to `k = 2^10`.
+pub fn n14_d20_k113_p20_s2c() -> Result<ReplicatedBootstrappingPreset> {
     build(PresetSpec {
-        name: "n14_d20_k109_p21_s2c",
+        name: "n14_d20_k113_p20_s2c",
         log_n: 14,
         base2k: 52,
         levels: 2,
-        log2_precision: 21,
+        log2_precision: 20,
         dense_secret_hamming_weight: 1024,
         sparse_secret_hamming_weight: 32,
         max_dense_modulus: 424,
         max_sparse_modulus: 77,
         transforms: ReplicatedTransforms::Dense,
-        s2c_log_delta_diag: 26,
+        s2c_log_delta_diag: 30,
+        c2s_log_delta_diag: 36,
     })
 }
 
-/// `N = 2^15`: 16 levels at `2^20`, outputs of 389 bits, at least 20 bits of
-/// precision.
-pub fn n15_d20_k389_p20_s2c() -> Result<ReplicatedBootstrappingPreset> {
+/// `N = 2^15`: 16 levels at `2^20`, outputs of 393 bits, at least 20 bits of
+/// precision. The `SlotsToCoeffs` diagonals are at `2^30` and the shaped
+/// `CoeffsToSlots` ones at `2^37`, for `U8_40` up to `k = 2^10`.
+pub fn n15_d20_k393_p20_s2c() -> Result<ReplicatedBootstrappingPreset> {
     build(PresetSpec {
-        name: "n15_d20_k389_p20_s2c",
+        name: "n15_d20_k393_p20_s2c",
         log_n: 15,
         base2k: 52,
         levels: 16,
@@ -195,24 +199,25 @@ pub fn n15_d20_k389_p20_s2c() -> Result<ReplicatedBootstrappingPreset> {
         max_dense_modulus: 851,
         max_sparse_modulus: 162,
         transforms: ReplicatedTransforms::Dense,
-        s2c_log_delta_diag: 26,
+        s2c_log_delta_diag: 30,
+        c2s_log_delta_diag: 37,
     })
 }
 
-/// `N = 2^16`: 30 levels at `2^20`, outputs of 763 bits, at least 19 bits of
+/// `N = 2^16`: 30 levels at `2^20`, outputs of 771 bits, at least 20 bits of
 /// precision. Each map is factored into two DFT factors and two placement
-/// factors, the `SlotsToCoeffs` diagonals at `2^30` and the inner
+/// factors, the `SlotsToCoeffs` diagonals at `2^32` and the inner
 /// `CoeffsToSlots` ones at `2^49`, one limb each at radix 52 (at `2^44` the
 /// precision falls to 17 bits), for batches of 4 to `2^10` values with
 /// `R = 16`. The first `CoeffsToSlots` factor runs on the modulus raise, with
 /// first-factor keys in place of the sparse-to-dense key.
-pub fn n16_d20_k763_p19_s2c_factored() -> Result<ReplicatedBootstrappingPreset> {
+pub fn n16_d20_k771_p20_s2c_factored() -> Result<ReplicatedBootstrappingPreset> {
     build(PresetSpec {
-        name: "n16_d20_k763_p19_s2c_factored",
+        name: "n16_d20_k771_p20_s2c_factored",
         log_n: 16,
         base2k: 52,
         levels: 30,
-        log2_precision: 19,
+        log2_precision: 20,
         dense_secret_hamming_weight: 1024,
         sparse_secret_hamming_weight: 32,
         max_dense_modulus: 1707,
@@ -224,16 +229,17 @@ pub fn n16_d20_k763_p19_s2c_factored() -> Result<ReplicatedBootstrappingPreset> 
             c2s_inner_log_delta_diag: 49,
             c2s_first_factor_on_raise: true,
         },
-        s2c_log_delta_diag: 30,
+        s2c_log_delta_diag: 32,
+        c2s_log_delta_diag: 34,
     })
 }
 
 /// Every replicated bootstrapping preset.
 pub fn all() -> Result<Vec<ReplicatedBootstrappingPreset>> {
     Ok(vec![
-        n14_d20_k109_p21_s2c()?,
-        n15_d20_k389_p20_s2c()?,
-        n16_d20_k763_p19_s2c_factored()?,
+        n14_d20_k113_p20_s2c()?,
+        n15_d20_k393_p20_s2c()?,
+        n16_d20_k771_p20_s2c_factored()?,
     ])
 }
 
@@ -242,11 +248,12 @@ fn reference_plan(spec: &PresetSpec) -> ReplicatedBootstrapPlan {
     plan_for(spec, ShapingUnit::U32_45.layout(4).expect("a valid unit"))
 }
 
-/// The circuit of ePrint 2026/2513 with the preset's transforms and `SlotsToCoeffs` scale.
+/// The circuit of ePrint 2026/2513 with the preset's transforms and diagonal scales.
 fn plan_for(spec: &PresetSpec, layout: ReplicatedLayout) -> ReplicatedBootstrapPlan {
     ReplicatedBootstrapPlan {
         transforms: spec.transforms,
         s2c_log_delta_diag: spec.s2c_log_delta_diag,
+        c2s_log_delta_diag: spec.c2s_log_delta_diag,
         ..ReplicatedBootstrapPlan::paper(layout)
     }
 }
@@ -370,12 +377,12 @@ mod tests {
             (layout.dnum.0, layout.k_digit.0, layout.k_aux.0)
         };
         let presets = [
-            (n14_d20_k109_p21_s2c().unwrap(), ShapingUnit::U32_45),
-            (n14_d20_k109_p21_s2c().unwrap(), ShapingUnit::U8_40),
-            (n15_d20_k389_p20_s2c().unwrap(), ShapingUnit::U32_45),
-            (n15_d20_k389_p20_s2c().unwrap(), ShapingUnit::U8_40),
-            (n16_d20_k763_p19_s2c_factored().unwrap(), ShapingUnit::U32_45),
-            (n16_d20_k763_p19_s2c_factored().unwrap(), ShapingUnit::U8_40),
+            (n14_d20_k113_p20_s2c().unwrap(), ShapingUnit::U32_45),
+            (n14_d20_k113_p20_s2c().unwrap(), ShapingUnit::U8_40),
+            (n15_d20_k393_p20_s2c().unwrap(), ShapingUnit::U32_45),
+            (n15_d20_k393_p20_s2c().unwrap(), ShapingUnit::U8_40),
+            (n16_d20_k771_p20_s2c_factored().unwrap(), ShapingUnit::U32_45),
+            (n16_d20_k771_p20_s2c_factored().unwrap(), ShapingUnit::U8_40),
         ];
         let got: Vec<_> = presets
             .iter()
@@ -396,15 +403,15 @@ mod tests {
                 )
             })
             .collect();
-        let n14 = "n14_d20_k109_p21_s2c";
-        let n15 = "n15_d20_k389_p20_s2c";
-        let n16 = "n16_d20_k763_p19_s2c_factored";
+        let n14 = "n14_d20_k113_p20_s2c";
+        let n15 = "n15_d20_k393_p20_s2c";
+        let n16 = "n16_d20_k771_p20_s2c_factored";
         assert_eq!(
             got,
             [
                 // Under 424 bits no whole-limb digit fits keys of 391 bits or more.
-                (n14, (14, 28, 32), (7, 52, 60), (2, 22, 33), (2, 25, 39)),
-                (n14, (34, 12, 16), (7, 52, 60), (2, 22, 33), (3, 17, 25)),
+                (n14, (19, 21, 25), (7, 52, 60), (2, 22, 33), (2, 25, 35)),
+                (n14, (46, 9, 10), (7, 52, 60), (2, 22, 33), (3, 17, 19)),
                 (n15, (7, 104, 119), (3, 208, 223), (1, 52, 67), (1, 52, 67)),
                 (n15, (7, 104, 119), (7, 104, 119), (1, 52, 67), (1, 52, 67)),
                 // First-factor keys in place of the key back, over the raise's small width.
@@ -419,9 +426,9 @@ mod tests {
     #[test]
     fn preset_widths() {
         for (preset, widths, u8_40_raised) in [
-            (n14_d20_k109_p21_s2c().unwrap(), (69, 109, 383), 399),
-            (n15_d20_k389_p20_s2c().unwrap(), (69, 389, 663), 679),
-            (n16_d20_k763_p19_s2c_factored().unwrap(), (163, 763, 1135), 1151),
+            (n14_d20_k113_p20_s2c().unwrap(), (73, 113, 389), 405),
+            (n15_d20_k393_p20_s2c().unwrap(), (73, 393, 670), 686),
+            (n16_d20_k771_p20_s2c_factored().unwrap(), (171, 771, 1143), 1159),
         ] {
             let plan = preset.plan(layout(ShapingUnit::U32_45)).unwrap();
             assert_eq!(

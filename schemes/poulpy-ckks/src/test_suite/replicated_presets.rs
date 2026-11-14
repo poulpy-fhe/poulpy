@@ -401,6 +401,10 @@ where
         for k in BATCH_SIZES {
             let mut run = ReplicatedBootstrappingPresetRun::<BE, BC>::setup(preset.clone(), k);
             check(&mut run, "offset");
+            // A first factor on the raise takes the place of the key back.
+            if run.ctx.plan().c2s_first_factor_on_raise() {
+                continue;
+            }
 
             let k_boot = run.ctx.plan().k_boot(preset.output_k());
             let mut full = ReplicatedBootstrappingPresetRun::<BE, BC>::setup_with_keys(
