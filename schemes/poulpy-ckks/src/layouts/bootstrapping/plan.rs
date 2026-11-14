@@ -2,9 +2,16 @@
 
 use anyhow::{Result, ensure};
 
+use poulpy_core::{
+    Distribution,
+    security::{SecretSpec, Security},
+};
+
 use crate::{
     CKKSCompositionError, CKKSInfos,
-    layouts::{DFTPlan, DFTType, EncodedLut, EvalModPlan, ModRaisePlan, eval_mod::EvalModType},
+    layouts::{
+        BootstrappingKeysLayout, DFTPlan, DFTType, EncodedLut, EvalModPlan, KeySecret, ModRaisePlan, eval_mod::EvalModType,
+    },
 };
 
 use super::{BootstrappingKeyWidths, CIConversion, EvalModRing, key_widths::StageWidths};
@@ -135,6 +142,8 @@ pub struct BootstrappingPlan {
     log_gap: usize,
     pub(super) functional_message_modulus: Option<usize>,
     eval_mod_ring: EvalModRing,
+    /// Level the keys must meet, checked when they are generated, `None` unchecked.
+    security: Option<Security>,
 
     techniques: BootstrappingTechniques,
 
@@ -246,6 +255,7 @@ impl BootstrappingPlan {
             log_gap: 0,
             functional_message_modulus: None,
             eval_mod_ring: EvalModRing::Standard,
+            security: None,
             techniques,
             coeffs_to_slots,
             eval_mod,
@@ -340,6 +350,67 @@ impl BootstrappingPlan {
     /// `log2` of the gap of the plaintexts, see [`Self::with_log_gap`].
     pub fn log_gap(&self) -> usize {
         self.log_gap
+    }
+
+    /// The plan with its keys required to meet `security`: generating them checks the dense secret and every key
+    /// against it before drawing anything (see [`Self::check_key_security`]).
+    pub fn with_security(mut self, security: Security) -> Self {
+        self.security = Some(security);
+        self
+    }
+
+    /// The plan without a security level: generating its keys checks nothing (see [`Self::with_security`]). A caller
+    /// generating the keys of a certified preset under a secret the level has no bound for, or one whose bounds the keys
+    /// exceed, opts out with it and certifies nothing.
+    pub fn without_security(mut self) -> Self {
+        self.security = None;
+        self
+    }
+
+    /// Level the keys must meet, see [`Self::with_security`].
+    pub fn security(&self) -> Option<Security> {
+        self.security
+    }
+
+    /// Checks every key of `layout` against `security`, each under the secret its samples are encrypted with: `dense`,
+    /// the ephemeral sparse secret of the plan's weight on the subring of its gap, or the conjugate-invariant secret of
+    /// EvalMod there, which is drawn at the dense secret's degree and weight and shares its bound (see
+    /// [`BootstrappingKeysLayout::keys_by_secret`]).
+    ///
+    /// # Errors
+    ///
+    /// [`SecurityLevelNotMet`](CKKSCompositionError::SecurityLevelNotMet) with `op` `"check_key_security"`, in the
+    /// chain, for the first key whose modulus exceeds the bound of its secret or a secret without a bound at
+    /// `security`.
+    pub fn check_key_security(&self, security: Security, dense: SecretSpec, layout: &BootstrappingKeysLayout) -> Result<()> {
+        Ok(self.check_key_security_for("check_key_security", security, dense, layout)?)
+    }
+
+    /// [`Self::check_key_security`] refusing for the public entry point `op`.
+    pub(crate) fn check_key_security_for(
+        &self,
+        op: &'static str,
+        security: Security,
+        dense: SecretSpec,
+        layout: &BootstrappingKeysLayout,
+    ) -> Result<(), CKKSCompositionError> {
+        let sparse_n = dense.n >> self.log_gap;
+        let sparse = SecretSpec::new(
+            sparse_n,
+            self.sparse_secret_hamming_weight()
+                .map_or(Distribution::NONE, Distribution::TernaryFixed),
+        );
+        for (name, secret, log_q) in layout.keys_by_secret() {
+            let spec = match secret {
+                KeySecret::Dense | KeySecret::ConjugateInvariant => dense,
+                // Without a sparse secret in the plan, `NONE` has no bound and the key is refused.
+                KeySecret::Sparse => sparse,
+            };
+            security
+                .check_log_q(spec, &format!("{name} key"), log_q)
+                .map_err(|source| CKKSCompositionError::SecurityLevelNotMet { op, source })?;
+        }
+        Ok(())
     }
 
     /// Adds scale bits at ModUp to reduce CoeffsToSlots rounding error.

@@ -177,6 +177,15 @@ pub enum CKKSCompositionError {
         k: u32,
         source: poulpy_core::CoreError,
     },
+    /// A plan requires a security level ([`BootstrappingPlan::with_security`](crate::layouts::BootstrappingPlan::with_security))
+    /// that a key or the secret does not meet: `source` is the
+    /// [`SecurityBoundExceeded`](poulpy_core::CoreError::SecurityBoundExceeded) of the key, with its modulus and
+    /// bound, or the [`SecurityUnsupported`](poulpy_core::CoreError::SecurityUnsupported) of a secret the level has no
+    /// bound for.
+    SecurityLevelNotMet {
+        op: &'static str,
+        source: poulpy_core::CoreError,
+    },
     /// A plaintext cannot be aligned into the requested destination precision.
     PlaintextAlignmentImpossible {
         op: &'static str,
@@ -275,6 +284,9 @@ impl fmt::Display for CKKSCompositionError {
             Self::MissingRelinearizationKey { op, k, source } => {
                 write!(f, "{op} requires a relinearization key at precision k={k}: {source}")
             }
+            Self::SecurityLevelNotMet { op, source } => {
+                write!(f, "{op} does not meet the plan's security level: {source}")
+            }
             Self::PlaintextAlignmentImpossible {
                 op,
                 ct_log_budget,
@@ -325,7 +337,9 @@ impl fmt::Display for CKKSCompositionError {
 impl Error for CKKSCompositionError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
-            Self::MissingAutomorphismKey { source, .. } | Self::MissingRelinearizationKey { source, .. } => Some(source),
+            Self::MissingAutomorphismKey { source, .. }
+            | Self::MissingRelinearizationKey { source, .. }
+            | Self::SecurityLevelNotMet { source, .. } => Some(source),
             _ => None,
         }
     }

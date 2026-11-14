@@ -26,3 +26,6 @@ rand = {workspace = true}
 num-traits = {workspace = true}
 rand_distr = {workspace = true}
 anyhow = {workspace = true}
+
+[build-dependencies]
+serde_json = {workspace = true}

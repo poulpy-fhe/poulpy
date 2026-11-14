@@ -55,6 +55,7 @@ use poulpy_core::{
             GLWEAutomorphismKeyPreparedBackendRef, GLWEAutomorphismKeyPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef,
         },
     },
+    security::{SecretSpec, Security},
 };
 use poulpy_hal::{
     api::{VecZnxAutomorphism, VecZnxSwitchRing},
@@ -378,6 +379,18 @@ impl<D: Data, W: ZnxWord> BootstrappingKeySet<D, W> {
     }
 }
 
+/// The secret the samples of a bootstrapping key are encrypted under (see
+/// [`BootstrappingKeysLayout::keys_by_secret`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum KeySecret {
+    /// The application secret.
+    Dense,
+    /// The ephemeral sparse secret of the encapsulation, on the subring of the plan's gap.
+    Sparse,
+    /// The secret of EvalMod on the conjugate-invariant ring, drawn at the dense secret's degree and weight.
+    ConjugateInvariant,
+}
+
 /// Layout parameters for the evaluation keys produced by
 /// [`BootstrappingContextPrepared::generate_keys`].
 ///
@@ -418,6 +431,40 @@ impl BootstrappingKeysLayout {
             .enumerate()
             .filter(move |&(index, layout)| !layouts.values().take(index).any(|seen| seen == layout))
             .map(|(_, layout)| layout)
+    }
+
+    /// Every key, named, with the secret its samples are encrypted under and its modulus in bits,
+    /// [`LWEInfos::k`], the auxiliary guard and row offset included. A switching key's samples are
+    /// under its output secret: the rotation, first-factor, sparse-to-dense and embedding keys under
+    /// the dense secret, the dense-to-sparse key under the sparse one, and the trace key under the
+    /// conjugate-invariant secret. The tensor key is under the secret of the ring EvalMod runs on,
+    /// the conjugate-invariant one when the layout has conversion keys.
+    pub fn keys_by_secret(&self) -> Vec<(&'static str, KeySecret, usize)> {
+        let ci = self.conversion_keys.is_some();
+        let mut keys: Vec<_> = self
+            .rotation_key_layouts()
+            .map(|key| ("rotation", KeySecret::Dense, key.k().as_usize()))
+            .collect();
+        let tensor_secret = if ci { KeySecret::ConjugateInvariant } else { KeySecret::Dense };
+        keys.push(("tensor", tensor_secret, self.tensor_key.k().as_usize()));
+        if let Some(key) = &self.first_factor_key {
+            keys.push(("first-factor", KeySecret::Dense, key.k().as_usize()));
+        }
+        if let Some((trace, embed)) = &self.conversion_keys {
+            keys.push(("trace", KeySecret::ConjugateInvariant, trace.k().as_usize()));
+            keys.push(("embed", KeySecret::Dense, embed.k().as_usize()));
+        }
+        if let Some(encapsulation) = &self.encapsulation {
+            keys.push((
+                "dense-to-sparse",
+                KeySecret::Sparse,
+                encapsulation.dense_to_sparse.k().as_usize(),
+            ));
+            if let Some(key) = &encapsulation.sparse_to_dense {
+                keys.push(("sparse-to-dense", KeySecret::Dense, key.k().as_usize()));
+            }
+        }
+        keys
     }
 
     /// The switching keys of the raise: the encapsulation keys and the first-factor key.
@@ -590,7 +637,11 @@ impl<BE: Backend, F> BootstrappingContextPrepared<BE, F> {
     /// [`InvalidOperand`](crate::CKKSCompositionError::InvalidOperand) before any draw: with
     /// EvalMod on the standard ring, for conversion key layouts, and on the conjugate-invariant
     /// ring, for missing conversion key layouts, a dense secret not of fixed-weight ternary
-    /// law, or a module of another degree than twice the secret's.
+    /// law, or a module of another degree than twice the secret's. With a plan that requires a
+    /// security level ([`BootstrappingPlan::with_security`]),
+    /// [`SecurityLevelNotMet`](crate::CKKSCompositionError::SecurityLevelNotMet) with `op`
+    /// `"generate_keys"`, from [`BootstrappingPlan::check_key_security`] under `sk_dense`, also
+    /// before any draw.
     #[expect(
         clippy::too_many_arguments,
         reason = "key generation takes the module, the secret, the layout, three sources and a scratch arena"
@@ -655,6 +706,9 @@ impl BootstrappingPlan {
             + GLWECIKeyEncryptSk<BE>,
         Module<BE>: GLWETensorKeyEncryptSk<BE, ConjugateInvariant> + GLWESecretSampling<BE, ConjugateInvariant>,
     {
+        if let Some(security) = self.security() {
+            self.check_key_security_for("generate_keys", security, SecretSpec::of(sk_dense), layout)?;
+        }
         // The cyclotomic order of the secret's degree, which the module may exceed.
         let order = crate::operand_cyclotomic_order::<_, Standard>("generate_keys", module, sk_dense.n().as_usize())?;
         self.key_recipe(sk_dense.n().as_usize(), order)?
@@ -1240,4 +1294,39 @@ pub struct CKKSFoldKeysLayout {
     /// Layout of the automorphism keys of the input secret, which split real pairs
     /// and sparse inputs.
     pub automorphism: Option<GGLWELayout>,
+}
+
+impl CKKSFoldKeysLayout {
+    /// Checks the keys of a fold against `security`, each under the secret its samples are
+    /// encrypted with: the inbound ring-switch key under the bootstrap secret `bootstrap`, the
+    /// outbound one and the automorphism keys under the input secret `input`, each spec at the
+    /// degree of the ring its secret lives in (the inputs' degree, or the conjugate-invariant
+    /// degree for embedded conjugate-invariant inputs). These keys belong to no preset or plan:
+    /// they are certified only through this call, as the bootstrapping keys are through
+    /// [`BootstrappingPlan::check_key_security`].
+    ///
+    /// # Errors
+    ///
+    /// [`SecurityLevelNotMet`](crate::CKKSCompositionError::SecurityLevelNotMet) with `op`
+    /// `"check_security"`, in the chain, for the first key whose modulus exceeds the bound of its
+    /// secret or a secret without a bound at `security`.
+    pub fn check_security(&self, security: Security, input: SecretSpec, bootstrap: SecretSpec) -> Result<()> {
+        let mut keys = Vec::new();
+        if let Some(ring_switch) = &self.ring_switch {
+            keys.push(("inbound ring-switch key", bootstrap, ring_switch.inbound.k()));
+            keys.push(("outbound ring-switch key", input, ring_switch.outbound.k()));
+        }
+        if let Some(automorphism) = &self.automorphism {
+            keys.push(("automorphism key", input, automorphism.k()));
+        }
+        for (what, secret, k) in keys {
+            security.check_log_q(secret, what, k.as_usize()).map_err(|source| {
+                crate::CKKSCompositionError::SecurityLevelNotMet {
+                    op: "check_security",
+                    source,
+                }
+            })?;
+        }
+        Ok(())
+    }
 }

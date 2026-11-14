@@ -25,42 +25,53 @@
 //!
 //! ## Security
 //!
-//! Each secret of a preset comes with the largest modulus `q = 2^k`, in bits, that
-//! any object under it may use for 128 bits of security: a ternary secret of that
-//! Hamming weight, an error of deviation 3.2, at the preset's ring degree. The
-//! values are estimates, not proofs, read from the 128-bit table of
-//! [sparse-key-estimate](https://github.com/jdumezy/sparse-key-estimate/blob/aa2c40d4eee4551e6fba06c55d7432f6918e1597/Precomputed-Tables/128bits_security.md):
+//! Every preset uses a ternary dense secret of Hamming weight 1024 and an
+//! ephemeral ternary sparse secret of weight 32 for the raise, and is certified
+//! for 128 bits of security ([`Security::Bits128`]). The bound of each secret, the
+//! largest modulus any object under it may use, comes from the rlwe-params table
+//! vendored in poulpy-core (see [`poulpy_core::security`]), at the degree of the
+//! ring the secret lives in. At rlwe-params v0.2.0:
 //!
 //! | `N` | dense secret, weight 1024 | sparse secret, weight 32 |
 //! | --- | ---: | ---: |
-//! | `2^16` | 1707 | 345 |
+//! | `2^16` | 1707 | 342 |
 //! | `2^15` | 851 | 162 |
 //!
-//! The tool estimates the primal hybrid attack with a meet-in-the-middle search
-//! over rotations of the secret ([ePrint 2026/279](https://eprint.iacr.org/2026/279)),
-//! and reproduces Table 1 of [ePrint 2022/024](https://eprint.iacr.org/2022/024) at
-//! that paper's sparse-key moduli: 161.8 bits of security at 120 bits for
-//! `N = 2^16` (168.5 in the paper), 140.6 at 111 bits for `N = 2^15` (140.9). The
-//! 121 and 111 bits of 2022/024 are the sizes of its sparse-secret key, not bounds.
-//! At the sparse bounds, the dual and dual-hybrid attacks of the
-//! [lattice estimator](https://github.com/malb/lattice-estimator) cost above
-//! 2^790, so the primal hybrid sets them.
+//! The bounds shape the keys: each key takes the digit of fewest rows whose
+//! modulus, auxiliary guard included, fits the bound of its secret (see
+//! [`BootstrappingKeyPolicy`]). Building a preset then checks the raised
+//! ciphertext and every key against them
+//! ([`BootstrappingPlan::check_key_security`]), and its plan carries the level, so
+//! generating the keys checks them again under the dense secret actually given.
+//! The values are estimates against the attacks of the estimators rlwe-params
+//! runs, not proofs.
 //!
-//! Every object under a secret counts, the keys included: their modulus is the
-//! widest in a preset, and a key's error sits at its last bit, so the bound
-//! applies to its precision `k`. Building a preset checks every key layout against
-//! the bounds of its secrets.
+//! Choosing a certified preset is the opt-in: nothing else in the library checks
+//! a level. Generating a preset's keys under a secret its level has no bound for,
+//! or one whose bound its keys exceed, is refused: a ternary secret of weight 192
+//! at `N = 2^16` is bounded at 1475 bits, below the 1680-bit keys of the logN16
+//! presets. A caller who wants those keys anyway clears the level with
+//! [`BootstrappingPlan::without_security`], and certifies nothing.
+//!
+//! The keys of a fold ([`CKKSFoldKeysLayout`](crate::layouts::CKKSFoldKeysLayout)), whose
+//! outbound ring-switch and automorphism keys sit under the inputs' secret at their degree,
+//! belong to no preset: they are certified only through
+//! [`CKKSFoldKeysLayout::check_security`](crate::layouts::CKKSFoldKeysLayout::check_security).
 
 use anyhow::{Context, Result, ensure};
-use poulpy_core::layouts::{
-    Base2K, BsgsRotations, Degree, GGLWEInfos, GLWEAutomorphismKeyLayout, GLWELayout, LWEInfos, LinearTransformationLayout, Rank,
-    TorusPrecision,
+use poulpy_core::{
+    Distribution,
+    layouts::{
+        Base2K, BsgsRotations, Degree, GGLWEInfos, GLWEAutomorphismKeyLayout, GLWELayout, LinearTransformationLayout, Rank,
+        TorusPrecision,
+    },
+    security::{SecretSpec, Security},
 };
 use poulpy_hal::layouts::{ConjugateInvariant, MaxBase2k, Module, Standard};
 
 use crate::numerics::CKKSFloat;
 use crate::{
-    CKKSLayout, CoeffsMeta, GLWEPlaintextMeta, Scale, SlotLayout, SlotsKind,
+    CKKSCompositionError, CKKSLayout, CoeffsMeta, GLWEPlaintextMeta, Scale, SlotLayout, SlotsKind,
     layouts::{
         BootstrappingKeysLayout, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques, CIConversion,
         DFTOutputFormat, DFTPlan, DFTType, EvalModPlan, EvalModRing, EvalModType, EvalRoundPlus, SparseSecretEncapsulation,
@@ -89,34 +100,21 @@ struct EvalModSpec {
     log_delta: usize,
 }
 
-/// A secret of a preset: its Hamming weight and the largest modulus, in bits, an
-/// object under it may use (see [Security](self#security)).
-#[derive(Clone, Copy, Debug)]
-struct SecretBound {
-    hamming_weight: usize,
-    max_log_modulus: usize,
-}
+/// Hamming weight of the dense secret of the presets.
+const DENSE_HAMMING_WEIGHT: usize = 1024;
+/// Hamming weight of the ephemeral sparse secret of the presets.
+const SPARSE_HAMMING_WEIGHT: usize = 32;
 
-/// The dense secret of the logN16 presets.
-const N16_DENSE_SECRET: SecretBound = SecretBound {
-    hamming_weight: 1024,
-    max_log_modulus: 1707,
-};
-/// The ephemeral sparse secret of the logN16 presets.
-const N16_SPARSE_SECRET: SecretBound = SecretBound {
-    hamming_weight: 32,
-    max_log_modulus: 345,
-};
-/// The dense secret of the logN15 preset.
-const N15_DENSE_SECRET: SecretBound = SecretBound {
-    hamming_weight: 1024,
-    max_log_modulus: 851,
-};
-/// The ephemeral sparse secret of the logN15 preset.
-const N15_SPARSE_SECRET: SecretBound = SecretBound {
-    hamming_weight: 32,
-    max_log_modulus: 162,
-};
+/// Where the modulus bounds that shape the keys of a preset come from.
+#[derive(Clone, Copy, Debug)]
+enum ModulusBounds {
+    /// The bounds of a level for the preset's secrets, which building the preset certifies
+    /// (see [Security](self#security)).
+    Certified(Security),
+    /// Placeholder bounds of an insecure test preset, in bits, at every degree: not security limits.
+    #[cfg(feature = "test-utils")]
+    Placeholder { dense: usize, sparse: usize },
+}
 
 #[derive(Clone, Copy, Debug)]
 struct PresetSpec {
@@ -129,8 +127,9 @@ struct PresetSpec {
     log2_precision: usize,
     /// Re-derived with other widths or precision than were measured: no name, no advertised precision.
     derived: bool,
-    dense_secret: SecretBound,
-    sparse_secret: SecretBound,
+    dense_hamming_weight: usize,
+    sparse_hamming_weight: usize,
+    bounds: ModulusBounds,
     /// Widest digit, in limbs, of the high-modulus keys, each of which takes the
     /// digit of fewest rows its use admits up to it; `None` leaves them uncapped.
     max_dsize: Option<usize>,
@@ -160,13 +159,44 @@ struct PresetSpec {
 }
 
 impl PresetSpec {
-    fn key_policy(&self) -> BootstrappingKeyPolicy {
+    /// The level the preset is certified at, `None` for an insecure test preset.
+    fn security(&self) -> Option<Security> {
+        match self.bounds {
+            ModulusBounds::Certified(security) => Some(security),
+            #[cfg(feature = "test-utils")]
+            ModulusBounds::Placeholder { .. } => None,
+        }
+    }
+
+    /// The dense secret, in the ring of degree `n`.
+    fn dense_secret(&self, n: usize) -> SecretSpec {
+        SecretSpec::new(n, Distribution::TernaryFixed(self.dense_hamming_weight))
+    }
+
+    /// The sparse secret, in the subring of the gap of the ring of degree `n`.
+    fn sparse_secret(&self, n: usize) -> SecretSpec {
+        SecretSpec::new(n >> self.log_gap, Distribution::TernaryFixed(self.sparse_hamming_weight))
+    }
+
+    /// Bounds, in bits, of the dense and sparse secrets in the ring of degree `n`.
+    fn log_modulus_bounds(&self, n: usize) -> poulpy_core::Result<(usize, usize)> {
+        match self.bounds {
+            ModulusBounds::Certified(security) => Ok((
+                security.max_log_q(self.dense_secret(n))?,
+                security.max_log_q(self.sparse_secret(n))?,
+            )),
+            #[cfg(feature = "test-utils")]
+            ModulusBounds::Placeholder { dense, sparse } => Ok((dense, sparse)),
+        }
+    }
+
+    fn key_policy(&self, dense_log_modulus: usize, sparse_log_modulus: usize) -> BootstrappingKeyPolicy {
         BootstrappingKeyPolicy {
             log_n: self.log_n,
             base2k: self.base2k,
             rank: self.rank,
-            dense_log_modulus: self.dense_secret.max_log_modulus,
-            sparse_log_modulus: self.sparse_secret.max_log_modulus,
+            dense_log_modulus,
+            sparse_log_modulus,
             max_dsize: self.max_dsize,
             dense_to_sparse_dsize: self.dense_to_sparse_dsize,
         }
@@ -211,6 +241,8 @@ pub struct BootstrappingPreset {
     input_k: usize,
     output_k: usize,
     bootstrap_k: usize,
+    dense_log_modulus: usize,
+    sparse_log_modulus: usize,
 }
 
 impl BootstrappingPreset {
@@ -261,22 +293,29 @@ impl BootstrappingPreset {
 
     /// Hamming weight of the dense application secret.
     pub fn dense_secret_hamming_weight(&self) -> usize {
-        self.spec.dense_secret.hamming_weight
+        self.spec.dense_hamming_weight
     }
 
     /// Hamming weight of the ephemeral sparse ModUp secret.
     pub fn sparse_secret_hamming_weight(&self) -> usize {
-        self.spec.sparse_secret.hamming_weight
+        self.spec.sparse_hamming_weight
     }
 
-    /// Modulus bound for objects under the dense secret (see [Security](self#security)).
+    /// The level the preset is certified at, `None` for an insecure test preset (see [Security](self#security)).
+    pub fn security(&self) -> Option<Security> {
+        self.spec.security()
+    }
+
+    /// Modulus bound, in bits, the keys under the dense secret are shaped under: the bound of the dense secret at
+    /// [`Self::security`] (see [Security](self#security)).
     pub fn max_dense_modulus(&self) -> usize {
-        self.spec.dense_secret.max_log_modulus
+        self.dense_log_modulus
     }
 
-    /// Modulus bound for objects under the ephemeral sparse secret (see [Security](self#security)).
+    /// Modulus bound, in bits, the keys under the ephemeral sparse secret are shaped under: the bound of the sparse
+    /// secret at [`Self::security`], on the subring of the gap (see [Security](self#security)).
     pub fn max_sparse_modulus(&self) -> usize {
-        self.spec.sparse_secret.max_log_modulus
+        self.sparse_log_modulus
     }
 
     /// Limbs per gadget digit, `ceil(k_digit / base2k)`, of the rotation key
@@ -305,7 +344,7 @@ impl BootstrappingPreset {
     /// How this preset shapes its keys: a caller adjusts it and derives other layouts for the plan with
     /// [`BootstrappingKeyPolicy::keys_layout`].
     pub fn key_policy(&self) -> BootstrappingKeyPolicy {
-        self.spec.key_policy()
+        self.spec.key_policy(self.dense_log_modulus, self.sparse_log_modulus)
     }
 
     /// Gadget digit size (in limbs) of the dense-to-sparse key.
@@ -319,7 +358,7 @@ impl BootstrappingPreset {
     /// layouts are rebuilt and re-validated against the modulus bounds, so a
     /// radix whose key shapes overflow them is rejected.
     pub fn with_base2k(&self, base2k: usize) -> Result<Self> {
-        build(PresetSpec { base2k, ..self.spec })
+        build("with_base2k", PresetSpec { base2k, ..self.spec })
     }
 
     /// Re-derives the preset with the first CoeffsToSlots factor applied by the
@@ -331,11 +370,14 @@ impl BootstrappingPreset {
     /// `2^layers` of them for the first factor of a full transform, each with its
     /// rows under the few limbs of a diagonal's term.
     pub fn with_first_factor_on_raise(&self, c2s_schedule: &'static [(usize, usize)]) -> Result<Self> {
-        build(PresetSpec {
-            c2s_schedule,
-            c2s_first_factor_on_raise: true,
-            ..self.spec
-        })
+        build(
+            "with_first_factor_on_raise",
+            PresetSpec {
+                c2s_schedule,
+                c2s_first_factor_on_raise: true,
+                ..self.spec
+            },
+        )
     }
 
     /// Re-derives the preset with EvalRound+: CoeffsToSlots at scale
@@ -343,11 +385,14 @@ impl BootstrappingPreset {
     /// same schedule at `2^bypass_log_delta`, which shares its rotation keys,
     /// gives the output its precision.
     pub fn with_eval_round_plus(&self, c2s_log_delta: usize, bypass_log_delta: usize) -> Result<Self> {
-        build(PresetSpec {
-            c2s_log_delta,
-            c2s_bypass_log_delta: Some(bypass_log_delta),
-            ..self.spec
-        })
+        build(
+            "with_eval_round_plus",
+            PresetSpec {
+                c2s_log_delta,
+                c2s_bypass_log_delta: Some(bypass_log_delta),
+                ..self.spec
+            },
+        )
     }
 
     /// Re-derives the preset with the transforms evaluated with the keys of
@@ -355,19 +400,25 @@ impl BootstrappingPreset {
     /// same key switches, half the CoeffsToSlots and SlotsToCoeffs keys, each
     /// switching several ciphertexts at once, and a product through more switches.
     pub fn with_power_of_two_keys(&self) -> Result<Self> {
-        build(PresetSpec {
-            power_of_two_keys: true,
-            ..self.spec
-        })
+        build(
+            "with_power_of_two_keys",
+            PresetSpec {
+                power_of_two_keys: true,
+                ..self.spec
+            },
+        )
     }
 
     /// Re-derives the preset with EvalMod on `eval_mod_ring`: the conversions to
     /// the conjugate-invariant ring widen the raised width by their scales.
     pub fn with_eval_mod_ring(&self, eval_mod_ring: EvalModRing) -> Result<Self> {
-        build(PresetSpec {
-            eval_mod_ring,
-            ..self.spec
-        })
+        build(
+            "with_eval_mod_ring",
+            PresetSpec {
+                eval_mod_ring,
+                ..self.spec
+            },
+        )
     }
 
     /// The scales of the preset.
@@ -386,20 +437,23 @@ impl BootstrappingPreset {
     /// Re-derives the preset with the scales `scales`, without a name or an advertised precision: a caller that lowers
     /// a scale measures what it gets.
     pub fn with_scales(&self, scales: PresetScales) -> Result<Self> {
-        build(PresetSpec {
-            derived: true,
-            log_delta: scales.log_delta,
-            log_msg_ratio: scales.log_msg_ratio,
-            c2s_guard_bits: scales.c2s_guard_bits,
-            c2s_log_delta: scales.c2s_log_delta,
-            s2c_log_delta: scales.s2c_log_delta,
-            eval_mod: EvalModSpec {
-                log_delta: scales.eval_mod_log_delta,
-                coeffs_log_delta: scales.eval_mod_coeffs_log_delta,
-                ..self.spec.eval_mod
+        build(
+            "with_scales",
+            PresetSpec {
+                derived: true,
+                log_delta: scales.log_delta,
+                log_msg_ratio: scales.log_msg_ratio,
+                c2s_guard_bits: scales.c2s_guard_bits,
+                c2s_log_delta: scales.c2s_log_delta,
+                s2c_log_delta: scales.s2c_log_delta,
+                eval_mod: EvalModSpec {
+                    log_delta: scales.eval_mod_log_delta,
+                    coeffs_log_delta: scales.eval_mod_coeffs_log_delta,
+                    ..self.spec.eval_mod
+                },
+                ..self.spec
             },
-            ..self.spec
-        })
+        )
     }
 
     /// Re-derives the preset with EvalMod's polynomial: the Han–Ki fit of degree `degree` on `interval` integers on
@@ -409,36 +463,45 @@ impl BootstrappingPreset {
     /// wrong. That integer has a standard deviation of about `sqrt((h + 1) / 12)` for a sparse secret of Hamming weight
     /// `h`, and the bound is the caller's to size to the coefficients it raises.
     pub fn with_eval_mod_polynomial(&self, interval: usize, degree: usize, log_interval_reduction: usize) -> Result<Self> {
-        build(PresetSpec {
-            derived: true,
-            eval_mod: EvalModSpec {
-                interval,
-                degree,
-                log_interval_reduction,
-                ..self.spec.eval_mod
+        build(
+            "with_eval_mod_polynomial",
+            PresetSpec {
+                derived: true,
+                eval_mod: EvalModSpec {
+                    interval,
+                    degree,
+                    log_interval_reduction,
+                    ..self.spec.eval_mod
+                },
+                ..self.spec
             },
-            ..self.spec
-        })
+        )
     }
 
     /// Re-derives the preset to leave `output_k` bits, for a circuit that spends fewer than the preset offers: the
     /// raised width and every key follow.
     pub fn with_output_k(&self, output_k: usize) -> Result<Self> {
-        build(PresetSpec {
-            output_k,
-            derived: true,
-            ..self.spec
-        })
+        build(
+            "with_output_k",
+            PresetSpec {
+                output_k,
+                derived: true,
+                ..self.spec
+            },
+        )
     }
 
     /// Re-derives the preset with the SlotsToCoeffs schedule `s2c_schedule` (`(layers, giant step)` pairs, in evaluation
     /// order): each factor spends one SlotsToCoeffs scale from the input width.
     pub fn with_slots_to_coeffs(&self, s2c_schedule: &'static [(usize, usize)]) -> Result<Self> {
-        build(PresetSpec {
-            s2c_schedule,
-            derived: true,
-            ..self.spec
-        })
+        build(
+            "with_slots_to_coeffs",
+            PresetSpec {
+                s2c_schedule,
+                derived: true,
+                ..self.spec
+            },
+        )
     }
 
     /// Re-derives the preset with an input `bits` wider, for a circuit between SlotsToCoeffs and the raise that spends
@@ -451,11 +514,14 @@ impl BootstrappingPreset {
             self.spec.pipeline == BootstrappingPipeline::S2CFirst,
             "only an S2C-first bootstrap runs a circuit between SlotsToCoeffs and the raise"
         );
-        build(PresetSpec {
-            input_headroom: bits,
-            derived: true,
-            ..self.spec
-        })
+        build(
+            "with_input_headroom",
+            PresetSpec {
+                input_headroom: bits,
+                derived: true,
+                ..self.spec
+            },
+        )
     }
 
     /// Re-derives the preset for plaintexts in `Z[X^(2^log_gap)]`, on the schedules of that many fewer layers: see
@@ -464,30 +530,24 @@ impl BootstrappingPreset {
     ///
     /// A gap moves the first CoeffsToSlots factor onto the raise, which requires the preset's sparse encapsulation.
     ///
-    /// Fails without a bound for the sparse secret at that degree.
+    /// Fails when the preset's level has no bound for the sparse secret at that degree, or a key does not fit it.
     pub fn with_log_gap(
         &self,
         log_gap: usize,
         c2s_schedule: &'static [(usize, usize)],
         s2c_schedule: &'static [(usize, usize)],
     ) -> Result<Self> {
-        let sparse_secret = match self.spec.log_n.saturating_sub(log_gap) {
-            16 => N16_SPARSE_SECRET,
-            15 => N15_SPARSE_SECRET,
-            // The placeholder bound of the insecure test presets, at every degree.
-            #[cfg(feature = "test-utils")]
-            _ if self.spec.dense_secret.max_log_modulus == TEST_SECRET.max_log_modulus => self.spec.sparse_secret,
-            degree => anyhow::bail!("no bound for a sparse secret at degree 2^{degree}"),
-        };
-        build(PresetSpec {
-            log_gap,
-            derived: true,
-            sparse_secret,
-            c2s_schedule,
-            c2s_first_factor_on_raise: true,
-            s2c_schedule,
-            ..self.spec
-        })
+        build(
+            "with_log_gap",
+            PresetSpec {
+                log_gap,
+                derived: true,
+                c2s_schedule,
+                c2s_first_factor_on_raise: true,
+                s2c_schedule,
+                ..self.spec
+            },
+        )
     }
 
     /// Re-derives the preset with the gadget digits of the high-modulus keys
@@ -496,11 +556,14 @@ impl BootstrappingPreset {
     /// for the dense-to-sparse key. Fails when some key has no digit under the cap
     /// that fits the modulus bound of its secret.
     pub fn with_dsizes(&self, max_dsize: usize, dense_to_sparse_dsize: usize) -> Result<Self> {
-        build(PresetSpec {
-            max_dsize: Some(max_dsize),
-            dense_to_sparse_dsize,
-            ..self.spec
-        })
+        build(
+            "with_dsizes",
+            PresetSpec {
+                max_dsize: Some(max_dsize),
+                dense_to_sparse_dsize,
+                ..self.spec
+            },
+        )
     }
 
     /// Largest limb radix at which every accumulation of the bootstrap stays
@@ -680,36 +743,40 @@ impl BootstrappingPreset {
 /// output has 595 usable bits (17 levels) before reaching the 41-bit input
 /// width; the bootstrap restores scale `2^35` automatically.
 pub fn n16_d35_k636_p20_c2s() -> Result<BootstrappingPreset> {
-    build(PresetSpec {
-        name: "n16_d35_k636_p20_c2s",
-        log_n: 16,
-        base2k: 52,
-        rank: 1,
-        log_delta: 35,
-        output_k: 636,
-        log2_precision: 20,
-        derived: false,
-        dense_secret: N16_DENSE_SECRET,
-        sparse_secret: N16_SPARSE_SECRET,
-        max_dsize: None,
-        dense_to_sparse_dsize: 1,
-        pipeline: BootstrappingPipeline::C2SFirst,
-        log_msg_ratio: 6,
-        c2s_schedule: &C2S_SCHEDULE,
-        c2s_first_factor_on_raise: false,
-        power_of_two_keys: false,
-        eval_mod_ring: EvalModRing::Standard,
-        c2s_guard_bits: 0,
-        c2s_log_delta: 51,
-        c2s_log_budget: 2,
-        c2s_bypass_log_delta: None,
-        s2c_schedule: &S2C_SCHEDULE,
-        s2c_log_delta: 35,
-        s2c_log_budget: 2,
-        input_headroom: 0,
-        log_gap: 0,
-        eval_mod: optimized_han_ki(),
-    })
+    build(
+        "n16_d35_k636_p20_c2s",
+        PresetSpec {
+            name: "n16_d35_k636_p20_c2s",
+            log_n: 16,
+            base2k: 52,
+            rank: 1,
+            log_delta: 35,
+            output_k: 636,
+            log2_precision: 20,
+            derived: false,
+            dense_hamming_weight: DENSE_HAMMING_WEIGHT,
+            sparse_hamming_weight: SPARSE_HAMMING_WEIGHT,
+            bounds: ModulusBounds::Certified(Security::Bits128),
+            max_dsize: None,
+            dense_to_sparse_dsize: 1,
+            pipeline: BootstrappingPipeline::C2SFirst,
+            log_msg_ratio: 6,
+            c2s_schedule: &C2S_SCHEDULE,
+            c2s_first_factor_on_raise: false,
+            power_of_two_keys: false,
+            eval_mod_ring: EvalModRing::Standard,
+            c2s_guard_bits: 0,
+            c2s_log_delta: 51,
+            c2s_log_budget: 2,
+            c2s_bypass_log_delta: None,
+            s2c_schedule: &S2C_SCHEDULE,
+            s2c_log_delta: 35,
+            s2c_log_budget: 2,
+            input_headroom: 0,
+            log_gap: 0,
+            eval_mod: optimized_han_ki(),
+        },
+    )
 }
 
 /// S2C-first full-slot preset at `N = 2^16` for inputs at scale `2^35`,
@@ -722,36 +789,40 @@ pub fn n16_d35_k636_p20_c2s() -> Result<BootstrappingPreset> {
 /// 138 bits: 595 bits (17 rescales at the input scale) are usable, one more than
 /// the C2S-first preset despite the larger `k`.
 pub fn n16_d35_k733_p20_s2c() -> Result<BootstrappingPreset> {
-    build(PresetSpec {
-        name: "n16_d35_k733_p20_s2c",
-        log_n: 16,
-        base2k: 52,
-        rank: 1,
-        log_delta: 35,
-        output_k: 733,
-        log2_precision: 20,
-        derived: false,
-        dense_secret: N16_DENSE_SECRET,
-        sparse_secret: N16_SPARSE_SECRET,
-        max_dsize: None,
-        dense_to_sparse_dsize: 1,
-        pipeline: BootstrappingPipeline::S2CFirst,
-        log_msg_ratio: 13,
-        c2s_schedule: &C2S_SCHEDULE,
-        c2s_first_factor_on_raise: false,
-        power_of_two_keys: false,
-        eval_mod_ring: EvalModRing::Standard,
-        c2s_guard_bits: 6,
-        c2s_log_delta: 50,
-        c2s_log_budget: 3,
-        c2s_bypass_log_delta: None,
-        s2c_schedule: &S2C_SCHEDULE,
-        s2c_log_delta: 30,
-        s2c_log_budget: 2,
-        input_headroom: 0,
-        log_gap: 0,
-        eval_mod: optimized_han_ki(),
-    })
+    build(
+        "n16_d35_k733_p20_s2c",
+        PresetSpec {
+            name: "n16_d35_k733_p20_s2c",
+            log_n: 16,
+            base2k: 52,
+            rank: 1,
+            log_delta: 35,
+            output_k: 733,
+            log2_precision: 20,
+            derived: false,
+            dense_hamming_weight: DENSE_HAMMING_WEIGHT,
+            sparse_hamming_weight: SPARSE_HAMMING_WEIGHT,
+            bounds: ModulusBounds::Certified(Security::Bits128),
+            max_dsize: None,
+            dense_to_sparse_dsize: 1,
+            pipeline: BootstrappingPipeline::S2CFirst,
+            log_msg_ratio: 13,
+            c2s_schedule: &C2S_SCHEDULE,
+            c2s_first_factor_on_raise: false,
+            power_of_two_keys: false,
+            eval_mod_ring: EvalModRing::Standard,
+            c2s_guard_bits: 6,
+            c2s_log_delta: 50,
+            c2s_log_budget: 3,
+            c2s_bypass_log_delta: None,
+            s2c_schedule: &S2C_SCHEDULE,
+            s2c_log_delta: 30,
+            s2c_log_budget: 2,
+            input_headroom: 0,
+            log_gap: 0,
+            eval_mod: optimized_han_ki(),
+        },
+    )
 }
 
 /// C2S-first full-slot preset at `N = 2^15` for inputs at scale `2^35`,
@@ -761,47 +832,44 @@ pub fn n16_d35_k733_p20_s2c() -> Result<BootstrappingPreset> {
 /// bits (four levels) at the input scale. Total key moduli are bounded by
 /// 851 bits for the weight-1024 dense secret and 162 bits for the weight-32 sparse secret.
 pub fn n15_d35_k180_p18_c2s() -> Result<BootstrappingPreset> {
-    build(PresetSpec {
-        name: "n15_d35_k180_p18_c2s",
-        log_n: 15,
-        base2k: 52,
-        rank: 1,
-        log_delta: 35,
-        output_k: 180,
-        log2_precision: 18,
-        derived: false,
-        dense_secret: N15_DENSE_SECRET,
-        sparse_secret: N15_SPARSE_SECRET,
-        max_dsize: None,
-        dense_to_sparse_dsize: 1,
-        pipeline: BootstrappingPipeline::C2SFirst,
-        log_msg_ratio: 5,
-        c2s_schedule: &[(7, 2048), (7, 16)],
-        c2s_first_factor_on_raise: false,
-        power_of_two_keys: false,
-        eval_mod_ring: EvalModRing::Standard,
-        c2s_guard_bits: 0,
-        c2s_log_delta: 50,
-        c2s_log_budget: 2,
-        c2s_bypass_log_delta: None,
-        s2c_schedule: &[(7, 16), (7, 2048)],
-        s2c_log_delta: 29,
-        s2c_log_budget: 2,
-        input_headroom: 0,
-        log_gap: 0,
-        eval_mod: EvalModSpec {
-            log_delta: 53,
-            ..optimized_han_ki()
+    build(
+        "n15_d35_k180_p18_c2s",
+        PresetSpec {
+            name: "n15_d35_k180_p18_c2s",
+            log_n: 15,
+            base2k: 52,
+            rank: 1,
+            log_delta: 35,
+            output_k: 180,
+            log2_precision: 18,
+            derived: false,
+            dense_hamming_weight: DENSE_HAMMING_WEIGHT,
+            sparse_hamming_weight: SPARSE_HAMMING_WEIGHT,
+            bounds: ModulusBounds::Certified(Security::Bits128),
+            max_dsize: None,
+            dense_to_sparse_dsize: 1,
+            pipeline: BootstrappingPipeline::C2SFirst,
+            log_msg_ratio: 5,
+            c2s_schedule: &[(7, 2048), (7, 16)],
+            c2s_first_factor_on_raise: false,
+            power_of_two_keys: false,
+            eval_mod_ring: EvalModRing::Standard,
+            c2s_guard_bits: 0,
+            c2s_log_delta: 50,
+            c2s_log_budget: 2,
+            c2s_bypass_log_delta: None,
+            s2c_schedule: &[(7, 16), (7, 2048)],
+            s2c_log_delta: 29,
+            s2c_log_budget: 2,
+            input_headroom: 0,
+            log_gap: 0,
+            eval_mod: EvalModSpec {
+                log_delta: 53,
+                ..optimized_han_ki()
+            },
         },
-    })
+    )
 }
-
-/// Placeholder secret bound of the insecure test presets, not a security limit.
-#[cfg(feature = "test-utils")]
-const TEST_SECRET: SecretBound = SecretBound {
-    hamming_weight: 192,
-    max_log_modulus: 1024,
-};
 
 /// Insecure S2C-first preset at `N = 2^11` for the test suite: the reference
 /// S2C-first spec on a ring small enough for a non-ignored test, so the key
@@ -810,39 +878,43 @@ const TEST_SECRET: SecretBound = SecretBound {
 /// dense one leaves the 800-bit raised width the margin of a few digits.
 #[cfg(feature = "test-utils")]
 pub(crate) fn insecure_n11_d35_k180_p20_s2c() -> Result<BootstrappingPreset> {
-    build(PresetSpec {
-        name: "insecure_n11_d35_k180_p20_s2c",
-        log_n: 11,
-        base2k: 52,
-        rank: 1,
-        log_delta: 35,
-        output_k: 180,
-        log2_precision: 20,
-        derived: false,
-        dense_secret: TEST_SECRET,
-        sparse_secret: SecretBound {
-            hamming_weight: 32,
-            ..TEST_SECRET
+    build(
+        "insecure_n11_d35_k180_p20_s2c",
+        PresetSpec {
+            name: "insecure_n11_d35_k180_p20_s2c",
+            log_n: 11,
+            base2k: 52,
+            rank: 1,
+            log_delta: 35,
+            output_k: 180,
+            log2_precision: 20,
+            derived: false,
+            dense_hamming_weight: 192,
+            sparse_hamming_weight: SPARSE_HAMMING_WEIGHT,
+            bounds: ModulusBounds::Placeholder {
+                dense: 1024,
+                sparse: 1024,
+            },
+            max_dsize: None,
+            dense_to_sparse_dsize: 1,
+            pipeline: BootstrappingPipeline::S2CFirst,
+            log_msg_ratio: 13,
+            c2s_schedule: &[(4, 4), (3, 4), (3, 4)],
+            c2s_first_factor_on_raise: false,
+            power_of_two_keys: false,
+            eval_mod_ring: EvalModRing::Standard,
+            c2s_guard_bits: 6,
+            c2s_log_delta: 50,
+            c2s_log_budget: 3,
+            c2s_bypass_log_delta: None,
+            s2c_schedule: &[(2, 4), (4, 4), (4, 4)],
+            s2c_log_delta: 30,
+            s2c_log_budget: 2,
+            input_headroom: 0,
+            log_gap: 0,
+            eval_mod: optimized_han_ki(),
         },
-        max_dsize: None,
-        dense_to_sparse_dsize: 1,
-        pipeline: BootstrappingPipeline::S2CFirst,
-        log_msg_ratio: 13,
-        c2s_schedule: &[(4, 4), (3, 4), (3, 4)],
-        c2s_first_factor_on_raise: false,
-        power_of_two_keys: false,
-        eval_mod_ring: EvalModRing::Standard,
-        c2s_guard_bits: 6,
-        c2s_log_delta: 50,
-        c2s_log_budget: 3,
-        c2s_bypass_log_delta: None,
-        s2c_schedule: &[(2, 4), (4, 4), (4, 4)],
-        s2c_log_delta: 30,
-        s2c_log_budget: 2,
-        input_headroom: 0,
-        log_gap: 0,
-        eval_mod: optimized_han_ki(),
-    })
+    )
 }
 
 /// Insecure C2S-first preset at `N = 2^11` for the test suite: [`n16_d35_k636_p20_c2s`]
@@ -852,18 +924,22 @@ pub(crate) fn insecure_n11_d35_k180_p20_s2c() -> Result<BootstrappingPreset> {
 #[cfg(feature = "test-utils")]
 pub(crate) fn insecure_n11_d35_k100_p17_c2s() -> Result<BootstrappingPreset> {
     let s2c = insecure_n11_d35_k180_p20_s2c()?.spec;
-    build(PresetSpec {
-        name: "insecure_n11_d35_k100_p17_c2s",
-        log_n: s2c.log_n,
-        output_k: 100,
-        log2_precision: 17,
-        derived: false,
-        dense_secret: s2c.dense_secret,
-        sparse_secret: s2c.sparse_secret,
-        c2s_schedule: s2c.c2s_schedule,
-        s2c_schedule: s2c.s2c_schedule,
-        ..n16_d35_k636_p20_c2s()?.spec
-    })
+    build(
+        "insecure_n11_d35_k100_p17_c2s",
+        PresetSpec {
+            name: "insecure_n11_d35_k100_p17_c2s",
+            log_n: s2c.log_n,
+            output_k: 100,
+            log2_precision: 17,
+            derived: false,
+            dense_hamming_weight: s2c.dense_hamming_weight,
+            sparse_hamming_weight: s2c.sparse_hamming_weight,
+            bounds: s2c.bounds,
+            c2s_schedule: s2c.c2s_schedule,
+            s2c_schedule: s2c.s2c_schedule,
+            ..n16_d35_k636_p20_c2s()?.spec
+        },
+    )
 }
 
 /// [`n16_d35_k733_p20_s2c`] tuned for speed: 685-bit ciphertexts with at least
@@ -872,24 +948,27 @@ pub(crate) fn insecure_n11_d35_k100_p17_c2s() -> Result<BootstrappingPreset> {
 /// on the conjugate-invariant ring ([`EvalModRing::ConjugateInvariant`], 84 bits
 /// of conversions), and SlotsToCoeffs has four factors. The raised width is 1431 bits.
 pub fn n16_d35_k685_p19_s2c_ffr_ci() -> Result<BootstrappingPreset> {
-    build(PresetSpec {
-        name: "n16_d35_k685_p19_s2c_ffr_ci",
-        output_k: 685,
-        log2_precision: 19,
-        derived: false,
-        c2s_schedule: &[(3, 1), (3, 2048), (3, 256), (3, 32), (3, 4)],
-        c2s_first_factor_on_raise: true,
-        power_of_two_keys: false,
-        // `u` carries the overflow of the raise, `v` only the message.
-        eval_mod_ring: EvalModRing::ConjugateInvariant {
-            pre: CIConversion::Product { log_delta: 46 },
-            post: CIConversion::Product { log_delta: 38 },
+    build(
+        "n16_d35_k685_p19_s2c_ffr_ci",
+        PresetSpec {
+            name: "n16_d35_k685_p19_s2c_ffr_ci",
+            output_k: 685,
+            log2_precision: 19,
+            derived: false,
+            c2s_schedule: &[(3, 1), (3, 2048), (3, 256), (3, 32), (3, 4)],
+            c2s_first_factor_on_raise: true,
+            power_of_two_keys: false,
+            // `u` carries the overflow of the raise, `v` only the message.
+            eval_mod_ring: EvalModRing::ConjugateInvariant {
+                pre: CIConversion::Product { log_delta: 46 },
+                post: CIConversion::Product { log_delta: 38 },
+            },
+            c2s_log_delta: 48,
+            s2c_schedule: &[(3, 4), (4, 32), (4, 512), (4, 8192)],
+            s2c_log_delta: 28,
+            ..n16_d35_k733_p20_s2c()?.spec
         },
-        c2s_log_delta: 48,
-        s2c_schedule: &[(3, 4), (4, 32), (4, 512), (4, 8192)],
-        s2c_log_delta: 28,
-        ..n16_d35_k733_p20_s2c()?.spec
-    })
+    )
 }
 
 /// Every preset, in a stable order.
@@ -918,7 +997,9 @@ const fn optimized_han_ki() -> EvalModSpec {
     }
 }
 
-fn build(spec: PresetSpec) -> Result<BootstrappingPreset> {
+/// Builds the preset of `spec`, its security refusals naming `op`, the public method that
+/// constructs or re-derives it.
+fn build(op: &'static str, spec: PresetSpec) -> Result<BootstrappingPreset> {
     ensure!(spec.base2k > 0, "bootstrapping preset base2k must be nonzero");
     ensure!(spec.rank == 1, "bootstrapping presets currently require rank 1");
     ensure!(
@@ -961,7 +1042,7 @@ fn build(spec: PresetSpec) -> Result<BootstrappingPreset> {
         spec.pipeline,
         BootstrappingTechniques {
             sparse_secret_encapsulation: Some(SparseSecretEncapsulation {
-                hamming_weight: spec.sparse_secret.hamming_weight,
+                hamming_weight: spec.sparse_hamming_weight,
             }),
             eval_round_plus: match spec.c2s_bypass_log_delta {
                 Some(log_delta) => Some(EvalRoundPlus {
@@ -1018,9 +1099,23 @@ fn build(spec: PresetSpec) -> Result<BootstrappingPreset> {
         "bootstrapping preset output width {output_k} is below its input width {input_k}"
     );
     let bootstrap_k = plan.bootstrap_k(output_k, spec.log_delta);
-    let keys_layout = spec.key_policy().keys_layout(&plan, bootstrap_k, input_k, spec.log_delta)?;
+    let refused = |source| CKKSCompositionError::SecurityLevelNotMet { op, source };
+    let (dense_log_modulus, sparse_log_modulus) = spec.log_modulus_bounds(n).map_err(refused)?;
+    let keys_layout =
+        spec.key_policy(dense_log_modulus, sparse_log_modulus)
+            .keys_layout(&plan, bootstrap_k, input_k, spec.log_delta)?;
 
-    validate_modulus_bounds(&spec, bootstrap_k, &keys_layout)?;
+    let plan = match spec.security() {
+        Some(security) => {
+            let dense = spec.dense_secret(n);
+            security
+                .check_log_q(dense, "raised ciphertext", bootstrap_k)
+                .map_err(refused)?;
+            plan.check_key_security_for(op, security, dense, &keys_layout)?;
+            plan.with_security(security)
+        }
+        None => plan,
+    };
     Ok(BootstrappingPreset {
         spec,
         n,
@@ -1029,57 +1124,27 @@ fn build(spec: PresetSpec) -> Result<BootstrappingPreset> {
         input_k,
         output_k,
         bootstrap_k,
+        dense_log_modulus,
+        sparse_log_modulus,
     })
-}
-
-/// Gadget precision of `key` (see [`GGLWELayout::gadget_k`]).
-fn gadget_k<K: GGLWEInfos>(key: &K) -> usize {
-    key.gglwe_layout().gadget_k().as_usize()
-}
-
-fn validate_modulus_bounds(spec: &PresetSpec, bootstrap_k: usize, keys: &BootstrappingKeysLayout) -> Result<()> {
-    let (dense, sparse) = (spec.dense_secret.max_log_modulus, spec.sparse_secret.max_log_modulus);
-    ensure!(
-        bootstrap_k <= dense,
-        "bootstrap modulus {bootstrap_k} exceeds dense-secret limit {dense}"
-    );
-    for key in keys.rotation_key_layouts() {
-        validate_key("automorphism", key, dense)?;
-    }
-    validate_key("tensor", &keys.tensor_key, dense)?;
-    if let Some(key) = &keys.first_factor_key {
-        validate_key("first-factor", key, dense)?;
-    }
-    if let Some((trace, embed)) = &keys.conversion_keys {
-        validate_key("trace", trace, dense)?;
-        validate_key("embed", embed, dense)?;
-    }
-    let encapsulation = keys
-        .encapsulation
-        .as_ref()
-        .context("bootstrapping preset is missing encapsulation keys")?;
-    validate_key("dense-to-sparse", &encapsulation.dense_to_sparse, sparse)?;
-    if let Some(key) = &encapsulation.sparse_to_dense {
-        validate_key("sparse-to-dense", key, dense)?;
-    }
-    Ok(())
-}
-
-fn validate_key<K: GGLWEInfos + LWEInfos>(name: &str, key: &K, limit: usize) -> Result<()> {
-    let rounded_k = gadget_k(key);
-    ensure!(rounded_k <= limit, "{name} key gadget modulus {rounded_k} exceeds {limit}");
-    ensure!(
-        key.k_aux().as_usize() <= limit,
-        "{name} key auxiliary modulus {} exceeds {limit}",
-        key.k_aux()
-    );
-    ensure!(key.k().as_usize() <= limit, "{name} key modulus {} exceeds {limit}", key.k());
-    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{
+        CKKSCompositionError,
+        layouts::{CKKSFoldKeysLayout, KeySecret, RingSwitchKeys},
+    };
+    use poulpy_core::{
+        CoreError,
+        layouts::{Dnum, GGLWELayout, LWEInfos},
+    };
+
+    /// Gadget precision of `key` (see [`poulpy_core::layouts::GGLWELayout::gadget_k`]).
+    fn gadget_k<K: GGLWEInfos>(key: &K) -> usize {
+        key.gglwe_layout().gadget_k().as_usize()
+    }
     use crate::CKKSInfos;
     use crate::presets::first_factor::FIRST_FACTOR_GUARD_BITS;
 
@@ -1225,7 +1290,7 @@ mod tests {
         );
 
         // The keys of the raised width, under the dense bound.
-        assert_eq!((preset.max_dense_modulus(), preset.max_sparse_modulus()), (1707, 345));
+        assert_eq!((preset.max_dense_modulus(), preset.max_sparse_modulus()), (1707, 342));
         let keys = preset.keys_layout();
         let wide = preset.widest_rotation_key();
         assert_eq!(
@@ -1237,7 +1302,7 @@ mod tests {
             ),
             (208, 7, 224, 1680)
         );
-        assert!(wide.k_aux >= wide.k_digit && wide.k().as_usize() <= preset.max_dense_modulus());
+        assert!(wide.k_aux >= wide.k_digit);
         assert_eq!(
             key_shapes(keys.rotation_key_layouts()),
             [(208, 7), (260, 5), (416, 3), (104, 1), (52, 1)]
@@ -1292,7 +1357,7 @@ mod tests {
         let keys = preset.keys_layout();
         let encapsulation = keys.encapsulation.as_ref().unwrap();
 
-        assert_eq!((preset.max_dense_modulus(), preset.max_sparse_modulus()), (1707, 345));
+        assert_eq!((preset.max_dense_modulus(), preset.max_sparse_modulus()), (1707, 342));
         let key = preset.widest_rotation_key();
         assert_eq!(
             (
@@ -1303,7 +1368,7 @@ mod tests {
             ),
             wide
         );
-        assert!(key.k_aux >= key.k_digit && key.k().as_usize() <= preset.max_dense_modulus());
+        assert!(key.k_aux >= key.k_digit);
         // One row under the raised ciphertext, below the modulus of the keys covering the raised width.
         assert!(encapsulation.sparse_to_dense.unwrap().k() <= key.k());
         let capped = preset.with_dsizes(key.dsize().as_usize(), 1).unwrap();
@@ -1319,7 +1384,6 @@ mod tests {
         assert_eq!(gadget_k(&encapsulation.dense_to_sparse), 52);
         assert_eq!(encapsulation.dense_to_sparse.k_aux.as_usize(), 68);
         assert_eq!(encapsulation.dense_to_sparse.k().as_usize(), 120);
-        assert!(encapsulation.dense_to_sparse.k().as_usize() <= preset.max_sparse_modulus());
     }
 
     #[test]
@@ -1345,7 +1409,6 @@ mod tests {
         assert_eq!(key.k_offset.as_usize() + 3 * 52, work);
         assert_eq!((key.k_digit.as_usize(), key.dnum.as_usize()), (156, 1));
         assert_eq!(key.k_offset.as_usize() + gadget_k(&key), work);
-        assert!(key.k().as_usize() <= preset.max_dense_modulus());
         assert!(base.keys_layout().first_factor_key.is_none());
         // The first-factor keys switch to the dense secret: no sparse-to-dense key.
         assert!(keys.encapsulation.unwrap().sparse_to_dense.is_none());
@@ -1404,13 +1467,168 @@ mod tests {
     }
 
     #[test]
-    fn a_gap_without_a_bound_at_its_degree_is_refused() {
+    fn a_gap_below_the_sparse_bound_of_its_keys_is_refused() {
         const C2S: &[(usize, usize)] = &[(3, 1), (3, 512), (3, 64), (2, 8), (2, 2)];
         const S2C: &[(usize, usize)] = &[(3, 4), (4, 32), (6, 1024)];
-        let Err(err) = n16_d35_k685_p19_s2c_ffr_ci().unwrap().with_log_gap(2, C2S, S2C) else {
-            panic!("no bound at degree 2^14");
+        // The weight-32 secret of degree 2^14 is bounded at 77 bits, below a dense-to-sparse key of one digit.
+        // The shaping refuses it before the certification sees a key.
+        let Err(err) = n16_d35_k733_p20_s2c().unwrap().with_log_gap(2, C2S, S2C) else {
+            panic!("the dense-to-sparse key fits a 77-bit bound");
         };
-        assert_eq!(err.to_string(), "no bound for a sparse secret at degree 2^14");
+        assert_eq!(
+            err.to_string(),
+            "dense-to-sparse key: a digit of 52 bits on a 48-bit input needs a modulus of 104 bits, above 77"
+        );
+    }
+
+    #[test]
+    fn a_gap_to_a_degree_without_bounds_is_refused_by_the_certification() {
+        const C2S: &[(usize, usize)] = &[(3, 1), (3, 64), (2, 8), (2, 2)];
+        const S2C: &[(usize, usize)] = &[(3, 4), (3, 32), (4, 512)];
+        // The table has no row at degree 2^11, where a gap of 5 puts the sparse secret.
+        let Err(err) = n16_d35_k733_p20_s2c().unwrap().with_log_gap(5, C2S, S2C) else {
+            panic!("a sparse secret of degree 2^11 is certified");
+        };
+        let (op, source) = security_refusal(&err);
+        assert_eq!(op, "with_log_gap");
+        assert!(
+            matches!(
+                source,
+                CoreError::SecurityUnsupported {
+                    security: Security::Bits128,
+                    secret: SecretSpec {
+                        n: 2048,
+                        dist: Distribution::TernaryFixed(32),
+                    },
+                    reason: "the table has no bound for this secret at this degree",
+                }
+            ),
+            "{source:?}"
+        );
+    }
+
+    #[test]
+    fn fold_keys_are_checked_under_the_secret_of_their_samples() {
+        // Inputs of degree 2^14 folded into the logN16 C2S-first preset: the outbound key covers the
+        // 636-bit output under the input secret, bounded at 424 bits at that degree.
+        let preset = n16_d35_k636_p20_c2s().unwrap();
+        let key = |n: u32, dnum: u32| GGLWELayout {
+            n: Degree(n),
+            base2k: Base2K(52),
+            dnum: Dnum(dnum),
+            k_aux: TorusPrecision(52 + 16),
+            rank_in: Rank(1),
+            rank_out: Rank(1),
+            k_digit: TorusPrecision(52),
+            k_offset: TorusPrecision(0),
+            stride: 1,
+        };
+        let input = SecretSpec::new(1 << 14, Distribution::TernaryFixed(1024));
+        let bootstrap = SecretSpec::new(preset.n(), Distribution::TernaryFixed(1024));
+        let mut fold = CKKSFoldKeysLayout {
+            ring_switch: Some(RingSwitchKeys {
+                inbound: key(1 << 16, 2),
+                outbound: key(1 << 16, 13),
+            }),
+            automorphism: Some(key(1 << 14, 2)),
+        };
+        let err = fold
+            .check_security(Security::Bits128, input, bootstrap)
+            .expect_err("an outbound key past the input secret's bound is certified");
+        assert_eq!(
+            security_refusal(&err),
+            (
+                "check_security",
+                &CoreError::SecurityBoundExceeded {
+                    security: Security::Bits128,
+                    secret: input,
+                    what: "outbound ring-switch key".into(),
+                    log_q: 13 * 52 + 68,
+                    max_log_q: 424,
+                }
+            )
+        );
+        // Under that bound, every key is certified.
+        fold.ring_switch.as_mut().unwrap().outbound = key(1 << 16, 6);
+        fold.check_security(Security::Bits128, input, bootstrap).unwrap();
+    }
+
+    /// The `op` and source of the [`CKKSCompositionError::SecurityLevelNotMet`] `err` holds.
+    fn security_refusal(err: &anyhow::Error) -> (&'static str, &CoreError) {
+        match err.downcast_ref::<CKKSCompositionError>() {
+            Some(CKKSCompositionError::SecurityLevelNotMet { op, source }) => (op, source),
+            _ => panic!("expected a security refusal, got {err:#}"),
+        }
+    }
+
+    #[test]
+    fn presets_certify_every_key_and_the_plan_carries_the_level() {
+        for preset in all().unwrap() {
+            assert_eq!(preset.security(), Some(Security::Bits128));
+            assert_eq!(preset.plan().security(), Some(Security::Bits128));
+            let dense = SecretSpec::new(preset.n(), Distribution::TernaryFixed(1024));
+            let keys = preset.keys_layout();
+            preset.plan().check_key_security(Security::Bits128, dense, keys).unwrap();
+            // Every key is listed: the rotation keys and one tensor key, with the encapsulation of every preset.
+            let listed = keys.keys_by_secret();
+            assert_eq!(
+                listed.iter().filter(|(name, ..)| *name == "rotation").count(),
+                keys.rotation_key_layouts().count()
+            );
+            assert!(
+                listed
+                    .iter()
+                    .any(|&(name, secret, _)| name == "dense-to-sparse" && secret == KeySecret::Sparse)
+            );
+        }
+    }
+
+    #[test]
+    fn a_key_one_bit_over_its_bound_or_an_unbounded_secret_is_refused() {
+        let preset = n15_d35_k180_p18_c2s().unwrap();
+        let dense = SecretSpec::new(preset.n(), Distribution::TernaryFixed(1024));
+        let mut keys = preset.keys_layout().clone();
+        // Widen the widest rotation key's guard to one bit past the dense bound.
+        let wide = *preset.widest_rotation_key();
+        let over = preset.max_dense_modulus() + 1 - wide.k().as_usize();
+        for key in keys.rotation_keys.values_mut().filter(|key| **key == wide) {
+            key.k_aux = TorusPrecision(wide.k_aux.0 + over as u32);
+        }
+        let err = preset
+            .plan()
+            .check_key_security(Security::Bits128, dense, &keys)
+            .expect_err("a key past the bound is certified");
+        let (op, source) = security_refusal(&err);
+        assert_eq!(op, "check_key_security");
+        assert_eq!(
+            source,
+            &CoreError::SecurityBoundExceeded {
+                security: Security::Bits128,
+                secret: dense,
+                what: "rotation key".into(),
+                log_q: 852,
+                max_log_q: 851,
+            }
+        );
+        // A dense secret the table has no cell for, such as a ternary one of density 1/2, certifies nothing.
+        let half = SecretSpec::new(preset.n(), Distribution::TernaryProb(0.5));
+        let err = preset
+            .plan()
+            .check_key_security(Security::Bits128, half, preset.keys_layout())
+            .expect_err("a secret without a bound is certified");
+        assert_eq!(
+            security_refusal(&err),
+            (
+                "check_key_security",
+                &CoreError::SecurityUnsupported {
+                    security: Security::Bits128,
+                    secret: half,
+                    reason: "the table has no secret of this distribution",
+                }
+            )
+        );
+        // Without the level, the plan checks nothing.
+        assert_eq!(preset.plan().clone().without_security().security(), None);
     }
 
     #[test]
@@ -1504,12 +1722,15 @@ mod tests {
         assert_eq!(key_set_bytes(&preset).map(mib), [4741, 99, 3, 248, 260]);
         // With the first factor evaluated by the matrix, every paid factor runs 48 bits
         // wider and the sparse-to-dense key comes back: 6506 MiB.
-        let without = build(PresetSpec {
-            c2s_schedule: &[(3, 8), (3, 2048), (3, 256), (3, 32), (3, 4)],
-            c2s_first_factor_on_raise: false,
-            power_of_two_keys: false,
-            ..preset.spec
-        })
+        let without = build(
+            "test",
+            PresetSpec {
+                c2s_schedule: &[(3, 8), (3, 2048), (3, 256), (3, 32), (3, 4)],
+                c2s_first_factor_on_raise: false,
+                power_of_two_keys: false,
+                ..preset.spec
+            },
+        )
         .unwrap();
         assert_eq!(without.bootstrap_k(), 1479);
         assert_eq!(key_set_bytes(&without).map(mib), [6113, 99, 34, 0, 260]);
@@ -1553,14 +1774,12 @@ mod tests {
                 wide.k_aux.as_usize(),
                 (fft_dsize * 18 + preset.log_n()).min(fft.max_dense_modulus() - gadget)
             );
-            assert!(wide.k().as_usize() <= fft.max_dense_modulus());
 
             let small_key = &keys.encapsulation.as_ref().unwrap().dense_to_sparse;
             assert_eq!(
                 small_key.k().as_usize(),
                 preset.log_modulus().div_ceil(18) * 18 + 18 + preset.log_n()
             );
-            assert!(small_key.k().as_usize() <= fft.max_sparse_modulus());
 
             // A cap at the widest digit changes no key, and an oversized dense-to-sparse digit is rejected.
             let widest = preset

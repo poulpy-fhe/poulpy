@@ -9,7 +9,7 @@
 use crate::Scale;
 use poulpy_core::layouts::prepared::GGLWEPreparedToBackendRef;
 use poulpy_core::{
-    GLWECIKeyEncryptSk, GLWEDiagonalProd, GLWELinearTransformationBabyStepsBytesOf, GLWERotate,
+    CoreError, GLWECIKeyEncryptSk, GLWEDiagonalProd, GLWELinearTransformationBabyStepsBytesOf, GLWERotate,
     ScratchArenaTakeGLWELinearTransformationBabySteps,
     api::{
         GLWEAutomorphismKeyPreparedFactory, GLWECIKeyPreparedFactory, GLWESecretPreparedFactory, GLWESecretSampling,
@@ -790,7 +790,9 @@ where
 /// conversion keys alike, leaving its arena of [`BootstrappingKeysLayout::generate_tmp_bytes`]
 /// wiped, on the
 /// insecure `N = 2^11` S2C-first preset, with the keys of power-of-two rotations, and with EvalMod
-/// on the conjugate-invariant ring, `u` folded into CoeffsToSlots.
+/// on the conjugate-invariant ring, `u` folded into CoeffsToSlots. The plan given a security level
+/// ([`BootstrappingPlan::with_security`]) refuses before any draw, the table having no row at
+/// `N = 2^11`.
 pub fn bootstrapping_plan_keys_match_context<BE>()
 where
     BE: TestContextBackend + HostStaged + MaxBase2k,
@@ -852,6 +854,29 @@ where
             "{}",
             preset_label(&preset)
         );
+        // With a level the secret has no bound for at `N = 2^11`, the plan refuses before any draw.
+        let certified = plan.clone().with_security(poulpy_core::security::Security::Bits128);
+        let (mut xs, mut xa, mut xe) = sources();
+        let Err(err) = certified.generate_keys(&module, &sk_raw, layout, &mut xs, &mut xe, &mut xa, &mut scratch.borrow()) else {
+            panic!("keys under a secret without a bound were generated");
+        };
+        assert!(
+            matches!(
+                err.downcast_ref::<CKKSCompositionError>(),
+                Some(CKKSCompositionError::SecurityLevelNotMet {
+                    op: "generate_keys",
+                    source: CoreError::SecurityUnsupported { .. },
+                })
+            ),
+            "{err}"
+        );
+        let (mut fresh_xs, mut fresh_xa, mut fresh_xe) = sources();
+        assert_eq!(
+            [xs.new_seed(), xa.new_seed(), xe.new_seed()],
+            [fresh_xs.new_seed(), fresh_xa.new_seed(), fresh_xe.new_seed()],
+            "a refused generation drew from its sources"
+        );
+        assert_eq!(certified.without_security().security(), None);
         // A layout without one of the rotation keys, or with the keyless identity, is refused.
         for bad in other_rotation_keys(layout) {
             let (mut xs, mut xa, mut xe) = sources();
