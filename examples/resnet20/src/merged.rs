@@ -42,7 +42,7 @@ impl MergedConv {
         scratch: &mut ScratchArena<'_, ServerBackend>,
     ) -> Result<Self> {
         ensure!(input.n() == module.n(), "the layouts must span the module's degree");
-        let polys = kernel_polynomials(input, output, weights, window, context.merged_s2c_cosets(), context.log_gap())?;
+        let polys = kernel_polynomials(input, output, weights, window, context.merged_s2c_cosets())?;
         let factor = context.merged_s2c_factor(module, &polys, log_delta, scratch)?;
         let plan = factor.factor().index();
         Ok(Self { factor, plan })

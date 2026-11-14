@@ -5,7 +5,7 @@ use anyhow::{Result, ensure};
 /// Sample `(q, i, j)` sits at coefficient `bases[q] + step * (i * row_stride + j)`. Every other coefficient is zero
 /// when the tensor is packed, which gives a convolution its zero padding wherever the grid leaves a gap.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct CoeffLayout {
+pub(crate) struct CoeffLayout {
     n: usize,
     height: usize,
     width: usize,
@@ -14,7 +14,7 @@ pub struct CoeffLayout {
     bases: Vec<usize>,
 }
 
-/// Real slot `s` of `slots` holds the coefficient of this index, and coefficient `s` sits in the slot of this index.
+/// Real slot `s` of `slots` holds the coefficient of this index.
 fn bit_reverse(s: usize, slots: usize) -> usize {
     s.reverse_bits() >> (usize::BITS - slots.trailing_zeros())
 }
@@ -45,11 +45,6 @@ impl CoeffLayout {
             taken[idx] = true;
         }
         Ok(layout)
-    }
-
-    /// `log2` of the largest `g` whose multiples hold every sample.
-    pub(crate) fn log_gap(&self) -> usize {
-        self.bases.iter().fold(self.step, |bits, &b| bits | b).trailing_zeros() as usize
     }
 
     pub(crate) fn n(&self) -> usize {
@@ -132,15 +127,5 @@ impl CoeffLayout {
             "real slots carry the lower half of the coefficients"
         );
         Ok((0..slots).map(|s| coeffs[bit_reverse(s, slots)]).collect())
-    }
-
-    /// The tensor in the `n / 2` real slots `re`, the inverse of [`Self::pack_slots`].
-    pub(crate) fn unpack_slots(&self, re: &[f64]) -> Result<Vec<f64>> {
-        let slots = self.n / 2;
-        ensure!(
-            re.len() == slots && self.samples().all(|(.., idx)| idx < slots),
-            "real slots carry the lower half of the coefficients"
-        );
-        Ok(self.samples().map(|(.., idx)| re[bit_reverse(idx, slots)]).collect())
     }
 }

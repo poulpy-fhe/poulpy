@@ -2,7 +2,7 @@
 //!
 //! [`Params`] derives the bootstrap, a [`Client`] holds the secret, generates the keys and encrypts an image, and a
 //! [`Server`] runs the network on it; [`model`] is the network in the clear. Every convolution runs in the last factor
-//! of the SlotsToCoeffs of a bootstrap: [`CoeffLayout`] says where a tensor sits in the coefficients, `kernel` turns a
+//! of the SlotsToCoeffs of a bootstrap: `layout` says where a tensor sits in the coefficients, `kernel` turns a
 //! convolution into the polynomials of that factor and `merged` evaluates it.
 
 mod client;
@@ -19,11 +19,10 @@ use poulpy_cpu_portable::NTT4x30Portable;
 use poulpy_hal::layouts::Backend;
 
 pub use client::Client;
-pub use layout::CoeffLayout;
 pub use params::Params;
 #[cfg(feature = "enable-cuda")]
 pub use server::RecordedInference;
-pub use server::{Probe, ProbePoint, Server, Timings};
+pub use server::Server;
 
 /// The client's backend, which holds the secret.
 pub type Host = NTT4x30Portable;

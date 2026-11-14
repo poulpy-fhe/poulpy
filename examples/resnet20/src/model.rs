@@ -76,7 +76,7 @@ pub(crate) fn conv2d(input: &[f64], weights: &[f64], height: usize, width: usize
 
 /// The share of the period a divisor's interval spans: `[-1, 1]` over the divisor maps to the phases `[-SPAN/2, SPAN/2]`
 /// of the unit circle, which leaves the rest of the period for the two ends of the ReLU to join.
-pub const SPAN: f64 = 0.9;
+pub(crate) const SPAN: f64 = 0.9;
 
 /// `(re, im)` of the coefficients of `z(a) = sum_l c_l a^l`, a minimax fit by reweighted least squares of `z(a) + conj(z(a))
 /// + RELU_AT_ZERO` to the ReLU on the phases `a = exp(iπ·SPAN·u)`, `u` in `[-1, 1]`. The sum vanishes at `a = 1`.
@@ -115,13 +115,13 @@ const HEADROOM: f64 = 1.3;
 /// The divisor of ReLU `relu`, half the power of two at or above 1.3 times its largest activation: its input
 /// over the divisor lies in `[-1, 1]`, but for the outliers. An input past its divisor wraps around the unit circle:
 /// that input comes out wrong, and nothing diverges.
-pub fn divisor(relu: usize) -> f64 {
+pub(crate) fn divisor(relu: usize) -> f64 {
     f64::from(1u32 << ((HEADROOM * MAX_ACTIVATION[relu]).log2().ceil() as u32 - 1))
 }
 
 /// The approximate ReLU of `u`, periodic, close to `max(u, 0)` on `[-1, 1]`: a polynomial in `a = exp(iπ·SPAN·u)`,
 /// by Horner's rule in `a`.
-pub fn relu(u: f64) -> f64 {
+fn relu(u: f64) -> f64 {
     let (sin, cos) = (std::f64::consts::PI * SPAN * u).sin_cos();
     let (re, _) = RELU_TRIG.iter().rev().fold((0.0, 0.0), |(re, im), c| {
         (re * cos - im * sin + c.0, re * sin + im * cos + c.1)
@@ -270,14 +270,8 @@ impl ResNet20 {
 
     /// The logits of `image`, `[3][32][32]` normalized.
     pub fn forward(&self, image: &[f64], variant: Variant) -> Vec<f64> {
-        self.forward_traced(image, variant, &mut |_, _| {})
-    }
-
-    /// [`Self::forward`], handing `trace` each ReLU's index, in evaluation order, and input.
-    pub fn forward_traced(&self, image: &[f64], variant: Variant, trace: &mut dyn FnMut(usize, &[f64])) -> Vec<f64> {
         let mut relus = 0;
         let mut activate = |x: Vec<f64>| -> Vec<f64> {
-            trace(relus, &x);
             let d = divisor(relus);
             relus += 1;
             match variant {

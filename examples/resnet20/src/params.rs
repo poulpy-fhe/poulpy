@@ -25,7 +25,7 @@ const S2C_SCHEDULE_N16: &[(usize, usize)] = &[(4, 4), (5, 128), (6, 4096)];
 pub(crate) const MERGED_COSETS: usize = 1 << S2C_SCHEDULE[S2C_SCHEDULE.len() - 1].0;
 
 /// Scale of the last SlotsToCoeffs factor, with the kernels folded in: the bits it spends.
-const LOG_DELTA_W: usize = 20;
+pub(crate) const LOG_DELTA_W: usize = 20;
 
 /// Levels of the ReLU: its polynomial of degree 15.
 const RELU_LEVELS: usize = 4;
@@ -89,10 +89,6 @@ impl Params {
 
     pub(crate) fn layouts(&self) -> &Layouts {
         &self.layouts
-    }
-
-    pub(crate) fn log_delta_w(&self) -> usize {
-        LOG_DELTA_W
     }
 
     /// Width of the SlotsToCoeffs input.

@@ -6,12 +6,12 @@ The weights and the first ten CIFAR-10 test images are built into the crate.
 
 ```sh
 # Encrypted, on the GPU, the circuit recorded as one graph.
-cargo run --release -p poulpy-resnet20 --features enable-cuda --bin encrypted_inference -- 10 --replay
+cargo run --release -p poulpy-resnet20 --features enable-cuda --bin encrypted_inference -- 10
 # In the clear: as trained, on the wrapped rows, and with the polynomial ReLU as well.
 cargo run --release -p poulpy-resnet20 --bin plain_accuracy -- 10
 ```
 
-Without `enable-cuda`, `encrypted_inference` runs on the CPU, about 100 seconds per image on one core. There it reports the time per phase, which waits for the server at each phase boundary: `--no-stage-sync` drops the waits and the report. `--trace` compares each layer with the cleartext on the first image, before and after its ReLU.
+Without `enable-cuda`, `encrypted_inference` runs on the CPU, about 100 seconds per image on one core.
 
 One full inference against the cleartext network is also a test, left out of the default run:
 
@@ -27,7 +27,7 @@ The dataset is not in this repository. Download the CIFAR-10 binary version, 170
 curl -LO https://www.cs.toronto.edu/~kriz/cifar-10-binary.tar.gz
 tar xzf cifar-10-binary.tar.gz
 export CIFAR10_TEST_BATCH=$PWD/cifar-10-batches-bin/test_batch.bin
-cargo run --release -p poulpy-resnet20 --features enable-cuda --bin encrypted_inference -- 10000 --replay
+cargo run --release -p poulpy-resnet20 --features enable-cuda --bin encrypted_inference -- 10000
 cargo run --release -p poulpy-resnet20 --bin plain_accuracy -- 10000
 ```
 

@@ -1,12 +1,12 @@
 use anyhow::Result;
 use poulpy_ckks::{
-    CKKSInfos, SetCKKSInfos,
+    SetCKKSInfos,
     api::{CKKSDecryptOps, CKKSEncodingHostOps, CKKSEncryptOps},
     layouts::{CKKSCiphertextAlloc, CKKSCiphertextOwned, CKKSPlaintextAlloc},
 };
 use poulpy_core::{
     api::{GLWESecretPreparedFactory, GLWESecretSampling},
-    layouts::{BackendGLWESecret, BackendGLWESecretPrepared, GLWESecretAlloc, LWEInfos},
+    layouts::{BackendGLWESecret, BackendGLWESecretPrepared, GLWESecretAlloc},
 };
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
@@ -14,10 +14,7 @@ use poulpy_hal::{
     source::Source,
 };
 
-use crate::{CoeffLayout, Host, KeySet, Params};
-
-/// Bits the host decoder reads.
-const DECODER_BITS: usize = 127;
+use crate::{Host, KeySet, Params};
 
 /// The client: the secret, the keys, the image in, the logits out.
 pub struct Client {
@@ -103,60 +100,30 @@ impl Client {
         Ok(ct)
     }
 
-    /// The tensor in the real slots of `ct`, an activation laid out as `layout`.
-    pub fn decrypt_slots(&mut self, ct: &CKKSCiphertextOwned<Host>, layout: &CoeffLayout) -> Result<Vec<f64>> {
-        let slots = self.module.n() / 2;
-        // Decryption drops the bits of a wide ciphertext the decoder cannot read.
-        let k = ct.k().as_usize().min(DECODER_BITS);
-        let mut pt = self.module.ckks_plaintext_alloc_from_slots(slots, ct.base2k(), k.into());
-        pt.set_meta(ct.meta());
-        self.module.ckks_decrypt(&mut pt, ct, &self.sk, &mut self.scratch.borrow())?;
-        let (mut re, mut im) = (vec![0.0; slots], vec![0.0; slots]);
-        self.module
-            .ckks_decode_slots_host_into(&pt, &mut re, &mut im, &mut self.scratch.borrow())?;
-        layout.unpack_slots(&re)
-    }
-
-    /// The tensor in the coefficients of `ct`, a layer's output at level 0 laid out as `layout`.
-    pub fn decrypt_coeffs(&mut self, ct: &CKKSCiphertextOwned<Host>, layout: &CoeffLayout) -> Result<Vec<f64>> {
-        layout.unpack(&self.coeffs(ct)?)
-    }
-
     /// The ten logits in the coefficients of `ct`, the output of an inference.
     pub fn decrypt_logits(&mut self, ct: &CKKSCiphertextOwned<Host>) -> Result<Vec<f64>> {
-        let coeffs = self.coeffs(ct)?;
-        self.params.layouts().logits.unpack(&coeffs)
-    }
-
-    fn coeffs(&mut self, ct: &CKKSCiphertextOwned<Host>) -> Result<Vec<f64>> {
         let mut pt = self.module.ckks_plaintext_alloc_from_infos(ct);
         self.module.ckks_decrypt(&mut pt, ct, &self.sk, &mut self.scratch.borrow())?;
         let mut coeffs = vec![0.0; self.module.n()];
         self.module
             .ckks_decode_coeffs_host_into(&pt, &mut coeffs, &mut self.scratch.borrow())?;
-        Ok(coeffs)
+        self.params.layouts().logits.unpack(&coeffs)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::Client;
-    use crate::{
-        Params,
-        model::{max_error, test_images},
-    };
+    use poulpy_core::layouts::LWEInfos;
 
-    /// The preset of the network derives, and the client reads back the image it encrypts in the slots.
+    use super::Client;
+    use crate::{Params, model::test_images};
+
+    /// The preset of the network derives, and the client encrypts an image at the width the server reads.
     #[test]
-    fn the_client_round_trips_an_image() {
+    fn the_client_encrypts_an_image() {
         let params = Params::new().unwrap();
         let (image, _) = &test_images(1).unwrap()[0];
-        let mut client = Client::new(&params, [0; 32]);
-        let ct = client.encrypt_image(image).unwrap();
-        let have = client.decrypt_slots(&ct, &params.layouts().image).unwrap();
-        assert!(
-            max_error(&have, image) < (-14.0f64).exp2(),
-            "the decrypted image is off by more than 2^-14"
-        );
+        let ct = Client::new(&params, [0; 32]).encrypt_image(image).unwrap();
+        assert_eq!(ct.k().as_usize(), params.in_k());
     }
 }

@@ -35,25 +35,22 @@ impl Tap {
 }
 
 /// The polynomials of the convolution of window `window` from `input` to `output`, on the one-dimensional sample
-/// index of their row stride as [`conv2d`](crate::model::conv2d), of `n` coefficients each, for an input in `Z[X^g]`,
-/// `g = 2^log_gap`.
+/// index of their row stride as [`conv2d`](crate::model::conv2d), of `n` coefficients each.
 ///
 /// The reads of a tap are `step * stride` coefficients apart and the last SlotsToCoeffs factor tells the indexes
-/// apart modulo `g * cosets`: with `period` the greatest common divisor of the two, polynomial `r` multiplies the
-/// input coefficients of index `g * r` modulo `period`, in place. The tap `(dk, dl)` from channel `q` to channel `o`
+/// apart modulo `cosets`: with `period` the greatest common divisor of the two, polynomial `r` multiplies the input
+/// coefficients of index `r` modulo `period`, in place. The tap `(dk, dl)` from channel `q` to channel `o`
 /// first reads coefficient `i0 = bases_in[q] + step * (dk * row_stride + dl)`: it sits in the polynomial of `i0`, at
 /// exponent `bases_out[o] - i0`, negated past the ring's end.
 ///
 /// `weights` is `[out][in][kernel][kernel]`, row-major, as PyTorch stores a convolution. Fails when the layouts do not
-/// chain, when the input leaves the subring, or when a term of a nonzero weight lands on an output sample it does not
-/// compute.
+/// chain, or when a term of a nonzero weight lands on an output sample it does not compute.
 pub(crate) fn kernel_polynomials(
     input: &CoeffLayout,
     output: &CoeffLayout,
     weights: &[f64],
     window: Window,
     cosets: usize,
-    log_gap: usize,
 ) -> Result<Vec<Vec<f64>>> {
     let Window { kernel, stride, padding } = window;
     ensure!(
@@ -77,11 +74,7 @@ pub(crate) fn kernel_polynomials(
         cosets.is_power_of_two() && cosets <= input.n(),
         "the coset count must be a power of two"
     );
-    ensure!(input.log_gap() >= log_gap, "the input must lie in the subring of the gap");
-    let period = 1usize
-        << (input.step() * stride)
-            .trailing_zeros()
-            .min((cosets << log_gap).trailing_zeros());
+    let period = 1usize << (input.step() * stride).trailing_zeros().min(cosets.trailing_zeros());
 
     // Input samples `(q, i, j, index)` by the polynomial that reads them.
     let mut parts = vec![Vec::new(); period];
@@ -92,7 +85,7 @@ pub(crate) fn kernel_polynomials(
     let (n, row_stride) = (input.n() as i64, input.row_stride() as i64);
     let (stride, out_height, out_width) = (stride as i64, output.height() as i64, output.width() as i64);
 
-    let mut polys = vec![vec![0.0; input.n()]; period >> log_gap];
+    let mut polys = vec![vec![0.0; input.n()]; period];
     for (t, &w) in weights.iter().enumerate().filter(|&(_, &w)| w != 0.0) {
         let tap = Tap::new(t, input, window);
         let shift = output.bases()[tap.o] as i64 - tap.i0;
@@ -112,7 +105,7 @@ pub(crate) fn kernel_polynomials(
         }
         let e = shift.rem_euclid(2 * n);
         let (e, sign) = if e < n { (e, 1.0) } else { (e - n, -1.0) };
-        polys[r >> log_gap][e as usize] += sign * w;
+        polys[r][e as usize] += sign * w;
     }
     Ok(polys)
 }
@@ -136,10 +129,10 @@ mod tests {
     }
 
     /// The convolution in the clear: each input coefficient, at its own index, times the polynomial of its class.
-    fn product(input: &[f64], polys: &[Vec<f64>], log_gap: usize) -> Vec<f64> {
+    fn product(input: &[f64], polys: &[Vec<f64>]) -> Vec<f64> {
         let mut res = vec![0.0; N];
         for (idx, &x) in input.iter().enumerate().filter(|&(_, &x)| x != 0.0) {
-            let poly = &polys[(idx >> log_gap) % polys.len()];
+            let poly = &polys[idx % polys.len()];
             for (e, &w) in poly.iter().enumerate().filter(|&(_, &w)| w != 0.0) {
                 let d = idx + e;
                 let (d, sign) = if d < N { (d, 1.0) } else { (d - N, -1.0) };
@@ -155,9 +148,8 @@ mod tests {
         let tensor = integers(input.len(), &mut source);
         let dense = output.channels() * input.channels() * window.kernel * window.kernel;
         let weights = weights.unwrap_or_else(|| integers(dense, &mut source));
-        let log_gap = input.log_gap();
-        let polys = kernel_polynomials(input, output, &weights, window, MERGED_COSETS, log_gap).unwrap();
-        let res = product(&input.pack(&tensor).unwrap(), &polys, log_gap);
+        let polys = kernel_polynomials(input, output, &weights, window, MERGED_COSETS).unwrap();
+        let res = product(&input.pack(&tensor).unwrap(), &polys);
         let want = conv2d(&tensor, &weights, input.height(), input.width(), input.row_stride(), window);
         assert_eq!(output.unpack(&res).unwrap(), want);
     }
@@ -229,17 +221,10 @@ mod tests {
     }
 
     #[test]
-    fn inputs_off_the_subring_are_refused() {
-        let l = Layouts::new(N).unwrap();
-        let weights = vec![1.0; 16 * 16 * 9];
-        assert!(kernel_polynomials(&l.stages[0], &l.stages[0], &weights, conv(1), MERGED_COSETS, 1).is_err());
-    }
-
-    #[test]
     fn colliding_layouts_are_refused() {
         // Two grids in one coset: one polynomial reads both.
         let grids = CoeffLayout::new(N, 8, 8, 32, 64, vec![0, 64 * 16]).unwrap();
         let weights = vec![1.0; 2 * 2 * 9];
-        assert!(kernel_polynomials(&grids, &grids, &weights, conv(1), MERGED_COSETS, 0).is_err());
+        assert!(kernel_polynomials(&grids, &grids, &weights, conv(1), MERGED_COSETS).is_err());
     }
 }

@@ -10,10 +10,7 @@
 //! The client encrypts the image in the real slots, as an activation, and decrypts the logits at level 0 from the
 //! head's coefficients.
 
-use std::{
-    cell::RefCell,
-    time::{Duration, Instant},
-};
+use std::cell::RefCell;
 
 use anyhow::{Context as _, Result, ensure};
 use poulpy_ckks::{
@@ -29,14 +26,16 @@ use poulpy_core::{
     layouts::{GLWEInfos, LWEInfos, SetGLWEPlaintextInfos, SetK},
 };
 use poulpy_hal::{
-    api::{ModuleSynchronize, ScratchOwnedAlloc, ScratchOwnedBorrow},
+    api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{Backend, Module, ScratchOwned},
 };
 
 use crate::{
-    CoeffLayout, Context, Ct, Host, KeySet, Params, Pt, ServerBackend,
+    Context, Ct, Host, KeySet, Params, Pt, ServerBackend,
+    layout::CoeffLayout,
     merged::MergedConv,
     model::{Conv, RELU_AT_ZERO, ResNet20, SPAN, Window, divisor, shortcut_weights},
+    params::LOG_DELTA_W,
     relu::Relu,
 };
 
@@ -75,33 +74,6 @@ struct Activation {
     relu_offset: Pt,
 }
 
-/// Time spent per phase of an inference, the server synchronized at each boundary.
-#[derive(Default, Debug, Clone, Copy)]
-pub struct Timings {
-    pub s2c: Duration,
-    pub conv: Duration,
-    pub raise: Duration,
-    pub relu: Duration,
-}
-
-/// Charges the phases of an inference, waiting for the server at each boundary: the host otherwise queues ahead of
-/// the device.
-struct Clock<'a> {
-    module: &'a Module<ServerBackend>,
-    timed: bool,
-    last: Instant,
-}
-
-impl Clock<'_> {
-    fn lap(&mut self, phase: &mut Duration) {
-        if self.timed {
-            self.module.synchronize();
-            *phase += self.last.elapsed();
-            self.last = Instant::now();
-        }
-    }
-}
-
 /// The server's ciphertexts, allocated once: a recording binds them.
 struct Buffers {
     /// The image, in real slots.
@@ -125,20 +97,6 @@ struct State {
     scratch: ScratchOwned<ServerBackend>,
     bufs: Buffers,
 }
-
-/// Where [`Server::infer_timed`] probes a layer.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ProbePoint {
-    /// The ReLU's input, in the coefficients at level 0.
-    Input,
-    /// The ReLU's output, in the slots.
-    Activation,
-}
-
-/// A probe of [`Server::infer_timed`]: the index of the layer's ReLU, as
-/// [`forward_traced`](crate::model::ResNet20::forward_traced) counts them, the point, a copy of the ciphertext there
-/// and its layout.
-pub type Probe<'a> = &'a mut dyn FnMut(usize, ProbePoint, &CKKSCiphertextOwned<Host>, &CoeffLayout);
 
 /// The server: the compiled bootstrap, the evaluation keys and the encoded network.
 pub struct Server {
@@ -173,7 +131,7 @@ impl<'a> Encoder<'a> {
             module,
             context,
             params,
-            factor: ScratchOwned::alloc(MergedConv::new_tmp_bytes(module, context, params.log_delta_w())?),
+            factor: ScratchOwned::alloc(MergedConv::new_tmp_bytes(module, context, LOG_DELTA_W)?),
             host: ScratchOwned::alloc(
                 CKKSEncodingHostOps::<ServerBackend, f64>::ckks_encoding_host_tmp_bytes(module, slots)
                     .max(context.coeffs_mask_tmp_bytes(module)?),
@@ -189,7 +147,7 @@ impl<'a> Encoder<'a> {
             output,
             weights,
             window,
-            self.params.log_delta_w(),
+            LOG_DELTA_W,
             &mut self.factor.borrow(),
         )
     }
@@ -423,49 +381,18 @@ impl Server {
     pub fn infer(&self, image: &CKKSCiphertextOwned<Host>) -> Result<CKKSCiphertextOwned<Host>> {
         let state = &mut *self.state.borrow_mut();
         self.write_image(state, image)?;
-        self.run(state, false, None)?;
+        self.run(state)?;
         Ok(state.bufs.level0.to_host_owned::<ServerBackend>())
     }
 
-    /// [`Self::infer`] with the time per phase, which costs about 8% of the wall clock, handing `probe` a copy of each
-    /// layer's ciphertext before and after its ReLU.
-    pub fn infer_timed(
-        &self,
-        image: &CKKSCiphertextOwned<Host>,
-        probe: Option<Probe<'_>>,
-    ) -> Result<(CKKSCiphertextOwned<Host>, Timings)> {
-        let state = &mut *self.state.borrow_mut();
-        self.write_image(state, image)?;
-        let t = self.run(state, true, probe)?;
-        Ok((state.bufs.level0.to_host_owned::<ServerBackend>(), t))
-    }
-
-    /// The whole circuit, from the image buffer to the logits in `level0`: device work only unless it is `timed` or a
-    /// `probe` reads.
-    fn run(&self, state: &mut State, timed: bool, mut probe: Option<Probe<'_>>) -> Result<Timings> {
+    /// The whole circuit, from the image buffer to the logits in `level0`: device work only.
+    fn run(&self, state: &mut State) -> Result<()> {
         let State { scratch, bufs } = state;
-        let layouts = self.params.layouts();
-        let mut t = Timings::default();
-        let mut clock = Clock {
-            module: &self.module,
-            timed,
-            last: Instant::now(),
-        };
-        let mut look = |clock: &mut Clock, relu: usize, point: ProbePoint, ct: &Ct, stage: usize| {
-            if let Some(probe) = probe.as_mut() {
-                probe(relu, point, &ct.to_host_owned::<ServerBackend>(), &layouts.stages[stage]);
-                clock.last = Instant::now();
-            }
-        };
         self.to_blocks(&bufs.image, &mut bufs.blocks, scratch)?;
-        clock.lap(&mut t.s2c);
-        for (relu, layer) in self.layers.iter().enumerate() {
+        for layer in &self.layers {
             let activation = &self.activations[layer.stage];
             self.layer(&layer.product, &layer.skip, self.params.level0_k(), bufs, scratch)?;
-            clock.lap(&mut t.conv);
-            look(&mut clock, relu, ProbePoint::Input, &bufs.level0, layer.stage);
             self.raise(activation, bufs, scratch)?;
-            clock.lap(&mut t.raise);
             self.relu.apply(
                 &self.module,
                 &mut bufs.activated,
@@ -475,14 +402,9 @@ impl Server {
                 &self.keys.rotation_keys,
                 &mut scratch.borrow(),
             )?;
-            clock.lap(&mut t.relu);
-            look(&mut clock, relu, ProbePoint::Activation, &bufs.activated, layer.stage);
             self.to_blocks(&bufs.activated, &mut bufs.blocks, scratch)?;
-            clock.lap(&mut t.s2c);
         }
-        self.layer(&self.head, &Skip::None, self.params.logits_k(), bufs, scratch)?;
-        clock.lap(&mut t.conv);
-        Ok(t)
+        self.layer(&self.head, &Skip::None, self.params.logits_k(), bufs, scratch)
     }
 
     /// SlotsToCoeffs of the activation `slots` into `blocks`, from its input width, short of its last factor.
@@ -565,7 +487,7 @@ impl Server {
 }
 
 /// The whole circuit recorded as one graph on the device: an inference writes the image, replays the graph and reads
-/// the logits, with no orchestration on the host.
+/// the logits, with no orchestration on the host. It is the one way the GPU runs the network.
 #[cfg(feature = "enable-cuda")]
 pub struct RecordedInference<'a> {
     server: &'a Server,
@@ -584,9 +506,9 @@ impl Server {
     /// must not see.
     pub fn record(&self, image: &CKKSCiphertextOwned<Host>) -> Result<RecordedInference<'_>> {
         self.infer(image)?;
-        self.module.synchronize();
+        poulpy_hal::api::ModuleSynchronize::synchronize(&self.module);
         let replay = poulpy_gpu_portable::Replay::record(move || {
-            self.run(&mut self.state.borrow_mut(), false, None)
+            self.run(&mut self.state.borrow_mut())
                 .expect("an inference on valid buffers does not fail");
         });
         Ok(RecordedInference { server: self, replay })
