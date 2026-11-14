@@ -9,6 +9,7 @@ use poulpy_core::{
 };
 use poulpy_hal::layouts::{Backend, ConjugateInvariant, Data, Module, ScratchArena, Standard};
 
+use crate::layouts::validation::check_first_factor_raise;
 use crate::oep::derived::replicated::{
     apply_transform, check_destination, check_module_degree, check_workspace, ct_bytes, invalid, transform_tmp_bytes,
     working_layout,
@@ -271,11 +272,22 @@ impl<BE: Backend> CKKSReplicatedBootstrapReference<BE> for Module<BE> {
             .encapsulation
             .as_ref()
             .and_then(|keys| keys.sparse_to_dense.as_ref().map(|back| (&keys.dense_to_sparse, back)));
-        let mod_up = match encapsulation {
-            Some((dense_to_sparse, sparse_to_dense)) => {
-                BE::ckks_encapsulated_mod_up_tmp_bytes(module, &boot, &input_ckks, dense_to_sparse, sparse_to_dense)
-            }
-            None => module.glwe_shift_tmp_bytes(raised.size()),
+        let mod_up = match (ctx.c2s_first_factor.as_ref(), keys_layout.first_factor_key.as_ref()) {
+            (Some(factor), Some(key)) => BE::ckks_mod_up_first_factor_tmp_bytes(
+                module,
+                0,
+                &boot,
+                &input_ckks,
+                factor,
+                keys_layout.encapsulation.as_ref().map(|keys| &keys.dense_to_sparse),
+                key,
+            ),
+            _ => match encapsulation {
+                Some((dense_to_sparse, sparse_to_dense)) => {
+                    BE::ckks_encapsulated_mod_up_tmp_bytes(module, &boot, &input_ckks, dense_to_sparse, sparse_to_dense)
+                }
+                None => module.glwe_shift_tmp_bytes(raised.size()),
+            },
         }
         .max(module.ckks_mul_pow2_tmp_bytes(input.size()));
         let eval_mod = module
@@ -381,6 +393,18 @@ impl<BE: Backend> CKKSReplicatedBootstrapReference<BE> for Module<BE> {
                 k: tensor_k.into(),
                 source,
             })?;
+        // The first factor on the raise, and its keys, which replace the sparse-to-dense key.
+        if let Some(factor) = ctx.c2s_first_factor.as_ref() {
+            check_first_factor_raise(
+                OP,
+                src.base2k().as_usize(),
+                module.log_n(),
+                k_boot,
+                plan.log_delta + plan.eval_mod.log_msg_ratio + plan.mod_up_extra_bits,
+                factor,
+                keys,
+            )?;
+        }
         let mut raised_meta = src.meta();
         raised_meta.slot_layout = SlotLayout::Full;
         let (mut raised, mut scratch) = scratch.borrow().take_ckks_ciphertext_scratch(&at(k_boot), raised_meta);
@@ -439,7 +463,7 @@ impl<BE: Backend> CKKSReplicatedBootstrapReference<BE> for Module<BE> {
                 &mut coeffs,
                 0,
                 plan.mod_up_extra_bits,
-                None,
+                ctx.c2s_first_factor.as_ref(),
                 0,
                 keys,
                 &mut scratch,

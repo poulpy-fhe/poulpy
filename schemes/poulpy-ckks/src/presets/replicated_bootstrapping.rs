@@ -203,7 +203,8 @@ pub fn n15_d20_k389_p20_s2c() -> Result<ReplicatedBootstrappingPreset> {
 /// precision. Each map is factored into two DFT factors and two placement
 /// factors, the `SlotsToCoeffs` diagonals at `2^30` and the inner
 /// `CoeffsToSlots` ones at `2^54`, for batches of 4 to `2^10` values with
-/// `R = 16`.
+/// `R = 16`. The first `CoeffsToSlots` factor runs on the modulus raise, with
+/// first-factor keys in place of the sparse-to-dense key.
 pub fn n16_d20_k763_p19_s2c_factored() -> Result<ReplicatedBootstrappingPreset> {
     build(PresetSpec {
         name: "n16_d20_k763_p19_s2c_factored",
@@ -220,6 +221,7 @@ pub fn n16_d20_k763_p19_s2c_factored() -> Result<ReplicatedBootstrappingPreset> 
             c2s_factors: 2,
             placement_factors: 2,
             c2s_inner_log_delta_diag: 54,
+            c2s_first_factor_on_raise: true,
         },
         s2c_log_delta_diag: 30,
     })
@@ -290,19 +292,29 @@ fn key_policy(spec: &PresetSpec) -> BootstrappingKeyPolicy {
 /// The key layouts of `plan`, its keys used at `widths`: the key to the
 /// ephemeral secret covers the ModUp input, the message ratio above the
 /// scale, and the key back its lifted window, its rows ending at the raised
-/// width.
+/// width, or with the first `CoeffsToSlots` factor on the raise, the
+/// first-factor keys in its place.
 fn key_layouts(
     spec: &PresetSpec,
     plan: &ReplicatedBootstrapPlan,
     widths: &BootstrappingKeyWidths,
 ) -> Result<BootstrappingKeysLayout> {
     let raise_input_k = plan.log_delta + plan.eval_mod.log_msg_ratio;
+    let window = raise_input_k + plan.mod_up_extra_bits;
     let raised = plan.k_boot(output_k(plan, spec.levels));
-    key_policy(spec).keys_layout_at(
-        widths,
-        Some((raise_input_k, Some((raise_input_k + plan.mod_up_extra_bits, raised)))),
-        None,
-    )
+    let policy = key_policy(spec);
+    if plan.c2s_first_factor_on_raise() {
+        // The first-factor keys replace the sparse-to-dense key.
+        let first_factor_key = policy.first_factor_key_layout_at(
+            window,
+            plan.c2s_first_factor_growth(spec.base2k),
+            raised,
+            spec.max_dense_modulus,
+        )?;
+        policy.keys_layout_at(widths, Some((raise_input_k, None)), Some(first_factor_key))
+    } else {
+        policy.keys_layout_at(widths, Some((raise_input_k, Some((window, raised)))), None)
+    }
 }
 
 /// The widest key each kind of key of `plan` covers: the raised width and the
@@ -346,7 +358,7 @@ mod tests {
     }
 
     /// The gadgets of the widest rotation key, of the tensor key, of the key
-    /// to the ephemeral secret and of the key back, as `(dnum, k_digit,
+    /// to the ephemeral secret and of the key back or the first-factor keys, as `(dnum, k_digit,
     /// k_aux)`, for a unit at the default EvalMod scale and for `U8_40`, whose
     /// EvalMod runs two bits wider: whole-limb digits of the fewest rows under
     /// the modulus bounds.
@@ -374,7 +386,12 @@ mod tests {
                     gadget(&keys.rotation_keys[&-1]),
                     gadget(&keys.tensor_key),
                     gadget(&encapsulation.dense_to_sparse),
-                    gadget(&encapsulation.sparse_to_dense.unwrap()),
+                    // The key back, or the first-factor keys in its place.
+                    match (encapsulation.sparse_to_dense, keys.first_factor_key) {
+                        (Some(back), None) => gadget(&back),
+                        (None, Some(first)) => gadget(&first),
+                        _ => panic!("{}: one raise key", preset.name()),
+                    },
                 )
             })
             .collect();
@@ -389,8 +406,9 @@ mod tests {
                 (n14, (34, 12, 16), (7, 52, 60), (2, 22, 33), (3, 17, 25)),
                 (n15, (7, 104, 119), (3, 208, 223), (1, 52, 67), (1, 52, 67)),
                 (n15, (7, 104, 119), (7, 104, 119), (1, 52, 67), (1, 52, 67)),
-                (n16, (3, 416, 432), (2, 520, 536), (1, 52, 68), (1, 52, 68)),
-                (n16, (3, 416, 432), (2, 520, 536), (1, 52, 68), (1, 52, 68)),
+                // First-factor keys in place of the key back, over the raise's small width.
+                (n16, (3, 416, 432), (2, 520, 536), (1, 52, 68), (1, 156, 172)),
+                (n16, (3, 416, 432), (2, 520, 536), (1, 52, 68), (1, 156, 172)),
             ]
         );
     }
@@ -402,7 +420,7 @@ mod tests {
         for (preset, widths, u8_40_raised) in [
             (n14_d20_k109_p21_s2c().unwrap(), (69, 109, 383), 399),
             (n15_d20_k389_p20_s2c().unwrap(), (69, 389, 663), 679),
-            (n16_d20_k763_p19_s2c_factored().unwrap(), (163, 763, 1199), 1215),
+            (n16_d20_k763_p19_s2c_factored().unwrap(), (163, 763, 1145), 1161),
         ] {
             let plan = preset.plan(layout(ShapingUnit::U32_45)).unwrap();
             assert_eq!(
@@ -432,7 +450,7 @@ mod tests {
     }
 
     #[test]
-    fn offset_keys_cover_the_raise_within_modulus_bounds() {
+    fn raise_keys_cover_the_raise_within_modulus_bounds() {
         for (preset, unit) in all()
             .unwrap()
             .into_iter()
@@ -443,17 +461,26 @@ mod tests {
                 let plan = preset.plan(layout(unit)).unwrap();
                 let keys = preset.keys_layout(layout(unit), &widest(&preset, unit)).unwrap();
                 let encapsulation = keys.encapsulation.unwrap();
-                let return_key = encapsulation.sparse_to_dense.unwrap();
                 let raised = plan.k_boot(preset.output_k());
+                assert!(keys.rotation_keys[&-1].k().as_usize() <= preset.spec.max_dense_modulus);
+                assert!(keys.tensor_key.k().as_usize() <= preset.spec.max_dense_modulus);
+                assert!(encapsulation.dense_to_sparse.k().as_usize() <= preset.spec.max_sparse_modulus);
+                if plan.c2s_first_factor_on_raise() {
+                    // The first-factor keys take the raise, rows under its small width and ending at its working width.
+                    let key = keys.first_factor_key.unwrap();
+                    assert!(encapsulation.sparse_to_dense.is_none());
+                    assert!(key.k_offset.0 > 0);
+                    assert!(key.k().as_usize() <= preset.spec.max_dense_modulus);
+                    crate::layouts::validation::small_limbs("replicated_bootstrapping_preset", base2k, raised, &key).unwrap();
+                    continue;
+                }
+                let return_key = encapsulation.sparse_to_dense.unwrap();
                 assert!(return_key.k_offset.0 > 0);
                 assert_eq!(
                     return_key.k_offset.as_usize() + return_key.gglwe_layout().gadget_k().as_usize(),
                     raised
                 );
                 assert!(return_key.k().as_usize() <= preset.spec.max_dense_modulus);
-                assert!(keys.rotation_keys[&-1].k().as_usize() <= preset.spec.max_dense_modulus);
-                assert!(keys.tensor_key.k().as_usize() <= preset.spec.max_dense_modulus);
-                assert!(encapsulation.dense_to_sparse.k().as_usize() <= preset.spec.max_sparse_modulus);
                 crate::layouts::validation::check_offset_raise(
                     "replicated_bootstrapping_preset",
                     raised,

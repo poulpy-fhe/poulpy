@@ -1,8 +1,8 @@
 //! Linear maps, conversions and bootstrapping of a replicated slot layout, the
 //! small-batch scheme of [ePrint 2026/2513](https://eprint.iacr.org/2026/2513)
 //! (see `docs/guides/replicated.md`).
-use poulpy_core::GLWESecretSampling;
 use poulpy_core::layouts::{GLWEAutomorphismKeyAlloc, GLWESecretAlloc, GLWESwitchingKeyAlloc, GLWETensorKeyAlloc};
+use poulpy_core::{GLWESecretSampling, GetDistribution};
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -11,22 +11,29 @@ use poulpy_core::{
     Distribution, GLWEAutomorphismKeyEncryptSk, GLWESwitchingKeyEncryptSk, GLWETensorKeyEncryptSk, GLWETrace, GetDistributionMut,
     layouts::{
         BackendGLWESecret, Base2K, Degree, Diagonals, GGLWELayout, GLWEAutomorphismKeyLayout, GLWEInfos, GLWELayout,
-        GLWESecretLayout, GLWESwitchingKeyLayout, GLWETensorKeyLayout, GetDegree, LWEInfos, LinearTransformationBabySteps,
-        LinearTransformationLayout, LinearTransformationPrepared, LinearTransformationStrategy, ModuleCoreAlloc, Rank,
-        TorusPrecision, optimal_bsgs_giant_step,
+        GLWESecretLayout, GLWESecretToBackendMut, GLWESecretToBackendRef, GLWESwitchingKeyLayout, GLWETensorKeyLayout, GetDegree,
+        LWEInfos, LinearTransformation, LinearTransformationBabySteps, LinearTransformationLayout, LinearTransformationPrepared,
+        LinearTransformationStrategy, ModuleCoreAlloc, Rank, TorusPrecision, optimal_bsgs_giant_step,
     },
 };
 use poulpy_hal::{
-    api::CnvPVecAlloc,
-    layouts::{Backend, Module, Ring, ScratchArena, Standard},
+    api::{CnvPVecAlloc, VecZnxAutomorphism},
+    layouts::{
+        Backend, Module, Ring, ScratchArena, Standard, galois_element, scalar_znx_as_vec_znx_backend_mut_from_mut,
+        scalar_znx_as_vec_znx_backend_ref_from_ref,
+    },
     source::Source,
 };
 
-use crate::layouts::{DFTType, dft_matrices::ckks_dft_matrices_gen_blockwise};
+use crate::layouts::{
+    CKKSRightOperandPrepared, DFTType, dft_matrices::ckks_dft_matrices_gen_blockwise, mod_raise::first_factor_prepare,
+};
 use crate::{
     CKKSLayout, CKKSModuleInfos, CoeffsMeta, GLWEPlaintextMeta, ReplicatedLayout, Scale, SetCKKSInfos, SetGLWEPlaintextInfos,
     SlotLayout, SlotsKind,
-    api::{CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar, CKKSLinearTransformationOps},
+    api::{
+        CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar, CKKSLinearTransformationOps, CKKSRightOperandPreparedFactory,
+    },
     encoding::linear_transformation::period_degree,
     layouts::{
         BootstrappingKeySet, BootstrappingKeyWidths, BootstrappingKeysLayout, CKKSCiphertextAlloc, CKKSLinearTransformationAlloc,
@@ -36,6 +43,7 @@ use crate::{
         },
     },
     polynomial::SplitStrategy,
+    presets::first_factor::{first_factor_small_bits, first_factor_work},
     shaping::conjugate_invariant,
 };
 
@@ -74,6 +82,16 @@ pub struct ReplicatedConversion<BE: Backend, Rg: Ring = Standard> {
 
 /// Bits a diagonal holds above its scale: the largest weight, a sign and a carry.
 const MAX_DIAGONAL_HEADROOM: usize = usize::BITS as usize + 2;
+
+/// Bits above its scale a diagonal of the first `CoeffsToSlots` factor holds:
+/// its entries are DFT twiddles, at most one in magnitude, with a sign and a
+/// carry. Compiling a plan whose factor needs more fails.
+const C2S_FIRST_FACTOR_HEADROOM: usize = 3;
+
+/// Fewest bits of scale the diagonals of the first `CoeffsToSlots` factor on
+/// the raise keep: their quantization error, relative to the multiples of the
+/// raised modulus the factor also maps, stays far under the output precision.
+pub const C2S_FIRST_FACTOR_MIN_LOG_DELTA: usize = 45;
 
 impl<BE: Backend, Rg: Ring> ReplicatedConversion<BE, Rg> {
     /// Scratch of [`Self::new`] and [`Self::new_factored`], for diagonals of at
@@ -544,6 +562,28 @@ impl<BE: Backend, Rg: Ring> ReplicatedTransform<BE, Rg> {
         F: CKKSEncodingScalar,
         Module<BE>: ReplicatedTransformModule<BE, F, Rg>,
     {
+        let lt = Self::encode_factor_plaintexts(module, layout, base2k, factor, false, scratch)?;
+        let first = lt.first_diagonal_plaintext().context("a transform has a diagonal")?;
+        let mut prepared = LinearTransformationPrepared::<BE, Rg>::alloc_prepared_from_index(module, &lt.index(), first);
+        module.ckks_linear_transformation_rhs_prepare(&mut prepared, &lt, scratch)?;
+        Ok(prepared)
+    }
+
+    /// The encoded diagonals of `factor`, scheduled as a BSGS transform, or with
+    /// `direct` one giant step per diagonal and no baby step, the form of a
+    /// first factor on the modulus raise.
+    pub(crate) fn encode_factor_plaintexts<F>(
+        module: &Module<BE>,
+        layout: ReplicatedLayout,
+        base2k: Base2K,
+        factor: ReplicatedFactor<F>,
+        direct: bool,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<LinearTransformation<CKKSPlaintextOwned<BE, Rg>>>
+    where
+        F: CKKSEncodingScalar,
+        Module<BE>: ReplicatedTransformModule<BE, F, Rg>,
+    {
         let ReplicatedFactor {
             diagonals,
             log_delta_diag,
@@ -573,7 +613,7 @@ impl<BE: Backend, Rg: Ring> ReplicatedTransform<BE, Rg> {
         let headroom = (usize::BITS - (largest.to_f64().unwrap_or(1.0).ceil() as usize).max(1).leading_zeros()) as usize + 2;
         debug_assert!(headroom <= MAX_DIAGONAL_HEADROOM);
         let count = diagonals.indexes().len();
-        let strategy = if count <= 2 {
+        let strategy = if count <= 2 || direct {
             LinearTransformationStrategy::Direct
         } else if fitted_giant_step {
             LinearTransformationStrategy::Bsgs {
@@ -634,10 +674,7 @@ impl<BE: Backend, Rg: Ring> ReplicatedTransform<BE, Rg> {
             }
         });
         result?;
-        let first = lt.first_diagonal_plaintext().context("a transform has a diagonal")?;
-        let mut prepared = LinearTransformationPrepared::<BE, Rg>::alloc_prepared_from_index(module, &lt.index(), first);
-        module.ckks_linear_transformation_rhs_prepare(&mut prepared, &lt, scratch)?;
-        Ok(prepared)
+        Ok(lt)
     }
 }
 
@@ -668,6 +705,7 @@ pub trait ReplicatedTransformModule<BE: Backend, F: CKKSEncodingScalar, Rg: Ring
     + CKKSModuleInfos
     + GetDegree
     + CKKSLinearTransformationOps<BE, Rg>
+    + CKKSRightOperandPreparedFactory<BE, Rg>
     + CnvPVecAlloc<BE>
 {
 }
@@ -679,6 +717,7 @@ impl<BE: Backend, F: CKKSEncodingScalar, Rg: Ring, M> ReplicatedTransformModule<
         + CKKSModuleInfos
         + GetDegree
         + CKKSLinearTransformationOps<BE, Rg>
+        + CKKSRightOperandPreparedFactory<BE, Rg>
         + CnvPVecAlloc<BE>
 {
 }
@@ -713,11 +752,21 @@ pub enum ReplicatedTransforms {
     /// unshaped quantization error to stay under the output precision. The DFT
     /// factors leave the subring's coefficients in bit-reversed order, which
     /// the two maps undo together, and a packed plan must fit the ring.
+    ///
+    /// With `c2s_first_factor_on_raise`, the first DFT factor of
+    /// `CoeffsToSlots` runs on the modulus raise, as
+    /// [`DFTPlan::with_first_factor_on_raise`](crate::layouts::DFTPlan::with_first_factor_on_raise)
+    /// does for the standard bootstrapping: the raised ciphertext is small until
+    /// its first key switch, so the factor consumes no modulus, and its
+    /// rotations are the raise's own switches, by first-factor keys that replace
+    /// the sparse-to-dense key. Its diagonals have period `k`, so the top trace
+    /// onto period `k`, which follows, commutes with it.
     Factored {
         s2c_factors: usize,
         c2s_factors: usize,
         placement_factors: usize,
         c2s_inner_log_delta_diag: usize,
+        c2s_first_factor_on_raise: bool,
     },
 }
 
@@ -812,9 +861,50 @@ impl ReplicatedBootstrapPlan {
                 c2s_factors,
                 placement_factors,
                 c2s_inner_log_delta_diag,
+                c2s_first_factor_on_raise,
                 ..
-            } => (c2s_factors + placement_factors - 1) * c2s_inner_log_delta_diag + self.c2s_log_delta_diag,
+            } => {
+                let inner = c2s_factors + placement_factors - 1 - usize::from(c2s_first_factor_on_raise);
+                inner * c2s_inner_log_delta_diag + self.c2s_log_delta_diag
+            }
         }
+    }
+
+    /// Scale of the diagonals of the first `CoeffsToSlots` factor on the raise,
+    /// at radix `base2k`. The factor consumes no modulus, but every term of the
+    /// raise carries its diagonal's limbs: the scale is the widest that fits the
+    /// fewest limbs holding [`C2S_FIRST_FACTOR_MIN_LOG_DELTA`] bits and the
+    /// headroom, at most the inner `CoeffsToSlots` scale. One limb of 49 bits
+    /// at radix 52.
+    pub fn c2s_first_factor_log_delta_diag(&self, base2k: usize) -> usize {
+        let inner = match self.transforms {
+            ReplicatedTransforms::Factored {
+                c2s_inner_log_delta_diag,
+                ..
+            } => c2s_inner_log_delta_diag,
+            ReplicatedTransforms::Dense => self.c2s_log_delta_diag,
+        };
+        let limbs = (C2S_FIRST_FACTOR_MIN_LOG_DELTA + C2S_FIRST_FACTOR_HEADROOM).div_ceil(base2k);
+        inner.min(limbs * base2k - C2S_FIRST_FACTOR_HEADROOM)
+    }
+
+    /// Bits a product by a diagonal of the first `CoeffsToSlots` factor adds
+    /// once divided by its scale, at radix `base2k`, which sizes the
+    /// first-factor keys: the diagonals are encoded on whole limbs.
+    pub fn c2s_first_factor_growth(&self, base2k: usize) -> usize {
+        let log_delta_diag = self.c2s_first_factor_log_delta_diag(base2k);
+        (log_delta_diag + C2S_FIRST_FACTOR_HEADROOM).div_ceil(base2k) * base2k - log_delta_diag
+    }
+
+    /// Whether the first `CoeffsToSlots` factor runs on the modulus raise.
+    pub fn c2s_first_factor_on_raise(&self) -> bool {
+        matches!(
+            self.transforms,
+            ReplicatedTransforms::Factored {
+                c2s_first_factor_on_raise: true,
+                ..
+            }
+        )
     }
 
     /// Width of the input at scale `Δ_b`: the message ratio and the bits
@@ -889,7 +979,6 @@ impl ReplicatedBootstrapPlan {
         };
         BootstrappingKeysLayout {
             rotation_keys: galois_elements.iter().map(|&p| (p, rotation_key)).collect(),
-            first_factor_key: None,
             conversion_keys: None,
             tensor_key: GLWETensorKeyLayout {
                 n,
@@ -906,8 +995,26 @@ impl ReplicatedBootstrapPlan {
                 sparse_to_dense.k_offset = self.k_boot(k_out).saturating_sub(gadget).into();
                 EncapsulationKeysLayout {
                     dense_to_sparse: switching(k_small, one_limb, base2k.as_usize() + 1),
-                    sparse_to_dense: Some(sparse_to_dense),
+                    sparse_to_dense: (!self.c2s_first_factor_on_raise()).then_some(sparse_to_dense),
                 }
+            }),
+            // The first-factor keys: rows under the small width of the raise, ending at its working width.
+            first_factor_key: self.c2s_first_factor_on_raise().then(|| {
+                let k_boot = self.k_boot(k_out);
+                let (work, _) = first_factor_work(base2k.as_usize(), k_boot);
+                let window = self.log_delta + self.eval_mod.log_msg_ratio + self.mod_up_extra_bits;
+                let log_n = n.as_usize().ilog2() as usize;
+                let small = first_factor_small_bits(
+                    base2k.as_usize(),
+                    log_n,
+                    k_boot,
+                    window,
+                    self.c2s_first_factor_growth(base2k.as_usize()),
+                )
+                .div_ceil(base2k.as_usize());
+                let mut key = switching(small * base2k.as_usize(), digit, k_aux);
+                key.k_offset = ((work - small) * base2k.as_usize()).into();
+                key
             }),
         }
     }
@@ -932,6 +1039,10 @@ pub struct ReplicatedBootstrapping<BE: Backend, F> {
     /// The layout of the two batches of a packed EvalMod.
     pub(crate) packed: Option<ReplicatedLayout>,
     pub(crate) eval_mod: EvalMod<F, MaskedCoeffs<CKKSPlaintextOwned<BE>>>,
+    /// The first `CoeffsToSlots` factor, which the modulus raise applies
+    /// ([`ReplicatedBootstrapPlan::c2s_first_factor_on_raise`]): one giant step
+    /// per diagonal and no baby step.
+    pub(crate) c2s_first_factor: Option<LinearTransformation<CKKSRightOperandPrepared<BE>>>,
 }
 
 /// The layout of the two batches EvalMod runs on side by side, when the plan packs them and they fit.
@@ -999,7 +1110,7 @@ impl<BE: Backend, F: CKKSEncodingScalar> ReplicatedBootstrapping<BE, F> {
         ensure!(r <= k, "bootstrapping needs the period {r} to divide the batch size {k}");
         let half = module.ckks_max_slots::<Standard>();
         let packed = packed_layout(&plan, half)?;
-        let (s2c, c2s) = match plan.transforms {
+        let transforms = match plan.transforms {
             ReplicatedTransforms::Dense => {
                 let v = embedding::<BE, F>(module, k, base2k, scratch)?;
                 let s2c = ReplicatedTransform::gather(
@@ -1054,7 +1165,7 @@ impl<BE: Backend, F: CKKSEncodingScalar> ReplicatedBootstrapping<BE, F> {
                         scratch,
                     )?,
                 };
-                (s2c, c2s)
+                (s2c, c2s, None)
             }
             ReplicatedTransforms::Factored { .. } => {
                 ensure!(
@@ -1063,6 +1174,10 @@ impl<BE: Backend, F: CKKSEncodingScalar> ReplicatedBootstrapping<BE, F> {
                 );
                 factored_transforms::<BE, F>(module, &plan, packed, base2k, scratch)?
             }
+        };
+        let (s2c, c2s, c2s_first_factor) = match transforms {
+            (s2c, c2s, Some(first)) => (s2c, c2s, Some(first_factor_prepare(module, first, scratch)?)),
+            (s2c, c2s, None) => (s2c, c2s, None),
         };
         let eval_mod = match packed {
             Some(double) => {
@@ -1079,6 +1194,7 @@ impl<BE: Backend, F: CKKSEncodingScalar> ReplicatedBootstrapping<BE, F> {
             top_sparsity: (half / k).trailing_zeros() as usize,
             packed,
             eval_mod,
+            c2s_first_factor,
         })
     }
 }
@@ -1208,11 +1324,12 @@ impl<BE: Backend, F> ReplicatedBootstrapping<BE, F> {
         for key in layout.rotation_key_layouts() {
             bytes = bytes.max(module.glwe_automorphism_key_encrypt_sk_tmp_bytes(&key));
         }
-        if let Some(encapsulation) = &layout.encapsulation {
-            for key in [Some(encapsulation.dense_to_sparse), encapsulation.sparse_to_dense]
-                .into_iter()
-                .flatten()
-            {
+        let switching = layout
+            .encapsulation
+            .iter()
+            .flat_map(|e| [Some(e.dense_to_sparse), e.sparse_to_dense]);
+        {
+            for key in switching.chain([layout.first_factor_key]).flatten() {
                 bytes = bytes.max(module.glwe_switching_key_encrypt_sk_tmp_bytes(&key));
             }
         }
@@ -1247,15 +1364,23 @@ impl<BE: Backend, F> ReplicatedBootstrapping<BE, F> {
             + GLWEAutomorphismKeyEncryptSk<BE>
             + GLWETensorKeyEncryptSk<BE>
             + GLWESwitchingKeyEncryptSk<BE>
-            + GLWESecretSampling<BE>,
+            + GLWESecretSampling<BE>
+            + VecZnxAutomorphism<BE>,
     {
-        assert!(
-            layout.first_factor_key.is_none(),
-            "replicated bootstrapping requires a separate first factor"
+        let first_factor_rotations: Vec<i64> = self
+            .c2s_first_factor
+            .as_ref()
+            .map_or_else(Vec::new, |factor| factor.giant_steps.iter().map(|giant| giant.rot).collect());
+        assert_eq!(
+            layout.first_factor_key.is_some(),
+            !first_factor_rotations.is_empty(),
+            "the key layouts have a first-factor key exactly when the raise applies the first CoeffsToSlots factor"
         );
         assert!(
-            layout.encapsulation.is_none_or(|keys| keys.sparse_to_dense.is_some()),
-            "replicated bootstrapping requires a sparse-to-dense key for encapsulation"
+            layout
+                .encapsulation
+                .is_none_or(|keys| keys.sparse_to_dense.is_some() == first_factor_rotations.is_empty()),
+            "replicated bootstrapping takes a sparse-to-dense key exactly when the raise applies no first factor"
         );
         let mut rotation_keys = HashMap::new();
         for gal in self.galois_elements(module) {
@@ -1269,26 +1394,64 @@ impl<BE: Backend, F> ReplicatedBootstrapping<BE, F> {
         }
         let mut tensor_key = module.glwe_tensor_key_alloc_from_infos(&layout.tensor_key);
         module.glwe_tensor_key_encrypt_sk(&mut tensor_key, sk, source_xe, source_xa, scratch);
+        let secret_layout = GLWESecretLayout {
+            n: sk.n(),
+            rank: sk.rank(),
+        };
+        // First-factor keys: each diagonal's term is rotated with no key, which leaves it
+        // under the rotated raise secret, then switched to the secret.
+        let order = 2 * module.n() as i64;
+        let first_factor_keys = |raise_sk: &BackendGLWESecret<BE>,
+                                 source_xe: &mut Source,
+                                 source_xa: &mut Source,
+                                 scratch: &mut ScratchArena<'_, BE>| {
+            let mut keys = HashMap::with_capacity(first_factor_rotations.len());
+            if let Some(key_layout) = &layout.first_factor_key {
+                let mut rotated = module.glwe_secret_alloc_from_infos(&secret_layout);
+                *rotated.dist_mut() = *raise_sk.dist();
+                for &rotation in &first_factor_rotations {
+                    {
+                        let raise_ref = GLWESecretToBackendRef::<BE>::to_backend_ref(raise_sk);
+                        let from = scalar_znx_as_vec_znx_backend_ref_from_ref::<BE, Standard>(raise_ref.data());
+                        let mut rotated_mut = GLWESecretToBackendMut::<BE>::to_backend_mut(&mut rotated);
+                        let mut to = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE, Standard>(rotated_mut.data_mut());
+                        for col in 0..secret_layout.rank.as_usize() {
+                            module.vec_znx_automorphism(galois_element(rotation, order), &mut to, col, &from, col);
+                        }
+                    }
+                    let mut key = module.glwe_switching_key_alloc_from_infos(key_layout);
+                    module.glwe_switching_key_encrypt_sk(&mut key, &rotated, sk, source_xe, source_xa, scratch);
+                    keys.insert(rotation, key);
+                }
+            }
+            keys
+        };
+        let mut first_factor = HashMap::new();
         let encapsulation_keys = layout.encapsulation.map(|encapsulation| {
-            let mut sparse = module.glwe_secret_alloc_from_infos(&GLWESecretLayout {
-                n: sk.n(),
-                rank: sk.rank(),
-            });
+            let mut sparse = module.glwe_secret_alloc_from_infos(&secret_layout);
             module.glwe_secret_fill_ternary_hw(&mut sparse, hamming_weight, source_xs);
             *sparse.dist_mut() = Distribution::ENCAPSULATED("sparse-encapsulation");
             let mut dense_to_sparse = module.glwe_switching_key_alloc_from_infos(&encapsulation.dense_to_sparse);
             module.glwe_switching_key_encrypt_sk(&mut dense_to_sparse, sk, &sparse, source_xe, source_xa, scratch);
-            let mut sparse_to_dense = module.glwe_switching_key_alloc_from_infos(&encapsulation.sparse_to_dense.unwrap());
-            module.glwe_switching_key_encrypt_sk(&mut sparse_to_dense, &sparse, sk, source_xe, source_xa, scratch);
-            (dense_to_sparse, Some(sparse_to_dense))
+            let sparse_to_dense = encapsulation.sparse_to_dense.map(|key_layout| {
+                let mut key = module.glwe_switching_key_alloc_from_infos(&key_layout);
+                module.glwe_switching_key_encrypt_sk(&mut key, &sparse, sk, source_xe, source_xa, scratch);
+                key
+            });
+            // The raise runs under the sparse secret: so do the first factor's products.
+            first_factor = first_factor_keys(&sparse, source_xe, source_xa, scratch);
+            (dense_to_sparse, sparse_to_dense)
         });
+        if encapsulation_keys.is_none() {
+            first_factor = first_factor_keys(sk, source_xe, source_xa, scratch);
+        }
         // The replicated EvalMod runs on the standard ring.
         BootstrappingKeySet {
             rotation_keys,
             tensor_key: Some(tensor_key),
             ci_tensor_key: None,
             encapsulation_keys,
-            first_factor_keys: HashMap::new(),
+            first_factor_keys: first_factor,
             conversion_keys: None,
         }
     }
@@ -1343,7 +1506,7 @@ fn factored_transforms<BE, F>(
     packed: Option<ReplicatedLayout>,
     base2k: Base2K,
     scratch: &mut ScratchArena<'_, BE>,
-) -> Result<(ReplicatedTransform<BE>, ReplicatedTransform<BE>)>
+) -> Result<FactoredTransforms<BE>>
 where
     BE: Backend,
     F: CKKSEncodingScalar,
@@ -1354,6 +1517,7 @@ where
         c2s_factors,
         placement_factors,
         c2s_inner_log_delta_diag,
+        c2s_first_factor_on_raise,
     } = plan.transforms
     else {
         anyhow::bail!("the plan's transforms are not factored");
@@ -1413,11 +1577,38 @@ where
     }
     last.log_delta_diag = plan.c2s_log_delta_diag;
     last.shaped = true;
+    let first = if c2s_first_factor_on_raise {
+        ensure!(
+            c2s.len() > 1,
+            "a first CoeffsToSlots factor on the raise leaves the shaped last factor to the transform"
+        );
+        let mut first = c2s.remove(0);
+        first.log_delta_diag = plan.c2s_first_factor_log_delta_diag(base2k.as_usize());
+        let first = ReplicatedTransform::<BE>::encode_factor_plaintexts(module, target, base2k, first, true, scratch)?;
+        let diagonal = first.first_diagonal_plaintext().context("a transform has a diagonal")?;
+        ensure!(
+            poulpy_core::layouts::IntPolyInfos::encoded_k(diagonal).as_usize() - crate::CKKSInfos::log_delta(diagonal)
+                <= plan.c2s_first_factor_growth(base2k.as_usize()),
+            "the first CoeffsToSlots factor holds more than {C2S_FIRST_FACTOR_HEADROOM} bits above its scale"
+        );
+        Some(first)
+    } else {
+        None
+    };
     Ok((
         ReplicatedTransform::from_factors(module, layout, base2k, s2c, scratch)?,
         ReplicatedTransform::from_factors(module, target, base2k, c2s, scratch)?,
+        first,
     ))
 }
+
+/// `SlotsToCoeffs`, `CoeffsToSlots`, and the first `CoeffsToSlots` factor when
+/// the raise applies it, encoded and not yet prepared.
+type FactoredTransforms<BE> = (
+    ReplicatedTransform<BE>,
+    ReplicatedTransform<BE>,
+    Option<LinearTransformation<CKKSPlaintextOwned<BE>>>,
+);
 
 /// Multiplies the outputs of slots `from..` of `diagonals` by `-i`:
 /// `(re, im) -> (im, -re)`.

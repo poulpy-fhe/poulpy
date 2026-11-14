@@ -180,9 +180,22 @@ impl BootstrappingKeyPolicy {
         bootstrap_k: usize,
         limit: usize,
     ) -> Result<GLWESwitchingKeyLayout> {
-        let (work, _) = first_factor_work(self.base2k, bootstrap_k);
         let raised = plan.raised_window(log_modulus);
         let growth = first_factor_diagonal_growth(self.base2k, &plan.coeffs_to_slots().coeffs_meta());
+        self.first_factor_key_layout_at(raised, growth, bootstrap_k, limit)
+    }
+
+    /// [`Self::first_factor_key_layout`] for a raise into `bootstrap_k` bits of a
+    /// ciphertext that fills `raised` bits once lifted, by diagonals whose
+    /// products grow by `growth` bits once divided by their scale.
+    pub(crate) fn first_factor_key_layout_at(
+        &self,
+        raised: usize,
+        growth: usize,
+        bootstrap_k: usize,
+        limit: usize,
+    ) -> Result<GLWESwitchingKeyLayout> {
+        let (work, _) = first_factor_work(self.base2k, bootstrap_k);
         let bits = first_factor_small_bits(self.base2k, self.log_n, bootstrap_k, raised, growth);
         let small = bits.div_ceil(self.base2k);
         ensure!(

@@ -2629,13 +2629,18 @@ where
     F: TestScalar,
     E: ReimNew<F>,
 {
-    let transforms = ReplicatedTransforms::Factored {
-        s2c_factors: 2,
-        c2s_factors: 2,
-        placement_factors: 2,
-        c2s_inner_log_delta_diag: 44,
-    };
-    replicated_bootstrap_with::<BE, F>(params, module, host_module, ShapingUnit::U16_40, transforms, 19.0)
+    // The first DFT factor in CoeffsToSlots, then on the raise.
+    for c2s_first_factor_on_raise in [false, true] {
+        let transforms = ReplicatedTransforms::Factored {
+            s2c_factors: 2,
+            c2s_factors: 2,
+            placement_factors: 2,
+            c2s_inner_log_delta_diag: 44,
+            c2s_first_factor_on_raise,
+        };
+        replicated_bootstrap_with::<BE, F>(params, module, host_module, ShapingUnit::U16_40, transforms, 19.0)?;
+    }
+    Ok(())
 }
 
 /// One bootstrapping of `k = 8` values of `unit`, with full-width and
@@ -2695,12 +2700,18 @@ where
         plan.k_in() - (plan.log_delta - plan.level_log_delta),
         1,
     )?;
+    // A full-width return key beside the offset one, unless first-factor keys take its place.
     let mut full_layouts = key_layouts.clone();
-    let full = full_layouts.encapsulation.as_mut().unwrap().sparse_to_dense.as_mut().unwrap();
-    full.k_offset = 0usize.into();
-    full.dnum = poulpy_core::layouts::GGLWELayout::dnum_for_input(plan.k_boot(k_out).into(), full.k_digit);
+    let sets = match full_layouts.encapsulation.as_mut().unwrap().sparse_to_dense.as_mut() {
+        Some(full) => {
+            full.k_offset = 0usize.into();
+            full.dnum = poulpy_core::layouts::GGLWELayout::dnum_for_input(plan.k_boot(k_out).into(), full.k_digit);
+            vec![&full_layouts, &key_layouts]
+        }
+        None => vec![&key_layouts],
+    };
     let mut decoded = Vec::new();
-    for key_layouts in [&full_layouts, &key_layouts] {
+    for key_layouts in sets {
         let (mut xs, mut xe, mut xa) = (Source::new([3; 32]), Source::new([4; 32]), Source::new([5; 32]));
         let mut keygen = ScratchOwned::<BE>::alloc(
             ctx.generate_keys_tmp_bytes(module, key_layouts)
@@ -2732,11 +2743,13 @@ where
         assert!(bits >= min_bits, "replicated bootstrapping of {unit:?}: {bits:.2} bits");
         decoded.push(got);
     }
-    let bits = precision((&decoded[0].0, &decoded[0].1), (&decoded[1].0, &decoded[1].1));
-    assert!(
-        bits >= min_bits - 1.0,
-        "offset and full-width replicated bootstrapping differ by {bits:.2} bits"
-    );
+    if let [full, offset] = &decoded[..] {
+        let bits = precision((&full.0, &full.1), (&offset.0, &offset.1));
+        assert!(
+            bits >= min_bits - 1.0,
+            "offset and full-width replicated bootstrapping differ by {bits:.2} bits"
+        );
+    }
     Ok(())
 }
 

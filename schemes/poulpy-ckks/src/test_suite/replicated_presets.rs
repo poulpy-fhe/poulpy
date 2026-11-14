@@ -26,7 +26,7 @@ use crate::{
     CKKSInfos, CKKSLayout, GLWEPlaintextInfos, GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotLayout, SlotsKind,
     api::{
         CKKSCopyOps, CKKSDecryptOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncryptOps, CKKSLinearTransformationOps,
-        CKKSModuleInfos, CKKSReplicatedBootstrapOps,
+        CKKSModuleInfos, CKKSReplicatedBootstrapOps, CKKSRightOperandPreparedFactory,
     },
     layouts::{
         BootstrappingKeysLayout, BootstrappingKeysPrepared, CKKSCiphertextAlloc, CKKSCiphertextOwned, CKKSPlaintextAlloc,
@@ -45,6 +45,7 @@ pub trait ReplicatedBootstrappingModule<BE: Backend>:
     + CKKSEncodingOps<BE, f64>
     + CKKSReplicatedBootstrapOps<BE>
     + CKKSLinearTransformationOps<BE>
+    + CKKSRightOperandPreparedFactory<BE>
     + CnvPVecAlloc<BE>
     + GLWETrace<BE>
     + GLWECIKeyPreparedFactory<BE>
@@ -57,6 +58,7 @@ impl<BE: Backend, M> ReplicatedBootstrappingModule<BE> for M where
         + CKKSEncodingOps<BE, f64>
         + CKKSReplicatedBootstrapOps<BE>
         + CKKSLinearTransformationOps<BE>
+        + CKKSRightOperandPreparedFactory<BE>
         + CnvPVecAlloc<BE>
         + GLWETrace<BE>
         + GLWECIKeyPreparedFactory<BE>
@@ -73,6 +75,7 @@ pub trait ReplicatedBootstrappingDeviceModule<BE: Backend>:
     + CKKSEncodingOps<BE, f64>
     + CKKSReplicatedBootstrapOps<BE>
     + CKKSLinearTransformationOps<BE>
+    + CKKSRightOperandPreparedFactory<BE>
     + CnvPVecAlloc<BE>
     + GLWETrace<BE>
     + GLWEAutomorphismKeyPreparedFactory<BE>
@@ -90,6 +93,7 @@ impl<BE: Backend, M> ReplicatedBootstrappingDeviceModule<BE> for M where
         + CKKSEncodingOps<BE, f64>
         + CKKSReplicatedBootstrapOps<BE>
         + CKKSLinearTransformationOps<BE>
+        + CKKSRightOperandPreparedFactory<BE>
         + CnvPVecAlloc<BE>
         + GLWETrace<BE>
         + GLWEAutomorphismKeyPreparedFactory<BE>
