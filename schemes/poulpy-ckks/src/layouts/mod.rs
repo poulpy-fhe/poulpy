@@ -173,8 +173,8 @@ pub use eval_mod::{
     CKKSEvalModInfos, EvalMod, EvalModBsgs, EvalModPlan, EvalModPoly, EvalModType, ckks_eval_mod_compile,
     ckks_eval_mod_replicated_compile, ckks_eval_mod_replicated_packed_compile,
 };
-pub use functional_bootstrapping::EncodedLut;
 pub(crate) use functional_bootstrapping::EncodedLutKind;
+pub use functional_bootstrapping::{EncodedLut, ReplicatedLut};
 pub use masked::{CKKSMaskedConstants, MaskedCoeffs, encode_bsgs_replicated, encode_complex_bsgs_replicated};
 pub use mod_raise::{CKKSModRaiseInfos, ModRaisePlan, ModRaisePrepared};
 #[allow(deprecated)]
@@ -186,8 +186,8 @@ pub use paco::{
 };
 pub use plaintext::{CKKSPlaintext, CKKSPlaintextOwned, CKKSPlaintextViewMut};
 pub use replicated::{
-    ReplicatedBootstrapPlan, ReplicatedBootstrapWorkspace, ReplicatedBootstrapping, ReplicatedConversion, ReplicatedTransform,
-    ReplicatedTransformWorkspace, ReplicatedTransforms,
+    ReplicatedBootstrapPlan, ReplicatedBootstrapWorkspace, ReplicatedBootstrapping, ReplicatedConversion, ReplicatedFunctional,
+    ReplicatedTransform, ReplicatedTransformWorkspace, ReplicatedTransforms,
 };
 pub use ship::{
     HMuxRotKey, HMuxRotKeyPrepared, ShipCoeffEncodings, ShipIndexKeys, ShipIndexKeysPrepared, ShipKeyParameters, ShipKeySet,

@@ -307,7 +307,7 @@ fn key_layouts(
     plan: &ReplicatedBootstrapPlan,
     widths: &BootstrappingKeyWidths,
 ) -> Result<BootstrappingKeysLayout> {
-    let raise_input_k = plan.log_delta + plan.eval_mod.log_msg_ratio;
+    let raise_input_k = plan.log_delta + plan.log_msg_ratio();
     let window = raise_input_k + plan.mod_up_extra_bits;
     let raised = plan.k_boot(output_k(plan, spec.levels));
     let policy = key_policy(spec);
@@ -492,7 +492,7 @@ mod tests {
                 crate::layouts::validation::check_offset_raise(
                     "replicated_bootstrapping_preset",
                     raised,
-                    plan.log_delta + plan.eval_mod.log_msg_ratio,
+                    plan.log_delta + plan.log_msg_ratio(),
                     plan.mod_up_extra_bits,
                     &return_key,
                 )
@@ -501,7 +501,7 @@ mod tests {
                     crate::layouts::validation::check_offset_raise(
                         "replicated_bootstrapping_preset",
                         raised + 1,
-                        plan.log_delta + plan.eval_mod.log_msg_ratio,
+                        plan.log_delta + plan.log_msg_ratio(),
                         plan.mod_up_extra_bits,
                         &return_key,
                     )

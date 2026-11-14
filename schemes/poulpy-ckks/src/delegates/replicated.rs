@@ -10,7 +10,7 @@ use crate::{
     api::{CKKSReplicatedBootstrapOps, CKKSReplicatedCIBootstrapOps, CKKSReplicatedOps},
     layouts::{
         BootstrappingKeys, BootstrappingKeysLayout, ReplicatedBootstrapWorkspace, ReplicatedBootstrapping, ReplicatedConversion,
-        ReplicatedTransformWorkspace,
+        ReplicatedLut, ReplicatedTransformWorkspace,
     },
     oep::{CKKSReplicatedBootstrapImpl, CKKSReplicatedCIBootstrapImpl, CKKSReplicatedImpl},
 };
@@ -94,6 +94,39 @@ impl<BE: Backend + CKKSReplicatedBootstrapImpl> CKKSReplicatedBootstrapOps<BE> f
         K: BootstrappingKeys<BE>,
     {
         BE::ckks_replicated_bootstrap(self, dst, src, ctx, workspace, keys, scratch)
+    }
+
+    fn ckks_replicated_functional_bootstrap_tmp_bytes<C, I, F>(
+        &self,
+        ct_out: &C,
+        ct_in: &I,
+        ctx: &ReplicatedBootstrapping<BE, F>,
+        luts: &[ReplicatedLut<BE>],
+        keys_layout: &BootstrappingKeysLayout,
+    ) -> usize
+    where
+        C: CKKSCtBounds,
+        I: CKKSCtBounds,
+    {
+        BE::ckks_replicated_functional_bootstrap_tmp_bytes(self, ct_out, ct_in, ctx, luts, keys_layout)
+    }
+
+    fn ckks_replicated_functional_bootstrap<Dst, Src, F, K>(
+        &self,
+        dst: &mut [Dst],
+        src: &Src,
+        ctx: &ReplicatedBootstrapping<BE, F>,
+        luts: &[ReplicatedLut<BE>],
+        workspace: &mut ReplicatedBootstrapWorkspace<BE>,
+        keys: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
+        K: BootstrappingKeys<BE>,
+    {
+        BE::ckks_replicated_functional_bootstrap(self, dst, src, ctx, luts, workspace, keys, scratch)
     }
 }
 

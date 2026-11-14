@@ -86,6 +86,16 @@ The preset now leaves its first `CoeffsToSlots` factor to the raise, which narro
 The bootstrapping looks every key up at its width before any work.
 A preset shapes each key from its width with the shared `BootstrappingKeyPolicy` of the standard presets: the whole-limb digit of fewest rows under the modulus bound of the secret, or, when no whole limb fits that bound, the digit of fewest rows of any width.
 
+### Functional bootstrapping
+
+`ReplicatedBootstrapPlan::with_functional_bootstrap(&lut)` turns the bootstrapping into a lookup table of `p` entries on integer messages: `SlotsToCoeffs` scales the messages by `2^r/p`, `r = ceil(log2(p))` the message ratio, so that the coefficients carry the phase `m/p`, and the plan runs unpacked.
+The EvalMod plan is the complex exponential, `EvalModPlan::complex_exponential`, at the scale `eval_mod_log_delta` of the unit.
+`EncodedLut::general_replicated` encodes the LUT's constants as masked plaintexts at `ReplicatedBootstrapPlan::functional_lut_log_delta(p)`, the raised scale, at which the exponential returns, and the widths count the LUT's budget there.
+`CKKSReplicatedBootstrapOps::ckks_replicated_functional_bootstrap` takes one output per LUT, all of one width, and writes `table[m mod p]` at the leveled scale.
+It runs the stages up to `CoeffsToSlots` once, then the exponential and each LUT's interpolation `T + conj(T)` on the real part, and for complex slots on the imaginary part too, recombined; two or more LUTs share the exponential and its powers.
+Binary LUTs are not taken: their double-angle chain subtracts constants, which a replicated layout adds only as masked plaintexts.
+On a test ring at `k = 8` with `U16_40`, a table of 5 entries keeps 26.8 bits on real and complex slots, alone or beside a second LUT, and a table of values up to 16 keeps 24.7 bits.
+
 ### Presets
 
 `poulpy_ckks::presets::replicated_bootstrapping` provides three parameter sets for 128-bit security, with dense secrets of weight 1024 and an ephemeral ModUp secret of weight 32.

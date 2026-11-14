@@ -29,15 +29,16 @@ use crate::layouts::{
     CKKSRightOperandPrepared, DFTType, dft_matrices::ckks_dft_matrices_gen_blockwise, mod_raise::first_factor_prepare,
 };
 use crate::{
-    CKKSLayout, CKKSModuleInfos, CoeffsMeta, GLWEPlaintextMeta, ReplicatedLayout, Scale, SetCKKSInfos, SetGLWEPlaintextInfos,
-    SlotLayout, SlotsKind,
+    CKKSInfos, CKKSLayout, CKKSModuleInfos, CoeffsMeta, GLWEPlaintextMeta, ReplicatedLayout, Scale, SetCKKSInfos,
+    SetGLWEPlaintextInfos, SlotLayout, SlotsKind,
     api::{
         CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar, CKKSLinearTransformationOps, CKKSRightOperandPreparedFactory,
     },
     encoding::linear_transformation::period_degree,
+    layouts::functional_bootstrapping::table_log_msg_ratio,
     layouts::{
         BootstrappingKeySet, BootstrappingKeyWidths, BootstrappingKeysLayout, CKKSCiphertextAlloc, CKKSLinearTransformationAlloc,
-        CKKSPlaintextAlloc, CKKSPlaintextOwned, ComplexDiagonals, EncapsulationKeysLayout, MaskedCoeffs,
+        CKKSPlaintextAlloc, CKKSPlaintextOwned, ComplexDiagonals, EncapsulationKeysLayout, EncodedLut, MaskedCoeffs,
         eval_mod::{
             EvalMod, EvalModPlan, EvalModType, ckks_eval_mod_replicated_compile, ckks_eval_mod_replicated_packed_compile,
         },
@@ -797,6 +798,21 @@ pub struct ReplicatedBootstrapPlan {
     pub packed: bool,
     /// The evaluation of `SlotsToCoeffs` and `CoeffsToSlots`.
     pub transforms: ReplicatedTransforms,
+    /// The LUT step of a functional bootstrapping in place of EvalMod, set by
+    /// [`Self::with_functional_bootstrap`].
+    pub functional: Option<ReplicatedFunctional>,
+}
+
+/// The LUT step of a functional replicated bootstrapping
+/// ([`ReplicatedBootstrapPlan::with_functional_bootstrap`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ReplicatedFunctional {
+    /// Entries `p` of the tables, the modulus of the integer messages.
+    pub message_modulus: usize,
+    /// `ceil(log2(p))`: the coefficient message ratio `q_b/Δ_b`.
+    pub log_msg_ratio: usize,
+    /// Bits a LUT of the batch consumes at the raised scale.
+    pub lut_consumed_bits: usize,
 }
 
 impl ReplicatedBootstrapPlan {
@@ -828,7 +844,69 @@ impl ReplicatedBootstrapPlan {
             },
             packed: true,
             transforms: ReplicatedTransforms::Dense,
+            functional: None,
         }
+    }
+
+    /// Configures the functional bootstrapping of integer messages modulo `p`,
+    /// the entries of `lut`: `SlotsToCoeffs` scales the messages by `2^r/p`,
+    /// `r = ceil(log2(p))` the message ratio, so that the coefficients carry the
+    /// phase `m/p`; the complex exponential of the EvalMod plan
+    /// ([`EvalModPlan::complex_exponential`]) and the LUT's interpolation take
+    /// the place of EvalMod; and the plan runs unpacked. The widths count the
+    /// LUT at the raised scale ([`Self::functional_lut_log_delta`]), at which
+    /// `lut`'s constants must be encoded.
+    ///
+    /// # Errors
+    ///
+    /// When the EvalMod plan is not the complex exponential, `lut` is not a
+    /// general LUT, or its constants are at another scale.
+    pub fn with_functional_bootstrap<P: CKKSInfos>(mut self, lut: &EncodedLut<P>) -> Result<Self> {
+        ensure!(
+            self.eval_mod.eval_mod_type == EvalModType::ExpCmplx,
+            "functional bootstrapping takes the complex exponential (EvalModPlan::complex_exponential)"
+        );
+        ensure!(lut.requires_eval_mod(), "functional bootstrapping takes a general LUT");
+        let raised = self.functional_lut_log_delta(lut.message_modulus())?;
+        ensure!(
+            lut.coeffs().log_delta() == raised,
+            "the LUT's constants must be at the raised scale 2^{raised}, got 2^{}",
+            lut.coeffs().log_delta()
+        );
+        self.packed = false;
+        self.functional = Some(ReplicatedFunctional {
+            message_modulus: lut.message_modulus(),
+            log_msg_ratio: lut.log_msg_ratio(),
+            lut_consumed_bits: lut.consumed_bits(raised),
+        });
+        Ok(self)
+    }
+
+    /// Scale of the raised ciphertext of a functional bootstrapping of
+    /// messages modulo `message_modulus`, at which the exponential returns and
+    /// its LUTs' constants are encoded: `Δ_b`, the message ratio and the ModUp
+    /// bits.
+    ///
+    /// # Errors
+    ///
+    /// For fewer than two entries.
+    pub fn functional_lut_log_delta(&self, message_modulus: usize) -> Result<usize> {
+        ensure!(message_modulus >= 2, "a LUT takes at least two entries");
+        Ok(self.log_delta + table_log_msg_ratio(message_modulus)? + self.mod_up_extra_bits)
+    }
+
+    /// The coefficient message ratio `q_b/Δ_b`: the LUT's of a functional plan, else EvalMod's.
+    pub fn log_msg_ratio(&self) -> usize {
+        self.functional
+            .map_or(self.eval_mod.log_msg_ratio, |functional| functional.log_msg_ratio)
+    }
+
+    /// The scaling of `SlotsToCoeffs`: `2^r/p` for a functional plan, so that
+    /// the coefficients carry the phase `m/p`, else one.
+    pub(crate) fn s2c_scaling(&self) -> f64 {
+        self.functional.map_or(1.0, |functional| {
+            (1u64 << functional.log_msg_ratio) as f64 / functional.message_modulus as f64
+        })
     }
 
     /// EvalMod scale of [`Self::paper`] for `layout`: `2^28`, or
@@ -912,14 +990,18 @@ impl ReplicatedBootstrapPlan {
     /// Width of the input at scale `Δ_b`: the message ratio and the bits
     /// `SlotsToCoeffs` consumes above it.
     pub fn k_in(&self) -> usize {
-        self.log_delta + self.eval_mod.log_msg_ratio + self.s2c_consumed_bits()
+        self.log_delta + self.log_msg_ratio() + self.s2c_consumed_bits()
     }
 
     /// Width after ModUp for an output of width `k_out`: `CoeffsToSlots`,
     /// EvalMod, and the rescale from `Δ_b`, lifted by the ModUp bits, to the
-    /// leveled scale.
+    /// leveled scale; for a functional plan also the LUT, and the rescale from
+    /// the raised scale, which the table values keep.
     pub fn k_boot(&self, k_out: usize) -> usize {
-        k_out + self.c2s_consumed_bits() + self.eval_mod.consumed_bits() + self.log_delta + self.mod_up_extra_bits
+        let lut = self
+            .functional
+            .map_or(0, |functional| functional.lut_consumed_bits + functional.log_msg_ratio);
+        k_out + self.c2s_consumed_bits() + self.eval_mod.consumed_bits() + lut + self.log_delta + self.mod_up_extra_bits
             - self.level_log_delta
     }
 
@@ -934,7 +1016,7 @@ impl ReplicatedBootstrapPlan {
     /// at the raised scale, the message ratio and the ModUp bits.
     pub fn tensor_key_k(&self, k_out: usize) -> usize {
         let after_c2s = self.k_boot(k_out) - self.c2s_consumed_bits();
-        let raised_log_delta = self.log_delta + self.eval_mod.log_msg_ratio + self.mod_up_extra_bits;
+        let raised_log_delta = self.log_delta + self.log_msg_ratio() + self.mod_up_extra_bits;
         self.eval_mod.relinearization_k(after_c2s - raised_log_delta)
     }
 
@@ -991,7 +1073,7 @@ impl ReplicatedBootstrapPlan {
                 k_digit: digit,
             },
             encapsulation: encapsulation.then(|| {
-                let k_small = self.log_delta + self.eval_mod.log_msg_ratio;
+                let k_small = self.log_delta + self.log_msg_ratio();
                 let mut sparse_to_dense = switching(k_small + self.mod_up_extra_bits, digit, k_aux);
                 let gadget = sparse_to_dense.dnum.0 as usize * k_digit;
                 sparse_to_dense.k_offset = self.k_boot(k_out).saturating_sub(gadget).into();
@@ -1004,7 +1086,7 @@ impl ReplicatedBootstrapPlan {
             first_factor_key: self.c2s_first_factor_on_raise().then(|| {
                 let k_boot = self.k_boot(k_out);
                 let (work, _) = first_factor_work(base2k.as_usize(), k_boot);
-                let window = self.log_delta + self.eval_mod.log_msg_ratio + self.mod_up_extra_bits;
+                let window = self.log_delta + self.log_msg_ratio() + self.mod_up_extra_bits;
                 let log_n = n.as_usize().ilog2() as usize;
                 let small = first_factor_small_bits(
                     base2k.as_usize(),
@@ -1115,13 +1197,17 @@ impl<BE: Backend, F: CKKSEncodingScalar> ReplicatedBootstrapping<BE, F> {
         let transforms = match plan.transforms {
             ReplicatedTransforms::Dense => {
                 let v = embedding::<BE, F>(module, k, base2k, scratch)?;
+                let s2c_scaling = F::from_f64(plan.s2c_scaling()).context("the SlotsToCoeffs scaling is not representable")?;
                 let s2c = ReplicatedTransform::gather(
                     module,
                     layout,
                     base2k,
                     plan.s2c_log_delta_diag,
                     false,
-                    |c, j| v[c][j],
+                    |c, j| {
+                        let (re, im) = v[c][j];
+                        (re * s2c_scaling, im * s2c_scaling)
+                    },
                     scratch,
                 )?;
                 let scale = F::from_usize(2 * k * plan.eval_mod.f_mod_interval)
@@ -1549,7 +1635,7 @@ where
             log_k,
             log_k + log_r,
             &split_depth(log_k, s2c_factors),
-            1.0,
+            plan.s2c_scaling(),
             false,
         ))
         .map(unshaped(plan.s2c_log_delta_diag))

@@ -63,7 +63,7 @@ use crate::{
     layouts::{
         CKKSCiphertextAlloc, CKKSCiphertextOwned, CKKSEncodingBuffer, CKKSPlaintextAlloc, CKKSPlaintextOwned, EncodedLut,
         EvalMod, EvalModPlan, EvalModPoly, EvalModType, ReplicatedBootstrapPlan, ReplicatedBootstrapping, ReplicatedConversion,
-        ReplicatedTransform, ReplicatedTransforms, ckks_eval_mod_compile, ckks_eval_mod_replicated_compile,
+        ReplicatedLut, ReplicatedTransform, ReplicatedTransforms, ckks_eval_mod_compile, ckks_eval_mod_replicated_compile,
         ckks_eval_mod_replicated_packed_compile, encode_bsgs_replicated, encode_complex_bsgs_replicated,
     },
     oep::CKKSEncapsulatedModUpImpl,
@@ -2998,6 +2998,210 @@ where
             "offset and full-width replicated bootstrapping differ by {bits:.2} bits"
         );
     }
+    Ok(())
+}
+
+/// Functional bootstrapping of `k = 8` integers modulo `p = 5`, negative ones and ones past `p` among them, with the
+/// complex exponential of the paper's EvalMod parameters: one LUT and two sharing the exponential, on real slots
+/// through the real part and on complex slots through both parts; and the refusals of a plan and LUTs that do not
+/// match.
+pub fn test_replicated_functional_bootstrap<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) -> Result<()>
+where
+    BE: TestContextBackend + CKKSEncapsulatedModUpImpl,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextModule<BE>
+        + CKKSEncodingOps<BE, F>
+        + CKKSReplicatedBootstrapOps<BE>
+        + CKKSLinearTransformationOps<BE>
+        + CnvPVecAlloc<BE>
+        + GLWETrace<BE>
+        + GLWECIKeyPreparedFactory<BE>
+        + poulpy_core::api::GLWETensorKeyPreparedFactory<BE, ConjugateInvariant>,
+    F: TestScalar,
+    E: ReimNew<F>,
+{
+    const OP: &str = "ckks_replicated_functional_bootstrap";
+    let layout = ShapingUnit::U16_40.layout(3)?;
+    let paper = ReplicatedBootstrapPlan::paper(layout);
+    let em = paper.eval_mod;
+    let plan = ReplicatedBootstrapPlan {
+        eval_mod: EvalModPlan::complex_exponential(
+            em.f_mod_degree,
+            em.f_mod_interval,
+            em.f_mod_log_interval_reduction,
+            em.split_strategy,
+            em.coeffs_meta,
+            em.f_mod_log_delta,
+        ),
+        ..paper
+    };
+    let base2k = Base2K(params.base2k as u32);
+    let tables: [Vec<F>; 2] = [[1.0, -2.0, 0.5, 3.0, -1.5], [0.0, 1.0, 4.0, 9.0, 16.0]]
+        .map(|table| table.iter().map(|&v| F::from_f64(v).unwrap()).collect());
+    let p = tables[0].len();
+    let lut_meta = CoeffsMeta::from_delta_budget(plan.functional_lut_log_delta(p)?, 20);
+    let mut encoding = ScratchOwned::<BE>::alloc(ReplicatedLut::<BE>::general_replicated_tmp_bytes::<BE, F>(module));
+    let encode = |table: &[F], meta: CoeffsMeta, encoding: &mut ScratchOwned<BE>| {
+        ReplicatedLut::<BE>::general_replicated(
+            module,
+            table,
+            base2k,
+            meta,
+            SplitStrategy::MinDepth,
+            layout,
+            &mut encoding.borrow(),
+        )
+    };
+    let luts = [
+        encode(&tables[0], lut_meta, &mut encoding)?,
+        encode(&tables[1], lut_meta, &mut encoding)?,
+    ];
+    // The paper's cosine is no exponential, and a LUT takes the raised scale.
+    assert!(paper.with_functional_bootstrap(&luts[0]).is_err());
+    let off_scale = encode(
+        &tables[0],
+        CoeffsMeta::from_delta_budget(lut_meta.log_delta() + 1, 20),
+        &mut encoding,
+    )?;
+    assert!(plan.with_functional_bootstrap(&off_scale).is_err());
+    let plan = plan.with_functional_bootstrap(&luts[0])?;
+    assert!(!plan.packed);
+
+    let mut compile = ScratchOwned::<BE>::alloc(ReplicatedBootstrapping::<BE, F>::new_tmp_bytes(module, &plan, base2k)?);
+    let ctx = ReplicatedBootstrapping::<BE, F>::new(module, plan, base2k, &mut compile.borrow())?;
+    let k_out = plan.k_in() + plan.level_log_delta;
+    let key_layouts = plan.key_layouts(
+        &ctx.galois_elements(module),
+        params.n.into(),
+        base2k,
+        k_out,
+        params.base2k,
+        params.base2k + 1,
+        true,
+    );
+    let (sk_raw, sk) = gen_sk_with_raw::<_, Standard>(&params, module, host_module, [0u8; 32]);
+    let (mut xs, mut xe, mut xa) = (Source::new([3; 32]), Source::new([4; 32]), Source::new([5; 32]));
+    let mut keygen = ScratchOwned::<BE>::alloc(
+        ctx.generate_keys_tmp_bytes(module, &key_layouts)
+            .max(key_layouts.prepare_tmp_bytes(module)),
+    );
+    let keys = ctx
+        .generate_keys(
+            module,
+            &sk_raw,
+            &key_layouts,
+            16,
+            &mut xs,
+            &mut xe,
+            &mut xa,
+            &mut keygen.borrow(),
+        )
+        .prepare(module, &mut keygen.borrow())?;
+
+    let len = 1 << layout.log_k();
+    let messages: [i64; 8] = [0, 1, 2, 3, 4, -1, 7, -3];
+    let others: [i64; 8] = [2, -4, 9, 0, 3, 1, -2, 6];
+    let as_f = |m: &[i64]| -> Vec<F> { m[..len].iter().map(|&m| F::from_f64(m as f64).unwrap()).collect() };
+    let lookup =
+        |table: &[F], m: &[i64]| -> Vec<F> { m[..len].iter().map(|&m| table[m.rem_euclid(p as i64) as usize]).collect() };
+    let k_in = plan.k_in() - (plan.log_delta - plan.level_log_delta);
+    // The integers at the leveled scale, on a plaintext of a few bits of budget.
+    let encrypt = |re: &[F], im: &[F]| -> Result<CKKSCiphertextOwned<BE>> {
+        let mut pt = module.ckks_plaintext_alloc_from_slots(
+            slots_of::<BE, Standard>(module, SlotLayout::Replicated(layout), len),
+            base2k,
+            TorusPrecision((plan.level_log_delta + 8) as u32),
+        );
+        pt.set_meta(GLWEPlaintextMeta {
+            scale: Scale::Log(plan.level_log_delta),
+            slots: SlotsKind::Complex,
+            log_sparsity: 0,
+            slot_layout: SlotLayout::Replicated(layout),
+        });
+        encoded(module, &mut pt, re, im)?;
+        let mut ct = alloc_ct::<_, Standard>(&params, module, k_in);
+        let (mut xe, mut xa) = (Source::new([6; 32]), Source::new([7; 32]));
+        with_scratch::<BE, _>(module.ckks_encrypt_sk_tmp_bytes(&ct), |s| {
+            module.ckks_encrypt_sk(&mut ct, &pt, &sk, &mut xe, &mut xa, s)
+        })?;
+        Ok(ct)
+    };
+    let mut workspace = ctx.alloc_workspace(module, &alloc_ct::<_, Standard>(&params, module, k_out));
+    for real in [true, false] {
+        let im = if real { vec![F::zero(); len] } else { as_f(&others) };
+        let mut input = encrypt(&as_f(&messages), &im)?;
+        if real {
+            input.set_slots(SlotsKind::Real);
+        }
+        for count in [1, 2] {
+            let luts = &luts[..count];
+            let mut outs: Vec<_> = (0..count).map(|_| alloc_ct::<_, Standard>(&params, module, k_out)).collect();
+            let bytes = module.ckks_replicated_functional_bootstrap_tmp_bytes(&outs[0], &input, &ctx, luts, &key_layouts);
+            let logged = LoggedBootstrappingKeys::new::<BE>(&keys);
+            with_scratch::<BE, _>(bytes, |s| {
+                module.ckks_replicated_functional_bootstrap(&mut outs, &input, &ctx, luts, &mut workspace, &logged, s)
+            })?;
+            logged.assert_lookups_at(&ctx.key_widths(module, k_out), "replicated functional bootstrapping");
+            for (index, out) in outs.iter().enumerate() {
+                assert_eq!(out.slot_layout(), SlotLayout::Replicated(layout));
+                assert_eq!(GLWEPlaintextInfos::slots(out).is_real(), real);
+                assert_eq!((out.log_delta(), out.k().as_usize()), (plan.level_log_delta, k_out));
+                let want_re = lookup(&tables[index], &messages);
+                let want_im = if real {
+                    vec![F::zero(); len]
+                } else {
+                    lookup(&tables[index], &others)
+                };
+                let got = decrypt_batch::<BE, F, Standard>(&params, module, &sk, out, len);
+                let bits = precision((&got.0, &got.1), (&want_re, &want_im));
+                // Measured on the portable backends: 24.7 to 26.8 bits.
+                assert!(
+                    bits >= 22.0,
+                    "replicated functional bootstrapping, real {real}, LUT {index} of {count}: {bits:.2} bits"
+                );
+            }
+        }
+    }
+
+    // The identity bootstrapping refuses a functional context, and the functional one outputs other than one per LUT,
+    // and a LUT of another modulus.
+    let input = encrypt(&as_f(&messages), &as_f(&others))?;
+    let mut out = alloc_ct::<_, Standard>(&params, module, k_out);
+    let bytes = module.ckks_replicated_functional_bootstrap_tmp_bytes(&out, &input, &ctx, &luts, &key_layouts);
+    let err = with_scratch::<BE, _>(bytes, |s| {
+        module.ckks_replicated_bootstrap(&mut out, &input, &ctx, &mut workspace, &keys, s)
+    })
+    .expect_err("a functional context");
+    assert_invalid(&err, "ckks_replicated_bootstrap");
+    let mut outs = vec![alloc_ct::<_, Standard>(&params, module, k_out)];
+    let err = with_scratch::<BE, _>(bytes, |s| {
+        module.ckks_replicated_functional_bootstrap(&mut outs, &input, &ctx, &luts, &mut workspace, &keys, s)
+    })
+    .expect_err("one output for two LUTs");
+    assert_invalid(&err, OP);
+    let four = encode(
+        &tables[0][..4],
+        CoeffsMeta::from_delta_budget(plan.functional_lut_log_delta(4)?, 20),
+        &mut encoding,
+    )?;
+    let err = with_scratch::<BE, _>(bytes, |s| {
+        module.ckks_replicated_functional_bootstrap(
+            &mut outs,
+            &input,
+            &ctx,
+            std::slice::from_ref(&four),
+            &mut workspace,
+            &keys,
+            s,
+        )
+    })
+    .expect_err("a LUT of another modulus");
+    assert_invalid(&err, OP);
     Ok(())
 }
 

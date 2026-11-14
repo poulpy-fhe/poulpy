@@ -9,7 +9,7 @@ use crate::{
     CKKSCtBounds, SetCKKSInfos,
     layouts::{
         BootstrappingKeys, BootstrappingKeysLayout, ReplicatedBootstrapWorkspace, ReplicatedBootstrapping, ReplicatedConversion,
-        ReplicatedTransformWorkspace,
+        ReplicatedLut, ReplicatedTransformWorkspace,
     },
 };
 
@@ -144,6 +144,53 @@ pub trait CKKSReplicatedBootstrapOps<BE: Backend> {
         dst: &mut Dst,
         src: &Src,
         ctx: &ReplicatedBootstrapping<BE, F>,
+        workspace: &mut ReplicatedBootstrapWorkspace<BE>,
+        keys: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
+        K: BootstrappingKeys<BE>;
+
+    /// Scratch of [`Self::ckks_replicated_functional_bootstrap`] with keys of `keys_layout`, whatever the number of
+    /// LUTs.
+    fn ckks_replicated_functional_bootstrap_tmp_bytes<C, I, F>(
+        &self,
+        ct_out: &C,
+        ct_in: &I,
+        ctx: &ReplicatedBootstrapping<BE, F>,
+        luts: &[ReplicatedLut<BE>],
+        keys_layout: &BootstrappingKeysLayout,
+    ) -> usize
+    where
+        C: CKKSCtBounds,
+        I: CKKSCtBounds;
+
+    /// Refreshes `src`, which holds integer messages modulo `p` at the scale
+    /// `Δ_b` or the leveled scale, and applies each LUT of `luts`, of `p`
+    /// entries, writing `table[m mod p]` into the output of the same index, at
+    /// the leveled scale and its width, all outputs of one width. The context
+    /// is compiled from a plan configured with
+    /// [`ReplicatedBootstrapPlan::with_functional_bootstrap`](crate::layouts::ReplicatedBootstrapPlan::with_functional_bootstrap):
+    /// steps 1 to 5 of [`Self::ckks_replicated_bootstrap`], then the complex
+    /// exponential of each part and each LUT's interpolation, `T + conj(T)`,
+    /// in place of EvalMod, the parts recombined, or of real slots the real
+    /// part alone. A batch of LUTs shares the stages up to `CoeffsToSlots`, and
+    /// two or more share the exponential and its powers.
+    ///
+    /// # Errors
+    /// Those of [`Self::ckks_replicated_bootstrap`] before writing `dst`, a plan
+    /// without a LUT step, outputs other than one per LUT at one width, and
+    /// LUTs of another modulus, another scale or more budget than the plan's
+    /// ([`crate::CKKSCompositionError::InvalidOperand`]).
+    #[allow(clippy::too_many_arguments)]
+    fn ckks_replicated_functional_bootstrap<Dst, Src, F, K>(
+        &self,
+        dst: &mut [Dst],
+        src: &Src,
+        ctx: &ReplicatedBootstrapping<BE, F>,
+        luts: &[ReplicatedLut<BE>],
         workspace: &mut ReplicatedBootstrapWorkspace<BE>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,

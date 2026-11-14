@@ -9,7 +9,7 @@ use crate::{
     CKKSCtBounds, SetCKKSInfos,
     layouts::{
         BootstrappingKeys, BootstrappingKeysLayout, ReplicatedBootstrapWorkspace, ReplicatedBootstrapping, ReplicatedConversion,
-        ReplicatedTransformWorkspace,
+        ReplicatedLut, ReplicatedTransformWorkspace,
     },
     oep::derived::replicated::{
         ckks_from_replicated_derived, ckks_replicated_conversion_tmp_bytes_derived, ckks_to_replicated_derived,
@@ -139,6 +139,39 @@ pub unsafe trait CKKSReplicatedBootstrapImpl: Backend {
         Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<Self> + CKKSCtBounds,
         K: BootstrappingKeys<Self>;
+
+    /// Scratch bound of [`Self::ckks_replicated_functional_bootstrap`]; may report less than the reference, never less
+    /// than the body takes.
+    fn ckks_replicated_functional_bootstrap_tmp_bytes<C, I, F>(
+        module: &Module<Self>,
+        ct_out: &C,
+        ct_in: &I,
+        ctx: &ReplicatedBootstrapping<Self, F>,
+        luts: &[ReplicatedLut<Self>],
+        keys_layout: &BootstrappingKeysLayout,
+    ) -> usize
+    where
+        C: CKKSCtBounds,
+        I: CKKSCtBounds;
+
+    /// Reproduces
+    /// [`ckks_replicated_functional_bootstrap_reference`](crate::reference::replicated::CKKSReplicatedBootstrapReference::ckks_replicated_functional_bootstrap_reference)
+    /// bit for bit.
+    #[allow(clippy::too_many_arguments)]
+    fn ckks_replicated_functional_bootstrap<Dst, Src, F, K>(
+        module: &Module<Self>,
+        dst: &mut [Dst],
+        src: &Src,
+        ctx: &ReplicatedBootstrapping<Self, F>,
+        luts: &[ReplicatedLut<Self>],
+        workspace: &mut ReplicatedBootstrapWorkspace<Self>,
+        keys: &K,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<Self> + CKKSCtBounds,
+        K: BootstrappingKeys<Self>;
 }
 
 /// Backend contract of [`CKKSReplicatedCIBootstrapOps`](crate::api::CKKSReplicatedCIBootstrapOps), the
@@ -239,6 +272,51 @@ macro_rules! impl_ckks_replicated_bootstrap_reference_full {
             {
                 $crate::reference::replicated::CKKSReplicatedBootstrapReference::ckks_replicated_bootstrap_reference(
                     module, dst, src, ctx, workspace, keys, scratch,
+                )
+            }
+
+            fn ckks_replicated_functional_bootstrap_tmp_bytes<C, I, F>(
+                module: &::poulpy_hal::layouts::Module<Self>,
+                ct_out: &C,
+                ct_in: &I,
+                ctx: &$crate::layouts::ReplicatedBootstrapping<Self, F>,
+                luts: &[$crate::layouts::ReplicatedLut<Self>],
+                keys_layout: &$crate::layouts::BootstrappingKeysLayout,
+            ) -> usize
+            where
+                C: $crate::CKKSCtBounds,
+                I: $crate::CKKSCtBounds,
+            {
+                $crate::reference::replicated::CKKSReplicatedBootstrapReference::ckks_replicated_functional_bootstrap_tmp_bytes_reference(
+                    module,
+                    ct_out,
+                    ct_in,
+                    ctx,
+                    luts,
+                    keys_layout,
+                )
+            }
+
+            fn ckks_replicated_functional_bootstrap<Dst, Src, F, K>(
+                module: &::poulpy_hal::layouts::Module<Self>,
+                dst: &mut [Dst],
+                src: &Src,
+                ctx: &$crate::layouts::ReplicatedBootstrapping<Self, F>,
+                luts: &[$crate::layouts::ReplicatedLut<Self>],
+                workspace: &mut $crate::layouts::ReplicatedBootstrapWorkspace<Self>,
+                keys: &K,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, Self>,
+            ) -> $crate::CKKSResult<()>
+            where
+                Dst: ::poulpy_core::layouts::GLWEToBackendMut<Self>
+                    + ::poulpy_core::layouts::GLWEToBackendRef<Self>
+                    + $crate::CKKSCtBounds
+                    + $crate::SetCKKSInfos,
+                Src: ::poulpy_core::layouts::GLWEToBackendRef<Self> + $crate::CKKSCtBounds,
+                K: $crate::layouts::BootstrappingKeys<Self>,
+            {
+                $crate::reference::replicated::CKKSReplicatedBootstrapReference::ckks_replicated_functional_bootstrap_reference(
+                    module, dst, src, ctx, luts, workspace, keys, scratch,
                 )
             }
         }

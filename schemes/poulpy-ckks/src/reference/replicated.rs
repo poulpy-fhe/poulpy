@@ -1,6 +1,6 @@
 use crate::CKKSResult as Result;
 use poulpy_core::{
-    GLWECIEmbed, GLWECITrace, GLWECopy, GLWEKeyswitch, GLWEShift, GLWETrace,
+    GLWECIEmbed, GLWECITrace, GLWECopy, GLWEKeyswitch, GLWENormalize, GLWEShift, GLWETrace,
     layouts::{
         GGLWEInfos, GGLWEPreparedToBackendRef, GLWEAutomorphismKeyLayout, GLWECIEmbedKeyPrepared, GLWECITraceKeyPrepared,
         GLWEInfos, GLWELayout, GLWEPlaintextMeta, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LWEInfos,
@@ -18,12 +18,15 @@ use crate::{
     CKKSCompositionError, CKKSCtBounds, CKKSInfos, CKKSLayout, GLWEPlaintextInfos, ReplicatedLayout, SetCKKSInfos,
     SetGLWEPlaintextInfos, SlotLayout, SlotsKind,
     api::{
-        CKKSAddOps, CKKSCIRingMapOps, CKKSConjugateOps, CKKSCopyOps, CKKSEvalModOps, CKKSImagOps, CKKSLinearTransformationOps,
-        CKKSPow2Ops, CKKSReplicatedBootstrapOps, CKKSRotateOps, CKKSRoundOps, CKKSSubOps,
+        CKKSAddOps, CKKSAllOpsTmpBytes, CKKSCIRingMapOps, CKKSComplexPolynomialEvaluationOps, CKKSConjugateOps, CKKSCopyOps,
+        CKKSEvalModOps, CKKSImagOps, CKKSLinearTransformationOps, CKKSMulOps, CKKSPolynomialEvaluationOps, CKKSPow2Ops,
+        CKKSReplicatedBootstrapOps, CKKSRotateOps, CKKSRoundOps, CKKSSubOps,
     },
+    eval_lut::{ckks_eval_lut, ckks_eval_lut_from_basis, ckks_lut_power_basis},
     layouts::{
-        BootstrappingKeys, BootstrappingKeysLayout, CKKSCiphertextViewMut, ReplicatedBootstrapWorkspace, ReplicatedBootstrapping,
-        ReplicatedTransform, ReplicatedTransformWorkspace, ScratchArenaTakeCKKSCiphertext,
+        BootstrappingKeys, BootstrappingKeysLayout, CKKSCiphertextAlloc, CKKSCiphertextViewMut, ReplicatedBootstrapWorkspace,
+        ReplicatedBootstrapping, ReplicatedLut, ReplicatedTransform, ReplicatedTransformWorkspace,
+        ScratchArenaTakeCKKSCiphertext,
     },
     oep::{CKKSEncapsulatedModUpImpl, CKKSModUpFirstFactorImpl},
     reference::bootstrapping::mod_raise_body,
@@ -139,6 +142,323 @@ fn ci_bootstrap_depths(layout: &ReplicatedLayout, log_delta_in: usize, level_log
     (profile.shaping_depth(log_delta_in), profile.shaping_depth(level_log_delta))
 }
 
+/// Scratch of a replicated bootstrapping into outputs like `ct_out` from `ct_in`: the stages up to
+/// `CoeffsToSlots` with each rotation key, beside `tail`, the step after them, of the raised layout, the output's and
+/// a rotation key.
+fn bootstrap_tmp_bytes_with<BE, C, I, F>(
+    module: &Module<BE>,
+    ct_out: &C,
+    ct_in: &I,
+    ctx: &ReplicatedBootstrapping<BE, F>,
+    keys_layout: &BootstrappingKeysLayout,
+    tail: impl Fn(&CKKSLayout, &CKKSLayout, &GLWEAutomorphismKeyLayout) -> usize,
+) -> usize
+where
+    BE: CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl,
+    Module<BE>: CKKSLinearTransformationOps<BE>
+        + CKKSRotateOps<BE>
+        + CKKSAddOps<BE>
+        + CKKSSubOps<BE>
+        + CKKSCopyOps<BE>
+        + CKKSPow2Ops<BE>
+        + CKKSRoundOps<BE>
+        + CKKSConjugateOps<BE>
+        + CKKSImagOps<BE>
+        + CKKSEvalModOps<BE>
+        + GLWECopy<BE>
+        + GLWEShift<BE>
+        + GLWEKeyswitch<BE>
+        + GLWETrace<BE>,
+    C: CKKSCtBounds,
+    I: CKKSCtBounds,
+{
+    let plan = ctx.plan;
+    let at = |k: usize| GLWELayout {
+        k: k.into(),
+        ..ct_out.glwe_layout()
+    };
+    let ckks = |glwe_layout: GLWELayout, slot_layout| CKKSLayout {
+        glwe_layout,
+        meta: GLWEPlaintextMeta {
+            slot_layout,
+            ..ct_out.meta()
+        },
+    };
+    let replicated = SlotLayout::Replicated(plan.layout);
+    let k_boot = plan.k_boot(ct_out.k().as_usize());
+    let input = at(plan.k_in());
+    let low = working_layout(&input, plan.extra_bits, 0);
+    let raised = at(k_boot);
+    let high = working_layout(&raised, plan.extra_bits, 0);
+    let boot = ckks(at(k_boot), replicated);
+    let wide = |layout: GLWELayout, transform: &ReplicatedTransform<BE>, atk: &GLWEAutomorphismKeyLayout| {
+        [replicated, SlotLayout::Full]
+            .into_iter()
+            .map(|slot_layout| {
+                let wide = ckks(layout, slot_layout);
+                transform_tmp_bytes(module, &wide, atk, transform)
+                    .max(module.ckks_rotate_tmp_bytes(&wide, atk))
+                    .max(module.ckks_conjugate_tmp_bytes(&wide, atk))
+                    .max(module.ckks_copy_tmp_bytes(&wide, &wide))
+                    .max(module.ckks_round_tmp_bytes(&boot, &wide))
+                    .max(module.ckks_add_tmp_bytes(layout.size()))
+                    .max(module.ckks_sub_tmp_bytes(layout.size()))
+                    .max(module.ckks_mul_i_tmp_bytes(layout.size()))
+                    .max(module.glwe_trace_assign_tmp_bytes(&layout, atk))
+            })
+            .max()
+            .unwrap_or(0)
+    };
+    let input_ckks = ckks(input, replicated);
+    let encapsulation = keys_layout
+        .encapsulation
+        .as_ref()
+        .and_then(|keys| keys.sparse_to_dense.as_ref().map(|back| (&keys.dense_to_sparse, back)));
+    let mod_up = match (ctx.c2s_first_factor.as_ref(), keys_layout.first_factor_key.as_ref()) {
+        (Some(factor), Some(key)) => BE::ckks_mod_up_first_factor_tmp_bytes(
+            module,
+            0,
+            &boot,
+            &input_ckks,
+            factor,
+            keys_layout.encapsulation.as_ref().map(|keys| &keys.dense_to_sparse),
+            key,
+        ),
+        _ => match encapsulation {
+            Some((dense_to_sparse, sparse_to_dense)) => {
+                BE::ckks_encapsulated_mod_up_tmp_bytes(module, &boot, &input_ckks, dense_to_sparse, sparse_to_dense)
+            }
+            None => module.glwe_shift_tmp_bytes(raised.size()),
+        },
+    }
+    .max(module.ckks_mul_pow2_tmp_bytes(input.size()));
+    let out = ckks(ct_out.glwe_layout(), replicated);
+    let lift = plan.log_delta.saturating_sub(ct_in.log_delta());
+    let narrow = at(ct_in.k().as_usize() + lift);
+    // Each stage with each rotation key: the keys differ in width and gadget.
+    keys_layout
+        .rotation_key_layouts()
+        .map(|atk| {
+            let front = ct_bytes::<BE>(&input)
+                + ct_bytes::<BE>(&narrow)
+                + 3 * ct_bytes::<BE>(&low)
+                + wide(low, &ctx.s2c, atk).max(mod_up);
+            let front = front.max(ct_bytes::<BE>(&input) + ct_bytes::<BE>(&low) + wide(low, &ctx.s2c, atk));
+            let eval_mod = tail(&boot, &out, atk);
+            let back = 3 * ct_bytes::<BE>(&raised) + (4 * ct_bytes::<BE>(&high) + wide(high, &ctx.c2s, atk)).max(eval_mod);
+            ct_bytes::<BE>(&raised) + front.max(back)
+        })
+        .max()
+        .unwrap_or(0)
+}
+
+/// Checks a replicated bootstrapping of `src` into outputs of width `k_out` for `op`, its keys at their widths
+/// first, then runs its stages up to `CoeffsToSlots` and hands `tail` the real part, the imaginary part unless packed
+/// or of real slots, a third ciphertext of their layout, whether the slots are real, and the arena.
+#[allow(clippy::too_many_arguments)]
+fn bootstrap_to_slots<BE, Src, F, K, T>(
+    module: &Module<BE>,
+    op: &'static str,
+    k_out: usize,
+    src: &Src,
+    ctx: &ReplicatedBootstrapping<BE, F>,
+    workspace: &mut ReplicatedBootstrapWorkspace<BE>,
+    keys: &K,
+    scratch: &mut ScratchArena<'_, BE>,
+    tail: T,
+) -> Result<()>
+where
+    BE: CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl,
+    Module<BE>: CKKSLinearTransformationOps<BE>
+        + CKKSRotateOps<BE>
+        + CKKSAddOps<BE>
+        + CKKSSubOps<BE>
+        + CKKSCopyOps<BE>
+        + CKKSPow2Ops<BE>
+        + CKKSRoundOps<BE>
+        + CKKSConjugateOps<BE>
+        + CKKSImagOps<BE>
+        + CKKSEvalModOps<BE>
+        + GLWECopy<BE>
+        + GLWEShift<BE>
+        + GLWEKeyswitch<BE>
+        + GLWETrace<BE>,
+    Src: GLWEToBackendRef<BE> + CKKSCtBounds,
+    K: BootstrappingKeys<BE>,
+    T: FnOnce(
+        &mut CKKSCiphertextViewMut<'_, BE>,
+        Option<&mut CKKSCiphertextViewMut<'_, BE>>,
+        &mut CKKSCiphertextViewMut<'_, BE>,
+        bool,
+        &mut ScratchArena<'_, BE>,
+    ) -> Result<()>,
+{
+    check_module_degree(op, module.n(), src)?;
+    let plan = ctx.plan;
+    if src.slot_layout() != SlotLayout::Replicated(plan.layout) {
+        return Err(invalid(op, "the source must have the bootstrapping's replicated layout"));
+    }
+    if src.rank().as_usize() != 1 {
+        return Err(invalid(op, "bootstrapping supports rank-1 ciphertexts only"));
+    }
+    let lift = match src.log_delta() {
+        d if d == plan.log_delta => 0,
+        d if d == plan.level_log_delta && d < plan.log_delta => plan.log_delta - d,
+        _ => return Err(invalid(op, "the source must be at the bootstrapping or the leveled scale")),
+    };
+    let k_in = plan.k_in();
+    if src.log_budget() + plan.log_delta < k_in {
+        return Err(invalid(op, "the source has less budget than the bootstrapping input"));
+    }
+    // The bootstrapping keys are the automorphism key source, and EvalMod runs on the standard ring.
+    let rotation_keys = &RotationKeys(keys);
+    let tsk = crate::layouts::validation::required_tensor_key(op, keys.tensor_key())?;
+    let at = |k: usize| GLWELayout {
+        k: k.into(),
+        ..src.glwe_layout()
+    };
+    let k_boot = plan.k_boot(k_out);
+    check_workspace(op, &workspace.s2c, &at(k_in + plan.extra_bits), &ctx.s2c)?;
+    check_workspace(op, &workspace.c2s, &at(k_boot + plan.extra_bits), &ctx.c2s)?;
+    // Every key at the width of its widest use, before any work.
+    let widths = ctx.key_widths(module, k_out);
+    for (&p, &k) in &widths.rotation_keys {
+        let k = TorusPrecision(k as u32);
+        rotation_keys
+            .get_automorphism_key(p, k)
+            .map_err(|source| CKKSCompositionError::MissingAutomorphismKey {
+                op,
+                rotation: p,
+                k: k.into(),
+                source,
+            })?;
+    }
+    let tensor_k = TorusPrecision(widths.tensor_key as u32);
+    tsk.get_tensor_key(tensor_k)
+        .map_err(|source| CKKSCompositionError::MissingRelinearizationKey {
+            op,
+            k: tensor_k.into(),
+            source,
+        })?;
+    // The first factor on the raise, and its keys, which replace the sparse-to-dense key.
+    if let Some(factor) = ctx.c2s_first_factor.as_ref() {
+        check_first_factor_raise(
+            op,
+            src.base2k().as_usize(),
+            module.log_n(),
+            k_boot,
+            plan.log_delta + plan.log_msg_ratio() + plan.mod_up_extra_bits,
+            factor,
+            keys,
+        )?;
+    }
+    let mut raised_meta = src.meta();
+    raised_meta.slot_layout = SlotLayout::Full;
+    let (mut raised, mut scratch) = scratch.borrow().take_ckks_ciphertext_scratch(&at(k_boot), raised_meta);
+
+    scratch.scope(|scratch| -> Result<()> {
+        let input = at(k_in);
+        let (mut coeffs, scratch) = scratch.take_ckks_ciphertext_scratch(&input, src.meta());
+        let (mut narrow, scratch) = scratch.take_ckks_ciphertext_scratch(&at(src.k().as_usize() + lift), src.meta());
+        let low = working_layout(&input, plan.extra_bits, 0);
+        let (mut x, scratch) = scratch.take_ckks_ciphertext_scratch(&low, src.meta());
+        let (mut acc, mut scratch) = scratch.take_ckks_ciphertext_scratch(&low, src.meta());
+
+        // 1. At `Δ_b`, a leveled input relabelled at the same torus value, then
+        //    reduced to the input width.
+        module.ckks_copy(&mut narrow, src, &mut scratch)?;
+        if lift > 0 {
+            narrow.set_log_delta(plan.log_delta);
+        }
+        module.ckks_copy(&mut coeffs, &narrow, &mut scratch)?;
+
+        // 2. The copies of the period.
+        trace_wide(
+            module,
+            &mut coeffs,
+            ctx.bottom_skip,
+            plan.extra_bits,
+            rotation_keys,
+            &mut scratch,
+        )?;
+        module.ckks_copy(&mut x, &coeffs, &mut scratch)?;
+
+        // 3. SlotsToCoeffs, rounded plainly to the message ratio.
+        x.set_log_delta(x.log_delta() + plan.extra_bits);
+        x.set_slot_layout(SlotLayout::Full);
+        apply_transform(
+            module,
+            &mut acc,
+            &x,
+            &ctx.s2c,
+            &mut workspace.s2c,
+            rotation_keys,
+            &mut scratch,
+        )?;
+        coeffs.set_k((acc.log_budget() + plan.log_delta).into());
+        module.ckks_round(&mut coeffs, &acc, &mut scratch)?;
+        if coeffs.log_budget() != plan.log_msg_ratio() {
+            return Err(invalid(op, "the coefficient message does not have the EvalMod message ratio"));
+        }
+
+        // 4. ModUp: `I·q_b + Δ_b·m` at the scale `q_b`, lifted.
+        let log_q_b = coeffs.k().as_usize();
+        raised.set_k(k_boot.into());
+        mod_raise_body(
+            module,
+            &mut raised,
+            &mut coeffs,
+            0,
+            plan.mod_up_extra_bits,
+            ctx.c2s_first_factor.as_ref(),
+            0,
+            keys,
+            &mut scratch,
+        )?;
+        raised.set_meta(GLWEPlaintextMeta {
+            scale: Scale::Log(log_q_b + plan.mod_up_extra_bits),
+            slots: SlotsKind::Complex,
+            log_sparsity: 0,
+            slot_layout: SlotLayout::Full,
+        });
+        Ok(())
+    })?;
+
+    // 5. The coefficients of the subring, onto the data slots.
+    let high = at(raised.k().as_usize());
+    let (mut re, scratch) = scratch.take_ckks_ciphertext_scratch(&high, raised.meta());
+    let (mut im, scratch) = scratch.take_ckks_ciphertext_scratch(&high, raised.meta());
+    let (mut out, mut scratch) = scratch.take_ckks_ciphertext_scratch(&high, raised.meta());
+    trace_wide(
+        module,
+        &mut raised,
+        ctx.top_skip,
+        plan.extra_bits,
+        rotation_keys,
+        &mut scratch,
+    )?;
+    raised.set_log_sparsity(ctx.top_sparsity);
+    let packed = ctx.packed.unwrap_or(plan.layout);
+    // Real slots leave only multiples of the modulus on the imaginary coefficients, whose EvalMod is zero: the
+    // real part alone carries the message.
+    let real = GLWEPlaintextInfos::slots(src).is_real();
+    coeffs_to_slots(
+        module,
+        &mut re,
+        (ctx.packed.is_none() && !real).then_some(&mut im),
+        &raised,
+        &ctx.c2s,
+        &mut workspace.c2s,
+        packed,
+        plan.extra_bits,
+        rotation_keys,
+        &mut scratch,
+    )?;
+
+    let im = (ctx.packed.is_none() && !real).then_some(&mut im);
+    tail(&mut re, im, &mut out, real, &mut scratch)
+}
+
 /// Reference of the [`CKKSReplicatedBootstrapImpl`](crate::oep::CKKSReplicatedBootstrapImpl) family,
 /// selected by [`impl_ckks_replicated_bootstrap_reference_full!`](crate::impl_ckks_replicated_bootstrap_reference_full):
 /// the bootstrapping of [`CKKSReplicatedBootstrapOps`] and the conjugate-invariant bootstrapping of
@@ -200,6 +520,72 @@ pub trait CKKSReplicatedBootstrapReference<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: BootstrappingKeys<BE>;
+
+    /// Scratch of [`Self::ckks_replicated_functional_bootstrap_reference`], whatever the number of LUTs.
+    fn ckks_replicated_functional_bootstrap_tmp_bytes_reference<C, I, F>(
+        &self,
+        ct_out: &C,
+        ct_in: &I,
+        ctx: &ReplicatedBootstrapping<BE, F>,
+        luts: &[ReplicatedLut<BE>],
+        keys_layout: &BootstrappingKeysLayout,
+    ) -> usize
+    where
+        BE: CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl,
+        Self: CKKSLinearTransformationOps<BE>
+            + CKKSRotateOps<BE>
+            + CKKSAddOps<BE>
+            + CKKSSubOps<BE>
+            + CKKSCopyOps<BE>
+            + CKKSPow2Ops<BE>
+            + CKKSRoundOps<BE>
+            + CKKSConjugateOps<BE>
+            + CKKSImagOps<BE>
+            + CKKSEvalModOps<BE>
+            + GLWECopy<BE>
+            + GLWEShift<BE>
+            + GLWEKeyswitch<BE>
+            + GLWETrace<BE>
+            + CKKSAllOpsTmpBytes<BE>,
+        C: CKKSCtBounds,
+        I: CKKSCtBounds;
+
+    /// [`CKKSReplicatedBootstrapOps::ckks_replicated_functional_bootstrap`].
+    #[allow(clippy::too_many_arguments)]
+    fn ckks_replicated_functional_bootstrap_reference<Dst, Src, F, K>(
+        &self,
+        dst: &mut [Dst],
+        src: &Src,
+        ctx: &ReplicatedBootstrapping<BE, F>,
+        luts: &[ReplicatedLut<BE>],
+        workspace: &mut ReplicatedBootstrapWorkspace<BE>,
+        keys: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        BE: CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl,
+        Self: CKKSLinearTransformationOps<BE>
+            + CKKSRotateOps<BE>
+            + CKKSAddOps<BE>
+            + CKKSSubOps<BE>
+            + CKKSCopyOps<BE>
+            + CKKSPow2Ops<BE>
+            + CKKSRoundOps<BE>
+            + CKKSConjugateOps<BE>
+            + CKKSImagOps<BE>
+            + CKKSEvalModOps<BE>
+            + GLWECopy<BE>
+            + GLWEShift<BE>
+            + GLWEKeyswitch<BE>
+            + GLWETrace<BE>
+            + CKKSComplexPolynomialEvaluationOps<BE>
+            + CKKSPolynomialEvaluationOps<BE>
+            + CKKSMulOps<BE>
+            + CKKSCiphertextAlloc<BE>
+            + GLWENormalize<BE>,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
+        K: BootstrappingKeys<BE>;
 }
 
 impl<BE: Backend> CKKSReplicatedBootstrapReference<BE> for Module<BE> {
@@ -230,88 +616,14 @@ impl<BE: Backend> CKKSReplicatedBootstrapReference<BE> for Module<BE> {
         I: CKKSCtBounds,
     {
         let module = self;
-        let plan = ctx.plan;
-        let at = |k: usize| GLWELayout {
-            k: k.into(),
-            ..ct_out.glwe_layout()
-        };
-        let ckks = |glwe_layout: GLWELayout, slot_layout| CKKSLayout {
-            glwe_layout,
-            meta: GLWEPlaintextMeta {
-                slot_layout,
-                ..ct_out.meta()
-            },
-        };
-        let replicated = SlotLayout::Replicated(plan.layout);
-        let k_boot = plan.k_boot(ct_out.k().as_usize());
-        let input = at(plan.k_in());
-        let low = working_layout(&input, plan.extra_bits, 0);
-        let raised = at(k_boot);
-        let high = working_layout(&raised, plan.extra_bits, 0);
-        let boot = ckks(at(k_boot), replicated);
-        let wide = |layout: GLWELayout, transform: &ReplicatedTransform<BE>, atk: &GLWEAutomorphismKeyLayout| {
-            [replicated, SlotLayout::Full]
-                .into_iter()
-                .map(|slot_layout| {
-                    let wide = ckks(layout, slot_layout);
-                    transform_tmp_bytes(module, &wide, atk, transform)
-                        .max(module.ckks_rotate_tmp_bytes(&wide, atk))
-                        .max(module.ckks_conjugate_tmp_bytes(&wide, atk))
-                        .max(module.ckks_copy_tmp_bytes(&wide, &wide))
-                        .max(module.ckks_round_tmp_bytes(&boot, &wide))
-                        .max(module.ckks_add_tmp_bytes(layout.size()))
-                        .max(module.ckks_sub_tmp_bytes(layout.size()))
-                        .max(module.ckks_mul_i_tmp_bytes(layout.size()))
-                        .max(module.glwe_trace_assign_tmp_bytes(&layout, atk))
-                })
-                .max()
-                .unwrap_or(0)
-        };
-        let input_ckks = ckks(input, replicated);
-        let encapsulation = keys_layout
-            .encapsulation
-            .as_ref()
-            .and_then(|keys| keys.sparse_to_dense.as_ref().map(|back| (&keys.dense_to_sparse, back)));
-        let mod_up = match (ctx.c2s_first_factor.as_ref(), keys_layout.first_factor_key.as_ref()) {
-            (Some(factor), Some(key)) => BE::ckks_mod_up_first_factor_tmp_bytes(
-                module,
-                0,
-                &boot,
-                &input_ckks,
-                factor,
-                keys_layout.encapsulation.as_ref().map(|keys| &keys.dense_to_sparse),
-                key,
-            ),
-            _ => match encapsulation {
-                Some((dense_to_sparse, sparse_to_dense)) => {
-                    BE::ckks_encapsulated_mod_up_tmp_bytes(module, &boot, &input_ckks, dense_to_sparse, sparse_to_dense)
-                }
-                None => module.glwe_shift_tmp_bytes(raised.size()),
-            },
-        }
-        .max(module.ckks_mul_pow2_tmp_bytes(input.size()));
-        let eval_mod = module
-            .ckks_eval_mod_tmp_bytes(&boot, &boot, &ctx.eval_mod, &keys_layout.tensor_key)
-            .max(module.ckks_mul_i_tmp_bytes(raised.size()))
-            .max(module.ckks_add_tmp_bytes(raised.size()))
-            .max(module.ckks_round_tmp_bytes(&ckks(ct_out.glwe_layout(), replicated), &boot));
-        let lift = plan.log_delta.saturating_sub(ct_in.log_delta());
-        let narrow = at(ct_in.k().as_usize() + lift);
-        // Each stage with each rotation key: the keys differ in width and gadget.
-        keys_layout
-            .rotation_key_layouts()
-            .map(|atk| {
-                let front = ct_bytes::<BE>(&input)
-                    + ct_bytes::<BE>(&narrow)
-                    + 3 * ct_bytes::<BE>(&low)
-                    + wide(low, &ctx.s2c, atk).max(mod_up);
-                let front = front.max(ct_bytes::<BE>(&input) + ct_bytes::<BE>(&low) + wide(low, &ctx.s2c, atk));
-                let eval_mod = eval_mod.max(module.ckks_rotate_tmp_bytes(&boot, atk));
-                let back = 3 * ct_bytes::<BE>(&raised) + (4 * ct_bytes::<BE>(&high) + wide(high, &ctx.c2s, atk)).max(eval_mod);
-                ct_bytes::<BE>(&raised) + front.max(back)
-            })
-            .max()
-            .unwrap_or(0)
+        bootstrap_tmp_bytes_with(module, ct_out, ct_in, ctx, keys_layout, |boot, out, atk| {
+            module
+                .ckks_eval_mod_tmp_bytes(boot, boot, &ctx.eval_mod, &keys_layout.tensor_key)
+                .max(module.ckks_mul_i_tmp_bytes(boot.size()))
+                .max(module.ckks_add_tmp_bytes(boot.size()))
+                .max(module.ckks_round_tmp_bytes(out, boot))
+                .max(module.ckks_rotate_tmp_bytes(boot, atk))
+        })
     }
 
     fn ckks_replicated_bootstrap_reference<Dst, Src, F, K>(
@@ -346,192 +658,253 @@ impl<BE: Backend> CKKSReplicatedBootstrapReference<BE> for Module<BE> {
         let module = self;
         const OP: &str = "ckks_replicated_bootstrap";
         check_destination(OP, dst, src)?;
-        check_module_degree(OP, module.n(), src)?;
-        let plan = ctx.plan;
-        if src.slot_layout() != SlotLayout::Replicated(plan.layout) {
-            return Err(invalid(OP, "the source must have the bootstrapping's replicated layout"));
-        }
-        if src.rank().as_usize() != 1 || dst.rank().as_usize() != 1 {
+        if dst.rank().as_usize() != 1 {
             return Err(invalid(OP, "bootstrapping supports rank-1 ciphertexts only"));
         }
-        let lift = match src.log_delta() {
-            d if d == plan.log_delta => 0,
-            d if d == plan.level_log_delta && d < plan.log_delta => plan.log_delta - d,
-            _ => return Err(invalid(OP, "the source must be at the bootstrapping or the leveled scale")),
-        };
-        let k_in = plan.k_in();
-        if src.log_budget() + plan.log_delta < k_in {
-            return Err(invalid(OP, "the source has less budget than the bootstrapping input"));
-        }
-        // The bootstrapping keys are the automorphism key source, and EvalMod runs on the standard ring.
-        let rotation_keys = &RotationKeys(keys);
-        let tsk = crate::layouts::validation::required_tensor_key(OP, keys.tensor_key())?;
-        let at = |k: usize| GLWELayout {
-            k: k.into(),
-            ..src.glwe_layout()
-        };
-        let k_boot = plan.k_boot(dst.k().as_usize());
-        check_workspace(OP, &workspace.s2c, &at(k_in + plan.extra_bits), &ctx.s2c)?;
-        check_workspace(OP, &workspace.c2s, &at(k_boot + plan.extra_bits), &ctx.c2s)?;
-        // Every key at the width of its widest use, before any work.
-        let widths = ctx.key_widths(module, dst.k().as_usize());
-        for (&p, &k) in &widths.rotation_keys {
-            let k = TorusPrecision(k as u32);
-            rotation_keys
-                .get_automorphism_key(p, k)
-                .map_err(|source| CKKSCompositionError::MissingAutomorphismKey {
-                    op: OP,
-                    rotation: p,
-                    k: k.into(),
-                    source,
-                })?;
-        }
-        let tensor_k = TorusPrecision(widths.tensor_key as u32);
-        tsk.get_tensor_key(tensor_k)
-            .map_err(|source| CKKSCompositionError::MissingRelinearizationKey {
-                op: OP,
-                k: tensor_k.into(),
-                source,
-            })?;
-        // The first factor on the raise, and its keys, which replace the sparse-to-dense key.
-        if let Some(factor) = ctx.c2s_first_factor.as_ref() {
-            check_first_factor_raise(
+        if ctx.plan.functional.is_some() {
+            return Err(invalid(
                 OP,
-                src.base2k().as_usize(),
-                module.log_n(),
-                k_boot,
-                plan.log_delta + plan.eval_mod.log_msg_ratio + plan.mod_up_extra_bits,
-                factor,
-                keys,
-            )?;
+                "a functional plan bootstraps through ckks_replicated_functional_bootstrap",
+            ));
         }
-        let mut raised_meta = src.meta();
-        raised_meta.slot_layout = SlotLayout::Full;
-        let (mut raised, mut scratch) = scratch.borrow().take_ckks_ciphertext_scratch(&at(k_boot), raised_meta);
-
-        scratch.scope(|scratch| -> Result<()> {
-            let input = at(k_in);
-            let (mut coeffs, scratch) = scratch.take_ckks_ciphertext_scratch(&input, src.meta());
-            let (mut narrow, scratch) = scratch.take_ckks_ciphertext_scratch(&at(src.k().as_usize() + lift), src.meta());
-            let low = working_layout(&input, plan.extra_bits, 0);
-            let (mut x, scratch) = scratch.take_ckks_ciphertext_scratch(&low, src.meta());
-            let (mut acc, mut scratch) = scratch.take_ckks_ciphertext_scratch(&low, src.meta());
-
-            // 1. At `Δ_b`, a leveled input relabelled at the same torus value, then
-            //    reduced to the input width.
-            module.ckks_copy(&mut narrow, src, &mut scratch)?;
-            if lift > 0 {
-                narrow.set_log_delta(plan.log_delta);
-            }
-            module.ckks_copy(&mut coeffs, &narrow, &mut scratch)?;
-
-            // 2. The copies of the period.
-            trace_wide(
-                module,
-                &mut coeffs,
-                ctx.bottom_skip,
-                plan.extra_bits,
-                rotation_keys,
-                &mut scratch,
-            )?;
-            module.ckks_copy(&mut x, &coeffs, &mut scratch)?;
-
-            // 3. SlotsToCoeffs, rounded plainly to the message ratio.
-            x.set_log_delta(x.log_delta() + plan.extra_bits);
-            x.set_slot_layout(SlotLayout::Full);
-            apply_transform(
-                module,
-                &mut acc,
-                &x,
-                &ctx.s2c,
-                &mut workspace.s2c,
-                rotation_keys,
-                &mut scratch,
-            )?;
-            coeffs.set_k((acc.log_budget() + plan.log_delta).into());
-            module.ckks_round(&mut coeffs, &acc, &mut scratch)?;
-            if coeffs.log_budget() != plan.eval_mod.log_msg_ratio {
-                return Err(invalid(OP, "the coefficient message does not have the EvalMod message ratio"));
-            }
-
-            // 4. ModUp: `I·q_b + Δ_b·m` at the scale `q_b`, lifted.
-            let log_q_b = coeffs.k().as_usize();
-            raised.set_k(k_boot.into());
-            mod_raise_body(
-                module,
-                &mut raised,
-                &mut coeffs,
-                0,
-                plan.mod_up_extra_bits,
-                ctx.c2s_first_factor.as_ref(),
-                0,
-                keys,
-                &mut scratch,
-            )?;
-            raised.set_meta(GLWEPlaintextMeta {
-                scale: Scale::Log(log_q_b + plan.mod_up_extra_bits),
-                slots: SlotsKind::Complex,
-                log_sparsity: 0,
-                slot_layout: SlotLayout::Full,
-            });
-            Ok(())
-        })?;
-
-        // 5. The coefficients of the subring, onto the data slots.
-        let s_raised = raised.log_delta();
-        let high = at(raised.k().as_usize());
-        let (mut re, scratch) = scratch.take_ckks_ciphertext_scratch(&high, raised.meta());
-        let (mut im, scratch) = scratch.take_ckks_ciphertext_scratch(&high, raised.meta());
-        let (mut out, mut scratch) = scratch.take_ckks_ciphertext_scratch(&high, raised.meta());
-        trace_wide(
+        let plan = ctx.plan;
+        let k_out = dst.k().as_usize();
+        bootstrap_to_slots(
             module,
-            &mut raised,
-            ctx.top_skip,
-            plan.extra_bits,
-            rotation_keys,
-            &mut scratch,
-        )?;
-        raised.set_log_sparsity(ctx.top_sparsity);
-        let packed = ctx.packed.unwrap_or(plan.layout);
-        // Real slots leave only multiples of the modulus on the imaginary coefficients, whose EvalMod is zero: the
-        // real part alone carries the message.
-        let real = GLWEPlaintextInfos::slots(src).is_real();
-        coeffs_to_slots(
-            module,
-            &mut re,
-            (ctx.packed.is_none() && !real).then_some(&mut im),
-            &raised,
-            &ctx.c2s,
-            &mut workspace.c2s,
-            packed,
-            plan.extra_bits,
-            rotation_keys,
-            &mut scratch,
-        )?;
+            OP,
+            k_out,
+            src,
+            ctx,
+            workspace,
+            keys,
+            scratch,
+            |re, im, out, real, scratch| {
+                let rotation_keys = &RotationKeys(keys);
+                let tsk = crate::layouts::validation::required_tensor_key(OP, keys.tensor_key())?;
+                let s_raised = re.log_delta();
+                // 6. EvalMod, and the parts recombined into `Re + i·Im`, or of real slots the real part alone.
+                // EvalMod takes its input as working storage: `re` and `im` are not read again.
+                module.ckks_eval_mod(&mut *out, &mut *re, &ctx.eval_mod, tsk, scratch)?;
+                if let Some(double) = ctx.packed {
+                    // The second batch came out times `i`: one rotation by `k` values adds it.
+                    let k = 1i64 << double.log_k();
+                    module.ckks_rotate_into((k / 2) << double.log_r(), &mut *re, &*out, rotation_keys, scratch)?;
+                    module.ckks_add_assign(&mut *out, &*re, scratch)?;
+                    out.set_log_sparsity(GLWEPlaintextInfos::log_sparsity(&*out) + 1);
+                } else if let Some(im) = im {
+                    module.ckks_eval_mod(&mut *re, im, &ctx.eval_mod, tsk, scratch)?;
+                    module.ckks_mul_i_assign(&mut *re, scratch)?;
+                    module.ckks_add_assign(&mut *out, &*re, scratch)?;
+                }
+                out.set_slots(if real { SlotsKind::Real } else { SlotsKind::Complex });
+                out.set_slot_layout(SlotLayout::Replicated(plan.layout));
 
-        // 6. EvalMod, and the parts recombined into `Re + i·Im`, or of real slots the real part alone.
-        // EvalMod takes its input as working storage: `re` and `im` are not read again.
-        module.ckks_eval_mod(&mut out, &mut re, &ctx.eval_mod, tsk, &mut scratch)?;
-        if let Some(double) = ctx.packed {
-            // The second batch came out times `i`: one rotation by `k` values adds it.
-            let k = 1i64 << double.log_k();
-            module.ckks_rotate_into((k / 2) << double.log_r(), &mut re, &out, rotation_keys, &mut scratch)?;
-            module.ckks_add_assign(&mut out, &re, &mut scratch)?;
-            out.set_log_sparsity(GLWEPlaintextInfos::log_sparsity(&out) + 1);
-        } else if !real {
-            module.ckks_eval_mod(&mut re, &mut im, &ctx.eval_mod, tsk, &mut scratch)?;
-            module.ckks_mul_i_assign(&mut re, &mut scratch)?;
-            module.ckks_add_assign(&mut out, &re, &mut scratch)?;
+                // 7. `Δ_b·m` at the raised scale is `m` at `Δ_b`, lifted by ModUp; one
+                //    shaped rounding returns to the leveled scale.
+                debug_assert_eq!(out.log_delta(), s_raised);
+                out.set_scale(Scale::Log(plan.log_delta + plan.mod_up_extra_bits));
+                dst.set_k((out.log_budget() + plan.level_log_delta).into());
+                module.ckks_round(dst, &*out, scratch)
+            },
+        )
+    }
+
+    fn ckks_replicated_functional_bootstrap_tmp_bytes_reference<C, I, F>(
+        &self,
+        ct_out: &C,
+        ct_in: &I,
+        ctx: &ReplicatedBootstrapping<BE, F>,
+        luts: &[ReplicatedLut<BE>],
+        keys_layout: &BootstrappingKeysLayout,
+    ) -> usize
+    where
+        BE: CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl,
+        Self: CKKSLinearTransformationOps<BE>
+            + CKKSRotateOps<BE>
+            + CKKSAddOps<BE>
+            + CKKSSubOps<BE>
+            + CKKSCopyOps<BE>
+            + CKKSPow2Ops<BE>
+            + CKKSRoundOps<BE>
+            + CKKSConjugateOps<BE>
+            + CKKSImagOps<BE>
+            + CKKSEvalModOps<BE>
+            + GLWECopy<BE>
+            + GLWEShift<BE>
+            + GLWEKeyswitch<BE>
+            + GLWETrace<BE>
+            + CKKSAllOpsTmpBytes<BE>,
+        C: CKKSCtBounds,
+        I: CKKSCtBounds,
+    {
+        let module = self;
+        let tsk = &keys_layout.tensor_key;
+        bootstrap_tmp_bytes_with(module, ct_out, ct_in, ctx, keys_layout, |boot, out, atk| {
+            // The exponential's copy of its input and its output, the conjugate, and the LUT of the imaginary part.
+            let carved = 4 * ct_bytes::<BE>(&boot.glwe_layout);
+            let lut = luts
+                .iter()
+                .map(|lut| module.ckks_all_ops_with_atk_tmp_bytes(boot, lut.coeffs(), tsk, atk))
+                .max()
+                .unwrap_or(0);
+            (carved + module.ckks_eval_mod_tmp_bytes(boot, boot, &ctx.eval_mod, tsk).max(lut))
+                .max(module.ckks_mul_i_tmp_bytes(boot.size()))
+                .max(module.ckks_add_tmp_bytes(boot.size()))
+                .max(module.ckks_round_tmp_bytes(out, boot))
+        })
+    }
+
+    fn ckks_replicated_functional_bootstrap_reference<Dst, Src, F, K>(
+        &self,
+        dst: &mut [Dst],
+        src: &Src,
+        ctx: &ReplicatedBootstrapping<BE, F>,
+        luts: &[ReplicatedLut<BE>],
+        workspace: &mut ReplicatedBootstrapWorkspace<BE>,
+        keys: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        BE: CKKSEncapsulatedModUpImpl + CKKSModUpFirstFactorImpl,
+        Self: CKKSLinearTransformationOps<BE>
+            + CKKSRotateOps<BE>
+            + CKKSAddOps<BE>
+            + CKKSSubOps<BE>
+            + CKKSCopyOps<BE>
+            + CKKSPow2Ops<BE>
+            + CKKSRoundOps<BE>
+            + CKKSConjugateOps<BE>
+            + CKKSImagOps<BE>
+            + CKKSEvalModOps<BE>
+            + GLWECopy<BE>
+            + GLWEShift<BE>
+            + GLWEKeyswitch<BE>
+            + GLWETrace<BE>
+            + CKKSComplexPolynomialEvaluationOps<BE>
+            + CKKSPolynomialEvaluationOps<BE>
+            + CKKSMulOps<BE>
+            + CKKSCiphertextAlloc<BE>
+            + GLWENormalize<BE>,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
+        K: BootstrappingKeys<BE>,
+    {
+        let module = self;
+        const OP: &str = "ckks_replicated_functional_bootstrap";
+        let plan = ctx.plan;
+        let Some(functional) = plan.functional else {
+            return Err(invalid(
+                OP,
+                "takes a plan configured with ReplicatedBootstrapPlan::with_functional_bootstrap",
+            ));
+        };
+        if dst.is_empty() || dst.len() != luts.len() {
+            return Err(invalid(OP, "takes one output per LUT, and at least one"));
         }
-        out.set_slots(if real { SlotsKind::Real } else { SlotsKind::Complex });
-        out.set_slot_layout(SlotLayout::Replicated(plan.layout));
+        let k_out = dst[0].k().as_usize();
+        for out in dst.iter() {
+            check_destination(OP, out, src)?;
+            if out.rank().as_usize() != 1 {
+                return Err(invalid(OP, "bootstrapping supports rank-1 ciphertexts only"));
+            }
+            if out.k().as_usize() != k_out {
+                return Err(invalid(OP, "takes its outputs at one width"));
+            }
+        }
+        // The LUTs read the exponential at the raised scale, within the plan's budget.
+        let raised = plan.log_delta + functional.log_msg_ratio + plan.mod_up_extra_bits;
+        for lut in luts {
+            if lut.message_modulus() != functional.message_modulus
+                || lut.general_series().is_none()
+                || lut.coeffs().log_delta() != raised
+                || lut.consumed_bits(raised) > functional.lut_consumed_bits
+            {
+                return Err(invalid(
+                    OP,
+                    "takes general LUTs of the plan's message modulus, encoded at its raised scale, within its LUT budget",
+                ));
+            }
+        }
+        // Equal-arity LUTs share the exponential and the powers of each part.
+        let shared = luts.len() > 1;
+        bootstrap_to_slots(
+            module,
+            OP,
+            k_out,
+            src,
+            ctx,
+            workspace,
+            keys,
+            scratch,
+            |re, mut im, out, real, scratch| {
+                let rotation_keys = &RotationKeys(keys);
+                let tsk = crate::layouts::validation::required_tensor_key(OP, keys.tensor_key())?;
+                let layout = re.glwe_layout();
+                let meta = re.meta();
+                // 6. The exponential of each part, then each LUT's interpolation, the parts recombined into `Re + i·Im`, or
+                //    of real slots the real part alone.
+                let basis_re = if shared {
+                    Some(ckks_lut_power_basis(
+                        module,
+                        &mut *re,
+                        &layout,
+                        &ctx.eval_mod,
+                        luts,
+                        tsk,
+                        scratch,
+                    )?)
+                } else {
+                    None
+                };
+                let basis_im = match (im.as_deref_mut(), shared) {
+                    (Some(im), true) => Some(ckks_lut_power_basis(module, im, &layout, &ctx.eval_mod, luts, tsk, scratch)?),
+                    _ => None,
+                };
+                let (mut part, mut scratch) = scratch.borrow().take_ckks_ciphertext_scratch(&layout, meta);
+                for (dst, lut) in dst.iter_mut().zip(luts) {
+                    out.set_meta(meta);
+                    out.set_k(layout.k);
+                    match &basis_re {
+                        Some(basis) => ckks_eval_lut_from_basis(module, &mut *out, lut, basis, rotation_keys, tsk, &mut scratch)?,
+                        None => {
+                            let series = lut.general_series().expect("a general LUT");
+                            ckks_eval_lut(
+                                module,
+                                &mut *out,
+                                &*re,
+                                &ctx.eval_mod,
+                                series,
+                                rotation_keys,
+                                tsk,
+                                &mut scratch,
+                            )?
+                        }
+                    }
+                    if let Some(im) = im.as_deref() {
+                        part.set_meta(meta);
+                        part.set_k(layout.k);
+                        match &basis_im {
+                            Some(basis) => {
+                                ckks_eval_lut_from_basis(module, &mut part, lut, basis, rotation_keys, tsk, &mut scratch)?
+                            }
+                            None => {
+                                let series = lut.general_series().expect("a general LUT");
+                                ckks_eval_lut(module, &mut part, im, &ctx.eval_mod, series, rotation_keys, tsk, &mut scratch)?
+                            }
+                        }
+                        module.ckks_mul_i_assign(&mut part, &mut scratch)?;
+                        module.ckks_add_assign(&mut *out, &part, &mut scratch)?;
+                    }
+                    out.set_slots(if real { SlotsKind::Real } else { SlotsKind::Complex });
+                    out.set_slot_layout(SlotLayout::Replicated(plan.layout));
 
-        // 7. `Δ_b·m` at the raised scale is `m` at `Δ_b`, lifted by ModUp; one
-        //    shaped rounding returns to the leveled scale.
-        debug_assert_eq!(out.log_delta(), s_raised);
-        out.set_scale(Scale::Log(plan.log_delta + plan.mod_up_extra_bits));
-        dst.set_k((out.log_budget() + plan.level_log_delta).into());
-        module.ckks_round(dst, &out, &mut scratch)
+                    // 7. The table values at the raised scale; one shaped rounding returns to the leveled scale.
+                    dst.set_k((out.log_budget() + plan.level_log_delta).into());
+                    module.ckks_round(dst, &*out, &mut scratch)?;
+                }
+                Ok(())
+            },
+        )
     }
 }
 

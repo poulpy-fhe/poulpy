@@ -37,6 +37,10 @@ pub struct EncodedLut<P> {
     message_modulus: usize,
 }
 
+/// A general LUT for a replicated layout, its constants masked
+/// ([`EncodedLut::general_replicated`]).
+pub type ReplicatedLut<BE> = EncodedLut<MaskedCoeffs<CKKSPlaintextOwned<BE>>>;
+
 pub(crate) enum EncodedLutKind<P> {
     General(ComplexBSGSPolynomial<P>),
     Binary {
@@ -273,7 +277,7 @@ impl<P> EncodedLut<P> {
     }
 }
 
-fn table_log_msg_ratio(len: usize) -> Result<usize> {
+pub(crate) fn table_log_msg_ratio(len: usize) -> Result<usize> {
     ensure!(len > 0, "LUT length must be nonzero");
     let binary_span = len
         .checked_next_power_of_two()
