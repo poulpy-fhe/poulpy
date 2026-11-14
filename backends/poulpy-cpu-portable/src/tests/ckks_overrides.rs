@@ -112,6 +112,7 @@ unsafe impl<Rg: poulpy_hal::layouts::Ring> poulpy_ckks::oep::CKKSShapedRoundingI
     }
 }
 ::poulpy_ckks::impl_ckks_round_reference_full!(OverrideBackend);
+::poulpy_ckks::impl_ckks_replicated_derived_full!(OverrideBackend);
 // The conjugate-invariant ring, on which a bootstrap's EvalMod runs, takes the reference of the overridden families,
 // the addition aside.
 poulpy_ckks::impl_ckks_copy_reference_full!(OverrideBackend, ConjugateInvariant);

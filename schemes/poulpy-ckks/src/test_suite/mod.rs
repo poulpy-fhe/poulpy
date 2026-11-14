@@ -373,6 +373,18 @@ macro_rules! ckks_backend_rank2_test_suite {
                 replicated_masked_constants,
                 $crate::test_suite::replicated::test_replicated_masked_constants
             );
+            run_ring_test_result!(
+                replicated_conversions_round_trip,
+                $crate::test_suite::replicated::test_replicated_conversions_round_trip
+            );
+            run_ring_test_result!(
+                replicated_conversions_round_trip_factored,
+                $crate::test_suite::replicated::test_replicated_conversions_round_trip_factored
+            );
+            run_ring_test_result!(
+                replicated_transforms_apply_matrices,
+                $crate::test_suite::replicated::test_replicated_transforms_apply_matrices
+            );
             run_test!(mul_ct_aligned, $crate::test_suite::mul::test_mul_ct_aligned);
             run_test!(
                 mul_ct_larger_budget_smaller_scale,
@@ -785,6 +797,30 @@ macro_rules! ckks_backend_test_suite {
             run_ring_test_result!(
                 replicated_masked_constants,
                 $crate::test_suite::replicated::test_replicated_masked_constants
+            );
+            run_ring_test_result!(
+                replicated_conversions_round_trip,
+                $crate::test_suite::replicated::test_replicated_conversions_round_trip
+            );
+            run_ring_test_result!(
+                replicated_conversions_round_trip_factored,
+                $crate::test_suite::replicated::test_replicated_conversions_round_trip_factored
+            );
+            run_ring_test_result!(
+                replicated_transforms_apply_matrices,
+                $crate::test_suite::replicated::test_replicated_transforms_apply_matrices
+            );
+            run_test_result!(
+                replicated_bootstrap,
+                $crate::test_suite::replicated::test_replicated_bootstrap
+            );
+            run_test_result!(
+                replicated_bootstrap_factored,
+                $crate::test_suite::replicated::test_replicated_bootstrap_factored
+            );
+            run_test_result!(
+                replicated_bootstrap_small_periods,
+                $crate::test_suite::replicated::test_replicated_bootstrap_small_periods
             );
             run_test!(conjugate_aligned, $crate::test_suite::conjugate::test_conjugate_aligned);
             run_test!(
@@ -1484,6 +1520,7 @@ pub mod presets;
 #[doc(hidden)]
 pub mod reference_encoder;
 pub mod replicated;
+pub mod replicated_presets;
 pub mod rotate;
 pub mod round;
 pub mod ship;
