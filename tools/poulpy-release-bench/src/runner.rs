@@ -174,8 +174,13 @@ fn preset_json(preset: &BootstrappingPreset, nominal_base2k: usize, pow2: bool) 
         "dense_to_sparse_dsize": preset.dense_to_sparse_dsize(),
         "dense_secret_hamming_weight": preset.dense_secret_hamming_weight(),
         "sparse_secret_hamming_weight": preset.sparse_secret_hamming_weight(),
-        "max_dense_modulus": preset.max_dense_modulus(),
-        "max_sparse_modulus": preset.max_sparse_modulus(),
+        // The level building the preset certified, `null` for an uncertified one.
+        "security": preset.security().map(|security| json!({
+            "bits": security.bits(),
+            "table": format!("rlwe-params {}", security.table_version()),
+            "max_dense_modulus": preset.max_dense_modulus(),
+            "max_sparse_modulus": preset.max_sparse_modulus(),
+        })),
     })
 }
 
