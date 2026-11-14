@@ -19,13 +19,13 @@ use crate::{
     SetGLWEPlaintextInfos, SlotLayout, SlotsKind,
     api::{
         CKKSAddOps, CKKSAllOpsTmpBytes, CKKSCIRingMapOps, CKKSComplexPolynomialEvaluationOps, CKKSConjugateOps, CKKSCopyOps,
-        CKKSEvalModOps, CKKSImagOps, CKKSLinearTransformationOps, CKKSMulOps, CKKSPolynomialEvaluationOps, CKKSPow2Ops,
-        CKKSReplicatedBootstrapOps, CKKSRotateOps, CKKSRoundOps, CKKSSubOps,
+        CKKSEvalModOps, CKKSImagOps, CKKSLinearTransformationOps, CKKSMulOps, CKKSNegOps, CKKSPolynomialEvaluationOps,
+        CKKSPow2Ops, CKKSReplicatedBootstrapOps, CKKSRotateOps, CKKSRoundOps, CKKSSubOps,
     },
-    eval_lut::{ckks_eval_lut, ckks_eval_lut_from_basis, ckks_lut_power_basis},
+    eval_lut::{ckks_eval_lut, ckks_eval_lut_binary, ckks_eval_lut_from_basis, ckks_lut_power_basis},
     layouts::{
-        BootstrappingKeys, BootstrappingKeysLayout, CKKSCiphertextAlloc, CKKSCiphertextViewMut, ReplicatedBootstrapWorkspace,
-        ReplicatedBootstrapping, ReplicatedLut, ReplicatedTransform, ReplicatedTransformWorkspace,
+        BootstrappingKeys, BootstrappingKeysLayout, CKKSCiphertextAlloc, CKKSCiphertextViewMut, EncodedLutKind,
+        ReplicatedBootstrapWorkspace, ReplicatedBootstrapping, ReplicatedLut, ReplicatedTransform, ReplicatedTransformWorkspace,
         ScratchArenaTakeCKKSCiphertext,
     },
     oep::{CKKSEncapsulatedModUpImpl, CKKSModUpFirstFactorImpl},
@@ -582,7 +582,8 @@ pub trait CKKSReplicatedBootstrapReference<BE: Backend> {
             + CKKSPolynomialEvaluationOps<BE>
             + CKKSMulOps<BE>
             + CKKSCiphertextAlloc<BE>
-            + GLWENormalize<BE>,
+            + GLWENormalize<BE>
+            + CKKSNegOps<BE>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: BootstrappingKeys<BE>;
@@ -748,6 +749,7 @@ impl<BE: Backend> CKKSReplicatedBootstrapReference<BE> for Module<BE> {
                 .max()
                 .unwrap_or(0);
             (carved + module.ckks_eval_mod_tmp_bytes(boot, boot, &ctx.eval_mod, tsk).max(lut))
+                .max(3 * ct_bytes::<BE>(&boot.glwe_layout) + module.ckks_round_tmp_bytes(boot, boot).max(lut))
                 .max(module.ckks_mul_i_tmp_bytes(boot.size()))
                 .max(module.ckks_add_tmp_bytes(boot.size()))
                 .max(module.ckks_round_tmp_bytes(out, boot))
@@ -784,7 +786,8 @@ impl<BE: Backend> CKKSReplicatedBootstrapReference<BE> for Module<BE> {
             + CKKSPolynomialEvaluationOps<BE>
             + CKKSMulOps<BE>
             + CKKSCiphertextAlloc<BE>
-            + GLWENormalize<BE>,
+            + GLWENormalize<BE>
+            + CKKSNegOps<BE>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: BootstrappingKeys<BE>,
@@ -811,22 +814,28 @@ impl<BE: Backend> CKKSReplicatedBootstrapReference<BE> for Module<BE> {
                 return Err(invalid(OP, "takes its outputs at one width"));
             }
         }
-        // The LUTs read the exponential at the raised scale, within the plan's budget.
-        let raised = plan.log_delta + functional.log_msg_ratio + plan.mod_up_extra_bits;
+        // General LUTs read the exponential at the raised scale, binary ones the EvalMod input at the EvalMod scale,
+        // within the plan's budget.
+        let eval_scale = plan.eval_mod.f_mod_log_delta;
+        let lut_scale = if functional.exponential {
+            plan.log_delta + functional.log_msg_ratio + plan.mod_up_extra_bits
+        } else {
+            eval_scale
+        };
         for lut in luts {
             if lut.message_modulus() != functional.message_modulus
-                || lut.general_series().is_none()
-                || lut.coeffs().log_delta() != raised
-                || lut.consumed_bits(raised) > functional.lut_consumed_bits
+                || lut.requires_eval_mod() != functional.exponential
+                || lut.coeffs().log_delta() != lut_scale
+                || lut.consumed_bits(lut_scale) > functional.lut_consumed_bits
             {
                 return Err(invalid(
                     OP,
-                    "takes general LUTs of the plan's message modulus, encoded at its raised scale, within its LUT budget",
+                    "takes LUTs of the plan's kind and message modulus, encoded at its LUT scale, within its LUT budget",
                 ));
             }
         }
-        // Equal-arity LUTs share the exponential and the powers of each part.
-        let shared = luts.len() > 1;
+        // Equal-arity general LUTs share the exponential and the powers of each part.
+        let shared = functional.exponential && luts.len() > 1;
         bootstrap_to_slots(
             module,
             OP,
@@ -839,6 +848,44 @@ impl<BE: Backend> CKKSReplicatedBootstrapReference<BE> for Module<BE> {
             |re, mut im, out, real, scratch| {
                 let rotation_keys = &RotationKeys(keys);
                 let tsk = crate::layouts::validation::required_tensor_key(OP, keys.tensor_key())?;
+                if !functional.exponential {
+                    // 6. Each part rounded with shaping to the EvalMod scale, then each LUT's cosine and double-angle chain,
+                    //    the parts recombined into `Re + i·Im`, or of real slots the real part alone.
+                    let layout = GLWELayout {
+                        k: (re.log_budget() + eval_scale).into(),
+                        ..re.glwe_layout()
+                    };
+                    let meta = re.meta();
+                    let (mut work_re, scratch) = scratch.borrow().take_ckks_ciphertext_scratch(&layout, meta);
+                    let (mut work_im, scratch) = scratch.take_ckks_ciphertext_scratch(&layout, meta);
+                    let (mut part, mut scratch) = scratch.take_ckks_ciphertext_scratch(&layout, meta);
+                    module.ckks_round(&mut work_re, &*re, &mut scratch)?;
+                    if let Some(im) = im.as_deref() {
+                        module.ckks_round(&mut work_im, im, &mut scratch)?;
+                    }
+                    let work_meta = work_re.meta();
+                    for (dst, lut) in dst.iter_mut().zip(luts) {
+                        let EncodedLutKind::Binary { cos, chain } = lut.kind() else {
+                            unreachable!("checked at entry");
+                        };
+                        out.set_meta(work_meta);
+                        out.set_k(layout.k);
+                        ckks_eval_lut_binary(module, &mut *out, &work_re, cos, chain.as_ref(), tsk, &mut scratch)?;
+                        if im.is_some() {
+                            part.set_meta(work_meta);
+                            part.set_k(layout.k);
+                            ckks_eval_lut_binary(module, &mut part, &work_im, cos, chain.as_ref(), tsk, &mut scratch)?;
+                            module.ckks_mul_i_assign(&mut part, &mut scratch)?;
+                            module.ckks_add_assign(&mut *out, &part, &mut scratch)?;
+                        }
+                        out.set_slots(if real { SlotsKind::Real } else { SlotsKind::Complex });
+                        out.set_slot_layout(SlotLayout::Replicated(plan.layout));
+                        // 7. The table values at the EvalMod scale; one shaped rounding returns to the leveled scale.
+                        dst.set_k((out.log_budget() + plan.level_log_delta).into());
+                        module.ckks_round(dst, &*out, &mut scratch)?;
+                    }
+                    return Ok(());
+                }
                 let layout = re.glwe_layout();
                 let meta = re.meta();
                 // 6. The exponential of each part, then each LUT's interpolation, the parts recombined into `Re + i·Im`, or

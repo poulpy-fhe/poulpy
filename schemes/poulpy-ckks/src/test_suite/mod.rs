@@ -827,6 +827,10 @@ macro_rules! ckks_backend_test_suite {
                 $crate::test_suite::replicated::test_replicated_functional_bootstrap
             );
             run_test_result!(
+                replicated_functional_bootstrap_binary,
+                $crate::test_suite::replicated::test_replicated_functional_bootstrap_binary
+            );
+            run_test_result!(
                 replicated_bootstrap_real,
                 $crate::test_suite::replicated::test_replicated_bootstrap_real
             );

@@ -93,8 +93,8 @@ The EvalMod plan is the complex exponential, `EvalModPlan::complex_exponential`,
 `EncodedLut::general_replicated` encodes the LUT's constants as masked plaintexts at `ReplicatedBootstrapPlan::functional_lut_log_delta(p)`, the raised scale, at which the exponential returns, and the widths count the LUT's budget there.
 `CKKSReplicatedBootstrapOps::ckks_replicated_functional_bootstrap` takes one output per LUT, all of one width, and writes `table[m mod p]` at the leveled scale.
 It runs the stages up to `CoeffsToSlots` once, then the exponential and each LUT's interpolation `T + conj(T)` on the real part, and for complex slots on the imaginary part too, recombined; two or more LUTs share the exponential and its powers.
-Binary LUTs are not taken: their double-angle chain subtracts constants, which a replicated layout adds only as masked plaintexts.
-On a test ring at `k = 8` with `U16_40`, a table of 5 entries keeps 26.8 bits on real and complex slots, alone or beside a second LUT, and a table of values up to 16 keeps 24.7 bits.
+A binary LUT (`EncodedLut::binary_replicated`, from the plan) skips the exponential: each part is rounded with shaping to the EvalMod scale, at which its constants are encoded, and the cosine reads it as `x/K` for the interval `K` of the EvalMod plan, then the double-angle chain adds and subtracts its constants as masked plaintexts; the plan's widths leave EvalMod out.
+On a test ring at `k = 8` with `U16_40`, a general table of 5 entries keeps 26.8 bits on real and complex slots, alone or beside a second LUT, a table of values up to 16 keeps 24.7 bits, and binary tables keep 27.5 and 28.5 bits.
 
 ### Presets
 

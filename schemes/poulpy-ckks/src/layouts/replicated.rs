@@ -811,8 +811,10 @@ pub struct ReplicatedFunctional {
     pub message_modulus: usize,
     /// `ceil(log2(p))`: the coefficient message ratio `q_b/Δ_b`.
     pub log_msg_ratio: usize,
-    /// Bits a LUT of the batch consumes at the raised scale.
+    /// Bits a LUT of the batch consumes at its scale.
     pub lut_consumed_bits: usize,
+    /// Whether the LUTs read the complex exponential, general LUTs, or the EvalMod input directly, binary ones.
+    pub exponential: bool,
 }
 
 impl ReplicatedBootstrapPlan {
@@ -851,41 +853,49 @@ impl ReplicatedBootstrapPlan {
     /// Configures the functional bootstrapping of integer messages modulo `p`,
     /// the entries of `lut`: `SlotsToCoeffs` scales the messages by `2^r/p`,
     /// `r = ceil(log2(p))` the message ratio, so that the coefficients carry the
-    /// phase `m/p`; the complex exponential of the EvalMod plan
-    /// ([`EvalModPlan::complex_exponential`]) and the LUT's interpolation take
-    /// the place of EvalMod; and the plan runs unpacked. The widths count the
-    /// LUT at the raised scale ([`Self::functional_lut_log_delta`]), at which
-    /// `lut`'s constants must be encoded.
+    /// phase `m/p`, and the plan runs unpacked. A general LUT takes the place of
+    /// EvalMod with the complex exponential of the EvalMod plan
+    /// ([`EvalModPlan::complex_exponential`]) and the LUT's interpolation; a
+    /// binary LUT ([`EncodedLut::binary_replicated`]) with its cosine and
+    /// double-angle chain on the EvalMod input, rounded with shaping to the
+    /// EvalMod scale, and no EvalMod. The widths count the LUT at its scale
+    /// ([`Self::functional_lut_log_delta`]), at which `lut`'s constants must be
+    /// encoded.
     ///
     /// # Errors
     ///
-    /// When the EvalMod plan is not the complex exponential, `lut` is not a
-    /// general LUT, or its constants are at another scale.
+    /// For a general LUT on an EvalMod plan other than the complex exponential,
+    /// and for constants at another scale than the LUT's.
     pub fn with_functional_bootstrap<P: CKKSInfos>(mut self, lut: &EncodedLut<P>) -> Result<Self> {
+        let exponential = lut.requires_eval_mod();
         ensure!(
-            self.eval_mod.eval_mod_type == EvalModType::ExpCmplx,
-            "functional bootstrapping takes the complex exponential (EvalModPlan::complex_exponential)"
+            !exponential || self.eval_mod.eval_mod_type == EvalModType::ExpCmplx,
+            "a general LUT takes the complex exponential (EvalModPlan::complex_exponential)"
         );
-        ensure!(lut.requires_eval_mod(), "functional bootstrapping takes a general LUT");
-        let raised = self.functional_lut_log_delta(lut.message_modulus())?;
+        let scale = if exponential {
+            self.functional_lut_log_delta(lut.message_modulus())?
+        } else {
+            self.eval_mod.f_mod_log_delta
+        };
         ensure!(
-            lut.coeffs().log_delta() == raised,
-            "the LUT's constants must be at the raised scale 2^{raised}, got 2^{}",
+            lut.coeffs().log_delta() == scale,
+            "the LUT's constants must be at 2^{scale}, got 2^{}",
             lut.coeffs().log_delta()
         );
         self.packed = false;
         self.functional = Some(ReplicatedFunctional {
             message_modulus: lut.message_modulus(),
             log_msg_ratio: lut.log_msg_ratio(),
-            lut_consumed_bits: lut.consumed_bits(raised),
+            lut_consumed_bits: lut.consumed_bits(scale),
+            exponential,
         });
         Ok(self)
     }
 
-    /// Scale of the raised ciphertext of a functional bootstrapping of
-    /// messages modulo `message_modulus`, at which the exponential returns and
-    /// its LUTs' constants are encoded: `Δ_b`, the message ratio and the ModUp
-    /// bits.
+    /// Scale of the constants of a general LUT of `message_modulus` entries:
+    /// the raised scale, at which the exponential returns, `Δ_b`, the message
+    /// ratio and the ModUp bits. A binary LUT's are at the EvalMod scale
+    /// ([`EvalModPlan::f_mod_log_delta`]).
     ///
     /// # Errors
     ///
@@ -995,14 +1005,22 @@ impl ReplicatedBootstrapPlan {
 
     /// Width after ModUp for an output of width `k_out`: `CoeffsToSlots`,
     /// EvalMod, and the rescale from `Δ_b`, lifted by the ModUp bits, to the
-    /// leveled scale; for a functional plan also the LUT, and the rescale from
-    /// the raised scale, which the table values keep.
+    /// leveled scale; for a functional plan the LUT, and EvalMod only for a
+    /// general LUT, and the rescale from the raised scale, which the table
+    /// values keep.
     pub fn k_boot(&self, k_out: usize) -> usize {
-        let lut = self
-            .functional
-            .map_or(0, |functional| functional.lut_consumed_bits + functional.log_msg_ratio);
-        k_out + self.c2s_consumed_bits() + self.eval_mod.consumed_bits() + lut + self.log_delta + self.mod_up_extra_bits
-            - self.level_log_delta
+        let (eval_mod, lut) = match self.functional {
+            None => (self.eval_mod.consumed_bits(), 0),
+            Some(functional) => (
+                if functional.exponential {
+                    self.eval_mod.consumed_bits()
+                } else {
+                    0
+                },
+                functional.lut_consumed_bits + functional.log_msg_ratio,
+            ),
+        };
+        k_out + self.c2s_consumed_bits() + eval_mod + lut + self.log_delta + self.mod_up_extra_bits - self.level_log_delta
     }
 
     /// Width of the widest key switch: the raised modulus and the working bits

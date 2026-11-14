@@ -20,7 +20,7 @@ use crate::{
     eval_lut::{cos_hermite_binary, trig_hermite_lut},
     layouts::{
         CKKSCiphertextAlloc, CKKSPlaintext, CKKSPlaintextAlloc, CKKSPlaintextOwned, CKKSPlaintextVecHostCodec, CKKSScalar,
-        MaskedCoeffs, encode_complex_bsgs_replicated,
+        MaskedCoeffs, encode_bsgs_replicated, encode_complex_bsgs_replicated, masked::encode_masked_constants,
     },
     polynomial::{BSGSPolynomial, CKKSPolynomialEncode, ComplexBSGSPolynomial, Polynomial, SplitStrategy},
 };
@@ -130,7 +130,7 @@ impl EncodedLut<CKKSPlaintextOwned<HostBytesBackend>> {
     where
         F: CKKSScalar + Float + FloatConst,
     {
-        let binary = cos_hermite_binary(f0, f1, degree, k_interval, log_interval_reduction)?;
+        let binary = cos_hermite_binary(f0, f1, degree, k_interval, log_interval_reduction, false)?;
         let cos =
             <Polynomial<F> as CKKSPolynomialEncode>::encode_bsgs_with(&binary.poly, host_module, base2k, coeffs_meta, strategy)?;
         let chain = match NonZeroUsize::new(binary.consts.len()) {
@@ -203,7 +203,53 @@ impl<D: Data, W: ZnxWord> EncodedLut<MaskedCoeffs<CKKSPlaintext<D, W>>> {
         })
     }
 
-    /// Scratch of [`Self::general_replicated`] on `module`.
+    /// [`EncodedLut::binary`] for a replicated bootstrapping of `plan`, encoded on `module` within the caller's scratch
+    /// of [`Self::general_replicated_tmp_bytes`]: the cosine reads the input of the plan's EvalMod, `x/K` for the
+    /// interval `K` of its EvalMod plan, and the constants of the polynomial and of the double-angle chain also
+    /// carry their masked plaintexts. Its constants are at the EvalMod scale
+    /// ([`ReplicatedBootstrapPlan::functional_lut_log_delta`](super::ReplicatedBootstrapPlan::functional_lut_log_delta)).
+    #[allow(clippy::too_many_arguments)]
+    pub fn binary_replicated<BE, F>(
+        module: &Module<BE>,
+        plan: &super::ReplicatedBootstrapPlan,
+        f0: F,
+        f1: F,
+        degree: usize,
+        log_interval_reduction: usize,
+        base2k: Base2K,
+        coeffs_meta: CoeffsMeta,
+        strategy: SplitStrategy,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<Self>
+    where
+        BE: Backend<OwnedBuf = D, ZnxWord = W>,
+        Module<BE>: CKKSCiphertextAlloc<BE> + CKKSPlaintextAlloc<BE> + CKKSEncodingOps<BE, F> + GetDegree + CKKSModuleInfos,
+        F: CKKSEncodingScalar + Float + FloatConst,
+    {
+        let layout = plan.layout;
+        let binary = cos_hermite_binary(f0, f1, degree, plan.eval_mod.f_mod_interval, log_interval_reduction, true)?;
+        let cos = encode_bsgs_replicated(&binary.poly, module, base2k, coeffs_meta, strategy, layout, scratch)?;
+        let chain = match NonZeroUsize::new(binary.consts.len()) {
+            None => None,
+            Some(steps) => {
+                let mut meta = coeffs_meta;
+                meta.meta.slots = SlotsKind::Real;
+                let consts = encode_masked_constants(module, base2k, meta, layout, &binary.consts, scratch)?;
+                Some(DoubleAngleChain {
+                    consts,
+                    steps,
+                    negate: binary.negate,
+                })
+            }
+        };
+        Ok(Self {
+            kind: EncodedLutKind::Binary { cos, chain },
+            log_msg_ratio: 1,
+            message_modulus: 2,
+        })
+    }
+
+    /// Scratch of [`Self::general_replicated`] and [`Self::binary_replicated`] on `module`.
     pub fn general_replicated_tmp_bytes<BE, F>(module: &Module<BE>) -> usize
     where
         BE: Backend<OwnedBuf = D, ZnxWord = W>,

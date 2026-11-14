@@ -3001,10 +3001,9 @@ where
     Ok(())
 }
 
-/// Functional bootstrapping of `k = 8` integers modulo `p = 5`, negative ones and ones past `p` among them, with the
-/// complex exponential of the paper's EvalMod parameters: one LUT and two sharing the exponential, on real slots
-/// through the real part and on complex slots through both parts; and the refusals of a plan and LUTs that do not
-/// match.
+/// Functional bootstrapping of `k = 8` integers with general LUTs of `p = 5` entries, through the complex exponential
+/// of the paper's EvalMod parameters: one LUT and two sharing the exponential, on real and complex slots, and the
+/// refusals of a plan and LUTs that do not match.
 pub fn test_replicated_functional_bootstrap<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -3025,7 +3024,6 @@ where
     F: TestScalar,
     E: ReimNew<F>,
 {
-    const OP: &str = "ckks_replicated_functional_bootstrap";
     let layout = ShapingUnit::U16_40.layout(3)?;
     let paper = ReplicatedBootstrapPlan::paper(layout);
     let em = paper.eval_mod;
@@ -3041,10 +3039,11 @@ where
         ..paper
     };
     let base2k = Base2K(params.base2k as u32);
-    let tables: [Vec<F>; 2] = [[1.0, -2.0, 0.5, 3.0, -1.5], [0.0, 1.0, 4.0, 9.0, 16.0]]
-        .map(|table| table.iter().map(|&v| F::from_f64(v).unwrap()).collect());
-    let p = tables[0].len();
-    let lut_meta = CoeffsMeta::from_delta_budget(plan.functional_lut_log_delta(p)?, 20);
+    let tables: Vec<Vec<F>> = [[1.0, -2.0, 0.5, 3.0, -1.5], [0.0, 1.0, 4.0, 9.0, 16.0]]
+        .iter()
+        .map(|table| table.iter().map(|&v| F::from_f64(v).unwrap()).collect())
+        .collect();
+    let lut_meta = CoeffsMeta::from_delta_budget(plan.functional_lut_log_delta(tables[0].len())?, 20);
     let mut encoding = ScratchOwned::<BE>::alloc(ReplicatedLut::<BE>::general_replicated_tmp_bytes::<BE, F>(module));
     let encode = |table: &[F], meta: CoeffsMeta, encoding: &mut ScratchOwned<BE>| {
         ReplicatedLut::<BE>::general_replicated(
@@ -3057,7 +3056,7 @@ where
             &mut encoding.borrow(),
         )
     };
-    let luts = [
+    let luts = vec![
         encode(&tables[0], lut_meta, &mut encoding)?,
         encode(&tables[1], lut_meta, &mut encoding)?,
     ];
@@ -3069,9 +3068,113 @@ where
         &mut encoding,
     )?;
     assert!(plan.with_functional_bootstrap(&off_scale).is_err());
+    let four = encode(
+        &tables[0][..4],
+        CoeffsMeta::from_delta_budget(plan.functional_lut_log_delta(4)?, 20),
+        &mut encoding,
+    )?;
     let plan = plan.with_functional_bootstrap(&luts[0])?;
     assert!(!plan.packed);
+    // Measured on the portable backends: 24.7 to 26.8 bits.
+    functional_bootstrap_with::<BE, F>(&params, module, host_module, plan, &luts, &tables, Some(four), 22.0)
+}
 
+/// Functional bootstrapping of `k = 8` integers with binary LUTs, one table `f0 > f1` and one `f0 < f1`, whose
+/// double-angle chain ends negated, through their cosine on the EvalMod input of the paper's plan, rounded with shaping
+/// to its scale: one LUT and two, on real and complex slots.
+pub fn test_replicated_functional_bootstrap_binary<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) -> Result<()>
+where
+    BE: TestContextBackend + CKKSEncapsulatedModUpImpl,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextModule<BE>
+        + CKKSEncodingOps<BE, F>
+        + CKKSReplicatedBootstrapOps<BE>
+        + CKKSLinearTransformationOps<BE>
+        + CnvPVecAlloc<BE>
+        + GLWETrace<BE>
+        + GLWECIKeyPreparedFactory<BE>
+        + poulpy_core::api::GLWETensorKeyPreparedFactory<BE, ConjugateInvariant>,
+    F: TestScalar,
+    E: ReimNew<F>,
+{
+    let layout = ShapingUnit::U16_40.layout(3)?;
+    let paper = ReplicatedBootstrapPlan::paper(layout);
+    let base2k = Base2K(params.base2k as u32);
+    let tables: Vec<Vec<F>> = [[1.5, -0.5], [0.0, 1.0]]
+        .iter()
+        .map(|table| table.iter().map(|&v| F::from_f64(v).unwrap()).collect())
+        .collect();
+    let mut encoding = ScratchOwned::<BE>::alloc(ReplicatedLut::<BE>::general_replicated_tmp_bytes::<BE, F>(module));
+    let encode = |table: &[F], log_delta: usize, encoding: &mut ScratchOwned<BE>| {
+        ReplicatedLut::<BE>::binary_replicated(
+            module,
+            &paper,
+            table[0],
+            table[1],
+            31,
+            3,
+            base2k,
+            CoeffsMeta::from_delta_budget(log_delta, 20),
+            SplitStrategy::MinDepth,
+            &mut encoding.borrow(),
+        )
+    };
+    let scale = paper.eval_mod.f_mod_log_delta;
+    let luts = vec![
+        encode(&tables[0], scale, &mut encoding)?,
+        encode(&tables[1], scale, &mut encoding)?,
+    ];
+    // A binary LUT takes the EvalMod scale.
+    assert!(
+        paper
+            .with_functional_bootstrap(&encode(&tables[0], scale + 1, &mut encoding)?)
+            .is_err()
+    );
+    let plan = paper.with_functional_bootstrap(&luts[0])?;
+    assert!(!plan.packed && !plan.functional.unwrap().exponential);
+    // Measured on the portable backends: 27.5 and 28.5 bits.
+    functional_bootstrap_with::<BE, F>(&params, module, host_module, plan, &luts, &tables, None, 25.0)
+}
+
+/// The functional bootstrapping of `plan` of `k = 8` integers, negative ones and ones past the table length among them,
+/// for one LUT of `luts` and for all of them, on real slots through the real part and on complex slots through both
+/// parts, each output at least `min_bits` precise against its table, the keys looked up at the plan's widths. With a
+/// LUT of another length, also the refusals of an identity bootstrapping, of one output for several LUTs, and of that
+/// LUT.
+#[allow(clippy::too_many_arguments)]
+fn functional_bootstrap_with<BE, F>(
+    params: &CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+    plan: ReplicatedBootstrapPlan,
+    luts: &[ReplicatedLut<BE>],
+    tables: &[Vec<F>],
+    other_length: Option<ReplicatedLut<BE>>,
+    min_bits: f64,
+) -> Result<()>
+where
+    BE: TestContextBackend + CKKSEncapsulatedModUpImpl,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextModule<BE>
+        + CKKSEncodingOps<BE, F>
+        + CKKSReplicatedBootstrapOps<BE>
+        + CKKSLinearTransformationOps<BE>
+        + CnvPVecAlloc<BE>
+        + GLWETrace<BE>
+        + GLWECIKeyPreparedFactory<BE>
+        + poulpy_core::api::GLWETensorKeyPreparedFactory<BE, ConjugateInvariant>,
+    F: TestScalar,
+{
+    const OP: &str = "ckks_replicated_functional_bootstrap";
+    let layout = plan.layout;
+    let p = tables[0].len();
+    let base2k = Base2K(params.base2k as u32);
     let mut compile = ScratchOwned::<BE>::alloc(ReplicatedBootstrapping::<BE, F>::new_tmp_bytes(module, &plan, base2k)?);
     let ctx = ReplicatedBootstrapping::<BE, F>::new(module, plan, base2k, &mut compile.borrow())?;
     let k_out = plan.k_in() + plan.level_log_delta;
@@ -3084,7 +3187,7 @@ where
         params.base2k + 1,
         true,
     );
-    let (sk_raw, sk) = gen_sk_with_raw::<_, Standard>(&params, module, host_module, [0u8; 32]);
+    let (sk_raw, sk) = gen_sk_with_raw::<_, Standard>(params, module, host_module, [0u8; 32]);
     let (mut xs, mut xe, mut xa) = (Source::new([3; 32]), Source::new([4; 32]), Source::new([5; 32]));
     let mut keygen = ScratchOwned::<BE>::alloc(
         ctx.generate_keys_tmp_bytes(module, &key_layouts)
@@ -3124,23 +3227,23 @@ where
             slot_layout: SlotLayout::Replicated(layout),
         });
         encoded(module, &mut pt, re, im)?;
-        let mut ct = alloc_ct::<_, Standard>(&params, module, k_in);
+        let mut ct = alloc_ct::<_, Standard>(params, module, k_in);
         let (mut xe, mut xa) = (Source::new([6; 32]), Source::new([7; 32]));
         with_scratch::<BE, _>(module.ckks_encrypt_sk_tmp_bytes(&ct), |s| {
             module.ckks_encrypt_sk(&mut ct, &pt, &sk, &mut xe, &mut xa, s)
         })?;
         Ok(ct)
     };
-    let mut workspace = ctx.alloc_workspace(module, &alloc_ct::<_, Standard>(&params, module, k_out));
+    let mut workspace = ctx.alloc_workspace(module, &alloc_ct::<_, Standard>(params, module, k_out));
     for real in [true, false] {
         let im = if real { vec![F::zero(); len] } else { as_f(&others) };
         let mut input = encrypt(&as_f(&messages), &im)?;
         if real {
             input.set_slots(SlotsKind::Real);
         }
-        for count in [1, 2] {
+        for count in [1, luts.len()] {
             let luts = &luts[..count];
-            let mut outs: Vec<_> = (0..count).map(|_| alloc_ct::<_, Standard>(&params, module, k_out)).collect();
+            let mut outs: Vec<_> = (0..count).map(|_| alloc_ct::<_, Standard>(params, module, k_out)).collect();
             let bytes = module.ckks_replicated_functional_bootstrap_tmp_bytes(&outs[0], &input, &ctx, luts, &key_layouts);
             let logged = LoggedBootstrappingKeys::new::<BE>(&keys);
             with_scratch::<BE, _>(bytes, |s| {
@@ -3157,50 +3260,47 @@ where
                 } else {
                     lookup(&tables[index], &others)
                 };
-                let got = decrypt_batch::<BE, F, Standard>(&params, module, &sk, out, len);
+                let got = decrypt_batch::<BE, F, Standard>(params, module, &sk, out, len);
                 let bits = precision((&got.0, &got.1), (&want_re, &want_im));
-                // Measured on the portable backends: 24.7 to 26.8 bits.
                 assert!(
-                    bits >= 22.0,
+                    bits >= min_bits,
                     "replicated functional bootstrapping, real {real}, LUT {index} of {count}: {bits:.2} bits"
                 );
             }
         }
     }
+    let Some(other_length) = other_length else {
+        return Ok(());
+    };
 
     // The identity bootstrapping refuses a functional context, and the functional one outputs other than one per LUT,
-    // and a LUT of another modulus.
+    // and a LUT of another length.
     let input = encrypt(&as_f(&messages), &as_f(&others))?;
-    let mut out = alloc_ct::<_, Standard>(&params, module, k_out);
-    let bytes = module.ckks_replicated_functional_bootstrap_tmp_bytes(&out, &input, &ctx, &luts, &key_layouts);
+    let mut out = alloc_ct::<_, Standard>(params, module, k_out);
+    let bytes = module.ckks_replicated_functional_bootstrap_tmp_bytes(&out, &input, &ctx, luts, &key_layouts);
     let err = with_scratch::<BE, _>(bytes, |s| {
         module.ckks_replicated_bootstrap(&mut out, &input, &ctx, &mut workspace, &keys, s)
     })
     .expect_err("a functional context");
     assert_invalid(&err, "ckks_replicated_bootstrap");
-    let mut outs = vec![alloc_ct::<_, Standard>(&params, module, k_out)];
+    let mut outs = vec![alloc_ct::<_, Standard>(params, module, k_out)];
     let err = with_scratch::<BE, _>(bytes, |s| {
-        module.ckks_replicated_functional_bootstrap(&mut outs, &input, &ctx, &luts, &mut workspace, &keys, s)
+        module.ckks_replicated_functional_bootstrap(&mut outs, &input, &ctx, luts, &mut workspace, &keys, s)
     })
     .expect_err("one output for two LUTs");
     assert_invalid(&err, OP);
-    let four = encode(
-        &tables[0][..4],
-        CoeffsMeta::from_delta_budget(plan.functional_lut_log_delta(4)?, 20),
-        &mut encoding,
-    )?;
     let err = with_scratch::<BE, _>(bytes, |s| {
         module.ckks_replicated_functional_bootstrap(
             &mut outs,
             &input,
             &ctx,
-            std::slice::from_ref(&four),
+            std::slice::from_ref(&other_length),
             &mut workspace,
             &keys,
             s,
         )
     })
-    .expect_err("a LUT of another modulus");
+    .expect_err("a LUT of another length");
     assert_invalid(&err, OP);
     Ok(())
 }
