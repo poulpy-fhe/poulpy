@@ -15,6 +15,7 @@ members = [
     "backends/poulpy-cpu-oracle",
     "backends/poulpy-gpu-portable",
     "tools/poulpy-bench",
+    "examples/resnet20",
 ]
 # Release measurements, built by tools/release_bench.py and not part of the library.
 exclude = ["tools/poulpy-release-bench"]
