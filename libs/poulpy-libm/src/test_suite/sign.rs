@@ -4,6 +4,7 @@ use poulpy_core::layouts::{
     GGLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, prepared::GLWETensorKeyPreparedToBackendRef,
 };
 use poulpy_hal::{
+    AlignedBuf,
     api::{ReimNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{HostBytesBackend, Module, ScratchOwned, Standard},
     source::Source,
@@ -42,12 +43,13 @@ where
     E: ReimNew<F>,
 {
     let coeff_meta = ckks_spec(base.n, base.base2k, base.prec().log_delta(), base.base2k);
+    type HostComposite<F> = SignComposite<F, CKKSPlaintext<AlignedBuf, i64, Standard>>;
     assert_error(
-        SignComposite::<F, _>::from_coeffs(base.base2k.into(), &[], coeff_meta, SplitStrategy::MinDepth, host_module),
+        HostComposite::<F>::from_coeffs(base.base2k.into(), &[], coeff_meta, SplitStrategy::MinDepth, host_module),
         "sign composite: coefficient rows must be non-empty",
     );
     assert_error(
-        SignComposite::<F, _>::from_minimax(
+        HostComposite::<F>::from_minimax(
             F::zero(),
             15.0,
             &[15],

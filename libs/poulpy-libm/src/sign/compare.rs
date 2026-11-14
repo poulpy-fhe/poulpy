@@ -8,24 +8,24 @@ use poulpy_core::{
         BSGSMeta, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, IntPolyInfos, LWEInfos,
     },
 };
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Module, Ring, ScratchArena, Standard};
 
 use poulpy_ckks::{
     CKKSCtBounds, CKKSInfos, SetCKKSInfos,
     api::{
-        CKKSAddOps, CKKSAllOpsTmpBytes, CKKSConjugateOps, CKKSCopyOps, CKKSMulOps, CKKSNegOps, CKKSPolynomialEvaluationOps,
-        CKKSPow2Ops, CKKSSubOps,
+        CKKSAddOps, CKKSAllOpsTmpBytes, CKKSCopyOps, CKKSMulOps, CKKSNegOps, CKKSPolynomialEvaluationOps, CKKSPow2Ops, CKKSSubOps,
     },
     layouts::ScratchArenaTakeCKKSCiphertext,
 };
 
-use super::{SignComposite, ckks_sign_into, ckks_sign_tmp_bytes};
+use super::{SignComposite, SignRing, SignRingOps, ckks_sign_into, ckks_sign_tmp_bytes};
 
 /// Smooth extrema and clamp.
 ///
 /// Every operation evaluates `step(d) * d` for a difference `d`, on scratch temporaries with the layout of its first
-/// operand, and writes `res` once, with its last call. `keys` answers the conjugation, Galois element `-1`.
-pub trait CKKSComparisonOps<BE: Backend> {
+/// operand, and writes `res` once, with its last call. On the standard ring `keys` answers the conjugation, Galois
+/// element `-1`. The conjugate-invariant ring looks up no key.
+pub trait CKKSComparisonOps<BE: Backend, Rg: Ring = Standard> {
     /// Scratch bytes for [`Self::ckks_fmax`] and [`Self::ckks_fmin`].
     fn ckks_comparison_tmp_bytes<R, A, B, P, T, K>(&self, res: &R, op0: &A, op1: &B, coeff_prec: &P, tsk: &T, keys: &K) -> usize
     where
@@ -67,12 +67,12 @@ pub trait CKKSComparisonOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        B: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE>,
-        H: GetTensorKey<BE>,
-        K: GetAutomorphismKey<BE>;
+        R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        B: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE, Rg>,
+        H: GetTensorKey<BE, Rg>,
+        K: GetAutomorphismKey<BE, Rg>;
 
     /// `res <- fmin(op0, op1) = op0 - step(op0 - op1) * (op0 - op1)`.
     ///
@@ -95,12 +95,12 @@ pub trait CKKSComparisonOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        B: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE>,
-        H: GetTensorKey<BE>,
-        K: GetAutomorphismKey<BE>;
+        R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        B: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE, Rg>,
+        H: GetTensorKey<BE, Rg>,
+        K: GetAutomorphismKey<BE, Rg>;
 
     /// `res <- fmax(x, bound[bound_coeff])`.
     ///
@@ -124,12 +124,12 @@ pub trait CKKSComparisonOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        X: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE>,
-        B: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
-        H: GetTensorKey<BE>,
-        K: GetAutomorphismKey<BE>;
+        R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        X: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE, Rg>,
+        B: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos,
+        H: GetTensorKey<BE, Rg>,
+        K: GetAutomorphismKey<BE, Rg>;
 
     /// `res <- fmin(x, bound[bound_coeff])`.
     ///
@@ -153,12 +153,12 @@ pub trait CKKSComparisonOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        X: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE>,
-        B: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
-        H: GetTensorKey<BE>,
-        K: GetAutomorphismKey<BE>;
+        R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        X: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE, Rg>,
+        B: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos,
+        H: GetTensorKey<BE, Rg>,
+        K: GetAutomorphismKey<BE, Rg>;
 
     /// `res <- min(max(x, bounds[lo_coeff]), bounds[hi_coeff])`.
     ///
@@ -183,25 +183,24 @@ pub trait CKKSComparisonOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        X: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE>,
-        B: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
-        H: GetTensorKey<BE>,
-        K: GetAutomorphismKey<BE>;
+        R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        X: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE, Rg>,
+        B: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos,
+        H: GetTensorKey<BE, Rg>,
+        K: GetAutomorphismKey<BE, Rg>;
 }
 
-impl<BE: Backend> CKKSComparisonOps<BE> for Module<BE>
+impl<BE: Backend, Rg: SignRingOps<BE>> CKKSComparisonOps<BE, Rg> for Module<BE>
 where
     Module<BE>: CKKSAllOpsTmpBytes<BE>
-        + CKKSSubOps<BE>
-        + CKKSAddOps<BE>
-        + CKKSCopyOps<BE>
-        + CKKSConjugateOps<BE>
-        + CKKSMulOps<BE>
-        + CKKSNegOps<BE>
-        + CKKSPow2Ops<BE>
-        + CKKSPolynomialEvaluationOps<BE>
+        + CKKSSubOps<BE, Rg>
+        + CKKSAddOps<BE, Rg>
+        + CKKSCopyOps<BE, Rg>
+        + CKKSMulOps<BE, Rg>
+        + CKKSNegOps<BE, Rg>
+        + CKKSPow2Ops<BE, Rg>
+        + CKKSPolynomialEvaluationOps<BE, Rg>
         + GLWEBytesOf<BE>,
 {
     fn ckks_comparison_tmp_bytes<R, A, B, P, T, K>(&self, res: &R, op0: &A, op1: &B, coeff_prec: &P, tsk: &T, keys: &K) -> usize
@@ -246,12 +245,12 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        B: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE>,
-        H: GetTensorKey<BE>,
-        K: GetAutomorphismKey<BE>,
+        R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        B: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE, Rg>,
+        H: GetTensorKey<BE, Rg>,
+        K: GetAutomorphismKey<BE, Rg>,
     {
         scratch.scope(|scratch_local| {
             let (mut corr, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(op0);
@@ -282,12 +281,12 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        B: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE>,
-        H: GetTensorKey<BE>,
-        K: GetAutomorphismKey<BE>,
+        R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        B: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE, Rg>,
+        H: GetTensorKey<BE, Rg>,
+        K: GetAutomorphismKey<BE, Rg>,
     {
         scratch.scope(|scratch_local| {
             let (mut corr, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(op0);
@@ -320,12 +319,12 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        X: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE>,
-        B: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
-        H: GetTensorKey<BE>,
-        K: GetAutomorphismKey<BE>,
+        R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        X: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE, Rg>,
+        B: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos,
+        H: GetTensorKey<BE, Rg>,
+        K: GetAutomorphismKey<BE, Rg>,
     {
         scratch.scope(|scratch_local| {
             let (mut corr, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(x);
@@ -348,12 +347,12 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        X: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE>,
-        B: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
-        H: GetTensorKey<BE>,
-        K: GetAutomorphismKey<BE>,
+        R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        X: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE, Rg>,
+        B: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos,
+        H: GetTensorKey<BE, Rg>,
+        K: GetAutomorphismKey<BE, Rg>,
     {
         scratch.scope(|scratch_local| {
             let (mut corr, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(x);
@@ -378,12 +377,12 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        X: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE>,
-        B: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
-        H: GetTensorKey<BE>,
-        K: GetAutomorphismKey<BE>,
+        R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        X: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE, Rg>,
+        B: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos,
+        H: GetTensorKey<BE, Rg>,
+        K: GetAutomorphismKey<BE, Rg>,
     {
         scratch.scope(|scratch_local| {
             let (mut lower, scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(x);
@@ -408,10 +407,16 @@ enum Diff<'a, C, B> {
 }
 
 /// Query of [`correction_into`] for a minuend with the layout of `x`.
-fn correction_tmp_bytes<BE, X, P, T, K>(module: &Module<BE>, x: &X, coeff_prec: &P, tsk: &T, keys: &K) -> usize
+fn correction_tmp_bytes<BE, Rg, X, P, T, K>(module: &Module<BE>, x: &X, coeff_prec: &P, tsk: &T, keys: &K) -> usize
 where
     BE: Backend,
-    Module<BE>: CKKSAllOpsTmpBytes<BE> + CKKSAddOps<BE> + CKKSCopyOps<BE> + CKKSMulOps<BE> + CKKSPow2Ops<BE> + CKKSSubOps<BE>,
+    Rg: SignRing,
+    Module<BE>: CKKSAllOpsTmpBytes<BE>
+        + CKKSAddOps<BE, Rg>
+        + CKKSCopyOps<BE, Rg>
+        + CKKSMulOps<BE, Rg>
+        + CKKSPow2Ops<BE, Rg>
+        + CKKSSubOps<BE, Rg>,
     Module<BE>: GLWEBytesOf<BE>,
     X: CKKSCtBounds,
     P: CKKSInfos + LWEInfos,
@@ -423,7 +428,7 @@ where
         + module
             .ckks_sub_tmp_bytes(x.size())
             .max(module.ckks_sub_pt_const_tmp_bytes(x.size()))
-            .max(ckks_sign_tmp_bytes(module, x, x, coeff_prec, tsk, keys))
+            .max(ckks_sign_tmp_bytes::<Rg, _>(module, x, x, coeff_prec, tsk, keys))
             .max(module.ckks_add_one_tmp_bytes(x.size()))
             .max(module.ckks_mul_tmp_bytes(x, x, x, tsk))
             .max(module.ckks_div_pow2_tmp_bytes(x.size()))
@@ -432,7 +437,7 @@ where
 
 /// Writes `step(d) * d` into `corr`, for `d = x - subtrahend`, negated when `reverse` is set.
 #[allow(clippy::too_many_arguments)]
-fn correction_into<BE, C, X, S, B, F, P, H, K>(
+fn correction_into<BE, Rg, C, X, S, B, F, P, H, K>(
     module: &Module<BE>,
     reverse: bool,
     corr: &mut C,
@@ -445,21 +450,21 @@ fn correction_into<BE, C, X, S, B, F, P, H, K>(
 ) -> Result<()>
 where
     BE: Backend,
-    Module<BE>: CKKSSubOps<BE>
-        + CKKSAddOps<BE>
-        + CKKSCopyOps<BE>
-        + CKKSConjugateOps<BE>
-        + CKKSMulOps<BE>
-        + CKKSNegOps<BE>
-        + CKKSPow2Ops<BE>
-        + CKKSPolynomialEvaluationOps<BE>,
-    C: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    X: GLWEToBackendRef<BE> + CKKSCtBounds,
-    S: GLWEToBackendRef<BE> + CKKSCtBounds,
-    B: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
-    P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE>,
-    H: GetTensorKey<BE>,
-    K: GetAutomorphismKey<BE>,
+    Rg: SignRingOps<BE>,
+    Module<BE>: CKKSSubOps<BE, Rg>
+        + CKKSAddOps<BE, Rg>
+        + CKKSCopyOps<BE, Rg>
+        + CKKSMulOps<BE, Rg>
+        + CKKSNegOps<BE, Rg>
+        + CKKSPow2Ops<BE, Rg>
+        + CKKSPolynomialEvaluationOps<BE, Rg>,
+    C: GLWEToBackendMut<BE, Rg> + GLWEToBackendRef<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+    X: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+    S: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+    B: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos,
+    P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE, Rg>,
+    H: GetTensorKey<BE, Rg>,
+    K: GetAutomorphismKey<BE, Rg>,
 {
     scratch.scope(|scratch_local| {
         let (mut diff, scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(x);

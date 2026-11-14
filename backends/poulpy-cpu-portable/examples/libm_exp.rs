@@ -10,7 +10,7 @@ mod libm_common;
 
 use anyhow::Result;
 use poulpy_ckks::{CKKSInfos, polynomial::SplitStrategy, test_suite::helpers::upload_pt};
-use poulpy_hal::api::ScratchOwnedBorrow;
+use poulpy_hal::{api::ScratchOwnedBorrow, layouts::Standard};
 use poulpy_libm::exp::{CKKSExpOps, ExpOptions, ExpPlan};
 
 use libm_common::{BASE2K, LOG_DELTA, Setup, coeff_layout, dense_interval, verify};
@@ -39,7 +39,7 @@ fn run() -> Result<()> {
     // The setup helper also creates the multiplication key and allocates the temporary memory reported by the operation.
     let plan = host_plan.map_plaintexts(|pt| upload_pt(&setup.module, pt));
     let mut context = setup.prepare(consumed, |module, sizing, params| {
-        module.ckks_exp_tmp_bytes(sizing, sizing, &plan, &params.tsk_layout())
+        CKKSExpOps::<_, Standard>::ckks_exp_tmp_bytes(module, sizing, sizing, &plan, &params.tsk_layout())
     });
 
     // 3. Pack many values into one ciphertext and encrypt them together.

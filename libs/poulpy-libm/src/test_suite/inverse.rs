@@ -5,6 +5,7 @@ use poulpy_core::layouts::{
     GGLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, prepared::GLWETensorKeyPreparedToBackendRef,
 };
 use poulpy_hal::{
+    AlignedBuf,
     api::{ReimNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{HostBytesBackend, Module, ScratchOwned, Standard},
 };
@@ -328,7 +329,12 @@ pub fn test_interval_normalization_assign<BE, F, E>(
     let iters = 6usize;
     let coeff_meta = ckks_spec(base.n, base.base2k, log_delta, base.base2k);
     super::helpers::assert_error(
-        IntervalNorm::from_max::<F>(f64::NAN, base.base2k.into(), coeff_meta, host_module),
+        IntervalNorm::<CKKSPlaintext<AlignedBuf, i64, Standard>>::from_max::<F>(
+            f64::NAN,
+            base.base2k.into(),
+            coeff_meta,
+            host_module,
+        ),
         "interval_norm: max must be positive and finite",
     );
     let host_norm =

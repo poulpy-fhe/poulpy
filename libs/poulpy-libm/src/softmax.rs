@@ -13,10 +13,10 @@ use poulpy_core::{
         BSGSMeta, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, IntPolyInfos, LWEInfos,
     },
 };
-use poulpy_hal::layouts::{Backend, HostBytesBackend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, HostBytesBackend, Module, Ring, ScratchArena};
 
 use poulpy_ckks::{
-    CKKSCtBounds, CKKSInfos, CKKSLayout, SetCKKSInfos,
+    CKKSCtBounds, CKKSInfos, CKKSLayout, CKKSModuleInfos, SetCKKSInfos,
     api::{CKKSAddOps, CKKSCopyOps, CKKSMulOps},
     layouts::{CKKSPlaintext, CKKSPlaintextAlloc, CKKSPlaintextVecHostCodec, CKKSScalar, ScratchArenaTakeCKKSCiphertext},
     polynomial::SplitStrategy,
@@ -64,7 +64,7 @@ pub struct SoftmaxPlan<P> {
     pub(crate) input_interval: (f64, f64),
 }
 
-impl SoftmaxPlan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
+impl<Rg: Ring> SoftmaxPlan<CKKSPlaintext<AlignedBuf, i64, Rg>> {
     /// Prepares softmax for dense inputs in `[a, b]`.
     pub fn from_precision<F>(
         a: F,
@@ -76,7 +76,7 @@ impl SoftmaxPlan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
     ) -> Result<Self>
     where
         F: CKKSScalar + Float + FloatConst + FromPrimitive + ToPrimitive + Debug,
-        CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
+        CKKSPlaintext<AlignedBuf, i64, Rg>: CKKSPlaintextVecHostCodec<F>,
     {
         let a64 = a.to_f64().unwrap_or(f64::NAN);
         let b64 = b.to_f64().unwrap_or(f64::NAN);
@@ -106,7 +106,7 @@ impl SoftmaxPlan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
             module,
         )
         .context("softmax")?;
-        let slots = usize::from(coeff_meta.n()) / 2;
+        let slots = module.ckks_slots_of_degree::<Rg>(usize::from(coeff_meta.n()));
         ensure!(slots.is_power_of_two(), "softmax: slot count must be a power of two");
         let reciprocal_iters = match options.reciprocal_iters {
             Some(iters) => {
@@ -194,7 +194,7 @@ fn reciprocal_iters(shifted_a: f64, target_bits: f64) -> Result<usize> {
 }
 
 /// Homomorphic softmax over every dense slot.
-pub trait CKKSSoftmaxOps<BE: Backend> {
+pub trait CKKSSoftmaxOps<BE: Backend, Rg: Ring = Standard> {
     /// Scratch bytes for [`Self::ckks_softmax`].
     fn ckks_softmax_tmp_bytes<R, I, P, T, A>(&self, res: &R, input: &I, plan: &SoftmaxPlan<P>, tsk: &T, keys: &A) -> usize
     where
@@ -230,21 +230,21 @@ pub trait CKKSSoftmaxOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        I: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE>,
-        H: GetTensorKey<BE>,
-        A: GetAutomorphismKey<BE>;
+        R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        I: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE, Rg>,
+        H: GetTensorKey<BE, Rg>,
+        A: GetAutomorphismKey<BE, Rg>;
 }
 
-impl<BE: Backend> CKKSSoftmaxOps<BE> for Module<BE>
+impl<BE: Backend, Rg: Ring> CKKSSoftmaxOps<BE, Rg> for Module<BE>
 where
-    Module<BE>: CKKSAddOps<BE>
-        + CKKSCopyOps<BE>
-        + CKKSExpOps<BE>
-        + CKKSInverseOps<BE>
-        + CKKSMulOps<BE>
-        + CKKSReductionOps<BE>
+    Module<BE>: CKKSAddOps<BE, Rg>
+        + CKKSCopyOps<BE, Rg>
+        + CKKSExpOps<BE, Rg>
+        + CKKSInverseOps<BE, Rg>
+        + CKKSMulOps<BE, Rg>
+        + CKKSReductionOps<BE, Rg>
         + GLWEBytesOf<BE>,
 {
     fn ckks_softmax_tmp_bytes<R, I, P, T, A>(&self, res: &R, input: &I, plan: &SoftmaxPlan<P>, tsk: &T, keys: &A) -> usize
@@ -280,18 +280,18 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        I: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE>,
-        H: GetTensorKey<BE>,
-        A: GetAutomorphismKey<BE>,
+        R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        I: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE, Rg>,
+        H: GetTensorKey<BE, Rg>,
+        A: GetAutomorphismKey<BE, Rg>,
     {
         ensure!(input.log_sparsity() == 0, "ckks_softmax: sparse packing is not supported");
         ensure!(
-            usize::from(input.n()) / 2 == plan.slots,
+            self.ckks_slots_of_degree::<Rg>(usize::from(input.n())) == plan.slots,
             "ckks_softmax: plan has {} slots, input has {}",
             plan.slots,
-            usize::from(input.n()) / 2
+            self.ckks_slots_of_degree::<Rg>(usize::from(input.n()))
         );
         scratch.scope(|scratch_local| {
             let (mut numerator, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(input);

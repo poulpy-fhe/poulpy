@@ -10,7 +10,7 @@ mod libm_common;
 
 use anyhow::Result;
 use poulpy_ckks::{CKKSInfos, polynomial::SplitStrategy, test_suite::helpers::upload_pt};
-use poulpy_hal::api::ScratchOwnedBorrow;
+use poulpy_hal::{api::ScratchOwnedBorrow, layouts::Standard};
 use poulpy_libm::{
     arithmetic::CKKSArithmeticOps,
     log::{CKKSLogOps, LogOptions, LogPlan},
@@ -61,10 +61,15 @@ fn run() -> Result<()> {
     let hypot = host_hypot.map_plaintexts(|pt| upload_pt(&setup.module, pt));
     let log = host_log.map_plaintexts(|pt| upload_pt(&setup.module, pt));
     let mut context = setup.prepare(circuit_consumed, |module, sizing, params| {
-        module
-            .ckks_hypot_tmp_bytes(sizing, sizing, sizing, &hypot, &params.tsk_layout())
-            .max(module.ckks_log_tmp_bytes(sizing, sizing, &log, &params.tsk_layout()))
-            .max(module.ckks_scalbn_tmp_bytes(sizing))
+        CKKSRootOps::<_, Standard>::ckks_hypot_tmp_bytes(module, sizing, sizing, sizing, &hypot, &params.tsk_layout())
+            .max(CKKSLogOps::<_, Standard>::ckks_log_tmp_bytes(
+                module,
+                sizing,
+                sizing,
+                &log,
+                &params.tsk_layout(),
+            ))
+            .max(CKKSArithmeticOps::<_, Standard>::ckks_scalbn_tmp_bytes(module, sizing))
     });
 
     // The two vectors are encrypted separately because they are independent input channels.

@@ -5,7 +5,7 @@ use std::fmt::Debug;
 
 use anyhow::{Result, ensure};
 use num_traits::{Float, FloatConst, FromPrimitive, ToPrimitive};
-use poulpy_hal::layouts::{Backend, HostBytesBackend, Module};
+use poulpy_hal::layouts::{Backend, HostBytesBackend, Module, Ring};
 
 use poulpy_ckks::{
     CKKSLayout,
@@ -25,7 +25,7 @@ define_unary_plan!(Log2Plan, "log2");
 define_unary_plan!(Log10Plan, "log10");
 define_unary_plan!(Log1pPlan, "log1p");
 
-impl LogPlan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
+impl<Rg: Ring> LogPlan<CKKSPlaintext<AlignedBuf, i64, Rg>> {
     /// Fits and prepares `log` on the positive interval `[a, b]`.
     pub fn from_precision<F>(
         a: F,
@@ -37,7 +37,7 @@ impl LogPlan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
     ) -> Result<Self>
     where
         F: CKKSScalar + Float + FloatConst + FromPrimitive + ToPrimitive + Debug,
-        CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
+        CKKSPlaintext<AlignedBuf, i64, Rg>: CKKSPlaintextVecHostCodec<F>,
     {
         ensure!(a > F::zero(), "log: interval must be positive");
         let (approximation, approximation_bits) =
@@ -49,7 +49,7 @@ impl LogPlan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
     }
 }
 
-impl Log2Plan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
+impl<Rg: Ring> Log2Plan<CKKSPlaintext<AlignedBuf, i64, Rg>> {
     /// Fits and prepares `log2` on the positive interval `[a, b]`.
     pub fn from_precision<F>(
         a: F,
@@ -61,7 +61,7 @@ impl Log2Plan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
     ) -> Result<Self>
     where
         F: CKKSScalar + Float + FloatConst + FromPrimitive + ToPrimitive + Debug,
-        CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
+        CKKSPlaintext<AlignedBuf, i64, Rg>: CKKSPlaintextVecHostCodec<F>,
     {
         ensure!(a > F::zero(), "log2: interval must be positive");
         let (approximation, approximation_bits) = prepare_function(
@@ -82,7 +82,7 @@ impl Log2Plan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
     }
 }
 
-impl Log10Plan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
+impl<Rg: Ring> Log10Plan<CKKSPlaintext<AlignedBuf, i64, Rg>> {
     /// Fits and prepares `log10` on the positive interval `[a, b]`.
     pub fn from_precision<F>(
         a: F,
@@ -94,7 +94,7 @@ impl Log10Plan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
     ) -> Result<Self>
     where
         F: CKKSScalar + Float + FloatConst + FromPrimitive + ToPrimitive + Debug,
-        CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
+        CKKSPlaintext<AlignedBuf, i64, Rg>: CKKSPlaintextVecHostCodec<F>,
     {
         ensure!(a > F::zero(), "log10: interval must be positive");
         let (approximation, approximation_bits) = prepare_function(
@@ -115,7 +115,7 @@ impl Log10Plan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
     }
 }
 
-impl Log1pPlan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
+impl<Rg: Ring> Log1pPlan<CKKSPlaintext<AlignedBuf, i64, Rg>> {
     /// Fits and prepares `log1p` on `[a, b]`, with `a > -1`.
     pub fn from_precision<F>(
         a: F,
@@ -127,7 +127,7 @@ impl Log1pPlan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
     ) -> Result<Self>
     where
         F: CKKSScalar + Float + FloatConst + FromPrimitive + ToPrimitive + Debug,
-        CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
+        CKKSPlaintext<AlignedBuf, i64, Rg>: CKKSPlaintextVecHostCodec<F>,
     {
         ensure!(a > -F::one(), "log1p: interval must be greater than -1");
         let (approximation, approximation_bits) = prepare_function(
@@ -149,16 +149,16 @@ impl Log1pPlan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
 }
 
 /// Homomorphic logarithms on fixed prepared domains.
-pub trait CKKSLogOps<BE: Backend> {
+pub trait CKKSLogOps<BE: Backend, Rg: Ring = Standard> {
     declare_unary_op!(ckks_log_tmp_bytes, ckks_log, LogPlan, "log");
     declare_unary_op!(ckks_log2_tmp_bytes, ckks_log2, Log2Plan, "log2");
     declare_unary_op!(ckks_log10_tmp_bytes, ckks_log10, Log10Plan, "log10");
     declare_unary_op!(ckks_log1p_tmp_bytes, ckks_log1p, Log1pPlan, "log1p");
 }
 
-impl<BE: Backend> CKKSLogOps<BE> for Module<BE>
+impl<BE: Backend, Rg: Ring> CKKSLogOps<BE, Rg> for Module<BE>
 where
-    Module<BE>: CKKSApproximationOps<BE>,
+    Module<BE>: CKKSApproximationOps<BE, Rg>,
 {
     impl_unary_op!(ckks_log_tmp_bytes, ckks_log, LogPlan);
     impl_unary_op!(ckks_log2_tmp_bytes, ckks_log2, Log2Plan);

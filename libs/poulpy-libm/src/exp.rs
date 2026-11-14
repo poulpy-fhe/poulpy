@@ -10,7 +10,7 @@ use poulpy_core::{
     GLWEBytesOf,
     layouts::{BSGSMeta, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetTensorKey, IntPolyInfos, LWEInfos},
 };
-use poulpy_hal::layouts::{Backend, HostBytesBackend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, HostBytesBackend, Module, Ring, ScratchArena};
 
 use poulpy_ckks::{
     CKKSCtBounds, CKKSInfos, CKKSLayout, SetCKKSInfos,
@@ -74,7 +74,7 @@ pub struct Expm1Plan<P> {
     pub(crate) approximation_bits: f64,
 }
 
-impl ExpPlan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
+impl<Rg: Ring> ExpPlan<CKKSPlaintext<AlignedBuf, i64, Rg>> {
     /// Fits and prepares `exp` on `[a, b]`.
     pub fn from_precision<F>(
         a: F,
@@ -86,7 +86,7 @@ impl ExpPlan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
     ) -> Result<Self>
     where
         F: CKKSScalar + Float + FloatConst + FromPrimitive + ToPrimitive + Debug,
-        CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
+        CKKSPlaintext<AlignedBuf, i64, Rg>: CKKSPlaintextVecHostCodec<F>,
     {
         ensure!(a.is_finite() && b.is_finite(), "exp: interval endpoints must be finite");
         ensure!(b > a, "exp: empty interval [a, b]");
@@ -124,7 +124,7 @@ impl ExpPlan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
     }
 }
 
-impl Exp2Plan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
+impl<Rg: Ring> Exp2Plan<CKKSPlaintext<AlignedBuf, i64, Rg>> {
     /// Fits and prepares `exp2` on `[a, b]`.
     pub fn from_precision<F>(
         a: F,
@@ -136,7 +136,7 @@ impl Exp2Plan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
     ) -> Result<Self>
     where
         F: CKKSScalar + Float + FloatConst + FromPrimitive + ToPrimitive + Debug,
-        CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
+        CKKSPlaintext<AlignedBuf, i64, Rg>: CKKSPlaintextVecHostCodec<F>,
     {
         let (reduction_steps, fit_bits) = exp_reduction(a, b, options, 1.0, "exp2")?;
         let divisor = F::from_f64(2f64.powi(reduction_steps as i32)).unwrap();
@@ -161,7 +161,7 @@ impl Exp2Plan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
     }
 }
 
-impl Exp10Plan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
+impl<Rg: Ring> Exp10Plan<CKKSPlaintext<AlignedBuf, i64, Rg>> {
     /// Fits and prepares `exp10` on `[a, b]`.
     pub fn from_precision<F>(
         a: F,
@@ -173,7 +173,7 @@ impl Exp10Plan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
     ) -> Result<Self>
     where
         F: CKKSScalar + Float + FloatConst + FromPrimitive + ToPrimitive + Debug,
-        CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
+        CKKSPlaintext<AlignedBuf, i64, Rg>: CKKSPlaintextVecHostCodec<F>,
     {
         let (reduction_steps, fit_bits) = exp_reduction(a, b, options, std::f64::consts::LOG2_10, "exp10")?;
         let divisor = F::from_f64(2f64.powi(reduction_steps as i32)).unwrap();
@@ -199,7 +199,7 @@ impl Exp10Plan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
     }
 }
 
-impl Expm1Plan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
+impl<Rg: Ring> Expm1Plan<CKKSPlaintext<AlignedBuf, i64, Rg>> {
     /// Fits and prepares `expm1` on `[a, b]`.
     pub fn from_precision<F>(
         a: F,
@@ -211,7 +211,7 @@ impl Expm1Plan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
     ) -> Result<Self>
     where
         F: CKKSScalar + Float + FloatConst + FromPrimitive + ToPrimitive + Debug,
-        CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
+        CKKSPlaintext<AlignedBuf, i64, Rg>: CKKSPlaintextVecHostCodec<F>,
     {
         let (reduction_steps, fit_bits) = exp_reduction(a, b, options, std::f64::consts::LOG2_E, "expm1")?;
         let divisor = F::from_f64(2f64.powi(reduction_steps as i32)).unwrap();
@@ -372,7 +372,7 @@ impl<P> Expm1Plan<P> {
 }
 
 /// Homomorphic exponential.
-pub trait CKKSExpOps<BE: Backend> {
+pub trait CKKSExpOps<BE: Backend, Rg: Ring = Standard> {
     /// Scratch bytes for [`Self::ckks_exp`].
     fn ckks_exp_tmp_bytes<R, I, P, T>(&self, res: &R, input: &I, plan: &ExpPlan<P>, tsk: &T) -> usize
     where
@@ -405,10 +405,10 @@ pub trait CKKSExpOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        I: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE>,
-        H: GetTensorKey<BE>;
+        R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        I: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE, Rg>,
+        H: GetTensorKey<BE, Rg>;
 
     /// Scratch bytes for [`Self::ckks_exp2`].
     fn ckks_exp2_tmp_bytes<R, I, P, T>(&self, res: &R, input: &I, plan: &Exp2Plan<P>, tsk: &T) -> usize
@@ -442,10 +442,10 @@ pub trait CKKSExpOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        I: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE>,
-        H: GetTensorKey<BE>;
+        R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        I: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE, Rg>,
+        H: GetTensorKey<BE, Rg>;
 
     /// Scratch bytes for [`Self::ckks_exp10`].
     fn ckks_exp10_tmp_bytes<R, I, P, T>(&self, res: &R, input: &I, plan: &Exp10Plan<P>, tsk: &T) -> usize
@@ -479,10 +479,10 @@ pub trait CKKSExpOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        I: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE>,
-        H: GetTensorKey<BE>;
+        R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        I: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE, Rg>,
+        H: GetTensorKey<BE, Rg>;
 
     /// Scratch bytes for [`Self::ckks_expm1`].
     fn ckks_expm1_tmp_bytes<R, I, P, T>(&self, res: &R, input: &I, plan: &Expm1Plan<P>, tsk: &T) -> usize
@@ -516,15 +516,15 @@ pub trait CKKSExpOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        I: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE>,
-        H: GetTensorKey<BE>;
+        R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        I: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE, Rg>,
+        H: GetTensorKey<BE, Rg>;
 }
 
-impl<BE: Backend> CKKSExpOps<BE> for Module<BE>
+impl<BE: Backend, Rg: Ring> CKKSExpOps<BE, Rg> for Module<BE>
 where
-    Module<BE>: CKKSAddOps<BE> + CKKSApproximationOps<BE> + CKKSCopyOps<BE> + CKKSMulOps<BE> + GLWEBytesOf<BE>,
+    Module<BE>: CKKSAddOps<BE, Rg> + CKKSApproximationOps<BE, Rg> + CKKSCopyOps<BE, Rg> + CKKSMulOps<BE, Rg> + GLWEBytesOf<BE>,
 {
     fn ckks_exp_tmp_bytes<R, I, P, T>(&self, res: &R, input: &I, plan: &ExpPlan<P>, tsk: &T) -> usize
     where
@@ -545,10 +545,10 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        I: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE>,
-        H: GetTensorKey<BE>,
+        R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        I: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE, Rg>,
+        H: GetTensorKey<BE, Rg>,
     {
         eval_reduced(
             self,
@@ -582,10 +582,10 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        I: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE>,
-        H: GetTensorKey<BE>,
+        R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        I: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE, Rg>,
+        H: GetTensorKey<BE, Rg>,
     {
         eval_reduced(
             self,
@@ -619,10 +619,10 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        I: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE>,
-        H: GetTensorKey<BE>,
+        R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        I: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE, Rg>,
+        H: GetTensorKey<BE, Rg>,
     {
         eval_reduced(
             self,
@@ -656,10 +656,10 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        I: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE>,
-        H: GetTensorKey<BE>,
+        R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        I: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE, Rg>,
+        H: GetTensorKey<BE, Rg>,
     {
         eval_reduced(
             self,
@@ -676,7 +676,7 @@ where
 }
 
 /// Query of [`eval_reduced`]: the stages run on an accumulator with the layout of `input`.
-fn reduced_tmp_bytes<BE, R, I, P, T>(
+fn reduced_tmp_bytes<BE, Rg, R, I, P, T>(
     module: &Module<BE>,
     doubling: bool,
     res: &R,
@@ -686,7 +686,8 @@ fn reduced_tmp_bytes<BE, R, I, P, T>(
 ) -> usize
 where
     BE: Backend,
-    Module<BE>: CKKSAddOps<BE> + CKKSApproximationOps<BE> + CKKSCopyOps<BE> + CKKSMulOps<BE> + GLWEBytesOf<BE>,
+    Rg: Ring,
+    Module<BE>: CKKSAddOps<BE, Rg> + CKKSApproximationOps<BE, Rg> + CKKSCopyOps<BE, Rg> + CKKSMulOps<BE, Rg> + GLWEBytesOf<BE>,
     R: CKKSCtBounds,
     I: CKKSCtBounds,
     P: CKKSInfos + LWEInfos,
@@ -710,7 +711,7 @@ where
 /// Evaluates `approximation` on `input`, then `reduction_steps` squarings, or `x * (x + 2)` doublings with `two`, on an
 /// accumulator carved like `input`, and copies the result to `res`.
 #[allow(clippy::too_many_arguments)]
-fn eval_reduced<BE, R, I, P, H>(
+fn eval_reduced<BE, Rg, R, I, P, H>(
     module: &Module<BE>,
     op: &'static str,
     res: &mut R,
@@ -723,11 +724,12 @@ fn eval_reduced<BE, R, I, P, H>(
 ) -> Result<()>
 where
     BE: Backend,
-    Module<BE>: CKKSAddOps<BE> + CKKSApproximationOps<BE> + CKKSCopyOps<BE> + CKKSMulOps<BE>,
-    R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-    I: GLWEToBackendRef<BE> + CKKSCtBounds,
-    P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE>,
-    H: GetTensorKey<BE>,
+    Rg: Ring,
+    Module<BE>: CKKSAddOps<BE, Rg> + CKKSApproximationOps<BE, Rg> + CKKSCopyOps<BE, Rg> + CKKSMulOps<BE, Rg>,
+    R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+    I: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+    P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE, Rg>,
+    H: GetTensorKey<BE, Rg>,
 {
     let log_delta = input.log_delta();
     let required = approximation.consumed_bits(log_delta) + reduction_steps * approximation.output_log_delta(log_delta);
