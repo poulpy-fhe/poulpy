@@ -4,7 +4,7 @@ use anyhow::{Result, ensure};
 
 use poulpy_core::{
     Distribution,
-    security::{SecretSpec, Security, SecurityError},
+    security::{SecretSpec, Security},
 };
 
 use crate::{
@@ -359,6 +359,14 @@ impl BootstrappingPlan {
         self
     }
 
+    /// The plan without a security level: generating its keys checks nothing (see [`Self::with_security`]). A caller
+    /// generating the keys of a certified preset under a secret the level has no bound for, or one whose bounds the keys
+    /// exceed, opts out with it and certifies nothing.
+    pub fn without_security(mut self) -> Self {
+        self.security = None;
+        self
+    }
+
     /// Level the keys must meet, see [`Self::with_security`].
     pub fn security(&self) -> Option<Security> {
         self.security
@@ -371,13 +379,25 @@ impl BootstrappingPlan {
     ///
     /// # Errors
     ///
-    /// The first key whose modulus exceeds the bound of its secret, or a secret without a bound at `security`.
+    /// [`SecurityLevelNotMet`](CKKSCompositionError::SecurityLevelNotMet) with `op` `"check_key_security"`, for the
+    /// first key whose modulus exceeds the bound of its secret or a secret without a bound at `security`.
     pub fn check_key_security(
         &self,
         security: Security,
         dense: SecretSpec,
         layout: &BootstrappingKeysLayout,
-    ) -> Result<(), SecurityError> {
+    ) -> Result<(), CKKSCompositionError> {
+        self.check_key_security_for("check_key_security", security, dense, layout)
+    }
+
+    /// [`Self::check_key_security`] refusing for the public entry point `op`.
+    pub(crate) fn check_key_security_for(
+        &self,
+        op: &'static str,
+        security: Security,
+        dense: SecretSpec,
+        layout: &BootstrappingKeysLayout,
+    ) -> Result<(), CKKSCompositionError> {
         let sparse_n = dense.n >> self.log_gap;
         let sparse = SecretSpec::new(
             sparse_n,
@@ -390,7 +410,9 @@ impl BootstrappingPlan {
                 // Without a sparse secret in the plan, `NONE` has no bound and the key is refused.
                 KeySecret::Sparse => sparse,
             };
-            security.check_log_q(spec, &format!("{name} key"), log_q)?;
+            security
+                .check_log_q(spec, &format!("{name} key"), log_q)
+                .map_err(|source| CKKSCompositionError::SecurityLevelNotMet { op, source })?;
         }
         Ok(())
     }

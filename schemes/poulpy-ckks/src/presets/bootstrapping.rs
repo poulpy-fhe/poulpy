@@ -45,6 +45,13 @@
 //! generating the keys checks them again under the dense secret actually given.
 //! The values are estimates against the attacks of the estimators rlwe-params
 //! runs, not proofs.
+//!
+//! Choosing a certified preset is the opt-in: nothing else in the library checks
+//! a level. Generating a preset's keys under a secret its level has no bound for,
+//! or one whose bound its keys exceed, is refused: a ternary secret of weight 192
+//! at `N = 2^16` is bounded at 1475 bits, below the 1680-bit keys of the logN16
+//! presets. A caller who wants those keys anyway clears the level with
+//! [`BootstrappingPlan::without_security`], and certifies nothing.
 
 use anyhow::{Context, Result, ensure};
 use poulpy_core::{
@@ -1064,8 +1071,8 @@ fn build(spec: PresetSpec) -> Result<BootstrappingPreset> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::layouts::KeySecret;
-    use poulpy_core::layouts::LWEInfos;
+    use crate::{CKKSCompositionError, layouts::KeySecret};
+    use poulpy_core::{CoreError, layouts::LWEInfos};
 
     /// Gadget precision of `key` (see [`poulpy_core::layouts::GGLWELayout::gadget_k`]).
     fn gadget_k<K: GGLWEInfos>(key: &K) -> usize {
@@ -1437,25 +1444,34 @@ mod tests {
         for key in keys.rotation_keys.values_mut().filter(|key| **key == wide) {
             key.k_aux = TorusPrecision(wide.k_aux.0 + over as u32);
         }
-        let Err(err) = preset.plan().check_key_security(Security::Bits128, dense, &keys) else {
-            panic!("a key past the bound is certified");
+        let err = preset.plan().check_key_security(Security::Bits128, dense, &keys);
+        let Err(CKKSCompositionError::SecurityLevelNotMet {
+            op: "check_key_security",
+            source: CoreError::SecurityBoundExceeded {
+                what, log_q, max_log_q, ..
+            },
+        }) = err
+        else {
+            panic!("a key past the bound is certified: {err:?}");
         };
-        assert_eq!(
-            err.to_string(),
-            format!(
-                "rotation key: a modulus of {} bits exceeds the 851 bits of 128-bit security for a TernaryFixed(1024) secret \
-                 of degree 32768",
-                preset.max_dense_modulus() + 1
-            )
-        );
+        assert_eq!((what.as_str(), log_q, max_log_q), ("rotation key", 852, 851));
         // A dense secret the table has no cell for, such as a ternary one of density 1/2, certifies nothing.
         let half = SecretSpec::new(preset.n(), Distribution::TernaryProb(0.5));
+        let err = preset
+            .plan()
+            .check_key_security(Security::Bits128, half, preset.keys_layout());
         assert!(
-            preset
-                .plan()
-                .check_key_security(Security::Bits128, half, preset.keys_layout())
-                .is_err()
+            matches!(
+                err,
+                Err(CKKSCompositionError::SecurityLevelNotMet {
+                    source: CoreError::SecurityUnsupported { .. },
+                    ..
+                })
+            ),
+            "{err:?}"
         );
+        // Without the level, the plan checks nothing.
+        assert_eq!(preset.plan().clone().without_security().security(), None);
     }
 
     #[test]

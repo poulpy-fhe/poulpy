@@ -33,7 +33,7 @@
 
 ## 3. Errors and validation
 
-- **The CoreError variants.** Core returns only `CoreError::GGLWEKeyUse { op, detail }`, `op` naming the public entry point, from the key-source getters, `GGLWELayout::at_k_digit` and `GGLWEPrepared::with_k_digit`, and `CoreError::InvalidReplicatedLayout` from the replicated layout constructor, and an operation receiving one panics with the error's text.
+- **The CoreError variants.** Core returns only `CoreError::GGLWEKeyUse { op, detail }`, `op` naming the public entry point, from the key-source getters, `GGLWELayout::at_k_digit` and `GGLWEPrepared::with_k_digit`, `CoreError::InvalidReplicatedLayout` from the replicated layout constructor, and `CoreError::SecurityUnsupported` and `CoreError::SecurityBoundExceeded` from the opt-in checks of `security::Security`, and an operation receiving one panics with the error's text.
 - **Shared refusal helpers.** A multi-comparison refusal an override must reproduce is a `pub fn assert_*` (`assert_key_covers`), called first by the reference and by every override, fused path and scheme helper on the same inputs, and a changed refusal changes the helper.
 
 ## 4. Scratch

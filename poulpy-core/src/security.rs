@@ -31,23 +31,24 @@
 //! | [`Distribution`] | Cell of the table |
 //! | --- | --- |
 //! | `TernaryFixed(h)` | sparse ternary, at the largest tabulated weight at most `h` |
-//! | `BinaryFixed(h)` | sparse binary, at the largest tabulated weight at most `h` |
+//! | `BinaryFixed(h)` | sparse binary, at the largest tabulated weight at most `min(h, N - h)` |
 //! | `TernaryProb(2/3)` | uniform ternary |
 //! | `BinaryProb(1/2)` | uniform binary |
 //!
 //! Any other distribution, a degree the table does not cover, and a cell the
-//! estimators failed on are [unsupported](SecurityError::Unsupported). Rounding a
-//! weight down is conservative, since the bounds grow with the weight (the tests
-//! check it on the vendored tables). The tables' sparse ternary secrets have
+//! estimators failed on are [unsupported](CoreError::SecurityUnsupported). Rounding
+//! a weight down is conservative, since the bounds grow with the weight (the tests
+//! check it on the vendored tables). A binary secret of weight `h` is as weak as
+//! one of weight `N - h`: with `1` the all-ones polynomial, `a * s = a * 1 - a * (1 - s)`
+//! and `a * 1` is public, so a fixed-weight binary secret takes the smaller of the
+//! two. A ternary secret has no such complement. The tables' sparse ternary secrets have
 //! exactly `h / 2` coefficients equal to 1, while
 //! [`TernaryFixed`](Distribution::TernaryFixed) draws each sign independently.
 //! Fixing the signs only lowers the entropy of the secret, so the bound holds. A
 //! secret of rank `r > 1` is bounded per component at degree `N`, which is
 //! conservative for Module-LWE.
 
-use std::fmt;
-
-use crate::{Distribution, GetDistribution, layouts::LWEInfos};
+use crate::{CoreError, Distribution, GetDistribution, Result, layouts::LWEInfos};
 
 /// A cell of a table: the largest `log2(q)` for a secret at degree `2^log_n`,
 /// `None` where the table has no result.
@@ -104,10 +105,10 @@ impl Security {
     ///
     /// # Errors
     ///
-    /// [`SecurityError::Unsupported`] when the table has no bound for the secret
-    /// (see [Secrets](self#secrets)).
-    pub fn max_log_q(self, secret: SecretSpec) -> Result<usize, SecurityError> {
-        let unsupported = |reason| SecurityError::Unsupported {
+    /// [`CoreError::SecurityUnsupported`] when the table has no bound for the
+    /// secret (see [Secrets](self#secrets)).
+    pub fn max_log_q(self, secret: SecretSpec) -> Result<usize> {
+        let unsupported = |reason| CoreError::SecurityUnsupported {
             security: self,
             secret,
             reason,
@@ -122,7 +123,7 @@ impl Security {
                 TableSecret::SparseTernary(w) => Some(w),
                 _ => None,
             }),
-            Distribution::BinaryFixed(h) if h <= secret.n => rounded_down(cells, h, |secret| match secret {
+            Distribution::BinaryFixed(h) if h <= secret.n => rounded_down(cells, h.min(secret.n - h), |secret| match secret {
                 TableSecret::SparseBinary(w) => Some(w),
                 _ => None,
             }),
@@ -138,12 +139,12 @@ impl Security {
     ///
     /// # Errors
     ///
-    /// [`SecurityError::Exceeds`] when `log_q` is above [`Self::max_log_q`], or
-    /// the error of [`Self::max_log_q`].
-    pub fn check_log_q(self, secret: SecretSpec, what: &str, log_q: usize) -> Result<(), SecurityError> {
+    /// [`CoreError::SecurityBoundExceeded`] when `log_q` is above
+    /// [`Self::max_log_q`], or the error of [`Self::max_log_q`].
+    pub fn check_log_q(self, secret: SecretSpec, what: &str, log_q: usize) -> Result<()> {
         let max_log_q = self.max_log_q(secret)?;
         if log_q > max_log_q {
-            return Err(SecurityError::Exceeds {
+            return Err(CoreError::SecurityBoundExceeded {
                 security: self,
                 secret,
                 what: what.to_string(),
@@ -161,13 +162,13 @@ impl Security {
     /// # Errors
     ///
     /// As [`Self::check_log_q`].
-    pub fn check<I: LWEInfos + ?Sized>(self, secret: SecretSpec, what: &str, obj: &I) -> Result<(), SecurityError> {
+    pub fn check<I: LWEInfos + ?Sized>(self, secret: SecretSpec, what: &str, obj: &I) -> Result<()> {
         self.check_log_q(secret, what, obj.k().as_usize())
     }
 }
 
-impl fmt::Display for Security {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl std::fmt::Display for Security {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}-bit security", self.bits())
     }
 }
@@ -214,55 +215,6 @@ impl SecretSpec {
     }
 }
 
-/// Why an object or a secret does not meet a [`Security`] level.
-#[derive(Clone, Debug, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum SecurityError {
-    /// The table has no bound for the secret.
-    Unsupported {
-        security: Security,
-        secret: SecretSpec,
-        reason: &'static str,
-    },
-    /// The modulus of an object is above the bound of its secret.
-    Exceeds {
-        security: Security,
-        secret: SecretSpec,
-        what: String,
-        log_q: usize,
-        max_log_q: usize,
-    },
-}
-
-impl fmt::Display for SecurityError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Unsupported {
-                security,
-                secret,
-                reason,
-            } => write!(
-                f,
-                "{security} cannot be certified for a {:?} secret of degree {}: {reason}",
-                secret.dist, secret.n
-            ),
-            Self::Exceeds {
-                security,
-                secret,
-                what,
-                log_q,
-                max_log_q,
-            } => write!(
-                f,
-                "{what}: a modulus of {log_q} bits exceeds the {max_log_q} bits of {security} for a {:?} secret of degree {}",
-                secret.dist, secret.n
-            ),
-        }
-    }
-}
-
-impl std::error::Error for SecurityError {}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -273,7 +225,7 @@ mod tests {
 
     const S: Security = Security::Bits128;
 
-    fn bound(log_n: u32, dist: Distribution) -> Result<usize, SecurityError> {
+    fn bound(log_n: u32, dist: Distribution) -> Result<usize> {
         S.max_log_q(SecretSpec::new(1 << log_n, dist))
     }
 
@@ -328,6 +280,24 @@ mod tests {
     }
 
     #[test]
+    fn a_dense_binary_secret_takes_the_bound_of_its_complement() {
+        // `N - 64` ones are 64 zeros: the weight-64 bound, not the weight-2048 one.
+        assert_eq!(bound(12, Distribution::BinaryFixed(4096 - 64)), Ok(53));
+        assert_eq!(
+            bound(16, Distribution::BinaryFixed(65536 - 32)),
+            bound(16, Distribution::BinaryFixed(32))
+        );
+        // The complement of weight 32 at degree 2^12 has no bound, and the all-ones secret none at all.
+        assert!(bound(12, Distribution::BinaryFixed(4096 - 32)).is_err());
+        assert!(bound(12, Distribution::BinaryFixed(4096)).is_err());
+        // A ternary secret has no complement: its weight rounds down as it is.
+        assert_eq!(
+            bound(12, Distribution::TernaryFixed(4096 - 64)),
+            bound(12, Distribution::TernaryFixed(2048))
+        );
+    }
+
+    #[test]
     fn uniform_secrets_take_their_own_cells() {
         assert_eq!(bound(12, Distribution::TernaryProb(2.0 / 3.0)), Ok(106));
         assert_eq!(bound(12, Distribution::BinaryProb(0.5)), Ok(105));
@@ -376,7 +346,7 @@ mod tests {
         for wider in [wider_guard, offset] {
             assert_eq!(
                 S.check(secret, "key", &wider),
-                Err(SecurityError::Exceeds {
+                Err(CoreError::SecurityBoundExceeded {
                     security: S,
                     secret,
                     what: "key".into(),

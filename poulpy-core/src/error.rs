@@ -1,5 +1,7 @@
 use std::{fmt, result};
 
+use crate::security::{SecretSpec, Security};
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum CoreError {
@@ -18,6 +20,22 @@ pub enum CoreError {
     GGLWEKeyUse { op: &'static str, detail: String },
     /// A [`ReplicatedLayout`](crate::layouts::ReplicatedLayout) violates its invariants.
     InvalidReplicatedLayout { detail: &'static str },
+    /// A [`Security`] level has no bound for a secret: the table lacks its
+    /// distribution, its degree, or a result for its cell.
+    SecurityUnsupported {
+        security: Security,
+        secret: SecretSpec,
+        reason: &'static str,
+    },
+    /// The modulus of an object, named by `what`, is above the bound of its secret
+    /// at a [`Security`] level.
+    SecurityBoundExceeded {
+        security: Security,
+        secret: SecretSpec,
+        what: String,
+        log_q: usize,
+        max_log_q: usize,
+    },
 }
 
 impl fmt::Display for CoreError {
@@ -42,6 +60,26 @@ impl fmt::Display for CoreError {
             ),
             CoreError::GGLWEKeyUse { op, detail } => write!(f, "{op}: {detail}"),
             CoreError::InvalidReplicatedLayout { detail } => write!(f, "invalid replicated layout: {detail}"),
+            CoreError::SecurityUnsupported {
+                security,
+                secret,
+                reason,
+            } => write!(
+                f,
+                "{security} cannot be certified for a {:?} secret of degree {}: {reason}",
+                secret.dist, secret.n
+            ),
+            CoreError::SecurityBoundExceeded {
+                security,
+                secret,
+                what,
+                log_q,
+                max_log_q,
+            } => write!(
+                f,
+                "{what}: a modulus of {log_q} bits exceeds the {max_log_q} bits of {security} for a {:?} secret of degree {}",
+                secret.dist, secret.n
+            ),
         }
     }
 }

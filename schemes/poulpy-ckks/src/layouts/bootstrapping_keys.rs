@@ -638,9 +638,10 @@ impl<BE: Backend, F> BootstrappingContextPrepared<BE, F> {
     /// EvalMod on the standard ring, for conversion key layouts, and on the conjugate-invariant
     /// ring, for missing conversion key layouts, a dense secret not of fixed-weight ternary
     /// law, or a module of another degree than twice the secret's. With a plan that requires a
-    /// security level ([`BootstrappingPlan::with_security`]), the
-    /// [`SecurityError`](poulpy_core::security::SecurityError) of
-    /// [`BootstrappingPlan::check_key_security`] under `sk_dense`, also before any draw.
+    /// security level ([`BootstrappingPlan::with_security`]),
+    /// [`SecurityLevelNotMet`](crate::CKKSCompositionError::SecurityLevelNotMet) with `op`
+    /// `"generate_keys"`, from [`BootstrappingPlan::check_key_security`] under `sk_dense`, also
+    /// before any draw.
     #[expect(
         clippy::too_many_arguments,
         reason = "key generation takes the module, the secret, the layout, three sources and a scratch arena"
@@ -706,7 +707,7 @@ impl BootstrappingPlan {
         Module<BE>: GLWETensorKeyEncryptSk<BE, ConjugateInvariant> + GLWESecretSampling<BE, ConjugateInvariant>,
     {
         if let Some(security) = self.security() {
-            self.check_key_security(security, SecretSpec::of(sk_dense), layout)?;
+            self.check_key_security_for("generate_keys", security, SecretSpec::of(sk_dense), layout)?;
         }
         // The cyclotomic order of the secret's degree, which the module may exceed.
         let order = crate::operand_cyclotomic_order::<_, Standard>("generate_keys", module, sk_dense.n().as_usize())?;
