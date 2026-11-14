@@ -1,36 +1,39 @@
 use anyhow::Result;
 use poulpy_ckks::{
-    CKKSCtBounds, CoeffsMeta, SetCKKSInfos, SlotsKind,
+    CKKSInfos, CoeffsMeta, SetCKKSInfos, SetGLWEPlaintextInfos, SlotsKind,
     api::{
         BSGSPolynomialInfos, CKKSAddOps, CKKSAllOpsTmpBytes, CKKSComplexPolynomialEvaluationOps, CKKSConjugateOps,
         CKKSEncodingHostOps,
     },
-    layouts::{CKKSCiphertextOwned, CKKSPlaintextAlloc, CKKSPlaintextOwned, ScratchArenaTakeCKKSCiphertext},
+    layouts::{CKKSPlaintextAlloc, ScratchArenaTakeCKKSCiphertext},
     polynomial::{Basis, ComplexBSGSPolynomial, Parity, Polynomial, SplitStrategy},
 };
 use poulpy_core::{
     GLWEBytesOf,
-    layouts::{
-        Base2K, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, IntPolyInfos, SetBSGSMeta, SetK,
-    },
+    layouts::{Base2K, GGLWEInfos, GetAutomorphismKey, GetTensorKey, LWEInfos, SetK},
 };
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::layouts::{Module, ScratchArena};
 
-use crate::model::RELU_TRIG;
+use crate::{Ct, Pt, ServerBackend, model::RELU_TRIG};
+
+/// Bits the encoded coefficients of the polynomial hold above the scale.
+const LOG_COEFFS_RANGE: usize = 2;
 
 /// The ReLU of [`relu`](crate::model::relu) on the unit circle the raise leaves in the slots: `z(a) + conj(z(a))` for
 /// [`RELU_TRIG`], a BSGS evaluation in the powers of `a` and a conjugation, slot by slot.
-pub struct Relu<BE: Backend> {
-    z: ComplexBSGSPolynomial<CKKSPlaintextOwned<BE>>,
+pub(crate) struct Relu {
+    z: ComplexBSGSPolynomial<Pt>,
 }
 
-impl<BE: Backend> Relu<BE> {
+impl Relu {
     /// Encodes the polynomial at radix `base2k` and scale `2^log_delta`, the scale of the activations.
-    pub fn new(module: &Module<BE>, base2k: Base2K, log_delta: usize, scratch: &mut ScratchArena<'_, BE>) -> Result<Self>
-    where
-        Module<BE>: CKKSPlaintextAlloc<BE> + CKKSEncodingHostOps<BE, f64>,
-    {
-        let meta = CoeffsMeta::from_delta_budget(log_delta, 2);
+    pub(crate) fn new(
+        module: &Module<ServerBackend>,
+        base2k: Base2K,
+        log_delta: usize,
+        scratch: &mut ScratchArena<'_, ServerBackend>,
+    ) -> Result<Self> {
+        let meta = CoeffsMeta::from_delta_budget(log_delta, LOG_COEFFS_RANGE);
         let mut encode = |coeffs: Vec<f64>| {
             Polynomial::new_with_parity(Basis::Monomial, coeffs, Parity::Full).decompose_bsgs_with(
                 SplitStrategy::MinDepth,
@@ -50,43 +53,37 @@ impl<BE: Backend> Relu<BE> {
         })
     }
 
-    pub fn apply_tmp_bytes<A, T, K>(&self, module: &Module<BE>, a: &A, tsk: &T, atk: &K) -> usize
+    /// Scratch of [`Self::apply`] on `a`, with a tensor key of layout `tsk` and rotation keys of layout `atk`.
+    pub(crate) fn apply_tmp_bytes<T, K>(&self, module: &Module<ServerBackend>, a: &Ct, tsk: &T, atk: &K) -> usize
     where
-        Module<BE>: GLWEBytesOf<BE> + CKKSAllOpsTmpBytes<BE>,
-        A: CKKSCtBounds,
         T: GGLWEInfos,
         K: GGLWEInfos,
     {
         module.glwe_bytes_of_from_infos(a)
-            + module.ckks_all_ops_with_atk_tmp_bytes(a, BSGSPolynomialInfos::<BE>::baby_step(&self.z.re, 0), tsk, atk)
+            + module.ckks_all_ops_with_atk_tmp_bytes(a, BSGSPolynomialInfos::<ServerBackend>::baby_step(&self.z.re, 0), tsk, atk)
     }
 
     /// `res = z(a) + conj(z(a)) + offset`, in real slots. The sum vanishes where `a` is 1, on the slots the mask of the
     /// raise left out: `offset` holds the ReLU of zero on the others.
     #[allow(clippy::too_many_arguments)]
-    pub fn apply<R, A, P, T, K>(
+    pub(crate) fn apply<T, K>(
         &self,
-        module: &Module<BE>,
-        res: &mut R,
-        a: &A,
-        offset: &P,
+        module: &Module<ServerBackend>,
+        res: &mut Ct,
+        a: &Ct,
+        offset: &Pt,
         tsk: &T,
-        keys: &K,
-        scratch: &mut ScratchArena<'_, BE>,
+        atk: &K,
+        scratch: &mut ScratchArena<'_, ServerBackend>,
     ) -> Result<()>
     where
-        Module<BE>: CKKSComplexPolynomialEvaluationOps<BE> + CKKSConjugateOps<BE> + CKKSAddOps<BE>,
-        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + SetK,
-        A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
-        T: GetTensorKey<BE>,
-        K: GetAutomorphismKey<BE>,
-        CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        T: GetTensorKey<ServerBackend>,
+        K: GetAutomorphismKey<ServerBackend>,
     {
         let (mut conjugate, mut scratch) = scratch.borrow().take_ckks_ciphertext_scratch(a, a.meta());
         res.set_k(a.k());
         module.ckks_eval_poly_complex_const_coeffs(res, a, &self.z, tsk, &mut scratch)?;
-        module.ckks_conjugate_into(&mut conjugate, res, keys, &mut scratch)?;
+        module.ckks_conjugate_into(&mut conjugate, res, atk, &mut scratch)?;
         module.ckks_add_assign(res, &conjugate, &mut scratch)?;
         res.set_slots(SlotsKind::Real);
         module.ckks_add_pt_vec_assign(res, offset, &mut scratch)?;

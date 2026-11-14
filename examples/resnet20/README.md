@@ -11,7 +11,13 @@ cargo run --release -p poulpy-resnet20 --features enable-cuda --bin encrypted_in
 cargo run --release -p poulpy-resnet20 --bin plain_accuracy -- 10
 ```
 
-Without `enable-cuda`, `encrypted_inference` runs on the CPU. `--trace` compares each layer with the cleartext on the first image.
+Without `enable-cuda`, `encrypted_inference` runs on the CPU, about 100 seconds per image on one core. There it reports the time per phase, which waits for the server at each phase boundary: `--no-stage-sync` drops the waits and the report. `--trace` compares each layer with the cleartext on the first image, before and after its ReLU.
+
+One full inference against the cleartext network is also a test, left out of the default run:
+
+```sh
+cargo test --release -p poulpy-resnet20 --features enable-cuda -- --ignored
+```
 
 ## The full test set
 

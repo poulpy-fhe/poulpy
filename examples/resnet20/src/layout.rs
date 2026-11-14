@@ -14,9 +14,14 @@ pub struct CoeffLayout {
     bases: Vec<usize>,
 }
 
+/// Real slot `s` of `slots` holds the coefficient of this index, and coefficient `s` sits in the slot of this index.
+fn bit_reverse(s: usize, slots: usize) -> usize {
+    s.reverse_bits() >> (usize::BITS - slots.trailing_zeros())
+}
+
 impl CoeffLayout {
     /// Fails unless `n` is a power of two, `row_stride >= width`, and every sample has its own coefficient below `n`.
-    pub fn new(n: usize, height: usize, width: usize, row_stride: usize, step: usize, bases: Vec<usize>) -> Result<Self> {
+    pub(crate) fn new(n: usize, height: usize, width: usize, row_stride: usize, step: usize, bases: Vec<usize>) -> Result<Self> {
         ensure!(n.is_power_of_two(), "the ring degree must be a power of two");
         ensure!(
             height > 0 && width > 0 && step > 0 && !bases.is_empty(),
@@ -32,88 +37,110 @@ impl CoeffLayout {
             bases,
         };
         let mut taken = vec![false; n];
-        for q in 0..layout.channels() {
-            for i in 0..height {
-                for j in 0..width {
-                    let idx = layout.index(q, i, j);
-                    ensure!(
-                        idx < n && !taken[idx],
-                        "two samples share a coefficient or a sample leaves the ring"
-                    );
-                    taken[idx] = true;
-                }
-            }
+        for (.., idx) in layout.samples() {
+            ensure!(
+                idx < n && !taken[idx],
+                "two samples share a coefficient or a sample leaves the ring"
+            );
+            taken[idx] = true;
         }
         Ok(layout)
     }
 
     /// `log2` of the largest `g` whose multiples hold every sample.
-    pub fn log_gap(&self) -> usize {
-        self.bases.iter().fold(self.step, |gcd, &b| gcd | b).trailing_zeros() as usize
+    pub(crate) fn log_gap(&self) -> usize {
+        self.bases.iter().fold(self.step, |bits, &b| bits | b).trailing_zeros() as usize
     }
 
-    pub fn n(&self) -> usize {
+    pub(crate) fn n(&self) -> usize {
         self.n
     }
 
-    pub fn channels(&self) -> usize {
+    pub(crate) fn channels(&self) -> usize {
         self.bases.len()
     }
 
-    pub fn height(&self) -> usize {
+    pub(crate) fn height(&self) -> usize {
         self.height
     }
 
-    pub fn width(&self) -> usize {
+    pub(crate) fn width(&self) -> usize {
         self.width
     }
 
+    /// The number of samples.
+    pub(crate) fn len(&self) -> usize {
+        self.channels() * self.height * self.width
+    }
+
     /// Samples between the starts of two rows.
-    pub fn row_stride(&self) -> usize {
+    pub(crate) fn row_stride(&self) -> usize {
         self.row_stride
     }
 
     /// Coefficients between two neighbouring samples of a row.
-    pub fn step(&self) -> usize {
+    pub(crate) fn step(&self) -> usize {
         self.step
     }
 
     /// Coefficient of each channel's first sample.
-    pub fn bases(&self) -> &[usize] {
+    pub(crate) fn bases(&self) -> &[usize] {
         &self.bases
     }
 
-    /// Coefficient index of channel `q`, row `i`, column `j`.
-    pub fn index(&self, q: usize, i: usize, j: usize) -> usize {
-        self.bases[q] + self.step * (i * self.row_stride + j)
+    /// The samples, as `(channel, row, column, coefficient)`, in the order of a `[channel][row][column]` tensor.
+    pub(crate) fn samples(&self) -> impl Iterator<Item = (usize, usize, usize, usize)> + '_ {
+        let rows = move |q| (0..self.height).map(move |i| (q, i));
+        let row = move |(q, i)| (0..self.width).map(move |j| (q, i, j, self.bases[q] + self.step * (i * self.row_stride + j)));
+        (0..self.channels()).flat_map(rows).flat_map(row)
+    }
+
+    /// Whether each of the `n` coefficients holds a sample.
+    pub(crate) fn occupied(&self) -> Vec<bool> {
+        let mut occupied = vec![false; self.n];
+        for (.., idx) in self.samples() {
+            occupied[idx] = true;
+        }
+        occupied
     }
 
     /// The `n` coefficients holding `tensor`, given as `[channel][row][column]`, zero elsewhere.
-    pub fn pack(&self, tensor: &[f64]) -> Result<Vec<f64>> {
+    pub(crate) fn pack(&self, tensor: &[f64]) -> Result<Vec<f64>> {
         ensure!(
-            tensor.len() == self.channels() * self.height * self.width,
+            tensor.len() == self.len(),
             "the tensor must hold channels * height * width values"
         );
         let mut coeffs = vec![0.0; self.n];
-        for (q, channel) in tensor.chunks_exact(self.height * self.width).enumerate() {
-            for (i, row) in channel.chunks_exact(self.width).enumerate() {
-                for (j, &value) in row.iter().enumerate() {
-                    coeffs[self.index(q, i, j)] = value;
-                }
-            }
+        for ((.., idx), &value) in self.samples().zip(tensor) {
+            coeffs[idx] = value;
         }
         Ok(coeffs)
     }
 
     /// The tensor, as `[channel][row][column]`, read from `n` coefficients.
-    pub fn unpack(&self, coeffs: &[f64]) -> Result<Vec<f64>> {
+    pub(crate) fn unpack(&self, coeffs: &[f64]) -> Result<Vec<f64>> {
         ensure!(coeffs.len() == self.n, "unpacking needs the n coefficients");
-        let mut tensor = Vec::with_capacity(self.channels() * self.height * self.width);
-        for q in 0..self.channels() {
-            for i in 0..self.height {
-                tensor.extend((0..self.width).map(|j| coeffs[self.index(q, i, j)]));
-            }
-        }
-        Ok(tensor)
+        Ok(self.samples().map(|(.., idx)| coeffs[idx]).collect())
+    }
+
+    /// The `n / 2` real slots that SlotsToCoeffs sends to the coefficients holding `tensor`. Real slots carry the lower
+    /// half of the coefficients: fails on a layout with a sample in the upper half.
+    pub(crate) fn pack_slots(&self, tensor: &[f64]) -> Result<Vec<f64>> {
+        let (slots, coeffs) = (self.n / 2, self.pack(tensor)?);
+        ensure!(
+            self.samples().all(|(.., idx)| idx < slots),
+            "real slots carry the lower half of the coefficients"
+        );
+        Ok((0..slots).map(|s| coeffs[bit_reverse(s, slots)]).collect())
+    }
+
+    /// The tensor in the `n / 2` real slots `re`, the inverse of [`Self::pack_slots`].
+    pub(crate) fn unpack_slots(&self, re: &[f64]) -> Result<Vec<f64>> {
+        let slots = self.n / 2;
+        ensure!(
+            re.len() == slots && self.samples().all(|(.., idx)| idx < slots),
+            "real slots carry the lower half of the coefficients"
+        );
+        Ok(self.samples().map(|(.., idx)| re[bit_reverse(idx, slots)]).collect())
     }
 }

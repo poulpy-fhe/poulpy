@@ -1,16 +1,78 @@
 //! A ResNet-20 for CIFAR-10: its weights with the batch norms folded into the convolutions, the
 //! approximate ReLU of the encrypted evaluator and the forward pass in the clear.
 
-use std::{collections::HashMap, fs};
+use std::{borrow::Cow, collections::HashMap, fs};
 
 use anyhow::{Context, Result, ensure};
 
-use crate::reference::conv2d;
+/// Side of an image, and bytes of a record of the CIFAR-10 binary format: a label and three channels.
+const SIDE: usize = 32;
+const RECORD: usize = 1 + 3 * SIDE * SIDE;
 
 /// Samples between the starts of two rows of every tensor of the network. Stage 1 fills its rows, so its convolutions
 /// read past a row's end into the next row, where the network was trained on zero padding: 0.13% on the test set,
 /// [`Variant::Wrapped`] against [`Variant::Trained`].
-pub const ROW_STRIDE: usize = 32;
+pub(crate) const ROW_STRIDE: usize = SIDE;
+
+/// The window of a convolution, as PyTorch states it: output `(i, j)` reads the inputs
+/// `(stride * i + dk - padding, stride * j + dl - padding)` for `dk` and `dl` below `kernel`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Window {
+    pub(crate) kernel: usize,
+    pub(crate) stride: usize,
+    pub(crate) padding: usize,
+}
+
+/// The convolution of window `window`, on `[channel][row][column]` tensors and `[out][in][kernel][kernel]` weights. A
+/// channel sits on rows of `row_stride` samples: what lies outside the grid reads zero, and a read past a row's end the
+/// row after it when `row_stride` leaves no room, as the coefficients of the encrypted network do.
+pub(crate) fn conv2d(input: &[f64], weights: &[f64], height: usize, width: usize, row_stride: usize, window: Window) -> Vec<f64> {
+    let Window { kernel, stride, padding } = window;
+    let in_channels = input.len() / (height * width);
+    let out_channels = weights.len() / (in_channels * kernel * kernel);
+    let (out_height, out_width) = (
+        (height + 2 * padding - kernel) / stride + 1,
+        (width + 2 * padding - kernel) / stride + 1,
+    );
+    // Each channel on its rows of `row_stride` samples, between the zeros a window reaches: a read is one index.
+    let margin = padding * (row_stride + 1);
+    let mut rows = vec![0.0; in_channels * (height * row_stride + 2 * margin)];
+    for (channel, rows) in input
+        .chunks_exact(height * width)
+        .zip(rows.chunks_exact_mut(height * row_stride + 2 * margin))
+    {
+        for (row, samples) in channel.chunks_exact(width).enumerate() {
+            rows[margin + row * row_stride..][..width].copy_from_slice(samples);
+        }
+    }
+    let mut res = vec![0.0; out_channels * out_height * out_width];
+    let mut acc = vec![0.0; out_width];
+    for (o, res) in res.chunks_exact_mut(out_height * out_width).enumerate() {
+        for (c, rows) in rows.chunks_exact(height * row_stride + 2 * margin).enumerate() {
+            let taps = &weights[(o * in_channels + c) * kernel * kernel..][..kernel * kernel];
+            for (i, res) in res.chunks_exact_mut(out_width).enumerate() {
+                acc.fill(0.0);
+                for (t, &w) in taps.iter().enumerate() {
+                    let first = &rows[(stride * i + t / kernel) * row_stride + t % kernel..];
+                    // Contiguous reads vectorize: 17 of the 19 convolutions.
+                    if stride == 1 {
+                        for (acc, x) in acc.iter_mut().zip(first) {
+                            *acc += w * x;
+                        }
+                    } else {
+                        for (acc, x) in acc.iter_mut().zip(first.iter().step_by(stride)) {
+                            *acc += w * x;
+                        }
+                    }
+                }
+                for (res, acc) in res.iter_mut().zip(&acc) {
+                    *res += acc;
+                }
+            }
+        }
+    }
+    res
+}
 
 /// The share of the period a divisor's interval spans: `[-1, 1]` over the divisor maps to the phases `[-SPAN/2, SPAN/2]`
 /// of the unit circle, which leaves the rest of the period for the two ends of the ReLU to join.
@@ -40,53 +102,31 @@ pub(crate) const RELU_TRIG: [(f64, f64); 16] = [
 /// The ReLU of zero under [`RELU_TRIG`].
 pub(crate) const RELU_AT_ZERO: f64 = 0.003299254007;
 
-/// The largest activation magnitude before each ReLU over 20,505 CIFAR-10 training images; the divisor of a ReLU is half
-/// the power of two at or above 1.3 times it. An input past its divisor wraps around the unit circle: that input comes out
-/// wrong, and nothing diverges.
-const MAX_ACTIVATION: [(&str, f64); 19] = [
-    ("stem", 7.55),
-    ("layer1.0.r1", 17.48),
-    ("layer1.0.r2", 11.69),
-    ("layer1.1.r1", 12.79),
-    ("layer1.1.r2", 10.40),
-    ("layer1.2.r1", 16.13),
-    ("layer1.2.r2", 11.10),
-    ("layer2.0.r1", 13.84),
-    ("layer2.0.r2", 11.41),
-    ("layer2.1.r1", 10.19),
-    ("layer2.1.r2", 11.49),
-    ("layer2.2.r1", 11.50),
-    ("layer2.2.r2", 14.26),
-    ("layer3.0.r1", 12.61),
-    ("layer3.0.r2", 19.02),
-    ("layer3.1.r1", 12.33),
-    ("layer3.1.r2", 22.59),
-    ("layer3.2.r1", 13.33),
-    ("layer3.2.r2", 51.82),
+/// The largest activation magnitude before each ReLU, in the order the network evaluates them (the stem, then the two
+/// of each block), over 20,505 CIFAR-10 training images.
+const MAX_ACTIVATION: [f64; 19] = [
+    7.55, 17.48, 11.69, 12.79, 10.40, 16.13, 11.10, 13.84, 11.41, 10.19, 11.49, 11.50, 14.26, 12.61, 19.02, 12.33, 22.59, 13.33,
+    51.82,
 ];
 
-/// `log2` of the divisor of the ReLU named `name` (`stem`, `layerS.B.r1` or `layerS.B.r2`): its input over the
-/// divisor lies in `[-1, 1]`, but for the outliers.
-pub fn log_divisor(name: &str) -> Result<u32> {
-    let (_, max) = MAX_ACTIVATION
-        .iter()
-        .find(|(n, _)| *n == name)
-        .with_context(|| format!("no range for the ReLU {name}"))?;
-    Ok((1.3 * max).log2().ceil() as u32 - 1)
+/// What a divisor leaves above the largest activation seen, before it rounds to a power of two.
+const HEADROOM: f64 = 1.3;
+
+/// The divisor of ReLU `relu`, half the power of two at or above 1.3 times its largest activation: its input
+/// over the divisor lies in `[-1, 1]`, but for the outliers. An input past its divisor wraps around the unit circle:
+/// that input comes out wrong, and nothing diverges.
+pub fn divisor(relu: usize) -> f64 {
+    f64::from(1u32 << ((HEADROOM * MAX_ACTIVATION[relu]).log2().ceil() as u32 - 1))
 }
 
-/// The approximate ReLU of `u`, periodic, close to `max(u, 0)` on `[-1, 1]`: [`RELU_TRIG`] on `exp(iπ·SPAN·u)`.
+/// The approximate ReLU of `u`, periodic, close to `max(u, 0)` on `[-1, 1]`: a polynomial in `a = exp(iπ·SPAN·u)`,
+/// by Horner's rule in `a`.
 pub fn relu(u: f64) -> f64 {
-    let phase = std::f64::consts::PI * SPAN * u;
-    let sum: f64 = RELU_TRIG
-        .iter()
-        .enumerate()
-        .map(|(l, (re, im))| {
-            let (sin, cos) = (l as f64 * phase).sin_cos();
-            re * cos - im * sin
-        })
-        .sum();
-    RELU_AT_ZERO + 2.0 * sum
+    let (sin, cos) = (std::f64::consts::PI * SPAN * u).sin_cos();
+    let (re, _) = RELU_TRIG.iter().rev().fold((0.0, 0.0), |(re, im), c| {
+        (re * cos - im * sin + c.0, re * sin + im * cos + c.1)
+    });
+    RELU_AT_ZERO + 2.0 * re
 }
 
 /// The weight archive in `weights/`.
@@ -158,30 +198,40 @@ impl Weights {
 }
 
 /// A convolution with its batch norm folded in, `weights` as `[out][in][kernel][kernel]`.
-pub struct Conv {
-    pub weights: Vec<f64>,
-    pub bias: Vec<f64>,
-    pub out_channels: usize,
-    pub in_channels: usize,
-    pub kernel: usize,
+pub(crate) struct Conv {
+    pub(crate) weights: Vec<f64>,
+    pub(crate) bias: Vec<f64>,
+    pub(crate) out_channels: usize,
+    pub(crate) in_channels: usize,
+    kernel: usize,
+}
+
+impl Conv {
+    /// The window at stride `stride`: the padding keeps the grid at stride 1.
+    pub(crate) fn window(&self, stride: usize) -> Window {
+        Window {
+            kernel: self.kernel,
+            stride,
+            padding: self.kernel / 2,
+        }
+    }
 }
 
 /// A residual block: `relu(conv2(relu(conv1(x))) + shortcut(x))`, the shortcut the identity or, at stride 2, Option
 /// A (every other sample, the channels zero-padded on both sides).
-pub struct Block {
-    pub name: String,
-    pub stride: usize,
-    pub conv1: Conv,
-    pub conv2: Conv,
+pub(crate) struct Block {
+    pub(crate) stride: usize,
+    pub(crate) conv1: Conv,
+    pub(crate) conv2: Conv,
 }
 
 /// The network, with its batch norms folded.
 pub struct ResNet20 {
-    pub stem: Conv,
-    pub blocks: Vec<Block>,
+    pub(crate) stem: Conv,
+    pub(crate) blocks: Vec<Block>,
     /// `[class][channel]`.
-    pub fc_weight: Vec<f64>,
-    pub fc_bias: Vec<f64>,
+    pub(crate) fc_weight: Vec<f64>,
+    pub(crate) fc_bias: Vec<f64>,
 }
 
 /// The network a forward pass runs.
@@ -189,7 +239,7 @@ pub struct ResNet20 {
 pub enum Variant {
     /// As trained: zero padding and the exact ReLU.
     Trained,
-    /// On rows of [`ROW_STRIDE`] samples, which wrap in stage 1, with the exact ReLU.
+    /// On the rows of the encrypted network, which wrap in stage 1, with the exact ReLU.
     Wrapped,
     /// On the same rows with `D * relu(x / D)`, the divisor of each ReLU: what the encrypted network computes.
     Polynomial,
@@ -207,7 +257,6 @@ impl ResNet20 {
                     stride: if stage > 1 && b == 0 { 2 } else { 1 },
                     conv1: w.folded(&format!("{name}.conv1"), &format!("{name}.bn1"))?,
                     conv2: w.folded(&format!("{name}.conv2"), &format!("{name}.bn2"))?,
-                    name,
                 });
             }
         }
@@ -220,56 +269,47 @@ impl ResNet20 {
     }
 
     /// The logits of `image`, `[3][32][32]` normalized.
-    pub fn forward(&self, image: &[f64], variant: Variant) -> Result<Vec<f64>> {
+    pub fn forward(&self, image: &[f64], variant: Variant) -> Vec<f64> {
         self.forward_traced(image, variant, &mut |_, _| {})
     }
 
-    /// [`Self::forward`], handing `trace` each ReLU's name and input.
-    pub fn forward_traced(&self, image: &[f64], variant: Variant, trace: &mut dyn FnMut(&str, &[f64])) -> Result<Vec<f64>> {
-        let mut activate = |x: Vec<f64>, name: &str| -> Result<Vec<f64>> {
-            trace(name, &x);
-            Ok(match variant {
+    /// [`Self::forward`], handing `trace` each ReLU's index, in evaluation order, and input.
+    pub fn forward_traced(&self, image: &[f64], variant: Variant, trace: &mut dyn FnMut(usize, &[f64])) -> Vec<f64> {
+        let mut relus = 0;
+        let mut activate = |x: Vec<f64>| -> Vec<f64> {
+            trace(relus, &x);
+            let d = divisor(relus);
+            relus += 1;
+            match variant {
                 Variant::Trained | Variant::Wrapped => x.into_iter().map(|v| v.max(0.0)).collect(),
-                Variant::Polynomial => {
-                    let d = f64::from(1u32 << log_divisor(name)?);
-                    x.into_iter().map(|v| d * relu(v / d)).collect()
-                }
-            })
-        };
-        // One empty sample after each row is the zero padding of a 3 x 3 kernel.
-        let row_stride = if variant == Variant::Trained {
-            ROW_STRIDE + 1
-        } else {
-            ROW_STRIDE
+                Variant::Polynomial => x.into_iter().map(|v| d * relu(v / d)).collect(),
+            }
         };
         let conv = |c: &Conv, x: &[f64], side: usize, stride: usize| {
-            let mut y = conv2d(
-                x,
-                &c.weights,
-                c.in_channels,
-                c.out_channels,
-                side,
-                side,
-                row_stride,
-                c.kernel,
-                stride,
-            );
+            let window = c.window(stride);
+            // Rows the window cannot read across are the zero padding of the training.
+            let row_stride = if variant == Variant::Trained {
+                side + window.padding
+            } else {
+                ROW_STRIDE
+            };
+            let mut y = conv2d(x, &c.weights, side, side, row_stride, window);
             let plane = y.len() / c.out_channels;
-            for (t, v) in y.iter_mut().enumerate() {
-                *v += c.bias[t / plane];
+            for (plane, bias) in y.chunks_exact_mut(plane).zip(&c.bias) {
+                plane.iter_mut().for_each(|v| *v += bias);
             }
             y
         };
-        let mut x = activate(conv(&self.stem, image, 32, 1), "stem")?;
-        let mut side = 32;
+        let mut x = activate(conv(&self.stem, image, SIDE, 1));
+        let mut side = SIDE;
         for block in &self.blocks {
-            let h = activate(conv(&block.conv1, &x, side, block.stride), &format!("{}.r1", block.name))?;
+            let h = activate(conv(&block.conv1, &x, side, block.stride));
             let out_side = side / block.stride;
             let mut y = conv(&block.conv2, &h, out_side, 1);
             for (v, s) in y.iter_mut().zip(shortcut(&x, block.conv1.in_channels, side, block.stride)) {
                 *v += s;
             }
-            x = activate(y, &format!("{}.r2", block.name))?;
+            x = activate(y);
             side = out_side;
         }
         let channels = x.len() / (side * side);
@@ -277,14 +317,14 @@ impl ResNet20 {
             .chunks_exact(side * side)
             .map(|c| c.iter().sum::<f64>() / (side * side) as f64)
             .collect();
-        Ok((0..self.fc_bias.len())
+        (0..self.fc_bias.len())
             .map(|class| {
                 self.fc_bias[class]
                     + (0..channels)
                         .map(|q| self.fc_weight[class * channels + q] * pooled[q])
                         .sum::<f64>()
             })
-            .collect())
+            .collect()
     }
 }
 
@@ -306,6 +346,16 @@ fn shortcut(x: &[f64], channels: usize, side: usize, stride: usize) -> Vec<f64> 
     res
 }
 
+/// The weights of the shortcut as a `1 x 1` convolution from `channels` to `out` channels: `factor` times input `q`
+/// into output `q + (out - channels) / 2`, the identity or Option A.
+pub(crate) fn shortcut_weights(channels: usize, out: usize, factor: f64) -> Vec<f64> {
+    let mut w = vec![0.0; out * channels];
+    for q in 0..channels {
+        w[(q + (out - channels) / 2) * channels + q] = factor;
+    }
+    w
+}
+
 /// The first ten images of the CIFAR-10 test batch, in its binary format.
 const SAMPLE: &[u8] = include_bytes!("../data/test_images.bin");
 
@@ -314,29 +364,25 @@ const SAMPLE: &[u8] = include_bytes!("../data/test_images.bin");
 pub fn test_images(limit: usize) -> Result<Vec<(Vec<f64>, usize)>> {
     const MEAN: [f64; 3] = [0.4914, 0.4822, 0.4465];
     const STD: [f64; 3] = [0.2023, 0.1994, 0.2010];
-    let read;
     let raw = match std::env::var_os("CIFAR10_TEST_BATCH") {
-        Some(path) => {
-            read = fs::read(&path).with_context(|| format!("reading {}", path.display()))?;
-            &read[..]
-        }
+        Some(path) => Cow::Owned(fs::read(&path).with_context(|| format!("reading {}", path.display()))?),
         None => {
             ensure!(
-                limit <= SAMPLE.len() / 3073,
+                limit <= SAMPLE.len() / RECORD,
                 "ten images are built in: the crate's README gets the others"
             );
-            SAMPLE
+            Cow::Borrowed(SAMPLE)
         }
     };
-    ensure!(raw.len().is_multiple_of(3073), "not a CIFAR-10 binary batch");
+    ensure!(raw.len().is_multiple_of(RECORD), "not a CIFAR-10 binary batch");
     Ok(raw
-        .chunks_exact(3073)
+        .chunks_exact(RECORD)
         .take(limit)
         .map(|record| {
             let image = record[1..]
                 .iter()
                 .enumerate()
-                .map(|(t, &p)| (f64::from(p) / 255.0 - MEAN[t / 1024]) / STD[t / 1024])
+                .map(|(t, &p)| (f64::from(p) / 255.0 - MEAN[t / (SIDE * SIDE)]) / STD[t / (SIDE * SIDE)])
                 .collect();
             (image, usize::from(record[0]))
         })
@@ -353,4 +399,9 @@ pub fn argmax(logits: &[f64]) -> usize {
             |(bi, bv), (i, &v)| if v > bv { (i, v) } else { (bi, bv) },
         )
         .0
+}
+
+/// The largest gap between `have` and `want`.
+pub fn max_error(have: &[f64], want: &[f64]) -> f64 {
+    have.iter().zip(want).fold(0.0f64, |e, (h, w)| e.max((h - w).abs()))
 }
