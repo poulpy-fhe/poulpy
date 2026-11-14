@@ -4,7 +4,9 @@
 //! host-built plans, and explicit precision and modulus costs. Names follow
 //! `libm` when the semantics transfer to approximate FHE.
 //!
-//! Every operation acts on standard-ring operands; none serves the conjugate-invariant ring.
+//! Every operation serves both rings: each trait takes the ring `Rg` of its operands,
+//! [`Standard`](poulpy_hal::layouts::Standard) by default, and the conjugate-invariant
+//! ring is [`ConjugateInvariant`](poulpy_hal::layouts::ConjugateInvariant).
 
 #![warn(missing_docs)]
 

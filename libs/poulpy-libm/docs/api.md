@@ -1,7 +1,7 @@
 # API
 
 `poulpy-libm` exposes CKKS operations on `Module<BE>`. Function names follow `libm`; operation methods add the `ckks_` prefix.
-Every operation acts on standard-ring operands; none serves the conjugate-invariant ring.
+Every operation serves both rings: the standard ring, whose `n/2` slots are complex, and the conjugate-invariant ring, whose `n` slots are real.
 
 ## Conventions
 
@@ -26,6 +26,14 @@ Plan fields are private: a plan is validated once, by its constructor.
 
 Build plans on the host with `from_precision`, transfer their plaintexts with `map_plaintexts`, size scratch with the matching `ckks_*_tmp_bytes` method, and then evaluate.
 No operation bootstraps.
+
+## Rings
+
+Each operation trait takes the ring `Rg` of its operands as a parameter, `Standard` by default, and each plan is built for the ring it serves.
+A backend implements every trait on both rings, so a scratch query on a concrete backend names its ring, as in `CKKSExpOps::<_, Standard>::ckks_exp_tmp_bytes(&module, ...)`.
+On the standard ring the sign factors are encoded at half scale, and a conjugation cleans each factor's output and restores full scale.
+On the conjugate-invariant ring the slots are real, so the factors are encoded at full scale and the sign-based operations look up no conjugation key.
+Costs and depths are the same on both rings.
 
 ## Precision tuning
 
@@ -228,7 +236,7 @@ Equality and ordering are smooth masks.
 
 ### Packed operations
 
-For `L = log2(slots)` on dense packing:
+For `L = log2(slots)` on dense packing, `slots` being `n/2` on the standard ring and `n` on the conjugate-invariant ring:
 
 | Operation | Domain | Modulus | Depth |
 |---|---|---:|---:|
@@ -241,7 +249,7 @@ Its cost is `exp().consumed_bits(D) + (reciprocal_iters() + 4)D`.
 
 The three packed operations rotate by `1, 2, 4, ...` slots.
 `ckks_sum_slots_galois_elements` lists the Galois elements of the rotation keys they look up, which the caller's key source must answer.
-`ckks_fmax_slots` and `ckks_fmin_slots` also look up the conjugation key, Galois element `-1`, in the same source.
+On the standard ring `ckks_fmax_slots` and `ckks_fmin_slots` also look up the conjugation key, Galois element `-1`, in the same source.
 
 ## Approximation API
 
