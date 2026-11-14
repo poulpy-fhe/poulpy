@@ -19,7 +19,7 @@
 
 ## Library Crates
 
-The basis crates sit at the root of the repository, and the other crates are grouped by role into four folders. A crate depends only on the basis, on crates of its own folder or on crates of the folders listed before it, except that the backends benchmark through `poulpy-bench`.
+The basis crates sit at the root of the repository, and the other crates are grouped by role into five folders. A crate depends only on the basis, on crates of its own folder or on crates of the folders listed before it, except that the backends benchmark through `poulpy-bench`.
 
 ### Basis, at the root
 
@@ -37,10 +37,6 @@ The basis crates sit at the root of the repository, and the other crates are gro
 - **`poulpy-blas`**: backend-agnostic encrypted matrix arithmetic built on **`poulpy-ckks`**: grids of CKKS block ciphertexts, and the encoded maps and public matrices its operations read.
 - **`poulpy-libm`**: backend-agnostic CKKS math functions with `libm` names built on **`poulpy-ckks`**: exponentials, logarithms, powers and roots, trigonometric, hyperbolic and special functions, comparisons, and slot reductions, each from a reusable plan prepared for an input interval and a precision.
 
-### [`examples/`](examples): applications on the library
-
-- **`poulpy-resnet20`**: encrypted ResNet-20 inference on CIFAR-10 over the real-slot S2C-first bootstrap of **`poulpy-ckks`**, on the CPU or the GPU. It is an example and is not published to crates.io.
-
 ### [`backends/`](backends): concrete implementations of the layers
 
 - **`poulpy-cpu-portable`**: the portable CPU implementation of **`poulpy-hal`** in plain scalar Rust, which runs on any target and whose scalar kernels back the SIMD backends.
@@ -54,6 +50,10 @@ The basis crates sit at the root of the repository, and the other crates are gro
 ### [`tools/`](tools): workspace tooling
 
 - **`poulpy-bench`**: the consolidated Criterion benchmark suite for the workspace. It is an internal workspace crate and is not published to crates.io.
+
+### [`examples/`](examples): applications on the library
+
+- **`poulpy-resnet20`**: encrypted ResNet-20 inference on CIFAR-10 over the real-slot S2C-first bootstrap of **`poulpy-ckks`**, on the CPU or the GPU. It is an example and is not published to crates.io.
 
 ## Architecture
 

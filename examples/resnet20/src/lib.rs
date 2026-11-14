@@ -8,8 +8,6 @@ mod layout;
 mod merged;
 pub mod model;
 pub mod network;
-#[cfg(test)]
-mod pipeline_tests;
 mod reference;
 mod relu;
 

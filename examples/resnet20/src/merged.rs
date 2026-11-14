@@ -41,9 +41,9 @@ pub struct MergedConv {
 }
 
 impl MergedConv {
-    /// Scratch of [`Self::new`] on a context of radix `base2k`: a factor holds on one limb.
-    pub fn new_tmp_bytes(module: &Module<ServerBackend>, context: &Context, base2k: usize) -> Result<usize> {
-        context.merged_s2c_factor_tmp_bytes(module, base2k)
+    /// Scratch of [`Self::new`] at scale `2^log_delta`.
+    pub fn new_tmp_bytes(module: &Module<ServerBackend>, context: &Context, log_delta: usize) -> Result<usize> {
+        context.merged_s2c_factor_tmp_bytes(module, log_delta)
     }
 
     /// The `kernel x kernel` convolution of stride `stride` from `input` to `output` at scale `2^log_delta`: it consumes
@@ -80,8 +80,16 @@ impl MergedConv {
         &self.output
     }
 
-    /// Scratch of [`Self::apply`] on `blocks`, with rotation keys of layout `key`.
-    pub fn apply_tmp_bytes<A, K, T>(&self, module: &Module<ServerBackend>, blocks: &A, tsk: &T, key: &K) -> usize
+    /// Scratch of [`Self::apply`] on `blocks`, with `shortcut` when it runs beside this convolution and rotation keys of
+    /// layout `key`.
+    pub fn apply_tmp_bytes<A, K, T>(
+        &self,
+        module: &Module<ServerBackend>,
+        shortcut: Option<&Self>,
+        blocks: &A,
+        tsk: &T,
+        key: &K,
+    ) -> usize
     where
         A: CKKSCtBounds,
         K: GGLWEInfos,
@@ -89,16 +97,34 @@ impl MergedConv {
     {
         let plan = self.factor.factor().index();
         let diagonal = ckks_plaintext_diagonal_layout(blocks);
+        let eval = |conv: &Self| {
+            <Module<ServerBackend> as CKKSLinearTransformationOps<ServerBackend>>::ckks_linear_transformation_eval_tmp_bytes(
+                module,
+                blocks,
+                &diagonal,
+                &conv.factor.factor().index(),
+                tsk,
+                key,
+            )
+        };
         module.glwe_linear_transformation_baby_steps_bytes_of(&plan, blocks)
             + <Module<ServerBackend> as CKKSLinearTransformationOps<ServerBackend>>::ckks_linear_transformation_baby_steps_prepare_tmp_bytes(module, blocks, &plan, key)
-                .max(<Module<ServerBackend> as CKKSLinearTransformationOps<ServerBackend>>::ckks_linear_transformation_eval_tmp_bytes(module, blocks, &diagonal, &plan, tsk, key))
+                .max(eval(self))
+                .max(shortcut.map_or(0, eval))
     }
 
-    /// `res = conv(a)` with `a` the state [`slots_to_blocks`] leaves, at least `log_delta` wider than `res`.
+    /// `res = conv(a)` with `a` the state [`slots_to_blocks`] leaves, at least `log_delta` wider than `res`. A
+    /// `shortcut`, another convolution of `a` and its destination, is evaluated beside it on the rotations of `a` this
+    /// convolution prepares.
+    ///
+    /// # Errors
+    ///
+    /// A `shortcut` that reads a rotation of `a` this convolution does not.
     pub fn apply<R, A, H>(
         &self,
         module: &Module<ServerBackend>,
         res: &mut R,
+        shortcut: Option<(&Self, &mut R)>,
         blocks: &A,
         keys: &H,
         scratch: Arena<'_, '_>,
@@ -115,6 +141,9 @@ impl MergedConv {
             .take_glwe_linear_transformation_baby_steps_scratch(module, &plan, blocks);
         module.ckks_linear_transformation_baby_steps_prepare(&mut babies, blocks, keys, &mut scratch)?;
         module.ckks_linear_transformation_eval_into(res, blocks, &babies, factor, keys, &mut scratch)?;
+        if let Some((conv, res)) = shortcut {
+            module.ckks_linear_transformation_eval_into(res, blocks, &babies, conv.factor.factor(), keys, &mut scratch)?;
+        }
         Ok(())
     }
 }

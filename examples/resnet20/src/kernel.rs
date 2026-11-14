@@ -13,8 +13,8 @@ use crate::layout::CoeffLayout;
 /// channel's grid; a stride keeps one in `stride^2`.
 ///
 /// `weights` is `[out][in][kernel][kernel]`, row-major, as PyTorch stores a convolution. Fails before building anything
-/// when the layouts do not chain, when the input leaves the subring, or when a term of a nonzero weight lands on an
-/// output sample it does not compute.
+/// when the layouts do not chain, when the input leaves the subring, when the reads of a tap span several polynomials,
+/// or when a term of a nonzero weight lands on an output sample it does not compute.
 pub(crate) fn kernel_polynomials(
     input: &CoeffLayout,
     output: &CoeffLayout,
@@ -46,6 +46,10 @@ pub(crate) fn kernel_polynomials(
     );
     ensure!(input.log_gap() >= log_gap, "the input must lie in the subring of the gap");
     let base = (input.step() * stride).min(cosets << log_gap);
+    ensure!(
+        (input.step() * stride).is_multiple_of(base),
+        "the polynomial count must divide the step between two reads of a tap"
+    );
     check_terms(input, output, weights, kernel, stride, base)?;
 
     let n = input.n() as i64;

@@ -3595,6 +3595,7 @@ dependencies = [
  "poulpy-cpu-portable",
  "poulpy-gpu-portable",
  "poulpy-hal",
+ "rand 0.10.3",
  "serde_json",
 ]
 

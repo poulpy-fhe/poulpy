@@ -12,12 +12,13 @@
 
 use std::{
     cell::RefCell,
+    rc::Rc,
     time::{Duration, Instant},
 };
 
 use anyhow::{Context, Result, ensure};
 use poulpy_ckks::{
-    CKKSCtBounds, CKKSInfos, GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotLayout, SlotsKind,
+    CKKSInfos, GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotLayout, SlotsKind,
     api::{
         CKKSAddOps, CKKSBootstrappingOps, CKKSCopyOps, CKKSDFTOps, CKKSDecryptOps, CKKSEncodingHostOps, CKKSEncryptOps,
         CKKSPow2Ops,
@@ -31,7 +32,8 @@ use poulpy_ckks::{
 use poulpy_core::{
     api::{GLWESecretPreparedFactory, GLWESecretSampling, TransferInto},
     layouts::{
-        BackendGLWESecret, BackendGLWESecretPrepared, GLWELayout, GLWESecretAlloc, LWEInfos, Rank, SetGLWEPlaintextInfos, SetK,
+        BackendGLWESecret, BackendGLWESecretPrepared, GLWEInfos, GLWELayout, GLWESecretAlloc, LWEInfos, Rank,
+        SetGLWEPlaintextInfos, SetK,
     },
 };
 use poulpy_cpu_portable::NTT4x30Portable;
@@ -210,12 +212,6 @@ fn samples(layout: &CoeffLayout) -> Vec<bool> {
     keep
 }
 
-/// The `n / 2` real slots, whether each holds a sample of `layout`.
-fn sample_slots(layout: &CoeffLayout) -> Vec<bool> {
-    let (half, keep) = (layout.n() / 2, samples(layout));
-    (0..half).map(|j| keep[bit_reverse(j, half)]).collect()
-}
-
 /// The client: the secret, the keys, the image in, the logits out.
 pub struct Client {
     module: Module<Host>,
@@ -340,16 +336,28 @@ impl Client {
     }
 }
 
-/// One layer at level 0: `conv(x) + shortcut(skip) + bias`, then, but for the head, the masked raise.
+/// What the raise and the ReLU of a layer read, which its output layout alone decides: one per stage.
+struct Activation {
+    /// Keeps the output samples through the raise. The real slots already keep the lower half: a layout that fills it
+    /// has none.
+    mask: Option<CoeffsMaskPrepared<ServerBackend>>,
+    /// The ReLU's value at zero on the slots of the output samples.
+    relu_offset: CKKSPlaintextOwned<ServerBackend>,
+}
+
+/// One layer at level 0: `conv(x) + bias`, plus the shortcut of its block on a block's second layer, then, but for the
+/// head, the masked raise.
 struct Layer {
     /// The ReLU that follows, `stem`, `layerS.B.r1` or `layerS.B.r2`, or `head`.
     name: String,
     conv: MergedConv,
+    /// On a block's first layer, the block's shortcut, which reads the layer's input.
     shortcut: Option<MergedConv>,
+    /// Whether the layer adds the shortcut the layer before it left.
+    residual: bool,
     bias: CKKSPlaintextOwned<ServerBackend>,
-    mask: Option<CoeffsMaskPrepared<ServerBackend>>,
-    /// The ReLU's value at zero on the slots of the output samples.
-    relu_offset: Option<CKKSPlaintextOwned<ServerBackend>>,
+    /// None on the head.
+    activation: Option<Rc<Activation>>,
     /// Width of the output.
     output_k: usize,
 }
@@ -373,12 +381,10 @@ impl Timings {
 struct Buffers {
     /// The image, in real slots.
     image: CKKSCiphertextOwned<ServerBackend>,
-    /// The input of a block, then of the head, short of the last SlotsToCoeffs factor, which also reads it for the
-    /// residual, allocated at the SlotsToCoeffs input width.
+    /// The input of a layer, short of the last SlotsToCoeffs factor, allocated at the SlotsToCoeffs input width.
     x_blocks: CKKSCiphertextOwned<ServerBackend>,
-    /// The middle activation of a block, in the same state.
-    h_blocks: CKKSCiphertextOwned<ServerBackend>,
     level0: CKKSCiphertextOwned<ServerBackend>,
+    /// The shortcut of a block, from its first layer to its second.
     skip: CKKSCiphertextOwned<ServerBackend>,
     /// The raise, then CoeffsToSlots, on the slots, at the bootstrap layout.
     raised: CKKSCiphertextOwned<ServerBackend>,
@@ -399,12 +405,10 @@ pub struct Server {
     module: Module<ServerBackend>,
     context: BootstrappingContextPrepared<ServerBackend, f64>,
     keys: BootstrappingKeysPrepared<<ServerBackend as Backend>::OwnedBuf, ServerBackend>,
-    stem: Layer,
-    blocks: Vec<[Layer; 2]>,
+    /// The stem, then the two layers of each block.
+    layers: Vec<Layer>,
     head: Layer,
     relu: Relu<ServerBackend>,
-    /// Allocates the copies handed back to the client.
-    host: Module<Host>,
     state: RefCell<State>,
     stage_sync: bool,
 }
@@ -439,25 +443,6 @@ pub enum Stage {
 /// A probe of [`Server::infer_traced`]: the ReLU's name, the stage, the copy and its layout.
 pub type Probe<'a> = &'a mut dyn FnMut(&str, Stage, &CKKSCiphertextOwned<Host>, &CoeffLayout);
 
-/// The layout `ct` was allocated with, which a transfer copies whatever its width.
-fn allocated<C: CKKSCtBounds>(ct: &C) -> GLWELayout {
-    GLWELayout {
-        n: ct.n(),
-        base2k: ct.base2k(),
-        k: (ct.max_size() * ct.base2k().as_usize()).into(),
-        rank: ct.rank(),
-    }
-}
-
-/// A copy of `ct` on the client.
-fn to_host(module: &Module<Host>, ct: &CKKSCiphertextOwned<ServerBackend>) -> CKKSCiphertextOwned<Host> {
-    let mut res = module.ckks_ciphertext_alloc_from_glwe_infos(&allocated(ct));
-    res.set_k(ct.k());
-    ct.transfer_into(&mut *res);
-    res.set_meta(ct.meta());
-    res
-}
-
 impl Server {
     /// Compiles the bootstrap, prepares the client's keys and encodes `model` laid out as `layouts`.
     pub fn new(
@@ -485,7 +470,7 @@ impl Server {
             key_set.transfer_and_prepare(&module, &mut arena::<ServerBackend>(bytes).borrow())?
         };
 
-        let mut enc = arena::<ServerBackend>(MergedConv::new_tmp_bytes(&module, &context, base2k)?);
+        let mut enc = arena::<ServerBackend>(MergedConv::new_tmp_bytes(&module, &context, params.log_delta_w)?);
         let mut conv = |input: &CoeffLayout, output: &CoeffLayout, weights: &[f64], kernel, stride| {
             MergedConv::new(
                 &module,
@@ -503,8 +488,33 @@ impl Server {
             CKKSEncodingHostOps::<ServerBackend, f64>::ckks_encoding_host_tmp_bytes(&module, n)
                 .max(context.coeffs_mask_tmp_bytes(&module)?),
         );
-        let mut finish = |name: String, conv: MergedConv, shortcut, bias: &[f64], activated: bool| -> Result<Layer> {
-            let output = conv.output().clone();
+        let mut activation = |output: &CoeffLayout| -> Result<Rc<Activation>> {
+            let keep = samples(output);
+            let slots = n / 2;
+            let mask = (keep.iter().filter(|&&s| s).count() < slots)
+                .then(|| context.coeffs_mask(&module, &keep, &mut aux.borrow()))
+                .transpose()?;
+            let re: Vec<f64> = (0..slots)
+                .map(|s| if keep[bit_reverse(s, slots)] { RELU_AT_ZERO } else { 0.0 })
+                .collect();
+            let mut relu_offset = module.ckks_plaintext_alloc_from_slots(slots, base2k.into(), (log_delta + 1).into());
+            relu_offset.set_meta(params.slots_meta());
+            module.ckks_encode_slots_host_into(&mut relu_offset, &re, &vec![0.0; slots], &mut aux.borrow())?;
+            Ok(Rc::new(Activation { mask, relu_offset }))
+        };
+        let stages = [
+            activation(&layouts.stage1)?,
+            activation(&layouts.stage2)?,
+            activation(&layouts.stage3)?,
+        ];
+        let mut finish = |name: String,
+                          conv: MergedConv,
+                          shortcut: Option<MergedConv>,
+                          residual: bool,
+                          bias: &[f64],
+                          activation: Option<&Rc<Activation>>|
+         -> Result<Layer> {
+            let output = conv.output();
             let coeffs = output.pack(
                 &bias
                     .iter()
@@ -514,44 +524,20 @@ impl Server {
             let max = coeffs.iter().fold(1.0f64, |m, b| m.max(b.abs()));
             let mut pt =
                 module.ckks_plaintext_alloc(n.into(), base2k.into(), (log_delta + 1 + max.log2().ceil() as usize).into());
-            pt.set_meta(GLWEPlaintextMeta {
-                scale: Scale::Log(log_delta),
-                slots: SlotsKind::Real,
-                log_sparsity: 0,
-                slot_layout: SlotLayout::Full,
-            });
+            pt.set_meta(params.slots_meta());
             module.ckks_encode_coeffs_host_into(&mut pt, &coeffs, &mut aux.borrow())?;
-            // The real slots already keep the lower half: a layout that fills it needs no mask.
-            let keep = samples(&output);
-            let mask = (activated && keep.iter().filter(|&&s| s).count() < n / 2)
-                .then(|| context.coeffs_mask(&module, &keep, &mut aux.borrow()))
-                .transpose()?;
-            let relu_offset = activated
-                .then(|| {
-                    let slots = n / 2;
-                    let re: Vec<f64> = sample_slots(&output)
-                        .iter()
-                        .map(|&s| if s { RELU_AT_ZERO } else { 0.0 })
-                        .collect();
-                    let mut offset = module.ckks_plaintext_alloc_from_slots(slots, base2k.into(), (log_delta + 1).into());
-                    offset.set_meta(GLWEPlaintextMeta {
-                        scale: Scale::Log(log_delta),
-                        slots: SlotsKind::Real,
-                        log_sparsity: 0,
-                        slot_layout: SlotLayout::Full,
-                    });
-                    module.ckks_encode_slots_host_into(&mut offset, &re, &vec![0.0; slots], &mut aux.borrow())?;
-                    Ok::<_, anyhow::Error>(offset)
-                })
-                .transpose()?;
             Ok(Layer {
                 name,
                 conv,
                 shortcut,
+                residual,
                 bias: pt,
-                mask,
-                relu_offset,
-                output_k: if activated { params.level0_k } else { params.logits_k },
+                output_k: if activation.is_some() {
+                    params.level0_k
+                } else {
+                    params.logits_k
+                },
+                activation: activation.cloned(),
             })
         };
         // What a layer divides by: its activation lands on `[-SPAN, SPAN]`.
@@ -560,16 +546,16 @@ impl Server {
         // The stem reads the image as it is.
         let d_stem = divisor("stem")?;
         let (w, b) = scaled(&model.stem, 1.0 / d_stem, d_stem);
-        let stem = finish(
+        let mut layers = vec![finish(
             "stem".into(),
             conv(&layouts.image, &layouts.stage1, &w, 3, 1)?,
             None,
+            false,
             &b,
-            true,
-        )?;
+            Some(&stages[0]),
+        )?];
         // A stored activation is the value over `D`.
         let mut sigma = d_stem * SPAN;
-        let mut blocks = Vec::new();
         for (i, block) in model.blocks.iter().enumerate() {
             let (input, output) = match (i / 3, i % 3 == 0) {
                 (0, _) => (&layouts.stage1, &layouts.stage1),
@@ -583,26 +569,27 @@ impl Server {
                 divisor(&format!("{}.r2", block.name))?,
             );
             let (w1, b1) = scaled(&block.conv1, sigma / d1, d1);
-            let first_layer = finish(
-                format!("{}.r1", block.name),
-                conv(input, output, &w1, 3, block.stride)?,
-                None,
-                &b1,
-                true,
-            )?;
             let (w2, b2) = scaled(&block.conv2, d1 * SPAN / d2, d2);
             let (channels, out) = (block.conv1.in_channels, block.conv2.out_channels);
             let offset = if block.stride == 1 { 0 } else { (out - channels) / 2 };
             let skip = shortcut_weights(channels, out, offset, sigma / d2);
             let shortcut = conv(input, output, &skip, 1, block.stride)?;
-            let second_layer = finish(
+            layers.push(finish(
+                format!("{}.r1", block.name),
+                conv(input, output, &w1, 3, block.stride)?,
+                Some(shortcut),
+                false,
+                &b1,
+                Some(&stages[i / 3]),
+            )?);
+            layers.push(finish(
                 format!("{}.r2", block.name),
                 conv(output, output, &w2, 3, 1)?,
-                Some(shortcut),
-                &b2,
+                None,
                 true,
-            )?;
-            blocks.push([first_layer, second_layer]);
+                &b2,
+                Some(&stages[i / 3]),
+            )?);
             sigma = d2 * SPAN;
         }
         // Average pooling and the linear layer as one product from the 8 x 8 grid: a 15 x 15 kernel at stride 8 whose
@@ -623,8 +610,9 @@ impl Server {
             "head".into(),
             conv(&layouts.stage3, &layouts.logits, &head_weights, 15, 8)?,
             None,
-            &model.fc_bias,
             false,
+            &model.fc_bias,
+            None,
         )?;
         drop((enc, aux));
         let relu = Relu::new(
@@ -643,7 +631,6 @@ impl Server {
             image: alloc(params.in_k),
             // SlotsToCoeffs runs in place from its input width.
             x_blocks: alloc(params.in_k),
-            h_blocks: alloc(params.in_k),
             level0: alloc(params.logits_k),
             skip: alloc(params.level0_k),
             raised: module.ckks_ciphertext_alloc_from_glwe_infos(&boot),
@@ -691,20 +678,19 @@ impl Server {
                 }),
                 keys_layout,
             ));
-        for layer in std::iter::once(&stem)
-            .chain(blocks.iter().flatten())
-            .chain(std::iter::once(&head))
-        {
-            for c in std::iter::once(&layer.conv).chain(layer.shortcut.as_ref()) {
-                for atk in keys_layout.rotation_key_layouts() {
-                    bytes = bytes.max(c.apply_tmp_bytes(&module, x, &keys_layout.tensor_key, &atk));
-                }
+        for layer in layers.iter().chain(std::iter::once(&head)) {
+            for atk in keys_layout.rotation_key_layouts() {
+                bytes = bytes.max(
+                    layer
+                        .conv
+                        .apply_tmp_bytes(&module, layer.shortcut.as_ref(), x, &keys_layout.tensor_key, &atk),
+                );
             }
-            if let Some(mask) = &layer.mask {
-                let masked = context.masked(mask)?;
-                for atk in keys_layout.rotation_key_layouts() {
-                    bytes = bytes.max(module.ckks_dft_tmp_bytes(&bufs.raised, &bufs.raised, &masked, &atk));
-                }
+        }
+        for mask in stages.iter().filter_map(|stage| stage.mask.as_ref()) {
+            let masked = context.masked(mask)?;
+            for atk in keys_layout.rotation_key_layouts() {
+                bytes = bytes.max(module.ckks_dft_tmp_bytes(&bufs.raised, &bufs.raised, &masked, &atk));
             }
         }
 
@@ -713,13 +699,11 @@ impl Server {
             bufs,
         });
         Ok(Self {
-            host: Module::<Host>::new(n as u64),
             params,
             module,
             context,
             keys,
-            stem,
-            blocks,
+            layers,
             head,
             relu,
             state,
@@ -734,12 +718,26 @@ impl Server {
     }
 
     /// `image` into the input buffer, in place: a recording binds that buffer.
-    fn write_image(&self, state: &mut State, image: &CKKSCiphertextOwned<Host>) {
-        image.transfer_into(&mut *state.bufs.image);
-        state.bufs.image.set_meta(image.meta());
+    fn write_image(&self, state: &mut State, image: &CKKSCiphertextOwned<Host>) -> Result<()> {
+        let buf = &mut state.bufs.image;
+        ensure!(
+            image.n() == buf.n()
+                && image.base2k() == buf.base2k()
+                && image.rank() == buf.rank()
+                && image.k() == buf.k()
+                && image.max_size() == buf.max_size()
+                && image.meta() == self.params.slots_meta(),
+            "the image must be encrypted as `Client::encrypt_image` does"
+        );
+        image.transfer_into(&mut **buf);
+        Ok(())
     }
 
     /// The logits of the encrypted `image`, in the coefficients of a level-0 ciphertext, and the time per stage.
+    ///
+    /// # Errors
+    ///
+    /// An `image` of another layout or metadata than [`Client::encrypt_image`] gives it.
     pub fn infer(&self, image: &CKKSCiphertextOwned<Host>) -> Result<(CKKSCiphertextOwned<Host>, Timings)> {
         self.infer_traced(image, None)
     }
@@ -752,14 +750,14 @@ impl Server {
         mut probe: Option<Probe<'_>>,
     ) -> Result<(CKKSCiphertextOwned<Host>, Timings)> {
         let state = &mut *self.state.borrow_mut();
-        self.write_image(state, image);
+        self.write_image(state, image)?;
         let mut look = |layer: &Layer, stage: Stage, ct: &CKKSCiphertextOwned<ServerBackend>| {
             if let Some(probe) = probe.as_mut() {
-                probe(&layer.name, stage, &to_host(&self.host, ct), layer.conv.output());
+                probe(&layer.name, stage, &ct.to_host_owned::<ServerBackend>(), layer.conv.output());
             }
         };
         let t = self.run(state, self.stage_sync, &mut look)?;
-        Ok((to_host(&self.host, &state.bufs.level0), t))
+        Ok((state.bufs.level0.to_host_owned::<ServerBackend>(), t))
     }
 
     /// The whole circuit, from the image buffer to the logits in `level0`: device work only unless `look` reads or
@@ -779,35 +777,16 @@ impl Server {
             relu: &self.relu,
             stage_sync,
         };
-        let (stem, head) = (&self.stem, &self.head);
         let mut t = Timings::default();
         eval.to_blocks(&bufs.image, &mut bufs.narrow, &mut bufs.x_blocks, scratch, &mut t)?;
-        eval.layer(stem, &bufs.x_blocks, None, &mut bufs.level0, &mut bufs.skip, scratch, &mut t)?;
-        look(stem, Stage::Input, &bufs.level0);
-        eval.activate(stem, bufs, scratch, &mut t)?;
-        look(stem, Stage::Activation, &bufs.activated);
-        eval.to_blocks(&bufs.activated, &mut bufs.narrow, &mut bufs.x_blocks, scratch, &mut t)?;
-        for [first, second] in self.blocks.iter() {
-            eval.layer(first, &bufs.x_blocks, None, &mut bufs.level0, &mut bufs.skip, scratch, &mut t)?;
-            look(first, Stage::Input, &bufs.level0);
-            eval.activate(first, bufs, scratch, &mut t)?;
-            look(first, Stage::Activation, &bufs.activated);
-            eval.to_blocks(&bufs.activated, &mut bufs.narrow, &mut bufs.h_blocks, scratch, &mut t)?;
-            eval.layer(
-                second,
-                &bufs.h_blocks,
-                Some(&bufs.x_blocks),
-                &mut bufs.level0,
-                &mut bufs.skip,
-                scratch,
-                &mut t,
-            )?;
-            look(second, Stage::Input, &bufs.level0);
-            eval.activate(second, bufs, scratch, &mut t)?;
-            look(second, Stage::Activation, &bufs.activated);
+        for layer in &self.layers {
+            eval.layer(layer, &bufs.x_blocks, &mut bufs.level0, &mut bufs.skip, scratch, &mut t)?;
+            look(layer, Stage::Input, &bufs.level0);
+            eval.activate(layer, bufs, scratch, &mut t)?;
+            look(layer, Stage::Activation, &bufs.activated);
             eval.to_blocks(&bufs.activated, &mut bufs.narrow, &mut bufs.x_blocks, scratch, &mut t)?;
         }
-        eval.layer(head, &bufs.x_blocks, None, &mut bufs.level0, &mut bufs.skip, scratch, &mut t)?;
+        eval.layer(&self.head, &bufs.x_blocks, &mut bufs.level0, &mut bufs.skip, scratch, &mut t)?;
         Ok(t)
     }
 }
@@ -843,10 +822,14 @@ impl Server {
 #[cfg(feature = "enable-cuda")]
 impl RecordedInference<'_> {
     /// The logits of the encrypted `image`, in the coefficients of a level-0 ciphertext.
-    pub fn infer(&mut self, image: &CKKSCiphertextOwned<Host>) -> CKKSCiphertextOwned<Host> {
-        self.server.write_image(&mut self.server.state.borrow_mut(), image);
+    ///
+    /// # Errors
+    ///
+    /// As [`Server::infer`], before the replay.
+    pub fn infer(&mut self, image: &CKKSCiphertextOwned<Host>) -> Result<CKKSCiphertextOwned<Host>> {
+        self.server.write_image(&mut self.server.state.borrow_mut(), image)?;
         self.replay.replay();
-        to_host(&self.server.host, &self.server.state.borrow().bufs.level0)
+        Ok(self.server.state.borrow().bufs.level0.to_host_owned::<ServerBackend>())
     }
 
     /// Whether inferences run the recorded graph rather than the circuit again.
@@ -894,26 +877,31 @@ impl Eval<'_> {
         *slot += start.elapsed();
     }
 
-    /// `res = conv(x) + shortcut(skip) + bias` at level 0, from `x` and `skip` short of the last SlotsToCoeffs factor.
-    #[allow(clippy::too_many_arguments)]
+    /// `res = conv(x) + bias` at level 0, from `x` short of the last SlotsToCoeffs factor. A block's first layer also
+    /// leaves the block's shortcut of `x` in `skip`, on the rotations of `x` its convolution computes, and its second
+    /// adds `skip`.
     fn layer(
         &self,
         layer: &Layer,
         x: &CKKSCiphertextOwned<ServerBackend>,
-        skip: Option<&CKKSCiphertextOwned<ServerBackend>>,
         res: &mut CKKSCiphertextOwned<ServerBackend>,
-        tmp: &mut CKKSCiphertextOwned<ServerBackend>,
+        skip: &mut CKKSCiphertextOwned<ServerBackend>,
         scratch: &mut ScratchOwned<ServerBackend>,
         t: &mut Timings,
     ) -> Result<()> {
         let start = Instant::now();
         let (module, keys) = (self.module, &self.keys.rotation_keys);
         res.set_k(layer.output_k.into());
-        layer.conv.apply(module, res, x, keys, &mut scratch.borrow())?;
-        if let (Some(shortcut), Some(skip)) = (&layer.shortcut, skip) {
-            tmp.set_k(self.params.level0_k.into());
-            shortcut.apply(module, tmp, skip, keys, &mut scratch.borrow())?;
-            module.ckks_add_assign(res, tmp, &mut scratch.borrow())?;
+        let shortcut = match &layer.shortcut {
+            Some(shortcut) => {
+                skip.set_k(self.params.level0_k.into());
+                Some((shortcut, &mut *skip))
+            }
+            None => None,
+        };
+        layer.conv.apply(module, res, shortcut, x, keys, &mut scratch.borrow())?;
+        if layer.residual {
+            module.ckks_add_assign(res, &*skip, &mut scratch.borrow())?;
         }
         module.ckks_add_pt_vec_assign(res, &layer.bias, &mut scratch.borrow())?;
         self.lap(start, &mut t.conv);
@@ -929,6 +917,7 @@ impl Eval<'_> {
         t: &mut Timings,
     ) -> Result<()> {
         let module = self.module;
+        let activation = layer.activation.as_deref().context("the head has no ReLU")?;
         let boot_k = self.params.preset.bootstrap_layout().k();
         let start = Instant::now();
         let (context, keys) = (self.context, self.keys);
@@ -938,7 +927,7 @@ impl Eval<'_> {
         bufs.reduced.set_k(boot_k);
         bufs.raised.set_k(boot_k);
         module.ckks_mod_raise(&mut bufs.raised, &mut bufs.level0, context, keys, &mut scratch)?;
-        match &layer.mask {
+        match &activation.mask {
             Some(mask) => {
                 module.ckks_coeffs_to_slots_assign(&mut bufs.raised, &context.masked(mask)?, &keys.rotation_keys, &mut scratch)?
             }
@@ -955,17 +944,13 @@ impl Eval<'_> {
             keys,
             &mut scratch,
         )?;
-        bufs.reduced.set_meta(GLWEPlaintextMeta {
-            slots: SlotsKind::Complex,
-            ..meta
-        });
         self.lap(start, &mut t.raise);
         let start = Instant::now();
         self.relu.apply(
             module,
             &mut bufs.activated,
             &bufs.reduced,
-            layer.relu_offset.as_ref().context("the head has no ReLU")?,
+            &activation.relu_offset,
             self.keys.tensor_key().context("the keys hold no tensor key")?,
             &self.keys.rotation_keys,
             &mut scratch.borrow(),
@@ -1002,8 +987,53 @@ impl Eval<'_> {
 
 #[cfg(test)]
 mod tests {
-    use super::Layouts;
-    use crate::kernel::kernel_polynomials;
+    use super::{Client, Layouts, Params, Server};
+    use crate::{
+        kernel::kernel_polynomials,
+        model::{ResNet20, Variant, test_images},
+    };
+
+    /// The largest gap between `have` and `want`.
+    fn max_error(have: &[f64], want: &[f64]) -> f64 {
+        have.iter().zip(want).fold(0.0f64, |e, (h, w)| e.max((h - w).abs()))
+    }
+
+    /// The preset of the network derives, and the client reads back the image it encrypts in the slots.
+    #[test]
+    fn the_client_round_trips_an_image() {
+        let params = Params::new().unwrap();
+        let layouts = Layouts::new(params.n()).unwrap();
+        let (image, _) = &test_images(1).unwrap()[0];
+        let mut client = Client::new(&params, [0; 32]);
+        let ct = client.encrypt_image(&params, &layouts.image, image).unwrap();
+        let have = client.decrypt_slots(&params, &ct, &layouts.image).unwrap();
+        assert!(
+            max_error(&have, image) < (-14.0f64).exp2(),
+            "the decrypted image is off by more than 2^-14"
+        );
+    }
+
+    #[test]
+    #[ignore = "a full encrypted inference; opt in with --ignored, on the GPU with --features enable-cuda"]
+    fn the_first_image_matches_the_cleartext_network() {
+        let params = Params::new().unwrap();
+        let layouts = Layouts::new(params.n()).unwrap();
+        let model = ResNet20::load().unwrap();
+        let (image, _) = &test_images(1).unwrap()[0];
+        let mut client = Client::new(&params, [0; 32]);
+        let key_set = client.keys(&params).unwrap();
+        let server = Server::new(params.clone(), &model, &layouts, &key_set).unwrap();
+        drop(key_set);
+        let ct = client.encrypt_image(&params, &layouts.image, image).unwrap();
+        let (out, _) = server.infer(&ct).unwrap();
+        let logits = client.decrypt_coeffs(&out, &layouts.logits).unwrap();
+        let err = max_error(&logits, &model.forward(image, Variant::Polynomial).unwrap());
+        println!(
+            "encrypted logits against the cleartext polynomial network: max error 2^{:.2}",
+            err.log2()
+        );
+        assert!(err < (-5.0f64).exp2(), "the encrypted logits are off by more than 2^-5");
+    }
 
     /// Every product of the network: its layouts chain and no term lands on a sample it does not compute.
     #[test]

@@ -17,6 +17,7 @@ poulpy-hal = {workspace = true}
 poulpy-core = {workspace = true}
 poulpy-ckks = {workspace = true}
 anyhow = {workspace = true}
+rand = {workspace = true}
 serde_json = {workspace = true}
 poulpy-cpu-portable = {workspace = true, features = ["enable-ckks"]}
 poulpy-gpu-portable = {workspace = true, optional = true, features = ["enable-ckks"]}

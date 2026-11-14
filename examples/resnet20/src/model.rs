@@ -8,7 +8,8 @@ use anyhow::{Context, Result, ensure};
 use crate::reference::conv2d;
 
 /// Samples between the starts of two rows of every tensor of the network. Stage 1 fills its rows, so its convolutions
-/// read past a row's end into the next row, where the network was trained on zero padding: 0.04% on the test set.
+/// read past a row's end into the next row, where the network was trained on zero padding: 0.13% on the test set,
+/// [`Variant::Wrapped`] against [`Variant::Trained`].
 pub const ROW_STRIDE: usize = 32;
 
 /// The share of the period a divisor's interval spans: `[-1, 1]` over the divisor maps to the phases `[-SPAN/2, SPAN/2]`
@@ -183,11 +184,14 @@ pub struct ResNet20 {
     pub fc_bias: Vec<f64>,
 }
 
-/// The ReLU of the forward pass.
+/// The network a forward pass runs.
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub enum Relu {
-    Exact,
-    /// `D * relu(x / D)`, with the divisor of each ReLU.
+pub enum Variant {
+    /// As trained: zero padding and the exact ReLU.
+    Trained,
+    /// On rows of [`ROW_STRIDE`] samples, which wrap in stage 1, with the exact ReLU.
+    Wrapped,
+    /// On the same rows with `D * relu(x / D)`, the divisor of each ReLU: what the encrypted network computes.
     Polynomial,
 }
 
@@ -216,21 +220,27 @@ impl ResNet20 {
     }
 
     /// The logits of `image`, `[3][32][32]` normalized.
-    pub fn forward(&self, image: &[f64], relu: Relu) -> Result<Vec<f64>> {
-        self.forward_traced(image, relu, &mut |_, _| {})
+    pub fn forward(&self, image: &[f64], variant: Variant) -> Result<Vec<f64>> {
+        self.forward_traced(image, variant, &mut |_, _| {})
     }
 
     /// [`Self::forward`], handing `trace` each ReLU's name and input.
-    pub fn forward_traced(&self, image: &[f64], relu: Relu, trace: &mut dyn FnMut(&str, &[f64])) -> Result<Vec<f64>> {
+    pub fn forward_traced(&self, image: &[f64], variant: Variant, trace: &mut dyn FnMut(&str, &[f64])) -> Result<Vec<f64>> {
         let mut activate = |x: Vec<f64>, name: &str| -> Result<Vec<f64>> {
             trace(name, &x);
-            Ok(match relu {
-                Relu::Exact => x.into_iter().map(|v| v.max(0.0)).collect(),
-                Relu::Polynomial => {
+            Ok(match variant {
+                Variant::Trained | Variant::Wrapped => x.into_iter().map(|v| v.max(0.0)).collect(),
+                Variant::Polynomial => {
                     let d = f64::from(1u32 << log_divisor(name)?);
-                    x.into_iter().map(|v| d * self::relu(v / d)).collect()
+                    x.into_iter().map(|v| d * relu(v / d)).collect()
                 }
             })
+        };
+        // One empty sample after each row is the zero padding of a 3 x 3 kernel.
+        let row_stride = if variant == Variant::Trained {
+            ROW_STRIDE + 1
+        } else {
+            ROW_STRIDE
         };
         let conv = |c: &Conv, x: &[f64], side: usize, stride: usize| {
             let mut y = conv2d(
@@ -240,7 +250,7 @@ impl ResNet20 {
                 c.out_channels,
                 side,
                 side,
-                ROW_STRIDE,
+                row_stride,
                 c.kernel,
                 stride,
             );
