@@ -305,3 +305,41 @@ impl BootstrappingKeyPolicy {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::BootstrappingKeyPolicy;
+
+    fn policy(dense_to_sparse_dsize: usize) -> BootstrappingKeyPolicy {
+        BootstrappingKeyPolicy {
+            log_n: 16,
+            base2k: 52,
+            rank: 1,
+            dense_log_modulus: 1600,
+            sparse_log_modulus: 95,
+            max_dsize: None,
+            dense_to_sparse_dsize,
+        }
+    }
+
+    /// The digit of fewest rows, and at that row count the narrowest, of any width up to the input's limbs.
+    #[test]
+    fn unaligned_k_digit_takes_fewest_rows_then_narrowest() {
+        let policy = policy(1);
+        assert_eq!(policy.unaligned_k_digit(60, |k_digit| k_digit >= 40), Some(60));
+        assert_eq!(policy.unaligned_k_digit(60, |k_digit| k_digit % 25 == 0), Some(75));
+        assert_eq!(policy.unaligned_k_digit(60, |k_digit| k_digit <= 20), Some(20));
+        assert_eq!(policy.unaligned_k_digit(60, |k_digit| k_digit > 104), None);
+    }
+
+    /// One whole limb where it fits the bound, else the digit of fewest rows of any width, and a wider digit as set.
+    #[test]
+    fn dense_to_sparse_k_digit_falls_back_under_a_narrow_bound() {
+        let one_limb = policy(1);
+        // A 40-bit input under 95 bits: a 52-bit digit leaves a 43-bit guard, a 40-bit digit fits in one row.
+        assert!(!one_limb.key_fits(40, 52, 95));
+        assert_eq!(one_limb.dense_to_sparse_k_digit(40, 95), 40);
+        assert_eq!(one_limb.dense_to_sparse_k_digit(40, 400), 52);
+        assert_eq!(policy(2).dense_to_sparse_k_digit(40, 95), 104);
+    }
+}

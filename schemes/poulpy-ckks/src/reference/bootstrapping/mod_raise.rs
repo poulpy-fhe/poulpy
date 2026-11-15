@@ -207,7 +207,7 @@ where
 
 /// What [`CKKSModRaiseReference::ckks_mod_raise_reference`] refuses on widths: `src`, lifted by `scale_up` fused
 /// into ModUp, into `dst`, under the encapsulation keys and the first-factor keys of `keys`.
-fn check_raise_widths<BE, Dst, Src, K>(
+pub(crate) fn check_raise_widths<BE, Dst, Src, K>(
     dst: &Dst,
     src: &Src,
     scale_up: usize,

@@ -9,7 +9,6 @@ use poulpy_core::{
 };
 use poulpy_hal::layouts::{Backend, ConjugateInvariant, Data, Module, ScratchArena, Standard};
 
-use crate::layouts::validation::check_first_factor_raise;
 use crate::oep::derived::replicated::{
     apply_transform, check_destination, check_module_degree, check_workspace, ct_bytes, invalid, transform_tmp_bytes,
     working_layout,
@@ -22,10 +21,10 @@ use crate::{
         CKKSEvalModOps, CKKSImagOps, CKKSLinearTransformationOps, CKKSMulOps, CKKSNegOps, CKKSPolynomialEvaluationOps,
         CKKSPow2Ops, CKKSReplicatedBootstrapOps, CKKSRotateOps, CKKSRoundOps, CKKSSubOps,
     },
-    eval_lut::{ckks_eval_lut, ckks_eval_lut_binary, ckks_eval_lut_from_basis, ckks_lut_power_basis},
+    eval_lut::{ckks_eval_lut, ckks_eval_lut_binary, ckks_eval_lut_from_basis, ckks_lut_power_basis_in, lut_power_basis_count},
     layouts::{
-        BootstrappingKeys, BootstrappingKeysLayout, CKKSCiphertextAlloc, CKKSCiphertextViewMut, EncodedLutKind,
-        ReplicatedBootstrapWorkspace, ReplicatedBootstrapping, ReplicatedLut, ReplicatedTransform, ReplicatedTransformWorkspace,
+        BootstrappingKeys, BootstrappingKeysLayout, CKKSCiphertextViewMut, EncodedLutKind, ReplicatedBootstrapWorkspace,
+        ReplicatedBootstrapping, ReplicatedLut, ReplicatedTransform, ReplicatedTransformWorkspace,
         ScratchArenaTakeCKKSCiphertext,
     },
     oep::{CKKSEncapsulatedModUpImpl, CKKSModUpFirstFactorImpl},
@@ -252,9 +251,10 @@ where
         .unwrap_or(0)
 }
 
-/// Checks a replicated bootstrapping of `src` into outputs of width `k_out` for `op`, its keys at their widths
-/// first, then runs its stages up to `CoeffsToSlots` and hands `tail` the real part, the imaginary part unless packed
-/// or of real slots, a third ciphertext of their layout, whether the slots are real, and the arena.
+/// Checks a replicated bootstrapping of `src` into outputs of width `k_out` for `op`, its keys at their widths and the
+/// arena against the op's `query` when the keys report their layout first, then runs its stages up to `CoeffsToSlots`
+/// and hands `tail` the real part, the imaginary part unless packed or of real slots, a third ciphertext of their
+/// layout, whether the slots are real, and the arena.
 #[allow(clippy::too_many_arguments)]
 fn bootstrap_to_slots<BE, Src, F, K, T>(
     module: &Module<BE>,
@@ -264,6 +264,7 @@ fn bootstrap_to_slots<BE, Src, F, K, T>(
     ctx: &ReplicatedBootstrapping<BE, F>,
     workspace: &mut ReplicatedBootstrapWorkspace<BE>,
     keys: &K,
+    query: Option<usize>,
     scratch: &mut ScratchArena<'_, BE>,
     tail: T,
 ) -> Result<()>
@@ -340,17 +341,21 @@ where
             k: tensor_k.into(),
             source,
         })?;
-    // The first factor on the raise, and its keys, which replace the sparse-to-dense key.
-    if let Some(factor) = ctx.c2s_first_factor.as_ref() {
-        check_first_factor_raise(
-            op,
-            src.base2k().as_usize(),
-            module.log_n(),
-            k_boot,
-            plan.log_delta + plan.log_msg_ratio() + plan.mod_up_extra_bits,
-            factor,
-            keys,
-        )?;
+    // The raise's keys at its widths: the encapsulation keys, or the first factor on the raise and its keys, which
+    // replace the sparse-to-dense key.
+    let raise_layout = |k: usize| CKKSLayout {
+        glwe_layout: at(k),
+        meta: src.meta(),
+    };
+    crate::reference::bootstrapping::check_raise_widths(
+        &raise_layout(k_boot),
+        &raise_layout(plan.log_delta + plan.log_msg_ratio()),
+        plan.mod_up_extra_bits,
+        ctx.c2s_first_factor.as_ref(),
+        keys,
+    )?;
+    if let Some(bytes) = query {
+        crate::layouts::validation::ensure_scratch(op, scratch, bytes)?;
     }
     let mut raised_meta = src.meta();
     raised_meta.slot_layout = SlotLayout::Full;
@@ -581,9 +586,9 @@ pub trait CKKSReplicatedBootstrapReference<BE: Backend> {
             + CKKSComplexPolynomialEvaluationOps<BE>
             + CKKSPolynomialEvaluationOps<BE>
             + CKKSMulOps<BE>
-            + CKKSCiphertextAlloc<BE>
             + GLWENormalize<BE>
-            + CKKSNegOps<BE>,
+            + CKKSNegOps<BE>
+            + CKKSAllOpsTmpBytes<BE>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: BootstrappingKeys<BE>;
@@ -670,6 +675,9 @@ impl<BE: Backend> CKKSReplicatedBootstrapReference<BE> for Module<BE> {
         }
         let plan = ctx.plan;
         let k_out = dst.k().as_usize();
+        let query = keys
+            .keys_layout()
+            .map(|layout| self.ckks_replicated_bootstrap_tmp_bytes_reference(&*dst, src, ctx, layout));
         bootstrap_to_slots(
             module,
             OP,
@@ -678,6 +686,7 @@ impl<BE: Backend> CKKSReplicatedBootstrapReference<BE> for Module<BE> {
             ctx,
             workspace,
             keys,
+            query,
             scratch,
             |re, im, out, real, scratch| {
                 let rotation_keys = &RotationKeys(keys);
@@ -741,8 +750,10 @@ impl<BE: Backend> CKKSReplicatedBootstrapReference<BE> for Module<BE> {
         let module = self;
         let tsk = &keys_layout.tensor_key;
         bootstrap_tmp_bytes_with(module, ct_out, ct_in, ctx, keys_layout, |boot, out, atk| {
-            // The exponential's copy of its input and its output, the conjugate, and the LUT of the imaginary part.
-            let carved = 4 * ct_bytes::<BE>(&boot.glwe_layout);
+            // The exponential's copy of its input and its output, the conjugate, the LUT of the imaginary part, and with
+            // two LUTs or more the shared exponential and powers of both parts.
+            let shared = if luts.len() > 1 { 2 * lut_power_basis_count(luts) } else { 0 };
+            let carved = (4 + shared) * ct_bytes::<BE>(&boot.glwe_layout);
             let lut = luts
                 .iter()
                 .map(|lut| module.ckks_all_ops_with_atk_tmp_bytes(boot, lut.coeffs(), tsk, atk))
@@ -785,9 +796,9 @@ impl<BE: Backend> CKKSReplicatedBootstrapReference<BE> for Module<BE> {
             + CKKSComplexPolynomialEvaluationOps<BE>
             + CKKSPolynomialEvaluationOps<BE>
             + CKKSMulOps<BE>
-            + CKKSCiphertextAlloc<BE>
             + GLWENormalize<BE>
-            + CKKSNegOps<BE>,
+            + CKKSNegOps<BE>
+            + CKKSAllOpsTmpBytes<BE>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: BootstrappingKeys<BE>,
@@ -836,6 +847,9 @@ impl<BE: Backend> CKKSReplicatedBootstrapReference<BE> for Module<BE> {
         }
         // Equal-arity general LUTs share the exponential and the powers of each part.
         let shared = functional.exponential && luts.len() > 1;
+        let query = keys
+            .keys_layout()
+            .map(|layout| self.ckks_replicated_functional_bootstrap_tmp_bytes_reference(&dst[0], src, ctx, luts, layout));
         bootstrap_to_slots(
             module,
             OP,
@@ -844,6 +858,7 @@ impl<BE: Backend> CKKSReplicatedBootstrapReference<BE> for Module<BE> {
             ctx,
             workspace,
             keys,
+            query,
             scratch,
             |re, mut im, out, real, scratch| {
                 let rotation_keys = &RotationKeys(keys);
@@ -890,24 +905,22 @@ impl<BE: Backend> CKKSReplicatedBootstrapReference<BE> for Module<BE> {
                 let meta = re.meta();
                 // 6. The exponential of each part, then each LUT's interpolation, the parts recombined into `Re + i·Im`, or
                 //    of real slots the real part alone.
-                let basis_re = if shared {
-                    Some(ckks_lut_power_basis(
-                        module,
-                        &mut *re,
-                        &layout,
-                        &ctx.eval_mod,
-                        luts,
-                        tsk,
-                        scratch,
-                    )?)
+                // The shared exponential and powers of each part, carved from the arena.
+                let arena = scratch.borrow();
+                let (basis_re, arena) = if shared {
+                    let (basis, arena) = ckks_lut_power_basis_in(module, &mut *re, &layout, &ctx.eval_mod, luts, tsk, arena)?;
+                    (Some(basis), arena)
                 } else {
-                    None
+                    (None, arena)
                 };
-                let basis_im = match (im.as_deref_mut(), shared) {
-                    (Some(im), true) => Some(ckks_lut_power_basis(module, im, &layout, &ctx.eval_mod, luts, tsk, scratch)?),
-                    _ => None,
+                let (basis_im, arena) = match (im.as_deref_mut(), shared) {
+                    (Some(im), true) => {
+                        let (basis, arena) = ckks_lut_power_basis_in(module, im, &layout, &ctx.eval_mod, luts, tsk, arena)?;
+                        (Some(basis), arena)
+                    }
+                    _ => (None, arena),
                 };
-                let (mut part, mut scratch) = scratch.borrow().take_ckks_ciphertext_scratch(&layout, meta);
+                let (mut part, mut scratch) = arena.take_ckks_ciphertext_scratch(&layout, meta);
                 for (dst, lut) in dst.iter_mut().zip(luts) {
                     out.set_meta(meta);
                     out.set_k(layout.k);
@@ -962,7 +975,6 @@ impl<BE: Backend> CKKSReplicatedBootstrapReference<BE> for Module<BE> {
 pub trait CKKSReplicatedCIBootstrapReference<BE: Backend> {
     /// Scratch of [`Self::ckks_replicated_ci_bootstrap_reference`]: the working ciphertexts of both rings
     /// beside the largest operation.
-    #[allow(clippy::too_many_arguments)]
     fn ckks_replicated_ci_bootstrap_tmp_bytes_reference<C, I, F, K>(
         &self,
         ct_out: &C,

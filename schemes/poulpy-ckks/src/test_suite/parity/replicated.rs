@@ -9,13 +9,18 @@ use super::{
 use crate::{
     CKKSLayout, CKKSModuleInfos, CoeffsMeta, GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotLayout, SlotsKind,
     api::{
-        CKKSAddOps, CKKSAllOpsTmpBytes, CKKSConjugateOps, CKKSEncodingHostOps, CKKSEncodingScalar, CKKSMulOps,
-        CKKSPolynomialEvaluationOps, CKKSRotateOps, CKKSRoundOps, CKKSSubOps,
+        CKKSAddOps, CKKSAllOpsTmpBytes, CKKSConjugateOps, CKKSDotProductOps, CKKSEncodingHostOps, CKKSEncodingScalar,
+        CKKSInnerSumOps, CKKSLeftOperandPreparedFactory, CKKSMulOps, CKKSPolynomialEvaluationOps, CKKSReplicatedOps,
+        CKKSRightOperandPreparedFactory, CKKSRotateOps, CKKSRoundOps, CKKSSubOps,
     },
-    layouts::{CKKSCiphertextOwned, CKKSPlaintextAlloc, encode_bsgs_replicated},
+    layouts::{
+        CKKSCiphertextOwned, CKKSPlaintextAlloc, ReplicatedTransform, encode_bsgs_replicated,
+        replicated::ReplicatedTransformModule,
+    },
     oep::{
-        CKKSAddImpl, CKKSConjugateImpl, CKKSCopyImpl, CKKSDotProductImpl, CKKSEncodingImpl, CKKSMulImpl, CKKSPlaintextVecImpl,
-        CKKSPolynomialEvaluationImpl, CKKSPow2Impl, CKKSRotateImpl, CKKSRoundImpl, CKKSSubImpl,
+        CKKSAddImpl, CKKSConjugateImpl, CKKSCopyImpl, CKKSDotProductImpl, CKKSEncodingImpl, CKKSInnerSumImpl, CKKSMulImpl,
+        CKKSPlaintextVecImpl, CKKSPolynomialEvaluationImpl, CKKSPow2Impl, CKKSReplicatedImpl, CKKSRotateImpl, CKKSRoundImpl,
+        CKKSSubImpl,
     },
     polynomial::{Basis, Polynomial, SplitStrategy},
     reference::encoding::CKKSSlotEmbedding,
@@ -26,7 +31,8 @@ use poulpy_core::{
     GLWEAdd, GLWEAutomorphismKeyPreparedFactory, GLWEFill, GLWETensorKeyPreparedFactory,
     layouts::{GLWEAutomorphismKeyPrepared, GLWELayout, LWEInfos},
 };
-use poulpy_hal::layouts::{Backend, Module, Ring, ScratchArena, Standard};
+use poulpy_hal::layouts::{Backend, Module, PrepareHint, Ring, ScratchArena, Standard};
+use std::collections::HashMap;
 
 /// The CKKS families of a ring that the shaped operations use.
 pub trait ReplicatedRingImpl<Rg: Ring>:
@@ -40,6 +46,8 @@ pub trait ReplicatedRingImpl<Rg: Ring>:
     + CKKSMulImpl<Rg>
     + CKKSDotProductImpl<Rg>
     + CKKSPolynomialEvaluationImpl<Rg>
+    + CKKSInnerSumImpl<Rg>
+    + CKKSReplicatedImpl<Rg>
 {
 }
 
@@ -54,6 +62,8 @@ impl<B, Rg: Ring> ReplicatedRingImpl<Rg> for B where
         + CKKSMulImpl<Rg>
         + CKKSDotProductImpl<Rg>
         + CKKSPolynomialEvaluationImpl<Rg>
+        + CKKSInnerSumImpl<Rg>
+        + CKKSReplicatedImpl<Rg>
 {
 }
 
@@ -169,8 +179,12 @@ fn shaped_ops<B, F, Rg: Ring>(params: CKKSTestParams, module: &Module<B>) -> Vec
 where
     B: Backend<ZnxWord = i64> + ReplicatedRingImpl<Rg> + CKKSEncodingImpl<F, Rg>,
     F: CKKSEncodingScalar,
-    Module<B>:
-        CKKSAllOpsTmpBytes<B> + GLWETensorKeyPreparedFactory<B, Rg> + GLWEAutomorphismKeyPreparedFactory<B, Rg> + GLWEFill<B, Rg>,
+    Module<B>: CKKSAllOpsTmpBytes<B>
+        + GLWETensorKeyPreparedFactory<B, Rg>
+        + GLWEAutomorphismKeyPreparedFactory<B, Rg>
+        + GLWEFill<B, Rg>
+        + ReplicatedTransformModule<B, F, Rg>
+        + CKKSLeftOperandPreparedFactory<B, Rg>,
 {
     let b = params.base2k;
     let la = replicated_at(params, 8 * b + 5);
@@ -221,6 +235,8 @@ where
     })
     .unwrap();
     results.push(("rotate_into", snapshot::<B, _, Rg>(&out)));
+
+    linear_ops::<B, F, Rg>(params, module, &a, &rhs, &mut results);
 
     narrow_automorphisms::<B, Rg>(
         params,
@@ -284,6 +300,122 @@ where
 
     assert_eq!(before, snapshot::<B, _, Rg>(&a));
     results
+}
+
+/// The lazy dot products, of ciphertexts and of prepared operands, the inner
+/// sum and `ckks_replicated_transform` of replicated operands `a` and `b` at
+/// scale `2^(base2k - 1)`, with keys covering their working widths.
+fn linear_ops<B, F, Rg: Ring>(
+    params: CKKSTestParams,
+    module: &Module<B>,
+    a: &CKKSCiphertextOwned<B, Rg>,
+    b: &CKKSCiphertextOwned<B, Rg>,
+    results: &mut Vec<(&'static str, Snapshot)>,
+) where
+    B: Backend<ZnxWord = i64> + ReplicatedRingImpl<Rg>,
+    F: CKKSEncodingScalar,
+    Module<B>: GLWETensorKeyPreparedFactory<B, Rg>
+        + GLWEAutomorphismKeyPreparedFactory<B, Rg>
+        + GLWEFill<B, Rg>
+        + ReplicatedTransformModule<B, F, Rg>
+        + CKKSLeftOperandPreparedFactory<B, Rg>,
+{
+    let (n, b_k) = (params.n, params.base2k);
+    let SlotLayout::Replicated(layout) = replicated() else {
+        unreachable!()
+    };
+    let lr = replicated_at(params, 5 * b_k + 3);
+    let wide = a.k().as_usize() + 64;
+    let (tsk_layout, atk_layout) = rank_keys(params, wide);
+    let tsk = prepared_tensor_key::<B, Rg>(module, &tsk_layout, 117);
+
+    let mut out = fixture_ciphertext::<B, Rg>(module, &lr, 99);
+    let bytes = module.ckks_dot_product_ct_tmp_bytes(2, &out, a, b, &tsk_layout);
+    with_scratch::<B, _>(bytes, |s| module.ckks_dot_product_ct(&mut out, &[a, b], &[b, a], &tsk, s)).unwrap();
+    results.push(("dot_product_ct", snapshot::<B, _, Rg>(&out)));
+
+    let left = |ct: &CKKSCiphertextOwned<B, Rg>| {
+        with_scratch::<B, _>(module.ckks_left_operand_prepare_tmp_bytes(ct), |s| {
+            module.ckks_left_operand_prepare_alloc(ct, PrepareHint::OneShot, s)
+        })
+        .unwrap()
+    };
+    let right = |ct: &CKKSCiphertextOwned<B, Rg>| {
+        with_scratch::<B, _>(module.ckks_right_operand_prepare_tmp_bytes(ct), |s| {
+            module.ckks_right_operand_prepare_alloc(ct, PrepareHint::OneShot, s)
+        })
+        .unwrap()
+    };
+    let (la, lb, ra, rb) = (left(a), left(b), right(a), right(b));
+    let mut out = fixture_ciphertext::<B, Rg>(module, &lr, 99);
+    let bytes = module.ckks_dot_product_prepared_tmp_bytes(2, &out, &la, &rb, &tsk_layout);
+    with_scratch::<B, _>(bytes, |s| {
+        module.ckks_dot_product_prepared(&mut out, &[&la, &lb], &[&rb, &ra], &tsk, s)
+    })
+    .unwrap();
+    results.push(("dot_product_prepared", snapshot::<B, _, Rg>(&out)));
+
+    // The inner sum of the `k` values, every `R` slots.
+    let (log_batch, log_count) = (layout.log_r(), layout.log_k());
+    let keys: HashMap<i64, _> = module
+        .ckks_inner_sum_galois_elements(n.into(), log_batch, log_count)
+        .into_iter()
+        .map(|p| {
+            (
+                p,
+                prepared_automorphism_key::<B, Rg>(module, &atk_layout, p, (p as u8).wrapping_add(31)),
+            )
+        })
+        .collect();
+    let mut out = fixture_ciphertext::<B, Rg>(module, &lr, 99);
+    with_scratch::<B, _>(module.ckks_inner_sum_tmp_bytes(&out, a, &atk_layout), |s| {
+        module.ckks_inner_sum(log_batch, log_count, false, &mut out, a, &keys, s)
+    })
+    .unwrap();
+    results.push(("inner_sum", snapshot::<B, _, Rg>(&out)));
+
+    // A map of the `k` values on the period `kR`.
+    let (k, r) = (1usize << layout.log_k(), 1usize << layout.log_r());
+    let log_delta_diag = 20;
+    let encode = ReplicatedTransform::<B, Rg>::encode_tmp_bytes::<F>(module, &layout, b_k.into(), log_delta_diag).unwrap();
+    let transform = with_scratch::<B, _>(encode, |s| {
+        ReplicatedTransform::<B, Rg>::from_input_period(
+            module,
+            layout,
+            k * r,
+            b_k.into(),
+            log_delta_diag,
+            true,
+            |s, c| {
+                if s % r == 0 && c % r == 0 {
+                    let v = F::from_f64(((s / r + 2 * (c / r)) % 5) as f64 * 0.125 - 0.25).unwrap();
+                    (v, F::from_f64(0.0).unwrap())
+                } else {
+                    (F::from_f64(0.0).unwrap(), F::from_f64(0.0).unwrap())
+                }
+            },
+            s,
+        )
+    })
+    .unwrap();
+    let rotations: HashMap<i64, _> = transform
+        .rotations()
+        .into_iter()
+        .map(|rotation| {
+            let p = module.ckks_galois_element::<Rg>(rotation);
+            (
+                p,
+                prepared_automorphism_key::<B, Rg>(module, &atk_layout, p, (p as u8).wrapping_add(37)),
+            )
+        })
+        .collect();
+    let mut workspace = transform.alloc_replicated_workspace(module, a);
+    let mut out = fixture_ciphertext::<B, Rg>(module, &lr, 99);
+    with_scratch::<B, _>(module.ckks_replicated_transform_tmp_bytes(a, &atk_layout, &transform), |s| {
+        module.ckks_replicated_transform(&mut out, a, &transform, &mut workspace, &rotations, s)
+    })
+    .unwrap();
+    results.push(("replicated_transform", snapshot::<B, _, Rg>(&out)));
 }
 
 type Automorphism<B, Rg> = fn(
@@ -376,8 +508,10 @@ where
 /// on both backends, on the ring `Rg` and at the suite's rank, each within its
 /// queried arena: rounding of replicated and full layouts, of a source with its
 /// canonical flag clear, to another radix and past the largest shaping pass;
-/// the shaped encoding; products, rotations, the masked one and polynomial
-/// evaluation; and, on the standard ring, the conjugations.
+/// the shaped encoding; products, the dot products of ciphertexts and of
+/// prepared operands, the inner sum, `ckks_replicated_transform`, rotations,
+/// the masked one and polynomial evaluation; and, on the standard ring, the
+/// conjugations.
 pub fn test_replicated_parity<BR, BT, F, Rg>(params: CKKSTestParams, reference: &Module<BR>, tested: &Module<BT>)
 where
     BR: Backend<ZnxWord = i64>
@@ -398,14 +532,18 @@ where
         + GLWEAutomorphismKeyPreparedFactory<BR>
         + GLWEFill<BR, Rg>
         + GLWEFill<BR>
-        + GLWEAdd<BR, Rg>,
+        + GLWEAdd<BR, Rg>
+        + ReplicatedTransformModule<BR, F, Rg>
+        + CKKSLeftOperandPreparedFactory<BR, Rg>,
     Module<BT>: CKKSAllOpsTmpBytes<BT>
         + GLWETensorKeyPreparedFactory<BT, Rg>
         + GLWEAutomorphismKeyPreparedFactory<BT, Rg>
         + GLWEAutomorphismKeyPreparedFactory<BT>
         + GLWEFill<BT, Rg>
         + GLWEFill<BT>
-        + GLWEAdd<BT, Rg>,
+        + GLWEAdd<BT, Rg>
+        + ReplicatedTransformModule<BT, F, Rg>
+        + CKKSLeftOperandPreparedFactory<BT, Rg>,
 {
     assert_eq!(reference.n(), tested.n());
     let standard = !conjugate_invariant::<Rg>();

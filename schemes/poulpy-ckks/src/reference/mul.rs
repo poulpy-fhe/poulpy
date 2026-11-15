@@ -861,7 +861,7 @@ where
 }
 
 /// Width of the tensor intermediate of a product of operands up to `tensor_k` into a result of `res_k` bits.
-fn tensor_intermediate_k(tensor_k: TorusPrecision, res_k: usize) -> TorusPrecision {
+pub(crate) fn tensor_intermediate_k(tensor_k: TorusPrecision, res_k: usize) -> TorusPrecision {
     tensor_k.max(res_k.into())
 }
 

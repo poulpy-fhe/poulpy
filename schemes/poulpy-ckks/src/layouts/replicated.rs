@@ -934,10 +934,13 @@ impl ReplicatedBootstrapPlan {
 
     /// The scaling of `SlotsToCoeffs`: `2^r/p` for a functional plan, so that
     /// the coefficients carry the phase `m/p`, else one.
-    pub(crate) fn s2c_scaling(&self) -> f64 {
-        self.functional.map_or(1.0, |functional| {
-            (1u64 << functional.log_msg_ratio) as f64 / functional.message_modulus as f64
-        })
+    pub(crate) fn s2c_scaling<F: CKKSEncodingScalar>(&self) -> Result<F> {
+        let Some(functional) = self.functional else {
+            return Ok(F::one());
+        };
+        let ratio = F::from_usize(1usize << functional.log_msg_ratio).context("the message ratio is a small integer")?;
+        let modulus = F::from_usize(functional.message_modulus).context("the message modulus is a small integer")?;
+        Ok(ratio / modulus)
     }
 
     /// EvalMod scale of [`Self::paper`] for `layout`: `2^28`, or
@@ -1066,7 +1069,15 @@ impl ReplicatedBootstrapPlan {
     /// `encapsulation`, the key to the ephemeral secret covers the ModUp input
     /// in one-limb digits and an auxiliary modulus of one limb and a bit. The
     /// key back covers the lifted ModUp input, with its rows offset to end at
-    /// the raised modulus.
+    /// the raised modulus. With the first `CoeffsToSlots` factor on the raise,
+    /// its keys take the place of the key back, in the shape of
+    /// [`BootstrappingKeyPolicy`](crate::presets::key_policy::BootstrappingKeyPolicy)'s
+    /// first-factor keys at these digits.
+    ///
+    /// # Panics
+    ///
+    /// With the first factor on the raise, when a term it switches does not fit
+    /// under the limbs the raise works at.
     #[allow(clippy::too_many_arguments)]
     pub fn key_layouts(
         &self,
@@ -1135,6 +1146,10 @@ impl ReplicatedBootstrapPlan {
                     self.c2s_first_factor_growth(base2k.as_usize()),
                 )
                 .div_ceil(base2k.as_usize());
+                assert!(
+                    small < work,
+                    "first-factor key: a term of {small} limbs does not fit the {work} limbs the raise works at"
+                );
                 let mut key = switching(small * base2k.as_usize(), digit, k_aux);
                 key.k_offset = ((work - small) * base2k.as_usize()).into();
                 key
@@ -1236,7 +1251,7 @@ impl<BE: Backend, F: CKKSEncodingScalar> ReplicatedBootstrapping<BE, F> {
         let transforms = match plan.transforms {
             ReplicatedTransforms::Dense => {
                 let v = embedding::<BE, F>(module, k, base2k, scratch)?;
-                let s2c_scaling = F::from_f64(plan.s2c_scaling()).context("the SlotsToCoeffs scaling is not representable")?;
+                let s2c_scaling = plan.s2c_scaling::<F>()?;
                 let s2c = ReplicatedTransform::gather(
                     module,
                     layout,
@@ -1666,7 +1681,8 @@ where
             fitted_giant_step: true,
         }
     };
-    let weight = F::from_usize(r).context("the period is a small integer")?;
+    // The placement carries the period's weight and the `SlotsToCoeffs` scaling, which commutes with the DFT.
+    let weight = F::from_usize(r).context("the period is a small integer")? * plan.s2c_scaling::<F>()?;
     let s2c: Vec<ReplicatedFactor<F>> = placement_compress::<F>(k, r, placement_factors, weight)
         .into_iter()
         .chain(ckks_dft_matrices_gen_blockwise::<F>(
@@ -1674,7 +1690,7 @@ where
             log_k,
             log_k + log_r,
             &split_depth(log_k, s2c_factors),
-            plan.s2c_scaling(),
+            1.0,
             false,
         ))
         .map(unshaped(plan.s2c_log_delta_diag))

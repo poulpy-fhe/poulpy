@@ -22,7 +22,7 @@ use crate::{
     oep::derived::dot_product::{accumulate, check_lengths},
     reference::mul::{
         MulStamp, StampOrder, check_prepared_layout, is_replicated, mul_one_pass, product_key_k, round_into, take_wide,
-        tensor_mul_core, with_shaped_bytes,
+        tensor_intermediate_k, tensor_mul_core, with_shaped_bytes,
     },
 };
 
@@ -72,8 +72,18 @@ pub trait CKKSDotProductReference<BE: Backend, Rg: Ring = Standard>: Sized + Mod
         let ct_bytes: usize = self.glwe_bytes_of_from_infos(res);
         let fallback: usize = ct_bytes + mul_scratch.max(self.ckks_add_tmp_bytes(res.size()));
         // The lazy sum into `res`, or on a replicated layout into a wider ciphertext rounded into `res`.
-        let lazy = |res: &GLWELayout, _: TorusPrecision| {
-            let relinearize: usize = self.glwe_tensor_relinearize_tmp_bytes(res, &tensor_layout, tsk);
+        // Its accumulator and terms are as wide as the operands or the result, the wider, which on a replicated layout
+        // reads `lambda` bits under the operands' width.
+        let lazy = |res: &GLWELayout, tensor_k: TorusPrecision| {
+            let sum_layout = GLWELayout {
+                k: tensor_intermediate_k(tensor_k, res.k.as_usize()),
+                ..tensor_layout
+            };
+            let tensor_bytes: usize = BE::scratch_aligned(self.glwe_tensor_bytes_of_from_infos(&sum_layout));
+            let apply: usize = self
+                .glwe_tensor_apply_tmp_bytes(&sum_layout, a, b)
+                .max(self.glwe_tensor_apply_prepared_tmp_bytes(&sum_layout, a.size(), b.size(), a.base2k()));
+            let relinearize: usize = self.glwe_tensor_relinearize_tmp_bytes(res, &sum_layout, tsk);
             let fast: usize = 2 * tensor_bytes + apply.max(self.glwe_normalize_tmp_bytes()).max(relinearize);
             // Its one-pass form, whatever the number of pairs.
             let one_pass: usize = self
@@ -97,8 +107,11 @@ pub trait CKKSDotProductReference<BE: Backend, Rg: Ring = Standard>: Sized + Mod
         Self: CKKSMulOps<BE, Rg>
             + CKKSAddOps<BE, Rg>
             + CKKSRoundOps<BE, Rg>
+            + GLWEBytesOf<BE>
+            + GLWETensorBytesOf<BE>
             + GLWETensoring<BE, Rg>
             + GLWEMulRelinearizeSum<BE, Rg>
+            + GLWEPreparedTensoring<BE, Rg>
             + GLWEAdd<BE, Rg>
             + GLWENormalize<BE, Rg>,
         Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
@@ -113,7 +126,14 @@ pub trait CKKSDotProductReference<BE: Backend, Rg: Ring = Standard>: Sized + Mod
         // Past base2k 62, two canonical tensor digits can overflow an `i64`, and no backend models a
         // product there (`Module::max_base2k`): such pairs keep the eager path.
         if n > 1 && dst.base2k().as_usize() <= 62 && share_layout(a) && share_layout(b) {
-            let rule = lazy_rule("ckks_dot_product_ct", dst, a, b, tsk)?;
+            const OP: &str = "ckks_dot_product_ct";
+            let rule = lazy_rule(OP, dst, a, b, tsk)?;
+            let key = crate::reference::mul::tensor_key_at(OP, tsk, rule.key_k)?;
+            crate::layouts::validation::ensure_scratch(
+                OP,
+                scratch,
+                self.ckks_dot_product_ct_tmp_bytes_reference(n, &*dst, a[0], b[0], &key),
+            )?;
             macro_rules! sum_into {
                 ($out:expr, $stamp:expr, $scratch:expr) => {
                     dot_product_lazy(
@@ -156,7 +176,12 @@ pub trait CKKSDotProductReference<BE: Backend, Rg: Ring = Standard>: Sized + Mod
             + GLWETensoring<BE, Rg>
             + GLWEAdd<BE, Rg>
             + GLWENormalize<BE, Rg>
-            + CKKSRoundOps<BE, Rg>,
+            + CKKSRoundOps<BE, Rg>
+            + CKKSMulOps<BE, Rg>
+            + CKKSAddOps<BE, Rg>
+            + GLWEBytesOf<BE>
+            + GLWETensorBytesOf<BE>
+            + GLWEMulRelinearizeSum<BE, Rg>,
         Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
         H: GetTensorKey<BE, Rg>,
     {
@@ -175,6 +200,12 @@ pub trait CKKSDotProductReference<BE: Backend, Rg: Ring = Standard>: Sized + Mod
         }
         check_lazy_base2k(OP, dst)?;
         let rule = lazy_rule(OP, dst, a, b, tsk)?;
+        let key = crate::reference::mul::tensor_key_at(OP, tsk, rule.key_k)?;
+        crate::layouts::validation::ensure_scratch(
+            OP,
+            scratch,
+            self.ckks_dot_product_ct_tmp_bytes_reference(a.len(), &*dst, a[0], b[0], &key),
+        )?;
         macro_rules! sum_into {
             ($out:expr, $stamp:expr, $scratch:expr) => {
                 dot_product_lazy(
@@ -539,6 +570,8 @@ struct LazyRule {
     tensor_k: TorusPrecision,
     cnv_offset: usize,
     lambda: Option<usize>,
+    /// The width the tensor key covers: the tensor's, or a replicated layout's wider intermediate.
+    key_k: TorusPrecision,
 }
 
 fn lazy_rule<BE, Dst, A, B, H, Rg: Ring>(op: &'static str, dst: &Dst, a: &[&A], b: &[&B], tsk: &H) -> Result<LazyRule>
@@ -588,6 +621,7 @@ where
         tensor_k,
         cnv_offset,
         lambda,
+        key_k,
     })
 }
 
@@ -645,7 +679,13 @@ where
         |acc, _dst, scratch| {
             tensor(acc, 0, cnv_offset, scratch);
             if a.len() > 1 {
-                let (mut term, mut scratch) = scratch.borrow().take_glwe_tensor_scratch(&tensor_layout);
+                // Every term at the accumulator's width, which on a replicated layout keeps the bits under the operands'
+                // width a shaped product reads.
+                let term_layout = GLWELayout {
+                    k: tensor_intermediate_k(tensor_layout.k, stamp.log_budget + stamp.log_delta),
+                    ..tensor_layout
+                };
+                let (mut term, mut scratch) = scratch.borrow().take_glwe_tensor_scratch(&term_layout);
                 for i in 1..a.len() {
                     tensor(&mut term, i, cnv_offset, &mut scratch);
                     module.glwe_add_assign(acc, &term);

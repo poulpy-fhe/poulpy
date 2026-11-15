@@ -21,12 +21,12 @@ use crate::{
         CKKSNegOps, CKKSPolynomialEvaluationOps, CKKSPow2Ops, CKKSSubOps,
     },
     layouts::{
-        CKKSCiphertextAlloc, CKKSCiphertextOwned, CKKSMaskedConstants, EncodedLut, ScratchArenaTakeCKKSCiphertext,
-        eval_mod::EvalMod, functional_bootstrapping::DoubleAngleChain,
+        CKKSCiphertextAlloc, CKKSCiphertextOwned, CKKSCiphertextViewMut, CKKSMaskedConstants, EncodedLut,
+        ScratchArenaTakeCKKSCiphertext, eval_mod::EvalMod, functional_bootstrapping::DoubleAngleChain,
     },
     numerics::CKKSFloat,
     polynomial::{BSGSPolynomial, ComplexBSGSPolynomial, ComplexPolynomial, Polynomial},
-    power_basis::{CKKSPowerBasisGen, PowerBasis},
+    power_basis::{CKKSPowerBasisGen, PowerBasis, populate_in},
     reference::polynomial_evaluation::{const_add_assign, const_sub_assign},
 };
 
@@ -204,12 +204,87 @@ where
     Ok(power_basis)
 }
 
-/// Evaluates one general LUT against a [`ckks_lut_power_basis`] result.
-pub(crate) fn ckks_eval_lut_from_basis<BE, P, K, R, H>(
+/// [`ckks_lut_power_basis`] in the arena: the exponential and every power carved from `scratch`, of which it returns
+/// what is left.
+pub(crate) fn ckks_lut_power_basis_in<'a, BE, F, P, C, H>(
+    module: &Module<BE>,
+    ct: &mut C,
+    layout: &GLWELayout,
+    eval_exp: &EvalMod<F, P>,
+    luts: &[EncodedLut<P>],
+    tsk: &H,
+    scratch: ScratchArena<'a, BE>,
+) -> Result<(PowerBasis<CKKSCiphertextViewMut<'a, BE>>, ScratchArena<'a, BE>)>
+where
+    BE: Backend + 'a,
+    Module<BE>: CKKSEvalModOps<BE>
+        + CKKSPolynomialEvaluationOps<BE>
+        + CKKSAddOps<BE>
+        + CKKSCopyOps<BE>
+        + CKKSMulOps<BE>
+        + CKKSPow2Ops<BE>
+        + CKKSSubOps<BE>
+        + GLWENormalize<BE>,
+    P: LutConstants<BE>,
+    C: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds,
+    H: GetTensorKey<BE>,
+{
+    let series = luts
+        .iter()
+        .map(|lut| {
+            lut.general_series()
+                .ok_or_else(|| anyhow!("ckks_lut_power_basis: shared evaluation supports general LUTs only"))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let head = &series
+        .first()
+        .ok_or_else(|| anyhow!("ckks_lut_power_basis: at least one LUT is required"))?
+        .re;
+    let (mut x1, mut scratch) = scratch.take_ckks_ciphertext_scratch(
+        &GLWELayout {
+            rank: Rank(1),
+            ..*layout
+        },
+        poulpy_core::layouts::GLWEPlaintextMeta::default(),
+    );
+    module.ckks_eval_mod(&mut x1, ct, eval_exp, tsk, &mut scratch)?;
+    let mut power_basis = PowerBasis::new(head.basis(), x1);
+    for lut in &series {
+        ensure!(
+            lut.re.basis() == head.basis(),
+            "ckks_lut_power_basis: all LUTs must use the same polynomial basis"
+        );
+        scratch = populate_in(
+            &mut power_basis,
+            lut.re.degree(),
+            lut.re.log_split(),
+            lut.re.parity(),
+            module,
+            tsk,
+            scratch,
+        )?;
+    }
+    Ok((power_basis, scratch))
+}
+
+/// The powers [`ckks_lut_power_basis_in`] carves for `luts`, the exponential included.
+pub(crate) fn lut_power_basis_count<P>(luts: &[EncodedLut<P>]) -> usize {
+    let series: Vec<_> = luts.iter().filter_map(EncodedLut::general_series).collect();
+    let Some(head) = series.first() else {
+        return 0;
+    };
+    1 + crate::power_basis::populated_powers_union(
+        series.iter().map(|s| (s.re.degree(), s.re.log_split(), s.re.parity())),
+        head.re.basis(),
+    )
+}
+
+/// Evaluates one general LUT against a [`ckks_lut_power_basis`] or [`ckks_lut_power_basis_in`] result.
+pub(crate) fn ckks_eval_lut_from_basis<BE, P, A, K, R, H>(
     module: &Module<BE>,
     res: &mut R,
     lut: &EncodedLut<P>,
-    power_basis: &PowerBasis<CKKSCiphertextOwned<BE>>,
+    power_basis: &PowerBasis<A>,
     conj_key: &K,
     tsk: &H,
     scratch: &mut ScratchArena<'_, BE>,
@@ -218,6 +293,7 @@ where
     BE: Backend,
     Module<BE>: CKKSComplexPolynomialEvaluationOps<BE> + CKKSConjugateOps<BE> + CKKSAddOps<BE>,
     P: LutConstants<BE>,
+    A: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta,
     K: GetAutomorphismKey<BE>,
     R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
     H: GetTensorKey<BE>,
@@ -225,13 +301,7 @@ where
     let series = lut
         .general_series()
         .ok_or_else(|| anyhow!("ckks_eval_lut_from_basis: shared evaluation supports general LUTs only"))?;
-    module.ckks_eval_poly_complex_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<BE>, _, _>(
-        res,
-        power_basis,
-        series,
-        tsk,
-        scratch,
-    )?;
+    module.ckks_eval_poly_complex_const_coeffs_from_power_basis::<_, _, A, _, _>(res, power_basis, series, tsk, scratch)?;
     let layout = GLWELayout {
         n: res.n(),
         base2k: res.base2k(),

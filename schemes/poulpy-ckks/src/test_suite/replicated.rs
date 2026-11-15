@@ -1707,6 +1707,13 @@ where
         module.ckks_inner_sum(log_batch, log_count, false, &mut out, &ct, &atks, s)
     })?;
     check(&out, &sum);
+    // A narrower destination takes the sum at its width.
+    let mut narrow = alloc_ct(params, module, k - 8);
+    with_scratch::<BE, _>(module.ckks_inner_sum_tmp_bytes(&narrow, &ct, &params.atk_layout()), |s| {
+        module.ckks_inner_sum(log_batch, log_count, false, &mut narrow, &ct, &atks, s)
+    })?;
+    assert_eq!(narrow.k().as_usize(), k - 8);
+    check(&narrow, &sum);
     with_scratch::<BE, _>(bytes, |s| {
         module.ckks_inner_sum(log_batch, log_count, true, &mut out, &ct, &atks, s)
     })?;
@@ -1724,7 +1731,8 @@ where
 }
 
 /// The inner sum, its mean and the replicate on a replicated layout rotate by multiples of `R`, `λ` bits under the
-/// scale, and round once with shaping; a batch of fewer than `R` slots is refused.
+/// scale, and round once with shaping, the sum also into a narrower destination; a batch of fewer than `R` slots is
+/// refused.
 pub fn test_replicated_inner_sums_are_shaped<BE, F, Rg: Ring>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -1747,8 +1755,9 @@ where
 }
 
 /// A map of the `k` values of a replicated layout onto its data slots, [`ReplicatedTransform::from_input_period`] on
-/// the period `kR` with shaped diagonals, by `ckks_replicated_transform`, against the matrix; and the refusal of a map
-/// rotating by slot counts that are not multiples of `R`.
+/// the period `kR` with shaped diagonals, by `ckks_replicated_transform`, against the matrix, into a destination as
+/// wide as the source and into a narrower one; and the refusals of a map rotating by slot counts that are not
+/// multiples of `R`, of a source of the full layout and of a workspace for another input.
 pub fn test_replicated_transform_maps_values<BE, F, Rg: Ring>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -1832,6 +1841,20 @@ where
     // Measured on the portable backends, both rings: 50.0 to 53.5 bits.
     assert!(bits >= 45.0, "replicated transform: {bits:.2} bits");
 
+    // A destination narrower than the result takes it at its width.
+    let narrow_k = k - transform.consumed_bits() - 8;
+    let mut narrow = alloc_ct(&params, module, narrow_k);
+    with_scratch::<BE, _>(bytes, |s| {
+        module.ckks_replicated_transform(&mut narrow, &ct, &transform, &mut workspace, &atks, s)
+    })?;
+    assert_eq!((narrow.k().as_usize(), narrow.log_delta()), (narrow_k, ct.log_delta()));
+    let got = decrypt_batch::<BE, F, Rg>(&params, module, &sk, &narrow, len);
+    let bits = precision((&got.0, &got.1), (&want.0, &want.1));
+    assert!(
+        bits >= 45.0,
+        "replicated transform into a narrower destination: {bits:.2} bits"
+    );
+
     // A map of period-`k` slots rotates by single slots.
     let unaligned = ReplicatedTransform::<BE, Rg>::from_period(
         module,
@@ -1854,6 +1877,23 @@ where
             &atks,
             &mut scratch.borrow()
         ),
+        [out, ct]
+    );
+
+    // A source of the full layout, and a workspace for another input.
+    let mut full = ct.clone();
+    full.set_slot_layout(SlotLayout::Full);
+    refused!(
+        Rg,
+        "ckks_replicated_transform",
+        module.ckks_replicated_transform(&mut out, &full, &transform, &mut workspace, &atks, &mut scratch.borrow()),
+        [out, full]
+    );
+    let mut other_workspace = transform.alloc_replicated_workspace(module, &narrow);
+    refused!(
+        Rg,
+        "ckks_replicated_transform",
+        module.ckks_replicated_transform(&mut out, &ct, &transform, &mut other_workspace, &atks, &mut scratch.borrow()),
         [out, ct]
     );
     Ok(())
@@ -3226,8 +3266,8 @@ where
 }
 
 /// Functional bootstrapping of `k = 8` integers with general LUTs of `p = 5` entries, through the complex exponential
-/// of the paper's EvalMod parameters: one LUT and two sharing the exponential, on real and complex slots, and the
-/// refusals of a plan and LUTs that do not match.
+/// of the paper's EvalMod parameters: one LUT and two sharing the exponential, on real and complex slots, with dense
+/// and factored maps, and the refusals of a plan and LUTs that do not match.
 pub fn test_replicated_functional_bootstrap<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -3300,12 +3340,34 @@ where
     let plan = plan.with_functional_bootstrap(&luts[0])?;
     assert!(!plan.packed);
     // Measured on the portable backends: 24.7 to 26.8 bits.
-    functional_bootstrap_with::<BE, F>(&params, module, host_module, plan, &luts, &tables, Some(four), 22.0)
+    functional_bootstrap_with::<BE, F>(
+        &params,
+        module,
+        host_module,
+        plan,
+        &luts,
+        &tables,
+        &[("of another length", four), ("at another scale", off_scale)],
+        22.0,
+    )?;
+    // Factored maps, whose placement carries the `2^r/p` scaling of `SlotsToCoeffs`.
+    let factored = ReplicatedBootstrapPlan {
+        transforms: ReplicatedTransforms::Factored {
+            s2c_factors: 2,
+            c2s_factors: 2,
+            placement_factors: 2,
+            c2s_inner_log_delta_diag: 44,
+            c2s_first_factor_on_raise: false,
+        },
+        ..plan
+    };
+    functional_bootstrap_with::<BE, F>(&params, module, host_module, factored, &luts, &tables, &[], 22.0)
 }
 
 /// Functional bootstrapping of `k = 8` integers with binary LUTs, one table `f0 > f1` and one `f0 < f1`, whose
 /// double-angle chain ends negated, through their cosine on the EvalMod input of the paper's plan, rounded with shaping
-/// to its scale: one LUT and two, on real and complex slots.
+/// to its scale: one LUT and two, on real and complex slots, and the refusals of a LUT at another scale and of one
+/// over the plan's budget.
 pub fn test_replicated_functional_bootstrap_binary<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -3334,42 +3396,51 @@ where
         .map(|table| table.iter().map(|&v| F::from_f64(v).unwrap()).collect())
         .collect();
     let mut encoding = ScratchOwned::<BE>::alloc(ReplicatedLut::<BE>::general_replicated_tmp_bytes::<BE, F>(module));
-    let encode = |table: &[F], log_delta: usize, encoding: &mut ScratchOwned<BE>| {
+    let encode_with = |table: &[F], log_delta: usize, double_angles: usize, encoding: &mut ScratchOwned<BE>| {
         ReplicatedLut::<BE>::binary_replicated(
             module,
             &paper,
             table[0],
             table[1],
             31,
-            3,
+            double_angles,
             base2k,
             CoeffsMeta::from_delta_budget(log_delta, 20),
             SplitStrategy::MinDepth,
             &mut encoding.borrow(),
         )
     };
+    let encode = |table: &[F], log_delta: usize, encoding: &mut ScratchOwned<BE>| encode_with(table, log_delta, 3, encoding);
     let scale = paper.eval_mod.f_mod_log_delta;
     let luts = vec![
         encode(&tables[0], scale, &mut encoding)?,
         encode(&tables[1], scale, &mut encoding)?,
     ];
     // A binary LUT takes the EvalMod scale.
-    assert!(
-        paper
-            .with_functional_bootstrap(&encode(&tables[0], scale + 1, &mut encoding)?)
-            .is_err()
-    );
+    let off_scale = encode(&tables[0], scale + 1, &mut encoding)?;
+    assert!(paper.with_functional_bootstrap(&off_scale).is_err());
+    // One more double angle than the plan's LUTs.
+    let over_budget = encode_with(&tables[0], scale, 4, &mut encoding)?;
     let plan = paper.with_functional_bootstrap(&luts[0])?;
     assert!(!plan.packed && !plan.functional.unwrap().exponential);
     // Measured on the portable backends: 27.5 and 28.5 bits.
-    functional_bootstrap_with::<BE, F>(&params, module, host_module, plan, &luts, &tables, None, 25.0)
+    functional_bootstrap_with::<BE, F>(
+        &params,
+        module,
+        host_module,
+        plan,
+        &luts,
+        &tables,
+        &[("at another scale", off_scale), ("over the plan's budget", over_budget)],
+        25.0,
+    )
 }
 
 /// The functional bootstrapping of `plan` of `k = 8` integers, negative ones and ones past the table length among them,
 /// for one LUT of `luts` and for all of them, on real slots through the real part and on complex slots through both
-/// parts, each output at least `min_bits` precise against its table, the keys looked up at the plan's widths. With a
-/// LUT of another length, also the refusals of an identity bootstrapping, of one output for several LUTs, and of that
-/// LUT.
+/// parts, each output at least `min_bits` precise against its table, the keys looked up at the plan's widths. Then the
+/// refusals of an identity bootstrapping, of one output for two LUTs, of outputs at two widths and of each of
+/// `refused_luts`, every operand unchanged.
 #[allow(clippy::too_many_arguments)]
 fn functional_bootstrap_with<BE, F>(
     params: &CKKSTestParams,
@@ -3378,7 +3449,7 @@ fn functional_bootstrap_with<BE, F>(
     plan: ReplicatedBootstrapPlan,
     luts: &[ReplicatedLut<BE>],
     tables: &[Vec<F>],
-    other_length: Option<ReplicatedLut<BE>>,
+    refused_luts: &[(&str, ReplicatedLut<BE>)],
     min_bits: f64,
 ) -> Result<()>
 where
@@ -3493,39 +3564,54 @@ where
             }
         }
     }
-    let Some(other_length) = other_length else {
-        return Ok(());
-    };
-
     // The identity bootstrapping refuses a functional context, and the functional one outputs other than one per LUT,
-    // and a LUT of another length.
+    // outputs at two widths and each refused LUT, every operand unchanged.
     let input = encrypt(&as_f(&messages), &as_f(&others))?;
     let mut out = alloc_ct::<_, Standard>(params, module, k_out);
     let bytes = module.ckks_replicated_functional_bootstrap_tmp_bytes(&out, &input, &ctx, luts, &key_layouts);
-    let err = with_scratch::<BE, _>(bytes, |s| {
-        module.ckks_replicated_bootstrap(&mut out, &input, &ctx, &mut workspace, &keys, s)
-    })
-    .expect_err("a functional context");
-    assert_invalid(&err, "ckks_replicated_bootstrap");
-    let mut outs = vec![alloc_ct::<_, Standard>(params, module, k_out)];
-    let err = with_scratch::<BE, _>(bytes, |s| {
-        module.ckks_replicated_functional_bootstrap(&mut outs, &input, &ctx, luts, &mut workspace, &keys, s)
-    })
-    .expect_err("one output for two LUTs");
-    assert_invalid(&err, OP);
-    let err = with_scratch::<BE, _>(bytes, |s| {
-        module.ckks_replicated_functional_bootstrap(
-            &mut outs,
-            &input,
-            &ctx,
-            std::slice::from_ref(&other_length),
-            &mut workspace,
-            &keys,
-            s,
-        )
-    })
-    .expect_err("a LUT of another length");
-    assert_invalid(&err, OP);
+    refused!(
+        Standard,
+        "ckks_replicated_bootstrap",
+        with_scratch::<BE, _>(bytes, |s| {
+            module.ckks_replicated_bootstrap(&mut out, &input, &ctx, &mut workspace, &keys, s)
+        }),
+        [out, input]
+    );
+    let mut outs = vec![out];
+    refused!(
+        Standard,
+        OP,
+        with_scratch::<BE, _>(bytes, |s| {
+            module.ckks_replicated_functional_bootstrap(&mut outs, &input, &ctx, luts, &mut workspace, &keys, s)
+        }),
+        [outs[0], input]
+    );
+    let mut widths = vec![
+        alloc_ct::<_, Standard>(params, module, k_out),
+        alloc_ct::<_, Standard>(params, module, k_out - 8),
+    ];
+    refused!(
+        Standard,
+        OP,
+        with_scratch::<BE, _>(bytes, |s| {
+            module.ckks_replicated_functional_bootstrap(&mut widths, &input, &ctx, &luts[..2], &mut workspace, &keys, s)
+        }),
+        [widths[0], widths[1], input]
+    );
+    for (label, lut) in refused_luts {
+        let lut = std::slice::from_ref(lut);
+        let before = (snapshot::<BE, _, Standard>(&outs[0]), snapshot::<BE, _, Standard>(&input));
+        let err = with_scratch::<BE, _>(bytes, |s| {
+            module.ckks_replicated_functional_bootstrap(&mut outs, &input, &ctx, lut, &mut workspace, &keys, s)
+        })
+        .unwrap_err();
+        assert_invalid(&err, OP);
+        assert_eq!(
+            (snapshot::<BE, _, Standard>(&outs[0]), snapshot::<BE, _, Standard>(&input)),
+            before,
+            "a LUT {label} changed an operand"
+        );
+    }
     Ok(())
 }
 

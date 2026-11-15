@@ -66,7 +66,6 @@ The workspace owns the prepared baby rotations for that input layout; evaluation
 A batch of real slots (`SlotsKind::Real`), such as the conjugate-invariant bootstrapping feeds, leaves only multiples of the modulus on the imaginary coefficients, whose EvalMod is zero.
 Unpacked (`ReplicatedBootstrapPlan::packed` off), `CoeffsToSlots` fills the `k` data slots alone and the real part takes one EvalMod, and the output keeps the real slots.
 Packed, real slots take the packed route.
-On one `NTT4x30Neon` thread at `k = 2^10`, a real batch bootstraps in 5.17 s unpacked against 5.55 s packed on `n16_d20_k771_p20_s2c_factored`, and in 2.70 s against 3.10 s for a complex batch on `n15_d20_k393_p20_s2c`, whose two batches do not fit the ring side by side. At `k = 2^8` on the logN15 preset the two routes take the same time.
 
 `ReplicatedBootstrapPlan` holds the circuit (`ReplicatedBootstrapPlan::paper` is the configuration of the paper) and its widths (`k_in`, `k_boot`, `key_k`).
 EvalMod enters its scale with a shaped rounding, which leaves noise of about `2^(G + log2(sqrt(N)))` units on the guard slots for a unit whose guards grow by `G` bits.
@@ -83,7 +82,7 @@ Its `transforms` select how `SlotsToCoeffs` and `CoeffsToSlots` are evaluated:
 
 Factoring trades levels and rotation keys for fewer diagonals: at `N = 2^16` and `k = 2^10`, the dense maps multiply by about 3000 diagonals with 69 rotation keys, the factored maps of `n16_d20_k771_p20_s2c_factored` by 381 diagonals with 83 keys, for a raised modulus 256 bits wider at the same levels.
 At `k = 2^10`, the factored preset bootstraps in 6.3 s on one `NTT4x30Neon` thread and 0.36 s on Metal, against 8.1 s and 0.52 s for dense maps at the same levels, within 0.2 bits of their precision. At `k = 2^8` the dense maps are faster, the diagonals no longer dominating.
-The preset now leaves its first `CoeffsToSlots` factor to the raise, which narrows the raised modulus by the factor's scale and takes about 5% off a bootstrapping on both backends, the raise's 63 small switches costing most of the factor they replace, at 21.6 bits instead of 22.3.
+The preset leaves its first `CoeffsToSlots` factor to the raise, which narrows the raised modulus by the factor's scale.
 `ReplicatedBootstrapping` compiles it for a module: the transforms, the masked EvalMod constants, and the Galois elements its keys cover.
 `ReplicatedBootstrapping::key_widths` gives the width at which a bootstrapping into `k_out` bits uses each key: the keys of the bottom trace and `SlotsToCoeffs` at the input width, those of the top trace and `CoeffsToSlots` at the raised width, each giant rotation one factor narrower, and the tensor key at the widest EvalMod product.
 The bootstrapping looks every key up at its width before any work.
@@ -107,7 +106,6 @@ The input and output widths do not depend on them, while the raised modulus and 
 A preset refuses a unit whose suppression is less than 8 bits above its precision, since the bootstrapping falls short of the suppression by up to 5 bits: the units of `R = 2` and those targeting 20 bits, which measure 16 to 19 bits on the logN14 preset.
 The logN14 and logN15 presets take dense maps, with `SlotsToCoeffs` diagonals at `2^30` and the shaped `CoeffsToSlots` ones at `2^36` and `2^37`, which keep the guards of `U8_40` under 0.16 at `k = 2^10`.
 The logN16 preset factors its maps into two DFT factors and two placement factors each, with `SlotsToCoeffs` diagonals at `2^32` and inner `CoeffsToSlots` diagonals at `2^49`, one limb each at radix 52, for batches of 4 to `2^10` values at `R = 16`.
-At `2^49` instead of `2^54` a bootstrapping is about 5% faster on Metal and 2% on NEON for 0.05 bits; at `2^44` the precision falls to 17 bits.
 Its first `CoeffsToSlots` factor runs on the raise, with first-factor keys in place of the sparse-to-dense key; the dense presets' sparse-to-dense key covers the 49-bit lifted ModUp input, with a row offset ending its gadget at the raised modulus.
 
 Each preset advertises 20 bits of precision on the data slots.

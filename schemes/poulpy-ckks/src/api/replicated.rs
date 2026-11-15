@@ -22,7 +22,7 @@ use crate::{
 /// layout, at scale `conv.log_delta`:
 ///
 /// ```text
-/// log_budget_out = src.log_budget - log_delta_diag
+/// log_budget_out = min(src.log_budget - log_delta_diag, dst.k - conv.log_delta)
 /// log_delta_out  = conv.log_delta
 /// ```
 ///
@@ -110,7 +110,7 @@ pub trait CKKSReplicatedOps<BE: Backend, Rg: Ring = Standard> {
     /// of [`ReplicatedTransform::rotations`] covering the working width.
     ///
     /// ```text
-    /// log_budget_out = src.log_budget - transform.consumed_bits()
+    /// log_budget_out = min(src.log_budget - transform.consumed_bits(), dst.k - src.log_delta)
     /// log_delta_out  = src.log_delta
     /// ```
     ///
@@ -153,7 +153,8 @@ pub trait CKKSReplicatedOps<BE: Backend, Rg: Ring = Standard> {
 ///    takes the real part alone: its imaginary part holds only multiples of
 ///    the modulus.
 /// 6. EvalMod, once when packed or on real slots, else once per part, then
-///    the parts are recombined. The output takes the slot kind of the source.
+///    the parts are recombined. The output has real slots for a source of
+///    real or integer slots, complex slots otherwise.
 /// 7. The result is relabelled at `Δ_b` and rounded with shaping to the
 ///    leveled scale.
 ///

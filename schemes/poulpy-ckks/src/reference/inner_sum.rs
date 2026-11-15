@@ -180,6 +180,8 @@ where
     };
     let ops = module
         .ckks_copy_tmp_bytes(&wide, a)
+        .max(module.ckks_copy_tmp_bytes(res, a))
+        .max(module.ckks_copy_tmp_bytes(&wide, res))
         .max(module.glwe_trace_assign_tmp_bytes(&wide, key))
         .max(module.ckks_round_tmp_bytes(res, &wide));
     plain.max(ct_bytes::<BE>(&wide.glwe_layout) + ops)
@@ -367,7 +369,13 @@ where
     let (mut wide, mut scratch) = scratch
         .borrow()
         .take_ckks_ciphertext_scratch::<_, Rg>(&wide_layout(&*res, a, lambda), a.meta());
-    module.ckks_copy(&mut wide, a, &mut scratch)?;
+    if a.k() > res.k() {
+        // A wider `a` narrows to `res`'s width through `res`, which the sum overwrites.
+        module.ckks_copy(res, a, &mut scratch)?;
+        module.ckks_copy(&mut wide, &*res, &mut scratch)?;
+    } else {
+        module.ckks_copy(&mut wide, a, &mut scratch)?;
+    }
     wide_trace(module, res, &mut wide, sum, lambda, keys, &mut scratch)
 }
 
