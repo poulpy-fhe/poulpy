@@ -4,7 +4,9 @@
 //! host-built plans, and explicit precision and modulus costs. Names follow
 //! `libm` when the semantics transfer to approximate FHE.
 //!
-//! Every operation acts on standard-ring operands; none serves the conjugate-invariant ring.
+//! Every operation serves both rings: each trait takes the ring `Rg` of its operands,
+//! [`Standard`](poulpy_hal::layouts::Standard) by default, and the conjugate-invariant
+//! ring is [`ConjugateInvariant`](poulpy_hal::layouts::ConjugateInvariant).
 
 #![warn(missing_docs)]
 
@@ -39,7 +41,7 @@ pub mod prelude {
     pub use crate::arithmetic::CKKSArithmeticOps;
     pub use crate::comparison::{
         CKKSComparisonOps, CKKSPredicateOps, CKKSSignOps, COEFFS_SIGN_X2_CHEBYSHEV, COEFFS_SIGN_X4_CHEBYSHEV,
-        DEFAULT_SIGN_COMPOSITE_CHEBYSHEV, SignComposite,
+        DEFAULT_SIGN_COMPOSITE_CHEBYSHEV, SignComposite, SignRing, SignRingOps,
     };
     pub use crate::erf::{CKKSErfOps, ErfOptions, ErfPlan, ErfcPlan};
     pub use crate::exp::{CKKSExpOps, Exp2Plan, Exp10Plan, ExpOptions, ExpPlan, Expm1Plan};
