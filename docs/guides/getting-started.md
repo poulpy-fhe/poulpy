@@ -6,7 +6,7 @@ It describes what each crate contains and where to look, how the layers are orga
 ## Library organization
 
 Poulpy is a stack of crates with a strict dependency direction.
-The basis crates sit at the root of the repository, and the other crates are grouped by role into four folders.
+The basis crates sit at the root of the repository, and the other crates are grouped by role into five folders.
 A crate depends only on the basis, on crates of its own folder or on crates of the folders listed before it, except that the backends benchmark through `poulpy-bench`.
 
 ```
@@ -28,6 +28,8 @@ backends/
   poulpy-cpu-arm           NEON / ASIMD backend (AArch64)
 tools/
   poulpy-bench             Criterion benchmark suite
+examples/
+  poulpy-resnet20          encrypted ResNet-20 on CIFAR-10
 ```
 
 ### poulpy-hal
