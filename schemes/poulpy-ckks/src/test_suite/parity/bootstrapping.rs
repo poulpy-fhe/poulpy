@@ -483,7 +483,7 @@ const REPLICATED_CASES: [(&str, bool, SlotsKind, ReplicatedLuts, bool); 6] = [
 ];
 
 /// The outputs of `ckks_replicated_bootstrap` and `ckks_replicated_functional_bootstrap` of each replicated fixture
-/// case, on `k = 4` values of period `R = 4` from the paper's plan, through the module on exactly its query.
+/// case, on `k = 8` values of period `R = 2` from the paper's plan, through the module on exactly its query.
 fn run_replicated_bootstraps<BE, F>(params: CKKSTestParams, module: &Module<BE>) -> Vec<(&'static str, Vec<Snapshot>)>
 where
     BE: Backend<ZnxWord = i64> + CKKSReplicatedBootstrapImpl,
@@ -498,7 +498,7 @@ where
     FixtureKeys<BE>: BootstrappingKeys<BE>,
 {
     let (n, b) = (module.n(), params.base2k);
-    let layout = ShapingUnit::U4_15.layout(2).unwrap();
+    let layout = ShapingUnit::U4_15.layout(3).unwrap();
     let value = |v: f64| F::from_f64(v).unwrap();
     let encoding = ReplicatedLut::<BE>::general_replicated_tmp_bytes::<BE, F>(module);
     REPLICATED_CASES
