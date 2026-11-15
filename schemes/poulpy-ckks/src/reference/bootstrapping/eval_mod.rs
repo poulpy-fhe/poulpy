@@ -20,7 +20,7 @@ use crate::{
         BootstrappingKeys, BootstrappingKeysLayout, CKKSEvalModInfos, CKKSPlaintextOwned, EvalMod,
         ScratchArenaTakeCKKSCiphertext,
         bootstrapping::bootstrap_layouts,
-        eval_mod::EvalModPlan,
+        eval_mod::{EvalModPlan, EvalModType},
         validation::{
             check_conversion_key_widths, check_eval_mod_on_ci, ensure_eval_round_interval, ensure_one_base2k, ensure_one_degree,
             ensure_rank_one, eval_mod_standard, remove_guard_bits, required_tensor_key,
@@ -190,6 +190,12 @@ pub trait CKKSBootstrapEvalModReference<BE: Backend>: std::borrow::Borrow<Module
         ensure_one_degree(OP, module.n(), a, res)?;
         ensure_one_base2k(OP, a, res)?;
         remove_guard_bits(OP, a.log_delta(), plan.c2s_guard_bits())?;
+        let one_eval_mod = plan.message_slots().unwrap_or(a.slots()).is_real() && plan.one_eval_mod_on_real_slots();
+        ckks_ensure_operand!(
+            OP,
+            one_eval_mod || plan.eval_mod_plan().eval_mod_type != EvalModType::ExpCmplx,
+            "the complex exponential takes a real message"
+        );
         let (standard, on_ci) = match plan.eval_mod_ci() {
             Some(eval_mod_ci) => {
                 let ci_keys = check_eval_mod_on_ci(OP, module, a, keys)?;
@@ -222,7 +228,7 @@ pub trait CKKSBootstrapEvalModReference<BE: Backend>: std::borrow::Borrow<Module
             );
         }
         if let Some((eval_mod, tensor_key)) = standard {
-            if plan.message_slots().unwrap_or(a.slots()).is_real() && plan.one_eval_mod_on_real_slots() {
+            if one_eval_mod {
                 eval_mod_real(module, res, a, eval_mod, tensor_key, keys, scratch)?;
             } else {
                 eval_mod_complex(module, res, a, plan, eval_mod, tensor_key, keys, scratch)?;
