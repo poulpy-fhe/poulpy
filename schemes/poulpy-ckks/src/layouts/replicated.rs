@@ -17,6 +17,7 @@ use poulpy_core::{
     },
 };
 use poulpy_hal::{
+    GALOISGENERATOR,
     api::CnvPVecAlloc,
     layouts::{Backend, Module, Ring, ScratchArena, Standard},
     source::Source,
@@ -965,8 +966,8 @@ fn packed_layout(plan: &ReplicatedBootstrapPlan, max_slots: usize) -> Result<Opt
 }
 
 impl<BE: Backend, F: CKKSEncodingScalar> ReplicatedBootstrapping<BE, F> {
-    /// Scratch of [`Self::new`]: the host encodings of the embedding and of the EvalMod constants, and
-    /// the transforms of both conversions.
+    /// Scratch of [`Self::new`]: the host encodings of the EvalMod constants, and the transforms of both
+    /// conversions.
     ///
     /// # Errors
     /// When the plan's layout needs more slots than the module has.
@@ -1016,7 +1017,7 @@ impl<BE: Backend, F: CKKSEncodingScalar> ReplicatedBootstrapping<BE, F> {
         let packed = packed_layout(&plan, half)?;
         let (s2c, c2s) = match plan.transforms {
             ReplicatedTransforms::Dense => {
-                let v = embedding::<BE, F>(module, k, base2k, scratch)?;
+                let v = embedding::<F>(k)?;
                 let s2c = ReplicatedTransform::gather(
                     module,
                     layout,
@@ -1250,37 +1251,23 @@ impl<BE: Backend, F> ReplicatedBootstrapping<BE, F> {
     }
 }
 
-/// `V[c][j]`, slot `c` of the monomial `Y'^j` of the subring of degree `2k`,
-/// read from the encoder.
-fn embedding<BE: Backend, F>(
-    module: &Module<BE>,
-    k: usize,
-    base2k: Base2K,
-    scratch: &mut ScratchArena<'_, BE>,
-) -> Result<Vec<Vec<(F, F)>>>
-where
-    F: CKKSEncodingScalar,
-    Module<BE>: ReplicatedTransformModule<BE, F>,
-{
-    let log_delta = 40;
-    let mut columns = Vec::with_capacity(k);
-    for j in 0..k {
-        let mut pt = module.ckks_plaintext_alloc_from_slots(k, base2k, TorusPrecision((log_delta + 2) as u32));
-        pt.set_meta(GLWEPlaintextMeta {
-            scale: Scale::Log(log_delta),
-            slots: SlotsKind::Complex,
-            log_sparsity: 0,
-            slot_layout: SlotLayout::Full,
-        });
-        let mut coeffs = vec![F::zero(); 2 * k];
-        coeffs[j] = F::one();
-        module.ckks_encode_coeffs_host_into(&mut pt, &coeffs, &mut scratch.borrow())?;
-        let (mut re, mut im) = (vec![F::zero(); k], vec![F::zero(); k]);
-        module.ckks_decode_slots_host_into(&pt, &mut re, &mut im, &mut scratch.borrow())?;
-        columns.push(re.into_iter().zip(im).collect::<Vec<_>>());
-    }
-    // `Y'^k` is `i` on every slot, so `m_j + i·m_(j+k)` reads `V[c][j]`.
-    Ok((0..k).map(|c| (0..k).map(|j| columns[j][c]).collect()).collect())
+/// `V[c][j]`, slot `c` of the monomial `Y'^j` of the subring of degree `2k`:
+/// `ω^(j·5^c)` for `ω = exp(iπ/(2k))`, slot `c` of the encoder sitting at the
+/// root of exponent `5^c` ([`EncodingPermutation`](crate::reference::encoding::EncodingPermutation)).
+/// `Y'^k` is `i` on every slot, so `m_j + i·m_(j+k)` reads `V[c][j]`.
+pub(crate) fn embedding<F: CKKSEncodingScalar>(k: usize) -> Result<Vec<Vec<(F, F)>>> {
+    ensure!(k.is_power_of_two(), "the batch size {k} is not a power of two");
+    let (order, log_order) = (4 * k, (4 * k).trailing_zeros());
+    let mut exponent = 1usize;
+    Ok((0..k)
+        .map(|_| {
+            let row = (0..k)
+                .map(|j| F::ckks_root_of_unity((j * exponent % order) as u64, log_order))
+                .collect();
+            exponent = exponent * GALOISGENERATOR as usize % order;
+            row
+        })
+        .collect())
 }
 
 /// The factored `SlotsToCoeffs` and `CoeffsToSlots` of
