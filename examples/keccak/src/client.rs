@@ -31,8 +31,8 @@ type Buf = <Host as Backend>::OwnedBuf;
 /// What the server evaluates with: the bootstrapping keys, and the rotation keys and tensor key of the round in a key
 /// set of their own, which the server moves to its backend as it does the bootstrapping's.
 pub struct EvaluationKeys {
-    pub bootstrapping: BootstrappingKeySet<Buf, i64>,
-    pub round: BootstrappingKeySet<Buf, i64>,
+    pub(crate) bootstrapping: BootstrappingKeySet<Buf, i64>,
+    pub(crate) round: BootstrappingKeySet<Buf, i64>,
 }
 
 /// The holder of the secret.
@@ -130,8 +130,8 @@ impl Client {
         module.glwe_tensor_key_encrypt_sk(
             &mut tensor,
             &self.sk_raw,
-            &mut self.source_xa,
             &mut self.source_xe,
+            &mut self.source_xa,
             &mut scratch.borrow(),
         );
         Ok(EvaluationKeys {

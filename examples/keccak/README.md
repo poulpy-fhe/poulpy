@@ -12,14 +12,16 @@ The client runs on `NTT4x30Portable`, and so does the server unless a feature pi
 
 | Feature | Server backend |
 |---|---|
-| `portable-rayon` | `NTT4x30PortableRayon` |
-| `neon` | `NTT4x30NeonRayon` |
-| `avx` | `NTT4x30AvxRayon`, built with `RUSTFLAGS="-C target-feature=+avx2,+fma"` |
-| `avx512` | `NTT4x30Avx512Rayon`, built with `RUSTFLAGS="-C target-feature=+avx2,+fma,+avx512f"` |
-| `cuda`, `hip` | `NTT4x30Cuda`, `NTT4x30Hip` |
-| `metal`, `vulkan` | `NTT4x30Wgpu` |
+| `enable-portable-rayon` | `NTT4x30PortableRayon` |
+| `enable-neon` | `NTT4x30NeonRayon` |
+| `enable-avx` | `NTT4x30AvxRayon`, built with `RUSTFLAGS="-C target-feature=+avx2,+fma"` |
+| `enable-avx512` | `NTT4x30Avx512Rayon`, built with `RUSTFLAGS="-C target-feature=+avx2,+fma,+avx512f"` |
+| `enable-ifma` | `NTT3x42IfmaRayon`, built with `RUSTFLAGS="-C target-feature=+avx2,+fma,+avx512f,+avx512ifma,+avx512vl"` |
+| `enable-cuda`, `enable-hip` | `NTT4x30Cuda`, `NTT4x30Hip` |
+| `enable-metal`, `enable-vulkan` | `NTT4x30Wgpu` |
 
-For example `cargo run --release -p poulpy-keccak --bin permutation --features neon`.
+With several, the most specific wins: a GPU over a CPU, IFMA over AVX-512 over AVX.
+For example `cargo run --release -p poulpy-keccak --bin permutation --features enable-neon`.
 
 ## Bits as integers
 
@@ -53,7 +55,9 @@ It is S2C-first, on all `2^14` slots:
 
 1. SlotsToCoeffs moves the slots into the coefficients.
 2. The raise reinterprets the ciphertext modulo a wide modulus, under an ephemeral sparse secret that keeps its integer part `I` small.
-3. CoeffsToSlots brings the phase `(m/2 + I)/K` back to the slots, with `K = 16` as in the presets.
+3. CoeffsToSlots brings the phase `(m/2 + I)/K` back to the slots.
+   The cosine is approximated on `[-K, K]`, so the bootstrapping holds while `|m/2 + I| < K`.
+   `K = 16` is the bound the presets take for a sparse secret of the same weight, 32.
 4. A cosine of period 2 in `m`, a degree-31 polynomial followed by 3 double angles, returns `[0, 1][m mod 2]` and ignores `I`.
 
 The scale sets the precision: each bit of it halves the error of the output bits, which at `2^35` stay within about `2^-10` of 0 or 1.

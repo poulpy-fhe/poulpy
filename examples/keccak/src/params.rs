@@ -18,31 +18,31 @@ use crate::{
 };
 
 /// Degree `2^15`: its 2^14 slots hold 8 states of 2^11 positions.
-pub const LOG_N: usize = 15;
+pub(crate) const LOG_N: usize = 15;
 /// Bits per limb of the torus representation.
-pub const BASE2K: usize = 52;
+pub(crate) const BASE2K: usize = 52;
 /// Scale of the integers the bootstrapping reduces. Each bit of it halves the error of the bits it returns.
-pub const LOG_DELTA: usize = 34;
+pub(crate) const LOG_DELTA: usize = 34;
 /// One bit between the modulus and the scale at the raise, so the bootstrapping reads integers mod 2.
-pub const LOG_MSG_RATIO: usize = 1;
+pub(crate) const LOG_MSG_RATIO: usize = 1;
 /// Scale of the bits the bootstrapping returns.
-pub const OUTPUT_LOG_DELTA: usize = LOG_DELTA + LOG_MSG_RATIO;
+pub(crate) const OUTPUT_LOG_DELTA: usize = LOG_DELTA + LOG_MSG_RATIO;
 /// Scale of the diagonals of the round's maps.
-pub const LOG_DELTA_MAPS: usize = 20;
+pub(crate) const LOG_DELTA_MAPS: usize = 20;
 /// Bits a round keeps above the bootstrapping input.
 const MARGIN: usize = 3;
 
 /// A secret's Hamming weight and the largest modulus, in bits, under it at 128 bits of security.
-pub struct SecretBound {
-    pub hamming_weight: usize,
-    pub max_log_modulus: usize,
+pub(crate) struct SecretBound {
+    pub(crate) hamming_weight: usize,
+    pub(crate) max_log_modulus: usize,
 }
 
-pub const DENSE_SECRET: SecretBound = SecretBound {
+pub(crate) const DENSE_SECRET: SecretBound = SecretBound {
     hamming_weight: 1024,
     max_log_modulus: 851,
 };
-pub const SPARSE_SECRET: SecretBound = SecretBound {
+pub(crate) const SPARSE_SECRET: SecretBound = SecretBound {
     hamming_weight: 32,
     max_log_modulus: 162,
 };
@@ -56,7 +56,7 @@ const KEY_NOISE_MARGIN: usize = 2;
 /// auxiliary modulus of a digit and `log N` bits, so the product of a digit and a key row loses nothing. Fewer digits
 /// mean fewer products, but wider digits need a wider auxiliary modulus: the widest digit that fits the bound wins.
 /// Digits are whole limbs.
-pub fn key_layout(input_k: usize, limit: usize) -> Result<GGLWELayout> {
+pub(crate) fn key_layout(input_k: usize, limit: usize) -> Result<GGLWELayout> {
     let shape = |k_digit: usize| {
         let gadget = input_k.div_ceil(k_digit) * k_digit;
         let k_aux = (k_digit + LOG_N).min(limit.saturating_sub(gadget));
@@ -83,12 +83,12 @@ pub fn key_layout(input_k: usize, limit: usize) -> Result<GGLWELayout> {
 
 /// Everything the client and the server agree on.
 pub struct Params {
-    pub bootstrapping: Bootstrapping,
+    pub(crate) bootstrapping: Bootstrapping,
     /// theta, rho and pi, then the `x + 1` and `x + 2` reads of chi.
-    pub maps: [SlotMap; 3],
+    pub(crate) maps: [SlotMap; 3],
     /// The rotation keys and the tensor key of the round, over the bootstrapping's output.
-    pub rotation_key: GLWEAutomorphismKeyLayout,
-    pub tensor_key: GLWETensorKeyLayout,
+    pub(crate) rotation_key: GLWEAutomorphismKeyLayout,
+    pub(crate) tensor_key: GLWETensorKeyLayout,
 }
 
 impl Params {
@@ -106,7 +106,7 @@ impl Params {
     }
 
     /// The Galois elements of the rotation keys the round's maps take.
-    pub fn round_galois_elements(&self, cyclotomic_order: i64) -> Vec<i64> {
+    pub(crate) fn round_galois_elements(&self, cyclotomic_order: i64) -> Vec<i64> {
         let mut elements: Vec<i64> = self
             .maps
             .iter()
@@ -119,12 +119,12 @@ impl Params {
 }
 
 /// The real diagonals of a slot map.
-pub fn diagonals(map: &SlotMap) -> Diagonals<f64> {
+pub(crate) fn diagonals(map: &SlotMap) -> Diagonals<f64> {
     Diagonals::<f64>::from_slot_map(SLOTS, SLOTS, map.iter().map(|&(o, i, w)| (o, i, w as f64)))
 }
 
 /// Their baby-step giant-step schedule.
-pub fn bsgs_layout(diagonals: &Diagonals<f64>) -> LinearTransformationLayout {
+pub(crate) fn bsgs_layout(diagonals: &Diagonals<f64>) -> LinearTransformationLayout {
     let indexes = diagonals.indexes();
     let giant_step = optimal_bsgs_giant_step(indexes.iter().copied(), SLOTS);
     LinearTransformationLayout {

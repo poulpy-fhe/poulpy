@@ -31,7 +31,7 @@ pub const ROUND_CONSTANTS: [u64; 24] = [
 ];
 
 /// Rotation offsets of rho, `RHO[x][y]`.
-pub const RHO: [[u32; 5]; 5] = [
+pub(crate) const RHO: [[u32; 5]; 5] = [
     [0, 36, 3, 41, 18],
     [1, 44, 10, 45, 2],
     [62, 6, 43, 15, 61],

@@ -1,7 +1,7 @@
 //! Keccak-f[1600] on eight encrypted states: the client encrypts eight pseudorandom states in one ciphertext, the
 //! server runs the 24 rounds, and the decrypted states are checked against the plain permutation.
 
-use std::{fs::File, io::Read, time::Instant};
+use std::time::Instant;
 
 use anyhow::{Result, ensure};
 use poulpy_keccak::{
@@ -14,9 +14,7 @@ use poulpy_keccak::{
 
 fn main() -> Result<()> {
     let params = Params::new()?;
-    let mut seed = [0; 32];
-    File::open("/dev/urandom")?.read_exact(&mut seed)?;
-    let mut client = Client::new(&params, seed);
+    let mut client = Client::new(&params, rand::random());
     let keys = client.keys(&params)?;
     let mut server = Server::new(&params, &keys)?;
     drop(keys);

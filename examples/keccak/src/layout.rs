@@ -7,9 +7,9 @@ use crate::keccak::RHO;
 /// Keccak states per ciphertext.
 pub const STATES: usize = 8;
 /// Positions of one state.
-pub const POSITIONS: usize = 2048;
+pub(crate) const POSITIONS: usize = 2048;
 /// Slots of the ciphertext.
-pub const SLOTS: usize = STATES * POSITIONS;
+pub(crate) const SLOTS: usize = STATES * POSITIONS;
 
 /// Position of bit `z` of lane `(x, y)` in its state.
 const fn position(x: usize, y: usize, z: usize) -> usize {
@@ -27,7 +27,7 @@ fn bits() -> impl Iterator<Item = (usize, usize, usize)> {
 }
 
 /// The states as slot values, 0 or 1, the unused slots 0.
-pub fn to_slots(states: &[[u64; 25]; STATES]) -> Vec<f64> {
+pub(crate) fn to_slots(states: &[[u64; 25]; STATES]) -> Vec<f64> {
     let mut v = vec![0.0; SLOTS];
     for (s, a) in states.iter().enumerate() {
         for (x, y, z) in bits() {
@@ -38,7 +38,7 @@ pub fn to_slots(states: &[[u64; 25]; STATES]) -> Vec<f64> {
 }
 
 /// The states of slot values, each rounded and reduced mod 2.
-pub fn from_slots(v: &[f64]) -> [[u64; 25]; STATES] {
+pub(crate) fn from_slots(v: &[f64]) -> [[u64; 25]; STATES] {
     std::array::from_fn(|s| {
         let mut a = [0u64; 25];
         for (x, y, z) in bits() {
@@ -49,7 +49,7 @@ pub fn from_slots(v: &[f64]) -> [[u64; 25]; STATES] {
 }
 
 /// A linear map on the slots, as `(out, in, weight)` terms.
-pub type SlotMap = Vec<(usize, usize, i64)>;
+pub(crate) type SlotMap = Vec<(usize, usize, i64)>;
 
 /// The map that applies `terms`, a map on the positions of one state, to every state.
 fn on_every_state(terms: impl Iterator<Item = (usize, usize, i64)>) -> SlotMap {
@@ -59,7 +59,7 @@ fn on_every_state(terms: impl Iterator<Item = (usize, usize, i64)>) -> SlotMap {
 }
 
 /// theta, rho and pi of one round, over the integers: XOR is addition, reduced mod 2 by the next bootstrapping.
-pub fn linear_layer() -> SlotMap {
+pub(crate) fn linear_layer() -> SlotMap {
     on_every_state(bits().flat_map(|(x, y, z)| {
         // pi and rho: output (x, y, z) reads theta's output at (x + 3y, x, z - RHO[x + 3y][x]).
         let (sx, sy) = ((x + 3 * y) % 5, x);
@@ -76,12 +76,12 @@ pub fn linear_layer() -> SlotMap {
 }
 
 /// The alignment of chi: output `(x, y, z)` reads `(x + k, y, z)`.
-pub fn shift_x(k: usize) -> SlotMap {
+pub(crate) fn shift_x(k: usize) -> SlotMap {
     on_every_state(bits().map(move |(x, y, z)| (position(x, y, z), position((x + k) % 5, y, z), 1)))
 }
 
 /// The slots of lane `(0, 0)` that the round constant `rc` flips, in every state.
-pub fn iota_slots(rc: u64) -> impl Iterator<Item = usize> {
+pub(crate) fn iota_slots(rc: u64) -> impl Iterator<Item = usize> {
     (0..64)
         .filter(move |z| (rc >> z) & 1 == 1)
         .flat_map(|z| (0..STATES).map(move |s| slot(s, position(0, 0, z))))

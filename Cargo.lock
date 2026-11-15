@@ -3579,6 +3579,7 @@ dependencies = [
  "poulpy-cpu-rayon",
  "poulpy-gpu-portable",
  "poulpy-hal",
+ "rand 0.10.3",
 ]
 
 [[package]]
