@@ -3004,6 +3004,7 @@ where
         module,
         host_module,
         ShapingUnit::U16_40,
+        3,
         ReplicatedTransforms::Dense,
         19.0,
         Slots::ComplexPacked,
@@ -3011,7 +3012,8 @@ where
 }
 
 /// [`test_replicated_bootstrap`] at the periods `R = 4` and `R = 2`, whose
-/// precision the units' suppression bounds: 41 bits for `U8_40`, 15 for `U4_15`.
+/// precision the units' suppression bounds: 41 bits for `U8_40`, 15 for `U4_15`,
+/// and at `R = 2` on a batch of `k = 2` values.
 pub fn test_replicated_bootstrap_small_periods<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -3032,17 +3034,69 @@ where
     F: TestScalar,
     E: ReimNew<F>,
 {
-    // `U4_15` suppresses 15.26 bits, which caps its precision: the noise draws move it by a few tenths.
-    for (unit, min_bits) in [(ShapingUnit::U8_40, 21.0), (ShapingUnit::U4_15, 14.5)] {
+    // `U4_15` suppresses 15.26 bits, which caps its precision: the noise draws move it by a few tenths. Its batch
+    // of `k = 2` values has a subring of degree 4, below the smallest degree of every backend.
+    for (unit, log_k, min_bits) in [
+        (ShapingUnit::U8_40, 3, 21.0),
+        (ShapingUnit::U4_15, 3, 14.5),
+        (ShapingUnit::U4_15, 1, 14.5),
+    ] {
         replicated_bootstrap_with::<BE, F>(
             params,
             module,
             host_module,
             unit,
+            log_k,
             ReplicatedTransforms::Dense,
             min_bits,
             Slots::ComplexPacked,
         )?;
+    }
+    Ok(())
+}
+
+/// The embedding `V` of the subring of degree `2k` that the dense maps compile, `V[c][j]` slot `c` of `Y'^j`, against
+/// the slots the encoder decodes from each monomial, at every degree `2k` from the backend's smallest to the module's.
+pub fn test_replicated_embedding_matches_the_encoder<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    _host_module: &Module<HostBytesBackend>,
+) -> Result<()>
+where
+    BE: TestContextBackend,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F>,
+    F: TestScalar,
+    E: ReimNew<F>,
+{
+    let (base2k, log_delta) = (Base2K(params.base2k as u32), 40);
+    let max_slots = module.ckks_max_slots::<Standard>();
+    let mut scratch = ScratchOwned::<BE>::alloc(module.ckks_encoding_host_tmp_bytes(max_slots));
+    let mut k = (BE::MIN_DEGREE / 2).max(1);
+    while k <= max_slots {
+        let v = crate::layouts::replicated::embedding::<F>(k)?;
+        for j in 0..k {
+            let mut pt = module.ckks_plaintext_alloc_from_slots(k, base2k, TorusPrecision((log_delta + 2) as u32));
+            pt.set_meta(GLWEPlaintextMeta {
+                scale: Scale::Log(log_delta),
+                slots: SlotsKind::Complex,
+                log_sparsity: 0,
+                slot_layout: SlotLayout::Full,
+            });
+            let mut coeffs = vec![F::zero(); 2 * k];
+            coeffs[j] = F::one();
+            module.ckks_encode_coeffs_host_into(&mut pt, &coeffs, &mut scratch.borrow())?;
+            let (mut re, mut im) = (vec![F::zero(); k], vec![F::zero(); k]);
+            module.ckks_decode_slots_host_into(&pt, &mut re, &mut im, &mut scratch.borrow())?;
+            for (c, row) in v.iter().enumerate() {
+                let (want_re, want_im) = row[j];
+                let err = (re[c] - want_re).abs().max((im[c] - want_im).abs()).to_f64().unwrap();
+                // The encoding rounds the monomial at `2^40`.
+                assert!(err < 1e-9, "k = {k}: slot {c} of Y'^{j} is off by {err:e}");
+            }
+        }
+        k *= 2;
     }
     Ok(())
 }
@@ -3083,6 +3137,7 @@ where
             module,
             host_module,
             ShapingUnit::U16_40,
+            3,
             transforms,
             19.0,
             Slots::ComplexPacked,
@@ -3127,7 +3182,7 @@ where
         (ReplicatedTransforms::Dense, Slots::Complex),
         (factored, Slots::Real),
     ] {
-        replicated_bootstrap_with::<BE, F>(params, module, host_module, ShapingUnit::U16_40, transforms, 19.0, slots)?;
+        replicated_bootstrap_with::<BE, F>(params, module, host_module, ShapingUnit::U16_40, 3, transforms, 19.0, slots)?;
     }
     Ok(())
 }
@@ -3141,13 +3196,15 @@ enum Slots {
     Real,
 }
 
-/// One bootstrapping of `k = 8` values of `unit` in `slots`, with full-width and
+/// One bootstrapping of `k = 2^log_k` values of `unit` in `slots`, with full-width and
 /// row-offset return keys, each at least `min_bits` precise.
+#[allow(clippy::too_many_arguments)]
 fn replicated_bootstrap_with<BE, F>(
     params: CKKSTestParams,
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
     unit: ShapingUnit,
+    log_k: u8,
     transforms: ReplicatedTransforms,
     min_bits: f64,
     slots: Slots,
@@ -3166,7 +3223,7 @@ where
         + poulpy_core::api::GLWETensorKeyPreparedFactory<BE, ConjugateInvariant>,
     F: TestScalar,
 {
-    let layout = unit.layout(3)?;
+    let layout = unit.layout(log_k)?;
     let packed = matches!(slots, Slots::ComplexPacked | Slots::RealPacked);
     let real = matches!(slots, Slots::Real | Slots::RealPacked);
     let plan = ReplicatedBootstrapPlan {
@@ -3251,7 +3308,7 @@ where
         let bits = precision((&got.0, &got.1), (&values.0, &values.1));
         assert!(
             bits >= min_bits,
-            "replicated bootstrapping of {unit:?} in {slots:?}: {bits:.2} bits"
+            "replicated bootstrapping of 2^{log_k} values of {unit:?} in {slots:?}: {bits:.2} bits"
         );
         decoded.push(got);
     }

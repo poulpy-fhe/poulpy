@@ -854,6 +854,10 @@ macro_rules! ckks_backend_test_suite {
                 replicated_bootstrap_small_periods,
                 $crate::test_suite::replicated::test_replicated_bootstrap_small_periods
             );
+            run_test_result!(
+                replicated_embedding_matches_the_encoder,
+                $crate::test_suite::replicated::test_replicated_embedding_matches_the_encoder
+            );
             run_test!(conjugate_aligned, $crate::test_suite::conjugate::test_conjugate_aligned);
             run_test!(
                 conjugate_smaller_output,
