@@ -5,7 +5,7 @@ use std::fmt::Debug;
 
 use anyhow::{Result, ensure};
 use num_traits::{Float, FloatConst, FromPrimitive, ToPrimitive};
-use poulpy_hal::layouts::{Backend, HostBytesBackend, Module};
+use poulpy_hal::layouts::{Backend, HostBytesBackend, Module, Ring};
 
 use poulpy_ckks::{
     CKKSLayout,
@@ -23,7 +23,7 @@ define_unary_plan!(LgammaPlan, "lgamma");
 
 macro_rules! impl_host_plan {
     ($plan:ident, $name:literal, $fun:path) => {
-        impl $plan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
+        impl<Rg: Ring> $plan<CKKSPlaintext<AlignedBuf, i64, Rg>> {
             #[doc = concat!("Fits and prepares `", $name, "` on positive `[a, b]`.")]
             pub fn from_precision<F>(
                 a: F,
@@ -35,7 +35,7 @@ macro_rules! impl_host_plan {
             ) -> Result<Self>
             where
                 F: CKKSScalar + Float + FloatConst + FromPrimitive + ToPrimitive + Debug,
-                CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
+                CKKSPlaintext<AlignedBuf, i64, Rg>: CKKSPlaintextVecHostCodec<F>,
             {
                 ensure!(a > F::zero(), concat!($name, ": interval must be positive"));
                 let (approximation, approximation_bits) = prepare_function(
@@ -62,14 +62,14 @@ impl_host_plan!(TgammaPlan, "tgamma", libm::tgamma);
 impl_host_plan!(LgammaPlan, "lgamma", libm::lgamma);
 
 /// Homomorphic gamma functions on positive prepared domains.
-pub trait CKKSGammaOps<BE: Backend> {
+pub trait CKKSGammaOps<BE: Backend, Rg: Ring = Standard> {
     declare_unary_op!(ckks_tgamma_tmp_bytes, ckks_tgamma, TgammaPlan, "tgamma");
     declare_unary_op!(ckks_lgamma_tmp_bytes, ckks_lgamma, LgammaPlan, "lgamma");
 }
 
-impl<BE: Backend> CKKSGammaOps<BE> for Module<BE>
+impl<BE: Backend, Rg: Ring> CKKSGammaOps<BE, Rg> for Module<BE>
 where
-    Module<BE>: CKKSApproximationOps<BE>,
+    Module<BE>: CKKSApproximationOps<BE, Rg>,
 {
     impl_unary_op!(ckks_tgamma_tmp_bytes, ckks_tgamma, TgammaPlan);
     impl_unary_op!(ckks_lgamma_tmp_bytes, ckks_lgamma, LgammaPlan);

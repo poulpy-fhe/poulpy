@@ -5,7 +5,7 @@ use std::fmt::Debug;
 
 use anyhow::Result;
 use num_traits::{Float, FloatConst, FromPrimitive, ToPrimitive};
-use poulpy_hal::layouts::{Backend, HostBytesBackend, Module};
+use poulpy_hal::layouts::{Backend, HostBytesBackend, Module, Ring};
 
 use poulpy_ckks::{
     CKKSLayout,
@@ -23,7 +23,7 @@ pub type ErfOptions = ApproximationOptions;
 define_unary_plan!(ErfPlan, "erf");
 define_unary_plan!(ErfcPlan, "erfc");
 
-impl ErfPlan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
+impl<Rg: Ring> ErfPlan<CKKSPlaintext<AlignedBuf, i64, Rg>> {
     /// Fits and prepares `erf` on `[a, b]`.
     pub fn from_precision<F>(
         a: F,
@@ -35,7 +35,7 @@ impl ErfPlan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
     ) -> Result<Self>
     where
         F: CKKSScalar + Float + FloatConst + FromPrimitive + ToPrimitive + Debug,
-        CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
+        CKKSPlaintext<AlignedBuf, i64, Rg>: CKKSPlaintextVecHostCodec<F>,
     {
         let (approximation, approximation_bits) = prepare_function(
             "erf",
@@ -55,7 +55,7 @@ impl ErfPlan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
     }
 }
 
-impl ErfcPlan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
+impl<Rg: Ring> ErfcPlan<CKKSPlaintext<AlignedBuf, i64, Rg>> {
     /// Fits and prepares `erfc` on `[a, b]`.
     pub fn from_precision<F>(
         a: F,
@@ -67,7 +67,7 @@ impl ErfcPlan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
     ) -> Result<Self>
     where
         F: CKKSScalar + Float + FloatConst + FromPrimitive + ToPrimitive + Debug,
-        CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
+        CKKSPlaintext<AlignedBuf, i64, Rg>: CKKSPlaintextVecHostCodec<F>,
     {
         let (approximation, approximation_bits) = prepare_function(
             "erfc",
@@ -88,14 +88,14 @@ impl ErfcPlan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
 }
 
 /// Homomorphic error functions on fixed prepared domains.
-pub trait CKKSErfOps<BE: Backend> {
+pub trait CKKSErfOps<BE: Backend, Rg: Ring = Standard> {
     declare_unary_op!(ckks_erf_tmp_bytes, ckks_erf, ErfPlan, "erf");
     declare_unary_op!(ckks_erfc_tmp_bytes, ckks_erfc, ErfcPlan, "erfc");
 }
 
-impl<BE: Backend> CKKSErfOps<BE> for Module<BE>
+impl<BE: Backend, Rg: Ring> CKKSErfOps<BE, Rg> for Module<BE>
 where
-    Module<BE>: CKKSApproximationOps<BE>,
+    Module<BE>: CKKSApproximationOps<BE, Rg>,
 {
     impl_unary_op!(ckks_erf_tmp_bytes, ckks_erf, ErfPlan);
     impl_unary_op!(ckks_erfc_tmp_bytes, ckks_erfc, ErfcPlan);

@@ -5,7 +5,7 @@ use num_traits::{Float, FloatConst, FromPrimitive};
 use poulpy_core::layouts::{Base2K, LWEInfos};
 use poulpy_hal::{
     AlignedBuf,
-    layouts::{HostBytesBackend, Module, Standard},
+    layouts::{HostBytesBackend, Module, Ring},
 };
 
 use poulpy_ckks::{
@@ -23,12 +23,12 @@ pub struct IntervalNorm<P> {
     pub(crate) coeff_log_delta: usize,
 }
 
-impl IntervalNorm<CKKSPlaintext<AlignedBuf, i64, Standard>> {
+impl<Rg: Ring> IntervalNorm<CKKSPlaintext<AlignedBuf, i64, Rg>> {
     /// Builds the constants for compressing `[−max, max]`.
     pub fn from_max<F>(max: f64, base2k: Base2K, coeff_meta: CKKSLayout, module: &Module<HostBytesBackend>) -> Result<Self>
     where
         F: CKKSScalar + Float + FloatConst + FromPrimitive,
-        CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
+        CKKSPlaintext<AlignedBuf, i64, Rg>: CKKSPlaintextVecHostCodec<F>,
     {
         ensure!(max.is_finite() && max > 0.0, "interval_norm: max must be positive and finite");
         let n = (max.log2() / COMPRESSION_L.log2()).ceil().max(1.0) as usize;

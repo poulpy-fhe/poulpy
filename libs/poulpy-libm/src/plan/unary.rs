@@ -82,17 +82,17 @@ macro_rules! declare_unary_op {
             scratch: &mut poulpy_hal::layouts::ScratchArena<'_, BE>,
         ) -> anyhow::Result<()>
         where
-            R: poulpy_core::layouts::GLWEToBackendMut<BE>
+            R: poulpy_core::layouts::GLWEToBackendMut<BE, Rg>
                 + poulpy_ckks::CKKSCtBounds
                 + poulpy_ckks::SetCKKSInfos
                 + poulpy_core::layouts::SetBSGSMeta,
-            I: poulpy_core::layouts::GLWEToBackendRef<BE> + poulpy_ckks::CKKSCtBounds,
-            P: poulpy_core::layouts::GLWEToBackendRef<BE>
+            I: poulpy_core::layouts::GLWEToBackendRef<BE, Rg> + poulpy_ckks::CKKSCtBounds,
+            P: poulpy_core::layouts::GLWEToBackendRef<BE, Rg>
                 + poulpy_ckks::CKKSCtBounds
                 + poulpy_core::layouts::BSGSMeta
                 + poulpy_core::layouts::IntPolyInfos
-                + poulpy_ckks::layouts::CKKSMaskedConstants<BE>,
-            H: poulpy_core::layouts::GetTensorKey<BE>;
+                + poulpy_ckks::layouts::CKKSMaskedConstants<BE, Rg>,
+            H: poulpy_core::layouts::GetTensorKey<BE, Rg>;
     };
 }
 
@@ -117,17 +117,17 @@ macro_rules! impl_unary_op {
             scratch: &mut poulpy_hal::layouts::ScratchArena<'_, BE>,
         ) -> anyhow::Result<()>
         where
-            R: poulpy_core::layouts::GLWEToBackendMut<BE>
+            R: poulpy_core::layouts::GLWEToBackendMut<BE, Rg>
                 + poulpy_ckks::CKKSCtBounds
                 + poulpy_ckks::SetCKKSInfos
                 + poulpy_core::layouts::SetBSGSMeta,
-            I: poulpy_core::layouts::GLWEToBackendRef<BE> + poulpy_ckks::CKKSCtBounds,
-            P: poulpy_core::layouts::GLWEToBackendRef<BE>
+            I: poulpy_core::layouts::GLWEToBackendRef<BE, Rg> + poulpy_ckks::CKKSCtBounds,
+            P: poulpy_core::layouts::GLWEToBackendRef<BE, Rg>
                 + poulpy_ckks::CKKSCtBounds
                 + poulpy_core::layouts::BSGSMeta
                 + poulpy_core::layouts::IntPolyInfos
-                + poulpy_ckks::layouts::CKKSMaskedConstants<BE>,
-            H: poulpy_core::layouts::GetTensorKey<BE>,
+                + poulpy_ckks::layouts::CKKSMaskedConstants<BE, Rg>,
+            H: poulpy_core::layouts::GetTensorKey<BE, Rg>,
         {
             anyhow::Context::context(
                 self.ckks_polynomial_approximation_eval(res, input, &plan.approximation, tsk, scratch),

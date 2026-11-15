@@ -1,6 +1,6 @@
 //! Polynomial fitting and prepared evaluation.
 
-use poulpy_hal::{AlignedBuf, layouts::Standard};
+use poulpy_hal::AlignedBuf;
 use std::fmt::Debug;
 
 use anyhow::{Context, Result, ensure};
@@ -11,7 +11,7 @@ use poulpy_ckks::{
     polynomial::SplitStrategy,
 };
 use poulpy_core::layouts::Base2K;
-use poulpy_hal::layouts::{HostBytesBackend, Module};
+use poulpy_hal::layouts::{HostBytesBackend, Module, Ring};
 
 pub use poulpy_ckks::approximation::{
     CKKSApproximationOps, DegreeChoice, Minimax, Parity, PolynomialApproximation, RemezOptions, degree_for_precision, error_bits,
@@ -40,7 +40,7 @@ impl Default for ApproximationOptions {
 }
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
-pub(crate) fn prepare_function<F, Fun>(
+pub(crate) fn prepare_function<F, Fun, Rg>(
     name: &'static str,
     fun: Fun,
     a: F,
@@ -50,11 +50,12 @@ pub(crate) fn prepare_function<F, Fun>(
     coeff_meta: CKKSLayout,
     options: ApproximationOptions,
     module: &Module<HostBytesBackend>,
-) -> Result<(PolynomialApproximation<CKKSPlaintext<AlignedBuf, i64, Standard>>, f64)>
+) -> Result<(PolynomialApproximation<CKKSPlaintext<AlignedBuf, i64, Rg>>, f64)>
 where
+    Rg: Ring,
     F: CKKSScalar + Float + FloatConst + FromPrimitive + ToPrimitive + Debug,
     Fun: Fn(F) -> F + Copy,
-    CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
+    CKKSPlaintext<AlignedBuf, i64, Rg>: CKKSPlaintextVecHostCodec<F>,
 {
     ensure!(a.is_finite() && b.is_finite(), "{name}: interval endpoints must be finite");
     ensure!(b > a, "{name}: empty interval [a, b]");
