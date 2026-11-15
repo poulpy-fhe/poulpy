@@ -69,4 +69,4 @@ This file adds the rules specific to `poulpy-bench` and to the bench binaries of
 
 ## 5. Measurements and documentation
 
-- **Claims run registered runners.** Cited ids are `bench_ops` ids of a registered runner run through a backend binary, or labels of a harness-free check (section 4).
+- **Claims run registered runners.** Cited ids are `bench_ops` ids of a registered runner run through a backend binary, or labels of a harness-free check (section 4); the figure of an application under `examples/` cites its exact command, commit, device and, on a GPU, runtime and release, and speaks for that application alone.

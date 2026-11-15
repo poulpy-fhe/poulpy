@@ -68,14 +68,16 @@ impl BootstrappingKeyPolicy {
             let sparse_to_dense = (!first_factor_on_raise).then(|| (plan.raised_window(log_modulus), bootstrap_k));
             (log_modulus, sparse_to_dense)
         });
-        let first_factor_key = first_factor_on_raise
-            .then(|| self.first_factor_key_layout(plan, log_modulus, bootstrap_k, self.dense_log_modulus))
-            .transpose()?;
-        self.keys_layout_at(
+        // The first-factor keys are shaped after the others, whose refusals name the widths of the plan.
+        let mut layout = self.keys_layout_at(
             &plan.key_widths(self.log_n, bootstrap_k, input_k, log_delta),
             encapsulation,
-            first_factor_key,
-        )
+            None,
+        )?;
+        layout.first_factor_key = first_factor_on_raise
+            .then(|| self.first_factor_key_layout(plan, log_modulus, bootstrap_k, self.dense_log_modulus))
+            .transpose()?;
+        Ok(layout)
     }
 
     /// The layouts of keys used at `widths`: each rotation and the tensor key

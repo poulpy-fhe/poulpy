@@ -436,7 +436,7 @@ where
     ensure_full_layout(OP, crate::GLWEPlaintextInfos::slot_layout(a))?;
     ckks_ensure_operand!(
         OP,
-        ctx.functional_message_modulus().is_none(),
+        ctx.functional_message_modulus().is_none() && ctx.plan.eval_mod().eval_mod_type != EvalModType::ExpCmplx,
         "requires an identity bootstrapping context"
     );
     ensure_rank_one(OP, a, res)?;
