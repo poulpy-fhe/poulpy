@@ -10,7 +10,7 @@ use poulpy_core::{
     GLWEBytesOf,
     layouts::{BSGSMeta, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetTensorKey, IntPolyInfos, LWEInfos},
 };
-use poulpy_hal::layouts::{Backend, HostBytesBackend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, HostBytesBackend, Module, Ring, ScratchArena};
 
 use poulpy_ckks::{
     CKKSCtBounds, CKKSInfos, CKKSLayout, SetCKKSInfos,
@@ -56,7 +56,7 @@ pub struct PowPlan<P> {
     pub(crate) exponent_interval: (f64, f64),
 }
 
-impl PowPlan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
+impl<Rg: Ring> PowPlan<CKKSPlaintext<AlignedBuf, i64, Rg>> {
     /// Prepares `x^y = exp(y log(x))` for positive `x`.
     #[allow(clippy::too_many_arguments)]
     pub fn from_precision<F>(
@@ -71,7 +71,7 @@ impl PowPlan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
     ) -> Result<Self>
     where
         F: CKKSScalar + Float + FloatConst + FromPrimitive + ToPrimitive + Debug,
-        CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
+        CKKSPlaintext<AlignedBuf, i64, Rg>: CKKSPlaintextVecHostCodec<F>,
     {
         ensure!(
             base_a.is_finite() && base_b.is_finite() && exponent_a.is_finite() && exponent_b.is_finite(),
@@ -183,7 +183,7 @@ impl<P> PowPlan<P> {
 }
 
 /// Homomorphic power functions.
-pub trait CKKSPowOps<BE: Backend> {
+pub trait CKKSPowOps<BE: Backend, Rg: Ring = Standard> {
     /// Scratch bytes for [`Self::ckks_powi`].
     fn ckks_powi_tmp_bytes<R, I, T>(&self, res: &R, input: &I, tsk: &T) -> usize
     where
@@ -213,9 +213,9 @@ pub trait CKKSPowOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        I: GLWEToBackendRef<BE> + CKKSCtBounds,
-        H: GetTensorKey<BE>;
+        R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        I: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        H: GetTensorKey<BE, Rg>;
 
     /// Scratch bytes for [`Self::ckks_pow`].
     fn ckks_pow_tmp_bytes<R, B, E, P, T>(&self, res: &R, base: &B, exponent: &E, plan: &PowPlan<P>, tsk: &T) -> usize
@@ -251,17 +251,22 @@ pub trait CKKSPowOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        B: GLWEToBackendRef<BE> + CKKSCtBounds,
-        E: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE>,
-        H: GetTensorKey<BE>;
+        R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        B: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        E: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE, Rg>,
+        H: GetTensorKey<BE, Rg>;
 }
 
-impl<BE: Backend> CKKSPowOps<BE> for Module<BE>
+impl<BE: Backend, Rg: Ring> CKKSPowOps<BE, Rg> for Module<BE>
 where
-    Module<BE>:
-        CKKSAddOps<BE> + CKKSCopyOps<BE> + CKKSExpOps<BE> + CKKSLogOps<BE> + CKKSMulOps<BE> + CKKSSubOps<BE> + GLWEBytesOf<BE>,
+    Module<BE>: CKKSAddOps<BE, Rg>
+        + CKKSCopyOps<BE, Rg>
+        + CKKSExpOps<BE, Rg>
+        + CKKSLogOps<BE, Rg>
+        + CKKSMulOps<BE, Rg>
+        + CKKSSubOps<BE, Rg>
+        + GLWEBytesOf<BE>,
 {
     fn ckks_powi_tmp_bytes<R, I, T>(&self, res: &R, input: &I, tsk: &T) -> usize
     where
@@ -282,9 +287,9 @@ where
 
     fn ckks_powi<R, I, H>(&self, exponent: u32, res: &mut R, input: &I, tsk: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        I: GLWEToBackendRef<BE> + CKKSCtBounds,
-        H: GetTensorKey<BE>,
+        R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        I: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        H: GetTensorKey<BE, Rg>,
     {
         let multiplications = powi_multiplications(exponent);
         let consumed = multiplications * input.log_delta();
@@ -341,11 +346,11 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        B: GLWEToBackendRef<BE> + CKKSCtBounds,
-        E: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE>,
-        H: GetTensorKey<BE>,
+        R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        B: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        E: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE, Rg>,
+        H: GetTensorKey<BE, Rg>,
     {
         scratch.scope(|scratch_local| {
             let (mut log, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(base);

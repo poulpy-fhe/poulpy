@@ -5,6 +5,7 @@ pub mod approximation;
 pub mod arithmetic;
 pub mod budgets;
 pub mod compare;
+pub mod conjugate_invariant;
 pub mod divsqrt;
 pub mod erf;
 pub mod exp;
@@ -58,6 +59,31 @@ macro_rules! libm_backend_test_suite {
 
             run_test!(sign_composite, $crate::test_suite::sign::test_sign_composite);
             run_test!(step_composite, $crate::test_suite::sign::test_step_composite);
+            #[test]
+            fn ci_sign_step() {
+                assert_eq!($params.n, 256);
+                $crate::test_suite::conjugate_invariant::test_sign_step::<$backend>($params, &MODULE, &HOST_MODULE);
+            }
+            #[test]
+            fn ci_exp() {
+                assert_eq!($params.n, 256);
+                $crate::test_suite::conjugate_invariant::test_exp::<$backend>($params, &MODULE, &HOST_MODULE);
+            }
+            #[test]
+            fn ci_max_min() {
+                assert_eq!($params.n, 256);
+                $crate::test_suite::conjugate_invariant::test_max_min::<$backend>($params, &MODULE, &HOST_MODULE);
+            }
+            #[test]
+            fn ci_slot_reductions() {
+                assert_eq!($params.n, 256);
+                $crate::test_suite::conjugate_invariant::test_slot_reductions::<$backend>($params, &MODULE, &HOST_MODULE);
+            }
+            #[test]
+            fn ci_softmax() {
+                assert_eq!($params.n, 256);
+                $crate::test_suite::conjugate_invariant::test_softmax::<$backend>($params, &MODULE, &HOST_MODULE);
+            }
             run_test!(sign_minimax, $crate::test_suite::sign::test_sign_minimax);
             run_test!(max_min, $crate::test_suite::compare::test_max_min);
             run_test!(arithmetic, $crate::test_suite::arithmetic::test_arithmetic);
