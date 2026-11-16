@@ -3,15 +3,13 @@ use poulpy_core::{
     GLWECIEmbed, GLWECITrace, GLWECopy, GLWEKeyswitch, GLWEShift, GLWETrace,
     layouts::{
         GGLWEInfos, GGLWEPreparedToBackendRef, GLWECIEmbedKeyPrepared, GLWECITraceKeyPrepared, GLWEInfos, GLWELayout,
-        GLWEPlaintextMeta, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LWEInfos, Scale, SetK,
+        GLWEPlaintextMeta, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, Scale, SetK,
     },
 };
 use poulpy_hal::layouts::{Backend, ConjugateInvariant, Data, Module, ScratchArena, Standard};
 
-use crate::oep::derived::replicated::{
-    apply_transform, check_destination, check_module_degree, check_workspace, ct_bytes, invalid, transform_tmp_bytes,
-    working_layout,
-};
+use crate::layouts::validation::{ensure_replicated_operands, ensure_transform_workspace};
+use crate::oep::derived::replicated::{apply_transform, ct_bytes, transform_tmp_bytes, working_layout};
 use crate::{
     CKKSCtBounds, CKKSInfos, CKKSLayout, GLWEPlaintextInfos, ReplicatedLayout, SetCKKSInfos, SetGLWEPlaintextInfos, SlotLayout,
     SlotsKind,
@@ -19,6 +17,7 @@ use crate::{
         CKKSAddOps, CKKSCIRingMapOps, CKKSConjugateOps, CKKSCopyOps, CKKSEvalModOps, CKKSImagOps, CKKSLinearTransformationOps,
         CKKSPow2Ops, CKKSReplicatedBootstrapOps, CKKSRotateOps, CKKSRoundOps, CKKSSubOps,
     },
+    ckks_ensure_operand,
     layouts::{
         BootstrappingKeys, CKKSCiphertextViewMut, ReplicatedBootstrapWorkspace, ReplicatedBootstrapping, ReplicatedTransform,
         ReplicatedTransformWorkspace, ScratchArenaTakeCKKSCiphertext,
@@ -26,32 +25,6 @@ use crate::{
     oep::{CKKSEncapsulatedModUpImpl, CKKSModUpFirstFactorImpl},
     reference::bootstrapping::mod_raise_body,
 };
-
-/// The rotation keys of a bootstrapping key set, which the replicated maps read: their diagonals are plaintexts, so
-/// they never ask for a tensor key, as a map of automorphism keys answers.
-struct RotationKeys<'a, K>(&'a K);
-
-impl<BE: Backend, K: GetAutomorphismKey<BE>> GetAutomorphismKey<BE> for RotationKeys<'_, K> {
-    fn lookup_automorphism_key(
-        &self,
-        p: i64,
-        k: poulpy_core::layouts::TorusPrecision,
-    ) -> poulpy_core::Result<poulpy_core::layouts::prepared::GLWEAutomorphismKeyPreparedBackendRef<'_, BE>> {
-        self.0.lookup_automorphism_key(p, k)
-    }
-}
-
-impl<BE: Backend, K> GetTensorKey<BE> for RotationKeys<'_, K> {
-    fn lookup_tensor_key(
-        &self,
-        _k: poulpy_core::layouts::TorusPrecision,
-    ) -> poulpy_core::Result<poulpy_core::layouts::prepared::GLWETensorKeyPreparedBackendRef<'_, BE>> {
-        Err(poulpy_core::CoreError::GGLWEKeyUse {
-            op: "get_tensor_key",
-            detail: "the rotation keys of a bootstrapping hold no tensor key".into(),
-        })
-    }
-}
 
 fn trace_wide<BE, H>(
     module: &Module<BE>,
@@ -103,7 +76,7 @@ where
         + CKKSRoundOps<BE>
         + CKKSConjugateOps<BE>
         + CKKSImagOps<BE>,
-    H: GetAutomorphismKey<BE> + GetTensorKey<BE>,
+    H: GetAutomorphismKey<BE>,
 {
     let working = working_layout(src, extra_bits, 0);
     let (mut x, scratch) = scratch.borrow().take_ckks_ciphertext_scratch(&working, src.meta());
@@ -113,7 +86,16 @@ where
 
     module.ckks_copy(&mut x, src, &mut scratch)?;
     x.set_log_delta(src.log_delta() + extra_bits);
-    apply_transform(module, &mut w, &x, transform, workspace, keys, &mut scratch)?;
+    apply_transform(
+        "ckks_replicated_bootstrap",
+        module,
+        &mut w,
+        &x,
+        transform,
+        workspace,
+        keys,
+        &mut scratch,
+    )?;
     w.set_slot_layout(SlotLayout::Replicated(layout));
     module.ckks_conjugate_into(&mut conj, &w, keys, &mut scratch)?;
     module.ckks_add_into(&mut part, &w, &conj, &mut scratch)?;
@@ -328,34 +310,42 @@ impl<BE: Backend> CKKSReplicatedBootstrapReference<BE> for Module<BE> {
     {
         let module = self;
         const OP: &str = "ckks_replicated_bootstrap";
-        check_destination(OP, dst, src)?;
-        check_module_degree(OP, module.n(), src)?;
+        ensure_replicated_operands(OP, module.n(), module.n(), src, dst)?;
         let plan = ctx.plan;
-        if src.slot_layout() != SlotLayout::Replicated(plan.layout) {
-            return Err(invalid(OP, "the source must have the bootstrapping's replicated layout"));
-        }
-        if src.rank().as_usize() != 1 || dst.rank().as_usize() != 1 {
-            return Err(invalid(OP, "bootstrapping supports rank-1 ciphertexts only"));
-        }
+        ckks_ensure_operand!(
+            OP,
+            src.slot_layout() == SlotLayout::Replicated(plan.layout),
+            "the source must have the bootstrapping's replicated layout"
+        );
+        crate::layouts::validation::ensure_rank_one(OP, src, dst)?;
         let lift = match src.log_delta() {
-            d if d == plan.log_delta => 0,
-            d if d == plan.level_log_delta && d < plan.log_delta => plan.log_delta - d,
-            _ => return Err(invalid(OP, "the source must be at the bootstrapping or the leveled scale")),
+            d if d == plan.log_delta => Some(0),
+            d if d == plan.level_log_delta && d < plan.log_delta => Some(plan.log_delta - d),
+            _ => None,
         };
+        ckks_ensure_operand!(
+            OP,
+            lift.is_some(),
+            "the source must be at the bootstrapping or the leveled scale, got 2^{}",
+            src.log_delta()
+        );
+        let lift = lift.unwrap_or_default();
         let k_in = plan.k_in();
-        if src.log_budget() + plan.log_delta < k_in {
-            return Err(invalid(OP, "the source has less budget than the bootstrapping input"));
-        }
+        ckks_ensure_operand!(
+            OP,
+            src.log_budget() + plan.log_delta >= k_in,
+            "the source has less budget than the bootstrapping input"
+        );
         // The bootstrapping keys are the automorphism key source, and EvalMod runs on the standard ring.
-        let rotation_keys = &RotationKeys(keys);
+        let rotation_keys = keys;
         let tsk = crate::layouts::validation::required_tensor_key(OP, keys.tensor_key())?;
         let at = |k: usize| GLWELayout {
             k: k.into(),
             ..src.glwe_layout()
         };
         let k_boot = plan.k_boot(dst.k().as_usize());
-        check_workspace(OP, &workspace.s2c, &at(k_in + plan.extra_bits), &ctx.s2c)?;
-        check_workspace(OP, &workspace.c2s, &at(k_boot + plan.extra_bits), &ctx.c2s)?;
+        ensure_transform_workspace(OP, &workspace.s2c, &at(k_in + plan.extra_bits), &ctx.s2c)?;
+        ensure_transform_workspace(OP, &workspace.c2s, &at(k_boot + plan.extra_bits), &ctx.c2s)?;
         let mut raised_meta = src.meta();
         raised_meta.slot_layout = SlotLayout::Full;
         let (mut raised, mut scratch) = scratch.borrow().take_ckks_ciphertext_scratch(&at(k_boot), raised_meta);
@@ -391,6 +381,7 @@ impl<BE: Backend> CKKSReplicatedBootstrapReference<BE> for Module<BE> {
             x.set_log_delta(x.log_delta() + plan.extra_bits);
             x.set_slot_layout(SlotLayout::Full);
             apply_transform(
+                OP,
                 module,
                 &mut acc,
                 &x,
@@ -401,9 +392,11 @@ impl<BE: Backend> CKKSReplicatedBootstrapReference<BE> for Module<BE> {
             )?;
             coeffs.set_k((acc.log_budget() + plan.log_delta).into());
             module.ckks_round(&mut coeffs, &acc, &mut scratch)?;
-            if coeffs.log_budget() != plan.eval_mod.log_msg_ratio {
-                return Err(invalid(OP, "the coefficient message does not have the EvalMod message ratio"));
-            }
+            ckks_ensure_operand!(
+                OP,
+                coeffs.log_budget() == plan.eval_mod.log_msg_ratio,
+                "the coefficient message does not have the EvalMod message ratio"
+            );
 
             // 4. ModUp: `I·q_b + Δ_b·m` at the scale `q_b`, lifted.
             let log_q_b = coeffs.k().as_usize();
@@ -656,20 +649,24 @@ impl<BE: Backend> CKKSReplicatedCIBootstrapReference<BE> for Module<BE> {
         let module = self;
         let (embed_key, trace_key) = conversion_keys;
         const OP: &str = "ckks_replicated_ci_bootstrap";
-        check_destination(OP, dst, src)?;
+        ckks_ensure_operand!(
+            OP,
+            src.rank() == dst.rank() && src.n() == dst.n(),
+            "takes a source and a destination of one rank and degree"
+        );
         let plan = ctx.plan;
-        if src.slot_layout() != SlotLayout::Replicated(plan.layout) {
-            return Err(invalid(OP, "the source must have the bootstrapping's replicated layout"));
-        }
-        if module.n() != 2 * src.n().as_usize()
-            || embed_key.n().as_usize() != module.n()
-            || trace_key.n().as_usize() != module.n()
-        {
-            return Err(invalid(
-                OP,
-                "takes a module and conversion keys of degree 2N and ciphertexts of degree N",
-            ));
-        }
+        ckks_ensure_operand!(
+            OP,
+            src.slot_layout() == SlotLayout::Replicated(plan.layout),
+            "the source must have the bootstrapping's replicated layout"
+        );
+        ckks_ensure_operand!(
+            OP,
+            module.n() == 2 * src.n().as_usize()
+                && embed_key.n().as_usize() == module.n()
+                && trace_key.n().as_usize() == module.n(),
+            "takes a module and conversion keys of degree 2N and ciphertexts of degree N"
+        );
         let (lambda_in, lambda_out) = ci_bootstrap_depths(&plan.layout, src.log_delta(), plan.level_log_delta);
         let standard = |k: usize| GLWELayout {
             n: module.n().into(),

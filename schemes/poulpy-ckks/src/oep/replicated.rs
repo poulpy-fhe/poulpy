@@ -1,7 +1,7 @@
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::{
     GGLWEInfos, GGLWEPreparedToBackendRef, GLWECIEmbedKeyPrepared, GLWECITraceKeyPrepared, GLWEToBackendMut, GLWEToBackendRef,
-    GetAutomorphismKey, GetTensorKey,
+    GetAutomorphismKey,
 };
 use poulpy_hal::layouts::{Backend, ConjugateInvariant, Data, Module, Ring, ScratchArena, Standard};
 
@@ -35,53 +35,55 @@ pub unsafe trait CKKSReplicatedImpl<Rg: Ring = Standard>:
 {
     /// Scratch bound of [`Self::ckks_to_replicated`] and [`Self::ckks_from_replicated`]; may report less than the
     /// derived body, never less than the body takes.
-    fn ckks_replicated_conversion_tmp_bytes<C, K>(
+    fn ckks_replicated_conversion_tmp_bytes<R, A, K>(
         module: &Module<Self>,
-        ct_infos: &C,
+        res: &R,
+        a: &A,
         key_infos: &K,
-        conv: &ReplicatedConversion<Self, Rg>,
+        ctx: &ReplicatedConversion<Self, Rg>,
     ) -> usize
     where
-        C: CKKSCtBounds,
+        R: CKKSCtBounds,
+        A: CKKSCtBounds,
         K: GGLWEInfos,
     {
-        ckks_replicated_conversion_tmp_bytes_derived(module, ct_infos, key_infos, conv)
+        ckks_replicated_conversion_tmp_bytes_derived(module, res, a, key_infos, ctx)
     }
 
-    /// Reproduces the derived conversion onto `conv`'s replicated layout bit for bit.
-    fn ckks_to_replicated<Dst, Src, H>(
+    /// Reproduces the derived conversion onto `ctx`'s replicated layout bit for bit.
+    fn ckks_to_replicated<R, A, H>(
         module: &Module<Self>,
-        dst: &mut Dst,
-        src: &Src,
-        conv: &ReplicatedConversion<Self, Rg>,
+        res: &mut R,
+        a: &A,
+        ctx: &ReplicatedConversion<Self, Rg>,
         workspace: &mut ReplicatedTransformWorkspace<Self, Rg>,
         keys: &H,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<Self, Rg> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<Self, Rg> + CKKSCtBounds,
-        H: GetAutomorphismKey<Self, Rg> + GetTensorKey<Self, Rg>,
+        R: GLWEToBackendMut<Self, Rg> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<Self, Rg> + CKKSCtBounds,
+        H: GetAutomorphismKey<Self, Rg>,
     {
-        ckks_to_replicated_derived(module, dst, src, conv, workspace, keys, scratch)
+        ckks_to_replicated_derived(module, res, a, ctx, workspace, keys, scratch)
     }
 
-    /// Reproduces the derived conversion from `conv`'s replicated layout bit for bit.
-    fn ckks_from_replicated<Dst, Src, H>(
+    /// Reproduces the derived conversion from `ctx`'s replicated layout bit for bit.
+    fn ckks_from_replicated<R, A, H>(
         module: &Module<Self>,
-        dst: &mut Dst,
-        src: &Src,
-        conv: &ReplicatedConversion<Self, Rg>,
+        res: &mut R,
+        a: &A,
+        ctx: &ReplicatedConversion<Self, Rg>,
         workspace: &mut ReplicatedTransformWorkspace<Self, Rg>,
         keys: &H,
         scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<Self, Rg> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<Self, Rg> + CKKSCtBounds,
-        H: GetAutomorphismKey<Self, Rg> + GetTensorKey<Self, Rg>,
+        R: GLWEToBackendMut<Self, Rg> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<Self, Rg> + CKKSCtBounds,
+        H: GetAutomorphismKey<Self, Rg>,
     {
-        ckks_from_replicated_derived(module, dst, src, conv, workspace, keys, scratch)
+        ckks_from_replicated_derived(module, res, a, ctx, workspace, keys, scratch)
     }
 }
 

@@ -9,8 +9,8 @@ use anyhow::{Context, Result, ensure};
 use poulpy_core::{
     LinearTransformationPrepared,
     layouts::{
-        Base2K, GGLWEInfos, GGLWELayout, GLWEInfos, GLWEToBackendRef, GetTensorKey, IntPolyInfos, LWEInfos, LinearTransformation,
-        TorusPrecision, prepared::GGLWEPreparedToBackendRef,
+        Base2K, BsgsRotations, GGLWEInfos, GGLWELayout, GLWEInfos, GLWELayout, GLWEToBackendRef, GetAutomorphismKey,
+        GetTensorKey, IntPolyInfos, LWEInfos, LinearTransformation, TorusPrecision, prepared::GGLWEPreparedToBackendRef,
     },
 };
 use poulpy_hal::layouts::{Backend, Module, Ring};
@@ -22,7 +22,7 @@ use crate::{
     layouts::{
         BootstrappingContextPrepared, BootstrappingKeys, BootstrappingLinearKeys, BootstrappingPipeline, CKKSCiphertextOwned,
         CKKSEvalModInfos, CKKSModRaiseInfos, CKKSPlaintextOwned, CKKSRightOperandPrepared, EncodedLut, EvalMod, EvalModPlan,
-        EvalModType,
+        EvalModType, ReplicatedTransform, ReplicatedTransformWorkspace,
     },
     presets::first_factor::{first_factor_small_bits, first_factor_work},
 };
@@ -371,6 +371,118 @@ pub(crate) fn ensure_one_degree<A: GLWEInfos, R: GLWEInfos>(op: &'static str, mo
 pub(crate) fn ensure_one_base2k<A: GLWEInfos, R: GLWEInfos>(op: &'static str, a: &A, res: &R) -> CKKSResult<()> {
     ckks_ensure_operand!(op, a.base2k() == res.base2k(), "takes ciphertexts of one base2k");
     Ok(())
+}
+
+/// `InvalidOperand` for `op` unless `a` and `res` share a rank and the degree `n` a replicated context is compiled at,
+/// which the module of degree `module_n` serves.
+pub(crate) fn ensure_replicated_operands<A: GLWEInfos, R: GLWEInfos>(
+    op: &'static str,
+    module_n: usize,
+    n: usize,
+    a: &A,
+    res: &R,
+) -> CKKSResult<()> {
+    ensure_one_degree(op, module_n, a, res)?;
+    ckks_ensure_operand!(
+        op,
+        a.n().as_usize() == n,
+        "takes ciphertexts of degree {n}, the degree of its context, got {}",
+        a.n().as_usize()
+    );
+    ckks_ensure_operand!(
+        op,
+        a.rank() == res.rank(),
+        "takes a source and a destination of one rank, got {} and {}",
+        a.rank().as_usize(),
+        res.rank().as_usize()
+    );
+    Ok(())
+}
+
+/// `InvalidOperand` for `op` unless `workspace` holds the baby steps of every factor of `transform` for inputs of
+/// layout `input`.
+pub(crate) fn ensure_transform_workspace<BE: Backend, Rg: Ring>(
+    op: &'static str,
+    workspace: &ReplicatedTransformWorkspace<BE, Rg>,
+    input: &GLWELayout,
+    transform: &ReplicatedTransform<BE, Rg>,
+) -> CKKSResult<()> {
+    let babies_match = workspace.babies.len() == transform.factors.len()
+        && workspace
+            .babies
+            .iter()
+            .zip(&transform.factors)
+            .all(|(babies, (lt, _))| babies.baby_steps().eq(lt.baby_steps().iter().copied()));
+    ckks_ensure_operand!(
+        op,
+        workspace.input == *input && babies_match,
+        "the workspace does not match the transform's input layout or rotations"
+    );
+    Ok(())
+}
+
+/// The automorphism keys `transform` switches with on an input of `input_k` bits, as `(rotation, k)`: each factor's
+/// baby steps at its input's width and its giant steps at its output's, through the rotations of `workspace`'s prepared
+/// baby steps and of the factor's giant steps, as the evaluation looks them up.
+pub(crate) fn transform_key_lookups<BE: Backend, Rg: Ring>(
+    transform: &ReplicatedTransform<BE, Rg>,
+    workspace: &ReplicatedTransformWorkspace<BE, Rg>,
+    input_k: usize,
+) -> Vec<(i64, usize)> {
+    let mut lookups = Vec::new();
+    let mut k = input_k;
+    for ((lt, consumed), babies) in transform.factors.iter().zip(&workspace.babies) {
+        let out_k = k - consumed;
+        lookups.extend(
+            babies
+                .rotations()
+                .baby_key_rotations(babies.baby_steps())
+                .into_iter()
+                .map(|rotation| (rotation, k)),
+        );
+        let giants = lt.giant_steps.iter().filter(|gs| !gs.diagonals.is_empty()).map(|gs| gs.rot);
+        let giants: Vec<i64> = match lt.rotations {
+            BsgsRotations::PerRotation => giants.filter(|&rotation| rotation != 0).collect(),
+            rotations => rotations.giant_key_rotations(giants),
+        };
+        lookups.extend(giants.into_iter().map(|rotation| (rotation, out_k)));
+        k = out_k;
+    }
+    lookups
+}
+
+/// `MissingAutomorphismKey` for `op` unless `keys` cover each `(rotation, k)` of `lookups` on operands of degree `n`;
+/// otherwise the layouts of the keys, for the scratch queries.
+pub(crate) fn ensure_rotation_keys<BE, Rg, H>(
+    op: &'static str,
+    module: &Module<BE>,
+    n: usize,
+    keys: &H,
+    lookups: impl IntoIterator<Item = (i64, usize)>,
+) -> CKKSResult<Vec<GGLWELayout>>
+where
+    BE: Backend,
+    Rg: Ring,
+    H: GetAutomorphismKey<BE, Rg>,
+{
+    lookups
+        .into_iter()
+        .map(|(rotation, k)| {
+            let p = crate::operand_rotation_galois_element::<_, Rg>(op, module, n, rotation)?;
+            let k = TorusPrecision(k as u32);
+            keys.get_automorphism_key(p, k)
+                .map(|key| key.gglwe_layout())
+                .map_err(|source| {
+                    CKKSCompositionError::MissingAutomorphismKey {
+                        op,
+                        rotation,
+                        k: k.into(),
+                        source,
+                    }
+                    .into()
+                })
+        })
+        .collect()
 }
 
 /// `InvalidOperand` for `op` unless `keys` carry the encapsulation switches exactly when the recipe encapsulates.

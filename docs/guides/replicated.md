@@ -45,7 +45,7 @@ Operations that would round plainly or write the guard slots return `InvalidOper
 `ReplicatedConversion` holds the encoded diagonals and lists the rotations its keys cover.
 `ReplicatedConversion::new` encodes each map as `k` diagonals; `ReplicatedConversion::new_factored` encodes it as the move between consecutive slots and the data slots in `placement_factors` factors of about `k^(1/placement_factors)` 0/1 mask diagonals, which needs no `R | k` for the return.
 Every factor consumes its diagonal bits: the last factor of `ckks_to_replicated` is quantized with shaping, its others plainly at `inner_log_delta_diag` bits, a few bits above the working precision.
-Allocate a `ReplicatedTransformWorkspace` once with `conv.alloc_to_workspace(&module, &input)` or `conv.alloc_from_workspace(&module, &input)` and pass it after `conv` to each evaluation.
+Allocate a `ReplicatedTransformWorkspace` once with `ctx.alloc_to_workspace(&module, &input)` or `ctx.alloc_from_workspace(&module, &input)` and pass it after `ctx` to each evaluation.
 The workspace owns the prepared baby rotations for that input layout; evaluations refill those buffers without reallocating them.
 
 ## Bootstrapping

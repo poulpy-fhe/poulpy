@@ -1,7 +1,7 @@
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::{
     GGLWEInfos, GGLWEPreparedToBackendRef, GLWECIEmbedKeyPrepared, GLWECITraceKeyPrepared, GLWEToBackendMut, GLWEToBackendRef,
-    GetAutomorphismKey, GetTensorKey,
+    GetAutomorphismKey,
 };
 use poulpy_hal::layouts::{Backend, ConjugateInvariant, Data, Module, Ring, ScratchArena};
 
@@ -16,51 +16,53 @@ use crate::{
 };
 
 impl<BE: Backend + CKKSReplicatedImpl<Rg>, Rg: Ring> CKKSReplicatedOps<BE, Rg> for Module<BE> {
-    fn ckks_replicated_conversion_tmp_bytes<C, K>(
+    fn ckks_replicated_conversion_tmp_bytes<R, A, K>(
         &self,
-        ct_infos: &C,
+        res: &R,
+        a: &A,
         key_infos: &K,
-        conv: &ReplicatedConversion<BE, Rg>,
+        ctx: &ReplicatedConversion<BE, Rg>,
     ) -> usize
     where
-        C: CKKSCtBounds,
+        R: CKKSCtBounds,
+        A: CKKSCtBounds,
         K: GGLWEInfos,
     {
-        <BE as CKKSReplicatedImpl<Rg>>::ckks_replicated_conversion_tmp_bytes(self, ct_infos, key_infos, conv)
+        <BE as CKKSReplicatedImpl<Rg>>::ckks_replicated_conversion_tmp_bytes(self, res, a, key_infos, ctx)
     }
 
-    fn ckks_to_replicated<Dst, Src, H>(
+    fn ckks_to_replicated<R, A, H>(
         &self,
-        dst: &mut Dst,
-        src: &Src,
-        conv: &ReplicatedConversion<BE, Rg>,
+        res: &mut R,
+        a: &A,
+        ctx: &ReplicatedConversion<BE, Rg>,
         workspace: &mut ReplicatedTransformWorkspace<BE, Rg>,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
-        H: GetAutomorphismKey<BE, Rg> + GetTensorKey<BE, Rg>,
+        R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        H: GetAutomorphismKey<BE, Rg>,
     {
-        <BE as CKKSReplicatedImpl<Rg>>::ckks_to_replicated(self, dst, src, conv, workspace, keys, scratch)
+        <BE as CKKSReplicatedImpl<Rg>>::ckks_to_replicated(self, res, a, ctx, workspace, keys, scratch)
     }
 
-    fn ckks_from_replicated<Dst, Src, H>(
+    fn ckks_from_replicated<R, A, H>(
         &self,
-        dst: &mut Dst,
-        src: &Src,
-        conv: &ReplicatedConversion<BE, Rg>,
+        res: &mut R,
+        a: &A,
+        ctx: &ReplicatedConversion<BE, Rg>,
         workspace: &mut ReplicatedTransformWorkspace<BE, Rg>,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
-        H: GetAutomorphismKey<BE, Rg> + GetTensorKey<BE, Rg>,
+        R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        H: GetAutomorphismKey<BE, Rg>,
     {
-        <BE as CKKSReplicatedImpl<Rg>>::ckks_from_replicated(self, dst, src, conv, workspace, keys, scratch)
+        <BE as CKKSReplicatedImpl<Rg>>::ckks_from_replicated(self, res, a, ctx, workspace, keys, scratch)
     }
 }
 
