@@ -473,7 +473,7 @@ jobs:
       contains(fromJSON(needs.changes.outputs.crates), 'poulpy-cpu-portable') ||
       contains(fromJSON(needs.changes.outputs.crates), 'poulpy-cpu-arm')
     runs-on: macos-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
 
     steps:
       - name: Checkout

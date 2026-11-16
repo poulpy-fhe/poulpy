@@ -1,0 +1,35 @@
+[package]
+name = "poulpy-keccak"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Keccak-f[1600] on eight encrypted states with poulpy-ckks and binary bootstrapping"
+repository.workspace = true
+homepage.workspace = true
+publish = false
+
+[features]
+# The server's backend, named after it. The client stays on NTT4x30Portable.
+enable-portable-rayon = ["dep:poulpy-cpu-rayon"]
+enable-neon = ["dep:poulpy-cpu-arm", "poulpy-cpu-arm/enable-rayon"]
+enable-avx = ["dep:poulpy-cpu-avx", "poulpy-cpu-avx/enable-rayon"]
+enable-avx512 = ["dep:poulpy-cpu-avx512", "poulpy-cpu-avx512/enable-rayon"]
+enable-ifma = ["enable-avx512", "poulpy-cpu-avx512/enable-ifma"]
+enable-cuda = ["dep:poulpy-gpu-portable", "poulpy-gpu-portable/enable-cuda"]
+enable-hip = ["dep:poulpy-gpu-portable", "poulpy-gpu-portable/enable-hip"]
+enable-metal = ["dep:poulpy-gpu-portable", "poulpy-gpu-portable/enable-metal"]
+enable-vulkan = ["dep:poulpy-gpu-portable", "poulpy-gpu-portable/enable-vulkan"]
+
+[dependencies]
+poulpy-hal = {workspace = true}
+poulpy-core = {workspace = true}
+poulpy-ckks = {workspace = true}
+anyhow = {workspace = true}
+rand = {workspace = true}
+poulpy-cpu-portable = {workspace = true, features = ["enable-ckks"]}
+poulpy-cpu-rayon = {workspace = true, optional = true, features = ["enable-ckks"]}
+poulpy-cpu-arm = {workspace = true, optional = true, features = ["enable-ckks"]}
+poulpy-cpu-avx = {workspace = true, optional = true, features = ["enable-ckks"]}
+poulpy-cpu-avx512 = {workspace = true, optional = true, features = ["enable-ckks"]}
+poulpy-gpu-portable = {workspace = true, optional = true, features = ["enable-ckks"]}
+
