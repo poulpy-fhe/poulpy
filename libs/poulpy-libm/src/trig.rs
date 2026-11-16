@@ -14,7 +14,7 @@ use poulpy_core::{
     GLWEBytesOf,
     layouts::{BSGSMeta, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetTensorKey, IntPolyInfos, LWEInfos, SetBSGSMeta},
 };
-use poulpy_hal::layouts::{Backend, HostBytesBackend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, HostBytesBackend, Module, Ring, ScratchArena};
 
 use poulpy_ckks::{
     CKKSCtBounds, CKKSInfos, CKKSLayout, SetCKKSInfos,
@@ -34,7 +34,7 @@ define_unary_plan!(SinPlan, "sin");
 define_unary_plan!(CosPlan, "cos");
 define_unary_plan!(TanPlan, "tan");
 
-impl SinPlan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
+impl<Rg: Ring> SinPlan<CKKSPlaintext<AlignedBuf, i64, Rg>> {
     /// Fits and prepares `sin` on `[a, b]` without modular reduction.
     pub fn from_precision<F>(
         a: F,
@@ -46,7 +46,7 @@ impl SinPlan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
     ) -> Result<Self>
     where
         F: CKKSScalar + Float + FloatConst + FromPrimitive + ToPrimitive + Debug,
-        CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
+        CKKSPlaintext<AlignedBuf, i64, Rg>: CKKSPlaintextVecHostCodec<F>,
     {
         let parity = parity_for_interval(a, b, Parity::Odd);
         let (approximation, approximation_bits) =
@@ -58,7 +58,7 @@ impl SinPlan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
     }
 }
 
-impl CosPlan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
+impl<Rg: Ring> CosPlan<CKKSPlaintext<AlignedBuf, i64, Rg>> {
     /// Fits and prepares `cos` on `[a, b]` without modular reduction.
     pub fn from_precision<F>(
         a: F,
@@ -70,7 +70,7 @@ impl CosPlan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
     ) -> Result<Self>
     where
         F: CKKSScalar + Float + FloatConst + FromPrimitive + ToPrimitive + Debug,
-        CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
+        CKKSPlaintext<AlignedBuf, i64, Rg>: CKKSPlaintextVecHostCodec<F>,
     {
         let parity = parity_for_interval(a, b, Parity::Even);
         let (approximation, approximation_bits) =
@@ -82,7 +82,7 @@ impl CosPlan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
     }
 }
 
-impl TanPlan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
+impl<Rg: Ring> TanPlan<CKKSPlaintext<AlignedBuf, i64, Rg>> {
     /// Fits and prepares `tan` on `[a, b] ⊂ (-π/2, π/2)`.
     pub fn from_precision<F>(
         a: F,
@@ -94,7 +94,7 @@ impl TanPlan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
     ) -> Result<Self>
     where
         F: CKKSScalar + Float + FloatConst + FromPrimitive + ToPrimitive + Debug,
-        CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
+        CKKSPlaintext<AlignedBuf, i64, Rg>: CKKSPlaintextVecHostCodec<F>,
     {
         let half_pi = F::PI() / (F::one() + F::one());
         ensure!(a > -half_pi && b < half_pi, "tan: interval must lie in (-pi/2, pi/2)");
@@ -109,7 +109,7 @@ impl TanPlan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
 }
 
 /// Homomorphic trigonometric functions on fixed prepared domains.
-pub trait CKKSTrigOps<BE: Backend> {
+pub trait CKKSTrigOps<BE: Backend, Rg: Ring = Standard> {
     declare_unary_op!(ckks_sin_tmp_bytes, ckks_sin, SinPlan, "sin");
     declare_unary_op!(ckks_cos_tmp_bytes, ckks_cos, CosPlan, "cos");
 
@@ -153,19 +153,19 @@ pub trait CKKSTrigOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        S: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        C: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
-        I: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE>,
-        Q: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE>,
-        H: GetTensorKey<BE>;
+        S: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        C: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        I: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE, Rg>,
+        Q: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE, Rg>,
+        H: GetTensorKey<BE, Rg>;
 
     declare_unary_op!(ckks_tan_tmp_bytes, ckks_tan, TanPlan, "tan");
 }
 
-impl<BE: Backend> CKKSTrigOps<BE> for Module<BE>
+impl<BE: Backend, Rg: Ring> CKKSTrigOps<BE, Rg> for Module<BE>
 where
-    Module<BE>: CKKSApproximationOps<BE> + CKKSCopyOps<BE> + GLWEBytesOf<BE>,
+    Module<BE>: CKKSApproximationOps<BE, Rg> + CKKSCopyOps<BE, Rg> + GLWEBytesOf<BE>,
 {
     impl_unary_op!(ckks_sin_tmp_bytes, ckks_sin, SinPlan);
     impl_unary_op!(ckks_cos_tmp_bytes, ckks_cos, CosPlan);
@@ -206,12 +206,12 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        S: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        C: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
-        I: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE>,
-        Q: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE>,
-        H: GetTensorKey<BE>,
+        S: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        C: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        I: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE, Rg>,
+        Q: GLWEToBackendRef<BE, Rg> + CKKSCtBounds + IntPolyInfos + BSGSMeta + CKKSMaskedConstants<BE, Rg>,
+        H: GetTensorKey<BE, Rg>,
     {
         scratch.scope(|scratch_local| {
             let (mut sine, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(input);

@@ -11,7 +11,7 @@ use poulpy_ckks::CKKSInfos;
 use poulpy_core::layouts::Base2K;
 use poulpy_hal::{
     AlignedBuf,
-    layouts::{HostBytesBackend, Module, Standard},
+    layouts::{HostBytesBackend, Module},
 };
 
 use poulpy_ckks::{
@@ -22,6 +22,8 @@ use poulpy_ckks::{
 };
 
 use poulpy_ckks::approximation::sign_composite_coeffs;
+
+use super::SignRing;
 
 /// Default Lattigo sign composite as Chebyshev coefficient rows.
 #[rustfmt::skip]
@@ -50,10 +52,10 @@ pub struct SignComposite<F, P> {
     pub(crate) coeff_log_delta: usize,
 }
 
-impl<F> SignComposite<F, CKKSPlaintext<AlignedBuf, i64, Standard>>
+impl<F, Rg: SignRing> SignComposite<F, CKKSPlaintext<AlignedBuf, i64, Rg>>
 where
     F: CKKSScalar + Float + FloatConst + FromPrimitive + std::fmt::Debug,
-    CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
+    CKKSPlaintext<AlignedBuf, i64, Rg>: CKKSPlaintextVecHostCodec<F>,
 {
     /// Prepares odd Chebyshev factors on `[−1, 1]`.
     pub fn from_coeffs(
@@ -109,7 +111,7 @@ where
         Self::from_coeffs(base2k, DEFAULT_SIGN_COMPOSITE_CHEBYSHEV, coeff_meta, strategy, module)
     }
 
-    /// Encodes Chebyshev rows as half-scale BSGS factors.
+    /// Encodes Chebyshev rows as BSGS factors, at half scale when [`SignRing::CONJUGATE_CLEANING`] is set.
     fn from_rows(
         rows: Vec<Vec<F>>,
         base2k: Base2K,
@@ -119,17 +121,18 @@ where
     ) -> Result<Self> {
         // Every constructor lands here, so a composite always has a factor.
         ensure!(!rows.is_empty(), "sign composite: coefficient rows must be non-empty");
-        let half = F::from_f64(0.5).ok_or_else(|| anyhow!("sign composite: 0.5 not representable"))?;
+        let scale = F::from_f64(if Rg::CONJUGATE_CLEANING { 0.5 } else { 1.0 })
+            .ok_or_else(|| anyhow!("sign composite: factor scale not representable"))?;
         let mut polys_bsgs = Vec::with_capacity(rows.len());
         let mut polys_host = Vec::with_capacity(rows.len());
         for (i, coeffs) in rows.into_iter().enumerate() {
-            // Real cleaning restores the half-scale encoding.
+            // The conjugation cleaning restores the half-scale encoding.
             let poly = Polynomial::new_with_parity(Basis::Chebyshev, coeffs.clone(), Parity::Odd);
-            let half_coeffs: Vec<F> = coeffs.into_iter().map(|c| c * half).collect();
-            let poly_half = Polynomial::new_with_parity(Basis::Chebyshev, half_coeffs, Parity::Odd);
+            let scaled_coeffs: Vec<F> = coeffs.into_iter().map(|c| c * scale).collect();
+            let poly_scaled = Polynomial::new_with_parity(Basis::Chebyshev, scaled_coeffs, Parity::Odd);
             polys_bsgs.push(
-                poly_half
-                    .encode_bsgs_with(module, base2k, coeff_meta.into(), strategy)
+                poly_scaled
+                    .encode_bsgs_with::<Rg>(module, base2k, coeff_meta.into(), strategy)
                     .with_context(|| format!("sign composite: coefficient row {i}"))?,
             );
             polys_host.push(poly);

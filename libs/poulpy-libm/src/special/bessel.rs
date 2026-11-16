@@ -5,7 +5,7 @@ use std::fmt::Debug;
 
 use anyhow::{Result, ensure};
 use num_traits::{Float, FloatConst, FromPrimitive, ToPrimitive};
-use poulpy_hal::layouts::{Backend, HostBytesBackend, Module};
+use poulpy_hal::layouts::{Backend, HostBytesBackend, Module, Ring};
 
 use poulpy_ckks::{
     CKKSLayout,
@@ -25,7 +25,7 @@ define_unary_plan!(Y1Plan, "y1");
 
 macro_rules! impl_host_plan {
     ($plan:ident, $name:literal, $fun:path, $parity:expr, $positive:expr) => {
-        impl $plan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
+        impl<Rg: Ring> $plan<CKKSPlaintext<AlignedBuf, i64, Rg>> {
             #[doc = concat!("Fits and prepares `", $name, "` on `[a, b]`.")]
             pub fn from_precision<F>(
                 a: F,
@@ -37,7 +37,7 @@ macro_rules! impl_host_plan {
             ) -> Result<Self>
             where
                 F: CKKSScalar + Float + FloatConst + FromPrimitive + ToPrimitive + Debug,
-                CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
+                CKKSPlaintext<AlignedBuf, i64, Rg>: CKKSPlaintextVecHostCodec<F>,
             {
                 if $positive {
                     ensure!(a > F::zero(), concat!($name, ": interval must be positive"));
@@ -82,7 +82,7 @@ pub struct YnPlan<P> {
     pub(crate) order: i32,
 }
 
-impl JnPlan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
+impl<Rg: Ring> JnPlan<CKKSPlaintext<AlignedBuf, i64, Rg>> {
     /// Fits and prepares `jn(order, x)` on `[a, b]`.
     pub fn from_precision<F>(
         order: i32,
@@ -95,7 +95,7 @@ impl JnPlan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
     ) -> Result<Self>
     where
         F: CKKSScalar + Float + FloatConst + FromPrimitive + ToPrimitive + Debug,
-        CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
+        CKKSPlaintext<AlignedBuf, i64, Rg>: CKKSPlaintextVecHostCodec<F>,
     {
         let target_parity = if order.unsigned_abs().is_multiple_of(2) {
             Parity::Even
@@ -122,7 +122,7 @@ impl JnPlan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
     }
 }
 
-impl YnPlan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
+impl<Rg: Ring> YnPlan<CKKSPlaintext<AlignedBuf, i64, Rg>> {
     /// Fits and prepares `yn(order, x)` on positive `[a, b]`.
     pub fn from_precision<F>(
         order: i32,
@@ -135,7 +135,7 @@ impl YnPlan<CKKSPlaintext<AlignedBuf, i64, Standard>> {
     ) -> Result<Self>
     where
         F: CKKSScalar + Float + FloatConst + FromPrimitive + ToPrimitive + Debug,
-        CKKSPlaintext<AlignedBuf, i64, Standard>: CKKSPlaintextVecHostCodec<F>,
+        CKKSPlaintext<AlignedBuf, i64, Rg>: CKKSPlaintextVecHostCodec<F>,
     {
         ensure!(a > F::zero(), "yn: interval must be positive");
         let (approximation, approximation_bits) = prepare_function(
@@ -211,7 +211,7 @@ impl_ordered_plan!(JnPlan);
 impl_ordered_plan!(YnPlan);
 
 /// Homomorphic Bessel functions on fixed prepared domains.
-pub trait CKKSBesselOps<BE: Backend> {
+pub trait CKKSBesselOps<BE: Backend, Rg: Ring = Standard> {
     declare_unary_op!(ckks_j0_tmp_bytes, ckks_j0, J0Plan, "j0");
     declare_unary_op!(ckks_j1_tmp_bytes, ckks_j1, J1Plan, "j1");
     declare_unary_op!(ckks_jn_tmp_bytes, ckks_jn, JnPlan, "jn");
@@ -220,9 +220,9 @@ pub trait CKKSBesselOps<BE: Backend> {
     declare_unary_op!(ckks_yn_tmp_bytes, ckks_yn, YnPlan, "yn");
 }
 
-impl<BE: Backend> CKKSBesselOps<BE> for Module<BE>
+impl<BE: Backend, Rg: Ring> CKKSBesselOps<BE, Rg> for Module<BE>
 where
-    Module<BE>: CKKSApproximationOps<BE>,
+    Module<BE>: CKKSApproximationOps<BE, Rg>,
 {
     impl_unary_op!(ckks_j0_tmp_bytes, ckks_j0, J0Plan);
     impl_unary_op!(ckks_j1_tmp_bytes, ckks_j1, J1Plan);
