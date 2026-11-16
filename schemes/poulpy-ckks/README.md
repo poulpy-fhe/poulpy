@@ -381,6 +381,9 @@ Leveled operations are invoked through traits implemented on
 | `CKKSPaCoOps` | PaCo bootstrapping (see [`docs/guides/paco.md`](../../docs/guides/paco.md)) |
 | `CKKSShipOps` | SHIP half bootstrapping (see [`docs/guides/ship.md`](../../docs/guides/ship.md)) |
 | `CKKSRoundOps` | rounding to a smaller width, with shaping on a replicated layout |
+| `CKKSReplicatedOps` | conversions between CKKS and a replicated slot layout (see [`docs/guides/replicated.md`](../../docs/guides/replicated.md)) |
+| `CKKSReplicatedBootstrapOps` | bootstrapping of a replicated slot layout (see [`docs/guides/replicated.md`](../../docs/guides/replicated.md)) |
+| `CKKSReplicatedCIBootstrapOps` | bootstrapping of a replicated slot layout on the conjugate-invariant ring, through the standard ring |
 | `CKKSAllOpsTmpBytes` | scratch size queries for all operations |
 
 For example, ciphertext addition uses `CKKSAddOps<BE>` and is called through
@@ -426,7 +429,7 @@ The core leveled evaluator building blocks are now implemented:
 - bootstrapping (mod-raise, homomorphic DFT, and `EvalMod`)
 - PaCo bootstrapping (partial CoeffsToSlots, without ModUp or `EvalMod`; see [`docs/guides/paco.md`](../../docs/guides/paco.md))
 - SHIP half bootstrapping (mux blind rotations over a sparse secret, without ModUp or `EvalMod`; see [`docs/guides/ship.md`](../../docs/guides/ship.md))
-- small batches in a replicated slot layout with shaped rounding, encoding, encryption and leveled arithmetic ([ePrint 2026/2513](https://eprint.iacr.org/2026/2513); see [`docs/guides/replicated.md`](../../docs/guides/replicated.md))
+- small batches in a replicated slot layout with shaped rounding, with conversions and bootstrapping ([ePrint 2026/2513](https://eprint.iacr.org/2026/2513); see [`docs/guides/replicated.md`](../../docs/guides/replicated.md))
 
 Higher-level functionality on top of that foundation:
 
@@ -475,7 +478,7 @@ of degree `2N` and maps them back by the relative trace (`CKKSCIRingMapOps`).
 Each map switches between the CI secret and a standard secret with its key,
 `GLWECIEmbedKey` or `GLWECITraceKey` (`GLWECIKeyEncryptSk`).
 
-Replicated slot layouts run on CI backends too, with an invariant shift of the shaping polynomial (see [`docs/guides/replicated.md`](../../docs/guides/replicated.md)).
+Replicated slot layouts run on the conjugate-invariant ring too, with an invariant shift of the shaping polynomial, and bootstrap through the standard ring of degree `2N` (`CKKSReplicatedCIBootstrapOps`, see [`docs/guides/replicated.md`](../../docs/guides/replicated.md)).
 
 ## Where to look next
 

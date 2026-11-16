@@ -131,6 +131,7 @@ pub mod mod_raise;
 pub mod mul;
 pub mod paco;
 pub mod plaintext;
+pub mod replicated;
 pub mod ship;
 pub(crate) mod slots;
 pub(crate) mod validation;
@@ -184,6 +185,10 @@ pub use paco::{
     PaCoPlan, PaCoSecretSpec, PaCoSlotOrder, PaCoWorker,
 };
 pub use plaintext::{CKKSPlaintext, CKKSPlaintextOwned, CKKSPlaintextViewMut};
+pub use replicated::{
+    ReplicatedBootstrapPlan, ReplicatedBootstrapWorkspace, ReplicatedBootstrapping, ReplicatedConversion, ReplicatedTransform,
+    ReplicatedTransformWorkspace, ReplicatedTransforms,
+};
 pub use ship::{
     HMuxRotKey, HMuxRotKeyPrepared, ShipCoeffEncodings, ShipIndexKeys, ShipIndexKeysPrepared, ShipKeyParameters, ShipKeySet,
     ShipKeysLayout, ShipKeysPrepared, ShipPlan, ShipSecretSpec,
