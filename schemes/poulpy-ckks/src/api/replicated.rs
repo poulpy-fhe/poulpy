@@ -8,8 +8,8 @@ use poulpy_hal::layouts::{Backend, ConjugateInvariant, Data, Ring, ScratchArena,
 use crate::{
     CKKSCtBounds, SetCKKSInfos,
     layouts::{
-        BootstrappingKeys, ReplicatedBootstrapWorkspace, ReplicatedBootstrapping, ReplicatedConversion,
-        ReplicatedTransformWorkspace,
+        BootstrappingKeys, BootstrappingKeysLayout, ReplicatedBootstrapWorkspace, ReplicatedBootstrapping, ReplicatedConversion,
+        ReplicatedLut, ReplicatedTransform, ReplicatedTransformWorkspace,
     },
 };
 
@@ -22,7 +22,7 @@ use crate::{
 /// layout, at scale `conv.log_delta`:
 ///
 /// ```text
-/// log_budget_out = src.log_budget - log_delta_diag
+/// log_budget_out = min(src.log_budget - log_delta_diag, dst.k - conv.log_delta)
 /// log_delta_out  = conv.log_delta
 /// ```
 ///
@@ -87,6 +87,51 @@ pub trait CKKSReplicatedOps<BE: Backend, Rg: Ring = Standard> {
         Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
         H: GetAutomorphismKey<BE, Rg> + GetTensorKey<BE, Rg>;
+
+    /// Scratch of [`Self::ckks_replicated_transform`] from a ciphertext like `ct_infos` with keys of `key_infos`.
+    fn ckks_replicated_transform_tmp_bytes<C, K>(
+        &self,
+        ct_infos: &C,
+        key_infos: &K,
+        transform: &ReplicatedTransform<BE, Rg>,
+    ) -> usize
+    where
+        C: CKKSCtBounds,
+        K: GGLWEInfos;
+
+    /// `dst = M(src)` for a ciphertext in a replicated layout and a
+    /// [`ReplicatedTransform`] `M` whose rotations are multiples of the period
+    /// `R`, such as one of [`ReplicatedTransform::from_input_period`] on the
+    /// period `kR` of the layout, its last factor quantized with shaping: the
+    /// chain runs `ShapingProfile::shaping_depth` bits under `src`'s scale,
+    /// its key switches and rescales rounding plainly there, and one shaped
+    /// rounding returns to that scale. Allocate the workspace with
+    /// [`ReplicatedTransform::alloc_replicated_workspace`] for `src`, and keys
+    /// of [`ReplicatedTransform::rotations`] covering the working width.
+    ///
+    /// ```text
+    /// log_budget_out = min(src.log_budget - transform.consumed_bits(), dst.k - src.log_delta)
+    /// log_delta_out  = src.log_delta
+    /// ```
+    ///
+    /// # Errors
+    /// [`crate::CKKSCompositionError::InvalidOperand`] before writing `dst` for
+    /// incompatible source and destination degrees or ranks, a source of the
+    /// full layout, a rotation that is not a multiple of `R`, or a workspace
+    /// for another input layout or other rotations.
+    fn ckks_replicated_transform<Dst, Src, H>(
+        &self,
+        dst: &mut Dst,
+        src: &Src,
+        transform: &ReplicatedTransform<BE, Rg>,
+        workspace: &mut ReplicatedTransformWorkspace<BE, Rg>,
+        keys: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        H: GetAutomorphismKey<BE, Rg> + GetTensorKey<BE, Rg>;
 }
 
 /// Bootstrapping of a replicated slot layout of `k` values, `R | k`, in
@@ -104,41 +149,94 @@ pub trait CKKSReplicatedOps<BE: Backend, Rg: Ring = Standard> {
 /// 5. The normalized top trace onto period `k` removes the lifted multiples
 ///    off the subring, and `CoeffsToSlots` writes the real and imaginary
 ///    parts of the coefficients onto the data slots, side by side when
-///    packed, each rounded with shaping.
-/// 6. EvalMod, then the parts are recombined.
+///    packed, each rounded with shaping. Unpacked, a source of real slots
+///    takes the real part alone: its imaginary part holds only multiples of
+///    the modulus.
+/// 6. EvalMod, once when packed or on real slots, else once per part, then
+///    the parts are recombined. The output has real slots for a source of
+///    real or integer slots, complex slots otherwise.
 /// 7. The result is relabelled at `Δ_b` and rounded with shaping to the
 ///    leveled scale.
 ///
 /// `dst.k()` is the output width; ModUp raises to
 /// [`ReplicatedBootstrapPlan::k_boot`](crate::layouts::ReplicatedBootstrapPlan::k_boot)
 /// of it. Allocate its reusable workspace with
-/// [`ReplicatedBootstrapping::alloc_workspace`]. The keys cover [`ReplicatedBootstrapping::galois_elements`].
+/// [`ReplicatedBootstrapping::alloc_workspace`]. The keys cover the widths of
+/// [`ReplicatedBootstrapping::key_widths`] for `dst.k()`, which the bootstrapping
+/// looks up before any work.
 pub trait CKKSReplicatedBootstrapOps<BE: Backend> {
-    fn ckks_replicated_bootstrap_tmp_bytes<C, I, F, A, T, S>(
+    /// Scratch of [`Self::ckks_replicated_bootstrap`] with keys of `keys_layout`: each stage with each of its rotation
+    /// keys, which differ in width and gadget.
+    fn ckks_replicated_bootstrap_tmp_bytes<C, I, F>(
         &self,
         ct_out: &C,
         ct_in: &I,
         ctx: &ReplicatedBootstrapping<BE, F>,
-        atk_infos: &A,
-        tsk_infos: &T,
-        encapsulation_infos: Option<(&S, &S)>,
+        keys_layout: &BootstrappingKeysLayout,
     ) -> usize
     where
         C: CKKSCtBounds,
-        I: CKKSCtBounds,
-        A: GGLWEInfos,
-        T: GGLWEInfos,
-        S: GGLWEInfos;
+        I: CKKSCtBounds;
 
     /// # Errors
     /// Incompatible source and destination degrees or ranks, or a workspace
     /// with incompatible input dimensions or rotations, return
-    /// [`crate::CKKSCompositionError::InvalidOperand`] before writing `dst`.
+    /// [`crate::CKKSCompositionError::InvalidOperand`] before writing `dst`, and
+    /// a key missing or narrower than its width
+    /// [`MissingAutomorphismKey`](crate::CKKSCompositionError::MissingAutomorphismKey) or
+    /// [`MissingRelinearizationKey`](crate::CKKSCompositionError::MissingRelinearizationKey), also before writing `dst`.
     fn ckks_replicated_bootstrap<Dst, Src, F, K>(
         &self,
         dst: &mut Dst,
         src: &Src,
         ctx: &ReplicatedBootstrapping<BE, F>,
+        workspace: &mut ReplicatedBootstrapWorkspace<BE>,
+        keys: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
+        K: BootstrappingKeys<BE>;
+
+    /// Scratch of [`Self::ckks_replicated_functional_bootstrap`] with keys of `keys_layout`, whatever the number of
+    /// LUTs.
+    fn ckks_replicated_functional_bootstrap_tmp_bytes<C, I, F>(
+        &self,
+        ct_out: &C,
+        ct_in: &I,
+        ctx: &ReplicatedBootstrapping<BE, F>,
+        luts: &[ReplicatedLut<BE>],
+        keys_layout: &BootstrappingKeysLayout,
+    ) -> usize
+    where
+        C: CKKSCtBounds,
+        I: CKKSCtBounds;
+
+    /// Refreshes `src`, which holds integer messages modulo `p` at the scale
+    /// `Δ_b` or the leveled scale, and applies each LUT of `luts`, of `p`
+    /// entries, writing `table[m mod p]` into the output of the same index, at
+    /// the leveled scale and its width, all outputs of one width. The context
+    /// is compiled from a plan configured with
+    /// [`ReplicatedBootstrapPlan::with_functional_bootstrap`](crate::layouts::ReplicatedBootstrapPlan::with_functional_bootstrap):
+    /// steps 1 to 5 of [`Self::ckks_replicated_bootstrap`], then the complex
+    /// exponential of each part and each LUT's interpolation, `T + conj(T)`,
+    /// in place of EvalMod, the parts recombined, or of real slots the real
+    /// part alone. A batch of LUTs shares the stages up to `CoeffsToSlots`, and
+    /// two or more share the exponential and its powers.
+    ///
+    /// # Errors
+    /// Those of [`Self::ckks_replicated_bootstrap`] before writing `dst`, a plan
+    /// without a LUT step, outputs other than one per LUT at one width, and
+    /// LUTs of another modulus, another scale or more budget than the plan's
+    /// ([`crate::CKKSCompositionError::InvalidOperand`]).
+    #[allow(clippy::too_many_arguments)]
+    fn ckks_replicated_functional_bootstrap<Dst, Src, F, K>(
+        &self,
+        dst: &mut [Dst],
+        src: &Src,
+        ctx: &ReplicatedBootstrapping<BE, F>,
+        luts: &[ReplicatedLut<BE>],
         workspace: &mut ReplicatedBootstrapWorkspace<BE>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
@@ -169,26 +267,17 @@ pub trait CKKSReplicatedBootstrapOps<BE: Backend> {
 /// ```
 pub trait CKKSReplicatedCIBootstrapOps<BE: Backend> {
     /// Scratch of [`Self::ckks_replicated_ci_bootstrap`].
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "the scratch covers the bootstrapping keys and the conversion keys"
-    )]
-    fn ckks_replicated_ci_bootstrap_tmp_bytes<C, I, F, A, T, S, K>(
+    fn ckks_replicated_ci_bootstrap_tmp_bytes<C, I, F, K>(
         &self,
         ct_out: &C,
         ct_in: &I,
         ctx: &ReplicatedBootstrapping<BE, F>,
-        atk_infos: &A,
-        tsk_infos: &T,
-        encapsulation_infos: Option<(&S, &S)>,
+        keys_layout: &BootstrappingKeysLayout,
         conversion_infos: &K,
     ) -> usize
     where
         C: CKKSCtBounds,
         I: CKKSCtBounds,
-        A: GGLWEInfos,
-        T: GGLWEInfos,
-        S: GGLWEInfos,
         K: GGLWEInfos;
 
     /// # Errors

@@ -385,6 +385,14 @@ macro_rules! ckks_backend_rank2_test_suite {
                 replicated_transforms_apply_matrices,
                 $crate::test_suite::replicated::test_replicated_transforms_apply_matrices
             );
+            run_ring_test_result!(
+                replicated_transform_maps_values,
+                $crate::test_suite::replicated::test_replicated_transform_maps_values
+            );
+            run_ring_test_result!(
+                replicated_inner_sums_are_shaped,
+                $crate::test_suite::replicated::test_replicated_inner_sums_are_shaped
+            );
             run_test!(mul_ct_aligned, $crate::test_suite::mul::test_mul_ct_aligned);
             run_test!(
                 mul_ct_larger_budget_smaller_scale,
@@ -787,6 +795,10 @@ macro_rules! ckks_backend_test_suite {
                 $crate::test_suite::replicated::test_replicated_complex_eval_mod_is_shaped
             );
             run_test_result!(
+                replicated_lut_is_shaped,
+                $crate::test_suite::replicated::test_replicated_lut_is_shaped
+            );
+            run_test_result!(
                 replicated_automorphisms_are_shaped,
                 $crate::test_suite::replicated::test_replicated_automorphisms_are_shaped
             );
@@ -810,6 +822,14 @@ macro_rules! ckks_backend_test_suite {
                 replicated_transforms_apply_matrices,
                 $crate::test_suite::replicated::test_replicated_transforms_apply_matrices
             );
+            run_ring_test_result!(
+                replicated_transform_maps_values,
+                $crate::test_suite::replicated::test_replicated_transform_maps_values
+            );
+            run_ring_test_result!(
+                replicated_inner_sums_are_shaped,
+                $crate::test_suite::replicated::test_replicated_inner_sums_are_shaped
+            );
             run_test_result!(
                 replicated_bootstrap,
                 $crate::test_suite::replicated::test_replicated_bootstrap
@@ -817,6 +837,18 @@ macro_rules! ckks_backend_test_suite {
             run_test_result!(
                 replicated_bootstrap_factored,
                 $crate::test_suite::replicated::test_replicated_bootstrap_factored
+            );
+            run_test_result!(
+                replicated_functional_bootstrap,
+                $crate::test_suite::replicated::test_replicated_functional_bootstrap
+            );
+            run_test_result!(
+                replicated_functional_bootstrap_binary,
+                $crate::test_suite::replicated::test_replicated_functional_bootstrap_binary
+            );
+            run_test_result!(
+                replicated_bootstrap_real,
+                $crate::test_suite::replicated::test_replicated_bootstrap_real
             );
             run_test_result!(
                 replicated_bootstrap_small_periods,

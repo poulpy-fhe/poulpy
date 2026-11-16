@@ -52,7 +52,8 @@ pub(crate) fn working_layout<C: GLWEInfos>(ct: &C, extra_bits: usize, trace_step
 }
 
 /// Wide stage onto a replicated layout: `dst = M(src)` computed `extra_bits`
-/// under `src`'s scale, then rounded with `layout`'s shaping to `log_delta`.
+/// under `src`'s scale, then rounded with `layout`'s shaping to `log_delta`,
+/// at most `dst.k()` wide.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn wide_onto_replicated<BE, Rg: Ring, Dst, Src, H>(
     module: &Module<BE>,
@@ -82,8 +83,17 @@ where
     x.set_slot_layout(SlotLayout::Full);
     apply_transform(module, &mut acc, &x, transform, workspace, keys, &mut scratch)?;
     acc.set_slot_layout(SlotLayout::Replicated(layout));
-    dst.set_k((acc.log_budget() + log_delta).into());
-    module.ckks_round(dst, &acc, &mut scratch)
+    // The result at its own width, `extra_bits` above `log_delta`; a narrower `dst` takes it through a modulus drop.
+    let k = acc.log_budget() + log_delta;
+    if k <= dst.k().as_usize() {
+        dst.set_k(k.into());
+        return module.ckks_round(dst, &acc, &mut scratch);
+    }
+    x.set_meta(acc.meta());
+    x.set_scale(crate::Scale::Log(log_delta));
+    x.set_log_budget(acc.log_budget());
+    module.ckks_round(&mut x, &acc, &mut scratch)?;
+    module.ckks_copy(dst, &x, &mut scratch)
 }
 
 /// Wide stage gathering onto period `k`: `dst = T(M(src))` computed `extra_bits` under `src`'s scale, where the normalized trace `T`
@@ -332,6 +342,7 @@ where
         .max(module.ckks_rotate_tmp_bytes(&wide, key_infos))
         .max(module.ckks_add_tmp_bytes(layout.size()))
         .max(module.ckks_copy_tmp_bytes(&wide, ct_infos))
+        .max(module.ckks_copy_tmp_bytes(ct_infos, &wide))
         .max(module.ckks_round_tmp_bytes(ct_infos, &wide))
         .max(module.ckks_div_pow2_tmp_bytes(layout.size()));
     3 * ct_bytes + ops
@@ -377,6 +388,96 @@ where
         conv.layout,
         conv.log_delta,
         conv.extra_bits,
+        keys,
+        scratch,
+    )
+}
+
+/// The bits under its scale at which a replicated transform of `ct` runs: the shaping depth of its scale, as a
+/// rotation or a product of its layout.
+pub(crate) fn replicated_transform_extra_bits<C: CKKSInfos>(ct: &C) -> usize {
+    crate::shaping::product_depth(ct.slot_layout(), ct.log_delta()).unwrap_or(0)
+}
+
+pub(crate) fn ckks_replicated_transform_tmp_bytes_derived<BE, Rg: Ring, C, K>(
+    module: &Module<BE>,
+    ct_infos: &C,
+    key_infos: &K,
+    transform: &ReplicatedTransform<BE, Rg>,
+) -> usize
+where
+    BE: Backend,
+    Module<BE>: CKKSLinearTransformationOps<BE, Rg> + CKKSCopyOps<BE, Rg> + CKKSRoundOps<BE, Rg>,
+    C: CKKSCtBounds,
+    K: GGLWEInfos,
+{
+    let layout = working_layout(ct_infos, replicated_transform_extra_bits(ct_infos), 0);
+    let wide = CKKSLayout {
+        glwe_layout: layout,
+        meta: ct_infos.meta(),
+    };
+    let ops = transform_tmp_bytes(module, &wide, key_infos, transform)
+        .max(module.ckks_copy_tmp_bytes(&wide, ct_infos))
+        .max(module.ckks_copy_tmp_bytes(ct_infos, &wide))
+        .max(module.ckks_round_tmp_bytes(ct_infos, &wide));
+    2 * ct_bytes::<BE>(&layout) + ops
+}
+
+pub(crate) fn ckks_replicated_transform_derived<BE, Rg: Ring, Dst, Src, H>(
+    module: &Module<BE>,
+    dst: &mut Dst,
+    src: &Src,
+    transform: &ReplicatedTransform<BE, Rg>,
+    workspace: &mut ReplicatedTransformWorkspace<BE, Rg>,
+    keys: &H,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> Result<()>
+where
+    BE: Backend,
+    Module<BE>: CKKSLinearTransformationOps<BE, Rg> + CKKSCopyOps<BE, Rg> + CKKSRoundOps<BE, Rg>,
+    Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+    Src: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+    H: GetAutomorphismKey<BE, Rg> + GetTensorKey<BE, Rg>,
+{
+    const OP: &str = "ckks_replicated_transform";
+    check_destination(OP, dst, src)?;
+    let SlotLayout::Replicated(layout) = src.slot_layout() else {
+        return Err(invalid(OP, "the source must have a replicated slot layout"));
+    };
+    // A rotation by other than a multiple of `R` moves the guard classes onto the data.
+    let period = 1i64 << layout.log_r();
+    if transform.rotations().iter().any(|&rotation| rotation % period != 0) {
+        return Err(invalid(
+            OP,
+            "the transform rotates by a slot count that is not a multiple of the period R",
+        ));
+    }
+    let extra_bits = replicated_transform_extra_bits(src);
+    let working = working_layout(src, extra_bits, 0);
+    check_workspace(OP, workspace, &working, transform)?;
+    // Every rotation key at the working width, then the arena against the query of the widest, before any write.
+    let mut bytes = 0;
+    for rotation in transform.rotations() {
+        let key = keys
+            .get_automorphism_key(module.ckks_galois_element::<Rg>(rotation), working.k)
+            .map_err(|source| CKKSCompositionError::MissingAutomorphismKey {
+                op: OP,
+                rotation,
+                k: working.k.into(),
+                source,
+            })?;
+        bytes = bytes.max(ckks_replicated_transform_tmp_bytes_derived(module, src, &key, transform));
+    }
+    crate::layouts::validation::ensure_scratch(OP, scratch, bytes)?;
+    wide_onto_replicated(
+        module,
+        dst,
+        src,
+        transform,
+        workspace,
+        layout,
+        src.log_delta(),
+        extra_bits,
         keys,
         scratch,
     )

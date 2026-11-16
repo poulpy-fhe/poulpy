@@ -259,6 +259,12 @@ const MAX_BABY_STEPS: usize = 1 << 12;
 /// Powers [`populate_in`] adds to a `basis` of a polynomial of `degree`, replaying [`split_degree`] on the stack: a query
 /// reads this, and a step runs its query at entry. Past [`MAX_BABY_STEPS`] it bounds the count by the whole schedule.
 pub(crate) fn populated_powers(degree: usize, log_split: usize, parity: Parity, basis: Basis) -> usize {
+    populated_powers_union([(degree, log_split, parity)], basis)
+}
+
+/// [`populated_powers`] of one basis populated for every schedule `(degree, log_split, parity)` of `schedules`, a power
+/// the schedules share counted once.
+pub(crate) fn populated_powers_union(schedules: impl IntoIterator<Item = (usize, usize, Parity)> + Clone, basis: Basis) -> usize {
     struct Seen {
         pow2: u64,
         rest: [u64; MAX_BABY_STEPS / 64],
@@ -280,15 +286,21 @@ pub(crate) fn populated_powers(degree: usize, log_split: usize, parity: Parity, 
         let c = if basis == Basis::Chebyshev { a.abs_diff(b) } else { 0 };
         1 + add(seen, a, basis) + add(seen, b, basis) + add(seen, c, basis)
     }
-    let baby_limit = (1usize << log_split).min(degree + 1);
-    if baby_limit > MAX_BABY_STEPS {
-        return baby_limit + usize::BITS as usize;
+    let baby_limits: Vec<usize> = schedules
+        .clone()
+        .into_iter()
+        .map(|(degree, log_split, _)| (1usize << log_split).min(degree + 1))
+        .collect();
+    if baby_limits.iter().any(|&limit| limit > MAX_BABY_STEPS) {
+        return baby_limits.iter().sum::<usize>() + usize::BITS as usize;
     }
     let mut seen = Seen {
         pow2: 0,
         rest: [0; MAX_BABY_STEPS / 64],
     };
-    populate_targets(degree, log_split, parity)
+    schedules
+        .into_iter()
+        .flat_map(|(degree, log_split, parity)| populate_targets(degree, log_split, parity))
         .map(|n| add(&mut seen, n, basis))
         .sum()
 }

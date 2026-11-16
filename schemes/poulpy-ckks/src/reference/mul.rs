@@ -706,7 +706,7 @@ pub(crate) struct MulStamp {
 
 impl MulStamp {
     /// The stamp of a result computed `lambda` bits under the scale.
-    fn widen(&self, lambda: usize) -> Self {
+    pub(crate) fn widen(&self, lambda: usize) -> Self {
         Self {
             log_delta: self.log_delta + lambda,
             ..*self
@@ -861,7 +861,7 @@ where
 }
 
 /// Width of the tensor intermediate of a product of operands up to `tensor_k` into a result of `res_k` bits.
-fn tensor_intermediate_k(tensor_k: TorusPrecision, res_k: usize) -> TorusPrecision {
+pub(crate) fn tensor_intermediate_k(tensor_k: TorusPrecision, res_k: usize) -> TorusPrecision {
     tensor_k.max(res_k.into())
 }
 

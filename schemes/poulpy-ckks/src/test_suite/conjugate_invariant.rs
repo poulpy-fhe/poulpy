@@ -714,6 +714,8 @@ macro_rules! conjugate_invariant_ckks_test_suite {
             run_replicated!(test_replicated_conversions_round_trip);
             run_replicated!(test_replicated_conversions_round_trip_factored);
             run_replicated!(test_replicated_transforms_apply_matrices);
+            run_replicated!(test_replicated_transform_maps_values);
+            run_replicated!(test_replicated_inner_sums_are_shaped);
             #[test]
             fn ckks_ci_round_error_is_shaped() {
                 let params = $params;

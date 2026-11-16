@@ -15,19 +15,22 @@ use crate::{
     api::{
         CKKSAllOpsTmpBytes, CKKSBootstrappingOps, CKKSCopyOps, CKKSDFTMatrixOps, CKKSDFTMatrixPreparedFactory, CKKSDFTOps,
         CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar, CKKSLinearTransformationOps, CKKSPow2Ops,
+        CKKSReplicatedBootstrapOps,
     },
     layouts::{
         BootstrappingContextPrepared, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingLinearKeys, BootstrappingPipeline,
         BootstrappingPlan, BootstrappingTechniques, CKKSCiphertextOwned, CKKSPlaintextOwned, DFTOutputFormat, DFTPlan, DFTType,
         Decode, DftScalar, EncapsulationKeysLayout, Encode, EncodedLut, EvalModPlan, EvalModType, EvalRoundPlus,
-        SparseSecretEncapsulation,
+        ReplicatedBootstrapPlan, ReplicatedBootstrapping, ReplicatedLut, SparseSecretEncapsulation,
+        replicated::ReplicatedTransformModule,
     },
-    oep::{CKKSBootstrappingImpl, CKKSEncapsulatedModUpImpl},
+    oep::{CKKSBootstrappingImpl, CKKSEncapsulatedModUpImpl, CKKSReplicatedBootstrapImpl},
     polynomial::SplitStrategy,
+    shaping::ShapingUnit,
     test_suite::{CKKSTestParams, presets::compile_context},
 };
 use poulpy_core::{
-    GLWEAdd, GLWEDiagonalProd, GLWEFill, GLWELinearTransformationBabyStepsBytesOf,
+    GLWEAdd, GLWEDiagonalProd, GLWEFill, GLWELinearTransformationBabyStepsBytesOf, GLWETrace,
     ScratchArenaTakeGLWELinearTransformationBabySteps,
     api::{GGLWEPreparedFactory, GLWEAutomorphismKeyPreparedFactory, GLWETensorKeyPreparedFactory},
     layouts::{
@@ -451,6 +454,187 @@ where
                 .collect()
         }),
     }
+}
+
+/// The LUTs of a replicated fixture case.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ReplicatedLuts {
+    None,
+    /// Two general LUTs of 5 entries, which share the exponential and its powers.
+    General,
+    /// One binary LUT.
+    Binary,
+}
+
+/// Label, packed plan, input slot kind, LUTs and encapsulation of each replicated fixture case.
+const REPLICATED_CASES: [(&str, bool, SlotsKind, ReplicatedLuts, bool); 6] = [
+    ("packed", true, SlotsKind::Complex, ReplicatedLuts::None, true),
+    ("unpacked", false, SlotsKind::Complex, ReplicatedLuts::None, false),
+    ("real slots", false, SlotsKind::Real, ReplicatedLuts::None, false),
+    ("general LUTs", false, SlotsKind::Complex, ReplicatedLuts::General, false),
+    (
+        "general LUTs on real slots",
+        false,
+        SlotsKind::Real,
+        ReplicatedLuts::General,
+        true,
+    ),
+    ("binary LUT", false, SlotsKind::Complex, ReplicatedLuts::Binary, false),
+];
+
+/// The outputs of `ckks_replicated_bootstrap` and `ckks_replicated_functional_bootstrap` of each replicated fixture
+/// case, on `k = 8` values of period `R = 2` from the paper's plan, through the module on exactly its query.
+fn run_replicated_bootstraps<BE, F>(params: CKKSTestParams, module: &Module<BE>) -> Vec<(&'static str, Vec<Snapshot>)>
+where
+    BE: Backend<ZnxWord = i64> + CKKSReplicatedBootstrapImpl,
+    F: CKKSEncodingScalar,
+    Module<BE>: ReplicatedTransformModule<BE, F>
+        + CKKSEncodingHostOps<BE, F>
+        + GLWETrace<BE>
+        + GLWEAutomorphismKeyPreparedFactory<BE>
+        + GLWETensorKeyPreparedFactory<BE>
+        + GGLWEPreparedFactory<BE>
+        + GLWEFill<BE>,
+    FixtureKeys<BE>: BootstrappingKeys<BE>,
+{
+    let (n, b) = (module.n(), params.base2k);
+    let layout = ShapingUnit::U4_15.layout(3).unwrap();
+    let value = |v: f64| F::from_f64(v).unwrap();
+    let encoding = ReplicatedLut::<BE>::general_replicated_tmp_bytes::<BE, F>(module);
+    REPLICATED_CASES
+        .into_iter()
+        .map(|(label, packed, slots, lut_kind, encapsulate)| {
+            let paper = ReplicatedBootstrapPlan {
+                packed,
+                ..ReplicatedBootstrapPlan::paper(layout)
+            };
+            let plan = if lut_kind == ReplicatedLuts::General {
+                let em = paper.eval_mod;
+                ReplicatedBootstrapPlan {
+                    eval_mod: EvalModPlan::complex_exponential(
+                        em.f_mod_degree,
+                        em.f_mod_interval,
+                        em.f_mod_log_interval_reduction,
+                        em.split_strategy,
+                        em.coeffs_meta,
+                        em.f_mod_log_delta,
+                    ),
+                    ..paper
+                }
+            } else {
+                paper
+            };
+            let luts: Vec<ReplicatedLut<BE>> = match lut_kind {
+                ReplicatedLuts::None => Vec::new(),
+                ReplicatedLuts::General => {
+                    let meta = CoeffsMeta::from_delta_budget(plan.functional_lut_log_delta(5).unwrap(), 20);
+                    [[1.0, -2.0, 0.5, 3.0, -1.5], [0.0, 1.0, 4.0, 9.0, 16.0]]
+                        .iter()
+                        .map(|table| {
+                            let table: Vec<F> = table.iter().map(|&v| value(v)).collect();
+                            with_scratch::<BE, _>(encoding, |s| {
+                                ReplicatedLut::<BE>::general_replicated(
+                                    module,
+                                    &table,
+                                    b.into(),
+                                    meta,
+                                    SplitStrategy::MinDepth,
+                                    layout,
+                                    s,
+                                )
+                            })
+                            .unwrap()
+                        })
+                        .collect()
+                }
+                ReplicatedLuts::Binary => vec![
+                    with_scratch::<BE, _>(encoding, |s| {
+                        ReplicatedLut::<BE>::binary_replicated(
+                            module,
+                            &plan,
+                            value(1.5),
+                            value(-0.5),
+                            31,
+                            3,
+                            b.into(),
+                            CoeffsMeta::from_delta_budget(plan.eval_mod.f_mod_log_delta, 20),
+                            SplitStrategy::MinDepth,
+                            s,
+                        )
+                    })
+                    .unwrap(),
+                ],
+            };
+            let plan = match luts.first() {
+                Some(lut) => plan.with_functional_bootstrap(lut).unwrap(),
+                None => plan,
+            };
+            let compile = ReplicatedBootstrapping::<BE, F>::new_tmp_bytes(module, &plan, b.into()).unwrap();
+            let ctx =
+                with_scratch::<BE, _>(compile, |s| ReplicatedBootstrapping::<BE, F>::new(module, plan, b.into(), s)).unwrap();
+
+            let k_out = plan.k_in() + plan.level_log_delta;
+            let k_in = plan.k_in() - (plan.log_delta - plan.level_log_delta);
+            let replicated = |mut ct: CKKSLayout| {
+                ct.meta.slot_layout = SlotLayout::Replicated(layout);
+                ct
+            };
+            let in_layout = replicated(ct_layout(n, b, k_in, plan.level_log_delta, slots));
+            let out_layout = replicated(ct_layout(n, b, k_out, plan.level_log_delta, SlotsKind::Complex));
+            let atk = key_layout(n, b, plan.key_k(k_out), 1, 1, 1);
+            let shapes = plan.key_layouts(&[], n.into(), b.into(), k_out, b, b + 1, true);
+            let encapsulation = shapes.encapsulation.unwrap();
+            let gglwe = |key: &poulpy_core::layouts::GLWESwitchingKeyLayout| {
+                key_layout_offset(
+                    n,
+                    b,
+                    key.dnum.as_usize() * key.k_digit.as_usize(),
+                    key.k_digit.as_usize(),
+                    key.k_offset.as_usize(),
+                    1,
+                    1,
+                )
+            };
+            let (d2s, s2d) = (
+                gglwe(&encapsulation.dense_to_sparse),
+                gglwe(&encapsulation.sparse_to_dense.unwrap()),
+            );
+            let mut elements = ctx.galois_elements(module);
+            elements.push(-1);
+            elements.sort_unstable();
+            elements.dedup();
+            let keys_layout = keys_layout(elements.iter().copied(), &atk, &d2s, &s2d, None, encapsulate);
+            let keys = FixtureKeys {
+                rotation_keys: elements
+                    .iter()
+                    .map(|&p| (p, prepared_automorphism_key(module, &atk, p, (p as u8).wrapping_add(41))))
+                    .collect(),
+                tensor_key: prepared_tensor_key(module, &atk, 43),
+                encapsulation_keys: encapsulate
+                    .then(|| (prepared_gglwe(module, &d2s, 47), Some(prepared_gglwe(module, &s2d, 53)))),
+                first_factor_keys: HashMap::new(),
+            };
+
+            let ct_in = fixture_ciphertext(module, &in_layout, 59);
+            let mut outs: Vec<CKKSCiphertextOwned<BE>> = (0..luts.len().max(1))
+                .map(|index| fixture_ciphertext(module, &out_layout, 61 + index as u8))
+                .collect();
+            let mut workspace = ctx.alloc_workspace(module, &outs[0]);
+            let result = if luts.is_empty() {
+                let bytes = module.ckks_replicated_bootstrap_tmp_bytes(&outs[0], &ct_in, &ctx, &keys_layout);
+                with_scratch::<BE, _>(bytes, |s| {
+                    module.ckks_replicated_bootstrap(&mut outs[0], &ct_in, &ctx, &mut workspace, &keys, s)
+                })
+            } else {
+                let bytes = module.ckks_replicated_functional_bootstrap_tmp_bytes(&outs[0], &ct_in, &ctx, &luts, &keys_layout);
+                with_scratch::<BE, _>(bytes, |s| {
+                    module.ckks_replicated_functional_bootstrap(&mut outs, &ct_in, &ctx, &luts, &mut workspace, &keys, s)
+                })
+            };
+            result.unwrap_or_else(|err| panic!("replicated bootstrapping, {label}: {err}"));
+            (label, outs.iter().map(|out| snapshot::<BE, _, Standard>(out)).collect())
+        })
+        .collect()
 }
 
 type Outcome = (Result<(), String>, Vec<Snapshot>);
@@ -954,12 +1138,13 @@ where
 /// Compare selected bootstrapping implementations on the same fixture inputs
 /// and key coefficients: C2S-first, S2C-first, real slots, EvalRound+,
 /// encapsulation, functional bootstrapping, the raise alone, the steps composed by
-/// hand, the masked CoeffsToSlots, the raise of a gap and the merged SlotsToCoeffs
-/// factor, each within its own exact guarded scratch budget.
+/// hand, the masked CoeffsToSlots, the raise of a gap, the merged SlotsToCoeffs
+/// factor, and the replicated bootstrapping, packed, unpacked, of real slots and
+/// with general and binary LUTs, each within its own exact guarded scratch budget.
 pub fn test_bootstrapping_parity<BR, BT, F>(params: CKKSTestParams, module_ref: &Module<BR>, module_test: &Module<BT>)
 where
-    BR: Backend<ZnxWord = i64> + CKKSBootstrappingImpl + HostStaged,
-    BT: Backend<ZnxWord = i64> + CKKSBootstrappingImpl + HostStaged,
+    BR: Backend<ZnxWord = i64> + CKKSBootstrappingImpl + CKKSReplicatedBootstrapImpl + HostStaged,
+    BT: Backend<ZnxWord = i64> + CKKSBootstrappingImpl + CKKSReplicatedBootstrapImpl + HostStaged,
     F: CKKSEncodingScalar + DftScalar + Sync,
     Module<BR>: CKKSDFTMatrixPreparedFactory<BR>
         + CKKSDFTOps<BR>
@@ -973,7 +1158,9 @@ where
         + GGLWEPreparedFactory<BR>
         + GLWEFill<BR>
         + crate::api::CKKSRightOperandPreparedFactory<BR>
-        + CyclotomicOrder,
+        + CyclotomicOrder
+        + ReplicatedTransformModule<BR, F>
+        + GLWETrace<BR>,
     Module<BT>: CKKSDFTMatrixPreparedFactory<BT>
         + CKKSDFTOps<BT>
         + CKKSDFTMatrixOps<BT, F>
@@ -986,7 +1173,9 @@ where
         + GGLWEPreparedFactory<BT>
         + GLWEFill<BT>
         + crate::api::CKKSRightOperandPreparedFactory<BT>
-        + CyclotomicOrder,
+        + CyclotomicOrder
+        + ReplicatedTransformModule<BT, F>
+        + GLWETrace<BT>,
     Module<BR>: CKKSEncodingOps<BR, F, ConjugateInvariant>,
     Module<BT>: CKKSEncodingOps<BT, F, ConjugateInvariant>,
     CKKSPlaintextOwned<BR>: GLWEToBackendRef<BR> + CKKSCtBounds + GLWEDiagonalProd<BR> + LWEInfos,
@@ -1014,5 +1203,12 @@ where
         want,
         run_coeffs_mask::<BT, F>(params, module_test),
         "coefficient mask differs"
+    );
+    let want = run_replicated_bootstraps::<BR, F>(params, module_ref);
+    assert_untagged("replicated bootstrapping", want.iter().flat_map(|(_, outputs)| outputs));
+    assert_eq!(
+        want,
+        run_replicated_bootstraps::<BT, F>(params, module_test),
+        "replicated bootstrapping differs"
     );
 }
