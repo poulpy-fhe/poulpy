@@ -1,15 +1,18 @@
 //! The parameters the client and the server agree on: the ring, the scales and widths of a round, the security bounds,
 //! the shape of every key, and the maps of a round.
 //!
-//! The 128-bit bounds are those `poulpy-ckks` uses for its presets, from the table of
-//! [sparse-key-estimate](https://github.com/jdumezy/sparse-key-estimate/blob/aa2c40d4eee4551e6fba06c55d7432f6918e1597/Precomputed-Tables/128bits_security.md)
-//! at `N = 2^15` and an error of deviation 3.2.
+//! The 128-bit bounds are those `poulpy-ckks` certifies its presets with: the rlwe-params table vendored in
+//! `poulpy-core`, read through [`poulpy_core::security`], at `N = 2^15` and an error of deviation 3.2.
 
 use anyhow::{Result, ensure};
 use poulpy_ckks::api::LinearTransformationStrategy;
-use poulpy_core::layouts::{
-    Degree, Diagonals, GGLWELayout, GLWEAutomorphismKeyLayout, GLWETensorKeyLayout, LinearTransformationLayout, Rank,
-    TorusPrecision, optimal_bsgs_giant_step,
+use poulpy_core::{
+    Distribution,
+    layouts::{
+        Degree, Diagonals, GGLWELayout, GLWEAutomorphismKeyLayout, GLWETensorKeyLayout, LinearTransformationLayout, Rank,
+        TorusPrecision, optimal_bsgs_giant_step,
+    },
+    security::{SecretSpec, Security},
 };
 
 use crate::{
@@ -32,20 +35,16 @@ pub(crate) const LOG_DELTA_MAPS: usize = 20;
 /// Bits a round keeps above the bootstrapping input.
 const MARGIN: usize = 3;
 
-/// A secret's Hamming weight and the largest modulus, in bits, under it at 128 bits of security.
-pub(crate) struct SecretBound {
-    pub(crate) hamming_weight: usize,
-    pub(crate) max_log_modulus: usize,
-}
-
-pub(crate) const DENSE_SECRET: SecretBound = SecretBound {
-    hamming_weight: 1024,
-    max_log_modulus: 851,
-};
-pub(crate) const SPARSE_SECRET: SecretBound = SecretBound {
-    hamming_weight: 32,
-    max_log_modulus: 162,
-};
+/// The level every key and ciphertext is certified at: their moduli stay under the bound of their secret.
+pub(crate) const SECURITY: Security = Security::Bits128;
+/// Hamming weight of the client's ternary secret.
+pub(crate) const DENSE_HAMMING_WEIGHT: usize = 1024;
+/// Hamming weight of the ternary secret the raise switches to and back.
+pub(crate) const SPARSE_HAMMING_WEIGHT: usize = 32;
+/// The client's secret, as the bounds see it.
+pub(crate) const DENSE_SECRET: SecretSpec = SecretSpec::new(1 << LOG_N, Distribution::TernaryFixed(DENSE_HAMMING_WEIGHT));
+/// The secret of the raise, on the same ring.
+pub(crate) const SPARSE_SECRET: SecretSpec = SecretSpec::new(1 << LOG_N, Distribution::TernaryFixed(SPARSE_HAMMING_WEIGHT));
 
 /// Bits a key keeps past its input and one digit, for its own error to stay below the input's last bit.
 const KEY_NOISE_MARGIN: usize = 2;
@@ -96,7 +95,8 @@ impl Params {
         // A round spends `LOG_DELTA_MAPS` bits of modulus on `L` and on the shifts of chi, `OUTPUT_LOG_DELTA` on the
         // product of chi, and the margin.
         let bootstrapping = Bootstrapping::new(MARGIN + 2 * LOG_DELTA_MAPS + OUTPUT_LOG_DELTA)?;
-        let key = key_layout(bootstrapping.output_k, DENSE_SECRET.max_log_modulus)?;
+        let key = key_layout(bootstrapping.output_k, SECURITY.max_log_q(DENSE_SECRET)?)?;
+        SECURITY.check(DENSE_SECRET, "round key", &key)?;
         Ok(Self {
             bootstrapping,
             maps: [linear_layer(), shift_x(1), shift_x(2)],

@@ -18,7 +18,7 @@ use poulpy_hal::layouts::{HostBytesBackend, Module};
 
 use crate::{
     layout::SLOTS,
-    params::{BASE2K, DENSE_SECRET, LOG_DELTA, LOG_MSG_RATIO, LOG_N, SPARSE_SECRET},
+    params::{BASE2K, DENSE_SECRET, LOG_DELTA, LOG_MSG_RATIO, LOG_N, SECURITY, SPARSE_HAMMING_WEIGHT, SPARSE_SECRET},
 };
 
 /// SlotsToCoeffs on the 14 slot layers: the layers each factor merges, in evaluation order, and the scale of its
@@ -97,7 +97,7 @@ impl Bootstrapping {
             BootstrappingPipeline::S2CFirst,
             BootstrappingTechniques {
                 sparse_secret_encapsulation: Some(SparseSecretEncapsulation {
-                    hamming_weight: SPARSE_SECRET.hamming_weight,
+                    hamming_weight: SPARSE_HAMMING_WEIGHT,
                 }),
                 eval_round_plus: None,
             },
@@ -107,28 +107,27 @@ impl Bootstrapping {
         )?
         .with_c2s_guard_bits(C2S_GUARD_BITS)?
         // Scales SlotsToCoeffs so the table reads `m/2` on its unit circle.
-        .with_functional_bootstrap(&lut)?;
+        .with_functional_bootstrap(&lut)?
+        // Generating the keys checks the client's secret and every key against the level.
+        .with_security(SECURITY);
 
         let log_modulus = LOG_DELTA + LOG_MSG_RATIO;
         let input_k = plan.input_k(log_modulus);
         let output_k = input_k + round_bits;
         let raised_k = plan.functional_bootstrap_k(output_k, LOG_DELTA, &lut)?;
-        ensure!(
-            raised_k <= DENSE_SECRET.max_log_modulus,
-            "the raised ciphertext of {raised_k} bits is above the dense secret's bound of {}",
-            DENSE_SECRET.max_log_modulus
-        );
+        SECURITY.check_log_q(DENSE_SECRET, "raised ciphertext", raised_k)?;
         // Each key as wide as the widest ciphertext it switches, with the fewest digits under its secret's bound.
         let keys = BootstrappingKeyPolicy {
             log_n: LOG_N,
             base2k: BASE2K,
             rank: 1,
-            dense_log_modulus: DENSE_SECRET.max_log_modulus,
-            sparse_log_modulus: SPARSE_SECRET.max_log_modulus,
+            dense_log_modulus: SECURITY.max_log_q(DENSE_SECRET)?,
+            sparse_log_modulus: SECURITY.max_log_q(SPARSE_SECRET)?,
             max_dsize: None,
             dense_to_sparse_dsize: 1,
         }
         .keys_layout(&plan, raised_k, input_k, LOG_DELTA)?;
+        plan.check_key_security(SECURITY, DENSE_SECRET, &keys)?;
         Ok(Self {
             plan,
             lut,
@@ -176,16 +175,18 @@ fn dft_plan(kind: DFTType, layers: &[usize], meta: CoeffsMeta) -> Result<DFTPlan
 
 #[cfg(test)]
 mod tests {
-    use poulpy_core::layouts::LWEInfos;
-
     use super::*;
 
     #[test]
-    fn widths_and_keys_fit_the_bounds() {
+    fn widths_and_keys_are_certified() {
         let boot = crate::params::Params::new().unwrap().bootstrapping;
         assert_eq!((boot.input_k, boot.output_k, boot.raised_k), (125, 203, 624));
-        for key in boot.keys.rotation_key_layouts() {
-            assert!(key.k().as_usize() <= DENSE_SECRET.max_log_modulus);
-        }
+        assert_eq!(boot.plan.security(), Some(SECURITY));
+        boot.plan.check_key_security(SECURITY, DENSE_SECRET, &boot.keys).unwrap();
+        // The bounds the keys are shaped under, at rlwe-params v0.2.0.
+        assert_eq!(
+            (SECURITY.max_log_q(DENSE_SECRET), SECURITY.max_log_q(SPARSE_SECRET)),
+            (Ok(851), Ok(162))
+        );
     }
 }
