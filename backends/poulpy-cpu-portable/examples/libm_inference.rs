@@ -10,7 +10,7 @@ mod libm_common;
 
 use anyhow::Result;
 use poulpy_ckks::{CKKSInfos, api::CKKSAddOps, polynomial::SplitStrategy, test_suite::helpers::upload_pt};
-use poulpy_hal::api::ScratchOwnedBorrow;
+use poulpy_hal::{api::ScratchOwnedBorrow, layouts::Standard};
 use poulpy_libm::{
     arithmetic::CKKSArithmeticOps,
     hyperbolic::{CKKSHyperbolicOps, HyperbolicOptions, TanhPlan},
@@ -42,9 +42,8 @@ fn run() -> Result<()> {
     let circuit_consumed = tanh_consumed + 2;
     let tanh = host_tanh.map_plaintexts(|pt| upload_pt(&setup.module, pt));
     let mut context = setup.prepare(circuit_consumed, |module, sizing, params| {
-        module
-            .ckks_tanh_tmp_bytes(sizing, sizing, &tanh, &params.tsk_layout())
-            .max(module.ckks_scalbn_tmp_bytes(sizing))
+        CKKSHyperbolicOps::<_, Standard>::ckks_tanh_tmp_bytes(module, sizing, sizing, &tanh, &params.tsk_layout())
+            .max(CKKSArithmeticOps::<_, Standard>::ckks_scalbn_tmp_bytes(module, sizing))
     });
 
     // One ciphertext carries an entire batch of independent model scores.

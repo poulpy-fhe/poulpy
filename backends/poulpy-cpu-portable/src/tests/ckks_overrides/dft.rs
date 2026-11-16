@@ -628,7 +628,7 @@ unsafe impl<F: CKKSEncodingScalar + DftScalar> CKKSDFTMatrixImpl<F> for Override
 fn bootstrap_sizing_includes_selected_dft_workspace() {
     use poulpy_ckks::api::CKKSBootstrappingOps;
     use poulpy_ckks::layouts::DFTType;
-    use poulpy_ckks::layouts::eval_mod::EvalModPlan;
+    use poulpy_ckks::layouts::eval_mod::{EvalModPlan, EvalModType};
     use poulpy_ckks::layouts::{
         BootstrappingContextPrepared, BootstrappingKeysLayout, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques,
     };
@@ -721,7 +721,12 @@ fn bootstrap_sizing_includes_selected_dft_workspace() {
         BootstrappingPipeline::C2SFirst,
         BootstrappingTechniques::default(),
         self::plan(DFTType::Encode, DFTOutputFormat::SplitRealAndImag),
-        EvalModPlan::complex_exponential(1, 1, 0, SplitStrategy::MinDepth, meta, 16),
+        // The plan refuses the exponential on C2S-first.
+        EvalModPlan {
+            eval_mod_type: EvalModType::CosCheby,
+            scaling: None,
+            ..eval_mod
+        },
         self::plan(DFTType::Decode, DFTOutputFormat::SplitRealAndImag),
     )
     .unwrap();

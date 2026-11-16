@@ -468,6 +468,32 @@ impl BootstrappingPreset {
             PresetSpec {
                 derived: true,
                 eval_mod: EvalModSpec {
+                    eval_mod_type: EvalModType::CosHKEven,
+                    interval,
+                    degree,
+                    log_interval_reduction,
+                    ..self.spec.eval_mod
+                },
+                ..self.spec
+            },
+        )
+    }
+
+    /// Re-derives the preset with EvalMod's polynomial as the complex exponential: the continuous fit of degree `degree`
+    /// on `interval` integers on each side of zero, followed by `log_interval_reduction` squarings.
+    ///
+    /// The fit holds on the whole interval, so the message may fill the modulus, down to a message ratio of 1 bit; the
+    /// bound on `interval` is that of [`Self::with_eval_mod_polynomial`], on the whole raised coefficient. The plan
+    /// states what EvalMod then leaves and which bootstrap refuses it: see [`BootstrappingPlan`].
+    ///
+    /// Fails on a C2S-first preset or one with EvalRound+.
+    pub fn with_eval_mod_exponential(&self, interval: usize, degree: usize, log_interval_reduction: usize) -> Result<Self> {
+        build(
+            "with_eval_mod_exponential",
+            PresetSpec {
+                derived: true,
+                eval_mod: EvalModSpec {
+                    eval_mod_type: EvalModType::ExpCmplx,
                     interval,
                     degree,
                     log_interval_reduction,
@@ -544,6 +570,28 @@ impl BootstrappingPreset {
                 derived: true,
                 c2s_schedule,
                 c2s_first_factor_on_raise: true,
+                s2c_schedule,
+                ..self.spec
+            },
+        )
+    }
+
+    /// Re-derives the preset at degree `2^log_n`, with the transforms `c2s_schedule` and `s2c_schedule` for its slots, the
+    /// dense secret of that degree and the sparse secret of the subring of its gap, to whose modulus bounds at the
+    /// preset's level every key is re-fitted. Fails when the level has no bound for a secret at that degree, or when the
+    /// preset's widths exceed the bounds, so a preset this narrows must be narrow by then.
+    pub fn with_log_n(
+        &self,
+        log_n: usize,
+        c2s_schedule: &'static [(usize, usize)],
+        s2c_schedule: &'static [(usize, usize)],
+    ) -> Result<Self> {
+        build(
+            "with_log_n",
+            PresetSpec {
+                log_n,
+                derived: true,
+                c2s_schedule,
                 s2c_schedule,
                 ..self.spec
             },
@@ -1066,7 +1114,11 @@ fn build(op: &'static str, spec: PresetSpec) -> Result<BootstrappingPreset> {
             f_mod_interval: spec.eval_mod.interval,
             f_mod_log_interval_reduction: spec.eval_mod.log_interval_reduction,
             f_mod_inv_degree: spec.eval_mod.inverse_degree,
-            scaling: spec.eval_mod.scaling,
+            scaling: match spec.eval_mod.eval_mod_type {
+                // The relabel by the message ratio that ends the raise lands on the unit circle.
+                EvalModType::ExpCmplx => Some(std::f64::consts::TAU / (spec.log_msg_ratio as f64).ckks_exp2()),
+                _ => spec.eval_mod.scaling,
+            },
             split_strategy: spec.eval_mod.split_strategy,
             coeffs_meta: CoeffsMeta::from_delta_budget(spec.eval_mod.coeffs_log_delta, spec.eval_mod.coeffs_log_budget),
             f_mod_log_delta: spec.eval_mod.log_delta,
@@ -1269,6 +1321,92 @@ mod tests {
             [(208, 7), (208, 6), (156, 1), (104, 1)]
         );
         assert_eq!(key_shapes([&capped.keys_layout().tensor_key]), [(208, 6)]);
+    }
+
+    #[test]
+    fn with_log_n_takes_the_bounds_of_its_degree() {
+        const C2S: &[(usize, usize)] = &[(3, 1), (3, 1024), (3, 128), (3, 16), (2, 2)];
+        const S2C: &[(usize, usize)] = &[(4, 4), (4, 64), (6, 2048)];
+        let wide = n16_d35_k685_p19_s2c_ffr_ci()
+            .unwrap()
+            .with_slots_to_coeffs(&S2C_SCHEDULE)
+            .unwrap()
+            .with_eval_mod_ring(EvalModRing::Standard)
+            .unwrap();
+        let Err(err) = wide.with_log_n(15, C2S, S2C) else {
+            panic!("the widths of a logN16 preset exceed the logN15 bound");
+        };
+        assert_eq!(
+            err.to_string(),
+            "rotation key: a digit of 52 bits on a 1155-bit input needs a modulus of 1248 bits, above 851"
+        );
+        // The table has no row at degree 2^11, which schedules of ten layers fill.
+        const C2S_11: &[(usize, usize)] = &[(3, 1), (3, 64), (2, 8), (2, 2)];
+        const S2C_11: &[(usize, usize)] = &[(3, 4), (3, 32), (4, 512)];
+        let err = wide
+            .with_log_n(11, C2S_11, S2C_11)
+            .expect_err("a dense secret of degree 2^11 is certified");
+        let (op, source) = security_refusal(&err);
+        assert_eq!(op, "with_log_n");
+        assert!(
+            matches!(
+                source,
+                CoreError::SecurityUnsupported {
+                    security: Security::Bits128,
+                    secret: SecretSpec {
+                        n: 2048,
+                        dist: Distribution::TernaryFixed(1024),
+                    },
+                    reason: "the table has no bound for this secret at this degree",
+                }
+            ),
+            "{source:?}"
+        );
+
+        let scales = PresetScales {
+            log_delta: 28,
+            log_msg_ratio: 1,
+            c2s_guard_bits: 4,
+            c2s_log_delta: 34,
+            s2c_log_delta: 16,
+            eval_mod_log_delta: 36,
+            eval_mod_coeffs_log_delta: 30,
+        };
+        let narrow = wide
+            .with_eval_mod_exponential(14, 15, 4)
+            .unwrap()
+            .with_scales(scales)
+            .unwrap();
+        let narrow = narrow.with_output_k(narrow.input_k() + 5 * narrow.log_delta()).unwrap();
+        let halved = narrow.with_log_n(15, C2S, S2C).unwrap();
+        assert_eq!(halved.n(), 1 << 15);
+        assert_eq!((halved.max_dense_modulus(), halved.max_sparse_modulus()), (851, 162));
+        assert_eq!(
+            (halved.input_k(), halved.output_k(), halved.bootstrap_k()),
+            (narrow.input_k(), narrow.output_k(), narrow.bootstrap_k())
+        );
+    }
+
+    #[test]
+    fn exponential_eval_mod_lands_on_the_unit_circle() {
+        let preset = n16_d35_k733_p20_s2c().unwrap();
+        let scales = PresetScales {
+            log_msg_ratio: 1,
+            ..preset.scales()
+        };
+        let preset = preset
+            .with_scales(scales)
+            .unwrap()
+            .with_eval_mod_exponential(14, 15, 4)
+            .unwrap();
+        let eval_mod = preset.plan().eval_mod();
+        assert_eq!(eval_mod.eval_mod_type, EvalModType::ExpCmplx);
+        assert_eq!(eval_mod.scaling, Some(std::f64::consts::PI));
+        assert_eq!(eval_mod.eval_depth(), 8);
+
+        let han_ki = preset.with_eval_mod_polynomial(14, 26, 3).unwrap();
+        assert_eq!(han_ki.plan().eval_mod().eval_mod_type, EvalModType::CosHKEven);
+        assert_eq!(han_ki.plan().eval_mod().scaling, None);
     }
 
     #[test]

@@ -19,7 +19,7 @@
 
 ## Library Crates
 
-The basis crates sit at the root of the repository, and the other crates are grouped by role into four folders. A crate depends only on the basis, on crates of its own folder or on crates of the folders listed before it, except that the backends benchmark through `poulpy-bench`.
+The basis crates sit at the root of the repository, and the other crates are grouped by role into five folders. A crate depends only on the basis, on crates of its own folder or on crates of the folders listed before it, except that the backends benchmark through `poulpy-bench`.
 
 ### Basis, at the root
 
@@ -51,6 +51,10 @@ The basis crates sit at the root of the repository, and the other crates are gro
 
 - **`poulpy-bench`**: the consolidated Criterion benchmark suite for the workspace. It is an internal workspace crate and is not published to crates.io.
 
+### [`examples/`](examples): applications on the library
+
+- **`poulpy-resnet20`**: encrypted ResNet-20 inference on CIFAR-10 over the real-slot S2C-first bootstrap of **`poulpy-ckks`**, on the CPU or the GPU. It is an example and is not published to crates.io.
+
 ## Architecture
 
 ### Crate Dependency Chain
@@ -60,7 +64,8 @@ poulpy-hal                  ← hardware abstraction: layouts and operation trai
 └── poulpy-core              ← scheme-agnostic Module-LWE arithmetic (LWE, GLWE, GGLWE, GGSW)
     ├── poulpy-ckks           ← leveled CKKS evaluator
     │   ├── poulpy-blas        ← encrypted matrix arithmetic (JKLS)
-    │   └── poulpy-libm        ← CKKS math functions (libm-style)
+    │   ├── poulpy-libm        ← CKKS math functions (libm-style)
+    │   └── poulpy-resnet20    ← encrypted ResNet-20 on CIFAR-10 (example)
     ├── poulpy-bin-fhe        ← binary / gate-level FHE
     └── poulpy-mhe            ← multiparty HE
 

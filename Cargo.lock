@@ -3567,6 +3567,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "poulpy-keccak"
+version = "0.10.0"
+dependencies = [
+ "anyhow",
+ "poulpy-ckks",
+ "poulpy-core",
+ "poulpy-cpu-arm",
+ "poulpy-cpu-avx",
+ "poulpy-cpu-avx512",
+ "poulpy-cpu-portable",
+ "poulpy-cpu-rayon",
+ "poulpy-gpu-portable",
+ "poulpy-hal",
+ "rand 0.10.3",
+]
+
+[[package]]
 name = "poulpy-libm"
 version = "0.10.0"
 dependencies = [
@@ -3584,6 +3601,20 @@ version = "0.10.0"
 dependencies = [
  "poulpy-core",
  "poulpy-hal",
+]
+
+[[package]]
+name = "poulpy-resnet20"
+version = "0.10.0"
+dependencies = [
+ "anyhow",
+ "poulpy-ckks",
+ "poulpy-core",
+ "poulpy-cpu-portable",
+ "poulpy-gpu-portable",
+ "poulpy-hal",
+ "rand 0.10.3",
+ "serde_json",
 ]
 
 [[package]]
