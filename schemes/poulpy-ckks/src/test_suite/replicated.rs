@@ -1927,7 +1927,7 @@ where
     let fresh_bits = precision((&fresh.0, &fresh.1), (&values.0, &values.1));
 
     let atk_infos = params.atk_layout();
-    let mut scratch = ScratchOwned::<BE>::alloc(module.ckks_replicated_conversion_tmp_bytes(&ckks, &atk_infos, &conv));
+    let mut scratch = ScratchOwned::<BE>::alloc(module.ckks_replicated_conversion_tmp_bytes(&ckks, &ckks, &atk_infos, &conv));
     let mut replicated = alloc_ct(&params, module, k);
     let mut to_workspace = conv.alloc_to_workspace(module, &ckks);
     module.ckks_to_replicated(&mut replicated, &ckks, &conv, &mut to_workspace, &atks, &mut scratch.borrow())?;
@@ -1970,9 +1970,18 @@ where
         let before = snapshot::<BE, _, Rg>(&out);
         let input_before = snapshot::<BE, _, Rg>(&ckks);
         let replicated_before = snapshot::<BE, _, Rg>(&replicated);
+        let rank = ckks.rank().as_usize();
         for (n, rank, reason) in [
-            (params.n, ckks.rank().as_usize() + 1, "source and destination ranks differ"),
-            (params.n / 2, ckks.rank().as_usize(), "source and destination degrees differ"),
+            (
+                params.n,
+                rank + 1,
+                format!("takes a source and a destination of one rank, got {rank} and {}", rank + 1),
+            ),
+            (
+                params.n / 2,
+                rank,
+                "takes ciphertexts of one degree, which the module serves".to_string(),
+            ),
         ] {
             let mut bad = module.ckks_ciphertext_alloc_from_glwe_infos::<_, Rg>(&GLWELayout {
                 n: n.into(),
@@ -1997,7 +2006,7 @@ where
                 .unwrap_err();
                 let expected_op = if to { "ckks_to_replicated" } else { "ckks_from_replicated" };
                 assert!(
-                    matches!(err.composition(), Some(crate::CKKSCompositionError::InvalidOperand { op, reason: actual }) if *op == expected_op && actual == reason)
+                    matches!(err.composition(), Some(crate::CKKSCompositionError::InvalidOperand { op, reason: actual }) if *op == expected_op && *actual == reason)
                 );
                 assert_eq!(snapshot::<BE, _, Rg>(&bad), bad_before);
                 assert_eq!(snapshot::<BE, _, Rg>(&ckks), input_before);
@@ -2025,7 +2034,7 @@ where
             )
             .unwrap_err();
         assert!(
-            matches!(err.composition(), Some(crate::CKKSCompositionError::InvalidOperand { op: "ckks_to_replicated", reason }) if reason == "takes ciphertexts of the module's degree")
+            matches!(err.composition(), Some(crate::CKKSCompositionError::InvalidOperand { op: "ckks_to_replicated", reason }) if *reason == format!("takes ciphertexts of degree {}, the degree of its context, got {}", params.n, params.n / 2))
         );
         assert_eq!(snapshot::<BE, _, Rg>(&half_dst), half_before);
         let mut wrong_width = conv.alloc_to_workspace(
@@ -2042,7 +2051,7 @@ where
                 .ckks_to_replicated(&mut out, &ckks, &conv, workspace, &atks, &mut scratch.borrow())
                 .unwrap_err();
             assert!(
-                matches!(err.composition(), Some(crate::CKKSCompositionError::InvalidOperand { op: "ckks_to_replicated", reason }) if reason == "workspace does not match the transform input layout or rotations")
+                matches!(err.composition(), Some(crate::CKKSCompositionError::InvalidOperand { op: "ckks_to_replicated", reason }) if reason == "the workspace does not match the transform's input layout or rotations")
             );
             assert_eq!(snapshot::<BE, _, Rg>(&out), before);
             assert_eq!(snapshot::<BE, _, Rg>(&ckks), input_before);
@@ -2186,6 +2195,7 @@ where
         },
     );
     wide_onto_replicated(
+        "wide_onto_replicated",
         module,
         &mut onto,
         &ckks,
@@ -2219,6 +2229,7 @@ where
         },
     );
     wide_gather_trace(
+        "wide_gather_trace",
         module,
         &mut gathered,
         &replicated,

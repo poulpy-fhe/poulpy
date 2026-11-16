@@ -91,7 +91,7 @@ fn ckks_replicated_workspace_reuses_prepared_buffers() {
     let mut out = module.ckks_ciphertext_alloc_from_infos(&layout);
     let mut expected = module.ckks_ciphertext_alloc_from_infos(&layout);
     let mut scratch =
-        ScratchOwned::<FFT64Portable>::alloc(module.ckks_replicated_conversion_tmp_bytes(&a, &key_layout, &conversion));
+        ScratchOwned::<FFT64Portable>::alloc(module.ckks_replicated_conversion_tmp_bytes(&a, &a, &key_layout, &conversion));
     module
         .ckks_to_replicated(&mut out, &a, &conversion, &mut workspace, &keys, &mut scratch.borrow())
         .unwrap();

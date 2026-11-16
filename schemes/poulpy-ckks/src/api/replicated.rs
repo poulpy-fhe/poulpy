@@ -1,7 +1,7 @@
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::{
     GGLWEInfos, GGLWEPreparedToBackendRef, GLWECIEmbedKeyPrepared, GLWECITraceKeyPrepared, GLWEToBackendMut, GLWEToBackendRef,
-    GetAutomorphismKey, GetTensorKey,
+    GetAutomorphismKey,
 };
 use poulpy_hal::layouts::{Backend, ConjugateInvariant, Data, Ring, ScratchArena, Standard};
 
@@ -17,76 +17,82 @@ use crate::{
 ///
 /// # Metadata
 ///
-/// `ckks_to_replicated` reads a full-layout ciphertext holding `k`
-/// values with period `k` and writes them on the data slots of `conv`'s
-/// layout, at scale `conv.log_delta`:
+/// `ckks_to_replicated` reads a full-layout ciphertext holding `k` values with period `k` and writes them on the data
+/// slots of `ctx`'s layout, at scale `ctx.log_delta`, rounded with shaping:
 ///
 /// ```text
-/// log_budget_out = src.log_budget - log_delta_diag
-/// log_delta_out  = conv.log_delta
+/// log_budget_out = a.log_budget - consumed_bits(to)
+/// log_delta_out  = ctx.log_delta
 /// ```
 ///
-/// `ckks_from_replicated` reads a ciphertext in `conv`'s layout, with
-/// `R | k`, and writes its `k` values with period `k` on a full layout,
-/// averaging the replicas:
+/// `ckks_from_replicated` reads a ciphertext in `ctx`'s layout, with `R | k`, and writes its `k` values with period
+/// `k` on a full layout, averaging the replicas through a trace of `L = log2(N/(2k))` steps:
 ///
 /// ```text
-/// log_budget_out = src.log_budget - log_delta_diag
-/// log_delta_out  = src.log_delta + extra_bits + log2(N/(2k))
+/// log_budget_out = a.log_budget - consumed_bits(from) - L
+/// log_delta_out  = a.log_delta + extra_bits + L
 /// ```
 ///
-/// `keys` holds the automorphism keys of
-/// [`ReplicatedConversion::rotations`]. Allocate the reusable workspace with
-/// [`ReplicatedConversion::alloc_to_workspace`] or
+/// Both land at `res.k()` when it is narrower, through a modulus drop.
+///
+/// `keys` holds the automorphism keys of [`ReplicatedConversion::rotations`], each covering the width the run looks
+/// it up at. Allocate the reusable workspace with [`ReplicatedConversion::alloc_to_workspace`] or
 /// [`ReplicatedConversion::alloc_from_workspace`] for the source layout.
 ///
-/// The conversions serve both rings, `Rg` that of the operands, `conv` compiled for it.
+/// The conversions serve both rings, `Rg` that of the operands, `ctx` compiled for it.
 pub trait CKKSReplicatedOps<BE: Backend, Rg: Ring = Standard> {
-    fn ckks_replicated_conversion_tmp_bytes<C, K>(
+    /// Scratch of both conversions of `ctx` from `a` into `res`, with keys of layout `key_infos`.
+    fn ckks_replicated_conversion_tmp_bytes<R, A, K>(
         &self,
-        ct_infos: &C,
+        res: &R,
+        a: &A,
         key_infos: &K,
-        conv: &ReplicatedConversion<BE, Rg>,
+        ctx: &ReplicatedConversion<BE, Rg>,
     ) -> usize
     where
-        C: CKKSCtBounds,
+        R: CKKSCtBounds,
+        A: CKKSCtBounds,
         K: GGLWEInfos;
 
     /// # Errors
-    /// Incompatible source and destination degrees or ranks, or a workspace
-    /// with incompatible input dimensions or rotations, return
-    /// [`crate::CKKSCompositionError::InvalidOperand`] before writing `dst`.
-    fn ckks_to_replicated<Dst, Src, H>(
+    /// Before writing `res`: `InvalidOperand` for operands of another rank or degree than one another and `ctx`, a
+    /// source off the full layout or at a scale below `ctx.log_delta - extra_bits`, or a workspace of another layout
+    /// or transform; `InsufficientHomomorphicCapacity` when `a` lacks the budget of the transform or the result does
+    /// not fit `res.k()`; `MissingAutomorphismKey` for a key the run looks up and `keys` lacks or does not cover; and an
+    /// arena below the query.
+    fn ckks_to_replicated<R, A, H>(
         &self,
-        dst: &mut Dst,
-        src: &Src,
-        conv: &ReplicatedConversion<BE, Rg>,
+        res: &mut R,
+        a: &A,
+        ctx: &ReplicatedConversion<BE, Rg>,
         workspace: &mut ReplicatedTransformWorkspace<BE, Rg>,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
-        H: GetAutomorphismKey<BE, Rg> + GetTensorKey<BE, Rg>;
+        R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        H: GetAutomorphismKey<BE, Rg>;
 
     /// # Errors
-    /// Incompatible source and destination degrees or ranks, or a workspace
-    /// with incompatible input dimensions or rotations, return
-    /// [`crate::CKKSCompositionError::InvalidOperand`] before writing `dst`.
-    fn ckks_from_replicated<Dst, Src, H>(
+    /// Before writing `res`: `InvalidOperand` for operands of another rank or degree than one another and `ctx`, a
+    /// source off `ctx`'s layout, a conversion without the gather, or a workspace of another layout or transform;
+    /// `InsufficientHomomorphicCapacity` when `a` lacks the budget of the transform and the trace or the result does
+    /// not fit `res.k()`; `MissingAutomorphismKey` for a key the run looks up and `keys` lacks or does not cover; and an
+    /// arena below the query.
+    fn ckks_from_replicated<R, A, H>(
         &self,
-        dst: &mut Dst,
-        src: &Src,
-        conv: &ReplicatedConversion<BE, Rg>,
+        res: &mut R,
+        a: &A,
+        ctx: &ReplicatedConversion<BE, Rg>,
         workspace: &mut ReplicatedTransformWorkspace<BE, Rg>,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
-        H: GetAutomorphismKey<BE, Rg> + GetTensorKey<BE, Rg>;
+        R: GLWEToBackendMut<BE, Rg> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE, Rg> + CKKSCtBounds,
+        H: GetAutomorphismKey<BE, Rg>;
 }
 
 /// Bootstrapping of a replicated slot layout of `k` values, `R | k`, in
