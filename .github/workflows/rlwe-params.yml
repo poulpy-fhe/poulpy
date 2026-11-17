@@ -2,15 +2,11 @@
 #
 # The table is vendored in poulpy-core/third_party/rlwe-params and committed as
 # Rust in poulpy-core/src/security/rlwe_params_128.rs, which a test rebuilds from
-# it. A new release can move the bounds the
-# bootstrapping presets are certified against, which the preset tests pin, so
-# the update usually needs work before merging.
-#
-# The workflow pushes the updated table to a branch and opens an issue linking to
-# a prefilled pull request, which a maintainer opens, so CI runs on it as on any
-# pull request. If the push is refused, the issue lists the update steps instead.
+# it. The workflow only compares the latest release with the vendored VERSION and
+# opens an issue listing the update steps: a maintainer updates the table by hand
+# and reviews the regenerated cells in a pull request.
 
-name: Update rlwe-params table
+name: Check rlwe-params table
 
 on:
   schedule:
@@ -18,7 +14,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
   issues: write
 
 env:
@@ -26,7 +22,7 @@ env:
   TABLE: 128bits_security.json
 
 jobs:
-  update:
+  check:
     name: Check for a new table
     runs-on: ubuntu-latest
     env:
@@ -35,65 +31,32 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Download the latest table
-        id: download
+      - name: Open an issue if a newer table was released
         run: |
           tag=$(gh release view --repo jdumezy/rlwe-params --json tagName -q .tagName)
-          gh release download "$tag" --repo jdumezy/rlwe-params --pattern "$TABLE" --dir "$TABLE_DIR" --clobber
-          expected=$(gh release view "$tag" --repo jdumezy/rlwe-params --json assets \
-            -q ".assets[] | select(.name == \"$TABLE\") | .digest")
-          actual="sha256:$(sha256sum "$TABLE_DIR/$TABLE" | cut -d' ' -f1)"
-          if [ "$expected" != "$actual" ]; then
-            echo "::error::$TABLE of $tag has digest $actual, the release states $expected"
-            exit 1
-          fi
-          echo "$tag" > "$TABLE_DIR/VERSION"
-          echo "$actual" > "$TABLE_DIR/SHA256"
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          echo "digest=$actual" >> "$GITHUB_OUTPUT"
-
-      - name: Push a branch and open an issue if the table changed
-        env:
-          TAG: ${{ steps.download.outputs.tag }}
-          DIGEST: ${{ steps.download.outputs.digest }}
-          REPO_URL: ${{ github.server_url }}/${{ github.repository }}
-        run: |
-          git add "$TABLE_DIR"
-          if git diff --cached --quiet; then
-            echo "The vendored table is $TAG already."
+          if [ "$tag" = "$(cat "$TABLE_DIR/VERSION")" ]; then
+            echo "The vendored table is $tag already."
             exit 0
           fi
-          title="Update the rlwe-params table to $TAG"
-          branch="rlwe-params-$TAG"
-          git switch -c "$branch"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "$title"
-
-          checks="Regenerate the Rust table (\`POULPY_REGENERATE_SECURITY_TABLE=1 cargo test -p poulpy-core --lib security::generate\`). The bounds of the certified bootstrapping presets may have moved: run the preset tests (\`cargo test -p poulpy-ckks --lib --features test-utils presets::\`) and the security tests (\`cargo test -p poulpy-core --lib security\`), then update the pinned bounds, key shapes, docs and CHANGELOG as needed."
-          if git push --force origin "$branch"; then
-            pr_body="Replaces the vendored 128-bit security table with that of rlwe-params $TAG ($DIGEST, checked against the release).
-
-          $checks"
-            link="$REPO_URL/compare/main...$branch?expand=1&title=$(jq -rn --arg v "$title" '$v | @uri')&body=$(jq -rn --arg v "$pr_body" '$v | @uri')"
-            update="The branch \`$branch\` holds the updated table. [Open the pull request]($link), prefilled, to run CI on it."
-          else
-            echo "::warning::Pushing $branch was refused: the issue lists the update steps instead."
-            update="The workflow could not push a branch, so update the table by hand:
-
-          \`\`\`bash
-          gh release download $TAG --repo jdumezy/rlwe-params --pattern $TABLE --dir $TABLE_DIR --clobber
-          echo $TAG > $TABLE_DIR/VERSION
-          echo $DIGEST > $TABLE_DIR/SHA256
-          \`\`\`"
-          fi
-
+          digest=$(gh release view "$tag" --repo jdumezy/rlwe-params --json assets \
+            -q ".assets[] | select(.name == \"$TABLE\") | .digest")
+          title="Update the rlwe-params table to $tag"
           if [ -n "$(gh issue list --state open --limit 200 --json title -q ".[] | select(.title == \"$title\") | .title")" ]; then
             echo "An issue titled \"$title\" is already open."
             exit 0
           fi
-          gh issue create --title "$title" --body "rlwe-params released $TAG, whose 128-bit security table differs from the vendored one. Its digest matched the release.
+          gh issue create --title "$title" --body "rlwe-params released $tag, newer than the vendored $(cat "$TABLE_DIR/VERSION"). The release states the digest \`$digest\` for \`$TABLE\`, which shows the download intact, not its values right.
 
-          $update
+          Update the table by hand:
 
-          $checks"
+          \`\`\`bash
+          gh release download $tag --repo jdumezy/rlwe-params --pattern $TABLE --dir $TABLE_DIR --clobber
+          echo \"sha256:\$(sha256sum $TABLE_DIR/$TABLE | cut -d' ' -f1)\" # must print $digest
+          echo $tag > $TABLE_DIR/VERSION
+          echo $digest > $TABLE_DIR/SHA256
+          POULPY_REGENERATE_SECURITY_TABLE=1 cargo test -p poulpy-core --lib security::generate
+          cargo test -p poulpy-core --lib security
+          cargo test -p poulpy-ckks --lib --features test-utils presets::
+          \`\`\`
+
+          Review the diff of \`poulpy-core/src/security/rlwe_params_128.rs\` cell by cell, then update the pinned bounds, key shapes, docs and CHANGELOG as needed."
