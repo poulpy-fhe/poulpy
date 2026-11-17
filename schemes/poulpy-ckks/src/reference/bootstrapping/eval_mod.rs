@@ -198,6 +198,14 @@ pub trait CKKSBootstrapEvalModReference<BE: Backend>: std::borrow::Borrow<Module
         if let (Some(stage), Some(eval_mod)) = (plan.replicated_stage(), plan.eval_mod_replicated()) {
             super::replicated::check_eval_mod(OP, module, res, a, stage, plan.eval_mod_plan().consumed_bits())?;
             let tsk = crate::layouts::validation::required_tensor_key(OP, keys.tensor_key())?;
+            if let Some(keys_layout) = keys.keys_layout() {
+                let bytes = module.ckks_bootstrap_eval_mod_tmp_bytes_reference(res, a, plan, keys_layout);
+                ckks_ensure!(
+                    scratch.available() >= bytes,
+                    "{OP} needs a scratch arena of {bytes} bytes, got {}",
+                    scratch.available()
+                );
+            }
             return super::replicated::eval_mod(module, res, a, stage, eval_mod, keys, tsk, scratch);
         }
         crate::layouts::validation::ensure_full_layout(OP, crate::GLWEPlaintextInfos::slot_layout(a))?;

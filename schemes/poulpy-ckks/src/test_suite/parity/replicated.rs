@@ -10,9 +10,12 @@ use crate::{
     CKKSLayout, CKKSModuleInfos, CoeffsMeta, GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotLayout, SlotsKind,
     api::{
         CKKSAddOps, CKKSAllOpsTmpBytes, CKKSConjugateOps, CKKSEncodingHostOps, CKKSEncodingScalar, CKKSMulOps,
-        CKKSPolynomialEvaluationOps, CKKSRotateOps, CKKSRoundOps, CKKSSubOps,
+        CKKSPolynomialEvaluationOps, CKKSReplicatedOps, CKKSRotateOps, CKKSRoundOps, CKKSSubOps,
     },
-    layouts::{CKKSCiphertextOwned, CKKSPlaintextAlloc, encode_bsgs_replicated},
+    layouts::{
+        CKKSCiphertextOwned, CKKSPlaintextAlloc, ReplicatedConversion, ReplicatedTransform, encode_bsgs_replicated,
+        replicated::ReplicatedTransformModule,
+    },
     oep::{
         CKKSAddImpl, CKKSConjugateImpl, CKKSCopyImpl, CKKSDotProductImpl, CKKSEncodingImpl, CKKSMulImpl, CKKSPlaintextVecImpl,
         CKKSPolynomialEvaluationImpl, CKKSPow2Impl, CKKSRotateImpl, CKKSRoundImpl, CKKSSubImpl,
@@ -26,7 +29,11 @@ use poulpy_core::{
     GLWEAdd, GLWEAutomorphismKeyPreparedFactory, GLWEFill, GLWETensorKeyPreparedFactory,
     layouts::{GLWEAutomorphismKeyPrepared, GLWELayout, LWEInfos},
 };
-use poulpy_hal::layouts::{Backend, Module, Ring, ScratchArena, Standard};
+use poulpy_hal::{
+    api::CnvPVecAlloc,
+    layouts::{Backend, Module, Ring, ScratchArena, Standard},
+};
+use std::collections::HashMap;
 
 /// The CKKS families of a ring that the shaped operations use.
 pub trait ReplicatedRingImpl<Rg: Ring>:
@@ -55,6 +62,98 @@ impl<B, Rg: Ring> ReplicatedRingImpl<Rg> for B where
         + CKKSDotProductImpl<Rg>
         + CKKSPolynomialEvaluationImpl<Rg>
 {
+}
+
+/// `ckks_to_replicated` and back of a full-layout fixture of `k = 4` values onto `U8_40` (`R = 4`), with the maps
+/// dense and with two placement factors, each within its queried arena, the keys fixtures at the suite's rank.
+fn conversions<B, F, Rg: Ring>(params: CKKSTestParams, module: &Module<B>) -> Vec<(&'static str, Snapshot)>
+where
+    B: Backend<ZnxWord = i64>,
+    F: CKKSEncodingScalar,
+    Module<B>: CKKSReplicatedOps<B, Rg>
+        + ReplicatedTransformModule<B, F, Rg>
+        + CnvPVecAlloc<B>
+        + GLWEAutomorphismKeyPreparedFactory<B, Rg>
+        + GLWEFill<B, Rg>,
+{
+    let b = params.base2k;
+    let (log_k, log_delta_ckks, log_delta, log_delta_diag) = (2u8, 40, 20, 30);
+    let layout = ShapingUnit::U8_40.layout(log_k).unwrap();
+    let extra_bits =
+        log_delta_ckks - log_delta - (module.ckks_slots_of_degree::<Rg>(params.n) >> log_k).trailing_zeros() as usize;
+    let inner_log_delta_diag = log_delta + extra_bits + 4;
+    let bytes =
+        ReplicatedConversion::<B, Rg>::new_tmp_bytes::<F>(module, &layout, b.into(), log_delta_diag.max(inner_log_delta_diag))
+            .unwrap();
+    let mut results = Vec::new();
+    for (label, placement_factors) in [("dense", None), ("factored", Some(2))] {
+        let conv = with_scratch::<B, _>(bytes, |s| match placement_factors {
+            None => ReplicatedConversion::<B, Rg>::new::<F>(
+                module,
+                params.n.into(),
+                layout,
+                b.into(),
+                log_delta,
+                log_delta_diag,
+                extra_bits,
+                s,
+            ),
+            Some(placement_factors) => ReplicatedConversion::<B, Rg>::new_factored::<F>(
+                module,
+                params.n.into(),
+                layout,
+                b.into(),
+                log_delta,
+                log_delta_diag,
+                inner_log_delta_diag,
+                extra_bits,
+                placement_factors,
+                s,
+            ),
+        })
+        .unwrap();
+        let from_bits = conv.from.as_ref().map_or(0, ReplicatedTransform::consumed_bits);
+        let k = log_delta_ckks + conv.to.consumed_bits() + from_bits + log_delta_diag;
+        let (_, atk_layout) = rank_keys(params, k + extra_bits + conv.trace.len() + b);
+        let keys: HashMap<i64, _> = conv
+            .rotations()
+            .into_iter()
+            .map(|r| {
+                let p = crate::operand_rotation_galois_element::<_, Rg>("parity", module, params.n, r).unwrap();
+                (
+                    p,
+                    prepared_automorphism_key::<B, Rg>(module, &atk_layout, p, (p as u8).wrapping_add(31)),
+                )
+            })
+            .collect();
+        let a = fixture_ciphertext::<B, Rg>(
+            module,
+            &super::arithmetic::layout(params, params.rank, k, log_delta_ckks, 0, SlotsKind::Complex),
+            81,
+        );
+        let mut replicated =
+            fixture_ciphertext::<B, Rg>(module, &ct_layout(params, k, log_delta, SlotLayout::Replicated(layout)), 83);
+        let mut workspace = conv.alloc_to_workspace(module, &a);
+        with_scratch::<B, _>(
+            module.ckks_replicated_conversion_tmp_bytes(&replicated, &a, &atk_layout, &conv),
+            |s| module.ckks_to_replicated(&mut replicated, &a, &conv, &mut workspace, &keys, s),
+        )
+        .unwrap();
+        results.push((label, snapshot::<B, _, Rg>(&replicated)));
+        let mut back = fixture_ciphertext::<B, Rg>(
+            module,
+            &super::arithmetic::layout(params, params.rank, k, log_delta_ckks, 0, SlotsKind::Complex),
+            85,
+        );
+        let mut workspace = conv.alloc_from_workspace(module, &replicated).unwrap();
+        with_scratch::<B, _>(
+            module.ckks_replicated_conversion_tmp_bytes(&back, &replicated, &atk_layout, &conv),
+            |s| module.ckks_from_replicated(&mut back, &replicated, &conv, &mut workspace, &keys, s),
+        )
+        .unwrap();
+        results.push((label, snapshot::<B, _, Rg>(&back)));
+    }
+    results
 }
 
 /// The replicated layout of the suite: period 8 holding 2 values, on `2kR = 32` slots.
@@ -398,33 +497,43 @@ where
         + GLWEAutomorphismKeyPreparedFactory<BR>
         + GLWEFill<BR, Rg>
         + GLWEFill<BR>
-        + GLWEAdd<BR, Rg>,
+        + GLWEAdd<BR, Rg>
+        + CKKSReplicatedOps<BR, Rg>
+        + ReplicatedTransformModule<BR, F, Rg>
+        + CnvPVecAlloc<BR>,
     Module<BT>: CKKSAllOpsTmpBytes<BT>
         + GLWETensorKeyPreparedFactory<BT, Rg>
         + GLWEAutomorphismKeyPreparedFactory<BT, Rg>
         + GLWEAutomorphismKeyPreparedFactory<BT>
         + GLWEFill<BT, Rg>
         + GLWEFill<BT>
-        + GLWEAdd<BT, Rg>,
+        + GLWEAdd<BT, Rg>
+        + CKKSReplicatedOps<BT, Rg>
+        + ReplicatedTransformModule<BT, F, Rg>
+        + CnvPVecAlloc<BT>,
 {
     assert_eq!(reference.n(), tested.n());
     let standard = !conjugate_invariant::<Rg>();
-    let run = |rounding: Vec<_>, shaped: Vec<_>, conjugations: Option<Vec<_>>| -> Vec<(&'static str, Snapshot)> {
-        rounding
-            .into_iter()
-            .chain(shaped)
-            .chain(conjugations.into_iter().flatten())
-            .collect()
-    };
+    let run =
+        |rounding: Vec<_>, shaped: Vec<_>, converted: Vec<_>, conjugations: Option<Vec<_>>| -> Vec<(&'static str, Snapshot)> {
+            rounding
+                .into_iter()
+                .chain(shaped)
+                .chain(converted)
+                .chain(conjugations.into_iter().flatten())
+                .collect()
+        };
     let want = run(
         rounding_ops::<BR, F, Rg>(params, reference),
         shaped_ops::<BR, F, Rg>(params, reference),
+        conversions::<BR, F, Rg>(params, reference),
         standard.then(|| conjugations::<BR>(params, reference)),
     );
     assert_untagged("replicated", want.iter().map(|(_, output)| output));
     let got = run(
         rounding_ops::<BT, F, Rg>(params, tested),
         shaped_ops::<BT, F, Rg>(params, tested),
+        conversions::<BT, F, Rg>(params, tested),
         standard.then(|| conjugations::<BT>(params, tested)),
     );
     assert_eq!(want, got, "replicated parity differs");

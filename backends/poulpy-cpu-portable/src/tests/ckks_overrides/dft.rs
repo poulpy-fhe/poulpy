@@ -926,7 +926,8 @@ fn replicated_bootstrap_enters_each_step_hook() {
     super::EVAL_MOD_FORWARD.set(false);
     result.unwrap();
     // Four bootstrappings, two key sets at the module degree, packed, and two at half of it: a raise and two
-    // transforms each, and EvalMod once packed and once per half otherwise. The EvalMod step refusal enters its hook,
-    // which refuses, and the transform step refusals refuse before evaluating.
-    assert_eq!(got, [4, 5, 8, 6]);
+    // transforms each, and EvalMod once packed and once per half otherwise. The refusals then drive the steps of a
+    // fifth by hand: its raise and transforms run, and its EvalMod step refuses a short arena. The two EvalMod step
+    // refusals enter their hook, which refuses, and the transform step refusals refuse before evaluating.
+    assert_eq!(got, [5, 6, 10, 6]);
 }

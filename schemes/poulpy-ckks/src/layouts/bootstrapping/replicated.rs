@@ -276,6 +276,8 @@ pub struct ReplicatedStage<'a> {
     pub(crate) top_sparsity: usize,
     /// The layout of the output of `CoeffsToSlots`: the route's, or two batches side by side when packed.
     pub(crate) packed: Option<ReplicatedLayout>,
+    /// The bits each factor of the step's transform consumes, in evaluation order.
+    pub(crate) consumed: &'a [usize],
 }
 
 impl ReplicatedStage<'_> {
@@ -311,6 +313,7 @@ impl<BE: Backend, F> ReplicatedStages<BE, F> {
             trace_skip: self.bottom_skip,
             top_sparsity: self.top_sparsity,
             packed: self.packed,
+            consumed: &self.s2c_consumed,
         }
     }
 
@@ -322,6 +325,7 @@ impl<BE: Backend, F> ReplicatedStages<BE, F> {
             trace_skip: self.top_skip,
             top_sparsity: self.top_sparsity,
             packed: self.packed,
+            consumed: &self.c2s_consumed,
         }
     }
 }

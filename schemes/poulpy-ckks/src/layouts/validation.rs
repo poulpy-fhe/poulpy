@@ -16,7 +16,8 @@ use poulpy_core::{
 use poulpy_hal::layouts::{Backend, Module, Ring};
 
 use crate::{
-    CKKSCompositionError, CKKSCtBounds, CKKSError, CKKSInfos, CKKSResult, GLWEPlaintextMeta, Scale, SlotLayout, SlotsKind,
+    CKKSCompositionError, CKKSCtBounds, CKKSError, CKKSInfos, CKKSLayout, CKKSResult, GLWEPlaintextMeta, Scale, SlotLayout,
+    SlotsKind,
     api::CKKSBootstrappingOps,
     checked_log_budget_sub, ckks_bail, ckks_ensure, ckks_ensure_operand, ckks_log_delta,
     layouts::{
@@ -765,6 +766,87 @@ where
     Ok(())
 }
 
+/// What the raise refuses on widths, labelled `op`: `src`, lifted by `scale_up` fused
+/// into ModUp, into `dst`, under the encapsulation keys and the first-factor keys of `keys`.
+pub(crate) fn check_raise_widths<BE, Dst, Src, K>(
+    op: &'static str,
+    dst: &Dst,
+    src: &Src,
+    scale_up: usize,
+    first_factor: Option<&LinearTransformation<CKKSRightOperandPrepared<BE>>>,
+    keys: &K,
+) -> CKKSResult<()>
+where
+    BE: Backend,
+    K: BootstrappingLinearKeys<BE>,
+    Dst: CKKSCtBounds,
+    Src: CKKSCtBounds,
+{
+    let (k_large, k_small) = (dst.k().as_usize(), src.k().as_usize());
+    if let Some(factor) = first_factor {
+        if let Some((dense_to_sparse, _)) = keys.encapsulation_keys() {
+            ensure_encapsulation_key_covers(op, src.k(), dense_to_sparse)?;
+        }
+        ensure_mod_up_widens(op, k_large, k_small, scale_up)?;
+        check_first_factor_raise(
+            op,
+            dst.base2k().as_usize(),
+            dst.n().as_usize().ilog2() as usize,
+            k_large,
+            k_small + scale_up,
+            factor,
+            keys,
+        )?;
+        return Ok(());
+    }
+    match keys.encapsulation_keys() {
+        Some((dense_to_sparse, Some(sparse_to_dense))) => {
+            check_encapsulated_raise(op, dst, src, scale_up, dense_to_sparse, sparse_to_dense)
+        }
+        Some((_, None)) => Err(CKKSCompositionError::InvalidOperand {
+            op,
+            reason:
+                "the encapsulated ModUp needs a sparse-to-dense key, which a key set for the first factor on the raise has not"
+                    .into(),
+        }
+        .into()),
+        None => ensure_mod_up_widens(op, k_large, k_small, scale_up),
+    }
+}
+
+/// `InvalidOperand` unless the encapsulation key `key` takes an input of `k` bits.
+fn ensure_encapsulation_key_covers<K: GGLWEInfos>(op: &'static str, k: TorusPrecision, key: &K) -> CKKSResult<()> {
+    ckks_ensure_operand!(
+        op,
+        k <= key.gglwe_layout().max_input_k(),
+        "the input is wider than an encapsulation key's max_input_k"
+    );
+    Ok(())
+}
+
+/// Refuses encapsulation keys too narrow for their inputs before any write: `src`
+/// for the dense-to-sparse switch, `dst` for an offset-free sparse-to-dense one, and
+/// the raise of `src` by `scale_up` into `dst`, a sparse-to-dense key with a row
+/// offset being checked against that raise, by [`check_offset_raise`].
+pub(crate) fn check_encapsulated_raise<Dst: CKKSCtBounds, Src: CKKSCtBounds, D2S: GGLWEInfos, S2D: GGLWEInfos>(
+    op: &'static str,
+    dst: &Dst,
+    src: &Src,
+    scale_up: usize,
+    dense_to_sparse: &D2S,
+    sparse_to_dense: &S2D,
+) -> CKKSResult<()> {
+    ensure_encapsulation_key_covers(op, src.k(), dense_to_sparse)?;
+    let (k_large, k_small) = (dst.k().as_usize(), src.k().as_usize());
+    if sparse_to_dense.k_offset().as_usize() > 0 {
+        check_offset_raise(op, k_large, k_small, scale_up, sparse_to_dense)?;
+    } else {
+        ensure_encapsulation_key_covers(op, dst.k(), sparse_to_dense)?;
+        ensure_mod_up_widens(op, k_large, k_small, scale_up)?;
+    }
+    Ok(())
+}
+
 /// Bits of input a sparse-to-dense key with a row offset takes for a raise
 /// into `dst_k` bits: those below its offset, which its rows must reach.
 pub(crate) fn offset_key_window<K: GGLWEInfos>(dst_k: usize, key: &K) -> usize {
@@ -1206,6 +1288,26 @@ pub(crate) fn chain_key_lookups(
     lookups
 }
 
+/// [`chain_key_lookups`] as Galois elements of operands of degree `n`.
+pub(crate) fn chain_galois_lookups<M: poulpy_hal::layouts::CyclotomicOrder + ?Sized>(
+    op: &'static str,
+    module: &M,
+    n: usize,
+    plans: &[poulpy_core::layouts::LinearTransformationPlan],
+    consumed: &[usize],
+    input_k: usize,
+) -> CKKSResult<Vec<(i64, usize)>> {
+    chain_key_lookups(plans, consumed, input_k)
+        .into_iter()
+        .map(|(rotation, k)| {
+            Ok((
+                crate::operand_rotation_galois_element::<M, poulpy_hal::layouts::Standard>(op, module, n, rotation)?,
+                k,
+            ))
+        })
+        .collect()
+}
+
 /// `MissingAutomorphismKey` for `op` unless `keys` cover each `(galois element, k)` of `lookups`, the error naming the
 /// element in place of a rotation.
 pub(crate) fn ensure_galois_keys<BE, H>(
@@ -1294,6 +1396,28 @@ where
             k: k.into(),
             source,
         })?;
+    // The raise of the coefficients SlotsToCoeffs leaves, at the message ratio above `Δ_b`, into the raised width.
+    let Some(raised_k) = plan.replicated_raised_k(res.k().as_usize()) else {
+        ckks_bail!("{OP}: the context has no replicated route");
+    };
+    let at = |k: usize| CKKSLayout {
+        glwe_layout: GLWELayout {
+            n: a.n(),
+            base2k: a.base2k(),
+            k: k.into(),
+            rank: poulpy_core::layouts::Rank(1),
+        },
+        meta: GLWEPlaintextMeta::default(),
+    };
+    let raise_input_k = route.log_delta + plan.eval_mod().log_msg_ratio;
+    check_raise_widths(
+        OP,
+        &at(raised_k),
+        &at(raise_input_k),
+        route.raise_bits(),
+        None::<&LinearTransformation<CKKSRightOperandPrepared<BE>>>,
+        keys,
+    )?;
     if let Some(keys_layout) = keys.keys_layout() {
         let bytes = module.ckks_bootstrap_tmp_bytes(res, a, ctx, keys_layout);
         ckks_ensure!(
