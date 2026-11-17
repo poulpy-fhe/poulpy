@@ -1136,8 +1136,9 @@ fn replicated_conversions_enter_the_round_hook() {
         params, &module, &host,
     )
     .unwrap();
-    // One round onto the replicated layout per conversion to it, at the module degree and at half of it, each with
-    // a shaping correction per half. The conversions back gather and trace without a round.
-    assert_eq!(ROUND_CALLS.with(Cell::get), 2);
-    assert_eq!(SHAPING_CALLS.with(Cell::get), 4);
+    // One round onto the replicated layout per conversion to it, into a wide and a narrow destination, at the module
+    // degree and at half of it, each with a shaping correction per half. The conversions back gather and trace
+    // without a round.
+    assert_eq!(ROUND_CALLS.with(Cell::get), 4);
+    assert_eq!(SHAPING_CALLS.with(Cell::get), 8);
 }

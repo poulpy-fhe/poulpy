@@ -331,6 +331,36 @@ where
     })
 }
 
+/// The rotations, and the widths, at which `ckks_to_replicated` of `a` through `ctx` looks its keys up: the width
+/// model of its entry check.
+pub(crate) fn to_key_lookups<BE: Backend, Rg: Ring, A: GLWEInfos>(
+    ctx: &ReplicatedConversion<BE, Rg>,
+    workspace: &ReplicatedTransformWorkspace<BE, Rg>,
+    a: &A,
+) -> Vec<(i64, usize)> {
+    transform_key_lookups(&ctx.to, workspace, working_layout(a, ctx.extra_bits, 0).k.as_usize())
+}
+
+/// The rotations, and the widths, at which `ckks_from_replicated` of `a` through `ctx` looks its keys up: the gather
+/// at the working width, then the trace at the width it leaves, or the refusal of `op` when `a` has not the budget.
+pub(crate) fn from_key_lookups<BE: Backend, Rg: Ring, A: CKKSCtBounds>(
+    op: &'static str,
+    ctx: &ReplicatedConversion<BE, Rg>,
+    from: &ReplicatedTransform<BE, Rg>,
+    workspace: &ReplicatedTransformWorkspace<BE, Rg>,
+    a: &A,
+) -> Result<Vec<(i64, usize)>> {
+    // The trace divides by `2^trace.len()` first, moving that many budget bits under the scale.
+    let log_budget = checked_log_budget_sub(op, a.log_budget(), from.consumed_bits() + ctx.trace.len())?;
+    let trace_k = log_budget + a.log_delta() + ctx.extra_bits + ctx.trace.len();
+    Ok(
+        transform_key_lookups(from, workspace, working_layout(a, ctx.extra_bits, 0).k.as_usize())
+            .into_iter()
+            .chain(ctx.trace.iter().map(|&rotation| (rotation, trace_k)))
+            .collect(),
+    )
+}
+
 /// `InsufficientHomomorphicCapacity` for `op` unless a result of `log_budget` bits at scale `2^log_delta` lands at
 /// `res.k()`, a narrower `res` taking it through a modulus drop.
 fn ensure_landing<R: CKKSCtBounds>(op: &'static str, res: &R, log_budget: usize, log_delta: usize) -> Result<()> {
@@ -368,8 +398,7 @@ where
     ensure_transform_workspace(OP, workspace, &working, &ctx.to)?;
     let log_budget = checked_log_budget_sub(OP, a.log_budget(), ctx.to.consumed_bits())?;
     ensure_landing(OP, res, log_budget, ctx.log_delta)?;
-    let lookups = transform_key_lookups(&ctx.to, workspace, working.k.as_usize());
-    let key_layouts = ensure_rotation_keys(OP, module, a.n().as_usize(), keys, lookups)?;
+    let key_layouts = ensure_rotation_keys(OP, module, a.n().as_usize(), keys, to_key_lookups(ctx, workspace, a))?;
     ensure_scratch(OP, scratch, conversion_bytes(module, res, a, &key_layouts, ctx))?;
     wide_onto_replicated(
         OP,
@@ -421,10 +450,7 @@ where
     let log_budget = checked_log_budget_sub(OP, a.log_budget(), from.consumed_bits() + ctx.trace.len())?;
     let log_delta = a.log_delta() + ctx.extra_bits + ctx.trace.len();
     ensure_landing(OP, res, log_budget, log_delta)?;
-    let trace_k = log_budget + log_delta;
-    let lookups = transform_key_lookups(from, workspace, working.k.as_usize())
-        .into_iter()
-        .chain(ctx.trace.iter().map(|&rotation| (rotation, trace_k)));
+    let lookups = from_key_lookups(OP, ctx, from, workspace, a)?;
     let key_layouts = ensure_rotation_keys(OP, module, a.n().as_usize(), keys, lookups)?;
     ensure_scratch(OP, scratch, conversion_bytes(module, res, a, &key_layouts, ctx))?;
     wide_gather_trace(OP, module, res, a, from, workspace, &ctx.trace, ctx.extra_bits, keys, scratch)

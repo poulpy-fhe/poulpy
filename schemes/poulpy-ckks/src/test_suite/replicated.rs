@@ -44,7 +44,7 @@ use poulpy_hal::{
     source::Source,
 };
 
-use super::helpers::LoggedBootstrappingKeys;
+use super::helpers::{LoggedBootstrappingKeys, QueryLog};
 use super::helpers::{
     PT_PREC, TestContextBackend, TestContextModule, TestContextSharedModule, TestScalar, alloc_ct, alloc_scratch,
     ckks_pt_cst_full, ckks_spec, gen_atk, gen_ci_keys, gen_sk, gen_sk_with_raw, gen_tsk, next_test_seed, upload_pt,
@@ -1968,9 +1968,12 @@ where
     let mut to_workspace = conv.alloc_to_workspace(module, &ckks);
     // The map consumes its diagonals' bits and lands at the replicated scale, at most `res.k()` wide.
     let to_k = (ckks.log_budget() - conv.to.consumed_bits() + log_delta).min(replicated.k().as_usize());
+    let to_lookups = crate::oep::derived::replicated::to_key_lookups(&conv, &to_workspace, &ckks);
+    let logged = QueryLog::new(&atks);
     with_scratch::<BE, _>(conv_bytes, |s| {
-        module.ckks_to_replicated(&mut replicated, &ckks, &conv, &mut to_workspace, &atks, s)
+        module.ckks_to_replicated(&mut replicated, &ckks, &conv, &mut to_workspace, &logged, s)
     })?;
+    assert_conversion_lookups::<BE, Rg>("to", module, params.n, &to_lookups, logged.take());
     assert_eq!(replicated.slot_layout(), SlotLayout::Replicated(layout));
     assert_eq!((replicated.k().as_usize(), replicated.log_delta()), (to_k, log_delta));
     let got = decrypt_batch::<BE, F, Rg>(&params, module, &sk, &replicated, len);
@@ -1990,9 +1993,17 @@ where
     let from_log_delta = replicated.log_delta() + extra_bits + trace_bits;
     let from_k = (replicated.log_budget() - from_bits_consumed - trace_bits + from_log_delta).min(back.k().as_usize());
     let mut from_workspace = conv.alloc_from_workspace(module, &replicated)?;
+    let from_lookups = crate::oep::derived::replicated::from_key_lookups(
+        "test",
+        &conv,
+        conv.from.as_ref().unwrap(),
+        &from_workspace,
+        &replicated,
+    )?;
     with_scratch::<BE, _>(conv_bytes, |s| {
-        module.ckks_from_replicated(&mut back, &replicated, &conv, &mut from_workspace, &atks, s)
+        module.ckks_from_replicated(&mut back, &replicated, &conv, &mut from_workspace, &logged, s)
     })?;
+    assert_conversion_lookups::<BE, Rg>("from", module, params.n, &from_lookups, logged.take());
     assert_eq!(back.slot_layout(), SlotLayout::Full);
     assert_eq!((back.k().as_usize(), back.log_delta()), (from_k, from_log_delta));
     assert_eq!(back.log_delta(), log_delta_ckks);
@@ -2003,6 +2014,34 @@ where
     assert!(
         from_bits >= fresh_bits.min(log_delta_diag as f64) - 3.0,
         "from replicated: {from_bits:.2} bits from {fresh_bits:.2}"
+    );
+
+    // Destinations narrower than the results, off the limb grid, take them through a modulus drop at the same scale
+    // and precision.
+    let mut narrow = alloc_ct(&params, module, to_k - 7);
+    let bytes = module.ckks_replicated_conversion_tmp_bytes(&narrow, &ckks, &atk_infos, &conv);
+    with_scratch::<BE, _>(bytes, |s| {
+        module.ckks_to_replicated(&mut narrow, &ckks, &conv, &mut to_workspace, &atks, s)
+    })?;
+    assert_eq!((narrow.k().as_usize(), narrow.log_delta()), (to_k - 7, log_delta));
+    let got = decrypt_batch::<BE, F, Rg>(&params, module, &sk, &narrow, len);
+    let narrow_bits = precision((&got.0, &got.1), (&values.0, &values.1));
+    assert!(
+        (narrow_bits - to_bits).abs() < 0.5,
+        "to replicated, narrow: {narrow_bits:.2} bits against {to_bits:.2}"
+    );
+    let narrow_from_k = from_log_delta + (from_k - from_log_delta) / 2;
+    let mut narrow = alloc_ct(&params, module, narrow_from_k);
+    let bytes = module.ckks_replicated_conversion_tmp_bytes(&narrow, &replicated, &atk_infos, &conv);
+    with_scratch::<BE, _>(bytes, |s| {
+        module.ckks_from_replicated(&mut narrow, &replicated, &conv, &mut from_workspace, &atks, s)
+    })?;
+    assert_eq!((narrow.k().as_usize(), narrow.log_delta()), (narrow_from_k, from_log_delta));
+    let got = decrypt_batch::<BE, F, Rg>(&params, module, &sk, &narrow, len);
+    let narrow_bits = precision((&got.0, &got.1), (&values.0, &values.1));
+    assert!(
+        (narrow_bits - from_bits).abs() < 0.5,
+        "from replicated, narrow: {narrow_bits:.2} bits against {from_bits:.2}"
     );
 
     let mut out = alloc_ct(&params, module, k);
@@ -2150,6 +2189,47 @@ where
             &|e: &E| matches!(e, E::InsufficientHomomorphicCapacity { op, .. } if *op == to),
             &out,
         );
+        // A source without the budget of the gather and the trace.
+        let mut spent = replicated.clone();
+        spent.set_log_budget(from_bits_consumed + trace_bits - 1);
+        let mut spent_workspace = conv.alloc_from_workspace(module, &spent)?;
+        let err = module
+            .ckks_from_replicated(&mut out, &spent, &conv, &mut spent_workspace, &atks, &mut scratch.borrow())
+            .unwrap_err();
+        check(
+            "from, spent budget",
+            err,
+            &|e: &E| matches!(e, E::InsufficientHomomorphicCapacity { op, .. } if *op == from),
+            &out,
+        );
+        // A destination narrower than the result's scale, where no modulus drop lands it.
+        for (label, to_dir, res_k) in [
+            ("to, landing", true, log_delta - 1),
+            ("from, landing", false, from_log_delta - 1),
+        ] {
+            let mut small = alloc_ct(&params, module, res_k);
+            let small_before = snapshot::<BE, _, Rg>(&small);
+            let err = if to_dir {
+                module.ckks_to_replicated(&mut small, &ckks, &conv, &mut to_workspace, &atks, &mut scratch.borrow())
+            } else {
+                module.ckks_from_replicated(
+                    &mut small,
+                    &replicated,
+                    &conv,
+                    &mut from_workspace,
+                    &atks,
+                    &mut scratch.borrow(),
+                )
+            }
+            .unwrap_err();
+            let op = if to_dir { to } else { from };
+            assert!(
+                err.composition()
+                    .is_some_and(|e| matches!(e, E::InsufficientHomomorphicCapacity { op: got, .. } if *got == op)),
+                "{label}: unexpected refusal {err}"
+            );
+            assert_eq!(snapshot::<BE, _, Rg>(&small), small_before, "{label} wrote the output");
+        }
         // A key the run looks up and the set lacks.
         let no_keys: HashMap<i64, poulpy_core::layouts::prepared::GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE, Rg>> =
             HashMap::new();
@@ -3416,6 +3496,16 @@ where
     let hiding = HidingKey { keys, hidden };
     let mut c2s_input = raised.clone();
     let before = snapshot::<BE, _, Standard>(&c2s_input);
+    let err = with_scratch::<BE, _>(0, |s| module.ckks_coeffs_to_slots_assign(&mut c2s_input, &run, keys, s)).unwrap_err();
+    assert!(
+        err.to_string().contains("ckks_coeffs_to_slots_assign needs a scratch arena"),
+        "CoeffsToSlots, empty arena: {err}"
+    );
+    assert_eq!(
+        snapshot::<BE, _, Standard>(&c2s_input),
+        before,
+        "CoeffsToSlots, empty arena: the refusal wrote its operand"
+    );
     let err = with_scratch::<BE, _>(bytes, |s| {
         module.ckks_coeffs_to_slots_assign(&mut c2s_input, &run, &hiding, s)
     })
@@ -3448,6 +3538,43 @@ where
         "EvalMod, short arena: the refusal wrote res"
     );
     Ok(())
+}
+
+/// Asserts the key lookups `seen` of a conversion on operands of degree `n`: first the entry check's pass over the
+/// rotations and widths of `model`, in its order, then the run, using each Galois element at most and at the widest
+/// at its widest width in `model`.
+fn assert_conversion_lookups<BE: Backend, Rg: Ring>(
+    label: &str,
+    module: &Module<BE>,
+    n: usize,
+    model: &[(i64, usize)],
+    seen: Vec<(i64, poulpy_core::layouts::TorusPrecision)>,
+) {
+    let entry: Vec<(i64, usize)> = model
+        .iter()
+        .map(|&(r, k)| {
+            (
+                crate::operand_rotation_galois_element::<_, Rg>("test", module, n, r).unwrap(),
+                k,
+            )
+        })
+        .collect();
+    let seen: Vec<(i64, usize)> = seen.into_iter().map(|(p, k)| (p, k.as_usize())).collect();
+    assert!(
+        seen.starts_with(&entry),
+        "{label}: the entry check did not look up every key at its width"
+    );
+    let widest = |lookups: &[(i64, usize)]| {
+        let mut widest = std::collections::BTreeMap::new();
+        for &(p, k) in lookups {
+            let width = widest.entry(p).or_insert(0);
+            *width = k.max(*width);
+        }
+        widest
+    };
+    let run = &seen[entry.len()..];
+    assert!(!run.is_empty(), "{label}: no key used");
+    assert_eq!(widest(run), widest(&entry), "{label}: widest use of each key");
 }
 
 /// `keys` without the automorphism key of the Galois element `hidden`.

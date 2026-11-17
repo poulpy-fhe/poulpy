@@ -19,8 +19,9 @@ use crate::{
 /// log_delta_out  = ctx.log_delta
 /// ```
 ///
-/// `ckks_from_replicated` reads a ciphertext in `ctx`'s layout, with `R | k`, and writes its `k` values with period
-/// `k` on a full layout, averaging the replicas through a trace of `L = log2(N/(2k))` steps:
+/// `ckks_from_replicated` reads a ciphertext in `ctx`'s layout, with `R | k` for a conversion of dense maps, and writes
+/// its `k` values with period `k` on a full layout, averaging the replicas through a trace of `L = log2(S/k)` steps
+/// for the `S` slots of the ring:
 ///
 /// ```text
 /// log_budget_out = a.log_budget - consumed_bits(from) - L
