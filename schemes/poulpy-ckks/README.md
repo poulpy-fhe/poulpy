@@ -382,8 +382,6 @@ Leveled operations are invoked through traits implemented on
 | `CKKSShipOps` | SHIP half bootstrapping (see [`docs/guides/ship.md`](../../docs/guides/ship.md)) |
 | `CKKSRoundOps` | rounding to a smaller width, with shaping on a replicated layout |
 | `CKKSReplicatedOps` | conversions between CKKS and a replicated slot layout (see [`docs/guides/replicated.md`](../../docs/guides/replicated.md)) |
-| `CKKSReplicatedBootstrapOps` | bootstrapping of a replicated slot layout (see [`docs/guides/replicated.md`](../../docs/guides/replicated.md)) |
-| `CKKSReplicatedCIBootstrapOps` | bootstrapping of a replicated slot layout on the conjugate-invariant ring, through the standard ring |
 | `CKKSAllOpsTmpBytes` | scratch size queries for all operations |
 
 For example, ciphertext addition uses `CKKSAddOps<BE>` and is called through
@@ -478,7 +476,7 @@ of degree `2N` and maps them back by the relative trace (`CKKSCIRingMapOps`).
 Each map switches between the CI secret and a standard secret with its key,
 `GLWECIEmbedKey` or `GLWECITraceKey` (`GLWECIKeyEncryptSk`).
 
-Replicated slot layouts run on the conjugate-invariant ring too, with an invariant shift of the shaping polynomial, and bootstrap through the standard ring of degree `2N` (`CKKSReplicatedCIBootstrapOps`, see [`docs/guides/replicated.md`](../../docs/guides/replicated.md)).
+Replicated slot layouts run on the conjugate-invariant ring too, with an invariant shift of the shaping polynomial, and bootstrap through the standard ring of degree `2N` by `ckks_ci_embed`, `ckks_bootstrap` on a replicated plan and `ckks_ci_trace` (see [`docs/guides/replicated.md`](../../docs/guides/replicated.md)).
 
 ## Where to look next
 

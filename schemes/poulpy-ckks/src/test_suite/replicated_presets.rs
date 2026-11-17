@@ -25,12 +25,12 @@ use poulpy_hal::{
 use crate::{
     CKKSInfos, CKKSLayout, GLWEPlaintextInfos, GLWEPlaintextMeta, Scale, SetCKKSInfos, SlotLayout, SlotsKind,
     api::{
-        CKKSCopyOps, CKKSDecryptOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncryptOps, CKKSLinearTransformationOps,
-        CKKSModuleInfos, CKKSReplicatedBootstrapOps,
+        CKKSBootstrappingOps, CKKSCopyOps, CKKSDecryptOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncryptOps,
+        CKKSLinearTransformationOps, CKKSModuleInfos,
     },
     layouts::{
-        BootstrappingKeysLayout, BootstrappingKeysPrepared, CKKSCiphertextAlloc, CKKSCiphertextOwned, CKKSPlaintextAlloc,
-        ReplicatedBootstrapWorkspace, ReplicatedBootstrapping,
+        BootstrappingContextPrepared, BootstrappingKeysLayout, BootstrappingKeysPrepared, BootstrappingPlan, CKKSCiphertextAlloc,
+        CKKSCiphertextOwned, CKKSPlaintextAlloc, CKKSPlaintextOwned,
     },
     oep::CKKSEncapsulatedModUpImpl,
     presets::replicated_bootstrapping::{ReplicatedBootstrappingPreset, all},
@@ -43,7 +43,7 @@ use crate::{
 pub trait ReplicatedBootstrappingModule<BE: Backend>:
     TestContextModule<BE>
     + CKKSEncodingOps<BE, f64>
-    + CKKSReplicatedBootstrapOps<BE>
+    + crate::test_suite::replicated::ReplicatedBootstrapModule<BE, f64>
     + CKKSLinearTransformationOps<BE>
     + CnvPVecAlloc<BE>
     + GLWETrace<BE>
@@ -55,7 +55,7 @@ pub trait ReplicatedBootstrappingModule<BE: Backend>:
 impl<BE: Backend, M> ReplicatedBootstrappingModule<BE> for M where
     M: TestContextModule<BE>
         + CKKSEncodingOps<BE, f64>
-        + CKKSReplicatedBootstrapOps<BE>
+        + crate::test_suite::replicated::ReplicatedBootstrapModule<BE, f64>
         + CKKSLinearTransformationOps<BE>
         + CnvPVecAlloc<BE>
         + GLWETrace<BE>
@@ -71,7 +71,7 @@ pub trait ReplicatedBootstrappingDeviceModule<BE: Backend>:
     + CKKSCiphertextAlloc<BE>
     + CKKSCopyOps<BE>
     + CKKSEncodingOps<BE, f64>
-    + CKKSReplicatedBootstrapOps<BE>
+    + crate::test_suite::replicated::ReplicatedBootstrapModule<BE, f64>
     + CKKSLinearTransformationOps<BE>
     + CnvPVecAlloc<BE>
     + GLWETrace<BE>
@@ -88,7 +88,7 @@ impl<BE: Backend, M> ReplicatedBootstrappingDeviceModule<BE> for M where
         + CKKSCiphertextAlloc<BE>
         + CKKSCopyOps<BE>
         + CKKSEncodingOps<BE, f64>
-        + CKKSReplicatedBootstrapOps<BE>
+        + crate::test_suite::replicated::ReplicatedBootstrapModule<BE, f64>
         + CKKSLinearTransformationOps<BE>
         + CnvPVecAlloc<BE>
         + GLWETrace<BE>
@@ -109,8 +109,7 @@ pub struct ReplicatedBootstrappingPresetRun<BE: Backend, BC: Backend = BE> {
     unit: ShapingUnit,
     module: Module<BE>,
     client: Module<BC>,
-    ctx: ReplicatedBootstrapping<BE, f64>,
-    workspace: ReplicatedBootstrapWorkspace<BE>,
+    ctx: BootstrappingContextPrepared<BE, f64>,
     keys: BootstrappingKeysPrepared<BE::OwnedBuf, BE>,
     sk: GLWESecretPrepared<BC::OwnedBuf, BC>,
     input: CKKSCiphertextOwned<BE>,
@@ -150,19 +149,12 @@ where
         let (module, client) = (Module::<BE>::new(n as u64), Module::<BC>::new(n as u64));
         let layout = unit.layout(k.trailing_zeros() as u8).unwrap();
         let plan = preset.plan(layout).unwrap();
-        let ctx = with_scratch::<BE, _>(
-            ReplicatedBootstrapping::<BE, f64>::new_tmp_bytes(&module, &plan, base2k.into()).unwrap(),
-            |s| ReplicatedBootstrapping::<BE, f64>::new(&module, plan, base2k.into(), s),
-        )
-        .unwrap();
+        let ctx = compile::<BE>(&module, base2k, &plan);
         // The client compiles the same plan, for the Galois elements and the keys of its secret.
-        let client_ctx = with_scratch::<BC, _>(
-            ReplicatedBootstrapping::<BC, f64>::new_tmp_bytes(&client, &plan, base2k.into()).unwrap(),
-            |s| ReplicatedBootstrapping::<BC, f64>::new(&client, plan, base2k.into(), s),
-        )
-        .unwrap();
-        let galois_elements = ctx.galois_elements(&module);
-        assert_eq!(client_ctx.galois_elements(&client), galois_elements);
+        let client_ctx = compile::<BC>(&client, base2k, &plan);
+        let galois_elements = ctx.replicated_galois_elements(&module);
+        assert_eq!(client_ctx.replicated_galois_elements(&client), galois_elements);
+        let level_log_delta = plan.replicated_route().unwrap().level_log_delta;
         let keys_layout = adjust(preset.keys_layout(layout, &galois_elements).unwrap());
         let input_layout = CKKSLayout {
             glwe_layout: GLWELayout {
@@ -181,15 +173,17 @@ where
             glwe_layout: GLWELayout {
                 n: degree.into(),
                 base2k: base2k.into(),
-                k: (plan.level_log_delta + 10).into(),
+                k: (level_log_delta + 10).into(),
                 rank: Rank(1),
             },
             meta: output_layout.meta,
         };
         let mut client_scratch = ScratchOwned::<BC>::alloc(
             client_ctx
-                .generate_keys_tmp_bytes(&client, &keys_layout)
-                .max(client.ckks_encoding_host_tmp_bytes(slots))
+                .generate_replicated_keys_tmp_bytes(&client, &keys_layout)
+                .max(<Module<BC> as CKKSEncodingHostOps<BC, f64>>::ckks_encoding_host_tmp_bytes(
+                    &client, slots,
+                ))
                 .max(client.ckks_encrypt_sk_tmp_bytes(&input_layout))
                 // `precision` decrypts at the degree of the output's sparsity: the ring's or the slots'.
                 .max(client.ckks_decrypt_tmp_bytes(&decrypted(n), &output_layout))
@@ -206,7 +200,7 @@ where
         client.glwe_secret_fill_ternary_hw(&mut sk_raw, preset.dense_secret_hamming_weight(), &mut xs);
         let mut sk = client.glwe_secret_prepared_alloc_from_infos(&glwe);
         client.glwe_secret_prepare(&mut sk, &sk_raw);
-        let keys = client_ctx.generate_keys(
+        let keys = client_ctx.generate_replicated_keys(
             &client,
             &sk_raw,
             &keys_layout,
@@ -222,9 +216,9 @@ where
         .expect("the bootstrapping keys prepare");
 
         let values: (Vec<f64>, Vec<f64>) = (0..k).map(|i| (0.37 * (i + 1) as f64).sin_cos()).map(|(s, c)| (c, s)).unzip();
-        let mut pt = client.ckks_plaintext_alloc_from_slots(slots, base2k.into(), (plan.level_log_delta + 8).into());
+        let mut pt = client.ckks_plaintext_alloc_from_slots(slots, base2k.into(), (level_log_delta + 8).into());
         pt.set_meta(GLWEPlaintextMeta {
-            scale: Scale::Log(plan.level_log_delta),
+            scale: Scale::Log(level_log_delta),
             slots: SlotsKind::Complex,
             log_sparsity: 0,
             slot_layout: SlotLayout::Replicated(layout),
@@ -241,18 +235,9 @@ where
         input.set_meta(client_input.meta());
 
         let output = module.ckks_ciphertext_alloc_from_infos(&output_layout);
-        let workspace = ctx.alloc_workspace(&module, &output);
-        let encapsulation = keys_layout.encapsulation.map(|e| (e.dense_to_sparse, e.sparse_to_dense));
         // The bootstrapping and the copy of an input.
         let run_bytes = module
-            .ckks_replicated_bootstrap_tmp_bytes(
-                &output,
-                &input,
-                &ctx,
-                keys_layout.rotation_keys.values().next().expect("the bootstrapping rotates"),
-                &keys_layout.tensor_key,
-                encapsulation.as_ref().map(|(d, s)| (d, s.as_ref().unwrap())),
-            )
+            .ckks_bootstrap_tmp_bytes(&output, &input, &ctx, &keys_layout)
             .max(module.ckks_copy_tmp_bytes(&input, &input));
         Self {
             preset,
@@ -260,7 +245,6 @@ where
             module,
             client,
             ctx,
-            workspace,
             keys,
             sk,
             input,
@@ -282,14 +266,17 @@ where
 
     /// The automorphism keys the bootstrapping rotates with.
     pub fn rotation_keys(&self) -> usize {
-        self.ctx.galois_elements(&self.module).len()
+        self.ctx.replicated_galois_elements(&self.module).len()
     }
 
     /// The gadgets of the keys under the secret and of the key to the
     /// ephemeral secret, as `dnum x k_digit + k_aux`.
     pub fn gadgets(&self) -> String {
         let gadget = |key: GGLWELayout| format!("{}x{}+{}", key.dnum.0, key.k_digit.0, key.k_aux.0);
-        let layout = self.preset.keys_layout(self.ctx.plan().layout, &[]).unwrap();
+        let layout = self
+            .preset
+            .keys_layout(self.ctx.plan.replicated_route().unwrap().layout, &[])
+            .unwrap();
         let ephemeral = layout.encapsulation.map(|e| gadget(e.dense_to_sparse.gglwe_layout()));
         let return_key = layout
             .encapsulation
@@ -305,11 +292,10 @@ where
 
     pub fn bootstrap(&mut self) {
         self.module
-            .ckks_replicated_bootstrap(
+            .ckks_bootstrap(
                 &mut self.output,
                 &self.input,
                 &self.ctx,
-                &mut self.workspace,
                 &self.keys,
                 &mut self.scratch.borrow(),
             )
@@ -397,7 +383,7 @@ where
             let mut run = ReplicatedBootstrappingPresetRun::<BE, BC>::setup(preset.clone(), k);
             check(&mut run, "offset");
 
-            let k_boot = run.ctx.plan().k_boot(preset.output_k());
+            let k_boot = run.ctx.plan.replicated_raised_k(preset.output_k()).unwrap();
             let mut full = ReplicatedBootstrappingPresetRun::<BE, BC>::setup_with_keys(
                 preset.clone(),
                 ShapingUnit::U32_45,
@@ -422,4 +408,20 @@ where
         let mut run = ReplicatedBootstrappingPresetRun::<BE, BC>::setup_with_unit(preset.clone(), ShapingUnit::U8_40, k);
         check(&mut run, "offset");
     }
+}
+
+/// `plan` compiled on `module` and prepared.
+fn compile<B>(module: &Module<B>, base2k: usize, plan: &BootstrappingPlan) -> BootstrappingContextPrepared<B, f64>
+where
+    B: Backend,
+    Module<B>: crate::test_suite::replicated::ReplicatedBootstrapModule<B, f64>,
+    ScratchOwned<B>: ScratchOwnedAlloc<B>,
+    CKKSPlaintextOwned<B>: poulpy_core::layouts::GLWEToBackendRef<B> + crate::CKKSCtBounds + poulpy_core::GLWEDiagonalProd<B>,
+{
+    let unprepared = with_scratch::<B, _>(
+        BootstrappingContextPrepared::<B, f64>::compile_unprepared_tmp_bytes(module, plan).unwrap(),
+        |s| BootstrappingContextPrepared::<B, f64>::compile_unprepared(module, base2k.into(), plan, s),
+    )
+    .unwrap();
+    with_scratch::<B, _>(unprepared.prepare_tmp_bytes(module), |s| unprepared.prepare(module, s)).unwrap()
 }

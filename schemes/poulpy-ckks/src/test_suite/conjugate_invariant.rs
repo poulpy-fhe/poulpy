@@ -944,7 +944,7 @@ where
     }
 
     let mut extended = alloc_ct(&standard_params, &standard, params.k);
-    with_scratch::<BE, _>(standard.ckks_ci_embed_tmp_bytes(&extended, &embed_key), |s| {
+    with_scratch::<BE, _>(standard.ckks_ci_embed_tmp_bytes(&extended, &ct, &embed_key), |s| {
         standard.ckks_ci_embed(&mut extended, &ct, &embed_key, s)
     })
     .unwrap();
@@ -1085,13 +1085,24 @@ where
     let wide = fixture_ciphertext(&ci, &ci_layout(past_key, base2k), 63);
     let err = embed_refused("past the key", &standard_layout(past_key, base2k), &wide, 0);
     invalid("past the key", &err, "ckks_ci_embed");
-    // The key switch rounds plainly, so a replicated source is refused.
+    // A replicated source switches at its shaping depth: a key short of it, or an arena below the query of a
+    // replicated source, is refused before any write.
     let replicated = crate::SlotLayout::Replicated(crate::shaping::ShapingUnit::U16_20.layout(1).unwrap());
     let mut replicated_ct = ct.clone();
     crate::SetGLWEPlaintextInfos::set_slot_layout(&mut replicated_ct, replicated);
-    let err = embed_refused("replicated", &standard_layout(k, base2k), &replicated_ct, 0);
-    invalid("replicated", &err, "ckks_ci_embed");
-    let bytes = standard.ckks_ci_embed_tmp_bytes(&extended, &embed_key);
+    let lambda = crate::shaping::product_depth(replicated, replicated_ct.log_delta()).unwrap();
+    let key_covers = |key_k: usize, k: usize| key_k >= k + lambda;
+    let bytes = standard.ckks_ci_embed_tmp_bytes(&extended, &replicated_ct, &embed_key);
+    let err = embed_refused("replicated", &standard_layout(k, base2k), &replicated_ct, bytes - 1);
+    if key_covers(
+        embed_key.gglwe_layout().max_input_k().as_usize(),
+        replicated_ct.k().as_usize(),
+    ) {
+        assert_ckks_internal("replicated", &err, "ckks_ci_embed: scratch below its query");
+    } else {
+        invalid("replicated", &err, "ckks_ci_embed");
+    }
+    let bytes = standard.ckks_ci_embed_tmp_bytes(&extended, &ct, &embed_key);
     let err = embed_refused("short arena", &standard_layout(k, base2k), &ct, bytes - 1);
     assert_ckks_internal("short arena", &err, "ckks_ci_embed: scratch below its query");
 
@@ -1106,8 +1117,16 @@ where
     invalid("past the key", &err, "ckks_ci_trace");
     let mut replicated_extended = extended.clone();
     crate::SetGLWEPlaintextInfos::set_slot_layout(&mut replicated_extended, replicated);
-    let err = trace_refused("replicated", &ci_layout(k - 1, base2k), &replicated_extended, 0);
-    invalid("replicated", &err, "ckks_ci_trace");
+    let bytes = standard.ckks_ci_trace_tmp_bytes(&back, &replicated_extended, &trace_key);
+    let err = trace_refused("replicated", &ci_layout(k - 1, base2k), &replicated_extended, bytes - 1);
+    if key_covers(
+        trace_key.gglwe_layout().max_input_k().as_usize(),
+        replicated_extended.k().as_usize(),
+    ) {
+        assert_ckks_internal("replicated", &err, "ckks_ci_trace: scratch below its query");
+    } else {
+        invalid("replicated", &err, "ckks_ci_trace");
+    }
     let spent = fixture_ciphertext(&standard, &standard_layout(ct.log_delta(), base2k), 65);
     let err = trace_refused("no budget", &ci_layout(k - 1, base2k), &spent, 0);
     assert!(

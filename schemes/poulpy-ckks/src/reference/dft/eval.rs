@@ -40,7 +40,7 @@ use crate::{
     CKKSCompositionError, CKKSCtBounds, SetCKKSInfos,
     api::{
         CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar, CKKSImagOps,
-        CKKSLinearTransformationOps, CKKSRotateOps, CKKSSubOps, LtDiagonalMeta,
+        CKKSLinearTransformationOps, CKKSRotateOps, CKKSRoundOps, CKKSSubOps, LtDiagonalMeta,
     },
     layouts::{
         CKKSDFTFactors, CKKSPlaintextOwned, ComplexDiagonals, DFTMatrix, DFTMatrixFactors, DFTMatrixPrepared, DFTPlan,
@@ -398,7 +398,9 @@ where
         + CKKSRotateOps<BE>
         + CKKSAddOps<BE>
         + CKKSSubOps<BE>
-        + CKKSImagOps<BE>,
+        + CKKSImagOps<BE>
+        + CKKSRoundOps<BE>
+        + poulpy_core::GLWETrace<BE>,
 {
     let envelope = |ct: &dyn CKKSCtBounds| crate::CKKSLayout {
         glwe_layout: GLWELayout {
@@ -413,9 +415,35 @@ where
         dft.factor_plans().len() == dft.factors().count(),
         "ckks_dft_tmp_bytes: one schedule per factor"
     );
+    if let Some(stage) = dft.replicated_stage() {
+        return crate::reference::bootstrapping::replicated::stage_tmp_bytes(module, &envelope(dst), stage, key, |layout| {
+            chain_tmp_bytes(module, std::slice::from_ref(layout), dft, key)
+        });
+    }
     let layouts = [envelope(dst), envelope(src)];
-    let mut bytes = module.ckks_copy_tmp_bytes(dst, src);
-    for ct in &layouts {
+    module
+        .ckks_copy_tmp_bytes(dst, src)
+        .max(chain_tmp_bytes(module, &layouts, dft, key))
+}
+
+/// The largest query of the chain of `dft` and of its format wrappers on ciphertexts of each of `layouts`.
+fn chain_tmp_bytes<BE, Dir, Fmt, D, K>(module: &Module<BE>, layouts: &[crate::CKKSLayout], dft: &D, key: &K) -> usize
+where
+    BE: Backend,
+    D: CKKSDFTFactors<BE, Dir, Fmt>,
+    K: GGLWEInfos,
+    Module<BE>: GLWELinearTransformationOps<BE>
+        + GLWEBytesOf<BE>
+        + GLWELinearTransformationBabyStepsBytesOf<BE>
+        + CKKSCopyOps<BE>
+        + CKKSConjugateOps<BE>
+        + CKKSRotateOps<BE>
+        + CKKSAddOps<BE>
+        + CKKSSubOps<BE>
+        + CKKSImagOps<BE>,
+{
+    let mut bytes = 0;
+    for ct in layouts {
         bytes = bytes
             .max(module.ckks_copy_tmp_bytes(ct, ct))
             .max(module.ckks_conjugate_tmp_bytes(ct, key))
@@ -484,7 +512,9 @@ pub trait CKKSDFTReference<BE: Backend> {
             + CKKSRotateOps<BE>
             + CKKSAddOps<BE>
             + CKKSSubOps<BE>
-            + CKKSImagOps<BE>;
+            + CKKSImagOps<BE>
+            + CKKSRoundOps<BE>
+            + poulpy_core::GLWETrace<BE>;
 
     fn ckks_dft_matrix_prepare_reference<Dir, Fmt, P>(
         &self,
@@ -536,7 +566,9 @@ impl<BE: Backend> CKKSDFTReference<BE> for Module<BE> {
             + CKKSRotateOps<BE>
             + CKKSAddOps<BE>
             + CKKSSubOps<BE>
-            + CKKSImagOps<BE>,
+            + CKKSImagOps<BE>
+            + CKKSRoundOps<BE>
+            + poulpy_core::GLWETrace<BE>,
     {
         ckks_dft_tmp_bytes_reference(self, dst, src, dft, key)
     }

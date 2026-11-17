@@ -143,7 +143,8 @@ pub use bootstrapping::BootstrappingContextUnprepared;
 pub use bootstrapping::{
     BootstrappingContext, BootstrappingContextPrepared, BootstrappingKeyWidths, BootstrappingPipeline, BootstrappingPlan,
     BootstrappingRun, BootstrappingTechniques, CIConversion, CIPrePrepared, CoeffsMaskPrepared, EvalModCIPrepared, EvalModRing,
-    EvalRoundPlus, MaskedFactors, MergedS2CFactorPrepared, SparseSecretEncapsulation,
+    EvalRoundPlus, MaskedFactors, MergedS2CFactorPrepared, ReplicatedRoute, ReplicatedStage, ReplicatedTransforms,
+    SparseSecretEncapsulation,
 };
 pub use bootstrapping_keys::{
     BootstrappingKeySet, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingKeysPrepared, BootstrappingLinearKeys,
@@ -185,10 +186,7 @@ pub use paco::{
     PaCoPlan, PaCoSecretSpec, PaCoSlotOrder, PaCoWorker,
 };
 pub use plaintext::{CKKSPlaintext, CKKSPlaintextOwned, CKKSPlaintextViewMut};
-pub use replicated::{
-    ReplicatedBootstrapPlan, ReplicatedBootstrapWorkspace, ReplicatedBootstrapping, ReplicatedConversion, ReplicatedTransform,
-    ReplicatedTransformWorkspace, ReplicatedTransforms,
-};
+pub use replicated::{ReplicatedConversion, ReplicatedTransform, ReplicatedTransformWorkspace};
 pub use ship::{
     HMuxRotKey, HMuxRotKeyPrepared, ShipCoeffEncodings, ShipIndexKeys, ShipIndexKeysPrepared, ShipKeyParameters, ShipKeySet,
     ShipKeysLayout, ShipKeysPrepared, ShipPlan, ShipSecretSpec,

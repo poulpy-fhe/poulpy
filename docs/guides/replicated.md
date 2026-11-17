@@ -36,7 +36,7 @@ The other operations build on it:
 - polynomial evaluation and EvalMod take `MaskedCoeffs` (`encode_bsgs_replicated`, `ckks_eval_mod_replicated_compile`), refusing constants without their masked plaintexts before any work, and evaluate each baby step as one shaped linear combination, each power prepared once per polynomial.
 
 Sums and differences of one slot layout and one scale add exactly.
-Operations that would round plainly or write the guard slots return `InvalidOperand` on a replicated layout: constant additions, rotations by a slot count that is not a multiple of `R`, dot products of prepared operands, inner sums, the full-layout linear transformations and DFT, ModUp, bootstrapping, PaCo and SHIP.
+Operations that would round plainly or write the guard slots return `InvalidOperand` on a replicated layout: constant additions, rotations by a slot count that is not a multiple of `R`, dot products of prepared operands, inner sums, the full-layout linear transformations and DFT, ModUp, a bootstrapping plan of the full layout, PaCo and SHIP.
 
 ## Conversions
 
@@ -50,28 +50,28 @@ The workspace owns the prepared baby rotations for that input layout; evaluation
 
 ## Bootstrapping
 
-`CKKSReplicatedBootstrapOps::ckks_replicated_bootstrap` refreshes a replicated ciphertext in `SlotsToCoeffs`-first order:
+A replicated ciphertext is refreshed by `ckks_bootstrap` with a plan on the replicated route, `BootstrappingPlan::replicated(route, eval_mod, techniques)`, S2C-first.
+`ReplicatedRoute` holds the route (`ReplicatedRoute::paper` is the configuration of the paper, `ReplicatedRoute::paper_eval_mod` its EvalMod), and the plan its widths (`replicated_input_k`, `replicated_raised_k`).
+The steps read the route from the run of the compiled context:
 
-1. a normalized trace averages the `N/(2kR)` copies of the period;
-2. `SlotsToCoeffs` gathers the data slots onto the coefficients of the subring of degree `2k`;
-3. ModUp, with sparse-secret encapsulation;
-4. a normalized trace onto period `k`, then `CoeffsToSlots`, with the real and imaginary parts side by side when they fit (packed);
-5. EvalMod (cosine with double angles), on both parts at once when packed;
-6. a shaped rounding back to the leveled scale.
+1. `ckks_slots_to_coeffs_assign` brings the input to `Δ_b`, averages the `N/(2kR)` copies of the period by a normalized trace, and gathers the data slots onto the coefficients of the subring of degree `2k`;
+2. `ckks_mod_raise`, with sparse-secret encapsulation, lifts the message by `mod_up_extra_bits` and the working bits of `CoeffsToSlots`;
+3. `ckks_coeffs_to_slots_assign` takes a normalized trace onto period `k`, then writes the coefficients onto the data slots, with the real and imaginary parts side by side when `packed`;
+4. `ckks_bootstrap_eval_mod` rounds the real and imaginary parts with shaping, evaluates EvalMod (cosine with double angles) on both at once when packed, recombines them, and rounds with shaping to the leveled scale at the width of the output.
 
-`ReplicatedBootstrapPlan` holds the circuit (`ReplicatedBootstrapPlan::paper` is the configuration of the paper) and its widths (`k_in`, `k_boot`, `key_k`).
 EvalMod enters its scale with a shaped rounding, which leaves noise of about `2^(G + log2(sqrt(N)))` units on the guard slots for a unit whose guards grow by `G` bits.
 The cosine polynomial and the double angles square the guards, so they must stay well below one: at `2^28`, the guards of `U8_40` (`G = 14.58`) reach `2^7` after the polynomial and wrap the data after the double angles.
-`ReplicatedBootstrapPlan::eval_mod_log_delta` keeps the paper's `2^28` for units whose guards grow by at most 13 bits, and runs EvalMod at `ceil(G) + 15` bits above that, `2^30` for `U8_40` and `2^31` for `U4_15`.
-Its `transforms` select how `SlotsToCoeffs` and `CoeffsToSlots` are evaluated:
+`ReplicatedRoute::eval_mod_log_delta` keeps the paper's `2^28` for units whose guards grow by at most 13 bits, and runs EvalMod at `ceil(G) + 15` bits above that, `2^30` for `U8_40` and `2^31` for `U4_15`.
+Its `transforms` select how `SlotsToCoeffs` and `CoeffsToSlots` are evaluated, both from the DFT generator on the subring of degree `2k`:
 
-- `ReplicatedTransforms::Dense`, the paper's: each map is one BSGS transform of `k` (`SlotsToCoeffs`) or `2k` (packed `CoeffsToSlots`) diagonals, consuming one diagonal scale;
-- `ReplicatedTransforms::Factored`: each map is the DFT on period `k` in `s2c_factors` or `c2s_factors` factors and the move between consecutive slots and the data slots in `placement_factors` factors of 0/1 masks, each factor a BSGS transform whose giant step is fitted to its offsets. Every `SlotsToCoeffs` factor consumes `s2c_log_delta_diag` bits; the last `CoeffsToSlots` factor is quantized with shaping at `c2s_log_delta_diag` bits and the others plainly at `c2s_inner_log_delta_diag` bits. Factored maps take at least `2^f` values for `f` factors, and a packed plan needs the two batches to fit the ring.
+- `ReplicatedTransforms::Dense`, the paper's: each map is the one-factor DFT merged with the placement, one BSGS transform of `k` (`SlotsToCoeffs`) or `2k` (packed `CoeffsToSlots`) diagonals, consuming one diagonal scale;
+- `ReplicatedTransforms::Factored`: each map is the DFT on period `k` in `s2c_factors` or `c2s_factors` factors and the move between consecutive slots and the data slots in `placement_factors` factors of 0/1 masks, each factor a BSGS transform whose giant step is fitted to its offsets. Every `SlotsToCoeffs` factor consumes `s2c_log_delta_diag` bits; the last `CoeffsToSlots` factor is quantized with shaping at `c2s_log_delta_diag` bits and the others plainly at `c2s_inner_log_delta_diag` bits. Factored maps take at least `2^f` values for `f` factors.
 
+A packed route needs its two batches to fit the ring, `4kR <= N`, which the compilation checks.
 Factoring trades levels and rotation keys for fewer diagonals: at `N = 2^16` and `k = 2^10`, the dense maps multiply by about 3000 diagonals with 69 rotation keys, the factored maps of `n16_d20_k763_p19_s2c_factored` by 381 diagonals with 83 keys, for a raised modulus 256 bits wider at the same levels.
 At `k = 2^10`, the factored preset bootstraps in 6.3 s on one `NTT4x30Neon` thread and 0.36 s on Metal, against 8.1 s and 0.52 s for dense maps at the same levels, within 0.2 bits of their precision. At `k = 2^8` the dense maps are faster, the diagonals no longer dominating.
-`ReplicatedBootstrapping` compiles it for a module: the transforms, the masked EvalMod constants, and the Galois elements its keys cover.
-`ReplicatedBootstrapPlan::secure_key_layouts` sizes the gadgets of the keys with the fewest digits whose modulus fits the caller's bounds for the dense secret and for the ephemeral sparse secret, with one automorphism key for each Galois element of the compiled bootstrapping.
+`BootstrappingContextPrepared::compile` compiles the plan for a module: the transforms, the masked EvalMod constants, and the Galois elements its keys cover (`replicated_galois_elements`).
+`BootstrappingPlan::replicated_secure_key_layouts` sizes the gadgets of the keys with the fewest digits whose modulus fits the caller's bounds for the dense secret and for the ephemeral sparse secret, with one automorphism key for each Galois element of the compiled bootstrapping.
 
 ### Presets
 
@@ -80,13 +80,13 @@ The batch size and the shaping unit are the caller's.
 The input and output widths do not depend on them, while the raised modulus and the keys follow the unit's EvalMod scale: `plan` and `keys_layout` take the layout.
 A preset refuses a unit whose suppression is less than 8 bits above its precision, since the bootstrapping falls short of the suppression by up to 5 bits: the units of `R = 2` and those targeting 20 bits, which measure 16 to 19 bits on the logN14 preset.
 The logN16 preset factors its maps into two DFT factors and two placement factors each, with `SlotsToCoeffs` diagonals at `2^30` and inner `CoeffsToSlots` diagonals at `2^54`, for batches of 4 to `2^10` values at `R = 16`.
-The sparse-to-dense key covers the 49-bit lifted ModUp input, with a row offset ending its gadget at the raised modulus. Its full modulus includes that offset, the gadget and the auxiliary bits.
+The sparse-to-dense key covers the 57-bit lifted ModUp input, with a row offset ending its gadget at the raised modulus. Its full modulus includes that offset, the gadget and the auxiliary bits.
 
 | preset | ring | levels at `2^20` | keys (digits × width + aux) | ephemeral key | sparse-to-dense key (offset + gadget + aux) | min precision, k = 16 / 64 |
 |---|---|---|---|---|---|---|
-| `n14_d20_k109_p21_s2c` | `2^14` | 2 | 14 × 28 + 28 | 2 × 22 + 22 | 333 + 2 × 25 + 25 | 21.79 / 21.73 bits |
-| `n15_d20_k389_p20_s2c` | `2^15` | 16 | 4 × 168 + 168 | 1 × 43 + 43 | 614 + 1 × 49 + 49 | 21.16 / 20.84 bits |
-| `n16_d20_k763_p19_s2c_factored` | `2^16` | 30 | 3 × 403 + 403 | 1 × 43 + 43 | 1150 + 1 × 49 + 49 | 20.52 / 20.38 bits |
+| `n14_d20_k109_p21_s2c` | `2^14` | 2 | 14 × 28 + 28 | 2 × 22 + 22 | 333 + 2 × 29 + 29 | 21.79 / 21.73 bits |
+| `n15_d20_k389_p20_s2c` | `2^15` | 16 | 4 × 168 + 168 | 1 × 43 + 43 | 614 + 1 × 57 + 57 | 21.16 / 20.84 bits |
+| `n16_d20_k763_p19_s2c_factored` | `2^16` | 30 | 3 × 403 + 403 | 1 × 43 + 43 | 1150 + 1 × 57 + 57 | 20.52 / 20.38 bits |
 
 The logN14 preset advertises 21 bits of precision on the data slots, the logN15 preset 20 bits and the logN16 preset 19 bits, which the precision test asserts.
 The logN16 preset measures 20.35 bits at `k = 2^8` and 20.00 bits at `k = 2^10` on `NTT4x30Neon`. The test covers offset and full-width return keys on matched ciphertexts, and `U8_40` at `k = 64`.
@@ -95,9 +95,9 @@ With `U8_40`, EvalMod at `2^30` raises the modulus by 16 bits:
 
 | preset | raised modulus | keys (digits × width + aux) | min precision, k = 64 |
 |---|---|---|---|
-| `n14_d20_k109_p21_s2c` | 399 bits | 34 × 12 + 12 | 21.28 bits |
-| `n15_d20_k389_p20_s2c` | 679 bits | 5 × 138 + 138 | 20.94 bits |
-| `n16_d20_k763_p19_s2c_factored` | 1215 bits | 3 × 408 + 408 | 20.61 bits |
+| `n14_d20_k109_p21_s2c` | 407 bits | 34 × 12 + 12 | 21.28 bits |
+| `n15_d20_k389_p20_s2c` | 687 bits | 5 × 138 + 138 | 20.94 bits |
+| `n16_d20_k763_p19_s2c_factored` | 1223 bits | 3 × 408 + 408 | 20.61 bits |
 
 The logN14 bound of 424 bits leaves only 12-bit digits, so its key switches take 34 digits instead of 14.
 
@@ -114,22 +114,23 @@ Leveled operations, polynomial evaluation, EvalMod and the conversions take the 
 Masked constants and the masked one keep their real part, as the slot encoder does.
 The conjugation, complex polynomials, the packed EvalMod and diagonals with an imaginary part are standard-only.
 
-`CKKSReplicatedCIBootstrapOps::ckks_replicated_ci_bootstrap` bootstraps through the standard ring of degree `2N` of its module, where the `ReplicatedBootstrapping` is compiled, the conjugate-invariant input and output of degree `N` living on the same module:
+`ckks_ci_embed` and `ckks_ci_trace` take a replicated layout: each switches at the shaping depth under the scale, then rounds with shaping.
+A conjugate-invariant ciphertext of degree `N` is bootstrapped through the standard ring of degree `2N` of its module, where the context is compiled, by composing them:
 
-1. The input is embedded (`GLWECIEmbedKey`) at the shaping depth under its scale, then rounded with shaping to its width.
-2. The standard bootstrapping refreshes it, one bit wider than the output.
-3. The relative trace (`GLWECITraceKey`) brings it back at the shaping depth under the leveled scale, then a shaped rounding gives the output width.
+1. `ckks_ci_embed` embeds the input under its `GLWECIEmbedKey`.
+2. `ckks_bootstrap` refreshes it, into a standard ciphertext one bit wider than the output.
+3. `ckks_ci_trace` brings it back under its `GLWECITraceKey`, the trace spending the extra bit.
 
 The key switches of the ring maps and the halving of the trace stay under the shaping depth, so the data slots keep the precision of the standard bootstrapping.
-The two keys switch between the conjugate-invariant secret and the standard secret of the bootstrapping keys (`GLWECIKeyEncryptSk`), and cover the widths of the ring maps.
-`ReplicatedBootstrapping` compiles for the standard ring, and the presets are sized for it.
+The two keys switch between the conjugate-invariant secret and the standard secret of the bootstrapping keys (`GLWECIKeyEncryptSk`), and cover the widths of the ring maps at the shaping depth.
+The context compiles for the standard ring, and the presets are sized for it.
 
 ## Construction outline
 
 ```rust,ignore
 use poulpy_ckks::{
-    api::CKKSReplicatedBootstrapOps,
-    layouts::ReplicatedBootstrapping,
+    api::CKKSBootstrappingOps,
+    layouts::BootstrappingContextPrepared,
     presets::replicated_bootstrapping::n15_d20_k389_p20_s2c,
     shaping::ShapingUnit,
 };
@@ -137,20 +138,19 @@ use poulpy_ckks::{
 let preset = n15_d20_k389_p20_s2c()?;
 let layout = ShapingUnit::U32_45.layout(log_k)?;
 let plan = preset.plan(layout)?;
-// `scratch` covers `ReplicatedBootstrapping::<MyBackend, f64>::new_tmp_bytes(&module, &plan, base2k)?`.
-let ctx = ReplicatedBootstrapping::<MyBackend, f64>::new(&module, plan, base2k, &mut scratch)?;
+// `scratch` covers `compile_unprepared_tmp_bytes(&module, &plan)?` and the preparation of the unprepared context.
+let ctx = BootstrappingContextPrepared::<MyBackend, f64>::compile(&module, base2k, &plan, &mut scratch)?;
+let keys_layout = preset.keys_layout(layout, &ctx.replicated_galois_elements(&module))?;
 let keys = ctx
-    .generate_keys(&module, &sk, &preset.keys_layout(layout, &ctx.galois_elements(&module))?, preset.sparse_secret_hamming_weight(),
-                   &mut source_xs, &mut source_xe, &mut source_xa, &mut scratch)
-    .prepare(&module, &mut scratch);
+    .generate_replicated_keys(&module, &sk, &keys_layout, preset.sparse_secret_hamming_weight(),
+                              &mut source_xs, &mut source_xe, &mut source_xa, &mut scratch)
+    .prepare(&module, &mut scratch)?;
 
 // `input` holds `2^log_k` values at the leveled scale and width `preset.input_k()`.
 let mut output = module.ckks_ciphertext_alloc_from_infos(&preset.output_layout(layout));
-let mut workspace = ctx.alloc_workspace(&module, &output);
-module.ckks_replicated_bootstrap(&mut output, &input, &ctx, &mut workspace, &keys, &mut scratch)?;
+// `scratch` covers `module.ckks_bootstrap_tmp_bytes(&output, &input, &ctx, &keys_layout)`.
+module.ckks_bootstrap(&mut output, &input, &ctx, &keys, &mut scratch)?;
 ```
-
-The bootstrap workspace is reusable for the same output width and plan. Concurrent evaluations use separate workspaces and scratch arenas.
 
 `ReplicatedBootstrappingPresetRun` in `poulpy_ckks::test_suite::replicated_presets` is a complete example, from key generation to the precision measurement.
 
@@ -158,5 +158,5 @@ The bootstrap workspace is reusable for the same output width and plan. Concurre
 
 The CKKS test suite checks every shaped operation against the full layout on the data slots (`test_round_*`, `test_replicated_*`), every unit on a product chain, that operations which would round plainly reject a replicated input, and the bootstrapping on a small ring.
 `test_replicated_parity` checks that the shaped operations give the same digits on every pair of backends, on both rings and at ranks 1 and 2, and the encryption parity suites check shaped encryption under the same draws.
-`conjugate_invariant_ckks_test_suite!` runs the tests that apply to the conjugate-invariant ring the shaped rounding on the unfolded coefficients and `test_replicated_ci_bootstrap`.
+`conjugate_invariant_ckks_test_suite!` runs the tests that apply to the conjugate-invariant ring, the shaped rounding on the unfolded coefficients, and `test_replicated_ci_bootstrap`, which composes the ring maps with the bootstrapping.
 The ignored test `replicated_bootstrapping_presets_meet_precision`, registered on the NTT backends, runs every preset at both batch sizes and asserts the advertised precision; the benchmark `bench_ckks_replicated_bootstrapping` of `poulpy-bench` runs the same configurations.

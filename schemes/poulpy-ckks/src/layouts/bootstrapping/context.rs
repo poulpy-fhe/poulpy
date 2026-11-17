@@ -16,7 +16,7 @@ use crate::{
     layouts::{
         CKKSDFTFactors, CKKSPlaintextOwned, CKKSRightOperandPrepared, DFTMatrix, DFTMatrixPrepared, DFTPlan, Decode, Encode,
         EvalMod, EvalModPlan, ModRaisePrepared, Split, Standard, eval_mod::ckks_eval_mod_compile,
-        mod_raise::first_factor_prepare,
+        mod_raise::first_factor_prepare, replicated::ReplicatedEncodeModule,
     },
 };
 
@@ -24,6 +24,7 @@ use super::{
     BootstrappingPipeline, BootstrappingPlan, CIConversion, EvalModCIPrepared, EvalModRing,
     eval_mod_ci::{CIPre, EvalModCI},
     key_widths::{RotationKeyOffsets, StageWidths},
+    replicated::{self, ReplicatedStages},
 };
 
 /// Compiled [`BootstrappingPlan`]: the resident DFT matrices and encoded EvalMod
@@ -63,6 +64,10 @@ pub struct BootstrappingContextPrepared<BE: Backend, F> {
 
     /// The offsets of the rotation keys at the compile degree, which every entry check reads.
     rotation_key_offsets: Vec<RotationKeyOffsets>,
+
+    /// The replicated route: EvalMod with masked constants and the shape of the traces, the transforms holding its
+    /// maps.
+    pub(crate) replicated: Option<ReplicatedStages<BE, F>>,
 }
 
 // A context holds `Split` matrices, evaluated unsplit: see `ckks_coeffs_to_slots_assign` for the scale.
@@ -185,6 +190,11 @@ impl<BE: Backend, F> BootstrappingContextPrepared<BE, F> {
         self.eval_mod_ci.as_ref()
     }
 
+    /// The compiled replicated route, `None` on the full layout.
+    pub(crate) fn replicated(&self) -> Option<&ReplicatedStages<BE, F>> {
+        self.replicated.as_ref()
+    }
+
     /// Ephemeral sparse-secret weight required by the compiled recipe.
     pub fn sparse_secret_hamming_weight(&self) -> Option<usize> {
         self.plan.sparse_secret_hamming_weight()
@@ -207,6 +217,7 @@ pub struct BootstrappingContext<BE: Backend, F> {
     slots_to_coeffs: DFTMatrix<BE, Decode, Split>,
     eval_mod: Option<EvalMod<F, CKKSPlaintextOwned<BE>>>,
     eval_mod_ci: Option<EvalModCI<BE, F>>,
+    replicated: Option<ReplicatedStages<BE, F>>,
 }
 
 /// The former name of [`BootstrappingContext`].
@@ -260,6 +271,7 @@ impl<BE: Backend, F> BootstrappingContext<BE, F> {
             slots_to_coeffs,
             eval_mod,
             eval_mod_ci,
+            replicated,
         } = self;
         let coeffs_to_slots = {
             let unprepared = coeffs_to_slots;
@@ -290,8 +302,12 @@ impl<BE: Backend, F> BootstrappingContext<BE, F> {
             eval_mod,
             eval_mod_ci,
             rotation_key_offsets: Vec::new(),
+            replicated,
         };
-        context.rotation_key_offsets = context.stage_widths().rotation_key_offsets(log_n);
+        // The replicated route looks its keys up at the widths of its own stages.
+        if context.replicated.is_none() {
+            context.rotation_key_offsets = context.stage_widths().rotation_key_offsets(log_n);
+        }
         Ok(context)
     }
 }
@@ -331,7 +347,8 @@ where
             + CKKSDFTOps<BE>
             + CKKSDFTMatrixOps<BE, F>
             + CKKSEncodingOps<BE, F>
-            + CKKSRightOperandPreparedFactory<BE>,
+            + CKKSRightOperandPreparedFactory<BE>
+            + ReplicatedEncodeModule<BE, F>,
         Module<BE>: CKKSEncodingOps<BE, F, ConjugateInvariant>,
         CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds + GLWEDiagonalProd<BE>,
     {
@@ -352,7 +369,7 @@ where
     /// As [`Self::compile`], and the plan-versus-ring error of [`CKKSDFTMatrixOps::ckks_dft_matrix_new`].
     pub fn compile_unprepared_tmp_bytes(module: &Module<BE>, plan: &BootstrappingPlan) -> Result<usize>
     where
-        Module<BE>: CKKSDFTMatrixOps<BE, F> + CKKSEncodingOps<BE, F>,
+        Module<BE>: CKKSDFTMatrixOps<BE, F> + CKKSEncodingOps<BE, F> + ReplicatedEncodeModule<BE, F>,
         Module<BE>: CKKSEncodingOps<BE, F, ConjugateInvariant>,
     {
         if plan.eval_mod_ring() == EvalModRing::Standard {
@@ -368,8 +385,11 @@ where
     /// [`Self::compile_unprepared_tmp_bytes`] of the stages on `module`.
     fn stages_tmp_bytes(module: &Module<BE>, plan: &BootstrappingPlan) -> Result<usize>
     where
-        Module<BE>: CKKSDFTMatrixOps<BE, F> + CKKSEncodingOps<BE, F>,
+        Module<BE>: CKKSDFTMatrixOps<BE, F> + CKKSEncodingOps<BE, F> + ReplicatedEncodeModule<BE, F>,
     {
+        if let Some(route) = plan.replicated_route() {
+            return replicated::compile_tmp_bytes::<BE, F>(module, route);
+        }
         let mut bytes = module
             .ckks_dft_matrix_new_tmp_bytes::<Encode, Split>(&plan.coeffs_to_slots)?
             .max(module.ckks_dft_matrix_new_tmp_bytes::<Decode, Split>(&plan.slots_to_coeffs)?);
@@ -399,7 +419,7 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<BootstrappingContext<BE, F>>
     where
-        Module<BE>: CKKSDFTMatrixOps<BE, F> + CKKSEncodingOps<BE, F>,
+        Module<BE>: CKKSDFTMatrixOps<BE, F> + CKKSEncodingOps<BE, F> + ReplicatedEncodeModule<BE, F>,
         Module<BE>: CKKSEncodingOps<BE, F, ConjugateInvariant>,
     {
         let EvalModRing::ConjugateInvariant { pre, post } = plan.eval_mod_ring() else {
@@ -430,8 +450,22 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<BootstrappingContext<BE, F>>
     where
-        Module<BE>: CKKSDFTMatrixOps<BE, F> + CKKSEncodingOps<BE, F>,
+        Module<BE>: CKKSDFTMatrixOps<BE, F> + CKKSEncodingOps<BE, F> + ReplicatedEncodeModule<BE, F>,
     {
+        if let Some(route) = plan.replicated_route() {
+            let (coeffs_to_slots, slots_to_coeffs, stages) = replicated::compile::<BE, F>(module, base2k, plan, route, scratch)?;
+            return Ok(BootstrappingContext {
+                plan: plan.clone(),
+                log_n: module.log_n(),
+                coeffs_to_slots,
+                coeffs_to_slots_first_factor: None,
+                coeffs_to_slots_bypass: None,
+                slots_to_coeffs,
+                eval_mod: None,
+                eval_mod_ci: None,
+                replicated: Some(stages),
+            });
+        }
         plan.check_log_gap_fits(module.log_n())?;
         let coeffs_to_slots = module.ckks_dft_matrix_new::<Encode, Split>(base2k, &plan.coeffs_to_slots, scratch)?;
         // A first factor left to the modulus raise is evaluated from its plaintexts, and a last one `u` folds into by
@@ -469,6 +503,7 @@ where
             slots_to_coeffs,
             eval_mod,
             eval_mod_ci: None,
+            replicated: None,
         })
     }
 }

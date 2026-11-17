@@ -4,8 +4,7 @@ use poulpy_ckks::{
     impl_ckks_complex_polynomial_evaluation_reference_full, impl_ckks_conjugate_reference_full,
     impl_ckks_dft_matrix_reference_full, impl_ckks_dft_reference_full, impl_ckks_encapsulated_mod_up_reference_full,
     impl_ckks_fold_layout_reference_full, impl_ckks_fold_reference_full, impl_ckks_imag_reference_full,
-    impl_ckks_mod_up_first_factor_reference_full, impl_ckks_paco_reference_full, impl_ckks_replicated_bootstrap_reference_full,
-    impl_ckks_replicated_ci_bootstrap_reference_full, impl_ckks_ship_reference_full,
+    impl_ckks_mod_up_first_factor_reference_full, impl_ckks_paco_reference_full, impl_ckks_ship_reference_full,
 };
 
 impl_ckks_encapsulated_mod_up_reference_full!(FFT64Avx);
@@ -42,8 +41,6 @@ poulpy_cpu_portable::impl_cpu_ckks_defaults!(super::FFT64Avx);
 impl_ckks_conjugate_reference_full!(super::FFT64Avx);
 impl_ckks_imag_reference_full!(super::FFT64Avx);
 impl_ckks_bootstrapping_reference_full!(super::FFT64Avx);
-impl_ckks_replicated_bootstrap_reference_full!(super::FFT64Avx);
-impl_ckks_replicated_ci_bootstrap_reference_full!(super::FFT64Avx);
 impl_ckks_fold_layout_reference_full!(super::FFT64Avx);
 impl_ckks_fold_reference_full!(super::FFT64Avx);
 impl_ckks_complex_polynomial_evaluation_reference_full!(super::FFT64Avx);
@@ -58,8 +55,6 @@ poulpy_cpu_portable::impl_cpu_ckks_defaults!(super::NTT4x30Avx);
 impl_ckks_conjugate_reference_full!(super::NTT4x30Avx);
 impl_ckks_imag_reference_full!(super::NTT4x30Avx);
 impl_ckks_bootstrapping_reference_full!(super::NTT4x30Avx);
-impl_ckks_replicated_bootstrap_reference_full!(super::NTT4x30Avx);
-impl_ckks_replicated_ci_bootstrap_reference_full!(super::NTT4x30Avx);
 impl_ckks_fold_layout_reference_full!(super::NTT4x30Avx);
 impl_ckks_fold_reference_full!(super::NTT4x30Avx);
 impl_ckks_complex_polynomial_evaluation_reference_full!(super::NTT4x30Avx);
@@ -78,10 +73,6 @@ impl_ckks_conjugate_reference_full!(super::FFT64AvxRayon);
 impl_ckks_imag_reference_full!(super::FFT64AvxRayon);
 #[cfg(feature = "enable-rayon")]
 impl_ckks_bootstrapping_reference_full!(super::FFT64AvxRayon);
-#[cfg(feature = "enable-rayon")]
-impl_ckks_replicated_bootstrap_reference_full!(super::FFT64AvxRayon);
-#[cfg(feature = "enable-rayon")]
-impl_ckks_replicated_ci_bootstrap_reference_full!(super::FFT64AvxRayon);
 #[cfg(feature = "enable-rayon")]
 impl_ckks_fold_layout_reference_full!(super::FFT64AvxRayon);
 #[cfg(feature = "enable-rayon")]
@@ -110,10 +101,6 @@ impl_ckks_conjugate_reference_full!(super::NTT4x30AvxRayon);
 impl_ckks_imag_reference_full!(super::NTT4x30AvxRayon);
 #[cfg(feature = "enable-rayon")]
 impl_ckks_bootstrapping_reference_full!(super::NTT4x30AvxRayon);
-#[cfg(feature = "enable-rayon")]
-impl_ckks_replicated_bootstrap_reference_full!(super::NTT4x30AvxRayon);
-#[cfg(feature = "enable-rayon")]
-impl_ckks_replicated_ci_bootstrap_reference_full!(super::NTT4x30AvxRayon);
 #[cfg(feature = "enable-rayon")]
 impl_ckks_fold_layout_reference_full!(super::NTT4x30AvxRayon);
 #[cfg(feature = "enable-rayon")]
