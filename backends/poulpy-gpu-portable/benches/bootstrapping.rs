@@ -2,10 +2,11 @@
 //! portable client generates the keys and encrypts on the host, the device
 //! backend compiles the context, prepares the keys and bootstraps.
 //!
-//! Two groups per runtime, from `poulpy-bench`: `ckks_bootstrapping` times
+//! Three groups per runtime, from `poulpy-bench`: `ckks_bootstrapping` times
 //! the bootstrap call, `ckks_bootstrapping_replayed` the replays of a
-//! bootstrap recorded once with [`poulpy_gpu_portable::Replay`]. Every
-//! iteration ends with a device synchronization.
+//! bootstrap recorded once with [`poulpy_gpu_portable::Replay`], and
+//! `ckks_replicated_bootstrapping` the replicated bootstrapping presets at
+//! radix 52. Every iteration ends with a device synchronization.
 
 use criterion::{Criterion, criterion_group, criterion_main};
 
@@ -14,6 +15,7 @@ macro_rules! bootstrapping {
     ($c:expr, $backend:ty, $runtime:ty) => {{
         use poulpy_bench::schemes::suites::{
             bench_ckks_bootstrapping_replayed_with_client, bench_ckks_bootstrapping_with_client,
+            bench_ckks_replicated_bootstrapping_with_client,
         };
         use poulpy_cpu_portable::NTT4x30Portable;
 
@@ -28,6 +30,7 @@ macro_rules! bootstrapping {
             );
             Box::new(move || replay.replay())
         });
+        bench_ckks_replicated_bootstrapping_with_client::<$backend, NTT4x30Portable, 52>($c);
     }};
 }
 

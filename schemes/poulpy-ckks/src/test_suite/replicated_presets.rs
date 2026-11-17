@@ -17,7 +17,7 @@ use poulpy_core::{
     layouts::{GGLWEInfos, GGLWELayout, GLWELayout, GLWESecretAlloc, GLWESecretPrepared, LWEInfos, Rank},
 };
 use poulpy_hal::{
-    api::{CnvPVecAlloc, ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
+    api::{CnvPVecAlloc, ModuleNew, ModuleSynchronize, ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{Backend, ConjugateInvariant, HostStaged, Module, ScratchOwned, Standard},
     source::Source,
 };
@@ -68,6 +68,7 @@ impl<BE: Backend, M> ReplicatedBootstrappingModule<BE> for M where
 /// compiles the bootstrapping, prepares the keys and bootstraps.
 pub trait ReplicatedBootstrappingDeviceModule<BE: Backend>:
     ModuleNew<BE>
+    + ModuleSynchronize<BE>
     + CKKSCiphertextAlloc<BE>
     + CKKSCopyOps<BE>
     + CKKSEncodingOps<BE, f64>
@@ -85,6 +86,7 @@ pub trait ReplicatedBootstrappingDeviceModule<BE: Backend>:
 
 impl<BE: Backend, M> ReplicatedBootstrappingDeviceModule<BE> for M where
     M: ModuleNew<BE>
+        + ModuleSynchronize<BE>
         + CKKSCiphertextAlloc<BE>
         + CKKSCopyOps<BE>
         + CKKSEncodingOps<BE, f64>
@@ -271,6 +273,11 @@ where
         self.ctx.replicated_galois_elements(&self.module).len()
     }
 
+    /// Width of the raised modulus, in bits.
+    pub fn raised_k(&self) -> usize {
+        self.ctx.plan.replicated_raised_k(self.preset.output_k()).unwrap()
+    }
+
     /// The gadgets of the keys under the secret and of the key to the
     /// ephemeral secret, as `dnum x k_digit + k_aux`.
     pub fn gadgets(&self) -> String {
@@ -293,7 +300,17 @@ where
         )
     }
 
+    /// Bootstraps the input into the output and returns once the evaluated
+    /// backend has completed it.
     pub fn bootstrap(&mut self) {
+        self.bootstrap_queued();
+        self.synchronize();
+    }
+
+    /// [`Self::bootstrap`] without waiting for the evaluated backend: on a
+    /// backend that queues its work, the bootstrap may still be running when
+    /// this returns. [`Self::synchronize`] waits for it.
+    pub fn bootstrap_queued(&mut self) {
         self.module
             .ckks_bootstrap(
                 &mut self.output,
@@ -303,6 +320,11 @@ where
                 &mut self.scratch.borrow(),
             )
             .unwrap();
+    }
+
+    /// Returns once the evaluated backend has completed the work queued so far.
+    pub fn synchronize(&self) {
+        self.module.synchronize();
     }
 
     /// `(min, avg)` bits over the real and imaginary parts of the data values, the
@@ -338,6 +360,9 @@ where
 
 /// Batch sizes the presets are exercised with.
 pub const BATCH_SIZES: [usize; 2] = [16, 64];
+
+/// Batch sizes at which the benchmark compares the dense and factored maps of the logN16 preset.
+pub const MAPS_BATCH_SIZES: [usize; 2] = [256, 1024];
 
 /// Every replicated bootstrapping preset, at limb radix `fixture_base2k` when
 /// smaller, meets its advertised precision on the data slots for every batch
