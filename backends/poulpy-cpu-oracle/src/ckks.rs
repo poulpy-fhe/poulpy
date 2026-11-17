@@ -217,7 +217,6 @@ macro_rules! impl_oracle_ckks {
             }
         }
         ::poulpy_ckks::impl_ckks_round_reference_full!($be);
-        ::poulpy_ckks::impl_ckks_replicated_derived_full!($be);
         ::poulpy_ckks::impl_ckks_reference_full!($be);
     };
 }

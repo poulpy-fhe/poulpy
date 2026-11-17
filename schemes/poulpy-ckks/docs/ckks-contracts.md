@@ -12,8 +12,8 @@ OEP trait in snake case without `Impl` (`CKKSAddImpl`: `impl_ckks_add_reference_
 `impl_ckks_reference_full!` selects every scalar-independent family that serves both
 rings, for each ring, the families `CKKSImpl` bundles minus the standard-only and
 cross-ring ones, except rounding, which selects `impl_ckks_round_reference_full!` after
-implementing `CKKSShapedRoundingImpl` for each ring, and the replicated conversions over
-it, which select `impl_ckks_replicated_derived_full!`. The
+implementing `CKKSShapedRoundingImpl` for each ring. It selects the replicated conversions
+(`impl_ckks_replicated_derived_full!`), whose family takes the rounding as a supertrait. The
 backend adds the opt-ins of the standard-only families, which act on standard-ring
 operands, `CKKSDFTMatrixImpl<F>` among them, of the conjugate-invariant ring maps, which
 take one conjugate-invariant and one standard operand, and of the fold, which registers

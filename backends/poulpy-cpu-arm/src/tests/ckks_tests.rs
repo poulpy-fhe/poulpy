@@ -127,6 +127,30 @@ mod bootstrapping_presets {
     }
 }
 
+/// Full logN14 to logN16 replicated bootstraps per preset: slow, so opt in with `--ignored`.
+mod replicated_bootstrapping_presets {
+    #[cfg(feature = "enable-rayon")]
+    use poulpy_ckks::test_suite::replicated_presets::replicated_bootstrapping_presets_meet_precision;
+    use poulpy_ckks::test_suite::replicated_presets::replicated_bootstrapping_presets_meet_precision_with_client;
+    // FFT64 backends do not register it: no FFT64 radix is measured against the replicated presets.
+
+    /// Keys and ciphertexts come from another backend and reach the evaluated one by transfer.
+    #[test]
+    #[ignore = "full logN14 to logN16 replicated bootstrapping presets with a portable client"]
+    fn ntt4x30_neon_with_portable_client() {
+        replicated_bootstrapping_presets_meet_precision_with_client::<crate::NTT4x30Neon, poulpy_cpu_portable::NTT4x30Portable>(
+            52,
+        );
+    }
+
+    #[cfg(feature = "enable-rayon")]
+    #[test]
+    #[ignore = "full logN14 to logN16 replicated bootstrapping presets"]
+    fn ntt4x30_neon_rayon() {
+        replicated_bootstrapping_presets_meet_precision::<crate::NTT4x30NeonRayon>(52);
+    }
+}
+
 // Paired OEP validation. Serial backends validate against portable implementations;
 // Rayon backends validate against their serial counterparts.
 poulpy_ckks::ckks_parity_test_suite! {

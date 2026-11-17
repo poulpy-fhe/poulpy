@@ -111,6 +111,18 @@ mod bootstrapping_presets {
     }
 }
 
+/// Full logN14 to logN16 replicated bootstraps per preset: slow, so opt in with `--ignored`.
+mod replicated_bootstrapping_presets {
+    use poulpy_ckks::test_suite::replicated_presets::replicated_bootstrapping_presets_meet_precision;
+    // FFT64 backends do not register it: no FFT64 radix is measured against the replicated presets.
+
+    #[test]
+    #[ignore = "runs full logN14 to logN16 replicated bootstraps per preset; opt in with --ignored"]
+    fn ntt4x30_presets_meet_precision() {
+        replicated_bootstrapping_presets_meet_precision::<crate::NTT4x30Oracle>(52);
+    }
+}
+
 // Parity between the two oracle families.
 poulpy_ckks::ckks_parity_test_suite! {
     mod ckks_parity_fft64oracle_f64,

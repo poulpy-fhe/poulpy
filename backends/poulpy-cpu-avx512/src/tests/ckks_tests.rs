@@ -136,11 +136,19 @@ mod bootstrapping_presets {
 #[cfg(feature = "enable-ifma")]
 mod replicated_bootstrapping_presets {
     use poulpy_ckks::test_suite::replicated_presets::replicated_bootstrapping_presets_meet_precision;
+    // FFT64 backends do not register it: no FFT64 radix is measured against the replicated presets.
 
     #[test]
     #[ignore = "full logN14 to logN16 replicated bootstrapping presets"]
     fn ifma() {
         replicated_bootstrapping_presets_meet_precision::<crate::NTT3x42Ifma>(52);
+    }
+
+    #[cfg(feature = "enable-rayon")]
+    #[test]
+    #[ignore = "full logN14 to logN16 replicated bootstrapping presets"]
+    fn ifma_rayon() {
+        replicated_bootstrapping_presets_meet_precision::<crate::NTT3x42IfmaRayon>(52);
     }
 }
 

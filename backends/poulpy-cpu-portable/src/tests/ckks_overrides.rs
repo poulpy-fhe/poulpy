@@ -8,7 +8,9 @@ use poulpy_ckks::api::{
 use poulpy_ckks::layouts::CKKSMaskedConstants;
 use poulpy_ckks::layouts::eval_mod::EvalMod;
 use poulpy_ckks::layouts::{CKKSCiphertextAlloc, CKKSPlaintextAlloc, CKKSPlaintextOwned};
-use poulpy_ckks::oep::{CKKSComplexPolynomialEvaluationImpl, CKKSCopyImpl, CKKSEvalModImpl, CKKSPolynomialEvaluationImpl};
+use poulpy_ckks::oep::{
+    CKKSComplexPolynomialEvaluationImpl, CKKSCopyImpl, CKKSEvalModImpl, CKKSPolynomialEvaluationImpl, CKKSRoundImpl,
+};
 use poulpy_ckks::polynomial::{BSGSPolynomial, ComplexBSGSPolynomial};
 use poulpy_ckks::reference::conjugate::CKKSConjugateReference;
 use poulpy_ckks::reference::copy::CKKSCopyReference;
@@ -18,6 +20,7 @@ use poulpy_ckks::reference::polynomial_evaluation::{
     CKKSComplexPolynomialEvaluationReference, CKKSPolynomialEvaluationReference,
 };
 use poulpy_ckks::reference::rotate::CKKSRotateReference;
+use poulpy_ckks::reference::round::CKKSRoundReference;
 use poulpy_ckks::test_suite::{
     helpers::{assert_ckks_error, assert_ckks_internal},
     parity::helpers::{fixture_ciphertext, snapshot, with_scratch},
@@ -47,6 +50,7 @@ thread_local! {
  /// whole bootstrap.
  static EVAL_MOD_FORWARD: Cell<bool> = const { Cell::new(false) };
  static MAX_COPY_CAPACITY: Cell<usize> = const { Cell::new(0) };
+ static ROUND_CALLS: Cell<usize> = const { Cell::new(0) };
 }
 const OVERRIDE_SCRATCH: usize = 256;
 poulpy_ckks::impl_ckks_plaintext_vec_reference_full!(OverrideBackend);
@@ -111,7 +115,25 @@ unsafe impl<Rg: poulpy_hal::layouts::Ring> poulpy_ckks::oep::CKKSShapedRoundingI
         crate::ckks_round::shaped_round_correction::<Self, Rg>(carry, h, low, profile, lambda);
     }
 }
-::poulpy_ckks::impl_ckks_round_reference_full!(OverrideBackend);
+// The round counts its calls and runs behind a marked region its query adds.
+const ROUND_EXTRA: usize = 960;
+unsafe impl CKKSRoundImpl<Standard> for OverrideBackend {
+    fn ckks_round_tmp_bytes<R: CKKSCtBounds, A: CKKSCtBounds>(module: &Module<Self>, res: &R, a: &A) -> usize {
+        ROUND_EXTRA + CKKSRoundReference::<Self, Standard>::ckks_round_tmp_bytes_reference(module, res, a)
+    }
+
+    fn ckks_round<R, A>(module: &Module<Self>, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, Self>) -> CKKSResult<()>
+    where
+        R: GLWEToBackendMut<Self, Standard> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<Self, Standard> + CKKSCtBounds,
+    {
+        ROUND_CALLS.with(|calls| calls.set(calls.get() + 1));
+        carry::with_marked_region::<ROUND_EXTRA, _>(scratch, |rest| {
+            CKKSRoundReference::<Self, Standard>::ckks_round_reference(module, res, a, rest)
+        })
+    }
+}
+::poulpy_ckks::impl_ckks_round_reference_full!(OverrideBackend, ConjugateInvariant);
 ::poulpy_ckks::impl_ckks_replicated_derived_full!(OverrideBackend);
 // The conjugate-invariant ring, on which a bootstrap's EvalMod runs, takes the reference of the overridden families,
 // the addition aside.
@@ -1099,4 +1121,23 @@ fn ckks_round_reference_dispatches_shaping_correction() {
         snapshot::<OverrideBackend, _, _>(&dst),
         snapshot::<crate::FFT64Portable, _, _>(&expected)
     );
+}
+
+#[test]
+fn replicated_conversions_enter_the_round_hook() {
+    let params = poulpy_ckks::test_suite::BASE19_PARAMS_F64;
+    let module = Module::<OverrideBackend>::new(params.n as u64);
+    let host = Module::<poulpy_hal::layouts::HostBytesBackend>::new(params.n as u64);
+    ROUND_CALLS.with(|calls| calls.set(0));
+    SHAPING_CALLS.with(|calls| calls.set(0));
+    // Every conversion of the suite runs on an arena of exactly its query, so the round's marked extra fits only if
+    // the query takes it.
+    poulpy_ckks::test_suite::replicated::test_replicated_conversions_round_trip::<OverrideBackend, f64, Standard>(
+        params, &module, &host,
+    )
+    .unwrap();
+    // One round onto the replicated layout per conversion to it, at the module degree and at half of it, each with
+    // a shaping correction per half. The conversions back gather and trace without a round.
+    assert_eq!(ROUND_CALLS.with(Cell::get), 2);
+    assert_eq!(SHAPING_CALLS.with(Cell::get), 4);
 }
