@@ -3339,7 +3339,6 @@ dependencies = [
  "poulpy-hal",
  "rand 0.10.3",
  "rand_distr",
- "serde_json",
 ]
 
 [[package]]

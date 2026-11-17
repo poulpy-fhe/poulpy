@@ -177,11 +177,11 @@ pub enum CKKSCompositionError {
         k: u32,
         source: poulpy_core::CoreError,
     },
-    /// A plan requires a security level ([`BootstrappingPlan::with_security`](crate::layouts::BootstrappingPlan::with_security))
-    /// that a key or the secret does not meet: `source` is the
-    /// [`SecurityBoundExceeded`](poulpy_core::CoreError::SecurityBoundExceeded) of the key, with its modulus and
-    /// bound, or the [`SecurityUnsupported`](poulpy_core::CoreError::SecurityUnsupported) of a secret the level has no
-    /// bound for.
+    /// A bootstrapping preset, built or re-derived by `op`, does not validate at its security level (see
+    /// [`presets::bootstrapping`](crate::presets::bootstrapping#security)): `source` is the
+    /// [`SecurityBoundExceeded`](poulpy_core::CoreError::SecurityBoundExceeded) of the raised ciphertext or a key,
+    /// with its modulus and bound, or the [`SecurityUnsupported`](poulpy_core::CoreError::SecurityUnsupported) of a
+    /// secret the table has no bound for.
     SecurityLevelNotMet {
         op: &'static str,
         source: poulpy_core::CoreError,
@@ -285,7 +285,7 @@ impl fmt::Display for CKKSCompositionError {
                 write!(f, "{op} requires a relinearization key at precision k={k}: {source}")
             }
             Self::SecurityLevelNotMet { op, source } => {
-                write!(f, "{op} does not meet the plan's security level: {source}")
+                write!(f, "{op} does not meet the preset's security level: {source}")
             }
             Self::PlaintextAlignmentImpossible {
                 op,

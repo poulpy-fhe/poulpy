@@ -13,7 +13,10 @@ use poulpy_ckks::{
     polynomial::SplitStrategy,
     presets::key_policy::BootstrappingKeyPolicy,
 };
-use poulpy_core::layouts::{Degree, GLWELayout, Rank};
+use poulpy_core::{
+    layouts::{Degree, GLWELayout, Rank},
+    security::{RlweParams, ValidateSecurity},
+};
 use poulpy_hal::layouts::{HostBytesBackend, Module};
 
 use crate::{
@@ -107,9 +110,7 @@ impl Bootstrapping {
         )?
         .with_c2s_guard_bits(C2S_GUARD_BITS)?
         // Scales SlotsToCoeffs so the table reads `m/2` on its unit circle.
-        .with_functional_bootstrap(&lut)?
-        // Generating the keys checks the client's secret and every key against the level.
-        .with_security(SECURITY);
+        .with_functional_bootstrap(&lut)?;
 
         let log_modulus = LOG_DELTA + LOG_MSG_RATIO;
         let input_k = plan.input_k(log_modulus);
@@ -127,7 +128,7 @@ impl Bootstrapping {
             dense_to_sparse_dsize: 1,
         }
         .keys_layout(&plan, raised_k, input_k, LOG_DELTA)?;
-        plan.check_key_security(SECURITY, DENSE_SECRET, &keys)?;
+        keys.validate_security_128(&plan.secrets(DENSE_SECRET), &RlweParams)?;
         Ok(Self {
             plan,
             lut,
@@ -181,8 +182,8 @@ mod tests {
     fn widths_and_keys_are_certified() {
         let boot = crate::params::Params::new().unwrap().bootstrapping;
         assert_eq!((boot.input_k, boot.output_k, boot.raised_k), (125, 203, 624));
-        assert_eq!(boot.plan.security(), Some(SECURITY));
-        boot.plan.check_key_security(SECURITY, DENSE_SECRET, &boot.keys).unwrap();
+        let secrets = boot.plan.secrets(DENSE_SECRET);
+        assert_eq!(boot.keys.validate_security_128(&secrets, &RlweParams), Ok(()));
         // The bounds the keys are shaped under, at rlwe-params v0.2.0.
         assert_eq!(
             (SECURITY.max_log_q(DENSE_SECRET), SECURITY.max_log_q(SPARSE_SECRET)),

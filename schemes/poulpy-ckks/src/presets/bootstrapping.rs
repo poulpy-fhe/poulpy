@@ -26,10 +26,10 @@
 //! ## Security
 //!
 //! Every preset uses a ternary dense secret of Hamming weight 1024 and an
-//! ephemeral ternary sparse secret of weight 32 for the raise, and is certified
-//! for 128 bits of security ([`Security::Bits128`]). The bound of each secret, the
-//! largest modulus any object under it may use, comes from the rlwe-params table
-//! vendored in poulpy-core (see [`poulpy_core::security`]), at the degree of the
+//! ephemeral ternary sparse secret of weight 32 for the raise, and validates at
+//! 128 bits of security against [`RlweParams`], the rlwe-params table vendored in
+//! poulpy-core (see [`poulpy_core::security`]). The bound of each secret, the
+//! largest modulus any object under it may use, is the one at the degree of the
 //! ring the secret lives in. At rlwe-params v0.2.0:
 //!
 //! | `N` | dense secret, weight 1024 | sparse secret, weight 32 |
@@ -39,24 +39,21 @@
 //!
 //! The bounds shape the keys: each key takes the digit of fewest rows whose
 //! modulus, auxiliary guard included, fits the bound of its secret (see
-//! [`BootstrappingKeyPolicy`]). Building a preset then checks the raised
-//! ciphertext and every key against them
-//! ([`BootstrappingPlan::check_key_security`]), and its plan carries the level, so
-//! generating the keys checks them again under the dense secret actually given.
-//! The values are estimates against the attacks of the estimators rlwe-params
-//! runs, not proofs.
+//! [`BootstrappingKeyPolicy`]). [`BootstrappingPreset`] implements
+//! [`ValidateSecurity`] over the raised ciphertext and every key, given the dense
+//! secret, and building a preset validates it under its own secrets, refusing with
+//! [`CKKSCompositionError::SecurityLevelNotMet`]. The values are estimates against
+//! the attacks of the estimators rlwe-params runs, not proofs.
 //!
-//! Choosing a certified preset is the opt-in: nothing else in the library checks
-//! a level. Generating a preset's keys under a secret its level has no bound for,
-//! or one whose bound its keys exceed, is refused: a ternary secret of weight 192
-//! at `N = 2^16` is bounded at 1475 bits, below the 1680-bit keys of the logN16
-//! presets. A caller who wants those keys anyway clears the level with
-//! [`BootstrappingPlan::without_security`], and certifies nothing.
+//! The secret the keys are generated under is the caller's, and key generation
+//! checks nothing. A caller drawing another secret validates the preset under it,
+//! `preset.validate_security_128(&SecretSpec::of(&sk), &RlweParams)`: a ternary
+//! secret of weight 192 at `N = 2^16` is bounded at 1475 bits, below the 1680-bit
+//! keys of the logN16 presets, and does not validate.
 //!
 //! The keys of a fold ([`CKKSFoldKeysLayout`](crate::layouts::CKKSFoldKeysLayout)), whose
 //! outbound ring-switch and automorphism keys sit under the inputs' secret at their degree,
-//! belong to no preset: they are certified only through
-//! [`CKKSFoldKeysLayout::check_security`](crate::layouts::CKKSFoldKeysLayout::check_security).
+//! belong to no preset: they validate through its own implementation of [`ValidateSecurity`].
 
 use anyhow::{Context, Result, ensure};
 use poulpy_core::{
@@ -65,7 +62,7 @@ use poulpy_core::{
         Base2K, BsgsRotations, Degree, GGLWEInfos, GLWEAutomorphismKeyLayout, GLWELayout, LinearTransformationLayout, Rank,
         TorusPrecision,
     },
-    security::{SecretSpec, Security},
+    security::{Modulus, RlweParams, SecretSpec, SecurityTable, ValidateSecurity},
 };
 use poulpy_hal::layouts::{ConjugateInvariant, MaxBase2k, Module, Standard};
 
@@ -108,9 +105,9 @@ const SPARSE_HAMMING_WEIGHT: usize = 32;
 /// Where the modulus bounds that shape the keys of a preset come from.
 #[derive(Clone, Copy, Debug)]
 enum ModulusBounds {
-    /// The bounds of a level for the preset's secrets, which building the preset certifies
+    /// The bounds of [`RlweParams`] at 128 bits for the preset's secrets, at which building the preset validates it
     /// (see [Security](self#security)).
-    Certified(Security),
+    RlweParams128,
     /// Placeholder bounds of an insecure test preset, in bits, at every degree: not security limits.
     #[cfg(feature = "test-utils")]
     Placeholder { dense: usize, sparse: usize },
@@ -159,15 +156,6 @@ struct PresetSpec {
 }
 
 impl PresetSpec {
-    /// The level the preset is certified at, `None` for an insecure test preset.
-    fn security(&self) -> Option<Security> {
-        match self.bounds {
-            ModulusBounds::Certified(security) => Some(security),
-            #[cfg(feature = "test-utils")]
-            ModulusBounds::Placeholder { .. } => None,
-        }
-    }
-
     /// The dense secret, in the ring of degree `n`.
     fn dense_secret(&self, n: usize) -> SecretSpec {
         SecretSpec::new(n, Distribution::TernaryFixed(self.dense_hamming_weight))
@@ -181,9 +169,9 @@ impl PresetSpec {
     /// Bounds, in bits, of the dense and sparse secrets in the ring of degree `n`.
     fn log_modulus_bounds(&self, n: usize) -> poulpy_core::Result<(usize, usize)> {
         match self.bounds {
-            ModulusBounds::Certified(security) => Ok((
-                security.max_log_q(self.dense_secret(n))?,
-                security.max_log_q(self.sparse_secret(n))?,
+            ModulusBounds::RlweParams128 => Ok((
+                RlweParams.max_log_q(128, self.dense_secret(n))?,
+                RlweParams.max_log_q(128, self.sparse_secret(n))?,
             )),
             #[cfg(feature = "test-utils")]
             ModulusBounds::Placeholder { dense, sparse } => Ok((dense, sparse)),
@@ -301,19 +289,24 @@ impl BootstrappingPreset {
         self.spec.sparse_hamming_weight
     }
 
-    /// The level the preset is certified at, `None` for an insecure test preset (see [Security](self#security)).
-    pub fn security(&self) -> Option<Security> {
-        self.spec.security()
+    /// The dense secret the preset is shaped and validated for, in its ring (see [Security](self#security)).
+    pub fn dense_secret(&self) -> SecretSpec {
+        self.spec.dense_secret(self.n)
     }
 
-    /// Modulus bound, in bits, the keys under the dense secret are shaped under: the bound of the dense secret at
-    /// [`Self::security`] (see [Security](self#security)).
+    /// The ephemeral sparse secret the preset is shaped and validated for, on the subring of its gap.
+    pub fn sparse_secret(&self) -> SecretSpec {
+        self.spec.sparse_secret(self.n)
+    }
+
+    /// Modulus bound, in bits, the keys under the dense secret are shaped under: the bound of
+    /// [`Self::dense_secret`] (see [Security](self#security)).
     pub fn max_dense_modulus(&self) -> usize {
         self.dense_log_modulus
     }
 
-    /// Modulus bound, in bits, the keys under the ephemeral sparse secret are shaped under: the bound of the sparse
-    /// secret at [`Self::security`], on the subring of the gap (see [Security](self#security)).
+    /// Modulus bound, in bits, the keys under the ephemeral sparse secret are shaped under: the bound of
+    /// [`Self::sparse_secret`] (see [Security](self#security)).
     pub fn max_sparse_modulus(&self) -> usize {
         self.sparse_log_modulus
     }
@@ -804,7 +797,7 @@ pub fn n16_d35_k636_p20_c2s() -> Result<BootstrappingPreset> {
             derived: false,
             dense_hamming_weight: DENSE_HAMMING_WEIGHT,
             sparse_hamming_weight: SPARSE_HAMMING_WEIGHT,
-            bounds: ModulusBounds::Certified(Security::Bits128),
+            bounds: ModulusBounds::RlweParams128,
             max_dsize: None,
             dense_to_sparse_dsize: 1,
             pipeline: BootstrappingPipeline::C2SFirst,
@@ -850,7 +843,7 @@ pub fn n16_d35_k733_p20_s2c() -> Result<BootstrappingPreset> {
             derived: false,
             dense_hamming_weight: DENSE_HAMMING_WEIGHT,
             sparse_hamming_weight: SPARSE_HAMMING_WEIGHT,
-            bounds: ModulusBounds::Certified(Security::Bits128),
+            bounds: ModulusBounds::RlweParams128,
             max_dsize: None,
             dense_to_sparse_dsize: 1,
             pipeline: BootstrappingPipeline::S2CFirst,
@@ -893,7 +886,7 @@ pub fn n15_d35_k180_p18_c2s() -> Result<BootstrappingPreset> {
             derived: false,
             dense_hamming_weight: DENSE_HAMMING_WEIGHT,
             sparse_hamming_weight: SPARSE_HAMMING_WEIGHT,
-            bounds: ModulusBounds::Certified(Security::Bits128),
+            bounds: ModulusBounds::RlweParams128,
             max_dsize: None,
             dense_to_sparse_dsize: 1,
             pipeline: BootstrappingPipeline::C2SFirst,
@@ -1157,18 +1150,7 @@ fn build(op: &'static str, spec: PresetSpec) -> Result<BootstrappingPreset> {
         spec.key_policy(dense_log_modulus, sparse_log_modulus)
             .keys_layout(&plan, bootstrap_k, input_k, spec.log_delta)?;
 
-    let plan = match spec.security() {
-        Some(security) => {
-            let dense = spec.dense_secret(n);
-            security
-                .check_log_q(dense, "raised ciphertext", bootstrap_k)
-                .map_err(refused)?;
-            plan.check_key_security_for(op, security, dense, &keys_layout)?;
-            plan.with_security(security)
-        }
-        None => plan,
-    };
-    Ok(BootstrappingPreset {
+    let preset = BootstrappingPreset {
         spec,
         n,
         plan,
@@ -1178,7 +1160,31 @@ fn build(op: &'static str, spec: PresetSpec) -> Result<BootstrappingPreset> {
         bootstrap_k,
         dense_log_modulus,
         sparse_log_modulus,
-    })
+    };
+    match spec.bounds {
+        ModulusBounds::RlweParams128 => preset
+            .validate_security_128(&preset.dense_secret(), &RlweParams)
+            .map_err(refused)?,
+        #[cfg(feature = "test-utils")]
+        ModulusBounds::Placeholder { .. } => {}
+    }
+    Ok(preset)
+}
+
+/// The raised ciphertext and every key, under `dense` and the sparse secret of the plan (see
+/// [`BootstrappingPlan::secrets`]).
+impl ValidateSecurity for BootstrappingPreset {
+    type Secrets = SecretSpec;
+
+    fn moduli(&self, dense: &SecretSpec) -> Vec<Modulus> {
+        let mut moduli = vec![Modulus {
+            what: "raised ciphertext",
+            secret: *dense,
+            log_q: self.bootstrap_k,
+        }];
+        moduli.extend(self.keys_layout.moduli(&self.plan.secrets(*dense)));
+        moduli
+    }
 }
 
 #[cfg(test)]
@@ -1186,7 +1192,7 @@ mod tests {
     use super::*;
     use crate::{
         CKKSCompositionError,
-        layouts::{CKKSFoldKeysLayout, KeySecret, RingSwitchKeys},
+        layouts::{CKKSFoldKeysLayout, FoldSecrets, RingSwitchKeys},
     };
     use poulpy_core::{
         CoreError,
@@ -1670,25 +1676,20 @@ mod tests {
             }),
             automorphism: Some(key(1 << 14, 2)),
         };
-        let err = fold
-            .check_security(Security::Bits128, input, bootstrap)
-            .expect_err("an outbound key past the input secret's bound is certified");
+        let secrets = FoldSecrets { input, bootstrap };
         assert_eq!(
-            security_refusal(&err),
-            (
-                "check_security",
-                &CoreError::SecurityBoundExceeded {
-                    target_bits: 128,
-                    secret: input,
-                    what: "outbound ring-switch key".into(),
-                    log_q: 13 * 52 + 68,
-                    max_log_q: 424,
-                }
-            )
+            fold.validate_security_128(&secrets, &RlweParams),
+            Err(CoreError::SecurityBoundExceeded {
+                target_bits: 128,
+                secret: input,
+                what: "outbound ring-switch key".into(),
+                log_q: 13 * 52 + 68,
+                max_log_q: 424,
+            })
         );
-        // Under that bound, every key is certified.
+        // Under that bound, every key validates.
         fold.ring_switch.as_mut().unwrap().outbound = key(1 << 16, 6);
-        fold.check_security(Security::Bits128, input, bootstrap).unwrap();
+        assert_eq!(fold.validate_security_128(&secrets, &RlweParams), Ok(()));
     }
 
     /// The `op` and source of the [`CKKSCompositionError::SecurityLevelNotMet`] `err` holds.
@@ -1700,23 +1701,23 @@ mod tests {
     }
 
     #[test]
-    fn presets_certify_every_key_and_the_plan_carries_the_level() {
+    fn presets_validate_the_raised_ciphertext_and_every_key() {
         for preset in all().unwrap() {
-            assert_eq!(preset.security(), Some(Security::Bits128));
-            assert_eq!(preset.plan().security(), Some(Security::Bits128));
-            let dense = SecretSpec::new(preset.n(), Distribution::TernaryFixed(1024));
-            let keys = preset.keys_layout();
-            preset.plan().check_key_security(Security::Bits128, dense, keys).unwrap();
+            let dense = preset.dense_secret();
+            assert_eq!(dense, SecretSpec::new(preset.n(), Distribution::TernaryFixed(1024)));
+            assert_eq!(preset.validate_security_128(&dense, &RlweParams), Ok(()));
             // Every key is listed: the rotation keys and one tensor key, with the encapsulation of every preset.
-            let listed = keys.keys_by_secret();
+            let moduli = preset.moduli(&dense);
+            assert_eq!(moduli[0].log_q, preset.bootstrap_k());
+            let keys = preset.keys_layout();
             assert_eq!(
-                listed.iter().filter(|(name, ..)| *name == "rotation").count(),
+                moduli.iter().filter(|m| m.what == "rotation key").count(),
                 keys.rotation_key_layouts().count()
             );
             assert!(
-                listed
+                moduli
                     .iter()
-                    .any(|&(name, secret, _)| name == "dense-to-sparse" && secret == KeySecret::Sparse)
+                    .any(|m| m.what == "dense-to-sparse key" && m.secret == preset.sparse_secret())
             );
         }
     }
@@ -1724,7 +1725,7 @@ mod tests {
     #[test]
     fn a_key_one_bit_over_its_bound_or_an_unbounded_secret_is_refused() {
         let preset = n15_d35_k180_p18_c2s().unwrap();
-        let dense = SecretSpec::new(preset.n(), Distribution::TernaryFixed(1024));
+        let secrets = preset.plan().secrets(preset.dense_secret());
         let mut keys = preset.keys_layout().clone();
         // Widen the widest rotation key's guard to one bit past the dense bound.
         let wide = *preset.widest_rotation_key();
@@ -1732,41 +1733,33 @@ mod tests {
         for key in keys.rotation_keys.values_mut().filter(|key| **key == wide) {
             key.k_aux = TorusPrecision(wide.k_aux.0 + over as u32);
         }
-        let err = preset
-            .plan()
-            .check_key_security(Security::Bits128, dense, &keys)
-            .expect_err("a key past the bound is certified");
-        let (op, source) = security_refusal(&err);
-        assert_eq!(op, "check_key_security");
         assert_eq!(
-            source,
-            &CoreError::SecurityBoundExceeded {
+            keys.validate_security_128(&secrets, &RlweParams),
+            Err(CoreError::SecurityBoundExceeded {
                 target_bits: 128,
-                secret: dense,
+                secret: secrets.dense,
                 what: "rotation key".into(),
                 log_q: 852,
                 max_log_q: 851,
-            }
+            })
         );
-        // A dense secret the table has no cell for, such as a structured one, certifies nothing.
+        // A dense secret the table has no cell for, such as a structured one, validates nothing.
         let block = SecretSpec::new(preset.n(), Distribution::BinaryBlock(8));
-        let err = preset
-            .plan()
-            .check_key_security(Security::Bits128, block, preset.keys_layout())
-            .expect_err("a secret without a bound is certified");
         assert_eq!(
-            security_refusal(&err),
-            (
-                "check_key_security",
-                &CoreError::SecurityUnsupported {
-                    target_bits: 128,
-                    secret: block,
-                    reason: "the table has no secret of this distribution",
-                }
-            )
+            preset.validate_security_128(&block, &RlweParams),
+            Err(CoreError::SecurityUnsupported {
+                target_bits: 128,
+                secret: block,
+                reason: "the table has no secret of this distribution",
+            })
         );
-        // Without the level, the plan checks nothing.
-        assert_eq!(preset.plan().clone().without_security().security(), None);
+        // A dense secret of weight 192 at 2^16 is bounded below the keys of the logN16 presets.
+        let preset = n16_d35_k636_p20_c2s().unwrap();
+        let light = SecretSpec::new(preset.n(), Distribution::TernaryFixed(192));
+        assert!(matches!(
+            preset.validate_security_128(&light, &RlweParams),
+            Err(CoreError::SecurityBoundExceeded { max_log_q: 1475, .. })
+        ));
     }
 
     #[test]

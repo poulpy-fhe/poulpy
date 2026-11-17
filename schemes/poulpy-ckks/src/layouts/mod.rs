@@ -146,8 +146,8 @@ pub use bootstrapping::{
 };
 pub use bootstrapping_keys::{
     BootstrappingKeySet, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingKeysPrepared, BootstrappingLinearKeys,
-    CKKSFoldKeysLayout, EncapsulationKeys, EncapsulationKeysLayout, KeySecret, RingSwitchKeySet, RingSwitchKeys,
-    RingSwitchKeysLayout, RingSwitchKeysPrepared,
+    BootstrappingSecrets, CKKSFoldKeysLayout, EncapsulationKeys, EncapsulationKeysLayout, FoldSecrets, RingSwitchKeySet,
+    RingSwitchKeys, RingSwitchKeysLayout, RingSwitchKeysPrepared,
 };
 #[allow(deprecated)]
 pub use ciphertext::CKKSRingCiphertext;
