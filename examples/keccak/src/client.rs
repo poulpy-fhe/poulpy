@@ -13,7 +13,7 @@ use poulpy_core::{
     layouts::{
         BackendGLWESecret, BackendGLWESecretPrepared, GLWEAutomorphismKeyAlloc, GLWESecretAlloc, GLWETensorKeyAlloc, LWEInfos,
     },
-    security::SecretSpec,
+    security::{RlweParams, SecretSpec, ValidateSecurity},
 };
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
@@ -24,7 +24,7 @@ use poulpy_hal::{
 use crate::{
     Ct, Host,
     layout::{SLOTS, STATES, from_slots, to_slots},
-    params::{BASE2K, DENSE_HAMMING_WEIGHT, LOG_N, OUTPUT_LOG_DELTA, Params, SECURITY},
+    params::{BASE2K, DENSE_HAMMING_WEIGHT, LOG_N, OUTPUT_LOG_DELTA, Params},
 };
 
 type Buf = <Host as Backend>::OwnedBuf;
@@ -105,10 +105,8 @@ impl Client {
                 .max(GLWEAutomorphismKeyEncryptSk::<Host, Standard>::glwe_automorphism_key_encrypt_sk_tmp_bytes(module, key))
                 .max(GLWETensorKeyEncryptSk::<Host, Standard>::glwe_tensor_key_encrypt_sk_tmp_bytes(module, tsk)),
         );
-        // The round's keys sit under the client's secret, checked here as the plan checks its own.
-        let secret = SecretSpec::of(&self.sk_raw);
-        SECURITY.check(secret, "round rotation key", key)?;
-        SECURITY.check(secret, "round tensor key", tsk)?;
+        // Every modulus under the secret actually drawn.
+        params.validate_security_128(&SecretSpec::of(&self.sk_raw), &RlweParams)?;
         let bootstrapping = boot.plan.generate_keys(
             module,
             &self.sk_raw,

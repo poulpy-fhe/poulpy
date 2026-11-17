@@ -72,6 +72,7 @@ The scale sets the precision: each bit of it halves the error of the output bits
 | Bootstrapping input, output, raised | 125, 203 and 624 bits |
 | A round | 20 bits for `L`, 20 for the shifts of chi, 35 for its product, 3 of margin |
 
-The bounds are the 128-bit ones `poulpy-ckks` certifies its presets with, read from the rlwe-params table vendored in `poulpy-core` through `poulpy_core::security`.
+The bounds are the 128-bit ones `poulpy-ckks` validates its presets with, from `poulpy_core::security::RlweParams`, the rlwe-params table vendored in `poulpy-core`.
 Every key takes the fewest digits that keep its modulus under the bound of its secret, see `key_layout` in `src/params.rs`.
-The parameters check the raised width and every key against those bounds, and the client checks its own secret and keys when it generates them.
+`Params` implements `ValidateSecurity`, listing the round's and the raised ciphertexts and every key under the secret its samples are encrypted with.
+The parameters validate under the secret they are shaped for, and the client again under the one it draws, before generating keys.

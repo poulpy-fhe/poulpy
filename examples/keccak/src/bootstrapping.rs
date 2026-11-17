@@ -13,15 +13,12 @@ use poulpy_ckks::{
     polynomial::SplitStrategy,
     presets::key_policy::BootstrappingKeyPolicy,
 };
-use poulpy_core::{
-    layouts::{Degree, GLWELayout, Rank},
-    security::{RlweParams, ValidateSecurity},
-};
+use poulpy_core::layouts::{Degree, GLWELayout, Rank};
 use poulpy_hal::layouts::{HostBytesBackend, Module};
 
 use crate::{
     layout::SLOTS,
-    params::{BASE2K, DENSE_SECRET, LOG_DELTA, LOG_MSG_RATIO, LOG_N, SECURITY, SPARSE_HAMMING_WEIGHT, SPARSE_SECRET},
+    params::{BASE2K, DENSE_SECRET, LOG_DELTA, LOG_MSG_RATIO, LOG_N, SPARSE_HAMMING_WEIGHT, SPARSE_SECRET, bound},
 };
 
 /// SlotsToCoeffs on the 14 slot layers: the layers each factor merges, in evaluation order, and the scale of its
@@ -116,19 +113,17 @@ impl Bootstrapping {
         let input_k = plan.input_k(log_modulus);
         let output_k = input_k + round_bits;
         let raised_k = plan.functional_bootstrap_k(output_k, LOG_DELTA, &lut)?;
-        SECURITY.check_log_q(DENSE_SECRET, "raised ciphertext", raised_k)?;
         // Each key as wide as the widest ciphertext it switches, with the fewest digits under its secret's bound.
         let keys = BootstrappingKeyPolicy {
             log_n: LOG_N,
             base2k: BASE2K,
             rank: 1,
-            dense_log_modulus: SECURITY.max_log_q(DENSE_SECRET)?,
-            sparse_log_modulus: SECURITY.max_log_q(SPARSE_SECRET)?,
+            dense_log_modulus: bound(DENSE_SECRET)?,
+            sparse_log_modulus: bound(SPARSE_SECRET)?,
             max_dsize: None,
             dense_to_sparse_dsize: 1,
         }
         .keys_layout(&plan, raised_k, input_k, LOG_DELTA)?;
-        keys.validate_security_128(&plan.secrets(DENSE_SECRET), &RlweParams)?;
         Ok(Self {
             plan,
             lut,
@@ -176,18 +171,20 @@ fn dft_plan(kind: DFTType, layers: &[usize], meta: CoeffsMeta) -> Result<DFTPlan
 
 #[cfg(test)]
 mod tests {
+    use poulpy_core::security::{RlweParams, ValidateSecurity};
+
     use super::*;
 
     #[test]
-    fn widths_and_keys_are_certified() {
-        let boot = crate::params::Params::new().unwrap().bootstrapping;
+    fn widths_and_keys_are_validated() {
+        let params = crate::params::Params::new().unwrap();
+        let boot = &params.bootstrapping;
         assert_eq!((boot.input_k, boot.output_k, boot.raised_k), (125, 203, 624));
-        let secrets = boot.plan.secrets(DENSE_SECRET);
-        assert_eq!(boot.keys.validate_security_128(&secrets, &RlweParams), Ok(()));
+        assert_eq!(params.validate_security_128(&DENSE_SECRET, &RlweParams), Ok(()));
         // The bounds the keys are shaped under, at rlwe-params v0.2.0.
-        assert_eq!(
-            (SECURITY.max_log_q(DENSE_SECRET), SECURITY.max_log_q(SPARSE_SECRET)),
-            (Ok(851), Ok(162))
-        );
+        assert_eq!((bound(DENSE_SECRET).unwrap(), bound(SPARSE_SECRET).unwrap()), (851, 162));
+        // A lighter client secret is bounded below the raised width.
+        let light = poulpy_core::security::SecretSpec::new(1 << LOG_N, poulpy_core::Distribution::TernaryFixed(64));
+        assert!(params.validate_security_128(&light, &RlweParams).is_err());
     }
 }
