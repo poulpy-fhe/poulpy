@@ -155,7 +155,8 @@ where
         let galois_elements = ctx.replicated_galois_elements(&module);
         assert_eq!(client_ctx.replicated_galois_elements(&client), galois_elements);
         let level_log_delta = plan.replicated_route().unwrap().level_log_delta;
-        let keys_layout = adjust(preset.keys_layout(layout, &galois_elements).unwrap());
+        let widths = ctx.replicated_key_widths(&module, preset.output_k()).unwrap();
+        let keys_layout = adjust(preset.keys_layout(layout, &widths).unwrap());
         let input_layout = CKKSLayout {
             glwe_layout: GLWELayout {
                 n: n.into(),
@@ -179,8 +180,8 @@ where
             meta: output_layout.meta,
         };
         let mut client_scratch = ScratchOwned::<BC>::alloc(
-            client_ctx
-                .generate_replicated_keys_tmp_bytes(&client, &keys_layout)
+            keys_layout
+                .generate_tmp_bytes(&client)
                 .max(<Module<BC> as CKKSEncodingHostOps<BC, f64>>::ckks_encoding_host_tmp_bytes(
                     &client, slots,
                 ))
@@ -200,16 +201,17 @@ where
         client.glwe_secret_fill_ternary_hw(&mut sk_raw, preset.dense_secret_hamming_weight(), &mut xs);
         let mut sk = client.glwe_secret_prepared_alloc_from_infos(&glwe);
         client.glwe_secret_prepare(&mut sk, &sk_raw);
-        let keys = client_ctx.generate_replicated_keys(
-            &client,
-            &sk_raw,
-            &keys_layout,
-            preset.sparse_secret_hamming_weight(),
-            &mut xs,
-            &mut xe,
-            &mut xa,
-            &mut client_scratch.borrow(),
-        );
+        let keys = client_ctx
+            .generate_replicated_keys(
+                &client,
+                &sk_raw,
+                &keys_layout,
+                &mut xs,
+                &mut xe,
+                &mut xa,
+                &mut client_scratch.borrow(),
+            )
+            .expect("the client generates the keys");
         let keys = with_scratch::<BE, _>(keys_layout.prepare_tmp_bytes(&module), |s| {
             keys.transfer_and_prepare(&module, s)
         })
@@ -273,9 +275,10 @@ where
     /// ephemeral secret, as `dnum x k_digit + k_aux`.
     pub fn gadgets(&self) -> String {
         let gadget = |key: GGLWELayout| format!("{}x{}+{}", key.dnum.0, key.k_digit.0, key.k_aux.0);
+        let widths = self.ctx.replicated_key_widths(&self.module, self.preset.output_k()).unwrap();
         let layout = self
             .preset
-            .keys_layout(self.ctx.plan.replicated_route().unwrap().layout, &[])
+            .keys_layout(self.ctx.plan.replicated_route().unwrap().layout, &widths)
             .unwrap();
         let ephemeral = layout.encapsulation.map(|e| gadget(e.dense_to_sparse.gglwe_layout()));
         let return_key = layout
@@ -284,7 +287,7 @@ where
             .map(|key| format!("{}+{}", key.k_offset.0, gadget(key.gglwe_layout())));
         format!(
             "keys={} ephemeral={} return={}",
-            gadget(layout.tensor_key.gglwe_layout()),
+            gadget(layout.rotation_keys[&-1].gglwe_layout()),
             ephemeral.unwrap_or_default(),
             return_key.unwrap_or_default()
         )

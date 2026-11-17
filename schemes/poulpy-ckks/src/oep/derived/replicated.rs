@@ -140,7 +140,7 @@ where
     }
     if shifts
         .first()
-        .is_some_and(|&step| (step as usize) << shifts.len() == module.ckks_max_slots::<Rg>())
+        .is_some_and(|&step| (step as usize) << shifts.len() == module.ckks_slots_of_degree::<Rg>(ct.n().as_usize()))
     {
         ct.set_log_sparsity(shifts.len());
     }
@@ -355,7 +355,7 @@ where
     H: GetAutomorphismKey<BE, Rg>,
 {
     const OP: &str = "ckks_to_replicated";
-    ensure_replicated_operands(OP, module.n(), module.n(), a, res)?;
+    ensure_replicated_operands(OP, module.n(), ctx.n.as_usize(), a, res)?;
     ensure_full_layout(OP, a.slot_layout())?;
     ckks_ensure_operand!(
         OP,
@@ -402,7 +402,7 @@ where
     H: GetAutomorphismKey<BE, Rg>,
 {
     const OP: &str = "ckks_from_replicated";
-    ensure_replicated_operands(OP, module.n(), module.n(), a, res)?;
+    ensure_replicated_operands(OP, module.n(), ctx.n.as_usize(), a, res)?;
     ckks_ensure_operand!(
         OP,
         a.slot_layout() == SlotLayout::Replicated(ctx.layout),

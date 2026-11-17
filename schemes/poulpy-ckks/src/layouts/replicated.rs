@@ -3,7 +3,7 @@
 //! (see `docs/guides/replicated.md`).
 use anyhow::{Context, Result, ensure};
 use poulpy_core::layouts::{
-    Base2K, Diagonals, GLWEInfos, GLWELayout, GetDegree, LinearTransformation, LinearTransformationBabySteps,
+    Base2K, Degree, Diagonals, GLWEInfos, GLWELayout, GetDegree, LinearTransformation, LinearTransformationBabySteps,
     LinearTransformationLayout, LinearTransformationPrepared, LinearTransformationStrategy, Rank, TorusPrecision,
     optimal_bsgs_giant_step,
 };
@@ -46,6 +46,8 @@ use crate::{
 /// their diagonals' bits of budget. `log_delta` is the scale of the
 /// replicated side.
 pub struct ReplicatedConversion<BE: Backend, Rg: Ring = Standard> {
+    /// The degree of the ciphertexts the conversions take.
+    pub(crate) n: Degree,
     pub(crate) layout: ReplicatedLayout,
     pub(crate) log_delta: usize,
     pub(crate) extra_bits: usize,
@@ -77,10 +79,15 @@ impl<BE: Backend, Rg: Ring> ReplicatedConversion<BE, Rg> {
         ReplicatedTransform::<BE, Rg>::encode_tmp_bytes::<F>(module, layout, base2k, log_delta_diag)
     }
 
-    /// Encodes and prepares the conversion maps on `module`, within the caller's `scratch`
-    /// of [`Self::new_tmp_bytes`].
+    /// Encodes and prepares the conversion maps on `module` for ciphertexts of degree `n`, within the caller's
+    /// `scratch` of [`Self::new_tmp_bytes`].
+    ///
+    /// # Errors
+    /// When `n` exceeds the degree of `module` or `layout` needs more slots than the ring of degree `n` has.
+    #[expect(clippy::too_many_arguments, reason = "the maps, their degree, layout, scales and arena")]
     pub fn new<F>(
         module: &Module<BE>,
+        n: Degree,
         layout: ReplicatedLayout,
         base2k: Base2K,
         log_delta: usize,
@@ -92,7 +99,8 @@ impl<BE: Backend, Rg: Ring> ReplicatedConversion<BE, Rg> {
         F: CKKSEncodingScalar,
         Module<BE>: ReplicatedTransformModule<BE, F, Rg>,
     {
-        let (k, r) = (1usize << layout.log_k(), 1usize << layout.log_r());
+        let (k, _) = check_period_at::<BE, Rg>(module, n, &layout)?;
+        let r = 1usize << layout.log_r();
         let select = |s: usize, j: usize| {
             let read = s.is_multiple_of(r) && (s / r) % k == j;
             (if read { F::one() } else { F::zero() }, F::zero())
@@ -112,9 +120,10 @@ impl<BE: Backend, Rg: Ring> ReplicatedConversion<BE, Rg> {
         } else {
             None
         };
-        let h = module.ckks_max_slots::<Rg>() / k;
+        let h = module.ckks_slots_of_degree::<Rg>(n.as_usize()) / k;
         let trace = (0..h.trailing_zeros()).map(|l| (k << l) as i64).collect();
         Ok(Self {
+            n,
             layout,
             log_delta,
             extra_bits,
@@ -128,9 +137,10 @@ impl<BE: Backend, Rg: Ring> ReplicatedConversion<BE, Rg> {
     /// slots and the data slots, in `placement_factors` factors of about
     /// `k^(1/placement_factors)` mask diagonals, each costing about the square
     /// root of its diagonals in key switches, for the factors' bits.
-    #[expect(clippy::too_many_arguments, reason = "the maps, their layout, scales and arena")]
+    #[expect(clippy::too_many_arguments, reason = "the maps, their degree, layout, scales and arena")]
     pub fn new_factored<F>(
         module: &Module<BE>,
+        n: Degree,
         layout: ReplicatedLayout,
         base2k: Base2K,
         log_delta: usize,
@@ -144,7 +154,7 @@ impl<BE: Backend, Rg: Ring> ReplicatedConversion<BE, Rg> {
         F: CKKSEncodingScalar,
         Module<BE>: ReplicatedTransformModule<BE, F, Rg>,
     {
-        let (k, _) = check_period::<BE, Rg>(module, &layout)?;
+        let (k, _) = check_period_at::<BE, Rg>(module, n, &layout)?;
         ensure!(
             (1..=layout.log_k()).contains(&placement_factors),
             "the placement takes between one and log2(k) = {} factors",
@@ -171,8 +181,9 @@ impl<BE: Backend, Rg: Ring> ReplicatedConversion<BE, Rg> {
             .into_iter()
             .map(factor(log_delta_diag))
             .collect();
-        let h = module.ckks_max_slots::<Rg>() / k;
+        let h = module.ckks_slots_of_degree::<Rg>(n.as_usize()) / k;
         Ok(Self {
+            n,
             layout,
             log_delta,
             extra_bits,
@@ -184,6 +195,11 @@ impl<BE: Backend, Rg: Ring> ReplicatedConversion<BE, Rg> {
 
     pub fn layout(&self) -> ReplicatedLayout {
         self.layout
+    }
+
+    /// The degree of the ciphertexts the conversions take.
+    pub fn n(&self) -> Degree {
+        self.n
     }
 
     /// Allocates reusable baby steps for conversion into this layout from `src`.
@@ -695,6 +711,31 @@ impl<BE: Backend, F: CKKSEncodingScalar, Rg: Ring, M> ReplicatedTransformModule<
         + CKKSLinearTransformationOps<BE, Rg>
         + CnvPVecAlloc<BE>
 {
+}
+
+/// `(k, kR)` of a layout that fits the slots of degree `n` of the ring `Rg`, at most the module's degree.
+pub(crate) fn check_period_at<BE: Backend, Rg: Ring>(
+    module: &Module<BE>,
+    n: Degree,
+    layout: &ReplicatedLayout,
+) -> Result<(usize, usize)>
+where
+    Module<BE>: CKKSModuleInfos,
+{
+    ensure!(
+        n.as_usize() <= module.n() && n.as_usize().is_power_of_two(),
+        "the degree {} is not a power of two at most the module's {}",
+        n.as_usize(),
+        module.n()
+    );
+    let (k, r) = (1usize << layout.log_k(), 1usize << layout.log_r());
+    let slots = module.ckks_slots_of_degree::<Rg>(n.as_usize());
+    ensure!(
+        k * r <= slots,
+        "{k} values of period {r} need more than the {slots} slots of degree {}",
+        n.as_usize()
+    );
+    Ok((k, k * r))
 }
 
 /// `(k, kR)` of a layout that fits the slots of the ring `Rg`.

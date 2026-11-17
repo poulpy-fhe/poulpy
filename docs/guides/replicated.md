@@ -43,7 +43,7 @@ Operations that would round plainly or write the guard slots return `InvalidOper
 `CKKSReplicatedOps` moves a batch between CKKS and the replicated layout with the same keys.
 `ckks_to_replicated` maps `k` values of a full-layout ciphertext with period `k` onto the data slots; `ckks_from_replicated` gathers them back, averaging the replicas.
 `ReplicatedConversion` holds the encoded diagonals and lists the rotations its keys cover.
-`ReplicatedConversion::new` encodes each map as `k` diagonals; `ReplicatedConversion::new_factored` encodes it as the move between consecutive slots and the data slots in `placement_factors` factors of about `k^(1/placement_factors)` 0/1 mask diagonals, which needs no `R | k` for the return.
+`ReplicatedConversion::new` encodes each map as `k` diagonals for ciphertexts of a degree `n` at most the module's, which the conversions take; `ReplicatedConversion::new_factored` encodes it as the move between consecutive slots and the data slots in `placement_factors` factors of about `k^(1/placement_factors)` 0/1 mask diagonals, which needs no `R | k` for the return.
 Every factor consumes its diagonal bits: the last factor of `ckks_to_replicated` is quantized with shaping, its others plainly at `inner_log_delta_diag` bits, a few bits above the working precision.
 Allocate a `ReplicatedTransformWorkspace` once with `ctx.alloc_to_workspace(&module, &input)` or `ctx.alloc_from_workspace(&module, &input)` and pass it after `ctx` to each evaluation.
 The workspace owns the prepared baby rotations for that input layout; evaluations refill those buffers without reallocating them.
@@ -70,8 +70,8 @@ Its `transforms` select how `SlotsToCoeffs` and `CoeffsToSlots` are evaluated, b
 A packed route needs its two batches to fit the ring, `4kR <= N`, which the compilation checks.
 Factoring trades levels and rotation keys for fewer diagonals: at `N = 2^16` and `k = 2^10`, the dense maps multiply by about 3000 diagonals with 69 rotation keys, the factored maps of `n16_d20_k763_p19_s2c_factored` by 381 diagonals with 83 keys, for a raised modulus 256 bits wider at the same levels.
 At `k = 2^10`, the factored preset bootstraps in 6.3 s on one `NTT4x30Neon` thread and 0.36 s on Metal, against 8.1 s and 0.52 s for dense maps at the same levels, within 0.2 bits of their precision. At `k = 2^8` the dense maps are faster, the diagonals no longer dominating.
-`BootstrappingContextPrepared::compile` compiles the plan for a module: the transforms, the masked EvalMod constants, and the Galois elements its keys cover (`replicated_galois_elements`).
-`BootstrappingPlan::replicated_secure_key_layouts` sizes the gadgets of the keys with the fewest digits whose modulus fits the caller's bounds for the dense secret and for the ephemeral sparse secret, with one automorphism key for each Galois element of the compiled bootstrapping.
+`BootstrappingContextPrepared::compile` compiles the plan for a module at the route's degree `2^log_n`, which the bootstrap takes its ciphertexts at: the transforms, the masked EvalMod constants, and the Galois elements its keys cover (`replicated_galois_elements`).
+`replicated_key_widths` gives the width at which a bootstrapping into a given output width looks each key up, the widest use of each Galois element and of the tensor key, which the entry check reads and `BootstrappingKeyPolicy::keys_layout_at` shapes keys from, with the digits of fewest rows under the caller's modulus bounds. `generate_replicated_keys` generates them by the generator of the full layout.
 
 ### Presets
 
@@ -80,24 +80,25 @@ The batch size and the shaping unit are the caller's.
 The input and output widths do not depend on them, while the raised modulus and the keys follow the unit's EvalMod scale: `plan` and `keys_layout` take the layout.
 A preset refuses a unit whose suppression is less than 8 bits above its precision, since the bootstrapping falls short of the suppression by up to 5 bits: the units of `R = 2` and those targeting 20 bits, which measure 16 to 19 bits on the logN14 preset.
 The logN16 preset factors its maps into two DFT factors and two placement factors each, with `SlotsToCoeffs` diagonals at `2^30` and inner `CoeffsToSlots` diagonals at `2^54`, for batches of 4 to `2^10` values at `R = 16`.
+The keys come from `BootstrappingKeyPolicy` under the bounds of the Security section of the bootstrapping presets, each covering its widest use with whole-limb digits, or a digit off a limb boundary where no whole limb fits the bound.
 The sparse-to-dense key covers the 57-bit lifted ModUp input, with a row offset ending its gadget at the raised modulus. Its full modulus includes that offset, the gadget and the auxiliary bits.
 
-| preset | ring | levels at `2^20` | keys (digits × width + aux) | ephemeral key | sparse-to-dense key (offset + gadget + aux) | min precision, k = 16 / 64 |
-|---|---|---|---|---|---|---|
-| `n14_d20_k109_p21_s2c` | `2^14` | 2 | 14 × 28 + 28 | 2 × 22 + 22 | 333 + 2 × 29 + 29 | 21.79 / 21.73 bits |
-| `n15_d20_k389_p20_s2c` | `2^15` | 16 | 4 × 168 + 168 | 1 × 43 + 43 | 614 + 1 × 57 + 57 | 21.16 / 20.84 bits |
-| `n16_d20_k763_p19_s2c_factored` | `2^16` | 30 | 3 × 403 + 403 | 1 × 43 + 43 | 1150 + 1 × 57 + 57 | 20.52 / 20.38 bits |
+| preset | ring | levels at `2^20` | widest rotation key (digits × width + aux) | tensor key | ephemeral key | sparse-to-dense key (offset + gadget + aux) | min precision, k = 16 / 64 |
+|---|---|---|---|---|---|---|---|
+| `n14_d20_k109_p21_s2c` | `2^14` | 2 | 14 × 28 + 32 | 7 × 52 + 60 | 2 × 22 + 33 | 333 + 2 × 29 + 33 | 21.79 / 21.73 bits |
+| `n15_d20_k389_p20_s2c` | `2^15` | 16 | 7 × 104 + 119 | 3 × 208 + 223 | 1 × 52 + 67 | 567 + 1 × 104 + 119 | 21.16 / 20.84 bits |
+| `n16_d20_k763_p19_s2c_factored` | `2^16` | 30 | 3 × 416 + 432 | 2 × 520 + 536 | 1 × 52 + 68 | 1103 + 1 × 104 + 120 | 20.52 / 20.38 bits |
 
 The logN14 preset advertises 21 bits of precision on the data slots, the logN15 preset 20 bits and the logN16 preset 19 bits, which the precision test asserts.
 The logN16 preset measures 20.35 bits at `k = 2^8` and 20.00 bits at `k = 2^10` on `NTT4x30Neon`. The test covers offset and full-width return keys on matched ciphertexts, and `U8_40` at `k = 64`.
 
 With `U8_40`, EvalMod at `2^30` raises the modulus by 16 bits:
 
-| preset | raised modulus | keys (digits × width + aux) | min precision, k = 64 |
+| preset | raised modulus | widest rotation key (digits × width + aux) | min precision, k = 64 |
 |---|---|---|---|
-| `n14_d20_k109_p21_s2c` | 407 bits | 34 × 12 + 12 | 21.28 bits |
-| `n15_d20_k389_p20_s2c` | 687 bits | 5 × 138 + 138 | 20.94 bits |
-| `n16_d20_k763_p19_s2c_factored` | 1223 bits | 3 × 408 + 408 | 20.61 bits |
+| `n14_d20_k109_p21_s2c` | 407 bits | 34 × 12 + 16 | 21.28 bits |
+| `n15_d20_k389_p20_s2c` | 687 bits | 7 × 104 + 119 | 20.94 bits |
+| `n16_d20_k763_p19_s2c_factored` | 1223 bits | 3 × 416 + 432 | 20.61 bits |
 
 The logN14 bound of 424 bits leaves only 12-bit digits, so its key switches take 34 digits instead of 14.
 
@@ -140,10 +141,11 @@ let layout = ShapingUnit::U32_45.layout(log_k)?;
 let plan = preset.plan(layout)?;
 // `scratch` covers `compile_unprepared_tmp_bytes(&module, &plan)?` and the preparation of the unprepared context.
 let ctx = BootstrappingContextPrepared::<MyBackend, f64>::compile(&module, base2k, &plan, &mut scratch)?;
-let keys_layout = preset.keys_layout(layout, &ctx.replicated_galois_elements(&module))?;
+let widths = ctx.replicated_key_widths(&module, preset.output_k()).unwrap();
+let keys_layout = preset.keys_layout(layout, &widths)?;
+// `scratch` covers `keys_layout.generate_tmp_bytes(&module)` and `keys_layout.prepare_tmp_bytes(&module)`.
 let keys = ctx
-    .generate_replicated_keys(&module, &sk, &keys_layout, preset.sparse_secret_hamming_weight(),
-                              &mut source_xs, &mut source_xe, &mut source_xa, &mut scratch)
+    .generate_replicated_keys(&module, &sk, &keys_layout, &mut source_xs, &mut source_xe, &mut source_xa, &mut scratch)?
     .prepare(&module, &mut scratch)?;
 
 // `input` holds `2^log_k` values at the leveled scale and width `preset.input_k()`.
