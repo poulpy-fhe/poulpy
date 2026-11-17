@@ -1,7 +1,8 @@
 # Opens an issue when rlwe-params releases a new 128-bit security table.
 #
-# The table is vendored in poulpy-core/third_party/rlwe-params and read at build
-# time by poulpy-core/build.rs. A new release can move the bounds the
+# The table is vendored in poulpy-core/third_party/rlwe-params and committed as
+# Rust in poulpy-core/src/security/rlwe_params_128.rs, which a test rebuilds from
+# it. A new release can move the bounds the
 # bootstrapping presets are certified against, which the preset tests pin, so
 # the update usually needs work before merging.
 #
@@ -69,7 +70,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "$title"
 
-          checks="The bounds of the certified bootstrapping presets may have moved: run the preset tests (\`cargo test -p poulpy-ckks --lib --features test-utils presets::\`) and the security tests (\`cargo test -p poulpy-core --lib security\`), then update the pinned bounds, key shapes, docs and CHANGELOG as needed."
+          checks="Regenerate the Rust table (\`POULPY_REGENERATE_SECURITY_TABLE=1 cargo test -p poulpy-core --lib security::generate\`). The bounds of the certified bootstrapping presets may have moved: run the preset tests (\`cargo test -p poulpy-ckks --lib --features test-utils presets::\`) and the security tests (\`cargo test -p poulpy-core --lib security\`), then update the pinned bounds, key shapes, docs and CHANGELOG as needed."
           if git push --force origin "$branch"; then
             pr_body="Replaces the vendored 128-bit security table with that of rlwe-params $TAG ($DIGEST, checked against the release).
 

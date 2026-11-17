@@ -1,47 +1,71 @@
-//! Turns the vendored rlwe-params table into the cells of `security`.
+//! Rebuilds `rlwe_params_128.rs` from the vendored rlwe-params table, see `third_party/rlwe-params/README.md`.
 //!
-//! The table is parsed here, so a malformed or mismatched table fails the build
-//! and the library carries no JSON parser. See `third_party/rlwe-params/README.md`.
+//! The test fails when the committed file differs from what the table gives, and rewrites it when
+//! `POULPY_REGENERATE_SECURITY_TABLE` is set.
 
-use std::{env, fmt::Write, fs, path::Path};
+use std::{fmt::Write, fs};
 
 use serde_json::Value;
 
-const TABLE_DIR: &str = "third_party/rlwe-params";
-const TABLE_128: &str = "128bits_security.json";
+const TABLE_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/third_party/rlwe-params");
+const GENERATED: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/src/security/rlwe_params_128.rs");
+const REGENERATE: &str = "POULPY_REGENERATE_SECURITY_TABLE";
 
-fn main() {
-    let table_path = Path::new(TABLE_DIR).join(TABLE_128);
-    let version_path = Path::new(TABLE_DIR).join("VERSION");
-    println!("cargo::rerun-if-changed={}", table_path.display());
-    println!("cargo::rerun-if-changed={}", version_path.display());
+#[test]
+fn the_committed_table_matches_the_vendored_one() {
+    let expected = render().unwrap_or_else(|err| panic!("{TABLE_DIR}: {err}"));
+    if std::env::var_os(REGENERATE).is_some() {
+        fs::write(GENERATED, &expected).unwrap_or_else(|err| panic!("{GENERATED}: {err}"));
+        return;
+    }
+    let committed = fs::read_to_string(GENERATED)
+        .unwrap_or_else(|err| panic!("{GENERATED}: {err}"))
+        .replace("\r\n", "\n");
+    if let Some((line, (committed, expected))) = committed.lines().zip(expected.lines()).enumerate().find(|(_, (c, e))| c != e) {
+        panic!(
+            "{GENERATED}:{} is stale, `{committed}` where the table gives `{expected}`. Run `{REGENERATE}=1 cargo test -p poulpy-core --lib security::generate`.",
+            line + 1
+        );
+    }
+    assert_eq!(
+        committed.lines().count(),
+        expected.lines().count(),
+        "{GENERATED} is stale. Run `{REGENERATE}=1 cargo test -p poulpy-core --lib security::generate`."
+    );
+}
 
-    let version = fs::read_to_string(&version_path).unwrap_or_else(|err| panic!("{}: {err}", version_path.display()));
+/// The source of `rlwe_params_128.rs`.
+fn render() -> Result<String, String> {
+    let read = |name: &str| fs::read_to_string(format!("{TABLE_DIR}/{name}")).map_err(|err| format!("{name}: {err}"));
+    let version = read("VERSION")?;
     let version = version.trim();
-    assert!(!version.is_empty(), "{} is empty", version_path.display());
-    let text = fs::read_to_string(&table_path).unwrap_or_else(|err| panic!("{}: {err}", table_path.display()));
-    let table: Value = serde_json::from_str(&text).unwrap_or_else(|err| panic!("{}: {err}", table_path.display()));
-    let cells = parse_table(&table, 128).unwrap_or_else(|err| panic!("{}: {err}", table_path.display()));
+    if version.is_empty() {
+        return Err("VERSION is empty".into());
+    }
+    let table: Value = serde_json::from_str(&read("128bits_security.json")?).map_err(|err| err.to_string())?;
+    let cells = parse_table(&table, 128)?;
 
     let mut out = String::new();
-    writeln!(out, "/// Release of rlwe-params the tables were copied from.").unwrap();
-    writeln!(out, "const TABLE_VERSION: &str = {version:?};").unwrap();
-    writeln!(
-        out,
-        "/// Cells of the 128-bit table: ring degree exponent, secret, largest `log2(q)`."
-    )
-    .unwrap();
-    writeln!(out, "static CELLS_128: &[Cell] = &[").unwrap();
+    let mut line = |text: &str| writeln!(out, "{text}").unwrap();
+    line("//! The 128-bit table of rlwe-params, as the cells [`super`] reads.");
+    line("//!");
+    line("//! Generated from `third_party/rlwe-params` by the test in `generate.rs`, not edited by hand.");
+    line("");
+    line("use super::{Cell, TableSecret};");
+    line("");
+    line("/// Release of rlwe-params the table was copied from.");
+    line(&format!("pub(super) const TABLE_VERSION: &str = {version:?};"));
+    line("");
+    line("/// Cells of the 128-bit table: ring degree exponent, secret, largest `log2(q)`.");
+    line("#[rustfmt::skip]");
+    line("pub(super) static CELLS_128: &[Cell] = &[");
     for (log_n, distribution, max_log_q) in cells {
-        writeln!(
-            out,
+        line(&format!(
             "    Cell {{ log_n: {log_n}, secret: TableSecret::{distribution}, max_log_q: {max_log_q:?} }},"
-        )
-        .unwrap();
+        ));
     }
-    writeln!(out, "];").unwrap();
-    let dest = Path::new(&env::var("OUT_DIR").unwrap()).join("rlwe_params.rs");
-    fs::write(&dest, out).unwrap_or_else(|err| panic!("{}: {err}", dest.display()));
+    line("];");
+    Ok(out)
 }
 
 /// The cells of a table for `target` bits: `(log_n, distribution, max_log_q)`,

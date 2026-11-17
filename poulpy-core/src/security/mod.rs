@@ -5,8 +5,9 @@
 //! the largest `log2(q)` at which every attack of its estimators costs at least
 //! the target, for a discrete Gaussian error of deviation 3.2
 //! ([`Noise::ENCRYPTION`](crate::Noise::ENCRYPTION)) and unlimited samples. The
-//! tables are vendored in `third_party/rlwe-params` and read at build time,
-//! which refuses a table of another error or sample count. Nothing in the
+//! tables are vendored in `third_party/rlwe-params` and committed as Rust in
+//! `rlwe_params_128.rs`, which a test rebuilds from them, refusing a table of
+//! another error or sample count. Nothing in the
 //! library calls this module on its own: a caller picks a [`Security`] level
 //! and checks the objects it builds with it.
 //!
@@ -72,7 +73,11 @@ enum TableSecret {
     SparseBinary(usize),
 }
 
-include!(concat!(env!("OUT_DIR"), "/rlwe_params.rs"));
+#[cfg(test)]
+mod generate;
+mod rlwe_params_128;
+
+use rlwe_params_128::{CELLS_128, TABLE_VERSION};
 
 /// A security level, in bits, against the attacks of the rlwe-params estimators.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
