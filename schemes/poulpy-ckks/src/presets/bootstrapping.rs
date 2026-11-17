@@ -1352,7 +1352,7 @@ mod tests {
             matches!(
                 source,
                 CoreError::SecurityUnsupported {
-                    security: Security::Bits128,
+                    target_bits: 128,
                     secret: SecretSpec {
                         n: 2048,
                         dist: Distribution::TernaryFixed(1024),
@@ -1633,7 +1633,7 @@ mod tests {
             matches!(
                 source,
                 CoreError::SecurityUnsupported {
-                    security: Security::Bits128,
+                    target_bits: 128,
                     secret: SecretSpec {
                         n: 2048,
                         dist: Distribution::TernaryFixed(32),
@@ -1678,7 +1678,7 @@ mod tests {
             (
                 "check_security",
                 &CoreError::SecurityBoundExceeded {
-                    security: Security::Bits128,
+                    target_bits: 128,
                     secret: input,
                     what: "outbound ring-switch key".into(),
                     log_q: 13 * 52 + 68,
@@ -1741,26 +1741,26 @@ mod tests {
         assert_eq!(
             source,
             &CoreError::SecurityBoundExceeded {
-                security: Security::Bits128,
+                target_bits: 128,
                 secret: dense,
                 what: "rotation key".into(),
                 log_q: 852,
                 max_log_q: 851,
             }
         );
-        // A dense secret the table has no cell for, such as a ternary one of density 1/2, certifies nothing.
-        let half = SecretSpec::new(preset.n(), Distribution::TernaryProb(0.5));
+        // A dense secret the table has no cell for, such as a structured one, certifies nothing.
+        let block = SecretSpec::new(preset.n(), Distribution::BinaryBlock(8));
         let err = preset
             .plan()
-            .check_key_security(Security::Bits128, half, preset.keys_layout())
+            .check_key_security(Security::Bits128, block, preset.keys_layout())
             .expect_err("a secret without a bound is certified");
         assert_eq!(
             security_refusal(&err),
             (
                 "check_key_security",
                 &CoreError::SecurityUnsupported {
-                    security: Security::Bits128,
-                    secret: half,
+                    target_bits: 128,
+                    secret: block,
                     reason: "the table has no secret of this distribution",
                 }
             )
