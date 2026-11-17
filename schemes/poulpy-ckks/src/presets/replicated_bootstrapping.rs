@@ -22,17 +22,25 @@
 //! suppression is less than 8 bits above its precision. Factored transforms
 //! take a batch of at least `2^f` values for `f` factors per stage. EvalMod runs on
 //! the real and imaginary parts side by side when they fit the ring (`2kR <= N/2`).
+//!
+//! The secrets and their modulus bounds are those of the
+//! [Security section of the bootstrapping presets](super::bootstrapping#security), which covers `N = 2^14` to `2^16`.
 
-use anyhow::{Result, ensure};
-use poulpy_core::layouts::{Base2K, Degree, GLWEAutomorphismKeyLayout, GLWELayout, Rank, TorusPrecision};
+use anyhow::{Context, Result, ensure};
+use poulpy_core::layouts::{Base2K, Degree, GLWELayout, Rank, TorusPrecision};
 
 use crate::{
     CKKSLayout, GLWEPlaintextMeta, ReplicatedLayout, Scale, SlotLayout, SlotsKind,
     layouts::{
-        BootstrappingKeysLayout, BootstrappingPlan, BootstrappingTechniques, ReplicatedRoute, ReplicatedTransforms,
-        SparseSecretEncapsulation,
+        BootstrappingKeyWidths, BootstrappingKeysLayout, BootstrappingPlan, BootstrappingTechniques, ReplicatedRoute,
+        ReplicatedTransforms, SparseSecretEncapsulation,
     },
+    presets::key_policy::BootstrappingKeyPolicy,
     shaping::ShapingUnit,
+};
+
+use super::bootstrapping::{
+    N14_DENSE_SECRET, N14_SPARSE_SECRET, N15_DENSE_SECRET, N15_SPARSE_SECRET, N16_DENSE_SECRET, N16_SPARSE_SECRET, SecretBound,
 };
 
 #[derive(Clone, Copy, Debug)]
@@ -42,18 +50,17 @@ struct PresetSpec {
     base2k: usize,
     levels: usize,
     log2_precision: usize,
-    dense_secret_hamming_weight: usize,
-    sparse_secret_hamming_weight: usize,
-    max_dense_modulus: usize,
-    max_sparse_modulus: usize,
+    /// The secrets and their modulus bounds, from the
+    /// [Security section of the bootstrapping presets](super::bootstrapping#security).
+    dense_secret: SecretBound,
+    sparse_secret: SecretBound,
     transforms: ReplicatedTransforms,
     s2c_log_delta_diag: usize,
 }
 
-/// A bootstrapping parameter set for a replicated slot layout: the circuit, the
-/// widths, the secret weights and, for each unit, the key layouts, whose gadgets
-/// have the fewest digits within the modulus bounds
-/// ([`BootstrappingPlan::replicated_secure_key_layouts`]).
+/// A bootstrapping parameter set for a replicated slot layout: the circuit, the widths, the secret weights and, for each
+/// unit, the key layouts, shaped by the [`BootstrappingKeyPolicy`] from the widths the compiled bootstrapping uses them
+/// at.
 #[derive(Clone, Debug)]
 pub struct ReplicatedBootstrappingPreset {
     spec: PresetSpec,
@@ -92,12 +99,12 @@ impl ReplicatedBootstrappingPreset {
 
     /// Hamming weight of the dense application secret.
     pub fn dense_secret_hamming_weight(&self) -> usize {
-        self.spec.dense_secret_hamming_weight
+        self.spec.dense_secret.hamming_weight
     }
 
     /// Hamming weight of the ephemeral sparse ModUp secret.
     pub fn sparse_secret_hamming_weight(&self) -> usize {
-        self.spec.sparse_secret_hamming_weight
+        self.spec.sparse_secret.hamming_weight
     }
 
     /// The circuit for a ciphertext in `layout`. Refuses a unit whose
@@ -121,25 +128,13 @@ impl ReplicatedBootstrappingPreset {
         input_k(&self.spec, &route) + self.spec.levels * route.level_log_delta
     }
 
-    /// Evaluation-key layouts sized for this preset and `layout`, with an
-    /// automorphism key for each of `galois_elements`
-    /// ([`BootstrappingContextPrepared::replicated_galois_elements`](crate::layouts::BootstrappingContextPrepared::replicated_galois_elements)),
-    /// all on the tensor key's gadget. Refuses the units [`Self::plan`] refuses.
-    pub fn keys_layout(&self, layout: ReplicatedLayout, galois_elements: &[i64]) -> Result<BootstrappingKeysLayout> {
-        let keys_layout = key_layouts(&self.spec, &self.plan(layout)?)?;
-        let tsk = keys_layout.tensor_key;
-        let rotation_key = GLWEAutomorphismKeyLayout {
-            n: tsk.n,
-            base2k: tsk.base2k,
-            dnum: tsk.dnum,
-            k_aux: tsk.k_aux,
-            rank: tsk.rank,
-            k_digit: tsk.k_digit,
-        };
-        Ok(BootstrappingKeysLayout {
-            rotation_keys: galois_elements.iter().map(|&p| (p, rotation_key)).collect(),
-            ..keys_layout
-        })
+    /// Evaluation-key layouts for this preset and `layout`, each key covering its width in `widths`, the widths at which
+    /// the bootstrapping of `layout` into [`Self::output_k`] bits uses its keys
+    /// ([`BootstrappingContextPrepared::replicated_key_widths`](crate::layouts::BootstrappingContextPrepared::replicated_key_widths)),
+    /// shaped by [`BootstrappingKeyPolicy`] under the preset's modulus bounds, with the encapsulation keys of the
+    /// ephemeral secret. Refuses the units [`Self::plan`] refuses.
+    pub fn keys_layout(&self, layout: ReplicatedLayout, widths: &BootstrappingKeyWidths) -> Result<BootstrappingKeysLayout> {
+        key_layouts(&self.spec, &self.plan(layout)?, widths)
     }
 
     /// Layout of the bootstrap destination, in `layout`.
@@ -185,10 +180,8 @@ pub fn n14_d20_k109_p21_s2c() -> Result<ReplicatedBootstrappingPreset> {
         base2k: 52,
         levels: 2,
         log2_precision: 21,
-        dense_secret_hamming_weight: 1024,
-        sparse_secret_hamming_weight: 32,
-        max_dense_modulus: 424,
-        max_sparse_modulus: 77,
+        dense_secret: N14_DENSE_SECRET,
+        sparse_secret: N14_SPARSE_SECRET,
         transforms: ReplicatedTransforms::Dense,
         s2c_log_delta_diag: 26,
     })
@@ -203,10 +196,8 @@ pub fn n15_d20_k389_p20_s2c() -> Result<ReplicatedBootstrappingPreset> {
         base2k: 52,
         levels: 16,
         log2_precision: 20,
-        dense_secret_hamming_weight: 1024,
-        sparse_secret_hamming_weight: 32,
-        max_dense_modulus: 851,
-        max_sparse_modulus: 162,
+        dense_secret: N15_DENSE_SECRET,
+        sparse_secret: N15_SPARSE_SECRET,
         transforms: ReplicatedTransforms::Dense,
         s2c_log_delta_diag: 26,
     })
@@ -224,10 +215,8 @@ pub fn n16_d20_k763_p19_s2c_factored() -> Result<ReplicatedBootstrappingPreset> 
         base2k: 52,
         levels: 30,
         log2_precision: 19,
-        dense_secret_hamming_weight: 1024,
-        sparse_secret_hamming_weight: 32,
-        max_dense_modulus: 1707,
-        max_sparse_modulus: 345,
+        dense_secret: N16_DENSE_SECRET,
+        sparse_secret: N16_SPARSE_SECRET,
         transforms: ReplicatedTransforms::Factored {
             s2c_factors: 2,
             c2s_factors: 2,
@@ -260,7 +249,7 @@ fn route_for(spec: &PresetSpec, layout: ReplicatedLayout) -> ReplicatedRoute {
         transforms: spec.transforms,
         s2c_log_delta_diag: spec.s2c_log_delta_diag,
         packed: 4 * k * r <= 1 << spec.log_n,
-        ..ReplicatedRoute::paper(layout)
+        ..ReplicatedRoute::paper(layout, spec.log_n)
     }
 }
 
@@ -271,7 +260,7 @@ fn plan_for(spec: &PresetSpec, layout: ReplicatedLayout) -> Result<Bootstrapping
         ReplicatedRoute::paper_eval_mod(&layout),
         BootstrappingTechniques {
             sparse_secret_encapsulation: Some(SparseSecretEncapsulation {
-                hamming_weight: spec.sparse_secret_hamming_weight,
+                hamming_weight: spec.sparse_secret.hamming_weight,
             }),
             eval_round_plus: None,
         },
@@ -309,16 +298,41 @@ fn check_unit(spec: &PresetSpec, layout: &ReplicatedLayout) -> Result<()> {
     Ok(())
 }
 
-/// The key layouts of `plan` without automorphism keys.
-fn key_layouts(spec: &PresetSpec, plan: &BootstrappingPlan) -> Result<BootstrappingKeysLayout> {
-    plan.replicated_secure_key_layouts(
-        &[],
-        Degree(1 << spec.log_n),
-        Base2K(spec.base2k as u32),
-        output_k(spec, plan),
-        spec.max_dense_modulus,
-        spec.max_sparse_modulus,
-    )
+/// The policy that shapes the keys of the preset: whole-limb digits of the fewest rows under its modulus bounds, the key
+/// to the ephemeral secret of one-limb digits.
+fn key_policy(spec: &PresetSpec) -> BootstrappingKeyPolicy {
+    BootstrappingKeyPolicy {
+        log_n: spec.log_n,
+        base2k: spec.base2k,
+        rank: 1,
+        dense_log_modulus: spec.dense_secret.max_log_modulus,
+        sparse_log_modulus: spec.sparse_secret.max_log_modulus,
+        max_dsize: None,
+        dense_to_sparse_dsize: 1,
+    }
+}
+
+/// The key layouts of `plan`, its keys used at `widths`: the key to the ephemeral secret covers the input of the
+/// raise, the message ratio above `Δ_b`, and the key back its lifted window, its rows ending at the raised width.
+fn key_layouts(spec: &PresetSpec, plan: &BootstrappingPlan, widths: &BootstrappingKeyWidths) -> Result<BootstrappingKeysLayout> {
+    let route = plan.replicated_route().context("a replicated plan")?;
+    let raise_input_k = route.log_delta + plan.eval_mod().log_msg_ratio;
+    let window = raise_input_k + route.raise_bits();
+    let raised = plan
+        .replicated_raised_k(output_k(spec, plan))
+        .context("the output holds the route")?;
+    key_policy(spec).keys_layout_at(widths, Some((raise_input_k, Some((window, raised)))))
+}
+
+/// The widest key of each kind of `plan`: the raised width for the rotation keys, the widest EvalMod product for the
+/// tensor key. Every narrower use fits where these do.
+fn widest_key_widths(spec: &PresetSpec, plan: &BootstrappingPlan) -> Result<BootstrappingKeyWidths> {
+    let k_out = output_k(spec, plan);
+    Ok(BootstrappingKeyWidths {
+        rotation_keys: [(-1, plan.replicated_raised_k(k_out).context("the output holds the route")?)].into(),
+        tensor_key: plan.replicated_tensor_key_k(k_out).context("the output holds the route")?,
+        conversion_keys: None,
+    })
 }
 
 /// Checks that the keys of every unit the preset accepts fit its modulus bounds.
@@ -327,7 +341,8 @@ fn build(spec: PresetSpec) -> Result<ReplicatedBootstrappingPreset> {
     for unit in ShapingUnit::ALL {
         let layout = unit.layout(unit.log_r as u8)?;
         if check_unit(&spec, &layout).is_ok() {
-            key_layouts(&spec, &plan_for(&spec, layout)?)?;
+            let plan = plan_for(&spec, layout)?;
+            key_layouts(&spec, &plan, &widest_key_widths(&spec, &plan)?)?;
         }
     }
     Ok(ReplicatedBootstrappingPreset { spec })
@@ -343,72 +358,77 @@ mod tests {
         unit.layout(6).unwrap()
     }
 
-    /// The gadgets of the keys under the secret and of the key to the
-    /// ephemeral secret, as `(dnum, k_digit, k_aux)`, for a unit at the
-    /// default EvalMod scale and for `U8_40`, whose EvalMod runs two bits wider.
+    /// The widest keys of `preset` for `unit`.
+    fn widest(preset: &ReplicatedBootstrappingPreset, unit: ShapingUnit) -> BootstrappingKeyWidths {
+        widest_key_widths(&preset.spec, &plan_for(&preset.spec, layout(unit)).unwrap()).unwrap()
+    }
+
+    /// The gadgets of the widest rotation key, of the tensor key, of the key to the ephemeral secret and of the key
+    /// back, as `(dnum, k_digit, k_aux)`, for a unit at the default EvalMod scale and for `U8_40`, whose EvalMod runs
+    /// two bits wider: the digits of fewest rows under the modulus bounds, off a limb boundary where no whole limb fits.
     #[test]
     fn preset_key_gadgets() {
         let gadget = |key: &dyn GGLWEInfos| {
             let layout = key.gglwe_layout();
             (layout.dnum.0, layout.k_digit.0, layout.k_aux.0)
         };
-        for (preset, unit, keys, ephemeral, return_key) in [
+        for (preset, unit, rotation, tensor, ephemeral, return_key) in [
             (
                 n14_d20_k109_p21_s2c().unwrap(),
                 ShapingUnit::U32_45,
-                (14, 28, 28),
-                (2, 22, 22),
-                (2, 29, 29),
+                (14, 28, 32),
+                (7, 52, 60),
+                (2, 22, 33),
+                (2, 29, 33),
             ),
             (
                 n14_d20_k109_p21_s2c().unwrap(),
                 ShapingUnit::U8_40,
-                (34, 12, 12),
-                (2, 22, 22),
-                (4, 15, 15),
+                (34, 12, 16),
+                (7, 52, 60),
+                (2, 22, 33),
+                (4, 15, 17),
             ),
             (
                 n15_d20_k389_p20_s2c().unwrap(),
                 ShapingUnit::U32_45,
-                (4, 168, 168),
-                (1, 43, 43),
-                (1, 57, 57),
+                (7, 104, 119),
+                (3, 208, 223),
+                (1, 52, 67),
+                (1, 104, 119),
             ),
             (
                 n15_d20_k389_p20_s2c().unwrap(),
                 ShapingUnit::U8_40,
-                (5, 138, 138),
-                (1, 43, 43),
-                (1, 57, 57),
+                (7, 104, 119),
+                (7, 104, 119),
+                (1, 52, 67),
+                (1, 104, 119),
             ),
             (
                 n16_d20_k763_p19_s2c_factored().unwrap(),
                 ShapingUnit::U32_45,
-                (3, 403, 403),
-                (1, 43, 43),
-                (1, 57, 57),
+                (3, 416, 432),
+                (2, 520, 536),
+                (1, 52, 68),
+                (1, 104, 120),
             ),
             (
                 n16_d20_k763_p19_s2c_factored().unwrap(),
                 ShapingUnit::U8_40,
-                (3, 408, 408),
-                (1, 43, 43),
-                (1, 57, 57),
+                (3, 416, 432),
+                (2, 520, 536),
+                (1, 52, 68),
+                (1, 104, 120),
             ),
         ] {
-            let layout = preset.keys_layout(layout(unit), &[5, -1]).unwrap();
+            let layout = preset.keys_layout(layout(unit), &widest(&preset, unit)).unwrap();
             let encapsulation = layout.encapsulation.unwrap();
-            for rotation_key in layout.rotation_keys.values() {
-                assert_eq!(gadget(rotation_key), keys, "{}", preset.name());
-            }
-            assert_eq!(gadget(&layout.tensor_key), keys, "{}", preset.name());
-            assert_eq!(gadget(&encapsulation.dense_to_sparse), ephemeral, "{}", preset.name());
-            assert_eq!(
-                gadget(&encapsulation.sparse_to_dense.unwrap()),
-                return_key,
-                "{}",
-                preset.name()
-            );
+            let name = preset.name();
+            assert_eq!(gadget(&layout.rotation_keys[&-1]), rotation, "{name} {unit:?}");
+            assert_eq!(gadget(&layout.tensor_key), tensor, "{name} {unit:?}");
+            assert_eq!(gadget(&encapsulation.dense_to_sparse), ephemeral, "{name} {unit:?}");
+            assert_eq!(gadget(&encapsulation.sparse_to_dense.unwrap()), return_key, "{name} {unit:?}");
         }
     }
 
@@ -444,7 +464,10 @@ mod tests {
                 let accepted = preset.plan(layout(unit)).is_ok();
                 let strong = unit.log_r > 1 && unit.target_bits >= 30;
                 assert_eq!(accepted, strong, "{} with {unit:?}", preset.name());
-                assert_eq!(preset.keys_layout(layout(unit), &[5]).is_ok(), accepted);
+                assert_eq!(
+                    preset.plan(layout(unit)).is_ok() && preset.keys_layout(layout(unit), &widest(&preset, unit)).is_ok(),
+                    accepted
+                );
             }
         }
     }
@@ -459,7 +482,7 @@ mod tests {
             for base2k in [18, 19, 28, 52, 54] {
                 let preset = preset.with_base2k(base2k).unwrap();
                 let plan = preset.plan(layout(unit)).unwrap();
-                let keys = preset.keys_layout(layout(unit), &[5]).unwrap();
+                let keys = preset.keys_layout(layout(unit), &widest(&preset, unit)).unwrap();
                 let encapsulation = keys.encapsulation.unwrap();
                 let return_key = encapsulation.sparse_to_dense.unwrap();
                 let raised = plan.replicated_raised_k(preset.output_k()).unwrap();
@@ -470,10 +493,10 @@ mod tests {
                     return_key.k_offset.as_usize() + return_key.gglwe_layout().gadget_k().as_usize(),
                     raised
                 );
-                assert!(return_key.k().as_usize() <= preset.spec.max_dense_modulus);
-                assert!(keys.rotation_keys[&5].k().as_usize() <= preset.spec.max_dense_modulus);
-                assert!(keys.tensor_key.k().as_usize() <= preset.spec.max_dense_modulus);
-                assert!(encapsulation.dense_to_sparse.k().as_usize() <= preset.spec.max_sparse_modulus);
+                assert!(return_key.k().as_usize() <= preset.spec.dense_secret.max_log_modulus);
+                assert!(keys.rotation_keys[&-1].k().as_usize() <= preset.spec.dense_secret.max_log_modulus);
+                assert!(keys.tensor_key.k().as_usize() <= preset.spec.dense_secret.max_log_modulus);
+                assert!(encapsulation.dense_to_sparse.k().as_usize() <= preset.spec.sparse_secret.max_log_modulus);
                 crate::layouts::validation::check_offset_raise(
                     "replicated_bootstrapping_preset",
                     raised,

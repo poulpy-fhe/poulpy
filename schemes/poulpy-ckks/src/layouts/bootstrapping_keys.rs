@@ -700,7 +700,7 @@ pub(crate) struct KeyRecipe {
 }
 
 impl KeyRecipe {
-    fn new(
+    pub(crate) fn new(
         mut galois_elements: BTreeSet<i64>,
         first_factor_rotations: Vec<i64>,
         sparse_secret_hamming_weight: Option<usize>,
@@ -726,7 +726,7 @@ impl KeyRecipe {
         clippy::too_many_arguments,
         reason = "key generation takes the module, the secret, the layout, three sources and a scratch arena"
     )]
-    fn generate_keys<BE>(
+    pub(crate) fn generate_keys<BE>(
         &self,
         module: &Module<BE>,
         sk_dense: &BackendGLWESecret<BE>,

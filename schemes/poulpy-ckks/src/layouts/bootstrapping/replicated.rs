@@ -2,20 +2,17 @@
 //! `R | k`, refreshed S2C-first, the small-batch scheme of [ePrint 2026/2513](https://eprint.iacr.org/2026/2513) (see
 //! `docs/guides/replicated.md`).
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use anyhow::{Context, Result, ensure};
 use poulpy_core::{
-    Distribution, GLWEAutomorphismKeyEncryptSk, GLWESecretSampling, GLWESwitchingKeyEncryptSk, GLWETensorKeyEncryptSk, GLWETrace,
-    GetDistributionMut,
-    layouts::{
-        BackendGLWESecret, Base2K, Degree, GGLWELayout, GLWEAutomorphismKeyAlloc, GLWEAutomorphismKeyLayout, GLWEInfos,
-        GLWESecretAlloc, GLWESecretLayout, GLWESwitchingKeyAlloc, GLWESwitchingKeyLayout, GLWETensorKeyAlloc,
-        GLWETensorKeyLayout, LWEInfos, LinearTransformation, ModuleCoreAlloc, Rank, TorusPrecision,
-    },
+    GLWEAutomorphismKeyEncryptSk, GLWECIKeyEncryptSk, GLWESecretSampling, GLWESwitchingKeyEncryptSk, GLWETensorKeyEncryptSk,
+    GLWETrace,
+    layouts::{BackendGLWESecret, Base2K, Degree, LWEInfos, LinearTransformation, ModuleCoreAlloc},
 };
 use poulpy_hal::{
-    layouts::{Backend, CyclotomicOrder, Module, ScratchArena, Standard},
+    api::{VecZnxAutomorphism, VecZnxSwitchRing},
+    layouts::{Backend, ConjugateInvariant, CyclotomicOrder, HostDataMut, Module, ScratchArena, Standard, galois_element},
     source::Source,
 };
 
@@ -23,13 +20,15 @@ use crate::{
     CKKSModuleInfos, CoeffsMeta, ReplicatedLayout,
     api::{CKKSEncodingHostOps, CKKSEncodingScalar},
     layouts::{
-        BootstrappingKeySet, BootstrappingKeysLayout, CKKSDFTFactors, CKKSPlaintextOwned, ComplexDiagonals, DFTMatrix,
-        DFTMatrixFactors, DFTPlan, DFTType, Decode, EncapsulationKeysLayout, Encode, EvalMod, EvalModPlan, MaskedCoeffs, Split,
+        BootstrappingKeySet, BootstrappingKeyWidths, BootstrappingKeysLayout, CKKSDFTFactors, CKKSPlaintextOwned,
+        ComplexDiagonals, DFTMatrix, DFTMatrixFactors, DFTPlan, DFTType, Decode, Encode, EvalMod, EvalModPlan, EvalModRing,
+        MaskedCoeffs, Split,
+        bootstrapping_keys::KeyRecipe,
         dft::DFTOutputFormat,
         dft_matrices::ckks_dft_matrices_gen_blockwise,
         eval_mod::{EvalModType, ckks_eval_mod_replicated_compile, ckks_eval_mod_replicated_packed_compile},
         replicated::{
-            ReplicatedEncodeModule, ReplicatedFactor, ReplicatedTransform, check_period, gather_factor, period_factor,
+            ReplicatedEncodeModule, ReplicatedFactor, ReplicatedTransform, check_period_at, gather_factor, period_factor,
             placement_compress, placement_spread, set_complex, split_depth,
         },
     },
@@ -78,6 +77,8 @@ pub enum ReplicatedTransforms {
 ///    packed, recombines them, and rounds with shaping to the leveled scale.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ReplicatedRoute {
+    /// `log2` of the degree of the ciphertexts the route bootstraps, at most the module's.
+    pub log_n: usize,
     pub layout: ReplicatedLayout,
     /// Scale of the bootstrapped message, `Δ_b`.
     pub log_delta: usize,
@@ -99,10 +100,11 @@ pub struct ReplicatedRoute {
 }
 
 impl ReplicatedRoute {
-    /// The parameters of ePrint 2026/2513 for `layout`: inputs at `2^30` with a ratio of `2^13`
+    /// The parameters of ePrint 2026/2513 for `layout` at degree `2^log_n`: inputs at `2^30` with a ratio of `2^13`
     /// ([`Self::paper_eval_mod`]), outputs at `2^20`, and the packed EvalMod.
-    pub fn paper(layout: ReplicatedLayout) -> Self {
+    pub fn paper(layout: ReplicatedLayout, log_n: usize) -> Self {
         Self {
+            log_n,
             layout,
             log_delta: 30,
             level_log_delta: 20,
@@ -216,119 +218,6 @@ impl ReplicatedRoute {
 }
 
 impl BootstrappingPlan {
-    /// Key layouts for outputs of width `k_out`: the automorphism keys of
-    /// `galois_elements` ([`BootstrappingContextPrepared::replicated_galois_elements`](super::BootstrappingContextPrepared::replicated_galois_elements)) and the
-    /// tensor key share one gadget, covering [`Self::replicated_raised_k`] in digits of
-    /// `k_digit` bits with an auxiliary modulus of `k_aux` bits; with
-    /// `encapsulation`, the key to the ephemeral secret covers the ModUp input
-    /// in one-limb digits and an auxiliary modulus of one limb and a bit. The
-    /// key back covers the lifted ModUp input, with its rows offset to end at
-    /// the raised modulus.
-    #[allow(clippy::too_many_arguments)]
-    pub fn replicated_key_layouts(
-        &self,
-        galois_elements: &[i64],
-        n: Degree,
-        base2k: Base2K,
-        k_out: usize,
-        k_digit: usize,
-        k_aux: usize,
-        encapsulation: bool,
-    ) -> Result<BootstrappingKeysLayout> {
-        let route = self.replicated.as_ref().context("the plan has no replicated route")?;
-        let digit = TorusPrecision(k_digit as u32);
-        let dnum = |k: usize, digit: TorusPrecision| GGLWELayout::dnum_for_input(TorusPrecision(k as u32), digit);
-        let switching = |k: usize, digit: TorusPrecision, k_aux: usize| GLWESwitchingKeyLayout {
-            n,
-            base2k,
-            dnum: dnum(k, digit),
-            k_aux: TorusPrecision(k_aux as u32),
-            rank_in: Rank(1),
-            rank_out: Rank(1),
-            k_digit: digit,
-            k_offset: TorusPrecision(0),
-        };
-        let k_key = self.replicated_raised_k(k_out).unwrap_or_default();
-        let one_limb = TorusPrecision(base2k.as_u32());
-        let rotation_key = GLWEAutomorphismKeyLayout {
-            n,
-            base2k,
-            dnum: dnum(k_key, digit),
-            k_aux: TorusPrecision(k_aux as u32),
-            rank: Rank(1),
-            k_digit: digit,
-        };
-        Ok(BootstrappingKeysLayout {
-            rotation_keys: galois_elements.iter().map(|&p| (p, rotation_key)).collect(),
-            first_factor_key: None,
-            conversion_keys: None,
-            tensor_key: GLWETensorKeyLayout {
-                n,
-                base2k,
-                dnum: dnum(k_key, digit),
-                k_aux: TorusPrecision(k_aux as u32),
-                rank: Rank(1),
-                k_digit: digit,
-            },
-            encapsulation: encapsulation.then(|| {
-                let k_small = route.log_delta + self.eval_mod.log_msg_ratio;
-                let mut sparse_to_dense = switching(k_small + route.raise_bits(), digit, k_aux);
-                let gadget = sparse_to_dense.dnum.0 as usize * k_digit;
-                sparse_to_dense.k_offset = k_key.saturating_sub(gadget).into();
-                EncapsulationKeysLayout {
-                    dense_to_sparse: switching(k_small, one_limb, base2k.as_usize() + 1),
-                    sparse_to_dense: Some(sparse_to_dense),
-                }
-            }),
-        })
-    }
-
-    /// [`Self::replicated_key_layouts`] with the fewest gadget digits within the modulus
-    /// bounds: every key under the secret within `max_dense_modulus` bits and
-    /// the key to the ephemeral secret within `max_sparse_modulus`, each with
-    /// an auxiliary modulus of one digit,
-    /// `log2(QP) = k_offset + (dnum + 1)·k_digit`.
-    pub fn replicated_secure_key_layouts(
-        &self,
-        galois_elements: &[i64],
-        n: Degree,
-        base2k: Base2K,
-        k_out: usize,
-        max_dense_modulus: usize,
-        max_sparse_modulus: usize,
-    ) -> Result<BootstrappingKeysLayout> {
-        let route = self.replicated.as_ref().context("the plan has no replicated route")?;
-        let k_key = self.replicated_raised_k(k_out).unwrap_or_default();
-        let k_q_b = route.log_delta + self.eval_mod.log_msg_ratio;
-        let digit = |k: usize, max: usize| {
-            (1..=k)
-                .map(|dnum| k.div_ceil(dnum))
-                .find(|&digit| k.div_ceil(digit) * digit + digit <= max)
-                .with_context(|| format!("no gadget covers {k} bits within a modulus of {max} bits"))
-        };
-        let k_digit = digit(k_key, max_dense_modulus)?;
-        let sparse_digit = digit(k_q_b, max_sparse_modulus)?;
-        let raised = k_key;
-        let window = k_q_b + route.raise_bits();
-        let return_digit = (1..=window)
-            .map(|dnum| window.div_ceil(dnum))
-            .find(|&digit| (window.div_ceil(digit) * digit).max(raised) + digit <= max_dense_modulus)
-            .context("no sparse-to-dense gadget fits the raised modulus and its auxiliary digit")?;
-        let mut layouts = self.replicated_key_layouts(galois_elements, n, base2k, k_out, k_digit, k_digit, true)?;
-        if let Some(encapsulation) = layouts.encapsulation.as_mut() {
-            let sparse = TorusPrecision(sparse_digit as u32);
-            encapsulation.dense_to_sparse.k_digit = sparse;
-            encapsulation.dense_to_sparse.k_aux = sparse;
-            encapsulation.dense_to_sparse.dnum = GGLWELayout::dnum_for_input(TorusPrecision(k_q_b as u32), sparse);
-            let sparse_to_dense = encapsulation.sparse_to_dense.as_mut().unwrap();
-            sparse_to_dense.k_digit = return_digit.into();
-            sparse_to_dense.k_aux = return_digit.into();
-            sparse_to_dense.dnum = GGLWELayout::dnum_for_input(window.into(), return_digit.into());
-            sparse_to_dense.k_offset = raised.saturating_sub(sparse_to_dense.dnum.0 as usize * return_digit).into();
-        }
-        Ok(layouts)
-    }
-
     /// The replicated route of this plan, `None` on the full layout.
     pub fn replicated_route(&self) -> Option<&ReplicatedRoute> {
         self.replicated.as_ref()
@@ -339,6 +228,19 @@ impl BootstrappingPlan {
     pub fn replicated_input_k(&self) -> Option<usize> {
         let route = self.replicated.as_ref()?;
         Some(route.log_delta + self.eval_mod.log_msg_ratio + route.s2c_consumed_bits())
+    }
+
+    /// Width of the widest product EvalMod relinearizes on the replicated route for an output of width `k_out`: EvalMod
+    /// reads the parts of what `CoeffsToSlots` leaves, rounded off its working bits at the raised scale, and relabels
+    /// them at its own scale.
+    pub fn replicated_tensor_key_k(&self, k_out: usize) -> Option<usize> {
+        let route = self.replicated.as_ref()?;
+        let after_c2s = self.replicated_raised_k(k_out)?.checked_sub(route.c2s_consumed_bits())?;
+        let raised_log_delta = route.log_delta + self.eval_mod.log_msg_ratio + route.mod_up_extra_bits;
+        Some(
+            self.eval_mod
+                .relinearization_k(after_c2s.checked_sub(route.extra_bits + raised_log_delta)?),
+        )
     }
 
     /// Width the raise of a replicated plan lands at for an output of width `k_out`: `CoeffsToSlots`, EvalMod, the
@@ -451,8 +353,9 @@ where
     F: CKKSEncodingScalar,
     Module<BE>: ReplicatedEncodeModule<BE, F>,
 {
-    check_period::<BE, Standard>(module, &route.layout)?;
-    packed_layout(route, module.ckks_max_slots::<Standard>())?;
+    let n = Degree(1 << route.log_n);
+    check_period_at::<BE, Standard>(module, n, &route.layout)?;
+    packed_layout(route, module.ckks_slots_of_degree::<Standard>(n.as_usize()))?;
     Ok(module.ckks_encoding_host_tmp_bytes(module.ckks_max_slots::<Standard>()))
 }
 
@@ -478,10 +381,11 @@ where
     Module<BE>: ReplicatedEncodeModule<BE, F>,
 {
     let layout = route.layout;
-    check_period::<BE, Standard>(module, &layout)?;
+    let n = Degree(1 << route.log_n);
+    check_period_at::<BE, Standard>(module, n, &layout)?;
     let (k, r) = (1usize << layout.log_k(), 1usize << layout.log_r());
     ensure!(r <= k, "bootstrapping needs the period {r} to divide the batch size {k}");
-    let half = module.ckks_max_slots::<Standard>();
+    let half = module.ckks_slots_of_degree::<Standard>(n.as_usize());
     let packed = packed_layout(route, half)?;
     let target = packed.unwrap_or(layout);
     let eval_mod_plan = plan.eval_mod;
@@ -703,7 +607,10 @@ impl<BE: Backend, F> BootstrappingContextPrepared<BE, F> {
         let Some(stages) = self.replicated() else {
             return Vec::new();
         };
-        let order = module.cyclotomic_order::<Standard>();
+        let n = self.bootstrap_degree();
+        let order = crate::operand_cyclotomic_order::<_, Standard>("replicated_galois_elements", module, n)
+            .expect("the context was compiled at a degree the module serves");
+        let rotation = |r: i64| galois_element(r.rem_euclid(order / 4), order);
         let (k, r) = (1i64 << stages.route.layout.log_k(), 1i64 << stages.route.layout.log_r());
         let plans = self
             .slots_to_coeffs()
@@ -712,8 +619,8 @@ impl<BE: Backend, F> BootstrappingContextPrepared<BE, F> {
             .chain(self.coeffs_to_slots().factor_plans());
         let mut elements: Vec<i64> = plans
             .flat_map(|plan| plan.galois_elements(order))
-            .chain(stages.packed.map(|_| module.ckks_galois_element::<Standard>(k * r)))
-            .chain(module.glwe_trace_galois_elements(module.n().into(), stages.top_skip..module.log_n(), false))
+            .chain(stages.packed.map(|_| rotation(k * r)))
+            .chain(module.glwe_trace_galois_elements(n.into(), stages.top_skip..n.ilog2() as usize, false))
             .chain([-1])
             .collect();
         elements.sort_unstable();
@@ -721,98 +628,116 @@ impl<BE: Backend, F> BootstrappingContextPrepared<BE, F> {
         elements
     }
 
-    /// Scratch of [`Self::generate_keys`] for `layout`: the encryption of each key.
-    pub fn generate_replicated_keys_tmp_bytes(&self, module: &Module<BE>, layout: &BootstrappingKeysLayout) -> usize
-    where
-        Module<BE>: GLWEAutomorphismKeyEncryptSk<BE> + GLWETensorKeyEncryptSk<BE> + GLWESwitchingKeyEncryptSk<BE>,
-    {
-        let mut bytes = module.glwe_tensor_key_encrypt_sk_tmp_bytes(&layout.tensor_key);
-        for key in layout.rotation_key_layouts() {
-            bytes = bytes.max(module.glwe_automorphism_key_encrypt_sk_tmp_bytes(&key));
-        }
-        if let Some(encapsulation) = &layout.encapsulation {
-            for key in [Some(encapsulation.dense_to_sparse), encapsulation.sparse_to_dense]
-                .into_iter()
-                .flatten()
-            {
-                bytes = bytes.max(module.glwe_switching_key_encrypt_sk_tmp_bytes(&key));
-            }
-        }
-        bytes
-    }
-
-    /// Generates the keys of the bootstrapping under `sk`: the automorphism
-    /// keys of [`Self::replicated_galois_elements`], the tensor key, and with
-    /// `layout.encapsulation` the keys to and from an ephemeral secret of
-    /// Hamming weight `hamming_weight` sampled from `source_xs`, within `scratch` of
-    /// [`Self::generate_replicated_keys_tmp_bytes`].
+    /// Generates the keys of the replicated route under `sk`, by the generator of the full layout: the automorphism
+    /// keys of [`Self::replicated_galois_elements`], the tensor key, and with the plan's sparse secret the keys to and
+    /// from an ephemeral secret of its weight, sampled from `source_xs` into the arena, which is wiped before returning.
+    /// `layout` gives one automorphism key per Galois element, and `scratch` covers
+    /// [`BootstrappingKeysLayout::generate_tmp_bytes`].
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// If `layout.rotation_keys` has no layout for one of [`Self::replicated_galois_elements`].
+    /// `InvalidOperand` on the full layout, and as [`Self::generate_keys`], for a layout of other Galois elements, an
+    /// encapsulation the plan does not have, or a first-factor or conversion key.
     #[allow(clippy::too_many_arguments)]
     pub fn generate_replicated_keys(
         &self,
         module: &Module<BE>,
         sk: &BackendGLWESecret<BE>,
         layout: &BootstrappingKeysLayout,
-        hamming_weight: usize,
         source_xs: &mut Source,
         source_xe: &mut Source,
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
-    ) -> BootstrappingKeySet<BE::OwnedBuf, BE::ZnxWord>
+    ) -> Result<BootstrappingKeySet<BE::OwnedBuf, BE::ZnxWord>>
     where
-        Module<BE>: CKKSModuleInfos
-            + GLWETrace<BE>
+        BE::OwnedBuf: HostDataMut,
+        Module<BE>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
             + CyclotomicOrder
-            + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
+            + GLWETrace<BE>
             + GLWEAutomorphismKeyEncryptSk<BE>
             + GLWETensorKeyEncryptSk<BE>
             + GLWESwitchingKeyEncryptSk<BE>
-            + GLWESecretSampling<BE>,
+            + GLWESecretSampling<BE>
+            + VecZnxAutomorphism<BE>
+            + VecZnxSwitchRing<BE>
+            + GLWECIKeyEncryptSk<BE>,
+        Module<BE>: GLWETensorKeyEncryptSk<BE, ConjugateInvariant> + GLWESecretSampling<BE, ConjugateInvariant>,
     {
-        assert!(
-            layout.first_factor_key.is_none(),
-            "replicated bootstrapping requires a separate first factor"
+        ensure!(
+            self.replicated().is_some(),
+            crate::CKKSCompositionError::InvalidOperand {
+                op: "generate_replicated_keys",
+                reason: "the context has no replicated route".into(),
+            }
         );
-        assert!(
-            layout.encapsulation.is_none_or(|keys| keys.sparse_to_dense.is_some()),
-            "replicated bootstrapping requires a sparse-to-dense key for encapsulation"
-        );
-        let mut rotation_keys = HashMap::new();
-        for gal in self.replicated_galois_elements(module) {
-            let key_layout = layout
-                .rotation_keys
-                .get(&gal)
-                .unwrap_or_else(|| panic!("the key layouts have no rotation key for Galois element {gal}"));
-            let mut key = module.glwe_automorphism_key_alloc_from_infos(key_layout);
-            module.glwe_automorphism_key_encrypt_sk(&mut key, gal, sk, source_xe, source_xa, scratch);
-            rotation_keys.insert(gal, key);
-        }
-        let mut tensor_key = module.glwe_tensor_key_alloc_from_infos(&layout.tensor_key);
-        module.glwe_tensor_key_encrypt_sk(&mut tensor_key, sk, source_xe, source_xa, scratch);
-        let encapsulation_keys = layout.encapsulation.map(|encapsulation| {
-            let mut sparse = module.glwe_secret_alloc_from_infos(&GLWESecretLayout {
-                n: sk.n(),
-                rank: sk.rank(),
-            });
-            module.glwe_secret_fill_ternary_hw(&mut sparse, hamming_weight, source_xs);
-            *sparse.dist_mut() = Distribution::ENCAPSULATED("sparse-encapsulation");
-            let mut dense_to_sparse = module.glwe_switching_key_alloc_from_infos(&encapsulation.dense_to_sparse);
-            module.glwe_switching_key_encrypt_sk(&mut dense_to_sparse, sk, &sparse, source_xe, source_xa, scratch);
-            let mut sparse_to_dense = module.glwe_switching_key_alloc_from_infos(&encapsulation.sparse_to_dense.unwrap());
-            module.glwe_switching_key_encrypt_sk(&mut sparse_to_dense, &sparse, sk, source_xe, source_xa, scratch);
-            (dense_to_sparse, Some(sparse_to_dense))
+        let order = crate::operand_cyclotomic_order::<_, Standard>("generate_replicated_keys", module, sk.n().as_usize())?;
+        KeyRecipe::new(
+            self.replicated_galois_elements(module).into_iter().collect(),
+            Vec::new(),
+            self.plan.sparse_secret_hamming_weight(),
+            EvalModRing::Standard,
+            order,
+            0,
+        )
+        .generate_keys(module, sk, layout, source_xs, source_xe, source_xa, scratch)
+    }
+
+    /// The widths at which a bootstrapping of the replicated route into an output of `k_out` bits uses its keys, the
+    /// one model the entry check, the key layouts and the tests read; `None` on the full layout:
+    ///
+    /// - the bottom trace and `SlotsToCoeffs` at the input width plus the working bits, each factor's baby rotations
+    ///   at its input's width and its giant rotations at its output's;
+    /// - the top trace and `CoeffsToSlots` at the raised width, likewise;
+    /// - the conjugation on what `CoeffsToSlots` leaves, and with the packed EvalMod the rotation that adds the second
+    ///   batch on what EvalMod leaves;
+    /// - the tensor key at the widest product EvalMod relinearizes.
+    ///
+    /// Each Galois element of [`Self::replicated_galois_elements`] gets the width of its widest use.
+    pub fn replicated_key_widths(&self, module: &Module<BE>, k_out: usize) -> Option<BootstrappingKeyWidths>
+    where
+        Module<BE>: GLWETrace<BE> + CyclotomicOrder,
+    {
+        let stages = self.replicated()?;
+        let (plan, route) = (&self.plan, &stages.route);
+        let n = self.bootstrap_degree();
+        let log_n = n.ilog2() as usize;
+        let order = crate::operand_cyclotomic_order::<_, Standard>("replicated_key_widths", module, n).ok()?;
+        let rotation = |r: i64| galois_element(r.rem_euclid(order / 4), order);
+        let wide_in = plan.replicated_input_k()? + route.extra_bits;
+        let raised = plan.replicated_raised_k(k_out)?;
+        let after_c2s = raised.checked_sub(route.c2s_consumed_bits())?;
+        let after_eval_mod = after_c2s.checked_sub(route.extra_bits + plan.eval_mod.consumed_bits())?;
+        let trace = |skip: usize, k: usize| {
+            module
+                .glwe_trace_galois_elements(n.into(), skip..log_n, false)
+                .into_iter()
+                .map(move |p| (p, k))
+        };
+        let chain = |plans: &[poulpy_core::layouts::LinearTransformationPlan], consumed: &[usize], k: usize| {
+            crate::layouts::validation::chain_key_lookups(plans, consumed, k)
+                .into_iter()
+                .map(|(r, k)| (rotation(r), k))
+                .collect::<Vec<_>>()
+        };
+        let packed = stages.packed.map(|double| {
+            let k = 1i64 << double.log_k();
+            (rotation((k / 2) << double.log_r()), after_eval_mod)
         });
-        // The replicated EvalMod runs on the standard ring.
-        BootstrappingKeySet {
-            rotation_keys,
-            tensor_key: Some(tensor_key),
-            ci_tensor_key: None,
-            encapsulation_keys,
-            first_factor_keys: HashMap::new(),
-            conversion_keys: None,
+        let mut rotation_keys: BTreeMap<i64, usize> = BTreeMap::new();
+        for (p, k) in trace(stages.bottom_skip, wide_in)
+            .chain(chain(self.slots_to_coeffs().factor_plans(), &stages.s2c_consumed, wide_in))
+            .chain(trace(stages.top_skip, raised))
+            .chain(chain(self.coeffs_to_slots().factor_plans(), &stages.c2s_consumed, raised))
+            .chain([(-1, after_c2s)])
+            .chain(packed)
+        {
+            let width = rotation_keys.entry(p).or_default();
+            *width = k.max(*width);
         }
+        Some(BootstrappingKeyWidths {
+            rotation_keys,
+            tensor_key: plan.replicated_tensor_key_k(k_out)?,
+            conversion_keys: None,
+        })
     }
 }

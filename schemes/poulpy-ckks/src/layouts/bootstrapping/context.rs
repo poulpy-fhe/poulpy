@@ -456,7 +456,7 @@ where
             let (coeffs_to_slots, slots_to_coeffs, stages) = replicated::compile::<BE, F>(module, base2k, plan, route, scratch)?;
             return Ok(BootstrappingContext {
                 plan: plan.clone(),
-                log_n: module.log_n(),
+                log_n: route.log_n,
                 coeffs_to_slots,
                 coeffs_to_slots_first_factor: None,
                 coeffs_to_slots_bypass: None,

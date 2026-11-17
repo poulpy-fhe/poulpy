@@ -59,9 +59,17 @@ fn ckks_replicated_workspace_reuses_prepared_buffers() {
     let mut setup = ScratchOwned::<FFT64Portable>::alloc(
         ReplicatedConversion::<FFT64Portable>::new_tmp_bytes::<f64>(&module, &replicated, 19usize.into(), 30).unwrap(),
     );
-    let conversion =
-        ReplicatedConversion::<FFT64Portable>::new::<f64>(&module, replicated, 19usize.into(), 20, 30, 16, &mut setup.borrow())
-            .unwrap();
+    let conversion = ReplicatedConversion::<FFT64Portable>::new::<f64>(
+        &module,
+        module.n().into(),
+        replicated,
+        19usize.into(),
+        20,
+        30,
+        16,
+        &mut setup.borrow(),
+    )
+    .unwrap();
     let layout = CKKSLayout {
         glwe_layout: GLWELayout {
             n: 256usize.into(),

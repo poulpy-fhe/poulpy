@@ -1245,7 +1245,7 @@ pub(crate) fn check_replicated_bootstrap_entry<BE, F, K>(
 ) -> CKKSResult<()>
 where
     BE: Backend,
-    Module<BE>: CKKSBootstrappingOps<BE> + poulpy_core::GLWETrace<BE> + crate::CKKSModuleInfos,
+    Module<BE>: CKKSBootstrappingOps<BE> + poulpy_core::GLWETrace<BE> + poulpy_hal::layouts::CyclotomicOrder,
     K: BootstrappingKeys<BE>,
 {
     const OP: &str = "ckks_bootstrap";
@@ -1259,7 +1259,7 @@ where
         "the source must have the bootstrapping's replicated layout"
     );
     ensure_rank_one(OP, a, res)?;
-    ensure_replicated_operands(OP, module.n(), module.n(), a, res)?;
+    ensure_replicated_operands(OP, module.n(), ctx.bootstrap_degree(), a, res)?;
     ensure_one_base2k(OP, a, res)?;
     let log_delta = a.log_delta();
     ckks_ensure_operand!(
@@ -1281,42 +1281,19 @@ where
         "the output is narrower than the leveled scale"
     );
     ensure_encapsulation(OP, keys, plan.sparse_secret_hamming_weight())?;
-    required_tensor_key(OP, keys.tensor_key())?;
-    let raised_k = plan.replicated_raised_k(res.k().as_usize()).unwrap_or_default();
-    let (n, log_n) = (a.n(), a.n().log2());
-    let order = |rotation: i64| crate::CKKSModuleInfos::ckks_galois_element::<poulpy_hal::layouts::Standard>(module, rotation);
-    let wide_in = k_in + route.extra_bits;
-    let c2s_out = raised_k - route.c2s_consumed_bits();
-    let mut lookups: Vec<(i64, usize)> = Vec::new();
-    lookups.extend(
-        poulpy_core::GLWETrace::glwe_trace_galois_elements(module, n, stages.bottom_skip..log_n, false)
-            .into_iter()
-            .map(|p| (p, wide_in)),
-    );
-    let s2c = crate::layouts::CKKSDFTFactors::factor_plans(ctx.slots_to_coeffs());
-    lookups.extend(
-        chain_key_lookups(s2c, &stages.s2c_consumed, wide_in)
-            .into_iter()
-            .map(|(rotation, k)| (order(rotation), k)),
-    );
-    lookups.extend(
-        poulpy_core::GLWETrace::glwe_trace_galois_elements(module, n, stages.top_skip..log_n, false)
-            .into_iter()
-            .map(|p| (p, raised_k)),
-    );
-    let c2s = crate::layouts::CKKSDFTFactors::factor_plans(ctx.coeffs_to_slots());
-    lookups.extend(
-        chain_key_lookups(c2s, &stages.c2s_consumed, raised_k)
-            .into_iter()
-            .map(|(rotation, k)| (order(rotation), k)),
-    );
-    lookups.push((-1, c2s_out));
-    if let Some(double) = stages.packed {
-        let rotation = ((1i64 << double.log_k()) / 2) << double.log_r();
-        let out_k = c2s_out - route.extra_bits - plan.eval_mod().consumed_bits();
-        lookups.push((order(rotation), out_k));
-    }
-    ensure_galois_keys(OP, keys, lookups)?;
+    let Some(widths) = ctx.replicated_key_widths(module, res.k().as_usize()) else {
+        ckks_bail!("{OP}: the output is too narrow for the stages of the route");
+    };
+    // Each key once, in the order of its Galois element, at the width of its widest use.
+    ensure_galois_keys(OP, keys, widths.rotation_keys.iter().map(|(&p, &k)| (p, k)))?;
+    let k = TorusPrecision(widths.tensor_key as u32);
+    required_tensor_key(OP, keys.tensor_key())?
+        .get_tensor_key(k)
+        .map_err(|source| CKKSCompositionError::MissingRelinearizationKey {
+            op: OP,
+            k: k.into(),
+            source,
+        })?;
     if let Some(keys_layout) = keys.keys_layout() {
         let bytes = module.ckks_bootstrap_tmp_bytes(res, a, ctx, keys_layout);
         ckks_ensure!(
