@@ -47,7 +47,7 @@ pub use paco::{CKKSPaCoOps, CKKSPaCoScalar};
 pub use plaintext::CKKSPlaintextVecOps;
 pub use polynomial_evaluation::*;
 pub use pow2::CKKSPow2Ops;
-pub use replicated::{CKKSReplicatedBootstrapOps, CKKSReplicatedCIBootstrapOps, CKKSReplicatedOps};
+pub use replicated::CKKSReplicatedOps;
 pub use ring_map::CKKSCIRingMapOps;
 pub use rotate::CKKSRotateOps;
 pub use round::CKKSRoundOps;

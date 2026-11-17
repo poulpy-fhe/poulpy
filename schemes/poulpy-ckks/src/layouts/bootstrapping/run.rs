@@ -7,7 +7,7 @@ use crate::{
     CKKSResult, GLWEPlaintextMeta, SetCKKSInfos, SlotsKind, ckks_ensure_operand, ckks_log_delta,
     layouts::{
         CKKSDFTFactors, CKKSEvalModInfos, CKKSModRaiseInfos, CKKSPlaintextOwned, CKKSRightOperandPrepared, DFTMatrixPrepared,
-        DFTPlan, Decode, Encode, EncodedLut, EvalMod, EvalModPlan, ModRaisePlan, Split, Standard,
+        DFTPlan, Decode, Encode, EncodedLut, EvalMod, EvalModPlan, MaskedCoeffs, ModRaisePlan, ReplicatedStage, Split, Standard,
         eval_mod::EvalModType,
         validation::{functional_output_contract, remove_guard_bits},
     },
@@ -52,6 +52,11 @@ impl<BE: Backend, F> CKKSDFTFactors<BE, Encode, Standard> for BootstrappingRun<'
     fn factor_plans(&self) -> &[LinearTransformationPlan] {
         CKKSDFTFactors::<BE, Encode, Standard>::factor_plans(self.context)
     }
+
+    fn replicated_stage(&self) -> Option<ReplicatedStage<'_>> {
+        let stages = self.context.replicated()?;
+        Some(stages.c2s_stage(self.context.eval_mod_plan().log_msg_ratio))
+    }
 }
 
 impl<BE: Backend, F> CKKSDFTFactors<BE, Decode, Standard> for BootstrappingRun<'_, BE, F> {
@@ -80,6 +85,11 @@ impl<BE: Backend, F> CKKSDFTFactors<BE, Decode, Standard> for BootstrappingRun<'
             ct.set_log_delta(ckks_log_delta(&self.message));
             ct.set_slots(self.message.slots);
         }
+    }
+
+    fn replicated_stage(&self) -> Option<ReplicatedStage<'_>> {
+        let stages = self.context.replicated()?;
+        Some(stages.s2c_stage(self.context.eval_mod_plan().log_msg_ratio))
     }
 }
 
@@ -136,6 +146,15 @@ impl<BE: Backend, F> CKKSEvalModInfos<BE, F> for BootstrappingRun<'_, BE, F> {
             res.set_meta(GLWEPlaintextMeta { slots, ..self.message });
         }
         Ok(())
+    }
+
+    fn replicated_stage(&self) -> Option<ReplicatedStage<'_>> {
+        let stages = self.context.replicated()?;
+        Some(stages.c2s_stage(self.context.eval_mod_plan().log_msg_ratio))
+    }
+
+    fn eval_mod_replicated(&self) -> Option<&EvalMod<F, MaskedCoeffs<CKKSPlaintextOwned<BE>>>> {
+        self.context.replicated().map(|stages| &stages.eval_mod)
     }
 
     fn eval_lut_output(

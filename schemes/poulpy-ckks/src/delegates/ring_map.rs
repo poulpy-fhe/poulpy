@@ -8,12 +8,13 @@ use poulpy_hal::layouts::{Backend, ConjugateInvariant, Data, Module, ScratchAren
 use crate::{CKKSCtBounds, SetCKKSInfos, api::CKKSCIRingMapOps, layouts::CKKSCiphertext, oep::CKKSCIRingMapImpl};
 
 impl<BE: Backend + CKKSCIRingMapImpl> CKKSCIRingMapOps<BE> for Module<BE> {
-    fn ckks_ci_embed_tmp_bytes<R, K>(&self, res_infos: &R, key_infos: &K) -> usize
+    fn ckks_ci_embed_tmp_bytes<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
         R: GLWEInfos,
+        A: CKKSCtBounds,
         K: GGLWEInfos,
     {
-        BE::ckks_ci_embed_tmp_bytes(self, res_infos, key_infos)
+        BE::ckks_ci_embed_tmp_bytes(self, res_infos, a_infos, key_infos)
     }
 
     fn ckks_ci_embed<Dst, D, K>(
@@ -36,7 +37,7 @@ impl<BE: Backend + CKKSCIRingMapImpl> CKKSCIRingMapOps<BE> for Module<BE> {
     fn ckks_ci_trace_tmp_bytes<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
         R: GLWEInfos,
-        A: GLWEInfos,
+        A: CKKSCtBounds,
         K: GGLWEInfos,
     {
         BE::ckks_ci_trace_tmp_bytes(self, res_infos, a_infos, key_infos)

@@ -155,7 +155,7 @@ where
 {
     let (embed_key, trace_key) = prepared_keys(module, fixtures);
     let mut extended = fixtures.extended.clone();
-    let bytes = module.ckks_ci_embed_tmp_bytes(&extended, &embed_key);
+    let bytes = module.ckks_ci_embed_tmp_bytes(&extended, &fixtures.src, &embed_key);
     with_scratch::<BE, _>(bytes, |s| module.ckks_ci_embed(&mut extended, &fixtures.src, &embed_key, s)).unwrap();
     let mut back = fixtures.back.clone();
     let bytes = module.ckks_ci_trace_tmp_bytes(&back, &extended, &trace_key);
@@ -182,7 +182,7 @@ fn ring_maps_enter_the_selected_core_maps() {
         rank: extended.rank(),
     };
     assert_eq!(
-        module_test.ckks_ci_embed_tmp_bytes(extended, &key_infos),
+        module_test.ckks_ci_embed_tmp_bytes(extended, &fixtures.src, &key_infos),
         <Module<OverrideBackend> as GLWEKeyswitch<OverrideBackend>>::glwe_keyswitch_tmp_bytes(
             &module_test,
             &allocated,

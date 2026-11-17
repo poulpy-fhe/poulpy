@@ -1177,3 +1177,152 @@ where
         growth,
     })
 }
+
+/// The automorphism keys a chain of transform factors switches with, as `(rotation, k)`, on an input of `input_k` bits:
+/// each factor's baby steps at its input's width and its giant steps at its output's, through the rotations of its
+/// schedule, as the evaluation looks them up; `consumed` gives each factor's bits.
+pub(crate) fn chain_key_lookups(
+    plans: &[poulpy_core::layouts::LinearTransformationPlan],
+    consumed: &[usize],
+    input_k: usize,
+) -> Vec<(i64, usize)> {
+    let mut lookups = Vec::new();
+    let mut k = input_k;
+    for (plan, &bits) in plans.iter().zip(consumed) {
+        let out_k = k - bits;
+        lookups.extend(
+            plan.rotations
+                .baby_key_rotations(plan.baby_steps.iter().copied())
+                .into_iter()
+                .map(|rotation| (rotation, k)),
+        );
+        let giants: Vec<i64> = match plan.rotations {
+            BsgsRotations::PerRotation => plan.giant_steps.iter().copied().filter(|&rotation| rotation != 0).collect(),
+            rotations => rotations.giant_key_rotations(plan.giant_steps.iter().copied()),
+        };
+        lookups.extend(giants.into_iter().map(|rotation| (rotation, out_k)));
+        k = out_k;
+    }
+    lookups
+}
+
+/// `MissingAutomorphismKey` for `op` unless `keys` cover each `(galois element, k)` of `lookups`, the error naming the
+/// element in place of a rotation.
+pub(crate) fn ensure_galois_keys<BE, H>(
+    op: &'static str,
+    keys: &H,
+    lookups: impl IntoIterator<Item = (i64, usize)>,
+) -> CKKSResult<()>
+where
+    BE: Backend,
+    H: GetAutomorphismKey<BE>,
+{
+    for (p, k) in lookups {
+        let k = TorusPrecision(k as u32);
+        keys.get_automorphism_key(p, k)
+            .map_err(|source| CKKSCompositionError::MissingAutomorphismKey {
+                op,
+                rotation: p,
+                k: k.into(),
+                source,
+            })?;
+    }
+    Ok(())
+}
+
+/// What the replicated route of `ckks_bootstrap` refuses before its first step, so that no step refuses with `res` half
+/// written: an input off the route's layout, ranks other than one, degrees other than the module's, two radices, an
+/// input at neither `Δ_b` nor the leveled scale or without the budget of the input width, an output narrower than the
+/// leveled scale, the encapsulation keys the plan does not match, a missing tensor key, every automorphism key at the
+/// width its stage looks it up at, and, when the keys report their layout, the arena against the query.
+pub(crate) fn check_replicated_bootstrap_entry<BE, F, K>(
+    module: &Module<BE>,
+    res: &CKKSCiphertextOwned<BE>,
+    a: &CKKSCiphertextOwned<BE>,
+    ctx: &BootstrappingContextPrepared<BE, F>,
+    keys: &K,
+    available: usize,
+) -> CKKSResult<()>
+where
+    BE: Backend,
+    Module<BE>: CKKSBootstrappingOps<BE> + poulpy_core::GLWETrace<BE> + crate::CKKSModuleInfos,
+    K: BootstrappingKeys<BE>,
+{
+    const OP: &str = "ckks_bootstrap";
+    let Some(stages) = ctx.replicated() else {
+        ckks_bail!("{OP}: the context has no replicated route");
+    };
+    let (route, plan) = (&stages.route, &ctx.plan);
+    ckks_ensure_operand!(
+        OP,
+        crate::GLWEPlaintextInfos::slot_layout(a) == SlotLayout::Replicated(route.layout),
+        "the source must have the bootstrapping's replicated layout"
+    );
+    ensure_rank_one(OP, a, res)?;
+    ensure_replicated_operands(OP, module.n(), module.n(), a, res)?;
+    ensure_one_base2k(OP, a, res)?;
+    let log_delta = a.log_delta();
+    ckks_ensure_operand!(
+        OP,
+        log_delta == route.log_delta || (log_delta == route.level_log_delta && log_delta < route.log_delta),
+        "the source must be at the bootstrapping or the leveled scale, got 2^{log_delta}"
+    );
+    let k_in = plan.replicated_input_k().unwrap_or_default();
+    ckks_ensure_operand!(
+        OP,
+        a.log_budget() + route.log_delta >= k_in,
+        "the source has a budget of {} bits, below the {} bits of the input width over Δ_b",
+        a.log_budget(),
+        k_in - route.log_delta
+    );
+    ckks_ensure_operand!(
+        OP,
+        res.k().as_usize() >= route.level_log_delta,
+        "the output is narrower than the leveled scale"
+    );
+    ensure_encapsulation(OP, keys, plan.sparse_secret_hamming_weight())?;
+    required_tensor_key(OP, keys.tensor_key())?;
+    let raised_k = plan.replicated_raised_k(res.k().as_usize()).unwrap_or_default();
+    let (n, log_n) = (a.n(), a.n().log2());
+    let order = |rotation: i64| crate::CKKSModuleInfos::ckks_galois_element::<poulpy_hal::layouts::Standard>(module, rotation);
+    let wide_in = k_in + route.extra_bits;
+    let c2s_out = raised_k - route.c2s_consumed_bits();
+    let mut lookups: Vec<(i64, usize)> = Vec::new();
+    lookups.extend(
+        poulpy_core::GLWETrace::glwe_trace_galois_elements(module, n, stages.bottom_skip..log_n, false)
+            .into_iter()
+            .map(|p| (p, wide_in)),
+    );
+    let s2c = crate::layouts::CKKSDFTFactors::factor_plans(ctx.slots_to_coeffs());
+    lookups.extend(
+        chain_key_lookups(s2c, &stages.s2c_consumed, wide_in)
+            .into_iter()
+            .map(|(rotation, k)| (order(rotation), k)),
+    );
+    lookups.extend(
+        poulpy_core::GLWETrace::glwe_trace_galois_elements(module, n, stages.top_skip..log_n, false)
+            .into_iter()
+            .map(|p| (p, raised_k)),
+    );
+    let c2s = crate::layouts::CKKSDFTFactors::factor_plans(ctx.coeffs_to_slots());
+    lookups.extend(
+        chain_key_lookups(c2s, &stages.c2s_consumed, raised_k)
+            .into_iter()
+            .map(|(rotation, k)| (order(rotation), k)),
+    );
+    lookups.push((-1, c2s_out));
+    if let Some(double) = stages.packed {
+        let rotation = ((1i64 << double.log_k()) / 2) << double.log_r();
+        let out_k = c2s_out - route.extra_bits - plan.eval_mod().consumed_bits();
+        lookups.push((order(rotation), out_k));
+    }
+    ensure_galois_keys(OP, keys, lookups)?;
+    if let Some(keys_layout) = keys.keys_layout() {
+        let bytes = module.ckks_bootstrap_tmp_bytes(res, a, ctx, keys_layout);
+        ckks_ensure!(
+            available >= bytes,
+            "{OP} needs a scratch arena of {bytes} bytes, got {available}"
+        );
+    }
+    Ok(())
+}

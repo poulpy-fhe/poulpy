@@ -957,6 +957,12 @@ pub trait CKKSDFTFactors<BE: Backend, Dir, Fmt> {
 
     /// Labels the output of a SlotsToCoeffs that ends a bootstrap.
     fn stamp_transform_output<C: SetCKKSInfos>(&self, _ct: &mut C) {}
+
+    /// The replicated route of a bootstrap run, `None` otherwise: the step then wraps the factors in the trace, the
+    /// working bits and the rounding [`ReplicatedRoute`](crate::layouts::ReplicatedRoute) gives the transform.
+    fn replicated_stage(&self) -> Option<crate::layouts::ReplicatedStage<'_>> {
+        None
+    }
 }
 
 impl<BE: Backend, Dir, Fmt, P> CKKSDFTFactors<BE, Dir, Fmt> for DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>

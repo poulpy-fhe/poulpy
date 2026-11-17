@@ -1,5 +1,5 @@
 //! Default parameter sets for the bootstrapping of a replicated slot layout,
-//! with the circuit of [`ReplicatedBootstrapPlan::paper`] in
+//! with the circuit of [`ReplicatedRoute::paper`] in
 //! `SlotsToCoeffs`-first order, its transforms dense or factored
 //! ([`ReplicatedTransforms`]).
 //!
@@ -10,25 +10,28 @@
 //! - `n`: ring-degree exponent, which with the secret weights fixes the modulus bounds;
 //! - `d`: leveled scale exponent of the inputs and the outputs;
 //! - `k`: output width in bits, the levels at `2^d` above the bootstrapping
-//!   input width [`ReplicatedBootstrapPlan::k_in`];
+//!   input width [`BootstrappingPlan::replicated_input_k`];
 //! - `p`: guaranteed output precision in bits on the data slots;
 //! - `_factored`: factored transforms.
 //!
 //! The batch size `k`, a power of two with `R | k`, and the shaping unit are the
 //! caller's. The input and output widths do not depend on them. The raised
 //! modulus and the keys depend on the unit through the EvalMod scale
-//! ([`ReplicatedBootstrapPlan::eval_mod_log_delta`]), which is wider for a unit
+//! ([`ReplicatedRoute::eval_mod_log_delta`]), which is wider for a unit
 //! whose guards grow by more than 13 bits. A preset refuses a unit whose
 //! suppression is less than 8 bits above its precision. Factored transforms
-//! take a batch of at least `2^f` values for `f` factors per stage, whose real
-//! and imaginary parts fit the ring side by side (`2kR <= N/2`).
+//! take a batch of at least `2^f` values for `f` factors per stage. EvalMod runs on
+//! the real and imaginary parts side by side when they fit the ring (`2kR <= N/2`).
 
 use anyhow::{Result, ensure};
 use poulpy_core::layouts::{Base2K, Degree, GLWEAutomorphismKeyLayout, GLWELayout, Rank, TorusPrecision};
 
 use crate::{
     CKKSLayout, GLWEPlaintextMeta, ReplicatedLayout, Scale, SlotLayout, SlotsKind,
-    layouts::{BootstrappingKeysLayout, ReplicatedBootstrapPlan, ReplicatedTransforms},
+    layouts::{
+        BootstrappingKeysLayout, BootstrappingPlan, BootstrappingTechniques, ReplicatedRoute, ReplicatedTransforms,
+        SparseSecretEncapsulation,
+    },
     shaping::ShapingUnit,
 };
 
@@ -50,7 +53,7 @@ struct PresetSpec {
 /// A bootstrapping parameter set for a replicated slot layout: the circuit, the
 /// widths, the secret weights and, for each unit, the key layouts, whose gadgets
 /// have the fewest digits within the modulus bounds
-/// ([`ReplicatedBootstrapPlan::secure_key_layouts`]).
+/// ([`BootstrappingPlan::replicated_secure_key_layouts`]).
 #[derive(Clone, Debug)]
 pub struct ReplicatedBootstrappingPreset {
     spec: PresetSpec,
@@ -100,26 +103,27 @@ impl ReplicatedBootstrappingPreset {
     /// The circuit for a ciphertext in `layout`. Refuses a unit whose
     /// suppression is less than 8 bits above [`Self::log2_precision`]: the
     /// units of `R = 2` and those targeting 20 bits.
-    pub fn plan(&self, layout: ReplicatedLayout) -> Result<ReplicatedBootstrapPlan> {
+    pub fn plan(&self, layout: ReplicatedLayout) -> Result<BootstrappingPlan> {
         check_unit(&self.spec, &layout)?;
-        Ok(plan_for(&self.spec, layout))
+        plan_for(&self.spec, layout)
     }
 
     /// Width the application hands a ciphertext back at, at the leveled scale,
     /// for every unit.
     pub fn input_k(&self) -> usize {
-        let plan = reference_plan(&self.spec);
-        plan.k_in() - (plan.log_delta - plan.level_log_delta)
+        let route = reference_route(&self.spec);
+        input_k(&self.spec, &route) - (route.log_delta - route.level_log_delta)
     }
 
     /// Width after bootstrapping, at the leveled scale, for every unit.
     pub fn output_k(&self) -> usize {
-        output_k(&reference_plan(&self.spec), self.spec.levels)
+        let route = reference_route(&self.spec);
+        input_k(&self.spec, &route) + self.spec.levels * route.level_log_delta
     }
 
     /// Evaluation-key layouts sized for this preset and `layout`, with an
     /// automorphism key for each of `galois_elements`
-    /// ([`ReplicatedBootstrapping::galois_elements`](crate::layouts::ReplicatedBootstrapping::galois_elements)),
+    /// ([`BootstrappingContextPrepared::replicated_galois_elements`](crate::layouts::BootstrappingContextPrepared::replicated_galois_elements)),
     /// all on the tensor key's gadget. Refuses the units [`Self::plan`] refuses.
     pub fn keys_layout(&self, layout: ReplicatedLayout, galois_elements: &[i64]) -> Result<BootstrappingKeysLayout> {
         let keys_layout = key_layouts(&self.spec, &self.plan(layout)?)?;
@@ -148,7 +152,7 @@ impl ReplicatedBootstrappingPreset {
                 rank: Rank(1),
             },
             meta: GLWEPlaintextMeta {
-                scale: Scale::Log(reference_plan(&self.spec).level_log_delta),
+                scale: Scale::Log(reference_route(&self.spec).level_log_delta),
                 slots: SlotsKind::Complex,
                 log_sparsity: 0,
                 slot_layout: SlotLayout::Replicated(layout),
@@ -244,21 +248,45 @@ pub fn all() -> Result<Vec<ReplicatedBootstrappingPreset>> {
 }
 
 /// The input and output widths do not depend on the layout.
-fn reference_plan(spec: &PresetSpec) -> ReplicatedBootstrapPlan {
-    plan_for(spec, ShapingUnit::U32_45.layout(4).expect("a valid unit"))
+fn reference_route(spec: &PresetSpec) -> ReplicatedRoute {
+    route_for(spec, ShapingUnit::U32_45.layout(4).expect("a valid unit"))
 }
 
-/// The circuit of ePrint 2026/2513 with the preset's transforms and `SlotsToCoeffs` scale.
-fn plan_for(spec: &PresetSpec, layout: ReplicatedLayout) -> ReplicatedBootstrapPlan {
-    ReplicatedBootstrapPlan {
+/// The route of ePrint 2026/2513 with the preset's transforms and `SlotsToCoeffs` scale, packed when the two batches
+/// fit the ring.
+fn route_for(spec: &PresetSpec, layout: ReplicatedLayout) -> ReplicatedRoute {
+    let (k, r) = (1usize << layout.log_k(), 1usize << layout.log_r());
+    ReplicatedRoute {
         transforms: spec.transforms,
         s2c_log_delta_diag: spec.s2c_log_delta_diag,
-        ..ReplicatedBootstrapPlan::paper(layout)
+        packed: 4 * k * r <= 1 << spec.log_n,
+        ..ReplicatedRoute::paper(layout)
     }
 }
 
-fn output_k(plan: &ReplicatedBootstrapPlan, levels: usize) -> usize {
-    plan.k_in() + levels * plan.level_log_delta
+/// The plan of [`route_for`], its EvalMod [`ReplicatedRoute::paper_eval_mod`], with the preset's sparse secret.
+fn plan_for(spec: &PresetSpec, layout: ReplicatedLayout) -> Result<BootstrappingPlan> {
+    BootstrappingPlan::replicated(
+        route_for(spec, layout),
+        ReplicatedRoute::paper_eval_mod(&layout),
+        BootstrappingTechniques {
+            sparse_secret_encapsulation: Some(SparseSecretEncapsulation {
+                hamming_weight: spec.sparse_secret_hamming_weight,
+            }),
+            eval_round_plus: None,
+        },
+    )
+}
+
+/// The input width of `route` at `Δ_b`, which no unit changes.
+fn input_k(spec: &PresetSpec, route: &ReplicatedRoute) -> usize {
+    let _ = spec;
+    route.log_delta + ReplicatedRoute::paper_eval_mod(&route.layout).log_msg_ratio + route.s2c_consumed_bits()
+}
+
+fn output_k(spec: &PresetSpec, plan: &BootstrappingPlan) -> usize {
+    let route = plan.replicated_route().expect("a replicated plan");
+    plan.replicated_input_k().unwrap_or_default() + spec.levels * route.level_log_delta
 }
 
 /// Bits by which a unit's suppression must exceed a preset's precision. The
@@ -282,12 +310,12 @@ fn check_unit(spec: &PresetSpec, layout: &ReplicatedLayout) -> Result<()> {
 }
 
 /// The key layouts of `plan` without automorphism keys.
-fn key_layouts(spec: &PresetSpec, plan: &ReplicatedBootstrapPlan) -> Result<BootstrappingKeysLayout> {
-    plan.secure_key_layouts(
+fn key_layouts(spec: &PresetSpec, plan: &BootstrappingPlan) -> Result<BootstrappingKeysLayout> {
+    plan.replicated_secure_key_layouts(
         &[],
         Degree(1 << spec.log_n),
         Base2K(spec.base2k as u32),
-        output_k(plan, spec.levels),
+        output_k(spec, plan),
         spec.max_dense_modulus,
         spec.max_sparse_modulus,
     )
@@ -299,7 +327,7 @@ fn build(spec: PresetSpec) -> Result<ReplicatedBootstrappingPreset> {
     for unit in ShapingUnit::ALL {
         let layout = unit.layout(unit.log_r as u8)?;
         if check_unit(&spec, &layout).is_ok() {
-            key_layouts(&spec, &plan_for(&spec, layout))?;
+            key_layouts(&spec, &plan_for(&spec, layout)?)?;
         }
     }
     Ok(ReplicatedBootstrappingPreset { spec })
@@ -330,42 +358,42 @@ mod tests {
                 ShapingUnit::U32_45,
                 (14, 28, 28),
                 (2, 22, 22),
-                (2, 25, 25),
+                (2, 29, 29),
             ),
             (
                 n14_d20_k109_p21_s2c().unwrap(),
                 ShapingUnit::U8_40,
                 (34, 12, 12),
                 (2, 22, 22),
-                (2, 25, 25),
+                (4, 15, 15),
             ),
             (
                 n15_d20_k389_p20_s2c().unwrap(),
                 ShapingUnit::U32_45,
                 (4, 168, 168),
                 (1, 43, 43),
-                (1, 49, 49),
+                (1, 57, 57),
             ),
             (
                 n15_d20_k389_p20_s2c().unwrap(),
                 ShapingUnit::U8_40,
                 (5, 138, 138),
                 (1, 43, 43),
-                (1, 49, 49),
+                (1, 57, 57),
             ),
             (
                 n16_d20_k763_p19_s2c_factored().unwrap(),
                 ShapingUnit::U32_45,
                 (3, 403, 403),
                 (1, 43, 43),
-                (1, 49, 49),
+                (1, 57, 57),
             ),
             (
                 n16_d20_k763_p19_s2c_factored().unwrap(),
                 ShapingUnit::U8_40,
                 (3, 408, 408),
                 (1, 43, 43),
-                (1, 49, 49),
+                (1, 57, 57),
             ),
         ] {
             let layout = preset.keys_layout(layout(unit), &[5, -1]).unwrap();
@@ -389,20 +417,21 @@ mod tests {
     #[test]
     fn preset_widths() {
         for (preset, widths, u8_40_raised) in [
-            (n14_d20_k109_p21_s2c().unwrap(), (69, 109, 383), 399),
-            (n15_d20_k389_p20_s2c().unwrap(), (69, 389, 663), 679),
-            (n16_d20_k763_p19_s2c_factored().unwrap(), (163, 763, 1199), 1215),
+            (n14_d20_k109_p21_s2c().unwrap(), (69, 109, 391), 407),
+            (n15_d20_k389_p20_s2c().unwrap(), (69, 389, 671), 687),
+            (n16_d20_k763_p19_s2c_factored().unwrap(), (163, 763, 1207), 1223),
         ] {
             let plan = preset.plan(layout(ShapingUnit::U32_45)).unwrap();
+            let raised = |plan: &BootstrappingPlan| plan.replicated_raised_k(preset.output_k()).unwrap();
             assert_eq!(
-                (plan.k_in(), preset.output_k(), plan.k_boot(preset.output_k())),
+                (plan.replicated_input_k().unwrap(), preset.output_k(), raised(&plan)),
                 widths,
                 "{}",
                 preset.name()
             );
             let plan = preset.plan(layout(ShapingUnit::U8_40)).unwrap();
-            assert_eq!(plan.k_in(), widths.0, "{}", preset.name());
-            assert_eq!(plan.k_boot(preset.output_k()), u8_40_raised, "{}", preset.name());
+            assert_eq!(plan.replicated_input_k().unwrap(), widths.0, "{}", preset.name());
+            assert_eq!(raised(&plan), u8_40_raised, "{}", preset.name());
         }
     }
 
@@ -433,7 +462,9 @@ mod tests {
                 let keys = preset.keys_layout(layout(unit), &[5]).unwrap();
                 let encapsulation = keys.encapsulation.unwrap();
                 let return_key = encapsulation.sparse_to_dense.unwrap();
-                let raised = plan.k_boot(preset.output_k());
+                let raised = plan.replicated_raised_k(preset.output_k()).unwrap();
+                let route = *plan.replicated_route().unwrap();
+                let k_small = route.log_delta + plan.eval_mod().log_msg_ratio;
                 assert!(return_key.k_offset.0 > 0);
                 assert_eq!(
                     return_key.k_offset.as_usize() + return_key.gglwe_layout().gadget_k().as_usize(),
@@ -446,8 +477,8 @@ mod tests {
                 crate::layouts::validation::check_offset_raise(
                     "replicated_bootstrapping_preset",
                     raised,
-                    plan.log_delta + plan.eval_mod.log_msg_ratio,
-                    plan.mod_up_extra_bits,
+                    k_small,
+                    route.raise_bits(),
                     &return_key,
                 )
                 .unwrap();
@@ -455,8 +486,8 @@ mod tests {
                     crate::layouts::validation::check_offset_raise(
                         "replicated_bootstrapping_preset",
                         raised + 1,
-                        plan.log_delta + plan.eval_mod.log_msg_ratio,
-                        plan.mod_up_extra_bits,
+                        k_small,
+                        route.raise_bits(),
                         &return_key,
                     )
                     .is_err()

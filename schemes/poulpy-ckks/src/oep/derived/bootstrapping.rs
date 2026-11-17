@@ -1,18 +1,19 @@
 //! The bootstrap and the functional bootstrap, composed from the public steps.
 use poulpy_core::{
     GLWEBytesOf,
-    layouts::{GLWELayout, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, SetBSGSMeta},
+    layouts::{GLWELayout, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank, SetBSGSMeta},
 };
-use poulpy_hal::layouts::{Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
-    CKKSCtBounds, CKKSInfos, CKKSLayout, CKKSResult as Result, SetCKKSInfos,
+    CKKSCtBounds, CKKSInfos, CKKSLayout, CKKSResult as Result, GLWEPlaintextMeta, SetCKKSInfos,
     api::{CKKSAddOps, CKKSBootstrappingOps, CKKSCopyOps, CKKSDFTOps, CKKSPow2Ops},
     layouts::{
         BootstrappingContextPrepared, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingPipeline, BootstrappingRun,
-        CKKSCiphertextOwned, CKKSDFTFactors, CKKSEvalModInfos, CKKSPlaintextOwned, EncodedLut, ScratchArenaTakeCKKSCiphertext,
+        CKKSCiphertextOwned, CKKSDFTFactors, CKKSEvalModInfos, CKKSPlaintextOwned, Decode, Encode, EncodedLut,
+        ScratchArenaTakeCKKSCiphertext, Standard,
         bootstrapping::bootstrap_layouts,
-        validation::{check_bootstrap_entry, check_functional_entry},
+        validation::{check_bootstrap_entry, check_functional_entry, check_replicated_bootstrap_entry},
     },
     oep::CKKSBootstrappingImpl,
 };
@@ -51,6 +52,9 @@ where
     C1: CKKSCtBounds,
     C2: CKKSCtBounds,
 {
+    if ctx.replicated().is_some() {
+        return replicated_bootstrap_tmp_bytes(module, res, a, ctx, keys_layout);
+    }
     let (boot_layout, in_layout) = bootstrap_layouts(res, a);
     let boot_bytes = BE::scratch_aligned(module.glwe_bytes_of_from_infos(&boot_layout));
     let in_bytes = BE::scratch_aligned(module.glwe_bytes_of_from_infos(&in_layout));
@@ -166,6 +170,9 @@ where
     K: BootstrappingKeys<BE> + Sync,
     K::TensorKey: Sync,
 {
+    if ctx.replicated().is_some() {
+        return replicated_bootstrap(module, res, a, ctx, keys, scratch);
+    }
     check_bootstrap_entry(module, res, a, ctx, keys, scratch.available())?;
     let run = ctx.run(a.meta());
     let boot_layout = bootstrap_layouts(&*res, a).0.glwe_layout;
@@ -247,5 +254,94 @@ where
         slots_to_coeffs_and_raise(module, &mut z, a, &run, keys, &mut scratch)?;
         module.ckks_coeffs_to_slots_assign(&mut z, &run, keys, &mut scratch)?;
         module.ckks_eval_lut(res, &z, &run, luts, keys, &mut scratch)
+    })
+}
+
+/// The working layouts of the replicated route from `a` into `res`: the copy of the input at least as wide as the input
+/// width, and the raised ciphertext at the width the raise lands at.
+fn replicated_layouts<BE, F, C1, C2>(res: &C1, a: &C2, ctx: &BootstrappingContextPrepared<BE, F>) -> (CKKSLayout, CKKSLayout)
+where
+    BE: Backend,
+    C1: CKKSCtBounds,
+    C2: CKKSCtBounds,
+{
+    let plan = &ctx.plan;
+    let k_in = plan.replicated_input_k().unwrap_or_default();
+    let raised_k = plan.replicated_raised_k(res.k().as_usize()).unwrap_or_default();
+    let at = |k: usize, meta| CKKSLayout {
+        glwe_layout: GLWELayout {
+            k: k.into(),
+            rank: Rank(1),
+            ..a.glwe_layout()
+        },
+        meta,
+    };
+    (
+        at(a.k().as_usize().max(k_in), a.meta()),
+        at(raised_k, GLWEPlaintextMeta::default()),
+    )
+}
+
+/// `ckks_bootstrap_derived` on a replicated route: the raised ciphertext beside every stage, the copy of the input
+/// beside SlotsToCoeffs and the raise.
+fn replicated_bootstrap_tmp_bytes<BE, C1, C2, F>(
+    module: &Module<BE>,
+    res: &C1,
+    a: &C2,
+    ctx: &BootstrappingContextPrepared<BE, F>,
+    keys_layout: &BootstrappingKeysLayout,
+) -> usize
+where
+    BE: CKKSBootstrappingImpl,
+    C1: CKKSCtBounds,
+    C2: CKKSCtBounds,
+{
+    let (coeffs, raised) = replicated_layouts(res, a, ctx);
+    let run = ctx.run(a.meta());
+    let ct_bytes = |layout: &CKKSLayout| BE::scratch_aligned(module.glwe_bytes_of_from_infos(&layout.glwe_layout));
+    let before_raise = module
+        .ckks_copy_tmp_bytes(&coeffs, a)
+        .max(dft_tmp_bytes::<BE, Decode, Standard, _>(
+            module,
+            &coeffs,
+            &coeffs,
+            &run,
+            keys_layout,
+        ))
+        .max(module.ckks_mod_raise_tmp_bytes(&raised, &coeffs, &run, keys_layout));
+    let after_raise = dft_tmp_bytes::<BE, Encode, Standard, _>(module, &raised, &raised, &run, keys_layout)
+        .max(module.ckks_bootstrap_eval_mod_tmp_bytes(res, &raised, &run, keys_layout));
+    ct_bytes(&raised) + (ct_bytes(&coeffs) + before_raise).max(after_raise)
+}
+
+/// `ckks_bootstrap_derived` on a replicated route: SlotsToCoeffs on a copy of the input, the raise, CoeffsToSlots and
+/// EvalMod into `res`, each reading the route from the run.
+fn replicated_bootstrap<BE, F, K>(
+    module: &Module<BE>,
+    res: &mut CKKSCiphertextOwned<BE>,
+    a: &CKKSCiphertextOwned<BE>,
+    ctx: &BootstrappingContextPrepared<BE, F>,
+    keys: &K,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> Result<()>
+where
+    BE: CKKSBootstrappingImpl,
+    F: Sync,
+    K: BootstrappingKeys<BE> + Sync,
+    K::TensorKey: Sync,
+{
+    check_replicated_bootstrap_entry(module, res, a, ctx, keys, scratch.available())?;
+    let run = ctx.run(a.meta());
+    let (coeffs_layout, raised_layout) = replicated_layouts(&*res, a, ctx);
+    scratch.scope(|scratch| {
+        let (mut z, mut scratch) = scratch.take_ckks_ciphertext_scratch(&raised_layout.glwe_layout, raised_layout.meta);
+        scratch.scope(|scratch| {
+            let (mut coeffs, mut scratch) = scratch.take_ckks_ciphertext_scratch(&coeffs_layout.glwe_layout, a.meta());
+            module.ckks_copy(&mut coeffs, a, &mut scratch)?;
+            module.ckks_slots_to_coeffs_assign(&mut coeffs, &run, keys, &mut scratch)?;
+            module.ckks_mod_raise(&mut z, &mut coeffs, &run, keys, &mut scratch)
+        })?;
+        module.ckks_coeffs_to_slots_assign(&mut z, &run, keys, &mut scratch)?;
+        module.ckks_bootstrap_eval_mod(res, &z, &run, keys, &mut scratch)
     })
 }

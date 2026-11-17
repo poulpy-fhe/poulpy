@@ -5,7 +5,7 @@ use poulpy_core::{
     GLWEBytesOf, GLWECIEmbed, GLWECITrace, GLWEKeyswitch,
     layouts::{
         Degree, GGLWEInfos, GGLWEPreparedToBackendRef, GLWE, GLWECIEmbedKeyPrepared, GLWECITraceKeyPrepared, GLWEInfos,
-        GLWELayout, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank, TorusPrecision,
+        GLWELayout, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank, SetK, TorusPrecision,
     },
 };
 use poulpy_hal::{
@@ -15,6 +15,7 @@ use poulpy_hal::{
 
 use crate::{
     CKKSCompositionError, CKKSCtBounds, CKKSInfos, GLWEPlaintextMeta, SetCKKSInfos, SlotsKind,
+    api::{CKKSCopyOps, CKKSRoundOps},
     error::checked_log_budget_sub,
     layouts::{CKKSCiphertext, ScratchArenaTakeCKKSCiphertext},
 };
@@ -23,19 +24,44 @@ use crate::{
 /// [`impl_ckks_ci_ring_map_reference_full!`](crate::impl_ckks_ci_ring_map_reference_full) forwards to: the core
 /// conjugate-invariant embedding and trace composed with the GLWE key switch.
 pub trait CKKSCIRingMapReference<BE: Backend> {
-    /// The key switch at the allocated width of `res_infos`, the widest input the destination holds.
-    fn ckks_ci_embed_tmp_bytes_reference<R, K>(&self, res_infos: &R, key_infos: &K) -> usize
+    /// The key switch at the allocated width of `res_infos`, the widest input the destination holds, and for a
+    /// replicated `a_infos` the wide copies at its shaping depth beside the copy, the switch and the rounding.
+    fn ckks_ci_embed_tmp_bytes_reference<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
-        Self: GLWEKeyswitch<BE>,
+        Self: GLWEKeyswitch<BE> + GLWEBytesOf<BE> + CKKSCopyOps<BE, ConjugateInvariant> + CKKSRoundOps<BE>,
         R: GLWEInfos,
+        A: CKKSCtBounds,
         K: GGLWEInfos,
     {
         let res = allocated(res_infos);
-        self.glwe_keyswitch_tmp_bytes(&res, &res, key_infos)
+        let Some(lambda) = crate::shaping::product_depth(crate::GLWEPlaintextInfos::slot_layout(a_infos), a_infos.log_delta())
+        else {
+            return self.glwe_keyswitch_tmp_bytes(&res, &res, key_infos);
+        };
+        let wide = GLWELayout {
+            k: (a_infos.max_k().as_usize() + lambda).into(),
+            ..res
+        };
+        let wide_ci = GLWELayout { n: a_infos.n(), ..wide };
+        BE::scratch_aligned(self.glwe_bytes_of_from_infos(&wide))
+            + BE::scratch_aligned(self.glwe_bytes_of_from_infos(&wide_ci))
+            + self
+                .glwe_keyswitch_tmp_bytes(&wide, &wide, key_infos)
+                .max(CKKSCopyOps::<BE, ConjugateInvariant>::ckks_copy_tmp_bytes(
+                    self,
+                    &ckks_layout(wide_ci),
+                    a_infos,
+                ))
+                .max(CKKSRoundOps::<BE>::ckks_round_tmp_bytes(
+                    self,
+                    &ckks_layout(res),
+                    &ckks_layout(wide),
+                ))
     }
 
     /// Refuses before any write, then stamps `dst` (real slots, the width of `src`), embeds `src` with
-    /// `glwe_ci_embed` and switches the result in place under `key`.
+    /// `glwe_ci_embed` and switches the result in place under `key`. A replicated `src` is embedded and switched at
+    /// its shaping depth under the scale, then rounded with shaping into `dst`.
     fn ckks_ci_embed_reference<Dst, D, K>(
         &self,
         dst: &mut Dst,
@@ -44,20 +70,58 @@ pub trait CKKSCIRingMapReference<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: ModuleN + GLWECIEmbed<BE> + GLWEKeyswitch<BE>,
+        Self: ModuleN
+            + GLWECIEmbed<BE>
+            + GLWEKeyswitch<BE>
+            + GLWEBytesOf<BE>
+            + CKKSCopyOps<BE, ConjugateInvariant>
+            + CKKSRoundOps<BE>,
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         D: Data,
         GLWE<D, BE::ZnxWord, ConjugateInvariant>: GLWEToBackendRef<BE, ConjugateInvariant>,
+        CKKSCiphertext<D, BE::ZnxWord, ConjugateInvariant>: GLWEToBackendRef<BE, ConjugateInvariant> + CKKSCtBounds,
         K: Data,
         GLWECIEmbedKeyPrepared<K, BE>: GGLWEPreparedToBackendRef<BE>,
     {
         const OP: &str = "ckks_ci_embed";
         check_embed(OP, self, dst, src)?;
-        // The key switch rounds plainly.
-        crate::layouts::validation::ensure_full_layout(OP, crate::GLWEPlaintextInfos::slot_layout(src))?;
+        if let Some(lambda) = shaping_depth(OP, src)? {
+            check_key(OP, "embed", key, dst.n(), dst.rank(), (src.k().as_usize() + lambda).into())?;
+            crate::ckks_ensure!(
+                scratch.available() >= self.ckks_ci_embed_tmp_bytes_reference(dst, src, key),
+                "{OP}: scratch below its query"
+            );
+            let wide_k = src.k().as_usize() + lambda;
+            let (mut wide, scratch_1) = scratch.borrow().take_ckks_ciphertext_scratch::<_, ConjugateInvariant>(
+                &GLWELayout {
+                    k: wide_k.into(),
+                    ..src.glwe_layout()
+                },
+                src.meta(),
+            );
+            let mut scratch_1 = scratch_1;
+            CKKSCopyOps::<BE, ConjugateInvariant>::ckks_copy(self, &mut wide, src, &mut scratch_1)?;
+            wide.set_log_delta(src.log_delta() + lambda);
+            let meta = GLWEPlaintextMeta {
+                slots: SlotsKind::Real,
+                ..wide.meta()
+            };
+            let (mut embedded, mut scratch_2) = scratch_1.take_ckks_ciphertext_scratch::<_, poulpy_hal::layouts::Standard>(
+                &GLWELayout {
+                    n: dst.n(),
+                    k: wide_k.into(),
+                    ..src.glwe_layout()
+                },
+                meta,
+            );
+            self.glwe_ci_embed(&mut embedded, &wide);
+            self.glwe_keyswitch_assign(&mut embedded, &key.to_backend_ref(), &mut scratch_2);
+            dst.set_k(src.k());
+            return CKKSRoundOps::<BE>::ckks_round(self, dst, &embedded, &mut scratch_2);
+        }
         check_key(OP, "embed", key, dst.n(), dst.rank(), src.k())?;
         crate::ckks_ensure!(
-            scratch.available() >= self.ckks_ci_embed_tmp_bytes_reference(dst, key),
+            scratch.available() >= self.ckks_ci_embed_tmp_bytes_reference(dst, src, key),
             "{OP}: scratch below its query"
         );
         embed(self, dst, src);
@@ -69,19 +133,42 @@ pub trait CKKSCIRingMapReference<BE: Backend> {
     /// `a_infos` to `res_infos`.
     fn ckks_ci_trace_tmp_bytes_reference<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
-        Self: GLWEBytesOf<BE> + GLWEKeyswitch<BE> + GLWECITrace<BE>,
+        Self: GLWEBytesOf<BE> + GLWEKeyswitch<BE> + GLWECITrace<BE> + CKKSCopyOps<BE> + CKKSRoundOps<BE, ConjugateInvariant>,
         R: GLWEInfos,
-        A: GLWEInfos,
+        A: CKKSCtBounds,
         K: GGLWEInfos,
     {
-        BE::scratch_aligned(self.glwe_bytes_of_from_infos(a_infos))
-            + self
-                .glwe_keyswitch_tmp_bytes(a_infos, a_infos, key_infos)
-                .max(self.glwe_ci_trace_tmp_bytes(res_infos, a_infos))
+        let Some(lambda) = crate::shaping::product_depth(crate::GLWEPlaintextInfos::slot_layout(a_infos), a_infos.log_delta())
+        else {
+            return BE::scratch_aligned(self.glwe_bytes_of_from_infos(a_infos))
+                + self
+                    .glwe_keyswitch_tmp_bytes(a_infos, a_infos, key_infos)
+                    .max(self.glwe_ci_trace_tmp_bytes(res_infos, a_infos));
+        };
+        // The wide copy, its switch and the trace at the shaping depth, then the rounding.
+        let wide = GLWELayout {
+            k: (a_infos.max_k().as_usize() + lambda).into(),
+            ..allocated(a_infos)
+        };
+        let traced = GLWELayout {
+            n: res_infos.n(),
+            ..wide
+        };
+        2 * BE::scratch_aligned(self.glwe_bytes_of_from_infos(&wide))
+            + BE::scratch_aligned(self.glwe_bytes_of_from_infos(&traced))
+            + CKKSCopyOps::<BE>::ckks_copy_tmp_bytes(self, &ckks_layout(wide), a_infos)
+                .max(self.glwe_keyswitch_tmp_bytes(&wide, &wide, key_infos))
+                .max(self.glwe_ci_trace_tmp_bytes(&traced, &wide))
+                .max(CKKSRoundOps::<BE, ConjugateInvariant>::ckks_round_tmp_bytes(
+                    self,
+                    &ckks_layout(allocated(res_infos)),
+                    &ckks_layout(traced),
+                ))
     }
 
     /// Refuses before any write, then switches `src` under `key` into a scratch copy, stamps `dst` (real slots, one
-    /// bit less width and budget) and writes the `glwe_ci_trace` of the copy into it.
+    /// bit less width and budget) and writes the `glwe_ci_trace` of the copy into it. A replicated `src` is switched
+    /// and traced at its shaping depth under the scale, then rounded with shaping into `dst`.
     fn ckks_ci_trace_reference<D, Src, K>(
         &self,
         dst: &mut CKKSCiphertext<D, BE::ZnxWord, ConjugateInvariant>,
@@ -90,19 +177,57 @@ pub trait CKKSCIRingMapReference<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: ModuleN + GLWEBytesOf<BE> + GLWEKeyswitch<BE> + GLWECITrace<BE>,
+        Self: ModuleN
+            + GLWEBytesOf<BE>
+            + GLWEKeyswitch<BE>
+            + GLWECITrace<BE>
+            + CKKSCopyOps<BE>
+            + CKKSRoundOps<BE, ConjugateInvariant>,
         D: Data,
         GLWE<D, BE::ZnxWord, ConjugateInvariant>: GLWEToBackendMut<BE, ConjugateInvariant>,
+        CKKSCiphertext<D, BE::ZnxWord, ConjugateInvariant>:
+            GLWEToBackendMut<BE, ConjugateInvariant> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: Data,
         GLWECITraceKeyPrepared<K, BE>: GGLWEPreparedToBackendRef<BE>,
     {
         const OP: &str = "ckks_ci_trace";
         check_trace(OP, self, dst, src)?;
-        // The key switch rounds plainly.
-        crate::layouts::validation::ensure_full_layout(OP, crate::GLWEPlaintextInfos::slot_layout(src))?;
-        check_key(OP, "trace", key, src.n(), src.rank(), src.k())?;
         let log_budget = trace_log_budget(OP, src)?;
+        if let Some(lambda) = shaping_depth(OP, src)? {
+            let wide_k = src.k().as_usize() + lambda;
+            check_key(OP, "trace", key, src.n(), src.rank(), wide_k.into())?;
+            crate::ckks_ensure!(
+                scratch.available() >= self.ckks_ci_trace_tmp_bytes_reference(dst, src, key),
+                "{OP}: scratch below its query"
+            );
+            let wide_layout = GLWELayout {
+                k: wide_k.into(),
+                ..src.glwe_layout()
+            };
+            let (mut wide, scratch_1) = scratch.borrow().take_ckks_ciphertext_scratch(&wide_layout, src.meta());
+            let (mut switched, mut scratch_2) = scratch_1.take_ckks_ciphertext_scratch(&wide_layout, src.meta());
+            CKKSCopyOps::<BE>::ckks_copy(self, &mut wide, src, &mut scratch_2)?;
+            wide.set_log_delta(src.log_delta() + lambda);
+            self.glwe_keyswitch(&mut switched, &wide, &key.to_backend_ref(), &mut scratch_2);
+            switched.set_meta(wide.meta());
+            let (mut traced, mut scratch_3) = scratch_2.take_ckks_ciphertext_scratch::<_, ConjugateInvariant>(
+                &GLWELayout {
+                    n: dst.n(),
+                    k: (wide_k - 1).into(),
+                    ..src.glwe_layout()
+                },
+                GLWEPlaintextMeta {
+                    slots: SlotsKind::Real,
+                    ..wide.meta()
+                },
+            );
+            traced.set_log_budget(wide.log_budget() - 1);
+            self.glwe_ci_trace(&mut traced, &switched, &mut scratch_3);
+            dst.set_k((log_budget + src.log_delta()).into());
+            return CKKSRoundOps::<BE, ConjugateInvariant>::ckks_round(self, dst, &traced, &mut scratch_3);
+        }
+        check_key(OP, "trace", key, src.n(), src.rank(), src.k())?;
         crate::ckks_ensure!(
             scratch.available() >= self.ckks_ci_trace_tmp_bytes_reference(dst, src, key),
             "{OP}: scratch below its query"
@@ -297,5 +422,24 @@ fn allocated<R: GLWEInfos>(infos: &R) -> GLWELayout {
         base2k: infos.base2k(),
         k: infos.max_k(),
         rank: infos.rank(),
+    }
+}
+
+/// The shaping depth a ring map computes a replicated `src` at, `None` on the full layout. A replicated layout whose
+/// scale leaves no shaping pass is refused: the key switch would round it plainly.
+fn shaping_depth<C: CKKSInfos>(op: &'static str, src: &C) -> Result<Option<usize>> {
+    let layout = crate::GLWEPlaintextInfos::slot_layout(src);
+    let lambda = crate::shaping::product_depth(layout, src.log_delta());
+    if matches!(layout, crate::SlotLayout::Replicated(_)) && lambda.is_none() {
+        return Err(invalid(op, "a replicated input leaves no shaping pass at its scale"));
+    }
+    Ok(lambda)
+}
+
+/// A CKKS layout of `glwe_layout` at the default metadata, for the queries.
+fn ckks_layout(glwe_layout: GLWELayout) -> crate::CKKSLayout {
+    crate::CKKSLayout {
+        glwe_layout,
+        meta: GLWEPlaintextMeta::default(),
     }
 }
