@@ -4,21 +4,21 @@ use poulpy_core::{
     GLWEBytesOf, GLWECopy, GLWEKeyswitch, GLWEShift, ScratchArenaTakeGLWE,
     layouts::{
         GGLWEInfos, GLWEInfos, GLWELayout, GLWEPlaintextInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
-        LinearTransformation, TorusPrecision,
+        LinearTransformation,
         prepared::{GGLWEPreparedBackendRef, GGLWEPreparedToBackendRef},
     },
 };
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
-    CKKSCompositionError, CKKSCtBounds, CKKSInfos, CKKSLayout, CKKSResult as Result, GLWEPlaintextMeta, Scale, SetCKKSInfos,
+    CKKSCtBounds, CKKSInfos, CKKSLayout, CKKSResult as Result, GLWEPlaintextMeta, Scale, SetCKKSInfos,
     api::CKKSPow2Ops,
     ckks_ensure, ckks_ensure_operand,
     layouts::{
         BootstrappingKeysLayout, BootstrappingLinearKeys, CKKSModRaiseInfos, CKKSRightOperandPrepared,
         bootstrapping::bootstrap_layouts,
         validation::{
-            check_first_factor_raise, check_offset_raise, ensure_encapsulation, ensure_mod_up_widens, ensure_one_base2k,
+            check_encapsulated_raise, check_offset_raise, ensure_encapsulation, ensure_mod_up_widens, ensure_one_base2k,
             ensure_one_degree, ensure_rank_one, offset_key_window,
         },
     },
@@ -131,7 +131,7 @@ pub trait CKKSModRaiseReference<BE: Backend>: std::borrow::Borrow<Module<BE>> {
         );
         // C2S-first derives both lifts from EvalMod, and the first one writes `a`: the checks run on what it will leave.
         let (lift_bits, scale_up) = raise.scale_ups(OP, a.k().as_usize(), a.log_delta())?;
-        check_raise_widths(res, a, scale_up, plan.first_factor(), keys)?;
+        crate::layouts::validation::check_raise_widths(OP, res, a, scale_up, plan.first_factor(), keys)?;
         if let Some(keys_layout) = keys.keys_layout() {
             let bytes = module.ckks_mod_raise_tmp_bytes_reference(res, a, plan, keys_layout);
             ckks_ensure!(
@@ -205,54 +205,6 @@ where
     Ok(())
 }
 
-/// What [`CKKSModRaiseReference::ckks_mod_raise_reference`] refuses on widths: `src`, lifted by `scale_up` fused
-/// into ModUp, into `dst`, under the encapsulation keys and the first-factor keys of `keys`.
-fn check_raise_widths<BE, Dst, Src, K>(
-    dst: &Dst,
-    src: &Src,
-    scale_up: usize,
-    first_factor: Option<&LinearTransformation<CKKSRightOperandPrepared<BE>>>,
-    keys: &K,
-) -> Result<()>
-where
-    BE: Backend,
-    K: BootstrappingLinearKeys<BE>,
-    Dst: CKKSCtBounds,
-    Src: CKKSCtBounds,
-{
-    const OP: &str = "ckks_mod_raise";
-    let (k_large, k_small) = (dst.k().as_usize(), src.k().as_usize());
-    if let Some(factor) = first_factor {
-        if let Some((dense_to_sparse, _)) = keys.encapsulation_keys() {
-            ensure_encapsulation_key_covers(src.k(), dense_to_sparse)?;
-        }
-        ensure_mod_up_widens(OP, k_large, k_small, scale_up)?;
-        check_first_factor_raise(
-            OP,
-            dst.base2k().as_usize(),
-            dst.n().as_usize().ilog2() as usize,
-            k_large,
-            k_small + scale_up,
-            factor,
-            keys,
-        )?;
-        return Ok(());
-    }
-    match keys.encapsulation_keys() {
-        Some((dense_to_sparse, Some(sparse_to_dense))) => {
-            check_encapsulated_raise(dst, src, scale_up, dense_to_sparse, sparse_to_dense)
-        }
-        Some((_, None)) => Err(CKKSCompositionError::InvalidOperand {
-            op: OP,
-            reason:
-                "the encapsulated ModUp needs a sparse-to-dense key, which a key set for the first factor on the raise has not"
-                    .into(),
-        }
-        .into()),
-        None => ensure_mod_up_widens(OP, k_large, k_small, scale_up),
-    }
-}
-
 #[expect(
     clippy::too_many_arguments,
     reason = "the raise takes its lift, its scale, the first factor and the gap as separate operands"
@@ -324,7 +276,7 @@ where
     Src: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
 {
     // The switch keeps the width of `src`: the raise's checks run before it.
-    check_encapsulated_raise(dst, src, scale_up, dense_to_sparse, sparse_to_dense)?;
+    check_encapsulated_raise("ckks_mod_raise", dst, src, scale_up, dense_to_sparse, sparse_to_dense)?;
     module.glwe_keyswitch_assign(src, &dense_to_sparse.to_backend_ref(), scratch);
     if sparse_to_dense.k_offset().as_usize() > 0 {
         return ckks_mod_up_offset_reference(module, dst, src, scale_up, sparse_to_dense, scratch);
@@ -383,39 +335,6 @@ where
         log_sparsity: src.log_sparsity(),
         slot_layout: src.slot_layout(),
     });
-    Ok(())
-}
-
-/// `InvalidOperand` unless the encapsulation key `key` takes an input of `k` bits.
-fn ensure_encapsulation_key_covers<K: GGLWEInfos>(k: TorusPrecision, key: &K) -> Result<()> {
-    ckks_ensure_operand!(
-        "ckks_mod_raise",
-        k <= key.gglwe_layout().max_input_k(),
-        "the input is wider than an encapsulation key's max_input_k"
-    );
-    Ok(())
-}
-
-/// Refuses encapsulation keys too narrow for their inputs before any write: `src`
-/// for the dense-to-sparse switch, `dst` for an offset-free sparse-to-dense one, and
-/// the raise of `src` by `scale_up` into `dst`, a sparse-to-dense key with a row
-/// offset being checked against that raise, by [`check_offset_raise`].
-fn check_encapsulated_raise<Dst: CKKSCtBounds, Src: CKKSCtBounds, D2S: GGLWEInfos, S2D: GGLWEInfos>(
-    dst: &Dst,
-    src: &Src,
-    scale_up: usize,
-    dense_to_sparse: &D2S,
-    sparse_to_dense: &S2D,
-) -> Result<()> {
-    const OP: &str = "ckks_mod_raise";
-    ensure_encapsulation_key_covers(src.k(), dense_to_sparse)?;
-    let (k_large, k_small) = (dst.k().as_usize(), src.k().as_usize());
-    if sparse_to_dense.k_offset().as_usize() > 0 {
-        check_offset_raise(OP, k_large, k_small, scale_up, sparse_to_dense)?;
-    } else {
-        ensure_encapsulation_key_covers(dst.k(), sparse_to_dense)?;
-        ensure_mod_up_widens(OP, k_large, k_small, scale_up)?;
-    }
     Ok(())
 }
 

@@ -3299,6 +3299,36 @@ where
         bytes,
         &|e: &E| matches!(e, E::MissingRelinearizationKey { op, .. } if *op == OP),
     );
+    // Keys whose encapsulation leaves the raise short: the ephemeral key narrower than the raise's input, and the
+    // return key's rows ending below the raised width. The entry refuses them, before SlotsToCoeffs runs.
+    let raise_input_k = route.log_delta + ctx.plan.eval_mod().log_msg_ratio;
+    let short_raise = |shorten: &dyn Fn(&mut crate::layouts::BootstrappingKeysLayout)| -> Result<_> {
+        let mut layouts = key_layouts.clone();
+        shorten(&mut layouts);
+        let (mut xs, mut xe, mut xa) = (Source::new([9; 32]), Source::new([10; 32]), Source::new([11; 32]));
+        let mut keygen = ScratchOwned::<BE>::alloc(layouts.generate_tmp_bytes(module).max(layouts.prepare_tmp_bytes(module)));
+        ctx.generate_replicated_keys(module, sk_raw, &layouts, &mut xs, &mut xe, &mut xa, &mut keygen.borrow())?
+            .prepare(module, &mut keygen.borrow())
+    };
+    let raise_refusal = &|e: &E| matches!(e, E::InvalidOperand { op, .. } if *op == OP);
+    let narrow_ephemeral = short_raise(&|layouts| {
+        let key = &mut layouts.encapsulation.as_mut().unwrap().dense_to_sparse;
+        key.k_digit = ((raise_input_k - 1) / key.dnum.as_usize()).into();
+    })?;
+    refuses(
+        "ephemeral key short",
+        out(),
+        input,
+        ctx,
+        &narrow_ephemeral,
+        bytes,
+        raise_refusal,
+    );
+    let short_return = short_raise(&|layouts| {
+        let key = layouts.encapsulation.as_mut().unwrap().sparse_to_dense.as_mut().unwrap();
+        key.k_digit = (key.k_digit.as_usize() - 1).into();
+    })?;
+    refuses("return key short", out(), input, ctx, &short_return, bytes, raise_refusal);
     // An arena a byte below the query.
     let mut res = out();
     let before = snapshot::<BE, _, Standard>(&res);
@@ -3351,7 +3381,97 @@ where
         ),
         "EvalMod off the layout of CoeffsToSlots: {err}"
     );
+
+    // The steps on the operands of a bootstrapping: each checks its arena and the keys of its transform before it
+    // writes.
+    let k_in = ctx.plan.replicated_input_k().unwrap();
+    let mut coeffs = alloc(input.k().as_usize().max(k_in), 1, params.n, params.base2k);
+    with_scratch::<BE, _>(bytes, |s| module.ckks_copy(&mut coeffs, input, s))?;
+    let mut s2c_input = coeffs.clone();
+    let err = with_scratch::<BE, _>(0, |s| module.ckks_slots_to_coeffs_assign(&mut s2c_input, &run, keys, s)).unwrap_err();
+    assert!(
+        err.to_string().contains("ckks_slots_to_coeffs_assign needs a scratch arena"),
+        "SlotsToCoeffs, empty arena: {err}"
+    );
+    with_scratch::<BE, _>(bytes, |s| module.ckks_slots_to_coeffs_assign(&mut coeffs, &run, keys, s))?;
+    let mut raised = alloc(ctx.plan.replicated_raised_k(k_out).unwrap(), 1, params.n, params.base2k);
+    with_scratch::<BE, _>(bytes, |s| module.ckks_mod_raise(&mut raised, &mut coeffs, &run, keys, s))?;
+    // A key of the CoeffsToSlots transform that its trace does not use, hidden.
+    use crate::layouts::CKKSDFTFactors;
+    let stages = ctx.replicated().unwrap();
+    let trace = module.glwe_trace_galois_elements(params.n.into(), stages.top_skip..params.n.ilog2() as usize, false);
+    let chain = crate::layouts::validation::chain_galois_lookups(
+        "test",
+        module,
+        params.n,
+        ctx.coeffs_to_slots().factor_plans(),
+        &stages.c2s_consumed,
+        raised.k().as_usize(),
+    )?;
+    let hidden = chain
+        .iter()
+        .map(|&(p, _)| p)
+        .find(|p| !trace.contains(p))
+        .expect("CoeffsToSlots rotates by a key its trace does not use");
+    let hiding = HidingKey { keys, hidden };
+    let mut c2s_input = raised.clone();
+    let before = snapshot::<BE, _, Standard>(&c2s_input);
+    let err = with_scratch::<BE, _>(bytes, |s| {
+        module.ckks_coeffs_to_slots_assign(&mut c2s_input, &run, &hiding, s)
+    })
+    .unwrap_err();
+    assert!(
+        matches!(err.composition(), Some(E::MissingAutomorphismKey { op: "ckks_coeffs_to_slots_assign", rotation, .. }) if *rotation == hidden),
+        "CoeffsToSlots without a transform key: {err}"
+    );
+    assert_eq!(
+        snapshot::<BE, _, Standard>(&c2s_input),
+        before,
+        "CoeffsToSlots without a transform key wrote its operand"
+    );
+    with_scratch::<BE, _>(bytes, |s| module.ckks_coeffs_to_slots_assign(&mut raised, &run, keys, s))?;
+    let mut res = out();
+    let before = snapshot::<BE, _, Standard>(&res);
+    // A byte below the step's query, which an override's own workspace is part of.
+    let eval_mod_bytes = module.ckks_bootstrap_eval_mod_tmp_bytes(&res, &raised, &run, key_layouts);
+    let err = with_scratch::<BE, _>(eval_mod_bytes - 1, |s| {
+        module.ckks_bootstrap_eval_mod(&mut res, &raised, &run, keys, s)
+    })
+    .unwrap_err();
+    assert!(
+        err.to_string().contains("ckks_bootstrap_eval_mod needs a scratch arena"),
+        "EvalMod, short arena: {err}"
+    );
+    assert_eq!(
+        snapshot::<BE, _, Standard>(&res),
+        before,
+        "EvalMod, short arena: the refusal wrote res"
+    );
     Ok(())
+}
+
+/// `keys` without the automorphism key of the Galois element `hidden`.
+struct HidingKey<'a, K> {
+    keys: &'a K,
+    hidden: i64,
+}
+
+impl<BE: Backend, K: poulpy_core::layouts::GetAutomorphismKey<BE>> poulpy_core::layouts::GetAutomorphismKey<BE>
+    for HidingKey<'_, K>
+{
+    fn lookup_automorphism_key(
+        &self,
+        p: i64,
+        k: poulpy_core::layouts::TorusPrecision,
+    ) -> poulpy_core::Result<poulpy_core::layouts::prepared::GLWEAutomorphismKeyPreparedBackendRef<'_, BE, Standard>> {
+        if p == self.hidden {
+            return Err(poulpy_core::CoreError::GGLWEKeyUse {
+                op: "get_automorphism_key",
+                detail: format!("no automorphism key for p={p}"),
+            });
+        }
+        self.keys.lookup_automorphism_key(p, k)
+    }
 }
 
 /// [`test_replicated_bootstrap`] on the conjugate-invariant ring of degree `N` on one `module` of degree `2N`: the input
