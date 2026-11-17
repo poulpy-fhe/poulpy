@@ -725,14 +725,14 @@ where
         }
         steps.push(compose_steps(module, &case));
     }
-    results.push(replicated_bootstrap::<BE, F>(params, module));
+    results.extend(replicated_bootstrap::<BE, F>(params, module));
     (results, steps)
 }
 
 /// `ckks_bootstrap` on the replicated route of ePrint 2026/2513 for `k = 4` values of `U8_40` (`R = 4`), packed when
-/// the two batches fit the ring, on a fixture input at the input width and fixture keys covering the widths of the
-/// route, within its queried arena.
-fn replicated_bootstrap<BE, F>(params: CKKSTestParams, module: &Module<BE>) -> Outcome
+/// the two batches fit the ring, on fixture inputs at the input width, at `Δ_b` and at the leveled scale, and fixture
+/// keys covering the widths of the route, within its queried arena.
+fn replicated_bootstrap<BE, F>(params: CKKSTestParams, module: &Module<BE>) -> Vec<Outcome>
 where
     BE: Backend<ZnxWord = i64> + CKKSBootstrappingImpl,
     F: CKKSEncodingScalar + Sync,
@@ -798,12 +798,19 @@ where
         layout_at.meta.slot_layout = SlotLayout::Replicated(layout);
         layout_at
     };
-    let a = fixture_ciphertext(module, &replicated(k_in, route.log_delta), 89);
-    let mut res = fixture_ciphertext(module, &replicated(k_out, route.level_log_delta), 97);
-    let bytes = module.ckks_bootstrap_tmp_bytes(&res, &a, &ctx, &keys_layout);
-    let result = with_scratch::<BE, _>(bytes, |scratch| module.ckks_bootstrap(&mut res, &a, &ctx, &keys, scratch));
-    assert!(result.is_ok(), "replicated: {result:?}");
-    (result.map_err(|e| e.to_string()), vec![snapshot::<BE, _, Standard>(&res)])
+    // An input at `Δ_b`, and one at the leveled scale, which SlotsToCoeffs lifts.
+    let lift = route.log_delta - route.level_log_delta;
+    [(k_in, route.log_delta), (k_in - lift, route.level_log_delta)]
+        .into_iter()
+        .map(|(k, log_delta)| {
+            let a = fixture_ciphertext(module, &replicated(k, log_delta), 89);
+            let mut res = fixture_ciphertext(module, &replicated(k_out, route.level_log_delta), 97);
+            let bytes = module.ckks_bootstrap_tmp_bytes(&res, &a, &ctx, &keys_layout);
+            let result = with_scratch::<BE, _>(bytes, |scratch| module.ckks_bootstrap(&mut res, &a, &ctx, &keys, scratch));
+            assert!(result.is_ok(), "replicated at 2^{log_delta}: {result:?}");
+            (result.map_err(|e| e.to_string()), vec![snapshot::<BE, _, Standard>(&res)])
+        })
+        .collect()
 }
 
 /// Runs one step on exactly `bytes` of poisoned scratch.

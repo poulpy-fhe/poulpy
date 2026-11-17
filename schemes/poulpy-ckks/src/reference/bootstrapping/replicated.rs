@@ -48,6 +48,26 @@ where
     module.ckks_round(ct, &wide, &mut scratch)
 }
 
+/// The query of a step on `ct` through `dft` under the keys of `key_layouts`, each switching with its own gadget.
+fn stage_query<BE, Dir, Fmt, D, C>(
+    module: &Module<BE>,
+    ct: &C,
+    dft: &D,
+    key_layouts: &[poulpy_core::layouts::GGLWELayout],
+) -> usize
+where
+    BE: Backend,
+    Module<BE>: CKKSDFTOps<BE>,
+    D: CKKSDFTFactors<BE, Dir, Fmt>,
+    C: CKKSCtBounds,
+{
+    key_layouts
+        .iter()
+        .map(|key| module.ckks_dft_tmp_bytes(ct, ct, dft, key))
+        .max()
+        .unwrap_or_default()
+}
+
 /// SlotsToCoeffs of a replicated run, in place on `ct`, a copy of the bootstrap's input at `Δ_b` or at the leveled
 /// scale, allocated at least as wide as the input width of the route.
 ///
@@ -94,7 +114,6 @@ where
         .glwe_trace_galois_elements(ct.n(), stage.trace_skip..ct.n().log2(), false)
         .into_iter()
         .map(|p| (p, k_in + route.extra_bits));
-    crate::layouts::validation::ensure_galois_keys(OP, keys, lookups)?;
     let chain = crate::layouts::validation::chain_galois_lookups(
         OP,
         module,
@@ -103,20 +122,13 @@ where
         stage.consumed,
         k_in + route.extra_bits,
     )?;
-    crate::layouts::validation::ensure_galois_keys(OP, keys, chain)?;
+    let key_layouts = crate::layouts::validation::ensure_galois_keys(OP, keys, lookups.chain(chain))?;
+    crate::layouts::validation::ensure_scratch(OP, scratch, stage_query(module, &*ct, dft, &key_layouts))?;
     let lift = route.log_delta - log_delta;
     let at = |k: usize| GLWELayout {
         k: k.into(),
         ..ct.glwe_layout()
     };
-    // The copies this step and its wide trace carve, at most `extra_bits` above the input width.
-    let ct_bytes = |k: usize| crate::oep::derived::replicated::ct_bytes::<BE>(&at(k));
-    let carved = ct_bytes(k_in) + 2 * ct_bytes(k_in + route.extra_bits);
-    crate::ckks_ensure!(
-        scratch.available() >= carved,
-        "{OP} needs a scratch arena of at least {carved} bytes, got {}",
-        scratch.available()
-    );
     let (mut input, scratch) = scratch.borrow().take_ckks_ciphertext_scratch(&at(k_in), ct.meta());
     let (mut x, mut scratch) = scratch.take_ckks_ciphertext_scratch(&at(k_in + route.extra_bits), ct.meta());
 
@@ -170,8 +182,7 @@ where
         .glwe_trace_galois_elements(ct.n(), stage.trace_skip..log_n, false)
         .into_iter()
         .map(|p| (p, ct.k().as_usize()));
-    crate::layouts::validation::ensure_galois_keys(OP, keys, lookups)?;
-    // The trace writes `ct`: the keys of the transform after it are checked first.
+    // The trace writes `ct`: the keys of the transform after it and the arena are checked first.
     let chain = crate::layouts::validation::chain_galois_lookups(
         OP,
         module,
@@ -180,7 +191,8 @@ where
         stage.consumed,
         ct.k().as_usize(),
     )?;
-    crate::layouts::validation::ensure_galois_keys(OP, keys, chain)?;
+    let key_layouts = crate::layouts::validation::ensure_galois_keys(OP, keys, lookups.chain(chain))?;
+    crate::layouts::validation::ensure_scratch(OP, scratch, stage_query(module, &*ct, dft, &key_layouts))?;
     module.glwe_trace_assign(ct, stage.trace_skip..log_n, false, true, keys, scratch);
     ct.set_log_sparsity(stage.top_sparsity);
     module.ckks_dft_matrix_eval_assign(ct, dft, keys, scratch)?;

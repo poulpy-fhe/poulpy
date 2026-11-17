@@ -1309,27 +1309,33 @@ pub(crate) fn chain_galois_lookups<M: poulpy_hal::layouts::CyclotomicOrder + ?Si
 }
 
 /// `MissingAutomorphismKey` for `op` unless `keys` cover each `(galois element, k)` of `lookups`, the error naming the
-/// element in place of a rotation.
+/// element in place of a rotation, or else the layout of each key found.
 pub(crate) fn ensure_galois_keys<BE, H>(
     op: &'static str,
     keys: &H,
     lookups: impl IntoIterator<Item = (i64, usize)>,
-) -> CKKSResult<()>
+) -> CKKSResult<Vec<GGLWELayout>>
 where
     BE: Backend,
     H: GetAutomorphismKey<BE>,
 {
-    for (p, k) in lookups {
-        let k = TorusPrecision(k as u32);
-        keys.get_automorphism_key(p, k)
-            .map_err(|source| CKKSCompositionError::MissingAutomorphismKey {
-                op,
-                rotation: p,
-                k: k.into(),
-                source,
-            })?;
-    }
-    Ok(())
+    lookups
+        .into_iter()
+        .map(|(p, k)| {
+            let k = TorusPrecision(k as u32);
+            keys.get_automorphism_key(p, k)
+                .map(|key| key.gglwe_layout())
+                .map_err(|source| {
+                    CKKSCompositionError::MissingAutomorphismKey {
+                        op,
+                        rotation: p,
+                        k: k.into(),
+                        source,
+                    }
+                    .into()
+                })
+        })
+        .collect()
 }
 
 /// What the replicated route of `ckks_bootstrap` refuses before its first step, so that no step refuses with `res` half

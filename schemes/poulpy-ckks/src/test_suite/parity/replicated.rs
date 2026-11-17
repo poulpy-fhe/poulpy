@@ -64,8 +64,8 @@ impl<B, Rg: Ring> ReplicatedRingImpl<Rg> for B where
 {
 }
 
-/// `ckks_to_replicated` and back of a full-layout fixture of `k = 4` values onto `U8_40` (`R = 4`), with the maps
-/// dense and with two placement factors, each within its queried arena, the keys fixtures at the suite's rank.
+/// `ckks_to_replicated` and back of a full-layout fixture of `k = 4` values onto `U8_40` (`R = 4`), into wide and
+/// narrower destinations, with the maps dense and with two placement factors, each within its queried arena, the keys fixtures at the suite's rank.
 fn conversions<B, F, Rg: Ring>(params: CKKSTestParams, module: &Module<B>) -> Vec<(&'static str, Snapshot)>
 where
     B: Backend<ZnxWord = i64>,
@@ -131,27 +131,34 @@ where
             &super::arithmetic::layout(params, params.rank, k, log_delta_ckks, 0, SlotsKind::Complex),
             81,
         );
-        let mut replicated =
-            fixture_ciphertext::<B, Rg>(module, &ct_layout(params, k, log_delta, SlotLayout::Replicated(layout)), 83);
-        let mut workspace = conv.alloc_to_workspace(module, &a);
-        with_scratch::<B, _>(
-            module.ckks_replicated_conversion_tmp_bytes(&replicated, &a, &atk_layout, &conv),
-            |s| module.ckks_to_replicated(&mut replicated, &a, &conv, &mut workspace, &keys, s),
-        )
-        .unwrap();
-        results.push((label, snapshot::<B, _, Rg>(&replicated)));
-        let mut back = fixture_ciphertext::<B, Rg>(
-            module,
-            &super::arithmetic::layout(params, params.rank, k, log_delta_ckks, 0, SlotsKind::Complex),
-            85,
-        );
-        let mut workspace = conv.alloc_from_workspace(module, &replicated).unwrap();
-        with_scratch::<B, _>(
-            module.ckks_replicated_conversion_tmp_bytes(&back, &replicated, &atk_layout, &conv),
-            |s| module.ckks_from_replicated(&mut back, &replicated, &conv, &mut workspace, &keys, s),
-        )
-        .unwrap();
-        results.push((label, snapshot::<B, _, Rg>(&back)));
+        // The results land wide, and narrower off the limb grid through a modulus drop.
+        let to_k = k - log_delta_ckks - conv.to.consumed_bits() + log_delta;
+        let mut replicated = None;
+        for res_k in [k, to_k - 7] {
+            let res_layout = ct_layout(params, res_k, log_delta, SlotLayout::Replicated(layout));
+            let mut res = fixture_ciphertext::<B, Rg>(module, &res_layout, 83);
+            let mut workspace = conv.alloc_to_workspace(module, &a);
+            with_scratch::<B, _>(
+                module.ckks_replicated_conversion_tmp_bytes(&res, &a, &atk_layout, &conv),
+                |s| module.ckks_to_replicated(&mut res, &a, &conv, &mut workspace, &keys, s),
+            )
+            .unwrap();
+            results.push((label, snapshot::<B, _, Rg>(&res)));
+            replicated.get_or_insert(res);
+        }
+        let replicated = replicated.unwrap();
+        let from_log_delta = log_delta + extra_bits + conv.trace.len();
+        for res_k in [k, from_log_delta + 7] {
+            let back_layout = super::arithmetic::layout(params, params.rank, res_k, log_delta_ckks, 0, SlotsKind::Complex);
+            let mut back = fixture_ciphertext::<B, Rg>(module, &back_layout, 85);
+            let mut workspace = conv.alloc_from_workspace(module, &replicated).unwrap();
+            with_scratch::<B, _>(
+                module.ckks_replicated_conversion_tmp_bytes(&back, &replicated, &atk_layout, &conv),
+                |s| module.ckks_from_replicated(&mut back, &replicated, &conv, &mut workspace, &keys, s),
+            )
+            .unwrap();
+            results.push((label, snapshot::<B, _, Rg>(&back)));
+        }
     }
     results
 }
