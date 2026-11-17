@@ -75,7 +75,7 @@
 //! | glwe\_trace | Normalized GLWE trace (average of automorphisms) |
 //! | noise | Noise-variance estimation for parameter selection |
 //! | dist | Secret-key distribution descriptors |
-//! | [`security`] | Opt-in security levels from the rlwe-params tables |
+//! | [`security`] | Opt-in validation of layouts against tables of secure moduli |
 //! | scratch | Arena-style scratch allocation for ciphertext temporaries |
 
 pub mod api;
