@@ -68,8 +68,9 @@ Its `transforms` select how `SlotsToCoeffs` and `CoeffsToSlots` are evaluated, b
 - `ReplicatedTransforms::Factored`: each map is the DFT on period `k` in `s2c_factors` or `c2s_factors` factors and the move between consecutive slots and the data slots in `placement_factors` factors of 0/1 masks, each factor a BSGS transform whose giant step is fitted to its offsets. Every `SlotsToCoeffs` factor consumes `s2c_log_delta_diag` bits; the last `CoeffsToSlots` factor is quantized with shaping at `c2s_log_delta_diag` bits and the others plainly at `c2s_inner_log_delta_diag` bits. Factored maps take at least `2^f` values for `f` factors.
 
 A packed route needs its two batches to fit the ring, `4kR <= N`, which the compilation checks.
-Factoring trades levels and rotation keys for fewer diagonals: at `N = 2^16` and `k = 2^10`, the dense maps multiply by about 3000 diagonals with 69 rotation keys, the factored maps of `n16_d20_k763_p19_s2c_factored` by 381 diagonals with 83 keys, for a raised modulus 256 bits wider at the same levels.
-At `k = 2^10`, the factored preset bootstraps in 6.3 s on one `NTT4x30Neon` thread and 0.36 s on Metal, against 8.1 s and 0.52 s for dense maps at the same levels, within 0.2 bits of their precision. At `k = 2^8` the dense maps are faster, the diagonals no longer dominating.
+Factoring trades levels and rotation keys for fewer diagonals: at `N = 2^16` and `k = 2^10`, the dense maps take 69 rotation keys and the factored maps of `n16_d20_k763_p19_s2c_factored` 83, for a raised modulus of 1207 bits against 955 at the same levels.
+At `k = 2^10`, the factored maps bootstrap in 6.1 to 6.5 s on one `NTT4x30Neon` thread and 0.35 s on Metal, against 8.6 to 8.7 s and 0.50 s for dense maps, at 22.37 bits against 22.87. At `k = 2^8` the dense maps are faster, 4.2 s against 5.0 s on `NTT4x30Neon` and 0.24 s against 0.29 s on Metal, the diagonals no longer dominating.
+These figures are the rows `n16_d20_k763_p19_s2c_factored({factored,dense},k={256,1024},base2k=52)` of `bench_ckks_replicated_bootstrapping` on an Apple M5 Pro: `NTT4x30Neon` in the `bootstrapping` bench of `poulpy-cpu-arm`, two rounds at `k = 2^10`, and `NTT4x30Gpu<Wgpu>` on Metal through CubeCL 0.11.3 in the `bootstrapping` bench of `poulpy-gpu-portable`, with an `NTT4x30Portable` client.
 `BootstrappingContextPrepared::compile` compiles the plan for a module at the route's degree `2^log_n`, which the bootstrap takes its ciphertexts at: the transforms, the masked EvalMod constants, and the Galois elements its keys cover (`replicated_galois_elements`).
 `replicated_key_widths` gives the width at which a bootstrapping into a given output width looks each key up, the widest use of each Galois element and of the tensor key, which the entry check reads and `BootstrappingKeyPolicy::keys_layout_at` shapes keys from, with the digits of fewest rows under the caller's modulus bounds. `generate_replicated_keys` generates them by the generator of the full layout.
 
@@ -85,20 +86,20 @@ The sparse-to-dense key covers the 57-bit lifted ModUp input, with a row offset 
 
 | preset | ring | levels at `2^20` | widest rotation key (digits × width + aux) | tensor key | ephemeral key | sparse-to-dense key (offset + gadget + aux) | min precision, k = 16 / 64 |
 |---|---|---|---|---|---|---|---|
-| `n14_d20_k109_p21_s2c` | `2^14` | 2 | 14 × 28 + 32 | 7 × 52 + 60 | 2 × 22 + 33 | 333 + 2 × 29 + 33 | 21.79 / 21.73 bits |
-| `n15_d20_k389_p20_s2c` | `2^15` | 16 | 7 × 104 + 119 | 3 × 208 + 223 | 1 × 52 + 67 | 567 + 1 × 104 + 119 | 21.16 / 20.84 bits |
-| `n16_d20_k763_p19_s2c_factored` | `2^16` | 30 | 3 × 416 + 432 | 2 × 520 + 536 | 1 × 52 + 68 | 1103 + 1 × 104 + 120 | 20.52 / 20.38 bits |
+| `n14_d20_k109_p21_s2c` | `2^14` | 2 | 14 × 28 + 32 | 7 × 52 + 60 | 2 × 22 + 33 | 333 + 2 × 29 + 33 | 23.00 / 22.89 bits |
+| `n15_d20_k389_p20_s2c` | `2^15` | 16 | 7 × 104 + 119 | 3 × 208 + 223 | 1 × 52 + 67 | 567 + 1 × 104 + 119 | 22.94 / 22.97 bits |
+| `n16_d20_k763_p19_s2c_factored` | `2^16` | 30 | 3 × 416 + 432 | 2 × 520 + 536 | 1 × 52 + 68 | 1103 + 1 × 104 + 120 | 23.06 / 23.19 bits |
 
 The logN14 preset advertises 21 bits of precision on the data slots, the logN15 preset 20 bits and the logN16 preset 19 bits, which the precision test asserts.
-The logN16 preset measures 20.35 bits at `k = 2^8` and 20.00 bits at `k = 2^10` on `NTT4x30Neon`. The test covers offset and full-width return keys on matched ciphertexts, and `U8_40` at `k = 64`.
+The logN16 preset measures 22.80 bits at `k = 2^8` and 22.37 bits at `k = 2^10` in the benchmark rows above. The test covers offset and full-width return keys on matched ciphertexts, and `U8_40` at `k = 64`.
 
 With `U8_40`, EvalMod at `2^30` raises the modulus by 16 bits:
 
 | preset | raised modulus | widest rotation key (digits × width + aux) | min precision, k = 64 |
 |---|---|---|---|
-| `n14_d20_k109_p21_s2c` | 407 bits | 34 × 12 + 16 | 21.28 bits |
-| `n15_d20_k389_p20_s2c` | 687 bits | 7 × 104 + 119 | 20.94 bits |
-| `n16_d20_k763_p19_s2c_factored` | 1223 bits | 3 × 416 + 432 | 20.61 bits |
+| `n14_d20_k109_p21_s2c` | 407 bits | 34 × 12 + 16 | 21.47 bits |
+| `n15_d20_k389_p20_s2c` | 687 bits | 7 × 104 + 119 | 21.60 bits |
+| `n16_d20_k763_p19_s2c_factored` | 1223 bits | 3 × 416 + 432 | 22.79 bits |
 
 The logN14 bound of 424 bits leaves only 12-bit digits, so its key switches take 34 digits instead of 14.
 
@@ -161,4 +162,4 @@ module.ckks_bootstrap(&mut output, &input, &ctx, &keys, &mut scratch)?;
 The CKKS test suite checks every shaped operation against the full layout on the data slots (`test_round_*`, `test_replicated_*`), every unit on a product chain, that operations which would round plainly reject a replicated input, and the bootstrapping on a small ring.
 `test_replicated_parity` checks that the shaped operations give the same digits on every pair of backends, on both rings and at ranks 1 and 2, and the encryption parity suites check shaped encryption under the same draws.
 `conjugate_invariant_ckks_test_suite!` runs the tests that apply to the conjugate-invariant ring, the shaped rounding on the unfolded coefficients, and `test_replicated_ci_bootstrap`, which composes the ring maps with the bootstrapping.
-The ignored test `replicated_bootstrapping_presets_meet_precision`, registered on the NTT backends, runs every preset at both batch sizes and asserts the advertised precision; the benchmark `bench_ckks_replicated_bootstrapping` of `poulpy-bench` runs the same configurations.
+The ignored test `replicated_bootstrapping_presets_meet_precision`, registered on the NTT backends, runs every preset at both batch sizes and asserts the advertised precision; the benchmark `bench_ckks_replicated_bootstrapping` of `poulpy-bench` runs the same configurations, and the logN16 preset with dense and factored maps at `k = 2^8` and `2^10`, each checked against the advertised precision before it is timed.
