@@ -120,6 +120,9 @@ pub use sub::impl_ckks_sub_reference_full;
 /// `CKKSFoldImpl<R>`). Also left out: the scalar-generic families (`CKKSEncodingImpl<F, Rg>`, which each backend
 /// implements for each scalar and each ring, and `CKKSDFTMatrixImpl<F>`, selected by its own macro) and the PaCo and
 /// SHIP coefficient encodings, which have no reference opt-in.
+///
+/// The replicated conversions it selects (`CKKSReplicatedImpl`) take the rounding of the ring as a supertrait, which the
+/// backend registers beside this macro (`CKKSRoundImpl`, with its `CKKSShapedRoundingImpl`).
 #[macro_export]
 macro_rules! impl_ckks_reference_full {
     ($be:ty) => {
@@ -146,6 +149,7 @@ macro_rules! impl_ckks_reference_full {
         $crate::impl_ckks_affine_derived_full!($be, $ring);
         $crate::impl_ckks_mul_sub_derived_full!($be, $ring);
         $crate::impl_ckks_approximation_derived_full!($be, $ring);
+        $crate::impl_ckks_replicated_derived_full!($be, $ring);
     };
 }
 pub use crate::impl_ckks_reference_full;

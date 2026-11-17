@@ -126,11 +126,19 @@ mod bootstrapping_presets {
 
 mod replicated_bootstrapping_presets {
     use poulpy_ckks::test_suite::replicated_presets::replicated_bootstrapping_presets_meet_precision;
+    // FFT64 backends do not register it: no FFT64 radix is measured against the replicated presets.
 
     #[test]
     #[ignore = "runs full logN14 to logN16 replicated bootstraps per preset; opt in with --ignored"]
     fn ntt4x30_presets_meet_precision() {
         replicated_bootstrapping_presets_meet_precision::<crate::NTT4x30Avx>(52);
+    }
+
+    #[cfg(feature = "enable-rayon")]
+    #[test]
+    #[ignore = "runs full logN14 to logN16 replicated bootstraps per preset; opt in with --ignored"]
+    fn ntt4x30_rayon_presets_meet_precision() {
+        replicated_bootstrapping_presets_meet_precision::<crate::NTT4x30AvxRayon>(52);
     }
 }
 
