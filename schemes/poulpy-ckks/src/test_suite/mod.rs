@@ -4,7 +4,8 @@
 //! `(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)`.
 //! Downstream backend crates instantiate these independent mathematical tests
 //! through [`ckks_backend_test_suite!`] and the frozen encoding and setup
-//! fixtures through [`ckks_determinism_test_suite!`]. The [`parity`] suite
+//! fixtures through [`ckks_determinism_test_suite!`] and
+//! [`conjugate_invariant_determinism_test_suite!`]. The [`parity`] suite
 //! compares a caller-selected pair through production operation dispatch.
 
 use crate::{Scale, ckks_log_delta};
@@ -1484,7 +1485,7 @@ macro_rules! ckks_backend_test_suite {
     };
 }
 
-pub use crate::{ckks_backend_test_suite, ckks_determinism_test_suite};
+pub use crate::{ckks_backend_test_suite, ckks_determinism_test_suite, conjugate_invariant_determinism_test_suite};
 
 pub mod add;
 pub mod add_many;

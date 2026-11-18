@@ -1,15 +1,3 @@
-use poulpy_ckks::ckks_determinism_test_suite;
-
-ckks_determinism_test_suite!(mod ckks_determinism_fft64avx, backend = crate::FFT64Avx, f32);
-
-ckks_determinism_test_suite!(mod ckks_determinism_ntt4x30avx, backend = crate::NTT4x30Avx, f32);
-
-#[cfg(feature = "enable-rayon")]
-ckks_determinism_test_suite!(mod ckks_determinism_fft64avxrayon, backend = crate::FFT64AvxRayon, f32);
-
-#[cfg(feature = "enable-rayon")]
-ckks_determinism_test_suite!(mod ckks_determinism_ntt4x30avxrayon, backend = crate::NTT4x30AvxRayon, f32);
-
 /// Full logN16 bootstraps per preset: slow, so opt in with `--ignored`. The
 /// small S2C-first and C2S-first presets run by default.
 mod bootstrapping_presets {

@@ -32,6 +32,7 @@
 - CPU backends register `CKKSShapedRoundingImpl<Rg>` with `impl_cpu_ckks_shaped_rounding!`, on both rings from `($be)` and on one from `($be, $ring)`, while the oracle computes the correction independently, on both rings.
 - Every backend type, the oracle and the test fixture backends included, selects the replicated conversions through `impl_ckks_reference_full!`, and the GPU backend and the override fixture through `impl_ckks_replicated_derived_full!` beside their rounding, on both rings, under the same features as the type.
 - `ckks_replicated_workspace` checks prepared-buffer reuse across distinct conversion inputs.
+- Each CPU backend crate registers its determinism suites, on both rings, in a `tests/determinism.rs` target, and `poulpy-cpu-portable` its encoding round trips in `tests/ckks_encoding.rs`, outside the library tests.
 
 ### `poulpy-core`
 
@@ -136,6 +137,7 @@
 - **Breaking:** `CKKSModUpFirstFactorImpl::ckks_mod_up_first_factor[_tmp_bytes]` take the plan's `log_gap`, and both take their scalars right after `module`: `(module, scale_up, log_gap, dst, src, factor, keys, scratch)` and `(module, log_gap, dst_infos, src_infos, factor, d2s_infos, key_infos)`. An out-of-tree implementation re-signatures both; `impl_ckks_mod_up_first_factor_reference_full!` forwards to the reference, whose methods take the same order. `generate_keys` requires `VecZnxSwitchRing`.
 - **Breaking:** the suite trait `TestContextSharedModule` requires `VecZnxSwitchRing`, as `generate_keys` does.
 - **Breaking, behaviour:** a sparse plan needs its gap. `generate_keys` refuses transforms that do not fill `N/2g` slots, and `ckks_bootstrap` and `ckks_functional_bootstrap` refuse an input of another degree than those transforms fill, where a plan on fewer slots than the ring without a gap returned noise: no projection and no trace kept the overflow of the raise in the subring.
+- **Breaking:** test suites: `conjugate_invariant_ckks_test_suite!` loses `ckks_ci_encoding_determinism_f64` and `ckks_ci_encoding_determinism_quad` for `conjugate_invariant_determinism_test_suite!(mod <name>, backend = <type>)`, whose `encoding_determinism_f64` and `encoding_determinism_quad` run the new `test_conjugate_invariant_encoding_determinism::<BE, F>()`.
 
 ### `poulpy-bin-fhe`
 
