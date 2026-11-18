@@ -790,9 +790,7 @@ where
 /// conversion keys alike, leaving its arena of [`BootstrappingKeysLayout::generate_tmp_bytes`]
 /// wiped, on the
 /// insecure `N = 2^11` S2C-first preset, with the keys of power-of-two rotations, and with EvalMod
-/// on the conjugate-invariant ring, `u` folded into CoeffsToSlots. The plan given a security level
-/// ([`BootstrappingPlan::with_security`]) refuses before any draw, the table having no row at
-/// `N = 2^11`.
+/// on the conjugate-invariant ring, `u` folded into CoeffsToSlots.
 pub fn bootstrapping_plan_keys_match_context<BE>()
 where
     BE: TestContextBackend + HostStaged + MaxBase2k,
