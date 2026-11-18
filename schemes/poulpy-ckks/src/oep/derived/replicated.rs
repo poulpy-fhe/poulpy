@@ -33,10 +33,9 @@ pub(crate) fn working_layout<C: GLWEInfos>(ct: &C, extra_bits: usize, trace_step
 
 /// Wide stage onto a replicated layout: `res = M(a)` computed `extra_bits` under `a`'s scale, then rounded with
 /// `layout`'s shaping to `log_delta`, landing at `res.k()` through a modulus drop when `res` is narrower. The caller
-/// has checked everything this refuses on, so `res` is stamped by the steps that write it.
+/// has checked the operands, workspace, keys and arena.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn wide_onto_replicated<BE, Rg: Ring, R, A, H>(
-    op: &'static str,
+fn wide_onto_replicated<BE, Rg: Ring, R, A, H>(
     module: &Module<BE>,
     res: &mut R,
     a: &A,
@@ -62,7 +61,7 @@ where
     module.ckks_copy(&mut x, a, &mut scratch)?;
     x.set_log_delta(a.log_delta() + extra_bits);
     x.set_slot_layout(SlotLayout::Full);
-    apply_transform(op, module, &mut acc, &x, transform, workspace, keys, &mut scratch)?;
+    apply_transform(module, &mut acc, &x, transform, workspace, keys, &mut scratch)?;
     acc.set_slot_layout(SlotLayout::Replicated(layout));
     let k = acc.log_budget() + log_delta;
     if k <= res.k().as_usize() {
@@ -80,8 +79,7 @@ where
 /// normalized trace `T` sums the rotations by `trace` after dividing by `2^trace.len()`, which lifts the modulus so
 /// that its multiples vanish. Rounds plainly, and lands at `res.k()`.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn wide_gather_trace<BE, Rg: Ring, R, A, H>(
-    op: &'static str,
+fn wide_gather_trace<BE, Rg: Ring, R, A, H>(
     module: &Module<BE>,
     res: &mut R,
     a: &A,
@@ -111,7 +109,7 @@ where
     module.ckks_copy(&mut x, a, &mut scratch)?;
     x.set_log_delta(a.log_delta() + extra_bits);
     x.set_slot_layout(SlotLayout::Full);
-    apply_transform(op, module, &mut acc, &x, transform, workspace, keys, &mut scratch)?;
+    apply_transform(module, &mut acc, &x, transform, workspace, keys, &mut scratch)?;
     normalized_trace(module, &mut acc, trace, keys, &mut rotated, &mut scratch)?;
     module.ckks_copy(res, &acc, &mut scratch)
 }
@@ -120,7 +118,7 @@ where
 /// The division comes first and lifts the modulus: the trace of the modulus'
 /// multiples lies in `2^L·R`, so they vanish on the torus. A trace closing the
 /// slot cycle, `step·2^L = N/2`, leaves a polynomial in `X^(2^L)`.
-pub(crate) fn normalized_trace<BE, Rg: Ring, H>(
+fn normalized_trace<BE, Rg: Ring, H>(
     module: &Module<BE>,
     ct: &mut CKKSCiphertextViewMut<'_, BE, Rg>,
     shifts: &[i64],
@@ -149,9 +147,7 @@ where
 
 /// `acc = M(x)` by the prepared transform `M`, its factors chained through one temporary at the layout of `x`, so
 /// that the last lands in `acc`. Its diagonals are plaintexts, so it reads the automorphism keys of `keys` only.
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn apply_transform<BE, Rg: Ring, H>(
-    op: &'static str,
+fn apply_transform<BE, Rg: Ring, H>(
     module: &Module<BE>,
     acc: &mut CKKSCiphertextViewMut<'_, BE, Rg>,
     x: &CKKSCiphertextViewMut<'_, BE, Rg>,
@@ -165,7 +161,6 @@ where
     Module<BE>: CKKSLinearTransformationOps<BE, Rg>,
     H: GetAutomorphismKey<BE, Rg>,
 {
-    ensure_transform_workspace(op, workspace, &x.glwe_layout(), transform)?;
     let keys = &PlaintextDiagonalKeys(keys);
     let count = transform.factors.len();
     let (mut tmp, mut scratch) = scratch
@@ -206,7 +201,7 @@ where
 
 /// Scratch of [`apply_transform`] on inputs of layout `wide`: the temporary of
 /// a chain beside the largest factor, each at its input width.
-pub(crate) fn transform_tmp_bytes<BE, Rg: Ring, K>(
+fn transform_tmp_bytes<BE, Rg: Ring, K>(
     module: &Module<BE>,
     wide: &CKKSLayout,
     key_infos: &K,
@@ -342,23 +337,19 @@ pub(crate) fn to_key_lookups<BE: Backend, Rg: Ring, A: GLWEInfos>(
 }
 
 /// The rotations, and the widths, at which `ckks_from_replicated` of `a` through `ctx` looks its keys up: the gather
-/// at the working width, then the trace at the width it leaves, or the refusal of `op` when `a` has not the budget.
+/// at the working width, then the trace at the width it leaves, a result of `log_budget` bits.
 pub(crate) fn from_key_lookups<BE: Backend, Rg: Ring, A: CKKSCtBounds>(
-    op: &'static str,
     ctx: &ReplicatedConversion<BE, Rg>,
     from: &ReplicatedTransform<BE, Rg>,
     workspace: &ReplicatedTransformWorkspace<BE, Rg>,
     a: &A,
-) -> Result<Vec<(i64, usize)>> {
-    // The trace divides by `2^trace.len()` first, moving that many budget bits under the scale.
-    let log_budget = checked_log_budget_sub(op, a.log_budget(), from.consumed_bits() + ctx.trace.len())?;
+    log_budget: usize,
+) -> Vec<(i64, usize)> {
     let trace_k = log_budget + a.log_delta() + ctx.extra_bits + ctx.trace.len();
-    Ok(
-        transform_key_lookups(from, workspace, working_layout(a, ctx.extra_bits, 0).k.as_usize())
-            .into_iter()
-            .chain(ctx.trace.iter().map(|&rotation| (rotation, trace_k)))
-            .collect(),
-    )
+    transform_key_lookups(from, workspace, working_layout(a, ctx.extra_bits, 0).k.as_usize())
+        .into_iter()
+        .chain(ctx.trace.iter().map(|&rotation| (rotation, trace_k)))
+        .collect()
 }
 
 /// `InsufficientHomomorphicCapacity` for `op` unless a result of `log_budget` bits at scale `2^log_delta` lands at
@@ -401,7 +392,6 @@ where
     let key_layouts = ensure_rotation_keys(OP, module, a.n().as_usize(), keys, to_key_lookups(ctx, workspace, a))?;
     ensure_scratch(OP, scratch, conversion_bytes(module, res, a, &key_layouts, ctx))?;
     wide_onto_replicated(
-        OP,
         module,
         res,
         a,
@@ -450,8 +440,8 @@ where
     let log_budget = checked_log_budget_sub(OP, a.log_budget(), from.consumed_bits() + ctx.trace.len())?;
     let log_delta = a.log_delta() + ctx.extra_bits + ctx.trace.len();
     ensure_landing(OP, res, log_budget, log_delta)?;
-    let lookups = from_key_lookups(OP, ctx, from, workspace, a)?;
+    let lookups = from_key_lookups(ctx, from, workspace, a, log_budget);
     let key_layouts = ensure_rotation_keys(OP, module, a.n().as_usize(), keys, lookups)?;
     ensure_scratch(OP, scratch, conversion_bytes(module, res, a, &key_layouts, ctx))?;
-    wide_gather_trace(OP, module, res, a, from, workspace, &ctx.trace, ctx.extra_bits, keys, scratch)
+    wide_gather_trace(module, res, a, from, workspace, &ctx.trace, ctx.extra_bits, keys, scratch)
 }

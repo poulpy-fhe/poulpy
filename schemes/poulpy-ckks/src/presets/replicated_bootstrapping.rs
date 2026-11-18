@@ -118,14 +118,14 @@ impl ReplicatedBootstrappingPreset {
     /// Width the application hands a ciphertext back at, at the leveled scale,
     /// for every unit.
     pub fn input_k(&self) -> usize {
-        let route = reference_route(&self.spec);
-        input_k(&self.spec, &route) - (route.log_delta - route.level_log_delta)
+        let plan = reference_plan(&self.spec);
+        let route = plan.replicated_route().expect("a replicated plan");
+        plan.replicated_input_k().unwrap_or_default() - (route.log_delta - route.level_log_delta)
     }
 
     /// Width after bootstrapping, at the leveled scale, for every unit.
     pub fn output_k(&self) -> usize {
-        let route = reference_route(&self.spec);
-        input_k(&self.spec, &route) + self.spec.levels * route.level_log_delta
+        output_k(&self.spec, &reference_plan(&self.spec))
     }
 
     /// Evaluation-key layouts for this preset and `layout`, each key covering its width in `widths`, the widths at which
@@ -147,7 +147,7 @@ impl ReplicatedBootstrappingPreset {
                 rank: Rank(1),
             },
             meta: GLWEPlaintextMeta {
-                scale: Scale::Log(reference_route(&self.spec).level_log_delta),
+                scale: Scale::Log(route_for(&self.spec, layout).level_log_delta),
                 slots: SlotsKind::Complex,
                 log_sparsity: 0,
                 slot_layout: SlotLayout::Replicated(layout),
@@ -237,8 +237,8 @@ pub fn all() -> Result<Vec<ReplicatedBootstrappingPreset>> {
 }
 
 /// The input and output widths do not depend on the layout.
-fn reference_route(spec: &PresetSpec) -> ReplicatedRoute {
-    route_for(spec, ShapingUnit::U32_45.layout(4).expect("a valid unit"))
+fn reference_plan(spec: &PresetSpec) -> BootstrappingPlan {
+    plan_for(spec, ShapingUnit::U32_45.layout(4).expect("a valid unit")).expect("the reference unit compiles")
 }
 
 /// The route of ePrint 2026/2513 with the preset's transforms and `SlotsToCoeffs` scale, packed when the two batches
@@ -265,12 +265,6 @@ fn plan_for(spec: &PresetSpec, layout: ReplicatedLayout) -> Result<Bootstrapping
             eval_round_plus: None,
         },
     )
-}
-
-/// The input width of `route` at `Δ_b`, which no unit changes.
-fn input_k(spec: &PresetSpec, route: &ReplicatedRoute) -> usize {
-    let _ = spec;
-    route.log_delta + ReplicatedRoute::paper_eval_mod(&route.layout).log_msg_ratio + route.s2c_consumed_bits()
 }
 
 fn output_k(spec: &PresetSpec, plan: &BootstrappingPlan) -> usize {
@@ -316,7 +310,7 @@ fn key_policy(spec: &PresetSpec) -> BootstrappingKeyPolicy {
 /// raise, the message ratio above `Δ_b`, and the key back its lifted window, its rows ending at the raised width.
 fn key_layouts(spec: &PresetSpec, plan: &BootstrappingPlan, widths: &BootstrappingKeyWidths) -> Result<BootstrappingKeysLayout> {
     let route = plan.replicated_route().context("a replicated plan")?;
-    let raise_input_k = route.log_delta + plan.eval_mod().log_msg_ratio;
+    let raise_input_k = plan.replicated_raise_input_k().context("a replicated plan")?;
     let window = raise_input_k + route.raise_bits();
     let raised = plan
         .replicated_raised_k(output_k(spec, plan))
@@ -487,7 +481,7 @@ mod tests {
                 let return_key = encapsulation.sparse_to_dense.unwrap();
                 let raised = plan.replicated_raised_k(preset.output_k()).unwrap();
                 let route = *plan.replicated_route().unwrap();
-                let k_small = route.log_delta + plan.eval_mod().log_msg_ratio;
+                let k_small = plan.replicated_raise_input_k().unwrap();
                 assert!(return_key.k_offset.0 > 0);
                 assert_eq!(
                     return_key.k_offset.as_usize() + return_key.gglwe_layout().gadget_k().as_usize(),

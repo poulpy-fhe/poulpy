@@ -427,7 +427,7 @@ The core leveled evaluator building blocks are now implemented:
 - bootstrapping (mod-raise, homomorphic DFT, and `EvalMod`)
 - PaCo bootstrapping (partial CoeffsToSlots, without ModUp or `EvalMod`; see [`docs/guides/paco.md`](../../docs/guides/paco.md))
 - SHIP half bootstrapping (mux blind rotations over a sparse secret, without ModUp or `EvalMod`; see [`docs/guides/ship.md`](../../docs/guides/ship.md))
-- small batches in a replicated slot layout with shaped rounding, with conversions and bootstrapping ([ePrint 2026/2513](https://eprint.iacr.org/2026/2513); see [`docs/guides/replicated.md`](../../docs/guides/replicated.md))
+- small batches in a replicated slot layout with shaped rounding, with conversions and bootstrapping ([ePrint 2026/2513](https://eprint.iacr.org/2026/2513), [`docs/guides/replicated.md`](../../docs/guides/replicated.md))
 
 Higher-level functionality on top of that foundation:
 

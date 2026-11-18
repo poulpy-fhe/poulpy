@@ -422,34 +422,71 @@ pub(crate) fn ensure_transform_workspace<BE: Backend, Rg: Ring>(
     Ok(())
 }
 
-/// The automorphism keys `transform` switches with on an input of `input_k` bits, as `(rotation, k)`: each factor's
-/// baby steps at its input's width and its giant steps at its output's, through the rotations of `workspace`'s prepared
-/// baby steps and of the factor's giant steps, as the evaluation looks them up.
-pub(crate) fn transform_key_lookups<BE: Backend, Rg: Ring>(
-    transform: &ReplicatedTransform<BE, Rg>,
-    workspace: &ReplicatedTransformWorkspace<BE, Rg>,
+/// The automorphism keys a chain of BSGS factors switches with on an input of `input_k` bits, as `(rotation, k)`:
+/// each factor's baby key rotations at its input's width and the keys of its giant steps at its output's, as the
+/// evaluation looks them up. Each factor gives its baby key rotations, its rotation schedule, its giant steps and the
+/// bits it consumes.
+fn bsgs_key_lookups(
+    factors: impl IntoIterator<Item = (Vec<i64>, BsgsRotations, Vec<i64>, usize)>,
     input_k: usize,
 ) -> Vec<(i64, usize)> {
     let mut lookups = Vec::new();
     let mut k = input_k;
-    for ((lt, consumed), babies) in transform.factors.iter().zip(&workspace.babies) {
-        let out_k = k - consumed;
-        lookups.extend(
-            babies
-                .rotations()
-                .baby_key_rotations(babies.baby_steps())
-                .into_iter()
-                .map(|rotation| (rotation, k)),
-        );
-        let giants = lt.giant_steps.iter().filter(|gs| !gs.diagonals.is_empty()).map(|gs| gs.rot);
-        let giants: Vec<i64> = match lt.rotations {
-            BsgsRotations::PerRotation => giants.filter(|&rotation| rotation != 0).collect(),
+    for (babies, rotations, giants, consumed) in factors {
+        let out_k = k.saturating_sub(consumed);
+        lookups.extend(babies.into_iter().map(|rotation| (rotation, k)));
+        let giants = match rotations {
+            BsgsRotations::PerRotation => giants.into_iter().filter(|&rotation| rotation != 0).collect(),
             rotations => rotations.giant_key_rotations(giants),
         };
         lookups.extend(giants.into_iter().map(|rotation| (rotation, out_k)));
         k = out_k;
     }
     lookups
+}
+
+/// [`bsgs_key_lookups`] of the prepared `transform`, through the baby steps `workspace` prepared and the giant steps
+/// holding diagonals.
+pub(crate) fn transform_key_lookups<BE: Backend, Rg: Ring>(
+    transform: &ReplicatedTransform<BE, Rg>,
+    workspace: &ReplicatedTransformWorkspace<BE, Rg>,
+    input_k: usize,
+) -> Vec<(i64, usize)> {
+    let factors = transform
+        .factors
+        .iter()
+        .zip(&workspace.babies)
+        .map(|((lt, consumed), babies)| {
+            let giants = lt.giant_steps.iter().filter(|gs| !gs.diagonals.is_empty()).map(|gs| gs.rot);
+            (
+                babies.rotations().baby_key_rotations(babies.baby_steps()),
+                lt.rotations,
+                giants.collect(),
+                *consumed,
+            )
+        });
+    bsgs_key_lookups(factors, input_k)
+}
+
+/// The key of Galois element `p` at width `k`, its layout, or `MissingAutomorphismKey` for `op` naming `rotation`.
+fn automorphism_key_layout<BE, Rg, H>(op: &'static str, keys: &H, p: i64, rotation: i64, k: usize) -> CKKSResult<GGLWELayout>
+where
+    BE: Backend,
+    Rg: Ring,
+    H: GetAutomorphismKey<BE, Rg>,
+{
+    let k = TorusPrecision(k as u32);
+    keys.get_automorphism_key(p, k)
+        .map(|key| key.gglwe_layout())
+        .map_err(|source| {
+            CKKSCompositionError::MissingAutomorphismKey {
+                op,
+                rotation,
+                k: k.into(),
+                source,
+            }
+            .into()
+        })
 }
 
 /// `MissingAutomorphismKey` for `op` unless `keys` cover each `(rotation, k)` of `lookups` on operands of degree `n`;
@@ -470,18 +507,7 @@ where
         .into_iter()
         .map(|(rotation, k)| {
             let p = crate::operand_rotation_galois_element::<_, Rg>(op, module, n, rotation)?;
-            let k = TorusPrecision(k as u32);
-            keys.get_automorphism_key(p, k)
-                .map(|key| key.gglwe_layout())
-                .map_err(|source| {
-                    CKKSCompositionError::MissingAutomorphismKey {
-                        op,
-                        rotation,
-                        k: k.into(),
-                        source,
-                    }
-                    .into()
-                })
+            automorphism_key_layout(op, keys, p, rotation, k)
         })
         .collect()
 }
@@ -1260,32 +1286,21 @@ where
     })
 }
 
-/// The automorphism keys a chain of transform factors switches with, as `(rotation, k)`, on an input of `input_k` bits:
-/// each factor's baby steps at its input's width and its giant steps at its output's, through the rotations of its
-/// schedule, as the evaluation looks them up; `consumed` gives each factor's bits.
+/// [`bsgs_key_lookups`] of the factor schedules `plans`, `consumed` giving each factor's bits.
 pub(crate) fn chain_key_lookups(
     plans: &[poulpy_core::layouts::LinearTransformationPlan],
     consumed: &[usize],
     input_k: usize,
 ) -> Vec<(i64, usize)> {
-    let mut lookups = Vec::new();
-    let mut k = input_k;
-    for (plan, &bits) in plans.iter().zip(consumed) {
-        let out_k = k - bits;
-        lookups.extend(
-            plan.rotations
-                .baby_key_rotations(plan.baby_steps.iter().copied())
-                .into_iter()
-                .map(|rotation| (rotation, k)),
-        );
-        let giants: Vec<i64> = match plan.rotations {
-            BsgsRotations::PerRotation => plan.giant_steps.iter().copied().filter(|&rotation| rotation != 0).collect(),
-            rotations => rotations.giant_key_rotations(plan.giant_steps.iter().copied()),
-        };
-        lookups.extend(giants.into_iter().map(|rotation| (rotation, out_k)));
-        k = out_k;
-    }
-    lookups
+    let factors = plans.iter().zip(consumed).map(|(plan, &bits)| {
+        (
+            plan.rotations.baby_key_rotations(plan.baby_steps.iter().copied()),
+            plan.rotations,
+            plan.giant_steps.clone(),
+            bits,
+        )
+    });
+    bsgs_key_lookups(factors, input_k)
 }
 
 /// [`chain_key_lookups`] as Galois elements of operands of degree `n`.
@@ -1321,20 +1336,7 @@ where
 {
     lookups
         .into_iter()
-        .map(|(p, k)| {
-            let k = TorusPrecision(k as u32);
-            keys.get_automorphism_key(p, k)
-                .map(|key| key.gglwe_layout())
-                .map_err(|source| {
-                    CKKSCompositionError::MissingAutomorphismKey {
-                        op,
-                        rotation: p,
-                        k: k.into(),
-                        source,
-                    }
-                    .into()
-                })
-        })
+        .map(|(p, k)| automorphism_key_layout(op, keys, p, p, k))
         .collect()
 }
 
@@ -1415,11 +1417,10 @@ where
         },
         meta: GLWEPlaintextMeta::default(),
     };
-    let raise_input_k = route.log_delta + plan.eval_mod().log_msg_ratio;
     check_raise_widths(
         OP,
         &at(raised_k),
-        &at(raise_input_k),
+        &at(plan.replicated_raise_input_k().unwrap_or_default()),
         route.raise_bits(),
         None::<&LinearTransformation<CKKSRightOperandPrepared<BE>>>,
         keys,

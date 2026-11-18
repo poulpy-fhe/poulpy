@@ -339,7 +339,7 @@ where
 /// A backend type with an `f32` encoding transform adds `, f32` after `backend = <type>`, which also
 /// registers `encoding_determinism_f32`.
 ///
-/// Every backend type implementing CKKS registers it. A backend type with the
+/// Every backend type implementing CKKS registers it. A CPU backend type with the
 /// conjugate-invariant ring also registers
 /// [`conjugate_invariant_determinism_test_suite!`](crate::conjugate_invariant_determinism_test_suite).
 #[macro_export]

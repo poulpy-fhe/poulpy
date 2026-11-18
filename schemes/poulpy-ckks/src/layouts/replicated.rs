@@ -18,6 +18,7 @@ use crate::{
     api::{CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar, CKKSLinearTransformationOps},
     encoding::linear_transformation::period_degree,
     layouts::{CKKSCiphertextAlloc, CKKSLinearTransformationAlloc, CKKSPlaintextAlloc, CKKSPlaintextOwned, ComplexDiagonals},
+    oep::derived::replicated::working_layout,
     shaping::conjugate_invariant,
 };
 
@@ -202,22 +203,16 @@ impl<BE: Backend, Rg: Ring> ReplicatedConversion<BE, Rg> {
         self.n
     }
 
-    /// Allocates reusable baby steps for conversion into this layout from `src`.
-    pub fn alloc_to_workspace<C: GLWEInfos>(&self, module: &Module<BE>, src: &C) -> ReplicatedTransformWorkspace<BE, Rg>
+    /// Allocates reusable baby steps for conversion into this layout from `a`.
+    pub fn alloc_to_workspace<C: GLWEInfos>(&self, module: &Module<BE>, a: &C) -> ReplicatedTransformWorkspace<BE, Rg>
     where
         Module<BE>: CnvPVecAlloc<BE>,
     {
-        self.to.alloc_workspace(
-            module,
-            &GLWELayout {
-                k: (src.k().as_usize() + self.extra_bits).into(),
-                ..src.glwe_layout()
-            },
-        )
+        self.to.alloc_workspace(module, &working_layout(a, self.extra_bits, 0))
     }
 
-    /// Allocates reusable baby steps for conversion from this layout.
-    pub fn alloc_from_workspace<C: GLWEInfos>(&self, module: &Module<BE>, src: &C) -> Result<ReplicatedTransformWorkspace<BE, Rg>>
+    /// Allocates reusable baby steps for conversion from this layout of `a`.
+    pub fn alloc_from_workspace<C: GLWEInfos>(&self, module: &Module<BE>, a: &C) -> Result<ReplicatedTransformWorkspace<BE, Rg>>
     where
         Module<BE>: CnvPVecAlloc<BE>,
     {
@@ -225,13 +220,7 @@ impl<BE: Backend, Rg: Ring> ReplicatedConversion<BE, Rg> {
             .from
             .as_ref()
             .context("the gather needs the period to divide the batch size")?;
-        Ok(from.alloc_workspace(
-            module,
-            &GLWELayout {
-                k: (src.k().as_usize() + self.extra_bits).into(),
-                ..src.glwe_layout()
-            },
-        ))
+        Ok(from.alloc_workspace(module, &working_layout(a, self.extra_bits, 0)))
     }
 
     /// Slot rotations the conversions use, for their automorphism keys.
